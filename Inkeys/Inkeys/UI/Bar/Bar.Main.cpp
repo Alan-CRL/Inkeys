@@ -10,6 +10,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
 #include <d2d1effects.h>
+#include <limits>
 
 #pragma comment(lib, "dxguid.lib")
 
@@ -51,6 +52,9 @@ constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
 constexpr UINT BarColorPickerCaptureMessage = WM_APP + 0x34;
 constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
 constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
+constexpr DWORD_PTR BarPointerMouseSignature = 0xFF515700u;
+constexpr DWORD_PTR BarPointerMouseSignatureMask = 0xFFFFFF00u;
+constexpr DWORD_PTR BarPointerMouseTouchFlag = 0x00000080u;
 constexpr WPARAM BarThicknessSliderCaptureStop = 0;
 constexpr WPARAM BarThicknessSliderCaptureStart = 1;
 constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
@@ -138,20 +142,21 @@ constexpr double BarThicknessSliderThumbAnimationDur = 0.28;
 	constexpr double BarThicknessSliderPressAnimationDur = 0.12;
 	constexpr double BarThicknessPreviewPopupAnimationDur = 0.40;
 	constexpr double BarThicknessPreviewNumberAnimationDur = 0.18;
-	constexpr double BarThicknessPreviewAvoidAnimationDur = 0.18;
 	constexpr double BarThicknessPreviewPopupPadding = 8.0;
-	constexpr double BarThicknessPreviewPopupGap = 5.0;
+	constexpr double BarThicknessPreviewPopupThumbGap = 10.0;
+	constexpr double BarThicknessPreviewAvoidGap = 5.0;
 	constexpr double BarThicknessPreviewNumberGap = 5.0;
 	constexpr double BarThicknessPreviewNumberInset = 4.0;
 	constexpr double BarThicknessPreviewNumberFontSize = 13.0;
 	constexpr double BarThicknessPreviewTouchSlopDip = 5.0;
+	// 直接触摸 Preview 使用三倍水平行程映射粗细，降低拖动调节速度。
+	constexpr double BarThicknessPreviewTouchDragTravelScale = 3.0;
 	// 拖动改值后静止 0.5s 出提示，再 1.5s（合计 2.0s）进度走满并锁定粗细。
 	constexpr double BarThicknessHoldStillnessPx = 5.0;
 	constexpr ULONGLONG BarThicknessHoldHintDelayMs = 500;
 	constexpr ULONGLONG BarThicknessHoldLockDelayMs = 1500;
 	constexpr double BarThicknessHoldHintAnimDur = 0.18;
-	constexpr double BarThicknessHoldExchangeAnimDur =
-		BarThicknessHoldHintAnimDur * 2.0;
+	constexpr double BarThicknessHoldExchangeAnimDur = 0.12;
 	// 圆环相对文字行高为 3/5，并比默认 5px 间隙更贴近文字。
 	constexpr double BarThicknessHoldRingSizeScale = 3.0 / 5.0;
 	constexpr double BarThicknessHoldRingTextGap = 2.0;
@@ -322,6 +327,67 @@ BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
 		&& geometry.previewRight > geometry.previewLeft
 		&& geometry.trackRight > geometry.trackLeft;
 	return geometry;
+}
+
+bool IsBarThicknessPrecisionDragHit(
+	BarUISetClass& barUISet, int mx, int my)
+{
+	auto panel = barUISet.shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+	auto region = barUISet.shapeMap[
+		BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
+	auto adjust = barUISet.shapeMap[
+		BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+	auto sliderThumb = barUISet.shapeMap[
+		BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb];
+	if (!panel || !region || !adjust || !sliderThumb
+		|| sliderThumb->w.val <= 0.0 || sliderThumb->h.val <= 0.0
+		|| static_cast<double>(sliderThumb->pct.val) < 0.999999)
+		return false;
+
+	auto geometry = CalculateBarThicknessPreviewGeometry(
+		*panel, *region, BarUiInheritClass(region->inhX, region->inhY),
+		*adjust, BarUiInheritClass(adjust->inhX, adjust->inhY));
+	if (!geometry.valid || abs(geometry.previewSide) <= 0.000001)
+		return false;
+
+	double outwardDirection = geometry.previewSide > 0.0 ? 1.0 : -1.0;
+	double thumbCenterY = sliderThumb->inhY + sliderThumb->h.val / 2.0;
+	double thumbHalfHeight = sliderThumb->h.val / 2.0;
+	double innerAdjacentY = outwardDirection > 0.0
+		? static_cast<double>(adjust->inhY) + adjust->h.val
+		: static_cast<double>(adjust->inhY);
+	double thumbInnerEdgeY = thumbCenterY
+		- outwardDirection * thumbHalfHeight;
+	double innerGap = max(0.0, outwardDirection
+		* (thumbInnerEdgeY - innerAdjacentY));
+	double bandNearY = thumbCenterY + outwardDirection
+		* (thumbHalfHeight + innerGap);
+	double bandFarY = outwardDirection > 0.0
+		? geometry.previewBottom : geometry.previewTop;
+	double bandTop = min(bandNearY, bandFarY);
+	double bandBottom = max(bandNearY, bandFarY);
+
+	// 水平与可见 Slider 轨道同宽；右侧 Hint 出现时扣除按钮占位。
+	double bandLeft = geometry.trackLeft;
+	double bandRight = geometry.trackRight;
+	if (barUISet.barState.drawAttributeBar.thicknessOverflowHintPresent)
+	{
+		auto overflowBadge = barUISet.shapeMap[
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge];
+		if (overflowBadge && overflowBadge->pct.val > 0.000001
+			&& overflowBadge->w.val > 0.0 && overflowBadge->h.val > 0.0)
+			bandRight = min(bandRight,
+				static_cast<double>(overflowBadge->inhX));
+	}
+
+	double zoom = static_cast<double>(barUISet.barStyle.zoom);
+	if (!isfinite(zoom) || zoom <= 0.0
+		|| bandRight <= bandLeft || bandBottom <= bandTop)
+		return false;
+	return static_cast<double>(mx) >= bandLeft * zoom
+		&& static_cast<double>(mx) <= bandRight * zoom
+		&& static_cast<double>(my) >= bandTop * zoom
+		&& static_cast<double>(my) <= bandBottom * zoom;
 }
 
 int GetBarThicknessPresetPx(
@@ -643,8 +709,11 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					&& !drawAttribute.thicknessSliderCapture
 					&& !colorPickerOccludes
 					&& !pointerInside
-					&& pointAvailable && sliderHit && sliderHit->IsClick(
-						point.x, point.y, barUISet.barStyle.zoom);
+					&& pointAvailable
+					&& ((sliderHit && sliderHit->IsClick(
+						point.x, point.y, barUISet.barStyle.zoom))
+						|| IsBarThicknessPrecisionDragHit(
+							barUISet, point.x, point.y));
 			if (static_cast<bool>(drawAttribute.thicknessSliderHover)
 				!= sliderHover)
 			{
@@ -930,9 +999,12 @@ barUISet.barState.drawAttributeBar.thicknessSliderCapture = false;
 	case WM_RBUTTONDBLCLK:
 	case WM_MOUSEMOVE:
 	{
-		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
-		DWORD extraInfo = GetMessageExtraInfo();
-		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
+		// 触摸已由 WM_TOUCH 单独合成；笔的兼容鼠标消息仍进入统一 ExMessage 路径。
+		DWORD_PTR extraInfo = static_cast<DWORD_PTR>(GetMessageExtraInfo());
+		bool pointerGenerated = (extraInfo & BarPointerMouseSignatureMask)
+			== BarPointerMouseSignature;
+		if (pointerGenerated && (extraInfo & BarPointerMouseTouchFlag) != 0)
+			return 0;
 		if (msg == WM_MOUSEMOVE) barUISet.ActivateBorderCursorTracking(hWnd);
 		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
 		if (msg == WM_LBUTTONUP) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
@@ -3290,8 +3362,8 @@ void BarUISetClass::Rendering()
 		}
 		BarUiValueClass drawAttributeThicknessPreviewPopupProgress(0.0);
 		BarUiValueClass drawAttributeThicknessPreviewNumberInsideProgress(0.0);
-		BarUiValueClass drawAttributeThicknessPreviewAvoidOffset(0.0);
 		BarUiValueClass drawAttributeThicknessHoldExchangeProgress(0.0);
+		BarUiValueClass drawAttributeThicknessHoldGroupScale(0.82);
 		D2D1_RECT_F drawAttributeThicknessPreviewNumberRect{};
 		D2D1_POINT_2F drawAttributeThicknessPreviewPopupAnchor{};
 		double drawAttributeThicknessPreviewPopupScale = 0.0;
@@ -3317,8 +3389,7 @@ void BarUISetClass::Rendering()
 		BarUiValueClass drawAttributeColorPickerDisplayB(0.0);
 		BarUiValueClass drawAttributeColorPickerDisplayOpacity(100.0);
 		bool drawAttributeColorPickerDisplayInitialized = false;
-		BarUiValueClass drawAttributeThicknessHoldHintOpacity(0.0);
-		BarUiValueClass drawAttributeThicknessHoldRingOpacity(0.0);
+		BarUiValueClass drawAttributeThicknessHoldRingLockOpacity(1.0);
 		BarUiValueClass drawAttributeThicknessHoldTextMix(0.0);
 		D2D1_SIZE_F holdLockLabelTextSize =
 			spec.MeasureText(L"保持并固定粗细", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
@@ -3711,31 +3782,61 @@ void BarUISetClass::Rendering()
 				operationDur, nullopt, false,
 				thicknessSliderProgressCurve);
 // 圆点只在轨道完全拉直后出现；退出时先完全消失，再恢复预览。
-				// 拖动中静止锁定后隐藏圆点，轨道仍保持拉直。
+				// 锁定只冻结本轮粗细，圆点和浮窗保持到真实抬手。
 				bool thicknessSliderHoldLocked =
 					barState.drawAttributeBar.thicknessSliderHoldLocked;
 				bool thicknessSliderThumbVisible = thicknessSliderActive
-					&& !thicknessSliderHoldLocked
 					&& drawAttributeThicknessSliderProgress.val >= 0.999999;
 				bool thicknessHoldHintTarget =
 					barState.drawAttributeBar.thicknessSliderHoldHintActive
 					|| thicknessSliderHoldLocked;
-				// 文字在锁定后仍保留；圆环在锁定瞬间开始淡出消失，不再变白。
-				bool thicknessHoldRingTarget =
-					barState.drawAttributeBar.thicknessSliderHoldHintActive
-					&& !thicknessSliderHoldLocked;
-				drawAttributeThicknessHoldHintOpacity.SetTar(
-					thicknessHoldHintTarget ? 1.0 : 0.0,
-					BarThicknessHoldHintAnimDur);
-				drawAttributeThicknessHoldRingOpacity.SetTar(
-					thicknessHoldRingTarget ? 1.0 : 0.0,
-					BarThicknessHoldHintAnimDur);
+				// 额外透明度只负责锁定后的圆环退场；普通显隐统一交给 Hold 组进度。
+				if (thicknessSliderHoldLocked)
+				{
+					drawAttributeThicknessHoldRingLockOpacity.SetTar(
+						0.0, BarThicknessHoldHintAnimDur);
+				}
+				else if (thicknessHoldHintTarget)
+				{
+					drawAttributeThicknessHoldRingLockOpacity.SetTar(
+						1.0, BarThicknessHoldHintAnimDur);
+				}
+				else if (drawAttributeThicknessHoldExchangeProgress.val <= 0.000001
+					&& drawAttributeThicknessHoldExchangeProgress.tar <= 0.000001)
+				{
+					// 锁定会话完全退场后再复位，下一次圆环可与文字同时弹入。
+					drawAttributeThicknessHoldRingLockOpacity.SetDirect(1.0);
+				}
 				drawAttributeThicknessHoldTextMix.SetTar(
 					thicknessSliderHoldLocked ? 1.0 : 0.0,
 					BarThicknessHoldHintAnimDur);
+				// 内容立即切换；组透明度和组缩放均从当前视觉状态平滑重定向。
+				const BarUiCurveSpecClass holdExchangeCurve{
+					thicknessHoldHintTarget
+						? BarUiCurveEnum::EaseOutCubic
+						: BarUiCurveEnum::EaseInCubic,
+					thicknessHoldHintTarget
+						? BarUiCurveEnum::EaseOutCubic
+						: BarUiCurveEnum::EaseInCubic,
+					0.0, false };
 				drawAttributeThicknessHoldExchangeProgress.SetTar(
 					thicknessHoldHintTarget ? 1.0 : 0.0,
-					BarThicknessHoldExchangeAnimDur);
+					BarThicknessHoldExchangeAnimDur,
+					nullopt, false, holdExchangeCurve);
+				const BarUiCurveSpecClass holdGroupScaleCurve{
+					thicknessHoldHintTarget
+						? BarUiCurveEnum::EaseOutBack
+						: BarUiCurveEnum::EaseInBack,
+					thicknessHoldHintTarget
+						? BarUiCurveEnum::EaseOutBack
+						: BarUiCurveEnum::EaseInBack,
+					0.0, false };
+				drawAttributeThicknessHoldGroupScale.SetTar(
+					thicknessHoldHintTarget ? 1.0 : 0.82,
+					thicknessHoldHintTarget
+						? static_cast<double>(BarUiDefaultOperationDur)
+						: BarThicknessHoldExchangeAnimDur,
+					nullopt, false, holdGroupScaleCurve);
 				const BarUiCurveSpecClass thicknessPreviewPopupCurve{
 					thicknessSliderThumbVisible
 						? BarUiCurveEnum::EaseOutBack
@@ -5421,10 +5522,13 @@ SetButtonPositionTar(temp->buttom.x, xO - barBtnGap / 2.0, 40.0, true);
 						thicknessDisplay->color.SetTar(
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 
-						double thicknessControlOpacity = clamp(
-							1.0 - static_cast<double>(
-								drawAttributeThicknessHoldExchangeProgress.val) * 2.0,
-							0.0, 1.0);
+				double thicknessControlOpacity = clamp(
+					1.0 - static_cast<double>(
+						drawAttributeThicknessHoldExchangeProgress.val),
+					0.0, 1.0);
+				bool thicknessControlsExchangeDirect =
+					drawAttributeThicknessHoldExchangeProgress.val > 0.000001
+					|| drawAttributeThicknessHoldExchangeProgress.tar > 0.000001;
 bool thicknessPresetMode =
 								PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
 							// 预设选中只看真实粗细；左下角数字由动画值驱动。
@@ -5456,25 +5560,47 @@ bool thicknessPresetMode =
 
 								if (!visible)
 								{
-									shape->pct.SetTar(0.0);
-									shape->frameLightPct.value().SetTar(0.0);
-									if (numberWord) numberWord->pct.SetTar(0.0);
+									if (thicknessControlsExchangeDirect)
+									{
+										shape->pct.SetDirect(0.0);
+										shape->frameLightPct.value().SetDirect(0.0);
+										if (numberWord) numberWord->pct.SetDirect(0.0);
+									}
+									else
+									{
+										shape->pct.SetTar(0.0);
+										shape->frameLightPct.value().SetTar(0.0);
+										if (numberWord) numberWord->pct.SetTar(0.0);
+									}
 								}
 								else
 								{
-									if (pressed) shape->pct.SetTar(
-										0.10 * thicknessControlOpacity);
-									else if (selected) shape->pct.SetTar(
-										0.20 * thicknessControlOpacity);
+									double shapeOpacity = pressed ? 0.10
+										: (selected ? 0.20 : 0.0);
+									if (thicknessControlsExchangeDirect)
+										shape->pct.SetDirect(
+											shapeOpacity * thicknessControlOpacity);
+									else if (pressed) shape->pct.SetTar(0.10);
+									else if (selected) shape->pct.SetTar(0.20);
 									else if (hoverStage == BarButtomHoverStageEnum::None
 										|| thicknessControlOpacity < 0.999999)
 										shape->pct.SetTar(0.0);
-									shape->frameLightPct.value().SetTar(selected
+									double frameLightOpacity = selected
 										? (pressed ? BarButtonPressedLightOpacity : 1.0)
 											* thicknessControlOpacity
-										: 0.0);
-									if (numberWord) numberWord->pct.SetTar(
-										thicknessControlOpacity);
+										: 0.0;
+									if (thicknessControlsExchangeDirect)
+										shape->frameLightPct.value().SetDirect(
+											frameLightOpacity);
+									else shape->frameLightPct.value().SetTar(
+										frameLightOpacity);
+									if (numberWord)
+									{
+										if (thicknessControlsExchangeDirect)
+											numberWord->pct.SetDirect(
+												thicknessControlOpacity);
+										else numberWord->pct.SetTar(1.0);
+									}
 								}
 
 								if (numberWord)
@@ -5554,8 +5680,11 @@ for (size_t i = 0; i < 3; ++i)
 						thicknessAdjustSvg->y.SetTar(0.0);
 						thicknessAdjustSvg->w.SetTar(18.0 * layoutScale);
 						thicknessAdjustSvg->h.SetTar(18.0 * layoutScale);
-						thicknessAdjustSvg->pct.SetTar(
-							adjustVisible ? thicknessControlOpacity : 0.0);
+						if (thicknessControlsExchangeDirect)
+							thicknessAdjustSvg->pct.SetDirect(
+								adjustVisible ? thicknessControlOpacity : 0.0);
+						else thicknessAdjustSvg->pct.SetTar(
+							adjustVisible ? 1.0 : 0.0);
 						auto& thicknessAdjustColor =
 							thicknessAdjustSvg->color1.value();
 								// 三角按下仍保留选中态基色，按压反馈由背景和光影透明度表达。
@@ -7063,22 +7192,21 @@ for (size_t i = 0; i < 3; ++i)
 				ChangeValue(drawAttributePenPreviewMorph, false);
 			if (!drawAttributeThicknessSliderNormalized.IsSame())
 				ChangeValue(drawAttributeThicknessSliderNormalized, false);
-			if (!drawAttributeThicknessHoldHintOpacity.IsSame())
-				ChangeValue(drawAttributeThicknessHoldHintOpacity, false);
-			if (!drawAttributeThicknessHoldRingOpacity.IsSame())
-				ChangeValue(drawAttributeThicknessHoldRingOpacity, false);
+			if (!drawAttributeThicknessHoldRingLockOpacity.IsSame())
+				ChangeValue(drawAttributeThicknessHoldRingLockOpacity, false);
 			if (!drawAttributeThicknessHoldTextMix.IsSame())
 				ChangeValue(drawAttributeThicknessHoldTextMix, false);
 			if (!drawAttributeThicknessHoldExchangeProgress.IsSame())
 				ChangeValue(drawAttributeThicknessHoldExchangeProgress, false);
+			if (!drawAttributeThicknessHoldGroupScale.IsSame())
+				ChangeValue(drawAttributeThicknessHoldGroupScale, false);
 			if (!drawAttributeThicknessPreviewPopupProgress.IsSame())
 				ChangeValue(drawAttributeThicknessPreviewPopupProgress, false);
 			if (!drawAttributeThicknessSliderProgress.IsSame())
 				ChangeValue(drawAttributeThicknessSliderProgress, false);
 			// 静止保持进度由交互线程写入，渲染侧每帧重绘环形进度。
 			if (barState.drawAttributeBar.thicknessSliderHoldHintActive
-				|| barState.drawAttributeBar.thicknessSliderHoldLocked
-				|| drawAttributeThicknessHoldHintOpacity.val > 0.000001)
+				|| barState.drawAttributeBar.thicknessSliderHoldLocked)
 				needRendering = true;
 		if (!drawAttributeThicknessSliderThumbOpacity.IsSame())
 			ChangeValue(drawAttributeThicknessSliderThumbOpacity, false);
@@ -7320,7 +7448,7 @@ for (size_t i = 0; i < 3; ++i)
 		};
 			double thicknessControlOpacity = clamp(
 				1.0 - static_cast<double>(
-					drawAttributeThicknessHoldExchangeProgress.val) * 2.0,
+					drawAttributeThicknessHoldExchangeProgress.val),
 				0.0, 1.0);
 			bool thicknessPresetMode =
 				PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
@@ -7774,81 +7902,49 @@ double baseThumbDiameter =
 					BarUiInheritEnum::TopLeft, *panel);
 				double anchorX = thumbInherit.x + sliderThumb->w.val / 2.0;
 				double anchorY = thumbInherit.y + sliderThumb->h.val / 2.0;
-				double targetCenterY = panel->inhY + panel->h.val / 2.0
-					+ previewGeometry.previewSide
-						* (panel->h.val / 2.0
-							+ BarThicknessPreviewPopupGap
-							+ popupHeight / 2.0);
+				double thumbRadius = min(
+					sliderThumb->w.val, sliderThumb->h.val) / 2.0;
+				// 浮窗贴着 Thumb 外侧留 10 DIP，可与属性面板局部重叠。
+				double targetCenterY = anchorY + previewGeometry.previewSide
+					* (thumbRadius + BarThicknessPreviewPopupThumbGap
+						+ popupHeight / 2.0);
 
-				D2D1_RECT_F avoidBounds{};
-				bool hasAvoidBounds = false;
-				auto IncludeAvoidWidget = [&](const auto& widget)
+				// 笔类型按钮和浮窗都转换到窗口局部坐标，取当前动画几何的最左边作为硬边界。
+				double penTypeSafeRight = numeric_limits<double>::infinity();
+				auto IncludePenTypeLeft = [&](const auto& widget)
 					{
 						if (!widget || widget->w.val <= 0.0 || widget->h.val <= 0.0)
 							return;
 						BarUiInheritClass inherit = widget->Inherit(
 							BarUiInheritEnum::TopLeft, *panel);
-						D2D1_RECT_F bounds = D2D1::RectF(
-							static_cast<FLOAT>(inherit.x),
-							static_cast<FLOAT>(inherit.y),
-							static_cast<FLOAT>(inherit.x + widget->w.val),
-							static_cast<FLOAT>(inherit.y + widget->h.val));
-						if (!hasAvoidBounds)
-						{
-							avoidBounds = bounds;
-							hasAvoidBounds = true;
-						}
-						else
-						{
-							avoidBounds.left = min(avoidBounds.left, bounds.left);
-							avoidBounds.top = min(avoidBounds.top, bounds.top);
-							avoidBounds.right = max(avoidBounds.right, bounds.right);
-							avoidBounds.bottom = max(avoidBounds.bottom, bounds.bottom);
-						}
+						penTypeSafeRight = min(penTypeSafeRight,
+							static_cast<double>(inherit.x)
+								- BarThicknessPreviewAvoidGap);
 					};
-				IncludeAvoidWidget(shapeMap[
+				IncludePenTypeLeft(shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_Brush1]);
-				IncludeAvoidWidget(shapeMap[
+				IncludePenTypeLeft(shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_Highlight1]);
-				IncludeAvoidWidget(shapeMap[
-					BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit]);
-				IncludeAvoidWidget(extensionDivider);
-				IncludeAvoidWidget(extensionArrow);
-				double targetLeft = anchorX - popupWidth / 2.0;
-				double targetRight = anchorX + popupWidth / 2.0;
+				IncludePenTypeLeft(shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu]);
+				if (!isfinite(penTypeSafeRight))
+					penTypeSafeRight = panel->inhX
+						+ BarDrawAttributePenTypeLeft * panelScale
+						- BarThicknessPreviewAvoidGap;
+
+				// X 只读取 Thumb 当帧最终布局中心；safe bound 是唯一允许产生相对位移的步骤。
+				double targetCenterX = min(anchorX,
+					penTypeSafeRight - popupWidth / 2.0);
+				// 按 Popup 当前回弹比例反解中心上限，确保最终右边缘不越界。
+				double safePopupScale = max(0.000001, popupScale);
+				double maxRenderedCenterX = anchorX
+					+ (penTypeSafeRight - anchorX) / safePopupScale
+					- popupWidth / 2.0;
+				targetCenterX = min(targetCenterX, maxRenderedCenterX);
+				double targetLeft = targetCenterX - popupWidth / 2.0;
+				double targetRight = targetCenterX + popupWidth / 2.0;
 				double targetTop = targetCenterY - popupHeight / 2.0;
 				double targetBottom = targetCenterY + popupHeight / 2.0;
-				double avoidOffsetTarget = 0.0;
-				if (hasAvoidBounds)
-				{
-					D2D1_RECT_F sweptBounds = D2D1::RectF(
-						static_cast<FLOAT>(min(anchorX, targetLeft)),
-						static_cast<FLOAT>(min(anchorY, targetTop)),
-						static_cast<FLOAT>(max(anchorX, targetRight)),
-						static_cast<FLOAT>(max(anchorY, targetBottom)));
-					bool intersects = sweptBounds.left < avoidBounds.right
-						&& sweptBounds.right > avoidBounds.left
-						&& sweptBounds.top < avoidBounds.bottom
-						&& sweptBounds.bottom > avoidBounds.top;
-					if (intersects)
-					{
-						double leftOffset = avoidBounds.left
-							- BarThicknessPreviewPopupGap - targetRight;
-						double rightOffset = avoidBounds.right
-							+ BarThicknessPreviewPopupGap - targetLeft;
-						avoidOffsetTarget = abs(leftOffset) <= abs(rightOffset)
-							? leftOffset : rightOffset;
-					}
-				}
-				drawAttributeThicknessPreviewAvoidOffset.SetTar(
-					avoidOffsetTarget, BarThicknessPreviewAvoidAnimationDur);
-				if (!drawAttributeThicknessPreviewAvoidOffset.IsSame())
-					ChangeValue(drawAttributeThicknessPreviewAvoidOffset, false);
-
-				double targetCenterX = anchorX + static_cast<double>(
-					drawAttributeThicknessPreviewAvoidOffset.val);
-				targetLeft = targetCenterX - popupWidth / 2.0;
-				targetRight = targetCenterX + popupWidth / 2.0;
 				double animatedLeft = anchorX
 					+ (targetLeft - anchorX) * popupScale;
 				double animatedTop = anchorY
@@ -7924,10 +8020,6 @@ double baseThumbDiameter =
 			}
 			else
 			{
-				drawAttributeThicknessPreviewAvoidOffset.SetTar(
-					0.0, BarThicknessPreviewAvoidAnimationDur);
-				if (!drawAttributeThicknessPreviewAvoidOffset.IsSame())
-					ChangeValue(drawAttributeThicknessPreviewAvoidOffset, false);
 				popupSurface->pct.SetDirect(0.0);
 				popupSurface->framePct->SetDirect(0.0);
 				popupSurface->frameLightPct->SetDirect(0.0);
@@ -8147,15 +8239,11 @@ double baseThumbDiameter =
 				+ (badgeTopAtLowerEdge - badgeTopAtUpperEdge)
 					* badgeLowerProgress;
 
-			// Hold 组在控制行右对齐；交换进度前半段只负责隐藏四个原控件。
-			double holdStageOpacity = clamp(
-				static_cast<double>(
-					drawAttributeThicknessHoldExchangeProgress.val) * 2.0 - 1.0,
-				0.0, 1.0);
+			// Hold 组在控制行右对齐；状态先更新，再用短促透明度与回弹稳定视觉。
+			double holdStageOpacity = clamp(static_cast<double>(
+				drawAttributeThicknessHoldExchangeProgress.val), 0.0, 1.0);
 			double holdHintOpacity = clamp(
-				static_cast<double>(
-					drawAttributeThicknessHoldHintOpacity.val)
-					* contentOpacity * holdStageOpacity, 0.0, 1.0);
+				contentOpacity * holdStageOpacity, 0.0, 1.0);
 			double holdLabelHeight = max(0.0,
 				static_cast<double>(thicknessAdjust->h.val));
 			double holdLabelW = max(0.0,
@@ -8165,9 +8253,9 @@ double baseThumbDiameter =
 			double holdRingGap = BarThicknessHoldRingTextGap
 				* (holdLabelHeight
 					/ max(1.0, BarThicknessTooltipBadgeHeight));
+			// 文字右端固定对齐，圆环在文字左侧紧邻显示。
 			double holdLabelX =
-				BarDrawAttributeThicknessDividerRight * panelScale
-					- holdLabelW - holdRingGap - holdRingSize;
+				BarDrawAttributeThicknessDividerRight * panelScale - holdLabelW;
 			BarUiInheritClass thicknessAdjustInherit = thicknessAdjust->Inherit(
 				BarUiInheritEnum::TopLeft, *panel);
 			double holdLabelY = thicknessAdjustInherit.y - panel->inhY;
@@ -8179,6 +8267,9 @@ double baseThumbDiameter =
 				holdLockLabel->h.SetDirect(holdLabelHeight);
 				holdLockLabel->size.SetDirect(13.0 * panelScale);
 				holdLockLabel->pct.SetDirect(holdHintOpacity);
+				holdLockLabel->contentScale = max(0.0, static_cast<double>(
+					drawAttributeThicknessHoldGroupScale.val));
+				holdLockLabel->contentPct = 1.0;
 				COLORREF holdGrayColor = MixBarUiColor(
 					GetThemeColor(BarThemeColorEnum::TextPrimary),
 					GetThemeColor(BarThemeColorEnum::Surface), 0.45);
@@ -10482,20 +10573,15 @@ else
 					drawAttributeAnnotationClosePressScale);
 				};
 
-				// 静止保持提示：文字在左、圆环在右；锁定后圆环淡出，文字可保留并变白。
+				// 静止保持提示：圆环在左、文字在右；锁定后圆环淡出，文字可保留并变白。
 					auto holdLockLabel = wordMap[
 						BarUISetWordEnum::DrawAttributeBar_ThicknessHoldLockLabel];
 					double holdHintOpacity = clamp(
 						static_cast<double>(holdLockLabel->pct.val), 0.0, 1.0);
-					// 圆环独立淡出；内容透明度已烘焙进文字 pct，按比例共享。
-					double holdHintAnim = max(0.000001, static_cast<double>(
-						drawAttributeThicknessHoldHintOpacity.val));
-					double holdContentScale = clamp(
-						holdHintOpacity / holdHintAnim, 0.0, 1.0);
-					double holdRingOpacity = clamp(
+					// 圆环复用整组显隐；额外因子只表达锁定后的圆环淡出。
+					double holdRingOpacity = holdHintOpacity * clamp(
 						static_cast<double>(
-							drawAttributeThicknessHoldRingOpacity.val)
-							* holdContentScale, 0.0, 1.0);
+							drawAttributeThicknessHoldRingLockOpacity.val), 0.0, 1.0);
 					if (holdHintOpacity > 0.000001
 						|| holdRingOpacity > 0.000001)
 					{
@@ -10503,15 +10589,17 @@ else
 						BarUiInheritClass holdLabelInherit =
 							holdLockLabel->Inherit(TopLeft, *panel);
 						double holdLabelHeight = holdLockLabel->h.val;
-						double holdRingSize =
-							holdLabelHeight * BarThicknessHoldRingSizeScale;
+						double holdContentScale = max(0.0, static_cast<double>(
+							drawAttributeThicknessHoldGroupScale.val));
+						double holdRingSize = holdLabelHeight
+							* BarThicknessHoldRingSizeScale * holdContentScale;
 						double holdRingGap = BarThicknessHoldRingTextGap
 							* (holdLabelHeight
 								/ max(1.0, BarThicknessTooltipBadgeHeight));
-						// 环在文字右侧，直径为文字行高的 3/5，垂直居中。
+						// 环在文字左侧，直径为文字行高的 3/5，垂直居中。
 						double holdRingCenterX =
-							(holdLabelInherit.x + holdLockLabel->w.val
-								+ holdRingGap + holdRingSize / 2.0)
+							(holdLabelInherit.x - holdRingGap
+								- holdRingSize / 2.0)
 							* holdUiZoom;
 						double holdRingCenterY =
 							(holdLabelInherit.y + holdLabelHeight / 2.0) * holdUiZoom;
@@ -11903,8 +11991,10 @@ auto ColorPickerAvailable = [&]()
 					&& !penTypeMenuOccludes
 					&& ThicknessSliderAvailable()
 					&& !overflowUiActive
-					&& sliderHit && sliderHit->IsClick(
-						msg.x, msg.y, barStyle.zoom);
+					&& ((sliderHit && sliderHit->IsClick(
+						msg.x, msg.y, barStyle.zoom))
+						|| IsBarThicknessPrecisionDragHit(
+							*this, msg.x, msg.y));
 				bool sliderHoverChanged = static_cast<bool>(
 					barState.drawAttributeBar.thicknessSliderHover)
 					!= sliderHover;
@@ -12763,12 +12853,16 @@ auto ColorPickerAvailable = [&]()
 					// 鼠标沿用 Slider；未悬停的直接触摸先判定点击或 Preview 拖动。
 					if (continueFlag && ThicknessSliderAvailable())
 					{
-						auto sliderHit = shapeMap[
-							BarUISetShapeEnum::
-								DrawAttributeBar_ThicknessSliderHit];
-						if (sliderHit && sliderHit->IsClick(
-							msg.x, msg.y, barStyle.zoom))
-						{
+							auto sliderHit = shapeMap[
+								BarUISetShapeEnum::
+									DrawAttributeBar_ThicknessSliderHit];
+							bool precisionDragHit =
+								IsBarThicknessPrecisionDragHit(
+									*this, msg.x, msg.y);
+							if ((sliderHit && sliderHit->IsClick(
+								msg.x, msg.y, barStyle.zoom))
+								|| precisionDragHit)
+							{
 							continueFlag = false;
 							if (msg.message == WM_LBUTTONDOWN)
 							{
@@ -12795,6 +12889,9 @@ auto ColorPickerAvailable = [&]()
 								bool directTouchPreviewGesture =
 									IsBarTouchPointerMessage(msg)
 									&& !sliderAlreadyShown;
+								// Thumb 已显示时，外侧空白带统一使用相对精细拖动。
+								bool precisionRelativeGesture = precisionDragHit
+									&& sliderAlreadyShown;
 								bool touchGestureCancelled = false;
 								bool penModeChanged = false;
 
@@ -12878,7 +12975,7 @@ auto ColorPickerAvailable = [&]()
 								bool pressOnThumb = valueAdjustAllowed
 									&& sliderThumb->IsClick(
 										msg.x, msg.y, barStyle.zoom);
-								double grabOffsetScreenX = pressOnThumb
+									double grabOffsetScreenX = pressOnThumb
 									? (pressScreenX - thumbCenterScreenX)
 									: 0.0;
 								auto ProjectWidthFromScreenX =
@@ -12903,7 +13000,9 @@ auto ColorPickerAvailable = [&]()
 										double rawWidth = static_cast<double>(
 											initialWidth)
 											+ (screenX - pressScreenX)
-												/ trackTravelScreenX * rangeSpan;
+												/ (trackTravelScreenX
+													* BarThicknessPreviewTouchDragTravelScale)
+												* rangeSpan;
 										double clampedWidth = clamp(rawWidth,
 											static_cast<double>(range.min),
 											static_cast<double>(range.max));
@@ -12916,9 +13015,8 @@ auto ColorPickerAvailable = [&]()
 										bool candidateAllowed) -> bool
 									{
 										if (!candidateAllowed) return false;
-										if (!directTouchPreviewGesture
-											&& barState.drawAttributeBar
-												.thicknessSliderHoldLocked)
+										if (barState.drawAttributeBar
+											.thicknessSliderHoldLocked)
 											return false;
 
 										int roundedWidth = static_cast<int>(
@@ -12949,6 +13047,9 @@ auto ColorPickerAvailable = [&]()
 									double lastMoveScreenX = pressScreenX;
 									double lastMoveScreenY =
 										static_cast<double>(startScreenPoint.y);
+									// 触摸静止帧没有新消息，保留最后触点推进 Hold，不能读取鼠标光标。
+									double lastTouchScreenX = pressScreenX;
+									double lastTouchScreenY = pressScreenY;
 									bool holdStillTracking = false;
 									ULONGLONG holdStillStartTick = 0;
 									// 仅在“尚未锁定”时允许取消提示；锁定后必须等松手。
@@ -12984,8 +13085,11 @@ auto ColorPickerAvailable = [&]()
 												.thicknessSliderHoldLocked)
 												return;
 
+											bool holdLockEligible = valueAdjustAllowed
+												|| (directTouchPreviewGesture
+													&& gestureDragged);
 											if (!candidateChanged
-												|| !valueAdjustAllowed
+												|| !holdLockEligible
 												|| !msg.lbutton)
 											{
 												ResetHoldLockState();
@@ -13046,7 +13150,7 @@ auto ColorPickerAvailable = [&]()
 													&& !barState.drawAttributeBar
 														.thicknessSliderHoldLocked)
 												{
-													// 锁定：圆点隐藏，粗细不可再调，轨道保留。
+												// 锁定：冻结候选；Slider 视觉或直接触摸 Preview 保持到真实抬手。
 													barState.drawAttributeBar
 														.thicknessSliderHoldLocked =
 														true;
@@ -13095,6 +13199,7 @@ auto ColorPickerAvailable = [&]()
 										.thicknessSliderHoldProgress = 0.0f;
 									// 圆点完全出现且点在外侧时，按下即跳到点击位置；点在圆点内只开始抓取。
 									if (!directTouchPreviewGesture
+										&& !precisionRelativeGesture
 										&& valueAdjustAllowed && !pressOnThumb)
 									{
 										ApplyCandidateWidth(
@@ -13135,15 +13240,23 @@ auto ColorPickerAvailable = [&]()
 												&& !msg.lbutton)
 												break;
 
-											POINT cursorPoint{};
-											if (!directTouchPreviewGesture
-												&& GetCursorPos(&cursorPoint))
+											if (directTouchPreviewGesture)
 											{
 												UpdateHoldLockState(
-													static_cast<double>(
-														cursorPoint.x),
-													static_cast<double>(
-														cursorPoint.y));
+													lastTouchScreenX,
+													lastTouchScreenY);
+											}
+											else
+											{
+												POINT cursorPoint{};
+												if (GetCursorPos(&cursorPoint))
+												{
+													UpdateHoldLockState(
+														static_cast<double>(
+															cursorPoint.x),
+														static_cast<double>(
+															cursorPoint.y));
+												}
 											}
 											std::this_thread::sleep_for(
 												std::chrono::milliseconds(8));
@@ -13185,6 +13298,8 @@ auto ColorPickerAvailable = [&]()
 													screenPoint.y);
 											if (directTouchPreviewGesture)
 											{
+												lastTouchScreenX = screenX;
+												lastTouchScreenY = screenY;
 												double moveDx =
 													screenX - pressScreenX;
 												double moveDy =
@@ -13199,11 +13314,45 @@ auto ColorPickerAvailable = [&]()
 														.thicknessPreviewDragging = true;
 													UpdateRendering(false);
 												}
-												if (gestureDragged
-													&& ApplyCandidateWidth(
+												if (gestureDragged)
+												{
+													if (ApplyCandidateWidth(
 														ProjectRelativePreviewWidth(screenX),
 														true))
+													{
+														// 有效改值后重新起算静止会话；未改值则继续累计。
+														lastMoveScreenX = screenX;
+														lastMoveScreenY = screenY;
+														ResetHoldLockState();
+														UpdateRendering(false);
+													}
+													else UpdateHoldLockState(screenX, screenY);
+												}
+												continue;
+											}
+											if (precisionRelativeGesture)
+											{
+												if (!gestureDragged
+													&& screenX != pressScreenX)
+												{
+													gestureDragged = true;
+													barState.drawAttributeBar
+														.thicknessSliderDragging = true;
 													UpdateRendering(false);
+												}
+												if (gestureDragged
+													&& !barState.drawAttributeBar
+														.thicknessSliderHoldLocked
+													&& ApplyCandidateWidth(
+														ProjectRelativePreviewWidth(screenX),
+														valueAdjustAllowed))
+												{
+													lastMoveScreenX = screenX;
+													lastMoveScreenY = screenY;
+													ResetHoldLockState();
+													UpdateRendering(false);
+												}
+												else UpdateHoldLockState(screenX, screenY);
 												continue;
 											}
 											if (!gestureDragged
@@ -13292,21 +13441,46 @@ auto ColorPickerAvailable = [&]()
 															static_cast<double>(screenPoint.x)),
 														true);
 											}
+											else if (precisionRelativeGesture)
+											{
+												POINT screenPoint{
+													static_cast<LONG>(msg.x),
+													static_cast<LONG>(msg.y) };
+												ClientToScreen(
+													floating_window, &screenPoint);
+												if (!gestureDragged
+													&& static_cast<double>(screenPoint.x)
+														!= pressScreenX)
+													gestureDragged = true;
+												if (gestureDragged)
+													ApplyCandidateWidth(
+														ProjectRelativePreviewWidth(
+															static_cast<double>(screenPoint.x)),
+														valueAdjustAllowed);
+											}
 											break;
 										}
 
 										// 其他鼠标消息仍更新静止计时。
-										POINT cursorPoint{};
-										if (!directTouchPreviewGesture
-											&& GetCursorPos(&cursorPoint))
+										if (directTouchPreviewGesture)
 										{
 											UpdateHoldLockState(
-												static_cast<double>(cursorPoint.x),
-												static_cast<double>(cursorPoint.y));
+												lastTouchScreenX,
+												lastTouchScreenY);
+										}
+										else
+										{
+											POINT cursorPoint{};
+											if (GetCursorPos(&cursorPoint))
+											{
+												UpdateHoldLockState(
+													static_cast<double>(cursorPoint.x),
+													static_cast<double>(cursorPoint.y));
+											}
 										}
 									}
 
-bool gestureCaptured = barState.drawAttributeBar
+									bool gestureCaptured = barState.drawAttributeBar
 										.thicknessSliderCapture;
 									if (gestureCaptured)
 										SendMessage(floating_window,
@@ -13314,7 +13488,7 @@ bool gestureCaptured = barState.drawAttributeBar
 											BarThicknessSliderCaptureStop, 0);
 									barState.drawAttributeBar
 										.thicknessSliderPressed = false;
-									// 松手后清除静止保持提示与锁定，圆点恢复。
+									// 真实松手后统一结束提示与锁定会话。
 									barState.drawAttributeBar
 										.thicknessSliderHoldHintActive = false;
 									barState.drawAttributeBar
@@ -13412,9 +13586,12 @@ bool gestureCaptured = barState.drawAttributeBar
 						|| barState.drawAttributeBar.thicknessOverflowPinned;
 									if (directTouchPreviewGesture)
 										barState.drawAttributeBar.thicknessSliderHover = false;
-									else barState.drawAttributeBar.thicknessSliderHover =
-										!overflowUiActive && sliderHit && sliderHit->IsClick(
-											msg.x, msg.y, barStyle.zoom);
+												else barState.drawAttributeBar.thicknessSliderHover =
+													!overflowUiActive
+													&& ((sliderHit && sliderHit->IsClick(
+														msg.x, msg.y, barStyle.zoom))
+														|| IsBarThicknessPrecisionDragHit(
+															*this, msg.x, msg.y));
 								}
 								else CloseThicknessSlider(false);
 								if (penModeChanged
