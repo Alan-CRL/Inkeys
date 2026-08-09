@@ -10420,9 +10420,7 @@ IncludeShapeBounds(shapeMap[
 										{
 											IDWriteTextLayout* layout = nullptr;
 											D2D1_POINT_2F origin{};
-											D2D1_RECT_F bounds{};
 											double opacity = 0.0;
-											bool endpoint = false;
 										};
 										array<FineDialLabelCandidate,
 											BarThicknessFineDialVisibleTickLimit>
@@ -10505,71 +10503,30 @@ IncludeShapeBounds(shapeMap[
 															- label->layoutWidth / 2.0F),
 														static_cast<FLOAT>(labelCenterY * uiZoom
 															- label->size.height / 2.0F));
-													candidate.bounds = D2D1::RectF(
-														candidate.origin.x, candidate.origin.y,
-														candidate.origin.x + label->layoutWidth,
-														candidate.origin.y + label->size.height);
 													candidate.opacity = tickOpacity * 0.92
 														* selectionProgress;
-													candidate.endpoint = endpoint;
 												}
 											}
 										}
 
-										// 端点先占用实际 layout bounds，普通 major label 冲突时隐藏而不挪刻度。
-										array<D2D1_RECT_F,
-											BarThicknessFineDialVisibleTickLimit>
-											acceptedLabelBounds{};
-										size_t acceptedLabelCount = 0;
-										FLOAT labelGap = static_cast<FLOAT>(
-											2.0 * panelAnimationScale * uiZoom);
-										auto DrawFineDialLabels = [&](bool endpoints)
+										// 所有可见 5 倍数和端点都绘制，避免投影移动时交错淘汰数字。
+										for (size_t index = 0;
+											index < labelCandidateCount; ++index)
+										{
+											const auto& candidate = labelCandidates[index];
+											if (!candidate.layout
+												|| candidate.opacity <= 0.000001)
+												continue;
+											if (auto labelBrush = spec.GetFrameSolidColorBrush(
+												barDeviceContext.Get(), tickColor,
+												candidate.opacity))
 											{
-												for (size_t index = 0;
-													index < labelCandidateCount; ++index)
-												{
-													const auto& candidate = labelCandidates[index];
-													if (candidate.endpoint != endpoints
-														|| !candidate.layout
-														|| candidate.opacity <= 0.000001)
-														continue;
-													bool collides = false;
-													for (size_t acceptedIndex = 0;
-														acceptedIndex < acceptedLabelCount;
-														++acceptedIndex)
-													{
-														const auto& accepted =
-															acceptedLabelBounds[acceptedIndex];
-														if (candidate.bounds.left
-															< accepted.right + labelGap
-															&& candidate.bounds.right + labelGap
-																> accepted.left
-															&& candidate.bounds.top
-																< accepted.bottom + labelGap
-															&& candidate.bounds.bottom + labelGap
-																> accepted.top)
-														{
-															collides = true;
-															break;
-														}
-													}
-													if (collides) continue;
-													if (auto labelBrush =
-														spec.GetFrameSolidColorBrush(
-															barDeviceContext.Get(), tickColor,
-															candidate.opacity))
-													{
-														barDeviceContext->DrawTextLayout(
-															candidate.origin, candidate.layout,
-															labelBrush,
-															D2D1_DRAW_TEXT_OPTIONS_CLIP);
-														acceptedLabelBounds[acceptedLabelCount++] =
-															candidate.bounds;
-													}
-												}
-											};
-										DrawFineDialLabels(true);
-										DrawFineDialLabels(false);
+												barDeviceContext->DrawTextLayout(
+													candidate.origin, candidate.layout,
+													labelBrush,
+													D2D1_DRAW_TEXT_OPTIONS_CLIP);
+											}
+										}
 
 										if (selectionProgress > 0.000001)
 										{

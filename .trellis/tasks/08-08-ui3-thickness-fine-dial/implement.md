@@ -412,3 +412,10 @@ Second-correction summary: `24 PASS`, `0 FAIL`, `13 NOT VERIFIED`.
 | 74 | NOT VERIFIED | Static flow proves persistent Brush1 color, Geometry anchor, penetrate independence and mode-identity light fade; visible no-black/no-flicker behavior requires GUI. |
 
 Third-correction supplement: `4 PASS`, `0 FAIL`, `5 NOT VERIFIED`. The task remains `in_progress` and must not be archived.
+
+## Fourth GUI correction after `2bb90cd`
+
+- Checkpoint: `2bb90cd060a135a05a6ba5e22e32c8743ee046f6` (`fix(ui3): refine fine dial preview and rendering`).
+- GUI finding: the endpoint-first label collision filter alternated the surviving ordinary major labels as the projection moved, producing sequences such as `1/10/20/30` and `5/15/25` instead of showing every visible 5-multiple.
+- Fix: retain the fixed `64`-entry candidate array and cached DWrite layouts, but remove bounds collision acceptance. The formal layer now draws every visible `tick % 5 == 0 || endpoint` label once; preactivation still creates no labels and edge fading/range clipping remain unchanged.
+- Static verification confirms no endpoint/selected-value/collision branch filters label candidates. ARM64-host full `Debug | ARM64` Solution Rebuild: PASS, `0 errors`, `317 warnings`, elapsed `00:02:52.14`; Git/encoding checks pass. GUI was not launched, so continuous visibility of every 5-multiple and endpoint while the Dial moves remains `NOT VERIFIED` pending manual observation.
