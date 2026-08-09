@@ -557,22 +557,6 @@ bool IsBarThicknessFineDialDwellZone(
 		geometry.clickZone);
 }
 
-bool IsBarThicknessFineDialRelatedZone(
-	BarUISetClass& barUISet, int clientX, int clientY)
-{
-	double zoom = static_cast<double>(barUISet.barStyle.zoom);
-	auto sliderHit = barUISet.shapeMap[
-		BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
-	if (sliderHit && sliderHit->IsClick(clientX, clientY, zoom))
-		return true;
-
-	BarThicknessFineDialGeometry geometry;
-	if (!TryGetBarThicknessFineDialActivationGeometry(barUISet, geometry))
-		return false;
-	return IsBarClientPointInLogicalRect(
-		clientX, clientY, zoom, geometry.ownershipCorridor);
-}
-
 bool IsBarThicknessPrecisionDragHit(
 	BarUISetClass& barUISet, int mx, int my)
 {
@@ -14632,6 +14616,9 @@ auto ColorPickerAvailable = [&]()
 											if (needRender) UpdateRendering(false);
 										};
 									bool fineActivationDwellTracking = false;
+									bool fineActivationDwellAnchorValid = false;
+									int fineActivationDwellAnchorClientX = 0;
+									int fineActivationDwellAnchorClientY = 0;
 									bool fineActivationRecognitionActive = false;
 									ULONGLONG fineActivationDwellStartTick = 0;
 									auto PublishFineActivationPreview = [&](bool recognitionActive,
@@ -14656,6 +14643,7 @@ auto ColorPickerAvailable = [&]()
 									auto ResetFineActivationDwell = [&]()
 										{
 											fineActivationDwellTracking = false;
+											fineActivationDwellAnchorValid = false;
 											fineActivationDwellStartTick = 0;
 											PublishFineActivationPreview(
 												fineActivationRecognitionActive, false, 0.0f);
@@ -14664,6 +14652,7 @@ auto ColorPickerAvailable = [&]()
 										{
 											fineActivationRecognitionActive = false;
 											fineActivationDwellTracking = false;
+											fineActivationDwellAnchorValid = false;
 											fineActivationDwellStartTick = 0;
 											PublishFineActivationPreview(false, false, 0.0f);
 										};
@@ -14671,25 +14660,11 @@ auto ColorPickerAvailable = [&]()
 										{
 											if (fineActivationRecognitionActive) return;
 											fineActivationRecognitionActive = true;
-											// 首次真实横移锁存刻度锚点，后续 Slider 改值不滚动预览层。
-										barState.drawAttributeBar
-											.thicknessFineDialActivationPreviewVisualWidth =
-											static_cast<float>(finalWidth);
-										PublishFineActivationPreview(true, false, 0.0f);
-									};
-									auto SyncFineActivationRecognitionRegion =
-										[&](int clientX, int clientY)
-										{
-											if (!gestureDragged
-												|| !barState.drawAttributeBar
-													.thicknessSliderDragging)
-												return;
-											// 离开 Slider 与 FineDial 的整体相关区才结束基础预览；
-											// 仅离开 dwell 区仍由 ResetFineActivationDwell 保留暗态。
-											if (IsBarThicknessFineDialRelatedZone(
-												*this, clientX, clientY))
-												BeginFineActivationRecognition();
-											else EndFineActivationRecognition();
+											// Slider 捕获建立即锁存刻度锚点，按住期间基础预览保持可见。
+											barState.drawAttributeBar
+												.thicknessFineDialActivationPreviewVisualWidth =
+												static_cast<float>(finalWidth);
+											PublishFineActivationPreview(true, false, 0.0f);
 										};
 									auto ActivateFineDialDrag = [&](double screenX,
 										double startValue,
@@ -14701,6 +14676,7 @@ auto ColorPickerAvailable = [&]()
 											// 完整 dwell 作为一次性交接值，直到 renderer 的 FineDial 帧消费。
 											fineActivationRecognitionActive = false;
 											fineActivationDwellTracking = false;
+											fineActivationDwellAnchorValid = false;
 											fineActivationDwellStartTick = 0;
 											barState.drawAttributeBar
 												.thicknessFineDialActivationPreviewActive = false;
@@ -14740,9 +14716,6 @@ auto ColorPickerAvailable = [&]()
 										{
 										if (fineDialGesture || fineDragActivationArmed
 											|| directTouchPreviewGesture
-											|| !barState.drawAttributeBar
-												.thicknessSliderDragging
-											|| !gestureDragged
 											|| !fineActivationRecognitionActive)
 										{
 											ResetFineActivationDwell();
@@ -14761,6 +14734,25 @@ auto ColorPickerAvailable = [&]()
 										if (!fineActivationDwellTracking)
 										{
 											fineActivationDwellTracking = true;
+											fineActivationDwellAnchorValid = true;
+											fineActivationDwellAnchorClientX = clientX;
+											fineActivationDwellAnchorClientY = clientY;
+											fineActivationDwellStartTick = nowTick;
+											PublishFineActivationPreview(true, true, 0.0f);
+											return false;
+										}
+										// 任一轴累计超过 5 DIP 都从当前位置重新开始静止计时。
+										if (!fineActivationDwellAnchorValid
+											|| abs(static_cast<double>(clientX
+												- fineActivationDwellAnchorClientX))
+												> touchDragThresholdPx
+											|| abs(static_cast<double>(clientY
+												- fineActivationDwellAnchorClientY))
+												> touchDragThresholdPx)
+										{
+											fineActivationDwellAnchorValid = true;
+											fineActivationDwellAnchorClientX = clientX;
+											fineActivationDwellAnchorClientY = clientY;
 											fineActivationDwellStartTick = nowTick;
 											PublishFineActivationPreview(true, true, 0.0f);
 											return false;
@@ -14818,6 +14810,10 @@ auto ColorPickerAvailable = [&]()
 										barState.drawAttributeBar
 											.thicknessSliderDragging = true;
 									}
+									if (!directTouchPreviewGesture
+										&& !fineDialGesture
+										&& !fineDragActivationArmed)
+										BeginFineActivationRecognition();
 									StopIndependentHover(
 										hoveredIndependentButton, true, true);
 									hoveredIndependentButton =
@@ -14864,17 +14860,15 @@ auto ColorPickerAvailable = [&]()
 												POINT clientPoint = cursorPoint;
 												ScreenToClient(
 													floating_window, &clientPoint);
-												SyncFineActivationRecognitionRegion(
-													clientPoint.x, clientPoint.y);
 												bool fineActivated = UpdateFineActivationDwell(
 													static_cast<double>(cursorPoint.x),
 													clientPoint.x, clientPoint.y);
-													if (!fineActivated
-														&& !fineActivationDwellTracking
-														&& !fineDragActivationArmed)
-														UpdateHoldLockState(
-															static_cast<double>(cursorPoint.x),
-															static_cast<double>(cursorPoint.y));
+												if (!fineActivated
+													&& !fineActivationDwellTracking
+													&& !fineDragActivationArmed)
+													UpdateHoldLockState(
+														static_cast<double>(cursorPoint.x),
+														static_cast<double>(cursorPoint.y));
 												}
 											}
 											std::this_thread::sleep_for(
@@ -14985,8 +14979,6 @@ auto ColorPickerAvailable = [&]()
 													.thicknessSliderDragging = true;
 												UpdateRendering(false);
 											}
-											SyncFineActivationRecognitionRegion(
-												msg.x, msg.y);
 											bool fineActivated = UpdateFineActivationDwell(
 												screenX, msg.x, msg.y);
 											if (fineActivated || fineActivationDwellTracking)
@@ -15021,7 +15013,6 @@ auto ColorPickerAvailable = [&]()
 												UpdateRendering(false);
 											}
 										}
-										SyncFineActivationRecognitionRegion(msg.x, msg.y);
 										bool fineActivated = UpdateFineActivationDwell(
 											screenX, msg.x, msg.y);
 										if (fineActivated || fineActivationDwellTracking)

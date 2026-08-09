@@ -23,7 +23,7 @@
 
 - Slider 可见且可交互时提供连续相接的 Drag Activation Zone 与更外侧 Click Activation Zone；两者组成 FineDial 专用 activation corridor，Popup 排除或动画瞬态也只能 consume，禁止落入普通 Slider 绝对投影。
 - Drag Zone 按下仅 armed，水平移动超过现有 5 DIP slop 后以当帧位置/值进入 FineDial；Click Zone 按下当帧立即进入持久 FineDial 并可继续拖动。
-- 普通 Slider drag 进入外侧 Click Zone 后，只要连续留区 `1000 ms` 即进入 FineDial；区域内 X/Y 移动不重置，也不再要求额外 outward 位移，只有离区、抬起/cancel 或生命周期失效才取消 dwell。
+- 普通 Slider 捕获按下后即可进入识别会话；进入外侧 Click Zone 时锁存当前 X/Y，任一轴累计波动不超过 `5 DIP` 并持续 `1000 ms` 才进入 FineDial。任一轴超过 `5 DIP` 时在当前位置重新锁存并重启计时；离区只取消 dwell，不结束按压会话的基础预览。
 - Fine activation dwell 优先于 Hold dwell，并重置/隐藏 Hold UI；真正进入 FineDial 后，新的有效 drag 仍完整支持 Hold。
 - Slider-drag recognition 先在 activation region 中心显示约 `0.5` 的基础 Dial/ticks，dwell 在 1 秒内从 `0.5` 推进到 `1.0`；离区平滑退回暗态，整个 gesture 结束后才平滑退到 0。正式 ViewMode 激活后再动画显示 labels、中心线和 selectors，并把几何从 recognition center 移到最终位置。
 - 所有激活方式在切换帧以当前 pointer X 和当前 candidate/visual value 重新锚定，粗细不得跳变。
@@ -62,7 +62,7 @@
 ### 第三轮 GUI correction（本轮覆盖冲突旧约定）
 
 1. FineDial / Slider 命中所有权：Slider 控制区外侧先保留约 `5 DIP` 的纯空白带，空白带只 consume；其后 FineDial Drag/Click 区一直拥有到绘图属性窗口外侧边缘。Popup 排除、Thumb 动画未完成或其他暂不可激活状态也必须 consume，任何位置都不得穿透到普通 Slider 投影，上下展开方向对称。
-2. Slider drag session preview：仅按下 Slider 不显示 Dial；确认发生真实水平拖动后，基础预览才从 `0` 平滑进入约 `0.5`，不需要先进入 dwell region。进入 dwell 时从当前预览继续；未正式激活而离区、抬手或取消时从当前值以约 `0.30 s` 平滑退到 `0`，进入时长不随之变慢。
+2. Slider press session preview：普通 Slider 捕获按下后，基础预览立即从 `0` 平滑进入约 `0.5`，不需要先移动或进入 dwell region；整个捕获按住期间保持该基础预览，即使指针离开 Slider/FineDial 相关区域。进入 dwell 时从当前预览继续；只有抬手、取消、capture loss、生命周期清理或正式 FineDial handoff 才结束基础预览，未正式激活时从当前值以约 `0.30 s` 平滑退到 `0`。
 3. 预激活与正式视觉分层：预激活只显示固定不滚动的普通短 tick 与 envelope，不显示长 tick、端点主 tick、数字、中心线或 selector。预激活保存稳定 visual anchor；正式激活后才平滑接管 live FineDial visual value，并动画引入正式层，快速进入/退出/反向和 min/max 边缘均不得跳位。
 4. 正式主刻度：`tick % 5 == 0`、`tick == range.min`、`tick == range.max` 均为 major，端点只绘制一次且带数字。正式层必须显示可见范围内所有 5 倍数和端点数字，不得按碰撞或当前选中值交错淘汰；继续复用缓存 layout，固定数组上限仍为 `64`。
 5. Slider 退出分两阶段：先保持完整直线轨道并让 Thumb 淡出；Thumb opacity 到约 `0.04` 以下后，Preview morph 才从 Slider 形态退回 Preview。全部使用可反向的 `SetTar`，重新进入时从当前视觉状态继续。
@@ -86,7 +86,7 @@
 - [ ] 3. Click Activation Zone Pointer Down 当帧进入持久 FineDial，并可继续按住拖动。
 - [ ] 4. Drag/Click Zone 共边界且整个 activation corridor 不落入普通 Slider direct-adjust。
 - [ ] 5. Popup 区域被排除并 consume，不会激活 FineDial 或触发 Slider 跳值。
-- [ ] 6. Slider drag 连续留在 dwell region 1000 ms 可激活；区域内 X/Y 移动不重计时，也不要求额外 outward gate。
+- [ ] 6. Slider 按住进入 dwell region 后，X/Y 分别保持在锁存锚点 `5 DIP` 内连续 `1000 ms` 可激活；任一轴超限会在当前位置重启计时。
 - [ ] 7. Activation dwell 中不会出现 Hold-to-lock 提示。
 - [ ] 8. FineDial drag 内 Hold-to-lock 仍正常工作。
 - [ ] 9. FineDial activation 不产生 thickness jump。
@@ -149,9 +149,9 @@
 
 ### 第三轮 correction 验收补充
 
-- [ ] 66. Slider 仅按下不显示预激活 Dial；真实水平拖动后才从 `0` 平滑出现。
+- [ ] 66. 普通 Slider 捕获按下即让预激活 Dial 从 `0` 平滑进入约 `0.5`；整个按住期间即使离开相关区域也保持，直到抬手/cancel/capture loss/生命周期清理或正式 handoff。
 - [ ] 67. 预激活只含固定普通短 tick/envelope，Slider candidate 改变时不滚动，无 major/endpoint/label/center selector。
-- [ ] 68. dwell 与正式激活从当前 opacity/anchor 连续接管；未激活释放以约 `0.30 s` 平滑退场且无残留。
+- [ ] 68. dwell 从进入区时的 X/Y 锚点开始，任一轴超过 `5 DIP` 会重启 `1000 ms`；正式激活从当前 opacity/visual anchor 连续接管，未激活释放以约 `0.30 s` 平滑退场且无残留。
 - [ ] 69. Slider control -> `5 DIP` blank -> FineDial-owned region -> panel edge 的所有点均按约定消费，panel edge 前不存在 Slider 穿透。
 - [ ] 70. range 两端始终是唯一 major tick 并显示 label；可见范围内所有 5 倍数和端点数字持续显示，不随选中值交错消失。
 - [ ] 71. Slider 退出时 Thumb opacity 到阈值后 Preview morph 才开始，快速反向无跳变。
