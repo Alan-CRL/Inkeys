@@ -412,3 +412,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 15: 完成墨迹粗细 Fine Dial
+
+**Date**: 2026-08-09
+**Task**: 完成墨迹粗细 Fine Dial
+**Branch**: `feature/animation`
+
+### Summary
+
+完成 Fine Dial 笔型量程连续过渡与 Geometry 画笔颜色隔离；用户完成 GUI 验收，ARM64 Debug 全量构建通过，任务已归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f81638a` | (see git log) |
+
+### Status
+
+[OK] **Completed**
