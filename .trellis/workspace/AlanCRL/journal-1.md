@@ -256,3 +256,24 @@ Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: 完成 Windows Ink 调查收尾
+
+**Date**: 2026-08-09
+**Task**: 完成 Windows Ink 调查收尾
+**Branch**: `main`
+
+### Summary
+
+撤回 Windows Ink 诊断、cadence 与 probe 代码和临时资产，保留 writer-latch 正确性修复，并新增默认关闭的绘制时应用光标设置；ARM64 Debug/Release 构建、自动测试和用户人工核验均完成。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `49dcbfe` | (see git log) |
+
+### Status
+
+[OK] **Completed**
