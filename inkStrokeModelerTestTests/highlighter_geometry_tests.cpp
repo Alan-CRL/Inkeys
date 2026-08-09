@@ -61,6 +61,7 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(!defaultConfiguration.laserParticlesEnabled);
 	HIGHLIGHTER_CHECK(!defaultConfiguration.laserMultiTouchDrawingEnabled);
 	HIGHLIGHTER_CHECK(!defaultConfiguration.performanceHudEnabled);
+	HIGHLIGHTER_CHECK(!defaultConfiguration.drawingCursorDuringContactEnabled);
 	HIGHLIGHTER_CHECK(defaultConfiguration.laserHoldDurationSeconds == 1.0);
 	HIGHLIGHTER_CHECK(draw3::CreateStrokeModelConfiguration(192).dpiScale == 2.0f);
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserDot) == 16);

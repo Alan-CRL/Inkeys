@@ -210,6 +210,7 @@ export namespace draw3
 		bool interruptedStrokeReconnectEnabled = true; // 默认允许 Touch 短暂断触继续同一模型；Pen/Mouse 始终正常收尾。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
 		bool performanceHudEnabled = false; // 默认关闭开发诊断 HUD；开启时只统计 Draw3 绘制循环。
+		bool drawingCursorDuringContactEnabled = false; // 默认落笔时隐藏应用光标；外部可显式开启。
 		bool laserParticlesEnabled = false; // GPU 粒子默认关闭；外部可按需开启，资源不可用时只降级激光主体。
 		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
 		LaserParticleConfig laserParticleConfig = {};

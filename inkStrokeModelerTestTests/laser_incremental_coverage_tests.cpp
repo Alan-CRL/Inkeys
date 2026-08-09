@@ -325,6 +325,29 @@ int RunLaserIncrementalCoverageTests()
 			"const InkPoint rectPoints[2]"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource,
 			"renderer_.EmitLaserParticles("));
+		// 无窗口测试通过源码契约锁定设置只在值变化时唤醒一次。
+		const std::string controllerText = ReadText(controllerSource);
+		const std::string contactCursorSetter = TextBetween(controllerText,
+			"void DrawingController::SetDrawingCursorDuringContactEnabled(bool enabled) noexcept",
+			"bool DrawingController::GetDrawingCursorDuringContactEnabled() const noexcept");
+		LASER_INCREMENTAL_CHECK(!contactCursorSetter.empty());
+		LASER_INCREMENTAL_CHECK(contactCursorSetter.find(
+			"drawingCursorDuringContactEnabled_.exchange(") != std::string::npos);
+		LASER_INCREMENTAL_CHECK(contactCursorSetter.find(
+			"std::memory_order_acq_rel") != std::string::npos);
+		LASER_INCREMENTAL_CHECK(contactCursorSetter.find(
+			"== enabled) return;") != std::string::npos);
+		const size_t firstContactCursorWake = contactCursorSetter.find(
+			"input_.PublishControlWake()");
+		LASER_INCREMENTAL_CHECK(firstContactCursorWake != std::string::npos);
+		LASER_INCREMENTAL_CHECK(contactCursorSetter.find(
+			"input_.PublishControlWake()", firstContactCursorWake + 1) == std::string::npos);
+		const std::string contactCursorGetter = TextBetween(controllerText,
+			"bool DrawingController::GetDrawingCursorDuringContactEnabled() const noexcept",
+			"void DrawingController::SetLaserParticlesEnabled(bool enabled) noexcept");
+		LASER_INCREMENTAL_CHECK(contactCursorGetter.find(
+			"drawingCursorDuringContactEnabled_.load(std::memory_order_acquire)") !=
+			std::string::npos);
 		LASER_INCREMENTAL_CHECK(TextAppearsBefore(controllerSource,
 			"const float preInputLaserOpacity = laserOpacity;",
 			"if (!interruptedStrokeReconnectEnabled)"));

@@ -107,7 +107,8 @@ export namespace draw3
 		DrawingCursorPointerAuthority pointerAuthority,
 		const DrawingCursorAppearance& selectedAppearance,
 		const DrawingCursorAppearance& eraserAppearance,
-		bool selectedToolIsEraser) noexcept;
+		bool selectedToolIsEraser,
+		bool drawingCursorDuringContactEnabled) noexcept;
 	// Laser 的 Pen/Mouse Hover 都显示发光点，Contact 笔尖由活动 contact 独立生成。
 	DrawingCursorVisual ResolveLaserDrawingCursorVisual(
 		const DrawingCursorSample& penSample,

@@ -971,28 +971,8 @@ namespace draw3
 			HRESULT STDMETHODCALLTYPE StylusDown(IRealTimeStylus* source, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-				const bool traceEnabled = IsInputDebugTraceEnabled();
-#endif
-				if (!source || !stylusInfo || !packet)
-				{
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.packetResult = RtsPacketResult::InvalidArguments;
-						RecordCallback("StylusDown", stylusInfo, nullptr, packet ? 1u : 0u,
-							propertyCount, packet, nullptr, false, false, E_INVALIDARG,
-							0, InputDeviceType::Pen, false, diagnostic);
-					}
-#endif
-					return E_INVALIDARG;
-				}
+				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-				size_t initialDecoderSlot = kContextDecoderCapacity;
-				if (traceEnabled) initialDecoderSlot = decoderCache_.FindSlot(stylusInfo->tcid);
-#endif
 				size_t decoderSlotIndex = kContextDecoderCapacity;
 				const RtsContextDecoder* decoder = ResolveContextDecoder(
 					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
@@ -1000,22 +980,8 @@ namespace draw3
 				{
 					PublishDefaultPenCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.packetResult = initialDecoderSlot == kContextDecoderCapacity
-							? RtsPacketResult::DecoderEnsureFailed : RtsPacketResult::DecoderMissing;
-						diagnostic.lifecycleGeneration = decoderCache_.Generation();
-						diagnostic.stateGateEntered = true;
-						diagnostic.decoderInitiallyAvailable =
-							initialDecoderSlot != kContextDecoderCapacity;
-						diagnostic.decoderEnsureAttempted =
-							initialDecoderSlot == kContextDecoderCapacity;
-						diagnostic.decoderEnsureSucceeded = false;
-						RecordCallback("StylusDown", stylusInfo, nullptr, 1, propertyCount,
-							packet, nullptr, false, false, S_OK, 0,
-							InputDeviceType::Pen, false, diagnostic);
-					}
+					RecordCallback("StylusDown", stylusInfo, nullptr, 1, propertyCount,
+						packet, nullptr, false, false);
 #endif
 					return S_OK;
 				}
@@ -1031,24 +997,8 @@ namespace draw3
 				if (activeBindings_.Insert(binding) != RtsBindingInsertResult::Inserted)
 				{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.packetResult = RtsPacketResult::BindingInsertFailed;
-						diagnostic.lifecycleGeneration = decoderCache_.Generation();
-						diagnostic.decoderGeneration = decoder->generation;
-						diagnostic.stateGateEntered = true;
-						diagnostic.decoderAvailable = true;
-						diagnostic.decoderInitiallyAvailable =
-							initialDecoderSlot != kContextDecoderCapacity;
-						diagnostic.decoderEnsureAttempted =
-							initialDecoderSlot == kContextDecoderCapacity;
-						diagnostic.decoderEnsureSucceeded =
-							diagnostic.decoderEnsureAttempted;
-						RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
-							packet, nullptr, false, false, E_OUTOFMEMORY, 0,
-							InputDeviceType::Pen, false, diagnostic);
-					}
+					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
+						packet, nullptr, false, false, E_OUTOFMEMORY);
 #endif
 					return E_OUTOFMEMORY;
 				}
@@ -1060,27 +1010,8 @@ namespace draw3
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.packetResult = propertyCount != decoder->propertyCount
-							? RtsPacketResult::PropertyCountMismatch : RtsPacketResult::DecodeFailed;
-						diagnostic.lifecycleGeneration = decoderCache_.Generation();
-						diagnostic.decoderGeneration = decoder->generation;
-						diagnostic.bindingGeneration = binding.decoderGeneration;
-						diagnostic.stateGateEntered = true;
-						diagnostic.bindingAvailable = true;
-						diagnostic.decoderAvailable = true;
-						diagnostic.decoderInitiallyAvailable =
-							initialDecoderSlot != kContextDecoderCapacity;
-						diagnostic.decoderEnsureAttempted =
-							initialDecoderSlot == kContextDecoderCapacity;
-						diagnostic.decoderEnsureSucceeded =
-							diagnostic.decoderEnsureAttempted;
-						RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
-							packet, nullptr, false, false, S_OK, 0,
-							InputDeviceType::Pen, false, diagnostic);
-					}
+					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
+						packet, nullptr, false, false);
 #endif
 					return S_OK;
 				}
@@ -1104,28 +1035,8 @@ namespace draw3
 						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
 				if (!published) activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				if (traceEnabled)
-				{
-					RtsCallbackDiagnosticState diagnostic;
-					diagnostic.packetResult = published
-						? RtsPacketResult::Success : RtsPacketResult::PublishDownFailed;
-					diagnostic.lifecycleGeneration = decoderCache_.Generation();
-					diagnostic.decoderGeneration = decoder->generation;
-					diagnostic.bindingGeneration = binding.decoderGeneration;
-					diagnostic.publishAttempted = true;
-					diagnostic.stateGateEntered = true;
-					diagnostic.bindingAvailable = true;
-					diagnostic.decoderAvailable = true;
-					diagnostic.decoderInitiallyAvailable =
-						initialDecoderSlot != kContextDecoderCapacity;
-					diagnostic.decoderEnsureAttempted =
-						initialDecoderSlot == kContextDecoderCapacity;
-					diagnostic.decoderEnsureSucceeded =
-						diagnostic.decoderEnsureAttempted;
-					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
-						packet, &snapshot, true, published, S_OK, 0, deviceType, true,
-						diagnostic);
-				}
+				RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
+					packet, &snapshot, true, published, S_OK, 0, deviceType, true);
 #endif
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
@@ -1216,38 +1127,16 @@ namespace draw3
 			HRESULT STDMETHODCALLTYPE Packets(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG packetCount, ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-				const bool traceEnabled = IsInputDebugTraceEnabled();
-#endif
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
-					packetBufferLength % packetCount != 0)
-				{
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.packetResult = RtsPacketResult::InvalidArguments;
-						RecordCallback("Packets", stylusInfo, nullptr, packetCount, 0,
-							nullptr, nullptr, false, false, E_INVALIDARG, 0,
-							InputDeviceType::Pen, false, diagnostic);
-					}
-#endif
-					return E_INVALIDARG;
-				}
+					packetBufferLength % packetCount != 0) return E_INVALIDARG;
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets + static_cast<size_t>(packetCount - 1) * propertyCount;
 				RtsPacketStateGuard stateAccess(stateGate_);
 				if (!stateAccess)
 				{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.packetResult = RtsPacketResult::StateGateBusy;
-						RecordCallback("Packets", stylusInfo, nullptr, packetCount, propertyCount,
-							lastPacket, nullptr, false, false, S_OK, 0,
-							InputDeviceType::Pen, false, diagnostic);
-					}
+					RecordCallback("Packets", stylusInfo, nullptr, packetCount, propertyCount,
+						lastPacket, nullptr, false, false);
 #endif
 					return S_OK;
 				}
@@ -1259,41 +1148,8 @@ namespace draw3
 					ContactPhase::Move, QueryQpc(), snapshot))
 				{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-					if (traceEnabled)
-					{
-						RtsCallbackDiagnosticState diagnostic;
-						diagnostic.lifecycleGeneration = decoderCache_.Generation();
-						diagnostic.stateGateEntered = true;
-						diagnostic.bindingAvailable = binding != nullptr;
-						if (!binding)
-						{
-							diagnostic.packetResult = RtsPacketResult::BindingMissing;
-						}
-						else
-						{
-							diagnostic.bindingGeneration = binding->decoderGeneration;
-							const RtsContextDecoder* slotDecoder =
-								decoderCache_.DecoderAt(binding->decoderSlotIndex);
-							diagnostic.decoderAvailable = slotDecoder != nullptr;
-							if (!slotDecoder)
-								diagnostic.packetResult = RtsPacketResult::DecoderMissing;
-							else
-							{
-								diagnostic.decoderGeneration = slotDecoder->generation;
-								if (slotDecoder->generation != binding->decoderGeneration)
-									diagnostic.packetResult = RtsPacketResult::GenerationMismatch;
-								else if (slotDecoder->tabletContextId != binding->tabletContextId)
-									diagnostic.packetResult = RtsPacketResult::ContextMismatch;
-								else if (propertyCount != slotDecoder->propertyCount)
-									diagnostic.packetResult = RtsPacketResult::PropertyCountMismatch;
-								else
-									diagnostic.packetResult = RtsPacketResult::DecodeFailed;
-							}
-						}
-						RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
-							lastPacket, nullptr, false, false, S_OK, 0,
-							InputDeviceType::Pen, false, diagnostic);
-					}
+					RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
+						lastPacket, nullptr, false, false);
 #endif
 					return S_OK;
 				}
@@ -1307,22 +1163,8 @@ namespace draw3
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
-				if (traceEnabled)
-				{
-					RtsCallbackDiagnosticState diagnostic;
-					diagnostic.packetResult = published
-						? RtsPacketResult::Success : RtsPacketResult::PublishMoveFailed;
-					diagnostic.lifecycleGeneration = decoderCache_.Generation();
-					diagnostic.decoderGeneration = decoder->generation;
-					diagnostic.bindingGeneration = binding->decoderGeneration;
-					diagnostic.publishAttempted = true;
-					diagnostic.stateGateEntered = true;
-					diagnostic.bindingAvailable = true;
-					diagnostic.decoderAvailable = true;
-					RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
-						lastPacket, &snapshot, true, published, S_OK, 0,
-						InputDeviceType::Pen, false, diagnostic);
-				}
+				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
+					lastPacket, &snapshot, true, published);
 #endif
 				return S_OK;
 			}
@@ -1420,41 +1262,26 @@ namespace draw3
 				const LONG* packet, const ContactSnapshot* snapshot, bool decoded,
 				bool published, HRESULT result = S_OK, uint32_t dataInterest = 0,
 				InputDeviceType routedDeviceType = InputDeviceType::Pen,
-				bool overrideDeviceType = false,
-				const RtsCallbackDiagnosticState& diagnostic = {}) noexcept
+				bool overrideDeviceType = false) noexcept
 			{
-				if (!IsInputDebugTraceEnabled()) return; // 未启用时 Release 热路径只保留一次原子读取与分支。
 				RtsCallbackTrace trace;
 				trace.eventName = eventName;
 				trace.qpc = snapshot ? snapshot->qpc : QueryQpc();
 				trace.threadId = GetCurrentThreadId();
 				trace.tabletContextId = stylusInfo ? stylusInfo->tcid : 0;
 				trace.contactId = stylusInfo ? stylusInfo->cid : 0;
-				trace.deviceType = overrideDeviceType
-					? static_cast<uint32_t>(routedDeviceType)
-					: decoder ? static_cast<uint32_t>(decoder->deviceType) : UINT32_MAX;
+				trace.deviceType = static_cast<uint32_t>(overrideDeviceType || !decoder
+					? routedDeviceType : decoder->deviceType);
 				trace.packetCount = packetCount;
 				trace.propertyCount = propertyCount;
 				trace.decoded = decoded;
 				trace.published = published;
 				trace.result = result;
 				trace.dataInterest = dataInterest;
-				trace.packetResult = diagnostic.packetResult;
-				trace.lifecycleGeneration = diagnostic.lifecycleGeneration;
-				trace.decoderGeneration = diagnostic.decoderGeneration;
-				trace.bindingGeneration = diagnostic.bindingGeneration;
-				trace.publishAttempted = diagnostic.publishAttempted;
-				trace.stateGateEntered = diagnostic.stateGateEntered;
-				trace.bindingAvailable = diagnostic.bindingAvailable;
-				trace.decoderAvailable = diagnostic.decoderAvailable;
-				trace.decoderInitiallyAvailable = diagnostic.decoderInitiallyAvailable;
-				trace.decoderEnsureAttempted = diagnostic.decoderEnsureAttempted;
-				trace.decoderEnsureSucceeded = diagnostic.decoderEnsureSucceeded;
 				if (snapshot)
 				{
 					trace.decodedX = snapshot->position.x;
 					trace.decodedY = snapshot->position.y;
-					trace.decodedPressure = snapshot->pressure;
 				}
 				if (decoder && packet && decoder->xIndex < propertyCount &&
 					decoder->yIndex < propertyCount)

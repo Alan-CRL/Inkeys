@@ -1,4 +1,39 @@
-# Windows Ink 输入诊断设计
+# Windows Ink 调查收尾设计
+
+> 下方旧诊断设计作为调查记录保留；本节是 2026-08-09 最终实现的权威设计。
+
+## Final Restoration Boundary
+
+- `949752a` 是生产行为基线；后续 `418338a`、`2520c2c` 涉及的 native、工程和测试文件恢复到该版本。
+- 未提交 cadence B 对 contact ring、DrawingController、metrics、diagnostics 和测试的改动全部撤回。
+- `ContactRecordAccess::Initialize` 不再清除 `writerLatch_`。该最小修复适用于 latest mailbox 基线：旧 generation 的持锁 Move 必须先在锁内 route 复核失败并自行解锁，新 generation writer 在此之前被 try-lock 拒绝。
+- 不保留 ordered ring、`DRAW3_TESTING` barrier、额外 trace/metrics 或 raw/tail probe。
+
+## Contact Cursor Setting Flow
+
+```text
+Inkeys setting layer（未来接入）
+  -> StrokeModelConfiguration 默认 false
+  -> DrawingController atomic + Set/Get
+  -> control wake（仅值变化时一次）
+  -> ResolvePrimaryDrawingCursorVisual
+  -> existing cursor dirty union / transient draw / Present
+```
+
+开关只解除普通 Pen Contact 在 `ResolvePrimaryDrawingCursorVisual` 中的隐藏条件。Pen 和 Highlighter 因此直接复用 Hover 已传入的 `DrawingCursorAppearance`、同一 mailbox 坐标和同一 transient renderer；不创建第二套形状或系统 cursor 路径。
+
+`ShouldHideSystemDrawingCursor` 不读取该设置，Pen authority 仍隐藏系统箭头。Eraser、倒转笔尾、Laser、Mouse、Touch 和 Unknown authority 的样本选择规则均沿用既有矩阵。setter 只发布 control wake；RTS/WM_POINTER Contact 更新仍不逐包唤醒，绘制线程按既有活动帧读取最新 mailbox。
+
+现有 previous/current cursor bounds 会把开关前后的旧区和新区合入 dirty rect，cursor 继续在 L0/L1/L2 合成后绘制，不进入墨迹层、contact payload、模型或 metrics。
+
+## Final Validation
+
+- 纯 helper 测试覆盖默认关闭、Pen/Highlighter 开启后与 Hover 的位置、形状、尺寸、颜色和 opacity 一致。
+- 反例覆盖 Mouse、Touch、Laser、Eraser、倒转笔尾及 Unknown authority fallback；系统 cursor helper 不改签名。
+- 静态搜索确认撤回的 diagnostics/cadence/probe 符号消失，Contact cursor 路径没有新增 per-packet wake。
+- ARM64 Debug/Release 构建完整解决方案并运行两套测试。
+
+## Historical Diagnostic Design (Superseded)
 
 ## Investigation Boundary
 
@@ -85,3 +120,13 @@ DrawingController 每帧只在 trace 已启用时执行少量 QPC、标量复制
 `Present1` 使用现有 `SyncInterval=0`、`PresentFlags=0` 和 dirty rect，不改参数。日志中的 `presentEndQpc` 仅表示 CPU 调用/提交返回，不能声称测得扫描输出或 input-to-photon latency。
 
 当前静态调查结论必须随日志输出/报告保留：swap chain 尝试 `DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT` 并调用 `SetMaximumFrameLatency(1)`，但源码没有 `GetFrameLatencyWaitableObject()`，也没有等待该 handle；本阶段不得接入。
+
+## Phase 3: Physical / Raw / Visible Separation Probe
+
+`--pen-latency-probe` 只在显式开启时增加两枚最终 transient visual：青色环表示同步 RTS callback 发布的最新 Pen contact 坐标，黄色小方框表示同一绘制帧完成 prediction 与 L0 重建后的 `l0DrawPoints.back()`。两者在 ink composition 之后、同一次 Present 之前绘制，因此 raw-to-visible 的相对位置不包含两条不同呈现链。
+
+同一开关在普通 Pen 工具下只对 Pen authority（或 Unknown authority + 有效 Pen 样本）保留既有 `defaultCursor_`，使高速录像能同时观察系统光标。Mouse、Touch、无 Pen 的 Unknown、Eraser/Laser 和默认关闭状态继续沿用原有系统光标隐藏策略；系统光标只是经 Windows 输入和桌面合成得到的第三个软件参照，不是 digitizer 采样点或实体笔尖真值。
+
+RTS 发布仍先完成既有 Move，再同时覆盖 RTS-only cursor mailbox 和既有 mixed Pen cursor mailbox。RTS-only mailbox 不接受 `WM_POINTER` 写入，Contact 更新不发布 wake；Hover/Clear 继续保持既有 mixed cursor 行为。DrawingController 只在 probe 开启、存在普通 Pen contact 且 raw 样本有效并为 Contact 时追加标记。
+
+probe 不记录或推断实体笔尖时间。实体笔尖、raw marker、visible-tail marker 的三实体判读为：raw 接近实体而 tail 落后 raw 指向应用内部；raw 与 tail 接近但共同落后实体指向应用上游或共享显示链；tail 领先 raw 但仍落后实体表示 prediction 有效但不足以覆盖总延迟。后两种都需要高速录像继续区分数位板/Windows 与 DWM/scanout。

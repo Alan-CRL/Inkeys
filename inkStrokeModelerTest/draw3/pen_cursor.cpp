@@ -133,7 +133,8 @@ namespace draw3
 		DrawingCursorPointerAuthority pointerAuthority,
 		const DrawingCursorAppearance& selectedAppearance,
 		const DrawingCursorAppearance& eraserAppearance,
-		bool selectedToolIsEraser) noexcept
+		bool selectedToolIsEraser,
+		bool drawingCursorDuringContactEnabled) noexcept
 	{
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
@@ -141,7 +142,9 @@ namespace draw3
 		if (!sample) return visual;
 		const bool pen = sample == &penSample;
 		const bool eraser = selectedToolIsEraser || (pen && sample->inverted);
-		if (!eraser && (!pen || sample->inContact)) return visual;
+		// 开关只放开普通 Pen/Highlighter 的 Contact；其余设备和橡皮语义保持不变。
+		if (!eraser && (!pen ||
+			(sample->inContact && !drawingCursorDuringContactEnabled))) return visual;
 
 		visual.visible = true;
 		visual.x = sample->x;

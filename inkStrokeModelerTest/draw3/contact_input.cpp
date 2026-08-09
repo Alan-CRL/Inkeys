@@ -192,7 +192,7 @@ namespace draw3
 			snapshot.phase = ContactPhase::Down;
 			snapshot.sequence = 2;
 			record.downSnapshot_ = snapshot;
-			record.writerLatch_.clear(std::memory_order_release);
+			// writerLatch_ 只能由实际持锁者释放，槽位跨 generation 复用时不能重置 ownership。
 			record.x_.Store(snapshot.position.x);
 			record.y_.Store(snapshot.position.y);
 			record.pressure_.Store(snapshot.pressure);

@@ -6,13 +6,11 @@
 
 #include <atomic>
 #include <compare>
-#include <cstdint>
 #include <windows.h>
 
 export module draw3.drawing_controller;
 
 import draw3.contact_input;
-import draw3.diagnostics;
 import draw3.haptic_feedback;
 import draw3.ink_prediction;
 import draw3.renderer;
@@ -38,6 +36,9 @@ export namespace draw3
 		// 即时控制 Touch 断触修正；关闭时已有候选会立即按正常 Up 收尾。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		bool GetInterruptedStrokeReconnectEnabled() const noexcept;
+		// 即时控制普通 Pen/Highlighter 落笔时是否继续显示应用内光标。
+		void SetDrawingCursorDuringContactEnabled(bool enabled) noexcept;
+		bool GetDrawingCursorDuringContactEnabled() const noexcept;
 		// 即时控制激光笔的稀疏粒子点缀，不影响主轨迹和留存计时。
 		void SetLaserParticlesEnabled(bool enabled) noexcept;
 		bool GetLaserParticlesEnabled() const noexcept;
@@ -60,11 +61,7 @@ export namespace draw3
 		void Run();
 	private:
 		void CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
-		bool PresentFrame(RECT dirty, bool presentFull
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-			, uint64_t frameSequence = 0, PresentTrace* outputTrace = nullptr
-#endif
-		);
+		bool PresentFrame(RECT dirty, bool presentFull);
 
 		ContactInputCoordinator& input_;
 		WindowController& window_;
@@ -74,6 +71,7 @@ export namespace draw3
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
+		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<bool> performanceHudEnabled_ = false;

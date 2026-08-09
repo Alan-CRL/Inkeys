@@ -1,4 +1,4 @@
-﻿# Runtime and Rendering
+# Runtime and Rendering
 
 ## Ownership And Flow
 
@@ -26,6 +26,7 @@
 - 控制请求先写 sticky 原子标记，再通过 coordinator 队列唤醒；消费方在阻塞前二次 dequeue，避免清 pending 与入队交错造成丢唤醒。
 - 无活动 contact 时使用 blocking dequeue；活动 contact 仍按帧更新停笔预测。
 - Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。RTS/`WM_POINTER` 的 Pen Contact cursor 同样只覆盖最新 mailbox，不逐包发布 render/control wake；Hover 与 Clear/终态继续按原路径唤醒。
+- contact slot 的 `writerLatch_` 只在对象初始化时为 clear，跨 generation 复用不得重置；只有实际取得 latch 的调用可以释放，避免旧 generation Move 与新 writer 形成 ownership ABA。
 - 绘制线程使用 `THREAD_PRIORITY_ABOVE_NORMAL`，活动末段按 QPC deadline 核对 wake generation；完全空闲仍阻塞在队列 semaphore，不自旋。
 
 ## Tool State
@@ -146,6 +147,8 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 - `RealTimeStylusInput::Initialize(HWND, ContactInputCoordinator&, DrawingCursorEventSink*)`
 - `DrawingCursorEventSink::PublishPenCursorSample/ClearPenCursorSample`
 - `WindowController::ConfigureDrawingCursor/ConsumeDrawingCursorRenderRequest`
+- `StrokeModelConfiguration::drawingCursorDuringContactEnabled`
+- `DrawingController::SetDrawingCursorDuringContactEnabled/GetDrawingCursorDuringContactEnabled`
 - `ResolvePrimaryDrawingCursorVisual`、`MakeTouchEraserDrawingCursorVisual`
 - `ShouldSuppressMouseButtonUpCursorSample`
 - `DrawingCursorVisualBounds`、`InkRenderer::DrawTransientDrawingCursor`
@@ -159,7 +162,9 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 - RTS InAir/Down/Packets 发布 X/Y/QPC、inverted 和 contact；StylusUp 只清除 Pen 样本，不把终态坐标冒充 Hover。后续真实 InAir 包才允许重新显示 Hover。InAir/Packets 只解码批次最后一个包；`Packets` 成功解码后的顺序固定为 `PublishMove -> PublishPenCursor -> diagnostics`，即使 Move 发布失败也继续更新 cursor mailbox。所有 Pen 样本都继续写入 writer latch + sequence mailbox；`inContact=false` 保持 sticky cursor render wake，`inContact=true` 不逐样本请求 render/control wake，由已有活动帧读取最新坐标。RTS 回调不得等待、分配、调用 D3D 或 `SetCursor`。
 - Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 继续发布 Pen 坐标，包括 Contact 样本，不能依赖首个 RTS Down。它与 RTS 共用相同 mailbox/wake 规则；禁止为了去重而停止发布 Contact 坐标。`WM_POINTERUP` 同样只清除 Pen 样本，后续 Update 才恢复 Hover。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；Pen/Touch authority 下的孤立 Mouse ButtonUp 必须忽略，避免终态兼容消息重新生成 Hover。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
 - Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；`WM_POINTERLEAVE` 无法取得 pointer type 时，只要旧 authority 或有效样本表明是 Pen，仍按 Pen 离开处理。禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
-- Pen/Highlighter：Pen Hover 显示应用 cursor，Pen Contact 只隐藏系统 cursor；Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
+- `drawingCursorDuringContactEnabled` 默认关闭；setter/getter 使用 DrawingController 原子状态，值实际变化时只发布一次 control wake，不改变 contact packet 的 mailbox-only 规则。
+- Pen/Highlighter：Pen Hover 显示应用 cursor；Pen Contact 在开关关闭时只隐藏系统 cursor，开启时复用对应 Hover 的同一 appearance 和最新 Pen mailbox 坐标。Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
+- Contact 开关只控制应用内 transient cursor，不修改 `ShouldHideSystemDrawingCursor`。开启后 Pen authority 仍隐藏系统箭头，不能用诊断 probe 的 `IDC_ARROW` 替代应用 cursor。
 - Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
 - 活动主指针使用 Down 锁定的有效工具；没有匹配主指针但仍有活动批次时使用批次 `selectedTool`。Touch cursor 直接读取各自 runtime 的一致 `lastModelSnapshot` 和有效 `tool`。
 - 当前和上一帧全部 cursor bounds 的并集必须加入 `frameDirty`；隐藏、离开、Up、工具切换、resize、clear、重新暴露和 Present 恢复都沿用该规则。即使 cursor 未变，只要其他几何会触发 Present，也必须把当前 cursor bounds 合入脏区并从 `L2 + L1 + L0` 重建，禁止在上一帧半透明 cursor 像素上再次叠加。静止且几何/状态不变时不得单独重复 Present。
@@ -171,7 +176,8 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 | Condition | Required behavior |
 |---|---|
 | Pen Hover + Pen/Highlighter | 隐藏系统 cursor，显示对应 Circle/Rectangle |
-| Pen Contact + Pen/Highlighter | 隐藏系统 cursor，不绘制应用 cursor |
+| Pen Contact + Pen/Highlighter，开关关闭 | 隐藏系统 cursor，不绘制应用 cursor |
+| Pen Contact + Pen/Highlighter，开关开启 | 隐藏系统 cursor，绘制与对应 Hover 完全相同的 Circle/Rectangle |
 | RTS/Pointer Pen Contact sample | 继续覆盖 cursor mailbox，但不逐样本调用 `RequestDrawingCursorRender`；活动帧读取最新坐标 |
 | Pen Up | 清除应用 cursor；只有后续真实 InAir/Pointer Update 才恢复 Hover |
 | Pen Hover、Clear、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
@@ -193,13 +199,14 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 ### 5. Good / Base / Bad Cases
 
 - Good：两指同时擦除时显示两枚白色不透明抓手圆；其中一指 Up 只清除对应旧区，另一枚继续移动。
-- Good：MPP Pen Enter 直接显示彩色笔尖，Down 后应用笔尖消失且系统 cursor 仍隐藏；Up 立即保持无应用 cursor，后续真实 Hover Update/InAir 到达后才在新样本位置恢复。
+- Good：默认关闭时 MPP Pen Down 后应用笔尖消失；开启 Contact cursor 时 Down 继续显示同一彩色笔尖且系统 cursor 仍隐藏。Up 后立即清除，后续真实 Hover Update/InAir 到达后才在新样本位置恢复。
 - Base：Mouse 在 Pen/Highlighter 下保持箭头，在 Eraser 下切换为应用圆；Windows 7 路径标记待真机验证。
 - Bad：把多枚 cursor 画进共享 L0 后随 contact Up resolve 到 L2，或为每次宽度变化重建 `HCURSOR`/纹理。
 
 ### 6. Tests Required
 
-- 自动断言 appearance 有效性、sample sequence 一致性、Pen/Mouse/Touch authority、Hover/Contact/Inverted 矩阵和系统 cursor 隐藏决策。
+- 自动断言配置默认关闭、setter/getter 往返，以及 Pen/Highlighter 开启后 Contact visual 与 Hover 的位置、形状、尺寸、颜色、fill/outline/opacity 完全一致。
+- 自动断言 appearance 有效性、sample sequence 一致性、Pen/Mouse/Touch authority、Hover/Contact/Inverted 矩阵和系统 cursor 隐藏决策；Mouse、Touch、Laser、Eraser 和倒转笔尾不受 Contact 开关影响。
 - 自动断言 Circle/Rectangle/Eraser 参数、Touch 强制 Alpha 1.0、旧/新 bounds、边界裁剪和多 visual 同时存在。
 - 自动断言 Pen authority + 无效 Pen 样本 + 陈旧 Mouse 样本不生成 visual；真实 Mouse authority 切换后才恢复 Mouse visual。
 - 自动断言 Pen/Touch authority 抑制孤立 Mouse ButtonUp，Mouse/Unknown 不抑制；静态核对 RTS StylusUp 与 `WM_POINTERUP` 都调用 clear 而非发布终态 Hover。
@@ -221,6 +228,10 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 Wrong：`每个 RTS/WM_POINTER Contact cursor 样本都 SetEvent`，或为避免唤醒而停止发布 `WM_POINTER` Contact 坐标。
 
 Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读取坐标，Hover、Clear、终态和 authority 变化仍沿用各自离散唤醒。
+
+Wrong：`绘制时显示光标 -> 为 Pen Contact 保留 IDC_ARROW`，导致产品行为依赖系统 cursor 路径且外观与 Hover 不一致。
+
+Correct：`drawingCursorDuringContactEnabled -> ResolvePrimaryDrawingCursorVisual 复用 Hover appearance`；系统 cursor 隐藏矩阵保持不变。
 
 ## Stroke Modeling Invariants
 
