@@ -993,6 +993,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				barUISet.barState.drawAttributeBar.thicknessFineDialDragging = false;
 				barUISet.barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
 				barUISet.barState.drawAttributeBar
+					.thicknessFineDialRangeTransitionActive = false;
+				barUISet.barState.drawAttributeBar
 					.thicknessFineDialActivationPreviewActive = false;
 				barUISet.barState.drawAttributeBar
 					.thicknessFineDialActivationDwellActive = false;
@@ -1381,12 +1383,21 @@ void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
 	}
 }
 
-bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
+bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
+	int drawingMode, int penMode, COLORREF brush1Color,
+	COLORREF highlighterColor, bool penetrateSelected)
 {
 	frameCursorLightVisible = false;
 	frameDrawingUsesPenColor = false;
+	auto SnapshotPenColor = [&]()
+		{
+			return (penMode
+				== static_cast<int>(PenModeSelectEnum::IdtPenHighlighter1)
+				? highlighterColor : brush1Color)
+				& 0x00FFFFFF;
+		};
 	COLORREF desiredDrawingPenColor = frameDrawingPenColorInitialized
-		? frameDrawingPenColorTarget : (GetPenColor() & 0x00FFFFFF);
+		? frameDrawingPenColorTarget : SnapshotPenColor();
 
 	double zoom = barUISetClass ? frameZoom : 0.0;
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
@@ -1413,6 +1424,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		frameDrawingPenColorInitialized = false;
 		frameDrawingModeTransitionAnimating = false;
 		frameDrawingModeInitialized = false;
+		frameDrawingPenColorSourceInitialized = false;
+		frameDrawingPenColorCarriesHighlighterHistory = false;
 		frameLightingWasAnimating = false;
 		return needSettlingFrame;
 	}
@@ -1425,11 +1438,11 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	if (barUISetClass)
 	{
 		// Geometry 始终使用持久 Brush1 色，不受当前 Pen 子模式影响。
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-			desiredDrawingPenColor = GetPenColor() & 0x00FFFFFF;
-		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-			desiredDrawingPenColor = stateMode.Pen.Brush1.color & 0x00FFFFFF;
-		switch (stateMode.StateModeSelect)
+		if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen))
+			desiredDrawingPenColor = SnapshotPenColor();
+		else if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape))
+			desiredDrawingPenColor = brush1Color & 0x00FFFFFF;
+		switch (static_cast<StateModeSelectEnum>(drawingMode))
 		{
 		case StateModeSelectEnum::IdtPen:
 			desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Draw;
@@ -1484,9 +1497,9 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		}
 
 		frameDrawingUsesPenColor =
-			(stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-				&& !penetrate.select)
-			|| stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
+			(drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen)
+				&& !penetrateSelected)
+			|| drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape);
 	}
 
 	unsigned long long cursorSerial = 0;
@@ -1513,7 +1526,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	if (!frameDrawingModeInitialized)
 	{
 		frameDrawingModeInitialized = true;
-		frameDrawingMode = static_cast<int>(stateMode.StateModeSelect);
+		frameDrawingMode = drawingMode;
 		frameDrawingPenColorBlend = desiredPenColorBlend;
 		frameDrawingPenColorBlendStart = desiredPenColorBlend;
 		frameDrawingPenColorBlendTarget = desiredPenColorBlend;
@@ -1522,7 +1535,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	}
 	else
 	{
-		int desiredDrawingMode = static_cast<int>(stateMode.StateModeSelect);
+		int desiredDrawingMode = drawingMode;
 		if (frameDrawingMode != desiredDrawingMode)
 			frameDrawingMode = desiredDrawingMode;
 		if (frameDrawingPenColorBlendTarget != desiredPenColorBlend)
@@ -1585,6 +1598,45 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 	}
 
 	bool penLightColorChanged = false;
+	int desiredColorSource = drawingMode
+		== static_cast<int>(StateModeSelectEnum::IdtShape)
+		? static_cast<int>(PenModeSelectEnum::IdtPenBrush1) : penMode;
+	if (frameDrawingUsesPenColor)
+	{
+		bool desiredSourceIsHighlighter = desiredColorSource
+			== static_cast<int>(PenModeSelectEnum::IdtPenHighlighter1);
+		bool enteringGeometryFromHighlighter = drawingMode
+			== static_cast<int>(StateModeSelectEnum::IdtShape)
+			&& frameDrawingPenColorCarriesHighlighterHistory;
+		if (!frameDrawingPenColorSourceInitialized)
+		{
+			frameDrawingPenColorSourceInitialized = true;
+			frameDrawingPenColorSource = desiredColorSource;
+			frameDrawingPenColorCarriesHighlighterHistory =
+				desiredSourceIsHighlighter;
+		}
+		else if (enteringGeometryFromHighlighter)
+		{
+			frameDrawingPenColorSource = desiredColorSource;
+			// Geometry 不继承未完成的 Highlighter -> Brush1 插值，直接接管 Brush1 快照。
+			frameDrawingPenColorStart = desiredDrawingPenColor;
+			frameDrawingPenColorTarget = desiredDrawingPenColor;
+			frameDrawingPenColor = desiredDrawingPenColor;
+			frameDrawingPenColorElapsed = 0.0;
+			frameDrawingPenColorAnimating = false;
+			frameDrawingPenColorInitialized = true;
+			frameDrawingPenColorCarriesHighlighterHistory = false;
+			penLightColorChanged = true;
+		}
+		else if (frameDrawingPenColorSource != desiredColorSource)
+		{
+			frameDrawingPenColorSource = desiredColorSource;
+			if (desiredSourceIsHighlighter)
+				frameDrawingPenColorCarriesHighlighterHistory = true;
+		}
+		else if (desiredSourceIsHighlighter)
+			frameDrawingPenColorCarriesHighlighterHistory = true;
+	}
 	if (!frameDrawingPenColorInitialized)
 	{
 		frameDrawingPenColorInitialized = true;
@@ -1629,6 +1681,16 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 				frameDrawingPenColorAnimating = false;
 			}
 		}
+	}
+	if (frameDrawingPenColorCarriesHighlighterHistory
+		&& frameDrawingPenColorSource
+			== static_cast<int>(PenModeSelectEnum::IdtPenBrush1)
+		&& !frameDrawingPenColorAnimating
+		&& (frameDrawingPenColor & 0x00FFFFFF)
+			== (desiredDrawingPenColor & 0x00FFFFFF))
+	{
+		// Brush1 真正稳定后才丢弃 Highlighter 历史；中途进入 Geometry 仍会直接接管。
+		frameDrawingPenColorCarriesHighlighterHistory = false;
 	}
 
 	bool primaryLightMoved = false;
@@ -3476,6 +3538,7 @@ void BarUISetClass::CloseThicknessSlider(bool cancelCapture)
 		barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
 		barState.drawAttributeBar.thicknessFineDialDragging = false;
 		barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
+		barState.drawAttributeBar.thicknessFineDialRangeTransitionActive = false;
 		barState.drawAttributeBar.thicknessFineDialActivationPreviewActive = false;
 		barState.drawAttributeBar.thicknessFineDialActivationDwellActive = false;
 		barState.drawAttributeBar.thicknessFineDialActivationPreviewProgress = 0.0f;
@@ -3644,6 +3707,16 @@ void BarUISetClass::Rendering()
 	BarUiTimelineClass geometryAttributeTimeline;
 	BarUiValueClass morePanelProgress(0.0);
 	BarUiValueClass morePanelOpacity(0.0);
+	struct FrameDrawingStateSnapshot
+	{
+		StateModeSelectEnum stateMode = StateModeSelectEnum::IdtSelection;
+		PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenBrush1;
+		COLORREF brush1Color = RGB(0, 0, 0);
+		COLORREF highlighterColor = RGB(0, 0, 0);
+		bool penetrate = false;
+	};
+	int mainLogoInkColorSource = -1;
+	bool mainLogoInkCarriesHighlighterHistory = false;
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	const BarUiCurveSpecClass buttonPressCurve{
 		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
@@ -3665,6 +3738,22 @@ void BarUISetClass::Rendering()
 	BarUiValueClass drawAttributeThicknessFineDialDwellProgress(0.0);
 	BarUiValueClass drawAttributeThicknessFineDialSelectionProgress(0.0);
 	bool drawAttributeThicknessFineDialActivationGeometryTransition = false;
+	enum class ThicknessFineDialRangeTransitionPhase
+	{
+		Idle,
+		RevealNewRange,
+		MoveValue,
+		RetireOldRange,
+	};
+	ThicknessFineDialRangeTransitionPhase thicknessFineDialRangeTransitionPhase =
+		ThicknessFineDialRangeTransitionPhase::Idle;
+	BarUiValueClass thicknessFineDialOldRangeOpacity(0.0);
+	BarUiValueClass thicknessFineDialNewRangeOpacity(1.0);
+	BarThicknessSliderRange thicknessFineDialOldRenderRange{};
+	BarThicknessSliderRange thicknessFineDialNewRenderRange{};
+	BarThicknessSliderRange thicknessFineDialLastLogicalRange =
+		GetBarThicknessSliderRange(stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+	PenModeSelectEnum thicknessFineDialLastPenMode = stateMode.Pen.ModeSelect;
 	BarUiValueClass drawAttributeThicknessSliderThumbOpacity(0.0);
 	BarUiValueClass drawAttributeThicknessSliderThumbScale(0.75);
 	BarUiValueClass drawAttributeThicknessSliderAccentOpacity(1.0);
@@ -3806,6 +3895,14 @@ void BarUISetClass::Rendering()
 		double frameZoom = static_cast<double>(barStyle.zoom);
 		if (!isfinite(frameZoom) || frameZoom <= 0.0) frameZoom = 1.0;
 		spec.SetFrameZoom(frameZoom);
+		// logoInk 与第一光源共用同一帧状态，避免模式和颜色跨帧混读。
+		const FrameDrawingStateSnapshot frameDrawingState{
+			stateMode.StateModeSelect,
+			stateMode.Pen.ModeSelect,
+			stateMode.Pen.Brush1.color,
+			stateMode.Pen.Highlighter1.color,
+			static_cast<bool>(penetrate.select),
+		};
 	#pragma region 计算UI
 
 		auto animationNow = chrono::high_resolution_clock::now();
@@ -3885,13 +3982,38 @@ void BarUISetClass::Rendering()
 					lastMainLogoDarkStyle = currentMainLogoDarkStyle;
 				}
 				// 着色层和底图同尺寸，贴合修正交给 SVG 路径本身处理。
-				bool showLogoInk = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-					|| stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
-				COLORREF logoInkColor = stateMode.StateModeSelect
+				bool showLogoInk = frameDrawingState.stateMode
+					== StateModeSelectEnum::IdtPen
+					|| frameDrawingState.stateMode == StateModeSelectEnum::IdtShape;
+				COLORREF logoInkColor = frameDrawingState.stateMode
 					== StateModeSelectEnum::IdtShape
-					? stateMode.Pen.Brush1.color : GetPenColor();
-				// 显隐和换色共用 UI3 动画时钟，关闭动画时由全局倍率立即完成。
-				mainButtonInk->color1.value().SetTar(logoInkColor, operationDur);
+					? frameDrawingState.brush1Color
+					: (frameDrawingState.penMode
+						== PenModeSelectEnum::IdtPenHighlighter1
+						? frameDrawingState.highlighterColor
+						: frameDrawingState.brush1Color);
+				int logoInkColorSource = frameDrawingState.stateMode
+					== StateModeSelectEnum::IdtShape
+					? static_cast<int>(PenModeSelectEnum::IdtPenBrush1)
+					: static_cast<int>(frameDrawingState.penMode);
+				bool logoInkUsesHighlighter = logoInkColorSource
+					== static_cast<int>(PenModeSelectEnum::IdtPenHighlighter1);
+				bool geometryTakingOverHighlighter = frameDrawingState.stateMode
+					== StateModeSelectEnum::IdtShape
+					&& mainLogoInkCarriesHighlighterHistory;
+				if (mainLogoInkColorSource < 0 || geometryTakingOverHighlighter)
+					mainButtonInk->color1.value().SetDirect(logoInkColor);
+				else mainButtonInk->color1.value().SetTar(
+					logoInkColor, operationDur);
+				mainLogoInkColorSource = logoInkColorSource;
+				if (geometryTakingOverHighlighter)
+					mainLogoInkCarriesHighlighterHistory = false;
+				else if (logoInkUsesHighlighter)
+					mainLogoInkCarriesHighlighterHistory = true;
+				else if (mainLogoInkCarriesHighlighterHistory
+					&& mainButtonInk->color1.value().IsSame())
+					mainLogoInkCarriesHighlighterHistory = false;
+				// 显隐继续共用 UI3 动画时钟；颜色源切换不允许污染 Geometry。
 				mainButtonInk->pct.SetTar(showLogoInk ? 1.0 : 0.0, operationDur);
 			}
 		}
@@ -3975,7 +4097,7 @@ void BarUISetClass::Rendering()
 				currentGeometryAttributeOpen != geometryAttributeLayoutOpen;
 			geometryAttributeLayoutOpen = currentGeometryAttributeOpen;
 			auto thicknessSliderRange = GetBarThicknessSliderRange(
-				stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+				frameDrawingState.penMode, barStyle.dpiZoom);
 			bool thicknessSliderAvailable =
 				stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
 					&& thicknessSliderRange.supported
@@ -4087,6 +4209,79 @@ void BarUISetClass::Rendering()
 				&& thicknessViewMode == ThicknessViewMode::Slider;
 			bool thicknessFineDialActive = thicknessSliderAvailable
 				&& thicknessViewMode == ThicknessViewMode::FineDial;
+			auto CancelFineDialRangeTransition = [&]()
+				{
+					thicknessFineDialRangeTransitionPhase =
+						ThicknessFineDialRangeTransitionPhase::Idle;
+					thicknessFineDialOldRangeOpacity.SetDirect(0.0);
+					thicknessFineDialNewRangeOpacity.SetDirect(1.0);
+					barState.drawAttributeBar
+						.thicknessFineDialRangeTransitionActive = false;
+				};
+			bool fineDialPenModeChanged = frameDrawingState.penMode
+				!= thicknessFineDialLastPenMode;
+			if (!thicknessFineDialActive
+				|| barState.drawAttributeBar.thicknessFineDialCandidateActive
+				|| !thicknessSliderRange.supported)
+			{
+				CancelFineDialRangeTransition();
+			}
+			else if (fineDialPenModeChanged)
+			{
+				BarThicknessSliderRange previousRenderRange =
+					thicknessFineDialLastLogicalRange;
+				if (thicknessFineDialRangeTransitionPhase
+					!= ThicknessFineDialRangeTransitionPhase::Idle)
+				{
+					previousRenderRange.min = min(
+						thicknessFineDialOldRenderRange.min,
+						thicknessFineDialNewRenderRange.min);
+					previousRenderRange.max = max(
+						thicknessFineDialOldRenderRange.max,
+						thicknessFineDialNewRenderRange.max);
+					previousRenderRange.supported = true;
+				}
+				double transitionVisual = static_cast<double>(
+					drawAttributePenThickness.val);
+				bool outsideNewRange = transitionVisual
+					< thicknessSliderRange.min - 0.000001
+					|| transitionVisual
+						> thicknessSliderRange.max + 0.000001;
+				if (previousRenderRange.supported && outsideNewRange)
+				{
+					// 先保留旧视觉并补齐新区间，随后才启动已有粗细动画。
+					thicknessFineDialOldRenderRange = previousRenderRange;
+					thicknessFineDialNewRenderRange = thicknessSliderRange;
+					thicknessFineDialRangeTransitionPhase =
+						ThicknessFineDialRangeTransitionPhase::RevealNewRange;
+					thicknessFineDialOldRangeOpacity.SetDirect(1.0);
+					thicknessFineDialNewRangeOpacity.SetDirect(0.0);
+					drawAttributePenThickness.SetDirect(transitionVisual);
+					barState.drawAttributeBar
+						.thicknessFineDialRangeTransitionActive = true;
+				}
+				else CancelFineDialRangeTransition();
+			}
+			thicknessFineDialLastPenMode = frameDrawingState.penMode;
+			thicknessFineDialLastLogicalRange = thicknessSliderRange;
+			if (thicknessFineDialRangeTransitionPhase
+				== ThicknessFineDialRangeTransitionPhase::RevealNewRange)
+			{
+				thicknessFineDialOldRangeOpacity.SetTar(1.0);
+				thicknessFineDialNewRangeOpacity.SetTar(
+					1.0, BarThicknessFineDialTransitionDur);
+				if (thicknessFineDialNewRangeOpacity.IsSame())
+					thicknessFineDialRangeTransitionPhase =
+						ThicknessFineDialRangeTransitionPhase::MoveValue;
+			}
+			else if (thicknessFineDialRangeTransitionPhase
+				== ThicknessFineDialRangeTransitionPhase::RetireOldRange)
+			{
+				thicknessFineDialOldRangeOpacity.SetTar(
+					0.0, BarThicknessFineDialTransitionDur);
+				if (thicknessFineDialOldRangeOpacity.IsSame())
+					CancelFineDialRangeTransition();
+			}
 			bool thicknessExpandedActive = thicknessSliderActive
 				|| thicknessFineDialActive;
 			if (thicknessExpandedActive
@@ -4478,7 +4673,18 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					else if (thicknessCandidateDragging)
 						// 拖动中数字跟手，不走过渡动画。
 						drawAttributePenThickness.SetDirect(penThickness);
-					else drawAttributePenThickness.SetTar(penThickness, operationDur);
+					else if (thicknessFineDialRangeTransitionPhase
+						== ThicknessFineDialRangeTransitionPhase::MoveValue)
+					{
+						bool moveStarted = drawAttributePenThickness.SetTar(
+							penThickness, operationDur);
+						if (!moveStarted && drawAttributePenThickness.IsSame())
+							thicknessFineDialRangeTransitionPhase =
+								ThicknessFineDialRangeTransitionPhase::RetireOldRange;
+					}
+					else if (thicknessFineDialRangeTransitionPhase
+						== ThicknessFineDialRangeTransitionPhase::Idle)
+						drawAttributePenThickness.SetTar(penThickness, operationDur);
 					if (!drawAttributePenPreviewMorphInitialized)
 					{
 						drawAttributePenPreviewMorph.SetDirect(penPreviewMorph);
@@ -7770,6 +7976,10 @@ for (size_t i = 0; i < 3; ++i)
 				ChangeValue(drawAttributeThicknessFineDialDwellProgress, false);
 			if (!drawAttributeThicknessFineDialSelectionProgress.IsSame())
 				ChangeValue(drawAttributeThicknessFineDialSelectionProgress, false);
+			if (!thicknessFineDialOldRangeOpacity.IsSame())
+				ChangeValue(thicknessFineDialOldRangeOpacity, false);
+			if (!thicknessFineDialNewRangeOpacity.IsSame())
+				ChangeValue(thicknessFineDialNewRangeOpacity, false);
 			// 静止保持进度由交互线程写入，渲染侧每帧重绘环形进度。
 			if (barState.drawAttributeBar.thicknessSliderHoldHintActive
 				|| barState.drawAttributeBar.thicknessSliderHoldLocked)
@@ -9467,7 +9677,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 	#pragma endregion
 
 		bool needRenderOnce = BarAtomic::renderOnceFlag.exchange(false);
-		bool needBorderLightingRendering = spec.PrepareFrameLighting(animationDtSeconds);
+		bool needBorderLightingRendering = spec.PrepareFrameLighting(
+			animationDtSeconds,
+			static_cast<int>(frameDrawingState.stateMode),
+			static_cast<int>(frameDrawingState.penMode),
+			frameDrawingState.brush1Color,
+			frameDrawingState.highlighterColor,
+			frameDrawingState.penetrate);
 		if (needRendering || true == BarAtomic::sustainFlag || true == needRenderOnce
 			|| needBorderLightingRendering || BarUiDebugModeEnabled)
 		{
@@ -10247,14 +10463,28 @@ IncludeShapeBounds(shapeMap[
 									* contentOpacity * panelExpandedProgress;
 								if (fineDialOpacity > 0.000001)
 								{
-									auto range = GetBarThicknessSliderRange(
-										stateMode.Pen.ModeSelect, barStyle.dpiZoom);
-									auto fineGeometry =
+								auto logicalRange = GetBarThicknessSliderRange(
+									frameDrawingState.penMode, barStyle.dpiZoom);
+								bool rangeTransitionActive =
+									thicknessFineDialRangeTransitionPhase
+										!= ThicknessFineDialRangeTransitionPhase::Idle;
+								BarThicknessSliderRange renderRange = logicalRange;
+								if (rangeTransitionActive)
+								{
+									renderRange.min = min(
+										thicknessFineDialOldRenderRange.min,
+										thicknessFineDialNewRenderRange.min);
+									renderRange.max = max(
+										thicknessFineDialOldRenderRange.max,
+										thicknessFineDialNewRenderRange.max);
+									renderRange.supported = true;
+								}
+								auto fineGeometry =
 										CalculateBarThicknessFineDialGeometry(
 											previewGeometry, sliderCenterY,
 											panel->inhY, panel->inhY + panel->h.val);
-									double rangeSpan = static_cast<double>(
-										range.max - range.min);
+								double rangeSpan = static_cast<double>(
+									renderRange.max - renderRange.min);
 									double trackTravelLogical = max(0.0,
 										previewGeometry.trackRight
 											- previewGeometry.trackLeft
@@ -10270,7 +10500,8 @@ IncludeShapeBounds(shapeMap[
 										/ sin(BarThicknessFineDialThetaLimit);
 									double angularStep = radius > 0.000001
 										? unitTravelLogical / radius : 0.0;
-									if (range.supported && rangeSpan > 0.0
+								if (logicalRange.supported && renderRange.supported
+									&& rangeSpan > 0.0
 										&& fineGeometry.valid && radius > 0.000001
 										&& angularStep > 0.000001)
 								{
@@ -10287,8 +10518,8 @@ IncludeShapeBounds(shapeMap[
 									if (!isfinite(liveVisualValue))
 										liveVisualValue = clamp(
 											static_cast<double>(GetPenWidth()),
-											static_cast<double>(range.min),
-											static_cast<double>(range.max));
+											static_cast<double>(logicalRange.min),
+											static_cast<double>(logicalRange.max));
 									double visualValue = liveVisualValue;
 									double previewAnchor = static_cast<double>(
 										barState.drawAttributeBar
@@ -10304,10 +10535,10 @@ IncludeShapeBounds(shapeMap[
 									}
 										double visibleValueRadius =
 											BarThicknessFineDialThetaLimit / angularStep;
-										int firstTick = max(range.min,
+									int firstTick = max(renderRange.min,
 											static_cast<int>(ceil(
 												visualValue - visibleValueRadius)));
-										int lastTick = min(range.max,
+									int lastTick = min(renderRange.max,
 											static_cast<int>(floor(
 												visualValue + visibleValueRadius)));
 										if (lastTick - firstTick + 1
@@ -10315,13 +10546,13 @@ IncludeShapeBounds(shapeMap[
 										{
 											int centerTick = static_cast<int>(
 												lround(visualValue));
-											firstTick = max(range.min,
+										firstTick = max(renderRange.min,
 												centerTick
 													- BarThicknessFineDialVisibleTickLimit / 2);
-											lastTick = min(range.max,
+										lastTick = min(renderRange.max,
 												firstTick
 													+ BarThicknessFineDialVisibleTickLimit - 1);
-											firstTick = max(range.min,
+										firstTick = max(renderRange.min,
 												lastTick
 													- BarThicknessFineDialVisibleTickLimit + 1);
 										}
@@ -10416,6 +10647,29 @@ IncludeShapeBounds(shapeMap[
 										size_t labelCandidateCount = 0;
 										for (int tick = firstTick; tick <= lastTick; ++tick)
 										{
+											double rangeMembershipOpacity = 1.0;
+											bool oldRangeMember = false;
+											bool newRangeMember = false;
+											if (rangeTransitionActive)
+											{
+												oldRangeMember = tick
+													>= thicknessFineDialOldRenderRange.min
+													&& tick <= thicknessFineDialOldRenderRange.max;
+												newRangeMember = tick
+													>= thicknessFineDialNewRenderRange.min
+													&& tick <= thicknessFineDialNewRenderRange.max;
+												rangeMembershipOpacity = max(
+													oldRangeMember
+														? static_cast<double>(
+															thicknessFineDialOldRangeOpacity.val)
+														: 0.0,
+													newRangeMember
+														? static_cast<double>(
+															thicknessFineDialNewRangeOpacity.val)
+														: 0.0);
+												if (rangeMembershipOpacity <= 0.000001)
+													continue;
+											}
 											double theta = (static_cast<double>(tick)
 												- visualValue) * angularStep;
 											if (abs(theta) > BarThicknessFineDialThetaLimit)
@@ -10436,7 +10690,14 @@ IncludeShapeBounds(shapeMap[
 												- fadeT * fadeT * (3.0 - 2.0 * fadeT);
 											double tickOpacity = fineDialOpacity * edgeFade
 												* (0.30 + 0.70 * depth);
-											bool endpoint = tick == range.min || tick == range.max;
+											tickOpacity *= rangeMembershipOpacity;
+											bool logicalEndpoint = tick == logicalRange.min
+												|| tick == logicalRange.max;
+											bool retiringEndpoint = rangeTransitionActive
+												&& oldRangeMember
+												&& (tick == thicknessFineDialOldRenderRange.min
+													|| tick == thicknessFineDialOldRenderRange.max);
+											bool endpoint = logicalEndpoint || retiringEndpoint;
 											bool major = tick % 5 == 0 || endpoint;
 											// 预激活统一为短刻度，正式层再引入 major 长度和线宽。
 											double majorProgress = major ? selectionProgress : 0.0;
@@ -14250,6 +14511,11 @@ auto ColorPickerAvailable = [&]()
 								== BarThicknessFineDialHitZone::Drag;
 							bool fineActivationCorridorConsumed = fineActivationHit
 								== BarThicknessFineDialHitZone::Consumed;
+							bool rangeTransitionConsumesPress =
+								barState.drawAttributeBar.thicknessViewMode
+									== ThicknessViewMode::FineDial
+								&& barState.drawAttributeBar
+									.thicknessFineDialRangeTransitionActive;
 							if ((sliderHit && sliderHit->IsClick(
 								msg.x, msg.y, barStyle.zoom))
 								|| fineActivationHit
@@ -14257,7 +14523,8 @@ auto ColorPickerAvailable = [&]()
 							{
 							continueFlag = false;
 							if (msg.message == WM_LBUTTONDOWN
-								&& !fineActivationCorridorConsumed)
+								&& !fineActivationCorridorConsumed
+								&& !rangeTransitionConsumesPress)
 							{
 								PenModeSelectEnum gesturePenMode =
 									stateMode.Pen.ModeSelect;

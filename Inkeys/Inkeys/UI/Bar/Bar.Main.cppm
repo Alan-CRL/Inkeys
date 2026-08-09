@@ -258,7 +258,9 @@ public:
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
-	bool PrepareFrameLighting(double animationDtSeconds);
+	bool PrepareFrameLighting(double animationDtSeconds,
+		int drawingMode, int penMode, COLORREF brush1Color,
+		COLORREF highlighterColor, bool penetrateSelected);
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
@@ -432,7 +434,10 @@ protected:
 	bool frameDrawingPenColorAnimating = false;
 	bool frameDrawingModeInitialized = false;
 	bool frameDrawingModeTransitionAnimating = false;
+	bool frameDrawingPenColorSourceInitialized = false;
+	bool frameDrawingPenColorCarriesHighlighterHistory = false;
 	int frameDrawingMode = -1;
+	int frameDrawingPenColorSource = -1;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;

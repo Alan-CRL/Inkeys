@@ -3,11 +3,11 @@
 ## Task state
 
 - Task: `08-08-ui3-thickness-fine-dial`
-- Final status for this session: `in_progress`
+- Final status for this session: `completed`, pending Trellis archive.
 - Base feature checkpoint: `44e4eaba2ca8e463343b44bc90069bfe011e230e` (`feat(ui3): add thickness fine dial`).
 - First GUI-correction checkpoint: `b272d4c922cd792c0d68e9fc52d43f35120cc9d3` (`fix(ui3): refine thickness fine dial activation`).
 - Second GUI-correction checkpoint: `21dbd22607627d603018d1401be494160e75b0b9` (`fix(ui3): refine fine dial recognition and popup exit`). The worktree was clean before the third correction, so no empty checkpoint was created.
-- The user authorized one separate final commit for the third correction after verification; do not amend `21dbd226`, push, archive, or launch/manipulate the GUI.
+- The user authorized separate correction commits and, on 2026-08-09, confirmed final GUI verification and requested task completion, commit, and archive. Do not amend existing checkpoints or push.
 - No public API, project-file, resource, configuration, or i18n change.
 - The old `08-07` task was not modified.
 
@@ -440,3 +440,46 @@ Third-correction supplement: `4 PASS`, `0 FAIL`, `5 NOT VERIFIED`. The task rema
 - Lighting finding: mode identity alone restarted `frameDrawingModeTransitionAnimating`, so Pen -> Geometry with the same Brush1 target color faded the colored primary light out, exposed the neutral frame, then faded red back in while the anchor also moved.
 - Lighting fix: mode identity is updated without forcing an opacity transition. Only a changed `desiredPenColorBlend` starts fade-out/recolor/fade-in; the existing independent primary-anchor animation handles Draw <-> Geometry and all other anchor changes. Direct pen-color interpolation remains unchanged.
 - Scope: `Bar.Main.cpp` plus this task's `prd.md`, `design.md`, and `implement.md`. Static path review, Git/encoding checks, and the ARM64-host full `Debug | ARM64` Rebuild all pass; the rebuild completed with `0 errors`, `317 warnings`, elapsed `00:01:43.35`. No headless UI test target covers these paths. GUI was not launched, so Slider-follow continuity and absence of the light flash remain `NOT VERIFIED`.
+
+## Seventh GUI correction after `83d8318`
+
+### Pre-implementation findings
+
+- Geometry's steady target already reads `stateMode.Pen.Brush1.color`, but `logoInk` and Primary light consume independently timed live state and share the prior active-pen color animation history. A Highlighter color can therefore become the visible interpolation start when Shape takes over in a special mode/color ordering.
+- FineDial currently animates `drawAttributePenThickness` from the old pen width while immediately clamping tick generation to the new pen range. For Highlighter `200` -> Brush `1`, the visual center remains near `200` while the tick range becomes `1..60`, producing an empty interval and later reappearance.
+
+### Ordered implementation plan
+
+- [x] Add one per-render-iteration drawing-state/color snapshot and route both `logoInk` and `PrepareFrameLighting` through it; isolate Brush1 and Highlighter visual source history while preserving Brush1 Pen <-> Shape anchor-only motion.
+- [x] Add a render-local FineDial range phase using fixed scalar state and existing `BarUiValueClass`: reveal new membership, move the existing thickness display animation, then retire old membership.
+- [x] Render only the visible part of the old/new union with the existing `64` cap; multiply tick/label opacity by range membership and preserve overlapping ticks/endpoints without per-frame allocation.
+- [x] Publish/clear a single range-transition-active flag so FineDial Pointer Down is consumed during the visual-only transition; clear it on all lifecycle exits and restart safely on a later supported pen switch.
+- [x] Statically trace Highlighter color changes, Brush1/Shape entry, `200 -> 1`, reverse range change, in-range switch, rapid second switch, Dial exit, fold/capture loss, and inactive hot path.
+- [x] Run `git diff --check`, scope and UTF-8/no-BOM/CRLF checks, then ARM64-host full `InkeysRepo.sln` `Debug | ARM64` Rebuild. Do not launch GUI, commit, push, archive, or change task status.
+
+### Seventh-correction implementation record
+
+1. Frame color snapshot: each rendering iteration snapshots StateMode, PenMode, Brush1 color, Highlighter color, and penetrate state once. `logoInk` and `PrepareFrameLighting(...)` consume that same snapshot; Geometry always resolves to Brush1 and keeps its Geometry primary-light anchor.
+2. Color-source isolation: `logoInk` and Primary light track whether their current/target interpolation still carries Highlighter history. A Highlighter -> Brush1 transition does not clear that marker merely because its target source changed; Brush1 settle clears it, while entering Geometry directly takes over the current Brush1 snapshot. Brush1 recoloring and Brush1 Pen <-> Geometry retain their existing smooth color/anchor-only behavior.
+3. Range transition: renderer-local `Idle / RevealNewRange / MoveValue / RetireOldRange` phases hold the old visual value while new-range membership fades in, reuse `drawAttributePenThickness` for the move to the new pen width, then fade out old-only membership. Overlap opacity is `max(oldMembership * oldOpacity, newMembership * newOpacity)`.
+4. Tick/render bounds: transition rendering clamps the projected visible interval to the old/new union and preserves the existing `BarThicknessFineDialVisibleTickLimit = 64`. Current-range endpoints and still-visible retiring endpoints remain majors; labels inherit membership opacity and continue using cached layouts and fixed arrays.
+5. Interaction/lifecycle: logical candidate/range ownership remains the new pen range. One shared `thicknessFineDialRangeTransitionActive` flag consumes Pointer Down inside the FineDial hit surface without starting candidate/physics. Renderer cancellation, `CloseThicknessSlider(...)`, and `WM_CAPTURECHANGED` clear the flag; Dial close/fold/availability exit reaches the same cleanup.
+
+### Seventh-correction review and verification
+
+- Independent `trellis-check` fixed one confirmed issue: source identity switched to Brush1 at the start of Highlighter -> Brush1 interpolation, so entering Geometry before settle could still inherit the Highlighter-colored intermediate value. Explicit Highlighter-history tracking now covers both `logoInk` and Primary light.
+- Static AC76 trace: the snapshot and history handoff are complete for direct Highlighter -> Geometry, Highlighter -> Brush1 -> Geometry before settle, Brush1 recoloring, non-pen intermediate modes, and Brush1 Pen <-> Geometry.
+- Static AC77 trace: `RevealNewRange -> MoveValue -> RetireOldRange` ordering, `200 -> 1`, reverse/in-range/rapid supported-pen switches, union membership, new-range logical ownership, Pointer Down consume, lifecycle cleanup, and inactive render behavior are all wired. No per-frame vector/string/COM/TextLayout creation was added.
+- Final full Rebuild: PASS with ARM64-host `MSBuild.exe`, `InkeysRepo.sln`, `Debug | ARM64`, `0 errors`, `317 warnings`, elapsed `00:01:57.50`.
+- No matching headless UI test target was found. `Inkeys.exe` was not launched.
+- AC 76: `NOT VERIFIED` overall. Static source isolation passes review and build, but visible Geometry color continuity requires GUI observation.
+- AC 77: `NOT VERIFIED` overall. Static transition order and bounds pass review and build, but the visible no-blank/no-flash sequence and timing require GUI observation.
+- Task status remains `in_progress`; no commit, push, archive, or GUI launch was performed in this correction.
+
+## Final user acceptance and closure
+
+- Date: 2026-08-09.
+- The user explicitly confirmed that GUI verification is complete and authorized task completion, commit, and archive.
+- Acceptance criteria 1-77 are therefore accepted as `PASS`: static/build evidence remains recorded in the historical matrices above, and previously GUI-only `NOT VERIFIED` items are closed by the user's manual verification rather than inferred by Codex.
+- Final code gate remains the ARM64-host full `InkeysRepo.sln` `Debug | ARM64` Rebuild: PASS, `0 errors`, `317 warnings`, elapsed `00:01:57.50`.
+- Codex did not launch or manipulate the GUI. No push is requested.

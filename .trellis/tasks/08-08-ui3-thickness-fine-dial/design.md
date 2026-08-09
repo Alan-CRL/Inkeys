@@ -87,6 +87,16 @@ pointer/physics raw position
 - `stateMode.Pen.Brush1.color` is the persistent Geometry color source. `logoInk` uses current `GetPenColor()` in Pen mode and Brush1 color in Shape mode; it is hidden in other modes.
 - Lighting uses current Pen color for Pen and Brush1 color for Shape. `frameDrawingUsesPenColor` is true for Shape regardless of `penetrate.select`, while Pen keeps the existing non-penetrate condition.
 - Track mode identity for current state, but start the opacity/color-role transition only when `desiredPenColorBlend` changes. Pen <-> Shape with the same target color keeps full light opacity and lets the independent primary-anchor interpolation move Draw <-> Geometry. Pen/Shape <-> non-pen-colored modes still use the established fade-out, recolor, fade-in transition; direct pen-color changes keep their existing smooth color interpolation.
+- At the start of each rendering iteration, snapshot StateMode, PenMode, Brush1 color, Highlighter color, and penetrate state once for the drawing-logo/light consumers. Both `logoInk` and `PrepareFrameLighting` consume that same snapshot, so one frame cannot mix a Shape identity with a Highlighter lookup.
+- Treat Brush1 and Highlighter as separate visual color sources. A source handoff into Shape synchronizes to the Brush1 snapshot instead of continuing the Highlighter color interpolator; a Brush1 Pen <-> Shape handoff keeps the same source and therefore preserves the no-fade anchor-only transition.
+
+## FineDial pen-range transition
+
+- Rendering owns a local `Idle / RevealNewRange / MoveValue / RetireOldRange` phase and two reversible range-membership opacity values. It starts only while FineDial is targeted/visible, no candidate is active, the supported pen range changes, and the current continuous display value lies outside the new range.
+- On start, stop the current programmatic thickness animation at its visual value, snapshot the old and new ranges, and render their union. Tick opacity is `max(oldMembership * oldOpacity, newMembership * newOpacity)`: overlapping ticks never blink, new-only ticks fade in first, and old-only ticks remain available for the subsequent travel.
+- After new membership reaches full opacity, retarget the existing `drawAttributePenThickness` value to the new pen's real thickness. Popup, selector projection, and the published takeover visual value continue to read this same animation, so they move together. Once it arrives, old-only membership fades to zero and rendering returns to the current range.
+- The projected visible interval is clamped to the union only for rendering and remains capped at `64`; current-range endpoints and still-visible old endpoints are majors. Candidate clamp, physics, Slider normalization, and `SetPenWidth` continue using the new current range.
+- A shared render-owned transition-active flag only prevents a FineDial Pointer Down from starting on visual-only old ticks. FineDial exit, fold/close/availability loss, or unsupported mode clears it. A later supported pen switch restarts from the current visual value without restoring stale candidate/physics state.
 
 ## Compatibility and rollback
 

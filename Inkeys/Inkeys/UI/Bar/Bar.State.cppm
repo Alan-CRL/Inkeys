@@ -50,6 +50,8 @@ public:
 		IdtAtomic<bool> thicknessFineDialCandidateActive = false;
 		IdtAtomic<bool> thicknessFineDialDragging = false;
 		IdtAtomic<bool> thicknessFineDialPhysicsActive = false;
+		// 量程视觉过渡期间旧 tick 只用于退场，交互线程仅消费按下。
+		IdtAtomic<bool> thicknessFineDialRangeTransitionActive = false;
 		// Slider 外移识别只发布独立预览，不提前改变 FineDial ViewMode。
 		IdtAtomic<bool> thicknessFineDialActivationPreviewActive = false;
 		IdtAtomic<bool> thicknessFineDialActivationDwellActive = false;

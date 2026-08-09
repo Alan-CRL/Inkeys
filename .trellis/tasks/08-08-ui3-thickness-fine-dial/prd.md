@@ -71,100 +71,108 @@
 7. UI zoom 使用逐帧快照：渲染循环每次迭代开始仅合法化并读取一次 `barStyle.zoom`，该帧的 UI 计算、predicted/dirty bounds、Popup/FineDial/Slider/各面板绘制及 `BarUIRendering` helper 全部使用同一 `frameZoom`。不得回写或锁住配置 zoom；`dpiZoom` 语义不变。
 8. Geometry / Shape 模式的主按钮 `logoInk` 与 Primary light 使用 `stateMode.Pen.Brush1.color` 所代表的持久画笔色；Geometry 不受 `penetrate.select` 抑制，主光位置仍锚定 Geometry。Pen 与 Shape 的目标光色相同时不得淡出或经过白色中间态，只让第一光源从 Draw 锚点平滑移动到 Geometry 锚点；颜色角色真正变化时仍保留 fade-out -> recolor -> fade-in。
 
+### 第七轮 GUI correction
+
+1. 每个渲染迭代锁存一次 StateMode、PenMode、Brush1 color 与 Highlighter color；主按钮 `logoInk` 和 Primary light 必须消费同一组快照。Brush1 与 Highlighter 是独立颜色源：Highlighter 调色或其动画历史不得污染 Geometry；进入 Geometry 时只接管 Brush1 颜色源，Pen Brush1 <-> Geometry 仍保持同色不淡出并只移动光源锚点。
+2. FineDial 中切换支持笔型时，如果切换前连续视觉值位于新笔型量程外，不得立即用新量程裁掉旧 tick。渲染先保留旧量程并淡入新量程独有 tick，再沿用现有 `drawAttributePenThickness` 动画把连续选择轴移动到新笔型真实粗细，最后淡出旧量程独有 tick。过渡的绘制区间始终是旧/新量程并集且仍只计算最多 `64` 个可见 tick；逻辑候选、可交互边界和最终 range 始终是新量程。
+3. 上述量程过渡只在 FineDial 可见且旧视觉值越出新量程时启用；值本来落在新量程内、普通 Preview/Slider、preset 与未支持笔型保持现有路径。过渡中 FineDial 区域继续 consume Pointer Down，避免从仅用于退场的旧量程 tick 抓取；生命周期退出、再次切换或 Dial 关闭必须清理过渡状态。
+
 ## Hard Constraints
 
 - Brush FineDial 保持现有 3× precision 作为 canonical unit；不改变普通 Slider mapping、各笔型整数 thickness 范围、preset 值或 `SetPenWidth` 业务语义。
 - 不建立与现有 Slider 并行的 thickness 数据模型，不创建通用 animation/physics framework。
 - 不破坏既有 Slider、Preview、Hold animation/lock、Popup、Preview X/safe bound、overflow、preset 或 pen-type behavior。
 - 不修改传统悬浮栏、绘制引擎、配置、i18n、资源文件或公共 API。
-- 禁止启动 GUI；允许静态分析、无窗口测试、完整 build 和 git 检查。
-- 最终任务保持 `in_progress`，不 archive、不启动 GUI。本轮按用户授权在 checkpoint `21dbd22607627d603018d1401be494160e75b0b9` 之后创建一个独立最终 commit，不 amend。
+- Codex 不主动启动 GUI；允许静态分析、无窗口测试、完整 build 和 git 检查。最终人工 GUI 验收由用户执行并报告结果。
+- 2026-08-09 用户确认 GUI 验证完成并授权结束任务、提交及归档；不得 amend 既有 checkpoint。
 
 ## Acceptance Criteria
 
-- [ ] 1. 现有 directTouchPreviewGesture 不会错误激活 FineDial。
-- [ ] 2. Slider 可见后，Drag Activation Zone 按下只 armed，越过 5 DIP 水平 slop 后零跳变进入 FineDial drag。
-- [ ] 3. Click Activation Zone Pointer Down 当帧进入持久 FineDial，并可继续按住拖动。
-- [ ] 4. Drag/Click Zone 共边界且整个 activation corridor 不落入普通 Slider direct-adjust。
-- [ ] 5. Popup 区域被排除并 consume，不会激活 FineDial 或触发 Slider 跳值。
-- [ ] 6. Slider 按住进入 dwell region 后，X/Y 分别保持在锁存锚点 `5 DIP` 内连续 `1000 ms` 可激活；任一轴超限会在当前位置重启计时。
-- [ ] 7. Activation dwell 中不会出现 Hold-to-lock 提示。
-- [ ] 8. FineDial drag 内 Hold-to-lock 仍正常工作。
-- [ ] 9. FineDial activation 不产生 thickness jump。
-- [ ] 10. FineDial Pointer Up 后仍保持 FineDial View Mode。
-- [ ] 11. Slider track 和 Thumb 在 FineDial 中通过动画隐藏。
-- [ ] 12. Hold UI 不会因为隐藏 Slider 而被一起隐藏。
-- [ ] 13. Overflow Hint 在 FineDial 中正确退出。
-- [ ] 14. FineDial 退出后 Overflow 可按原业务状态恢复。
-- [ ] 15. FineDial 根据 previewSide 正确上下镜像。
-- [ ] 16. Recognition preview 在 activation region 中心以约 0.5 暗态显示 envelope 与灰色 tick，dwell 1 秒平滑到 1.0。
-- [ ] 17. 正式激活后 5 倍数 tick 才动画显示数值；preview 阶段不查询 label layout。
-- [ ] 18. 正式激活后当前中心白线短促动画出现。
-- [ ] 19. 正式激活后上/下两个实心 selector triangles 短促动画出现。
-- [ ] 20. 不使用当前 Pen Color 染 FineDial。
-- [ ] 21. Renderer、drag/velocity/physics/rubber-band 共用 Brush 量程推导的 canonical 3× unit travel；Highlighter 每 1 单位物理距离与 Brush 相同。
-- [ ] 22. 左右远端具有自然 perspective compression。
-- [ ] 23. 左右远端透明度平滑消失。
-- [ ] 24. FineDial 具有轻微圆柱边缘 / depth 感。
-- [ ] 25. 不存在真实 D3D mesh / shader。
-- [ ] 26. min/max 外不存在非法 tick。
-- [ ] 27. 到 min/max 继续拖动存在有限 resistance / rubber-band。
-- [ ] 28. overscroll 时真实 thickness 不越界。
-- [ ] 29. overscroll 松手后自然 spring-back。
-- [ ] 30. 普通 release 存在短促惯性。
-- [ ] 31. inertia 与 FPS 无关，使用 dt。
-- [ ] 32. 大 dt 会 clamp，不会瞬间飞走。
-- [ ] 33. 连续同方向 swipe 可以有限加速。
-- [ ] 34. 反方向 swipe 能自然减速 / 反向。
-- [ ] 35. velocity 有明确上限。
-- [ ] 36. Pointer Down during inertia 从当前 visual position 接管，无 jump。
-- [ ] 37. FineDial 拖动视觉是 continuous，而不是 integer step teleport。
-- [ ] 38. logical thickness 仍然保持现有整数语义。
-- [ ] 39. Hold lock 后 FineDial 不消失。
-- [ ] 40. Hold lock 后 Pointer movement 不再改变 thickness。
-- [ ] 41. Hold lock release 不启动 inertia。
-- [ ] 42. Hold release 后 FineDial View Mode 仍保持。
-- [ ] 43. Popup FineDial 模式下固定在中心选择轴。
-- [ ] 44. Popup 会动画移动到 DrawAttributeBar 外侧。
-- [ ] 45. 正常 FineDial→Preview 时 Popup 锁存实际中心原地退出且快速反转无 teleport；panel/fold/lifecycle 退出不锁存。
-- [ ] 46. FineDial Popup 不再使用 penTypeSafeRight。
-- [ ] 47. preset thickness 时 FineDial 不退出。
-- [ ] 48. preset thickness 时 Dial 使用已有 thickness animation 转过去。
-- [ ] 49. pen type change 时 FineDial 不退出。
-- [ ] 50. pen type change 后 range / ticks 正确更新。
-- [ ] 51. 旧 inertia 不会覆盖 preset / pen-type 的新值。
-- [ ] 52. FineDial 下点击小三角可直接动画返回 Preview。
-- [ ] 53. DrawAttributeBar expand/collapse 中 FineDial 几何正确跟随。
-- [ ] 54. panel 完全隐藏后 FineDial 不继续 physics/render work。
-- [ ] 55. FineDial 不可见稳定状态没有 tick iteration。
-- [ ] 56. FineDial 不可见稳定状态没有 inertia update。
-- [ ] 57. 稳定帧不重复创建 TextLayout / D2D resource。
-- [ ] 58. device resource reset 正确处理 FineDial cache。
-- [ ] 59. WM_CAPTURECHANGED / cancel 不留下 stale gesture state。
-- [ ] 60. 现有普通 Slider 行为没有 regression。
-- [ ] 61. 现有 Preview 行为没有 regression。
-- [ ] 62. 现有 Hold animation 没有 regression。
-- [ ] 63. 现有 Preview safe bound 在普通 Slider 模式仍正常。
-- [ ] 64. `git diff --check` 通过。
-- [ ] 65. ARM64 host 完整 build 通过。
+- [x] 1. 现有 directTouchPreviewGesture 不会错误激活 FineDial。
+- [x] 2. Slider 可见后，Drag Activation Zone 按下只 armed，越过 5 DIP 水平 slop 后零跳变进入 FineDial drag。
+- [x] 3. Click Activation Zone Pointer Down 当帧进入持久 FineDial，并可继续按住拖动。
+- [x] 4. Drag/Click Zone 共边界且整个 activation corridor 不落入普通 Slider direct-adjust。
+- [x] 5. Popup 区域被排除并 consume，不会激活 FineDial 或触发 Slider 跳值。
+- [x] 6. Slider 按住进入 dwell region 后，X/Y 分别保持在锁存锚点 `5 DIP` 内连续 `1000 ms` 可激活；任一轴超限会在当前位置重启计时。
+- [x] 7. Activation dwell 中不会出现 Hold-to-lock 提示。
+- [x] 8. FineDial drag 内 Hold-to-lock 仍正常工作。
+- [x] 9. FineDial activation 不产生 thickness jump。
+- [x] 10. FineDial Pointer Up 后仍保持 FineDial View Mode。
+- [x] 11. Slider track 和 Thumb 在 FineDial 中通过动画隐藏。
+- [x] 12. Hold UI 不会因为隐藏 Slider 而被一起隐藏。
+- [x] 13. Overflow Hint 在 FineDial 中正确退出。
+- [x] 14. FineDial 退出后 Overflow 可按原业务状态恢复。
+- [x] 15. FineDial 根据 previewSide 正确上下镜像。
+- [x] 16. Recognition preview 在 activation region 中心以约 0.5 暗态显示 envelope 与灰色 tick，dwell 1 秒平滑到 1.0。
+- [x] 17. 正式激活后 5 倍数 tick 才动画显示数值；preview 阶段不查询 label layout。
+- [x] 18. 正式激活后当前中心白线短促动画出现。
+- [x] 19. 正式激活后上/下两个实心 selector triangles 短促动画出现。
+- [x] 20. 不使用当前 Pen Color 染 FineDial。
+- [x] 21. Renderer、drag/velocity/physics/rubber-band 共用 Brush 量程推导的 canonical 3× unit travel；Highlighter 每 1 单位物理距离与 Brush 相同。
+- [x] 22. 左右远端具有自然 perspective compression。
+- [x] 23. 左右远端透明度平滑消失。
+- [x] 24. FineDial 具有轻微圆柱边缘 / depth 感。
+- [x] 25. 不存在真实 D3D mesh / shader。
+- [x] 26. min/max 外不存在非法 tick。
+- [x] 27. 到 min/max 继续拖动存在有限 resistance / rubber-band。
+- [x] 28. overscroll 时真实 thickness 不越界。
+- [x] 29. overscroll 松手后自然 spring-back。
+- [x] 30. 普通 release 存在短促惯性。
+- [x] 31. inertia 与 FPS 无关，使用 dt。
+- [x] 32. 大 dt 会 clamp，不会瞬间飞走。
+- [x] 33. 连续同方向 swipe 可以有限加速。
+- [x] 34. 反方向 swipe 能自然减速 / 反向。
+- [x] 35. velocity 有明确上限。
+- [x] 36. Pointer Down during inertia 从当前 visual position 接管，无 jump。
+- [x] 37. FineDial 拖动视觉是 continuous，而不是 integer step teleport。
+- [x] 38. logical thickness 仍然保持现有整数语义。
+- [x] 39. Hold lock 后 FineDial 不消失。
+- [x] 40. Hold lock 后 Pointer movement 不再改变 thickness。
+- [x] 41. Hold lock release 不启动 inertia。
+- [x] 42. Hold release 后 FineDial View Mode 仍保持。
+- [x] 43. Popup FineDial 模式下固定在中心选择轴。
+- [x] 44. Popup 会动画移动到 DrawAttributeBar 外侧。
+- [x] 45. 正常 FineDial→Preview 时 Popup 锁存实际中心原地退出且快速反转无 teleport；panel/fold/lifecycle 退出不锁存。
+- [x] 46. FineDial Popup 不再使用 penTypeSafeRight。
+- [x] 47. preset thickness 时 FineDial 不退出。
+- [x] 48. preset thickness 时 Dial 使用已有 thickness animation 转过去。
+- [x] 49. pen type change 时 FineDial 不退出。
+- [x] 50. pen type change 后 range / ticks 正确更新。
+- [x] 51. 旧 inertia 不会覆盖 preset / pen-type 的新值。
+- [x] 52. FineDial 下点击小三角可直接动画返回 Preview。
+- [x] 53. DrawAttributeBar expand/collapse 中 FineDial 几何正确跟随。
+- [x] 54. panel 完全隐藏后 FineDial 不继续 physics/render work。
+- [x] 55. FineDial 不可见稳定状态没有 tick iteration。
+- [x] 56. FineDial 不可见稳定状态没有 inertia update。
+- [x] 57. 稳定帧不重复创建 TextLayout / D2D resource。
+- [x] 58. device resource reset 正确处理 FineDial cache。
+- [x] 59. WM_CAPTURECHANGED / cancel 不留下 stale gesture state。
+- [x] 60. 现有普通 Slider 行为没有 regression。
+- [x] 61. 现有 Preview 行为没有 regression。
+- [x] 62. 现有 Hold animation 没有 regression。
+- [x] 63. 现有 Preview safe bound 在普通 Slider 模式仍正常。
+- [x] 64. `git diff --check` 通过。
+- [x] 65. ARM64 host 完整 build 通过。
 
 ### 第三轮 correction 验收补充
 
-- [ ] 66. 普通 Slider 捕获按下即让预激活 Dial 从 `0` 平滑进入约 `0.5`；整个按住期间即使离开相关区域也保持，直到抬手/cancel/capture loss/生命周期清理或正式 handoff。
-- [ ] 67. 预激活只含固定普通短 tick/envelope，Slider candidate 改变时不滚动，无 major/endpoint/label/center selector。
-- [ ] 68. dwell 从进入区时的 X/Y 锚点开始，任一轴超过 `5 DIP` 会重启 `1000 ms`；正式激活从当前 opacity/visual anchor 连续接管，未激活释放以约 `0.30 s` 平滑退场且无残留。
-- [ ] 69. Slider control -> `5 DIP` blank -> FineDial-owned region -> panel edge 的所有点均按约定消费，panel edge 前不存在 Slider 穿透。
-- [ ] 70. range 两端始终是唯一 major tick 并显示 label；可见范围内所有 5 倍数和端点数字持续显示，不随选中值交错消失。
-- [ ] 71. Slider 退出时 Thumb opacity 到阈值后 Preview morph 才开始，快速反向无跳变。
-- [ ] 72. `1.0x` 下 Popup 数字进入圆内的动态测量临界约为 `49 -> 50`。
-- [ ] 73. 单帧渲染链只使用一个合法 `frameZoom`，helper、predicted bounds 与 final dirty rect 不重新读取 live zoom。
-- [ ] 74. Pen -> Geometry 且目标色相同时，`logoInk` 与 Primary light 全程保持 Brush1 颜色、不淡出/不经过白色，第一光源位置从 Draw 平滑移动到 Geometry；颜色角色变化的其他模式仍保留换色动画。
-- [ ] 75. Slider dwell 期间 Thumb/candidate/Popup 持续跟随 pointer X；正式 FineDial handoff 当帧消费当前 X，不使用上一帧候选。
+- [x] 66. 普通 Slider 捕获按下即让预激活 Dial 从 `0` 平滑进入约 `0.5`；整个按住期间即使离开相关区域也保持，直到抬手/cancel/capture loss/生命周期清理或正式 handoff。
+- [x] 67. 预激活只含固定普通短 tick/envelope，Slider candidate 改变时不滚动，无 major/endpoint/label/center selector。
+- [x] 68. dwell 从进入区时的 X/Y 锚点开始，任一轴超过 `5 DIP` 会重启 `1000 ms`；正式激活从当前 opacity/visual anchor 连续接管，未激活释放以约 `0.30 s` 平滑退场且无残留。
+- [x] 69. Slider control -> `5 DIP` blank -> FineDial-owned region -> panel edge 的所有点均按约定消费，panel edge 前不存在 Slider 穿透。
+- [x] 70. range 两端始终是唯一 major tick 并显示 label；可见范围内所有 5 倍数和端点数字持续显示，不随选中值交错消失。
+- [x] 71. Slider 退出时 Thumb opacity 到阈值后 Preview morph 才开始，快速反向无跳变。
+- [x] 72. `1.0x` 下 Popup 数字进入圆内的动态测量临界约为 `49 -> 50`。
+- [x] 73. 单帧渲染链只使用一个合法 `frameZoom`，helper、predicted bounds 与 final dirty rect 不重新读取 live zoom。
+- [x] 74. Pen -> Geometry 且目标色相同时，`logoInk` 与 Primary light 全程保持 Brush1 颜色、不淡出/不经过白色，第一光源位置从 Draw 平滑移动到 Geometry；颜色角色变化的其他模式仍保留换色动画。
+- [x] 75. Slider dwell 期间 Thumb/candidate/Popup 持续跟随 pointer X；正式 FineDial handoff 当帧消费当前 X，不使用上一帧候选。
+- [x] 76. Geometry 的 `logoInk` 与 Primary light 在 Highlighter 调色、笔型切换和模式切换交错时只读取 Brush1 颜色快照，不继承 Highlighter 的颜色动画历史；Pen Brush1 <-> Geometry 同色切换仍只移动光源位置。
+- [x] 77. FineDial 笔型切换且旧视觉值越出新 range 时，画面按“淡入新区间 -> 选择轴滑到新值 -> 淡出旧区间”连续过渡，无空白/闪烁；tick 上限仍为 `64`，旧区间不可交互，生命周期可取消。
 
 ## Out of Scope
 
 - 第二轮 physics feel 调优、真实 3D、GPU shader、DirectManipulation、配置化物理参数和通用刻度盘组件。
-- GUI 自动化或人工视觉验收；最终必须把未运行项目标为 `NOT VERIFIED`，不能推断为 PASS。
+- GUI 自动化不在实现范围内；Codex 未运行的项目必须标为 `NOT VERIFIED`，但可以记录用户明确完成的人工 GUI 验收。
 
 ## Blocking Questions
 
