@@ -433,3 +433,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 16: 归档六个已验收 UI3 任务
+
+**Date**: 2026-08-09
+**Task**: 归档六个已验收 UI3 任务
+**Branch**: `feature/animation`
+
+### Summary
+
+记录用户对按钮光影、简易颜色选择器、More 溢出区、渲染缓存优化、绘制属性增量调整和粗细预览浮窗的人工验收，并归档六个任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b21a5d` | (see git log) |
+
+### Status
+
+[OK] **Completed**
