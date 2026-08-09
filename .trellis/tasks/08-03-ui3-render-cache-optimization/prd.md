@@ -45,13 +45,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 连续稳定帧只绘制 SVG 缓存位图；静态检查和 instrumentation/日志可证明无重复 lunasvg parse/rasterize。
-- [ ] SVG 尺寸、按压、强调和内容跳变动画中不会每帧解析；超过质量阈值时最多按策略重建，动画结束稳定帧至多补建一次。
-- [ ] 仅旋转 SVG 时缓存命中，目标布局宽高和中心不变；旋转 0/90/180/任意角度均能恢复原 D2D transform。
-- [ ] SVG 内容/颜色变化和中点替换会重建新位图；设备重建后不使用旧位图且可恢复渲染。
-- [ ] 超椭圆仅移动位置时路径缓存命中；宽高或 `n` 改变时重建，填充/边框/裁剪/PointLight 视觉结果不回退。
-- [ ] `git diff --check` 通过；`InkeysRepo.sln` `Debug | ARM64` 使用 ARM64 Host MSBuild 在至少 5 分钟超时内构建通过。
-- [ ] 现有 Draw2/UI3 交互回归：几何面板、绘制属性、橡皮和主栏按钮动画无行为变化。
+- [x] 连续稳定帧只绘制 SVG 缓存位图；静态检查和 instrumentation/日志可证明无重复 lunasvg parse/rasterize。
+- [x] SVG 尺寸、按压、强调和内容跳变动画中不会每帧解析；超过质量阈值时最多按策略重建，动画结束稳定帧至多补建一次。
+- [x] 仅旋转 SVG 时缓存命中，目标布局宽高和中心不变；旋转 0/90/180/任意角度均能恢复原 D2D transform。
+- [x] SVG 内容/颜色变化和中点替换会重建新位图；设备重建后不使用旧位图且可恢复渲染。
+- [x] 超椭圆仅移动位置时路径缓存命中；宽高或 `n` 改变时重建，填充/边框/裁剪/PointLight 视觉结果不回退。
+- [x] `git diff --check` 通过；`InkeysRepo.sln` `Debug | ARM64` 使用 ARM64 Host MSBuild 在至少 5 分钟超时内构建通过。
+- [x] 现有 Draw2/UI3 交互回归：几何面板、绘制属性、橡皮和主栏按钮动画无行为变化。
 
 ## Out Of Scope
 

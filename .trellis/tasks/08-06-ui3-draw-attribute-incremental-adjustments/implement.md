@@ -71,3 +71,9 @@ Use a timeout of at least five minutes for the full Solution build. The reposito
 - Keep changes localized to the draw-attribute sections of `Bar.Main.cpp`; no new resource registration or public API is expected.
 - If Slider behavior regresses, revert the pointer-state and Position B changes together while retaining the previously verified Overflow Hint lifecycle.
 - If an angle target disagrees with visual direction, correct the direction-to-base-angle mapping rather than adding coordinate compensation or 360-degree accumulation.
+
+## 最终用户验收与收尾
+
+- 2026-08-09：用户明确确认本任务已完成人工核验，并授权结束、提交与归档。
+- PRD 验收项据此记为 `PASS`；历史回归清单保留原记录，最终人工视觉和输入结果以本次用户确认收口。
+- 本轮未修改产品代码，未重复启动 GUI 或执行构建。

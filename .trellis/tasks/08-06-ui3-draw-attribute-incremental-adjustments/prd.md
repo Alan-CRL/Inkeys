@@ -58,14 +58,14 @@
 
 ## Acceptance Criteria
 
-- [ ] AC1 选中笔型入口的分割线为主题 Accent，按压主入口时其几何、透明度和颜色均稳定，hover/pressed 不闪白。
-- [ ] AC2 Thumb 的单击无拖动也会结束粗细三角固定展开态；直接触摸 Preview 在 5 DIP 内抬起才展开 Slider，超过阈值则只显示候选 Preview 并在抬手提交一次；拖动、track 点击、capture 取消和抬起后行为正确。
-- [ ] AC3 Slider 所有会话均位于原 Position B；删除仅服务于 Position A/B 选择的状态分支，Overflow Hint 状态机逐项无回归。
-- [ ] AC4 高亮快捷档有清晰的 Inkeys2 依据和换算说明，建议的 `35 / 50 / 70 DIP` 在 100% DPI 时对应旧版前两档的 35/50 画布宽度基准。
-- [ ] AC5 Color Picker 打开/关闭呈现与其他 Popup 一致的克制回弹；固定字段锚点、数值右对齐和外侧 padding 在中英文文案下均稳定。
-- [ ] AC6 Color Picker 只保留第三鼠标光，第一光仍不参与，其他 Popup 光源配置无改变。
-- [ ] AC7 两个三角展开和收起均做反向 180 度动画；真实展开方向、快速反向和强制关闭时无跳角、360 度旋转或状态不同步。
-- [ ] AC8 `git diff --check` 通过；使用 ARM64 host MSBuild 对 `InkeysRepo.sln` 执行 `Debug | ARM64` 构建；完成任务中的手工回归清单。
+- [x] AC1 选中笔型入口的分割线为主题 Accent，按压主入口时其几何、透明度和颜色均稳定，hover/pressed 不闪白。
+- [x] AC2 Thumb 的单击无拖动也会结束粗细三角固定展开态；直接触摸 Preview 在 5 DIP 内抬起才展开 Slider，超过阈值则只显示候选 Preview 并在抬手提交一次；拖动、track 点击、capture 取消和抬起后行为正确。
+- [x] AC3 Slider 所有会话均位于原 Position B；删除仅服务于 Position A/B 选择的状态分支，Overflow Hint 状态机逐项无回归。
+- [x] AC4 高亮快捷档有清晰的 Inkeys2 依据和换算说明，建议的 `35 / 50 / 70 DIP` 在 100% DPI 时对应旧版前两档的 35/50 画布宽度基准。
+- [x] AC5 Color Picker 打开/关闭呈现与其他 Popup 一致的克制回弹；固定字段锚点、数值右对齐和外侧 padding 在中英文文案下均稳定。
+- [x] AC6 Color Picker 只保留第三鼠标光，第一光仍不参与，其他 Popup 光源配置无改变。
+- [x] AC7 两个三角展开和收起均做反向 180 度动画；真实展开方向、快速反向和强制关闭时无跳角、360 度旋转或状态不同步。
+- [x] AC8 `git diff --check` 通过；使用 ARM64 host MSBuild 对 `InkeysRepo.sln` 执行 `Debug | ARM64` 构建；完成任务中的手工回归清单。
 
 ## Out Of Scope
 
