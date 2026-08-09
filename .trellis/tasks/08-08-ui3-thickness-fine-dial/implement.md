@@ -6,7 +6,8 @@
 - Final status for this session: `in_progress`
 - Base feature checkpoint: `44e4eaba2ca8e463343b44bc90069bfe011e230e` (`feat(ui3): add thickness fine dial`).
 - First GUI-correction checkpoint: `b272d4c922cd792c0d68e9fc52d43f35120cc9d3` (`fix(ui3): refine thickness fine dial activation`).
-- The second GUI correction remains uncommitted and unstaged in the working tree; there is no push, archive, or GUI launch.
+- Second GUI-correction checkpoint: `21dbd22607627d603018d1401be494160e75b0b9` (`fix(ui3): refine fine dial recognition and popup exit`). The worktree was clean before the third correction, so no empty checkpoint was created.
+- The user authorized one separate final commit for the third correction after verification; do not amend `21dbd226`, push, archive, or launch/manipulate the GUI.
 - No public API, project-file, resource, configuration, or i18n change.
 - The old `08-07` task was not modified.
 
@@ -330,4 +331,84 @@ Second-correction summary: `24 PASS`, `0 FAIL`, `13 NOT VERIFIED`.
 - ARM64 host: `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\arm64\MSBuild.exe`.
 - Command: `MSBuild.exe InkeysRepo.sln /t:Rebuild /m /p:Configuration=Debug /p:Platform=ARM64 /nologo`.
 - Rebuild result: PASS, `0 errors`, `317 warnings`, elapsed `00:01:46.74`.
-- Task remains `in_progress`; current correction is not staged or committed.
+- Task remained `in_progress`; the correction was subsequently committed as checkpoint `21dbd22607627d603018d1401be494160e75b0b9` before the next round.
+
+## Third GUI correction after `21dbd226`
+
+### Pre-implementation audit
+
+- Baseline: clean `feature/animation` worktree at `21dbd22607627d603018d1401be494160e75b0b9`.
+- Hit ownership: the old Drag gap is `3 DIP`, Click depth stops after `18 DIP`, `activationCorridor` begins after the gap, and `ThicknessSliderHit` covers the full Preview. Therefore the gap and space beyond `clickFar` can return `None` and reach ordinary Slider projection.
+- Slider preview: `thicknessSliderDragging` may be set on track press, while recognition visibility is only published inside `UpdateFineActivationDwell`; there is no distinct real-drag preview lifecycle or stable preview-value anchor.
+- Visual layering: labels/selectors are formal-only, but major tick length is currently applied before activation and the tick lattice always reads the live candidate/display value.
+- Endpoints/collision: major is only `tick % 5 == 0`; cached layouts expose `layoutWidth`, so fixed-array projected bounds can resolve endpoint priority without new allocations.
+- Slider exit: expanded morph targets zero in the same frame as Thumb opacity. It must remain at one until Thumb opacity is about `<= 0.04`, then reverse through `SetTar`.
+- Popup fit: measured-fit logic uses `BarThicknessPreviewNumberInset = 4.0`; a small inset/bias adjustment is the scoped mechanism for the `49/50` target.
+- Frame zoom: the rendering loop and `BarUIRendering` helpers reread live `barStyle.zoom` across layout, lighting, masks, controls, Popup, FineDial and dirty bounds. A validated per-iteration snapshot is required through the final present/dirty calculation.
+- Geometry color: `logoInk` is Pen-only; lighting updates color only in Pen and uses a Pen-only/non-penetrate condition. Geometry must read persistent `stateMode.Pen.Brush1.color`, and actual mode identity must trigger the existing fade transition even when Pen and Shape both use pen-colored lighting.
+
+### Ordered implementation plan
+
+- [x] Reshape FineDial ownership geometry to `Slider edge -> 5 DIP consumed blank -> 12 DIP Drag -> Click through panel edge`, preserving Popup/transient consume and mirrored directions.
+- [x] Separate real Slider-drag preview visibility from dwell, latch a stable preview visual anchor on first horizontal movement, and use an independent about `0.30 s` fade-out.
+- [x] Gate preactivation to short ticks/envelope only; interpolate anchor to live visual value on formal activation and add formal long-tick/label/selector entrances.
+- [x] Promote both range endpoints to major ticks and suppress colliding ordinary labels with a fixed `<=64` projected-bounds array, endpoint-first.
+- [x] Gate Slider morph exit on Thumb opacity `<=0.04` while preserving FineDial direct exit and reversible `SetTar` behavior.
+- [x] Adjust the measured Popup fit inset/bias to target the `1.0x` `49 outside / 50 inside` boundary without a thickness literal branch.
+- [x] Add a validated `frameZoom` snapshot at each rendering-loop iteration, route it through all rendering helpers and `RefreshBorderCursorVisibleRegions`, and leave input/live `dpiZoom` semantics unchanged.
+- [x] Show persistent Brush1 color in Geometry `logoInk` and Primary light, independent of penetrate; track actual mode transitions for fade-out/recolor/fade-in.
+
+### Verification plan
+
+- [x] Static trace of press-only, first movement, dwell enter/leave, release-before-activation, formal handoff, rapid reversal, min/max, lifecycle cancellation, and Slider/FineDial exit paths.
+- [x] Search the rendering-loop body and `BarUIRendering` helpers to prove there is exactly one live `barStyle.zoom` read per loop iteration and no helper rereads it.
+- [x] Confirm no per-frame vector/string/COM/TextLayout creation was introduced; label collision storage and visible tick count stay fixed at `64`.
+- [x] Run `git diff --check`, `git diff --numstat`, scope review, UTF-8/no-BOM/CRLF checks, and verify task `08-07` remains unchanged.
+- [x] Run all discoverable non-GUI ARM64 Debug tests, without launching `Inkeys.exe`.
+- [x] Rebuild `InkeysRepo.sln` with ARM64-host `MSBuild.exe`, `Debug | ARM64`, timeout at least five minutes.
+- [x] Record requirement 1-8 evidence and mark visual/feel items `NOT VERIFIED`; keep task `in_progress`, then create one separate final commit.
+
+### Third-correction implementation record
+
+1. Ownership geometry: `CalculateBarThicknessFineDialGeometry(...)` now derives the ownership near edge from the Slider Thumb outward edge, applies `BarThicknessFineDialBlankDepthDip = 5.0`, then a `12.0 DIP` Drag Zone, with the Click Zone and `ownershipCorridor` continuing to the animated panel edge. `HitTestBarThicknessFineDialFreshActivation(...)` returns `Consumed` for the blank band, Popup occlusion, incomplete Thumb animation, and every unclassified corridor point; the outer interaction dispatch checks this classification before ordinary Slider projection.
+2. Slider-drag preview: shared state now has a separate `thicknessFineDialActivationPreviewVisualWidth` anchor. A press publishes no preview; first real horizontal Slider motion begins recognition from zero, latches the current candidate, and targets base opacity with `0.18 s` entry. `IsBarThicknessFineDialRelatedZone(...)` and `SyncFineActivationRecognitionRegion(...)` distinguish leaving the whole Slider/FineDial area from merely leaving the Click dwell zone: whole-area exit/release/cancel targets zero over `0.30 s`, while dwell-only exit retains the base preview; re-entry relatches the current candidate.
+3. Visual layering: preactivation uses the fixed anchor and only short ticks plus envelope. Major length/weight, endpoint treatment, labels, center line, and selector geometry are multiplied by formal selection progress. Activation interpolates the fixed anchor to the live continuous FineDial value with `drawAttributeThicknessFineDialProgress`, preserving the existing min/max-clamped visible interval and `64`-tick cap.
+4. Endpoint majors and labels: `major = tick % 5 == 0 || tick == range.min || tick == range.max`. Label candidates use cached DWrite layout widths and projected pixel bounds in fixed `array<..., 64>` storage. Endpoint bounds are accepted first; colliding ordinary multiple-of-five labels are skipped without moving ticks.
+5. Slider exit: `BarThicknessSliderThumbMorphExitOpacity = 0.04`. While the Thumb is above that opacity, Slider morph and track targets remain at one; only after crossing the threshold do they retarget to Preview through reversible `SetTar`. FineDial -> Preview remains the direct path because its Thumb is already hidden.
+6. Popup threshold: `BarThicknessPreviewNumberInset` changed from `4.0` to `5.0`; the decision remains `circleDiameter >= max(measured text width, measured text height) + inset * 2`, with no thickness literal branch. The requested `49 outside / 50 inside` appearance remains a GUI observation item.
+7. Frame zoom: each `Rendering()` iteration reads and validates `barStyle.zoom` once into `frameZoom`, publishes it to `BarUIRendering::SetFrameZoom(...)`, and uses that snapshot for layout pixel conversion, predicted/current/final dirty bounds, Popup, FineDial, Slider, panels, debug drawing, lighting/masks, and `RefreshBorderCursorVisibleRegions(frameZoom)`. Rendering helpers no longer reread live zoom; input hit testing continues to read current input zoom and `dpiZoom` is unchanged.
+8. Geometry color: Geometry `logoInk` and Primary light use persistent `stateMode.Pen.Brush1.color`; Geometry bypasses `penetrate.select` suppression and keeps the Geometry anchor. A private integer mode identity snapshot makes Pen/Shape/other mode changes restart the existing light fade-out -> recolor/anchor transition -> fade-in even when the two drawing modes use the same color.
+
+### Third-correction review findings
+
+- Fixed during `trellis-check`: the base recognition preview previously remained active after capture moved outside the entire Slider + FineDial related region. The new related-zone synchronization covers both mouse-move messages and the 8 ms no-message polling path, while preserving base preview for dwell-zone-only exits.
+- Fixed during build: `StateModeSelectEnum` was not visible in the module interface where the private lighting identity field was first declared. The field now stores an internal integer identity and implementation assignments use explicit casts; no public API changed.
+- No other static findings remain. GUI-only continuity, feel, dynamic-zoom appearance, and the exact Popup fit boundary remain `NOT VERIFIED`.
+
+### Third-correction verification
+
+- Modified product files: `Inkeys/Inkeys/UI/Bar/Bar.Main.cpp`, `Bar.Main.cppm`, and `Bar.State.cppm` only.
+- Modified task files: `prd.md`, `design.md`, and this `implement.md`; task `08-07` and unrelated source files remain unchanged.
+- Static zoom search: within the `Rendering()` loop there is one live `barStyle.zoom` read at frame start; all later rendering coordinates and `BarUIRendering` helpers use `frameZoom`. Remaining live reads are outside the rendering loop in input/window-position paths.
+- Stable-frame allocation review: tick and collision storage are fixed arrays capped at `64`; the preactivation path does not request label layouts; formal labels reuse the bounded cache; no new per-frame vector/string/COM/effect creation was introduced.
+- Non-GUI tests: no test project or headless executable is present in `InkeysRepo.sln`; `Inkeys.exe` was not launched.
+- First full Rebuild exposed the private module-interface type visibility issue (`4 errors`, `185 warnings`) and was used only as a diagnostic run.
+- Final full Rebuild: PASS with ARM64-host MSBuild, `Debug | ARM64`, `0 errors`, `317 warnings`, elapsed `00:02:37.57`.
+- Git/encoding: final `git diff --check` and scope checks pass; all six modified files are UTF-8 without BOM and CRLF-only after final normalization.
+- GUI: not run by explicit instruction. Visual continuity, physical feel, upper/lower mirrored appearance, live zoom changes, and exact 1.0x `49 -> 50` threshold require manual observation.
+
+### Third-correction acceptance matrix (66-74)
+
+| # | Status | Evidence |
+| ---: | --- | --- |
+| 66 | NOT VERIFIED | Static state flow proves press-only publishes no preview and first real horizontal drag targets entry from zero; visible smoothness requires GUI. |
+| 67 | PASS | Preactivation uses the latched anchor, short uniform ticks and envelope only; major length, endpoints, labels, center line and selectors are formal-progress gated. |
+| 68 | NOT VERIFIED | Dwell/formal handoff preserves current local opacity/anchor, and release/whole-area exit targets zero over `0.30 s`; visible continuity and absence of residue require GUI. |
+| 69 | PASS | Geometry and dispatch statically enforce `Slider edge -> 5 DIP consumed blank -> 12 DIP Drag -> Click/owned through panel edge`, including Popup/transient consume. |
+| 70 | PASS | Endpoints are unique majors; fixed cached-layout bounds accept endpoints before ordinary labels and suppress collisions without moving ticks. |
+| 71 | NOT VERIFIED | Morph remains targeted at one until Thumb opacity is `<= 0.04` and all targets are reversible `SetTar`; visible two-phase timing and rapid reversal require GUI. |
+| 72 | NOT VERIFIED | Measured-fit inset changed from `4.0` to `5.0` without a literal thickness branch; the exact 1.0x `49 outside / 50 inside` boundary requires GUI measurement. |
+| 73 | PASS | Static search proves one validated live zoom read per rendering iteration and snapshot use through helpers and final dirty calculation; full ARM64 build passes. |
+| 74 | NOT VERIFIED | Static flow proves persistent Brush1 color, Geometry anchor, penetrate independence and mode-identity light fade; visible no-black/no-flicker behavior requires GUI. |
+
+Third-correction supplement: `4 PASS`, `0 FAIL`, `5 NOT VERIFIED`. The task remains `in_progress` and must not be archived.

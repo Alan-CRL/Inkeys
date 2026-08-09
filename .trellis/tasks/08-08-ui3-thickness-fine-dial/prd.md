@@ -59,6 +59,17 @@
 - Active 时只计算可见角度范围并设置固定 tick 上限；稳定帧不得进行 heap 扩容、字符串生成、MeasureText/CreateTextLayout 或 D2D/COM resource 创建。
 - brush/format 复用现有 cache；selector geometry 与 major labels lazy-cache；device reset 必须清理 FineDial 相关 cache。
 
+### 第三轮 GUI correction（本轮覆盖冲突旧约定）
+
+1. FineDial / Slider 命中所有权：Slider 控制区外侧先保留约 `5 DIP` 的纯空白带，空白带只 consume；其后 FineDial Drag/Click 区一直拥有到绘图属性窗口外侧边缘。Popup 排除、Thumb 动画未完成或其他暂不可激活状态也必须 consume，任何位置都不得穿透到普通 Slider 投影，上下展开方向对称。
+2. Slider drag session preview：仅按下 Slider 不显示 Dial；确认发生真实水平拖动后，基础预览才从 `0` 平滑进入约 `0.5`，不需要先进入 dwell region。进入 dwell 时从当前预览继续；未正式激活而离区、抬手或取消时从当前值以约 `0.30 s` 平滑退到 `0`，进入时长不随之变慢。
+3. 预激活与正式视觉分层：预激活只显示固定不滚动的普通短 tick 与 envelope，不显示长 tick、端点主 tick、数字、中心线或 selector。预激活保存稳定 visual anchor；正式激活后才平滑接管 live FineDial visual value，并动画引入正式层，快速进入/退出/反向和 min/max 边缘均不得跳位。
+4. 正式主刻度：`tick % 5 == 0`、`tick == range.min`、`tick == range.max` 均为 major，端点只绘制一次且带数字。使用缓存 layout 的实际宽度与投影 X 做 bounds collision；冲突时优先保留端点 label，不移动 tick，固定数组上限仍为 `64`。
+5. Slider 退出分两阶段：先保持完整直线轨道并让 Thumb 淡出；Thumb opacity 到约 `0.04` 以下后，Preview morph 才从 Slider 形态退回 Preview。全部使用可反向的 `SetTar`，重新进入时从当前视觉状态继续。
+6. Preview Popup 数字仍使用实测文字尺寸判断进入圆内，仅微调 fit inset/bias，使 `1.0x` 下临界大致为 `49` 在圆外、`50` 开始在圆内；禁止硬编码 thickness 值分支。
+7. UI zoom 使用逐帧快照：渲染循环每次迭代开始仅合法化并读取一次 `barStyle.zoom`，该帧的 UI 计算、predicted/dirty bounds、Popup/FineDial/Slider/各面板绘制及 `BarUIRendering` helper 全部使用同一 `frameZoom`。不得回写或锁住配置 zoom；`dpiZoom` 语义不变。
+8. Geometry / Shape 模式的主按钮 `logoInk` 与 Primary light 使用 `stateMode.Pen.Brush1.color` 所代表的持久画笔色；Geometry 不受 `penetrate.select` 抑制，主光位置仍锚定 Geometry。Pen 与 Shape 之间即使都使用画笔色，也必须按实际 mode change 保留 fade-out -> recolor -> fade-in 过渡。
+
 ## Hard Constraints
 
 - Brush FineDial 保持现有 3× precision 作为 canonical unit；不改变普通 Slider mapping、各笔型整数 thickness 范围、preset 值或 `SetPenWidth` 业务语义。
@@ -66,7 +77,7 @@
 - 不破坏既有 Slider、Preview、Hold animation/lock、Popup、Preview X/safe bound、overflow、preset 或 pen-type behavior。
 - 不修改传统悬浮栏、绘制引擎、配置、i18n、资源文件或公共 API。
 - 禁止启动 GUI；允许静态分析、无窗口测试、完整 build 和 git 检查。
-- 最终任务保持 `in_progress`，不 commit、不 archive。
+- 最终任务保持 `in_progress`，不 archive、不启动 GUI。本轮按用户授权在 checkpoint `21dbd22607627d603018d1401be494160e75b0b9` 之后创建一个独立最终 commit，不 amend。
 
 ## Acceptance Criteria
 
@@ -135,6 +146,18 @@
 - [ ] 63. 现有 Preview safe bound 在普通 Slider 模式仍正常。
 - [ ] 64. `git diff --check` 通过。
 - [ ] 65. ARM64 host 完整 build 通过。
+
+### 第三轮 correction 验收补充
+
+- [ ] 66. Slider 仅按下不显示预激活 Dial；真实水平拖动后才从 `0` 平滑出现。
+- [ ] 67. 预激活只含固定普通短 tick/envelope，Slider candidate 改变时不滚动，无 major/endpoint/label/center selector。
+- [ ] 68. dwell 与正式激活从当前 opacity/anchor 连续接管；未激活释放以约 `0.30 s` 平滑退场且无残留。
+- [ ] 69. Slider control -> `5 DIP` blank -> FineDial-owned region -> panel edge 的所有点均按约定消费，panel edge 前不存在 Slider 穿透。
+- [ ] 70. range 两端始终是唯一 major tick 并显示 label；端点 label 优先、实际 bounds 无交叠。
+- [ ] 71. Slider 退出时 Thumb opacity 到阈值后 Preview morph 才开始，快速反向无跳变。
+- [ ] 72. `1.0x` 下 Popup 数字进入圆内的动态测量临界约为 `49 -> 50`。
+- [ ] 73. 单帧渲染链只使用一个合法 `frameZoom`，helper、predicted bounds 与 final dirty rect 不重新读取 live zoom。
+- [ ] 74. Pen -> Geometry 后 `logoInk` 与 Primary light 保持 Brush1 颜色，位置锚定 Geometry，且模式换色过渡不黑、不闪。
 
 ## Out of Scope
 

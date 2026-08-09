@@ -259,6 +259,10 @@ public:
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	bool PrepareFrameLighting(double animationDtSeconds);
+	void SetFrameZoom(double zoom)
+	{
+		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
+	}
 	void DiscardDeviceResources();
 	void PushFrameDirtyClip(
 		ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect);
@@ -407,6 +411,7 @@ protected:
 	bool frameDiffuseMaskUnavailable = false;
 	bool frameDiffuseMaskCreatedThisFrame = false;
 	double frameDiffuseMaskGeometryScale = 1.0;
+	double frameZoom = 1.0;
 	bool frameDirtyClipActive = false;
 	D2D1_RECT_F frameDirtyClipRect{};
 	double framePrimaryLightMoveElapsed = 0.0;
@@ -427,6 +432,7 @@ protected:
 	bool frameDrawingPenColorAnimating = false;
 	bool frameDrawingModeInitialized = false;
 	bool frameDrawingModeTransitionAnimating = false;
+	int frameDrawingMode = -1;
 	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
 	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
@@ -517,7 +523,7 @@ protected:
 	void ClosePenTypeMenu();
 	void CloseThicknessSlider(bool cancelCapture);
 	void CloseColorPicker(bool cancelCapture);
-	void RefreshBorderCursorVisibleRegions();
+	void RefreshBorderCursorVisibleRegions(double frameZoom);
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 

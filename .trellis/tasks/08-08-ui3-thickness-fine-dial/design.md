@@ -4,7 +4,7 @@
 
 - Product code remains in `Bar.Main.cpp`, `Bar.Main.cppm`, and `Bar.State.cppm`; no project-file, resource, public API, or shared animation-framework changes.
 - `ThicknessViewMode` is the only cross-thread view target. `thicknessSliderPinned` remains only as Slider persistence/leave policy. Rendering owns visual transition progress; interaction owns gesture/physics phases.
-- Shared atomics are limited to ViewMode, FineDial continuous visual value, candidate-active/dragging/physics flags, recognition visibility/dwell completion snapshots, and one normal-Preview Popup-exit latch request. The interaction thread owns anchors, range snapshot, raw position, velocity, fixed sample ring, residual velocity, phase, and timestamps; the renderer owns the actual Popup center latch and all visual transition values.
+- Shared atomics are limited to ViewMode, FineDial continuous visual value, candidate-active/dragging/physics flags, Slider-drag preview visibility/anchor, dwell completion snapshots, and one normal-Preview Popup-exit latch request. The interaction thread owns gesture qualification, anchors, range snapshot, raw position, velocity, fixed sample ring, residual velocity, phase, and timestamps; the renderer owns the actual Popup center latch and all visual transition values.
 
 ## State machine
 
@@ -18,15 +18,15 @@ Any --close/fold/unavailable/cancel/offSignal--> Preview + cleared interaction
 
 - Hover may target Slider only while not pinned; leave returns to Preview. Pinned decides that policy but never replaces ViewMode as the visual source.
 - Renderer keeps an expanded/morph progress at 1 for Slider or FineDial. Slider track/Thumb opacity targets 1 only for Slider; FineDial progress targets 1 only for FineDial. FineDial→Preview drives morph and dial exit together, so no Slider frame appears.
-- Slider-drag recognition does not change ViewMode. Its base visibility and dwell completion are separate: the base Dial/ticks target about `0.5`, dwell maps `0..1` to the remaining `0.5`, cancellation retargets to the dark state, and formal activation hands off full opacity while geometry moves to the final Dial center. Labels, center line, and selectors have a separate short formal-selection animation.
+- Slider-drag preview does not change ViewMode and is separate from dwell recognition. A press alone publishes nothing; the first real horizontal Slider movement latches a stable preview visual value and targets base Dial/tick opacity from `0` to about `0.5`. Entering Click/dwell region only starts the remaining `0.5` progress. Leaving only the Click/dwell region cancels dwell but retains the base preview while the drag remains inside `SliderHit ∪ ownershipCorridor`; leaving that whole related region, or release/cancel before activation, targets both layers to `0` with an independent about `0.30 s` fade. Re-entry during the same real drag relatches the current candidate as the fixed anchor. Formal activation hands off current opacity and interpolates the fixed anchor to the live FineDial visual value while geometry moves to the final center. Labels, long ticks, center line, and selectors use a separate formal-selection animation.
 - Hit-testing checks target ViewMode, not animated opacity. FineDial remains drawable during exit but is immediately non-interactive.
 
 ## Geometry and activation
 
 - `CalculateBarThicknessPreviewGeometry` remains the common source of `panelScale`, preview bounds, track bounds, and continuous `previewSide`. `outwardDirection = sign(previewSide)`; near-zero side disables activation.
-- `CalculateBarThicknessFineDialGeometry` derives center axis, dial bounds, Drag Zone, Click Zone, and the union activation corridor. Named values: drag gap 3 DIP, drag depth 12 DIP, click depth 18 DIP, Popup panel gap 8 DIP; `clickNear == dragFar`, with no guard gap.
-- Hit rectangles are logical UI coordinates scaled by `panelScale`; the existing `barStyle.zoom` conversion is used for client-message coordinates. The corridor is classified before Slider interaction. Popup occlusion, a not-yet-complete Thumb animation, or a boundary classification fallback returns `Consumed`, never ordinary Slider projection.
-- Dwell is eligible only for an ordinary Slider drag inside Click Zone. Continuous region residency for `1000 ms` activates regardless of X/Y motion and without another outward-distance gate. Leaving resets only dwell completion and returns to the latched recognition dark state; release/cancel/lifecycle end the recognition session. While in-region, Hold state is reset and suppressed.
+- `CalculateBarThicknessFineDialGeometry` derives center axis, dial bounds, Slider-side ownership corridor, `5 DIP` blank band, Drag Zone, and Click Zone. The ownership corridor begins at the Slider Thumb outward edge and extends to the panel edge; Drag starts after the scaled blank band, keeps its `12 DIP` depth, and Click owns all remaining outward space. `clickNear == dragFar`; a collapsed sub-zone remains owned and consumed.
+- Hit rectangles are logical UI coordinates scaled by `panelScale`; client-message conversion uses current input zoom. Ownership is geometric rather than an ordering accident: points in the blank band, Popup occlusion, a not-yet-complete Thumb animation, or any unclassified point in the ownership corridor return `Consumed`, never ordinary Slider projection. Existing full Preview SliderHit may continue to support hover, but it cannot claim an owned Pointer Down.
+- Dwell is eligible only for an ordinary Slider drag inside Click Zone. Continuous region residency for `1000 ms` activates regardless of X/Y motion and without another outward-distance gate. Leaving Click Zone resets only dwell completion and returns to the latched recognition dark state; leaving `SliderHit ∪ ownershipCorridor`, release/cancel, or lifecycle end terminates the recognition session. While in-region, Hold state is reset and suppressed.
 - On every activation, `anchorPointerX` is the current screen X and `anchorContinuousValue` is the current candidate/visual value. Hold becomes eligible only after a subsequent FineDial candidate change.
 
 ## Value and commit flow
@@ -61,8 +61,11 @@ pointer/physics raw position
 - With `thetaLimit=1.20`, `radius=(availableHalfWidth-edgeInset)/sin(thetaLimit)` and `angularStep=unitTravelLogical/radius`. Thus `dx/dValue` at `theta=0` equals the 3× unit travel exactly.
 - For each visible integer: `theta=(tick-visual)*angularStep`, `x=centerX+radius*sin(theta)`, `depth=max(0,cos(theta))`, and `y=centerY-outwardDirection*(1-depth)*4 DIP*panelScale`. Depth controls length/scale/alpha; a smoothstep fade starts at 68% of the horizontal half-width.
 - Compute `firstTick/lastTick` directly from `visual ± thetaLimit/angularStep`, clamp to range, and cap at 64. A fixed white center line/selector represents the continuous axis; integer ticks stay gray so rounding does not teleport the dial.
-- Recognition preview computes only envelope and tick lines at the activation-region center. Major labels, fixed center line, and cached unit selectors are gated by the formal-selection progress, so no label-layout lookup or selector-geometry query occurs before activation. The base geometry then interpolates to the existing final FineDial center; label text/layout remains cached by value and zoom.
+- Recognition preview computes only envelope and uniform short tick lines at the activation-region center using the latched Slider-drag preview value. It never follows the live Slider candidate. Major status is not applied until formal-selection progress begins; formal visual value interpolates from the latched preview anchor to the live FineDial visual value, so the tick lattice does not jump at handoff.
+- Formal major status is `multiple-of-five || range.min || range.max`. Projected label candidates are recorded in a fixed stack array with their cached `layoutWidth` bounds. Endpoint labels are accepted first, then ordinary major labels only when their bounds retain a small gap from already accepted labels; ticks remain at their projected positions and the loop stays capped at `64`.
 - Slider track/Thumb and Dial crossfade only after formal activation. Popup anchor interpolates from the existing safe-bound Thumb result to the selector X and an external Y computed from the animated panel edge; only the Slider endpoint applies `penTypeSafeRight`.
+- Slider -> Preview is explicitly staged: while Thumb opacity is above approximately `0.04`, expanded morph remains targeted at `1`; after the Thumb crosses the threshold, morph retargets to `0`. FineDial -> Preview is unaffected because its Thumb is already hidden. Every transition uses `SetTar`, so a re-entry reverses from the current value.
+- Popup number fit keeps measured DWrite width/height and circle diameter as the source of truth; only the inset/bias is adjusted so the `1.0x` observed boundary moves from about `47/48` to about `49/50`.
 - A normal triangle-confirmed FineDial→Preview transition publishes a one-shot latch request. While the panel remains expanded and the main bar is not folded, rendering captures the actual rendered Popup center and scales surface/circle/text around that center until hidden. A rapid show reverses through a local retarget progress from the latched geometry. Panel collapse, fold, availability loss, capture loss, and other lifecycle cleanup clear or bypass the request; if collapse starts during a latch, rendering releases it and restores the original chase geometry.
 - Overflow target/hit state closes immediately on FineDial entry. Business overflow remains untouched and can recreate its UI only after FineDial exit progress reaches zero.
 
@@ -71,6 +74,18 @@ pointer/physics raw position
 - Reuse the existing solid-brush and format caches. Lazily create one unit selector PathGeometry and cached DWrite label layouts; reset them from `DiscardDeviceResources`.
 - Inactive fast path is a single composite opacity/physics check before any tick, projection, text, or FineDial geometry work. Recognition/dwell/formal-selection animations request frames only while their local `BarUiValueClass` is moving; completed cancellation returns to zero and stops rendering. Physics settle disables polling and stops render requests.
 - Active hot path uses fixed arrays/stack values only. No per-frame vector growth, `to_wstring`, text measurement/layout creation, brush/effect/geometry creation, or full-range iteration.
+
+## Frame zoom snapshot
+
+- At the top of every rendering-loop iteration, read `barStyle.zoom` once, validate it to a positive finite fallback, store it in local `frameZoom`, and publish the same value to `BarUIRendering`.
+- Every operation in that iteration, including UI layout-derived pixel coordinates, Popup transforms, predicted bounds, `BeginDraw` content, debug bounds, final dirty rect, and `RefreshBorderCursorVisibleRegions`, uses local `frameZoom`.
+- `PrepareFrameLighting`, diffuse-mask lookup, `DrawPointLightFrame`, `Shape`, `Superellipse`, `Svg`, `Png`, and `Word` read only the renderer snapshot. Interaction hit-testing remains outside this contract and may read the latest live zoom. `dpiZoom` is unchanged.
+
+## Geometry pen-color ownership
+
+- `stateMode.Pen.Brush1.color` is the persistent Geometry color source. `logoInk` uses current `GetPenColor()` in Pen mode and Brush1 color in Shape mode; it is hidden in other modes.
+- Lighting uses current Pen color for Pen and Brush1 color for Shape. `frameDrawingUsesPenColor` is true for Shape regardless of `penetrate.select`, while Pen keeps the existing non-penetrate condition.
+- Store the actual last `StateModeSelectEnum` alongside the existing light transition state. Any mode change, including Pen <-> Shape where both sides use pen color, restarts the established opacity transition so light fades out, changes anchor/color while hidden, then fades in.
 
 ## Compatibility and rollback
 

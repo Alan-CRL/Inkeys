@@ -54,6 +54,7 @@ public:
 		IdtAtomic<bool> thicknessFineDialActivationPreviewActive = false;
 		IdtAtomic<bool> thicknessFineDialActivationDwellActive = false;
 		IdtAtomic<float> thicknessFineDialActivationPreviewProgress = 0.0f;
+		IdtAtomic<float> thicknessFineDialActivationPreviewVisualWidth = 0.0f;
 		// 仅正常 FineDial -> Preview 退出请求渲染侧锁存 Popup 当前位置。
 		IdtAtomic<bool> thicknessFineDialPopupExitLatchRequested = false;
 		// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
