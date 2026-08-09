@@ -24,6 +24,7 @@
 - Slider 可见且可交互时提供连续相接的 Drag Activation Zone 与更外侧 Click Activation Zone；两者组成 FineDial 专用 activation corridor，Popup 排除或动画瞬态也只能 consume，禁止落入普通 Slider 绝对投影。
 - Drag Zone 按下仅 armed，水平移动超过现有 5 DIP slop 后以当帧位置/值进入 FineDial；Click Zone 按下当帧立即进入持久 FineDial 并可继续拖动。
 - 普通 Slider 捕获按下后即可进入识别会话；进入外侧 Click Zone 时锁存当前 X/Y，任一轴累计波动不超过 `5 DIP` 并持续 `1000 ms` 才进入 FineDial。任一轴超过 `5 DIP` 时在当前位置重新锁存并重启计时；离区只取消 dwell，不结束按压会话的基础预览。
+- dwell 期间普通 Slider 继续按现有绝对映射跟随 pointer X 并更新 candidate/Popup；只有正式切换到 FineDial、Slider Thumb/数字开始退场时才停止 Slider 跟随。激活当帧必须先消费当前 pointer X，再以该 candidate 重新锚定 FineDial。
 - Fine activation dwell 优先于 Hold dwell，并重置/隐藏 Hold UI；真正进入 FineDial 后，新的有效 drag 仍完整支持 Hold。
 - Slider-drag recognition 先在 activation region 中心显示约 `0.5` 的基础 Dial/ticks，dwell 在 1 秒内从 `0.5` 推进到 `1.0`；离区平滑退回暗态，整个 gesture 结束后才平滑退到 0。正式 ViewMode 激活后再动画显示 labels、中心线和 selectors，并把几何从 recognition center 移到最终位置。
 - 所有激活方式在切换帧以当前 pointer X 和当前 candidate/visual value 重新锚定，粗细不得跳变。
@@ -68,7 +69,7 @@
 5. Slider 退出分两阶段：先保持完整直线轨道并让 Thumb 淡出；Thumb opacity 到约 `0.04` 以下后，Preview morph 才从 Slider 形态退回 Preview。全部使用可反向的 `SetTar`，重新进入时从当前视觉状态继续。
 6. Preview Popup 数字仍使用实测文字尺寸判断进入圆内，仅微调 fit inset/bias，使 `1.0x` 下临界大致为 `49` 在圆外、`50` 开始在圆内；禁止硬编码 thickness 值分支。
 7. UI zoom 使用逐帧快照：渲染循环每次迭代开始仅合法化并读取一次 `barStyle.zoom`，该帧的 UI 计算、predicted/dirty bounds、Popup/FineDial/Slider/各面板绘制及 `BarUIRendering` helper 全部使用同一 `frameZoom`。不得回写或锁住配置 zoom；`dpiZoom` 语义不变。
-8. Geometry / Shape 模式的主按钮 `logoInk` 与 Primary light 使用 `stateMode.Pen.Brush1.color` 所代表的持久画笔色；Geometry 不受 `penetrate.select` 抑制，主光位置仍锚定 Geometry。Pen 与 Shape 之间即使都使用画笔色，也必须按实际 mode change 保留 fade-out -> recolor -> fade-in 过渡。
+8. Geometry / Shape 模式的主按钮 `logoInk` 与 Primary light 使用 `stateMode.Pen.Brush1.color` 所代表的持久画笔色；Geometry 不受 `penetrate.select` 抑制，主光位置仍锚定 Geometry。Pen 与 Shape 的目标光色相同时不得淡出或经过白色中间态，只让第一光源从 Draw 锚点平滑移动到 Geometry 锚点；颜色角色真正变化时仍保留 fade-out -> recolor -> fade-in。
 
 ## Hard Constraints
 
@@ -157,7 +158,8 @@
 - [ ] 71. Slider 退出时 Thumb opacity 到阈值后 Preview morph 才开始，快速反向无跳变。
 - [ ] 72. `1.0x` 下 Popup 数字进入圆内的动态测量临界约为 `49 -> 50`。
 - [ ] 73. 单帧渲染链只使用一个合法 `frameZoom`，helper、predicted bounds 与 final dirty rect 不重新读取 live zoom。
-- [ ] 74. Pen -> Geometry 后 `logoInk` 与 Primary light 保持 Brush1 颜色，位置锚定 Geometry，且模式换色过渡不黑、不闪。
+- [ ] 74. Pen -> Geometry 且目标色相同时，`logoInk` 与 Primary light 全程保持 Brush1 颜色、不淡出/不经过白色，第一光源位置从 Draw 平滑移动到 Geometry；颜色角色变化的其他模式仍保留换色动画。
+- [ ] 75. Slider dwell 期间 Thumb/candidate/Popup 持续跟随 pointer X；正式 FineDial handoff 当帧消费当前 X，不使用上一帧候选。
 
 ## Out of Scope
 

@@ -431,3 +431,12 @@ Third-correction supplement: `4 PASS`, `0 FAIL`, `5 NOT VERIFIED`. The task rema
 - Git/encoding: PASS. `git diff --check` succeeds; scope is `Bar.Main.cpp` plus the three current task documents; task `08-07` is unchanged; all four modified files are UTF-8 without BOM and CRLF-only.
 - Build: PASS. ARM64-host full `InkeysRepo.sln` Rebuild, `Debug | ARM64`, completed with `0 errors`, `317 warnings`, elapsed `00:01:49.61`.
 - Tests/GUI: no headless test target covers this UI3 interaction and `Inkeys.exe` was not launched. Base-opacity continuity, real pointer stillness, and activation feel remain `NOT VERIFIED`.
+
+## Sixth GUI correction after `be6b643`
+
+- Checkpoint: `be6b6435` (`fix(ui3): stabilize fine dial press recognition`). The worktree was clean before this correction.
+- Slider finding: both ordinary and relative Slider branches returned immediately while `fineActivationDwellTracking` was true, so entering the recognition zone froze Thumb/candidate/Popup before formal FineDial activation. The completion frame could also hand off the previous move's candidate.
+- Slider fix: dwell now suppresses only Hold. Existing Slider projection continues during recognition; only a completed activation short-circuits the Slider branch. The completion frame projects the current pointer X before calling `ActivateFineDialDrag(...)`, preserving the existing mapping and exact zero-jump handoff.
+- Lighting finding: mode identity alone restarted `frameDrawingModeTransitionAnimating`, so Pen -> Geometry with the same Brush1 target color faded the colored primary light out, exposed the neutral frame, then faded red back in while the anchor also moved.
+- Lighting fix: mode identity is updated without forcing an opacity transition. Only a changed `desiredPenColorBlend` starts fade-out/recolor/fade-in; the existing independent primary-anchor animation handles Draw <-> Geometry and all other anchor changes. Direct pen-color interpolation remains unchanged.
+- Scope: `Bar.Main.cpp` plus this task's `prd.md`, `design.md`, and `implement.md`. Static path review, Git/encoding checks, and the ARM64-host full `Debug | ARM64` Rebuild all pass; the rebuild completed with `0 errors`, `317 warnings`, elapsed `00:01:43.35`. No headless UI test target covers these paths. GUI was not launched, so Slider-follow continuity and absence of the light flash remain `NOT VERIFIED`.

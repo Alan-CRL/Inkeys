@@ -27,6 +27,7 @@ Any --close/fold/unavailable/cancel/offSignal--> Preview + cleared interaction
 - `CalculateBarThicknessFineDialGeometry` derives center axis, dial bounds, Slider-side ownership corridor, `5 DIP` blank band, Drag Zone, and Click Zone. The ownership corridor begins at the Slider Thumb outward edge and extends to the panel edge; Drag starts after the scaled blank band, keeps its `12 DIP` depth, and Click owns all remaining outward space. `clickNear == dragFar`; a collapsed sub-zone remains owned and consumed.
 - Hit rectangles are logical UI coordinates scaled by `panelScale`; client-message conversion uses current input zoom. Ownership is geometric rather than an ordering accident: points in the blank band, Popup occlusion, a not-yet-complete Thumb animation, or any unclassified point in the ownership corridor return `Consumed`, never ordinary Slider projection. Existing full Preview SliderHit may continue to support hover, but it cannot claim an owned Pointer Down.
 - Dwell is eligible for an ordinary captured Slider press inside Click Zone. Entry latches client X/Y; both axes must remain within the existing `5 DIP` slop for `1000 ms`. If either axis exceeds that slop, the current point becomes the new anchor and the timer restarts. Leaving Click Zone resets only dwell completion and returns to the latched recognition dark state; it does not end the press-owned base preview. Release/cancel/capture loss or lifecycle end terminates the recognition session. While in-region, Hold state is reset and suppressed.
+- Dwell tracking suppresses only Hold. Ordinary Slider projection, integer candidate publication, Thumb position, and Popup continue following pointer X throughout the recognition interval. On the completion frame, the current pointer X is projected before `ActivateFineDialDrag(...)`, then FineDial re-anchors from that exact candidate/X pair.
 - On every activation, `anchorPointerX` is the current screen X and `anchorContinuousValue` is the current candidate/visual value. Hold becomes eligible only after a subsequent FineDial candidate change.
 
 ## Value and commit flow
@@ -85,7 +86,7 @@ pointer/physics raw position
 
 - `stateMode.Pen.Brush1.color` is the persistent Geometry color source. `logoInk` uses current `GetPenColor()` in Pen mode and Brush1 color in Shape mode; it is hidden in other modes.
 - Lighting uses current Pen color for Pen and Brush1 color for Shape. `frameDrawingUsesPenColor` is true for Shape regardless of `penetrate.select`, while Pen keeps the existing non-penetrate condition.
-- Store the actual last `StateModeSelectEnum` alongside the existing light transition state. Any mode change, including Pen <-> Shape where both sides use pen color, restarts the established opacity transition so light fades out, changes anchor/color while hidden, then fades in.
+- Track mode identity for current state, but start the opacity/color-role transition only when `desiredPenColorBlend` changes. Pen <-> Shape with the same target color keeps full light opacity and lets the independent primary-anchor interpolation move Draw <-> Geometry. Pen/Shape <-> non-pen-colored modes still use the established fade-out, recolor, fade-in transition; direct pen-color changes keep their existing smooth color interpolation.
 
 ## Compatibility and rollback
 

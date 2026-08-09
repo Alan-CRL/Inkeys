@@ -1520,17 +1520,21 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds)
 		frameDrawingLightOpacity = 1.0;
 		frameDrawingLightOpacityStart = 1.0;
 	}
-	else if (frameDrawingMode != static_cast<int>(stateMode.StateModeSelect)
-		|| frameDrawingPenColorBlendTarget != desiredPenColorBlend)
+	else
 	{
-		// 实际 mode 改变也重启过渡，Pen/Geometry 同色时仍先退场再换锚点。
-		frameDrawingMode = static_cast<int>(stateMode.StateModeSelect);
-		frameDrawingPenColorBlendStart = frameDrawingPenColorBlend;
-		frameDrawingPenColorBlendTarget = desiredPenColorBlend;
-		frameDrawingLightOpacityStart = frameDrawingLightOpacity;
-		frameDrawingModeTransitionElapsed = 0.0;
-		frameDrawingModeTransitionAnimating = animationEnabled;
-		drawingModeTransitionStarted = true;
+		int desiredDrawingMode = static_cast<int>(stateMode.StateModeSelect);
+		if (frameDrawingMode != desiredDrawingMode)
+			frameDrawingMode = desiredDrawingMode;
+		if (frameDrawingPenColorBlendTarget != desiredPenColorBlend)
+		{
+			// 只有颜色角色改变才淡出换色；同色模式切换仅移动第一光源锚点。
+			frameDrawingPenColorBlendStart = frameDrawingPenColorBlend;
+			frameDrawingPenColorBlendTarget = desiredPenColorBlend;
+			frameDrawingLightOpacityStart = frameDrawingLightOpacity;
+			frameDrawingModeTransitionElapsed = 0.0;
+			frameDrawingModeTransitionAnimating = animationEnabled;
+			drawingModeTransitionStarted = true;
+		}
 	}
 
 	if (!animationEnabled)
@@ -14764,11 +14768,18 @@ auto ColorPickerAvailable = [&]()
 												/ static_cast<double>(
 													BarThicknessFineDialActivationDwellMs),
 												0.0, 1.0)));
-											if (dwellMs < BarThicknessFineDialActivationDwellMs)
-												return false;
-											ActivateFineDialDrag(screenX,
-												static_cast<double>(finalWidth), true);
-											return true;
+										if (dwellMs < BarThicknessFineDialActivationDwellMs)
+											return false;
+										// 切换当帧先吃掉当前 X，避免 handoff 使用上一条 move 的候选。
+										ApplyCandidateWidth(
+											precisionRelativeGesture
+												? ProjectRelativePreviewWidth(screenX)
+												: ProjectWidthFromScreenX(
+													screenX - grabOffsetScreenX),
+											valueAdjustAllowed);
+										ActivateFineDialDrag(screenX,
+											static_cast<double>(finalWidth), true);
+										return true;
 										};
 
 									if (!fineDialGesture)
@@ -14981,7 +14992,7 @@ auto ColorPickerAvailable = [&]()
 											}
 											bool fineActivated = UpdateFineActivationDwell(
 												screenX, msg.x, msg.y);
-											if (fineActivated || fineActivationDwellTracking)
+											if (fineActivated)
 												continue;
 											if (gestureDragged
 												&& !barState.drawAttributeBar
@@ -14995,7 +15006,8 @@ auto ColorPickerAvailable = [&]()
 												ResetHoldLockState();
 												UpdateRendering(false);
 											}
-											else UpdateHoldLockState(screenX, screenY);
+											else if (!fineActivationDwellTracking)
+												UpdateHoldLockState(screenX, screenY);
 											continue;
 										}
 										if (!gestureDragged
@@ -15015,7 +15027,7 @@ auto ColorPickerAvailable = [&]()
 										}
 										bool fineActivated = UpdateFineActivationDwell(
 											screenX, msg.x, msg.y);
-										if (fineActivated || fineActivationDwellTracking)
+										if (fineActivated)
 											continue;
 
 											if (gestureDragged
@@ -15052,7 +15064,7 @@ auto ColorPickerAvailable = [&]()
 												}
 												UpdateRendering(false);
 											}
-											else
+											else if (!fineActivationDwellTracking)
 											{
 												UpdateHoldLockState(
 													screenX, screenY);
