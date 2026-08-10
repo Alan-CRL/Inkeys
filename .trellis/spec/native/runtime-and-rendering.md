@@ -17,7 +17,7 @@
 
 ## Input And Thread Boundary
 
-`WindowController::HandleWindowMessage` 将 resize、清屏、全量呈现、DWM 变化和退出写入原子状态。主循环通过 `Consume*` 方法消费请求。
+`WindowController::HandleWindowMessage` 将 resize、新建页、全量呈现、DWM 变化和退出写入原子状态。主循环通过 `Consume*` 方法消费请求。
 
 - 窗口回调不重建 D3D 资源。
 - `pendingResizeWidth_/Height_` 先写入，`resizeRequested_` 最后 release 发布。
@@ -25,7 +25,7 @@
 - RTS 同步回调只完成 packet 解析、contact 状态发布和唤醒，不调用 D3D、presenter 或 stroke modeler。
 - 控制请求先写 sticky 原子标记，再通过 coordinator 队列唤醒；消费方在阻塞前二次 dequeue，避免清 pending 与入队交错造成丢唤醒。
 - 无活动 contact 时使用 blocking dequeue；活动 contact 仍按帧更新停笔预测。
-- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。RTS/`WM_POINTER` 的 Pen Contact cursor 同样只覆盖最新 mailbox，不逐包发布 render/control wake；Hover 与 Clear/终态继续按原路径唤醒。
+- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。RTS/`WM_POINTER` 的 Pen Contact cursor 同样只覆盖最新 mailbox，不逐包发布 render/control wake；Hover 与新建页/终态继续按原路径唤醒。
 - contact slot 的 `writerLatch_` 只在对象初始化时为 clear，跨 generation 复用不得重置；只有实际取得 latch 的调用可以释放，避免旧 generation Move 与新 writer 形成 ownership ABA。
 - 绘制线程使用 `THREAD_PRIORITY_ABOVE_NORMAL`，活动末段按 QPC deadline 核对 wake generation；完全空闲仍阻塞在队列 semaphore，不自旋。
 
@@ -180,7 +180,7 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 | Pen Contact + Pen/Highlighter，开关开启 | 隐藏系统 cursor，绘制与对应 Hover 完全相同的 Circle/Rectangle |
 | RTS/Pointer Pen Contact sample | 继续覆盖 cursor mailbox，但不逐样本调用 `RequestDrawingCursorRender`；活动帧读取最新坐标 |
 | Pen Up | 清除应用 cursor；只有后续真实 InAir/Pointer Update 才恢复 Hover |
-| Pen Hover、Clear、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
+| Pen Hover、新建页、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
 | Pen/Mouse Hover + Eraser | 隐藏系统 cursor，绘制 Alpha 0.5 EraserGripCircle |
 | Pen/Mouse Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
 | N 个 Touch Eraser Contact | 同时绘制 N 枚 Alpha 1.0 EraserGripCircle |
@@ -227,7 +227,7 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 
 Wrong：`每个 RTS/WM_POINTER Contact cursor 样本都 SetEvent`，或为避免唤醒而停止发布 `WM_POINTER` Contact 坐标。
 
-Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读取坐标，Hover、Clear、终态和 authority 变化仍沿用各自离散唤醒。
+Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读取坐标，Hover、新建页、终态和 authority 变化仍沿用各自离散唤醒。
 
 Wrong：`绘制时显示光标 -> 为 Pen Contact 保留 IDC_ARROW`，导致产品行为依赖系统 cursor 路径且外观与 Hover 不一致。
 
@@ -282,7 +282,7 @@ Correct：`drawingCursorDuringContactEnabled -> ResolvePrimaryDrawingCursorVisua
 - prediction 为空、位置/时域无效或工具禁用 prediction 时，回退真实尾方向与模型真实点末端时间窗速度：96 DPI 下方向回看 12px、有效方向至少 4px、绝对距离不超过 32px，沿用 35°、自适应距离和速度比规则；模型时间窗不可用时才使用滤波 RTS 末速，并按当前间隔与绝对上限裁掉无意义尖峰。
 - 多候选按归一化预测落点误差、实际选择走廊夹角、距离、较新 Up 的顺序选择；回退候选首排序量仍为实际/预测距离比例误差。命中时旧 handle 回收，新 handle 接管原 runtime，新 Down 以连续时间作为 `kMove`；不得 Reset modeler 或宽度状态。
 - 最多保留 8 个候选；超限先以保存的 Up 完成最旧候选。仅剩候选时结束 1ms timer period，并等待新 Down、控制 wake 或最近 deadline。
-- 超时后才发送真正 `kUp`，随后沿用同帧批量 L2 resolve、活动层重建、指标提交、handle 回收和 runtime Reset。resize 重建候选，clear 最多额外等待当前候选剩余窗口。
+- 超时后才发送真正 `kUp`，随后沿用同帧有序 Stored Stroke 提交、活动层重建、指标提交、handle 回收和 runtime Reset。resize 重建候选，new-page 请求最多额外等待当前候选剩余窗口。
 - RTS 断触注入只用于人工测试：开启时使用固定 32 contact 状态和合成 contact id 随机生成 Up→丢弃 20–70ms Move→新 Down；关闭时必须由 `if constexpr` 选择原始 coordinator 直达分支，空模拟器不得查询频率、生成随机数、加锁或输出日志。
 - `kInterruptedStrokeReconnectManualTestModeEnabled` 与 `kInterruptedStrokeReconnectSimulationEnabled` 的正式默认值均为 `false`。人工测试开关关闭时恢复笔尾倒转橡皮，并由 `if constexpr` 移除绿色桥接覆盖和拒绝诊断；模拟开关关闭时不进入任何合成 contact 热路径。
 
@@ -327,7 +327,7 @@ Correct：`drawingCursorDuringContactEnabled -> ResolvePrimaryDrawingCursorVisua
 - 覆盖预测距离比例误差/角度/距离/Up 时间的多候选确定性选择、候选上限和超时策略。
 - 同一 modeler 依次接收 `Down → Move → 暂留 Up(kMove) → 新 Down(kMove) → Up`；橡皮使用 Disabled predictor。
 - 静态检查功能关闭时保留旧队列顺序，仅候选时 timer period 已结束且 deadline 可自行唤醒。
-- 实体 Touch 验证续接、主动分笔不误连、快速断触、resize、clear 和三类工具；实体 Pen/Mouse 验证 Up 立即收尾且不续接，`SendInput` 不能替代 RTS 硬件验证。
+- 实体 Touch 验证续接、主动分笔不误连、快速断触、resize、new-page 和三类工具；实体 Pen/Mouse 验证 Up 立即收尾且不续接，`SendInput` 不能替代 RTS 硬件验证。
 
 ### 7. Wrong vs Correct
 
@@ -488,13 +488,13 @@ Result = Add + Retain * Below
 liveTipDuration + predictionDuration
 ```
 
-contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收尾，并始终先重建此前已经进入 L1 的稳定前缀。默认 `false`：把最终真实尾段叠加与绘制中相同的 L0 笔锋后合入 L1，明确去掉 prediction，使抬笔瞬间 tip 定住不回缩；设为 `true`：把最后可见 L0（真实尾部、prediction 和笔锋）原样合入 L1。完成态 tip 使用与 L0 相同的公切线安全投影，不套用稳定笔宽时间限速。只有 Down 后立即 Up、尚未生成建模点时，才使用初始点兜底生成点击或短段。同一帧的全部结束 contact 只执行一次 L2 resolve、一次 backbuffer composite 和一次 present。仍活动 contact 的 L1/L0 必须在清空临时纹理后从 CPU 状态重建。
+contact 结束时，Pen 用已确认真实点合并稳定前缀和完成态 taper 尾段，连接点只保留一次；Highlighter/Eraser 保存完整真实中心线。Down 后立即 Up、尚未生成建模点时使用初始点生成单点。prediction 和 `time` 不进入 `InkStroke`。每条非取消、非 Laser Stroke 必须先追加到当前 `InkCanvas`，再从刚追加的同一对象重建 operator 几何并独立 resolve 到 L2；同帧只共享最终 backbuffer composite/present，不共享跨 Stroke coverage。全部完成项处理后再从 CPU runtime 重建仍活动 contact 的 L1/L0。
 
 ## Scenario: RTS Multi-Contact Input And Rendering
 
 ### 1. Scope / Trigger
 
-修改 RTS packet、contact 路由、跨线程队列、活动笔画、resize/clear、临时层合成或呈现时，必须应用本契约。
+修改 RTS packet、contact 路由、跨线程队列、活动笔画、resize/new-page、临时层合成或呈现时，必须应用本契约。
 
 ### 2. Signatures
 
@@ -524,8 +524,8 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - `Error` 不是 decoder lifecycle boundary：它只清 cursor、active bindings、断触模拟和 producing contacts，必须保留当前 decoder slots、shared position scale、enabled state 和 lifecycle generation。只有 Enabled pre-reset、Disabled、UpdateMapping、TabletRemoved 和 TabletAdded full-rebuild fallback 才执行完整 decoder lifecycle reset。
 - packet/contact callbacks 通常来自 RTS high-priority execution/tablet-data thread；`RealTimeStylusEnabled/Disabled` 可能在修改 `Enabled` 或 plugin collection 的 caller thread 执行，不能假设所有 `IStylusSyncPlugin` callbacks 天然同线程串行。普通 decoder/binding 数组必须由项目自己的 rare-writer/lock-free-reader gate 发布：lifecycle、Down、Up 和 Error 使用 writer mutex + writer bit + reader drain，`Packets/InAirPackets` 只做一次 lock-free CAS，失败立即丢包且不等待。
 - state gate 的 happens-before 必须由 C++ atomic memory order 建立：reader acquire-CAS/release decrement，writer acq_rel 发布 writer bit、acquire 等待 reader count 清零、release 清 writer bit；writer bit 发布后禁止新 reader 进入。`put_Enabled(FALSE)` 的 Disabled writer 必须先 drain 已进入的 packet readers，返回后才 Remove plugin 和释放对象。
-- 每个活动 contact 拥有独立 CPU runtime，其 GPU 几何共同重建到共享 L1/L0；不得提前进入 L2。完成 contact 的同帧批次只 resolve/composite/present 一次，随后重建仍活动 contact。
-- resize 成功后重建活动临时层；clear 在有活动 contact 时延后。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
+- 每个活动 contact 拥有独立 CPU runtime，其 GPU 几何共同重建到共享 L1/L0；不得提前进入 L2。完成 contact 按 `active` 稳定顺序逐条 Finalize、Append、从 Stored Stroke 重画并独立 resolve；随后重建仍活动 contact，同帧仍只 composite/present 一次。
+- resize 成功后重建活动临时层；用户 new-page 请求在有活动 contact 时延后，最后一个 contact 完成后才追加空白页并清空 GPU 工作面。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
 - waitable swapchain resize 必须先 `GetDesc1`，并原样传回 `BufferCount/Format/Flags`；部分驱动在传入零值时第一次 resize 成功、恢复尺寸时失败。
 - 运行指标关闭时不创建会话、不启用输入计数、不写文件；开启后原始样本写入忽略的 `TestResults/`，仓库只保存环境、阈值和分位数摘要。
 - 开发诊断 HUD 默认关闭；启用时使用独立 owned layered popup，必须点击穿透且不激活，也不进入 backbuffer、L0/L1/L2、Laser coverage、dirty rect、shader 或 presenter。
@@ -552,9 +552,9 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 | lifecycle writer 与 packet reader overlap | writer bit 阻止新 packet reader；writer 等既有 reader 退出后修改固定数组，packet callback 不 spin、不 retry、不取得 writer mutex |
 | Resize succeeds | 保留 L2 交集并从 CPU runtime 重建全部活动 L1/L0 |
 | waitable swapchain second resize | 保留原 swapchain 描述字段；不得用 `ResizeBuffers(..., UNKNOWN, 0)` 丢弃 flags |
-| Clear with active contact | 延后到活动集合为空 |
-| Multiple Up in one frame | 一次 L2 resolve、一次 composite、一次 present |
-| Up arrives after a visible prediction | 默认稳定前缀连接模型 `kUp` 真实尾段且清除 prediction；开关启用时才原样烘干最后可见 L0 |
+| New page with active contact | 请求计数保留并延后到活动集合为空；完成 Stroke 仍写入旧页 |
+| Multiple Up in one frame | 按 Canvas 追加顺序逐 Stroke resolve；一次 composite、一次 present |
+| Up arrives after a visible prediction | 只保存确认真实点；Pen 烘入 taper 并去重连接点，prediction 不进入 Stored Stroke |
 | Present failure | 保持整画布重呈现请求，下一帧恢复 |
 | HUD layered/GDI presentation failure | 隐藏 HUD；不得改变主窗口、绘制资源、dirty rect、Present 或输入生命周期 |
 
@@ -574,19 +574,19 @@ contact 结束时由 `StrokeModelConfiguration::retainPredictionOnUp` 选择收�
 - 静态验证 generation/state CAS、sticky terminal、seqlock、零自旋阻塞等待、timer begin/end 配对和 Release 无逐帧日志。
 - 自动验证 Error active-only reset 后 decoder/scale/generation 仍有效、旧 contact 为 Cancelled，且同 context 可立即重新 bind/decode；静态核对 `Error` 不调用完整 decoder lifecycle reset。
 - 自动验证 InAir decoder hit/miss 和 state gate overlap；静态截取 `Packets/InAirPackets` callback body，断言没有 decoder rebuild/COM/writer mutex/allocation 路径。
-- 真机验证鼠标宽度连续、Pen/Touch 单 contact、双 Touch 交错、同时抬起、活动时 resize、活动时 clear、设备禁用/拔出、长时间 idle CPU 和最终点位置。普通 `SendInput` 不能替代 RTS 硬件验证。
+- 真机验证鼠标宽度连续、Pen/Touch 单 contact、双 Touch 交错、同时抬起、活动时 resize、活动时 new-page、设备禁用/拔出、长时间 idle CPU 和最终点位置。普通 `SendInput` 不能替代 RTS 硬件验证。
 - Release 自动基准至少连续三轮：即时工具 Down→Present p99 ≤ 8.33ms，活动帧间隔 p99 ≤ 9.5ms，>16.67ms 比例 <1%，连续空闲至少 4.9 秒且 frame/Present 零增长。
-- 快速曲线末端抬笔时，默认的模型 `kUp` 收尾无 prediction 残留、回头或重复连接；开关启用时上一帧预测端点仍保留且不重复连接 `kUp` 尾段。
+- 快速曲线末端抬笔时，Stored Stroke 无 prediction 残留、回头或重复连接，且首次 L2 绘制与 Stored Stroke 重放一致。
 
 ### 7. Wrong vs Correct
 
-Wrong：`收到 Up 就立即把该 contact resolve 到 L2 并 Present；槽位只靠 contactId 复用。`
+Wrong：`收到 Up 就立即 Present；或把同帧多个 Stroke 合到同一 MAX/MIN coverage 后一次 resolve。`
 
-Correct：`route 用 generation+state 精确交接；同帧全部 terminal contact 先完成几何，再统一 resolve/composite/present，并重建剩余活动层。`
+Correct：`route 用 generation+state 精确交接；同帧 terminal contact 按稳定顺序逐条 Append + resolve，最后统一 composite/present 并重建剩余活动层。`
 
-Wrong：`Up 后同时绘制新的真实尾部与上一帧留下的 predictedPoints，把两种收尾接在一起。`
+Wrong：`Up 后把上一帧 predictedPoints 复制到 InkStroke，或首次显示仍从 ActiveStroke 的另一套缓存绘制。`
 
-Correct：`重建已提交稳定前缀；默认只连接模型 kUp 真实尾段，retainPredictionOnUp 启用时只烘干 previousL0DrawPoints。`
+Correct：`只从确认真实点生成最终 InkStroke；先追加，再从刚追加的对象完成首次绘制。`
 
 Wrong：`put_MultiTouchEnabled(TRUE) 成功，所以窗口已经能收到多指。`
 
@@ -605,61 +605,72 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 上面的抬笔规则只描述当前测试程序的瞬时视觉画布：
 
 - prediction 是瞬时视觉结果。
-- L2 是当前已落定的像素画布，不是正式墨迹持久化记录。
-- 正式持久化原则上从已确认输入生成。
-- 最终 prediction 必须被后续真实采样替换，或经过明确定义的提交动作转为已确认数据。
+- L2 是当前页已落定的像素缓存，不是文档真值。
+- `InkCanvasCollection` 是当前会话的 CPU 文档真值，只从已确认输入生成。
 - 未确认预测点不得无条件写入永久笔迹、回放记录或跨版本格式。
 
-> **待验证**：仓库尚无正式 `InkStrokeRecord`、预测来源标记或显式提交协议。未来持久化任务必须单独定义数据结构、替换/提交条件和兼容行为，不能直接复制当前 L2 的视觉提交语义。
+当前只保存会话内对象；UInk 编解码、文件生命周期和旧页重放仍需独立任务。
 
-## Scenario: Persisting Stroke Samples
+## Scenario: Ink Document Persistence
 
 ### 1. Scope / Trigger
 
-当任务新增 `InkStrokeRecord`、保存、导出、同步、回放或从 L2/活动 contact runtime 提取永久笔迹时，必须应用本契约。
+修改完成态 Stroke、Canvas/Page/Collection、首次 L2 提交、新建页、未来保存/导出/同步/回放时，必须应用本契约。
 
 ### 2. Signatures
 
-当前仓库没有正式持久化 API 或记录结构。未来任务必须先定义明确的写入签名和数据结构；禁止把活动 contact 的 prediction 或 L2 像素读取隐式当成持久化接口。
+- `StoredInkPoint { float x, y, width; }`
+- `StoredInkStyle { StoredInkType inkType; uint32_t fallbackRgb; float opacity; uint16_t texture; }`
+- `InkStroke -> InkCanvas -> InkPage -> InkCanvasCollection`
+- `InkCanvas::AppendStroke(InkStroke) -> optional<size_t>`
+- `InkPage::FindCanvas/GetOrCreateCanvas(DeviceKey, InkViewport)`
+- `InkCanvasCollection::AppendPage(InkGuid|InkPage) -> optional<size_t>`
+- `FinalizeStoredStroke(ActiveStroke, StoredInkStyle, taperSeconds, scratch)`
+- `WindowController::ConsumeAddPageRequestCount() -> uint32_t`
 
 ### 3. Contracts
 
-永久样本只能来自以下状态之一：
-
-- 已确认真实输入；
-- 由后续真实输入替换后的 prediction；
-- 经过明确定义的提交动作转为已确认的数据。
-
-仅为当前帧展示而生成的 prediction 保持 transient，不进入永久记录。
+- `x/y` 是 Canvas-local 物理像素，可为负数或有限的屏外值；`width` 是完整直径。模型不做 DPI 换算、viewport 变换或画布裁剪。
+- Stroke 只保存有序点和 style，不保存 time、压力、速度、倾角、prediction 来源、blend、AA、shader、UUID 或历史状态。首版固定单层；Laser 不持久化。
+- Canvas 没有固定宽高，viewport 默认 `{0,0,1}`；Page 用 16-byte canonical GUID，并按 opaque `DeviceKey` 拥有 Canvas；Collection 的 Page vector 位置就是 pageIndex。
+- `DrawingController` 绘制线程独占 Collection，不加锁。运行开始创建 Workspace、第一页和默认 Device Canvas；current page index 是运行时状态。
+- Pen 复制稳定前缀并用完成态真实 taper 尾段替换连接点；Highlighter/Eraser 保存完整真实中心线；无 modeled point 时保存 `inputStartPoint`。Cancelled 和 Laser 都不 Append。
+- 首次提交顺序固定为 `FinalizeStoredStroke -> AppendStroke -> DrawStoredStroke(appended stroke) -> per-Stroke L2 resolve`。同帧多个完成项按 Canvas 追加顺序逐条执行，不能共享 coverage union。
+- 数字键 `0` 发布可计数、忽略自动重复的 new-page 请求。请求等待全部 active/reconnect contact 完成；每个请求追加一页。只有 GUID、Page 和默认 Canvas 均成功后才切换 current index 并清空 GPU 工作面；启动 `DrawingController::ClearCanvas()` 只初始化透明表面。
 
 ### 4. Validation & Error Matrix
 
-| Input state | Persistence behavior |
+| Input/state | Required behavior |
 |---|---|
-| Confirmed real sample | 可以写入 |
-| Prediction later replaced by real sample | 只写替换后的确认结果 |
-| Prediction explicitly committed by future protocol | 按该协议写入并保留可解释的确认语义 |
-| Unconfirmed prediction | 拒绝或省略，不得静默写入 |
-| L2 pixel result | 只能作为视觉结果，不能自动还原为永久 stroke record |
+| Confirmed real sample | 原值写入 `x/y`，半径转换为 `width=2r` |
+| Unconfirmed prediction / previous L0 snapshot | 省略，不得静默写入 |
+| Down 后立即 Up | 以 `inputStartPoint` 保存单点 Pen/Highlighter/Eraser |
+| Cancelled / Laser | 不追加 Stroke |
+| 非有限坐标、宽度或 opacity / 负 width | `InkStroke::IsValid == false`，Append 不改变 Canvas |
+| 零值/重复 Page GUID | AppendPage 失败，Collection 顺序不变 |
+| New-page GUID/Page/default Canvas 失败 | current page 和 GPU 画面保持不变 |
+| N 个有效 new-page 请求 | 追加 N 个有序空白页，最后一页成为 current |
+| L2 draw/map failure after Append | CPU Stroke 保留为真值；不得回写 prediction 作为替代 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：持久化层只接收已确认样本，并测试 replacement/explicit commit。
-- Base：在尚无持久化结构时保持 prediction 仅用于 L0/L2 视觉流程。
-- Bad：抬笔时直接把 `predictedPoints` 全量序列化，因为它们当前可见。
+- Good：两支半透明 Highlighter 同帧抬起，按 Canvas 顺序分别 resolve，交叠效果与之后逐 Stroke 重放一致。
+- Base：Pen 单点、屏外有限坐标和 Eraser 都保留原始 float32 数据；viewport 仍不参与显示。
+- Bad：先从 ActiveStroke 画完，再另存一个不同的 Stroke；或把同帧多笔 MAX/MIN 合并后只 resolve 一次。
 
 ### 6. Tests Required
 
-- 未确认 prediction 不出现在保存记录中。
-- 真实采样到达后替换对应 prediction，回放使用确认结果。
-- 显式提交协议存在时，提交条件和记录解释可重复。
-- 保存后回放不依赖当前 predictor 参数才能解释旧数据。
+- 纯 CPU 覆盖 GUID/Page 顺序、Device Canvas 隔离、默认 viewport、非法值拒绝、Stroke 顺序和连续空白页。
+- 覆盖负/远端坐标与 float32 `x/y/width` 原值不被裁剪或换算。
+- 覆盖 Pen taper、稳定/尾段连接点去重、prediction/time 排除；Highlighter/Eraser/单点正确生成。
+- 静态或集成验证 Cancelled/Laser exclusion、Append 先于 Draw、首次 Draw 使用刚追加对象、同帧逐 Stroke resolve。
+- ARM64 Debug/Release 完整解决方案构建并运行测试；人工验证基础绘制、prediction、抬笔、活动时新建页和 resize。
 
 ### 7. Wrong vs Correct
 
-Wrong：`L2 已包含最终 prediction，所以永久笔迹直接保存 predictedPoints。`
+Wrong：`L2 已经可见，所以从 realPoints/predictedPoints 另拼一次保存记录，并把同帧多笔一起 resolve。`
 
-Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或显式提交的数据。`
+Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对象逐笔 resolve，L2 只是当前页缓存。`
 
 ## Highlighter Geometry
 
@@ -670,7 +681,7 @@ Correct：`L2 只表示当前视觉结果；永久笔迹只接受真实确认或
 - 相邻 sweep 通过 Add/MAX、Retain/MIN coverage union 连接，不生成 round join、cap 或 short mark primitive。
 - CPU bounds 与 GPU AABB 都使用 `halfSize=(1.25,25)`，并分别保留现有 `3px` dirty padding 与 `2px` shader quad padding。
 - Down 起允许 L0 点击矩形和 prediction；`12px` 不再是可见性、完成态或几何分支。
-- L1 只增量缓存稳定 sweep，Up 只重放缓存和最后一帧 L0；从未生成 L0 的同步点击仅补一次单点矩形。
+- L1 只增量缓存活动态稳定 sweep；Up 从最终 Stored Stroke 的真实中心线重建完整 sweep，单点生成一次点击矩形。
 
 上述尺寸和去重值仍属于实验参数。修改任一值时必须同时验证 CPU bounds、HLSL coverage、L0/L1 切片、缓存完成态和单点行为。
 

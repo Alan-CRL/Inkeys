@@ -195,7 +195,7 @@ int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPat
 	SendMouse(curveStartX + usableWidth * 2 / 3, curveStartY,
 		MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP);
 
-	// 停笔后继续、清屏与 resize 都使用真实窗口/输入消息。
+	// 停笔后继续、新建页与 resize 都使用真实窗口/输入消息。
 	SendMouse(left + 50, top + usableHeight - 100, MOUSEEVENTF_MOVE);
 	SendMouse(left + 50, top + usableHeight - 100, MOUSEEVENTF_LEFTDOWN);
 	Sleep(80);

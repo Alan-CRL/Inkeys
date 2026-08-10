@@ -38,6 +38,7 @@
     <ClCompile Include="draw3\drawing_controller.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\graphics_initialization.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+	<ClCompile Include="draw3\ink_document.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\laser_particles.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\pen_cursor.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
@@ -51,6 +52,7 @@
     <ClCompile Include="draw3\drawing_controller.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\graphics_initialization.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+	<ClCompile Include="draw3\ink_document.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\stroke_geometry.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\win7_compat.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>

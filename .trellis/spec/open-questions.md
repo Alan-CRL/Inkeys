@@ -104,12 +104,12 @@
 
 **已确认规则**：prediction 是瞬时视觉结果，不是默认可信的永久笔迹输入。
 
-- 正式持久化内容原则上由已确认输入生成。
-- 最终 prediction 必须被后续真实采样替换，或通过明确定义的提交动作转为已确认数据。
-- 未确认的预测点不得无条件写入永久笔迹或回放记录。
-- `retainPredictionOnUp` 开启时把最后可见 L0 合入 L2，是测试程序的可选视觉画布行为；L2 不是正式 `InkStrokeRecord`，不能据此推导持久化契约。
+- 当前 `InkCanvasCollection` 只从已确认真实点生成 Stroke；prediction、time 与来源标记都不保存。
+- Pen 在抬笔时把稳定前缀和真实 taper 尾段合并，Highlighter/Eraser 保存真实中心线。
+- Stroke 必须先追加到当前 Canvas，再从该对象完成首次绘制；L2 只是当前页像素缓存。
+- Laser 和 Cancelled contact 不进入文档。
 
-**待验证**：正式 `InkStrokeRecord`、预测来源标记、显式提交条件、替换规则及回放兼容尚未设计，应作为独立持久化任务处理。
+**待验证**：UInk 编解码、第三方文件兼容、旧页重放和 history 仍应作为独立任务处理。
 
 ## Remaining Follow-Up
 
@@ -118,4 +118,4 @@
 - 建立可重复的 D3D Debug Layer 启用和日志检查方式。
 - 为历史 `.vcxproj` 残留引用建立专门清理/弃用任务。
 - 设计自动化测试工程。
-- 设计正式笔迹持久化与 prediction 提交协议。
+- 设计 UInk 编解码、旧页重放和 history；prediction 继续只作为瞬时视觉数据。

@@ -22,7 +22,7 @@ Win32 window message
 - 数据由谁拥有，何时失效。
 - 坐标、半径、时间、alpha 是否仍保持相同单位和语义。
 - 失败是返回 `false`、记录日志、回退，还是请求下一次全量呈现。
-- resize、清屏、抬笔和呈现失败是否仍能恢复一致状态。
+- resize、新建页、抬笔和呈现失败是否仍能恢复一致状态。
 
 ## Required Boundary Checks
 
@@ -40,7 +40,7 @@ Win32 window message
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。
 - 最新 snapshot 覆盖采样改变了速度采样节奏；每份真实速度只滤波一次，第一份速度不得回写已可见起笔，半径仍需时间/距离双限速。
 - 活动 contact 的提交游标必须单调前进，已进入 L1 的稳定前缀不能重复提交。
-- Up 收尾由 `retainPredictionOnUp` 唯一选择：默认连接 `kUp` 的真实 modeled 尾段并清除 prediction；开启时只烘干上一帧可见 L0，禁止两种尾段同时绘制。
+- Up 收尾是否只从确认真实点生成 Stored Stroke；Pen 是否烘入 taper、去重连接点并排除 prediction/time。
 - 荧光笔固定矩形的 8:1 half size、0.25px 去重、sweep coverage 和 dirty bounds 必须一起检查。
 
 依据：`AppendNewModeledPoints`、`RebuildPredictedPoints`、`CommitStablePrefixToL1`、`BuildHighlighterGeometry`。
@@ -58,10 +58,10 @@ Win32 window message
 - L2 是已落定的 premultiplied RGBA 画布。
 - L1 是当前笔稳定前缀操作，L0 是每帧清空重绘的实时操作。
 - 普通绘制与橡皮都编码为 `Add + Retain * Below`；同笔分段默认使用覆盖率并集。
-- 抬笔时默认把模型 `kUp` 的真实尾段并入 L1；`retainPredictionOnUp` 开启时改为把最后可见 L0 并入 L1，再一次性作用到 L2。
-- “保留最后可见 L0”表示直接烘干其真实尾部、prediction 和笔锋；此分支不得再并排绘制或重建另一条终态尾部。
+- 抬笔时先把最终 Stroke 追加到当前 Canvas，再从刚追加的对象重建 operator 几何；不得先从 ActiveStroke 绘制再保存另一份数据。
+- 同帧多个完成 Stroke 必须按 Canvas 追加顺序独立作用到 L2；共享 MAX/MIN coverage 会破坏半透明和擦除顺序。
 
-依据：`DrawingController::CompositeLayersToBackBuffer`、`DrawCompletedStroke`、`InkRenderer::ApplyOperatorLayers`。
+依据：`DrawingController::CompositeLayersToBackBuffer`、`DrawStoredStroke`、`InkRenderer::ApplyOperatorLayers`。
 
 ### Presenter fallback
 

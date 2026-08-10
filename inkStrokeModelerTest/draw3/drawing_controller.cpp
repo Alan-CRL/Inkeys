@@ -14,7 +14,9 @@
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 #include <windows.h>
 #include <mmsystem.h>
@@ -134,6 +136,105 @@ namespace draw3
 			if (tool == DrawingTool::Highlighter) return kHighlighterCompositeColor;
 			if (tool == DrawingTool::Eraser) return kTransparentLayerClearColor;
 			return kMultiContactInkColor;
+		}
+
+		bool TryCreateInkGuid(InkGuid& output) noexcept
+		{
+			GUID guid = {};
+			const HRESULT result = CoCreateGuid(&guid);
+			if (result != S_OK)
+			{
+				LogHResult("CoCreateGuid(ink document)", result);
+				return false;
+			}
+			// Windows GUID 前三段是整数；显式转成 canonical UUID 字节序，避免依赖本机端序。
+			const std::array<uint8_t, 16> bytes = {
+				static_cast<uint8_t>(guid.Data1 >> 24),
+				static_cast<uint8_t>(guid.Data1 >> 16),
+				static_cast<uint8_t>(guid.Data1 >> 8),
+				static_cast<uint8_t>(guid.Data1),
+				static_cast<uint8_t>(guid.Data2 >> 8),
+				static_cast<uint8_t>(guid.Data2),
+				static_cast<uint8_t>(guid.Data3 >> 8),
+				static_cast<uint8_t>(guid.Data3),
+				guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
+				guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]
+			};
+			InkGuid created(bytes);
+			if (created.IsZero())
+			{
+				std::cout << "CoCreateGuid returned a nil ink document GUID." << std::endl;
+				return false;
+			}
+			output = created;
+			return true;
+		}
+
+		bool TryAppendBlankPage(InkCanvasCollection& document,
+			size_t& currentPageIndex)
+		{
+			InkGuid pageGuid;
+			if (!TryCreateInkGuid(pageGuid)) return false;
+			InkPage page(pageGuid);
+			if (!page.GetOrCreateCanvas(kDefaultDeviceKey))
+			{
+				std::cout << "Failed to create the default ink canvas for a new page." << std::endl;
+				return false;
+			}
+			const std::optional<size_t> pageIndex = document.AppendPage(std::move(page));
+			if (!pageIndex)
+			{
+				std::cout << "Failed to append a unique ink document page." << std::endl;
+				return false;
+			}
+			currentPageIndex = *pageIndex;
+			return true;
+		}
+
+		uint32_t PackStoredRgb(const DirectX::XMFLOAT4& color) noexcept
+		{
+			auto channel = [](float value) noexcept
+			{
+				return static_cast<uint32_t>(std::lround(
+					std::clamp(value, 0.0f, 1.0f) * 255.0f));
+			};
+			return channel(color.x) << 16 | channel(color.y) << 8 | channel(color.z);
+		}
+
+		std::optional<StoredInkStyle> StoredStyleForTool(DrawingTool tool) noexcept
+		{
+			StoredInkStyle style;
+			const DirectX::XMFLOAT4 color = ColorForTool(tool);
+			style.fallbackRgb = PackStoredRgb(color);
+			style.texture = 0;
+			switch (tool)
+			{
+			case DrawingTool::Pen:
+				style.inkType = StoredInkType::Pen;
+				style.opacity = color.w;
+				return style;
+			case DrawingTool::Highlighter:
+				style.inkType = StoredInkType::Highlighter;
+				style.opacity = color.w;
+				return style;
+			case DrawingTool::Eraser:
+				style.inkType = StoredInkType::Eraser;
+				style.opacity = 1.0f;
+				return style;
+			default:
+				return std::nullopt; // Laser 是瞬时视觉，不进入文档。
+			}
+		}
+
+		DirectX::XMFLOAT4 ColorForStoredStyle(const StoredInkStyle& style) noexcept
+		{
+			constexpr float kByteToFloat = 1.0f / 255.0f;
+			return {
+				static_cast<float>((style.fallbackRgb >> 16) & 0xFFu) * kByteToFloat,
+				static_cast<float>((style.fallbackRgb >> 8) & 0xFFu) * kByteToFloat,
+				static_cast<float>(style.fallbackRgb & 0xFFu) * kByteToFloat,
+				style.opacity
+			};
 		}
 
 		struct ReconnectManualTestRange
@@ -754,84 +855,31 @@ namespace draw3
 			return RectFromStrokePoints(stablePoints, width, height);
 		}
 
-		RECT DrawCompletedStroke(RuntimeStroke& runtime, InkRenderer& renderer, int width, int height,
-			bool retainPredictionOnUp, double liveTipTaperSeconds)
+		RECT DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
+			int width, int height, std::vector<InkPoint>& pointScratch,
+			HighlighterGeometry& highlighterScratch)
 		{
-			ActiveStroke& stroke = runtime.stroke;
-			RECT dirty = {};
-			renderer.SetOperatorTarget(renderer.layerL1);
-			if (runtime.tool == DrawingTool::Highlighter)
-			{
-				bool drewGeometry = false;
-				if (!stroke.committedHighlighterGeometry.primitives.empty())
-				{
-					renderer.DrawHighlighterPrimitives(
-						stroke.committedHighlighterGeometry.primitives,
-						ColorForTool(runtime.tool));
-					UnionRectInPlace(dirty, stroke.committedHighlighterGeometry.bounds);
-					drewGeometry = true;
-				}
-				if (!stroke.l0HighlighterGeometry.primitives.empty())
-				{
-					// 两段继续写入同一 MAX/MIN target，等价于先合并 vector 后一次绘制。
-					renderer.DrawHighlighterPrimitives(
-						stroke.l0HighlighterGeometry.primitives,
-						ColorForTool(runtime.tool));
-					UnionRectInPlace(dirty, stroke.l0HighlighterGeometry.bounds);
-					drewGeometry = true;
-				}
-				if (!drewGeometry)
-				{
-					std::array<InkPoint, 1> clickPoints = {};
-					if (stroke.hasInputStartPoint)
-						clickPoints[0] = stroke.inputStartPoint;
-					else if (!stroke.realPoints.empty())
-						clickPoints[0] = stroke.realPoints.front();
-					else
-						return {};
-					RebuildHighlighterGeometry(clickPoints, stroke.l0HighlighterGeometry);
-					renderer.DrawHighlighterPrimitives(
-						stroke.l0HighlighterGeometry.primitives,
-						ColorForTool(runtime.tool));
-					dirty = stroke.l0HighlighterGeometry.bounds;
-				}
-				return ClampRectToCanvas(dirty, width, height);
-			}
-			if (runtime.tool == DrawingTool::Pen)
-			{
-				if (stroke.hasCommittedGeometry && !stroke.realPoints.empty())
-				{
-					const size_t stablePointCount =
-						std::min(stroke.committedIndex + 1, stroke.realPoints.size());
-					const std::span<const InkPoint> stablePoints =
-						std::span<const InkPoint>(stroke.realPoints).first(stablePointCount);
-					renderer.DrawStrokeOrDot(stablePoints, ColorForTool(runtime.tool));
-					UnionRectInPlace(dirty,
-						RectFromStrokePoints(stablePoints, width, height));
-				}
-				BuildCompletedPenTail(stroke, retainPredictionOnUp, liveTipTaperSeconds,
-					runtime.rebuildPoints);
-				if (!runtime.rebuildPoints.empty())
-				{
-					renderer.DrawStrokeOrDot(runtime.rebuildPoints, ColorForTool(runtime.tool));
-					UnionRectInPlace(dirty,
-						RectFromStrokePoints(runtime.rebuildPoints, width, height));
-				}
-				return ClampRectToCanvas(dirty, width, height);
-			}
+			pointScratch.clear();
+			pointScratch.reserve(stroke.Points().size());
+			for (const StoredInkPoint& point : stroke.Points())
+				pointScratch.push_back({ point.x, point.y, point.width * 0.5f, 0.0f });
+			if (pointScratch.empty()) return {};
 
-			std::array<InkPoint, 1> fallbackPoint = {};
-			std::span<const InkPoint> completedPoints = stroke.realPoints;
-			if (completedPoints.empty() && stroke.hasInputStartPoint)
+			const StoredInkStyle& style = stroke.Style();
+			const DirectX::XMFLOAT4 color = ColorForStoredStyle(style);
+			renderer.SetOperatorTarget(renderer.layerL1);
+			if (style.inkType == StoredInkType::Highlighter)
 			{
-				fallbackPoint[0] = stroke.inputStartPoint;
-				completedPoints = fallbackPoint; // Down 后立即 Up 仍要落下点击圆点。
+				RebuildHighlighterGeometry(pointScratch, highlighterScratch);
+				if (renderer.DrawHighlighterPrimitives(
+					highlighterScratch.primitives, color) < 0) return {};
+				return ClampRectToCanvas(highlighterScratch.bounds, width, height);
 			}
-			if (completedPoints.empty()) return {};
-			renderer.DrawStrokeOrDot(completedPoints, ColorForTool(runtime.tool),
-				StrokeShape::RoundCapsule, InkOperatorKind::Erase);
-			UnionRectInPlace(dirty, RectFromStrokePoints(completedPoints, width, height));
-			return ClampRectToCanvas(dirty, width, height);
+			const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
+				? InkOperatorKind::Erase : InkOperatorKind::Draw;
+			if (renderer.DrawStrokeOrDot(pointScratch, color,
+				StrokeShape::RoundCapsule, operatorKind) < 0) return {};
+			return RectFromStrokePoints(pointScratch, width, height);
 		}
 
 		RECT RebuildActiveLayers(const std::vector<RuntimeStroke*>& active,
@@ -1104,6 +1152,15 @@ namespace draw3
 	void DrawingController::Run()
 	{
 		using namespace ink::stroke_model;
+		InkGuid workspaceGuid;
+		if (!TryCreateInkGuid(workspaceGuid)) return;
+		document_.emplace(workspaceGuid);
+		currentPageIndex_ = 0;
+		if (!TryAppendBlankPage(*document_, currentPageIndex_))
+		{
+			document_.reset();
+			return;
+		}
 
 		auto strokeModelParams = configuration_.modelParams;
 		ApplyPredictionMode(strokeModelParams, configuration_.kalmanPredictorParams);
@@ -1193,6 +1250,7 @@ namespace draw3
 		laserTipDots.reserve(kPreheatedStrokeCount + 1);
 		std::vector<LaserParticleEmissionRequest> laserParticleEmissionRequests;
 		laserParticleEmissionRequests.reserve(kLaserReservedContactCount);
+		HighlighterGeometry completedHighlighterScratch;
 		LaserParticleDirtyTracker laserParticleDirtyTracker;
 		const LaserParticleConfig laserParticleConfiguration =
 			IsValidLaserParticleConfig(configuration_.laserParticleConfig)
@@ -1916,7 +1974,7 @@ namespace draw3
 				return positionMoved || stylusStateChanged || deferUp;
 			};
 
-		bool clearPending = false;
+		uint32_t pendingAddPageRequestCount = 0;
 		bool timerPeriodActive = false;
 		bool timerPeriodAttempted = false;
 		double lastActiveFrameStartMs = 0.0;
@@ -1998,6 +2056,50 @@ namespace draw3
 					DrawingCursorVisualBounds(visual, size.width, size.height));
 			return bounds;
 		};
+
+		auto resetGpuForNewPage = [&](RECT& frameDirty,
+			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
+			int width, int height)
+		{
+			frameDirty = GetFullCanvasRect(width, height);
+			renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
+			renderer_.ClearOperatorLayer(renderer_.layerL1);
+			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			renderer_.ClearAllLaserCoverage();
+			renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
+			laserLifecycle = {};
+			laserOpacity = 0.0f;
+			laserStableBounds = {};
+			laserLiveBounds = {};
+			laserStrokeLayers.clear();
+			laserCoverageMode = LaserCoverageMode::Inactive;
+			laserSummaryPending = false;
+			laserDiagnostics.Reset();
+			renderer_.ResetLaserParticles();
+			laserParticleDirtyTracker.Clear();
+			particleSnapshot = {};
+			lastLaserParticleSimulationQpc = 0;
+			previousLaserParticleBounds = {};
+			previousLaserTipBounds = {};
+			forceFullPresent = true;
+		};
+
+		auto applyPendingAddPageRequests = [&](uint32_t& requestCount,
+			RECT& frameDirty, LaserParticleDirtySnapshot& particleSnapshot,
+			bool& forceFullPresent, int width, int height)
+		{
+			if (requestCount == 0 || !document_) return;
+			const uint32_t requestsToApply = requestCount;
+			requestCount = 0;
+			bool appendedAnyPage = false;
+			for (uint32_t index = 0; index < requestsToApply; ++index)
+				appendedAnyPage = TryAppendBlankPage(
+					*document_, currentPageIndex_) || appendedAnyPage;
+			// 只有页面和默认 Canvas 已完整追加后，才允许清除当前 GPU 画面。
+			if (appendedAnyPage)
+				resetGpuForNewPage(frameDirty, particleSnapshot,
+					forceFullPresent, width, height);
+		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();
 		while (true)
@@ -2039,7 +2141,11 @@ namespace draw3
 			ContactRecord* record = nullptr;
 
 			bool forceFullPresent = false;
-			if (window_.ConsumeClearCanvasRequest()) clearPending = true;
+			const uint32_t addPageRequestCount = window_.ConsumeAddPageRequestCount();
+			pendingAddPageRequestCount = addPageRequestCount >
+				(std::numeric_limits<uint32_t>::max)() - pendingAddPageRequestCount
+				? (std::numeric_limits<uint32_t>::max)()
+				: pendingAddPageRequestCount + addPageRequestCount;
 			if (window_.ConsumeCompositionChangedRequest())
 			{
 				presentation_.RefreshAfterCompositionChanged();
@@ -2177,30 +2283,12 @@ namespace draw3
 				laserCoverageMode = LaserCoverageMode::Inactive;
 				laserSummaryPending = false;
 			}
-			if (active.empty() && clearPending)
+			if (active.empty() && pendingAddPageRequestCount > 0)
 			{
 				const WindowSize size = window_.Size();
-				frameDirty = GetFullCanvasRect(size.width, size.height);
-				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
-				renderer_.ClearOperatorLayer(renderer_.layerL1);
-				renderer_.ClearOperatorLayer(renderer_.layerL0);
-				renderer_.ClearAllLaserCoverage();
-				renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
-				laserLifecycle = {};
-				laserOpacity = 0.0f;
-				laserStableBounds = {};
-				laserLiveBounds = {};
-				laserStrokeLayers.clear();
-				laserCoverageMode = LaserCoverageMode::Inactive;
-				laserSummaryPending = false;
-				renderer_.ResetLaserParticles();
-				laserParticleDirtyTracker.Clear();
-				laserParticleSnapshot = {};
-				lastLaserParticleSimulationQpc = 0;
-				previousLaserParticleBounds = {};
-				previousLaserTipBounds = {};
-				clearPending = false;
-				forceFullPresent = true;
+				applyPendingAddPageRequests(pendingAddPageRequestCount,
+					frameDirty, laserParticleSnapshot, forceFullPresent,
+					size.width, size.height);
 			}
 
 			if (active.empty() && !forceFullPresent && !drawingCursorRequested &&
@@ -2687,7 +2775,6 @@ namespace draw3
 			{
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
-				RECT completedDirty = {};
 				for (RuntimeStroke* runtime : active)
 				{
 					if (!runtime->ended) continue;
@@ -2698,30 +2785,53 @@ namespace draw3
 					}
 					if (!runtime->cancelled)
 					{
-						const double completedTipTaperSeconds =
-							runtime->tool == DrawingTool::Pen
-							? ResolveLiveTipTaperDurationSeconds(
-								runtime->stroke.widthMode,
-								configuration_.liveTipDurationSeconds)
-							: 0.0;
-						RECT completedStrokeDirty =
-							DrawCompletedStroke(*runtime, renderer_, size.width, size.height,
-								configuration_.retainPredictionOnUp, completedTipTaperSeconds);
-						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
-							UnionRectInPlace(completedStrokeDirty,
-								DrawReconnectManualTestRanges(*runtime, renderer_, size.width, size.height));
-						UnionRectInPlace(completedDirty, completedStrokeDirty);
-						if (!IsEmptyRect(completedStrokeDirty)) runtime->metricVisible = true;
+						const std::optional<StoredInkStyle> style =
+							StoredStyleForTool(runtime->tool);
+						const double completedTipTaperSeconds = runtime->tool == DrawingTool::Pen
+							? ResolveLiveTipTaperDurationSeconds(runtime->stroke.widthMode,
+								configuration_.liveTipDurationSeconds) : 0.0;
+						std::optional<InkStroke> finalizedStroke = style
+							? FinalizeStoredStroke(runtime->stroke, *style,
+								completedTipTaperSeconds, runtime->rebuildPoints)
+							: std::nullopt;
+						InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
+						InkCanvas* canvas = page
+							? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+						const std::optional<size_t> strokeIndex = finalizedStroke && canvas
+							? canvas->AppendStroke(std::move(*finalizedStroke)) : std::nullopt;
+						if (strokeIndex)
+						{
+							// 文档对象先成为真值，再从刚追加的同一 Stroke 完成首次 L2 绘制。
+							const std::span<const InkStroke> strokes = canvas->Strokes();
+							const InkStroke& storedStroke = strokes[*strokeIndex];
+							renderer_.ClearOperatorLayer(renderer_.layerL1);
+							renderer_.ClearOperatorLayer(renderer_.layerL0);
+							RECT completedStrokeDirty = DrawStoredStroke(storedStroke,
+								renderer_, size.width, size.height,
+								runtime->rebuildPoints, completedHighlighterScratch);
+							if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+								UnionRectInPlace(completedStrokeDirty,
+									DrawReconnectManualTestRanges(
+										*runtime, renderer_, size.width, size.height));
+							completedStrokeDirty = ClampRectToCanvas(
+								completedStrokeDirty, size.width, size.height);
+							if (!IsEmptyRect(completedStrokeDirty))
+							{
+								// 每条 Stroke 独立 resolve，保留高亮透明度和擦除的文档顺序。
+								renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
+									renderer_.layerL1, renderer_.layerL0,
+									completedStrokeDirty);
+								UnionRectInPlace(frameDirty, completedStrokeDirty);
+								runtime->metricVisible = true;
+							}
+						}
+						else
+						{
+							std::cout << "Failed to append completed stroke to the current ink canvas."
+								<< std::endl;
+						}
 					}
 					UnionRectInPlace(frameDirty, runtime->visibleDirty);
-				}
-				completedDirty = ClampRectToCanvas(completedDirty, size.width, size.height);
-				if (!IsEmptyRect(completedDirty))
-				{
-					// 所有同帧结束 contact 共用一次 resolve，L2 从不接收仍活动的几何。
-					renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
-						renderer_.layerL1, renderer_.layerL0, completedDirty);
-					UnionRectInPlace(frameDirty, completedDirty);
 				}
 				UnionRectInPlace(frameDirty,
 					RebuildActiveLayers(active, renderer_, size.width, size.height));
@@ -2799,29 +2909,10 @@ namespace draw3
 				}
 			}
 
-			if (active.empty() && clearPending)
-			{
-				frameDirty = GetFullCanvasRect(size.width, size.height);
-				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
-				renderer_.ClearOperatorLayer(renderer_.layerL1);
-				renderer_.ClearOperatorLayer(renderer_.layerL0);
-				renderer_.ClearAllLaserCoverage();
-				renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
-				laserLifecycle = {};
-				laserOpacity = 0.0f;
-				laserStableBounds = {};
-				laserLiveBounds = {};
-				laserStrokeLayers.clear();
-				laserCoverageMode = LaserCoverageMode::Inactive;
-				renderer_.ResetLaserParticles();
-				laserParticleDirtyTracker.Clear();
-				laserParticleSnapshot = {};
-				lastLaserParticleSimulationQpc = 0;
-				previousLaserParticleBounds = {};
-				previousLaserTipBounds = {};
-				clearPending = false;
-				forceFullPresent = true;
-			}
+			if (active.empty() && pendingAddPageRequestCount > 0)
+				applyPendingAddPageRequests(pendingAddPageRequestCount,
+					frameDirty, laserParticleSnapshot, forceFullPresent,
+					size.width, size.height);
 
 			RECT currentLaserParticleUnclippedBounds =
 				laserParticleSnapshot.activeBounds;

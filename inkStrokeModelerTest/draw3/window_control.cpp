@@ -29,6 +29,7 @@ namespace draw3
 		constexpr UINT kApplySystemCursorMessage = WM_APP + 1;
 		constexpr LONG_PTR kPromotedPointerSignatureMask = 0xFFFFFF00;
 		constexpr LONG_PTR kPromotedPointerSignature = 0xFF515700;
+		constexpr LPARAM kPreviousKeyStateMask = static_cast<LPARAM>(1) << 30;
 
 		constexpr DWORD kTabletInputFlags =
 			TABLET_ENABLE_MULTITOUCHDATA |
@@ -136,6 +137,16 @@ namespace draw3
 			monitorInfo.cbSize = sizeof(monitorInfo);
 			if (monitor && GetMonitorInfoW(monitor, &monitorInfo)) return monitorInfo.rcMonitor;
 			return RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+		}
+
+		void IncrementSaturating(std::atomic<uint32_t>& value) noexcept
+		{
+			uint32_t current = value.load(std::memory_order_relaxed);
+			while (current != UINT32_MAX &&
+				!value.compare_exchange_weak(current, current + 1,
+					std::memory_order_release, std::memory_order_relaxed))
+			{
+			}
 		}
 	}
 
@@ -301,9 +312,9 @@ namespace draw3
 		size_.height = height;
 	}
 
-	bool WindowController::ConsumeClearCanvasRequest()
+	uint32_t WindowController::ConsumeAddPageRequestCount() noexcept
 	{
-		return clearCanvasRequested_.exchange(false, std::memory_order_relaxed);
+		return addPageRequestCount_.exchange(0, std::memory_order_acquire);
 	}
 
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
@@ -778,8 +789,12 @@ namespace draw3
 			{
 			case '0':
 			case VK_NUMPAD0:
-				clearCanvasRequested_.store(true, std::memory_order_release);
-				RequestControlWake();
+				if ((lParam & kPreviousKeyStateMask) == 0)
+				{
+					// 每次真实按下都保留为独立的新建页请求，长按自动重复不计入。
+					IncrementSaturating(addPageRequestCount_);
+					RequestControlWake();
+				}
 				return 0;
 			case '1':
 			case VK_NUMPAD1:

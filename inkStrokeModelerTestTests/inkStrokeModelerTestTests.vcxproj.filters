@@ -15,6 +15,9 @@
 	<ClCompile Include="highlighter_geometry_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
+	<ClCompile Include="ink_document_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
 	<ClCompile Include="laser_incremental_coverage_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
@@ -34,6 +37,12 @@
       <Filter>draw3</Filter>
     </ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm">
 	  <Filter>draw3</Filter>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp">

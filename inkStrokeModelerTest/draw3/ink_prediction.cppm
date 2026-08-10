@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <vector>
 #include <windows.h>
@@ -17,6 +18,7 @@
 export module draw3.ink_prediction;
 
 import draw3.contact_input;
+import draw3.ink_document;
 import draw3.renderer;
 
 export namespace draw3
@@ -205,7 +207,6 @@ export namespace draw3
 		double liveTipDurationSeconds;
 		ink::stroke_model::KalmanPredictorParams kalmanPredictorParams;
 		ink::stroke_model::StrokeModelParams modelParams;
-		bool retainPredictionOnUp = false; // 默认由模型生成 Up 收尾；外部开关可选择保留最后可见 prediction。
 		bool invertedPenEraserEnabled = true; // 默认允许倒转 Pen 在画笔/荧光笔下临时覆盖为橡皮。
 		bool interruptedStrokeReconnectEnabled = true; // 默认允许 Touch 短暂断触继续同一模型；Pen/Mouse 始终正常收尾。
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
@@ -438,9 +439,13 @@ export namespace draw3
 	// 原地重建荧光笔几何并复用 primitive 容量，供每帧 L0 热路径使用。
 	void RebuildHighlighterGeometry(
 		std::span<const InkPoint> points, HighlighterGeometry& output);
-	// 选择普通笔完成态尾段：默认定住真实尾部+笔锋（去预测）；开关启用时保留最后可见 L0（含预测）。
-	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
+	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
+	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);
+	// 把完成态真实点转换为不含 time/prediction 的持久 Stroke；scratch 由绘制线程复用。
+	std::optional<InkStroke> FinalizeStoredStroke(const ActiveStroke& stroke,
+		StoredInkStyle style, double liveTipTaperSeconds,
+		std::vector<InkPoint>& scratch);
 
 	// 将矩形并入已有脏区。
 	void UnionRectInPlace(RECT& target, const RECT& addition);

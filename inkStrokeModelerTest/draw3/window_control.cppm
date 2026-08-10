@@ -53,8 +53,8 @@ export namespace draw3
 		WindowSize Size() const;
 		// 在 D3D 资源重建成功后提交新的逻辑尺寸。
 		void CommitSize(int width, int height);
-		// 消费一次清屏请求。
-		bool ConsumeClearCanvasRequest();
+		// 消费并返回尚未处理的新建页请求数。
+		uint32_t ConsumeAddPageRequestCount() noexcept;
 		// 消费一次窗口缩放请求并返回目标尺寸。
 		bool ConsumeResizeRequest(WindowSize& size);
 		// 消费一次全画布呈现请求。
@@ -121,7 +121,7 @@ export namespace draw3
 		HANDLE windowReadyEvent_ = nullptr;
 		DWORD initialExtendedStyle_ = 0;
 		WindowSize size_ = {};
-		std::atomic<bool> clearCanvasRequested_ = false;
+		std::atomic<uint32_t> addPageRequestCount_ = 0;
 		std::atomic<bool> resizeRequested_ = false;
 		std::atomic<bool> fullPresentRequested_ = false;
 		std::atomic<bool> compositionChangedRequested_ = false;

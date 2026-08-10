@@ -263,6 +263,10 @@
     <ClCompile Include="draw3\haptic_feedback.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+	<ClCompile Include="draw3\ink_document.cpp" />
+	<ClCompile Include="draw3\ink_document.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cpp" />
 	<ClCompile Include="draw3\stroke_geometry.cpp" />
 	<ClCompile Include="draw3\win7_compat.cpp" />

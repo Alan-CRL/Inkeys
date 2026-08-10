@@ -8,10 +8,12 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <vector>
 #include <windows.h>
 
 import draw3.renderer;
+import draw3.ink_document;
 import draw3.ink_prediction;
 
 namespace
@@ -56,7 +58,6 @@ int RunHighlighterGeometryTests()
 	int failures = 0;
 	const draw3::StrokeModelConfiguration defaultConfiguration =
 		draw3::CreateStrokeModelConfiguration(96);
-	HIGHLIGHTER_CHECK(!defaultConfiguration.retainPredictionOnUp);
 	HIGHLIGHTER_CHECK(defaultConfiguration.dpiScale == 1.0f);
 	HIGHLIGHTER_CHECK(!defaultConfiguration.laserParticlesEnabled);
 	HIGHLIGHTER_CHECK(!defaultConfiguration.laserMultiTouchDrawingEnabled);
@@ -494,25 +495,98 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		{ 20.0f, 20.0f, 2.4f, 0.01f },
 		{ 50.0f, 30.0f, 1.2f, 0.04f }
 	};
+	completedPen.predictedPoints = {
+		{ 50.0f, 30.0f, 1.2f, 0.04f }
+	};
 	std::vector<draw3::InkPoint> completedTail;
-		draw3::BuildCompletedPenTail(completedPen, false, 0.055, completedTail);
-		HIGHLIGHTER_CHECK(completedTail.size() == 3);
-		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 40.0f));
-		// 默认定住真实尾并叠加笔锋，末端应比未 taper 的 realPoints 更细。
-		HIGHLIGHTER_CHECK(completedTail.back().r < completedPen.realPoints.back().r);
-		draw3::BuildCompletedPenTail(completedPen, true, 0.055, completedTail);
-		HIGHLIGHTER_CHECK(completedTail.size() == 2);
-		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 50.0f));
+	draw3::BuildCompletedPenTail(completedPen, 0.055, completedTail);
+	HIGHLIGHTER_CHECK(completedTail.size() == 3);
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 20.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.back().x, 40.0f));
+	// 完成态只使用真实点并叠加笔锋，末端应比未 taper 的 realPoints 更细。
+	HIGHLIGHTER_CHECK(completedTail.back().r < completedPen.realPoints.back().r);
 
-		draw3::ActiveStroke clickPen(5.0f, 500.0f);
-		clickPen.inputStartPoint = { 12.0f, 34.0f, 2.5f, 0.0f };
-		clickPen.hasInputStartPoint = true;
-		draw3::BuildCompletedPenTail(clickPen, false, 0.055, completedTail);
-		HIGHLIGHTER_CHECK(completedTail.size() == 1);
-		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 12.0f));
-		HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().y, 34.0f));
+	const draw3::StoredInkStyle penStyle = {
+		.inkType = draw3::StoredInkType::Pen,
+		.fallbackRgb = 0xFF0000u,
+		.opacity = 1.0f,
+		.texture = 0u
+	};
+	const std::optional<draw3::InkStroke> storedPen = draw3::FinalizeStoredStroke(
+		completedPen, penStyle, 0.055, completedTail);
+	HIGHLIGHTER_CHECK(storedPen.has_value());
+	HIGHLIGHTER_CHECK(storedPen && storedPen->Points().size() == 4);
+	if (storedPen && storedPen->Points().size() == 4)
+	{
+		HIGHLIGHTER_CHECK(NearlyEqual(storedPen->Points()[0].x, 10.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedPen->Points()[1].x, 20.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedPen->Points()[2].x, 30.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedPen->Points()[3].x, 40.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(
+			storedPen->Points()[1].width, completedTail[0].r * 2.0f));
+		HIGHLIGHTER_CHECK(storedPen->Points().back().width <
+			completedPen.realPoints.back().r * 2.0f);
+	}
+
+	draw3::ActiveStroke clickPen(5.0f, 500.0f);
+	clickPen.inputStartPoint = { 12.0f, 34.0f, 2.5f, 123.0f };
+	clickPen.hasInputStartPoint = true;
+	draw3::BuildCompletedPenTail(clickPen, 0.055, completedTail);
+	HIGHLIGHTER_CHECK(completedTail.size() == 1);
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().x, 12.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(completedTail.front().y, 34.0f));
+	const std::optional<draw3::InkStroke> storedClick = draw3::FinalizeStoredStroke(
+		clickPen, penStyle, 0.055, completedTail);
+	HIGHLIGHTER_CHECK(storedClick.has_value());
+	HIGHLIGHTER_CHECK(storedClick && storedClick->Points().size() == 1);
+	if (storedClick && storedClick->Points().size() == 1)
+		HIGHLIGHTER_CHECK(NearlyEqual(storedClick->Points()[0].width, 5.0f));
+
+	draw3::ActiveStroke completedHighlighter(50.0f, 500.0f,
+		draw3::StrokeWidthMode::Fixed, true);
+	completedHighlighter.realPoints = {
+		{ -20.0f, 30.0f, 25.0f, 1.0f },
+		{ 80.0f, 90.0f, 25.0f, 2.0f }
+	};
+	completedHighlighter.predictedPoints = {
+		{ 120.0f, 130.0f, 25.0f, 3.0f }
+	};
+	const draw3::StoredInkStyle highlighterStyle = {
+		.inkType = draw3::StoredInkType::Highlighter,
+		.fallbackRgb = 0xFF0000u,
+		.opacity = 0.35f,
+		.texture = 0u
+	};
+	const std::optional<draw3::InkStroke> storedHighlighter =
+		draw3::FinalizeStoredStroke(completedHighlighter,
+			highlighterStyle, 0.0, completedTail);
+	HIGHLIGHTER_CHECK(storedHighlighter.has_value());
+	HIGHLIGHTER_CHECK(storedHighlighter && storedHighlighter->Points().size() == 2);
+	if (storedHighlighter && storedHighlighter->Points().size() == 2)
+	{
+		HIGHLIGHTER_CHECK(NearlyEqual(storedHighlighter->Points()[0].x, -20.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedHighlighter->Points()[1].width, 50.0f));
+	}
+
+	draw3::ActiveStroke clickEraser(50.0f, 500.0f,
+		draw3::StrokeWidthMode::Fixed);
+	clickEraser.inputStartPoint = { 7.0f, 8.0f, 25.0f, 9.0f };
+	clickEraser.hasInputStartPoint = true;
+	const draw3::StoredInkStyle eraserStyle = {
+		.inkType = draw3::StoredInkType::Eraser,
+		.fallbackRgb = 0u,
+		.opacity = 1.0f,
+		.texture = 0u
+	};
+	const std::optional<draw3::InkStroke> storedEraser =
+		draw3::FinalizeStoredStroke(clickEraser, eraserStyle, 0.0, completedTail);
+	HIGHLIGHTER_CHECK(storedEraser.has_value());
+	HIGHLIGHTER_CHECK(storedEraser && storedEraser->Points().size() == 1);
+	if (storedEraser && storedEraser->Points().size() == 1)
+	{
+		HIGHLIGHTER_CHECK(NearlyEqual(storedEraser->Points()[0].x, 7.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedEraser->Points()[0].width, 50.0f));
+	}
 
 	constexpr float kHalfHeight = 25.0f;
 	constexpr float kHalfWidth = 3.125f;

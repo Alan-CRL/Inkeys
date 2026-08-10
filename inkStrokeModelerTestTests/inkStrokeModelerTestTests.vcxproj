@@ -103,6 +103,7 @@
   <ItemGroup>
     <ClCompile Include="contact_input_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
+	<ClCompile Include="ink_document_tests.cpp" />
 	<ClCompile Include="laser_incremental_coverage_tests.cpp" />
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
@@ -116,6 +117,10 @@
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cpp" Link="draw3\haptic_feedback.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm" Link="draw3\haptic_feedback.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp" Link="draw3\ink_document.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm" Link="draw3\ink_document.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp" Link="draw3\pen_cursor.cpp" />

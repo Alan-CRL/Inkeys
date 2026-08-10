@@ -27,6 +27,7 @@ import draw3.realtime_stylus;
 import draw3.runtime_metrics;
 
 int RunHighlighterGeometryTests();
+int RunInkDocumentTests();
 int RunLaserIncrementalCoverageTests();
 int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
@@ -1620,6 +1621,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestHapticFeedbackContracts(state);
 	TestPerformanceHudMetrics(state);
 	state.failures += RunHighlighterGeometryTests();
+	state.failures += RunInkDocumentTests();
 	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();
 	if (state.failures == 0)

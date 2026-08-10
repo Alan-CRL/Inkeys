@@ -10,7 +10,10 @@
 #include <iterator>
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
+#include <optional>
 #include <span>
+#include <utility>
+#include <vector>
 #include <windows.h>
 
 module draw3.ink_prediction;
@@ -343,20 +346,11 @@ namespace draw3
 		return geometry;
 	}
 
-	void BuildCompletedPenTail(const ActiveStroke& stroke, bool retainPredictionOnUp,
+	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output)
 	{
 		output.clear();
-		if (retainPredictionOnUp)
-		{
-			// 开关启用时原样烘干最后可见 L0（含 prediction）；优先本帧，再回退上一帧快照。
-			if (!stroke.l0DrawPoints.empty())
-				output.assign(stroke.l0DrawPoints.begin(), stroke.l0DrawPoints.end());
-			else if (!stroke.previousL0DrawPoints.empty())
-				output.assign(stroke.previousL0DrawPoints.begin(), stroke.previousL0DrawPoints.end());
-			if (!output.empty()) return;
-		}
-		// 默认：定住真实尾部并叠加笔锋，明确去掉 prediction，避免抬笔瞬间 tip 回缩。
+		// 完成态只从真实点生成；prediction 永远不进入持久 Stroke。
 		if (!stroke.realPoints.empty())
 		{
 			const size_t tailStart = stroke.hasCommittedGeometry
@@ -367,6 +361,53 @@ namespace draw3
 		}
 		if (output.empty() && stroke.hasInputStartPoint)
 			output.push_back(stroke.inputStartPoint); // Down 后立即 Up 尚无建模点时仍生成点击。
+	}
+
+	std::optional<InkStroke> FinalizeStoredStroke(const ActiveStroke& stroke,
+		StoredInkStyle style, double liveTipTaperSeconds,
+		std::vector<InkPoint>& scratch)
+	{
+		std::vector<StoredInkPoint> points;
+		auto appendPoint = [&](const InkPoint& point)
+		{
+			points.push_back({ point.x, point.y, point.r * 2.0f });
+		};
+
+		if (style.inkType == StoredInkType::Pen)
+		{
+			BuildCompletedPenTail(stroke, liveTipTaperSeconds, scratch);
+			const size_t stablePointCount = stroke.hasCommittedGeometry &&
+				!stroke.realPoints.empty()
+				? std::min(stroke.committedIndex + 1, stroke.realPoints.size()) : 0;
+			points.reserve((stablePointCount > 0 ? stablePointCount - 1 : 0) +
+				scratch.size());
+			// 尾段首点已经烘入 taper；用它替换稳定前缀连接点，避免接缝重复。
+			for (size_t index = 0; index + 1 < stablePointCount; ++index)
+				appendPoint(stroke.realPoints[index]);
+			for (const InkPoint& point : scratch) appendPoint(point);
+		}
+		else if (style.inkType == StoredInkType::Highlighter ||
+			style.inkType == StoredInkType::Eraser)
+		{
+			if (!stroke.realPoints.empty())
+			{
+				points.reserve(stroke.realPoints.size());
+				for (const InkPoint& point : stroke.realPoints) appendPoint(point);
+			}
+			else if (stroke.hasInputStartPoint)
+			{
+				points.reserve(1);
+				appendPoint(stroke.inputStartPoint);
+			}
+		}
+		else
+		{
+			return std::nullopt;
+		}
+
+		InkStroke storedStroke(style, std::move(points));
+		if (!storedStroke.IsValid()) return std::nullopt;
+		return storedStroke;
 	}
 
 	ActiveStroke::ActiveStroke(float baseDiameter, float expectedSpeed,

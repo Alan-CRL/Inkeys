@@ -6,12 +6,15 @@
 
 #include <atomic>
 #include <compare>
+#include <cstddef>
+#include <optional>
 #include <windows.h>
 
 export module draw3.drawing_controller;
 
 import draw3.contact_input;
 import draw3.haptic_feedback;
+import draw3.ink_document;
 import draw3.ink_prediction;
 import draw3.renderer;
 import draw3.runtime_metrics;
@@ -78,6 +81,8 @@ export namespace draw3
 		std::atomic<bool> performanceHudResetRequested_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
 		PerformanceHudTracker performanceHudTracker_;
+		std::optional<InkCanvasCollection> document_;
+		size_t currentPageIndex_ = 0;
 		RuntimeMetricsSession* metrics_ = nullptr;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
