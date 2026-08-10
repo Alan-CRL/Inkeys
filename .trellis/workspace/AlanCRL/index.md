@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
-- **Last Active**: 2026-08-09
+- **Total Sessions**: 10
+- **Last Active**: 2026-08-11
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~279 | Active |
+| `journal-1.md` | ~301 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-08-11 | 墨迹文档、分块撤回与页面恢复 | `1cc746e`, `ebfd0ed` | `main` |
 | 9 | 2026-08-09 | 完成 Windows Ink 调查收尾 | `49dcbfe` | `main` |
 | 8 | 2026-08-07 | Finish RTS packet decoder hot path | `415ee5e`, `74c33fc` | `main` |
 | 7 | 2026-08-02 | 完成并归档任务 4-8 | `aa305d3`, `56e95d7`, `bc22d07`, `41754d1`, `b91366d`, `be50ae4`, `b035a67` | `main` |

@@ -277,3 +277,25 @@ Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: 墨迹文档、分块撤回与页面恢复
+
+**Date**: 2026-08-11
+**Task**: 墨迹文档、分块撤回与页面恢复
+**Branch**: `main`
+
+### Summary
+
+完成墨迹文档模型、64 MiB 热前像、192 MiB 合成缓存、尾部撤回和 0/8 页面恢复；ARM64 Debug/Release 构建及控制台测试通过，用户人工验收通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1cc746e` | (see git log) |
+| `ebfd0ed` | (see git log) |
+
+### Status
+
+[OK] **Completed**
