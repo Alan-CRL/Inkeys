@@ -104,6 +104,7 @@
     <ClCompile Include="contact_input_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
 	<ClCompile Include="ink_document_tests.cpp" />
+	<ClCompile Include="ink_history_tests.cpp" />
 	<ClCompile Include="laser_incremental_coverage_tests.cpp" />
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
@@ -121,6 +122,14 @@
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp" Link="draw3\ink_document.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm" Link="draw3\ink_document.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp" Link="draw3\ink_history.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history_gpu.cpp" Link="draw3\ink_history_gpu.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history_gpu.cppm" Link="draw3\ink_history_gpu.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cppm" Link="draw3\ink_history.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp" Link="draw3\pen_cursor.cpp" />

@@ -7,6 +7,7 @@
 #include <atomic>
 #include <compare>
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <windows.h>
 
@@ -15,6 +16,8 @@ export module draw3.drawing_controller;
 import draw3.contact_input;
 import draw3.haptic_feedback;
 import draw3.ink_document;
+import draw3.ink_history;
+import draw3.ink_history_gpu;
 import draw3.ink_prediction;
 import draw3.renderer;
 import draw3.runtime_metrics;
@@ -54,6 +57,11 @@ export namespace draw3
 		// 控制独立性能 HUD；默认关闭，不进入墨迹合成路径。
 		void SetPerformanceHudEnabled(bool enabled) noexcept;
 		bool GetPerformanceHudEnabled() const noexcept;
+		// 运行时调整热前像和合成树预算；0 表示关闭对应缓存。
+		void SetUndoCachePolicy(UndoCachePolicy policy);
+		UndoCachePolicy GetUndoCachePolicy() const;
+		void SetCompositionCachePolicy(CompositionCachePolicy policy);
+		CompositionCachePolicy GetCompositionCachePolicy() const;
 		// 清空 L0/L1/L2 和 backbuffer，并立即全量呈现。
 		void ClearCanvas();
 		// 合成并呈现完整画布。
@@ -80,6 +88,10 @@ export namespace draw3
 		std::atomic<bool> performanceHudEnabled_ = false;
 		std::atomic<bool> performanceHudResetRequested_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
+		mutable std::mutex historyCachePolicyMutex_;
+		UndoCachePolicy undoCachePolicy_ = {};
+		CompositionCachePolicy compositionCachePolicy_ = {};
+		std::atomic<uint64_t> historyCachePolicyGeneration_ = 1;
 		PerformanceHudTracker performanceHudTracker_;
 		std::optional<InkCanvasCollection> document_;
 		size_t currentPageIndex_ = 0;

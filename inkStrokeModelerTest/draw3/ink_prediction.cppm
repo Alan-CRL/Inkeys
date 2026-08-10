@@ -447,6 +447,27 @@ export namespace draw3
 		StoredInkStyle style, double liveTipTaperSeconds,
 		std::vector<InkPoint>& scratch);
 
+	// 描述 Stored Stroke 栅格化目标；origin 是目标左上角对应的 Canvas 坐标。
+	struct StoredStrokeRasterTarget
+	{
+		const OperatorLayerResources* operatorLayer = nullptr;
+		float originX = 0.0f;
+		float originY = 0.0f;
+		int width = 0;
+		int height = 0;
+	};
+
+	struct StoredStrokeRasterResult
+	{
+		bool succeeded = false;
+		RECT dirty = {};
+	};
+
+	// 从持久对象重建最终 operator；全屏首次提交与 tile cache 共用此入口。
+	StoredStrokeRasterResult DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
+		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
+		HighlighterGeometry& highlighterScratch);
+
 	// 将矩形并入已有脏区。
 	void UnionRectInPlace(RECT& target, const RECT& addition);
 	// 判断矩形是否为空。

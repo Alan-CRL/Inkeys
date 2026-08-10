@@ -18,6 +18,9 @@
 	<ClCompile Include="ink_document_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
+	<ClCompile Include="ink_history_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
 	<ClCompile Include="laser_incremental_coverage_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
@@ -43,6 +46,18 @@
 	  <Filter>draw3</Filter>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history_gpu.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history_gpu.cppm">
 	  <Filter>draw3</Filter>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp">

@@ -410,6 +410,56 @@ namespace draw3
 		return storedStroke;
 	}
 
+	StoredStrokeRasterResult DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
+		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
+		HighlighterGeometry& highlighterScratch)
+	{
+		if (!target.operatorLayer || !target.operatorLayer->addRTV ||
+			!target.operatorLayer->retainRTV || target.width <= 0 || target.height <= 0 ||
+			!std::isfinite(target.originX) || !std::isfinite(target.originY)) return {};
+
+		pointScratch.clear();
+		pointScratch.reserve(stroke.Points().size());
+		for (const StoredInkPoint& point : stroke.Points())
+		{
+			pointScratch.push_back({
+				point.x - target.originX,
+				point.y - target.originY,
+				point.width * 0.5f,
+				0.0f });
+		}
+		if (pointScratch.empty()) return {};
+
+		const StoredInkStyle& style = stroke.Style();
+		constexpr float kByteToFloat = 1.0f / 255.0f;
+		const DirectX::XMFLOAT4 color = {
+			static_cast<float>((style.fallbackRgb >> 16) & 0xFFu) * kByteToFloat,
+			static_cast<float>((style.fallbackRgb >> 8) & 0xFFu) * kByteToFloat,
+			static_cast<float>(style.fallbackRgb & 0xFFu) * kByteToFloat,
+			style.opacity
+		};
+
+		// tile 目标只改变坐标原点和 viewport，笔刷颜色/几何仍走正式 renderer。
+		renderer.SetScreenSize(static_cast<float>(target.width),
+			static_cast<float>(target.height));
+		renderer.SetOperatorTarget(*target.operatorLayer);
+		if (style.inkType == StoredInkType::Highlighter)
+		{
+			RebuildHighlighterGeometry(pointScratch, highlighterScratch);
+			if (renderer.DrawHighlighterPrimitives(
+				highlighterScratch.primitives, color) < 0) return {};
+			return { true, ClampRectToCanvas(
+				highlighterScratch.bounds, target.width, target.height) };
+		}
+
+		const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
+			? InkOperatorKind::Erase : InkOperatorKind::Draw;
+		if (renderer.DrawStrokeOrDot(pointScratch, color,
+			StrokeShape::RoundCapsule, operatorKind) < 0) return {};
+		return { true, RectFromStrokePoints(
+			pointScratch, target.width, target.height) };
+	}
+
 	ActiveStroke::ActiveStroke(float baseDiameter, float expectedSpeed,
 		StrokeWidthMode widthModeValue, bool highlighterValue)
 	{

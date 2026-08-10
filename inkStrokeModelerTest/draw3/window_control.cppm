@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -34,6 +35,18 @@ export namespace draw3
 		int height = 0;
 	};
 
+	enum class CanvasCommandType : uint8_t
+	{
+		Undo,
+		NextPage,
+		PreviousPage
+	};
+
+	struct CanvasCommand
+	{
+		CanvasCommandType type = CanvasCommandType::Undo;
+	};
+
 	// 管理窗口创建、消息回调、系统光标和跨线程瞬态光标请求。
 	class WindowController : public DrawingCursorEventSink
 	{
@@ -53,8 +66,8 @@ export namespace draw3
 		WindowSize Size() const;
 		// 在 D3D 资源重建成功后提交新的逻辑尺寸。
 		void CommitSize(int width, int height);
-		// 消费并返回尚未处理的新建页请求数。
-		uint32_t ConsumeAddPageRequestCount() noexcept;
+		// 按真实按键发布顺序消费低频画布命令。
+		bool TryDequeueCanvasCommand(CanvasCommand& command);
 		// 消费一次窗口缩放请求并返回目标尺寸。
 		bool ConsumeResizeRequest(WindowSize& size);
 		// 消费一次全画布呈现请求。
@@ -106,6 +119,7 @@ export namespace draw3
 		void PostPerformanceHudRefresh() noexcept;
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
+		void QueueCanvasCommand(CanvasCommandType type);
 		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorPointerAuthority(
@@ -121,7 +135,8 @@ export namespace draw3
 		HANDLE windowReadyEvent_ = nullptr;
 		DWORD initialExtendedStyle_ = 0;
 		WindowSize size_ = {};
-		std::atomic<uint32_t> addPageRequestCount_ = 0;
+		std::mutex canvasCommandMutex_;
+		std::deque<CanvasCommand> canvasCommands_;
 		std::atomic<bool> resizeRequested_ = false;
 		std::atomic<bool> fullPresentRequested_ = false;
 		std::atomic<bool> compositionChangedRequested_ = false;

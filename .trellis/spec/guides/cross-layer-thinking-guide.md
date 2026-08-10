@@ -22,7 +22,7 @@ Win32 window message
 - 数据由谁拥有，何时失效。
 - 坐标、半径、时间、alpha 是否仍保持相同单位和语义。
 - 失败是返回 `false`、记录日志、回退，还是请求下一次全量呈现。
-- resize、新建页、抬笔和呈现失败是否仍能恢复一致状态。
+- resize、撤回/页面命令、抬笔和呈现失败是否仍能恢复一致状态。
 
 ## Required Boundary Checks
 
@@ -60,6 +60,7 @@ Win32 window message
 - 普通绘制与橡皮都编码为 `Add + Retain * Below`；同笔分段默认使用覆盖率并集。
 - 抬笔时先把最终 Stroke 追加到当前 Canvas，再从刚追加的对象重建 operator 几何；不得先从 ActiveStroke 绘制再保存另一份数据。
 - 同帧多个完成 Stroke 必须按 Canvas 追加顺序独立作用到 L2；共享 MAX/MIN coverage 会破坏半透明和擦除顺序。
+- 每笔首次 L2 提交前必须先追加 RenderItem；热前像在 L1 栅格后、L2 resolve 前捕获，冷撤回只在受影响 tile 构建候选画面，成功后才提交 visibility。
 
 依据：`DrawingController::CompositeLayersToBackBuffer`、`DrawStoredStroke`、`InkRenderer::ApplyOperatorLayers`。
 

@@ -62,29 +62,29 @@ namespace draw3
 		context->CopySubresourceRegion(dst, 0, rect.left, rect.top, 0, src, 0, &sourceRegion); // 只复制脏矩形，减少 backbuffer 更新量。
 	}
 
-	void InkRenderer::ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
+	bool InkRenderer::ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
 		const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 		RECT rect, OperatorLayerMergeMode mergeMode)
 	{
 		if (!dstRTV || !stableLayer.addSRV || !stableLayer.retainSRV ||
-			!liveLayer.addSRV || !liveLayer.retainSRV) return;
+			!liveLayer.addSRV || !liveLayer.retainSRV) return false;
 		rect.left = std::max(0L, rect.left);
 		rect.top = std::max(0L, rect.top);
 		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
 		rect.bottom = std::min(static_cast<LONG>(viewportHeight), rect.bottom);
-		if (rect.left >= rect.right || rect.top >= rect.bottom) return;
+		if (rect.left >= rect.right || rect.top >= rect.bottom) return true;
 
 		InkPoint rectPoints[2] = {
 			{ static_cast<float>(rect.left), static_cast<float>(rect.top), 0.0f, 0.0f },
 			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
 		};
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(inkDataBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		if (FAILED(context->Map(inkDataBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
 		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 复用墨迹缓冲区传入要混合的矩形范围。
 		context->Unmap(inkDataBuffer.Get(), 0);
 		m_bufferHead = 2;
 
-		if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
@@ -123,6 +123,7 @@ namespace draw3
 		context->VSSetShaderResources(0, 1, nullResources);
 		context->PSSetShaderResources(1, ARRAYSIZE(nullResources), nullResources); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
 		context->PSSetSamplers(0, 1, nullSampler);
+		return true;
 	}
 
 	void InkRenderer::SetScreenSize(float width, float height)

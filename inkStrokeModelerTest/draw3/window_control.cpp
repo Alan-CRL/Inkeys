@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cerrno>
 #include <iostream>
+#include <mutex>
 #include <process.h>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
@@ -139,15 +140,6 @@ namespace draw3
 			return RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 		}
 
-		void IncrementSaturating(std::atomic<uint32_t>& value) noexcept
-		{
-			uint32_t current = value.load(std::memory_order_relaxed);
-			while (current != UINT32_MAX &&
-				!value.compare_exchange_weak(current, current + 1,
-					std::memory_order_release, std::memory_order_relaxed))
-			{
-			}
-		}
 	}
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -312,9 +304,13 @@ namespace draw3
 		size_.height = height;
 	}
 
-	uint32_t WindowController::ConsumeAddPageRequestCount() noexcept
+	bool WindowController::TryDequeueCanvasCommand(CanvasCommand& command)
 	{
-		return addPageRequestCount_.exchange(0, std::memory_order_acquire);
+		const std::scoped_lock lock(canvasCommandMutex_);
+		if (canvasCommands_.empty()) return false;
+		command = canvasCommands_.front();
+		canvasCommands_.pop_front();
+		return true;
 	}
 
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
@@ -356,6 +352,15 @@ namespace draw3
 	{
 		if (ContactInputCoordinator* coordinator = inputCoordinator_.load(std::memory_order_acquire))
 			coordinator->PublishControlWake();
+	}
+
+	void WindowController::QueueCanvasCommand(CanvasCommandType type)
+	{
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			canvasCommands_.push_back({ type });
+		}
+		RequestControlWake();
 	}
 
 	void WindowController::SetGpuTransparentComposition(bool enabled)
@@ -790,11 +795,7 @@ namespace draw3
 			case '0':
 			case VK_NUMPAD0:
 				if ((lParam & kPreviousKeyStateMask) == 0)
-				{
-					// 每次真实按下都保留为独立的新建页请求，长按自动重复不计入。
-					IncrementSaturating(addPageRequestCount_);
-					RequestControlWake();
-				}
+					QueueCanvasCommand(CanvasCommandType::NextPage);
 				return 0;
 			case '1':
 			case VK_NUMPAD1:
@@ -819,6 +820,16 @@ namespace draw3
 				activeTool_.store(DrawingTool::Laser, std::memory_order_relaxed);
 				RequestDrawingCursorRender();
 				QueueSystemCursorRefresh();
+				return 0;
+			case '5':
+			case VK_NUMPAD5:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand(CanvasCommandType::Undo);
+				return 0;
+			case '8':
+			case VK_NUMPAD8:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand(CanvasCommandType::PreviousPage);
 				return 0;
 			case '9':
 			case VK_NUMPAD9:

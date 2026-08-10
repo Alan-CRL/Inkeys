@@ -267,6 +267,14 @@
 	<ClCompile Include="draw3\ink_document.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="draw3\ink_history.cpp" />
+	<ClCompile Include="draw3\ink_history.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\ink_history_gpu.cpp" />
+	<ClCompile Include="draw3\ink_history_gpu.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cpp" />
 	<ClCompile Include="draw3\stroke_geometry.cpp" />
 	<ClCompile Include="draw3\win7_compat.cpp" />

@@ -17,7 +17,7 @@
 
 ## Input And Thread Boundary
 
-`WindowController::HandleWindowMessage` 将 resize、新建页、全量呈现、DWM 变化和退出写入原子状态。主循环通过 `Consume*` 方法消费请求。
+`WindowController::HandleWindowMessage` 将 resize、FIFO Canvas command、全量呈现、DWM 变化和退出发布给绘制线程。主循环通过 `Consume*` 或 `TryDequeueCanvasCommand` 消费请求。
 
 - 窗口回调不重建 D3D 资源。
 - `pendingResizeWidth_/Height_` 先写入，`resizeRequested_` 最后 release 发布。
@@ -25,7 +25,7 @@
 - RTS 同步回调只完成 packet 解析、contact 状态发布和唤醒，不调用 D3D、presenter 或 stroke modeler。
 - 控制请求先写 sticky 原子标记，再通过 coordinator 队列唤醒；消费方在阻塞前二次 dequeue，避免清 pending 与入队交错造成丢唤醒。
 - 无活动 contact 时使用 blocking dequeue；活动 contact 仍按帧更新停笔预测。
-- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。RTS/`WM_POINTER` 的 Pen Contact cursor 同样只覆盖最新 mailbox，不逐包发布 render/control wake；Hover 与新建页/终态继续按原路径唤醒。
+- Down、Up/Cancelled 和控制请求递增 wake generation 并触发 Win7 可用的 event；Move 只更新合并快照，不把 240Hz packet 变成无界帧驱动。RTS/`WM_POINTER` 的 Pen Contact cursor 同样只覆盖最新 mailbox，不逐包发布 render/control wake；Hover、Canvas command 与终态继续按原路径唤醒。
 - contact slot 的 `writerLatch_` 只在对象初始化时为 clear，跨 generation 复用不得重置；只有实际取得 latch 的调用可以释放，避免旧 generation Move 与新 writer 形成 ownership ABA。
 - 绘制线程使用 `THREAD_PRIORITY_ABOVE_NORMAL`，活动末段按 QPC deadline 核对 wake generation；完全空闲仍阻塞在队列 semaphore，不自旋。
 
@@ -180,7 +180,7 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 | Pen Contact + Pen/Highlighter，开关开启 | 隐藏系统 cursor，绘制与对应 Hover 完全相同的 Circle/Rectangle |
 | RTS/Pointer Pen Contact sample | 继续覆盖 cursor mailbox，但不逐样本调用 `RequestDrawingCursorRender`；活动帧读取最新坐标 |
 | Pen Up | 清除应用 cursor；只有后续真实 InAir/Pointer Update 才恢复 Hover |
-| Pen Hover、新建页、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
+| Pen Hover、Canvas command、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
 | Pen/Mouse Hover + Eraser | 隐藏系统 cursor，绘制 Alpha 0.5 EraserGripCircle |
 | Pen/Mouse Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
 | N 个 Touch Eraser Contact | 同时绘制 N 枚 Alpha 1.0 EraserGripCircle |
@@ -227,7 +227,7 @@ Correct：`StylusUp/WM_POINTERUP -> clear Pen sample`；后续真实 InAir/Point
 
 Wrong：`每个 RTS/WM_POINTER Contact cursor 样本都 SetEvent`，或为避免唤醒而停止发布 `WM_POINTER` Contact 坐标。
 
-Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读取坐标，Hover、新建页、终态和 authority 变化仍沿用各自离散唤醒。
+Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读取坐标，Hover、Canvas command、终态和 authority 变化仍沿用各自离散唤醒。
 
 Wrong：`绘制时显示光标 -> 为 Pen Contact 保留 IDC_ARROW`，导致产品行为依赖系统 cursor 路径且外观与 Hover 不一致。
 
@@ -282,7 +282,7 @@ Correct：`drawingCursorDuringContactEnabled -> ResolvePrimaryDrawingCursorVisua
 - prediction 为空、位置/时域无效或工具禁用 prediction 时，回退真实尾方向与模型真实点末端时间窗速度：96 DPI 下方向回看 12px、有效方向至少 4px、绝对距离不超过 32px，沿用 35°、自适应距离和速度比规则；模型时间窗不可用时才使用滤波 RTS 末速，并按当前间隔与绝对上限裁掉无意义尖峰。
 - 多候选按归一化预测落点误差、实际选择走廊夹角、距离、较新 Up 的顺序选择；回退候选首排序量仍为实际/预测距离比例误差。命中时旧 handle 回收，新 handle 接管原 runtime，新 Down 以连续时间作为 `kMove`；不得 Reset modeler 或宽度状态。
 - 最多保留 8 个候选；超限先以保存的 Up 完成最旧候选。仅剩候选时结束 1ms timer period，并等待新 Down、控制 wake 或最近 deadline。
-- 超时后才发送真正 `kUp`，随后沿用同帧有序 Stored Stroke 提交、活动层重建、指标提交、handle 回收和 runtime Reset。resize 重建候选，new-page 请求最多额外等待当前候选剩余窗口。
+- 超时后才发送真正 `kUp`，随后沿用同帧有序 Stored Stroke 提交、活动层重建、指标提交、handle 回收和 runtime Reset。resize 重建候选，Canvas command 最多额外等待当前候选剩余窗口。
 - RTS 断触注入只用于人工测试：开启时使用固定 32 contact 状态和合成 contact id 随机生成 Up→丢弃 20–70ms Move→新 Down；关闭时必须由 `if constexpr` 选择原始 coordinator 直达分支，空模拟器不得查询频率、生成随机数、加锁或输出日志。
 - `kInterruptedStrokeReconnectManualTestModeEnabled` 与 `kInterruptedStrokeReconnectSimulationEnabled` 的正式默认值均为 `false`。人工测试开关关闭时恢复笔尾倒转橡皮，并由 `if constexpr` 移除绿色桥接覆盖和拒绝诊断；模拟开关关闭时不进入任何合成 contact 热路径。
 
@@ -494,7 +494,7 @@ contact 结束时，Pen 用已确认真实点合并稳定前缀和完成态 tape
 
 ### 1. Scope / Trigger
 
-修改 RTS packet、contact 路由、跨线程队列、活动笔画、resize/new-page、临时层合成或呈现时，必须应用本契约。
+修改 RTS packet、contact 路由、跨线程队列、活动笔画、resize/Canvas command、临时层合成或呈现时，必须应用本契约。
 
 ### 2. Signatures
 
@@ -525,7 +525,7 @@ contact 结束时，Pen 用已确认真实点合并稳定前缀和完成态 tape
 - packet/contact callbacks 通常来自 RTS high-priority execution/tablet-data thread；`RealTimeStylusEnabled/Disabled` 可能在修改 `Enabled` 或 plugin collection 的 caller thread 执行，不能假设所有 `IStylusSyncPlugin` callbacks 天然同线程串行。普通 decoder/binding 数组必须由项目自己的 rare-writer/lock-free-reader gate 发布：lifecycle、Down、Up 和 Error 使用 writer mutex + writer bit + reader drain，`Packets/InAirPackets` 只做一次 lock-free CAS，失败立即丢包且不等待。
 - state gate 的 happens-before 必须由 C++ atomic memory order 建立：reader acquire-CAS/release decrement，writer acq_rel 发布 writer bit、acquire 等待 reader count 清零、release 清 writer bit；writer bit 发布后禁止新 reader 进入。`put_Enabled(FALSE)` 的 Disabled writer 必须先 drain 已进入的 packet readers，返回后才 Remove plugin 和释放对象。
 - 每个活动 contact 拥有独立 CPU runtime，其 GPU 几何共同重建到共享 L1/L0；不得提前进入 L2。完成 contact 按 `active` 稳定顺序逐条 Finalize、Append、从 Stored Stroke 重画并独立 resolve；随后重建仍活动 contact，同帧仍只 composite/present 一次。
-- resize 成功后重建活动临时层；用户 new-page 请求在有活动 contact 时延后，最后一个 contact 完成后才追加空白页并清空 GPU 工作面。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
+- resize 成功后重建活动临时层；`0/5/8` Canvas command 在有活动或续接候选 contact 时保持 FIFO，最后一个 contact 完成后才执行撤回或页面恢复。无活动 contact 时阻塞等待；1ms timer period 只在活动区间启用，且每次成功 begin 必须配对 end。
 - waitable swapchain resize 必须先 `GetDesc1`，并原样传回 `BufferCount/Format/Flags`；部分驱动在传入零值时第一次 resize 成功、恢复尺寸时失败。
 - 运行指标关闭时不创建会话、不启用输入计数、不写文件；开启后原始样本写入忽略的 `TestResults/`，仓库只保存环境、阈值和分位数摘要。
 - 开发诊断 HUD 默认关闭；启用时使用独立 owned layered popup，必须点击穿透且不激活，也不进入 backbuffer、L0/L1/L2、Laser coverage、dirty rect、shader 或 presenter。
@@ -552,7 +552,7 @@ contact 结束时，Pen 用已确认真实点合并稳定前缀和完成态 tape
 | lifecycle writer 与 packet reader overlap | writer bit 阻止新 packet reader；writer 等既有 reader 退出后修改固定数组，packet callback 不 spin、不 retry、不取得 writer mutex |
 | Resize succeeds | 保留 L2 交集并从 CPU runtime 重建全部活动 L1/L0 |
 | waitable swapchain second resize | 保留原 swapchain 描述字段；不得用 `ResizeBuffers(..., UNKNOWN, 0)` 丢弃 flags |
-| New page with active contact | 请求计数保留并延后到活动集合为空；完成 Stroke 仍写入旧页 |
+| Canvas command with active contact | FIFO 保留并延后到活动集合为空；完成 Stroke 仍写入命令执行前的当前页 |
 | Multiple Up in one frame | 按 Canvas 追加顺序逐 Stroke resolve；一次 composite、一次 present |
 | Up arrives after a visible prediction | 只保存确认真实点；Pen 烘入 taper 并去重连接点，prediction 不进入 Stored Stroke |
 | Present failure | 保持整画布重呈现请求，下一帧恢复 |
@@ -626,7 +626,8 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - `InkPage::FindCanvas/GetOrCreateCanvas(DeviceKey, InkViewport)`
 - `InkCanvasCollection::AppendPage(InkGuid|InkPage) -> optional<size_t>`
 - `FinalizeStoredStroke(ActiveStroke, StoredInkStyle, taperSeconds, scratch)`
-- `WindowController::ConsumeAddPageRequestCount() -> uint32_t`
+- `CanvasCommand { Undo | NextPage | PreviousPage }`
+- `WindowController::TryDequeueCanvasCommand(CanvasCommand&) -> bool`
 
 ### 3. Contracts
 
@@ -635,8 +636,8 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - Canvas 没有固定宽高，viewport 默认 `{0,0,1}`；Page 用 16-byte canonical GUID，并按 opaque `DeviceKey` 拥有 Canvas；Collection 的 Page vector 位置就是 pageIndex。
 - `DrawingController` 绘制线程独占 Collection，不加锁。运行开始创建 Workspace、第一页和默认 Device Canvas；current page index 是运行时状态。
 - Pen 复制稳定前缀并用完成态真实 taper 尾段替换连接点；Highlighter/Eraser 保存完整真实中心线；无 modeled point 时保存 `inputStartPoint`。Cancelled 和 Laser 都不 Append。
-- 首次提交顺序固定为 `FinalizeStoredStroke -> AppendStroke -> DrawStoredStroke(appended stroke) -> per-Stroke L2 resolve`。同帧多个完成项按 Canvas 追加顺序逐条执行，不能共享 coverage union。
-- 数字键 `0` 发布可计数、忽略自动重复的 new-page 请求。请求等待全部 active/reconnect contact 完成；每个请求追加一页。只有 GUID、Page 和默认 Canvas 均成功后才切换 current index 并清空 GPU 工作面；启动 `DrawingController::ClearCanvas()` 只初始化透明表面。
+- 首次提交顺序固定为 `FinalizeStoredStroke -> AppendStroke -> AppendRenderItem -> DrawStoredStroke(appended stroke) -> capture preimage -> per-Stroke L2 resolve`。任何可见 L2 像素必须先有对应 RenderItem；同帧多个完成项按 Canvas 追加顺序逐条执行，不能共享 coverage union。
+- 数字键 `0/5/8` 发布 FIFO Canvas command 并忽略自动重复；请求等待全部 active/reconnect contact 完成。`0` 优先切换已有下一页，仅在末页追加空白页；`8` 返回上一页；`5` 撤回当前页最后可见项。只有 GUID、Page 和默认 Canvas 均成功后才切换到新页；启动 `DrawingController::ClearCanvas()` 只初始化透明表面。
 
 ### 4. Validation & Error Matrix
 
@@ -649,7 +650,9 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 | 非有限坐标、宽度或 opacity / 负 width | `InkStroke::IsValid == false`，Append 不改变 Canvas |
 | 零值/重复 Page GUID | AppendPage 失败，Collection 顺序不变 |
 | New-page GUID/Page/default Canvas 失败 | current page 和 GPU 画面保持不变 |
-| N 个有效 new-page 请求 | 追加 N 个有序空白页，最后一页成为 current |
+| `0` 且已有下一页 | 切换已有页，不追加 Page |
+| `0` 且当前为末页 | 追加一个有序空白页并切换过去 |
+| `8` 且当前为第一页 | no-op，Page 顺序和画面不变 |
 | L2 draw/map failure after Append | CPU Stroke 保留为真值；不得回写 prediction 作为替代 |
 
 ### 5. Good / Base / Bad Cases
@@ -660,17 +663,75 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 ### 6. Tests Required
 
-- 纯 CPU 覆盖 GUID/Page 顺序、Device Canvas 隔离、默认 viewport、非法值拒绝、Stroke 顺序和连续空白页。
+- 纯 CPU 覆盖 GUID/Page 顺序、Device Canvas 隔离、默认 viewport、非法值拒绝和 Stroke 顺序。
 - 覆盖负/远端坐标与 float32 `x/y/width` 原值不被裁剪或换算。
 - 覆盖 Pen taper、稳定/尾段连接点去重、prediction/time 排除；Highlighter/Eraser/单点正确生成。
 - 静态或集成验证 Cancelled/Laser exclusion、Append 先于 Draw、首次 Draw 使用刚追加对象、同帧逐 Stroke resolve。
-- ARM64 Debug/Release 完整解决方案构建并运行测试；人工验证基础绘制、prediction、抬笔、活动时新建页和 resize。
+- ARM64 Debug/Release 完整解决方案构建并运行测试；允许运行可见窗口时再人工验证基础绘制、prediction、抬笔、活动时页面命令和 resize。
 
 ### 7. Wrong vs Correct
 
 Wrong：`L2 已经可见，所以从 realPoints/predictedPoints 另拼一次保存记录，并把同帧多笔一起 resolve。`
 
 Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对象逐笔 resolve，L2 只是当前页缓存。`
+
+## Scenario: Runtime Undo Cache And Page Restore
+
+### 1. Scope / Trigger
+
+修改 RenderItem visibility、热前像、合成范围树、history shader pass、`0/5/8` 命令、页面切换或 resize 后 L2 恢复时，必须应用本契约。
+
+### 2. Signatures
+
+- `CanvasRuntimeHistory::AppendStroke / LastVisibleItem / UndoLastVisible`
+- `UndoCachePolicy { byteBudget=64 MiB, maxEntries=20 }`
+- `CompositionCachePolicy { byteBudget=192 MiB }`
+- `InkHistoryGpuCache::CapturePreimage / RestorePreimage / RestoreComposition`
+- `CompositionRestoreRequest { canvas, rasterKey, documentCanvas, history, tiles, rangeEnd, canvasWidth, canvasHeight, clearTargetTiles, excludedItem }`
+- `CanvasCommandType { Undo, NextPage, PreviousPage }`
+
+### 3. Contracts
+
+- Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。撤回只隐藏最后可见 RenderItem，不删除 Stroke、不提供 redo；撤回后新笔继续追加，previous-visible 链必须 O(1) 找到尾部。
+- 热前像使用 `128x128 BGRA8` tile。默认 `64 MiB / 20 entries` 对应 1024 槽；每笔只复制与当前可见区相交的稀疏 footprint，顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Copy 只在绘制线程提交，不 Map/readback/wait。
+- 冷路径使用 32 RenderItem 的叶 Block 和 `256x256` operator tile；每槽为 `BGRA8 Add + R16F Retain = 384 KiB`，默认 `192 MiB = 512 slots`。组合固定为 `Later(Earlier(Below))`；CPU topology/generation 永久保留，GPU 节点只作 LRU 可淘汰缓存。
+- 撤回路径依次为 `hot_preimage -> composition_cache/composition_rebuild -> ordered_tile_replay`。冷撤回只处理被撤项的 composition tiles，候选画面成功后才提交 visibility；失败时恢复原可见范围。缓存预算为 0 或资源失败只能降低性能，不能删除 CPU history。
+- GPU history pass 的 array SRV/RTV 必须各自限制为单 slice；所有公开 composition 操作的全部出口解绑 `t0..t13`、`b2` 和 RTV，并恢复全画布 viewport/raster state。没有 `ID3D11DeviceContext1` 时仍可用 transparent scratch copy 清理 L2 tile。
+- `0/5/8` 在窗口线程只入 FIFO 并发布 control wake；绘制线程仅在 active/reconnect contact 全部结束后消费。页面不保留独立全尺寸 L2；切换和 resize 都从当前可见 RenderItem 恢复。
+- Undo 控制台输出 page、item、实际 path、`hot_remaining` 和可选 `history_end=true`；页面输出 key、action、current/count 和 restore path。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| 热前像 key/state/尺寸匹配 | tile 原样复制回 L2，随后隐藏 RenderItem |
+| 前像超预算、淘汰或 generation 不匹配 | 不改变 visibility，转入 composition/ordered replay |
+| composition 节点缺失 | 按需重建；资源不足时逐 tile ordered replay |
+| 候选冷恢复失败 | visibility 保持原值，并尝试恢复撤回前 tile |
+| Cache policy 降低 | 先淘汰最旧热项/LRU 节点；提高预算不恢复已淘汰内容 |
+| Resize | 丢弃不兼容热前像、更新 footprint/raster generation，并从 CPU history 恢复当前页 |
+| 首页按 `8` / 空页按 `5` | 明确 no-op，不改变 Page、history 或 L2 |
+| 极端但有限 Stored 坐标 | 文档原值不变；sidecar 无法精确量化时使用保守可见 footprint，不得使有效 Stroke 无 RenderItem |
+
+### 5. Good / Base / Bad Cases
+
+- Good：一条小笔只捕获邻近 128 tile；连续 `5` 先命中热前像，超出热深度后只重建受影响的 256 tile。
+- Base：composition budget 为 0 时仍可按当前可见顺序逐 tile 重放；空白页切换只清空并呈现透明 L2。
+- Bad：撤回任意一笔都全画布重放，或先隐藏 CPU item 再尝试可能失败的 GPU 恢复。
+
+### 6. Tests Required
+
+- CPU 测试断言 4K 为 510 个 128 tile、默认 1024/20 热预算、512 composition 槽、FIFO/LRU/pin 和 0 禁用。
+- 覆盖 Pen/Highlighter/Eraser、单点、负坐标、屏外/极端有限坐标、AA padding 和跨 4K 稀疏对角线 footprint。
+- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、隐藏分支后 append、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
+- 静态核对首次提交顺序、逐笔 capture/resolve、无 readback、单 slice SRV、所有 pass 解绑、事务式 cold undo、FIFO Canvas command 和控制台字段。
+- Debug/Release ARM64 完整解决方案 Rebuild并运行两套控制台测试；可见窗口和 D3D Debug Layer 未执行时必须明确标记未验证，不能用静态检查替代。
+
+### 7. Wrong vs Correct
+
+Wrong：`Undo -> visible=false -> 尝试全局重绘；失败后留下空白或半恢复画面。`
+
+Correct：`选择最后可见项 -> 热前像命中则复制；否则只在受影响 tile 构建排除该项的候选画面 -> 成功后提交 visibility -> 失败则恢复原范围。`
 
 ## Highlighter Geometry
 

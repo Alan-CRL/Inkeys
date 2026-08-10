@@ -55,6 +55,11 @@ float2 halfSize
 
 新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10/11/12/13` 的绑定。
 
+`HistoryCacheConstants` 绑定到 VS/PS `b2`，总大小固定为 `48 bytes`：两个
+`float4` 分别保存目标矩形和采样 UV，尾部四个 `uint` 保存 Earlier/Later/Source
+slice 与 padding。普通墨迹和 Laser pass 不读取 `b2`；history pass 结束时必须从
+VS/PS 显式解绑。
+
 ## Resource Registers
 
 | Register | Resource |
@@ -70,6 +75,10 @@ float2 halfSize
 | `t7` | LaserStrokeCoverage，可复用的单笔 coverage scratch (`R8G8B8A8_UNORM`) |
 | `t8` | LaserParticleData，固定 2048 槽、每槽 80 bytes 的粒子池 SRV |
 | `t9` | LaserLiveCoverage，单 contact 当前 L0/prediction coverage (`R8G8B8A8_UNORM`) |
+| `t10` | HistoryEarlierAdd，单 slice `Texture2DArray` SRV (`B8G8R8A8_UNORM`) |
+| `t11` | HistoryEarlierRetain，单 slice `Texture2DArray` SRV (`R16_FLOAT`) |
+| `t12` | HistoryLaterAdd，单 slice `Texture2DArray` SRV (`B8G8R8A8_UNORM`) |
+| `t13` | HistoryLaterRetain，单 slice `Texture2DArray` SRV (`R16_FLOAT`) |
 | `s0` | OperatorSampler |
 
 `ApplyOperatorLayers` 绑定 PS `t1..t5` 时为 VS `t3` 留空槽。修改数组顺序前必须按寄存器表核对。
@@ -96,6 +105,8 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 - `11`：解析 `t6` 稳定预乘颜色和整组 opacity。
 - `12`：关闭混合后，以矩形覆盖写零局部清理当前 coverage（`t7` 或 `t9`）。
 - `13`：逐通道 `max(t7, t9)` 后单次解析 Laser 材质，用于单 contact 增量快路。
+- `14`：按 `Later(Earlier(Below))` 组合两个 history operator tile。
+- `15`：把一个 history operator tile 应用到 L2 的目标 Canvas 矩形。
 
 `globalOperatorKind`：
 
@@ -119,6 +130,13 @@ Result = Add + Retain * Destination
 - resolve 使用 dual-source blend：source Add + source1 Retain × destination。
 - coverage union 取 `max(stableAdd, liveAdd)` 与 `min(stableRetain, liveRetain)`。
 - ordered 模式计算 `liveAdd + liveRetain * stableAdd` 和 `liveRetain * stableRetain`。
+- history tree 的组合固定为 `Add = Later.Add + Later.Retain * Earlier.Add`、
+  `Retain = Later.Retain * Earlier.Retain`。
+
+History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。即使输入和输出
+使用同一 texture array，只要 slice 不同也不能绑定覆盖整个 array 的 SRV，否则 D3D11
+会把它判定为与输出 RTV 重叠。每个 history pass 的全部出口都必须解绑 `t10..t13`、
+`b2` 和 RTV，并恢复全画布 viewport/raster state。
 
 内部颜色是 premultiplied alpha。改变 blend state、PS 输出或清屏值时，必须把数学公式作为整体验证。
 

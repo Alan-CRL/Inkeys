@@ -29,6 +29,17 @@ cbuffer LaserStyleBuffer : register(b1)
     float4 laserParameters;
 };
 
+// History cache pass 独立使用 b2，不改变普通墨迹和 Laser 的 b0/b1 布局。
+cbuffer InkHistoryCacheBuffer : register(b2)
+{
+    float4 historyTargetRect;
+    float4 historySourceUvRect;
+    uint historyEarlierSlice;
+    uint historyLaterSlice;
+    uint historySourceSlice;
+    uint historyPassPadding;
+};
+
 // 2. 结构定义
 struct InkPoint
 {
@@ -55,6 +66,10 @@ Texture2D LaserCompositedColor : register(t6);
 Texture2D LaserStrokeCoverage : register(t7);
 StructuredBuffer<LaserGpuParticle> LaserParticleData : register(t8);
 Texture2D LaserLiveCoverage : register(t9);
+Texture2DArray HistoryEarlierAdd : register(t10);
+Texture2DArray HistoryEarlierRetain : register(t11);
+Texture2DArray HistoryLaterAdd : register(t12);
+Texture2DArray HistoryLaterRetain : register(t13);
 SamplerState OperatorSampler : register(s0);
 
 // 4. VS -> PS

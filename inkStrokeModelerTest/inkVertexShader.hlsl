@@ -126,6 +126,19 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
+    if (type == 14 || type == 15)
+    {
+        // Cache compose/apply 都由 b2 提供目标矩形和 tile-local 采样范围。
+        float2 worldPos = lerp(historyTargetRect.xy, historyTargetRect.zw, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.uv = lerp(historySourceUvRect.xy, historySourceUvRect.zw, templatePos);
+        output.p1 = historyTargetRect.xy;
+        output.p2 = historyTargetRect.zw;
+        return output;
+    }
+
     uint realIndex = globalBufferOffset + itemIndex;
     InkPoint data1 = InkData[realIndex];
     InkPoint data2 = InkData[realIndex + 1];

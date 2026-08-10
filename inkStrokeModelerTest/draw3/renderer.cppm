@@ -236,7 +236,7 @@ export namespace draw3
 		// 复制纹理中的指定矩形区域。
 		void CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect);
 		// 将 L1/L0 仿射操作统一应用到目标 RGBA。
-		void ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
+		bool ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
 			const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 			RECT rect, OperatorLayerMergeMode mergeMode = OperatorLayerMergeMode::CoverageUnion);
 		// 更新视口和屏幕尺寸。

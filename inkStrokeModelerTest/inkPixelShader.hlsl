@@ -281,6 +281,34 @@ OperatorOutput main(PS_INPUT input)
         return clearOutput;
     }
 
+    if (type == 14)
+    {
+        float3 earlierLocation = float3(input.uv, (float) historyEarlierSlice);
+        float3 laterLocation = float3(input.uv, (float) historyLaterSlice);
+        float4 earlierAdd = HistoryEarlierAdd.Sample(OperatorSampler, earlierLocation);
+        float earlierRetain = HistoryEarlierRetain.Sample(
+            OperatorSampler, earlierLocation).r;
+        float4 laterAdd = HistoryLaterAdd.Sample(OperatorSampler, laterLocation);
+        float laterRetain = HistoryLaterRetain.Sample(
+            OperatorSampler, laterLocation).r;
+        OperatorOutput composedOutput;
+        // Later(Earlier(Below)) = Al + Rl * Ae + Rl * Re * Below。
+        composedOutput.add = laterAdd + laterRetain * earlierAdd;
+        composedOutput.retain = (laterRetain * earlierRetain).xxxx;
+        return composedOutput;
+    }
+
+    if (type == 15)
+    {
+        float3 sourceLocation = float3(input.uv, (float) historySourceSlice);
+        OperatorOutput cachedOutput;
+        cachedOutput.add = HistoryEarlierAdd.Sample(
+            OperatorSampler, sourceLocation);
+        cachedOutput.retain = HistoryEarlierRetain.Sample(
+            OperatorSampler, sourceLocation).rrrr;
+        return cachedOutput;
+    }
+
     if (type == 1 || type == 2)
     {
         float4 stableAdd = StableOperatorAdd.Sample(OperatorSampler, input.uv);

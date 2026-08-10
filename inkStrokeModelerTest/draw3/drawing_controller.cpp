@@ -9,15 +9,18 @@
 #include <chrono>
 #include <cstdint>
 #include <cmath>
+#include <deque>
 #include <DirectXMath.h>
 #include <iostream>
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <utility>
 #include <vector>
+#include <dxgiformat.h>
 #include <windows.h>
 #include <mmsystem.h>
 
@@ -170,25 +173,72 @@ namespace draw3
 			return true;
 		}
 
-		bool TryAppendBlankPage(InkCanvasCollection& document,
-			size_t& currentPageIndex)
+		std::optional<size_t> TryAppendBlankPage(InkCanvasCollection& document)
 		{
 			InkGuid pageGuid;
-			if (!TryCreateInkGuid(pageGuid)) return false;
+			if (!TryCreateInkGuid(pageGuid)) return std::nullopt;
 			InkPage page(pageGuid);
 			if (!page.GetOrCreateCanvas(kDefaultDeviceKey))
 			{
 				std::cout << "Failed to create the default ink canvas for a new page." << std::endl;
-				return false;
+				return std::nullopt;
 			}
 			const std::optional<size_t> pageIndex = document.AppendPage(std::move(page));
 			if (!pageIndex)
 			{
 				std::cout << "Failed to append a unique ink document page." << std::endl;
-				return false;
+				return std::nullopt;
 			}
-			currentPageIndex = *pageIndex;
-			return true;
+			return pageIndex;
+		}
+
+		struct CanvasPageRuntimeState
+		{
+			CanvasRuntimeHistory history;
+			InkRasterStateToken rasterState = 0;
+			std::vector<InkRasterStateToken> beforeStates;
+			std::vector<InkRasterStateToken> afterStates;
+		};
+
+		struct CompositionMaintenanceItem
+		{
+			size_t pageIndex = 0;
+			CompositionNodeId node = {};
+			SignedTileCoordinate tile = {};
+			uint64_t rasterGeneration = 0;
+		};
+
+		InkPixelBounds VisibleInkBounds(int width, int height) noexcept
+		{
+			return { 0.0f, 0.0f, static_cast<float>(std::max(width, 0)),
+				static_cast<float>(std::max(height, 0)) };
+		}
+
+		const char* CompositionRestorePathName(CompositionRestorePath path) noexcept
+		{
+			switch (path)
+			{
+			case CompositionRestorePath::CompositionCache: return "composition_cache";
+			case CompositionRestorePath::CompositionRebuild: return "composition_rebuild";
+			case CompositionRestorePath::OrderedTileReplay: return "ordered_tile_replay";
+			case CompositionRestorePath::Empty: return "empty";
+			default: return "failed";
+			}
+		}
+
+		std::vector<SignedTileCoordinate> CollectVisibleCompositionTiles(
+			const CanvasRuntimeHistory& history)
+		{
+			std::vector<SignedTileCoordinate> tiles;
+			for (const RenderItemState& item : history.Items())
+			{
+				if (!item.visible) continue;
+				tiles.insert(tiles.end(), item.compositionTiles.begin(),
+					item.compositionTiles.end());
+			}
+			std::sort(tiles.begin(), tiles.end());
+			tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
+			return tiles;
 		}
 
 		uint32_t PackStoredRgb(const DirectX::XMFLOAT4& color) noexcept
@@ -224,17 +274,6 @@ namespace draw3
 			default:
 				return std::nullopt; // Laser 是瞬时视觉，不进入文档。
 			}
-		}
-
-		DirectX::XMFLOAT4 ColorForStoredStyle(const StoredInkStyle& style) noexcept
-		{
-			constexpr float kByteToFloat = 1.0f / 255.0f;
-			return {
-				static_cast<float>((style.fallbackRgb >> 16) & 0xFFu) * kByteToFloat,
-				static_cast<float>((style.fallbackRgb >> 8) & 0xFFu) * kByteToFloat,
-				static_cast<float>(style.fallbackRgb & 0xFFu) * kByteToFloat,
-				style.opacity
-			};
 		}
 
 		struct ReconnectManualTestRange
@@ -855,33 +894,6 @@ namespace draw3
 			return RectFromStrokePoints(stablePoints, width, height);
 		}
 
-		RECT DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
-			int width, int height, std::vector<InkPoint>& pointScratch,
-			HighlighterGeometry& highlighterScratch)
-		{
-			pointScratch.clear();
-			pointScratch.reserve(stroke.Points().size());
-			for (const StoredInkPoint& point : stroke.Points())
-				pointScratch.push_back({ point.x, point.y, point.width * 0.5f, 0.0f });
-			if (pointScratch.empty()) return {};
-
-			const StoredInkStyle& style = stroke.Style();
-			const DirectX::XMFLOAT4 color = ColorForStoredStyle(style);
-			renderer.SetOperatorTarget(renderer.layerL1);
-			if (style.inkType == StoredInkType::Highlighter)
-			{
-				RebuildHighlighterGeometry(pointScratch, highlighterScratch);
-				if (renderer.DrawHighlighterPrimitives(
-					highlighterScratch.primitives, color) < 0) return {};
-				return ClampRectToCanvas(highlighterScratch.bounds, width, height);
-			}
-			const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
-				? InkOperatorKind::Erase : InkOperatorKind::Draw;
-			if (renderer.DrawStrokeOrDot(pointScratch, color,
-				StrokeShape::RoundCapsule, operatorKind) < 0) return {};
-			return RectFromStrokePoints(pointScratch, width, height);
-		}
-
 		RECT RebuildActiveLayers(const std::vector<RuntimeStroke*>& active,
 			InkRenderer& renderer, int width, int height)
 		{
@@ -1079,6 +1091,41 @@ namespace draw3
 		return performanceHudEnabled_.load(std::memory_order_acquire);
 	}
 
+	void DrawingController::SetUndoCachePolicy(UndoCachePolicy policy)
+	{
+		{
+			const std::scoped_lock lock(historyCachePolicyMutex_);
+			if (undoCachePolicy_.byteBudget == policy.byteBudget &&
+				undoCachePolicy_.maxEntries == policy.maxEntries) return;
+			undoCachePolicy_ = policy;
+			historyCachePolicyGeneration_.fetch_add(1, std::memory_order_release);
+		}
+		input_.PublishControlWake();
+	}
+
+	UndoCachePolicy DrawingController::GetUndoCachePolicy() const
+	{
+		const std::scoped_lock lock(historyCachePolicyMutex_);
+		return undoCachePolicy_;
+	}
+
+	void DrawingController::SetCompositionCachePolicy(CompositionCachePolicy policy)
+	{
+		{
+			const std::scoped_lock lock(historyCachePolicyMutex_);
+			if (compositionCachePolicy_.byteBudget == policy.byteBudget) return;
+			compositionCachePolicy_ = policy;
+			historyCachePolicyGeneration_.fetch_add(1, std::memory_order_release);
+		}
+		input_.PublishControlWake();
+	}
+
+	CompositionCachePolicy DrawingController::GetCompositionCachePolicy() const
+	{
+		const std::scoped_lock lock(historyCachePolicyMutex_);
+		return compositionCachePolicy_;
+	}
+
 	void DrawingController::CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable)
 	{
 		const WindowSize size = window_.Size();
@@ -1156,11 +1203,43 @@ namespace draw3
 		if (!TryCreateInkGuid(workspaceGuid)) return;
 		document_.emplace(workspaceGuid);
 		currentPageIndex_ = 0;
-		if (!TryAppendBlankPage(*document_, currentPageIndex_))
+		const std::optional<size_t> firstPageIndex = TryAppendBlankPage(*document_);
+		if (!firstPageIndex)
 		{
 			document_.reset();
 			return;
 		}
+		currentPageIndex_ = *firstPageIndex;
+		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
+		pageRuntimeStates.reserve(8);
+		pageRuntimeStates.emplace_back();
+		uint64_t nextRasterStateToken = 1;
+		auto allocateRasterStateToken = [&]()
+		{
+			if (nextRasterStateToken == 0) nextRasterStateToken = 1;
+			return nextRasterStateToken++;
+		};
+		pageRuntimeStates.front().rasterState = allocateRasterStateToken();
+		uint64_t rasterPipelineGeneration = 1;
+		UndoCachePolicy appliedUndoPolicy;
+		CompositionCachePolicy appliedCompositionPolicy;
+		uint64_t appliedHistoryCachePolicyGeneration = 0;
+		{
+			const std::scoped_lock lock(historyCachePolicyMutex_);
+			appliedUndoPolicy = undoCachePolicy_;
+			appliedCompositionPolicy = compositionCachePolicy_;
+			appliedHistoryCachePolicyGeneration =
+				historyCachePolicyGeneration_.load(std::memory_order_acquire);
+		}
+		InkHistoryGpuCache historyGpuCache;
+		if (!historyGpuCache.Initialize(
+			renderer_, appliedUndoPolicy, appliedCompositionPolicy))
+		{
+			std::cout << "[InkHistory] GPU cache unavailable; history restore may fail."
+				<< std::endl;
+		}
+		std::deque<CompositionMaintenanceItem> compositionMaintenance;
+		constexpr size_t kMaximumCompositionMaintenanceItems = 4096;
 
 		auto strokeModelParams = configuration_.modelParams;
 		ApplyPredictionMode(strokeModelParams, configuration_.kalmanPredictorParams);
@@ -1974,7 +2053,6 @@ namespace draw3
 				return positionMoved || stylusStateChanged || deferUp;
 			};
 
-		uint32_t pendingAddPageRequestCount = 0;
 		bool timerPeriodActive = false;
 		bool timerPeriodAttempted = false;
 		double lastActiveFrameStartMs = 0.0;
@@ -2057,7 +2135,95 @@ namespace draw3
 			return bounds;
 		};
 
-		auto resetGpuForNewPage = [&](RECT& frameDirty,
+		auto currentRasterKey = [&]() noexcept
+		{
+			return InkHistoryRasterKey{
+				kDefaultDeviceKey,
+				1.0f,
+				static_cast<uint32_t>(DXGI_FORMAT_B8G8R8A8_UNORM),
+				rasterPipelineGeneration
+			};
+		};
+
+		auto restorePageContent = [&](size_t pageIndex, int width, int height,
+			bool clearTargetTiles)
+		{
+			CompositionRestoreResult result;
+			if (!document_ || pageIndex >= pageRuntimeStates.size()) return result;
+			const InkPage* page = document_->PageAt(pageIndex);
+			const InkCanvas* canvas = page
+				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!page || !canvas) return result;
+			const CanvasPageRuntimeState& runtime = pageRuntimeStates[pageIndex];
+			std::vector<SignedTileCoordinate> tiles =
+				CollectVisibleCompositionTiles(runtime.history);
+			if (tiles.empty())
+			{
+				result.path = CompositionRestorePath::Empty;
+				return result;
+			}
+			const CompositionRestoreRequest request = {
+				{ page->PageGuid(), kDefaultDeviceKey },
+				currentRasterKey(),
+				canvas,
+				&runtime.history,
+				tiles,
+				runtime.history.Items().size(),
+				width,
+				height,
+				clearTargetTiles
+			};
+			return historyGpuCache.RestoreComposition(request);
+		};
+
+		auto rebuildAllPageFootprints = [&](int width, int height)
+		{
+			if (!document_) return;
+			const InkPixelBounds visibleBounds = VisibleInkBounds(width, height);
+			for (size_t pageIndex = 0; pageIndex < pageRuntimeStates.size(); ++pageIndex)
+			{
+				const InkPage* page = document_->PageAt(pageIndex);
+				const InkCanvas* canvas = page
+					? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+				if (!canvas) continue;
+				CanvasRuntimeHistory& history = pageRuntimeStates[pageIndex].history;
+				const size_t itemCount = history.Items().size();
+				for (size_t itemIndex = 0; itemIndex < itemCount; ++itemIndex)
+				{
+					const RenderItemState item = history.Items()[itemIndex];
+					if (item.strokeIndex >= canvas->Strokes().size()) continue;
+					std::optional<StrokeTileFootprint> footprint = BuildStrokeTileFootprint(
+						canvas->Strokes()[item.strokeIndex], visibleBounds);
+					if (!footprint || !history.UpdateItemGeometry(
+						item.id, std::move(*footprint)))
+					{
+						std::cout << "[InkHistory] failed to rebuild footprint page=" <<
+							(pageIndex + 1) << " item=" << item.id.index << std::endl;
+					}
+				}
+			}
+		};
+
+		auto appendBlankPageWithRuntime = [&]() -> std::optional<size_t>
+		{
+			if (!document_) return std::nullopt;
+			pageRuntimeStates.emplace_back();
+			const std::optional<size_t> pageIndex = TryAppendBlankPage(*document_);
+			if (!pageIndex)
+			{
+				pageRuntimeStates.pop_back();
+				return std::nullopt;
+			}
+			if (*pageIndex + 1 != pageRuntimeStates.size())
+			{
+				std::cout << "[InkHistory] page/runtime index mismatch." << std::endl;
+				return std::nullopt;
+			}
+			pageRuntimeStates.back().rasterState = allocateRasterStateToken();
+			return pageIndex;
+		};
+
+		auto resetGpuForPageSwitch = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
 			int width, int height)
 		{
@@ -2084,21 +2250,186 @@ namespace draw3
 			forceFullPresent = true;
 		};
 
-		auto applyPendingAddPageRequests = [&](uint32_t& requestCount,
-			RECT& frameDirty, LaserParticleDirtySnapshot& particleSnapshot,
+		auto undoCurrentPage = [&](RECT& frameDirty)
+		{
+			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
+			{
+				std::cout << "[Undo] result=noop reason=no_canvas" << std::endl;
+				return;
+			}
+			InkPage* page = document_->PageAt(currentPageIndex_);
+			InkCanvas* canvas = page
+				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			const std::optional<RenderItemId> itemId = runtime.history.LastVisibleItem();
+			if (!page || !canvas || !itemId)
+			{
+				std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+					" result=noop reason=empty" << std::endl;
+				return;
+			}
+			const RenderItemState* item = runtime.history.Find(*itemId);
+			if (!item || itemId->index >= runtime.beforeStates.size())
+			{
+				std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+					" result=noop reason=history_mismatch" << std::endl;
+				return;
+			}
+			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
+			const size_t restoreRangeEnd = static_cast<size_t>(itemId->index) + 1;
+			const HistoryCanvasIdentity canvasIdentity = {
+				page->PageGuid(), kDefaultDeviceKey };
+			const InkHistoryRasterKey rasterKey = currentRasterKey();
+			const WindowSize size = window_.Size();
+			const HotPreimageRestoreResult hotRestore = historyGpuCache.RestorePreimage(
+				canvasIdentity, *itemId, rasterKey, runtime.rasterState,
+				size.width, size.height);
+			const char* path = "failed";
+			RECT dirty = {};
+			if (hotRestore.restored)
+			{
+				if (!runtime.history.UndoLastVisible(*itemId))
+				{
+					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+						" result=failed reason=visibility" << std::endl;
+					return;
+				}
+				runtime.rasterState = hotRestore.restoredState;
+				dirty = hotRestore.dirty;
+				path = "hot_preimage";
+			}
+			else
+			{
+				const InkRasterStateToken beforeState =
+					runtime.beforeStates[itemId->index];
+				const auto restoreOriginalTiles = [&]()
+				{
+					const CompositionRestoreRequest rollbackRequest = {
+						canvasIdentity,
+						rasterKey,
+						canvas,
+						&runtime.history,
+						affectedTiles,
+						restoreRangeEnd,
+						size.width,
+						size.height,
+						true
+					};
+					return historyGpuCache.RestoreComposition(rollbackRequest);
+				};
+				const CompositionRestoreRequest request = {
+					canvasIdentity,
+					rasterKey,
+					canvas,
+					&runtime.history,
+					affectedTiles,
+					restoreRangeEnd,
+					size.width,
+					size.height,
+					true,
+					*itemId
+				};
+				const CompositionRestoreResult restored =
+					historyGpuCache.RestoreComposition(request);
+				if (restored.path == CompositionRestorePath::Failed)
+				{
+					const CompositionRestoreResult rollback = restoreOriginalTiles();
+					UnionRectInPlace(frameDirty, restored.dirty);
+					UnionRectInPlace(frameDirty, rollback.dirty);
+					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+						" item=" << itemId->index <<
+						" result=failed reason=restore rollback=" <<
+						CompositionRestorePathName(rollback.path) << std::endl;
+					return;
+				}
+				// 候选画面成功后才提交 visibility，避免失败时丢失历史状态。
+				if (!runtime.history.UndoLastVisible(*itemId))
+				{
+					const CompositionRestoreResult rollback = restoreOriginalTiles();
+					UnionRectInPlace(frameDirty, restored.dirty);
+					UnionRectInPlace(frameDirty, rollback.dirty);
+					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+						" result=failed reason=visibility rollback=" <<
+						CompositionRestorePathName(rollback.path) << std::endl;
+					return;
+				}
+				runtime.rasterState = beforeState;
+				dirty = restored.dirty;
+				path = CompositionRestorePathName(restored.path);
+			}
+			renderer_.ClearOperatorLayer(renderer_.layerL1);
+			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			UnionRectInPlace(frameDirty, dirty);
+			const size_t hotRemaining = historyGpuCache.ConsecutiveHotDepth(
+				canvasIdentity, rasterKey, runtime.rasterState);
+			const bool historyEnd = !runtime.history.LastVisibleItem().has_value();
+			std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
+				" item=" << itemId->index << " path=" << path <<
+				" hot_remaining=" << hotRemaining;
+			if (historyEnd) std::cout << " history_end=true";
+			std::cout << std::endl;
+		};
+
+		auto processCanvasCommands = [&](RECT& frameDirty,
+			LaserParticleDirtySnapshot& particleSnapshot,
 			bool& forceFullPresent, int width, int height)
 		{
-			if (requestCount == 0 || !document_) return;
-			const uint32_t requestsToApply = requestCount;
-			requestCount = 0;
-			bool appendedAnyPage = false;
-			for (uint32_t index = 0; index < requestsToApply; ++index)
-				appendedAnyPage = TryAppendBlankPage(
-					*document_, currentPageIndex_) || appendedAnyPage;
-			// 只有页面和默认 Canvas 已完整追加后，才允许清除当前 GPU 画面。
-			if (appendedAnyPage)
-				resetGpuForNewPage(frameDirty, particleSnapshot,
+			CanvasCommand command;
+			while (active.empty() && window_.TryDequeueCanvasCommand(command))
+			{
+				if (command.type == CanvasCommandType::Undo)
+				{
+					undoCurrentPage(frameDirty);
+					continue;
+				}
+				if (!document_) continue;
+				const size_t pageCount = document_->Pages().size();
+				size_t targetPageIndex = currentPageIndex_;
+				const char* action = nullptr;
+				const char* key = command.type == CanvasCommandType::NextPage ? "0" : "8";
+				if (command.type == CanvasCommandType::NextPage)
+				{
+					if (currentPageIndex_ + 1 < pageCount)
+					{
+						targetPageIndex = currentPageIndex_ + 1;
+						action = "next";
+					}
+					else
+					{
+						const std::optional<size_t> appended = appendBlankPageWithRuntime();
+						if (!appended)
+						{
+							std::cout << "[Page] key=0 result=failed reason=create current=" <<
+								(currentPageIndex_ + 1) << " count=" <<
+								document_->Pages().size() << std::endl;
+							continue;
+						}
+						targetPageIndex = *appended;
+						action = "append";
+					}
+				}
+				else if (currentPageIndex_ > 0)
+				{
+					targetPageIndex = currentPageIndex_ - 1;
+					action = "previous";
+				}
+				else
+				{
+					std::cout << "[Page] key=8 result=noop reason=first current=1 count=" <<
+						pageCount << std::endl;
+					continue;
+				}
+
+				currentPageIndex_ = targetPageIndex;
+				resetGpuForPageSwitch(frameDirty, particleSnapshot,
 					forceFullPresent, width, height);
+				const CompositionRestoreResult restored = restorePageContent(
+					currentPageIndex_, width, height, false);
+				std::cout << "[Page] key=" << key << " action=" << action <<
+					" current=" << (currentPageIndex_ + 1) << " count=" <<
+					document_->Pages().size() << " path=" <<
+					CompositionRestorePathName(restored.path) << std::endl;
+			}
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();
@@ -2141,11 +2472,20 @@ namespace draw3
 			ContactRecord* record = nullptr;
 
 			bool forceFullPresent = false;
-			const uint32_t addPageRequestCount = window_.ConsumeAddPageRequestCount();
-			pendingAddPageRequestCount = addPageRequestCount >
-				(std::numeric_limits<uint32_t>::max)() - pendingAddPageRequestCount
-				? (std::numeric_limits<uint32_t>::max)()
-				: pendingAddPageRequestCount + addPageRequestCount;
+			const uint64_t requestedPolicyGeneration =
+				historyCachePolicyGeneration_.load(std::memory_order_acquire);
+			if (requestedPolicyGeneration != appliedHistoryCachePolicyGeneration)
+			{
+				{
+					const std::scoped_lock lock(historyCachePolicyMutex_);
+					appliedUndoPolicy = undoCachePolicy_;
+					appliedCompositionPolicy = compositionCachePolicy_;
+					appliedHistoryCachePolicyGeneration =
+						historyCachePolicyGeneration_.load(std::memory_order_acquire);
+				}
+				historyGpuCache.SetUndoPolicy(appliedUndoPolicy);
+				historyGpuCache.SetCompositionPolicy(appliedCompositionPolicy);
+			}
 			if (window_.ConsumeCompositionChangedRequest())
 			{
 				presentation_.RefreshAfterCompositionChanged();
@@ -2154,6 +2494,22 @@ namespace draw3
 			if (ProcessPendingResize(false))
 			{
 				const WindowSize size = window_.Size();
+				historyGpuCache.DiscardHotPreimages();
+				compositionMaintenance.clear();
+				if (rasterPipelineGeneration == (std::numeric_limits<uint64_t>::max)())
+				{
+					rasterPipelineGeneration = 1;
+					historyGpuCache.DiscardCompositionCache();
+				}
+				else ++rasterPipelineGeneration;
+				rebuildAllPageFootprints(size.width, size.height);
+				renderer_.ClearRTV(
+					renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
+				const CompositionRestoreResult resizedPage = restorePageContent(
+					currentPageIndex_, size.width, size.height, false);
+				std::cout << "[InkHistory] resize generation=" <<
+					rasterPipelineGeneration << " path=" <<
+					CompositionRestorePathName(resizedPage.path) << std::endl;
 				RebuildActiveLayers(active, renderer_, size.width, size.height);
 				laserStableBounds = ClampRectToCanvas(
 					laserStableBounds, size.width, size.height);
@@ -2283,12 +2639,42 @@ namespace draw3
 				laserCoverageMode = LaserCoverageMode::Inactive;
 				laserSummaryPending = false;
 			}
-			if (active.empty() && pendingAddPageRequestCount > 0)
+			if (active.empty())
 			{
 				const WindowSize size = window_.Size();
-				applyPendingAddPageRequests(pendingAddPageRequestCount,
+				processCanvasCommands(
 					frameDirty, laserParticleSnapshot, forceFullPresent,
 					size.width, size.height);
+			}
+			if (active.empty() && !forceFullPresent && !drawingCursorRequested &&
+				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty) &&
+				!compositionMaintenance.empty())
+			{
+				// 每个 tile 之间先检查输入，避免后台预建拉长下一笔 Down 的排队时间。
+				if (input_.TryDequeue(record))
+				{
+					processCommand(record);
+					continue;
+				}
+				const CompositionMaintenanceItem maintenance =
+					compositionMaintenance.front();
+				compositionMaintenance.pop_front();
+				if (maintenance.rasterGeneration == rasterPipelineGeneration &&
+					document_ && maintenance.pageIndex < pageRuntimeStates.size())
+				{
+					const InkPage* page = document_->PageAt(maintenance.pageIndex);
+					const InkCanvas* canvas = page
+						? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+					if (page && canvas)
+					{
+						const WindowSize size = window_.Size();
+						historyGpuCache.PrimeCompositionNode(
+							{ page->PageGuid(), kDefaultDeviceKey }, currentRasterKey(),
+							*canvas, pageRuntimeStates[maintenance.pageIndex].history,
+							maintenance.node, maintenance.tile, size.width, size.height);
+					}
+				}
+				continue;
 			}
 
 			if (active.empty() && !forceFullPresent && !drawingCursorRequested &&
@@ -2804,25 +3190,118 @@ namespace draw3
 							// 文档对象先成为真值，再从刚追加的同一 Stroke 完成首次 L2 绘制。
 							const std::span<const InkStroke> strokes = canvas->Strokes();
 							const InkStroke& storedStroke = strokes[*strokeIndex];
-							renderer_.ClearOperatorLayer(renderer_.layerL1);
-							renderer_.ClearOperatorLayer(renderer_.layerL0);
-							RECT completedStrokeDirty = DrawStoredStroke(storedStroke,
-								renderer_, size.width, size.height,
-								runtime->rebuildPoints, completedHighlighterScratch);
-							if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
-								UnionRectInPlace(completedStrokeDirty,
-									DrawReconnectManualTestRanges(
-										*runtime, renderer_, size.width, size.height));
-							completedStrokeDirty = ClampRectToCanvas(
-								completedStrokeDirty, size.width, size.height);
-							if (!IsEmptyRect(completedStrokeDirty))
+							CanvasPageRuntimeState& pageRuntime =
+								pageRuntimeStates[currentPageIndex_];
+							std::optional<StrokeTileFootprint> footprint =
+								BuildStrokeTileFootprint(storedStroke,
+									VisibleInkBounds(size.width, size.height));
+							const std::optional<RenderItemId> renderItem = footprint
+								? pageRuntime.history.AppendStroke(
+									*strokeIndex, std::move(*footprint), true) : std::nullopt;
+							HotPreimageCaptureResult preimageCapture;
+							InkRasterStateToken afterState = pageRuntime.rasterState;
+							if (renderItem && renderItem->index == pageRuntime.beforeStates.size())
 							{
-								// 每条 Stroke 独立 resolve，保留高亮透明度和擦除的文档顺序。
-								renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
-									renderer_.layerL1, renderer_.layerL0,
-									completedStrokeDirty);
-								UnionRectInPlace(frameDirty, completedStrokeDirty);
-								runtime->metricVisible = true;
+								const InkRasterStateToken beforeState = pageRuntime.rasterState;
+								afterState = allocateRasterStateToken();
+								pageRuntime.beforeStates.push_back(beforeState);
+								pageRuntime.afterStates.push_back(afterState);
+								// Runtime history 先登记成功，随后才允许产生可见 L2 像素。
+								renderer_.ClearOperatorLayer(renderer_.layerL1);
+								renderer_.ClearOperatorLayer(renderer_.layerL0);
+								const StoredStrokeRasterTarget storedStrokeTarget = {
+									&renderer_.layerL1, 0.0f, 0.0f, size.width, size.height
+								};
+								const StoredStrokeRasterResult completedStrokeRaster =
+									DrawStoredStroke(storedStroke,
+									renderer_, storedStrokeTarget,
+									runtime->rebuildPoints, completedHighlighterScratch);
+								RECT completedStrokeDirty = completedStrokeRaster.dirty;
+								const RenderItemState* addedItem = pageRuntime.history.Find(*renderItem);
+								if (addedItem && completedStrokeRaster.succeeded)
+								{
+									preimageCapture = historyGpuCache.CapturePreimage({
+										{ page->PageGuid(), kDefaultDeviceKey },
+										*renderItem,
+										currentRasterKey(),
+										beforeState,
+										afterState,
+										addedItem->undoTiles,
+										size.width,
+										size.height
+									});
+									if ((renderItem->index + 1) % kCompositionLeafItemCount == 0)
+									{
+										const std::optional<CompositionNodeId> leaf =
+											pageRuntime.history.CompositionTree().LeafNodeForItem(
+												renderItem->index);
+										std::vector<SignedTileCoordinate> leafTiles;
+										if (leaf)
+										{
+											const RenderItemRange range =
+												pageRuntime.history.CompositionTree().NodeItemRange(*leaf);
+											const std::span<const RenderItemState> items =
+												pageRuntime.history.Items();
+											for (size_t index = range.begin;
+												index < std::min(range.end, items.size()); ++index)
+											{
+												leafTiles.insert(leafTiles.end(),
+													items[index].compositionTiles.begin(),
+													items[index].compositionTiles.end());
+											}
+											std::sort(leafTiles.begin(), leafTiles.end());
+											leafTiles.erase(std::unique(
+												leafTiles.begin(), leafTiles.end()), leafTiles.end());
+											for (SignedTileCoordinate tile : leafTiles)
+											{
+												if (compositionMaintenance.size() ==
+													kMaximumCompositionMaintenanceItems)
+													compositionMaintenance.pop_front();
+												compositionMaintenance.push_back({
+													currentPageIndex_, *leaf, tile,
+													rasterPipelineGeneration });
+											}
+										}
+									}
+								}
+								if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+									UnionRectInPlace(completedStrokeDirty,
+										DrawReconnectManualTestRanges(
+											*runtime, renderer_, size.width, size.height));
+								completedStrokeDirty = ClampRectToCanvas(
+									completedStrokeDirty, size.width, size.height);
+								bool submitted = completedStrokeRaster.succeeded;
+								if (submitted && !IsEmptyRect(completedStrokeDirty))
+								{
+									// 每条 Stroke 独立 resolve，保留高亮透明度和擦除的文档顺序。
+									submitted = renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
+										renderer_.layerL1, renderer_.layerL0,
+										completedStrokeDirty);
+									if (submitted)
+									{
+										UnionRectInPlace(frameDirty, completedStrokeDirty);
+										runtime->metricVisible = true;
+									}
+								}
+								pageRuntime.rasterState = afterState;
+								if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+								{
+									if (!submitted ||
+										!historyGpuCache.CommitPreimage(preimageCapture.ticket))
+										historyGpuCache.CancelPreimage(preimageCapture.ticket);
+								}
+								if (!submitted)
+								{
+									std::cout << "[InkHistory] stored stroke raster failed page=" <<
+										(currentPageIndex_ + 1) << " item=" << *strokeIndex <<
+										std::endl;
+								}
+							}
+							else
+							{
+								std::cout << "[InkHistory] failed to append render item page=" <<
+									(currentPageIndex_ + 1) << " stroke=" << *strokeIndex <<
+									std::endl;
 							}
 						}
 						else
@@ -2909,10 +3388,9 @@ namespace draw3
 				}
 			}
 
-			if (active.empty() && pendingAddPageRequestCount > 0)
-				applyPendingAddPageRequests(pendingAddPageRequestCount,
-					frameDirty, laserParticleSnapshot, forceFullPresent,
-					size.width, size.height);
+			if (active.empty())
+				processCanvasCommands(frameDirty, laserParticleSnapshot,
+					forceFullPresent, size.width, size.height);
 
 			RECT currentLaserParticleUnclippedBounds =
 				laserParticleSnapshot.activeBounds;
