@@ -59,12 +59,12 @@
 - [x] `64 MiB / 20` 默认策略、运行时增减、FIFO 淘汰、0 禁用、单条超预算和 4K 510/1024 tile 计算由测试覆盖。
 - [x] footprint 测试覆盖 Pen/Highlighter/Eraser、单点、负坐标、画布裁剪、AA padding 和跨 4K 的稀疏对角线。
 - [x] 静态核对确认 GPU 捕获位于 L1 栅格与 L2 resolve 之间、没有 readback，且同帧多 Up 保持逐笔 capture/resolve 顺序。
-- [ ] 热撤回逐 tile 原样恢复 L2；缓存缺失时依次降级到合成树和局部有序重放，显示顺序不变。
+- [x] 热撤回逐 tile 原样恢复 L2；缓存缺失时依次降级到合成树和局部有序重放，显示顺序不变（用户人工验收通过）。
 - [x] 合成树测试覆盖 32 项 Block、动态增长、范围组合顺序、visibility identity、局部 generation 失效、LRU/pin 和非仿射屏障。
 - [x] `192 MiB` composition 策略对应 8 个 24 MiB 页/512 槽；降低预算淘汰未固定节点，提高预算不阻塞窗口线程。
-- [ ] `5`、`0`、`8` 忽略自动重复并在活动 contact 结束后按发布顺序执行；控制台输出包含规定路径和剩余热撤回深度。
-- [ ] `0` 在已有下一页时切换、末页时追加；`8` 返回上一页且首页 no-op；旧页按当前 visibility 正确恢复。
-- [ ] resize/cache generation/resource failure 不使用陈旧 tile，并能通过 CPU 数据恢复当前页。
+- [x] `5`、`0`、`8` 忽略自动重复并在活动 contact 结束后按发布顺序执行；控制台输出包含规定路径和剩余热撤回深度（用户人工验收通过）。
+- [x] `0` 在已有下一页时切换、末页时追加；`8` 返回上一页且首页 no-op；旧页按当前 visibility 正确恢复（用户人工验收通过）。
+- [x] resize/cache generation/resource failure 不使用陈旧 tile，并能通过 CPU 数据恢复当前页（用户人工验收通过）。
 - [x] `Debug|ARM64`、`Release|ARM64` 完整解决方案 Rebuild、两套测试可执行文件和 `git diff --check` 通过；静态审计确认 SRV/RTV slice 与解绑契约。受本轮禁止可见窗口/桌面操控的约束，D3D Debug Layer 运行验证明确不执行、不得声称通过。
 
 ## Out Of Scope

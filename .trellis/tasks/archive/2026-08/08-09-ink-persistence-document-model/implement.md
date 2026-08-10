@@ -21,7 +21,7 @@ Rollback point：本阶段只增加 renderer-independent module/tests，不接�
 - [x] 把 Stored Stroke 栅格 helper 移到现有几何 module，支持显式 operator target、tile-local offset 和 target size；全屏路径保持同一函数。
 - [x] 扩展 renderer/HLSL：cache b2、未占用 SRV 槽、tile raster/ordered compose/apply pass；同步 C++ layout/static_assert。
 - [x] 每个 pass 显式解绑 SRV/RTV，恢复 viewport、raster/blend state；Undo copy 前解除 L2 绑定。
-- [ ] GPU backend 尚无自动化 allocate/capture/restore/build/apply 调用顺序测试；本轮只完成静态契约审查，未运行 WARP 或 D3D Debug Layer。
+- [ ] GPU backend 尚无自动化 allocate/capture/restore/build/apply 调用顺序测试；静态契约和用户人工功能验收已通过，未运行 WARP 或 D3D Debug Layer。
 
 Rollback point：cache backend 初始化失败时 renderer 继续使用原 L0/L1/L2；不改变首次绘制结果。
 
@@ -50,7 +50,7 @@ Rollback point：通过 policy 将 composition budget 设为 0，可强制验证
 - [x] `0` 切换已有下一页，末页才完整创建并追加空白页；`8` 返回上一页，首页 no-op。
 - [x] 页面切换清理 transient GPU 状态，从目标页 visible composition root 恢复 L2；失败时 ordered tile replay；创建失败保持旧页/画面。
 - [x] 输出稳定控制台诊断：Page action/path；Undo current path、hot_remaining、history_end/no-op。
-- [ ] `0/8/5` 的真实窗口输入、页面 GPU 恢复和 active-contact defer 尚无自动集成测试；本轮不启动可见窗口验证。
+- [ ] `0/8/5` 的真实窗口输入、页面 GPU 恢复和 active-contact defer 尚无自动集成测试；对应人工行为已由用户验收通过。
 
 ## 6. Validation And Spec
 
@@ -61,7 +61,7 @@ Rollback point：通过 policy 将 composition budget 设为 0，可强制验证
 - [x] 运行 `.\ARM64\Debug\inkStrokeModelerTestTests.exe`，全部测试通过。
 - [x] 使用 ARM64 `MSBuild.exe` 完整 Rebuild `inkStrokeModelerTest.sln` 的 `Release|ARM64`；VS/PS/UpdateCS/EmitCS 均重新编译成功。
 - [x] 运行 `.\ARM64\Release\inkStrokeModelerTestTests.exe`，全部测试通过。
-- [ ] 人工验证普通笔、荧光笔、橡皮、同帧多 contact、`5` 热/冷撤回、`0/8` 页面、resize、空页和控制台输出。本轮按用户约束不启动可见窗口。
+- [x] 用户已人工验收普通笔、荧光笔、橡皮、同帧多 contact、`5` 热/冷撤回、`0/8` 页面、resize、空页和控制台输出。
 - [ ] D3D Debug Layer 运行验证未执行；本轮仅静态核对单 slice SRV/RTV/copy 与解绑规则，不能声明 Debug Layer 已通过。
 - [x] 执行 `git diff --check`、scope/spec review，确认 `Vcpkg/` 未修改且未暂存。
 
