@@ -88,6 +88,7 @@
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.FramePacing.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
     <ClCompile Include="animation_tests.cpp" />
+	<ClCompile Include="dirty_region_tests.cpp" />
     <ClCompile Include="frame_pacing_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
     <ClCompile Include="wake_signal_tests.cpp" />

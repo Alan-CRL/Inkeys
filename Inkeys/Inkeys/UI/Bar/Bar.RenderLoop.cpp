@@ -10,6 +10,7 @@
 #include "../../../IdtFloating.h"
 #include "../../../IdtState.h"
 #include "../../../IdtWindow.h"
+#include "Bar.DirtyRegion.h"
 #include "Bar.PresentDecision.h"
 #include <limits>
 
@@ -163,12 +164,38 @@ struct BarRenderFrameSnapshot
 	int ordinal = 2;
 };
 
+using Inkeys::UI::Bar::BarDirtyRegionTracker;
+using Inkeys::UI::Bar::BarDirtyVisualKey;
+using Inkeys::UI::Bar::ResolveBarDebugDamage;
+
 enum class BarRenderLoopStageResult
 {
 	Proceed,
 	Continue,
 	Stop,
 };
+
+enum class BarDirtyFixedVisual : BarDirtyVisualKey
+{
+	MainGroup = 0xFFFF000000000001ULL,
+	DrawAttributeGroup = 0xFFFF000000000002ULL,
+	GeometryAttributeGroup = 0xFFFF000000000003ULL,
+	MoreGroup = 0xFFFF000000000004ULL,
+	PrimaryLight = 0xFFFF000000000005ULL,
+	CursorLight = 0xFFFF000000000006ULL,
+};
+
+[[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
+{
+	return static_cast<BarDirtyVisualKey>(
+		reinterpret_cast<std::uintptr_t>(visual));
+}
+
+[[nodiscard]] constexpr BarDirtyVisualKey GetBarDirtyVisualKey(
+	BarDirtyFixedVisual visual) noexcept
+{
+	return static_cast<BarDirtyVisualKey>(visual);
+}
 
 // 只保存渲染线程跨帧使用的状态；控件拓扑仍由 BarUISetClass 持有。
 struct BarRenderLoopState
@@ -284,10 +311,12 @@ struct BarRenderLoopState
 	chrono::high_resolution_clock::time_point reckon =
 		chrono::high_resolution_clock::now();
 	Inkeys::UI::Bar::FrameAnimationClock animationClock;
+	Inkeys::UI::Bar::BarDirtyRegionTracker dirtyRegionTracker;
 	RECT current = RECT(0, 0, 0, 0);
 	Inkeys::UI::Bar::BarPresentDecision presentDecision;
-	RECT lastPresentedDebugBounds = RECT(0, 0, 0, 0);
-	bool lastPresentedDebugBoundsValid = false;
+	RECT lastPresentedDebugTextBounds{};
+	RECT lastPresentedDebugFrameBounds{};
+	bool unclassifiedDamagePending = false;
 	unsigned long long presentAttemptFrameSerial = 0;
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
@@ -4413,8 +4442,15 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	const double currentAnimationSpeedRate = frame.animationSpeedRate;
 	const int forNum = frame.ordinal;
 	bool needRendering = false;
+	const BarDirtyVisualKey drawAttributeDirtyKey = GetBarDirtyVisualKey(
+		BarDirtyFixedVisual::DrawAttributeGroup);
+	const BarDirtyVisualKey geometryAttributeDirtyKey = GetBarDirtyVisualKey(
+		BarDirtyFixedVisual::GeometryAttributeGroup);
+	const BarDirtyVisualKey moreDirtyKey = GetBarDirtyVisualKey(
+		BarDirtyFixedVisual::MoreGroup);
 
-	auto AdvanceAnimation = [&](auto& animation, bool forceReplace) -> void
+	auto AdvanceAnimation = [&](auto& animation, bool forceReplace,
+		BarDirtyVisualKey dirtyKey = 0) -> void
 		{
 			const BarUiAnimationAdvanceContextClass context{
 				animationDtSeconds,
@@ -4425,19 +4461,27 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			const auto result = BarUiAdvanceAnimation(animation, context);
 			// active 保证量化后未变色的中间帧继续推进，changed 保证最后一帧提交。
 			needRendering = needRendering || result.changed || result.active;
+			if ((result.changed || result.active) && dirtyKey != 0)
+				state.dirtyRegionTracker.MarkChanged(dirtyKey);
 		};
-	auto ChangeState = [&](BarUiStateClass& state, bool forceReplace)
-		{ AdvanceAnimation(state, forceReplace); };
-	auto ChangeValue = [&](BarUiValueClass& value, bool forceReplace)
-		{ AdvanceAnimation(value, forceReplace); };
-	auto ChangeColor = [&](BarUiColorClass& color, bool forceReplace)
-		{ AdvanceAnimation(color, forceReplace); };
-	auto ChangePct = [&](BarUiPctClass& pct, bool forceReplace)
-		{ AdvanceAnimation(pct, forceReplace); };
-	auto ChangeString = [&](BarUiStringClass& stringO, bool) -> void
+	auto ChangeState = [&](BarUiStateClass& target, bool forceReplace,
+		BarDirtyVisualKey dirtyKey = 0)
+		{ AdvanceAnimation(target, forceReplace, dirtyKey); };
+	auto ChangeValue = [&](BarUiValueClass& value, bool forceReplace,
+		BarDirtyVisualKey dirtyKey = 0)
+		{ AdvanceAnimation(value, forceReplace, dirtyKey); };
+	auto ChangeColor = [&](BarUiColorClass& color, bool forceReplace,
+		BarDirtyVisualKey dirtyKey = 0)
+		{ AdvanceAnimation(color, forceReplace, dirtyKey); };
+	auto ChangePct = [&](BarUiPctClass& pct, bool forceReplace,
+		BarDirtyVisualKey dirtyKey = 0)
+		{ AdvanceAnimation(pct, forceReplace, dirtyKey); };
+	auto ChangeString = [&](BarUiStringClass& stringO, bool,
+		BarDirtyVisualKey dirtyKey = 0) -> void
 		{
 			needRendering = true;
 			stringO.ApplyTar();
+			if (dirtyKey != 0) state.dirtyRegionTracker.MarkChanged(dirtyKey);
 		};
 // 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
 		if (state.barState.drawAttributeBar.thicknessSliderDragging
@@ -4446,217 +4490,252 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive)
 		{
 			needRendering = true;
+			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 		}
 		// 独立的粗细值也进入统一动画时钟，方便后续直接替换为非线性或回弹曲线。
-		if (!state.drawAttributePenThickness.IsSame()) ChangeValue(state.drawAttributePenThickness, false);
+		if (!state.drawAttributePenThickness.IsSame()) ChangeValue(state.drawAttributePenThickness, false, drawAttributeDirtyKey);
 		if (!state.drawAttributePenPreviewMorph.IsSame())
-			ChangeValue(state.drawAttributePenPreviewMorph, false);
+			ChangeValue(state.drawAttributePenPreviewMorph, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessSliderNormalized.IsSame())
-			ChangeValue(state.drawAttributeThicknessSliderNormalized, false);
+			ChangeValue(state.drawAttributeThicknessSliderNormalized, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessHoldRingLockOpacity.IsSame())
-			ChangeValue(state.drawAttributeThicknessHoldRingLockOpacity, false);
+			ChangeValue(state.drawAttributeThicknessHoldRingLockOpacity, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessHoldTextMix.IsSame())
-			ChangeValue(state.drawAttributeThicknessHoldTextMix, false);
+			ChangeValue(state.drawAttributeThicknessHoldTextMix, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessHoldExchangeProgress.IsSame())
-			ChangeValue(state.drawAttributeThicknessHoldExchangeProgress, false);
+			ChangeValue(state.drawAttributeThicknessHoldExchangeProgress, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessHoldGroupScale.IsSame())
-			ChangeValue(state.drawAttributeThicknessHoldGroupScale, false);
+			ChangeValue(state.drawAttributeThicknessHoldGroupScale, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessPreviewPopupProgress.IsSame())
-			ChangeValue(state.drawAttributeThicknessPreviewPopupProgress, false);
+			ChangeValue(state.drawAttributeThicknessPreviewPopupProgress, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessPreviewPopupRetargetProgress.IsSame())
 			ChangeValue(
-				state.drawAttributeThicknessPreviewPopupRetargetProgress, false);
+				state.drawAttributeThicknessPreviewPopupRetargetProgress, false,
+				drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessSliderProgress.IsSame())
-			ChangeValue(state.drawAttributeThicknessSliderProgress, false);
+			ChangeValue(state.drawAttributeThicknessSliderProgress, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessSliderTrackOpacity.IsSame())
-			ChangeValue(state.drawAttributeThicknessSliderTrackOpacity, false);
+			ChangeValue(state.drawAttributeThicknessSliderTrackOpacity, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessFineDialProgress.IsSame())
-			ChangeValue(state.drawAttributeThicknessFineDialProgress, false);
+			ChangeValue(state.drawAttributeThicknessFineDialProgress, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessFineDialRecognitionVisibility.IsSame())
 			ChangeValue(
-				state.drawAttributeThicknessFineDialRecognitionVisibility, false);
+				state.drawAttributeThicknessFineDialRecognitionVisibility, false,
+				drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessFineDialDwellProgress.IsSame())
-			ChangeValue(state.drawAttributeThicknessFineDialDwellProgress, false);
+			ChangeValue(state.drawAttributeThicknessFineDialDwellProgress, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessFineDialSelectionProgress.IsSame())
-			ChangeValue(state.drawAttributeThicknessFineDialSelectionProgress, false);
+			ChangeValue(state.drawAttributeThicknessFineDialSelectionProgress, false, drawAttributeDirtyKey);
 		if (!state.thicknessFineDialOldRangeOpacity.IsSame())
-			ChangeValue(state.thicknessFineDialOldRangeOpacity, false);
+			ChangeValue(state.thicknessFineDialOldRangeOpacity, false, drawAttributeDirtyKey);
 		if (!state.thicknessFineDialNewRangeOpacity.IsSame())
-			ChangeValue(state.thicknessFineDialNewRangeOpacity, false);
+			ChangeValue(state.thicknessFineDialNewRangeOpacity, false, drawAttributeDirtyKey);
 		// 静止保持进度由交互线程写入，渲染侧每帧重绘环形进度。
 		if (state.barState.drawAttributeBar.thicknessSliderHoldHintActive
 			|| state.barState.drawAttributeBar.thicknessSliderHoldLocked)
 		{
 			needRendering = true;
+			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 		}
 	if (!state.drawAttributeThicknessSliderThumbOpacity.IsSame())
-		ChangeValue(state.drawAttributeThicknessSliderThumbOpacity, false);
+		ChangeValue(state.drawAttributeThicknessSliderThumbOpacity, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeThicknessSliderThumbScale.IsSame())
-		ChangeValue(state.drawAttributeThicknessSliderThumbScale, false);
+		ChangeValue(state.drawAttributeThicknessSliderThumbScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeThicknessSliderAccentOpacity.IsSame())
-		ChangeValue(state.drawAttributeThicknessSliderAccentOpacity, false);
+		ChangeValue(state.drawAttributeThicknessSliderAccentOpacity, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeThicknessSliderCenterDiameter.IsSame())
-		ChangeValue(state.drawAttributeThicknessSliderCenterDiameter, false);
+		ChangeValue(state.drawAttributeThicknessSliderCenterDiameter, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeAnnotationPopupProgress.IsSame())
-		ChangeValue(state.drawAttributeAnnotationPopupProgress, false);
+		ChangeValue(state.drawAttributeAnnotationPopupProgress, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeOverflowPopupProgress.IsSame())
-		ChangeValue(state.drawAttributeOverflowPopupProgress, false);
+		ChangeValue(state.drawAttributeOverflowPopupProgress, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeOverflowBadgeProgress.IsSame())
-		ChangeValue(state.drawAttributeOverflowBadgeProgress, false);
+		ChangeValue(state.drawAttributeOverflowBadgeProgress, false, drawAttributeDirtyKey);
 	if (!state.drawAttributePenTypeMenuProgress.IsSame())
-		ChangeValue(state.drawAttributePenTypeMenuProgress, false);
+		ChangeValue(state.drawAttributePenTypeMenuProgress, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerProgress.IsSame())
-		ChangeValue(state.drawAttributeColorPickerProgress, false);
+		ChangeValue(state.drawAttributeColorPickerProgress, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerEntryPressScale.IsSame())
-		ChangeValue(state.drawAttributeColorPickerEntryPressScale, false);
+		ChangeValue(state.drawAttributeColorPickerEntryPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerToneMix.IsSame())
-		ChangeValue(state.drawAttributeColorPickerToneMix, false);
+		ChangeValue(state.drawAttributeColorPickerToneMix, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerHoldOpacity.IsSame())
-		ChangeValue(state.drawAttributeColorPickerHoldOpacity, false);
+		ChangeValue(state.drawAttributeColorPickerHoldOpacity, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerHoldRingOpacity.IsSame())
-		ChangeValue(state.drawAttributeColorPickerHoldRingOpacity, false);
+		ChangeValue(state.drawAttributeColorPickerHoldRingOpacity, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerHoldTextMix.IsSame())
-		ChangeValue(state.drawAttributeColorPickerHoldTextMix, false);
+		ChangeValue(state.drawAttributeColorPickerHoldTextMix, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerDisplayR.IsSame())
-		ChangeValue(state.drawAttributeColorPickerDisplayR, false);
+		ChangeValue(state.drawAttributeColorPickerDisplayR, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerDisplayG.IsSame())
-		ChangeValue(state.drawAttributeColorPickerDisplayG, false);
+		ChangeValue(state.drawAttributeColorPickerDisplayG, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerDisplayB.IsSame())
-		ChangeValue(state.drawAttributeColorPickerDisplayB, false);
+		ChangeValue(state.drawAttributeColorPickerDisplayB, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerDisplayOpacity.IsSame())
-		ChangeValue(state.drawAttributeColorPickerDisplayOpacity, false);
+		ChangeValue(state.drawAttributeColorPickerDisplayOpacity, false, drawAttributeDirtyKey);
 	if (!state.morePanelProgress.IsSame())
-		ChangeValue(state.morePanelProgress, false);
+		ChangeValue(state.morePanelProgress, false, moreDirtyKey);
 	if (!state.morePanelOpacity.IsSame())
-		ChangeValue(state.morePanelOpacity, false);
+		ChangeValue(state.morePanelOpacity, false, moreDirtyKey);
 	// 保持进度仅在按压期间推进；静止打开的面板不会维持渲染唤醒。
 	if (state.barState.drawAttributeBar.colorPickerPointerPressed
 		&& (state.barState.drawAttributeBar.colorPickerHoldHintActive
 			|| state.barState.drawAttributeBar.colorPickerHoldLocked))
 	{
 		needRendering = true;
+		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 	}
-	if (!state.drawAttributeBrushPressScale.IsSame()) ChangeValue(state.drawAttributeBrushPressScale, false);
-	if (!state.drawAttributeHighlightPressScale.IsSame()) ChangeValue(state.drawAttributeHighlightPressScale, false);
+	if (!state.drawAttributeBrushPressScale.IsSame()) ChangeValue(state.drawAttributeBrushPressScale, false, drawAttributeDirtyKey);
+	if (!state.drawAttributeHighlightPressScale.IsSame()) ChangeValue(state.drawAttributeHighlightPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributePenTypeExtensionPressScale.IsSame())
-		ChangeValue(state.drawAttributePenTypeExtensionPressScale, false);
+		ChangeValue(state.drawAttributePenTypeExtensionPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributePenTypeFreeLinePressScale.IsSame())
-		ChangeValue(state.drawAttributePenTypeFreeLinePressScale, false);
-	if (!state.drawAttributeThicknessFinePressScale.IsSame()) ChangeValue(state.drawAttributeThicknessFinePressScale, false);
-	if (!state.drawAttributeThicknessMediumPressScale.IsSame()) ChangeValue(state.drawAttributeThicknessMediumPressScale, false);
-	if (!state.drawAttributeThicknessCoarsePressScale.IsSame()) ChangeValue(state.drawAttributeThicknessCoarsePressScale, false);
-	if (!state.drawAttributeThicknessAdjustPressScale.IsSame()) ChangeValue(state.drawAttributeThicknessAdjustPressScale, false);
+		ChangeValue(state.drawAttributePenTypeFreeLinePressScale, false, drawAttributeDirtyKey);
+	if (!state.drawAttributeThicknessFinePressScale.IsSame()) ChangeValue(state.drawAttributeThicknessFinePressScale, false, drawAttributeDirtyKey);
+	if (!state.drawAttributeThicknessMediumPressScale.IsSame()) ChangeValue(state.drawAttributeThicknessMediumPressScale, false, drawAttributeDirtyKey);
+	if (!state.drawAttributeThicknessCoarsePressScale.IsSame()) ChangeValue(state.drawAttributeThicknessCoarsePressScale, false, drawAttributeDirtyKey);
+	if (!state.drawAttributeThicknessAdjustPressScale.IsSame()) ChangeValue(state.drawAttributeThicknessAdjustPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeAnnotationClosePressScale.IsSame())
-		ChangeValue(state.drawAttributeAnnotationClosePressScale, false);
+		ChangeValue(state.drawAttributeAnnotationClosePressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeOverflowClosePressScale.IsSame())
-		ChangeValue(state.drawAttributeOverflowClosePressScale, false);
+		ChangeValue(state.drawAttributeOverflowClosePressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerTonePressScale.IsSame())
-		ChangeValue(state.drawAttributeColorPickerTonePressScale, false);
+		ChangeValue(state.drawAttributeColorPickerTonePressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeColorPickerClosePressScale.IsSame())
-		ChangeValue(state.drawAttributeColorPickerClosePressScale, false);
+		ChangeValue(state.drawAttributeColorPickerClosePressScale, false, drawAttributeDirtyKey);
 	if (!state.moreClosePressScale.IsSame())
-		ChangeValue(state.moreClosePressScale, false);
+		ChangeValue(state.moreClosePressScale, false, moreDirtyKey);
 	if (!state.geometryStraightLinePressScale.IsSame())
-		ChangeValue(state.geometryStraightLinePressScale, false);
+		ChangeValue(state.geometryStraightLinePressScale, false, geometryAttributeDirtyKey);
 	if (!state.geometryRectanglePressScale.IsSame())
-		ChangeValue(state.geometryRectanglePressScale, false);
+		ChangeValue(state.geometryRectanglePressScale, false, geometryAttributeDirtyKey);
 	if (!state.geometryThicknessFinePressScale.IsSame())
-		ChangeValue(state.geometryThicknessFinePressScale, false);
+		ChangeValue(state.geometryThicknessFinePressScale, false, geometryAttributeDirtyKey);
 	if (!state.geometryThicknessMediumPressScale.IsSame())
-		ChangeValue(state.geometryThicknessMediumPressScale, false);
+		ChangeValue(state.geometryThicknessMediumPressScale, false, geometryAttributeDirtyKey);
 	if (!state.geometryThicknessCoarsePressScale.IsSame())
-		ChangeValue(state.geometryThicknessCoarsePressScale, false);
+		ChangeValue(state.geometryThicknessCoarsePressScale, false, geometryAttributeDirtyKey);
 	if (!state.geometryClosePressScale.IsSame())
-		ChangeValue(state.geometryClosePressScale, false);
+		ChangeValue(state.geometryClosePressScale, false, geometryAttributeDirtyKey);
 
 	for (const auto& [key, val] : state.shapeMap)
 	{
 		bool forceReplace = false, change = false;
+		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
-		if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value(), forceReplace), change = true;
-		if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value(), forceReplace), change = true;
-		if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace), change = true;
-		if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
-		if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
-		if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
-		if (val->frameLightPct.has_value() && !val->frameLightPct->IsSame()) ChangePct(val->frameLightPct.value(), forceReplace), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
+		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
+		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
+		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
+		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
+		if (val->rw.has_value() && !val->rw->IsSame()) ChangeValue(val->rw.value(), forceReplace, dirtyKey), change = true;
+		if (val->rh.has_value() && !val->rh->IsSame()) ChangeValue(val->rh.value(), forceReplace, dirtyKey), change = true;
+		if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace, dirtyKey), change = true;
+		if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace, dirtyKey), change = true;
+		if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace, dirtyKey), change = true;
+		if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace, dirtyKey), change = true;
+		if (val->frameLightPct.has_value() && !val->frameLightPct->IsSame()) ChangePct(val->frameLightPct.value(), forceReplace, dirtyKey), change = true;
+		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
+		if (change && key == BarUISetShapeEnum::MainBar)
+		{
+			// 主栏是所有浮层的布局根，移动时必须覆盖所有功能组的旧/新位置。
+			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+				BarDirtyFixedVisual::MainGroup));
+			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
+			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
+		}
+		else if (change && key == BarUISetShapeEnum::DrawAttributeBar)
+			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+		else if (change && key == BarUISetShapeEnum::GeometryAttributeBar)
+			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
+		else if (change && key == BarUISetShapeEnum::MorePanel)
+			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
 	}
 	for (const auto& [key, val] : state.superellipseMap)
 	{
 		bool forceReplace = false, change = false;
+		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
-		if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value(), forceReplace), change = true;
-		if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace), change = true;
-		if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace), change = true;
-		if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace), change = true;
-		if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
+		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
+		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
+		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
+		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
+		if (val->n.has_value() && !val->n->IsSame()) ChangeValue(val->n.value(), forceReplace, dirtyKey), change = true;
+		if (val->ft.has_value() && !val->ft->IsSame()) ChangeValue(val->ft.value(), forceReplace, dirtyKey), change = true;
+		if (val->fill.has_value() && !val->fill->IsSame()) ChangeColor(val->fill.value(), forceReplace, dirtyKey), change = true;
+		if (val->frame.has_value() && !val->frame->IsSame()) ChangeColor(val->frame.value(), forceReplace, dirtyKey), change = true;
+		if (val->framePct.has_value() && !val->framePct->IsSame()) ChangePct(val->framePct.value(), forceReplace, dirtyKey), change = true;
+		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
+		if (change && key == BarUISetSuperellipseEnum::MainButton)
+		{
+			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+				BarDirtyFixedVisual::MainGroup));
+			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
+			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
+		}
 	}
 	for (const auto& [key, val] : state.svgMap)
 	{
 		bool forceReplace = false, change = false;;
+		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 		if (val->AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate))
 		{
 			needRendering = true;
+			state.dirtyRegionTracker.MarkChanged(dirtyKey);
 		}
 
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
-		if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace), change = true;
-		if (!val->svg.IsSame()) ChangeString(val->svg, forceReplace), change = true;
-		if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace), change = true;
-		if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
+		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
+		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
+		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
+		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
+		if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace, dirtyKey), change = true;
+		if (!val->svg.IsSame()) ChangeString(val->svg, forceReplace, dirtyKey), change = true;
+		if (val->color1.has_value() && !val->color1->IsSame()) ChangeColor(val->color1.value(), forceReplace, dirtyKey), change = true;
+		if (val->color2.has_value() && !val->color2->IsSame()) ChangeColor(val->color2.value(), forceReplace, dirtyKey), change = true;
+		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
 	}
 	for (const auto& [key, val] : state.pngMap)
 	{
 		bool forceReplace = false, change = false;
+		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
-		if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
+		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
+		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
+		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
+		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
+		if (!val->angle.IsSame()) ChangeValue(val->angle, forceReplace, dirtyKey), change = true;
+		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
 	}
 	for (const auto& [key, val] : state.wordMap)
 	{
 		bool forceReplace = false, change = false;;
+		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 		if (val->AdvanceContentTransition(
 			animationDtSeconds, currentAnimationSpeedRate))
 		{
 			needRendering = true;
+			state.dirtyRegionTracker.MarkChanged(dirtyKey);
 		}
 
-		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace), change = true;
-		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace), change = true;
-		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace), change = true;
-		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace), change = true;
-		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace), change = true;
-		if (!val->size.IsSame()) ChangeValue(val->size, forceReplace), change = true;
-		if (!val->content.IsSame()) ChangeString(val->content, forceReplace), change = true;
-		if (!val->color.IsSame()) ChangeColor(val->color, forceReplace), change = true;
-		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace), change = true;
+		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
+		if (!val->x.IsSame()) ChangeValue(val->x, forceReplace, dirtyKey), change = true;
+		if (!val->y.IsSame()) ChangeValue(val->y, forceReplace, dirtyKey), change = true;
+		if (!val->w.IsSame()) ChangeValue(val->w, forceReplace, dirtyKey), change = true;
+		if (!val->h.IsSame()) ChangeValue(val->h, forceReplace, dirtyKey), change = true;
+		if (!val->size.IsSame()) ChangeValue(val->size, forceReplace, dirtyKey), change = true;
+		if (!val->content.IsSame()) ChangeString(val->content, forceReplace, dirtyKey), change = true;
+		if (!val->color.IsSame()) ChangeColor(val->color, forceReplace, dirtyKey), change = true;
+		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
 	}
 	auto UpdateHoverAnimation = [&](BarUiPctClass& hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>& hoverStage, bool visible, bool hoverAllowed)
@@ -4840,6 +4919,9 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		bool moreItem)
 	{
 		if (temp == nullptr) return;
+		const auto buttonDirtyKey = GetBarDirtyVisualKey(&temp->button);
+		const auto iconDirtyKey = GetBarDirtyVisualKey(&temp->icon);
+		const auto nameDirtyKey = GetBarDirtyVisualKey(&temp->name);
 		BarUiColorClass* hoverFill = temp->button.fill.has_value()
 			? &temp->button.fill.value() : nullptr;
 		bool isDivider = temp->preset == BarButtonPresetEnum::Divider;
@@ -4866,25 +4948,26 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 					pressed ? state.buttonPressCurve : state.buttonReleaseCurve);
 			}
 		}
-		if (!temp->pressScale.IsSame()) ChangeValue(temp->pressScale, false);
+		if (!temp->pressScale.IsSame())
+			ChangeValue(temp->pressScale, false, buttonDirtyKey);
 
 		{
 			bool forceReplace = false, change = false;;
 			if (temp->button.forceReplace) temp->button.forceReplace = false, forceReplace = true;
 
-			if (!temp->button.enable.IsSame()) ChangeState(temp->button.enable, forceReplace), change = true;
-			if (!temp->button.x.IsSame()) ChangeValue(temp->button.x, forceReplace), change = true;
-			if (!temp->button.y.IsSame()) ChangeValue(temp->button.y, forceReplace), change = true;
-			if (!temp->button.w.IsSame()) ChangeValue(temp->button.w, forceReplace), change = true;
-			if (!temp->button.h.IsSame()) ChangeValue(temp->button.h, forceReplace), change = true;
-			if (temp->button.rw.has_value() && !temp->button.rw->IsSame()) ChangeValue(temp->button.rw.value(), forceReplace), change = true;
-			if (temp->button.rh.has_value() && !temp->button.rh->IsSame()) ChangeValue(temp->button.rh.value(), forceReplace), change = true;
-			if (temp->button.ft.has_value() && !temp->button.ft->IsSame()) ChangeValue(temp->button.ft.value(), forceReplace), change = true;
-			if (temp->button.fill.has_value() && !temp->button.fill->IsSame()) ChangeColor(temp->button.fill.value(), forceReplace), change = true;
-			if (temp->button.frame.has_value() && !temp->button.frame->IsSame()) ChangeColor(temp->button.frame.value(), forceReplace), change = true;
-			if (temp->button.framePct.has_value() && !temp->button.framePct->IsSame()) ChangePct(temp->button.framePct.value(), forceReplace), change = true;
-			if (temp->button.frameLightPct.has_value() && !temp->button.frameLightPct->IsSame()) ChangePct(temp->button.frameLightPct.value(), forceReplace), change = true;
-			if (!temp->button.pct.IsSame()) ChangePct(temp->button.pct, forceReplace), change = true;
+			if (!temp->button.enable.IsSame()) ChangeState(temp->button.enable, forceReplace, buttonDirtyKey), change = true;
+			if (!temp->button.x.IsSame()) ChangeValue(temp->button.x, forceReplace, buttonDirtyKey), change = true;
+			if (!temp->button.y.IsSame()) ChangeValue(temp->button.y, forceReplace, buttonDirtyKey), change = true;
+			if (!temp->button.w.IsSame()) ChangeValue(temp->button.w, forceReplace, buttonDirtyKey), change = true;
+			if (!temp->button.h.IsSame()) ChangeValue(temp->button.h, forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.rw.has_value() && !temp->button.rw->IsSame()) ChangeValue(temp->button.rw.value(), forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.rh.has_value() && !temp->button.rh->IsSame()) ChangeValue(temp->button.rh.value(), forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.ft.has_value() && !temp->button.ft->IsSame()) ChangeValue(temp->button.ft.value(), forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.fill.has_value() && !temp->button.fill->IsSame()) ChangeColor(temp->button.fill.value(), forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.frame.has_value() && !temp->button.frame->IsSame()) ChangeColor(temp->button.frame.value(), forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.framePct.has_value() && !temp->button.framePct->IsSame()) ChangePct(temp->button.framePct.value(), forceReplace, buttonDirtyKey), change = true;
+			if (temp->button.frameLightPct.has_value() && !temp->button.frameLightPct->IsSame()) ChangePct(temp->button.frameLightPct.value(), forceReplace, buttonDirtyKey), change = true;
+			if (!temp->button.pct.IsSame()) ChangePct(temp->button.pct, forceReplace, buttonDirtyKey), change = true;
 		}
 		{
 			bool forceReplace = false, change = false;;
@@ -4892,18 +4975,19 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			if (temp->icon.AdvanceContentTransition(animationDtSeconds, currentAnimationSpeedRate))
 			{
 				needRendering = true;
+				state.dirtyRegionTracker.MarkChanged(iconDirtyKey);
 			}
 
-			if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace), change = true;
-			if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace), change = true;
-			if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace), change = true;
-			if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace), change = true;
-			if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace), change = true;
-			if (!temp->icon.angle.IsSame()) ChangeValue(temp->icon.angle, forceReplace), change = true;
-			if (!temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace), change = true;
-			if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace), change = true;
-			if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace), change = true;
-			if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct, forceReplace), change = true;
+			if (!temp->icon.enable.IsSame()) ChangeState(temp->icon.enable, forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.x.IsSame()) ChangeValue(temp->icon.x, forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.y.IsSame()) ChangeValue(temp->icon.y, forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.w.IsSame()) ChangeValue(temp->icon.w, forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.h.IsSame()) ChangeValue(temp->icon.h, forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.angle.IsSame()) ChangeValue(temp->icon.angle, forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.svg.IsSame()) ChangeString(temp->icon.svg, forceReplace, iconDirtyKey), change = true;
+			if (temp->icon.color1.has_value() && !temp->icon.color1->IsSame()) ChangeColor(temp->icon.color1.value(), forceReplace, iconDirtyKey), change = true;
+			if (temp->icon.color2.has_value() && !temp->icon.color2->IsSame()) ChangeColor(temp->icon.color2.value(), forceReplace, iconDirtyKey), change = true;
+			if (!temp->icon.pct.IsSame()) ChangePct(temp->icon.pct, forceReplace, iconDirtyKey), change = true;
 		}
 
 		{
@@ -4913,17 +4997,18 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 				animationDtSeconds, currentAnimationSpeedRate))
 			{
 				needRendering = true;
+				state.dirtyRegionTracker.MarkChanged(nameDirtyKey);
 			}
 
-			if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace), change = true;
-			if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace), change = true;
-			if (!temp->name.y.IsSame()) ChangeValue(temp->name.y, forceReplace), change = true;
-			if (!temp->name.w.IsSame()) ChangeValue(temp->name.w, forceReplace), change = true;
-			if (!temp->name.h.IsSame()) ChangeValue(temp->name.h, forceReplace), change = true;
-			if (!temp->name.size.IsSame()) ChangeValue(temp->name.size, forceReplace), change = true;
-			if (!temp->name.content.IsSame()) ChangeString(temp->name.content, forceReplace), change = true;
-			if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace), change = true;
-			if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace), change = true;
+			if (!temp->name.enable.IsSame()) ChangeState(temp->name.enable, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.x.IsSame()) ChangeValue(temp->name.x, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.y.IsSame()) ChangeValue(temp->name.y, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.w.IsSame()) ChangeValue(temp->name.w, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.h.IsSame()) ChangeValue(temp->name.h, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.size.IsSame()) ChangeValue(temp->name.size, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.content.IsSame()) ChangeString(temp->name.content, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.color.IsSame()) ChangeColor(temp->name.color, forceReplace, nameDirtyKey), change = true;
+			if (!temp->name.pct.IsSame()) ChangePct(temp->name.pct, forceReplace, nameDirtyKey), change = true;
 		}
 	};
 	for (int id = 0; id < state.barButtonSet.tot; id++)
@@ -5172,7 +5257,8 @@ double baseThumbDiameter =
 				BarThicknessPreviewNumberAnimationDur);
 			if (!state.drawAttributeThicknessPreviewNumberInsideProgress.IsSame())
 				ChangeValue(
-					state.drawAttributeThicknessPreviewNumberInsideProgress, false);
+					state.drawAttributeThicknessPreviewNumberInsideProgress, false,
+					drawAttributeDirtyKey);
 			double numberInsideProgress = clamp(static_cast<double>(
 				state.drawAttributeThicknessPreviewNumberInsideProgress.val),
 				0.0, 1.0);
@@ -6174,6 +6260,18 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		}
 
 	// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
+	if (state.mainBarTimeline.IsActive())
+	{
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MainGroup));
+		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
+	}
+	if (state.drawAttributeTimeline.IsActive())
+		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+	if (state.geometryAttributeTimeline.IsActive())
+		state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
 	state.mainBarTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
 	state.drawAttributeTimeline.Advance(animationDtSeconds, currentAnimationSpeedRate);
 	state.geometryAttributeTimeline.Advance(
@@ -6202,6 +6300,32 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
 	bool debugRendering = true == BarUiDebugModeEnabled;
+	if (sustainRendering)
+	{
+		// 整栏直接拖动绕过标准动画，按四个功能组累计旧/新内容范围。
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MainGroup));
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::DrawAttributeGroup));
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::GeometryAttributeGroup));
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MoreGroup));
+	}
+	if (needBorderLightingRendering)
+	{
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::PrimaryLight));
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::CursorLight));
+	}
+	if (needRenderOnce || ((needRendering || sustainRendering
+		|| needBorderLightingRendering)
+		&& !state.dirtyRegionTracker.HasPendingDamage()))
+	{
+		// 未接入视觉键的呈现请求不能冒险漏刷，保持到成功提交为止。
+		state.unclassifiedDamagePending = true;
+	}
 	state.presentDecision.AddDemand({
 		needRendering || sustainRendering || debugRendering,
 		needBorderLightingRendering,
@@ -6242,6 +6366,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			static_cast<UINT32>(state.barWindow.w), static_cast<UINT32>(state.barWindow.h));
 		if (FAILED(ensureDeviceResourcesHr))
 		{
+			state.dirtyRegionTracker.RetainForRetry(true);
 			state.presentDecision.RequireFullDirtyRetry();
 			state.presentDecision.RecordFailure(
 				Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
@@ -6261,6 +6386,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.barDeviceResourceFailureGeneration = 0;
 			state.presentDecision.ResetFailureRecovery();
 			state.presentDecision.RequireFullDirtyRetry();
+			state.dirtyRegionTracker.ForceFullDamage();
 		}
 		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
 		ID2D1GdiInteropRenderTarget* barGdiInterop =
@@ -6288,7 +6414,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		geometryAttribute->Inherit(
 			BarUiInheritEnum::Center, geometryButton->button);
 
-		RECT predicted = RECT(0, 0, 0, 0);
+		const RECT windowBounds = RECT(
+			0, 0, state.barWindow.w, state.barWindow.h);
+		state.dirtyRegionTracker.BeginFrame(windowBounds);
+		if (state.presentDecision.NeedsFullDirty())
+			state.dirtyRegionTracker.ForceFullDamage();
+
+		RECT visibleContentBounds = RECT(0, 0, 0, 0);
 		auto UnionShapeBounds = [&](RECT& bounds, const BarUiShapeClass* shape)
 			{
 				if (!shape) return;
@@ -6330,13 +6462,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			};
 		// 预测边界与成功提交后保存的实际边界必须共用同一可见性判定。
 		auto IncludeShapeBounds = [&](const shared_ptr<BarUiShapeClass>& shape)
-			{ UnionShapeBounds(predicted, shape.get()); };
+			{ UnionShapeBounds(visibleContentBounds, shape.get()); };
 		auto IncludeSvgBounds = [&](const shared_ptr<BarUiSVGClass>& svg)
-			{ UnionSvgBounds(predicted, svg.get()); };
+			{ UnionSvgBounds(visibleContentBounds, svg.get()); };
 		auto IncludePngBounds = [&](const shared_ptr<BarUiPNGClass>& png)
-			{ UnionPngBounds(predicted, png.get()); };
+			{ UnionPngBounds(visibleContentBounds, png.get()); };
 		auto IncludeWordBounds = [&](const shared_ptr<BarUiWordClass>& word)
-			{ UnionWordBounds(predicted, word.get()); };
+			{ UnionWordBounds(visibleContentBounds, word.get()); };
 		IncludeShapeBounds(mainBar);
 		IncludeShapeBounds(drawAttribute);
 		IncludeShapeBounds(geometryAttribute);
@@ -6352,8 +6484,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				IncludeShapeBounds(shared_ptr<BarUiShapeClass>(
 					button, &button->button));
 				if (button->iconKind == BarButtonIconKindEnum::Png)
-					IncludePngBounds(shared_ptr<BarUiPNGClass>(
-						button, &button->pngIcon));
+					// PNG 载荷在绘制时才同步，预测边界必须读取它的 SVG 控制器。
+					IncludeSvgBounds(shared_ptr<BarUiSVGClass>(
+						button, &button->icon));
 				else IncludeSvgBounds(shared_ptr<BarUiSVGClass>(
 					button, &button->icon));
 				IncludeWordBounds(shared_ptr<BarUiWordClass>(
@@ -6369,7 +6502,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderHit];
 		if (thicknessSliderHit
 			&& state.drawAttributeThicknessSliderProgress.val > 0.0)
-			BarRenderingAttribute::UnionRectInPlace(predicted,
+			BarRenderingAttribute::UnionRectInPlace(visibleContentBounds,
 				BarRenderingAttribute::GetWeigetRect(
 					*thicknessSliderHit,
 					static_cast<double>(frameZoom)));
@@ -6454,11 +6587,160 @@ IncludeShapeBounds(state.shapeMap[
 		IncludeWordBounds(state.wordMap[
 			BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel]);
 		if (mainButton->enable.val && mainButton->pct.val > 0.0)
-			BarRenderingAttribute::UnionRectInPlace(predicted,
+			BarRenderingAttribute::UnionRectInPlace(visibleContentBounds,
 				BarRenderingAttribute::GetWeigetRect(
 					*mainButton, static_cast<double>(frameZoom)));
 
+		RECT mainGroupBounds{};
+		RECT drawAttributeGroupBounds{};
+		RECT geometryAttributeGroupBounds{};
+		RECT moreGroupBounds{};
+		auto ObserveShape = [&](const BarUiShapeClass* shape) -> RECT
+			{
+				RECT bounds{};
+				UnionShapeBounds(bounds, shape);
+				if (shape) state.dirtyRegionTracker.Observe(
+					GetBarDirtyVisualKey(shape), bounds);
+				return bounds;
+			};
+		auto ObserveSuperellipse = [&](const BarUiSuperellipseClass* shape) -> RECT
+			{
+				RECT bounds{};
+				if (shape && shape->enable.val && shape->pct.val > 0.0
+					&& shape->w.val > 0.0 && shape->h.val > 0.0)
+					BarRenderingAttribute::UnionRectInPlace(bounds,
+						BarRenderingAttribute::GetWeigetRect(
+							*shape, static_cast<double>(frameZoom)));
+				if (shape) state.dirtyRegionTracker.Observe(
+					GetBarDirtyVisualKey(shape), bounds);
+				return bounds;
+			};
+		auto ObserveSvg = [&](const BarUiSVGClass* svg,
+			BarDirtyVisualKey visualKey = 0) -> RECT
+			{
+				RECT bounds{};
+				UnionSvgBounds(bounds, svg);
+				if (svg) state.dirtyRegionTracker.Observe(
+					visualKey != 0 ? visualKey : GetBarDirtyVisualKey(svg), bounds);
+				return bounds;
+			};
+		auto ObservePng = [&](const BarUiPNGClass* png,
+			BarDirtyVisualKey visualKey = 0) -> RECT
+			{
+				RECT bounds{};
+				UnionPngBounds(bounds, png);
+				if (png) state.dirtyRegionTracker.Observe(
+					visualKey != 0 ? visualKey : GetBarDirtyVisualKey(png), bounds);
+				return bounds;
+			};
+		auto ObserveWord = [&](const BarUiWordClass* word) -> RECT
+			{
+				RECT bounds{};
+				UnionWordBounds(bounds, word);
+				if (word) state.dirtyRegionTracker.Observe(
+					GetBarDirtyVisualKey(word), bounds);
+				return bounds;
+			};
+		auto AddGroupBounds = [&](RECT& group, const RECT& bounds)
+			{
+				BarRenderingAttribute::UnionRectInPlace(group, bounds);
+				BarRenderingAttribute::UnionRectInPlace(
+					visibleContentBounds, bounds);
+			};
+
+		// 标准视觉按对象记录；父布局和自绘控件另用功能组键做保守兜底。
+		for (const auto& [visual, shape] : state.shapeMap)
+		{
+			RECT bounds = ObserveShape(shape.get());
+			const int ordinal = static_cast<int>(visual);
+			if (visual == BarUISetShapeEnum::MainBar)
+				AddGroupBounds(mainGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(BarUISetShapeEnum::MorePanel)
+				&& ordinal <= static_cast<int>(BarUISetShapeEnum::MorePanelCloseHit))
+				AddGroupBounds(moreGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar)
+				&& ordinal <= static_cast<int>(
+					BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner))
+				AddGroupBounds(drawAttributeGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar))
+				AddGroupBounds(geometryAttributeGroupBounds, bounds);
+		}
+		for (const auto& [visual, shape] : state.superellipseMap)
+			AddGroupBounds(mainGroupBounds, ObserveSuperellipse(shape.get()));
+		for (const auto& [visual, svg] : state.svgMap)
+		{
+			RECT bounds = ObserveSvg(svg.get());
+			const int ordinal = static_cast<int>(visual);
+			if (visual == BarUISetSvgEnum::logo1
+				|| visual == BarUISetSvgEnum::logoInk)
+				AddGroupBounds(mainGroupBounds, bounds);
+			else if (visual == BarUISetSvgEnum::MorePanelClose)
+				AddGroupBounds(moreGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(
+				BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
+				&& ordinal < static_cast<int>(
+					BarUISetSvgEnum::GeometryAttributeBar_StraightLine))
+				AddGroupBounds(drawAttributeGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(
+				BarUISetSvgEnum::GeometryAttributeBar_StraightLine))
+				AddGroupBounds(geometryAttributeGroupBounds, bounds);
+		}
+		for (const auto& [visual, png] : state.pngMap)
+			AddGroupBounds(drawAttributeGroupBounds, ObservePng(png.get()));
+		for (const auto& [visual, word] : state.wordMap)
+		{
+			RECT bounds = ObserveWord(word.get());
+			const int ordinal = static_cast<int>(visual);
+			if (visual == BarUISetWordEnum::BackgroundWarning
+				|| visual == BarUISetWordEnum::MainButton)
+				AddGroupBounds(mainGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(
+				BarUISetWordEnum::DrawAttributeBar_Brush1)
+				&& ordinal < static_cast<int>(
+					BarUISetWordEnum::GeometryAttributeBar_StraightLine))
+				AddGroupBounds(drawAttributeGroupBounds, bounds);
+			else if (ordinal >= static_cast<int>(
+				BarUISetWordEnum::GeometryAttributeBar_StraightLine))
+				AddGroupBounds(geometryAttributeGroupBounds, bounds);
+		}
+
+		auto ObserveRegisteredButton = [&](BarButtonClass* button, RECT& group)
+			{
+				if (!button) return;
+				AddGroupBounds(group, ObserveShape(&button->button));
+				const auto iconKey = GetBarDirtyVisualKey(&button->icon);
+				// PNG 与 SVG 共用 icon 控制器，避免观察到绘制阶段同步前的旧 PNG 几何。
+				RECT iconBounds = ObserveSvg(&button->icon, iconKey);
+				AddGroupBounds(group, iconBounds);
+				AddGroupBounds(group, ObserveWord(&button->name));
+			};
+		for (int id = 0; id < state.barButtonSet.tot; ++id)
+			ObserveRegisteredButton(
+				state.barButtonSet.buttonList.Get(id), mainGroupBounds);
+		for (const shared_ptr<BarButtonClass>& button :
+			predictedMoreSnapshot.explicitMore)
+			ObserveRegisteredButton(button.get(), moreGroupBounds);
+		for (const shared_ptr<BarButtonClass>& button :
+			predictedMoreSnapshot.forcedOverflow)
+			ObserveRegisteredButton(button.get(), moreGroupBounds);
+
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MainGroup), mainGroupBounds);
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::DrawAttributeGroup), drawAttributeGroupBounds);
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::GeometryAttributeGroup), geometryAttributeGroupBounds);
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MoreGroup), moreGroupBounds);
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::PrimaryLight),
+			state.spec.GetFramePrimaryLightDamageBounds());
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::CursorLight),
+			state.spec.GetFrameCursorLightDamageBounds());
+
 		D2D1_RECT_F debugTextLayoutRect{};
+		RECT currentDebugTextBounds{};
 		const bool debugTextAlignToLeft = state.mainBarLayoutSide;
 		if (debugModeEnabled)
 		{
@@ -6473,35 +6755,34 @@ IncludeShapeBounds(state.shapeMap[
 				static_cast<FLOAT>(debugTextY * frameZoom),
 				static_cast<FLOAT>(debugTextRight * frameZoom),
 				static_cast<FLOAT>((debugTextY + 20.0) * frameZoom));
-			RECT debugTextBounds = RECT(
+			currentDebugTextBounds = RECT(
 				static_cast<LONG>(debugTextLayoutRect.left),
 				static_cast<LONG>(debugTextLayoutRect.top),
 				static_cast<LONG>(debugTextLayoutRect.right),
 				static_cast<LONG>(debugTextLayoutRect.bottom));
-			// 调试文字属于本帧可见内容，首次开启时也必须进入真实脏区。
-			BarRenderingAttribute::UnionRectInPlace(predicted, debugTextBounds);
 		}
-		RECT frameDirty = state.presentDecision.LastPresentedBounds();
-		BarRenderingAttribute::UnionRectInPlace(frameDirty, predicted);
-		if (state.presentDecision.NeedsFullDirty())
-			frameDirty = RECT(0, 0, state.barWindow.w, state.barWindow.h);
-		frameDirty.left = clamp<LONG>(
-			frameDirty.left, 0, static_cast<LONG>(state.barWindow.w));
-		frameDirty.top = clamp<LONG>(
-			frameDirty.top, 0, static_cast<LONG>(state.barWindow.h));
-		frameDirty.right = clamp<LONG>(
-			frameDirty.right, 0, static_cast<LONG>(state.barWindow.w));
-		frameDirty.bottom = clamp<LONG>(
-			frameDirty.bottom, 0, static_cast<LONG>(state.barWindow.h));
-		if (frameDirty.right <= frameDirty.left
-			|| frameDirty.bottom <= frameDirty.top)
-			frameDirty = RECT(0, 0, state.barWindow.w, state.barWindow.h);
-		RECT presentDirty = frameDirty;
-		if (state.lastPresentedDebugBoundsValid)
+		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
+			state.unclassifiedDamagePending);
+		// 旧逻辑留给未来动态窗口尺寸：visibleContentBounds 仍采集，但不再逐帧作为脏区。
+		(void)visibleContentBounds;
+		// RECT frameDirty = state.presentDecision.LastPresentedBounds();
+		// BarRenderingAttribute::UnionRectInPlace(frameDirty, visibleContentBounds);
+		// 调试覆盖层在业务脏区解析后加入，避免红框反向污染业务 damage。
+		const auto debugDamage = ResolveBarDebugDamage(
+			businessDirty,
+			state.lastPresentedDebugTextBounds,
+			state.lastPresentedDebugFrameBounds,
+			currentDebugTextBounds,
+			debugModeEnabled);
+		RECT debugTarget = debugDamage.frameTarget;
+		RECT currentDebugFrameBounds = debugModeEnabled ? debugTarget : RECT{};
+		RECT presentDirty = debugDamage.presentDamage;
+		if (BarDirtyRegionTracker::IsEmpty(presentDirty))
 		{
-			// 提交区额外清除上一帧红框，但红框本身仍展示未污染的真实脏区。
-			BarRenderingAttribute::UnionRectInPlace(
-				presentDirty, state.lastPresentedDebugBounds);
+			// ShouldPresent 却没有分类结果属于合同缺口，安全退回全窗口。
+			state.dirtyRegionTracker.ForceFullDamage();
+			businessDirty = windowBounds;
+			presentDirty = windowBounds;
 		}
 		D2D1_RECT_F presentDirtyRect = D2D1::RectF(
 			static_cast<FLOAT>(presentDirty.left),
@@ -8904,13 +9185,9 @@ else
 			);
 		}
 
-		RECT nextPresentedDebugBounds = RECT(0, 0, 0, 0);
-		bool nextPresentedDebugBoundsValid = false;
 		if (debugModeEnabled)
 		{
 			// 红框只标记业务内容与调试文字产生的真实脏区。
-			RECT debugTarget = frameDirty;
-			BarRenderingAttribute::UnionRectInPlace(debugTarget, state.current);
 			{
 				if (debugTarget.left < 0) debugTarget.left = 0;
 				if (debugTarget.top < 0) debugTarget.top = 0;
@@ -8937,8 +9214,6 @@ else
 			if (borderBrush)
 				barDeviceContext->DrawRoundedRectangle(
 					&roundedRect, borderBrush, debugFrameWidth);
-			nextPresentedDebugBounds = debugTarget;
-			nextPresentedDebugBoundsValid = true;
 		}
 
 		// Windows 7 Platform Update 要求 GetDC 时 Clip/Layer 栈为空。
@@ -8999,12 +9274,17 @@ else
 		if (presentCompletion.IsCommitted())
 		{
 			state.barPresentFailureLogged = false;
-			state.lastPresentedDebugBounds = nextPresentedDebugBounds;
-			state.lastPresentedDebugBoundsValid =
-				nextPresentedDebugBoundsValid;
+			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
+			state.dirtyRegionTracker.CommitPresented();
+			state.lastPresentedDebugTextBounds = debugModeEnabled
+				? currentDebugTextBounds : RECT{};
+			state.lastPresentedDebugFrameBounds = debugModeEnabled
+				? currentDebugFrameBounds : RECT{};
+			state.unclassifiedDamagePending = false;
 		}
 		else
 		{
+			state.dirtyRegionTracker.RetainForRetry(true);
 			if (!state.barPresentFailureLogged && IDTLogger)
 				IDTLogger->error(
 					"[BarUISetClass::Rendering] 提交事务失败，将全脏重试: GetDC=0x{:08X}, ULW={}, ULWError={}, ReleaseDC=0x{:08X}, EndDraw=0x{:08X}",

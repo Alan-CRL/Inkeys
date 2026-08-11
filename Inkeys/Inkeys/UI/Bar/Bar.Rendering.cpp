@@ -207,6 +207,34 @@ void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
 	}
 }
 
+RECT BarUIRendering::GetFramePrimaryLightDamageBounds() const noexcept
+{
+	if (!frameEdgeLightingEnabled || !framePrimaryLightAnchorInitialized)
+		return {};
+	const double padding = BarRenderingAttribute::pointLightDiffuseExtraWidth
+		* frameZoom + BarRenderingAttribute::dirtyAntialiasPadding;
+	const double radius = max(0.0, static_cast<double>(frameLightRadius)) + padding;
+	return RECT(
+		static_cast<LONG>(floor(static_cast<double>(framePrimaryLight.x) - radius)),
+		static_cast<LONG>(floor(static_cast<double>(framePrimaryLight.y) - radius)),
+		static_cast<LONG>(ceil(static_cast<double>(framePrimaryLight.x) + radius)),
+		static_cast<LONG>(ceil(static_cast<double>(framePrimaryLight.y) + radius)));
+}
+
+RECT BarUIRendering::GetFrameCursorLightDamageBounds() const noexcept
+{
+	if (!frameEdgeLightingEnabled || frameCursorLightIntensity <= 0.0001F)
+		return {};
+	const double padding = BarRenderingAttribute::pointLightDiffuseExtraWidth
+		* frameZoom + BarRenderingAttribute::dirtyAntialiasPadding;
+	const double radius = max(0.0, static_cast<double>(frameCursorLightRadius)) + padding;
+	return RECT(
+		static_cast<LONG>(floor(static_cast<double>(frameCursorLight.x) - radius)),
+		static_cast<LONG>(floor(static_cast<double>(frameCursorLight.y) - radius)),
+		static_cast<LONG>(ceil(static_cast<double>(frameCursorLight.x) + radius)),
+		static_cast<LONG>(ceil(static_cast<double>(frameCursorLight.y) + radius)));
+}
+
 bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	int drawingMode, int penMode, COLORREF brush1Color,
 	COLORREF highlighterColor, bool penetrateSelected)

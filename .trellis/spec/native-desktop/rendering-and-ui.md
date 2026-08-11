@@ -111,6 +111,90 @@ if (offSignal) return;
 clock.Rebase();
 ~~~
 
+### UI3 基于变化的脏区事务合同
+
+#### 1. Scope / Trigger
+
+修改 UI3 Bar 的动画推进、自绘控件、动态光、调试覆盖层、D2D dirty clip 或 `UpdateLayeredWindowIndirect` 提交时适用。窗口仍保持显示器尺寸；可见内容总边界只为未来动态缩窗保留，不得重新作为普通帧的默认脏区。
+
+#### 2. Signatures
+
+~~~cpp
+using BarDirtyVisualKey = std::uint64_t;
+
+class BarDirtyRegionTracker
+{
+public:
+	void BeginFrame(const RECT& windowBounds);
+	void Observe(BarDirtyVisualKey key, const RECT& currentBounds);
+	void MarkChanged(BarDirtyVisualKey key);
+	RECT ResolveDamage(bool requireFallback);
+	void CommitPresented();
+	void RetainForRetry(bool forceFullDamage);
+};
+
+BarDebugDamageResolution ResolveBarDebugDamage(
+	const RECT& businessDamage,
+	const RECT& previousTextBounds,
+	const RECT& previousFrameBounds,
+	const RECT& currentTextBounds,
+	bool debugEnabled) noexcept;
+~~~
+
+#### 3. Contracts
+
+- 标准 Shape/SVG/PNG/Word 使用稳定对象键记录边界；父布局、粗细/色板/弹窗等自绘内容使用稳定功能组键。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
+- 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → `ResolveDamage` → 加入调试文字和红框旧/新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与 `UPDATELAYEREDWINDOWINFO::prcDirty`。
+- `BarUiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
+- 主光和鼠标光分别记录旧/新影响矩形；矩形至少覆盖径向半径、`pointLightDiffuseExtraWidth * zoom` 的 Gaussian 外扩及抗锯齿余量。关闭光影时当前矩形为空，旧矩形仍参与清除。
+- 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
+- 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可 `CommitPresented()`；失败时不得推进已呈现快照。
+- FPS 文字每个调试帧都进入 damage。红框在业务 damage 解析后生成，只显示业务 damage 与当前调试文字；最终提交区另并入上一帧文字/红框，关闭调试时用其清除遗留像素。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 首次呈现或 device generation 改变 | 全窗口 damage；成功后才建立快照 |
+| 单控件移动/缩放 | 提交旧边界与新边界的并集 |
+| 控件出现或消失 | 空边界与非空边界按同一变化键解析 |
+| 装饰帧租约跳过 | 保留变化键与累计 damage，后续继续提交 |
+| 任一 GetDC/ULW/ReleaseDC/EndDraw 失败 | 保留请求并强制全窗口重试 |
+| 未分类的非调试呈现请求 | 安全回退全窗口，不允许空提交 |
+| 调试模式关闭 | 并入上次文字与红框边界完成清除，不绘制新覆盖层 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新光源旧/新影响范围；整栏拖动按功能组覆盖所有可见内容。
+- Base：静止帧没有呈现请求；首次帧、设备切换和失败恢复帧允许全窗口更新。
+- Bad：每帧把所有可见内容边界并入 damage，或 ULW 成功但 `EndDraw` 失败后仍推进快照；前者丢失优化，后者会在重试时漏掉旧像素。
+
+#### 6. Tests Required
+
+- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退，以及调试文字/红框关闭清除。
+- 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln` 的 `Debug | ARM64`，并运行 `InkeysHeadlessTests`。
+- 手工覆盖悬停/按压、属性栏与更多面板、换边、粗细/色板弹窗、整栏拖动、主光/鼠标光、动画开关、调试开关、DPI/zoom 和设备资源重建；不允许残影或漏刷。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：所有可见内容每帧都成为脏区，并在 ULW 后提前推进快照。
+dirty = Union(lastPresentedBounds, visibleContentBounds);
+UpdateLayeredWindowIndirect(hwnd, &ulwi);
+tracker.CommitPresented();
+EndDraw();
+
+// Correct：只解析变化项；完整事务成功后再提交快照。
+tracker.MarkChanged(controlKey);
+tracker.Observe(controlKey, currentBounds);
+RECT dirty = tracker.ResolveDamage(unclassifiedDemand);
+auto result = PresentThroughGdiInterop(dirty);
+if (result.GetDcOk && result.UlwOk && result.ReleaseDcOk && result.EndDrawOk)
+	tracker.CommitPresented();
+else
+	tracker.RetainForRetry(true);
+~~~
+
 ### UI3 共享设备、整帧租约与光影缓存契约
 
 #### 1. Scope / Trigger

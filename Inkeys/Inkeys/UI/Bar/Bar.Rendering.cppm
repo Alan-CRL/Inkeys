@@ -61,6 +61,8 @@ public:
 	bool PrepareFrameLighting(double animationDtSeconds,
 		int drawingMode, int penMode, COLORREF brush1Color,
 		COLORREF highlighterColor, bool penetrateSelected);
+	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;
+	[[nodiscard]] RECT GetFrameCursorLightDamageBounds() const noexcept;
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;

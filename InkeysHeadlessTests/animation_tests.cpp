@@ -21,6 +21,7 @@ import Inkeys.UI.Bar.Animation;
 
 int RunWakeSignalTests();
 int RunPresentDecisionTests();
+int RunDirtyRegionTests();
 int RunFramePacingTests(bool benchmark);
 
 namespace
@@ -867,6 +868,7 @@ int main(int argc, char** argv)
 	TestConcurrentAnimationPublication();
 	failureCount += RunWakeSignalTests();
 	failureCount += RunPresentDecisionTests();
+	failureCount += RunDirtyRegionTests();
 	bool benchmark = argc > 1 && std::string_view(argv[1]) == "--benchmark";
 	failureCount += RunFramePacingTests(benchmark);
 	if (benchmark) RunBenchmarks();
