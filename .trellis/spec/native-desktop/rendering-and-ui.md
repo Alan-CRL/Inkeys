@@ -193,7 +193,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - `Experimental.Inkeys3.UI3.Debug.Enable` 只控制脏区红框；`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字。隐藏 FPS 子项不得覆盖其持久化值；帧率文字不得单独形成持续呈现需求或维持 60 FPS。
 - FPS 文字只随真实 UI、光影、一次性刷新和失败重试帧进入 damage；真实活动结束后由 `DebugFrameSleepLatch` 请求唯一一帧并追加“休眠”标记，完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值只统计成功呈现帧，并在休眠后恢复真实活动时重建桶，禁止把 idle 等待计入墙钟分母。无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长；设备、租约和真实渲染成本仍属于工作时长，只有帧率锁等待被排除。
 - 红框在业务 damage 解析后生成，只显示业务 damage 与当前帧率文字；最终提交区另并入上一帧文字/红框。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素，只有完整呈现事务成功后才清除该刷新请求。
-- 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。禁止直接读取未参与本帧绘制的默认 `inhX/inhY=(0,0)`，否则滑块、轮盘或预览浮窗会把窗口左上角错误并入。
+- 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。功能组不能只依赖根面板兜底：凡是动画中可能越过根边界的子视觉，都要在 `ResolveDamage()` 前按实际绘制层级同步；Main/More 注册按钮固定为 `button ← MainBar`、`icon/name ← button`。同步只在对应功能组需要观察时执行，纯光源帧不得为此遍历图标和文字。禁止直接读取未参与本帧绘制的默认或上一帧 `inhX/inhY`；绘制后的 `state.current` 更新也不能补救已经用于 Clear/D2D/ULW 的本帧 dirty。
 
 #### 4. Validation & Error Matrix
 
@@ -202,6 +202,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 | 首次呈现或 device generation 改变 | 全窗口 damage；成功后才建立快照 |
 | 单控件移动/缩放 | 提交旧边界与新边界的并集 |
 | 控件出现或消失 | 空边界与非空边界按同一变化键解析 |
+| 更多/绘制属性快速交替后主栏立即收缩 | Main/More 组先同步本帧按钮组合坐标，再把成功呈现的旧组边界与当前新组边界合并；最左旧像素不得漏算 |
 | 装饰帧租约跳过 | 保留变化键与累计 damage，后续继续提交 |
 | 任一 GetDC/ULW/ReleaseDC/EndDraw 失败 | 保留请求并强制全窗口重试 |
 | 未分类的非调试呈现请求 | 安全回退全窗口，不允许空提交 |
@@ -221,11 +222,13 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - Base：静止帧没有呈现请求；首次帧、设备切换和失败恢复帧允许全窗口更新。
 - Bad：每帧把所有可见内容边界并入 damage，或 ULW 成功但 `EndDraw` 失败后仍推进快照；前者丢失优化，后者会在重试时漏掉旧像素。
 - Bad：粗细预览数字用显式变换绘制，却仍以从未更新的 `word.inhX/inhY` 采集边界；结果是脏区无故从 `(0,0)` 开始。
+- Bad：先用上一帧的按钮继承坐标提交功能组，再在绘制阶段更新 `state.current`；当前帧清除和 ULW 已经使用较窄 dirty，旧边缘仍会暂留。
 
 #### 6. Tests Required
 
 - Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
 - Headless 覆盖显式 pivot/scale 变换后的实际矩形和隐藏 `scale=0` 空边界，断言结果不回落到默认原点。
+- Headless 覆盖功能组在中间帧未提交时继续保留最外层 pending damage，成功提交后只推进最终观察边界；RenderLoop 的继承顺序另由静态审查和完整构建约束。
 - Headless 覆盖完整一秒前不发布、桶结束同时发布两个平均值、一秒内保持锁存、无限制分母排除 pacing 等待、Reset 和非单调时间重建统计桶；另覆盖休眠帧单次请求、失败保留、成功关闭、真实活动重新武装和禁用清理。
 - 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln` 的 `Debug | ARM64`，并运行 `InkeysHeadlessTests`。
 - 手工覆盖悬停/按压、属性栏与更多面板、换边、粗细/色板弹窗、整栏拖动、主光/鼠标光、动画开关、调试开关、DPI/zoom 和设备资源重建；不允许残影或漏刷。
@@ -257,6 +260,18 @@ dirty = GetWeigetRect(previewNumber); // inhX/inhY 仍为 0
 // Correct：复用实际绘制的 pivot/scale 解析呈现边界。
 dirty = ResolveBarScaledDirtyBounds(
 	left, top, right, bottom, pivotX, pivotY, scale, zoom, padding);
+~~~
+
+~~~cpp
+// Wrong：组边界先读取上一帧继承坐标，绘制时同步已经太晚。
+tracker.Observe(mainGroupKey, CollectRegisteredButtonBounds());
+DrawMainBar(); // 此处才执行 button/icon/name.Inherit(...)
+
+// Correct：复用绘制层级先同步，再观察并解析本帧 damage。
+SyncRegisteredButtonPresentedBounds();
+tracker.Observe(mainGroupKey, CollectRegisteredButtonBounds());
+RECT dirty = tracker.ResolveDamage(false);
+DrawMainBar();
 ~~~
 
 ~~~cpp

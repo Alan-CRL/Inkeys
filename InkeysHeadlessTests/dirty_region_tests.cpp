@@ -164,6 +164,45 @@ namespace
 			"observed group child advances without a full snapshot copy");
 	}
 
+	void TestTrackerRetainsPendingGroupDamageAcrossFrames()
+	{
+		constexpr RECT window{ 0, 0, 1400, 800 };
+		constexpr std::uint64_t mainGroup = 21;
+		constexpr std::uint64_t moreGroup = 22;
+		BarDirtyRegionTracker tracker;
+		// 这里只验证 tracker 的 pending/commit 事务，不覆盖 RenderLoop 的 Inherit 时序。
+		tracker.BeginFrame(window);
+		tracker.Observe(mainGroup, RECT{ 90, 300, 900, 430 });
+		tracker.Observe(moreGroup, RECT{ 480, 150, 780, 290 });
+		tracker.CommitPresented();
+
+		tracker.BeginFrame(window);
+		tracker.MarkChanged(mainGroup);
+		tracker.MarkChanged(moreGroup);
+		tracker.Observe(mainGroup, RECT{ 320, 300, 1050, 430 });
+		tracker.Observe(moreGroup, RECT{ 500, 120, 820, 290 });
+		Check(SameRect(tracker.ResolveDamage(false),
+			RECT{ 90, 120, 1050, 430 }),
+			"rapid panel switch includes last presented and intermediate extents");
+		tracker.RetainForRetry(false);
+
+		// 中间帧未提交便立刻收缩；最后 damage 仍不能丢掉最左旧像素。
+		tracker.BeginFrame(window);
+		tracker.Observe(mainGroup, RECT{ 610, 320, 760, 410 });
+		tracker.Observe(moreGroup, RECT{});
+		Check(SameRect(tracker.ResolveDamage(false),
+			RECT{ 90, 120, 1050, 430 }),
+			"interrupted collapse retains the outermost presented group boundary");
+		tracker.CommitPresented();
+
+		tracker.BeginFrame(window);
+		tracker.MarkChanged(mainGroup);
+		tracker.Observe(mainGroup, RECT{ 500, 300, 820, 430 });
+		Check(SameRect(tracker.ResolveDamage(false),
+			RECT{ 500, 300, 820, 430 }),
+			"successful interrupted collapse commits only the final presented bounds");
+	}
+
 	void TestLightDamageUsesAffectedBorderBands()
 	{
 		constexpr RECT outer{ 0, 0, 1000, 400 };
@@ -235,6 +274,7 @@ int RunDirtyRegionTests()
 	TestRetryRetainsDamageAndCommitAdvancesSnapshot();
 	TestExplicitAndFullRetryDamage();
 	TestStableRecordsAndSelectiveObservation();
+	TestTrackerRetainsPendingGroupDamageAcrossFrames();
 	TestLightDamageUsesAffectedBorderBands();
 	TestScaledDirectContentUsesPresentedBounds();
 	TestDebugOverlayDamageAndClear();

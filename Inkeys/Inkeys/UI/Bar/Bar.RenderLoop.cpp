@@ -6710,6 +6710,33 @@ IncludeShapeBounds(state.shapeMap[
 			state.dirtyRegionTracker.ShouldObserve(primaryLightKey);
 		const bool observeCursorLight =
 			state.dirtyRegionTracker.ShouldObserve(cursorLightKey);
+		auto SyncRegisteredButtonPresentedBounds =
+			[&](BarButtonClass* button)
+			{
+				if (!button) return;
+				button->button.Inherit(
+					BarUiInheritEnum::CenterFromTopLeft, *mainBar);
+				button->icon.Inherit(
+					BarUiInheritEnum::Center, button->button);
+				button->name.Inherit(
+					BarUiInheritEnum::Center, button->button);
+			};
+		// 功能组必须使用本帧绘制坐标，不能提交上一帧的继承位置快照。
+		if (observeMainGroup)
+		{
+			for (int id = 0; id < state.barButtonSet.tot; ++id)
+				SyncRegisteredButtonPresentedBounds(
+					state.barButtonSet.buttonList.Get(id));
+		}
+		if (observeMoreGroup)
+		{
+			for (const shared_ptr<BarButtonClass>& button :
+				predictedMoreSnapshot.explicitMore)
+				SyncRegisteredButtonPresentedBounds(button.get());
+			for (const shared_ptr<BarButtonClass>& button :
+				predictedMoreSnapshot.forcedOverflow)
+				SyncRegisteredButtonPresentedBounds(button.get());
+		}
 		const bool lightOnlyFrame = !observeMainGroup
 			&& !observeDrawAttributeGroup && !observeGeometryAttributeGroup
 			&& !observeMoreGroup
