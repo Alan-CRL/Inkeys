@@ -10,7 +10,6 @@ module;
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <deque>
 #include <limits>
 #include <thread>
 
@@ -117,45 +116,91 @@ export namespace Inkeys::UI::Bar
 		Clock::time_point reckon_;
 	};
 
-	// 调试文字按最近一秒内的帧时间戳计算平均值，显示仍随每帧刷新。
-	class RollingFrameRate
+	struct FrameRateAverages
+	{
+		double actualFramesPerSecond = 0.0;
+		double unlimitedFramesPerSecond = 0.0;
+		bool updated = false;
+	};
+
+	// 每个完整窗口才锁存一次；无限制帧率只累计排除 pacing 等待后的工作时间。
+	class OneSecondFrameRate
 	{
 	public:
 		using Clock = std::chrono::steady_clock;
 
-		explicit RollingFrameRate(
-			Clock::duration window = std::chrono::seconds(1)) noexcept
+		explicit OneSecondFrameRate(
+			Clock::duration window = std::chrono::seconds(1),
+			Clock::time_point now = Clock::now()) noexcept
 			: window_(window > Clock::duration::zero()
-				? window : std::chrono::seconds(1))
+				? window : std::chrono::seconds(1)),
+			bucketStart_(now),
+			lastTick_(now)
 		{
 		}
 
-		double Tick(Clock::time_point now = Clock::now()) noexcept
+		FrameRateAverages Tick(
+			Clock::duration activeFrameTime,
+			Clock::time_point now = Clock::now()) noexcept
 		{
-			if (!frames_.empty() && now <= frames_.back())
+			if (now <= lastTick_)
 			{
-				// 时钟回拨或测试重放时丢弃旧窗口，禁止输出失真的负间隔。
-				frames_.clear();
+				// 时钟回拨或测试重放时重建统计桶，禁止输出负间隔。
+				Reset(now);
 			}
-			frames_.push_back(now);
-			while (frames_.size() > 1 && now - frames_.front() > window_)
-				frames_.pop_front();
-			if (frames_.size() < 2) return 0.0;
+			lastTick_ = now;
+			++frameCount_;
+
+			const double activeSeconds =
+				std::chrono::duration<double>(activeFrameTime).count();
+			if (activeSeconds > 0.0 && std::isfinite(activeSeconds))
+			{
+				activeSeconds_ += activeSeconds;
+				++activeFrameCount_;
+			}
+
+			FrameRateAverages result{
+				publishedActual_, publishedUnlimited_, false };
+			if (now - bucketStart_ < window_) return result;
 
 			const double elapsedSeconds =
-				std::chrono::duration<double>(now - frames_.front()).count();
-			if (!(elapsedSeconds > 0.0) || !std::isfinite(elapsedSeconds)) return 0.0;
-			return static_cast<double>(frames_.size() - 1) / elapsedSeconds;
+				std::chrono::duration<double>(now - bucketStart_).count();
+			if (elapsedSeconds > 0.0 && std::isfinite(elapsedSeconds))
+				publishedActual_ = static_cast<double>(frameCount_) / elapsedSeconds;
+			else
+				publishedActual_ = 0.0;
+			publishedUnlimited_ = activeSeconds_ > 0.0
+				? static_cast<double>(activeFrameCount_) / activeSeconds_
+				: 0.0;
+			result = { publishedActual_, publishedUnlimited_, true };
+
+			bucketStart_ = now;
+			frameCount_ = 0;
+			activeFrameCount_ = 0;
+			activeSeconds_ = 0.0;
+			return result;
 		}
 
-		void Reset() noexcept
+		void Reset(Clock::time_point now = Clock::now()) noexcept
 		{
-			frames_.clear();
+			bucketStart_ = now;
+			lastTick_ = now;
+			frameCount_ = 0;
+			activeFrameCount_ = 0;
+			activeSeconds_ = 0.0;
+			publishedActual_ = 0.0;
+			publishedUnlimited_ = 0.0;
 		}
 
 	private:
 		Clock::duration window_;
-		std::deque<Clock::time_point> frames_;
+		Clock::time_point bucketStart_;
+		Clock::time_point lastTick_;
+		std::uint64_t frameCount_ = 0;
+		std::uint64_t activeFrameCount_ = 0;
+		double activeSeconds_ = 0.0;
+		double publishedActual_ = 0.0;
+		double publishedUnlimited_ = 0.0;
 	};
 
 	// 默认使用 waitable timer；Win7/创建或等待失败时在内部有界回退。

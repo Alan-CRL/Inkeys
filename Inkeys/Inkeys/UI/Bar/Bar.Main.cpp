@@ -234,10 +234,11 @@ namespace Inkeys::UI::Bar
 		barUISet.UpdateRendering(false);
 	}
 
-	void SetDebugMode(bool enable)
+	void SetDebugOptions(bool enable, bool showFrameRate)
 	{
 		BarUiDebugModeEnabled = enable;
-		// 关闭时也请求一帧，用新旧脏区并集清除 FPS 文本与红框。
+		BarUiDebugFrameRateEnabled = showFrameRate;
+		// 渲染线程会比较新旧选项，只在需要时清除 FPS 文字或红框。
 		barUISet.UpdateRendering(false);
 	}
 

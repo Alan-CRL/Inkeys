@@ -26,6 +26,7 @@ import Inkeys.Helper.Thread;
 IdtAtomic<bool> BarUiEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDynamicEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDebugModeEnabled = false;
+IdtAtomic<bool> BarUiDebugFrameRateEnabled = true;
 
 // ====================
 // 窗口
@@ -321,7 +322,7 @@ namespace Inkeys::UI::Bar
 	export void Initialization();
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
-	export void SetDebugMode(bool enable);
+	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);

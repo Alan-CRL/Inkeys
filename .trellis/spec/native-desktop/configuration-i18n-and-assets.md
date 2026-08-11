@@ -34,6 +34,68 @@
 4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
 5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
 
+## UI3 脏区调试与帧率显示配置合同
+
+### 1. Scope / Trigger
+
+修改 UI3 脏区红框、下方帧率文字、设置页实验室卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
+
+### 2. Signatures
+
+~~~cpp
+namespace Inkeys::UI::Bar
+{
+	export void SetDebugOptions(bool enable, bool showFrameRate);
+}
+~~~
+
+持久化路径为：
+
+~~~text
+Experimental.Inkeys3.UI3.Debug.Enable        : bool = false
+Experimental.Inkeys3.UI3.Debug.ShowFrameRate : bool = true
+~~~
+
+### 3. Contracts
+
+- `Enable` 只控制实际业务脏区红框；设置卡片名称为“脏区调试”。
+- `ShowFrameRate` 只控制下方帧率文字和为采样维持的连续帧；其设置卡片只在 `Enable=true` 时显示，隐藏不得覆盖持久化值。
+- 新字段默认 `true`，使旧配置开启调试后继续显示帧率。设置修改先更新 `Inkeys::config`，再调用 `SetDebugOptions` 即时同步运行时，最后 `Config::Write()`。
+- 启动 `ReadAll()` 后必须把两个字段一起传给 Bar；运行时负责用旧/新覆盖层快照清除被关闭的文字或红框。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧配置缺少 `ShowFrameRate` | 使用 schema 默认 `true`；不需要手写迁移 |
+| `Enable=false` | 隐藏帧率子卡片；不绘制红框或文字 |
+| `Enable=true, ShowFrameRate=false` | 仅在真实业务 damage 时绘制红框；不得持续空帧 |
+| 配置写入失败 | 本次运行时开关仍即时生效；下次启动按磁盘值恢复 |
+| 关闭任一项 | 请求清理其上次成功呈现边界；失败时保留到重试成功 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：开启脏区调试后出现帧率子项；关闭帧率文字后红框仍工作，静止 Bar 回到 idle。
+- Base：两个字段保持默认值时，调试默认关闭；用户开启后同时看到红框和帧率。
+- Bad：用 `Enable` 同时永久覆盖 `ShowFrameRate`，或隐藏子卡片时写回 `false`。
+
+### 6. Tests Required
+
+- Headless 验证一秒帧率锁存、无限制帧率排除 pacing 等待，以及覆盖层关闭清理。
+- 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工验证四种切换组合、设置容器高度、重启持久化和静止 CPU。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：脏区调试关闭时顺带覆盖用户的帧率偏好。
+config.Debug.Enable = false;
+config.Debug.ShowFrameRate = false;
+
+// Correct：隐藏只影响可见性，两个持久化字段独立同步。
+config.Debug.Enable = dirtyDebugEnabled;
+SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
+~~~
+
 ## UI3 Bar 分区布局配置合同
 
 ### 1. Scope / Trigger

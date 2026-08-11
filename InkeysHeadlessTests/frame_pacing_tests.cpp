@@ -51,37 +51,57 @@ namespace
 			"idle rebase excludes sleep from first animation frame");
 	}
 
-	void TestRollingFrameRate()
+	void TestOneSecondFrameRate()
 	{
-		using Clock = RollingFrameRate::Clock;
+		using Clock = OneSecondFrameRate::Clock;
 		const auto start = Clock::time_point{};
-		RollingFrameRate frameRate;
-		Check(frameRate.Tick(start) == 0.0,
-			"rolling FPS waits for a complete interval");
-		for (int frame = 1; frame <= 60; ++frame)
+		OneSecondFrameRate frameRate(std::chrono::seconds(1), start);
+		FrameRateAverages value{};
+		for (int frame = 1; frame <= 10; ++frame)
 		{
-			const auto timestamp = start + std::chrono::duration_cast<Clock::duration>(
-				std::chrono::duration<double>(static_cast<double>(frame) / 60.0));
-			const double value = frameRate.Tick(timestamp);
-			if (frame == 60)
-				Check(Near(value, 60.0, 0.001),
-					"rolling FPS averages the latest second");
+			value = frameRate.Tick(
+				std::chrono::milliseconds(10),
+				start + std::chrono::milliseconds(frame * 100));
+			if (frame < 10)
+				Check(!value.updated,
+					"one-second FPS keeps the current value during the bucket");
 		}
+		Check(value.updated && Near(value.actualFramesPerSecond, 10.0),
+			"one-second FPS publishes the completed wall-clock bucket");
+		Check(Near(value.unlimitedFramesPerSecond, 100.0),
+			"unlimited FPS excludes pacing wait time");
 
-		frameRate.Reset();
-		Check(frameRate.Tick(start) == 0.0,
-			"rolling FPS reset clears history");
-		Check(Near(frameRate.Tick(start + std::chrono::milliseconds(100)), 10.0),
-			"rolling FPS reports the available startup window");
-		Check(frameRate.Tick(start + std::chrono::milliseconds(1500)) == 0.0,
-			"rolling FPS evicts frames older than one second");
-		Check(Near(frameRate.Tick(start + std::chrono::milliseconds(1600)), 10.0),
-			"rolling FPS resumes after an idle gap");
+		value = frameRate.Tick(
+			std::chrono::milliseconds(20),
+			start + std::chrono::milliseconds(1100));
+		Check(!value.updated
+			&& Near(value.actualFramesPerSecond, 10.0)
+			&& Near(value.unlimitedFramesPerSecond, 100.0),
+			"displayed FPS stays latched until the next full second");
+		for (int frame = 2; frame <= 10; ++frame)
+		{
+			value = frameRate.Tick(
+				std::chrono::milliseconds(20),
+				start + std::chrono::milliseconds(1000 + frame * 100));
+		}
+		Check(value.updated && Near(value.actualFramesPerSecond, 10.0),
+			"second wall-clock bucket publishes independently");
+		Check(Near(value.unlimitedFramesPerSecond, 50.0),
+			"second unlimited bucket uses its own active frame time");
 
-		Check(frameRate.Tick(start + std::chrono::milliseconds(1400)) == 0.0,
-			"rolling FPS rebases after a non-monotonic timestamp");
-		Check(Near(frameRate.Tick(start + std::chrono::milliseconds(1500)), 10.0),
-			"rolling FPS recovers after a timestamp rebase");
+		value = frameRate.Tick(
+			std::chrono::milliseconds(10),
+			start + std::chrono::milliseconds(1500));
+		Check(!value.updated
+			&& value.actualFramesPerSecond == 0.0
+			&& value.unlimitedFramesPerSecond == 0.0,
+			"one-second FPS rebases after a non-monotonic timestamp");
+		frameRate.Reset(start + std::chrono::seconds(3));
+		value = frameRate.Tick(
+			std::chrono::milliseconds(10),
+			start + std::chrono::milliseconds(3100));
+		Check(!value.updated && value.actualFramesPerSecond == 0.0,
+			"one-second FPS reset clears the published values");
 	}
 
 	void TestPoliciesAndMeasurements()
@@ -473,7 +493,7 @@ int RunFramePacingTests(bool benchmark)
 {
 	failureCount = 0;
 	TestAnimationFrameClockRebase();
-	TestRollingFrameRate();
+	TestOneSecondFrameRate();
 	TestPoliciesAndMeasurements();
 	if (benchmark) RunFramePacingBenchmarks();
 	return failureCount;

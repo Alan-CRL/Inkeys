@@ -312,12 +312,18 @@ struct BarRenderLoopState
 	bool barPresentFailureLogged = false;
 	chrono::high_resolution_clock::time_point reckon =
 		chrono::high_resolution_clock::now();
+	chrono::steady_clock::time_point frameWorkStart =
+		chrono::steady_clock::now();
 	Inkeys::UI::Bar::FrameAnimationClock animationClock;
 	Inkeys::UI::Bar::BarDirtyRegionTracker dirtyRegionTracker;
 	RECT current = RECT(0, 0, 0, 0);
 	Inkeys::UI::Bar::BarPresentDecision presentDecision;
 	RECT lastPresentedDebugTextBounds{};
 	RECT lastPresentedDebugFrameBounds{};
+	bool observedDebugModeEnabled = true == BarUiDebugModeEnabled;
+	bool observedDebugFrameRateEnabled = observedDebugModeEnabled
+		&& true == BarUiDebugFrameRateEnabled;
+	bool debugOverlayRefreshPending = false;
 	bool unclassifiedDamagePending = false;
 	unsigned long long presentAttemptFrameSerial = 0;
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
@@ -482,8 +488,8 @@ struct BarRenderLoopState
 	double mainButtonLogoBaseW = mainButtonLogo->w.tar;
 	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
 	unsigned long long handledMainButtonPulseSerial = 0;
-	Inkeys::UI::Bar::RollingFrameRate rollingFrameRate;
-	wstring fps = L"-- FPS";
+	Inkeys::UI::Bar::OneSecondFrameRate frameRate;
+	wstring fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
 };
 
 // 渲染线程的阶段协调器仅在当前 module 内可见，不扩大 BarUISetClass 的公开接口。
@@ -580,6 +586,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 		else state.presentAttemptFrameSerial = state.presentDecision.NextRetryFrame();
 	}
 
+	state.frameWorkStart = chrono::steady_clock::now();
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	state.spec.SetFrameZoom(frame.zoom);
@@ -6301,7 +6308,22 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 			frameDrawingState.penetrate);
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
-	bool debugRendering = true == BarUiDebugModeEnabled;
+	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
+	const bool debugFrameRateEnabled = debugModeEnabled
+		&& true == BarUiDebugFrameRateEnabled;
+	if (debugModeEnabled != state.observedDebugModeEnabled
+		|| debugFrameRateEnabled != state.observedDebugFrameRateEnabled)
+	{
+		// FPS 子项切换时只清理旧覆盖层；关闭文字后不再维持 60 FPS 空转。
+		state.debugOverlayRefreshPending = state.debugOverlayRefreshPending
+			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugTextBounds)
+			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugFrameBounds)
+			|| debugFrameRateEnabled;
+		state.observedDebugModeEnabled = debugModeEnabled;
+		state.observedDebugFrameRateEnabled = debugFrameRateEnabled;
+	}
+	bool debugRendering = debugFrameRateEnabled
+		|| state.debugOverlayRefreshPending;
 	if (sustainRendering)
 	{
 		// 整栏直接拖动绕过标准动画，按四个功能组累计旧/新内容范围。
@@ -6346,6 +6368,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
+	const bool debugFrameRateEnabled = debugModeEnabled
+		&& true == BarUiDebugFrameRateEnabled;
 	if (state.presentDecision.ShouldPresent())
 	{
 
@@ -6975,7 +6999,7 @@ IncludeShapeBounds(state.shapeMap[
 		D2D1_RECT_F debugTextLayoutRect{};
 		RECT currentDebugTextBounds{};
 		const bool debugTextAlignToLeft = state.mainBarLayoutSide;
-		if (debugModeEnabled)
+		if (debugFrameRateEnabled)
 		{
 			double debugTextX = mainButton->inhX;
 			double debugTextY = mainButton->inhY + mainButton->GetH();
@@ -9374,11 +9398,11 @@ else
 			}
 		}
 
-		// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
-		if (debugModeEnabled)
+		// 帧率文字每帧重绘，但数值只在完整一秒统计桶结束时更新。
+		if (debugFrameRateEnabled)
 		{
 			FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
-			wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + state.fps;
+			const wstring& content = state.fps;
 
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
@@ -9513,6 +9537,7 @@ else
 				? currentDebugTextBounds : RECT{};
 			state.lastPresentedDebugFrameBounds = debugModeEnabled
 				? currentDebugFrameBounds : RECT{};
+			state.debugOverlayRefreshPending = false;
 			state.unclassifiedDamagePending = false;
 		}
 		else
@@ -9556,6 +9581,8 @@ void BarRenderLoopCoordinator::PaceFrame(
 	{
 		IdtWindowsIsVisible.floatingWindow = true;
 	}
+	const auto workEnd = chrono::steady_clock::now();
+	const auto activeFrameTime = workEnd - state.frameWorkStart;
 	// 帧率锁
 	{
 		Inkeys::UI::Bar::HighPrecisionWait(chrono::duration<double, milli>(chrono::high_resolution_clock::now() - state.reckon).count(), 60.0);
@@ -9564,12 +9591,20 @@ void BarRenderLoopCoordinator::PaceFrame(
 		//if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
 	}
 
-	if (BarUiDebugModeEnabled)
+	const auto frameEnd = chrono::steady_clock::now();
+	if (BarUiDebugModeEnabled && BarUiDebugFrameRateEnabled)
 	{
-		const double averageFps = state.rollingFrameRate.Tick();
-		state.fps = averageFps > 0.0
-			? format(L"{:.2f} FPS", averageFps)
-			: L"-- FPS";
+		const auto averages = state.frameRate.Tick(activeFrameTime, frameEnd);
+		if (averages.updated)
+			state.fps = format(
+				L"帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
+				averages.actualFramesPerSecond,
+				averages.unlimitedFramesPerSecond);
+	}
+	else
+	{
+		state.frameRate.Reset(frameEnd);
+		state.fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
 	}
 	state.reckon = chrono::high_resolution_clock::now();
 }

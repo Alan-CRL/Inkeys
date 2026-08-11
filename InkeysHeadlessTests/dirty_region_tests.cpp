@@ -211,6 +211,13 @@ namespace
 		Check(SameRect(enabled.presentDamage, RECT{ 5, 10, 130, 100 }),
 			"debug present damage includes old and new overlays");
 
+		const auto frameOnly = ResolveBarDebugDamage(
+			business, previousText, previousFrame, RECT{}, true);
+		Check(SameRect(frameOnly.frameTarget, business),
+			"dirty debug without FPS frames business damage only");
+		Check(SameRect(frameOnly.presentDamage, RECT{ 5, 10, 100, 100 }),
+			"dirty debug without FPS clears stale text and frame");
+
 		const auto disabled = ResolveBarDebugDamage(
 			RECT{}, previousText, previousFrame, RECT{}, false);
 		Check(BarDirtyRegionTracker::IsEmpty(disabled.frameTarget),

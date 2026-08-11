@@ -21,7 +21,7 @@ Tracker 每帧接收：窗口边界、稳定视觉键对应的当前边界、变
 
 1. 提交目标并推进动画；动画包装器把 `changed/active` 关联到控件键或功能组键。
 2. 完成当前布局派生后观察标准控件边界，并登记自绘功能组和动态光影响范围。
-3. 先解析业务 damage，再加入 FPS 文字及红框的旧/新边界，得到最终 present dirty。
+3. 先解析业务 damage，再按独立开关加入 FPS 文字及红框的旧/新边界，得到最终 present dirty。
 4. 最终矩形同时用于 D2D dirty clip、透明清除和 `ULW::prcDirty`。
 5. 完整事务成功才 commit；跳帧保留，失败强制全窗口重试。
 
@@ -34,12 +34,13 @@ Tracker 每帧接收：窗口边界、稳定视觉键对应的当前边界、变
 - 仅主光/鼠标光变化时走窄热路径，只扫描可能承载 PointLight 的 Shape、超椭圆和按钮边框，跳过 SVG/PNG/Word 集合。
 - 未来动态缩窗所需的全可见内容收集保留为停用代码块，普通呈现帧不执行；只有变化对象、被标记功能组和光源帧才计算相应边界。
 - 显式 D2D 变换内容按同一 pivot/scale 解析呈现边界；绘制时才继承父对象的子视觉在 dirty 采集前同步同一 `Inherit`，禁止读取未参与绘制的默认 `(0,0)` 快照。
+- `Debug.Enable` 只控制红框；`Debug.ShowFrameRate` 仅在前者开启时控制文字和持续调试帧。实际/无限制帧率共用完整 1 秒锁存桶，无限制分母只累计进入 pacing 等待前的帧工作时长。
 - 未分类的 `renderOnce`/外部请求以全窗口回退保证正确性。
 - 现有可见内容边界代码保留为 helper；旧的逐帧默认调用注释停用，未来可用于动态窗口尺寸，整套 UI 移动时可作为功能组边界。
 
 ## Compatibility and Rollback
 
-- 不修改公开 API、配置 schema 或窗口协议。
+- 配置 schema 在 `Experimental.Inkeys3.UI3.Debug` 下新增默认 `true` 的 `ShowFrameRate`，保留旧版开启调试时显示 FPS 的行为；窗口协议不变。
 - `BarPresentDecision` 与现有失败退避保持不变。
 - 新 tracker 若出现不可分类或非法矩形，退化为全窗口 damage；可通过恢复旧的可见内容边界调用快速回滚。
 
