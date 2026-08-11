@@ -141,6 +141,11 @@ RECT ResolveBarLightBorderDamage(
 	const RECT& contentBounds,
 	const RECT& lightInfluenceBounds) noexcept;
 
+RECT ResolveBarScaledDirtyBounds(
+	double left, double top, double right, double bottom,
+	double pivotX, double pivotY, double scale, double zoom,
+	LONG padding) noexcept;
+
 BarDebugDamageResolution ResolveBarDebugDamage(
 	const RECT& businessDamage,
 	const RECT& previousTextBounds,
@@ -159,6 +164,7 @@ BarDebugDamageResolution ResolveBarDebugDamage(
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可 `CommitPresented()`；失败时不得推进已呈现快照。
 - FPS 文字每个调试帧都进入 damage。红框在业务 damage 解析后生成，只显示业务 damage 与当前调试文字；最终提交区另并入上一帧文字/红框，关闭调试时用其清除遗留像素。
+- 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。禁止直接读取未参与本帧绘制的默认 `inhX/inhY=(0,0)`，否则滑块、轮盘或预览浮窗会把窗口左上角错误并入。
 
 #### 4. Validation & Error Matrix
 
@@ -173,16 +179,19 @@ BarDebugDamageResolution ResolveBarDebugDamage(
 | 调试模式关闭 | 并入上次文字与红框边界完成清除，不绘制新覆盖层 |
 | 仅鼠标光位置变化 | 只标记鼠标光键；按其旧/新实际受光边框合并，不并入静止主光 |
 | 光源影响矩形完全位于控件内部且未触及边框 | 该控件不贡献光源 damage，不得用整个光圈矩形代替 |
+| 显式缩放文字或延迟继承的色轮子视觉 | 按实际 pivot/scale 或父子 Inherit 解析当前边界；隐藏/无效变换返回空矩形 |
 
 #### 5. Good / Base / Bad Cases
 
 - Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新旧/新位置实际触及的 `PointLight` 边框带；整栏拖动按功能组覆盖所有可见内容。
 - Base：静止帧没有呈现请求；首次帧、设备切换和失败恢复帧允许全窗口更新。
 - Bad：每帧把所有可见内容边界并入 damage，或 ULW 成功但 `EndDraw` 失败后仍推进快照；前者丢失优化，后者会在重试时漏掉旧像素。
+- Bad：粗细预览数字用显式变换绘制，却仍以从未更新的 `word.inhX/inhY` 采集边界；结果是脏区无故从 `(0,0)` 开始。
 
 #### 6. Tests Required
 
 - Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
+- Headless 覆盖显式 pivot/scale 变换后的实际矩形和隐藏 `scale=0` 空边界，断言结果不回落到默认原点。
 - 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln` 的 `Debug | ARM64`，并运行 `InkeysHeadlessTests`。
 - 手工覆盖悬停/按压、属性栏与更多面板、换边、粗细/色板弹窗、整栏拖动、主光/鼠标光、动画开关、调试开关、DPI/zoom 和设备资源重建；不允许残影或漏刷。
 
@@ -204,6 +213,15 @@ if (result.GetDcOk && result.UlwOk && result.ReleaseDcOk && result.EndDrawOk)
 	tracker.CommitPresented();
 else
 	tracker.RetainForRetry(true);
+~~~
+
+~~~cpp
+// Wrong：文字并未通过 Inherit 绘制，默认坐标会污染脏区。
+dirty = GetWeigetRect(previewNumber); // inhX/inhY 仍为 0
+
+// Correct：复用实际绘制的 pivot/scale 解析呈现边界。
+dirty = ResolveBarScaledDirtyBounds(
+	left, top, right, bottom, pivotX, pivotY, scale, zoom, padding);
 ~~~
 
 ### UI3 共享设备、整帧租约与光影缓存契约

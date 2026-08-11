@@ -8,6 +8,7 @@ namespace
 	using Inkeys::UI::Bar::BarDirtyRegionTracker;
 	using Inkeys::UI::Bar::ResolveBarDebugDamage;
 	using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
+	using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
 
 	int failureCount = 0;
 
@@ -184,6 +185,19 @@ namespace
 			"corner light conservatively merges the two affected edge bands");
 	}
 
+	void TestScaledDirectContentUsesPresentedBounds()
+	{
+		Check(SameRect(ResolveBarScaledDirtyBounds(
+			400.0, 200.0, 460.0, 220.0,
+			420.0, 220.0, 0.5, 1.0, 3),
+			RECT{ 407, 207, 443, 223 }),
+			"scaled direct content uses its presented position instead of zero origin");
+		Check(BarDirtyRegionTracker::IsEmpty(ResolveBarScaledDirtyBounds(
+			400.0, 200.0, 460.0, 220.0,
+			420.0, 220.0, 0.0, 1.0, 3)),
+			"hidden scaled direct content contributes no damage");
+	}
+
 	void TestDebugOverlayDamageAndClear()
 	{
 		constexpr RECT business{ 20, 20, 40, 40 };
@@ -215,6 +229,7 @@ int RunDirtyRegionTests()
 	TestExplicitAndFullRetryDamage();
 	TestStableRecordsAndSelectiveObservation();
 	TestLightDamageUsesAffectedBorderBands();
+	TestScaledDirectContentUsesPresentedBounds();
 	TestDebugOverlayDamageAndClear();
 	return failureCount;
 }

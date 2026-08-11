@@ -168,6 +168,7 @@ using Inkeys::UI::Bar::BarDirtyRegionTracker;
 using Inkeys::UI::Bar::BarDirtyVisualKey;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
+using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
 
 enum class BarRenderLoopStageResult
 {
@@ -6417,6 +6418,22 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.shapeMap[BarUISetShapeEnum::GeometryAttributeBar];
 		geometryAttribute->Inherit(
 			BarUiInheritEnum::Center, geometryButton->button);
+		// 这些子视觉在绘制阶段才调用 Inherit，脏区采集前先同步同一屏幕坐标。
+		auto customSwatch = state.shapeMap[
+			BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
+		auto customInner = state.shapeMap[
+			BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+		auto customWheel = state.pngMap[
+			BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+		auto customCheck = state.svgMap[
+			BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+		if (customSwatch && customInner && customWheel && customCheck)
+		{
+			customSwatch->Inherit(BarUiInheritEnum::TopLeft, *drawAttribute);
+			customInner->Inherit(BarUiInheritEnum::TopLeft, *customSwatch);
+			customWheel->Inherit(BarUiInheritEnum::TopLeft, *customSwatch);
+			customCheck->Inherit(BarUiInheritEnum::TopLeft, *customSwatch);
+		}
 
 		const RECT windowBounds = RECT(
 			0, 0, state.barWindow.w, state.barWindow.h);
@@ -6458,13 +6475,30 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						BarRenderingAttribute::GetWeigetRect(
 							*png, static_cast<double>(frameZoom)));
 			};
+		const BarUiWordClass* thicknessPreviewNumber = state.wordMap[
+			BarUISetWordEnum::DrawAttributeBar_ThicknessPreviewPopupNumber].get();
 		auto UnionWordBounds = [&](RECT& bounds, const BarUiWordClass* word)
 			{
 				if (!word) return;
-				if (word->enable.val && word->pct.val > 0.0)
+				if (!word->enable.val || word->pct.val <= 0.0) return;
+				if (word == thicknessPreviewNumber
+					&& state.drawAttributeThicknessPreviewPopupGeometryValid)
+				{
+					// 数字以完整字号排版后围绕 Popup 锚点缩放，不能读取未使用的 inhX/inhY。
+					const auto& logical = state.drawAttributeThicknessPreviewNumberRect;
+					const auto& pivot = state.drawAttributeThicknessPreviewPopupAnchor;
 					BarRenderingAttribute::UnionRectInPlace(bounds,
-						BarRenderingAttribute::GetWeigetRect(
-							*word, static_cast<double>(frameZoom)));
+						ResolveBarScaledDirtyBounds(
+							logical.left, logical.top, logical.right, logical.bottom,
+							pivot.x, pivot.y,
+							state.drawAttributeThicknessPreviewPopupScale,
+							frameZoom,
+							BarRenderingAttribute::dirtyAntialiasPadding));
+					return;
+				}
+				BarRenderingAttribute::UnionRectInPlace(bounds,
+					BarRenderingAttribute::GetWeigetRect(
+						*word, static_cast<double>(frameZoom)));
 			};
 		// 预测边界与成功提交后保存的实际边界必须共用同一可见性判定。
 		auto IncludeShapeBounds = [&](const shared_ptr<BarUiShapeClass>& shape)

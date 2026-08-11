@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -263,6 +264,31 @@ namespace Inkeys::UI::Bar
 			BarDirtyRegionTracker::UnionInPlace(result,
 				IntersectBarDirtyRect(edgeBand, lightInfluenceBounds));
 		return result;
+	}
+
+	[[nodiscard]] inline RECT ResolveBarScaledDirtyBounds(
+		double left, double top, double right, double bottom,
+		double pivotX, double pivotY, double scale, double zoom,
+		LONG padding) noexcept
+	{
+		if (!std::isfinite(left) || !std::isfinite(top)
+			|| !std::isfinite(right) || !std::isfinite(bottom)
+			|| !std::isfinite(pivotX) || !std::isfinite(pivotY)
+			|| !std::isfinite(scale) || scale <= 0.0
+			|| !std::isfinite(zoom) || zoom <= 0.0
+			|| left >= right || top >= bottom)
+			return {};
+
+		const double scaledLeft = pivotX + (left - pivotX) * scale;
+		const double scaledTop = pivotY + (top - pivotY) * scale;
+		const double scaledRight = pivotX + (right - pivotX) * scale;
+		const double scaledBottom = pivotY + (bottom - pivotY) * scale;
+		padding = padding > 0 ? padding : 0;
+		return RECT{
+			static_cast<LONG>(std::floor(scaledLeft * zoom)) - padding,
+			static_cast<LONG>(std::floor(scaledTop * zoom)) - padding,
+			static_cast<LONG>(std::ceil(scaledRight * zoom)) + padding,
+			static_cast<LONG>(std::ceil(scaledBottom * zoom)) + padding };
 	}
 
 	struct BarDebugDamageResolution
