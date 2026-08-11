@@ -496,3 +496,25 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 19: 调整 UI3 墨迹粗细预览浮窗交互
+
+**Date**: 2026-08-11
+**Task**: 调整 UI3 墨迹粗细预览浮窗交互
+**Branch**: `feature/animation`
+
+### Summary
+
+为粗细预览浮窗补充 Slider/FineDial 双向点击、拖动与 Hold-lock，并修复普通滑块拖入识别区时 dwell 被 Popup Hold 抢占的回归；Debug ARM64 完整构建与无头测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `70c49c09` | (see git log) |
+| `ad6718b` | (see git log) |
+
+### Status
+
+[OK] **Completed**
