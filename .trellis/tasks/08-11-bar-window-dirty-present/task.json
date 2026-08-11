@@ -1,0 +1,31 @@
+{
+  "id": "bar-window-dirty-present",
+  "name": "bar-window-dirty-present",
+  "title": "Bar 非全屏 HWND 与脏区呈现优化",
+  "description": "规划将 UI3 Bar 从全屏分层窗口迁移为按内容包围盒变化的 HWND，并研究与之配套的 D2D、GDI、ULW 脏区呈现策略。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "planning-only",
+  "package": "Inkeys/UI/Bar",
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Bar/Bar.Initialization.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.Rendering.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.Rendering.cppm",
+    "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp"
+  ],
+  "notes": "保持 planning 状态；本任务当前只记录方案、研究项和后续验证步骤，不授权实现。",
+  "meta": {}
+}
