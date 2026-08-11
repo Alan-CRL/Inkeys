@@ -286,6 +286,8 @@ struct BarRenderLoopState
 	Inkeys::UI::Bar::FrameAnimationClock animationClock;
 	RECT current = RECT(0, 0, 0, 0);
 	Inkeys::UI::Bar::BarPresentDecision presentDecision;
+	RECT lastPresentedDebugBounds = RECT(0, 0, 0, 0);
+	bool lastPresentedDebugBoundsValid = false;
 	unsigned long long presentAttemptFrameSerial = 0;
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
@@ -6214,6 +6216,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
+	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
 	if (state.presentDecision.ShouldPresent())
 	{
 
@@ -6454,9 +6457,33 @@ IncludeShapeBounds(state.shapeMap[
 			BarRenderingAttribute::UnionRectInPlace(predicted,
 				BarRenderingAttribute::GetWeigetRect(
 					*mainButton, static_cast<double>(frameZoom)));
+
+		D2D1_RECT_F debugTextLayoutRect{};
+		const bool debugTextAlignToLeft = state.mainBarLayoutSide;
+		if (debugModeEnabled)
+		{
+			double debugTextX = mainButton->inhX;
+			double debugTextY = mainButton->inhY + mainButton->GetH();
+			double debugTextLeft = debugTextAlignToLeft
+				? debugTextX : debugTextX + mainButton->GetW() - 300.0;
+			double debugTextRight = debugTextAlignToLeft
+				? debugTextX + 300.0 : debugTextX + mainButton->GetW();
+			debugTextLayoutRect = D2D1::RectF(
+				static_cast<FLOAT>(debugTextLeft * frameZoom),
+				static_cast<FLOAT>(debugTextY * frameZoom),
+				static_cast<FLOAT>(debugTextRight * frameZoom),
+				static_cast<FLOAT>((debugTextY + 20.0) * frameZoom));
+			RECT debugTextBounds = RECT(
+				static_cast<LONG>(debugTextLayoutRect.left),
+				static_cast<LONG>(debugTextLayoutRect.top),
+				static_cast<LONG>(debugTextLayoutRect.right),
+				static_cast<LONG>(debugTextLayoutRect.bottom));
+			// 调试文字属于本帧可见内容，首次开启时也必须进入真实脏区。
+			BarRenderingAttribute::UnionRectInPlace(predicted, debugTextBounds);
+		}
 		RECT frameDirty = state.presentDecision.LastPresentedBounds();
 		BarRenderingAttribute::UnionRectInPlace(frameDirty, predicted);
-		if (state.presentDecision.NeedsFullDirty() || BarUiDebugModeEnabled)
+		if (state.presentDecision.NeedsFullDirty())
 			frameDirty = RECT(0, 0, state.barWindow.w, state.barWindow.h);
 		frameDirty.left = clamp<LONG>(
 			frameDirty.left, 0, static_cast<LONG>(state.barWindow.w));
@@ -6469,14 +6496,21 @@ IncludeShapeBounds(state.shapeMap[
 		if (frameDirty.right <= frameDirty.left
 			|| frameDirty.bottom <= frameDirty.top)
 			frameDirty = RECT(0, 0, state.barWindow.w, state.barWindow.h);
-		D2D1_RECT_F frameDirtyRect = D2D1::RectF(
-			static_cast<FLOAT>(frameDirty.left),
-			static_cast<FLOAT>(frameDirty.top),
-			static_cast<FLOAT>(frameDirty.right),
-			static_cast<FLOAT>(frameDirty.bottom));
+		RECT presentDirty = frameDirty;
+		if (state.lastPresentedDebugBoundsValid)
+		{
+			// 提交区额外清除上一帧红框，但红框本身仍展示未污染的真实脏区。
+			BarRenderingAttribute::UnionRectInPlace(
+				presentDirty, state.lastPresentedDebugBounds);
+		}
+		D2D1_RECT_F presentDirtyRect = D2D1::RectF(
+			static_cast<FLOAT>(presentDirty.left),
+			static_cast<FLOAT>(presentDirty.top),
+			static_cast<FLOAT>(presentDirty.right),
+			static_cast<FLOAT>(presentDirty.bottom));
 		state.current = RECT(0, 0, 0, 0);
 		barDeviceContext->BeginDraw();
-		state.spec.PushFrameDirtyClip(barDeviceContext, frameDirtyRect);
+		state.spec.PushFrameDirtyClip(barDeviceContext, presentDirtyRect);
 
 		// 清除背景
 		{
@@ -8827,12 +8861,11 @@ else
 		}
 
 		// 调试模式持续显示实时 FPS，并把文本范围加入脏区。
-		if (BarUiDebugModeEnabled)
+		if (debugModeEnabled)
 		{
 			FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
 			wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + state.fps;
 
-			const bool alignToLeft = state.mainBarLayoutSide;
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
 				L"HarmonyOS Sans SC",
@@ -8842,7 +8875,7 @@ else
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
 				L"zh-cn",
-				alignToLeft
+				debugTextAlignToLeft
 					? DWRITE_TEXT_ALIGNMENT_LEADING
 					: DWRITE_TEXT_ALIGNMENT_TRAILING,
 				DWRITE_PARAGRAPH_ALIGNMENT_NEAR // 指定段落顶部对齐
@@ -8853,20 +8886,11 @@ else
 				state.spec.GetFrameSolidColorBrush(
 					barDeviceContext, RGB(255, 255, 255), 0.5);
 
-			auto mainButton = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-			double tarX = mainButton->inhX;
-			double tarY = mainButton->inhY + mainButton->GetH();
-			// 主按钮位于右侧时向左排版，避免调试文字越过屏幕边缘。
-			double layoutLeft = alignToLeft ? tarX : tarX + mainButton->GetW() - 300.0;
-			double layoutRight = alignToLeft ? tarX + 300.0 : tarX + mainButton->GetW();
-
-			// 4. 设定绘制区域
-			D2D1_RECT_F layoutRect = D2D1::RectF(
-				static_cast<FLOAT>(layoutLeft * tarZoom), static_cast<FLOAT>(tarY * tarZoom),
-				static_cast<FLOAT>(layoutRight * tarZoom),
-				static_cast<FLOAT>((tarY + 20) * tarZoom));
-
-			RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
+			RECT tmp = RECT(
+				static_cast<LONG>(debugTextLayoutRect.left),
+				static_cast<LONG>(debugTextLayoutRect.top),
+				static_cast<LONG>(debugTextLayoutRect.right),
+				static_cast<LONG>(debugTextLayoutRect.bottom));
 			BarRenderingAttribute::UnionRectInPlace(state.current, tmp);
 
 			// 5. 绘制文本
@@ -8874,15 +8898,17 @@ else
 				content.c_str(),           // text
 				(UINT32)content.length(),  // text length
 				pTextFormat.Get(),         // format
-				layoutRect,                // layout rect
+				debugTextLayoutRect,       // layout rect
 				pBrush,                    // brush
 				D2D1_DRAW_TEXT_OPTIONS_NONE
 			);
 		}
 
-		if (BarUiDebugModeEnabled)
+		RECT nextPresentedDebugBounds = RECT(0, 0, 0, 0);
+		bool nextPresentedDebugBoundsValid = false;
+		if (debugModeEnabled)
 		{
-			// 红框只标记本帧即将提交的实际脏区，不改变正常更新区域。
+			// 红框只标记业务内容与调试文字产生的真实脏区。
 			RECT debugTarget = frameDirty;
 			BarRenderingAttribute::UnionRectInPlace(debugTarget, state.current);
 			{
@@ -8895,10 +8921,14 @@ else
 			}
 
 			COLORREF frame = RGB(255, 0, 0);
+			constexpr FLOAT debugFrameWidth = 1.0F;
+			constexpr FLOAT debugFrameInset = debugFrameWidth / 2.0F;
+			// D2D 描边以路径为中心，四边内缩半个线宽，避免任何像素落到脏区外。
 			D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-				static_cast<FLOAT>(debugTarget.left), static_cast<FLOAT>(debugTarget.top),
-				static_cast<FLOAT>(debugTarget.right - 1),
-				static_cast<FLOAT>(debugTarget.bottom - 1)), 0, 0);
+				static_cast<FLOAT>(debugTarget.left) + debugFrameInset,
+				static_cast<FLOAT>(debugTarget.top) + debugFrameInset,
+				static_cast<FLOAT>(debugTarget.right) - debugFrameInset,
+				static_cast<FLOAT>(debugTarget.bottom) - debugFrameInset), 0, 0);
 
 			ID2D1SolidColorBrush* borderBrush =
 				state.spec.GetFrameSolidColorBrush(
@@ -8906,7 +8936,9 @@ else
 
 			if (borderBrush)
 				barDeviceContext->DrawRoundedRectangle(
-					&roundedRect, borderBrush, 1.0f);
+					&roundedRect, borderBrush, debugFrameWidth);
+			nextPresentedDebugBounds = debugTarget;
+			nextPresentedDebugBoundsValid = true;
 		}
 
 		// Windows 7 Platform Update 要求 GetDC 时 Clip/Layer 栈为空。
@@ -8917,7 +8949,7 @@ else
 		HRESULT releaseDcHr = E_FAIL;
 		{
 			// 脏区更新
-			RECT target = frameDirty;
+			RECT target = presentDirty;
 			{
 				// 脏区更新限制
 				if (target.left < 0) target.left = 0;
@@ -8967,6 +8999,9 @@ else
 		if (presentCompletion.IsCommitted())
 		{
 			state.barPresentFailureLogged = false;
+			state.lastPresentedDebugBounds = nextPresentedDebugBounds;
+			state.lastPresentedDebugBoundsValid =
+				nextPresentedDebugBoundsValid;
 		}
 		else
 		{
