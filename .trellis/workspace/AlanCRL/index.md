@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
+- **Total Sessions**: 20
 - **Last Active**: 2026-08-11
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~520 | Active |
+| `journal-1.md` | ~541 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-08-11 | 修复 UI3 调试脏区红框 | `70ad8c8b` | `feature/animation` |
 | 19 | 2026-08-11 | 调整 UI3 墨迹粗细预览浮窗交互 | `70c49c09`, `ad6718b` | `feature/animation` |
 | 18 | 2026-08-11 | 完成 UI2 最终兼容版发版前适配 | `f61765d6` | `feature/animation` |
 | 17 | 2026-08-11 | UI3 animation performance audit | `7fbf5720` | `feature/animation` |

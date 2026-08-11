@@ -518,3 +518,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 20: 修复 UI3 调试脏区红框
+
+**Date**: 2026-08-11
+**Task**: 修复 UI3 调试脏区红框
+**Branch**: `feature/animation`
+
+### Summary
+
+修复调试模式强制全屏脏区及红框越界残留；调试文字纳入脏区并跟踪上一帧覆盖层；Debug|ARM64 完整构建与 headless 测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `70ad8c8b` | (see git log) |
+
+### Status
+
+[OK] **Completed**
