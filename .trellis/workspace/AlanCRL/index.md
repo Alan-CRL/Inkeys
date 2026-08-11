@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-08-09
+- **Total Sessions**: 17
+- **Last Active**: 2026-08-11
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~456 | Active |
+| `journal-1.md` | ~477 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-08-11 | UI3 animation performance audit | `7fbf5720` | `feature/animation` |
 | 16 | 2026-08-09 | 归档六个已验收 UI3 任务 | `9b21a5d` | `feature/animation` |
 | 15 | 2026-08-09 | 完成墨迹粗细 Fine Dial | `f81638a` | `feature/animation` |
 | 14 | 2026-08-06 | 完成绘制属性窗口增量验收 | `26259fd`, `7a5e59a` | `feature/animation` |

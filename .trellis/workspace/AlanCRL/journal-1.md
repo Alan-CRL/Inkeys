@@ -454,3 +454,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 17: UI3 animation performance audit
+
+**Date**: 2026-08-11
+**Task**: UI3 animation performance audit
+**Branch**: `feature/animation`
+
+### Summary
+
+完成 UI3 Bar 动画架构拆分、性能优化、安全审计、自动化验证与人工验收；任务已归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7fbf5720` | (see git log) |
+
+### Status
+
+[OK] **Completed**
