@@ -154,6 +154,32 @@ namespace
 		INK_HISTORY_CHECK(ContainsTile(highlighter->undoTiles, { 0, 0 }));
 		INK_HISTORY_CHECK(ContainsTile(highlighter->undoTiles, { 0, 1 }));
 
+		const draw3::InkPixelBounds shapeVisible{ 0.0f, 0.0f, 512.0f, 512.0f };
+		const std::optional<draw3::StrokeTileFootprint> solidLine =
+			draw3::BuildStrokeTileFootprint(MakeStroke(draw3::StoredInkType::SolidLine,
+				{ { 64.0f, 64.0f, 4.0f }, { 448.0f, 448.0f, 4.0f } }), shapeVisible);
+		INK_HISTORY_CHECK(solidLine.has_value());
+		INK_HISTORY_CHECK(solidLine && solidLine->pixelBounds.left == 60.0f);
+		INK_HISTORY_CHECK(solidLine && solidLine->pixelBounds.right == 452.0f);
+		const std::optional<draw3::StrokeTileFootprint> outlineRectangle =
+			draw3::BuildStrokeTileFootprint(MakeStroke(
+				draw3::StoredInkType::OutlineRectangle,
+				{ { 448.0f, 448.0f, 4.0f }, { 64.0f, 64.0f, 4.0f } }), shapeVisible);
+		INK_HISTORY_CHECK(outlineRectangle.has_value());
+		INK_HISTORY_CHECK(outlineRectangle &&
+			!ContainsTile(outlineRectangle->undoTiles, { 1, 1 }));
+		INK_HISTORY_CHECK(outlineRectangle &&
+			ContainsTile(outlineRectangle->undoTiles, { 0, 0 }));
+		const std::optional<draw3::StrokeTileFootprint> filledRectangle =
+			draw3::BuildStrokeTileFootprint(MakeStroke(
+				draw3::StoredInkType::FilledRectangle,
+				{ { 448.0f, 448.0f, 4.0f }, { 64.0f, 64.0f, 4.0f } }), shapeVisible);
+		INK_HISTORY_CHECK(filledRectangle.has_value());
+		INK_HISTORY_CHECK(filledRectangle &&
+			ContainsTile(filledRectangle->undoTiles, { 1, 1 }));
+		INK_HISTORY_CHECK(filledRectangle && filledRectangle->pixelBounds.left == 62.0f);
+		INK_HISTORY_CHECK(filledRectangle && filledRectangle->pixelBounds.right == 450.0f);
+
 		const std::optional<draw3::StrokeTileFootprint> offscreen =
 			draw3::BuildStrokeTileFootprint(MakeStroke(draw3::StoredInkType::Pen,
 				{ { -10000.0f, -10000.0f, 4.0f } }), fourK);

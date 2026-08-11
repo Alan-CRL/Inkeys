@@ -34,6 +34,7 @@ namespace draw3
 		constexpr float kHighlighterDuplicateDistancePx = 0.25f;
 		constexpr float kHighlighterRadiusPx = 25.0f;
 		constexpr float kHighlighterBoundsPaddingPx = 3.0f;
+		constexpr float kShapeBoundsPaddingPx = 3.0f;
 		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,
 			"半径空间变化率必须严格小于胶囊切线退化阈值");
 		static_assert(kCapsuleRadiusSlope > 0.0f && kCapsuleRadiusSlope < 1.0f,
@@ -98,6 +99,19 @@ namespace draw3
 				std::min(p1.y, p2.y) - kHighlighterRadiusPx,
 				std::max(p1.x, p2.x) + halfWidth,
 				std::max(p1.y, p2.y) + kHighlighterRadiusPx);
+		}
+
+		std::optional<ShapePrimitiveKind> ShapeKindForStoredType(
+			StoredInkType type) noexcept
+		{
+			switch (type)
+			{
+			case StoredInkType::SolidLine: return ShapePrimitiveKind::SolidLine;
+			case StoredInkType::DashedLine: return ShapePrimitiveKind::DashedLine;
+			case StoredInkType::OutlineRectangle: return ShapePrimitiveKind::OutlineRectangle;
+			case StoredInkType::FilledRectangle: return ShapePrimitiveKind::FilledRectangle;
+			default: return std::nullopt;
+			}
 		}
 
 		float ClampRadiusTransition(float previousRadius, float desiredRadius, float baseDiameter,
@@ -410,6 +424,40 @@ namespace draw3
 		return storedStroke;
 	}
 
+	std::optional<InkStroke> FinalizeStoredShape(
+		const ShapePrimitive& primitive, StoredInkStyle style)
+	{
+		if (!IsStoredShapeType(style.inkType) ||
+			!std::isfinite(primitive.start.x) || !std::isfinite(primitive.start.y) ||
+			!std::isfinite(primitive.end.x) || !std::isfinite(primitive.end.y) ||
+			!std::isfinite(primitive.start.r) || primitive.start.r <= 0.0f)
+			return std::nullopt;
+		const float width = primitive.start.r * 2.0f;
+		InkStroke storedStroke(style, {
+			{ primitive.start.x, primitive.start.y, width },
+			{ primitive.end.x, primitive.end.y, width }
+		});
+		if (!storedStroke.IsValid()) return std::nullopt;
+		return storedStroke;
+	}
+
+	DirectX::XMFLOAT2 ResolveShapeLiveEndpoint(
+		std::span<const ink::stroke_model::Result> predictedResults,
+		DirectX::XMFLOAT2 modeledEndpoint, bool hasModeledEndpoint,
+		DirectX::XMFLOAT2 rawEndpoint, bool forceRawEndpoint) noexcept
+	{
+		if (forceRawEndpoint) return rawEndpoint;
+		if (!predictedResults.empty())
+		{
+			const auto& predicted = predictedResults.back().position;
+			if (std::isfinite(predicted.x) && std::isfinite(predicted.y))
+				return { predicted.x, predicted.y };
+		}
+		if (hasModeledEndpoint && std::isfinite(modeledEndpoint.x) &&
+			std::isfinite(modeledEndpoint.y)) return modeledEndpoint;
+		return rawEndpoint;
+	}
+
 	StoredStrokeRasterResult DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
 		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
 		HighlighterGeometry& highlighterScratch)
@@ -418,18 +466,7 @@ namespace draw3
 			!target.operatorLayer->retainRTV || target.width <= 0 || target.height <= 0 ||
 			!std::isfinite(target.originX) || !std::isfinite(target.originY)) return {};
 
-		pointScratch.clear();
-		pointScratch.reserve(stroke.Points().size());
-		for (const StoredInkPoint& point : stroke.Points())
-		{
-			pointScratch.push_back({
-				point.x - target.originX,
-				point.y - target.originY,
-				point.width * 0.5f,
-				0.0f });
-		}
-		if (pointScratch.empty()) return {};
-
+		if (!stroke.IsValid()) return {};
 		const StoredInkStyle& style = stroke.Style();
 		constexpr float kByteToFloat = 1.0f / 255.0f;
 		const DirectX::XMFLOAT4 color = {
@@ -443,6 +480,32 @@ namespace draw3
 		renderer.SetScreenSize(static_cast<float>(target.width),
 			static_cast<float>(target.height));
 		renderer.SetOperatorTarget(*target.operatorLayer);
+		if (const std::optional<ShapePrimitiveKind> shapeKind =
+			ShapeKindForStoredType(style.inkType))
+		{
+			const std::span<const StoredInkPoint> points = stroke.Points();
+			ShapePrimitive primitive;
+			primitive.start = { points[0].x - target.originX,
+				points[0].y - target.originY, points[0].width * 0.5f, 0.0f };
+			primitive.end = { points[1].x - target.originX,
+				points[1].y - target.originY, 0.0f, 0.0f };
+			if (renderer.DrawShapePrimitives(
+				std::span<const ShapePrimitive>(&primitive, 1), *shapeKind, color) < 0) return {};
+			return { true, RectFromShapePrimitive(
+				primitive, *shapeKind, target.width, target.height) };
+		}
+
+		pointScratch.clear();
+		pointScratch.reserve(stroke.Points().size());
+		for (const StoredInkPoint& point : stroke.Points())
+		{
+			pointScratch.push_back({
+				point.x - target.originX,
+				point.y - target.originY,
+				point.width * 0.5f,
+				0.0f });
+		}
+		if (pointScratch.empty()) return {};
 		if (style.inkType == StoredInkType::Highlighter)
 		{
 			RebuildHighlighterGeometry(pointScratch, highlighterScratch);
@@ -548,6 +611,30 @@ namespace draw3
 				SaturatingCeilToLong(static_cast<double>(point.y) + padding) });
 		}
 		return ClampRectToCanvas(rect, width, height);
+	}
+
+	RECT RectFromShapePrimitive(const ShapePrimitive& primitive,
+		ShapePrimitiveKind kind, int width, int height)
+	{
+		if ((!IsLineShapePrimitive(kind) && !IsRectangleShapePrimitive(kind)) ||
+			!std::isfinite(primitive.start.x) || !std::isfinite(primitive.start.y) ||
+			!std::isfinite(primitive.end.x) || !std::isfinite(primitive.end.y) ||
+			!std::isfinite(primitive.start.r)) return {};
+		const double linePadding = static_cast<double>(
+			std::max(primitive.start.r, 0.0f)) + kShapeBoundsPaddingPx;
+		const double padding = kind == ShapePrimitiveKind::FilledRectangle
+			? kShapeBoundsPaddingPx : linePadding;
+		const double left = static_cast<double>(
+			std::min(primitive.start.x, primitive.end.x)) - padding;
+		const double top = static_cast<double>(
+			std::min(primitive.start.y, primitive.end.y)) - padding;
+		const double right = static_cast<double>(
+			std::max(primitive.start.x, primitive.end.x)) + padding;
+		const double bottom = static_cast<double>(
+			std::max(primitive.start.y, primitive.end.y)) + padding;
+		return ClampRectToCanvas({
+			SaturatingFloorToLong(left), SaturatingFloorToLong(top),
+			SaturatingCeilToLong(right), SaturatingCeilToLong(bottom) }, width, height);
 	}
 
 	RECT RectFromLaserPoints(std::span<const InkPoint> points,

@@ -21,7 +21,8 @@ namespace draw3
 		{
 			const bool knownType = style.inkType == StoredInkType::Pen ||
 				style.inkType == StoredInkType::Highlighter ||
-				style.inkType == StoredInkType::Eraser;
+				style.inkType == StoredInkType::Eraser ||
+				IsStoredShapeType(style.inkType);
 			return knownType && std::isfinite(style.opacity) &&
 				style.opacity >= 0.0f && style.opacity <= 1.0f;
 		}
@@ -64,8 +65,18 @@ namespace draw3
 
 	bool InkStroke::IsValid() const noexcept
 	{
-		return IsValidStyle(style_) && !points_.empty() &&
-			std::all_of(points_.begin(), points_.end(), IsValidPoint);
+		if (!IsValidStyle(style_) || points_.empty() ||
+			!std::all_of(points_.begin(), points_.end(), IsValidPoint)) return false;
+		if (!IsStoredShapeType(style_.inkType)) return true;
+		if (points_.size() != 2 || points_[0].width <= 0.0f ||
+			points_[0].width != points_[1].width) return false;
+		if (style_.inkType == StoredInkType::OutlineRectangle ||
+			style_.inkType == StoredInkType::FilledRectangle)
+		{
+			// 退化矩形不进入文档和 history；反向拖动仍由端点自然表达。
+			return points_[0].x != points_[1].x && points_[0].y != points_[1].y;
+		}
+		return true; // 零长度直线由 analytic shader 退化为圆点。
 	}
 
 	InkCanvas::InkCanvas(DeviceKey device, InkViewport viewport) noexcept

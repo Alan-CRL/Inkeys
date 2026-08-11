@@ -3,6 +3,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -65,6 +66,98 @@ int RunHighlighterGeometryTests()
 	HIGHLIGHTER_CHECK(!defaultConfiguration.drawingCursorDuringContactEnabled);
 	HIGHLIGHTER_CHECK(defaultConfiguration.laserHoldDurationSeconds == 1.0);
 	HIGHLIGHTER_CHECK(draw3::CreateStrokeModelConfiguration(192).dpiScale == 2.0f);
+	static_assert(static_cast<uint32_t>(draw3::ShapePrimitiveKind::SolidLine) == 16);
+	static_assert(static_cast<uint32_t>(draw3::ShapePrimitiveKind::DashedLine) == 17);
+	static_assert(static_cast<uint32_t>(draw3::ShapePrimitiveKind::OutlineRectangle) == 18);
+	static_assert(static_cast<uint32_t>(draw3::ShapePrimitiveKind::FilledRectangle) == 19);
+	static_assert(sizeof(draw3::ShapePrimitive) == sizeof(draw3::InkPoint) * 2);
+	draw3::ShapePrimitive reverseRectangle = {
+		{ 30.0f, 40.0f, 2.5f, 0.0f }, { 10.0f, 20.0f, 0.0f, 0.0f }
+	};
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::ClampShapeRoundedCornerRadius(
+		reverseRectangle, draw3::kShapeRoundedCornerRadiusAt96Dpi), 8.0f));
+	draw3::ShapePrimitive smallRectangle = {
+		{ 0.0f, 0.0f, 2.5f, 0.0f }, { 6.0f, 4.0f, 0.0f, 0.0f }
+	};
+	HIGHLIGHTER_CHECK(NearlyEqual(draw3::ClampShapeRoundedCornerRadius(
+		smallRectangle, draw3::kShapeRoundedCornerRadiusAt96Dpi), 2.0f));
+	const RECT outlineBounds = draw3::RectFromShapePrimitive(reverseRectangle,
+		draw3::ShapePrimitiveKind::OutlineRectangle, 100, 100);
+	HIGHLIGHTER_CHECK(outlineBounds.left == 4 && outlineBounds.top == 14);
+	HIGHLIGHTER_CHECK(outlineBounds.right == 36 && outlineBounds.bottom == 46);
+	const RECT filledBounds = draw3::RectFromShapePrimitive(reverseRectangle,
+		draw3::ShapePrimitiveKind::FilledRectangle, 100, 100);
+	HIGHLIGHTER_CHECK(filledBounds.left == 7 && filledBounds.top == 17);
+	HIGHLIGHTER_CHECK(filledBounds.right == 33 && filledBounds.bottom == 43);
+
+	draw3::ActiveStroke shapeStroke(5.0f, 500.0f);
+	shapeStroke.predictedResults.resize(2);
+	shapeStroke.predictedResults[0].position = { 60.0f, 70.0f };
+	shapeStroke.predictedResults[1].position = { 80.0f, 90.0f };
+	DirectX::XMFLOAT2 shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+		shapeStroke.predictedResults, { 40.0f, 50.0f }, true, { 20.0f, 30.0f });
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.x, 80.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.y, 90.0f));
+	shapeStroke.predictedResults.back().position = {
+		(std::numeric_limits<float>::quiet_NaN)(), 90.0f };
+	shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+		shapeStroke.predictedResults, { 40.0f, 50.0f }, true, { 20.0f, 30.0f });
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.x, 40.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.y, 50.0f));
+	shapeStroke.predictedResults.back().position = {
+		80.0f, (std::numeric_limits<float>::infinity)() };
+	shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+		shapeStroke.predictedResults, { 40.0f, 50.0f }, true, { 20.0f, 30.0f });
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.x, 40.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.y, 50.0f));
+	shapeStroke.predictedResults.back().position = { 80.0f, 90.0f };
+	shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+		shapeStroke.predictedResults, { 40.0f, 50.0f }, true,
+		{ 20.0f, 30.0f }, true);
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.x, 20.0f));
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.y, 30.0f));
+	shapeStroke.predictedResults.clear();
+	shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+		shapeStroke.predictedResults, { 40.0f, 50.0f }, true, { 20.0f, 30.0f });
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.x, 40.0f));
+	shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+		shapeStroke.predictedResults, {}, false, { 20.0f, 30.0f });
+	HIGHLIGHTER_CHECK(NearlyEqual(shapeEndpoint.x, 20.0f));
+	HIGHLIGHTER_CHECK(!draw3::ShouldRebuildSharedL0(true, false, false));
+	HIGHLIGHTER_CHECK(draw3::ShouldRebuildSharedL0(false, false, false));
+	HIGHLIGHTER_CHECK(draw3::ShouldRebuildSharedL0(true, true, false));
+	HIGHLIGHTER_CHECK(draw3::ShouldRebuildSharedL0(true, false, true));
+
+	const draw3::StoredInkStyle lineStyle = {
+		.inkType = draw3::StoredInkType::SolidLine,
+		.fallbackRgb = 0xFF0000u,
+		.opacity = 1.0f,
+		.texture = 0u
+	};
+	const std::optional<draw3::InkStroke> storedLine =
+		draw3::FinalizeStoredShape(reverseRectangle, lineStyle);
+	HIGHLIGHTER_CHECK(storedLine && storedLine->Points().size() == 2);
+	if (storedLine)
+	{
+		HIGHLIGHTER_CHECK(NearlyEqual(storedLine->Points()[0].x, 30.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedLine->Points()[1].x, 10.0f));
+		HIGHLIGHTER_CHECK(NearlyEqual(storedLine->Points()[0].width, 5.0f));
+	}
+	const draw3::ShapePrimitive zeroLengthLine = {
+		{ 12.0f, 13.0f, 2.5f, 0.0f }, { 12.0f, 13.0f, 0.0f, 0.0f }
+	};
+	HIGHLIGHTER_CHECK(draw3::FinalizeStoredShape(zeroLengthLine, lineStyle).has_value());
+	const draw3::StoredInkStyle rectangleStyle = {
+		.inkType = draw3::StoredInkType::OutlineRectangle,
+		.fallbackRgb = 0xFF0000u,
+		.opacity = 1.0f,
+		.texture = 0u
+	};
+	const draw3::ShapePrimitive zeroWidthRectangle = {
+		{ 12.0f, 13.0f, 2.5f, 0.0f }, { 12.0f, 40.0f, 0.0f, 0.0f }
+	};
+	HIGHLIGHTER_CHECK(!draw3::FinalizeStoredShape(
+		zeroWidthRectangle, rectangleStyle).has_value());
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserDot) == 16);
 	HIGHLIGHTER_CHECK(sizeof(draw3::LaserStyleConstants) == 112);
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::kLaserSolidDiameterAt96Dpi, 5.0f));

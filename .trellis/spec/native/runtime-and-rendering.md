@@ -44,6 +44,72 @@
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
 
+## Scenario: Analytic Line And Rounded Rectangle Tools
+
+### 1. Scope / Trigger
+
+修改 `Q/W/E/R` 工具选择、Shape 活动态、解析几何、Stored Shape、dirty bounds、history footprint 或首次 L2 提交时，必须同步应用本节与 [CPU/GPU Contracts](../shaders/cpu-gpu-contracts.md)。
+
+### 2. Signatures
+
+- `DrawingTool { Pen=0, Highlighter=1, Eraser=2, Laser=3, SolidLine=4, DashedLine=5, OutlineRectangle=6, FilledRectangle=7 }`
+- `StoredInkType { Pen=0, Highlighter=1, Eraser=2, SolidLine=3, DashedLine=4, OutlineRectangle=5, FilledRectangle=6 }`
+- `ShapePrimitiveKind { SolidLine=16, DashedLine=17, OutlineRectangle=18, FilledRectangle=19 }`
+- `ResolveShapeLiveEndpoint(predictedResults, modeledEndpoint, hasModeledEndpoint, rawEndpoint)`
+- `FinalizeStoredShape(primitive, style) -> optional<InkStroke>`
+- `DrawShapePrimitives(primitives, kind, color, operatorKind)`
+- `RectFromShapePrimitive(primitive, kind, width, height)`
+- `BuildStrokeTileFootprint(stroke, visibleBounds)`
+
+上述枚举都是 append-only 数值协议；不得重排既有值或把 shader `0..15` 复用于 Shape。
+
+### 3. Contracts
+
+- 空闲批次首个 Down 锁定所选工具；`Q/W/E/R` 只影响下一批。四种 Shape 使用 Pen 的 `5px` 基础直径、颜色、圆形 cursor 和触觉，不读取压力、倾角、笔锋或 taper；倒转 Pen 仍可按既有规则覆盖为 Eraser。
+- 原始 Down 坐标永久作为起点。活动终点依次选择最后一个有限 prediction、最后建模点、最后原始输入；非有限候选必须回退。原始 Up 坐标强制覆盖最终终点，不能由 modeler/prediction 再修改。
+- 每个活动 Shape 只保存固定 primitive、kind、原始/建模末点和少量标志。`modeledResults`、`predictedResults` 仅作预留 scratch，提取末点后清空；不得生成真实路径、可变宽度点列、笔锋或 L1 稳定前缀。
+- 活动 Shape 完整绘制在共享 L0。仅当所有活动 L0 内容都是 Shape 且全部末点稳定时才可保留既有 L0；任一 Shape 变化或 Pen/Highlighter live 内容需要刷新时，先把 L0 清为单位操作，再按 kind 批量重放全部活动 Shape。同类 contact 在容量允许时只提交一次 `Draw(6 * count)`。
+- Resize、contact 完成和 Cancel 后通过活动层全量重建恢复仍活动 Shape。Cancel 只脏化旧/新 L0 bounds 并丢弃对象；不得追加文档、RenderItem 或 L2 像素。
+- 实线是圆头胶囊；虚线由 pixel shader 解析为 `4 * width` 实线段、`2 * width` 空隙和圆头，不在 CPU 展开短划。矩形先规范化任意方向对角点，使用 `8 DIP * dpiScale` 圆角并钳制到短边一半；Outline 边界居中，Filled 不附加边框。
+- 完成 Shape 恰好保存两个同宽 `StoredInkPoint` 和 Pen 颜色/透明度。零长度 Line 合法并重放为圆点；宽或高为零的 Rectangle 非法。首次落定顺序保持 `Finalize -> AppendStroke -> AppendRenderItem -> raster appended Stroke -> capture preimage -> resolve L2`，页面恢复、冷重建和 history tile 也必须调用同一个 `DrawStoredStroke` 入口。
+- Line footprint 使用扩宽线段；OutlineRectangle 只遍历四边；FilledRectangle 覆盖完整规范化面积。pixel bounds 与 dirty bounds 都包含半线宽（Filled 除外）、AA padding、裁剪和反向拖动。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Predict 失败或最后 prediction 为 NaN/Inf | 清空 prediction，回退最后有限建模点；仍不可用时使用原始输入 |
+| Model Update 失败 | 保留原始末点；Up 仍能用原始坐标完成有效 Shape |
+| 原始 Up | 无条件成为 Stored 第二端点；旧 prediction 不得写入文档 |
+| 零长度 Solid/Dashed Line | Stored 有效，shader 输出一枚线宽圆点 |
+| Rectangle 宽或高为零 | `FinalizeStoredShape`/`InkStroke::IsValid` 拒绝，不产生 history 项 |
+| Cancel | 清除旧 L0 可见区，不追加 Stroke/RenderItem，不 resolve 到 L2 |
+| Shape-only 稳定帧 | 不清理、不上传、不重复 draw L0 |
+| 稳定 Shape 与移动 Pen/Highlighter 并存 | 共享 L0 重建并重放普通 live 内容及全部活动 Shape |
+| renderer Map/Draw 失败 | Stored 文档对象保持真值，栅格失败沿用 history 诊断/恢复路径 |
+| 极端但有限坐标 | 文档保留原值；无法精确量化时 history 使用保守可见 footprint |
+
+### 5. Good / Base / Bad Cases
+
+- Good：多支同类 Shape 共享一次上传/Draw，另一支 Pen 移动时仍完整重放 Shape；Up 后撤回、翻页和 resize 都从两个 Stored 点恢复相同解析几何。
+- Base：反向拖动的小矩形把 `8 DIP` 圆角钳制到短边一半；零长度虚线显示圆点。
+- Bad：把拖动路径保存成点列、把 Shape 稳定前缀提交到 L1、CPU 生成每一段 dash，或为了保留稳定 Shape 而跳过共享 L0 中普通笔的刷新。
+
+### 6. Tests Required
+
+- 静态断言三组 enum 数值、`sizeof(ShapePrimitive)==32`，并核对 HLSL `16..19` 分支和 `Draw(6 * count)`。
+- 单元测试 prediction -> modeled -> raw 优先级、NaN/Inf 回退、原始终点强制覆盖、反向矩形、`8 DIP` 圆角钳制和 Shape dirty bounds。
+- 文档测试覆盖四种 Stored 类型、严格双端点/同宽/正宽、三点拒绝、零长度 Line 合法和退化 Rectangle 拒绝。
+- history 测试覆盖扩宽 Line、四边 Outline、完整 Filled 内部 tile、反向拖动、AA padding 和可见区裁剪。
+- `--drawing-perf` 在 scratch/batch 预留后反复清空 modeled/predicted 长度并重建同类批次，断言零分配、容量稳定和有限终点；GPU 批量调用仍以 renderer 静态契约和人工 D3D 验证为准。
+- ARM64 Debug/Release 完整 solution 构建与全部测试；人工覆盖 `Q/W/E/R`、prediction、Cancel、撤回、翻页和 resize。未执行 Pen/Touch 或 D3D Debug Layer 时必须明确标记。
+
+### 7. Wrong vs Correct
+
+Wrong：`Move -> append predicted path points -> commit old prefix to L1 -> Up 时继续使用预测末点。`
+
+Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Shape 留在 L0 -> raw Up 覆盖终点 -> 保存两个点并从 Stored 对象重放。`
+
 ## Scenario: Laser Pointer Glow Trail
 
 ### 1. Scope / Trigger

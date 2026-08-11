@@ -57,6 +57,7 @@ Win32 window message
 
 - L2 是已落定的 premultiplied RGBA 画布。
 - L1 是当前笔稳定前缀操作，L0 是每帧清空重绘的实时操作。
+- L0 是多工具共享层；引入“稳定内容保留 L0”优化时，必须同时检查其他活动 contact 是否仍需刷新，并在任何共享层重建后重放全部仍活动内容。
 - 普通绘制与橡皮都编码为 `Add + Retain * Below`；同笔分段默认使用覆盖率并集。
 - 抬笔时先把最终 Stroke 追加到当前 Canvas，再从刚追加的对象重建 operator 几何；不得先从 ActiveStroke 绘制再保存另一份数据。
 - 同帧多个完成 Stroke 必须按 Canvas 追加顺序独立作用到 L2；共享 MAX/MIN coverage 会破坏半透明和擦除顺序。

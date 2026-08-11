@@ -12,6 +12,18 @@ float2 position + float radius + float time = 16 bytes
 
 C++ 用 `static_assert(sizeof(InkPoint) == 16)`，D3D buffer 的 `StructureByteStride` 使用 `sizeof(InkPoint)`，HLSL 在 `t0` 读取。
 
+### ShapePrimitive
+
+Shape 不新增 buffer、texture 或 SRV；每项直接占用 `t0 InkData` 中两个连续 `InkPoint` 槽：
+
+```text
+start = float2 起点 + float 半线宽 + 0
+end   = float2 终点 + 0 + 0
+总大小 = 32 bytes
+```
+
+C++ 必须保持 `static_assert(sizeof(ShapePrimitive) == 32)`。`globalBufferOffset` 仍以 `InkPoint` 槽计数，所以 VS 用 `offset + itemIndex * 2` 解包；renderer 一批同类 primitive 上传连续 32-byte 项并调用 `Draw(6 * count)`。禁止为虚线增加 CPU 短划数组或第二套 structured buffer。
+
 ### HighlighterPrimitive
 
 字段顺序必须保持：
@@ -37,7 +49,7 @@ float2 halfSize
 | `bufferOffset` | `globalBufferOffset` |
 | `color` | `globalColor` |
 | `operatorKind` | `globalOperatorKind` |
-| `padding[3]` | `globalPadding`（cursor shape 时为 outline RGB） |
+| `padding[3]` | `globalPadding`（cursor shape 时为 outline RGB；Shape `16..19` 时 `x` 为 `8 DIP * dpiScale` 圆角像素值） |
 
 它绑定在 VS `b0` 与 PS `b0`。`operatorKind` 只在 pixel shader 使用，但仍属于同一共享常量缓冲区。
 
@@ -107,6 +119,10 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 - `13`：逐通道 `max(t7, t9)` 后单次解析 Laser 材质，用于单 contact 增量快路。
 - `14`：按 `Later(Earlier(Below))` 组合两个 history operator tile。
 - `15`：把一个 history operator tile 应用到 L2 的目标 Canvas 矩形。
+- `16`：固定宽度圆头实线胶囊。
+- `17`：固定宽度圆头虚线；实线段 `4 * width`、空隙 `2 * width`，周期在 PS 中解析。
+- `18`：边界居中的圆角矩形边框。
+- `19`：无额外边框的圆角填充矩形。
 
 `globalOperatorKind`：
 
@@ -145,6 +161,8 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 - VS 为圆胶囊和荧光笔固定矩形 sweep 生成覆盖形状的 quad/AABB。
 - PS 使用 signed distance 与 `fwidth`/`smoothstep` 做抗锯齿；高亮 sweep 的零等值线由 X/Y/线段法线半平面交集确定。
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
+- Shape `16/17` 的 VS 生成扩宽线段 OBB，PS 分别计算整段 capsule 或 analytic dashed capsules；零长度必须退化为半线宽圆点。Shape `18/19` 的 VS 先对任意方向端点取 `min/max`，PS 使用 rounded-box SDF；圆角把 `globalPadding.x` 钳制到短边一半，Outline 使用 `abs(boxDistance) - halfWidth`，Filled 直接使用 box distance。
+- Shape dirty/history bounds 必须与上述几何同步：Line/Outline 扩展半线宽和 AA，Filled 只扩展 AA；Outline history 遍历四边而非整个内部，Filled 覆盖完整规范化矩形。
 - Laser shape `7` 的 `InkPoint.r` 是红色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；红粉高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子红边锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
 - 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。

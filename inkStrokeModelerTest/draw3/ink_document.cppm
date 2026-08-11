@@ -54,10 +54,20 @@ export namespace draw3
 
 	enum class StoredInkType : uint8_t
 	{
-		Pen,
-		Highlighter,
-		Eraser
+		Pen = 0,
+		Highlighter = 1,
+		Eraser = 2,
+		SolidLine = 3,
+		DashedLine = 4,
+		OutlineRectangle = 5,
+		FilledRectangle = 6
 	};
+
+	constexpr bool IsStoredShapeType(StoredInkType type) noexcept
+	{
+		return type == StoredInkType::SolidLine || type == StoredInkType::DashedLine ||
+			type == StoredInkType::OutlineRectangle || type == StoredInkType::FilledRectangle;
+	}
 
 	struct StoredInkPoint
 	{

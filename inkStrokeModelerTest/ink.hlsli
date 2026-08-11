@@ -55,6 +55,13 @@ struct HighlighterPrimitive
     float2 halfSize;
 };
 
+// ShapePrimitive 不新增 SRV；每项直接占用 InkData 中两个连续槽。
+struct ShapePrimitive
+{
+    InkPoint start;
+    InkPoint end;
+};
+
 // 3. 结构化缓冲区
 StructuredBuffer<InkPoint> InkData : register(t0);
 Texture2D StableOperatorAdd : register(t1);

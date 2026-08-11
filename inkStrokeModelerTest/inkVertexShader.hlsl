@@ -139,6 +139,49 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
+    if (type >= 16 && type <= 19)
+    {
+        uint primitiveOffset = globalBufferOffset + itemIndex * 2;
+        ShapePrimitive primitive;
+        primitive.start = InkData[primitiveOffset];
+        primitive.end = InkData[primitiveOffset + 1];
+        float2 p1 = primitive.start.pos;
+        float2 p2 = primitive.end.pos;
+        float halfWidth = max(primitive.start.r, 0.0);
+        output.p1 = p1;
+        output.p2 = p2;
+        output.r1 = halfWidth;
+        output.r2 = globalPadding.x;
+
+        float2 worldPos = 0.0;
+        if (type == 16 || type == 17)
+        {
+            float2 segment = p2 - p1;
+            float segmentLength = length(segment);
+            float2 tangent = segmentLength > 0.001
+                ? segment / segmentLength : float2(1.0, 0.0);
+            float2 normal = float2(-tangent.y, tangent.x);
+            float extent = halfWidth + 2.0;
+            float localX = lerp(-extent, segmentLength + extent, templatePos.x);
+            float localY = lerp(-extent, extent, templatePos.y);
+            worldPos = p1 + tangent * localX + normal * localY;
+        }
+        else
+        {
+            float2 rectMin = min(p1, p2);
+            float2 rectMax = max(p1, p2);
+            float extent = type == 18 ? halfWidth + 2.0 : 2.0;
+            worldPos = lerp(rectMin - extent, rectMax + extent, templatePos);
+            output.p1 = rectMin;
+            output.p2 = rectMax;
+        }
+
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        return output;
+    }
+
     uint realIndex = globalBufferOffset + itemIndex;
     InkPoint data1 = InkData[realIndex];
     InkPoint data2 = InkData[realIndex + 1];

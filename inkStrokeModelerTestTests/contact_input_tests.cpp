@@ -1534,6 +1534,46 @@ namespace
 			});
 		const uint64_t highlighterAllocations =
 			gAllocationCount.load(std::memory_order_relaxed) - allocationStart;
+		constexpr size_t kShapeContactCount = 8;
+		draw3::ActiveStroke shapeScratch(5.0f, 500.0f);
+		shapeScratch.modeledResults.reserve(1);
+		shapeScratch.predictedResults.reserve(1);
+		std::vector<draw3::ShapePrimitive> shapeBatch;
+		shapeBatch.reserve(kShapeContactCount);
+		const size_t modeledCapacity = shapeScratch.modeledResults.capacity();
+		const size_t predictedCapacity = shapeScratch.predictedResults.capacity();
+		DirectX::XMFLOAT2 shapeEndpoint = {};
+		const uint64_t shapeAllocationStart =
+			gAllocationCount.load(std::memory_order_relaxed);
+		const double shapeMedian = medianMicroseconds([&]
+			{
+				for (size_t pointIndex = 0; pointIndex < kPointCount; ++pointIndex)
+				{
+					shapeScratch.modeledResults.resize(1);
+					shapeScratch.predictedResults.resize(1);
+					const float coordinate = static_cast<float>(pointIndex);
+					shapeScratch.modeledResults.back().position = {
+						coordinate, coordinate + 1.0f };
+					shapeScratch.predictedResults.back().position = {
+						coordinate + 2.0f, coordinate + 3.0f };
+					shapeEndpoint = draw3::ResolveShapeLiveEndpoint(
+						shapeScratch.predictedResults,
+						{ coordinate, coordinate + 1.0f }, true, {});
+					// Shape 每次只消费末点，模型结果长度和批次容量都不随路径增长。
+					shapeScratch.modeledResults.clear();
+					shapeScratch.predictedResults.clear();
+					shapeBatch.clear();
+					for (size_t contactIndex = 0;
+						contactIndex < kShapeContactCount; ++contactIndex)
+					{
+						shapeBatch.push_back({
+							{ 0.0f, 0.0f, 2.5f, 0.0f },
+							{ shapeEndpoint.x, shapeEndpoint.y, 0.0f, 0.0f } });
+					}
+				}
+			});
+		const uint64_t shapeAllocations =
+			gAllocationCount.load(std::memory_order_relaxed) - shapeAllocationStart;
 		RECT penBounds = {};
 		const double penMedian = medianMicroseconds([&]
 			{
@@ -1555,11 +1595,19 @@ namespace
 			" highlighter_primitives=" << highlighterGeometry.primitives.size() <<
 			" highlighter_allocations=" << highlighterAllocations <<
 			" highlighter_median_us=" << highlighterMedian <<
+			" shape_contacts=" << shapeBatch.size() <<
+			" shape_allocations=" << shapeAllocations <<
+			" shape_median_us=" << shapeMedian <<
 			" pen_bounds_median_us=" << penMedian <<
 			" eraser_bounds_median_us=" << eraserMedian <<
 			" laser_bounds_median_us=" << laserMedian << std::endl;
-		const bool valid = highlighterAllocations == 0 &&
+		const bool valid = highlighterAllocations == 0 && shapeAllocations == 0 &&
 			highlighterGeometry.primitives.size() == points.size() - 1 &&
+			shapeScratch.modeledResults.empty() && shapeScratch.predictedResults.empty() &&
+			shapeScratch.modeledResults.capacity() == modeledCapacity &&
+			shapeScratch.predictedResults.capacity() == predictedCapacity &&
+			shapeBatch.size() == kShapeContactCount &&
+			std::isfinite(shapeEndpoint.x) && std::isfinite(shapeEndpoint.y) &&
 			penBounds.left < penBounds.right && eraserBounds.left < eraserBounds.right &&
 			laserBounds.left < laserBounds.right;
 		return valid ? 0 : 1;

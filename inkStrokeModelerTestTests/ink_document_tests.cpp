@@ -156,6 +156,33 @@ int RunInkDocumentTests()
 	style.opacity = 1.0f;
 	INK_DOCUMENT_CHECK(draw3::InkStroke(style, { { 0.0f, 0.0f, 1.0f } }).IsValid());
 
+	const std::array<draw3::StoredInkType, 4> shapeTypes = {
+		draw3::StoredInkType::SolidLine,
+		draw3::StoredInkType::DashedLine,
+		draw3::StoredInkType::OutlineRectangle,
+		draw3::StoredInkType::FilledRectangle
+	};
+	for (draw3::StoredInkType shapeType : shapeTypes)
+	{
+		draw3::StoredInkStyle shapeStyle = style;
+		shapeStyle.inkType = shapeType;
+		INK_DOCUMENT_CHECK(draw3::IsStoredShapeType(shapeType));
+		INK_DOCUMENT_CHECK(draw3::InkStroke(shapeStyle,
+			{ { 10.0f, 20.0f, 5.0f }, { 30.0f, 40.0f, 5.0f } }).IsValid());
+		INK_DOCUMENT_CHECK(!draw3::InkStroke(shapeStyle,
+			{ { 10.0f, 20.0f, 5.0f } }).IsValid());
+		INK_DOCUMENT_CHECK(!draw3::InkStroke(shapeStyle,
+			{ { 10.0f, 20.0f, 5.0f }, { 30.0f, 40.0f, 6.0f } }).IsValid());
+	}
+	draw3::StoredInkStyle solidLineStyle = style;
+	solidLineStyle.inkType = draw3::StoredInkType::SolidLine;
+	INK_DOCUMENT_CHECK(draw3::InkStroke(solidLineStyle,
+		{ { 10.0f, 20.0f, 5.0f }, { 10.0f, 20.0f, 5.0f } }).IsValid());
+	draw3::StoredInkStyle outlineRectangleStyle = style;
+	outlineRectangleStyle.inkType = draw3::StoredInkType::OutlineRectangle;
+	INK_DOCUMENT_CHECK(!draw3::InkStroke(outlineRectangleStyle,
+		{ { 10.0f, 20.0f, 5.0f }, { 10.0f, 40.0f, 5.0f } }).IsValid());
+
 	const std::optional<size_t> firstStrokeIndex = defaultCanvas->AppendStroke(
 		MakeStroke(draw3::StoredInkType::Pen, 10.0f));
 	const std::optional<size_t> secondStrokeIndex = defaultCanvas->AppendStroke(

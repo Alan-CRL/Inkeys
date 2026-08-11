@@ -74,6 +74,43 @@ float GetRectangleDist(float2 p, float2 halfSize)
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
 }
 
+float GetRoundedRectangleDist(float2 p, float2 halfSize, float radius)
+{
+    radius = clamp(radius, 0.0, min(halfSize.x, halfSize.y));
+    float2 q = abs(p) - halfSize + radius;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+float GetDashedLineDist(float2 p, float2 p1, float2 p2, float radius)
+{
+    float2 segment = p2 - p1;
+    float segmentLength = length(segment);
+    if (segmentLength <= 1e-5)
+        return length(p - p1) - radius;
+
+    float2 tangent = segment / segmentLength;
+    float2 normal = float2(-tangent.y, tangent.x);
+    float2 local = float2(dot(p - p1, tangent), dot(p - p1, normal));
+    float lineWidth = max(radius * 2.0, 1e-4);
+    float dashLength = lineWidth * 4.0;
+    float period = dashLength + lineWidth * 2.0;
+    float cell = floor(clamp(local.x, 0.0, segmentLength) / period);
+    float bestAlong = 1e20;
+    [unroll]
+    for (int offset = -1; offset <= 1; ++offset)
+    {
+        float dashStart = (cell + (float) offset) * period;
+        float dashEnd = min(dashStart + dashLength, segmentLength);
+        if (dashEnd > dashStart && dashEnd >= 0.0 && dashStart <= segmentLength)
+        {
+            dashStart = max(dashStart, 0.0);
+            float along = local.x - clamp(local.x, dashStart, dashEnd);
+            bestAlong = min(bestAlong, abs(along));
+        }
+    }
+    return length(float2(bestAlong, local.y)) - radius;
+}
+
 float GetVerticalCapsuleDist(float2 p, float radius, float halfHeight)
 {
     float segmentHalfHeight = max(halfHeight - radius, 0.0);
@@ -329,6 +366,45 @@ OperatorOutput main(PS_INPUT input)
             output.retain = (liveRetain * stableRetain).xxxx;
         }
         return output;
+    }
+
+    if (type >= 16 && type <= 19)
+    {
+        float d = 0.0;
+        if (type == 16)
+            d = GetInkDist_Convex(
+                input.pixPos, input.p1, input.p2, input.r1, input.r1);
+        else if (type == 17)
+            d = GetDashedLineDist(
+                input.pixPos, input.p1, input.p2, input.r1);
+        else
+        {
+            float2 center = (input.p1 + input.p2) * 0.5;
+            float2 halfSize = (input.p2 - input.p1) * 0.5;
+            float boxDistance = GetRoundedRectangleDist(
+                input.pixPos - center, halfSize, input.r2);
+            d = type == 18 ? abs(boxDistance) - input.r1 : boxDistance;
+        }
+
+        float aaWidth = max(fwidth(d) * 1.5, 1e-5);
+        float alpha = 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, d);
+        if (alpha <= 0.0)
+            discard;
+        OperatorOutput shapeOutput;
+        if (globalOperatorKind == 1)
+        {
+            shapeOutput.add = 0.0;
+            shapeOutput.retain = (1.0 - alpha).xxxx;
+        }
+        else
+        {
+            float outAlpha = input.color.a * alpha;
+            if (outAlpha <= 0.0)
+                discard;
+            shapeOutput.add = float4(input.color.rgb * outAlpha, outAlpha);
+            shapeOutput.retain = (1.0 - outAlpha).xxxx;
+        }
+        return shapeOutput;
     }
 
     float d = 0.0;

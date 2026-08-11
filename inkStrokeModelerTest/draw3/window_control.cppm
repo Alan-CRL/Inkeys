@@ -22,11 +22,21 @@ export namespace draw3
 	// 表示当前选择或活动 contact 锁定的绘制工具。
 	enum class DrawingTool
 	{
-		Pen,
-		Highlighter,
-		Eraser,
-		Laser
+		Pen = 0,
+		Highlighter = 1,
+		Eraser = 2,
+		Laser = 3,
+		SolidLine = 4,
+		DashedLine = 5,
+		OutlineRectangle = 6,
+		FilledRectangle = 7
 	};
+
+	constexpr bool IsShapeDrawingTool(DrawingTool tool) noexcept
+	{
+		return tool == DrawingTool::SolidLine || tool == DrawingTool::DashedLine ||
+			tool == DrawingTool::OutlineRectangle || tool == DrawingTool::FilledRectangle;
+	}
 
 	// 表示当前客户区尺寸。
 	struct WindowSize
@@ -84,7 +94,7 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
-		// 配置 Pen/Highlighter/Eraser/Laser 的应用内瞬态光标外观。
+		// 配置基础工具的应用内瞬态光标外观；Shape 统一复用 Pen 外观。
 		bool ConfigureDrawingCursor(DrawingTool tool,
 			const DrawingCursorAppearance& appearance);
 		DrawingCursorAppearance CursorAppearanceForTool(DrawingTool tool) const noexcept;

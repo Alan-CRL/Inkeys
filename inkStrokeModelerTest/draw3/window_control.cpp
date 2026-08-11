@@ -385,7 +385,8 @@ namespace draw3
 		if (tool == DrawingTool::Pen) penCursorAppearance_ = appearance;
 		else if (tool == DrawingTool::Highlighter) highlighterCursorAppearance_ = appearance;
 		else if (tool == DrawingTool::Eraser) eraserCursorAppearance_ = appearance;
-		else laserCursorAppearance_ = appearance;
+		else if (tool == DrawingTool::Laser) laserCursorAppearance_ = appearance;
+		else penCursorAppearance_ = appearance;
 		RequestDrawingCursorRender();
 		return true;
 	}
@@ -396,7 +397,8 @@ namespace draw3
 		if (tool == DrawingTool::Pen) return penCursorAppearance_;
 		if (tool == DrawingTool::Highlighter) return highlighterCursorAppearance_;
 		if (tool == DrawingTool::Eraser) return eraserCursorAppearance_;
-		return laserCursorAppearance_;
+		if (tool == DrawingTool::Laser) return laserCursorAppearance_;
+		return penCursorAppearance_;
 	}
 
 	void WindowController::SetActiveDrawingCursorTool(DrawingTool tool) noexcept
@@ -422,7 +424,7 @@ namespace draw3
 	{
 		const int32_t activeTool = activeDrawingCursorTool_.load(std::memory_order_acquire);
 		if (activeTool >= static_cast<int32_t>(DrawingTool::Pen) &&
-			activeTool <= static_cast<int32_t>(DrawingTool::Laser))
+			activeTool <= static_cast<int32_t>(DrawingTool::FilledRectangle))
 			return static_cast<DrawingTool>(activeTool);
 		return ActiveTool();
 	}
@@ -818,6 +820,26 @@ namespace draw3
 			case '4':
 			case VK_NUMPAD4:
 				activeTool_.store(DrawingTool::Laser, std::memory_order_relaxed);
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
+				return 0;
+			case 'Q':
+				activeTool_.store(DrawingTool::SolidLine, std::memory_order_relaxed);
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
+				return 0;
+			case 'W':
+				activeTool_.store(DrawingTool::DashedLine, std::memory_order_relaxed);
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
+				return 0;
+			case 'E':
+				activeTool_.store(DrawingTool::OutlineRectangle, std::memory_order_relaxed);
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
+				return 0;
+			case 'R':
+				activeTool_.store(DrawingTool::FilledRectangle, std::memory_order_relaxed);
 				RequestDrawingCursorRender();
 				QueueSystemCursorRefresh();
 				return 0;

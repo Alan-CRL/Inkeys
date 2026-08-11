@@ -1,6 +1,6 @@
 # Inkeys3-Draw3
 
-Inkeys3-Draw3 是面向下一代 Inkeys3 的 Windows 原生墨迹渲染实验项目。当前仓库用于验证 C++20、Google Ink Stroke Modeler、D3D11/HLSL 与透明窗口呈现组合下的低延迟画笔、荧光笔和橡皮行为；它仍是原型工程，不是完整的 Inkeys3 应用。
+Inkeys3-Draw3 是面向下一代 Inkeys3 的 Windows 原生墨迹渲染实验项目。当前仓库用于验证 C++20、Google Ink Stroke Modeler、D3D11/HLSL 与透明窗口呈现组合下的低延迟画笔、荧光笔、橡皮和 Shape 工具；它仍是原型工程，不是完整的 Inkeys3 应用。
 
 ## 当前能力
 
@@ -9,6 +9,7 @@ Inkeys3-Draw3 是面向下一代 Inkeys3 的 Windows 原生墨迹渲染实验项
 - 普通笔的模拟压感、实时笔锋和预测保护窗口。
 - 固定宽度平头荧光笔，支持解析矩形 body、圆角 join 和确定性的短划。
 - 圆角橡皮，使用覆盖率并集和 destination-out 等价操作擦除。
+- 实线、虚线、圆角矩形边框和圆角填充矩形；活动期在 `L0` 使用预测终点，完成后支持撤回和翻页恢复。
 - `L2` 最终画布、`L1` 稳定前缀、`L0` 实时内容三层合成。
 - 源码包含 DirectComposition、DWM 扩展玻璃和 UpdateLayeredWindow 透明呈现回退链。
 - 脏矩形更新、窗口缩放内容保留以及硬件 D3D11 到 WARP 的设备回退。
@@ -74,11 +75,15 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 | `2` / 小键盘 `2` | 选择荧光笔 |
 | `3` / 小键盘 `3` | 选择橡皮 |
 | `4` / 小键盘 `4` | 选择发光激光笔 |
+| `Q` | 选择实线工具 |
+| `W` | 选择虚线工具 |
+| `E` | 选择圆角矩形边框工具 |
+| `R` | 选择圆角填充矩形工具 |
 | `5` / 小键盘 `5` | 撤回当前页最后一笔 |
 | `8` / 小键盘 `8` | 返回上一页 |
 | `9` / 小键盘 `9` | 退出 |
 
-当前测试参数中，普通笔和激光笔基准直径为 `5px`，荧光笔和橡皮为 `50px`；应在没有活动落笔时选择 1/2/3/4，下一批落笔会使用该工具。这些值由 `DrawingController` 固定，是实验参数而非稳定产品配置。激光笔默认在最后一根接触抬起后满亮保留 `3.0s`，再用 `0.8s` 淡出；粒子默认开启，可通过 `DrawingController` 外部 setter 关闭。
+当前测试参数中，普通笔、四种 Shape 和激光笔基准直径为 `5px`，荧光笔和橡皮为 `50px`；应在没有活动落笔时选择 `1/2/3/4/Q/W/E/R`，下一批落笔会使用该工具。Shape 使用固定宽度和 `8 DIP` 圆角，不使用压力、倾角或笔锋。这些值由 `DrawingController` 固定，是实验参数而非稳定产品配置。激光笔默认在最后一根接触抬起后满亮保留 `3.0s`，再用 `0.8s` 淡出；粒子默认开启，可通过 `DrawingController` 外部 setter 关闭。
 
 ## 仓库边界
 
@@ -91,6 +96,6 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 ## 已知范围
 
-当前仅实现鼠标单笔输入，没有 RTS、多点触摸、按 `pointerId` 管理并发笔画、正式墨迹持久化或自动化测试工程。Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标，但当前测试程序的 DWM、透明呈现和 resize 路径尚未在该环境完成验证，不能视为已保证能力。
+当前仍是实验程序，不包含 redo、UInk 编解码或 Shape 的外部文件兼容。Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标，但当前测试程序的 DWM、透明呈现和 resize 路径尚未在该环境完成验证，不能视为已保证能力。
 
 更详细的第一阶段历史设计与计划见 `Inkeys_D3D11_Ink_Renderer_Refactor_Plan_Phase1_Update.md`；面向后续 AI 开发与审查的约束见 `.trellis/spec/`。当阶段说明与当前源码不一致时，源码记录现有行为，阶段说明记录历史设计或计划；必须明确标记差异并等待当前需求或专门架构决定，不自动把任一方提升为最终规范。

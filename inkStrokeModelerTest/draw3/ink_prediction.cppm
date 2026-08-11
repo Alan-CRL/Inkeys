@@ -446,6 +446,20 @@ export namespace draw3
 	std::optional<InkStroke> FinalizeStoredStroke(const ActiveStroke& stroke,
 		StoredInkStyle style, double liveTipTaperSeconds,
 		std::vector<InkPoint>& scratch);
+	// Shape 完成态只保存固定 Down 与最终 Up 两个端点。
+	std::optional<InkStroke> FinalizeStoredShape(
+		const ShapePrimitive& primitive, StoredInkStyle style);
+	// 活动终点优先取最后一个有效 prediction，再回退建模末点和原始输入。
+	DirectX::XMFLOAT2 ResolveShapeLiveEndpoint(
+		std::span<const ink::stroke_model::Result> predictedResults,
+		DirectX::XMFLOAT2 modeledEndpoint, bool hasModeledEndpoint,
+		DirectX::XMFLOAT2 rawEndpoint, bool forceRawEndpoint = false) noexcept;
+	// Shape 与普通实时几何共用 L0；任一一方变化都必须重放完整共享层。
+	constexpr bool ShouldRebuildSharedL0(bool hasActiveShape,
+		bool shapeGeometryChanged, bool otherLiveGeometryChanged) noexcept
+	{
+		return !hasActiveShape || shapeGeometryChanged || otherLiveGeometryChanged;
+	}
 
 	// 描述 Stored Stroke 栅格化目标；origin 是目标左上角对应的 Canvas 坐标。
 	struct StoredStrokeRasterTarget
@@ -479,6 +493,9 @@ export namespace draw3
 	// 计算一段墨迹点覆盖的脏矩形。
 	RECT RectFromStrokePoints(std::span<const InkPoint> points, int width, int height,
 		StrokeShape shape = StrokeShape::RoundCapsule);
+	// Shape dirty bounds 覆盖线宽、AA、反向拖动和填充内部。
+	RECT RectFromShapePrimitive(const ShapePrimitive& primitive,
+		ShapePrimitiveKind kind, int width, int height);
 	// 激光脏区按每点实体半径覆盖固定 5px 漫反射和抗锯齿 padding。
 	RECT RectFromLaserPoints(std::span<const InkPoint> points,
 		float dpiScale, int width, int height);

@@ -91,9 +91,20 @@ namespace draw3
 
 		float DiameterForTool(DrawingTool tool)
 		{
-			if (tool == DrawingTool::Pen) return kPenDiameter;
+			if (tool == DrawingTool::Pen || IsShapeDrawingTool(tool)) return kPenDiameter;
 			if (tool == DrawingTool::Laser) return kLaserDiameter;
 			return kWideToolDiameter;
+		}
+
+		ShapePrimitiveKind ShapeKindForTool(DrawingTool tool) noexcept
+		{
+			switch (tool)
+			{
+			case DrawingTool::DashedLine: return ShapePrimitiveKind::DashedLine;
+			case DrawingTool::OutlineRectangle: return ShapePrimitiveKind::OutlineRectangle;
+			case DrawingTool::FilledRectangle: return ShapePrimitiveKind::FilledRectangle;
+			default: return ShapePrimitiveKind::SolidLine;
+			}
 		}
 
 		bool HasLinearStylusChange(float current, float previous, float epsilon, float maximum) noexcept
@@ -271,6 +282,22 @@ namespace draw3
 				style.inkType = StoredInkType::Eraser;
 				style.opacity = 1.0f;
 				return style;
+			case DrawingTool::SolidLine:
+				style.inkType = StoredInkType::SolidLine;
+				style.opacity = color.w;
+				return style;
+			case DrawingTool::DashedLine:
+				style.inkType = StoredInkType::DashedLine;
+				style.opacity = color.w;
+				return style;
+			case DrawingTool::OutlineRectangle:
+				style.inkType = StoredInkType::OutlineRectangle;
+				style.opacity = color.w;
+				return style;
+			case DrawingTool::FilledRectangle:
+				style.inkType = StoredInkType::FilledRectangle;
+				style.opacity = color.w;
+				return style;
 			default:
 				return std::nullopt; // Laser 是瞬时视觉，不进入文档。
 			}
@@ -280,6 +307,23 @@ namespace draw3
 		{
 			size_t firstPointIndex = 0;
 			size_t lastPointIndex = 0;
+		};
+
+		struct RuntimeShapeState
+		{
+			ShapePrimitive primitive = {};
+			ShapePrimitiveKind kind = ShapePrimitiveKind::SolidLine;
+			DirectX::XMFLOAT2 rawEndpoint = {};
+			DirectX::XMFLOAT2 modeledEndpoint = {};
+			bool active = false;
+			bool hasModeledEndpoint = false;
+			bool rawFallbackRequired = false;
+			bool visualChanged = false;
+
+			void Reset() noexcept
+			{
+				*this = {};
+			}
 		};
 
 		struct RuntimeStroke
@@ -298,6 +342,7 @@ namespace draw3
 			}
 
 			ActiveStroke stroke;
+			RuntimeShapeState shape;
 			ContactHandle handle = {};
 			DrawingTool selectedTool = DrawingTool::Pen;
 			DrawingTool tool = DrawingTool::Pen;
@@ -340,6 +385,35 @@ namespace draw3
 			float laserParticleTangentY = 0.0f;
 			bool hasLaserParticleTangent = false;
 		};
+
+		bool SetShapeVisualEndpoint(
+			RuntimeShapeState& shape, DirectX::XMFLOAT2 endpoint) noexcept
+		{
+			if (!std::isfinite(endpoint.x) || !std::isfinite(endpoint.y)) return false;
+			if (shape.primitive.end.x == endpoint.x &&
+				shape.primitive.end.y == endpoint.y) return false;
+			shape.primitive.end.x = endpoint.x;
+			shape.primitive.end.y = endpoint.y;
+			shape.visualChanged = true;
+			return true;
+		}
+
+		void ExtractShapeModeledEndpoint(RuntimeStroke& runtime) noexcept
+		{
+			ActiveStroke& stroke = runtime.stroke;
+			if (!stroke.modeledResults.empty())
+			{
+				const auto& position = stroke.modeledResults.back().position;
+				if (std::isfinite(position.x) && std::isfinite(position.y))
+				{
+					runtime.shape.modeledEndpoint = { position.x, position.y };
+					runtime.shape.hasModeledEndpoint = true;
+					runtime.shape.rawFallbackRequired = false;
+				}
+			}
+			stroke.modeledResults.clear(); // Shape 只复用末点 scratch，内存不随路径长度增长。
+			stroke.convertedResultCount = 0;
+		}
 
 		struct LaserStrokeLayer
 		{
@@ -649,6 +723,10 @@ namespace draw3
 			case DrawingTool::Highlighter: return "Highlighter";
 			case DrawingTool::Eraser: return "Eraser";
 			case DrawingTool::Laser: return "Laser";
+			case DrawingTool::SolidLine: return "SolidLine";
+			case DrawingTool::DashedLine: return "DashedLine";
+			case DrawingTool::OutlineRectangle: return "OutlineRectangle";
+			case DrawingTool::FilledRectangle: return "FilledRectangle";
 			default: return "Pen";
 			}
 		}
@@ -894,8 +972,34 @@ namespace draw3
 			return RectFromStrokePoints(stablePoints, width, height);
 		}
 
+		void DrawActiveShapePrimitives(const std::vector<RuntimeStroke*>& active,
+			InkRenderer& renderer, std::vector<ShapePrimitive>& scratch)
+		{
+			constexpr std::array<ShapePrimitiveKind, 4> kKinds = {
+				ShapePrimitiveKind::SolidLine,
+				ShapePrimitiveKind::DashedLine,
+				ShapePrimitiveKind::OutlineRectangle,
+				ShapePrimitiveKind::FilledRectangle
+			};
+			for (ShapePrimitiveKind kind : kKinds)
+			{
+				scratch.clear();
+				for (const RuntimeStroke* runtime : active)
+				{
+					if (!runtime || runtime->ended || !runtime->shape.active ||
+						runtime->shape.kind != kind) continue;
+					scratch.push_back(runtime->shape.primitive);
+				}
+				if (scratch.empty()) continue;
+				renderer.SetOperatorTarget(renderer.layerL0);
+				renderer.DrawShapePrimitives(scratch, kind,
+					ColorForTool(DrawingTool::Pen));
+			}
+		}
+
 		RECT RebuildActiveLayers(const std::vector<RuntimeStroke*>& active,
-			InkRenderer& renderer, int width, int height)
+			InkRenderer& renderer, int width, int height,
+			std::vector<ShapePrimitive>& shapeScratch)
 		{
 			renderer.ClearOperatorLayer(renderer.layerL1);
 			renderer.ClearOperatorLayer(renderer.layerL0);
@@ -904,6 +1008,15 @@ namespace draw3
 			{
 				if (!runtime || runtime->ended) continue;
 				if (runtime->tool == DrawingTool::Laser) continue;
+				if (runtime->shape.active)
+				{
+					ActiveStroke& stroke = runtime->stroke;
+					stroke.lastL0Rect = {};
+					stroke.currentL0Rect = RectFromShapePrimitive(runtime->shape.primitive,
+						runtime->shape.kind, width, height);
+					UnionRectInPlace(dirty, stroke.currentL0Rect);
+					continue;
+				}
 				UnionRectInPlace(dirty, DrawStablePrefix(*runtime, renderer, width, height));
 				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 					UnionRectInPlace(dirty,
@@ -918,6 +1031,7 @@ namespace draw3
 						StrokeShape::RoundCapsule, renderer, false);
 				UnionRectInPlace(dirty, stroke.currentL0Rect);
 			}
+			DrawActiveShapePrimitives(active, renderer, shapeScratch);
 			return ClampRectToCanvas(dirty, width, height);
 		}
 	}
@@ -990,6 +1104,7 @@ namespace draw3
 		laserAppearance.outlineWidth = 0.0f;
 		window_.ConfigureDrawingCursor(DrawingTool::Laser, laserAppearance);
 		renderer_.ConfigureLaserStyle(configuration_.dpiScale);
+		renderer_.ConfigureShapePrimitives(configuration_.dpiScale);
 		renderer_.ConfigureLaserParticles(
 			configuration_.laserParticleConfig, configuration_.dpiScale);
 		const bool performanceHudEnabled =
@@ -1325,8 +1440,10 @@ namespace draw3
 		bool laserSummaryWasIncremental = false;
 		uint64_t nextLaserLayerId = 1;
 		std::vector<LaserDot> laserTipDots;
+		std::vector<ShapePrimitive> shapePrimitiveScratch;
 		laserStrokeLayers.reserve(kLaserReservedContactCount);
 		laserTipDots.reserve(kPreheatedStrokeCount + 1);
+		shapePrimitiveScratch.reserve(kLaserReservedContactCount * 2);
 		std::vector<LaserParticleEmissionRequest> laserParticleEmissionRequests;
 		laserParticleEmissionRequests.reserve(kLaserReservedContactCount);
 		HighlighterGeometry completedHighlighterScratch;
@@ -1397,7 +1514,8 @@ namespace draw3
 					return false;
 				}
 				const bool selectedToolSupportsOverride =
-					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter;
+					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter ||
+					IsShapeDrawingTool(batchTool);
 				bool effectiveInvertedPenEraserEnabled = false;
 				if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
 					effectiveInvertedPenEraserEnabled =
@@ -1429,7 +1547,7 @@ namespace draw3
 				InterruptedStrokeReconnectResult diagnosticResult;
 				if (GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectDeviceSupported(deviceType) &&
-					tool != DrawingTool::Laser)
+					tool != DrawingTool::Laser && !IsShapeDrawingTool(tool))
 				{
 					for (RuntimeStroke* candidate : active)
 					{
@@ -1706,6 +1824,7 @@ namespace draw3
 				runtime->reconnectDeadlineQpc = 0;
 				runtime->reconnectPredictedResults.clear();
 				runtime->reconnectManualTestRanges.clear();
+				runtime->shape.Reset();
 				runtime->laserParticleSeed = LaserSeedForHandle(handle);
 				runtime->laserLayerId = 0;
 				ResetLaserParticleEmitterState(*runtime);
@@ -1751,6 +1870,18 @@ namespace draw3
 				stroke.inputStartPoint = {
 					down.position.x, down.position.y, initialDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
+				if (IsShapeDrawingTool(runtime->tool))
+				{
+					RuntimeShapeState& shape = runtime->shape;
+					shape.active = true;
+					shape.kind = ShapeKindForTool(runtime->tool);
+					shape.rawEndpoint = { down.position.x, down.position.y };
+					shape.primitive.start = stroke.inputStartPoint;
+					shape.primitive.start.time = 0.0f;
+					shape.primitive.end = {
+						down.position.x, down.position.y, 0.0f, 0.0f };
+					shape.visualChanged = true;
+				}
 				const Input downInput{
 					.event_type = Input::EventType::kDown,
 					.position = Vec2(down.position.x, down.position.y),
@@ -1771,7 +1902,10 @@ namespace draw3
 					runtime->inUse = false;
 					return false;
 				}
-				AppendNewModeledPoints(stroke);
+				if (runtime->shape.active)
+					ExtractShapeModeledEndpoint(*runtime);
+				else
+					AppendNewModeledPoints(stroke);
 				if (runtime->tool == DrawingTool::Laser)
 				{
 					const WindowSize laserSize = window_.Size();
@@ -1890,11 +2024,22 @@ namespace draw3
 				};
 				if (absl::Status status = runtime.stroke.modeler.Update(
 					upInput, runtime.stroke.modeledResults); status.ok())
-					AppendNewModeledPoints(runtime.stroke);
+				{
+					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
+					else AppendNewModeledPoints(runtime.stroke);
+				}
 				else
 				{
 					std::cout << "Error: " << status.message() << std::endl;
-					appendTerminalFallback(runtime, snapshot, inputTime);
+					if (!runtime.shape.active)
+						appendTerminalFallback(runtime, snapshot, inputTime);
+				}
+				if (runtime.shape.active)
+				{
+					runtime.shape.rawEndpoint = {
+						snapshot.position.x, snapshot.position.y };
+					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
+					runtime.stroke.predictedResults.clear();
 				}
 				runtime.lastModelSnapshot = modelSnapshot;
 				runtime.ended = true;
@@ -1916,6 +2061,15 @@ namespace draw3
 				if (snapshot.phase == ContactPhase::Down) return false;
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
+				bool shapeRawChanged = false;
+				if (runtime.shape.active && std::isfinite(snapshot.position.x) &&
+					std::isfinite(snapshot.position.y))
+				{
+					shapeRawChanged = runtime.shape.rawEndpoint.x != snapshot.position.x ||
+						runtime.shape.rawEndpoint.y != snapshot.position.y;
+					runtime.shape.rawEndpoint = {
+						snapshot.position.x, snapshot.position.y };
+				}
 
 				const float deltaX = snapshot.position.x - runtime.lastSpeedSnapshot.position.x;
 				const float deltaY = snapshot.position.y - runtime.lastSpeedSnapshot.position.y;
@@ -1925,11 +2079,11 @@ namespace draw3
 				const bool deferUp = snapshot.phase == ContactPhase::Up &&
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectDeviceSupported(runtime.metricDeviceType) &&
-					runtime.tool != DrawingTool::Laser;
+					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 				runtime.laserParticleMovedThisFrame = positionMoved;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
-				if (!terminal && !positionMoved && !stylusStateChanged)
+				if (!terminal && !positionMoved && !stylusStateChanged && !shapeRawChanged)
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
 
 				const double deltaSeconds = QpcDeltaSeconds(
@@ -1975,12 +2129,16 @@ namespace draw3
 					input, runtime.stroke.modeledResults); status.ok())
 				{
 					modelUpdateSucceeded = true;
-					AppendNewModeledPoints(runtime.stroke, inputSpeed);
+					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
+					else AppendNewModeledPoints(runtime.stroke, inputSpeed);
 				}
 				else
 				{
 					std::cout << "Error: " << status.message() << std::endl;
-					if (terminal && !deferUp) appendTerminalFallback(runtime, snapshot, inputTime);
+					if (runtime.shape.active)
+						runtime.shape.rawFallbackRequired = true;
+					if (terminal && !deferUp && !runtime.shape.active)
+						appendTerminalFallback(runtime, snapshot, inputTime);
 				}
 				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
@@ -2007,6 +2165,12 @@ namespace draw3
 					FinalizeLaserStrokeLayer(laserStrokeLayers, runtime,
 						laserCancelled,
 						configuration_.dpiScale, laserSize.width, laserSize.height);
+				}
+				if (terminal && runtime.shape.active)
+				{
+					// 最终文档端点必须严格使用原始 Up，不能让 prediction/modeler 覆盖。
+					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
+					runtime.stroke.predictedResults.clear();
 				}
 				if (deferUp)
 				{
@@ -2050,7 +2214,7 @@ namespace draw3
 					runtime.ended = true;
 					runtime.cancelled = snapshot.phase == ContactPhase::Cancelled;
 				}
-				return positionMoved || stylusStateChanged || deferUp;
+				return positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
 			};
 
 		bool timerPeriodActive = false;
@@ -2433,6 +2597,7 @@ namespace draw3
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();
+		renderer_.WarmUpShapeShaders();
 		while (true)
 		{
 			const double frameStartMs = GetQpcTimeMilliseconds();
@@ -2510,7 +2675,8 @@ namespace draw3
 				std::cout << "[InkHistory] resize generation=" <<
 					rasterPipelineGeneration << " path=" <<
 					CompositionRestorePathName(resizedPage.path) << std::endl;
-				RebuildActiveLayers(active, renderer_, size.width, size.height);
+				RebuildActiveLayers(active, renderer_, size.width, size.height,
+					shapePrimitiveScratch);
 				laserStableBounds = ClampRectToCanvas(
 					laserStableBounds, size.width, size.height);
 				laserLiveBounds = {};
@@ -2853,6 +3019,8 @@ namespace draw3
 			RECT currentFrameLaserParticleBatchBounds = {};
 			const RECT previousLaserLiveBounds = laserLiveBounds;
 			RECT currentLaserLiveBounds = {};
+			bool shapeLayerNeedsRebuild = false;
+			bool otherLiveLayerNeedsRebuild = false;
 			const bool hasLaserRuntime = std::any_of(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime)
 				{
@@ -2867,6 +3035,46 @@ namespace draw3
 			for (RuntimeStroke* runtime : active)
 			{
 				ActiveStroke& stroke = runtime->stroke;
+				if (runtime->shape.active)
+				{
+					stroke.lastL0Rect = stroke.currentL0Rect;
+					stroke.logicalInputTime = std::max(stroke.logicalInputTime,
+						QpcDeltaSeconds(frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency));
+					if (!runtime->ended)
+					{
+						stroke.predictedResults.clear();
+						if (!runtime->shape.rawFallbackRequired &&
+							kActivePredictionMode != InkPredictionMode::Disabled)
+						{
+							if (absl::Status status = stroke.modeler.Predict(
+								stroke.predictedResults); !status.ok())
+								stroke.predictedResults.clear();
+						}
+						const DirectX::XMFLOAT2 endpoint = ResolveShapeLiveEndpoint(
+							stroke.predictedResults, runtime->shape.modeledEndpoint,
+							runtime->shape.hasModeledEndpoint, runtime->shape.rawEndpoint,
+							runtime->shape.rawFallbackRequired);
+						SetShapeVisualEndpoint(runtime->shape, endpoint);
+						stroke.predictedResults.clear(); // prediction 只作为末点 scratch，不保留轨迹。
+					}
+					else
+					{
+						stroke.predictedResults.clear();
+					}
+					stroke.currentL0Rect = RectFromShapePrimitive(runtime->shape.primitive,
+						runtime->shape.kind, size.width, size.height);
+					if (runtime->shape.visualChanged)
+					{
+						shapeLayerNeedsRebuild = true;
+						runtime->shape.visualChanged = false;
+						UnionRectInPlace(frameDirty, stroke.lastL0Rect);
+						UnionRectInPlace(frameDirty, stroke.currentL0Rect);
+						UnionRectInPlace(runtime->visibleDirty, stroke.lastL0Rect);
+						UnionRectInPlace(runtime->visibleDirty, stroke.currentL0Rect);
+					}
+					if (!IsEmptyRect(stroke.currentL0Rect)) runtime->metricVisible = true;
+					continue; // Shape 完整几何只在共享 L0，绝不推进稳定前缀到 L1。
+				}
 				if (runtime->tool == DrawingTool::Laser)
 				{
 					stroke.logicalInputTime = std::max(stroke.logicalInputTime,
@@ -3027,6 +3235,8 @@ namespace draw3
 					continue; // 暂留候选保持上一帧 L0/L1，不制造脏区或重复 prediction。
 				const bool eraser = runtime->tool == DrawingTool::Eraser;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
+				if (!eraser)
+					otherLiveLayerNeedsRebuild = true;
 				// 保护窗口仍按配置 live-tip 时长推进 L1；taper 仅在非硬件压感普通笔上叠加。
 				const double liveTipProtectionSeconds =
 					eraser || highlighter ? 0.0 : configuration_.liveTipDurationSeconds;
@@ -3176,10 +3386,14 @@ namespace draw3
 						const double completedTipTaperSeconds = runtime->tool == DrawingTool::Pen
 							? ResolveLiveTipTaperDurationSeconds(runtime->stroke.widthMode,
 								configuration_.liveTipDurationSeconds) : 0.0;
-						std::optional<InkStroke> finalizedStroke = style
-							? FinalizeStoredStroke(runtime->stroke, *style,
-								completedTipTaperSeconds, runtime->rebuildPoints)
-							: std::nullopt;
+						std::optional<InkStroke> finalizedStroke;
+						if (style)
+						{
+							finalizedStroke = runtime->shape.active
+								? FinalizeStoredShape(runtime->shape.primitive, *style)
+								: FinalizeStoredStroke(runtime->stroke, *style,
+									completedTipTaperSeconds, runtime->rebuildPoints);
+						}
 						InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
 						InkCanvas* canvas = page
 							? page->FindCanvas(kDefaultDeviceKey) : nullptr;
@@ -3313,7 +3527,8 @@ namespace draw3
 					UnionRectInPlace(frameDirty, runtime->visibleDirty);
 				}
 				UnionRectInPlace(frameDirty,
-					RebuildActiveLayers(active, renderer_, size.width, size.height));
+					RebuildActiveLayers(active, renderer_, size.width, size.height,
+						shapePrimitiveScratch));
 
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
@@ -3341,6 +3556,7 @@ namespace draw3
 						runtime->reconnectDeadlineQpc = 0;
 						runtime->reconnectPredictedResults.clear();
 						runtime->reconnectManualTestRanges.clear();
+						runtime->shape.Reset();
 						runtime->laserParticleSeed = 0;
 						runtime->laserLayerId = 0;
 						ResetLaserParticleEmitterState(*runtime);
@@ -3352,14 +3568,25 @@ namespace draw3
 			}
 			else if (!active.empty())
 			{
-				renderer_.ClearOperatorLayer(renderer_.layerL0); // 共享 L0 每帧只恢复一次单位操作。
-				for (RuntimeStroke* runtime : active)
+				const bool hasActiveShape = std::any_of(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime)
+					{
+						return runtime && !runtime->ended && runtime->shape.active;
+					});
+				if (ShouldRebuildSharedL0(hasActiveShape,
+					shapeLayerNeedsRebuild, otherLiveLayerNeedsRebuild))
 				{
-					if (runtime->tool != DrawingTool::Eraser &&
-						runtime->tool != DrawingTool::Laser &&
-						!runtime->stroke.l0DrawPoints.empty())
-						DrawL0LiveComposite(runtime->stroke, ColorForTool(runtime->tool),
-							StrokeShape::RoundCapsule, renderer_, false);
+					// 只有 Shape-only 且末点稳定时才能保留；共享层一旦重建必须重放全部活动 Shape。
+					renderer_.ClearOperatorLayer(renderer_.layerL0);
+					for (RuntimeStroke* runtime : active)
+					{
+						if (runtime->tool != DrawingTool::Eraser &&
+							runtime->tool != DrawingTool::Laser && !runtime->shape.active &&
+							!runtime->stroke.l0DrawPoints.empty())
+							DrawL0LiveComposite(runtime->stroke, ColorForTool(runtime->tool),
+								StrokeShape::RoundCapsule, renderer_, false);
+					}
+					DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch);
 				}
 			}
 

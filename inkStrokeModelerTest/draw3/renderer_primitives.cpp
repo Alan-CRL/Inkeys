@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <d3d11.h>
@@ -19,6 +20,15 @@ namespace draw3
 {
 	// 本实现单元只负责普通笔、荧光笔和瞬态光标 primitive。
 	using renderer_detail::GlobalShaderConstants;
+
+	float ClampShapeRoundedCornerRadius(
+		const ShapePrimitive& primitive, float configuredRadius) noexcept
+	{
+		if (!std::isfinite(configuredRadius)) return 0.0f;
+		const float halfWidth = std::abs(primitive.end.x - primitive.start.x) * 0.5f;
+		const float halfHeight = std::abs(primitive.end.y - primitive.start.y) * 0.5f;
+		return std::clamp(configuredRadius, 0.0f, std::min(halfWidth, halfHeight));
+	}
 
 	int InkRenderer::DrawStrokeOrDot(std::span<const InkPoint> points, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkOperatorKind operatorKind)
@@ -136,6 +146,96 @@ namespace draw3
 			startIndex += batchCount;
 		}
 		return 0;
+	}
+
+	void InkRenderer::ConfigureShapePrimitives(float dpiScale) noexcept
+	{
+		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
+		shapeRoundedCornerRadiusPixels_ = kShapeRoundedCornerRadiusAt96Dpi * scale;
+	}
+
+	int InkRenderer::DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
+		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, InkOperatorKind operatorKind)
+	{
+		if (primitives.empty()) return 0;
+		if (!IsLineShapePrimitive(kind) && !IsRectangleShapePrimitive(kind)) return -1;
+		constexpr size_t kMaximumPrimitiveBatch = kMaxBufferCapacity / 2;
+
+		size_t startIndex = 0;
+		while (startIndex < primitives.size())
+		{
+			const size_t batchCount = std::min(
+				primitives.size() - startIndex, kMaximumPrimitiveBatch);
+			const size_t pointCount = batchCount * 2;
+			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
+			if (m_bufferHead + pointCount > kMaxBufferCapacity)
+			{
+				mapType = D3D11_MAP_WRITE_DISCARD;
+				m_bufferHead = 0;
+			}
+
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(inkDataBuffer.Get(), 0, mapType, 0, &mapped))) return -1;
+			auto* destination = static_cast<InkPoint*>(mapped.pData);
+			std::memcpy(destination + m_bufferHead, primitives.data() + startIndex,
+				batchCount * sizeof(ShapePrimitive)); // 两个连续 InkPoint 槽描述一个 analytic shape。
+			context->Unmap(inkDataBuffer.Get(), 0);
+
+			if (FAILED(context->Map(globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return -1;
+			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->color = color;
+			constants->shapeType = static_cast<float>(static_cast<uint32_t>(kind));
+			constants->bufferOffset = static_cast<uint32_t>(m_bufferHead);
+			constants->operatorKind = static_cast<uint32_t>(operatorKind);
+			constants->padding[0] = shapeRoundedCornerRadiusPixels_;
+			constants->padding[1] = 0.0f;
+			constants->padding[2] = 0.0f;
+			context->Unmap(globalCB.Get(), 0);
+
+			context->IASetInputLayout(nullptr);
+			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			ID3D11ShaderResourceView* shaderResources[] = { inkDataSRV.Get() };
+			context->VSSetShaderResources(0, 1, shaderResources);
+			ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
+			context->VSSetConstantBuffers(0, 1, constantBuffers);
+			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->PSSetConstantBuffers(0, 1, constantBuffers);
+			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->RSSetState(rasterState.Get());
+			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+
+			ID3D11ShaderResourceView* nullResource[] = { nullptr };
+			context->VSSetShaderResources(0, 1, nullResource);
+			m_bufferHead += pointCount;
+			startIndex += batchCount;
+		}
+		return 0;
+	}
+
+	void InkRenderer::WarmUpShapeShaders() noexcept
+	{
+		if (!context || !layerL0.addRTV || !layerL0.retainRTV) return;
+		D3D11_VIEWPORT savedViewport = {};
+		UINT viewportCount = 1;
+		context->RSGetViewports(&viewportCount, &savedViewport);
+		const D3D11_VIEWPORT emptyViewport = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+		context->RSSetViewports(1, &emptyViewport);
+		SetOperatorTarget(layerL0);
+		const std::array<ShapePrimitive, 1> primitive = { ShapePrimitive{
+			{ 0.0f, 0.0f, 2.5f, 0.0f }, { 16.0f, 12.0f, 0.0f, 0.0f } } };
+		DrawShapePrimitives(primitive, ShapePrimitiveKind::SolidLine,
+			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
+		DrawShapePrimitives(primitive, ShapePrimitiveKind::DashedLine,
+			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
+		DrawShapePrimitives(primitive, ShapePrimitiveKind::OutlineRectangle,
+			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
+		DrawShapePrimitives(primitive, ShapePrimitiveKind::FilledRectangle,
+			DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f));
+		context->RSSetViewports(1, &savedViewport);
 	}
 
 	void InkRenderer::DrawTransientDrawingCursor(const DrawingCursorVisual& visual)

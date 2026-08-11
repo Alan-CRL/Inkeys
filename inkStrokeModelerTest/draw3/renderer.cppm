@@ -26,6 +26,9 @@ export namespace draw3
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
 	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
 	inline constexpr float kLaserScatterHalfWidthToCoreRatio = 0.4f;
+	inline constexpr float kShapeRoundedCornerRadiusAt96Dpi = 8.0f;
+	inline constexpr float kShapeDashLengthToWidthRatio = 4.0f;
+	inline constexpr float kShapeDashGapToWidthRatio = 2.0f;
 	// 临时性能日志开关；用户回传数据后可在后续任务中关闭或移除。
 	inline constexpr bool kLaserIncrementalDiagnosticsEnabled = true;
 
@@ -80,6 +83,41 @@ export namespace draw3
 	};
 
 	static_assert(sizeof(InkPoint) == 16, "InkPoint 必须与结构化缓冲区布局保持一致");
+
+	// 追加值 16..19 是 CPU/HLSL 协议，不能占用既有 0..15 shape 编号。
+	enum class ShapePrimitiveKind : uint32_t
+	{
+		SolidLine = 16,
+		DashedLine = 17,
+		OutlineRectangle = 18,
+		FilledRectangle = 19
+	};
+
+	constexpr bool IsLineShapePrimitive(ShapePrimitiveKind kind) noexcept
+	{
+		return kind == ShapePrimitiveKind::SolidLine ||
+			kind == ShapePrimitiveKind::DashedLine;
+	}
+
+	constexpr bool IsRectangleShapePrimitive(ShapePrimitiveKind kind) noexcept
+	{
+		return kind == ShapePrimitiveKind::OutlineRectangle ||
+			kind == ShapePrimitiveKind::FilledRectangle;
+	}
+
+	// 恰好占用两个 InkPoint 槽：start.r 保存半线宽，其余额外字段保留为零。
+	struct ShapePrimitive
+	{
+		InkPoint start = {};
+		InkPoint end = {};
+	};
+
+	static_assert(sizeof(ShapePrimitive) == 32,
+		"ShapePrimitive 必须与两个连续 InkPoint 槽保持一致");
+
+	// 与 shader 相同，把固定圆角钳制到矩形短边的一半。
+	float ClampShapeRoundedCornerRadius(
+		const ShapePrimitive& primitive, float configuredRadius) noexcept;
 
 	// 荧光笔是固定竖直矩形沿中心线扫掠的 primitive；p1 == p2 表示单击矩形。
 	struct HighlighterPrimitive
@@ -194,6 +232,14 @@ export namespace draw3
 		// 绘制固定矩形 sweep，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
 		int DrawHighlighterPrimitives(std::span<const HighlighterPrimitive> primitives,
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		// 同类 Shape 复用 InkData，一批 primitive 只提交一次 Draw。
+		int DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
+			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color,
+			InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		// 按 DPI 配置固定 8 DIP 圆角。
+		void ConfigureShapePrimitives(float dpiScale) noexcept;
+		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。
+		void WarmUpShapeShaders() noexcept;
 		// 在当前 backbuffer 最上层绘制一枚瞬态应用光标，不修改 L0/L1/L2。
 		void DrawTransientDrawingCursor(const DrawingCursorVisual& visual);
 		// 把可变压力胶囊写入当前 Laser coverage，四通道使用 MAX 累积。
@@ -279,6 +325,7 @@ export namespace draw3
 			UINT secondarySourceSlot = 0);
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders();
+		float shapeRoundedCornerRadiusPixels_ = kShapeRoundedCornerRadiusAt96Dpi;
 		LaserStyleConstants laserStyleConstants_ = {};
 		uint64_t laserStyleGeneration_ = 1;
 		uint64_t uploadedLaserStyleGeneration_ = 0;

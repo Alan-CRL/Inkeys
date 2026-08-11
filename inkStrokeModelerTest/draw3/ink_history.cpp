@@ -385,6 +385,30 @@ namespace draw3
 			return false;
 		}
 
+		bool AddRectangleTiles(const RectD& originalBounds,
+			uint32_t tileSize, const InkPixelBounds& visible,
+			std::vector<SignedTileCoordinate>& output)
+		{
+			const double left = (std::max)(originalBounds.left,
+				static_cast<double>(visible.left));
+			const double top = (std::max)(originalBounds.top,
+				static_cast<double>(visible.top));
+			const double right = (std::min)(originalBounds.right,
+				static_cast<double>(visible.right));
+			const double bottom = (std::min)(originalBounds.bottom,
+				static_cast<double>(visible.bottom));
+			if (!(left < right && top < bottom)) return true;
+			const InkPixelBounds clipped{ static_cast<float>(left), static_cast<float>(top),
+				static_cast<float>(right), static_cast<float>(bottom) };
+			TileRange range;
+			if (!TryMakeTileRange(clipped, tileSize, range)) return false;
+			AddVisibleTileRange(range, output, [&](SignedTileCoordinate tile)
+			{
+				return TileOverlapsVisible(tile, tileSize, visible);
+			});
+			return true;
+		}
+
 		std::optional<std::vector<SignedTileCoordinate>> BuildTiles(
 			const InkStroke& stroke, uint32_t tileSize, const InkPixelBounds& visible)
 		{
@@ -392,6 +416,56 @@ namespace draw3
 			if (!TryMakeTileRange(visible, tileSize, visibleTiles)) return std::nullopt;
 			std::vector<SignedTileCoordinate> result;
 			const std::span<const StoredInkPoint> points = stroke.Points();
+			const StoredInkType inkType = stroke.Style().inkType;
+			if (IsStoredShapeType(inkType))
+			{
+				const PointD first{ points[0].x, points[0].y };
+				const PointD second{ points[1].x, points[1].y };
+				const double lineExpansion =
+					static_cast<double>(points[0].width) * 0.5 + kFootprintAaPadding;
+				bool succeeded = true;
+				if (inkType == StoredInkType::SolidLine ||
+					inkType == StoredInkType::DashedLine)
+				{
+					succeeded = first.x == second.x && first.y == second.y
+						? AddPointTiles(first, lineExpansion, lineExpansion,
+							tileSize, visible, visibleTiles, result)
+						: AddSegmentTiles(first, second, lineExpansion, lineExpansion,
+							tileSize, visible, visibleTiles, result);
+				}
+				else
+				{
+					const double left = (std::min)(first.x, second.x);
+					const double top = (std::min)(first.y, second.y);
+					const double right = (std::max)(first.x, second.x);
+					const double bottom = (std::max)(first.y, second.y);
+					if (inkType == StoredInkType::FilledRectangle)
+					{
+						succeeded = AddRectangleTiles({
+							left - kFootprintAaPadding, top - kFootprintAaPadding,
+							right + kFootprintAaPadding, bottom + kFootprintAaPadding },
+							tileSize, visible, result);
+					}
+					else
+					{
+						const PointD topLeft{ left, top };
+						const PointD topRight{ right, top };
+						const PointD bottomRight{ right, bottom };
+						const PointD bottomLeft{ left, bottom };
+						succeeded = AddSegmentTiles(topLeft, topRight,
+							lineExpansion, lineExpansion, tileSize, visible, visibleTiles, result) &&
+							AddSegmentTiles(topRight, bottomRight,
+								lineExpansion, lineExpansion, tileSize, visible, visibleTiles, result) &&
+							AddSegmentTiles(bottomRight, bottomLeft,
+								lineExpansion, lineExpansion, tileSize, visible, visibleTiles, result) &&
+							AddSegmentTiles(bottomLeft, topLeft,
+								lineExpansion, lineExpansion, tileSize, visible, visibleTiles, result);
+					}
+				}
+				if (!succeeded) return std::nullopt;
+				NormalizeTiles(result);
+				return result;
+			}
 			const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
 			const auto expansionForPoint = [&](const StoredInkPoint& point)
 			{
@@ -449,6 +523,29 @@ namespace draw3
 		{
 			const std::span<const StoredInkPoint> points = stroke.Points();
 			if (!stroke.IsValid() || points.empty()) return std::nullopt;
+			if (IsStoredShapeType(stroke.Style().inkType))
+			{
+				const double lineExpansion =
+					static_cast<double>(points[0].width) * 0.5 + kFootprintAaPadding;
+				const double expansion = stroke.Style().inkType == StoredInkType::FilledRectangle
+					? kFootprintAaPadding : lineExpansion;
+				const double left = (std::min)(static_cast<double>(points[0].x),
+					static_cast<double>(points[1].x)) - expansion;
+				const double top = (std::min)(static_cast<double>(points[0].y),
+					static_cast<double>(points[1].y)) - expansion;
+				const double right = (std::max)(static_cast<double>(points[0].x),
+					static_cast<double>(points[1].x)) + expansion;
+				const double bottom = (std::max)(static_cast<double>(points[0].y),
+					static_cast<double>(points[1].y)) + expansion;
+				const double floatMaximum = (std::numeric_limits<float>::max)();
+				if (!std::isfinite(left) || !std::isfinite(top) ||
+					!std::isfinite(right) || !std::isfinite(bottom) ||
+					left < -floatMaximum || top < -floatMaximum ||
+					right > floatMaximum || bottom > floatMaximum) return std::nullopt;
+				const InkPixelBounds result{ static_cast<float>(left), static_cast<float>(top),
+					static_cast<float>(right), static_cast<float>(bottom) };
+				return IsValidBounds(result) ? std::optional<InkPixelBounds>(result) : std::nullopt;
+			}
 			double left = (std::numeric_limits<double>::infinity)();
 			double top = (std::numeric_limits<double>::infinity)();
 			double right = -(std::numeric_limits<double>::infinity)();
