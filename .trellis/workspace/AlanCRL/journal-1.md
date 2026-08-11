@@ -539,3 +539,28 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 21: 完成 UI3 基于变化的脏区系统
+
+**Date**: 2026-08-11
+**Task**: 完成 UI3 基于变化的脏区系统
+**Branch**: `feature/animation`
+
+### Summary
+
+实现并优化 UI3 变化脏区、受光边框裁剪、实际呈现边界、独立帧率调试与最终休眠帧；ARM64 全量构建和 headless 测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `963db5e5` | (see git log) |
+| `506dd263` | (see git log) |
+| `59cc6ee9` | (see git log) |
+| `35c8e59a` | (see git log) |
+| `38bd4f06` | (see git log) |
+
+### Status
+
+[OK] **Completed**

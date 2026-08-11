@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-08-11
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~541 | Active |
+| `journal-1.md` | ~566 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-08-11 | 完成 UI3 基于变化的脏区系统 | `963db5e5`, `506dd263`, `59cc6ee9`, `35c8e59a`, `38bd4f06` | `feature/animation` |
 | 20 | 2026-08-11 | 修复 UI3 调试脏区红框 | `70ad8c8b` | `feature/animation` |
 | 19 | 2026-08-11 | 调整 UI3 墨迹粗细预览浮窗交互 | `70c49c09`, `ad6718b` | `feature/animation` |
 | 18 | 2026-08-11 | 完成 UI2 最终兼容版发版前适配 | `f61765d6` | `feature/animation` |
