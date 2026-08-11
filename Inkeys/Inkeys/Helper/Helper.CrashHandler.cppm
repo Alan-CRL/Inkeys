@@ -55,10 +55,10 @@ private:
 export void CloseProgram()
 {
 	CrashHandler::Shutdown();
-	offSignal = 1;
+	SetOffSignal(1);
 }
 export void RestartProgram()
 {
 	CrashHandler::Shutdown();
-	offSignal = 2;
+	SetOffSignal(2);
 }

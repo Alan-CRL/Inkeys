@@ -1,0 +1,5 @@
+{"file":".trellis/spec/index.md","reason":"核对有效 Spec 层、证据等级和强制决策门"}
+{"file":".trellis/spec/native-desktop/index.md","reason":"核对原生桌面专题覆盖及实施前阻塞条件"}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"核对 COM 数据流与 PPT/WPS 支持范围边界"}
+{"file":".trellis/spec/guides/index.md","reason":"核对共享检查入口仍可达"}
+{"file":".trellis/tasks/00-bootstrap-guidelines/research/repository-overview.md","reason":"核对所有 Spec 结论与仓库研究证据一致"}

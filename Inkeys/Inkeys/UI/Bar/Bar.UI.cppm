@@ -5,102 +5,14 @@ module;
 #include "../../../IdtD2DPreparation.h"
 #include <wrl/client.h>
 
+#include <functional>
+
 export module Inkeys.UI.Bar:UI;
 
 import :State;
 
-// 动效类型
-enum class BarUiValueModeEnum : int
-{
-	Once = 0, // 无动画
-	Linear = 1, // 线性
-	Variable = 2 // 回弹动效
-};
+export import Inkeys.UI.Bar.Animation;
 
-/// 单个 UI 值
-//// 状态 UI 值
-class BarUiStateClass
-{
-public:
-	BarUiStateClass() {}
-	BarUiStateClass(optional<bool> valT, optional<bool> tarT = nullopt)
-	{
-		if (valT.has_value()) val = valT.value();
-		else val = false;
-
-		if (tarT.has_value()) tar = tarT.value();
-		else tar = val;
-	}
-
-	bool IsSame() { return val == tar; }
-	void Initialization(optional<bool> valT, optional<bool> tarT = nullopt)
-	{
-		if (valT.has_value()) val = valT.value();
-		else val = false;
-
-		if (tarT.has_value()) tar = tarT.value();
-		else tar = val;
-	}
-
-public:
-	IdtAtomic<bool> val = false;
-	IdtAtomic<bool> tar = false;
-};
-//// 模态 UI 值
-class BarUiValueClass
-{
-public:
-	BarUiValueClass() {}
-	BarUiValueClass(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
-
-	bool IsSame() { return val == tar; }
-	void Initialization(double valT, BarUiValueModeEnum modT = BarUiValueModeEnum::Variable) { mod = modT, val = tar = valT, startV = valT; }
-
-public:
-	IdtAtomic<BarUiValueModeEnum> mod = BarUiValueModeEnum::Linear;
-
-	IdtAtomic<double> val = 0.0; // 直接值（当前位置）
-	IdtAtomic<double> tar = 0.0; // 目标值（目标位置）
-	IdtAtomic<double> ary = 1.0; // 变换精度（差值绝对值小于等于精度则认为已经动画完成，则直接赋值等于）
-
-	// 适用于 回弹动效模式
-	IdtAtomic<double> spe = 1.0; // 基准速度 px/s
-	IdtAtomic<double> startV = 0.0; // 起始位置（用于计算百分比，在界面设被设置时）
-};
-//// 颜色 UI 值（忽略透明度）
-class BarUiColorClass
-{
-public:
-	BarUiColorClass() {}
-	BarUiColorClass(COLORREF valT) { val = tar = valT; }
-
-	bool IsSame() { return val == tar; }
-	void Initialization(COLORREF valT) { val = tar = valT; }
-
-public:
-	IdtAtomic<COLORREF> val = RGB(0, 0, 0); // 直接值（当前位置）
-	IdtAtomic<COLORREF> tar = RGB(0, 0, 0); // 目标值（目标位置）
-
-	IdtAtomic<double> spe = 0.0; // RGB基准速度 1/s
-	// 如果 spe == 0 则表示直接变化
-};
-//// 透明度 UI 值
-class BarUiPctClass
-{
-public:
-	BarUiPctClass() {}
-	BarUiPctClass(double valT) { val = tar = valT; }
-
-	bool IsSame() { return val == tar; }
-	void Initialization(double valT) { val = tar = valT; }
-
-public:
-	IdtAtomic<double> val = 1.0; // 透明度直接值
-	IdtAtomic<double> tar = 1.0; // 颜色目标值
-
-	IdtAtomic<double> spe = 0.0; // 透明度基准速度 1/s
-	// 如果 spe == 0 则表示直接变化
-};
 //// 文字 UI 值
 class BarUiStringClass
 {
@@ -118,7 +30,13 @@ public:
 	}
 	// 拷贝构造函数，只拷贝值，mutex新建
 	BarUiStringClass(const BarUiStringClass& other)
-		: val(other.val), tar(other.tar), valmt(), tarmt() {}
+	{
+		// 与 ApplyTar/IsSame 保持 val -> tar 的锁顺序，避免读取并发写入中的 wstring。
+		shared_lock lockVal(other.valmt);
+		shared_lock lockTar(other.tarmt);
+		val = other.val;
+		tar = other.tar;
+	}
 
 public:
 	wstring GetVal() const
@@ -129,6 +47,8 @@ public:
 	void SetVal(const wstring& v)
 	{
 		unique_lock lock(valmt);
+		// 高频布局会重复提交同一文字，持锁短路避免无效字符串复制。
+		if (val == v) return;
 		val = v;
 	}
 	wstring GetTar() const
@@ -139,6 +59,7 @@ public:
 	void SetTar(const wstring& t)
 	{
 		unique_lock lock(tarmt);
+		if (tar == t) return;
 		tar = t;
 	}
 
@@ -170,10 +91,10 @@ public:
 	{
 		if (&lhs == &rhs) return true; // 同一个对象
 
-		// 按指针大小先锁valmt，再锁tarmt，避免死锁
+		// std::less 为无关对象指针提供稳定全序，随后统一按 valmt -> tarmt 加锁。
 		const BarUiStringClass* first = &lhs;
 		const BarUiStringClass* second = &rhs;
-		if (first > second) swap(first, second);
+		if (std::less<const BarUiStringClass*>{}(second, first)) swap(first, second);
 
 		// 为了防止死锁，分别锁两个对象的valmt和tarmt
 		// 总是先valmt，再tarmt（重要！避免死锁）
@@ -208,20 +129,23 @@ class BarUiWordClass;
 //// 位置继承
 enum class BarUiInheritEnum
 {
-	// 相对内部继承
+	// 内部对齐：将子控件指定锚点对齐到父控件同名锚点，再叠加子控件的 x/y 偏移。
 
-	TopLeft = 0, // 左上继承
-	Top = 1, // 上中继承
-	Left = 4, // 左中继承
-	Center = 5, // 居中继承
-	Right = 6, // 右中继承
+	TopLeft = 0, // 子左上角 = 父左上角 + (x, y)
+	Top = 1, // 子上边中点 = 父上边中点 + (x, y)
+	Left = 4, // 子左边中点 = 父左边中点 + (x, y)
+	Center = 5, // 子中心 = 父中心 + (x, y)
+	Right = 6, // 子右边中点 = 父右边中点 + (x, y)
 
-	// 相对外部继承
+	// 非对称
+	CenterFromTopLeft = 10, // 子中心 = 父左上角 + (x, y)，适合使用中心坐标描述父级内部布局
 
-	ToTop = 11, // 父下中，子上中
-	ToRight = 13, // 父左中，子右中
-	ToLeft = 15, // 父右中，子左中
-	ToBottom = 17, // 父上中，子下中
+	// 外部停靠：将子控件贴在父控件外侧，再叠加子控件的 x/y 偏移。
+
+	ToTop = 11, // 子下边中点 = 父上边中点 + (x, y)，子控件位于父级上方
+	ToRight = 13, // 子左边中点 = 父右边中点 + (x, y)，子控件位于父级右侧
+	ToLeft = 15, // 子右边中点 = 父左边中点 + (x, y)，子控件位于父级左侧
+	ToBottom = 17, // 子上边中点 = 父下边中点 + (x, y)，子控件位于父级下方
 };
 class BarUiInheritClass
 {
@@ -276,6 +200,22 @@ public:
 };
 
 /// 控件
+enum class BarUiFrameRenderingEnum : int
+{
+	Solid = 0,
+	PointLight = 1,
+};
+enum class BarUiFrameLightColorEnum : int
+{
+	Frame = 0,
+	PenWhenDrawing = 1,
+};
+enum class BarUiFrameLightOpacitySourceEnum : int
+{
+	FramePct = 0,
+	ObjectPct = 1,
+};
+
 //// 单个形状控件
 class BarUiShapeClass : public BarUiInnheritBaseClass
 {
@@ -303,6 +243,12 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	optional<BarUiPctClass> frameLightPct; // 仅点光边框使用的独立透明度
+	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
+	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
+	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
+	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
+	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -332,6 +278,11 @@ public:
 
 	// 透明度
 	optional<BarUiPctClass> framePct; // 控件边框透明度
+	BarUiFrameRenderingEnum frameRendering = BarUiFrameRenderingEnum::Solid; // 默认保留原纯色边框
+	BarUiFrameLightColorEnum frameLightColor = BarUiFrameLightColorEnum::Frame;
+	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
+	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
+	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass
@@ -346,10 +297,20 @@ public:
 	void InitializationFromResource(const wstring& resType, const wstring& resName);
 	void SetTarFromString(wstring valT);
 	void SetTarFromResource(const wstring& resType, const wstring& resName);
+	bool TransitionToString(const wstring& valT, optional<double> durT = nullopt,
+		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool TransitionToResource(const wstring& resType, const wstring& resName,
+		optional<double> durT = nullopt, double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool AdvanceContentTransition(double dt, double speedRate);
+	void CancelContentTransition();
+	// SVG 位图属于当前 D2D device，设备 epoch 切换时必须主动释放。
+	void ResetCache();
 
 public:
 	// 整体该控件是否显示
 	BarUiStateClass enable;
+	// 绕目标矩形中心旋转，不改变控件本身的宽高。
+	BarUiValueClass angle;
 
 	// 颜色
 
@@ -363,6 +324,9 @@ public:
 	// SVG 内容
 	BarUiStringClass svg;
 	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;
+	// 内容切换倍率不参与 SVG 栅格化尺寸，只在最终绘制时叠乘。
+	IdtAtomic<double> contentScale = 1.0;
+	IdtAtomic<double> contentPct = 1.0;
 
 	double cW = 0.0, cH = 0.0; // 缓存宽度、高度
 	COLORREF cColor1 = RGB(0, 0, 0), cColor2 = RGB(0, 0, 0);
@@ -371,11 +335,51 @@ public:
 public:
 	bool SetWH(optional<double> wT, optional<double> hT);
 protected:
+	void ApplyContentDirect(const wstring& valT);
 	pair<double, double> CalcWH();
+	BarUiStringClass transitionSvg;
+	BarUiKeyframeTimelineClass contentTransitionTimeline;
+	// 以下载荷只允许在 contentTransitionTimeline 的事务回调内读写。
+	double contentTransitionStartScale = 1.0;
+	double contentTransitionStartPct = 1.0;
+	double contentTransitionMiddleScale = 0.8;
+	double contentTransitionKeyframeProgress = 0.5;
 
 public:
-	double rW; // 实际宽度
-	double rH; // 实际高度
+	double rW = 0.0; // 实际宽度
+	double rH = 0.0; // 实际高度
+};
+static_assert(std::is_default_constructible_v<BarUiSVGClass>,
+	"BarUiSVGClass must remain default constructible");
+//// 单个 PNG 控件
+class BarUiPNGClass : public BarUiInnheritBaseClass
+{
+public:
+	BarUiPNGClass() {}
+	BarUiPNGClass(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
+
+	void Initialization(double xT, double yT, BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
+	bool InitializationFromMemory(const void* data, size_t size);
+	bool InitializationFromResource(const wstring& resType, const wstring& resName);
+	bool SetWH(optional<double> wT, optional<double> hT);
+	bool CacheBitmap(ID2D1DeviceContext* deviceContext);
+	void ResetCache();
+
+public:
+	// 整体该控件是否显示
+	BarUiStateClass enable;
+	// 绕目标矩形中心旋转，不改变控件本身的宽高。
+	BarUiValueClass angle;
+	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;
+
+protected:
+	vector<unsigned char> bitmapPixels;
+	UINT32 bitmapWidth = 0;
+	UINT32 bitmapHeight = 0;
+
+public:
+	double rW = 0.0; // PNG 原始宽度
+	double rH = 0.0; // PNG 原始高度
 };
 //// 单个文字控件
 class BarUiWordClass : public BarUiInnheritBaseClass
@@ -385,6 +389,10 @@ public:
 	BarUiWordClass(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
 
 	void Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
+	bool TransitionToString(const wstring& contentT, optional<double> durT = nullopt,
+		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool AdvanceContentTransition(double dt, double speedRate);
+	void CancelContentTransition();
 
 public:
 	// 整体该控件是否显示
@@ -392,10 +400,22 @@ public:
 
 	// 内容
 	BarUiStringClass content;
+	// 文字内容切换与 SVG 使用同一缩放、淡出和中点替换语义。
+	IdtAtomic<double> contentScale = 1.0;
+	IdtAtomic<double> contentPct = 1.0;
 
 	// 字号
 	BarUiValueClass size;
 
 	// 颜色
 	BarUiColorClass color;
+
+protected:
+	BarUiStringClass transitionContent;
+	BarUiKeyframeTimelineClass contentTransitionTimeline;
+	// 以下载荷只允许在 contentTransitionTimeline 的事务回调内读写。
+	double contentTransitionStartScale = 1.0;
+	double contentTransitionStartPct = 1.0;
+	double contentTransitionMiddleScale = 0.8;
+	double contentTransitionKeyframeProgress = 0.5;
 };

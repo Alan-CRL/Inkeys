@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"完整 Solution、Debug|ARM64、ARM64 host MSBuild 与工程资源登记要求"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"设置窗口 ImGui DX9 现状、多渲染后端边界与迁移生命周期要求"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"D3D/ImGui/SRV 资源所有权、失败路径和逆序释放约束"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"shader/资源文件的工程与 Win32 resource 归属"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"最小修改、中文关键注释、编码换行与现有 dirty worktree 保护"}
+{"file":".trellis/tasks/07-19-setting-dx11-embedded-cso/research/dx11-migration-evidence.md","reason":"当前 DX9 数据流、旧归档证据、ImGui SRV 契约和 CSO 缺陷"}

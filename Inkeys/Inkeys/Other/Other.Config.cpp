@@ -5,6 +5,8 @@ module;
 #include <initializer_list>
 #include <sstream>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 module Inkeys.Other.Config;
@@ -172,13 +174,13 @@ namespace
 	}
 
 	template <typename ValueT, typename EnableT = void>
-	struct JsonScalarTraits
+	struct JsonValueCodec
 	{
-		static_assert(InkeysConfigDependentFalseV<ValueT>, "Inkeys::Config: unsupported scalar type in schema.");
+		static_assert(InkeysConfigDependentFalseV<ValueT>, "Inkeys::Config: unsupported value type in schema.");
 	};
 
 	template <>
-	struct JsonScalarTraits<bool, void>
+	struct JsonValueCodec<bool, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, bool& outValue)
 		{
@@ -194,7 +196,7 @@ namespace
 	};
 
 	template <typename ValueT>
-	struct JsonScalarTraits<ValueT, std::enable_if_t<std::is_integral_v<ValueT> && !std::is_same_v<ValueT, bool>>>
+	struct JsonValueCodec<ValueT, std::enable_if_t<std::is_integral_v<ValueT> && !std::is_same_v<ValueT, bool>>>
 	{
 		static bool TryRead(const Json::Value& jsonValue, ValueT& outValue)
 		{
@@ -219,7 +221,7 @@ namespace
 	};
 
 	template <typename ValueT>
-	struct JsonScalarTraits<ValueT, std::enable_if_t<std::is_floating_point_v<ValueT>>>
+	struct JsonValueCodec<ValueT, std::enable_if_t<std::is_floating_point_v<ValueT>>>
 	{
 		static bool TryRead(const Json::Value& jsonValue, ValueT& outValue)
 		{
@@ -235,7 +237,7 @@ namespace
 	};
 
 	template <>
-	struct JsonScalarTraits<std::string, void>
+	struct JsonValueCodec<std::string, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, std::string& outValue)
 		{
@@ -251,7 +253,7 @@ namespace
 	};
 
 	template <>
-	struct JsonScalarTraits<std::wstring, void>
+	struct JsonValueCodec<std::wstring, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, std::wstring& outValue)
 		{
@@ -267,19 +269,198 @@ namespace
 	};
 
 	template <typename ValueT>
-	struct JsonScalarTraits<IdtAtomic<ValueT>, void>
+	struct JsonValueCodec<IdtAtomic<ValueT>, void>
 	{
 		static bool TryRead(const Json::Value& jsonValue, IdtAtomic<ValueT>& outValue)
 		{
 			ValueT loadedValue{};
-			if (!JsonScalarTraits<ValueT>::TryRead(jsonValue, loadedValue)) return false;
+			if (!JsonValueCodec<ValueT>::TryRead(jsonValue, loadedValue)) return false;
 			outValue.store(loadedValue);
 			return true;
 		}
 
 		static Json::Value ToJson(const IdtAtomic<ValueT>& value)
 		{
-			return JsonScalarTraits<ValueT>::ToJson(value.load());
+			return JsonValueCodec<ValueT>::ToJson(value.load());
+		}
+	};
+
+bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSizeKind& outSize)
+		{
+			if (!jsonValue.isString()) return false;
+			const std::string text = jsonValue.asString();
+			if (text == "twoTwo")
+			{
+				outSize = Inkeys::BarButtonSizeKind::TwoTwo;
+				return true;
+			}
+			if (text == "twoOne")
+			{
+				outSize = Inkeys::BarButtonSizeKind::TwoOne;
+				return true;
+			}
+			if (text == "oneTwo")
+			{
+				outSize = Inkeys::BarButtonSizeKind::OneTwo;
+				return true;
+			}
+			if (text == "oneOne")
+			{
+				outSize = Inkeys::BarButtonSizeKind::OneOne;
+				return true;
+			}
+			return false;
+		}
+
+		const char* BarButtonSizeKindToText(Inkeys::BarButtonSizeKind size)
+		{
+			switch (size)
+			{
+			case Inkeys::BarButtonSizeKind::TwoTwo: return "twoTwo";
+			case Inkeys::BarButtonSizeKind::TwoOne: return "twoOne";
+			case Inkeys::BarButtonSizeKind::OneTwo: return "oneTwo";
+			case Inkeys::BarButtonSizeKind::OneOne: return "oneOne";
+			}
+			return "twoTwo";
+		}
+
+		// 固定区：读取 Id；Size 缺省/非法时先落默认，Load 时再纠正到注册默认。
+		// 误带 Visible 时忽略，不导致整字段失败。
+		template <>
+		struct JsonValueCodec<Inkeys::BarFixedButtonLayoutEntry, void>
+		{
+			static bool TryRead(const Json::Value& jsonValue, Inkeys::BarFixedButtonLayoutEntry& outValue)
+			{
+				if (!jsonValue.isObject()) return false;
+				if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+				std::string id = jsonValue["Id"].asString();
+				if (id.empty()) return false;
+
+				Inkeys::BarButtonSizeKind size = Inkeys::DefaultSizeForBarButtonId(id);
+				if (jsonValue.isMember("Size"))
+				{
+					Inkeys::BarButtonSizeKind parsedSize = size;
+					if (TryReadBarButtonSizeKind(jsonValue["Size"], parsedSize)) size = parsedSize;
+				}
+
+				outValue = { std::move(id), size };
+				return true;
+			}
+
+			static Json::Value ToJson(const Inkeys::BarFixedButtonLayoutEntry& value)
+			{
+				Json::Value result(Json::objectValue);
+				result["Id"] = value.Id;
+				result["Size"] = BarButtonSizeKindToText(value.Size);
+				return result;
+			}
+		};
+
+		template <>
+		struct JsonValueCodec<Inkeys::BarExtensionButtonLayoutEntry, void>
+		{
+			static bool TryRead(const Json::Value& jsonValue, Inkeys::BarExtensionButtonLayoutEntry& outValue)
+			{
+				if (!jsonValue.isObject()) return false;
+				if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+				std::string id = jsonValue["Id"].asString();
+				if (id.empty()) return false;
+
+				Inkeys::BarButtonSizeKind size = Inkeys::DefaultSizeForBarButtonId(id);
+				if (jsonValue.isMember("Size"))
+				{
+					Inkeys::BarButtonSizeKind parsedSize = size;
+					if (TryReadBarButtonSizeKind(jsonValue["Size"], parsedSize)) size = parsedSize;
+				}
+
+				bool visible = true;
+				if (jsonValue.isMember("Visible"))
+				{
+					if (!jsonValue["Visible"].isBool()) return false;
+					visible = jsonValue["Visible"].asBool();
+				}
+
+				outValue = { std::move(id), size, visible };
+				return true;
+			}
+
+			static Json::Value ToJson(const Inkeys::BarExtensionButtonLayoutEntry& value)
+			{
+				Json::Value result(Json::objectValue);
+				result["Id"] = value.Id;
+				result["Size"] = BarButtonSizeKindToText(value.Size);
+				result["Visible"] = value.Visible;
+				return result;
+			}
+		};
+
+		// 旧单数组仅用于启动迁移，不进入 schema。
+		template <>
+		struct JsonValueCodec<Inkeys::BarLegacyButtonLayoutEntry, void>
+		{
+			static bool TryRead(const Json::Value& jsonValue, Inkeys::BarLegacyButtonLayoutEntry& outValue)
+			{
+				if (!jsonValue.isObject()) return false;
+				if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+				std::string id = jsonValue["Id"].asString();
+				if (id.empty()) return false;
+
+				bool visible = true;
+				if (jsonValue.isMember("Visible"))
+				{
+					if (!jsonValue["Visible"].isBool()) return false;
+					visible = jsonValue["Visible"].asBool();
+				}
+
+				outValue = { std::move(id), visible };
+				return true;
+			}
+
+			static Json::Value ToJson(const Inkeys::BarLegacyButtonLayoutEntry& value)
+			{
+				Json::Value result(Json::objectValue);
+				result["Id"] = value.Id;
+				result["Visible"] = value.Visible;
+				return result;
+			}
+		};
+
+	template <typename ValueT>
+	struct JsonValueCodec<ValueT, std::void_t<typename Inkeys::ConfigSequenceAdapter<ValueT>::ElementType>>
+	{
+		using AdapterT = Inkeys::ConfigSequenceAdapter<ValueT>;
+		using ElementT = typename AdapterT::ElementType;
+
+		static bool TryRead(const Json::Value& jsonValue, ValueT& outValue)
+		{
+			if (!jsonValue.isArray()) return false;
+
+			std::vector<ElementT> loadedValues;
+			loadedValues.reserve(jsonValue.size());
+			for (Json::ArrayIndex index = 0; index < jsonValue.size(); index++)
+			{
+				ElementT loadedValue{};
+				if (!JsonValueCodec<ElementT>::TryRead(jsonValue[index], loadedValue)) return false;
+				loadedValues.emplace_back(std::move(loadedValue));
+			}
+
+			// 只有整个数组解析成功后，才由序列适配器一次性接收。
+			AdapterT::Replace(outValue, std::move(loadedValues));
+			return true;
+		}
+
+		static Json::Value ToJson(const ValueT& value)
+		{
+			Json::Value result(Json::arrayValue);
+			const std::vector<ElementT> values = AdapterT::Snapshot(value);
+			for (const ElementT& element : values)
+			{
+				result.append(JsonValueCodec<ElementT>::ToJson(element));
+			}
+			return result;
 		}
 	};
 
@@ -386,7 +567,7 @@ namespace
 			if (!jsonValue) return;
 
 			T loadedValue{};
-			if (!JsonScalarTraits<T>::TryRead(*jsonValue, loadedValue)) return;
+			if (!JsonValueCodec<T>::TryRead(*jsonValue, loadedValue)) return;
 
 			AssignConfigValue(value, loadedValue);
 		}
@@ -418,7 +599,7 @@ namespace
 		void HandleValue(const char* name, T& value, const T&, bool, Inkeys::ConfigUploadMode, const char*)
 		{
 			Json::Value& parent = EnsureObjectPath(root, groupPath);
-			parent[name] = JsonScalarTraits<T>::ToJson(value);
+			parent[name] = JsonValueCodec<T>::ToJson(value);
 		}
 
 	private:
@@ -444,7 +625,7 @@ namespace
 		{
 			if (uploadMode != Inkeys::ConfigUploadMode::Upload) return;
 
-			std::string valueText = JsonValueToUploadText(JsonScalarTraits<T>::ToJson(value));
+			std::string valueText = JsonValueToUploadText(JsonValueCodec<T>::ToJson(value));
 			MakeUploadTextSingleLine(valueText);
 			const std::string keyText = UsesFullUploadPath(uploadName) ? JoinPath(groupPath, name) : std::string(uploadName);
 
@@ -564,12 +745,92 @@ namespace Inkeys
 			return false;
 		}
 
+		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
+		TryMigrateLegacyBarButtonLayout(parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;
 		hasLoadedDocument = true;
 		return true;
 	}
 
+	bool Config::TryMigrateLegacyBarButtonLayout(Json::Value& root)
+	{
+		if (!root.isObject() || !root.isMember("UI") || !root["UI"].isObject()) return false;
+		Json::Value& uiNode = root["UI"];
+		if (!uiNode.isMember("Bar") || !uiNode["Bar"].isObject()) return false;
+		Json::Value& barNode = uiNode["Bar"];
+
+		// 已有任一新字段时不再从旧数组迁移，避免覆盖用户新区配置。
+		const bool hasNewLayoutFields =
+			barNode.isMember("FixedButtonsA1")
+			|| barNode.isMember("ExtensionButtons")
+			|| barNode.isMember("FixedButtonsA2");
+		if (hasNewLayoutFields) return false;
+		if (!barNode.isMember("ButtonLayout") || !barNode["ButtonLayout"].isArray()) return false;
+
+		auto sizeText = [](BarButtonSizeKind size) -> const char*
+		{
+			switch (size)
+			{
+			case BarButtonSizeKind::TwoTwo: return "twoTwo";
+			case BarButtonSizeKind::TwoOne: return "twoOne";
+			case BarButtonSizeKind::OneTwo: return "oneTwo";
+			case BarButtonSizeKind::OneOne: return "oneOne";
+			}
+			return "twoTwo";
+		};
+
+		auto makeFixedObject = [&](const std::string& id) -> Json::Value
+		{
+			Json::Value item(Json::objectValue);
+			item["Id"] = id;
+			item["Size"] = sizeText(DefaultSizeForBarButtonId(id));
+			return item;
+		};
+
+		auto makeExtensionObject = [&](const std::string& id, bool visible) -> Json::Value
+		{
+			Json::Value item(Json::objectValue);
+			item["Id"] = id;
+			item["Size"] = sizeText(DefaultSizeForBarButtonId(id));
+			item["Visible"] = visible;
+			return item;
+		};
+
+		Json::Value fixedA1Json(Json::arrayValue);
+		Json::Value extensionJson(Json::arrayValue);
+		Json::Value fixedA2Json(Json::arrayValue);
+
+		for (Json::ArrayIndex index = 0; index < barNode["ButtonLayout"].size(); index++)
+		{
+			const Json::Value& jsonValue = barNode["ButtonLayout"][index];
+			if (!jsonValue.isObject()) return false;
+			if (!jsonValue.isMember("Id") || !jsonValue["Id"].isString()) return false;
+
+			const std::string id = jsonValue["Id"].asString();
+			if (id.empty()) return false;
+
+			bool visible = true;
+			if (jsonValue.isMember("Visible"))
+			{
+				if (!jsonValue["Visible"].isBool()) return false;
+				visible = jsonValue["Visible"].asBool();
+			}
+
+// 旧布局中的 Divider 不迁入三区配置；交界分割线改由运行时注入。
+			if (IsRuntimeBoundaryDividerId(id)) continue;
+			if (IsFixedButtonsA1Id(id)) fixedA1Json.append(makeFixedObject(id));
+			else if (IsFixedButtonsA2Id(id)) fixedA2Json.append(makeFixedObject(id));
+			else extensionJson.append(makeExtensionObject(id, visible));
+			}
+
+		// 迁移结果写回文档节点；A 区是否合法由后续 Load 严校验决定。
+		barNode["FixedButtonsA1"] = fixedA1Json;
+		barNode["ExtensionButtons"] = extensionJson;
+		barNode["FixedButtonsA2"] = fixedA2Json;
+		barNode.removeMember("ButtonLayout");
+		return true;
+	}
 	void Config::ApplyDefaults(const std::vector<std::string>& paths)
 	{
 		DefaultValueHandler handler(paths);

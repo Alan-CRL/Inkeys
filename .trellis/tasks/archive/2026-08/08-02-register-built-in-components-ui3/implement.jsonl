@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "UI3 Bar、设置页与 IdtFloating 的桌面层边界和开发前检查"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++20 module、共享状态、线程与中文注释约定"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "D2D/SVG/PNG 图标渲染和 UI3 Bar 生命周期"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "COM、D2D 位图缓存和设备资源释放约定"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "UI2 旧配置作为权威数据源及 UI3 B 区运行时投影合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution 的 Debug ARM64 构建要求"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "抽取 UI2/UI3 共用组件动作，避免重复实现"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对旧配置、注册表、设置页和运行时布局的完整数据流"}

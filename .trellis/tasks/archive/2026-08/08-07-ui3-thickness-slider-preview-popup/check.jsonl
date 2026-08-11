@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "复核 UI3 Bar 范围、平台边界和任务验收。"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "检查动画连续性、第三光、缓存、绘制层级和脏区契约。"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "检查最小改动、局部注释、编码和 CRLF。"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "检查直接触摸 Preview 与 Slider Thumb 生命周期回归。"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "检查完整 InkeysRepo.sln 的 Debug ARM64 构建方式。"}

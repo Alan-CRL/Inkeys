@@ -62,7 +62,7 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 		case BarThemeColorEnum::Accent: return RGB(0, 140, 105);
 		case BarThemeColorEnum::PressedFill: return RGB(64, 72, 80);
 		case BarThemeColorEnum::SubtleFill: return RGB(0, 140, 105);
-		case BarThemeColorEnum::SwatchFrame: return RGB(127, 127, 127);
+		case BarThemeColorEnum::SwatchFrame: return RGB(176, 176, 176);
 		default: return RGB(27, 27, 27);
 		}
 	}
@@ -75,7 +75,7 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 	case BarThemeColorEnum::Accent: return RGB(88, 255, 236);
 	case BarThemeColorEnum::PressedFill: return RGB(127, 127, 127);
 	case BarThemeColorEnum::SubtleFill: return RGB(127, 127, 127);
-	case BarThemeColorEnum::SwatchFrame: return RGB(127, 127, 127);
+	case BarThemeColorEnum::SwatchFrame: return RGB(80, 80, 80);
 	default: return RGB(255, 255, 255);
 	}
 }

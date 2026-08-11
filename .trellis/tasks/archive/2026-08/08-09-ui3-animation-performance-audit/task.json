@@ -1,0 +1,38 @@
+{
+  "id": "ui3-animation-performance-audit",
+  "name": "ui3-animation-performance-audit",
+  "title": "UI3 动画架构、性能、代码质量与安全阶段性验收",
+  "description": "基于真实源码、Git 历史和 headless 测量，连续完成 UI3 Bar 动画架构、渲染性能、结构清理与状态安全阶段性验收。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "UI3 Bar animation, rendering performance, structure, and safety",
+  "package": "native-desktop",
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-09",
+  "completedAt": "2026-08-11",
+  "branch": "feature/animation",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Bar",
+    "Inkeys/IdtD2DPreparation.cpp",
+    "Inkeys/IdtD2DPreparation.h",
+    "Inkeys/IdtDrawpad.cpp",
+    "Inkeys/Inkeys.vcxproj"
+  ],
+  "notes": "Work Phase 0-5 must execute continuously after a later explicit start instruction. No GUI/manual automation; manual acceptance remains NOT VERIFIED. This task precedes 08-01-render-pipeline-refactor and excludes its multi-HWND/shared-pipeline scope.",
+  "meta": {
+    "kind": "acceptance-and-implementation",
+    "precedes": "08-01-render-pipeline-refactor",
+    "work_phases": "0-5",
+    "execution": "continuous",
+    "no_gui": "true"
+  }
+}
