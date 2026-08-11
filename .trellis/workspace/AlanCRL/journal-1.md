@@ -475,3 +475,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 18: 完成 UI2 最终兼容版发版前适配
+
+**Date**: 2026-08-11
+**Task**: 完成 UI2 最终兼容版发版前适配
+**Branch**: `feature/animation`
+
+### Summary
+
+修复 UI3 主按钮触摸坐标混用，完成 UI2/UI3 设置显隐与 Draw2 收面板协调，调整光影选项、滚动平均 FPS、调试布局和版本号，并通过 ARM64 构建、无界面测试及用户人工验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f61765d6` | (see git log) |
+
+### Status
+
+[OK] **Completed**
