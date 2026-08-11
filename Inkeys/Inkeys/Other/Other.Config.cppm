@@ -275,7 +275,7 @@ GROUP(UI, \
 				) \
 				GROUP(EdgeLighting, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
-					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Dynamic, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Dynamic, false) \
 				) \
 				GROUP(Animation, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \

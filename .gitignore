@@ -23,3 +23,8 @@
 /Inkeys/Cache/
 /InkeysHeadlessTests/Cache/
 /PptCOM/Cache/
+
+# Agents
+/.agents/
+/.codex/
+/.zcode/
