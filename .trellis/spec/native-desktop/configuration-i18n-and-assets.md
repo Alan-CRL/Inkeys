@@ -45,15 +45,15 @@
 - `ConfigSequence<T>::Snapshot() -> std::vector<T>`
 - `ConfigSequence<T>::Replace(std::vector<T>) -> void`
 - `ConfigSequenceAdapter<T>::ElementType / Snapshot(...) / Replace(...)`
-- `BarButtomSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, legacyField={}, legacyEnabled={}, categoryName={}, settingsName={}, closeMoreAfterAction=true) -> bool`
-- `BarButtomSetClass::RegisterLayoutMarker(id) -> bool`（只接受无实体的官方布局标识）
-- `BarButtomSetClass::TryGetRegistration(id, outRegistration) -> bool`
-- `BarButtomSetClass::GetExtensionRegistrations() -> std::vector<BarButtonRegistrationClass>`
-- `BarButtomSetClass::GetMoreButtonSnapshot() -> BarMoreButtonSnapshotClass`
-- `BarButtomSetClass::GetMoreButton() -> BarButtomClass*`
-- `BarButtomSetClass::RegisterBuiltInComponents() -> void`
-- `BarButtomSetClass::SyncLegacyExtensionButtons() -> void`
-- `BarButtomSetClass::Load() -> void`
+- `BarButtonSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, legacyField={}, legacyEnabled={}, categoryName={}, settingsName={}, closeMoreAfterAction=true) -> bool`
+- `BarButtonSetClass::RegisterLayoutMarker(id) -> bool`（只接受无实体的官方布局标识）
+- `BarButtonSetClass::TryGetRegistration(id, outRegistration) -> bool`
+- `BarButtonSetClass::GetExtensionRegistrations() -> std::vector<BarButtonRegistrationClass>`
+- `BarButtonSetClass::GetMoreButtonSnapshot() -> BarMoreButtonSnapshotClass`
+- `BarButtonSetClass::GetMoreButton() -> BarButtonClass*`
+- `BarButtonSetClass::RegisterBuiltInComponents() -> void`
+- `BarButtonSetClass::SyncLegacyExtensionButtons() -> void`
+- `BarButtonSetClass::Load() -> void`
 
 ### 3. Contracts
 
@@ -81,7 +81,7 @@
 - **More 浮层**：每个标准单元为 70 DIP，按 `twoTwo`/`twoOne`/`oneTwo`/`oneOne` 子网格近方形打包，最多五列；强制组靠近主栏，显式组在远端。仅两组均非空时绘制整行横向分割线，分割线跨过 X 侧栏并保持面板左右内边距一致。根面板从 More 按钮中心的 60×30 紧凑态展开，时长使用 `BarUiDefaultOperationDur`，几何使用 Back、透明度使用 Sine；子内容围绕完整面板中心等比缩放，按钮持续保存为主栏局部坐标并在隐藏时缩在 More 入口下方，补位到主栏时不得从远端飘入。面板先于主栏绘制，使收拢部分从主栏下层出现。关闭按钮位于按钮网格右侧窄栏的右上角，不额外增加顶部高度。主栏左右换边不改变逻辑顺序，上下展开仅翻转物理行方向。
 - **More 交互**：点击外部先关闭并继续处理同一鼠标消息；面板正文消费点击；X 复用独立按钮悬停填充、按下缩小、拖出取消与抬起关闭；浮层完全隐藏时直接同步内部按钮的填充、边框、图标和文字颜色，Selected 青色必须在下次展开前落稳。浮层按钮复用普通 `clickFunc`，默认按 `closeMoreAfterAction=true` 在回调前关闭，设为 false 时保持打开。打开绘制属性、几何、颜色/粗细子面板、主栏折叠或互斥面板时关闭 More。
 - **More 入口视觉**：三角图标比原尺寸略小并保持固定朝向，不随开关或上下换边旋转；浮层打开时 More 入口使用普通按钮的 `Selected` 状态，使背景、图标和文字切换为青色 Accent 高亮。浮层几何继续使用不截断的 Back 进度形成弹性展开，并与主栏锚点保留独立间隙。SVG 设备缓存与注册按钮一起在 device epoch 重建时清理。
-- **相邻分割线规则**：配置侧相邻 Divider 只保留一条；运行时通过“先判断 B 是否有可见项再注入”避免相邻交界线。不得对 `only` 单例按钮重复 `buttomlist.Set` 重建列表（会 double-free）。
+- **相邻分割线规则**：配置侧相邻 Divider 只保留一条；运行时通过“先判断 B 是否有可见项再注入”避免相邻交界线。不得对 `only` 单例按钮重复 `buttonList.Set` 重建列表（会 double-free）。
 - A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
 - A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值；Geometry 注册默认可见，但选择模式通过运行时 `hide` 隐藏。
 - `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
@@ -90,7 +90,7 @@
 - A1 仅将 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
 - `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
-- `BarButtomClass::IsVisible()` 是唯一消费入口：`userVisible && !hide`。`PresetHoming` 等运行时仍可临时改 Freeze 尺寸或上下文 `hide`。
+- `BarButtonClass::IsVisible()` 是唯一消费入口：`userVisible && !hide`。`PresetHoming` 等运行时仍可临时改 Freeze 尺寸或上下文 `hide`。
 
 ### 4. Validation & Error Matrix
 

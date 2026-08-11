@@ -4,14 +4,18 @@ module;
 
 #include "../../../IdtD2DPreparation.h"
 #include <array>
+#include <cstdint>
 
 export module Inkeys.UI.Bar:Main;
 
 import :UI;
 import :State;
-import :Bottom;
+import :Button;
 import :Format;
+import :Rendering;
 import :RenderingAttribute;
+
+import Inkeys.UI.Bar.Animation;
 
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
@@ -19,10 +23,6 @@ import Inkeys.Helper.Thread;
 // ====================
 // 动画
 
-IdtAtomic<double> BarUiDefaultDes = 600.0; // 全局默认速度 px/s
-IdtAtomic<double> BarUiDefaultOperationDur = 0.4; // 默认操作过程时长 s
-IdtAtomic<bool> BarUiAnimationEnabled = true;
-IdtAtomic<double> BarUiAnimationSpeedRate = 1.00; // 有效速度倍率；关闭动画时由配置接口切换为即时完成倍率
 IdtAtomic<bool> BarUiEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDynamicEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDebugModeEnabled = false;
@@ -48,17 +48,9 @@ public:
 class BarMediaClass
 {
 public:
-	void LoadExImage();
 	void LoadFormat();
 
 public:
-	enum class BarExImageEnum : int
-	{};
-
-	// 似乎被废弃了，新版较多地使用的是 svg
-
-public:
-	IMAGE Image[10];
 	unique_ptr<BarFormatCache> formatCache;
 
 protected:
@@ -69,10 +61,7 @@ protected:
 
 // 前向声明
 class BarUISetClass;
-// 前向声明
-
-void HighPrecisionWait(double frameTimeSpentMs, double targetFPS);
-
+class BarRenderLoopCoordinator;
 // 控件枚举
 enum class BarUISetShapeEnum : int
 {
@@ -223,243 +212,11 @@ enum class BarUISetWordEnum : int
 		GeometryAttributeBar_ThicknessCoarseNumber,
 	};
 
-enum class BarBorderLightSourceEnum : int
-{
-	Primary,
-	Cursor,
-};
-enum class BarBorderPrimaryAnchorEnum : int
-{
-	MainButton,
-	Select,
-	Draw,
-	Eraser,
-	Geometry,
-};
 enum class BarBorderCursorTrackingStateEnum : int
 {
 	Dormant,
 	Inside,
 	Grace,
-};
-
-// 具体渲染
-class BarUIRendering
-{
-public:
-	BarUIRendering() {};
-	BarUIRendering(BarUISetClass* barUISetClassT);
-
-public:
-	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
-	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
-	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
-	bool Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh);
-	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
-	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
-		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
-	bool PrepareFrameLighting(double animationDtSeconds,
-		int drawingMode, int penMode, COLORREF brush1Color,
-		COLORREF highlighterColor, bool penetrateSelected);
-	void SetFrameZoom(double zoom)
-	{
-		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
-	}
-	void DiscardDeviceResources();
-	void PushFrameDirtyClip(
-		ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect);
-	void PopFrameDirtyClip(ID2D1DeviceContext* deviceContext);
-	void HandleFrameEndDrawResult(HRESULT endDrawResult);
-	void SetFrameDiffuseMaskGeometryScale(double scale)
-	{
-		frameDiffuseMaskGeometryScale = scale > 0.0 ? scale : 1.0;
-	}
-
-public:
-	BarUISetClass* barUISetClass = nullptr;
-
-protected:
-	struct FrameGradientBrushCacheClass
-	{
-		COLORREF color = RGB(0, 0, 0);
-		BarBorderLightSourceEnum lightSource = BarBorderLightSourceEnum::Primary;
-		ComPtr<ID2D1RadialGradientBrush> brush;
-	};
-	struct FrameDiffuseMaskCacheClass
-	{
-		int radiusXQuarter = 0;
-		int radiusYQuarter = 0;
-		int strokeWidthQuarter = 0;
-		int standardDeviationQuarter = 0;
-		FLOAT padding = 0.0F;
-		FLOAT radiusX = 0.0F;
-		FLOAT radiusY = 0.0F;
-		D2D1_SIZE_F size{};
-		ComPtr<ID2D1Bitmap1> bitmap;
-	};
-	struct FrameGeometryDiffuseMaskCacheClass
-	{
-		int widthQuarter = 0;
-		int heightQuarter = 0;
-		int geometryVariantQuarter = 0;
-		int strokeWidthQuarter = 0;
-		int standardDeviationQuarter = 0;
-		FLOAT padding = 0.0F;
-		D2D1_SIZE_F size{};
-		ComPtr<ID2D1Bitmap1> bitmap;
-	};
-	struct SuperellipseGeometryCacheClass
-	{
-		FLOAT width = 0.0F;
-		FLOAT height = 0.0F;
-		FLOAT n = 0.0F;
-		int segments = 0;
-		FLOAT translatedX = 0.0F;
-		FLOAT translatedY = 0.0F;
-		ComPtr<ID2D1PathGeometry> localGeometry;
-		ComPtr<ID2D1TransformedGeometry> translatedGeometry;
-	};
-	struct ThicknessFineDialLabelCacheClass
-	{
-		int value = 0;
-		FLOAT zoom = 0.0F;
-		D2D1_SIZE_F size{};
-		FLOAT layoutWidth = 0.0F;
-		unsigned long long lastUse = 0;
-		bool valid = false;
-		ComPtr<IDWriteTextLayout> layout;
-	};
-
-	ID2D1RadialGradientBrush* GetFrameGradientBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
-	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
-	ID2D1LinearGradientBrush* GetThicknessPreviewGradientBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color,
-		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
-		FLOAT leftOpacity);
-	ID2D1LinearGradientBrush* GetColorPickerHueGradientBrush(
-		ID2D1DeviceContext* deviceContext,
-		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint);
-	ID2D1LinearGradientBrush* GetColorPickerToneGradientBrush(
-		ID2D1DeviceContext* deviceContext, bool darkTone,
-		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
-		FLOAT opacity);
-	void DrawProgressRing(ID2D1DeviceContext* deviceContext,
-		D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
-		FLOAT progress, COLORREF trackColor, COLORREF progressColor,
-		FLOAT trackOpacity, FLOAT progressOpacity);
-	ID2D1PathGeometry* GetThicknessPreviewPath(
-		const array<D2D1_POINT_2F, 7>& points);
-	ID2D1StrokeStyle* GetThicknessPreviewStrokeStyle();
-	ID2D1PathGeometry* GetThicknessFineDialSelectorGeometry();
-	ThicknessFineDialLabelCacheClass* GetThicknessFineDialLabelLayout(
-		int value, FLOAT zoom);
-	ID2D1Geometry* GetSuperellipseGeometry(
-		FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments);
-	FrameDiffuseMaskCacheClass* GetRoundedRectDiffuseMask(
-		ID2D1DeviceContext* deviceContext,
-		const D2D1_ROUNDED_RECT& roundedRect, FLOAT strokeWidth);
-	void DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContext,
-		const FrameDiffuseMaskCacheClass& mask,
-		const D2D1_ROUNDED_RECT& roundedRect,
-		ID2D1RadialGradientBrush* brush, FLOAT opacity);
-	FrameGeometryDiffuseMaskCacheClass* GetGeometryDiffuseMask(
-		ID2D1DeviceContext* deviceContext, ID2D1Geometry* geometry,
-		FLOAT strokeWidth, int geometryVariantQuarter);
-	void DrawGeometryDiffuseMask(ID2D1DeviceContext* deviceContext,
-		const FrameGeometryDiffuseMaskCacheClass& mask,
-		const D2D1_RECT_F& geometryBounds,
-		ID2D1RadialGradientBrush* brush, FLOAT opacity);
-	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
-		BarUiFrameLightColorEnum frameLightColor,
-		bool primaryLightEnabled, double cursorLightIntensityScale,
-		double baseFramePct, double lightPct, FLOAT strokeWidth,
-		const D2D1_ROUNDED_RECT* roundedRect,
-		ID2D1Geometry* geometry, int geometryVariantQuarter = 0);
-
-	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
-	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();
-	D2D1_POINT_2F framePrimaryLightTarget = D2D1::Point2F();
-	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
-	FLOAT frameCursorLightIntensity = 0.0F;
-	FLOAT frameCursorLightIntensityStart = 0.0F;
-	FLOAT frameCursorLightIntensityTarget = 0.0F;
-	FLOAT frameLightRadius = 0.0F;
-	FLOAT frameCursorLightRadius = 0.0F;
-	BarBorderPrimaryAnchorEnum framePrimaryLightAnchor = BarBorderPrimaryAnchorEnum::MainButton;
-	bool framePrimaryLightAnchorInitialized = false;
-	bool framePrimaryLightAnimating = false;
-	bool frameCursorLightVisible = false;
-	bool frameCursorLightAnimating = false;
-	bool frameAnimationStateInitialized = false;
-	bool frameLastAnimationEnabled = false;
-	bool frameCursorInputAvailable = false;
-	bool frameLightingWasAnimating = false;
-	bool frameEdgeLightingEnabled = false;
-	bool frameGradientFailureLogged = false;
-	bool thicknessPreviewGradientFailureLogged = false;
-	bool thicknessPreviewGradientUnavailable = false;
-	bool thicknessPreviewGradientColorInitialized = false;
-	bool thicknessPreviewPathFailureLogged = false;
-	bool thicknessPreviewPathUnavailable = false;
-	bool thicknessPreviewPathInitialized = false;
-	bool thicknessFineDialSelectorUnavailable = false;
-	bool thicknessFineDialSelectorFailureLogged = false;
-	bool colorPickerGradientFailureLogged = false;
-	bool colorPickerGradientUnavailable = false;
-	bool frameDiffuseEffectFailureLogged = false;
-	bool frameDiffuseMaskFailureLogged = false;
-	bool frameDiffuseMaskUnavailable = false;
-	bool frameDiffuseMaskCreatedThisFrame = false;
-	double frameDiffuseMaskGeometryScale = 1.0;
-	double frameZoom = 1.0;
-	bool frameDirtyClipActive = false;
-	D2D1_RECT_F frameDirtyClipRect{};
-	double framePrimaryLightMoveElapsed = 0.0;
-	double frameCursorLightFadeElapsed = 0.0;
-	double frameDrawingPenColorElapsed = 0.0;
-	double frameDrawingModeTransitionElapsed = 0.0;
-	double frameDrawingPenColorBlend = 0.0;
-	double frameDrawingPenColorBlendStart = 0.0;
-	double frameDrawingPenColorBlendTarget = 0.0;
-	double frameDrawingLightOpacity = 1.0;
-	double frameDrawingLightOpacityStart = 1.0;
-	unsigned long long handledBorderCursorLightSerial = 0;
-	COLORREF frameDrawingPenColor = RGB(0, 0, 0);
-	COLORREF frameDrawingPenColorStart = RGB(0, 0, 0);
-	COLORREF frameDrawingPenColorTarget = RGB(0, 0, 0);
-	bool frameDrawingUsesPenColor = false;
-	bool frameDrawingPenColorInitialized = false;
-	bool frameDrawingPenColorAnimating = false;
-	bool frameDrawingModeInitialized = false;
-	bool frameDrawingModeTransitionAnimating = false;
-	bool frameDrawingPenColorSourceInitialized = false;
-	bool frameDrawingPenColorCarriesHighlighterHistory = false;
-	int frameDrawingMode = -1;
-	int frameDrawingPenColorSource = -1;
-	vector<FrameGradientBrushCacheClass> frameGradientBrushCache;
-	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
-	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
-	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
-	ComPtr<ID2D1LinearGradientBrush> thicknessPreviewGradientBrush;
-	ComPtr<ID2D1LinearGradientBrush> colorPickerHueGradientBrush;
-	ComPtr<ID2D1LinearGradientBrush> colorPickerLightGradientBrush;
-	ComPtr<ID2D1LinearGradientBrush> colorPickerDarkGradientBrush;
-	ComPtr<ID2D1PathGeometry> thicknessPreviewPath;
-	ComPtr<ID2D1StrokeStyle> thicknessPreviewStrokeStyle;
-	ComPtr<ID2D1PathGeometry> thicknessFineDialSelectorGeometry;
-	array<ThicknessFineDialLabelCacheClass, 64>
-		thicknessFineDialLabelCache{};
-	unsigned long long thicknessFineDialLabelUseSerial = 0;
-	SuperellipseGeometryCacheClass superellipseGeometryCache;
-	COLORREF thicknessPreviewGradientColor = RGB(0, 0, 0);
-	FLOAT thicknessPreviewGradientLeftOpacity = -1.0F;
-	array<D2D1_POINT_2F, 7> thicknessPreviewPathPoints{};
-	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
-	ComPtr<ID2D1Effect> frameGaussianBlurEffect;
-
-	friend class BarUISetClass;
 };
 
 // UI 总集
@@ -476,7 +233,7 @@ public:
 public:
 	BarWindowPosClass barWindow;
 	BarMediaClass barMedia;
-	BarButtomSetClass barButtomSet;
+	BarButtonSetClass barButtonSet;
 	BarUIRendering spec;
 
 	BarStateClass barState;
@@ -489,25 +246,25 @@ public:
 	ankerl::unordered_dense::map<BarUISetWordEnum, shared_ptr<BarUiWordClass>> wordMap;
 
 	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeBrushHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeHighlightHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributePenTypeExtensionHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributePenTypeFreeLineHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessFineHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeThicknessAdjustHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeAnnotationCloseHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeOverflowCloseHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeColorPickerToneHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> drawAttributeColorPickerCloseHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> moreCloseHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> geometryStraightLineHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> geometryRectangleHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessFineHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessMediumHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> geometryThicknessCoarseHoverStage = BarButtomHoverStageEnum::None;
-	IdtAtomic<BarButtomHoverStageEnum> geometryCloseHoverStage = BarButtomHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeBrushHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeHighlightHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributePenTypeExtensionHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributePenTypeFreeLineHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeThicknessFineHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeThicknessMediumHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeThicknessCoarseHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeThicknessAdjustHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeAnnotationCloseHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeOverflowCloseHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeColorPickerToneHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeColorPickerCloseHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> moreCloseHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> geometryStraightLineHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> geometryRectangleHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> geometryThicknessFineHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> geometryThicknessMediumHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> geometryThicknessCoarseHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> geometryCloseHoverStage = BarButtonHoverStageEnum::None;
 
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
@@ -528,6 +285,7 @@ protected:
 	void ClosePenTypeMenu();
 	void CloseThicknessSlider(bool cancelCapture);
 	void CloseColorPicker(bool cancelCapture);
+	void ShutdownWindowInput(HWND hWnd);
 	void RefreshBorderCursorVisibleRegions(double frameZoom);
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
@@ -550,22 +308,11 @@ protected:
 	size_t borderCursorVisibleRegionCount = 0;
 
 	friend class BarUIRendering;
+	friend class BarRenderLoopCoordinator;
 	friend LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 };
 // 全局 Bar UI 集合
 export extern BarUISetClass barUISet;
-
-// ====================
-// 环境
-
-// 弃用
-/*
-// LOGO配色方案
-enum class BarLogoColorSchemeEnum : int
-{
-	Default = 0, // 深色
-	Slate = 1, // 浅色
-};*/
 
 // 初始化
 
@@ -579,7 +326,6 @@ namespace Inkeys::UI::Bar
 	export void NotifyCanvasDrawingEnded();
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
-	void InitializeWindow(BarUISetClass& barUISet);
-	void InitializeMedia(BarUISetClass& barUISet);
+	bool InitializeWindow(BarUISetClass& barUISet);
 	void InitializeUI(BarUISetClass& barUISet);
 };

@@ -65,6 +65,22 @@ wstring targetArchitecture = L"win32";
 wstring windowsEdition;
 
 IdtAtomic<int> offSignal;						// 关闭指令
+namespace
+{
+	// PptCOM 会长期持有该地址；不要把原子包装对象强转成 LONG 指针。
+	LONG offSignalInterop = 0;
+}
+
+void SetOffSignal(int signal)
+{
+	InterlockedExchange(&offSignalInterop, static_cast<LONG>(signal));
+	offSignal.store(signal, std::memory_order_release);
+}
+
+LONG* GetOffSignalInteropPointer()
+{
+	return &offSignalInterop;
+}
 
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
@@ -1288,8 +1304,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 #pragma region 线程
 
-	if (useInkeys3UI) thread(Inkeys::UI::Bar::Initialization).detach();
-	else thread(floating_main).detach();
+	thread ui3InitializationThread;
+	if (useInkeys3UI)
+		ui3InitializationThread = thread(Inkeys::UI::Bar::Initialization);
+	else
+		thread(floating_main).detach();
 	auto settingMainThread = jthread(SettingMain);
 	thread(drawpad_main).detach();
 	thread(FreezeFrameWindow).detach();
@@ -1336,6 +1355,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
+	// Setting 仍会发布 UI3 状态；必须先停止生产者，再等待主栏窗口和渲染线程退出。
+	settingMainThread.request_stop();
+	if (settingMainThread.joinable()) settingMainThread.join();
+	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
@@ -1372,7 +1395,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 
-	// 后续外层还需要进行封装，当前函数返回时则会使 jthread 构析来结束线程
 	return 0;
 }
 

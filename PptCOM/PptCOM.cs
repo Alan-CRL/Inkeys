@@ -1359,7 +1359,7 @@ namespace PptCOM
                     }
 
                     // 关闭信号检测
-                    if (*offSignal != 0)
+                    if (Thread.VolatileRead(ref *offSignal) != 0)
                     {
                         Console.WriteLine("offSignal Close");
                         break;

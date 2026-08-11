@@ -14,10 +14,12 @@
 # Build output
 /Build/
 /Inkeys/Build/
+/InkeysHeadlessTests/Build/
 /PptCOM/Build/
 
 # Project-local cache
 /packages/
 /Package/
 /Inkeys/Cache/
+/InkeysHeadlessTests/Cache/
 /PptCOM/Cache/

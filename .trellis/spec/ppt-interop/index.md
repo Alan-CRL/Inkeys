@@ -21,7 +21,7 @@
 ~~~text
 IdtMain: COM + activation context + PptCOM.dll
   → IdtPlug-in::CheckPptCom 创建 IPptCOMServer
-  → Initialization(&PptInfoState.TotalPage, &CurrentPage, &offSignal)
+  → Initialization(&PptInfoState.TotalPage, &CurrentPage, GetOffSignalInteropPointer())
   → PptCOM::PptComService 绑定 PowerPoint 或 WPS并写 native 页码
   → IdtDrawpad 检测页码变化，保存/恢复 PptImg[页]
   → 更新 PptInfoStateBuffer

@@ -19,7 +19,7 @@ module;
 #include <unordered_set>
 
 module Inkeys.UI.Bar;
-import :Bottom;
+import :Button;
 
 import :Main;
 import :Theme;
@@ -29,19 +29,19 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
 
-bool BarButtomClass::TransitionContent(
+bool BarButtonClass::TransitionContent(
 	const wstring& iconResourceName, const wstring& label)
 {
 	bool changed = false;
-	if (iconKind == BarButtomIconKindEnum::Svg && !iconResourceName.empty())
+	if (iconKind == BarButtonIconKindEnum::Svg && !iconResourceName.empty())
 		changed |= icon.TransitionToResource(L"UI", iconResourceName);
 	changed |= name.TransitionToString(label);
 	return changed;
 }
 
-bool BarButtomSetClass::RegisterButton(
+bool BarButtonSetClass::RegisterButton(
 	const std::string& id,
-	BarButtomClass* button,
+	BarButtonClass* button,
 	bool allowMultiple,
 	BarButtonLayoutZoneEnum zone,
 	bool defaultUserVisible,
@@ -72,7 +72,7 @@ bool BarButtomSetClass::RegisterButton(
 	button->only = !allowMultiple;
 	button->userVisible = defaultUserVisible;
 	button->closeMoreAfterAction = closeMoreAfterAction;
-	shared_ptr<BarButtomClass> ownedButton(button);
+	shared_ptr<BarButtonClass> ownedButton(button);
 	registrations.emplace(
 		id,
 		BarButtonRegistrationClass{
@@ -93,7 +93,7 @@ bool BarButtomSetClass::RegisterButton(
 	return true;
 }
 
-bool BarButtomSetClass::RegisterLayoutMarker(const std::string& id)
+bool BarButtonSetClass::RegisterLayoutMarker(const std::string& id)
 {
 	if (id != Inkeys::BarButtonId::MoreBoundary) return false;
 	unique_lock lock(registrationMutex);
@@ -104,7 +104,7 @@ bool BarButtomSetClass::RegisterLayoutMarker(const std::string& id)
 		BarButtonRegistrationKindEnum::LayoutMarker,
 		false,
 		BarButtonLayoutZoneEnum::Extension,
-		BarButtomSizeEnum::twoTwo,
+		BarButtonSizeEnum::twoTwo,
 		true,
 		{},
 		{},
@@ -116,7 +116,7 @@ bool BarButtomSetClass::RegisterLayoutMarker(const std::string& id)
 	return true;
 }
 
-bool BarButtomSetClass::TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const
+bool BarButtonSetClass::TryGetRegistration(const std::string& id, BarButtonRegistrationClass& outRegistration) const
 {
 	shared_lock lock(registrationMutex);
 	auto registration = registrations.find(id);
@@ -126,7 +126,7 @@ bool BarButtomSetClass::TryGetRegistration(const std::string& id, BarButtonRegis
 	return true;
 }
 
-vector<BarButtonRegistrationClass> BarButtomSetClass::GetExtensionRegistrations() const
+vector<BarButtonRegistrationClass> BarButtonSetClass::GetExtensionRegistrations() const
 {
 	shared_lock lock(registrationMutex);
 	vector<BarButtonRegistrationClass> result;
@@ -141,24 +141,24 @@ vector<BarButtonRegistrationClass> BarButtomSetClass::GetExtensionRegistrations(
 	return result;
 }
 
-BarMoreButtonSnapshotClass BarButtomSetClass::GetMoreButtonSnapshot() const
+BarMoreButtonSnapshotClass BarButtonSetClass::GetMoreButtonSnapshot() const
 {
 	lock_guard lock(moreSnapshotMutex);
 	return moreSnapshot;
 }
 
-void BarButtomSetClass::PresetInitialization()
+void BarButtonSetClass::PresetInitialization()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
 	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
 
 	// 分隔线
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
 		{
-			obj->size = BarButtomSizeEnum::oneTwo;
-			obj->preset = BarButtomPresetEnum::Divider;
+			obj->size = BarButtonSizeEnum::oneTwo;
+			obj->preset = BarButtonPresetEnum::Divider;
 			obj->hide = false;
 
 			obj->only = false; // 允许多个分隔线
@@ -170,15 +170,15 @@ void BarButtomSetClass::PresetInitialization()
 		}
 		{
 			// Divider 直接使用 Shape 细线，SVG 资源继续保留但不参与视觉。
-			obj->buttom.Initialization(0.0, 0.0, 1.0, 50.0, 0.5, 0.5,
+			obj->button.Initialization(0.0, 0.0, 1.0, 50.0, 0.5, 0.5,
 				1.0, dividerColor, dividerColor);
-			obj->buttom.pct.Initialization(0.30);
-			obj->buttom.framePct = BarUiPctClass(0.0);
-			obj->buttom.frameLightPct = BarUiPctClass(0.0);
-			obj->buttom.frameRendering = BarUiFrameRenderingEnum::PointLight;
-			obj->buttom.frameLightColor = BarUiFrameLightColorEnum::Frame;
-			obj->buttom.framePrimaryLightEnabled = false;
-			obj->buttom.enable.Initialization(true);
+			obj->button.pct.Initialization(0.30);
+			obj->button.framePct = BarUiPctClass(0.0);
+			obj->button.frameLightPct = BarUiPctClass(0.0);
+			obj->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
+			obj->button.frameLightColor = BarUiFrameLightColorEnum::Frame;
+			obj->button.framePrimaryLightEnabled = false;
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -186,16 +186,16 @@ void BarButtomSetClass::PresetInitialization()
 			obj->icon.enable.Initialization(false);
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 
 	// 选择
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Select;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Select;
 			obj->hide = false;
 		}
 
@@ -204,8 +204,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -221,15 +221,15 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 	// 绘制
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Draw;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Draw;
 			obj->hide = false;
 		}
 
@@ -238,8 +238,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -274,15 +274,15 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 	// 擦除
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Eraser;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Eraser;
 			obj->hide = false;
 		}
 
@@ -291,8 +291,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -308,15 +308,15 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 	// 几何
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Geometry;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Geometry;
 			obj->hide = false;
 		}
 
@@ -325,8 +325,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, defaultIconColor);
@@ -359,16 +359,16 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 
 	// 撤回
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Recall;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Recall;
 			obj->hide = false;
 		}
 
@@ -377,8 +377,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -399,16 +399,16 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 	// TODO 重做（这个会成为撤回的子窗口）
 	// 清空
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Clean;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Clean;
 			obj->hide = false;
 		}
 
@@ -417,8 +417,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -439,16 +439,16 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 
 	// 穿透
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoOne;
-			obj->preset = BarButtomPresetEnum::Pierce;
+			obj->size = BarButtonSizeEnum::twoOne;
+			obj->preset = BarButtonPresetEnum::Pierce;
 			obj->hide = false;
 		}
 
@@ -457,8 +457,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -485,15 +485,15 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 	// 定格
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoOne;
-			obj->preset = BarButtomPresetEnum::Freeze;
+			obj->size = BarButtonSizeEnum::twoOne;
+			obj->preset = BarButtonPresetEnum::Freeze;
 			obj->hide = false;
 		}
 
@@ -502,8 +502,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -530,16 +530,16 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 
 	// 设置
 	{
-		BarButtomClass* obj = new BarButtomClass;
+		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtomSizeEnum::twoTwo;
-			obj->preset = BarButtomPresetEnum::Setting;
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::Setting;
 			obj->hide = false;
 
 		}
@@ -549,8 +549,8 @@ void BarButtomSetClass::PresetInitialization()
 			obj->name.enable.Initialization(true);
 		}
 		{
-			obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->buttom.enable.Initialization(true);
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
 		}
 		{
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
@@ -566,22 +566,22 @@ void BarButtomSetClass::PresetInitialization()
 				};
 		}
 
-		obj->state = &barButtomState[(int)obj->preset.load()];
+		obj->state = &barButtonState[(int)obj->preset.load()];
 		preset[(int)obj->preset.load()] = obj;
 	}
 
 	// 官方按钮使用稳定 ID；A1/A2 固定区与扩展区在注册时写死分区和默认显隐。
-	RegisterButton(Inkeys::BarButtonId::Select, preset[(int)BarButtomPresetEnum::Select], false, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Draw, preset[(int)BarButtomPresetEnum::Draw], false, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Eraser, preset[(int)BarButtomPresetEnum::Eraser], false, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Geometry, preset[(int)BarButtomPresetEnum::Geometry], false, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Recall, preset[(int)BarButtomPresetEnum::Recall], false, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtomPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Select, preset[(int)BarButtonPresetEnum::Select], false, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Draw, preset[(int)BarButtonPresetEnum::Draw], false, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Eraser, preset[(int)BarButtonPresetEnum::Eraser], false, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Geometry, preset[(int)BarButtonPresetEnum::Geometry], false, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Recall, preset[(int)BarButtonPresetEnum::Recall], false, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtonPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
 	// Divider 不进 A1 配置 required 集；仅作运行时交界注入模板（可多实例拷贝）。
-	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtomPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtomPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
-	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtomPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
-	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtomPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
+	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtonPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtonPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
+	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtonPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
+	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtonPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
 	RegisterLayoutMarker(Inkeys::BarButtonId::MoreBoundary);
 
 	BarButtonRegistrationClass dividerRegistration;
@@ -589,27 +589,27 @@ void BarButtomSetClass::PresetInitialization()
 		&& dividerRegistration.button)
 	{
 		// 两条交界线由集合长期持有，运行时替换列表时不会释放正在绘制的对象。
-		boundaryDividers[0] = make_shared<BarButtomClass>(*dividerRegistration.button);
-		boundaryDividers[1] = make_shared<BarButtomClass>(*dividerRegistration.button);
+		boundaryDividers[0] = make_shared<BarButtonClass>(*dividerRegistration.button);
+		boundaryDividers[1] = make_shared<BarButtonClass>(*dividerRegistration.button);
 	}
 	// 更多入口是硬编码控件，不进入注册表或持久化序列。
-	moreButton = make_shared<BarButtomClass>();
+	moreButton = make_shared<BarButtonClass>();
 	moreButton->id = Inkeys::BarButtonId::MoreBoundary;
-	moreButton->preset = BarButtomPresetEnum::More;
-	moreButton->size = BarButtomSizeEnum::twoTwo;
+	moreButton->preset = BarButtonPresetEnum::More;
+	moreButton->size = BarButtonSizeEnum::twoTwo;
 	moreButton->hide = false;
 	moreButton->userVisible = true;
 	moreButton->name.Initialization(0.0, 0.0, 0.0, 0.0, L"更多", 0.0);
 	moreButton->name.enable.Initialization(true);
-	moreButton->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-	moreButton->buttom.enable.Initialization(true);
+	moreButton->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+	moreButton->button.enable.Initialization(true);
 	moreButton->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 	moreButton->icon.InitializationFromResource(L"UI", L"barMore");
 	moreButton->icon.enable.Initialization(true);
 	moreButton->state = &moreButton->localState;
 }
 
-void BarButtomSetClass::RegisterBuiltInComponents()
+void BarButtonSetClass::RegisterBuiltInComponents()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
 	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
@@ -626,15 +626,15 @@ void BarButtomSetClass::RegisterBuiltInComponents()
 		BarButtonRegistrationClass existingRegistration;
 		if (TryGetRegistration(id, existingRegistration)) return;
 
-		BarButtomClass* obj = new BarButtomClass;
-		obj->size = BarButtomSizeEnum::twoTwo;
+		BarButtonClass* obj = new BarButtonClass;
+		obj->size = BarButtonSizeEnum::twoTwo;
 		obj->hide = false;
 		obj->only = true;
 
 		obj->name.Initialization(0.0, 0.0, 0.0, 0.0, shortText, 0.0);
 		obj->name.enable.Initialization(true);
-		obj->buttom.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-		obj->buttom.enable.Initialization(true);
+		obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
+		obj->button.enable.Initialization(true);
 
 		obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
 		obj->icon.enable.Initialization(true);
@@ -648,7 +648,7 @@ void BarButtomSetClass::RegisterBuiltInComponents()
 		// 复用 SVG 的动画状态，但为 PNG 提供真实宽高，避免 SetWH 无法按比例计算。
 		obj->icon.rW = obj->pngIcon.rW;
 		obj->icon.rH = obj->pngIcon.rH;
-		obj->iconKind = BarButtomIconKindEnum::Png;
+		obj->iconKind = BarButtonIconKindEnum::Png;
 		obj->clickFunc = [action]() { ExecuteInkeysBuiltInComponentAction(action); };
 
 		if (!RegisterButton(
@@ -762,7 +762,7 @@ void BarButtomSetClass::RegisterBuiltInComponents()
 		InkeysBuiltInComponentAction::ClassIslandClassSwap);
 }
 
-void BarButtomSetClass::StateUpdate()
+void BarButtonSetClass::StateUpdate()
 {
 	CalcState();
 	PresetHoming();
@@ -770,7 +770,7 @@ void BarButtomSetClass::StateUpdate()
 	UpdateEraserButtonStyle();
 	UpdateGeometryButtonStyle();
 }
-void BarButtomSetClass::UpdateDrawButtonStyle()
+void BarButtonSetClass::UpdateDrawButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
@@ -781,14 +781,14 @@ void BarButtomSetClass::UpdateDrawButtonStyle()
 
 	lock_guard<mutex> lock(mtx);
 	if (drawButtonStyleKey == styleKey) return;
-	auto button = preset[(int)BarButtomPresetEnum::Draw];
+	auto button = preset[(int)BarButtonPresetEnum::Draw];
 	if (!button) return;
 	button->TransitionContent(
 		highlighter ? L"barHighlighter1" : L"barBrush1",
 		selected ? (highlighter ? L"荧光笔" : L"硬笔") : L"绘制");
 	drawButtonStyleKey = styleKey;
 }
-void BarButtomSetClass::UpdateEraserButtonStyle()
+void BarButtonSetClass::UpdateEraserButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
@@ -797,13 +797,13 @@ void BarButtomSetClass::UpdateEraserButtonStyle()
 
 	lock_guard<mutex> lock(mtx);
 	if (eraserButtonStyleKey == styleKey) return;
-	auto button = preset[(int)BarButtomPresetEnum::Eraser];
+	auto button = preset[(int)BarButtonPresetEnum::Eraser];
 	if (!button) return;
 	button->TransitionContent(
 		L"barEraser", selected ? L"面积擦" : L"擦除");
 	eraserButtonStyleKey = styleKey;
 }
-void BarButtomSetClass::UpdateGeometryButtonStyle()
+void BarButtonSetClass::UpdateGeometryButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
@@ -814,7 +814,7 @@ void BarButtomSetClass::UpdateGeometryButtonStyle()
 
 	lock_guard<mutex> lock(mtx);
 	if (geometryButtonStyleKey == styleKey) return;
-	auto button = preset[(int)BarButtomPresetEnum::Geometry];
+	auto button = preset[(int)BarButtonPresetEnum::Geometry];
 	if (!button) return;
 	const wchar_t* resourceName = !selected
 		? L"barGeometry" : (rectangle
@@ -824,31 +824,31 @@ void BarButtomSetClass::UpdateGeometryButtonStyle()
 	geometryButtonStyleKey = styleKey;
 }
 
-Inkeys::BarButtonSizeKind BarButtomSetClass::ToConfigSize(BarButtomSizeEnum size)
+Inkeys::BarButtonSizeKind BarButtonSetClass::ToConfigSize(BarButtonSizeEnum size)
 {
 	switch (size)
 	{
-	case BarButtomSizeEnum::twoTwo: return Inkeys::BarButtonSizeKind::TwoTwo;
-	case BarButtomSizeEnum::twoOne: return Inkeys::BarButtonSizeKind::TwoOne;
-	case BarButtomSizeEnum::oneTwo: return Inkeys::BarButtonSizeKind::OneTwo;
-	case BarButtomSizeEnum::oneOne: return Inkeys::BarButtonSizeKind::OneOne;
+	case BarButtonSizeEnum::twoTwo: return Inkeys::BarButtonSizeKind::TwoTwo;
+	case BarButtonSizeEnum::twoOne: return Inkeys::BarButtonSizeKind::TwoOne;
+	case BarButtonSizeEnum::oneTwo: return Inkeys::BarButtonSizeKind::OneTwo;
+	case BarButtonSizeEnum::oneOne: return Inkeys::BarButtonSizeKind::OneOne;
 	}
 	return Inkeys::BarButtonSizeKind::TwoTwo;
 }
 
-BarButtomSizeEnum BarButtomSetClass::ToRuntimeSize(Inkeys::BarButtonSizeKind size)
+BarButtonSizeEnum BarButtonSetClass::ToRuntimeSize(Inkeys::BarButtonSizeKind size)
 {
 	switch (size)
 	{
-	case Inkeys::BarButtonSizeKind::TwoTwo: return BarButtomSizeEnum::twoTwo;
-	case Inkeys::BarButtonSizeKind::TwoOne: return BarButtomSizeEnum::twoOne;
-	case Inkeys::BarButtonSizeKind::OneTwo: return BarButtomSizeEnum::oneTwo;
-	case Inkeys::BarButtonSizeKind::OneOne: return BarButtomSizeEnum::oneOne;
+	case Inkeys::BarButtonSizeKind::TwoTwo: return BarButtonSizeEnum::twoTwo;
+	case Inkeys::BarButtonSizeKind::TwoOne: return BarButtonSizeEnum::twoOne;
+	case Inkeys::BarButtonSizeKind::OneTwo: return BarButtonSizeEnum::oneTwo;
+	case Inkeys::BarButtonSizeKind::OneOne: return BarButtonSizeEnum::oneOne;
 	}
-	return BarButtomSizeEnum::twoTwo;
+	return BarButtonSizeEnum::twoTwo;
 }
 
-bool BarButtomSetClass::IsExactFixedZonePermutation(
+bool BarButtonSetClass::IsExactFixedZonePermutation(
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults)
 {
@@ -872,7 +872,7 @@ bool BarButtomSetClass::IsExactFixedZonePermutation(
 	return actualCounts == expectedCounts;
 }
 
-std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtomSetClass::NormalizeFixedZone(
+std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtonSetClass::NormalizeFixedZone(
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults,
 	BarButtonLayoutZoneEnum zone)
@@ -933,7 +933,7 @@ std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtomSetClass::NormalizeFixed
 	return normalized;
 }
 
-std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtomSetClass::NormalizeExtensionZone(
+std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtonSetClass::NormalizeExtensionZone(
 	const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& configured)
 {
 	std::vector<Inkeys::BarExtensionButtonLayoutEntry> normalized;
@@ -990,9 +990,9 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> BarButtomSetClass::NormalizeE
 	return normalized;
 }
 
-void BarButtomSetClass::AppendFixedButtons(
+void BarButtonSetClass::AppendFixedButtons(
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries,
-	vector<shared_ptr<BarButtomClass>>& activeButtons)
+	vector<shared_ptr<BarButtonClass>>& activeButtons)
 {
 	for (const Inkeys::BarFixedButtonLayoutEntry& entry : entries)
 	{
@@ -1006,7 +1006,7 @@ void BarButtomSetClass::AppendFixedButtons(
 	}
 }
 
-vector<shared_ptr<BarButtomClass>> BarButtomSetClass::GetLegacyExtensionButtons()
+vector<shared_ptr<BarButtonClass>> BarButtonSetClass::GetLegacyExtensionButtons()
 {
 	vector<BarButtonRegistrationClass> registrationsSnapshot = GetExtensionRegistrations();
 	unordered_map<std::string, BarButtonRegistrationClass> registrationsById;
@@ -1050,7 +1050,7 @@ vector<shared_ptr<BarButtomClass>> BarButtomSetClass::GetLegacyExtensionButtons(
 		activeOrder = legacyActiveOrder;
 	}
 
-	vector<shared_ptr<BarButtomClass>> result;
+	vector<shared_ptr<BarButtonClass>> result;
 	result.reserve(activeOrder.size());
 	for (const std::string& id : activeOrder)
 	{
@@ -1064,8 +1064,8 @@ vector<shared_ptr<BarButtomClass>> BarButtomSetClass::GetLegacyExtensionButtons(
 	return result;
 }
 
-void BarButtomSetClass::AppendBoundaryDivider(
-	vector<shared_ptr<BarButtomClass>>& activeButtons,
+void BarButtonSetClass::AppendBoundaryDivider(
+	vector<shared_ptr<BarButtonClass>>& activeButtons,
 	size_t boundaryIndex)
 {
 	if (boundaryIndex >= 2 || !boundaryDividers[boundaryIndex]) return;
@@ -1079,7 +1079,7 @@ void BarButtomSetClass::AppendBoundaryDivider(
 	activeButtons.push_back(boundaryDividers[boundaryIndex]);
 }
 
-void BarButtomSetClass::Load()
+void BarButtonSetClass::Load()
 {
 	// UI3 与 UI2 并行期间，B 区只由旧组件开关投影，完全忽略新版 ExtensionButtons。
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA1 =
@@ -1096,17 +1096,17 @@ void BarButtomSetClass::Load()
 		defaultA2,
 		BarButtonLayoutZoneEnum::FixedA2);
 
-	vector<shared_ptr<BarButtomClass>> activeButtons;
+	vector<shared_ptr<BarButtonClass>> activeButtons;
 	AppendFixedButtons(normalizedA1, activeButtons);
-	vector<shared_ptr<BarButtomClass>> legacyButtons = GetLegacyExtensionButtons();
-	vector<shared_ptr<BarButtomClass>> forcedOverflow;
-	vector<shared_ptr<BarButtomClass>> mainButtons;
-	for (const shared_ptr<BarButtomClass>& button : legacyButtons)
+	vector<shared_ptr<BarButtonClass>> legacyButtons = GetLegacyExtensionButtons();
+	vector<shared_ptr<BarButtonClass>> forcedOverflow;
+	vector<shared_ptr<BarButtonClass>> mainButtons;
+	for (const shared_ptr<BarButtonClass>& button : legacyButtons)
 	{
 		if (mainButtons.size() < 2) mainButtons.push_back(button);
 		else forcedOverflow.push_back(button);
 	}
-	vector<shared_ptr<BarButtomClass>> explicitMore;
+	vector<shared_ptr<BarButtonClass>> explicitMore;
 	BarButtonRegistrationClass settingRegistration;
 	if (TryGetRegistration(Inkeys::BarButtonId::Setting, settingRegistration)
 		&& settingRegistration.button)
@@ -1129,7 +1129,7 @@ void BarButtomSetClass::Load()
 
 	// 先在列表锁内替换整段序列，再发布数量；注册表和边界实例继续持有对象所有权。
 	const int activeButtonCount = static_cast<int>(activeButtons.size());
-	buttomlist.Replace(move(activeButtons));
+	buttonList.Replace(move(activeButtons));
 	tot = activeButtonCount;
 
 	// 只规范化 A1/A2；运行时投影不读取、修改或写回持久化 B 区。
@@ -1137,42 +1137,42 @@ void BarButtomSetClass::Load()
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
 }
 
-void BarButtomSetClass::SyncLegacyExtensionButtons()
+void BarButtonSetClass::SyncLegacyExtensionButtons()
 {
 	Load();
 }
 
-void BarButtomSetClass::ResetIconCaches()
+void BarButtonSetClass::ResetIconCaches()
 {
 	shared_lock lock(registrationMutex);
 	for (const auto& [id, registration] : registrations)
 	{
 		if (!registration.button) continue;
 		registration.button->icon.ResetCache();
-		if (registration.button->iconKind == BarButtomIconKindEnum::Png)
+		if (registration.button->iconKind == BarButtonIconKindEnum::Png)
 			registration.button->pngIcon.ResetCache();
 	}
-	for (const shared_ptr<BarButtomClass>& divider : boundaryDividers)
+	for (const shared_ptr<BarButtonClass>& divider : boundaryDividers)
 	{
 		if (!divider) continue;
 		divider->icon.ResetCache();
-		if (divider->iconKind == BarButtomIconKindEnum::Png)
+		if (divider->iconKind == BarButtonIconKindEnum::Png)
 			divider->pngIcon.ResetCache();
 	}
 	if (moreButton) moreButton->icon.ResetCache();
 }
 
-void BarButtomSetClass::PresetHoming()
+void BarButtonSetClass::PresetHoming()
 {
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtomPresetEnum::Draw]->IsVisible())
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
 	{
 		barUISet.barState.drawAttribute = false;
 	}
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtomPresetEnum::Geometry]->IsVisible())
+		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible())
 	{
 		barUISet.barState.geometryAttribute = false;
 	}
@@ -1182,68 +1182,68 @@ void BarButtomSetClass::PresetHoming()
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 	{
 		// 显示状态变化
-		preset[(int)BarButtomPresetEnum::Eraser]->hide = true;
-		preset[(int)BarButtomPresetEnum::Geometry]->hide = true;
-		preset[(int)BarButtomPresetEnum::Recall]->hide = true;
-		//preset[(int)BarButtomPresetEnum::Redo]->hide = true;
-		// preset[(int)BarButtomPresetEnum::Clean]->hide = true;
-		preset[(int)BarButtomPresetEnum::Pierce]->hide = true;
+		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
+		preset[(int)BarButtonPresetEnum::Geometry]->hide = true;
+		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
+		//preset[(int)BarButtonPresetEnum::Redo]->hide = true;
+		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
+		preset[(int)BarButtonPresetEnum::Pierce]->hide = true;
 
 		// 显示尺寸变化
-		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoTwo;
+		preset[(int)BarButtonPresetEnum::Freeze]->size = BarButtonSizeEnum::twoTwo;
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
-		preset[(int)BarButtomPresetEnum::Select]->TransitionContent(
+		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
 			L"barSelect", L"选择");
 	}
 	else
 	{
 		// 显示状态变化
-		preset[(int)BarButtomPresetEnum::Eraser]->hide = false;
-		preset[(int)BarButtomPresetEnum::Geometry]->hide = false;
-		preset[(int)BarButtomPresetEnum::Recall]->hide = false;
-		//preset[(int)BarButtomPresetEnum::Redo]->hide = false;
-		// preset[(int)BarButtomPresetEnum::Clean]->hide = false;
-		preset[(int)BarButtomPresetEnum::Pierce]->hide = false;
+		preset[(int)BarButtonPresetEnum::Eraser]->hide = false;
+		preset[(int)BarButtonPresetEnum::Geometry]->hide = false;
+		preset[(int)BarButtonPresetEnum::Recall]->hide = false;
+		//preset[(int)BarButtonPresetEnum::Redo]->hide = false;
+		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
+		preset[(int)BarButtonPresetEnum::Pierce]->hide = false;
 
 		// 显示尺寸变化
-		preset[(int)BarButtomPresetEnum::Freeze]->size = BarButtomSizeEnum::twoOne;
+		preset[(int)BarButtonPresetEnum::Freeze]->size = BarButtonSizeEnum::twoOne;
 
 		// 显示名称变化
-		preset[(int)BarButtomPresetEnum::Select]->TransitionContent(
+		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
 			L"barSelect", L"选择(清空)");
 	}
 }
-void BarButtomSetClass::CalcState()
+void BarButtonSetClass::CalcState()
 {
 	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Select].state = BarWidgetState::None;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::None;
 	}
 	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Draw].state = BarWidgetState::None;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen) barButtonState[(int)BarButtonPresetEnum::Draw].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Draw].state = BarWidgetState::None;
 	}
 	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Eraser].state = BarWidgetState::None;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser) barButtonState[(int)BarButtonPresetEnum::Eraser].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Eraser].state = BarWidgetState::None;
 	}
 	{
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape) barButtomState[(int)BarButtomPresetEnum::Geometry].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Geometry].state = BarWidgetState::None;
-	}
-
-	{
-		if (penetrate.select) barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Pierce].state = BarWidgetState::None;
-	}
-	{
-		if (FreezeFrame.mode == 1) barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Freeze].state = BarWidgetState::None;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape) barButtonState[(int)BarButtonPresetEnum::Geometry].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Geometry].state = BarWidgetState::None;
 	}
 
 	{
-		if (test.select) barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::Selected;
-		else barButtomState[(int)BarButtomPresetEnum::Setting].state = BarWidgetState::None;
+		if (penetrate.select) barButtonState[(int)BarButtonPresetEnum::Pierce].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Pierce].state = BarWidgetState::None;
+	}
+	{
+		if (FreezeFrame.mode == 1) barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;
+	}
+
+	{
+		if (test.select) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
+		else barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::None;
 	}
 }

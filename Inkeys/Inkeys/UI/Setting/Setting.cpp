@@ -38,10 +38,13 @@ import Inkeys.Other.Config;
 
 using namespace std;
 
+// WndProc 内的同步拖动直接复用窗口线程 stop_token，避免退出消息被拖动循环饿死。
+static thread_local stop_token settingWindowStopToken;
+
 static void SyncUi3BuiltInComponents()
 {
 	if (!useInkeys3UI) return;
-	barUISet.barButtomSet.SyncLegacyExtensionButtons();
+	barUISet.barButtonSet.SyncLegacyExtensionButtons();
 	barUISet.UpdateRendering();
 }
 
@@ -67,7 +70,8 @@ struct
 
 void SettingSeekBar()
 {
-	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (settingWindowStopToken.stop_requested() || offSignal
+		|| !Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -75,7 +79,7 @@ void SettingSeekBar()
 	int pop_x = p.x - SettingWindowX;
 	int pop_y = p.y - SettingWindowY;
 
-	while (1)
+	while (!settingWindowStopToken.stop_requested() && !offSignal)
 	{
 		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
@@ -89,6 +93,8 @@ void SettingSeekBar()
 			0,
 			0,
 			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
+		// 限制同步拖动的轮询频率，并把停止响应延迟约束在一个短周期内。
+		this_thread::sleep_for(chrono::milliseconds(8));
 	}
 
 	return;
@@ -152,6 +158,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void SettingWindow(stop_token sT, promise<void>& promise)
 {
+	settingWindowStopToken = sT;
+
 	// 创建窗口
 	{
 		wstring ClassName;
@@ -164,24 +172,55 @@ void SettingWindow(stop_token sT, promise<void>& promise)
 		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
 	}
 
-	// 设置终止时回调
-	auto tid = GetCurrentThreadId();
-	stop_callback sc(sT, [tid]
-		{
-			PostThreadMessage(tid, Inkeys::Thread::WM_USER_STOP_Win32Msg, 0, 0);
-		});
-
-	// 窗口创建完成
-	promise.set_value();
-
-	MSG msg;
-	while (GetMessage(&msg, nullptr, 0, 0))
+	HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	if (!stopEvent && IDTLogger) IDTLogger->error(
+		"[SettingWindow] 创建停止事件失败，将使用有界消息等待, error={}",
+		GetLastError());
 	{
-		if (sT.stop_requested()) break;
+		// 停止事件与窗口消息共用等待点；事件不可用时最多 100ms 轮询一次 stop_token。
+		stop_callback sc(sT, [stopEvent]
+			{
+				if (stopEvent) SetEvent(stopEvent);
+			});
 
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		// 窗口创建完成
+		promise.set_value();
+
+		MSG msg{};
+		bool quitRequested = false;
+		while (!sT.stop_requested() && !quitRequested)
+		{
+			const DWORD waitResult = stopEvent
+				? MsgWaitForMultipleObjectsEx(
+					1, &stopEvent, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+				: MsgWaitForMultipleObjectsEx(
+					0, nullptr, 100, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+			if (stopEvent && waitResult == WAIT_OBJECT_0) break;
+			if (waitResult == WAIT_TIMEOUT) continue;
+
+			const DWORD messageWaitResult = WAIT_OBJECT_0 + (stopEvent ? 1 : 0);
+			if (waitResult != messageWaitResult)
+			{
+				if (IDTLogger) IDTLogger->error(
+					"[SettingWindow] 等待停止事件失败, error={}",
+					GetLastError());
+				break;
+			}
+
+			while (!sT.stop_requested()
+				&& PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+			{
+				if (msg.message == WM_QUIT)
+				{
+					quitRequested = true;
+					break;
+				}
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+		}
 	}
+	if (stopEvent) CloseHandle(stopEvent);
 
 	// 构析窗口相关
 	{

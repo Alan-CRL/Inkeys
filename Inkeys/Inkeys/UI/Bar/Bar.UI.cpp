@@ -231,23 +231,28 @@ bool BarUiSVGClass::TransitionToString(const wstring& valT, optional<double> dur
 	double keyframeProgressT, double middleScaleT)
 {
 	if (valT.empty()) return false;
-	if (contentTransitionTimeline.IsActive() && transitionSvg.GetTar() == valT) return false;
-	if (!contentTransitionTimeline.IsActive() && svg.GetVal() == valT && svg.GetTar() == valT)
-	{
-		transitionSvg.Initialization(valT);
-		return false;
-	}
-
-	// 新请求只保留最新资源，并从当前视觉倍率连续重建关键帧过程。
-	transitionSvg.SetTar(valT);
-	contentTransitionStartScale = max(0.0, static_cast<double>(contentScale));
-	contentTransitionStartPct = clamp(static_cast<double>(contentPct), 0.0, 1.0);
-	contentTransitionMiddleScale = isfinite(middleScaleT) ? max(0.0, middleScaleT) : 0.8;
-	contentTransitionKeyframeProgress = isfinite(keyframeProgressT)
-		? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
 	double duration = durT.has_value() ? durT.value() : static_cast<double>(BarUiDefaultOperationDur);
-	contentTransitionTimeline.Start(duration, contentTransitionKeyframeProgress);
-	return true;
+	return contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+		{
+			if (timeline.IsActive() && transitionSvg.GetTar() == valT) return false;
+			if (!timeline.IsActive() && svg.GetVal() == valT && svg.GetTar() == valT)
+			{
+				transitionSvg.Initialization(valT);
+				return false;
+			}
+
+			// 目标、起始视觉值与新代次必须在同一事务内发布。
+			transitionSvg.SetTar(valT);
+			contentTransitionStartScale = max(0.0, static_cast<double>(contentScale));
+			contentTransitionStartPct = clamp(static_cast<double>(contentPct), 0.0, 1.0);
+			contentTransitionMiddleScale = isfinite(middleScaleT)
+				? max(0.0, middleScaleT) : 0.8;
+			contentTransitionKeyframeProgress = isfinite(keyframeProgressT)
+				? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
+			timeline.Start(duration, contentTransitionKeyframeProgress);
+			return true;
+		});
 }
 bool BarUiSVGClass::TransitionToResource(const wstring& resType, const wstring& resName,
 	optional<double> durT, double keyframeProgressT, double middleScaleT)
@@ -259,57 +264,114 @@ bool BarUiSVGClass::TransitionToResource(const wstring& resType, const wstring& 
 }
 bool BarUiSVGClass::AdvanceContentTransition(double dt, double speedRate)
 {
-	if (!contentTransitionTimeline.IsActive()) return false;
-	BarUiKeyframeTimelineResultClass result = contentTransitionTimeline.Advance(dt, speedRate);
-	double keyframe = clamp(static_cast<double>(contentTransitionKeyframeProgress), 0.0, 1.0);
-	double middleScale = max(0.0, static_cast<double>(contentTransitionMiddleScale));
-	double progress = clamp(result.progress, 0.0, 1.0);
+	struct TransitionSnapshot
+	{
+		BarUiKeyframeTimelineResultClass result;
+		wstring target;
+		double startScale = 1.0;
+		double startPct = 1.0;
+		double middleScale = 0.8;
+		double keyframe = 0.5;
+		bool applyContent = false;
+	};
+	optional<TransitionSnapshot> snapshot = contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			-> optional<TransitionSnapshot>
+		{
+			if (!timeline.IsActive()) return nullopt;
+			TransitionSnapshot value;
+			value.result = timeline.Advance(dt, speedRate);
+			value.target = transitionSvg.GetTar();
+			value.startScale = contentTransitionStartScale;
+			value.startPct = contentTransitionStartPct;
+			value.middleScale = max(0.0, contentTransitionMiddleScale);
+			value.keyframe = clamp(contentTransitionKeyframeProgress, 0.0, 1.0);
+			value.applyContent = value.result.reachedKeyframe
+				|| (value.result.finished
+					&& (svg.GetVal() != value.target || svg.GetTar() != value.target));
+			return value;
+		});
+	if (!snapshot.has_value()) return false;
+
+	double progress = clamp(snapshot->result.progress, 0.0, 1.0);
 	double nextScale = 1.0;
 	double nextPct = 1.0;
-	if (progress <= keyframe)
+	if (progress <= snapshot->keyframe)
 	{
-		double localProgress = keyframe > 0.000001 ? progress / keyframe : 1.0;
-		nextScale = static_cast<double>(contentTransitionStartScale)
-			+ (middleScale - static_cast<double>(contentTransitionStartScale))
+		double localProgress = snapshot->keyframe > 0.000001
+			? progress / snapshot->keyframe : 1.0;
+		nextScale = snapshot->startScale
+			+ (snapshot->middleScale - snapshot->startScale)
 			* BarUiApplyCurve(BarUiCurveEnum::EaseInCubic, localProgress);
-		nextPct = static_cast<double>(contentTransitionStartPct)
+		nextPct = snapshot->startPct
 			* (1.0 - BarUiApplyCurve(BarUiCurveEnum::EaseInSine, localProgress));
 	}
 	else
 	{
-		double localProgress = 1.0 - keyframe > 0.000001
-			? (progress - keyframe) / (1.0 - keyframe) : 1.0;
-		nextScale = middleScale + (1.0 - middleScale)
+		double localProgress = 1.0 - snapshot->keyframe > 0.000001
+			? (progress - snapshot->keyframe) / (1.0 - snapshot->keyframe) : 1.0;
+		nextScale = snapshot->middleScale + (1.0 - snapshot->middleScale)
 			* BarUiApplyCurve(BarUiCurveEnum::EaseOutBack, localProgress);
 		nextPct = BarUiApplyCurve(BarUiCurveEnum::EaseOutSine, localProgress);
 	}
-	contentScale = isfinite(nextScale) ? max(0.0, nextScale) : 1.0;
-	contentPct = isfinite(nextPct) ? clamp(nextPct, 0.0, 1.0) : 1.0;
 
-	if (result.reachedKeyframe)
+	pair<double, double> targetSize = { 0.0, 0.0 };
+	if (snapshot->applyContent)
 	{
-		// 中点完全透明时才替换离散内容；缓存只在这里失效一次。
-		contentScale = middleScale;
-		contentPct = 0.0;
-		ApplyContentDirect(transitionSvg.GetTar());
+		// SVG 解析可能较重，先对快照目标解析，再凭代次提交短状态。
+		auto document = lunasvg::Document::loadFromData(utf16ToUtf8(snapshot->target));
+		if (document)
+			targetSize = { static_cast<double>(document->width()),
+				static_cast<double>(document->height()) };
 	}
-	if (result.finished)
+
+	bool contentCommitted = false;
+	contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+		{
+			if (!timeline.IsCurrentGeneration(snapshot->result.generation)) return;
+			contentScale = isfinite(nextScale) ? max(0.0, nextScale) : 1.0;
+			contentPct = isfinite(nextPct) ? clamp(nextPct, 0.0, 1.0) : 1.0;
+
+			if (snapshot->result.reachedKeyframe)
+			{
+				contentScale = snapshot->middleScale;
+				contentPct = 0.0;
+			}
+			if (snapshot->applyContent)
+			{
+				svg.Initialization(snapshot->target);
+				rW = targetSize.first;
+				rH = targetSize.second;
+				contentCommitted = true;
+			}
+			if (snapshot->result.finished)
+			{
+				contentScale = 1.0;
+				contentPct = 1.0;
+			}
+		});
+	if (contentCommitted)
 	{
-		// 极短时长也必须提交最终内容，并直接收尾到标准倍率。
-		wstring target = transitionSvg.GetTar();
-		if (svg.GetVal() != target || svg.GetTar() != target) ApplyContentDirect(target);
-		contentScale = 1.0;
-		contentPct = 1.0;
+		// cache 只由渲染线程持有，不扩大时间线锁的临界区。
+		ResetCache();
 	}
 	return true;
 }
 void BarUiSVGClass::CancelContentTransition()
 {
-	contentTransitionTimeline.Cancel();
-	contentScale = 1.0;
-	contentPct = 1.0;
-	contentTransitionStartScale = 1.0;
-	contentTransitionStartPct = 1.0;
+	contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+		{
+			timeline.Cancel();
+			transitionSvg.Initialization(svg.GetTar());
+			contentScale = 1.0;
+			contentPct = 1.0;
+			contentTransitionStartScale = 1.0;
+			contentTransitionStartPct = 1.0;
+			contentTransitionMiddleScale = 0.8;
+			contentTransitionKeyframeProgress = 0.5;
+		});
 }
 void BarUiSVGClass::ResetCache()
 {
@@ -611,80 +673,118 @@ void BarUiWordClass::Initialization(double xT, double yT, double wT, double hT, 
 bool BarUiWordClass::TransitionToString(const wstring& contentT, optional<double> durT,
 	double keyframeProgressT, double middleScaleT)
 {
-	if (contentTransitionTimeline.IsActive() && transitionContent.GetTar() == contentT)
-		return false;
-	if (!contentTransitionTimeline.IsActive()
-		&& content.GetVal() == contentT && content.GetTar() == contentT)
-	{
-		transitionContent.Initialization(contentT);
-		return false;
-	}
-
-	transitionContent.SetTar(contentT);
-	contentTransitionStartScale = max(0.0, static_cast<double>(contentScale));
-	contentTransitionStartPct = clamp(static_cast<double>(contentPct), 0.0, 1.0);
-	contentTransitionMiddleScale = isfinite(middleScaleT) ? max(0.0, middleScaleT) : 0.8;
-	contentTransitionKeyframeProgress = isfinite(keyframeProgressT)
-		? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
 	double duration = durT.has_value()
 		? durT.value() : static_cast<double>(BarUiDefaultOperationDur);
-	contentTransitionTimeline.Start(duration, contentTransitionKeyframeProgress);
-	return true;
+	return contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+		{
+			if (timeline.IsActive() && transitionContent.GetTar() == contentT)
+				return false;
+			if (!timeline.IsActive()
+				&& content.GetVal() == contentT && content.GetTar() == contentT)
+			{
+				transitionContent.Initialization(contentT);
+				return false;
+			}
+
+			transitionContent.SetTar(contentT);
+			contentTransitionStartScale = max(0.0, static_cast<double>(contentScale));
+			contentTransitionStartPct = clamp(static_cast<double>(contentPct), 0.0, 1.0);
+			contentTransitionMiddleScale = isfinite(middleScaleT)
+				? max(0.0, middleScaleT) : 0.8;
+			contentTransitionKeyframeProgress = isfinite(keyframeProgressT)
+				? clamp(keyframeProgressT, 0.0, 1.0) : 0.5;
+			timeline.Start(duration, contentTransitionKeyframeProgress);
+			return true;
+		});
 }
 bool BarUiWordClass::AdvanceContentTransition(double dt, double speedRate)
 {
-	if (!contentTransitionTimeline.IsActive()) return false;
-	BarUiKeyframeTimelineResultClass result =
-		contentTransitionTimeline.Advance(dt, speedRate);
-	double keyframe = clamp(
-		static_cast<double>(contentTransitionKeyframeProgress), 0.0, 1.0);
-	double middleScale = max(
-		0.0, static_cast<double>(contentTransitionMiddleScale));
-	double progress = clamp(result.progress, 0.0, 1.0);
+	struct TransitionSnapshot
+	{
+		BarUiKeyframeTimelineResultClass result;
+		wstring target;
+		double startScale = 1.0;
+		double startPct = 1.0;
+		double middleScale = 0.8;
+		double keyframe = 0.5;
+		bool applyContent = false;
+	};
+	optional<TransitionSnapshot> snapshot = contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			-> optional<TransitionSnapshot>
+		{
+			if (!timeline.IsActive()) return nullopt;
+			TransitionSnapshot value;
+			value.result = timeline.Advance(dt, speedRate);
+			value.target = transitionContent.GetTar();
+			value.startScale = contentTransitionStartScale;
+			value.startPct = contentTransitionStartPct;
+			value.middleScale = max(0.0, contentTransitionMiddleScale);
+			value.keyframe = clamp(contentTransitionKeyframeProgress, 0.0, 1.0);
+			value.applyContent = value.result.reachedKeyframe
+				|| (value.result.finished
+					&& (content.GetVal() != value.target || content.GetTar() != value.target));
+			return value;
+		});
+	if (!snapshot.has_value()) return false;
+
+	double progress = clamp(snapshot->result.progress, 0.0, 1.0);
 	double nextScale = 1.0;
 	double nextPct = 1.0;
-	if (progress <= keyframe)
+	if (progress <= snapshot->keyframe)
 	{
-		double localProgress = keyframe > 0.000001
-			? progress / keyframe : 1.0;
-		nextScale = static_cast<double>(contentTransitionStartScale)
-			+ (middleScale - static_cast<double>(contentTransitionStartScale))
+		double localProgress = snapshot->keyframe > 0.000001
+			? progress / snapshot->keyframe : 1.0;
+		nextScale = snapshot->startScale
+			+ (snapshot->middleScale - snapshot->startScale)
 			* BarUiApplyCurve(BarUiCurveEnum::EaseInCubic, localProgress);
-		nextPct = static_cast<double>(contentTransitionStartPct)
+		nextPct = snapshot->startPct
 			* (1.0 - BarUiApplyCurve(BarUiCurveEnum::EaseInSine, localProgress));
 	}
 	else
 	{
-		double localProgress = 1.0 - keyframe > 0.000001
-			? (progress - keyframe) / (1.0 - keyframe) : 1.0;
-		nextScale = middleScale + (1.0 - middleScale)
+		double localProgress = 1.0 - snapshot->keyframe > 0.000001
+			? (progress - snapshot->keyframe) / (1.0 - snapshot->keyframe) : 1.0;
+		nextScale = snapshot->middleScale + (1.0 - snapshot->middleScale)
 			* BarUiApplyCurve(BarUiCurveEnum::EaseOutBack, localProgress);
 		nextPct = BarUiApplyCurve(BarUiCurveEnum::EaseOutSine, localProgress);
 	}
-	contentScale = isfinite(nextScale) ? max(0.0, nextScale) : 1.0;
-	contentPct = isfinite(nextPct) ? clamp(nextPct, 0.0, 1.0) : 1.0;
 
-	if (result.reachedKeyframe)
-	{
-		contentScale = middleScale;
-		contentPct = 0.0;
-		content.Initialization(transitionContent.GetTar());
-	}
-	if (result.finished)
-	{
-		wstring target = transitionContent.GetTar();
-		if (content.GetVal() != target || content.GetTar() != target)
-			content.Initialization(target);
-		contentScale = 1.0;
-		contentPct = 1.0;
-	}
+	contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+		{
+			if (!timeline.IsCurrentGeneration(snapshot->result.generation)) return;
+			contentScale = isfinite(nextScale) ? max(0.0, nextScale) : 1.0;
+			contentPct = isfinite(nextPct) ? clamp(nextPct, 0.0, 1.0) : 1.0;
+
+			if (snapshot->result.reachedKeyframe)
+			{
+				contentScale = snapshot->middleScale;
+				contentPct = 0.0;
+			}
+			if (snapshot->applyContent)
+				content.Initialization(snapshot->target);
+			if (snapshot->result.finished)
+			{
+				contentScale = 1.0;
+				contentPct = 1.0;
+			}
+		});
 	return true;
 }
 void BarUiWordClass::CancelContentTransition()
 {
-	contentTransitionTimeline.Cancel();
-	contentScale = 1.0;
-	contentPct = 1.0;
-	contentTransitionStartScale = 1.0;
-	contentTransitionStartPct = 1.0;
+	contentTransitionTimeline.Transaction(
+		[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+		{
+			timeline.Cancel();
+			transitionContent.Initialization(content.GetTar());
+			contentScale = 1.0;
+			contentPct = 1.0;
+			contentTransitionStartScale = 1.0;
+			contentTransitionStartPct = 1.0;
+			contentTransitionMiddleScale = 0.8;
+			contentTransitionKeyframeProgress = 0.5;
+		});
 }

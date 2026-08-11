@@ -49,6 +49,9 @@ public:
 		DWRITE_PARAGRAPH_ALIGNMENT paragraphAlign = DWRITE_PARAGRAPH_ALIGNMENT_NEAR
 	)
 	{
+		if (!m_pDWriteFactory || !std::isfinite(fontSize) || fontSize <= 0.0F)
+			return nullptr;
+
 		// 1. 使用所有参数创建 Key
 		BarFormatKey key = { pFontCollection, fontFamily, fontSize, fontWeight, fontStyle, fontStretch, textAlign, paragraphAlign, locale };
 
@@ -62,7 +65,7 @@ public:
 		}
 
 		// 3. 没找到，创建一个新的
-		IDWriteTextFormat* newFormat = nullptr;
+		ComPtr<IDWriteTextFormat> newFormat;
 		HRESULT hr = m_pDWriteFactory->CreateTextFormat(
 			fontFamily.c_str(),
 			pFontCollection, // 使用传入的 FontCollection
@@ -71,29 +74,23 @@ public:
 			fontStretch,
 			fontSize,
 			locale.c_str(),
-			&newFormat
+			newFormat.GetAddressOf()
 		);
+		if (FAILED(hr) || !newFormat) return nullptr;
 
-		// 默认换行策略：禁用自动换行
-		newFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+		// 只有完整格式化成功的对象才能进入缓存。
+		if (FAILED(newFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP))
+			|| FAILED(newFormat->SetTextAlignment(textAlign))
+			|| FAILED(newFormat->SetParagraphAlignment(paragraphAlign)))
+			return nullptr;
 
-		if (SUCCEEDED(hr))
-		{
-			// 重要：在存入缓存前，设置好所有附加属性！
-			newFormat->SetTextAlignment(textAlign);
-			newFormat->SetParagraphAlignment(paragraphAlign);
+		// 4. 将新创建并完全配置好的对象存入缓存
+		CacheValue newValue;
+		newValue.pFormat = newFormat;
+		newValue.usageCountThisFrame = 1;
 
-			// 4. 将新创建并完全配置好的对象存入缓存
-			CacheValue newValue;
-			newValue.pFormat.Attach(newFormat);
-			newValue.usageCountThisFrame = 1;
-
-			auto [inserted_it, success] = m_cache.emplace(key, newValue);
-			return inserted_it->second.pFormat.Get();
-		}
-
-		// 创建失败，返回空指针
-		return nullptr;
+		auto insertedIt = m_cache.emplace(key, std::move(newValue)).first;
+		return insertedIt->second.pFormat.Get();
 	}
 
 	void Clean()

@@ -35,7 +35,7 @@ export namespace Inkeys
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
 
-// 与 BarButtomSizeEnum 对应的配置侧尺寸枚举，JSON 使用同名字符串。
+// 与 BarButtonSizeEnum 对应的配置侧尺寸枚举，JSON 使用同名字符串。
 		enum class BarButtonSizeKind
 		{
 			TwoTwo,

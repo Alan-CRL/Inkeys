@@ -42,7 +42,7 @@
 
 ## `Inkeys.UI.Bar`
 
-`【直接确认】` `Inkeys/Inkeys/UI/Bar/` 按 `Bar.State`、`Bar.Atomic`、`Bar.Theme`、`Bar.UI`、`Bar.RenderingAttribute`、`Bar.Bottom`/`Bar.Buttom`、`Bar.Main`、`Bar.Zoom`、`Bar.Format` 等文件拆分状态、主题、布局/动画、渲染和窗口逻辑。
+`【直接确认】` `Inkeys/Inkeys/UI/Bar/` 按 `Bar.State`、`Bar.Atomic`、`Bar.Animation`、`Bar.Theme`、`Bar.UI`、`Bar.RenderingAttribute`、`Bar.Button`、`Bar.Layout`、`Bar.Rendering`、`Bar.RenderLoop`、`Bar.Interaction`、`Bar.Initialization`、`Bar.Main`、`Bar.Zoom`、`Bar.Format` 等文件拆分状态、主题、布局/动画、渲染、交互和窗口初始化逻辑。
 
 `Bar.Main.cpp::BarUISetClass::Rendering` 从共享 D2D device 创建 device context，并创建 GDI-compatible、BGRA premultiplied target bitmap；绘制后通过 `ID2D1GdiInteropRenderTarget::GetDC` 和 `UpdateLayeredWindowIndirect` 提交计算出的脏区。代码存在静止等待和约 60 FPS 的节奏控制。
 
@@ -53,6 +53,63 @@
 - 维持 premultiplied alpha 语义；
 - `GetDC/ReleaseDC`、`BeginDraw/EndDraw` 在成功与失败路径成对；
 - 不在没有线程安全依据时跨线程传递 device context/target。
+
+### UI3 idle 唤醒动画时钟合同
+
+#### 1. Scope / Trigger
+
+修改 Bar 渲染线程的 idle wait、唤醒、失败退避或动画 `dt` 计算时适用。该合同防止把真实休眠时长计入唤醒后的第一帧动画。
+
+#### 2. Signatures
+
+~~~cpp
+class FrameAnimationClock
+{
+public:
+	double Tick(Clock::time_point now = Clock::now()) noexcept;
+	void Rebase(Clock::time_point now = Clock::now()) noexcept;
+};
+~~~
+
+#### 3. Contracts
+
+- 动画时钟使用单调时钟；`Tick()` 对非有限值或负值返回 `0`，并将活动帧 `dt` 限制到 `[0, 0.05]` 秒。
+- 只有渲染线程在无可见工作并从 `BarAtomic::wait.WaitAndConsume()` 真正唤醒后，才在处理下一轮状态前调用 `Rebase()`；退出信号已生效时直接停止。
+- present/device 失败的 `WaitUntilGenerationChange()` 退避、普通 60 FPS pacing 和连续动画帧不得 rebase，否则会冻结或缩短仍需推进的动画。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 长时间 idle 后收到 UI 请求 | 唤醒点 rebase；下一轮只计算唤醒后的实际帧间隔 |
+| idle wait 因退出信号结束 | 直接停止，不再推进动画 |
+| present/device 失败退避结束 | 不 rebase；保留失败等待期间的动画时间语义 |
+| 时钟差为负或非有限 | 本帧 `dt=0` |
+| 活动线程异常停顿超过 50 ms | 本帧 `dt` 上限为 50 ms |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：静置数小时后点击按钮，动画从接近起点开始，不会首帧直接跳过约 50 ms。
+- Base：连续 60 FPS 动画仍按相邻活动帧间隔推进。
+- Bad：只依赖 `clamp(dt, 0, 0.05)`；长时间 idle 后首帧仍会固定跳过 50 ms。
+
+#### 6. Tests Required
+
+- headless 用可注入时间点模拟活动帧、长时间 idle、`Rebase()` 和唤醒后首帧，断言休眠时长不进入结果。
+- 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工检查长时间静置后的首次展开、属性面板和粗细预览动画。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：idle 等待结束后沿用等待前的动画时刻。
+wait.WaitAndConsume();
+const double dt = clock.Tick(); // 直接得到 50 ms clamp
+
+// Correct：只在真正 idle 唤醒后重置基准。
+wait.WaitAndConsume();
+if (offSignal) return;
+clock.Rebase();
+~~~
 
 ### UI3 共享设备、整帧租约与光影缓存契约
 
@@ -399,6 +456,12 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 6. **Tests Required**：完整 Solution `Debug|ARM64` 构建；`fxc /dumpbin` 核对 VS/PS profile 与 POSITION/COLOR/TEXCOORD；EXE import 不含 d3dcompiler；手工检查 show/hide/resize/遮挡、十张图片颜色与透明度。
 7. **Wrong vs Correct**：错误是把 `LPDIRECT3DTEXTURE9` 或 `ID3D11Texture2D*` 直接交给 DX11 backend；正确是创建 `ID3D11ShaderResourceView*`，保持到 draw submission 结束后再释放。
 
+### 设置窗口线程退出合同
+
+- 设置窗口由 `settingInitializationJthread` 的窗口线程拥有。`stop_callback` 必须设置窗口线程持有的停止事件，消息循环用 `MsgWaitForMultipleObjectsEx` 同时等待该事件和窗口消息；事件创建失败时也必须用有界消息等待轮询 `stop_token`，不得把可能失败的 `PostThreadMessage` 作为 `join` 的唯一唤醒保证。
+- WndProc 内的同步轮询必须直接观察同一窗口线程的 `stop_token`；涉及进程退出时还需观察 `offSignal`，并使用有界短等待。不得依赖 UI3 Hook 后续更新共享按键状态来保证退出。
+- 退出验证需覆盖按住设置标题栏时触发重启/关闭；`SettingMain` 的 join 必须完成，随后仍按既有顺序清理 ImGui、纹理、device 和窗口线程。
+
 ## EasyX、GDI/GDI+ 与特定窗口
 
 `【直接确认】`：
@@ -407,6 +470,27 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 - `IdtFloating.cpp` 使用 EasyX/GDI+ 实现传统悬浮栏；
 - `IdtPlug-in.cpp::PptUI` 在 HiEasyX/EasyX 背景上使用 D2D DC target 绘制 PPT 控件；
 - `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` 各自保留传统窗口/图像链。
+
+### HiEasyX 窗口消息队列并发合同
+
+每个窗口的 `vecMessage` 由对应的 `g_vecWindows_vecMessage_sm[index]` 保护。只检查是否存在消息时可持有共享锁；`peekmessage_win32` 的筛选、结果复制以及按 `removemsg` 删除匹配项/前置项必须在同一次独占锁中完成。不得在锁释放后返回或遍历 `vecMessage` 的引用、指针或迭代器，否则窗口线程并发 `push_back` 会使消费者发生迭代器失效。
+
+~~~cpp
+// Wrong：锁在返回前析构，调用方拿到的是无保护引用。
+std::vector<ExMessage>& GetMsgVector(HWND window);
+
+// Correct：一次锁定内完成查找、复制和可选删除。
+std::unique_lock lock(g_vecWindows_vecMessage_sm[index]);
+auto& messages = g_vecWindows[index].vecMessage;
+auto it = FindMatchingMessage(messages, filter);
+if (it != messages.end()) CopyAndConsume(messages, it, removemsg);
+~~~
+
+`removemsg=false` 仍保持既有兼容语义：丢弃匹配项之前的记录，但保留匹配项本身。验证至少覆盖窗口线程并发入队、消费者重复 peek/get、混合筛选、`removemsg` 两种取值和空队列。
+
+UI2/UI3 共用的低级鼠标 Hook 必须在创建 Hook 的线程卸载。停止端设置受生命周期锁保护的事件，Hook 线程用 `MsgWaitForMultipleObjectsEx` 同时等待事件和消息；调用方只能在事件已发布或启动已失败的终态后等待 `join`，不得依赖 `PostThreadMessage(WM_QUIT)` 成功才能退出。
+
+`BarUiSVGClass` 的原始尺寸 `rW/rH` 必须默认初始化为 `0.0`。默认构造或资源解析失败后，单边 `SetWH` 应稳定返回失败，不能读取未初始化尺寸来推导宽高。
 
 这些是并存的当前实现，不是简单的“新后端取代旧后端”。修改前必须先确认目标窗口，不得把 Bar 的 D2D device context、设置的 ImGui DX11 swap-chain/SRV 或画板的 `IMAGE` 生命周期规则互相套用。
 
