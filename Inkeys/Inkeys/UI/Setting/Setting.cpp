@@ -38,6 +38,16 @@ import Inkeys.Other.Config;
 
 using namespace std;
 
+// WndProc 内的同步拖动直接复用窗口线程 stop_token，避免退出消息被拖动循环饿死。
+static thread_local stop_token settingWindowStopToken;
+
+static void SyncUi3BuiltInComponents()
+{
+	if (!useInkeys3UI) return;
+	barUISet.barButtonSet.SyncLegacyExtensionButtons();
+	barUISet.UpdateRendering();
+}
+
 // 软件构建信息
 // signal1
 struct
@@ -60,7 +70,8 @@ struct
 
 void SettingSeekBar()
 {
-	if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return;
+	if (settingWindowStopToken.stop_requested() || offSignal
+		|| !Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return;
 
 	POINT p;
 	GetCursorPos(&p);
@@ -68,7 +79,7 @@ void SettingSeekBar()
 	int pop_x = p.x - SettingWindowX;
 	int pop_y = p.y - SettingWindowY;
 
-	while (1)
+	while (!settingWindowStopToken.stop_requested() && !offSignal)
 	{
 		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
 
@@ -82,6 +93,8 @@ void SettingSeekBar()
 			0,
 			0,
 			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
+		// 限制同步拖动的轮询频率，并把停止响应延迟约束在一个短周期内。
+		this_thread::sleep_for(chrono::milliseconds(8));
 	}
 
 	return;
@@ -145,6 +158,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void SettingWindow(stop_token sT, promise<void>& promise)
 {
+	settingWindowStopToken = sT;
+
 	// 创建窗口
 	{
 		wstring ClassName;
@@ -157,24 +172,55 @@ void SettingWindow(stop_token sT, promise<void>& promise)
 		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
 	}
 
-	// 设置终止时回调
-	auto tid = GetCurrentThreadId();
-	stop_callback sc(sT, [tid]
-		{
-			PostThreadMessage(tid, Inkeys::Thread::WM_USER_STOP_Win32Msg, 0, 0);
-		});
-
-	// 窗口创建完成
-	promise.set_value();
-
-	MSG msg;
-	while (GetMessage(&msg, nullptr, 0, 0))
+	HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	if (!stopEvent && IDTLogger) IDTLogger->error(
+		"[SettingWindow] 创建停止事件失败，将使用有界消息等待, error={}",
+		GetLastError());
 	{
-		if (sT.stop_requested()) break;
+		// 停止事件与窗口消息共用等待点；事件不可用时最多 100ms 轮询一次 stop_token。
+		stop_callback sc(sT, [stopEvent]
+			{
+				if (stopEvent) SetEvent(stopEvent);
+			});
 
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		// 窗口创建完成
+		promise.set_value();
+
+		MSG msg{};
+		bool quitRequested = false;
+		while (!sT.stop_requested() && !quitRequested)
+		{
+			const DWORD waitResult = stopEvent
+				? MsgWaitForMultipleObjectsEx(
+					1, &stopEvent, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+				: MsgWaitForMultipleObjectsEx(
+					0, nullptr, 100, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+			if (stopEvent && waitResult == WAIT_OBJECT_0) break;
+			if (waitResult == WAIT_TIMEOUT) continue;
+
+			const DWORD messageWaitResult = WAIT_OBJECT_0 + (stopEvent ? 1 : 0);
+			if (waitResult != messageWaitResult)
+			{
+				if (IDTLogger) IDTLogger->error(
+					"[SettingWindow] 等待停止事件失败, error={}",
+					GetLastError());
+				break;
+			}
+
+			while (!sT.stop_requested()
+				&& PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+			{
+				if (msg.message == WM_QUIT)
+				{
+					quitRequested = true;
+					break;
+				}
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+		}
 	}
+	if (stopEvent) CloseHandle(stopEvent);
 
 	// 构析窗口相关
 	{
@@ -314,17 +360,7 @@ void SettingMain(stop_token sT)
 	{
 		if (showWindow)
 		{
-			{
-				for (unsigned int i = 0; i < size(TextureSettingSign); i++)
-				{
-					if (TextureSettingSign[i])
-					{
-						TextureSettingSign[i]->Release();
-						TextureSettingSign[i] = nullptr;
-					}
-				}
-			}
-
+			CleanupSettingTextures();
 			CleanupDeviceD3D();
 			::ShowWindow(setting_window, SW_HIDE);
 		}
@@ -337,7 +373,15 @@ void SettingMain(stop_token sT)
 			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
 			showWindow = true;
 
-			CreateDeviceD3D(setting_window);
+			if (!CreateDeviceD3D(setting_window))
+			{
+				if (IDTLogger) IDTLogger->error("[SettingMain] 创建 D3D11 设置窗口设备失败");
+				CleanupDeviceD3D();
+				::ShowWindow(setting_window, SW_HIDE);
+				showWindow = false;
+				test.select = false;
+				continue;
+			}
 
 			// 初始化
 			{
@@ -707,7 +751,7 @@ void SettingMain(stop_token sT)
 		ImGui::StyleColorsLight();
 
 		ImGui_ImplWin32_Init(setting_window);
-		ImGui_ImplDX9_Init(g_pd3dDevice);
+		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
 		{
 			ImFontConfig font_cfg;
@@ -974,6 +1018,7 @@ void SettingMain(stop_token sT)
 				bool EdgeLightingEnable = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable;
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
+				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 			}Inkeys3;
 		}Experimental;
 
@@ -986,32 +1031,36 @@ void SettingMain(stop_token sT)
 
 		while (!sT.stop_requested())
 		{
-			// Handle lost D3D9 device
-			if (g_DeviceLost)
+			// 窗口被遮挡时仅探测呈现状态，避免持续提交和忙等。
+			if (g_SwapChainOccluded)
 			{
-				HRESULT hr = g_pd3dDevice->TestCooperativeLevel();
-				if (hr == D3DERR_DEVICELOST)
+				if (g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED)
 				{
 					this_thread::sleep_for(chrono::milliseconds(10));
 					continue;
 				}
-				if (hr == D3DERR_DEVICENOTRESET) ResetDevice();
-				g_DeviceLost = false;
+				g_SwapChainOccluded = false;
 			}
 
 			// Handle window resize (we don't resize directly in the WM_SIZE handler)
 			if (g_ResizeWidth != 0 && g_ResizeHeight != 0)
 			{
-				g_d3dpp.BackBufferWidth = g_ResizeWidth;
-				g_d3dpp.BackBufferHeight = g_ResizeHeight;
+				const UINT resizeWidth = g_ResizeWidth;
+				const UINT resizeHeight = g_ResizeHeight;
 				g_ResizeWidth = g_ResizeHeight = 0;
-				ResetDevice();
+				if (!ResizeSwapChain(resizeWidth, resizeHeight))
+				{
+					g_ResizeWidth = resizeWidth;
+					g_ResizeHeight = resizeHeight;
+					this_thread::sleep_for(chrono::milliseconds(10));
+					continue;
+				}
 			}
 
 			hiex::DelayFPS(recond, 24);
 
 			// Start the Dear ImGui frame
-			ImGui_ImplDX9_NewFrame();
+			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 			EnableAutoUpdate = GetEnableAutoUpdate();
@@ -1157,7 +1206,6 @@ void SettingMain(stop_token sT)
 					}
 
 					// 组件
-					if (!useInkeys3UI)
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
 
@@ -2816,7 +2864,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 170.0f : 165.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 245.0f : 165.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -2966,6 +3014,49 @@ void SettingMain(stop_token sT)
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
 							}
 							ImGui::EndChild();
+
+							// 光影属于 UI3 外观能力，放在常规页便于正式版本使用。
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("启用边缘光影", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								float cursosPosY = 0;
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+									ImGui::TextUnformatted("启用边缘光影");
+								}
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+									ImGui::TextUnformatted("关闭后仅保留基础边框，停用点光与柔光效果。");
+								}
+								{
+									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+									Widgets::toggle.ToggleBool("##启用边缘光影", &Experimental.Inkeys3.EdgeLightingEnable);
+									if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable
+										!= Experimental.Inkeys3.EdgeLightingEnable)
+									{
+										Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
+											Experimental.Inkeys3.EdgeLightingEnable;
+										Inkeys::UI::Bar::SetEdgeLightingOptions(
+											Experimental.Inkeys3.EdgeLightingEnable,
+											Experimental.Inkeys3.DynamicEdgeLighting);
+										Inkeys::config.Write();
+									}
+								}
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+							}
+							ImGui::EndChild();
 						}
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
@@ -3053,7 +3144,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#4", { settingItemWidth * settingGlobalScale,480.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#4", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 225.0f : 480.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3185,6 +3276,7 @@ void SettingMain(stop_token sT)
 							}
 							ImGui::EndChild();
 						}
+						if (!useInkeys3UI)
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -7241,6 +7333,7 @@ void SettingMain(stop_token sT)
 						ImGui::TextUnformatted("组件");
 					}
 
+					if (!useInkeys3UI)
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -7319,6 +7412,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.appliance.explorer = ComponentShortcutButtonApplianceExplorer;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7351,6 +7445,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.appliance.taskmgr = ComponentShortcutButtonApplianceTaskmgr;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7383,6 +7478,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.appliance.control = ComponentShortcutButtonApplianceControl;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7437,6 +7533,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.system.desktop = ComponentShortcutButtonSystemDesktop;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7469,6 +7566,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.system.lockWorkStation = ComponentShortcutButtonSystemLockWorkStation;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7523,6 +7621,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.keyboard.keyboardesc = ComponentShortcutButtonKeyboardKeyboardesc;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7555,6 +7654,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.keyboard.keyboardAltF4 = ComponentShortcutButtonKeyboardKeyboardAltF4;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7615,6 +7715,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.IslandCaller1 = ComponentShortcutButtonRollCallIslandCaller1;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7653,6 +7754,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.IslandCaller2 = ComponentShortcutButtonRollCallIslandCaller2;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7691,6 +7793,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.SecRandom1 = ComponentShortcutButtonRollCallSecRandom1;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7729,6 +7832,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.SecRandom2 = ComponentShortcutButtonRollCallSecRandom2;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7767,6 +7871,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.SecRandom2Compat = ComponentShortcutButtonRollCallSecRandom2Compat;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7805,6 +7910,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.rollCall.NamePicker = ComponentShortcutButtonRollCallNamePicker;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7902,6 +8008,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.linkage.classislandSettings = ComponentShortcutButtonLinkageClassislandSettings;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7928,6 +8035,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.linkage.classislandProfile = ComponentShortcutButtonLinkageClassislandProfile;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -7960,6 +8068,7 @@ void SettingMain(stop_token sT)
 								{
 									setlist.component.shortcutButton.linkage.classislandClassswap = ComponentShortcutButtonLinkageClassislandClassswap;
 									WriteSetting();
+									SyncUi3BuiltInComponents();
 								}
 							}
 
@@ -8105,7 +8214,8 @@ void SettingMain(stop_token sT)
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							(Experimental.Inkeys3.UI3
-								? (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
+								? (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
+									+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f)
 								: 115.0f) * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -8156,48 +8266,6 @@ void SettingMain(stop_token sT)
 
 						if (Experimental.Inkeys3.UI3)
 						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("启用边缘光影", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
-								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-							{
-								float cursosPosY = 0;
-								{
-									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-									ImGui::TextUnformatted("启用边缘光影");
-								}
-								{
-									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-									ImGui::TextUnformatted("关闭后仅保留基础边框，停用点光与柔光效果。");
-								}
-								{
-									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
-									Widgets::toggle.ToggleBool("##启用边缘光影", &Experimental.Inkeys3.EdgeLightingEnable);
-									if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable
-										!= Experimental.Inkeys3.EdgeLightingEnable)
-									{
-										Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
-											Experimental.Inkeys3.EdgeLightingEnable;
-										Inkeys::UI::Bar::SetEdgeLightingOptions(
-											Experimental.Inkeys3.EdgeLightingEnable,
-											Experimental.Inkeys3.DynamicEdgeLighting);
-										Inkeys::config.Write();
-									}
-								}
-								{
-									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-									while (PushFontNum) PushFontNum--, ImGui::PopFont();
-								}
-							}
-							ImGui::EndChild();
-
 							if (Experimental.Inkeys3.EdgeLightingEnable)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
@@ -8247,7 +8315,7 @@ void SettingMain(stop_token sT)
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("UI 调试模式", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+							ImGui::BeginChild("脏区调试", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
 								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 							{
 								float cursosPosY = 0;
@@ -8255,23 +8323,25 @@ void SettingMain(stop_token sT)
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
 									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-									ImGui::TextUnformatted("UI 调试模式");
+									ImGui::TextUnformatted("脏区调试");
 								}
 								{
 									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-									ImGui::TextUnformatted("显示 UI3 实时 FPS 和每帧脏区边界。");
+									ImGui::TextUnformatted("显示 UI3 每帧实际提交的脏区边界。");
 								}
 								{
 									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
-									Widgets::toggle.ToggleBool("##UI 调试模式", &Experimental.Inkeys3.DebugMode);
+									Widgets::toggle.ToggleBool("##脏区调试", &Experimental.Inkeys3.DebugMode);
 									if (Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable
 										!= Experimental.Inkeys3.DebugMode)
 									{
 										Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable =
 											Experimental.Inkeys3.DebugMode;
-										Inkeys::UI::Bar::SetDebugMode(Experimental.Inkeys3.DebugMode);
+										Inkeys::UI::Bar::SetDebugOptions(
+											Experimental.Inkeys3.DebugMode,
+											Experimental.Inkeys3.ShowFrameRate);
 										Inkeys::config.Write();
 									}
 								}
@@ -8282,6 +8352,51 @@ void SettingMain(stop_token sT)
 								}
 							}
 							ImGui::EndChild();
+
+							if (Experimental.Inkeys3.DebugMode)
+							{
+								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+								ImGui::BeginChild("显示帧率", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+									ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+								{
+									float cursosPosY = 0;
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+										ImGui::TextUnformatted("显示帧率");
+									}
+									{
+										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+										ImGui::TextUnformatted("每秒更新上一秒平均帧率和无等待帧率。");
+									}
+									{
+										ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+										Widgets::toggle.ToggleBool("##显示帧率", &Experimental.Inkeys3.ShowFrameRate);
+										if (Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate
+											!= Experimental.Inkeys3.ShowFrameRate)
+										{
+											Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate =
+												Experimental.Inkeys3.ShowFrameRate;
+											Inkeys::UI::Bar::SetDebugOptions(
+												Experimental.Inkeys3.DebugMode,
+												Experimental.Inkeys3.ShowFrameRate);
+											Inkeys::config.Write();
+										}
+									}
+									{
+										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+										while (PushFontNum) PushFontNum--, ImGui::PopFont();
+									}
+								}
+								ImGui::EndChild();
+							}
 						}
 						}
 
@@ -9195,19 +9310,18 @@ void SettingMain(stop_token sT)
 
 			// 渲染
 			ImGui::EndFrame();
-			g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-			g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-			g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-			D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x * clear_color.w * 255.0f), (int)(clear_color.y * clear_color.w * 255.0f), (int)(clear_color.z * clear_color.w * 255.0f), (int)(clear_color.w * 255.0f));
-			g_pd3dDevice->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-			if (g_pd3dDevice->BeginScene() >= 0)
-			{
-				ImGui::Render();
-				ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-				g_pd3dDevice->EndScene();
-			}
-			HRESULT result = g_pd3dDevice->Present(nullptr, nullptr, nullptr, nullptr);
-			if (result == D3DERR_DEVICELOST) g_DeviceLost = true;
+			ImGui::Render();
+			const float clearColor[4] = {
+				clear_color.x * clear_color.w,
+				clear_color.y * clear_color.w,
+				clear_color.z * clear_color.w,
+				clear_color.w
+			};
+			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
+			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			const HRESULT result = g_pSwapChain->Present(1, 0);
+			g_SwapChainOccluded = (result == DXGI_STATUS_OCCLUDED);
 
 			if (!test.select) break;
 			if (!showWindow)
@@ -9221,9 +9335,17 @@ void SettingMain(stop_token sT)
 
 		io.Fonts->Clear();
 
-		ImGui_ImplDX9_Shutdown();
+		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
+	}
+
+	// stop 路径不会再次进入外层循环，需在退出线程前完成最终逆序清理。
+	if (showWindow)
+	{
+		CleanupSettingTextures();
+		CleanupDeviceD3D();
+		::ShowWindow(setting_window, SW_HIDE);
 	}
 
 	// 通知相关线程下班

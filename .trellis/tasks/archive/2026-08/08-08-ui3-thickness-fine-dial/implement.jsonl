@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"UI3 native desktop ownership and pre-development checklist"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"C++20 module, atomic state, naming and comment conventions"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"UI3 rendering thread, D2D resources, animation and performance constraints"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"Win32 mouse/touch/pen normalization and interaction ownership"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"COM and device-resource lifetime requirements"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"ARM64 host full-solution build contract"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing 3x mapping, animation and cache paths"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace input, shared state, animation, geometry and rendering data flow"}
+{"file":".trellis/tasks/08-08-ui3-thickness-fine-dial/research/current-thickness-flow.md","reason":"Current Slider candidate, Hold, Popup, capture and rendering contracts"}

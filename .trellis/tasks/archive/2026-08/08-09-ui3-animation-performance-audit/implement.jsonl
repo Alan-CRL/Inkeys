@@ -1,0 +1,12 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Native desktop ownership, pre-development checklist and quality gate"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"C++20 modules, naming, comments, atomics and concurrency conventions"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"UI3 rendering threads, animation, D2D resources, dirty regions and performance contracts"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"Win32 input, drawing activity and interaction ownership constraints"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"HRESULT handling, COM/device-resource lifetime and bounded diagnostics"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"ARM64 host full-solution build and Windows compatibility contract"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"Module and file responsibility boundaries for the Bar.Main split"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing animation primitives, caches and render infrastructure"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace input, shared state, animation, layout, lighting and present end to end"}
+{"file":".trellis/tasks/08-09-ui3-animation-performance-audit/research/current-source-architecture.md","reason":"Current animation ownership, source scale and proposed extraction boundaries"}
+{"file":".trellis/tasks/08-09-ui3-animation-performance-audit/research/performance-runtime-baseline.md","reason":"Confirmed optimizations, performance hypotheses and correctness risks to measure"}
+{"file":".trellis/tasks/08-09-ui3-animation-performance-audit/research/git-history-and-task-overlap.md","reason":"Recent UI3 commit history, landed contracts and adjacent-task exclusions"}

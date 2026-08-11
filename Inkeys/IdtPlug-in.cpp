@@ -270,7 +270,7 @@ bool CheckPptCom()
 	{
 		rel = pptCom->Initialization(reinterpret_cast<long*>(&PptInfoState.TotalPage),
 			reinterpret_cast<long*>(&PptInfoState.CurrentPage),
-			reinterpret_cast<long*>(&offSignal));
+			GetOffSignalInteropPointer());
 	}
 	catch (_com_error err)
 	{
@@ -689,7 +689,7 @@ bool StartPptTakeoverAnnotation(int toolType)
 
 	if (useInkeys3UI)
 	{
-		barUISet.barButtomSet.UpdateDrawButtonStyle();
+		barUISet.barButtonSet.UpdateDrawButtonStyle();
 		barUISet.UpdateRendering();
 	}
 
@@ -2398,7 +2398,7 @@ void PptInfo()
 			// 刷新 UI
 			if (useInkeys3UI)
 			{
-				barUISet.barButtomSet.UpdateDrawButtonStyle();
+				barUISet.barButtonSet.UpdateDrawButtonStyle();
 				barUISet.UpdateRendering();
 			}
 
@@ -2421,7 +2421,7 @@ void PptInfo()
 			// 刷新 UI
 			if (useInkeys3UI)
 			{
-				barUISet.barButtomSet.UpdateDrawButtonStyle();
+				barUISet.barButtonSet.UpdateDrawButtonStyle();
 				barUISet.UpdateRendering();
 			}
 

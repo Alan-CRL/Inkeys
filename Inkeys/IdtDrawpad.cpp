@@ -1,4 +1,4 @@
-﻿import Inkeys.UI.Bar;
+import Inkeys.UI.Bar;
 import Inkeys.Helper.Thread;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
@@ -53,6 +53,12 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 
 		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, true);
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) Inkeys::Inputs::SetKeyBoardDown((BYTE)pKeyInfo->vkCode, false);
+
+		// UI3 颜色面板打开时由 Bar 交互线程串行处理方向键/WASD；关闭时完全沿用原快捷键与 PPT 路径。
+		if (useInkeys3UI && Inkeys::UI::Bar::TryQueueColorPickerKeyboardInput(
+			static_cast<BYTE>(pKeyInfo->vkCode),
+			wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+			return 1;
 
 		if (!IsHotkeyDown && (Inkeys::Inputs::IsKeyBoardDown(VK_CONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_LCONTROL) || Inkeys::Inputs::IsKeyBoardDown(VK_RCONTROL)) && (Inkeys::Inputs::IsKeyBoardDown(VK_LWIN) || Inkeys::Inputs::IsKeyBoardDown(VK_RWIN)) && (Inkeys::Inputs::IsKeyBoardDown(VK_MENU) || Inkeys::Inputs::IsKeyBoardDown(VK_LMENU) || Inkeys::Inputs::IsKeyBoardDown(VK_RMENU)))
 		{
@@ -534,6 +540,19 @@ void ResetPrepareCanvas()
 
 void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInfo, StateModeSelectEnum stateModeSelect)
 {
+	struct CanvasDrawingActivityGuard
+	{
+		bool enabled = false;
+		explicit CanvasDrawingActivityGuard(bool enabledT) : enabled(enabledT)
+		{
+			if (enabled) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
+		}
+		~CanvasDrawingActivityGuard()
+		{
+			if (enabled) Inkeys::UI::Bar::NotifyCanvasDrawingEnded();
+		}
+	} canvasDrawingActivityGuard(useInkeys3UI);
+
 	struct
 	{
 		int width;
@@ -2267,9 +2286,6 @@ int drawpad_main()
 					unique_lock<shared_mutex> lock2(touchTempSm);
 					TouchTemp.pop_front();
 					lock2.unlock();
-
-					// Draw2 在落笔线程派发前只通知一次；后续采样不再触碰 UI3 状态。
-					if (useInkeys3UI) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
 
 					thread MultiFingerDrawing_thread(MultiFingerDrawing, touchPoint.pid, touchPoint.mode, stateMode, nextPointMode);
 					MultiFingerDrawing_thread.detach();

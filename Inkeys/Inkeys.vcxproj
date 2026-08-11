@@ -391,6 +391,9 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="IdtAtomic.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
     <ClInclude Include="additional\hashlib++\hl_hashwrapper.h" />
@@ -408,7 +411,7 @@
     <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h" />
     <ClInclude Include="additional\imgui\imconfig.h" />
     <ClInclude Include="additional\imgui\imgui.h" />
-    <ClInclude Include="additional\imgui\imgui_impl_dx9.h" />
+    <ClInclude Include="additional\imgui\imgui_impl_dx11.h" />
     <ClInclude Include="additional\imgui\imgui_impl_win32.h" />
     <ClInclude Include="additional\imgui\imgui_internal.h" />
     <ClInclude Include="additional\imgui\imgui_offset_rect.h" />
@@ -497,7 +500,7 @@
     <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp" />
     <ClCompile Include="additional\imgui\imgui.cpp" />
     <ClCompile Include="additional\imgui\imgui_draw.cpp" />
-    <ClCompile Include="additional\imgui\imgui_impl_dx9.cpp" />
+    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
     <ClCompile Include="additional\imgui\imgui_toggle.cpp" />
@@ -580,13 +583,23 @@
     <ClCompile Include="Inkeys\Text\Text.Font.cppm" />
     <ClCompile Include="Inkeys\Text\Text.Split.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm" />
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm" />
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm" />
@@ -695,19 +708,27 @@
     <None Include="src\i18n\zh-TW.jsonc" />
     <None Include="src\ui1.bin" />
     <None Include="src\UI\barBrush1.svg" />
-    <None Include="src\UI\barBursh1.svg" />
+    <None Include="src\UI\barBrush2.svg" />
+    <None Include="src\UI\barPaintBrush.svg" />
+    <None Include="src\UI\barLaser.svg" />
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
+    <None Include="src\UI\barInfo.svg" />
+    <None Include="src\UI\barQuestion.svg" />
+    <None Include="src\UI\barCloseSmall.svg" />
+    <None Include="src\UI\barThicknessAdjust.svg" />
+    <None Include="src\UI\fluentCheckmark12Filled.svg" />
     <None Include="src\UI\barPierce.svg" />
     <None Include="src\UI\barRecall.svg" />
     <None Include="src\UI\barRedo.svg" />
     <None Include="src\UI\barSelect.svg" />
     <None Include="src\UI\barSetting.svg" />
     <None Include="src\UI\color\colorSelect.svg" />
+    <Image Include="src\UI\color\colorCustom.png" />
     <None Include="src\UI\Frame 94.svg" />
     <None Include="src\UI\logo1.svg" />
     <None Include="src\UI\logo2.svg" />
@@ -760,6 +781,18 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>

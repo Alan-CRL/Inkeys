@@ -4,17 +4,102 @@ module;
 
 export module Inkeys.UI.Bar:State;
 
+enum class ThicknessViewMode : int
+{
+	Preview,
+	Slider,
+	FineDial,
+};
+
 class BarStateClass
 {
 public:
 	IdtAtomic<bool> fold = true;
 	IdtAtomic<bool> drawAttribute = false;
+	IdtAtomic<bool> geometryAttribute = false;
+	// 更多浮层状态同步到主栏入口的 Selected 视觉；折叠主栏时强制关闭。
+	IdtAtomic<bool> moreExpanded = false;
+	IdtAtomic<bool> moreClosePress = false;
 
 	struct
 	{
 		IdtAtomic<bool> brush1Press = false;
 		IdtAtomic<bool> highlight1Press = false;
+		IdtAtomic<bool> penTypeMenuOpen = false;
+		IdtAtomic<bool> penTypeMenuDirectionLocked = false;
+		IdtAtomic<bool> penTypeMenuOpenBelow = true;
+		IdtAtomic<int> penTypeMenuAnchorMode = 0;
+		IdtAtomic<bool> penTypeExtensionPress = false;
+		IdtAtomic<bool> penTypeFreeLinePress = false;
+		IdtAtomic<bool> thicknessFinePress = false;
+		IdtAtomic<bool> thicknessMediumPress = false;
+		IdtAtomic<bool> thicknessCoarsePress = false;
+		IdtAtomic<bool> thicknessAdjustPress = false;
+		IdtAtomic<ThicknessViewMode> thicknessViewMode =
+			ThicknessViewMode::Preview;
+		IdtAtomic<bool> thicknessSliderHover = false;
+		IdtAtomic<bool> thicknessSliderPinned = false;
+		IdtAtomic<bool> thicknessSliderDragging = false;
+		// 直接触摸 Preview 时只更新候选预览，不激活 Slider 视觉。
+		IdtAtomic<bool> thicknessPreviewDragging = false;
+		IdtAtomic<bool> thicknessSliderPressed = false;
+		IdtAtomic<bool> thicknessSliderCapture = false;
+		IdtAtomic<float> thicknessSliderCandidateWidth = 0.0f;
+		// FineDial 只共享渲染所需快照；运动阶段、速度和采样环留在交互线程。
+		IdtAtomic<float> thicknessFineDialVisualWidth = 0.0f;
+		IdtAtomic<bool> thicknessFineDialCandidateActive = false;
+		IdtAtomic<bool> thicknessFineDialDragging = false;
+		IdtAtomic<bool> thicknessFineDialPhysicsActive = false;
+		// 量程视觉过渡期间旧 tick 只用于退场，交互线程仅消费按下。
+		IdtAtomic<bool> thicknessFineDialRangeTransitionActive = false;
+		// Slider 外移识别只发布独立预览，不提前改变 FineDial ViewMode。
+		IdtAtomic<bool> thicknessFineDialActivationPreviewActive = false;
+		IdtAtomic<bool> thicknessFineDialActivationDwellActive = false;
+		IdtAtomic<float> thicknessFineDialActivationPreviewProgress = 0.0f;
+		IdtAtomic<float> thicknessFineDialActivationPreviewVisualWidth = 0.0f;
+		// 仅正常 FineDial -> Preview 退出请求渲染侧锁存 Popup 当前位置。
+		IdtAtomic<bool> thicknessFineDialPopupExitLatchRequested = false;
+		// 拖动改值后静止保持：提示/进度/锁定，跨交互与渲染线程共享。
+		IdtAtomic<bool> thicknessSliderHoldHintActive = false;
+		IdtAtomic<bool> thicknessSliderHoldLocked = false;
+		IdtAtomic<float> thicknessSliderHoldProgress = 0.0f;
+		IdtAtomic<bool> thicknessAnnotationHover = false;
+		IdtAtomic<bool> thicknessAnnotationHoverGrace = false;
+		IdtAtomic<bool> thicknessAnnotationPinned = false;
+		IdtAtomic<bool> thicknessAnnotationClosePress = false;
+		IdtAtomic<bool> thicknessOverflowHover = false;
+		IdtAtomic<bool> thicknessOverflowHoverGrace = false;
+		IdtAtomic<bool> thicknessOverflowPinned = false;
+		IdtAtomic<bool> thicknessOverflowClosePress = false;
+		IdtAtomic<bool> thicknessPreviewOverflow = false;
+		// 记录 Hint 是否已经进入视觉状态，Slider 会据此锁存本次会话。
+		IdtAtomic<bool> thicknessOverflowHintPresent = false;
+		// 简易颜色选择器：输入线程串行改色，渲染线程只读取这些轻量状态。
+		IdtAtomic<bool> colorPickerOpen = false;
+		IdtAtomic<bool> colorPickerDarkTone = true; // 默认暗色系
+		IdtAtomic<bool> colorPickerTonePress = false;
+		IdtAtomic<bool> colorPickerClosePress = false;
+		IdtAtomic<bool> colorPickerMarkerVisible = false;
+		IdtAtomic<float> colorPickerMarkerX = 0.0f;
+		IdtAtomic<float> colorPickerMarkerY = 0.0f;
+		IdtAtomic<bool> colorPickerPointerPressed = false;
+		IdtAtomic<bool> colorPickerPointerCapture = false;
+		IdtAtomic<bool> colorPickerHoldHintActive = false;
+		IdtAtomic<bool> colorPickerHoldLocked = false;
+		IdtAtomic<float> colorPickerHoldProgress = 0.0f;
+		IdtAtomic<float> colorPickerPointerY = 0.0f;
+		IdtAtomic<unsigned int> colorPickerKeyboardDownMask = 0;
 	}drawAttributeBar;
+
+	struct
+	{
+		IdtAtomic<bool> straightLinePress = false;
+		IdtAtomic<bool> rectanglePress = false;
+		IdtAtomic<bool> thicknessFinePress = false;
+		IdtAtomic<bool> thicknessMediumPress = false;
+		IdtAtomic<bool> thicknessCoarsePress = false;
+		IdtAtomic<bool> closePress = false;
+	}geometryAttributeBar;
 
 	struct
 	{

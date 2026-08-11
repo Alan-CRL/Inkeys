@@ -25,6 +25,8 @@ import Inkeys.Text.Font;
 
 #include <shldisp.h>
 #include <exdisp.h>
+#include <atomic>
+#include <condition_variable>
 #include <mutex>
 
 floating_windowsStruct floating_windows;
@@ -49,6 +51,88 @@ static void OpenSecRandomQuickDrawAsync()
 
 			Inkeys::SecRandom::OpenQuickDraw();
 		}).detach();
+}
+
+static void OpenComponentUri(const wchar_t* uri)
+{
+	SHELLEXECUTEINFO sei = { sizeof(sei) };
+	sei.fMask = SEE_MASK_NOASYNC;
+	sei.lpVerb = L"open";
+	sei.lpFile = uri;
+	sei.nShow = SW_SHOWNORMAL;
+	ShellExecuteEx(&sei);
+}
+
+void ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction action)
+{
+	switch (action)
+	{
+	case InkeysBuiltInComponentAction::Explorer:
+		ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::TaskManager:
+		ShellExecute(NULL, L"open", L"taskmgr.exe", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ControlPanel:
+		ShellExecute(NULL, L"open", L"control.exe", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ShowDesktop:
+	{
+		// UI3 的交互线程也可能调用此入口，因此在调用 Shell COM 前补齐当前线程初始化。
+		const HRESULT initializeResult = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+		IShellDispatch4* shellDispatch = NULL;
+		const HRESULT createResult = CoCreateInstance(
+			CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch4,
+			reinterpret_cast<void**>(&shellDispatch));
+		if (SUCCEEDED(createResult) && shellDispatch != NULL)
+		{
+			shellDispatch->ToggleDesktop();
+			shellDispatch->Release();
+		}
+		if (SUCCEEDED(initializeResult)) CoUninitialize();
+		return;
+	}
+	case InkeysBuiltInComponentAction::LockWorkStation:
+		LockWorkStation();
+		return;
+	case InkeysBuiltInComponentAction::Escape:
+		keybd_event(VK_ESCAPE, 0, 0, 0);
+		keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
+		return;
+	case InkeysBuiltInComponentAction::AltF4:
+		keybd_event(VK_MENU, 0, 0, 0);
+		keybd_event(VK_F4, 0, 0, 0);
+		keybd_event(VK_F4, 0, KEYEVENTF_KEYUP, 0);
+		keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+		return;
+	case InkeysBuiltInComponentAction::IslandCaller:
+		OpenComponentUri(L"classisland://plugins/IslandCaller/Run");
+		return;
+	case InkeysBuiltInComponentAction::IslandCallerSimple:
+		OpenComponentUri(L"classisland://plugins/IslandCaller/Simple/1");
+		return;
+	case InkeysBuiltInComponentAction::SecRandomDirect:
+		OpenComponentUri(L"secrandom://direct_extraction");
+		return;
+	case InkeysBuiltInComponentAction::SecRandomQuickDraw:
+		OpenSecRandomQuickDrawAsync();
+		return;
+	case InkeysBuiltInComponentAction::SecRandomQuickDrawCompat:
+		OpenComponentUri(L"secrandom://roll_call/quick_draw");
+		return;
+	case InkeysBuiltInComponentAction::NamePicker:
+		OpenComponentUri(L"namepicker://");
+		return;
+	case InkeysBuiltInComponentAction::ClassIslandSettings:
+		ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ClassIslandProfile:
+		ShellExecute(NULL, L"open", L"classisland://app/profile/", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	case InkeysBuiltInComponentAction::ClassIslandClassSwap:
+		ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
+		return;
+	}
 }
 
 //UI 控件
@@ -194,35 +278,154 @@ int SeekBar(ExMessage m)
 }
 
 IdtAtomic<bool> ConfirmaNoMouMsgSignal, ConfirmaNoMouFunSignal;
-void MouseClickCollapse()
-{
-	if (!ConfirmaNoMouFunSignal.compare_set_strong(false, true)) return;
-
-	this_thread::sleep_for(chrono::milliseconds(100));
-
-	if (ConfirmaNoMouMsgSignal) target_status = 0;
-	ConfirmaNoMouMsgSignal = false;
-
-	ConfirmaNoMouFunSignal = false;
-}
 IdtAtomic<bool> confirmaNoMouUpSignal;
-void MouseUpCollapse(UINT msg)
+
+namespace
 {
-	this_thread::sleep_for(chrono::milliseconds(500));
+	std::mutex floatingCollapseLifecycleMutex;
+	std::condition_variable floatingCollapseLifecycleCondition;
+	bool floatingCollapseStopping = true;
+	bool mouseClickCollapsePending = false;
+	bool mouseUpCollapsePending = false;
+	std::chrono::steady_clock::time_point mouseClickCollapseDeadline;
+	std::chrono::steady_clock::time_point mouseUpCollapseDeadline;
+	UINT mouseUpCollapseMessage = 0;
 
-	if (confirmaNoMouUpSignal)
+	void ScheduleMouseClickCollapse()
 	{
-		IDTLogger->info("[鼠标钩子][MouseUpCollapse] 修正错误的抬起");
+		if (!ConfirmaNoMouFunSignal.compare_set_strong(false, true)) return;
 
-		// 手动触发通知
-		HandleMouseInput(drawpad_window, msg, 0, 0);
+		{
+			lock_guard lock(floatingCollapseLifecycleMutex);
+			if (floatingCollapseStopping || offSignal)
+			{
+				ConfirmaNoMouMsgSignal = false;
+				ConfirmaNoMouFunSignal = false;
+				return;
+			}
+
+			mouseClickCollapsePending = true;
+			mouseClickCollapseDeadline = std::chrono::steady_clock::now()
+				+ std::chrono::milliseconds(100);
+		}
+		floatingCollapseLifecycleCondition.notify_all();
 	}
-	confirmaNoMouUpSignal = false;
+
+	void ScheduleMouseUpCollapse(UINT msg)
+	{
+		{
+			lock_guard lock(floatingCollapseLifecycleMutex);
+			if (floatingCollapseStopping || offSignal)
+			{
+				confirmaNoMouUpSignal = false;
+				return;
+			}
+			// 原逻辑共享同一确认标记；已有请求会在最早的 500ms 截止点统一处理。
+			if (mouseUpCollapsePending) return;
+
+			mouseUpCollapsePending = true;
+			mouseUpCollapseMessage = msg;
+			mouseUpCollapseDeadline = std::chrono::steady_clock::now()
+				+ std::chrono::milliseconds(500);
+		}
+		floatingCollapseLifecycleCondition.notify_all();
+	}
+
+	void FloatingCollapseWorker()
+	{
+		unique_lock lock(floatingCollapseLifecycleMutex);
+		while (!floatingCollapseStopping)
+		{
+			floatingCollapseLifecycleCondition.wait(lock, []()
+				{
+					return floatingCollapseStopping
+						|| mouseClickCollapsePending
+						|| mouseUpCollapsePending;
+				});
+			if (floatingCollapseStopping) break;
+
+			auto deadline = mouseClickCollapsePending
+				? mouseClickCollapseDeadline
+				: mouseUpCollapseDeadline;
+			if (mouseUpCollapsePending && mouseUpCollapseDeadline < deadline)
+				deadline = mouseUpCollapseDeadline;
+
+			floatingCollapseLifecycleCondition.wait_until(lock, deadline);
+			if (floatingCollapseStopping) break;
+
+			const auto now = std::chrono::steady_clock::now();
+			const bool collapseClick = mouseClickCollapsePending
+				&& mouseClickCollapseDeadline <= now;
+			const bool collapseMouseUp = mouseUpCollapsePending
+				&& mouseUpCollapseDeadline <= now;
+			const UINT mouseUpMessage = mouseUpCollapseMessage;
+			if (collapseClick) mouseClickCollapsePending = false;
+			if (collapseMouseUp) mouseUpCollapsePending = false;
+
+			lock.unlock();
+			if (collapseClick)
+			{
+				if (!offSignal && ConfirmaNoMouMsgSignal) target_status = 0;
+				ConfirmaNoMouMsgSignal = false;
+				ConfirmaNoMouFunSignal = false;
+			}
+			if (collapseMouseUp)
+			{
+				if (!offSignal && confirmaNoMouUpSignal)
+				{
+					if (IDTLogger)
+						IDTLogger->info("[鼠标钩子][MouseUpCollapse] 修正错误的抬起");
+
+					// 手动触发通知
+					HandleMouseInput(drawpad_window, mouseUpMessage, 0, 0);
+				}
+				confirmaNoMouUpSignal = false;
+			}
+			lock.lock();
+		}
+	}
+
+	void PrepareFloatingCollapseWorker()
+	{
+		lock_guard lock(floatingCollapseLifecycleMutex);
+		floatingCollapseStopping = false;
+		mouseClickCollapsePending = false;
+		mouseUpCollapsePending = false;
+		ConfirmaNoMouMsgSignal = false;
+		ConfirmaNoMouFunSignal = false;
+		confirmaNoMouUpSignal = false;
+	}
+
+	void RequestFloatingCollapseWorkerStop()
+	{
+		{
+			lock_guard lock(floatingCollapseLifecycleMutex);
+			floatingCollapseStopping = true;
+			mouseClickCollapsePending = false;
+			mouseUpCollapsePending = false;
+			ConfirmaNoMouMsgSignal = false;
+			ConfirmaNoMouFunSignal = false;
+			confirmaNoMouUpSignal = false;
+		}
+		floatingCollapseLifecycleCondition.notify_all();
+	}
 }
 
 HHOOK FloatingHookCall;
+namespace
+{
+	// 低级 Hook 必须由创建它的消息循环退出，不能仅靠 offSignal 轮询。
+	std::atomic<bool> floatingHookStopping = false;
+	std::mutex floatingHookLifecycleMutex;
+	std::condition_variable floatingHookLifecycleCondition;
+	HANDLE floatingHookStopEvent = nullptr;
+	bool floatingHookStartupComplete = false;
+}
 LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
+	if (floatingHookStopping.load(std::memory_order_acquire))
+		return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
+
 	if (nCode < 0 || wParam == WM_MOUSEMOVE)
 	{
 		return CallNextHookEx(FloatingHookCall, nCode, wParam, lParam);
@@ -238,7 +441,7 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			if (useMouseInput && leftButtonPid != 0)
 			{
 				confirmaNoMouUpSignal = true;
-				thread(MouseUpCollapse, WM_LBUTTONUP).detach();
+				ScheduleMouseUpCollapse(WM_LBUTTONUP);
 			}
 		}
 		else if (wParam == WM_MBUTTONDOWN) Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, true);
@@ -253,7 +456,7 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			if (useMouseInput && rightButtonPid != 0)
 			{
 				confirmaNoMouUpSignal = true;
-				thread(MouseUpCollapse, WM_RBUTTONUP).detach();
+				ScheduleMouseUpCollapse(WM_RBUTTONUP);
 			}
 		}
 
@@ -293,7 +496,7 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			if (setlist.regularSetting.clickRecover && (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection || penetrate.select))
 			{
 				ConfirmaNoMouMsgSignal = true;
-				thread(MouseClickCollapse).detach();
+				ScheduleMouseClickCollapse();
 			}
 		}
 
@@ -469,19 +672,150 @@ LRESULT CALLBACK FloatingHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 }
 void FloatingInstallHook()
 {
-	// 安装钩子
-	FloatingHookCall = SetWindowsHookEx(WH_MOUSE_LL, FloatingHookCallback, NULL, 0);
-	if (FloatingHookCall == NULL) return;
-
-	MSG msg;
-	while (!offSignal && GetMessage(&msg, NULL, 0, 0))
+	MSG msg{};
+	// 先建立消息队列；停止事件与消息输入由同一个等待点负责唤醒。
+	PeekMessage(&msg, NULL, WM_USER, WM_USER, PM_NOREMOVE);
+	HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	if (!stopEvent)
 	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		const DWORD eventError = GetLastError();
+		{
+			lock_guard lock(floatingHookLifecycleMutex);
+			floatingHookStartupComplete = true;
+		}
+		floatingHookLifecycleCondition.notify_all();
+		RequestFloatingCollapseWorkerStop();
+		if (IDTLogger) IDTLogger->error(
+			"[鼠标钩子][FloatingInstallHook] 创建停止事件失败, error={}",
+			eventError);
+		return;
 	}
 
-	// 卸载钩子
+	bool stopBeforeInstall = false;
+	{
+		lock_guard lock(floatingHookLifecycleMutex);
+		floatingHookStopEvent = stopEvent;
+		stopBeforeInstall = floatingHookStopping.load(std::memory_order_acquire);
+		if (stopBeforeInstall)
+		{
+			floatingHookStopEvent = nullptr;
+			floatingHookStartupComplete = true;
+		}
+	}
+	if (stopBeforeInstall)
+	{
+		floatingHookLifecycleCondition.notify_all();
+		CloseHandle(stopEvent);
+		return;
+	}
+	// 延迟修正由 Hook 线程持有，卸钩前必须取消并 join。
+	thread collapseWorker(FloatingCollapseWorker);
+
+	// 安装钩子
+	FloatingHookCall = SetWindowsHookEx(WH_MOUSE_LL, FloatingHookCallback, NULL, 0);
+	const bool hookInstalled = FloatingHookCall != NULL;
+	bool startMessageLoop = false;
+	{
+		lock_guard lock(floatingHookLifecycleMutex);
+		// 无论安装成功、失败还是提前停止，都必须让等待启动结果的调用方继续执行。
+		floatingHookStartupComplete = true;
+		startMessageLoop = hookInstalled
+			&& !floatingHookStopping.load(std::memory_order_acquire);
+	}
+	floatingHookLifecycleCondition.notify_all();
+	if (!hookInstalled)
+	{
+		RequestFloatingCollapseWorkerStop();
+		if (collapseWorker.joinable()) collapseWorker.join();
+		{
+			lock_guard lock(floatingHookLifecycleMutex);
+			floatingHookStopEvent = nullptr;
+		}
+		CloseHandle(stopEvent);
+		return;
+	}
+
+	while (!offSignal && startMessageLoop
+		&& !floatingHookStopping.load(std::memory_order_acquire))
+	{
+		const DWORD waitResult = MsgWaitForMultipleObjectsEx(
+			1, &stopEvent, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+		if (waitResult == WAIT_OBJECT_0) break;
+		if (waitResult != WAIT_OBJECT_0 + 1)
+		{
+			if (IDTLogger) IDTLogger->error(
+				"[鼠标钩子][FloatingInstallHook] 等待停止事件失败, error={}",
+				GetLastError());
+			break;
+		}
+
+		bool quitRequested = false;
+		while (!offSignal
+			&& !floatingHookStopping.load(std::memory_order_acquire)
+			&& PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+		{
+			if (msg.message == WM_QUIT)
+			{
+				quitRequested = true;
+				break;
+			}
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		if (quitRequested) break;
+	}
+	RequestFloatingCollapseWorkerStop();
+	if (collapseWorker.joinable()) collapseWorker.join();
+
+	{
+		lock_guard lock(floatingHookLifecycleMutex);
+		// 先撤销共享句柄，再由本线程卸钩和关闭事件，避免停止端访问失效句柄。
+		floatingHookStopEvent = nullptr;
+	}
+	// Hook 只在安装它的线程中卸载。
 	UnhookWindowsHookEx(FloatingHookCall);
+	FloatingHookCall = NULL;
+	CloseHandle(stopEvent);
+}
+
+void FloatingPrepareHookStart()
+{
+	{
+		lock_guard lock(floatingHookLifecycleMutex);
+		floatingHookStopping.store(false, std::memory_order_release);
+		floatingHookStartupComplete = false;
+	}
+	PrepareFloatingCollapseWorker();
+}
+
+void FloatingWaitHookReady()
+{
+	unique_lock lock(floatingHookLifecycleMutex);
+	// 安装失败或启动期间收到停止请求也要结束等待，调用方才能安全 join 线程。
+	floatingHookLifecycleCondition.wait(lock, []() { return floatingHookStartupComplete; });
+}
+
+void FloatingRequestHookStop()
+{
+	bool signalFailed = false;
+	DWORD signalError = ERROR_SUCCESS;
+	{
+		lock_guard lock(floatingHookLifecycleMutex);
+		floatingHookStopping.store(true, std::memory_order_release);
+		// 句柄的发布、置位与撤销受同一把锁保护，失败的消息投递不再影响退出。
+		if (floatingHookStopEvent && !SetEvent(floatingHookStopEvent))
+		{
+			signalFailed = true;
+			signalError = GetLastError();
+		}
+	}
+	RequestFloatingCollapseWorkerStop();
+	if (signalFailed && IDTLogger)
+	{
+		IDTLogger->error(
+			"[鼠标钩子][FloatingRequestHookStop] 设置停止事件失败, error={}",
+			signalError);
+	}
 }
 
 LRESULT CALLBACK FloatingMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -6513,113 +6847,38 @@ void MouseInteraction()
 							{
 								if (!m.lbutton)
 								{
-									if (setlist.component.shortcutButton.appliance.explorer) ShellExecute(NULL, L"open", L"explorer.exe", NULL, NULL, SW_SHOWNORMAL);
-									else if (setlist.component.shortcutButton.appliance.taskmgr) ShellExecute(NULL, L"open", L"taskmgr.exe", NULL, NULL, SW_SHOWNORMAL);
-									else if (setlist.component.shortcutButton.appliance.control) ShellExecute(NULL, L"open", L"control.exe", NULL, NULL, SW_SHOWNORMAL);
-
+									if (setlist.component.shortcutButton.appliance.explorer)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::Explorer);
+									else if (setlist.component.shortcutButton.appliance.taskmgr)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::TaskManager);
+									else if (setlist.component.shortcutButton.appliance.control)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ControlPanel);
 									else if (setlist.component.shortcutButton.system.desktop)
-									{
-										IShellDispatch4* pShellDispatch = NULL;
-										HRESULT hr = E_FAIL;
-
-										hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch4, (void**)&pShellDispatch);
-										if (SUCCEEDED(hr) && pShellDispatch != NULL)
-										{
-											hr = pShellDispatch->ToggleDesktop();
-
-											pShellDispatch->Release();
-											pShellDispatch = NULL;
-										}
-									}
-									else if (setlist.component.shortcutButton.system.lockWorkStation) LockWorkStation();
-
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ShowDesktop);
+									else if (setlist.component.shortcutButton.system.lockWorkStation)
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::LockWorkStation);
 									else if (setlist.component.shortcutButton.keyboard.keyboardesc)
-									{
-										keybd_event(VK_ESCAPE, 0, 0, 0);
-										keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::Escape);
 									else if (setlist.component.shortcutButton.keyboard.keyboardAltF4)
-									{
-										keybd_event(VK_MENU, 0, 0, 0);
-										keybd_event(VK_F4, 0, 0, 0);
-										keybd_event(VK_F4, 0, KEYEVENTF_KEYUP, 0);
-										keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
-									}
-
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::AltF4);
 									else if (setlist.component.shortcutButton.rollCall.IslandCaller1)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"classisland://plugins/IslandCaller/Run";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::IslandCaller);
 									else if (setlist.component.shortcutButton.rollCall.IslandCaller2)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"classisland://plugins/IslandCaller/Simple/1";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::IslandCallerSimple);
 									else if (setlist.component.shortcutButton.rollCall.SecRandom1)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"secrandom://direct_extraction";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::SecRandomDirect);
 									else if (setlist.component.shortcutButton.rollCall.SecRandom2)
-									{
-										OpenSecRandomQuickDrawAsync();
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::SecRandomQuickDraw);
 									else if (setlist.component.shortcutButton.rollCall.SecRandom2Compat)
-									{
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"secrandom://roll_call/quick_draw";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::SecRandomQuickDrawCompat);
 									else if (setlist.component.shortcutButton.rollCall.NamePicker)
-									{
-										/*ShellExecute(NULL, L"open", L"namepicker://", NULL, NULL, SW_SHOWNORMAL);*/
-
-										SHELLEXECUTEINFO sei = { sizeof(sei) };
-										sei.fMask = SEE_MASK_NOASYNC;
-										sei.hwnd = NULL;
-										sei.lpVerb = L"open";
-										sei.lpFile = L"namepicker://";
-										sei.nShow = SW_SHOWNORMAL;
-
-										ShellExecuteEx(&sei);
-									}
-
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::NamePicker);
 									else if (setlist.component.shortcutButton.linkage.classislandSettings)
-									{
-										ShellExecute(NULL, L"open", L"classisland://app/settings/", NULL, NULL, SW_SHOWNORMAL);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ClassIslandSettings);
 									else if (setlist.component.shortcutButton.linkage.classislandProfile)
-									{
-										ShellExecute(NULL, L"open", L"classisland://app/profile/", NULL, NULL, SW_SHOWNORMAL);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ClassIslandProfile);
 									else if (setlist.component.shortcutButton.linkage.classislandClassswap)
-									{
-										ShellExecute(NULL, L"open", L"classisland://app/class-swap", NULL, NULL, SW_SHOWNORMAL);
-									}
+										ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction::ClassIslandClassSwap);
 
 									break;
 								}
@@ -6683,8 +6942,9 @@ int floating_main()
 
 	hiex::SetWndProcFunc(floating_window, FloatingMsgCallback);
 
+	FloatingPrepareHookStart();
 	thread FloatingInstallHookThread(FloatingInstallHook);
-	FloatingInstallHookThread.detach();
+	FloatingWaitHookReady();
 
 	//LOG(INFO) << "尝试启动悬浮窗窗口绘制线程";
 	thread DrawScreen_thread(DrawScreen);
@@ -6696,6 +6956,8 @@ int floating_main()
 	MouseInteractionThread.detach();
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
+	FloatingRequestHookStop();
+	if (FloatingInstallHookThread.joinable()) FloatingInstallHookThread.join();
 
 	int i = 1;
 	for (; i <= 10; i++)

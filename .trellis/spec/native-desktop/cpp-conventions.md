@@ -26,7 +26,7 @@
 | 传统类型后缀 | 部分使用 `Class`、`Struct`、`Enum` | `StrokeImageClass`、`SetListStruct` |
 | 共享状态 | camelCase、PascalCase 与历史名称并存 | `offSignal`、`TouchList`、`useMouseInput` |
 
-`【历史/兼容】` `Bar.Buttom.cpp`、`ActivateSildeShowWindow`、`D2DStarup` 等拼写已经进入文件名、调用点或 COM 接口。除非任务明确覆盖全部引用及兼容产物，不要顺手改名；它们也不是新名称的推荐拼法。
+`【历史/兼容】` `ActivateSildeShowWindow`、`D2DStarup` 等拼写已经进入调用点或 COM 接口。除非任务明确覆盖全部引用及兼容产物，不要顺手改名；它们也不是新名称的推荐拼法。UI3 按钮文件与类型现已统一为 `Bar.Button.cpp` / `BarButton*`，新增引用不得恢复旧名称。
 
 `【合理推断，不是强制全仓规范】` 在已有 module 目录内新增同领域文件时，优先沿用相邻 module 名和目录结构。是否要求所有未来代码迁入 C++ module，仓库没有给出政策，属于 `【待确认】`。
 

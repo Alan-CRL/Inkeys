@@ -1,0 +1,12 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Verify native desktop ownership and full-scope quality checklist"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Review module boundaries, naming, atomics, synchronization and comments"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"Review animation behavior, frame lifecycle, D2D resources and hot-path constraints"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"Review input, capture, drawing activity and thread handoff regressions"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Review HRESULT, device loss, COM lifetime, fallback and diagnostics"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Verify ARM64 full-solution build and supported Windows contract"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"Verify the final module split follows repository ownership boundaries"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check existing animation, cache and rendering facilities were reused"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check complete input-to-present and failure/recovery data flows"}
+{"file":".trellis/tasks/08-09-ui3-animation-performance-audit/research/current-source-architecture.md","reason":"Compare final ownership and structure against the source-backed baseline"}
+{"file":".trellis/tasks/08-09-ui3-animation-performance-audit/research/performance-runtime-baseline.md","reason":"Verify measured hot paths and recorded correctness risks were resolved or dispositioned"}
+{"file":".trellis/tasks/08-09-ui3-animation-performance-audit/research/git-history-and-task-overlap.md","reason":"Verify recent-commit audit coverage and prevent adjacent-task scope expansion"}

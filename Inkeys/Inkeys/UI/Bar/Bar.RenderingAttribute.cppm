@@ -64,14 +64,46 @@ public:
 
 		return ret;
 	}
+	static RECT GetRotatedImageRect(double inhX, double inhY,
+		double width, double height, double angle, double tarZoom,
+		double contentScale = 1.0)
+	{
+		constexpr double pi = 3.14159265358979323846;
+		if (!isfinite(angle)) angle = 0.0;
+		if (!isfinite(contentScale) || contentScale <= 0.0) contentScale = 1.0;
+		double radians = angle * pi / 180.0;
+		double displayW = width * contentScale;
+		double displayH = height * contentScale;
+		double rotatedW = abs(displayW * cos(radians))
+			+ abs(displayH * sin(radians));
+		double rotatedH = abs(displayW * sin(radians))
+			+ abs(displayH * cos(radians));
+		// 旋转只改变内容，脏区至少保留控件原布局范围。
+		rotatedW = max(width, rotatedW);
+		rotatedH = max(height, rotatedH);
+		double centerX = (inhX + width / 2.0) * tarZoom;
+		double centerY = (inhY + height / 2.0) * tarZoom;
+
+		RECT ret;
+		ret.left = static_cast<LONG>(floor(centerX - rotatedW * tarZoom / 2.0)
+			- dirtyAntialiasPadding);
+		ret.top = static_cast<LONG>(floor(centerY - rotatedH * tarZoom / 2.0)
+			- dirtyAntialiasPadding);
+		ret.right = static_cast<LONG>(ceil(centerX + rotatedW * tarZoom / 2.0)
+			+ dirtyAntialiasPadding);
+		ret.bottom = static_cast<LONG>(ceil(centerY + rotatedH * tarZoom / 2.0)
+			+ dirtyAntialiasPadding);
+		return ret;
+	}
 	static RECT GetWeigetRect(const BarUiSVGClass& svg, double tarZoom)
 	{
-		RECT ret;
-		ret.left = static_cast<LONG>(floor(svg.inhX * tarZoom) - dirtyAntialiasPadding);
-		ret.top = static_cast<LONG>(floor(svg.inhY * tarZoom) - dirtyAntialiasPadding);
-		ret.right = static_cast<LONG>(ceil((svg.inhX + svg.w.val) * tarZoom) + dirtyAntialiasPadding);
-		ret.bottom = static_cast<LONG>(ceil((svg.inhY + svg.h.val) * tarZoom) + dirtyAntialiasPadding);
-		return ret;
+		return GetRotatedImageRect(svg.inhX, svg.inhY,
+			svg.w.val, svg.h.val, svg.angle.val, tarZoom, svg.contentScale);
+	}
+	static RECT GetWeigetRect(const BarUiPNGClass& png, double tarZoom)
+	{
+		return GetRotatedImageRect(png.inhX, png.inhY,
+			png.w.val, png.h.val, png.angle.val, tarZoom);
 	}
 	static RECT GetWeigetRect(const BarUiWordClass& word, double tarZoom)
 	{

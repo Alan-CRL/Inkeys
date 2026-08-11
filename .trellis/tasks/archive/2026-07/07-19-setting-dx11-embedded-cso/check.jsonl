@@ -1,0 +1,5 @@
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对工程登记及完整 ARM64 Solution 构建门禁"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"核对仅迁移设置窗口且 DX11 frame/resize/shutdown 数据流完整"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"核对 SRV、RTV、swap chain、context/device 失败与释放顺序"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"核对最小差异、中文注释、编码换行和用户现有改动保护"}
+{"file":".trellis/tasks/07-19-setting-dx11-embedded-cso/research/dx11-migration-evidence.md","reason":"核对资源 ID、shader profile、颜色通道和 ImGui texture contract"}

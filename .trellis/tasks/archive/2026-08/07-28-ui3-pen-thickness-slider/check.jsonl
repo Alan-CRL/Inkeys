@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "复核 UI3 Bar 范围、平台声明与原生桌面层实施门。"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "检查动画连续性、D2D 资源、光影、脏区、捕获与输入状态机是否符合契约。"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "检查最小修改、状态同步、局部中文注释、编码和换行。"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "检查鼠标/触摸路径、共享粗细状态及多显示器窗口边缘场景。"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "检查完整 InkeysRepo.sln 的 Debug ARM64 构建方法与产物边界。"}

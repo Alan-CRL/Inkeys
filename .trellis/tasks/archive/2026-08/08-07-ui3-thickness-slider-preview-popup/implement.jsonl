@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "确认任务属于 UI3 Bar 原生桌面层，并遵守实施前决策门。"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "实现可打断动画、PointLight 缓存归一、单帧提交和 layered-window 脏区。"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "保持 C++ module 局部风格、中文注释、最小修改和 CRLF。"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "回归 Slider 的鼠标、触摸候选值和真实墨迹设备像素语义。"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "使用完整 Solution、Debug ARM64 与 ARM64 host MSBuild 验证。"}

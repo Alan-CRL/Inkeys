@@ -47,8 +47,40 @@ pair<double, double> GetPointOnCircle(double x, double y, double r, double angle
 void DrawScreen();
 int SeekBar(ExMessage m);
 
+extern IdtAtomic<bool> ConfirmaNoMouMsgSignal, ConfirmaNoMouFunSignal;
 extern IdtAtomic<bool> confirmaNoMouUpSignal;
 
+// UI2 与 UI3 共用同一套内置组件动作，避免两条界面路径出现行为偏差。
+enum class InkeysBuiltInComponentAction
+{
+	Explorer,
+	TaskManager,
+	ControlPanel,
+	ShowDesktop,
+	LockWorkStation,
+	Escape,
+	AltF4,
+	IslandCaller,
+	IslandCallerSimple,
+	SecRandomDirect,
+	SecRandomQuickDraw,
+	SecRandomQuickDrawCompat,
+	NamePicker,
+	ClassIslandSettings,
+	ClassIslandProfile,
+	ClassIslandClassSwap,
+};
+
+void ExecuteInkeysBuiltInComponentAction(InkeysBuiltInComponentAction action);
+
 void MouseInteraction();
+
+// 调用方启动 Hook 线程前先重置状态；Hook 线程同时持有延迟输入 worker。
+void FloatingPrepareHookStart();
+void FloatingInstallHook();
+// 等待 Hook 发布停止事件并完成安装，或发布安装失败/提前停止的终态。
+void FloatingWaitHookReady();
+// 取消延迟动作；调用方仍需 join Hook 线程，以等待 worker 完全退出。
+void FloatingRequestHookStop();
 
 int floating_main();

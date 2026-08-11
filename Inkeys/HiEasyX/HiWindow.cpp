@@ -670,82 +670,27 @@ namespace HiEasyX
 		g_hCustomIconSm = LoadIcon(g_hInstance, lpszIconSm);
 	}
 
-	// 获取消息容器
-	std::vector<ExMessage>& GetMsgVector(HWND hWnd)
-	{
-		static std::vector<ExMessage> vec;
-		int index = GetWindowIndex(hWnd);
-		if (IsAliveWindow(index))
-		{
-			std::shared_lock<std::shared_mutex> lg_vecWindows_vecMessage_sm(g_vecWindows_vecMessage_sm[index]);
-			return g_vecWindows[index].vecMessage;
-			lg_vecWindows_vecMessage_sm.unlock();
-		}
-		else
-		{
-			vec.clear();
-			return vec;
-		}
-	}
-
-	// 移除当前消息
-	void RemoveMessage(HWND hWnd)
-	{
-		if (GetMsgVector(hWnd).size())
-		{
-			GetMsgVector(hWnd).erase(GetMsgVector(hWnd).begin());
-		}
-	}
-
-	// 清空消息
-	// 支持混合消息类型
-	void ClearMessage(BYTE filter, HWND hWnd)
-	{
-		for (size_t i = 0; i < GetMsgVector(hWnd).size(); i++)
-			if (filter & GetExMessageType(GetMsgVector(hWnd)[i]))
-				GetMsgVector(hWnd).erase(GetMsgVector(hWnd).begin() + i--);
-	}
-
 	// 是否有新消息
 	// 支持混合消息类型
 	bool IsNewMessage(BYTE filter, HWND hWnd)
 	{
-		for (auto& element : GetMsgVector(hWnd))
+		int index = GetWindowIndex(hWnd);
+		if (!IsAliveWindow(index)) return false;
+
+		std::shared_lock<std::shared_mutex> lock(g_vecWindows_vecMessage_sm[index]);
+		for (const auto& element : g_vecWindows[index].vecMessage)
 			if (filter & GetExMessageType(element))
 				return true;
 		return false;
 	}
 
-	// 清除消息，直至获取到符合类型的消息
-	// 支持混合消息类型
-	ExMessage GetNextMessage(BYTE filter, HWND hWnd)
-	{
-		if (IsNewMessage(filter, hWnd))
-		{
-			for (size_t i = 0; i < GetMsgVector(hWnd).size(); i++)
-			{
-				if (filter & GetExMessageType(GetMsgVector(hWnd)[i]))
-				{
-					for (size_t j = 0; j < i; j++)
-					{
-						RemoveMessage(hWnd);
-					}
-					return GetMsgVector(hWnd)[0];
-				}
-			}
-		}
-		return {};
-	}
-
 	ExMessage getmessage_win32(BYTE filter, HWND hWnd)
 	{
-		while (!IsNewMessage(filter, hWnd))
+		ExMessage msg{};
+		while (!peekmessage_win32(&msg, filter, true, hWnd))
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
-
-		ExMessage msg = GetNextMessage(filter, hWnd);
-		RemoveMessage(hWnd);
 		return msg;
 	}
 
@@ -757,10 +702,19 @@ namespace HiEasyX
 
 	bool peekmessage_win32(ExMessage* msg, BYTE filter, bool removemsg, HWND hWnd)
 	{
-		if (IsNewMessage(filter, hWnd))
+		int index = GetWindowIndex(hWnd);
+		if (!IsAliveWindow(index)) return false;
+
+		// 查找、复制与删除必须处于同一次锁定中，避免窗口线程 push 导致迭代器失效。
+		std::unique_lock<std::shared_mutex> lock(g_vecWindows_vecMessage_sm[index]);
+		auto& messages = g_vecWindows[index].vecMessage;
+		for (auto it = messages.begin(); it != messages.end(); ++it)
 		{
-			if (msg)		*msg = GetNextMessage(filter, hWnd);
-			if (removemsg)	RemoveMessage(hWnd);
+			if (!(filter & GetExMessageType(*it))) continue;
+
+			if (msg) *msg = *it;
+			// 保持原行为：符合条件消息之前的记录总会被丢弃。
+			messages.erase(messages.begin(), removemsg ? it + 1 : it);
 			return true;
 		}
 		return false;
@@ -768,7 +722,14 @@ namespace HiEasyX
 
 	void flushmessage_win32(BYTE filter, HWND hWnd)
 	{
-		ClearMessage(filter, hWnd);
+		int index = GetWindowIndex(hWnd);
+		if (!IsAliveWindow(index)) return;
+
+		std::unique_lock<std::shared_mutex> lock(g_vecWindows_vecMessage_sm[index]);
+		auto& messages = g_vecWindows[index].vecMessage;
+		for (size_t i = 0; i < messages.size(); i++)
+			if (filter & GetExMessageType(messages[i]))
+				messages.erase(messages.begin() + i--);
 	}
 
 	bool MouseHit_win32(HWND hWnd)
@@ -792,7 +753,7 @@ namespace HiEasyX
 
 	void FlushMouseMsgBuffer_win32(HWND hWnd)
 	{
-		ClearMessage(EM_MOUSE, hWnd);
+		flushmessage_win32(EM_MOUSE, hWnd);
 	}
 
 	ExMessage To_ExMessage(MOUSEMSG msg)

@@ -42,7 +42,7 @@
 | Inkeys/IdtMain.cpp、IdtMain.h | wWinMain、启动编排、共享声明和大量传统依赖的中心 |
 | Inkeys/Inkeys/ | C++20 module 根目录，按 Conv、Helper、Load、Net、Other、Text、UI 分区 |
 | Inkeys/Inkeys/UI/Bar/ | Inkeys3 悬浮栏的状态、主题、布局、动画、渲染属性和入口；是否为发布默认待确认 |
-| Inkeys/Inkeys/UI/Setting/ | Dear ImGui 设置界面、DX9 后端和自定义控件 |
+| Inkeys/Inkeys/UI/Setting/ | Dear ImGui 设置界面、DX11 后端和自定义控件 |
 | Inkeys/Launch/ | 启动状态相关代码 |
 | Inkeys/SuperTop/ | UIAccess/置顶辅助相关代码和 token 声明 |
 | Inkeys/src/i18n/ | zh-CN、zh-TW、en-US JSONC 文案 |

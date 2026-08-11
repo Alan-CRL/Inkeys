@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "实现 UI3 Bar 动画、脏区、PointLight 与分层窗口渲染时遵守现有契约。"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "实现鼠标/触摸命中、捕获、快速切换和粗细状态清理时遵守输入契约。"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "修改 C++20 module 与 Bar 状态/枚举时遵守项目编码约定。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "约束复用现有分割线、动画、资源、能力判断和 tooltip，不建立平行逻辑。"}

@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="rotate(45 12 12)">
+    <path fill="rgba(10,0,7,0)" d="M8.1 1.75A4 4 0 1 1 15.9 1.75Z"/>
+    <path fill="rgba(10,0,7,0)" fill-rule="evenodd" clip-rule="evenodd" d="M8 3.25H16V17.5H8ZM13.4 9A1.4 1.4 0 1 1 10.6 9A1.4 1.4 0 1 1 13.4 9Z"/>
+    <path stroke="rgba(10,0,7,0)" stroke-width="2" stroke-linecap="round" d="M12 19.8V24.8M8.7 18.9L6.2 21.4M15.3 18.9L17.8 21.4"/>
+  </g>
+</svg>

@@ -39,17 +39,20 @@
 
 - `reinterpret_cast<long*>(&PptInfoState.TotalPage)`；
 - `reinterpret_cast<long*>(&PptInfoState.CurrentPage)`；
-- `reinterpret_cast<long*>(&offSignal)`。
+- `GetOffSignalInteropPointer()` 返回的独立 `LONG` 槽地址。
 
-`PptCOMServer.Initialization` 把它们保存为 C# `int*` 字段；`PptComService` 及其事件/轮询路径之后持续写页数/页码并读取退出信号。Windows ABI 下这里依赖 native `long` 与 C# `int` 均为 32 位，以及这些全局对象地址在服务期内稳定。
+`PptCOMServer.Initialization` 把它们保存为 C# `int*` 字段；`PptComService` 及其事件/轮询路径之后持续写页数/页码并读取退出信号。Windows ABI 下这里依赖 native `long`/`LONG` 与 C# `int` 均为 32 位，以及这些全局对象地址在服务期内稳定。
 
-`【直接确认】` `PptInfoStateStruct` 字段是普通 `int`。`pptComSlotSm` 及 `Get/Set/ResetPptComSnapshot` 保护的是 `IPptCOMServerPtr` 服务槽/快照；本轮未发现它们同时保护 managed 指针所读写的三个整数，也未发现这些字段使用 `std::atomic`。
+`【直接确认】` 退出信号使用地址稳定的独立 `LONG` 槽：native 的唯一写入口 `SetOffSignal` 先以 `InterlockedExchange` 发布该槽，再以 release store 更新 C++ `offSignal`；managed 侧用 .NET Framework 4.0 的 `Thread.VolatileRead(ref *offSignal)` 读取。不得把 `IdtAtomic<int>` 包装对象强转为 ABI 指针，也不得把 managed 读取退回普通解引用。
 
-`【待确认；风险观察，不是已确认缺陷】` 需要维护者确认跨 managed/native 线程读写这些整数所依赖的同步、可见性和退出契约。静态扫描不足以证明已发生数据竞争或错误，也不足以把服务指针 mutex 描述成状态字段的同步保证。
+`【直接确认】` `PptInfoStateStruct` 的 `TotalPage/CurrentPage` 仍是普通 `int`。`pptComSlotSm` 及 `Get/Set/ResetPptComSnapshot` 保护的是 `IPptCOMServerPtr` 服务槽/快照；它们不同时保护 managed 指针所写的两个页码整数。
+
+`【待确认；风险观察，不是本轮修复范围】` 需要维护者确认跨 managed/native 线程读写 `TotalPage/CurrentPage` 所依赖的同步和可见性契约。静态扫描不足以把服务指针 mutex 描述成页码字段的同步保证。
 
 涉及该 ABI 的 `【合理推断】` 检查项：
 
 - 不传局部变量、可移动容器元素或宽度不同的整数地址；
+- 退出槽只通过 `SetOffSignal` 写入，并在 managed 侧用 `Thread.VolatileRead` 读取；
 - 服务释放/退出后不再由 managed 侧解引用；
 - 改变字段类型或位置时同时检查 C# unsafe 声明、native cast 和所有读写线程；
 - 若补同步，必须设计跨 CLR/native 边界都成立的协议，不能只在一侧加锁后宣称完成。

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "检查第三光、动画连续性、dirty rect、设备资源与 UI3 渲染回归。"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "检查 Preview/Slider/Overflow 与菜单在鼠标、触摸和快速反向下无残留命中。"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "按完整 Solution、Debug ARM64、ARM64 host MSBuild 完成构建门禁。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "确认改动限制在 UI3 Bar，不越界修改绘制业务、配置或传统 UI。"}

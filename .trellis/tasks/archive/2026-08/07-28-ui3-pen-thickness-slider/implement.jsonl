@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "确认任务属于 UI3 Bar 原生桌面层，并遵守该层实施前决策门与边界。"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "实现可打断动画、D2D 稳态资源复用、PointLight、输入命中与 layered-window 脏区。"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "保持 C++ module 局部风格、共享状态约定、中文注释、编码与 CRLF。"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "核对鼠标/触摸序列、UI3 与共享画笔状态边界及窗口外输入验证。"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "使用完整 Solution、Debug ARM64 与 ARM64 host MSBuild 完成验证。"}

@@ -5,6 +5,7 @@
 #include <d2d1_1.h>
 #include <dwrite_1.h>
 #include <d3d11.h>
+#include <d3d11_1.h>
 #include <dxgi.h>
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
@@ -16,8 +17,54 @@ extern ComPtr<ID2D1Factory1> d2dFactory1;
 extern ComPtr<IDWriteFactory1> dWriteFactory1;
 extern ComPtr<IDWriteFontCollection> dWriteFontCollection;
 
-extern ComPtr<ID3D11Device> d3dDevice_WARP;
-extern ComPtr<ID2D1Device> d2dDevice_WARP;
+enum class Ui3RenderBackend : unsigned char
+{
+	Warp,
+	Hardware,
+};
+
+enum class Ui3RenderPriority : unsigned char
+{
+	Interactive,
+	Cosmetic,
+};
+
+struct Ui3RenderDeviceEpoch
+{
+	Ui3RenderBackend backend = Ui3RenderBackend::Warp;
+	unsigned long long generation = 0;
+	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+	ComPtr<ID3D11Device> d3dDevice;
+	ComPtr<ID3D11Device1> d3dDevice1;
+	ComPtr<ID2D1Device> d2dDevice;
+};
+
+// UI3 客户端用该租约包住完整绘制和提交区间，保证共享设备上的帧不会交错。
+class Ui3RenderPass
+{
+public:
+	Ui3RenderPass() noexcept = default;
+	Ui3RenderPass(Ui3RenderPass&&) noexcept = default;
+	Ui3RenderPass& operator=(Ui3RenderPass&&) noexcept = default;
+	Ui3RenderPass(const Ui3RenderPass&) = delete;
+	Ui3RenderPass& operator=(const Ui3RenderPass&) = delete;
+
+	explicit operator bool() const noexcept { return renderLock.owns_lock(); }
+
+private:
+	friend Ui3RenderPass AcquireUi3RenderPass(Ui3RenderPriority priority);
+	explicit Ui3RenderPass(unique_lock<mutex>&& lock) noexcept : renderLock(move(lock)) {}
+
+	unique_lock<mutex> renderLock;
+};
+
+extern ComPtr<ID3D11Device> d3dDevice_UI3;
+extern ComPtr<ID2D1Device> d2dDevice_UI3;
+
+Ui3RenderDeviceEpoch GetUi3RenderDeviceEpoch();
+Ui3RenderPass AcquireUi3RenderPass(Ui3RenderPriority priority);
+HRESULT PrepareUi3RenderBackend(Ui3RenderBackend backend);
+bool CommitPreparedUi3RenderBackend();
 
 //class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
 //{

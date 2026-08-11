@@ -192,6 +192,15 @@
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtAtomic.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="IdtRts.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -315,7 +324,7 @@
     <ClInclude Include="additional\imgui\imgui.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_impl_dx9.h">
+    <ClInclude Include="additional\imgui\imgui_impl_dx11.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
     <ClInclude Include="additional\imgui\imgui_impl_win32.h">
@@ -560,7 +569,7 @@
     <ClCompile Include="additional\imgui\imgui_draw.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_impl_dx9.cpp">
+    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp">
@@ -614,10 +623,28 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Bottom.cppm">
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm">
@@ -632,10 +659,19 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Buttom.cpp">
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
@@ -714,6 +750,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Other\Other.Config.cppm">
@@ -980,6 +1019,9 @@
     <None Include="src\UI\color\colorSelect.svg">
       <Filter>资源文件</Filter>
     </None>
+    <Image Include="src\UI\color\colorCustom.png">
+      <Filter>资源文件</Filter>
+    </Image>
     <None Include="src\UI\barSetting.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -1001,6 +1043,12 @@
     <None Include="src\UI\barHighlighter1.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barThicknessAdjust.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\fluentCheckmark12Filled.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barGeometry.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -1016,7 +1064,13 @@
     <None Include="src\UI\barClean.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barBursh1.svg">
+    <None Include="src\UI\barBrush2.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barPaintBrush.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barLaser.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barBrush1.svg">
