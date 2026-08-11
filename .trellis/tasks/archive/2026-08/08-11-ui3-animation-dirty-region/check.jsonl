@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"原生桌面质量检查入口"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"验证脏区事务、旧新边界与呈现失败行为"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"完整 Solution Debug ARM64 构建要求"}
