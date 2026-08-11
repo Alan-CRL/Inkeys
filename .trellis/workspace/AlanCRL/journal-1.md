@@ -564,3 +564,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 22: 修复 UI3 功能组脏区漏算
+
+**Date**: 2026-08-11
+**Task**: 修复 UI3 功能组脏区漏算
+**Branch**: `draw`
+
+### Summary
+
+修复 Main/More 注册按钮在 ResolveDamage 前未同步本帧继承坐标导致的左侧残影；补充 pending 功能组 damage 的 headless 回归测试与渲染规范，并通过 ARM64 Debug 完整构建及无窗口测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `caf624e9` | (see git log) |
+
+### Status
+
+[OK] **Completed**
