@@ -299,3 +299,24 @@ Fixed Pen/Mouse cursor authority handoff, immediate Pen hover coordinates, stale
 ### Status
 
 [OK] **Completed**
+
+
+## Session 11: Line and rounded rectangle tools
+
+**Date**: 2026-08-11
+**Task**: Line and rounded rectangle tools
+**Branch**: `main`
+
+### Summary
+
+Implemented Q/W/E/R analytic Shape tools with predicted L0 rendering, stored replay, undo/page history, shader batching, documentation, and focused tests. ARM64 Debug/Release builds and headless tests passed; Release Shape benchmark remained zero-allocation. GUI, Pen/Touch, resize, and D3D Debug Layer checks were intentionally skipped per user restriction.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d192f24` | (see git log) |
+
+### Status
+
+[OK] **Completed**
