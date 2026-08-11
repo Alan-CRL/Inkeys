@@ -1,4 +1,4 @@
-# Implementation Plan
+﻿# Implementation Plan
 
 1. 新增纯头文件 dirty tracker 和 headless 单元测试，覆盖旧/新并集、显隐、多键合并、裁剪、首帧、commit/retain/full fallback。
 2. 在渲染状态中接入 tracker；为标准控件、父布局和自绘功能组建立稳定键与变化标记。
@@ -11,6 +11,7 @@
 9. 将 tracker 改为稳定快照记录并停用普通帧的未来缩窗边界收集，验证普通提交不再进行逐帧哈希节点重建或全表复制。
 10. 修正滑块/轮盘及粗细预览浮窗的实际呈现边界采集，为显式缩放矩形补充 headless 回归测试。
 11. 拆分脏区调试与帧率显示设置；将实际/无限制帧率改为完整 1 秒桶锁存，并为排除 pacing 等待的计算补充 headless 测试。
+12. 将 FPS 文字改为被动覆盖层；增加最终“休眠”帧锁存、失败保留与真实活动重新武装测试，禁止调试文字自行维持渲染循环。
 
 ## Risk and Rollback Points
 

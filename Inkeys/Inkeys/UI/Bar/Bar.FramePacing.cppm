@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -201,6 +201,47 @@ export namespace Inkeys::UI::Bar
 		double activeSeconds_ = 0.0;
 		double publishedActual_ = 0.0;
 		double publishedUnlimited_ = 0.0;
+	};
+
+	// FPS 文字只在真实渲染结束后补一帧休眠标记，不能反向维持渲染循环。
+	class DebugFrameSleepLatch
+	{
+	public:
+		[[nodiscard]] bool Update(
+			bool enabled,
+			bool hasActiveRendering) noexcept
+		{
+			if (!enabled || hasActiveRendering)
+			{
+				pending_ = false;
+				presented_ = false;
+				return false;
+			}
+			if (!presented_) pending_ = true;
+			return pending_;
+		}
+
+		[[nodiscard]] bool IsPending() const noexcept
+		{
+			return pending_;
+		}
+
+		[[nodiscard]] bool IsPresented() const noexcept
+		{
+			return presented_;
+		}
+
+		bool CommitPresented() noexcept
+		{
+			if (!pending_) return false;
+			pending_ = false;
+			presented_ = true;
+			return true;
+		}
+
+	private:
+		bool pending_ = false;
+		bool presented_ = false;
 	};
 
 	// 默认使用 waitable timer；Win7/创建或等待失败时在内部有界回退。

@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -102,6 +102,33 @@ namespace
 			start + std::chrono::milliseconds(3100));
 		Check(!value.updated && value.actualFramesPerSecond == 0.0,
 			"one-second FPS reset clears the published values");
+	}
+
+	void TestDebugFrameSleepLatch()
+	{
+		DebugFrameSleepLatch latch;
+		Check(!latch.Update(false, false) && !latch.IsPending(),
+			"disabled FPS debug never requests a sleep frame");
+		Check(!latch.Update(true, true) && !latch.IsPresented(),
+			"active rendering keeps the FPS marker awake");
+
+		Check(latch.Update(true, false) && latch.IsPending(),
+			"idle transition requests one final FPS frame");
+		Check(latch.Update(true, false),
+			"uncommitted sleep frame remains pending for retry");
+		Check(latch.CommitPresented() && latch.IsPresented()
+			&& !latch.IsPending(),
+			"successful sleep frame commit closes the latch");
+		Check(!latch.Update(true, false),
+			"presented sleep marker does not continuously wake rendering");
+
+		Check(!latch.Update(true, true) && !latch.IsPresented(),
+			"real rendering rearms the next idle transition");
+		Check(latch.Update(true, false),
+			"a later idle transition requests one new final frame");
+		Check(!latch.Update(false, false) && !latch.IsPending()
+			&& !latch.IsPresented(),
+			"disabling FPS debug clears pending sleep state");
 	}
 
 	void TestPoliciesAndMeasurements()
@@ -494,6 +521,7 @@ int RunFramePacingTests(bool benchmark)
 	failureCount = 0;
 	TestAnimationFrameClockRebase();
 	TestOneSecondFrameRate();
+	TestDebugFrameSleepLatch();
 	TestPoliciesAndMeasurements();
 	if (benchmark) RunFramePacingBenchmarks();
 	return failureCount;

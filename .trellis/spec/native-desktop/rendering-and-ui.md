@@ -1,4 +1,4 @@
-# Rendering and UI
+﻿# Rendering and UI
 
 本页区分 `【直接确认】`、`【合理推断】`、`【待确认】` 和 `【历史/兼容】`。图形实现是按窗口分流的；“仓库用了 D3D11”不等于所有窗口或 ImGui 都使用 D3D11。
 
@@ -169,6 +169,15 @@ public:
 	void Reset(Clock::time_point now = Clock::now()) noexcept;
 };
 
+class DebugFrameSleepLatch
+{
+public:
+	bool Update(bool enabled, bool hasActiveRendering) noexcept;
+	bool IsPending() const noexcept;
+	bool IsPresented() const noexcept;
+	bool CommitPresented() noexcept;
+};
+
 void SetDebugOptions(bool enable, bool showFrameRate);
 ~~~
 
@@ -181,8 +190,8 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。禁止逐帧清空并重建哈希节点、复制完整快照，或继续执行仅为未来动态缩窗保留的全可见内容收集；只有主光/鼠标光变化的高频帧不得遍历不会承载 `PointLight` 的 SVG/PNG/Word 内容。
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可 `CommitPresented()`；失败时不得推进已呈现快照。
-- `Experimental.Inkeys3.UI3.Debug.Enable` 只控制脏区红框；`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字和持续调试帧。隐藏 FPS 子项不得覆盖其持久化值；关闭帧率显示后不得继续为无文字的空调试帧维持 60 FPS。
-- FPS 文字启用时每帧进入 damage，但内容只包含实际帧率与无限制帧率。两者按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值以成功呈现帧数除以桶墙钟时长，无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长。设备、租约和真实渲染成本仍属于工作时长，只有帧率锁等待被排除。
+- `Experimental.Inkeys3.UI3.Debug.Enable` 只控制脏区红框；`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字。隐藏 FPS 子项不得覆盖其持久化值；帧率文字不得单独形成持续呈现需求或维持 60 FPS。
+- FPS 文字只随真实 UI、光影、一次性刷新和失败重试帧进入 damage；真实活动结束后由 `DebugFrameSleepLatch` 请求唯一一帧并追加“休眠”标记，完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值只统计成功呈现帧，并在休眠后恢复真实活动时重建桶，禁止把 idle 等待计入墙钟分母。无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长；设备、租约和真实渲染成本仍属于工作时长，只有帧率锁等待被排除。
 - 红框在业务 damage 解析后生成，只显示业务 damage 与当前帧率文字；最终提交区另并入上一帧文字/红框。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素，只有完整呈现事务成功后才清除该刷新请求。
 - 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。禁止直接读取未参与本帧绘制的默认 `inhX/inhY=(0,0)`，否则滑块、轮盘或预览浮窗会把窗口左上角错误并入。
 
@@ -198,7 +207,9 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 | 未分类的非调试呈现请求 | 安全回退全窗口，不允许空提交 |
 | 调试模式关闭 | 并入上次文字与红框边界完成清除，不绘制新覆盖层 |
 | 脏区调试开启、显示帧率关闭 | 仅在真实业务 damage 时绘制红框；清除旧文字后不得持续空转 |
-| 一秒统计桶尚未结束 | 继续每帧重绘已锁存文字，`updated=false`，显示值不变化 |
+| 显示帧率开启但没有真实呈现需求 | 只提交一帧带“休眠”标记的文字；成功后进入 wait，失败或租约跳帧保留该帧 |
+| 休眠后出现真实呈现需求 | 清除休眠标记并以当前活动帧起点重建统计桶，idle 时长不得进入实际帧率 |
+| 一秒统计桶尚未结束 | 真实呈现帧继续绘制已锁存文字，`updated=false`，显示值不变化 |
 | 一秒统计桶结束 | 同时发布实际/无限制平均值并开始新桶；无限制分母不包含 pacing 等待 |
 | 仅鼠标光位置变化 | 只标记鼠标光键；按其旧/新实际受光边框合并，不并入静止主光 |
 | 光源影响矩形完全位于控件内部且未触及边框 | 该控件不贡献光源 damage，不得用整个光圈矩形代替 |
@@ -206,7 +217,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 
 #### 5. Good / Base / Bad Cases
 
-- Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新旧/新位置实际触及的 `PointLight` 边框带；实际/无限制帧率一秒更新一次，关闭文字后静止 Bar 回到 idle。
+- Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新旧/新位置实际触及的 `PointLight` 边框带；实际/无限制帧率一秒更新一次，最后一帧显示“休眠”后静止 Bar 回到 idle。
 - Base：静止帧没有呈现请求；首次帧、设备切换和失败恢复帧允许全窗口更新。
 - Bad：每帧把所有可见内容边界并入 damage，或 ULW 成功但 `EndDraw` 失败后仍推进快照；前者丢失优化，后者会在重试时漏掉旧像素。
 - Bad：粗细预览数字用显式变换绘制，却仍以从未更新的 `word.inhX/inhY` 采集边界；结果是脏区无故从 `(0,0)` 开始。
@@ -215,7 +226,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 
 - Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
 - Headless 覆盖显式 pivot/scale 变换后的实际矩形和隐藏 `scale=0` 空边界，断言结果不回落到默认原点。
-- Headless 覆盖完整一秒前不发布、桶结束同时发布两个平均值、一秒内保持锁存、无限制分母排除 pacing 等待、Reset 和非单调时间重建统计桶。
+- Headless 覆盖完整一秒前不发布、桶结束同时发布两个平均值、一秒内保持锁存、无限制分母排除 pacing 等待、Reset 和非单调时间重建统计桶；另覆盖休眠帧单次请求、失败保留、成功关闭、真实活动重新武装和禁用清理。
 - 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln` 的 `Debug | ARM64`，并运行 `InkeysHeadlessTests`。
 - 手工覆盖悬停/按压、属性栏与更多面板、换边、粗细/色板弹窗、整栏拖动、主光/鼠标光、动画开关、调试开关、DPI/zoom 和设备资源重建；不允许残影或漏刷。
 

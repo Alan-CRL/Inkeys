@@ -324,6 +324,8 @@ struct BarRenderLoopState
 	bool observedDebugFrameRateEnabled = observedDebugModeEnabled
 		&& true == BarUiDebugFrameRateEnabled;
 	bool debugOverlayRefreshPending = false;
+	Inkeys::UI::Bar::DebugFrameSleepLatch debugFrameSleepLatch;
+	bool frameRateSamplePending = false;
 	bool unclassifiedDamagePending = false;
 	unsigned long long presentAttemptFrameSerial = 0;
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
@@ -490,6 +492,7 @@ struct BarRenderLoopState
 	unsigned long long handledMainButtonPulseSerial = 0;
 	Inkeys::UI::Bar::OneSecondFrameRate frameRate;
 	wstring fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
+	wstring sleepingFps = L"帧率: -- FPS | 无限制帧率: -- FPS | 休眠";
 };
 
 // 渲染线程的阶段协调器仅在当前 module 内可见，不扩大 BarUISetClass 的公开接口。
@@ -6314,7 +6317,7 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	if (debugModeEnabled != state.observedDebugModeEnabled
 		|| debugFrameRateEnabled != state.observedDebugFrameRateEnabled)
 	{
-		// FPS 子项切换时只清理旧覆盖层；关闭文字后不再维持 60 FPS 空转。
+		// FPS 子项切换时只清理旧覆盖层；文字本身不能维持 60 FPS 空转。
 		state.debugOverlayRefreshPending = state.debugOverlayRefreshPending
 			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugTextBounds)
 			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugFrameBounds)
@@ -6322,7 +6325,25 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		state.observedDebugModeEnabled = debugModeEnabled;
 		state.observedDebugFrameRateEnabled = debugFrameRateEnabled;
 	}
-	bool debugRendering = debugFrameRateEnabled
+	const bool retryingNonSleepVisual = state.presentDecision.HasPendingVisual()
+		&& !state.debugFrameSleepLatch.IsPending();
+	const bool hasActiveRendering = needRendering
+		|| sustainRendering
+		|| needBorderLightingRendering
+		|| needRenderOnce
+		|| state.unclassifiedDamagePending
+		|| retryingNonSleepVisual
+		|| state.presentDecision.HasPendingLighting()
+		|| state.presentDecision.HasPendingRenderOnce();
+	if (debugFrameRateEnabled && hasActiveRendering
+		&& state.debugFrameSleepLatch.IsPresented())
+	{
+		// 从真正 idle 恢复时重建统计桶，避免把休眠时间算入实际帧率。
+		state.frameRate.Reset(state.frameWorkStart);
+	}
+	const bool debugSleepFramePending = state.debugFrameSleepLatch.Update(
+		debugFrameRateEnabled, hasActiveRendering);
+	const bool debugRendering = debugSleepFramePending
 		|| state.debugOverlayRefreshPending;
 	if (sustainRendering)
 	{
@@ -9398,11 +9419,12 @@ else
 			}
 		}
 
-		// 帧率文字每帧重绘，但数值只在完整一秒统计桶结束时更新。
+		// 帧率文字只随真实渲染重绘；最后一帧额外标记即将休眠。
 		if (debugFrameRateEnabled)
 		{
 			FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
-			const wstring& content = state.fps;
+			const wstring& content = state.debugFrameSleepLatch.IsPending()
+				? state.sleepingFps : state.fps;
 
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
@@ -9538,6 +9560,8 @@ else
 			state.lastPresentedDebugFrameBounds = debugModeEnabled
 				? currentDebugFrameBounds : RECT{};
 			state.debugOverlayRefreshPending = false;
+			(void)state.debugFrameSleepLatch.CommitPresented();
+			state.frameRateSamplePending = debugFrameRateEnabled;
 			state.unclassifiedDamagePending = false;
 		}
 		else
@@ -9592,20 +9616,27 @@ void BarRenderLoopCoordinator::PaceFrame(
 	}
 
 	const auto frameEnd = chrono::steady_clock::now();
-	if (BarUiDebugModeEnabled && BarUiDebugFrameRateEnabled)
+	const bool debugFrameRateEnabled = BarUiDebugModeEnabled
+		&& BarUiDebugFrameRateEnabled;
+	if (debugFrameRateEnabled && state.frameRateSamplePending)
 	{
 		const auto averages = state.frameRate.Tick(activeFrameTime, frameEnd);
 		if (averages.updated)
+		{
 			state.fps = format(
 				L"帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
 				averages.actualFramesPerSecond,
 				averages.unlimitedFramesPerSecond);
+			state.sleepingFps = state.fps + L" | 休眠";
+		}
 	}
-	else
+	else if (!debugFrameRateEnabled)
 	{
 		state.frameRate.Reset(frameEnd);
 		state.fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
+		state.sleepingFps = L"帧率: -- FPS | 无限制帧率: -- FPS | 休眠";
 	}
+	state.frameRateSamplePending = false;
 	state.reckon = chrono::high_resolution_clock::now();
 }
 
