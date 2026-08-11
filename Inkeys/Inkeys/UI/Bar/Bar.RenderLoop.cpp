@@ -167,6 +167,7 @@ struct BarRenderFrameSnapshot
 using Inkeys::UI::Bar::BarDirtyRegionTracker;
 using Inkeys::UI::Bar::BarDirtyVisualKey;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
+using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
 
 enum class BarRenderLoopStageResult
 {
@@ -6314,10 +6315,13 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	}
 	if (needBorderLightingRendering)
 	{
-		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::PrimaryLight));
-		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::CursorLight));
+		// 两个光源独立累计，鼠标光移动不能把静止主光拉进同一个大矩形。
+		if (state.spec.DidFramePrimaryLightChange())
+			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+				BarDirtyFixedVisual::PrimaryLight));
+		if (state.spec.DidFrameCursorLightChange())
+			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
+				BarDirtyFixedVisual::CursorLight));
 	}
 	if (needRenderOnce || ((needRendering || sustainRendering
 		|| needBorderLightingRendering)
@@ -6417,10 +6421,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const RECT windowBounds = RECT(
 			0, 0, state.barWindow.w, state.barWindow.h);
 		state.dirtyRegionTracker.BeginFrame(windowBounds);
-		if (state.presentDecision.NeedsFullDirty())
+		if (state.presentDecision.NeedsFullDirty()
+			|| state.unclassifiedDamagePending)
 			state.dirtyRegionTracker.ForceFullDamage();
 
 		RECT visibleContentBounds = RECT(0, 0, 0, 0);
+		constexpr bool collectVisibleContentBoundsForFutureWindowSizing = false;
 		auto UnionShapeBounds = [&](RECT& bounds, const BarUiShapeClass* shape)
 			{
 				if (!shape) return;
@@ -6469,15 +6475,18 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			{ UnionPngBounds(visibleContentBounds, png.get()); };
 		auto IncludeWordBounds = [&](const shared_ptr<BarUiWordClass>& word)
 			{ UnionWordBounds(visibleContentBounds, word.get()); };
-		IncludeShapeBounds(mainBar);
-		IncludeShapeBounds(drawAttribute);
-		IncludeShapeBounds(geometryAttribute);
-		IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel]);
-		IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelDivider]);
-		IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelCloseHit]);
-		IncludeSvgBounds(state.svgMap[BarUISetSvgEnum::MorePanelClose]);
 		BarMoreButtonSnapshotClass predictedMoreSnapshot =
 			state.barButtonSet.GetMoreButtonSnapshot();
+		if constexpr (collectVisibleContentBoundsForFutureWindowSizing)
+		{
+			// 未来动态缩窗会重新启用本段；当前普通帧不能为停用能力支付边界计算成本。
+			IncludeShapeBounds(mainBar);
+			IncludeShapeBounds(drawAttribute);
+			IncludeShapeBounds(geometryAttribute);
+			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel]);
+			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelDivider]);
+			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelCloseHit]);
+			IncludeSvgBounds(state.svgMap[BarUISetSvgEnum::MorePanelClose]);
 		auto IncludeMoreButtonBounds = [&](const shared_ptr<BarButtonClass>& button)
 			{
 				if (!button) return;
@@ -6590,154 +6599,344 @@ IncludeShapeBounds(state.shapeMap[
 			BarRenderingAttribute::UnionRectInPlace(visibleContentBounds,
 				BarRenderingAttribute::GetWeigetRect(
 					*mainButton, static_cast<double>(frameZoom)));
+		}
 
 		RECT mainGroupBounds{};
 		RECT drawAttributeGroupBounds{};
 		RECT geometryAttributeGroupBounds{};
 		RECT moreGroupBounds{};
-		auto ObserveShape = [&](const BarUiShapeClass* shape) -> RECT
+		RECT primaryLightDamageBounds{};
+		RECT cursorLightDamageBounds{};
+		const BarDirtyVisualKey mainGroupKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MainGroup);
+		const BarDirtyVisualKey drawAttributeGroupKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::DrawAttributeGroup);
+		const BarDirtyVisualKey geometryAttributeGroupKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::GeometryAttributeGroup);
+		const BarDirtyVisualKey moreGroupKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::MoreGroup);
+		const BarDirtyVisualKey primaryLightKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::PrimaryLight);
+		const BarDirtyVisualKey cursorLightKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::CursorLight);
+		const bool observeMainGroup =
+			state.dirtyRegionTracker.ShouldObserve(mainGroupKey);
+		const bool observeDrawAttributeGroup =
+			state.dirtyRegionTracker.ShouldObserve(drawAttributeGroupKey);
+		const bool observeGeometryAttributeGroup =
+			state.dirtyRegionTracker.ShouldObserve(geometryAttributeGroupKey);
+		const bool observeMoreGroup =
+			state.dirtyRegionTracker.ShouldObserve(moreGroupKey);
+		const bool observePrimaryLight =
+			state.dirtyRegionTracker.ShouldObserve(primaryLightKey);
+		const bool observeCursorLight =
+			state.dirtyRegionTracker.ShouldObserve(cursorLightKey);
+		const bool lightOnlyFrame = !observeMainGroup
+			&& !observeDrawAttributeGroup && !observeGeometryAttributeGroup
+			&& !observeMoreGroup
+			&& state.dirtyRegionTracker.HasOnlyChangedKeys(
+				primaryLightKey, cursorLightKey);
+		const RECT primaryLightInfluence = observePrimaryLight
+			? state.spec.GetFramePrimaryLightDamageBounds() : RECT{};
+		const RECT cursorLightInfluence = observeCursorLight
+			? state.spec.GetFrameCursorLightDamageBounds() : RECT{};
+		auto GetContentBounds = [&](double x, double y, double w, double h)
 			{
+				return RECT(
+					static_cast<LONG>(floor(x * frameZoom)),
+					static_cast<LONG>(floor(y * frameZoom)),
+					static_cast<LONG>(ceil((x + w) * frameZoom)),
+					static_cast<LONG>(ceil((y + h) * frameZoom)));
+			};
+		auto IsShapePointLightCandidate = [](const BarUiShapeClass* shape)
+			{
+				if (!shape || !shape->frame.has_value()
+					|| shape->frameRendering != BarUiFrameRenderingEnum::PointLight
+					|| !shape->enable.val || shape->w.val <= 0.0 || shape->h.val <= 0.0)
+					return false;
+				if (shape->ft.has_value() && shape->ft->val <= 0.0) return false;
+				double lightOpacity = shape->frameLightPct.has_value()
+					? static_cast<double>(shape->frameLightPct->val)
+					: (shape->framePct.has_value()
+						? static_cast<double>(shape->framePct->val)
+						: static_cast<double>(shape->pct.val));
+				if (!shape->frameLightPct.has_value()
+					&& shape->frameLightOpacitySource
+						== BarUiFrameLightOpacitySourceEnum::ObjectPct)
+					lightOpacity = static_cast<double>(shape->pct.val);
+				return lightOpacity > 0.0;
+			};
+		auto IncludeShapeLightDamage = [&](const BarUiShapeClass* shape,
+			const RECT& outerBounds)
+			{
+				if (!IsShapePointLightCandidate(shape)) return;
+				const RECT contentBounds = GetContentBounds(
+					shape->inhX, shape->inhY, shape->w.val, shape->h.val);
+				if (observePrimaryLight && shape->framePrimaryLightEnabled)
+					BarRenderingAttribute::UnionRectInPlace(
+						primaryLightDamageBounds,
+						ResolveBarLightBorderDamage(
+							outerBounds, contentBounds, primaryLightInfluence));
+				if (observeCursorLight
+					&& shape->frameCursorLightIntensityScale > 0.0)
+					BarRenderingAttribute::UnionRectInPlace(
+						cursorLightDamageBounds,
+						ResolveBarLightBorderDamage(
+							outerBounds, contentBounds, cursorLightInfluence));
+			};
+		auto ObserveShape = [&](const BarUiShapeClass* shape,
+			bool includeGroup) -> RECT
+			{
+				if (!shape) return {};
+				const BarDirtyVisualKey visualKey = GetBarDirtyVisualKey(shape);
+				const bool observeVisual = !lightOnlyFrame
+					&& state.dirtyRegionTracker.ShouldObserve(visualKey);
+				const bool lightCandidate = (observePrimaryLight || observeCursorLight)
+					&& IsShapePointLightCandidate(shape);
+				if (!observeVisual && !includeGroup && !lightCandidate) return {};
 				RECT bounds{};
 				UnionShapeBounds(bounds, shape);
-				if (shape) state.dirtyRegionTracker.Observe(
-					GetBarDirtyVisualKey(shape), bounds);
+				if (observeVisual || includeGroup)
+					state.dirtyRegionTracker.Observe(visualKey, bounds);
+				if (lightCandidate) IncludeShapeLightDamage(shape, bounds);
 				return bounds;
 			};
-		auto ObserveSuperellipse = [&](const BarUiSuperellipseClass* shape) -> RECT
+		auto ObserveSuperellipse = [&](const BarUiSuperellipseClass* shape,
+			bool includeGroup) -> RECT
 			{
+				if (!shape) return {};
+				const BarDirtyVisualKey visualKey = GetBarDirtyVisualKey(shape);
+				const bool observeVisual = !lightOnlyFrame
+					&& state.dirtyRegionTracker.ShouldObserve(visualKey);
+				double lightOpacity = shape->framePct.has_value()
+					? static_cast<double>(shape->framePct->val)
+					: static_cast<double>(shape->pct.val);
+				if (shape->frameLightOpacitySource
+					== BarUiFrameLightOpacitySourceEnum::ObjectPct)
+					lightOpacity = static_cast<double>(shape->pct.val);
+				const bool lightCandidate = (observePrimaryLight || observeCursorLight)
+					&& shape->frame.has_value()
+					&& shape->frameRendering == BarUiFrameRenderingEnum::PointLight
+					&& shape->enable.val && shape->w.val > 0.0 && shape->h.val > 0.0
+					&& (!shape->ft.has_value() || shape->ft->val > 0.0)
+					&& lightOpacity > 0.0;
+				if (!observeVisual && !includeGroup && !lightCandidate) return {};
 				RECT bounds{};
-				if (shape && shape->enable.val && shape->pct.val > 0.0
+				if (shape->enable.val && shape->pct.val > 0.0
 					&& shape->w.val > 0.0 && shape->h.val > 0.0)
 					BarRenderingAttribute::UnionRectInPlace(bounds,
 						BarRenderingAttribute::GetWeigetRect(
 							*shape, static_cast<double>(frameZoom)));
-				if (shape) state.dirtyRegionTracker.Observe(
-					GetBarDirtyVisualKey(shape), bounds);
+				if (observeVisual || includeGroup)
+					state.dirtyRegionTracker.Observe(visualKey, bounds);
+				if (lightCandidate)
+				{
+					const RECT contentBounds = GetContentBounds(
+						shape->inhX, shape->inhY, shape->w.val, shape->h.val);
+					if (observePrimaryLight && shape->framePrimaryLightEnabled)
+						BarRenderingAttribute::UnionRectInPlace(
+							primaryLightDamageBounds,
+							ResolveBarLightBorderDamage(
+								bounds, contentBounds, primaryLightInfluence));
+					if (observeCursorLight
+						&& shape->frameCursorLightIntensityScale > 0.0)
+						BarRenderingAttribute::UnionRectInPlace(
+							cursorLightDamageBounds,
+							ResolveBarLightBorderDamage(
+								bounds, contentBounds, cursorLightInfluence));
+				}
 				return bounds;
 			};
 		auto ObserveSvg = [&](const BarUiSVGClass* svg,
-			BarDirtyVisualKey visualKey = 0) -> RECT
+			bool includeGroup, BarDirtyVisualKey visualKey = 0) -> RECT
 			{
+				if (!svg) return {};
+				if (visualKey == 0) visualKey = GetBarDirtyVisualKey(svg);
+				const bool observeVisual =
+					state.dirtyRegionTracker.ShouldObserve(visualKey);
+				if (!observeVisual && !includeGroup) return {};
 				RECT bounds{};
 				UnionSvgBounds(bounds, svg);
-				if (svg) state.dirtyRegionTracker.Observe(
-					visualKey != 0 ? visualKey : GetBarDirtyVisualKey(svg), bounds);
+				if (observeVisual || includeGroup)
+					state.dirtyRegionTracker.Observe(visualKey, bounds);
 				return bounds;
 			};
 		auto ObservePng = [&](const BarUiPNGClass* png,
-			BarDirtyVisualKey visualKey = 0) -> RECT
+			bool includeGroup, BarDirtyVisualKey visualKey = 0) -> RECT
 			{
+				if (!png) return {};
+				if (visualKey == 0) visualKey = GetBarDirtyVisualKey(png);
+				const bool observeVisual =
+					state.dirtyRegionTracker.ShouldObserve(visualKey);
+				if (!observeVisual && !includeGroup) return {};
 				RECT bounds{};
 				UnionPngBounds(bounds, png);
-				if (png) state.dirtyRegionTracker.Observe(
-					visualKey != 0 ? visualKey : GetBarDirtyVisualKey(png), bounds);
+				if (observeVisual || includeGroup)
+					state.dirtyRegionTracker.Observe(visualKey, bounds);
 				return bounds;
 			};
-		auto ObserveWord = [&](const BarUiWordClass* word) -> RECT
+		auto ObserveWord = [&](const BarUiWordClass* word,
+			bool includeGroup) -> RECT
 			{
+				if (!word) return {};
+				const BarDirtyVisualKey visualKey = GetBarDirtyVisualKey(word);
+				const bool observeVisual =
+					state.dirtyRegionTracker.ShouldObserve(visualKey);
+				if (!observeVisual && !includeGroup) return {};
 				RECT bounds{};
 				UnionWordBounds(bounds, word);
-				if (word) state.dirtyRegionTracker.Observe(
-					GetBarDirtyVisualKey(word), bounds);
+				if (observeVisual || includeGroup)
+					state.dirtyRegionTracker.Observe(visualKey, bounds);
 				return bounds;
 			};
 		auto AddGroupBounds = [&](RECT& group, const RECT& bounds)
 			{
 				BarRenderingAttribute::UnionRectInPlace(group, bounds);
-				BarRenderingAttribute::UnionRectInPlace(
-					visibleContentBounds, bounds);
 			};
 
 		// 标准视觉按对象记录；父布局和自绘控件另用功能组键做保守兜底。
 		for (const auto& [visual, shape] : state.shapeMap)
 		{
-			RECT bounds = ObserveShape(shape.get());
 			const int ordinal = static_cast<int>(visual);
-			if (visual == BarUISetShapeEnum::MainBar)
-				AddGroupBounds(mainGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(BarUISetShapeEnum::MorePanel)
-				&& ordinal <= static_cast<int>(BarUISetShapeEnum::MorePanelCloseHit))
-				AddGroupBounds(moreGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar)
+			const bool includeMain = visual == BarUISetShapeEnum::MainBar
+				&& observeMainGroup;
+			const bool includeMore = ordinal >= static_cast<int>(
+				BarUISetShapeEnum::MorePanel)
 				&& ordinal <= static_cast<int>(
-					BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner))
+					BarUISetShapeEnum::MorePanelCloseHit)
+				&& observeMoreGroup;
+			const bool includeDraw = ordinal >= static_cast<int>(
+				BarUISetShapeEnum::DrawAttributeBar)
+				&& ordinal <= static_cast<int>(
+					BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner)
+				&& observeDrawAttributeGroup;
+			const bool includeGeometry = ordinal >= static_cast<int>(
+				BarUISetShapeEnum::GeometryAttributeBar)
+				&& observeGeometryAttributeGroup;
+			RECT bounds = ObserveShape(shape.get(),
+				includeMain || includeMore || includeDraw || includeGeometry);
+			if (includeMain)
+				AddGroupBounds(mainGroupBounds, bounds);
+			else if (includeMore)
+				AddGroupBounds(moreGroupBounds, bounds);
+			else if (includeDraw)
 				AddGroupBounds(drawAttributeGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar))
+			else if (includeGeometry)
 				AddGroupBounds(geometryAttributeGroupBounds, bounds);
 		}
 		for (const auto& [visual, shape] : state.superellipseMap)
-			AddGroupBounds(mainGroupBounds, ObserveSuperellipse(shape.get()));
-		for (const auto& [visual, svg] : state.svgMap)
 		{
-			RECT bounds = ObserveSvg(svg.get());
-			const int ordinal = static_cast<int>(visual);
-			if (visual == BarUISetSvgEnum::logo1
-				|| visual == BarUISetSvgEnum::logoInk)
-				AddGroupBounds(mainGroupBounds, bounds);
-			else if (visual == BarUISetSvgEnum::MorePanelClose)
-				AddGroupBounds(moreGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(
-				BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
-				&& ordinal < static_cast<int>(
-					BarUISetSvgEnum::GeometryAttributeBar_StraightLine))
-				AddGroupBounds(drawAttributeGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(
-				BarUISetSvgEnum::GeometryAttributeBar_StraightLine))
-				AddGroupBounds(geometryAttributeGroupBounds, bounds);
+			RECT bounds = ObserveSuperellipse(shape.get(), observeMainGroup);
+			if (observeMainGroup) AddGroupBounds(mainGroupBounds, bounds);
 		}
-		for (const auto& [visual, png] : state.pngMap)
-			AddGroupBounds(drawAttributeGroupBounds, ObservePng(png.get()));
-		for (const auto& [visual, word] : state.wordMap)
+		if (!lightOnlyFrame)
 		{
-			RECT bounds = ObserveWord(word.get());
-			const int ordinal = static_cast<int>(visual);
-			if (visual == BarUISetWordEnum::BackgroundWarning
-				|| visual == BarUISetWordEnum::MainButton)
-				AddGroupBounds(mainGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(
-				BarUISetWordEnum::DrawAttributeBar_Brush1)
-				&& ordinal < static_cast<int>(
-					BarUISetWordEnum::GeometryAttributeBar_StraightLine))
-				AddGroupBounds(drawAttributeGroupBounds, bounds);
-			else if (ordinal >= static_cast<int>(
-				BarUISetWordEnum::GeometryAttributeBar_StraightLine))
-				AddGroupBounds(geometryAttributeGroupBounds, bounds);
+			for (const auto& [visual, svg] : state.svgMap)
+			{
+				const int ordinal = static_cast<int>(visual);
+				const bool includeMain = (visual == BarUISetSvgEnum::logo1
+					|| visual == BarUISetSvgEnum::logoInk) && observeMainGroup;
+				const bool includeMore = visual == BarUISetSvgEnum::MorePanelClose
+					&& observeMoreGroup;
+				const bool includeDraw = ordinal >= static_cast<int>(
+					BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
+					&& ordinal < static_cast<int>(
+						BarUISetSvgEnum::GeometryAttributeBar_StraightLine)
+					&& observeDrawAttributeGroup;
+				const bool includeGeometry = ordinal >= static_cast<int>(
+					BarUISetSvgEnum::GeometryAttributeBar_StraightLine)
+					&& observeGeometryAttributeGroup;
+				RECT bounds = ObserveSvg(svg.get(),
+					includeMain || includeMore || includeDraw || includeGeometry);
+				if (includeMain)
+					AddGroupBounds(mainGroupBounds, bounds);
+				else if (includeMore)
+					AddGroupBounds(moreGroupBounds, bounds);
+				else if (includeDraw)
+					AddGroupBounds(drawAttributeGroupBounds, bounds);
+				else if (includeGeometry)
+					AddGroupBounds(geometryAttributeGroupBounds, bounds);
+			}
+		}
+		if (!lightOnlyFrame)
+		{
+			for (const auto& [visual, png] : state.pngMap)
+			{
+				RECT bounds = ObservePng(png.get(), observeDrawAttributeGroup);
+				if (observeDrawAttributeGroup)
+					AddGroupBounds(drawAttributeGroupBounds, bounds);
+			}
+		}
+		if (!lightOnlyFrame)
+		{
+			for (const auto& [visual, word] : state.wordMap)
+			{
+				const int ordinal = static_cast<int>(visual);
+				const bool includeMain = (visual == BarUISetWordEnum::BackgroundWarning
+					|| visual == BarUISetWordEnum::MainButton) && observeMainGroup;
+				const bool includeDraw = ordinal >= static_cast<int>(
+					BarUISetWordEnum::DrawAttributeBar_Brush1)
+					&& ordinal < static_cast<int>(
+						BarUISetWordEnum::GeometryAttributeBar_StraightLine)
+					&& observeDrawAttributeGroup;
+				const bool includeGeometry = ordinal >= static_cast<int>(
+					BarUISetWordEnum::GeometryAttributeBar_StraightLine)
+					&& observeGeometryAttributeGroup;
+				RECT bounds = ObserveWord(word.get(),
+					includeMain || includeDraw || includeGeometry);
+				if (includeMain)
+					AddGroupBounds(mainGroupBounds, bounds);
+				else if (includeDraw)
+					AddGroupBounds(drawAttributeGroupBounds, bounds);
+				else if (includeGeometry)
+					AddGroupBounds(geometryAttributeGroupBounds, bounds);
+			}
 		}
 
-		auto ObserveRegisteredButton = [&](BarButtonClass* button, RECT& group)
+		auto ObserveRegisteredButton = [&](BarButtonClass* button, RECT& group,
+			bool includeGroup)
 			{
 				if (!button) return;
-				AddGroupBounds(group, ObserveShape(&button->button));
+				RECT buttonBounds = ObserveShape(&button->button, includeGroup);
+				if (includeGroup) AddGroupBounds(group, buttonBounds);
+				// 高频纯光源帧只需检查按钮边框，不遍历不会受光的图标和文字。
+				if (lightOnlyFrame) return;
 				const auto iconKey = GetBarDirtyVisualKey(&button->icon);
 				// PNG 与 SVG 共用 icon 控制器，避免观察到绘制阶段同步前的旧 PNG 几何。
-				RECT iconBounds = ObserveSvg(&button->icon, iconKey);
-				AddGroupBounds(group, iconBounds);
-				AddGroupBounds(group, ObserveWord(&button->name));
+				RECT iconBounds = ObserveSvg(&button->icon, includeGroup, iconKey);
+				if (includeGroup) AddGroupBounds(group, iconBounds);
+				RECT nameBounds = ObserveWord(&button->name, includeGroup);
+				if (includeGroup) AddGroupBounds(group, nameBounds);
 			};
 		for (int id = 0; id < state.barButtonSet.tot; ++id)
 			ObserveRegisteredButton(
-				state.barButtonSet.buttonList.Get(id), mainGroupBounds);
+				state.barButtonSet.buttonList.Get(id), mainGroupBounds,
+				observeMainGroup);
 		for (const shared_ptr<BarButtonClass>& button :
 			predictedMoreSnapshot.explicitMore)
-			ObserveRegisteredButton(button.get(), moreGroupBounds);
+			ObserveRegisteredButton(
+				button.get(), moreGroupBounds, observeMoreGroup);
 		for (const shared_ptr<BarButtonClass>& button :
 			predictedMoreSnapshot.forcedOverflow)
-			ObserveRegisteredButton(button.get(), moreGroupBounds);
+			ObserveRegisteredButton(
+				button.get(), moreGroupBounds, observeMoreGroup);
 
-		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::MainGroup), mainGroupBounds);
-		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::DrawAttributeGroup), drawAttributeGroupBounds);
-		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::GeometryAttributeGroup), geometryAttributeGroupBounds);
-		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::MoreGroup), moreGroupBounds);
-		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::PrimaryLight),
-			state.spec.GetFramePrimaryLightDamageBounds());
-		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::CursorLight),
-			state.spec.GetFrameCursorLightDamageBounds());
+		if (observeMainGroup)
+			state.dirtyRegionTracker.Observe(mainGroupKey, mainGroupBounds);
+		if (observeDrawAttributeGroup)
+			state.dirtyRegionTracker.Observe(
+				drawAttributeGroupKey, drawAttributeGroupBounds);
+		if (observeGeometryAttributeGroup)
+			state.dirtyRegionTracker.Observe(
+				geometryAttributeGroupKey, geometryAttributeGroupBounds);
+		if (observeMoreGroup)
+			state.dirtyRegionTracker.Observe(moreGroupKey, moreGroupBounds);
+		if (observePrimaryLight)
+			state.dirtyRegionTracker.Observe(
+				primaryLightKey, primaryLightDamageBounds);
+		if (observeCursorLight)
+			state.dirtyRegionTracker.Observe(
+				cursorLightKey, cursorLightDamageBounds);
 
 		D2D1_RECT_F debugTextLayoutRect{};
 		RECT currentDebugTextBounds{};
@@ -6763,7 +6962,7 @@ IncludeShapeBounds(state.shapeMap[
 		}
 		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
 			state.unclassifiedDamagePending);
-		// 旧逻辑留给未来动态窗口尺寸：visibleContentBounds 仍采集，但不再逐帧作为脏区。
+		// 旧逻辑留给未来动态窗口尺寸：收集代码保留，但普通帧已停止执行。
 		(void)visibleContentBounds;
 		// RECT frameDirty = state.presentDecision.LastPresentedBounds();
 		// BarRenderingAttribute::UnionRectInPlace(frameDirty, visibleContentBounds);

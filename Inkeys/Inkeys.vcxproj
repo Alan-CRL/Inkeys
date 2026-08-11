@@ -392,6 +392,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="IdtAtomic.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />

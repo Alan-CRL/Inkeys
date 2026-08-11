@@ -63,6 +63,14 @@ public:
 		COLORREF highlighterColor, bool penetrateSelected);
 	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;
 	[[nodiscard]] RECT GetFrameCursorLightDamageBounds() const noexcept;
+	[[nodiscard]] bool DidFramePrimaryLightChange() const noexcept
+	{
+		return framePrimaryLightChanged;
+	}
+	[[nodiscard]] bool DidFrameCursorLightChange() const noexcept
+	{
+		return frameCursorLightChanged;
+	}
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
@@ -274,6 +282,10 @@ protected:
 	bool framePrimaryLightAnimating = false;
 	bool frameCursorLightVisible = false;
 	bool frameCursorLightAnimating = false;
+	bool framePrimaryLightChanged = false;
+	bool frameCursorLightChanged = false;
+	bool framePrimaryLightWasAnimating = false;
+	bool frameCursorLightWasAnimating = false;
 	bool frameAnimationStateInitialized = false;
 	bool frameLastAnimationEnabled = false;
 	bool frameCursorInputAvailable = false;

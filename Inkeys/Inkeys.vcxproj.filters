@@ -198,6 +198,9 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="IdtRts.h">
       <Filter>头文件</Filter>
     </ClInclude>

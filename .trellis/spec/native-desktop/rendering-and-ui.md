@@ -128,10 +128,18 @@ public:
 	void BeginFrame(const RECT& windowBounds);
 	void Observe(BarDirtyVisualKey key, const RECT& currentBounds);
 	void MarkChanged(BarDirtyVisualKey key);
+	bool ShouldObserve(BarDirtyVisualKey key) const noexcept;
+	bool HasOnlyChangedKeys(BarDirtyVisualKey first,
+		BarDirtyVisualKey second) const noexcept;
 	RECT ResolveDamage(bool requireFallback);
 	void CommitPresented();
 	void RetainForRetry(bool forceFullDamage);
 };
+
+RECT ResolveBarLightBorderDamage(
+	const RECT& outerBounds,
+	const RECT& contentBounds,
+	const RECT& lightInfluenceBounds) noexcept;
 
 BarDebugDamageResolution ResolveBarDebugDamage(
 	const RECT& businessDamage,
@@ -146,7 +154,8 @@ BarDebugDamageResolution ResolveBarDebugDamage(
 - 标准 Shape/SVG/PNG/Word 使用稳定对象键记录边界；父布局、粗细/色板/弹窗等自绘内容使用稳定功能组键。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
 - 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → `ResolveDamage` → 加入调试文字和红框旧/新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与 `UPDATELAYEREDWINDOWINFO::prcDirty`。
 - `BarUiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
-- 主光和鼠标光分别记录旧/新影响矩形；矩形至少覆盖径向半径、`pointLightDiffuseExtraWidth * zoom` 的 Gaussian 外扩及抗锯齿余量。关闭光影时当前矩形为空，旧矩形仍参与清除。
+- 主光和鼠标光必须独立报告变化，静止的一路不得因另一路移动而被标脏。每路先计算包含径向半径、`pointLightDiffuseExtraWidth * zoom` Gaussian 外扩和抗锯齿余量的影响矩形，再只与实际可见 `PointLight` 边框的上/下/左/右影响带求交；光圈内部没有边框像素贡献的区域不得进入 damage。关闭光影时当前边界为空，旧边界仍参与清除。
+- Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。禁止逐帧清空并重建哈希节点、复制完整快照，或继续执行仅为未来动态缩窗保留的全可见内容收集；只有主光/鼠标光变化的高频帧不得遍历不会承载 `PointLight` 的 SVG/PNG/Word 内容。
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可 `CommitPresented()`；失败时不得推进已呈现快照。
 - FPS 文字每个调试帧都进入 damage。红框在业务 damage 解析后生成，只显示业务 damage 与当前调试文字；最终提交区另并入上一帧文字/红框，关闭调试时用其清除遗留像素。
@@ -162,16 +171,18 @@ BarDebugDamageResolution ResolveBarDebugDamage(
 | 任一 GetDC/ULW/ReleaseDC/EndDraw 失败 | 保留请求并强制全窗口重试 |
 | 未分类的非调试呈现请求 | 安全回退全窗口，不允许空提交 |
 | 调试模式关闭 | 并入上次文字与红框边界完成清除，不绘制新覆盖层 |
+| 仅鼠标光位置变化 | 只标记鼠标光键；按其旧/新实际受光边框合并，不并入静止主光 |
+| 光源影响矩形完全位于控件内部且未触及边框 | 该控件不贡献光源 damage，不得用整个光圈矩形代替 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新光源旧/新影响范围；整栏拖动按功能组覆盖所有可见内容。
+- Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新旧/新位置实际触及的 `PointLight` 边框带；整栏拖动按功能组覆盖所有可见内容。
 - Base：静止帧没有呈现请求；首次帧、设备切换和失败恢复帧允许全窗口更新。
 - Bad：每帧把所有可见内容边界并入 damage，或 ULW 成功但 `EndDraw` 失败后仍推进快照；前者丢失优化，后者会在重试时漏掉旧像素。
 
 #### 6. Tests Required
 
-- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退，以及调试文字/红框关闭清除。
+- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
 - 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln` 的 `Debug | ARM64`，并运行 `InkeysHeadlessTests`。
 - 手工覆盖悬停/按压、属性栏与更多面板、换边、粗细/色板弹窗、整栏拖动、主光/鼠标光、动画开关、调试开关、DPI/zoom 和设备资源重建；不允许残影或漏刷。
 

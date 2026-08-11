@@ -7,6 +7,7 @@ namespace
 {
 	using Inkeys::UI::Bar::BarDirtyRegionTracker;
 	using Inkeys::UI::Bar::ResolveBarDebugDamage;
+	using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
 
 	int failureCount = 0;
 
@@ -121,6 +122,68 @@ namespace
 			"failed present retains full damage until commit");
 	}
 
+	void TestStableRecordsAndSelectiveObservation()
+	{
+		constexpr RECT window{ 0, 0, 200, 120 };
+		constexpr std::uint64_t moving = 7;
+		constexpr std::uint64_t stable = 8;
+		BarDirtyRegionTracker tracker;
+		tracker.BeginFrame(window);
+		tracker.Observe(moving, RECT{ 10, 10, 20, 20 });
+		tracker.Observe(stable, RECT{ 80, 10, 100, 30 });
+		tracker.CommitPresented();
+
+		for (LONG frame = 0; frame < 100; ++frame)
+		{
+			tracker.BeginFrame(window);
+			tracker.MarkChanged(moving);
+			Check(tracker.HasOnlyChangedKeys(moving, 99),
+				"single light-like key selects the narrow hot path");
+			Check(tracker.ShouldObserve(moving),
+				"changed visual requests current bounds");
+			Check(!tracker.ShouldObserve(stable),
+				"stable visual skips ordinary-frame bounds work");
+			tracker.Observe(moving, RECT{ 11 + frame, 10, 21 + frame, 20 });
+			(void)tracker.ResolveDamage(false);
+			tracker.CommitPresented();
+		}
+		Check(tracker.VisualRecordCount() == 2,
+			"stable tracker records do not grow across frames");
+
+		tracker.BeginFrame(window);
+		tracker.MarkChanged(moving);
+		tracker.Observe(moving, RECT{ 120, 10, 130, 20 });
+		tracker.Observe(stable, RECT{ 90, 10, 110, 30 });
+		(void)tracker.ResolveDamage(false);
+		tracker.CommitPresented();
+		tracker.BeginFrame(window);
+		tracker.MarkChanged(stable);
+		tracker.Observe(stable, RECT{ 100, 10, 120, 30 });
+		Check(SameRect(tracker.ResolveDamage(false), RECT{ 90, 10, 120, 30 }),
+			"observed group child advances without a full snapshot copy");
+	}
+
+	void TestLightDamageUsesAffectedBorderBands()
+	{
+		constexpr RECT outer{ 0, 0, 1000, 400 };
+		constexpr RECT content{ 10, 10, 990, 390 };
+		Check(BarDirtyRegionTracker::IsEmpty(ResolveBarLightBorderDamage(
+			outer, content, RECT{ 450, 150, 550, 250 })),
+			"light inside a large control without reaching its border has no damage");
+		Check(SameRect(ResolveBarLightBorderDamage(
+			outer, content, RECT{ 450, 0, 550, 30 }),
+			RECT{ 450, 0, 550, 20 }),
+			"top light damage is clipped to the affected border band");
+		Check(SameRect(ResolveBarLightBorderDamage(
+			outer, content, RECT{ 0, 180, 30, 220 }),
+			RECT{ 0, 180, 20, 220 }),
+			"side light damage is clipped to the affected border band");
+		Check(SameRect(ResolveBarLightBorderDamage(
+			outer, content, RECT{ -20, -20, 30, 30 }),
+			RECT{ 0, 0, 30, 30 }),
+			"corner light conservatively merges the two affected edge bands");
+	}
+
 	void TestDebugOverlayDamageAndClear()
 	{
 		constexpr RECT business{ 20, 20, 40, 40 };
@@ -150,6 +213,8 @@ int RunDirtyRegionTests()
 	TestAppearanceDisappearanceAndMultipleKeys();
 	TestRetryRetainsDamageAndCommitAdvancesSnapshot();
 	TestExplicitAndFullRetryDamage();
+	TestStableRecordsAndSelectiveObservation();
+	TestLightDamageUsesAffectedBorderBands();
 	TestDebugOverlayDamageAndClear();
 	return failureCount;
 }

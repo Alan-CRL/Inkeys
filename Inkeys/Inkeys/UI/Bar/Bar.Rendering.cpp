@@ -223,7 +223,9 @@ RECT BarUIRendering::GetFramePrimaryLightDamageBounds() const noexcept
 
 RECT BarUIRendering::GetFrameCursorLightDamageBounds() const noexcept
 {
-	if (!frameEdgeLightingEnabled || frameCursorLightIntensity <= 0.0001F)
+	const bool cursorLightCanContribute = frameCursorLightIntensity > 0.0001F
+		|| (frameCursorLightAnimating && frameCursorLightIntensityTarget > 0.0001F);
+	if (!frameEdgeLightingEnabled || !cursorLightCanContribute)
 		return {};
 	const double padding = BarRenderingAttribute::pointLightDiffuseExtraWidth
 		* frameZoom + BarRenderingAttribute::dirtyAntialiasPadding;
@@ -239,6 +241,59 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	int drawingMode, int penMode, COLORREF brush1Color,
 	COLORREF highlighterColor, bool penetrateSelected)
 {
+	const bool previousEdgeLightingEnabled = frameEdgeLightingEnabled;
+	const bool previousPrimaryLightAvailable = framePrimaryLightAnchorInitialized;
+	const D2D1_POINT_2F previousPrimaryLight = framePrimaryLight;
+	const D2D1_POINT_2F previousCursorLight = frameCursorLight;
+	const FLOAT previousPrimaryRadius = frameLightRadius;
+	const FLOAT previousCursorRadius = frameCursorLightRadius;
+	const FLOAT previousCursorIntensity = frameCursorLightIntensity;
+	const COLORREF previousDrawingPenColor = frameDrawingPenColor;
+	const double previousDrawingPenColorBlend = frameDrawingPenColorBlend;
+	const double previousDrawingLightOpacity = frameDrawingLightOpacity;
+	framePrimaryLightChanged = false;
+	frameCursorLightChanged = false;
+	auto FinishLightingFrame = [&](bool sustainPrimary, bool sustainCursor)
+		{
+			auto PointChanged = [](D2D1_POINT_2F left, D2D1_POINT_2F right)
+				{
+					return abs(left.x - right.x) > 0.01F
+						|| abs(left.y - right.y) > 0.01F;
+				};
+			const bool sharedVisualChanged =
+				(previousDrawingPenColor & 0x00FFFFFF)
+					!= (frameDrawingPenColor & 0x00FFFFFF)
+				|| abs(previousDrawingPenColorBlend
+					- frameDrawingPenColorBlend) > 0.000001
+				|| abs(previousDrawingLightOpacity
+					- frameDrawingLightOpacity) > 0.000001;
+			const bool previousPrimaryVisible = previousEdgeLightingEnabled
+				&& previousPrimaryLightAvailable && previousPrimaryRadius > 0.0F;
+			const bool currentPrimaryVisible = frameEdgeLightingEnabled
+				&& framePrimaryLightAnchorInitialized && frameLightRadius > 0.0F;
+			const bool previousCursorVisible = previousEdgeLightingEnabled
+				&& previousCursorIntensity > 0.0001F && previousCursorRadius > 0.0F;
+			const bool currentCursorVisible = frameEdgeLightingEnabled
+				&& frameCursorLightIntensity > 0.0001F
+				&& frameCursorLightRadius > 0.0F;
+
+			framePrimaryLightChanged = sustainPrimary
+				|| previousPrimaryVisible != currentPrimaryVisible
+				|| ((previousPrimaryVisible || currentPrimaryVisible)
+					&& (PointChanged(previousPrimaryLight, framePrimaryLight)
+						|| abs(previousPrimaryRadius - frameLightRadius) > 0.01F
+						|| sharedVisualChanged));
+			frameCursorLightChanged = sustainCursor
+				|| previousCursorVisible != currentCursorVisible
+				|| ((previousCursorVisible || currentCursorVisible)
+					&& (PointChanged(previousCursorLight, frameCursorLight)
+						|| abs(previousCursorRadius - frameCursorLightRadius) > 0.01F
+						|| abs(previousCursorIntensity
+							- frameCursorLightIntensity) > 0.0001F
+						|| sharedVisualChanged));
+			return framePrimaryLightChanged || frameCursorLightChanged;
+		};
+
 	frameCursorLightVisible = false;
 	frameDrawingUsesPenColor = false;
 	auto SnapshotPenColor = [&]()
@@ -278,8 +333,14 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 		frameDrawingModeInitialized = false;
 		frameDrawingPenColorSourceInitialized = false;
 		frameDrawingPenColorCarriesHighlighterHistory = false;
+		const bool sustainPrimary = framePrimaryLightWasAnimating;
+		const bool sustainCursor = frameCursorLightWasAnimating;
+		framePrimaryLightWasAnimating = false;
+		frameCursorLightWasAnimating = false;
 		frameLightingWasAnimating = false;
-		return needSettlingFrame;
+		return FinishLightingFrame(
+			needSettlingFrame && sustainPrimary,
+			needSettlingFrame && sustainCursor);
 	}
 	bool edgeLightingStateChanged = !frameEdgeLightingEnabled;
 	frameEdgeLightingEnabled = true;
@@ -668,8 +729,15 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 		frameCursorLightIntensityTarget = 0.0F;
 		frameCursorLightAnimating = false;
 		bool needSettlingFrame = frameLightingWasAnimating;
+		const bool sustainPrimary = framePrimaryLightWasAnimating;
+		const bool sustainCursor = frameCursorLightWasAnimating;
+		framePrimaryLightWasAnimating = false;
+		frameCursorLightWasAnimating = false;
 		frameLightingWasAnimating = false;
-		return stateChanged || needSettlingFrame || primaryLightMoved;
+		return FinishLightingFrame(
+			(primaryLightMoved || stateChanged)
+				|| (needSettlingFrame && sustainPrimary),
+			(stateChanged || (needSettlingFrame && sustainCursor)));
 	}
 
 	if (cursorSerial != handledBorderCursorLightSerial)
@@ -697,11 +765,28 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	frameCursorLightVisible = frameCursorLightIntensity > 0.0001F;
 
 	// 时间过程结束后再绘制一帧最终状态，随后恢复原有静止等待。
-	bool lightingAnimating = frameCursorLightAnimating || framePrimaryLightAnimating
-		|| frameDrawingPenColorAnimating || frameDrawingModeTransitionAnimating;
-	bool needSettlingFrame = frameLightingWasAnimating && !lightingAnimating;
+	const bool sharedLightingAnimating = frameDrawingPenColorAnimating
+		|| frameDrawingModeTransitionAnimating;
+	const bool primaryLightingAnimating = framePrimaryLightAnimating
+		|| sharedLightingAnimating;
+	const bool cursorLightingAnimating = frameCursorLightAnimating
+		|| sharedLightingAnimating;
+	const bool primarySettlingFrame = framePrimaryLightWasAnimating
+		&& !primaryLightingAnimating;
+	const bool cursorSettlingFrame = frameCursorLightWasAnimating
+		&& !cursorLightingAnimating;
+	framePrimaryLightWasAnimating = primaryLightingAnimating;
+	frameCursorLightWasAnimating = cursorLightingAnimating;
+	bool lightingAnimating = primaryLightingAnimating || cursorLightingAnimating;
 	frameLightingWasAnimating = lightingAnimating;
-	return lightingAnimating || needSettlingFrame || stateChanged || cursorMoved || primaryLightMoved;
+	return FinishLightingFrame(
+		primaryLightingAnimating || primarySettlingFrame
+			|| primaryStateChanged || primaryLightMoved
+			|| penLightColorChanged || drawingModeTransitionStarted
+			|| edgeLightingStateChanged,
+		cursorLightingAnimating || cursorSettlingFrame || cursorMoved
+			|| penLightColorChanged || drawingModeTransitionStarted
+			|| edgeLightingStateChanged);
 }
 
 ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
