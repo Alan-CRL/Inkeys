@@ -3622,9 +3622,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											ResetFineActivationDwell();
 											return false;
 										}
-										bool inActivationZone =
-											!IsBarThicknessPreviewPopupHit(
-												barUISet, clientX, clientY)
+										// 仅 Popup 起手时由 Surface 保留 Hold；普通 Slider 拖动仍让识别区优先。
+										bool popupOwnsPoint = previewPopupGesture
+											&& IsBarThicknessPreviewPopupHit(
+												barUISet, clientX, clientY);
+										bool inActivationZone = !popupOwnsPoint
 											&& IsBarThicknessFineDialDwellZone(
 												barUISet, clientX, clientY);
 										if (!inActivationZone)
