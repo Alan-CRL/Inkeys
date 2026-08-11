@@ -449,7 +449,8 @@ struct BarRenderLoopState
 	double mainButtonLogoBaseW = mainButtonLogo->w.tar;
 	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
 	unsigned long long handledMainButtonPulseSerial = 0;
-	wstring fps;
+	Inkeys::UI::Bar::RollingFrameRate rollingFrameRate;
+	wstring fps = L"-- FPS";
 };
 
 // 渲染线程的阶段协调器仅在当前 module 内可见，不扩大 BarUISetClass 的公开接口。
@@ -8831,6 +8832,7 @@ else
 			FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
 			wstring content = L"开发版本 " + editionDate + L" | 不代表最终品质 | " + state.fps;
 
+			const bool alignToLeft = state.mainBarLayoutSide;
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
 				L"HarmonyOS Sans SC",
@@ -8840,7 +8842,9 @@ else
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
 				L"zh-cn",
-				DWRITE_TEXT_ALIGNMENT_LEADING, // 指定文本左对齐
+				alignToLeft
+					? DWRITE_TEXT_ALIGNMENT_LEADING
+					: DWRITE_TEXT_ALIGNMENT_TRAILING,
 				DWRITE_PARAGRAPH_ALIGNMENT_NEAR // 指定段落顶部对齐
 			);
 
@@ -8849,13 +8853,17 @@ else
 				state.spec.GetFrameSolidColorBrush(
 					barDeviceContext, RGB(255, 255, 255), 0.5);
 
-			double tarX = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhX;
-			double tarY = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->inhY + barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetH();
+			auto mainButton = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			double tarX = mainButton->inhX;
+			double tarY = mainButton->inhY + mainButton->GetH();
+			// 主按钮位于右侧时向左排版，避免调试文字越过屏幕边缘。
+			double layoutLeft = alignToLeft ? tarX : tarX + mainButton->GetW() - 300.0;
+			double layoutRight = alignToLeft ? tarX + 300.0 : tarX + mainButton->GetW();
 
 			// 4. 设定绘制区域
 			D2D1_RECT_F layoutRect = D2D1::RectF(
-				static_cast<FLOAT>(tarX * tarZoom), static_cast<FLOAT>(tarY * tarZoom),
-				static_cast<FLOAT>((tarX + 300) * tarZoom),
+				static_cast<FLOAT>(layoutLeft * tarZoom), static_cast<FLOAT>(tarY * tarZoom),
+				static_cast<FLOAT>(layoutRight * tarZoom),
 				static_cast<FLOAT>((tarY + 20) * tarZoom));
 
 			RECT tmp = RECT((LONG)(layoutRect.left), (LONG)(layoutRect.top), (LONG)(layoutRect.right), (LONG)(layoutRect.bottom));
@@ -9010,8 +9018,10 @@ void BarRenderLoopCoordinator::PaceFrame(
 
 	if (BarUiDebugModeEnabled)
 	{
-		double cost = chrono::duration<double, std::milli>(chrono::high_resolution_clock::now() - state.reckon).count();
-		state.fps = format(L"{:.2f} FPS", 1000.0 / cost);
+		const double averageFps = state.rollingFrameRate.Tick();
+		state.fps = averageFps > 0.0
+			? format(L"{:.2f} FPS", averageFps)
+			: L"-- FPS";
 	}
 	state.reckon = chrono::high_resolution_clock::now();
 }

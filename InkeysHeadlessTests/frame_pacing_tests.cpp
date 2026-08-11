@@ -51,6 +51,39 @@ namespace
 			"idle rebase excludes sleep from first animation frame");
 	}
 
+	void TestRollingFrameRate()
+	{
+		using Clock = RollingFrameRate::Clock;
+		const auto start = Clock::time_point{};
+		RollingFrameRate frameRate;
+		Check(frameRate.Tick(start) == 0.0,
+			"rolling FPS waits for a complete interval");
+		for (int frame = 1; frame <= 60; ++frame)
+		{
+			const auto timestamp = start + std::chrono::duration_cast<Clock::duration>(
+				std::chrono::duration<double>(static_cast<double>(frame) / 60.0));
+			const double value = frameRate.Tick(timestamp);
+			if (frame == 60)
+				Check(Near(value, 60.0, 0.001),
+					"rolling FPS averages the latest second");
+		}
+
+		frameRate.Reset();
+		Check(frameRate.Tick(start) == 0.0,
+			"rolling FPS reset clears history");
+		Check(Near(frameRate.Tick(start + std::chrono::milliseconds(100)), 10.0),
+			"rolling FPS reports the available startup window");
+		Check(frameRate.Tick(start + std::chrono::milliseconds(1500)) == 0.0,
+			"rolling FPS evicts frames older than one second");
+		Check(Near(frameRate.Tick(start + std::chrono::milliseconds(1600)), 10.0),
+			"rolling FPS resumes after an idle gap");
+
+		Check(frameRate.Tick(start + std::chrono::milliseconds(1400)) == 0.0,
+			"rolling FPS rebases after a non-monotonic timestamp");
+		Check(Near(frameRate.Tick(start + std::chrono::milliseconds(1500)), 10.0),
+			"rolling FPS recovers after a timestamp rebase");
+	}
+
 	void TestPoliciesAndMeasurements()
 	{
 		constexpr FramePacingWaitPolicy defaultPolicy = FramePacingWaitPolicy::Default();
@@ -440,6 +473,7 @@ int RunFramePacingTests(bool benchmark)
 {
 	failureCount = 0;
 	TestAnimationFrameClockRebase();
+	TestRollingFrameRate();
 	TestPoliciesAndMeasurements();
 	if (benchmark) RunFramePacingBenchmarks();
 	return failureCount;

@@ -4895,6 +4895,16 @@ void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 	if (started && BarCanvasDrawingActivityCount.load(std::memory_order_acquire) == 0)
 		return;
 
+	// UI3 落笔时固定收起次级面板；主栏本身保持用户当前的展开状态。
+	barState.drawAttribute = false;
+	barState.geometryAttribute = false;
+	barState.moreExpanded = false;
+	ClosePenTypeMenu();
+	CloseDrawAttributeTooltips();
+	CloseThicknessSlider(true);
+	CloseColorPicker(true);
+	UpdateRendering(false);
+
 	POINT screenPoint{};
 	if (!GetCursorPos(&screenPoint) || WindowFromPoint(screenPoint) == hWnd) return;
 
@@ -5034,16 +5044,12 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		{
 			return Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON) || ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 		};
-	if (!IsLeftButtonDown()) return 0;
+	bool touchGesture = IsBarTouchPointerMessage(msg);
+	if ((touchGesture && (!msg.lbutton || IsBarTouchCancelMessage(msg)))
+		|| (!touchGesture && !IsLeftButtonDown())) return 0;
 
 	auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
 	if (!mainButton) return 0;
-
-	POINT p{};
-	if (!GetCursorPos(&p)) return 0;
-
-	double firX = static_cast<double>(p.x);
-	double firY = static_cast<double>(p.y);
 
 	double ret = 0.0;
 
@@ -5051,44 +5057,78 @@ double BarUISetClass::Seek(const ExMessage& msg)
 	UpdateRendering();
 
 	double tarZoom = barStyle.zoom;
-	while (!offSignal)
+	auto ApplyPointerDelta = [&](double deltaX, double deltaY)
+		{
+			if (deltaX == 0.0 && deltaY == 0.0) return;
+
+			double nextX = mainButton->x.tar + deltaX / tarZoom;
+			double nextY = mainButton->y.tar + deltaY / tarZoom;
+
+			// 临时限制主按钮整体始终留在主屏幕内，先不处理贴边隐藏和多显示器。
+			double frameHalf = 0.0;
+			if (mainButton->ft.has_value()) frameHalf = max(0.0, mainButton->ft.value().tar / 2.0);
+
+			double minX = mainButton->GetW() / 2.0 + frameHalf;
+			double minY = mainButton->GetH() / 2.0 + frameHalf;
+			double maxX = static_cast<double>(barWindow.w) / tarZoom - mainButton->GetW() / 2.0 - frameHalf;
+			double maxY = static_cast<double>(barWindow.h) / tarZoom - mainButton->GetH() / 2.0 - frameHalf;
+
+			if (maxX < minX) maxX = minX;
+			if (maxY < minY) maxY = minY;
+
+			mainButton->x.SetDirect(clamp(nextX, minX, maxX));
+			mainButton->y.SetDirect(clamp(nextY, minY, maxY));
+			ret += sqrt(deltaX * deltaX + deltaY * deltaY);
+		};
+
+	if (touchGesture)
 	{
-		if (!IsLeftButtonDown()) break;
-		if (!GetCursorPos(&p)) break;
-
-		if (firX == p.x && firY == p.y)
+		// WM_TOUCH 已提供连续客户区坐标，整个手势不得混入系统鼠标位置。
+		double previousX = static_cast<double>(msg.x);
+		double previousY = static_cast<double>(msg.y);
+		ExMessage touchMessage = msg;
+		while (!offSignal)
 		{
-			this_thread::sleep_for(chrono::milliseconds(15));
-			continue;
+			if (!WaitForBarInteractionMessage(
+				touchMessage, EM_MOUSE, floating_window)) break;
+			if (!IsBarTouchPointerMessage(touchMessage)) continue;
+			if (IsBarTouchCancelMessage(touchMessage)) break;
+
+			double currentX = static_cast<double>(touchMessage.x);
+			double currentY = static_cast<double>(touchMessage.y);
+			ApplyPointerDelta(currentX - previousX, currentY - previousY);
+			previousX = currentX;
+			previousY = currentY;
+
+			if (!touchMessage.lbutton || touchMessage.message == WM_LBUTTONUP) break;
 		}
-
-		double nextX = mainButton->x.tar + static_cast<double>(p.x - firX) / tarZoom;
-		double nextY = mainButton->y.tar + static_cast<double>(p.y - firY) / tarZoom;
-
-		// 临时限制主按钮整体始终留在主屏幕内，先不处理贴边隐藏和多显示器。
-		double frameHalf = 0.0;
-		if (mainButton->ft.has_value()) frameHalf = max(0.0, mainButton->ft.value().tar / 2.0);
-
-		double minX = mainButton->GetW() / 2.0 + frameHalf;
-		double minY = mainButton->GetH() / 2.0 + frameHalf;
-		double maxX = static_cast<double>(barWindow.w) / tarZoom - mainButton->GetW() / 2.0 - frameHalf;
-		double maxY = static_cast<double>(barWindow.h) / tarZoom - mainButton->GetH() / 2.0 - frameHalf;
-
-		if (maxX < minX) maxX = minX;
-		if (maxY < minY) maxY = minY;
-
-		mainButton->x.SetDirect(clamp(nextX, minX, maxX));
-		mainButton->y.SetDirect(clamp(nextY, minY, maxY));
-
-		ret += sqrt((p.x - firX) * (p.x - firX) + (p.y - firY) * (p.y - firY));
-		firX = static_cast<double>(p.x), firY = static_cast<double>(p.y);
-		// 拖动时收起主栏
-		if (setlist.regularSetting.moveRecover)
+	}
+	else
+	{
+		POINT point{};
+		if (!GetCursorPos(&point))
 		{
-			if (ret > 20 && barState.fold == false)
+			BarAtomic::sustainFlag = false;
+			return 0;
+		}
+		double previousX = static_cast<double>(point.x);
+		double previousY = static_cast<double>(point.y);
+		while (!offSignal)
+		{
+			if (!IsLeftButtonDown()) break;
+			if (!GetCursorPos(&point)) break;
+
+			double currentX = static_cast<double>(point.x);
+			double currentY = static_cast<double>(point.y);
+			if (previousX == currentX && previousY == currentY)
 			{
-				barState.fold = true;
+				this_thread::sleep_for(chrono::milliseconds(15));
+				continue;
 			}
+
+			ApplyPointerDelta(currentX - previousX, currentY - previousY);
+			previousX = currentX;
+			previousY = currentY;
 		}
 	}
 	if (offSignal)

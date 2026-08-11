@@ -10,6 +10,7 @@ module;
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <thread>
 
@@ -114,6 +115,47 @@ export namespace Inkeys::UI::Bar
 
 	private:
 		Clock::time_point reckon_;
+	};
+
+	// 调试文字按最近一秒内的帧时间戳计算平均值，显示仍随每帧刷新。
+	class RollingFrameRate
+	{
+	public:
+		using Clock = std::chrono::steady_clock;
+
+		explicit RollingFrameRate(
+			Clock::duration window = std::chrono::seconds(1)) noexcept
+			: window_(window > Clock::duration::zero()
+				? window : std::chrono::seconds(1))
+		{
+		}
+
+		double Tick(Clock::time_point now = Clock::now()) noexcept
+		{
+			if (!frames_.empty() && now <= frames_.back())
+			{
+				// 时钟回拨或测试重放时丢弃旧窗口，禁止输出失真的负间隔。
+				frames_.clear();
+			}
+			frames_.push_back(now);
+			while (frames_.size() > 1 && now - frames_.front() > window_)
+				frames_.pop_front();
+			if (frames_.size() < 2) return 0.0;
+
+			const double elapsedSeconds =
+				std::chrono::duration<double>(now - frames_.front()).count();
+			if (!(elapsedSeconds > 0.0) || !std::isfinite(elapsedSeconds)) return 0.0;
+			return static_cast<double>(frames_.size() - 1) / elapsedSeconds;
+		}
+
+		void Reset() noexcept
+		{
+			frames_.clear();
+		}
+
+	private:
+		Clock::duration window_;
+		std::deque<Clock::time_point> frames_;
 	};
 
 	// 默认使用 waitable timer；Win7/创建或等待失败时在内部有界回退。

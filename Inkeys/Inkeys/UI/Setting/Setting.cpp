@@ -2863,7 +2863,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 170.0f : 165.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 245.0f : 165.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3013,6 +3013,49 @@ void SettingMain(stop_token sT)
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
 							}
 							ImGui::EndChild();
+
+							// 光影属于 UI3 外观能力，放在常规页便于正式版本使用。
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("启用边缘光影", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								float cursosPosY = 0;
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
+									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+									ImGui::TextUnformatted("启用边缘光影");
+								}
+								{
+									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+									ImGui::TextUnformatted("关闭后仅保留基础边框，停用点光与柔光效果。");
+								}
+								{
+									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
+									Widgets::toggle.ToggleBool("##启用边缘光影", &Experimental.Inkeys3.EdgeLightingEnable);
+									if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable
+										!= Experimental.Inkeys3.EdgeLightingEnable)
+									{
+										Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
+											Experimental.Inkeys3.EdgeLightingEnable;
+										Inkeys::UI::Bar::SetEdgeLightingOptions(
+											Experimental.Inkeys3.EdgeLightingEnable,
+											Experimental.Inkeys3.DynamicEdgeLighting);
+										Inkeys::config.Write();
+									}
+								}
+								{
+									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+									while (PushFontNum) PushFontNum--, ImGui::PopFont();
+								}
+							}
+							ImGui::EndChild();
 						}
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
@@ -3100,7 +3143,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#4", { settingItemWidth * settingGlobalScale,480.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#4", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 225.0f : 480.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3232,6 +3275,7 @@ void SettingMain(stop_token sT)
 							}
 							ImGui::EndChild();
 						}
+						if (!useInkeys3UI)
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -8169,7 +8213,7 @@ void SettingMain(stop_token sT)
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							(Experimental.Inkeys3.UI3
-								? (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
+								? (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
 								: 115.0f) * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -8220,48 +8264,6 @@ void SettingMain(stop_token sT)
 
 						if (Experimental.Inkeys3.UI3)
 						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("启用边缘光影", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
-								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-							{
-								float cursosPosY = 0;
-								{
-									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-									ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-									ImGui::TextUnformatted("启用边缘光影");
-								}
-								{
-									ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-									ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-									ImGui::TextUnformatted("关闭后仅保留基础边框，停用点光与柔光效果。");
-								}
-								{
-									ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
-									Widgets::toggle.ToggleBool("##启用边缘光影", &Experimental.Inkeys3.EdgeLightingEnable);
-									if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable
-										!= Experimental.Inkeys3.EdgeLightingEnable)
-									{
-										Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
-											Experimental.Inkeys3.EdgeLightingEnable;
-										Inkeys::UI::Bar::SetEdgeLightingOptions(
-											Experimental.Inkeys3.EdgeLightingEnable,
-											Experimental.Inkeys3.DynamicEdgeLighting);
-										Inkeys::config.Write();
-									}
-								}
-								{
-									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-									if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-									while (PushFontNum) PushFontNum--, ImGui::PopFont();
-								}
-							}
-							ImGui::EndChild();
-
 							if (Experimental.Inkeys3.EdgeLightingEnable)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
