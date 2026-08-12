@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
+- **Total Sessions**: 25
 - **Last Active**: 2026-08-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~630 | Active |
+| `journal-1.md` | ~651 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-08-12 | UI3 展开按钮点击合并 | `b43dc640` | `draw` |
 | 24 | 2026-08-12 | 修复触摸重复转译与 Setting 窗口合同 | `664ab92`, `e7f42dc` | `draw` |
 | 23 | 2026-08-12 | UI3 Draw3 Win32 host preparation | `41535ea` | `draw` |
 | 22 | 2026-08-11 | 修复 UI3 功能组脏区漏算 | `caf624e9` | `draw` |

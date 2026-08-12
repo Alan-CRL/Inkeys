@@ -628,3 +628,24 @@ Bar/PPT 仅在应用级 HiMsg callback 中过滤系统触摸兼容鼠标，保�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 25: UI3 展开按钮点击合并
+
+**Date**: 2026-08-12
+**Task**: UI3 展开按钮点击合并
+**Branch**: `draw`
+
+### Summary
+
+为主栏、绘制/几何属性、更多、粗细调节和笔属性菜单增加独立 180ms toggle 合并；保留状态切换与原始输入语义，补充纯算法 Headless 测试并通过完整 ARM64 构建。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b43dc640` | (see git log) |
+
+### Status
+
+[OK] **Completed**
