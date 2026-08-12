@@ -39,6 +39,7 @@
     <ClCompile Include="draw3\graphics_initialization.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_document.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+	<ClCompile Include="draw3\canvas_navigation.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history_gpu.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
@@ -55,6 +56,7 @@
     <ClCompile Include="draw3\graphics_initialization.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_document.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+	<ClCompile Include="draw3\canvas_navigation.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history_gpu.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_prediction.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
@@ -68,6 +70,7 @@
     <ClCompile Include="draw3\renderer.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\renderer_primitives.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\renderer_laser.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+	<ClCompile Include="draw3\renderer_snapshot.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\transparent_presentation.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
     <ClCompile Include="draw3\window_control.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\window_performance_hud.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>

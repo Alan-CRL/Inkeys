@@ -713,6 +713,11 @@ namespace draw3
 		impl_->queue.wait_dequeue(record);
 	}
 
+	bool ContactInputCoordinator::HasPendingWork() const noexcept
+	{
+		return impl_->queue.size_approx() != 0;
+	}
+
 	bool ContactInputCoordinator::PublishControlWake() noexcept
 	{
 		impl_->SignalWake(); // sticky 请求已发布后，即使 queue wake 已合并也要打断活动帧等待。

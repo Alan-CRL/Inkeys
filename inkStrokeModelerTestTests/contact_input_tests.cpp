@@ -27,6 +27,7 @@ import draw3.realtime_stylus;
 import draw3.runtime_metrics;
 
 int RunHighlighterGeometryTests();
+int RunCanvasNavigationTests();
 int RunInkDocumentTests();
 int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
@@ -290,6 +291,7 @@ namespace
 	void TestWakeProtocols(TestState& state)
 	{
 		draw3::ContactInputCoordinator input(32);
+		TEST_CHECK(state, !input.HasPendingWork());
 		std::atomic<bool> waiterReturned = false;
 		std::atomic<bool> gotControlWake = false;
 		std::thread idleWaiter([&]
@@ -300,9 +302,11 @@ namespace
 				waiterReturned.store(true, std::memory_order_release);
 			});
 		TEST_CHECK(state, input.PublishControlWake());
+		TEST_CHECK(state, input.HasPendingWork());
 		idleWaiter.join();
 		TEST_CHECK(state, waiterReturned.load(std::memory_order_acquire));
 		TEST_CHECK(state, gotControlWake.load(std::memory_order_acquire));
+		TEST_CHECK(state, !input.HasPendingWork());
 		input.AcknowledgeControlWake();
 
 		uint64_t generation = input.CaptureWakeGeneration();
@@ -315,7 +319,9 @@ namespace
 		TEST_CHECK(state, input.PublishDown(31, 1, draw3::InputDeviceType::Pen, MakeSnapshot(1)));
 		activeWaiter.join();
 		TEST_CHECK(state, downWoke.load(std::memory_order_acquire));
+		TEST_CHECK(state, input.HasPendingWork());
 		std::vector<draw3::ContactHandle> handles = DrainDowns(input, 1, state);
+		TEST_CHECK(state, !input.HasPendingWork());
 
 		generation = input.CaptureWakeGeneration();
 		TEST_CHECK(state, input.PublishMove(31, 1, MakeSnapshot(2, draw3::ContactPhase::Move)));
@@ -1670,6 +1676,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestHapticFeedbackContracts(state);
 	TestPerformanceHudMetrics(state);
 	state.failures += RunHighlighterGeometryTests();
+	state.failures += RunCanvasNavigationTests();
 	state.failures += RunInkDocumentTests();
 	state.failures += RunInkHistoryTests();
 	state.failures += RunLaserIncrementalCoverageTests();

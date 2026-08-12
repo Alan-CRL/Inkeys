@@ -283,6 +283,8 @@ namespace draw3
 		renderTargetDescription.Format = textureDescription.Format;
 		renderTargetDescription.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
 		if (FAILED(device->CreateRenderTargetView(layerL2Texture.Get(), &renderTargetDescription, layerL2RTV.ReleaseAndGetAddressOf()))) return false;
+		// 快照是可选视觉兜底；分配失败时权威 L2 与逐 tile 恢复仍可继续。
+		CreateTrustedL2SnapshotResources(width, height);
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
 		if (!CreateOperatorLayerResources(width, height, layerL0)) return false; // L0 保存每帧变化的笔锋和预测操作。
 		if (!CreateLaserCoverageResources(width, height, laserCompositedColor)) return false;
@@ -313,6 +315,7 @@ namespace draw3
 		}
 		backBufferRTV.Reset();
 		backBufferTexture.Reset();
+		ReleaseTrustedL2SnapshotResources();
 		layerL2RTV.Reset();
 		layerL2Texture.Reset();
 		layerL1.addRTV.Reset();
@@ -351,6 +354,7 @@ namespace draw3
 		highlighterPrimitiveBuffer.Reset();
 		highlighterPrimitiveSRV.Reset();
 		operatorSampler.Reset();
+		ReleaseTrustedL2SnapshotPipeline();
 		strokeOperatorBlendState.Reset();
 		operatorResolveBlendState.Reset();
 		laserCoverageBlendState.Reset();
@@ -526,6 +530,7 @@ namespace draw3
 		samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
 		samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
 		if (FAILED(device->CreateSamplerState(&samplerDescription, operatorSampler.ReleaseAndGetAddressOf()))) return false;
+		CreateTrustedL2SnapshotPipeline(); // 可选 pass 失败时仅禁用动态快照兜底。
 		return LoadShaders();
 	}
 

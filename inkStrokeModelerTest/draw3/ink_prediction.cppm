@@ -447,10 +447,12 @@ export namespace draw3
 	// 把完成态真实点转换为不含 time/prediction 的持久 Stroke；scratch 由绘制线程复用。
 	std::optional<InkStroke> FinalizeStoredStroke(const ActiveStroke& stroke,
 		StoredInkStyle style, double liveTipTaperSeconds,
-		std::vector<InkPoint>& scratch);
+		std::vector<InkPoint>& scratch, float canvasOffsetX = 0.0f,
+		float canvasOffsetY = 0.0f);
 	// Shape 完成态只保存固定 Down 与最终 Up 两个端点。
 	std::optional<InkStroke> FinalizeStoredShape(
-		const ShapePrimitive& primitive, StoredInkStyle style);
+		const ShapePrimitive& primitive, StoredInkStyle style,
+		float canvasOffsetX = 0.0f, float canvasOffsetY = 0.0f);
 	// 活动终点优先取最后一个有效 prediction，再回退建模末点和原始输入。
 	DirectX::XMFLOAT2 ResolveShapeLiveEndpoint(
 		std::span<const ink::stroke_model::Result> predictedResults,

@@ -40,6 +40,14 @@ cbuffer InkHistoryCacheBuffer : register(b2)
     uint historyPassPadding;
 };
 
+// 可信 L2 快照只供 backbuffer 兜底 pass 使用，不参与任何权威画布层。
+cbuffer TrustedL2SnapshotBuffer : register(b3)
+{
+    float4 trustedSnapshotTargetRect;
+    float4 trustedSnapshotSourceUvRect;
+    float4 trustedSnapshotBlurUv;
+};
+
 // 2. 结构定义
 struct InkPoint
 {
@@ -77,6 +85,7 @@ Texture2DArray HistoryEarlierAdd : register(t10);
 Texture2DArray HistoryEarlierRetain : register(t11);
 Texture2DArray HistoryLaterAdd : register(t12);
 Texture2DArray HistoryLaterRetain : register(t13);
+Texture2D TrustedL2Snapshot : register(t14);
 SamplerState OperatorSampler : register(s0);
 
 // 4. VS -> PS

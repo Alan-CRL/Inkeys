@@ -14,7 +14,9 @@ namespace draw3
 		bool IsValidViewport(const InkViewport& viewport) noexcept
 		{
 			return std::isfinite(viewport.x) && std::isfinite(viewport.y) &&
-				std::isfinite(viewport.scale) && viewport.scale > 0.0f;
+				std::abs(viewport.x) <= kInkCanvasViewportLimitDip &&
+				std::abs(viewport.y) <= kInkCanvasViewportLimitDip &&
+				viewport.scale == 1.0f;
 		}
 
 		bool IsValidStyle(const StoredInkStyle& style) noexcept
@@ -90,6 +92,13 @@ namespace draw3
 	const InkViewport& InkCanvas::Viewport() const noexcept
 	{
 		return viewport_;
+	}
+
+	bool InkCanvas::SetViewport(InkViewport viewport) noexcept
+	{
+		if (!IsValidViewport(viewport)) return false;
+		viewport_ = viewport;
+		return true;
 	}
 
 	std::span<const InkStroke> InkCanvas::Strokes() const noexcept

@@ -581,22 +581,30 @@ namespace draw3
 	}
 
 	std::optional<StrokeTileFootprint> BuildStrokeTileFootprint(
-		const InkStroke& stroke, InkPixelBounds visibleBounds)
+		const InkStroke& stroke, std::optional<InkPixelBounds> visibleBounds)
 	{
-		if (!stroke.IsValid() || !IsValidBounds(visibleBounds)) return std::nullopt;
-		const std::optional<InkPixelBounds> pixelBounds = ComputeStrokeBounds(stroke);
+		if (!stroke.IsValid()) return std::nullopt;
+		std::optional<InkPixelBounds> pixelBounds = ComputeStrokeBounds(stroke);
+		if (!pixelBounds)
+		{
+			if (!visibleBounds || !IsValidBounds(*visibleBounds)) return std::nullopt;
+			// float 极值附近无法表达笔宽时，保守覆盖当前可见区，不能丢失有效历史项。
+			pixelBounds = *visibleBounds;
+		}
+		const InkPixelBounds clippedBounds = visibleBounds.value_or(*pixelBounds);
+		if (!IsValidBounds(clippedBounds)) return std::nullopt;
 		std::optional<std::vector<SignedTileCoordinate>> undoTiles =
-			BuildTiles(stroke, kUndoTileSize, visibleBounds);
+			BuildTiles(stroke, kUndoTileSize, clippedBounds);
 		std::optional<std::vector<SignedTileCoordinate>> compositionTiles =
-			BuildTiles(stroke, kCompositionTileSize, visibleBounds);
+			BuildTiles(stroke, kCompositionTileSize, clippedBounds);
 		// 极端但有限的坐标无法安全量化时，退化为当前可见区的保守 Tile，
 		// 不能让一个有效 Stored Stroke 因 sidecar 计算失败而失去撤回能力。
-		if (!undoTiles) undoTiles = BuildAllVisibleTiles(kUndoTileSize, visibleBounds);
+		if (!undoTiles) undoTiles = BuildAllVisibleTiles(kUndoTileSize, clippedBounds);
 		if (!compositionTiles)
-			compositionTiles = BuildAllVisibleTiles(kCompositionTileSize, visibleBounds);
+			compositionTiles = BuildAllVisibleTiles(kCompositionTileSize, clippedBounds);
 		if (!undoTiles || !compositionTiles) return std::nullopt;
 		StrokeTileFootprint result;
-		result.pixelBounds = pixelBounds.value_or(visibleBounds);
+		result.pixelBounds = *pixelBounds;
 		result.undoTiles = std::move(*undoTiles);
 		result.compositionTiles = std::move(*compositionTiles);
 		return result;

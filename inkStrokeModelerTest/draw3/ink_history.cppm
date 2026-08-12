@@ -64,7 +64,8 @@ export namespace draw3
 
 	// 只枚举与当前可见区域相交的稀疏 Tile；无法安全量化坐标时返回空。
 	std::optional<StrokeTileFootprint> BuildStrokeTileFootprint(
-		const InkStroke& stroke, InkPixelBounds visibleBounds);
+		const InkStroke& stroke,
+		std::optional<InkPixelBounds> visibleBounds = std::nullopt);
 	std::optional<size_t> CountTilesCoveringPixelBounds(
 		InkPixelBounds bounds, uint32_t tileSize) noexcept;
 

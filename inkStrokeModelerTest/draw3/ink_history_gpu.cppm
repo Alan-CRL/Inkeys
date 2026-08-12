@@ -70,6 +70,8 @@ export namespace draw3
 		InkRasterStateToken beforeState = 0;
 		InkRasterStateToken afterState = 0;
 		std::span<const SignedTileCoordinate> tiles;
+		float viewportX = 0.0f;
+		float viewportY = 0.0f;
 		int canvasWidth = 0;
 		int canvasHeight = 0;
 	};
@@ -105,6 +107,8 @@ export namespace draw3
 		const CanvasRuntimeHistory* history = nullptr;
 		std::span<const SignedTileCoordinate> tiles;
 		size_t rangeEnd = 0;
+		float viewportX = 0.0f;
+		float viewportY = 0.0f;
 		int canvasWidth = 0;
 		int canvasHeight = 0;
 		bool clearTargetTiles = true;
@@ -144,6 +148,7 @@ export namespace draw3
 		HotPreimageRestoreResult RestorePreimage(
 			HistoryCanvasIdentity canvas, RenderItemId item,
 			InkHistoryRasterKey rasterKey, InkRasterStateToken currentState,
+			float viewportX, float viewportY,
 			int canvasWidth, int canvasHeight);
 		size_t ConsecutiveHotDepth(HistoryCanvasIdentity canvas,
 			InkHistoryRasterKey rasterKey, InkRasterStateToken currentState) const noexcept;

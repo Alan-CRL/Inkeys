@@ -80,10 +80,14 @@ int RunInkDocumentTests()
 	INK_DOCUMENT_CHECK(defaultCanvas->Viewport().x == 0.0f);
 	INK_DOCUMENT_CHECK(defaultCanvas->Viewport().y == 0.0f);
 	INK_DOCUMENT_CHECK(defaultCanvas->Viewport().scale == 1.0f);
+	INK_DOCUMENT_CHECK(defaultCanvas->SetViewport({ -120.0f, 450.0f, 1.0f }));
+	INK_DOCUMENT_CHECK(defaultCanvas->Viewport().x == -120.0f);
+	INK_DOCUMENT_CHECK(!defaultCanvas->SetViewport({ 0.0f, 0.0f, 2.0f }));
+	INK_DOCUMENT_CHECK(defaultCanvas->Viewport().x == -120.0f);
 	INK_DOCUMENT_CHECK(defaultCanvas->Strokes().empty());
 
 	const draw3::DeviceKey secondDevice(17);
-	const draw3::InkViewport secondViewport = { -300.0f, 500.0f, 2.0f };
+	const draw3::InkViewport secondViewport = { -300.0f, 500.0f, 1.0f };
 	draw3::InkCanvas* secondCanvas = firstPage->GetOrCreateCanvas(
 		secondDevice, secondViewport);
 	INK_DOCUMENT_CHECK(secondCanvas != nullptr);
@@ -111,6 +115,9 @@ int RunInkDocumentTests()
 		{ 0.0f, 0.0f, 0.0f }) == nullptr);
 	INK_DOCUMENT_CHECK(firstPage->GetOrCreateCanvas(draw3::DeviceKey(21),
 		{ 0.0f, 0.0f, -1.0f }) == nullptr);
+	INK_DOCUMENT_CHECK(!defaultCanvas->SetViewport(
+		{ draw3::kInkCanvasViewportLimitDip + 1.0f, 0.0f, 1.0f }));
+	INK_DOCUMENT_CHECK(defaultCanvas->Viewport().x == -120.0f);
 	INK_DOCUMENT_CHECK(firstPage->Canvases().size() == 2);
 
 	draw3::StoredInkStyle style = {

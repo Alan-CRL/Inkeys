@@ -105,6 +105,50 @@ namespace draw3
 				static_cast<LONG>(clippedRight), static_cast<LONG>(clippedBottom) };
 		}
 
+		struct TileScreenMapping
+		{
+			float canvasLeft = 0.0f;
+			float canvasTop = 0.0f;
+			float canvasRight = 0.0f;
+			float canvasBottom = 0.0f;
+			RECT dirty = {};
+		};
+
+		std::optional<TileScreenMapping> MapTileToScreen(
+			SignedTileCoordinate tile, uint32_t tileSize,
+			float viewportX, float viewportY, int width, int height) noexcept
+		{
+			if (tileSize == 0 || width <= 0 || height <= 0 ||
+				!std::isfinite(viewportX) || !std::isfinite(viewportY)) return std::nullopt;
+			const double tileLeft = static_cast<double>(tile.x) * tileSize;
+			const double tileTop = static_cast<double>(tile.y) * tileSize;
+			const double canvasLeft = std::max(tileLeft, static_cast<double>(viewportX));
+			const double canvasTop = std::max(tileTop, static_cast<double>(viewportY));
+			const double canvasRight = std::min(tileLeft + tileSize,
+				static_cast<double>(viewportX) + width);
+			const double canvasBottom = std::min(tileTop + tileSize,
+				static_cast<double>(viewportY) + height);
+			if (!(canvasLeft < canvasRight && canvasTop < canvasBottom))
+				return std::nullopt;
+			TileScreenMapping mapping;
+			mapping.canvasLeft = static_cast<float>(canvasLeft);
+			mapping.canvasTop = static_cast<float>(canvasTop);
+			mapping.canvasRight = static_cast<float>(canvasRight);
+			mapping.canvasBottom = static_cast<float>(canvasBottom);
+			mapping.dirty = {
+				static_cast<LONG>(std::floor(canvasLeft - viewportX)),
+				static_cast<LONG>(std::floor(canvasTop - viewportY)),
+				static_cast<LONG>(std::ceil(canvasRight - viewportX)),
+				static_cast<LONG>(std::ceil(canvasBottom - viewportY))
+			};
+			mapping.dirty.left = std::clamp(mapping.dirty.left, 0L, static_cast<LONG>(width));
+			mapping.dirty.top = std::clamp(mapping.dirty.top, 0L, static_cast<LONG>(height));
+			mapping.dirty.right = std::clamp(mapping.dirty.right, 0L, static_cast<LONG>(width));
+			mapping.dirty.bottom = std::clamp(mapping.dirty.bottom, 0L, static_cast<LONG>(height));
+			return IsEmptyRectLocal(mapping.dirty)
+				? std::nullopt : std::optional<TileScreenMapping>(mapping);
+		}
+
 		int64_t TileOrigin(int32_t coordinate, uint32_t tileSize) noexcept
 		{
 			return static_cast<int64_t>(coordinate) * tileSize;
@@ -137,7 +181,7 @@ namespace draw3
 		{
 			SignedTileCoordinate tile = {};
 			UndoSlot slot = {};
-			RECT canvasRect = {};
+			RECT screenRect = {};
 		};
 
 		struct HotEntry
@@ -148,6 +192,8 @@ namespace draw3
 			InkHistoryRasterKey rasterKey = {};
 			InkRasterStateToken beforeState = 0;
 			InkRasterStateToken afterState = 0;
+			float viewportX = 0.0f;
+			float viewportY = 0.0f;
 			int canvasWidth = 0;
 			int canvasHeight = 0;
 			bool committed = false;
@@ -611,26 +657,27 @@ namespace draw3
 		}
 
 		bool ApplyOperator(OperatorPage& source, uint32_t sourceSlice,
-			SignedTileCoordinate tile, int width, int height)
+			SignedTileCoordinate tile, float viewportX, float viewportY,
+			int width, int height)
 		{
-			const std::optional<RECT> clipped = TileRect(
-				tile, kCompositionTileSize, width, height);
-			if (!clipped) return true;
+			const std::optional<TileScreenMapping> mapping = MapTileToScreen(
+				tile, kCompositionTileSize, viewportX, viewportY, width, height);
+			if (!mapping) return true;
 			const int64_t originX = TileOrigin(tile.x, kCompositionTileSize);
 			const int64_t originY = TileOrigin(tile.y, kCompositionTileSize);
 			HistoryCacheConstants constants = {};
-			constants.targetRect[0] = static_cast<float>(clipped->left);
-			constants.targetRect[1] = static_cast<float>(clipped->top);
-			constants.targetRect[2] = static_cast<float>(clipped->right);
-			constants.targetRect[3] = static_cast<float>(clipped->bottom);
-			constants.sourceUvRect[0] = static_cast<float>(
-				static_cast<int64_t>(clipped->left) - originX) / kCompositionTileSize;
-			constants.sourceUvRect[1] = static_cast<float>(
-				static_cast<int64_t>(clipped->top) - originY) / kCompositionTileSize;
-			constants.sourceUvRect[2] = static_cast<float>(
-				static_cast<int64_t>(clipped->right) - originX) / kCompositionTileSize;
-			constants.sourceUvRect[3] = static_cast<float>(
-				static_cast<int64_t>(clipped->bottom) - originY) / kCompositionTileSize;
+			constants.targetRect[0] = mapping->canvasLeft - viewportX;
+			constants.targetRect[1] = mapping->canvasTop - viewportY;
+			constants.targetRect[2] = mapping->canvasRight - viewportX;
+			constants.targetRect[3] = mapping->canvasBottom - viewportY;
+			constants.sourceUvRect[0] =
+				(mapping->canvasLeft - static_cast<float>(originX)) / kCompositionTileSize;
+			constants.sourceUvRect[1] =
+				(mapping->canvasTop - static_cast<float>(originY)) / kCompositionTileSize;
+			constants.sourceUvRect[2] =
+				(mapping->canvasRight - static_cast<float>(originX)) / kCompositionTileSize;
+			constants.sourceUvRect[3] =
+				(mapping->canvasBottom - static_cast<float>(originY)) / kCompositionTileSize;
 			constants.sourceSlice = 0;
 			if (!UpdatePassConstants(kApplyCachedShapeType,
 				static_cast<float>(width), static_cast<float>(height), constants)) return false;
@@ -652,16 +699,18 @@ namespace draw3
 			return true;
 		}
 
-		bool ClearL2Tile(SignedTileCoordinate tile, int width, int height)
+		bool ClearL2Tile(SignedTileCoordinate tile, float viewportX, float viewportY,
+			int width, int height)
 		{
-			const std::optional<RECT> clipped = TileRect(
-				tile, kCompositionTileSize, width, height);
-			if (!clipped) return true;
+			const std::optional<TileScreenMapping> mapping = MapTileToScreen(
+				tile, kCompositionTileSize, viewportX, viewportY, width, height);
+			if (!mapping) return true;
+			const RECT clipped = mapping->dirty;
 			if (context1)
 			{
 				const float transparent[4] = {};
 				const D3D11_RECT clearRect = {
-					clipped->left, clipped->top, clipped->right, clipped->bottom };
+					clipped.left, clipped.top, clipped.right, clipped.bottom };
 				UnbindAllShaderResources();
 				context1->ClearView(renderer->layerL2RTV.Get(), transparent, &clearRect, 1);
 				return true;
@@ -670,20 +719,14 @@ namespace draw3
 			ClearOperator(scratchPages[0], 0);
 			UnbindAllShaderResources();
 			renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
-			const int64_t originX = TileOrigin(tile.x, kCompositionTileSize);
-			const int64_t originY = TileOrigin(tile.y, kCompositionTileSize);
 			D3D11_BOX sourceBox = {};
-			sourceBox.left = static_cast<UINT>(
-				static_cast<int64_t>(clipped->left) - originX);
-			sourceBox.top = static_cast<UINT>(
-				static_cast<int64_t>(clipped->top) - originY);
-			sourceBox.right = static_cast<UINT>(
-				static_cast<int64_t>(clipped->right) - originX);
-			sourceBox.bottom = static_cast<UINT>(
-				static_cast<int64_t>(clipped->bottom) - originY);
+			sourceBox.left = 0;
+			sourceBox.top = 0;
+			sourceBox.right = static_cast<UINT>(clipped.right - clipped.left);
+			sourceBox.bottom = static_cast<UINT>(clipped.bottom - clipped.top);
 			sourceBox.back = 1;
 			renderer->context->CopySubresourceRegion(renderer->layerL2Texture.Get(), 0,
-				static_cast<UINT>(clipped->left), static_cast<UINT>(clipped->top), 0,
+				static_cast<UINT>(clipped.left), static_cast<UINT>(clipped.top), 0,
 				scratchPages[0].addTexture.Get(), 0, &sourceBox);
 			return true;
 		}
@@ -710,11 +753,12 @@ namespace draw3
 
 		bool ReplayRangeDirect(const InkCanvas& canvas,
 			const CanvasRuntimeHistory& history, SignedTileCoordinate tile,
-			size_t begin, size_t end, int width, int height)
+			size_t begin, size_t end, float viewportX, float viewportY,
+			int width, int height)
 		{
-			const std::optional<RECT> dirty = TileRect(
-				tile, kCompositionTileSize, width, height);
-			if (!dirty) return true;
+			const std::optional<TileScreenMapping> mapping = MapTileToScreen(
+				tile, kCompositionTileSize, viewportX, viewportY, width, height);
+			if (!mapping) return true;
 			const std::span<const RenderItemState> items = history.Items();
 			end = std::min(end, items.size());
 			renderer->ClearOperatorLayer(renderer->layerL0);
@@ -725,13 +769,13 @@ namespace draw3
 					item.strokeIndex >= canvas.Strokes().size()) continue;
 				renderer->ClearOperatorLayer(renderer->layerL1);
 				const StoredStrokeRasterTarget target = {
-					&renderer->layerL1, 0.0f, 0.0f, width, height };
+					&renderer->layerL1, viewportX, viewportY, width, height };
 				const StoredStrokeRasterResult rasterized = DrawStoredStroke(
 					canvas.Strokes()[item.strokeIndex], *renderer,
 					target, pointScratch, highlighterScratch);
 				if (!rasterized.succeeded || !renderer->ApplyOperatorLayers(
 					renderer->layerL2RTV.Get(), renderer->layerL1,
-					renderer->layerL0, *dirty)) return false;
+					renderer->layerL0, mapping->dirty)) return false;
 			}
 			return true;
 		}
@@ -739,11 +783,12 @@ namespace draw3
 		ReplayRangeResult ReplayRange(const InkCanvas& canvas,
 			const CanvasRuntimeHistory& history,
 			SignedTileCoordinate tile, size_t begin, size_t end,
-			int width, int height)
+			float viewportX, float viewportY, int width, int height)
 		{
 			if (!compositionPassAvailable || !EnsureScratch())
 				return { ReplayRangeDirect(
-					canvas, history, tile, begin, end, width, height), true };
+					canvas, history, tile, begin, end,
+					viewportX, viewportY, width, height), true };
 			const std::span<const RenderItemState> items = history.Items();
 			end = std::min(end, items.size());
 			for (size_t index = std::min(begin, end); index < end; ++index)
@@ -751,7 +796,8 @@ namespace draw3
 				const RenderItemState& item = items[index];
 				if (!item.visible || !ContainsTile(item.compositionTiles, tile)) continue;
 				if (!RasterItem(canvas, item, tile, scratchPages[2], 0)) return {};
-				if (!ApplyOperator(scratchPages[2], 0, tile, width, height)) return {};
+				if (!ApplyOperator(scratchPages[2], 0, tile,
+					viewportX, viewportY, width, height)) return {};
 			}
 			return { true, false };
 		}
@@ -1086,7 +1132,11 @@ namespace draw3
 			request.canvas.pageGuid.IsZero() || request.canvas.device != request.rasterKey.device ||
 			request.beforeState == 0 || request.afterState == 0 ||
 			request.beforeState == request.afterState || request.canvasWidth <= 0 ||
-			request.canvasHeight <= 0 || !std::isfinite(request.rasterKey.scale) ||
+			request.canvasHeight <= 0 || !std::isfinite(request.viewportX) ||
+			!std::isfinite(request.viewportY) ||
+			std::floor(request.viewportX) != request.viewportX ||
+			std::floor(request.viewportY) != request.viewportY ||
+			!std::isfinite(request.rasterKey.scale) ||
 			request.rasterKey.scale <= 0.0f)
 		{
 			result.status = HotPreimageCaptureStatus::InvalidRequest;
@@ -1097,7 +1147,8 @@ namespace draw3
 		visibleTiles.reserve(request.tiles.size());
 		for (SignedTileCoordinate tile : request.tiles)
 		{
-			if (!TileRect(tile, kUndoTileSize,
+			if (!MapTileToScreen(tile, kUndoTileSize,
+				request.viewportX, request.viewportY,
 				request.canvasWidth, request.canvasHeight)) continue;
 			if (std::find(visibleTiles.begin(), visibleTiles.end(), tile) == visibleTiles.end())
 				visibleTiles.push_back(tile);
@@ -1138,6 +1189,8 @@ namespace draw3
 		entry.rasterKey = request.rasterKey;
 		entry.beforeState = request.beforeState;
 		entry.afterState = request.afterState;
+		entry.viewportX = request.viewportX;
+		entry.viewportY = request.viewportY;
 		entry.canvasWidth = request.canvasWidth;
 		entry.canvasHeight = request.canvasHeight;
 		entry.tiles.reserve(visibleTiles.size());
@@ -1146,25 +1199,27 @@ namespace draw3
 		impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
 		for (SignedTileCoordinate tile : visibleTiles)
 		{
-			const RECT canvasRect = *TileRect(
-				tile, kUndoTileSize, request.canvasWidth, request.canvasHeight);
+			const TileScreenMapping mapping = *MapTileToScreen(
+				tile, kUndoTileSize, request.viewportX, request.viewportY,
+				request.canvasWidth, request.canvasHeight);
+			const RECT screenRect = mapping.dirty;
 			const Impl::UndoSlot slot = impl_->freeUndoSlots.back();
 			impl_->freeUndoSlots.pop_back();
 			const int64_t originX = TileOrigin(tile.x, kUndoTileSize);
 			const int64_t originY = TileOrigin(tile.y, kUndoTileSize);
 			D3D11_BOX sourceBox = {};
-			sourceBox.left = static_cast<UINT>(canvasRect.left);
-			sourceBox.top = static_cast<UINT>(canvasRect.top);
-			sourceBox.right = static_cast<UINT>(canvasRect.right);
-			sourceBox.bottom = static_cast<UINT>(canvasRect.bottom);
+			sourceBox.left = static_cast<UINT>(screenRect.left);
+			sourceBox.top = static_cast<UINT>(screenRect.top);
+			sourceBox.right = static_cast<UINT>(screenRect.right);
+			sourceBox.bottom = static_cast<UINT>(screenRect.bottom);
 			sourceBox.back = 1;
 			const UINT destinationSubresource = D3D11CalcSubresource(0, slot.slice, 1);
 			impl_->renderer->context->CopySubresourceRegion(
 				impl_->undoPages[slot.page].texture.Get(), destinationSubresource,
-				static_cast<UINT>(static_cast<int64_t>(canvasRect.left) - originX),
-				static_cast<UINT>(static_cast<int64_t>(canvasRect.top) - originY), 0,
+				static_cast<UINT>(static_cast<int64_t>(mapping.canvasLeft) - originX),
+				static_cast<UINT>(static_cast<int64_t>(mapping.canvasTop) - originY), 0,
 				impl_->renderer->layerL2Texture.Get(), 0, &sourceBox);
-			entry.tiles.push_back({ tile, slot, canvasRect });
+			entry.tiles.push_back({ tile, slot, screenRect });
 		}
 
 		impl_->hotEntries.push_back(std::move(entry));
@@ -1196,7 +1251,7 @@ namespace draw3
 	HotPreimageRestoreResult InkHistoryGpuCache::RestorePreimage(
 		HistoryCanvasIdentity canvas, RenderItemId item,
 		InkHistoryRasterKey rasterKey, InkRasterStateToken currentState,
-		int canvasWidth, int canvasHeight)
+		float viewportX, float viewportY, int canvasWidth, int canvasHeight)
 	{
 		HotPreimageRestoreResult result;
 		if (!impl_ || !impl_->renderer || currentState == 0) return result;
@@ -1205,6 +1260,7 @@ namespace draw3
 			{
 				return entry.committed && entry.canvas == canvas && entry.item == item &&
 					entry.rasterKey == rasterKey && entry.afterState == currentState &&
+					entry.viewportX == viewportX && entry.viewportY == viewportY &&
 					entry.canvasWidth == canvasWidth && entry.canvasHeight == canvasHeight;
 			});
 		if (reverseIterator == impl_->hotEntries.rend()) return result;
@@ -1220,22 +1276,22 @@ namespace draw3
 			const int64_t originY = TileOrigin(tile.tile.y, kUndoTileSize);
 			D3D11_BOX sourceBox = {};
 			sourceBox.left = static_cast<UINT>(
-				static_cast<int64_t>(tile.canvasRect.left) - originX);
+				static_cast<int64_t>(tile.screenRect.left + viewportX) - originX);
 			sourceBox.top = static_cast<UINT>(
-				static_cast<int64_t>(tile.canvasRect.top) - originY);
+				static_cast<int64_t>(tile.screenRect.top + viewportY) - originY);
 			sourceBox.right = static_cast<UINT>(
-				static_cast<int64_t>(tile.canvasRect.right) - originX);
+				static_cast<int64_t>(tile.screenRect.right + viewportX) - originX);
 			sourceBox.bottom = static_cast<UINT>(
-				static_cast<int64_t>(tile.canvasRect.bottom) - originY);
+				static_cast<int64_t>(tile.screenRect.bottom + viewportY) - originY);
 			sourceBox.back = 1;
 			const UINT sourceSubresource = D3D11CalcSubresource(0, tile.slot.slice, 1);
 			impl_->renderer->context->CopySubresourceRegion(
 				impl_->renderer->layerL2Texture.Get(), 0,
-				static_cast<UINT>(tile.canvasRect.left),
-				static_cast<UINT>(tile.canvasRect.top), 0,
+				static_cast<UINT>(tile.screenRect.left),
+				static_cast<UINT>(tile.screenRect.top), 0,
 				impl_->undoPages[tile.slot.page].texture.Get(), sourceSubresource,
 				&sourceBox);
-			UnionRectLocal(result.dirty, tile.canvasRect);
+			UnionRectLocal(result.dirty, tile.screenRect);
 		}
 
 		impl_->undoPlanner.Consume(entryId);
@@ -1282,6 +1338,7 @@ namespace draw3
 		if (!impl_ || !impl_->renderer || !request.documentCanvas || !request.history ||
 			request.canvas.pageGuid.IsZero() || request.canvas.device != request.rasterKey.device ||
 			request.canvasWidth <= 0 || request.canvasHeight <= 0 ||
+			!std::isfinite(request.viewportX) || !std::isfinite(request.viewportY) ||
 			!std::isfinite(request.rasterKey.scale) || request.rasterKey.scale <= 0.0f)
 			return result;
 
@@ -1290,7 +1347,8 @@ namespace draw3
 		tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
 		tiles.erase(std::remove_if(tiles.begin(), tiles.end(), [&](SignedTileCoordinate tile)
 			{
-				return !TileRect(tile, kCompositionTileSize,
+				return !MapTileToScreen(tile, kCompositionTileSize,
+					request.viewportX, request.viewportY,
 					request.canvasWidth, request.canvasHeight).has_value();
 			}), tiles.end());
 		if (tiles.empty())
@@ -1316,11 +1374,14 @@ namespace draw3
 		{
 			if (!excludedIndex)
 				return impl_->ReplayRangeDirect(*request.documentCanvas, *request.history,
-					tile, 0, rangeEnd, request.canvasWidth, request.canvasHeight);
+					tile, 0, rangeEnd, request.viewportX, request.viewportY,
+					request.canvasWidth, request.canvasHeight);
 			return impl_->ReplayRangeDirect(*request.documentCanvas, *request.history,
-				tile, 0, *excludedIndex, request.canvasWidth, request.canvasHeight) &&
+				tile, 0, *excludedIndex, request.viewportX, request.viewportY,
+				request.canvasWidth, request.canvasHeight) &&
 				impl_->ReplayRangeDirect(*request.documentCanvas, *request.history,
 					tile, *excludedIndex + 1, rangeEnd,
+					request.viewportX, request.viewportY,
 					request.canvasWidth, request.canvasHeight);
 		};
 		bool usedRebuild = false;
@@ -1328,10 +1389,12 @@ namespace draw3
 			impl_->compositionPlanner.SlotCapacity() == 0;
 		for (SignedTileCoordinate tile : tiles)
 		{
-			const RECT tileDirty = *TileRect(
-				tile, kCompositionTileSize, request.canvasWidth, request.canvasHeight);
+			const RECT tileDirty = MapTileToScreen(tile, kCompositionTileSize,
+				request.viewportX, request.viewportY,
+				request.canvasWidth, request.canvasHeight)->dirty;
 			bool tileSucceeded = !request.clearTargetTiles ||
-				impl_->ClearL2Tile(tile, request.canvasWidth, request.canvasHeight);
+				impl_->ClearL2Tile(tile, request.viewportX, request.viewportY,
+					request.canvasWidth, request.canvasHeight);
 			if (tileSucceeded && !usedReplay)
 			{
 				std::optional<std::vector<CompositionRangePiece>> pieces =
@@ -1376,7 +1439,8 @@ namespace draw3
 							{
 								Impl::OperatorPage& page = impl_->PageFor(node.slot);
 								tileSucceeded = impl_->ApplyOperator(page, node.slot.slice,
-									tile, request.canvasWidth, request.canvasHeight);
+									tile, request.viewportX, request.viewportY,
+									request.canvasWidth, request.canvasHeight);
 								impl_->UnpinNode(node.plannerKey);
 							}
 							if (!tileSucceeded) break;
@@ -1387,6 +1451,7 @@ namespace draw3
 							const Impl::ReplayRangeResult replay = impl_->ReplayRange(
 								*request.documentCanvas, *request.history,
 								tile, piece.range.begin, piece.range.end,
+								request.viewportX, request.viewportY,
 								request.canvasWidth, request.canvasHeight);
 							usedReplay = usedReplay || replay.usedDirect;
 							if (!replay.succeeded)
@@ -1402,7 +1467,8 @@ namespace draw3
 			if (usedReplay || !tileSucceeded)
 			{
 				usedReplay = true;
-				if (!impl_->ClearL2Tile(tile, request.canvasWidth, request.canvasHeight) ||
+				if (!impl_->ClearL2Tile(tile, request.viewportX, request.viewportY,
+					request.canvasWidth, request.canvasHeight) ||
 					!replayRequestedRangeDirect(tile))
 				{
 					UnionRectLocal(result.dirty, tileDirty);

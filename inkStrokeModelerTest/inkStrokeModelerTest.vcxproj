@@ -260,9 +260,13 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="draw3\haptic_feedback.cpp" />
-    <ClCompile Include="draw3\haptic_feedback.cppm">
+	<ClCompile Include="draw3\haptic_feedback.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
-    </ClCompile>
+	</ClCompile>
+	<ClCompile Include="draw3\canvas_navigation.cpp" />
+	<ClCompile Include="draw3\canvas_navigation.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
 	<ClCompile Include="draw3\ink_document.cpp" />
 	<ClCompile Include="draw3\ink_document.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
@@ -301,6 +305,7 @@
 	<ClCompile Include="draw3\renderer.cpp" />
 	<ClCompile Include="draw3\renderer_primitives.cpp" />
 	<ClCompile Include="draw3\renderer_laser.cpp" />
+	<ClCompile Include="draw3\renderer_snapshot.cpp" />
     <ClCompile Include="draw3\renderer.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>

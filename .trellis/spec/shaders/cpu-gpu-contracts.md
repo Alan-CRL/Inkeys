@@ -1,4 +1,4 @@
-# CPU/GPU Contracts
+﻿# CPU/GPU Contracts
 
 ## Structured Buffers
 
@@ -72,6 +72,12 @@ float2 halfSize
 slice 与 padding。普通墨迹和 Laser pass 不读取 `b2`；history pass 结束时必须从
 VS/PS 显式解绑。
 
+`TrustedL2SnapshotShaderConstants` 绑定到 VS/PS `b3`，总大小固定为 `48 bytes`：
+`targetRect` 保存 backbuffer 目标矩形，`sourceUvRect` 保存可信快照真实交集的 UV，
+`blurUv` 保存沿内容运动方向的 UV 模糊步长和采样参数。C++ 必须保持
+`static_assert(sizeof(TrustedL2SnapshotShaderConstants) == 48)` 和 16 字节对齐；
+snapshot pass 的全部出口都必须解绑 VS/PS `b3`。
+
 ## Resource Registers
 
 | Register | Resource |
@@ -91,6 +97,7 @@ VS/PS 显式解绑。
 | `t11` | HistoryEarlierRetain，单 slice `Texture2DArray` SRV (`R16_FLOAT`) |
 | `t12` | HistoryLaterAdd，单 slice `Texture2DArray` SRV (`B8G8R8A8_UNORM`) |
 | `t13` | HistoryLaterRetain，单 slice `Texture2DArray` SRV (`R16_FLOAT`) |
+| `t14` | TrustedL2Snapshot，最后一次完整清晰视口的 `B8G8R8A8_UNORM` 视觉快照 |
 | `s0` | OperatorSampler |
 
 `ApplyOperatorLayers` 绑定 PS `t1..t5` 时为 VS `t3` 留空槽。修改数组顺序前必须按寄存器表核对。
@@ -123,6 +130,7 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 - `17`：固定宽度圆头虚线；中心线实线段 `4 * width`、中心线空隙 `6 * width`，圆头侵占后可见线段与可见空隙接近 `1:1`，周期在 PS 中解析。
 - `18`：边界居中的圆角矩形边框。
 - `19`：无额外边框的圆角填充矩形。
+- `20`：把 `t14` 的可信 L2 快照按 `b3` 目标/UV 矩形重投影到 backbuffer，并可沿内容运动方向模糊。
 
 `globalOperatorKind`：
 
@@ -132,6 +140,57 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 这些数值虽然部分未暴露在 enum 中，但已经是 CPU/GPU 协议；不要任意复用。
 
 Cursor `InkData[0]` 使用 `pos=center, r=halfWidth, time=halfHeight`；`InkData[1].pos` 使用 `x=outlineWidth, y=fillAlpha`。`globalColor` 保存 fill RGB 与整体 opacity，`globalPadding` 保存 outline RGB。Cursor shape 不写 operator texture，而是对 backbuffer 使用 `operatorResolveBlendState` 直接计算 `premultiplied Add + Retain * Destination`。
+
+## Scenario: Trusted L2 Snapshot Fallback
+
+### 1. Scope / Trigger
+
+修改 shape `20`、可信快照资源、`b3/t14`、平移时 backbuffer 合成、模糊采样或 snapshot 生命周期时，必须同步本节与 [Runtime and Rendering](../native/runtime-and-rendering.md)。
+
+### 2. Signatures
+
+- `TrustedL2SnapshotShaderConstants { float4 targetRect; float4 sourceUvRect; float4 blurUv; }`
+- `TrustedL2SnapshotCompositeRequest { currentViewportX/Y, contentMotionX/Y, blurDip, dpiScale, RECT rect }`
+- `InkRenderer::RefreshTrustedL2Snapshot(viewportX, viewportY) -> bool`
+- `InkRenderer::CompositeTrustedL2SnapshotToBackBuffer(request) -> bool`
+- `InkRenderer::InvalidateTrustedL2Snapshot()`
+
+### 3. Contracts
+
+- 快照只在当前页全部可见 composition tile 已清晰恢复后，从 L2 `CopyResource` 刷新，并记录该时刻 viewport origin；不得包含 L1、L0、Laser、粒子或 cursor。
+- 合成前先求 snapshot 世界视口与 current 世界视口的真实交集，再由 `b3` 同时限定目标矩形和 `t14` UV。透明 border sampler 用于模糊采样；禁止 clamp/stretch 快照边缘来填充未知区域。
+- shape `20` 以专用 under blend 把快照画在已恢复清晰 tile 下方，清晰 L2 随后覆盖。`blurDip` 在 CPU 钳制到 `[0,12]`，乘 DPI 后只沿 `contentMotion` 方向形成 UV 步长；零运动或低速可为零模糊。
+- pass 只写 backbuffer。其结果永不 Copy/Resolve 到 L2、operator layer、history preimage、composition texture 或文档。
+- VS/PS 使用 `b3`，PS 使用 `t14/s0`；绘制完成和所有失败出口显式解绑 `t14`、VS/PS `b3`、sampler，并恢复普通 blend/raster/viewport 状态。释放 snapshot 资源前也先解绑 `t14`。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| snapshot 无效、资源/CB/sampler/blend 缺失 | 返回 false，不改变权威层 |
+| viewport 或请求字段非有限、dpiScale 非正 | 返回 false，不 Map/Draw |
+| 真实覆盖交集为空 | 返回 false，不拉伸或伪造墨迹 |
+| CB Map 失败 | 不 Draw，并清理可能绑定的 snapshot 状态 |
+| blurDip < 0 或 > 12 | 钳制到 0 或 12 DIP；方向仍来自有限 contentMotion |
+| Resize/page/Undo | invalidate；只有新的完整清晰 L2 才能再次 refresh |
+
+### 5. Good / Base / Bad Cases
+
+- Good：高速平移时交集区先显示有方向模糊的旧清晰像素，随后清晰 tile 覆盖；新暴露的世界区域保持透明。
+- Base：慢速平移使用零模糊重投影；静止且可见 tile 全清晰后刷新一次快照。
+- Bad：使用 wrap/clamp 拉满 backbuffer、把 L0/Laser 一起捕获，或把 snapshot draw 当成已恢复 L2。
+
+### 6. Tests Required
+
+- 静态断言 CB 为 48 bytes 且 16 字节对齐，HLSL/CPU 字段顺序一致，shape `20`、`b3`、`t14` 没有与现有 pass 冲突。
+- 单元测试覆盖世界交集、源/目标矩形、零/双方向运动、300 DIP/s 清晰阈值、12 DIP 上限、无交集透明和失效签名。
+- 静态检查每个 exit 的 `t14/b3/sampler` 解绑和 blend/raster/viewport 恢复；人工 D3D Debug Layer 验证无 SRV/RTV 冲突，视觉检查边缘不拉伸且清晰 tile 位于兜底上层。
+
+### 7. Wrong vs Correct
+
+Wrong：`snapshot 全屏 clamp 采样 -> 模糊结果 Copy 到 L2 -> 标记 viewport 已清晰。`
+
+Correct：`真实世界交集 -> shape 20 只画 backbuffer 下层 -> Canvas-local tile 恢复 L2 -> 全部可见清晰后再刷新 snapshot。`
 
 ## Affine Operator Layers
 

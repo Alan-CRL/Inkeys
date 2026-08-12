@@ -9,6 +9,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="canvas_navigation_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="contact_input_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -45,6 +48,8 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp">
 	  <Filter>draw3</Filter>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\canvas_navigation.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\canvas_navigation.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm">
 	  <Filter>draw3</Filter>
 	</ClCompile>
@@ -79,6 +84,9 @@
       <Filter>draw3</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_laser.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_snapshot.cpp">
       <Filter>draw3</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cppm">

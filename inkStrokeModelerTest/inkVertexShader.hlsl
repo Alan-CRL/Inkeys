@@ -139,6 +139,20 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
+    if (type == 20)
+    {
+        float2 worldPos = lerp(
+            trustedSnapshotTargetRect.xy, trustedSnapshotTargetRect.zw, templatePos);
+        output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
+            -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
+        output.pixPos = worldPos;
+        output.uv = lerp(
+            trustedSnapshotSourceUvRect.xy, trustedSnapshotSourceUvRect.zw, templatePos);
+        output.p1 = trustedSnapshotTargetRect.xy;
+        output.p2 = trustedSnapshotTargetRect.zw;
+        return output;
+    }
+
     if (type >= 16 && type <= 19)
     {
         uint primitiveOffset = globalBufferOffset + itemIndex * 2;

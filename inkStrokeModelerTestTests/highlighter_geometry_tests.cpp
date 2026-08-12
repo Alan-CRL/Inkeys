@@ -147,6 +147,12 @@ int RunHighlighterGeometryTests()
 		HIGHLIGHTER_CHECK(NearlyEqual(storedLine->Points()[1].x, 10.0f));
 		HIGHLIGHTER_CHECK(NearlyEqual(storedLine->Points()[0].width, 5.0f));
 	}
+	const std::optional<draw3::InkStroke> offsetStoredLine =
+		draw3::FinalizeStoredShape(reverseRectangle, lineStyle, -100.0f, 250.0f);
+	HIGHLIGHTER_CHECK(offsetStoredLine &&
+		NearlyEqual(offsetStoredLine->Points()[0].x, -70.0f));
+	HIGHLIGHTER_CHECK(offsetStoredLine &&
+		NearlyEqual(offsetStoredLine->Points()[0].y, 290.0f));
 	const draw3::ShapePrimitive zeroLengthLine = {
 		{ 12.0f, 13.0f, 2.5f, 0.0f }, { 12.0f, 13.0f, 0.0f, 0.0f }
 	};
@@ -624,6 +630,12 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		HIGHLIGHTER_CHECK(storedPen->Points().back().width <
 			completedPen.realPoints.back().r * 2.0f);
 	}
+	const std::optional<draw3::InkStroke> offsetStoredPen = draw3::FinalizeStoredStroke(
+		completedPen, penStyle, 0.055, completedTail, -100.0f, 250.0f);
+	HIGHLIGHTER_CHECK(offsetStoredPen &&
+		NearlyEqual(offsetStoredPen->Points()[0].x, -90.0f));
+	HIGHLIGHTER_CHECK(offsetStoredPen &&
+		NearlyEqual(offsetStoredPen->Points()[0].y, 270.0f));
 
 	draw3::ActiveStroke clickPen(5.0f, 500.0f);
 	clickPen.inputStartPoint = { 12.0f, 34.0f, 2.5f, 123.0f };
@@ -664,6 +676,13 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		HIGHLIGHTER_CHECK(NearlyEqual(storedHighlighter->Points()[0].x, -20.0f));
 		HIGHLIGHTER_CHECK(NearlyEqual(storedHighlighter->Points()[1].width, 50.0f));
 	}
+	const std::optional<draw3::InkStroke> offsetStoredHighlighter =
+		draw3::FinalizeStoredStroke(completedHighlighter, highlighterStyle,
+			0.0, completedTail, -100.0f, 250.0f);
+	HIGHLIGHTER_CHECK(offsetStoredHighlighter &&
+		NearlyEqual(offsetStoredHighlighter->Points()[0].x, -120.0f));
+	HIGHLIGHTER_CHECK(offsetStoredHighlighter &&
+		NearlyEqual(offsetStoredHighlighter->Points()[0].y, 280.0f));
 
 	draw3::ActiveStroke clickEraser(50.0f, 500.0f,
 		draw3::StrokeWidthMode::Fixed);
@@ -684,6 +703,13 @@ HIGHLIGHTER_CHECK(NearlyEqual(
 		HIGHLIGHTER_CHECK(NearlyEqual(storedEraser->Points()[0].x, 7.0f));
 		HIGHLIGHTER_CHECK(NearlyEqual(storedEraser->Points()[0].width, 50.0f));
 	}
+	const std::optional<draw3::InkStroke> offsetStoredEraser =
+		draw3::FinalizeStoredStroke(clickEraser, eraserStyle, 0.0,
+			completedTail, -100.0f, 250.0f);
+	HIGHLIGHTER_CHECK(offsetStoredEraser &&
+		NearlyEqual(offsetStoredEraser->Points()[0].x, -93.0f));
+	HIGHLIGHTER_CHECK(offsetStoredEraser &&
+		NearlyEqual(offsetStoredEraser->Points()[0].y, 258.0f));
 
 	constexpr float kHalfHeight = 25.0f;
 	constexpr float kHalfWidth = 3.125f;

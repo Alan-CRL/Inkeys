@@ -347,6 +347,37 @@ OperatorOutput main(PS_INPUT input)
         return cachedOutput;
     }
 
+    if (type == 20)
+    {
+        float2 blurUv = trustedSnapshotBlurUv.xy;
+        float4 snapshotColor = 0.0;
+        if (dot(blurUv, blurUv) <= 1e-12)
+        {
+            // 零模糊保持单次线性采样，分数像素平移时仍清晰稳定。
+            snapshotColor = TrustedL2Snapshot.Sample(OperatorSampler, input.uv);
+        }
+        else
+        {
+            // 越出可信纹理的 tap 由透明 border 提供，不能钳制并拉伸边缘。
+            static const float kWeights[9] =
+            {
+                1.0, 2.0, 3.0, 4.0, 5.0, 4.0, 3.0, 2.0, 1.0
+            };
+            [unroll]
+            for (int tap = 0; tap < 9; ++tap)
+            {
+                float offset = ((float) tap - 4.0) * 0.25;
+                snapshotColor += TrustedL2Snapshot.Sample(
+                    OperatorSampler, input.uv + blurUv * offset) * kWeights[tap];
+            }
+            snapshotColor *= 1.0 / 25.0;
+        }
+        OperatorOutput snapshotOutput;
+        snapshotOutput.add = snapshotColor;
+        snapshotOutput.retain = (1.0 - snapshotColor.a).xxxx;
+        return snapshotOutput;
+    }
+
     if (type == 1 || type == 2)
     {
         float4 stableAdd = StableOperatorAdd.Sample(OperatorSampler, input.uv);

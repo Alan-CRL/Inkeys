@@ -49,12 +49,15 @@ export namespace draw3
 	{
 		Undo,
 		NextPage,
-		PreviousPage
+		PreviousPage,
+		TranslateViewport
 	};
 
 	struct CanvasCommand
 	{
 		CanvasCommandType type = CanvasCommandType::Undo;
+		float deltaX = 0.0f;
+		float deltaY = 0.0f;
 	};
 
 	// 管理窗口创建、消息回调、系统光标和跨线程瞬态光标请求。
@@ -132,7 +135,7 @@ export namespace draw3
 		void PostPerformanceHudRefresh() noexcept;
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 		void RequestControlWake();
-		void QueueCanvasCommand(CanvasCommandType type);
+		void QueueCanvasCommand(CanvasCommand command);
 		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorPointerAuthority(

@@ -182,6 +182,17 @@ export namespace draw3
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
 	};
 
+	struct TrustedL2SnapshotCompositeRequest
+	{
+		float currentViewportX = 0.0f;
+		float currentViewportY = 0.0f;
+		float contentMotionX = 0.0f;
+		float contentMotionY = 0.0f;
+		float blurDip = 0.0f;
+		float dpiScale = 1.0f;
+		RECT rect = {};
+	};
+
 	// 管理墨迹着色器、绘制图层及其 D3D11 资源。
 	class InkRenderer
 	{
@@ -285,6 +296,12 @@ export namespace draw3
 		bool ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
 			const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 			RECT rect, OperatorLayerMergeMode mergeMode = OperatorLayerMergeMode::CoverageUnion);
+		// 调用方仅在当前 L2 已完整清晰时显式刷新，并同时记录其 Canvas viewport。
+		bool RefreshTrustedL2Snapshot(float snapshotViewportX, float snapshotViewportY) noexcept;
+		// 先恢复当前 L2，再仅在真实世界交集内把可信快照补到透明像素下方。
+		bool CompositeTrustedL2SnapshotToBackBuffer(
+			const TrustedL2SnapshotCompositeRequest& request) noexcept;
+		void InvalidateTrustedL2Snapshot() noexcept;
 		// 更新视口和屏幕尺寸。
 		void SetScreenSize(float width, float height);
 		// 设置当前输出合并目标。
@@ -316,6 +333,10 @@ export namespace draw3
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
 		bool CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer);
 		bool CreateLaserCoverageResources(UINT width, UINT height, LaserCoverageResources& layer);
+		bool CreateTrustedL2SnapshotResources(UINT width, UINT height) noexcept;
+		bool CreateTrustedL2SnapshotPipeline() noexcept;
+		void ReleaseTrustedL2SnapshotResources() noexcept;
+		void ReleaseTrustedL2SnapshotPipeline() noexcept;
 		void UnbindLaserCoverageShaderResources();
 		bool UpdateLaserStyleConstants(float opacity);
 		bool DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
@@ -342,6 +363,14 @@ export namespace draw3
 		LaserCoverageResources laserLiveCoverage;
 		bool laserIncrementalCoverageEnabled_ = false;
 		bool laserIncrementalCoverageUnavailable_ = false;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> trustedL2SnapshotTexture_;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> trustedL2SnapshotSRV_;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> trustedL2SnapshotCB_;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState> trustedL2SnapshotSampler_;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> trustedL2SnapshotUnderBlendState_;
+		float trustedL2SnapshotViewportX_ = 0.0f;
+		float trustedL2SnapshotViewportY_ = 0.0f;
+		bool trustedL2SnapshotValid_ = false;
 	};
 }
 
@@ -361,4 +390,14 @@ namespace draw3::renderer_detail
 
 	static_assert(sizeof(GlobalShaderConstants) == 48);
 	static_assert(sizeof(GlobalShaderConstants) % 16 == 0);
+
+	struct TrustedL2SnapshotShaderConstants
+	{
+		DirectX::XMFLOAT4 targetRect;
+		DirectX::XMFLOAT4 sourceUvRect;
+		DirectX::XMFLOAT4 blurUv;
+	};
+
+	static_assert(sizeof(TrustedL2SnapshotShaderConstants) == 48);
+	static_assert(sizeof(TrustedL2SnapshotShaderConstants) % 16 == 0);
 }

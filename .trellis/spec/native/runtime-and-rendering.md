@@ -1,4 +1,4 @@
-# Runtime and Rendering
+﻿# Runtime and Rendering
 
 ## Ownership And Flow
 
@@ -694,6 +694,70 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - 未确认预测点不得无条件写入永久笔迹、回放记录或跨版本格式。
 
 当前只保存会话内对象；UInk 编解码、文件生命周期和旧页重放仍需独立任务。
+
+## Scenario: Free Canvas Navigation And Predictive Recovery
+
+### 1. Scope / Trigger
+
+修改 Canvas 坐标变换、`CanvasCommand::TranslateViewport`、Touch 批次归属、平移/惯性、Pen 接管、分页视口、composition tile 恢复或可信 L2 快照时，必须同步应用本节与 [CPU/GPU Contracts](../shaders/cpu-gpu-contracts.md)。当前 `scale` 固定为 `1`；本契约不包含缩放、旋转、EDID 物理距离、边缘拉伸或回弹。
+
+### 2. Signatures
+
+- `InkViewport { float x, y, scale }`，`InkCanvas::SetViewport(InkViewport) -> bool`
+- `CanvasCommand { CanvasCommandType type; float deltaX; float deltaY; }`，其中 `TranslateViewport` 的 delta 是可见内容屏幕位移 DIP
+- `ScreenToCanvas(screen, viewport)` / `CanvasToScreen(canvas, viewport)` / `ApplyCanvasContentTranslation(viewport, contentDelta)`
+- `CanvasTouchGestureState::OnTouchDown/OnTouchUp/Update/InterruptForPenOrMouse`
+- `BeginCanvasPan/UpdateCanvasPan/EndCanvasPan/StepCanvasPanInertia/StopCanvasPan`
+- `PlanCanvasRenderTiles` / `ComputeCanvasRenderBudget` / `ComputeCanvasSnapshotScreenIntersection`
+- `CompositionRestoreRequest::{tiles, viewportX, viewportY, canvasWidth, canvasHeight}`
+- `ContactInputCoordinator::HasPendingWork()` 与窗口线程 Pen cursor mailbox
+
+### 3. Contracts
+
+- `InkViewport.x/y` 是屏幕左上角对应的 Canvas 世界坐标，固定映射为 `screen = canvas - viewportOrigin`。Pen、Highlighter、Eraser、Shape 和 Laser 在进入模型/文档前都反变换为 Canvas-local；瞬态 L0/L1/Laser/粒子/cursor 在当前视口下重建。Viewport 必须 finite、`scale == 1` 且 `x/y` 在 `[-1048576, 1048576] DIP`；触限轴速度立即归零。
+- 方向键只在非自动重复 Down 时发布一次 `TranslateViewport`，内容移动 `64 DIP`，不启动惯性。Viewport 不进入 Undo，也不进入 `InkHistoryRasterKey`；视口变化丢弃依赖屏幕坐标的热前像，但保留 Canvas-local composition cache。
+- 只有零 Touch 开始的批次可识别平移。首指静止时立即按工具绘制；第二指的输入时间戳与首指相差 `<= 180ms` 时，即使绘制线程稍晚执行 `Update`，仍取消该批全部 Touch 临时内容、清 Laser/笔尖/粒子并从剩余 Pen/Mouse contact 重建 L1/L0 后进入平移。超时后该批直到全部 Up 都不可再识别平移。
+- 平移中新增 Touch 只加入手势、不绘制；拓扑变化重设中心，剩一指仍可拖动。最后一指 Up 才进入惯性。`IManipulationProcessor`/`IInertiaProcessor` 只在绘制线程创建和驱动；COM 不可用时保留直接跟手但不启动自动惯性。
+- 惯性中首个 Touch 进入特殊 180ms 候选期：惯性继续且该指不绘制。及时第二指接续旧速度；候选超时后首指整段生命周期都不补画，并请求加速制动，迟到 Touch 可绘制但不能与首指组成平移。
+- 接续惯性时旧速度在约 `120ms` 内与新手势位移混合：同向叠加，反向先制动再反向，合速度钳制到 `24000 DIP/s`。Pen hover 只在惯性中提高减速度；Pen 或 Mouse contact 在平移/惯性中立即清零速度、吞掉未抬起手势 Touch，并从固定视口开始绘制。窗口 Pen mailbox 必须在 contact dequeue 前读取，避免多滑一帧。
+- 页面切换、Undo、Resize 和键盘平移先终止手势/惯性。每个 Page/Device Canvas 保存自己的 viewport；切页恢复目标 viewport，只保存位置不保存速度。Undo 只改变当前页 RenderItem visibility，不能移动当前 viewport，离屏内容仍按 Canvas-local tile 恢复。
+- L2 是当前 viewport 的清晰稳定层；每次 viewport 变化从 Canvas-local 有符号 `256x256` tile 恢复。规划优先级固定为可见缺失区、运动前缘、150ms 预测扫掠区、后缘维护，预测距离不超过 `1.5` 个视口对角线并带一圈 tile 余量。
+- 每帧恢复预算使用目标帧间隔、上一帧工作/Present 耗时和 tile EWMA，预留 `1ms` 且上限 `4ms`；允许预算为零。每个 tile 前检查 `HasPendingWork()` 和 wake generation，输入到达必须让出。可见 tile 失败保留当前游标并重试，不能把 L2 标记为清晰；仅全部可见 tile 清晰后刷新可信快照。
+- 可信快照只含最后一次完整清晰 L2。平移时按两个世界视口的真实交集重投影到 backbuffer；低于 `300 DIP/s` 不模糊，之后沿运动方向增加并钳制到 `12 DIP`。清晰 tile 后画并覆盖兜底；超出快照覆盖的区域保持真实透明。兜底像素不得写回 L2、文档、history、热前像或 composition cache。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| viewport 非有限、scale 不为 1 或越界 | `SetViewport` 返回 false，原 viewport 不变 |
+| 内容位移触及单轴保护值 | 应用可表示部分并把该轴速度清零，另一轴继续 |
+| 第二 Touch 时间戳恰好 180ms | 允许平移；判定不能依赖绘制线程实际处理延迟 |
+| 首 Touch 已在 L0/L1 产生内容后及时第二指 | 丢弃该批 Touch 内容并从仍有效 Pen/Mouse 重建全部瞬态层 |
+| 惯性首指超时 | 不补画该指；加强制动；迟到 Touch 不得重新组成手势 |
+| Pen/Mouse 已 contact | 阻止新双指手势；活动平移/惯性立即刹停并吞手势 Touch |
+| manipulation/inertia COM 创建失败 | 双指直接跟手可用，最后 Up 不产生惯性 |
+| 可见 tile 恢复失败或有新输入 | 不推进失败 tile；保持恢复 pending，下一帧重试 |
+| 快照/当前视口无交集 | 不采样、不拉伸边缘，区域保持透明背景 |
+| Undo/page/Resize | 快照签名失效；失败的权威恢复继续排队，不能把兜底提交为文档内容 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：快速同向反复滑动继承速度并增速；反向滑动先消耗旧速度；Pen 靠近时惯性快速减弱，落笔前 viewport 已固定。
+- Base：方向键一次移动内容 64 DIP；切到另一页恢复该页上次 viewport；负坐标 Stroke 由有符号 tile 正确显示和撤回。
+- Bad：用处理时刻而非 contact QPC 判定 180ms、把 viewport 写入 raster key、用模糊快照覆盖未知区域，或恢复 tile 时不检查待处理 Down。
+
+### 6. Tests Required
+
+- 单元测试覆盖 180ms 内/等于/超时和绘制线程迟到、静止首指撤销、惯性首指抑制、迟到 Touch、额外 Touch、同向/反向接续、Pen hover/Down、Mouse contact、速度上限与单轴范围保护。
+- 坐标/文档测试覆盖 Pen、Highlighter、Eraser、四种 Shape 的 Canvas-local 完成态，Laser 瞬态变换，负/远端坐标、有符号 tile、每页独立 viewport、离屏 Undo 和 viewport 不进入 history raster key。
+- 渲染规划测试覆盖双方向预测、`1.5` 对角线上限、优先级、0/4ms 预算、pending input 让出、失败 tile 不推进、可见完成、快照交集、300 DIP/s 清晰阈值和 12 DIP 模糊上限。
+- ARM64 Debug/Release 完整 solution 构建并运行两套测试。实体 Touch/Pen、快速反复滑动手感、视觉重投影/模糊、窗口 Resize、翻页、D3D Debug Layer 和 Windows 7 未执行时必须明确标记。
+
+### 7. Wrong vs Correct
+
+Wrong：`screen point 直接写文档 -> viewport 进入 history key -> 平移时整页缓存失效 -> 模糊图写回 L2。`
+
+Correct：`screen -> Canvas-local 文档真值；viewport 仅决定目标矩形；Canvas tile 清晰恢复写 L2，可信快照只在 backbuffer 下方作视觉兜底。`
 
 ## Scenario: Ink Document Persistence
 

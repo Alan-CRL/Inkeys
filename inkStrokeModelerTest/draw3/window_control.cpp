@@ -354,11 +354,11 @@ namespace draw3
 			coordinator->PublishControlWake();
 	}
 
-	void WindowController::QueueCanvasCommand(CanvasCommandType type)
+	void WindowController::QueueCanvasCommand(CanvasCommand command)
 	{
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
-			canvasCommands_.push_back({ type });
+			canvasCommands_.push_back(command);
 		}
 		RequestControlWake();
 	}
@@ -806,7 +806,7 @@ namespace draw3
 			case '0':
 			case VK_NUMPAD0:
 				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand(CanvasCommandType::NextPage);
+					QueueCanvasCommand({ CanvasCommandType::NextPage });
 				return 0;
 			case '1':
 			case VK_NUMPAD1:
@@ -855,12 +855,28 @@ namespace draw3
 			case '5':
 			case VK_NUMPAD5:
 				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand(CanvasCommandType::Undo);
+					QueueCanvasCommand({ CanvasCommandType::Undo });
 				return 0;
 			case '8':
 			case VK_NUMPAD8:
 				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand(CanvasCommandType::PreviousPage);
+					QueueCanvasCommand({ CanvasCommandType::PreviousPage });
+				return 0;
+			case VK_LEFT:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, -64.0f, 0.0f });
+				return 0;
+			case VK_RIGHT:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 64.0f, 0.0f });
+				return 0;
+			case VK_UP:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 0.0f, -64.0f });
+				return 0;
+			case VK_DOWN:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 0.0f, 64.0f });
 				return 0;
 			case '9':
 			case VK_NUMPAD9:

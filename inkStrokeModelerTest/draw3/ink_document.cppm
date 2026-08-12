@@ -44,6 +44,7 @@ export namespace draw3
 	};
 
 	inline constexpr DeviceKey kDefaultDeviceKey{ 0 };
+	inline constexpr float kInkCanvasViewportLimitDip = 1048576.0f;
 
 	struct InkViewport
 	{
@@ -104,6 +105,8 @@ export namespace draw3
 	public:
 		DeviceKey Device() const noexcept;
 		const InkViewport& Viewport() const noexcept;
+		// 仅接受有限坐标和固定 1x 缩放；失败时保留原视口。
+		bool SetViewport(InkViewport viewport) noexcept;
 		std::span<const InkStroke> Strokes() const noexcept;
 
 		// 非法 Stroke 不改变容器；成功时返回不会随扩容变化的索引。

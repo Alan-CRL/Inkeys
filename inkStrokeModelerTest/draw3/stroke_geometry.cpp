@@ -379,12 +379,15 @@ namespace draw3
 
 	std::optional<InkStroke> FinalizeStoredStroke(const ActiveStroke& stroke,
 		StoredInkStyle style, double liveTipTaperSeconds,
-		std::vector<InkPoint>& scratch)
+		std::vector<InkPoint>& scratch, float canvasOffsetX, float canvasOffsetY)
 	{
+		if (!std::isfinite(canvasOffsetX) || !std::isfinite(canvasOffsetY))
+			return std::nullopt;
 		std::vector<StoredInkPoint> points;
 		auto appendPoint = [&](const InkPoint& point)
 		{
-			points.push_back({ point.x, point.y, point.r * 2.0f });
+			points.push_back({ point.x + canvasOffsetX,
+				point.y + canvasOffsetY, point.r * 2.0f });
 		};
 
 		if (style.inkType == StoredInkType::Pen)
@@ -425,17 +428,21 @@ namespace draw3
 	}
 
 	std::optional<InkStroke> FinalizeStoredShape(
-		const ShapePrimitive& primitive, StoredInkStyle style)
+		const ShapePrimitive& primitive, StoredInkStyle style,
+		float canvasOffsetX, float canvasOffsetY)
 	{
 		if (!IsStoredShapeType(style.inkType) ||
+			!std::isfinite(canvasOffsetX) || !std::isfinite(canvasOffsetY) ||
 			!std::isfinite(primitive.start.x) || !std::isfinite(primitive.start.y) ||
 			!std::isfinite(primitive.end.x) || !std::isfinite(primitive.end.y) ||
 			!std::isfinite(primitive.start.r) || primitive.start.r <= 0.0f)
 			return std::nullopt;
 		const float width = primitive.start.r * 2.0f;
 		InkStroke storedStroke(style, {
-			{ primitive.start.x, primitive.start.y, width },
-			{ primitive.end.x, primitive.end.y, width }
+			{ primitive.start.x + canvasOffsetX,
+				primitive.start.y + canvasOffsetY, width },
+			{ primitive.end.x + canvasOffsetX,
+				primitive.end.y + canvasOffsetY, width }
 		});
 		if (!storedStroke.IsValid()) return std::nullopt;
 		return storedStroke;

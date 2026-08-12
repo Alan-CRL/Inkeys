@@ -196,6 +196,8 @@ export namespace draw3
 		// 非空指针表示 Down，空指针表示合并的 ControlWake。
 		bool TryDequeue(ContactRecord*& record) noexcept;
 		void WaitDequeue(ContactRecord*& record) noexcept;
+		// 仅供低优先级恢复任务让出预算；不消费也不承诺精确队列长度。
+		bool HasPendingWork() const noexcept;
 		// 窗口请求已经原子发布后，合并投递一次控制唤醒。
 		bool PublishControlWake() noexcept;
 		// 消费 ControlWake 后先清 pending，再复查全部窗口请求。
