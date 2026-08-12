@@ -8,7 +8,7 @@ module;
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
 #include <cstdio>
 #include <d2d1effects.h>
 #include <limits>

@@ -10,6 +10,7 @@
 
 #pragma once
 #include "IdtMain.h"
+#include "Inkeys/Graphics/Surface.hpp"
 
 #include "IdtD2DPreparation.h"
 #include "SuperTop/IdtToken.h"
@@ -19,6 +20,8 @@
 
 // --------------------------------------------------
 // PPT 联动插件
+
+LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 // -------------------------
 // UI 对象
@@ -204,7 +207,7 @@ struct PptImgStruct
 {
 	bool IsSave;
 	map<int, bool> IsSaved;
-	map<int, IMAGE> Image;
+	map<int, Inkeys::Graphics::DibSurface> Image;
 };
 extern PptImgStruct PptImg;
 struct PptInfoStateStruct

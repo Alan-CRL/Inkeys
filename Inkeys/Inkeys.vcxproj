@@ -181,10 +181,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
@@ -221,10 +221,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
@@ -260,10 +260,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
     </Link>
@@ -299,10 +299,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -338,10 +338,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.02</MinimumRequiredVersion>
     </Link>
@@ -379,10 +379,10 @@
       <OptimizeReferences>
       </OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -391,6 +391,10 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
+	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
+	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
+	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
@@ -429,43 +433,10 @@
     <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
-    <ClInclude Include="HiEasyX.h" />
-    <ClInclude Include="HiEasyX\HiCanvas.h" />
-    <ClInclude Include="HiEasyX\HiContainer.h" />
-    <ClInclude Include="HiEasyX\HiDef.h" />
-    <ClInclude Include="HiEasyX\HiDrawingProperty.h" />
-    <ClInclude Include="HiEasyX\HiFPS.h" />
-    <ClInclude Include="HiEasyX\HiFunc.h" />
-    <ClInclude Include="HiEasyX\HiGdiplus.h" />
-    <ClInclude Include="HiEasyX\HiGif.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Button.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h" />
-    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Page.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Static.h" />
-    <ClInclude Include="HiEasyX\HiIcon.h" />
-    <ClInclude Include="HiEasyX\HiMacro.h" />
-    <ClInclude Include="HiEasyX\HiMouseDrag.h" />
-    <ClInclude Include="HiEasyX\HiMusicMCI.h" />
-    <ClInclude Include="HiEasyX\HiStart.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
-    <ClInclude Include="HiEasyX\HiWindow.h" />
     <ClInclude Include="IdtConfiguration.h" />
     <ClInclude Include="IdtD2DPreparation.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
-    <ClInclude Include="IdtFloating.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
     <ClInclude Include="IdtGuid.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
@@ -483,11 +454,22 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtTime.h" />
-    <ClInclude Include="IdtWindow.h" />
     <ClInclude Include="SuperTop\IdtSuperTop.h" />
     <ClInclude Include="SuperTop\IdtToken.h" />
   </ItemGroup>
   <ItemGroup>
+	<ClCompile Include="Inkeys\Graphics\Surface.cpp" />
+	<ClCompile Include="Inkeys\Graphics\Surface.cppm" />
+	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
+	<ClCompile Include="Inkeys\Business\ComponentActions.cppm" />
+	<ClCompile Include="Inkeys\Business\LegacyDrawState.cpp" />
+	<ClCompile Include="Inkeys\Input\MouseHook.cpp" />
+	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
+	<ClCompile Include="Inkeys\Message\Message.cpp" />
+	<ClCompile Include="Inkeys\Message\Message.cppm" />
+	<ClCompile Include="Inkeys\Window\Window.cpp" />
+	<ClCompile Include="Inkeys\Window\Window.cppm" />
+	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />
     <ClCompile Include="additional\hashlib++\hl_sha1.cpp" />
@@ -517,36 +499,8 @@
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
-    <ClCompile Include="HiEasyX\HiCanvas.cpp" />
-    <ClCompile Include="HiEasyX\HiContainer.cpp" />
-    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp" />
-    <ClCompile Include="HiEasyX\HiFPS.cpp" />
-    <ClCompile Include="HiEasyX\HiFunc.cpp" />
-    <ClCompile Include="HiEasyX\HiGdiplus.cpp" />
-    <ClCompile Include="HiEasyX\HiGif.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Button.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Page.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Static.cpp" />
-    <ClCompile Include="HiEasyX\HiIcon.cpp" />
-    <ClCompile Include="HiEasyX\HiMouseDrag.cpp" />
-    <ClCompile Include="HiEasyX\HiMusicMCI.cpp" />
-    <ClCompile Include="HiEasyX\HiStart.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
-    <ClCompile Include="HiEasyX\HiWindow.cpp" />
     <ClCompile Include="IdtDrawpad.cpp" />
     <ClCompile Include="IdtDrawpadList.cpp" />
-    <ClCompile Include="IdtFloating.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
     <ClCompile Include="IdtHistoricalDrawpad.cpp" />
@@ -561,7 +515,6 @@
     <ClCompile Include="IdtOther.cpp" />
     <ClCompile Include="IdtPlug-in.cpp" />
     <ClCompile Include="IdtTime.cpp" />
-    <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\Conv\Conv.Color.cppm" />
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
@@ -698,6 +651,10 @@
     <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
+	<None Include="IdtFloating.cpp" />
+	<None Include="IdtFloating.h" />
+	<None Include="IdtWindow.cpp" />
+	<None Include="IdtWindow.h" />
     <None Include="additional\imgui\CustomShaders\imgui_common.hlsli" />
     <None Include="additional\imgui\CustomShaders\imgui_ps.cso" />
     <None Include="additional\imgui\CustomShaders\imgui_vs.cso" />

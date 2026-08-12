@@ -33,10 +33,18 @@
 #include "IdtAtomic.h"
 
 #include <windows.h>
+#include "Inkeys/Message/Message.Legacy.hpp"
 
 // 图形类
-#include "HiEasyX.h"
 #include <gdiplus.h>
+
+// 项目内部仍以 COLORREF 的低 24 位保存 RGB，高 8 位保存 alpha。
+#ifndef RGBA
+#define RGBA(r, g, b, a) (COLORREF)(((b) << 16) | ((g) << 8) | (r) | ((a) << 24))
+#endif
+#ifndef GetAValue
+#define GetAValue(rgba) (BYTE)(((rgba) >> 24) & 0xFF)
+#endif
 
 // COM类
 #include <comutil.h>
@@ -121,7 +129,6 @@ extern IdtAtomic<int> offSignal; //关闭指令
 
 extern shared_ptr<spdlog::logger> IDTLogger;
 extern IdtAtomic<bool> useMouseInput;
-extern IdtAtomic<bool> useInkeys3UI;
 
 // 调测专用
 #ifndef IDT_RELEASE

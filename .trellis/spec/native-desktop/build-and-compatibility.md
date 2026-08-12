@@ -66,7 +66,7 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
 
 ## 随附依赖与第三方边界
 
-`【直接确认】` `Inkeys/additional/`、`Inkeys/HiEasyX/`、`Package/`、`ThirdpartyLicenses/` 和工程链接项可见 Dear ImGui、stb、WinToast、zip/hash、HiEasyX/EasyX、Office Interop 等随附代码或库。主项目还使用 Windows SDK/COM、D2D、DWrite、D3D11、DXGI、GDI+ 和 RealTimeStylus。
+`【直接确认】` `Inkeys/additional/`、`Package/`、`ThirdpartyLicenses/` 和工程链接项可见 Dear ImGui、stb、WinToast、zip/hash、HiMsg、Office Interop 等随附代码或库。HiMsg 以 `Inkeys/additional/HiMsg` Git submodule 固定版本，并复用主仓 vcpkg 依赖；HiEasyX/EasyX 源码、头文件和静态库已删除。主项目还使用 Windows SDK/COM、D2D、DWrite、D3D11、DXGI、GDI+ 和 RealTimeStylus。
 
 `【历史/兼容】` `Timeout/InkeysTimeout/json/` 内嵌一份 JsonCpp 源码；它不是主项目 vcpkg JsonCpp 使用方式的证据。除非任务明确覆盖 Timeout，不要把两套依赖路径合并。
 

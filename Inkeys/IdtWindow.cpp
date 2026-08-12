@@ -18,10 +18,6 @@ HWND ppt_window = NULL; //PPT控件窗口
 HWND freeze_window = NULL; //定格背景窗口
 HWND setting_window = NULL; //程序调测窗口
 
-bool FreezePPT;
-HWND ppt_show;
-wstring ppt_title, ppt_software;
-map<wstring, bool> ppt_title_recond;
 
 HWND GetLastFocusWindow()
 {

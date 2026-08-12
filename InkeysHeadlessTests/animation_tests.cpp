@@ -21,6 +21,9 @@ import Inkeys.UI.Bar.Animation;
 
 int RunWakeSignalTests();
 int RunPresentDecisionTests();
+int RunSurfaceTests();
+int RunMessageTests();
+int RunWindowTests();
 int RunDirtyRegionTests();
 int RunFramePacingTests(bool benchmark);
 
@@ -862,14 +865,26 @@ namespace
 
 int main(int argc, char** argv)
 {
+	bool benchmark = false;
+	bool runWindowTests = true;
+	for (int index = 1; index < argc; ++index)
+	{
+		const std::string_view argument(argv[index]);
+		benchmark |= argument == "--benchmark";
+		// 受限 CI 可只执行完全不创建 HWND 的测试集。
+		runWindowTests &= argument != "--no-window";
+	}
+
 	TestCurvesAndTimelines();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
 	TestConcurrentAnimationPublication();
 	failureCount += RunWakeSignalTests();
 	failureCount += RunPresentDecisionTests();
+	failureCount += RunSurfaceTests();
+	failureCount += RunMessageTests();
+	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
-	bool benchmark = argc > 1 && std::string_view(argv[1]) == "--benchmark";
 	failureCount += RunFramePacingTests(benchmark);
 	if (benchmark) RunBenchmarks();
 

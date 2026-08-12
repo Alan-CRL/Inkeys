@@ -319,6 +319,7 @@ export extern BarUISetClass barUISet;
 
 namespace Inkeys::UI::Bar
 {
+	export WNDPROC WindowProc() noexcept;
 	export void Initialization();
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);

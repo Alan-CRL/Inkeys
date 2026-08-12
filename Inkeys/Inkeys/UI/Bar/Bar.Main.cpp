@@ -7,9 +7,9 @@ module;
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
-#include "../../../IdtFloating.h"
+#include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
 #include "Bar.PresentDecision.h"
 #include <limits>
 

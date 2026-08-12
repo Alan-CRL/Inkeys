@@ -22,6 +22,7 @@ import Inkeys.Conv.Text;
 import Inkeys.Text.Split;
 import Inkeys.Text.Font;
 import Inkeys.Other.Config;
+import Inkeys.Window;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -31,7 +32,6 @@ import Inkeys.Other.Config;
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
-#include "IdtFloating.h"
 #include "IdtFreezeFrame.h"
 #include "IdtGuid.h"
 #include "IdtI18n.h"
@@ -43,7 +43,7 @@ import Inkeys.Other.Config;
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtTime.h"
-#include "IdtWindow.h"
+#include "Inkeys/Window/Window.Legacy.hpp"
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
@@ -84,7 +84,6 @@ LONG* GetOffSignalInteropPointer()
 
 shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
-IdtAtomic<bool> useInkeys3UI = false;
 
 using namespace Inkeys;
 
@@ -828,9 +827,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		//图像DPI转化
 		{
-			alpha_drawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			tester.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-			pptdrawpad.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+			(void)alpha_drawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+			(void)tester.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+			(void)pptdrawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 		}
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
@@ -1084,15 +1083,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			}
 		}
 
-		// 需要重启生效的配置
-		{
-			useInkeys3UI = setlist.Experimental.Inkeys3.UI3;
-
-			if (useInkeys3UI)
-			{
-				setlist.selectLanguage = 1;
-			}
-		}
+		// UI3 是唯一界面入口，当前界面资源固定使用简体中文基线。
+		setlist.selectLanguage = 1;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
@@ -1154,27 +1146,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// 字体初始化
 	{
-		// 加载字体到 GDI[废弃]
-		if (!useInkeys3UI)
-		{
-			INT numFound = 0;
-			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
-
-			fontCollection.AddMemoryFont(pLock, dwSize);
-			fontCollection.GetFamilies(1, &HarmonyOS_fontFamily, &numFound);
-
-			stringFormat.SetAlignment(StringAlignmentCenter);
-			stringFormat.SetLineAlignment(StringAlignmentCenter);
-			stringFormat.SetFormatFlags(StringFormatFlagsNoWrap);
-
-			stringFormat_left.SetAlignment(StringAlignmentNear);
-			stringFormat_left.SetLineAlignment(StringAlignmentNear);
-			stringFormat_left.SetFormatFlags(StringFormatFlagsNoWrap);
-		}
-
 		{
 			vector<UINT> fontResourceIDs;
 			fontResourceIDs.emplace_back(IDR_TTF1); // HarmonyOS Sans SC
@@ -1252,7 +1223,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 窗口
 	{
 		wstring ClassName;
-		if (userId == L"Error") ClassName = L"HiEasyX041";
+		if (userId == L"Error") ClassName = L"Inkeys";
 		else ClassName = userId;
 
 		// 窗口创建完成后处理的
@@ -1266,35 +1237,115 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				disableGestureFuc(hWnd);
 			};
 
-		CreateMagnifierWindow();
-
-		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		if (magnificationCreateReady) freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str(), nullptr, magnifierWindow);
-		else freeze_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys5 FreezeWindow", (L"Inkeys1;" + ClassName).c_str());
-
-		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		drawpad_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys4 DrawpadWindow", (L"Inkeys2;" + ClassName).c_str(), nullptr, freeze_window, disableGestureFuc);
-
 		SettingWindowBegin();
 
-		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, setting_window, touchRegisterFuc);
-		//ppt_window = hiex::initgraph_win32(MainMonitor.MonitorWidth, MainMonitor.MonitorHeight, 0, L"Inkeys2 PptWindow", (L"Inkeys4;" + ClassName).c_str(), nullptr, drawpad_window);
+		const DWORD overlayStyle = WS_POPUP | WS_CLIPCHILDREN;
+		const DWORD overlayExStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+		const int overlayWidth = MainMonitor.MonitorWidth;
+		const int overlayHeight = MainMonitor.MonitorHeight;
+		HICON applicationIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ICON1));
+		std::vector<Inkeys::Window::WindowSpec> windowSpecs;
 
-		hiex::PreSetWindowStyleEx(WS_EX_NOACTIVATE);
-		if (!useInkeys3UI) floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window);
-		else floating_window = hiex::initgraph_win32(background.getwidth(), background.getheight(), 0, L"Inkeys1 FloatingWindow", (L"Inkeys5;" + ClassName).c_str(), nullptr, ppt_window, touchRegisterFuc);
+		Inkeys::Window::WindowSpec magnifierHost;
+		magnifierHost.role = Inkeys::Window::WindowRole::MagnifierHost;
+		magnifierHost.className = L"Inkeys6;" + ClassName;
+		magnifierHost.title = L"Inkeys6 MagnifierHostWindow";
+		magnifierHost.width = GetSystemMetrics(SM_CXSCREEN);
+		magnifierHost.height = GetSystemMetrics(SM_CYSCREEN) - (setlist.regularSetting.avoidFullScreen ? 1 : 0);
+		magnifierHost.style = WS_POPUP | WS_CLIPCHILDREN;
+		magnifierHost.exStyle = overlayExStyle;
+		magnifierHost.windowProc = MagnifierHostWindowWndProc;
+		magnifierHost.optional = true;
+		magnifierHost.bindMessages = false;
+		magnifierHost.beforeCreate = PrepareMagnifierWindow;
+		magnifierHost.created = MagnifierHostCreated;
+		magnifierHost.destroyed = ShutdownMagnifierWindow;
+		windowSpecs.push_back(std::move(magnifierHost));
 
-		// 画板窗口在注册 RTS 前必须拥有置顶属性，在显示前先进行一次全局置顶
-		if (magnificationCreateReady) SetWindowPos(magnifierWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		else SetWindowPos(freeze_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		Inkeys::Window::WindowSpec magnifierChildSpec;
+		magnifierChildSpec.role = Inkeys::Window::WindowRole::MagnifierChild;
+		magnifierChildSpec.className = WC_MAGNIFIER;
+		magnifierChildSpec.title = L"Inkeys Screen Magnifier";
+		magnifierChildSpec.width = GetSystemMetrics(SM_CXSCREEN);
+		magnifierChildSpec.height = GetSystemMetrics(SM_CYSCREEN) - (setlist.regularSetting.avoidFullScreen ? 1 : 0);
+		magnifierChildSpec.style = WS_CHILD | WS_VISIBLE | MS_CLIPAROUNDCURSOR;
+		magnifierChildSpec.exStyle = WS_EX_NOACTIVATE;
+		magnifierChildSpec.optional = true;
+		magnifierChildSpec.bindMessages = false;
+		magnifierChildSpec.created = MagnifierChildCreated;
+		windowSpecs.push_back(std::move(magnifierChildSpec));
 
-		thread TopWindowThread(TopWindow);
-		TopWindowThread.detach();
+		auto AddOverlayWindow = [&](Inkeys::Window::WindowRole role, const wchar_t* suffix,
+			const wchar_t* title, WNDPROC proc, DWORD extraStyle, const function<void(HWND)>& created)
+			{
+				Inkeys::Window::WindowSpec spec;
+				spec.role = role;
+				spec.className = wstring(suffix) + ClassName;
+				spec.title = title;
+				spec.width = overlayWidth;
+				spec.height = overlayHeight;
+				spec.style = overlayStyle;
+				spec.exStyle = overlayExStyle | extraStyle;
+				spec.windowProc = proc;
+				spec.created = created;
+				windowSpecs.push_back(std::move(spec));
+			};
+		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
+			DefWindowProcW, WS_EX_TRANSPARENT, {});
+		AddOverlayWindow(Inkeys::Window::WindowRole::Drawpad, L"Inkeys2;", L"Inkeys DrawpadWindow",
+			DrawpadMsgCallback, 0, disableGestureFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::PptControls, L"Inkeys4;", L"Inkeys PptWindow",
+			PptWindowMsgCallback, 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
+			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc);
+
+		Inkeys::Window::WindowSpec settingSpec;
+		settingSpec.role = Inkeys::Window::WindowRole::Setting;
+		settingSpec.className = L"Inkeys.Setting;" + ClassName;
+		settingSpec.title = L"Inkeys Settings";
+		settingSpec.x = SettingWindowX;
+		settingSpec.y = SettingWindowY;
+		settingSpec.width = SettingWindowWidth;
+		settingSpec.height = SettingWindowHeight;
+		settingSpec.style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+		settingSpec.exStyle = WS_EX_APPWINDOW;
+		settingSpec.windowProc = SettingWindowProc();
+		settingSpec.largeIcon = applicationIcon;
+		settingSpec.smallIcon = applicationIcon;
+		settingSpec.cursor = LoadCursorW(nullptr, IDC_ARROW);
+		settingSpec.bindMessages = false;
+		windowSpecs.push_back(std::move(settingSpec));
+
+		Inkeys::Window::WindowSpec displayObserver;
+		displayObserver.role = Inkeys::Window::WindowRole::DisplayObserver;
+		displayObserver.className = L"Inkeys.DisplayObserver;" + ClassName;
+		displayObserver.title = L"Inkeys Display Observer";
+		displayObserver.width = 1;
+		displayObserver.height = 1;
+		displayObserver.windowProc = IdtDisplayManagementWindowProc;
+		displayObserver.bindMessages = false;
+		windowSpecs.push_back(std::move(displayObserver));
+
+		auto& windowService = Inkeys::Window::GetService();
+		if (!windowService.Start(std::move(windowSpecs)))
+		{
+			IDTLogger->critical("[主线程][IdtMain] Win32 窗口服务启动失败");
+			SetOffSignal(1);
+			return 1;
+		}
+		magnifierWindow = windowService.Handle(Inkeys::Window::WindowRole::MagnifierHost);
+		magnifierChild = windowService.Handle(Inkeys::Window::WindowRole::MagnifierChild);
+		freeze_window = windowService.Handle(Inkeys::Window::WindowRole::Freeze);
+		drawpad_window = windowService.Handle(Inkeys::Window::WindowRole::Drawpad);
+		ppt_window = windowService.Handle(Inkeys::Window::WindowRole::PptControls);
+		floating_window = windowService.Handle(Inkeys::Window::WindowRole::Bar);
+		setting_window = windowService.Handle(Inkeys::Window::WindowRole::Setting);
+		magnificationCreateReady = magnifierWindow && magnifierChild;
+
+		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
+		(void)windowService.RequestTopmostRefresh();
 
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
-
-		//hiex::init_console();
 	}
 	// RealTimeStylus触控库
 	{
@@ -1305,21 +1356,19 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 #pragma region 线程
 
-	thread ui3InitializationThread;
-	if (useInkeys3UI)
-		ui3InitializationThread = thread(Inkeys::UI::Bar::Initialization);
-	else
-		thread(floating_main).detach();
+	jthread topWindowThread(TopWindow);
+	jthread ui3InitializationThread(Inkeys::UI::Bar::Initialization);
 	auto settingMainThread = jthread(SettingMain);
-	thread(drawpad_main).detach();
-	thread(FreezeFrameWindow).detach();
-	thread(StateMonitoring).detach();
+	jthread drawpadMainThread(drawpad_main);
+	jthread freezeFrameThread(FreezeFrameWindow);
+	jthread stateMonitoringThread(StateMonitoring);
 
 	// 放大API
-	if (magnificationCreateReady) thread(MagnifierThread).detach();
+	jthread magnifierThread;
+	if (magnificationCreateReady) magnifierThread = jthread(MagnifierThread);
 
 	// 启动 PPT 联动插件
-	thread(PPTLinkageMain).detach();
+	jthread pptLinkageThread(PPTLinkageMain);
 
 	IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 
@@ -1360,6 +1409,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	settingMainThread.request_stop();
 	if (settingMainThread.joinable()) settingMainThread.join();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
+	if (drawpadMainThread.joinable()) drawpadMainThread.join();
+	if (freezeFrameThread.joinable()) freezeFrameThread.join();
+	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
+	if (magnifierThread.joinable()) magnifierThread.join();
+	if (pptLinkageThread.joinable()) pptLinkageThread.join();
+	if (topWindowThread.joinable()) topWindowThread.join();
+	Inkeys::Window::GetService().StopAndJoin();
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 
@@ -1369,7 +1425,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		int WaitingCount = 0;
 		for (; WaitingCount < 20; WaitingCount++)
 		{
-			if (!GetStatus("floating_main") && !GetStatus("drawpad_main") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
+			if (!GetStatus("drawpad_main") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");

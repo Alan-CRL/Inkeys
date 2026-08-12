@@ -35,7 +35,7 @@ Win32 mouse fallback ─┘                              │
 
 ## 笔画生命周期
 
-`【直接确认】` `IdtDrawpad.cpp::MultiFingerDrawing` 为每个活动接触点处理临时 `StrokeImageClass`/`IMAGE`。可见行为包括：
+`【直接确认】` `IdtDrawpad.cpp::MultiFingerDrawing` 为每个活动接触点处理临时 `StrokeImageClass`/`DibSurface`。可见行为包括：
 
 - 普通画笔用 GDI+ 曲线绘制采样点；
 - 荧光笔走半透明合成，当前代码可见 alpha 130；
@@ -46,7 +46,7 @@ Win32 mouse fallback ─┘                              │
 
 `IdtDrawpad.cpp::DrawpadDrawing` 周期合成基础 `drawpad` 与 `StrokeImageList` 中的活动笔画，再写入 `window_background` 并更新分层窗口。完成笔画还会与 `RecallImage` 历史以及放映中的 `PptImg` 页级画布交互。
 
-这些是 `【历史/兼容】` 的现有 EasyX/GDI+ 墨迹模型，不代表新渲染实现必须复制所有全局结构；但在改动当前路径时不能忽略其层次和页级状态。
+这些是 `【历史/兼容】` 的现有 Draw2/GDI+ 墨迹模型；图像承载已迁为 `Inkeys.Graphics.DibSurface`，不再依赖 EasyX `IMAGE`。新渲染实现不必复制所有全局结构，但改动当前路径时不能忽略其层次和页级状态。
 
 ## 共享状态与并发风险
 
@@ -54,7 +54,7 @@ Win32 mouse fallback ─┘                              │
 
 `【待确认；风险观察，不是已确认缺陷】` 静态扫描不能证明所有共享访问已同步，也不能证明 detached 笔画线程在快速退出时发生竞态。未来改动前应逐个调用点确认：
 
-1. 接触点和临时 `IMAGE` 的创建、读取、最终合并与释放分别由谁执行；
+1. 接触点和临时 `DibSurface` 的创建、读取、最终合并与释放分别由谁执行；
 2. `endMode` 的最终处理者是否唯一；
 3. 橡皮直接写基础层时与合成线程如何协调；
 4. 清屏、撤销、恢复、冻结帧和 PPT 换页替换/复制画布时，活动笔画如何收束；
@@ -66,8 +66,8 @@ Win32 mouse fallback ─┘                              │
 
 `【直接确认】` `IdtState.cpp/h`、`IdtDraw.cpp/h` 和 `IdtHistoricalDrawpad.cpp/h` 提供画笔、橡皮、形状、清屏、撤销/恢复等共享行为。UI 反馈有两条分支：
 
-- `Inkeys/Inkeys/UI/Bar/Bar.State.*` 属于 `Experimental.Inkeys3.UI3=true` 时的 Bar 路径；
-- `IdtFloating.cpp` 属于该开关为 false 时的传统悬浮栏路径；
+- `Inkeys/Inkeys/UI/Bar/Bar.State.*` 是唯一产品悬浮栏路径；
+- `IdtFloating.cpp` 只作为不编译的 UI2 迁移参考；
 - 两者最终都会影响传统画板/工具共享状态，但不能把 `Bar.State` 称为所有 UI 模式的唯一状态源。
 
 `【合理推断】` 新增当前画板工具时，按实际范围核对工具状态、两套可达 UI、输入 begin/move/end、临时/基础层、历史、PPT 页级墨迹、配置和 i18n。只有维护者确认某条 UI 已退出产品范围后，才能缩减对应验证。

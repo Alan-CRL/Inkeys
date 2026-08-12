@@ -13,7 +13,7 @@
 
 ### 容易混淆的真实边界
 
-- `【直接确认】` 是否启用 `Inkeys.UI.Bar` 的开关是传统 `setlist.Experimental.Inkeys3.UI3`，定义于 `IdtConfiguration.h`，由 `IdtMain.cpp` 读入 `useInkeys3UI`。
+- `【直接确认】` `Inkeys.UI.Bar` 是唯一产品悬浮栏入口；传统 `setlist.Experimental.Inkeys3.UI3` 路由字段和 `useInkeys3UI` 已删除，写旧配置时清理遗留 key。
 - `【直接确认】` 新配置中的 `Experimental.Inkeys3.UI3.Animation` 控制 UI3 动画；`Experimental.Inkeys3.UI3.EdgeLighting` 控制 UI3 边缘点光及第三鼠标光。它们都不是选择新旧悬浮栏的总开关。
 - `【直接确认】` Bar 的 zoom 配置走 `Inkeys.Other.Config`；Bar 的其他行为仍可读取传统 `setlist`，因此不能把 Bar 简化成“只用新配置”。
 - `【直接确认】` PPT helper 新字段由 `IdtPlug-in.cpp` 等读取，但 `IdtPlug-in.cpp` 同时仍使用传统 PPT/交互设置。
@@ -241,7 +241,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 ## 二进制与生成资源的范围
 
 - `【直接确认】` `Inkeys/exe/` 当前可见 `DesktopDrawpadBlocker.exe`；其生成/更新来源为 `【待确认】`。
-- `【直接确认】` `Inkeys/binarypackage/` 含 EasyX/HiEasyX 相关库/产物；正式生成与更新流程为 `【待确认】`。
+- `【直接确认】` 原分架构 EasyX 静态库已从 `Inkeys/binarypackage/` 删除；不得由打包流程重新复制。
 - `【直接确认】` `PptCOM.dll`/`.tlb` 由 `PptCOM.csproj` 的构建后步骤生成/复制；仓库内预编译产物还被构建文档用作兼容路径。
 - shader、字体和图像是否全部可重建、哪些随发布包解包，需结合 `vcxproj`、`.rc`、打包脚本逐项确认，不能由目录名外推。
 

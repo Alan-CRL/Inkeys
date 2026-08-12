@@ -2,9 +2,9 @@
 
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
-#include "IdtFloating.h"
+#include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtPlug-in.h"
-#include "IdtWindow.h"
+#include "Inkeys/Window/Window.Legacy.hpp"
 
 #include "IdtConfiguration.h"
 

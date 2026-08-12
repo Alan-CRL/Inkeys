@@ -7,9 +7,9 @@
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
-#include "../../../IdtFloating.h"
+#include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -19,6 +19,7 @@ import :Theme;
 
 import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
+import Inkeys.Window;
 constexpr double BarButtonHoverOpacity = 0.18;
 constexpr double BarButtonHoverShowDur = 0.24;
 constexpr double BarButtonHoverExitDur = 0.24;
@@ -184,7 +185,7 @@ bool IsBarThicknessPrecisionDragHit(
 
 void MarkBarTouchPointerMessage(ExMessage& message, bool cancelled = false)
 {
-	// 非滚轮鼠标消息不使用 wheel，局部携带触摸来源且不改 HiEasyX 接口。
+	// 非滚轮鼠标消息不使用 wheel，保留触摸转单指的来源标记。
 	message.wheel = cancelled
 		? BarTouchCancelMessageMarker
 		: BarTouchPointerMessageMarker;
@@ -205,13 +206,28 @@ bool IsBarTouchCancelMessage(const ExMessage& message)
 
 bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd)
 {
-	// HiEasyX 的阻塞读取不观察 offSignal；保持原有轮询粒度并让 join 可终止。
+	// 保持原有轮询粒度，同时让退出时的 join 可终止。
 	while (!offSignal)
 	{
-		if (hiex::peekmessage_win32(&message, filter, true, hWnd)) return true;
+		if (Inkeys::Window::TryGet(hWnd, message,
+			static_cast<Inkeys::Message::Filter>(filter))) return true;
 		this_thread::sleep_for(chrono::milliseconds(1));
 	}
 	return false;
+}
+
+bool TryGetBarInteractionMessage(
+	ExMessage* message, BYTE filter, bool removeMessage, HWND hWnd)
+{
+	// 旧交互路径全部是成功即消费，HiMsg 不提供 peek 语义。
+	return message && removeMessage && Inkeys::Window::TryGet(
+		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter));
+}
+
+void ClearBarInteractionMessages(BYTE filter, HWND hWnd)
+{
+	(void)Inkeys::Window::Clear(
+		hWnd, static_cast<Inkeys::Message::Filter>(filter));
 }
 
 void QueueBarThicknessSliderEnd(HWND hWnd)
@@ -229,10 +245,7 @@ void QueueBarThicknessSliderEnd(HWND hWnd)
 		point.y, SHRT_MIN, SHRT_MAX));
 	message.lbutton = false;
 
-	int index = hiex::GetWindowIndex(hWnd, false);
-	if (index < 0) return;
-	unique_lock lock(hiex::g_vecWindows_vecMessage_sm[index]);
-	hiex::g_vecWindows[index].vecMessage.push_back(message);
+	(void)Inkeys::Window::Enqueue(hWnd, message);
 }
 
 void QueueBarColorPickerEnd(HWND hWnd)
@@ -248,10 +261,7 @@ void QueueBarColorPickerEnd(HWND hWnd)
 	message.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
 	message.lbutton = false;
 
-	int index = hiex::GetWindowIndex(hWnd, false);
-	if (index < 0) return;
-	unique_lock lock(hiex::g_vecWindows_vecMessage_sm[index]);
-	hiex::g_vecWindows[index].vecMessage.push_back(message);
+	(void)Inkeys::Window::Enqueue(hWnd, message);
 }
 
 // ====================
@@ -262,10 +272,10 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	if (msg == WM_DESTROY)
 	{
 		barUISet.ShutdownWindowInput(hWnd);
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 	// 关闭后不允许迟到的计时器或 Raw Input 重新建立交互/追踪状态。
-	if (offSignal) return HIWINDOW_DEFAULT_PROC;
+	if (offSignal) return DefWindowProcW(hWnd, msg, wParam, lParam);
 
 	if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN)
 	{
@@ -279,7 +289,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 		// Raw Input 只负责唤醒并读取系统光标，WM_INPUT 仍交给默认过程完成清理。
 		barUISet.RegisterBorderCursorLight(hWnd);
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
 	case WM_TIMER:
@@ -391,7 +401,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			if (changed) barUISet.UpdateRendering(false);
 			return 0;
 		}
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
 	case BarBorderCursorSuspendMessage:
@@ -493,7 +503,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 				barUISet.UpdateRendering(false);
 				return 0;
 		}
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
 	case WM_MOUSELEAVE:
@@ -586,10 +596,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = false;
 							MarkBarTouchPointerMessage(msgMouse, true);
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 
@@ -613,10 +620,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = true;
 							MarkBarTouchPointerMessage(msgMouse);
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 				}
@@ -638,10 +642,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = true;
 							MarkBarTouchPointerMessage(msgMouse);
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 				}
@@ -665,10 +666,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.lbutton = false;
 							MarkBarTouchPointerMessage(msgMouse);
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 				}
@@ -705,10 +703,10 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 
 	default:
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
-	return HIWINDOW_DEFAULT_PROC;
+	return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
 // UI 总集
@@ -1863,7 +1861,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 		while (!offSignal)
 		{
-			if (!hiex::peekmessage_win32(
+			if (!TryGetBarInteractionMessage(
 				&gestureMessage, EM_MOUSE, true, floating_window))
 			{
 				if (!ColorPickerAvailable() || !picker.colorPickerOpen
@@ -1909,7 +1907,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			SetPenColor(Inkeys::Color::SetAlphaR(finalColor, 255), true);
 		UpdateRendering();
 		SuppressHoverUntilPointerMove();
-		hiex::flushmessage_win32(EM_MOUSE, floating_window);
+		ClearBarInteractionMessages(EM_MOUSE, floating_window);
 	}
 
 	BarInteractionStageResult FinishInteraction()
@@ -1939,7 +1937,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					== ThicknessFineDialPhase::Settling);
 		if (thicknessPhysicsPolling)
 		{
-			if (!hiex::peekmessage_win32(
+			if (!TryGetBarInteractionMessage(
 				&msg, EM_MOUSE | EM_KEY, true, floating_window))
 			{
 				AdvanceThicknessFineDialPhysics();
@@ -2411,7 +2409,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.drawAttributeBar.colorPickerClosePress = false;
 						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
-						hiex::flushmessage_win32(
+						ClearBarInteractionMessages(
 							EM_MOUSE, floating_window);
 					}
 				}
@@ -2449,7 +2447,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.drawAttributeBar.colorPickerTonePress = false;
 						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
-						hiex::flushmessage_win32(
+						ClearBarInteractionMessages(
 							EM_MOUSE, floating_window);
 					}
 				}
@@ -2507,7 +2505,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						BarColorPickerEntryPressed = false;
 						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
-						hiex::flushmessage_win32(
+						ClearBarInteractionMessages(
 							EM_MOUSE, floating_window);
 					}
 				}
@@ -2601,7 +2599,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					*tooltip.pressed = false;
 					UpdateRendering(false);
 					SuppressHoverUntilPointerMove();
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}
 			}
 
@@ -2641,7 +2639,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					*tooltip.hover = false;
 					UpdateRendering(false);
 					SuppressHoverUntilPointerMove();
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}
 			}
 
@@ -2722,7 +2720,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.drawAttributeBar.penTypeFreeLinePress = false;
 						UpdateRendering(false);
 						if (clickCompleted) SuppressHoverUntilPointerMove();
-						hiex::flushmessage_win32(
+						ClearBarInteractionMessages(
 							EM_MOUSE, floating_window);
 					}
 				}
@@ -2780,7 +2778,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.moreClosePress = false;
 						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 				}
 				else
@@ -2823,7 +2821,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							button->state->emph = BarWidgetEmphasize::None;
 							UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
-							hiex::flushmessage_win32(EM_MOUSE, floating_window);
+							ClearBarInteractionMessages(EM_MOUSE, floating_window);
 						}
 						break;
 					}
@@ -2871,13 +2869,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 					SuppressHoverUntilPointerMove();
 
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}
 				if (msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 				{
 					if (MessageBox(floating_window, L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？", L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) CloseProgram();
 
-					hiex::flushmessage_win32(EM_MOUSE, floating_window);
+					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}
 			}
 
@@ -2944,7 +2942,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							SuppressHoverUntilPointerMove();
 
 							// 成功点击后保留队列中的下一击；拖出取消时仍清理本轮残留消息。
-							if (!clickCompleted) hiex::flushmessage_win32(EM_MOUSE, floating_window);
+							if (!clickCompleted) ClearBarInteractionMessages(EM_MOUSE, floating_window);
 						}
 						break;
 					}
@@ -3031,7 +3029,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						*button.pressed = false;
 						UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 					break;
 				}
@@ -3758,7 +3756,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									while (!offSignal)
 									{
 										// 用 peek 轮询，便于静止计时在无新消息时也能推进。
-										if (!hiex::peekmessage_win32(
+										if (!TryGetBarInteractionMessage(
 											&msg, EM_MOUSE, true, floating_window))
 										{
 											bool samePenMode =
@@ -4451,7 +4449,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									CloseThicknessSlider(false);
 								UpdateRendering();
 								SuppressHoverUntilPointerMove();
-								hiex::flushmessage_win32(
+									ClearBarInteractionMessages(
 									EM_MOUSE, floating_window);
 							}
 						}
@@ -4500,7 +4498,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								}
 
 								SuppressHoverUntilPointerMove();
-								hiex::flushmessage_win32(EM_MOUSE, floating_window);
+									ClearBarInteractionMessages(EM_MOUSE, floating_window);
 							}
 						}
 
@@ -4629,7 +4627,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								*button.pressed = false;
 								UpdateRendering(clickCompleted && button.presetIndex >= 0);
 								SuppressHoverUntilPointerMove();
-								hiex::flushmessage_win32(
+									ClearBarInteractionMessages(
 									EM_MOUSE, floating_window);
 							}
 						break;
@@ -4712,7 +4710,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							barState.drawAttributeBar.penTypeExtensionPress = false;
 							UpdateRendering(false);
 							if (clickCompleted) SuppressHoverUntilPointerMove();
-							hiex::flushmessage_win32(
+							ClearBarInteractionMessages(
 								EM_MOUSE, floating_window);
 						}
 					}
@@ -4760,7 +4758,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.drawAttributeBar.brush1Press = false; UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
 
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 				}
 				// 荧光笔
@@ -4805,7 +4803,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.drawAttributeBar.highlight1Press = false; UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
 
-						hiex::flushmessage_win32(EM_MOUSE, floating_window);
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 				}
 			}
@@ -5474,7 +5472,7 @@ namespace Inkeys::UI::Bar
 			|| vkCode == VK_UP || vkCode == VK_DOWN
 			|| vkCode == 'A' || vkCode == 'D'
 			|| vkCode == 'W' || vkCode == 'S';
-		if (!movementKey || offSignal || !useInkeys3UI || !floating_window
+		if (!movementKey || offSignal || !floating_window
 			|| !IsWindow(floating_window)
 			|| stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 			|| barUISet.barState.fold || !barUISet.barState.drawAttribute
@@ -5484,13 +5482,7 @@ namespace Inkeys::UI::Bar
 		ExMessage message{};
 		message.message = keyDown ? WM_KEYDOWN : WM_KEYUP;
 		message.vkcode = vkCode;
-		int index = hiex::GetWindowIndex(floating_window, false);
-		if (index < 0) return false;
-		{
-			unique_lock lock(hiex::g_vecWindows_vecMessage_sm[index]);
-			hiex::g_vecWindows[index].vecMessage.push_back(message);
-		}
-		return true;
+		return Inkeys::Window::Enqueue(floating_window, message);
 	}
 
 	void NotifyCanvasDrawingStarted()

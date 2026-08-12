@@ -4,7 +4,6 @@ module;
 
 export module Inkeys.UI.Setting:Base;
 
-WNDCLASSEXW ImGuiWc;
 ImFont* ImFontMain = nullptr;
 struct SettingSignStruct
 {

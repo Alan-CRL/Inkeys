@@ -6,9 +6,8 @@
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
-#include "../../../IdtFloating.h"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -19,6 +18,9 @@ import :Theme;
 
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
+import Inkeys.Business.ComponentActions;
+import Inkeys.Input.MouseHook;
+import Inkeys.Window;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
 extern const double BarButtonCursorLightIntensity;
 extern const double BarDrawAttributeCompactWidth;
@@ -52,17 +54,15 @@ constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
 namespace Inkeys::UI::Bar
 {
+	WNDPROC WindowProc() noexcept
+	{
+		return barWindowMsgCallback;
+	}
+
 	void Initialization()
 	{
 		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");
 		if (offSignal) return;
-		const auto CloseBarWindow = []()
-			{
-				HWND window = floating_window;
-				if (window && IsWindow(window))
-					hiex::closegraph_win32(window);
-			};
-
 		// 初始化
 		if (!InitializeWindow(barUISet)) return;
 		InitializeUI(barUISet);
@@ -79,15 +79,14 @@ namespace Inkeys::UI::Bar
 
 		barUISet.barState.PositionUpdate(barUISet.barStyle.zoom);
 		if (offSignal)
-		{
-			CloseBarWindow();
 			return;
-		}
 
-		// 所有 map 与按钮拓扑已冻结，再启动 Hook、Rendering、Interaction 三条工作线程。
-		FloatingPrepareHookStart();
-		thread hookThread(FloatingInstallHook);
-		FloatingWaitHookReady();
+		// Hook 自有 jthread，并在创建它的线程卸载。
+		(void)Inkeys::Input::MouseHook::Start([&]()
+			{
+				barUISet.barState.fold = true;
+				barUISet.UpdateRendering(false);
+			});
 		thread renderingThread([&]() { barUISet.Rendering(); });
 		thread interactionThread([&]() { barUISet.Interact(); });
 
@@ -95,14 +94,13 @@ namespace Inkeys::UI::Bar
 
 		while (!offSignal) this_thread::sleep_for(chrono::milliseconds(100));
 		// 先停止输入生产者，再由窗口线程撤销计时器、Raw Input 与 capture。
-		FloatingRequestHookStop();
-		if (hookThread.joinable()) hookThread.join();
+		Inkeys::Input::MouseHook::Stop();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。
 		BarAtomic::wait.Notify();
 
 		if (interactionThread.joinable()) interactionThread.join();
 		if (renderingThread.joinable()) renderingThread.join();
-		CloseBarWindow();
+		Inkeys::Business::ShutdownComponentActions();
 
 		return;
 	}
@@ -113,20 +111,17 @@ namespace Inkeys::UI::Bar
 		HWND window = floating_window;
 		if (!window || !IsWindow(window)) return false;
 
-		DisableResizing(window, true); // hiex 禁止窗口拉伸
-
-		SetWindowLong(window, GWL_STYLE, GetWindowLong(window, GWL_STYLE) & ~WS_CAPTION); // 隐藏窗口标题栏
-		SetWindowLong(window, GWL_EXSTYLE, WS_EX_TOOLWINDOW); // 隐藏窗口任务栏图标
-
 		barUISet.barWindow.x = 0;
 		barUISet.barWindow.y = 0;
 		barUISet.barWindow.w = MainMonitor.MonitorWidth;
 		barUISet.barWindow.h = MainMonitor.MonitorHeight - 1;
 		barUISet.barWindow.pct = 255;
-		SetWindowPos(window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
+		RECT bounds{ barUISet.barWindow.x, barUISet.barWindow.y,
+			barUISet.barWindow.x + barUISet.barWindow.w,
+			barUISet.barWindow.y + barUISet.barWindow.h };
+		if (!Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Bar, bounds))
+			return false;
 
-		// 设置自定义窗口消息回调
-		hiex::SetWndProcFunc(window, barWindowMsgCallback);
 		return true;
 	}
 	void InitializeUI(BarUISetClass& barUISet)

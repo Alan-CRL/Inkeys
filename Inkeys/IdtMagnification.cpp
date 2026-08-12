@@ -4,13 +4,13 @@
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
-#include "IdtWindow.h"
+#include "Inkeys/Window/Window.Legacy.hpp"
 
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
 
 HWND magnifierWindow, magnifierChild;
-IMAGE MagnificationBackground;
+Inkeys::Graphics::DibSurface MagnificationBackground;
 
 bool magnificationCreateReady;
 bool magnificationReady;
@@ -29,11 +29,11 @@ void UpdateMagWindow()
 	{
 		std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
 
-		if (MagnificationBackground.getwidth() != GetSystemMetrics(SM_CXSCREEN) || MagnificationBackground.getheight() != GetSystemMetrics(SM_CYSCREEN))
-			MagnificationBackground.Resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		if (MagnificationBackground.width() != GetSystemMetrics(SM_CXSCREEN) || MagnificationBackground.height() != GetSystemMetrics(SM_CYSCREEN))
+			MagnificationBackground.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 
-		PrintWindow(magnifierChild, GetImageHDC(&MagnificationBackground), PW_RENDERFULLCONTENT);
-		hiex::RemoveImageTransparency(&MagnificationBackground);
+		PrintWindow(magnifierChild, MagnificationBackground.dc(), PW_RENDERFULLCONTENT);
+		ForceOpaqueAlpha(&MagnificationBackground);
 
 		LockMagnificationBackgroundSm.unlock();
 	}
@@ -44,34 +44,16 @@ LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam,
 {
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
-ATOM RegisterHostWindowClass(HINSTANCE hInstance, wstring className)
+bool PrepareMagnifierWindow()
 {
-	WNDCLASSEX wcex = {};
-
-	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc = MagnifierHostWindowWndProc;
-	wcex.hInstance = hInstance;
-	wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wcex.hbrBackground = (HBRUSH)(1 + COLOR_BTNFACE);
-	wcex.lpszClassName = className.c_str();
-
-	return RegisterClassEx(&wcex);
-}
-
-void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
-{
-	// 一系列操作必须在同一线程中完成
-
 	// 尝试加载
 	HMODULE hMagDll = LoadLibrary(TEXT("Magnification.dll"));
 	if (hMagDll == NULL)
 	{
 		IDTLogger->warn("[放大API线程][MagnifierThread] 本机缺少 Magnification.dll，定格等相关功能将被禁用。");
-		promise.set_value(); // 通知主线程继续，不要卡死
-
-		return;
+		return false;
 	}
+	FreeLibrary(hMagDll);
 
 	// 检测是否是 Wine
 	{
@@ -81,9 +63,7 @@ void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 			if (GetProcAddress(hNtdll, "wine_get_version") != nullptr)
 			{
 				IDTLogger->warn("[放大API线程][MagnifierThread] 本机为 Wine 环境，不支持 Magnification.dll 相关功能，定格等相关功能将被禁用。");
-				promise.set_value(); // 通知主线程继续，不要卡死
-
-				return;
+				return false;
 			}
 		}
 	}
@@ -91,95 +71,55 @@ void MagnifierWindow(HINSTANCE hinst, promise<void>& promise)
 	// 初始化放大API
 	if (!MagInitialize())
 	{
-		promise.set_value();
-
 		IDTLogger->error("[放大API线程][MagnifierThread] 初始化MagInitialize失败");
+		return false;
+	}
+
+	return true;
+}
+
+void MagnifierHostCreated(HWND hwnd)
+{
+	magnifierWindow = hwnd;
+	SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+}
+
+void MagnifierChildCreated(HWND hwnd)
+{
+	magnifierChild = hwnd;
+	MAGTRANSFORM matrix{};
+	matrix.v[0][0] = 1.0f;
+	matrix.v[1][1] = 1.0f;
+	matrix.v[2][2] = 1.0f;
+	if (!MagSetWindowTransform(hwnd, &matrix))
+	{
+		IDTLogger->error("[放大API线程][MagnifierThread] 启动放大API失败");
 		return;
 	}
 
-	// 窗口创建
+	MAGCOLOREFFECT effect = { {
+		{ 1.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+		{ 0.0f, 1.0f, 0.0f, 0.0f, 0.0f },
+		{ 0.0f, 0.0f, 1.0f, 0.0f, 0.0f },
+		{ 0.0f, 0.0f, 0.0f, 1.0f, 0.0f },
+		{ 0.0f, 0.0f, 0.0f, 0.0f, 1.0f }
+	} };
+	if (!MagSetColorEffect(hwnd, &effect))
+		IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大API转换矩阵失败");
+	else
 	{
-		hostWindowRect.left = 0;
-		hostWindowRect.top = 0;
-		hostWindowRect.right = GetSystemMetrics(SM_CXSCREEN);
-		if (setlist.regularSetting.avoidFullScreen) hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN) - 1;
-		else hostWindowRect.bottom = GetSystemMetrics(SM_CYSCREEN);
-
-		wstring ClassName;
-		if (userId == L"Error") ClassName = L"Inkeys6;HiEasyX041";
-		else ClassName = L"Inkeys6;" + userId;
-		if (!RegisterHostWindowClass(hinst, ClassName)) IDTLogger->warn("[放大API线程][SetupMagnifier] 注册放大API主机窗口失败");
-
-		magnifierWindow = CreateWindowEx(WS_EX_LAYERED | WS_EX_NOACTIVATE, ClassName.c_str(), L"Inkeys6 MagnifierHostWindow",
-			WS_SIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_MAXIMIZEBOX,
-			0, 0, hostWindowRect.right, hostWindowRect.bottom, NULL, NULL, hinst, NULL);
-		if (!magnifierWindow) IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API主机窗口失败" + to_string(GetLastError()));
-
-		SetLayeredWindowAttributes(magnifierWindow, 0, 0, LWA_ALPHA);
-
-		magnifierChild = CreateWindowEx(WS_EX_NOACTIVATE, WC_MAGNIFIER, TEXT("IdtScreenMagnifierMag"),
-			WS_CHILD | MS_CLIPAROUNDCURSOR | WS_VISIBLE, // 光标一并放大 MS_SHOWMAGNIFIEDCURSOR
-			hostWindowRect.left, hostWindowRect.top, hostWindowRect.right, hostWindowRect.bottom, magnifierWindow, NULL, hinst, NULL);
-		if (!magnifierChild) IDTLogger->error("[放大API线程][SetupMagnifier] 创建放大API窗口失败" + to_string(GetLastError()));
+		magnificationCreateReady = true;
+		IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API转换矩阵完成");
 	}
-
-	// 样式设置
-	{
-		SetWindowLong(magnifierWindow, GWL_STYLE, GetWindowLong(magnifierWindow, GWL_STYLE) & ~WS_CAPTION); // 隐藏标题栏
-		SetWindowLong(magnifierWindow, GWL_STYLE, GetWindowLong(magnifierWindow, GWL_STYLE) & ~WS_THICKFRAME); // 禁止窗口拉伸
-		SetWindowPos(magnifierWindow, nullptr, 0, 0, 0, 0, SWP_NOSIZE | SWP_FRAMECHANGED);
-		SetWindowLong(magnifierWindow, GWL_EXSTYLE, (GetWindowLong(magnifierWindow, GWL_EXSTYLE) | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW); // 隐藏任务栏图标
-	}
-	// 注册变换矩形
-	{
-		MAGTRANSFORM matrix;
-		memset(&matrix, 0, sizeof(matrix));
-		matrix.v[0][0] = 1.0f;
-		matrix.v[1][1] = 1.0f;
-		matrix.v[2][2] = 1.0f;
-
-		BOOL ret = MagSetWindowTransform(magnifierChild, &matrix);
-		if (ret)
-		{
-			MAGCOLOREFFECT magEffectInvert =
-			{ {
-				{  1.0f,  0.0f,  0.0f,  0.0f,  0.0f },
-				{  0.0f,  1.0f,  0.0f,  0.0f,  0.0f },
-				{  0.0f,  0.0f,  1.0f,  0.0f,  0.0f },
-				{  0.0f,  0.0f,  0.0f,  1.0f,  0.0f },
-				{  0.0f,  0.0f,  0.0f,  0.0f,  1.0f }
-			} };
-
-			if (!MagSetColorEffect(magnifierChild, &magEffectInvert)) IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大API转换矩阵失败");
-			else IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API转换矩阵完成");
-		}
-		else IDTLogger->error("[放大API线程][MagnifierThread] 启动放大API失败");
-	}
-	// 更新状态
-	{
-		ShowWindow(magnifierWindow, SW_SHOWNOACTIVATE);
-		UpdateWindow(magnifierWindow);
-	}
-
-	magnificationCreateReady = true;
-	promise.set_value();
-
-	MSG msg;
-	while (!offSignal && GetMessage(&msg, nullptr, 0, 0))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
-
-	MagUninitialize();
 }
-void CreateMagnifierWindow()
-{
-	promise<void> promise;
-	future<void> future = promise.get_future();
 
-	thread(MagnifierWindow, GetModuleHandle(0), ref(promise)).detach();
-	future.get();
+void ShutdownMagnifierWindow()
+{
+	magnificationCreateReady = false;
+	magnificationReady = false;
+	magnifierChild = nullptr;
+	magnifierWindow = nullptr;
+	MagUninitialize();
 }
 
 int RequestUpdateMagWindow;

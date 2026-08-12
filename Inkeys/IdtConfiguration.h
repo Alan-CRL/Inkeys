@@ -146,13 +146,6 @@ struct SetListStruct
 	}plugInSetting;
 #pragma endregion
 
-	struct
-	{
-		struct
-		{
-			IdtAtomic<bool> UI3 = false;
-		} Inkeys3;
-	} Experimental;
 };
 extern SetListStruct setlist;
 extern shared_mutex setlistUpdateMutex;

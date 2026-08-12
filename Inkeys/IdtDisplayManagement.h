@@ -109,3 +109,4 @@ bool IdtIsCorrectEDID(const BYTE* pEDIDBuf, DWORD dwcbBufSize, LPCWSTR lpModel);
 bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD dwcbBufSize, DWORD* pdwGetBytes);
 
 void DisplayManagementMain();
+LRESULT CALLBACK IdtDisplayManagementWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

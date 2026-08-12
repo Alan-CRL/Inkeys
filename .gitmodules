@@ -2,3 +2,6 @@
 	path = Vcpkg
 	url = https://github.com/microsoft/vcpkg.git
 	ignore = dirty
+[submodule "HiMsg"]
+	path = Inkeys/additional/HiMsg
+	url = https://github.com/Alan-CRL/HiMsg.git

@@ -13,15 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="头文件\HiEasyX">
-      <UniqueIdentifier>{2e03b9bb-420e-4299-9bab-cb6b8e174341}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\HiEasyX\HiGUI">
-      <UniqueIdentifier>{be31b9e3-af03-4091-8eef-748b8802b7be}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\HiEasyX\HiSysGUI">
-      <UniqueIdentifier>{594605a8-07f6-4f1f-99d6-9121281e72a3}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\Additional">
       <UniqueIdentifier>{1bdd4c2e-4346-44fb-9ad6-b03fa2767a63}</UniqueIdentifier>
     </Filter>
@@ -85,107 +76,26 @@
     <Filter Include="Modules\Inkeys\Helper">
       <UniqueIdentifier>{27615d57-79cc-4874-bfe3-3d8915419a1e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\Graphics">
+      <UniqueIdentifier>{88f57eae-8544-4785-b314-55608360684f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Message">
+      <UniqueIdentifier>{24904d13-cf18-43bd-9359-7700c5ae630e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Window">
+      <UniqueIdentifier>{ddcf2b67-f2c9-4dcc-a8a9-1de93c20acdb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Input">
+      <UniqueIdentifier>{b0ff23cc-0040-4b97-9a1a-dfd6d4e1a6db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Business">
+      <UniqueIdentifier>{804a968f-5f95-43f4-9944-38a9113715ec}</UniqueIdentifier>
+    </Filter>
     <Filter Include="头文件\Additional\Imgui\CustomShaders">
       <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="HiEasyX.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\Button.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\Page.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGUI\Static.h">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiCanvas.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiContainer.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiDef.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiDrawingProperty.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiFPS.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiFunc.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGdiplus.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiGif.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiIcon.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiMacro.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiMouseDrag.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiMusicMCI.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiStart.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
-    <ClInclude Include="HiEasyX\HiWindow.h">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClInclude>
     <ClInclude Include="resource.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -207,9 +117,6 @@
     <ClInclude Include="IdtImage.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtWindow.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtMagnification.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -220,9 +127,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtOther.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtFloating.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtDrawpad.h">
@@ -375,92 +279,20 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Graphics\Surface.Core.hpp">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Graphics\Surface.hpp">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\LegacyDrawState.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="HiEasyX\HiGUI\Button.cpp">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGUI\Page.cpp">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGUI\Static.cpp">
-      <Filter>头文件\HiEasyX\HiGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp">
-      <Filter>头文件\HiEasyX\HiSysGUI</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiCanvas.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiContainer.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiFPS.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiFunc.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGdiplus.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiGif.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiIcon.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiMouseDrag.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiMusicMCI.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiStart.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="HiEasyX\HiWindow.cpp">
-      <Filter>头文件\HiEasyX</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtWindow.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="IdtMagnification.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -480,9 +312,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtMain.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtFloating.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtDrawpad.cpp">
@@ -760,6 +589,42 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Other\Other.Config.cpp">
       <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Graphics\Surface.cpp">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Graphics\Surface.cppm">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Business\ComponentActions.cpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Business\ComponentActions.cppm">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Business\LegacyDrawState.cpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Input\MouseHook.cpp">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Input\MouseHook.cppm">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Message\Message.cpp">
+      <Filter>Modules\Inkeys\Message</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Message\Message.cppm">
+      <Filter>Modules\Inkeys\Message</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Window\Window.cpp">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Window\Window.cppm">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Window\Window.Legacy.cpp">
+      <Filter>Modules\Inkeys\Window</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1093,6 +958,18 @@
     </None>
     <None Include="src\i18n\zh-TW.jsonc">
       <Filter>资源文件</Filter>
+    </None>
+    <None Include="IdtFloating.cpp">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="IdtFloating.h">
+      <Filter>头文件</Filter>
+    </None>
+    <None Include="IdtWindow.cpp">
+      <Filter>源文件</Filter>
+    </None>
+    <None Include="IdtWindow.h">
+      <Filter>头文件</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

@@ -2,7 +2,7 @@
 
 本层主要覆盖 Inkeys/Inkeys.vcxproj 中的 Windows 桌面程序，并记录仓库内独立 Timeout Solution 的工程边界。证据等级沿用 [../index.md](../index.md)；现状、推断、待确认和历史/兼容路径不能互相替代。
 
-**【直接确认】** 主程序同时编译传统 Idt* 子系统和 Inkeys/Inkeys 下的 C++20 module。**【待确认】** 这是否代表正式迁移方向；不要把文件年代或 module 语法自动当成推荐优先级。
+**【直接确认】** 主程序同时编译传统 Draw2/PPT 等 Idt* 业务子系统和 Inkeys/Inkeys 下的 C++20 module。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
 
 ## 文档索引
 
@@ -34,14 +34,14 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 
 - wWinMain 位于 Inkeys/IdtMain.cpp。新增其他入口会改变现有进程模型，属于架构变更，而不是本 Spec 已批准的路线。
 - D2DStarup 在 UI 分支选择前无条件创建 D3D11 WARP、D2D factory/device 和 DWrite 对象；d2dDevice_WARP 被 UI3 Bar 使用，d2dFactory1/dWriteFactory1 也被 PPT 控件使用。
-- 设置窗口的已编译产品实现是 Dear ImGui Win32 + Direct3D 11；它拥有独立 hardware device/context、discard swap chain、RTV 和图片 SRV，不复用进程级 D2D/WARP device。`Inkeys.vcxproj` 编译带 Inkeys 定制标记的 DX11 backend，仓库不再随附 ImGui DX9 backend。
+- 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它拥有独立 hardware device/context、discard swap chain、RTV 和图片 SRV，不复用进程级 D2D/WARP device。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。
 - 画布合成、撤销历史和按 PPT 页保存的墨迹彼此有关，不能只验证屏幕上的即时笔迹。
 - 主 Solution 中 Inkeys 依赖 PptCOM；Timeout 属于另一个 Solution，且本次未发现主产品引用。
-- 没有扫描到自动化测试项目。目标架构构建和专题手工检查是当前审计建议，不是已确认的正式发布门禁；正式清单待维护者确认。
+- `InkeysHeadlessTests` 覆盖 Surface、HiMsg、窗口合同和 UI3 算法；受限环境必须用 `--no-window` 跳过会创建 HWND 的窗口测试。
 
 ## 历史/兼容与待确认
 
-- IdtConfiguration.h 将 Experimental.Inkeys3.UI3 默认初始化为 false；IdtMain.cpp 据此在 floating_main 与 Inkeys::UI::Bar::Initialization 之间二选一。持久化 deploy.json 可改变该值，所以静态默认不等于发布默认。
-- IdtFloating 仍是可执行分支，不能仅因文件名/实现方式较旧就标记为废弃；UI3 Bar 也不能仅因名称较新就标记为正式主路径。
+- `Experimental.Inkeys3.UI3` 容器仅保留 Animation、EdgeLighting 和 Debug 配置，不再包含路由开关；旧 JSON `Experimental.Inkeys3.UI3` 路由字段在写配置时清理。
+- `IdtFloating` 保留一段迁移期供阅读，但不得重新加入编译或被生产代码 include；复用业务必须迁入 `Inkeys.Business` / `Inkeys.Input`。
 - Timeout 的发布、打包和 ARM64 计划均待确认。

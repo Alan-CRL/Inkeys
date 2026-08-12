@@ -3,11 +3,8 @@
 #include "IdtConfiguration.h"
 #include "IdtDisplayManagement.h"
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stbimage/stb_image_write.h"
-
 BrushColorChooseStruct BrushColorChoose = { 0,0,-1,-1 };
-IMAGE ColorPaletteImg;
+Inkeys::Graphics::DibSurface ColorPaletteImg;
 shared_mutex ColorPaletteSm;
 
 penetrateStruct penetrate; //窗口穿透
@@ -38,28 +35,21 @@ double computeContrast(COLORREF color1, COLORREF color2) {
 }
 
 //像素颜色调整（将所有透明度不为0的像素点，改为指定颜色）
-void ChangeColor(IMAGE& img, COLORREF color)
+void RecolorSurface(Inkeys::Graphics::DibSurface& surface, COLORREF color)
 {
-	// 获取图像的宽度和高度
-	int width = img.getwidth();
-	int height = img.getheight();
-
-	// 获取图像的缓冲区指针
-	DWORD* pBuf = GetImageBuffer(&img);
-
 	// 遍历每个像素点
-	for (int i = 0; i < width * height; i++)
+	for (auto& pixel : surface.pixels())
 	{
 		// 获取当前像素点的颜色值
-		DWORD pixel = pBuf[i];
+		const DWORD sourcePixel = pixel;
 
 		// 获取当前像素点的透明度（alpha 值）
-		DWORD alpha = pixel >> 24;
+		const DWORD alpha = sourcePixel >> 24;
 
 		// 如果源图像颜色与修改颜色相同则不修改（直接跳过）
 		if (alpha != 0)
 		{
-			if (pixel == BGR(color)) continue;
+			if (sourcePixel == PackSurfaceBgra(color, false)) continue;
 		}
 		else continue;
 
@@ -79,8 +69,120 @@ void ChangeColor(IMAGE& img, COLORREF color)
 		DWORD newPixel = (alpha << 24) | (rgb & 0x00FFFFFF);
 
 		// 将新的颜色值写入缓冲区
-		pBuf[i] = newPixel;
+		pixel = newPixel;
 	}
+}
+
+uint32_t PackSurfaceBgra(COLORREF color, bool preserveAlpha)
+{
+	const uint32_t alpha = preserveAlpha ? static_cast<uint32_t>((color >> 24) & 0xFF) : 255u;
+	return (alpha << 24) |
+		(static_cast<uint32_t>(GetRValue(color)) << 16) |
+		(static_cast<uint32_t>(GetGValue(color)) << 8) |
+		static_cast<uint32_t>(GetBValue(color));
+}
+
+Gdiplus::Color ToGdiplusColor(COLORREF color, bool preserveAlpha)
+{
+	return Gdiplus::Color(
+		preserveAlpha ? static_cast<BYTE>((color >> 24) & 0xFF) : 255,
+		GetRValue(color),
+		GetGValue(color),
+		GetBValue(color));
+}
+
+Gdiplus::RectF ToGdiplusRect(RECT rect)
+{
+	return Gdiplus::RectF(
+		static_cast<Gdiplus::REAL>(rect.left),
+		static_cast<Gdiplus::REAL>(rect.top),
+		static_cast<Gdiplus::REAL>(rect.right - rect.left),
+		static_cast<Gdiplus::REAL>(rect.bottom - rect.top));
+}
+
+namespace
+{
+	void BuildRoundRectPath(Gdiplus::GraphicsPath& path, float x, float y, float width, float height, float ellipseWidth, float ellipseHeight)
+	{
+		ellipseWidth = min(ellipseWidth, width - 1);
+		ellipseHeight = min(ellipseHeight, height - 1);
+		path.AddArc(x, y, ellipseWidth, ellipseHeight, 180, 90);
+		path.AddArc(x + width - ellipseWidth - 1, y, ellipseWidth, ellipseHeight, 270, 90);
+		path.AddArc(x + width - ellipseWidth - 1, y + height - ellipseHeight - 1, ellipseWidth, ellipseHeight, 0, 90);
+		path.AddArc(x, y + height - ellipseHeight - 1, ellipseWidth, ellipseHeight, 90, 90);
+		path.CloseFigure();
+	}
+}
+
+void DrawSurfaceRectangle(float x, float y, float width, float height, COLORREF color, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty()) return;
+	if (!Inkeys::Graphics::Detail::EnsureGdiplusReady()) return;
+	Gdiplus::Graphics graphics(surface->dc());
+	Gdiplus::Pen pen(ToGdiplusColor(color, preserveAlpha), lineWidth);
+	graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+	graphics.SetSmoothingMode(smoothingMode);
+	graphics.DrawRectangle(&pen, x, y, width, height);
+}
+
+void DrawSurfaceEllipse(float x, float y, float width, float height, COLORREF color, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty()) return;
+	if (!Inkeys::Graphics::Detail::EnsureGdiplusReady()) return;
+	Gdiplus::Graphics graphics(surface->dc());
+	Gdiplus::Pen pen(ToGdiplusColor(color, preserveAlpha), lineWidth);
+	graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+	graphics.SetSmoothingMode(smoothingMode);
+	graphics.DrawEllipse(&pen, x, y, width, height);
+}
+
+void FillSurfaceEllipse(float x, float y, float width, float height, COLORREF color, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty()) return;
+	if (!Inkeys::Graphics::Detail::EnsureGdiplusReady()) return;
+	Gdiplus::Graphics graphics(surface->dc());
+	Gdiplus::SolidBrush brush(ToGdiplusColor(color, preserveAlpha));
+	graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+	graphics.SetSmoothingMode(smoothingMode);
+	graphics.FillEllipse(&brush, x, y, width, height);
+}
+
+void DrawSurfaceRoundRect(float x, float y, float width, float height, float ellipseWidth, float ellipseHeight, COLORREF color, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty()) return;
+	if (!Inkeys::Graphics::Detail::EnsureGdiplusReady()) return;
+	Gdiplus::Graphics graphics(surface->dc());
+	Gdiplus::Pen pen(ToGdiplusColor(color, preserveAlpha), lineWidth);
+	Gdiplus::GraphicsPath path;
+	BuildRoundRectPath(path, x, y, width, height, ellipseWidth, ellipseHeight);
+	graphics.SetSmoothingMode(smoothingMode);
+	graphics.DrawPath(&pen, &path);
+}
+
+void FillSurfaceRoundRect(float x, float y, float width, float height, float ellipseWidth, float ellipseHeight, COLORREF color, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty()) return;
+	if (!Inkeys::Graphics::Detail::EnsureGdiplusReady()) return;
+	Gdiplus::Graphics graphics(surface->dc());
+	Gdiplus::SolidBrush brush(ToGdiplusColor(color, preserveAlpha));
+	Gdiplus::GraphicsPath path;
+	BuildRoundRectPath(path, x, y, width, height, ellipseWidth, ellipseHeight);
+	graphics.SetSmoothingMode(smoothingMode);
+	graphics.FillPath(&brush, &path);
+}
+
+void DrawFilledSurfaceRoundRect(float x, float y, float width, float height, float ellipseWidth, float ellipseHeight, COLORREF lineColor, COLORREF fillColor, float lineWidth, bool preserveAlpha, Gdiplus::SmoothingMode smoothingMode, Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface || surface->empty()) return;
+	if (!Inkeys::Graphics::Detail::EnsureGdiplusReady()) return;
+	Gdiplus::Graphics graphics(surface->dc());
+	Gdiplus::Pen pen(ToGdiplusColor(lineColor, preserveAlpha), lineWidth);
+	Gdiplus::SolidBrush brush(ToGdiplusColor(fillColor, preserveAlpha));
+	Gdiplus::GraphicsPath path;
+	BuildRoundRectPath(path, x, y, width, height, ellipseWidth, ellipseHeight);
+	graphics.SetSmoothingMode(smoothingMode);
+	graphics.FillPath(&brush, &path);
+	graphics.DrawPath(&pen, &path);
 }
 // 计算两个COLORREF颜色之间的加权距离
 double color_distance(COLORREF c1, COLORREF c2) {
@@ -129,107 +231,33 @@ COLORREF InvertColor(COLORREF color, bool alpha_enable)
 }
 
 //保存图像到本地
-bool saveImageToPNG(IMAGE img, const wstring& filePath, bool alpha, int compression_level)
+bool SaveSurfaceToPng(const Inkeys::Graphics::DibSurface& surface, const wstring& filePath)
 {
-	int width = img.getwidth();
-	int height = img.getheight();
-
-	// Get the image buffer of the IMAGE object
-	DWORD* pMem = GetImageBuffer(&img);
-
-	unsigned char* data = new unsigned char[width * height * 4];
-	for (int y = 0; y < height; ++y)
-	{
-		for (int x = 0; x < width; ++x)
-		{
-			DWORD color = pMem[y * width + x];
-			if (alpha)
-			{
-				unsigned char alpha = (color & 0xFF000000) >> 24;
-				if (alpha != 0)
-				{
-					data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-					data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-					data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-				}
-				else
-				{
-					data[(y * width + x) * 4 + 0] = 0;
-					data[(y * width + x) * 4 + 1] = 0;
-					data[(y * width + x) * 4 + 2] = 0;
-				}
-				data[(y * width + x) * 4 + 3] = alpha;
-			}
-			else
-			{
-				data[(y * width + x) * 4 + 0] = unsigned char((color & 0x00FF0000) >> 16);
-				data[(y * width + x) * 4 + 1] = unsigned char((color & 0x0000FF00) >> 8);
-				data[(y * width + x) * 4 + 2] = unsigned char((color & 0x000000FF) >> 0);
-				data[(y * width + x) * 4 + 3] = 255;
-			}
-		}
-	}
-
-	// 使用宽字符函数打开文件
-	FILE* file = nullptr;
-	errno_t err = _wfopen_s(&file, filePath.c_str(), L"wb");
-	if (err != 0 || file == nullptr)
-	{
-		delete[] data;
-		return false;
-	}
-
-	auto writeCallback = [](void* context, void* data, int size)
-		{
-			FILE* file = static_cast<FILE*>(context);
-			size_t written = fwrite(data, 1, size, file);
-		};
-
-	stbi_write_png_compression_level = compression_level;
-	int result = stbi_write_png_to_func(writeCallback, file, width, height, 4, data, width * 4);
-
-	fclose(file);
-	delete[] data;
-
-	if (result == 0) return false;
-	return true;
+	return surface.savePng(filePath);
 }
 
 //比较图像
-bool CompareImagesWithBuffer(IMAGE* img1, IMAGE* img2)
+bool CompareSurfaces(const Inkeys::Graphics::DibSurface* first, const Inkeys::Graphics::DibSurface* second)
 {
-	// 检查宽度和高度
-	if (img1->getwidth() != img2->getwidth() || img1->getheight() != img2->getheight()) return false;
-
-	DWORD* pBuf1 = GetImageBuffer(img1);
-	DWORD* pBuf2 = GetImageBuffer(img2);
-
-	int dataSize = img1->getwidth() * img1->getheight() * sizeof(DWORD);
-
-	return memcmp(pBuf1, pBuf2, dataSize) == 0;
+	return first && second && first->equals(*second);
 }
 //设置图像必须不拥有全透明像素（将所有全透明像素点透明度设置为1）
-void SetAlphaToOne(IMAGE* pImg) // pImg是绘图设备指针
+void EnsureNonZeroAlpha(Inkeys::Graphics::DibSurface* surface)
 {
-	// 获取图像缓冲区指针
-	DWORD* pBuffer = GetImageBuffer(pImg);
-	// 获取图像宽度和高度
-	int width = pImg->getwidth();
-	int height = pImg->getheight();
-	// 遍历每个点
-	for (int i = 0; i < width * height; i++)
+	if (!surface) return;
+	for (auto& color : surface->pixels())
 	{
-		// 获取当前点的颜色值（ARGB格式）
-		DWORD color = pBuffer[i];
 		// 如果透明度为0，则将其设为1
 		if ((color >> 24) == 0)
-		{
-			// 将最高8位设为1，并保持其他位不变
 			color = (color & 0x00FFFFFF) | 0x01000000;
-			// 将修改后的颜色值写回到图像缓冲区
-			pBuffer[i] = color;
-		}
 	}
+}
+
+void ForceOpaqueAlpha(Inkeys::Graphics::DibSurface* surface)
+{
+	if (!surface) return;
+	for (auto& color : surface->pixels())
+		color |= 0xFF000000u;
 }
 
 double EuclideanDistance(POINT a, POINT b)

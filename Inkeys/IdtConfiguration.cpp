@@ -344,14 +344,6 @@ bool ReadSetting()
 			}
 		}
 
-		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject())
-		{
-			if (setlistVal["Experimental"].isMember("Inkeys3") && setlistVal["Experimental"]["Inkeys3"].isObject())
-			{
-				if (setlistVal["Experimental"]["Inkeys3"].isMember("UI3") && setlistVal["Experimental"]["Inkeys3"]["UI3"].isBool())
-					setlist.Experimental.Inkeys3.UI3 = setlistVal["Experimental"]["Inkeys3"]["UI3"].asBool();
-			}
-		}
 	}
 	else return false;
 
@@ -556,10 +548,16 @@ bool WriteSetting()
 			}
 		}
 
+		// UI3 已成为唯一入口，升级写回时移除旧实验开关。
+		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject()
+			&& setlistVal["Experimental"].isMember("Inkeys3")
+			&& setlistVal["Experimental"]["Inkeys3"].isObject())
 		{
-			{
-				setlistVal["Experimental"]["Inkeys3"]["UI3"] = Json::Value(setlist.Experimental.Inkeys3.UI3);
-			}
+			setlistVal["Experimental"]["Inkeys3"].removeMember("UI3");
+			if (setlistVal["Experimental"]["Inkeys3"].empty())
+				setlistVal["Experimental"].removeMember("Inkeys3");
+			if (setlistVal["Experimental"].empty())
+				setlistVal.removeMember("Experimental");
 		}
 	}
 

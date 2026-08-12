@@ -39,9 +39,9 @@
 | ImGui context/backends | 显式 DX11/Win32 shutdown 与 `DestroyContext` | `Setting.cpp` 的窗口线程退出路径 |
 | Office COM（C#） | 事件解绑、`ReleaseComObject`/`FinalReleaseComObject`、置 null | `PptCOM/PptCOM.cs::FullCleanup` 及 release helpers |
 | native PPT 服务 | `_com_ptr_t` 包装、`pptComSlotSm` 保护服务槽/快照 | `IdtPlug-in.cpp::Get/Set/ResetPptComSnapshot` |
-| HiEasyX `IMAGE`/临时画布 | 指针、容器、显式 delete 或回收队列 | `IdtDrawpad.cpp`、`IdtImage.cpp` |
-| Win32 handles/modules | 按路径调用 `DestroyWindow`、`ReleaseDC`、`CloseHandle`、`FreeLibrary`、activation-context API | `IdtMain.cpp` 与各窗口实现 |
-| 线程 | `thread/detach/offSignal`、线程状态，或局部 `jthread/stop_token/StatusGuard` | 传统 Idt 与部分 module 并存 |
+| `Graphics::DibSurface`/临时画布 | RAII 管理 HDC、DIB bitmap、旧选入对象和像素地址；容器按值拥有 | `Inkeys/Graphics/Surface.*`、`IdtDrawpad.cpp`、`IdtImage.cpp` |
+| Win32 HWND/消息 channel | `Inkeys.Window` 所属线程创建、解绑并逆序销毁；外部只持有非 owning HWND | `Inkeys/Window/Window.*`、`IdtMain.cpp` |
+| 线程 | 窗口、Setting 和低级 Hook 使用受管 `jthread/stop_token`；遗留业务线程也必须在 Window Service 前 join | `IdtMain.cpp`、`Inkeys/Window`、`Inkeys/Input` |
 
 `【合理推断】` 在局部功能中沿用目标资源的现有所有者和释放点。raw pointer → smart pointer、detached thread → jthread 等会改变生命周期和退出顺序，应作为可验证的独立改动，而不是顺带“清理”。
 

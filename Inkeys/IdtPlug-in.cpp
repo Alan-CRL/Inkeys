@@ -25,6 +25,7 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.UI.Bar;
 import Inkeys.Other.Config;
+import Inkeys.Window;
 
 #include "IdtPlug-in.h"
 
@@ -32,10 +33,10 @@ import Inkeys.Other.Config;
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
-#include "IdtFloating.h"
+#include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtMagnification.h"
 #include "IdtRts.h"
-#include "IdtWindow.h"
+#include "Inkeys/Window/Window.Legacy.hpp"
 #include "IdtOther.h"
 #include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
@@ -50,6 +51,14 @@ import Inkeys.Other.Config;
 #include <tlhelp32.h>
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
+
+namespace
+{
+	[[nodiscard]] bool IsInRect(long x, long y, const RECT& rect) noexcept
+	{
+		return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+	}
+}
 
 using namespace Inkeys;
 
@@ -175,12 +184,30 @@ bool PptUiIsInRoundRect(float x, float y, PptUiRoundRectWidgetClass pptUiRoundRe
 }
 bool PptUiIsLeftButtonPressed(ExMessage& m)
 {
-	while (hiex::peekmessage_win32(&m, EM_MOUSE, true, ppt_window))
+	while (Inkeys::Window::TryGet(
+		ppt_window, m, Inkeys::Message::Filter::Mouse))
 	{
 		if (m.message == WM_LBUTTONUP || (m.message == WM_MOUSEMOVE && !m.lbutton)) return false;
 	}
 
 	return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+}
+
+bool GetPptInteractionMessage(ExMessage& message)
+{
+	while (!offSignal)
+	{
+		if (Inkeys::Window::Get(
+			ppt_window, message, Inkeys::Message::Filter::Mouse, 100))
+			return true;
+	}
+	return false;
+}
+
+void ClearPptInteractionMessages()
+{
+	(void)Inkeys::Window::Clear(
+		ppt_window, Inkeys::Message::Filter::Mouse);
 }
 bool PptUiIsLeftButtonPressedInRoundRect(ExMessage& m, PptUiRoundRectWidgetClass pptUiRoundRectWidget)
 {
@@ -197,8 +224,8 @@ void PptUiReleaseMouseCapture()
 	if (GetCapture() == ppt_window) ReleaseCapture();
 }
 
-IMAGE PptIcon[6]; // PPT 控件的按键图标
-IMAGE PptWindowBackground; // PPT 窗口背景画布
+Inkeys::Graphics::DibSurface PptIcon[6]; // PPT 控件的按键图标
+Inkeys::Graphics::DibSurface PptWindowBackground; // PPT 窗口背景画布
 
 IdtAtomic<bool> PptUiChangeSignal;
 IdtAtomic<int> PptUiAllReplaceSignal;
@@ -209,6 +236,10 @@ IdtAtomic<int> PptUiAllReplaceSignal;
 PptImgStruct PptImg = { false }; // 其存储幻灯片放映时产生的图像数据。
 PptInfoStateStruct PptInfoState = { -1, -1 }; // 其存储幻灯片放映软件当前的状态，First 代表总幻灯片页数，Second 代表当前幻灯片编号。
 PptInfoStateStruct PptInfoStateBuffer = { -1, -1 }; // PptInfoState 的缓冲变量。*1
+bool FreezePPT;
+HWND ppt_show;
+wstring ppt_title, ppt_software;
+map<wstring, bool> ppt_title_recond;
 
 wstring pptComVersion;
 wstring pptComExtraWarning;
@@ -365,10 +396,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.y = activeTouchY;
 							msgMouse.lbutton = false;
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 
@@ -390,10 +418,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 				}
@@ -414,10 +439,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 				}
@@ -439,10 +461,7 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = false;
 
-							int index = hiex::GetWindowIndex(hWnd, false);
-							unique_lock lg_vecWindows_vecMessage_sm(hiex::g_vecWindows_vecMessage_sm[index]);
-							hiex::g_vecWindows[index].vecMessage.push_back(msgMouse);
-							lg_vecWindows_vecMessage_sm.unlock();
+							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
 					}
 				}
@@ -473,10 +492,10 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 
 	default:
-		return HIWINDOW_DEFAULT_PROC;
+		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
 
-	return HIWINDOW_DEFAULT_PROC;
+	return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
 wstring GetPptTitle()
@@ -687,11 +706,8 @@ bool StartPptTakeoverAnnotation(int toolType)
 		res = ChangeStateModeToPen();
 	if (res) stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 
-	if (useInkeys3UI)
-	{
-		barUISet.barButtonSet.UpdateDrawButtonStyle();
-		barUISet.UpdateRendering();
-	}
+	barUISet.barButtonSet.UpdateDrawButtonStyle();
+	barUISet.UpdateRendering();
 
 	return res;
 }
@@ -2396,11 +2412,8 @@ void PptInfo()
 			else ppt_software = L"PowerPoint";
 
 			// 刷新 UI
-			if (useInkeys3UI)
-			{
-				barUISet.barButtonSet.UpdateDrawButtonStyle();
-				barUISet.UpdateRendering();
-			}
+			barUISet.barButtonSet.UpdateDrawButtonStyle();
+			barUISet.UpdateRendering();
 
 			if (!ppt_title_recond[ppt_title] && pptComSetlist.showLoadingScreen) FreezePPT = true;
 			Initialization = true;
@@ -2419,11 +2432,8 @@ void PptInfo()
 			// 设置控件归位
 			PptComReadSettingPositionOnly();
 			// 刷新 UI
-			if (useInkeys3UI)
-			{
-				barUISet.barButtonSet.UpdateDrawButtonStyle();
-				barUISet.UpdateRendering();
-			}
+			barUISet.barButtonSet.UpdateDrawButtonStyle();
+			barUISet.UpdateRendering();
 
 			FreezePPT = false;
 			Initialization = false;
@@ -2438,17 +2448,10 @@ void PptInfo()
 
 				if (config.PlugIn.PPTHelper.AutoTakeOverExpand)
 				{
-					if (useInkeys3UI)
+					if (barUISet.barState.fold)
 					{
-						if (barUISet.barState.fold)
-						{
-							barUISet.barState.fold = false;
-							barUISet.UpdateRendering();
-						}
-					}
-					else
-					{
-						if ((int)state == 0) target_status = 1;
+						barUISet.barState.fold = false;
+						barUISet.UpdateRendering();
 					}
 				}
 			}
@@ -2464,29 +2467,25 @@ void PptDraw()
 	//ppt窗口初始化
 	MonitorInfoStruct PPTMainMonitor;
 	{
-		DisableResizing(ppt_window, true);//禁止窗口拉伸
-		SetWindowLong(ppt_window, GWL_STYLE, GetWindowLong(ppt_window, GWL_STYLE) & ~WS_CAPTION);//隐藏标题栏
-		SetWindowPos(ppt_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_DRAWFRAME | SWP_NOACTIVATE);
-		SetWindowLong(ppt_window, GWL_EXSTYLE, WS_EX_TOOLWINDOW);//隐藏任务栏
-
 		shared_lock<shared_mutex> DisplaysInfoLock2(DisplaysInfoSm);
 		PPTMainMonitor = MainMonitor;
 		DisplaysInfoLock2.unlock();
 
-		if (setlist.regularSetting.avoidFullScreen)
+		const int monitorHeight = PPTMainMonitor.MonitorHeight.load();
+		const int pptSurfaceHeight = setlist.regularSetting.avoidFullScreen
+			? monitorHeight - 1
+			: monitorHeight;
+		if (!PptWindowBackground.resize(PPTMainMonitor.MonitorWidth, pptSurfaceHeight))
 		{
-			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
-			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+			if (IDTLogger) IDTLogger->error("[PPT 线程][PptDraw] 创建 DIB Surface 失败");
+			return;
 		}
-		else
-		{
-			PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
-			SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
-		}
+		RECT pptBounds{ PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top,
+			PPTMainMonitor.rcMonitor.left + PPTMainMonitor.MonitorWidth.load(),
+			PPTMainMonitor.rcMonitor.top + pptSurfaceHeight };
+		(void)Inkeys::Window::GetService().SetBounds(
+			Inkeys::Window::WindowRole::PptControls, pptBounds);
 	}
-
-	// 设置窗口自定义消息回调
-	hiex::SetWndProcFunc(ppt_window, PptWindowMsgCallback);
 
 	auto D2DProperty = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE::D2D1_RENDER_TARGET_TYPE_SOFTWARE,
 		D2D1::PixelFormat(
@@ -2495,205 +2494,43 @@ void PptDraw()
 		), 0.0, 0.0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_FEATURE_LEVEL_DEFAULT
 	);
 
-	// 创建 EasyX 兼容的 DC Render Target
+	// 创建绑定项目 DIB Surface 的 DC Render Target。
 	ID2D1DCRenderTarget* DCRenderTarget = nullptr;
 	d2dFactory1->CreateDCRenderTarget(&D2DProperty, &DCRenderTarget);
 
-	// 绑定 EasyX DC
-	RECT PptBackgroundWindowRect = { 0, 0, PptWindowBackground.getwidth(), PptWindowBackground.getheight() };
-	DCRenderTarget->BindDC(GetImageHDC(&PptWindowBackground), &PptBackgroundWindowRect);
+	RECT PptBackgroundWindowRect = { 0, 0, PptWindowBackground.width(), PptWindowBackground.height() };
+	DCRenderTarget->BindDC(PptWindowBackground.dc(), &PptBackgroundWindowRect);
 
 	// 设置抗锯齿
 	DCRenderTarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE::D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
 	//媒体初始化
 	{
-		idtLoadImage(&PptIcon[1], L"PNG", L"ppt1");
-		idtLoadImage(&PptIcon[2], L"PNG", L"ppt2");
-		idtLoadImage(&PptIcon[3], L"PNG", L"ppt3");
-		idtLoadImage(&PptIcon[4], L"PNG", L"ppt4");
-		idtLoadImage(&PptIcon[5], L"PNG", L"ppt5");
+		LoadSurfaceFromResource(&PptIcon[1], L"PNG", L"ppt1");
+		LoadSurfaceFromResource(&PptIcon[2], L"PNG", L"ppt2");
+		LoadSurfaceFromResource(&PptIcon[3], L"PNG", L"ppt3");
+		LoadSurfaceFromResource(&PptIcon[4], L"PNG", L"ppt4");
+		LoadSurfaceFromResource(&PptIcon[5], L"PNG", L"ppt5");
 
-		ChangeColor(PptIcon[1], RGB(50, 50, 50));
-		ChangeColor(PptIcon[2], RGB(50, 50, 50));
-		ChangeColor(PptIcon[3], RGB(50, 50, 50));
-		ChangeColor(PptIcon[4], RGB(50, 50, 50));
-		ChangeColor(PptIcon[5], RGB(50, 50, 50));
+		RecolorSurface(PptIcon[1], RGB(50, 50, 50));
+		RecolorSurface(PptIcon[2], RGB(50, 50, 50));
+		RecolorSurface(PptIcon[3], RGB(50, 50, 50));
+		RecolorSurface(PptIcon[4], RGB(50, 50, 50));
+		RecolorSurface(PptIcon[5], RGB(50, 50, 50));
 
+		const D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(
+			D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+		for (int index = 1; index <= 5; ++index)
 		{
-			int width = PptIcon[1].getwidth();
-			int height = PptIcon[1].getheight();
-			DWORD* pMem = GetImageBuffer(&PptIcon[1]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
-			{
-				for (int x = 0; x < width; ++x)
-				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
-					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
-				}
-			}
-
-			ID2D1Bitmap* pBitmap = nullptr;
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
-			delete[] data;
-
-			pptIconBitmap[1].Attach(pBitmap);
-		}
-		{
-			int width = PptIcon[2].getwidth();
-			int height = PptIcon[2].getheight();
-			DWORD* pMem = GetImageBuffer(&PptIcon[2]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
-			{
-				for (int x = 0; x < width; ++x)
-				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
-					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
-				}
-			}
-
-			ID2D1Bitmap* pBitmap = nullptr;
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
-			delete[] data;
-
-			pptIconBitmap[2].Attach(pBitmap);
-		}
-		{
-			int width = PptIcon[3].getwidth();
-			int height = PptIcon[3].getheight();
-			DWORD* pMem = GetImageBuffer(&PptIcon[3]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
-			{
-				for (int x = 0; x < width; ++x)
-				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
-					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
-				}
-			}
-
-			ID2D1Bitmap* pBitmap = nullptr;
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
-			delete[] data;
-
-			pptIconBitmap[3].Attach(pBitmap);
-		}
-		{
-			int width = PptIcon[4].getwidth();
-			int height = PptIcon[4].getheight();
-			DWORD* pMem = GetImageBuffer(&PptIcon[4]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
-			{
-				for (int x = 0; x < width; ++x)
-				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
-					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
-				}
-			}
-
-			ID2D1Bitmap* pBitmap = nullptr;
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
-			delete[] data;
-
-			pptIconBitmap[4].Attach(pBitmap);
-		}
-		{
-			int width = PptIcon[5].getwidth();
-			int height = PptIcon[5].getheight();
-			DWORD* pMem = GetImageBuffer(&PptIcon[5]);
-
-			unsigned char* data = new unsigned char[width * height * 4];
-			for (int y = 0; y < height; ++y)
-			{
-				for (int x = 0; x < width; ++x)
-				{
-					DWORD color = pMem[y * width + x];
-					unsigned char alpha = (color & 0xFF000000) >> 24;
-					if (alpha != 0)
-					{
-						data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-						data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-						data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-					}
-					else
-					{
-						data[(y * width + x) * 4 + 0] = 0;
-						data[(y * width + x) * 4 + 1] = 0;
-						data[(y * width + x) * 4 + 2] = 0;
-					}
-					data[(y * width + x) * 4 + 3] = alpha;
-				}
-			}
-
-			ID2D1Bitmap* pBitmap = nullptr;
-			D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-			DCRenderTarget->CreateBitmap(D2D1::SizeU(width, height), data, width * 4, bitmapProps, &pBitmap);
-			delete[] data;
-
-			pptIconBitmap[5].Attach(pBitmap);
+			const auto pixels = PptIcon[index].pixels();
+			ID2D1Bitmap* bitmap = nullptr;
+			DCRenderTarget->CreateBitmap(
+				D2D1::SizeU(PptIcon[index].width(), PptIcon[index].height()),
+				pixels.data(),
+				PptIcon[index].width() * static_cast<UINT32>(sizeof(Inkeys::Graphics::DibSurface::Pixel)),
+				bitmapProps,
+				&bitmap);
+			pptIconBitmap[index].Attach(bitmap);
 		}
 	}
 
@@ -2709,7 +2546,7 @@ void PptDraw()
 	}
 
 	POINT ptSrc = { 0,0 };
-	SIZE sizeWnd = { PptWindowBackground.getwidth(),PptWindowBackground.getheight() };
+	SIZE sizeWnd = { PptWindowBackground.width(),PptWindowBackground.height() };
 	POINT ptDst = { PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top };
 
 	// 调用UpdateLayeredWindow函数更新窗口
@@ -2717,7 +2554,7 @@ void PptDraw()
 	{
 		ulwi.cbSize = sizeof(ulwi);
 		ulwi.hdcDst = GetDC(NULL);
-		ulwi.hdcSrc = GetImageHDC(&PptWindowBackground);
+		ulwi.hdcSrc = PptWindowBackground.dc();
 		ulwi.pptDst = &ptDst;
 		ulwi.psize = &sizeWnd;
 		ulwi.pptSrc = &ptSrc;
@@ -2753,23 +2590,27 @@ void PptDraw()
 
 			if (MainMonitorDifferent)
 			{
-				if (setlist.regularSetting.avoidFullScreen)
+				const int monitorHeight = PPTMainMonitor.MonitorHeight.load();
+				const int pptSurfaceHeight = setlist.regularSetting.avoidFullScreen
+					? monitorHeight - 1
+					: monitorHeight;
+				if (!PptWindowBackground.resize(PPTMainMonitor.MonitorWidth, pptSurfaceHeight))
 				{
-					PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1);
-					SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight - 1, SWP_NOZORDER | SWP_NOACTIVATE);
+					if (IDTLogger) IDTLogger->error("[PPT 线程][PptDraw] 调整 DIB Surface 失败");
+					break;
 				}
-				else
-				{
-					PptWindowBackground.Resize(PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight);
-					SetWindowPos(ppt_window, NULL, PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight, SWP_NOZORDER | SWP_NOACTIVATE);
-				}
-				ulwi.hdcSrc = GetImageHDC(&PptWindowBackground);
+				RECT pptBounds{ PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top,
+					PPTMainMonitor.rcMonitor.left + PPTMainMonitor.MonitorWidth.load(),
+					PPTMainMonitor.rcMonitor.top + pptSurfaceHeight };
+				(void)Inkeys::Window::GetService().SetBounds(
+					Inkeys::Window::WindowRole::PptControls, pptBounds);
+				ulwi.hdcSrc = PptWindowBackground.dc();
 
-				sizeWnd = { PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight };
+				sizeWnd = { PptWindowBackground.width(), PptWindowBackground.height() };
 				POINT ptDst = { PPTMainMonitor.rcMonitor.left, PPTMainMonitor.rcMonitor.top };
 
-				RECT PptBackgroundWindowRect = { 0, 0, PPTMainMonitor.MonitorWidth, PPTMainMonitor.MonitorHeight };
-				DCRenderTarget->BindDC(GetImageHDC(&PptWindowBackground), &PptBackgroundWindowRect);
+				RECT PptBackgroundWindowRect = { 0, 0, PptWindowBackground.width(), PptWindowBackground.height() };
+				DCRenderTarget->BindDC(PptWindowBackground.dc(), &PptBackgroundWindowRect);
 
 				PptUiAllReplaceSignal = -1;
 			}
@@ -2779,7 +2620,7 @@ void PptDraw()
 		if (PptUiChangeSignal)
 		{
 			PptUiChangeSignal = false;
-			SetImageColor(PptWindowBackground, RGBA(0, 0, 0, 0), true);
+			PptWindowBackground.clear();
 
 			DCRenderTarget->BeginDraw();
 
@@ -3648,10 +3489,10 @@ void PptInteract()
 	{
 		if (PptInfoStateBuffer.TotalPage != -1)
 		{
-			hiex::getmessage_win32(&m, EM_MOUSE, ppt_window);
+			if (!GetPptInteractionMessage(m)) break;
 			if (PptInfoStateBuffer.TotalPage == -1)
 			{
-				hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+				ClearPptInteractionMessages();
 				continue;
 			}
 
@@ -3679,7 +3520,7 @@ void PptInteract()
 						FocusPptShow();
 						NextPptSlides(temp_currentpage);
 					}
-					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+					ClearPptInteractionMessages();
 				}
 				// 上一页
 				else
@@ -3687,7 +3528,7 @@ void PptInteract()
 					FocusPptShow();
 					PreviousPptSlides();
 
-					hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+					ClearPptInteractionMessages();
 				}
 			}
 
@@ -3732,7 +3573,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -3810,7 +3651,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -3833,7 +3674,7 @@ void PptInteract()
 							}
 						}
 
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 					}
 				}
 
@@ -3876,7 +3717,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -3954,7 +3795,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -3977,7 +3818,7 @@ void PptInteract()
 							}
 						}
 
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 					}
 				}
 			}
@@ -4022,7 +3863,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -4100,7 +3941,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -4126,7 +3967,7 @@ void PptInteract()
 							}
 						}
 
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 					}
 				}
 
@@ -4169,7 +4010,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -4247,7 +4088,7 @@ void PptInteract()
 						}
 
 						pptUiRoundRectWidgetTarget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(250, 250, 250, 160);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -4273,7 +4114,7 @@ void PptInteract()
 							}
 						}
 
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 					}
 				}
 			}
@@ -4297,7 +4138,8 @@ void PptInteract()
 						int lx = m.x, ly = m.y;
 						while (1)
 						{
-							ExMessage m = hiex::getmessage_win32(EM_MOUSE, ppt_window);
+							ExMessage m{};
+							if (!GetPptInteractionMessage(m)) break;
 							if (PptUiIsInRoundRect(m.x, m.y, pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_MiddleTabSlideWidget_EndShow]))
 							{
 								if (!m.lbutton)
@@ -4319,7 +4161,7 @@ void PptInteract()
 							else break;
 						}
 
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 
 						POINT pt;
 						GetCursorPos(&pt);
@@ -4334,7 +4176,7 @@ void PptInteract()
 					if (m.message == WM_LBUTTONDOWN)
 					{
 						PptBottomMiddleSeekBar(m.x, m.y);
-						hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+						ClearPptInteractionMessages();
 					}
 				}
 			}
@@ -4343,7 +4185,7 @@ void PptInteract()
 		{
 			last_x = -1, last_y = -1;
 
-			hiex::flushmessage_win32(EM_MOUSE, ppt_window);
+			ClearPptInteractionMessages();
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 	}

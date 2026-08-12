@@ -15,7 +15,7 @@ module;
 #include "../../../IdtPlug-in.h"
 #include "../../../IdtRts.h"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -35,15 +35,12 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Helper.CrashHandler;
 import Inkeys.Other.Config;
+import Inkeys.Window;
 
 using namespace std;
 
-// WndProc 内的同步拖动直接复用窗口线程 stop_token，避免退出消息被拖动循环饿死。
-static thread_local stop_token settingWindowStopToken;
-
 static void SyncUi3BuiltInComponents()
 {
-	if (!useInkeys3UI) return;
 	barUISet.barButtonSet.SyncLegacyExtensionButtons();
 	barUISet.UpdateRendering();
 }
@@ -68,38 +65,6 @@ struct
 } settingCICD;
 // signal1
 
-void SettingSeekBar()
-{
-	if (settingWindowStopToken.stop_requested() || offSignal
-		|| !Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) return;
-
-	POINT p;
-	GetCursorPos(&p);
-
-	int pop_x = p.x - SettingWindowX;
-	int pop_y = p.y - SettingWindowY;
-
-	while (!settingWindowStopToken.stop_requested() && !offSignal)
-	{
-		if (!Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)) break;
-
-		POINT p;
-		GetCursorPos(&p);
-
-		SetWindowPos(setting_window,
-			NULL,
-			SettingWindowX = p.x - pop_x,
-			SettingWindowY = p.y - pop_y,
-			0,
-			0,
-			SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
-		// 限制同步拖动的轮询频率，并把停止响应延迟约束在一个短周期内。
-		this_thread::sleep_for(chrono::milliseconds(8));
-	}
-
-	return;
-}
-
 // Win32 消息处理器
 // 您可以阅读 io.WantCaptureMouse、io.WantCaptureKeyboard 标志，以了解 dear imgui 是否想使用您的输入。
 // - 当 io.WantCaptureMouse 为 true 时，请勿将鼠标输入数据发送到主应用程序，或者清除/覆盖鼠标数据的副本。
@@ -112,11 +77,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	switch (msg)
 	{
-		// 标题栏拖动
-	case WM_LBUTTONDOWN:
-		if (IsInRect(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), { 0,0,int(904.0 * settingGlobalScale),int(40.0 * settingGlobalScale) })) SettingSeekBar();
-		break;
-
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
@@ -156,87 +116,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-void SettingWindow(stop_token sT, promise<void>& promise)
-{
-	settingWindowStopToken = sT;
-
-	// 创建窗口
-	{
-		wstring ClassName;
-		if (userId == L"Error") ClassName = L"Inkeys3;HiEasyX041";
-		else ClassName = L"Inkeys3;" + userId;
-
-		ImGuiWc = { sizeof(WNDCLASSEX), CS_VREDRAW | CS_HREDRAW, ImGuiWndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, ClassName.c_str(), nullptr };
-		RegisterClassExW(&ImGuiWc);
-		setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, drawpad_window, nullptr, ImGuiWc.hInstance, nullptr);
-		//setting_window = CreateWindowEx(WS_EX_NOACTIVATE, ImGuiWc.lpszClassName, L"Inkeys3 SettingWindow", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, SettingWindowX, SettingWindowY, SettingWindowWidth, SettingWindowHeight, nullptr, nullptr, ImGuiWc.hInstance, nullptr);
-	}
-
-	HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-	if (!stopEvent && IDTLogger) IDTLogger->error(
-		"[SettingWindow] 创建停止事件失败，将使用有界消息等待, error={}",
-		GetLastError());
-	{
-		// 停止事件与窗口消息共用等待点；事件不可用时最多 100ms 轮询一次 stop_token。
-		stop_callback sc(sT, [stopEvent]
-			{
-				if (stopEvent) SetEvent(stopEvent);
-			});
-
-		// 窗口创建完成
-		promise.set_value();
-
-		MSG msg{};
-		bool quitRequested = false;
-		while (!sT.stop_requested() && !quitRequested)
-		{
-			const DWORD waitResult = stopEvent
-				? MsgWaitForMultipleObjectsEx(
-					1, &stopEvent, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
-				: MsgWaitForMultipleObjectsEx(
-					0, nullptr, 100, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-			if (stopEvent && waitResult == WAIT_OBJECT_0) break;
-			if (waitResult == WAIT_TIMEOUT) continue;
-
-			const DWORD messageWaitResult = WAIT_OBJECT_0 + (stopEvent ? 1 : 0);
-			if (waitResult != messageWaitResult)
-			{
-				if (IDTLogger) IDTLogger->error(
-					"[SettingWindow] 等待停止事件失败, error={}",
-					GetLastError());
-				break;
-			}
-
-			while (!sT.stop_requested()
-				&& PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
-			{
-				if (msg.message == WM_QUIT)
-				{
-					quitRequested = true;
-					break;
-				}
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
-			}
-		}
-	}
-	if (stopEvent) CloseHandle(stopEvent);
-
-	// 构析窗口相关
-	{
-		// 销毁窗口
-		if (setting_window)
-		{
-			DestroyWindow(setting_window);
-			setting_window = nullptr;
-		}
-
-		UnregisterClassW(ImGuiWc.lpszClassName, ImGuiWc.hInstance);
-	}
-
-	// 窗口负责函数结束
-	return;
-}
 void SettingWindowBegin()
 {
 	// 尺寸计算
@@ -249,20 +128,11 @@ void SettingWindowBegin()
 		SettingWindowX = max(0, (MainMonitor.MonitorWidth - SettingWindowWidth) / 2);
 		SettingWindowY = max(0, (MainMonitor.MonitorHeight - SettingWindowHeight) / 2);
 	}
-	// 窗口初始化
-	{
-		promise<void> promise;
-		future<void> future = promise.get_future();
+}
 
-		Inkeys::Thread::constantThread.settingInitializationJthread = jthread(SettingWindow, ref(promise));
-		future.get();
-	}
-
-	SetWindowLongPtrW(setting_window, GWL_STYLE, GetWindowLongPtrW(setting_window, GWL_STYLE) & ~(WS_CAPTION | WS_BORDER | WS_THICKFRAME));
-	SetWindowPos(setting_window, NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-
-	ShowWindow(setting_window, SW_HIDE);
-	//UpdateWindow(setting_window);
+WNDPROC SettingWindowProc() noexcept
+{
+	return ImGuiWndProc;
 }
 
 void SettingMain(stop_token sT)
@@ -362,7 +232,7 @@ void SettingMain(stop_token sT)
 		{
 			CleanupSettingTextures();
 			CleanupDeviceD3D();
-			::ShowWindow(setting_window, SW_HIDE);
+			(void)Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Setting);
 		}
 		showWindow = false;
 
@@ -370,14 +240,14 @@ void SettingMain(stop_token sT)
 		if (sT.stop_requested()) break;
 
 		{
-			::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+			(void)Inkeys::Window::GetService().Show(Inkeys::Window::WindowRole::Setting);
 			showWindow = true;
 
 			if (!CreateDeviceD3D(setting_window))
 			{
 				if (IDTLogger) IDTLogger->error("[SettingMain] 创建 D3D11 设置窗口设备失败");
 				CleanupDeviceD3D();
-				::ShowWindow(setting_window, SW_HIDE);
+				(void)Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Setting);
 				showWindow = false;
 				test.select = false;
 				continue;
@@ -387,15 +257,15 @@ void SettingMain(stop_token sT)
 			{
 				// 图像加载
 				{
-					IMAGE SettingSign;
+					Inkeys::Graphics::DibSurface SettingSign;
 
-					if (I18n::isIdentifying(L"zh-CN")) idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
-					else if (I18n::isIdentifying(L"zh-TW")) idtLoadImage(&SettingSign, L"PNG", L"Home1_zh-TW", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
-					else idtLoadImage(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 215 * settingGlobalScale, true);
+					if (I18n::isIdentifying(L"zh-CN")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home1_zh-CN", 700 * settingGlobalScale, 215 * settingGlobalScale);
+					else if (I18n::isIdentifying(L"zh-TW")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home1_zh-TW", 700 * settingGlobalScale, 215 * settingGlobalScale);
+					else LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home1_en-US", 700 * settingGlobalScale, 215 * settingGlobalScale);
 					{
-						int width = settingSign[1].width = SettingSign.getwidth();
-						int height = settingSign[1].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[1].width = SettingSign.width();
+						int height = settingSign[1].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -426,13 +296,13 @@ void SettingMain(stop_token sT)
 						IM_ASSERT(ret);
 					}
 
-					if (I18n::isIdentifying(L"zh-CN")) idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-					else if (I18n::isIdentifying(L"zh-TW")) idtLoadImage(&SettingSign, L"PNG", L"Home2_zh-TW", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
-					else idtLoadImage(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale, true);
+					if (I18n::isIdentifying(L"zh-CN")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale);
+					else if (I18n::isIdentifying(L"zh-TW")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_zh-TW", 770 * settingGlobalScale, 390 * settingGlobalScale);
+					else LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_en-US", 770 * settingGlobalScale, 390 * settingGlobalScale);
 					{
-						int width = settingSign[2].width = SettingSign.getwidth();
-						int height = settingSign[2].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[2].width = SettingSign.width();
+						int height = settingSign[2].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -463,11 +333,11 @@ void SettingMain(stop_token sT)
 						IM_ASSERT(ret);
 					}
 
-					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
-						int width = settingSign[5].width = SettingSign.getwidth();
-						int height = settingSign[5].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[5].width = SettingSign.width();
+						int height = settingSign[5].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -497,11 +367,11 @@ void SettingMain(stop_token sT)
 
 						IM_ASSERT(ret);
 					}
-					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
-						int width = settingSign[6].width = SettingSign.getwidth();
-						int height = settingSign[6].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[6].width = SettingSign.width();
+						int height = settingSign[6].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -531,11 +401,11 @@ void SettingMain(stop_token sT)
 
 						IM_ASSERT(ret);
 					}
-					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
-						int width = settingSign[8].width = SettingSign.getwidth();
-						int height = settingSign[8].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[8].width = SettingSign.width();
+						int height = settingSign[8].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -565,11 +435,11 @@ void SettingMain(stop_token sT)
 
 						IM_ASSERT(ret);
 					}
-					idtLoadImage(&SettingSign, L"PNG", L"PluginFlag4", 30 * settingGlobalScale, 30 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag4", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
-						int width = settingSign[10].width = SettingSign.getwidth();
-						int height = settingSign[10].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[10].width = SettingSign.width();
+						int height = settingSign[10].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -600,11 +470,11 @@ void SettingMain(stop_token sT)
 						IM_ASSERT(ret);
 					}
 
-					idtLoadImage(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale);
 					{
-						int width = settingSign[4].width = SettingSign.getwidth();
-						int height = settingSign[4].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[4].width = SettingSign.width();
+						int height = settingSign[4].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -634,11 +504,11 @@ void SettingMain(stop_token sT)
 
 						IM_ASSERT(ret);
 					}
-					idtLoadImage(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale);
 					{
-						int width = settingSign[3].width = SettingSign.getwidth();
-						int height = settingSign[3].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[3].width = SettingSign.width();
+						int height = settingSign[3].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -668,11 +538,11 @@ void SettingMain(stop_token sT)
 
 						IM_ASSERT(ret);
 					}
-					idtLoadImage(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale);
 					{
-						int width = settingSign[7].width = SettingSign.getwidth();
-						int height = settingSign[7].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[7].width = SettingSign.width();
+						int height = settingSign[7].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -703,11 +573,11 @@ void SettingMain(stop_token sT)
 						IM_ASSERT(ret);
 					}
 
-					idtLoadImage(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale, true);
+					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale);
 					{
-						int width = settingSign[9].width = SettingSign.getwidth();
-						int height = settingSign[9].height = SettingSign.getheight();
-						DWORD* pMem = GetImageBuffer(&SettingSign);
+						int width = settingSign[9].width = SettingSign.width();
+						int height = settingSign[9].height = SettingSign.height();
+						auto* pMem = SettingSign.pixels().data();
 
 						unsigned char* data = new unsigned char[width * height * 4];
 						for (int y = 0; y < height; ++y)
@@ -861,8 +731,8 @@ void SettingMain(stop_token sT)
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		Widgets::style.ApplyGlobal(settingWin11ScrollbarWidth);
 
-		//初始化定义变量
-		hiex::tDelayFPS recond;
+		// 设置窗口使用独立的 24 FPS 稳定帧节奏。
+		auto nextFrame = chrono::steady_clock::now();
 
 		int QuestNumbers = 0;
 		int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;
@@ -1010,7 +880,6 @@ void SettingMain(stop_token sT)
 		{
 			struct
 			{
-				bool UI3 = setlist.Experimental.Inkeys3.UI3;
 				bool AnimationEnable = Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable;
 				float AnimationSpeedRate = static_cast<float>(clamp(
 					static_cast<double>(Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate), 0.1, 5.0));
@@ -1057,7 +926,10 @@ void SettingMain(stop_token sT)
 				}
 			}
 
-			hiex::DelayFPS(recond, 24);
+			nextFrame += chrono::milliseconds(1000 / 24);
+			this_thread::sleep_until(nextFrame);
+			const auto now = chrono::steady_clock::now();
+			if (nextFrame < now - chrono::milliseconds(100)) nextFrame = now;
 
 			// Start the Dear ImGui frame
 			ImGui_ImplDX11_NewFrame();
@@ -1115,11 +987,7 @@ void SettingMain(stop_token sT)
 						// 关闭
 						test.select = false;
 
-						// Sign
-						if (useInkeys3UI)
-						{
-							barUISet.UpdateRendering();
-						}
+						barUISet.UpdateRendering();
 					}
 
 					if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -1136,14 +1004,6 @@ void SettingMain(stop_token sT)
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,42.0f * settingGlobalScale });
 
 						if (Widgets::button.Navigation(("   \ue80f   " + IA(I18nKey.SettingsUI.Home.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab1, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab1;
-					}
-
-					// 语言
-					if (!useInkeys3UI)
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \uf2b7   " + IA(I18nKey.SettingsUI.Language.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::Language, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::Language;
 					}
 
 					// 软件配置
@@ -1369,10 +1229,10 @@ void SettingMain(stop_token sT)
 							float Hx = Pt.x - Mx;
 							float Hy = Pt.y - My;
 
-							if (Hx < 0) Hx = min(1000, -Hx);
-							else Hx = min(1000, Hx);
-							if (Hy < 0) Hy = min(1000, -Hy);
-							else Hy = min(1000, Hy);
+							if (Hx < 0) Hx = min(1000.0f, -Hx);
+							else Hx = min(1000.0f, Hx);
+							if (Hy < 0) Hy = min(1000.0f, -Hy);
+							else Hy = min(1000.0f, Hy);
 
 							// 计算横向位移
 							float Sx = (Hx * (-0.5 / (1000.0f * settingGlobalScale)) + 1) * Hx * 0.2;
@@ -2864,7 +2724,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 245.0f : 165.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,245.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -2874,68 +2734,6 @@ void SettingMain(stop_token sT)
 						}
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-						// Inkeys3 UI 使用内置主题，旧版主题选择卡仅在传统主栏下显示。
-						if (!useInkeys3UI)
-						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("主题", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-							float cursosPosY = 0;
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightComboX * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
-								ImGui::SetNextItemWidth(200 * settingGlobalScale);
-
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-								vector<char*> vec;
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip1)).c_str()));
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip2)).c_str()));
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip3)).c_str()));
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Skip4)).c_str()));
-
-								if (Widgets::combo.Begin("##主题", vec[SetSkinMode], static_cast<int>(vec.size())))
-								{
-									for (int i = 0; i < vec.size(); i++)
-									{
-										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
-
-										bool is_selected = (SetSkinMode == i);
-										if (Widgets::combo.Selectable(vec[i], is_selected))
-										{
-											SetSkinMode = i;
-											if (setlist.SetSkinMode != SetSkinMode)
-											{
-												setlist.SetSkinMode = SetSkinMode;
-												WriteSetting();
-
-												if (SetSkinMode == 0) setlist.SkinMode = 1;
-												else setlist.SkinMode = SetSkinMode;
-											}
-										}
-									}
-									ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
-									Widgets::combo.End();
-								}
-								for (char* ptr : vec) free(ptr), ptr = nullptr;
-							}
-
-							{
-								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
-							}
-							ImGui::EndChild();
-						}
-						if (useInkeys3UI)
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -3144,7 +2942,7 @@ void SettingMain(stop_token sT)
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#4", { settingItemWidth * settingGlobalScale,(useInkeys3UI ? 225.0f : 480.0f) * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#4", { settingItemWidth * settingGlobalScale,225.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3265,123 +3063,6 @@ void SettingMain(stop_token sT)
 								if (setlist.RightClickClose != RightClickClose)
 								{
 									setlist.RightClickClose = RightClickClose;
-									WriteSetting();
-								}
-							}
-
-							{
-								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
-							}
-							ImGui::EndChild();
-						}
-						if (!useInkeys3UI)
-						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("常规#41", { settingItemWidth * settingGlobalScale,250.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-							float cursosPosY = 0;
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.DrawingRetract).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								Widgets::toggle.ToggleBool("##画笔绘制时收起主栏", &BrushRecover);
-
-								if (setlist.BrushRecover != BrushRecover)
-								{
-									setlist.BrushRecover = BrushRecover;
-									WriteSetting();
-								}
-							}
-
-							// Separator
-							cursosPosY = ImGui::GetCursorPosY();
-							{
-								ImGui::SetCursorPosY(cursosPosY + 20.0f * settingGlobalScale);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, Widgets::FluentColor::Divider);
-								ImGui::Separator();
-							}
-
-							cursosPosY = ImGui::GetCursorPosY();
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.ErasingRetract).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								Widgets::toggle.ToggleBool("##橡皮擦除时收起主栏", &RubberRecover);
-
-								if (setlist.RubberRecover != RubberRecover)
-								{
-									setlist.RubberRecover = RubberRecover;
-									WriteSetting();
-								}
-							}
-
-							// Separator
-							cursosPosY = ImGui::GetCursorPosY();
-							{
-								ImGui::SetCursorPosY(cursosPosY + 20.0f * settingGlobalScale);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, Widgets::FluentColor::Divider);
-								ImGui::Separator();
-							}
-
-							cursosPosY = ImGui::GetCursorPosY();
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.DraggingRetract).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								Widgets::toggle.ToggleBool("##拖动主栏时收起主栏", &RegularSetting.MoveRecover);
-
-								if (setlist.regularSetting.moveRecover != RegularSetting.MoveRecover)
-								{
-									setlist.regularSetting.moveRecover = RegularSetting.MoveRecover;
-									WriteSetting();
-								}
-							}
-
-							// Separator
-							cursosPosY = ImGui::GetCursorPosY();
-							{
-								ImGui::SetCursorPosY(cursosPosY + 20.0f * settingGlobalScale);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, Widgets::FluentColor::Divider);
-								ImGui::Separator();
-							}
-
-							cursosPosY = ImGui::GetCursorPosY();
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.CheckingRetract).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Behavior.CheckingRetractE).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
-								Widgets::toggle.ToggleBool("##点击时收起主栏", &RegularSetting.ClickRecover);
-
-								if (setlist.regularSetting.clickRecover != RegularSetting.ClickRecover)
-								{
-									setlist.regularSetting.clickRecover = RegularSetting.ClickRecover;
 									WriteSetting();
 								}
 							}
@@ -7333,49 +7014,6 @@ void SettingMain(stop_token sT)
 						ImGui::TextUnformatted("组件");
 					}
 
-					if (!useInkeys3UI)
-					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-						ImGui::BeginChild("组件#0", { settingItemWidth * settingGlobalScale,80.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-						float cursosPosY = 0;
-						{
-							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
-							ImGui::TextUnformatted("\uf167");
-						}
-						{
-							ImGui::SetCursorPos({ 60.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-							ImGui::BeginChild("组件-提示", { settingPromptWidth * settingGlobalScale,40.0f * settingGlobalScale }, false);
-
-							{
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextWrapped("现阶段由于UI设计问题, 仅能容纳1个组件在主栏上显示。通常为下方列表中所选择的第一个。\n后续待UI3发布后, 将进一步完善组件能力。");
-							}
-
-							{
-								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
-							}
-							ImGui::EndChild();
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
-						ImGui::EndChild();
-					}
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -8210,13 +7848,10 @@ void SettingMain(stop_token sT)
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-						// 保留 dev 中根据 UI3 状态收缩容器的行为，颜色统一使用新版 Fluent 令牌。
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
-							(Experimental.Inkeys3.UI3
-								? (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
-									+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f)
-								: 115.0f) * settingGlobalScale }, false,
+							((Experimental.Inkeys3.EdgeLightingEnable ? 340.0f : 265.0f)
+								+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f)) * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
@@ -8226,46 +7861,6 @@ void SettingMain(stop_token sT)
 							ImGui::TextUnformatted("Inkeys3");
 						}
 
-						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("启用 UI3", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-							float cursosPosY = 0;
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted("启用 UI3");
-							}
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted("[需要重启软件]处于早期开发阶段，相关功能尚未完善，仅供体验。");
-							}
-							{
-								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 25.0f * settingGlobalScale });
-								Widgets::toggle.ToggleBool("##启用 UI3", &Experimental.Inkeys3.UI3);
-
-								if (setlist.Experimental.Inkeys3.UI3 != Experimental.Inkeys3.UI3)
-								{
-									setlist.Experimental.Inkeys3.UI3 = Experimental.Inkeys3.UI3;
-									WriteSetting();
-								}
-							}
-
-							{
-								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
-							}
-							ImGui::EndChild();
-
-						if (Experimental.Inkeys3.UI3)
-						{
 							if (Experimental.Inkeys3.EdgeLightingEnable)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
@@ -8397,11 +7992,6 @@ void SettingMain(stop_token sT)
 								}
 								ImGui::EndChild();
 							}
-						}
-						}
-
-						if (Experimental.Inkeys3.UI3)
-						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
@@ -8501,8 +8091,6 @@ void SettingMain(stop_token sT)
 								while (PushFontNum) PushFontNum--, ImGui::PopFont();
 							}
 							ImGui::EndChild();
-						}
-
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -9326,7 +8914,7 @@ void SettingMain(stop_token sT)
 			if (!test.select) break;
 			if (!showWindow)
 			{
-				::ShowWindow(setting_window, SW_SHOWNOACTIVATE);
+				(void)Inkeys::Window::GetService().Show(Inkeys::Window::WindowRole::Setting);
 				showWindow = true;
 			}
 		}
@@ -9345,12 +8933,7 @@ void SettingMain(stop_token sT)
 	{
 		CleanupSettingTextures();
 		CleanupDeviceD3D();
-		::ShowWindow(setting_window, SW_HIDE);
-	}
-
-	// 通知相关线程下班
-	{
-		Inkeys::Thread::constantThread.RequestStop(Inkeys::Thread::constantThread.settingInitializationJthread);
+		(void)Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Setting);
 	}
 
 	return;

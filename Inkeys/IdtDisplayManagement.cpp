@@ -285,33 +285,7 @@ bool IdtGetDeviceEDID(LPCWSTR lpModel, LPCWSTR lpDriver, BYTE* pDataBuf, DWORD d
 	return bGetEDIDSuccess;
 }
 
-void DisplayManagementPolling()
-{
-	HINSTANCE hInst = GetModuleHandleW(NULL);
-
-	WNDCLASS wc = { 0 };
-	wc.lpfnWndProc = IdtDisplayManagementWindowProc;
-	wc.hInstance = hInst;
-	wc.lpszClassName = L"IdtDisplayManagementClass";
-	RegisterClass(&wc);
-	HWND hwnd = CreateWindowEx(0, L"IdtDisplayManagementClass", NULL, 0, 0, 0, 0, 0, NULL, NULL, hInst, NULL);
-	if (!hwnd) return;
-
-	MSG msg;
-	while (!offSignal && GetMessage(&msg, NULL, 0, 0))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
-
-	return;
-}
 void DisplayManagementMain()
 {
-	if (EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, NULL))
-	{
-		thread DisplayManagementPollingThread(DisplayManagementPolling);
-		DisplayManagementPollingThread.detach();
-	}
-	else DisplaysNumber = 1;
+	if (!EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, NULL)) DisplaysNumber = 1;
 }

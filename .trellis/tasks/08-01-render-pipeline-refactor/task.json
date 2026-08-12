@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "08-12-ui3-draw3-win32-himsg"
+  ],
   "parent": null,
   "relatedFiles": [
     "Inkeys/IdtWindows.cpp",

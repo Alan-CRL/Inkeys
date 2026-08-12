@@ -6,16 +6,14 @@
 
 | 区域 | 当前选择关系 | 图形/呈现链 | 直接证据 |
 | --- | --- | --- | --- |
-| `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 仅在 `useInkeys3UI` 为 true 时启动 `Inkeys::UI::Bar::Initialization` | 默认由共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 用独立 D2D device context/DWrite 绘制，经 GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`IdtD2DPreparation.cpp::D2DStarup`、`Inkeys/Inkeys/UI/Bar/Bar.Main.cpp::BarUISetClass::Rendering` |
-| 传统 `IdtFloating` | `【直接确认】` 同一分支在 `useInkeys3UI` 为 false 时启动 `floating_main`；`SetListStruct::Experimental.Inkeys3.UI3` 的源码默认值为 false | HiEasyX/EasyX、GDI/GDI+、分层窗口 | `IdtConfiguration.h`、`IdtMain.cpp::wWinMain`、`IdtFloating.cpp` |
+| `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | 默认由共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 用独立 D2D device context/DWrite 绘制，经 GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`IdtD2DPreparation.cpp::D2DStarup`、`Inkeys/Inkeys/UI/Bar/Bar.Main.cpp::BarUISetClass::Rendering` |
+| 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
 | 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 独立 hardware D3D11 device/context、discard swap chain、RTV | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `ImGui_ImplDX11_*`、`Inkeys.vcxproj` |
-| 主画板 | `【直接确认】` 两套悬浮栏分支共用的墨迹窗口 | HiEasyX/EasyX `IMAGE`、GDI+ 笔画、软件合成、分层窗口 | `IdtDrawpad.cpp::DrawpadDrawing`、`IdtImage.cpp` |
-| PPT 控件 | `【直接确认】` 放映联动的特定窗口 | HiEasyX/EasyX 背景表面 + D2D DC render target/DWrite + GDI | `IdtPlug-in.cpp::PptUI` |
-| 冻结帧、放大镜等 | `【直接确认】` 独立传统工具窗口 | 以各自现有 GDI/EasyX 路径为准 | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
+| 主画板 | `【直接确认】` Draw2 暂时继续负责墨迹；未来 Draw3 复用现有 Drawpad HWND | `Inkeys.Graphics.DibSurface` + GDI+ 笔画、软件合成、分层窗口 | `IdtDrawpad.cpp::DrawpadDrawing`、`IdtImage.cpp` |
+| PPT 控件 | `【直接确认】` 放映联动的特定窗口 | `DibSurface` 背景 + D2D DC render target/DWrite + GDI | `IdtPlug-in.cpp::PptUI` |
+| 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
 
-`【待确认】` `Experimental.Inkeys3.UI3` 可从旧配置文件读取并覆盖源码默认值，因此“源码默认进入 `IdtFloating`”不等于“当前发布包一定默认旧栏”。维护者尚需确认发布时的 `opt/deploy.json` 默认内容、回退策略和旧栏淘汰计划。
-
-`【历史/兼容】` `IdtFloating` 仍是可执行分支，不能称为已弃用；`Inkeys.UI.Bar` 的命名和实验开关也不足以证明它已是唯一正式主路径。
+`Experimental.Inkeys3.UI3` 名下的 Animation、EdgeLighting 和 Debug 仍是 UI3 功能配置，不是路由开关。旧路由 JSON key 只能清理，不能恢复读取或写入。
 
 ## D3D11 WARP、D2D 与 DWrite
 
@@ -290,7 +288,7 @@ if (averages.updated)
 
 #### 1. Scope / Trigger
 
-新增或修改 UI3 Bar、PptBar、Setting、白板等使用同一 D3D11.1/D2D1.1 device 的客户端，或修改 WARP/Hardware 选择、Bar 光影、脏区与分层窗口提交时，必须遵守本节。该契约不把传统 `IdtFloating`、主画板 EasyX 表面或当前 ImGui DX9 设置窗口自动迁入 UI3。
+新增或修改 UI3 Bar、PptBar、Setting、白板等图形客户端，或修改 WARP/Hardware 选择、Bar 光影、脏区与分层窗口提交时，必须遵守本节。该契约不把暂存的 `IdtFloating`、Draw2 `DibSurface` 或当前 ImGui DX11 设置窗口自动迁入 UI3 共享设备。
 
 #### 2. Signatures
 
@@ -615,7 +613,7 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 
 - `Setting.Base.cppm::CreateDeviceD3D` 调用 `D3D11CreateDeviceAndSwapChain`，请求 feature level 11.0 并创建独立 hardware device/context、discard swap chain 和 RTV；
 - `Setting.cpp` 调用 `ImGui_ImplWin32_Init`、`ImGui_ImplDX11_Init/NewFrame/RenderDrawData/Shutdown`；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST` 降低忙等；
-- 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；EasyX 提供的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
+- 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；`DibSurface` 的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
 - `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，仓库不再随附 ImGui DX9 backend；
 - DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 由 `Inkeys.rc` 嵌入 EXE；Inkeys 定制段在 backend 中用成对注释精确标记。
 
@@ -637,41 +635,81 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 - WndProc 内的同步轮询必须直接观察同一窗口线程的 `stop_token`；涉及进程退出时还需观察 `offSignal`，并使用有界短等待。不得依赖 UI3 Hook 后续更新共享按键状态来保证退出。
 - 退出验证需覆盖按住设置标题栏时触发重启/关闭；`SettingMain` 的 join 必须完成，随后仍按既有顺序清理 ImGui、纹理、device 和窗口线程。
 
-## EasyX、GDI/GDI+ 与特定窗口
+## Win32 Window、DibSurface 与 HiMsg 合同
 
-`【直接确认】`：
+### 1. Scope / Trigger
 
-- `IdtDrawpad.cpp` 使用 HiEasyX/EasyX `IMAGE`、GDI+ 曲线及软件合成，`DrawpadDrawing` 组合基础画布与活动笔画后更新分层窗口；
-- `IdtFloating.cpp` 使用 EasyX/GDI+ 实现传统悬浮栏；
-- `IdtPlug-in.cpp::PptUI` 在 HiEasyX/EasyX 背景上使用 D2D DC target 绘制 PPT 控件；
-- `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` 各自保留传统窗口/图像链。
+创建或操作 Mag、Freeze、Drawpad、PPT Controls、UI3 Bar、Setting、DisplayObserver，或迁移 Draw2 图像/消息路径时适用。HiEasyX/EasyX 已从源码、工程和链接中删除，不得重新引入。
 
-### HiEasyX 窗口消息队列并发合同
-
-每个窗口的 `vecMessage` 由对应的 `g_vecWindows_vecMessage_sm[index]` 保护。只检查是否存在消息时可持有共享锁；`peekmessage_win32` 的筛选、结果复制以及按 `removemsg` 删除匹配项/前置项必须在同一次独占锁中完成。不得在锁释放后返回或遍历 `vecMessage` 的引用、指针或迭代器，否则窗口线程并发 `push_back` 会使消费者发生迭代器失效。
+### 2. Signatures
 
 ~~~cpp
-// Wrong：锁在返回前析构，调用方拿到的是无保护引用。
-std::vector<ExMessage>& GetMsgVector(HWND window);
+Window::Service::Start(std::vector<WindowSpec>) -> bool;
+Window::Service::SetBounds(WindowRole, RECT) -> bool;
+Window::Service::SetClickThrough(WindowRole, bool) -> bool;
+Window::Service::RequestTopmostRefresh() -> bool;
+Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
+Window::Service::StopAndJoin() noexcept;
 
-// Correct：一次锁定内完成查找、复制和可选删除。
-std::unique_lock lock(g_vecWindows_vecMessage_sm[index]);
-auto& messages = g_vecWindows[index].vecMessage;
-auto it = FindMatchingMessage(messages, filter);
-if (it != messages.end()) CopyAndConsume(messages, it, removemsg);
+Graphics::DibSurface(int width, int height);
+Graphics::DibSurface::dc() -> HDC;
+Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 ~~~
 
-`removemsg=false` 仍保持既有兼容语义：丢弃匹配项之前的记录，但保留匹配项本身。验证至少覆盖窗口线程并发入队、消费者重复 peek/get、混合筛选、`removemsg` 两种取值和空队列。
+### 3. Contracts
 
-UI2/UI3 共用的低级鼠标 Hook 必须在创建 Hook 的线程卸载。停止端设置受生命周期锁保护的事件，Hook 线程用 `MsgWaitForMultipleObjectsEx` 同时等待事件和消息；调用方只能在事件已发布或启动已失败的终态后等待 `join`，不得依赖 `PostThreadMessage(WM_QUIT)` 成功才能退出。
+- 一个 overlay `std::jthread` 同线程拥有 Mag host/child、Freeze、Drawpad、PPT、Bar、DisplayObserver；Setting 由独立 `std::jthread` 拥有。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。
+- style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
+- overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad -> PPT -> Bar`；Mag 缺失时 Freeze 为根。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
+- Setting owner 必须为 null，style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`，ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow；必须有箭头光标和大小图标。
+- `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
+- HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
+- 所有使用 HWND 的渲染/交互 `jthread` 必须先 stop/join，最后才调用 Window Service `StopAndJoin()` 逆序销毁窗口。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| `beforeCreate`、注册类、CreateWindow、HiMsg bind 或 `created` 失败 | 回滚 HWND、channel、class、thread id 和已激活 lifecycle；optional role 不拖垮同组 |
+| 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
+| Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
+| Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
+| 队列满或 shutdown | `Enqueue` 返回 false；队列满增加 dropped count，shutdown 不再接收 |
+| DIB 创建或 resize 失败 | 原 surface 保持有效，临时 GDI 资源全部释放 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：Drawpad 线程仅 present HDC；尺寸和穿透切换通过 Window Service，同一 owner 链稳定不闪烁。
+- Base：合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段。
+- Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，历史上会导致绘制卡顿或闪烁。
+
+### 6. Tests Required
+
+- ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
+- Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
+- Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
+- 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：从 Drawpad 渲染线程直接修改所属线程状态。
+SetWindowLongPtrW(drawpad, GWL_EXSTYLE, style | WS_EX_TRANSPARENT);
+
+// Correct：由 Window Service 投递到 HWND 所属线程。
+Inkeys::Window::GetService().SetClickThrough(
+    Inkeys::Window::WindowRole::Drawpad, true);
+~~~
+
+低级鼠标 Hook 必须在创建 Hook 的受管 `std::jthread` 中卸载。停止端设置事件，Hook 线程用 `MsgWaitForMultipleObjectsEx` 同时等待事件和消息，不得使用 detached thread 或只依赖 `PostThreadMessage(WM_QUIT)`。
 
 `BarUiSVGClass` 的原始尺寸 `rW/rH` 必须默认初始化为 `0.0`。默认构造或资源解析失败后，单边 `SetWH` 应稳定返回失败，不能读取未初始化尺寸来推导宽高。
 
-这些是并存的当前实现，不是简单的“新后端取代旧后端”。修改前必须先确认目标窗口，不得把 Bar 的 D2D device context、设置的 ImGui DX11 swap-chain/SRV 或画板的 `IMAGE` 生命周期规则互相套用。
+各窗口仍使用不同的渲染后端；不得把 Bar 的 D2D device context、Setting 的 ImGui DX11 swap-chain/SRV 或 Draw2 的 `DibSurface` 生命周期规则互相套用。
 
 ## Win32、DPI 与坐标
 
-`【直接确认】` 程序有多个窗口和消息/渲染线程；多处使用 layered、transparent、no-activate/topmost 语义。`IdtWindow.cpp` 还维护窗口可见性、style 和置顶状态。`IdtMain.cpp`、`IdtDisplayManagement.cpp` 初始化系统版本、DPI 和显示器状态。
+`【直接确认】` `Inkeys.Window` 统一维护窗口线程、owner、style、消息与置顶状态；旧 `IdtWindow.cpp/.h` 仅暂存不编译。`IdtMain.cpp`、`IdtDisplayManagement.cpp` 仍初始化系统版本、DPI 和显示器状态。
 
 `【合理推断】` 修改尺寸、命中或窗口显示行为时，应追踪目标窗口实际使用的逻辑/物理坐标、显示器原点、DPI 缩放、分层窗口脏区及 mouse/touch/RTS 坐标转换；不要仅在创建点修改 style 后假设维护线程不会覆盖它。
 
@@ -683,4 +721,4 @@ UI2/UI3 共用的低级鼠标 Hook 必须在创建 Hook 的线程卸载。停止
 - Bar 的脏区、静止 CPU 与 D2D 失败路径；
 - 设置窗口的 DX11 resize/遮挡、hide/show/stop 资源清理，以及 SRV 图片颜色/透明度；
 - 画板的基础层、活动笔画、撤销/恢复和 PPT 换页合成；
-- `IdtFloating` 与 Bar 两条配置分支分别验证，直到维护者确认正式主路径。
+- UI3 Bar 是唯一悬浮栏路径；不得把 UI2 源码重新加入产品回归矩阵。

@@ -7,9 +7,9 @@
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
-#include "../../../IdtFloating.h"
+#include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.PresentDecision.h"
 #include <limits>
@@ -9696,22 +9696,6 @@ void BarRenderLoopCoordinator::Run()
 		ulwi.dwFlags = ULW_ALPHA;
 	}
 
-	// 退出期间不再让窗口样式重试阻塞渲染线程收尾。
-	while (!offSignal && !(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED))
-	{
-		SetWindowLong(floating_window, GWL_EXSTYLE,
-			GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-		if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-		this_thread::sleep_for(chrono::milliseconds(10));
-	}
-	if (offSignal) return;
-	while (!offSignal && !(GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
-	{
-		SetWindowLong(floating_window, GWL_EXSTYLE,
-			GetWindowLong(floating_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-		if (GetWindowLong(floating_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-		this_thread::sleep_for(chrono::milliseconds(10));
-	}
 	if (offSignal) return;
 
 	{

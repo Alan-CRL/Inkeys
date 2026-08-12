@@ -1,7 +1,10 @@
 module;
 
 #include <windows.h>
-#include "../../../HiEasyX/HiMacro.h"
+
+#ifndef RGBA
+#define RGBA(r, g, b, a) (COLORREF)(((b) << 16) | ((g) << 8) | (r) | ((a) << 24))
+#endif
 
 export module Inkeys.UI.Bar:Theme;
 
