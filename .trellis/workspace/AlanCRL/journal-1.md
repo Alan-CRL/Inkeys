@@ -585,3 +585,24 @@ Implemented the UI3 geometry panel and toolbar refinements: swapped Geometry/Era
 ### Status
 
 [OK] **Completed**
+
+
+## Session 23: UI3 Draw3 Win32 host preparation
+
+**Date**: 2026-08-12
+**Task**: UI3 Draw3 Win32 host preparation
+**Branch**: `draw`
+
+### Summary
+
+UI3 成为唯一入口；移除 HiEasyX/EasyX，引入 HiMsg 子模块、DibSurface、Window Service 与受管窗口线程；ARM64 完整构建及 --no-window Headless Tests 通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `41535ea` | (see git log) |
+
+### Status
+
+[OK] **Completed**

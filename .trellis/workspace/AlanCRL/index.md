@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
-- **Last Active**: 2026-08-11
+- **Total Sessions**: 23
+- **Last Active**: 2026-08-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~587 | Active |
+| `journal-1.md` | ~608 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-08-12 | UI3 Draw3 Win32 host preparation | `41535ea` | `draw` |
 | 22 | 2026-08-11 | 修复 UI3 功能组脏区漏算 | `caf624e9` | `draw` |
 | 21 | 2026-08-11 | 完成 UI3 基于变化的脏区系统 | `963db5e5`, `506dd263`, `59cc6ee9`, `35c8e59a`, `38bd4f06` | `feature/animation` |
 | 20 | 2026-08-11 | 修复 UI3 调试脏区红框 | `70ad8c8b` | `feature/animation` |
