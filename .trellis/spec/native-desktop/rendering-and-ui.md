@@ -580,6 +580,15 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 
 手工验证至少覆盖：指针驻留至自然淡出、淡出中移出、显现中按下、淡出中按下、拖出取消，以及抬起后未移动指针时不重新触发悬停。
 
+### UI3 展开按钮点击合并合同
+
+- `BarToggleClickCoalescer::TryBegin(channel, now)` 对每个 `BarToggleChannel` 独立记录最近一次成功 toggle；第一击立即通过，距上次同通道操作小于 180ms 时返回 `false`，达到 180ms 边界后重新通过。
+- 门控只能放在业务代码已经确定本次操作是展开/收起之后。绘制和几何按钮不在目标工具状态时，第一击只切换工具且不得写入门控；已经处于目标工具时，再由 DrawAttribute / GeometryAttribute 通道决定是否 toggle 属性面板。
+- 主按钮、更多、粗细调节三角和笔属性三角分别使用独立通道；普通命令、粗细预设、FineDial 提交、显式关闭、浮层外点击关闭以及 Win32/HiMsg 原始消息不进入门控。
+- Headless 测试必须覆盖首次立即执行、179ms 合并、180ms 边界通过和不同通道互不阻塞；按钮调用点另以静态审查和完整 Solution 构建确认门控位于状态切换之后。
+
+错误做法是在 `WM_LBUTTONDOWN` / HiMsg 队列层全局丢弃第二击，这会破坏“选择状态双击绘制：第一击切换工具、第二击展开属性”。正确做法是保留两次输入，仅合并第二次真正重复的展开/收起动作。
+
 ### UI3 动画批次加入与关键帧中点
 
 `【直接确认；设计约定】` `BarUiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。

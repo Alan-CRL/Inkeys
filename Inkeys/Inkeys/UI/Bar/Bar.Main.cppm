@@ -16,6 +16,7 @@ import :Rendering;
 import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
+export import Inkeys.UI.Bar.ToggleClickCoalescer;
 
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
@@ -230,6 +231,11 @@ public:
 	void Rendering();
 	// 鼠标交互
 	void Interact();
+	// 仅合并已经判定为展开/收起的动作，不拦截状态切换和原始输入。
+	bool TryBeginToggle(Inkeys::UI::Bar::BarToggleChannel channel)
+	{
+		return toggleClickCoalescer.TryBegin(channel);
+	}
 
 public:
 	BarWindowPosClass barWindow;
@@ -290,6 +296,7 @@ protected:
 	void RefreshBorderCursorVisibleRegions(double frameZoom);
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
+	Inkeys::UI::Bar::BarToggleClickCoalescer toggleClickCoalescer;
 
 	mutex borderCursorLightMutex;
 	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();

@@ -31,6 +31,7 @@ import Inkeys.Business.ComponentActions;
 
 using Inkeys::Business::BuiltInComponentAction;
 using Inkeys::Business::ExecuteBuiltInComponentAction;
+using Inkeys::UI::Bar::BarToggleChannel;
 
 bool BarButtonClass::TransitionContent(
 	const wstring& iconResourceName, const wstring& label)
@@ -263,6 +264,8 @@ void BarButtonSetClass::PresetInitialization()
 					}
 					else
 					{
+						if (!barUISet.TryBeginToggle(
+							BarToggleChannel::DrawAttribute)) return;
 						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
 						else
 						{
@@ -351,6 +354,8 @@ void BarButtonSetClass::PresetInitialization()
 					}
 					else
 					{
+						if (!barUISet.TryBeginToggle(
+							BarToggleChannel::GeometryAttribute)) return;
 						bool open = !static_cast<bool>(barUISet.barState.geometryAttribute);
 						if (open)
 						{

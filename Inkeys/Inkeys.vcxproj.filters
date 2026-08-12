@@ -473,6 +473,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+	<ClCompile Include="Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm">
+	  <Filter>Modules\Inkeys\UI\Bar</Filter>
+	</ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>

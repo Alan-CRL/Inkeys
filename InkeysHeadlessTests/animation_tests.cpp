@@ -26,6 +26,7 @@ int RunMessageTests();
 int RunWindowTests();
 int RunDirtyRegionTests();
 int RunFramePacingTests(bool benchmark);
+int RunToggleClickCoalescerTests();
 
 namespace
 {
@@ -886,6 +887,7 @@ int main(int argc, char** argv)
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
 	failureCount += RunFramePacingTests(benchmark);
+	failureCount += RunToggleClickCoalescerTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

@@ -21,6 +21,7 @@ import Inkeys.Conv.Color;
 import Inkeys.Message;
 import Inkeys.Other.Inputs;
 import Inkeys.Window;
+using Inkeys::UI::Bar::BarToggleChannel;
 constexpr double BarButtonHoverOpacity = 0.18;
 constexpr double BarButtonHoverShowDur = 0.24;
 constexpr double BarButtonHoverExitDur = 0.24;
@@ -2851,17 +2852,21 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					double moveDis = Seek(msg);
 					if (moveDis <= 20)
 					{
-						mainButtonClickPulseSerial.fetch_add(1, std::memory_order_relaxed);
-						// 展开/收起主栏
-						if (barState.fold) barState.fold = false;
-						else
+						if (barUISet.TryBeginToggle(BarToggleChannel::Main))
 						{
-							barState.fold = true;
-							barState.moreExpanded = false;
-							CloseThicknessSlider(true);
-							CloseColorPicker(true);
+							mainButtonClickPulseSerial.fetch_add(
+								1, std::memory_order_relaxed);
+							// 展开/收起主栏
+							if (barState.fold) barState.fold = false;
+							else
+							{
+								barState.fold = true;
+								barState.moreExpanded = false;
+								CloseThicknessSlider(true);
+								CloseColorPicker(true);
+							}
+							UpdateRendering();
 						}
-						UpdateRendering();
 					}
 					SuppressHoverUntilPointerMove();
 
@@ -2913,15 +2918,20 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										ClosePenTypeMenu();
 										if (temp->preset == BarButtonPresetEnum::More)
 										{
-											bool opening = !static_cast<bool>(barState.moreExpanded);
-											barState.moreExpanded = opening;
-											if (opening)
+											if (barUISet.TryBeginToggle(
+												BarToggleChannel::More))
 											{
-												CloseDrawAttributeTooltips();
-												barState.drawAttribute = false;
-												barState.geometryAttribute = false;
-												CloseThicknessSlider(true);
-												CloseColorPicker(true);
+												bool opening = !static_cast<bool>(
+													barState.moreExpanded);
+												barState.moreExpanded = opening;
+												if (opening)
+												{
+													CloseDrawAttributeTooltips();
+													barState.drawAttribute = false;
+													barState.geometryAttribute = false;
+													CloseThicknessSlider(true);
+													CloseColorPicker(true);
+												}
 											}
 										}
 										else if (temp->clickFunc) temp->clickFunc();
@@ -4601,7 +4611,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 															.thicknessFineDialPopupExitLatchRequested = false;
 													}
 												}
-												else
+												else if (barUISet.TryBeginToggle(
+													BarToggleChannel::ThicknessAdjust))
 												{
 													barState.drawAttributeBar
 														.thicknessSliderPinned = !sliderPinnedAtPress;
@@ -4665,7 +4676,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									clickCompleted = true;
 									if (barState.drawAttributeBar.penTypeMenuOpen)
 									{
-										ClosePenTypeMenu();
+										if (barUISet.TryBeginToggle(
+											BarToggleChannel::PenTypeMenu))
+											ClosePenTypeMenu();
 									}
 									else
 									{
@@ -4678,7 +4691,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 													barState.widgetPosition.primaryBar)
 											&& barState.drawAttributeBar.penTypeMenuAnchorMode
 												== static_cast<int>(stateMode.Pen.ModeSelect);
-										if (!directionLocked || canResumeClosingMenu)
+										if ((!directionLocked || canResumeClosingMenu)
+											&& barUISet.TryBeginToggle(
+												BarToggleChannel::PenTypeMenu))
 										{
 											// FineDial 在笔型菜单期间保持；实际切换时再取消旧候选。
 											if (barState.drawAttributeBar.thicknessViewMode
