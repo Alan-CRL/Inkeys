@@ -26,9 +26,9 @@ export namespace draw3
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
 	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
 	inline constexpr float kLaserScatterHalfWidthToCoreRatio = 0.4f;
-	inline constexpr float kShapeRoundedCornerRadiusAt96Dpi = 8.0f;
+	inline constexpr float kShapeRoundedCornerRadiusAt96Dpi = 4.0f;
 	inline constexpr float kShapeDashLengthToWidthRatio = 4.0f;
-	inline constexpr float kShapeDashGapToWidthRatio = 2.0f;
+	inline constexpr float kShapeDashGapToWidthRatio = 6.0f;
 	// 临时性能日志开关；用户回传数据后可在后续任务中关闭或移除。
 	inline constexpr bool kLaserIncrementalDiagnosticsEnabled = true;
 
@@ -236,7 +236,7 @@ export namespace draw3
 		int DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
 			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
-		// 按 DPI 配置固定 8 DIP 圆角。
+		// 按 DPI 配置固定 4 DIP 圆角。
 		void ConfigureShapePrimitives(float dpiScale) noexcept;
 		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。
 		void WarmUpShapeShaders() noexcept;

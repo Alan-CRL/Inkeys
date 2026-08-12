@@ -28,8 +28,8 @@ WM_KEYDOWN Q/W/E/R
 
 - `ShapePrimitive` 为 32 字节，内存布局等价于两个连续 `InkPoint`；起点槽保存起点和半线宽，终点槽保存终点。renderer 复用 `inkDataBuffer`，每个 primitive 对应 6 个顶点。
 - `DrawShapePrimitives` 以 `kMaxBufferCapacity / 2` 分批，Map 后一次上传连续 primitive，并设置追加的 shape type；不创建新 buffer、纹理或 SRV。
-- VS 对直线生成扩张 OBB，对矩形用 `min/max` 生成扩张 AABB。PS 使用 analytic SDF：实线胶囊、周期虚线胶囊、rounded-box fill、`abs(rounded-box distance) - halfWidth` 居中边框。
-- 矩形圆角像素值由 renderer 配置的 `8 * dpiScale` 写入既有 `globalPadding.x`；小矩形在 shader 内钳制。CPU/HLSL 常量缓冲区大小不变。
+- VS 对直线生成扩张 OBB，对矩形用 `min/max` 生成扩张 AABB。PS 使用 analytic SDF：实线胶囊、中心线 `4:6` 周期的虚线胶囊、rounded-box fill、`abs(rounded-box distance) - halfWidth` 居中边框；圆头侵占后虚线可见段与可见空隙接近 `1:1`。
+- 矩形圆角像素值由 renderer 配置的 `4 * dpiScale` 写入既有 `globalPadding.x`；小矩形在 shader 内钳制。CPU/HLSL 常量缓冲区大小不变。
 - 新路径使用现有 stroke operator blend state。启动时在零像素 viewport 依次预热四个 Shape 分支，避免首次使用的驱动 JIT 卡顿。
 
 ## Persistence And History

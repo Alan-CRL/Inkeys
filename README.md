@@ -83,7 +83,7 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 | `8` / 小键盘 `8` | 返回上一页 |
 | `9` / 小键盘 `9` | 退出 |
 
-当前测试参数中，普通笔、四种 Shape 和激光笔基准直径为 `5px`，荧光笔和橡皮为 `50px`；应在没有活动落笔时选择 `1/2/3/4/Q/W/E/R`，下一批落笔会使用该工具。Shape 使用固定宽度和 `8 DIP` 圆角，不使用压力、倾角或笔锋。这些值由 `DrawingController` 固定，是实验参数而非稳定产品配置。激光笔默认在最后一根接触抬起后满亮保留 `3.0s`，再用 `0.8s` 淡出；粒子默认开启，可通过 `DrawingController` 外部 setter 关闭。
+当前测试参数中，普通笔、四种 Shape 和激光笔基准直径为 `5px`，荧光笔和橡皮为 `50px`；应在没有活动落笔时选择 `1/2/3/4/Q/W/E/R`，下一批落笔会使用该工具。Shape 使用固定宽度和 `4 DIP` 圆角，不使用压力、倾角或笔锋；虚线的可见线段与可见空隙接近 `1:1`。这些值由 `DrawingController` 固定，是实验参数而非稳定产品配置。激光笔默认在最后一根接触抬起后满亮保留 `3.0s`，再用 `0.8s` 淡出；粒子默认开启，可通过 `DrawingController` 外部 setter 关闭。
 
 ## 仓库边界
 

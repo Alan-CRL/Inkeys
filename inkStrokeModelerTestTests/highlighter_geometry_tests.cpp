@@ -71,11 +71,13 @@ int RunHighlighterGeometryTests()
 	static_assert(static_cast<uint32_t>(draw3::ShapePrimitiveKind::OutlineRectangle) == 18);
 	static_assert(static_cast<uint32_t>(draw3::ShapePrimitiveKind::FilledRectangle) == 19);
 	static_assert(sizeof(draw3::ShapePrimitive) == sizeof(draw3::InkPoint) * 2);
+	static_assert(draw3::kShapeDashLengthToWidthRatio == 4.0f);
+	static_assert(draw3::kShapeDashGapToWidthRatio == 6.0f);
 	draw3::ShapePrimitive reverseRectangle = {
 		{ 30.0f, 40.0f, 2.5f, 0.0f }, { 10.0f, 20.0f, 0.0f, 0.0f }
 	};
 	HIGHLIGHTER_CHECK(NearlyEqual(draw3::ClampShapeRoundedCornerRadius(
-		reverseRectangle, draw3::kShapeRoundedCornerRadiusAt96Dpi), 8.0f));
+		reverseRectangle, draw3::kShapeRoundedCornerRadiusAt96Dpi), 4.0f));
 	draw3::ShapePrimitive smallRectangle = {
 		{ 0.0f, 0.0f, 2.5f, 0.0f }, { 6.0f, 4.0f, 0.0f, 0.0f }
 	};

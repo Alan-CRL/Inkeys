@@ -70,7 +70,7 @@
 - 每个活动 Shape 只保存固定 primitive、kind、原始/建模末点和少量标志。`modeledResults`、`predictedResults` 仅作预留 scratch，提取末点后清空；不得生成真实路径、可变宽度点列、笔锋或 L1 稳定前缀。
 - 活动 Shape 完整绘制在共享 L0。仅当所有活动 L0 内容都是 Shape 且全部末点稳定时才可保留既有 L0；任一 Shape 变化或 Pen/Highlighter live 内容需要刷新时，先把 L0 清为单位操作，再按 kind 批量重放全部活动 Shape。同类 contact 在容量允许时只提交一次 `Draw(6 * count)`。
 - Resize、contact 完成和 Cancel 后通过活动层全量重建恢复仍活动 Shape。Cancel 只脏化旧/新 L0 bounds 并丢弃对象；不得追加文档、RenderItem 或 L2 像素。
-- 实线是圆头胶囊；虚线由 pixel shader 解析为 `4 * width` 实线段、`2 * width` 空隙和圆头，不在 CPU 展开短划。矩形先规范化任意方向对角点，使用 `8 DIP * dpiScale` 圆角并钳制到短边一半；Outline 边界居中，Filled 不附加边框。
+- 实线是圆头胶囊；虚线由 pixel shader 解析为中心线 `4 * width` 实线段、`6 * width` 空隙和圆头，使圆头侵占后的可见线段与可见空隙接近 `1:1`，不在 CPU 展开短划。矩形先规范化任意方向对角点，使用 `4 DIP * dpiScale` 圆角并钳制到短边一半；Outline 边界居中，Filled 不附加边框。
 - 完成 Shape 恰好保存两个同宽 `StoredInkPoint` 和 Pen 颜色/透明度。零长度 Line 合法并重放为圆点；宽或高为零的 Rectangle 非法。首次落定顺序保持 `Finalize -> AppendStroke -> AppendRenderItem -> raster appended Stroke -> capture preimage -> resolve L2`，页面恢复、冷重建和 history tile 也必须调用同一个 `DrawStoredStroke` 入口。
 - Line footprint 使用扩宽线段；OutlineRectangle 只遍历四边；FilledRectangle 覆盖完整规范化面积。pixel bounds 与 dirty bounds 都包含半线宽（Filled 除外）、AA padding、裁剪和反向拖动。
 
@@ -92,13 +92,13 @@
 ### 5. Good / Base / Bad Cases
 
 - Good：多支同类 Shape 共享一次上传/Draw，另一支 Pen 移动时仍完整重放 Shape；Up 后撤回、翻页和 resize 都从两个 Stored 点恢复相同解析几何。
-- Base：反向拖动的小矩形把 `8 DIP` 圆角钳制到短边一半；零长度虚线显示圆点。
+- Base：反向拖动的小矩形把 `4 DIP` 圆角钳制到短边一半；零长度虚线显示圆点。
 - Bad：把拖动路径保存成点列、把 Shape 稳定前缀提交到 L1、CPU 生成每一段 dash，或为了保留稳定 Shape 而跳过共享 L0 中普通笔的刷新。
 
 ### 6. Tests Required
 
 - 静态断言三组 enum 数值、`sizeof(ShapePrimitive)==32`，并核对 HLSL `16..19` 分支和 `Draw(6 * count)`。
-- 单元测试 prediction -> modeled -> raw 优先级、NaN/Inf 回退、原始终点强制覆盖、反向矩形、`8 DIP` 圆角钳制和 Shape dirty bounds。
+- 单元测试 prediction -> modeled -> raw 优先级、NaN/Inf 回退、原始终点强制覆盖、反向矩形、`4 DIP` 圆角钳制、`4:6` 中心线虚线比例和 Shape dirty bounds。
 - 文档测试覆盖四种 Stored 类型、严格双端点/同宽/正宽、三点拒绝、零长度 Line 合法和退化 Rectangle 拒绝。
 - history 测试覆盖扩宽 Line、四边 Outline、完整 Filled 内部 tile、反向拖动、AA padding 和可见区裁剪。
 - `--drawing-perf` 在 scratch/batch 预留后反复清空 modeled/predicted 长度并重建同类批次，断言零分配、容量稳定和有限终点；GPU 批量调用仍以 renderer 静态契约和人工 D3D 验证为准。

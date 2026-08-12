@@ -4,7 +4,7 @@
 
 - [ ] 追加工具枚举、`Q/W/E/R` 键位、工具分类/名称/宽度/光标/触觉规则和 README 文档。
 - [ ] 在 renderer 契约中加入 `ShapePrimitiveKind`、32 字节 `ShapePrimitive`、批量 Draw、DPI 圆角配置、bounds helper 与零像素预热。
-- [ ] 扩展 VS/PS shape 16..19，实现实线、4:2 圆头虚线、8 DIP rounded rectangle fill/outline。
+- [ ] 扩展 VS/PS shape 16..19，实现实线、中心线 4:6（可见约 1:1）圆头虚线、4 DIP rounded rectangle fill/outline。
 - [ ] 增加固定大小 Shape runtime；接入模型 Update/Predict、原始 Down/Up 端点、L0-only 批量重建和稳定帧复用。
 - [ ] 扩展 Stored 类型、双端点完成态、统一重放、精确 bounds/tile footprint，并接入现有 L2/history/page restore。
 - [ ] 补充文档、geometry、history、建模回退和性能测试；同步 Native/Shader specs。

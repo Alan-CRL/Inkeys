@@ -49,7 +49,7 @@ float2 halfSize
 | `bufferOffset` | `globalBufferOffset` |
 | `color` | `globalColor` |
 | `operatorKind` | `globalOperatorKind` |
-| `padding[3]` | `globalPadding`（cursor shape 时为 outline RGB；Shape `16..19` 时 `x` 为 `8 DIP * dpiScale` 圆角像素值） |
+| `padding[3]` | `globalPadding`（cursor shape 时为 outline RGB；Shape `16..19` 时 `x` 为 `4 DIP * dpiScale` 圆角像素值） |
 
 它绑定在 VS `b0` 与 PS `b0`。`operatorKind` 只在 pixel shader 使用，但仍属于同一共享常量缓冲区。
 
@@ -120,7 +120,7 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 - `14`：按 `Later(Earlier(Below))` 组合两个 history operator tile。
 - `15`：把一个 history operator tile 应用到 L2 的目标 Canvas 矩形。
 - `16`：固定宽度圆头实线胶囊。
-- `17`：固定宽度圆头虚线；实线段 `4 * width`、空隙 `2 * width`，周期在 PS 中解析。
+- `17`：固定宽度圆头虚线；中心线实线段 `4 * width`、中心线空隙 `6 * width`，圆头侵占后可见线段与可见空隙接近 `1:1`，周期在 PS 中解析。
 - `18`：边界居中的圆角矩形边框。
 - `19`：无额外边框的圆角填充矩形。
 

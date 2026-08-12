@@ -93,7 +93,8 @@ float GetDashedLineDist(float2 p, float2 p1, float2 p2, float radius)
     float2 local = float2(dot(p - p1, tangent), dot(p - p1, normal));
     float lineWidth = max(radius * 2.0, 1e-4);
     float dashLength = lineWidth * 4.0;
-    float period = dashLength + lineWidth * 2.0;
+    // Round caps consume one width, so a 6x center gap gives an approximately 1:1 visible rhythm.
+    float period = dashLength + lineWidth * 6.0;
     float cell = floor(clamp(local.x, 0.0, segmentLength) / period);
     float bestAlong = 1e20;
     [unroll]
