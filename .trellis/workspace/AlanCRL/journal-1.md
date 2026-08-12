@@ -606,3 +606,25 @@ UI3 成为唯一入口；移除 HiEasyX/EasyX，引入 HiMsg 子模块、DibSurf
 ### Status
 
 [OK] **Completed**
+
+
+## Session 24: 修复触摸重复转译与 Setting 窗口合同
+
+**Date**: 2026-08-12
+**Task**: 修复触摸重复转译与 Setting 窗口合同
+**Branch**: `draw`
+
+### Summary
+
+Bar/PPT 仅在应用级 HiMsg callback 中过滤系统触摸兼容鼠标，保留自定义 WM_TOUCH 单指转译；Setting 改为可聚焦固定尺寸无框任务栏窗口；补齐 HiMsg 扩展鼠标分类并通过 ARM64 构建与无窗口测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `664ab92` | (see git log) |
+| `e7f42dc` | (see git log) |
+
+### Status
+
+[OK] **Completed**
