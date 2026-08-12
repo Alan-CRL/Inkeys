@@ -117,9 +117,45 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(motion.velocity.x > 0.0f);
 	draw3::EndCanvasPan(motion);
 	CANVAS_NAVIGATION_CHECK(motion.inertiaActive);
+	draw3::CanvasPanMotionState staleReleaseMotion;
+	staleReleaseMotion.velocity = { 3200.0f, 0.0f };
+	draw3::EndCanvasPan(staleReleaseMotion,
+		draw3::kCanvasPanReleaseVelocityHorizonSeconds + 0.001);
+	CANVAS_NAVIGATION_CHECK(!staleReleaseMotion.inertiaActive);
+	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(staleReleaseMotion) == 0.0f);
+	draw3::CanvasPanMotionState travelMotion;
+	travelMotion.velocity = { 3200.0f, 0.0f };
+	travelMotion.inertiaActive = true;
+	float normalTravel = 0.0f;
+	for (size_t step = 0; step < 1000 && travelMotion.inertiaActive; ++step)
+		normalTravel += draw3::StepCanvasPanInertia(
+			travelMotion, 0.01, false).x;
+	const float firstVersionTravel = 3200.0f * 3200.0f / (2.0f * 3200.0f);
+	CANVAS_NAVIGATION_CHECK(normalTravel > firstVersionTravel * 2.5f);
+	motion.velocity = { 1000.0f, 0.0f };
+	motion.inertiaActive = true;
 	const float beforeHover = draw3::CanvasPanSpeed(motion);
 	draw3::StepCanvasPanInertia(motion, 0.01, true);
 	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(motion) < beforeHover);
+	gesture.Reset();
+	gesture.OnTouchDown(61, 7000, 1000, false, false);
+	gesture.OnTouchDown(62, 7100, 1000, false, false);
+	draw3::InterruptCanvasPanForDrawing(motion, gesture);
+	CANVAS_NAVIGATION_CHECK(!motion.inertiaActive);
+	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(motion) == 0.0f);
+	CANVAS_NAVIGATION_CHECK(!gesture.PanActive());
+	CANVAS_NAVIGATION_CHECK(gesture.Disposition(61) ==
+		draw3::CanvasTouchDisposition::Suppressed);
+	CANVAS_NAVIGATION_CHECK(gesture.Disposition(62) ==
+		draw3::CanvasTouchDisposition::Suppressed);
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldPrioritizeDrawingContact(
+		true, true, false));
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldPrioritizeDrawingContact(
+		true, false, true));
+	CANVAS_NAVIGATION_CHECK(!draw3::ShouldPrioritizeDrawingContact(
+		false, true, false));
+	CANVAS_NAVIGATION_CHECK(!draw3::ShouldPrioritizeDrawingContact(
+		true, false, false));
 	draw3::StopCanvasPan(motion);
 	CANVAS_NAVIGATION_CHECK(!motion.inertiaActive);
 
@@ -146,6 +182,11 @@ int RunCanvasNavigationTests()
 		{ 24000.0f, 0.0f }, 100.0f, 100.0f);
 	CANVAS_NAVIGATION_CHECK(std::abs(cappedPrediction.x -
 		1.5f * std::hypot(100.0f, 100.0f)) < 0.001f);
+	const auto recoveryCoverage = draw3::ComputeCanvasRenderCoverageBounds(
+		{ 0.0f, 0.0f }, 256.0f, 256.0f, { -2000.0f, 0.0f }, 256);
+	CANVAS_NAVIGATION_CHECK(recoveryCoverage.has_value());
+	CANVAS_NAVIGATION_CHECK(recoveryCoverage->left <= -256.0f);
+	CANVAS_NAVIGATION_CHECK(recoveryCoverage->right >= 812.0f);
 
 	const std::vector<draw3::CanvasTileCoordinate> contentTiles = {
 		{ -2, 0 }, { -1, 0 }, { 0, 0 }, { 1, 0 }, { 2, 0 }, { 3, 0 }

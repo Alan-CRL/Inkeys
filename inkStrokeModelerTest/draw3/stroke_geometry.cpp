@@ -465,6 +465,72 @@ namespace draw3
 		return rawEndpoint;
 	}
 
+	std::vector<StoredStrokePointRange> PlanStoredStrokeRasterRanges(
+		const InkStroke& stroke, const StoredStrokeRasterTarget& target)
+	{
+		std::vector<StoredStrokePointRange> ranges;
+		if (!stroke.IsValid() || IsStoredShapeType(stroke.Style().inkType) ||
+			target.width <= 0 || target.height <= 0 ||
+			!std::isfinite(target.originX) || !std::isfinite(target.originY)) return ranges;
+		const std::span<const StoredInkPoint> points = stroke.Points();
+		if (points.empty()) return ranges;
+		const double targetLeft = target.originX;
+		const double targetTop = target.originY;
+		const double targetRight = targetLeft + target.width;
+		const double targetBottom = targetTop + target.height;
+		const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
+		const auto pointPadding = [&](const StoredInkPoint& point) noexcept
+		{
+			return highlighter
+				? std::pair<double, double>{
+					kHighlighterRadiusPx / kHighlighterNibAspectRatio +
+						kHighlighterBoundsPaddingPx,
+					kHighlighterRadiusPx + kHighlighterBoundsPaddingPx }
+				: std::pair<double, double>{
+					static_cast<double>(point.width) * 0.5 + 3.0,
+					static_cast<double>(point.width) * 0.5 + 3.0 };
+		};
+		const auto pointTouches = [&](const StoredInkPoint& point) noexcept
+		{
+			const auto [paddingX, paddingY] = pointPadding(point);
+			return static_cast<double>(point.x) - paddingX < targetRight &&
+				static_cast<double>(point.x) + paddingX > targetLeft &&
+				static_cast<double>(point.y) - paddingY < targetBottom &&
+				static_cast<double>(point.y) + paddingY > targetTop;
+		};
+		if (points.size() == 1)
+		{
+			if (pointTouches(points.front())) ranges.push_back({ 0, 1 });
+			return ranges;
+		}
+		for (size_t index = 1; index < points.size(); ++index)
+		{
+			const StoredInkPoint& first = points[index - 1];
+			const StoredInkPoint& second = points[index];
+			const auto [firstPaddingX, firstPaddingY] = pointPadding(first);
+			const auto [secondPaddingX, secondPaddingY] = pointPadding(second);
+			const double left = (std::min)(
+				static_cast<double>(first.x) - firstPaddingX,
+				static_cast<double>(second.x) - secondPaddingX);
+			const double top = (std::min)(
+				static_cast<double>(first.y) - firstPaddingY,
+				static_cast<double>(second.y) - secondPaddingY);
+			const double right = (std::max)(
+				static_cast<double>(first.x) + firstPaddingX,
+				static_cast<double>(second.x) + secondPaddingX);
+			const double bottom = (std::max)(
+				static_cast<double>(first.y) + firstPaddingY,
+				static_cast<double>(second.y) + secondPaddingY);
+			if (!(left < targetRight && right > targetLeft &&
+				top < targetBottom && bottom > targetTop)) continue;
+			const StoredStrokePointRange next{ index - 1, index + 1 };
+			if (!ranges.empty() && ranges.back().end >= next.begin)
+				ranges.back().end = next.end;
+			else ranges.push_back(next);
+		}
+		return ranges;
+	}
+
 	StoredStrokeRasterResult DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
 		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
 		HighlighterGeometry& highlighterScratch)
@@ -502,32 +568,37 @@ namespace draw3
 				primitive, *shapeKind, target.width, target.height) };
 		}
 
-		pointScratch.clear();
-		pointScratch.reserve(stroke.Points().size());
-		for (const StoredInkPoint& point : stroke.Points())
+		const std::vector<StoredStrokePointRange> ranges =
+			PlanStoredStrokeRasterRanges(stroke, target);
+		RECT dirty = {};
+		for (StoredStrokePointRange range : ranges)
 		{
-			pointScratch.push_back({
-				point.x - target.originX,
-				point.y - target.originY,
-				point.width * 0.5f,
-				0.0f });
-		}
-		if (pointScratch.empty()) return {};
-		if (style.inkType == StoredInkType::Highlighter)
-		{
-			RebuildHighlighterGeometry(pointScratch, highlighterScratch);
-			if (renderer.DrawHighlighterPrimitives(
-				highlighterScratch.primitives, color) < 0) return {};
-			return { true, ClampRectToCanvas(
-				highlighterScratch.bounds, target.width, target.height) };
-		}
+			pointScratch.clear();
+			pointScratch.reserve(range.end - range.begin);
+			for (const StoredInkPoint& point : stroke.Points().subspan(
+				range.begin, range.end - range.begin))
+			{
+				pointScratch.push_back({ point.x - target.originX,
+					point.y - target.originY, point.width * 0.5f, 0.0f });
+			}
+			if (style.inkType == StoredInkType::Highlighter)
+			{
+				RebuildHighlighterGeometry(pointScratch, highlighterScratch);
+				if (renderer.DrawHighlighterPrimitives(
+					highlighterScratch.primitives, color) < 0) return {};
+				UnionRectInPlace(dirty, ClampRectToCanvas(
+					highlighterScratch.bounds, target.width, target.height));
+				continue;
+			}
 
-		const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
-			? InkOperatorKind::Erase : InkOperatorKind::Draw;
-		if (renderer.DrawStrokeOrDot(pointScratch, color,
-			StrokeShape::RoundCapsule, operatorKind) < 0) return {};
-		return { true, RectFromStrokePoints(
-			pointScratch, target.width, target.height) };
+			const InkOperatorKind operatorKind = style.inkType == StoredInkType::Eraser
+				? InkOperatorKind::Erase : InkOperatorKind::Draw;
+			if (renderer.DrawStrokeOrDot(pointScratch, color,
+				StrokeShape::RoundCapsule, operatorKind) < 0) return {};
+			UnionRectInPlace(dirty, RectFromStrokePoints(
+				pointScratch, target.width, target.height));
+		}
+		return { true, dirty };
 	}
 
 	ActiveStroke::ActiveStroke(float baseDiameter, float expectedSpeed,

@@ -179,7 +179,6 @@ namespace draw3
 
 		struct HotTile
 		{
-			SignedTileCoordinate tile = {};
 			UndoSlot slot = {};
 			RECT screenRect = {};
 		};
@@ -1050,6 +1049,50 @@ namespace draw3
 		}
 	};
 
+	std::vector<HotPreimageScreenRect> PlanHotPreimageScreenRects(
+		std::span<const SignedTileCoordinate> canvasTiles,
+		float viewportX, float viewportY, int canvasWidth, int canvasHeight)
+	{
+		std::vector<SignedTileCoordinate> screenBlocks;
+		if (!std::isfinite(viewportX) || !std::isfinite(viewportY) ||
+			canvasWidth <= 0 || canvasHeight <= 0) return {};
+		for (SignedTileCoordinate canvasTile : canvasTiles)
+		{
+			const std::optional<TileScreenMapping> mapping = MapTileToScreen(
+				canvasTile, kUndoTileSize, viewportX, viewportY,
+				canvasWidth, canvasHeight);
+			if (!mapping) continue;
+			const RECT rect = mapping->dirty;
+			const int32_t firstX = rect.left / static_cast<int32_t>(kUndoTileSize);
+			const int32_t lastX = (rect.right - 1) / static_cast<int32_t>(kUndoTileSize);
+			const int32_t firstY = rect.top / static_cast<int32_t>(kUndoTileSize);
+			const int32_t lastY = (rect.bottom - 1) / static_cast<int32_t>(kUndoTileSize);
+			for (int32_t x = firstX; x <= lastX; ++x)
+				for (int32_t y = firstY; y <= lastY; ++y)
+					screenBlocks.push_back({ x, y });
+		}
+		std::sort(screenBlocks.begin(), screenBlocks.end());
+		screenBlocks.erase(std::unique(screenBlocks.begin(), screenBlocks.end()),
+			screenBlocks.end());
+
+		std::vector<HotPreimageScreenRect> result;
+		result.reserve(screenBlocks.size());
+		for (SignedTileCoordinate block : screenBlocks)
+		{
+			const int64_t left = static_cast<int64_t>(block.x) * kUndoTileSize;
+			const int64_t top = static_cast<int64_t>(block.y) * kUndoTileSize;
+			result.push_back({
+				static_cast<int32_t>(left),
+				static_cast<int32_t>(top),
+				static_cast<int32_t>((std::min)(left + kUndoTileSize,
+					static_cast<int64_t>(canvasWidth))),
+				static_cast<int32_t>((std::min)(top + kUndoTileSize,
+					static_cast<int64_t>(canvasHeight)))
+			});
+		}
+		return result;
+	}
+
 	InkHistoryGpuCache::InkHistoryGpuCache() : impl_(std::make_unique<Impl>()) {}
 	InkHistoryGpuCache::~InkHistoryGpuCache() = default;
 	InkHistoryGpuCache::InkHistoryGpuCache(InkHistoryGpuCache&&) noexcept = default;
@@ -1134,8 +1177,6 @@ namespace draw3
 			request.beforeState == request.afterState || request.canvasWidth <= 0 ||
 			request.canvasHeight <= 0 || !std::isfinite(request.viewportX) ||
 			!std::isfinite(request.viewportY) ||
-			std::floor(request.viewportX) != request.viewportX ||
-			std::floor(request.viewportY) != request.viewportY ||
 			!std::isfinite(request.rasterKey.scale) ||
 			request.rasterKey.scale <= 0.0f)
 		{
@@ -1143,18 +1184,10 @@ namespace draw3
 			return result;
 		}
 
-		std::vector<SignedTileCoordinate> visibleTiles;
-		visibleTiles.reserve(request.tiles.size());
-		for (SignedTileCoordinate tile : request.tiles)
-		{
-			if (!MapTileToScreen(tile, kUndoTileSize,
-				request.viewportX, request.viewportY,
-				request.canvasWidth, request.canvasHeight)) continue;
-			if (std::find(visibleTiles.begin(), visibleTiles.end(), tile) == visibleTiles.end())
-				visibleTiles.push_back(tile);
-		}
-		std::sort(visibleTiles.begin(), visibleTiles.end());
-		if (visibleTiles.empty())
+		const std::vector<HotPreimageScreenRect> screenRects =
+			PlanHotPreimageScreenRects(request.tiles, request.viewportX, request.viewportY,
+				request.canvasWidth, request.canvasHeight);
+		if (screenRects.empty())
 		{
 			result.status = HotPreimageCaptureStatus::InvalidRequest;
 			return result;
@@ -1162,7 +1195,7 @@ namespace draw3
 
 		const UndoCacheEntryId entryId = { impl_->nextHotEntryId++ };
 		const UndoCacheReservation reservation = impl_->undoPlanner.Reserve(
-			entryId, visibleTiles.size());
+			entryId, screenRects.size());
 		impl_->ApplyUndoEvictions(reservation.evictedEntries);
 		if (reservation.status == UndoCacheReservationStatus::Disabled)
 		{
@@ -1175,7 +1208,7 @@ namespace draw3
 			return result;
 		}
 		if (reservation.status != UndoCacheReservationStatus::Reserved ||
-			!impl_->EnsureUndoSlots(visibleTiles.size()))
+			!impl_->EnsureUndoSlots(screenRects.size()))
 		{
 			impl_->undoPlanner.Cancel(entryId);
 			result.status = HotPreimageCaptureStatus::ResourceFailure;
@@ -1193,20 +1226,16 @@ namespace draw3
 		entry.viewportY = request.viewportY;
 		entry.canvasWidth = request.canvasWidth;
 		entry.canvasHeight = request.canvasHeight;
-		entry.tiles.reserve(visibleTiles.size());
+		entry.tiles.reserve(screenRects.size());
 
 		impl_->UnbindAllShaderResources();
 		impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
-		for (SignedTileCoordinate tile : visibleTiles)
+		for (const HotPreimageScreenRect& planned : screenRects)
 		{
-			const TileScreenMapping mapping = *MapTileToScreen(
-				tile, kUndoTileSize, request.viewportX, request.viewportY,
-				request.canvasWidth, request.canvasHeight);
-			const RECT screenRect = mapping.dirty;
+			const RECT screenRect = {
+				planned.left, planned.top, planned.right, planned.bottom };
 			const Impl::UndoSlot slot = impl_->freeUndoSlots.back();
 			impl_->freeUndoSlots.pop_back();
-			const int64_t originX = TileOrigin(tile.x, kUndoTileSize);
-			const int64_t originY = TileOrigin(tile.y, kUndoTileSize);
 			D3D11_BOX sourceBox = {};
 			sourceBox.left = static_cast<UINT>(screenRect.left);
 			sourceBox.top = static_cast<UINT>(screenRect.top);
@@ -1216,16 +1245,15 @@ namespace draw3
 			const UINT destinationSubresource = D3D11CalcSubresource(0, slot.slice, 1);
 			impl_->renderer->context->CopySubresourceRegion(
 				impl_->undoPages[slot.page].texture.Get(), destinationSubresource,
-				static_cast<UINT>(static_cast<int64_t>(mapping.canvasLeft) - originX),
-				static_cast<UINT>(static_cast<int64_t>(mapping.canvasTop) - originY), 0,
+				0, 0, 0,
 				impl_->renderer->layerL2Texture.Get(), 0, &sourceBox);
-			entry.tiles.push_back({ tile, slot, screenRect });
+			entry.tiles.push_back({ slot, screenRect });
 		}
 
 		impl_->hotEntries.push_back(std::move(entry));
 		result.status = HotPreimageCaptureStatus::Captured;
 		result.ticket = entryId.value;
-		result.tileCount = visibleTiles.size();
+		result.tileCount = screenRects.size();
 		return result;
 	}
 
@@ -1272,17 +1300,13 @@ namespace draw3
 		impl_->renderer->context->OMSetRenderTargets(0, nullptr, nullptr);
 		for (const Impl::HotTile& tile : tiles)
 		{
-			const int64_t originX = TileOrigin(tile.tile.x, kUndoTileSize);
-			const int64_t originY = TileOrigin(tile.tile.y, kUndoTileSize);
 			D3D11_BOX sourceBox = {};
-			sourceBox.left = static_cast<UINT>(
-				static_cast<int64_t>(tile.screenRect.left + viewportX) - originX);
-			sourceBox.top = static_cast<UINT>(
-				static_cast<int64_t>(tile.screenRect.top + viewportY) - originY);
+			sourceBox.left = 0;
+			sourceBox.top = 0;
 			sourceBox.right = static_cast<UINT>(
-				static_cast<int64_t>(tile.screenRect.right + viewportX) - originX);
+				tile.screenRect.right - tile.screenRect.left);
 			sourceBox.bottom = static_cast<UINT>(
-				static_cast<int64_t>(tile.screenRect.bottom + viewportY) - originY);
+				tile.screenRect.bottom - tile.screenRect.top);
 			sourceBox.back = 1;
 			const UINT sourceSubresource = D3D11CalcSubresource(0, tile.slot.slice, 1);
 			impl_->renderer->context->CopySubresourceRegion(

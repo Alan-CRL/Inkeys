@@ -12,10 +12,13 @@ export namespace draw3
 {
 	inline constexpr double kCanvasPanGestureWindowSeconds = 0.180;
 	inline constexpr double kCanvasPanMomentumBlendSeconds = 0.120;
+	inline constexpr double kCanvasPanReleaseVelocityHorizonSeconds = 0.100;
 	inline constexpr double kCanvasPanPredictionSeconds = 0.150;
 	inline constexpr float kCanvasPanKeyboardStepDip = 64.0f;
 	inline constexpr float kCanvasViewportLimitDip = 1048576.0f;
 	inline constexpr float kCanvasPanMaximumSpeedDipPerSecond = 24000.0f;
+	inline constexpr float kCanvasPanInertiaDecelerationDipPerSecondSquared = 1200.0f;
+	inline constexpr float kCanvasPanPenBrakeDecelerationDipPerSecondSquared = 12000.0f;
 	inline constexpr float kCanvasPanSharpSpeedThresholdDipPerSecond = 300.0f;
 	inline constexpr float kCanvasPanMaximumFallbackBlurDip = 12.0f;
 
@@ -98,10 +101,16 @@ export namespace draw3
 	CanvasVector UpdateCanvasPan(CanvasPanMotionState& motion,
 		CanvasVector contentDelta, double deltaSeconds) noexcept;
 	void SetCanvasPanVelocity(CanvasPanMotionState& motion, CanvasVector velocity) noexcept;
-	void EndCanvasPan(CanvasPanMotionState& motion) noexcept;
+	void EndCanvasPan(CanvasPanMotionState& motion,
+		double secondsSinceLastInput = 0.0) noexcept;
 	CanvasVector StepCanvasPanInertia(CanvasPanMotionState& motion,
 		double deltaSeconds, bool penInRange) noexcept;
 	void StopCanvasPan(CanvasPanMotionState& motion) noexcept;
+	void InterruptCanvasPanForDrawing(CanvasPanMotionState& motion,
+		CanvasTouchGestureState& gesture) noexcept;
+	// 平移/惯性中的物理落笔必须先于本帧导航推进消费。
+	bool ShouldPrioritizeDrawingContact(bool navigationInProgress,
+		bool penInContact, bool mouseInContact) noexcept;
 	float CanvasPanSpeed(const CanvasPanMotionState& motion) noexcept;
 	float CanvasPanFallbackBlurDip(float speedDipPerSecond) noexcept;
 
@@ -134,6 +143,11 @@ export namespace draw3
 		float right = 0.0f;
 		float bottom = 0.0f;
 	};
+
+	// 返回当前视口、150ms 预测扫掠和前后各一圈 tile 余量的查询范围。
+	std::optional<CanvasRect> ComputeCanvasRenderCoverageBounds(
+		CanvasViewportState viewport, float viewportWidth, float viewportHeight,
+		CanvasVector contentVelocity, uint32_t tileSize) noexcept;
 
 	struct CanvasTileCoordinate
 	{

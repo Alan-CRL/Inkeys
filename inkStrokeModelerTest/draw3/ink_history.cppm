@@ -189,14 +189,22 @@ export namespace draw3
 
 		const RenderItemState* Find(RenderItemId id) const noexcept;
 		std::span<const RenderItemState> Items() const noexcept;
+		// 由可见项引用计数维护稀疏索引，只枚举与查询范围相交的 Canvas Tile。
+		std::vector<SignedTileCoordinate> VisibleCompositionTiles(
+			InkPixelBounds bounds) const;
 		uint64_t Revision() const noexcept;
 		const CompositionRangeTree& CompositionTree() const noexcept;
 
 	private:
 		RenderItemState* FindMutable(RenderItemId id) noexcept;
+		void AddVisibleCompositionTiles(
+			std::span<const SignedTileCoordinate> tiles);
+		void RemoveVisibleCompositionTiles(
+			std::span<const SignedTileCoordinate> tiles);
 
 		std::vector<RenderItemState> items_;
 		CompositionRangeTree compositionTree_;
+		std::map<SignedTileCoordinate, uint32_t> visibleCompositionTileReferences_;
 		uint64_t revision_ = 0;
 		uint32_t nextItemGeneration_ = 1;
 		std::optional<uint32_t> lastVisibleIndex_;

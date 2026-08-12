@@ -481,6 +481,19 @@ export namespace draw3
 		RECT dirty = {};
 	};
 
+	struct StoredStrokePointRange
+	{
+		size_t begin = 0;
+		size_t end = 0;
+
+		friend bool operator==(const StoredStrokePointRange&,
+			const StoredStrokePointRange&) noexcept = default;
+	};
+
+	// 返回与目标 Canvas 区域相交的连续笔段；每段保留两侧连接点。
+	std::vector<StoredStrokePointRange> PlanStoredStrokeRasterRanges(
+		const InkStroke& stroke, const StoredStrokeRasterTarget& target);
+
 	// 从持久对象重建最终 operator；全屏首次提交与 tile cache 共用此入口。
 	StoredStrokeRasterResult DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
 		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,

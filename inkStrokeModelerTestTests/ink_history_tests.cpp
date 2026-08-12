@@ -1,4 +1,5 @@
 ﻿#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -10,6 +11,7 @@
 
 import draw3.ink_document;
 import draw3.ink_history;
+import draw3.ink_history_gpu;
 
 namespace
 {
@@ -351,6 +353,57 @@ namespace
 		INK_HISTORY_CHECK(!visibleChain.LastVisibleItem().has_value());
 	}
 
+	void TestVisibleTileIndexAndHotScreenRects(int& failures)
+	{
+		const draw3::SignedTileCoordinate tileA{ 0, 0 };
+		const draw3::SignedTileCoordinate tileB{ 1, 0 };
+		const draw3::SignedTileCoordinate tileC{ -2, 3 };
+		draw3::CanvasRuntimeHistory history;
+		const auto first = history.AppendStroke(0, MakeFootprint(tileA));
+		const auto second = history.AppendStroke(1, MakeFootprint(tileA, 20.0f));
+		INK_HISTORY_CHECK(first.has_value() && second.has_value());
+		INK_HISTORY_CHECK(history.VisibleCompositionTiles(
+			{ -10.0f, -10.0f, 260.0f, 260.0f }) ==
+			std::vector<draw3::SignedTileCoordinate>{ tileA });
+		INK_HISTORY_CHECK(history.UndoLastVisible(*second));
+		INK_HISTORY_CHECK(history.VisibleCompositionTiles(
+			{ -10.0f, -10.0f, 260.0f, 260.0f }) ==
+			std::vector<draw3::SignedTileCoordinate>{ tileA });
+		INK_HISTORY_CHECK(history.UpdateItemGeometry(*first, MakeFootprint(tileC)));
+		INK_HISTORY_CHECK(history.VisibleCompositionTiles(
+			{ -10.0f, -10.0f, 520.0f, 260.0f }).empty());
+		INK_HISTORY_CHECK(history.VisibleCompositionTiles(
+			{ -520.0f, 760.0f, -250.0f, 1030.0f }) ==
+			std::vector<draw3::SignedTileCoordinate>{ tileC });
+		const auto third = history.AppendStroke(2, MakeFootprint(tileB));
+		INK_HISTORY_CHECK(third.has_value());
+		INK_HISTORY_CHECK(history.VisibleCompositionTiles(
+			{ 256.0f, 0.0f, 512.0f, 256.0f }) ==
+			std::vector<draw3::SignedTileCoordinate>{ tileB });
+
+		const std::array<draw3::SignedTileCoordinate, 2> affected = {
+			{{ 0, 0 }, { 1, 0 }} };
+		const std::vector<draw3::HotPreimageScreenRect> fractional =
+			draw3::PlanHotPreimageScreenRects(
+				affected, 0.5f, 0.5f, 256, 256);
+		INK_HISTORY_CHECK(fractional.size() == 2);
+		for (const draw3::HotPreimageScreenRect& rect : fractional)
+		{
+			INK_HISTORY_CHECK(rect.left >= 0 && rect.top >= 0);
+			INK_HISTORY_CHECK(rect.right <= 256 && rect.bottom <= 256);
+			INK_HISTORY_CHECK(rect.right - rect.left <=
+				static_cast<int32_t>(draw3::kUndoTileSize));
+			INK_HISTORY_CHECK(rect.bottom - rect.top <=
+				static_cast<int32_t>(draw3::kUndoTileSize));
+		}
+		const std::array<draw3::SignedTileCoordinate, 1> origin = { {{ 0, 0 }} };
+		const std::vector<draw3::HotPreimageScreenRect> negativeViewport =
+			draw3::PlanHotPreimageScreenRects(origin, -0.5f, -0.5f, 130, 130);
+		INK_HISTORY_CHECK(negativeViewport.size() == 4);
+		INK_HISTORY_CHECK((negativeViewport.back() ==
+			draw3::HotPreimageScreenRect{ 128, 128, 130, 130 }));
+	}
+
 	void TestCompositionLru(int& failures)
 	{
 		draw3::CompositionCachePlanner defaults;
@@ -408,6 +461,7 @@ int RunInkHistoryTests()
 	TestPoliciesAndUndoBudget(failures);
 	TestSparseFootprints(failures);
 	TestHistoryAndRangeTree(failures);
+	TestVisibleTileIndexAndHotScreenRects(failures);
 	TestCompositionLru(failures);
 	if (failures == 0) std::cout << "All ink history tests passed." << std::endl;
 	return failures;

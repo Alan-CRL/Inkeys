@@ -16,6 +16,9 @@
 - Undo 只改变墨迹，不改变视口；视口变化丢弃屏幕相关热前像，但保留 Canvas-local composition cache。
 - 平移时按速度方向预建 tile；性能不足时优先保持输入和帧率，以可信旧快照模糊重投影覆盖已有区域，未知区域允许显示真实透明背景。
 - 模糊兜底不得写入 L2、文档、history、热前像或 composition cache；Laser、粒子和光标始终按当前视口重画。
+- 双指/惯性产生任意有限小数 viewport 后，新完成的小笔画仍必须捕获并命中热前像；旧 viewport 的热前像继续失效。
+- 平移恢复只查询当前/预测区域内实际含内容的 tile；不得因 Resize 重算 Canvas-local footprint，长笔画重建单个 tile 时不得无条件处理整条离区几何。
+- 默认惯性应接近触摸浏览网页的滑行距离，明显长于首版；Pen Down 必须同帧刹停平移/惯性并立即开始绘制，不能等待 Touch 全部抬起。
 - 暂不实现 pinch、rotation、边界拉伸/回弹和 EDID 物理手掌距离判断。
 
 ## Acceptance Criteria
@@ -24,4 +27,6 @@
 - [ ] 180ms 边界、触摸接管重建、惯性候选、额外触点、同向/反向接续及 Pen hover/Down 均通过自动或人工验证。
 - [ ] 翻页恢复各自视口，离屏 Undo 不移动当前视口，Resize 后能从文档恢复当前视口内容。
 - [ ] 低速时可见区逐步保持/恢复清晰；高速或过载时不阻塞输入，可信快照只在覆盖交集内兜底且不会污染权威层。
+- [ ] 小数 viewport 下新笔 Undo 命中热前像；平移规划不遍历无关离区墨迹，单 tile 重建只提交相交笔段，Resize 不重算不变的 Canvas-local footprint。
+- [ ] 惯性滑行距离达到触摸网页级别；平移或惯性中的 Pen Down 无额外导航帧并立即产生首个绘制点。
 - [ ] ARM64 Debug/Release 完整解决方案构建成功，两个配置的测试程序通过；未具备的真实 Touch/D3D Debug Layer 场景如实记录。

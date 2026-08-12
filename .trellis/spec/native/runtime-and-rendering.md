@@ -1,4 +1,4 @@
-﻿# Runtime and Rendering
+# Runtime and Rendering
 
 ## Ownership And Flow
 
@@ -707,7 +707,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - `CanvasCommand { CanvasCommandType type; float deltaX; float deltaY; }`，其中 `TranslateViewport` 的 delta 是可见内容屏幕位移 DIP
 - `ScreenToCanvas(screen, viewport)` / `CanvasToScreen(canvas, viewport)` / `ApplyCanvasContentTranslation(viewport, contentDelta)`
 - `CanvasTouchGestureState::OnTouchDown/OnTouchUp/Update/InterruptForPenOrMouse`
-- `BeginCanvasPan/UpdateCanvasPan/EndCanvasPan/StepCanvasPanInertia/StopCanvasPan`
+- `BeginCanvasPan/UpdateCanvasPan/EndCanvasPan(motion, secondsSinceLastInput)/StepCanvasPanInertia/StopCanvasPan/ShouldPrioritizeDrawingContact`
 - `PlanCanvasRenderTiles` / `ComputeCanvasRenderBudget` / `ComputeCanvasSnapshotScreenIntersection`
 - `CompositionRestoreRequest::{tiles, viewportX, viewportY, canvasWidth, canvasHeight}`
 - `ContactInputCoordinator::HasPendingWork()` 与窗口线程 Pen cursor mailbox
@@ -717,12 +717,15 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - `InkViewport.x/y` 是屏幕左上角对应的 Canvas 世界坐标，固定映射为 `screen = canvas - viewportOrigin`。Pen、Highlighter、Eraser、Shape 和 Laser 在进入模型/文档前都反变换为 Canvas-local；瞬态 L0/L1/Laser/粒子/cursor 在当前视口下重建。Viewport 必须 finite、`scale == 1` 且 `x/y` 在 `[-1048576, 1048576] DIP`；触限轴速度立即归零。
 - 方向键只在非自动重复 Down 时发布一次 `TranslateViewport`，内容移动 `64 DIP`，不启动惯性。Viewport 不进入 Undo，也不进入 `InkHistoryRasterKey`；视口变化丢弃依赖屏幕坐标的热前像，但保留 Canvas-local composition cache。
 - 只有零 Touch 开始的批次可识别平移。首指静止时立即按工具绘制；第二指的输入时间戳与首指相差 `<= 180ms` 时，即使绘制线程稍晚执行 `Update`，仍取消该批全部 Touch 临时内容、清 Laser/笔尖/粒子并从剩余 Pen/Mouse contact 重建 L1/L0 后进入平移。超时后该批直到全部 Up 都不可再识别平移。
-- 平移中新增 Touch 只加入手势、不绘制；拓扑变化重设中心，剩一指仍可拖动。最后一指 Up 才进入惯性。`IManipulationProcessor`/`IInertiaProcessor` 只在绘制线程创建和驱动；COM 不可用时保留直接跟手但不启动自动惯性。
+- 平移中新增 Touch 只加入手势、不绘制；拓扑变化重设中心，剩一指仍可拖动。只有收到新的 Pan Move snapshot 时才按两次 Touch QPC 和中心位移更新速度；没有新输入的渲染空帧不得写入零速度。最后一指 `ProcessUp` 前锁存 Windows manipulation 速度，最近有效输入超过 `100ms` 才视为用户已经停住并禁止惯性。
 - 惯性中首个 Touch 进入特殊 180ms 候选期：惯性继续且该指不绘制。及时第二指接续旧速度；候选超时后首指整段生命周期都不补画，并请求加速制动，迟到 Touch 可绘制但不能与首指组成平移。
-- 接续惯性时旧速度在约 `120ms` 内与新手势位移混合：同向叠加，反向先制动再反向，合速度钳制到 `24000 DIP/s`。Pen hover 只在惯性中提高减速度；Pen 或 Mouse contact 在平移/惯性中立即清零速度、吞掉未抬起手势 Touch，并从固定视口开始绘制。窗口 Pen mailbox 必须在 contact dequeue 前读取，避免多滑一帧。
+- 接续惯性时旧速度在约 `120ms` 内与新手势位移混合：同向叠加，反向先制动再反向，合速度钳制到 `24000 DIP/s`。Pen hover 只在惯性中提高减速度；Pen 或 Mouse contact 在平移/惯性中立即清零速度、吞掉未抬起手势 Touch，并从固定视口开始绘制。窗口 Pen/Mouse mailbox 必须在导航推进和 viewport tile 恢复前读取；确认物理 contact 后先排空已发布 Down、创建 runtime 并固定 viewport，再执行本帧导航/恢复。首次 mailbox wake 若早于 Down 入队，只要被吞手势 Touch 尚未全部 Up，下一帧仍保持该优先级。
+- `IManipulationProcessor`/`IInertiaProcessor` 只在已初始化 COM 的绘制线程创建和驱动。每轮 `IInertiaProcessor::Reset` 后必须清除事件 sink 的旧 `Completed` 状态；创建、启动或 `ProcessTime` 失败时保留已锁存速度并切换到 CPU fallback，不能瞬停或反复调用未启动的 processor。Windows 与 fallback 共用以 `DIP/s^2` 表示的减速度：默认 `1200`，Pen hover 或惯性候选超时为 `12000`。Windows API 接受 `DIP/ms^2`，写入前除以 `1000000`；fallback 使用同一线性减速度、真实帧间隔和梯形积分，不能改成另一套指数衰减。
 - 页面切换、Undo、Resize 和键盘平移先终止手势/惯性。每个 Page/Device Canvas 保存自己的 viewport；切页恢复目标 viewport，只保存位置不保存速度。Undo 只改变当前页 RenderItem visibility，不能移动当前 viewport，离屏内容仍按 Canvas-local tile 恢复。
 - L2 是当前 viewport 的清晰稳定层；每次 viewport 变化从 Canvas-local 有符号 `256x256` tile 恢复。规划优先级固定为可见缺失区、运动前缘、150ms 预测扫掠区、后缘维护，预测距离不超过 `1.5` 个视口对角线并带一圈 tile 余量。
 - 每帧恢复预算使用目标帧间隔、上一帧工作/Present 耗时和 tile EWMA，预留 `1ms` 且上限 `4ms`；允许预算为零。每个 tile 前检查 `HasPendingWork()` 和 wake generation，输入到达必须让出。可见 tile 失败保留当前游标并重试，不能把 L2 标记为清晰；仅全部可见 tile 清晰后刷新可信快照。
+- `CanvasRuntimeHistory` 用可见 composition tile 引用计数维护稀疏索引；Append、Undo 和可见项 geometry update 必须同步加减引用。平移规划先计算当前/预测/后缘带一圈 tile 余量的查询范围，再从索引枚举内容，禁止每帧遍历所有 RenderItem。footprint 是 Canvas-local 真值，窗口 Resize 只更新 raster generation 并恢复当前可见 tile，不重算全页 footprint。
+- Stored Pen/Highlighter/Eraser 的 tile restore 只上传与目标 Canvas 区域相交的连续点段；每段保留相邻连接点，胶囊、擦除和荧光 sweep 在 tile 边缘必须连续。Shape 继续使用解析外框筛选并只提交两个端点。
 - 可信快照只含最后一次完整清晰 L2。平移时按两个世界视口的真实交集重投影到 backbuffer；低于 `300 DIP/s` 不模糊，之后沿运动方向增加并钳制到 `12 DIP`。清晰 tile 后画并覆盖兜底；超出快照覆盖的区域保持真实透明。兜底像素不得写回 L2、文档、history、热前像或 composition cache。
 
 ### 4. Validation & Error Matrix
@@ -734,21 +737,24 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 | 第二 Touch 时间戳恰好 180ms | 允许平移；判定不能依赖绘制线程实际处理延迟 |
 | 首 Touch 已在 L0/L1 产生内容后及时第二指 | 丢弃该批 Touch 内容并从仍有效 Pen/Mouse 重建全部瞬态层 |
 | 惯性首指超时 | 不补画该指；加强制动；迟到 Touch 不得重新组成手势 |
-| Pen/Mouse 已 contact | 阻止新双指手势；活动平移/惯性立即刹停并吞手势 Touch |
-| manipulation/inertia COM 创建失败 | 双指直接跟手可用，最后 Up 不产生惯性 |
+| Pen/Mouse 已 contact | 阻止新双指手势；活动平移/惯性立即刹停并吞手势 Touch；真实 Down 必须先于导航推进和 tile 恢复消费 |
+| 无新 Touch Move 的渲染帧 | 保持最后有效速度；不得用零中心位移覆盖 |
+| 最后 Touch Up / Windows processor 完成 | `ProcessUp` 前锁存速度；最近输入不超过 `100ms` 时启动惯性，超时则停止 |
+| manipulation/inertia COM 创建、启动或步进失败 | 双指直接跟手保持可用；以锁存速度切换同参数 CPU 线性惯性 |
+| 新一轮 Windows inertia | 清空上一轮事件 sink 的 `Completed`，不能在第一帧误判完成 |
 | 可见 tile 恢复失败或有新输入 | 不推进失败 tile；保持恢复 pending，下一帧重试 |
 | 快照/当前视口无交集 | 不采样、不拉伸边缘，区域保持透明背景 |
-| Undo/page/Resize | 快照签名失效；失败的权威恢复继续排队，不能把兜底提交为文档内容 |
+| Undo/page/Resize | 快照签名失效；Resize 不重算 Canvas-local footprint；失败的权威恢复继续排队，不能把兜底提交为文档内容 |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：快速同向反复滑动继承速度并增速；反向滑动先消耗旧速度；Pen 靠近时惯性快速减弱，落笔前 viewport 已固定。
 - Base：方向键一次移动内容 64 DIP；切到另一页恢复该页上次 viewport；负坐标 Stroke 由有符号 tile 正确显示和撤回。
-- Bad：用处理时刻而非 contact QPC 判定 180ms、把 viewport 写入 raster key、用模糊快照覆盖未知区域，或恢复 tile 时不检查待处理 Down。
+- Bad：用处理时刻而非 contact QPC 判定 180ms、每个渲染帧用零位移刷新速度、最后 `ProcessUp` 后才读取速度、只用 mailbox 刹停却把真实 Down 留到 tile 恢复之后、把 viewport 写入 raster key，或用模糊快照覆盖未知区域。
 
 ### 6. Tests Required
 
-- 单元测试覆盖 180ms 内/等于/超时和绘制线程迟到、静止首指撤销、惯性首指抑制、迟到 Touch、额外 Touch、同向/反向接续、Pen hover/Down、Mouse contact、速度上限与单轴范围保护。
+- 单元测试覆盖 180ms 内/等于/超时和绘制线程迟到、静止首指撤销、惯性首指抑制、迟到 Touch、额外 Touch、同向/反向接续、Pen hover/Down、Mouse contact、导航 contact 优先判定、速度上限、`100ms` 释放速度时效与单轴范围保护；静态/集成检查覆盖真实 Down 先于导航/恢复出队、空帧不改速、最后 Up 前锁存、旧 Completed 清理和 Windows 失败 CPU 接续。
 - 坐标/文档测试覆盖 Pen、Highlighter、Eraser、四种 Shape 的 Canvas-local 完成态，Laser 瞬态变换，负/远端坐标、有符号 tile、每页独立 viewport、离屏 Undo 和 viewport 不进入 history raster key。
 - 渲染规划测试覆盖双方向预测、`1.5` 对角线上限、优先级、0/4ms 预算、pending input 让出、失败 tile 不推进、可见完成、快照交集、300 DIP/s 清晰阈值和 12 DIP 模糊上限。
 - ARM64 Debug/Release 完整 solution 构建并运行两套测试。实体 Touch/Pen、快速反复滑动手感、视觉重投影/模糊、窗口 Resize、翻页、D3D Debug Layer 和 Windows 7 未执行时必须明确标记。
@@ -757,7 +763,11 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 Wrong：`screen point 直接写文档 -> viewport 进入 history key -> 平移时整页缓存失效 -> 模糊图写回 L2。`
 
-Correct：`screen -> Canvas-local 文档真值；viewport 仅决定目标矩形；Canvas tile 清晰恢复写 L2，可信快照只在 backbuffer 下方作视觉兜底。`
+Correct：`真实 Touch Move + Touch QPC 更新速度 -> Up 前锁存 -> Windows inertia；Windows 失败则同速度 CPU 接续。screen -> Canvas-local 文档真值；viewport 仅决定目标矩形；Canvas tile 清晰恢复写 L2，可信快照只在 backbuffer 下方作视觉兜底。`
+
+Wrong：`Pen mailbox 清零速度 -> 本帧继续 tile 恢复 -> 帧后段才出队 Pen Down。`
+
+Correct：`Pen/Mouse mailbox 确认 contact -> 导航/恢复前优先出队真实 Down -> 固定 viewport 并吞手势 Touch -> 同帧创建绘制 runtime。`
 
 ## Scenario: Ink Document Persistence
 
@@ -841,7 +851,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 ### 3. Contracts
 
 - Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。撤回只隐藏最后可见 RenderItem，不删除 Stroke、不提供 redo；撤回后新笔继续追加，previous-visible 链必须 O(1) 找到尾部。
-- 热前像使用 `128x128 BGRA8` tile。默认 `64 MiB / 20 entries` 对应 1024 槽；每笔只复制与当前可见区相交的稀疏 footprint，顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Copy 只在绘制线程提交，不 Map/readback/wait。
+- 热前像使用 `128x128 BGRA8` screen-local block。Canvas `128x128` undo tile 只确定受影响屏幕范围；小数 viewport 下一个 Canvas tile 可覆盖 129 个屏幕像素，必须拆成相邻 screen block，不能直接写入单个 slice。默认 `64 MiB / 20 entries` 对应 1024 槽；顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Capture/restore 要求 page、item、raster state、viewport float 值和窗口尺寸完全一致；viewport 只需有限，不要求整数。Copy 只在绘制线程提交，不 Map/readback/wait。
 - 冷路径使用 32 RenderItem 的叶 Block 和 `256x256` operator tile；每槽为 `BGRA8 Add + R16F Retain = 384 KiB`，默认 `192 MiB = 512 slots`。组合固定为 `Later(Earlier(Below))`；CPU topology/generation 永久保留，GPU 节点只作 LRU 可淘汰缓存。
 - 撤回路径依次为 `hot_preimage -> composition_cache/composition_rebuild -> ordered_tile_replay`。冷撤回只处理被撤项的 composition tiles，候选画面成功后才提交 visibility；失败时恢复原可见范围。缓存预算为 0 或资源失败只能降低性能，不能删除 CPU history。
 - GPU history pass 的 array SRV/RTV 必须各自限制为单 slice；所有公开 composition 操作的全部出口解绑 `t0..t13`、`b2` 和 RTV，并恢复全画布 viewport/raster state。没有 `ID3D11DeviceContext1` 时仍可用 transparent scratch copy 清理 L2 tile。
@@ -857,7 +867,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 | composition 节点缺失 | 按需重建；资源不足时逐 tile ordered replay |
 | 候选冷恢复失败 | visibility 保持原值，并尝试恢复撤回前 tile |
 | Cache policy 降低 | 先淘汰最旧热项/LRU 节点；提高预算不恢复已淘汰内容 |
-| Resize | 丢弃不兼容热前像、更新 footprint/raster generation，并从 CPU history 恢复当前页 |
+| Resize | 丢弃不兼容热前像、更新 raster generation；保留 Canvas-local footprint 和 tile 索引，并从 CPU history 恢复当前页 |
 | 首页按 `8` / 空页按 `5` | 明确 no-op，不改变 Page、history 或 L2 |
 | 极端但有限 Stored 坐标 | 文档原值不变；sidecar 无法精确量化时使用保守可见 footprint，不得使有效 Stroke 无 RenderItem |
 
@@ -870,7 +880,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 ### 6. Tests Required
 
 - CPU 测试断言 4K 为 510 个 128 tile、默认 1024/20 热预算、512 composition 槽、FIFO/LRU/pin 和 0 禁用。
-- 覆盖 Pen/Highlighter/Eraser、单点、负坐标、屏外/极端有限坐标、AA padding 和跨 4K 稀疏对角线 footprint。
+- 覆盖 Pen/Highlighter/Eraser、单点、负坐标、屏外/极端有限坐标、AA padding 和跨 4K 稀疏对角线 footprint；小数正负 viewport 的 screen block 每边不得超过 128，且边缘 partial block 必须落在窗口内。
 - 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、隐藏分支后 append、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
 - 静态核对首次提交顺序、逐笔 capture/resolve、无 readback、单 slice SRV、所有 pass 解绑、事务式 cold undo、FIFO Canvas command 和控制台字段。
 - Debug/Release ARM64 完整解决方案 Rebuild并运行两套控制台测试；可见窗口和 D3D Debug Layer 未执行时必须明确标记未验证，不能用静态检查替代。

@@ -90,6 +90,22 @@ export namespace draw3
 		RECT dirty = {};
 	};
 
+	struct HotPreimageScreenRect
+	{
+		int32_t left = 0;
+		int32_t top = 0;
+		int32_t right = 0;
+		int32_t bottom = 0;
+
+		friend bool operator==(const HotPreimageScreenRect&,
+			const HotPreimageScreenRect&) noexcept = default;
+	};
+
+	// 小数 viewport 下 Canvas Tile 可能覆盖 129 个屏幕像素，热前像改按屏幕局部块规划。
+	std::vector<HotPreimageScreenRect> PlanHotPreimageScreenRects(
+		std::span<const SignedTileCoordinate> canvasTiles,
+		float viewportX, float viewportY, int canvasWidth, int canvasHeight);
+
 	enum class CompositionRestorePath : uint8_t
 	{
 		CompositionCache,

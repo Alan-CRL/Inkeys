@@ -239,8 +239,12 @@ namespace draw3
 		motion.velocity = ClampVelocity(velocity);
 	}
 
-	void EndCanvasPan(CanvasPanMotionState& motion) noexcept
+	void EndCanvasPan(CanvasPanMotionState& motion,
+		double secondsSinceLastInput) noexcept
 	{
+		if (!std::isfinite(secondsSinceLastInput) || secondsSinceLastInput < 0.0 ||
+			secondsSinceLastInput > kCanvasPanReleaseVelocityHorizonSeconds)
+			motion.velocity = {};
 		motion.velocity = ClampVelocity(motion.velocity);
 		motion.inheritedVelocity = {};
 		motion.inheritedBlendRemainingSeconds = 0.0;
@@ -253,19 +257,45 @@ namespace draw3
 		if (!motion.inertiaActive || !std::isfinite(deltaSeconds) || deltaSeconds <= 0.0)
 			return {};
 		const double boundedSeconds = std::min(deltaSeconds, 0.05);
-		const float decay = static_cast<float>(std::exp(
-			-(penInRange ? 12.0 : 3.2) * boundedSeconds));
+		const float speed = CanvasPanSpeed(motion);
+		if (speed < 5.0f)
+		{
+			StopCanvasPan(motion);
+			return {};
+		}
+		const float deceleration = penInRange
+			? kCanvasPanPenBrakeDecelerationDipPerSecondSquared
+			: kCanvasPanInertiaDecelerationDipPerSecondSquared;
+		const float seconds = static_cast<float>(boundedSeconds);
+		const float nextSpeed = (std::max)(0.0f, speed - deceleration * seconds);
+		const float traveled = (speed + nextSpeed) * 0.5f * seconds;
 		const CanvasVector delta = {
-			motion.velocity.x * static_cast<float>(boundedSeconds),
-			motion.velocity.y * static_cast<float>(boundedSeconds)
-		};
-		motion.velocity.x *= decay;
-		motion.velocity.y *= decay;
-		if (CanvasPanSpeed(motion) < 5.0f) StopCanvasPan(motion);
+			motion.velocity.x / speed * traveled,
+			motion.velocity.y / speed * traveled };
+		if (nextSpeed < 5.0f) StopCanvasPan(motion);
+		else
+		{
+			const float scale = nextSpeed / speed;
+			motion.velocity.x *= scale;
+			motion.velocity.y *= scale;
+		}
 		return delta;
 	}
 
 	void StopCanvasPan(CanvasPanMotionState& motion) noexcept { motion = {}; }
+
+	void InterruptCanvasPanForDrawing(CanvasPanMotionState& motion,
+		CanvasTouchGestureState& gesture) noexcept
+	{
+		StopCanvasPan(motion);
+		gesture.InterruptForPenOrMouse();
+	}
+
+	bool ShouldPrioritizeDrawingContact(bool navigationInProgress,
+		bool penInContact, bool mouseInContact) noexcept
+	{
+		return navigationInProgress && (penInContact || mouseInContact);
+	}
 
 	float CanvasPanSpeed(const CanvasPanMotionState& motion) noexcept
 	{
@@ -323,6 +353,34 @@ namespace draw3
 			offset.y *= scale;
 		}
 		return offset;
+	}
+
+	std::optional<CanvasRect> ComputeCanvasRenderCoverageBounds(
+		CanvasViewportState viewport, float viewportWidth, float viewportHeight,
+		CanvasVector contentVelocity, uint32_t tileSize) noexcept
+	{
+		if (!std::isfinite(viewport.x) || !std::isfinite(viewport.y) ||
+			!std::isfinite(viewportWidth) || !std::isfinite(viewportHeight) ||
+			viewportWidth <= 0.0f || viewportHeight <= 0.0f || tileSize == 0)
+			return std::nullopt;
+		const CanvasVector contentPrediction = ComputeCanvasPredictionOffset(
+			contentVelocity, viewportWidth, viewportHeight);
+		const CanvasVector viewportPrediction{
+			-contentPrediction.x, -contentPrediction.y };
+		const CanvasRect current{ viewport.x, viewport.y,
+			viewport.x + viewportWidth, viewport.y + viewportHeight };
+		const CanvasRect future{ current.left + viewportPrediction.x,
+			current.top + viewportPrediction.y, current.right + viewportPrediction.x,
+			current.bottom + viewportPrediction.y };
+		const CanvasRect trailing{ current.left + contentPrediction.x,
+			current.top + contentPrediction.y, current.right + contentPrediction.x,
+			current.bottom + contentPrediction.y };
+		const float margin = static_cast<float>(tileSize);
+		return CanvasRect{
+			(std::min)({ current.left, future.left, trailing.left }) - margin,
+			(std::min)({ current.top, future.top, trailing.top }) - margin,
+			(std::max)({ current.right, future.right, trailing.right }) + margin,
+			(std::max)({ current.bottom, future.bottom, trailing.bottom }) + margin };
 	}
 
 	CanvasRenderTilePlan PlanCanvasRenderTiles(

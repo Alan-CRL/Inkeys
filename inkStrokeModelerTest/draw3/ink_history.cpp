@@ -923,6 +923,7 @@ namespace draw3
 			return std::nullopt;
 		}
 		const RenderItemId result = items_.back().id;
+		AddVisibleCompositionTiles(items_.back().compositionTiles);
 		lastVisibleIndex_ = result.index;
 		if (nextItemGeneration_ == (std::numeric_limits<uint32_t>::max)())
 			nextItemGeneration_ = 0;
@@ -949,6 +950,7 @@ namespace draw3
 		if (LastVisibleItem() != expected) return false;
 		RenderItemState* item = FindMutable(expected);
 		if (!item || !compositionTree_.SetItemVisibility(expected, false)) return false;
+		RemoveVisibleCompositionTiles(item->compositionTiles);
 		item->visible = false;
 		lastVisibleIndex_ = item->previousVisibleIndex;
 		if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
@@ -964,8 +966,14 @@ namespace draw3
 		if (!item || !IsValidBounds(footprint.pixelBounds)) return false;
 		NormalizeTiles(footprint.undoTiles);
 		NormalizeTiles(footprint.compositionTiles);
+		const std::vector<SignedTileCoordinate> previousTiles = item->compositionTiles;
 		if (!compositionTree_.UpdateItemGeometry(
 			id, footprint.pixelBounds, footprint.compositionTiles)) return false;
+		if (item->visible)
+		{
+			RemoveVisibleCompositionTiles(previousTiles);
+			AddVisibleCompositionTiles(footprint.compositionTiles);
+		}
 		item->pixelBounds = footprint.pixelBounds;
 		item->undoTiles = std::move(footprint.undoTiles);
 		item->compositionTiles = std::move(footprint.compositionTiles);
@@ -1002,6 +1010,45 @@ namespace draw3
 	std::span<const RenderItemState> CanvasRuntimeHistory::Items() const noexcept
 	{
 		return { items_.data(), items_.size() };
+	}
+
+	void CanvasRuntimeHistory::AddVisibleCompositionTiles(
+		std::span<const SignedTileCoordinate> tiles)
+	{
+		for (SignedTileCoordinate tile : tiles)
+		{
+			uint32_t& references = visibleCompositionTileReferences_[tile];
+			if (references != (std::numeric_limits<uint32_t>::max)()) ++references;
+		}
+	}
+
+	void CanvasRuntimeHistory::RemoveVisibleCompositionTiles(
+		std::span<const SignedTileCoordinate> tiles)
+	{
+		for (SignedTileCoordinate tile : tiles)
+		{
+			const auto found = visibleCompositionTileReferences_.find(tile);
+			if (found == visibleCompositionTileReferences_.end()) continue;
+			if (found->second <= 1) visibleCompositionTileReferences_.erase(found);
+			else --found->second;
+		}
+	}
+
+	std::vector<SignedTileCoordinate> CanvasRuntimeHistory::VisibleCompositionTiles(
+		InkPixelBounds bounds) const
+	{
+		std::vector<SignedTileCoordinate> result;
+		TileRange range;
+		if (!TryMakeTileRange(bounds, kCompositionTileSize, range)) return result;
+		const auto begin = visibleCompositionTileReferences_.lower_bound({
+			range.firstX, (std::numeric_limits<int32_t>::min)() });
+		for (auto iterator = begin; iterator != visibleCompositionTileReferences_.end() &&
+			iterator->first.x <= range.lastX; ++iterator)
+		{
+			if (iterator->first.y >= range.firstY && iterator->first.y <= range.lastY)
+				result.push_back(iterator->first);
+		}
+		return result;
 	}
 
 	uint64_t CanvasRuntimeHistory::Revision() const noexcept

@@ -75,6 +75,40 @@ int RunHighlighterGeometryTests()
 	static_assert(sizeof(draw3::ShapePrimitive) == sizeof(draw3::InkPoint) * 2);
 	static_assert(draw3::kShapeDashLengthToWidthRatio == 4.0f);
 	static_assert(draw3::kShapeDashGapToWidthRatio == 6.0f);
+	const draw3::StoredInkStyle localRasterPenStyle{
+		draw3::StoredInkType::Pen, 0x123456u, 1.0f, 0u };
+	const draw3::InkStroke longStroke(localRasterPenStyle, {
+		{ 10.0f, 10.0f, 5.0f },
+		{ 10.0f, -200.0f, 5.0f },
+		{ 400.0f, -200.0f, 5.0f },
+		{ 500.0f, -200.0f, 5.0f },
+		{ 10.0f, 20.0f, 5.0f }
+	});
+	const draw3::StoredStrokeRasterTarget localTarget{
+		nullptr, 0.0f, 0.0f, 256, 256 };
+	const std::vector<draw3::StoredStrokePointRange> localRanges =
+		draw3::PlanStoredStrokeRasterRanges(longStroke, localTarget);
+	HIGHLIGHTER_CHECK(localRanges.size() == 2);
+	HIGHLIGHTER_CHECK((localRanges[0] == draw3::StoredStrokePointRange{ 0, 2 }));
+	HIGHLIGHTER_CHECK((localRanges[1] == draw3::StoredStrokePointRange{ 3, 5 }));
+	const draw3::InkStroke distantStroke(localRasterPenStyle, {
+		{ -1000.0f, -1000.0f, 5.0f }, { -900.0f, -900.0f, 5.0f } });
+	HIGHLIGHTER_CHECK(draw3::PlanStoredStrokeRasterRanges(
+		distantStroke, localTarget).empty());
+	const draw3::StoredInkStyle localRasterHighlighterStyle{
+		draw3::StoredInkType::Highlighter, 0xFFFF00u, 0.35f, 0u };
+	const draw3::StoredInkStyle localRasterEraserStyle{
+		draw3::StoredInkType::Eraser, 0u, 1.0f, 0u };
+	const draw3::InkStroke longHighlighter(localRasterHighlighterStyle,
+		std::vector<draw3::StoredInkPoint>(longStroke.Points().begin(),
+			longStroke.Points().end()));
+	const draw3::InkStroke longEraser(localRasterEraserStyle,
+		std::vector<draw3::StoredInkPoint>(longStroke.Points().begin(),
+			longStroke.Points().end()));
+	HIGHLIGHTER_CHECK(draw3::PlanStoredStrokeRasterRanges(
+		longHighlighter, localTarget) == localRanges);
+	HIGHLIGHTER_CHECK(draw3::PlanStoredStrokeRasterRanges(
+		longEraser, localTarget) == localRanges);
 	draw3::ShapePrimitive reverseRectangle = {
 		{ 30.0f, 40.0f, 2.5f, 0.0f }, { 10.0f, 20.0f, 0.0f, 0.0f }
 	};

@@ -111,6 +111,11 @@ namespace draw3
 			}
 
 			void ResetDelta() noexcept { delta_ = {}; }
+			void BeginOperation() noexcept
+			{
+				delta_ = {};
+				completed_ = false;
+			}
 			CanvasVector TakeDelta() noexcept
 			{
 				const CanvasVector delta = delta_;
@@ -164,6 +169,7 @@ namespace draw3
 			{
 				if (!available_) return;
 				manipulation_->CompleteManipulation();
+				lastManipulationVelocity_ = {};
 				for (const auto& [id, point] : contacts)
 					if (FAILED(manipulation_->ProcessDown(id, point.x, point.y)))
 					{
@@ -174,8 +180,13 @@ namespace draw3
 
 			void Move(MANIPULATOR_ID id, CanvasVector point) noexcept
 			{
-				if (available_ && FAILED(manipulation_->ProcessMove(id, point.x, point.y)))
+				if (!available_) return;
+				if (FAILED(manipulation_->ProcessMove(id, point.x, point.y)))
+				{
 					available_ = false;
+					return;
+				}
+				CaptureManipulationVelocity();
 			}
 
 			void Down(MANIPULATOR_ID id, CanvasVector point) noexcept
@@ -186,45 +197,54 @@ namespace draw3
 
 			void Up(MANIPULATOR_ID id, CanvasVector point) noexcept
 			{
-				if (available_ && FAILED(manipulation_->ProcessUp(id, point.x, point.y)))
+				if (!available_) return;
+				// 最后一指 ProcessUp 会完成 processor；必须先锁存甩动速度。
+				CaptureManipulationVelocity();
+				if (FAILED(manipulation_->ProcessUp(id, point.x, point.y)))
 					available_ = false;
 			}
 
 			CanvasVector VelocityDipPerSecond() const noexcept
 			{
-				if (!available_) return {};
-				float x = 0.0f;
-				float y = 0.0f;
-				if (FAILED(manipulation_->GetVelocityX(&x)) ||
-					FAILED(manipulation_->GetVelocityY(&y)) ||
-					!std::isfinite(x) || !std::isfinite(y)) return {};
-				return { x * 1000.0f, y * 1000.0f };
+				return lastManipulationVelocity_;
 			}
 
 			bool StartInertia(CanvasVector velocityDipPerSecond) noexcept
 			{
-				if (!available_) return false;
-				inertiaSink_->ResetDelta();
-				return SUCCEEDED(inertia_->Reset()) &&
+				inertiaRunning_ = false;
+				if (!available_ || FAILED(inertia_->Reset())) return false;
+				// Stop/CompleteTime 会留下 Completed；新一轮必须显式清掉旧终态。
+				inertiaSink_->BeginOperation();
+				inertiaRunning_ =
 					SUCCEEDED(inertia_->put_InitialOriginX(0.0f)) &&
 					SUCCEEDED(inertia_->put_InitialOriginY(0.0f)) &&
 					SUCCEEDED(inertia_->put_InitialVelocityX(velocityDipPerSecond.x / 1000.0f)) &&
 					SUCCEEDED(inertia_->put_InitialVelocityY(velocityDipPerSecond.y / 1000.0f)) &&
-					SUCCEEDED(inertia_->put_DesiredDeceleration(0.0032f)) &&
+					SUCCEEDED(inertia_->put_DesiredDeceleration(
+						kCanvasPanInertiaDecelerationDipPerSecondSquared / 1000000.0f)) &&
 					SUCCEEDED(inertia_->put_InitialTimestamp(GetTickCount()));
+				return inertiaRunning_;
 			}
 
 			bool StepInertia(bool penInRange, CanvasVector& delta, bool& completed) noexcept
 			{
 				delta = {};
 				completed = true;
-				if (!available_) return false;
+				if (!available_ || !inertiaRunning_) return false;
 				inertiaSink_->ResetDelta();
 				BOOL nativeCompleted = FALSE;
-				if (FAILED(inertia_->put_DesiredDeceleration(penInRange ? 0.012f : 0.0032f)) ||
-					FAILED(inertia_->ProcessTime(GetTickCount(), &nativeCompleted))) return false;
+				const float deceleration = penInRange
+					? kCanvasPanPenBrakeDecelerationDipPerSecondSquared / 1000000.0f
+					: kCanvasPanInertiaDecelerationDipPerSecondSquared / 1000000.0f;
+				if (FAILED(inertia_->put_DesiredDeceleration(deceleration)) ||
+					FAILED(inertia_->ProcessTime(GetTickCount(), &nativeCompleted)))
+				{
+					inertiaRunning_ = false;
+					return false;
+				}
 				delta = inertiaSink_->TakeDelta();
 				completed = nativeCompleted != FALSE || inertiaSink_->Completed();
+				if (completed) inertiaRunning_ = false;
 				return std::isfinite(delta.x) && std::isfinite(delta.y);
 			}
 
@@ -232,9 +252,20 @@ namespace draw3
 			{
 				if (manipulation_) manipulation_->CompleteManipulation();
 				if (inertia_) inertia_->CompleteTime(GetTickCount());
+				inertiaRunning_ = false;
 			}
 
 		private:
+			void CaptureManipulationVelocity() noexcept
+			{
+				float x = 0.0f;
+				float y = 0.0f;
+				if (FAILED(manipulation_->GetVelocityX(&x)) ||
+					FAILED(manipulation_->GetVelocityY(&y)) ||
+					!std::isfinite(x) || !std::isfinite(y)) return;
+				lastManipulationVelocity_ = { x * 1000.0f, y * 1000.0f };
+			}
+
 			static bool Advise(IUnknown* source, _IManipulationEvents* sink,
 				Microsoft::WRL::ComPtr<IConnectionPoint>& connection, DWORD& cookie)
 			{
@@ -254,6 +285,8 @@ namespace draw3
 			Microsoft::WRL::ComPtr<IConnectionPoint> inertiaConnection_;
 			DWORD manipulationCookie_ = 0;
 			DWORD inertiaCookie_ = 0;
+			CanvasVector lastManipulationVelocity_ = {};
+			bool inertiaRunning_ = false;
 			bool available_ = false;
 		};
 
@@ -444,40 +477,18 @@ namespace draw3
 			const CanvasRuntimeHistory& history, InkViewport viewport,
 			int width, int height)
 		{
-			std::vector<SignedTileCoordinate> tiles;
-			const double visibleLeft = viewport.x;
-			const double visibleTop = viewport.y;
-			const double visibleRight = visibleLeft + std::max(width, 0);
-			const double visibleBottom = visibleTop + std::max(height, 0);
-			for (const RenderItemState& item : history.Items())
-			{
-				if (!item.visible) continue;
-				for (SignedTileCoordinate tile : item.compositionTiles)
-				{
-					const double left = static_cast<double>(tile.x) * kCompositionTileSize;
-					const double top = static_cast<double>(tile.y) * kCompositionTileSize;
-					if (left < visibleRight && left + kCompositionTileSize > visibleLeft &&
-						top < visibleBottom && top + kCompositionTileSize > visibleTop)
-						tiles.push_back(tile);
-				}
-			}
-			std::sort(tiles.begin(), tiles.end());
-			tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
-			return tiles;
+			return history.VisibleCompositionTiles({ viewport.x, viewport.y,
+				viewport.x + static_cast<float>(std::max(width, 0)),
+				viewport.y + static_cast<float>(std::max(height, 0)) });
 		}
 
 		std::vector<CanvasTileCoordinate> CollectCanvasContentTiles(
-			const CanvasRuntimeHistory& history)
+			const CanvasRuntimeHistory& history, CanvasRect coverage)
 		{
 			std::vector<CanvasTileCoordinate> tiles;
-			for (const RenderItemState& item : history.Items())
-			{
-				if (!item.visible) continue;
-				for (SignedTileCoordinate tile : item.compositionTiles)
-					tiles.push_back({ tile.x, tile.y });
-			}
-			std::sort(tiles.begin(), tiles.end());
-			tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
+			for (SignedTileCoordinate tile : history.VisibleCompositionTiles({
+				coverage.left, coverage.top, coverage.right, coverage.bottom }))
+				tiles.push_back({ tile.x, tile.y });
 			return tiles;
 		}
 
@@ -1716,6 +1727,7 @@ namespace draw3
 		CanvasVector previousPanCentroid = {};
 		bool panCentroidValid = false;
 		size_t previousPanContactCount = 0;
+		int64_t lastPanInputQpc = 0;
 		int64_t lastNavigationQpc = 0;
 		LaserTrailLifecycle laserLifecycle;
 		float laserOpacity = 0.0f;
@@ -1815,9 +1827,8 @@ namespace draw3
 
 		auto interruptNavigationForPenOrMouse = [&]()
 		{
-			StopCanvasPan(panMotion);
+			InterruptCanvasPanForDrawing(panMotion, touchGesture);
 			windowsManipulation.Stop();
-			touchGesture.InterruptForPenOrMouse();
 			for (CanvasGestureContactRuntime& contact : gestureContacts)
 				contact.disposition = CanvasTouchDisposition::Suppressed;
 			panCentroidValid = false;
@@ -1875,6 +1886,7 @@ namespace draw3
 						if (touchDecision.beginPan)
 						{
 							BeginCanvasPan(panMotion, inheritedInertia);
+							lastPanInputQpc = down.qpc;
 							windowsManipulation.Stop();
 							if (touchDecision.cancelExistingTouchDrawing)
 								cancelTouchDrawingForPan();
@@ -2653,8 +2665,10 @@ namespace draw3
 				// RTS 先发布接触光标；利用该原子通道在 Pen contact 出队前立即刹停。
 				interruptNavigationForPenOrMouse();
 			}
-			touchGesture.Update(nowQpc, qpcFrequency);
+				touchGesture.Update(nowQpc, qpcFrequency);
 			bool topologyChanged = false;
+			bool panInputUpdated = false;
+			int64_t newestPanInputQpc = 0;
 			for (CanvasGestureContactRuntime& contact : gestureContacts)
 			{
 				ContactSnapshot snapshot;
@@ -2667,7 +2681,11 @@ namespace draw3
 				if (snapshot.phase == ContactPhase::Move)
 				{
 					if (contact.disposition == CanvasTouchDisposition::Pan)
+					{
 						windowsManipulation.Move(contact.manipulatorId, point);
+						panInputUpdated = true;
+						newestPanInputQpc = (std::max)(newestPanInputQpc, snapshot.qpc);
+					}
 				}
 				else if (snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled)
@@ -2713,18 +2731,21 @@ namespace draw3
 						panCentroidValid = true;
 						previousPanContactCount = count;
 					}
-					else
+					else if (panInputUpdated)
 					{
 						const CanvasVector centroidDelta{
 							centroid.x - previousPanCentroid.x,
 							centroid.y - previousPanCentroid.y };
-						const double deltaSeconds = QpcDeltaSeconds(
-							nowQpc, lastNavigationQpc, qpcFrequency);
+						const double deltaSeconds = lastPanInputQpc > 0
+							? QpcDeltaSeconds(newestPanInputQpc,
+								lastPanInputQpc, qpcFrequency) : 0.0;
 						contentDelta = UpdateCanvasPan(panMotion, centroidDelta,
 							deltaSeconds > 0.0 ? deltaSeconds :
 								1.0 / configuration_.timingProfile.target_fps);
 						previousPanCentroid = centroid;
 					}
+					if (panInputUpdated && newestPanInputQpc > 0)
+						lastPanInputQpc = newestPanInputQpc;
 				}
 			}
 			else if (panMotion.inertiaActive)
@@ -2734,23 +2755,37 @@ namespace draw3
 				bool completed = false;
 				if (windowsManipulationInitialized && windowsManipulation.Available())
 				{
-					if (!windowsManipulation.StepInertia(
-						accelerateStop, contentDelta, completed) || completed)
-						StopCanvasPan(panMotion);
-					else
+					const bool nativeStepSucceeded = windowsManipulation.StepInertia(
+						accelerateStop, contentDelta, completed);
+					if (nativeStepSucceeded && !completed)
 					{
 						const double deltaSeconds = QpcDeltaSeconds(
 							nowQpc, lastNavigationQpc, qpcFrequency);
-						if (deltaSeconds > 0.0)
+						// GetTickCount 毫秒量化可能产生零 delta；未完成时仍保留锁存速度。
+						if (deltaSeconds > 0.0 &&
+							(contentDelta.x != 0.0f || contentDelta.y != 0.0f))
 							SetCanvasPanVelocity(panMotion, {
 								static_cast<float>(contentDelta.x / deltaSeconds),
 								static_cast<float>(contentDelta.y / deltaSeconds) });
 					}
+					else if (nativeStepSucceeded) StopCanvasPan(panMotion);
+					else
+					{
+						// 原生 processor 运行中失败时保留当前速度，继续同参数 CPU 惯性。
+						const double deltaSeconds = QpcDeltaSeconds(
+							nowQpc, lastNavigationQpc, qpcFrequency);
+						contentDelta = StepCanvasPanInertia(panMotion,
+							deltaSeconds > 0.0 ? deltaSeconds :
+								1.0 / configuration_.timingProfile.target_fps, accelerateStop);
+					}
 				}
 				else
 				{
+					const double deltaSeconds = QpcDeltaSeconds(
+						nowQpc, lastNavigationQpc, qpcFrequency);
 					contentDelta = StepCanvasPanInertia(panMotion,
-						1.0 / configuration_.timingProfile.target_fps, accelerateStop);
+						deltaSeconds > 0.0 ? deltaSeconds :
+							1.0 / configuration_.timingProfile.target_fps, accelerateStop);
 				}
 			}
 
@@ -2787,12 +2822,21 @@ namespace draw3
 					if (panMotion.inheritedBlendRemainingSeconds <= 0.0 &&
 						(systemVelocity.x != 0.0f || systemVelocity.y != 0.0f))
 						SetCanvasPanVelocity(panMotion, systemVelocity);
-					EndCanvasPan(panMotion);
-					if (panMotion.inertiaActive &&
-						!windowsManipulation.StartInertia(panMotion.velocity))
-						StopCanvasPan(panMotion);
+					const double secondsSinceLastInput = lastPanInputQpc > 0
+						? QpcDeltaSeconds(nowQpc, lastPanInputQpc, qpcFrequency)
+						: (std::numeric_limits<double>::infinity)();
+					EndCanvasPan(panMotion, secondsSinceLastInput);
+					// StartInertia 失败时保留 motion，由下一帧 CPU fallback 接管。
+					if (panMotion.inertiaActive)
+						windowsManipulation.StartInertia(panMotion.velocity);
 				}
-				else StopCanvasPan(panMotion); // COM 不可用时保留跟手，但禁用自动惯性。
+				else
+				{
+					const double secondsSinceLastInput = lastPanInputQpc > 0
+						? QpcDeltaSeconds(nowQpc, lastPanInputQpc, qpcFrequency)
+						: (std::numeric_limits<double>::infinity)();
+					EndCanvasPan(panMotion, secondsSinceLastInput);
+				}
 			}
 			lastNavigationQpc = nowQpc;
 		};
@@ -2924,33 +2968,6 @@ namespace draw3
 				clearTargetTiles
 			};
 			return historyGpuCache.RestoreComposition(request);
-		};
-
-		auto rebuildAllPageFootprints = [&](int width, int height)
-		{
-			if (!document_) return;
-			for (size_t pageIndex = 0; pageIndex < pageRuntimeStates.size(); ++pageIndex)
-			{
-				const InkPage* page = document_->PageAt(pageIndex);
-				const InkCanvas* canvas = page
-					? page->FindCanvas(kDefaultDeviceKey) : nullptr;
-				if (!canvas) continue;
-				CanvasRuntimeHistory& history = pageRuntimeStates[pageIndex].history;
-				const size_t itemCount = history.Items().size();
-				for (size_t itemIndex = 0; itemIndex < itemCount; ++itemIndex)
-				{
-					const RenderItemState item = history.Items()[itemIndex];
-					if (item.strokeIndex >= canvas->Strokes().size()) continue;
-					std::optional<StrokeTileFootprint> footprint = BuildStrokeTileFootprint(
-						canvas->Strokes()[item.strokeIndex]);
-					if (!footprint || !history.UpdateItemGeometry(
-						item.id, std::move(*footprint)))
-					{
-						std::cout << "[InkHistory] failed to rebuild footprint page=" <<
-							(pageIndex + 1) << " item=" << item.id.index << std::endl;
-					}
-				}
-			}
 		};
 
 		auto appendBlankPageWithRuntime = [&]() -> std::optional<size_t>
@@ -3304,7 +3321,7 @@ namespace draw3
 					historyGpuCache.DiscardCompositionCache();
 				}
 				else ++rasterPipelineGeneration;
-				rebuildAllPageFootprints(size.width, size.height);
+				// Footprint 是 Canvas-local 真值，窗口 Resize 不需要遍历全页重算。
 				renderer_.ClearRTV(
 					renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 				const CompositionRestoreResult resizedPage = restorePageContent(
@@ -3348,6 +3365,23 @@ namespace draw3
 				laserCoverageMode = resizedCoverageMode;
 				forceFullPresent = true; // Resize 保留 L2，并从 CPU 状态恢复共享 L1/L0。
 			}
+			DrawingCursorSample priorityPenSample;
+			DrawingCursorSample priorityMouseSample;
+			const bool priorityPenInContact =
+				window_.ReadPenCursorSample(priorityPenSample) &&
+				priorityPenSample.valid && priorityPenSample.inContact;
+			const bool priorityMouseInContact =
+				window_.ReadMouseCursorSample(priorityMouseSample) &&
+				priorityMouseSample.valid && priorityMouseSample.inContact;
+			const bool navigationInProgress = touchGesture.PanActive() ||
+				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
+				!gestureContacts.empty();
+			if (ShouldPrioritizeDrawingContact(navigationInProgress,
+				priorityPenInContact, priorityMouseInContact))
+			{
+				// 真实 Down 先固定视口并创建 runtime，不能等导航与 Tile 恢复结束。
+				while (input_.TryDequeue(record)) processCommand(record);
+			}
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
 			LARGE_INTEGER navigationQpc = {};
 			QueryPerformanceCounter(&navigationQpc);
@@ -3374,13 +3408,22 @@ namespace draw3
 							? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 						if (canvas)
 						{
-							const std::vector<CanvasTileCoordinate> contentTiles =
-								CollectCanvasContentTiles(
-									pageRuntimeStates[currentPageIndex_].history);
-							viewportTilePlan = PlanCanvasRenderTiles(contentTiles,
-								{ canvas->Viewport().x, canvas->Viewport().y },
-								static_cast<float>(size.width), static_cast<float>(size.height),
-								panMotion.velocity, kCompositionTileSize);
+							const CanvasViewportState viewport{
+								canvas->Viewport().x, canvas->Viewport().y };
+							const std::optional<CanvasRect> coverage =
+								ComputeCanvasRenderCoverageBounds(viewport,
+									static_cast<float>(size.width), static_cast<float>(size.height),
+									panMotion.velocity, kCompositionTileSize);
+							if (coverage)
+							{
+								const std::vector<CanvasTileCoordinate> contentTiles =
+									CollectCanvasContentTiles(
+										pageRuntimeStates[currentPageIndex_].history, *coverage);
+								viewportTilePlan = PlanCanvasRenderTiles(contentTiles,
+									viewport, static_cast<float>(size.width),
+									static_cast<float>(size.height), panMotion.velocity,
+									kCompositionTileSize);
+							}
 						}
 					}
 					viewportRecoveryPending = !viewportTilePlan.tiles.empty();
