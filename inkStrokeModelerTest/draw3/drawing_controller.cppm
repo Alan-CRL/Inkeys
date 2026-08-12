@@ -45,6 +45,12 @@ export namespace draw3
 		// 即时控制普通 Pen/Highlighter 落笔时是否继续显示应用内光标。
 		void SetDrawingCursorDuringContactEnabled(bool enabled) noexcept;
 		bool GetDrawingCursorDuringContactEnabled() const noexcept;
+		// 控制 Ink 设备光标是否使用旧的半透明外观；默认使用不透明外观。
+		void SetTranslucentInkCursorEnabled(bool enabled) noexcept;
+		bool GetTranslucentInkCursorEnabled() const noexcept;
+		// 控制普通绘制工具下鼠标使用系统箭头或不透明应用光标；不影响 Eraser/Laser。
+		void SetMouseUsesSystemCursor(bool enabled) noexcept;
+		bool GetMouseUsesSystemCursor() const noexcept;
 		// 即时控制激光笔的稀疏粒子点缀，不影响主轨迹和留存计时。
 		void SetLaserParticlesEnabled(bool enabled) noexcept;
 		bool GetLaserParticlesEnabled() const noexcept;
@@ -83,6 +89,7 @@ export namespace draw3
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;
+		std::atomic<bool> translucentInkCursorEnabled_ = false;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<bool> performanceHudEnabled_ = false;

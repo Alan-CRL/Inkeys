@@ -1045,6 +1045,7 @@ namespace draw3
 		invertedPenEraserEnabled_(configuration_.invertedPenEraserEnabled),
 		interruptedStrokeReconnectEnabled_(configuration_.interruptedStrokeReconnectEnabled),
 		drawingCursorDuringContactEnabled_(configuration_.drawingCursorDuringContactEnabled),
+		translucentInkCursorEnabled_(configuration_.translucentInkCursorEnabled),
 		laserParticlesEnabled_(configuration_.laserParticlesEnabled),
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		performanceHudEnabled_(configuration_.performanceHudEnabled),
@@ -1053,6 +1054,7 @@ namespace draw3
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
 		haptics_(haptics)
 	{
+		window_.SetMouseUsesSystemCursor(configuration_.mouseUsesSystemCursor);
 		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);
 		const float penCursorDiameter = std::max(
 			kPenDiameter, kMinimumPenCursorDiameterAt96Dpi * configuration_.dpiScale);
@@ -1156,6 +1158,28 @@ namespace draw3
 	bool DrawingController::GetDrawingCursorDuringContactEnabled() const noexcept
 	{
 		return drawingCursorDuringContactEnabled_.load(std::memory_order_acquire);
+	}
+
+	void DrawingController::SetTranslucentInkCursorEnabled(bool enabled) noexcept
+	{
+		if (translucentInkCursorEnabled_.exchange(
+			enabled, std::memory_order_acq_rel) == enabled) return;
+		input_.PublishControlWake(); // 立即按新 Alpha 重建当前 Ink 光标。
+	}
+
+	bool DrawingController::GetTranslucentInkCursorEnabled() const noexcept
+	{
+		return translucentInkCursorEnabled_.load(std::memory_order_acquire);
+	}
+
+	void DrawingController::SetMouseUsesSystemCursor(bool enabled) noexcept
+	{
+		window_.SetMouseUsesSystemCursor(enabled);
+	}
+
+	bool DrawingController::GetMouseUsesSystemCursor() const noexcept
+	{
+		return window_.GetMouseUsesSystemCursor();
 	}
 
 	void DrawingController::SetLaserParticlesEnabled(bool enabled) noexcept
@@ -2235,6 +2259,7 @@ namespace draw3
 			window_.ReadPenCursorSample(penSample);
 			window_.ReadMouseCursorSample(mouseSample);
 			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
+			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 			if (cursorTool == DrawingTool::Laser)
 			{
 				const DrawingCursorVisual primary = ResolveLaserDrawingCursorVisual(
@@ -2251,7 +2276,9 @@ namespace draw3
 					window_.CursorAppearanceForTool(cursorTool),
 					window_.CursorAppearanceForTool(DrawingTool::Eraser),
 					cursorTool == DrawingTool::Eraser,
-					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire));
+					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
+					translucentInkCursorEnabled_.load(std::memory_order_acquire),
+					mouseUsesSystemCursor);
 				if (primary.visible) currentCursorVisuals.push_back(primary);
 			}
 

@@ -283,6 +283,8 @@ int RunLaserIncrementalCoverageTests()
 			root / "inkStrokeModelerTest" / "draw3" / "renderer_primitives.cpp";
 		const std::filesystem::path controllerSource =
 			root / "inkStrokeModelerTest" / "draw3" / "drawing_controller.cpp";
+		const std::filesystem::path windowControlSource =
+			root / "inkStrokeModelerTest" / "draw3" / "window_control.cpp";
 		const std::filesystem::path contactInputSource =
 			root / "inkStrokeModelerTest" / "draw3" / "contact_input.cpp";
 		const std::filesystem::path realtimeStylusSource =
@@ -348,6 +350,30 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(contactCursorGetter.find(
 			"drawingCursorDuringContactEnabled_.load(std::memory_order_acquire)") !=
 			std::string::npos);
+		const std::string translucentCursorSetter = TextBetween(controllerText,
+			"void DrawingController::SetTranslucentInkCursorEnabled(bool enabled) noexcept",
+			"bool DrawingController::GetTranslucentInkCursorEnabled() const noexcept");
+		LASER_INCREMENTAL_CHECK(translucentCursorSetter.find(
+			"translucentInkCursorEnabled_.exchange(") != std::string::npos);
+		LASER_INCREMENTAL_CHECK(translucentCursorSetter.find(
+			"input_.PublishControlWake()") != std::string::npos);
+		const std::string translucentCursorGetter = TextBetween(controllerText,
+			"bool DrawingController::GetTranslucentInkCursorEnabled() const noexcept",
+			"void DrawingController::SetMouseUsesSystemCursor(bool enabled) noexcept");
+		LASER_INCREMENTAL_CHECK(translucentCursorGetter.find(
+			"translucentInkCursorEnabled_.load(std::memory_order_acquire)") !=
+			std::string::npos);
+		const std::string mouseCursorSetter = TextBetween(controllerText,
+			"void DrawingController::SetMouseUsesSystemCursor(bool enabled) noexcept",
+			"bool DrawingController::GetMouseUsesSystemCursor() const noexcept");
+		LASER_INCREMENTAL_CHECK(mouseCursorSetter.find(
+			"window_.SetMouseUsesSystemCursor(enabled)") != std::string::npos);
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor()"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"return draw3::ShouldIgnoreMouseCursorMessage("));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"ResolveGetPointerType() != nullptr"));
 		LASER_INCREMENTAL_CHECK(TextAppearsBefore(controllerSource,
 			"const float preInputLaserOpacity = laserOpacity;",
 			"if (!interruptedStrokeReconnectEnabled)"));

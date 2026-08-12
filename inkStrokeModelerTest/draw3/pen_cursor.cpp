@@ -134,7 +134,9 @@ namespace draw3
 		const DrawingCursorAppearance& selectedAppearance,
 		const DrawingCursorAppearance& eraserAppearance,
 		bool selectedToolIsEraser,
-		bool drawingCursorDuringContactEnabled) noexcept
+		bool drawingCursorDuringContactEnabled,
+		bool translucentInkCursorEnabled,
+		bool mouseUsesSystemCursor) noexcept
 	{
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
@@ -142,15 +144,30 @@ namespace draw3
 		if (!sample) return visual;
 		const bool pen = sample == &penSample;
 		const bool eraser = selectedToolIsEraser || (pen && sample->inverted);
-		// 开关只放开普通 Pen/Highlighter 的 Contact；其余设备和橡皮语义保持不变。
-		if (!eraser && (!pen ||
-			(sample->inContact && !drawingCursorDuringContactEnabled))) return visual;
+		if (!eraser)
+		{
+			if (!pen && mouseUsesSystemCursor) return visual;
+			// Contact 开关只放开普通 Pen/Highlighter；Mouse 应用光标不进入该语义。
+			if (pen && sample->inContact && !drawingCursorDuringContactEnabled) return visual;
+		}
 
 		visual.visible = true;
 		visual.x = sample->x;
 		visual.y = sample->y;
 		visual.appearance = eraser ? eraserAppearance : selectedAppearance;
 		if (eraser && sample->inContact) visual.appearance.opacity = 1.0f;
+		if (pen && !translucentInkCursorEnabled)
+		{
+			// 正常模式同时提高整体和填充 Alpha，保留原轮廓、颜色与尺寸。
+			visual.appearance.opacity = 1.0f;
+			visual.appearance.fillAlpha = 1.0f;
+		}
+		else if (!pen && !eraser)
+		{
+			// Mouse 不继承 Ink 半透明模式；使用应用光标时也始终保持正常 Alpha。
+			visual.appearance.opacity = 1.0f;
+			visual.appearance.fillAlpha = 1.0f;
+		}
 		if (!IsValidDrawingCursorAppearance(visual.appearance)) visual.visible = false;
 		return visual;
 	}
@@ -175,19 +192,30 @@ namespace draw3
 
 	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
-		bool penSampleValid, bool mouseSampleValid) noexcept
+		bool penSampleValid, bool mouseSampleValid,
+		bool mouseUsesSystemCursor) noexcept
 	{
 		switch (pointerAuthority)
 		{
 		case DrawingCursorPointerAuthority::Pen:
 			return true;
 		case DrawingCursorPointerAuthority::Mouse:
+			return selectedToolIsEraser || selectedToolIsLaser ||
+				(!mouseUsesSystemCursor && mouseSampleValid);
 		case DrawingCursorPointerAuthority::Touch:
 			return selectedToolIsEraser || selectedToolIsLaser;
 		default:
-			return penSampleValid ||
-				((selectedToolIsEraser || selectedToolIsLaser) && mouseSampleValid);
+			return penSampleValid || (mouseSampleValid &&
+				(selectedToolIsEraser || selectedToolIsLaser || !mouseUsesSystemCursor));
 		}
+	}
+
+	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
+		bool pointerApiAvailable, bool penSampleValid) noexcept
+	{
+		if (promotedPointerMessage) return true;
+		// Pointer API 能可靠过滤 Pen 提升消息；剩余 WM_MOUSE* 来自真实鼠标。
+		return !pointerApiAvailable && penSampleValid;
 	}
 
 	bool ShouldSuppressMouseButtonUpCursorSample(

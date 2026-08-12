@@ -401,6 +401,19 @@ namespace draw3
 		return penCursorAppearance_;
 	}
 
+	void WindowController::SetMouseUsesSystemCursor(bool enabled) noexcept
+	{
+		if (mouseUsesSystemCursor_.exchange(enabled, std::memory_order_acq_rel) == enabled)
+			return;
+		RequestDrawingCursorRender(); // 同时清理旧应用光标脏区并切换系统箭头。
+		QueueSystemCursorRefresh();
+	}
+
+	bool WindowController::GetMouseUsesSystemCursor() const noexcept
+	{
+		return mouseUsesSystemCursor_.load(std::memory_order_acquire);
+	}
+
 	void WindowController::SetActiveDrawingCursorTool(DrawingTool tool) noexcept
 	{
 		const int32_t encoded = static_cast<int32_t>(tool);
@@ -485,16 +498,11 @@ namespace draw3
 
 	bool WindowController::ShouldIgnoreMouseCursorMessage() const noexcept
 	{
-		if (IsPromotedPointerMouseMessage()) return true;
-		const DrawingCursorPointerAuthority authority =
-			drawingCursorPointerAuthority_.load(std::memory_order_acquire);
 		DrawingCursorSample penSample;
-		if (authority == DrawingCursorPointerAuthority::Pen)
-			return penCursorSample_.Read(penSample) && penSample.valid;
-		if (ResolveGetPointerType()) return false;
-
-		// Windows 7 没有 Pointer API：Pen 仍在 RTS range 内时，低优先级鼠标消息不得抢占。
-		return penCursorSample_.Read(penSample) && penSample.valid;
+		const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
+		return draw3::ShouldIgnoreMouseCursorMessage(
+			IsPromotedPointerMouseMessage(), ResolveGetPointerType() != nullptr,
+			penSampleValid);
 	}
 
 	void WindowController::RequestDrawingCursorRender() noexcept
@@ -536,7 +544,8 @@ namespace draw3
 		const bool hide = ShouldHideSystemDrawingCursor(
 			drawingCursorPointerAuthority_.load(std::memory_order_acquire),
 			tool == DrawingTool::Eraser, tool == DrawingTool::Laser,
-			penSample.valid, mouseSample.valid);
+			penSample.valid, mouseSample.valid,
+			mouseUsesSystemCursor_.load(std::memory_order_acquire));
 		SetCursor(hide ? nullptr : defaultCursor_); // 仅影响当前 HWND，不使用全局计数式 ShowCursor。
 	}
 

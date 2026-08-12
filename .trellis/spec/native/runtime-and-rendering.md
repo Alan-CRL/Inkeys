@@ -213,8 +213,10 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 - `RealTimeStylusInput::Initialize(HWND, ContactInputCoordinator&, DrawingCursorEventSink*)`
 - `DrawingCursorEventSink::PublishPenCursorSample/ClearPenCursorSample`
 - `WindowController::ConfigureDrawingCursor/ConsumeDrawingCursorRenderRequest`
-- `StrokeModelConfiguration::drawingCursorDuringContactEnabled`
+- `StrokeModelConfiguration::drawingCursorDuringContactEnabled/translucentInkCursorEnabled/mouseUsesSystemCursor`
 - `DrawingController::SetDrawingCursorDuringContactEnabled/GetDrawingCursorDuringContactEnabled`
+- `DrawingController::SetTranslucentInkCursorEnabled/GetTranslucentInkCursorEnabled`
+- `DrawingController::SetMouseUsesSystemCursor/GetMouseUsesSystemCursor`
 - `ResolvePrimaryDrawingCursorVisual`、`MakeTouchEraserDrawingCursorVisual`
 - `ShouldSuppressMouseButtonUpCursorSample`
 - `DrawingCursorVisualBounds`、`InkRenderer::DrawTransientDrawingCursor`
@@ -223,15 +225,18 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 
 - 自定义 Pen/Highlighter/Eraser 光标属于 L0 帧的最终瞬态视觉：先把 dirty 区域按 `L2 + L1 + L0` 合成到 backbuffer，再逐枚绘制 cursor。禁止把 cursor 写入共享 `layerL0`、L1、L2、ActiveStroke、contact payload、reconnect 或 metrics。
 - shader shape type `4/5/6` 分别表示 Cursor Circle、Rectangle、EraserGripCircle；复用两项 `InkPoint`、48 字节全局常量和 resolve dual-source blend，直接输出 premultiplied Add 与 Retain。尺寸变化只能更新常量/primitive，不创建尺寸相关纹理或 `HCURSOR`。
-- Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB、25% fill Alpha 和 `#B8B8B8` 细内描边；fill Alpha 不得降低 outline Alpha，压力不改变 cursor 尺寸。
-- EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Hover 整体 Alpha 0.5，Contact 整体 Alpha 1.0。
+- Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB 和 `#B8B8B8` 细内描边，压力不改变 cursor 尺寸。`translucentInkCursorEnabled=false` 时 Pen authority 的整体与填充 Alpha 都为 1；开启后恢复 25% fill Alpha，且 fill Alpha 不得降低 outline Alpha。
+- EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Pen Hover 默认整体 Alpha 1，半透明开关开启后为 0.5；Contact 始终为 1。Touch Eraser Contact 始终为 1，不受开关影响。
 - RTS InAir/Down/Packets 发布 X/Y/QPC、inverted 和 contact；StylusUp 只清除 Pen 样本，不把终态坐标冒充 Hover。后续真实 InAir 包才允许重新显示 Hover。InAir/Packets 只解码批次最后一个包；`Packets` 成功解码后的顺序固定为 `PublishMove -> PublishPenCursor -> diagnostics`，即使 Move 发布失败也继续更新 cursor mailbox。所有 Pen 样本都继续写入 writer latch + sequence mailbox；`inContact=false` 保持 sticky cursor render wake，`inContact=true` 不逐样本请求 render/control wake，由已有活动帧读取最新坐标。RTS 回调不得等待、分配、调用 D3D 或 `SetCursor`。
 - Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 继续发布 Pen 坐标，包括 Contact 样本，不能依赖首个 RTS Down。它与 RTS 共用相同 mailbox/wake 规则；禁止为了去重而停止发布 Contact 坐标。`WM_POINTERUP` 同样只清除 Pen 样本，后续 Update 才恢复 Hover。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；Pen/Touch authority 下的孤立 Mouse ButtonUp 必须忽略，避免终态兼容消息重新生成 Hover。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
 - Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；`WM_POINTERLEAVE` 无法取得 pointer type 时，只要旧 authority 或有效样本表明是 Pen，仍按 Pen 离开处理。禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
 - `drawingCursorDuringContactEnabled` 默认关闭；setter/getter 使用 DrawingController 原子状态，值实际变化时只发布一次 control wake，不改变 contact packet 的 mailbox-only 规则。
-- Pen/Highlighter：Pen Hover 显示应用 cursor；Pen Contact 在开关关闭时只隐藏系统 cursor，开启时复用对应 Hover 的同一 appearance 和最新 Pen mailbox 坐标。Mouse 保留 `IDC_ARROW`；Touch 不显示笔尖 cursor。
+- `translucentInkCursorEnabled` 默认关闭；setter/getter 使用 DrawingController 原子状态，值实际变化时发布一次 control wake，使当前与上一帧 bounds 按新 Alpha 重建。该开关只改变 Pen authority 的 transient appearance，不改工具颜色、尺寸、contact 或持久墨迹。
+- `mouseUsesSystemCursor` 默认开启；WindowController 原子状态是普通绘制工具下系统 cursor 与 transient cursor 的单一真值，值变化时同时请求 cursor render 和 `WM_SETCURSOR` 私有刷新。开启时 Mouse authority 在 Pen/Highlighter/Shape 下保留 `IDC_ARROW`；关闭时这些工具改用对应的不透明应用光标。Eraser/Laser 始终使用专用应用光标，不受该开关影响。
+- Pointer API 可用时，promoted Pen `WM_MOUSE*` 由消息签名直接过滤；其余非 promoted `WM_MOUSE*` 必须视为真实鼠标并立即取得 Mouse authority，即使旧 Pen mailbox 尚未收到 OutOfRange/Leave 清理。只有 Windows 7 无 Pointer API 回退才允许用有效 Pen 样本抑制低优先级鼠标消息。
+- Pen/Highlighter：Pen Hover 显示应用 cursor；Pen Contact 在 Contact 开关关闭时只隐藏系统 cursor，开启时复用对应 Hover 的同一 appearance 和最新 Pen mailbox 坐标。Touch 不显示笔尖 cursor。
 - Contact 开关只控制应用内 transient cursor，不修改 `ShouldHideSystemDrawingCursor`。开启后 Pen authority 仍隐藏系统箭头，不能用诊断 probe 的 `IDC_ARROW` 替代应用 cursor。
-- Eraser/倒转笔尾：Pen/Mouse Hover 显示 Alpha 0.5，Contact 显示 Alpha 1.0，并隐藏系统 cursor。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
+- Eraser/倒转笔尾：Pen 使用当前 Ink 透明模式，Contact 强制 Alpha 1.0，并隐藏系统 cursor。Mouse 始终显示应用 EraserGripCircle，Hover Alpha 0.5、Contact Alpha 1.0，不受普通画笔光标开关影响。每个活动 Touch eraser contact 独立显示一枚 Alpha 1.0 cursor，不存在 Touch Hover；多指不得互相覆盖状态。
 - 活动主指针使用 Down 锁定的有效工具；没有匹配主指针但仍有活动批次时使用批次 `selectedTool`。Touch cursor 直接读取各自 runtime 的一致 `lastModelSnapshot` 和有效 `tool`。
 - 当前和上一帧全部 cursor bounds 的并集必须加入 `frameDirty`；隐藏、离开、Up、工具切换、resize、clear、重新暴露和 Present 恢复都沿用该规则。即使 cursor 未变，只要其他几何会触发 Present，也必须把当前 cursor bounds 合入脏区并从 `L2 + L1 + L0` 重建，禁止在上一帧半透明 cursor 像素上再次叠加。静止且几何/状态不变时不得单独重复 Present。
 - 窗口线程只允许 `SetCursor(nullptr)` 或非拥有的系统 `IDC_ARROW`；禁止 `CreateIconIndirect`、`SetSystemCursor`、窗口类全局 cursor 和计数式 `ShowCursor`。私有刷新必须先用 `WindowFromPoint` 确认当前 HWND 所有权。
@@ -241,18 +246,23 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 
 | Condition | Required behavior |
 |---|---|
-| Pen Hover + Pen/Highlighter | 隐藏系统 cursor，显示对应 Circle/Rectangle |
+| Pen Hover + Pen/Highlighter，默认模式 | 隐藏系统 cursor，显示 Alpha 1 的 Circle/Rectangle |
+| Pen Hover + Pen/Highlighter，半透明模式 | 隐藏系统 cursor，显示 25% fill Alpha 的 Circle/Rectangle |
 | Pen Contact + Pen/Highlighter，开关关闭 | 隐藏系统 cursor，不绘制应用 cursor |
 | Pen Contact + Pen/Highlighter，开关开启 | 隐藏系统 cursor，绘制与对应 Hover 完全相同的 Circle/Rectangle |
 | RTS/Pointer Pen Contact sample | 继续覆盖 cursor mailbox，但不逐样本调用 `RequestDrawingCursorRender`；活动帧读取最新坐标 |
 | Pen Up | 清除应用 cursor；只有后续真实 InAir/Pointer Update 才恢复 Hover |
 | Pen Hover、Canvas command、Up/Leave 或首次 authority 变化 | 保持现有 render/control wake、清理和系统 cursor 刷新行为 |
-| Pen/Mouse Hover + Eraser | 隐藏系统 cursor，绘制 Alpha 0.5 EraserGripCircle |
-| Pen/Mouse Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
+| Pen Hover + Eraser | 隐藏系统 cursor；默认 Alpha 1，半透明模式 Alpha 0.5 |
+| Pen Contact + Eraser 或 inverted Pen | 隐藏系统 cursor，绘制 Alpha 1.0 EraserGripCircle |
+| Mouse + Pen/Highlighter/Shape，`mouseUsesSystemCursor=true` | 保留 `IDC_ARROW`，不绘制主应用 cursor |
+| Mouse + Pen/Highlighter/Shape，`mouseUsesSystemCursor=false` | 隐藏系统 cursor，绘制对应不透明应用光标 |
+| Mouse + Eraser/Laser | 始终隐藏系统 cursor并绘制专用应用光标，不受开关影响 |
+| 有效旧 Pen 样本 + Pointer API + 非 promoted Mouse Move | 立即接受 Mouse 并切换 authority；工具切换不得重放旧 Pen 坐标 |
 | N 个 Touch Eraser Contact | 同时绘制 N 枚 Alpha 1.0 EraserGripCircle |
 | Touch Up + 兼容 Mouse ButtonUp | 清除对应 contact visual，并忽略终态 Mouse Up，不在原地生成 Hover |
 | Touch 使用 Pen/Highlighter | 不绘制应用 cursor |
-| Mouse 使用 Pen/Highlighter | 使用 `IDC_ARROW`，不绘制应用 cursor |
+| Mouse 使用 Pen/Highlighter | 按 `mouseUsesSystemCursor` 选择 `IDC_ARROW` 或不透明应用 cursor |
 | Cursor 消失或移动 | dirty 包含旧 bounds 与新 bounds，正常图层重建后无残影 |
 | Contact 完成/L2 resolve | cursor 像素从未进入 operator layer，L2 只接收墨迹 |
 | Pointer API 不存在 | authority 为 Unknown，按有效 Pen 优先、Mouse 次之回退 |
@@ -265,16 +275,20 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 ### 5. Good / Base / Bad Cases
 
 - Good：两指同时擦除时显示两枚白色不透明抓手圆；其中一指 Up 只清除对应旧区，另一枚继续移动。
-- Good：默认关闭时 MPP Pen Down 后应用笔尖消失；开启 Contact cursor 时 Down 继续显示同一彩色笔尖且系统 cursor 仍隐藏。Up 后立即清除，后续真实 Hover Update/InAir 到达后才在新样本位置恢复。
-- Base：Mouse 在 Pen/Highlighter 下保持箭头，在 Eraser 下切换为应用圆；Windows 7 路径标记待真机验证。
+- Good：默认不透明模式下 Pen Hover 为实心工具光标；运行时开启半透明后，同一位置立即重建为旧 Alpha 且无残影。
+- Good：默认关闭 Contact cursor 时 MPP Pen Down 后应用笔尖消失；开启后 Down 继续显示同一彩色笔尖且系统 cursor 仍隐藏。Up 后立即清除，后续真实 Hover Update/InAir 到达后才在新样本位置恢复。
+- Base：Mouse 默认在 Pen/Highlighter 下保持箭头，在 Eraser/Laser 下始终显示专用应用光标；关闭 `mouseUsesSystemCursor` 后 Pen/Highlighter 改用不透明应用光标。Windows 7 路径标记待真机验证。
 - Bad：把多枚 cursor 画进共享 L0 后随 contact Up resolve 到 L2，或为每次宽度变化重建 `HCURSOR`/纹理。
 
 ### 6. Tests Required
 
-- 自动断言配置默认关闭、setter/getter 往返，以及 Pen/Highlighter 开启后 Contact visual 与 Hover 的位置、形状、尺寸、颜色、fill/outline/opacity 完全一致。
+- 自动断言 Contact 与半透明配置默认关闭、鼠标系统光标默认开启；静态核对 setter/getter 与原子状态/窗口委托，值变化时能够触发即时重建。
+- 自动断言默认 Pen visual 的 `opacity/fillAlpha` 为 1，开启半透明后恢复配置 appearance；Pen/Highlighter 开启 Contact visual 后与同模式 Hover 的位置、形状、尺寸、颜色、fill/outline/opacity 完全一致。
 - 自动断言 appearance 有效性、sample sequence 一致性、Pen/Mouse/Touch authority、Hover/Contact/Inverted 矩阵和系统 cursor 隐藏决策；Mouse、Touch、Laser、Eraser 和倒转笔尾不受 Contact 开关影响。
 - 自动断言 Circle/Rectangle/Eraser 参数、Touch 强制 Alpha 1.0、旧/新 bounds、边界裁剪和多 visual 同时存在。
 - 自动断言 Pen authority + 无效 Pen 样本 + 陈旧 Mouse 样本不生成 visual；真实 Mouse authority 切换后才恢复 Mouse visual。
+- 自动断言 Mouse 在 Eraser/Laser 下始终生成 visual 并隐藏箭头；普通工具按鼠标系统光标开关选择系统箭头或不透明应用光标。
+- 自动断言 promoted 消息始终忽略；Pointer API 可用时非 promoted Mouse Move 即使存在有效旧 Pen 样本也不忽略；无 Pointer API 时仍按有效 Pen 样本抑制。
 - 自动断言 Pen/Touch authority 抑制孤立 Mouse ButtonUp，Mouse/Unknown 不抑制；静态核对 RTS StylusUp 与 `WM_POINTERUP` 都调用 clear 而非发布终态 Hover。
 - 静态核对 `Packets` 为 Move -> Pen cursor -> diagnostics，Move 失败不跳过 cursor；Contact 样本仍写 mailbox 但不逐包请求 render wake，`WM_POINTER` 分支保持发布坐标。
 - 静态断言 RTS DataInterest 含 InRange/OutOfRange/InAir，InAir 选择最后 packet；搜索确认无自建 `HCURSOR` API。
@@ -298,6 +312,10 @@ Correct：`Contact sample -> latest mailbox only`；已有 120 Hz 活动帧读�
 Wrong：`绘制时显示光标 -> 为 Pen Contact 保留 IDC_ARROW`，导致产品行为依赖系统 cursor 路径且外观与 Hover 不一致。
 
 Correct：`drawingCursorDuringContactEnabled -> ResolvePrimaryDrawingCursorVisual 复用 Hover appearance`；系统 cursor 隐藏矩阵保持不变。
+
+Wrong：分别修改 transient visual 与 `WM_SETCURSOR`，使 Mouse Eraser 同时出现箭头和应用圆，或两者都消失。
+
+Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同时请求 backbuffer cursor 重建与系统 cursor 刷新`。
 
 ## Stroke Modeling Invariants
 

@@ -212,6 +212,8 @@ export namespace draw3
 		bool hapticFeedbackEnabled = true; // 当前原型默认启用触觉；后续由 Inkeys3 设置替换。
 		bool performanceHudEnabled = false; // 默认关闭开发诊断 HUD；开启时只统计 Draw3 绘制循环。
 		bool drawingCursorDuringContactEnabled = false; // 默认落笔时隐藏应用光标；外部可显式开启。
+		bool translucentInkCursorEnabled = false; // 默认使用不透明 Ink 光标；开启后恢复半透明外观。
+		bool mouseUsesSystemCursor = true; // 普通绘制工具默认使用系统箭头；Eraser/Laser 始终保留专用光标。
 		bool laserParticlesEnabled = false; // GPU 粒子默认关闭；外部可按需开启，资源不可用时只降级激光主体。
 		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
 		LaserParticleConfig laserParticleConfig = {};

@@ -98,6 +98,9 @@ export namespace draw3
 		bool ConfigureDrawingCursor(DrawingTool tool,
 			const DrawingCursorAppearance& appearance);
 		DrawingCursorAppearance CursorAppearanceForTool(DrawingTool tool) const noexcept;
+		// 控制普通绘制工具下鼠标使用系统箭头或应用光标；Eraser/Laser 不受影响。
+		void SetMouseUsesSystemCursor(bool enabled) noexcept;
+		bool GetMouseUsesSystemCursor() const noexcept;
 		// 活动 Pen/Mouse contact 锁定有效工具；没有主指针 contact 时恢复批次选择。
 		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
 		void ClearActiveDrawingCursorTool() noexcept;
@@ -164,6 +167,7 @@ export namespace draw3
 		std::atomic<DrawingCursorPointerAuthority> drawingCursorPointerAuthority_ =
 			DrawingCursorPointerAuthority::Unknown;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
+		std::atomic<bool> mouseUsesSystemCursor_ = true;
 		std::atomic<ContactInputCoordinator*> inputCoordinator_ = nullptr;
 		DrawingCursorSampleMailbox penCursorSample_;
 		DrawingCursorSampleMailbox mouseCursorSample_;

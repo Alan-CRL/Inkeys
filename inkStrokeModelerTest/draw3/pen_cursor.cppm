@@ -108,7 +108,9 @@ export namespace draw3
 		const DrawingCursorAppearance& selectedAppearance,
 		const DrawingCursorAppearance& eraserAppearance,
 		bool selectedToolIsEraser,
-		bool drawingCursorDuringContactEnabled) noexcept;
+		bool drawingCursorDuringContactEnabled,
+		bool translucentInkCursorEnabled = false,
+		bool mouseUsesSystemCursor = true) noexcept;
 	// Laser 的 Pen/Mouse Hover 都显示发光点，Contact 笔尖由活动 contact 独立生成。
 	DrawingCursorVisual ResolveLaserDrawingCursorVisual(
 		const DrawingCursorSample& penSample,
@@ -118,7 +120,11 @@ export namespace draw3
 	// 决定当前 HWND 客户区应使用系统箭头还是隐藏系统光标。
 	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
-		bool penSampleValid, bool mouseSampleValid) noexcept;
+		bool penSampleValid, bool mouseSampleValid,
+		bool mouseUsesSystemCursor = true) noexcept;
+	// Pointer API 可区分 promoted 消息时，真实鼠标必须立即接管陈旧 Pen authority。
+	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
+		bool pointerApiAvailable, bool penSampleValid) noexcept;
 	// Pen/Touch 终态后的兼容 Mouse ButtonUp 不能重新生成应用内 Hover。
 	bool ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority pointerAuthority) noexcept;

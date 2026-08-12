@@ -93,8 +93,14 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(visual.visible);
 	PEN_CURSOR_CHECK(visual.appearance.shape == draw3::DrawingCursorShape::Circle);
 	PEN_CURSOR_CHECK(Near(visual.x, penHover.x));
-	PEN_CURSOR_CHECK(Near(visual.appearance.fillAlpha, 0.5f));
+	PEN_CURSOR_CHECK(Near(visual.appearance.fillAlpha, 1.0f));
 	const draw3::DrawingCursorVisual penHoverVisual = visual;
+	const draw3::DrawingCursorVisual translucentPenHoverVisual =
+		draw3::ResolvePrimaryDrawingCursorVisual(
+			penHover, mouseHover, DrawingCursorPointerAuthority::Pen,
+			penAppearance, eraserAppearance, false, false, true, true);
+	PEN_CURSOR_CHECK(translucentPenHoverVisual.visible);
+	PEN_CURSOR_CHECK(Near(translucentPenHoverVisual.appearance.fillAlpha, 0.5f));
 
 	draw3::DrawingCursorSample penContact = penHover;
 	penContact.inContact = true;
@@ -128,6 +134,10 @@ int RunPenCursorTests()
 		penAppearance, eraserAppearance, false, true);
 	PEN_CURSOR_CHECK(visual.visible);
 	PEN_CURSOR_CHECK(visual.appearance.shape == draw3::DrawingCursorShape::EraserGripCircle);
+	PEN_CURSOR_CHECK(Near(visual.appearance.opacity, 1.0f));
+	visual = draw3::ResolvePrimaryDrawingCursorVisual(
+		invertedHover, mouseHover, DrawingCursorPointerAuthority::Pen,
+		penAppearance, eraserAppearance, false, true, true, true);
 	PEN_CURSOR_CHECK(Near(visual.appearance.opacity, 0.5f));
 
 	invertedHover.inContact = true;
@@ -145,6 +155,12 @@ int RunPenCursorTests()
 		penHover, mouseHover, DrawingCursorPointerAuthority::Mouse,
 		penAppearance, eraserAppearance, false, true);
 	PEN_CURSOR_CHECK(!visual.visible);
+	visual = draw3::ResolvePrimaryDrawingCursorVisual(
+		penHover, mouseHover, DrawingCursorPointerAuthority::Mouse,
+		penAppearance, eraserAppearance, false, true, true, false);
+	PEN_CURSOR_CHECK(visual.visible);
+	PEN_CURSOR_CHECK(Near(visual.appearance.opacity, 1.0f));
+	PEN_CURSOR_CHECK(Near(visual.appearance.fillAlpha, 1.0f));
 	visual = draw3::ResolvePrimaryDrawingCursorVisual(
 		penHover, mouseHover, DrawingCursorPointerAuthority::Mouse,
 		penAppearance, eraserAppearance, true, true);
@@ -189,6 +205,8 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Mouse, true, false, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Mouse, true, false, false, true, false));
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Touch, true, false, false, false));
 	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Touch, false, false, false, false));
@@ -196,6 +214,8 @@ int RunPenCursorTests()
 		DrawingCursorPointerAuthority::Unknown, false, false, true, false));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Mouse, false, true, false, true));
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Mouse, false, true, false, true, false));
 	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority::Pen));
 	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
@@ -204,6 +224,10 @@ int RunPenCursorTests()
 		DrawingCursorPointerAuthority::Mouse));
 	PEN_CURSOR_CHECK(!draw3::ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority::Unknown));
+	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(true, true, true));
+	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, true, true));
+	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(false, false, true));
+	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, false, false));
 
 	mouseHover.inContact = false;
 	const draw3::DrawingCursorVisual laserMouseHover =
