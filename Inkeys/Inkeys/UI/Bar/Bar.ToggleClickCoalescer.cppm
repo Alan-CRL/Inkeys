@@ -26,7 +26,7 @@ export namespace Inkeys::UI::Bar
 		using Duration = Clock::duration;
 
 		explicit BarToggleClickCoalescer(
-			Duration mergeWindow = std::chrono::milliseconds(180)) noexcept
+			Duration mergeWindow = std::chrono::milliseconds(300)) noexcept
 			: mergeWindow_(mergeWindow)
 		{
 		}

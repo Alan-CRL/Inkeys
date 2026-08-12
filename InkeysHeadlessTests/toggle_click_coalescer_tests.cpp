@@ -22,21 +22,21 @@ namespace
 	{
 		using Clock = BarToggleClickCoalescer::Clock;
 		const auto start = Clock::time_point{};
-		BarToggleClickCoalescer coalescer(180ms);
+		BarToggleClickCoalescer coalescer(300ms);
 
 		Check(coalescer.TryBegin(BarToggleChannel::Main, start),
 			"first toggle executes immediately");
-		Check(!coalescer.TryBegin(BarToggleChannel::Main, start + 179ms),
-			"same toggle is merged inside 180 ms");
-		Check(coalescer.TryBegin(BarToggleChannel::Main, start + 180ms),
-			"same toggle executes at the 180 ms boundary");
+		Check(!coalescer.TryBegin(BarToggleChannel::Main, start + 299ms),
+			"same toggle is merged inside 300 ms");
+		Check(coalescer.TryBegin(BarToggleChannel::Main, start + 300ms),
+			"same toggle executes at the 300 ms boundary");
 	}
 
 	void TestChannelsAreIndependent()
 	{
 		using Clock = BarToggleClickCoalescer::Clock;
 		const auto start = Clock::time_point{};
-		BarToggleClickCoalescer coalescer(180ms);
+		BarToggleClickCoalescer coalescer(300ms);
 
 		Check(coalescer.TryBegin(BarToggleChannel::DrawAttribute, start),
 			"draw attribute toggle executes");
@@ -54,7 +54,7 @@ namespace
 	{
 		using Clock = BarToggleClickCoalescer::Clock;
 		const auto start = Clock::time_point{} + 1s;
-		BarToggleClickCoalescer coalescer(180ms);
+		BarToggleClickCoalescer coalescer(300ms);
 
 		Check(coalescer.TryBegin(BarToggleChannel::Main, start),
 			"initial toggle executes before clock reset");
