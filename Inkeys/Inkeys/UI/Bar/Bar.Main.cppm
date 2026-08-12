@@ -20,6 +20,7 @@ export import Inkeys.UI.Bar.ToggleClickCoalescer;
 
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
+import Inkeys.Message;
 
 // ====================
 // 动画
@@ -327,6 +328,8 @@ export extern BarUISetClass barUISet;
 namespace Inkeys::UI::Bar
 {
 	export WNDPROC WindowProc() noexcept;
+	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
+		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);

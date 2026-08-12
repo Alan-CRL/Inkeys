@@ -43,8 +43,11 @@ BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = 
 HRESULT BarUIRendering::EnsureDeviceResources(
 	const Ui3RenderDeviceEpoch& epoch, UINT32 targetWidth, UINT32 targetHeight)
 {
+	if (targetWidth == 0 || targetHeight == 0) return E_INVALIDARG;
 	if (epoch.generation == deviceGeneration && deviceContext
-		&& targetBitmap && gdiInteropRenderTarget)
+		&& targetBitmap && gdiInteropRenderTarget
+		&& targetBitmapWidth == targetWidth
+		&& targetBitmapHeight == targetHeight)
 		return S_OK;
 	return RecreateDeviceResources(epoch, targetWidth, targetHeight);
 }
@@ -81,6 +84,8 @@ HRESULT BarUIRendering::RecreateDeviceResources(
 	targetBitmap = move(nextTargetBitmap);
 	gdiInteropRenderTarget = move(nextGdiInteropRenderTarget);
 	deviceGeneration = epoch.generation;
+	targetBitmapWidth = targetWidth;
+	targetBitmapHeight = targetHeight;
 	return S_OK;
 }
 
@@ -92,6 +97,8 @@ void BarUIRendering::DiscardDeviceResources()
 	targetBitmap.Reset();
 	deviceContext.Reset();
 	deviceGeneration = 0;
+	targetBitmapWidth = 0;
+	targetBitmapHeight = 0;
 }
 
 void BarUIRendering::DiscardDeviceDependentCaches()

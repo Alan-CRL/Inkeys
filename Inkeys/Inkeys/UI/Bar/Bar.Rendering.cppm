@@ -89,6 +89,10 @@ public:
 	{
 		return deviceGeneration;
 	}
+	[[nodiscard]] D2D1_SIZE_U GetTargetBitmapSize() const noexcept
+	{
+		return D2D1::SizeU(targetBitmapWidth, targetBitmapHeight);
+	}
 	void DiscardDeviceResources();
 	void PushFrameDirtyClip(
 		ID2D1DeviceContext* deviceContext, const D2D1_RECT_F& dirtyRect);
@@ -267,6 +271,8 @@ protected:
 	ComPtr<ID2D1Bitmap1> targetBitmap;
 	ComPtr<ID2D1GdiInteropRenderTarget> gdiInteropRenderTarget;
 	unsigned long long deviceGeneration = 0;
+	UINT32 targetBitmapWidth = 0;
+	UINT32 targetBitmapHeight = 0;
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
 	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();

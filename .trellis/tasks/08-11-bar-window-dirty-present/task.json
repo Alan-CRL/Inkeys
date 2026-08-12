@@ -2,10 +2,10 @@
   "id": "bar-window-dirty-present",
   "name": "bar-window-dirty-present",
   "title": "Bar 非全屏 HWND 与脏区呈现优化",
-  "description": "规划将 UI3 Bar 从全屏分层窗口迁移为按内容包围盒变化的 HWND，并研究与之配套的 D2D、GDI、ULW 脏区呈现策略。",
-  "status": "planning",
+  "description": "将 UI3 Bar 从全屏分层窗口迁移为按动画批次包络变化的 HWND，并保留现有 GDI-compatible D2D、GetDC(COPY) 与 ULW 呈现路线作为首阶段基线。",
+  "status": "in_progress",
   "dev_type": null,
-  "scope": "planning-only",
+  "scope": "implementation",
   "package": "Inkeys/UI/Bar",
   "priority": "P2",
   "creator": "AlanCRL",
@@ -24,8 +24,11 @@
     "Inkeys/Inkeys/UI/Bar/Bar.Initialization.cpp",
     "Inkeys/Inkeys/UI/Bar/Bar.Rendering.cpp",
     "Inkeys/Inkeys/UI/Bar/Bar.Rendering.cppm",
-    "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp"
+    "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp",
+    "Inkeys/Inkeys/UI/Bar/Bar.Animation.cppm",
+    "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+    "Inkeys/Inkeys/Window/Window.cpp"
   ],
-  "notes": "保持 planning 状态；本任务当前只记录方案、研究项和后续验证步骤，不授权实现。",
+  "notes": "用户已批准实施。采用动画批次扫掠包络、稳定布局坐标和单次 ULW 几何提交方案；首阶段不引入 staging/DIB，也不修改 draw3。脏区调试开启时活动帧显示红框、idle 前最后一帧显示绿框、实际 HWND 显示蓝框，帧率文字不再显示休眠。",
   "meta": {}
 }

@@ -12,6 +12,7 @@
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.PresentDecision.h"
+#include "Bar.WindowGeometry.h"
 #include <limits>
 
 #pragma comment(lib, "dxguid.lib")
@@ -166,6 +167,14 @@ struct BarRenderFrameSnapshot
 
 using Inkeys::UI::Bar::BarDirtyRegionTracker;
 using Inkeys::UI::Bar::BarDirtyVisualKey;
+using Inkeys::UI::Bar::BarWindowViewportController;
+using Inkeys::UI::Bar::BarWindowViewportDecision;
+using Inkeys::UI::Bar::BarLayoutToClientRect;
+using Inkeys::UI::Bar::DeflateBarWindowRect;
+using Inkeys::UI::Bar::IntersectBarWindowRect;
+using Inkeys::UI::Bar::IsBarWindowRectEmpty;
+using Inkeys::UI::Bar::ResolveBarWindowCapacity;
+using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
 using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
@@ -246,7 +255,7 @@ struct BarRenderLoopState
 		geometryThicknessCoarseHoverStage(owner.geometryThicknessCoarseHoverStage),
 		geometryCloseHoverStage(owner.geometryCloseHoverStage),
 		mainButtonClickPulseSerial(mainButtonPulseSerial),
-		presentDecision(RECT(0, 0, barWindow.w, barWindow.h))
+		presentDecision()
 	{
 		auto range = GetBarThicknessSliderRange(
 			stateMode.Pen.ModeSelect, barStyle.dpiZoom);
@@ -318,8 +327,18 @@ struct BarRenderLoopState
 	Inkeys::UI::Bar::BarDirtyRegionTracker dirtyRegionTracker;
 	RECT current = RECT(0, 0, 0, 0);
 	Inkeys::UI::Bar::BarPresentDecision presentDecision;
+	BarWindowViewportController viewportController;
+	POINT capacityOrigin{};
+	SIZE capacitySize{};
+	double capacityZoom = 0.0;
+	bool capacityOriginInitialized = false;
+	POINT monitorOrigin{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top };
+	POINT committedAnchor{};
+	bool committedAnchorInitialized = false;
+	RECT cachedVisibleContentBounds{};
 	RECT lastPresentedDebugTextBounds{};
 	RECT lastPresentedDebugFrameBounds{};
+	RECT lastPresentedDebugWindowBounds{};
 	bool observedDebugModeEnabled = true == BarUiDebugModeEnabled;
 	bool observedDebugFrameRateEnabled = observedDebugModeEnabled
 		&& true == BarUiDebugFrameRateEnabled;
@@ -492,7 +511,6 @@ struct BarRenderLoopState
 	unsigned long long handledMainButtonPulseSerial = 0;
 	Inkeys::UI::Bar::OneSecondFrameRate frameRate;
 	wstring fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
-	wstring sleepingFps = L"帧率: -- FPS | 无限制帧率: -- FPS | 休眠";
 };
 
 // 渲染线程的阶段协调器仅在当前 module 内可见，不扩大 BarUISetClass 的公开接口。
@@ -6321,6 +6339,7 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		state.debugOverlayRefreshPending = state.debugOverlayRefreshPending
 			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugTextBounds)
 			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugFrameBounds)
+			|| !BarDirtyRegionTracker::IsEmpty(state.lastPresentedDebugWindowBounds)
 			|| debugFrameRateEnabled;
 		state.observedDebugModeEnabled = debugModeEnabled;
 		state.observedDebugFrameRateEnabled = debugFrameRateEnabled;
@@ -6341,9 +6360,9 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		// 从真正 idle 恢复时重建统计桶，避免把休眠时间算入实际帧率。
 		state.frameRate.Reset(state.frameWorkStart);
 	}
-	const bool debugSleepFramePending = state.debugFrameSleepLatch.Update(
-		debugFrameRateEnabled, hasActiveRendering);
-	const bool debugRendering = debugSleepFramePending
+	const bool finalIdleFramePending = state.debugFrameSleepLatch.Update(
+		true, hasActiveRendering);
+	const bool debugRendering = finalIdleFramePending
 		|| state.debugOverlayRefreshPending;
 	if (sustainRendering)
 	{
@@ -6412,42 +6431,77 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		state.presentDecision.ObserveDeviceGeneration(epoch.generation);
 		const bool deviceGenerationChanged =
 			epoch.generation != state.spec.GetDeviceGeneration();
-		HRESULT ensureDeviceResourcesHr = state.spec.EnsureDeviceResources(epoch,
-			static_cast<UINT32>(state.barWindow.w), static_cast<UINT32>(state.barWindow.h));
-		if (FAILED(ensureDeviceResourcesHr))
-		{
-			state.dirtyRegionTracker.RetainForRetry(true);
-			state.presentDecision.RequireFullDirtyRetry();
-			state.presentDecision.RecordFailure(
-				Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
-				epoch.generation, frameDemandGeneration,
-				state.presentAttemptFrameSerial);
-			if (state.barDeviceResourceFailureGeneration != epoch.generation)
+		const D2D1_SIZE_U previousTargetSize =
+			state.spec.GetTargetBitmapSize();
+
+		// 容量相对主按钮锚点移动；同尺寸拖动只改变映射，不重建 D2D/GDI 资源。
+		auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
+		const POINT frameAnchor{
+			static_cast<LONG>(lround(static_cast<double>(mainButton->x.val) * frameZoom)),
+			static_cast<LONG>(lround(static_cast<double>(mainButton->y.val) * frameZoom)) };
+		auto AnimationAbsMaximum = [](const BarUiValueClass& value)
 			{
-				state.barDeviceResourceFailureGeneration = epoch.generation;
-				if (IDTLogger) IDTLogger->error(
-					"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
-					static_cast<unsigned int>(ensureDeviceResourcesHr));
-			}
-			return BarRenderLoopStageResult::Continue;
-		}
-		if (deviceGenerationChanged)
+				double maximum = max({
+					abs(static_cast<double>(value.val)),
+					abs(static_cast<double>(value.startV)),
+					abs(static_cast<double>(value.tar)) });
+				if (value.hasMiddleV)
+					maximum = max(maximum,
+						abs(static_cast<double>(value.middleV)));
+				if (BarUiIsBackCurve(value.activeCurve)
+					|| (value.hasMiddleV
+						&& BarUiIsBackCurve(value.activeMiddleCurve)))
+					maximum *= 1.06;
+				return maximum;
+			};
+		const double mainBarMaximumWidth = max(80.0,
+			AnimationAbsMaximum(mainBar->w));
+		const auto moreSnapshotForCapacity =
+			state.barButtonSet.GetMoreButtonSnapshot();
+		const double moreItemCount = static_cast<double>(
+			moreSnapshotForCapacity.explicitMore.size()
+			+ moreSnapshotForCapacity.forcedOverflow.size());
+		const double moreMaximumHeight = min(
+			static_cast<double>(state.barWindow.h) / max(0.000001, frameZoom),
+			BarMorePanelPadding * 2.0
+				+ max(1.0, moreItemCount) * 75.0
+				+ BarMorePanelSeparatorGap);
+		const double horizontalCapacityDip = mainBarMaximumWidth
+			+ state.mainButtonBaseSize / 2.0 + 10.0
+			+ max({ BarDrawAttributeExpandedWidth / 2.0,
+				BarGeometryAttributeExpandedWidth / 2.0, 207.5 }) + 24.0;
+		const double verticalCapacityDip = max(
+			state.mainButtonBaseSize / 2.0 + 10.0
+				+ BarDrawAttributeExpandedHeight
+				+ BarColorPickerPanelGap + BarColorPickerPanelHeight + 24.0,
+			state.mainButtonBaseSize / 2.0 + BarMorePanelAnchorGap
+				+ moreMaximumHeight + 24.0);
+		SIZE requestedCapacity{
+			max<LONG>(1, static_cast<LONG>(ceil(horizontalCapacityDip
+				* frameZoom)) * 2),
+			max<LONG>(1, static_cast<LONG>(ceil(verticalCapacityDip
+				* frameZoom)) * 2) };
+		const bool capacityEpochChanged = !state.capacityOriginInitialized
+			|| abs(state.capacityZoom - frameZoom) > 0.000001;
+		if (capacityEpochChanged)
+			state.capacitySize = requestedCapacity;
+		else
 		{
-			state.barDeviceResourceFailureGeneration = 0;
-			state.presentDecision.ResetFailureRecovery();
-			state.presentDecision.RequireFullDirtyRetry();
-			state.dirtyRegionTracker.ForceFullDamage();
+			state.capacitySize.cx = max(state.capacitySize.cx, requestedCapacity.cx);
+			state.capacitySize.cy = max(state.capacitySize.cy, requestedCapacity.cy);
 		}
-		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
-		ID2D1GdiInteropRenderTarget* barGdiInterop =
-			state.spec.GetGdiInteropRenderTarget();
+		const POINT nextCapacityOrigin{
+			frameAnchor.x - state.capacitySize.cx / 2,
+			frameAnchor.y - state.capacitySize.cy / 2 };
+		state.capacityOrigin = nextCapacityOrigin;
+		state.capacityOriginInitialized = true;
+		state.capacityZoom = frameZoom;
 
 		// BeginDraw 前计算三个根控件的保守边界，用同一 dirty rect 约束清除、D2D 和 ULW。
-		auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 		mainButton->UpInh(BarUiInheritClass(
 			mainButton->x.val - mainButton->w.val / 2.0,
 			mainButton->y.val - mainButton->h.val / 2.0));
-		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 		mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
 		auto drawButton =
 			state.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Draw)];
@@ -6488,7 +6542,22 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.dirtyRegionTracker.ForceFullDamage();
 
 		RECT visibleContentBounds = RECT(0, 0, 0, 0);
-		constexpr bool collectVisibleContentBoundsForFutureWindowSizing = false;
+		const bool collectVisibleContentBoundsForWindowSizing =
+			capacityEpochChanged
+			|| IsBarWindowRectEmpty(state.cachedVisibleContentBounds)
+			|| true == BarAtomic::sustainFlag
+			|| state.mainBarTimeline.IsActive()
+			|| state.drawAttributeTimeline.IsActive()
+			|| state.geometryAttributeTimeline.IsActive()
+			|| !state.morePanelProgress.IsSame()
+			|| !state.drawAttributeThicknessPreviewPopupProgress.IsSame()
+			|| !state.drawAttributeThicknessPreviewPopupRetargetProgress.IsSame()
+			|| !state.drawAttributeThicknessFineDialProgress.IsSame()
+			|| !state.drawAttributeAnnotationPopupProgress.IsSame()
+			|| !state.drawAttributeOverflowPopupProgress.IsSame()
+			|| !state.drawAttributePenTypeMenuProgress.IsSame()
+			|| !state.drawAttributeColorPickerProgress.IsSame()
+			|| state.debugFrameSleepLatch.IsPending();
 		auto UnionShapeBounds = [&](RECT& bounds, const BarUiShapeClass* shape)
 			{
 				if (!shape) return;
@@ -6556,9 +6625,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			{ UnionWordBounds(visibleContentBounds, word.get()); };
 		BarMoreButtonSnapshotClass predictedMoreSnapshot =
 			state.barButtonSet.GetMoreButtonSnapshot();
-		if constexpr (collectVisibleContentBoundsForFutureWindowSizing)
+		if (collectVisibleContentBoundsForWindowSizing)
 		{
-			// 未来动态缩窗会重新启用本段；当前普通帧不能为停用能力支付边界计算成本。
+			// 只在外框可能变化时重算；普通 hover/光影帧复用上次完整外框。
 			IncludeShapeBounds(mainBar);
 			IncludeShapeBounds(drawAttribute);
 			IncludeShapeBounds(geometryAttribute);
@@ -6679,6 +6748,10 @@ IncludeShapeBounds(state.shapeMap[
 				BarRenderingAttribute::GetWeigetRect(
 					*mainButton, static_cast<double>(frameZoom)));
 		}
+		if (collectVisibleContentBoundsForWindowSizing)
+			state.cachedVisibleContentBounds = visibleContentBounds;
+		else
+			visibleContentBounds = state.cachedVisibleContentBounds;
 
 		RECT mainGroupBounds{};
 		RECT drawAttributeGroupBounds{};
@@ -7066,28 +7139,143 @@ IncludeShapeBounds(state.shapeMap[
 				static_cast<LONG>(debugTextLayoutRect.right),
 				static_cast<LONG>(debugTextLayoutRect.bottom));
 		}
+		RECT currentContentBounds = visibleContentBounds;
+		if (debugFrameRateEnabled)
+			UnionBarWindowRect(currentContentBounds, currentDebugTextBounds);
+		const RECT layoutBounds{
+			0, 0, static_cast<LONG>(state.barWindow.w),
+			static_cast<LONG>(state.barWindow.h) };
+		const auto capacityDecision = ResolveBarWindowCapacity(
+			state.capacitySize, frameAnchor, currentContentBounds,
+			layoutBounds, 2);
+		state.capacityOrigin = capacityDecision.origin;
+		state.capacitySize = capacityDecision.size;
+		HRESULT ensureDeviceResourcesHr = state.spec.EnsureDeviceResources(epoch,
+			static_cast<UINT32>(state.capacitySize.cx),
+			static_cast<UINT32>(state.capacitySize.cy));
+		if (FAILED(ensureDeviceResourcesHr))
+		{
+			state.dirtyRegionTracker.RetainForRetry(true);
+			state.presentDecision.RequireFullDirtyRetry();
+			state.presentDecision.RecordFailure(
+				Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
+				epoch.generation, frameDemandGeneration,
+				state.presentAttemptFrameSerial);
+			if (state.barDeviceResourceFailureGeneration != epoch.generation)
+			{
+				state.barDeviceResourceFailureGeneration = epoch.generation;
+				if (IDTLogger) IDTLogger->error(
+					"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
+					static_cast<unsigned int>(ensureDeviceResourcesHr));
+			}
+			return BarRenderLoopStageResult::Continue;
+		}
+		const bool targetSizeChanged =
+			previousTargetSize.width != static_cast<UINT32>(state.capacitySize.cx)
+			|| previousTargetSize.height != static_cast<UINT32>(state.capacitySize.cy);
+		if (deviceGenerationChanged || targetSizeChanged)
+		{
+			state.barDeviceResourceFailureGeneration = 0;
+			state.presentDecision.ResetFailureRecovery();
+			state.presentDecision.RequireFullDirtyRetry();
+			state.dirtyRegionTracker.ForceFullDamage();
+		}
+		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
+		ID2D1GdiInteropRenderTarget* barGdiInterop =
+			state.spec.GetGdiInteropRenderTarget();
 		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
 			state.unclassifiedDamagePending);
-		// 旧逻辑留给未来动态窗口尺寸：收集代码保留，但普通帧已停止执行。
-		(void)visibleContentBounds;
-		// RECT frameDirty = state.presentDecision.LastPresentedBounds();
-		// BarRenderingAttribute::UnionRectInPlace(frameDirty, visibleContentBounds);
+		const bool reserveAnimationEnvelope =
+			state.mainBarTimeline.IsActive()
+			|| state.drawAttributeTimeline.IsActive()
+			|| state.geometryAttributeTimeline.IsActive()
+			|| !state.morePanelProgress.IsSame()
+			|| !state.drawAttributeThicknessPreviewPopupProgress.IsSame()
+			|| !state.drawAttributeThicknessPreviewPopupRetargetProgress.IsSame()
+			|| !state.drawAttributeThicknessFineDialProgress.IsSame()
+			|| !state.drawAttributeAnnotationPopupProgress.IsSame()
+			|| !state.drawAttributeOverflowPopupProgress.IsSame()
+			|| !state.drawAttributePenTypeMenuProgress.IsSame()
+			|| !state.drawAttributeColorPickerProgress.IsSame();
+		constexpr LONG viewportPadding = 2;
+		RECT predictedEnvelope{};
+		if (reserveAnimationEnvelope)
+		{
+			// 只在会改变顶层外框的动画批次预留容量，普通 hover/光影不扩窗。
+			predictedEnvelope = RECT{
+				state.capacityOrigin.x,
+				state.capacityOrigin.y,
+				state.capacityOrigin.x + state.capacitySize.cx,
+				state.capacityOrigin.y + state.capacitySize.cy };
+			predictedEnvelope = IntersectBarWindowRect(
+				predictedEnvelope, layoutBounds);
+			// Resolve() 还会外扩 viewportPadding，先内缩可避免 pptSrc 越出 target。
+			predictedEnvelope = DeflateBarWindowRect(
+				predictedEnvelope, viewportPadding);
+		}
+		POINT viewportTranslation{};
+		if (state.committedAnchorInitialized)
+		{
+			viewportTranslation.x = frameAnchor.x - state.committedAnchor.x;
+			viewportTranslation.y = frameAnchor.y - state.committedAnchor.y;
+		}
+		const bool settleViewport = state.debugFrameSleepLatch.IsPending();
+		const BarWindowViewportDecision viewportDecision =
+			state.viewportController.Resolve(
+				currentContentBounds, predictedEnvelope, layoutBounds,
+				viewportPadding, settleViewport, viewportTranslation);
+		const RECT candidateViewport = viewportDecision.viewport;
+		const POINT candidateSource{
+			candidateViewport.left - state.capacityOrigin.x,
+			candidateViewport.top - state.capacityOrigin.y };
+		POINT committedSource{};
+		if (state.viewportController.Initialized())
+		{
+			const RECT committedViewport = state.viewportController.Committed();
+			committedSource.x = committedViewport.left
+				- state.capacityOrigin.x + viewportTranslation.x;
+			committedSource.y = committedViewport.top
+				- state.capacityOrigin.y + viewportTranslation.y;
+		}
+		const RECT committedViewport = state.viewportController.Committed();
+		const bool viewportMappingChanged = !state.viewportController.Initialized()
+			|| candidateSource.x != committedSource.x
+			|| candidateSource.y != committedSource.y
+			|| candidateViewport.right - candidateViewport.left
+				!= committedViewport.right - committedViewport.left
+			|| candidateViewport.bottom - candidateViewport.top
+				!= committedViewport.bottom - committedViewport.top;
+		if (viewportMappingChanged)
+		{
+			// 源点或尺寸变化会重新解释整张 HWND，本帧不沿用局部 dirty。
+			state.dirtyRegionTracker.ForceFullDamage();
+			businessDirty = candidateViewport;
+		}
 		// 调试覆盖层在业务脏区解析后加入，避免红框反向污染业务 damage。
 		const auto debugDamage = ResolveBarDebugDamage(
 			businessDirty,
 			state.lastPresentedDebugTextBounds,
 			state.lastPresentedDebugFrameBounds,
 			currentDebugTextBounds,
-			debugModeEnabled);
+			debugModeEnabled,
+			state.debugFrameSleepLatch.IsPending());
 		RECT debugTarget = debugDamage.frameTarget;
 		RECT currentDebugFrameBounds = debugModeEnabled ? debugTarget : RECT{};
 		RECT presentDirty = debugDamage.presentDamage;
+		if ((viewportMappingChanged || state.debugOverlayRefreshPending)
+			&& !IsBarWindowRectEmpty(state.lastPresentedDebugWindowBounds))
+			UnionBarWindowRect(presentDirty,
+				state.lastPresentedDebugWindowBounds);
+		if (debugModeEnabled && (viewportMappingChanged
+			|| state.debugOverlayRefreshPending))
+			UnionBarWindowRect(presentDirty, candidateViewport);
+		presentDirty = IntersectBarWindowRect(presentDirty, candidateViewport);
 		if (BarDirtyRegionTracker::IsEmpty(presentDirty))
 		{
-			// ShouldPresent 却没有分类结果属于合同缺口，安全退回全窗口。
+			// ShouldPresent 却没有分类结果属于合同缺口，安全退回当前窗口。
 			state.dirtyRegionTracker.ForceFullDamage();
-			businessDirty = windowBounds;
-			presentDirty = windowBounds;
+			businessDirty = candidateViewport;
+			presentDirty = candidateViewport;
 		}
 		D2D1_RECT_F presentDirtyRect = D2D1::RectF(
 			static_cast<FLOAT>(presentDirty.left),
@@ -7095,6 +7283,9 @@ IncludeShapeBounds(state.shapeMap[
 			static_cast<FLOAT>(presentDirty.right),
 			static_cast<FLOAT>(presentDirty.bottom));
 		state.current = RECT(0, 0, 0, 0);
+		barDeviceContext->SetTransform(D2D1::Matrix3x2F::Translation(
+			-static_cast<FLOAT>(state.capacityOrigin.x),
+			-static_cast<FLOAT>(state.capacityOrigin.y)));
 		barDeviceContext->BeginDraw();
 		state.spec.PushFrameDirtyClip(barDeviceContext, presentDirtyRect);
 
@@ -9446,12 +9637,11 @@ else
 			}
 		}
 
-		// 帧率文字只随真实渲染重绘；最后一帧额外标记即将休眠。
+		// 帧率文字只随真实渲染重绘；最终 idle 帧保持上一帧文字不变。
 		if (debugFrameRateEnabled)
 		{
 			FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
-			const wstring& content = state.debugFrameSleepLatch.IsPending()
-				? state.sleepingFps : state.fps;
+			const wstring& content = state.fps;
 
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
@@ -9503,15 +9693,17 @@ else
 				if (debugTarget.bottom > debugWindowHeight) debugTarget.bottom = debugWindowHeight;
 			}
 
-			COLORREF frame = RGB(255, 0, 0);
+			COLORREF frame = state.debugFrameSleepLatch.IsPending()
+				? RGB(0, 255, 0) : RGB(255, 0, 0);
 			constexpr FLOAT debugFrameWidth = 1.0F;
-			constexpr FLOAT debugFrameInset = debugFrameWidth / 2.0F;
-			// D2D 描边以路径为中心，四边内缩半个线宽，避免任何像素落到脏区外。
+			constexpr FLOAT dirtyFrameInset = 2.5F;
+			constexpr FLOAT windowFrameInset = debugFrameWidth / 2.0F;
+			// 脏区框比 HWND 框再内缩 2px，最终全脏帧仍能同时辨认绿框与蓝框。
 			D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-				static_cast<FLOAT>(debugTarget.left) + debugFrameInset,
-				static_cast<FLOAT>(debugTarget.top) + debugFrameInset,
-				static_cast<FLOAT>(debugTarget.right) - debugFrameInset,
-				static_cast<FLOAT>(debugTarget.bottom) - debugFrameInset), 0, 0);
+				static_cast<FLOAT>(debugTarget.left) + dirtyFrameInset,
+				static_cast<FLOAT>(debugTarget.top) + dirtyFrameInset,
+				static_cast<FLOAT>(debugTarget.right) - dirtyFrameInset,
+				static_cast<FLOAT>(debugTarget.bottom) - dirtyFrameInset), 0, 0);
 
 			ID2D1SolidColorBrush* borderBrush =
 				state.spec.GetFrameSolidColorBrush(
@@ -9520,6 +9712,20 @@ else
 			if (borderBrush)
 				barDeviceContext->DrawRoundedRectangle(
 					&roundedRect, borderBrush, debugFrameWidth);
+
+			// 蓝框直接表示本次 ULW 的 HWND 边界，内缩半像素避免右/下边被裁切。
+			const RECT debugWindowTarget = candidateViewport;
+			D2D1_ROUNDED_RECT windowRect = D2D1::RoundedRect(D2D1::RectF(
+				static_cast<FLOAT>(debugWindowTarget.left) + windowFrameInset,
+				static_cast<FLOAT>(debugWindowTarget.top) + windowFrameInset,
+				static_cast<FLOAT>(debugWindowTarget.right) - windowFrameInset,
+				static_cast<FLOAT>(debugWindowTarget.bottom) - windowFrameInset), 0, 0);
+			ID2D1SolidColorBrush* windowBrush =
+				state.spec.GetFrameSolidColorBrush(
+					barDeviceContext, RGB(0, 120, 255), 1.0);
+			if (windowBrush)
+				barDeviceContext->DrawRoundedRectangle(
+					&windowRect, windowBrush, debugFrameWidth);
 		}
 
 		// Windows 7 Platform Update 要求 GetDC 时 Clip/Layer 栈为空。
@@ -9530,13 +9736,18 @@ else
 		HRESULT releaseDcHr = E_FAIL;
 		{
 			// 脏区更新
-			RECT target = presentDirty;
+			RECT target = BarLayoutToClientRect(
+				presentDirty, candidateViewport);
+			const LONG candidateWidth =
+				candidateViewport.right - candidateViewport.left;
+			const LONG candidateHeight =
+				candidateViewport.bottom - candidateViewport.top;
 			{
 				// 脏区更新限制
 				if (target.left < 0) target.left = 0;
 				if (target.top < 0) target.top = 0;
-				if (target.right > state.barWindow.w) target.right = state.barWindow.w;
-				if (target.bottom > state.barWindow.h) target.bottom = state.barWindow.h;
+				if (target.right > candidateWidth) target.right = candidateWidth;
+				if (target.bottom > candidateHeight) target.bottom = candidateHeight;
 			}
 
 			// psize 指定窗口本次更新“新内容”宽高
@@ -9544,7 +9755,11 @@ else
 			// pptSrc 从源内存 DC 的哪个位置起贴内容
 
 			// 设置窗口位置
-			POINT ptDst = { 0, 0 };
+			POINT ptDst = {
+				state.monitorOrigin.x + candidateViewport.left,
+				state.monitorOrigin.y + candidateViewport.top };
+			POINT ptSrc = candidateSource;
+			SIZE sizeWnd = { candidateWidth, candidateHeight };
 			if (barGdiInterop)
 			{
 				// GetDC 自带必要的 D2D 提交，避免在此之前再做一次重复 Flush。
@@ -9554,6 +9769,8 @@ else
 				if (SUCCEEDED(getDcHr) && hdc)
 				{
 					ulwi.pptDst = &ptDst;
+					ulwi.psize = &sizeWnd;
+					ulwi.pptSrc = &ptSrc;
 					ulwi.hdcSrc = hdc;
 					ulwi.prcDirty = &target;
 					updateLayeredWindowSucceeded =
@@ -9582,10 +9799,15 @@ else
 			state.barPresentFailureLogged = false;
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();
+			state.viewportController.Commit(candidateViewport);
+			state.committedAnchor = frameAnchor;
+			state.committedAnchorInitialized = true;
 			state.lastPresentedDebugTextBounds = debugModeEnabled
 				? currentDebugTextBounds : RECT{};
 			state.lastPresentedDebugFrameBounds = debugModeEnabled
 				? currentDebugFrameBounds : RECT{};
+			state.lastPresentedDebugWindowBounds = debugModeEnabled
+				? candidateViewport : RECT{};
 			state.debugOverlayRefreshPending = false;
 			(void)state.debugFrameSleepLatch.CommitPresented();
 			state.frameRateSamplePending = debugFrameRateEnabled;
@@ -9654,14 +9876,12 @@ void BarRenderLoopCoordinator::PaceFrame(
 				L"帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
 				averages.actualFramesPerSecond,
 				averages.unlimitedFramesPerSecond);
-			state.sleepingFps = state.fps + L" | 休眠";
 		}
 	}
 	else if (!debugFrameRateEnabled)
 	{
 		state.frameRate.Reset(frameEnd);
 		state.fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
-		state.sleepingFps = L"帧率: -- FPS | 无限制帧率: -- FPS | 休眠";
 	}
 	state.frameRateSamplePending = false;
 	state.reckon = chrono::high_resolution_clock::now();
@@ -9669,9 +9889,6 @@ void BarRenderLoopCoordinator::PaceFrame(
 
 void BarRenderLoopCoordinator::Run()
 {
-	auto& barWindow = owner_.barWindow;
-	auto& spec = owner_.spec;
-
 	Inkeys::Thread::StatusGuard guard("BarUISetClass::Rendering");
 
 	BLENDFUNCTION blend;
@@ -9681,7 +9898,7 @@ void BarRenderLoopCoordinator::Run()
 		blend.SourceConstantAlpha = 255;
 		blend.AlphaFormat = AC_SRC_ALPHA;
 	}
-	SIZE sizeWnd = { static_cast<LONG>(barWindow.w), static_cast<LONG>(barWindow.h) };
+	SIZE sizeWnd = { 1, 1 };
 	POINT ptSrc = { 0,0 };
 	POINT ptDst = { 0,0 };
 	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
@@ -9697,20 +9914,6 @@ void BarRenderLoopCoordinator::Run()
 	}
 
 	if (offSignal) return;
-
-	{
-		auto renderPass = AcquireUi3RenderPass(Ui3RenderPriority::Interactive);
-		Ui3RenderDeviceEpoch epoch = GetUi3RenderDeviceEpoch();
-		HRESULT hr = spec.EnsureDeviceResources(epoch,
-			static_cast<UINT32>(barWindow.w), static_cast<UINT32>(barWindow.h));
-		if (FAILED(hr))
-		{
-			if (IDTLogger) IDTLogger->error(
-				"[BarUISetClass::Rendering] 创建 UI3 Bar 设备资源失败, hr=0x{:08X}",
-				static_cast<unsigned int>(hr));
-			return;
-		}
-	}
 
 	BarRenderLoopState state(owner_, owner_.mainButtonClickPulseSerial);
 	for (int forNum = 1; !offSignal; forNum = 2)

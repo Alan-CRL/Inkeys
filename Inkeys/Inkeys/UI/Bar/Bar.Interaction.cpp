@@ -10,6 +10,7 @@ module;
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
+#include "Bar.WindowGeometry.h"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -203,6 +204,45 @@ bool IsBarTouchCancelMessage(const ExMessage& message)
 		&& message.wheel == BarTouchCancelMessageMarker;
 }
 
+bool IsBarCoordinateMessage(UINT message)
+{
+	switch (message)
+	{
+	case WM_MOUSEMOVE:
+	case WM_MOUSEWHEEL:
+	case WM_MOUSEHWHEEL:
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_LBUTTONDBLCLK:
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP:
+	case WM_MBUTTONDBLCLK:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+	case WM_RBUTTONDBLCLK:
+	case WM_XBUTTONDOWN:
+	case WM_XBUTTONUP:
+	case WM_XBUTTONDBLCLK:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool BarScreenToLayout(POINT& point)
+{
+	point = Inkeys::UI::Bar::BarScreenToLayoutPoint(
+		point, POINT{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top });
+	return true;
+}
+
+bool BarLayoutToScreen(POINT& point)
+{
+	point = Inkeys::UI::Bar::BarLayoutToScreenPoint(
+		point, POINT{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top });
+	return true;
+}
+
 bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd)
 {
 	// 保持原有轮询粒度，同时让退出时的 join 可终止。
@@ -219,8 +259,10 @@ bool TryGetBarInteractionMessage(
 	ExMessage* message, BYTE filter, bool removeMessage, HWND hWnd)
 {
 	// 旧交互路径全部是成功即消费，HiMsg 不提供 peek 语义。
-	return message && removeMessage && Inkeys::Window::TryGet(
-		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter));
+	if (!message || !removeMessage || !Inkeys::Window::TryGet(
+		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter)))
+		return false;
+	return true;
 }
 
 void ClearBarInteractionMessages(BYTE filter, HWND hWnd)
@@ -234,7 +276,7 @@ void QueueBarThicknessSliderEnd(HWND hWnd)
 	if (!hWnd) return;
 	POINT point{};
 	if (!GetCursorPos(&point)) point = {};
-	ScreenToClient(hWnd, &point);
+	BarScreenToLayout(point);
 
 	ExMessage message{};
 	message.message = WM_LBUTTONUP;
@@ -252,7 +294,7 @@ void QueueBarColorPickerEnd(HWND hWnd)
 	if (!hWnd) return;
 	POINT point{};
 	if (!GetCursorPos(&point)) point = {};
-	ScreenToClient(hWnd, &point);
+	BarScreenToLayout(point);
 
 	ExMessage message{};
 	message.message = WM_LBUTTONUP;
@@ -327,7 +369,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 			POINT point{};
 			bool pointAvailable = GetCursorPos(&point)
-				&& ScreenToClient(hWnd, &point);
+				&& BarScreenToLayout(point);
 			auto infoHit = barUISet.shapeMap[annotation
 				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit
 				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
@@ -576,7 +618,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 				pt.x = static_cast<LONG>(xO + 0.5);
 				pt.y = static_cast<LONG>(yO + 0.5);
-				ScreenToClient(hWnd, &pt);
+				BarScreenToLayout(pt);
 
 				if ((ti.dwFlags & TOUCHEVENTF_DOWN) && (isPrimaryTouch || canLockFallbackTouch))
 				{
@@ -1808,7 +1850,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			POINT stablePoint{
 				static_cast<LONG>(gestureMessage.x),
 				static_cast<LONG>(gestureMessage.y) };
-			ClientToScreen(floating_window, &stablePoint);
+			BarLayoutToScreen(stablePoint);
 			POINT activeScreenPoint = stablePoint;
 			ULONGLONG stableStartTick = GetTickCount64();
 			double stableThreshold = BarColorPickerHoldStillnessPx
@@ -1876,7 +1918,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				POINT screenPoint{
 					static_cast<LONG>(gestureMessage.x),
 					static_cast<LONG>(gestureMessage.y) };
-				ClientToScreen(floating_window, &screenPoint);
+				BarLayoutToScreen(screenPoint);
 				activeScreenPoint = screenPoint;
 				if (!picker.colorPickerHoldLocked)
 					ApplyClientPoint(gestureMessage.x, gestureMessage.y);
@@ -3149,8 +3191,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								POINT startScreenPoint{
 									static_cast<LONG>(msg.x),
 									static_cast<LONG>(msg.y) };
-								ClientToScreen(
-									floating_window, &startScreenPoint);
+								BarLayoutToScreen(startScreenPoint);
 								double pressScreenX =
 									static_cast<double>(
 										startScreenPoint.x);
@@ -3194,8 +3235,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									static_cast<LONG>(lround(
 										(previewGeometry.trackRight - halfThumb)
 										* static_cast<double>(barStyle.zoom))), 0 };
-								ClientToScreen(floating_window, &trackStartPoint);
-								ClientToScreen(floating_window, &trackEndPoint);
+								BarLayoutToScreen(trackStartPoint);
+								BarLayoutToScreen(trackEndPoint);
 								double trackStartScreenX =
 									static_cast<double>(trackStartPoint.x);
 								double trackTravelScreenX = max(1.0,
@@ -3791,9 +3832,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 													POINT clientPoint{
 														static_cast<LONG>(lastTouchScreenX),
 														static_cast<LONG>(lastTouchScreenY) };
-													bool fineActivated = ScreenToClient(
-														floating_window, &clientPoint)
-														&& UpdateFineActivationDwell(
+													bool fineActivated = BarScreenToLayout(
+														clientPoint) && UpdateFineActivationDwell(
 															lastTouchScreenX,
 															clientPoint.x, clientPoint.y);
 													if (!fineActivated
@@ -3813,8 +3853,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											if (GetCursorPos(&cursorPoint))
 											{
 												POINT clientPoint = cursorPoint;
-												ScreenToClient(
-													floating_window, &clientPoint);
+														BarScreenToLayout(clientPoint);
 												bool fineActivated = UpdateFineActivationDwell(
 													static_cast<double>(cursorPoint.x),
 													clientPoint.x, clientPoint.y);
@@ -3856,8 +3895,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											POINT screenPoint{
 												static_cast<LONG>(msg.x),
 												static_cast<LONG>(msg.y) };
-											ClientToScreen(
-												floating_window, &screenPoint);
+											BarLayoutToScreen(screenPoint);
 											double screenX =
 												static_cast<double>(
 													screenPoint.x);
@@ -4090,8 +4128,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												POINT screenPoint{
 													static_cast<LONG>(msg.x),
 													static_cast<LONG>(msg.y) };
-												ClientToScreen(
-													floating_window, &screenPoint);
+														BarLayoutToScreen(screenPoint);
 												ApplyFineDialScreenX(
 													static_cast<double>(screenPoint.x));
 											}
@@ -4100,8 +4137,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												POINT screenPoint{
 													static_cast<LONG>(msg.x),
 													static_cast<LONG>(msg.y) };
-												ClientToScreen(
-													floating_window, &screenPoint);
+														BarLayoutToScreen(screenPoint);
 												double screenX = static_cast<double>(screenPoint.x);
 												double screenY = static_cast<double>(screenPoint.y);
 												lastTouchScreenX = screenX;
@@ -4126,8 +4162,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												POINT screenPoint{
 													static_cast<LONG>(msg.x),
 													static_cast<LONG>(msg.y) };
-												ClientToScreen(
-													floating_window, &screenPoint);
+														BarLayoutToScreen(screenPoint);
 												double screenX = static_cast<double>(screenPoint.x);
 												double screenY = static_cast<double>(screenPoint.y);
 												lastTouchScreenX = screenX;
@@ -4153,8 +4188,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												POINT screenPoint{
 													static_cast<LONG>(msg.x),
 													static_cast<LONG>(msg.y) };
-												ClientToScreen(
-													floating_window, &screenPoint);
+														BarLayoutToScreen(screenPoint);
 												double moveDx = static_cast<double>(
 													screenPoint.x) - pressScreenX;
 												double moveDy = static_cast<double>(
@@ -4178,8 +4212,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												POINT screenPoint{
 													static_cast<LONG>(msg.x),
 													static_cast<LONG>(msg.y) };
-												ClientToScreen(
-													floating_window, &screenPoint);
+														BarLayoutToScreen(screenPoint);
 												if (!gestureDragged
 													&& static_cast<double>(screenPoint.x)
 														!= pressScreenX)
@@ -4202,9 +4235,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												POINT clientPoint{
 													static_cast<LONG>(lastTouchScreenX),
 													static_cast<LONG>(lastTouchScreenY) };
-												bool fineActivated = ScreenToClient(
-													floating_window, &clientPoint)
-													&& UpdateFineActivationDwell(
+														bool fineActivated = BarScreenToLayout(
+															clientPoint) && UpdateFineActivationDwell(
 														lastTouchScreenX,
 														clientPoint.x, clientPoint.y);
 												if (!fineActivated
@@ -5088,7 +5120,7 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 	// 接受区只控制生命周期；240px 邻近判断仅用于裁剪无效渲染唤醒。
 	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
 	POINT clientPoint = screenPoint;
-	if (!ScreenToClient(hWnd, &clientPoint)) return;
+	if (!BarScreenToLayout(clientPoint)) return;
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -5162,7 +5194,7 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 	// 区域外仍更新同一光源点；邻近判断不参与任何亮度公式。
 	bool cursorNearVisibleRegion = IsBorderCursorLightNearVisibleRegion(screenPoint);
 	POINT clientPoint = screenPoint;
-	if (!ScreenToClient(hWnd, &clientPoint)) return;
+	if (!BarScreenToLayout(clientPoint)) return;
 	bool needRendering = false;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -5319,8 +5351,8 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions(double frameZoom)
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble]);
 
 	// 距离判断统一在屏幕坐标完成，避免接受区内外分别换算客户区坐标。
-	POINT clientOrigin{};
-	if (!floating_window || !ClientToScreen(floating_window, &clientOrigin))
+	POINT clientOrigin{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top };
+	if (!floating_window)
 	{
 		nextCount = 0;
 	}
@@ -5477,6 +5509,45 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 namespace Inkeys::UI::Bar
 {
+	Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
+		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		if (Inkeys::Message::IsTouchGeneratedMouseMessage(
+			message, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
+			return { Inkeys::Message::Action::Discard, 0 };
+		if (!IsBarCoordinateMessage(message)) return {};
+
+		// 在窗口线程入队时就固化屏幕坐标，避免 resize 后用新原点解释旧 client 消息。
+		POINT point{};
+		if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)
+		{
+			point.x = GET_X_LPARAM(lParam);
+			point.y = GET_Y_LPARAM(lParam);
+		}
+		else
+		{
+			const LPARAM messagePosition = static_cast<LPARAM>(GetMessagePos());
+			point.x = GET_X_LPARAM(messagePosition);
+			point.y = GET_Y_LPARAM(messagePosition);
+		}
+		BarScreenToLayout(point);
+
+		ExMessage queued{};
+		queued.message = static_cast<USHORT>(message);
+		queued.x = static_cast<short>(clamp<LONG>(point.x, SHRT_MIN, SHRT_MAX));
+		queued.y = static_cast<short>(clamp<LONG>(point.y, SHRT_MIN, SHRT_MAX));
+		queued.wheel = message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL
+			? GET_WHEEL_DELTA_WPARAM(wParam) : 0;
+		const WORD keyState = GET_KEYSTATE_WPARAM(wParam);
+		queued.shift = (keyState & MK_SHIFT) != 0;
+		queued.ctrl = (keyState & MK_CONTROL) != 0;
+		queued.lbutton = (keyState & MK_LBUTTON) != 0;
+		queued.mbutton = (keyState & MK_MBUTTON) != 0;
+		queued.rbutton = (keyState & MK_RBUTTON) != 0;
+		(void)Inkeys::Window::Enqueue(hwnd, queued);
+		return { Inkeys::Message::Action::Discard, 0 };
+	}
+
 	bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown)
 	{
 		bool movementKey = vkCode == VK_LEFT || vkCode == VK_RIGHT

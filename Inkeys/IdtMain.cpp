@@ -1289,8 +1289,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				spec.exStyle = overlayExStyle | extraStyle;
 				spec.windowProc = proc;
 				spec.created = created;
-				if (role == Inkeys::Window::WindowRole::PptControls ||
-					role == Inkeys::Window::WindowRole::Bar)
+				if (role == Inkeys::Window::WindowRole::PptControls)
 				{
 					// WM_TOUCH 已由窗口过程自行转为单指输入，HiMsg 入队前丢弃系统兼容副本。
 					spec.messageCallback = [](HWND, UINT message, WPARAM, LPARAM)
@@ -1300,6 +1299,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 								message, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
 								return { Inkeys::Message::Action::Discard, 0 };
 							return {};
+						};
+				}
+				else if (role == Inkeys::Window::WindowRole::Bar)
+				{
+					// Bar 的 HWND 会动态改变，鼠标坐标必须在入队时固化到布局空间。
+					spec.messageCallback = [](HWND hwnd, UINT message,
+						WPARAM wParam, LPARAM lParam)
+						{
+							return Inkeys::UI::Bar::QueueWindowMessageInLayoutSpace(
+								hwnd, message, wParam, lParam);
 						};
 				}
 				windowSpecs.push_back(std::move(spec));

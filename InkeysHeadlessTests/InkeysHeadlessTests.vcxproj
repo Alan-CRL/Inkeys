@@ -96,6 +96,7 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="animation_tests.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
+	<ClCompile Include="window_geometry_tests.cpp" />
     <ClCompile Include="frame_pacing_tests.cpp" />
 	<ClCompile Include="toggle_click_coalescer_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />

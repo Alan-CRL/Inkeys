@@ -302,13 +302,19 @@ namespace Inkeys::UI::Bar
 		const RECT& previousTextBounds,
 		const RECT& previousFrameBounds,
 		const RECT& currentTextBounds,
-		bool debugEnabled) noexcept
+		bool debugEnabled,
+		bool finalIdleFrame = false) noexcept
 	{
 		BarDebugDamageResolution result{};
 		result.frameTarget = businessDamage;
 		if (debugEnabled)
+		{
+			if (finalIdleFrame && BarDirtyRegionTracker::IsEmpty(
+				result.frameTarget))
+				result.frameTarget = previousFrameBounds;
 			BarDirtyRegionTracker::UnionInPlace(
 				result.frameTarget, currentTextBounds);
+		}
 
 		result.presentDamage = businessDamage;
 		// 旧覆盖层始终进入提交区，关闭调试时也能完整擦除文字与红框。

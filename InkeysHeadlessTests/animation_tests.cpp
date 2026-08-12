@@ -25,6 +25,7 @@ int RunSurfaceTests();
 int RunMessageTests();
 int RunWindowTests();
 int RunDirtyRegionTests();
+int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
 int RunToggleClickCoalescerTests();
 
@@ -886,6 +887,7 @@ int main(int argc, char** argv)
 	failureCount += RunMessageTests();
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
+	failureCount += RunWindowGeometryTests();
 	failureCount += RunFramePacingTests(benchmark);
 	failureCount += RunToggleClickCoalescerTests();
 	if (benchmark) RunBenchmarks();

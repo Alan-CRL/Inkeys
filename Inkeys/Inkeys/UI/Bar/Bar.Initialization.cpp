@@ -116,9 +116,9 @@ namespace Inkeys::UI::Bar
 		barUISet.barWindow.w = MainMonitor.MonitorWidth;
 		barUISet.barWindow.h = MainMonitor.MonitorHeight - 1;
 		barUISet.barWindow.pct = 255;
-		RECT bounds{ barUISet.barWindow.x, barUISet.barWindow.y,
-			barUISet.barWindow.x + barUISet.barWindow.w,
-			barUISet.barWindow.y + barUISet.barWindow.h };
+		// 真实窗口范围由首帧 ULW 原子提交，初始化阶段不再短暂覆盖整张屏幕。
+		RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
+			MainMonitor.rcMonitor.left + 1, MainMonitor.rcMonitor.top + 1 };
 		if (!Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Bar, bounds))
 			return false;
 

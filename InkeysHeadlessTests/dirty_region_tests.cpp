@@ -257,6 +257,13 @@ namespace
 		Check(SameRect(frameOnly.presentDamage, RECT{ 5, 10, 100, 100 }),
 			"dirty debug without FPS clears stale text and frame");
 
+		const auto finalIdle = ResolveBarDebugDamage(
+			RECT{}, previousText, previousFrame, RECT{}, true, true);
+		Check(SameRect(finalIdle.frameTarget, previousFrame),
+			"final idle frame reuses the last red frame as its green target");
+		Check(SameRect(finalIdle.presentDamage, RECT{ 5, 10, 100, 100 }),
+			"final idle frame damages the previous overlays before recoloring");
+
 		const auto disabled = ResolveBarDebugDamage(
 			RECT{}, previousText, previousFrame, RECT{}, false);
 		Check(BarDirtyRegionTracker::IsEmpty(disabled.frameTarget),

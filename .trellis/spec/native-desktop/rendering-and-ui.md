@@ -113,7 +113,7 @@ clock.Rebase();
 
 #### 1. Scope / Trigger
 
-修改 UI3 Bar 的动画推进、自绘控件、动态光、调试覆盖层、D2D dirty clip 或 `UpdateLayeredWindowIndirect` 提交时适用。窗口仍保持显示器尺寸；可见内容总边界只为未来动态缩窗保留，不得重新作为普通帧的默认脏区。
+修改 UI3 Bar 的动画推进、动态 HWND、输入坐标、自绘控件、动态光、调试覆盖层、D2D dirty clip 或 `UpdateLayeredWindowIndirect` 提交时适用。Bar 的 D2D target 是可复用资源容量，真实 HWND 只覆盖当前 viewport；两者不得重新合并为显示器尺寸的单一状态。
 
 #### 2. Signatures
 
@@ -149,7 +149,23 @@ BarDebugDamageResolution ResolveBarDebugDamage(
 	const RECT& previousTextBounds,
 	const RECT& previousFrameBounds,
 	const RECT& currentTextBounds,
-	bool debugEnabled) noexcept;
+	bool debugEnabled,
+	bool finalIdleFrame = false) noexcept;
+
+BarWindowCapacityDecision ResolveBarWindowCapacity(
+	SIZE currentSize,
+	POINT anchor,
+	const RECT& currentContentBounds,
+	const RECT& layoutBounds,
+	LONG padding) noexcept;
+
+BarWindowViewportDecision BarWindowViewportController::Resolve(
+	const RECT& currentContentBounds,
+	const RECT& predictedEnvelope,
+	const RECT& layoutBounds,
+	LONG padding,
+	bool settleToCurrent,
+	POINT committedTranslation = {}) noexcept;
 
 struct FrameRateAverages
 {
@@ -182,15 +198,19 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 #### 3. Contracts
 
 - 标准 Shape/SVG/PNG/Word 使用稳定对象键记录边界；父布局、粗细/色板/弹窗等自绘内容使用稳定功能组键。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
-- 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → `ResolveDamage` → 加入调试文字和红框旧/新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与 `UPDATELAYEREDWINDOWINFO::prcDirty`。
+- 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → `ResolveDamage` → 解析容量/viewport → 加入调试文字和红/绿/蓝框旧新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与 `UPDATELAYEREDWINDOWINFO::prcDirty`。viewport 的位置、尺寸或 source 映射变化时，当帧必须按新 HWND 范围全脏。
 - `BarUiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
 - 主光和鼠标光必须独立报告变化，静止的一路不得因另一路移动而被标脏。每路先计算包含径向半径、`pointLightDiffuseExtraWidth * zoom` Gaussian 外扩和抗锯齿余量的影响矩形，再只与实际可见 `PointLight` 边框的上/下/左/右影响带求交；光圈内部没有边框像素贡献的区域不得进入 damage。关闭光影时当前边界为空，旧边界仍参与清除。
-- Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。禁止逐帧清空并重建哈希节点、复制完整快照，或继续执行仅为未来动态缩窗保留的全可见内容收集；只有主光/鼠标光变化的高频帧不得遍历不会承载 `PointLight` 的 SVG/PNG/Word 内容。
+- Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。全可见内容边界只在首帧、DPI/容量纪元、顶层外框动画、整栏拖动和最终 idle 帧重算，普通 hover/按压/光影帧复用缓存。禁止逐帧清空并重建哈希节点、复制完整快照，或为动态缩窗在普通高频帧遍历全部 SVG/PNG/Word 内容。
+- D2D target 容量以主按钮为稳定锚点，启动、DPI/显示器纪元或真实内容突破容量才重建；整栏拖动只平移 `capacityOrigin` 和 viewport，同尺寸不重建 target。容量突破要保守对称扩容并强制全脏，不得为追求立即缩小而频繁重建。
+- 只有可改变顶层外框的动画批次才在首帧扩展 viewport 并保留保守扫掠包络；批次内不缩放，最终 idle 帧只收缩一次。普通 hover、按压、帧率文字和光影不得将 HWND 扩到整个容量。预留包络要预先内缩 viewport padding，保证解析后的 `pptSrc + psize` 始终位于 target 内。
+- 绘制使用布局坐标，D2D 帧 transform 统一平移 `-capacityOrigin`；ULW 在同一次调用中提交 `pptDst/psize/pptSrc/prcDirty`。Bar 原生鼠标消息必须在窗口线程入队时就用当次 Win32 消息的屏幕位置固化为 monitor-local layout 坐标，然后丢弃 HiMsg 默认 client 副本；合成触摸、Raw Input 和计时器重新命中也必须在生产时转成同一 layout 空间。禁止在交互线程出队时再读取新 viewport 解释旧 client 坐标，否则 resize 恰好夹在入队/出队之间时会出现一次命中跳变。
+- 保持单次 GDI interop 链：`GetDC(D2D1_DC_INITIALIZE_MODE_COPY) → UpdateLayeredWindowIndirect → ReleaseDC`。不得在没有端到端数据的情况下加入 staging bitmap、DIB Section、`CopyFromBitmap`、`Map` 或脏行 `memcpy`；这些会引入额外拷贝和更复杂的持久像素一致性。
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
-- 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可 `CommitPresented()`；失败时不得推进已呈现快照。
-- `Experimental.Inkeys3.UI3.Debug.Enable` 只控制脏区红框；`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字。隐藏 FPS 子项不得覆盖其持久化值；帧率文字不得单独形成持续呈现需求或维持 60 FPS。
-- FPS 文字只随真实 UI、光影、一次性刷新和失败重试帧进入 damage；真实活动结束后由 `DebugFrameSleepLatch` 请求唯一一帧并追加“休眠”标记，完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值只统计成功呈现帧，并在休眠后恢复真实活动时重建桶，禁止把 idle 等待计入墙钟分母。无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长；设备、租约和真实渲染成本仍属于工作时长，只有帧率锁等待被排除。
-- 红框在业务 damage 解析后生成，只显示业务 damage 与当前帧率文字；最终提交区另并入上一帧文字/红框。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素，只有完整呈现事务成功后才清除该刷新请求。
+- 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可推进业务 damage、viewport controller 和调试覆盖快照；失败时保留请求并强制下一帧全脏。ULW 已成功但后续阶段失败时，真实 HWND 已经改变，但内部呈现快照仍不推进，下帧全脏重新对齐。输入消息已在窗口线程入队时固化为 layout 坐标，不依赖异步 viewport 快照发布。
+- `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制脏区框和 HWND 框；活动帧 damage 用红框，idle 前最后一帧将上一帧红框原位改为绿框，当前真实 HWND 边界用蓝框。`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字；文字不得显示“休眠”，也不得单独形成持续呈现需求或维持 60 FPS。
+- FPS 文字只随真实 UI、光影、一次性刷新和失败重试帧进入 damage。真实活动结束后由 `DebugFrameSleepLatch` 请求唯一最终帧，用于收缩 viewport 和把旧红框重绘为绿框；完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值只统计成功呈现帧，并在 idle 后恢复真实活动时重建桶，禁止把 idle 等待计入墙钟分母。无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长；只有帧率锁等待被排除。
+- 红/绿框在业务 damage 解析后生成；蓝框跟随 candidate viewport。绿框使用上次成功呈现的红框边界，不重新扩大 damage。蓝框的旧新边界只在 viewport 或调试开关变化时进入 damage，稳定帧不得因蓝框而每帧全窗刷新。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素。
 - 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。功能组不能只依赖根面板兜底：凡是动画中可能越过根边界的子视觉，都要在 `ResolveDamage()` 前按实际绘制层级同步；Main/More 注册按钮固定为 `button ← MainBar`、`icon/name ← button`。同步只在对应功能组需要观察时执行，纯光源帧不得为此遍历图标和文字。禁止直接读取未参与本帧绘制的默认或上一帧 `inhX/inhY`；绘制后的 `state.current` 更新也不能补救已经用于 Clear/D2D/ULW 的本帧 dirty。
 
 #### 4. Validation & Error Matrix
@@ -198,16 +218,20 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 | 条件 | 必须行为 |
 | --- | --- |
 | 首次呈现或 device generation 改变 | 全窗口 damage；成功后才建立快照 |
+| target 尺寸改变或内容突破容量 | 重建容量并按新 HWND 全脏；失败保留旧资源语义并重试 |
+| 顶层外框动画 | 批次开始最多扩窗一次，批次中不收缩，idle 最终帧收缩一次 |
+| 整栏拖动 | 平移 HWND 与容量原点；尺寸不变时不重建 target |
+| viewport/source 映射改变 | `pptDst/psize/pptSrc/prcDirty` 同次提交，当帧全脏，`pptSrc + psize` 不得越出 target |
 | 单控件移动/缩放 | 提交旧边界与新边界的并集 |
 | 控件出现或消失 | 空边界与非空边界按同一变化键解析 |
 | 更多/绘制属性快速交替后主栏立即收缩 | Main/More 组先同步本帧按钮组合坐标，再把成功呈现的旧组边界与当前新组边界合并；最左旧像素不得漏算 |
 | 装饰帧租约跳过 | 保留变化键与累计 damage，后续继续提交 |
 | 任一 GetDC/ULW/ReleaseDC/EndDraw 失败 | 保留请求并强制全窗口重试 |
 | 未分类的非调试呈现请求 | 安全回退全窗口，不允许空提交 |
-| 调试模式关闭 | 并入上次文字与红框边界完成清除，不绘制新覆盖层 |
-| 脏区调试开启、显示帧率关闭 | 仅在真实业务 damage 时绘制红框；清除旧文字后不得持续空转 |
-| 显示帧率开启但没有真实呈现需求 | 只提交一帧带“休眠”标记的文字；成功后进入 wait，失败或租约跳帧保留该帧 |
-| 休眠后出现真实呈现需求 | 清除休眠标记并以当前活动帧起点重建统计桶，idle 时长不得进入实际帧率 |
+| 调试模式关闭 | 并入上次文字、红/绿框与蓝框边界完成清除，不绘制新覆盖层 |
+| 脏区调试开启、显示帧率关闭 | 活动帧绘制红色 damage 框和蓝色 HWND 框；idle 最终帧把旧红框改为绿色后进入 wait |
+| 显示帧率开启但没有真实呈现需求 | 最终帧保持帧率文字不变、绿框标记旧 damage，成功后进入 wait；不显示“休眠” |
+| idle 后出现真实呈现需求 | 恢复红色 damage 框并以当前活动帧起点重建统计桶，idle 时长不得进入实际帧率 |
 | 一秒统计桶尚未结束 | 真实呈现帧继续绘制已锁存文字，`updated=false`，显示值不变化 |
 | 一秒统计桶结束 | 同时发布实际/无限制平均值并开始新桶；无限制分母不包含 pacing 等待 |
 | 仅鼠标光位置变化 | 只标记鼠标光键；按其旧/新实际受光边框合并，不并入静止主光 |
@@ -216,18 +240,20 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 
 #### 5. Good / Base / Bad Cases
 
-- Good：单个按钮悬停只更新该对象旧/新矩形；鼠标光移动只更新旧/新位置实际触及的 `PointLight` 边框带；实际/无限制帧率一秒更新一次，最后一帧显示“休眠”后静止 Bar 回到 idle。
-- Base：静止帧没有呈现请求；首次帧、设备切换和失败恢复帧允许全窗口更新。
+- Good：顶层展开动画前一次扩展 HWND，批次内不再 resize，idle 最终帧一次贴合内容；活动 damage 是红框，最后一帧原位变绿，真实 HWND 始终是蓝框。
+- Base：普通 hover/光影不扩窗；静止后没有呈现请求；首次帧、target/设备切换和失败恢复帧允许按当前 HWND 全脏。
+- Bad：将 HWND 与 target 每帧缩到当前 damage，或者为每次缩窗重建 target；前者会跳变并频繁 resize，后者把节省的覆盖成本换成资源重建成本。
 - Bad：每帧把所有可见内容边界并入 damage，或 ULW 成功但 `EndDraw` 失败后仍推进快照；前者丢失优化，后者会在重试时漏掉旧像素。
 - Bad：粗细预览数字用显式变换绘制，却仍以从未更新的 `word.inhX/inhY` 采集边界；结果是脏区无故从 `(0,0)` 开始。
 - Bad：先用上一帧的按钮继承坐标提交功能组，再在绘制阶段更新 `state.current`；当前帧清除和 ULW 已经使用较窄 dirty，旧边缘仍会暂留。
 
 #### 6. Tests Required
 
-- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
+- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红/绿框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
+- Headless 覆盖 client/layout/surface 坐标往返、动画批次扩展/中间帧不 resize/idle 一次收缩、普通 hover 不预留整容量、整栏拖动保持尺寸、容量突破扩容，以及 `pptSrc + psize` 始终位于 target 内。
 - Headless 覆盖显式 pivot/scale 变换后的实际矩形和隐藏 `scale=0` 空边界，断言结果不回落到默认原点。
 - Headless 覆盖功能组在中间帧未提交时继续保留最外层 pending damage，成功提交后只推进最终观察边界；RenderLoop 的继承顺序另由静态审查和完整构建约束。
-- Headless 覆盖完整一秒前不发布、桶结束同时发布两个平均值、一秒内保持锁存、无限制分母排除 pacing 等待、Reset 和非单调时间重建统计桶；另覆盖休眠帧单次请求、失败保留、成功关闭、真实活动重新武装和禁用清理。
+- Headless 覆盖完整一秒前不发布、桶结束同时发布两个平均值、一秒内保持锁存、无限制分母排除 pacing 等待、Reset 和非单调时间重建统计桶；另覆盖最终 idle 帧单次请求、失败保留、成功关闭和真实活动重新武装。
 - 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln` 的 `Debug | ARM64`，并运行 `InkeysHeadlessTests`。
 - 手工覆盖悬停/按压、属性栏与更多面板、换边、粗细/色板弹窗、整栏拖动、主光/鼠标光、动画开关、调试开关、DPI/zoom 和设备资源重建；不允许残影或漏刷。
 
