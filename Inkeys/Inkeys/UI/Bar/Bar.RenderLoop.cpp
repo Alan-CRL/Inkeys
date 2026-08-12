@@ -169,11 +169,14 @@ using Inkeys::UI::Bar::BarDirtyRegionTracker;
 using Inkeys::UI::Bar::BarDirtyVisualKey;
 using Inkeys::UI::Bar::BarWindowViewportController;
 using Inkeys::UI::Bar::BarWindowViewportDecision;
+using Inkeys::UI::Bar::BarWindowScalarRange;
 using Inkeys::UI::Bar::BarLayoutToClientRect;
 using Inkeys::UI::Bar::DeflateBarWindowRect;
 using Inkeys::UI::Bar::IntersectBarWindowRect;
 using Inkeys::UI::Bar::IsBarWindowRectEmpty;
 using Inkeys::UI::Bar::ResolveBarWindowCapacity;
+using Inkeys::UI::Bar::ResolveBarWindowAnimatedRect;
+using Inkeys::UI::Bar::ResolveBarWindowAnimationRange;
 using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
@@ -6404,6 +6407,20 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame,
 	UPDATELAYEREDWINDOWINFO& ulwi)
 {
+	if (owner_.directWindowDragActive.load(memory_order_acquire))
+	{
+		// 拖动期间不推进旧 viewport；松手后再由一次 ULW 对齐布局和窗口内容。
+		unique_lock lock(owner_.directWindowDragMutex);
+		owner_.directWindowDragCondition.wait(lock, [&]
+			{
+				return offSignal || !owner_.directWindowDragActive.load(
+					memory_order_acquire);
+			});
+		state.animationClock.Rebase();
+		return offSignal
+			? BarRenderLoopStageResult::Stop
+			: BarRenderLoopStageResult::Continue;
+	}
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
@@ -7201,17 +7218,169 @@ IncludeShapeBounds(state.shapeMap[
 		RECT predictedEnvelope{};
 		if (reserveAnimationEnvelope)
 		{
-			// 只在会改变顶层外框的动画批次预留容量，普通 hover/光影不扩窗。
-			predictedEnvelope = RECT{
-				state.capacityOrigin.x,
-				state.capacityOrigin.y,
-				state.capacityOrigin.x + state.capacitySize.cx,
-				state.capacityOrigin.y + state.capacitySize.cy };
+			// 只传播实际动画段的 Back 极值，禁止把绝对坐标或整张 capacity 放大。
+			auto ValueRange = [](const auto& value)
+				{
+					const auto first = BarUiGetCurveExtrema(value.activeCurve);
+					const auto second = BarUiGetCurveExtrema(value.activeMiddleCurve);
+					return ResolveBarWindowAnimationRange(
+						value.val, value.startV, value.tar,
+						value.hasMiddleV, value.middleV,
+						{ first.minimum, first.maximum },
+						{ second.minimum, second.maximum });
+				};
+			auto AddRanges = [](BarWindowScalarRange left,
+				BarWindowScalarRange right)
+				{
+					return BarWindowScalarRange{
+						left.minimum + right.minimum,
+						left.maximum + right.maximum };
+				};
+			auto SubtractHalfRange = [](BarWindowScalarRange center,
+				BarWindowScalarRange size)
+				{
+					return BarWindowScalarRange{
+						center.minimum - size.maximum / 2.0,
+						center.maximum - size.minimum / 2.0 };
+				};
+			struct PredictedVisualExtent
+			{
+				bool visible = false;
+				LONG outset = 0;
+			};
+			auto VisualExtent = [&](const auto& root)
+				{
+					const bool enabled = root->enable.val || root->enable.tar;
+					const double objectOpacity = ValueRange(root->pct).maximum;
+					double baseFrameOpacity = root->framePct.has_value()
+						? ValueRange(root->framePct.value()).maximum
+						: objectOpacity;
+					double lightOpacity = baseFrameOpacity;
+					if (root->frameLightOpacitySource
+						== BarUiFrameLightOpacitySourceEnum::ObjectPct)
+						lightOpacity = objectOpacity;
+					if constexpr (requires { root->frameLightPct; })
+						if (root->frameLightPct.has_value())
+							lightOpacity = ValueRange(
+								root->frameLightPct.value()).maximum;
+					const bool hasPossibleLightSource = BarUiEdgeLightingEnabled
+						&& (root->framePrimaryLightEnabled
+							|| (BarUiDynamicEdgeLightingEnabled
+								&& root->frameCursorLightIntensityScale > 0.0));
+					const bool pointLightFrame = root->frame.has_value()
+						&& root->frameRendering == BarUiFrameRenderingEnum::PointLight;
+					const bool visibleFrame = root->frame.has_value()
+						&& (baseFrameOpacity > 0.0
+							|| (pointLightFrame && lightOpacity > 0.0
+								&& hasPossibleLightSource));
+					double frameWidth = visibleFrame
+						? (root->ft.has_value()
+							? max(0.0, ValueRange(root->ft.value()).maximum)
+							: 4.0)
+						: 0.0;
+					const bool pointLightVisible = pointLightFrame
+						&& frameWidth > 0.0 && lightOpacity > 0.0
+						&& hasPossibleLightSource;
+					if (pointLightVisible)
+						frameWidth += BarRenderingAttribute::pointLightDiffuseExtraWidth;
+					const bool visible = enabled
+						&& ((root->fill.has_value() && objectOpacity > 0.0)
+							|| visibleFrame);
+					return PredictedVisualExtent{
+						visible,
+						visible ? static_cast<LONG>(ceil(frameWidth * frameZoom))
+							+ BarRenderingAttribute::dirtyAntialiasPadding : 0 };
+				};
+			auto AddRoot = [&](BarWindowScalarRange centerX,
+				BarWindowScalarRange centerY, const auto& root)
+				{
+					const PredictedVisualExtent extent = VisualExtent(root);
+					if (!extent.visible) return;
+					const RECT rootEnvelope = ResolveBarWindowAnimatedRect(
+						centerX, centerY, ValueRange(root->w), ValueRange(root->h),
+						frameZoom, extent.outset);
+					UnionBarWindowRect(predictedEnvelope, rootEnvelope);
+				};
+
+			const auto mainButtonX = ValueRange(mainButton->x);
+			const auto mainButtonY = ValueRange(mainButton->y);
+			AddRoot(mainButtonX, mainButtonY, mainButton);
+			const auto mainBarX = AddRanges(mainButtonX, ValueRange(mainBar->x));
+			const auto mainBarY = AddRanges(mainButtonY, ValueRange(mainBar->y));
+			AddRoot(mainBarX, mainBarY, mainBar);
+
+			const auto mainBarLeft = SubtractHalfRange(
+				mainBarX, ValueRange(mainBar->w));
+			const auto mainBarTop = SubtractHalfRange(
+				mainBarY, ValueRange(mainBar->h));
+			const auto drawButtonCenterX = AddRanges(
+				mainBarLeft, ValueRange(drawButton->button.x));
+			const auto drawButtonCenterY = AddRanges(
+				mainBarTop, ValueRange(drawButton->button.y));
+			AddRoot(AddRanges(drawButtonCenterX, ValueRange(drawAttribute->x)),
+				AddRanges(drawButtonCenterY, ValueRange(drawAttribute->y)),
+				drawAttribute);
+			const auto geometryButtonCenterX = AddRanges(
+				mainBarLeft, ValueRange(geometryButton->button.x));
+			const auto geometryButtonCenterY = AddRanges(
+				mainBarTop, ValueRange(geometryButton->button.y));
+			AddRoot(AddRanges(geometryButtonCenterX, ValueRange(geometryAttribute->x)),
+				AddRanges(geometryButtonCenterY, ValueRange(geometryAttribute->y)),
+				geometryAttribute);
+
+			// 根 Surface 之外的 Popup/More 也必须在首次可见帧前预留目标外框。
+			auto AddInheritedVisual = [&](const shared_ptr<BarUiShapeClass>& visual,
+				BarWindowScalarRange parentX, BarWindowScalarRange parentY,
+				double parentCurrentX, double parentCurrentY)
+				{
+					if (!visual || (!visual->enable.val && !visual->enable.tar)
+						|| (visual->pct.val <= 0.0 && visual->pct.tar <= 0.0
+							&& (!visual->frameLightPct.has_value()
+								|| (visual->frameLightPct->val <= 0.0
+									&& visual->frameLightPct->tar <= 0.0)))) return;
+					const double currentCenterX = visual->inhX + visual->w.val / 2.0;
+					const double currentCenterY = visual->inhY + visual->h.val / 2.0;
+					auto childX = ValueRange(visual->x);
+					auto childY = ValueRange(visual->y);
+					childX.minimum -= visual->x.val;
+					childX.maximum -= visual->x.val;
+					childY.minimum -= visual->y.val;
+					childY.maximum -= visual->y.val;
+					parentX.minimum -= parentCurrentX;
+					parentX.maximum -= parentCurrentX;
+					parentY.minimum -= parentCurrentY;
+					parentY.maximum -= parentCurrentY;
+					AddRoot(AddRanges({ currentCenterX, currentCenterX },
+						AddRanges(parentX, childX)),
+						AddRanges({ currentCenterY, currentCenterY },
+							AddRanges(parentY, childY)), visual);
+				};
+			const double drawAttributeCurrentCenterX =
+				drawAttribute->inhX + drawAttribute->w.val / 2.0;
+			const double drawAttributeCurrentCenterY =
+				drawAttribute->inhY + drawAttribute->h.val / 2.0;
+			const auto drawAttributeCenterX = AddRanges(
+				drawButtonCenterX, ValueRange(drawAttribute->x));
+			const auto drawAttributeCenterY = AddRanges(
+				drawButtonCenterY, ValueRange(drawAttribute->y));
+			for (BarUISetShapeEnum visual : {
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupCircle,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+				BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu,
+				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel,
+				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble,
+				BarUISetShapeEnum::DrawAttributeBar_ColorPickerHoldHint })
+				AddInheritedVisual(state.shapeMap[visual],
+					drawAttributeCenterX, drawAttributeCenterY,
+					drawAttributeCurrentCenterX, drawAttributeCurrentCenterY);
+			AddInheritedVisual(state.shapeMap[BarUISetShapeEnum::MorePanel],
+				mainBarX, mainBarY, mainBar->inhX + mainBar->w.val / 2.0,
+				mainBar->inhY + mainBar->h.val / 2.0);
+			UnionBarWindowRect(predictedEnvelope, currentContentBounds);
 			predictedEnvelope = IntersectBarWindowRect(
 				predictedEnvelope, layoutBounds);
-			// Resolve() 还会外扩 viewportPadding，先内缩可避免 pptSrc 越出 target。
-			predictedEnvelope = DeflateBarWindowRect(
-				predictedEnvelope, viewportPadding);
 		}
 		POINT viewportTranslation{};
 		if (state.committedAnchorInitialized)
@@ -9735,6 +9904,15 @@ else
 		DWORD updateLayeredWindowError = ERROR_SUCCESS;
 		HRESULT releaseDcHr = E_FAIL;
 		{
+			unique_lock directDragLock(owner_.directWindowDragMutex);
+			if (owner_.directWindowDragActive.load(memory_order_acquire))
+			{
+				HRESULT endDrawHr = barDeviceContext->EndDraw();
+				state.spec.HandleFrameEndDrawResult(endDrawHr);
+				state.dirtyRegionTracker.RetainForRetry(true);
+				state.presentDecision.RequireFullDirtyRetry();
+				return BarRenderLoopStageResult::Continue;
+			}
 			// 脏区更新
 			RECT target = BarLayoutToClientRect(
 				presentDirty, candidateViewport);
@@ -9777,6 +9955,14 @@ else
 						UpdateLayeredWindowIndirect(floating_window, &ulwi);
 					if (!updateLayeredWindowSucceeded)
 						updateLayeredWindowError = GetLastError();
+					else
+					{
+						// ULW 已改变真实 HWND 时立即发布几何，即使后续 EndDraw 失败也不能回退旧位置。
+						owner_.committedWindowScreenBounds = RECT{
+							ptDst.x, ptDst.y,
+							ptDst.x + sizeWnd.cx, ptDst.y + sizeWnd.cy };
+						owner_.committedWindowScreenBoundsReady = true;
+					}
 					releaseDcHr = barGdiInterop->ReleaseDC(nullptr);
 				}
 				else if (SUCCEEDED(getDcHr)) getDcHr = E_POINTER;
@@ -9921,6 +10107,18 @@ void BarRenderLoopCoordinator::Run()
 		BarRenderFrameSnapshot frame;
 		frame.ordinal = forNum;
 		if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop) break;
+		if (owner_.directWindowDragActive.load(memory_order_acquire))
+		{
+			// HWND 直移期间尺寸与内容保持，阻塞到松手，避免渲染线程空轮询。
+			unique_lock lock(owner_.directWindowDragMutex);
+			owner_.directWindowDragCondition.wait(lock, [&]
+				{
+					return offSignal || !owner_.directWindowDragActive.load(
+						memory_order_acquire);
+				});
+			state.animationClock.Rebase();
+			continue;
+		}
 		SubmitTargetsAndLayout(state, frame);
 		const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame);
 		PrepareLightingAndDemand(state, frame, needRendering);

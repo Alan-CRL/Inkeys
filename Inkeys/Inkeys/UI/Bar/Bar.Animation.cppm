@@ -55,6 +55,37 @@ export
 			|| curve == BarUiCurveEnum::EaseOutBack
 			|| curve == BarUiCurveEnum::EaseInOutBack;
 	}
+	struct BarUiCurveExtremaClass
+	{
+		double minimum = 0.0;
+		double maximum = 1.0;
+	};
+	inline BarUiCurveExtremaClass BarUiGetCurveExtrema(
+		BarUiCurveEnum curve) noexcept
+	{
+		constexpr double back = 1.1;
+		auto EaseInMinimum = [](double coefficient)
+			{
+				double progress = 2.0 * coefficient
+					/ (3.0 * (coefficient + 1.0));
+				return (coefficient + 1.0) * progress * progress * progress
+					- coefficient * progress * progress;
+			};
+		switch (curve)
+		{
+		case BarUiCurveEnum::EaseInBack:
+			return { EaseInMinimum(back), 1.0 };
+		case BarUiCurveEnum::EaseOutBack:
+			return { 0.0, 1.0 - EaseInMinimum(back) };
+		case BarUiCurveEnum::EaseInOutBack:
+		{
+			const double minimum = EaseInMinimum(back * 1.525) / 2.0;
+			return { minimum, 1.0 - minimum };
+		}
+		default:
+			return {};
+		}
+	}
 	inline double BarUiApplyCurve(BarUiCurveEnum curve, double progress)
 	{
 		constexpr double pi = 3.14159265358979323846;

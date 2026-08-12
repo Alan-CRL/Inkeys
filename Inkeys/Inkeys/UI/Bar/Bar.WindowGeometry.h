@@ -7,6 +7,87 @@
 
 namespace Inkeys::UI::Bar
 {
+	struct BarWindowScalarRange
+	{
+		double minimum = 0.0;
+		double maximum = 0.0;
+	};
+
+	[[nodiscard]] inline BarWindowScalarRange ResolveBarWindowSegmentRange(
+		double start, double target, double curveMinimum,
+		double curveMaximum) noexcept
+	{
+		if (!std::isfinite(start) || !std::isfinite(target)) return {};
+		if (!std::isfinite(curveMinimum) || !std::isfinite(curveMaximum))
+			curveMinimum = 0.0, curveMaximum = 1.0;
+		if (curveMinimum > curveMaximum)
+			(std::swap)(curveMinimum, curveMaximum);
+		const double delta = target - start;
+		const double first = start + delta * curveMinimum;
+		const double second = start + delta * curveMaximum;
+		return { (std::min)(first, second), (std::max)(first, second) };
+	}
+
+	[[nodiscard]] inline BarWindowScalarRange ResolveBarWindowAnimationRange(
+		double current, double start, double target,
+		bool hasMiddle, double middle,
+		const BarWindowScalarRange& firstCurve,
+		const BarWindowScalarRange& secondCurve) noexcept
+	{
+		if (!std::isfinite(current)) return {};
+		BarWindowScalarRange range{ current, current };
+		// 其他控件仍在动画时，稳定属性不能重新贡献已经结束的历史段。
+		if (current == target && !hasMiddle) return range;
+		auto AddSegment = [&](double segmentStart, double segmentTarget,
+			const BarWindowScalarRange& curve)
+			{
+				const auto segment = ResolveBarWindowSegmentRange(
+					segmentStart, segmentTarget, curve.minimum, curve.maximum);
+				range.minimum = (std::min)(range.minimum, segment.minimum);
+				range.maximum = (std::max)(range.maximum, segment.maximum);
+			};
+		if (hasMiddle)
+		{
+			AddSegment(start, middle, firstCurve);
+			AddSegment(middle, target, secondCurve);
+		}
+		else AddSegment(start, target, firstCurve);
+		return range;
+	}
+
+	[[nodiscard]] inline RECT ResolveBarWindowAnimatedRect(
+		const BarWindowScalarRange& centerX,
+		const BarWindowScalarRange& centerY,
+		const BarWindowScalarRange& width,
+		const BarWindowScalarRange& height,
+		double zoom, LONG outset) noexcept
+	{
+		if (!std::isfinite(zoom) || zoom <= 0.0) return {};
+		const double maximumWidth = (std::max)(0.0, width.maximum);
+		const double maximumHeight = (std::max)(0.0, height.maximum);
+		outset = (std::max)(0L, outset);
+		return RECT{
+			static_cast<LONG>(std::floor(
+				(centerX.minimum - maximumWidth / 2.0) * zoom)) - outset,
+			static_cast<LONG>(std::floor(
+				(centerY.minimum - maximumHeight / 2.0) * zoom)) - outset,
+			static_cast<LONG>(std::ceil(
+				(centerX.maximum + maximumWidth / 2.0) * zoom)) + outset,
+			static_cast<LONG>(std::ceil(
+				(centerY.maximum + maximumHeight / 2.0) * zoom)) + outset,
+		};
+	}
+
+	[[nodiscard]] constexpr RECT TranslateBarWindowRect(
+		RECT value, POINT translation) noexcept
+	{
+		value.left += translation.x;
+		value.right += translation.x;
+		value.top += translation.y;
+		value.bottom += translation.y;
+		return value;
+	}
+
 	[[nodiscard]] constexpr bool IsBarWindowRectEmpty(const RECT& value) noexcept
 	{
 		return value.left >= value.right || value.top >= value.bottom;

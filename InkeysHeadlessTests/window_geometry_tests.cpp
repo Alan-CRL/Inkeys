@@ -49,6 +49,37 @@ namespace
 			"screen and layout point mapping round trips");
 	}
 
+	void TestAnimationEnvelopeUsesSegmentDelta()
+	{
+		const auto monotonic = ResolveBarWindowSegmentRange(
+			1000.0, 1100.0, 0.0, 1.0);
+		Check(monotonic.minimum == 1000.0 && monotonic.maximum == 1100.0,
+			"monotonic animation reserves only its real endpoints");
+
+		const auto rebound = ResolveBarWindowSegmentRange(
+			1000.0, 1100.0, 0.0, 1.05);
+		Check(rebound.minimum == 1000.0 && rebound.maximum == 1105.0,
+			"Back overshoot applies to segment delta instead of absolute position");
+
+		const auto stable = ResolveBarWindowAnimationRange(
+			1100.0, 1000.0, 1100.0, false, 0.0,
+			{ 0.0, 1.05 }, { 0.0, 1.0 });
+		Check(stable.minimum == 1100.0 && stable.maximum == 1100.0,
+			"settled values ignore historical animation segments");
+
+		const auto keyframes = ResolveBarWindowAnimationRange(
+			1020.0, 1000.0, 1080.0, true, 1050.0,
+			{ 0.0, 1.0 }, { 0.0, 1.1 });
+		Check(keyframes.minimum == 1000.0 && keyframes.maximum == 1083.0,
+			"keyframe animation merges each segment's own overshoot");
+
+		const RECT envelope = ResolveBarWindowAnimatedRect(
+			{ 500.0, 520.0 }, { 300.0, 310.0 },
+			{ 80.0, 100.0 }, { 60.0, 70.0 }, 1.0, 8);
+		Check(SameBarWindowRect(envelope, RECT{ 442, 257, 578, 353 }),
+			"animated root bounds include maximum size and real visual outset");
+	}
+
 	void TestBatchExpansionAndIdleShrink()
 	{
 		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
@@ -180,6 +211,7 @@ namespace
 int RunWindowGeometryTests()
 {
 	TestCoordinateRoundTrip();
+	TestAnimationEnvelopeUsesSegmentDelta();
 	TestBatchExpansionAndIdleShrink();
 	TestLayoutClipping();
 	TestCapacityFallbackExpansion();

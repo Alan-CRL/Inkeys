@@ -5404,7 +5404,8 @@ double BarUISetClass::Seek(const ExMessage& msg)
 {
 	auto IsLeftButtonDown = []() -> bool
 		{
-			return Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON) || ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+			// HWND 移动后可能收不到抬手消息，拖动循环必须以系统实时按键态结束。
+			return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 		};
 	bool touchGesture = IsBarTouchPointerMessage(msg);
 	if ((touchGesture && (!msg.lbutton || IsBarTouchCancelMessage(msg)))
@@ -5414,18 +5415,34 @@ double BarUISetClass::Seek(const ExMessage& msg)
 	if (!mainButton) return 0;
 
 	double ret = 0.0;
-
-	BarAtomic::sustainFlag = true;
-	UpdateRendering();
-
 	double tarZoom = barStyle.zoom;
-	auto ApplyPointerDelta = [&](double deltaX, double deltaY)
+	if (!isfinite(tarZoom) || tarZoom <= 0.0) return 0;
+	RECT initialWindowRect{};
+	{
+		lock_guard lock(directWindowDragMutex);
+		if (committedWindowScreenBoundsReady)
+			initialWindowRect = committedWindowScreenBounds;
+		else if (!GetWindowRect(floating_window, &initialWindowRect))
+			return 0;
+		directWindowDragActive.store(true, memory_order_release);
+	}
+	auto FinishDirectWindowDrag = [&]()
 		{
-			if (deltaX == 0.0 && deltaY == 0.0) return;
+			{
+				lock_guard lock(directWindowDragMutex);
+				directWindowDragActive.store(false, memory_order_release);
+			}
+			directWindowDragCondition.notify_all();
+		};
 
-			double nextX = mainButton->x.tar + deltaX / tarZoom;
-			double nextY = mainButton->y.tar + deltaY / tarZoom;
-
+	// HWND 对应当前已显示位置；从 val 起算可避免打断旧动画时跳到尚未呈现的 tar。
+	const double initialMainX = mainButton->x.val;
+	const double initialMainY = mainButton->y.val;
+	double appliedDeltaX = 0.0;
+	double appliedDeltaY = 0.0;
+	bool directMoveFailed = false;
+	auto ApplyPointerDelta = [&](double totalDeltaX, double totalDeltaY)
+		{
 			// 临时限制主按钮整体始终留在主屏幕内，先不处理贴边隐藏和多显示器。
 			double frameHalf = 0.0;
 			if (mainButton->ft.has_value()) frameHalf = max(0.0, mainButton->ft.value().tar / 2.0);
@@ -5438,18 +5455,41 @@ double BarUISetClass::Seek(const ExMessage& msg)
 			if (maxX < minX) maxX = minX;
 			if (maxY < minY) maxY = minY;
 
-			mainButton->x.SetDirect(clamp(nextX, minX, maxX));
-			mainButton->y.SetDirect(clamp(nextY, minY, maxY));
-			ret += sqrt(deltaX * deltaX + deltaY * deltaY);
+			double nextX = clamp(initialMainX + totalDeltaX / tarZoom, minX, maxX);
+			double nextY = clamp(initialMainY + totalDeltaY / tarZoom, minY, maxY);
+			LONG pixelDeltaX = static_cast<LONG>(lround((nextX - initialMainX) * tarZoom));
+			LONG pixelDeltaY = static_cast<LONG>(lround((nextY - initialMainY) * tarZoom));
+			if (pixelDeltaX == static_cast<LONG>(lround(appliedDeltaX))
+				&& pixelDeltaY == static_cast<LONG>(lround(appliedDeltaY))) return false;
+			{
+				lock_guard lock(directWindowDragMutex);
+				if (!SetWindowPos(floating_window, nullptr,
+					initialWindowRect.left + pixelDeltaX,
+					initialWindowRect.top + pixelDeltaY, 0, 0,
+					SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE))
+				{
+					directMoveFailed = true;
+					return false;
+				}
+				committedWindowScreenBounds =
+					Inkeys::UI::Bar::TranslateBarWindowRect(
+					initialWindowRect, POINT{ pixelDeltaX, pixelDeltaY });
+				committedWindowScreenBoundsReady = true;
+			}
+			ret += hypot(static_cast<double>(pixelDeltaX) - appliedDeltaX,
+				static_cast<double>(pixelDeltaY) - appliedDeltaY);
+			appliedDeltaX = static_cast<double>(pixelDeltaX);
+			appliedDeltaY = static_cast<double>(pixelDeltaY);
+			return true;
 		};
 
 	if (touchGesture)
 	{
-		// WM_TOUCH 已提供连续客户区坐标，整个手势不得混入系统鼠标位置。
-		double previousX = static_cast<double>(msg.x);
-		double previousY = static_cast<double>(msg.y);
+		// WM_TOUCH 入队时已固化为 layout 坐标，HWND 直移不会改变手势增量。
+		double startX = static_cast<double>(msg.x);
+		double startY = static_cast<double>(msg.y);
 		ExMessage touchMessage = msg;
-		while (!offSignal)
+		while (!offSignal && !directMoveFailed)
 		{
 			if (!WaitForBarInteractionMessage(
 				touchMessage, EM_MOUSE, floating_window)) break;
@@ -5458,9 +5498,7 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 			double currentX = static_cast<double>(touchMessage.x);
 			double currentY = static_cast<double>(touchMessage.y);
-			ApplyPointerDelta(currentX - previousX, currentY - previousY);
-			previousX = currentX;
-			previousY = currentY;
+			(void)ApplyPointerDelta(currentX - startX, currentY - startY);
 
 			if (!touchMessage.lbutton || touchMessage.message == WM_LBUTTONUP) break;
 		}
@@ -5470,40 +5508,30 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		POINT point{};
 		if (!GetCursorPos(&point))
 		{
-			BarAtomic::sustainFlag = false;
+			FinishDirectWindowDrag();
 			return 0;
 		}
-		double previousX = static_cast<double>(point.x);
-		double previousY = static_cast<double>(point.y);
-		while (!offSignal)
+		double startX = static_cast<double>(point.x);
+		double startY = static_cast<double>(point.y);
+		while (!offSignal && !directMoveFailed)
 		{
 			if (!IsLeftButtonDown()) break;
 			if (!GetCursorPos(&point)) break;
 
 			double currentX = static_cast<double>(point.x);
 			double currentY = static_cast<double>(point.y);
-			if (previousX == currentX && previousY == currentY)
-			{
+			if (!ApplyPointerDelta(currentX - startX, currentY - startY)
+				&& !directMoveFailed)
 				this_thread::sleep_for(chrono::milliseconds(15));
-				continue;
-			}
-
-			ApplyPointerDelta(currentX - previousX, currentY - previousY);
-			previousX = currentX;
-			previousY = currentY;
 		}
 	}
-	if (offSignal)
-	{
-		BarAtomic::sustainFlag = false;
-		return ret;
-	}
-	// 左右侧只在松手时提交；若动画尚未结束，新提交会从当前 val 重建关键帧过程。
-	bool previousMainBarSide = barState.widgetPosition.mainBar;
+	mainButton->x.SetDirect(initialMainX + appliedDeltaX / tarZoom);
+	mainButton->y.SetDirect(initialMainY + appliedDeltaY / tarZoom);
+	// 左右侧只在松手时提交；下一帧从新锚点一次重建布局和 viewport。
 	barState.PositionUpdate(tarZoom);
-	if (previousMainBarSide != barState.widgetPosition.mainBar) UpdateRendering(false);
-
-	BarAtomic::sustainFlag = false;
+	FinishDirectWindowDrag();
+	// 0 位移或首次直移失败也要唤醒一次 ULW，恢复拖动期间保留的完整呈现事务。
+	if (!offSignal) UpdateRendering(false);
 	return ret;
 }
 
