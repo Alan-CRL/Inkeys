@@ -32,6 +32,7 @@ Win32 window message
 - 发布 payload 后再以 release 写请求标志，消费端以 acquire 读取请求后再读取 payload。
 - 不在窗口回调中直接操作 `InkRenderer` 或交换链。
 - RTS 多点同时检查 HWND Tablet Pen Service 属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回值和 `IRealTimeStylus3`；不能只验证 COM 初始化成功。
+- 输入被手势状态机抑制时，沿 `RTS contact -> DrawingController -> WM_POINTER cursor/haptics` 检查所有副作用；“不产生 Stored Stroke”不等于已抑制接触光标、系统光标决策和触觉预启动。跨线程抑制需锁存到对应设备终态，并覆盖 Pointer 与 RTS 任一路径缺失的设备。
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 

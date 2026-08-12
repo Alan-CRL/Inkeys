@@ -291,6 +291,27 @@ namespace draw3
 		gesture.InterruptForPenOrMouse();
 	}
 
+	bool ShouldBeginSuppressingPenContactDuringTouchPan(bool touchPanActive,
+		bool penInContact) noexcept
+	{
+		return touchPanActive && penInContact;
+	}
+
+	bool ShouldSuppressPenContactForTouchPan(bool touchPanContactLive,
+		int64_t penDownQpc, int64_t lastTouchPanEndQpc,
+		bool suppressedPenContactLive) noexcept
+	{
+		return suppressedPenContactLive || touchPanContactLive ||
+			(lastTouchPanEndQpc > 0 && penDownQpc <= lastTouchPanEndQpc);
+	}
+
+	bool IsPenContactSampleFresh(bool inContact, int64_t sampleQpc,
+		int64_t suppressedTerminalQpc) noexcept
+	{
+		return inContact && (suppressedTerminalQpc <= 0 ||
+			sampleQpc > suppressedTerminalQpc);
+	}
+
 	bool ShouldPrioritizeDrawingContact(bool navigationInProgress,
 		bool penInContact, bool mouseInContact) noexcept
 	{

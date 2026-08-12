@@ -111,6 +111,9 @@ export namespace draw3
 		DrawingCursorPointerAuthority CursorPointerAuthority() const noexcept;
 		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
+		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
+		void SetTouchPanActive(bool active) noexcept;
+		bool PenContactSuppressedForTouchPan() const noexcept;
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
@@ -140,6 +143,7 @@ export namespace draw3
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorPointerAuthority(
 			DrawingCursorPointerAuthority authority) noexcept;
+		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
 		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
 		void ClearMouseCursorSample() noexcept;
 		bool ShouldIgnoreMouseCursorMessage() const noexcept;
@@ -165,6 +169,8 @@ export namespace draw3
 		std::atomic<bool> pendingHapticPointerEraser_ = false;
 		std::atomic<bool> hapticPointerIdRequested_ = false;
 		std::atomic<bool> hapticPointerLeaveRequested_ = false;
+		std::atomic<bool> touchPanActive_ = false;
+		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> drawingCursorPointerAuthority_ =
@@ -180,6 +186,7 @@ export namespace draw3
 		DrawingCursorAppearance laserCursorAppearance_ = {};
 		HCURSOR defaultCursor_ = nullptr;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
+		std::atomic<uint32_t> suppressedPenPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;

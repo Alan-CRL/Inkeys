@@ -1724,10 +1724,13 @@ namespace draw3
 		const bool windowsManipulationInitialized = windowsManipulation.Initialize();
 		std::vector<CanvasGestureContactRuntime> gestureContacts;
 		gestureContacts.reserve(kPreheatedStrokeCount);
+		bool suppressPenUntilRelease = false;
 		CanvasVector previousPanCentroid = {};
 		bool panCentroidValid = false;
 		size_t previousPanContactCount = 0;
 		int64_t lastPanInputQpc = 0;
+		int64_t lastTouchPanEndQpc = 0;
+		int64_t suppressedPenTerminalQpc = 0;
 		int64_t lastNavigationQpc = 0;
 		LaserTrailLifecycle laserLifecycle;
 		float laserOpacity = 0.0f;
@@ -1793,6 +1796,45 @@ namespace draw3
 				handle.record->DownSnapshot().sequence, disposition });
 		};
 
+		auto hasLiveSuppressedPenContact = [&]() noexcept
+		{
+			return std::any_of(gestureContacts.begin(), gestureContacts.end(),
+				[&](const CanvasGestureContactRuntime& contact)
+				{
+					if (!contact.handle.record ||
+						contact.handle.record->DeviceType() != InputDeviceType::Pen)
+						return false;
+					ContactSnapshot latest = contact.snapshot;
+					input_.TryReadSnapshot(contact.handle, latest);
+					return latest.phase != ContactPhase::Up &&
+						latest.phase != ContactPhase::Cancelled;
+				});
+		};
+
+		auto penDownBelongsToTouchPan = [&](int64_t penDownQpc) noexcept
+		{
+			bool touchPanContactLive = false;
+			int64_t observedTouchPanEndQpc = lastTouchPanEndQpc;
+			for (const CanvasGestureContactRuntime& contact : gestureContacts)
+			{
+				if (contact.handle.record == nullptr ||
+					contact.handle.record->DeviceType() != InputDeviceType::Touch ||
+					touchGesture.Disposition(contact.key) != CanvasTouchDisposition::Pan)
+					continue;
+				ContactSnapshot latest = contact.snapshot;
+				input_.TryReadSnapshot(contact.handle, latest);
+				if (latest.phase != ContactPhase::Up &&
+					latest.phase != ContactPhase::Cancelled)
+					touchPanContactLive = true;
+				else
+					observedTouchPanEndQpc = (std::max)(
+						observedTouchPanEndQpc, latest.qpc);
+			}
+			return ShouldSuppressPenContactForTouchPan(
+				touchPanContactLive, penDownQpc, observedTouchPanEndQpc,
+				hasLiveSuppressedPenContact());
+		};
+
 		auto cancelTouchDrawingForPan = [&]()
 		{
 			for (RuntimeStroke* runtime : active)
@@ -1826,14 +1868,15 @@ namespace draw3
 		};
 
 		auto interruptNavigationForPenOrMouse = [&]()
-		{
-			InterruptCanvasPanForDrawing(panMotion, touchGesture);
-			windowsManipulation.Stop();
-			for (CanvasGestureContactRuntime& contact : gestureContacts)
-				contact.disposition = CanvasTouchDisposition::Suppressed;
-			panCentroidValid = false;
-			previousPanContactCount = 0;
-		};
+			{
+				InterruptCanvasPanForDrawing(panMotion, touchGesture);
+				window_.SetTouchPanActive(false);
+				windowsManipulation.Stop();
+				for (CanvasGestureContactRuntime& contact : gestureContacts)
+					contact.disposition = CanvasTouchDisposition::Suppressed;
+				panCentroidValid = false;
+				previousPanContactCount = 0;
+			};
 
 		auto acquireStroke = [&]() -> RuntimeStroke*
 			{
@@ -1861,6 +1904,21 @@ namespace draw3
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const InputDeviceType deviceType = handle.record->DeviceType();
+				const bool penBeganDuringTouchPan = deviceType == InputDeviceType::Pen &&
+					penDownBelongsToTouchPan(down.qpc);
+				if (deviceType == InputDeviceType::Pen &&
+					(penBeganDuringTouchPan || hasLiveSuppressedPenContact()))
+				{
+					// Touch 跟手批次中的 Pen 只跟踪到抬笔，不能在惯性阶段补画。
+					suppressPenUntilRelease = true;
+					addGestureContact(handle, CanvasTouchDisposition::Suppressed);
+					return true;
+				}
+				if (deviceType == InputDeviceType::Pen)
+				{
+					suppressPenUntilRelease = false;
+					suppressedPenTerminalQpc = 0;
+				}
 				if (deviceType == InputDeviceType::Pen ||
 					deviceType == InputDeviceType::MouseLeft ||
 					deviceType == InputDeviceType::MouseRight)
@@ -1886,6 +1944,7 @@ namespace draw3
 						if (touchDecision.beginPan)
 						{
 							BeginCanvasPan(panMotion, inheritedInertia);
+							window_.SetTouchPanActive(true);
 							lastPanInputQpc = down.qpc;
 							windowsManipulation.Stop();
 							if (touchDecision.cancelExistingTouchDrawing)
@@ -2657,10 +2716,19 @@ namespace draw3
 			DrawingCursorSample navigationPenSample;
 			const bool penInRange = window_.ReadPenCursorSample(navigationPenSample) &&
 				navigationPenSample.valid;
+			const bool penInContact = penInRange && IsPenContactSampleFresh(
+				navigationPenSample.inContact, navigationPenSample.qpc,
+				suppressedPenTerminalQpc);
+			if (ShouldBeginSuppressingPenContactDuringTouchPan(
+				touchGesture.PanActive(), penInContact))
+				suppressPenUntilRelease = true;
+			else if (suppressPenUntilRelease && !penInContact &&
+				!hasLiveSuppressedPenContact())
+				suppressPenUntilRelease = false;
 			DrawingCursorSample navigationMouseSample;
 			const bool mouseInContact = window_.ReadMouseCursorSample(navigationMouseSample) &&
 				navigationMouseSample.valid && navigationMouseSample.inContact;
-			if ((penInRange && navigationPenSample.inContact) || mouseInContact)
+			if ((penInContact && !suppressPenUntilRelease) || mouseInContact)
 			{
 				// RTS 先发布接触光标；利用该原子通道在 Pen contact 出队前立即刹停。
 				interruptNavigationForPenOrMouse();
@@ -2690,10 +2758,16 @@ namespace draw3
 				else if (snapshot.phase == ContactPhase::Up ||
 					snapshot.phase == ContactPhase::Cancelled)
 				{
+					if (contact.handle.record &&
+						contact.handle.record->DeviceType() == InputDeviceType::Pen)
+						suppressedPenTerminalQpc = (std::max)(
+							suppressedPenTerminalQpc, snapshot.qpc);
 					const CanvasTouchDisposition endedDisposition =
 						touchGesture.OnTouchUp(contact.key);
 					if (endedDisposition == CanvasTouchDisposition::Pan)
 					{
+						lastTouchPanEndQpc = (std::max)(
+							lastTouchPanEndQpc, snapshot.qpc);
 						windowsManipulation.Up(contact.manipulatorId, point);
 						topologyChanged = true;
 					}
@@ -2707,6 +2781,7 @@ namespace draw3
 					input_.Recycle(contact.handle);
 					return true;
 				});
+			window_.SetTouchPanActive(touchGesture.PanActive());
 
 			CanvasVector contentDelta = {};
 			if (touchGesture.PanActive())
@@ -2750,7 +2825,7 @@ namespace draw3
 			}
 			else if (panMotion.inertiaActive)
 			{
-				const bool accelerateStop = penInRange ||
+				const bool accelerateStop = (penInRange && !suppressPenUntilRelease) ||
 					touchGesture.InertiaBrakeRequested();
 				bool completed = false;
 				if (windowsManipulationInitialized && windowsManipulation.Available())
@@ -2858,6 +2933,8 @@ namespace draw3
 			DrawingCursorSample mouseSample;
 			window_.ReadPenCursorSample(penSample);
 			window_.ReadMouseCursorSample(mouseSample);
+			if (suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan())
+				penSample.valid = false;
 			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 			if (cursorTool == DrawingTool::Laser)
@@ -3367,19 +3444,31 @@ namespace draw3
 			}
 			DrawingCursorSample priorityPenSample;
 			DrawingCursorSample priorityMouseSample;
-			const bool priorityPenInContact =
+			const bool priorityPenSampleValid =
 				window_.ReadPenCursorSample(priorityPenSample) &&
-				priorityPenSample.valid && priorityPenSample.inContact;
+				priorityPenSample.valid;
+			const bool priorityPenInContact = priorityPenSampleValid &&
+				IsPenContactSampleFresh(priorityPenSample.inContact,
+					priorityPenSample.qpc, suppressedPenTerminalQpc);
+			if (ShouldBeginSuppressingPenContactDuringTouchPan(
+				touchGesture.PanActive(), priorityPenInContact))
+				suppressPenUntilRelease = true;
+			else if (suppressPenUntilRelease && !priorityPenInContact &&
+				!hasLiveSuppressedPenContact())
+				suppressPenUntilRelease = false;
 			const bool priorityMouseInContact =
 				window_.ReadMouseCursorSample(priorityMouseSample) &&
 				priorityMouseSample.valid && priorityMouseSample.inContact;
 			const bool navigationInProgress = touchGesture.PanActive() ||
 				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
 				!gestureContacts.empty();
-			if (ShouldPrioritizeDrawingContact(navigationInProgress,
-				priorityPenInContact, priorityMouseInContact))
+			if (navigationInProgress && (touchGesture.PanActive() ||
+				input_.HasPendingWork() || ShouldPrioritizeDrawingContact(
+					navigationInProgress,
+					priorityPenInContact && !suppressPenUntilRelease,
+					priorityMouseInContact)))
 			{
-				// 真实 Down 先固定视口并创建 runtime，不能等导航与 Tile 恢复结束。
+				// 导航推进前先按输入 QPC 归类，避免最后 Touch Up 附近的 Pen 被补画。
 				while (input_.TryDequeue(record)) processCommand(record);
 			}
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
@@ -3499,12 +3588,21 @@ namespace draw3
 			if (haptics_)
 			{
 				if (window_.ConsumeHapticPointerLeave())
+				{
+					hapticContinuousActive = false;
 					haptics_->StopFeedback();
+				}
 				uint32_t pointerId = 0;
 				bool pointerEraserHint = false;
 				if (window_.ConsumeHapticPointerId(pointerId, pointerEraserHint))
 				{
-					if (haptics_->AttachPointerId(pointerId))
+					if (touchGesture.PanActive() || suppressPenUntilRelease ||
+						window_.PenContactSuppressedForTouchPan())
+					{
+						hapticContinuousActive = false;
+						haptics_->StopFeedback();
+					}
+					else if (haptics_->AttachPointerId(pointerId))
 					{
 						if (window_.ActiveTool() == DrawingTool::Laser)
 						{

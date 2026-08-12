@@ -457,9 +457,57 @@ namespace draw3
 		return mouseCursorSample_.Read(sample);
 	}
 
+	void WindowController::SetTouchPanActive(bool active) noexcept
+	{
+		if (touchPanActive_.exchange(active, std::memory_order_acq_rel) == active) return;
+		if (!active) return;
+		// Hover 可能已经预启动触觉；进入跟手平移时立即停止并丢弃待绑定请求。
+		hapticPointerIdRequested_.store(false, std::memory_order_release);
+		hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+		DrawingCursorSample penSample;
+		if (penCursorSample_.Read(penSample) && penSample.valid && penSample.inContact)
+			SetPenContactSuppressedForTouchPan(true);
+		RequestControlWake();
+	}
+
+	bool WindowController::PenContactSuppressedForTouchPan() const noexcept
+	{
+		return penContactSuppressedForTouchPan_.load(std::memory_order_acquire);
+	}
+
+	void WindowController::SetPenContactSuppressedForTouchPan(bool suppressed) noexcept
+	{
+		const bool changed = penContactSuppressedForTouchPan_.exchange(
+			suppressed, std::memory_order_acq_rel) != suppressed;
+		if (!changed) return;
+		if (suppressed)
+		{
+			hapticPointerIdRequested_.store(false, std::memory_order_release);
+			hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+			RequestControlWake();
+		}
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
 	void WindowController::PublishPenCursorSample(
 		const DrawingCursorSample& sample) noexcept
 	{
+		const bool suppressForTouchPan = ShouldSuppressPenFeedbackForTouchPan(
+			touchPanActive_.load(std::memory_order_acquire),
+			penContactSuppressedForTouchPan_.load(std::memory_order_acquire),
+			true, sample.inContact);
+		if (suppressForTouchPan)
+		{
+			SetPenContactSuppressedForTouchPan(true);
+			// 不把接触起点留在 mailbox；绘制线程无需等待下一帧再隐藏旧 Hover。
+			if (penCursorSample_.Clear())
+			{
+				RequestDrawingCursorRender();
+				QueueSystemCursorRefresh();
+			}
+			return;
+		}
 		if (sample.valid)
 			SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Pen);
 		DrawingCursorSample previous;
@@ -473,6 +521,9 @@ namespace draw3
 
 	void WindowController::ClearPenCursorSample() noexcept
 	{
+		// 没有 WM_POINTER 生命周期的设备以 RTS Clear 作为本次抑制终态。
+		if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
+			SetPenContactSuppressedForTouchPan(false);
 		if (!penCursorSample_.Clear()) return;
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
@@ -623,11 +674,21 @@ namespace draw3
 				drawingCursorPointerAuthority_.load(std::memory_order_acquire);
 			DrawingCursorSample penSample;
 			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
+			const bool suppressedPenPointer =
+				suppressedPenPointerId_.load(std::memory_order_acquire) == pointerId;
 			const DrawingCursorPointerAuthority leaveAuthority = details.typeKnown
 				? AuthorityForPointerType(details.type)
-				: previousAuthority == DrawingCursorPointerAuthority::Pen || penSampleValid
+				: suppressedPenPointer ||
+					previousAuthority == DrawingCursorPointerAuthority::Pen || penSampleValid
 					? DrawingCursorPointerAuthority::Pen : previousAuthority;
 			if (leaveAuthority == DrawingCursorPointerAuthority::Pen) ClearPenCursorSample();
+			if (leaveAuthority == DrawingCursorPointerAuthority::Pen &&
+				(suppressedPenPointerId_.load(std::memory_order_acquire) == 0 ||
+					suppressedPenPointerId_.load(std::memory_order_relaxed) == pointerId))
+			{
+				suppressedPenPointerId_.store(0, std::memory_order_release);
+				SetPenContactSuppressedForTouchPan(false);
+			}
 			// 保留离开的设备 authority，防止陈旧 Mouse 样本在没有新鼠标移动时恢复。
 			SetDrawingCursorPointerAuthority(leaveAuthority);
 			lastHapticPenInfoPointerId_ = 0;
@@ -648,14 +709,31 @@ namespace draw3
 				drawingCursorPointerAuthority_.load(std::memory_order_acquire);
 			const DrawingCursorPointerAuthority pointerAuthority = details.typeKnown
 				? AuthorityForPointerType(details.type) : previousAuthority;
+			const bool penPointer = pointerAuthority == DrawingCursorPointerAuthority::Pen ||
+				suppressedPenPointerId_.load(std::memory_order_acquire) == pointerId;
+			const bool penInContact = details.inContact || message == WM_POINTERDOWN;
 			if (details.typeKnown)
 				SetDrawingCursorPointerAuthority(pointerAuthority);
-			if (message == WM_POINTERUP && pointerAuthority == DrawingCursorPointerAuthority::Pen)
+			if (message == WM_POINTERUP && penPointer)
 			{
 				ClearPenCursorSample(); // 终态坐标不能冒充 Hover；新 Update/InAir 会重新发布。
+				if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0 ||
+					suppressedPenPointerId_.load(std::memory_order_relaxed) == pointerId)
+				{
+					suppressedPenPointerId_.store(0, std::memory_order_release);
+					SetPenContactSuppressedForTouchPan(false);
+				}
 			}
 			else if (details.type == PT_PEN && details.positionKnown)
 			{
+				if (ShouldSuppressPenFeedbackForTouchPan(
+					touchPanActive_.load(std::memory_order_acquire),
+					penContactSuppressedForTouchPan_.load(std::memory_order_acquire),
+					true, penInContact))
+				{
+					suppressedPenPointerId_.store(pointerId, std::memory_order_release);
+					SetPenContactSuppressedForTouchPan(true);
+				}
 				POINT clientPosition = details.screenPosition;
 				if (ScreenToClient(window, &clientPosition))
 				{
@@ -664,14 +742,17 @@ namespace draw3
 					sample.y = static_cast<float>(clientPosition.y);
 					sample.valid = true;
 					sample.inverted = details.eraserHint;
-					sample.inContact = details.inContact;
+					sample.inContact = penInContact;
 					LARGE_INTEGER qpc = {};
 					QueryPerformanceCounter(&qpc);
 					sample.qpc = qpc.QuadPart;
 					PublishPenCursorSample(sample);
 				}
 			}
-			if ((message == WM_POINTERENTER || message == WM_POINTERDOWN) && pointerId != 0)
+			if ((message == WM_POINTERENTER || message == WM_POINTERDOWN) &&
+				pointerId != 0 && penPointer &&
+				!touchPanActive_.load(std::memory_order_acquire) &&
+				!penContactSuppressedForTouchPan_.load(std::memory_order_acquire))
 			{
 				if (pointerId != lastHapticPenInfoPointerId_ || !lastHapticPenInfoKnown_)
 				{
@@ -696,6 +777,9 @@ namespace draw3
 			mouseCursorSample_.Clear();
 			drawingCursorPointerAuthority_.store(
 				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
+			touchPanActive_.store(false, std::memory_order_release);
+			penContactSuppressedForTouchPan_.store(false, std::memory_order_release);
+			suppressedPenPointerId_.store(0, std::memory_order_release);
 			SetCursor(defaultCursor_);
 			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 			exitRequested_.store(true, std::memory_order_release); // 通知主循环退出。

@@ -108,7 +108,15 @@ export namespace draw3
 	void StopCanvasPan(CanvasPanMotionState& motion) noexcept;
 	void InterruptCanvasPanForDrawing(CanvasPanMotionState& motion,
 		CanvasTouchGestureState& gesture) noexcept;
-	// 平移/惯性中的物理落笔必须先于本帧导航推进消费。
+	// 活动 Touch 平移中的 Pen contact 由平台批次吞到抬笔；惯性中的新 Down 仍可抢占。
+	bool ShouldBeginSuppressingPenContactDuringTouchPan(bool touchPanActive,
+		bool penInContact) noexcept;
+	bool ShouldSuppressPenContactForTouchPan(bool touchPanContactLive,
+		int64_t penDownQpc, int64_t lastTouchPanEndQpc,
+		bool suppressedPenContactLive) noexcept;
+	bool IsPenContactSampleFresh(bool inContact, int64_t sampleQpc,
+		int64_t suppressedTerminalQpc) noexcept;
+	// 允许抢占的物理落笔必须先于本帧导航推进消费。
 	bool ShouldPrioritizeDrawingContact(bool navigationInProgress,
 		bool penInContact, bool mouseInContact) noexcept;
 	float CanvasPanSpeed(const CanvasPanMotionState& motion) noexcept;

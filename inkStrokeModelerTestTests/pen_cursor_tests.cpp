@@ -224,6 +224,16 @@ int RunPenCursorTests()
 		DrawingCursorPointerAuthority::Mouse));
 	PEN_CURSOR_CHECK(!draw3::ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority::Unknown));
+	PEN_CURSOR_CHECK(!draw3::ShouldSuppressPenFeedbackForTouchPan(
+		false, false, true, true));
+	PEN_CURSOR_CHECK(!draw3::ShouldSuppressPenFeedbackForTouchPan(
+		true, false, true, false));
+	PEN_CURSOR_CHECK(draw3::ShouldSuppressPenFeedbackForTouchPan(
+		true, false, true, true));
+	PEN_CURSOR_CHECK(draw3::ShouldSuppressPenFeedbackForTouchPan(
+		false, true, true, false));
+	PEN_CURSOR_CHECK(!draw3::ShouldSuppressPenFeedbackForTouchPan(
+		true, true, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(true, true, true));
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, true, true));
 	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(false, false, true));

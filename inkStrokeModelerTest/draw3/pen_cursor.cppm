@@ -128,6 +128,9 @@ export namespace draw3
 	// Pen/Touch 终态后的兼容 Mouse ButtonUp 不能重新生成应用内 Hover。
 	bool ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority pointerAuthority) noexcept;
+	// Touch 跟手期间按下的 Pen 必须连同光标和触觉一起抑制到终态。
+	bool ShouldSuppressPenFeedbackForTouchPan(bool touchPanActive,
+		bool suppressionLatched, bool penPointer, bool inContact) noexcept;
 	// Touch 橡皮接触始终生成不透明 visual；Hover 不调用该函数。
 	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& eraserAppearance) noexcept;

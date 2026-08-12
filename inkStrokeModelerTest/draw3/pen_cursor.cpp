@@ -225,6 +225,12 @@ namespace draw3
 			pointerAuthority == DrawingCursorPointerAuthority::Touch;
 	}
 
+	bool ShouldSuppressPenFeedbackForTouchPan(bool touchPanActive,
+		bool suppressionLatched, bool penPointer, bool inContact) noexcept
+	{
+		return penPointer && (suppressionLatched || (touchPanActive && inContact));
+	}
+
 	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& eraserAppearance) noexcept
 	{

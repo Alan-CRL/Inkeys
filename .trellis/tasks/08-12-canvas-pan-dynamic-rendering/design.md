@@ -21,9 +21,10 @@
 - 空闲首指按当前工具开始 runtime；第二指及时落下时取消所有 Touch runtime 和 Laser 瞬态并重建剩余 contact 层。
 - 惯性首指仅登记候选，不创建 runtime。180ms 内第二指进入接续平移；超时后标记该 contact suppressed-until-up，其他迟到 contact 可按工具绘制。
 - 平移接管后的中心变化直接驱动位移；旧惯性在 120ms 内衰减叠加。最后触点抬起后使用采样速度启动惯性。
-- Pen hover 只改变惯性阻尼；Pen/Mouse Down 立即结束手势并清零速度，仍落下的 gesture Touch 保持 suppressed-until-up。
+- 活动 Touch 跟手平移期间到达的 Pen contact 锁存为 suppressed-until-up，不结束手势、不改变速度，也不能在随后惯性阶段补画；同一锁存状态由绘制线程发布给窗口线程，必须同时清除接触光标、停止/拒绝触觉绑定，并保持到对应 `WM_POINTERUP`/`WM_POINTERLEAVE` 或 RTS 终态。Mouse Down 仍可立即抢占。惯性阶段的 Pen hover 改变阻尼，抬笔后重新产生的 Pen Down 立即清零速度并绘制。
 - 调低 Windows inertia 的期望减速度并同步 CPU fallback，使常规甩动具有接近触摸网页的滑行距离；hover/候选超时的加强制动相对比例保持明显。
-- contact dequeue 前读取的 Pen mailbox 只负责提前刹停；真实 Pen Down 出队时仍在同一循环创建 runtime，并以刹停后的固定 viewport 变换 Down 点。
+- contact dequeue 前读取 Pen mailbox：活动 Touch 跟手时只锁存本次 Pen suppression；惯性阶段才提前刹停。可抢占的真实 Pen Down 出队时仍在同一循环创建 runtime，并以刹停后的固定 viewport 变换 Down 点。
+- 惯性中的新双指先保存应用层残余速度并停止旧 `IInertiaProcessor`，再用当前触点启动新 `IManipulationProcessor`；残余速度在 `120ms` 内混入跟手位移，因此不依赖 Windows processor 自动“抓住”惯性。
 - 平移速度只由真实 Touch Move 及其 QPC 更新，渲染空帧不得覆盖；最后 Up 前锁存 Windows 速度并限制为最近 `100ms` 输入。Windows inertia 的旧 Completed 必须重置，创建/启动/步进失败时由同参数 CPU 线性惯性接续。
 
 ## Compatibility

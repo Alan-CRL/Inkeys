@@ -102,6 +102,8 @@ int RunCanvasNavigationTests()
 	motion.velocity = { 1000.0f, 0.0f };
 	motion.inertiaActive = true;
 	draw3::BeginCanvasPan(motion, true);
+	CANVAS_NAVIGATION_CHECK(!motion.inertiaActive);
+	CANVAS_NAVIGATION_CHECK(motion.inheritedVelocity.x == 1000.0f);
 	const draw3::CanvasVector blended = draw3::UpdateCanvasPan(
 		motion, { 10.0f, 0.0f }, 0.01);
 	CANVAS_NAVIGATION_CHECK(blended.x > 10.0f);
@@ -148,6 +150,28 @@ int RunCanvasNavigationTests()
 		draw3::CanvasTouchDisposition::Suppressed);
 	CANVAS_NAVIGATION_CHECK(gesture.Disposition(62) ==
 		draw3::CanvasTouchDisposition::Suppressed);
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldBeginSuppressingPenContactDuringTouchPan(
+		true, true));
+	CANVAS_NAVIGATION_CHECK(!draw3::ShouldBeginSuppressingPenContactDuringTouchPan(
+		false, true));
+	CANVAS_NAVIGATION_CHECK(!draw3::ShouldBeginSuppressingPenContactDuringTouchPan(
+		true, false));
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldSuppressPenContactForTouchPan(
+		true, 1200, 0, false));
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldSuppressPenContactForTouchPan(
+		false, 1200, 1200, false));
+	CANVAS_NAVIGATION_CHECK(!draw3::ShouldSuppressPenContactForTouchPan(
+		false, 1201, 1200, false));
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldSuppressPenContactForTouchPan(
+		false, 1201, 1200, true));
+	CANVAS_NAVIGATION_CHECK(!draw3::IsPenContactSampleFresh(
+		true, 1200, 1200));
+	CANVAS_NAVIGATION_CHECK(draw3::IsPenContactSampleFresh(
+		true, 1201, 1200));
+	CANVAS_NAVIGATION_CHECK(!draw3::IsPenContactSampleFresh(
+		false, 1201, 1200));
+	CANVAS_NAVIGATION_CHECK(draw3::IsPenContactSampleFresh(
+		true, 1200, 0));
 	CANVAS_NAVIGATION_CHECK(draw3::ShouldPrioritizeDrawingContact(
 		true, true, false));
 	CANVAS_NAVIGATION_CHECK(draw3::ShouldPrioritizeDrawingContact(
