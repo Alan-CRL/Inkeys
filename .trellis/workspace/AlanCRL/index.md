@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
-- **Last Active**: 2026-08-11
+- **Total Sessions**: 12
+- **Last Active**: 2026-08-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~322 | Active |
+| `journal-1.md` | ~343 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-08-12 | Tune shape visual proportions | `dfbbd2a` | `main` |
 | 11 | 2026-08-11 | Line and rounded rectangle tools | `d192f24` | `main` |
 | 10 | 2026-08-11 | 墨迹文档、分块撤回与页面恢复 | `1cc746e`, `ebfd0ed` | `main` |
 | 9 | 2026-08-09 | 完成 Windows Ink 调查收尾 | `49dcbfe` | `main` |

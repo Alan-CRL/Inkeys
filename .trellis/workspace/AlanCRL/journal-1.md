@@ -320,3 +320,24 @@ Implemented Q/W/E/R analytic Shape tools with predicted L0 rendering, stored rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 12: Tune shape visual proportions
+
+**Date**: 2026-08-12
+**Task**: Tune shape visual proportions
+**Branch**: `main`
+
+### Summary
+
+Adjusted dashed-line center spacing from 4:2 to 4:6 so round-capped visible segments and gaps are approximately 1:1, and reduced rounded-rectangle corners from 8 DIP to 4 DIP. Synced renderer constants, HLSL, generated pixel shader, tests, README, task artifacts, and specs. ARM64 Debug/Release full builds, headless tests, and drawing performance benchmark passed; GUI and desktop control were intentionally not run.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dfbbd2a` | (see git log) |
+
+### Status
+
+[OK] **Completed**
