@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @file		IdtPlug-in.cpp
  * @brief		IDT plugin linkage | 智绘教插件联动
  * @note		PPT linkage components and other plugins | PPT联动组件和其他插件等
@@ -21,6 +21,7 @@
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 import Inkeys.Load;
+import Inkeys.Message;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.UI.Bar;
@@ -482,9 +483,9 @@ LRESULT CALLBACK PptWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case WM_RBUTTONDBLCLK:
 	case WM_MOUSEMOVE:
 	{
-		// 如果是触摸模拟出来的鼠标消息，就直接丢掉
-		DWORD extraInfo = GetMessageExtraInfo();
-		if ((extraInfo & 0xFFFFFF00) == 0xFF515700) return 0;
+		// 手工 WM_TOUCH 转译优先，仅丢弃系统补发的触摸兼容鼠标；保留笔和真实鼠标。
+		if (Inkeys::Message::IsTouchGeneratedMouseMessage(
+			msg, static_cast<ULONG_PTR>(GetMessageExtraInfo()))) return 0;
 
 		// 否则当成真正的鼠标消息处理
 

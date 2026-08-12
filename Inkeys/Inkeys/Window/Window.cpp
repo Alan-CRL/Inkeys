@@ -573,6 +573,10 @@ namespace Inkeys::Window
 			}
 			if (!record.channel)
 				record.channel = std::make_unique<Message::Channel>(messageCapacity_);
+			if (spec.messageCallback)
+				record.channel->SetCallback(spec.messageCallback);
+			else
+				record.channel->ClearCallback();
 			record.className = spec.className.empty() ? DefaultClassName(spec.role) : spec.className;
 
 			const HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -602,7 +606,7 @@ namespace Inkeys::Window
 			DWORD exStyle = spec.exStyle;
 			if (IsSetting(spec.role))
 			{
-				style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+				style = WS_POPUP | WS_CLIPCHILDREN;
 				exStyle = (exStyle | WS_EX_APPWINDOW) &
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
 				owner = nullptr;
@@ -832,7 +836,18 @@ namespace Inkeys::Window
 			case CommandType::Destroy:
 				return false;
 			case CommandType::Show:
-				ShowWindow(hwnd, IsSetting(command.role) ? SW_SHOW : SW_SHOWNOACTIVATE);
+				if (IsSetting(command.role))
+				{
+					ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+					// Setting 是普通应用窗口；每次打开都交还键盘焦点。
+					(void)SetForegroundWindow(hwnd);
+					(void)SetActiveWindow(hwnd);
+					(void)SetFocus(hwnd);
+				}
+				else
+				{
+					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+				}
 				return true;
 			case CommandType::Hide:
 				ShowWindow(hwnd, SW_HIDE);

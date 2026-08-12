@@ -29,6 +29,11 @@ export namespace Inkeys::Message
 		return static_cast<Filter>(static_cast<BYTE>(lhs) | static_cast<BYTE>(rhs));
 	}
 
+	// Win32 会在触摸后继续派发兼容鼠标消息；手工转译 WM_TOUCH 时必须过滤这一副本。
+	[[nodiscard]] bool IsTouchGeneratedMouseMessage(
+		UINT message,
+		ULONG_PTR extraInfo) noexcept;
+
 	enum class Action
 	{
 		Default,

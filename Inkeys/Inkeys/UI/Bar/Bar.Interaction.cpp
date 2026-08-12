@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
@@ -18,6 +18,7 @@ import :Atomic;
 import :Theme;
 
 import Inkeys.Conv.Color;
+import Inkeys.Message;
 import Inkeys.Other.Inputs;
 import Inkeys.Window;
 constexpr double BarButtonHoverOpacity = 0.18;
@@ -34,9 +35,6 @@ constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
 constexpr UINT BarColorPickerCaptureMessage = WM_APP + 0x34;
 constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
 constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
-constexpr DWORD_PTR BarPointerMouseSignature = 0xFF515700u;
-constexpr DWORD_PTR BarPointerMouseSignatureMask = 0xFFFFFF00u;
-constexpr DWORD_PTR BarPointerMouseTouchFlag = 0x00000080u;
 constexpr WPARAM BarThicknessSliderCaptureStop = 0;
 constexpr WPARAM BarThicknessSliderCaptureStart = 1;
 constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
@@ -688,10 +686,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case WM_MOUSEMOVE:
 	{
 		// 触摸已由 WM_TOUCH 单独合成；笔的兼容鼠标消息仍进入统一 ExMessage 路径。
-		DWORD_PTR extraInfo = static_cast<DWORD_PTR>(GetMessageExtraInfo());
-		bool pointerGenerated = (extraInfo & BarPointerMouseSignatureMask)
-			== BarPointerMouseSignature;
-		if (pointerGenerated && (extraInfo & BarPointerMouseTouchFlag) != 0)
+		if (Inkeys::Message::IsTouchGeneratedMouseMessage(
+			msg, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
 			return 0;
 		if (msg == WM_MOUSEMOVE) barUISet.ActivateBorderCursorTracking(hWnd);
 		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK) Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);

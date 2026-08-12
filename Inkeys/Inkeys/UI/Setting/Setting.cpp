@@ -77,6 +77,15 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	switch (msg)
 	{
+	case WM_GETMINMAXINFO:
+	{
+		auto* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
+		if (!minMaxInfo) return 0;
+		// Setting 是固定尺寸无框窗口，系统命令也不得改变其大小。
+		minMaxInfo->ptMinTrackSize = { SettingWindowWidth, SettingWindowHeight };
+		minMaxInfo->ptMaxTrackSize = { SettingWindowWidth, SettingWindowHeight };
+		return 0;
+	}
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;

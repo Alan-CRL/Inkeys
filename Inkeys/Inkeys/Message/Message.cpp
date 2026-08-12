@@ -24,6 +24,41 @@ namespace
 
 namespace Inkeys::Message
 {
+	bool IsTouchGeneratedMouseMessage(UINT message, ULONG_PTR extraInfo) noexcept
+	{
+		constexpr ULONG_PTR pointerMouseSignature = 0xFF515700u;
+		constexpr ULONG_PTR pointerMouseSignatureMask = 0xFFFFFF00u;
+		constexpr ULONG_PTR pointerMouseTouchFlag = 0x00000080u;
+
+		bool mouseMessage = false;
+		switch (message)
+		{
+		case WM_MOUSEMOVE:
+		case WM_MOUSEWHEEL:
+		case WM_MOUSEHWHEEL:
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP:
+		case WM_LBUTTONDBLCLK:
+		case WM_MBUTTONDOWN:
+		case WM_MBUTTONUP:
+		case WM_MBUTTONDBLCLK:
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP:
+		case WM_RBUTTONDBLCLK:
+		case WM_XBUTTONDOWN:
+		case WM_XBUTTONUP:
+		case WM_XBUTTONDBLCLK:
+			mouseMessage = true;
+			break;
+		default:
+			break;
+		}
+
+		return mouseMessage
+			&& (extraInfo & pointerMouseSignatureMask) == pointerMouseSignature
+			&& (extraInfo & pointerMouseTouchFlag) != 0;
+	}
+
 	class Channel::Impl
 	{
 	public:

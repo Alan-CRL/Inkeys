@@ -22,6 +22,7 @@ import Inkeys.Conv.Text;
 import Inkeys.Text.Split;
 import Inkeys.Text.Font;
 import Inkeys.Other.Config;
+import Inkeys.Message;
 import Inkeys.Window;
 
 #include "IdtMain.h"
@@ -1288,6 +1289,19 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				spec.exStyle = overlayExStyle | extraStyle;
 				spec.windowProc = proc;
 				spec.created = created;
+				if (role == Inkeys::Window::WindowRole::PptControls ||
+					role == Inkeys::Window::WindowRole::Bar)
+				{
+					// WM_TOUCH 已由窗口过程自行转为单指输入，HiMsg 入队前丢弃系统兼容副本。
+					spec.messageCallback = [](HWND, UINT message, WPARAM, LPARAM)
+						-> Inkeys::Message::Reply
+						{
+							if (Inkeys::Message::IsTouchGeneratedMouseMessage(
+								message, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
+								return { Inkeys::Message::Action::Discard, 0 };
+							return {};
+						};
+				}
 				windowSpecs.push_back(std::move(spec));
 			};
 		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
@@ -1307,7 +1321,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		settingSpec.y = SettingWindowY;
 		settingSpec.width = SettingWindowWidth;
 		settingSpec.height = SettingWindowHeight;
-		settingSpec.style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN;
 		settingSpec.exStyle = WS_EX_APPWINDOW;
 		settingSpec.windowProc = SettingWindowProc();
 		settingSpec.largeIcon = applicationIcon;

@@ -105,5 +105,33 @@ int RunMessageTests()
 			&& actual.wheel == expected.wheel,
 			"touch marker roundtrip");
 	}
+
+	constexpr ULONG_PTR touchMouseExtraInfo = 0xFF515780u;
+	constexpr ULONG_PTR penMouseExtraInfo = 0xFF515700u;
+	const UINT touchCompatibleMessages[] = {
+		WM_MOUSEMOVE,
+		WM_MOUSEWHEEL,
+		WM_MOUSEHWHEEL,
+		WM_LBUTTONDOWN,
+		WM_LBUTTONUP,
+		WM_LBUTTONDBLCLK,
+		WM_MBUTTONDOWN,
+		WM_MBUTTONUP,
+		WM_MBUTTONDBLCLK,
+		WM_RBUTTONDOWN,
+		WM_RBUTTONUP,
+		WM_RBUTTONDBLCLK,
+		WM_XBUTTONDOWN,
+		WM_XBUTTONUP,
+		WM_XBUTTONDBLCLK,
+	};
+	for (const auto message : touchCompatibleMessages)
+		check(IsTouchGeneratedMouseMessage(message, touchMouseExtraInfo),
+			"touch-compatible mouse detection");
+	check(!IsTouchGeneratedMouseMessage(WM_LBUTTONDOWN, 0), "real mouse preserved");
+	check(!IsTouchGeneratedMouseMessage(WM_LBUTTONDOWN, penMouseExtraInfo),
+		"pen-compatible mouse preserved");
+	check(!IsTouchGeneratedMouseMessage(WM_TOUCH, touchMouseExtraInfo),
+		"non-mouse touch message preserved");
 	return failures;
 }

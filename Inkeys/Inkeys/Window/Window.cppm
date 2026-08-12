@@ -49,6 +49,7 @@ export namespace Inkeys::Window
 		bool bindMessages = true;
 		bool optional = false;
 		Message::BindOptions messageOptions{};
+		Message::Channel::Callback messageCallback;
 		std::function<bool()> beforeCreate;
 		std::function<void(HWND)> created;
 		std::function<void()> destroyed;
