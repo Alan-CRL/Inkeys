@@ -119,12 +119,35 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(motion.velocity.x > 0.0f);
 	draw3::EndCanvasPan(motion);
 	CANVAS_NAVIGATION_CHECK(motion.inertiaActive);
+	draw3::CanvasPanMotionState lowResidualMotion;
+	lowResidualMotion.velocity = { 120.0f, 0.0f };
+	lowResidualMotion.inertiaActive = true;
+	draw3::BeginCanvasPan(lowResidualMotion, true);
+	const draw3::CanvasVector lowResidualBlend = draw3::UpdateCanvasPan(
+		lowResidualMotion, { 3.0f, 0.0f }, 0.01);
+	CANVAS_NAVIGATION_CHECK(lowResidualBlend.x > 3.0f);
+	CANVAS_NAVIGATION_CHECK(lowResidualMotion.velocity.x > 300.0f);
+	draw3::EndCanvasPan(lowResidualMotion, 0.0);
+	CANVAS_NAVIGATION_CHECK(lowResidualMotion.inertiaActive);
 	draw3::CanvasPanMotionState staleReleaseMotion;
 	staleReleaseMotion.velocity = { 3200.0f, 0.0f };
 	draw3::EndCanvasPan(staleReleaseMotion,
 		draw3::kCanvasPanReleaseVelocityHorizonSeconds + 0.001);
 	CANVAS_NAVIGATION_CHECK(!staleReleaseMotion.inertiaActive);
 	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(staleReleaseMotion) == 0.0f);
+	CANVAS_NAVIGATION_CHECK(std::abs(draw3::CanvasPanReleaseAgeSeconds(
+		1099, 1000, 1000, false) - 0.099) < 0.000001);
+	CANVAS_NAVIGATION_CHECK(std::abs(draw3::CanvasPanReleaseAgeSeconds(
+		1100, 1000, 1000, false) -
+		draw3::kCanvasPanReleaseVelocityHorizonSeconds) < 0.000001);
+	CANVAS_NAVIGATION_CHECK(!std::isfinite(draw3::CanvasPanReleaseAgeSeconds(
+		1099, 1000, 1000, true)));
+	CANVAS_NAVIGATION_CHECK(!std::isfinite(draw3::CanvasPanReleaseAgeSeconds(
+		900, 1000, 1000, false)));
+	CANVAS_NAVIGATION_CHECK(
+		draw3::kCanvasPanInertiaDecelerationDipPerSecondSquared == 4000.0f);
+	CANVAS_NAVIGATION_CHECK(
+		draw3::kCanvasPanPenBrakeDecelerationDipPerSecondSquared == 12000.0f);
 	draw3::CanvasPanMotionState travelMotion;
 	travelMotion.velocity = { 3200.0f, 0.0f };
 	travelMotion.inertiaActive = true;
@@ -132,8 +155,9 @@ int RunCanvasNavigationTests()
 	for (size_t step = 0; step < 1000 && travelMotion.inertiaActive; ++step)
 		normalTravel += draw3::StepCanvasPanInertia(
 			travelMotion, 0.01, false).x;
-	const float firstVersionTravel = 3200.0f * 3200.0f / (2.0f * 3200.0f);
-	CANVAS_NAVIGATION_CHECK(normalTravel > firstVersionTravel * 2.5f);
+	const float expectedTravel = 3200.0f * 3200.0f /
+		(2.0f * draw3::kCanvasPanInertiaDecelerationDipPerSecondSquared);
+	CANVAS_NAVIGATION_CHECK(std::abs(normalTravel - expectedTravel) < 1.0f);
 	motion.velocity = { 1000.0f, 0.0f };
 	motion.inertiaActive = true;
 	const float beforeHover = draw3::CanvasPanSpeed(motion);

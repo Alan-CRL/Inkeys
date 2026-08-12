@@ -374,6 +374,15 @@ int RunLaserIncrementalCoverageTests()
 			"return draw3::ShouldIgnoreMouseCursorMessage("));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
 			"ResolveGetPointerType() != nullptr"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"initialExtendedStyle_ = WS_EX_TOPMOST"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource, "WS_EX_TOPMOST"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource, "SW_SHOWNORMAL"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(windowControlSource, "WS_EX_NOACTIVATE"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(windowControlSource, "SW_SHOWNOACTIVATE"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(windowControlSource, "case WM_MOUSEACTIVATE:"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"monitorRect.bottom - monitorRect.top - 1L"));
 		LASER_INCREMENTAL_CHECK(TextAppearsBefore(controllerSource,
 			"const float preInputLaserOpacity = laserOpacity;",
 			"if (!interruptedStrokeReconnectEnabled)"));

@@ -9,6 +9,7 @@
 #include <dwmapi.h>
 #include <tpcshrd.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cerrno>
 #include <iostream>
@@ -171,7 +172,9 @@ namespace draw3
 	bool WindowController::Initialize(bool preconfigureNoRedirectionBitmap)
 	{
 		defaultCursor_ = LoadCursorW(nullptr, IDC_ARROW);
-		initialExtendedStyle_ = preconfigureNoRedirectionBitmap ? WS_EX_NOREDIRECTIONBITMAP : 0;
+		initialExtendedStyle_ = WS_EX_TOPMOST;
+		if (preconfigureNoRedirectionBitmap)
+			initialExtendedStyle_ |= WS_EX_NOREDIRECTIONBITMAP;
 		windowReadyEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		if (!windowReadyEvent_)
 		{
@@ -249,7 +252,9 @@ namespace draw3
 
 		const RECT monitorRect = GetPrimaryMonitorRectangle();
 		size_.width = static_cast<int>(monitorRect.right - monitorRect.left);
-		size_.height = static_cast<int>(monitorRect.bottom - monitorRect.top);
+		// 保留显示器最底部一行，避免覆盖系统边缘交互区。
+		size_.height = static_cast<int>((std::max)(1L,
+			monitorRect.bottom - monitorRect.top - 1L));
 		const HWND window = CreateWindowExW(
 			initialExtendedStyle_, kWindowClassName, L"Inkeys Draw3", WS_POPUP,
 			monitorRect.left, monitorRect.top, size_.width, size_.height,
@@ -283,6 +288,7 @@ namespace draw3
 	{
 		if (const HWND window = window_.load(std::memory_order_acquire))
 		{
+			// 独立测试宿主需要取得焦点，以便方向键验证画布平移。
 			ShowWindow(window, SW_SHOWNORMAL);
 			PostPerformanceHudRefresh();
 		}

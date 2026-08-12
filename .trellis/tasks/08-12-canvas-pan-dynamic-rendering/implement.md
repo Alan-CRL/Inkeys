@@ -12,6 +12,7 @@
 10. 修复抬手瞬停：速度改为 Touch Move/QPC 驱动，Up 前锁存 Windows 速度，清理旧 inertia Completed，并在 COM 初始化/启动/步进失败时切换 CPU fallback。
 11. 明确 Windows Tablet/RTS 混合输入限制：活动双指跟手时不允许 Pen 抢占；保持惯性中双指立即接续残余速度，以及抬笔后新 Pen Down 抢占惯性。
 12. 将活动 Touch Pan 的 Pen suppression 同步到 `WM_POINTER` 光标与触觉入口：按下时清空 mailbox、停止触觉并锁存到对应终态，增加纯判定测试。
+13. 将普通惯性收敛到 `4000 DIP/s^2`，用 Touch 终态 QPC 锁存最终速度并覆盖低残余同向接续；主窗口改为显示器高度减 1、创建期 TOPMOST，并暂时允许独立测试宿主激活以验证方向键。
 
 ## Rollback Points
 

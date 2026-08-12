@@ -1791,9 +1791,12 @@ namespace draw3
 			if (std::any_of(gestureContacts.begin(), gestureContacts.end(),
 				[key](const CanvasGestureContactRuntime& contact)
 				{ return contact.key == key; })) return;
+			const ContactSnapshot downSnapshot = handle.record->DownSnapshot();
+			ContactSnapshot snapshot = downSnapshot;
+			input_.TryReadSnapshot(handle, snapshot); // 手势接管以当前触点为基准，不能跳回首指 Down。
 			gestureContacts.push_back({
-				handle, key, CanvasManipulatorId(handle), handle.record->DownSnapshot(),
-				handle.record->DownSnapshot().sequence, disposition });
+				handle, key, CanvasManipulatorId(handle), snapshot,
+				downSnapshot.sequence, disposition }); // 终态即使已进 mailbox，也必须由导航循环消费。
 		};
 
 		auto hasLiveSuppressedPenContact = [&]() noexcept
@@ -1960,8 +1963,19 @@ namespace draw3
 											contact.snapshot.position.y } });
 							}
 							windowsManipulation.Begin(contacts);
-							panCentroidValid = false;
-							previousPanContactCount = 0;
+							previousPanCentroid = {};
+							for (const auto& [id, point] : contacts)
+							{
+								previousPanCentroid.x += point.x;
+								previousPanCentroid.y += point.y;
+							}
+							previousPanContactCount = contacts.size();
+							panCentroidValid = !contacts.empty();
+							if (panCentroidValid)
+							{
+								previousPanCentroid.x /= static_cast<float>(contacts.size());
+								previousPanCentroid.y /= static_cast<float>(contacts.size());
+							}
 						}
 						else if (touchDecision.joinedExistingPan)
 						{
@@ -2737,14 +2751,17 @@ namespace draw3
 			bool topologyChanged = false;
 			bool panInputUpdated = false;
 			int64_t newestPanInputQpc = 0;
+			int64_t panReleaseQpc = 0;
+			bool panReleaseCancelled = false;
 			for (CanvasGestureContactRuntime& contact : gestureContacts)
 			{
 				ContactSnapshot snapshot;
 				if (!input_.TryReadSnapshot(contact.handle, snapshot) ||
 					snapshot.sequence == contact.lastConsumedSequence) continue;
+				const ContactSnapshot previousSnapshot = contact.snapshot;
+				contact.disposition = touchGesture.Disposition(contact.key);
 				contact.lastConsumedSequence = snapshot.sequence;
 				contact.snapshot = snapshot;
-				contact.disposition = touchGesture.Disposition(contact.key);
 				const CanvasVector point{ snapshot.position.x, snapshot.position.y };
 				if (snapshot.phase == ContactPhase::Move)
 				{
@@ -2762,26 +2779,25 @@ namespace draw3
 						contact.handle.record->DeviceType() == InputDeviceType::Pen)
 						suppressedPenTerminalQpc = (std::max)(
 							suppressedPenTerminalQpc, snapshot.qpc);
-					const CanvasTouchDisposition endedDisposition =
-						touchGesture.OnTouchUp(contact.key);
-					if (endedDisposition == CanvasTouchDisposition::Pan)
+					if (contact.disposition == CanvasTouchDisposition::Pan)
 					{
+						// Up 也携带最终位置；先作为 Move 锁存，避免快速拨动整段被终态合并掉。
+						if (snapshot.phase == ContactPhase::Up &&
+							(snapshot.position.x != previousSnapshot.position.x ||
+								snapshot.position.y != previousSnapshot.position.y))
+						{
+							windowsManipulation.Move(contact.manipulatorId, point);
+							panInputUpdated = true;
+							newestPanInputQpc = (std::max)(newestPanInputQpc, snapshot.qpc);
+						}
+						panReleaseQpc = (std::max)(panReleaseQpc, snapshot.qpc);
+						panReleaseCancelled = panReleaseCancelled ||
+							snapshot.phase == ContactPhase::Cancelled;
 						lastTouchPanEndQpc = (std::max)(
 							lastTouchPanEndQpc, snapshot.qpc);
-						windowsManipulation.Up(contact.manipulatorId, point);
-						topologyChanged = true;
 					}
 				}
 			}
-
-			std::erase_if(gestureContacts, [&](CanvasGestureContactRuntime& contact)
-				{
-					if (contact.snapshot.phase != ContactPhase::Up &&
-						contact.snapshot.phase != ContactPhase::Cancelled) return false;
-					input_.Recycle(contact.handle);
-					return true;
-				});
-			window_.SetTouchPanActive(touchGesture.PanActive());
 
 			CanvasVector contentDelta = {};
 			if (touchGesture.PanActive())
@@ -2823,6 +2839,49 @@ namespace draw3
 						lastPanInputQpc = newestPanInputQpc;
 				}
 			}
+
+			for (CanvasGestureContactRuntime& contact : gestureContacts)
+			{
+				if (contact.snapshot.phase != ContactPhase::Up &&
+					contact.snapshot.phase != ContactPhase::Cancelled) continue;
+				const CanvasTouchDisposition endedDisposition =
+					touchGesture.OnTouchUp(contact.key);
+				if (endedDisposition == CanvasTouchDisposition::Pan)
+				{
+					windowsManipulation.Up(contact.manipulatorId, {
+						contact.snapshot.position.x, contact.snapshot.position.y });
+					topologyChanged = true;
+				}
+			}
+			std::erase_if(gestureContacts, [&](CanvasGestureContactRuntime& contact)
+				{
+					if (contact.snapshot.phase != ContactPhase::Up &&
+						contact.snapshot.phase != ContactPhase::Cancelled) return false;
+					input_.Recycle(contact.handle);
+					return true;
+				});
+			window_.SetTouchPanActive(touchGesture.PanActive());
+
+			if (touchGesture.PanActive() && topologyChanged)
+			{
+				previousPanCentroid = {};
+				previousPanContactCount = 0;
+				for (const CanvasGestureContactRuntime& contact : gestureContacts)
+				{
+					if (touchGesture.Disposition(contact.key) != CanvasTouchDisposition::Pan)
+						continue;
+					previousPanCentroid.x += contact.snapshot.position.x;
+					previousPanCentroid.y += contact.snapshot.position.y;
+					++previousPanContactCount;
+				}
+				panCentroidValid = previousPanContactCount > 0;
+				if (panCentroidValid)
+				{
+					previousPanCentroid.x /= static_cast<float>(previousPanContactCount);
+					previousPanCentroid.y /= static_cast<float>(previousPanContactCount);
+				}
+			}
+
 			else if (panMotion.inertiaActive)
 			{
 				const bool accelerateStop = (penInRange && !suppressPenUntilRelease) ||
@@ -2897,9 +2956,8 @@ namespace draw3
 					if (panMotion.inheritedBlendRemainingSeconds <= 0.0 &&
 						(systemVelocity.x != 0.0f || systemVelocity.y != 0.0f))
 						SetCanvasPanVelocity(panMotion, systemVelocity);
-					const double secondsSinceLastInput = lastPanInputQpc > 0
-						? QpcDeltaSeconds(nowQpc, lastPanInputQpc, qpcFrequency)
-						: (std::numeric_limits<double>::infinity)();
+					const double secondsSinceLastInput = CanvasPanReleaseAgeSeconds(
+						panReleaseQpc, lastPanInputQpc, qpcFrequency, panReleaseCancelled);
 					EndCanvasPan(panMotion, secondsSinceLastInput);
 					// StartInertia 失败时保留 motion，由下一帧 CPU fallback 接管。
 					if (panMotion.inertiaActive)
@@ -2907,9 +2965,8 @@ namespace draw3
 				}
 				else
 				{
-					const double secondsSinceLastInput = lastPanInputQpc > 0
-						? QpcDeltaSeconds(nowQpc, lastPanInputQpc, qpcFrequency)
-						: (std::numeric_limits<double>::infinity)();
+					const double secondsSinceLastInput = CanvasPanReleaseAgeSeconds(
+						panReleaseQpc, lastPanInputQpc, qpcFrequency, panReleaseCancelled);
 					EndCanvasPan(panMotion, secondsSinceLastInput);
 				}
 			}

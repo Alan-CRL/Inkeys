@@ -17,7 +17,7 @@ export namespace draw3
 	inline constexpr float kCanvasPanKeyboardStepDip = 64.0f;
 	inline constexpr float kCanvasViewportLimitDip = 1048576.0f;
 	inline constexpr float kCanvasPanMaximumSpeedDipPerSecond = 24000.0f;
-	inline constexpr float kCanvasPanInertiaDecelerationDipPerSecondSquared = 1200.0f;
+	inline constexpr float kCanvasPanInertiaDecelerationDipPerSecondSquared = 4000.0f;
 	inline constexpr float kCanvasPanPenBrakeDecelerationDipPerSecondSquared = 12000.0f;
 	inline constexpr float kCanvasPanSharpSpeedThresholdDipPerSecond = 300.0f;
 	inline constexpr float kCanvasPanMaximumFallbackBlurDip = 12.0f;
@@ -101,6 +101,9 @@ export namespace draw3
 	CanvasVector UpdateCanvasPan(CanvasPanMotionState& motion,
 		CanvasVector contentDelta, double deltaSeconds) noexcept;
 	void SetCanvasPanVelocity(CanvasPanMotionState& motion, CanvasVector velocity) noexcept;
+	// 释放速度只比较输入事件时间，不能受绘制线程排队延迟影响。
+	double CanvasPanReleaseAgeSeconds(int64_t releaseQpc, int64_t lastInputQpc,
+		int64_t qpcFrequency, bool cancelled) noexcept;
 	void EndCanvasPan(CanvasPanMotionState& motion,
 		double secondsSinceLastInput = 0.0) noexcept;
 	CanvasVector StepCanvasPanInertia(CanvasPanMotionState& motion,

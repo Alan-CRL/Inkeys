@@ -239,6 +239,16 @@ namespace draw3
 		motion.velocity = ClampVelocity(velocity);
 	}
 
+	double CanvasPanReleaseAgeSeconds(int64_t releaseQpc, int64_t lastInputQpc,
+		int64_t qpcFrequency, bool cancelled) noexcept
+	{
+		if (cancelled || releaseQpc <= 0 || lastInputQpc <= 0 ||
+			qpcFrequency <= 0 || releaseQpc < lastInputQpc)
+			return (std::numeric_limits<double>::infinity)();
+		return static_cast<double>(releaseQpc - lastInputQpc) /
+			static_cast<double>(qpcFrequency);
+	}
+
 	void EndCanvasPan(CanvasPanMotionState& motion,
 		double secondsSinceLastInput) noexcept
 	{

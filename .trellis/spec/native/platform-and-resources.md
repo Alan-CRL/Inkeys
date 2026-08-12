@@ -41,7 +41,7 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 
 本规则不新增 API；修改上述签名或返回语义需要专门设计并检查全部调用者。
 
-`WindowController` 直接使用原生 Win32 API 创建窗口，并拥有独立消息线程；工程不需要窗口源文件的 Release 优化例外。
+`WindowController` 直接使用原生 Win32 API 创建窗口，并拥有独立消息线程；工程不需要窗口源文件的 Release 优化例外。主绘图窗口当前以 `WS_EX_TOPMOST`（按 presenter 需要再含 `WS_EX_NOREDIRECTIONBITMAP`）创建，并以 `SW_SHOWNORMAL` 显示，允许独立测试宿主取得键盘焦点；接入 Inkeys 后再恢复 NOACTIVATE。
 
 ### 3. Contracts
 
@@ -49,6 +49,7 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 - 实测记录必须包含：OS/补丁、GPU/驱动、feature level、active presenter、是否 WARP、场景与结果。
 - 没有环境记录时，只能声明代码路径存在并标记“待验证”。
 - 首选 DComp 时，`WS_EX_NOREDIRECTIONBITMAP` 必须随 `CreateWindowEx` 的 `dwExStyle` 传入；不能依赖创建后调用 `SetWindowLongPtr` 补设。
+- 主绘图窗口矩形取主显示器 `rcMonitor`，宽度不变，高度为 `max(1, monitorHeight - 1)`；创建期保持 TOPMOST，当前测试宿主允许激活以接收方向键。
 - 窗口线程使用 `_beginthreadex` 启动，通过手动复位事件发布创建结果；禁止 detached thread、普通全局预设或轮询非原子完成标志。
 - `WindowController::window_` 是跨线程句柄，必须以 acquire/release 原子语义发布和清空；调用 Win32 API 前先读取到局部 `HWND`，避免关闭期间重复读取失效句柄。
 - `WM_NCCREATE` 必须从 `CREATESTRUCTW::lpCreateParams` 取得控制器并写入 `GWLP_USERDATA`；其余未处理消息交给 `DefWindowProcW`。
@@ -62,6 +63,8 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 | hardware device 创建失败 | 尝试 WARP；两者都失败则初始化失败 |
 | DirectComposition API/初始化不可用 | 进入下一 presenter，不宣称 DComp 可用 |
 | DComp 窗口在创建后缺少 `WS_EX_NOREDIRECTIONBITMAP` | 输出包含实际 `GWL_EXSTYLE` 的低频诊断并进入下一 presenter；不要尝试创建后补设 |
+| 主显示器有效高度大于 1 | 主窗口从顶部覆盖到倒数第二个物理像素，最底部保留 1px |
+| 显示窗口或鼠标按下 | 保持 TOPMOST；当前独立测试宿主可正常取得前台激活与键盘焦点 |
 | 窗口类注册、线程或 `CreateWindowExW` 失败 | 输出对应 Win32/CRT 上下文，发布失败结果并回收线程与事件句柄 |
 | `WM_CLOSE` 投递失败 | 向已记录的窗口线程投递 `WM_QUIT`，析构仍等待线程结束 |
 | `GetMessageW` 返回 `-1` 或线程收到兜底 `WM_QUIT` | 记录错误（如有），销毁仍有效的 HWND，原子清空句柄后结束线程 |
@@ -75,12 +78,13 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 - Base：仅从源码确认 fallback 分支存在，并明确写“待验证”。
 - Bad：因为存在 DWM/DComp 分支就直接写“Windows 7 透明呈现已保证”。
 - Good：Debug 与 Release 都确认窗口创建后包含 `WS_EX_NOREDIRECTIONBITMAP`，并多轮启动进入 DComp。
+- Good：窗口创建后包含 TOPMOST，主显示器底部保留 1px，独立测试时点击画布后可使用方向键。
 - Bad：只在 Debug 验证窗口预设，或在 DComp 配置阶段再补设创建期样式。
 
 ### 6. Tests Required
 
 - 目标系统启动与 device/presenter 日志。
-- ARM64 Debug/Release 多轮启动，确认 active presenter；涉及窗口预设或工程优化时，两种配置都必须验证。
+- ARM64 Debug/Release 多轮启动，确认 active presenter、创建期 TOPMOST、底部 1px 留边与方向键焦点；涉及窗口预设或工程优化时，两种配置都必须验证。
 - 检查 Release 编译命令：窗口宿主与其他自研源码都沿用项目级 `/O2 /GL`，没有文件级 WPO 例外。
 - 基础绘制、prediction、抬笔烘干、窗口 resize。
 - 关闭窗口、快捷键退出和 `WM_QUIT` 兜底均应断言 HWND 被销毁、窗口线程可等待结束且进程无死锁。
@@ -96,6 +100,8 @@ Correct：`Windows 7 SP1 + KB2670838 是项目兼容目标；当前测试程序�
 Wrong：`窗口创建后发现缺少 WS_EX_NOREDIRECTIONBITMAP，再用 SetWindowLongPtr 补上。`
 
 Correct：`首选 DComp 时把 WS_EX_NOREDIRECTIONBITMAP 作为 CreateWindowEx 创建参数；创建后缺失则记录并安全回退。`
+
+当前独立测试宿主：`CreateWindowExW` 直接带 `WS_EX_TOPMOST`，高度为 `monitorHeight - 1`，并用 `SW_SHOWNORMAL` 显示以接收方向键。接入 Inkeys 后恢复 NOACTIVATE 时，必须同时恢复创建样式、显示方式与鼠标激活处理。
 
 ## D3D Device Initialization
 
