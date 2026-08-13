@@ -196,7 +196,8 @@ void MagnifierThread()
 				MagTransparency = 255;
 			}
 
-			while (RequestUpdateMagWindow == 1) this_thread::sleep_for(chrono::milliseconds(100));
+			while (!offSignal && RequestUpdateMagWindow == 1)
+				this_thread::sleep_for(chrono::milliseconds(100));
 			/*for (int i = 0; RequestUpdateMagWindow == 1; i++, i %= 10)
 			{
 				if (!i) SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -212,7 +213,8 @@ void MagnifierThread()
 				MagTransparency = 0;
 			}
 
-			while (RequestUpdateMagWindow == 0) this_thread::sleep_for(chrono::milliseconds(100));
+			while (!offSignal && RequestUpdateMagWindow == 0)
+				this_thread::sleep_for(chrono::milliseconds(100));
 		}
 	}
 }

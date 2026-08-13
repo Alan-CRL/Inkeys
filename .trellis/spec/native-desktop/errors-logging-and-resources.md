@@ -56,6 +56,55 @@
 
 `【合理推断】` 修改某个子系统时，按其实际依赖逆序检查“停止生产者 → 等待仍使用资源的线程 → 释放目标/设备/COM/窗口”。这只是审计方法，不能替代对具体退出代码的追踪。
 
+## 受管线程退出合同
+
+### 1. Scope / Trigger
+
+当线程由主退出路径执行 `join()`，或线程可能无限等待事件、消息、状态值时，必须应用本合同。
+
+### 2. Signatures
+
+- 进程级退出入口：`SetOffSignal(int)`。
+- C++20 线程入口：接收并观察 `std::stop_token`，或观察全局 `offSignal`。
+- 共享 UI3 调度器：发布退出标志时同步调用 `RenderScheduler::Scheduler::WakeForStop()`。
+
+### 3. Contracts
+
+- 被 `join()` 的线程中，每一层可能持续等待的循环都必须观察同一个退出条件；只在最外层检查不成立。
+- `SetOffSignal()` 必须先发布 managed/native 共用退出槽和 C++ `offSignal`，再唤醒所有无限等待对象。
+- 窗口服务销毁前，所有仍可能访问 HWND 或 UI3 target 的线程必须已经返回。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 状态值在退出时长期保持不变 | 内层等待在一个轮询周期内观察退出并返回 |
+| UI3 调度器处于 `WaitForSingleObject(..., INFINITE)` | `SetOffSignal()` 同步设置 wake event，渲染线程重查退出条件 |
+| 退出入口被重复调用 | 标志发布和唤醒保持幂等，不创建第二个调度线程 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：`while (!offSignal && RequestUpdateMagWindow == 0)`，退出不依赖状态先变化。
+- Base：`stop_token` 的 stop callback 设置等待事件，线程醒来后重查 `stop_requested()`。
+- Bad：外层 `while (!offSignal)` 内嵌 `while (state)`，随后主线程对其执行无限 `join()`。
+
+### 6. Tests Required
+
+- Headless 覆盖退出通知能唤醒 idle 的 UI3 调度器，并在有请求/无请求两种状态下有界返回。
+- 手工验证默认放大镜状态、穿透状态和 UI3 完全 idle 状态下退出，进程不得停留超过一个轮询周期。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：状态不变化时，退出标志永远没有机会被重新检查。
+while (RequestUpdateMagWindow == 0)
+    std::this_thread::sleep_for(100ms);
+
+// Correct：所有可能长期等待的层级都观察退出条件。
+while (!offSignal && RequestUpdateMagWindow == 0)
+    std::this_thread::sleep_for(100ms);
+~~~
+
 ## 待确认风险（不是已确认缺陷）
 
 - `D2DShutdown`：`IdtD2DPreparation.cpp` 有声明/定义，但全仓静态搜索未找到调用。需确认是否有意依赖进程退出，影响未来 Codex 是否可以复用或调整 D2D 生命周期。

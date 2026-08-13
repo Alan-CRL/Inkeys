@@ -15,6 +15,7 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.RenderScheduler;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
@@ -77,6 +78,8 @@ void SetOffSignal(int signal)
 {
 	InterlockedExchange(&offSignalInterop, static_cast<LONG>(signal));
 	offSignal.store(signal, std::memory_order_release);
+	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
+	Inkeys::UI::RenderScheduler::GetScheduler().WakeForStop();
 }
 
 LONG* GetOffSignalInteropPointer()

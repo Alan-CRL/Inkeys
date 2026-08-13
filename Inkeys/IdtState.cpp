@@ -353,14 +353,14 @@ bool ChangeStateModeToTouchTest()
 // 状态监测
 void StateMonitoring()
 {
-	// 监测代码暂时不加入安全退出
-
 	chrono::high_resolution_clock::time_point StateMonitoringManipulated = chrono::high_resolution_clock::now();
 	while (!offSignal)
 	{
 		if (penetrate.select)
 		{
-			while (penetrate.select) this_thread::sleep_for(chrono::milliseconds(100));
+			// 穿透状态可以跨越程序退出，内层等待也必须可中断。
+			while (!offSignal && penetrate.select)
+				this_thread::sleep_for(chrono::milliseconds(100));
 			StateMonitoringManipulated = chrono::high_resolution_clock::now();
 		}
 
