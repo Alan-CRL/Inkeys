@@ -5432,7 +5432,6 @@ double BarUISetClass::Seek(const ExMessage& msg)
 				lock_guard lock(directWindowDragMutex);
 				directWindowDragActive.store(false, memory_order_release);
 			}
-			directWindowDragCondition.notify_all();
 		};
 
 	// HWND 对应当前已显示位置；从 val 起算可避免打断旧动画时跳到尚未呈现的 tar。
@@ -5509,6 +5508,8 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		if (!GetCursorPos(&point))
 		{
 			FinishDirectWindowDrag();
+			// 直移已经暂停过 Bar 客户端，早退也必须重新请求一次完整呈现。
+			if (!offSignal) UpdateRendering(false);
 			return 0;
 		}
 		double startX = static_cast<double>(point.x);

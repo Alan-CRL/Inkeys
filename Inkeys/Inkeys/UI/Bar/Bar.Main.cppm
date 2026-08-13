@@ -4,7 +4,6 @@ module;
 
 #include "../../../IdtD2DPreparation.h"
 #include <array>
-#include <condition_variable>
 #include <cstdint>
 
 export module Inkeys.UI.Bar:Main;
@@ -319,7 +318,6 @@ protected:
 
 	// ULW 与主按钮直移共用同一几何锁，拖动期间 HWND 只移动、不重绘或改尺寸。
 	mutex directWindowDragMutex;
-	condition_variable directWindowDragCondition;
 	atomic<bool> directWindowDragActive = false;
 	RECT committedWindowScreenBounds{};
 	bool committedWindowScreenBoundsReady = false;

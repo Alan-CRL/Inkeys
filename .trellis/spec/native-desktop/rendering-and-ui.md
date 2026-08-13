@@ -142,6 +142,7 @@ void Scheduler::Run(const std::function<bool()>& shouldStop);
 - `Unregister` 返回前必须等待该客户端正在执行的回调退出。不得从客户端自己的回调内注销自身；释放 per-window target/context 前必须先同步注销。
 - 单窗 `D2DERR_RECREATE_TARGET`、ULW 或资源创建失败返回 `Retry` 并仅丢弃该窗 target。`DXGI_ERROR_DEVICE_REMOVED/RESET/DRIVER_INTERNAL_ERROR` 返回 `DeviceLost`，共享 device epoch 只能由唯一调度线程切换。
 - 所有客户端共享 D3D11/D2D device，但各自持有 device context、target bitmap、GDI interop 和 ULW 状态。COM、配置写盘、模态确认或其他可能阻塞的业务回调必须投递到业务线程，不能在调度回调内直接执行。
+- 主按钮直拖激活时，Bar 回调必须返回 `Idle`，不能用条件变量阻塞共享调度线程；直接 `SetWindowPos` 与 ULW 提交必须持有同一几何锁。清除直拖状态的每条退出路径都必须重新 `Request(Client::Bar)`，使 Bar 完整呈现一次并恢复正常续帧。
 
 #### 4. Validation & Error Matrix
 
@@ -154,7 +155,7 @@ void Scheduler::Run(const std::function<bool()>& shouldStop);
 | 共享 device 丢失 | 唯一线程恢复 device epoch，随后所有已注册客户端重建自己的 target |
 | 请求落在 idle reset/wait 边界 | event 或二次 `TakeRequested` 至少有一路保留请求 |
 | 注销时回调仍在执行 | `Unregister` 阻塞到回调退出，再允许释放资源 |
-| Bar HWND 直移 | Bar 返回 idle/暂停；PPT 请求仍可被同一调度器处理 |
+| Bar HWND 直移 | Bar 返回 `Idle` 且不阻塞共享线程；PPT 请求继续处理，退出直拖后重新请求 Bar 完整呈现 |
 
 #### 5. Good / Base / Bad Cases
 
