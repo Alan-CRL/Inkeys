@@ -723,8 +723,9 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - 接续惯性时应用层旧速度在约 `120ms` 内与新手势位移混合：同向叠加，反向先制动再反向，合速度钳制到 `24000 DIP/s`。新手势立即停止旧惯性步进并保存残余速度；抓取、混合和反向均由同一个应用层状态机拥有。
 - Windows Tablet/RTS 在活动多 Touch 批次中不保证交付后来加入的 Pen contact；本机 Windows 11 ARM64 实测双 Touch 均持续收到 RTS Packets，但随后 Pen 没有任何 RTS `StylusDown/Packets/StylusUp`，只有独立 `WM_POINTER` 触觉/光标事件。活动 Touch 跟手平移期间的 Pen contact 因此锁存为 suppressed-until-up：不刹停、不绘制、不发布接触光标、不预启动触觉，也不能在 Touch 抬起后的惯性阶段补画。Pen 抬起后，惯性阶段重新产生的新 Pen Down 才可抢占；Pen hover 仍只在惯性中提高减速度。Mouse contact 仍可立即抢占。
 - 窗口 Pen/Mouse mailbox 必须在导航推进和 viewport tile 恢复前读取。活动 Touch 跟手时 Pen mailbox 只开始/维持 suppression；惯性阶段确认可抢占 contact 后，先排空已发布 Down、创建 runtime 并固定 viewport，再执行本帧导航/恢复。若 RTS Pen Down 曾到达，轻量 contact 消费 Up/Cancelled 后记录终态 QPC，并忽略 `sample.qpc <= terminal.qpc` 的陈旧 Pointer contact；更晚的新 Down 可正常抢占。完全没有 RTS Pen contact 的 Pointer-only 情况只能等待 mailbox 变为非 contact 或离屏后解除，防止旧样本在惯性中误刹停。
-- `CanvasPanMotionState` 是手势、估速和惯性的唯一权威；生产路径不得再引入 `IManipulationProcessor`、`IInertiaProcessor` 或与应用状态机并行的系统速度真值。惯性按真实绘制帧 QPC 间隔、`DIP/s^2` 线性减速度和梯形积分推进：普通滑行为 `4000`，Pen hover 或惯性候选超时为 `12000`；单步时间限制为 `50ms`，避免调度长停顿产生位移尖峰。
-- 触点拓扑变化必须清空旧拟合窗口并以当前 centroid 重建零点，同时保留此前锁存速度；不得把不同触点集合的中心串进同一速度拟合。首指 Down 开始的新零 Touch 批次必须显式重置旧批次的中断和超时资格。
+- `CanvasPanMotionState` 是手势、估速和惯性的唯一权威；生产路径不得再引入 `IManipulationProcessor`、`IInertiaProcessor` 或与应用状态机并行的系统速度真值。惯性按真实绘制帧 QPC 间隔、`DIP/s^2` 线性减速度和梯形积分推进：普通滑行为 `6000`，Pen hover 或惯性候选超时为 `12000`；单步时间限制为 `50ms`，避免调度长停顿产生位移尖峰。
+- 新 Touch Down 出队时，旧首指可能已在合并 mailbox 中发布 `Up/Cancelled`，但导航循环尚未消费。若当前不是活动 Pan，且旧终态 QPC 不晚于新 Down，必须先只调用 `CanvasTouchGestureState::OnTouchUp` 退休旧批次资格；不得提前回收 contact、跳过 Stored 收尾或让新批次取消旧笔画。
+- Pan 开始、额外触点加入以及触点移除后，都必须从同一组 snapshot 重建 `previousPanCentroid` 与每个剩余触点的 `velocityPosition`；`ResetCanvasPanVelocitySamples` 的 QPC 不得早于 `CanvasPanMotionState::lastUpdateQpc`。只重建几何中心会把拓扑跳变误算成速度尖峰。首指 Down 开始的新零 Touch 批次必须显式重置旧批次的中断和超时资格。
 - 视口硬限位以 `double` 候选原点直接比较 `+/-1048576 DIP`；只有候选真实越界才报告 clamp 并清零该轴速度。禁止通过 float 应用前后差值反推 clamp，远端 viewport 的量化误差不是撞边。
 - Pen mailbox 仍用于活动 Touch 平移中的 suppression 和惯性 hover 制动。Mouse mailbox 不得作为导航抢占真值，因为系统可能把 Touch 提升为 Mouse；只有从 contact coordinator 出队的真实 Mouse Down 才可抢占。
 - 页面切换、Undo、Resize 和键盘平移先终止手势/惯性。每个 Page/Device Canvas 保存自己的 viewport；切页恢复目标 viewport，只保存位置不保存速度。Undo 只改变当前页 RenderItem visibility，不能移动当前 viewport，离屏内容仍按 Canvas-local tile 恢复。
@@ -755,7 +756,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 ### 5. Good / Base / Bad Cases
 
-- Good：普通 `3200 DIP/s` 甩动按 `4000 DIP/s^2` 约滑行 `0.8s / 1280 DIP`；快速同向反复滑动即使残余速度较小也能继承并增速；反向滑动先消耗旧速度；活动跟手中的 Pen 不打断，抬笔后惯性中的新 Pen 靠近时按 `12000 DIP/s^2` 快速减弱并在落笔前固定 viewport。
+- Good：普通 `3200 DIP/s` 甩动按 `6000 DIP/s^2` 约滑行 `0.53s / 853 DIP`；快速同向反复滑动即使残余速度较小也能继承并增速；反向滑动先消耗旧速度；活动跟手中的 Pen 不打断且不会留下接触起点光标，抬笔后惯性中的新 Pen 靠近时按 `12000 DIP/s^2` 快速减弱并在落笔前固定 viewport。
 - Base：方向键一次移动内容 64 DIP；切到另一页恢复该页上次 viewport；负坐标 Stroke 由有符号 tile 正确显示和撤回。
 - Bad：用处理时刻而非 contact QPC 判定 180ms 或释放速度时效、用单个 `delta/dt` 或 Up 终态估速、跨触点拓扑拟合、每个渲染帧用零位移刷新速度、用 float 应用差值反推 clamp、只用 mailbox 刹停却把真实 Down 留到 tile 恢复之后、把 viewport 写入 raster key，或用模糊快照覆盖未知区域。
 

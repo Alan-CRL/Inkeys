@@ -33,6 +33,8 @@ Win32 window message
 - 不在窗口回调中直接操作 `InkRenderer` 或交换链。
 - RTS 多点同时检查 HWND Tablet Pen Service 属性、`WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回值和 `IRealTimeStylus3`；不能只验证 COM 初始化成功。
 - 输入被手势状态机抑制时，沿 `RTS contact -> DrawingController -> WM_POINTER cursor/haptics` 检查所有副作用；“不产生 Stored Stroke”不等于已抑制接触光标、系统光标决策和触觉预启动。跨线程抑制需锁存到对应设备终态，并覆盖 Pointer 与 RTS 任一路径缺失的设备。
+- contact Down 的队列顺序与已有 contact 的合并 snapshot 是两条时间线；处理新 Down 前检查旧单指是否已在 mailbox 发布较早的 `Up/Cancelled`，只退休手势归属，不能跳过旧笔画正常收尾。
+- 平移触点拓扑变化时同时核对几何 centroid、每指估速位置和 QPC 零点；只重建其中一项会把触点加入/移除误算成速度尖峰。
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 

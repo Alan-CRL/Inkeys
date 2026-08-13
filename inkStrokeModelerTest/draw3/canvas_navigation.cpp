@@ -283,6 +283,12 @@ namespace draw3
 			}));
 	}
 
+	bool CanvasTouchGestureState::HasContact(uint64_t contactKey) const noexcept
+	{
+		return std::any_of(contacts_.begin(), contacts_.end(),
+			[contactKey](const ContactState& item) { return item.key == contactKey; });
+	}
+
 	CanvasTouchDisposition CanvasTouchGestureState::Disposition(uint64_t contactKey) const noexcept
 	{
 		const auto iterator = std::find_if(contacts_.begin(), contacts_.end(),
@@ -307,7 +313,8 @@ namespace draw3
 		int64_t inputQpc) noexcept
 	{
 		const int64_t lastVelocitySampleQpc = motion.lastVelocitySampleQpc;
-		ResetVelocitySamples(motion, inputQpc);
+		// 拓扑终态可能晚于旧 Up 被消费，估速时间基准不得倒退。
+		ResetVelocitySamples(motion, (std::max)(inputQpc, motion.lastUpdateQpc));
 		motion.directVelocity = motion.velocity;
 		motion.lastVelocitySampleQpc = lastVelocitySampleQpc;
 		motion.inheritedVelocity = {};
@@ -329,8 +336,10 @@ namespace draw3
 		{
 			if (motion.velocitySampleCount == 0)
 				ResetVelocitySamples(motion, inputQpc);
-			else
+			else if (inputQpc > motion.velocitySamples[
+				motion.velocitySampleCount - 1].qpc)
 			{
+				// 倒序 QPC 仍允许几何跟手，但不能污染累计位移和释放速度。
 				motion.samplePositionX += static_cast<double>(velocityDelta.x);
 				motion.samplePositionY += static_cast<double>(velocityDelta.y);
 				AppendVelocitySample(motion, inputQpc, qpcFrequency);

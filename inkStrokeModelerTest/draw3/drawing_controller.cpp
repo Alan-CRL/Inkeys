@@ -1611,12 +1611,24 @@ namespace draw3
 				hasLiveSuppressedPenContact());
 		};
 
+		auto runtimeContactPhysicallyLive = [&](const RuntimeStroke& runtime) noexcept
+		{
+			ContactSnapshot latest = runtime.lastInputSnapshot;
+			input_.TryReadSnapshot(runtime.handle, latest);
+			return latest.phase != ContactPhase::Up &&
+				latest.phase != ContactPhase::Cancelled;
+		};
+
 		auto cancelTouchDrawingForPan = [&]()
 		{
 			for (RuntimeStroke* runtime : active)
 			{
 				if (!runtime || runtime->ended ||
-					runtime->metricDeviceType != InputDeviceType::Touch) continue;
+					runtime->metricDeviceType != InputDeviceType::Touch ||
+					!touchGesture.HasContact(runtime->touchGestureKey) ||
+					touchGesture.Disposition(runtime->touchGestureKey) !=
+						CanvasTouchDisposition::Pan ||
+					!runtimeContactPhysicallyLive(*runtime)) continue;
 				addGestureContact(runtime->handle, CanvasTouchDisposition::Pan);
 				runtime->handle = {}; // gesture runtime 接管 handle，直到真实 Up 才回收。
 				runtime->ended = true;
@@ -1641,6 +1653,65 @@ namespace draw3
 			laserParticleDirtyTracker.Clear();
 			viewportRefreshPending = true;
 			viewportRefreshClearsTransient = true;
+		};
+
+		auto rebuildPanContactBaseline = [&](int64_t inputQpc,
+			bool resetVelocitySamples)
+		{
+			previousPanCentroid = {};
+			previousPanContactCount = 0;
+			for (CanvasGestureContactRuntime& contact : gestureContacts)
+			{
+				if (touchGesture.Disposition(contact.key) !=
+					CanvasTouchDisposition::Pan) continue;
+				// 触点拓扑变化时，位置中心和估速中心必须从同一快照重新起步。
+				contact.velocityPosition = contact.snapshot.position;
+				previousPanCentroid.x += contact.snapshot.position.x;
+				previousPanCentroid.y += contact.snapshot.position.y;
+				++previousPanContactCount;
+			}
+			panCentroidValid = previousPanContactCount > 0;
+			if (panCentroidValid)
+			{
+				previousPanCentroid.x /= static_cast<float>(previousPanContactCount);
+				previousPanCentroid.y /= static_cast<float>(previousPanContactCount);
+				if (resetVelocitySamples)
+					ResetCanvasPanVelocitySamples(panMotion,
+						(std::max)(inputQpc, panMotion.lastUpdateQpc));
+			}
+		};
+
+		auto retireEndedTouchBeforeDown = [&](int64_t downQpc)
+		{
+			if (touchGesture.PanActive() || touchGesture.ContactCount() != 1) return;
+			auto retire = [&](uint64_t key, ContactHandle handle,
+				ContactSnapshot fallback) -> bool
+				{
+				if (key == 0 || !touchGesture.HasContact(key)) return false;
+				ContactSnapshot latest = fallback;
+				input_.TryReadSnapshot(handle, latest);
+				if ((latest.phase != ContactPhase::Up &&
+					latest.phase != ContactPhase::Cancelled) ||
+					latest.qpc > downQpc) return false;
+				touchGesture.OnTouchUp(key);
+				LogCanvasPan("touch-retire-before-down key=%llu terminal-qpc=%lld down-qpc=%lld",
+					static_cast<unsigned long long>(key),
+					static_cast<long long>(latest.qpc),
+					static_cast<long long>(downQpc));
+				return true;
+			};
+			for (const CanvasGestureContactRuntime& contact : gestureContacts)
+			{
+				if (!contact.handle.record || contact.handle.record->DeviceType() !=
+					InputDeviceType::Touch) continue;
+				if (retire(contact.key, contact.handle, contact.snapshot)) return;
+			}
+			for (const RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->metricDeviceType != InputDeviceType::Touch) continue;
+				if (retire(runtime->touchGestureKey, runtime->handle,
+					runtime->lastInputSnapshot)) return;
+			}
 		};
 
 		auto interruptNavigationForPenOrMouse = [&](const char* reason)
@@ -1710,6 +1781,8 @@ namespace draw3
 				}
 				else if (deviceType == InputDeviceType::Touch)
 				{
+					// 新 Down 可能先于旧 Up 的导航消费到达；先退休已物理结束的旧批次。
+					retireEndedTouchBeforeDown(down.qpc);
 					const bool blockingContactActive = std::any_of(
 						active.begin(), active.end(), [](const RuntimeStroke* runtime)
 						{
@@ -1754,30 +1827,14 @@ namespace draw3
 							lastPanInputQpc = down.qpc;
 							if (touchDecision.cancelExistingTouchDrawing)
 								cancelTouchDrawingForPan();
-							previousPanCentroid = {};
-							previousPanContactCount = 0;
-							for (const CanvasGestureContactRuntime& contact : gestureContacts)
-							{
-								if (touchGesture.Disposition(contact.key) !=
-									CanvasTouchDisposition::Pan) continue;
-								previousPanCentroid.x += contact.snapshot.position.x;
-								previousPanCentroid.y += contact.snapshot.position.y;
-								++previousPanContactCount;
-							}
-							panCentroidValid = previousPanContactCount > 0;
+							rebuildPanContactBaseline(down.qpc, false);
 							nextPanMoveDiagnosticQpc = down.qpc;
 							inertiaFirstStepDiagnosticPending = false;
 							inertiaBrakeStateValid = false;
-							if (panCentroidValid)
-							{
-								previousPanCentroid.x /= static_cast<float>(previousPanContactCount);
-								previousPanCentroid.y /= static_cast<float>(previousPanContactCount);
-							}
 						}
 						else if (touchDecision.joinedExistingPan)
 						{
-							panCentroidValid = false;
-							ResetCanvasPanVelocitySamples(panMotion, down.qpc);
+							rebuildPanContactBaseline(down.qpc, true);
 						}
 						return true;
 					}
@@ -1787,7 +1844,8 @@ namespace draw3
 				bool hasActiveLaserTouchContact = false;
 				for (RuntimeStroke* activeRuntime : active)
 				{
-					if (activeRuntime && !activeRuntime->ended && !activeRuntime->awaitingReconnect)
+					if (activeRuntime && !activeRuntime->ended && !activeRuntime->awaitingReconnect &&
+						runtimeContactPhysicallyLive(*activeRuntime))
 					{
 						if (!hasActiveBatchContact)
 							batchTool = activeRuntime->selectedTool; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
@@ -2531,7 +2589,10 @@ namespace draw3
 				suppressedPenTerminalQpc);
 			if (ShouldBeginSuppressingPenContactDuringTouchPan(
 				touchGesture.PanActive(), penInContact))
+			{
 				suppressPenUntilRelease = true;
+				window_.SuppressPenContactForTouchPan();
+			}
 			else if (suppressPenUntilRelease && !penInContact &&
 				!hasLiveSuppressedPenContact())
 				suppressPenUntilRelease = false;
@@ -2705,23 +2766,8 @@ namespace draw3
 
 			if (touchGesture.PanActive() && topologyChanged)
 			{
-				previousPanCentroid = {};
-				previousPanContactCount = 0;
-				for (const CanvasGestureContactRuntime& contact : gestureContacts)
-				{
-					if (touchGesture.Disposition(contact.key) != CanvasTouchDisposition::Pan)
-						continue;
-					previousPanCentroid.x += contact.snapshot.position.x;
-					previousPanCentroid.y += contact.snapshot.position.y;
-					++previousPanContactCount;
-				}
-				panCentroidValid = previousPanContactCount > 0;
-				if (panCentroidValid)
-				{
-					previousPanCentroid.x /= static_cast<float>(previousPanContactCount);
-					previousPanCentroid.y /= static_cast<float>(previousPanContactCount);
-					ResetCanvasPanVelocitySamples(panMotion, panReleaseQpc);
-				}
+				rebuildPanContactBaseline((std::max)(panReleaseQpc,
+					newestPanPositionQpc), true);
 			}
 
 			else if (panMotion.inertiaActive)
@@ -3351,7 +3397,10 @@ namespace draw3
 					priorityPenSample.qpc, suppressedPenTerminalQpc);
 			if (ShouldBeginSuppressingPenContactDuringTouchPan(
 				touchGesture.PanActive(), priorityPenInContact))
+			{
 				suppressPenUntilRelease = true;
+				window_.SuppressPenContactForTouchPan();
+			}
 			else if (suppressPenUntilRelease && !priorityPenInContact &&
 				!hasLiveSuppressedPenContact())
 				suppressPenUntilRelease = false;

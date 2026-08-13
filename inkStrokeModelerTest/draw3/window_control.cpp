@@ -476,6 +476,20 @@ namespace draw3
 		RequestControlWake();
 	}
 
+	void WindowController::SuppressPenContactForTouchPan() noexcept
+	{
+		SetPenContactSuppressedForTouchPan(true);
+		hapticPointerIdRequested_.store(false, std::memory_order_release);
+		hapticPointerLeaveRequested_.store(true, std::memory_order_release);
+		pendingHapticPointerId_.store(0, std::memory_order_relaxed);
+		pendingHapticPointerEraser_.store(false, std::memory_order_relaxed);
+		penCursorSample_.Clear();
+		// suppression 已锁存时也要清掉本帧刚到达的接触起点。
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+		RequestControlWake();
+	}
+
 	bool WindowController::PenContactSuppressedForTouchPan() const noexcept
 	{
 		return penContactSuppressedForTouchPan_.load(std::memory_order_acquire);

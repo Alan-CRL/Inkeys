@@ -113,6 +113,8 @@ export namespace draw3
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
 		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
 		void SetTouchPanActive(bool active) noexcept;
+		// 活动平移观察到 Pen contact 时立即锁存抑制并清除旧光标/触觉状态。
+		void SuppressPenContactForTouchPan() noexcept;
 		bool PenContactSuppressedForTouchPan() const noexcept;
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;

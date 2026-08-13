@@ -537,6 +537,26 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"inertia-first-step engine=application"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "inertia-brake active="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"touch-retire-before-down"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"contact.velocityPosition = contact.snapshot.position"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"!touchGesture.HasContact(runtime->touchGestureKey)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"touchGesture.Disposition(runtime->touchGestureKey) !="));
+		const std::string suppressionCall = "window_.SuppressPenContactForTouchPan()";
+		const size_t firstSuppressionCall = controllerText.find(suppressionCall);
+		LASER_INCREMENTAL_CHECK(firstSuppressionCall != std::string::npos);
+		LASER_INCREMENTAL_CHECK(controllerText.find(
+			suppressionCall, firstSuppressionCall + suppressionCall.size()) !=
+			std::string::npos);
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"void WindowController::SuppressPenContactForTouchPan() noexcept"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"pendingHapticPointerId_.store(0"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"penCursorSample_.Clear()"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IManipulationProcessor"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IInertiaProcessor"));
 	}

@@ -19,7 +19,7 @@ export namespace draw3
 	inline constexpr float kCanvasPanKeyboardStepDip = 64.0f;
 	inline constexpr float kCanvasViewportLimitDip = 1048576.0f;
 	inline constexpr float kCanvasPanMaximumSpeedDipPerSecond = 24000.0f;
-	inline constexpr float kCanvasPanInertiaDecelerationDipPerSecondSquared = 4000.0f;
+	inline constexpr float kCanvasPanInertiaDecelerationDipPerSecondSquared = 6000.0f;
 	inline constexpr float kCanvasPanPenBrakeDecelerationDipPerSecondSquared = 12000.0f;
 	inline constexpr float kCanvasPanSharpSpeedThresholdDipPerSecond = 300.0f;
 	inline constexpr float kCanvasPanMaximumFallbackBlurDip = 12.0f;
@@ -87,6 +87,7 @@ export namespace draw3
 		size_t ContactCount() const noexcept;
 		int64_t FirstDownQpc() const noexcept;
 		size_t GestureContactCount() const noexcept;
+		bool HasContact(uint64_t contactKey) const noexcept;
 		CanvasTouchDisposition Disposition(uint64_t contactKey) const noexcept;
 
 	private:

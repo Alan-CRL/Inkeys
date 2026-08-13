@@ -73,11 +73,15 @@ int RunCanvasNavigationTests()
 	first = gesture.OnTouchDown(21, 3000, 1000, true, false);
 	CANVAS_NAVIGATION_CHECK(first.disposition == draw3::CanvasTouchDisposition::PanCandidate);
 	gesture.Update(3181, 1000);
+	CANVAS_NAVIGATION_CHECK(gesture.HasContact(21));
 	CANVAS_NAVIGATION_CHECK(gesture.Disposition(21) ==
 		draw3::CanvasTouchDisposition::Suppressed);
 	CANVAS_NAVIGATION_CHECK(gesture.InertiaBrakeRequested());
 	late = gesture.OnTouchDown(22, 3200, 1000, true, false);
 	CANVAS_NAVIGATION_CHECK(late.disposition == draw3::CanvasTouchDisposition::Draw);
+	CANVAS_NAVIGATION_CHECK(!gesture.HasContact(999));
+	gesture.OnTouchUp(21);
+	CANVAS_NAVIGATION_CHECK(!gesture.HasContact(21));
 	gesture.Reset();
 	first = gesture.OnTouchDown(23, 3300, 1000, true, false);
 	gesture.Update(3481, 1000);
@@ -178,6 +182,10 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.y == 0.0f);
 	const int64_t stableSampleQpc = sampledMotion.lastVelocitySampleQpc;
+	const int64_t stableUpdateQpc = sampledMotion.lastUpdateQpc;
+	draw3::ResetCanvasPanVelocitySamples(sampledMotion, stableUpdateQpc - 1);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.lastUpdateQpc == stableUpdateQpc);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocitySamples[0].qpc == stableUpdateQpc);
 	draw3::ResetCanvasPanVelocitySamples(sampledMotion, 4070);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == stableSampleQpc);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
@@ -204,7 +212,7 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(!std::isfinite(draw3::CanvasPanReleaseAgeSeconds(
 		900, 1000, 1000, false)));
 	CANVAS_NAVIGATION_CHECK(
-		draw3::kCanvasPanInertiaDecelerationDipPerSecondSquared == 4000.0f);
+		draw3::kCanvasPanInertiaDecelerationDipPerSecondSquared == 6000.0f);
 	CANVAS_NAVIGATION_CHECK(
 		draw3::kCanvasPanPenBrakeDecelerationDipPerSecondSquared == 12000.0f);
 	draw3::CanvasPanMotionState travelMotion;
