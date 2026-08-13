@@ -26,7 +26,6 @@ namespace draw3
 {
 	namespace
 	{
-#if defined(_DEBUG)
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
 			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE); // 缓存控制台句柄，减少每帧日志开销。
@@ -37,7 +36,6 @@ namespace draw3
 				WriteFile(consoleHandle, text, length, &written, nullptr); // 输出被重定向时 WriteConsoleA 会失败，改用 WriteFile。
 			}
 		}
-#endif
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		constexpr size_t kRtsTraceContactCapacity = 32;
@@ -516,6 +514,29 @@ namespace draw3
 		(void)previousFrameMs;
 		(void)idleFrozen;
 #endif
+	}
+
+	void LogCanvasPan(const char* format, ...) noexcept
+	{
+		if (!format) return;
+		char buffer[768] = {};
+		constexpr char prefix[] = "[CanvasPan] ";
+		std::memcpy(buffer, prefix, sizeof(prefix) - 1);
+		va_list arguments;
+		va_start(arguments, format);
+		constexpr size_t prefixLength = sizeof(prefix) - 1;
+		constexpr size_t bodyCapacity = sizeof(buffer) - prefixLength - 3;
+		const int bodyLength = std::vsnprintf(buffer + prefixLength,
+			bodyCapacity + 1, format, arguments);
+		va_end(arguments);
+		if (bodyLength < 0) return;
+		const size_t used = prefixLength + (std::min)(
+			bodyCapacity, static_cast<size_t>(bodyLength));
+		buffer[used] = '\r';
+		buffer[used + 1] = '\n';
+		buffer[used + 2] = '\0';
+		WriteFastConsoleLine(buffer, static_cast<DWORD>(used + 2));
+		OutputDebugStringA(buffer);
 	}
 
 	void LogHResult(const char* step, HRESULT result)

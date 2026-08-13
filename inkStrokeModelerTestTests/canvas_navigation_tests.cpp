@@ -29,6 +29,17 @@ int RunCanvasNavigationTests()
 	draw3::ApplyCanvasContentTranslation(viewport, { -3000000.0f, 3000000.0f });
 	CANVAS_NAVIGATION_CHECK(viewport.x == draw3::kCanvasViewportLimitDip);
 	CANVAS_NAVIGATION_CHECK(viewport.y == -draw3::kCanvasViewportLimitDip);
+	draw3::CanvasViewportState distantViewport{ 150000.0f, -275000.0f };
+	const draw3::CanvasContentTranslationResult distantTranslation =
+		draw3::ApplyCanvasContentTranslationChecked(
+			distantViewport, { -14.135f, -16.706f });
+	CANVAS_NAVIGATION_CHECK(!distantTranslation.xClamped);
+	CANVAS_NAVIGATION_CHECK(!distantTranslation.yClamped);
+	const draw3::CanvasContentTranslationResult hardLimitTranslation =
+		draw3::ApplyCanvasContentTranslationChecked(
+			distantViewport, { -3000000.0f, 0.0f });
+	CANVAS_NAVIGATION_CHECK(hardLimitTranslation.xClamped);
+	CANVAS_NAVIGATION_CHECK(!hardLimitTranslation.yClamped);
 
 	draw3::CanvasTouchGestureState gesture;
 	auto first = gesture.OnTouchDown(1, 1000, 1000, false, false);
@@ -74,6 +85,18 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(queuedWithinWindow.beginPan);
 	CANVAS_NAVIGATION_CHECK(!queuedWithinWindow.cancelExistingTouchDrawing);
 	gesture.Reset();
+	first = gesture.OnTouchDown(25, 3600, 1000, false, false);
+	auto reversedTimestamp = gesture.OnTouchDown(26, 3599, 1000, false, false);
+	CANVAS_NAVIGATION_CHECK(!reversedTimestamp.beginPan);
+	CANVAS_NAVIGATION_CHECK(reversedTimestamp.disposition ==
+		draw3::CanvasTouchDisposition::Draw);
+	gesture.Reset();
+	first = gesture.OnTouchDown(27, 3700, 0, false, false);
+	auto invalidFrequency = gesture.OnTouchDown(28, 3701, 0, false, false);
+	CANVAS_NAVIGATION_CHECK(!invalidFrequency.beginPan);
+	CANVAS_NAVIGATION_CHECK(invalidFrequency.disposition ==
+		draw3::CanvasTouchDisposition::Draw);
+	gesture.Reset();
 
 	first = gesture.OnTouchDown(31, 4000, 1000, true, false);
 	auto resumed = gesture.OnTouchDown(32, 4179, 1000, true, false);
@@ -97,24 +120,31 @@ int RunCanvasNavigationTests()
 		draw3::CanvasTouchDisposition::Suppressed);
 	CANVAS_NAVIGATION_CHECK(gesture.Disposition(52) ==
 		draw3::CanvasTouchDisposition::Suppressed);
+	gesture.OnTouchUp(51);
+	gesture.OnTouchUp(52);
+	first = gesture.OnTouchDown(53, 6200, 1000, false, false);
+	resumed = gesture.OnTouchDown(54, 6201, 1000, false, false);
+	CANVAS_NAVIGATION_CHECK(first.disposition == draw3::CanvasTouchDisposition::Draw);
+	CANVAS_NAVIGATION_CHECK(resumed.beginPan);
+	gesture.Reset();
 
 	draw3::CanvasPanMotionState motion;
 	motion.velocity = { 1000.0f, 0.0f };
 	motion.inertiaActive = true;
-	draw3::BeginCanvasPan(motion, true);
+	draw3::BeginCanvasPan(motion, true, 1000);
 	CANVAS_NAVIGATION_CHECK(!motion.inertiaActive);
 	CANVAS_NAVIGATION_CHECK(motion.inheritedVelocity.x == 1000.0f);
 	const draw3::CanvasVector blended = draw3::UpdateCanvasPan(
-		motion, { 10.0f, 0.0f }, 0.01);
+		motion, { 10.0f, 0.0f }, { 10.0f, 0.0f }, 1010, 1000);
 	CANVAS_NAVIGATION_CHECK(blended.x > 10.0f);
 	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(motion) <=
 		draw3::kCanvasPanMaximumSpeedDipPerSecond);
 	draw3::StopCanvasPan(motion);
 	motion.velocity = { 1000.0f, 0.0f };
 	motion.inertiaActive = true;
-	draw3::BeginCanvasPan(motion, true);
+	draw3::BeginCanvasPan(motion, true, 2000);
 	const draw3::CanvasVector reversed = draw3::UpdateCanvasPan(
-		motion, { -4.0f, 0.0f }, 0.01);
+		motion, { -4.0f, 0.0f }, { -4.0f, 0.0f }, 2010, 1000);
 	CANVAS_NAVIGATION_CHECK(reversed.x > -4.0f);
 	CANVAS_NAVIGATION_CHECK(motion.velocity.x > 0.0f);
 	draw3::EndCanvasPan(motion);
@@ -122,13 +152,42 @@ int RunCanvasNavigationTests()
 	draw3::CanvasPanMotionState lowResidualMotion;
 	lowResidualMotion.velocity = { 120.0f, 0.0f };
 	lowResidualMotion.inertiaActive = true;
-	draw3::BeginCanvasPan(lowResidualMotion, true);
+	draw3::BeginCanvasPan(lowResidualMotion, true, 3000);
 	const draw3::CanvasVector lowResidualBlend = draw3::UpdateCanvasPan(
-		lowResidualMotion, { 3.0f, 0.0f }, 0.01);
+		lowResidualMotion, { 3.0f, 0.0f }, { 3.0f, 0.0f }, 3010, 1000);
 	CANVAS_NAVIGATION_CHECK(lowResidualBlend.x > 3.0f);
 	CANVAS_NAVIGATION_CHECK(lowResidualMotion.velocity.x > 300.0f);
 	draw3::EndCanvasPan(lowResidualMotion, 0.0);
 	CANVAS_NAVIGATION_CHECK(lowResidualMotion.inertiaActive);
+	draw3::CanvasPanMotionState sampledMotion;
+	draw3::BeginCanvasPan(sampledMotion, false, 4000);
+	draw3::UpdateCanvasPan(sampledMotion,
+		{ 10.0f, 0.0f }, { 10.0f, 0.0f }, 4010, 1000);
+	draw3::UpdateCanvasPan(sampledMotion,
+		{ 20.0f, 0.0f }, { 20.0f, 0.0f }, 4030, 1000);
+	draw3::UpdateCanvasPan(sampledMotion,
+		{ 20.0f, 0.0f }, { 20.0f, 0.0f }, 4050, 1000);
+	const float stableVelocity = sampledMotion.velocity.x;
+	CANVAS_NAVIGATION_CHECK(std::abs(stableVelocity - 1000.0f) < 0.1f);
+	// 重复位置包和 Up 的终态跳变都不能覆盖已拟合的释放速度。
+	draw3::UpdateCanvasPan(sampledMotion, {}, {}, 4060, 1000, true);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
+	const draw3::CanvasVector terminalDelta = draw3::UpdateCanvasPan(sampledMotion,
+		{ 500.0f, -600.0f }, {}, 4061, 1000, false);
+	CANVAS_NAVIGATION_CHECK(terminalDelta.x == 500.0f && terminalDelta.y == -600.0f);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.y == 0.0f);
+	const int64_t stableSampleQpc = sampledMotion.lastVelocitySampleQpc;
+	draw3::ResetCanvasPanVelocitySamples(sampledMotion, 4070);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == stableSampleQpc);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
+	draw3::UpdateCanvasPan(sampledMotion,
+		{ -10.0f, 0.0f }, { -10.0f, 0.0f }, 4080, 1000);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x < 0.0f);
+	draw3::UpdateCanvasPan(sampledMotion,
+		{ -10.0f, 0.0f }, { -10.0f, 0.0f }, 4300, 1000);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocitySampleCount == 1);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == 0.0f);
 	draw3::CanvasPanMotionState staleReleaseMotion;
 	staleReleaseMotion.velocity = { 3200.0f, 0.0f };
 	draw3::EndCanvasPan(staleReleaseMotion,

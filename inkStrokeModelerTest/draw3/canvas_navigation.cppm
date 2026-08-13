@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <span>
 #include <vector>
@@ -13,6 +14,7 @@ export namespace draw3
 	inline constexpr double kCanvasPanGestureWindowSeconds = 0.180;
 	inline constexpr double kCanvasPanMomentumBlendSeconds = 0.120;
 	inline constexpr double kCanvasPanReleaseVelocityHorizonSeconds = 0.100;
+	inline constexpr size_t kCanvasPanVelocitySampleCapacity = 24;
 	inline constexpr double kCanvasPanPredictionSeconds = 0.150;
 	inline constexpr float kCanvasPanKeyboardStepDip = 64.0f;
 	inline constexpr float kCanvasViewportLimitDip = 1048576.0f;
@@ -34,8 +36,18 @@ export namespace draw3
 		float y = 0.0f;
 	};
 
+	struct CanvasContentTranslationResult
+	{
+		CanvasVector viewportDelta = {};
+		bool xClamped = false;
+		bool yClamped = false;
+	};
+
 	// 屏幕位移与 Canvas 原点方向相反；返回被范围保护后的实际原点位移。
 	CanvasVector ApplyCanvasContentTranslation(
+		CanvasViewportState& viewport, CanvasVector contentDelta) noexcept;
+	// 显式报告真正触及硬边界的轴，避免把远端 float 量化误差误判为限位。
+	CanvasContentTranslationResult ApplyCanvasContentTranslationChecked(
 		CanvasViewportState& viewport, CanvasVector contentDelta) noexcept;
 	CanvasVector ScreenToCanvas(CanvasVector screen, CanvasViewportState viewport) noexcept;
 	CanvasVector CanvasToScreen(CanvasVector canvas, CanvasViewportState viewport) noexcept;
@@ -71,6 +83,9 @@ export namespace draw3
 		// 惯性候选超时且首指仍按下时，请求快速制动但继续吞掉该指。
 		bool InertiaBrakeRequested() const noexcept;
 		bool BatchAllowsPan() const noexcept;
+		// 只供诊断读取当前批次，不改变手势归属。
+		size_t ContactCount() const noexcept;
+		int64_t FirstDownQpc() const noexcept;
 		size_t GestureContactCount() const noexcept;
 		CanvasTouchDisposition Disposition(uint64_t contactKey) const noexcept;
 
@@ -89,17 +104,39 @@ export namespace draw3
 		bool inertiaCandidate_ = false;
 	};
 
+	struct CanvasPanVelocitySample
+	{
+		int64_t qpc = 0;
+		double x = 0.0;
+		double y = 0.0;
+	};
+
 	struct CanvasPanMotionState
 	{
 		CanvasVector velocity = {};
+		CanvasVector directVelocity = {};
 		CanvasVector inheritedVelocity = {};
 		double inheritedBlendRemainingSeconds = 0.0;
+		double samplePositionX = 0.0;
+		double samplePositionY = 0.0;
+		int64_t lastUpdateQpc = 0;
+		int64_t lastVelocitySampleQpc = 0;
+		std::array<CanvasPanVelocitySample,
+			kCanvasPanVelocitySampleCapacity> velocitySamples = {};
+		size_t velocitySampleCount = 0;
 		bool inertiaActive = false;
 	};
 
-	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia) noexcept;
+	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia,
+		int64_t inputQpc = 0) noexcept;
+	// 触点数量变化时只重置估速基准，保留当前速度与残余动量。
+	void ResetCanvasPanVelocitySamples(CanvasPanMotionState& motion,
+		int64_t inputQpc = 0) noexcept;
+	// 只有真实 Move 可更新估速；Up 可提交最终位移，但不得污染释放速度。
 	CanvasVector UpdateCanvasPan(CanvasPanMotionState& motion,
-		CanvasVector contentDelta, double deltaSeconds) noexcept;
+		CanvasVector contentDelta, CanvasVector velocityDelta,
+		int64_t inputQpc, int64_t qpcFrequency,
+		bool updateVelocity = true) noexcept;
 	void SetCanvasPanVelocity(CanvasPanMotionState& motion, CanvasVector velocity) noexcept;
 	// 释放速度只比较输入事件时间，不能受绘制线程排队延迟影响。
 	double CanvasPanReleaseAgeSeconds(int64_t releaseQpc, int64_t lastInputQpc,

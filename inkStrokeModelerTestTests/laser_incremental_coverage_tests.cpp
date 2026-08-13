@@ -526,6 +526,19 @@ int RunLaserIncrementalCoverageTests()
 			"std::string result(static_cast<size_t>(requiredSize), '\\0')"));
 		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource,
 			"written != requiredSize"));
+		// 平移诊断保留关键判定字段，便于从现场日志区分手势超时和惯性瞬停。
+		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource, "[CanvasPan] "));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "within-180=%u"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "touch-window-expired"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"pan-release engine=application"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"velocity-sample=%u terminal-position=%u"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"inertia-first-step engine=application"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "inertia-brake active="));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IManipulationProcessor"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IInertiaProcessor"));
 	}
 
 	if (failures == 0)

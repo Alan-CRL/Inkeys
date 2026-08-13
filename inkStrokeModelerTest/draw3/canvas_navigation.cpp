@@ -31,20 +31,109 @@ namespace draw3
 			const float scale = kCanvasPanMaximumSpeedDipPerSecond / speed;
 			return { velocity.x * scale, velocity.y * scale };
 		}
+
+		void ResetVelocitySamples(CanvasPanMotionState& motion, int64_t inputQpc) noexcept
+		{
+			motion.samplePositionX = 0.0;
+			motion.samplePositionY = 0.0;
+			motion.lastUpdateQpc = inputQpc;
+			motion.lastVelocitySampleQpc = 0;
+			motion.velocitySampleCount = inputQpc > 0 ? 1 : 0;
+			if (motion.velocitySampleCount != 0)
+				motion.velocitySamples[0] = { inputQpc, 0.0, 0.0 };
+		}
+
+		void AppendVelocitySample(CanvasPanMotionState& motion,
+			int64_t inputQpc, int64_t qpcFrequency) noexcept
+		{
+			if (inputQpc <= 0 || qpcFrequency <= 0) return;
+			if (motion.velocitySampleCount != 0 &&
+				inputQpc <= motion.velocitySamples[motion.velocitySampleCount - 1].qpc) return;
+			if (motion.velocitySampleCount == motion.velocitySamples.size())
+			{
+				std::move(motion.velocitySamples.begin() + 1,
+					motion.velocitySamples.end(), motion.velocitySamples.begin());
+				--motion.velocitySampleCount;
+			}
+			motion.velocitySamples[motion.velocitySampleCount++] = {
+				inputQpc, motion.samplePositionX, motion.samplePositionY };
+			const int64_t horizonTicks = static_cast<int64_t>(
+				kCanvasPanReleaseVelocityHorizonSeconds * static_cast<double>(qpcFrequency));
+			while (motion.velocitySampleCount > 1 &&
+				inputQpc - motion.velocitySamples[0].qpc > horizonTicks)
+			{
+				std::move(motion.velocitySamples.begin() + 1,
+					motion.velocitySamples.begin() + motion.velocitySampleCount,
+					motion.velocitySamples.begin());
+				--motion.velocitySampleCount;
+			}
+		}
+
+		CanvasVector EstimateVelocity(const CanvasPanMotionState& motion,
+			int64_t qpcFrequency) noexcept
+		{
+			if (motion.velocitySampleCount < 2 || qpcFrequency <= 0) return {};
+			const int64_t newestQpc = motion.velocitySamples[
+				motion.velocitySampleCount - 1].qpc;
+			double sumTime = 0.0;
+			double sumTimeSquared = 0.0;
+			double sumX = 0.0;
+			double sumY = 0.0;
+			double sumTimeX = 0.0;
+			double sumTimeY = 0.0;
+			for (size_t index = 0; index < motion.velocitySampleCount; ++index)
+			{
+				const CanvasPanVelocitySample& sample = motion.velocitySamples[index];
+				const double time = static_cast<double>(sample.qpc - newestQpc) /
+					static_cast<double>(qpcFrequency);
+				sumTime += time;
+				sumTimeSquared += time * time;
+				sumX += sample.x;
+				sumY += sample.y;
+				sumTimeX += time * sample.x;
+				sumTimeY += time * sample.y;
+			}
+			const double count = static_cast<double>(motion.velocitySampleCount);
+			const double denominator = count * sumTimeSquared - sumTime * sumTime;
+			if (!std::isfinite(denominator) || denominator <= 1.0e-12) return {};
+			return ClampVelocity({
+				static_cast<float>((count * sumTimeX - sumTime * sumX) / denominator),
+				static_cast<float>((count * sumTimeY - sumTime * sumY) / denominator) });
+		}
 	}
 
-	CanvasVector ApplyCanvasContentTranslation(
+	CanvasContentTranslationResult ApplyCanvasContentTranslationChecked(
 		CanvasViewportState& viewport, CanvasVector contentDelta) noexcept
 	{
 		const float oldX = ClampFinite(viewport.x,
 			-kCanvasViewportLimitDip, kCanvasViewportLimitDip);
 		const float oldY = ClampFinite(viewport.y,
 			-kCanvasViewportLimitDip, kCanvasViewportLimitDip);
-		viewport.x = ClampFinite(oldX - contentDelta.x,
-			-kCanvasViewportLimitDip, kCanvasViewportLimitDip);
-		viewport.y = ClampFinite(oldY - contentDelta.y,
-			-kCanvasViewportLimitDip, kCanvasViewportLimitDip);
-		return { viewport.x - oldX, viewport.y - oldY };
+		const double requestedX = static_cast<double>(oldX) -
+			static_cast<double>(contentDelta.x);
+		const double requestedY = static_cast<double>(oldY) -
+			static_cast<double>(contentDelta.y);
+		const bool finiteX = std::isfinite(requestedX);
+		const bool finiteY = std::isfinite(requestedY);
+		viewport.x = static_cast<float>(std::clamp(finiteX ? requestedX : 0.0,
+			-static_cast<double>(kCanvasViewportLimitDip),
+			static_cast<double>(kCanvasViewportLimitDip)));
+		viewport.y = static_cast<float>(std::clamp(finiteY ? requestedY : 0.0,
+			-static_cast<double>(kCanvasViewportLimitDip),
+			static_cast<double>(kCanvasViewportLimitDip)));
+		return {
+			{ viewport.x - oldX, viewport.y - oldY },
+			!finiteX || requestedX < -static_cast<double>(kCanvasViewportLimitDip) ||
+				requestedX > static_cast<double>(kCanvasViewportLimitDip),
+			!finiteY || requestedY < -static_cast<double>(kCanvasViewportLimitDip) ||
+				requestedY > static_cast<double>(kCanvasViewportLimitDip)
+		};
+	}
+
+	CanvasVector ApplyCanvasContentTranslation(
+		CanvasViewportState& viewport, CanvasVector contentDelta) noexcept
+	{
+		return ApplyCanvasContentTranslationChecked(viewport, contentDelta).viewportDelta;
 	}
 
 	CanvasVector ScreenToCanvas(CanvasVector screen, CanvasViewportState viewport) noexcept
@@ -76,8 +165,9 @@ namespace draw3
 
 		if (contacts_.empty())
 		{
+			Reset(); // 新批次不能继承上一次中断或超时留下的资格位。
 			firstDownQpc_ = qpc;
-			batchStartedEligible_ = !blockingContactActive;
+			batchStartedEligible_ = !blockingContactActive && qpc > 0 && qpcFrequency > 0;
 			batchAllowsPan_ = batchStartedEligible_;
 			inertiaCandidate_ = inertiaActive && batchAllowsPan_;
 			decision.disposition = inertiaCandidate_
@@ -95,8 +185,12 @@ namespace draw3
 		}
 
 		const bool secondContact = contacts_.size() == 1;
-		const double gapSeconds = QpcSeconds(qpc, firstDownQpc_, qpcFrequency);
-		if (secondContact && batchStartedEligible_ &&
+		// QPC 无效或倒退时不能把 0 秒差误判为同一双指窗口。
+		const bool validGap = qpcFrequency > 0 && firstDownQpc_ > 0 &&
+			qpc >= firstDownQpc_;
+		const double gapSeconds = validGap
+			? QpcSeconds(qpc, firstDownQpc_, qpcFrequency) : 0.0;
+		if (secondContact && batchStartedEligible_ && validGap &&
 			gapSeconds <= kCanvasPanGestureWindowSeconds)
 		{
 			panActive_ = true;
@@ -176,6 +270,8 @@ namespace draw3
 			CanvasTouchDisposition::Suppressed;
 	}
 	bool CanvasTouchGestureState::BatchAllowsPan() const noexcept { return batchAllowsPan_; }
+	size_t CanvasTouchGestureState::ContactCount() const noexcept { return contacts_.size(); }
+	int64_t CanvasTouchGestureState::FirstDownQpc() const noexcept { return firstDownQpc_; }
 
 	size_t CanvasTouchGestureState::GestureContactCount() const noexcept
 	{
@@ -195,26 +291,55 @@ namespace draw3
 			? CanvasTouchDisposition::Suppressed : iterator->disposition;
 	}
 
-	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia) noexcept
+	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia,
+		int64_t inputQpc) noexcept
 	{
 		motion.inheritedVelocity = inheritInertia ? motion.velocity : CanvasVector{};
 		motion.inheritedBlendRemainingSeconds = inheritInertia
 			? kCanvasPanMomentumBlendSeconds : 0.0;
 		motion.inertiaActive = false;
+		motion.directVelocity = {};
 		if (!inheritInertia) motion.velocity = {};
+		ResetVelocitySamples(motion, inputQpc);
+	}
+
+	void ResetCanvasPanVelocitySamples(CanvasPanMotionState& motion,
+		int64_t inputQpc) noexcept
+	{
+		const int64_t lastVelocitySampleQpc = motion.lastVelocitySampleQpc;
+		ResetVelocitySamples(motion, inputQpc);
+		motion.directVelocity = motion.velocity;
+		motion.lastVelocitySampleQpc = lastVelocitySampleQpc;
+		motion.inheritedVelocity = {};
+		motion.inheritedBlendRemainingSeconds = 0.0;
 	}
 
 	CanvasVector UpdateCanvasPan(CanvasPanMotionState& motion,
-		CanvasVector contentDelta, double deltaSeconds) noexcept
+		CanvasVector contentDelta, CanvasVector velocityDelta,
+		int64_t inputQpc, int64_t qpcFrequency,
+		bool updateVelocity) noexcept
 	{
-		if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0) return contentDelta;
-		CanvasVector directVelocity = {
-			static_cast<float>(contentDelta.x / deltaSeconds),
-			static_cast<float>(contentDelta.y / deltaSeconds)
-		};
-		directVelocity = ClampVelocity(directVelocity);
+		if (!std::isfinite(contentDelta.x) || !std::isfinite(contentDelta.y) ||
+			!std::isfinite(velocityDelta.x) || !std::isfinite(velocityDelta.y)) return {};
+		const double deltaSeconds = QpcSeconds(inputQpc,
+			motion.lastUpdateQpc, qpcFrequency);
+		if (inputQpc > motion.lastUpdateQpc) motion.lastUpdateQpc = inputQpc;
+		const bool positionalMove = velocityDelta.x != 0.0f || velocityDelta.y != 0.0f;
+		if (updateVelocity && positionalMove && inputQpc > 0 && qpcFrequency > 0)
+		{
+			if (motion.velocitySampleCount == 0)
+				ResetVelocitySamples(motion, inputQpc);
+			else
+			{
+				motion.samplePositionX += static_cast<double>(velocityDelta.x);
+				motion.samplePositionY += static_cast<double>(velocityDelta.y);
+				AppendVelocitySample(motion, inputQpc, qpcFrequency);
+				motion.directVelocity = EstimateVelocity(motion, qpcFrequency);
+				motion.lastVelocitySampleQpc = inputQpc;
+			}
+		}
 		float inheritedWeight = 0.0f;
-		if (motion.inheritedBlendRemainingSeconds > 0.0)
+		if (motion.inheritedBlendRemainingSeconds > 0.0 && deltaSeconds > 0.0)
 		{
 			inheritedWeight = static_cast<float>(std::clamp(
 				motion.inheritedBlendRemainingSeconds / kCanvasPanMomentumBlendSeconds,
@@ -223,8 +348,8 @@ namespace draw3
 				0.0, motion.inheritedBlendRemainingSeconds - deltaSeconds);
 		}
 		motion.velocity = ClampVelocity({
-			directVelocity.x + motion.inheritedVelocity.x * inheritedWeight,
-			directVelocity.y + motion.inheritedVelocity.y * inheritedWeight
+			motion.directVelocity.x + motion.inheritedVelocity.x * inheritedWeight,
+			motion.directVelocity.y + motion.inheritedVelocity.y * inheritedWeight
 		});
 		return {
 			contentDelta.x + static_cast<float>(motion.inheritedVelocity.x *

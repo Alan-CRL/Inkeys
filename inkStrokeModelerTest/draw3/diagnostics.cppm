@@ -84,6 +84,8 @@ export namespace draw3
 	// Debug 限频输出墨迹建模和绘制耗时；Release 中为空操作。
 	void LogFrameTiming(size_t committedIndex, size_t realPointCount, size_t predictedPointCount,
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen);
+	// 输出带统一前缀的画布平移诊断；调用方负责只在关键状态或限频采样时调用。
+	void LogCanvasPan(const char* format, ...) noexcept;
 	// 输出 HRESULT 失败信息。
 	void LogHResult(const char* step, HRESULT result);
 	// 输出 Win32 错误码。
