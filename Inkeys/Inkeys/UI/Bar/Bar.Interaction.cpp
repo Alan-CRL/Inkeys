@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -229,10 +229,16 @@ bool IsBarCoordinateMessage(UINT message)
 	}
 }
 
-bool BarScreenToLayout(POINT& point)
+bool BarScreenToLayout(
+	POINT& point, bool preserveScreenDuringDirectDrag = false)
 {
+	POINT presentedTranslation{};
+	// WM_TOUCH 拖动采样保留物理屏幕坐标；其他命中和光源始终跟随实际 HWND。
+	presentedTranslation = barUISet.DirectWindowPresentedTranslation(
+		preserveScreenDuringDirectDrag);
 	point = Inkeys::UI::Bar::BarScreenToLayoutPoint(
-		point, POINT{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top });
+		point, POINT{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top },
+		presentedTranslation);
 	return true;
 }
 
@@ -618,7 +624,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 				pt.x = static_cast<LONG>(xO + 0.5);
 				pt.y = static_cast<LONG>(yO + 0.5);
-				BarScreenToLayout(pt);
+				BarScreenToLayout(pt, true);
 
 				if ((ti.dwFlags & TOUCHEVENTF_DOWN) && (isPrimaryTouch || canLockFallbackTouch))
 				{
@@ -5417,28 +5423,29 @@ double BarUISetClass::Seek(const ExMessage& msg)
 	double ret = 0.0;
 	double tarZoom = barStyle.zoom;
 	if (!isfinite(tarZoom) || tarZoom <= 0.0) return 0;
-	RECT initialWindowRect{};
+	// 吸收阶段不含 ULW；若恰好撞上，只等待这段极短的布局接管。
+	for (;;)
 	{
+		BarDirectWindowDragPhase expected = BarDirectWindowDragPhase::Idle;
+		if (directWindowDragPhase.compare_exchange_weak(
+			expected, BarDirectWindowDragPhase::Dragging,
+			memory_order_acq_rel, memory_order_acquire)) break;
+		if (expected == BarDirectWindowDragPhase::Dragging) return 0;
 		lock_guard lock(directWindowDragMutex);
-		if (committedWindowScreenBoundsReady)
-			initialWindowRect = committedWindowScreenBounds;
-		else if (!GetWindowRect(floating_window, &initialWindowRect))
-			return 0;
-		directWindowDragActive.store(true, memory_order_release);
 	}
 	auto FinishDirectWindowDrag = [&]()
 		{
-			{
-				lock_guard lock(directWindowDragMutex);
-				directWindowDragActive.store(false, memory_order_release);
-			}
+			directWindowDragPhase.store(
+				BarDirectWindowDragPhase::Idle, memory_order_release);
 		};
 
 	// HWND 对应当前已显示位置；从 val 起算可避免打断旧动画时跳到尚未呈现的 tar。
 	const double initialMainX = mainButton->x.val;
 	const double initialMainY = mainButton->y.val;
-	double appliedDeltaX = 0.0;
-	double appliedDeltaY = 0.0;
+	const LONG dragBaseX = directWindowDragTranslationX.load(memory_order_acquire);
+	const LONG dragBaseY = directWindowDragTranslationY.load(memory_order_acquire);
+	double appliedDeltaX = static_cast<double>(dragBaseX);
+	double appliedDeltaY = static_cast<double>(dragBaseY);
 	bool directMoveFailed = false;
 	auto ApplyPointerDelta = [&](double totalDeltaX, double totalDeltaY)
 		{
@@ -5454,26 +5461,65 @@ double BarUISetClass::Seek(const ExMessage& msg)
 			if (maxX < minX) maxX = minX;
 			if (maxY < minY) maxY = minY;
 
-			double nextX = clamp(initialMainX + totalDeltaX / tarZoom, minX, maxX);
-			double nextY = clamp(initialMainY + totalDeltaY / tarZoom, minY, maxY);
+			double nextX = clamp(initialMainX
+				+ (static_cast<double>(dragBaseX) + totalDeltaX) / tarZoom,
+				minX, maxX);
+			double nextY = clamp(initialMainY
+				+ (static_cast<double>(dragBaseY) + totalDeltaY) / tarZoom,
+				minY, maxY);
 			LONG pixelDeltaX = static_cast<LONG>(lround((nextX - initialMainX) * tarZoom));
 			LONG pixelDeltaY = static_cast<LONG>(lround((nextY - initialMainY) * tarZoom));
 			if (pixelDeltaX == static_cast<LONG>(lround(appliedDeltaX))
 				&& pixelDeltaY == static_cast<LONG>(lround(appliedDeltaY))) return false;
+			directWindowDragTranslationX.store(pixelDeltaX, memory_order_release);
+			directWindowDragTranslationY.store(pixelDeltaY, memory_order_release);
 			{
-				lock_guard lock(directWindowDragMutex);
-				if (!SetWindowPos(floating_window, nullptr,
-					initialWindowRect.left + pixelDeltaX,
-					initialWindowRect.top + pixelDeltaY, 0, 0,
-					SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE))
+				unique_lock lock(directWindowDragMutex, try_to_lock);
+				if (lock.owns_lock())
 				{
-					directMoveFailed = true;
-					return false;
+					RECT currentWindowRect{};
+					if (committedWindowScreenBoundsReady)
+						currentWindowRect = committedWindowScreenBounds;
+					else if (!GetWindowRect(floating_window, &currentWindowRect))
+					{
+						directMoveFailed = true;
+						return false;
+					}
+					const POINT desiredTranslation{
+						directWindowDragTranslationX.load(memory_order_acquire),
+						directWindowDragTranslationY.load(memory_order_acquire) };
+					const POINT presentedTranslation{
+						directWindowPresentedTranslationX.load(memory_order_acquire),
+						directWindowPresentedTranslationY.load(memory_order_acquire) };
+					const POINT moveDelta =
+						Inkeys::UI::Bar::ResolveBarDirectWindowMoveDelta(
+							desiredTranslation, presentedTranslation);
+					if ((moveDelta.x != 0 || moveDelta.y != 0)
+						&& !SetWindowPos(floating_window, nullptr,
+							currentWindowRect.left + moveDelta.x,
+							currentWindowRect.top + moveDelta.y, 0, 0,
+							SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE))
+					{
+						directWindowDragTranslationX.store(
+							static_cast<LONG>(lround(appliedDeltaX)), memory_order_release);
+						directWindowDragTranslationY.store(
+							static_cast<LONG>(lround(appliedDeltaY)), memory_order_release);
+						directMoveFailed = true;
+						return false;
+					}
+					if (moveDelta.x != 0 || moveDelta.y != 0)
+					{
+						committedWindowScreenBounds =
+							Inkeys::UI::Bar::TranslateBarWindowRect(
+								currentWindowRect, moveDelta);
+						committedWindowScreenBoundsReady = true;
+						directWindowPresentedTranslationX.store(
+							desiredTranslation.x, memory_order_release);
+						directWindowPresentedTranslationY.store(
+							desiredTranslation.y, memory_order_release);
+					}
 				}
-				committedWindowScreenBounds =
-					Inkeys::UI::Bar::TranslateBarWindowRect(
-					initialWindowRect, POINT{ pixelDeltaX, pixelDeltaY });
-				committedWindowScreenBoundsReady = true;
+				else UpdateRendering(false);
 			}
 			ret += hypot(static_cast<double>(pixelDeltaX) - appliedDeltaX,
 				static_cast<double>(pixelDeltaY) - appliedDeltaY);
@@ -5484,9 +5530,11 @@ double BarUISetClass::Seek(const ExMessage& msg)
 
 	if (touchGesture)
 	{
-		// WM_TOUCH 入队时已固化为 layout 坐标，HWND 直移不会改变手势增量。
-		double startX = static_cast<double>(msg.x);
-		double startY = static_cast<double>(msg.y);
+		// DOWN 在进入 Dragging 前已减去补偿，后续 MOVE 保留屏幕相对坐标。
+		double startX = static_cast<double>(msg.x
+			+ directWindowPresentedTranslationX.load(memory_order_acquire));
+		double startY = static_cast<double>(msg.y
+			+ directWindowPresentedTranslationY.load(memory_order_acquire));
 		ExMessage touchMessage = msg;
 		while (!offSignal && !directMoveFailed)
 		{
@@ -5526,12 +5574,8 @@ double BarUISetClass::Seek(const ExMessage& msg)
 				this_thread::sleep_for(chrono::milliseconds(15));
 		}
 	}
-	mainButton->x.SetDirect(initialMainX + appliedDeltaX / tarZoom);
-	mainButton->y.SetDirect(initialMainY + appliedDeltaY / tarZoom);
-	// 左右侧只在松手时提交；下一帧从新锚点一次重建布局和 viewport。
-	barState.PositionUpdate(tarZoom);
 	FinishDirectWindowDrag();
-	// 0 位移或首次直移失败也要唤醒一次 ULW，恢复拖动期间保留的完整呈现事务。
+	// 松手只发布接管请求；布局值由渲染线程吸收，避免和动画线程并发写对象。
 	if (!offSignal) UpdateRendering(false);
 	return ret;
 }

@@ -135,6 +135,22 @@ namespace
 			&& BarClientToLayoutPoint(expandedClient, expandedViewport).x == layout.x
 			&& BarClientToLayoutPoint(expandedClient, expandedViewport).y == layout.y,
 			"screen-derived layout input remains stable across viewport resize");
+
+		constexpr POINT directTranslation{ 180, -40 };
+		constexpr POINT translatedLayout = BarScreenToLayoutPoint(
+			screenPoint, monitorOrigin, directTranslation);
+		Check(translatedLayout.x == layout.x - directTranslation.x
+			&& translatedLayout.y == layout.y - directTranslation.y,
+			"unabsorbed direct-window movement preserves layout hit coordinates");
+		constexpr POINT followUpDelta = ResolveBarDirectWindowMoveDelta(
+			POINT{ 260, 20 }, directTranslation);
+		Check(followUpDelta.x == 80 && followUpDelta.y == 60,
+			"rapid drag appends only the translation not already presented");
+		constexpr POINT afterAbsorb =
+			ResolveBarDirectWindowTranslationAfterAbsorb(
+				POINT{ 180, -40 }, POINT{ 260, 20 });
+		Check(afterAbsorb.x == -80 && afterAbsorb.y == -60,
+			"layout absorption retains the HWND offset until the next ULW commit");
 	}
 
 	void TestBatchExpansionAndIdleShrink()

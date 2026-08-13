@@ -80,6 +80,25 @@ namespace Inkeys::UI::Bar
 			fullDamagePending_ = true;
 		}
 
+		void TranslateCommitted(POINT translation) noexcept
+		{
+			if (translation.x == 0 && translation.y == 0) return;
+			auto Translate = [&](RECT& value)
+				{
+					if (IsEmpty(value)) return;
+					value.left += translation.x;
+					value.right += translation.x;
+					value.top += translation.y;
+					value.bottom += translation.y;
+				};
+			Translate(pendingDamage_);
+			for (auto& [key, record] : visualRecords_)
+			{
+				if (record.hasCommittedBounds) Translate(record.committedBounds);
+				Translate(record.currentBounds);
+			}
+		}
+
 		[[nodiscard]] RECT ResolveDamage(bool requireFallback)
 		{
 			for (BarDirtyVisualKey key : changedKeys_)

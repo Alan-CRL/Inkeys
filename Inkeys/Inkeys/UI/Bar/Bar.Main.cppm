@@ -222,6 +222,13 @@ enum class BarBorderCursorTrackingStateEnum : int
 	Grace,
 };
 
+enum class BarDirectWindowDragPhase : std::uint8_t
+{
+	Idle,
+	Dragging,
+	Absorbing,
+};
+
 // UI 总集
 export class BarUISetClass
 {
@@ -277,6 +284,16 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	POINT DirectWindowPresentedTranslation(bool ignoreWhileDragging = false) const noexcept
+	{
+		if (ignoreWhileDragging
+			&& directWindowDragPhase.load(memory_order_acquire)
+				== BarDirectWindowDragPhase::Dragging)
+			return {};
+		return POINT{
+			directWindowPresentedTranslationX.load(memory_order_acquire),
+			directWindowPresentedTranslationY.load(memory_order_acquire) };
+	}
 protected:
 	// 拖动交互
 	double Seek(const ExMessage& msg);
@@ -316,9 +333,14 @@ protected:
 	array<RECT, 6> borderCursorVisibleRegions{};
 	size_t borderCursorVisibleRegionCount = 0;
 
-	// ULW 与主按钮直移共用同一几何锁，拖动期间 HWND 只移动、不重绘或改尺寸。
+	// ULW 与主按钮直移共用几何锁；位移使用原子目标，交互线程不等待慢提交。
 	mutex directWindowDragMutex;
-	atomic<bool> directWindowDragActive = false;
+	atomic<BarDirectWindowDragPhase> directWindowDragPhase =
+		BarDirectWindowDragPhase::Idle;
+	atomic<LONG> directWindowDragTranslationX = 0;
+	atomic<LONG> directWindowDragTranslationY = 0;
+	atomic<LONG> directWindowPresentedTranslationX = 0;
+	atomic<LONG> directWindowPresentedTranslationY = 0;
 	RECT committedWindowScreenBounds{};
 	bool committedWindowScreenBoundsReady = false;
 

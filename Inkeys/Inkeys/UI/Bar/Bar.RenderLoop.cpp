@@ -181,6 +181,8 @@ using Inkeys::UI::Bar::ResolveBarWindowAnimatedRect;
 using Inkeys::UI::Bar::ResolveBarWindowAnimationRange;
 using Inkeys::UI::Bar::ResolveBarThicknessPreviewEnvelope;
 using Inkeys::UI::Bar::ResolveBarThicknessPreviewReservationMode;
+using Inkeys::UI::Bar::ResolveBarDirectWindowTranslationAfterAbsorb;
+using Inkeys::UI::Bar::TranslateBarWindowRect;
 using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
@@ -6420,13 +6422,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame,
 	UPDATELAYEREDWINDOWINFO& ulwi)
 {
-	if (owner_.directWindowDragActive.load(memory_order_acquire))
-	{
-		// 拖动期间不推进旧 viewport；共享线程继续服务其余窗口。
-		state.animationClock.Rebase();
-		return offSignal ? BarRenderLoopStageResult::Stop
-			: BarRenderLoopStageResult::Idle;
-	}
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
@@ -10110,14 +10105,6 @@ else
 		HRESULT releaseDcHr = E_FAIL;
 		{
 			unique_lock directDragLock(owner_.directWindowDragMutex);
-			if (owner_.directWindowDragActive.load(memory_order_acquire))
-			{
-				HRESULT endDrawHr = barDeviceContext->EndDraw();
-				state.spec.HandleFrameEndDrawResult(endDrawHr);
-				state.dirtyRegionTracker.RetainForRetry(true);
-				state.presentDecision.RequireFullDirtyRetry();
-				return BarRenderLoopStageResult::Continue;
-			}
 			// 脏区更新
 			RECT target = BarLayoutToClientRect(
 				presentDirty, candidateViewport);
@@ -10138,9 +10125,12 @@ else
 			// pptSrc 从源内存 DC 的哪个位置起贴内容
 
 			// 设置窗口位置
+			const POINT directTranslation{
+				owner_.directWindowDragTranslationX.load(memory_order_acquire),
+				owner_.directWindowDragTranslationY.load(memory_order_acquire) };
 			POINT ptDst = {
-				state.monitorOrigin.x + candidateViewport.left,
-				state.monitorOrigin.y + candidateViewport.top };
+				state.monitorOrigin.x + candidateViewport.left + directTranslation.x,
+				state.monitorOrigin.y + candidateViewport.top + directTranslation.y };
 			POINT ptSrc = candidateSource;
 			SIZE sizeWnd = { candidateWidth, candidateHeight };
 			if (barGdiInterop)
@@ -10167,6 +10157,10 @@ else
 							ptDst.x, ptDst.y,
 							ptDst.x + sizeWnd.cx, ptDst.y + sizeWnd.cy };
 						owner_.committedWindowScreenBoundsReady = true;
+						owner_.directWindowPresentedTranslationX.store(
+							directTranslation.x, memory_order_release);
+						owner_.directWindowPresentedTranslationY.store(
+							directTranslation.y, memory_order_release);
 					}
 					releaseDcHr = barGdiInterop->ReleaseDC(nullptr);
 				}
@@ -10297,11 +10291,54 @@ BarRenderLoopCoordinator::RenderFrame()
 	if (state.presentDecision.HasFailureBackoff()
 		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
 		return FrameResult::Retry;
-	if (owner_.directWindowDragActive.load(memory_order_acquire))
+	BarDirectWindowDragPhase expectedPhase = BarDirectWindowDragPhase::Idle;
+	const bool directTranslationPending =
+		owner_.directWindowDragTranslationX.load(memory_order_acquire) != 0
+		|| owner_.directWindowDragTranslationY.load(memory_order_acquire) != 0;
+	if (directTranslationPending
+		&& owner_.directWindowDragPhase.compare_exchange_strong(
+		expectedPhase, BarDirectWindowDragPhase::Absorbing,
+		memory_order_acq_rel, memory_order_acquire))
 	{
-		// HWND 直移只暂停 Bar 客户端，不能阻塞同线程上的 PPT 窗口。
-		state.animationClock.Rebase();
-		return FrameResult::Idle;
+		lock_guard directDragLock(owner_.directWindowDragMutex);
+		const POINT presentedBeforeAbsorb{
+			owner_.directWindowPresentedTranslationX.load(memory_order_acquire),
+			owner_.directWindowPresentedTranslationY.load(memory_order_acquire) };
+		const POINT translation{
+			owner_.directWindowDragTranslationX.exchange(0, memory_order_acq_rel),
+			owner_.directWindowDragTranslationY.exchange(0, memory_order_acq_rel) };
+		if (translation.x != 0 || translation.y != 0)
+		{
+			auto mainButton = state.superellipseMap[
+				BarUISetSuperellipseEnum::MainButton];
+			const double zoom = max(0.000001, frame.zoom);
+			mainButton->x.SetDirect(mainButton->x.val
+				+ static_cast<double>(translation.x) / zoom);
+			mainButton->y.SetDirect(mainButton->y.val
+				+ static_cast<double>(translation.y) / zoom);
+			owner_.barState.PositionUpdate(zoom);
+			// 纯整栏平移不需要擦除旧屏幕坐标，快照先平移到新的布局域。
+			state.dirtyRegionTracker.TranslateCommitted(translation);
+			state.cachedVisibleContentBounds = TranslateBarWindowRect(
+				state.cachedVisibleContentBounds, translation);
+			state.lastPresentedDebugTextBounds = TranslateBarWindowRect(
+				state.lastPresentedDebugTextBounds, translation);
+			state.lastPresentedDebugFrameBounds = TranslateBarWindowRect(
+				state.lastPresentedDebugFrameBounds, translation);
+			state.lastPresentedDebugWindowBounds = TranslateBarWindowRect(
+				state.lastPresentedDebugWindowBounds, translation);
+			state.unclassifiedDamagePending = true;
+		}
+		// ULW 可能尚未追上目标位移；保留实际 HWND 相对新布局的坐标补偿。
+		const POINT presentedAfterAbsorb =
+			ResolveBarDirectWindowTranslationAfterAbsorb(
+				presentedBeforeAbsorb, translation);
+		owner_.directWindowPresentedTranslationX.store(
+			presentedAfterAbsorb.x, memory_order_release);
+		owner_.directWindowPresentedTranslationY.store(
+			presentedAfterAbsorb.y, memory_order_release);
+		owner_.directWindowDragPhase.store(
+			BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
 	SubmitTargetsAndLayout(state, frame);
 	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame);

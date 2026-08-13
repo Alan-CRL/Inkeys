@@ -246,11 +246,29 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] constexpr POINT BarScreenToLayoutPoint(
-		POINT screenPoint, POINT monitorOrigin) noexcept
+		POINT screenPoint, POINT monitorOrigin,
+		POINT presentedTranslation = {}) noexcept
 	{
-		screenPoint.x -= monitorOrigin.x;
-		screenPoint.y -= monitorOrigin.y;
+		screenPoint.x -= monitorOrigin.x + presentedTranslation.x;
+		screenPoint.y -= monitorOrigin.y + presentedTranslation.y;
 		return screenPoint;
+	}
+
+	[[nodiscard]] constexpr POINT ResolveBarDirectWindowMoveDelta(
+		POINT desiredTranslation, POINT presentedTranslation) noexcept
+	{
+		return POINT{
+			desiredTranslation.x - presentedTranslation.x,
+			desiredTranslation.y - presentedTranslation.y };
+	}
+
+	[[nodiscard]] constexpr POINT
+		ResolveBarDirectWindowTranslationAfterAbsorb(
+			POINT presentedTranslation, POINT absorbedTranslation) noexcept
+	{
+		return POINT{
+			presentedTranslation.x - absorbedTranslation.x,
+			presentedTranslation.y - absorbedTranslation.y };
 	}
 
 	[[nodiscard]] constexpr POINT BarLayoutToScreenPoint(

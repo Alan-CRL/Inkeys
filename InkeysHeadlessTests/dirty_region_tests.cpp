@@ -58,6 +58,24 @@ namespace
 			"changed control unions old and clipped new bounds");
 	}
 
+	void TestWholeBarTranslationRebasesCommittedDamage()
+	{
+		constexpr RECT window{ 0, 0, 1600, 900 };
+		constexpr std::uint64_t control = 3;
+		BarDirtyRegionTracker tracker;
+		tracker.BeginFrame(window);
+		tracker.Observe(control, RECT{ 100, 200, 220, 280 });
+		tracker.CommitPresented();
+
+		tracker.TranslateCommitted(POINT{ 900, 0 });
+		tracker.BeginFrame(window);
+		tracker.MarkChanged(control);
+		tracker.Observe(control, RECT{ 1010, 200, 1140, 280 });
+		Check(SameRect(tracker.ResolveDamage(false),
+			RECT{ 1000, 200, 1140, 280 }),
+			"whole-Bar translation rebases old bounds before animation damage");
+	}
+
 	void TestAppearanceDisappearanceAndMultipleKeys()
 	{
 		constexpr RECT window{ 0, 0, 200, 120 };
@@ -277,6 +295,7 @@ int RunDirtyRegionTests()
 {
 	TestInitialAndFallbackDamage();
 	TestChangedBoundsUnionAndClipping();
+	TestWholeBarTranslationRebasesCommittedDamage();
 	TestAppearanceDisappearanceAndMultipleKeys();
 	TestRetryRetainsDamageAndCommitAdvancesSnapshot();
 	TestExplicitAndFullRetryDamage();
