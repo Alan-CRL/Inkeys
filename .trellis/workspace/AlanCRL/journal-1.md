@@ -649,3 +649,24 @@ Bar/PPT 仅在应用级 HiMsg callback 中过滤系统触摸兼容鼠标，保�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 26: UI3 Bar dynamic viewport and drag completion
+
+**Date**: 2026-08-13
+**Task**: UI3 Bar dynamic viewport and drag completion
+**Branch**: `draw`
+
+### Summary
+
+Completed dynamic Bar viewport, thickness popup reservations, direct drag animation continuity, input translation, and dirty-region rebasing.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ded57c` | (see git log) |
+
+### Status
+
+[OK] **Completed**
