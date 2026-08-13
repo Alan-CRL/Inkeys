@@ -178,6 +178,7 @@ export namespace draw3
 		std::atomic<bool> hapticPointerLeaveRequested_ = false;
 		std::atomic<bool> touchPanActive_ = false;
 		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
+		std::atomic<bool> penCompatibilityMouseContactSuppressed_ = false;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> drawingCursorPointerAuthority_ =

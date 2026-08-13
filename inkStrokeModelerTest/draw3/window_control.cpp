@@ -14,6 +14,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <process.h>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
@@ -567,7 +568,8 @@ namespace draw3
 	{
 		const bool suppressForTouchPan = ShouldSuppressPenFeedbackForTouchPan(
 			touchPanActive_.load(std::memory_order_acquire),
-			penContactSuppressedForTouchPan_.load(std::memory_order_acquire),
+			penContactSuppressedForTouchPan_.load(std::memory_order_acquire) ||
+				penCompatibilityMouseContactSuppressed_.load(std::memory_order_acquire),
 			true, sample.inContact);
 		if (suppressForTouchPan)
 		{
@@ -970,6 +972,9 @@ namespace draw3
 				suppressedPenPointerId_.store(0, std::memory_order_release);
 				SetPenContactSuppressedForTouchPan(false);
 			}
+			if (leaveAuthority == DrawingCursorPointerAuthority::Pen)
+				penCompatibilityMouseContactSuppressed_.store(false,
+					std::memory_order_release);
 			// 保留离开的设备 authority，防止陈旧 Mouse 样本在没有新鼠标移动时恢复。
 			SetDrawingCursorPointerAuthority(leaveAuthority);
 			lastHapticPenInfoPointerId_ = 0;
@@ -1008,6 +1013,8 @@ namespace draw3
 				SetDrawingCursorPointerAuthority(pointerAuthority);
 			if (message == WM_POINTERUP && penPointer)
 			{
+				penCompatibilityMouseContactSuppressed_.store(false,
+					std::memory_order_release);
 				ClearPenCursorSample(); // 终态坐标不能冒充 Hover；新 Update/InAir 会重新发布。
 				if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0 ||
 					suppressedPenPointerId_.load(std::memory_order_relaxed) == pointerId)
@@ -1080,6 +1087,8 @@ namespace draw3
 				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
 			touchPanActive_.store(false, std::memory_order_release);
 			penContactSuppressedForTouchPan_.store(false, std::memory_order_release);
+			penCompatibilityMouseContactSuppressed_.store(false,
+				std::memory_order_release);
 			suppressedPenPointerId_.store(0, std::memory_order_release);
 			SetCursor(defaultCursor_);
 			RemoveProp(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
@@ -1147,26 +1156,58 @@ namespace draw3
 		{
 			const bool buttonUp = message == WM_LBUTTONUP || message == WM_RBUTTONUP ||
 				message == WM_MBUTTONUP;
+			if (buttonUp && penCompatibilityMouseContactSuppressed_.exchange(
+				false, std::memory_order_acq_rel))
+			{
+				if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0)
+					SetPenContactSuppressedForTouchPan(false);
+				break;
+			}
+			if (penCompatibilityMouseContactSuppressed_.load(
+				std::memory_order_acquire)) break;
 			if (buttonUp && ShouldSuppressMouseButtonUpCursorSample(
 				drawingCursorPointerAuthority_.load(std::memory_order_acquire)))
 				break; // Pointer 终态后的兼容 Mouse Up 不能把已隐藏光标重新发布为 Hover。
 			if (ShouldIgnoreMouseCursorMessage()) break;
+			const bool buttonDown = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN ||
+				message == WM_MBUTTONDOWN ||
+				(wParam & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)) != 0;
+			LARGE_INTEGER qpc = {};
+			LARGE_INTEGER qpcFrequency = {};
+			QueryPerformanceCounter(&qpc);
+			QueryPerformanceFrequency(&qpcFrequency);
+			DrawingCursorSample penSample;
+			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
+			const float mouseX = static_cast<float>(GET_X_LPARAM(lParam));
+			const float mouseY = static_cast<float>(GET_Y_LPARAM(lParam));
+			const double penSampleAgeSeconds = penSampleValid && qpcFrequency.QuadPart > 0 &&
+				qpc.QuadPart >= penSample.qpc
+				? static_cast<double>(qpc.QuadPart - penSample.qpc) /
+					static_cast<double>(qpcFrequency.QuadPart)
+				: (std::numeric_limits<double>::infinity)();
+			if (ShouldTreatMouseContactAsPenCompatibilityMessage(
+				touchPanActive_.load(std::memory_order_acquire),
+				drawingCursorPointerAuthority_.load(std::memory_order_acquire),
+				penSampleValid, buttonDown, mouseX - penSample.x, mouseY - penSample.y,
+				penSampleAgeSeconds))
+			{
+				// 没有 Pointer Down 的设备仍会提升兼容鼠标消息；只抑制反馈，不改变平移 authority。
+				penCompatibilityMouseContactSuppressed_.store(true,
+					std::memory_order_release);
+				SuppressPenContactForTouchPan();
+				break;
+			}
 			SetDrawingCursorPointerAuthority(DrawingCursorPointerAuthority::Mouse);
 			if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
 			{
 				TRACKMOUSEEVENT tracking = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, window, 0 };
 				trackingMouseLeave_ = TrackMouseEvent(&tracking) != FALSE;
 			}
-			const bool buttonDown = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN ||
-				message == WM_MBUTTONDOWN ||
-				(wParam & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)) != 0;
 			DrawingCursorSample sample;
-			sample.x = static_cast<float>(GET_X_LPARAM(lParam));
-			sample.y = static_cast<float>(GET_Y_LPARAM(lParam));
+			sample.x = mouseX;
+			sample.y = mouseY;
 			sample.valid = true;
 			sample.inContact = buttonDown;
-			LARGE_INTEGER qpc = {};
-			QueryPerformanceCounter(&qpc);
 			sample.qpc = qpc.QuadPart;
 			PublishMouseCursorSample(sample);
 			break;

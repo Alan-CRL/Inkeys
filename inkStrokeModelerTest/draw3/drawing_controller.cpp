@@ -2752,14 +2752,12 @@ namespace draw3
 							? static_cast<float>(std::clamp(
 								panMotion.inheritedBlendRemainingSeconds /
 								kCanvasPanMomentumBlendSeconds, 0.0, 1.0)) : 0.0f;
-						const CanvasVector inheritedContentDelta{
-							static_cast<float>(panMotion.inheritedVelocity.x * inheritedWeight *
-								updateDeltaSeconds),
-							static_cast<float>(panMotion.inheritedVelocity.y * inheritedWeight *
-								updateDeltaSeconds) };
 						contentDelta = UpdateCanvasPan(panMotion, centroidDelta,
 							velocityDelta, inputQpc,
 							qpcFrequency, updateVelocity);
+						const CanvasVector inheritedContentDelta{
+							contentDelta.x - centroidDelta.x,
+							contentDelta.y - centroidDelta.y };
 						const float inputDistance = std::hypot(centroidDelta.x, centroidDelta.y);
 						const float outputDistance = std::hypot(contentDelta.x, contentDelta.y);
 						const float inheritedDistance = std::hypot(
@@ -2911,6 +2909,10 @@ namespace draw3
 				panCentroidValid = false;
 				previousPanContactCount = 0;
 				const CanvasVector appVelocityBefore = panMotion.velocity;
+				const bool usesTopologyReleaseCandidate =
+					panMotion.lastVelocitySampleQpc <= 0 &&
+					(panMotion.topologyReleaseVelocity.x != 0.0f ||
+						panMotion.topologyReleaseVelocity.y != 0.0f);
 				const double secondsSinceLastInput = CanvasPanReleaseAgeSeconds(
 					panReleaseQpc, lastPanInputQpc, qpcFrequency, panReleaseCancelled);
 				EndCanvasPan(panMotion, secondsSinceLastInput);
@@ -2919,6 +2921,7 @@ namespace draw3
 				const char* releaseReason = panReleaseCancelled ? "cancelled" :
 					!std::isfinite(secondsSinceLastInput) ? "invalid-release-time" :
 					secondsSinceLastInput > kCanvasPanReleaseVelocityHorizonSeconds ? "release-stale" :
+					usesTopologyReleaseCandidate ? "topology-release-candidate" :
 					panMotion.lastVelocitySampleQpc <= 0 ? "no-move-samples" :
 					CanvasPanSpeed(panMotion) < 5.0f ? "speed-below-threshold" :
 					"application-inertia";

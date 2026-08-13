@@ -157,6 +157,11 @@ export namespace draw3
 	// Pointer API 可区分 promoted 消息时，真实鼠标必须立即接管陈旧 Pen authority。
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool pointerApiAvailable, bool penSampleValid) noexcept;
+	// 部分 Pen 驱动缺失 promoted 标记；活动平移中以新鲜且同位置的 Pen 样本识别兼容 Mouse contact。
+	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
+		DrawingCursorPointerAuthority pointerAuthority, bool penSampleValid,
+		bool mouseInContact, float positionDeltaX, float positionDeltaY,
+		double sampleAgeSeconds) noexcept;
 	// Pen/Touch 终态后的兼容 Mouse ButtonUp 不能重新生成应用内 Hover。
 	bool ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority pointerAuthority) noexcept;

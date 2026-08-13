@@ -720,8 +720,9 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 - 只有零 Touch 开始的批次可识别平移。首指静止时立即按工具绘制；第二指的输入时间戳与首指相差 `<= 180ms` 时，即使绘制线程稍晚执行 `Update`，仍取消该批全部 Touch 临时内容、清 Laser/笔尖/粒子并从剩余 Pen/Mouse contact 重建 L1/L0 后进入平移。超时后该批直到全部 Up 都不可再识别平移。
 - 平移中新增 Touch 只加入手势、不绘制；拓扑变化重设中心，剩一指仍可拖动。QPC 是唯一时间源；固定容量 `24` 的 Move 样本在约 `100ms` 窗口内对累计中心位移做线性拟合。零位移包、Up 终态和渲染空帧不得进入估速；最后 Up 只补齐最终中心位移，并以 `releaseQpc - lastVelocitySampleQpc` 判断时效。Cancelled、反向时间或无有效 Move 样本禁止惯性。
 - 惯性中首个 Touch 进入特殊 180ms 候选期：惯性继续且该指不绘制。及时第二指接续旧速度；候选超时后首指整段生命周期都不补画，并请求加速制动，迟到 Touch 可绘制但不能与首指组成平移。
-- 接续惯性时应用层旧速度在约 `120ms` 内与新手势位移混合：同向叠加，反向先制动再反向，合速度钳制到 `24000 DIP/s`。新手势立即停止旧惯性步进并保存残余速度；抓取、混合和反向均由同一个应用层状态机拥有。
+- 接续惯性时应用层旧速度在约 `120ms` 内只与新手势的速度状态混合：同向叠加，反向先制动再反向，合速度钳制到 `24000 DIP/s`；位置输出必须严格等于当前 centroid delta，旧速度不得在手指按住时继续积分成额外位移。新手势尚无 Move 就释放时可用残余速度继续惯性；一旦产生新 Move，后续释放只使用新拓扑样本。
 - Windows Tablet/RTS 在活动多 Touch 批次中不保证交付后来加入的 Pen contact；本机 Windows 11 ARM64 实测双 Touch 均持续收到 RTS Packets，但随后 Pen 没有任何 RTS `StylusDown/Packets/StylusUp`，只有独立 `WM_POINTER` 触觉/光标事件。活动 Touch 跟手平移期间的 Pen contact 因此锁存为 suppressed-until-up：不刹停、不绘制、不发布接触光标、不预启动触觉，也不能在 Touch 抬起后的惯性阶段补画。Pen 抬起后，惯性阶段重新产生的新 Pen Down 才可抢占；Pen hover 仍只在惯性中提高减速度。Mouse contact 仍可立即抢占。
+- 部分 Pen/Windows 输入栈在活动 Touch Pan 中既不交付 Pen `WM_POINTERDOWN`，又产生缺少 promoted signature 的兼容 `WM_MOUSE*`。窗口层仅在 Touch Pan 活动、当前 authority 为 Pen、Pen 样本不超过 `100ms`、Mouse 正 contact、两者客户区位置相差不超过 `8 DIP` 时，把该消息锁存为 Pen compatibility contact：清 Pen cursor/触觉但不切换 Mouse authority，并吞到 Mouse Up、Pen Up/Leave 或窗口销毁。普通非 promoted 真实鼠标仍须立即接管。
 - 窗口 Pen/Mouse mailbox 必须在导航推进和 viewport tile 恢复前读取。活动 Touch 跟手时 Pen mailbox 只开始/维持 suppression；惯性阶段确认可抢占 contact 后，先排空已发布 Down、创建 runtime 并固定 viewport，再执行本帧导航/恢复。若 RTS Pen Down 曾到达，轻量 contact 消费 Up/Cancelled 后记录终态 QPC，并忽略 `sample.qpc <= terminal.qpc` 的陈旧 Pointer contact；更晚的新 Down 可正常抢占。完全没有 RTS Pen contact 的 Pointer-only 情况只能等待 mailbox 变为非 contact 或离屏后解除，防止旧样本在惯性中误刹停。
 - `CanvasPanMotionState` 是手势、估速和惯性的唯一权威；生产路径不得再引入 `IManipulationProcessor`、`IInertiaProcessor` 或与应用状态机并行的系统速度真值。惯性按真实绘制帧 QPC 间隔、`DIP/s^2` 线性减速度和梯形积分推进：普通滑行为 `6000`，Pen hover 或惯性候选超时为 `12000`；单步时间限制为 `50ms`，避免调度长停顿产生位移尖峰。
 - 新 Touch Down 出队时，旧首指可能已在合并 mailbox 中发布 `Up/Cancelled`，但导航循环尚未消费。若当前不是活动 Pan，且旧终态 QPC 不晚于新 Down，必须先只调用 `CanvasTouchGestureState::OnTouchUp` 退休旧批次资格；不得提前回收 contact、跳过 Stored 收尾或让新批次取消旧笔画。
@@ -747,7 +748,9 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 | Pen/Mouse 已 contact | 阻止新双指手势；活动 Touch 跟手中的新 Pen 抑制到 Up，Mouse 仍可抢占；惯性中的新 Pen/Mouse Down 先于导航和 tile 恢复消费并立即刹停 |
 | 无新 Touch Move 的渲染帧 | 保持最后有效速度；不得用零中心位移覆盖 |
 | 最后 Touch Up | 先应用最终 centroid 位移但不把 Up 写入估速；按 `Up QPC - last Move sample QPC` 判断，最近样本不超过 `100ms` 时用拟合速度启动惯性，处理线程晚到不影响 |
-| 触点数量变化 | 重建 centroid 和 Move 样本零点，保留锁存速度；首个拓扑帧不得制造速度尖峰 |
+| 触点数量变化 | 重建 centroid 和 Move 样本零点；刚结束拓扑的有效直接速度只作为紧邻释放候选，首个新 Move 立即作废候选；首个拓扑帧不得制造速度尖峰 |
+| 惯性中双指重新抓取 | 旧惯性不再产生位置增量；输出严格等于触点 centroid delta，残余速度仅影响松手后的速度状态 |
+| 活动 Touch Pan + 无 promoted 标记的同位置 Pen 兼容 Mouse contact | 锁存并抑制 Pen 光标/触觉到终态，不切换 Mouse authority；位置或时间不匹配时按真实鼠标处理 |
 | 远端有限 viewport 发生小位移 | 按 double 候选值判断未越界，不得因 float 量化差异报告 `viewport-clamp` |
 | Mouse mailbox 显示 contact 但没有真实 Mouse contact 出队 | 不打断平移或惯性；避免 Touch-to-Mouse 提升污染导航状态 |
 | 可见 tile 恢复失败或有新输入 | 不推进失败 tile；保持恢复 pending，下一帧重试 |
@@ -762,7 +765,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 ### 6. Tests Required
 
-- 单元测试覆盖 180ms 内/等于/超时和绘制线程迟到、静止首指撤销、惯性首指抑制、迟到 Touch、额外 Touch、低残余同向/反向接续、活动跟手 Pen suppression、惯性 Pen hover/Down、Mouse contact、导航 contact 优先判定、速度上限、Move-only 多样本拟合、零位移保持、Up 尖峰排除、`100ms` 旧样本淘汰、拓扑重建、新批次资格复位、Cancelled、远端 float viewport 和真实单轴范围保护；静态检查生产源码不包含 Windows manipulation/inertia 接口。
+- 单元测试覆盖 180ms 内/等于/超时和绘制线程迟到、静止首指撤销、惯性首指抑制、迟到 Touch、额外 Touch、低残余同向/反向速度接续且位置严格跟手、活动跟手 Pen suppression、无 promoted 标记 Pen 兼容 Mouse 的时间/位置边界、惯性 Pen hover/Down、Mouse contact、导航 contact 优先判定、速度上限、Move-only 多样本拟合、零位移保持、Up 尖峰排除、`100ms` 旧样本淘汰、拓扑重建候选/新 Move 作废、新批次资格复位、Cancelled、远端 float viewport 和真实单轴范围保护；静态检查生产源码不包含 Windows manipulation/inertia 接口。
 - 坐标/文档测试覆盖 Pen、Highlighter、Eraser、四种 Shape 的 Canvas-local 完成态，Laser 瞬态变换，负/远端坐标、有符号 tile、每页独立 viewport、离屏 Undo 和 viewport 不进入 history raster key。
 - 渲染规划测试覆盖双方向预测、`1.5` 对角线上限、优先级、0/4ms 预算、pending input 让出、失败 tile 不推进、可见完成、快照交集、300 DIP/s 清晰阈值和 12 DIP 模糊上限。
 - ARM64 Debug/Release 完整 solution 构建并运行两套测试。实体 Touch/Pen、快速反复滑动手感、视觉重投影/模糊、窗口 Resize、翻页、D3D Debug Layer 和 Windows 7 未执行时必须明确标记。
@@ -771,7 +774,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 Wrong：`screen point 直接写文档 -> viewport 进入 history key -> 平移时整页缓存失效 -> 模糊图写回 L2。`
 
-Correct：`真实 Touch Move + QPC 进入固定窗口线性拟合 -> Up 只补最终位移并以 Up QPC 检查 100ms -> 应用层线性惯性；拓扑变化重建拟合零点但保留锁存速度。screen -> Canvas-local 文档真值；viewport 仅决定目标矩形；Canvas tile 清晰恢复写 L2，可信快照只在 backbuffer 下方作视觉兜底。`
+Correct：`真实 Touch Move + QPC 进入固定窗口线性拟合 -> Up 只补最终位移并以 Up QPC 检查 100ms -> 应用层线性惯性；拓扑变化重建拟合零点，旧直接速度仅作为无新 Move 时的一次释放候选；重新抓取期间位置严格跟随 centroid。screen -> Canvas-local 文档真值；viewport 仅决定目标矩形；Canvas tile 清晰恢复写 L2，可信快照只在 backbuffer 下方作视觉兜底。`
 
 Wrong：`活动 Touch 跟手时只凭 Pointer 触觉假设 RTS Pen contact 存在并清零速度；或惯性中 Pen mailbox 清零速度 -> 本帧继续 tile 恢复 -> 帧后段才出队 Pen Down。`
 

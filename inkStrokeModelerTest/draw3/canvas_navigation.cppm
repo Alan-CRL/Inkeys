@@ -117,6 +117,7 @@ export namespace draw3
 		CanvasVector velocity = {};
 		CanvasVector directVelocity = {};
 		CanvasVector inheritedVelocity = {};
+		CanvasVector topologyReleaseVelocity = {};
 		double inheritedBlendRemainingSeconds = 0.0;
 		double samplePositionX = 0.0;
 		double samplePositionY = 0.0;
@@ -130,7 +131,7 @@ export namespace draw3
 
 	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia,
 		int64_t inputQpc = 0) noexcept;
-	// 触点数量变化时只重置估速基准，保留当前速度与残余动量。
+	// 触点数量变化时重置估速基准，仅保留刚结束拓扑的有效直接速度用于紧邻释放。
 	void ResetCanvasPanVelocitySamples(CanvasPanMotionState& motion,
 		int64_t inputQpc = 0) noexcept;
 	// 只有真实 Move 可更新估速；Up 可提交最终位移，但不得污染释放速度。

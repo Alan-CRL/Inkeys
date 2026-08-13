@@ -140,7 +140,8 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(motion.inheritedVelocity.x == 1000.0f);
 	const draw3::CanvasVector blended = draw3::UpdateCanvasPan(
 		motion, { 10.0f, 0.0f }, { 10.0f, 0.0f }, 1010, 1000);
-	CANVAS_NAVIGATION_CHECK(blended.x > 10.0f);
+	CANVAS_NAVIGATION_CHECK(blended.x == 10.0f);
+	CANVAS_NAVIGATION_CHECK(motion.velocity.x > motion.directVelocity.x);
 	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(motion) <=
 		draw3::kCanvasPanMaximumSpeedDipPerSecond);
 	draw3::StopCanvasPan(motion);
@@ -149,7 +150,7 @@ int RunCanvasNavigationTests()
 	draw3::BeginCanvasPan(motion, true, 2000);
 	const draw3::CanvasVector reversed = draw3::UpdateCanvasPan(
 		motion, { -4.0f, 0.0f }, { -4.0f, 0.0f }, 2010, 1000);
-	CANVAS_NAVIGATION_CHECK(reversed.x > -4.0f);
+	CANVAS_NAVIGATION_CHECK(reversed.x == -4.0f);
 	CANVAS_NAVIGATION_CHECK(motion.velocity.x > 0.0f);
 	draw3::EndCanvasPan(motion);
 	CANVAS_NAVIGATION_CHECK(motion.inertiaActive);
@@ -159,7 +160,7 @@ int RunCanvasNavigationTests()
 	draw3::BeginCanvasPan(lowResidualMotion, true, 3000);
 	const draw3::CanvasVector lowResidualBlend = draw3::UpdateCanvasPan(
 		lowResidualMotion, { 3.0f, 0.0f }, { 3.0f, 0.0f }, 3010, 1000);
-	CANVAS_NAVIGATION_CHECK(lowResidualBlend.x > 3.0f);
+	CANVAS_NAVIGATION_CHECK(lowResidualBlend.x == 3.0f);
 	CANVAS_NAVIGATION_CHECK(lowResidualMotion.velocity.x > 300.0f);
 	draw3::EndCanvasPan(lowResidualMotion, 0.0);
 	CANVAS_NAVIGATION_CHECK(lowResidualMotion.inertiaActive);
@@ -181,17 +182,25 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(terminalDelta.x == 500.0f && terminalDelta.y == -600.0f);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.y == 0.0f);
-	const int64_t stableSampleQpc = sampledMotion.lastVelocitySampleQpc;
 	const int64_t stableUpdateQpc = sampledMotion.lastUpdateQpc;
 	draw3::ResetCanvasPanVelocitySamples(sampledMotion, stableUpdateQpc - 1);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.lastUpdateQpc == stableUpdateQpc);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocitySamples[0].qpc == stableUpdateQpc);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == 0);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == 0.0f);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.topologyReleaseVelocity.x == stableVelocity);
+	draw3::CanvasPanMotionState immediateTopologyRelease = sampledMotion;
+	draw3::EndCanvasPan(immediateTopologyRelease, 0.01);
+	CANVAS_NAVIGATION_CHECK(immediateTopologyRelease.inertiaActive);
+	CANVAS_NAVIGATION_CHECK(immediateTopologyRelease.velocity.x == stableVelocity);
 	draw3::ResetCanvasPanVelocitySamples(sampledMotion, 4070);
-	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == stableSampleQpc);
-	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == stableVelocity);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == 0);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == 0.0f);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.topologyReleaseVelocity.x == stableVelocity);
 	draw3::UpdateCanvasPan(sampledMotion,
 		{ -10.0f, 0.0f }, { -10.0f, 0.0f }, 4080, 1000);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x < 0.0f);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.topologyReleaseVelocity.x == 0.0f);
 	draw3::UpdateCanvasPan(sampledMotion,
 		{ -10.0f, 0.0f }, { -10.0f, 0.0f }, 4300, 1000);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocitySampleCount == 1);

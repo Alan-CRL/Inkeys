@@ -301,6 +301,7 @@ namespace draw3
 		int64_t inputQpc) noexcept
 	{
 		motion.inheritedVelocity = inheritInertia ? motion.velocity : CanvasVector{};
+		motion.topologyReleaseVelocity = motion.inheritedVelocity;
 		motion.inheritedBlendRemainingSeconds = inheritInertia
 			? kCanvasPanMomentumBlendSeconds : 0.0;
 		motion.inertiaActive = false;
@@ -312,11 +313,12 @@ namespace draw3
 	void ResetCanvasPanVelocitySamples(CanvasPanMotionState& motion,
 		int64_t inputQpc) noexcept
 	{
-		const int64_t lastVelocitySampleQpc = motion.lastVelocitySampleQpc;
+		if (motion.lastVelocitySampleQpc > 0)
+			motion.topologyReleaseVelocity = motion.directVelocity;
 		// 拓扑终态可能晚于旧 Up 被消费，估速时间基准不得倒退。
 		ResetVelocitySamples(motion, (std::max)(inputQpc, motion.lastUpdateQpc));
-		motion.directVelocity = motion.velocity;
-		motion.lastVelocitySampleQpc = lastVelocitySampleQpc;
+		motion.velocity = {};
+		motion.directVelocity = {};
 		motion.inheritedVelocity = {};
 		motion.inheritedBlendRemainingSeconds = 0.0;
 	}
@@ -345,6 +347,7 @@ namespace draw3
 				AppendVelocitySample(motion, inputQpc, qpcFrequency);
 				motion.directVelocity = EstimateVelocity(motion, qpcFrequency);
 				motion.lastVelocitySampleQpc = inputQpc;
+				motion.topologyReleaseVelocity = {};
 			}
 		}
 		float inheritedWeight = 0.0f;
@@ -360,12 +363,8 @@ namespace draw3
 			motion.directVelocity.x + motion.inheritedVelocity.x * inheritedWeight,
 			motion.directVelocity.y + motion.inheritedVelocity.y * inheritedWeight
 		});
-		return {
-			contentDelta.x + static_cast<float>(motion.inheritedVelocity.x *
-				inheritedWeight * deltaSeconds),
-			contentDelta.y + static_cast<float>(motion.inheritedVelocity.y *
-				inheritedWeight * deltaSeconds)
-		};
+		// 手指落下后位置必须严格跟手；残余动量只参与释放速度，不能继续推动画布。
+		return contentDelta;
 	}
 
 	void SetCanvasPanVelocity(CanvasPanMotionState& motion, CanvasVector velocity) noexcept
@@ -386,11 +385,14 @@ namespace draw3
 	void EndCanvasPan(CanvasPanMotionState& motion,
 		double secondsSinceLastInput) noexcept
 	{
+		if (motion.lastVelocitySampleQpc <= 0)
+			motion.velocity = motion.topologyReleaseVelocity;
 		if (!std::isfinite(secondsSinceLastInput) || secondsSinceLastInput < 0.0 ||
 			secondsSinceLastInput > kCanvasPanReleaseVelocityHorizonSeconds)
 			motion.velocity = {};
 		motion.velocity = ClampVelocity(motion.velocity);
 		motion.inheritedVelocity = {};
+		motion.topologyReleaseVelocity = {};
 		motion.inheritedBlendRemainingSeconds = 0.0;
 		motion.inertiaActive = CanvasPanSpeed(motion) >= 5.0f;
 	}

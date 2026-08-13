@@ -238,6 +238,16 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, true, true));
 	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(false, false, true));
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, false, false));
+	PEN_CURSOR_CHECK(draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
+		true, DrawingCursorPointerAuthority::Pen, true, true, 1.0f, -2.0f, 0.01));
+	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
+		false, DrawingCursorPointerAuthority::Pen, true, true, 1.0f, -2.0f, 0.01));
+	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
+		true, DrawingCursorPointerAuthority::Mouse, true, true, 1.0f, -2.0f, 0.01));
+	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
+		true, DrawingCursorPointerAuthority::Pen, true, true, 9.0f, 0.0f, 0.01));
+	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
+		true, DrawingCursorPointerAuthority::Pen, true, true, 1.0f, -2.0f, 0.101));
 
 	mouseHover.inContact = false;
 	const draw3::DrawingCursorVisual laserMouseHover =

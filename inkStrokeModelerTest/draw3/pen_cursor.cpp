@@ -371,6 +371,18 @@ namespace draw3
 		return !pointerApiAvailable && penSampleValid;
 	}
 
+	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
+		DrawingCursorPointerAuthority pointerAuthority, bool penSampleValid,
+		bool mouseInContact, float positionDeltaX, float positionDeltaY,
+		double sampleAgeSeconds) noexcept
+	{
+		if (!touchPanActive || pointerAuthority != DrawingCursorPointerAuthority::Pen ||
+			!penSampleValid || !mouseInContact || !std::isfinite(positionDeltaX) ||
+			!std::isfinite(positionDeltaY) || !std::isfinite(sampleAgeSeconds) ||
+			sampleAgeSeconds < 0.0 || sampleAgeSeconds > 0.1) return false;
+		return std::hypot(positionDeltaX, positionDeltaY) <= 8.0f;
+	}
+
 	bool ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority pointerAuthority) noexcept
 	{
