@@ -90,6 +90,7 @@ namespace Inkeys::UI::Ppt
 			ComPtr<ID2D1Bitmap1> bitmap;
 			ComPtr<ID2D1GdiInteropRenderTarget> gdi;
 			ComPtr<ID2D1SolidColorBrush> brush;
+			ComPtr<ID2D1StrokeStyle> dragHandleStyle;
 			ComPtr<IDWriteTextFormat> pageFormat;
 			ComPtr<IDWriteTextFormat> totalFormat;
 			std::array<ComPtr<ID2D1Bitmap1>, 6> icons;
@@ -103,6 +104,7 @@ namespace Inkeys::UI::Ppt
 				for (auto& icon : icons) icon.Reset();
 				totalFormat.Reset();
 				pageFormat.Reset();
+				dragHandleStyle.Reset();
 				brush.Reset();
 				gdi.Reset();
 				bitmap.Reset();
@@ -358,25 +360,30 @@ namespace Inkeys::UI::Ppt
 		{
 			const float x = static_cast<float>(point.x) / layout.scale;
 			const float y = static_cast<float>(point.y) / layout.scale;
+			const auto geometry = ResolveControlVisualGeometry(ControlFor(client));
+			auto Contains = [x, y](const VisualRect& rect)
+				{
+					return x >= rect.left && x <= rect.right &&
+						y >= rect.top && y <= rect.bottom;
+				};
 			if (client == RenderClient::PptExitShow)
-				return x >= 15.0F && x <= 65.0F && y >= 5.0F && y <= 55.0F
+				return Contains(geometry.action)
 					? HitTarget::EndShow : HitTarget::Drag;
 			if (IsBottom(client))
 			{
-				const float inset = IsLeft(client) ? 15.0F : 5.0F;
-				if (x >= inset && x <= inset + 50.0F && y >= 5.0F && y <= 55.0F)
+				if (Contains(geometry.previous))
 					return HitTarget::Previous;
-				if (x >= inset + 55.0F && x <= inset + 120.0F)
+				if (IsInPageHitArea(ControlFor(client), x, y))
 					return HitTarget::Page;
-				if (x >= inset + 125.0F && x <= inset + 175.0F && y >= 5.0F && y <= 55.0F)
+				if (Contains(geometry.next))
 					return HitTarget::Next;
 				return HitTarget::Drag;
 			}
-			if (y >= 15.0F && y <= 65.0F && x >= 5.0F && x <= 55.0F)
+			if (Contains(geometry.previous))
 				return HitTarget::Previous;
-			if (y >= 70.0F && y <= 120.0F)
+			if (IsInPageHitArea(ControlFor(client), x, y))
 				return HitTarget::Page;
-			if (y >= 125.0F && y <= 175.0F && x >= 5.0F && x <= 55.0F)
+			if (Contains(geometry.next))
 				return HitTarget::Next;
 			return HitTarget::Drag;
 		}
@@ -626,9 +633,10 @@ namespace Inkeys::UI::Ppt
 			const Ui3RenderDeviceEpoch& epoch, const Layout& layout)
 		{
 			if (target.context && target.bitmap && target.gdi && target.brush &&
+				target.dragHandleStyle &&
 				target.generation == epoch.generation && target.width == layout.width &&
 				target.height == layout.height) return S_OK;
-			if (!epoch.d2dDevice || !dWriteFactory1) return E_POINTER;
+			if (!epoch.d2dDevice || !d2dFactory1 || !dWriteFactory1) return E_POINTER;
 
 			TargetResources next;
 			HRESULT hr = epoch.d2dDevice->CreateDeviceContext(
@@ -648,12 +656,20 @@ namespace Inkeys::UI::Ppt
 			hr = next.context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black),
 				&next.brush);
 			if (FAILED(hr)) return hr;
-			hr = dWriteFactory1->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
+			D2D1_STROKE_STYLE_PROPERTIES strokeProperties = D2D1::StrokeStyleProperties();
+			strokeProperties.startCap = D2D1_CAP_STYLE_ROUND;
+			strokeProperties.endCap = D2D1_CAP_STYLE_ROUND;
+			hr = d2dFactory1->CreateStrokeStyle(&strokeProperties, nullptr, 0,
+				&next.dragHandleStyle);
+			if (FAILED(hr)) return hr;
+			hr = dWriteFactory1->CreateTextFormat(L"HarmonyOS Sans SC",
+				dWriteFontCollection.Get(),
 				DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL, 24.0F * layout.scale, L"zh-CN",
 				&next.pageFormat);
 			if (FAILED(hr)) return hr;
-			hr = dWriteFactory1->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
+			hr = dWriteFactory1->CreateTextFormat(L"HarmonyOS Sans SC",
+				dWriteFontCollection.Get(),
 				DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL, 16.0F * layout.scale, L"zh-CN",
 				&next.totalFormat);
@@ -662,6 +678,7 @@ namespace Inkeys::UI::Ppt
 			{
 				format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 				format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+				format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
 			}
 			if (!iconsReady) return E_UNEXPECTED;
 			const D2D1_BITMAP_PROPERTIES1 iconProperties = D2D1::BitmapProperties1(
@@ -750,10 +767,28 @@ namespace Inkeys::UI::Ppt
 				D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 		}
 
+		[[nodiscard]] D2D1_RECT_F ScaleRect(const VisualRect& rect, float scale) noexcept
+		{
+			return D2D1::RectF(rect.left * scale, rect.top * scale,
+				rect.right * scale, rect.bottom * scale);
+		}
+
+		void DrawDragHandle(TargetResources& target, const VisualLine& line,
+			float scale)
+		{
+			// 拖动柄沿用旧版深灰色、2px 圆头线条。
+			SetBrush(target, D2D1::ColorF(60.0F / 255.0F, 60.0F / 255.0F,
+				60.0F / 255.0F, 250.0F / 255.0F));
+			target.context->DrawLine(D2D1::Point2F(line.x1 * scale, line.y1 * scale),
+				D2D1::Point2F(line.x2 * scale, line.y2 * scale), target.brush.Get(),
+				2.0F * scale, target.dragHandleStyle.Get());
+		}
+
 		void DrawPageControl(RenderClient client, ClientState& state,
 			TargetResources& target, const Layout& layout)
 		{
 			const float s = layout.scale;
+			const auto geometry = ResolveControlVisualGeometry(ControlFor(client));
 			const auto outer = D2D1::RoundedRect(D2D1::RectF(0.5F, 0.5F,
 				static_cast<float>(layout.width) - 0.5F,
 				static_cast<float>(layout.height) - 0.5F), 15.0F * s, 15.0F * s);
@@ -763,65 +798,63 @@ namespace Inkeys::UI::Ppt
 			SetBrush(target, D2D1::ColorF(200.0F / 255.0F, 200.0F / 255.0F,
 				200.0F / 255.0F, 160.0F / 255.0F));
 			target.context->DrawRoundedRectangle(outer, target.brush.Get(), s);
+			DrawDragHandle(target, geometry.dragHandle, s);
 
 			if (IsBottom(client))
 			{
-				const float inset = (IsLeft(client) ? 15.0F : 5.0F) * s;
-				const auto previous = D2D1::RectF(inset, 5.0F * s,
-					inset + 50.0F * s, 55.0F * s);
-				const auto next = D2D1::RectF(inset + 125.0F * s, 5.0F * s,
-					inset + 175.0F * s, 55.0F * s);
+				const auto previous = ScaleRect(geometry.previous, s);
+				const auto next = ScaleRect(geometry.next, s);
 				DrawButton(target, previous, HitTarget::Previous, state, 17.5F * s);
 				DrawButton(target, next, HitTarget::Next, state, 17.5F * s);
-				DrawIcon(target, 1, D2D1::RectF(inset + 5.0F * s, 10.0F * s,
-					inset + 45.0F * s, 50.0F * s));
+				DrawIcon(target, 1, D2D1::RectF(previous.left + 5.0F * s,
+					previous.top + 5.0F * s, previous.right - 5.0F * s,
+					previous.bottom - 5.0F * s));
 				const std::size_t nextIcon = currentPage.load(std::memory_order_acquire) < 0
 					? 3 : 2;
-				DrawIcon(target, nextIcon, D2D1::RectF(inset + 130.0F * s, 10.0F * s,
-					inset + 170.0F * s, 50.0F * s));
-				const auto page = std::to_wstring(std::min(9999,
-					currentPage.load(std::memory_order_acquire)));
-				const auto total = L"/" + std::to_wstring(std::min(9999,
-					totalPage.load(std::memory_order_acquire)));
+				DrawIcon(target, nextIcon, D2D1::RectF(next.left + 5.0F * s,
+					next.top + 5.0F * s, next.right - 5.0F * s,
+					next.bottom - 5.0F * s));
+				const auto text = ResolvePageText(ControlFor(client),
+					currentPage.load(std::memory_order_acquire),
+					totalPage.load(std::memory_order_acquire));
 				SetBrush(target, D2D1::ColorF(30.0F / 255.0F, 30.0F / 255.0F,
 					30.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(page.c_str(), static_cast<UINT32>(page.size()),
-					target.pageFormat.Get(), D2D1::RectF(inset + 55.0F * s, 4.0F * s,
-						inset + 120.0F * s, 35.0F * s), target.brush.Get());
+				target.context->DrawTextW(text.current.c_str(),
+					static_cast<UINT32>(text.current.size()), target.pageFormat.Get(),
+					ScaleRect(geometry.currentPage, s), target.brush.Get());
 				SetBrush(target, D2D1::ColorF(60.0F / 255.0F, 60.0F / 255.0F,
 					60.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(total.c_str(), static_cast<UINT32>(total.size()),
-					target.totalFormat.Get(), D2D1::RectF(inset + 55.0F * s, 30.0F * s,
-						inset + 120.0F * s, 56.0F * s), target.brush.Get());
+				target.context->DrawTextW(text.total.c_str(),
+					static_cast<UINT32>(text.total.size()), target.totalFormat.Get(),
+					ScaleRect(geometry.totalPage, s), target.brush.Get());
 			}
 			else
 			{
-				const auto previous = D2D1::RectF(5.0F * s, 15.0F * s,
-					55.0F * s, 65.0F * s);
-				const auto next = D2D1::RectF(5.0F * s, 125.0F * s,
-					55.0F * s, 175.0F * s);
+				const auto previous = ScaleRect(geometry.previous, s);
+				const auto next = ScaleRect(geometry.next, s);
 				DrawButton(target, previous, HitTarget::Previous, state, 17.5F * s);
 				DrawButton(target, next, HitTarget::Next, state, 17.5F * s);
-				DrawIcon(target, 4, D2D1::RectF(10.0F * s, 20.0F * s,
-					50.0F * s, 60.0F * s));
+				DrawIcon(target, 4, D2D1::RectF(previous.left + 5.0F * s,
+					previous.top + 5.0F * s, previous.right - 5.0F * s,
+					previous.bottom - 5.0F * s));
 				const std::size_t nextIcon = currentPage.load(std::memory_order_acquire) < 0
 					? 3 : 5;
-				DrawIcon(target, nextIcon, D2D1::RectF(10.0F * s, 130.0F * s,
-					50.0F * s, 170.0F * s));
-				const auto page = std::to_wstring(std::min(999,
-					currentPage.load(std::memory_order_acquire)));
-				const auto total = L"/" + std::to_wstring(std::min(999,
-					totalPage.load(std::memory_order_acquire)));
+				DrawIcon(target, nextIcon, D2D1::RectF(next.left + 5.0F * s,
+					next.top + 5.0F * s, next.right - 5.0F * s,
+					next.bottom - 5.0F * s));
+				const auto text = ResolvePageText(ControlFor(client),
+					currentPage.load(std::memory_order_acquire),
+					totalPage.load(std::memory_order_acquire));
 				SetBrush(target, D2D1::ColorF(30.0F / 255.0F, 30.0F / 255.0F,
 					30.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(page.c_str(), static_cast<UINT32>(page.size()),
-					target.pageFormat.Get(), D2D1::RectF(5.0F * s, 68.0F * s,
-						55.0F * s, 102.0F * s), target.brush.Get());
+				target.context->DrawTextW(text.current.c_str(),
+					static_cast<UINT32>(text.current.size()), target.pageFormat.Get(),
+					ScaleRect(geometry.currentPage, s), target.brush.Get());
 				SetBrush(target, D2D1::ColorF(60.0F / 255.0F, 60.0F / 255.0F,
 					60.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(total.c_str(), static_cast<UINT32>(total.size()),
-					target.totalFormat.Get(), D2D1::RectF(5.0F * s, 99.0F * s,
-						55.0F * s, 124.0F * s), target.brush.Get());
+				target.context->DrawTextW(text.total.c_str(),
+					static_cast<UINT32>(text.total.size()), target.totalFormat.Get(),
+					ScaleRect(geometry.totalPage, s), target.brush.Get());
 			}
 		}
 
@@ -829,14 +862,15 @@ namespace Inkeys::UI::Ppt
 			const Layout& layout)
 		{
 			const float s = layout.scale;
+			const auto geometry = ResolveControlVisualGeometry(Control::ExitShow);
 			const auto outer = D2D1::RoundedRect(D2D1::RectF(0.5F, 0.5F,
 				static_cast<float>(layout.width) - 0.5F,
 				static_cast<float>(layout.height) - 0.5F), 15.0F * s, 15.0F * s);
 			SetBrush(target, D2D1::ColorF(225.0F / 255.0F, 225.0F / 255.0F,
 				225.0F / 255.0F, 160.0F / 255.0F));
 			target.context->FillRoundedRectangle(outer, target.brush.Get());
-			const auto button = D2D1::RectF(15.0F * s, 5.0F * s,
-				65.0F * s, 55.0F * s);
+			DrawDragHandle(target, geometry.dragHandle, s);
+			const auto button = ScaleRect(geometry.action, s);
 			DrawButton(target, button, HitTarget::EndShow, state, 17.5F * s);
 			DrawIcon(target, 3, D2D1::RectF(20.0F * s, 10.0F * s,
 				60.0F * s, 50.0F * s));

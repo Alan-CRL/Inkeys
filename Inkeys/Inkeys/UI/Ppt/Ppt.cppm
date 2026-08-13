@@ -7,6 +7,7 @@ module;
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <string>
 
 export module Inkeys.UI.Ppt;
 
@@ -46,6 +47,96 @@ export namespace Inkeys::UI::Ppt
 		float scale = 1.0F;
 		bool enabled = false;
 	};
+
+	struct VisualRect
+	{
+		float left = 0.0F;
+		float top = 0.0F;
+		float right = 0.0F;
+		float bottom = 0.0F;
+	};
+
+	struct VisualLine
+	{
+		float x1 = 0.0F;
+		float y1 = 0.0F;
+		float x2 = 0.0F;
+		float y2 = 0.0F;
+	};
+
+	struct ControlVisualGeometry
+	{
+		VisualLine dragHandle{};
+		VisualRect previous{};
+		VisualRect currentPage{};
+		VisualRect totalPage{};
+		VisualRect next{};
+		VisualRect action{};
+	};
+
+	struct PageText
+	{
+		std::wstring current;
+		std::wstring total;
+	};
+
+	[[nodiscard]] inline ControlVisualGeometry ResolveControlVisualGeometry(
+		Control control) noexcept
+	{
+		ControlVisualGeometry geometry;
+		if (control == Control::BottomLeft || control == Control::BottomRight)
+		{
+			const bool left = control == Control::BottomLeft;
+			const float inset = left ? 15.0F : 5.0F;
+			geometry.dragHandle = left
+				? VisualLine{ 8.0F, 15.0F, 8.0F, 45.0F }
+				: VisualLine{ 187.0F, 15.0F, 187.0F, 45.0F };
+			geometry.previous = { inset, 5.0F, inset + 50.0F, 55.0F };
+			geometry.currentPage = { inset + 55.0F, 5.0F,
+				inset + 120.0F, 40.0F };
+			geometry.totalPage = { inset + 55.0F, 30.0F,
+				inset + 120.0F, 60.0F };
+			geometry.next = { inset + 125.0F, 5.0F,
+				inset + 175.0F, 55.0F };
+		}
+		else if (control == Control::MiddleLeft || control == Control::MiddleRight)
+		{
+			geometry.dragHandle = { 15.0F, 8.0F, 45.0F, 8.0F };
+			geometry.previous = { 5.0F, 15.0F, 55.0F, 65.0F };
+			geometry.currentPage = { 5.0F, 70.0F, 55.0F, 110.0F };
+			geometry.totalPage = { 5.0F, 100.0F, 55.0F, 125.0F };
+			geometry.next = { 5.0F, 130.0F, 55.0F, 180.0F };
+		}
+		else
+		{
+			geometry.dragHandle = { 8.0F, 15.0F, 8.0F, 45.0F };
+			geometry.action = { 15.0F, 5.0F, 65.0F, 55.0F };
+		}
+		return geometry;
+	}
+
+	[[nodiscard]] inline PageText ResolvePageText(Control control,
+		int currentPage, int totalPage)
+	{
+		const int maximum = control == Control::MiddleLeft ||
+			control == Control::MiddleRight ? 999 : 9999;
+		return {
+			currentPage < 0 ? L"-" : std::to_wstring((std::min)(maximum, currentPage)),
+			L"/" + (totalPage < 0 ? std::wstring(L"-")
+				: std::to_wstring((std::min)(maximum, totalPage))),
+		};
+	}
+
+	[[nodiscard]] inline bool IsInPageHitArea(Control control,
+		float x, float y) noexcept
+	{
+		const auto geometry = ResolveControlVisualGeometry(control);
+		if (control == Control::BottomLeft || control == Control::BottomRight)
+			return x >= geometry.currentPage.left && x <= geometry.currentPage.right;
+		if (control == Control::MiddleLeft || control == Control::MiddleRight)
+			return y >= geometry.currentPage.top && y <= geometry.totalPage.bottom;
+		return false;
+	}
 
 	struct DragResolution
 	{

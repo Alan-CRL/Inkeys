@@ -122,6 +122,52 @@ namespace
 			SameRect(final.damage, active.damage),
 			"idle transition draws one green final damage");
 	}
+
+	void TestVisualGeometryAndPageText()
+	{
+		const auto bottomLeft = ResolveControlVisualGeometry(Control::BottomLeft);
+		const auto bottomRight = ResolveControlVisualGeometry(Control::BottomRight);
+		const auto middleLeft = ResolveControlVisualGeometry(Control::MiddleLeft);
+		const auto exit = ResolveControlVisualGeometry(Control::ExitShow);
+		Check(bottomLeft.dragHandle.x1 == 8.0F && bottomLeft.dragHandle.x2 == 8.0F &&
+			bottomLeft.dragHandle.y1 == 15.0F && bottomLeft.dragHandle.y2 == 45.0F,
+			"bottom-left restores vertical drag handle");
+		Check(bottomRight.dragHandle.x1 == 187.0F &&
+			bottomRight.dragHandle.x2 == 187.0F,
+			"bottom-right drag handle mirrors at trailing edge");
+		Check(middleLeft.dragHandle.y1 == 8.0F && middleLeft.dragHandle.y2 == 8.0F &&
+			middleLeft.dragHandle.x1 == 15.0F && middleLeft.dragHandle.x2 == 45.0F,
+			"middle controls restore horizontal drag handle");
+		Check(exit.dragHandle.x1 == 8.0F && exit.dragHandle.x2 == 8.0F,
+			"exit control restores vertical drag handle");
+
+		Check(middleLeft.previous.top == 15.0F && middleLeft.previous.bottom == 65.0F &&
+			middleLeft.next.top == 130.0F && middleLeft.next.bottom == 180.0F,
+			"middle buttons keep balanced outer spacing");
+		Check(middleLeft.currentPage.top == 70.0F &&
+			middleLeft.currentPage.bottom == 110.0F &&
+			middleLeft.totalPage.top == 100.0F &&
+			middleLeft.totalPage.bottom == 125.0F,
+			"middle page text uses legacy centered bounds");
+		Check(IsInPageHitArea(Control::BottomLeft, 70.0F, 0.0F) &&
+			IsInPageHitArea(Control::BottomLeft, 120.0F, 60.0F) &&
+			!IsInPageHitArea(Control::BottomLeft, 69.0F, 30.0F),
+			"bottom page hit area keeps full control height");
+		Check(IsInPageHitArea(Control::MiddleLeft, 0.0F, 70.0F) &&
+			IsInPageHitArea(Control::MiddleLeft, 60.0F, 125.0F) &&
+			!IsInPageHitArea(Control::MiddleLeft, 30.0F, 126.0F),
+			"middle page hit area keeps full control width");
+
+		const auto unknown = ResolvePageText(Control::BottomLeft, -1, -1);
+		Check(unknown.current == L"-" && unknown.total == L"/-",
+			"unknown page values use placeholders");
+		const auto bottomLimit = ResolvePageText(Control::BottomRight, 12345, 56789);
+		Check(bottomLimit.current == L"9999" && bottomLimit.total == L"/9999",
+			"bottom page values retain four-digit cap");
+		const auto middleLimit = ResolvePageText(Control::MiddleRight, 1234, 5678);
+		Check(middleLimit.current == L"999" && middleLimit.total == L"/999",
+			"middle page values retain three-digit cap");
+	}
 }
 
 int RunPptUiTests()
@@ -129,5 +175,6 @@ int RunPptUiTests()
 	TestLayoutAndDpi();
 	TestAnimationAndDrag();
 	TestDamageTransactions();
+	TestVisualGeometryAndPageText();
 	return failureCount;
 }

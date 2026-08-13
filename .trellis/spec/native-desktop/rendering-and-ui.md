@@ -195,6 +195,57 @@ scheduler.Unregister(client);
 target.Reset();
 ~~~
 
+### UI3 PPT 控件内部几何合同
+
+#### 1. Scope / Trigger
+
+修改五个 PPT 控件的拖动柄、按钮、页码文字框、命中区或 DPI 缩放时适用。控件内部几何使用 96 DPI 逻辑坐标，绘制时统一乘窗口 scale。
+
+#### 2. Signatures
+
+~~~cpp
+ControlVisualGeometry ResolveControlVisualGeometry(Control) noexcept;
+PageText ResolvePageText(Control, int currentPage, int totalPage);
+bool IsInPageHitArea(Control, float x, float y) noexcept;
+~~~
+
+#### 3. Contracts
+
+- 底部左、底部结束拖动柄为 `x=8, y=15..45` 的竖线；底部右镜像为 `x=187`；中部左右为 `y=8, x=15..45` 的横线。线宽 2，使用圆头和深灰色。
+- 中部按钮固定为上一页 `y=15..65`、下一页 `y=130..180`，在 `60x185` backing 中保持左右和底部各 5px 间距。
+- 页码沿用 `HarmonyOS Sans SC` 自定义字体集合；未知当前页/总页分别显示 `-` 和 `/-`；底部页码上限 9999，中部页码上限 999，文字禁止自动换行。
+- 文本绘制框与点击热区是相关但不同的合同：底部页码列整窗高度可点击，中部 `y=70..125` 在整窗宽度内可点击。视觉框不得缩窄既有点击热区。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| DPI/用户缩放变化 | 所有逻辑几何和 stroke width 乘同一 scale |
+| 当前页或总页为负数 | 使用占位符，不渲染 `-1` |
+| 指针位于页码文字左右空白 | 中部窗口仍执行页码点击，不转为拖动 |
+| 指针位于页码列上下空白 | 底部窗口仍执行页码点击，不转为拖动 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：绘制、命中和测试读取同一逻辑几何，热区通过独立 helper 保留兼容范围。
+- Base：默认 scale 下拖动柄、按钮和页码与迁移前布局一致。
+- Bad：只移动 D2D 按钮矩形，不同步命中区、图标和脏区边界；或直接 `to_wstring(-1)`。
+
+#### 6. Tests Required
+
+- Headless 断言五窗拖动柄方向/坐标、中部按钮外边距、页码框、未知值、数值上限和热区边界。
+- 完整 Solution `Debug|ARM64` 构建；真实 PowerPoint/WPS 中手工检查不同 scale/DPI 下的线宽、文本裁切和页码点击。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：文字框变窄时顺带缩窄既有页码点击区。
+return Contains(geometry.currentPage);
+
+// Correct：视觉框负责排版，兼容热区由明确合同派生。
+return IsInPageHitArea(control, x, y);
+~~~
+
 ### UI3 基于变化的脏区事务合同
 
 #### 1. Scope / Trigger
