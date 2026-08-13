@@ -14,6 +14,7 @@
 import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
+import Inkeys.UI.Ppt;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
@@ -1044,6 +1045,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			Inkeys::UI::Bar::SetDebugOptions(
 				config.Experimental.Inkeys3.UI3.Debug.Enable,
 				config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate);
+			// PPT 五窗复用 UI3 脏区诊断开关，但按设计不显示帧率。
+			Inkeys::UI::Ppt::SetDebugEnabled(
+				config.Experimental.Inkeys3.UI3.Debug.Enable);
 
 			configOnce = Inkeys::config;
 
@@ -1289,17 +1293,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				spec.exStyle = overlayExStyle | extraStyle;
 				spec.windowProc = proc;
 				spec.created = created;
-				if (role == Inkeys::Window::WindowRole::PptControls)
+				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
+					role <= Inkeys::Window::WindowRole::PptExitShow)
 				{
-					// WM_TOUCH 已由窗口过程自行转为单指输入，HiMsg 入队前丢弃系统兼容副本。
-					spec.messageCallback = [](HWND, UINT message, WPARAM, LPARAM)
-						-> Inkeys::Message::Reply
-						{
-							if (Inkeys::Message::IsTouchGeneratedMouseMessage(
-								message, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
-								return { Inkeys::Message::Action::Discard, 0 };
-							return {};
-						};
+					// 五个 HWND 只覆盖控件自身，固定 backing 由 PPT 渲染客户端按缩放提交。
+					spec.width = (role == Inkeys::Window::WindowRole::PptExitShow) ? 70 :
+						(role <= Inkeys::Window::WindowRole::PptBottomRight ? 195 : 60);
+					spec.height = role <= Inkeys::Window::WindowRole::PptBottomRight ||
+						role == Inkeys::Window::WindowRole::PptExitShow ? 60 : 185;
+					spec.bindMessages = false;
 				}
 				else if (role == Inkeys::Window::WindowRole::Bar)
 				{
@@ -1317,8 +1319,21 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			DefWindowProcW, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::Drawpad, L"Inkeys2;", L"Inkeys DrawpadWindow",
 			DrawpadMsgCallback, 0, disableGestureFuc);
-		AddOverlayWindow(Inkeys::Window::WindowRole::PptControls, L"Inkeys4;", L"Inkeys PptWindow",
-			PptWindowMsgCallback, 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomLeft,
+			L"Inkeys4.BottomLeft;", L"Inkeys Ppt Bottom Left",
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomRight,
+			L"Inkeys4.BottomRight;", L"Inkeys Ppt Bottom Right",
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleLeft,
+			L"Inkeys4.MiddleLeft;", L"Inkeys Ppt Middle Left",
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleRight,
+			L"Inkeys4.MiddleRight;", L"Inkeys Ppt Middle Right",
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::PptExitShow,
+			L"Inkeys4.ExitShow;", L"Inkeys Ppt Exit Show",
+			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
 		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
 			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc);
 
@@ -1360,7 +1375,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		magnifierChild = windowService.Handle(Inkeys::Window::WindowRole::MagnifierChild);
 		freeze_window = windowService.Handle(Inkeys::Window::WindowRole::Freeze);
 		drawpad_window = windowService.Handle(Inkeys::Window::WindowRole::Drawpad);
-		ppt_window = windowService.Handle(Inkeys::Window::WindowRole::PptControls);
 		floating_window = windowService.Handle(Inkeys::Window::WindowRole::Bar);
 		setting_window = windowService.Handle(Inkeys::Window::WindowRole::Setting);
 		magnificationCreateReady = magnifierWindow && magnifierChild;

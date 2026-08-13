@@ -469,6 +469,10 @@
 	<ClCompile Include="Inkeys\Message\Message.cppm" />
 	<ClCompile Include="Inkeys\Window\Window.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.cppm" />
+	<ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cppm" />
+	<ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cpp" />
+	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
+	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />

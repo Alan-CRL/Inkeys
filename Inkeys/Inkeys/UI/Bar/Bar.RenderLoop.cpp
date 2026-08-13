@@ -26,6 +26,7 @@ import :Zoom;
 import :Theme;
 
 import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.RenderScheduler;
 
 import <ranges>;
 
@@ -186,6 +187,7 @@ enum class BarRenderLoopStageResult
 {
 	Proceed,
 	Continue,
+	Idle,
 	Stop,
 };
 
@@ -520,9 +522,10 @@ struct BarRenderLoopState
 class BarRenderLoopCoordinator
 {
 public:
-	explicit BarRenderLoopCoordinator(BarUISetClass& owner) : owner_(owner) {}
+	explicit BarRenderLoopCoordinator(BarUISetClass& owner);
 
 	void Run();
+	Inkeys::UI::RenderScheduler::FrameResult RenderFrame();
 
 private:
 	BarRenderLoopStageResult WakeAndSnapshot(
@@ -574,12 +577,36 @@ private:
 	}
 
 	BarUISetClass& owner_;
+	unique_ptr<BarRenderLoopState> state_;
+	BLENDFUNCTION blend_{};
+	SIZE sizeWnd_{ 1, 1 };
+	POINT ptSrc_{};
+	POINT ptDst_{};
+	UPDATELAYEREDWINDOWINFO ulwi_{};
+	int frameOrdinal_ = 1;
 };
 
 // 渲染
 void BarUISetClass::Rendering()
 {
 	BarRenderLoopCoordinator(*this).Run();
+}
+
+BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
+	: owner_(owner),
+	state_(make_unique<BarRenderLoopState>(owner, owner.mainButtonClickPulseSerial))
+{
+	blend_.BlendOp = AC_SRC_OVER;
+	blend_.BlendFlags = 0;
+	blend_.SourceConstantAlpha = 255;
+	blend_.AlphaFormat = AC_SRC_ALPHA;
+	ulwi_.cbSize = sizeof(ulwi_);
+	ulwi_.pptDst = &ptDst_;
+	ulwi_.psize = &sizeWnd_;
+	ulwi_.pptSrc = &ptSrc_;
+	ulwi_.crKey = RGB(255, 255, 255);
+	ulwi_.pblend = &blend_;
+	ulwi_.dwFlags = ULW_ALPHA;
 }
 
 BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
@@ -592,24 +619,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	}
 	frame.demandGeneration = BarAtomic::wait.CurrentGeneration();
 	state.presentDecision.ObserveDemandGeneration(frame.demandGeneration);
-	if (state.presentDecision.HasFailureBackoff())
-	{
-		const auto retryDeadline = chrono::steady_clock::now()
-			+ chrono::duration_cast<chrono::steady_clock::duration>(
-				chrono::duration<double>(
-					state.presentDecision.RetryDelayFrames() / 60.0));
-		// 失败退避只阻塞到新请求或截止时间，不再按 60 Hz 轮询整条渲染循环。
-		const auto wakeGeneration = BarAtomic::wait.WaitUntilGenerationChange(
-			frame.demandGeneration, retryDeadline);
-		if (offSignal) return BarRenderLoopStageResult::Stop;
-		if (wakeGeneration != frame.demandGeneration)
-		{
-			frame.demandGeneration = wakeGeneration;
-			state.presentDecision.ObserveDemandGeneration(frame.demandGeneration);
-		}
-		else state.presentAttemptFrameSerial = state.presentDecision.NextRetryFrame();
-	}
-
 	state.frameWorkStart = chrono::steady_clock::now();
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
@@ -6409,17 +6418,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 {
 	if (owner_.directWindowDragActive.load(memory_order_acquire))
 	{
-		// 拖动期间不推进旧 viewport；松手后再由一次 ULW 对齐布局和窗口内容。
-		unique_lock lock(owner_.directWindowDragMutex);
-		owner_.directWindowDragCondition.wait(lock, [&]
-			{
-				return offSignal || !owner_.directWindowDragActive.load(
-					memory_order_acquire);
-			});
+		// 拖动期间不推进旧 viewport；共享线程继续服务其余窗口。
 		state.animationClock.Rebase();
-		return offSignal
-			? BarRenderLoopStageResult::Stop
-			: BarRenderLoopStageResult::Continue;
+		return offSignal ? BarRenderLoopStageResult::Stop
+			: BarRenderLoopStageResult::Idle;
 	}
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
@@ -10024,10 +10026,9 @@ else
 	}
 	else
 	{
-		(void)BarAtomic::wait.WaitAndConsume();
-		if (offSignal) return BarRenderLoopStageResult::Stop;
-		// 只重置真正 idle 的休眠时间；提交失败退避仍需继续推进待完成动画。
+		// 共享调度器负责唯一休眠点，客户端只报告本窗口已经 idle。
 		state.animationClock.Rebase();
+		return BarRenderLoopStageResult::Idle;
 	}
 
 	return BarRenderLoopStageResult::Proceed;
@@ -10042,14 +10043,6 @@ void BarRenderLoopCoordinator::PaceFrame(
 	}
 	const auto workEnd = chrono::steady_clock::now();
 	const auto activeFrameTime = workEnd - state.frameWorkStart;
-	// 帧率锁
-	{
-		Inkeys::UI::Bar::HighPrecisionWait(chrono::duration<double, milli>(chrono::high_resolution_clock::now() - state.reckon).count(), 60.0);
-
-		//double delay = 1000.0 / 60.0 - chrono::duration<double, milli>(chrono::high_resolution_clock::now() - state.reckon).count();
-		//if (delay >= 10.0) std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(delay)));
-	}
-
 	const auto frameEnd = chrono::steady_clock::now();
 	const bool debugFrameRateEnabled = BarUiDebugModeEnabled
 		&& BarUiDebugFrameRateEnabled;
@@ -10076,58 +10069,43 @@ void BarRenderLoopCoordinator::PaceFrame(
 void BarRenderLoopCoordinator::Run()
 {
 	Inkeys::Thread::StatusGuard guard("BarUISetClass::Rendering");
-
-	BLENDFUNCTION blend;
-	{
-		blend.BlendOp = AC_SRC_OVER;
-		blend.BlendFlags = 0;
-		blend.SourceConstantAlpha = 255;
-		blend.AlphaFormat = AC_SRC_ALPHA;
-	}
-	SIZE sizeWnd = { 1, 1 };
-	POINT ptSrc = { 0,0 };
-	POINT ptDst = { 0,0 };
-	UPDATELAYEREDWINDOWINFO ulwi = { 0 };
-	{
-		ulwi.cbSize = sizeof(ulwi);
-		ulwi.hdcDst = NULL;
-		ulwi.pptDst = &ptDst;
-		ulwi.psize = &sizeWnd;
-		ulwi.pptSrc = &ptSrc;
-		ulwi.crKey = RGB(255, 255, 255);
-		ulwi.pblend = &blend;
-		ulwi.dwFlags = ULW_ALPHA;
-	}
-
 	if (offSignal) return;
+	auto& scheduler = Inkeys::UI::RenderScheduler::GetScheduler();
+	scheduler.SetDeviceRecoveryCallback([]() { return RecoverUi3RenderDevice(); });
+	if (!scheduler.Register(Inkeys::UI::RenderScheduler::Client::Bar,
+		[this]() { return RenderFrame(); })) return;
+	scheduler.Run([]() { return static_cast<bool>(offSignal); });
+	scheduler.Unregister(Inkeys::UI::RenderScheduler::Client::Bar);
+}
 
-	BarRenderLoopState state(owner_, owner_.mainButtonClickPulseSerial);
-	for (int forNum = 1; !offSignal; forNum = 2)
+Inkeys::UI::RenderScheduler::FrameResult
+BarRenderLoopCoordinator::RenderFrame()
+{
+	using Inkeys::UI::RenderScheduler::FrameResult;
+	if (offSignal) return FrameResult::Stop;
+	auto& state = *state_;
+	BarRenderFrameSnapshot frame;
+	frame.ordinal = frameOrdinal_;
+	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
+		return FrameResult::Stop;
+	if (state.presentDecision.HasFailureBackoff()
+		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
+		return FrameResult::Retry;
+	if (owner_.directWindowDragActive.load(memory_order_acquire))
 	{
-		BarRenderFrameSnapshot frame;
-		frame.ordinal = forNum;
-		if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop) break;
-		if (owner_.directWindowDragActive.load(memory_order_acquire))
-		{
-			// HWND 直移期间尺寸与内容保持，阻塞到松手，避免渲染线程空轮询。
-			unique_lock lock(owner_.directWindowDragMutex);
-			owner_.directWindowDragCondition.wait(lock, [&]
-				{
-					return offSignal || !owner_.directWindowDragActive.load(
-						memory_order_acquire);
-				});
-			state.animationClock.Rebase();
-			continue;
-		}
-		SubmitTargetsAndLayout(state, frame);
-		const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame);
-		PrepareLightingAndDemand(state, frame, needRendering);
-		const auto presentResult = CalculateDirtyAndDrawPresent(state, frame, ulwi);
-		if (presentResult == BarRenderLoopStageResult::Stop) break;
-		if (presentResult == BarRenderLoopStageResult::Continue) continue;
-		PaceFrame(state, forNum);
+		// HWND 直移只暂停 Bar 客户端，不能阻塞同线程上的 PPT 窗口。
+		state.animationClock.Rebase();
+		return FrameResult::Idle;
 	}
-
-	return;
+	SubmitTargetsAndLayout(state, frame);
+	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame);
+	PrepareLightingAndDemand(state, frame, needRendering);
+	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_);
+	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Stop;
+	if (result == BarRenderLoopStageResult::Idle) return FrameResult::Idle;
+	if (result == BarRenderLoopStageResult::Continue) return FrameResult::Retry;
+	PaceFrame(state, frameOrdinal_);
+	frameOrdinal_ = 2;
+	return FrameResult::Continue;
 }
 // 渲染更新：状态更新 + 通知计算并渲染

@@ -19,7 +19,8 @@
   "pr_url": null,
   "subtasks": [],
   "children": [
-    "08-12-ui3-draw3-win32-himsg"
+    "08-12-ui3-draw3-win32-himsg",
+    "08-12-pptcom-ui3-multi-window-rendering"
   ],
   "parent": null,
   "relatedFiles": [

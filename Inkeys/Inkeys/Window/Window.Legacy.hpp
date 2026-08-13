@@ -7,7 +7,6 @@
 
 extern HWND floating_window;
 extern HWND drawpad_window;
-extern HWND ppt_window;
 extern HWND freeze_window;
 extern HWND setting_window;
 

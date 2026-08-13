@@ -19,6 +19,7 @@ module;
 
 module Inkeys.Input.MouseHook;
 import Inkeys.Other.Inputs;
+import Inkeys.UI.Ppt;
 
 namespace
 {
@@ -138,12 +139,9 @@ namespace
 		{
 			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
 			const short wheel = GET_WHEEL_DELTA_WPARAM(mouse->mouseData);
-			// 由 PPT 窗口线程的消息绑定统一入队，Hook 不再访问旧窗口队列内部。
-			if (ppt_window && PostMessageW(
-				ppt_window, WM_MOUSEWHEEL,
-				MAKEWPARAM(0, static_cast<WORD>(wheel)),
-				MAKELPARAM(mouse->pt.x, mouse->pt.y)))
-				return 1;
+			// Hook 只写入 UI3 交互队列，具体命令由共享渲染线程串行处理。
+			Inkeys::UI::Ppt::QueueGlobalWheel(wheel);
+			return 1;
 		}
 
 		if ((message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN

@@ -149,6 +149,28 @@ bool CommitPreparedUi3RenderBackend()
 	return true;
 }
 
+bool RecoverUi3RenderDevice()
+{
+	Ui3RenderBackend backend = Ui3RenderBackend::Warp;
+	unsigned long long generation = 0;
+	{
+		lock_guard lock(ui3RenderDeviceMutex);
+		backend = ui3CurrentEpoch.backend;
+		generation = ui3NextGeneration++;
+	}
+
+	Ui3RenderDeviceEpoch recoveredEpoch;
+	if (FAILED(CreateUi3RenderDevice(backend, generation, recoveredEpoch)))
+		return false;
+
+	// 重建设备和发布代次均在共享调度线程完成，避免客户端看到半更新状态。
+	auto renderPass = AcquireUi3RenderPass(Ui3RenderPriority::Interactive);
+	lock_guard lock(ui3RenderDeviceMutex);
+	ui3PreparedEpoch.reset();
+	PublishUi3Epoch(recoveredEpoch);
+	return true;
+}
+
 HRESULT D2DStarup()
 {
 	auto resetState = []()

@@ -42,10 +42,17 @@ int RunWindowTests()
 
 	std::vector<WindowSpec> specs;
 	specs.push_back(makeSpec(WindowRole::MagnifierHost, L"MagnifierHost"));
-	specs.push_back(makeSpec(WindowRole::MagnifierChild, L"MagnifierChild"));
+	auto magnifierChildSpec = makeSpec(WindowRole::MagnifierChild, L"MagnifierChild");
+	// MagnifierChild 使用系统类，不经过服务注册测试类。
+	magnifierChildSpec.className = L"Static";
+	specs.push_back(std::move(magnifierChildSpec));
 	specs.push_back(makeSpec(WindowRole::Freeze, L"Freeze"));
 	specs.push_back(makeSpec(WindowRole::Drawpad, L"Drawpad"));
-	specs.push_back(makeSpec(WindowRole::PptControls, L"PptControls"));
+	specs.push_back(makeSpec(WindowRole::PptBottomLeft, L"PptBottomLeft"));
+	specs.push_back(makeSpec(WindowRole::PptBottomRight, L"PptBottomRight"));
+	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
+	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
+	specs.push_back(makeSpec(WindowRole::PptExitShow, L"PptExitShow"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
 	settingSpec.style = WS_POPUP;
@@ -65,7 +72,11 @@ int RunWindowTests()
 		WindowRole::MagnifierChild,
 		WindowRole::Freeze,
 		WindowRole::Drawpad,
-		WindowRole::PptControls,
+		WindowRole::PptBottomLeft,
+		WindowRole::PptBottomRight,
+		WindowRole::PptMiddleLeft,
+		WindowRole::PptMiddleRight,
+		WindowRole::PptExitShow,
 		WindowRole::Bar,
 		WindowRole::Setting,
 		WindowRole::DisplayObserver,
@@ -83,7 +94,11 @@ int RunWindowTests()
 	check(service.OwnerThreadId(WindowRole::MagnifierChild) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Freeze) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Drawpad) == overlayThread
-		&& service.OwnerThreadId(WindowRole::PptControls) == overlayThread
+		&& service.OwnerThreadId(WindowRole::PptBottomLeft) == overlayThread
+		&& service.OwnerThreadId(WindowRole::PptBottomRight) == overlayThread
+		&& service.OwnerThreadId(WindowRole::PptMiddleLeft) == overlayThread
+		&& service.OwnerThreadId(WindowRole::PptMiddleRight) == overlayThread
+		&& service.OwnerThreadId(WindowRole::PptExitShow) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Bar) == overlayThread
 		&& service.OwnerThreadId(WindowRole::DisplayObserver) == overlayThread,
 		"single overlay owner thread");
@@ -94,7 +109,11 @@ int RunWindowTests()
 	const HWND magnifierChild = service.Handle(WindowRole::MagnifierChild);
 	const HWND freeze = service.Handle(WindowRole::Freeze);
 	const HWND drawpad = service.Handle(WindowRole::Drawpad);
-	const HWND ppt = service.Handle(WindowRole::PptControls);
+	const HWND pptBottomLeft = service.Handle(WindowRole::PptBottomLeft);
+	const HWND pptBottomRight = service.Handle(WindowRole::PptBottomRight);
+	const HWND pptMiddleLeft = service.Handle(WindowRole::PptMiddleLeft);
+	const HWND pptMiddleRight = service.Handle(WindowRole::PptMiddleRight);
+	const HWND pptExitShow = service.Handle(WindowRole::PptExitShow);
 	const HWND bar = service.Handle(WindowRole::Bar);
 	const HWND setting = service.Handle(WindowRole::Setting);
 	const HWND observer = service.Handle(WindowRole::DisplayObserver);
@@ -102,8 +121,12 @@ int RunWindowTests()
 	check(GetParent(magnifierChild) == magnifierHost, "magnifier child parent");
 	check(GetWindow(freeze, GW_OWNER) == magnifierHost, "freeze owner");
 	check(GetWindow(drawpad, GW_OWNER) == freeze, "drawpad owner");
-	check(GetWindow(ppt, GW_OWNER) == drawpad, "ppt owner");
-	check(GetWindow(bar, GW_OWNER) == ppt, "bar owner");
+	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
+		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
+		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
+		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad
+		&& GetWindow(pptExitShow, GW_OWNER) == drawpad, "five ppt drawpad owner");
+	check(GetWindow(bar, GW_OWNER) == drawpad, "bar drawpad owner");
 	check(GetWindow(setting, GW_OWNER) == nullptr, "setting no owner");
 	check(FindWindowExW(HWND_MESSAGE, nullptr,
 		L"Inkeys.Window.Tests.DisplayObserver", nullptr) == observer,
@@ -140,10 +163,24 @@ int RunWindowTests()
 		&& !(GetWindowLongPtrW(setting, GWL_STYLE) & WS_VISIBLE), "hide command");
 	check(!(GetWindowLongPtrW(freeze, GWL_EXSTYLE) & WS_EX_TOPMOST)
 		&& !(GetWindowLongPtrW(drawpad, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(ppt, GWL_EXSTYLE) & WS_EX_TOPMOST)
+		&& !(GetWindowLongPtrW(pptBottomLeft, GWL_EXSTYLE) & WS_EX_TOPMOST)
 		&& !(GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST),
 		"non-root has no independent topmost before refresh");
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
+	const HWND focusBeforePromote = Service::LastFocusWindow();
+	check(service.PromotePptWindow(WindowRole::PptMiddleRight), "promote ppt below bar");
+	check(GetWindow(bar, GW_HWNDNEXT) == pptMiddleRight
+		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad,
+		"promoted ppt remains drawpad sibling below bar");
+	check(Service::LastFocusWindow() == focusBeforePromote,
+		"promote ppt does not activate");
+	check(service.Hide(WindowRole::PptBottomLeft)
+		&& service.Show(WindowRole::PptBottomLeft), "reshow ppt below bar");
+	check(GetWindow(bar, GW_HWNDNEXT) == pptBottomLeft
+		&& GetWindow(pptBottomLeft, GW_OWNER) == drawpad,
+		"reshown ppt remains drawpad sibling below bar");
+	check(Service::LastFocusWindow() == focusBeforePromote,
+		"reshow ppt does not activate");
 
 	Inkeys::Message::Message expected{};
 	expected.message = WM_MOUSEMOVE;
@@ -165,7 +202,7 @@ int RunWindowTests()
 		&& !service.TryGet(WindowRole::Bar, actual, Inkeys::Message::Filter::Mouse),
 		"message clear");
 
-	// owner 链存在时只能按逆序动态销毁。
+	// 基础 owner 链存在时只能按逆序动态销毁；UI popup 可独立销毁。
 	check(!service.Destroy(WindowRole::Freeze), "reject middle owner destruction");
 	check(service.Destroy(WindowRole::Bar) && !IsWindow(bar), "destroy leaf on owner thread");
 	auto replacementBar = makeSpec(WindowRole::Bar, L"ReplacementBar");

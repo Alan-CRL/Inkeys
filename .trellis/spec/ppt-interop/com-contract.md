@@ -64,8 +64,8 @@
 1. `IdtMain.cpp::wWinMain` 调用 `CoInitializeEx`，准备/激活 PptCOM manifest context 并 `LoadLibrary` DLL；
 2. `IdtPlug-in.cpp::CheckPptCom` 创建服务，调用 `CheckCOM` 与 `Initialization`，再写入受保护的服务槽；
 3. `GetPptState` 取得快照并运行 `PptComService`；
-4. `PPTLinkageMain` 启动 `GetPptState`、`PptInfo`、`PptDraw`、`PptInteract` 等线程；
-5. `NextPptSlides`、`PreviousPptSlides` 等取得服务快照并包装用户命令；
+4. `PPTLinkageMain` 注册 `Inkeys.UI.Ppt` 五个渲染客户端，并启动 `GetPptState`、`PptInfo` 与 PPT 业务队列；
+5. UI3 回调只向业务队列提交请求，业务线程再通过 `NextPptSlides`、`PreviousPptSlides` 等取得服务快照并执行 COM 或模态确认；
 6. 退出路径通过 `offSignal`、服务 reset、COM/activation-context/module 清理收束。
 
 native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应每次通过既有快照入口取得服务并处理空值/COM 失败，而不是缓存未经同步的 raw interface pointer。
@@ -102,7 +102,9 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 2. `IdtPlug-in.cpp::PptInfo` 观察放映状态，并在放映结束时清理 `PptImg` 等状态；
 3. `IdtDrawpad.cpp` 比较 COM 状态与 buffer，换页前保存当前 `drawpad` 到 `PptImg.Image[页]`，再恢复目标页或清空画布；
 4. 画布处理完成后更新 `PptInfoStateBuffer`；源码注释明确 buffer 要等 `DrawpadDrawing` 加载 PPT 画布后再同步；
-5. `PptDraw`/PPT UI 使用缓冲状态显示控件，交互命令再调用 COM 服务。
+5. `Inkeys.UI.Ppt::PublishPageState` 将缓冲状态发布给四个页码窗口；结束放映窗不参与页码计算，交互命令投递到 PPT 业务线程后再调用 COM 服务。
+
+`【直接确认】` UI3 渲染回调与 COM/模态业务之间以队列隔离。新增 PPT UI 命令时，渲染线程只能复制不可变请求数据并入队；不得在共享 UI3 调度线程内直接调用 Office COM、`PptComWriteSetting()` 或结束放映确认，否则任一阻塞都会饿死 Bar 与其余 PPT 窗口。
 
 `PptImgStruct` 包含 `IsSave`、`IsSaved` 和 `map<int, IMAGE> Image`；它是 native 页级墨迹缓存，不是从 Office 获取的幻灯片位图。
 

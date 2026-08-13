@@ -5,6 +5,7 @@ module;
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <deque>
 #include <future>
 #include <memory>
@@ -43,6 +44,17 @@ namespace
 		return role == WindowRole::DisplayObserver;
 	}
 
+	[[nodiscard]] constexpr bool IsPpt(WindowRole role) noexcept
+	{
+		return role >= WindowRole::PptBottomLeft
+			&& role <= WindowRole::PptExitShow;
+	}
+
+	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
+	{
+		return IsPpt(role) || role == WindowRole::Bar;
+	}
+
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
 	{
 		switch (role)
@@ -50,8 +62,6 @@ namespace
 		case WindowRole::MagnifierHost: return 0;
 		case WindowRole::Freeze: return 1;
 		case WindowRole::Drawpad: return 2;
-		case WindowRole::PptControls: return 3;
-		case WindowRole::Bar: return 4;
 		default: return -1;
 		}
 	}
@@ -64,7 +74,11 @@ namespace
 		case WindowRole::MagnifierChild: return L"Inkeys.Window.MagnifierChild";
 		case WindowRole::Freeze: return L"Inkeys.Window.Freeze";
 		case WindowRole::Drawpad: return L"Inkeys.Window.Drawpad";
-		case WindowRole::PptControls: return L"Inkeys.Window.PptControls";
+		case WindowRole::PptBottomLeft: return L"Inkeys.Window.PptBottomLeft";
+		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
+		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
+		case WindowRole::PptMiddleRight: return L"Inkeys.Window.PptMiddleRight";
+		case WindowRole::PptExitShow: return L"Inkeys.Window.PptExitShow";
 		case WindowRole::Bar: return L"Inkeys.Window.Bar";
 		case WindowRole::Setting: return L"Inkeys.Window.Setting";
 		case WindowRole::DisplayObserver: return L"Inkeys.Window.DisplayObserver";
@@ -180,7 +194,11 @@ namespace Inkeys::Window
 				WindowRole::MagnifierChild,
 				WindowRole::Freeze,
 				WindowRole::Drawpad,
-				WindowRole::PptControls,
+				WindowRole::PptBottomLeft,
+				WindowRole::PptBottomRight,
+				WindowRole::PptMiddleLeft,
+				WindowRole::PptMiddleRight,
+				WindowRole::PptExitShow,
 				WindowRole::Bar,
 				WindowRole::DisplayObserver,
 			};
@@ -211,7 +229,6 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::Freeze,
 				WindowRole::Drawpad,
-				WindowRole::PptControls,
 				WindowRole::Bar,
 			};
 			for (const auto role : order)
@@ -285,6 +302,12 @@ namespace Inkeys::Window
 			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
 		}
 
+		[[nodiscard]] bool PromotePptWindow(WindowRole role)
+		{
+			if (!IsPpt(role)) return false;
+			return Submit(role, CommandType::PromotePpt);
+		}
+
 		[[nodiscard]] bool BindMessages(WindowRole role, const Message::BindOptions& options)
 		{
 			Command command;
@@ -321,6 +344,7 @@ namespace Inkeys::Window
 			SetBounds,
 			SetClickThrough,
 			RefreshTopmost,
+			PromotePpt,
 			BindMessages,
 			UnbindMessages,
 		};
@@ -506,7 +530,11 @@ namespace Inkeys::Window
 				WindowRole::MagnifierChild,
 				WindowRole::Freeze,
 				WindowRole::Drawpad,
-				WindowRole::PptControls,
+				WindowRole::PptBottomLeft,
+				WindowRole::PptBottomRight,
+				WindowRole::PptMiddleLeft,
+				WindowRole::PptMiddleRight,
+				WindowRole::PptExitShow,
 				WindowRole::Bar,
 				WindowRole::DisplayObserver,
 			};
@@ -539,13 +567,16 @@ namespace Inkeys::Window
 					roleOwner = Handle(WindowRole::MagnifierHost);
 				else if (role == WindowRole::DisplayObserver)
 					roleOwner = HWND_MESSAGE;
+				else if (IsUiPopup(role))
+					roleOwner = Handle(WindowRole::Drawpad);
 				if (!CreateWindowFor(*spec, roleOwner, threadId))
 				{
 					if (!spec->optional) return false;
 					configured_[RoleIndex(role)].store(false, std::memory_order_release);
 					continue;
 				}
-				if (role != WindowRole::MagnifierChild && role != WindowRole::DisplayObserver)
+				if (role != WindowRole::MagnifierChild
+					&& role != WindowRole::DisplayObserver && !IsUiPopup(role))
 					owner = Handle(role);
 			}
 			return true;
@@ -644,6 +675,12 @@ namespace Inkeys::Window
 				nullptr);
 			if (!hwnd)
 			{
+				const DWORD createError = GetLastError();
+				wchar_t diagnostic[256]{};
+				swprintf_s(diagnostic, L"Inkeys.Window create failed: role=%u error=%lu class=%s\n",
+					static_cast<unsigned>(spec.role), createError, record.className.c_str());
+				OutputDebugStringW(diagnostic);
+				std::fwprintf(stderr, L"%s", diagnostic);
 				RollbackCreation(record);
 				return false;
 			}
@@ -689,7 +726,11 @@ namespace Inkeys::Window
 		{
 			constexpr WindowRole overlayDestructionOrder[] = {
 				WindowRole::Bar,
-				WindowRole::PptControls,
+				WindowRole::PptExitShow,
+				WindowRole::PptMiddleRight,
+				WindowRole::PptMiddleLeft,
+				WindowRole::PptBottomRight,
+				WindowRole::PptBottomLeft,
 				WindowRole::Drawpad,
 				WindowRole::Freeze,
 				WindowRole::MagnifierChild,
@@ -827,7 +868,8 @@ namespace Inkeys::Window
 				return command.spec && CreateDynamic(*command.spec);
 			if (command.type == CommandType::Destroy)
 				return DestroyDynamic(command.role);
-			if (command.type != CommandType::RefreshTopmost && (!record || !hwnd || !IsWindow(hwnd)))
+			if (command.type != CommandType::RefreshTopmost
+				&& (!record || !hwnd || !IsWindow(hwnd)))
 				return false;
 
 			switch (command.type)
@@ -847,6 +889,16 @@ namespace Inkeys::Window
 				else
 				{
 					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+					if (IsPpt(command.role))
+					{
+						const HWND bar = Handle(WindowRole::Bar);
+						if (!bar || !IsWindow(bar) ||
+							!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
+								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) ||
+							!SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+							return false;
+					}
 				}
 				return true;
 			case CommandType::Hide:
@@ -882,6 +934,17 @@ namespace Inkeys::Window
 					root, HWND_TOPMOST, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
 			}
+			case CommandType::PromotePpt:
+			{
+				if (!IsPpt(command.role)) return false;
+				const HWND bar = Handle(WindowRole::Bar);
+				if (!bar || !IsWindow(bar)) return false;
+				// no-activate 窗口没有焦点自动排序：Bar 固定最上，交互 PPT 紧随其后。
+				if (!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return false;
+				return SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+			}
 			case CommandType::BindMessages:
 				if (!record->channel) return false;
 				if (record->messagesBound)
@@ -911,14 +974,17 @@ namespace Inkeys::Window
 			{
 				owner = HWND_MESSAGE;
 			}
+			else if (IsUiPopup(spec.role))
+			{
+				owner = Handle(WindowRole::Drawpad);
+				if (!owner) return false;
+			}
 			else if (!IsSetting(spec.role))
 			{
 				constexpr WindowRole chain[] = {
 					WindowRole::MagnifierHost,
 					WindowRole::Freeze,
 					WindowRole::Drawpad,
-					WindowRole::PptControls,
-					WindowRole::Bar,
 				};
 				const int position = OverlayChainPosition(spec.role);
 				for (int index = position - 1; index >= 0; --index)
@@ -952,12 +1018,17 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::Freeze,
 				WindowRole::Drawpad,
-				WindowRole::PptControls,
-				WindowRole::Bar,
 			};
 			for (int index = position + 1; index < static_cast<int>(std::size(chain)); ++index)
 			{
 				if (Handle(chain[index])) return false;
+			}
+			if (role == WindowRole::Drawpad)
+			{
+				for (auto popup = WindowRole::PptBottomLeft;
+					popup <= WindowRole::Bar;
+					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))
+					if (Handle(popup)) return false;
 			}
 			if (role == WindowRole::MagnifierHost && Handle(WindowRole::MagnifierChild))
 				return false;
@@ -1018,6 +1089,7 @@ namespace Inkeys::Window
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
 	bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+	bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
 	bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
 	bool Service::UnbindMessages(WindowRole role) { return impl_->UnbindMessages(role); }
 

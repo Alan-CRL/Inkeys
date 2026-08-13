@@ -10,7 +10,6 @@ import Inkeys.Window;
 
 HWND floating_window = nullptr;
 HWND drawpad_window = nullptr;
-HWND ppt_window = nullptr;
 HWND freeze_window = nullptr;
 HWND setting_window = nullptr;
 
@@ -65,7 +64,12 @@ void TopWindow()
 
 	(void)service.Show(Inkeys::Window::WindowRole::Freeze);
 	(void)service.Show(Inkeys::Window::WindowRole::Drawpad);
-	(void)service.Show(Inkeys::Window::WindowRole::PptControls);
+	// PPT 五窗按各自配置决定显隐，TopWindow 只负责唤醒其首次提交。
+	(void)service.Show(Inkeys::Window::WindowRole::PptBottomLeft);
+	(void)service.Show(Inkeys::Window::WindowRole::PptBottomRight);
+	(void)service.Show(Inkeys::Window::WindowRole::PptMiddleLeft);
+	(void)service.Show(Inkeys::Window::WindowRole::PptMiddleRight);
+	(void)service.Show(Inkeys::Window::WindowRole::PptExitShow);
 	(void)service.Show(Inkeys::Window::WindowRole::Bar);
 	while (rtsWait && !offSignal)
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));

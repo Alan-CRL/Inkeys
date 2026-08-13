@@ -1,4 +1,5 @@
 import Inkeys.UI.Bar;
+import Inkeys.UI.Ppt;
 import Inkeys.Helper.Thread;
 import Inkeys.Window;
 import Inkeys.Other.Inputs;
@@ -89,12 +90,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_RETURN: // Enter
 			{
 				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
-				{
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_NextPage].FillColor.v = RGBA(200, 200, 200, 255);
-				}
+					Inkeys::UI::Ppt::FlashPageDirection(true);
 				break;
 			}
 
@@ -104,12 +100,7 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 			case VK_BACK:   // Backsapce
 			{
 				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
-				{
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::BottomSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_LeftPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
-					pptUiRoundRectWidget[PptUiRoundRectWidgetID::MiddleSide_RightPageWidget_PreviousPage].FillColor.v = RGBA(200, 200, 200, 255);
-				}
+					Inkeys::UI::Ppt::FlashPageDirection(false);
 				break;
 			}
 

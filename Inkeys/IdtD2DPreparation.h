@@ -65,6 +65,7 @@ Ui3RenderDeviceEpoch GetUi3RenderDeviceEpoch();
 Ui3RenderPass AcquireUi3RenderPass(Ui3RenderPriority priority);
 HRESULT PrepareUi3RenderBackend(Ui3RenderBackend backend);
 bool CommitPreparedUi3RenderBackend();
+bool RecoverUi3RenderDevice();
 
 //class IdtFontFileEnumerator : public IDWriteFontFileEnumerator
 //{

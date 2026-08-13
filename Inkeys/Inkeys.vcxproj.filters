@@ -58,6 +58,12 @@
     <Filter Include="Modules\Inkeys\UI\Bar">
       <UniqueIdentifier>{56be2dfa-0003-4904-8ed4-aac871d769c8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\UI\Ppt">
+      <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\RenderScheduler">
+      <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\Conv">
       <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
     </Filter>
@@ -532,6 +538,18 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm">
+      <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
+      <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cppm">
+      <Filter>Modules\Inkeys\UI\RenderScheduler</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cpp">
+      <Filter>Modules\Inkeys\UI\RenderScheduler</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Load\Load.cppm">
       <Filter>Modules\Inkeys\Load</Filter>

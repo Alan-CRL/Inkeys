@@ -24,6 +24,7 @@ import :Zoom;
 import :Theme;
 
 import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.RenderScheduler;
 
 import <ranges>;
 
@@ -203,6 +204,8 @@ void BarUISetClass::UpdateRendering(bool updateState)
 
 	// 通知计算并渲染
 	BarAtomic::wait.Notify();
+	Inkeys::UI::RenderScheduler::Request(
+		Inkeys::UI::RenderScheduler::Client::Bar);
 }
 
 // 全局 Bar UI 集合

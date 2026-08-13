@@ -21,7 +21,11 @@ export namespace Inkeys::Window
 		MagnifierChild,
 		Freeze,
 		Drawpad,
-		PptControls,
+		PptBottomLeft,
+		PptBottomRight,
+		PptMiddleLeft,
+		PptMiddleRight,
+		PptExitShow,
 		Bar,
 		Setting,
 		DisplayObserver,
@@ -88,6 +92,7 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
 		[[nodiscard]] bool RequestTopmostRefresh();
+		[[nodiscard]] bool PromotePptWindow(WindowRole role);
 
 		[[nodiscard]] bool BindMessages(
 			WindowRole role,

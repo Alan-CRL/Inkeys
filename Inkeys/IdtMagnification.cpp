@@ -9,6 +9,8 @@
 #include <d3d9.h>
 #pragma comment(lib, "d3d9")
 
+import Inkeys.Window;
+
 HWND magnifierWindow, magnifierChild;
 Inkeys::Graphics::DibSurface MagnificationBackground;
 
@@ -139,7 +141,16 @@ void MagnifierThread()
 		{
 			std::vector<HWND> hwndList;
 			hwndList.emplace_back(floating_window);
-			hwndList.emplace_back(ppt_window);
+			const auto& windowService = Inkeys::Window::GetService();
+			for (const auto role : {
+				Inkeys::Window::WindowRole::PptBottomLeft,
+				Inkeys::Window::WindowRole::PptBottomRight,
+				Inkeys::Window::WindowRole::PptMiddleLeft,
+				Inkeys::Window::WindowRole::PptMiddleRight,
+				Inkeys::Window::WindowRole::PptExitShow })
+			{
+				if (const HWND hwnd = windowService.Handle(role)) hwndList.emplace_back(hwnd);
+			}
 			hwndList.emplace_back(drawpad_window);
 			hwndList.emplace_back(freeze_window);
 			hwndList.emplace_back(setting_window);

@@ -28,6 +28,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 module Inkeys.UI.Setting;
 
 import Inkeys.UI.Bar;
+import Inkeys.UI.Ppt;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
@@ -4772,7 +4773,8 @@ void SettingMain(stop_token sT)
 											pptComSetlist.showBottomBoth = ShowBottomBoth;
 											PptComWriteSetting();
 
-											PptUiChangeSignal = true;
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::BottomPair);
 										}
 									}
 
@@ -4800,7 +4802,8 @@ void SettingMain(stop_token sT)
 											pptComSetlist.showMiddleBoth = ShowMiddleBoth;
 											PptComWriteSetting();
 
-											PptUiChangeSignal = true;
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
 										}
 									}
 
@@ -4828,7 +4831,8 @@ void SettingMain(stop_token sT)
 											pptComSetlist.showBottomMiddle = ShowBottomMiddle;
 											PptComWriteSetting();
 
-											PptUiChangeSignal = true;
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 										}
 									}
 
@@ -4888,6 +4892,8 @@ void SettingMain(stop_token sT)
 											pptComSetlist.bottomMiddleHeight = BottomMiddleHeight = 0;
 
 											PptComWriteSetting();
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::All);
 										}
 									}
 
@@ -5009,6 +5015,14 @@ void SettingMain(stop_token sT)
 												if (BottomSideMiddleWidgetScaleUnifie)
 													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = BottomSideBothWidgetScale;
 											}
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::BottomPair);
+											if (BottomSideBothWidgetScaleUnifie && MiddleSideBothWidgetScaleUnifie)
+												Inkeys::UI::Ppt::NotifyConfigurationChanged(
+													Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
+											if (BottomSideBothWidgetScaleUnifie && BottomSideMiddleWidgetScaleUnifie)
+												Inkeys::UI::Ppt::NotifyConfigurationChanged(
+													Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 										}
 									}
 									{
@@ -5116,6 +5130,14 @@ void SettingMain(stop_token sT)
 												if (BottomSideMiddleWidgetScaleUnifie)
 													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = MiddleSideBothWidgetScale;
 											}
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
+											if (MiddleSideBothWidgetScaleUnifie && BottomSideBothWidgetScaleUnifie)
+												Inkeys::UI::Ppt::NotifyConfigurationChanged(
+													Inkeys::UI::Ppt::ConfigGroup::BottomPair);
+											if (MiddleSideBothWidgetScaleUnifie && BottomSideMiddleWidgetScaleUnifie)
+												Inkeys::UI::Ppt::NotifyConfigurationChanged(
+													Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 										}
 									}
 									{
@@ -5229,6 +5251,14 @@ void SettingMain(stop_token sT)
 												if (MiddleSideBothWidgetScaleUnifie)
 													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideMiddleWidgetScale;
 											}
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::ExitShow);
+											if (BottomSideMiddleWidgetScaleUnifie && BottomSideBothWidgetScaleUnifie)
+												Inkeys::UI::Ppt::NotifyConfigurationChanged(
+													Inkeys::UI::Ppt::ConfigGroup::BottomPair);
+											if (BottomSideMiddleWidgetScaleUnifie && MiddleSideBothWidgetScaleUnifie)
+												Inkeys::UI::Ppt::NotifyConfigurationChanged(
+													Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
 										}
 									}
 									{
@@ -5297,18 +5327,24 @@ void SettingMain(stop_token sT)
 										BottomSideBothWidgetScaleRecord = BottomSideBothWidgetScale;
 										pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale;
 										PptComWriteSetting();
+										Inkeys::UI::Ppt::NotifyConfigurationChanged(
+											Inkeys::UI::Ppt::ConfigGroup::BottomPair);
 									}
 									if (MiddleSideBothWidgetScale != MiddleSideBothWidgetScaleRecord)
 									{
 										MiddleSideBothWidgetScaleRecord = MiddleSideBothWidgetScale;
 										pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale;
 										PptComWriteSetting();
+										Inkeys::UI::Ppt::NotifyConfigurationChanged(
+											Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
 									}
 									if (BottomSideMiddleWidgetScale != BottomSideMiddleWidgetScaleRecord)
 									{
 										BottomSideMiddleWidgetScaleRecord = BottomSideMiddleWidgetScale;
 										pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
 										PptComWriteSetting();
+										Inkeys::UI::Ppt::NotifyConfigurationChanged(
+											Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 									}
 								}
 
