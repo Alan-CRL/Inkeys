@@ -56,7 +56,8 @@ namespace
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
 	mutex settingLifecycleMutex;
-	mutex settingImguiMutex;
+	// Win32 backend 会调用 SetCapture/ReleaseCapture/IME，可能同步重入同一 WndProc。
+	recursive_mutex settingImguiMutex;
 	mutex settingStateMutex;
 	mutex settingDrainMutex;
 	condition_variable settingDrainCondition;

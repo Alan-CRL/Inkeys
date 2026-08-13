@@ -122,8 +122,9 @@ namespace Inkeys::UI::Bar
 		// 真实窗口范围由首帧 ULW 原子提交，初始化阶段不再短暂覆盖整张屏幕。
 		RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
 			MainMonitor.rcMonitor.left + 1, MainMonitor.rcMonitor.top + 1 };
-		if (!Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Bar, bounds))
-			return false;
+		// 预缩放仅用于首帧前防闪；失败时仍由首帧 ULW 提交真实窗口范围。
+		(void)Inkeys::Window::GetService().SetBounds(
+			Inkeys::Window::WindowRole::Bar, bounds);
 
 		return true;
 	}
