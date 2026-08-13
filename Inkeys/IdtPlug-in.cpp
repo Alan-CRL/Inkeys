@@ -549,7 +549,12 @@ void PPTLinkageMain()
 			QueuePptUiPositionPersistence(configuration);
 		},
 	});
-	if (!pptUiReady && IDTLogger)
+	if (pptUiReady)
+	{
+		// 未放映时五个 PPT 窗口不会提交首帧；客户端注册完成即代表启动门禁已就绪。
+		IdtWindowsIsVisible.pptWindow = true;
+	}
+	else if (IDTLogger)
 		IDTLogger->error("[PPT 线程][PPTLinkageMain] UI3 五窗口客户端注册失败");
 
 	thread(GetPptState).detach();

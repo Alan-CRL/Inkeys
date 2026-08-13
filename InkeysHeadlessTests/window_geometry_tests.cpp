@@ -80,6 +80,50 @@ namespace
 			"animated root bounds include maximum size and real visual outset");
 	}
 
+	void TestThicknessPreviewInteractionEnvelope()
+	{
+		const RECT maximumPopup = ResolveBarThicknessPreviewEnvelope({
+			500.0, 420.0, 490.0, 330.0,
+			100.0, 24.0, 18.0, 8.0, 5.0,
+			1.05, 2.0, 10 });
+		Check(SameBarWindowRect(
+			maximumPopup, RECT{ 816, 519, 1142, 783 }),
+			"maximum thickness popup reserves outside-number and Back envelope");
+
+		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
+		BarWindowViewportController controller;
+		auto pressed = controller.Resolve(
+			RECT{ 700, 500, 1000, 700 }, maximumPopup,
+			layoutBounds, 2, false);
+		controller.Commit(pressed.viewport);
+		auto dragged = controller.Resolve(
+			RECT{ 720, 510, 1080, 740 }, maximumPopup,
+			layoutBounds, 2, false);
+		Check(!dragged.changed
+			&& SameBarWindowRect(dragged.viewport, pressed.viewport),
+			"maximum thickness reservation prevents per-value viewport resize");
+	}
+
+	void TestViewportResizeKeepsLayoutInputStable()
+	{
+		constexpr POINT monitorOrigin{ -1920, -200 };
+		constexpr POINT screenPoint{ -1320, 360 };
+		constexpr RECT oldViewport{ 480, 420, 980, 720 };
+		constexpr RECT expandedViewport{ 300, 160, 1100, 720 };
+		constexpr POINT layout = BarScreenToLayoutPoint(
+			screenPoint, monitorOrigin);
+		constexpr POINT oldClient = BarLayoutToClientPoint(layout, oldViewport);
+		constexpr POINT expandedClient = BarLayoutToClientPoint(
+			layout, expandedViewport);
+		Check(oldClient.x != expandedClient.x || oldClient.y != expandedClient.y,
+			"client coordinates change when the dynamic viewport expands");
+		Check(BarClientToLayoutPoint(oldClient, oldViewport).x == layout.x
+			&& BarClientToLayoutPoint(oldClient, oldViewport).y == layout.y
+			&& BarClientToLayoutPoint(expandedClient, expandedViewport).x == layout.x
+			&& BarClientToLayoutPoint(expandedClient, expandedViewport).y == layout.y,
+			"screen-derived layout input remains stable across viewport resize");
+	}
+
 	void TestBatchExpansionAndIdleShrink()
 	{
 		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
@@ -212,6 +256,8 @@ int RunWindowGeometryTests()
 {
 	TestCoordinateRoundTrip();
 	TestAnimationEnvelopeUsesSegmentDelta();
+	TestThicknessPreviewInteractionEnvelope();
+	TestViewportResizeKeepsLayoutInputStable();
 	TestBatchExpansionAndIdleShrink();
 	TestLayoutClipping();
 	TestCapacityFallbackExpansion();

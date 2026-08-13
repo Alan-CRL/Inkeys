@@ -178,6 +178,7 @@ using Inkeys::UI::Bar::IsBarWindowRectEmpty;
 using Inkeys::UI::Bar::ResolveBarWindowCapacity;
 using Inkeys::UI::Bar::ResolveBarWindowAnimatedRect;
 using Inkeys::UI::Bar::ResolveBarWindowAnimationRange;
+using Inkeys::UI::Bar::ResolveBarThicknessPreviewEnvelope;
 using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
@@ -420,6 +421,8 @@ struct BarRenderLoopState
 	int drawAttributeThicknessPreviewMeasuredValue = -1;
 	wstring drawAttributeThicknessPreviewMeasuredText;
 	D2D1_SIZE_F drawAttributeThicknessPreviewMeasuredSize{};
+	int drawAttributeThicknessEnvelopeMeasuredValue = -1;
+	D2D1_SIZE_F drawAttributeThicknessEnvelopeMeasuredSize{};
 	BarUiValueClass drawAttributeAnnotationPopupProgress{ 0.0 };
 	BarUiValueClass drawAttributeOverflowPopupProgress{ 0.0 };
 	BarUiValueClass drawAttributeOverflowBadgeProgress{ 0.0 };
@@ -7207,6 +7210,13 @@ IncludeShapeBounds(state.shapeMap[
 			state.spec.GetGdiInteropRenderTarget();
 		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
 			state.unclassifiedDamagePending);
+		const bool reserveThicknessInteractionEnvelope =
+			state.barState.drawAttributeBar.thicknessSliderCapture
+			|| state.barState.drawAttributeBar.thicknessSliderPressed
+			|| state.barState.drawAttributeBar.thicknessSliderDragging
+			|| state.barState.drawAttributeBar.thicknessPreviewDragging
+			|| state.barState.drawAttributeBar.thicknessFineDialDragging
+			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive;
 		const bool reserveAnimationEnvelope =
 			state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
@@ -7218,7 +7228,8 @@ IncludeShapeBounds(state.shapeMap[
 			|| !state.drawAttributeAnnotationPopupProgress.IsSame()
 			|| !state.drawAttributeOverflowPopupProgress.IsSame()
 			|| !state.drawAttributePenTypeMenuProgress.IsSame()
-			|| !state.drawAttributeColorPickerProgress.IsSame();
+			|| !state.drawAttributeColorPickerProgress.IsSame()
+			|| reserveThicknessInteractionEnvelope;
 		constexpr LONG viewportPadding = 2;
 		RECT predictedEnvelope{};
 		if (reserveAnimationEnvelope)
@@ -7380,6 +7391,149 @@ IncludeShapeBounds(state.shapeMap[
 				AddInheritedVisual(state.shapeMap[visual],
 					drawAttributeCenterX, drawAttributeCenterY,
 					drawAttributeCurrentCenterX, drawAttributeCurrentCenterY);
+			if (reserveThicknessInteractionEnvelope)
+			{
+				const auto range = GetBarThicknessSliderRange(
+					stateMode.Pen.ModeSelect, state.barStyle.dpiZoom);
+				const auto sliderThumb = state.shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb];
+				const auto popupSurface = state.shapeMap[
+					BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface];
+				if (range.supported && sliderThumb && popupSurface)
+				{
+					auto panel = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+					auto region = state.shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
+					auto adjust = state.shapeMap[
+						BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+					const auto regionInherit = region->Inherit(
+						BarUiInheritEnum::TopLeft, *panel);
+					const auto adjustInherit = adjust->Inherit(
+						BarUiInheritEnum::TopLeft, *panel);
+					const auto geometry = CalculateBarThicknessPreviewGeometry(
+						*panel, *region, regionInherit, *adjust, adjustInherit);
+					if (geometry.valid)
+					{
+						const double maximumThickness = static_cast<double>(range.max);
+						if (state.drawAttributeThicknessEnvelopeMeasuredValue
+							!= range.max)
+						{
+							state.drawAttributeThicknessEnvelopeMeasuredValue = range.max;
+							state.drawAttributeThicknessEnvelopeMeasuredSize =
+								state.spec.MeasureText(to_wstring(range.max),
+									BarThicknessPreviewNumberFontSize,
+									DWRITE_FONT_WEIGHT_BOLD);
+						}
+						const D2D1_SIZE_F maximumTextSize =
+							state.drawAttributeThicknessEnvelopeMeasuredSize;
+						const double circleDiameter = maximumThickness
+							/ max(0.000001, static_cast<double>(frameZoom));
+						const double textWidth = max(1.0,
+							static_cast<double>(maximumTextSize.width));
+						const double textHeight = max(1.0,
+							static_cast<double>(maximumTextSize.height));
+						const double popupHeight = max(circleDiameter, textHeight)
+							+ BarThicknessPreviewPopupPadding * 2.0;
+						const double anchorX = geometry.trackRight
+							- BarThicknessSliderThumbDiameter * geometry.panelScale / 2.0;
+						const double anchorY = ResolveThicknessSliderCenterY(
+							state, geometry);
+						const double targetCenterY = anchorY + geometry.previewSide
+							* (BarThicknessSliderThumbDiameter * geometry.panelScale / 2.0
+								+ BarThicknessPreviewPopupThumbGap + popupHeight / 2.0);
+						const double outsideNumberWidth = circleDiameter
+							+ BarThicknessPreviewNumberGap + textWidth;
+						// 最大值刚出现时数字仍可能位于圆外，完整会话必须覆盖该过渡帧。
+						const double popupWidth = max(circleDiameter, outsideNumberWidth)
+							+ BarThicknessPreviewPopupPadding * 2.0;
+						double penTypeSafeRight = numeric_limits<double>::infinity();
+						auto IncludePenTypeLeft = [&](const auto& widget)
+							{
+								if (!widget || widget->w.val <= 0.0
+									|| widget->h.val <= 0.0)
+									return;
+								const auto inherit = widget->Inherit(
+									BarUiInheritEnum::TopLeft, *panel);
+								penTypeSafeRight = min(penTypeSafeRight,
+									static_cast<double>(inherit.x)
+										- BarThicknessPreviewAvoidGap);
+							};
+						IncludePenTypeLeft(state.shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_Brush1]);
+						IncludePenTypeLeft(state.shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_Highlight1]);
+						IncludePenTypeLeft(state.shapeMap[
+							BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu]);
+						if (!isfinite(penTypeSafeRight))
+							penTypeSafeRight = panel->inhX
+								+ BarDrawAttributePenTypeLeft * geometry.panelScale
+								- BarThicknessPreviewAvoidGap;
+						double sliderTargetCenterX = min(anchorX,
+							penTypeSafeRight - popupWidth / 2.0);
+						const auto popupCurve = BarUiGetCurveExtrema(
+							BarUiCurveEnum::EaseOutBack);
+						const double safePopupScale = max(
+							0.000001, popupCurve.maximum);
+						sliderTargetCenterX = min(sliderTargetCenterX,
+							anchorX + (penTypeSafeRight - anchorX) / safePopupScale
+								- popupWidth / 2.0);
+						double fineTargetCenterX =
+							(geometry.trackLeft + geometry.trackRight) / 2.0;
+						double fineTargetCenterY = panel->inhY
+							+ panel->h.val / 2.0 + geometry.previewSide
+								* (panel->h.val / 2.0
+									+ BarThicknessFineDialPopupPanelGapDip
+										* geometry.panelScale + popupHeight / 2.0);
+						const double logicalWindowWidth = static_cast<double>(
+							state.barWindow.w) / max(0.000001,
+								static_cast<double>(frameZoom));
+						const double logicalWindowHeight = static_cast<double>(
+							state.barWindow.h) / max(0.000001,
+								static_cast<double>(frameZoom));
+						auto ClampPopupCenter = [&](double& centerX, double& centerY)
+							{
+								centerX = clamp(centerX, popupWidth / 2.0,
+									max(popupWidth / 2.0,
+										logicalWindowWidth - popupWidth / 2.0));
+								centerY = clamp(centerY, popupHeight / 2.0,
+									max(popupHeight / 2.0,
+										logicalWindowHeight - popupHeight / 2.0));
+							};
+						double sliderTargetCenterY = targetCenterY;
+						ClampPopupCenter(sliderTargetCenterX, sliderTargetCenterY);
+						ClampPopupCenter(fineTargetCenterX, fineTargetCenterY);
+						const auto extent = VisualExtent(popupSurface);
+						const bool fullPointLightVisible = BarUiEdgeLightingEnabled
+							&& popupSurface->frameRendering
+								== BarUiFrameRenderingEnum::PointLight
+							&& (popupSurface->framePrimaryLightEnabled
+								|| (BarUiDynamicEdgeLightingEnabled
+									&& popupSurface->frameCursorLightIntensityScale > 0.0));
+						const LONG fullPopupOutset = static_cast<LONG>(ceil(
+							(popupCurve.maximum + (fullPointLightVisible
+								? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0))
+							* frameZoom)) + BarRenderingAttribute::dirtyAntialiasPadding;
+						const LONG maximumPopupOutset = max(
+							extent.outset, fullPopupOutset);
+						auto AddMaximumPopupEnvelope = [&](double targetCenterX,
+							double targetCenterY)
+							{
+								UnionBarWindowRect(predictedEnvelope,
+									ResolveBarThicknessPreviewEnvelope({
+								anchorX, anchorY, targetCenterX, targetCenterY,
+								circleDiameter, textWidth, textHeight,
+								BarThicknessPreviewPopupPadding,
+								BarThicknessPreviewNumberGap,
+								popupCurve.maximum,
+								static_cast<double>(frameZoom), maximumPopupOutset }));
+							};
+						AddMaximumPopupEnvelope(
+							sliderTargetCenterX, sliderTargetCenterY);
+						AddMaximumPopupEnvelope(
+							fineTargetCenterX, fineTargetCenterY);
+					}
+				}
+			}
 			AddInheritedVisual(state.shapeMap[BarUISetShapeEnum::MorePanel],
 				mainBarX, mainBarY, mainBar->inhX + mainBar->w.val / 2.0,
 				mainBar->inhY + mainBar->h.val / 2.0);

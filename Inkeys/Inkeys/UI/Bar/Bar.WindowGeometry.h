@@ -78,6 +78,61 @@ namespace Inkeys::UI::Bar
 		};
 	}
 
+	struct BarThicknessPreviewEnvelopeInput
+	{
+		double anchorX = 0.0;
+		double anchorY = 0.0;
+		double targetCenterX = 0.0;
+		double targetCenterY = 0.0;
+		double circleDiameter = 0.0;
+		double textWidth = 0.0;
+		double textHeight = 0.0;
+		double popupPadding = 0.0;
+		double numberGap = 0.0;
+		double maximumScale = 1.0;
+		double zoom = 1.0;
+		LONG outset = 0;
+	};
+
+	// 连续粗细手势在首帧预留当前笔型最大值 Popup，避免拖动中逐帧追扩 HWND。
+	[[nodiscard]] inline RECT ResolveBarThicknessPreviewEnvelope(
+		const BarThicknessPreviewEnvelopeInput& input) noexcept
+	{
+		if (!std::isfinite(input.zoom) || input.zoom <= 0.0
+			|| !std::isfinite(input.maximumScale)
+			|| input.maximumScale <= 0.0)
+			return {};
+		const double circleDiameter = (std::max)(0.0, input.circleDiameter);
+		const double textWidth = (std::max)(1.0, input.textWidth);
+		const double textHeight = (std::max)(1.0, input.textHeight);
+		const double popupPadding = (std::max)(0.0, input.popupPadding);
+		const double contentHeight = (std::max)(circleDiameter, textHeight);
+		const double outsideNumberWidth = circleDiameter
+			+ (std::max)(0.0, input.numberGap) + textWidth;
+		const double popupWidth = (std::max)(circleDiameter, outsideNumberWidth)
+			+ popupPadding * 2.0;
+		const double popupHeight = contentHeight + popupPadding * 2.0;
+		const double targetLeft = input.targetCenterX - popupWidth / 2.0;
+		const double targetTop = input.targetCenterY - popupHeight / 2.0;
+		const double targetRight = input.targetCenterX + popupWidth / 2.0;
+		const double targetBottom = input.targetCenterY + popupHeight / 2.0;
+		const double left = input.anchorX
+			+ (targetLeft - input.anchorX) * input.maximumScale;
+		const double top = input.anchorY
+			+ (targetTop - input.anchorY) * input.maximumScale;
+		const double right = input.anchorX
+			+ (targetRight - input.anchorX) * input.maximumScale;
+		const double bottom = input.anchorY
+			+ (targetBottom - input.anchorY) * input.maximumScale;
+		const LONG outset = (std::max)(0L, input.outset);
+		return RECT{
+			static_cast<LONG>(std::floor(left * input.zoom)) - outset,
+			static_cast<LONG>(std::floor(top * input.zoom)) - outset,
+			static_cast<LONG>(std::ceil(right * input.zoom)) + outset,
+			static_cast<LONG>(std::ceil(bottom * input.zoom)) + outset,
+		};
+	}
+
 	[[nodiscard]] constexpr RECT TranslateBarWindowRect(
 		RECT value, POINT translation) noexcept
 	{
