@@ -12,6 +12,7 @@ namespace
 	using Inkeys::UI::Bar::BarPresentDecision;
 	using Inkeys::UI::Bar::BarPresentDemand;
 	using Inkeys::UI::Bar::BarPresentFailureClass;
+	using Inkeys::UI::Bar::IsBarSharedDeviceLost;
 
 	int failureCount = 0;
 
@@ -143,6 +144,35 @@ namespace
 		}
 	}
 
+	void TestSharedDeviceLossClassification()
+	{
+		constexpr RECT bounds{ 5, 6, 70, 80 };
+		constexpr std::array<HRESULT, 3> sharedFailures{
+			DXGI_ERROR_DEVICE_REMOVED,
+			DXGI_ERROR_DEVICE_RESET,
+			DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+		};
+		for (const HRESULT failure : sharedFailures)
+		{
+			Check(IsBarSharedDeviceLost(failure),
+				"DXGI shared-device failure is recognized");
+			Check(BarPresentAttemptResult::Acquired(
+				failure, TRUE, S_OK, S_OK, bounds).HasSharedDeviceLoss(),
+				"GetDC shared-device failure is propagated");
+			Check(BarPresentAttemptResult::Acquired(
+				S_OK, TRUE, failure, S_OK, bounds).HasSharedDeviceLoss(),
+				"ReleaseDC shared-device failure is propagated");
+			Check(BarPresentAttemptResult::Acquired(
+				S_OK, TRUE, S_OK, failure, bounds).HasSharedDeviceLoss(),
+				"EndDraw shared-device failure is propagated");
+		}
+		Check(!IsBarSharedDeviceLost(D2DERR_RECREATE_TARGET),
+			"local target recreation stays per-window");
+		Check(!BarPresentAttemptResult::Acquired(
+			E_FAIL, TRUE, S_OK, S_OK, bounds).HasSharedDeviceLoss(),
+			"ordinary present failure stays local retry");
+	}
+
 	void TestBoundsAdvanceOnlyOnSuccess()
 	{
 		constexpr RECT initialBounds{ 1, 2, 30, 40 };
@@ -260,6 +290,7 @@ int RunPresentDecisionTests()
 	TestCosmeticLeaseSkipRetainsPendingAndBounds();
 	TestEveryPresentStageMustSucceed();
 	TestRecreateTargetRequestsResourceReset();
+	TestSharedDeviceLossClassification();
 	TestBoundsAdvanceOnlyOnSuccess();
 	TestResourceResetForcesFullDirtyWithoutLosingDemand();
 	TestRepeatedFailureUsesBoundedBackoff();

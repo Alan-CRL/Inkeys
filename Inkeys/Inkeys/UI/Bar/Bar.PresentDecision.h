@@ -2,12 +2,20 @@
 
 #include <Windows.h>
 #include <d2d1.h>
+#include <dxgi.h>
 
 #include <cstdint>
 #include <limits>
 
 namespace Inkeys::UI::Bar
 {
+	[[nodiscard]] constexpr bool IsBarSharedDeviceLost(HRESULT hr) noexcept
+	{
+		return hr == DXGI_ERROR_DEVICE_REMOVED
+			|| hr == DXGI_ERROR_DEVICE_RESET
+			|| hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
+	}
+
 	struct BarPresentDemand
 	{
 		bool visual = false;
@@ -76,6 +84,13 @@ namespace Inkeys::UI::Bar
 			return getDcHr == D2DERR_RECREATE_TARGET
 				|| releaseDcHr == D2DERR_RECREATE_TARGET
 				|| endDrawHr == D2DERR_RECREATE_TARGET;
+		}
+
+		[[nodiscard]] constexpr bool HasSharedDeviceLoss() const noexcept
+		{
+			return IsBarSharedDeviceLost(getDcHr)
+				|| IsBarSharedDeviceLost(releaseDcHr)
+				|| IsBarSharedDeviceLost(endDrawHr);
 		}
 
 		[[nodiscard]] constexpr BarPresentFailureClass GetFailureClass() const noexcept

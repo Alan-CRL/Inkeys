@@ -188,6 +188,7 @@ enum class BarRenderLoopStageResult
 	Proceed,
 	Continue,
 	Idle,
+	DeviceLost,
 	Stop,
 };
 
@@ -324,8 +325,6 @@ struct BarRenderLoopState
 
 	unsigned long long barDeviceResourceFailureGeneration = 0;
 	bool barPresentFailureLogged = false;
-	chrono::high_resolution_clock::time_point reckon =
-		chrono::high_resolution_clock::now();
 	chrono::steady_clock::time_point frameWorkStart =
 		chrono::steady_clock::now();
 	Inkeys::UI::Bar::FrameAnimationClock animationClock;
@@ -6440,9 +6439,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// 租约结果也交给同一状态机，装饰跳帧不得吞掉最终 lighting 状态。
 			(void)state.presentDecision.CompleteAttempt(
 				Inkeys::UI::Bar::BarPresentAttemptResult::CosmeticLeaseSkipped());
-			Inkeys::UI::Bar::HighPrecisionWait(chrono::duration<double, milli>(
-				chrono::high_resolution_clock::now() - state.reckon).count(), 60.0);
-			state.reckon = chrono::high_resolution_clock::now();
+			// 共享调度器统一负责 60 FPS 节拍，客户端不能在回调内阻塞后续 PPT 窗口。
 			return BarRenderLoopStageResult::Continue;
 		}
 
@@ -7186,6 +7183,12 @@ IncludeShapeBounds(state.shapeMap[
 				if (IDTLogger) IDTLogger->error(
 					"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
 					static_cast<unsigned int>(ensureDeviceResourcesHr));
+			}
+			if (Inkeys::UI::Bar::IsBarSharedDeviceLost(ensureDeviceResourcesHr))
+			{
+				// 共享 device 错误必须交给唯一调度线程切换 epoch，不能只让 Bar 自旋重试。
+				state.spec.DiscardDeviceResources();
+				return BarRenderLoopStageResult::DeviceLost;
 			}
 			return BarRenderLoopStageResult::Continue;
 		}
@@ -9973,13 +9976,14 @@ else
 
 		HRESULT endDrawHr = barDeviceContext->EndDraw();
 		state.spec.HandleFrameEndDrawResult(endDrawHr);
-		const auto presentCompletion = state.presentDecision.CompleteAttempt(
-			Inkeys::UI::Bar::BarPresentAttemptResult::Acquired(
+		const auto presentAttempt = Inkeys::UI::Bar::BarPresentAttemptResult::Acquired(
 				getDcHr,
 				updateLayeredWindowSucceeded,
 				releaseDcHr,
 				endDrawHr,
-				state.current),
+				state.current);
+		const auto presentCompletion = state.presentDecision.CompleteAttempt(
+			presentAttempt,
 			epoch.generation, frameDemandGeneration,
 			state.presentAttemptFrameSerial);
 		if (presentCompletion.IsCommitted())
@@ -10015,12 +10019,15 @@ else
 			state.barPresentFailureLogged = true;
 		}
 
-		if (presentCompletion.NeedsTargetRecreation())
+		if (presentCompletion.NeedsTargetRecreation()
+			|| presentAttempt.HasSharedDeviceLoss())
 		{
-			// 任一 D2D/GDI 互操作阶段报告设备丢失，都在下一帧重建本地资源。
+			// 本地 target 失效或共享 device 丢失都先释放 Bar 的 per-window 资源。
 			state.spec.DiscardDeviceResources();
 		}
 		state.barMedia.formatCache->Clean();
+		if (presentAttempt.HasSharedDeviceLoss())
+			return BarRenderLoopStageResult::DeviceLost;
 		if (!presentCompletion.IsCommitted()) return BarRenderLoopStageResult::Continue;
 
 	}
@@ -10063,7 +10070,6 @@ void BarRenderLoopCoordinator::PaceFrame(
 		state.fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
 	}
 	state.frameRateSamplePending = false;
-	state.reckon = chrono::high_resolution_clock::now();
 }
 
 void BarRenderLoopCoordinator::Run()
@@ -10102,6 +10108,7 @@ BarRenderLoopCoordinator::RenderFrame()
 	PrepareLightingAndDemand(state, frame, needRendering);
 	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_);
 	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Stop;
+	if (result == BarRenderLoopStageResult::DeviceLost) return FrameResult::DeviceLost;
 	if (result == BarRenderLoopStageResult::Idle) return FrameResult::Idle;
 	if (result == BarRenderLoopStageResult::Continue) return FrameResult::Retry;
 	PaceFrame(state, frameOrdinal_);

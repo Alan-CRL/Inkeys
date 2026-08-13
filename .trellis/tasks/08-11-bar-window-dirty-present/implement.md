@@ -60,6 +60,7 @@
 ## Phase 6：验证和收尾
 
 - [x] 运行 Bar 包围盒、坐标转换、脏区事务和失败重试 headless 测试：`PASS animation correctness`。
+- [x] 完成共享 UI3 调度兼容收尾：Bar 回调内不再做本地帧等待；共享 `DXGI_ERROR_DEVICE_REMOVED/RESET/DRIVER_INTERNAL_ERROR` 上报 `DeviceLost`，由唯一调度线程恢复 epoch。
 - [ ] 在 Windows 7 SP1 + KB2670838 与当前 Windows 11 ARM64 上验证。
 - [x] 使用 ARM64 MSBuild 编译完整 `InkeysRepo.sln` 的 `Debug | ARM64` 配置：0 errors，仅保留仓库现有告警。
 - [ ] 执行长时间动画、DPI 切换、配置切换、设备重建和显示器变化压力测试。
