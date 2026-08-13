@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
