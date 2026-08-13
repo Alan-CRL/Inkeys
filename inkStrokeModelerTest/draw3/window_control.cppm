@@ -149,7 +149,12 @@ export namespace draw3
 		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
 		void ClearMouseCursorSample() noexcept;
 		bool ShouldIgnoreMouseCursorMessage() const noexcept;
-		void ApplyWindowCursor() noexcept;
+		void ApplyWindowCursor(const char* trigger) noexcept;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		void TraceCursorState(const char* eventName, uint32_t pointerId,
+			POINTER_INPUT_TYPE pointerType, bool pointerTypeKnown,
+			bool forceLifecycle = false) noexcept;
+#endif
 
 		std::atomic<HWND> window_ = nullptr;
 		HANDLE windowThread_ = nullptr;
@@ -179,6 +184,17 @@ export namespace draw3
 			DrawingCursorPointerAuthority::Unknown;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<bool> mouseUsesSystemCursor_ = true;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		std::atomic<bool> cursorTraceEnabled_ = false;
+		std::mutex cursorTraceMutex_;
+		uint64_t lastCursorTraceStateKey_ = 0;
+		bool lastCursorTraceStateKnown_ = false;
+		uint64_t lastSystemCursorDecisionKey_ = 0;
+		bool lastSystemCursorDecisionKnown_ = false;
+		std::atomic<uint32_t> lastCursorTracePointerId_ = 0;
+		std::atomic<uint32_t> lastCursorTracePointerType_ = PT_POINTER;
+		std::atomic<bool> lastCursorTracePointerTypeKnown_ = false;
+#endif
 		std::atomic<ContactInputCoordinator*> inputCoordinator_ = nullptr;
 		DrawingCursorSampleMailbox penCursorSample_;
 		DrawingCursorSampleMailbox mouseCursorSample_;

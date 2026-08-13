@@ -90,6 +90,38 @@ export namespace draw3
 		DrawingCursorAppearance appearance = {};
 	};
 
+	// 仅供有界输入诊断记录应用光标最终可见性，不参与光标策略。
+	enum class DrawingCursorDiagnosticVisualReason : uint32_t
+	{
+		None,
+		NoSample,
+		TouchAuthority,
+		MouseUsesSystemCursor,
+		PenContactDisabled,
+		InvalidAppearance,
+		LaserContact,
+		VisiblePen,
+		VisibleMouse,
+		VisibleEraser,
+		VisibleLaser
+	};
+
+	struct DrawingCursorDiagnosticVisualState
+	{
+		bool known = false;
+		bool visible = false;
+		bool laser = false;
+		bool penSampleValid = false;
+		bool penSampleInContact = false;
+		bool penSampleInverted = false;
+		bool mouseSampleValid = false;
+		bool mouseSampleInContact = false;
+		DrawingCursorPointerAuthority pointerAuthority =
+			DrawingCursorPointerAuthority::Unknown;
+		DrawingCursorDiagnosticVisualReason reason =
+			DrawingCursorDiagnosticVisualReason::None;
+	};
+
 	// RTS 通过窄接口发布完整 Pen 光标样本，避免输入模块依赖窗口实现。
 	class DrawingCursorEventSink
 	{
@@ -131,6 +163,12 @@ export namespace draw3
 	// Touch 跟手期间按下的 Pen 必须连同光标和触觉一起抑制到终态。
 	bool ShouldSuppressPenFeedbackForTouchPan(bool touchPanActive,
 		bool suppressionLatched, bool penPointer, bool inContact) noexcept;
+	// 与 --rts-trace 共用开关；快照忽略坐标，只在应用光标状态变化时输出。
+	void ConfigureDrawingCursorTrace(bool enabled) noexcept;
+	bool ReadDrawingCursorDiagnosticVisualState(
+		DrawingCursorDiagnosticVisualState& state) noexcept;
+	const char* DrawingCursorDiagnosticVisualReasonName(
+		DrawingCursorDiagnosticVisualReason reason) noexcept;
 	// Touch 橡皮接触始终生成不透明 visual；Hover 不调用该函数。
 	DrawingCursorVisual MakeTouchEraserDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& eraserAppearance) noexcept;

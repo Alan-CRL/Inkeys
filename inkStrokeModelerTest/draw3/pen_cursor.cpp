@@ -7,7 +7,11 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdio>
+#include <iostream>
+#include <mutex>
 
 module draw3.pen_cursor;
 
@@ -17,6 +21,9 @@ namespace draw3
 	{
 		constexpr float kCursorBoundsPaddingPx = 2.0f;
 		constexpr float kMaximumCursorExtentPx = 4096.0f;
+		std::atomic<bool> drawingCursorTraceEnabled = false;
+		std::mutex drawingCursorTraceMutex;
+		DrawingCursorDiagnosticVisualState drawingCursorDiagnosticVisual = {};
 
 		bool FloatEqual(float left, float right) noexcept
 		{
@@ -54,6 +61,107 @@ namespace draw3
 				if (penSample.valid) return &penSample;
 				return mouseSample.valid ? &mouseSample : nullptr;
 			}
+		}
+
+		bool DiagnosticVisualStateEqual(
+			const DrawingCursorDiagnosticVisualState& left,
+			const DrawingCursorDiagnosticVisualState& right) noexcept
+		{
+			return left.known == right.known && left.visible == right.visible &&
+				left.laser == right.laser &&
+				left.penSampleValid == right.penSampleValid &&
+				left.penSampleInContact == right.penSampleInContact &&
+				left.penSampleInverted == right.penSampleInverted &&
+				left.mouseSampleValid == right.mouseSampleValid &&
+				left.mouseSampleInContact == right.mouseSampleInContact &&
+				left.pointerAuthority == right.pointerAuthority &&
+				left.reason == right.reason;
+		}
+
+		void TraceResolvedDrawingCursor(
+			const DrawingCursorSample& penSample,
+			const DrawingCursorSample& mouseSample,
+			DrawingCursorPointerAuthority pointerAuthority,
+			bool laser, bool visible,
+			DrawingCursorDiagnosticVisualReason reason) noexcept
+		{
+			if (!drawingCursorTraceEnabled.load(std::memory_order_acquire)) return;
+			DrawingCursorDiagnosticVisualState state;
+			state.known = true;
+			state.visible = visible;
+			state.laser = laser;
+			state.penSampleValid = penSample.valid;
+			state.penSampleInContact = penSample.inContact;
+			state.penSampleInverted = penSample.inverted;
+			state.mouseSampleValid = mouseSample.valid;
+			state.mouseSampleInContact = mouseSample.inContact;
+			state.pointerAuthority = pointerAuthority;
+			state.reason = reason;
+
+			std::lock_guard<std::mutex> lock(drawingCursorTraceMutex);
+			if (DiagnosticVisualStateEqual(drawingCursorDiagnosticVisual, state)) return;
+			drawingCursorDiagnosticVisual = state;
+			char line[512] = {};
+			const int length = std::snprintf(line, sizeof(line),
+				"[CURSOR_TRACE][app] pointerType=%u mode=%s "
+				"penSample={valid=%u,contact=%u,inverted=%u} "
+				"mouseSample={valid=%u,contact=%u} appVisible=%u reason=%s\r\n",
+				static_cast<unsigned>(pointerAuthority), laser ? "laser" : "primary",
+				penSample.valid ? 1u : 0u, penSample.inContact ? 1u : 0u,
+				penSample.inverted ? 1u : 0u, mouseSample.valid ? 1u : 0u,
+				mouseSample.inContact ? 1u : 0u, visible ? 1u : 0u,
+				DrawingCursorDiagnosticVisualReasonName(reason));
+			if (length > 0)
+			{
+				std::cout.write(line, (std::min)(
+					static_cast<size_t>(length), sizeof(line) - 1));
+				std::cout.flush();
+			}
+		}
+	}
+
+	void ConfigureDrawingCursorTrace(bool enabled) noexcept
+	{
+		if (!enabled)
+		{
+			drawingCursorTraceEnabled.store(false, std::memory_order_release);
+			return;
+		}
+		{
+			std::lock_guard<std::mutex> lock(drawingCursorTraceMutex);
+			drawingCursorDiagnosticVisual = {};
+		}
+		drawingCursorTraceEnabled.store(true, std::memory_order_release);
+	}
+
+	bool ReadDrawingCursorDiagnosticVisualState(
+		DrawingCursorDiagnosticVisualState& state) noexcept
+	{
+		if (!drawingCursorTraceEnabled.load(std::memory_order_acquire)) return false;
+		std::lock_guard<std::mutex> lock(drawingCursorTraceMutex);
+		state = drawingCursorDiagnosticVisual;
+		return state.known;
+	}
+
+	const char* DrawingCursorDiagnosticVisualReasonName(
+		DrawingCursorDiagnosticVisualReason reason) noexcept
+	{
+		switch (reason)
+		{
+		case DrawingCursorDiagnosticVisualReason::NoSample: return "no-sample";
+		case DrawingCursorDiagnosticVisualReason::TouchAuthority: return "touch-authority";
+		case DrawingCursorDiagnosticVisualReason::MouseUsesSystemCursor:
+			return "mouse-uses-system-cursor";
+		case DrawingCursorDiagnosticVisualReason::PenContactDisabled:
+			return "pen-contact-disabled";
+		case DrawingCursorDiagnosticVisualReason::InvalidAppearance:
+			return "invalid-appearance";
+		case DrawingCursorDiagnosticVisualReason::LaserContact: return "laser-contact";
+		case DrawingCursorDiagnosticVisualReason::VisiblePen: return "visible-pen";
+		case DrawingCursorDiagnosticVisualReason::VisibleMouse: return "visible-mouse";
+		case DrawingCursorDiagnosticVisualReason::VisibleEraser: return "visible-eraser";
+		case DrawingCursorDiagnosticVisualReason::VisibleLaser: return "visible-laser";
+		default: return "none";
 		}
 	}
 
@@ -141,14 +249,33 @@ namespace draw3
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
 			penSample, mouseSample, pointerAuthority);
-		if (!sample) return visual;
+		if (!sample)
+		{
+			TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+				false, false, pointerAuthority == DrawingCursorPointerAuthority::Touch
+				? DrawingCursorDiagnosticVisualReason::TouchAuthority
+				: DrawingCursorDiagnosticVisualReason::NoSample);
+			return visual;
+		}
 		const bool pen = sample == &penSample;
 		const bool eraser = selectedToolIsEraser || (pen && sample->inverted);
 		if (!eraser)
 		{
-			if (!pen && mouseUsesSystemCursor) return visual;
+			if (!pen && mouseUsesSystemCursor)
+			{
+				TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+					false, false,
+					DrawingCursorDiagnosticVisualReason::MouseUsesSystemCursor);
+				return visual;
+			}
 			// Contact 开关只放开普通 Pen/Highlighter；Mouse 应用光标不进入该语义。
-			if (pen && sample->inContact && !drawingCursorDuringContactEnabled) return visual;
+			if (pen && sample->inContact && !drawingCursorDuringContactEnabled)
+			{
+				TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+					false, false,
+					DrawingCursorDiagnosticVisualReason::PenContactDisabled);
+				return visual;
+			}
 		}
 
 		visual.visible = true;
@@ -169,6 +296,12 @@ namespace draw3
 			visual.appearance.fillAlpha = 1.0f;
 		}
 		if (!IsValidDrawingCursorAppearance(visual.appearance)) visual.visible = false;
+		TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+			false, visual.visible, visual.visible
+			? eraser ? DrawingCursorDiagnosticVisualReason::VisibleEraser
+				: pen ? DrawingCursorDiagnosticVisualReason::VisiblePen
+				: DrawingCursorDiagnosticVisualReason::VisibleMouse
+			: DrawingCursorDiagnosticVisualReason::InvalidAppearance);
 		return visual;
 	}
 
@@ -181,12 +314,32 @@ namespace draw3
 		DrawingCursorVisual visual;
 		const DrawingCursorSample* sample = SelectPrimarySample(
 			penSample, mouseSample, pointerAuthority);
-		if (!sample || sample->inContact ||
-			!IsValidDrawingCursorAppearance(laserAppearance)) return visual;
+		if (!sample)
+		{
+			TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+				true, false, pointerAuthority == DrawingCursorPointerAuthority::Touch
+				? DrawingCursorDiagnosticVisualReason::TouchAuthority
+				: DrawingCursorDiagnosticVisualReason::NoSample);
+			return visual;
+		}
+		if (sample->inContact)
+		{
+			TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+				true, false, DrawingCursorDiagnosticVisualReason::LaserContact);
+			return visual;
+		}
+		if (!IsValidDrawingCursorAppearance(laserAppearance))
+		{
+			TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+				true, false, DrawingCursorDiagnosticVisualReason::InvalidAppearance);
+			return visual;
+		}
 		visual.visible = true;
 		visual.x = sample->x;
 		visual.y = sample->y;
 		visual.appearance = laserAppearance;
+		TraceResolvedDrawingCursor(penSample, mouseSample, pointerAuthority,
+			true, true, DrawingCursorDiagnosticVisualReason::VisibleLaser);
 		return visual;
 	}
 

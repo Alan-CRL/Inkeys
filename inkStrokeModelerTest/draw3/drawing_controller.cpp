@@ -1501,7 +1501,9 @@ namespace draw3
 		int64_t lastTouchPanEndQpc = 0;
 		int64_t suppressedPenTerminalQpc = 0;
 		int64_t lastNavigationQpc = 0;
+		int64_t lastPanReleaseQpc = 0;
 		int64_t nextPanMoveDiagnosticQpc = 0;
+		int64_t nextPanAnomalyDiagnosticQpc = 0;
 		bool inertiaFirstStepDiagnosticPending = false;
 		bool inertiaBrakeStateValid = false;
 		bool previousInertiaBrake = false;
@@ -1658,6 +1660,8 @@ namespace draw3
 		auto rebuildPanContactBaseline = [&](int64_t inputQpc,
 			bool resetVelocitySamples)
 		{
+			const size_t oldContactCount = previousPanContactCount;
+			const int64_t oldLastUpdateQpc = panMotion.lastUpdateQpc;
 			previousPanCentroid = {};
 			previousPanContactCount = 0;
 			for (CanvasGestureContactRuntime& contact : gestureContacts)
@@ -1678,6 +1682,23 @@ namespace draw3
 				if (resetVelocitySamples)
 					ResetCanvasPanVelocitySamples(panMotion,
 						(std::max)(inputQpc, panMotion.lastUpdateQpc));
+			}
+			LogCanvasPan("pan-baseline reset-velocity=%u input-qpc=%lld last-update-before=%lld last-update-after=%lld contacts-before=%zu contacts-after=%zu centroid=(%.2f,%.2f)",
+				resetVelocitySamples ? 1u : 0u, static_cast<long long>(inputQpc),
+				static_cast<long long>(oldLastUpdateQpc),
+				static_cast<long long>(panMotion.lastUpdateQpc), oldContactCount,
+				previousPanContactCount, previousPanCentroid.x, previousPanCentroid.y);
+			for (const CanvasGestureContactRuntime& contact : gestureContacts)
+			{
+				if (touchGesture.Disposition(contact.key) !=
+					CanvasTouchDisposition::Pan) continue;
+				LogCanvasPan("pan-baseline-contact key=%llu snapshot=(%.2f,%.2f) velocity-position=(%.2f,%.2f) qpc=%lld phase=%u sequence=%llu",
+					static_cast<unsigned long long>(contact.key),
+					contact.snapshot.position.x, contact.snapshot.position.y,
+					contact.velocityPosition.x, contact.velocityPosition.y,
+					static_cast<long long>(contact.snapshot.qpc),
+					static_cast<unsigned>(contact.snapshot.phase),
+					static_cast<unsigned long long>(contact.snapshot.sequence));
 			}
 		};
 
@@ -1818,11 +1839,22 @@ namespace draw3
 						if (touchDecision.beginPan)
 						{
 							const CanvasVector residualVelocity = panMotion.velocity;
+							const int64_t residualSourceQpc = panMotion.lastUpdateQpc;
+							const int64_t velocitySourceQpc = panMotion.lastVelocitySampleQpc;
 							BeginCanvasPan(panMotion, inheritedInertia, down.qpc);
-							LogCanvasPan("pan-begin inherited=%u residual=(%.1f,%.1f) speed=%.1f contacts=%zu",
+							const double inertiaAgeMilliseconds = inheritedInertia &&
+								lastPanReleaseQpc > 0
+								? QpcDeltaSeconds(down.qpc, lastPanReleaseQpc,
+									qpcFrequency) * 1000.0 : -1.0;
+							LogCanvasPan("pan-begin inherited=%u residual=(%.1f,%.1f) speed=%.1f contacts=%zu down-qpc=%lld release-qpc=%lld inertia-age-ms=%.3f residual-source-qpc=%lld velocity-source-qpc=%lld",
 								inheritedInertia ? 1u : 0u, residualVelocity.x,
 								residualVelocity.y, std::hypot(residualVelocity.x,
-									residualVelocity.y), touchGesture.GestureContactCount());
+									residualVelocity.y), touchGesture.GestureContactCount(),
+								static_cast<long long>(down.qpc),
+								static_cast<long long>(lastPanReleaseQpc),
+								inertiaAgeMilliseconds,
+								static_cast<long long>(residualSourceQpc),
+								static_cast<long long>(velocitySourceQpc));
 							window_.SetTouchPanActive(true);
 							lastPanInputQpc = down.qpc;
 							if (touchDecision.cancelExistingTouchDrawing)
@@ -2712,9 +2744,50 @@ namespace draw3
 							? CanvasVector{ velocityCentroid.x - previousPanCentroid.x,
 								velocityCentroid.y - previousPanCentroid.y }
 							: CanvasVector{};
+						const CanvasVector velocityBeforeUpdate = panMotion.velocity;
+						const double updateDeltaSeconds = QpcDeltaSeconds(inputQpc,
+							panMotion.lastUpdateQpc, qpcFrequency);
+						const float inheritedWeight = panMotion.inheritedBlendRemainingSeconds > 0.0 &&
+							updateDeltaSeconds > 0.0
+							? static_cast<float>(std::clamp(
+								panMotion.inheritedBlendRemainingSeconds /
+								kCanvasPanMomentumBlendSeconds, 0.0, 1.0)) : 0.0f;
+						const CanvasVector inheritedContentDelta{
+							static_cast<float>(panMotion.inheritedVelocity.x * inheritedWeight *
+								updateDeltaSeconds),
+							static_cast<float>(panMotion.inheritedVelocity.y * inheritedWeight *
+								updateDeltaSeconds) };
 						contentDelta = UpdateCanvasPan(panMotion, centroidDelta,
 							velocityDelta, inputQpc,
 							qpcFrequency, updateVelocity);
+						const float inputDistance = std::hypot(centroidDelta.x, centroidDelta.y);
+						const float outputDistance = std::hypot(contentDelta.x, contentDelta.y);
+						const float inheritedDistance = std::hypot(
+							inheritedContentDelta.x, inheritedContentDelta.y);
+						const float speedBeforeUpdate = std::hypot(
+							velocityBeforeUpdate.x, velocityBeforeUpdate.y);
+						const float speedAfterUpdate = CanvasPanSpeed(panMotion);
+						const bool anomalousPanFrame = inheritedDistance > 24.0f ||
+							speedAfterUpdate - speedBeforeUpdate > 2000.0f ||
+							(inputDistance < 2.0f && outputDistance > 24.0f) ||
+							speedAfterUpdate > 6000.0f;
+						if (anomalousPanFrame && inputQpc >= nextPanAnomalyDiagnosticQpc)
+						{
+							// 只在可疑帧输出动量拆分，定位旧惯性是否直接放大本帧位移。
+							LogCanvasPan("pan-anomaly qpc=%lld dt-ms=%.3f contacts=%zu direct-delta=(%.3f,%.3f) inherited-delta=(%.3f,%.3f) output-delta=(%.3f,%.3f) direct-velocity=(%.1f,%.1f) inherited-velocity=(%.1f,%.1f) inherited-weight=%.3f combined-before=(%.1f,%.1f) combined-after=(%.1f,%.1f) samples=%zu last-sample-qpc=%lld",
+								static_cast<long long>(inputQpc), updateDeltaSeconds * 1000.0,
+								count, centroidDelta.x, centroidDelta.y,
+								inheritedContentDelta.x, inheritedContentDelta.y,
+								contentDelta.x, contentDelta.y, panMotion.directVelocity.x,
+								panMotion.directVelocity.y, panMotion.inheritedVelocity.x,
+								panMotion.inheritedVelocity.y, inheritedWeight,
+								velocityBeforeUpdate.x, velocityBeforeUpdate.y,
+								panMotion.velocity.x, panMotion.velocity.y,
+								panMotion.velocitySampleCount,
+								static_cast<long long>(panMotion.lastVelocitySampleQpc));
+							nextPanAnomalyDiagnosticQpc = inputQpc +
+								(std::max)(int64_t{ 1 }, qpcFrequency / 10);
+						}
 						if (newestPanPositionQpc >= nextPanMoveDiagnosticQpc)
 						{
 							const double velocityAge = lastPanInputQpc > 0
@@ -2849,14 +2922,34 @@ namespace draw3
 					panMotion.lastVelocitySampleQpc <= 0 ? "no-move-samples" :
 					CanvasPanSpeed(panMotion) < 5.0f ? "speed-below-threshold" :
 					"application-inertia";
-				LogCanvasPan("pan-release engine=application qpc=%lld last-input-qpc=%lld age-ms=%.3f cancelled=%u samples=%zu before=(%.1f,%.1f) selected=(%.1f,%.1f) speed=%.1f inertia=%u reason=%s",
+				const CanvasPanVelocitySample* firstVelocitySample =
+					panMotion.velocitySampleCount > 0 ? &panMotion.velocitySamples[0] : nullptr;
+				const CanvasPanVelocitySample* lastVelocitySample =
+					panMotion.velocitySampleCount > 0
+					? &panMotion.velocitySamples[panMotion.velocitySampleCount - 1] : nullptr;
+				const double sampleSpanMilliseconds = firstVelocitySample && lastVelocitySample
+					? QpcDeltaSeconds(lastVelocitySample->qpc, firstVelocitySample->qpc,
+						qpcFrequency) * 1000.0 : 0.0;
+				const double sampleSpanX = firstVelocitySample && lastVelocitySample
+					? lastVelocitySample->x - firstVelocitySample->x : 0.0;
+				const double sampleSpanY = firstVelocitySample && lastVelocitySample
+					? lastVelocitySample->y - firstVelocitySample->y : 0.0;
+				LogCanvasPan("pan-release engine=application qpc=%lld last-input-qpc=%lld age-ms=%.3f cancelled=%u samples=%zu sample-first=(%lld,%.2f,%.2f) sample-last=(%lld,%.2f,%.2f) sample-span-ms=%.3f sample-span=(%.2f,%.2f) before=(%.1f,%.1f) selected=(%.1f,%.1f) speed=%.1f inertia=%u reason=%s",
 					static_cast<long long>(panReleaseQpc),
 					static_cast<long long>(lastPanInputQpc),
 					std::isfinite(secondsSinceLastInput) ? secondsSinceLastInput * 1000.0 : -1.0,
 					panReleaseCancelled ? 1u : 0u, panMotion.velocitySampleCount,
+					static_cast<long long>(firstVelocitySample ? firstVelocitySample->qpc : 0),
+					firstVelocitySample ? firstVelocitySample->x : 0.0,
+					firstVelocitySample ? firstVelocitySample->y : 0.0,
+					static_cast<long long>(lastVelocitySample ? lastVelocitySample->qpc : 0),
+					lastVelocitySample ? lastVelocitySample->x : 0.0,
+					lastVelocitySample ? lastVelocitySample->y : 0.0,
+					sampleSpanMilliseconds, sampleSpanX, sampleSpanY,
 					appVelocityBefore.x, appVelocityBefore.y, panMotion.velocity.x,
 					panMotion.velocity.y, CanvasPanSpeed(panMotion),
 					panMotion.inertiaActive ? 1u : 0u, releaseReason);
+				if (panReleaseQpc > 0) lastPanReleaseQpc = panReleaseQpc;
 			}
 			lastNavigationQpc = nowQpc;
 		};

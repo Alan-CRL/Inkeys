@@ -537,6 +537,10 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"inertia-first-step engine=application"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "inertia-brake active="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "pan-anomaly qpc="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "inherited-delta="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "sample-span-ms="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "pan-baseline-contact"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"touch-retire-before-down"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
@@ -557,6 +561,16 @@ int RunLaserIncrementalCoverageTests()
 			"pendingHapticPointerId_.store(0"));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
 			"penCursorSample_.Clear()"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"[CURSOR_TRACE][state]"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"[CURSOR_TRACE][system]"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"ShouldHideSystemDrawingCursor=%u"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"haptic={pointerId=%u,pending=%u,leave=%u}"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"ApplyWindowCursor(\"WM_SETCURSOR\")"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IManipulationProcessor"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IInertiaProcessor"));
 	}
