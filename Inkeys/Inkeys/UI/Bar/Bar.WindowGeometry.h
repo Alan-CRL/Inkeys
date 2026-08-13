@@ -94,6 +94,30 @@ namespace Inkeys::UI::Bar
 		LONG outset = 0;
 	};
 
+	enum class BarThicknessPreviewReservationMode
+	{
+		None,
+		Target,
+		Interaction,
+	};
+
+	// 连续手势优先预留完整量程；程序化动画只在 Popup 可见时预留已知目标。
+	[[nodiscard]] constexpr BarThicknessPreviewReservationMode
+		ResolveBarThicknessPreviewReservationMode(
+			bool popupVisible,
+			bool interactionActive,
+			bool thicknessAnimating,
+			bool sliderPositionAnimating,
+			bool numberLayoutAnimating) noexcept
+	{
+		if (interactionActive)
+			return BarThicknessPreviewReservationMode::Interaction;
+		if (popupVisible && (thicknessAnimating
+			|| sliderPositionAnimating || numberLayoutAnimating))
+			return BarThicknessPreviewReservationMode::Target;
+		return BarThicknessPreviewReservationMode::None;
+	}
+
 	// 连续粗细手势在首帧预留当前笔型最大值 Popup，避免拖动中逐帧追扩 HWND。
 	[[nodiscard]] inline RECT ResolveBarThicknessPreviewEnvelope(
 		const BarThicknessPreviewEnvelopeInput& input) noexcept

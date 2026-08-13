@@ -82,6 +82,19 @@ namespace
 
 	void TestThicknessPreviewInteractionEnvelope()
 	{
+		Check(ResolveBarThicknessPreviewReservationMode(
+			true, true, false, false, false)
+				== BarThicknessPreviewReservationMode::Interaction,
+			"active gesture reserves the full thickness interaction domain");
+		Check(ResolveBarThicknessPreviewReservationMode(
+			true, false, true, false, false)
+				== BarThicknessPreviewReservationMode::Target,
+			"visible popup reserves a known programmatic thickness target");
+		Check(ResolveBarThicknessPreviewReservationMode(
+			false, false, true, true, true)
+				== BarThicknessPreviewReservationMode::None,
+			"hidden popup does not expand for thickness-only animation");
+
 		const RECT maximumPopup = ResolveBarThicknessPreviewEnvelope({
 			500.0, 420.0, 490.0, 330.0,
 			100.0, 24.0, 18.0, 8.0, 5.0,

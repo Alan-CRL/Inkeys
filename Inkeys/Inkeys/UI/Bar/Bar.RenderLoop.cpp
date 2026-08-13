@@ -171,6 +171,7 @@ using Inkeys::UI::Bar::BarDirtyVisualKey;
 using Inkeys::UI::Bar::BarWindowViewportController;
 using Inkeys::UI::Bar::BarWindowViewportDecision;
 using Inkeys::UI::Bar::BarWindowScalarRange;
+using Inkeys::UI::Bar::BarThicknessPreviewReservationMode;
 using Inkeys::UI::Bar::BarLayoutToClientRect;
 using Inkeys::UI::Bar::DeflateBarWindowRect;
 using Inkeys::UI::Bar::IntersectBarWindowRect;
@@ -179,6 +180,7 @@ using Inkeys::UI::Bar::ResolveBarWindowCapacity;
 using Inkeys::UI::Bar::ResolveBarWindowAnimatedRect;
 using Inkeys::UI::Bar::ResolveBarWindowAnimationRange;
 using Inkeys::UI::Bar::ResolveBarThicknessPreviewEnvelope;
+using Inkeys::UI::Bar::ResolveBarThicknessPreviewReservationMode;
 using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
@@ -6569,6 +6571,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
 			|| !state.morePanelProgress.IsSame()
+			|| !state.drawAttributePenThickness.IsSame()
+			|| !state.drawAttributeThicknessSliderNormalized.IsSame()
+			|| !state.drawAttributeThicknessPreviewNumberInsideProgress.IsSame()
 			|| !state.drawAttributeThicknessPreviewPopupProgress.IsSame()
 			|| !state.drawAttributeThicknessPreviewPopupRetargetProgress.IsSame()
 			|| !state.drawAttributeThicknessFineDialProgress.IsSame()
@@ -7217,6 +7222,15 @@ IncludeShapeBounds(state.shapeMap[
 			|| state.barState.drawAttributeBar.thicknessPreviewDragging
 			|| state.barState.drawAttributeBar.thicknessFineDialDragging
 			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive;
+		const auto thicknessReservationMode =
+			ResolveBarThicknessPreviewReservationMode(
+				state.drawAttributeThicknessPreviewPopupTargetVisible,
+				reserveThicknessInteractionEnvelope,
+				!state.drawAttributePenThickness.IsSame(),
+				!state.drawAttributeThicknessSliderNormalized.IsSame(),
+				!state.drawAttributeThicknessPreviewNumberInsideProgress.IsSame());
+		const bool reserveThicknessTargetEnvelope = thicknessReservationMode
+			== BarThicknessPreviewReservationMode::Target;
 		const bool reserveAnimationEnvelope =
 			state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
@@ -7229,7 +7243,8 @@ IncludeShapeBounds(state.shapeMap[
 			|| !state.drawAttributeOverflowPopupProgress.IsSame()
 			|| !state.drawAttributePenTypeMenuProgress.IsSame()
 			|| !state.drawAttributeColorPickerProgress.IsSame()
-			|| reserveThicknessInteractionEnvelope;
+			|| reserveThicknessInteractionEnvelope
+			|| reserveThicknessTargetEnvelope;
 		constexpr LONG viewportPadding = 2;
 		RECT predictedEnvelope{};
 		if (reserveAnimationEnvelope)
@@ -7391,10 +7406,11 @@ IncludeShapeBounds(state.shapeMap[
 				AddInheritedVisual(state.shapeMap[visual],
 					drawAttributeCenterX, drawAttributeCenterY,
 					drawAttributeCurrentCenterX, drawAttributeCurrentCenterY);
-			if (reserveThicknessInteractionEnvelope)
+			if (thicknessReservationMode
+				!= BarThicknessPreviewReservationMode::None)
 			{
 				const auto range = GetBarThicknessSliderRange(
-					stateMode.Pen.ModeSelect, state.barStyle.dpiZoom);
+					frameDrawingState.penMode, state.barStyle.dpiZoom);
 				const auto sliderThumb = state.shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb];
 				const auto popupSurface = state.shapeMap[
@@ -7414,13 +7430,19 @@ IncludeShapeBounds(state.shapeMap[
 						*panel, *region, regionInherit, *adjust, adjustInherit);
 					if (geometry.valid)
 					{
-						const double maximumThickness = static_cast<double>(range.max);
+						// 连续手势预留完整量程；快捷粗细和切笔只预留已知动画范围。
+						const double maximumThickness = reserveThicknessInteractionEnvelope
+							? static_cast<double>(range.max)
+							: max(0.0, ValueRange(
+								state.drawAttributePenThickness).maximum);
+						const int measuredThickness = static_cast<int>(lround(clamp(
+							maximumThickness, 0.0, 999.0)));
 						if (state.drawAttributeThicknessEnvelopeMeasuredValue
-							!= range.max)
+							!= measuredThickness)
 						{
-							state.drawAttributeThicknessEnvelopeMeasuredValue = range.max;
+							state.drawAttributeThicknessEnvelopeMeasuredValue = measuredThickness;
 							state.drawAttributeThicknessEnvelopeMeasuredSize =
-								state.spec.MeasureText(to_wstring(range.max),
+								state.spec.MeasureText(to_wstring(measuredThickness),
 									BarThicknessPreviewNumberFontSize,
 									DWRITE_FONT_WEIGHT_BOLD);
 						}
@@ -7434,13 +7456,8 @@ IncludeShapeBounds(state.shapeMap[
 							static_cast<double>(maximumTextSize.height));
 						const double popupHeight = max(circleDiameter, textHeight)
 							+ BarThicknessPreviewPopupPadding * 2.0;
-						const double anchorX = geometry.trackRight
-							- BarThicknessSliderThumbDiameter * geometry.panelScale / 2.0;
 						const double anchorY = ResolveThicknessSliderCenterY(
 							state, geometry);
-						const double targetCenterY = anchorY + geometry.previewSide
-							* (BarThicknessSliderThumbDiameter * geometry.panelScale / 2.0
-								+ BarThicknessPreviewPopupThumbGap + popupHeight / 2.0);
 						const double outsideNumberWidth = circleDiameter
 							+ BarThicknessPreviewNumberGap + textWidth;
 						// 最大值刚出现时数字仍可能位于圆外，完整会话必须覆盖该过渡帧。
@@ -7468,15 +7485,8 @@ IncludeShapeBounds(state.shapeMap[
 							penTypeSafeRight = panel->inhX
 								+ BarDrawAttributePenTypeLeft * geometry.panelScale
 								- BarThicknessPreviewAvoidGap;
-						double sliderTargetCenterX = min(anchorX,
-							penTypeSafeRight - popupWidth / 2.0);
 						const auto popupCurve = BarUiGetCurveExtrema(
 							BarUiCurveEnum::EaseOutBack);
-						const double safePopupScale = max(
-							0.000001, popupCurve.maximum);
-						sliderTargetCenterX = min(sliderTargetCenterX,
-							anchorX + (penTypeSafeRight - anchorX) / safePopupScale
-								- popupWidth / 2.0);
 						double fineTargetCenterX =
 							(geometry.trackLeft + geometry.trackRight) / 2.0;
 						double fineTargetCenterY = panel->inhY
@@ -7499,10 +7509,11 @@ IncludeShapeBounds(state.shapeMap[
 									max(popupHeight / 2.0,
 										logicalWindowHeight - popupHeight / 2.0));
 							};
-						double sliderTargetCenterY = targetCenterY;
-						ClampPopupCenter(sliderTargetCenterX, sliderTargetCenterY);
-						ClampPopupCenter(fineTargetCenterX, fineTargetCenterY);
 						const auto extent = VisualExtent(popupSurface);
+						const double maximumPopupScale = reserveThicknessInteractionEnvelope
+							? popupCurve.maximum
+							: max(0.000001, ValueRange(
+								state.drawAttributeThicknessPreviewPopupProgress).maximum);
 						const bool fullPointLightVisible = BarUiEdgeLightingEnabled
 							&& popupSurface->frameRendering
 								== BarUiFrameRenderingEnum::PointLight
@@ -7510,27 +7521,62 @@ IncludeShapeBounds(state.shapeMap[
 								|| (BarUiDynamicEdgeLightingEnabled
 									&& popupSurface->frameCursorLightIntensityScale > 0.0));
 						const LONG fullPopupOutset = static_cast<LONG>(ceil(
-							(popupCurve.maximum + (fullPointLightVisible
+							(maximumPopupScale + (fullPointLightVisible
 								? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0))
 							* frameZoom)) + BarRenderingAttribute::dirtyAntialiasPadding;
 						const LONG maximumPopupOutset = max(
 							extent.outset, fullPopupOutset);
-						auto AddMaximumPopupEnvelope = [&](double targetCenterX,
-							double targetCenterY)
+						const double baseThumbDiameter =
+							BarThicknessSliderThumbDiameter * geometry.panelScale;
+						const double thumbTravel = max(0.0,
+							geometry.trackRight - geometry.trackLeft - baseThumbDiameter);
+						const auto normalizedRange = reserveThicknessInteractionEnvelope
+							? BarWindowScalarRange{ 1.0, 1.0 }
+							: ValueRange(state.drawAttributeThicknessSliderNormalized);
+						const auto fineDialRange = reserveThicknessInteractionEnvelope
+							? BarWindowScalarRange{ 0.0, 1.0 }
+							: ValueRange(state.drawAttributeThicknessFineDialProgress);
+						auto AddPopupEnvelope = [&](double normalized,
+							double fineDialProgress)
 							{
+								normalized = clamp(normalized, 0.0, 1.0);
+								fineDialProgress = clamp(fineDialProgress, 0.0, 1.0);
+								const double anchorX = geometry.trackLeft
+									+ baseThumbDiameter / 2.0 + thumbTravel * normalized;
+								double sliderTargetCenterX = min(anchorX,
+									penTypeSafeRight - popupWidth / 2.0);
+								const double safePopupScale = max(
+									0.000001, maximumPopupScale);
+								sliderTargetCenterX = min(sliderTargetCenterX,
+									anchorX + (penTypeSafeRight - anchorX) / safePopupScale
+										- popupWidth / 2.0);
+								double sliderTargetCenterY = anchorY + geometry.previewSide
+									* (baseThumbDiameter / 2.0
+										+ BarThicknessPreviewPopupThumbGap + popupHeight / 2.0);
+								ClampPopupCenter(sliderTargetCenterX, sliderTargetCenterY);
+								double clampedFineCenterX = fineTargetCenterX;
+								double clampedFineCenterY = fineTargetCenterY;
+								ClampPopupCenter(clampedFineCenterX, clampedFineCenterY);
+								const double targetCenterX = sliderTargetCenterX
+									+ (clampedFineCenterX - sliderTargetCenterX)
+										* fineDialProgress;
+								const double targetCenterY = sliderTargetCenterY
+									+ (clampedFineCenterY - sliderTargetCenterY)
+										* fineDialProgress;
 								UnionBarWindowRect(predictedEnvelope,
 									ResolveBarThicknessPreviewEnvelope({
 								anchorX, anchorY, targetCenterX, targetCenterY,
 								circleDiameter, textWidth, textHeight,
 								BarThicknessPreviewPopupPadding,
 								BarThicknessPreviewNumberGap,
-								popupCurve.maximum,
+								maximumPopupScale,
 								static_cast<double>(frameZoom), maximumPopupOutset }));
 							};
-						AddMaximumPopupEnvelope(
-							sliderTargetCenterX, sliderTargetCenterY);
-						AddMaximumPopupEnvelope(
-							fineTargetCenterX, fineTargetCenterY);
+						for (double normalized : {
+							normalizedRange.minimum, normalizedRange.maximum })
+							for (double fineDialProgress : {
+								fineDialRange.minimum, fineDialRange.maximum })
+								AddPopupEnvelope(normalized, fineDialProgress);
 					}
 				}
 			}
