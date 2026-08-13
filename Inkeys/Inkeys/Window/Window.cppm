@@ -89,6 +89,7 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool Destroy(WindowRole role);
 		[[nodiscard]] bool Show(WindowRole role);
 		[[nodiscard]] bool Hide(WindowRole role);
+		[[nodiscard]] bool HideAllUserWindows();
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
 		[[nodiscard]] bool RequestTopmostRefresh();

@@ -279,6 +279,14 @@ namespace Inkeys::Window
 			return Submit(role, CommandType::Hide);
 		}
 
+		[[nodiscard]] bool HideAllUserWindows()
+		{
+			// 两组窗口分别在自己的 owner thread 隐藏，避免跨线程直接操作 HWND。
+			const bool overlayHidden = Submit(WindowRole::Bar, CommandType::HideAll);
+			const bool settingHidden = Submit(WindowRole::Setting, CommandType::HideAll);
+			return overlayHidden && settingHidden;
+		}
+
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds)
 		{
 			Command command;
@@ -341,6 +349,7 @@ namespace Inkeys::Window
 			Destroy,
 			Show,
 			Hide,
+			HideAll,
 			SetBounds,
 			SetClickThrough,
 			RefreshTopmost,
@@ -862,6 +871,8 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool Execute(const Command& command)
 		{
+			if (command.type == CommandType::HideAll)
+				return HideUserWindowsInGroup(IsSetting(command.role));
 			auto* record = Record(command.role);
 			const HWND hwnd = record ? record->hwnd.load(std::memory_order_acquire) : nullptr;
 			if (command.type == CommandType::Create)
@@ -904,6 +915,8 @@ namespace Inkeys::Window
 			case CommandType::Hide:
 				ShowWindow(hwnd, SW_HIDE);
 				return true;
+			case CommandType::HideAll:
+				return false;
 			case CommandType::SetBounds:
 				return SetWindowPos(
 					hwnd, nullptr,
@@ -957,6 +970,35 @@ namespace Inkeys::Window
 				return !record->messagesBound;
 			}
 			return false;
+		}
+
+		[[nodiscard]] bool HideUserWindowsInGroup(bool settingGroup) noexcept
+		{
+			if (settingGroup)
+			{
+				if (const HWND hwnd = Handle(WindowRole::Setting); hwnd && IsWindow(hwnd))
+					ShowWindow(hwnd, SW_HIDE);
+				return true;
+			}
+
+			constexpr WindowRole overlayRoles[] = {
+				WindowRole::MagnifierHost,
+				WindowRole::MagnifierChild,
+				WindowRole::Freeze,
+				WindowRole::Drawpad,
+				WindowRole::PptBottomLeft,
+				WindowRole::PptBottomRight,
+				WindowRole::PptMiddleLeft,
+				WindowRole::PptMiddleRight,
+				WindowRole::PptExitShow,
+				WindowRole::Bar,
+			};
+			for (const auto role : overlayRoles)
+			{
+				if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
+					ShowWindow(hwnd, SW_HIDE);
+			}
+			return true;
 		}
 
 		[[nodiscard]] bool CreateDynamic(const WindowSpec& spec)
@@ -1086,6 +1128,7 @@ namespace Inkeys::Window
 	bool Service::Destroy(WindowRole role) { return impl_->Destroy(role); }
 	bool Service::Show(WindowRole role) { return impl_->Show(role); }
 	bool Service::Hide(WindowRole role) { return impl_->Hide(role); }
+	bool Service::HideAllUserWindows() { return impl_->HideAllUserWindows(); }
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
 	bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }

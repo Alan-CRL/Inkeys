@@ -105,6 +105,55 @@ while (!offSignal && RequestUpdateMagWindow == 0)
     std::this_thread::sleep_for(100ms);
 ~~~
 
+## 关闭前隐藏用户窗口合同
+
+### 1. Scope / Trigger
+
+关闭或重启由 UI 命令触发时，必须在后台清理前同步移除全部用户可见窗口。
+
+### 2. Signatures
+
+- 窗口服务：`bool Inkeys::Window::Service::HideAllUserWindows()`。
+- 进程入口：`CloseProgram()`、`RestartProgram()`。
+
+### 3. Contracts
+
+- Window Service 分别在 Overlay 与 Setting owner thread 批量执行 `SW_HIDE`，不销毁 HWND；`DisplayObserver` 不属于用户界面。
+- 关闭/重启入口先调用批量隐藏，再执行 CrashHandler 清理和 `SetOffSignal()`。
+- 隐藏失败不得阻断退出信号发布。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 窗口不存在或已经隐藏 | 视为可继续，其他窗口仍被隐藏 |
+| 任一 owner thread 隐藏失败 | 关闭/重启仍继续清理并发布退出信号 |
+| 调用来自任一窗口 owner thread | 该组直接执行，另一组同步投递，不发生自锁 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：用户点击关闭后所有界面立即消失，后台线程随后有序退出。
+- Base：部分窗口尚未创建或本来不可见，调用仍可完成。
+- Bad：先执行耗时清理或等待线程，再隐藏窗口。
+
+### 6. Tests Required
+
+- Window Service 测试先显示全部用户窗口，调用批量隐藏后断言 HWND 仍有效且均不可见。
+- 完整构建验证关闭入口能够导入 Window 模块，不形成模块依赖环。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：清理耗时会让界面看起来卡住。
+CrashHandler::Shutdown();
+SetOffSignal(1);
+
+// Correct：视觉退出先完成，隐藏结果不改变退出控制流。
+(void)Inkeys::Window::GetService().HideAllUserWindows();
+CrashHandler::Shutdown();
+SetOffSignal(1);
+~~~
+
 ## 待确认风险（不是已确认缺陷）
 
 - `D2DShutdown`：`IdtD2DPreparation.cpp` 有声明/定义，但全仓静态搜索未找到调用。需确认是否有意依赖进程退出，影响未来 Codex 是否可以复用或调整 D2D 生命周期。

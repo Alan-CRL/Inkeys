@@ -182,6 +182,20 @@ int RunWindowTests()
 	check(Service::LastFocusWindow() == focusBeforePromote,
 		"reshow ppt does not activate");
 
+	for (const auto role : roles)
+	{
+		if (role != WindowRole::DisplayObserver)
+			check(service.Show(role), "show before hide all");
+	}
+	check(service.HideAllUserWindows(), "hide all user windows");
+	for (const auto role : roles)
+	{
+		const HWND hwnd = service.Handle(role);
+		check(hwnd && IsWindow(hwnd), "hide all preserves window lifecycle");
+		if (role != WindowRole::DisplayObserver)
+			check(!IsWindowVisible(hwnd), "hide all removes visible ui");
+	}
+
 	Inkeys::Message::Message expected{};
 	expected.message = WM_MOUSEMOVE;
 	expected.x = 17;
