@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM64">
@@ -434,7 +434,6 @@
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
     <ClInclude Include="IdtConfiguration.h" />
-    <ClInclude Include="IdtD2DPreparation.h" />
     <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
@@ -449,6 +448,7 @@
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
@@ -469,8 +469,8 @@
 	<ClCompile Include="Inkeys\Message\Message.cppm" />
 	<ClCompile Include="Inkeys\Window\Window.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.cppm" />
-	<ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cppm" />
-	<ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cpp" />
+	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
+	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
@@ -499,7 +499,6 @@
     <ClCompile Include="additional\ziputils\zip.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
-    <ClCompile Include="IdtD2DPreparation.cpp" />
     <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
@@ -660,9 +659,9 @@
 	<None Include="IdtFloating.h" />
 	<None Include="IdtWindow.cpp" />
 	<None Include="IdtWindow.h" />
-    <None Include="additional\imgui\CustomShaders\imgui_common.hlsli" />
-    <None Include="additional\imgui\CustomShaders\imgui_ps.cso" />
-    <None Include="additional\imgui\CustomShaders\imgui_vs.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
     <None Include="src\i18n\en-US.jsonc" />
@@ -722,7 +721,7 @@
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="additional\imgui\CustomShaders\imgui_ps.hlsl">
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
@@ -742,7 +741,7 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
-    <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>

@@ -3,6 +3,7 @@ module;
 #include <windows.h>
 #include <windowsx.h>
 #include <d2d1_1.h>
+#include <d2d1helper.h>
 #include <dwrite_1.h>
 #include <wrl/client.h>
 
@@ -19,13 +20,12 @@ module;
 #include <vector>
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtImage.h"
 
 module Inkeys.UI.Ppt;
 
-import Inkeys.UI.RenderScheduler;
+import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Other.Config;
 
@@ -36,8 +36,9 @@ namespace Inkeys::UI::Ppt
 	namespace
 	{
 		using namespace std::chrono_literals;
-		using RenderClient = Inkeys::UI::RenderScheduler::Client;
-		using FrameResult = Inkeys::UI::RenderScheduler::FrameResult;
+		using RenderClient = Inkeys::UI::RenderPipeline::Client;
+		using FrameResult = Inkeys::UI::RenderPipeline::FrameResult;
+		using FrameContext = Inkeys::UI::RenderPipeline::FrameContext;
 		using WindowRole = Inkeys::Window::WindowRole;
 
 		constexpr std::array<RenderClient, 5> Clients{
@@ -259,10 +260,10 @@ namespace Inkeys::UI::Ppt
 			return dpi ? dpi : USER_DEFAULT_SCREEN_DPI;
 		}
 
-		[[nodiscard]] Inkeys::UI::RenderScheduler::ClientMask PairMask(
+		[[nodiscard]] Inkeys::UI::RenderPipeline::ClientMask PairMask(
 			RenderClient client) noexcept
 		{
-			using Inkeys::UI::RenderScheduler::Mask;
+			using Inkeys::UI::RenderPipeline::Mask;
 			if (IsBottom(client))
 				return Mask(RenderClient::PptBottomLeft) |
 					Mask(RenderClient::PptBottomRight);
@@ -477,7 +478,7 @@ namespace Inkeys::UI::Ppt
 			// 拖动期间固定 backing 仅直移 HWND，释放后才重新绘制该组。
 			for (const auto moved : Clients)
 			{
-				if ((movedMask & Inkeys::UI::RenderScheduler::Mask(moved)) == 0) continue;
+			if ((movedMask & Inkeys::UI::RenderPipeline::Mask(moved)) == 0) continue;
 				const auto movedLayout = ResolveControlLayout(ControlFor(moved), monitor,
 					candidate, presentationVisible.load(std::memory_order_acquire),
 					DpiScale(moved));
@@ -500,7 +501,7 @@ namespace Inkeys::UI::Ppt
 				else
 					state.input.push_back(event);
 			}
-			Inkeys::UI::RenderScheduler::Request(client);
+			Inkeys::UI::RenderPipeline::Request(client);
 		}
 
 		struct InputOutcome
@@ -592,7 +593,7 @@ namespace Inkeys::UI::Ppt
 						groupDragging[DragGroup(client)].store(false,
 							std::memory_order_release);
 						outcome.dragReleased = true;
-						Inkeys::UI::RenderScheduler::Request(PairMask(client));
+						Inkeys::UI::RenderPipeline::Request(PairMask(client));
 						const auto configurationSnapshot = ReadConfiguration();
 						if (configurationSnapshot.rememberPosition)
 							PersistPosition(configurationSnapshot);
@@ -630,13 +631,16 @@ namespace Inkeys::UI::Ppt
 		}
 
 		[[nodiscard]] HRESULT EnsureResources(TargetResources& target,
-			const Ui3RenderDeviceEpoch& epoch, const Layout& layout)
+			const FrameContext& frameContext, const Layout& layout)
 		{
+			const auto& epoch = frameContext.epoch;
+			const auto& assets = frameContext.assets;
 			if (target.context && target.bitmap && target.gdi && target.brush &&
 				target.dragHandleStyle &&
 				target.generation == epoch.generation && target.width == layout.width &&
 				target.height == layout.height) return S_OK;
-			if (!epoch.d2dDevice || !d2dFactory1 || !dWriteFactory1) return E_POINTER;
+			if (!epoch.d2dDevice || !assets.d2dFactory || !assets.dwriteFactory)
+				return E_POINTER;
 
 			TargetResources next;
 			HRESULT hr = epoch.d2dDevice->CreateDeviceContext(
@@ -659,17 +663,17 @@ namespace Inkeys::UI::Ppt
 			D2D1_STROKE_STYLE_PROPERTIES strokeProperties = D2D1::StrokeStyleProperties();
 			strokeProperties.startCap = D2D1_CAP_STYLE_ROUND;
 			strokeProperties.endCap = D2D1_CAP_STYLE_ROUND;
-			hr = d2dFactory1->CreateStrokeStyle(&strokeProperties, nullptr, 0,
+			hr = assets.d2dFactory->CreateStrokeStyle(&strokeProperties, nullptr, 0,
 				&next.dragHandleStyle);
 			if (FAILED(hr)) return hr;
-			hr = dWriteFactory1->CreateTextFormat(L"HarmonyOS Sans SC",
-				dWriteFontCollection.Get(),
+			hr = assets.dwriteFactory->CreateTextFormat(L"HarmonyOS Sans SC",
+				assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL, 24.0F * layout.scale, L"zh-CN",
 				&next.pageFormat);
 			if (FAILED(hr)) return hr;
-			hr = dWriteFactory1->CreateTextFormat(L"HarmonyOS Sans SC",
-				dWriteFontCollection.Get(),
+			hr = assets.dwriteFactory->CreateTextFormat(L"HarmonyOS Sans SC",
+				assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL, 16.0F * layout.scale, L"zh-CN",
 				&next.totalFormat);
@@ -927,7 +931,8 @@ namespace Inkeys::UI::Ppt
 			}
 		}
 
-		[[nodiscard]] FrameResult RenderFrame(RenderClient client)
+		[[nodiscard]] FrameResult RenderFrame(
+			RenderClient client, const FrameContext& frameContext)
 		{
 			auto& state = states[Index(client)];
 			const Layout layout = CalculateLayout(client, state);
@@ -961,13 +966,11 @@ namespace Inkeys::UI::Ppt
 				state.shown = true;
 			}
 
-			// 每个 PPT 客户端的目标重建、绘制和 ULW 提交必须处于同一共享设备租约。
-			auto renderPass = AcquireUi3RenderPass(Ui3RenderPriority::Interactive);
-			if (!renderPass) return FrameResult::Retry;
-			const auto epoch = GetUi3RenderDeviceEpoch();
+			// 唯一管线线程串行覆盖目标重建、绘制和 ULW 提交。
+			const auto& epoch = frameContext.epoch;
 			const bool targetChanged = state.target.generation != epoch.generation ||
 				state.target.width != layout.width || state.target.height != layout.height;
-			const HRESULT resourceHr = EnsureResources(state.target, epoch, layout);
+			const HRESULT resourceHr = EnsureResources(state.target, frameContext, layout);
 			if (FAILED(resourceHr))
 			{
 				state.committedGeneration = 0;
@@ -1202,7 +1205,7 @@ namespace Inkeys::UI::Ppt
 					? LOWORD(wParam) : QueryWindowDpi(hwnd);
 				// 消息本身也是布局代次；即使 DPI 仍为 96，也需重算显示器位置。
 				dpiTokens[Index(client)].store(dpi, std::memory_order_release);
-				Inkeys::UI::RenderScheduler::Request(client);
+				Inkeys::UI::RenderPipeline::Request(client);
 				return 0;
 			}
 			if (message == WM_MOUSEMOVE)
@@ -1254,10 +1257,11 @@ namespace Inkeys::UI::Ppt
 			std::scoped_lock lock(callbackMutex);
 			business = std::move(callbacks);
 		}
-		auto& scheduler = Inkeys::UI::RenderScheduler::GetScheduler();
+		using namespace Inkeys::UI::RenderPipeline;
 		for (const auto client : Clients)
 		{
-			if (!scheduler.Register(client, [client]() { return RenderFrame(client); }))
+			if (!Register(client, [client](const FrameContext& context)
+				{ return RenderFrame(client, context); }))
 			{
 				Shutdown();
 				return false;
@@ -1277,9 +1281,9 @@ namespace Inkeys::UI::Ppt
 			if (hwnd) (void)SendMessageTimeoutW(hwnd, WM_CANCELMODE, 0, 0,
 				SMTO_ABORTIFHUNG | SMTO_BLOCK, 200, &ignored);
 		}
-		auto& scheduler = Inkeys::UI::RenderScheduler::GetScheduler();
 		// Unregister 同步等待正在执行的回调退出，之后才可释放每窗 D2D target。
-		for (const auto client : Clients) scheduler.Unregister(client);
+		for (const auto client : Clients)
+			Inkeys::UI::RenderPipeline::Unregister(client);
 		for (auto& state : states)
 		{
 			std::scoped_lock lock(state.inputMutex);
@@ -1330,8 +1334,8 @@ namespace Inkeys::UI::Ppt
 	{
 		if (presentationVisible.exchange(visible, std::memory_order_acq_rel) == visible)
 			return;
-		Inkeys::UI::RenderScheduler::Request(
-			Inkeys::UI::RenderScheduler::PptMask());
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::PptMask());
 	}
 
 	void PublishPageState(int current, int total) noexcept
@@ -1342,8 +1346,8 @@ namespace Inkeys::UI::Ppt
 			totalPage.exchange(total, std::memory_order_acq_rel) != total;
 		const bool changed = currentChanged || totalChanged;
 		if (changed)
-			Inkeys::UI::RenderScheduler::Request(
-				Inkeys::UI::RenderScheduler::PptPageMask());
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void FlashPageDirection(bool next) noexcept
@@ -1352,31 +1356,31 @@ namespace Inkeys::UI::Ppt
 		const auto until = std::chrono::duration_cast<std::chrono::milliseconds>(
 			(std::chrono::steady_clock::now() + 100ms).time_since_epoch()).count();
 		keyboardFlashUntil.store(until, std::memory_order_release);
-		Inkeys::UI::RenderScheduler::Request(
-			Inkeys::UI::RenderScheduler::PptPageMask());
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::PptPageMask());
 	}
 
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept
 	{
 		WriteConfiguration(SnapshotLegacyConfiguration());
-		using Inkeys::UI::RenderScheduler::Mask;
+		using Inkeys::UI::RenderPipeline::Mask;
 		switch (group)
 		{
 		case ConfigGroup::BottomPair:
-			Inkeys::UI::RenderScheduler::Request(Mask(RenderClient::PptBottomLeft) |
+			Inkeys::UI::RenderPipeline::Request(Mask(RenderClient::PptBottomLeft) |
 				Mask(RenderClient::PptBottomRight));
 			break;
 		case ConfigGroup::MiddlePair:
-			Inkeys::UI::RenderScheduler::Request(Mask(RenderClient::PptMiddleLeft) |
+			Inkeys::UI::RenderPipeline::Request(Mask(RenderClient::PptMiddleLeft) |
 				Mask(RenderClient::PptMiddleRight));
 			break;
 		case ConfigGroup::ExitShow:
-			Inkeys::UI::RenderScheduler::Request(RenderClient::PptExitShow);
+			Inkeys::UI::RenderPipeline::Request(RenderClient::PptExitShow);
 			break;
 		case ConfigGroup::All:
 		default:
-			Inkeys::UI::RenderScheduler::Request(
-				Inkeys::UI::RenderScheduler::PptMask());
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::PptMask());
 			break;
 		}
 	}
@@ -1390,7 +1394,7 @@ namespace Inkeys::UI::Ppt
 	void SetDebugEnabled(bool enabled) noexcept
 	{
 		if (debugEnabled.exchange(enabled, std::memory_order_acq_rel) == enabled) return;
-		Inkeys::UI::RenderScheduler::Request(
-			Inkeys::UI::RenderScheduler::PptMask());
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::PptMask());
 	}
 }

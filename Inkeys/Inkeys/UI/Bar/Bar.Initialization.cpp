@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
@@ -21,7 +21,7 @@ import Inkeys.Helper.Thread;
 import Inkeys.Business.ComponentActions;
 import Inkeys.Input.MouseHook;
 import Inkeys.Window;
-import Inkeys.UI.RenderScheduler;
+import Inkeys.UI.RenderPipeline;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
 extern const double BarButtonCursorLightIntensity;
 extern const double BarDrawAttributeCompactWidth;
@@ -88,7 +88,8 @@ namespace Inkeys::UI::Bar
 				barUISet.barState.fold = true;
 				barUISet.UpdateRendering(false);
 			});
-		thread renderingThread([&]() { barUISet.Rendering(); });
+		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
+		barUISet.Rendering();
 		thread interactionThread([&]() { barUISet.Interact(); });
 
 		// 等待
@@ -98,10 +99,10 @@ namespace Inkeys::UI::Bar
 		Inkeys::Input::MouseHook::Stop();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。
 		BarAtomic::wait.Notify();
-		Inkeys::UI::RenderScheduler::GetScheduler().WakeForStop();
+		Inkeys::UI::RenderPipeline::WakeForStop();
 
 		if (interactionThread.joinable()) interactionThread.join();
-		if (renderingThread.joinable()) renderingThread.join();
+		barUISet.StopRendering();
 		Inkeys::Business::ShutdownComponentActions();
 
 		return;

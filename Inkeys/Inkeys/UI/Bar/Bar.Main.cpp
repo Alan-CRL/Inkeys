@@ -3,7 +3,7 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
+#include <dwrite_1.h>
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
@@ -24,7 +24,7 @@ import :Zoom;
 import :Theme;
 
 import Inkeys.UI.Bar.FramePacing;
-import Inkeys.UI.RenderScheduler;
+import Inkeys.UI.RenderPipeline;
 
 import <ranges>;
 
@@ -182,7 +182,8 @@ extern constexpr double BarMorePanelCompactHeight = 30.0;
 // 媒体操控类
 void BarMediaClass::LoadFormat()
 {
-	formatCache = make_unique<BarFormatCache>(dWriteFactory1.Get());
+	formatCache = make_unique<BarFormatCache>(
+		Inkeys::UI::RenderPipeline::DWriteFactory().Get());
 }
 
 // ====================
@@ -204,8 +205,8 @@ void BarUISetClass::UpdateRendering(bool updateState)
 
 	// 通知计算并渲染
 	BarAtomic::wait.Notify();
-	Inkeys::UI::RenderScheduler::Request(
-		Inkeys::UI::RenderScheduler::Client::Bar);
+	Inkeys::UI::RenderPipeline::Request(
+		Inkeys::UI::RenderPipeline::Client::Bar);
 }
 
 // 全局 Bar UI 集合

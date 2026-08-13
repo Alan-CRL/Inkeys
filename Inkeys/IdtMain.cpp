@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
@@ -15,7 +15,7 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
-import Inkeys.UI.RenderScheduler;
+import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
@@ -31,7 +31,6 @@ import Inkeys.Window;
 #include "resource.h"
 
 #include "IdtConfiguration.h"
-#include "IdtD2DPreparation.h"
 #include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
@@ -79,7 +78,7 @@ void SetOffSignal(int signal)
 	InterlockedExchange(&offSignalInterop, static_cast<LONG>(signal));
 	offSignal.store(signal, std::memory_order_release);
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
-	Inkeys::UI::RenderScheduler::GetScheduler().WakeForStop();
+	Inkeys::UI::RenderPipeline::WakeForStop();
 }
 
 LONG* GetOffSignalInteropPointer()
@@ -1143,7 +1142,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 界面绘图库初始化
 	{
-		HRESULT hr = D2DStarup();
+		HRESULT hr = Inkeys::UI::RenderPipeline::Initialize();
 		if (FAILED(hr))
 		{
 			if (IDTLogger) IDTLogger->error("[主线程][IdtMain] 界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
@@ -1162,16 +1161,20 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			IdtFontFileLoader::IsLoaderInitialized();
 			IdtFontCollectionLoader::IsLoaderInitialized();
 
-			dWriteFactory1->RegisterFontFileLoader(IdtFontFileLoader::GetLoader());
-			dWriteFactory1->RegisterFontCollectionLoader(IdtFontCollectionLoader::GetLoader());
-
-			IDWriteFontCollection* tempFontCollection = nullptr;
-			dWriteFactory1->CreateCustomFontCollection(IdtFontCollectionLoader::GetLoader(), fontResourceIDs.data(), static_cast<UINT32>(fontResourceIDs.size() * sizeof(UINT)), &tempFontCollection);
-
-			dWriteFontCollection.Attach(tempFontCollection);
+			const HRESULT fontHr = Inkeys::UI::RenderPipeline::InitializeFontCollection(
+				IdtFontFileLoader::GetLoader(),
+				IdtFontCollectionLoader::GetLoader(), fontResourceIDs);
+			if (FAILED(fontHr))
+			{
+				if (IDTLogger) IDTLogger->error(
+					"[主线程][IdtMain] UI 字体集合初始化失败, hr=0x{:08X}",
+					static_cast<unsigned int>(fontHr));
+				Inkeys::UI::RenderPipeline::Shutdown();
+				return 0;
+			}
 
 			// ----- 开始诊断代码 -----
-			/*if (dWriteFontCollection)
+			/*if (auto dWriteFontCollection = Inkeys::UI::RenderPipeline::FontCollection())
 			{
 				UINT32 familyCount = dWriteFontCollection->GetFontFamilyCount();
 				wchar_t buffer[256];
@@ -1350,7 +1353,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		settingSpec.height = SettingWindowHeight;
 		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN;
 		settingSpec.exStyle = WS_EX_APPWINDOW;
-		settingSpec.windowProc = SettingWindowProc();
+		settingSpec.windowProc = Inkeys::UI::Setting::WindowProc();
 		settingSpec.largeIcon = applicationIcon;
 		settingSpec.smallIcon = applicationIcon;
 		settingSpec.cursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -1372,6 +1375,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		{
 			IDTLogger->critical("[主线程][IdtMain] Win32 窗口服务启动失败");
 			SetOffSignal(1);
+			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
 		magnifierWindow = windowService.Handle(Inkeys::Window::WindowRole::MagnifierHost);
@@ -1380,6 +1384,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		drawpad_window = windowService.Handle(Inkeys::Window::WindowRole::Drawpad);
 		floating_window = windowService.Handle(Inkeys::Window::WindowRole::Bar);
 		setting_window = windowService.Handle(Inkeys::Window::WindowRole::Setting);
+		if (!setting_window || !Inkeys::UI::Setting::Initialize())
+		{
+			IDTLogger->critical("[主线程][IdtMain] Setting 渲染客户端初始化失败");
+			SetOffSignal(1);
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
 		magnificationCreateReady = magnifierWindow && magnifierChild;
 
 		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
@@ -1398,7 +1410,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	jthread topWindowThread(TopWindow);
 	jthread ui3InitializationThread(Inkeys::UI::Bar::Initialization);
-	auto settingMainThread = jthread(SettingMain);
 	jthread drawpadMainThread(drawpad_main);
 	jthread freezeFrameThread(FreezeFrameWindow);
 	jthread stateMonitoringThread(StateMonitoring);
@@ -1445,9 +1456,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
-	// Setting 仍会发布 UI3 状态；必须先停止生产者，再等待主栏窗口和渲染线程退出。
-	settingMainThread.request_stop();
-	if (settingMainThread.joinable()) settingMainThread.join();
+	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
+	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 	if (drawpadMainThread.joinable()) drawpadMainThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();
@@ -1456,6 +1466,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	if (pptLinkageThread.joinable()) pptLinkageThread.join();
 	if (topWindowThread.joinable()) topWindowThread.join();
 	Inkeys::Window::GetService().StopAndJoin();
+	Inkeys::UI::RenderPipeline::Shutdown();
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 

@@ -2,7 +2,7 @@ module;
 
 #include "../../IdtMain.h"
 
-#include "../../IdtD2DPreparation.h"
+#include <dwrite_1.h>
 
 export module Inkeys.Text.Font;
 

@@ -2,7 +2,8 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
+#include <wrl/client.h>
 
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO

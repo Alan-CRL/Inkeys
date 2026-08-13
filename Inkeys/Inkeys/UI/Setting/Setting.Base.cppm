@@ -4,6 +4,8 @@ module;
 
 export module Inkeys.UI.Setting:Base;
 
+import Inkeys.UI.RenderPipeline;
+
 ImFont* ImFontMain = nullptr;
 struct SettingSignStruct
 {
@@ -18,10 +20,11 @@ export float settingGlobalScale = 1.0f;
 // Data
 ID3D11Device* g_pd3dDevice = nullptr;
 ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
+Microsoft::WRL::ComPtr<ID3D11Device> g_settingDeviceLease;
+Microsoft::WRL::ComPtr<ID3D11DeviceContext> g_settingContextLease;
 IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 bool g_SwapChainOccluded = false;
-UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
 
 // Forward declarations of helper functions
 void CleanupDeviceD3D();
@@ -49,8 +52,12 @@ void CleanupRenderTarget()
 	}
 }
 
-bool CreateDeviceD3D(HWND hWnd)
+bool CreateDeviceD3D(HWND hWnd,
+	const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch)
 {
+	if (!hWnd || !epoch.d3dDevice || !epoch.immediateContext || !epoch.dxgiFactory)
+		return false;
+
 	DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
 	swapChainDesc.BufferCount = 2;
 	swapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -60,25 +67,22 @@ bool CreateDeviceD3D(HWND hWnd)
 	swapChainDesc.Windowed = TRUE;
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-	const D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0 };
-	D3D_FEATURE_LEVEL createdFeatureLevel = D3D_FEATURE_LEVEL_11_0;
-	const HRESULT hr = D3D11CreateDeviceAndSwapChain(
-		nullptr,
-		D3D_DRIVER_TYPE_HARDWARE,
-		nullptr,
-		D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-		featureLevels,
-		static_cast<UINT>(std::size(featureLevels)),
-		D3D11_SDK_VERSION,
-		&swapChainDesc,
-		&g_pSwapChain,
-		&g_pd3dDevice,
-		&createdFeatureLevel,
-		&g_pd3dDeviceContext);
+	// Setting 只创建独立呈现资源，device/context 由唯一渲染管线借用。
+	g_settingDeviceLease = epoch.d3dDevice;
+	g_settingContextLease = epoch.immediateContext;
+	g_pd3dDevice = g_settingDeviceLease.Get();
+	g_pd3dDeviceContext = g_settingContextLease.Get();
+	const HRESULT hr = epoch.dxgiFactory->CreateSwapChain(
+		epoch.d3dDevice.Get(), &swapChainDesc, &g_pSwapChain);
 	if (FAILED(hr))
+	{
+		g_pd3dDevice = nullptr;
+		g_pd3dDeviceContext = nullptr;
+		g_settingContextLease.Reset();
+		g_settingDeviceLease.Reset();
 		return false;
+	}
 
-	// 设置窗口独占其 D3D11 设备，不复用进程级 D2D/WARP 设备。
 	if (!CreateRenderTarget())
 	{
 		CleanupDeviceD3D();
@@ -90,21 +94,21 @@ bool CreateDeviceD3D(HWND hWnd)
 void CleanupDeviceD3D()
 {
 	CleanupRenderTarget();
-	if (g_pd3dDeviceContext)
-		g_pd3dDeviceContext->ClearState();
 	if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-	if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
-	if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+	g_pd3dDeviceContext = nullptr;
+	g_pd3dDevice = nullptr;
+	g_settingContextLease.Reset();
+	g_settingDeviceLease.Reset();
 	g_SwapChainOccluded = false;
-	g_ResizeWidth = g_ResizeHeight = 0;
 }
 
-bool ResizeSwapChain(UINT width, UINT height)
+HRESULT ResizeSwapChain(UINT width, UINT height)
 {
 	CleanupRenderTarget();
-	if (FAILED(g_pSwapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0)))
-		return false;
-	return CreateRenderTarget();
+	const HRESULT resizeResult = g_pSwapChain->ResizeBuffers(
+		0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+	if (FAILED(resizeResult)) return resizeResult;
+	return CreateRenderTarget() ? S_OK : E_FAIL;
 }
 
 void CleanupSettingTextures()

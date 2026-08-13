@@ -1,4 +1,4 @@
-﻿import Inkeys.Conv.Text;
+import Inkeys.Conv.Text;
 
 import Inkeys.Other.Config;
 
@@ -403,7 +403,7 @@ bool ReadSettingMini()
 
 	return true;
 }
-bool WriteSetting()
+string CaptureSettingJson()
 {
 	if (Inkeys::config.Config.AutoClean) setlistVal.clear();
 
@@ -561,6 +561,12 @@ bool WriteSetting()
 		}
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
+}
+
+bool WriteSettingJson(const string& jsonContent)
+{
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\deploy.json"))
 	{
@@ -578,9 +584,6 @@ bool WriteSetting()
 		return false;
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
-
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -590,6 +593,11 @@ bool WriteSetting()
 
 	UnOccupyFile(&fileHandle);
 	return true;
+}
+
+bool WriteSetting()
+{
+	return WriteSettingJson(CaptureSettingJson());
 }
 
 PptComSetListStruct pptComSetlist;
@@ -735,7 +743,7 @@ bool PptComReadSettingPositionOnly()
 
 	return true;
 }
-bool PptComWriteSetting()
+string CapturePptComSettingJson()
 {
 	Json::Value updateVal;
 	{
@@ -761,6 +769,12 @@ bool PptComWriteSetting()
 		// updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+}
+
+bool WritePptComSettingJson(const string& jsonContent)
+{
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
@@ -778,9 +792,6 @@ bool PptComWriteSetting()
 		return false;
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -790,6 +801,11 @@ bool PptComWriteSetting()
 
 	UnOccupyFile(&fileHandle);
 	return true;
+}
+
+bool PptComWriteSetting()
+{
+	return WritePptComSettingJson(CapturePptComSettingJson());
 }
 
 DdbInteractionSetListStruct ddbInteractionSetList;
@@ -907,7 +923,7 @@ DdbInteractionSetListStruct ddbInteractionSetList;
 //
 //	return true;
 //}
-bool DdbWriteInteraction(bool change, bool close)
+string CaptureDdbInteractionJson(bool change, bool close)
 {
 	Json::Value updateVal;
 	{
@@ -941,6 +957,13 @@ bool DdbWriteInteraction(bool change, bool close)
 		updateVal["~KeepOpen"] = Json::Value(!close);
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+}
+
+bool WriteDdbInteractionJson(const string& jsonContent)
+{
+
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, pluginPath + L"DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
@@ -958,9 +981,6 @@ bool DdbWriteInteraction(bool change, bool close)
 		return false;
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -970,6 +990,11 @@ bool DdbWriteInteraction(bool change, bool close)
 
 	UnOccupyFile(&fileHandle);
 	return true;
+}
+
+bool DdbWriteInteraction(bool change, bool close)
+{
+	return WriteDdbInteractionJson(CaptureDdbInteractionJson(change, close));
 }
 
 bool GetMemory()

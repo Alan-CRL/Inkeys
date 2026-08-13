@@ -16,19 +16,22 @@ module;
 #include "../../../IdtRts.h"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
+#include "Setting.SessionState.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <condition_variable>
+#include <coroutine>
+#include <deque>
+#include <mutex>
 #pragma comment(lib, "shlwapi.lib")
-
-// 从 imgui_impl_win32.cpp 中前向声明消息处理器
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 module Inkeys.UI.Setting;
 
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
 import Inkeys.Load;
@@ -38,7 +41,453 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.Other.Config;
 import Inkeys.Window;
 
+// 从 imgui_impl_win32.cpp 中前向声明消息处理器
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(
+	HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, ImGuiIO& io);
+
 using namespace std;
+
+namespace
+{
+	using Inkeys::UI::RenderPipeline::FrameContext;
+	using Inkeys::UI::RenderPipeline::FrameResult;
+
+	atomic<bool> settingInitialized = false;
+	atomic<bool> settingSessionShouldStop = false;
+	mutex settingLifecycleMutex;
+	mutex settingImguiMutex;
+	mutex settingStateMutex;
+	mutex settingDrainMutex;
+	condition_variable settingDrainCondition;
+	bool settingSessionDrained = true;
+	FrameContext settingFrameContext;
+	FrameResult settingFrameResult = FrameResult::Idle;
+	uint64_t settingSessionEpoch = 0;
+	Inkeys::UI::Setting::SessionState settingSessionState;
+	Inkeys::UI::Setting::BusinessCompletionSnapshot settingLastBusinessCompletion;
+
+	enum class SettingBusinessKind
+	{
+		WriteSetting,
+		WritePptSetting,
+		WriteConfig,
+		ShellExecute,
+		Information,
+		ConfirmRestart,
+		Restart,
+		Close,
+		ShowWindow,
+		HideWindow,
+		ClearInstallerAndSetAutoUpdate,
+		ClearInstallerAndSetChannel,
+		ClearInstallerAndSetArchitecture,
+		CreateShortcut,
+		ConfigureDdb,
+		RestartDdb,
+		WriteDdb,
+		SetStartup,
+		StartAutomaticUpdate,
+	};
+
+	struct SettingBusinessCommand
+	{
+		SettingBusinessKind kind = SettingBusinessKind::WriteSetting;
+		wstring text;
+		wstring verb;
+		wstring parameters;
+		wstring directory;
+		string value;
+		string digest;
+		string jsonPayload;
+		string ddbCloseJsonPayload;
+		string ddbOpenJsonPayload;
+		shared_ptr<Inkeys::Config> configSnapshot;
+		bool flag = false;
+		bool secondaryFlag = false;
+		int showCommand = SW_SHOW;
+	};
+
+	class SettingBusinessQueue
+	{
+	public:
+		bool Start()
+		{
+			lock_guard lock(mutex_);
+			if (worker_.joinable()) return true;
+			stopping_ = false;
+			try
+			{
+				worker_ = jthread([this](stop_token token) { Run(token); });
+			}
+			catch (...)
+			{
+				return false;
+			}
+			return true;
+		}
+
+		void Stop() noexcept
+		{
+			{
+				lock_guard lock(mutex_);
+				stopping_ = true;
+			}
+			condition_.notify_all();
+			if (worker_.joinable())
+			{
+				worker_.join();
+			}
+			lock_guard lock(mutex_);
+			commands_.clear();
+		}
+
+		void Enqueue(SettingBusinessCommand command)
+		{
+			{
+				lock_guard lock(mutex_);
+				if (stopping_ || !worker_.joinable()) return;
+				// FIFO 节点完整拥有 payload，禁止借用帧内字符串或临时对象。
+				commands_.push_back(std::move(command));
+			}
+			condition_.notify_one();
+		}
+
+	private:
+		void Run(stop_token token) noexcept
+		{
+			for (;;)
+			{
+				SettingBusinessCommand command;
+				{
+					unique_lock lock(mutex_);
+					condition_.wait(lock, token, [this]
+						{ return stopping_ || !commands_.empty(); });
+					// 停止生产后继续排空既有命令，避免退出时丢失最后一次配置写盘。
+					if (commands_.empty() && (stopping_ || token.stop_requested())) break;
+					if (commands_.empty()) continue;
+					command = std::move(commands_.front());
+					commands_.pop_front();
+				}
+				bool succeeded = false;
+				try { succeeded = Execute(command); }
+				catch (...) { succeeded = false; }
+				{
+					lock_guard stateLock(settingStateMutex);
+					const auto nextSerial =
+						settingSessionState.BusinessCompletion().serial + 1;
+					// worker 只在此发布不可变完成快照，渲染线程负责消费。
+					settingSessionState.PublishBusinessCompletion(nextSerial, succeeded);
+				}
+				Inkeys::UI::RenderPipeline::Request(
+					Inkeys::UI::RenderPipeline::Client::Settings);
+			}
+		}
+
+		static bool Execute(const SettingBusinessCommand& command)
+		{
+			switch (command.kind)
+			{
+			case SettingBusinessKind::WriteSetting:
+				return WriteSettingJson(command.jsonPayload);
+			case SettingBusinessKind::WritePptSetting:
+				return WritePptComSettingJson(command.jsonPayload);
+			case SettingBusinessKind::WriteConfig:
+				return command.configSnapshot && command.configSnapshot->Write();
+			case SettingBusinessKind::ShellExecute:
+				return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,
+					command.verb.empty() ? nullptr : command.verb.c_str(),
+					command.text.c_str(),
+					command.parameters.empty() ? nullptr : command.parameters.c_str(),
+					command.directory.empty() ? nullptr : command.directory.c_str(),
+					command.showCommand)) > 32;
+			case SettingBusinessKind::Information:
+				return MessageBoxW(nullptr, command.text.c_str(),
+					L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK) != 0;
+			case SettingBusinessKind::ConfirmRestart:
+				if (MessageBoxW(nullptr, command.text.c_str(),
+					L"Inkeys Tips | 智绘教提示",
+					MB_OKCANCEL | MB_SYSTEMMODAL) == IDOK)
+					RestartProgram();
+				return true;
+			case SettingBusinessKind::Restart:
+				RestartProgram();
+				return true;
+			case SettingBusinessKind::Close:
+				CloseProgram();
+				return true;
+			case SettingBusinessKind::ShowWindow:
+				return Inkeys::Window::GetService().Show(
+					Inkeys::Window::WindowRole::Setting);
+			case SettingBusinessKind::HideWindow:
+				return Inkeys::Window::GetService().Hide(
+					Inkeys::Window::WindowRole::Setting);
+			case SettingBusinessKind::ClearInstallerAndSetAutoUpdate:
+			case SettingBusinessKind::ClearInstallerAndSetChannel:
+			case SettingBusinessKind::ClearInstallerAndSetArchitecture:
+			{
+				const auto installerDir = globalPath + L"installer";
+				error_code ec;
+				if (filesystem::exists(installerDir, ec)) filesystem::remove_all(installerDir, ec);
+				if (!ec) filesystem::create_directory(installerDir, ec);
+				if (ec) return false;
+				return WriteSettingJson(command.jsonPayload);
+			}
+			case SettingBusinessKind::CreateShortcut:
+				if (_waccess(command.text.c_str(), 0) == -1
+					|| !shortcutAssistant.IsShortcutPointingToDirectory(
+						command.text, command.directory))
+					shortcutAssistant.CreateShortcut(command.text, command.directory);
+				return true;
+			case SettingBusinessKind::ConfigureDdb:
+			{
+				const wstring& executable = command.text;
+				(void)WriteSettingJson(command.jsonPayload);
+				if (command.flag)
+				{
+					error_code ec;
+					filesystem::create_directories(command.directory, ec);
+					if (ec) return false;
+					bool extract = _waccess(executable.c_str(), 0) == -1;
+					if (!extract && !command.digest.empty())
+					{
+						sha256wrapper wrapper;
+						extract = wrapper.getHashFromFileW(executable) != command.digest;
+						if (extract && isProcessRunning(executable.c_str()))
+						{
+							WriteDdbInteractionJson(command.ddbCloseJsonPayload);
+							for (int i = 0; i < 20 && isProcessRunning(executable.c_str()); ++i)
+								this_thread::sleep_for(chrono::milliseconds(500));
+						}
+					}
+					if (extract)
+						Inkeys::Load::ExtractResourceFile(executable.c_str(), L"EXE", MAKEINTRESOURCE(237));
+					if (!isProcessRunning(executable.c_str()))
+					{
+						WriteDdbInteractionJson(command.ddbOpenJsonPayload);
+						return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,
+							command.secondaryFlag ? L"runas" : nullptr, executable.c_str(),
+							nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+					}
+					return true;
+				}
+				WriteDdbInteractionJson(command.ddbCloseJsonPayload);
+				SetStartupState(false, executable, L"$Inkeys_DesktopDrawpadBlocker");
+				error_code ec;
+				filesystem::remove(command.directory + L"\\start_up.signal", ec);
+				return true;
+			}
+			case SettingBusinessKind::RestartDdb:
+				if (!isProcessRunning(command.text.c_str())) return true;
+				WriteDdbInteractionJson(command.ddbCloseJsonPayload);
+				for (int i = 0; i < 25 && isProcessRunning(command.text.c_str()); ++i)
+					this_thread::sleep_for(chrono::milliseconds(500));
+				WriteDdbInteractionJson(command.ddbOpenJsonPayload);
+				return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,
+					command.flag ? L"runas" : nullptr, command.text.c_str(),
+					nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+			case SettingBusinessKind::WriteDdb:
+				(void)WriteSettingJson(command.jsonPayload);
+				return WriteDdbInteractionJson(command.ddbCloseJsonPayload);
+			case SettingBusinessKind::SetStartup:
+				return SetStartupState(command.flag, command.text,
+					command.parameters);
+			case SettingBusinessKind::StartAutomaticUpdate:
+				thread(AutomaticUpdate).detach();
+				return true;
+			}
+			return false;
+		}
+
+		mutex mutex_;
+		condition_variable_any condition_;
+		deque<SettingBusinessCommand> commands_;
+		jthread worker_;
+		bool stopping_ = true;
+	};
+
+	SettingBusinessQueue settingBusinessQueue;
+
+	void QueueBusiness(SettingBusinessCommand command)
+	{
+		// 在生产者线程冻结配置内容，worker 只消费 owned payload 并执行 I/O。
+		switch (command.kind)
+		{
+		case SettingBusinessKind::WriteSetting:
+			command.jsonPayload = CaptureSettingJson();
+			break;
+		case SettingBusinessKind::ClearInstallerAndSetAutoUpdate:
+		case SettingBusinessKind::ClearInstallerAndSetChannel:
+		case SettingBusinessKind::ClearInstallerAndSetArchitecture:
+			{
+				unique_lock<shared_mutex> lock(setlistUpdateMutex);
+				if (command.kind == SettingBusinessKind::ClearInstallerAndSetAutoUpdate)
+					setlist.enableAutoUpdate = command.flag;
+				else if (command.kind == SettingBusinessKind::ClearInstallerAndSetChannel)
+					setlist.UpdateChannel = command.value;
+				else
+					setlist.updateArchitecture = command.value;
+			}
+			command.jsonPayload = CaptureSettingJson();
+			break;
+		case SettingBusinessKind::ConfigureDdb:
+			ddbInteractionSetList.enable = command.flag;
+			ddbInteractionSetList.runAsAdmin = command.secondaryFlag;
+			ddbInteractionSetList.hostPath = command.parameters;
+			command.jsonPayload = CaptureSettingJson();
+			command.ddbCloseJsonPayload = CaptureDdbInteractionJson(true, true);
+			command.ddbOpenJsonPayload = CaptureDdbInteractionJson(true, false);
+			break;
+		case SettingBusinessKind::RestartDdb:
+			command.ddbCloseJsonPayload = CaptureDdbInteractionJson(true, true);
+			command.ddbOpenJsonPayload = CaptureDdbInteractionJson(true, false);
+			break;
+		case SettingBusinessKind::WriteDdb:
+			command.jsonPayload = CaptureSettingJson();
+			command.ddbCloseJsonPayload = CaptureDdbInteractionJson(
+				command.flag, command.secondaryFlag);
+			break;
+		case SettingBusinessKind::WritePptSetting:
+			command.jsonPayload = CapturePptComSettingJson();
+			break;
+		case SettingBusinessKind::WriteConfig:
+			command.configSnapshot = make_shared<Inkeys::Config>();
+			*command.configSnapshot = Inkeys::config;
+			break;
+		default:
+			break;
+		}
+		settingBusinessQueue.Enqueue(std::move(command));
+	}
+
+	void QueueWriteSetting()
+	{
+		QueueBusiness({ SettingBusinessKind::WriteSetting });
+	}
+
+	void QueuePptComWriteSetting()
+	{
+		QueueBusiness({ SettingBusinessKind::WritePptSetting });
+	}
+
+	void QueueConfigWrite()
+	{
+		QueueBusiness({ SettingBusinessKind::WriteConfig });
+	}
+
+	void QueueShellExecute(wstring target, wstring verb = {},
+		wstring parameters = {}, wstring directory = {}, int showCommand = SW_SHOW)
+	{
+		SettingBusinessCommand command;
+		command.kind = SettingBusinessKind::ShellExecute;
+		command.text = std::move(target);
+		command.verb = std::move(verb);
+		command.parameters = std::move(parameters);
+		command.directory = std::move(directory);
+		command.showCommand = showCommand;
+		QueueBusiness(std::move(command));
+	}
+
+	void QueueInformation(wstring message)
+	{
+		QueueBusiness({ SettingBusinessKind::Information, std::move(message) });
+	}
+
+	void QueueConfirmRestart(wstring message)
+	{
+		QueueBusiness({ SettingBusinessKind::ConfirmRestart, std::move(message) });
+	}
+
+	void QueueRestart()
+	{
+		QueueBusiness({ SettingBusinessKind::Restart });
+	}
+
+	void QueueClose()
+	{
+		QueueBusiness({ SettingBusinessKind::Close });
+	}
+
+	void QueueDdbWriteInteraction(bool change, bool close)
+	{
+		SettingBusinessCommand command;
+		command.kind = SettingBusinessKind::WriteDdb;
+		command.flag = change;
+		command.secondaryFlag = close;
+		QueueBusiness(std::move(command));
+	}
+
+	bool QueueSetStartup(bool enabled, wstring path, const wstring& name)
+	{
+		SettingBusinessCommand command;
+		command.kind = SettingBusinessKind::SetStartup;
+		command.flag = enabled;
+		command.text = std::move(path);
+		command.parameters = name;
+		QueueBusiness(std::move(command));
+		return true;
+	}
+
+	void QueueAutomaticUpdate()
+	{
+		QueueBusiness({ SettingBusinessKind::StartAutomaticUpdate });
+	}
+
+	HINSTANCE QueueShellExecuteCompat(HWND, LPCWSTR operation, LPCWSTR file,
+		LPCWSTR parameters, LPCWSTR directory, INT showCommand)
+	{
+		QueueShellExecute(file ? file : L"", operation ? operation : L"",
+			parameters ? parameters : L"", directory ? directory : L"", showCommand);
+		return reinterpret_cast<HINSTANCE>(static_cast<INT_PTR>(33));
+	}
+
+	struct SettingSessionCoroutine
+	{
+		struct promise_type
+		{
+			SettingSessionCoroutine get_return_object() noexcept
+			{
+				return SettingSessionCoroutine(
+					coroutine_handle<promise_type>::from_promise(*this));
+			}
+			suspend_always initial_suspend() const noexcept { return {}; }
+			suspend_always final_suspend() const noexcept { return {}; }
+			void return_void() const noexcept {}
+			void unhandled_exception() const noexcept { terminate(); }
+		};
+
+		SettingSessionCoroutine() = default;
+		explicit SettingSessionCoroutine(coroutine_handle<promise_type> value) noexcept
+			: handle(value) {}
+		SettingSessionCoroutine(SettingSessionCoroutine&& other) noexcept
+			: handle(exchange(other.handle, {})) {}
+		SettingSessionCoroutine& operator=(SettingSessionCoroutine&& other) noexcept
+		{
+			if (this == &other) return *this;
+			Reset();
+			handle = exchange(other.handle, {});
+			return *this;
+		}
+		~SettingSessionCoroutine() { Reset(); }
+		SettingSessionCoroutine(const SettingSessionCoroutine&) = delete;
+		SettingSessionCoroutine& operator=(const SettingSessionCoroutine&) = delete;
+
+		void Resume()
+		{
+			if (handle && !handle.done()) handle.resume();
+		}
+		[[nodiscard]] bool Done() const noexcept { return !handle || handle.done(); }
+		void Reset() noexcept
+		{
+			if (handle) handle.destroy();
+			handle = {};
+		}
+
+		coroutine_handle<promise_type> handle{};
+	};
+
+	SettingSessionCoroutine settingSession;
+}
 
 static void SyncUi3BuiltInComponents()
 {
@@ -73,8 +522,15 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if (test.select && ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-		return true;
+	if (Inkeys::UI::Setting::IsVisible())
+	{
+		// HWND 线程只更新 IO；context/backend/draw/present 仍由渲染线程拥有。
+		lock_guard lock(settingImguiMutex);
+		if (ImGui::GetCurrentContext()
+			&& ImGui_ImplWin32_WndProcHandlerEx(
+				hWnd, msg, wParam, lParam, ImGui::GetIO()))
+			return true;
+	}
 
 	switch (msg)
 	{
@@ -90,8 +546,14 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
-		g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
-		g_ResizeHeight = (UINT)HIWORD(lParam);
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.QueueResize(
+				static_cast<UINT>(LOWORD(lParam)),
+				static_cast<UINT>(HIWORD(lParam)));
+		}
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
 		return 0;
 	case WM_SYSCOMMAND:
 		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
@@ -100,13 +562,15 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		// 拦截任务栏关闭指令
 		if ((wParam & 0xFFF0) == SC_CLOSE)
 		{
-			test.select = false;
+			Inkeys::UI::Setting::Hide();
 			return 0;
 		}
 
 		break;
 
 	case WM_CLOSE:
+		Inkeys::UI::Setting::Hide();
+		return 0;
 	case WM_DESTROY:
 	{
 		// 防御其他流氓软件关闭我的窗口
@@ -140,13 +604,15 @@ void SettingWindowBegin()
 	}
 }
 
-WNDPROC SettingWindowProc() noexcept
+SettingSessionCoroutine RunSettingSession()
 {
-	return ImGuiWndProc;
-}
-
-void SettingMain(stop_token sT)
-{
+	// 本作用域内所有潜在阻塞业务统一投递给单一 FIFO worker。
+	#define WriteSetting QueueWriteSetting
+	#define PptComWriteSetting QueuePptComWriteSetting
+	#define ShellExecuteW QueueShellExecuteCompat
+	#define SetStartupState QueueSetStartup
+	#define RestartProgram QueueRestart
+	#define CloseProgram QueueClose
 	auto GetUpdateChannel = []()
 		{
 			shared_lock<shared_mutex> lock(setlistUpdateMutex);
@@ -177,50 +643,6 @@ void SettingMain(stop_token sT)
 			unique_lock<shared_mutex> lock(setlistUpdateMutex);
 			setlist.enableAutoUpdate = enable;
 		};
-	enum class ClearInstallerResult
-	{
-		Missing,
-		Cleared,
-		Failed
-	};
-	auto ClearUpdateRestartInstaller = []() -> ClearInstallerResult
-		{
-			const auto installerDir = globalPath + L"installer";
-			error_code ec;
-			const bool exists = filesystem::exists(installerDir, ec);
-			if (ec)
-			{
-				if (IDTLogger) IDTLogger->error("[SettingMain] 检查更新安装目录失败: {}", ec.message());
-				return ClearInstallerResult::Failed;
-			}
-			if (!exists)
-			{
-				filesystem::create_directory(installerDir, ec);
-				if (ec)
-				{
-					if (IDTLogger) IDTLogger->error("[SettingMain] 创建更新安装目录失败: {}", ec.message());
-					return ClearInstallerResult::Failed;
-				}
-				return ClearInstallerResult::Missing;
-			}
-
-			filesystem::remove_all(installerDir, ec);
-			if (ec)
-			{
-				if (IDTLogger) IDTLogger->error("[SettingMain] 删除更新安装目录失败: {}", ec.message());
-				return ClearInstallerResult::Failed;
-			}
-
-			filesystem::create_directory(installerDir, ec);
-			if (ec)
-			{
-				if (IDTLogger) IDTLogger->error("[SettingMain] 重建更新安装目录失败: {}", ec.message());
-				return ClearInstallerResult::Failed;
-			}
-
-			return ClearInstallerResult::Cleared;
-		};
-
 	// Win11 风格滚动条使用较窄视觉宽度，条目宽度由内容区反推，避免文字空间被压缩。
 	constexpr float settingContentPanelWidth = 780.0f;
 	constexpr float settingWin11ScrollbarWidth = 12.0f;
@@ -235,33 +657,15 @@ void SettingMain(stop_token sT)
 	constexpr float settingDescriptionBeforeComboWidth = settingRightComboX - 20.0f;
 	constexpr float settingPromptBeforeButtonWidth = settingRightButtonX - 70.0f;
 
-	bool showWindow = false;
-	while (!sT.stop_requested())
 	{
-		if (showWindow)
+		if (!CreateDeviceD3D(setting_window, settingFrameContext.epoch))
 		{
-			CleanupSettingTextures();
+			if (IDTLogger) IDTLogger->error("[Setting] 创建共享 D3D11 设置窗口会话失败");
 			CleanupDeviceD3D();
-			(void)Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Setting);
+			settingFrameResult = FrameResult::Retry;
+			co_return;
 		}
-		showWindow = false;
-
-		while (!test.select && !sT.stop_requested()) this_thread::sleep_for(chrono::milliseconds(100));
-		if (sT.stop_requested()) break;
-
-		{
-			(void)Inkeys::Window::GetService().Show(Inkeys::Window::WindowRole::Setting);
-			showWindow = true;
-
-			if (!CreateDeviceD3D(setting_window))
-			{
-				if (IDTLogger) IDTLogger->error("[SettingMain] 创建 D3D11 设置窗口设备失败");
-				CleanupDeviceD3D();
-				(void)Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Setting);
-				showWindow = false;
-				test.select = false;
-				continue;
-			}
+		settingSessionEpoch = settingFrameContext.epoch.generation;
 
 			// 初始化
 			{
@@ -741,9 +1145,6 @@ void SettingMain(stop_token sT)
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		Widgets::style.ApplyGlobal(settingWin11ScrollbarWidth);
 
-		// 设置窗口使用独立的 24 FPS 稳定帧节奏。
-		auto nextFrame = chrono::steady_clock::now();
-
 		int QuestNumbers = 0;
 		int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;
 		int QueryWaitingTime = 5;
@@ -908,39 +1309,8 @@ void SettingMain(stop_token sT)
 		int settingTab = 0;
 		int settingPlugInTab = 0;
 
-		while (!sT.stop_requested())
+		while (!settingSessionShouldStop.load(memory_order_acquire))
 		{
-			// 窗口被遮挡时仅探测呈现状态，避免持续提交和忙等。
-			if (g_SwapChainOccluded)
-			{
-				if (g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED)
-				{
-					this_thread::sleep_for(chrono::milliseconds(10));
-					continue;
-				}
-				g_SwapChainOccluded = false;
-			}
-
-			// Handle window resize (we don't resize directly in the WM_SIZE handler)
-			if (g_ResizeWidth != 0 && g_ResizeHeight != 0)
-			{
-				const UINT resizeWidth = g_ResizeWidth;
-				const UINT resizeHeight = g_ResizeHeight;
-				g_ResizeWidth = g_ResizeHeight = 0;
-				if (!ResizeSwapChain(resizeWidth, resizeHeight))
-				{
-					g_ResizeWidth = resizeWidth;
-					g_ResizeHeight = resizeHeight;
-					this_thread::sleep_for(chrono::milliseconds(10));
-					continue;
-				}
-			}
-
-			nextFrame += chrono::milliseconds(1000 / 24);
-			this_thread::sleep_until(nextFrame);
-			const auto now = chrono::steady_clock::now();
-			if (nextFrame < now - chrono::milliseconds(100)) nextFrame = now;
-
 			// Start the Dear ImGui frame
 			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
@@ -980,7 +1350,7 @@ void SettingMain(stop_token sT)
 				ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
 
 				ImGui::PushStyleColor(ImGuiCol_Border, Widgets::FluentColor::WindowBorder);
-				ImGui::Begin("主窗口", &test.select, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
+				ImGui::Begin("主窗口", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);//开始绘制窗口
 				ImGui::PopStyleColor();
 
 				// 标题栏高 32px + 8px
@@ -995,7 +1365,7 @@ void SettingMain(stop_token sT)
 					if (Widgets::button.TitleBarClose("\ue8bb", { 46.0f * settingGlobalScale,32.0f * settingGlobalScale }))
 					{
 						// 关闭
-						test.select = false;
+						Inkeys::UI::Setting::Hide();
 
 						barUISet.UpdateRendering();
 					}
@@ -1149,7 +1519,7 @@ void SettingMain(stop_token sT)
 
 						if (Widgets::button.Navigation(("   \ue72c   " + IA(I18nKey.SettingsUI.RestartSoftware.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, false, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f)))
 						{
-							test.select = false;
+							Inkeys::UI::Setting::Hide();
 							RestartProgram();
 						}
 					}
@@ -1160,7 +1530,7 @@ void SettingMain(stop_token sT)
 
 						if (Widgets::button.Navigation(("   \ue711   " + IA(I18nKey.SettingsUI.ExitSoftware.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, false, Widgets::FluentColor::Danger, ImVec2(0.0f, 0.5f)))
 						{
-							test.select = false;
+							Inkeys::UI::Setting::Hide();
 							CloseProgram();
 						}
 					}
@@ -1488,7 +1858,8 @@ void SettingMain(stop_token sT)
 												else if (setlist.selectLanguage == 2) I18n::load(1, L"JSON", L"zh-TW");
 												else I18n::load(1, L"JSON", L"en-US");
 
-												if (MessageBox(setting_window, IW(I18nKey.SettingsUI.Language.UI.Warn).c_str(), L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) RestartProgram();
+												QueueConfirmRestart(
+													IW(I18nKey.SettingsUI.Language.UI.Warn));
 											}
 										}
 									}
@@ -1577,7 +1948,7 @@ void SettingMain(stop_token sT)
 								if (Inkeys::config.Config.AutoClean != ConfigurationSetting.Enable)
 								{
 									Inkeys::config.Config.AutoClean = ConfigurationSetting.Enable;
-									Inkeys::config.Write();
+									QueueConfigWrite();
 									WriteSetting();
 								}
 							}
@@ -2093,7 +2464,7 @@ void SettingMain(stop_token sT)
 									}
 
 									mandatoryUpdate = true;
-									if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted) thread(AutomaticUpdate).detach();
+									if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted) QueueAutomaticUpdate();
 									else AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 								}
 							}
@@ -2176,13 +2547,11 @@ void SettingMain(stop_token sT)
 								{
 									if (!EnableAutoUpdate && AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 									{
-										if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
-										{
-											SetEnableAutoUpdate(EnableAutoUpdate);
-											WriteSetting();
-											AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-										}
-										else EnableAutoUpdate = enableAutoUpdateSnapshot;
+										SettingBusinessCommand command;
+										command.kind = SettingBusinessKind::ClearInstallerAndSetAutoUpdate;
+										command.flag = EnableAutoUpdate;
+										QueueBusiness(std::move(command));
+										AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 									}
 									else
 									{
@@ -2298,12 +2667,11 @@ void SettingMain(stop_token sT)
 
 												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
-													{
-														SetUpdateChannel(selectedUpdateChannel);
-														WriteSetting();
-														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-													}
+													SettingBusinessCommand command;
+													command.kind = SettingBusinessKind::ClearInstallerAndSetChannel;
+													command.value = selectedUpdateChannel;
+													QueueBusiness(std::move(command));
+													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 												}
 												else
 												{
@@ -2386,12 +2754,11 @@ void SettingMain(stop_token sT)
 
 												if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateRestart)
 												{
-													if (ClearUpdateRestartInstaller() != ClearInstallerResult::Failed)
-													{
-														SetUpdateArchitecture(selectedUpdateArchitecture);
-														WriteSetting();
-														AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
-													}
+													SettingBusinessCommand command;
+													command.kind = SettingBusinessKind::ClearInstallerAndSetArchitecture;
+													command.value = selectedUpdateArchitecture;
+													QueueBusiness(std::move(command));
+													AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 												}
 												else
 												{
@@ -2690,17 +3057,15 @@ void SettingMain(stop_token sT)
 								if (Widgets::button.Standard(IA(I18nKey.Operate.Create).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 								{
 									wchar_t desktopPath[MAX_PATH];
-									wstring DesktopPath;
 
 									if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
 									{
-										DesktopPath = wstring(desktopPath) + L"\\";
-
-										if (_waccess((DesktopPath + IW(I18nKey.Widget.LnkName) + L".lnk").c_str(), 0) == -1 ||
-											!shortcutAssistant.IsShortcutPointingToDirectory(DesktopPath + IW(I18nKey.Widget.LnkName) + L".lnk", GetCurrentExePath()))
-										{
-											shortcutAssistant.CreateShortcut(DesktopPath + IW(I18nKey.Widget.LnkName) + L".lnk", GetCurrentExePath());
-										}
+										SettingBusinessCommand command;
+										command.kind = SettingBusinessKind::CreateShortcut;
+										command.text = wstring(desktopPath) + L"\\"
+											+ IW(I18nKey.Widget.LnkName) + L".lnk";
+										command.directory = GetCurrentExePath();
+										QueueBusiness(std::move(command));
 									}
 								}
 							}
@@ -2801,7 +3166,7 @@ void SettingMain(stop_token sT)
 								}
 								if (!isItemActive && BarZoomSavePending)
 								{
-									Inkeys::config.Write();
+									QueueConfigWrite();
 									BarZoomSavePending = false;
 								}
 							}
@@ -2852,11 +3217,11 @@ void SettingMain(stop_token sT)
 									{
 										Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
 											Experimental.Inkeys3.EdgeLightingEnable;
-										Inkeys::UI::Bar::SetEdgeLightingOptions(
-											Experimental.Inkeys3.EdgeLightingEnable,
-											Experimental.Inkeys3.DynamicEdgeLighting);
-										Inkeys::config.Write();
-									}
+									Inkeys::UI::Bar::SetEdgeLightingOptions(
+										Experimental.Inkeys3.EdgeLightingEnable,
+										Experimental.Inkeys3.DynamicEdgeLighting);
+									QueueConfigWrite();
+								}
 								}
 								{
 									if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -5479,7 +5844,7 @@ void SettingMain(stop_token sT)
 										if (Inkeys::config.PlugIn.PPTHelper.AutoTakeOver != value)
 										{
 											Inkeys::config.PlugIn.PPTHelper.AutoTakeOver = value;
-											Inkeys::config.Write();
+											QueueConfigWrite();
 										}
 									}
 
@@ -5513,7 +5878,7 @@ void SettingMain(stop_token sT)
 										if (Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce != value)
 										{
 											Inkeys::config.PlugIn.PPTHelper.AutoTakeOverOnce = value;
-											Inkeys::config.Write();
+											QueueConfigWrite();
 										}
 									}
 
@@ -5541,7 +5906,7 @@ void SettingMain(stop_token sT)
 										if (Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand != value)
 										{
 											Inkeys::config.PlugIn.PPTHelper.AutoTakeOverExpand = value;
-											Inkeys::config.Write();
+											QueueConfigWrite();
 										}
 									}
 
@@ -5576,7 +5941,7 @@ void SettingMain(stop_token sT)
 										if (Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress != value)
 										{
 											Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress = value;
-											Inkeys::config.Write();
+											QueueConfigWrite();
 										}
 									}
 
@@ -6152,73 +6517,15 @@ void SettingMain(stop_token sT)
 										if (ddbInteractionSetList.enable != Ddb.Enable)
 										{
 											ddbInteractionSetList.enable = Ddb.Enable;
-
-											WriteSetting();
-
-											if (ddbInteractionSetList.enable)
-											{
-												ddbInteractionSetList.hostPath = GetCurrentExePath();
-												if (_waccess((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
-												{
-													if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == -1)
-													{
-														error_code ec;
-														filesystem::create_directories(pluginPath + L"DesktopDrawpadBlocker", ec);
-													}
-													Inkeys::Load::ExtractResourceFile((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
-												}
-												else
-												{
-													string hash_sha256;
-													{
-														hashwrapper* myWrapper = new sha256wrapper();
-														hash_sha256 = myWrapper->getHashFromFileW(pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe");
-														delete myWrapper;
-													}
-
-													if (hash_sha256 != ddbInteractionSetList.DdbSHA256)
-													{
-														if (isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
-														{
-															// 需要关闭旧版 DDB 并更新版本
-
-															DdbWriteInteraction(true, true);
-															for (int i = 1; i <= 20; i++)
-															{
-																if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
-																	break;
-																this_thread::sleep_for(chrono::milliseconds(500));
-															}
-														}
-														Inkeys::Load::ExtractResourceFile((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
-													}
-												}
-
-												// 启动 DDB
-												if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
-												{
-													DdbWriteInteraction(true, false);
-													if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-													else ShellExecuteW(NULL, NULL, (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-												}
-											}
-											else
-											{
-												DdbWriteInteraction(true, true);
-
-												// 历史遗留问题处理
-												{
-													// 取消开机自动启动
-													SetStartupState(false, pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe", L"$Inkeys_DesktopDrawpadBlocker");
-
-													// 移除开机自启标识
-													if (_waccess((pluginPath + L"DesktopDrawpadBlocker\\start_up.signal").c_str(), 0) == 0)
-													{
-														error_code ec;
-														filesystem::remove(pluginPath + L"DesktopDrawpadBlocker\\start_up.signal", ec);
-													}
-												}
-											}
+											SettingBusinessCommand command;
+											command.kind = SettingBusinessKind::ConfigureDdb;
+											command.flag = Ddb.Enable;
+											command.secondaryFlag = ddbInteractionSetList.runAsAdmin;
+											command.text = pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
+											command.directory = pluginPath + L"DesktopDrawpadBlocker";
+											command.parameters = GetCurrentExePath();
+											command.digest = ddbInteractionSetList.DdbSHA256;
+											QueueBusiness(std::move(command));
 										}
 									}
 
@@ -6279,21 +6586,11 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.runAsAdmin = Ddb.RunAsAdmin;
 											WriteSetting();
 
-											if (isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
-											{
-												// 需要关闭 DDB 并重新启动
-												DdbWriteInteraction(true, true);
-												for (int i = 1; i <= 25; i++)
-												{
-													if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
-														break;
-													this_thread::sleep_for(chrono::milliseconds(500));
-												}
-
-												DdbWriteInteraction(true, false);
-												if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-												else ShellExecuteW(NULL, NULL, (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-											}
+											SettingBusinessCommand command;
+											command.kind = SettingBusinessKind::RestartDdb;
+											command.flag = Ddb.RunAsAdmin;
+											command.text = pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
+											QueueBusiness(std::move(command));
 										}
 									}
 
@@ -6364,7 +6661,7 @@ void SettingMain(stop_token sT)
 														else ddbInteractionSetList.sleepTime = 5000;
 														WriteSetting();
 
-														DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 													}
 												}
 											}
@@ -6426,7 +6723,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoWhiteboard3Floating = Ddb.intercept.SeewoWhiteboard3Floating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6460,7 +6757,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoWhiteboard5Floating = Ddb.intercept.SeewoWhiteboard5Floating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6494,7 +6791,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating = Ddb.intercept.SeewoWhiteboard5CFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6528,7 +6825,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoPincoSideBarFloating = Ddb.intercept.SeewoPincoSideBarFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6562,7 +6859,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoPincoDrawingFloating = Ddb.intercept.SeewoPincoDrawingFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6596,7 +6893,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoPPTFloating = Ddb.intercept.SeewoPPTFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6630,7 +6927,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoIwbAssistantFloating = Ddb.intercept.SeewoIwbAssistantFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6670,7 +6967,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.YiouBoardFloating = Ddb.intercept.YiouBoardFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6704,7 +7001,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.AiClassFloating = Ddb.intercept.AiClassFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6738,7 +7035,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.ClassInXFloating = Ddb.intercept.ClassInXFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6778,7 +7075,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.IntelligentClassFloating = Ddb.intercept.IntelligentClassFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6818,7 +7115,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.ChangYanFloating = Ddb.intercept.ChangYanFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6852,7 +7149,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.ChangYan5Floating = Ddb.intercept.ChangYan5Floating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6892,7 +7189,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.Iclass30SidebarFloating = Ddb.intercept.Iclass30SidebarFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6926,7 +7223,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.Iclass30Floating = Ddb.intercept.Iclass30Floating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -6966,7 +7263,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating = Ddb.intercept.SeewoDesktopSideBarFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -7000,7 +7297,7 @@ void SettingMain(stop_token sT)
 											ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating = Ddb.intercept.SeewoDesktopDrawingFloating;
 											WriteSetting();
 
-											DdbWriteInteraction(true, false);
+											QueueDdbWriteInteraction(true, false);
 										}
 									}
 
@@ -7936,10 +8233,10 @@ void SettingMain(stop_token sT)
 										{
 											Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic =
 												Experimental.Inkeys3.DynamicEdgeLighting;
-											Inkeys::UI::Bar::SetEdgeLightingOptions(
-												Experimental.Inkeys3.EdgeLightingEnable,
-												Experimental.Inkeys3.DynamicEdgeLighting);
-											Inkeys::config.Write();
+										Inkeys::UI::Bar::SetEdgeLightingOptions(
+											Experimental.Inkeys3.EdgeLightingEnable,
+											Experimental.Inkeys3.DynamicEdgeLighting);
+										QueueConfigWrite();
 										}
 									}
 									{
@@ -7979,10 +8276,10 @@ void SettingMain(stop_token sT)
 									{
 										Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable =
 											Experimental.Inkeys3.DebugMode;
-										Inkeys::UI::Bar::SetDebugOptions(
-											Experimental.Inkeys3.DebugMode,
-											Experimental.Inkeys3.ShowFrameRate);
-										Inkeys::config.Write();
+									Inkeys::UI::Bar::SetDebugOptions(
+										Experimental.Inkeys3.DebugMode,
+										Experimental.Inkeys3.ShowFrameRate);
+									QueueConfigWrite();
 									}
 								}
 								{
@@ -8023,10 +8320,10 @@ void SettingMain(stop_token sT)
 										{
 											Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate =
 												Experimental.Inkeys3.ShowFrameRate;
-											Inkeys::UI::Bar::SetDebugOptions(
-												Experimental.Inkeys3.DebugMode,
-												Experimental.Inkeys3.ShowFrameRate);
-											Inkeys::config.Write();
+										Inkeys::UI::Bar::SetDebugOptions(
+											Experimental.Inkeys3.DebugMode,
+											Experimental.Inkeys3.ShowFrameRate);
+										QueueConfigWrite();
 										}
 									}
 									{
@@ -8067,7 +8364,7 @@ void SettingMain(stop_token sT)
 										Experimental.Inkeys3.AnimationEnable;
 									Inkeys::UI::Bar::SetAnimationOptions(Experimental.Inkeys3.AnimationEnable,
 										Experimental.Inkeys3.AnimationSpeedRate);
-									Inkeys::config.Write();
+									QueueConfigWrite();
 								}
 							}
 							{
@@ -8116,7 +8413,7 @@ void SettingMain(stop_token sT)
 								}
 								if (!isItemActive && Experimental.Inkeys3.AnimationSpeedSavePending)
 								{
-									Inkeys::config.Write();
+									QueueConfigWrite();
 									Experimental.Inkeys3.AnimationSpeedSavePending = false;
 								}
 							}
@@ -8489,7 +8786,7 @@ void SettingMain(stop_token sT)
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
 							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.Repair).c_str()))
 							{
-								MessageBox(floating_window, L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+								QueueInformation(L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。");
 							}
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, Widgets::FluentColor::AccentText);
@@ -8926,7 +9223,7 @@ void SettingMain(stop_token sT)
 						{
 							if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted)
 							{
-								MessageBox(floating_window, L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+								QueueInformation(L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。");
 							}
 							else AutomaticUpdateState = UpdateObtainInformation;
 						}
@@ -8955,31 +9252,239 @@ void SettingMain(stop_token sT)
 			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 			const HRESULT result = g_pSwapChain->Present(1, 0);
 			g_SwapChainOccluded = (result == DXGI_STATUS_OCCLUDED);
-
-			if (!test.select) break;
-			if (!showWindow)
-			{
-				(void)Inkeys::Window::GetService().Show(Inkeys::Window::WindowRole::Setting);
-				showWindow = true;
-			}
+			if (Inkeys::UI::Setting::IsSharedDeviceLoss(result))
+				settingFrameResult = FrameResult::DeviceLost;
+			else if (FAILED(result))
+				settingFrameResult = FrameResult::Retry;
+			else
+				settingFrameResult = FrameResult::Continue;
+			co_await suspend_always{};
 		}
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
-		io.Fonts->Clear();
-
+		// epoch/隐藏/退出均在渲染线程按 backend -> SRV -> swap chain 逆序释放。
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
-		ImGui::DestroyContext();
-	}
-
-	// stop 路径不会再次进入外层循环，需在退出线程前完成最终逆序清理。
-	if (showWindow)
-	{
 		CleanupSettingTextures();
+		io.Fonts->Clear();
+		ImGui::DestroyContext();
 		CleanupDeviceD3D();
-		(void)Inkeys::Window::GetService().Hide(Inkeys::Window::WindowRole::Setting);
+	settingSessionEpoch = 0;
+	#undef CloseProgram
+	#undef RestartProgram
+	#undef ShellExecuteW
+	#undef SetStartupState
+	#undef PptComWriteSetting
+	#undef WriteSetting
+	co_return;
+}
+
+namespace
+{
+	void DrainSettingSessionOnRenderThread() noexcept
+	{
+		if (!settingSession.Done())
+		{
+			settingSessionShouldStop.store(true, memory_order_release);
+			lock_guard imguiLock(settingImguiMutex);
+			settingSession.Resume();
+		}
+		settingSession.Reset();
+		settingSessionEpoch = 0;
+		{
+			lock_guard lock(settingDrainMutex);
+			settingSessionDrained = true;
+		}
+		settingDrainCondition.notify_all();
 	}
 
-	return;
+	FrameResult RenderSettingFrame(const FrameContext& context)
+	{
+		Inkeys::UI::Setting::SessionDecision decision;
+		Inkeys::UI::Setting::ResizeSnapshot resize;
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.SetOccluded(g_SwapChainOccluded);
+			decision = settingSessionState.Resolve(
+				context.epoch.generation, !settingSession.Done());
+			resize = settingSessionState.Resize();
+			if (decision.consumeBusinessCompletion)
+			{
+				settingLastBusinessCompletion = settingSessionState.BusinessCompletion();
+				settingSessionState.ConsumeBusinessCompletion(
+					settingLastBusinessCompletion.serial);
+			}
+		}
+
+		if (decision.release)
+		{
+			DrainSettingSessionOnRenderThread();
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.Release();
+		}
+
+		if (!decision.rebuild && settingSession.Done()) return FrameResult::Idle;
+
+		if (decision.probeOcclusion && g_pSwapChain)
+		{
+			const HRESULT probeResult = g_pSwapChain->Present(0, DXGI_PRESENT_TEST);
+			if (probeResult == DXGI_STATUS_OCCLUDED) return FrameResult::Retry;
+			if (Inkeys::UI::Setting::IsSharedDeviceLoss(probeResult))
+				return FrameResult::DeviceLost;
+			if (FAILED(probeResult)) return FrameResult::Retry;
+			g_SwapChainOccluded = false;
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.SetOccluded(false);
+		}
+
+		if (decision.resize && !settingSession.Done())
+		{
+			const HRESULT resizeResult = ResizeSwapChain(resize.width, resize.height);
+			if (Inkeys::UI::Setting::IsSharedDeviceLoss(resizeResult))
+				return FrameResult::DeviceLost;
+			if (FAILED(resizeResult))
+			{
+				DrainSettingSessionOnRenderThread();
+				lock_guard stateLock(settingStateMutex);
+				settingSessionState.Release();
+				return FrameResult::Retry;
+			}
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.ConsumeResize(resize.serial);
+		}
+
+		if (settingSession.Done())
+		{
+			settingSessionShouldStop.store(false, memory_order_release);
+			settingFrameContext = context;
+			settingFrameResult = FrameResult::Retry;
+			settingSession = RunSettingSession();
+			{
+				lock_guard lock(settingDrainMutex);
+				settingSessionDrained = false;
+			}
+		}
+		else
+		{
+			settingFrameContext = context;
+		}
+
+		{
+			lock_guard imguiLock(settingImguiMutex);
+			settingSession.Resume();
+		}
+		if (settingSession.Done())
+		{
+			settingSession.Reset();
+			settingSessionEpoch = 0;
+			lock_guard lock(settingDrainMutex);
+			settingSessionDrained = true;
+			settingDrainCondition.notify_all();
+		}
+		else
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.CommitEpoch(context.epoch.generation);
+		}
+		return settingFrameResult;
+	}
+}
+
+namespace Inkeys::UI::Setting
+{
+	bool Initialize()
+	{
+		lock_guard lock(settingLifecycleMutex);
+		if (settingInitialized.load(memory_order_acquire)) return true;
+		if (!setting_window || !settingBusinessQueue.Start()) return false;
+		if (!Inkeys::UI::RenderPipeline::Register(
+			Inkeys::UI::RenderPipeline::Client::Settings, RenderSettingFrame))
+		{
+			settingBusinessQueue.Stop();
+			return false;
+		}
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.SetVisible(false);
+		}
+		settingInitialized.store(true, memory_order_release);
+		return true;
+	}
+
+	void Shutdown() noexcept
+	{
+		unique_lock lifecycleLock(settingLifecycleMutex);
+		if (!settingInitialized.exchange(false, memory_order_acq_rel)) return;
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.SetVisible(false);
+		}
+		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
+		const bool drainPosted = Inkeys::UI::RenderPipeline::PostControl([]
+			{
+				DrainSettingSessionOnRenderThread();
+				lock_guard stateLock(settingStateMutex);
+				settingSessionState.Release();
+			});
+		if (drainPosted)
+		{
+			unique_lock drainLock(settingDrainMutex);
+			settingDrainCondition.wait(drainLock, [] { return settingSessionDrained; });
+		}
+		else if (IDTLogger)
+		{
+			IDTLogger->error(
+				"[Setting] 渲染管线已停止，无法在线程内排空设置会话");
+		}
+		Inkeys::UI::RenderPipeline::Unregister(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		settingBusinessQueue.Stop();
+	}
+
+	void Show()
+	{
+		if (!settingInitialized.load(memory_order_acquire)) return;
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.SetVisible(true);
+		}
+		settingBusinessQueue.Enqueue({ SettingBusinessKind::ShowWindow });
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+	}
+
+	void Hide()
+	{
+		if (!settingInitialized.load(memory_order_acquire)) return;
+		{
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.SetVisible(false);
+		}
+		settingBusinessQueue.Enqueue({ SettingBusinessKind::HideWindow });
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+	}
+
+	void Toggle()
+	{
+		if (IsVisible()) Hide();
+		else Show();
+	}
+
+	bool IsVisible() noexcept
+	{
+		lock_guard stateLock(settingStateMutex);
+		return settingSessionState.IsVisible();
+	}
+
+	WNDPROC WindowProc() noexcept
+	{
+		return ImGuiWndProc;
+	}
+}
+
+WNDPROC SettingWindowProc() noexcept
+{
+	return Inkeys::UI::Setting::WindowProc();
 }

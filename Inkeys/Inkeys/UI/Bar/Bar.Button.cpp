@@ -10,7 +10,6 @@ module;
 #include "../../../IdtState.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
 #include "../../../IdtDisplayManagement.h"
 #include "../../Window/Window.Legacy.hpp"
 
@@ -28,6 +27,7 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
 import Inkeys.Business.ComponentActions;
+import Inkeys.UI.Setting;
 
 using Inkeys::Business::BuiltInComponentAction;
 using Inkeys::Business::ExecuteBuiltInComponentAction;
@@ -569,8 +569,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					if (test.select) test.select = false;
-					else test.select = true;
+					Inkeys::UI::Setting::Toggle();
 				};
 		}
 
@@ -1251,7 +1250,7 @@ void BarButtonSetClass::CalcState()
 	}
 
 	{
-		if (test.select) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
+		if (Inkeys::UI::Setting::IsVisible()) barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Setting].state = BarWidgetState::None;
 	}
 }

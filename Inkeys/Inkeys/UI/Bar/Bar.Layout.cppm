@@ -1,7 +1,7 @@
 module;
 
 #include "../../../IdtState.h"
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1helper.h>
 
 #include <algorithm>
 #include <cmath>

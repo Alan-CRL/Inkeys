@@ -6,18 +6,18 @@
 
 | 区域 | 当前选择关系 | 图形/呈现链 | 直接证据 |
 | --- | --- | --- | --- |
-| `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | 默认由共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 是共享 UI3 调度器的独立客户端，经自己的 device context、GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`IdtD2DPreparation.cpp::D2DStarup`、`Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp` |
+| `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | `Inkeys.UI.RenderPipeline` 的共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 是独立客户端，经自己的 device context、GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*`、`Bar.RenderLoop.cpp` |
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
-| 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 独立 hardware D3D11 device/context、discard swap chain、RTV | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `ImGui_ImplDX11_*`、`Inkeys.vcxproj` |
+| 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 共享 WARP D3D11 device/immediate context；Setting 独占传统 discard swap chain、RTV、SRV 和 ImGui session | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
 | 主画板 | `【直接确认】` Draw2 暂时继续负责墨迹；未来 Draw3 复用现有 Drawpad HWND | `Inkeys.Graphics.DibSurface` + GDI+ 笔画、软件合成、分层窗口 | `IdtDrawpad.cpp::DrawpadDrawing`、`IdtImage.cpp` |
-| PPT 控件 | `【直接确认】` UI3 五个独立 owned layered HWND | 与 Bar 共享 D3D11/D2D 1.1 device epoch；每窗独立 device context/target/GDI interop，并由共享调度线程串行 ULW 呈现 | `Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/RenderScheduler/RenderScheduler.*` |
+| PPT 控件 | `【直接确认】` UI3 五个独立 owned layered HWND | 与 Bar/Setting 共享 D3D11 epoch；每窗独立 D2D device context/target/GDI interop，并由 RenderPipeline 线程串行 ULW 呈现 | `Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
 
 `Experimental.Inkeys3.UI3` 名下的 Animation、EdgeLighting 和 Debug 仍是 UI3 功能配置，不是路由开关。旧路由 JSON key 只能清理，不能恢复读取或写入。
 
 ## D3D11 WARP、D2D 与 DWrite
 
-`【直接确认】` `Inkeys/IdtMain.cpp::wWinMain` 在选择新旧悬浮栏之前调用 `D2DStarup()`。`Inkeys/IdtD2DPreparation.cpp::D2DStarup` 依次：
+`【直接确认】` `Inkeys/IdtMain.cpp::wWinMain` 调用 `Inkeys::UI::RenderPipeline::Initialize()`。`Inkeys.UI.RenderPipeline` 依次：
 
 1. 创建 multithreaded `ID2D1Factory1`；
 2. 创建 shared `IDWriteFactory`；
@@ -25,18 +25,16 @@
 4. 取得 `IDXGIDevice`；
 5. 由 D2D factory 创建 `ID2D1Device`。
 
-共享对象使用 `Microsoft::WRL::ComPtr`。默认 epoch 为 WARP；`PrepareUi3RenderBackend`/`CommitPreparedUi3RenderBackend` 为以后显式选择 Hardware 提供帧边界切换入口。初始化失败路径会写日志并 reset 已创建对象。
+共享对象使用 `Microsoft::WRL::ComPtr`。默认 epoch 为 WARP；`PrepareBackend`/`CommitPreparedBackend` 为以后显式选择 Hardware 提供帧边界切换入口。只有唯一渲染线程可以发布新 epoch；初始化失败路径逆序 reset 已创建对象。
 
 `【直接确认】` 消费者并不相同：
 
-- `d2dDevice_UI3` 和 `GetUi3RenderDeviceEpoch()` 由 UI3 Bar 与五个 PPT 渲染客户端共用；每个 HWND 仍创建并持有自己的 D2D device context、target bitmap 和 GDI interop；
-- `dWriteFactory1` 被 Bar/PPT 的文字资源使用，PPT UI 状态、布局和绘制不再位于 `IdtPlug-in.cpp`；
-- 设置窗口没有使用这条 device 链，而是独立 hardware D3D11 device/context 和 window swap chain；
+- `DeviceEpoch` 由 Bar、五个 PPT 渲染客户端和 Setting 共用；Bar/PPT 每个 HWND 仍创建并持有自己的 D2D device context、target bitmap 和 GDI interop；
+- `SharedAssets` 中的 D2D 1.1 factory、DWrite factory/font collection 被 Bar/PPT 文字资源使用；
+- Setting 借用同一 D3D11 device/immediate context，但独占 discard swap chain、RTV、纹理 SRV 和 ImGui backend/session；
 - 主画板不是 D2D target。
 
-`【合理推断】` 修改现有 Bar/PPT 图形初始化时应先沿用共享 factory/device 的现有生命周期。新增完全独立设备是否合适属于架构决策，不能由“当前共享”自动升级成永久禁令。
-
-`【待确认；风险观察】` `IdtD2DPreparation.cpp` 定义了 `D2DShutdown()`，全仓静态搜索未找到调用点。本轮未做运行时退出验证，因此只记录为清理契约待确认，不称为资源泄漏或已确认缺陷。
+`【直接确认】` `IdtD2DPreparation.*`、旧图形全局和 `Inkeys.UI.RenderScheduler` 已从产品工程移除。新增 Bar/PPT/Setting 图形资产必须沿用 RenderPipeline 的共享生命周期；Draw2、白板、定格和其他背景窗口不因本合同自动迁移。
 
 ## `Inkeys.UI.Bar`
 
@@ -113,7 +111,7 @@ clock.Rebase();
 
 #### 1. Scope / Trigger
 
-新增或修改 UI3 layered HWND 客户端、请求唤醒、动画续帧、target/device 失败恢复、渲染线程退出或 Settings 后续接入时适用。当前固定顺序为 Bar、底部左、底部右、中部左、中部右、结束放映，Settings 仅预留槽位。
+新增或修改 Bar、五个 PPT HWND、Settings、请求唤醒、动画续帧、target/device 失败恢复或渲染线程退出时适用。当前固定顺序为 Bar、底部左、底部右、中部左、中部右、结束放映、Settings。
 
 #### 2. Signatures
 
@@ -127,20 +125,24 @@ enum class FrameResult : std::uint8_t {
 	Idle, Continue, Retry, DeviceLost, Stop
 };
 
+bool Scheduler::Start(ContextProvider, DeviceRecoveryCallback, ControlCallback);
+void Scheduler::Stop() noexcept;
 bool Scheduler::Register(Client, RenderCallback);
 void Scheduler::Unregister(Client) noexcept;
 void Scheduler::Request(Client) noexcept;
 void Scheduler::Request(ClientMask) noexcept;
-void Scheduler::Run(const std::function<bool()>& shouldStop);
+bool Scheduler::PostControl(ControlTask);
 ~~~
 
 #### 3. Contracts
 
 - 每个客户端占一个原子请求位；`Request(mask)` 使用 `fetch_or` 合并并设置唯一 manual-reset event。idle 边界必须遵循 `ResetEvent -> TakeRequested -> 重查 stop -> wait`，不能丢失发生在 reset 前后的请求。
 - 每帧只回调请求位、上一帧 `Continue` 或 `Retry` 的客户端。固定顺序不得依赖注册顺序；帧截止时间以 `steady_clock` 控制到最多 60 FPS，pacing 期间追加的请求可并入下一批但不能提前越过期限。
-- `Idle` 不自动续帧；`Continue` 只续当前客户端；`Retry` 只重试当前客户端；`DeviceLost` 调用进程级恢复回调并请求全部槽；`Stop` 只用于结束共享循环。
+- `Idle` 不自动续帧；`Continue` 只续当前客户端；`Retry` 只重试当前客户端；`DeviceLost` 调用进程级恢复回调并请求全部已注册槽；`Stop` 只用于显式进程级管线退出。普通客户端观察到 `offSignal` 时返回 `Idle` 并等待主线程同步注销，不得抢先停止共享线程。
 - `Unregister` 返回前必须等待该客户端正在执行的回调退出。不得从客户端自己的回调内注销自身；释放 per-window target/context 前必须先同步注销。
 - 单窗 `D2DERR_RECREATE_TARGET`、ULW 或资源创建失败返回 `Retry` 并仅丢弃该窗 target。`DXGI_ERROR_DEVICE_REMOVED/RESET/DRIVER_INTERNAL_ERROR` 返回 `DeviceLost`，共享 device epoch 只能由唯一调度线程切换。
+- 设备恢复失败时保留 recovery pending 状态，后续 16,666,667 ns 节拍只重试恢复；恢复成功前禁止调用任何客户端或向旧 epoch 提交。`Stop()` 后清空请求位、控制位和 event 状态，Scheduler 重启不得回放旧请求。
+- `PostControl` 用于必须在渲染线程执行的会话销毁等生命周期任务；FIFO 控制任务在每轮设备恢复重试前执行，因此 recovery pending 不得阻塞 Setting teardown。停止接收任务后投递必须失败，调用者不得无限等待未入队任务。
 - 所有客户端共享 D3D11/D2D device，但各自持有 device context、target bitmap、GDI interop 和 ULW 状态。COM、配置写盘、模态确认或其他可能阻塞的业务回调必须投递到业务线程，不能在调度回调内直接执行。客户端也不得调用 `HighPrecisionWait`、`Sleep` 或条件变量做本地帧等待；最多 60 FPS 的节拍只由共享调度器负责。
 - 主按钮直拖激活时，Bar 仍须推进并呈现已有动画；直接 `SetWindowPos` 与 ULW 提交共用同一几何锁，交互线程只能 `try_lock`，不得等待可能包含 `GetDC/ULW` 的慢提交。拖动累计屏幕位移必须同时叠加到 ULW `pptDst`，允许动画帧改变 viewport 大小而不把窗口拉回；松手后由渲染线程把位移吸收到主按钮布局并重基准脏区快照，吸收前后的屏幕到布局转换继续扣除尚未接管的位移，保证快速下一段拖动命中和坐标连续。
 
@@ -153,20 +155,23 @@ void Scheduler::Run(const std::function<bool()>& shouldStop);
 | 回调返回 `Continue` / `Retry` | 只在下一帧保留该客户端，并继续受 60 FPS 限制 |
 | 单窗 target/ULW 失败 | 仅该窗重试；其他客户端可进入 idle |
 | 共享 device 丢失 | 唯一线程恢复 device epoch，随后所有已注册客户端重建自己的 target |
+| 共享 device 首次恢复失败 | 后续节拍继续恢复，成功前客户端回调计数不增加 |
 | 客户端因租约或局部条件暂不能提交 | 返回 `Continue` / `Retry`，不得在回调内等待下一帧期限 |
 | 请求落在 idle reset/wait 边界 | event 或二次 `TakeRequested` 至少有一路保留请求 |
 | 注销时回调仍在执行 | `Unregister` 阻塞到回调退出，再允许释放资源 |
+| Scheduler 停止后重启 | 旧请求/control/event 不得触发回调；新请求仍可唤醒 |
+| `offSignal` 在 Setting 可见时生效 | Bar 返回 `Idle`；主线程先 drain/unregister Setting，再 join Bar/PPT 并停止管线 |
 | Bar HWND 直移 | Bar 动画和 resize 继续；交互线程不等待慢 ULW，PPT 请求继续处理，松手位移由下一帧无跳变接管 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：页码变化只请求四个页码窗；结束放映窗不计算，随后六窗都 idle 时唯一事件进入等待。
-- Base：Bar 单独动画时只有 Bar 连续返回 `Continue`，五个 PPT 客户端不被回调。
-- Bad：每次唤醒都遍历六窗并让客户端内部判断是否需要画；这破坏精确计算和未来 Settings 扩展边界。
+- Good：Settings 可见时独自连续返回 `Continue`，未变化的 Bar/PPT 不进入回调；隐藏后全部 idle，唯一事件无限等待。
+- Base：页码变化只请求四个页码窗；结束放映窗和 Settings 不计算。
+- Bad：Bar 观察到进程退出就返回 `Stop`，导致渲染线程先退出而 Setting shutdown 永久等待 session drain。
 
 #### 6. Tests Required
 
-- Headless 断言请求位合并、固定顺序、并发请求不丢失、`Continue/Retry` 局部续帧、`DeviceLost` 全槽请求、同步注销和相邻帧不少于约 16 ms。
+- Headless 断言请求位合并、固定顺序、并发请求不丢失、Settings 独自 60 FPS/隐藏 idle、`Continue/Retry` 局部续帧、`DeviceLost` 全槽请求、恢复失败重试、同步注销、restart 清理和相邻帧不少于约 16 ms。
 - 窗口测试断言 Bar/五个 PPT 生命周期和 Z 序；完整 Solution `Debug|ARM64` 构建验证 module/project 登记。
 - 手工验证静止休眠、Bar 直移期间 PPT 更新、设备/DPI 切换、PowerPoint/WPS 长按与拖动；自动测试不能替代真实 Office/WPS 和显示器切换。
 
@@ -193,6 +198,12 @@ scheduler.Unregister(client);
 // Correct：同步 drain 后才能释放回调使用的资源。
 scheduler.Unregister(client);
 target.Reset();
+
+// Wrong：单个客户端提前终止共享线程，其他客户端无法同步清理。
+if (offSignal) return FrameResult::Stop;
+
+// Correct：客户端退出只停止自身续帧，由主线程统一注销并 Shutdown。
+if (offSignal) return FrameResult::Idle;
 ~~~
 
 ### UI3 PPT 控件内部几何合同
@@ -450,33 +461,30 @@ if (averages.updated)
 		averages.unlimitedFramesPerSecond);
 ~~~
 
-### UI3 共享设备、整帧租约与光影缓存契约
+### UI3 共享设备、串行帧与光影缓存契约
 
 #### 1. Scope / Trigger
 
-新增或修改 UI3 Bar、PptBar、Setting、白板等图形客户端，或修改 WARP/Hardware 选择、Bar 光影、脏区与分层窗口提交时，必须遵守本节。该契约不把暂存的 `IdtFloating`、Draw2 `DibSurface` 或当前 ImGui DX11 设置窗口自动迁入 UI3 共享设备。
+新增或修改 Bar、PPT、Setting 图形客户端，或修改 WARP/Hardware 选择、Bar 光影、脏区与分层窗口提交时，必须遵守本节。该契约不把暂存的 `IdtFloating`、Draw2 `DibSurface`、白板或定格自动迁入共享设备。
 
 #### 2. Signatures
 
 ~~~cpp
-enum class Ui3RenderBackend : unsigned char { Warp, Hardware };
-enum class Ui3RenderPriority : unsigned char { Interactive, Cosmetic };
-
-Ui3RenderDeviceEpoch GetUi3RenderDeviceEpoch();
-Ui3RenderPass AcquireUi3RenderPass(Ui3RenderPriority priority);
-HRESULT PrepareUi3RenderBackend(Ui3RenderBackend backend);
-bool CommitPreparedUi3RenderBackend();
+enum class Backend : std::uint8_t { Warp, Hardware };
+DeviceEpoch GetDeviceEpoch();
+SharedAssets GetSharedAssets();
+HRESULT PrepareBackend(Backend backend);
+bool CommitPreparedBackend() noexcept;
 void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 ~~~
 
-每个 epoch 至少发布 `backend`、单调递增的 `generation`、实际 `featureLevel`、`ID3D11Device`、可选 `ID3D11Device1` 与 `ID2D1Device`。`Ui3RenderPass` 是 move-only RAII 租约。
+每个 epoch 至少发布 `backend`、单调递增的 `generation`、实际 `featureLevel`、`ID3D11Device`、可选 `ID3D11Device1`、immediate context、DXGI factory/device 与 `ID2D1Device`。
 
 #### 3. Contracts
 
-- 启动默认创建 WARP epoch。Hardware 只能显式准备；准备过程在当前 epoch 旁路创建完整 device，失败时不得破坏正在使用的 WARP。
-- 发布新 epoch 前必须取得 `Interactive` 整帧租约。客户端也必须先取得租约，再读取 epoch，并在 `generation` 变化时于本帧 `BeginDraw` 前重建自己的 device context、target、GDI interop、brush/effect/mask 等设备相关资源。
-- 共享的是 D3D/D2D device，不共享客户端 device context 或 target。租约覆盖该客户端的完整绘制和呈现区间，至少包括资源检查、`BeginDraw`、D2D 命令、`GetDC/ReleaseDC`、`UpdateLayeredWindowIndirect` 与 `EndDraw`，禁止不同 UI3 客户端的帧交错。
-- `Interactive` 帧可以等待租约；`Cosmetic` 帧在有交互等待者或设备正忙时必须跳帧，并保持正常帧率节流，不能自旋重试。开始真实绘图后，Bar 光影帧属于可牺牲的装饰工作。
+- 启动默认创建 WARP epoch，请求 FL11.1/11.0；仅在 `E_INVALIDARG` 时用 FL11.0 重试。Hardware 只能显式准备；失败时不得破坏当前 WARP。
+- 只有 RenderPipeline 线程能发布新 epoch 并串行调用客户端。客户端从本次 `FrameContext` 读取 epoch，在 `generation` 变化时于 `BeginDraw` 前重建自己的 context、target、GDI interop、RTV/SRV、brush/effect/mask 等设备相关资源。
+- 共享 D3D11 device/immediate context、DXGI/D2D device 和 factories，不共享 Bar/PPT 的 D2D context/target 或 Setting 的 swap chain/RTV/SRV。每个回调覆盖该客户端完整绘制和呈现区间，禁止另起渲染线程或跨回调缓存 `FrameContext*`。
 - Bar 主帧只保留一组 `BeginDraw/EndDraw`，`GetDC` 已承担必要提交，前面不得再调用显式 `Flush`。Windows 7 Platform Update 路径在 `GetDC` 前必须弹出所有 clip/layer。
 - 动态光只长期缓存颜色停靠点/画刷和几何的 A8 预模糊遮罩；画刷位置、半径和透明度每帧更新。禁止缓存快速变化的最终光影帧或冻结布局状态。
 - A8 遮罩按几何参数量化且有容量上限。生成时使用同一 D2D device 上的专用 device context，先用一组 `BeginDraw/EndDraw` 写 source target，再把 source 作为 Gaussian 输入，用第二组 `BeginDraw/EndDraw` 写 output；禁止在同一 draw span 中把仍绑定为 target 的 bitmap 当作输入。
@@ -491,7 +499,7 @@ void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 | Windows 7 运行时以 `E_INVALIDARG` 拒绝 feature level 11.1 列表 | 只用 11.0 重试；仍失败则保留初始化失败语义 |
 | Hardware 准备失败 | 当前 WARP epoch 和全部客户端资源保持可用；不得发布半成品 |
 | `generation` 变化后客户端资源重建失败 | 跳过该帧；同一 generation 错误限频，不能用旧 device 的资源向新 epoch 提交 |
-| 装饰帧租约竞争失败 | 直接跳过并按目标 FPS 等待，不得忙循环 |
+| 客户端本帧无变化 | 返回 `Idle`；不得为探测状态扫描其他窗口 |
 | A8、Effect 或遮罩专用 context 失败 | 本设备会话停用 diffuse mask；保留基础灰边和硬光，不得退回逐帧实时 Gaussian 或逐帧重试 |
 | PointLight 等比几何动画中 | 查询归一化后的稳定 diffuse mask；第一、第三光源、基础边框和硬光全程保持，不得在动画终点集中创建遮罩 |
 | 主 `EndDraw` 返回 `D2DERR_RECREATE_TARGET` | 丢弃客户端设备资源并在下一帧按当前 epoch 重建 |
@@ -500,7 +508,7 @@ void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 #### 5. Good / Base / Bad Cases
 
 - Good：WARP 中展开属性栏或弹性提示浮窗时始终绘制相同亮度的第三光源，圆角和描边按完整尺寸归一后复用同一 A8 mask；浮窗文字复用完整字号格式并通过 D2D 变换缩放，Bar 主上下文每帧仅一次提交。
-- Base：后台准备 Hardware 成功，帧间取得整帧租约并发布新 generation；Bar 下一帧先重建全部资源，再开始绘制。
+- Base：后台准备 Hardware 成功，渲染线程控制点发布新 generation；Bar/PPT/Setting 下一帧先重建各自资源，再开始绘制。
 - Bad：切换全局 device 指针后让旧 Bar context 继续一帧，或为避免重建而跨 device 复用 bitmap/brush；这会造成设备域错配、空白帧或设备丢失错误。
 
 #### 6. Tests Required
@@ -508,24 +516,21 @@ void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`，必须使用 ARM64 host MSBuild。
 - 在 WARP 上分别测光影关、仅主光、主光+动态光：属性栏展开/收起、主栏状态切换、鼠标第三光和长时间静止；记录 CPU、帧时间、遮罩 cache miss 和提交次数。
 - 反复展开/收起绘制属性和两个提示浮窗；同一完整几何变体在动画期间最多产生一次遮罩 cache miss，动画终点不得新增 miss；第三光源 diffuse 亮度必须连续，第一光源全程保持原效果。
-- 在 Windows 7 SP1 + KB2670838 实机验证 feature level 回退、A8 target、Gaussian、`FillOpacityMask`、clip 栈为空时的 `GetDC` 及 layered-window 脏区无残影。
-- 在支持设备上循环执行 WARP → Hardware → WARP 帧边界切换，覆盖动画中、装饰帧竞争、资源重建失败与 Hardware 准备失败；断言旧 epoch 在发布前始终可用。
+- Windows 7 SP1 + KB2670838 需单独实机验证 feature level 回退、A8 target、Gaussian、`FillOpacityMask`、传统 discard swap chain 和 layered-window 脏区；仅完成静态审计时必须明确未做此项。
+- 在支持设备上循环执行 WARP → Hardware → WARP 帧边界切换，覆盖动画中、资源重建失败与 Hardware 准备失败；断言旧 epoch 在发布前始终可用。
 - 后续每接入一个共享设备客户端，都要并发触发其交互与 Bar 装饰帧，断言帧串行、交互优先、无自旋和跨 device 资源复用。
 - 视觉对比基础灰边、硬光、圆角九宫格遮罩接缝和超椭圆量化伸缩；允许经产品确认的轻微 diffuse 像素差异，不允许边缘断裂或残影。
 
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：先读取 epoch，等待租约期间 epoch 可能已经切换。
-auto epoch = GetUi3RenderDeviceEpoch();
-auto pass = AcquireUi3RenderPass(Ui3RenderPriority::Interactive);
-DrawWith(epoch);
+// Wrong：客户端另起线程读取全局 epoch 并并行使用 immediate context。
+auto epoch = GetDeviceEpoch();
+std::thread([epoch] { DrawWith(epoch); }).detach();
 
-// Correct：租约内读取 epoch，并在 BeginDraw 前处理 generation。
-auto pass = AcquireUi3RenderPass(priority);
-if (!pass) return;
-auto epoch = GetUi3RenderDeviceEpoch();
-if (epoch.generation != localGeneration) RecreateClientResources(epoch);
+// Correct：只在管线回调中读取 FrameContext，并在 BeginDraw 前处理 generation。
+if (context.epoch.generation != localGeneration)
+    RecreateClientResources(context.epoch);
 BeginDrawAndPresent();
 ~~~
 
@@ -786,29 +791,76 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 
 `【直接确认】`：
 
-- `Setting.Base.cppm::CreateDeviceD3D` 调用 `D3D11CreateDeviceAndSwapChain`，请求 feature level 11.0 并创建独立 hardware device/context、discard swap chain 和 RTV；
-- `Setting.cpp` 调用 `ImGui_ImplWin32_Init`、`ImGui_ImplDX11_Init/NewFrame/RenderDrawData/Shutdown`；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST` 降低忙等；
+- `Setting.Base.cppm::CreateDeviceD3D` 借用 `FrameContext::epoch` 的共享 WARP device/immediate context，并通过传统 `IDXGIFactory::CreateSwapChain` 创建 Setting 独占的 discard swap chain 和 RTV；
+- `Setting.cpp` 的持久协程 session 调用 `ImGui_ImplWin32_Init`、`ImGui_ImplDX11_Init/NewFrame/RenderDrawData/Shutdown`；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST`；
 - 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；`DibSurface` 的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
 - `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，仓库不再随附 ImGui DX9 backend；
-- DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 由 `Inkeys.rc` 嵌入 EXE；Inkeys 定制段在 backend 中用成对注释精确标记。
+- DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 位于 `UI/RenderPipeline/Assets/ImGui` 并由 `Inkeys.rc` 嵌入 EXE。
 
 `【合理推断】` 设置 UI 的局部改动应复用 `Setting.Widgets`、`Setting.Wrap` 及现有字体/纹理路径；普通设置功能不得顺带更换 device、swap-chain、shader 或 SRV 所有权。
 
-### 设置窗口 DX11 可执行合同
+### Setting 统一渲染与业务队列合同
 
-1. **Scope / Trigger**：修改设置窗口渲染、图片上传、ImGui backend 或内嵌 shader 时适用；不适用于 Bar 的共享 WARP/D2D device。
-2. **Signatures**：`CreateDeviceD3D(HWND) -> bool`；`ResizeSwapChain(UINT, UINT) -> bool`；`LoadTextureFromMemory(const unsigned char*, int, int, ID3D11ShaderResourceView**) -> bool`。
-3. **Contracts**：`TextureSettingSign` 保存 SRV；`ImGui::Image` 接收其 `(ImTextureID)(intptr_t)`；输入字节为 BGRA；资源映射固定为 `IDR_SHADERS2=VS`、`IDR_SHADERS1=PS`。
-4. **Validation / Error Matrix**：device/RTV/texture/SRV 创建失败返回 false；resize 失败保留待处理尺寸并延时重试；`DXGI_STATUS_OCCLUDED` 切换到 `DXGI_PRESENT_TEST`；CSO 缺失或类型映射错误使 backend device objects 创建失败。
-5. **Good / Base / Bad**：Good 为 show→resize→hide→show 后图片颜色和资源均正常；Base 为无 resize 的正常呈现；Bad 为把 DX9 texture pointer、BGRA 原始字节或 PS/VS 资源 ID 直接套用到错误 DX11 契约。
-6. **Tests Required**：完整 Solution `Debug|ARM64` 构建；`fxc /dumpbin` 核对 VS/PS profile 与 POSITION/COLOR/TEXCOORD；EXE import 不含 d3dcompiler；手工检查 show/hide/resize/遮挡、十张图片颜色与透明度。
-7. **Wrong vs Correct**：错误是把 `LPDIRECT3DTEXTURE9` 或 `ID3D11Texture2D*` 直接交给 DX11 backend；正确是创建 `ID3D11ShaderResourceView*`，保持到 draw submission 结束后再释放。
+#### 1. Scope / Trigger
 
-### 设置窗口线程退出合同
+修改 Setting 显隐、WndProc、ImGui session、swap chain/RTV/SRV、配置持久化、模态动作或退出顺序时适用。
 
-- 设置窗口由 `settingInitializationJthread` 的窗口线程拥有。`stop_callback` 必须设置窗口线程持有的停止事件，消息循环用 `MsgWaitForMultipleObjectsEx` 同时等待该事件和窗口消息；事件创建失败时也必须用有界消息等待轮询 `stop_token`，不得把可能失败的 `PostThreadMessage` 作为 `join` 的唯一唤醒保证。
-- WndProc 内的同步轮询必须直接观察同一窗口线程的 `stop_token`；涉及进程退出时还需观察 `offSignal`，并使用有界短等待。不得依赖 UI3 Hook 后续更新共享按键状态来保证退出。
-- 退出验证需覆盖按住设置标题栏时触发重启/关闭；`SettingMain` 的 join 必须完成，随后仍按既有顺序清理 ImGui、纹理、device 和窗口线程。
+#### 2. Signatures
+
+~~~cpp
+bool Setting::Initialize();
+void Setting::Shutdown() noexcept;
+void Setting::Show();
+void Setting::Hide();
+void Setting::Toggle();
+bool Setting::IsVisible() noexcept;
+WNDPROC Setting::WindowProc() noexcept;
+FrameResult RenderSettingFrame(const FrameContext&);
+~~~
+
+#### 3. Contracts
+
+- HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；专用 mutex 串行访问 ImGui IO。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。
+- Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；隐藏时逆序释放 backend、SRV、swap chain/RTV，返回 `Idle`。resize、遮挡和 epoch 变化由 `SessionState` 决策，不在 WndProc 直接操作 D3D。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
+- 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| `Present` / `ResizeBuffers` 返回 device removed/reset/internal error | 返回 `DeviceLost`，由唯一管线线程恢复 epoch |
+| 普通 Present/resize 失败 | 只返回 `Retry` 并重建 Setting session，不影响 Bar/PPT |
+| `DXGI_STATUS_OCCLUDED` | 后续帧用 `DXGI_PRESENT_TEST` 探测，成功后恢复绘制 |
+| 隐藏或 generation 变化 | 在渲染线程逆序释放旧 session；可见时按新 epoch 重建 |
+| 业务命令完成 | 发布不可变 completion snapshot 并只请求 Settings |
+| 退出时 FIFO 尚有配置写盘 | 排空后 join，不得 request_stop 后清空未执行命令 |
+| Bar 在 Setting drain 前观察到 `offSignal` | Bar 返回 `Idle`，不得以 `Stop` 提前结束共享线程 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：Setting 连续绘制时 Bar/PPT 保持 idle；隐藏后 session 释放且管线无限等待，最后一次配置仍写盘。
+- Base：show→resize→occluded→visible→hide→show，epoch 不变时复用共享 device 并重建 Setting 私有呈现资源。
+- Bad：在渲染回调直接 `Write()`/`MessageBox`，或 worker 到退出时清空尚未执行的 FIFO；前者阻塞所有 UI，后者丢配置。
+
+#### 6. Tests Required
+
+- Headless 覆盖显隐、resize、occlusion、generation、业务完成快照和 device loss 分类；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
+- 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
+- GUI 受限任务只运行 `InkeysHeadlessTests.exe --no-window`。Win7 SP1 + KB2670838 只可声明传统 CreateSwapChain/discard/FL11.0 fallback 的静态兼容，未经实机不得声称已验证。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：渲染线程同步写盘并从 worker 延迟读取可变全局配置。
+Inkeys::config.Write();
+queue.push({ .kind = WriteConfig });
+
+// Correct：入队前冻结值，worker 只消费 owned payload。
+command.configSnapshot = std::make_shared<Inkeys::Config>(Inkeys::config);
+queue.push(std::move(command));
+~~~
 
 ## Win32 Window、DibSurface 与 HiMsg 合同
 
@@ -834,7 +886,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 3. Contracts
 
-- 一个 overlay `std::jthread` 同线程拥有 Mag host/child、Freeze、Drawpad、五个 PPT HWND、Bar、DisplayObserver；Setting 由独立 `std::jthread` 拥有。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。
+- Window Service 的受管线程拥有 Mag host/child、Freeze、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
 - Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
@@ -897,7 +949,7 @@ spec.messageCallback = [](HWND, UINT message, WPARAM, LPARAM) {
 
 `BarUiSVGClass` 的原始尺寸 `rW/rH` 必须默认初始化为 `0.0`。默认构造或资源解析失败后，单边 `SetWH` 应稳定返回失败，不能读取未初始化尺寸来推导宽高。
 
-Bar 与 PPT 共享 UI3 device epoch 和调度线程，但不得共享 per-window device context/target/ULW 状态。Setting 的 ImGui DX11 swap-chain/SRV 与 Draw2 的 `DibSurface` 仍是不同生命周期，不能套用 UI3 target 规则。
+Bar、PPT 与 Setting 共享 RenderPipeline device epoch 和调度线程；Bar/PPT 不得共享 per-window device context/target/ULW，Setting 仍独占 ImGui DX11 swap-chain/RTV/SRV。Draw2 的 `DibSurface` 仍是独立生命周期，不能套用共享 D2D target 规则。
 
 ## Win32、DPI 与坐标
 

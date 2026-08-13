@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @file		IdtPlug-in.h
  * @brief		IDT plugin linkage | 智绘教插件联动
  * @note		PPT linkage components and other plugins | PPT联动组件和其他插件等
@@ -12,7 +12,6 @@
 #include "IdtMain.h"
 #include "Inkeys/Graphics/Surface.hpp"
 
-#include "IdtD2DPreparation.h"
 #include "SuperTop/IdtToken.h"
 
 // All function and variable descriptions should be in the corresponding cpp file.

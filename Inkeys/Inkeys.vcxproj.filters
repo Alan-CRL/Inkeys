@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -61,7 +61,7 @@
     <Filter Include="Modules\Inkeys\UI\Ppt">
       <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Modules\Inkeys\UI\RenderScheduler">
+    <Filter Include="Modules\Inkeys\UI\RenderPipeline">
       <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Modules\Inkeys\Conv">
@@ -97,7 +97,7 @@
     <Filter Include="Modules\Inkeys\Business">
       <UniqueIdentifier>{804a968f-5f95-43f4-9944-38a9113715ec}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Additional\Imgui\CustomShaders">
+    <Filter Include="Modules\Inkeys\UI\RenderPipeline\Assets\ImGui">
       <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -151,9 +151,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtGuid.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtD2DPreparation.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtState.h">
@@ -282,6 +279,9 @@
     <ClInclude Include="SuperTop\IdtToken.h">
       <Filter>头文件\SuperTop</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -345,9 +345,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtGuid.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtD2DPreparation.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtState.cpp">
@@ -545,11 +542,11 @@
     <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cppm">
-      <Filter>Modules\Inkeys\UI\RenderScheduler</Filter>
+    <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\RenderScheduler\RenderScheduler.cpp">
-      <Filter>Modules\Inkeys\UI\RenderScheduler</Filter>
+    <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Load\Load.cppm">
       <Filter>Modules\Inkeys\Load</Filter>
@@ -592,9 +589,6 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtD2DPreparation.cpp">
-      <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtHistoricalDrawpad.cpp">
       <Filter>源文件</Filter>
@@ -962,14 +956,14 @@
     <None Include="src\UI\barBrush1.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="additional\imgui\CustomShaders\imgui_common.hlsli">
-      <Filter>头文件\Additional\Imgui\CustomShaders</Filter>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
-    <None Include="additional\imgui\CustomShaders\imgui_vs.cso">
-      <Filter>资源文件</Filter>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
-    <None Include="additional\imgui\CustomShaders\imgui_ps.cso">
-      <Filter>资源文件</Filter>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
     <None Include="src\i18n\en-US.jsonc">
       <Filter>资源文件</Filter>
@@ -1025,11 +1019,11 @@
     </Manifest>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="additional\imgui\CustomShaders\imgui_ps.hlsl">
-      <Filter>头文件\Additional\Imgui\CustomShaders</Filter>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
-    <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
-      <Filter>头文件\Additional\Imgui\CustomShaders</Filter>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>

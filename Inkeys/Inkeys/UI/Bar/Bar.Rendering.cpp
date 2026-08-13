@@ -3,7 +3,10 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
+#include <d2d1helper.h>
+#include <dwrite_1.h>
+#include <wrl/client.h>
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
@@ -25,9 +28,25 @@ import :Format;
 import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.RenderPipeline;
 
 namespace
 {
+	[[nodiscard]] auto SharedD2DFactory()
+	{
+		return Inkeys::UI::RenderPipeline::D2DFactory();
+	}
+
+	[[nodiscard]] auto SharedDWriteFactory()
+	{
+		return Inkeys::UI::RenderPipeline::DWriteFactory();
+	}
+
+	[[nodiscard]] auto SharedFontCollection()
+	{
+		return Inkeys::UI::RenderPipeline::FontCollection();
+	}
+
 	constexpr double BarThicknessFineDialLabelFontSizeDip = 10.0;
 
 	double ApplyBorderLightSmoothstep(double progress)
@@ -1079,7 +1098,8 @@ void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 			center.y + radius * sinf(angle));
 		ComPtr<ID2D1PathGeometry> path;
 		ComPtr<ID2D1GeometrySink> sink;
-		if (FAILED(d2dFactory1->CreatePathGeometry(&path))
+		auto factory = SharedD2DFactory();
+		if (!factory || FAILED(factory->CreatePathGeometry(&path))
 			|| FAILED(path->Open(&sink)))
 			return;
 		sink->BeginFigure(start, D2D1_FIGURE_BEGIN_HOLLOW);
@@ -1098,14 +1118,15 @@ void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 
 ID2D1PathGeometry* BarUIRendering::GetThicknessPreviewPath()
 {
-	if (!d2dFactory1 || thicknessPreviewPathUnavailable) return nullptr;
+	auto factory = SharedD2DFactory();
+	if (!factory || thicknessPreviewPathUnavailable) return nullptr;
 	if (thicknessPreviewPath)
 	{
 		return thicknessPreviewPath.Get();
 	}
 
 	ComPtr<ID2D1PathGeometry> path;
-	HRESULT hr = d2dFactory1->CreatePathGeometry(&path);
+	HRESULT hr = factory->CreatePathGeometry(&path);
 	if (SUCCEEDED(hr))
 	{
 		ComPtr<ID2D1GeometrySink> sink;
@@ -1149,14 +1170,15 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessPreviewPath()
 ID2D1StrokeStyle1* BarUIRendering::GetThicknessPreviewStrokeStyle()
 {
 	if (thicknessPreviewStrokeStyle) return thicknessPreviewStrokeStyle.Get();
-	if (!d2dFactory1 || thicknessPreviewPathUnavailable) return nullptr;
+	auto factory = SharedD2DFactory();
+	if (!factory || thicknessPreviewPathUnavailable) return nullptr;
 	// 非均匀单位变换只拉伸路径，FIXED 保持真实笔宽与圆头不变形。
 	D2D1_STROKE_STYLE_PROPERTIES1 properties{
 		D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND,
 		D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND,
 		10.0F, D2D1_DASH_STYLE_SOLID, 0.0F,
 		D2D1_STROKE_TRANSFORM_TYPE_FIXED };
-	HRESULT hr = d2dFactory1->CreateStrokeStyle(
+	HRESULT hr = factory->CreateStrokeStyle(
 		&properties, nullptr, 0, &thicknessPreviewStrokeStyle);
 	if (FAILED(hr))
 	{
@@ -1176,12 +1198,13 @@ ID2D1StrokeStyle1* BarUIRendering::GetThicknessPreviewStrokeStyle()
 ID2D1StrokeStyle* BarUIRendering::GetRoundStrokeStyle()
 {
 	if (roundStrokeStyle) return roundStrokeStyle.Get();
-	if (!d2dFactory1 || roundStrokeStyleUnavailable) return nullptr;
+	auto factory = SharedD2DFactory();
+	if (!factory || roundStrokeStyleUnavailable) return nullptr;
 	D2D1_STROKE_STYLE_PROPERTIES properties = D2D1::StrokeStyleProperties(
 		D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND,
 		D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND,
 		10.0F, D2D1_DASH_STYLE_SOLID, 0.0F);
-	HRESULT hr = d2dFactory1->CreateStrokeStyle(
+	HRESULT hr = factory->CreateStrokeStyle(
 		properties, nullptr, 0, &roundStrokeStyle);
 	if (FAILED(hr))
 	{
@@ -1202,10 +1225,11 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessFineDialSelectorGeometry()
 {
 	if (thicknessFineDialSelectorGeometry)
 		return thicknessFineDialSelectorGeometry.Get();
-	if (!d2dFactory1 || thicknessFineDialSelectorUnavailable) return nullptr;
+	auto factory = SharedD2DFactory();
+	if (!factory || thicknessFineDialSelectorUnavailable) return nullptr;
 
 	ComPtr<ID2D1PathGeometry> geometry;
-	HRESULT hr = d2dFactory1->CreatePathGeometry(&geometry);
+	HRESULT hr = factory->CreatePathGeometry(&geometry);
 	if (SUCCEEDED(hr))
 	{
 		ComPtr<ID2D1GeometrySink> sink;
@@ -1240,7 +1264,9 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessFineDialSelectorGeometry()
 BarUIRendering::ThicknessFineDialLabelCacheClass*
 BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 {
-	if (!dWriteFactory1 || !barUISetClass
+	auto dwriteFactory = SharedDWriteFactory();
+	auto fontCollection = SharedFontCollection();
+	if (!dwriteFactory || !barUISetClass
 		|| !barUISetClass->barMedia.formatCache
 		|| !isfinite(zoom) || zoom <= 0.0F)
 		return nullptr;
@@ -1270,7 +1296,7 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 	IDWriteTextFormat* format =
 		barUISetClass->barMedia.formatCache->GetFormat(
 			L"HarmonyOS Sans SC", fontSize,
-			dWriteFontCollection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
+			fontCollection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
 			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
 			L"zh-cn", DWRITE_TEXT_ALIGNMENT_CENTER,
 			DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -1280,7 +1306,7 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 	int length = _snwprintf_s(text, _countof(text), _TRUNCATE, L"%d", value);
 	if (length <= 0) return nullptr;
 	ComPtr<IDWriteTextLayout> layout;
-	HRESULT hr = dWriteFactory1->CreateTextLayout(
+	HRESULT hr = dwriteFactory->CreateTextLayout(
 		text, static_cast<UINT32>(length), format,
 		64.0F * zoom, 20.0F * zoom, &layout);
 	if (FAILED(hr)) return nullptr;
@@ -2326,7 +2352,8 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 ID2D1Geometry* BarUIRendering::GetSuperellipseGeometry(
 	FLOAT x, FLOAT y, FLOAT width, FLOAT height, FLOAT n, int segments)
 {
-	if (!d2dFactory1 || width <= 0.0F || height <= 0.0F || n <= 0.0F)
+	auto factory = SharedD2DFactory();
+	if (!factory || width <= 0.0F || height <= 0.0F || n <= 0.0F)
 		return nullptr;
 
 	bool pathChanged = !superellipseGeometryCache.localGeometry
@@ -2385,7 +2412,7 @@ ID2D1Geometry* BarUIRendering::GetSuperellipseGeometry(
 		}
 
 		ComPtr<ID2D1PathGeometry> nextLocalGeometry;
-		HRESULT hr = d2dFactory1->CreatePathGeometry(&nextLocalGeometry);
+		HRESULT hr = factory->CreatePathGeometry(&nextLocalGeometry);
 		if (FAILED(hr) || !nextLocalGeometry) return nullptr;
 		ComPtr<ID2D1GeometrySink> sink;
 		hr = nextLocalGeometry->Open(&sink);
@@ -2411,7 +2438,7 @@ ID2D1Geometry* BarUIRendering::GetSuperellipseGeometry(
 	{
 		D2D1_MATRIX_3X2_F translation = D2D1::Matrix3x2F::Translation(x, y);
 		ComPtr<ID2D1TransformedGeometry> nextTranslatedGeometry;
-		HRESULT hr = d2dFactory1->CreateTransformedGeometry(
+		HRESULT hr = factory->CreateTransformedGeometry(
 			superellipseGeometryCache.localGeometry.Get(), &translation,
 			&nextTranslatedGeometry);
 		if (FAILED(hr) || !nextTranslatedGeometry) return nullptr;
@@ -2687,9 +2714,9 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	IDWriteTextFormat* textFormat = nullptr;
 	{
 		/*IDWriteTextFormat* tmpTextFormat;
-		dWriteFactory1->CreateTextFormat(
+		SharedDWriteFactory()->CreateTextFormat(
 			L"HarmonyOS Sans SC",
-			dWriteFontCollection.Get(),
+			SharedFontCollection().Get(),
 			DWRITE_FONT_WEIGHT_NORMAL,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
@@ -2705,7 +2732,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		textFormat = barUISetClass->barMedia.formatCache->GetFormat(
 			L"HarmonyOS Sans SC",
 			tarSize,
-			dWriteFontCollection.Get(),
+			SharedFontCollection().Get(),
 			fontWeight,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
@@ -2750,14 +2777,15 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 	const wstring& content, double fontSize, DWRITE_FONT_WEIGHT fontWeight)
 {
 	D2D1_SIZE_F result = D2D1::SizeF();
-	if (content.empty() || !dWriteFactory1 || !barUISetClass
+	auto dwriteFactory = SharedDWriteFactory();
+	if (content.empty() || !dwriteFactory || !barUISetClass
 		|| !barUISetClass->barMedia.formatCache || fontSize <= 0.0)
 		return result;
 
 	IDWriteTextFormat* textFormat =
 		barUISetClass->barMedia.formatCache->GetFormat(
 			L"HarmonyOS Sans SC", static_cast<FLOAT>(fontSize),
-			dWriteFontCollection.Get(),
+			SharedFontCollection().Get(),
 			fontWeight, DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL, L"zh-cn",
 			DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -2765,7 +2793,7 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 	if (!textFormat) return result;
 
 	ComPtr<IDWriteTextLayout> textLayout;
-	HRESULT hr = dWriteFactory1->CreateTextLayout(
+	HRESULT hr = dwriteFactory->CreateTextLayout(
 		content.c_str(), static_cast<UINT32>(content.size()), textFormat,
 		4096.0F, 4096.0F, &textLayout);
 	if (SUCCEEDED(hr))

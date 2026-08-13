@@ -2,7 +2,9 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
+#include <dwrite_1.h>
+#include <wrl/client.h>
 #include <array>
 #include <cstdint>
 
@@ -237,6 +239,7 @@ public:
 
 	// 渲染
 	void Rendering();
+	void StopRendering();
 	// 鼠标交互
 	void Interact();
 	// 仅合并已经判定为展开/收起的动作，不拦截状态切换和原始输入。

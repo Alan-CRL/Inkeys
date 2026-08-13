@@ -1,8 +1,10 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
+#include <dwrite_1.h>
+#include <wrl/client.h>
 #include <array>
 #include <cstdint>
 
@@ -15,6 +17,9 @@ import :Format;
 import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.RenderPipeline;
+
+using Ui3RenderDeviceEpoch = Inkeys::UI::RenderPipeline::DeviceEpoch;
 
 constexpr double BarSvgRasterUpscaleThreshold = 1.35;
 constexpr double BarSvgRasterSizeEpsilon = 0.01;

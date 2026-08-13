@@ -29,6 +29,7 @@ int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
 int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
+int RunSettingSessionStateTests();
 int RunPptUiTests();
 
 namespace
@@ -893,6 +894,7 @@ int main(int argc, char** argv)
 	failureCount += RunFramePacingTests(benchmark);
 	failureCount += RunToggleClickCoalescerTests();
 	failureCount += RunRenderSchedulerTests();
+	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
 	if (benchmark) RunBenchmarks();
 

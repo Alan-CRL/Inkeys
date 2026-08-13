@@ -33,8 +33,8 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 ## 已直接确认的边界
 
 - wWinMain 位于 Inkeys/IdtMain.cpp。新增其他入口会改变现有进程模型，属于架构变更，而不是本 Spec 已批准的路线。
-- D2DStarup 在 UI 分支选择前无条件创建 D3D11 WARP、D2D factory/device 和 DWrite 对象；UI3 Bar 与五个 PPT 控件共享同一 device epoch，并在唯一 UI3 调度线程上串行使用各自的 D2D device context/ULW target。
-- 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它拥有独立 hardware device/context、discard swap chain、RTV 和图片 SRV，不复用进程级 D2D/WARP device。
+- `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、五个 PPT 控件与 Setting 共享同一 device epoch 和唯一串行渲染线程。
+- 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它复用 RenderPipeline 的 WARP device/immediate context，并独占 discard swap chain、RTV、图片 SRV 和 ImGui session。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。
 - 画布合成、撤销历史和按 PPT 页保存的墨迹彼此有关，不能只验证屏幕上的即时笔迹。
 - 主 Solution 中 Inkeys 依赖 PptCOM；Timeout 属于另一个 Solution，且本次未发现主产品引用。

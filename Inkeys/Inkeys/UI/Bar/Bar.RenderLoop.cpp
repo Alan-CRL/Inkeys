@@ -1,9 +1,11 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
+#include <dwrite_1.h>
+#include <wrl/client.h>
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
@@ -26,7 +28,7 @@ import :Zoom;
 import :Theme;
 
 import Inkeys.UI.Bar.FramePacing;
-import Inkeys.UI.RenderScheduler;
+import Inkeys.UI.RenderPipeline;
 
 import <ranges>;
 
@@ -530,8 +532,10 @@ class BarRenderLoopCoordinator
 public:
 	explicit BarRenderLoopCoordinator(BarUISetClass& owner);
 
-	void Run();
-	Inkeys::UI::RenderScheduler::FrameResult RenderFrame();
+	[[nodiscard]] bool Register();
+	void Unregister() noexcept;
+	Inkeys::UI::RenderPipeline::FrameResult RenderFrame(
+		const Inkeys::UI::RenderPipeline::FrameContext& context);
 
 private:
 	BarRenderLoopStageResult WakeAndSnapshot(
@@ -545,7 +549,8 @@ private:
 		bool needRendering);
 	BarRenderLoopStageResult CalculateDirtyAndDrawPresent(
 		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame,
-		UPDATELAYEREDWINDOWINFO& ulwi);
+		UPDATELAYEREDWINDOWINFO& ulwi,
+		const Inkeys::UI::RenderPipeline::FrameContext& context);
 	void PaceFrame(BarRenderLoopState& state, int frameOrdinal);
 
 	void CloseAnnotationTooltip() { owner_.CloseAnnotationTooltip(); }
@@ -592,10 +597,25 @@ private:
 	int frameOrdinal_ = 1;
 };
 
+namespace
+{
+	unique_ptr<BarRenderLoopCoordinator> barRenderCoordinator;
+}
+
 // 渲染
 void BarUISetClass::Rendering()
 {
-	BarRenderLoopCoordinator(*this).Run();
+	if (barRenderCoordinator) return;
+	auto coordinator = make_unique<BarRenderLoopCoordinator>(*this);
+	if (!coordinator->Register()) return;
+	barRenderCoordinator = move(coordinator);
+}
+
+void BarUISetClass::StopRendering()
+{
+	if (!barRenderCoordinator) return;
+	barRenderCoordinator->Unregister();
+	barRenderCoordinator.reset();
 }
 
 BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
@@ -6420,7 +6440,8 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 
 BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame,
-	UPDATELAYEREDWINDOWINFO& ulwi)
+	UPDATELAYEREDWINDOWINFO& ulwi,
+	const Inkeys::UI::RenderPipeline::FrameContext& context)
 {
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
@@ -6431,19 +6452,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	if (state.presentDecision.ShouldPresent())
 	{
 
-		bool interactiveFrame = state.presentDecision.NeedsInteractivePass();
-		auto renderPass = AcquireUi3RenderPass(interactiveFrame
-			? Ui3RenderPriority::Interactive : Ui3RenderPriority::Cosmetic);
-		if (!renderPass)
-		{
-			// 租约结果也交给同一状态机，装饰跳帧不得吞掉最终 lighting 状态。
-			(void)state.presentDecision.CompleteAttempt(
-				Inkeys::UI::Bar::BarPresentAttemptResult::CosmeticLeaseSkipped());
-			// 共享调度器统一负责 60 FPS 节拍，客户端不能在回调内阻塞后续 PPT 窗口。
-			return BarRenderLoopStageResult::Continue;
-		}
-
-		Ui3RenderDeviceEpoch epoch = GetUi3RenderDeviceEpoch();
+		const auto& epoch = context.epoch;
 		state.presentDecision.ObserveDeviceGeneration(epoch.generation);
 		const bool deviceGenerationChanged =
 			epoch.generation != state.spec.GetDeviceGeneration();
@@ -9272,7 +9281,7 @@ else
 					L"HarmonyOS Sans SC",
 					static_cast<FLOAT>(
 						BarThicknessTooltipTitleFontSize * frameZoom),
-					dWriteFontCollection.Get(),
+					context.assets.fontCollection.Get(),
 					DWRITE_FONT_WEIGHT_SEMI_BOLD,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
@@ -9283,7 +9292,7 @@ else
 					L"HarmonyOS Sans SC",
 					static_cast<FLOAT>(
 						BarThicknessTooltipBodyFontSize * frameZoom),
-					dWriteFontCollection.Get(),
+					context.assets.fontCollection.Get(),
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
@@ -10016,7 +10025,7 @@ else
 			pTextFormat = state.barMedia.formatCache->GetFormat(
 				L"HarmonyOS Sans SC",
 				12.0F * tarZoom,
-				dWriteFontCollection.Get(),
+				context.assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
@@ -10266,28 +10275,33 @@ void BarRenderLoopCoordinator::PaceFrame(
 	state.frameRateSamplePending = false;
 }
 
-void BarRenderLoopCoordinator::Run()
+bool BarRenderLoopCoordinator::Register()
 {
-	Inkeys::Thread::StatusGuard guard("BarUISetClass::Rendering");
-	if (offSignal) return;
-	auto& scheduler = Inkeys::UI::RenderScheduler::GetScheduler();
-	scheduler.SetDeviceRecoveryCallback([]() { return RecoverUi3RenderDevice(); });
-	if (!scheduler.Register(Inkeys::UI::RenderScheduler::Client::Bar,
-		[this]() { return RenderFrame(); })) return;
-	scheduler.Run([]() { return static_cast<bool>(offSignal); });
-	scheduler.Unregister(Inkeys::UI::RenderScheduler::Client::Bar);
+	if (offSignal) return false;
+	return Inkeys::UI::RenderPipeline::Register(
+		Inkeys::UI::RenderPipeline::Client::Bar,
+		[this](const Inkeys::UI::RenderPipeline::FrameContext& context)
+		{ return RenderFrame(context); });
 }
 
-Inkeys::UI::RenderScheduler::FrameResult
-BarRenderLoopCoordinator::RenderFrame()
+void BarRenderLoopCoordinator::Unregister() noexcept
 {
-	using Inkeys::UI::RenderScheduler::FrameResult;
-	if (offSignal) return FrameResult::Stop;
+	Inkeys::UI::RenderPipeline::Unregister(
+		Inkeys::UI::RenderPipeline::Client::Bar);
+}
+
+Inkeys::UI::RenderPipeline::FrameResult
+BarRenderLoopCoordinator::RenderFrame(
+	const Inkeys::UI::RenderPipeline::FrameContext& context)
+{
+	using Inkeys::UI::RenderPipeline::FrameResult;
+	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
+	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
 	BarRenderFrameSnapshot frame;
 	frame.ordinal = frameOrdinal_;
 	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
-		return FrameResult::Stop;
+		return FrameResult::Idle;
 	if (state.presentDecision.HasFailureBackoff()
 		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
 		return FrameResult::Retry;
@@ -10343,8 +10357,8 @@ BarRenderLoopCoordinator::RenderFrame()
 	SubmitTargetsAndLayout(state, frame);
 	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame);
 	PrepareLightingAndDemand(state, frame, needRendering);
-	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_);
-	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Stop;
+	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_, context);
+	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Idle;
 	if (result == BarRenderLoopStageResult::DeviceLost) return FrameResult::DeviceLost;
 	if (result == BarRenderLoopStageResult::Idle) return FrameResult::Idle;
 	if (result == BarRenderLoopStageResult::Continue) return FrameResult::Retry;

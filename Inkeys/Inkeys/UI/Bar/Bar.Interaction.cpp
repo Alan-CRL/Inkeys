@@ -1,14 +1,14 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
+#include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.WindowGeometry.h"
 

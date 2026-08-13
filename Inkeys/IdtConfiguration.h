@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "IdtMain.h"
 
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
@@ -151,6 +151,8 @@ extern SetListStruct setlist;
 extern shared_mutex setlistUpdateMutex;
 bool ReadSetting();
 bool ReadSettingMini();
+string CaptureSettingJson();
+bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
 struct PptComSetListStruct
@@ -216,6 +218,8 @@ struct PptComSetListStruct
 extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
 bool PptComReadSettingPositionOnly();
+string CapturePptComSettingJson();
+bool WritePptComSettingJson(const string& jsonContent);
 bool PptComWriteSetting();
 
 struct DdbInteractionSetListStruct
@@ -296,6 +300,8 @@ struct DdbInteractionSetListStruct
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;
 //bool DdbReadInteraction();
+string CaptureDdbInteractionJson(bool change, bool close);
+bool WriteDdbInteractionJson(const string& jsonContent);
 bool DdbWriteInteraction(bool change, bool close);
 
 bool GetMemory();
