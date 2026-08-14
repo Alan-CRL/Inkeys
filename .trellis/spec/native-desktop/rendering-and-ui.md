@@ -825,6 +825,8 @@ FrameResult RenderSettingFrame(const FrameContext&);
 - Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
 - device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品并返回 `Retry`，后续重试不能对未初始化 backend 重复 `Shutdown`。
 - `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。导航断点按客户区逻辑 DIP 判定：`>=900` 为 LeftOpen、`760..899` 为 LeftCompact、`<760` 为 CompactOverlay。
+- Setting 页面壳层使用 ImFluent 标准组合：桌面模式的 `BeginNavigationView/EndNavigationView` 必须与紧随其后的 `NavigationViewBeginContent/NavigationViewEndContent` 成对；窄屏以 CompactOverlay SplitView 承载同一导航条目函数，禁止复制另一套页面路由或恢复绝对坐标侧栏。
+- 业务页面优先直接使用 ImFluent 的 SettingsCard、ToggleSwitch、ComboBox、Slider、Button、InfoBar、Card 和布局容器。`Setting.Widgets` 只可保留兼容签名并委托 ImFluent；窗口标题栏按钮属于 Win32 chrome 例外。更新状态和检查操作只在版本页呈现，不得恢复跨页面常驻底栏。
 - 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
@@ -854,6 +856,7 @@ FrameResult RenderSettingFrame(const FrameContext&);
 
 - Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点和主题优先级；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
+- Setting 页面样式迁移需静态审计导航/content、SplitView、Card/SettingsCard、ScrollView/WrapPanel/StackPanel 的 Begin/End 配对；产品路径不得重新引入 `imgui_toggle`、页面级原生 ImGui Button/Combo/Slider/Toggle 或 `ImFluent::ShowDemoWindow()`。
 - GUI 受限任务只运行 `InkeysHeadlessTests.exe --no-window`。Win7 SP1 + KB2670838 只可声明传统 CreateSwapChain/discard/FL11.0 fallback 的静态兼容，未经实机不得声称已验证。
 
 #### 7. Wrong vs Correct

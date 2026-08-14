@@ -15,39 +15,6 @@ namespace Widgets
 			if (colorCount > 0) ImGui::PopStyleColor(colorCount);
 		}
 
-		void PushStandardControlColors(ImU32 textColor)
-		{
-			ImGui::PushStyleColor(ImGuiCol_Button, FluentColor::ControlFill);
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::ControlFillHovered);
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, FluentColor::ControlFillPressed);
-			ImGui::PushStyleColor(ImGuiCol_Text, textColor);
-			ImGui::PushStyleColor(ImGuiCol_Border, FluentColor::ControlStroke);
-		}
-
-		void PushComboColors()
-		{
-			ImGui::PushStyleColor(ImGuiCol_Border, FluentColor::ControlStroke);
-			ImGui::PushStyleColor(ImGuiCol_FrameBg, FluentColor::ControlFill);
-			ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, FluentColor::ControlFillHovered);
-			ImGui::PushStyleColor(ImGuiCol_FrameBgActive, FluentColor::ControlFillPressed);
-			ImGui::PushStyleColor(ImGuiCol_PopupBg, FluentColor::PopupBackground);
-			ImGui::PushStyleColor(ImGuiCol_Button, FluentColor::PopupBackground);
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::ControlFillHovered);
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, FluentColor::ControlFillPressed);
-			ImGui::PushStyleColor(ImGuiCol_Text, FluentColor::TextStrong);
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * settingGlobalScale, 8.0f * settingGlobalScale));
-		}
-
-		void PushSliderColors()
-		{
-			ImGui::PushStyleColor(ImGuiCol_FrameBg, FluentColor::ControlFill);
-			ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, FluentColor::ControlFillHovered);
-			ImGui::PushStyleColor(ImGuiCol_FrameBgActive, FluentColor::ControlFillPressed);
-			ImGui::PushStyleColor(ImGuiCol_SliderGrab, FluentColor::Accent);
-			ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, FluentColor::AccentHovered);
-			ImGui::PushStyleColor(ImGuiCol_Border, FluentColor::ControlStroke);
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 6.0f * settingGlobalScale));
-		}
 	}
 
 	void StyleClass::ApplyGlobal(float scrollbarWidth) const
@@ -81,24 +48,10 @@ namespace Widgets
 		FluentColor::ControlFillPressed = color(ImFluentCol_ControlFillTertiary);
 		FluentColor::SubtleFill = color(ImFluentCol_SubtleFillSecondary);
 		FluentColor::SubtleFillPressed = color(ImFluentCol_SubtleFillTertiary);
+		// ImFluent preset 拥有 Fluent2 的全局间距、圆角和控件尺寸。
 		ImGuiStyle& imguiStyle = ImGui::GetStyle();
-		imguiStyle.Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(FluentColor::WindowBackground);
-		imguiStyle.Colors[ImGuiCol_ChildBg] = ImGui::ColorConvertU32ToFloat4(FluentColor::CardBackground);
-		imguiStyle.Colors[ImGuiCol_TitleBgActive] = ImGui::ColorConvertU32ToFloat4(FluentColor::WindowBackground);
-		imguiStyle.Colors[ImGuiCol_Border] = ImGui::ColorConvertU32ToFloat4(FluentColor::Divider);
-
-		imguiStyle.ItemSpacing.y = 0;
 		imguiStyle.ScrollbarSize = scrollbarWidth * settingGlobalScale;
 		imguiStyle.WindowTitleAlign = ImVec2(0.0f, 0.5f);
-		imguiStyle.WindowPadding = ImVec2(0.0f, 0.0f);
-		imguiStyle.FramePadding = ImVec2(0.0f, 0.0f);
-		imguiStyle.FrameBorderSize = 1.0f * settingGlobalScale;
-		imguiStyle.ChildBorderSize = 1.0f * settingGlobalScale;
-		imguiStyle.ChildRounding = 4.0f * settingGlobalScale;
-		imguiStyle.FrameRounding = 4.0f * settingGlobalScale;
-		imguiStyle.PopupRounding = 4.0f * settingGlobalScale;
-		imguiStyle.GrabRounding = 4.0f * settingGlobalScale;
-		imguiStyle.GrabMinSize = 12.0f * settingGlobalScale;
 	}
 	StyleClass style;
 
@@ -118,35 +71,11 @@ namespace Widgets
 		return clicked;
 	}
 
-	bool ButtonClass::Navigation(const char* label, const ImVec2& size, bool selected, ImU32 textColor, const ImVec2& alignment) const
-	{
-		(void)size;
-		(void)alignment;
-		if (textColor != FluentColor::TextPrimary)
-			ImGui::PushStyleColor(ImGuiCol_Text, textColor);
-		const bool clicked = ImFluent::NavItem(label, selected);
-		if (textColor != FluentColor::TextPrimary) ImGui::PopStyleColor();
-		return clicked;
-	}
-
 	bool ButtonClass::AccentToggle(const char* label, const ImVec2& size, bool selected) const
 	{
 		return selected
 			? ImFluent::AccentButton(label, size)
 			: ImFluent::Button(label, size);
-	}
-
-	bool ButtonClass::HeroIcon(const char* label, const ImVec2& size) const
-	{
-		ImGui::PushStyleColor(ImGuiCol_Button, FluentColor::HeroFill);
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::HeroFillHovered);
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive, FluentColor::HeroFillPressed);
-		ImGui::PushStyleColor(ImGuiCol_Text, FluentColor::TextOnAccent);
-		ImGui::PushStyleColor(ImGuiCol_Border, FluentColor::Transparent);
-
-		const bool clicked = ImGui::Button(label, size);
-		PopControlStyle(5);
-		return clicked;
 	}
 
 	bool ButtonClass::TitleBarClose(const char* label, const ImVec2& size) const
@@ -164,29 +93,14 @@ namespace Widgets
 	}
 	ButtonClass button;
 
-	bool ComboClass::Begin(const char* label, const char* preview, int itemCount) const
+	bool ComboClass::Select(const char* label, int* currentItem, const vector<string>& items) const
 	{
-		const float itemHeight = ImGui::GetTextLineHeightWithSpacing() + 8.0f * settingGlobalScale;
-		const float popupHeight = itemCount * itemHeight + ImGui::GetStyle().WindowPadding.y * 2 * settingGlobalScale + 16.0f * settingGlobalScale;
-		ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, popupHeight));
-
-		PushComboColors();
-		const bool open = ImGui::BeginCombo(label, preview);
-		if (!open) PopControlStyle(9, 1);
-		return open;
-	}
-
-	bool ComboClass::Selectable(const char* label, bool selected) const
-	{
-		const bool clicked = ImGui::Selectable(label, selected);
-		if (selected) ImGui::SetItemDefaultFocus();
-		return clicked;
-	}
-
-	void ComboClass::End() const
-	{
-		ImGui::EndCombo();
-		PopControlStyle(9, 1);
+		if (!currentItem || items.empty()) return false;
+		vector<const char*> itemViews;
+		itemViews.reserve(items.size());
+		for (const auto& item : items) itemViews.push_back(item.c_str());
+		return ImFluent::ComboBox(label, currentItem, itemViews.data(),
+			static_cast<int>(itemViews.size()));
 	}
 	ComboClass combo;
 
@@ -203,14 +117,4 @@ namespace Widgets
 	}
 	SliderClass slider;
 
-	// 三级封装类
-	void EntryClass::EntryOneLine(const string& line, const vector<Encapsulation>& vec)
-	{
-	}
-	void EntryClass::EntryTwoLines(const string& line1, const string& line2, const vector<Encapsulation>& vec)
-	{
-	}
-	void EntryClass::EntryMultiLines(const string& line1, const string& text, const vector<Encapsulation>& vec)
-	{
-	}
 }

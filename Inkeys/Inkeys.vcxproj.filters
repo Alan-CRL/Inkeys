@@ -246,21 +246,6 @@
     <ClInclude Include="additional\imgui\imgui_offset_rect.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_toggle.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_toggle_math.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_toggle_palette.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_toggle_presets.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_toggle_renderer.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
     <ClInclude Include="additional\imgui\imstb_rectpack.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
@@ -426,18 +411,6 @@
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_tables.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_toggle.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_toggle_palette.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_widgets.cpp">

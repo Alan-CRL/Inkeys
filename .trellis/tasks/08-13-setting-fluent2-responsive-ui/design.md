@@ -25,3 +25,9 @@ HWND 延续 Window Service 单次创建。窗口使用可缩放顶层样式和 c
 页面路由、状态、业务 action 和 FIFO worker 保持原实现，按页面逐段把旧伪 Fluent 外观替换为 ImFluent。主页单独重写。ImFluent 输出仍是标准 ImDrawData，因此现有 CSO backend 无接口变化。ImFluent 依赖 `imgui_internal.h`，固定 commit 与 ImGui 1.92.7 作为成对升级单元。
 
 若集成出现阻断，可先保留页面业务渲染函数并仅启用 ImFluent 主题/导航适配；不得回退 resident lifecycle 或窗口合同。第三方升级通过替换上游快照、重新应用两处标记补丁、ARM64 严格编译与完整 UI 验收完成。
+
+## Fluent2 Composition Follow-up
+
+窗口主体遵循固定上游 Demo 的组合顺序：`BeginNavigationView` 渲染 pane，`EndNavigationView` 后立即进入 `NavigationViewBeginContent`，全部业务页面都在该滚动 content child 内绘制并由 `NavigationViewEndContent` 收口。窄屏使用 SplitView CompactOverlay 承载同一导航函数。不得把导航和业务内容继续作为两个互不相关的绝对坐标层。
+
+`Setting.Widgets` 只保留旧页面调用签名的兼容职责。Toggle、Button、Slider 和 Combo 的最终绘制必须委托 ImFluent；Combo 的旧 Begin/Selectable/End 状态机迁移为一次性 `ImFluent::ComboBox` 后，页面调用点同步改写。标题栏的 Windows caption buttons 属于窗口 chrome，可保留专用绘制。全局更新底栏删除，版本页仍拥有更新状态和业务操作。

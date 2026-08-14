@@ -419,11 +419,6 @@
     <ClInclude Include="additional\imgui\imgui_impl_win32.h" />
     <ClInclude Include="additional\imgui\imgui_internal.h" />
     <ClInclude Include="additional\imgui\imgui_offset_rect.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_math.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_palette.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_presets.h" />
-    <ClInclude Include="additional\imgui\imgui_toggle_renderer.h" />
     <ClInclude Include="additional\imgui\imstb_rectpack.h" />
     <ClInclude Include="additional\imgui\imstb_textedit.h" />
     <ClInclude Include="additional\imgui\imstb_truetype.h" />
@@ -494,10 +489,6 @@
     <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="additional\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="additional\imgui\imgui_tables.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_palette.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp" />
-    <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp" />
     <ClCompile Include="additional\imgui\imgui_widgets.cpp" />
     <ClCompile Include="additional\imfluent\imfluent.cpp" />
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />

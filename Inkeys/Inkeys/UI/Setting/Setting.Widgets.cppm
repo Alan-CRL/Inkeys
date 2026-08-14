@@ -68,10 +68,7 @@ namespace Widgets
 	{
 	public:
 		bool Standard(const char* label, const ImVec2& size, ImU32 textColor = FluentColor::TextPrimary) const;
-		bool Navigation(const char* label, const ImVec2& size, bool selected,
-			ImU32 textColor = FluentColor::TextPrimary, const ImVec2& alignment = ImVec2(0.0f, 0.5f)) const;
 		bool AccentToggle(const char* label, const ImVec2& size, bool selected) const;
-		bool HeroIcon(const char* label, const ImVec2& size) const;
 		bool TitleBarClose(const char* label, const ImVec2& size) const;
 	};
 	extern ButtonClass button;
@@ -79,9 +76,7 @@ namespace Widgets
 	class ComboClass
 	{
 	public:
-		bool Begin(const char* label, const char* preview, int itemCount) const;
-		bool Selectable(const char* label, bool selected) const;
-		void End() const;
+		bool Select(const char* label, int* currentItem, const vector<string>& items) const;
 	};
 	extern ComboClass combo;
 
@@ -93,14 +88,4 @@ namespace Widgets
 	};
 	extern SliderClass slider;
 
-	// 三级封装类
-	using Encapsulation = variant<ToggleClass>;
-
-	class EntryClass
-	{
-	public:
-		void EntryOneLine(const string& line, const vector<Encapsulation>& vec);
-		void EntryTwoLines(const string& line1, const string& line2, const vector<Encapsulation>& vec);
-		void EntryMultiLines(const string& line1, const string& text, const vector<Encapsulation>& vec);
-	};
 }

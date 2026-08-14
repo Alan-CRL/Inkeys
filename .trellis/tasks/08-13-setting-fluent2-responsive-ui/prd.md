@@ -29,6 +29,9 @@
 - R15：使用 ImFluent 内建动画并增加约 160ms 页面进入动画，不在每帧加载资源；禁用动画优化另行处理。
 - R16：本轮支持预热静态图片的轻量展示接口；GIF、视频和完整快捷键编辑增强仅保留扩展边界，不引入媒体依赖。
 - R17：保留工作区现有 `Inkeys/PptCOM.dll` 及其他线程改动，不回退无关文件。
+- R18：设置窗口壳层必须采用 ImFluent Demo 的标准组合：NavigationView pane 与 NavigationView content 成对使用，保留库自带的 pane toggle、选择指示器和展开动画；窄屏继续使用 CompactOverlay。
+- R19：页面中的开关、下拉框、按钮、滑块、设置行、信息提示和分组优先直接使用 ImFluent 原生控件；兼容包装不得继续自行绘制或用原生 ImGui 控件仿制同名 Fluent 控件。
+- R20：移除跨页面常驻的“更新状态 / 检查更新”底栏；更新状态和操作只在软件版本页面内呈现。
 
 ## Acceptance Criteria
 
@@ -40,6 +43,7 @@
 - [ ] 拖动、自由缩放、双击标题栏、最小化、最大化、系统菜单、Snap、Win+方向键、多 DPI 和主题切换正常。
 - [ ] ARM64 Debug 完整 Solution 构建、headless tests 和 `git diff --check` 通过；真实窗口完成动态检查。
 - [ ] 可见空闲帧时间相对同等旧页面无超过约 10% 的持续回退，打开/缩放/切页无明显卡顿或资源增长。
+- [ ] 导航、页面标题、设置卡片、ToggleSwitch、ComboBox、Button 和 Slider 的视觉及动画与固定 ImFluent Demo 的 Fluent2 语言一致，不再混用旧伪 Fluent 控件。
 
 ## Out Of Scope
 

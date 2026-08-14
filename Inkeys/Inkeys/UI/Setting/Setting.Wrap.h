@@ -13,8 +13,6 @@
 #include "imgui/imstb_textedit.h"
 #include "imgui/imstb_truetype.h"
 
-#include "imgui/imgui_toggle.h"
-#include "imgui/imgui_toggle_presets.h"
 #include "imfluent/imfluent.h"
 
 static_assert(IMGUI_VERSION_NUM == 19270,
