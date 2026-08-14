@@ -341,3 +341,25 @@ Adjusted dashed-line center spacing from 4:2 to 4:6 so round-capped visible segm
 ### Status
 
 [OK] **Completed**
+
+
+## Session 13: 修复并暂时禁用 Canvas Navigation
+
+**Date**: 2026-08-14
+**Task**: 修复并暂时禁用 Canvas Navigation
+**Branch**: `main`
+
+### Summary
+
+修复 Pan 速度、Touch handoff 与 cursor ownership；正常模式隐藏滑动日志，并以单一产品门禁暂时禁用 Touch/方向键平移。ARM64 Debug/Release 完整构建及测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e4ddd5c` | (see git log) |
+| `5c29821` | (see git log) |
+
+### Status
+
+[OK] **Completed**
