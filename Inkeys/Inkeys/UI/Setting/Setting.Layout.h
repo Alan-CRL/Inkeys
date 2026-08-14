@@ -11,6 +11,8 @@ namespace Inkeys::UI::Setting
 	inline constexpr float MinimumWidthDip = 720.0F;
 	inline constexpr float MinimumHeightDip = 520.0F;
 	inline constexpr float TitleBarHeightDip = 40.0F;
+	inline constexpr float TitleBarToggleHitWidthDip = 52.0F;
+	inline constexpr float PageMaximumWidthDip = 920.0F;
 
 	enum class NavigationLayout
 	{
@@ -58,6 +60,17 @@ namespace Inkeys::UI::Setting
 		if (widthDip >= 900.0F) return NavigationLayout::Open;
 		if (widthDip >= 760.0F) return NavigationLayout::Compact;
 		return NavigationLayout::Overlay;
+	}
+
+	[[nodiscard]] inline float ResolvePageWidth(
+		float availablePixels, float effectiveScale) noexcept
+	{
+		if (!std::isfinite(availablePixels) || availablePixels <= 0.0F)
+			return 0.0F;
+		const float scale = std::isfinite(effectiveScale) && effectiveScale > 0.0F
+			? effectiveScale : 1.0F;
+		const float maximumPixels = PageMaximumWidthDip * scale;
+		return availablePixels < maximumPixels ? availablePixels : maximumPixels;
 	}
 
 	[[nodiscard]] inline float ResolvePageTransitionProgress(

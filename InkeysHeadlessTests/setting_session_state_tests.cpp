@@ -43,6 +43,10 @@ int RunSettingSessionStateTests()
 		&& Inkeys::UI::Setting::ResolveNavigationLayout(1519.0F, 2.0F)
 		== NavigationLayout::Overlay,
 		"responsive breakpoints use logical DIP width")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::ResolvePageWidth(1400.0F, 1.0F) == 920.0F
+		&& Inkeys::UI::Setting::ResolvePageWidth(1400.0F, 1.5F) == 1380.0F
+		&& Inkeys::UI::Setting::ResolvePageWidth(800.0F, 2.0F) == 800.0F,
+		"page width caps at 920 DIP without expanding narrow content")) ++failures;
 	if (!Expect(Inkeys::UI::Setting::ResolvePageTransitionProgress(-0.01F) == 0.0F
 		&& std::abs(Inkeys::UI::Setting::ResolvePageTransitionProgress(0.08F) - 0.5F)
 		< 0.0001F

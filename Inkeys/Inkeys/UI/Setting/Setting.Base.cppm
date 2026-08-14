@@ -8,6 +8,7 @@ export module Inkeys.UI.Setting:Base;
 import Inkeys.UI.RenderPipeline;
 
 ImFont* ImFontMain = nullptr;
+ImFont* ImFontStrong = nullptr;
 struct SettingSignStruct
 {
 	int width;
@@ -134,58 +135,6 @@ void CleanupSettingTextures()
 	}
 }
 
-// 基础封装（历史遗留）
-void HelpMarker(const char* desc, ImVec4 tmp)
-{
-	if (!ImFontMain) return;
-	ImFontMain->Scale = 0.45f;
-	ImGui::PushFont(ImFontMain);
-	ImGui::TextColored(ImVec4(13 / 255.0f, 83 / 255.0f, 255 / 255.0f, 1.0f), "\ue90a");
-	ImGui::PopFont();
-
-	ImFontMain->Scale = 0.7f;
-	ImGui::PushFont(ImFontMain);
-	if (ImGui::IsItemHovered())
-	{
-		ImGui::PushStyleColor(ImGuiCol_PopupBg, IM_COL32(236, 241, 255, 200));
-		ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(175, 197, 255, 255));
-		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
-
-		ImGui::BeginTooltip();
-		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-		ImGui::TextUnformatted(desc);
-		ImGui::PopTextWrapPos();
-		ImGui::EndTooltip();
-
-		ImGui::PopStyleColor(3);
-		ImGui::PopStyleVar(1);
-	}
-	ImGui::PopFont();
-}
-void CenteredText(const char* desc, float displacement)
-{
-	float temp = ImGui::GetCursorPosY();
-	ImGui::SetCursorPosY(temp + displacement);
-	ImGui::TextUnformatted(desc);
-	ImGui::SetCursorPosY(temp);
-}
-void ScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
-{
-	ImGuiContext& g = *ImGui::GetCurrentContext();
-	ImGuiWindow* window = g.CurrentWindow;
-	bool hovered = false;
-	bool held = false;
-	ImGuiID id = window->GetID("##scrolldraggingoverlay");
-	ImGui::KeepAliveID(id);
-
-	ImGui::ButtonBehavior(window->Rect(), id, &hovered, &held, mouse_button);
-	if (!held && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseDown(mouse_button))
-		held = true;
-
-	if (held && delta.x != 0.0f) ImGui::SetScrollX(window, window->Scroll.x + delta.x);
-	if (held && delta.y != 0.0f) ImGui::SetScrollY(window, window->Scroll.y + delta.y);
-}
 bool LoadTextureFromMemory(const unsigned char* image_data, int width, int height, ID3D11ShaderResourceView** out_texture)
 {
 	if (!image_data || width <= 0 || height <= 0 || !out_texture || !g_pd3dDevice)
