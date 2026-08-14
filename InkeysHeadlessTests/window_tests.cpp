@@ -134,11 +134,12 @@ int RunWindowTests()
 
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
-	check((settingStyle & (WS_POPUP | WS_CLIPCHILDREN)) ==
-		(WS_POPUP | WS_CLIPCHILDREN)
-		&& (settingStyle & (WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
-			WS_MAXIMIZEBOX | WS_SYSMENU)) == 0,
-		"setting fixed borderless style");
+	check((settingStyle & (WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME
+		| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)) ==
+		(WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME
+			| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)
+		&& (settingStyle & WS_CAPTION) == 0,
+		"setting resizable client-title style");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");

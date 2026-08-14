@@ -1023,8 +1023,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 					scale = static_cast<double>(dpiX) / USER_DEFAULT_SCREEN_DPI;
 				}
 
-				// 限制范围 1.0 ~ 1.5
-				setlist.settingGlobalScale = static_cast<float>(clamp(scale, 1.0, 1.5));
+				// 系统 DPI 由 Setting 运行时单独计算，配置只保存用户倍率。
+				setlist.settingGlobalScale = 1.0F;
 			}
 		}
 
@@ -1351,7 +1351,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		settingSpec.y = SettingWindowY;
 		settingSpec.width = SettingWindowWidth;
 		settingSpec.height = SettingWindowHeight;
-		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN;
+		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME
+			| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
 		settingSpec.exStyle = WS_EX_APPWINDOW;
 		settingSpec.windowProc = Inkeys::UI::Setting::WindowProc();
 		settingSpec.largeIcon = applicationIcon;

@@ -165,7 +165,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -204,7 +204,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -244,7 +244,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -281,7 +281,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -320,7 +320,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -360,7 +360,7 @@
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\additional;.\additional\imgui;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -427,6 +427,9 @@
     <ClInclude Include="additional\imgui\imstb_rectpack.h" />
     <ClInclude Include="additional\imgui\imstb_textedit.h" />
     <ClInclude Include="additional\imgui\imstb_truetype.h" />
+    <ClInclude Include="additional\imfluent\imfluent.h" />
+    <ClInclude Include="additional\imfluent\imfluent_icons.h" />
+    <ClInclude Include="additional\imfluent\imfluent_internal.h" />
     <ClInclude Include="additional\stbimage\stb_image.h" />
     <ClInclude Include="additional\stbimage\stb_image_resize.h" />
     <ClInclude Include="additional\stbimage\stb_image_write.h" />
@@ -450,6 +453,8 @@
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
@@ -494,6 +499,7 @@
     <ClCompile Include="additional\imgui\imgui_toggle_presets.cpp" />
     <ClCompile Include="additional\imgui\imgui_toggle_renderer.cpp" />
     <ClCompile Include="additional\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="additional\imfluent\imfluent.cpp" />
     <ClCompile Include="additional\wintoastlib\wintoastlib.cpp" />
     <ClCompile Include="additional\ziputils\unzip.cpp" />
     <ClCompile Include="additional\ziputils\zip.cpp" />
@@ -633,7 +639,6 @@
     <Image Include="src\setting\Home2_en-US.png" />
     <Image Include="src\setting\Home2_zh-CN.png" />
     <Image Include="src\setting\Home2_zh-TW.png" />
-    <Image Include="src\setting\Home_Backgroung.png" />
     <Image Include="src\setting\Home_Feedback.png" />
     <Image Include="src\setting\Profile-picture.png" />
     <Image Include="src\setting\Profile_Picture.png" />
@@ -659,6 +664,8 @@
 	<None Include="IdtFloating.h" />
 	<None Include="IdtWindow.cpp" />
 	<None Include="IdtWindow.h" />
+	<None Include="additional\imfluent\LICENSE" />
+	<None Include="additional\imfluent\UPSTREAM.md" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />

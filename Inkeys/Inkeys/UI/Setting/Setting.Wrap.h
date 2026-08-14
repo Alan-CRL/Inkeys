@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../../../IdtMain.h"
+#include "Setting.Layout.h"
+#include "Setting.Theme.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_dx11.h"
@@ -13,6 +15,10 @@
 
 #include "imgui/imgui_toggle.h"
 #include "imgui/imgui_toggle_presets.h"
+#include "imfluent/imfluent.h"
+
+static_assert(IMGUI_VERSION_NUM == 19270,
+	"The vendored ImFluent snapshot is validated with Dear ImGui 1.92.7 only.");
 
 #include <d3d11.h>
 #include <dxgi.h>

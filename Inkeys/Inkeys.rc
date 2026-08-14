@@ -125,8 +125,6 @@ SIGN4                   PNG                     "src\\sign3.png"
 
 PROFILE_PICTURE         PNG                     "src\\setting\\Profile_Picture.png"
 
-HOME_BACKGROUNG         PNG                     "src\\setting\\Home_Backgroung.png"
-
 HOME_FEEDBACK           PNG                     "src\\setting\\Home_Feedback.png"
 
 PLUGINFLAG3             PNG                     "src\\PluginFlag3.png"

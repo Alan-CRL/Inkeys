@@ -1,5 +1,8 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.SessionState.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Theme.h"
 
+#include <cmath>
 #include <iostream>
 
 namespace
@@ -14,66 +17,130 @@ namespace
 int RunSettingSessionStateTests()
 {
 	using Inkeys::UI::Setting::SessionState;
+	using Inkeys::UI::Setting::NavigationLayout;
 	int failures = 0;
+
+	if (!Expect(Inkeys::UI::Setting::NormalizeUserScale(0.5F) == 1.0F
+		&& Inkeys::UI::Setting::NormalizeUserScale(2.5F) == 2.0F
+		&& Inkeys::UI::Setting::NormalizeUserScale(1.35F) == 1.35F,
+		"user scale clamps to the 1.0-2.0 contract")) ++failures;
+	if (!Expect(std::abs(Inkeys::UI::Setting::EffectiveScale(144U, 1.25F)
+		- 1.875F) < 0.0001F,
+		"effective scale multiplies system DPI and user scale")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::ResolveWindowExtent(960.0F, 1.5F, 1920)
+		== 1440
+		&& Inkeys::UI::Setting::ResolveWindowExtent(700.0F, 3.0F, 1776)
+		== 1776
+		&& Inkeys::UI::Setting::ResolveWindowExtent(700.0F, 3.0F, 0)
+		== 2100,
+		"default setting extent is capped by the monitor work area")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::ResolveNavigationLayout(1800.0F, 2.0F)
+		== NavigationLayout::Open
+		&& Inkeys::UI::Setting::ResolveNavigationLayout(1799.0F, 2.0F)
+		== NavigationLayout::Compact
+		&& Inkeys::UI::Setting::ResolveNavigationLayout(1520.0F, 2.0F)
+		== NavigationLayout::Compact
+		&& Inkeys::UI::Setting::ResolveNavigationLayout(1519.0F, 2.0F)
+		== NavigationLayout::Overlay,
+		"responsive breakpoints use logical DIP width")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::ResolvePageTransitionProgress(-0.01F) == 0.0F
+		&& std::abs(Inkeys::UI::Setting::ResolvePageTransitionProgress(0.08F) - 0.5F)
+		< 0.0001F
+		&& Inkeys::UI::Setting::ResolvePageTransitionProgress(0.16F) == 1.0F
+		&& Inkeys::UI::Setting::ResolvePageTransitionProgress(1.0F) == 1.0F,
+		"page transition stays within the 160ms bounds")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::ResolveThemeMode(false, true)
+		== Inkeys::UI::Setting::ThemeMode::Light
+		&& Inkeys::UI::Setting::ResolveThemeMode(false, false)
+		== Inkeys::UI::Setting::ThemeMode::Dark
+		&& Inkeys::UI::Setting::ResolveThemeMode(true, true)
+		== Inkeys::UI::Setting::ThemeMode::HighContrast,
+		"high contrast overrides the Windows app theme")) ++failures;
+
 	SessionState state;
 
-	auto decision = state.Resolve(1, false);
-	if (!Expect(!decision.release && !decision.rebuild && !decision.render,
-		"hidden state stays idle")) ++failures;
-
-	state.SetVisible(true);
-	decision = state.Resolve(1, false);
-	if (!Expect(decision.rebuild && decision.render,
-		"first visible frame rebuilds and renders")) ++failures;
+	auto decision = state.Resolve(1, false, false);
+	if (!Expect(decision.initializeResident && !decision.createPresentation
+		&& !decision.render, "hidden initialization builds resident resources"))
+		++failures;
 	state.CommitEpoch(1);
 
-	decision = state.Resolve(1, true);
-	if (!Expect(!decision.release && !decision.rebuild && decision.render,
+	state.SetVisible(true);
+	decision = state.Resolve(1, true, false);
+	if (!Expect(!decision.initializeResident && !decision.rebuildDeviceResources
+		&& decision.createPresentation
+		&& decision.render, "first visible frame creates presentation")) ++failures;
+
+	decision = state.Resolve(1, true, true);
+	if (!Expect(!decision.initializeResident && !decision.rebuildDeviceResources
+		&& !decision.releasePresentation && decision.render,
 		"stable visible session renders")) ++failures;
 
 	state.QueueResize(960, 700);
-	decision = state.Resolve(1, true);
+	decision = state.Resolve(1, true, true);
 	const auto firstResize = state.Resize();
 	if (!Expect(decision.resize && firstResize.width == 960
 		&& firstResize.height == 700, "resize is queued once")) ++failures;
 	state.ConsumeResize(firstResize.serial);
-	if (!Expect(!state.Resolve(1, true).resize, "resize clears after commit"))
+	if (!Expect(!state.Resolve(1, true, true).resize, "resize clears after commit"))
 		++failures;
 	state.QueueResize(1000, 720);
 	const auto staleResize = state.Resize();
 	state.QueueResize(1024, 768);
 	state.ConsumeResize(staleResize.serial);
-	if (!Expect(state.Resolve(1, true).resize
+	if (!Expect(state.Resolve(1, true, true).resize
 		&& state.Resize().width == 1024,
 		"new resize survives stale completion")) ++failures;
 	state.ConsumeResize(state.Resize().serial);
 
+	state.QueueFontRebuild();
+	decision = state.Resolve(1, true, true);
+	const auto fontSerial = state.FontRebuildSerial();
+	if (!Expect(decision.rebuildFonts,
+		"DPI or user scale change requests a font rebuild")) ++failures;
+	state.ConsumeFontRebuild(fontSerial);
+	if (!Expect(!state.Resolve(1, true, true).rebuildFonts,
+		"font rebuild is consumed once")) ++failures;
+
 	state.SetOccluded(true);
-	decision = state.Resolve(1, true);
+	decision = state.Resolve(1, true, true);
 	if (!Expect(decision.probeOcclusion && !decision.render,
 		"occlusion probes without rendering")) ++failures;
 	state.SetOccluded(false);
 
 	state.PublishBusinessCompletion(1, false);
-	decision = state.Resolve(1, true);
+	decision = state.Resolve(1, true, true);
 	const auto completion = state.BusinessCompletion();
 	if (!Expect(decision.consumeBusinessCompletion && completion.serial == 1
 		&& !completion.succeeded,
 		"business completion requests state consumption")) ++failures;
 	state.ConsumeBusinessCompletion(completion.serial);
-	if (!Expect(!state.Resolve(1, true).consumeBusinessCompletion,
+	if (!Expect(!state.Resolve(1, true, true).consumeBusinessCompletion,
 		"business completion is consumed once")) ++failures;
 
-	decision = state.Resolve(2, true);
-	if (!Expect(decision.release && decision.rebuild && decision.render,
-		"generation change releases and rebuilds")) ++failures;
-	state.Release();
+	decision = state.Resolve(2, true, true);
+	if (!Expect(!decision.initializeResident && decision.rebuildDeviceResources
+		&& decision.releasePresentation && decision.createPresentation
+		&& decision.render, "generation change rebuilds both layers")) ++failures;
+	state.ReleaseResident();
 	state.CommitEpoch(2);
 
 	state.SetVisible(false);
-	decision = state.Resolve(2, true);
-	if (!Expect(decision.release && !decision.rebuild && !decision.render,
-		"hide releases session and becomes idle")) ++failures;
+	decision = state.Resolve(2, true, true);
+	if (!Expect(!decision.initializeResident && !decision.rebuildDeviceResources
+		&& decision.releasePresentation && !decision.createPresentation
+		&& !decision.render, "hide keeps resident resources and becomes idle"))
+		++failures;
+	state.ReleasePresentation();
+	decision = state.Resolve(2, true, false);
+	if (!Expect(!decision.initializeResident && !decision.rebuildDeviceResources
+		&& !decision.createPresentation
+		&& !decision.render, "hidden resident session stays idle")) ++failures;
+
+	decision = state.Resolve(3, true, false);
+	if (!Expect(!decision.initializeResident && decision.rebuildDeviceResources
+		&& !decision.createPresentation && !decision.render,
+		"hidden generation change rebuilds resident resources")) ++failures;
 
 	using Inkeys::UI::Setting::IsSharedDeviceLoss;
 	if (!Expect(IsSharedDeviceLoss(DXGI_ERROR_DEVICE_REMOVED)

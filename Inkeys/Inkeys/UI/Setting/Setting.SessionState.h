@@ -28,8 +28,11 @@ namespace Inkeys::UI::Setting
 
 	struct SessionDecision
 	{
-		bool release = false;
-		bool rebuild = false;
+		bool initializeResident = false;
+		bool rebuildDeviceResources = false;
+		bool rebuildFonts = false;
+		bool releasePresentation = false;
+		bool createPresentation = false;
 		bool resize = false;
 		bool probeOcclusion = false;
 		bool render = false;
@@ -49,6 +52,7 @@ namespace Inkeys::UI::Setting
 			resizeWidth_ = width;
 			resizeHeight_ = height;
 		}
+		void QueueFontRebuild() noexcept { ++fontRebuildSerial_; }
 		void PublishBusinessCompletion(
 			std::uint64_t serial, bool succeeded = true) noexcept
 		{
@@ -57,14 +61,24 @@ namespace Inkeys::UI::Setting
 		}
 
 		[[nodiscard]] SessionDecision Resolve(
-			std::uint64_t epoch, bool hasSession) const noexcept
+			std::uint64_t epoch, bool hasResident,
+			bool hasPresentation) const noexcept
 		{
 			SessionDecision decision;
-			decision.release = hasSession && (!visible_ || (epoch_ && epoch_ != epoch));
-			decision.rebuild = visible_ && (!hasSession || decision.release);
-			decision.resize = visible_ && hasSession
+			const bool epochChanged = hasResident && epoch_ && epoch_ != epoch;
+			decision.initializeResident = !hasResident;
+			decision.rebuildDeviceResources = epochChanged;
+			decision.rebuildFonts = hasResident
+				&& fontRebuildSerial_ != consumedFontRebuildSerial_;
+			decision.releasePresentation = hasPresentation
+				&& (!visible_ || epochChanged);
+			decision.createPresentation = visible_
+				&& (!hasPresentation || decision.releasePresentation);
+			decision.resize = visible_ && hasPresentation
+				&& !decision.releasePresentation
 				&& resizeSerial_ != consumedResizeSerial_;
-			decision.probeOcclusion = visible_ && hasSession && occluded_;
+			decision.probeOcclusion = visible_ && hasPresentation
+				&& !decision.releasePresentation && occluded_;
 			decision.render = visible_ && !decision.probeOcclusion;
 			decision.consumeBusinessCompletion =
 				businessCompletion_ != consumedBusinessCompletion_;
@@ -81,6 +95,11 @@ namespace Inkeys::UI::Setting
 			return { businessCompletion_, businessSucceeded_ };
 		}
 
+		[[nodiscard]] std::uint64_t FontRebuildSerial() const noexcept
+		{
+			return fontRebuildSerial_;
+		}
+
 		void CommitEpoch(std::uint64_t epoch) noexcept
 		{
 			epoch_ = epoch;
@@ -92,6 +111,13 @@ namespace Inkeys::UI::Setting
 				consumedResizeSerial_ = serial;
 		}
 
+		void ConsumeFontRebuild(std::uint64_t serial) noexcept
+		{
+			if (serial > consumedFontRebuildSerial_
+				&& serial <= fontRebuildSerial_)
+				consumedFontRebuildSerial_ = serial;
+		}
+
 		void ConsumeBusinessCompletion(std::uint64_t serial) noexcept
 		{
 			if (serial > consumedBusinessCompletion_
@@ -99,11 +125,13 @@ namespace Inkeys::UI::Setting
 				consumedBusinessCompletion_ = serial;
 		}
 
-		void Release() noexcept
+		void ReleaseResident() noexcept
 		{
 			epoch_ = 0;
 			occluded_ = false;
 		}
+
+		void ReleasePresentation() noexcept { occluded_ = false; }
 
 	private:
 		bool visible_ = false;
@@ -113,6 +141,8 @@ namespace Inkeys::UI::Setting
 		std::uint64_t consumedBusinessCompletion_ = 0;
 		std::uint64_t resizeSerial_ = 0;
 		std::uint64_t consumedResizeSerial_ = 0;
+		std::uint64_t fontRebuildSerial_ = 0;
+		std::uint64_t consumedFontRebuildSerial_ = 0;
 		bool businessSucceeded_ = true;
 		std::uint32_t resizeWidth_ = 0;
 		std::uint32_t resizeHeight_ = 0;

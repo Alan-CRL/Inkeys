@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "Setting.Wrap.h"
 
@@ -13,40 +13,40 @@ namespace Widgets
 	{
 	public:
 		static constexpr ImU32 Transparent = IM_COL32(0, 0, 0, 0);
-		static constexpr ImU32 White = IM_COL32(255, 255, 255, 255);
-		static constexpr ImU32 WindowBackground = IM_COL32(243, 243, 243, 255);
-		static constexpr ImU32 CardBackground = IM_COL32(251, 251, 251, 255);
-		static constexpr ImU32 PopupBackground = White;
-		static constexpr ImU32 Divider = IM_COL32(229, 229, 229, 255);
-		static constexpr ImU32 WindowBorder = IM_COL32(189, 189, 189, 255);
-		static constexpr ImU32 ControlStroke = IM_COL32(0, 0, 0, 15);
+		static inline ImU32 White = IM_COL32(255, 255, 255, 255);
+		static inline ImU32 WindowBackground = IM_COL32(243, 243, 243, 255);
+		static inline ImU32 CardBackground = IM_COL32(251, 251, 251, 255);
+		static inline ImU32 PopupBackground = White;
+		static inline ImU32 Divider = IM_COL32(229, 229, 229, 255);
+		static inline ImU32 WindowBorder = IM_COL32(189, 189, 189, 255);
+		static inline ImU32 ControlStroke = IM_COL32(0, 0, 0, 15);
 
-		static constexpr ImU32 TextStrong = IM_COL32(0, 0, 0, 255);
-		static constexpr ImU32 TextPrimary = IM_COL32(0, 0, 0, 228);
-		static constexpr ImU32 TextSecondary = IM_COL32(120, 120, 120, 255);
-		static constexpr ImU32 TextDisabled = IM_COL32(0, 0, 0, 155);
-		static constexpr ImU32 TextOnAccent = White;
+		static inline ImU32 TextStrong = IM_COL32(0, 0, 0, 255);
+		static inline ImU32 TextPrimary = IM_COL32(0, 0, 0, 228);
+		static inline ImU32 TextSecondary = IM_COL32(120, 120, 120, 255);
+		static inline ImU32 TextDisabled = IM_COL32(0, 0, 0, 155);
+		static inline ImU32 TextOnAccent = White;
 
-		static constexpr ImU32 Accent = IM_COL32(0, 95, 184, 255);
-		static constexpr ImU32 AccentText = IM_COL32(0, 95, 183, 255);
-		static constexpr ImU32 AccentHovered = IM_COL32(0, 95, 184, 230);
-		static constexpr ImU32 AccentPressed = IM_COL32(0, 95, 184, 204);
-		static constexpr ImU32 Danger = IM_COL32(196, 43, 28, 255);
-		static constexpr ImU32 DangerPressed = IM_COL32(200, 60, 49, 255);
+		static inline ImU32 Accent = IM_COL32(0, 95, 184, 255);
+		static inline ImU32 AccentText = IM_COL32(0, 95, 183, 255);
+		static inline ImU32 AccentHovered = IM_COL32(0, 95, 184, 230);
+		static inline ImU32 AccentPressed = IM_COL32(0, 95, 184, 204);
+		static inline ImU32 Danger = IM_COL32(196, 43, 28, 255);
+		static inline ImU32 DangerPressed = IM_COL32(200, 60, 49, 255);
 		static constexpr ImU32 HeroFill = IM_COL32(236, 241, 255, 0);
 		static constexpr ImU32 HeroFillHovered = IM_COL32(236, 241, 255, 30);
 		static constexpr ImU32 HeroFillPressed = IM_COL32(236, 241, 255, 60);
-		static constexpr ImU32 WarningBackground = IM_COL32(255, 244, 206, 255);
-		static constexpr ImU32 WarningText = IM_COL32(157, 93, 0, 255);
-		static constexpr ImU32 DangerBackground = IM_COL32(253, 231, 233, 255);
-		static constexpr ImU32 SuccessBackground = IM_COL32(223, 246, 221, 255);
-		static constexpr ImU32 SuccessText = IM_COL32(15, 123, 15, 255);
+		static inline ImU32 WarningBackground = IM_COL32(255, 244, 206, 255);
+		static inline ImU32 WarningText = IM_COL32(157, 93, 0, 255);
+		static inline ImU32 DangerBackground = IM_COL32(253, 231, 233, 255);
+		static inline ImU32 SuccessBackground = IM_COL32(223, 246, 221, 255);
+		static inline ImU32 SuccessText = IM_COL32(15, 123, 15, 255);
 
-		static constexpr ImU32 ControlFill = IM_COL32(255, 255, 255, 179);
-		static constexpr ImU32 ControlFillHovered = IM_COL32(249, 249, 249, 128);
-		static constexpr ImU32 ControlFillPressed = IM_COL32(249, 249, 249, 77);
-		static constexpr ImU32 SubtleFill = IM_COL32(0, 0, 0, 10);
-		static constexpr ImU32 SubtleFillPressed = IM_COL32(0, 0, 0, 6);
+		static inline ImU32 ControlFill = IM_COL32(255, 255, 255, 179);
+		static inline ImU32 ControlFillHovered = IM_COL32(249, 249, 249, 128);
+		static inline ImU32 ControlFillPressed = IM_COL32(249, 249, 249, 77);
+		static inline ImU32 SubtleFill = IM_COL32(0, 0, 0, 10);
+		static inline ImU32 SubtleFillPressed = IM_COL32(0, 0, 0, 6);
 	};
 
 	class StyleClass

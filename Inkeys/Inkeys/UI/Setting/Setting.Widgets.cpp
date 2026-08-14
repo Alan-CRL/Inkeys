@@ -52,6 +52,35 @@ namespace Widgets
 
 	void StyleClass::ApplyGlobal(float scrollbarWidth) const
 	{
+		auto color = [](ImFluentCol index)
+			{ return ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[index]); };
+		FluentColor::White = color(ImFluentCol_LayerFillAlt);
+		FluentColor::WindowBackground = color(ImFluentCol_SolidBgBase);
+		FluentColor::CardBackground = color(ImFluentCol_CardBgDefault);
+		FluentColor::PopupBackground = color(ImFluentCol_LayerFillAlt);
+		FluentColor::Divider = color(ImFluentCol_DividerStrokeDefault);
+		FluentColor::WindowBorder = color(ImFluentCol_SurfaceStrokeDefault);
+		FluentColor::ControlStroke = color(ImFluentCol_ControlStrokeDefault);
+		FluentColor::TextStrong = color(ImFluentCol_TextPrimary);
+		FluentColor::TextPrimary = color(ImFluentCol_TextPrimary);
+		FluentColor::TextSecondary = color(ImFluentCol_TextSecondary);
+		FluentColor::TextDisabled = color(ImFluentCol_TextDisabled);
+		FluentColor::TextOnAccent = color(ImFluentCol_TextOnAccentPrimary);
+		FluentColor::Accent = color(ImFluentCol_AccentFillDefault);
+		FluentColor::AccentText = color(ImFluentCol_AccentTextPrimary);
+		FluentColor::AccentHovered = color(ImFluentCol_AccentFillSecondary);
+		FluentColor::AccentPressed = color(ImFluentCol_AccentFillTertiary);
+		FluentColor::Danger = color(ImFluentCol_SystemFillCritical);
+		FluentColor::WarningBackground = color(ImFluentCol_CardBgDefault);
+		FluentColor::WarningText = color(ImFluentCol_SystemFillCaution);
+		FluentColor::DangerBackground = color(ImFluentCol_CardBgDefault);
+		FluentColor::SuccessBackground = color(ImFluentCol_CardBgDefault);
+		FluentColor::SuccessText = color(ImFluentCol_SystemFillSuccess);
+		FluentColor::ControlFill = color(ImFluentCol_ControlFillDefault);
+		FluentColor::ControlFillHovered = color(ImFluentCol_ControlFillSecondary);
+		FluentColor::ControlFillPressed = color(ImFluentCol_ControlFillTertiary);
+		FluentColor::SubtleFill = color(ImFluentCol_SubtleFillSecondary);
+		FluentColor::SubtleFillPressed = color(ImFluentCol_SubtleFillTertiary);
 		ImGuiStyle& imguiStyle = ImGui::GetStyle();
 		imguiStyle.Colors[ImGuiCol_WindowBg] = ImGui::ColorConvertU32ToFloat4(FluentColor::WindowBackground);
 		imguiStyle.Colors[ImGuiCol_ChildBg] = ImGui::ColorConvertU32ToFloat4(FluentColor::CardBackground);
@@ -76,68 +105,35 @@ namespace Widgets
 	bool ToggleClass::ToggleBool(const char* label, bool* state) const
 	{
 		if (!state) return false;
-
-		ImGuiToggleConfig config;
-		config.Size = { 40.0f * settingGlobalScale, 20.0f * settingGlobalScale };
-		config.Flags = ImGuiToggleFlags_Animated | ImGuiToggleFlags_ShadowedFrame;
-
-		// 开关轨道、滑块和文字颜色成组压入，避免调用处重复维护样式栈。
-		ImGui::PushStyleColor(ImGuiCol_FrameBg, FluentColor::SubtleFillPressed);
-		ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, FluentColor::ControlStroke);
-		ImGui::PushStyleColor(ImGuiCol_Button, FluentColor::Accent);
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::AccentHovered);
-		ImGui::PushStyleColor(ImGuiCol_Text, *state ? FluentColor::TextOnAccent : FluentColor::TextDisabled);
-		ImGui::PushStyleColor(ImGuiCol_BorderShadow, *state ? FluentColor::Accent : FluentColor::TextDisabled);
-
-		const bool changed = ImGui::Toggle(label, state, config);
-		PopControlStyle(6);
-		return changed;
+		return ImFluent::ToggleSwitch(label, state, "", "");
 	}
 	ToggleClass toggle;
 
 	bool ButtonClass::Standard(const char* label, const ImVec2& size, ImU32 textColor) const
 	{
-		PushStandardControlColors(textColor);
-		const bool clicked = ImGui::Button(label, size);
-		PopControlStyle(5);
+		if (textColor != FluentColor::TextPrimary)
+			ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+		const bool clicked = ImFluent::Button(label, size);
+		if (textColor != FluentColor::TextPrimary) ImGui::PopStyleColor();
 		return clicked;
 	}
 
 	bool ButtonClass::Navigation(const char* label, const ImVec2& size, bool selected, ImU32 textColor, const ImVec2& alignment) const
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, selected ? FluentColor::SubtleFill : FluentColor::Transparent);
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::SubtleFill);
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive, selected ? FluentColor::SubtleFill : FluentColor::SubtleFillPressed);
-		ImGui::PushStyleColor(ImGuiCol_Text, textColor);
-		ImGui::PushStyleColor(ImGuiCol_Border, FluentColor::Transparent);
-		ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, alignment);
-
-		const bool clicked = ImGui::Button(label, size);
-		PopControlStyle(5, 1);
+		(void)size;
+		(void)alignment;
+		if (textColor != FluentColor::TextPrimary)
+			ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+		const bool clicked = ImFluent::NavItem(label, selected);
+		if (textColor != FluentColor::TextPrimary) ImGui::PopStyleColor();
 		return clicked;
 	}
 
 	bool ButtonClass::AccentToggle(const char* label, const ImVec2& size, bool selected) const
 	{
-		if (selected)
-		{
-			ImGui::PushStyleColor(ImGuiCol_Button, FluentColor::Accent);
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::AccentHovered);
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, FluentColor::AccentPressed);
-			ImGui::PushStyleColor(ImGuiCol_Text, FluentColor::TextOnAccent);
-		}
-		else
-		{
-			ImGui::PushStyleColor(ImGuiCol_Button, FluentColor::ControlFill);
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, FluentColor::ControlFillHovered);
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, FluentColor::ControlFillPressed);
-			ImGui::PushStyleColor(ImGuiCol_Text, FluentColor::TextPrimary);
-		}
-		ImGui::PushStyleColor(ImGuiCol_Border, FluentColor::ControlStroke);
-
-		const bool clicked = ImGui::Button(label, size);
-		PopControlStyle(5);
-		return clicked;
+		return selected
+			? ImFluent::AccentButton(label, size)
+			: ImFluent::Button(label, size);
 	}
 
 	bool ButtonClass::HeroIcon(const char* label, const ImVec2& size) const
@@ -196,18 +192,14 @@ namespace Widgets
 
 	bool SliderClass::Float(const char* label, float* value, float minValue, float maxValue, const char* format) const
 	{
-		PushSliderColors();
-		const bool changed = ImGui::SliderFloat(label, value, minValue, maxValue, format);
-		PopControlStyle(6, 1);
-		return changed;
+		return ImFluent::Slider(label, value, minValue, maxValue,
+			format && *format ? format : "%.2f");
 	}
 
 	bool SliderClass::Int(const char* label, int* value, int minValue, int maxValue, const char* format) const
 	{
-		PushSliderColors();
-		const bool changed = ImGui::SliderInt(label, value, minValue, maxValue, format);
-		PopControlStyle(6, 1);
-		return changed;
+		return ImFluent::SliderInt(label, value, minValue, maxValue,
+			format && *format ? format : "%d");
 	}
 	SliderClass slider;
 

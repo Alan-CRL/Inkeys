@@ -22,6 +22,9 @@
     <Filter Include="头文件\Additional\Imgui">
       <UniqueIdentifier>{001e6116-1c4e-4fd0-9487-bb5936347151}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Additional\ImFluent">
+      <UniqueIdentifier>{26a34aed-8d70-4e90-b560-d7e04b2049c7}</UniqueIdentifier>
+    </Filter>
     <Filter Include="头文件\Additional\StbImage">
       <UniqueIdentifier>{d6e10050-a0f3-411f-ab59-e865236ce23f}</UniqueIdentifier>
     </Filter>
@@ -267,6 +270,15 @@
     <ClInclude Include="additional\imgui\imstb_truetype.h">
       <Filter>头文件\Additional\Imgui</Filter>
     </ClInclude>
+    <ClInclude Include="additional\imfluent\imfluent.h">
+      <Filter>头文件\Additional\ImFluent</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imfluent\imfluent_icons.h">
+      <Filter>头文件\Additional\ImFluent</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imfluent\imfluent_internal.h">
+      <Filter>头文件\Additional\ImFluent</Filter>
+    </ClInclude>
     <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -283,6 +295,12 @@
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Graphics\Surface.Core.hpp">
@@ -424,6 +442,9 @@
     </ClCompile>
     <ClCompile Include="additional\imgui\imgui_widgets.cpp">
       <Filter>头文件\Additional\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imfluent\imfluent.cpp">
+      <Filter>头文件\Additional\ImFluent</Filter>
     </ClCompile>
     <ClCompile Include="ExtraInclude.cpp">
       <Filter>源文件</Filter>
@@ -819,9 +840,6 @@
     <Image Include="src\setting\Community-picture.png">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="src\setting\Home_Backgroung.png">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="src\setting\Home_Feedback.png">
       <Filter>资源文件</Filter>
     </Image>
@@ -985,6 +1003,12 @@
     </None>
     <None Include="IdtWindow.h">
       <Filter>头文件</Filter>
+    </None>
+    <None Include="additional\imfluent\LICENSE">
+      <Filter>头文件\Additional\ImFluent</Filter>
+    </None>
+    <None Include="additional\imfluent\UPSTREAM.md">
+      <Filter>头文件\Additional\ImFluent</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

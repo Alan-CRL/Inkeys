@@ -2,6 +2,11 @@ module;
 
 #include "Setting.Wrap.h"
 
+// ImFluent 使用 imgui_internal.h，升级 Dear ImGui 时必须同步验证固定快照。
+#if IMGUI_VERSION_NUM != 19270
+#error "Inkeys Setting requires Dear ImGui 1.92.7 (IMGUI_VERSION_NUM == 19270)"
+#endif
+
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
@@ -21,11 +26,13 @@ module;
 
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <dwmapi.h>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
 #include <mutex>
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "dwmapi.lib")
 
 module Inkeys.UI.Setting;
 
@@ -62,11 +69,116 @@ namespace
 	mutex settingDrainMutex;
 	condition_variable settingDrainCondition;
 	bool settingSessionDrained = true;
+	mutex settingInitializeMutex;
+	condition_variable settingInitializeCondition;
+	bool settingInitializeCompleted = false;
+	bool settingInitializeSucceeded = false;
+	atomic<uint64_t> settingThemeSerial = 1;
+	uint64_t settingConsumedThemeSerial = 0;
 	FrameContext settingFrameContext;
 	FrameResult settingFrameResult = FrameResult::Idle;
 	uint64_t settingSessionEpoch = 0;
 	Inkeys::UI::Setting::SessionState settingSessionState;
 	Inkeys::UI::Setting::BusinessCompletionSnapshot settingLastBusinessCompletion;
+
+	[[nodiscard]] UINT QuerySettingDpi(HWND hwnd) noexcept
+	{
+		using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+		static const auto getDpiForWindow = reinterpret_cast<GetDpiForWindowProc>(
+			GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+		const UINT dpi = getDpiForWindow && hwnd ? getDpiForWindow(hwnd) : 0;
+		if (dpi) return dpi;
+		HDC screen = GetDC(nullptr);
+		const UINT fallback = screen
+			? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : USER_DEFAULT_SCREEN_DPI;
+		if (screen) ReleaseDC(nullptr, screen);
+		return fallback ? fallback : USER_DEFAULT_SCREEN_DPI;
+	}
+
+	void UpdateSettingScale(UINT dpi) noexcept
+	{
+		settingUserScale = Inkeys::UI::Setting::NormalizeUserScale(
+			setlist.settingGlobalScale);
+		settingSystemDpiScale = Inkeys::UI::Setting::DpiScale(dpi);
+		settingGlobalScale = settingSystemDpiScale * settingUserScale;
+	}
+
+	[[nodiscard]] bool QueryAppsUseLightTheme() noexcept
+	{
+		DWORD value = 1;
+		DWORD size = sizeof(value);
+		RegGetValueW(HKEY_CURRENT_USER,
+			L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+			L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
+		return value != 0;
+	}
+
+	[[nodiscard]] ImFluentThemePreset QuerySystemTheme() noexcept
+	{
+		HIGHCONTRASTW contrast{ sizeof(contrast) };
+		const bool highContrast = SystemParametersInfoW(SPI_GETHIGHCONTRAST,
+			sizeof(contrast), &contrast, 0)
+			&& (contrast.dwFlags & HCF_HIGHCONTRASTON);
+		switch (Inkeys::UI::Setting::ResolveThemeMode(
+			highContrast, QueryAppsUseLightTheme()))
+		{
+		case Inkeys::UI::Setting::ThemeMode::HighContrast:
+			return ImFluentThemePreset_HighContrast;
+		case Inkeys::UI::Setting::ThemeMode::Dark:
+			return ImFluentThemePreset_Dark;
+		default:
+			return ImFluentThemePreset_Light;
+		}
+	}
+
+	void ApplySystemTheme(HWND hwnd) noexcept
+	{
+		const ImFluentThemePreset preset = QuerySystemTheme();
+		ImFluent::SetThemePreset(preset);
+		// 最小客户区仍需完整容纳全部路由；宽度由响应式模式另行控制。
+		ImFluent::GetStyle().NavItemHeight = 36.0F;
+		Widgets::style.ApplyGlobal(12.0F);
+		const BOOL darkFrame = preset == ImFluentThemePreset_Dark;
+		if (hwnd)
+			DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+				&darkFrame, sizeof(darkFrame));
+	}
+
+	[[nodiscard]] LRESULT HitTestSettingWindow(HWND hwnd, LPARAM lParam) noexcept
+	{
+		RECT bounds{};
+		if (!GetWindowRect(hwnd, &bounds)) return HTCLIENT;
+		const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		const int border = max(4, Inkeys::UI::Setting::ScaleDip(8.0F,
+			settingSystemDpiScale));
+		if (!IsZoomed(hwnd))
+		{
+			const bool left = point.x < bounds.left + border;
+			const bool right = point.x >= bounds.right - border;
+			const bool top = point.y < bounds.top + border;
+			const bool bottom = point.y >= bounds.bottom - border;
+			if (top && left) return HTTOPLEFT;
+			if (top && right) return HTTOPRIGHT;
+			if (bottom && left) return HTBOTTOMLEFT;
+			if (bottom && right) return HTBOTTOMRIGHT;
+			if (left) return HTLEFT;
+			if (right) return HTRIGHT;
+			if (top) return HTTOP;
+			if (bottom) return HTBOTTOM;
+		}
+
+		const int titleHeight = Inkeys::UI::Setting::ScaleDip(
+			Inkeys::UI::Setting::TitleBarHeightDip, settingGlobalScale);
+		const int buttonWidth = Inkeys::UI::Setting::ScaleDip(46.0F, settingGlobalScale);
+		if (point.y < bounds.top + titleHeight)
+		{
+			if (point.x >= bounds.right - buttonWidth) return HTCLOSE;
+			if (point.x >= bounds.right - buttonWidth * 2) return HTMAXBUTTON;
+			if (point.x >= bounds.right - buttonWidth * 3) return HTMINBUTTON;
+			return HTCAPTION;
+		}
+		return HTCLIENT;
+	}
 
 	enum class SettingBusinessKind
 	{
@@ -535,19 +647,77 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	switch (msg)
 	{
+	case WM_NCCALCSIZE:
+		// 保留可缩放窗口样式，只把标题栏和边框绘制交给 ImGui。
+		if (wParam) return 0;
+		break;
+	case WM_NCHITTEST:
+	{
+		return HitTestSettingWindow(hWnd, lParam);
+	}
 	case WM_GETMINMAXINFO:
 	{
 		auto* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
 		if (!minMaxInfo) return 0;
-		// Setting 是固定尺寸无框窗口，系统命令也不得改变其大小。
-		minMaxInfo->ptMinTrackSize = { SettingWindowWidth, SettingWindowHeight };
-		minMaxInfo->ptMaxTrackSize = { SettingWindowWidth, SettingWindowHeight };
+		int minimumWidth = Inkeys::UI::Setting::ScaleDip(
+			Inkeys::UI::Setting::MinimumWidthDip, settingGlobalScale);
+		int minimumHeight = Inkeys::UI::Setting::ScaleDip(
+			Inkeys::UI::Setting::MinimumHeightDip, settingGlobalScale);
+		if (const HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST))
+		{
+			MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+			if (GetMonitorInfoW(monitor, &monitorInfo))
+			{
+				const int workWidth = monitorInfo.rcWork.right
+					- monitorInfo.rcWork.left;
+				const int workHeight = monitorInfo.rcWork.bottom
+					- monitorInfo.rcWork.top;
+				minimumWidth = Inkeys::UI::Setting::ResolveWindowExtent(
+					Inkeys::UI::Setting::MinimumWidthDip,
+					settingGlobalScale, workWidth);
+				minimumHeight = Inkeys::UI::Setting::ResolveWindowExtent(
+					Inkeys::UI::Setting::MinimumHeightDip,
+					settingGlobalScale, workHeight);
+				minMaxInfo->ptMaxPosition = {
+					monitorInfo.rcWork.left - monitorInfo.rcMonitor.left,
+					monitorInfo.rcWork.top - monitorInfo.rcMonitor.top };
+				minMaxInfo->ptMaxSize = {
+					workWidth, workHeight };
+			}
+		}
+		minMaxInfo->ptMinTrackSize = { minimumWidth, minimumHeight };
 		return 0;
 	}
+	case WM_DPICHANGED:
+	{
+		UpdateSettingScale(LOWORD(wParam));
+		{
+			lock_guard stateLock(settingStateMutex);
+			// DPI 变化只请求字体图集重建，普通窗口缩放不触碰字体资源。
+			settingSessionState.QueueFontRebuild();
+		}
+		const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+		if (suggested)
+		{
+			SetWindowPos(hWnd, nullptr, suggested->left, suggested->top,
+				suggested->right - suggested->left,
+				suggested->bottom - suggested->top,
+				SWP_NOZORDER | SWP_NOACTIVATE);
+		}
+		return 0;
+	}
+	case WM_THEMECHANGED:
+	case WM_SETTINGCHANGE:
+		settingThemeSerial.fetch_add(1, memory_order_release);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		break;
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
 		{
+			SettingWindowWidth = static_cast<int>(LOWORD(lParam));
+			SettingWindowHeight = static_cast<int>(HIWORD(lParam));
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.QueueResize(
 				static_cast<UINT>(LOWORD(lParam)),
@@ -595,14 +765,103 @@ void SettingWindowBegin()
 {
 	// 尺寸计算
 	{
-		//settingGlobalScale = min((float)MainMonitor.MonitorWidth / 1920.0f, (float)MainMonitor.MonitorHeight / 1080.0f);
-		settingGlobalScale = setlist.settingGlobalScale;
-
-		SettingWindowWidth = 960 * settingGlobalScale;
-		SettingWindowHeight = 700 * settingGlobalScale;
-		SettingWindowX = max(0, (MainMonitor.MonitorWidth - SettingWindowWidth) / 2);
-		SettingWindowY = max(0, (MainMonitor.MonitorHeight - SettingWindowHeight) / 2);
+		UpdateSettingScale(QuerySettingDpi(nullptr));
+		RECT workArea{ 0, 0, MainMonitor.MonitorWidth, MainMonitor.MonitorHeight };
+		(void)SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
+		const int rawWorkWidth = static_cast<int>(workArea.right - workArea.left);
+		const int rawWorkHeight = static_cast<int>(workArea.bottom - workArea.top);
+		const int workWidth = rawWorkWidth > 1 ? rawWorkWidth : 1;
+		const int workHeight = rawWorkHeight > 1 ? rawWorkHeight : 1;
+		// 高 DPI 叠加用户倍率时，启动窗口仍需完整落在工作区内。
+		SettingWindowWidth = Inkeys::UI::Setting::ResolveWindowExtent(
+			Inkeys::UI::Setting::DefaultWidthDip, settingGlobalScale, workWidth);
+		SettingWindowHeight = Inkeys::UI::Setting::ResolveWindowExtent(
+			Inkeys::UI::Setting::DefaultHeightDip, settingGlobalScale, workHeight);
+		SettingWindowX = workArea.left + max(0,
+			(workWidth - SettingWindowWidth) / 2);
+		SettingWindowY = workArea.top + max(0,
+			(workHeight - SettingWindowHeight) / 2);
 	}
+}
+
+[[nodiscard]] bool AddSettingFontResource(UINT resourceId, float size,
+	ImFontConfig* config, ImFont** result = nullptr)
+{
+	HMODULE module = GetModuleHandleW(nullptr);
+	HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(resourceId), L"TTF");
+	if (!resource) return false;
+	HGLOBAL loaded = LoadResource(module, resource);
+	void* data = loaded ? LockResource(loaded) : nullptr;
+	const DWORD dataSize = SizeofResource(module, resource);
+	if (!data || !dataSize) return false;
+	ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+		data, dataSize, size, config);
+	if (result) *result = font;
+	return font != nullptr;
+}
+
+[[nodiscard]] bool RebuildSettingFonts()
+{
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+	ImFontMain = nullptr;
+	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
+
+	ImFontConfig textConfig;
+	textConfig.OversampleH = 1;
+	textConfig.OversampleV = 1;
+	textConfig.RasterizerDensity = settingGlobalScale;
+	textConfig.FontDataOwnedByAtlas = false;
+	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
+	textConfig.GlyphExcludeRanges = excludedGlyphs;
+	const UINT primaryResource = I18n::isIdentifying(L"zh-TW") ? 258U : 198U;
+	if (!AddSettingFontResource(primaryResource, 30.0F,
+		&textConfig, &ImFontMain))
+		return false;
+
+	if (I18n::isIdentifying(L"zh-TW"))
+	{
+		// 繁体字库后合并简体字形，保持单一文本字体入口。
+		textConfig.MergeMode = true;
+		if (!AddSettingFontResource(198U, 30.0F,
+			&textConfig, &ImFontMain))
+			return false;
+	}
+
+	ImFontConfig iconConfig;
+	iconConfig.OversampleH = 1;
+	iconConfig.OversampleV = 1;
+	iconConfig.RasterizerDensity = settingGlobalScale;
+	iconConfig.FontDataOwnedByAtlas = false;
+	iconConfig.GlyphOffset.y = 10.0F;
+	iconConfig.PixelSnapH = true;
+	iconConfig.MergeMode = true;
+	if (!AddSettingFontResource(257U, 36.0F,
+		&iconConfig, &ImFontMain))
+		return false;
+	iconConfig.GlyphOffset.y = 4.0F;
+	if (!AddSettingFontResource(262U, 32.0F,
+		&iconConfig, &ImFontMain))
+		return false;
+
+	io.FontDefault = ImFontMain;
+	// ImFluent 只绑定项目内嵌字体，文字层级仍使用 DIP 尺寸。
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Caption,
+		ImFontMain, 12.0F);
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body,
+		ImFontMain, 14.0F);
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong,
+		ImFontMain, 14.0F);
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Subtitle,
+		ImFontMain, 20.0F);
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Title,
+		ImFontMain, 28.0F);
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_TitleLarge,
+		ImFontMain, 36.0F);
+	ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Display,
+		ImFontMain, 64.0F);
+	// Initialize/隐藏态重建都必须先完成 atlas，Show 不承担字体工作。
+	return io.Fonts->Build();
 }
 
 SettingSessionCoroutine RunSettingSession()
@@ -645,23 +904,25 @@ SettingSessionCoroutine RunSettingSession()
 			setlist.enableAutoUpdate = enable;
 		};
 	// Win11 风格滚动条使用较窄视觉宽度，条目宽度由内容区反推，避免文字空间被压缩。
-	constexpr float settingContentPanelWidth = 780.0f;
-	constexpr float settingWin11ScrollbarWidth = 12.0f;
-	constexpr float settingContentRightGap = 10.0f;
-	constexpr float settingItemWidth = settingContentPanelWidth - settingWin11ScrollbarWidth - settingContentRightGap;
-	constexpr float settingRightComboX = settingItemWidth - 220.0f;
-	constexpr float settingRightToggleX = settingItemWidth - 60.0f;
-	constexpr float settingRightButtonX = settingItemWidth - 120.0f;
-	constexpr float settingRightButtonPairLeftX = settingRightButtonX - 105.0f;
-	constexpr float settingDescriptionWidth = settingItemWidth - 40.0f;
-	constexpr float settingPromptWidth = settingItemWidth - 80.0f;
-	constexpr float settingDescriptionBeforeComboWidth = settingRightComboX - 20.0f;
-	constexpr float settingPromptBeforeButtonWidth = settingRightButtonX - 70.0f;
+	float settingContentOriginX = 170.0F;
+	float settingContentPanelWidth = 780.0F;
+	float settingContentPanelHeight = 608.0F;
+	constexpr float settingWin11ScrollbarWidth = 12.0F;
+	constexpr float settingContentRightGap = 10.0F;
+	float settingItemWidth = 758.0F;
+	float settingRightComboX = 538.0F;
+	float settingRightToggleX = 698.0F;
+	float settingRightButtonX = 638.0F;
+	float settingRightButtonPairLeftX = 533.0F;
+	float settingDescriptionWidth = 718.0F;
+	float settingPromptWidth = 678.0F;
+	float settingDescriptionBeforeComboWidth = 518.0F;
+	float settingPromptBeforeButtonWidth = 568.0F;
 
 	{
-		if (!CreateDeviceD3D(setting_window, settingFrameContext.epoch))
+		if (!AcquireDeviceLease(settingFrameContext.epoch))
 		{
-			if (IDTLogger) IDTLogger->error("[Setting] 创建共享 D3D11 设置窗口会话失败");
+			if (IDTLogger) IDTLogger->error("[Setting] 获取共享 D3D11 设置资源失败");
 			CleanupDeviceD3D();
 			settingFrameResult = FrameResult::Retry;
 			co_return;
@@ -708,7 +969,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[1]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 
 					if (I18n::isIdentifying(L"zh-CN")) LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home2_zh-CN", 770 * settingGlobalScale, 390 * settingGlobalScale);
@@ -745,7 +1006,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[2]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag1", 30 * settingGlobalScale, 30 * settingGlobalScale);
@@ -780,7 +1041,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[5]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag2", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
@@ -814,7 +1075,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[6]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag3", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
@@ -848,7 +1109,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[8]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"PluginFlag4", 30 * settingGlobalScale, 30 * settingGlobalScale);
 					{
@@ -882,43 +1143,9 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[10]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 
-					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home_Backgroung", 980 * settingGlobalScale, 768 * settingGlobalScale);
-					{
-						int width = settingSign[4].width = SettingSign.width();
-						int height = settingSign[4].height = SettingSign.height();
-						auto* pMem = SettingSign.pixels().data();
-
-						unsigned char* data = new unsigned char[width * height * 4];
-						for (int y = 0; y < height; ++y)
-						{
-							for (int x = 0; x < width; ++x)
-							{
-								DWORD color = pMem[y * width + x];
-								unsigned char alpha = (color & 0xFF000000) >> 24;
-								if (alpha != 0)
-								{
-									data[(y * width + x) * 4 + 0] = unsigned char(((color & 0x000000FF) >> 0) * 255 / alpha);
-									data[(y * width + x) * 4 + 1] = unsigned char(((color & 0x0000FF00) >> 8) * 255 / alpha);
-									data[(y * width + x) * 4 + 2] = unsigned char(((color & 0x00FF0000) >> 16) * 255 / alpha);
-								}
-								else
-								{
-									data[(y * width + x) * 4 + 0] = 0;
-									data[(y * width + x) * 4 + 1] = 0;
-									data[(y * width + x) * 4 + 2] = 0;
-								}
-								data[(y * width + x) * 4 + 3] = alpha;
-							}
-						}
-
-						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[4]);
-						delete[] data;
-
-						IM_ASSERT(ret);
-					}
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Profile_Picture", 45 * settingGlobalScale, 45 * settingGlobalScale);
 					{
 						int width = settingSign[3].width = SettingSign.width();
@@ -951,7 +1178,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[3]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"Home_Feedback", 100 * settingGlobalScale, 100 * settingGlobalScale);
 					{
@@ -985,7 +1212,7 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[7]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 
 					LoadSurfaceFromResource(&SettingSign, L"PNG", L"SettingSponsor", 650 * settingGlobalScale, 460 * settingGlobalScale);
@@ -1020,9 +1247,20 @@ SettingSessionCoroutine RunSettingSession()
 						bool ret = LoadTextureFromMemory(data, width, height, &TextureSettingSign[9]);
 						delete[] data;
 
-						IM_ASSERT(ret);
+						(void)ret;
 					}
 				}
+			}
+			constexpr size_t requiredTextureIndexes[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10 };
+			if (ranges::any_of(requiredTextureIndexes,
+				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
+			{
+				if (IDTLogger) IDTLogger->error("[Setting] 静态图片 resident 预热失败");
+				CleanupSettingTextures();
+				CleanupSettingTextureCache();
+				CleanupDeviceD3D();
+				settingFrameResult = FrameResult::Retry;
+				co_return;
 			}
 		}
 
@@ -1035,116 +1273,27 @@ SettingSessionCoroutine RunSettingSession()
 
 		ImGui::StyleColorsLight();
 
-		ImGui_ImplWin32_Init(setting_window);
-		ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
-
+		const bool win32BackendInitialized = ImGui_ImplWin32_Init(setting_window);
+		const bool dx11BackendInitialized = win32BackendInitialized
+			&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+		if (!dx11BackendInitialized || !RebuildSettingFonts()
+			|| !ImGui_ImplDX11_CreateDeviceObjects())
 		{
-			ImFontConfig font_cfg;
-			font_cfg.OversampleH = 1;
-			font_cfg.OversampleV = 1;
-			font_cfg.FontDataOwnedByAtlas = false;
-			font_cfg.MergeMode = false;
-
-			ImWchar exclude_ranges[] = { 0xe81e, 0xe81e, 0 };
-			font_cfg.GlyphExcludeRanges = exclude_ranges;
-
-			{
-				HRSRC hRes;
-				if (I18n::isIdentifying(L"zh-TW")) hRes = FindResource(NULL, MAKEINTRESOURCE(258), L"TTF");
-				else hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-				HGLOBAL hMem = LoadResource(NULL, hRes);
-				void* pLock = LockResource(hMem);
-				DWORD dwSize = SizeofResource(NULL, hRes);
-
-				ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg);
-			}
-			if (I18n::isIdentifying(L"zh-TW"))
-			{
-				// 补充简化字
-				HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(198), L"TTF");
-				HGLOBAL hMem = LoadResource(NULL, hRes);
-				void* pLock = LockResource(hMem);
-				DWORD dwSize = SizeofResource(NULL, hRes);
-
-				ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 30.0f * settingGlobalScale, &font_cfg);
-			}
-			// 字体自身偏小，假设是 28px 字高
-		}
-		{
-			//ImWchar icons_ranges[] =
-			//{
-			//	0xe713, 0xe713, // 设置
-			//	0xe8bb, 0xe8bb, // 关闭
-			//	0xe72b, 0xe72b, // 返回
-
-			//	0xf167, 0xf167, // 信息
-			//	0xec61, 0xec61, // 完成
-			//	0xe814, 0xe814, // 警告
-			//	0xeb90, 0xeb90, // 错误
-
-			//	0xe80f, 0xe80f, // 主页
-			//	0xf2b7, 0xf2b7, // 语言
-			//	0xe7b8, 0xe7b8, // 常规
-			//	0xee56, 0xee56, // 绘制
-			//	0xe74e, 0xe74e, // 保存
-			//	0xec4a, 0xec4a, // 性能
-			//	0xf259, 0xf259, // 预设
-			//	0xe70b, 0xe70b, // 组件
-			//	0xe74c, 0xe74c, // 插件
-			//	0xe765, 0xe765, // 快捷键
-			//	0xe81e, 0xe81e, // 软件配置
-			//	0xe946, 0xe946, // 软件版本
-			//	0xe716, 0xe716, // 社区名片
-			//	0xe789, 0xe789, // 赞助我们
-
-			//	0xe711,0xe711, // 关闭程序
-			//	0xe72c,0xe72c, // 重启程序
-
-			//	0
-			//};
-
-			ImFontConfig font_cfg;
-			font_cfg.OversampleH = 1;
-			font_cfg.OversampleV = 1;
-			font_cfg.FontDataOwnedByAtlas = false;
-			font_cfg.GlyphOffset.y = 10.0f * settingGlobalScale;
-			font_cfg.PixelSnapH = true;
-			font_cfg.MergeMode = true;
-
-			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(257), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
-
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 36.0f * settingGlobalScale, &font_cfg);
-		}
-		{
-			/*ImWchar icons_ranges[] =
-			{
-				0xf900, 0xf907,
-				0
-			};*/
-
-			ImFontConfig font_cfg;
-			font_cfg.OversampleH = 1;
-			font_cfg.OversampleV = 1;
-			font_cfg.FontDataOwnedByAtlas = false;
-			font_cfg.MergeMode = true;
-			font_cfg.GlyphOffset.y = 4.0f * settingGlobalScale;
-			font_cfg.PixelSnapH = true;
-
-			HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(262), L"TTF");
-			HGLOBAL hMem = LoadResource(NULL, hRes);
-			void* pLock = LockResource(hMem);
-			DWORD dwSize = SizeofResource(NULL, hRes);
-
-			ImFontMain = io.Fonts->AddFontFromMemoryTTF(pLock, dwSize, 32.0f * settingGlobalScale, &font_cfg);
+			if (IDTLogger) IDTLogger->error("[Setting] 内嵌字体图集初始化失败");
+			if (dx11BackendInitialized) ImGui_ImplDX11_Shutdown();
+			if (win32BackendInitialized) ImGui_ImplWin32_Shutdown();
+			CleanupSettingTextures();
+			CleanupSettingTextureCache();
+			io.Fonts->Clear();
+			ImFluent::ResetContext();
+			ImGui::DestroyContext();
+			CleanupDeviceD3D();
+			settingFrameResult = FrameResult::Retry;
+			co_return;
 		}
 
-		// io.Fonts->Build();
-
-		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-		Widgets::style.ApplyGlobal(settingWin11ScrollbarWidth);
+		ApplySystemTheme(setting_window);
+		settingConsumedThemeSerial = settingThemeSerial.load(memory_order_acquire);
 
 		int QuestNumbers = 0;
 		int PushStyleColorNum = 0, PushFontNum = 0, PushStyleVarNum = 0;
@@ -1166,7 +1315,7 @@ SettingSessionCoroutine RunSettingSession()
 		bool CorrectLnk = setlist.shortcutAssistant.correctLnk;
 
 		int SetSkinMode = setlist.SetSkinMode;
-		float SettingGlobalScale = settingGlobalScale;
+		float SettingGlobalScale = settingUserScale;
 		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom.load());
 		bool BarZoomSavePending = false;
 
@@ -1309,6 +1458,12 @@ SettingSessionCoroutine RunSettingSession()
 
 		int settingTab = 0;
 		int settingPlugInTab = 0;
+		int transitionTab = settingTab;
+		auto transitionStarted = chrono::steady_clock::now();
+
+		// 首次恢复只完成常驻资源预热；Show 后才创建交换链并进入绘制循环。
+		settingFrameResult = FrameResult::Idle;
+		co_await suspend_always{};
 
 		while (!settingSessionShouldStop.load(memory_order_acquire))
 		{
@@ -1362,12 +1517,25 @@ SettingSessionCoroutine RunSettingSession()
 					ImGui::TextUnformatted(("\ue713   " + IA(I18nKey.SettingsUI.N)).c_str());
 
 					ImFontMain->Scale = 0.3f, PushFontNum++, ImGui::PushFont(ImFontMain);
-					ImGui::SetCursorPos({ 914 * settingGlobalScale,0.0f * settingGlobalScale });
-					if (Widgets::button.TitleBarClose("\ue8bb", { 46.0f * settingGlobalScale,32.0f * settingGlobalScale }))
+					const float captionButtonWidth = 46.0F * settingGlobalScale;
+					const float captionButtonHeight = 32.0F * settingGlobalScale;
+					const float captionButtonsX = max(0.0F,
+						static_cast<float>(SettingWindowWidth) - captionButtonWidth * 3.0F);
+					ImGui::SetCursorPos({ captionButtonsX, 0.0F });
+					if (Widgets::button.Standard("\ue921##minimize",
+						{ captionButtonWidth, captionButtonHeight }))
+						PostMessageW(setting_window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+					ImGui::SameLine(0.0F, 0.0F);
+					if (Widgets::button.Standard(IsZoomed(setting_window)
+						? "\ue923##restore" : "\ue922##maximize",
+						{ captionButtonWidth, captionButtonHeight }))
+						PostMessageW(setting_window, WM_SYSCOMMAND,
+							IsZoomed(setting_window) ? SC_RESTORE : SC_MAXIMIZE, 0);
+					ImGui::SameLine(0.0F, 0.0F);
+					if (Widgets::button.TitleBarClose("\ue8bb##close",
+						{ captionButtonWidth, captionButtonHeight }))
 					{
-						// 关闭
-						Inkeys::UI::Setting::Hide();
-
+						PostMessageW(setting_window, WM_SYSCOMMAND, SC_CLOSE, 0);
 						barUISet.UpdateRendering();
 					}
 
@@ -1376,180 +1544,110 @@ SettingSessionCoroutine RunSettingSession()
 					while (PushFontNum) PushFontNum--, ImGui::PopFont();
 				}
 
-				// 左侧导航栏
+				// 三档导航复用同一条目源；业务页仍保留原有根坐标，避免迁移时改变回调。
+				bool navigationActivated = false;
+				auto renderNavigationItems = [&]()
 				{
-					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-					// 主页
+					ImGui::BeginChild("##setting-navigation-items", { 0.0F, 0.0F });
+					auto page = [&](int target, const char* label, const char* glyph)
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,42.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue80f   " + IA(I18nKey.SettingsUI.Home.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab1, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab1;
-					}
-
-					// 软件配置
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue81e   " + IA(I18nKey.SettingsUI.Configuration.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tabConfiguration, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tabConfiguration;
-					}
-
-					// 软件版本
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue946   " + IA(I18nKey.SettingsUI.Version.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab6, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab6;
-					}
-
-					// --------------------
-					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f * settingGlobalScale);
-
-						ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-						ImVec2 p1 = ImVec2(35 * settingGlobalScale, ImGui::GetCursorPosY() - 1.0f * settingGlobalScale);
-						ImVec2 p2 = ImVec2(135 * settingGlobalScale, ImGui::GetCursorPosY());
-						ImU32 color = Widgets::FluentColor::Divider;
-
-						draw_list->AddRectFilled(p1, p2, color, 2.0f * settingGlobalScale);
-					}
-
-					// 常规
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue7b8   " + IA(I18nKey.SettingsUI.Regular.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab2, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab2;
-					}
-
-					// 绘制
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \uee56   " + IA(I18nKey.SettingsUI.Draw.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab3, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab3;
-					}
-
-					// 预设
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \uf259   " + IA(I18nKey.SettingsUI.Preset.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tabPreset, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tabPreset;
-					}
-
-					// 插件
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue74c   " + IA(I18nKey.SettingsUI.PlugIn.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab4, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f)))
+						if (ImFluent::NavItem(label, settingTab == target, glyph))
 						{
-							settingPlugInTab = settingPlugInTabEnum::tabPlug1;
-							settingTab = settingTabEnum::tab4;
+							settingTab = target;
+							navigationActivated = true;
+							if (target == settingTabEnum::tab4)
+								settingPlugInTab = settingPlugInTabEnum::tabPlug1;
 						}
-					}
-
-					// 组件
+					};
+					auto action = [&](const char* label, const char* glyph, auto&& callback)
 					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+						if (!ImFluent::NavItem(label, false, glyph)) return;
+						navigationActivated = true;
+						callback();
+					};
 
-						if (Widgets::button.Navigation(("   \ue70b   " + IA(I18nKey.SettingsUI.Component.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tabComponent, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f)))
+					page(settingTabEnum::tab1, IA(I18nKey.SettingsUI.Home.N).c_str(), "\ue80f");
+					page(settingTabEnum::tabConfiguration, IA(I18nKey.SettingsUI.Configuration.N).c_str(), "\ue81e");
+					page(settingTabEnum::tab6, IA(I18nKey.SettingsUI.Version.N).c_str(), "\ue946");
+					page(settingTabEnum::tab2, IA(I18nKey.SettingsUI.Regular.N).c_str(), "\ue7b8");
+					page(settingTabEnum::tab3, IA(I18nKey.SettingsUI.Draw.N).c_str(), "\uee56");
+					page(settingTabEnum::tabPreset, IA(I18nKey.SettingsUI.Preset.N).c_str(), "\uf259");
+					page(settingTabEnum::tab4, IA(I18nKey.SettingsUI.PlugIn.N).c_str(), "\ue74c");
+					page(settingTabEnum::tabComponent, IA(I18nKey.SettingsUI.Component.N).c_str(), "\ue70b");
+					page(settingTabEnum::tab5, IA(I18nKey.SettingsUI.HotKey.N).c_str(), "\ue765");
+					page(settingTabEnum::tabExperimental, "实验选项", "\uec4a");
+					page(settingTabEnum::tab8, IA(I18nKey.SettingsUI.Sponsor.N).c_str(), "\ue789");
+					page(settingTabEnum::tab9, IA(I18nKey.SettingsUI.DebugSoftware.N).c_str(), "\ue90f");
+					ImGui::Separator();
+					action(IA(I18nKey.SettingsUI.Community.N).c_str(), "\ue716", [&]
 						{
-							settingTab = settingTabEnum::tabComponent;
-						}
-					}
-
-					// 快捷键
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue765   " + IA(I18nKey.SettingsUI.HotKey.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab5, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab5;
-					}
-
-					// 实验选项
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \uec4a   " + string("实验选项")).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tabExperimental, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tabExperimental;
-					}
-
-					// --------------------
-					{
-						ImGui::SetCursorPosY(486 * settingGlobalScale);
-
-						ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-						ImVec2 p1 = ImVec2(35 * settingGlobalScale, ImGui::GetCursorPosY() - 1.0f * settingGlobalScale);
-						ImVec2 p2 = ImVec2(135 * settingGlobalScale, ImGui::GetCursorPosY());
-						ImU32 color = Widgets::FluentColor::Divider;
-
-						draw_list->AddRectFilled(p1, p2, color, 2.0f * settingGlobalScale);
-					}
-
-					// 社区名片
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,490.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue716   " + IA(I18nKey.SettingsUI.Community.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, false))
-						{
-							if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
-							else ShellExecuteW(0, 0, L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
-						}
-					}
-
-					// 赞助我们
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,530.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue789   " + IA(I18nKey.SettingsUI.Sponsor.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab8, Widgets::FluentColor::AccentText, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab8;
-					}
-
-					// --------------------
-					{
-						ImGui::SetCursorPosY(570.0f * settingGlobalScale);
-
-						ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-						ImVec2 p1 = ImVec2(35 * settingGlobalScale, ImGui::GetCursorPosY() - 1.0f * settingGlobalScale);
-						ImVec2 p2 = ImVec2(135 * settingGlobalScale, ImGui::GetCursorPosY());
-						ImU32 color = Widgets::FluentColor::Divider;
-
-						draw_list->AddRectFilled(p1, p2, color, 2.0f * settingGlobalScale);
-					}
-
-					// 重启软件
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,574.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue72c   " + IA(I18nKey.SettingsUI.RestartSoftware.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, false, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f)))
+							if (I18n::isIdentifying(L"zh-CN"))
+								ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
+							else
+								ShellExecuteW(0, 0, L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
+						});
+					action(IA(I18nKey.SettingsUI.RestartSoftware.N).c_str(), "\ue72c", [&]
 						{
 							Inkeys::UI::Setting::Hide();
 							RestartProgram();
-						}
-					}
-
-					// 关闭软件
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,614.0f * settingGlobalScale });
-
-						if (Widgets::button.Navigation(("   \ue711   " + IA(I18nKey.SettingsUI.ExitSoftware.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, false, Widgets::FluentColor::Danger, ImVec2(0.0f, 0.5f)))
+						});
+					action(IA(I18nKey.SettingsUI.ExitSoftware.N).c_str(), "\ue711", [&]
 						{
 							Inkeys::UI::Setting::Hide();
 							CloseProgram();
-						}
-					}
+						});
+					ImGui::EndChild();
+				};
 
-					// 调试软件
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,660.0f * settingGlobalScale });
-						ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-						if (Widgets::button.Navigation(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str(), { 150.0f * settingGlobalScale,30.0f * settingGlobalScale }, settingTab == settingTabEnum::tab9, Widgets::FluentColor::TextPrimary, ImVec2(0.5f, 0.5f))) settingTab = settingTabEnum::tab9;
-					}
-
-					{
-						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-						while (PushFontNum) PushFontNum--, ImGui::PopFont();
-					}
+				const auto navigationLayout = Inkeys::UI::Setting::ResolveNavigationLayout(
+					static_cast<float>(SettingWindowWidth), settingGlobalScale);
+				const float logicalWindowWidth = static_cast<float>(SettingWindowWidth)
+					/ max(settingGlobalScale, 0.01F);
+				settingContentOriginX = navigationLayout == Inkeys::UI::Setting::NavigationLayout::Open
+					? 170.0F : 58.0F;
+				settingContentPanelWidth = clamp(logicalWindowWidth
+					- settingContentOriginX - 10.0F, 620.0F, 780.0F);
+				const float logicalWindowHeight = static_cast<float>(SettingWindowHeight)
+					/ max(settingGlobalScale, 0.01F);
+				settingContentPanelHeight = clamp(logicalWindowHeight - 82.0F,
+					360.0F, 608.0F);
+				settingItemWidth = settingContentPanelWidth
+					- settingWin11ScrollbarWidth - settingContentRightGap;
+				settingRightComboX = settingItemWidth - 220.0F;
+				settingRightToggleX = settingItemWidth - 60.0F;
+				settingRightButtonX = settingItemWidth - 120.0F;
+				settingRightButtonPairLeftX = settingRightButtonX - 105.0F;
+				settingDescriptionWidth = settingItemWidth - 40.0F;
+				settingPromptWidth = settingItemWidth - 80.0F;
+				settingDescriptionBeforeComboWidth = settingRightComboX - 20.0F;
+				settingPromptBeforeButtonWidth = settingRightButtonX - 70.0F;
+				ImGui::SetCursorPos({ 0.0F, Inkeys::UI::Setting::TitleBarHeightDip * settingGlobalScale });
+				ImFluent::PushStyleVar(ImFluentStyleVar_NavPaneOpenWidth, 160.0F);
+				ImFluent::PushStyleVar(ImFluentStyleVar_NavPaneCompactWidth, 48.0F);
+				static bool narrowPaneOpen = false;
+				if (navigationLayout != Inkeys::UI::Setting::NavigationLayout::Overlay)
+				{
+					ImFluentNavViewMode mode = navigationLayout == Inkeys::UI::Setting::NavigationLayout::Open
+						? ImFluentNavViewMode_LeftOpen : ImFluentNavViewMode_LeftCompact;
+					ImFluent::SetNextNavPaneToggleButtonVisible(false);
+					ImFluent::BeginNavigationView("##setting-navigation", &mode);
+					renderNavigationItems();
+					ImFluent::EndNavigationView();
 				}
+				ImFluent::PopStyleVar(2);
+
+				// 页面切换只推进两个标量，避免动画期间加载或分配图形资源。
+				if (transitionTab != settingTab)
+				{
+					transitionTab = settingTab;
+					transitionStarted = chrono::steady_clock::now();
+				}
+				const float transitionProgress =
+					Inkeys::UI::Setting::ResolvePageTransitionProgress(chrono::duration<float>(
+						chrono::steady_clock::now() - transitionStarted).count());
+				settingContentOriginX += (1.0F - transitionProgress) * 8.0F;
+				ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+					ImGui::GetStyle().Alpha * (0.55F + transitionProgress * 0.45F));
 
 				// 主版块 765<-750(770 主页) * 608
 				switch (settingTab)
@@ -1557,219 +1655,67 @@ SettingSessionCoroutine RunSettingSession()
 					// 主页
 				case settingTabEnum::tab1:
 				{
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,
+						42.0F * settingGlobalScale });
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+						ImVec2(20.0F * settingGlobalScale, 18.0F * settingGlobalScale));
+					ImGui::BeginChild("主页", { settingContentPanelWidth * settingGlobalScale,
+						settingContentPanelHeight * settingGlobalScale }, false,
+						ImGuiWindowFlags_HorizontalScrollbar);
+
+					ImFluent::TextBlock("Inkeys", ImFluentTextStyle_TitleLarge);
+					ImFluent::TextBlock(IA(I18nKey.SettingsUI.Home.Prompt).c_str(),
+						ImFluentTextStyle_Body);
+					ImGui::Dummy({ 0.0F, 12.0F * settingGlobalScale });
+
+					const ImVec2 linkButtonSize(138.0F * settingGlobalScale,
+						34.0F * settingGlobalScale);
+					if (ImFluent::Button("\uf900  Website", linkButtonSize))
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 42.0f * settingGlobalScale });
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-						ImGui::BeginChild("主页-提示", { 780.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-						float cursosPosY = 0;
-						{
-							ImGui::SetCursorPos({ 10.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.55f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::AccentText);
-							ImGui::TextUnformatted("\uf167");
-						}
-						{
-							ImGui::SetCursorPos({ 36.0f * settingGlobalScale, cursosPosY + 8.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Home.Prompt).c_str());
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
-						ImGui::EndChild();
+						if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
+						else ShellExecuteW(0, 0, L"https://en.inkeys.top", 0, 0, SW_SHOW);
 					}
+					ImGui::SameLine();
+					if (ImFluent::Button("\uf901  GitHub", linkButtonSize))
+						ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW);
+					ImGui::SameLine();
+					if (ImFluent::Button("\uf904  Community", linkButtonSize))
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale,ImGui::GetCursorPosY() + 10.0f * settingGlobalScale });
-						float Cx = ImGui::GetCursorPosX(), Cy = ImGui::GetCursorPosY();
-
-						ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-						ImVec2 p_min = ImVec2(Cx - 4.0f * settingGlobalScale, Cy - 4.0f * settingGlobalScale);
-						ImVec2 p_max = ImVec2(Cx + 780 * settingGlobalScale + 4.0f * settingGlobalScale, Cy + 568 * settingGlobalScale + 4.0f * settingGlobalScale);
-
-						ImVec2 reg_min = ImVec2(Cx, Cy);
-						ImVec2 reg_max = ImVec2(Cx + 780 * settingGlobalScale, Cy + 568 * settingGlobalScale);
-						ImGui::PushClipRect(reg_min, reg_max, true);
-
-						{
-							// 计算图像中心点
-							float Mx = SettingWindowX + Cx + 780.0f / 2.0f;
-							float My = SettingWindowY + Cy + 568.0f / 2.0f;
-
-							// 获取鼠标坐标
-							POINT Pt;
-							GetCursorPos(&Pt);
-
-							float Hx = Pt.x - Mx;
-							float Hy = Pt.y - My;
-
-							if (Hx < 0) Hx = min(1000.0f, -Hx);
-							else Hx = min(1000.0f, Hx);
-							if (Hy < 0) Hy = min(1000.0f, -Hy);
-							else Hy = min(1000.0f, Hy);
-
-							// 计算横向位移
-							float Sx = (Hx * (-0.5 / (1000.0f * settingGlobalScale)) + 1) * Hx * 0.2;
-							float Sy = (Hy * (-0.5 / (1000.0f * settingGlobalScale)) + 1) * Hy * 0.2;
-
-							ImGui::SetCursorPosX(Cx + Sx * (Pt.x >= Mx ? -1 : 1) - 100.0f * settingGlobalScale);
-							ImGui::SetCursorPosY(Cy + Sy * (Pt.y >= My ? -1 : 1) - 100.0f * settingGlobalScale);
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[4], ImVec2((float)settingSign[4].width, (float)settingSign[4].height));
-						}
-						{
-							ImGui::SetCursorPos({ Cx,Cy });
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2], ImVec2((float)settingSign[2].width, (float)settingSign[2].height));
-						}
-
-						ImU32 color = Widgets::FluentColor::WindowBackground;
-						float rounding = 8.0f * settingGlobalScale;
-						float thickness = 9.0f * settingGlobalScale;
-
-						draw_list->AddRect(p_min, p_max, color, rounding, ImDrawFlags_None, thickness);
-
-						ImGui::PopClipRect();
-
-						{
-							ImGui::SetCursorPos({ Cx + 20.0f * settingGlobalScale,Cy + 20.0f * settingGlobalScale });
-
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							if (Widgets::button.HeroIcon("\uf900", { 50.0f * settingGlobalScale,50.0f * settingGlobalScale }))
-							{
-								if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
-								else ShellExecuteW(0, 0, L"https://en.inkeys.top", 0, 0, SW_SHOW);
-							}
-						}
-						{
-							ImGui::SetCursorPos({ Cx + 80.0f * settingGlobalScale,Cy + 20.0f * settingGlobalScale });
-
-							ImFontMain->Scale = 1.0f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							if (Widgets::button.HeroIcon("\uf901", { 50.0f * settingGlobalScale,50.0f * settingGlobalScale }))
-							{
-								ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW);
-							}
-						}
-
-						{
-							ImGui::SetCursorPos({ Cx + 100.0f * settingGlobalScale,Cy + 390.0f * settingGlobalScale });
-							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[3], ImVec2((float)settingSign[3].width, (float)settingSign[3].height));
-
-							ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 390.0f * settingGlobalScale });
-							{
-								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("AlanCRL");
-							}
-							ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
-							{
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Home.Developer).c_str());
-							}
-
-							{
-								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 465.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("\uf902");
-
-								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 465.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("2685549821");
-							}
-
-							{
-								ImGui::SetCursorPos({ Cx + 106.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.9f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("\uf903");
-
-								ImGui::SetCursorPos({ Cx + 160.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.75f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("alan-crl@foxmail.com");
-							}
-						}
-						{
-							{
-								ImGui::SetCursorPos({ Cx + 448.0f * settingGlobalScale,Cy + 405.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("\uf904");
-
-								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 393.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Home.Group).c_str());
-
-								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 418.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 0.7f));
-								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.GroupE).c_str()))
-								{
-									if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://qm.qq.com/cgi-bin/qm/qr?k=9V2l83dc0yP4UYeDF-NkTX0o7_TcYqlh&jump_from=webapi&authKey=LsLLUhb1KSzHYbc8k5nCQDqTtRcRUCEE3j+DdR9IgHaF/7JF7LLpY191hsiYEBz6", 0, 0, SW_SHOW);
-									else ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW);
-								}
-							}
-							{
-								ImGui::SetCursorPos({ Cx + 447.0f * settingGlobalScale,Cy + 460.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("\uf905");
-
-								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 462.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.BilibiliChannel).c_str()))
-								{
-									ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
-								}
-							}
-							{
-								ImGui::SetCursorPos({ Cx + 447.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.95f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								ImGui::TextUnformatted("\uf906");
-
-								ImGui::SetCursorPos({ Cx + 500.0f * settingGlobalScale,Cy + 515.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.8f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-								if (ImGui::TextLink(IA(I18nKey.SettingsUI.Home.FeedBack).c_str()))
-								{
-									ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW);
-								}
-
-								ImGui::SameLine(); ImGui::TextUnformatted("  \uf907");
-								if (ImGui::IsItemHovered())
-								{
-									PushFontNum++, ImFontMain->Scale = 0.7f, ImGui::PushFont(ImFontMain);
-
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_PopupBg, Widgets::FluentColor::White);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(130, 130, 130, 255));
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(13, 83, 255, 255));
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f * settingGlobalScale);
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5.0f * settingGlobalScale, 5.0f * settingGlobalScale));
-
-									ImGui::BeginTooltip();
-									ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[7], ImVec2((float)settingSign[7].width, (float)settingSign[7].height));
-									ImGui::EndTooltip();
-								}
-							}
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
+						if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
+						else ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW);
 					}
+					ImGui::Dummy({ 0.0F, 8.0F * settingGlobalScale });
+					if (ImFluent::Button("\uf905  Bilibili", linkButtonSize))
+						ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
+					ImGui::SameLine();
+					if (ImFluent::Button("\uf906  Feedback", linkButtonSize))
+						ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW);
+
+					ImGui::Dummy({ 0.0F, 16.0F * settingGlobalScale });
+					if (ImFluent::BeginSettingsCard("##home-author", "AlanCRL",
+						IA(I18nKey.SettingsUI.Home.Developer).c_str(), "\uf902"))
+					{
+						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[3],
+							{ 45.0F * settingGlobalScale, 45.0F * settingGlobalScale });
+						ImGui::SameLine();
+						ImFluent::TextBlock("alan-crl@foxmail.com", ImFluentTextStyle_Caption);
+						ImFluent::EndSettingsCard();
+					}
+
+					ImGui::Dummy({ 0.0F, 16.0F * settingGlobalScale });
+					ImFluent::TextBlock("Tutorial", ImFluentTextStyle_Subtitle);
+					const float tutorialWidth = min(settingContentPanelWidth - 40.0F, 700.0F)
+						* settingGlobalScale;
+					const float tutorialHeight = tutorialWidth * 215.0F / 700.0F;
+					ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[1],
+						{ tutorialWidth, tutorialHeight });
+					ImGui::Dummy({ 0.0F, 10.0F * settingGlobalScale });
+					const float guideHeight = tutorialWidth * 390.0F / 770.0F;
+					ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[2],
+						{ tutorialWidth, guideHeight });
+
+					ImGui::EndChild();
+					ImGui::PopStyleVar();
 
 					break;
 				}
@@ -1777,10 +1723,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 语言
 				case settingTabEnum::Language:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("语言", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("语言", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -1902,10 +1848,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 配置保存
 				case settingTabEnum::tabConfiguration:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("配置保存", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("配置保存", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -2133,10 +2079,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 软件版本
 				case settingTabEnum::tab6:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("软件版本", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("软件版本", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -2811,10 +2757,10 @@ SettingSessionCoroutine RunSettingSession()
 				// CICD
 				case settingTabEnum::tabCICD:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("自动构建详情信息", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+					ImGui::BeginChild("自动构建详情信息", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					{
 						ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -2965,10 +2911,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 常规
 				case settingTabEnum::tab2:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("常规", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("常规", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -3283,7 +3229,15 @@ SettingSessionCoroutine RunSettingSession()
 								}
 								if (!isItemActive && SettingGlobalScale != setlist.settingGlobalScale)
 								{
-									setlist.settingGlobalScale = SettingGlobalScale;
+									setlist.settingGlobalScale =
+										Inkeys::UI::Setting::NormalizeUserScale(SettingGlobalScale);
+									UpdateSettingScale(QuerySettingDpi(setting_window));
+									{
+										lock_guard stateLock(settingStateMutex);
+										settingSessionState.QueueFontRebuild();
+									}
+									Inkeys::UI::RenderPipeline::Request(
+										Inkeys::UI::RenderPipeline::Client::Settings);
 									WriteSetting();
 								}
 							}
@@ -3615,10 +3569,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("绘制", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("绘制", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -4223,10 +4177,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 预设
 				case settingTabEnum::tabPreset:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("预设", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("预设", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -4541,13 +4495,13 @@ SettingSessionCoroutine RunSettingSession()
 				// 插件
 				case settingTabEnum::tab4:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 					switch (settingPlugInTab)
 					{
 					case settingPlugInTabEnum::tabPlug1:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-						ImGui::BeginChild("插件", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+						ImGui::BeginChild("插件", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 						ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 						{
@@ -4808,7 +4762,7 @@ SettingSessionCoroutine RunSettingSession()
 					case settingPlugInTabEnum::tabPlug2:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-						ImGui::BeginChild("PPT演示助手", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("PPT演示助手", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -5986,7 +5940,7 @@ SettingSessionCoroutine RunSettingSession()
 					case settingPlugInTabEnum::tabSuperTop:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-						ImGui::BeginChild("超级置顶", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("超级置顶", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -6199,7 +6153,7 @@ SettingSessionCoroutine RunSettingSession()
 					case settingPlugInTabEnum::tabPlug3:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-						ImGui::BeginChild("快捷方式保障助手", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("快捷方式保障助手", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -6395,7 +6349,7 @@ SettingSessionCoroutine RunSettingSession()
 					case settingPlugInTabEnum::tabPlugDDB:
 					{
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-						ImGui::BeginChild("同类软件悬浮窗拦截助手", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar);
+						ImGui::BeginChild("同类软件悬浮窗拦截助手", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 						{
 							ImGui::SetCursorPos({ 0,10.0f * settingGlobalScale });
@@ -7345,10 +7299,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 组件
 				case settingTabEnum::tabComponent:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("组件", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("组件", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -8085,10 +8039,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 快捷键
 				case settingTabEnum::tab5:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("快捷键", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("快捷键", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -8175,10 +8129,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 实验室
 				case settingTabEnum::tabExperimental:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("实验室", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("实验室", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPosY(10.0f * settingGlobalScale);
 					{
@@ -8460,10 +8414,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 赞助我们
 				case settingTabEnum::tab8:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f));
-					ImGui::BeginChild("赞助我们", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, true);
+					ImGui::BeginChild("赞助我们", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, true, ImGuiWindowFlags_HorizontalScrollbar);
 
 					ImGui::SetCursorPos({ 50.0f * settingGlobalScale,20.0f * settingGlobalScale });
 					ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[9], ImVec2((float)settingSign[9].width, (float)settingSign[9].height));
@@ -8528,10 +8482,10 @@ SettingSessionCoroutine RunSettingSession()
 				// 程序调测
 				case settingTabEnum::tab9:
 				{
-					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
+					ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale,40.0f * settingGlobalScale });
 
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
-					ImGui::BeginChild("程序调测", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
+					ImGui::BeginChild("程序调测", { settingContentPanelWidth * settingGlobalScale,settingContentPanelHeight * settingGlobalScale }, false, ImGuiWindowFlags_HorizontalScrollbar);
 
 					{
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -8756,17 +8710,23 @@ SettingSessionCoroutine RunSettingSession()
 					break;
 				}
 				}
+				ImGui::PopStyleVar();
 
 				// 底栏：更新信息提示栏
 				{
 					using enum AutomaticUpdateStateEnum;
+					const float bottomStatusY = max(42.0F, logicalWindowHeight - 40.0F);
+					const float bottomStatusWidth = max(280.0F,
+						settingContentPanelWidth - 105.0F);
+					const float bottomActionX = settingContentOriginX
+						+ bottomStatusWidth + 5.0F;
 
 					if (AutomaticUpdateState == UpdateNotStarted)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WarningBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -8808,10 +8768,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateObtainInformation)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -8845,10 +8805,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateInformationFail)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::DangerBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -8882,10 +8842,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateInformationDamage)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::DangerBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -8919,10 +8879,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateInformationUnStandardized)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::DangerBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -8956,10 +8916,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateDownloading)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WarningBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9005,10 +8965,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateDownloadFail)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::DangerBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9042,10 +9002,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateDownloadDamage)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::DangerBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9079,10 +9039,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateRestart)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WarningBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9108,10 +9068,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateLatest)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::SuccessBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9144,10 +9104,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateNewer)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::SuccessBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9180,10 +9140,10 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					else if (AutomaticUpdateState == UpdateNew)
 					{
-						ImGui::SetCursorPos({ 170.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ settingContentOriginX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WarningBackground);
-						ImGui::BeginChild("更新状态-提示", { 675.0f * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("更新状态-提示", { bottomStatusWidth * settingGlobalScale,30.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						float cursosPosY = 0;
 						{
@@ -9218,7 +9178,7 @@ SettingSessionCoroutine RunSettingSession()
 					}
 
 					{
-						ImGui::SetCursorPos({ 850.0f * settingGlobalScale, 660.0f * settingGlobalScale });
+						ImGui::SetCursorPos({ bottomActionX * settingGlobalScale, bottomStatusY * settingGlobalScale });
 						ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 						if (Widgets::button.Standard(IA(I18nKey.SettingsUI.Update.Check).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 						{
@@ -9229,6 +9189,32 @@ SettingSessionCoroutine RunSettingSession()
 							else AutomaticUpdateState = UpdateObtainInformation;
 						}
 					}
+				}
+
+				if (navigationLayout == Inkeys::UI::Setting::NavigationLayout::Overlay)
+				{
+					// overlay 最后绘制，保证导航 pane 位于业务 child 与底栏之上。
+					ImGui::SetCursorPos({ 0.0F,
+						Inkeys::UI::Setting::TitleBarHeightDip * settingGlobalScale });
+					ImFluent::PushStyleVar(ImFluentStyleVar_NavPaneOpenWidth, 160.0F);
+					ImFluent::PushStyleVar(ImFluentStyleVar_NavPaneCompactWidth, 48.0F);
+					ImFluent::BeginSplitView("##setting-responsive-nav", &narrowPaneOpen,
+						ImFluentSplitViewDisplayMode_CompactOverlay,
+						ImFluentSplitViewPanePlacement_Left,
+						160.0F, 48.0F);
+					if (ImFluent::BeginSplitViewPane())
+					{
+						ImFluentNavViewMode mode = narrowPaneOpen
+							? ImFluentNavViewMode_LeftOpen : ImFluentNavViewMode_LeftCompact;
+						ImFluent::BeginNavigationView("##setting-overlay-nav", &mode);
+						renderNavigationItems();
+						ImFluent::EndNavigationView();
+						narrowPaneOpen = mode == ImFluentNavViewMode_LeftOpen
+							&& !navigationActivated;
+						ImFluent::EndSplitViewPane();
+					}
+					ImFluent::EndSplitView();
+					ImFluent::PopStyleVar(2);
 				}
 
 				{
@@ -9242,11 +9228,12 @@ SettingSessionCoroutine RunSettingSession()
 			// 渲染
 			ImGui::EndFrame();
 			ImGui::Render();
+			const ImVec4 clearColorValue = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			const float clearColor[4] = {
-				clear_color.x * clear_color.w,
-				clear_color.y * clear_color.w,
-				clear_color.z * clear_color.w,
-				clear_color.w
+				clearColorValue.x * clearColorValue.w,
+				clearColorValue.y * clearColorValue.w,
+				clearColorValue.z * clearColorValue.w,
+				clearColorValue.w
 			};
 			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
 			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
@@ -9264,11 +9251,13 @@ SettingSessionCoroutine RunSettingSession()
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
-		// epoch/隐藏/退出均在渲染线程按 backend -> SRV -> swap chain 逆序释放。
+		// Shutdown 在渲染线程按 backend -> SRV -> presentation 逆序释放。
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
 		CleanupSettingTextures();
+		CleanupSettingTextureCache();
 		io.Fonts->Clear();
+		ImFluent::ResetContext();
 		ImGui::DestroyContext();
 		CleanupDeviceD3D();
 	settingSessionEpoch = 0;
@@ -9304,12 +9293,15 @@ namespace
 	{
 		Inkeys::UI::Setting::SessionDecision decision;
 		Inkeys::UI::Setting::ResizeSnapshot resize;
+		uint64_t fontRebuildSerial = 0;
 		{
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetOccluded(g_SwapChainOccluded);
 			decision = settingSessionState.Resolve(
-				context.epoch.generation, !settingSession.Done());
+				context.epoch.generation, !settingSession.Done(),
+				g_pSwapChain != nullptr);
 			resize = settingSessionState.Resize();
+			fontRebuildSerial = settingSessionState.FontRebuildSerial();
 			if (decision.consumeBusinessCompletion)
 			{
 				settingLastBusinessCompletion = settingSessionState.BusinessCompletion();
@@ -9318,14 +9310,105 @@ namespace
 			}
 		}
 
-		if (decision.release)
+		if (decision.releasePresentation)
 		{
-			DrainSettingSessionOnRenderThread();
+			CleanupPresentation();
 			lock_guard stateLock(settingStateMutex);
-			settingSessionState.Release();
+			settingSessionState.ReleasePresentation();
 		}
 
-		if (!decision.rebuild && settingSession.Done()) return FrameResult::Idle;
+		if (decision.initializeResident)
+		{
+			settingSessionShouldStop.store(false, memory_order_release);
+			settingFrameContext = context;
+			settingFrameResult = FrameResult::Retry;
+			settingSession = RunSettingSession();
+			{
+				lock_guard lock(settingDrainMutex);
+				settingSessionDrained = false;
+			}
+			{
+				lock_guard imguiLock(settingImguiMutex);
+				settingSession.Resume();
+			}
+
+			const bool succeeded = !settingSession.Done();
+			if (succeeded)
+			{
+				lock_guard stateLock(settingStateMutex);
+				settingSessionState.CommitEpoch(context.epoch.generation);
+			}
+			else
+			{
+				settingSession.Reset();
+				settingSessionEpoch = 0;
+				lock_guard lock(settingDrainMutex);
+				settingSessionDrained = true;
+				settingDrainCondition.notify_all();
+			}
+			{
+				lock_guard initializeLock(settingInitializeMutex);
+				settingInitializeSucceeded = succeeded;
+				settingInitializeCompleted = true;
+			}
+			settingInitializeCondition.notify_all();
+			if (!succeeded) return FrameResult::Retry;
+		}
+
+		if (decision.rebuildDeviceResources && !settingSession.Done())
+		{
+			lock_guard imguiLock(settingImguiMutex);
+			CleanupPresentation();
+			if (ImGui::GetIO().BackendRendererUserData)
+				ImGui_ImplDX11_Shutdown();
+			CleanupSettingTextures();
+			CleanupDeviceD3D();
+			const bool acquired = AcquireDeviceLease(context.epoch);
+			const bool backendInitialized = acquired
+				&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+			if (!backendInitialized || !ImGui_ImplDX11_CreateDeviceObjects()
+				|| !RecreateSettingTextures())
+			{
+				// epoch 失败后保持 resident context，但撤销半成品 device 资源供下次重试。
+				if (backendInitialized) ImGui_ImplDX11_Shutdown();
+				CleanupSettingTextures();
+				CleanupDeviceD3D();
+				return FrameResult::Retry;
+			}
+			settingSessionEpoch = context.epoch.generation;
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.CommitEpoch(context.epoch.generation);
+		}
+
+		if (decision.rebuildFonts && !settingSession.Done())
+		{
+			lock_guard imguiLock(settingImguiMutex);
+			ImGui_ImplDX11_InvalidateDeviceObjects();
+			if (!RebuildSettingFonts()
+				|| !ImGui_ImplDX11_CreateDeviceObjects())
+				return FrameResult::Retry;
+			Widgets::style.ApplyGlobal(12.0F);
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.ConsumeFontRebuild(fontRebuildSerial);
+		}
+
+		const uint64_t themeSerial = settingThemeSerial.load(memory_order_acquire);
+		if (!settingSession.Done() && themeSerial != settingConsumedThemeSerial)
+		{
+			// 主题消息在隐藏态也立即更新 resident style，不等待下一次 Show。
+			lock_guard imguiLock(settingImguiMutex);
+			ApplySystemTheme(setting_window);
+			settingConsumedThemeSerial = themeSerial;
+		}
+
+		if (decision.createPresentation && !g_pSwapChain)
+		{
+			if (!CreatePresentation(setting_window, context.epoch))
+				return FrameResult::Retry;
+		}
+
+		if (!decision.render || settingSession.Done() || !g_pSwapChain)
+			return FrameResult::Idle;
 
 		if (decision.probeOcclusion && g_pSwapChain)
 		{
@@ -9339,37 +9422,23 @@ namespace
 			settingSessionState.SetOccluded(false);
 		}
 
-		if (decision.resize && !settingSession.Done())
+		if (decision.resize && !settingSession.Done() && g_pSwapChain)
 		{
 			const HRESULT resizeResult = ResizeSwapChain(resize.width, resize.height);
 			if (Inkeys::UI::Setting::IsSharedDeviceLoss(resizeResult))
 				return FrameResult::DeviceLost;
 			if (FAILED(resizeResult))
 			{
-				DrainSettingSessionOnRenderThread();
+				CleanupPresentation();
 				lock_guard stateLock(settingStateMutex);
-				settingSessionState.Release();
+				settingSessionState.ReleasePresentation();
 				return FrameResult::Retry;
 			}
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.ConsumeResize(resize.serial);
 		}
 
-		if (settingSession.Done())
-		{
-			settingSessionShouldStop.store(false, memory_order_release);
-			settingFrameContext = context;
-			settingFrameResult = FrameResult::Retry;
-			settingSession = RunSettingSession();
-			{
-				lock_guard lock(settingDrainMutex);
-				settingSessionDrained = false;
-			}
-		}
-		else
-		{
-			settingFrameContext = context;
-		}
+		settingFrameContext = context;
 
 		{
 			lock_guard imguiLock(settingImguiMutex);
@@ -9409,6 +9478,25 @@ namespace Inkeys::UI::Setting
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
 		}
+		{
+			lock_guard initializeLock(settingInitializeMutex);
+			settingInitializeCompleted = false;
+			settingInitializeSucceeded = false;
+		}
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		{
+			unique_lock initializeLock(settingInitializeMutex);
+			settingInitializeCondition.wait(initializeLock,
+				[] { return settingInitializeCompleted; });
+			if (!settingInitializeSucceeded)
+			{
+				Inkeys::UI::RenderPipeline::Unregister(
+					Inkeys::UI::RenderPipeline::Client::Settings);
+				settingBusinessQueue.Stop();
+				return false;
+			}
+		}
 		settingInitialized.store(true, memory_order_release);
 		return true;
 	}
@@ -9426,7 +9514,7 @@ namespace Inkeys::UI::Setting
 			{
 				DrainSettingSessionOnRenderThread();
 				lock_guard stateLock(settingStateMutex);
-				settingSessionState.Release();
+				settingSessionState.ReleaseResident();
 			});
 		if (drainPosted)
 		{

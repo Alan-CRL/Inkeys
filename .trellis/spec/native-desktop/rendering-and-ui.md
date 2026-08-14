@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | `Inkeys.UI.RenderPipeline` 的共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 是独立客户端，经自己的 device context、GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*`、`Bar.RenderLoop.cpp` |
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
-| 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 共享 WARP D3D11 device/immediate context；Setting 独占传统 discard swap chain、RTV、SRV 和 ImGui session | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
+| 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + ImFluent 生成标准 `ImDrawData`，复用共享 WARP D3D11 device/immediate context；Setting 常驻 ImGui context、backend、字体和图片 SRV，仅在可见时持有独占 discard swap chain/RTV | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
 | 主画板 | `【直接确认】` Draw2 暂时继续负责墨迹；未来 Draw3 复用现有 Drawpad HWND | `Inkeys.Graphics.DibSurface` + GDI+ 笔画、软件合成、分层窗口 | `IdtDrawpad.cpp::DrawpadDrawing`、`IdtImage.cpp` |
 | PPT 控件 | `【直接确认】` UI3 五个独立 owned layered HWND | 与 Bar/Setting 共享 D3D11 epoch；每窗独立 D2D device context/target/GDI interop，并由 RenderPipeline 线程串行 ULW 呈现 | `Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
@@ -31,7 +31,7 @@
 
 - `DeviceEpoch` 由 Bar、五个 PPT 渲染客户端和 Setting 共用；Bar/PPT 每个 HWND 仍创建并持有自己的 D2D device context、target bitmap 和 GDI interop；
 - `SharedAssets` 中的 D2D 1.1 factory、DWrite factory/font collection 被 Bar/PPT 文字资源使用；
-- Setting 借用同一 D3D11 device/immediate context，但独占 discard swap chain、RTV、纹理 SRV 和 ImGui backend/session；
+- Setting 借用同一 D3D11 device/immediate context；ImGui context、Win32/DX11 backend、字体和图片资源从 `Initialize()` 到 `Shutdown()` 常驻，discard swap chain/RTV 仅在窗口可见时存在；
 - 主画板不是 D2D target。
 
 `【直接确认】` `IdtD2DPreparation.*`、旧图形全局和 `Inkeys.UI.RenderScheduler` 已从产品工程移除。新增 Bar/PPT/Setting 图形资产必须沿用 RenderPipeline 的共享生命周期；Draw2、白板、定格和其他背景窗口不因本合同自动迁移。
@@ -792,7 +792,7 @@ shape.frameCursorLightIntensityScale = buttonIntensity;
 `【直接确认】`：
 
 - `Setting.Base.cppm::CreateDeviceD3D` 借用 `FrameContext::epoch` 的共享 WARP device/immediate context，并通过传统 `IDXGIFactory::CreateSwapChain` 创建 Setting 独占的 discard swap chain 和 RTV；
-- `Setting.cpp` 的持久协程 session 调用 `ImGui_ImplWin32_Init`、`ImGui_ImplDX11_Init/NewFrame/RenderDrawData/Shutdown`；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST`；
+- `Setting.cpp` 的持久协程 session 在渲染线程建立 ImGui context、Win32/DX11 backend、字体图集和图片 SRV；`WM_SIZE` 只排队宽高，渲染线程释放 RTV、`ResizeBuffers` 后重建，遮挡时用 `DXGI_PRESENT_TEST`；
 - 设置图片使用 `ID3D11ShaderResourceView*` 作为 `ImTextureID`；`DibSurface` 的 BGRA 字节上传为 `DXGI_FORMAT_B8G8R8A8_UNORM` immutable texture/SRV；
 - `Inkeys/Inkeys.vcxproj` 编译 `additional/imgui/imgui_impl_win32.cpp` 与 `imgui_impl_dx11.cpp`，仓库不再随附 ImGui DX9 backend；
 - DX11 backend 不在运行时调用 `D3DCompile`：`IDR_SHADERS2` 是 VS、`IDR_SHADERS1` 是 PS，两个预编译 CSO 位于 `UI/RenderPipeline/Assets/ImGui` 并由 `Inkeys.rc` 嵌入 EXE。
@@ -821,7 +821,10 @@ FrameResult RenderSettingFrame(const FrameContext&);
 #### 3. Contracts
 
 - HWND 所属线程只处理 capture/cursor/IME、生命周期和 `ImGui_ImplWin32_WndProcHandlerEx`；专用 recursive mutex 串行访问 ImGui IO，因为 Win32 backend 的 `SetCapture`/`ReleaseCapture`/IME 调用可能同步重入同一 WndProc。ImGui context、DX11 backend、NewFrame/draw/Present 只由 RenderPipeline 线程使用。
-- Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；隐藏时逆序释放 backend、SRV、swap chain/RTV，返回 `Idle`。resize、遮挡和 epoch 变化由 `SessionState` 决策，不在 WndProc 直接操作 D3D。
+- `Initialize()` 注册 Settings 客户端后，必须同步等待渲染线程建立 ImGui context、Win32/DX11 backend、内嵌字体图集、解码图片缓存和全部图片 SRV；任一步失败都按相反顺序回滚并返回 `false`，不得留下已初始化 backend、device lease 或半套 SRV。
+- Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
+- device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品并返回 `Retry`，后续重试不能对未初始化 backend 重复 `Shutdown`。
+- `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。导航断点按客户区逻辑 DIP 判定：`>=900` 为 LeftOpen、`760..899` 为 LeftCompact、`<760` 为 CompactOverlay。
 - 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
@@ -831,22 +834,25 @@ FrameResult RenderSettingFrame(const FrameContext&);
 | 条件 | 必须行为 |
 | --- | --- |
 | `Present` / `ResizeBuffers` 返回 device removed/reset/internal error | 返回 `DeviceLost`，由唯一管线线程恢复 epoch |
-| 普通 Present/resize 失败 | 只返回 `Retry` 并重建 Setting session，不影响 Bar/PPT |
+| 普通 Present/resize 失败 | 只返回 `Retry` 并重建 Setting presentation resources，不销毁常驻 ImGui/backend/font/SRV，也不影响 Bar/PPT |
 | `DXGI_STATUS_OCCLUDED` | 后续帧用 `DXGI_PRESENT_TEST` 探测，成功后恢复绘制 |
-| 隐藏或 generation 变化 | 在渲染线程逆序释放旧 session；可见时按新 epoch 重建 |
+| Hide | 释放 swap chain/RTV 并返回 `Idle`；常驻资源继续有效且不提交帧 |
+| 隐藏时 generation 变化 | 立即重建 backend device objects 和图片 SRV；保持无 swap chain/RTV |
+| 可见时 generation 变化 | 重建 backend device objects、图片 SRV、swap chain 和 RTV；失败路径不遗留半成品 |
+| DPI 或用户倍率变化 | 消费 font rebuild serial 并重建图集；用户倍率先限制到 `[1.0, 2.0]` |
 | 业务命令完成 | 发布不可变 completion snapshot 并只请求 Settings |
 | 退出时 FIFO 尚有配置写盘 | 排空后 join，不得 request_stop 后清空未执行命令 |
 | Bar 在 Setting drain 前观察到 `offSignal` | Bar 返回 `Idle`，不得以 `Stop` 提前结束共享线程 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：Setting 连续绘制时 Bar/PPT 保持 idle；隐藏后 session 释放且管线无限等待，最后一次配置仍写盘。
-- Base：show→resize→occluded→visible→hide→show，epoch 不变时复用共享 device 并重建 Setting 私有呈现资源。
-- Bad：在渲染回调直接 `Write()`/`MessageBox`，或 worker 到退出时清空尚未执行的 FIFO；前者阻塞所有 UI，后者丢配置。
+- Good：Setting 连续绘制时 Bar/PPT 保持 idle；隐藏后仅呈现资源释放且管线无限等待，再次显示不加载图片或重建字体。
+- Base：show→resize→occluded→visible→hide→epoch change→show；隐藏期间完成 device-dependent 常驻资源恢复，显示时只补 presentation resources。
+- Bad：Hide 时销毁 ImGui context/backend/font/SRV，或 epoch 重建失败后保留新 lease/半初始化 backend；前者造成再次显示卡顿，后者使重试进入双重初始化/释放。
 
 #### 6. Tests Required
 
-- Headless 覆盖显隐、resize、occlusion、generation、业务完成快照和 device loss 分类；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
+- Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点和主题优先级；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
 - GUI 受限任务只运行 `InkeysHeadlessTests.exe --no-window`。Win7 SP1 + KB2670838 只可声明传统 CreateSwapChain/discard/FL11.0 fallback 的静态兼容，未经实机不得声称已验证。
 
@@ -860,6 +866,13 @@ queue.push({ .kind = WriteConfig });
 // Correct：入队前冻结值，worker 只消费 owned payload。
 command.configSnapshot = std::make_shared<Inkeys::Config>(Inkeys::config);
 queue.push(std::move(command));
+
+// Wrong：普通 Hide 销毁常驻资源，下一次 Show 再读盘和建图集。
+DestroyImguiContextAndDeviceResources();
+
+// Correct：Hide 只撤销呈现状态；常驻资源留到 Shutdown。
+sessionState.SetVisible(false);
+ReleasePresentation();
 ~~~
 
 ## Win32 Window、DibSurface 与 HiMsg 合同
@@ -889,7 +902,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Window Service 的受管线程拥有 Mag host/child、Freeze、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
-- Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
+- Setting owner 必须为 null，style 为 `WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU`；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，普通关闭映射为 Hide，Window Service 只在进程退出时销毁 HWND。
+- Setting 使用 client-area 自绘标题栏：`WM_NCCALCSIZE` 移除原生非客户区，`WM_NCHITTEST` 优先返回八方向 resize hit，再对标题栏非交互区返回 `HTCAPTION`；最小化、最大化/还原、关闭按钮投递标准 `WM_SYSCOMMAND`，从而保留双击标题栏、系统菜单、Snap 和 Win+方向键行为。
+- 默认客户区约 `960x700 DIP`，`WM_GETMINMAXINFO` 只设置约 `720x520 DIP` 的最小 track size；默认尺寸和最小 track 按 effective scale 转为物理像素后都必须夹紧到目标显示器工作区，最大化范围使用该显示器的 `rcWork`，不得固定最大 track size。`WM_DPICHANGED` 接受系统建议矩形，Hide/Show 在单次进程内保留最大化和窗口 bounds，不持久化到下一进程。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
 - HiMsg 默认接受 Win32 系统生成的触摸兼容 mouse；这是公共库行为。只有已经自行处理 `WM_TOUCH` 并合成单指输入的 Inkeys Bar/PPT binding 才设置 `WindowSpec::messageCallback`，在 HiMsg subclass 自动入队前对 `IsTouchGeneratedMouseMessage(message, GetMessageExtraInfo())` 返回 `Action::Discard`。该 callback 仍继续原 WndProc；真实鼠标和不带 touch flag 的笔兼容 mouse 必须保留。
@@ -903,6 +918,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
 | Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
+| Setting 传入缺失的 resize/system style | Service 补齐 thickframe、minimize、maximize 和 system-menu，不能把窗口重新归一化为固定大小 |
+| 指针位于 Setting 边角/边缘 | `WM_NCHITTEST` 返回对应 `HTTOPLEFT`..`HTBOTTOMRIGHT`，标题栏命中不得覆盖 resize hit |
+| Setting 普通关闭 | 调用 `Hide()`，保留 HWND、窗口状态和常驻 ImGui 资源 |
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |
 | 未配置上述 callback 的其他 HiMsg binding | 保持库默认行为，系统触摸兼容 mouse 正常入队 |
@@ -911,7 +929,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Drawpad 线程仅 present HDC；尺寸和穿透切换通过 Window Service；Bar 与五个 PPT 是同 owner 的兄弟窗口，PPT 前置始终止于 Bar 正下方。
+- Good：Setting 可拖动、八方向缩放、最小化、最大化和 Snap；关闭后 HWND 仍存在，再次 Show 保留本进程窗口状态。
 - Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
 - Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，历史上会导致绘制卡顿或闪烁。
 
@@ -919,7 +937,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
-- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
+- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖八方向命中、最小尺寸、DPI 建议矩形和响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
 
 ### 7. Wrong vs Correct
