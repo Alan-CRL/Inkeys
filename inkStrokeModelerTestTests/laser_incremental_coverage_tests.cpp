@@ -285,6 +285,8 @@ int RunLaserIncrementalCoverageTests()
 			root / "inkStrokeModelerTest" / "draw3" / "drawing_controller.cpp";
 		const std::filesystem::path windowControlSource =
 			root / "inkStrokeModelerTest" / "draw3" / "window_control.cpp";
+		const std::filesystem::path windowControlInterfaceSource =
+			root / "inkStrokeModelerTest" / "draw3" / "window_control.cppm";
 		const std::filesystem::path contactInputSource =
 			root / "inkStrokeModelerTest" / "draw3" / "contact_input.cpp";
 		const std::filesystem::path realtimeStylusSource =
@@ -528,6 +530,18 @@ int RunLaserIncrementalCoverageTests()
 			"written != requiredSize"));
 		// 平移诊断保留关键判定字段，便于从现场日志区分手势超时和惯性瞬停。
 		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource, "[CanvasPan] "));
+		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource,
+			"#if defined(DRAW3_RTS_DIAGNOSTICS)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(diagnosticsSource,
+			"if (!rtsTraceEnabled.load(std::memory_order_acquire)) return;"));
+		// 产品接入前用单一常量同时禁用 Touch Pan 与方向键平移，算法和诊断代码继续保留。
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlInterfaceSource,
+			"kCanvasNavigationProductIntegrationEnabled = false"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"if constexpr (kCanvasNavigationProductIntegrationEnabled)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"!kCanvasNavigationProductIntegrationEnabled"));
+		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "[Viewport]"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "within-180=%u"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "touch-window-expired"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,

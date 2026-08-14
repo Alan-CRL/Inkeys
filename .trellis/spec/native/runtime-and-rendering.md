@@ -717,6 +717,7 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 - `InkViewport.x/y` 是屏幕左上角对应的 Canvas 世界坐标，固定映射为 `screen = canvas - viewportOrigin`。Pen、Highlighter、Eraser、Shape 和 Laser 在进入模型/文档前都反变换为 Canvas-local；瞬态 L0/L1/Laser/粒子/cursor 在当前视口下重建。Viewport 必须 finite、`scale == 1` 且 `x/y` 在 `[-1048576, 1048576] DIP`；触限轴速度立即归零。
 - 方向键只在非自动重复 Down 时发布一次 `TranslateViewport`，内容移动 `64 DIP`，不启动惯性。Viewport 不进入 Undo，也不进入 `InkHistoryRasterKey`；视口变化丢弃依赖屏幕坐标的热前像，但保留 Canvas-local composition cache。
+- `kCanvasNavigationProductIntegrationEnabled` 是临时产品接入门禁，当前固定为 `false`：普通 Touch 继续绘制，但双指 Pan 与方向键 `TranslateViewport` 不进入运行时；接入 Inkeys 白板后只改该常量即可恢复。`LogCanvasPan` 仅随显式 RTS diagnostics 开启，正常模式不得输出滑动日志。
 - 只有零 Touch 开始的批次可识别平移。首指静止时立即按工具绘制；第二指的输入时间戳与首指相差 `<= 180ms` 时，即使绘制线程稍晚执行 `Update`，仍取消该批全部 Touch 临时内容、清 Laser/笔尖/粒子并从剩余 Pen/Mouse contact 重建 L1/L0 后进入平移。新加入 Pan 的第二/后续 Touch 必须以自身 `DownSnapshot` 为 anchor，使排队期间的 Move 在首帧补齐；原 drawing 首指以 handoff 当前 snapshot 为 anchor，不能把第二指出现前的单指位移算入 Pan。超时后该批直到全部 Up 都不可再识别平移。
 - 平移中新增 Touch 只加入手势、不绘制；拓扑变化重设中心，剩一指仍可拖动。QPC 是唯一时间源；固定容量 `24` 的 Move 样本在约 `100ms` 窗口内对累计中心位移做线性拟合。零位移包、Up 终态和渲染空帧不得进入估速；最后 Up 只补齐最终中心位移，并以 `releaseQpc - lastVelocitySampleQpc` 判断时效。Cancelled、反向时间或无有效 Move 样本禁止惯性。
 - 惯性中首个 Touch 进入特殊 180ms 候选期：惯性继续且该指不绘制。及时第二指接续旧速度；候选超时后首指整段生命周期都不补画，并请求加速制动，迟到 Touch 可绘制但不能与首指组成平移。

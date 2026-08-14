@@ -60,6 +60,9 @@ export namespace draw3
 		float deltaY = 0.0f;
 	};
 
+	// 临时产品接入门禁：接入 Inkeys 白板后改为 true，同时恢复双指和方向键平移。
+	inline constexpr bool kCanvasNavigationProductIntegrationEnabled = false;
+
 	// 管理窗口创建、消息回调、系统光标和跨线程瞬态光标请求。
 	class WindowController : public DrawingCursorEventSink
 	{

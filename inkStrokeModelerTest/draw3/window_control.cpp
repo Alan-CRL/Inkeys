@@ -1340,20 +1340,32 @@ namespace draw3
 					QueueCanvasCommand({ CanvasCommandType::PreviousPage });
 				return 0;
 			case VK_LEFT:
-				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, -64.0f, 0.0f });
+				if constexpr (kCanvasNavigationProductIntegrationEnabled)
+				{
+					if ((lParam & kPreviousKeyStateMask) == 0)
+						QueueCanvasCommand({ CanvasCommandType::TranslateViewport, -64.0f, 0.0f });
+				}
 				return 0;
 			case VK_RIGHT:
-				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 64.0f, 0.0f });
+				if constexpr (kCanvasNavigationProductIntegrationEnabled)
+				{
+					if ((lParam & kPreviousKeyStateMask) == 0)
+						QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 64.0f, 0.0f });
+				}
 				return 0;
 			case VK_UP:
-				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 0.0f, -64.0f });
+				if constexpr (kCanvasNavigationProductIntegrationEnabled)
+				{
+					if ((lParam & kPreviousKeyStateMask) == 0)
+						QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 0.0f, -64.0f });
+				}
 				return 0;
 			case VK_DOWN:
-				if ((lParam & kPreviousKeyStateMask) == 0)
-					QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 0.0f, 64.0f });
+				if constexpr (kCanvasNavigationProductIntegrationEnabled)
+				{
+					if ((lParam & kPreviousKeyStateMask) == 0)
+						QueueCanvasCommand({ CanvasCommandType::TranslateViewport, 0.0f, 64.0f });
+				}
 				return 0;
 			case '9':
 			case VK_NUMPAD9:

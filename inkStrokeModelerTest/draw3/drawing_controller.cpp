@@ -1861,6 +1861,8 @@ namespace draw3
 							return runtime && !runtime->ended && !runtime->awaitingReconnect &&
 								runtime->metricDeviceType != InputDeviceType::Touch;
 						});
+					const bool canvasNavigationBlocked = blockingContactActive ||
+						!kCanvasNavigationProductIntegrationEnabled;
 					const uint64_t key = CanvasTouchKey(handle);
 					const bool inheritedInertia = panMotion.inertiaActive;
 					const size_t contactCountBefore = touchGesture.ContactCount();
@@ -1871,14 +1873,14 @@ namespace draw3
 						: -1.0;
 					const CanvasTouchDecision touchDecision = touchGesture.OnTouchDown(
 						key, down.qpc, qpcFrequency, inheritedInertia,
-						blockingContactActive);
+						canvasNavigationBlocked);
 					LogCanvasPan("touch-down key=%llu order=%zu qpc=%lld first-qpc=%lld gap-ms=%.3f within-180=%u blocking=%u inherited-inertia=%u batch-before=%u decision=%s begin=%u joined=%u cancel-draw=%u",
 						static_cast<unsigned long long>(key), contactCountBefore + 1,
 						static_cast<long long>(down.qpc), static_cast<long long>(
 							contactCountBefore == 0 ? down.qpc : firstDownQpc), gapMilliseconds,
 						contactCountBefore == 1 && gapMilliseconds >= 0.0 &&
 							gapMilliseconds <= kCanvasPanGestureWindowSeconds * 1000.0 ? 1u : 0u,
-						blockingContactActive ? 1u : 0u, inheritedInertia ? 1u : 0u,
+						canvasNavigationBlocked ? 1u : 0u, inheritedInertia ? 1u : 0u,
 						batchAllowedBefore ? 1u : 0u,
 						CanvasTouchDispositionName(touchDecision.disposition),
 						touchDecision.beginPan ? 1u : 0u,
@@ -3395,8 +3397,8 @@ namespace draw3
 					viewportRefreshPending = true;
 					viewportRefreshClearsTransient = true;
 					forceFullPresent = true;
-					std::cout << "[Viewport] x=" << next.x << " y=" << next.y <<
-						" path=budgeted" << std::endl;
+					LogCanvasPan("viewport x=%.3f y=%.3f path=budgeted",
+						next.x, next.y);
 					continue;
 				}
 				renderer_.InvalidateTrustedL2Snapshot();

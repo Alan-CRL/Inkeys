@@ -518,6 +518,8 @@ namespace draw3
 
 	void LogCanvasPan(const char* format, ...) noexcept
 	{
+	#if defined(DRAW3_RTS_DIAGNOSTICS)
+		if (!rtsTraceEnabled.load(std::memory_order_acquire)) return;
 		if (!format) return;
 		char buffer[768] = {};
 		constexpr char prefix[] = "[CanvasPan] ";
@@ -537,6 +539,9 @@ namespace draw3
 		buffer[used + 2] = '\0';
 		WriteFastConsoleLine(buffer, static_cast<DWORD>(used + 2));
 		OutputDebugStringA(buffer);
+	#else
+		(void)format;
+	#endif
 	}
 
 	void LogHResult(const char* step, HRESULT result)
