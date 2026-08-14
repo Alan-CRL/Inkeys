@@ -132,38 +132,95 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(resumed.beginPan);
 	gesture.Reset();
 
+	// 第二指 Down 排队后即使 latest 已前进，Pan anchor 仍从 Down 补齐全部位移。
+	const draw3::CanvasPanContactAnchor secondDownAnchor{
+		{ 10.0f, 20.0f }, 1, false };
+	const draw3::CanvasPanContactAnchor delayedSecondLatest{
+		{ 55.0f, 80.0f }, 4, false };
+	const draw3::CanvasPanContactAnchor selectedSecondAnchor =
+		draw3::ResolveCanvasPanContactAnchor(secondDownAnchor,
+			delayedSecondLatest, draw3::CanvasPanContactAnchorMode::Down, false);
+	CANVAS_NAVIGATION_CHECK(selectedSecondAnchor.sequence == 1);
+	CANVAS_NAVIGATION_CHECK(delayedSecondLatest.position.x -
+		selectedSecondAnchor.position.x == 45.0f);
+	CANVAS_NAVIGATION_CHECK(delayedSecondLatest.position.y -
+		selectedSecondAnchor.position.y == 60.0f);
+	const draw3::CanvasPanContactAnchor terminalFirstAnchor =
+		draw3::ResolveCanvasPanContactAnchor(
+			{ { 0.0f, 0.0f }, 1, false },
+			{ { 25.0f, 30.0f }, 3, false },
+			draw3::CanvasPanContactAnchorMode::Current, true);
+	CANVAS_NAVIGATION_CHECK(terminalFirstAnchor.sequence == 3);
+	CANVAS_NAVIGATION_CHECK(terminalFirstAnchor.terminalPending);
+	CANVAS_NAVIGATION_CHECK(draw3::ShouldConsumeCanvasPanContactSnapshot(
+		3, 3, terminalFirstAnchor.terminalPending));
+	draw3::CanvasTouchGestureState handoffGesture;
+	handoffGesture.OnTouchDown(71, 7000, 1000, false, false);
+	handoffGesture.OnTouchDown(72, 7050, 1000, false, false);
+	CANVAS_NAVIGATION_CHECK(draw3::IsCanvasPanLifecycleOwnershipConsistent(
+		true, handoffGesture.PanContactCount(), 2, 1));
+	handoffGesture.OnTouchUp(71); // terminal 首指同步退休后，剩余一指仍持有 Pan。
+	CANVAS_NAVIGATION_CHECK(handoffGesture.PanActive());
+	CANVAS_NAVIGATION_CHECK(draw3::IsCanvasPanLifecycleOwnershipConsistent(
+		true, handoffGesture.PanContactCount(), 1, 0));
+	handoffGesture.OnTouchUp(72);
+	CANVAS_NAVIGATION_CHECK(!handoffGesture.PanActive());
+	CANVAS_NAVIGATION_CHECK(draw3::IsCanvasPanLifecycleOwnershipConsistent(
+		false, handoffGesture.PanContactCount(), 0, 0));
+
 	draw3::CanvasPanMotionState motion;
-	motion.velocity = { 1000.0f, 0.0f };
+	motion.velocity = { 3000.0f, 0.0f };
 	motion.inertiaActive = true;
 	draw3::BeginCanvasPan(motion, true, 1000);
 	CANVAS_NAVIGATION_CHECK(!motion.inertiaActive);
-	CANVAS_NAVIGATION_CHECK(motion.inheritedVelocity.x == 1000.0f);
-	const draw3::CanvasVector blended = draw3::UpdateCanvasPan(
-		motion, { 10.0f, 0.0f }, { 10.0f, 0.0f }, 1010, 1000);
-	CANVAS_NAVIGATION_CHECK(blended.x == 10.0f);
-	CANVAS_NAVIGATION_CHECK(motion.velocity.x > motion.directVelocity.x);
-	CANVAS_NAVIGATION_CHECK(draw3::CanvasPanSpeed(motion) <=
-		draw3::kCanvasPanMaximumSpeedDipPerSecond);
-	draw3::StopCanvasPan(motion);
-	motion.velocity = { 1000.0f, 0.0f };
-	motion.inertiaActive = true;
-	draw3::BeginCanvasPan(motion, true, 2000);
-	const draw3::CanvasVector reversed = draw3::UpdateCanvasPan(
-		motion, { -4.0f, 0.0f }, { -4.0f, 0.0f }, 2010, 1000);
-	CANVAS_NAVIGATION_CHECK(reversed.x == -4.0f);
-	CANVAS_NAVIGATION_CHECK(motion.velocity.x > 0.0f);
-	draw3::EndCanvasPan(motion);
-	CANVAS_NAVIGATION_CHECK(motion.inertiaActive);
-	draw3::CanvasPanMotionState lowResidualMotion;
-	lowResidualMotion.velocity = { 120.0f, 0.0f };
-	lowResidualMotion.inertiaActive = true;
-	draw3::BeginCanvasPan(lowResidualMotion, true, 3000);
-	const draw3::CanvasVector lowResidualBlend = draw3::UpdateCanvasPan(
-		lowResidualMotion, { 3.0f, 0.0f }, { 3.0f, 0.0f }, 3010, 1000);
-	CANVAS_NAVIGATION_CHECK(lowResidualBlend.x == 3.0f);
-	CANVAS_NAVIGATION_CHECK(lowResidualMotion.velocity.x > 300.0f);
-	draw3::EndCanvasPan(lowResidualMotion, 0.0);
-	CANVAS_NAVIGATION_CHECK(lowResidualMotion.inertiaActive);
+	CANVAS_NAVIGATION_CHECK(motion.releaseVelocityCandidate.x == 3000.0f);
+	CANVAS_NAVIGATION_CHECK(motion.releaseVelocityCandidateSource ==
+		draw3::CanvasPanReleaseCandidateSource::Residual);
+	const draw3::CanvasVector catchUp = draw3::UpdateCanvasPan(
+		motion, { 2.0f, -1.0f }, { 2.0f, -1.0f }, 1010, 1000);
+	CANVAS_NAVIGATION_CHECK(catchUp.x == 2.0f && catchUp.y == -1.0f);
+	CANVAS_NAVIGATION_CHECK(motion.hasNewMove);
+	CANVAS_NAVIGATION_CHECK(motion.releaseVelocityCandidateSource ==
+		draw3::CanvasPanReleaseCandidateSource::None);
+	const draw3::CanvasVector smallDirect = motion.directVelocity;
+	CANVAS_NAVIGATION_CHECK(motion.velocity.x == smallDirect.x &&
+		motion.velocity.y == smallDirect.y);
+	draw3::EndCanvasPan(motion, 0.0);
+	CANVAS_NAVIGATION_CHECK(motion.releaseSource ==
+		draw3::CanvasPanReleaseSource::NewDirect);
+	CANVAS_NAVIGATION_CHECK(motion.selectedReleaseVelocity.x == smallDirect.x &&
+		motion.selectedReleaseVelocity.y == smallDirect.y);
+	CANVAS_NAVIGATION_CHECK(motion.velocity.x == smallDirect.x &&
+		motion.velocity.y == smallDirect.y);
+	CANVAS_NAVIGATION_CHECK(std::abs(motion.velocity.x - 3200.0f) > 1.0f);
+
+	draw3::CanvasPanMotionState residualFallback;
+	residualFallback.velocity = { 3000.0f, -400.0f };
+	residualFallback.inertiaActive = true;
+	draw3::BeginCanvasPan(residualFallback, true, 2000);
+	draw3::EndCanvasPan(residualFallback, 0.01);
+	CANVAS_NAVIGATION_CHECK(residualFallback.selectedReleaseVelocity.x == 3000.0f &&
+		residualFallback.selectedReleaseVelocity.y == -400.0f);
+	CANVAS_NAVIGATION_CHECK(residualFallback.velocity.x == 3000.0f &&
+		residualFallback.velocity.y == -400.0f);
+	CANVAS_NAVIGATION_CHECK(residualFallback.releaseSource ==
+		draw3::CanvasPanReleaseSource::NoNewMoveResidual);
+
+	for (float moveDelta : { 5.0f, -5.0f })
+	{
+		draw3::CanvasPanMotionState directionMotion;
+		directionMotion.velocity = { 3000.0f, 0.0f };
+		directionMotion.inertiaActive = true;
+		draw3::BeginCanvasPan(directionMotion, true, 3000);
+		draw3::UpdateCanvasPan(directionMotion,
+			{ moveDelta, 0.0f }, { moveDelta, 0.0f }, 3010, 1000);
+		const float directVelocity = directionMotion.directVelocity.x;
+		CANVAS_NAVIGATION_CHECK(directionMotion.velocity.x == directVelocity);
+		draw3::EndCanvasPan(directionMotion, 0.0);
+		CANVAS_NAVIGATION_CHECK(directionMotion.velocity.x == directVelocity);
+		CANVAS_NAVIGATION_CHECK(directionMotion.releaseSource ==
+			draw3::CanvasPanReleaseSource::NewDirect);
+	}
 	draw3::CanvasPanMotionState sampledMotion;
 	draw3::BeginCanvasPan(sampledMotion, false, 4000);
 	draw3::UpdateCanvasPan(sampledMotion,
@@ -188,19 +245,45 @@ int RunCanvasNavigationTests()
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocitySamples[0].qpc == stableUpdateQpc);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == 0);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == 0.0f);
-	CANVAS_NAVIGATION_CHECK(sampledMotion.topologyReleaseVelocity.x == stableVelocity);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.releaseVelocityCandidate.x == stableVelocity);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.releaseVelocityCandidateSource ==
+		draw3::CanvasPanReleaseCandidateSource::Topology);
 	draw3::CanvasPanMotionState immediateTopologyRelease = sampledMotion;
 	draw3::EndCanvasPan(immediateTopologyRelease, 0.01);
 	CANVAS_NAVIGATION_CHECK(immediateTopologyRelease.inertiaActive);
+	CANVAS_NAVIGATION_CHECK(immediateTopologyRelease.selectedReleaseVelocity.x ==
+		stableVelocity);
 	CANVAS_NAVIGATION_CHECK(immediateTopologyRelease.velocity.x == stableVelocity);
+	CANVAS_NAVIGATION_CHECK(immediateTopologyRelease.releaseSource ==
+		draw3::CanvasPanReleaseSource::TopologyNoNewMove);
 	draw3::ResetCanvasPanVelocitySamples(sampledMotion, 4070);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.lastVelocitySampleQpc == 0);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x == 0.0f);
-	CANVAS_NAVIGATION_CHECK(sampledMotion.topologyReleaseVelocity.x == stableVelocity);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.releaseVelocityCandidate.x == stableVelocity);
 	draw3::UpdateCanvasPan(sampledMotion,
 		{ -10.0f, 0.0f }, { -10.0f, 0.0f }, 4080, 1000);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocity.x < 0.0f);
-	CANVAS_NAVIGATION_CHECK(sampledMotion.topologyReleaseVelocity.x == 0.0f);
+	CANVAS_NAVIGATION_CHECK(sampledMotion.releaseVelocityCandidateSource ==
+		draw3::CanvasPanReleaseCandidateSource::None);
+	const float topologyDirectVelocity = sampledMotion.directVelocity.x;
+	draw3::CanvasPanMotionState topologyMovedRelease = sampledMotion;
+	draw3::EndCanvasPan(topologyMovedRelease, 0.0);
+	CANVAS_NAVIGATION_CHECK(topologyMovedRelease.velocity.x == topologyDirectVelocity);
+	CANVAS_NAVIGATION_CHECK(topologyMovedRelease.releaseSource ==
+		draw3::CanvasPanReleaseSource::NewDirect);
+	draw3::CanvasPanMotionState staleDirectRelease;
+	draw3::BeginCanvasPan(staleDirectRelease, false, 5000);
+	draw3::UpdateCanvasPan(staleDirectRelease,
+		{ 10.0f, 0.0f }, { 10.0f, 0.0f }, 5010, 1000);
+	const float staleSelectedDirect = staleDirectRelease.directVelocity.x;
+	draw3::EndCanvasPan(staleDirectRelease,
+		draw3::kCanvasPanReleaseVelocityHorizonSeconds + 0.001);
+	CANVAS_NAVIGATION_CHECK(staleDirectRelease.releaseSource ==
+		draw3::CanvasPanReleaseSource::NewDirect);
+	CANVAS_NAVIGATION_CHECK(staleDirectRelease.selectedReleaseVelocity.x ==
+		staleSelectedDirect);
+	CANVAS_NAVIGATION_CHECK(staleDirectRelease.velocity.x == 0.0f);
+	CANVAS_NAVIGATION_CHECK(!staleDirectRelease.inertiaActive);
 	draw3::UpdateCanvasPan(sampledMotion,
 		{ -10.0f, 0.0f }, { -10.0f, 0.0f }, 4300, 1000);
 	CANVAS_NAVIGATION_CHECK(sampledMotion.velocitySampleCount == 1);

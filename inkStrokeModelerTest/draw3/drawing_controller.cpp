@@ -415,6 +415,7 @@ namespace draw3
 			PointF velocityPosition = {};
 			uint64_t lastConsumedSequence = 0;
 			CanvasTouchDisposition disposition = CanvasTouchDisposition::Suppressed;
+			bool terminalPending = false;
 		};
 
 		uint64_t CanvasTouchKey(const ContactHandle& handle) noexcept
@@ -1559,7 +1560,7 @@ namespace draw3
 		// 绘制线程只在活动期占用 CPU；提高一级优先级降低 120 FPS deadline 被后台窗口抢占的概率。
 
 		auto addGestureContact = [&](ContactHandle handle,
-			CanvasTouchDisposition disposition)
+			CanvasTouchDisposition disposition, CanvasPanContactAnchorMode anchorMode)
 		{
 			if (!handle.record) return;
 			const uint64_t key = CanvasTouchKey(handle);
@@ -1567,11 +1568,28 @@ namespace draw3
 				[key](const CanvasGestureContactRuntime& contact)
 				{ return contact.key == key; })) return;
 			const ContactSnapshot downSnapshot = handle.record->DownSnapshot();
-			ContactSnapshot snapshot = downSnapshot;
-			input_.TryReadSnapshot(handle, snapshot); // 手势接管以当前触点为基准，不能跳回首指 Down。
+			ContactSnapshot currentSnapshot = downSnapshot;
+			input_.TryReadSnapshot(handle, currentSnapshot);
+			const bool currentTerminal = currentSnapshot.phase == ContactPhase::Up ||
+				currentSnapshot.phase == ContactPhase::Cancelled;
+			const CanvasPanContactAnchor anchor = ResolveCanvasPanContactAnchor(
+				{ { downSnapshot.position.x, downSnapshot.position.y },
+					downSnapshot.sequence, false },
+				{ { currentSnapshot.position.x, currentSnapshot.position.y },
+					currentSnapshot.sequence, false },
+				anchorMode, currentTerminal);
+			ContactSnapshot snapshot = anchorMode == CanvasPanContactAnchorMode::Down
+				? downSnapshot : currentSnapshot;
 			gestureContacts.push_back({
 				handle, key, snapshot, snapshot.position,
-				downSnapshot.sequence, disposition }); // 终态即使已进 mailbox，也必须由导航循环消费。
+				anchor.sequence, disposition, anchor.terminalPending });
+			LogCanvasPan("pan-contact-acquire key=%llu anchor=%s down-sequence=%llu current-sequence=%llu selected-sequence=%llu phase=%u terminal-pending=%u",
+				static_cast<unsigned long long>(key),
+				anchorMode == CanvasPanContactAnchorMode::Down ? "down" : "current",
+				static_cast<unsigned long long>(downSnapshot.sequence),
+				static_cast<unsigned long long>(currentSnapshot.sequence),
+				static_cast<unsigned long long>(anchor.sequence),
+				static_cast<unsigned>(snapshot.phase), anchor.terminalPending ? 1u : 0u);
 		};
 
 		auto hasLiveSuppressedPenContact = [&]() noexcept
@@ -1629,10 +1647,27 @@ namespace draw3
 					runtime->metricDeviceType != InputDeviceType::Touch ||
 					!touchGesture.HasContact(runtime->touchGestureKey) ||
 					touchGesture.Disposition(runtime->touchGestureKey) !=
-						CanvasTouchDisposition::Pan ||
-					!runtimeContactPhysicallyLive(*runtime)) continue;
-				addGestureContact(runtime->handle, CanvasTouchDisposition::Pan);
-				runtime->handle = {}; // gesture runtime 接管 handle，直到真实 Up 才回收。
+						CanvasTouchDisposition::Pan) continue;
+				ContactSnapshot latest = runtime->lastInputSnapshot;
+				input_.TryReadSnapshot(runtime->handle, latest);
+				const bool terminal = latest.phase == ContactPhase::Up ||
+					latest.phase == ContactPhase::Cancelled;
+				if (terminal)
+				{
+					// 已进 mailbox 的终态在 handoff 点同步退休，不能留下无 runtime 的 FSM contact。
+					const CanvasTouchDisposition retired = touchGesture.OnTouchUp(
+						runtime->touchGestureKey);
+					input_.Recycle(runtime->handle);
+					LogCanvasPan("touch-pan-handoff-retire key=%llu qpc=%lld phase=%u disposition=%s",
+						static_cast<unsigned long long>(runtime->touchGestureKey),
+						static_cast<long long>(latest.qpc),
+						static_cast<unsigned>(latest.phase),
+						CanvasTouchDispositionName(retired));
+				}
+				else
+					addGestureContact(runtime->handle, CanvasTouchDisposition::Pan,
+						CanvasPanContactAnchorMode::Current);
+				runtime->handle = {}; // gesture runtime 接管或同步退休后，drawing 不再拥有 handle。
 				runtime->ended = true;
 				runtime->cancelled = true;
 				runtime->awaitingReconnect = false;
@@ -1700,6 +1735,21 @@ namespace draw3
 					static_cast<unsigned>(contact.snapshot.phase),
 					static_cast<unsigned long long>(contact.snapshot.sequence));
 			}
+			const size_t terminalPending = static_cast<size_t>(std::count_if(
+				gestureContacts.begin(), gestureContacts.end(),
+				[&](const CanvasGestureContactRuntime& contact)
+				{
+					return contact.terminalPending && touchGesture.Disposition(contact.key) ==
+						CanvasTouchDisposition::Pan;
+				}));
+			const size_t fsmPanContacts = touchGesture.PanContactCount();
+			const bool lifecycleConsistent = IsCanvasPanLifecycleOwnershipConsistent(
+				touchGesture.PanActive(), fsmPanContacts,
+				previousPanContactCount, terminalPending);
+			LogCanvasPan("pan-lifecycle panActive=%u fsmPanContacts=%zu gestureRuntimePanContacts=%zu terminalPendingPanContacts=%zu consistent=%u",
+				touchGesture.PanActive() ? 1u : 0u, fsmPanContacts,
+				previousPanContactCount, terminalPending,
+				lifecycleConsistent ? 1u : 0u);
 		};
 
 		auto retireEndedTouchBeforeDown = [&](int64_t downQpc)
@@ -1786,7 +1836,8 @@ namespace draw3
 				{
 					// Touch 跟手批次中的 Pen 只跟踪到抬笔，不能在惯性阶段补画。
 					suppressPenUntilRelease = true;
-					addGestureContact(handle, CanvasTouchDisposition::Suppressed);
+					addGestureContact(handle, CanvasTouchDisposition::Suppressed,
+						CanvasPanContactAnchorMode::Current);
 					return true;
 				}
 				if (deviceType == InputDeviceType::Pen)
@@ -1835,7 +1886,8 @@ namespace draw3
 						touchDecision.cancelExistingTouchDrawing ? 1u : 0u);
 					if (touchDecision.disposition != CanvasTouchDisposition::Draw)
 					{
-						addGestureContact(handle, touchDecision.disposition);
+						addGestureContact(handle, touchDecision.disposition,
+							CanvasPanContactAnchorMode::Down);
 						if (touchDecision.beginPan)
 						{
 							const CanvasVector residualVelocity = panMotion.velocity;
@@ -2658,13 +2710,16 @@ namespace draw3
 			bool panReleaseCancelled = false;
 			for (CanvasGestureContactRuntime& contact : gestureContacts)
 			{
-				ContactSnapshot snapshot;
-				if (!input_.TryReadSnapshot(contact.handle, snapshot) ||
-					snapshot.sequence == contact.lastConsumedSequence) continue;
+				ContactSnapshot snapshot = contact.snapshot;
+				const bool snapshotRead = input_.TryReadSnapshot(contact.handle, snapshot);
+				if ((!snapshotRead && !contact.terminalPending) ||
+					!ShouldConsumeCanvasPanContactSnapshot(snapshot.sequence,
+						contact.lastConsumedSequence, contact.terminalPending)) continue;
 				const ContactSnapshot previousSnapshot = contact.snapshot;
 				contact.disposition = touchGesture.Disposition(contact.key);
 				contact.lastConsumedSequence = snapshot.sequence;
 				contact.snapshot = snapshot;
+				contact.terminalPending = false;
 				const CanvasVector point{ snapshot.position.x, snapshot.position.y };
 				if (snapshot.phase == ContactPhase::Move)
 				{
@@ -2747,38 +2802,31 @@ namespace draw3
 						const CanvasVector velocityBeforeUpdate = panMotion.velocity;
 						const double updateDeltaSeconds = QpcDeltaSeconds(inputQpc,
 							panMotion.lastUpdateQpc, qpcFrequency);
-						const float inheritedWeight = panMotion.inheritedBlendRemainingSeconds > 0.0 &&
-							updateDeltaSeconds > 0.0
-							? static_cast<float>(std::clamp(
-								panMotion.inheritedBlendRemainingSeconds /
-								kCanvasPanMomentumBlendSeconds, 0.0, 1.0)) : 0.0f;
 						contentDelta = UpdateCanvasPan(panMotion, centroidDelta,
 							velocityDelta, inputQpc,
 							qpcFrequency, updateVelocity);
-						const CanvasVector inheritedContentDelta{
-							contentDelta.x - centroidDelta.x,
-							contentDelta.y - centroidDelta.y };
 						const float inputDistance = std::hypot(centroidDelta.x, centroidDelta.y);
 						const float outputDistance = std::hypot(contentDelta.x, contentDelta.y);
-						const float inheritedDistance = std::hypot(
-							inheritedContentDelta.x, inheritedContentDelta.y);
 						const float speedBeforeUpdate = std::hypot(
 							velocityBeforeUpdate.x, velocityBeforeUpdate.y);
 						const float speedAfterUpdate = CanvasPanSpeed(panMotion);
-						const bool anomalousPanFrame = inheritedDistance > 24.0f ||
+						const bool candidateValid = panMotion.releaseVelocityCandidateSource !=
+							CanvasPanReleaseCandidateSource::None;
+						const bool anomalousPanFrame =
 							speedAfterUpdate - speedBeforeUpdate > 2000.0f ||
 							(inputDistance < 2.0f && outputDistance > 24.0f) ||
 							speedAfterUpdate > 6000.0f;
 						if (anomalousPanFrame && inputQpc >= nextPanAnomalyDiagnosticQpc)
 						{
-							// 只在可疑帧输出动量拆分，定位旧惯性是否直接放大本帧位移。
-							LogCanvasPan("pan-anomaly qpc=%lld dt-ms=%.3f contacts=%zu direct-delta=(%.3f,%.3f) inherited-delta=(%.3f,%.3f) output-delta=(%.3f,%.3f) direct-velocity=(%.1f,%.1f) inherited-velocity=(%.1f,%.1f) inherited-weight=%.3f combined-before=(%.1f,%.1f) combined-after=(%.1f,%.1f) samples=%zu last-sample-qpc=%lld",
+							// 可疑帧直接打印候选与新手势速度，验证二者从未混入同一数值。
+							LogCanvasPan("pan-anomaly qpc=%lld dt-ms=%.3f contacts=%zu centroid-delta=(%.3f,%.3f) content-delta=(%.3f,%.3f) direct=(%.1f,%.1f) candidate=(%.1f,%.1f) candidate-valid=%u has-new-move=%u velocity-before=(%.1f,%.1f) velocity-after=(%.1f,%.1f) samples=%zu last-sample-qpc=%lld",
 								static_cast<long long>(inputQpc), updateDeltaSeconds * 1000.0,
 								count, centroidDelta.x, centroidDelta.y,
-								inheritedContentDelta.x, inheritedContentDelta.y,
 								contentDelta.x, contentDelta.y, panMotion.directVelocity.x,
-								panMotion.directVelocity.y, panMotion.inheritedVelocity.x,
-								panMotion.inheritedVelocity.y, inheritedWeight,
+								panMotion.directVelocity.y,
+								panMotion.releaseVelocityCandidate.x,
+								panMotion.releaseVelocityCandidate.y,
+								candidateValid ? 1u : 0u, panMotion.hasNewMove ? 1u : 0u,
 								velocityBeforeUpdate.x, velocityBeforeUpdate.y,
 								panMotion.velocity.x, panMotion.velocity.y,
 								panMotion.velocitySampleCount,
@@ -2791,14 +2839,16 @@ namespace draw3
 							const double velocityAge = lastPanInputQpc > 0
 								? QpcDeltaSeconds(newestPanPositionQpc,
 									lastPanInputQpc, qpcFrequency) : 0.0;
-							LogCanvasPan("pan-move engine=application contacts=%zu qpc=%lld velocity-sample=%u terminal-position=%u centroid-delta=(%.3f,%.3f) content-delta=(%.3f,%.3f) velocity=(%.1f,%.1f) samples=%zu sample-age-ms=%.3f inherited-ms=%.1f",
+							LogCanvasPan("pan-move engine=application contacts=%zu qpc=%lld velocity-sample=%u terminal-position=%u centroid-delta=(%.3f,%.3f) content-delta=(%.3f,%.3f) direct=(%.1f,%.1f) candidate=(%.1f,%.1f) candidate-valid=%u has-new-move=%u samples=%zu sample-age-ms=%.3f",
 								count, static_cast<long long>(newestPanPositionQpc),
 								updateVelocity ? 1u : 0u, panTerminalPositionUpdated ? 1u : 0u,
 								centroidDelta.x, centroidDelta.y,
-								contentDelta.x, contentDelta.y, panMotion.velocity.x,
-								panMotion.velocity.y, panMotion.velocitySampleCount,
-								velocityAge * 1000.0,
-								panMotion.inheritedBlendRemainingSeconds * 1000.0);
+								contentDelta.x, contentDelta.y, panMotion.directVelocity.x,
+								panMotion.directVelocity.y,
+								panMotion.releaseVelocityCandidate.x,
+								panMotion.releaseVelocityCandidate.y,
+								candidateValid ? 1u : 0u, panMotion.hasNewMove ? 1u : 0u,
+								panMotion.velocitySampleCount, velocityAge * 1000.0);
 							nextPanMoveDiagnosticQpc = newestPanPositionQpc +
 								(std::max)(int64_t{ 1 }, qpcFrequency / 10);
 						}
@@ -2833,6 +2883,29 @@ namespace draw3
 					input_.Recycle(contact.handle);
 					return true;
 				});
+			const size_t fsmPanContacts = touchGesture.PanContactCount();
+			const size_t gestureRuntimePanContacts = static_cast<size_t>(std::count_if(
+				gestureContacts.begin(), gestureContacts.end(),
+				[&](const CanvasGestureContactRuntime& contact)
+				{
+					return touchGesture.Disposition(contact.key) ==
+						CanvasTouchDisposition::Pan;
+				}));
+			const size_t terminalPendingPanContacts = static_cast<size_t>(std::count_if(
+				gestureContacts.begin(), gestureContacts.end(),
+				[&](const CanvasGestureContactRuntime& contact)
+				{
+					return contact.terminalPending && touchGesture.Disposition(contact.key) ==
+						CanvasTouchDisposition::Pan;
+				}));
+			const bool panLifecycleConsistent = IsCanvasPanLifecycleOwnershipConsistent(
+				touchGesture.PanActive(), fsmPanContacts,
+				gestureRuntimePanContacts, terminalPendingPanContacts);
+			if (topologyChanged || terminalPendingPanContacts > 0 || !panLifecycleConsistent)
+				LogCanvasPan("pan-lifecycle panActive=%u fsmPanContacts=%zu gestureRuntimePanContacts=%zu terminalPendingPanContacts=%zu consistent=%u",
+					touchGesture.PanActive() ? 1u : 0u, fsmPanContacts,
+					gestureRuntimePanContacts, terminalPendingPanContacts,
+					panLifecycleConsistent ? 1u : 0u);
 			window_.SetTouchPanActive(touchGesture.PanActive());
 
 			if (touchGesture.PanActive() && topologyChanged)
@@ -2885,9 +2958,15 @@ namespace draw3
 						ApplyCanvasContentTranslationChecked(
 						viewport, contentDelta);
 					if (translation.xClamped)
+					{
 						panMotion.velocity.x = 0.0f;
+						if (panMotion.hasNewMove) panMotion.directVelocity.x = 0.0f;
+					}
 					if (translation.yClamped)
+					{
 						panMotion.velocity.y = 0.0f;
+						if (panMotion.hasNewMove) panMotion.directVelocity.y = 0.0f;
+					}
 					if (translation.xClamped || translation.yClamped)
 						LogCanvasPan("viewport-clamp x=%u y=%u requested=(%.3f,%.3f) applied-viewport=(%.3f,%.3f) velocity=(%.1f,%.1f)",
 							translation.xClamped ? 1u : 0u, translation.yClamped ? 1u : 0u,
@@ -2908,20 +2987,30 @@ namespace draw3
 			{
 				panCentroidValid = false;
 				previousPanContactCount = 0;
-				const CanvasVector appVelocityBefore = panMotion.velocity;
-				const bool usesTopologyReleaseCandidate =
-					panMotion.lastVelocitySampleQpc <= 0 &&
-					(panMotion.topologyReleaseVelocity.x != 0.0f ||
-						panMotion.topologyReleaseVelocity.y != 0.0f);
+				const CanvasVector directVelocity = panMotion.directVelocity;
+				const CanvasVector releaseCandidate = panMotion.releaseVelocityCandidate;
+				const bool candidateValid = panMotion.releaseVelocityCandidateSource !=
+					CanvasPanReleaseCandidateSource::None;
+				const bool hasNewMove = panMotion.hasNewMove;
 				const double secondsSinceLastInput = CanvasPanReleaseAgeSeconds(
 					panReleaseQpc, lastPanInputQpc, qpcFrequency, panReleaseCancelled);
 				EndCanvasPan(panMotion, secondsSinceLastInput);
+				const CanvasVector selectedReleaseVelocity =
+					panMotion.selectedReleaseVelocity;
+				const bool directReleaseMismatch = hasNewMove &&
+					(std::abs(selectedReleaseVelocity.x - directVelocity.x) > 0.01f ||
+						std::abs(selectedReleaseVelocity.y - directVelocity.y) > 0.01f);
+				if (directReleaseMismatch)
+					LogCanvasPan("pan-release-anomaly has-new-move=1 direct=(%.1f,%.1f) candidate=(%.1f,%.1f) selected=(%.1f,%.1f) release-source=%s",
+						directVelocity.x, directVelocity.y, releaseCandidate.x,
+						releaseCandidate.y, selectedReleaseVelocity.x,
+						selectedReleaseVelocity.y,
+						CanvasPanReleaseSourceName(panMotion.releaseSource));
 				inertiaFirstStepDiagnosticPending = panMotion.inertiaActive;
 				inertiaBrakeStateValid = false;
 				const char* releaseReason = panReleaseCancelled ? "cancelled" :
 					!std::isfinite(secondsSinceLastInput) ? "invalid-release-time" :
 					secondsSinceLastInput > kCanvasPanReleaseVelocityHorizonSeconds ? "release-stale" :
-					usesTopologyReleaseCandidate ? "topology-release-candidate" :
 					panMotion.lastVelocitySampleQpc <= 0 ? "no-move-samples" :
 					CanvasPanSpeed(panMotion) < 5.0f ? "speed-below-threshold" :
 					"application-inertia";
@@ -2937,7 +3026,7 @@ namespace draw3
 					? lastVelocitySample->x - firstVelocitySample->x : 0.0;
 				const double sampleSpanY = firstVelocitySample && lastVelocitySample
 					? lastVelocitySample->y - firstVelocitySample->y : 0.0;
-				LogCanvasPan("pan-release engine=application qpc=%lld last-input-qpc=%lld age-ms=%.3f cancelled=%u samples=%zu sample-first=(%lld,%.2f,%.2f) sample-last=(%lld,%.2f,%.2f) sample-span-ms=%.3f sample-span=(%.2f,%.2f) before=(%.1f,%.1f) selected=(%.1f,%.1f) speed=%.1f inertia=%u reason=%s",
+				LogCanvasPan("pan-release engine=application qpc=%lld last-input-qpc=%lld age-ms=%.3f cancelled=%u samples=%zu sample-first=(%lld,%.2f,%.2f) sample-last=(%lld,%.2f,%.2f) sample-span-ms=%.3f sample-span=(%.2f,%.2f) direct=(%.1f,%.1f) candidate=(%.1f,%.1f) candidate-valid=%u has-new-move=%u selected=(%.1f,%.1f) release-source=%s speed=%.1f inertia=%u reason=%s",
 					static_cast<long long>(panReleaseQpc),
 					static_cast<long long>(lastPanInputQpc),
 					std::isfinite(secondsSinceLastInput) ? secondsSinceLastInput * 1000.0 : -1.0,
@@ -2949,9 +3038,13 @@ namespace draw3
 					lastVelocitySample ? lastVelocitySample->x : 0.0,
 					lastVelocitySample ? lastVelocitySample->y : 0.0,
 					sampleSpanMilliseconds, sampleSpanX, sampleSpanY,
-					appVelocityBefore.x, appVelocityBefore.y, panMotion.velocity.x,
-					panMotion.velocity.y, CanvasPanSpeed(panMotion),
-					panMotion.inertiaActive ? 1u : 0u, releaseReason);
+					directVelocity.x, directVelocity.y, releaseCandidate.x,
+					releaseCandidate.y, candidateValid ? 1u : 0u,
+					hasNewMove ? 1u : 0u, selectedReleaseVelocity.x,
+					selectedReleaseVelocity.y,
+					CanvasPanReleaseSourceName(panMotion.releaseSource),
+					CanvasPanSpeed(panMotion), panMotion.inertiaActive ? 1u : 0u,
+					releaseReason);
 				if (panReleaseQpc > 0) lastPanReleaseQpc = panReleaseQpc;
 			}
 			lastNavigationQpc = nowQpc;
@@ -2974,14 +3067,15 @@ namespace draw3
 			DrawingCursorSample mouseSample;
 			window_.ReadPenCursorSample(penSample);
 			window_.ReadMouseCursorSample(mouseSample);
-			if (suppressPenUntilRelease || window_.PenContactSuppressedForTouchPan())
+			if (window_.TouchPanActive() || suppressPenUntilRelease ||
+				window_.PenContactSuppressedForTouchPan())
 				penSample.valid = false;
 			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 			if (cursorTool == DrawingTool::Laser)
 			{
 				const DrawingCursorVisual primary = ResolveLaserDrawingCursorVisual(
-					penSample, mouseSample, window_.CursorPointerAuthority(),
+					penSample, mouseSample, window_.CursorOwner(),
 					window_.CursorAppearanceForTool(DrawingTool::Laser));
 				if (primary.visible)
 					laserTipDots.push_back({ primary.x, primary.y,
@@ -2990,7 +3084,7 @@ namespace draw3
 			else
 			{
 				const DrawingCursorVisual primary = ResolvePrimaryDrawingCursorVisual(
-					penSample, mouseSample, window_.CursorPointerAuthority(),
+					penSample, mouseSample, window_.CursorOwner(),
 					window_.CursorAppearanceForTool(cursorTool),
 					window_.CursorAppearanceForTool(DrawingTool::Eraser),
 					cursorTool == DrawingTool::Eraser,
@@ -3918,7 +4012,7 @@ namespace draw3
 				? (*frameToolIterator)->tool
 				: active.empty() ? window_.ActiveTool() : active.front()->tool;
 			const DrawingCursorPointerAuthority cursorAuthority =
-				window_.CursorPointerAuthority();
+				window_.CursorOwner();
 			auto activeCursorIterator = std::find_if(active.begin(), active.end(),
 				[&](const RuntimeStroke* runtime)
 				{

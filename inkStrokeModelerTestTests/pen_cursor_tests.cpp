@@ -216,6 +216,38 @@ int RunPenCursorTests()
 		DrawingCursorPointerAuthority::Mouse, false, true, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Mouse, false, true, false, true, false));
+	// Touch 只记录事件；本轮没有真实 Mouse 接管时，Pan 必须始终隐藏系统箭头。
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Pen, false, false, true, false,
+		true, true, false));
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Mouse, false, false, false, true,
+		true, true, false));
+	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Mouse, false, false, false, true,
+		true, true, true));
+	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Pen, false, false, true, true,
+		true, true, true));
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerForPointerEvent(
+		DrawingCursorPointerAuthority::Pen,
+		DrawingCursorPointerAuthority::Touch) == DrawingCursorPointerAuthority::Pen);
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerForPointerEvent(
+		DrawingCursorPointerAuthority::Mouse,
+		DrawingCursorPointerAuthority::Touch) == DrawingCursorPointerAuthority::Mouse);
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerForPointerEvent(
+		DrawingCursorPointerAuthority::Pen,
+		DrawingCursorPointerAuthority::Mouse) == DrawingCursorPointerAuthority::Mouse);
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerForPointerEvent(
+		DrawingCursorPointerAuthority::Mouse,
+		DrawingCursorPointerAuthority::Pen,
+		true, true) == DrawingCursorPointerAuthority::Mouse);
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerAfterTouchPan(
+		false, true, true) == DrawingCursorPointerAuthority::Pen);
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerAfterTouchPan(
+		true, true, true) == DrawingCursorPointerAuthority::Mouse);
+	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerAfterTouchPan(
+		true, true, false) == DrawingCursorPointerAuthority::Pen);
 	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority::Pen));
 	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
@@ -238,16 +270,17 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, true, true));
 	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(false, false, true));
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, false, false));
+	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
+		false, true, true, 1.0f, -2.0f, 0.01));
+	// 当前 owner 即使已不是 Pen，新鲜同位置 Pen presence 仍可识别兼容 Mouse contact。
 	PEN_CURSOR_CHECK(draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
-		true, DrawingCursorPointerAuthority::Pen, true, true, 1.0f, -2.0f, 0.01));
+		true, true, true, 1.0f, -2.0f, 0.01));
 	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
-		false, DrawingCursorPointerAuthority::Pen, true, true, 1.0f, -2.0f, 0.01));
+		true, false, true, 1.0f, -2.0f, 0.01));
 	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
-		true, DrawingCursorPointerAuthority::Mouse, true, true, 1.0f, -2.0f, 0.01));
+		true, true, true, 9.0f, 0.0f, 0.01));
 	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
-		true, DrawingCursorPointerAuthority::Pen, true, true, 9.0f, 0.0f, 0.01));
-	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
-		true, DrawingCursorPointerAuthority::Pen, true, true, 1.0f, -2.0f, 0.101));
+		true, true, true, 1.0f, -2.0f, 0.101));
 
 	mouseHover.inContact = false;
 	const draw3::DrawingCursorVisual laserMouseHover =

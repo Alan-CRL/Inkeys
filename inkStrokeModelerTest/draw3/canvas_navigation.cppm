@@ -12,7 +12,6 @@ export module draw3.canvas_navigation;
 export namespace draw3
 {
 	inline constexpr double kCanvasPanGestureWindowSeconds = 0.180;
-	inline constexpr double kCanvasPanMomentumBlendSeconds = 0.120;
 	inline constexpr double kCanvasPanReleaseVelocityHorizonSeconds = 0.100;
 	inline constexpr size_t kCanvasPanVelocitySampleCapacity = 24;
 	inline constexpr double kCanvasPanPredictionSeconds = 0.150;
@@ -87,6 +86,7 @@ export namespace draw3
 		size_t ContactCount() const noexcept;
 		int64_t FirstDownQpc() const noexcept;
 		size_t GestureContactCount() const noexcept;
+		size_t PanContactCount() const noexcept;
 		bool HasContact(uint64_t contactKey) const noexcept;
 		CanvasTouchDisposition Disposition(uint64_t contactKey) const noexcept;
 
@@ -112,13 +112,53 @@ export namespace draw3
 		double y = 0.0;
 	};
 
+	enum class CanvasPanContactAnchorMode : uint8_t
+	{
+		Down,
+		Current
+	};
+
+	struct CanvasPanContactAnchor
+	{
+		CanvasVector position = {};
+		uint64_t sequence = 0;
+		bool terminalPending = false;
+	};
+
+	// 新加入触点从 Down 补齐位移；drawing handoff 从当前点起步并显式保留终态消费。
+	CanvasPanContactAnchor ResolveCanvasPanContactAnchor(
+		CanvasPanContactAnchor downAnchor, CanvasPanContactAnchor currentAnchor,
+		CanvasPanContactAnchorMode mode, bool currentTerminal) noexcept;
+	bool ShouldConsumeCanvasPanContactSnapshot(uint64_t snapshotSequence,
+		uint64_t lastConsumedSequence, bool terminalPending) noexcept;
+	bool IsCanvasPanLifecycleOwnershipConsistent(bool panActive,
+		size_t fsmPanContacts, size_t gestureRuntimePanContacts,
+		size_t terminalPendingPanContacts) noexcept;
+
+	enum class CanvasPanReleaseCandidateSource : uint8_t
+	{
+		None,
+		Residual,
+		Topology
+	};
+
+	enum class CanvasPanReleaseSource : uint8_t
+	{
+		None,
+		NewDirect,
+		NoNewMoveResidual,
+		TopologyNoNewMove
+	};
+
 	struct CanvasPanMotionState
 	{
 		CanvasVector velocity = {};
 		CanvasVector directVelocity = {};
-		CanvasVector inheritedVelocity = {};
-		CanvasVector topologyReleaseVelocity = {};
-		double inheritedBlendRemainingSeconds = 0.0;
+		CanvasVector releaseVelocityCandidate = {};
+		CanvasVector selectedReleaseVelocity = {};
+		CanvasPanReleaseCandidateSource releaseVelocityCandidateSource =
+			CanvasPanReleaseCandidateSource::None;
+		CanvasPanReleaseSource releaseSource = CanvasPanReleaseSource::None;
 		double samplePositionX = 0.0;
 		double samplePositionY = 0.0;
 		int64_t lastUpdateQpc = 0;
@@ -126,12 +166,13 @@ export namespace draw3
 		std::array<CanvasPanVelocitySample,
 			kCanvasPanVelocitySampleCapacity> velocitySamples = {};
 		size_t velocitySampleCount = 0;
+		bool hasNewMove = false;
 		bool inertiaActive = false;
 	};
 
 	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia,
 		int64_t inputQpc = 0) noexcept;
-	// 触点数量变化时重置估速基准，仅保留刚结束拓扑的有效直接速度用于紧邻释放。
+	// 触点数量变化时重置估速基准；旧直接速度只作为无后续 Move 的一次性候选。
 	void ResetCanvasPanVelocitySamples(CanvasPanMotionState& motion,
 		int64_t inputQpc = 0) noexcept;
 	// 只有真实 Move 可更新估速；Up 可提交最终位移，但不得污染释放速度。
@@ -145,6 +186,7 @@ export namespace draw3
 		int64_t qpcFrequency, bool cancelled) noexcept;
 	void EndCanvasPan(CanvasPanMotionState& motion,
 		double secondsSinceLastInput = 0.0) noexcept;
+	const char* CanvasPanReleaseSourceName(CanvasPanReleaseSource source) noexcept;
 	CanvasVector StepCanvasPanInertia(CanvasPanMotionState& motion,
 		double deltaSeconds, bool penInRange) noexcept;
 	void StopCanvasPan(CanvasPanMotionState& motion) noexcept;

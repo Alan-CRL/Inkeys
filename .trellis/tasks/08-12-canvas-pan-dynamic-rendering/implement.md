@@ -16,6 +16,7 @@
 14. 移除 `IManipulationProcessor`/`IInertiaProcessor`：以 QPC、固定 `24` 样本/约 `100ms` Move 窗口和线性拟合统一估速；Up 只补最终位移，拓扑变化重建基准，应用层线性惯性成为唯一实现。
 15. 修复长日志暴露的问题：以 double 候选值判断真实硬边界；新零 Touch 批次清除旧中断资格；零位移不覆盖速度；Mouse mailbox 不把 Touch-to-Mouse 提升误作物理 Mouse 抢占；增加对应无窗口回归测试和生产源码 COM 禁用检查。
 16. 修复第二轮长日志暴露的事件排序：Down 前退休 mailbox 已终态的旧单指手势归属；所有 Pan 拓扑变化同步位置/估速基准并保持 QPC 单调；绘制层显式触发窗口 Pen suppression 清理。
+17. 修复状态所有权：删除旧惯性与新 direct velocity 的 120ms 混合，改为无新 Move 才可消费的一次性 release candidate；拆分 pointer event 与 cursor owner，Touch Pan 仅允许确认真实 Mouse 接管；第二指使用 Down anchor，终态首指完成同步 handoff retirement，并增加速度、cursor 与 lifecycle 回归诊断/测试。
 
 ## Rollback Points
 

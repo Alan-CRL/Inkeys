@@ -108,11 +108,12 @@ export namespace draw3
 		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
 		void ClearActiveDrawingCursorTool() noexcept;
 		DrawingTool EffectiveDrawingCursorTool() const noexcept;
-		DrawingCursorPointerAuthority CursorPointerAuthority() const noexcept;
+		DrawingCursorPointerAuthority CursorOwner() const noexcept;
 		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
 		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
 		void SetTouchPanActive(bool active) noexcept;
+		bool TouchPanActive() const noexcept;
 		// 活动平移观察到 Pen contact 时立即锁存抑制并清除旧光标/触觉状态。
 		void SuppressPenContactForTouchPan() noexcept;
 		bool PenContactSuppressedForTouchPan() const noexcept;
@@ -143,8 +144,7 @@ export namespace draw3
 		void QueueCanvasCommand(CanvasCommand command);
 		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
-		void SetDrawingCursorPointerAuthority(
-			DrawingCursorPointerAuthority authority) noexcept;
+		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
 		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
 		void ClearMouseCursorSample() noexcept;
@@ -177,11 +177,12 @@ export namespace draw3
 		std::atomic<bool> hapticPointerIdRequested_ = false;
 		std::atomic<bool> hapticPointerLeaveRequested_ = false;
 		std::atomic<bool> touchPanActive_ = false;
+		std::atomic<bool> realMouseTakeoverDuringTouchPan_ = false;
 		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
 		std::atomic<bool> penCompatibilityMouseContactSuppressed_ = false;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
-		std::atomic<DrawingCursorPointerAuthority> drawingCursorPointerAuthority_ =
+		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =
 			DrawingCursorPointerAuthority::Unknown;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<bool> mouseUsesSystemCursor_ = true;

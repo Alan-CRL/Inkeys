@@ -36,7 +36,7 @@ export namespace draw3
 		float outlineBlue = 184.0f / 255.0f;
 	};
 
-	// Pointer API 可用时决定当前系统指针来源；Unknown 使用 RTS/Mouse 样本回退。
+	// 仅表示持久 cursor owner；Touch 只可作为事件类型，不得长期接管 owner。
 	enum class DrawingCursorPointerAuthority : uint32_t
 	{
 		Unknown,
@@ -153,14 +153,23 @@ export namespace draw3
 	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
 		bool penSampleValid, bool mouseSampleValid,
-		bool mouseUsesSystemCursor = true) noexcept;
+		bool mouseUsesSystemCursor = true, bool touchPanActive = false,
+		bool realMouseTakeoverDuringTouchPan = false) noexcept;
+	// Touch Pointer 只更新 diagnostics；只有 Pen/真实 Mouse 可改变持久 owner。
+	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerForPointerEvent(
+		DrawingCursorPointerAuthority currentOwner,
+		DrawingCursorPointerAuthority pointerEventType,
+		bool touchPanActive = false,
+		bool realMouseTakeoverDuringTouchPan = false) noexcept;
+	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerAfterTouchPan(
+		bool realMouseTakeoverDuringTouchPan,
+		bool penSampleValid, bool mouseSampleValid) noexcept;
 	// Pointer API 可区分 promoted 消息时，真实鼠标必须立即接管陈旧 Pen authority。
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool pointerApiAvailable, bool penSampleValid) noexcept;
 	// 部分 Pen 驱动缺失 promoted 标记；活动平移中以新鲜且同位置的 Pen 样本识别兼容 Mouse contact。
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
-		DrawingCursorPointerAuthority pointerAuthority, bool penSampleValid,
-		bool mouseInContact, float positionDeltaX, float positionDeltaY,
+		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,
 		double sampleAgeSeconds) noexcept;
 	// Pen/Touch 终态后的兼容 Mouse ButtonUp 不能重新生成应用内 Hover。
 	bool ShouldSuppressMouseButtonUpCursorSample(

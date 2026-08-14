@@ -103,13 +103,13 @@ namespace draw3
 			drawingCursorDiagnosticVisual = state;
 			char line[512] = {};
 			const int length = std::snprintf(line, sizeof(line),
-				"[CURSOR_TRACE][app] pointerType=%u mode=%s "
+				"[CURSOR_TRACE][app] cursorOwner=%u mode=%s "
 				"penSample={valid=%u,contact=%u,inverted=%u} "
-				"mouseSample={valid=%u,contact=%u} appVisible=%u reason=%s\r\n",
+				"mouseSample={valid=%u,contact=%u} appCursor=%s reason=%s\r\n",
 				static_cast<unsigned>(pointerAuthority), laser ? "laser" : "primary",
 				penSample.valid ? 1u : 0u, penSample.inContact ? 1u : 0u,
 				penSample.inverted ? 1u : 0u, mouseSample.valid ? 1u : 0u,
-				mouseSample.inContact ? 1u : 0u, visible ? 1u : 0u,
+				mouseSample.inContact ? 1u : 0u, visible ? "visible" : "hidden",
 				DrawingCursorDiagnosticVisualReasonName(reason));
 			if (length > 0)
 			{
@@ -346,8 +346,14 @@ namespace draw3
 	bool ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority pointerAuthority,
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
 		bool penSampleValid, bool mouseSampleValid,
-		bool mouseUsesSystemCursor) noexcept
+		bool mouseUsesSystemCursor, bool touchPanActive,
+		bool realMouseTakeoverDuringTouchPan) noexcept
 	{
+		if (touchPanActive)
+		{
+			if (!realMouseTakeoverDuringTouchPan) return true;
+			pointerAuthority = DrawingCursorPointerAuthority::Mouse;
+		}
 		switch (pointerAuthority)
 		{
 		case DrawingCursorPointerAuthority::Pen:
@@ -363,6 +369,33 @@ namespace draw3
 		}
 	}
 
+	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerForPointerEvent(
+		DrawingCursorPointerAuthority currentOwner,
+		DrawingCursorPointerAuthority pointerEventType,
+		bool touchPanActive,
+		bool realMouseTakeoverDuringTouchPan) noexcept
+	{
+		// 本轮真实 Mouse 已接管后，Touch/Pen 反馈不能再把系统箭头抢回隐藏状态。
+		if (touchPanActive && realMouseTakeoverDuringTouchPan &&
+			pointerEventType != DrawingCursorPointerAuthority::Mouse)
+			return currentOwner;
+		if (pointerEventType == DrawingCursorPointerAuthority::Pen ||
+			pointerEventType == DrawingCursorPointerAuthority::Mouse)
+			return pointerEventType;
+		return currentOwner;
+	}
+
+	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerAfterTouchPan(
+		bool realMouseTakeoverDuringTouchPan,
+		bool penSampleValid, bool mouseSampleValid) noexcept
+	{
+		if (realMouseTakeoverDuringTouchPan && mouseSampleValid)
+			return DrawingCursorPointerAuthority::Mouse;
+		if (penSampleValid) return DrawingCursorPointerAuthority::Pen;
+		if (mouseSampleValid) return DrawingCursorPointerAuthority::Mouse;
+		return DrawingCursorPointerAuthority::Unknown;
+	}
+
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool pointerApiAvailable, bool penSampleValid) noexcept
 	{
@@ -372,12 +405,11 @@ namespace draw3
 	}
 
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
-		DrawingCursorPointerAuthority pointerAuthority, bool penSampleValid,
-		bool mouseInContact, float positionDeltaX, float positionDeltaY,
+		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,
 		double sampleAgeSeconds) noexcept
 	{
-		if (!touchPanActive || pointerAuthority != DrawingCursorPointerAuthority::Pen ||
-			!penSampleValid || !mouseInContact || !std::isfinite(positionDeltaX) ||
+		if (!touchPanActive || !penSampleValid || !mouseInContact ||
+			!std::isfinite(positionDeltaX) ||
 			!std::isfinite(positionDeltaY) || !std::isfinite(sampleAgeSeconds) ||
 			sampleAgeSeconds < 0.0 || sampleAgeSeconds > 0.1) return false;
 		return std::hypot(positionDeltaX, positionDeltaY) <= 8.0f;

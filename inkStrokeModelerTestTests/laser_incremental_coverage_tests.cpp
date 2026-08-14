@@ -538,9 +538,15 @@ int RunLaserIncrementalCoverageTests()
 			"inertia-first-step engine=application"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "inertia-brake active="));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "pan-anomaly qpc="));
-		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "inherited-delta="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"candidate-valid=%u has-new-move=%u"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "release-source=%s"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "sample-span-ms="));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "pan-baseline-contact"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "pan-lifecycle panActive="));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource, "anchor=%s"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"touch-pan-handoff-retire"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
 			"touch-retire-before-down"));
 		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
@@ -560,7 +566,7 @@ int RunLaserIncrementalCoverageTests()
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
 			"pendingHapticPointerId_.store(0"));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
-			"penCursorSample_.Clear()"));
+			"penCursorSample_.Publish(sample)"));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
 			"[CURSOR_TRACE][state]"));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
@@ -569,6 +575,14 @@ int RunLaserIncrementalCoverageTests()
 			"ShouldHideSystemDrawingCursor=%u"));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
 			"haptic={pointerId=%u,pending=%u,leave=%u}"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"pointerEventType=%s(%u)"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
+			"cursorOwner=%u touchPanActive=%u realMouseTakeover=%u"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource, "systemCursor=%s"));
+		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource, "appCursor=%s"));
+		LASER_INCREMENTAL_CHECK(ContainsText(controllerSource,
+			"window_.TouchPanActive() || suppressPenUntilRelease"));
 		LASER_INCREMENTAL_CHECK(ContainsText(windowControlSource,
 			"ApplyWindowCursor(\"WM_SETCURSOR\")"));
 		LASER_INCREMENTAL_CHECK(!ContainsText(controllerSource, "IManipulationProcessor"));

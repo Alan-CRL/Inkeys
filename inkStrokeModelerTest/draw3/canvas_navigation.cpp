@@ -150,6 +150,32 @@ namespace draw3
 		return { canvas.x - viewport.x, canvas.y - viewport.y };
 	}
 
+	CanvasPanContactAnchor ResolveCanvasPanContactAnchor(
+		CanvasPanContactAnchor downAnchor, CanvasPanContactAnchor currentAnchor,
+		CanvasPanContactAnchorMode mode, bool currentTerminal) noexcept
+	{
+		CanvasPanContactAnchor result = mode == CanvasPanContactAnchorMode::Down
+			? downAnchor : currentAnchor;
+		result.terminalPending = mode == CanvasPanContactAnchorMode::Current &&
+			currentTerminal;
+		return result;
+	}
+
+	bool ShouldConsumeCanvasPanContactSnapshot(uint64_t snapshotSequence,
+		uint64_t lastConsumedSequence, bool terminalPending) noexcept
+	{
+		return terminalPending || snapshotSequence != lastConsumedSequence;
+	}
+
+	bool IsCanvasPanLifecycleOwnershipConsistent(bool panActive,
+		size_t fsmPanContacts, size_t gestureRuntimePanContacts,
+		size_t terminalPendingPanContacts) noexcept
+	{
+		if (terminalPendingPanContacts > gestureRuntimePanContacts ||
+			fsmPanContacts != gestureRuntimePanContacts) return false;
+		return !panActive || gestureRuntimePanContacts > 0;
+	}
+
 	CanvasTouchDecision CanvasTouchGestureState::OnTouchDown(uint64_t contactKey,
 		int64_t qpc, int64_t qpcFrequency, bool inertiaActive,
 		bool blockingContactActive) noexcept
@@ -283,6 +309,15 @@ namespace draw3
 			}));
 	}
 
+	size_t CanvasTouchGestureState::PanContactCount() const noexcept
+	{
+		return static_cast<size_t>(std::count_if(contacts_.begin(), contacts_.end(),
+			[](const ContactState& item)
+			{
+				return item.disposition == CanvasTouchDisposition::Pan;
+			}));
+	}
+
 	bool CanvasTouchGestureState::HasContact(uint64_t contactKey) const noexcept
 	{
 		return std::any_of(contacts_.begin(), contacts_.end(),
@@ -300,27 +335,36 @@ namespace draw3
 	void BeginCanvasPan(CanvasPanMotionState& motion, bool inheritInertia,
 		int64_t inputQpc) noexcept
 	{
-		motion.inheritedVelocity = inheritInertia ? motion.velocity : CanvasVector{};
-		motion.topologyReleaseVelocity = motion.inheritedVelocity;
-		motion.inheritedBlendRemainingSeconds = inheritInertia
-			? kCanvasPanMomentumBlendSeconds : 0.0;
+		motion.releaseVelocityCandidate = inheritInertia
+			? ClampVelocity(motion.velocity) : CanvasVector{};
+		motion.releaseVelocityCandidateSource = inheritInertia
+			? CanvasPanReleaseCandidateSource::Residual
+			: CanvasPanReleaseCandidateSource::None;
+		motion.releaseSource = CanvasPanReleaseSource::None;
 		motion.inertiaActive = false;
+		motion.velocity = {};
 		motion.directVelocity = {};
-		if (!inheritInertia) motion.velocity = {};
+		motion.selectedReleaseVelocity = {};
+		motion.hasNewMove = false;
 		ResetVelocitySamples(motion, inputQpc);
 	}
 
 	void ResetCanvasPanVelocitySamples(CanvasPanMotionState& motion,
 		int64_t inputQpc) noexcept
 	{
-		if (motion.lastVelocitySampleQpc > 0)
-			motion.topologyReleaseVelocity = motion.directVelocity;
+		if (motion.hasNewMove)
+		{
+			motion.releaseVelocityCandidate = ClampVelocity(motion.directVelocity);
+			motion.releaseVelocityCandidateSource =
+				CanvasPanReleaseCandidateSource::Topology;
+		}
 		// 拓扑终态可能晚于旧 Up 被消费，估速时间基准不得倒退。
 		ResetVelocitySamples(motion, (std::max)(inputQpc, motion.lastUpdateQpc));
 		motion.velocity = {};
 		motion.directVelocity = {};
-		motion.inheritedVelocity = {};
-		motion.inheritedBlendRemainingSeconds = 0.0;
+		motion.selectedReleaseVelocity = {};
+		motion.releaseSource = CanvasPanReleaseSource::None;
+		motion.hasNewMove = false;
 	}
 
 	CanvasVector UpdateCanvasPan(CanvasPanMotionState& motion,
@@ -330,12 +374,15 @@ namespace draw3
 	{
 		if (!std::isfinite(contentDelta.x) || !std::isfinite(contentDelta.y) ||
 			!std::isfinite(velocityDelta.x) || !std::isfinite(velocityDelta.y)) return {};
-		const double deltaSeconds = QpcSeconds(inputQpc,
-			motion.lastUpdateQpc, qpcFrequency);
 		if (inputQpc > motion.lastUpdateQpc) motion.lastUpdateQpc = inputQpc;
 		const bool positionalMove = velocityDelta.x != 0.0f || velocityDelta.y != 0.0f;
 		if (updateVelocity && positionalMove && inputQpc > 0 && qpcFrequency > 0)
 		{
+			// 第一条有效 Move 永久切断旧惯性/旧拓扑候选，释放只能使用新直接速度。
+			motion.hasNewMove = true;
+			motion.releaseVelocityCandidate = {};
+			motion.releaseVelocityCandidateSource =
+				CanvasPanReleaseCandidateSource::None;
 			if (motion.velocitySampleCount == 0)
 				ResetVelocitySamples(motion, inputQpc);
 			else if (inputQpc > motion.velocitySamples[
@@ -347,23 +394,17 @@ namespace draw3
 				AppendVelocitySample(motion, inputQpc, qpcFrequency);
 				motion.directVelocity = EstimateVelocity(motion, qpcFrequency);
 				motion.lastVelocitySampleQpc = inputQpc;
-				motion.topologyReleaseVelocity = {};
 			}
 		}
-		float inheritedWeight = 0.0f;
-		if (motion.inheritedBlendRemainingSeconds > 0.0 && deltaSeconds > 0.0)
+		else if (updateVelocity && positionalMove)
 		{
-			inheritedWeight = static_cast<float>(std::clamp(
-				motion.inheritedBlendRemainingSeconds / kCanvasPanMomentumBlendSeconds,
-				0.0, 1.0));
-			motion.inheritedBlendRemainingSeconds = std::max(
-				0.0, motion.inheritedBlendRemainingSeconds - deltaSeconds);
+			motion.hasNewMove = true;
+			motion.releaseVelocityCandidate = {};
+			motion.releaseVelocityCandidateSource =
+				CanvasPanReleaseCandidateSource::None;
 		}
-		motion.velocity = ClampVelocity({
-			motion.directVelocity.x + motion.inheritedVelocity.x * inheritedWeight,
-			motion.directVelocity.y + motion.inheritedVelocity.y * inheritedWeight
-		});
-		// 手指落下后位置必须严格跟手；残余动量只参与释放速度，不能继续推动画布。
+		motion.velocity = ClampVelocity(motion.directVelocity);
+		// 手指落下后位置与速度都只服从新手势；候选只在无 Move 释放时选择一次。
 		return contentDelta;
 	}
 
@@ -385,16 +426,47 @@ namespace draw3
 	void EndCanvasPan(CanvasPanMotionState& motion,
 		double secondsSinceLastInput) noexcept
 	{
-		if (motion.lastVelocitySampleQpc <= 0)
-			motion.velocity = motion.topologyReleaseVelocity;
+		if (motion.hasNewMove)
+		{
+			motion.selectedReleaseVelocity = ClampVelocity(motion.directVelocity);
+			motion.releaseSource = CanvasPanReleaseSource::NewDirect;
+		}
+		else if (motion.releaseVelocityCandidateSource !=
+			CanvasPanReleaseCandidateSource::None)
+		{
+			motion.selectedReleaseVelocity = ClampVelocity(
+				motion.releaseVelocityCandidate);
+			motion.releaseSource = motion.releaseVelocityCandidateSource ==
+				CanvasPanReleaseCandidateSource::Residual
+				? CanvasPanReleaseSource::NoNewMoveResidual
+				: CanvasPanReleaseSource::TopologyNoNewMove;
+		}
+		else
+		{
+			motion.selectedReleaseVelocity = {};
+			motion.releaseSource = CanvasPanReleaseSource::None;
+		}
+		// 先固定本次 release 的选择结果，再由样本时效决定是否真正启动惯性。
+		motion.velocity = motion.selectedReleaseVelocity;
 		if (!std::isfinite(secondsSinceLastInput) || secondsSinceLastInput < 0.0 ||
 			secondsSinceLastInput > kCanvasPanReleaseVelocityHorizonSeconds)
 			motion.velocity = {};
 		motion.velocity = ClampVelocity(motion.velocity);
-		motion.inheritedVelocity = {};
-		motion.topologyReleaseVelocity = {};
-		motion.inheritedBlendRemainingSeconds = 0.0;
+		motion.releaseVelocityCandidate = {};
+		motion.releaseVelocityCandidateSource =
+			CanvasPanReleaseCandidateSource::None;
 		motion.inertiaActive = CanvasPanSpeed(motion) >= 5.0f;
+	}
+
+	const char* CanvasPanReleaseSourceName(CanvasPanReleaseSource source) noexcept
+	{
+		switch (source)
+		{
+		case CanvasPanReleaseSource::NewDirect: return "new-direct";
+		case CanvasPanReleaseSource::NoNewMoveResidual: return "no-new-move-residual";
+		case CanvasPanReleaseSource::TopologyNoNewMove: return "topology-no-new-move";
+		default: return "none";
+		}
 	}
 
 	CanvasVector StepCanvasPanInertia(CanvasPanMotionState& motion,
