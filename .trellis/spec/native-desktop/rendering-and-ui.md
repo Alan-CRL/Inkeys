@@ -906,8 +906,8 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
 - Setting owner 必须为 null，style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，普通关闭映射为 Hide，Window Service 只在进程退出时销毁 HWND。DWM 只负责默认系统边框、阴影和圆角：`DWMWA_BORDER_COLOR` 使用 `DWMWA_COLOR_DEFAULT`，不得硬编码 accent，也不得把玻璃扩展到不透明 DX11 标题栏客户区。
-- Setting 使用单一 client-area caption ownership：ImGui/ImFluent 绘制 32 DIP 标题栏、16 DIP 应用图标和 Segoe Fluent Icons `E921/E922/E923/E8BB` caption glyph；Win32 独占 resize、拖拽、系统命令与 Snap。禁止用 `DwmDefWindowProc` 再次接管隐藏原生 caption。`WM_NCCALCSIZE` 在自绘路径的 TRUE/FALSE 两种参数下都保留完整客户区，最大化时按系统 sizing frame inset；DWM 不可用时回退标准原生非客户区。
-- 标题栏渲染与命中必须共用 `ResolveTitleBarGeometry`：`WM_NCHITTEST` 先返回八方向 resize hit，再依次解析 `HTCLOSE`、`HTMAXBUTTON`、`HTMINBUTTON`、版本 `HTCLIENT`、图标 `HTSYSMENU` 和拖拽 `HTCAPTION`。caption 的非客户区鼠标消息交给 `DefWindowProcW` 生成标准 `WM_SYSCOMMAND`，关闭命令仍映射到 Hide；最大化格必须返回 `HTMAXBUTTON` 以保留 Windows 11 Snap Layout。
+- Setting 使用单一 client-area caption ownership，且不以 DWM composition 为启用条件：ImGui/ImFluent 始终绘制 32 DIP 标题栏、16 DIP 应用图标、46 DIP caption cells 和 10 DIP Segoe Fluent Icons `E921/E922/E923/E8BB` glyph；DWM 只提供可选的默认边框、阴影和圆角。禁止用 `DwmDefWindowProc` 再次接管隐藏原生 caption，也禁止用正值 margins 把 DWM frame 延伸到不透明 DX11 客户区。
+- 标题栏渲染与命中必须共用 `ResolveTitleBarGeometry`：`WM_NCHITTEST` 先返回八方向 resize hit，再依次解析 `HTCLOSE`、`HTMAXBUTTON`、`HTMINBUTTON`、版本 `HTCLIENT`、图标 `HTSYSMENU` 和拖拽 `HTCAPTION`。caption button 由 WndProc 跟踪相同 hit 内的按下/释放并投递标准 `WM_SYSCOMMAND`；拖动、双击和系统菜单仍交给 `DefWindowProcW`。关闭命令映射到 Hide，最大化格必须保持 `HTMAXBUTTON` 以保留 Windows 11 Snap Layout。
 - RightHeader 位于 caption cells 之前，显示真实 `editionVersion` 并路由到 `settingTabEnum::tab6`；空间不足时先隐藏版本入口，但必须保留 caption、identity 和至少 96 DIP 拖拽区。活动/非活动窗口的标题、版本和 caption glyph 需要可见状态差异，关闭按钮 hover/pressed 使用 Windows critical red，其余按钮使用 Fluent subtle fill。
 - 默认客户区约 `960x700 DIP`，`WM_GETMINMAXINFO` 只设置约 `720x520 DIP` 的最小 track size；默认尺寸和最小 track 按 effective scale 转为物理像素后都必须夹紧到目标显示器工作区，最大化范围使用该显示器的 `rcWork`，不得固定最大 track size。`WM_DPICHANGED` 接受系统建议矩形，Hide/Show 在单次进程内保留最大化和窗口 bounds，不持久化到下一进程。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
@@ -927,8 +927,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | 指针位于 Setting 边角/边缘 | `WM_NCHITTEST` 返回对应 `HTTOPLEFT`..`HTBOTTOMRIGHT`，标题栏命中不得覆盖 resize hit |
 | 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
 | 指针位于版本 RightHeader | 返回 `HTCLIENT`，点击后进入 `settingTabEnum::tab6`，不得触发窗口拖动 |
-| DWM composition 可用 | 不扩展标题栏玻璃；设置默认 border color 和默认圆角，客户区只出现一套 ImGui caption glyph |
-| DWM composition 不可用 | 不执行自绘 NCCALCSIZE/NCHITTEST，回退 `WS_OVERLAPPEDWINDOW` 原生标题栏 |
+| DWM composition 可用 | 只允许零 margins 重置历史扩展；设置默认 border color/non-client rendering/default corner，客户区只出现一套 ImGui caption glyph |
+| DWM composition 不可用或 Win11 属性不受支持 | 继续执行自绘 NCCALCSIZE/NCHITTEST 与同一套 caption；DWM 增强安全失败，不回退原生标题栏 |
+| `WM_NCMOUSEMOVE` 的 hit 为 `HTCAPTION` | 直接进入系统 move loop，不请求 Settings 渲染帧；只有 caption button hover/leave 需要刷新 |
 | Setting 普通关闭 | 调用 `Hide()`，保留 HWND、窗口状态和常驻 ImGui 资源 |
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |

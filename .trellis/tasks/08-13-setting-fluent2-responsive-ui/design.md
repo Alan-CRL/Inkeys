@@ -31,3 +31,9 @@ HWND 延续 Window Service 单次创建。窗口使用可缩放顶层样式和 c
 窗口主体遵循固定上游 Demo 的组合顺序：`BeginNavigationView` 渲染 pane，`EndNavigationView` 后立即进入 `NavigationViewBeginContent`，全部业务页面都在该滚动 content child 内绘制并由 `NavigationViewEndContent` 收口。窄屏使用 SplitView CompactOverlay 承载同一导航函数。不得把导航和业务内容继续作为两个互不相关的绝对坐标层。
 
 `Setting.Widgets` 只保留旧页面调用签名的兼容职责。Toggle、Button、Slider 和 Combo 的最终绘制必须委托 ImFluent；Combo 的旧 Begin/Selectable/End 状态机迁移为一次性 `ImFluent::ComboBox` 后，页面调用点同步改写。标题栏的 Windows caption buttons 属于窗口 chrome，可保留专用绘制。全局更新底栏删除，版本页仍拥有更新状态和业务操作。
+
+## Client-Drawn Chrome Follow-up
+
+自绘标题栏始终启用，不能再以 DWM composition 作为显示开关。DWM 只维护可选的 non-client border/shadow/corner；客户区始终绘制 32 DIP title bar、46 DIP caption cells、应用图标、标题和版本 RightHeader。caption 几何继续由 `ResolveTitleBarGeometry` 同时提供给渲染与 `WM_NCHITTEST`。
+
+窗口拖动、双击标题栏、系统菜单和 Snap 走 Win32 non-client 路径。caption button 的 pressed hit 由 WndProc 原子记录，只有同一按钮内释放才投递 `SC_MINIMIZE/SC_MAXIMIZE/SC_RESTORE/SC_CLOSE`。系统 move loop 中的 `WM_NCMOUSEMOVE(HTCAPTION)` 不得请求 D3D11/ImGui 帧；最大化/还原的 non-client 计算必须避免让默认系统 caption 在客户区首帧之前获得可见区域。

@@ -11,9 +11,11 @@ namespace Inkeys::UI::Setting
 	inline constexpr float MinimumWidthDip = 720.0F;
 	inline constexpr float MinimumHeightDip = 520.0F;
 	inline constexpr float TitleBarHeightDip = 32.0F;
+	inline constexpr float TitleBarCaptionButtonWidthDip = 46.0F;
+	inline constexpr float TitleBarCaptionGlyphSizeDip = 10.0F;
 	inline constexpr float TitleBarIconSizeDip = 16.0F;
 	inline constexpr float TitleBarHorizontalInsetDip = 16.0F;
-	inline constexpr float TitleBarContentSpacingDip = 12.0F;
+	inline constexpr float TitleBarContentSpacingDip = 16.0F;
 	inline constexpr float TitleBarRightHeaderSpacingDip = 8.0F;
 	inline constexpr float TitleBarVersionPaddingDip = 12.0F;
 	inline constexpr float TitleBarMinimumDragWidthDip = 96.0F;
@@ -96,7 +98,8 @@ namespace Inkeys::UI::Setting
 			? (std::max)(0.0F, clientWidthPixels) : 0.0F;
 		const float height = TitleBarHeightDip * scale;
 		const float captionWidth = std::isfinite(captionButtonWidthPixels)
-			? (std::max)(height, captionButtonWidthPixels) : height;
+			? (std::max)(1.0F, captionButtonWidthPixels)
+			: TitleBarCaptionButtonWidthDip * scale;
 		const float captionStart = (std::max)(0.0F, width - captionWidth * 3.0F);
 		const float inset = TitleBarHorizontalInsetDip * scale;
 		const float iconSize = TitleBarIconSizeDip * scale;

@@ -11,6 +11,8 @@
 9. 使用 `trellis-check` 复核规范、行为、测试与第三方许可，修复范围内问题并更新 native desktop spec。
 10. 按固定上游 Demo 重构 NavigationView content 壳层和导航分组，恢复 pane toggle/展开动画；删除跨页面更新底栏。
 11. 将旧 Combo/Button/Toggle/Slider 兼容层收敛到 ImFluent 原生控件，并以 SettingsCard/标准文字层级逐页替换旧绝对坐标卡片。
+12. 固化 client-drawn chrome：DWM 仅作可选增强，caption 使用 46 DIP cell/10 DIP glyph，并由 WndProc 跟踪按钮按下与标准系统命令。
+13. 复查系统 move/maximize 消息链，消除拖动期间渲染唤醒和最大化瞬间的原生蓝色标题栏暴露；只用静态审计、完整 ARM64 Solution 构建和 `--no-window` 测试验证自动化范围。
 
 ## Risk And Rollback Points
 
@@ -41,3 +43,4 @@ rg -n "LoadFluentSystemFonts|D3DCompile|D3DCompileFromFile" Inkeys
 - 真实 HWND 的最大化、还原、最小化和 `SC_CLOSE` 已验证；关闭后 HWND 继续存在且变为隐藏。
 - 当前测试环境的 Bar 分层表面未发布可命中首帧，无法从真实业务入口调用 `Setting::Show()`；外部 `ShowWindow` 不等价于业务 Show，未将其冒充呈现生命周期验收。
 - 仍待人工验收：可见页面的标题栏直接拖动、八方向实际拉伸、Snap/Win+方向键、窄/中/宽页面导航、CompactOverlay、所有业务页面、动画、主题/高对比切换、多显示器 DPI、重复 Hide/Show、device epoch 实机恢复，以及帧时间/内存/Show 延迟指标。
+- 后续 client-drawn chrome 基线：标题栏不再依赖 DWM 是否开启；caption cell 固定 46 DIP、glyph 固定 10 DIP，应用自行跟踪 non-client button press/release；`HTCAPTION` 的 `WM_NCMOUSEMOVE` 不请求渲染。用户仍观察到拖动卡顿和最大化时顶边蓝色原生标题栏闪现，作为步骤 13 的未完成回归继续处理。

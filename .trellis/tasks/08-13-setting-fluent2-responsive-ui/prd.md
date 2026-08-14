@@ -32,6 +32,9 @@
 - R18：设置窗口壳层必须采用 ImFluent Demo 的标准组合：NavigationView pane 与 NavigationView content 成对使用，保留库自带的 pane toggle、选择指示器和展开动画；窄屏继续使用 CompactOverlay。
 - R19：页面中的开关、下拉框、按钮、滑块、设置行、信息提示和分组优先直接使用 ImFluent 原生控件；兼容包装不得继续自行绘制或用原生 ImGui 控件仿制同名 Fluent 控件。
 - R20：移除跨页面常驻的“更新状态 / 检查更新”底栏；更新状态和操作只在软件版本页面内呈现。
+- R21：自绘标题栏不以 DWM composition 为启用条件；DWM 仅提供可选边框、阴影和圆角，关闭 Aero 或属性不受支持时仍保持同一套 Inkeys caption 视觉和命中。
+- R22：caption buttons 使用固定 46 DIP 单元格和独立 10 DIP Fluent glyph；按下/释放由 Win32 non-client 消息跟踪并投递标准 `WM_SYSCOMMAND`，关闭继续映射到 Hide。
+- R23：拖动窗口时不得在每次 `WM_NCMOUSEMOVE(HTCAPTION)` 唤醒 Settings 渲染；最大化/还原和 frame refresh 期间不得短暂露出系统蓝色标题栏或第二套 caption。
 
 ## Acceptance Criteria
 
@@ -44,6 +47,7 @@
 - [ ] ARM64 Debug 完整 Solution 构建、headless tests 和 `git diff --check` 通过；真实窗口完成动态检查。
 - [ ] 可见空闲帧时间相对同等旧页面无超过约 10% 的持续回退，打开/缩放/切页无明显卡顿或资源增长。
 - [ ] 导航、页面标题、设置卡片、ToggleSwitch、ComboBox、Button 和 Slider 的视觉及动画与固定 ImFluent Demo 的 Fluent2 语言一致，不再混用旧伪 Fluent 控件。
+- [ ] 标题栏拖动无明显卡顿；最大化/还原过程中顶边不闪现原生蓝色标题栏，且 resize、Snap、系统菜单和 caption commands 保持正常。
 
 ## Out Of Scope
 

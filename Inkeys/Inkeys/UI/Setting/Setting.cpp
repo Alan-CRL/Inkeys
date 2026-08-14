@@ -64,6 +64,7 @@ namespace
 	atomic<bool> settingSessionShouldStop = false;
 	atomic<bool> settingDwmFrameEnabled = false;
 	atomic<bool> settingWindowActive = true;
+	atomic<LRESULT> settingCaptionPressedHit = HTNOWHERE;
 	mutex settingLifecycleMutex;
 	// Win32 backend 会调用 SetCapture/ReleaseCapture/IME，可能同步重入同一 WndProc。
 	recursive_mutex settingImguiMutex;
@@ -174,13 +175,15 @@ namespace
 	}
 
 	[[nodiscard]] float QuerySettingCaptionButtonWidth(
-		HWND hwnd, float titleBarHeight) noexcept
+		HWND /*hwnd*/, float titleBarHeight) noexcept
 	{
-		const int systemWidth = max(1, QuerySettingSystemMetric(hwnd, SM_CXSIZE));
-		const int systemHeight = max(1, QuerySettingSystemMetric(hwnd, SM_CYSIZE));
-		// 自绘按钮沿用系统 caption 的宽高比例，单元格高度则服从应用缩放。
-		return titleBarHeight * static_cast<float>(systemWidth)
-			/ static_cast<float>(systemHeight);
+		// 按当前 Fluent/Windows 视觉目标使用 46-DIP caption cell。
+		// 这里固定标题栏几何比例，而不是用传统 SM_CXSIZE/SM_CYSIZE
+		// 比值放大；后者在高 DPI 下会让自绘按钮明显过宽。
+		const float scale = titleBarHeight > 0.0F
+			? titleBarHeight / Inkeys::UI::Setting::TitleBarHeightDip
+			: 1.0F;
+		return Inkeys::UI::Setting::TitleBarCaptionButtonWidthDip * scale;
 	}
 
 	[[nodiscard]] Inkeys::UI::Setting::TitleBarGeometry
@@ -207,18 +210,36 @@ namespace
 	[[nodiscard]] bool ApplySettingDwmFrame(HWND hwnd) noexcept
 	{
 		BOOL compositionEnabled = FALSE;
-		bool frameEnabled = hwnd
+		const bool frameEnabled = hwnd
 			&& SUCCEEDED(DwmIsCompositionEnabled(&compositionEnabled))
 			&& compositionEnabled;
 		if (frameEnabled)
 		{
+			// 保留 DWM non-client rendering，但不要再把 frame 延伸到
+			// 不透明的 D3D11/ImGui client surface 下面。真正可见的 1px
+			// non-client border 由 WM_NCCALCSIZE 留出，DWM 因而可以正常
+			// 绘制系统活动/非活动边框与阴影，而不会产生“被 client 覆盖”的
+			// extended-frame 假边框。
+			const DWMNCRENDERINGPOLICY renderingPolicy = DWMNCRP_ENABLED;
+			(void)DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY,
+				&renderingPolicy, sizeof(renderingPolicy));
+
+			const MARGINS frameMargins{ 0, 0, 0, 0 };
+			(void)DwmExtendFrameIntoClientArea(hwnd, &frameMargins);
+
+			// Windows 11 enhancement。旧系统不认识这些 attribute 时只会
+			// 返回失败，不影响 Win7 SP1 + KB2670838 的基础自绘 chrome。
 			const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_DEFAULT;
-			const COLORREF borderColor = DWMWA_COLOR_DEFAULT;
-			// 不再向客户区扩展玻璃；DWM 仅保留系统边框、阴影与圆角。
 			(void)DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
 				&preference, sizeof(preference));
+
+			// 不是自定义颜色：显式恢复为“系统默认边框策略”。这样即使同一
+			// HWND 之前曾被其它路径改过 DWMWA_BORDER_COLOR，也会重新服从
+			// Windows 的 active/inactive 与“在标题栏和窗口边框上显示强调色”
+			// 用户设置。Windows 10/7 不支持该属性时安全失败。
+			const COLORREF defaultBorderColor = static_cast<COLORREF>(0xFFFFFFFFu);
 			(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
-				&borderColor, sizeof(borderColor));
+				&defaultBorderColor, sizeof(defaultBorderColor));
 		}
 		settingDwmFrameEnabled.store(frameEnabled, memory_order_release);
 		return frameEnabled;
@@ -327,8 +348,11 @@ namespace
 		if (geometry.versionVisible && geometry.version.Contains(x, y))
 			return HTCLIENT;
 		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
-		if (geometry.identity.Contains(x, y)
-			|| geometry.drag.Contains(x, y)) return HTCAPTION;
+
+		// 除交互控件外，整条 32-DIP title bar 都明确交给 Win32 作为
+		// HTCAPTION。拖窗、双击最大化、Aero Snap 等因此走系统的
+		// non-client move loop，而不是依赖 ImGui/client mouse dragging。
+		if (y >= 0.0F && y < geometry.height) return HTCAPTION;
 		return HTCLIENT;
 	}
 
@@ -386,10 +410,48 @@ namespace
 			? IM_COL32(255, 255, 255, 255)
 			: SettingChromeColor(ImFluentCol_TextPrimary,
 				active ? 1.0F : 0.55F);
-		const ImVec2 glyphSize = ImGui::CalcTextSize(glyph);
-		drawList->AddText({ bounds.Min.x + (bounds.GetWidth() - glyphSize.x) * 0.5F,
-			bounds.Min.y + (bounds.GetHeight() - glyphSize.y) * 0.5F },
+
+		// Chrome glyph 视觉尺寸独立于 Body typography。直接用当前合并了
+		// Fluent Icons 的字体按 10 DIP 绘制，避免 E921/E922/E923/E8BB
+		// 跟随 14-DIP Body 字号而显得过大。
+		const float glyphFontSize = Inkeys::UI::Setting::TitleBarCaptionGlyphSizeDip
+			* settingGlobalScale;
+		const float currentFontSize = (std::max)(1.0F, ImGui::GetFontSize());
+		ImVec2 glyphSize = ImGui::CalcTextSize(glyph);
+		const float glyphScale = glyphFontSize / currentFontSize;
+		glyphSize.x *= glyphScale;
+		glyphSize.y *= glyphScale;
+		drawList->AddText(ImGui::GetFont(), glyphFontSize,
+			{ bounds.Min.x + (bounds.GetWidth() - glyphSize.x) * 0.5F,
+				bounds.Min.y + (bounds.GetHeight() - glyphSize.y) * 0.5F },
 			glyphColor, glyph);
+	}
+
+	[[nodiscard]] bool IsSettingCaptionHit(LRESULT hit) noexcept
+	{
+		return hit == HTMINBUTTON || hit == HTMAXBUTTON || hit == HTCLOSE;
+	}
+
+	void InvokeSettingCaptionCommand(HWND hwnd, LRESULT hit) noexcept
+	{
+		if (!hwnd) return;
+		switch (hit)
+		{
+		case HTMINBUTTON:
+			(void)PostMessageW(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+			break;
+		case HTMAXBUTTON:
+			(void)PostMessageW(hwnd, WM_SYSCOMMAND,
+				IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
+			break;
+		case HTCLOSE:
+			// Settings 的既有语义是关闭按钮隐藏窗口；SC_CLOSE 会在本
+			// WndProc 中统一拦截到 Hide()，不会退出整个 Inkeys 进程。
+			(void)PostMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+			break;
+		default:
+			break;
+		}
 	}
 
 	enum class SettingBusinessKind
@@ -847,48 +909,116 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	const bool customFrame = settingDwmFrameEnabled.load(memory_order_acquire);
+	// 自绘 TitleBar/Caption Buttons 是 Win7+ 的固定 UI，不依赖 DWM。
+	// settingDwmFrameEnabled 只表示“系统 DWM 增强（阴影/边框/圆角）可用”。
+	constexpr bool customFrame = true;
 	if (customFrame)
 	{
 		// Chrome 消息先于 ImGui：Win32 独占 resize、拖拽、Snap 与系统命令。
 		switch (msg)
 		{
 		case WM_NCCALCSIZE:
+		{
+			// 不再把整个 HWND 无条件变成 client area。DWM 可用且窗口未
+			// 最大化时，四周留下 1 个真实 non-client pixel，供系统绘制
+			// 默认 active/inactive（含用户强调色）边框。标题栏本身仍完全
+			// 由 Inkeys 绘制；Win7 无 DWM 时则自然退化为方形 full-client。
+			const bool keepDwmBorder = settingDwmFrameEnabled.load(
+				memory_order_acquire) && !IsZoomed(hWnd);
 			if (wParam)
 			{
 				auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
-				if (params && IsZoomed(hWnd))
+				if (params)
 				{
-					// 最大化保留系统 sizing frame inset，客户区不会越过工作区。
-					const int frameWidth = QuerySettingFrameWidth(hWnd);
-					const int frameHeight = QuerySettingFrameHeight(hWnd);
-					if (params->rgrc[0].right - params->rgrc[0].left > frameWidth * 2)
+					if (IsZoomed(hWnd))
 					{
-						params->rgrc[0].left += frameWidth;
-						params->rgrc[0].right -= frameWidth;
+						// 最大化保留系统 sizing frame inset，客户区不会越过工作区。
+						const int frameWidth = QuerySettingFrameWidth(hWnd);
+						const int frameHeight = QuerySettingFrameHeight(hWnd);
+						if (params->rgrc[0].right - params->rgrc[0].left > frameWidth * 2)
+						{
+							params->rgrc[0].left += frameWidth;
+							params->rgrc[0].right -= frameWidth;
+						}
+						if (params->rgrc[0].bottom - params->rgrc[0].top > frameHeight * 2)
+						{
+							params->rgrc[0].top += frameHeight;
+							params->rgrc[0].bottom -= frameHeight;
+						}
 					}
-					if (params->rgrc[0].bottom - params->rgrc[0].top > frameHeight * 2)
+					else if (keepDwmBorder
+						&& params->rgrc[0].right - params->rgrc[0].left > 2
+						&& params->rgrc[0].bottom - params->rgrc[0].top > 2)
 					{
-						params->rgrc[0].top += frameHeight;
-						params->rgrc[0].bottom -= frameHeight;
+						++params->rgrc[0].left;
+						++params->rgrc[0].top;
+						--params->rgrc[0].right;
+						--params->rgrc[0].bottom;
 					}
 				}
 			}
-			// wParam 为 FALSE 时 lParam 是 RECT，同样保留整块窗口为客户区。
+			else if (keepDwmBorder && lParam)
+			{
+				auto* rect = reinterpret_cast<RECT*>(lParam);
+				if (rect->right - rect->left > 2 && rect->bottom - rect->top > 2)
+				{
+					++rect->left;
+					++rect->top;
+					--rect->right;
+					--rect->bottom;
+				}
+			}
 			return 0;
+		}
 		case WM_NCHITTEST:
 			return HitTestSettingWindow(hWnd, lParam);
 		case WM_NCLBUTTONDOWN:
+		{
+			const LRESULT hit = static_cast<LRESULT>(wParam);
+			if (IsSettingCaptionHit(hit))
+			{
+				settingCaptionPressedHit.store(hit, memory_order_release);
+				Inkeys::UI::RenderPipeline::Request(
+					Inkeys::UI::RenderPipeline::Client::Settings);
+				return 0;
+			}
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		}
 		case WM_NCLBUTTONUP:
+		{
+			const LRESULT pressed = settingCaptionPressedHit.exchange(
+				HTNOWHERE, memory_order_acq_rel);
+			const LRESULT released = HitTestSettingWindow(hWnd, lParam);
+			if (IsSettingCaptionHit(pressed))
+			{
+				if (released == pressed) InvokeSettingCaptionCommand(hWnd, pressed);
+				Inkeys::UI::RenderPipeline::Request(
+					Inkeys::UI::RenderPipeline::Client::Settings);
+				return 0;
+			}
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		}
 		case WM_NCLBUTTONDBLCLK:
 		case WM_NCRBUTTONDOWN:
 		case WM_NCRBUTTONUP:
 			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 		case WM_NCMOUSEMOVE:
+			// 拖窗时 wParam == HTCAPTION。不要在系统 move loop 的每一次
+			// NC mouse move 都唤醒 D3D11/ImGui 渲染，否则会和窗口移动抢
+			// UI 线程/呈现节奏造成明显卡顿。仅 caption button hover 需要刷新。
+			if (IsSettingCaptionHit(static_cast<LRESULT>(wParam)))
+				Inkeys::UI::RenderPipeline::Request(
+					Inkeys::UI::RenderPipeline::Client::Settings);
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 		case WM_NCMOUSELEAVE:
+			settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
 			Inkeys::UI::RenderPipeline::Request(
 				Inkeys::UI::RenderPipeline::Client::Settings);
 			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		case WM_CANCELMODE:
+		case WM_CAPTURECHANGED:
+			settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+			break;
 		case WM_NCACTIVATE:
 			settingWindowActive.store(wParam != FALSE, memory_order_release);
 			Inkeys::UI::RenderPipeline::Request(
@@ -972,6 +1102,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_DWMCOMPOSITIONCHANGED:
+	case WM_DWMCOLORIZATIONCOLORCHANGED:
 		RefreshSettingNonClientFrame(hWnd);
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
@@ -985,6 +1116,9 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_ACTIVATE:
 		settingWindowActive.store(LOWORD(wParam) != WA_INACTIVE,
 			memory_order_release);
+		// 让 DWM 重新应用系统默认 active/inactive border 状态。
+		if (settingDwmFrameEnabled.load(memory_order_acquire))
+			(void)ApplySettingDwmFrame(hWnd);
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		break;
@@ -1796,12 +1930,15 @@ SettingSessionCoroutine RunSettingSession()
 				const bool overlayNavigation = navigationLayout
 					== Inkeys::UI::Setting::NavigationLayout::Overlay;
 
-				const bool customTitleBar = settingDwmFrameEnabled.load(memory_order_acquire);
+				// TitleBar 与三个 caption buttons 始终由 Inkeys 自绘；DWM 只做
+				// 可选的外框/阴影/圆角增强，因此 Win7 关闭 Aero 时也不会退回
+				// 系统标题栏。
+				constexpr bool customTitleBar = true;
 				if (customTitleBar)
 				{
 					const string titleText = IA(I18nKey.SettingsUI.N);
 					const string versionLabel = utf16ToUtf8(editionVersion);
-					ImFluent::PushFont(ImFluentTextStyle_Body);
+					ImFluent::PushFont(ImFluentTextStyle_Caption);
 					const float titleTextWidth = ImGui::CalcTextSize(titleText.c_str()).x;
 					ImFluent::PopFont();
 					ImFluent::PushFont(ImFluentTextStyle_Caption);
@@ -1822,7 +1959,7 @@ SettingSessionCoroutine RunSettingSession()
 								IM_COL32(255, 255, 255, active ? 255 : 140));
 						}
 
-						ImFluent::PushFont(ImFluentTextStyle_Body);
+						ImFluent::PushFont(ImFluentTextStyle_Caption);
 						const float titleLeft = titleBarGeometry.icon.right
 							+ Inkeys::UI::Setting::TitleBarContentSpacingDip * settingGlobalScale;
 						const ImVec4 titleClip{ origin.x + titleLeft, origin.y,
