@@ -439,6 +439,7 @@ namespace draw3
 			uint32_t contactId = 0;
 			size_t decoderSlotIndex = 0;
 			uint64_t decoderGeneration = 0;
+			InputDeviceType deviceType = InputDeviceType::Pen;
 			bool occupied = false;
 		};
 
@@ -512,7 +513,12 @@ namespace draw3
 			RtsBindingInsertResult Insert(const RtsActiveContactBinding& binding) noexcept
 			{
 				const RtsBindingInsertResult result = InsertWithoutCount(binding);
-				if (result == RtsBindingInsertResult::Inserted) ++activeBindingCount_;
+				if (result == RtsBindingInsertResult::Inserted)
+				{
+					++activeBindingCount_;
+					if (binding.deviceType == InputDeviceType::Touch)
+						++activeTouchBindingCount_;
+				}
 				return result;
 			}
 
@@ -527,6 +533,8 @@ namespace draw3
 					if (binding.tabletContextId == tabletContextId &&
 						binding.contactId == contactId)
 					{
+						if (binding.deviceType == InputDeviceType::Touch)
+							--activeTouchBindingCount_;
 						binding = {};
 						--activeBindingCount_;
 						return RepairClusterAfterErase(NextIndex(index));
@@ -540,10 +548,12 @@ namespace draw3
 			{
 				slots_.fill({});
 				activeBindingCount_ = 0;
+				activeTouchBindingCount_ = 0;
 			}
 
 			size_t LogicalCapacity() const noexcept { return logicalCapacity_; }
 			size_t ActiveBindingCount() const noexcept { return activeBindingCount_; }
+			size_t ActiveTouchBindingCount() const noexcept { return activeTouchBindingCount_; }
 
 		private:
 			size_t NextIndex(size_t index) const noexcept
@@ -595,6 +605,7 @@ namespace draw3
 			std::array<RtsActiveContactBinding, kMaximumActiveBindingCapacity> slots_ = {};
 			size_t logicalCapacity_ = kActiveBindingSlotsPerBlock;
 			size_t activeBindingCount_ = 0;
+			size_t activeTouchBindingCount_ = 0;
 		};
 
 		class RtsDecoderCache
@@ -871,6 +882,20 @@ namespace draw3
 			return std::isfinite(snapshot.position.x) && std::isfinite(snapshot.position.y);
 		}
 
+		void NotifyRtsStylusDownCursor(InputDeviceType deviceType,
+			DrawingCursorEventSink* drawingCursorSink) noexcept
+		{
+			if (drawingCursorSink && deviceType == InputDeviceType::Touch)
+				drawingCursorSink->NotifyTouchContactBegin();
+		}
+
+		void NotifyRtsTouchContactEnd(InputDeviceType deviceType,
+			DrawingCursorEventSink* drawingCursorSink) noexcept
+		{
+			if (drawingCursorSink && deviceType == InputDeviceType::Touch)
+				drawingCursorSink->NotifyTouchContactEnd();
+		}
+
 		class StylusSyncPlugin final : public IStylusSyncPlugin
 		{
 		public:
@@ -985,17 +1010,24 @@ namespace draw3
 #endif
 					return S_OK;
 				}
+				// 设备模态切换不依赖坐标包解码；Win7 也能在 Touch Down 时清掉旧 Mouse Hover。
+				NotifyRtsStylusDownCursor(decoder->deviceType, drawingCursorSink_);
 
-				if (activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid))
+				if (const RtsActiveContactBinding* existingBinding =
+					activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid))
 				{
+					const InputDeviceType existingDeviceType = existingBinding->deviceType;
 					// duplicate Down 先关闭旧 producer，再修复 cluster 并绑定当前 contact。
 					CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					NotifyRtsTouchContactEnd(existingDeviceType, drawingCursorSink_);
 				}
 				const RtsActiveContactBinding binding{
-					stylusInfo->tcid, stylusInfo->cid, decoderSlotIndex, decoder->generation, true };
+					stylusInfo->tcid, stylusInfo->cid, decoderSlotIndex,
+					decoder->generation, decoder->deviceType, true };
 				if (activeBindings_.Insert(binding) != RtsBindingInsertResult::Inserted)
 				{
+					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
 						packet, nullptr, false, false, E_OUTOFMEMORY);
@@ -1008,6 +1040,7 @@ namespace draw3
 					ContactPhase::Down, QueryQpc(), snapshot))
 				{
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
@@ -1033,7 +1066,11 @@ namespace draw3
 				else
 					published = coordinator_.PublishDown(
 						stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
-				if (!published) activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+				if (!published)
+				{
+					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
+				}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published, S_OK, 0, deviceType, true);
@@ -1046,15 +1083,20 @@ namespace draw3
 			{
 				if (!stylusInfo) return E_INVALIDARG;
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
+				const RtsActiveContactBinding* binding = activeBindings_.Find(
+					stylusInfo->tcid, stylusInfo->cid);
+				const bool bindingKnown = binding != nullptr;
+				const InputDeviceType bindingDeviceType = binding
+					? binding->deviceType : InputDeviceType::Pen;
 				if (!packet)
 				{
 					PublishDefaultPenCursor();
 					CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					if (bindingKnown)
+						NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
 					return S_OK;
 				}
-				const RtsActiveContactBinding* binding = activeBindings_.Find(
-					stylusInfo->tcid, stylusInfo->cid);
 				const RtsContextDecoder* decoder = binding ? decoderCache_.Resolve(*binding) : nullptr;
 				ContactSnapshot snapshot;
 				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, packet,
@@ -1065,6 +1107,8 @@ namespace draw3
 					const bool published = CloseProducerContact(
 						stylusInfo->tcid, stylusInfo->cid, QueryQpc());
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+					if (bindingKnown)
+						NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusUp", stylusInfo, decoder, 1, propertyCount,
 						packet, nullptr, false, published);
@@ -1081,6 +1125,8 @@ namespace draw3
 				else
 					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
 				activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
+				if (bindingKnown)
+					NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("StylusUp", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published);
@@ -1330,6 +1376,8 @@ namespace draw3
 
 			void ResetActiveContactState(bool closeProducerContacts) noexcept
 			{
+				const size_t activeTouchContactCount =
+					activeBindings_.ActiveTouchBindingCount();
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					interruptionSimulation_.Reset();
 				if (closeProducerContacts)
@@ -1337,6 +1385,9 @@ namespace draw3
 						activeBindings_, coordinator_, QueryQpc());
 				else
 					activeBindings_.Clear();
+				// Disabled/Error/Tablet reset 都属于 Cancel 终态，逐个平衡 RTS Touch Begin。
+				for (size_t index = 0; index < activeTouchContactCount; ++index)
+					NotifyRtsTouchContactEnd(InputDeviceType::Touch, drawingCursorSink_);
 			}
 
 			void ResetDecoderLifecycleState(bool closeProducerContacts) noexcept
@@ -1504,6 +1555,18 @@ namespace draw3
 	}
 
 #if defined(DRAW3_TESTING)
+	void NotifyRtsStylusDownCursorForTesting(InputDeviceType deviceType,
+		DrawingCursorEventSink* drawingCursorSink) noexcept
+	{
+		NotifyRtsStylusDownCursor(deviceType, drawingCursorSink);
+	}
+
+	void NotifyRtsTouchContactEndForTesting(InputDeviceType deviceType,
+		DrawingCursorEventSink* drawingCursorSink) noexcept
+	{
+		NotifyRtsTouchContactEnd(deviceType, drawingCursorSink);
+	}
+
 	float NormalizeRtsPressureForTesting(int32_t rawValue,
 		int32_t logicalMin, int32_t logicalMax) noexcept
 	{
@@ -1624,9 +1687,11 @@ namespace draw3
 
 		RtsActiveContactBinding MakeTestingBinding(uint32_t tabletContextId,
 			uint32_t contactId, size_t decoderSlotIndex = 0,
-			uint64_t decoderGeneration = 1) noexcept
+			uint64_t decoderGeneration = 1,
+			InputDeviceType deviceType = InputDeviceType::Pen) noexcept
 		{
-			return { tabletContextId, contactId, decoderSlotIndex, decoderGeneration, true };
+			return { tabletContextId, contactId, decoderSlotIndex,
+				decoderGeneration, deviceType, true };
 		}
 
 		bool FindCollidingContactIds(size_t logicalCapacity, size_t bucket,
@@ -1697,14 +1762,18 @@ namespace draw3
 	{
 		RtsActiveBindingTable table(32);
 		const RtsActiveContactBinding first = MakeTestingBinding(1, 11, 2, 7);
-		const RtsActiveContactBinding second = MakeTestingBinding(2, 22, 3, 8);
+		const RtsActiveContactBinding second = MakeTestingBinding(
+			2, 22, 3, 8, InputDeviceType::Touch);
 		return table.Insert(first) == RtsBindingInsertResult::Inserted &&
 			table.Insert(second) == RtsBindingInsertResult::Inserted &&
-			table.ActiveBindingCount() == 2 && table.Find(1, 11) && table.Find(2, 22) &&
+			table.ActiveBindingCount() == 2 && table.ActiveTouchBindingCount() == 1 &&
+			table.Find(1, 11) && table.Find(2, 22) &&
 			table.Insert(first) == RtsBindingInsertResult::Duplicate &&
-			table.ActiveBindingCount() == 2 && table.Erase(1, 11) && !table.Find(1, 11) &&
-			table.Find(2, 22) && table.ActiveBindingCount() == 1 && table.Erase(2, 22) &&
-			table.ActiveBindingCount() == 0 && !table.Find(2, 22);
+			table.ActiveBindingCount() == 2 && table.ActiveTouchBindingCount() == 1 &&
+			table.Erase(1, 11) && !table.Find(1, 11) && table.Find(2, 22) &&
+			table.ActiveBindingCount() == 1 && table.ActiveTouchBindingCount() == 1 &&
+			table.Erase(2, 22) && table.ActiveBindingCount() == 0 &&
+			table.ActiveTouchBindingCount() == 0 && !table.Find(2, 22);
 	}
 
 	bool RtsBindingNonPowerOfTwoCapacityForTesting(size_t logicalCapacity) noexcept

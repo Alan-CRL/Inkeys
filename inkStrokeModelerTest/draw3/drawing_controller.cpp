@@ -3060,6 +3060,10 @@ namespace draw3
 		std::vector<DrawingCursorVisual> currentCursorVisuals;
 		previousCursorVisuals.reserve(kPreheatedStrokeCount + 1);
 		currentCursorVisuals.reserve(kPreheatedStrokeCount + 1);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+		bool multipleCursorSourceTraceActive = false;
+		uint64_t multipleCursorSourceTraceKey = 0;
+#endif
 
 		auto buildDrawingCursorVisuals = [&]()
 		{
@@ -3074,14 +3078,23 @@ namespace draw3
 				penSample.valid = false;
 			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			bool primaryCursorSourceVisible = false;
+			size_t runtimeCursorSourceCount = 0;
+#endif
 			if (cursorTool == DrawingTool::Laser)
 			{
 				const DrawingCursorVisual primary = ResolveLaserDrawingCursorVisual(
 					penSample, mouseSample, window_.CursorOwner(),
 					window_.CursorAppearanceForTool(DrawingTool::Laser));
 				if (primary.visible)
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					primaryCursorSourceVisible = true;
+#endif
 					laserTipDots.push_back({ primary.x, primary.y,
 						primary.appearance.width * 0.5f, primary.appearance.opacity });
+				}
 			}
 			else
 			{
@@ -3093,7 +3106,13 @@ namespace draw3
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
 					mouseUsesSystemCursor);
-				if (primary.visible) currentCursorVisuals.push_back(primary);
+				if (primary.visible)
+				{
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					primaryCursorSourceVisible = true;
+#endif
+					currentCursorVisuals.push_back(primary);
+				}
 			}
 
 			const DrawingCursorAppearance eraserAppearance =
@@ -3107,6 +3126,9 @@ namespace draw3
 					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
 					laserTipDots.push_back({ snapshot.position.x, snapshot.position.y,
 						LaserSolidRadius(configuration_.dpiScale), 1.0f });
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					++runtimeCursorSourceCount;
+#endif
 					continue;
 				}
 				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
@@ -3115,8 +3137,99 @@ namespace draw3
 				const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
 				const DrawingCursorVisual touchVisual = MakeTouchEraserDrawingCursorVisual(
 					snapshot.position.x, snapshot.position.y, eraserAppearance);
-				if (touchVisual.visible) currentCursorVisuals.push_back(touchVisual);
+				if (touchVisual.visible)
+				{
+					currentCursorVisuals.push_back(touchVisual);
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					++runtimeCursorSourceCount;
+#endif
+				}
 			}
+
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			DrawingCursorDiagnosticVisualState diagnosticState;
+			const bool traceEnabled = ReadDrawingCursorDiagnosticVisualState(diagnosticState);
+			const size_t visibleCursorSourceCount = runtimeCursorSourceCount +
+				(primaryCursorSourceVisible ? 1u : 0u);
+			uint64_t traceKey = 0;
+			auto mixTraceKey = [&traceKey](uint64_t value) noexcept
+			{
+				traceKey ^= value + 0x9e3779b97f4a7c15ull +
+					(traceKey << 6) + (traceKey >> 2);
+			};
+			if (traceEnabled)
+			{
+				mixTraceKey(visibleCursorSourceCount);
+				mixTraceKey(primaryCursorSourceVisible ? 1u : 0u);
+				mixTraceKey(static_cast<uint64_t>(window_.CursorOwner()));
+				mixTraceKey(static_cast<uint64_t>(cursorTool));
+				mixTraceKey(penSample.valid ? 1u : 0u);
+				mixTraceKey(static_cast<uint64_t>(penSample.qpc));
+				mixTraceKey(mouseSample.valid ? 1u : 0u);
+				mixTraceKey(static_cast<uint64_t>(mouseSample.qpc));
+				for (const RuntimeStroke* runtime : active)
+				{
+					if (!runtime) continue;
+					const ContactRecord* record = runtime->handle.record;
+					mixTraceKey(record ? record->TabletContextId() : 0);
+					mixTraceKey(record ? record->ContactId() : 0);
+					mixTraceKey(runtime->handle.generation);
+					mixTraceKey(static_cast<uint64_t>(runtime->metricDeviceType));
+					mixTraceKey(static_cast<uint64_t>(runtime->tool));
+					mixTraceKey(static_cast<uint64_t>(runtime->lastModelSnapshot.qpc));
+					mixTraceKey(runtime->ended ? 1u : 0u);
+					mixTraceKey(runtime->awaitingReconnect ? 1u : 0u);
+				}
+			}
+			if (!traceEnabled || visibleCursorSourceCount < 2)
+			{
+				multipleCursorSourceTraceActive = false;
+				multipleCursorSourceTraceKey = 0;
+			}
+			else if (!multipleCursorSourceTraceActive ||
+				multipleCursorSourceTraceKey != traceKey)
+			{
+				multipleCursorSourceTraceActive = true;
+				multipleCursorSourceTraceKey = traceKey;
+				std::cout << "[CURSOR_TRACE][cursor-sources] count=" <<
+					visibleCursorSourceCount << " primaryVisible=" <<
+					(primaryCursorSourceVisible ? 1u : 0u) << " runtimeSources=" <<
+					runtimeCursorSourceCount << " cursorOwner=" <<
+					static_cast<unsigned>(window_.CursorOwner()) << " tool=" <<
+					DrawingToolName(cursorTool) << std::endl;
+				std::cout << "[CURSOR_TRACE][primary-samples] pen={valid=" <<
+					(penSample.valid ? 1u : 0u) << ",contact=" <<
+					(penSample.inContact ? 1u : 0u) << ",inverted=" <<
+					(penSample.inverted ? 1u : 0u) << ",qpc=" << penSample.qpc <<
+					",x=" << penSample.x << ",y=" << penSample.y << "} mouse={valid=" <<
+					(mouseSample.valid ? 1u : 0u) << ",contact=" <<
+					(mouseSample.inContact ? 1u : 0u) << ",qpc=" << mouseSample.qpc <<
+					",x=" << mouseSample.x << ",y=" << mouseSample.y << "}" << std::endl;
+				size_t traceIndex = 0;
+				for (const RuntimeStroke* runtime : active)
+				{
+					if (!runtime) continue;
+					const ContactRecord* record = runtime->handle.record;
+					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+					const bool cursorSource = !runtime->ended && !runtime->awaitingReconnect &&
+						runtime->metricDeviceType == InputDeviceType::Touch &&
+						(runtime->tool == DrawingTool::Eraser ||
+							runtime->tool == DrawingTool::Laser);
+					std::cout << "[CURSOR_TRACE][active-runtime] index=" << traceIndex++ <<
+						" tcid=" << (record ? record->TabletContextId() : 0) <<
+						" cid=" << (record ? record->ContactId() : 0) <<
+						" generation=" << runtime->handle.generation <<
+						" device=" << InputDeviceTypeName(runtime->metricDeviceType) <<
+						" tool=" << DrawingToolName(runtime->tool) <<
+						" cursorSource=" << (cursorSource ? 1u : 0u) <<
+						" ended=" << (runtime->ended ? 1u : 0u) <<
+						" awaitingReconnect=" << (runtime->awaitingReconnect ? 1u : 0u) <<
+						" qpc=" << snapshot.qpc << " x=" << snapshot.position.x <<
+						" y=" << snapshot.position.y <<
+						std::endl;
+				}
+			}
+#endif
 		};
 
 		auto cursorVisualsEquivalent = [&]() noexcept

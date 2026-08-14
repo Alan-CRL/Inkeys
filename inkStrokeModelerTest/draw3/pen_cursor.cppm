@@ -127,6 +127,10 @@ export namespace draw3
 	{
 	public:
 		virtual ~DrawingCursorEventSink() = default;
+		// RTS 确认 Touch 接触开始后，使上一设备留下的 Mouse Hover 失效。
+		virtual void NotifyTouchContactBegin() noexcept = 0;
+		// RTS Touch 的 Up/Cancel 仅维护诊断生命周期，不把 Touch 设为持久 owner。
+		virtual void NotifyTouchContactEnd() noexcept = 0;
 		virtual void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept = 0;
 		virtual void ClearPenCursorSample() noexcept = 0;
 	};
@@ -164,9 +168,15 @@ export namespace draw3
 	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerAfterTouchPan(
 		bool realMouseTakeoverDuringTouchPan,
 		bool penSampleValid, bool mouseSampleValid) noexcept;
+	// Touch 开始接触时作废陈旧 Mouse Hover；之后真实鼠标消息仍可重新发布并接管。
+	bool ShouldClearMouseCursorSampleForPointerEvent(
+		DrawingCursorPointerAuthority pointerEventType,
+		bool beginsContact) noexcept;
 	// Pointer API 可区分 promoted 消息时，真实鼠标必须立即接管陈旧 Pen authority。
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
-		bool pointerApiAvailable, bool penSampleValid) noexcept;
+		bool pointerApiAvailable, bool penSampleValid,
+		bool touchBarrierKnown = false, uint32_t mouseMessageTick = 0,
+		uint32_t touchBarrierTick = 0) noexcept;
 	// 部分 Pen 驱动缺失 promoted 标记；活动平移中以新鲜且同位置的 Pen 样本识别兼容 Mouse contact。
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
 		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,

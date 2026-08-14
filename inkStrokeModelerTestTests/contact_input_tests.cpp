@@ -23,6 +23,7 @@
 import draw3.contact_input;
 import draw3.haptic_feedback;
 import draw3.ink_prediction;
+import draw3.pen_cursor;
 import draw3.realtime_stylus;
 import draw3.runtime_metrics;
 
@@ -48,6 +49,53 @@ namespace
 			++failures;
 			std::cerr << "FAILED line " << line << ": " << expression << std::endl;
 		}
+	};
+
+	class TestDrawingCursorSink final : public draw3::DrawingCursorEventSink
+	{
+	public:
+		void NotifyTouchContactBegin() noexcept override
+		{
+			++touchContactBeginCount;
+			mouseSample_.Clear();
+		}
+
+		void NotifyTouchContactEnd() noexcept override
+		{
+			++touchContactEndCount;
+		}
+
+		void PublishPenCursorSample(const draw3::DrawingCursorSample& sample) noexcept override
+		{
+			penSample_.Publish(sample);
+		}
+
+		void ClearPenCursorSample() noexcept override
+		{
+			penSample_.Clear();
+		}
+
+		void PublishMouseCursorSample(const draw3::DrawingCursorSample& sample) noexcept
+		{
+			mouseSample_.Publish(sample);
+		}
+
+		bool ReadPenCursorSample(draw3::DrawingCursorSample& sample) const noexcept
+		{
+			return penSample_.Read(sample);
+		}
+
+		bool ReadMouseCursorSample(draw3::DrawingCursorSample& sample) const noexcept
+		{
+			return mouseSample_.Read(sample);
+		}
+
+		int touchContactBeginCount = 0;
+		int touchContactEndCount = 0;
+
+	private:
+		draw3::DrawingCursorSampleMailbox penSample_;
+		draw3::DrawingCursorSampleMailbox mouseSample_;
 	};
 
 #define TEST_CHECK(state, expression) (state).Check(!!(expression), #expression, __LINE__)
@@ -420,6 +468,78 @@ namespace
 		const draw3::SizeF invalidScaleSize = draw3::DecodeRtsContactSizeForTesting(
 			draw3::InputDeviceType::Touch, 120, 80, 0.0f, 0.5f);
 		TEST_CHECK(state, invalidScaleSize.width < 0.0f && invalidScaleSize.height < 0.0f);
+	}
+
+	void TestRtsTouchDownCursorInvalidation(TestState& state)
+	{
+		using draw3::DrawingCursorPointerAuthority;
+		TestDrawingCursorSink sink;
+		draw3::DrawingCursorSample mouseHover = {
+			.x = 120.0f, .y = 240.0f, .qpc = 1, .valid = true
+		};
+		sink.PublishMouseCursorSample(mouseHover);
+		draw3::DrawingCursorSample observedMouse;
+		TEST_CHECK(state, sink.ReadMouseCursorSample(observedMouse) && observedMouse.valid);
+
+		draw3::NotifyRtsStylusDownCursorForTesting(
+			draw3::InputDeviceType::Touch, &sink);
+		TEST_CHECK(state, sink.touchContactBeginCount == 1);
+		TEST_CHECK(state, sink.ReadMouseCursorSample(observedMouse) && !observedMouse.valid);
+		draw3::NotifyRtsTouchContactEndForTesting(
+			draw3::InputDeviceType::Touch, &sink);
+		TEST_CHECK(state, sink.touchContactEndCount == 1);
+
+		const draw3::DrawingCursorAppearance eraserAppearance = {
+			draw3::DrawingCursorShape::EraserGripCircle,
+			50.0f, 50.0f, 1.0f, 1.0f, 1.0f
+		};
+		const draw3::DrawingCursorAppearance laserAppearance = {
+			draw3::DrawingCursorShape::Circle,
+			5.0f, 5.0f, 1.0f, 0.0f, 0.0f
+		};
+		draw3::DrawingCursorSample absentPen;
+		TEST_CHECK(state, !draw3::ResolvePrimaryDrawingCursorVisual(
+			absentPen, observedMouse, DrawingCursorPointerAuthority::Mouse,
+			eraserAppearance, eraserAppearance, true, true).visible);
+		TEST_CHECK(state, !draw3::ResolveLaserDrawingCursorVisual(
+			absentPen, observedMouse, DrawingCursorPointerAuthority::Mouse,
+			laserAppearance).visible);
+
+		// Touch 后真实 Mouse 的下一次移动仍可重新发布并恢复应用光标。
+		mouseHover.x = 300.0f;
+		mouseHover.qpc = 2;
+		sink.PublishMouseCursorSample(mouseHover);
+		TEST_CHECK(state, sink.ReadMouseCursorSample(observedMouse) && observedMouse.valid);
+		TEST_CHECK(state, draw3::ResolvePrimaryDrawingCursorVisual(
+			absentPen, observedMouse, DrawingCursorPointerAuthority::Mouse,
+			eraserAppearance, eraserAppearance, true, true).visible);
+		TEST_CHECK(state, draw3::ResolveLaserDrawingCursorVisual(
+			absentPen, observedMouse, DrawingCursorPointerAuthority::Mouse,
+			laserAppearance).visible);
+
+		// Pen/Mouse Down 不触发 Touch 通知，也不会屏蔽真实 Mouse takeover。
+		draw3::NotifyRtsStylusDownCursorForTesting(
+			draw3::InputDeviceType::Pen, &sink);
+		draw3::NotifyRtsStylusDownCursorForTesting(
+			draw3::InputDeviceType::MouseLeft, &sink);
+		draw3::NotifyRtsTouchContactEndForTesting(
+			draw3::InputDeviceType::Pen, &sink);
+		TEST_CHECK(state, sink.touchContactBeginCount == 1);
+		TEST_CHECK(state, sink.touchContactEndCount == 1);
+		TEST_CHECK(state, sink.ReadMouseCursorSample(observedMouse) && observedMouse.valid);
+
+		// Pen Up 已按原路径清除 Pen sample；随后 Touch Down 只清理 Mouse，不重新发布 Pen。
+		draw3::DrawingCursorSample penContact = {
+			.x = 40.0f, .y = 80.0f, .qpc = 3, .valid = true, .inContact = true
+		};
+		sink.PublishPenCursorSample(penContact);
+		sink.ClearPenCursorSample();
+		draw3::NotifyRtsStylusDownCursorForTesting(
+			draw3::InputDeviceType::Touch, &sink);
+		draw3::DrawingCursorSample observedPen;
+		TEST_CHECK(state, sink.ReadPenCursorSample(observedPen) && !observedPen.valid);
+		TEST_CHECK(state, sink.ReadMouseCursorSample(observedMouse) && !observedMouse.valid);
+		TEST_CHECK(state, sink.touchContactBeginCount == 2);
 	}
 
 	void TestRtsDecoderAndBindingHotPath(TestState& state)
@@ -1668,6 +1788,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestMoveUpRaceAndShutdown(state);
 	TestWakeProtocols(state);
 	TestRtsStylusConversions(state);
+	TestRtsTouchDownCursorInvalidation(state);
 	TestRtsDecoderAndBindingHotPath(state);
 	TestInputWidthModesAndHardwarePressure(state);
 	TestInterruptedStrokeReconnectPolicy(state);

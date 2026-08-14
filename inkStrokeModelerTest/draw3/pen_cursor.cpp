@@ -349,6 +349,8 @@ namespace draw3
 		bool mouseUsesSystemCursor, bool touchPanActive,
 		bool realMouseTakeoverDuringTouchPan) noexcept
 	{
+		// Eraser/Laser 始终由 Draw3 绘制专用光标，不依赖 event-only Touch owner 或 Hover sample。
+		if (selectedToolIsEraser || selectedToolIsLaser) return true;
 		if (touchPanActive)
 		{
 			if (!realMouseTakeoverDuringTouchPan) return true;
@@ -359,13 +361,11 @@ namespace draw3
 		case DrawingCursorPointerAuthority::Pen:
 			return true;
 		case DrawingCursorPointerAuthority::Mouse:
-			return selectedToolIsEraser || selectedToolIsLaser ||
-				(!mouseUsesSystemCursor && mouseSampleValid);
+			return !mouseUsesSystemCursor && mouseSampleValid;
 		case DrawingCursorPointerAuthority::Touch:
-			return selectedToolIsEraser || selectedToolIsLaser;
+			return false;
 		default:
-			return penSampleValid || (mouseSampleValid &&
-				(selectedToolIsEraser || selectedToolIsLaser || !mouseUsesSystemCursor));
+			return penSampleValid || (mouseSampleValid && !mouseUsesSystemCursor);
 		}
 	}
 
@@ -396,10 +396,23 @@ namespace draw3
 		return DrawingCursorPointerAuthority::Unknown;
 	}
 
+	bool ShouldClearMouseCursorSampleForPointerEvent(
+		DrawingCursorPointerAuthority pointerEventType,
+		bool beginsContact) noexcept
+	{
+		return beginsContact &&
+			pointerEventType == DrawingCursorPointerAuthority::Touch;
+	}
+
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
-		bool pointerApiAvailable, bool penSampleValid) noexcept
+		bool pointerApiAvailable, bool penSampleValid,
+		bool touchBarrierKnown, uint32_t mouseMessageTick,
+		uint32_t touchBarrierTick) noexcept
 	{
 		if (promotedPointerMessage) return true;
+		// Windows 消息 tick 会回绕；有符号差值 <= 0 表示消息早于或等于 Touch barrier。
+		if (touchBarrierKnown &&
+			static_cast<LONG>(mouseMessageTick - touchBarrierTick) <= 0) return true;
 		// Pointer API 能可靠过滤 Pen 提升消息；剩余 WM_MOUSE* 来自真实鼠标。
 		return !pointerApiAvailable && penSampleValid;
 	}

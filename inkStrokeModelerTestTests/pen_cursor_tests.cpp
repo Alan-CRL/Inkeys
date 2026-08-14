@@ -216,6 +216,25 @@ int RunPenCursorTests()
 		DrawingCursorPointerAuthority::Mouse, false, true, false, true));
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Mouse, false, true, false, true, false));
+	// 专用 Eraser/Laser 不依赖 owner 或 sample；普通 Pen/Highlighter 保持系统光标语义。
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Unknown, true, false, false, false));
+	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Unknown, false, true, false, false));
+	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Unknown, false, false, false, false));
+	PEN_CURSOR_CHECK(!draw3::ShouldHideSystemDrawingCursor(
+		DrawingCursorPointerAuthority::Mouse, false, false, false, true, true));
+	for (const DrawingCursorPointerAuthority authority : {
+		DrawingCursorPointerAuthority::Mouse,
+		DrawingCursorPointerAuthority::Pen,
+		DrawingCursorPointerAuthority::Unknown })
+	{
+		PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+			authority, true, false, false, false));
+		PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
+			authority, false, true, false, false));
+	}
 	// Touch 只记录事件；本轮没有真实 Mouse 接管时，Pan 必须始终隐藏系统箭头。
 	PEN_CURSOR_CHECK(draw3::ShouldHideSystemDrawingCursor(
 		DrawingCursorPointerAuthority::Pen, false, false, true, false,
@@ -248,6 +267,14 @@ int RunPenCursorTests()
 		true, true, true) == DrawingCursorPointerAuthority::Mouse);
 	PEN_CURSOR_CHECK(draw3::ResolveDrawingCursorOwnerAfterTouchPan(
 		true, true, false) == DrawingCursorPointerAuthority::Pen);
+	PEN_CURSOR_CHECK(draw3::ShouldClearMouseCursorSampleForPointerEvent(
+		DrawingCursorPointerAuthority::Touch, true));
+	PEN_CURSOR_CHECK(!draw3::ShouldClearMouseCursorSampleForPointerEvent(
+		DrawingCursorPointerAuthority::Touch, false));
+	PEN_CURSOR_CHECK(!draw3::ShouldClearMouseCursorSampleForPointerEvent(
+		DrawingCursorPointerAuthority::Mouse, true));
+	PEN_CURSOR_CHECK(!draw3::ShouldClearMouseCursorSampleForPointerEvent(
+		DrawingCursorPointerAuthority::Pen, true));
 	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
 		DrawingCursorPointerAuthority::Pen));
 	PEN_CURSOR_CHECK(draw3::ShouldSuppressMouseButtonUpCursorSample(
@@ -270,6 +297,20 @@ int RunPenCursorTests()
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, true, true));
 	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(false, false, true));
 	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(false, false, false));
+	// Touch barrier 使用消息创建 tick；同 tick 和更早的排队 Mouse 均不能重新接管。
+	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(
+		false, true, false, true, 99u, 100u));
+	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(
+		false, true, false, true, 100u, 100u));
+	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(
+		false, true, false, true, 101u, 100u));
+	// GetMessageTime/GetTickCount 的 DWORD 回绕前后仍按半区间有符号差值排序。
+	PEN_CURSOR_CHECK(!draw3::ShouldIgnoreMouseCursorMessage(
+		false, true, false, true, 0x00000010u, 0xfffffff0u));
+	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(
+		false, true, false, true, 0xfffffff0u, 0x00000010u));
+	PEN_CURSOR_CHECK(draw3::ShouldIgnoreMouseCursorMessage(
+		true, true, false, true, 101u, 100u));
 	PEN_CURSOR_CHECK(!draw3::ShouldTreatMouseContactAsPenCompatibilityMessage(
 		false, true, true, 1.0f, -2.0f, 0.01));
 	// 当前 owner 即使已不是 Pen，新鲜同位置 Pen presence 仍可识别兼容 Mouse contact。

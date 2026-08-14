@@ -120,6 +120,8 @@ export namespace draw3
 		// 活动平移观察到 Pen contact 时立即锁存抑制并清除旧光标/触觉状态。
 		void SuppressPenContactForTouchPan() noexcept;
 		bool PenContactSuppressedForTouchPan() const noexcept;
+		void NotifyTouchContactBegin() noexcept override;
+		void NotifyTouchContactEnd() noexcept override;
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
@@ -149,14 +151,23 @@ export namespace draw3
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
+		void NotifyTouchContactBegin(bool trackActiveContact,
+			uint32_t touchBarrierTick) noexcept;
 		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
 		void ClearMouseCursorSample() noexcept;
-		bool ShouldIgnoreMouseCursorMessage() const noexcept;
+		bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
+			bool penSampleValid, bool touchBarrierKnown,
+			uint32_t mouseMessageTick, uint32_t touchBarrierTick) const noexcept;
 		void ApplyWindowCursor(const char* trigger) noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
 			POINTER_INPUT_TYPE pointerType, bool pointerTypeKnown,
 			bool forceLifecycle = false) noexcept;
+		void TraceTouchMouseMessage(UINT message, uint32_t messageTick,
+			uint32_t touchBarrierTick, bool touchBarrierKnown,
+			ULONG_PTR extraInfo, bool promotedPointerMessage,
+			int x, int y, uint32_t activeTouchContactCount,
+			bool accepted, const char* reason) noexcept;
 #endif
 
 		std::atomic<HWND> window_ = nullptr;
@@ -183,6 +194,9 @@ export namespace draw3
 		std::atomic<bool> realMouseTakeoverDuringTouchPan_ = false;
 		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
 		std::atomic<bool> penCompatibilityMouseContactSuppressed_ = false;
+		// 高 32 位为有效标志，低 32 位保存 Windows uptime tick，保证跨线程一致快照。
+		std::atomic<uint64_t> latestTouchInputBarrierTick_ = 0;
+		std::atomic<uint32_t> activeTouchContactCount_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =

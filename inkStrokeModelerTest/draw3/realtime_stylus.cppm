@@ -82,6 +82,10 @@ export namespace draw3
 	bool RtsContactSizePropertiesRequestedForTesting() noexcept;
 	bool RtsPenCursorDataInterestEnabledForTesting() noexcept;
 	bool RtsProductionDataInterestIsExactForTesting() noexcept;
+	void NotifyRtsStylusDownCursorForTesting(InputDeviceType deviceType,
+		DrawingCursorEventSink* drawingCursorSink) noexcept;
+	void NotifyRtsTouchContactEndForTesting(InputDeviceType deviceType,
+		DrawingCursorEventSink* drawingCursorSink) noexcept;
 	RtsDecoderResultForTesting DecodeRtsContextForTesting(
 		const RtsPacketPropertyForTesting* properties, size_t propertyCount,
 		const int32_t* packet, size_t decodedPropertyCount, InputDeviceType deviceType,
