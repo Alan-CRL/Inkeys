@@ -11,7 +11,6 @@ namespace Inkeys::UI::Setting
 	inline constexpr float MinimumWidthDip = 720.0F;
 	inline constexpr float MinimumHeightDip = 520.0F;
 	inline constexpr float TitleBarHeightDip = 40.0F;
-	inline constexpr float TitleBarToggleHitWidthDip = 52.0F;
 	inline constexpr float PageMaximumWidthDip = 920.0F;
 
 	enum class NavigationLayout

@@ -646,9 +646,8 @@ namespace Inkeys::Window
 			DWORD exStyle = spec.exStyle;
 			if (IsSetting(spec.role))
 			{
-				// Setting 使用客户区自绘标题栏，但保留系统缩放、Snap 和窗口命令能力。
-				style = WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME
-					| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+				// 标准 overlapped 语义交给 DWM 维护 caption controls、Snap 与系统菜单。
+				style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 				exStyle = (exStyle | WS_EX_APPWINDOW) &
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
 				owner = nullptr;

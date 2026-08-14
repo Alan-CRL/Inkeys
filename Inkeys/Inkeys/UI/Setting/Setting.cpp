@@ -62,6 +62,7 @@ namespace
 
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
+	atomic<bool> settingDwmFrameEnabled = false;
 	mutex settingLifecycleMutex;
 	// Win32 backend 会调用 SetCapture/ReleaseCapture/IME，可能同步重入同一 WndProc。
 	recursive_mutex settingImguiMutex;
@@ -144,19 +145,136 @@ namespace
 				&darkFrame, sizeof(darkFrame));
 	}
 
+	[[nodiscard]] int QuerySettingSystemMetric(HWND hwnd, int metric) noexcept
+	{
+		using GetSystemMetricsForDpiProc = int(WINAPI*)(int, UINT);
+		static const auto getSystemMetricsForDpi =
+			reinterpret_cast<GetSystemMetricsForDpiProc>(GetProcAddress(
+				GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
+		return getSystemMetricsForDpi
+			? getSystemMetricsForDpi(metric, QuerySettingDpi(hwnd))
+			: GetSystemMetrics(metric);
+	}
+
+	[[nodiscard]] int QuerySettingFrameWidth(HWND hwnd) noexcept
+	{
+		return QuerySettingSystemMetric(hwnd, SM_CXSIZEFRAME)
+			+ QuerySettingSystemMetric(hwnd, SM_CXPADDEDBORDER);
+	}
+
+	[[nodiscard]] int QuerySettingFrameHeight(HWND hwnd) noexcept
+	{
+		return QuerySettingSystemMetric(hwnd, SM_CYSIZEFRAME)
+			+ QuerySettingSystemMetric(hwnd, SM_CXPADDEDBORDER);
+	}
+
+	[[nodiscard]] bool ApplySettingDwmFrame(HWND hwnd) noexcept
+	{
+		BOOL compositionEnabled = FALSE;
+		bool frameEnabled = hwnd
+			&& SUCCEEDED(DwmIsCompositionEnabled(&compositionEnabled))
+			&& compositionEnabled;
+		if (frameEnabled)
+		{
+			// DWM 扩展区使用系统 DPI；应用缩放只影响客户区内的 Fluent 内容。
+			const MARGINS margins{ 0, 0, Inkeys::UI::Setting::ScaleDip(
+				Inkeys::UI::Setting::TitleBarHeightDip,
+				Inkeys::UI::Setting::DpiScale(QuerySettingDpi(hwnd))), 0 };
+			frameEnabled = SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &margins));
+			if (frameEnabled)
+			{
+				const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_DEFAULT;
+				// 旧系统会返回不支持；失败时继续使用系统默认边框和阴影。
+				(void)DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+					&preference, sizeof(preference));
+			}
+		}
+		settingDwmFrameEnabled.store(frameEnabled, memory_order_release);
+		return frameEnabled;
+	}
+
+	void RefreshSettingNonClientFrame(HWND hwnd) noexcept
+	{
+		(void)ApplySettingDwmFrame(hwnd);
+		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+			SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE
+			| SWP_NOZORDER | SWP_NOACTIVATE);
+	}
+
+	[[nodiscard]] bool LoadSettingWindowIconTexture(HWND hwnd) noexcept
+	{
+		constexpr int iconTextureSize = 64;
+		HICON icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL2, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0));
+		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICONSM));
+		if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICON));
+		if (!icon) return false;
+
+		BITMAPINFO bitmapInfo{};
+		bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		bitmapInfo.bmiHeader.biWidth = iconTextureSize;
+		bitmapInfo.bmiHeader.biHeight = -iconTextureSize;
+		bitmapInfo.bmiHeader.biPlanes = 1;
+		bitmapInfo.bmiHeader.biBitCount = 32;
+		bitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+		void* iconPixels = nullptr;
+		HDC screenDc = GetDC(nullptr);
+		HDC memoryDc = screenDc ? CreateCompatibleDC(screenDc) : nullptr;
+		HBITMAP bitmap = memoryDc
+			? CreateDIBSection(screenDc, &bitmapInfo, DIB_RGB_COLORS,
+				&iconPixels, nullptr, 0)
+			: nullptr;
+		bool loaded = false;
+		if (bitmap && iconPixels)
+		{
+			const HGDIOBJ previousBitmap = SelectObject(memoryDc, bitmap);
+			ZeroMemory(iconPixels, iconTextureSize * iconTextureSize * 4);
+			// 统一以高分辨率缓存 HWND 图标，渲染时再按系统 DPI 缩放。
+			const BOOL drawn = DrawIconEx(memoryDc, 0, 0, icon,
+				iconTextureSize, iconTextureSize, 0, nullptr, DI_NORMAL);
+			if (previousBitmap) SelectObject(memoryDc, previousBitmap);
+			if (drawn)
+			{
+				auto* pixels = static_cast<unsigned char*>(iconPixels);
+				for (int pixel = 0; pixel < iconTextureSize * iconTextureSize; ++pixel)
+				{
+					const int offset = pixel * 4;
+					const unsigned int alpha = pixels[offset + 3];
+					if (alpha == 0 || alpha == 255) continue;
+					// DrawIconEx 输出预乘 alpha；ImGui DX11 混合前还原为直通道颜色。
+					pixels[offset + 0] = static_cast<unsigned char>(
+						min(255U, pixels[offset + 0] * 255U / alpha));
+					pixels[offset + 1] = static_cast<unsigned char>(
+						min(255U, pixels[offset + 1] * 255U / alpha));
+					pixels[offset + 2] = static_cast<unsigned char>(
+						min(255U, pixels[offset + 2] * 255U / alpha));
+				}
+				loaded = LoadTextureFromMemory(
+					pixels,
+					iconTextureSize, iconTextureSize, &TextureSettingSign[0]);
+			}
+		}
+		if (bitmap) DeleteObject(bitmap);
+		if (memoryDc) DeleteDC(memoryDc);
+		if (screenDc) ReleaseDC(nullptr, screenDc);
+		return loaded;
+	}
+
 	[[nodiscard]] LRESULT HitTestSettingWindow(HWND hwnd, LPARAM lParam) noexcept
 	{
 		RECT bounds{};
 		if (!GetWindowRect(hwnd, &bounds)) return HTCLIENT;
 		const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-		const int border = max(4, Inkeys::UI::Setting::ScaleDip(8.0F,
-			settingSystemDpiScale));
 		if (!IsZoomed(hwnd))
 		{
-			const bool left = point.x < bounds.left + border;
-			const bool right = point.x >= bounds.right - border;
-			const bool top = point.y < bounds.top + border;
-			const bool bottom = point.y >= bounds.bottom - border;
+			const int frameWidth = QuerySettingFrameWidth(hwnd);
+			const int frameHeight = QuerySettingFrameHeight(hwnd);
+			const bool left = point.x < bounds.left + frameWidth;
+			const bool right = point.x >= bounds.right - frameWidth;
+			const bool top = point.y < bounds.top + frameHeight;
+			const bool bottom = point.y >= bounds.bottom - frameHeight;
 			if (top && left) return HTTOPLEFT;
 			if (top && right) return HTTOPRIGHT;
 			if (bottom && left) return HTBOTTOMLEFT;
@@ -167,19 +285,16 @@ namespace
 			if (bottom) return HTBOTTOM;
 		}
 
+		LRESULT dwmResult = HTNOWHERE;
+		if (DwmDefWindowProc(hwnd, WM_NCHITTEST, 0, lParam, &dwmResult))
+			return dwmResult;
+
+		POINT clientPoint = point;
+		if (!ScreenToClient(hwnd, &clientPoint)) return HTCLIENT;
 		const int titleHeight = Inkeys::UI::Setting::ScaleDip(
 			Inkeys::UI::Setting::TitleBarHeightDip, settingGlobalScale);
-		const int buttonWidth = Inkeys::UI::Setting::ScaleDip(46.0F, settingGlobalScale);
-		if (point.y < bounds.top + titleHeight)
-		{
-			if (point.x >= bounds.right - buttonWidth) return HTCLOSE;
-			if (point.x >= bounds.right - buttonWidth * 2) return HTMAXBUTTON;
-			if (point.x >= bounds.right - buttonWidth * 3) return HTMINBUTTON;
-			const int toggleHitWidth = Inkeys::UI::Setting::ScaleDip(
-				Inkeys::UI::Setting::TitleBarToggleHitWidthDip, settingGlobalScale);
-			if (point.x < bounds.left + toggleHitWidth) return HTCLIENT;
+		if (clientPoint.y >= 0 && clientPoint.y < titleHeight)
 			return HTCAPTION;
-		}
 		return HTCLIENT;
 	}
 
@@ -638,25 +753,59 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (msg != WM_NCHITTEST
+		&& settingDwmFrameEnabled.load(memory_order_acquire))
+	{
+		LRESULT dwmResult = 0;
+		if (DwmDefWindowProc(hWnd, msg, wParam, lParam, &dwmResult))
+			return dwmResult;
+	}
+
 	if (Inkeys::UI::Setting::IsVisible())
 	{
 		// HWND 线程只更新 IO；context/backend/draw/present 仍由渲染线程拥有。
 		lock_guard lock(settingImguiMutex);
 		if (ImGui::GetCurrentContext()
 			&& ImGui_ImplWin32_WndProcHandlerEx(
-				hWnd, msg, wParam, lParam, ImGui::GetIO()))
+				hWnd, msg, wParam, lParam, ImGui::GetIO())
+			// Alt+Space 必须继续交给 DefWindowProc 打开原生系统菜单。
+			&& !(msg == WM_SYSKEYDOWN && wParam == VK_SPACE))
 			return true;
 	}
 
 	switch (msg)
 	{
+	case WM_CREATE:
+		RefreshSettingNonClientFrame(hWnd);
+		return 0;
 	case WM_NCCALCSIZE:
-		// 保留可缩放窗口样式，只把标题栏和边框绘制交给 ImGui。
-		if (wParam) return 0;
+		if (wParam && settingDwmFrameEnabled.load(memory_order_acquire))
+		{
+			auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+			if (params && IsZoomed(hWnd))
+			{
+				// 最大化窗口保留系统 sizing frame inset，避免客户区越过工作区边界。
+				const int frameWidth = QuerySettingFrameWidth(hWnd);
+				const int frameHeight = QuerySettingFrameHeight(hWnd);
+				if (params->rgrc[0].right - params->rgrc[0].left > frameWidth * 2)
+				{
+					params->rgrc[0].left += frameWidth;
+					params->rgrc[0].right -= frameWidth;
+				}
+				if (params->rgrc[0].bottom - params->rgrc[0].top > frameHeight * 2)
+				{
+					params->rgrc[0].top += frameHeight;
+					params->rgrc[0].bottom -= frameHeight;
+				}
+			}
+			return 0;
+		}
 		break;
 	case WM_NCHITTEST:
 	{
-		return HitTestSettingWindow(hWnd, lParam);
+		if (settingDwmFrameEnabled.load(memory_order_acquire))
+			return HitTestSettingWindow(hWnd, lParam);
+		break;
 	}
 	case WM_GETMINMAXINFO:
 	{
@@ -681,11 +830,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				minimumHeight = Inkeys::UI::Setting::ResolveWindowExtent(
 					Inkeys::UI::Setting::MinimumHeightDip,
 					settingGlobalScale, workHeight);
-				minMaxInfo->ptMaxPosition = {
-					monitorInfo.rcWork.left - monitorInfo.rcMonitor.left,
-					monitorInfo.rcWork.top - monitorInfo.rcMonitor.top };
-				minMaxInfo->ptMaxSize = {
-					workWidth, workHeight };
 			}
 		}
 		minMaxInfo->ptMinTrackSize = { minimumWidth, minimumHeight };
@@ -694,6 +838,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_DPICHANGED:
 	{
 		UpdateSettingScale(LOWORD(wParam));
+		(void)ApplySettingDwmFrame(hWnd);
 		{
 			lock_guard stateLock(settingStateMutex);
 			// DPI 变化只请求字体图集重建，普通窗口缩放不触碰字体资源。
@@ -709,6 +854,11 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		return 0;
 	}
+	case WM_DWMCOMPOSITIONCHANGED:
+		RefreshSettingNonClientFrame(hWnd);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return 0;
 	case WM_THEMECHANGED:
 	case WM_SETTINGCHANGE:
 		settingThemeSerial.fetch_add(1, memory_order_release);
@@ -730,9 +880,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		return 0;
 	case WM_SYSCOMMAND:
-		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
-			return 0;
-
 		// 拦截任务栏关闭指令
 		if ((wParam & 0xFFF0) == SC_CLOSE)
 		{
@@ -747,6 +894,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	case WM_DESTROY:
 	{
+		settingDwmFrameEnabled.store(false, memory_order_release);
 		// 防御其他流氓软件关闭我的窗口
 		return 0;
 	}
@@ -1246,7 +1394,8 @@ SettingSessionCoroutine RunSettingSession()
 					}
 				}
 			}
-			constexpr size_t requiredTextureIndexes[] = { 1, 2, 3, 5, 6, 7, 8, 9, 10 };
+			(void)LoadSettingWindowIconTexture(setting_window);
+			constexpr size_t requiredTextureIndexes[] = { 0, 1, 2, 3, 5, 6, 7, 8, 9, 10 };
 			if (ranges::any_of(requiredTextureIndexes,
 				[](size_t index) { return TextureSettingSign[index] == nullptr; }))
 			{
@@ -1524,45 +1673,22 @@ SettingSessionCoroutine RunSettingSession()
 				const bool overlayNavigation = navigationLayout
 					== Inkeys::UI::Setting::NavigationLayout::Overlay;
 
-				// pane toggle 与应用标题统一放入 ImFluent TitleBar，避免顶部出现双层栏。
+				const bool customTitleBar = settingDwmFrameEnabled.load(memory_order_acquire);
+				if (customTitleBar)
 				{
 					if (ImFluent::BeginTitleBar())
 					{
-						if (ImFluent::TitleBarPaneToggleButton())
-						{
-							if (overlayNavigation) narrowPaneOpen = !narrowPaneOpen;
-							else desktopNavigationMode = desktopNavigationMode
-								== ImFluentNavViewMode_LeftOpen
-								? ImFluentNavViewMode_LeftCompact : ImFluentNavViewMode_LeftOpen;
-						}
-						ImFluent::TitleBarIcon("\ue713");
-						ImFluent::TitleBarTitle(IA(I18nKey.SettingsUI.N).c_str());
-
-						ImFluent::PushFont(ImFluentTextStyle_Caption);
-						const float captionButtonWidth = 46.0F * settingGlobalScale;
-						const float captionButtonHeight = Inkeys::UI::Setting::TitleBarHeightDip
-							* settingGlobalScale;
+						const float iconSize = 16.0F * settingSystemDpiScale;
 						const ImVec2 titleBarPosition = ImGui::GetWindowPos();
-						const float captionButtonsX = titleBarPosition.x
-							+ ImGui::GetWindowSize().x - captionButtonWidth * 3.0F;
-						ImGui::SetCursorScreenPos({ captionButtonsX, titleBarPosition.y });
-						if (Widgets::button.TitleBar("\ue921##minimize",
-							{ captionButtonWidth, captionButtonHeight }))
-							PostMessageW(setting_window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-						ImGui::SameLine(0.0F, 0.0F);
-						if (Widgets::button.TitleBar(IsZoomed(setting_window)
-							? "\ue923##restore" : "\ue922##maximize",
-							{ captionButtonWidth, captionButtonHeight }))
-							PostMessageW(setting_window, WM_SYSCOMMAND,
-								IsZoomed(setting_window) ? SC_RESTORE : SC_MAXIMIZE, 0);
-						ImGui::SameLine(0.0F, 0.0F);
-						if (Widgets::button.TitleBar("\ue8bb##close",
-							{ captionButtonWidth, captionButtonHeight }, true))
-						{
-							PostMessageW(setting_window, WM_SYSCOMMAND, SC_CLOSE, 0);
-							barUISet.UpdateRendering();
-						}
-						ImFluent::PopFont();
+						const ImVec2 titleBarSize = ImGui::GetWindowSize();
+						ImGui::SetCursorScreenPos({ ImGui::GetCursorScreenPos().x,
+							titleBarPosition.y + max(0.0F, (titleBarSize.y - iconSize) * 0.5F) });
+						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[0],
+							{ iconSize, iconSize });
+						ImGui::SameLine(0.0F,
+							Widgets::Dip(ImFluent::GetStyle().SpacingMedium));
+						ImFluent::TitleBarTitle(IA(I18nKey.SettingsUI.N).c_str());
+						// 标题后方保留为可拖拽的 RightHeader 区域，右端由 DWM caption controls 占用。
 						ImFluent::EndTitleBar();
 					}
 				}
@@ -1633,10 +1759,10 @@ SettingSessionCoroutine RunSettingSession()
 						});
 					};
 
-				ImGui::SetCursorPos({ 0.0F, Inkeys::UI::Setting::TitleBarHeightDip * settingGlobalScale });
+				ImGui::SetCursorPos({ 0.0F, customTitleBar
+					? Inkeys::UI::Setting::TitleBarHeightDip * settingGlobalScale : 0.0F });
 				if (navigationLayout != Inkeys::UI::Setting::NavigationLayout::Overlay)
 				{
-					ImFluent::SetNextNavPaneToggleButtonVisible(false);
 					ImFluent::BeginNavigationView("##setting-navigation", &desktopNavigationMode);
 					renderNavigationItems();
 					ImFluent::EndNavigationView();
@@ -3462,7 +3588,6 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						ImFluentNavViewMode mode = narrowPaneOpen
 							? ImFluentNavViewMode_LeftOpen : ImFluentNavViewMode_LeftCompact;
-						ImFluent::SetNextNavPaneToggleButtonVisible(false);
 						ImFluent::BeginNavigationView("##setting-overlay-nav", &mode);
 						renderNavigationItems();
 						ImFluent::EndNavigationView();
