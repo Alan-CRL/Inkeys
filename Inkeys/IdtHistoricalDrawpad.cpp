@@ -3,7 +3,6 @@
 #include "IdtHistoricalDrawpad.h"
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "Inkeys/Business/LegacyDrawState.hpp"

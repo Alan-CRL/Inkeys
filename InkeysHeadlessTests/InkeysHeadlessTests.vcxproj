@@ -92,6 +92,8 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
@@ -105,6 +107,8 @@
 	<ClCompile Include="render_scheduler_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
+	<ClCompile Include="display_tests.cpp" />
+	<ClCompile Include="bar_display_transition_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />
 	<ClCompile Include="message_tests.cpp" />

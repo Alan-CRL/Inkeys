@@ -7,7 +7,6 @@ module;
 #include <d2d1helper.h>
 #include <dwrite_1.h>
 #include <wrl/client.h>
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtState.h"

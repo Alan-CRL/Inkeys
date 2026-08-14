@@ -91,6 +91,9 @@
     <Filter Include="Modules\Inkeys\Window">
       <UniqueIdentifier>{ddcf2b67-f2c9-4dcc-a8a9-1de93c20acdb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\Display">
+      <UniqueIdentifier>{96d55c57-dc3e-442b-a157-11d01f92ff45}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\Input">
       <UniqueIdentifier>{b0ff23cc-0040-4b97-9a1a-dfd6d4e1a6db}</UniqueIdentifier>
     </Filter>
@@ -115,6 +118,9 @@
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="IdtRts.h">
@@ -142,9 +148,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtFreezeFrame.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtDisplayManagement.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtSysNotifications.h">
@@ -333,9 +336,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtFreezeFrame.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtDisplayManagement.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtConfiguration.cpp">
@@ -640,6 +640,12 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Window\Window.Legacy.cpp">
       <Filter>Modules\Inkeys\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Display\Display.cppm">
+      <Filter>Modules\Inkeys\Display</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Display\Display.cpp">
+      <Filter>Modules\Inkeys\Display</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

@@ -6,13 +6,13 @@ module;
 #include <d2d1_1.h>
 #include <dwrite_1.h>
 #include <wrl/client.h>
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
+#include "Bar.DisplayTransition.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.WindowGeometry.h"
 #include <limits>
@@ -343,7 +343,15 @@ struct BarRenderLoopState
 	SIZE capacitySize{};
 	double capacityZoom = 0.0;
 	bool capacityOriginInitialized = false;
-	POINT monitorOrigin{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top };
+	POINT monitorOrigin{};
+	RECT activeMonitorBounds{};
+	unsigned long long observedDisplaySerial = 0;
+	bool displayTransitionInitialized = false;
+	bool displayTransitionActive = false;
+	double displayCapacityZoom = 1.0;
+	BarUiValueClass displayDpiScale{ 1.0 };
+	BarUiValueClass displayCenterX{ 0.0 };
+	BarUiValueClass displayCenterY{ 0.0 };
 	POINT committedAnchor{};
 	bool committedAnchorInitialized = false;
 	RECT cachedVisibleContentBounds{};
@@ -540,6 +548,8 @@ public:
 private:
 	BarRenderLoopStageResult WakeAndSnapshot(
 		BarRenderLoopState& state, BarRenderFrameSnapshot& frame);
+	void ApplyDisplayTransition(
+		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
 	void SubmitTargetsAndLayout(
 		BarRenderLoopState& state, const BarRenderFrameSnapshot& frame);
 	bool AdvanceAnimationsAndDeriveLayout(
@@ -646,6 +656,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	frame.demandGeneration = BarAtomic::wait.CurrentGeneration();
 	state.presentDecision.ObserveDemandGeneration(frame.demandGeneration);
 	state.frameWorkStart = chrono::steady_clock::now();
+	frame.animationDtSeconds = state.animationClock.Tick();
+	frame.animationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	state.spec.SetFrameZoom(frame.zoom);
@@ -656,9 +668,103 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	frame.highlighterColor = stateMode.Pen.Highlighter1.color;
 	frame.penetrate = static_cast<bool>(penetrate.select);
 
-	frame.animationDtSeconds = state.animationClock.Tick();
-	frame.animationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
 	return BarRenderLoopStageResult::Proceed;
+}
+
+void BarRenderLoopCoordinator::ApplyDisplayTransition(
+	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame)
+{
+	auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+	if (!mainButton) return;
+	const auto serial = owner_.pendingDisplaySerial.load(memory_order_acquire);
+	const bool dragging = owner_.directWindowDragPhase.load(memory_order_acquire)
+		== BarDirectWindowDragPhase::Dragging;
+	const RECT targetBounds{
+		owner_.pendingDisplayLeft.load(memory_order_acquire),
+		owner_.pendingDisplayTop.load(memory_order_acquire),
+		owner_.pendingDisplayRight.load(memory_order_acquire),
+		owner_.pendingDisplayBottom.load(memory_order_acquire) };
+	const UINT targetDpi = owner_.pendingDisplayDpi.load(memory_order_acquire);
+	const double targetDpiScale = clamp(
+		static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
+		static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+	const double configZoom = max(0.01,
+		static_cast<double>(state.barStyle.configZoom));
+
+	if (!state.displayTransitionInitialized)
+	{
+		state.activeMonitorBounds = targetBounds;
+		state.monitorOrigin = { targetBounds.left, targetBounds.top };
+		state.displayDpiScale.SetDirect(targetDpiScale);
+		const double initialZoom = targetDpiScale * configZoom;
+		state.displayCenterX.SetDirect(mainButton->x.val * initialZoom);
+		state.displayCenterY.SetDirect(mainButton->y.val * initialZoom);
+		state.displayCapacityZoom = initialZoom;
+		state.observedDisplaySerial = serial;
+		state.displayTransitionInitialized = true;
+	}
+	else if (!dragging && serial != state.observedDisplaySerial)
+	{
+		const double currentZoom = max(0.01,
+			static_cast<double>(state.barStyle.zoom));
+		const double oldLocalX = mainButton->x.val * currentZoom;
+		const double oldLocalY = mainButton->y.val * currentZoom;
+		const LONG targetWidth = (std::max)(1L,
+			targetBounds.right - targetBounds.left);
+		const LONG targetHeight = (std::max)(1L,
+			targetBounds.bottom - targetBounds.top);
+		const double targetZoom = targetDpiScale * configZoom;
+		const double frameHalf = mainButton->ft.has_value()
+			? max(0.0, static_cast<double>(mainButton->ft.value().tar) * targetZoom / 2.0)
+			: 0.0;
+		const double halfWidth = mainButton->GetW() * targetZoom / 2.0 + frameHalf;
+		const double halfHeight = mainButton->GetH() * targetZoom / 2.0 + frameHalf;
+		const auto placement = Inkeys::UI::Bar::ResolveBarDisplayPlacement(
+			state.activeMonitorBounds, targetBounds, oldLocalX, oldLocalY,
+			halfWidth, halfHeight);
+
+		// 先改坐标原点，再以等价局部起点启动动画，屏幕坐标不会发生首帧跳变。
+		state.monitorOrigin = { targetBounds.left, targetBounds.top };
+		state.activeMonitorBounds = targetBounds;
+		state.displayCenterX.SetDirect(placement.startLocalCenterX);
+		state.displayCenterY.SetDirect(placement.startLocalCenterY);
+		state.displayCenterX.SetTar(placement.targetLocalCenterX, 0.4);
+		state.displayCenterY.SetTar(placement.targetLocalCenterY, 0.4);
+		state.displayDpiScale.SetTar(targetDpiScale, 0.4);
+		state.displayCapacityZoom = max(state.displayCapacityZoom,
+			max(currentZoom, targetZoom));
+		state.barWindow.w = targetWidth;
+		state.barWindow.h = targetHeight;
+		state.unclassifiedDamagePending = true;
+		state.dirtyRegionTracker.ForceFullDamage();
+		state.observedDisplaySerial = serial;
+	}
+
+	const BarUiAnimationAdvanceContextClass animationContext{
+		frame.animationDtSeconds, frame.animationSpeedRate,
+		true == BarUiAnimationEnabled, false };
+	const auto dpiResult = BarUiAdvanceAnimation(
+		state.displayDpiScale, animationContext);
+	const auto xResult = BarUiAdvanceAnimation(state.displayCenterX, animationContext);
+	const auto yResult = BarUiAdvanceAnimation(state.displayCenterY, animationContext);
+	state.displayTransitionActive = dpiResult.active || xResult.active || yResult.active;
+	const double currentDpiScale = max(0.01,
+		static_cast<double>(state.displayDpiScale.val));
+	const double currentZoom = currentDpiScale * configZoom;
+	state.barStyle.dpiZoom = currentDpiScale;
+	state.barStyle.zoom = currentZoom;
+	mainButton->x.SetDirect(state.displayCenterX.val / currentZoom);
+	mainButton->y.SetDirect(state.displayCenterY.val / currentZoom);
+	state.barState.PositionUpdate(currentZoom);
+	owner_.presentedMonitorOriginX.store(state.monitorOrigin.x, memory_order_release);
+	owner_.presentedMonitorOriginY.store(state.monitorOrigin.y, memory_order_release);
+
+	if (!state.displayTransitionActive && serial == state.observedDisplaySerial)
+	{
+		// 直接拖动吸收完成后，用实际位置重新同步下一次显示变化的起点。
+		state.displayCenterX.SetDirect(mainButton->x.val * currentZoom);
+		state.displayCenterY.SetDirect(mainButton->y.val * currentZoom);
+	}
 }
 
 void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
@@ -6502,14 +6608,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				+ BarColorPickerPanelGap + BarColorPickerPanelHeight + 24.0,
 			state.mainButtonBaseSize / 2.0 + BarMorePanelAnchorGap
 				+ moreMaximumHeight + 24.0);
+		const double capacityPlanningZoom = max(frameZoom,
+			state.displayCapacityZoom);
 		SIZE requestedCapacity{
 			max<LONG>(1, static_cast<LONG>(ceil(horizontalCapacityDip
-				* frameZoom)) * 2),
+				* capacityPlanningZoom)) * 2),
 			max<LONG>(1, static_cast<LONG>(ceil(verticalCapacityDip
-				* frameZoom)) * 2) };
+				* capacityPlanningZoom)) * 2) };
 		const bool capacityEpochChanged = !state.capacityOriginInitialized
-			|| abs(state.capacityZoom - frameZoom) > 0.000001;
-		if (capacityEpochChanged)
+			|| requestedCapacity.cx > state.capacitySize.cx
+			|| requestedCapacity.cy > state.capacitySize.cy;
+		if (!state.capacityOriginInitialized)
 			state.capacitySize = requestedCapacity;
 		else
 		{
@@ -6521,7 +6630,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			frameAnchor.y - state.capacitySize.cy / 2 };
 		state.capacityOrigin = nextCapacityOrigin;
 		state.capacityOriginInitialized = true;
-		state.capacityZoom = frameZoom;
+		state.capacityZoom = capacityPlanningZoom;
 
 		// BeginDraw 前计算三个根控件的保守边界，用同一 dirty rect 约束清除、D2D 和 ULW。
 		mainButton->UpInh(BarUiInheritClass(
@@ -6569,6 +6678,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		RECT visibleContentBounds = RECT(0, 0, 0, 0);
 		const bool collectVisibleContentBoundsForWindowSizing =
 			capacityEpochChanged
+			|| state.displayTransitionActive
 			|| IsBarWindowRectEmpty(state.cachedVisibleContentBounds)
 			|| true == BarAtomic::sustainFlag
 			|| state.mainBarTimeline.IsActive()
@@ -10330,6 +10440,12 @@ BarRenderLoopCoordinator::RenderFrame(
 				+ static_cast<double>(translation.x) / zoom);
 			mainButton->y.SetDirect(mainButton->y.val
 				+ static_cast<double>(translation.y) / zoom);
+			if (state.displayTransitionInitialized)
+			{
+				// 用户直拖优先于尚未结束的位置动画，松手后从实际主按钮中心继续。
+				state.displayCenterX.SetDirect(mainButton->x.val * zoom);
+				state.displayCenterY.SetDirect(mainButton->y.val * zoom);
+			}
 			owner_.barState.PositionUpdate(zoom);
 			// 纯整栏平移不需要擦除旧屏幕坐标，快照先平移到新的布局域。
 			state.dirtyRegionTracker.TranslateCommitted(translation);
@@ -10354,8 +10470,13 @@ BarRenderLoopCoordinator::RenderFrame(
 		owner_.directWindowDragPhase.store(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
+	ApplyDisplayTransition(state, frame);
+	frame.zoom = static_cast<double>(state.barStyle.zoom);
+	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
+	state.spec.SetFrameZoom(frame.zoom);
 	SubmitTargetsAndLayout(state, frame);
-	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame);
+	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame)
+		|| state.displayTransitionActive;
 	PrepareLightingAndDemand(state, frame, needRendering);
 	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_, context);
 	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Idle;

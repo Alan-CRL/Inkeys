@@ -2,7 +2,6 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtState.h"
 
 module Inkeys.UI.Bar;
@@ -15,8 +14,8 @@ void BarStateClass::PositionUpdate(double tarZoom)
 	// 获取主按钮中心位置
 	double x = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
 	double y = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetY() * tarZoom;
-	double monW = static_cast<double>(MainMonitor.MonitorWidth);
-	double monH = static_cast<double>(MainMonitor.MonitorHeight);
+	double monW = static_cast<double>(barUISet.barWindow.w);
+	double monH = static_cast<double>(barUISet.barWindow.h);
 
 	// 判断主栏所有位置
 	if (x <= monW / 2.0) widgetPosition.mainBar = true;

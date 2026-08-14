@@ -3,7 +3,6 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../Business/LegacyDrawState.hpp"
@@ -22,6 +21,7 @@ import Inkeys.Conv.Color;
 import Inkeys.Message;
 import Inkeys.Other.Inputs;
 import Inkeys.Window;
+import Inkeys.Display;
 using Inkeys::UI::Bar::BarToggleChannel;
 constexpr double BarButtonHoverOpacity = 0.18;
 constexpr double BarButtonHoverShowDur = 0.24;
@@ -237,7 +237,7 @@ bool BarScreenToLayout(
 	presentedTranslation = barUISet.DirectWindowPresentedTranslation(
 		preserveScreenDuringDirectDrag);
 	point = Inkeys::UI::Bar::BarScreenToLayoutPoint(
-		point, POINT{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top },
+		point, barUISet.PresentedMonitorOrigin(),
 		presentedTranslation);
 	return true;
 }
@@ -245,7 +245,7 @@ bool BarScreenToLayout(
 bool BarLayoutToScreen(POINT& point)
 {
 	point = Inkeys::UI::Bar::BarLayoutToScreenPoint(
-		point, POINT{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top });
+		point, barUISet.PresentedMonitorOrigin());
 	return true;
 }
 
@@ -323,6 +323,16 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 	// 关闭后不允许迟到的计时器或 Raw Input 重新建立交互/追踪状态。
 	if (offSignal) return DefWindowProcW(hWnd, msg, wParam, lParam);
+	if (msg == WM_DPICHANGED || msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)
+	{
+		if (msg == WM_DPICHANGED)
+			barUISet.PublishWindowDpi(LOWORD(wParam));
+		else
+			(void)Inkeys::Display::Refresh(msg == WM_DISPLAYCHANGE
+				? Inkeys::Display::ChangeReason::Display
+				: Inkeys::Display::ChangeReason::Settings);
+		return 0;
+	}
 
 	if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN)
 	{
@@ -5357,7 +5367,7 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions(double frameZoom)
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble]);
 
 	// 距离判断统一在屏幕坐标完成，避免接受区内外分别换算客户区坐标。
-	POINT clientOrigin{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top };
+	POINT clientOrigin = barUISet.PresentedMonitorOrigin();
 	if (!floating_window)
 	{
 		nextCount = 0;

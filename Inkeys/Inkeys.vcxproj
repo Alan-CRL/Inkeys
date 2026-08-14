@@ -397,6 +397,7 @@
 	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
@@ -434,7 +435,6 @@
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
     <ClInclude Include="IdtConfiguration.h" />
-    <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
     <ClInclude Include="IdtGuid.h" />
@@ -467,6 +467,8 @@
 	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
 	<ClCompile Include="Inkeys\Message\Message.cpp" />
 	<ClCompile Include="Inkeys\Message\Message.cppm" />
+	<ClCompile Include="Inkeys\Display\Display.cppm" />
+	<ClCompile Include="Inkeys\Display\Display.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.cppm" />
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
@@ -499,7 +501,6 @@
     <ClCompile Include="additional\ziputils\zip.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
-    <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
     <ClCompile Include="IdtDrawpad.cpp" />

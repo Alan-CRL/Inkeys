@@ -1,7 +1,7 @@
 ﻿#include "IdtDraw.h"
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
+import Inkeys.Display;
 
 BrushColorChooseStruct BrushColorChoose = { 0,0,-1,-1 };
 Inkeys::Graphics::DibSurface ColorPaletteImg;
@@ -378,11 +378,21 @@ bool isLine(vector<Point> points, double tolerance, double drawingScale, std::ch
 int stopTimingError = 5;
 int GetStopTimingError()
 {
-	if (setlist.paintDevice == 1 || MainMonitor.MonitorPhyHeight == 0 || MainMonitor.MonitorPhyWidth == 0) return 5;
-	else return min(0.3f * (float)MainMonitor.MonitorWidth / (float)MainMonitor.MonitorPhyHeight, 0.5f * (float)MainMonitor.MonitorHeight / (float)MainMonitor.MonitorPhyHeight);
+	const auto snapshot = Inkeys::Display::GetSnapshot();
+	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+	if (!monitor || setlist.paintDevice == 1 ||
+		monitor->edid.physicalHeightCm == 0 || monitor->edid.physicalWidthCm == 0) return 5;
+	return min(0.3f * static_cast<float>(monitor->pixelWidth) /
+		static_cast<float>(monitor->edid.physicalHeightCm),
+		0.5f * static_cast<float>(monitor->pixelHeight) /
+		static_cast<float>(monitor->edid.physicalHeightCm));
 }
 float drawingScale = 1.0f;
 float GetDrawingScale()
 {
-	return min((float)MainMonitor.MonitorWidth / 1920.0f, (float)MainMonitor.MonitorHeight / 1080.0f);
+	const auto snapshot = Inkeys::Display::GetSnapshot();
+	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+	if (!monitor) return 1.0F;
+	return min(static_cast<float>(monitor->pixelWidth) / 1920.0f,
+		static_cast<float>(monitor->pixelHeight) / 1080.0f);
 }

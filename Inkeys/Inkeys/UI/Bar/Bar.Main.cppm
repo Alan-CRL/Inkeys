@@ -23,6 +23,7 @@ export import Inkeys.UI.Bar.ToggleClickCoalescer;
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
 import Inkeys.Message;
+import Inkeys.Display;
 
 // ====================
 // 动画
@@ -287,6 +288,15 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	void StartDisplayTracking();
+	void StopDisplayTracking() noexcept;
+	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;
+	void PublishWindowDpi(UINT dpi) noexcept;
+	POINT PresentedMonitorOrigin() const noexcept
+	{
+		return POINT{ presentedMonitorOriginX.load(memory_order_acquire),
+			presentedMonitorOriginY.load(memory_order_acquire) };
+	}
 	POINT DirectWindowPresentedTranslation(bool ignoreWhileDragging = false) const noexcept
 	{
 		if (ignoreWhileDragging
@@ -346,6 +356,15 @@ protected:
 	atomic<LONG> directWindowPresentedTranslationY = 0;
 	RECT committedWindowScreenBounds{};
 	bool committedWindowScreenBoundsReady = false;
+	Inkeys::Display::Subscription displaySubscription;
+	atomic<unsigned long long> pendingDisplaySerial = 0;
+	atomic<LONG> pendingDisplayLeft = 0;
+	atomic<LONG> pendingDisplayTop = 0;
+	atomic<LONG> pendingDisplayRight = 1;
+	atomic<LONG> pendingDisplayBottom = 1;
+	atomic<UINT> pendingDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+	atomic<LONG> presentedMonitorOriginX = 0;
+	atomic<LONG> presentedMonitorOriginY = 0;
 
 	friend class BarUIRendering;
 	friend class BarRenderLoopCoordinator;

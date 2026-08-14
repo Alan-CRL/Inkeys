@@ -2,7 +2,6 @@
 #include <winuser.h>
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 

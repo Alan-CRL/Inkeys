@@ -10,7 +10,6 @@ module;
 #include "../../../IdtState.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtDisplayManagement.h"
 #include "../../Window/Window.Legacy.hpp"
 
 #include <unordered_map>

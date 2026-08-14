@@ -168,6 +168,78 @@ namespace
 		Check(middleLimit.current == L"999" && middleLimit.total == L"/999",
 			"middle page values retain three-digit cap");
 	}
+
+	void TestDisplayReflowAndTransition()
+	{
+		const RECT monitor{ -800, 0, 0, 600 };
+		LayoutConfiguration config;
+		config.bottomPairWidth = 10000.0F;
+		config.bottomPairHeight = -100.0F;
+		config.middlePairWidth = 10000.0F;
+		config.middlePairHeight = 10000.0F;
+		config.exitWidth = 10000.0F;
+		config.exitHeight = -100.0F;
+		config.showMiddlePair = true;
+		config.bottomPairScale = 2.0F;
+		config.middlePairScale = 2.0F;
+		config.exitScale = 2.0F;
+		const auto runtime = ResolveRuntimeLayoutConfiguration(
+			monitor, config, 1.5F);
+		for (const auto control : { Control::BottomLeft, Control::BottomRight,
+			Control::MiddleLeft, Control::MiddleRight, Control::ExitShow })
+		{
+			const auto layout = ResolveControlLayout(control, monitor,
+				runtime.configuration, true, runtime.dpiScale);
+			Check(layout.expanded.left >= monitor.left &&
+				layout.expanded.top >= monitor.top &&
+				layout.expanded.right <= monitor.right &&
+				layout.expanded.bottom <= monitor.bottom,
+				"display reflow keeps enabled PPT control on screen");
+		}
+		Check(EasePptDisplayTransition(0.25F) == 0.0625F &&
+			EasePptDisplayTransition(0.5F) == 0.5F,
+			"PPT display transition uses ease-in-out cubic");
+		const float midpoint = InterpolatePptDisplayValue(100.0F, 300.0F, 0.5F);
+		Check(midpoint == 200.0F &&
+			InterpolatePptDisplayValue(midpoint, 400.0F, 0.0F) == midpoint,
+			"PPT display retarget starts from current rendered value");
+
+		const RECT tinyMonitor{ -180, -60, 0, 60 };
+		LayoutConfiguration extreme;
+		extreme.bottomPairWidth = 10000.0F;
+		extreme.bottomPairHeight = 10000.0F;
+		extreme.middlePairWidth = 10000.0F;
+		extreme.middlePairHeight = 10000.0F;
+		extreme.exitWidth = 10000.0F;
+		extreme.exitHeight = 10000.0F;
+		extreme.bottomPairScale = 3.0F;
+		extreme.middlePairScale = 3.0F;
+		extreme.exitScale = 3.0F;
+		extreme.showMiddlePair = true;
+		const auto original = extreme;
+		const auto fitted = ResolveRuntimeLayoutConfiguration(
+			tinyMonitor, extreme, 1.5F);
+		for (const auto control : { Control::BottomLeft, Control::BottomRight,
+			Control::MiddleLeft, Control::MiddleRight, Control::ExitShow })
+		{
+			const auto layout = ResolveControlLayout(control, tinyMonitor,
+				fitted.configuration, true, fitted.dpiScale);
+			Check(layout.expanded.left >= tinyMonitor.left &&
+				layout.expanded.top >= tinyMonitor.top &&
+				layout.expanded.right <= tinyMonitor.right &&
+				layout.expanded.bottom <= tinyMonitor.bottom,
+				"extreme monitor uses runtime-only group fitting");
+		}
+		Check(!PptDragCollides(Control::ExitShow, tinyMonitor,
+			fitted.configuration, fitted.dpiScale) &&
+			!PptDragCollides(Control::MiddleLeft, tinyMonitor,
+				fitted.configuration, fitted.dpiScale),
+			"lower-priority PPT groups are corrected after collisions");
+		Check(extreme.bottomPairWidth == original.bottomPairWidth &&
+			extreme.middlePairScale == original.middlePairScale &&
+			extreme.exitScale == original.exitScale,
+			"runtime correction does not mutate persisted configuration input");
+	}
 }
 
 int RunPptUiTests()
@@ -176,5 +248,6 @@ int RunPptUiTests()
 	TestAnimationAndDrag();
 	TestDamageTransactions();
 	TestVisualGeometryAndPageText();
+	TestDisplayReflowAndTransition();
 	return failureCount;
 }

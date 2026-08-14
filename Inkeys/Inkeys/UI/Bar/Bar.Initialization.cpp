@@ -3,7 +3,6 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtState.h"
@@ -22,6 +21,7 @@ import Inkeys.Business.ComponentActions;
 import Inkeys.Input.MouseHook;
 import Inkeys.Window;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.Display;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
 extern const double BarButtonCursorLightIntensity;
 extern const double BarDrawAttributeCompactWidth;
@@ -53,6 +53,46 @@ extern const double BarMorePanelCompactHeight;
 
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
+
+void BarUISetClass::PublishDisplaySnapshot(
+	Inkeys::Display::SnapshotPtr snapshot) noexcept
+{
+	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+	if (!monitor) return;
+	pendingDisplayLeft.store(monitor->bounds.left, memory_order_release);
+	pendingDisplayTop.store(monitor->bounds.top, memory_order_release);
+	pendingDisplayRight.store(monitor->bounds.right, memory_order_release);
+	pendingDisplayBottom.store(monitor->bounds.bottom, memory_order_release);
+	pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
+		USER_DEFAULT_SCREEN_DPI, memory_order_release);
+	pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+	UpdateRendering(false);
+}
+
+void BarUISetClass::PublishWindowDpi(UINT dpi) noexcept
+{
+	if (!dpi) return;
+	pendingDisplayDpi.store(dpi, memory_order_release);
+	pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+	UpdateRendering(false);
+}
+
+void BarUISetClass::StartDisplayTracking()
+{
+	displaySubscription.Reset();
+	displaySubscription = Inkeys::Display::Subscribe(
+		[this](Inkeys::Display::SnapshotPtr snapshot)
+		{
+			// 订阅线程只发布原子目标，布局与资源仍由共享渲染线程接管。
+			PublishDisplaySnapshot(std::move(snapshot));
+		});
+}
+
+void BarUISetClass::StopDisplayTracking() noexcept
+{
+	displaySubscription.Reset();
+}
+
 namespace Inkeys::UI::Bar
 {
 	WNDPROC WindowProc() noexcept
@@ -67,6 +107,7 @@ namespace Inkeys::UI::Bar
 		// 初始化
 		if (!InitializeWindow(barUISet)) return;
 		InitializeUI(barUISet);
+		barUISet.StartDisplayTracking();
 
 		barUISet.barMedia.LoadFormat();
 
@@ -102,6 +143,7 @@ namespace Inkeys::UI::Bar
 		Inkeys::UI::RenderPipeline::WakeForStop();
 
 		if (interactionThread.joinable()) interactionThread.join();
+		barUISet.StopDisplayTracking();
 		barUISet.StopRendering();
 		Inkeys::Business::ShutdownComponentActions();
 
@@ -116,12 +158,16 @@ namespace Inkeys::UI::Bar
 
 		barUISet.barWindow.x = 0;
 		barUISet.barWindow.y = 0;
-		barUISet.barWindow.w = MainMonitor.MonitorWidth;
-		barUISet.barWindow.h = MainMonitor.MonitorHeight - 1;
+		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+		const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+		const RECT monitorBounds = monitor ? monitor->bounds :
+			RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+		barUISet.barWindow.w = (std::max)(1L, monitorBounds.right - monitorBounds.left);
+		barUISet.barWindow.h = (std::max)(1L, monitorBounds.bottom - monitorBounds.top);
 		barUISet.barWindow.pct = 255;
 		// 真实窗口范围由首帧 ULW 原子提交，初始化阶段不再短暂覆盖整张屏幕。
-		RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-			MainMonitor.rcMonitor.left + 1, MainMonitor.rcMonitor.top + 1 };
+		RECT bounds{ monitorBounds.left, monitorBounds.top,
+			monitorBounds.left + 1, monitorBounds.top + 1 };
 		// 预缩放仅用于首帧前防闪；失败时仍由首帧 ULW 提交真实窗口范围。
 		(void)Inkeys::Window::GetService().SetBounds(
 			Inkeys::Window::WindowRole::Bar, bounds);

@@ -4,7 +4,6 @@ module;
 
 #include "../../../IdtConfiguration.h"
 #include <dwrite_1.h>
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../Business/LegacyDrawState.hpp"

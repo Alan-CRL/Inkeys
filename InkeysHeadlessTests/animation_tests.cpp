@@ -31,6 +31,8 @@ int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
+int RunDisplayTests();
+int RunBarDisplayTransitionTests();
 
 namespace
 {
@@ -896,6 +898,8 @@ int main(int argc, char** argv)
 	failureCount += RunRenderSchedulerTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
+	failureCount += RunDisplayTests();
+	failureCount += RunBarDisplayTransitionTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

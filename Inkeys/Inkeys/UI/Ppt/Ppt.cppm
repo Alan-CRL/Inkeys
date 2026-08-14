@@ -48,6 +48,12 @@ export namespace Inkeys::UI::Ppt
 		bool enabled = false;
 	};
 
+	struct RuntimeLayoutConfiguration
+	{
+		LayoutConfiguration configuration;
+		float dpiScale = 1.0F;
+	};
+
 	struct VisualRect
 	{
 		float left = 0.0F;
@@ -159,6 +165,12 @@ export namespace Inkeys::UI::Ppt
 		return std::clamp(dpiScale, 0.5F, 4.0F);
 	}
 
+	[[nodiscard]] inline float NormalizePptRuntimeControlScale(float scale) noexcept
+	{
+		if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
+		return std::clamp(scale, 1.0F / 128.0F, 3.0F);
+	}
+
 	[[nodiscard]] inline float AdvanceLegacyValue(float current, float target,
 		float divisor = 15.0F, float minimumStep = 0.1F) noexcept
 	{
@@ -168,6 +180,22 @@ export namespace Inkeys::UI::Ppt
 		if (std::abs(difference) <= minimumStep) return target;
 		const float step = (std::max)(minimumStep, std::abs(difference) / divisor);
 		return current + std::copysign((std::min)(step, std::abs(difference)), difference);
+	}
+
+	[[nodiscard]] inline float EasePptDisplayTransition(float progress) noexcept
+	{
+		progress = std::clamp(progress, 0.0F, 1.0F);
+		return progress < 0.5F
+			? 4.0F * progress * progress * progress
+			: 1.0F - std::pow(-2.0F * progress + 2.0F, 3.0F) / 2.0F;
+	}
+
+	[[nodiscard]] inline float InterpolatePptDisplayValue(
+		float start, float target, float progress) noexcept
+	{
+		if (!std::isfinite(start) || !std::isfinite(target)) return target;
+		const float eased = EasePptDisplayTransition(progress);
+		return start + (target - start) * eased;
 	}
 
 	[[nodiscard]] inline ControlLayout ResolveControlLayout(Control control,
@@ -184,7 +212,7 @@ export namespace Inkeys::UI::Ppt
 		float hiddenY = 0.0F;
 		if (control == Control::BottomLeft || control == Control::BottomRight)
 		{
-			result.scale = std::clamp(config.bottomPairScale, 0.5F, 3.0F) * normalizedDpi;
+			result.scale = NormalizePptRuntimeControlScale(config.bottomPairScale) * normalizedDpi;
 			result.backing = {
 				static_cast<LONG>((std::max)(1.0F, std::round(195.0F * result.scale))),
 				static_cast<LONG>((std::max)(1.0F, std::round(60.0F * result.scale))) };
@@ -198,7 +226,7 @@ export namespace Inkeys::UI::Ppt
 		}
 		else if (control == Control::MiddleLeft || control == Control::MiddleRight)
 		{
-			result.scale = std::clamp(config.middlePairScale, 0.5F, 3.0F) * normalizedDpi;
+			result.scale = NormalizePptRuntimeControlScale(config.middlePairScale) * normalizedDpi;
 			result.backing = {
 				static_cast<LONG>((std::max)(1.0F, std::round(60.0F * result.scale))),
 				static_cast<LONG>((std::max)(1.0F, std::round(185.0F * result.scale))) };
@@ -212,7 +240,7 @@ export namespace Inkeys::UI::Ppt
 		}
 		else
 		{
-			result.scale = std::clamp(config.exitScale, 0.5F, 3.0F) * normalizedDpi;
+			result.scale = NormalizePptRuntimeControlScale(config.exitScale) * normalizedDpi;
 			result.backing = {
 				static_cast<LONG>((std::max)(1.0F, std::round(70.0F * result.scale))),
 				static_cast<LONG>((std::max)(1.0F, std::round(60.0F * result.scale))) };
@@ -253,7 +281,7 @@ export namespace Inkeys::UI::Ppt
 		const float normalizedDpi = NormalizePptDpiScale(dpiScale);
 		if (control == Control::BottomLeft || control == Control::BottomRight)
 		{
-			const float scale = std::clamp(next.bottomPairScale, 0.5F, 3.0F) * normalizedDpi;
+			const float scale = NormalizePptRuntimeControlScale(next.bottomPairScale) * normalizedDpi;
 			next.bottomPairWidth = std::clamp(next.bottomPairWidth, 0.0F,
 				(std::max)(0.0F, width / 2.0F - 205.0F * scale));
 			next.bottomPairHeight = std::clamp(next.bottomPairHeight, 0.0F,
@@ -261,18 +289,23 @@ export namespace Inkeys::UI::Ppt
 		}
 		else if (control == Control::MiddleLeft || control == Control::MiddleRight)
 		{
-			const float scale = std::clamp(next.middlePairScale, 0.5F, 3.0F) * normalizedDpi;
-			next.middlePairWidth = std::clamp(next.middlePairWidth, 0.0F,
-				(std::max)(0.0F, width / 2.0F - 65.0F * scale));
-			next.middlePairHeight = std::clamp(next.middlePairHeight,
-				-height / 2.0F + 97.5F * scale,
+			const float scale = NormalizePptRuntimeControlScale(next.middlePairScale) * normalizedDpi;
+			const float horizontalLimit = (std::max)(0.0F,
+				width / 2.0F - 65.0F * scale);
+			const float verticalLimit = (std::max)(0.0F,
 				height / 2.0F - 97.5F * scale);
+			next.middlePairWidth = std::clamp(next.middlePairWidth,
+				0.0F, horizontalLimit);
+			next.middlePairHeight = std::clamp(next.middlePairHeight,
+				-verticalLimit, verticalLimit);
 		}
 		else
 		{
-			const float scale = std::clamp(next.exitScale, 0.5F, 3.0F) * normalizedDpi;
+			const float scale = NormalizePptRuntimeControlScale(next.exitScale) * normalizedDpi;
+			const float horizontalLimit = (std::max)(0.0F,
+				width / 2.0F - 40.0F * scale);
 			next.exitWidth = std::clamp(next.exitWidth,
-				-width / 2.0F + 40.0F * scale, width / 2.0F - 40.0F * scale);
+				-horizontalLimit, horizontalLimit);
 			next.exitHeight = std::clamp(next.exitHeight, 0.0F,
 				(std::max)(0.0F, height - 70.0F * scale));
 		}
@@ -286,8 +319,11 @@ export namespace Inkeys::UI::Ppt
 			control == Control::BottomRight;
 		const bool middle = control == Control::MiddleLeft ||
 			control == Control::MiddleRight;
-		const float commonScale = (std::min)({ config.bottomPairScale,
-			config.middlePairScale, config.exitScale }) * NormalizePptDpiScale(dpiScale);
+		const float commonScale = (std::min)({
+			NormalizePptRuntimeControlScale(config.bottomPairScale),
+			NormalizePptRuntimeControlScale(config.middlePairScale),
+			NormalizePptRuntimeControlScale(config.exitScale) }) *
+			NormalizePptDpiScale(dpiScale);
 		const LONG gap = static_cast<LONG>(std::lround(10.0F * commonScale));
 		constexpr std::array<Control, 5> controls{
 			Control::BottomLeft, Control::BottomRight, Control::MiddleLeft,
@@ -318,6 +354,60 @@ export namespace Inkeys::UI::Ppt
 			}
 		}
 		return false;
+	}
+
+	[[nodiscard]] inline RuntimeLayoutConfiguration ResolveRuntimeLayoutConfiguration(
+		const RECT& monitor, LayoutConfiguration configuration,
+		float dpiScale = 1.0F) noexcept
+	{
+		const float width = static_cast<float>((std::max)(1L,
+			monitor.right - monitor.left));
+		const float height = static_cast<float>((std::max)(1L,
+			monitor.bottom - monitor.top));
+		const float fittedDpi = NormalizePptDpiScale(dpiScale);
+		auto Fit = [&](bool enabled, float baseWidth, float baseHeight, float& scale)
+			{
+				scale = std::clamp(scale, 0.5F, 3.0F);
+				if (!enabled) return;
+				const float maximum = (std::min)(width / (baseWidth * fittedDpi),
+					height / (baseHeight * fittedDpi));
+				scale = (std::min)(scale, (std::max)(1.0F / 128.0F, maximum));
+			};
+		Fit(configuration.showBottomPair, 410.0F, 70.0F,
+			configuration.bottomPairScale);
+		Fit(configuration.showMiddlePair, 130.0F, 195.0F,
+			configuration.middlePairScale);
+		Fit(configuration.showExit, 80.0F, 70.0F,
+			configuration.exitScale);
+
+		if (configuration.showBottomPair)
+			configuration = ClampPptDrag(Control::BottomLeft, monitor,
+				configuration, fittedDpi);
+		auto ResolveLowerPriority = [&](Control control, float& scale,
+			float& offsetX, float& offsetY)
+		{
+			configuration = ClampPptDrag(control, monitor, configuration, fittedDpi);
+			if (!PptDragCollides(control, monitor, configuration, fittedDpi)) return;
+			offsetX = 0.0F;
+			offsetY = 0.0F;
+			configuration = ClampPptDrag(control, monitor, configuration, fittedDpi);
+			for (int attempt = 0; attempt < 24 &&
+				PptDragCollides(control, monitor, configuration, fittedDpi); ++attempt)
+			{
+				scale = (std::max)(1.0F / 128.0F, scale * 0.75F);
+				configuration = ClampPptDrag(control, monitor, configuration, fittedDpi);
+			}
+		};
+		const bool showMiddlePair = configuration.showMiddlePair;
+		configuration.showMiddlePair = false;
+		if (configuration.showExit)
+			ResolveLowerPriority(Control::ExitShow, configuration.exitScale,
+				configuration.exitWidth, configuration.exitHeight);
+		configuration.showMiddlePair = showMiddlePair;
+		if (showMiddlePair)
+			ResolveLowerPriority(Control::MiddleLeft, configuration.middlePairScale,
+				configuration.middlePairWidth, configuration.middlePairHeight);
+		return { configuration, fittedDpi };
 	}
 
 	[[nodiscard]] inline RECT ResolvePptDamage(SIZE backing,

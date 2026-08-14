@@ -3,7 +3,6 @@ module;
 #include "Setting.Wrap.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtDrawpad.h"
 #include "../../../IdtHistoricalDrawpad.h"
@@ -29,6 +28,7 @@ module;
 
 module Inkeys.UI.Setting;
 
+import Inkeys.Display;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.RenderPipeline;
@@ -595,13 +595,16 @@ void SettingWindowBegin()
 {
 	// 尺寸计算
 	{
-		//settingGlobalScale = min((float)MainMonitor.MonitorWidth / 1920.0f, (float)MainMonitor.MonitorHeight / 1080.0f);
 		settingGlobalScale = setlist.settingGlobalScale;
 
 		SettingWindowWidth = 960 * settingGlobalScale;
 		SettingWindowHeight = 700 * settingGlobalScale;
-		SettingWindowX = max(0, (MainMonitor.MonitorWidth - SettingWindowWidth) / 2);
-		SettingWindowY = max(0, (MainMonitor.MonitorHeight - SettingWindowHeight) / 2);
+		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+		const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+		const int monitorWidth = monitor ? monitor->pixelWidth : GetSystemMetrics(SM_CXSCREEN);
+		const int monitorHeight = monitor ? monitor->pixelHeight : GetSystemMetrics(SM_CYSCREEN);
+		SettingWindowX = max(0, (monitorWidth - SettingWindowWidth) / 2);
+		SettingWindowY = max(0, (monitorHeight - SettingWindowHeight) / 2);
 	}
 }
 
@@ -8684,15 +8687,17 @@ SettingSessionCoroutine RunSettingSession()
 								text += to_wstring(PptInfoState.CurrentPage);
 
 								text += L"\n\n监视器数量：";
-								text += to_wstring(DisplaysNumber);
+								const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+								const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+								text += to_wstring(displaySnapshot ? displaySnapshot->monitors.size() : 0);
 								text += L"\n主监视器像素宽度：";
-								text += to_wstring(MainMonitor.MonitorWidth) + L"px";
+								text += to_wstring(monitor ? monitor->pixelWidth : 0) + L"px";
 								text += L"\n主监视器像素高度：";
-								text += to_wstring(MainMonitor.MonitorHeight) + L"px";
+								text += to_wstring(monitor ? monitor->pixelHeight : 0) + L"px";
 								text += L"\n主监视器物理宽度：";
-								text += to_wstring(MainMonitor.MonitorPhyWidth) + L"cm";
+								text += to_wstring(monitor ? monitor->edid.physicalWidthCm : 0) + L"cm";
 								text += L"\n主监视器物理高度：";
-								text += to_wstring(MainMonitor.MonitorPhyHeight) + L"cm";
+								text += to_wstring(monitor ? monitor->edid.physicalHeightCm : 0) + L"cm";
 							}
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;

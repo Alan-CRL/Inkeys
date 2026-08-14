@@ -5,7 +5,7 @@ import Inkeys.Window;
 #include "IdtFreezeFrame.h"
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
+import Inkeys.Display;
 #include "IdtDraw.h"
 #include "IdtI18n.h"
 #include "IdtImage.h"
@@ -20,18 +20,21 @@ void FreezeFrameWindow()
 	Inkeys::Thread::StatusGuard guard("FreezeFrameWindow");
 
 	Inkeys::Graphics::DibSurface freeze_background, PptSign;
-	const int monitorHeight = MainMonitor.MonitorHeight.load();
+	const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+	const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+	if (!monitor) return;
+	const int monitorHeight = monitor->pixelHeight;
 	const int freezeHeight = setlist.regularSetting.avoidFullScreen
 		? monitorHeight - 1
 		: monitorHeight;
-	if (!freeze_background.resize(MainMonitor.MonitorWidth, freezeHeight))
+	if (!freeze_background.resize(monitor->pixelWidth, freezeHeight))
 	{
 		if (IDTLogger) IDTLogger->error("[定格线程][FreezeFrameWindow] 创建 DIB Surface 失败");
 		return;
 	}
-	RECT freezeBounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-		MainMonitor.rcMonitor.left + MainMonitor.MonitorWidth.load(),
-		MainMonitor.rcMonitor.top + freezeHeight };
+	RECT freezeBounds{ monitor->bounds.left, monitor->bounds.top,
+		monitor->bounds.left + monitor->pixelWidth,
+		monitor->bounds.top + freezeHeight };
 	(void)Inkeys::Window::GetService().SetBounds(
 		Inkeys::Window::WindowRole::Freeze, freezeBounds);
 	freeze_background.clear();

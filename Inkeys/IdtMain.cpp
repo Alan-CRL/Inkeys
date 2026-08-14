@@ -26,12 +26,12 @@ import Inkeys.Text.Font;
 import Inkeys.Other.Config;
 import Inkeys.Message;
 import Inkeys.Window;
+import Inkeys.Display;
 
 #include "IdtMain.h"
 #include "resource.h"
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
 #include "IdtDraw.h"
 #include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
@@ -71,6 +71,7 @@ namespace
 {
 	// PptCOM 会长期持有该地址；不要把原子包装对象强转成 LONG 指针。
 	LONG offSignalInterop = 0;
+	Inkeys::Display::Subscription displaySubscription;
 }
 
 void SetOffSignal(int signal)
@@ -845,11 +846,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 显示器信息初始化
 	{
-		// 显示器检查
-		DisplayManagementMain();
-
-		int DisplaysNumberTemp = DisplaysNumber;
-		if (DisplaysNumberTemp > 1) IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
+		if (!Inkeys::Display::Initialize())
+			IDTLogger->warn("[主线程][IdtMain] 显示器枚举失败，使用兼容回退信息");
+		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+		if (displaySnapshot && displaySnapshot->monitors.size() > 1)
+			IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
 		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
 	}
 
@@ -1004,8 +1005,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				bool hasTouchDevice = (digitizerStatus & NID_READY) && (digitizerStatus & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH));
 				if (hasTouchDevice)
 				{
-					if (MainMonitor.MonitorPhyWidth == 0 || MainMonitor.MonitorPhyHeight == 0) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else if (MainMonitor.MonitorPhyWidth * MainMonitor.MonitorPhyHeight >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+					const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+					if (!monitor || monitor->edid.physicalWidthCm == 0 || monitor->edid.physicalHeightCm == 0) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					else if (monitor->edid.physicalWidthCm * monitor->edid.physicalHeightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
 					else setlist.paintDevice = 1;
 				}
 				else setlist.paintDevice = 1;
@@ -1095,6 +1098,27 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 	}
+	// 显示快照发布后只桥接旧绘图尺度，UI 自身通过各自客户端处理布局。
+	displaySubscription = Inkeys::Display::Subscribe([](Inkeys::Display::SnapshotPtr snapshot)
+		{
+			const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+			if (!monitor)
+			{
+				drawingScale = 1.0F;
+				stopTimingError = 5;
+				return;
+			}
+			drawingScale = min(static_cast<float>(monitor->pixelWidth) / 1920.0F,
+				static_cast<float>(monitor->pixelHeight) / 1080.0F);
+			if (setlist.paintDevice == 1 || monitor->edid.physicalHeightCm == 0 ||
+				monitor->edid.physicalWidthCm == 0)
+				stopTimingError = 5;
+			else
+				stopTimingError = min(0.3F * static_cast<float>(monitor->pixelWidth) /
+					static_cast<float>(monitor->edid.physicalHeightCm),
+					0.5F * static_cast<float>(monitor->pixelHeight) /
+					static_cast<float>(monitor->edid.physicalHeightCm));
+		});
 	// I18N初始化
 	{
 		// 默认以 zh-CN 作为完整兜底语言，再叠加配置指定的语言
@@ -1252,8 +1276,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		const DWORD overlayStyle = WS_POPUP | WS_CLIPCHILDREN;
 		const DWORD overlayExStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
-		const int overlayWidth = MainMonitor.MonitorWidth;
-		const int overlayHeight = MainMonitor.MonitorHeight;
+		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+		const auto* primaryMonitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+		const int overlayWidth = primaryMonitor ? primaryMonitor->pixelWidth : GetSystemMetrics(SM_CXSCREEN);
+		const int overlayHeight = primaryMonitor ? primaryMonitor->pixelHeight : GetSystemMetrics(SM_CYSCREEN);
 		HICON applicationIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ICON1));
 		std::vector<Inkeys::Window::WindowSpec> windowSpecs;
 
@@ -1366,7 +1392,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		displayObserver.title = L"Inkeys Display Observer";
 		displayObserver.width = 1;
 		displayObserver.height = 1;
-		displayObserver.windowProc = IdtDisplayManagementWindowProc;
+		displayObserver.windowProc = Inkeys::Display::WindowProc();
 		displayObserver.bindMessages = false;
 		windowSpecs.push_back(std::move(displayObserver));
 
@@ -1467,6 +1493,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	if (topWindowThread.joinable()) topWindowThread.join();
 	Inkeys::Window::GetService().StopAndJoin();
 	Inkeys::UI::RenderPipeline::Shutdown();
+	displaySubscription.Reset();
+	Inkeys::Display::Shutdown();
 
 	IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束");
 

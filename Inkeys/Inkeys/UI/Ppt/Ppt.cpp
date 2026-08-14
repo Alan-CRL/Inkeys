@@ -28,6 +28,7 @@ module Inkeys.UI.Ppt;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Other.Config;
+import Inkeys.Display;
 
 using Microsoft::WRL::ComPtr;
 
@@ -128,10 +129,30 @@ namespace Inkeys::UI::Ppt
 			bool animationInitialized = false;
 			float currentLeft = 0.0F;
 			float currentTop = 0.0F;
+			float currentWidth = 1.0F;
+			float currentHeight = 1.0F;
+			float currentScale = 1.0F;
 			float currentOpacity = 0.0F;
+			float startLeft = 0.0F;
+			float startTop = 0.0F;
+			float startWidth = 1.0F;
+			float startHeight = 1.0F;
+			float startScale = 1.0F;
+			float targetLeft = 0.0F;
+			float targetTop = 0.0F;
+			float targetWidth = 1.0F;
+			float targetHeight = 1.0F;
+			float targetScale = 1.0F;
+			std::chrono::steady_clock::time_point geometryStarted{};
+			RECT observedMonitor{};
+			float observedDpiScale = 1.0F;
+			bool displayGeometryInitialized = false;
+			bool displayTransitionActive = false;
 			POINT dragStart{};
-			float startWidth = 0.0F;
-			float startHeight = 0.0F;
+			RECT dragMonitor{};
+			float dragDpiScale = 1.0F;
+			float dragStartWidth = 0.0F;
+			float dragStartHeight = 0.0F;
 			float feasibleWidth = 0.0F;
 			float feasibleHeight = 0.0F;
 			RECT committedScreen{};
@@ -163,6 +184,8 @@ namespace Inkeys::UI::Ppt
 			RECT screen{};
 			UINT width = 1;
 			UINT height = 1;
+			UINT capacityWidth = 1;
+			UINT capacityHeight = 1;
 			float scale = 1.0F;
 			float opacity = 0.0F;
 			bool visible = false;
@@ -174,6 +197,7 @@ namespace Inkeys::UI::Ppt
 		std::array<TouchState, 5> touches;
 		std::array<std::atomic<UINT>, 5> dpiTokens{};
 		std::array<std::atomic_bool, 3> groupDragging{};
+		Inkeys::Display::Subscription displaySubscription;
 		std::mutex callbackMutex;
 		std::mutex configurationMutex;
 		BusinessCallbacks business;
@@ -273,16 +297,13 @@ namespace Inkeys::UI::Ppt
 			return Mask(RenderClient::PptExitShow);
 		}
 
-		[[nodiscard]] RECT DrawpadBounds() noexcept
+		[[nodiscard]] RECT PrimaryDisplayBounds() noexcept
 		{
-			RECT bounds{};
-			const HWND drawpad = Inkeys::Window::GetService().Handle(WindowRole::Drawpad);
-			if (!drawpad || !GetWindowRect(drawpad, &bounds))
-			{
-				bounds.right = GetSystemMetrics(SM_CXSCREEN);
-				bounds.bottom = GetSystemMetrics(SM_CYSCREEN);
-			}
-			return bounds;
+			const auto snapshot = Inkeys::Display::GetSnapshot();
+			if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr)
+				return monitor->bounds;
+			return RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN),
+				GetSystemMetrics(SM_CYSCREEN) };
 		}
 
 		[[nodiscard]] LayoutConfiguration ReadConfiguration()
@@ -316,37 +337,147 @@ namespace Inkeys::UI::Ppt
 			return snapshot;
 		}
 
-		[[nodiscard]] Layout CalculateLayout(RenderClient client, ClientState& state)
+		[[nodiscard]] Layout CalculateLayout(RenderClient client, ClientState& state,
+			std::chrono::steady_clock::time_point now)
 		{
-			const RECT monitor = DrawpadBounds();
+			const RECT monitor = PrimaryDisplayBounds();
+			const auto runtime = ResolveRuntimeLayoutConfiguration(monitor,
+				ReadConfiguration(), DpiScale(client));
 			const auto resolved = ResolveControlLayout(ControlFor(client), monitor,
-				ReadConfiguration(), presentationVisible.load(std::memory_order_acquire),
-				DpiScale(client));
+				runtime.configuration, presentationVisible.load(std::memory_order_acquire),
+				runtime.dpiScale);
 			Layout layout;
-			layout.scale = resolved.scale;
-			layout.width = static_cast<UINT>(resolved.backing.cx);
-			layout.height = static_cast<UINT>(resolved.backing.cy);
 			layout.targetVisible = resolved.enabled;
 			const RECT& target = resolved.enabled ? resolved.expanded : resolved.hidden;
+			auto UpdateDisplayGeometry = [&]()
+				{
+					const float seconds = std::chrono::duration<float>(now -
+						state.geometryStarted).count();
+					const float progress = std::clamp(seconds / 0.4F, 0.0F, 1.0F);
+					state.currentLeft = InterpolatePptDisplayValue(
+						state.startLeft, state.targetLeft, progress);
+					state.currentTop = InterpolatePptDisplayValue(
+						state.startTop, state.targetTop, progress);
+					state.currentWidth = InterpolatePptDisplayValue(
+						state.startWidth, state.targetWidth, progress);
+					state.currentHeight = InterpolatePptDisplayValue(
+						state.startHeight, state.targetHeight, progress);
+					state.currentScale = InterpolatePptDisplayValue(
+						state.startScale, state.targetScale, progress);
+					return progress;
+				};
+			auto DisplayMatches = [&]() noexcept
+				{
+					return state.displayGeometryInitialized &&
+						EqualRect(&state.observedMonitor, &monitor) &&
+						std::abs(state.observedDpiScale - runtime.dpiScale) <= 0.0001F;
+				};
+			auto TargetMatches = [&]() noexcept
+				{
+					return std::abs(state.targetLeft - target.left) <= 0.01F &&
+						std::abs(state.targetTop - target.top) <= 0.01F &&
+						std::abs(state.targetWidth - resolved.backing.cx) <= 0.01F &&
+						std::abs(state.targetHeight - resolved.backing.cy) <= 0.01F &&
+						std::abs(state.targetScale - resolved.scale) <= 0.0001F;
+				};
 			if (!state.animationInitialized)
 			{
 				state.currentLeft = static_cast<float>(target.left);
 				state.currentTop = static_cast<float>(target.top);
+				state.currentWidth = static_cast<float>(resolved.backing.cx);
+				state.currentHeight = static_cast<float>(resolved.backing.cy);
+				state.currentScale = resolved.scale;
+				state.startLeft = state.targetLeft = state.currentLeft;
+				state.startTop = state.targetTop = state.currentTop;
+				state.startWidth = state.targetWidth = state.currentWidth;
+				state.startHeight = state.targetHeight = state.currentHeight;
+				state.startScale = state.targetScale = state.currentScale;
+				state.geometryStarted = now;
+				state.observedMonitor = monitor;
+				state.observedDpiScale = runtime.dpiScale;
+				state.displayGeometryInitialized = true;
+				state.displayTransitionActive = false;
 				state.currentOpacity = resolved.enabled ? 1.0F : 0.0F;
 				state.animationInitialized = true;
 			}
 			else
 			{
-				state.currentLeft = AdvanceLegacyValue(state.currentLeft,
-					static_cast<float>(target.left));
-				state.currentTop = AdvanceLegacyValue(state.currentTop,
-					static_cast<float>(target.top));
+				const bool dragging = groupDragging[DragGroup(client)].load(
+					std::memory_order_acquire);
+				if (!dragging)
+				{
+					float progress = 0.0F;
+					if (state.displayTransitionActive)
+						progress = UpdateDisplayGeometry();
+					if (!DisplayMatches())
+					{
+						// 只对显示范围或 DPI 变化启用固定 0.4 秒动画；显隐仍沿用旧推进逻辑。
+						state.startLeft = state.currentLeft;
+						state.startTop = state.currentTop;
+						state.startWidth = state.currentWidth;
+						state.startHeight = state.currentHeight;
+						state.startScale = state.currentScale;
+						state.targetLeft = static_cast<float>(target.left);
+						state.targetTop = static_cast<float>(target.top);
+						state.targetWidth = static_cast<float>(resolved.backing.cx);
+						state.targetHeight = static_cast<float>(resolved.backing.cy);
+						state.targetScale = resolved.scale;
+						state.geometryStarted = now;
+						state.observedMonitor = monitor;
+						state.observedDpiScale = runtime.dpiScale;
+						state.displayGeometryInitialized = true;
+						state.displayTransitionActive = !TargetMatches() ||
+							std::abs(state.currentLeft - state.targetLeft) > 0.01F ||
+							std::abs(state.currentTop - state.targetTop) > 0.01F ||
+							std::abs(state.currentWidth - state.targetWidth) > 0.01F ||
+							std::abs(state.currentHeight - state.targetHeight) > 0.01F ||
+							std::abs(state.currentScale - state.targetScale) > 0.0001F;
+					}
+					else if (state.displayTransitionActive && !TargetMatches())
+					{
+						// 配置或显隐变化不是显示事件，取消几何过渡并交回旧布局动画。
+						state.displayTransitionActive = false;
+					}
+					else if (state.displayTransitionActive && progress >= 1.0F)
+					{
+						state.displayTransitionActive = false;
+					}
+
+					if (!state.displayTransitionActive)
+					{
+						state.currentLeft = AdvanceLegacyValue(state.currentLeft,
+							static_cast<float>(target.left));
+						state.currentTop = AdvanceLegacyValue(state.currentTop,
+							static_cast<float>(target.top));
+						state.currentWidth = static_cast<float>(resolved.backing.cx);
+						state.currentHeight = static_cast<float>(resolved.backing.cy);
+						state.currentScale = resolved.scale;
+						state.startLeft = state.targetLeft = static_cast<float>(target.left);
+						state.startTop = state.targetTop = static_cast<float>(target.top);
+						state.startWidth = state.targetWidth = state.currentWidth;
+						state.startHeight = state.targetHeight = state.currentHeight;
+						state.startScale = state.targetScale = state.currentScale;
+					}
+				}
 				state.currentOpacity = AdvanceLegacyValue(state.currentOpacity,
 					resolved.enabled ? 1.0F : 0.0F, 15.0F, 1.0F / 255.0F);
 			}
-			layout.animationActive = std::abs(state.currentLeft - target.left) > 0.01F ||
+			layout.animationActive = state.displayTransitionActive ||
+				std::abs(state.currentLeft - target.left) > 0.01F ||
 				std::abs(state.currentTop - target.top) > 0.01F ||
+				std::abs(state.currentWidth - state.targetWidth) > 0.01F ||
+				std::abs(state.currentHeight - state.targetHeight) > 0.01F ||
+				std::abs(state.currentScale - state.targetScale) > 0.0001F ||
 				std::abs(state.currentOpacity - (resolved.enabled ? 1.0F : 0.0F)) > 0.001F;
+			layout.scale = state.currentScale;
+			layout.width = static_cast<UINT>((std::max)(1.0F,
+				std::round(state.currentWidth)));
+			layout.height = static_cast<UINT>((std::max)(1.0F,
+				std::round(state.currentHeight)));
+			layout.capacityWidth = static_cast<UINT>(std::ceil((std::max)({ 1.0F,
+				state.currentWidth, state.targetWidth })));
+			layout.capacityHeight = static_cast<UINT>(std::ceil((std::max)({ 1.0F,
+				state.currentHeight, state.targetHeight })));
 			layout.opacity = std::clamp(state.currentOpacity, 0.0F, 1.0F);
 			layout.visible = resolved.enabled || layout.animationActive || layout.opacity > 0.0F;
 			layout.screen.left = static_cast<LONG>(std::lround(state.currentLeft));
@@ -432,27 +563,27 @@ namespace Inkeys::UI::Ppt
 			auto candidate = ReadConfiguration();
 			if (IsBottom(client))
 			{
-				candidate.bottomPairWidth = state.startWidth + (IsLeft(client) ? dx : -dx);
-				candidate.bottomPairHeight = state.startHeight - dy;
+				candidate.bottomPairWidth = state.dragStartWidth + (IsLeft(client) ? dx : -dx);
+				candidate.bottomPairHeight = state.dragStartHeight - dy;
 			}
 			else if (IsMiddle(client))
 			{
-				candidate.middlePairWidth = state.startWidth + (IsLeft(client) ? dx : -dx);
-				candidate.middlePairHeight = state.startHeight - dy;
+				candidate.middlePairWidth = state.dragStartWidth + (IsLeft(client) ? dx : -dx);
+				candidate.middlePairHeight = state.dragStartHeight - dy;
 			}
 			else
 			{
-				candidate.exitWidth = state.startWidth + dx;
-				candidate.exitHeight = state.startHeight - dy;
+				candidate.exitWidth = state.dragStartWidth + dx;
+				candidate.exitHeight = state.dragStartHeight - dy;
 			}
-			const RECT monitor = DrawpadBounds();
+			const RECT monitor = state.dragMonitor;
 			candidate = ClampPptDrag(ControlFor(client), monitor, candidate,
-				DpiScale(client));
+				state.dragDpiScale);
 
 			// 五个控件互相排斥；碰撞时回退最近可行采样，而不是整次手势起点。
 			const auto movedMask = PairMask(client);
 			const bool collision = PptDragCollides(ControlFor(client), monitor, candidate,
-				DpiScale(client));
+				state.dragDpiScale);
 			if (collision)
 			{
 				if (IsBottom(client))
@@ -481,12 +612,18 @@ namespace Inkeys::UI::Ppt
 			if ((movedMask & Inkeys::UI::RenderPipeline::Mask(moved)) == 0) continue;
 				const auto movedLayout = ResolveControlLayout(ControlFor(moved), monitor,
 					candidate, presentationVisible.load(std::memory_order_acquire),
-					DpiScale(moved));
+					state.dragDpiScale);
 				(void)Inkeys::Window::GetService().SetBounds(RoleFor(moved),
 					movedLayout.expanded);
 				auto& movedState = states[Index(moved)];
 				movedState.currentLeft = static_cast<float>(movedLayout.expanded.left);
 				movedState.currentTop = static_cast<float>(movedLayout.expanded.top);
+				movedState.startLeft = movedState.targetLeft = movedState.currentLeft;
+				movedState.startTop = movedState.targetTop = movedState.currentTop;
+				movedState.startWidth = movedState.currentWidth;
+				movedState.startHeight = movedState.currentHeight;
+				movedState.startScale = movedState.currentScale;
+				movedState.geometryStarted = std::chrono::steady_clock::now();
 			}
 		}
 
@@ -561,15 +698,30 @@ namespace Inkeys::UI::Ppt
 						state.dragging = true;
 						groupDragging[DragGroup(client)].store(true,
 							std::memory_order_release);
+						const auto pausedAt = std::chrono::steady_clock::now();
+						for (const auto moved : Clients)
+						{
+							if ((PairMask(client) & Inkeys::UI::RenderPipeline::Mask(moved)) == 0)
+								continue;
+							auto& movedState = states[Index(moved)];
+							movedState.startLeft = movedState.currentLeft;
+							movedState.startTop = movedState.currentTop;
+							movedState.startWidth = movedState.currentWidth;
+							movedState.startHeight = movedState.currentHeight;
+							movedState.startScale = movedState.currentScale;
+							movedState.geometryStarted = pausedAt;
+						}
 						state.dragStart = event.screen;
-						state.startWidth = IsBottom(client) ? snapshot.bottomPairWidth
+						state.dragMonitor = PrimaryDisplayBounds();
+						state.dragDpiScale = DpiScale(client);
+						state.dragStartWidth = IsBottom(client) ? snapshot.bottomPairWidth
 							: IsMiddle(client) ? snapshot.middlePairWidth
 							: snapshot.exitWidth;
-						state.startHeight = IsBottom(client) ? snapshot.bottomPairHeight
+						state.dragStartHeight = IsBottom(client) ? snapshot.bottomPairHeight
 							: IsMiddle(client) ? snapshot.middlePairHeight
 							: snapshot.exitHeight;
-						state.feasibleWidth = state.startWidth;
-						state.feasibleHeight = state.startHeight;
+						state.feasibleWidth = state.dragStartWidth;
+						state.feasibleHeight = state.dragStartHeight;
 					}
 					else
 						groupDragging[DragGroup(client)].store(false,
@@ -590,6 +742,19 @@ namespace Inkeys::UI::Ppt
 							dx * dx + dy * dy <= 400)
 							Invoke(HitTarget::Page);
 						state.dragging = false;
+						const auto resumedAt = std::chrono::steady_clock::now();
+						for (const auto moved : Clients)
+						{
+							if ((PairMask(client) & Inkeys::UI::RenderPipeline::Mask(moved)) == 0)
+								continue;
+							auto& movedState = states[Index(moved)];
+							movedState.startLeft = movedState.currentLeft;
+							movedState.startTop = movedState.currentTop;
+							movedState.startWidth = movedState.currentWidth;
+							movedState.startHeight = movedState.currentHeight;
+							movedState.startScale = movedState.currentScale;
+							movedState.geometryStarted = resumedAt;
+						}
 						groupDragging[DragGroup(client)].store(false,
 							std::memory_order_release);
 						outcome.dragReleased = true;
@@ -637,8 +802,9 @@ namespace Inkeys::UI::Ppt
 			const auto& assets = frameContext.assets;
 			if (target.context && target.bitmap && target.gdi && target.brush &&
 				target.dragHandleStyle &&
-				target.generation == epoch.generation && target.width == layout.width &&
-				target.height == layout.height) return S_OK;
+				target.generation == epoch.generation &&
+				target.width >= layout.capacityWidth &&
+				target.height >= layout.capacityHeight) return S_OK;
 			if (!epoch.d2dDevice || !assets.d2dFactory || !assets.dwriteFactory)
 				return E_POINTER;
 
@@ -650,7 +816,8 @@ namespace Inkeys::UI::Ppt
 				D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_GDI_COMPATIBLE,
 				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
 					D2D1_ALPHA_MODE_PREMULTIPLIED));
-			hr = next.context->CreateBitmap(D2D1::SizeU(layout.width, layout.height),
+			hr = next.context->CreateBitmap(D2D1::SizeU(layout.capacityWidth,
+				layout.capacityHeight),
 				nullptr, 0, &properties, &next.bitmap);
 			if (FAILED(hr)) return hr;
 			hr = next.context.As(&next.gdi);
@@ -669,13 +836,13 @@ namespace Inkeys::UI::Ppt
 			hr = assets.dwriteFactory->CreateTextFormat(L"HarmonyOS Sans SC",
 				assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
-				DWRITE_FONT_STRETCH_NORMAL, 24.0F * layout.scale, L"zh-CN",
+				DWRITE_FONT_STRETCH_NORMAL, 24.0F, L"zh-CN",
 				&next.pageFormat);
 			if (FAILED(hr)) return hr;
 			hr = assets.dwriteFactory->CreateTextFormat(L"HarmonyOS Sans SC",
 				assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
-				DWRITE_FONT_STRETCH_NORMAL, 16.0F * layout.scale, L"zh-CN",
+				DWRITE_FONT_STRETCH_NORMAL, 16.0F, L"zh-CN",
 				&next.totalFormat);
 			if (FAILED(hr)) return hr;
 			for (auto* format : { next.pageFormat.Get(), next.totalFormat.Get() })
@@ -702,8 +869,8 @@ namespace Inkeys::UI::Ppt
 				if (FAILED(hr)) return hr;
 			}
 			next.generation = epoch.generation;
-			next.width = layout.width;
-			next.height = layout.height;
+			next.width = layout.capacityWidth;
+			next.height = layout.capacityHeight;
 			target.Reset();
 			target = std::move(next);
 			return S_OK;
@@ -771,6 +938,20 @@ namespace Inkeys::UI::Ppt
 				D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 		}
 
+		void DrawLogicalText(TargetResources& target, const std::wstring& text,
+			IDWriteTextFormat* format, const VisualRect& bounds, float scale)
+		{
+			if (!format || scale <= 0.0F) return;
+			D2D1_MATRIX_3X2_F original{};
+			target.context->GetTransform(&original);
+			// 文本格式保持 96-DPI 逻辑字号，当前插值 scale 只作为绘制变换。
+			target.context->SetTransform(D2D1::Matrix3x2F::Scale(scale, scale));
+			target.context->DrawTextW(text.c_str(), static_cast<UINT32>(text.size()),
+				format, D2D1::RectF(bounds.left, bounds.top, bounds.right, bounds.bottom),
+				target.brush.Get());
+			target.context->SetTransform(original);
+		}
+
 		[[nodiscard]] D2D1_RECT_F ScaleRect(const VisualRect& rect, float scale) noexcept
 		{
 			return D2D1::RectF(rect.left * scale, rect.top * scale,
@@ -823,14 +1004,12 @@ namespace Inkeys::UI::Ppt
 					totalPage.load(std::memory_order_acquire));
 				SetBrush(target, D2D1::ColorF(30.0F / 255.0F, 30.0F / 255.0F,
 					30.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(text.current.c_str(),
-					static_cast<UINT32>(text.current.size()), target.pageFormat.Get(),
-					ScaleRect(geometry.currentPage, s), target.brush.Get());
+				DrawLogicalText(target, text.current, target.pageFormat.Get(),
+					geometry.currentPage, s);
 				SetBrush(target, D2D1::ColorF(60.0F / 255.0F, 60.0F / 255.0F,
 					60.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(text.total.c_str(),
-					static_cast<UINT32>(text.total.size()), target.totalFormat.Get(),
-					ScaleRect(geometry.totalPage, s), target.brush.Get());
+				DrawLogicalText(target, text.total, target.totalFormat.Get(),
+					geometry.totalPage, s);
 			}
 			else
 			{
@@ -851,14 +1030,12 @@ namespace Inkeys::UI::Ppt
 					totalPage.load(std::memory_order_acquire));
 				SetBrush(target, D2D1::ColorF(30.0F / 255.0F, 30.0F / 255.0F,
 					30.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(text.current.c_str(),
-					static_cast<UINT32>(text.current.size()), target.pageFormat.Get(),
-					ScaleRect(geometry.currentPage, s), target.brush.Get());
+				DrawLogicalText(target, text.current, target.pageFormat.Get(),
+					geometry.currentPage, s);
 				SetBrush(target, D2D1::ColorF(60.0F / 255.0F, 60.0F / 255.0F,
 					60.0F / 255.0F, 1.0F));
-				target.context->DrawTextW(text.total.c_str(),
-					static_cast<UINT32>(text.total.size()), target.totalFormat.Get(),
-					ScaleRect(geometry.totalPage, s), target.brush.Get());
+				DrawLogicalText(target, text.total, target.totalFormat.Get(),
+					geometry.totalPage, s);
 			}
 		}
 
@@ -935,7 +1112,7 @@ namespace Inkeys::UI::Ppt
 			RenderClient client, const FrameContext& frameContext)
 		{
 			auto& state = states[Index(client)];
-			const Layout layout = CalculateLayout(client, state);
+			const Layout layout = CalculateLayout(client, state, frameContext.frameTime);
 			const auto input = DrainInput(client, state, layout);
 			// 成对控件共享拖拽门闩，直移期间配对窗口也不得进入 D2D/ULW。
 			if (groupDragging[DragGroup(client)].load(std::memory_order_acquire) &&
@@ -969,7 +1146,8 @@ namespace Inkeys::UI::Ppt
 			// 唯一管线线程串行覆盖目标重建、绘制和 ULW 提交。
 			const auto& epoch = frameContext.epoch;
 			const bool targetChanged = state.target.generation != epoch.generation ||
-				state.target.width != layout.width || state.target.height != layout.height;
+				state.target.width < layout.capacityWidth ||
+				state.target.height < layout.capacityHeight;
 			const HRESULT resourceHr = EnsureResources(state.target, frameContext, layout);
 			if (FAILED(resourceHr))
 			{
@@ -1201,11 +1379,22 @@ namespace Inkeys::UI::Ppt
 				message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE))
 			{
 				const auto client = ClientFor(role);
+				if (message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE)
+					(void)Inkeys::Display::Refresh(message == WM_DISPLAYCHANGE
+						? Inkeys::Display::ChangeReason::Display
+						: Inkeys::Display::ChangeReason::Settings);
 				const UINT dpi = message == WM_DPICHANGED && LOWORD(wParam)
 					? LOWORD(wParam) : QueryWindowDpi(hwnd);
 				// 消息本身也是布局代次；即使 DPI 仍为 96，也需重算显示器位置。
-				dpiTokens[Index(client)].store(dpi, std::memory_order_release);
-				Inkeys::UI::RenderPipeline::Request(client);
+				if (message == WM_DPICHANGED)
+					for (auto& token : dpiTokens)
+						token.store(dpi, std::memory_order_release);
+				else
+					dpiTokens[Index(client)].store(dpi, std::memory_order_release);
+				Inkeys::UI::RenderPipeline::Request(
+					message == WM_DPICHANGED
+						? Inkeys::UI::RenderPipeline::PptMask()
+						: Inkeys::UI::RenderPipeline::Mask(client));
 				return 0;
 			}
 			if (message == WM_MOUSEMOVE)
@@ -1267,12 +1456,25 @@ namespace Inkeys::UI::Ppt
 				return false;
 			}
 		}
+		displaySubscription = Inkeys::Display::Subscribe(
+			[](Inkeys::Display::SnapshotPtr snapshot)
+			{
+				const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+				const UINT dpi = monitor && monitor->effectiveDpiX
+					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI;
+				for (auto& token : dpiTokens)
+					token.store(dpi, std::memory_order_release);
+				if (initialized.load(std::memory_order_acquire))
+					Inkeys::UI::RenderPipeline::Request(
+						Inkeys::UI::RenderPipeline::PptMask());
+			});
 		return true;
 	}
 
 	void Shutdown() noexcept
 	{
 		if (!initialized.exchange(false, std::memory_order_acq_rel)) return;
+		displaySubscription.Reset();
 		for (const auto role : Roles)
 		{
 			const HWND hwnd = Inkeys::Window::GetService().Handle(role);
@@ -1297,10 +1499,25 @@ namespace Inkeys::UI::Ppt
 			state.animationInitialized = false;
 			state.currentLeft = 0.0F;
 			state.currentTop = 0.0F;
+			state.currentWidth = 1.0F;
+			state.currentHeight = 1.0F;
+			state.currentScale = 1.0F;
 			state.currentOpacity = 0.0F;
+			state.startLeft = state.targetLeft = 0.0F;
+			state.startTop = state.targetTop = 0.0F;
+			state.startWidth = state.targetWidth = 1.0F;
+			state.startHeight = state.targetHeight = 1.0F;
+			state.startScale = state.targetScale = 1.0F;
+			state.geometryStarted = {};
+			state.observedMonitor = {};
+			state.observedDpiScale = 1.0F;
+			state.displayGeometryInitialized = false;
+			state.displayTransitionActive = false;
 			state.dragStart = {};
-			state.startWidth = 0.0F;
-			state.startHeight = 0.0F;
+			state.dragMonitor = {};
+			state.dragDpiScale = 1.0F;
+			state.dragStartWidth = 0.0F;
+			state.dragStartHeight = 0.0F;
 			state.feasibleWidth = 0.0F;
 			state.feasibleHeight = 0.0F;
 			state.committedScreen = {};
