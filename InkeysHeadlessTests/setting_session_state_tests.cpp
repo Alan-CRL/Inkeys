@@ -53,6 +53,41 @@ int RunSettingSessionStateTests()
 		&& Inkeys::UI::Setting::ResolvePageTransitionProgress(0.16F) == 1.0F
 		&& Inkeys::UI::Setting::ResolvePageTransitionProgress(1.0F) == 1.0F,
 		"page transition stays within the 160ms bounds")) ++failures;
+	{
+		const auto titleBar = Inkeys::UI::Setting::ResolveTitleBarGeometry(
+			960.0F, 1.0F, 46.0F, 56.0F, 80.0F);
+		if (!Expect(titleBar.height == 32.0F
+			&& titleBar.icon.Width() == 16.0F
+			&& titleBar.minimize.left == 822.0F
+			&& titleBar.maximize.left == 868.0F
+			&& titleBar.close.left == 914.0F
+			&& titleBar.versionVisible
+			&& titleBar.drag.Width() >= 96.0F,
+			"titlebar geometry keeps 32 DIP identity, drag, right header and captions"))
+			++failures;
+		if (!Expect(titleBar.close.Contains(959.0F, 16.0F)
+			&& !titleBar.close.Contains(914.0F, 32.0F)
+			&& titleBar.version.right < titleBar.minimize.left,
+			"titlebar hit rectangles stay disjoint and use half-open bounds"))
+			++failures;
+
+		const auto narrowTitleBar = Inkeys::UI::Setting::ResolveTitleBarGeometry(
+			360.0F, 1.0F, 46.0F, 56.0F, 80.0F);
+		if (!Expect(!narrowTitleBar.versionVisible
+			&& narrowTitleBar.drag.Width() >= 96.0F
+			&& narrowTitleBar.close.right == 360.0F,
+			"narrow titlebar hides version before sacrificing drag or captions"))
+			++failures;
+
+		const auto scaledTitleBar = Inkeys::UI::Setting::ResolveTitleBarGeometry(
+			1920.0F, 2.0F, 92.0F, 112.0F, 160.0F);
+		if (!Expect(scaledTitleBar.height == titleBar.height * 2.0F
+			&& scaledTitleBar.icon.Width() == titleBar.icon.Width() * 2.0F
+			&& scaledTitleBar.close.left == titleBar.close.left * 2.0F
+			&& scaledTitleBar.versionVisible,
+			"titlebar geometry scales logical DIP coordinates exactly once"))
+			++failures;
+	}
 	if (!Expect(Inkeys::UI::Setting::ResolveThemeMode(false, true)
 		== Inkeys::UI::Setting::ThemeMode::Light
 		&& Inkeys::UI::Setting::ResolveThemeMode(false, false)

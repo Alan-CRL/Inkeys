@@ -905,8 +905,10 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Window Service 的受管线程拥有 Mag host/child、Freeze、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
-- Setting owner 必须为 null，style 为 `WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU`；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，普通关闭映射为 Hide，Window Service 只在进程退出时销毁 HWND。
-- Setting 使用 client-area 自绘标题栏：`WM_NCCALCSIZE` 移除原生非客户区，`WM_NCHITTEST` 优先返回八方向 resize hit，再对标题栏非交互区返回 `HTCAPTION`；最小化、最大化/还原、关闭按钮投递标准 `WM_SYSCOMMAND`，从而保留双击标题栏、系统菜单、Snap 和 Win+方向键行为。
+- Setting owner 必须为 null，style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，普通关闭映射为 Hide，Window Service 只在进程退出时销毁 HWND。DWM 只负责默认系统边框、阴影和圆角：`DWMWA_BORDER_COLOR` 使用 `DWMWA_COLOR_DEFAULT`，不得硬编码 accent，也不得把玻璃扩展到不透明 DX11 标题栏客户区。
+- Setting 使用单一 client-area caption ownership：ImGui/ImFluent 绘制 32 DIP 标题栏、16 DIP 应用图标和 Segoe Fluent Icons `E921/E922/E923/E8BB` caption glyph；Win32 独占 resize、拖拽、系统命令与 Snap。禁止用 `DwmDefWindowProc` 再次接管隐藏原生 caption。`WM_NCCALCSIZE` 在自绘路径的 TRUE/FALSE 两种参数下都保留完整客户区，最大化时按系统 sizing frame inset；DWM 不可用时回退标准原生非客户区。
+- 标题栏渲染与命中必须共用 `ResolveTitleBarGeometry`：`WM_NCHITTEST` 先返回八方向 resize hit，再依次解析 `HTCLOSE`、`HTMAXBUTTON`、`HTMINBUTTON`、版本 `HTCLIENT`、图标 `HTSYSMENU` 和拖拽 `HTCAPTION`。caption 的非客户区鼠标消息交给 `DefWindowProcW` 生成标准 `WM_SYSCOMMAND`，关闭命令仍映射到 Hide；最大化格必须返回 `HTMAXBUTTON` 以保留 Windows 11 Snap Layout。
+- RightHeader 位于 caption cells 之前，显示真实 `editionVersion` 并路由到 `settingTabEnum::tab6`；空间不足时先隐藏版本入口，但必须保留 caption、identity 和至少 96 DIP 拖拽区。活动/非活动窗口的标题、版本和 caption glyph 需要可见状态差异，关闭按钮 hover/pressed 使用 Windows critical red，其余按钮使用 Fluent subtle fill。
 - 默认客户区约 `960x700 DIP`，`WM_GETMINMAXINFO` 只设置约 `720x520 DIP` 的最小 track size；默认尺寸和最小 track 按 effective scale 转为物理像素后都必须夹紧到目标显示器工作区，最大化范围使用该显示器的 `rcWork`，不得固定最大 track size。`WM_DPICHANGED` 接受系统建议矩形，Hide/Show 在单次进程内保留最大化和窗口 bounds，不持久化到下一进程。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -923,6 +925,10 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
 | Setting 传入缺失的 resize/system style | Service 补齐 thickframe、minimize、maximize 和 system-menu，不能把窗口重新归一化为固定大小 |
 | 指针位于 Setting 边角/边缘 | `WM_NCHITTEST` 返回对应 `HTTOPLEFT`..`HTBOTTOMRIGHT`，标题栏命中不得覆盖 resize hit |
+| 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
+| 指针位于版本 RightHeader | 返回 `HTCLIENT`，点击后进入 `settingTabEnum::tab6`，不得触发窗口拖动 |
+| DWM composition 可用 | 不扩展标题栏玻璃；设置默认 border color 和默认圆角，客户区只出现一套 ImGui caption glyph |
+| DWM composition 不可用 | 不执行自绘 NCCALCSIZE/NCHITTEST，回退 `WS_OVERLAPPEDWINDOW` 原生标题栏 |
 | Setting 普通关闭 | 调用 `Hide()`，保留 HWND、窗口状态和常驻 ImGui 资源 |
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |
@@ -940,7 +946,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
-- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖八方向命中、最小尺寸、DPI 建议矩形和响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
+- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption cells/RightHeader/拖拽区互斥、窄宽版本隐藏、最小尺寸、DPI 建议矩形和响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
 
 ### 7. Wrong vs Correct

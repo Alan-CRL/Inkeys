@@ -63,10 +63,12 @@ namespace
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
 	atomic<bool> settingDwmFrameEnabled = false;
+	atomic<bool> settingWindowActive = true;
 	mutex settingLifecycleMutex;
 	// Win32 backend 会调用 SetCapture/ReleaseCapture/IME，可能同步重入同一 WndProc。
 	recursive_mutex settingImguiMutex;
 	mutex settingStateMutex;
+	mutex settingTitleBarGeometryMutex;
 	mutex settingDrainMutex;
 	condition_variable settingDrainCondition;
 	bool settingSessionDrained = true;
@@ -81,6 +83,9 @@ namespace
 	uint64_t settingSessionEpoch = 0;
 	Inkeys::UI::Setting::SessionState settingSessionState;
 	Inkeys::UI::Setting::BusinessCompletionSnapshot settingLastBusinessCompletion;
+	Inkeys::UI::Setting::TitleBarGeometry settingTitleBarGeometry;
+	float settingTitleTextWidth = 0.0F;
+	float settingVersionTextWidth = 0.0F;
 
 	[[nodiscard]] UINT QuerySettingDpi(HWND hwnd) noexcept
 	{
@@ -168,6 +173,37 @@ namespace
 			+ QuerySettingSystemMetric(hwnd, SM_CXPADDEDBORDER);
 	}
 
+	[[nodiscard]] float QuerySettingCaptionButtonWidth(
+		HWND hwnd, float titleBarHeight) noexcept
+	{
+		const int systemWidth = max(1, QuerySettingSystemMetric(hwnd, SM_CXSIZE));
+		const int systemHeight = max(1, QuerySettingSystemMetric(hwnd, SM_CYSIZE));
+		// 自绘按钮沿用系统 caption 的宽高比例，单元格高度则服从应用缩放。
+		return titleBarHeight * static_cast<float>(systemWidth)
+			/ static_cast<float>(systemHeight);
+	}
+
+	[[nodiscard]] Inkeys::UI::Setting::TitleBarGeometry
+		ResolveSettingTitleBarGeometry(HWND hwnd,
+			float titleTextWidth = -1.0F,
+			float versionTextWidth = -1.0F) noexcept
+	{
+		RECT client{};
+		const float clientWidth = hwnd && GetClientRect(hwnd, &client)
+			? static_cast<float>(max(0L, client.right - client.left))
+			: static_cast<float>(max(0, SettingWindowWidth));
+		const float titleBarHeight = Inkeys::UI::Setting::TitleBarHeightDip
+			* settingGlobalScale;
+		lock_guard lock(settingTitleBarGeometryMutex);
+		if (titleTextWidth >= 0.0F) settingTitleTextWidth = titleTextWidth;
+		if (versionTextWidth >= 0.0F) settingVersionTextWidth = versionTextWidth;
+		settingTitleBarGeometry = Inkeys::UI::Setting::ResolveTitleBarGeometry(
+			clientWidth, settingGlobalScale,
+			QuerySettingCaptionButtonWidth(hwnd, titleBarHeight),
+			settingTitleTextWidth, settingVersionTextWidth);
+		return settingTitleBarGeometry;
+	}
+
 	[[nodiscard]] bool ApplySettingDwmFrame(HWND hwnd) noexcept
 	{
 		BOOL compositionEnabled = FALSE;
@@ -176,18 +212,13 @@ namespace
 			&& compositionEnabled;
 		if (frameEnabled)
 		{
-			// DWM 扩展区使用系统 DPI；应用缩放只影响客户区内的 Fluent 内容。
-			const MARGINS margins{ 0, 0, Inkeys::UI::Setting::ScaleDip(
-				Inkeys::UI::Setting::TitleBarHeightDip,
-				Inkeys::UI::Setting::DpiScale(QuerySettingDpi(hwnd))), 0 };
-			frameEnabled = SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &margins));
-			if (frameEnabled)
-			{
-				const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_DEFAULT;
-				// 旧系统会返回不支持；失败时继续使用系统默认边框和阴影。
-				(void)DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-					&preference, sizeof(preference));
-			}
+			const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_DEFAULT;
+			const COLORREF borderColor = DWMWA_COLOR_DEFAULT;
+			// 不再向客户区扩展玻璃；DWM 仅保留系统边框、阴影与圆角。
+			(void)DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+				&preference, sizeof(preference));
+			(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
+				&borderColor, sizeof(borderColor));
 		}
 		settingDwmFrameEnabled.store(frameEnabled, memory_order_release);
 		return frameEnabled;
@@ -285,17 +316,80 @@ namespace
 			if (bottom) return HTBOTTOM;
 		}
 
-		LRESULT dwmResult = HTNOWHERE;
-		if (DwmDefWindowProc(hwnd, WM_NCHITTEST, 0, lParam, &dwmResult))
-			return dwmResult;
-
 		POINT clientPoint = point;
 		if (!ScreenToClient(hwnd, &clientPoint)) return HTCLIENT;
-		const int titleHeight = Inkeys::UI::Setting::ScaleDip(
-			Inkeys::UI::Setting::TitleBarHeightDip, settingGlobalScale);
-		if (clientPoint.y >= 0 && clientPoint.y < titleHeight)
-			return HTCAPTION;
+		const auto geometry = ResolveSettingTitleBarGeometry(hwnd);
+		const float x = static_cast<float>(clientPoint.x);
+		const float y = static_cast<float>(clientPoint.y);
+		if (geometry.close.Contains(x, y)) return HTCLOSE;
+		if (geometry.maximize.Contains(x, y)) return HTMAXBUTTON;
+		if (geometry.minimize.Contains(x, y)) return HTMINBUTTON;
+		if (geometry.versionVisible && geometry.version.Contains(x, y))
+			return HTCLIENT;
+		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
+		if (geometry.identity.Contains(x, y)
+			|| geometry.drag.Contains(x, y)) return HTCAPTION;
 		return HTCLIENT;
+	}
+
+	[[nodiscard]] ImRect ToImRect(
+		const Inkeys::UI::Setting::LayoutRect& rect,
+		const ImVec2& origin) noexcept
+	{
+		return { { origin.x + rect.left, origin.y + rect.top },
+			{ origin.x + rect.right, origin.y + rect.bottom } };
+	}
+
+	[[nodiscard]] bool IsSettingChromeHovered(HWND hwnd,
+		const Inkeys::UI::Setting::LayoutRect& rect) noexcept
+	{
+		POINT point{};
+		return hwnd && GetCursorPos(&point) && ScreenToClient(hwnd, &point)
+			&& rect.Contains(static_cast<float>(point.x),
+				static_cast<float>(point.y));
+	}
+
+	[[nodiscard]] ImU32 SettingChromeColor(
+		ImFluentCol color, float alpha = 1.0F) noexcept
+	{
+		ImVec4 resolved = ImGui::ColorConvertU32ToFloat4(Widgets::Color(color));
+		resolved.w *= alpha;
+		return ImGui::GetColorU32(resolved);
+	}
+
+	void RenderSettingCaptionButton(ImDrawList* drawList, HWND hwnd,
+		const ImVec2& origin, const Inkeys::UI::Setting::LayoutRect& rect,
+		const char* glyph, bool closeButton, bool active)
+	{
+		const ImRect bounds = ToImRect(rect, origin);
+		const bool hovered = active && IsSettingChromeHovered(hwnd, rect);
+		const bool held = hovered && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+		if (hovered)
+		{
+			ImU32 fill = 0;
+			if (closeButton)
+			{
+				// Windows 关闭按钮的 critical red 与普通 subtle hover 分开处理。
+				fill = held ? IM_COL32(164, 38, 27, 255)
+					: IM_COL32(196, 43, 28, 255);
+			}
+			else
+			{
+				fill = SettingChromeColor(held
+					? ImFluentCol_SubtleFillTertiary
+					: ImFluentCol_SubtleFillSecondary);
+			}
+			drawList->AddRectFilled(bounds.Min, bounds.Max, fill);
+		}
+
+		const ImU32 glyphColor = closeButton && hovered
+			? IM_COL32(255, 255, 255, 255)
+			: SettingChromeColor(ImFluentCol_TextPrimary,
+				active ? 1.0F : 0.55F);
+		const ImVec2 glyphSize = ImGui::CalcTextSize(glyph);
+		drawList->AddText({ bounds.Min.x + (bounds.GetWidth() - glyphSize.x) * 0.5F,
+			bounds.Min.y + (bounds.GetHeight() - glyphSize.y) * 0.5F },
+			glyphColor, glyph);
 	}
 
 	enum class SettingBusinessKind
@@ -753,12 +847,64 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if (msg != WM_NCHITTEST
-		&& settingDwmFrameEnabled.load(memory_order_acquire))
+	const bool customFrame = settingDwmFrameEnabled.load(memory_order_acquire);
+	if (customFrame)
 	{
-		LRESULT dwmResult = 0;
-		if (DwmDefWindowProc(hWnd, msg, wParam, lParam, &dwmResult))
-			return dwmResult;
+		// Chrome 消息先于 ImGui：Win32 独占 resize、拖拽、Snap 与系统命令。
+		switch (msg)
+		{
+		case WM_NCCALCSIZE:
+			if (wParam)
+			{
+				auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+				if (params && IsZoomed(hWnd))
+				{
+					// 最大化保留系统 sizing frame inset，客户区不会越过工作区。
+					const int frameWidth = QuerySettingFrameWidth(hWnd);
+					const int frameHeight = QuerySettingFrameHeight(hWnd);
+					if (params->rgrc[0].right - params->rgrc[0].left > frameWidth * 2)
+					{
+						params->rgrc[0].left += frameWidth;
+						params->rgrc[0].right -= frameWidth;
+					}
+					if (params->rgrc[0].bottom - params->rgrc[0].top > frameHeight * 2)
+					{
+						params->rgrc[0].top += frameHeight;
+						params->rgrc[0].bottom -= frameHeight;
+					}
+				}
+			}
+			// wParam 为 FALSE 时 lParam 是 RECT，同样保留整块窗口为客户区。
+			return 0;
+		case WM_NCHITTEST:
+			return HitTestSettingWindow(hWnd, lParam);
+		case WM_NCLBUTTONDOWN:
+		case WM_NCLBUTTONUP:
+		case WM_NCLBUTTONDBLCLK:
+		case WM_NCRBUTTONDOWN:
+		case WM_NCRBUTTONUP:
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		case WM_NCMOUSEMOVE:
+		case WM_NCMOUSELEAVE:
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::Client::Settings);
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		case WM_NCACTIVATE:
+			settingWindowActive.store(wParam != FALSE, memory_order_release);
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::Client::Settings);
+			// 默认 DWM border 仍由 DefWindowProc 更新活动/非活动状态。
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		case WM_SYSCOMMAND:
+			if ((wParam & 0xFFF0) == SC_CLOSE)
+			{
+				Inkeys::UI::Setting::Hide();
+				return 0;
+			}
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		default:
+			break;
+		}
 	}
 
 	if (Inkeys::UI::Setting::IsVisible())
@@ -778,35 +924,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_CREATE:
 		RefreshSettingNonClientFrame(hWnd);
 		return 0;
-	case WM_NCCALCSIZE:
-		if (wParam && settingDwmFrameEnabled.load(memory_order_acquire))
-		{
-			auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
-			if (params && IsZoomed(hWnd))
-			{
-				// 最大化窗口保留系统 sizing frame inset，避免客户区越过工作区边界。
-				const int frameWidth = QuerySettingFrameWidth(hWnd);
-				const int frameHeight = QuerySettingFrameHeight(hWnd);
-				if (params->rgrc[0].right - params->rgrc[0].left > frameWidth * 2)
-				{
-					params->rgrc[0].left += frameWidth;
-					params->rgrc[0].right -= frameWidth;
-				}
-				if (params->rgrc[0].bottom - params->rgrc[0].top > frameHeight * 2)
-				{
-					params->rgrc[0].top += frameHeight;
-					params->rgrc[0].bottom -= frameHeight;
-				}
-			}
-			return 0;
-		}
-		break;
-	case WM_NCHITTEST:
-	{
-		if (settingDwmFrameEnabled.load(memory_order_acquire))
-			return HitTestSettingWindow(hWnd, lParam);
-		break;
-	}
 	case WM_GETMINMAXINFO:
 	{
 		auto* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
@@ -865,6 +982,12 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		break;
+	case WM_ACTIVATE:
+		settingWindowActive.store(LOWORD(wParam) != WA_INACTIVE,
+			memory_order_release);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		break;
 	case WM_SIZE:
 		if (wParam == SIZE_MINIMIZED)
 			return 0;
@@ -880,7 +1003,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		return 0;
 	case WM_SYSCOMMAND:
-		// 拦截任务栏关闭指令
+		// 非 DWM 回退路径同样保持“关闭即隐藏”。
 		if ((wParam & 0xFFF0) == SC_CLOSE)
 		{
 			Inkeys::UI::Setting::Hide();
@@ -1676,19 +1799,86 @@ SettingSessionCoroutine RunSettingSession()
 				const bool customTitleBar = settingDwmFrameEnabled.load(memory_order_acquire);
 				if (customTitleBar)
 				{
-					if (ImFluent::BeginTitleBar())
+					const string titleText = IA(I18nKey.SettingsUI.N);
+					const string versionLabel = utf16ToUtf8(editionVersion);
+					ImFluent::PushFont(ImFluentTextStyle_Body);
+					const float titleTextWidth = ImGui::CalcTextSize(titleText.c_str()).x;
+					ImFluent::PopFont();
+					ImFluent::PushFont(ImFluentTextStyle_Caption);
+					const float versionTextWidth = ImGui::CalcTextSize(versionLabel.c_str()).x;
+					ImFluent::PopFont();
+					const auto titleBarGeometry = ResolveSettingTitleBarGeometry(
+						setting_window, titleTextWidth, versionTextWidth);
+					if (ImFluent::BeginTitleBar(nullptr, titleBarGeometry.height))
 					{
-						const float iconSize = 16.0F * settingSystemDpiScale;
-						const ImVec2 titleBarPosition = ImGui::GetWindowPos();
-						const ImVec2 titleBarSize = ImGui::GetWindowSize();
-						ImGui::SetCursorScreenPos({ ImGui::GetCursorScreenPos().x,
-							titleBarPosition.y + max(0.0F, (titleBarSize.y - iconSize) * 0.5F) });
-						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[0],
-							{ iconSize, iconSize });
-						ImGui::SameLine(0.0F,
-							Widgets::Dip(ImFluent::GetStyle().SpacingMedium));
-						ImFluent::TitleBarTitle(IA(I18nKey.SettingsUI.N).c_str());
-						// 标题后方保留为可拖拽的 RightHeader 区域，右端由 DWM caption controls 占用。
+						const ImVec2 origin = ImGui::GetWindowPos();
+						ImDrawList* drawList = ImGui::GetWindowDrawList();
+						const bool active = settingWindowActive.load(memory_order_acquire);
+						const ImRect iconBounds = ToImRect(titleBarGeometry.icon, origin);
+						if (TextureSettingSign[0])
+						{
+							drawList->AddImage((ImTextureID)(intptr_t)TextureSettingSign[0],
+								iconBounds.Min, iconBounds.Max, { 0.0F, 0.0F }, { 1.0F, 1.0F },
+								IM_COL32(255, 255, 255, active ? 255 : 140));
+						}
+
+						ImFluent::PushFont(ImFluentTextStyle_Body);
+						const float titleLeft = titleBarGeometry.icon.right
+							+ Inkeys::UI::Setting::TitleBarContentSpacingDip * settingGlobalScale;
+						const ImVec4 titleClip{ origin.x + titleLeft, origin.y,
+							origin.x + titleBarGeometry.identity.right,
+							origin.y + titleBarGeometry.height };
+						const ImU32 titleColor = SettingChromeColor(
+							ImFluentCol_TextPrimary, active ? 1.0F : 0.55F);
+						drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+							{ origin.x + titleLeft,
+								origin.y + (titleBarGeometry.height - ImGui::GetFontSize()) * 0.5F },
+							titleColor, titleText.c_str(), nullptr, 0.0F, &titleClip);
+						ImFluent::PopFont();
+
+						if (titleBarGeometry.versionVisible)
+						{
+							const ImRect versionBounds = ToImRect(titleBarGeometry.version, origin);
+							ImGui::SetCursorScreenPos(versionBounds.Min);
+							if (ImGui::InvisibleButton("##setting-titlebar-version",
+								versionBounds.GetSize()))
+							{
+								// RightHeader 版本入口与导航中的“软件版本”复用同一路由。
+								settingTab = settingTabEnum::tab6;
+							}
+							const bool versionHovered = ImGui::IsItemHovered();
+							const bool versionHeld = ImGui::IsItemActive();
+							if (versionHovered)
+							{
+								const float insetY = 4.0F * settingGlobalScale;
+								drawList->AddRectFilled(
+									{ versionBounds.Min.x, versionBounds.Min.y + insetY },
+									{ versionBounds.Max.x, versionBounds.Max.y - insetY },
+									SettingChromeColor(versionHeld
+										? ImFluentCol_SubtleFillTertiary
+										: ImFluentCol_SubtleFillSecondary),
+									4.0F * settingGlobalScale);
+							}
+							ImFluent::PushFont(ImFluentTextStyle_Caption);
+							const ImVec2 versionSize = ImGui::CalcTextSize(versionLabel.c_str());
+							drawList->AddText({
+								versionBounds.Min.x + (versionBounds.GetWidth() - versionSize.x) * 0.5F,
+								versionBounds.Min.y + (versionBounds.GetHeight() - versionSize.y) * 0.5F },
+								SettingChromeColor(ImFluentCol_TextSecondary,
+									active ? 1.0F : 0.55F), versionLabel.c_str());
+							ImFluent::PopFont();
+						}
+
+						ImFluent::PushFont(ImFluentTextStyle_Body);
+						RenderSettingCaptionButton(drawList, setting_window, origin,
+							titleBarGeometry.minimize, "\xee\xa4\xa1", false, active);
+						RenderSettingCaptionButton(drawList, setting_window, origin,
+							titleBarGeometry.maximize,
+							IsZoomed(setting_window) ? "\xee\xa4\xa3" : "\xee\xa4\xa2",
+							false, active);
+						RenderSettingCaptionButton(drawList, setting_window, origin,
+							titleBarGeometry.close, "\xee\xa2\xbb", true, active);
+						ImFluent::PopFont();
 						ImFluent::EndTitleBar();
 					}
 				}

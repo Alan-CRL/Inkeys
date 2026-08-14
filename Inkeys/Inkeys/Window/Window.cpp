@@ -646,7 +646,7 @@ namespace Inkeys::Window
 			DWORD exStyle = spec.exStyle;
 			if (IsSetting(spec.role))
 			{
-				// 标准 overlapped 语义交给 DWM 维护 caption controls、Snap 与系统菜单。
+				// 标准 overlapped style 保留 DWM 外框、Snap 与系统菜单；caption 视觉由客户区自绘。
 				style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 				exStyle = (exStyle | WS_EX_APPWINDOW) &
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
