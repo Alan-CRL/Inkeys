@@ -363,3 +363,24 @@ Adjusted dashed-line center spacing from 4:2 to 4:6 so round-capped visible segm
 ### Status
 
 [OK] **Completed**
+
+
+## Session 14: 运行时重做与分支丢弃
+
+**Date**: 2026-08-15
+**Task**: 运行时重做与分支丢弃
+**Branch**: `main`
+
+### Summary
+
+实现每页独立 redo 栈、数字键 6、直接绘制与热前像重建、合成树回退及新笔分支丢弃；ARM64 Debug/Release 构建和无窗口测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9de6b7b` | (see git log) |
+
+### Status
+
+[OK] **Completed**

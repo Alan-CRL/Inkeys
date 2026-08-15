@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
-- **Last Active**: 2026-08-14
+- **Total Sessions**: 14
+- **Last Active**: 2026-08-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~365 | Active |
+| `journal-1.md` | ~386 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-08-15 | 运行时重做与分支丢弃 | `9de6b7b` | `main` |
 | 13 | 2026-08-14 | 修复并暂时禁用 Canvas Navigation | `e4ddd5c`, `5c29821` | `main` |
 | 12 | 2026-08-12 | Tune shape visual proportions | `dfbbd2a` | `main` |
 | 11 | 2026-08-11 | Line and rounded rectangle tools | `d192f24` | `main` |
