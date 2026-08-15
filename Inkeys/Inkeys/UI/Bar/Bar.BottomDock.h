@@ -140,6 +140,16 @@ namespace Inkeys::UI::Bar
 		return std::clamp(centerScreenX, minimum, maximum);
 	}
 
+	[[nodiscard]] inline bool ResolveBarMainBarRightSide(
+		double mainCenterX, double monitorWidth) noexcept
+	{
+		if (!std::isfinite(mainCenterX) || !std::isfinite(monitorWidth)
+			|| monitorWidth <= 0.0)
+			return true;
+		// 中轴线上保持右展；只有抬手后越过中轴才切换到左展。
+		return mainCenterX <= monitorWidth / 2.0;
+	}
+
 	[[nodiscard]] inline double ResolveBarBottomDockInitialMainCenterScreenX(
 		const RECT& monitorBounds, double bodyLeftFromMainCenterDip,
 		double bodyRightFromMainCenterDip, double mainVisibleHalfWidthDip,

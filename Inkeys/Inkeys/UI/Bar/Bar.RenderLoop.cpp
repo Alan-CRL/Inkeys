@@ -1093,7 +1093,8 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 		bool currentMainBarSide = state.barState.widgetPosition.mainBar;
 		const bool mainBarSideChanged = !state.barState.fold
 			&& currentMainBarSide != state.mainBarLayoutSide;
-		bool mainBarSideSwitch = mainBarSideChanged && !dockLayoutLocked;
+		// 底栏也允许在抬手吸收 x 后走同一套横向换边关键帧；垂直布局仍由 dock 锁定。
+		bool mainBarSideSwitch = mainBarSideChanged;
 		// 浮层展开状态直接映射到硬编码入口的选中态，复用普通按钮颜色。
 		if (auto moreButton = state.barButtonSet.GetMoreButton())
 			moreButton->localState.state = (!state.barState.fold && state.barState.moreExpanded)

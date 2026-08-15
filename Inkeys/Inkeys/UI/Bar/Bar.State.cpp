@@ -3,6 +3,7 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtState.h"
+#include "Bar.BottomDock.h"
 
 module Inkeys.UI.Bar;
 import :State;
@@ -13,8 +14,12 @@ void BarStateClass::PositionUpdate(double tarZoom)
 {
 	if (barUISet.IsBottomDockLayoutLocked())
 	{
-		// 底栏及脱离回弹阶段保持主栏右展、次级面板向上，避免拖动中翻边。
-		widgetPosition.mainBar = true;
+		// 拖动中逻辑坐标不变；抬手吸收 x 后允许按中轴触发现有横向换边动画。
+		double x = barUISet.superellipseMap[
+			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
+		double monW = static_cast<double>(barUISet.barWindow.w);
+		widgetPosition.mainBar = Inkeys::UI::Bar::ResolveBarMainBarRightSide(x, monW);
+		// 底栏及脱离回弹阶段仍强制次级面板向上，避免纵向翻边。
 		widgetPosition.primaryBar = false;
 		return;
 	}

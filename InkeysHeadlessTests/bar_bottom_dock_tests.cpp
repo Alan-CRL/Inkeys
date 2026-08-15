@@ -109,6 +109,10 @@ int RunBarBottomDockTests()
 		&& Near(ClampBarBottomDockMainCenterScreenX(
 			650.0, RECT{ 0, 0, 1000, 600 }, 40.0, 1.0), 650.0),
 		"horizontal reversal remains exact and independent");
+	Check(ResolveBarMainBarRightSide(500.0, 1000.0)
+		&& ResolveBarMainBarRightSide(499.99, 1000.0)
+		&& !ResolveBarMainBarRightSide(500.01, 1000.0),
+		"main bar reverses only after crossing the horizontal center line");
 
 	BarBottomDockEnvironment environment{
 		RECT{ 0, 0, 1920, 1080 }, RECT{ 0, 0, 1920, 1032 }, 1.5 };
