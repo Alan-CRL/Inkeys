@@ -32,6 +32,30 @@ export namespace draw3
 		FilledRectangle = 7
 	};
 
+	// 橡皮宽度模式由窗口线程低频发布，绘制线程在物理批次首个 Down 锁定。
+	enum class EraserWidthMode : uint32_t
+	{
+		Fixed,
+		Speed
+	};
+
+	constexpr EraserWidthMode ToggleEraserWidthMode(EraserWidthMode mode) noexcept
+	{
+		return mode == EraserWidthMode::Fixed
+			? EraserWidthMode::Speed : EraserWidthMode::Fixed;
+	}
+	// revision 每次真实切换递增；最低位同时编码当前模式，避免跨线程读取撕裂。
+	constexpr EraserWidthMode EraserWidthModeForRevision(uint32_t revision) noexcept
+	{
+		return (revision & 1u) != 0u
+			? EraserWidthMode::Speed : EraserWidthMode::Fixed;
+	}
+	static_assert(ToggleEraserWidthMode(EraserWidthMode::Fixed) == EraserWidthMode::Speed);
+	static_assert(ToggleEraserWidthMode(EraserWidthMode::Speed) == EraserWidthMode::Fixed);
+	static_assert(EraserWidthModeForRevision(0) == EraserWidthMode::Fixed);
+	static_assert(EraserWidthModeForRevision(1) == EraserWidthMode::Speed);
+	static_assert(EraserWidthModeForRevision(2) == EraserWidthMode::Fixed);
+
 	constexpr bool IsShapeDrawingTool(DrawingTool tool) noexcept
 	{
 		return tool == DrawingTool::SolidLine || tool == DrawingTool::DashedLine ||
@@ -101,6 +125,10 @@ export namespace draw3
 		void SetGpuTransparentComposition(bool enabled);
 		// 返回当前绘制工具。
 		DrawingTool ActiveTool() const;
+		// 返回当前橡皮宽度模式；活动批次仍使用其 Down 时锁定值。
+		EraserWidthMode ActiveEraserWidthMode() const noexcept;
+		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
+		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		// 配置基础工具的应用内瞬态光标外观；Shape 统一复用 Pen 外观。
 		bool ConfigureDrawingCursor(DrawingTool tool,
 			const DrawingCursorAppearance& appearance);
@@ -199,6 +227,7 @@ export namespace draw3
 		std::atomic<uint64_t> latestTouchInputBarrierTick_ = 0;
 		std::atomic<uint32_t> activeTouchContactCount_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
+		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =
 			DrawingCursorPointerAuthority::Unknown;

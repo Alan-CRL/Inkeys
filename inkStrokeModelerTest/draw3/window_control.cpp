@@ -438,6 +438,17 @@ namespace draw3
 		return activeTool_.load(std::memory_order_relaxed);
 	}
 
+	EraserWidthMode WindowController::ActiveEraserWidthMode() const noexcept
+	{
+		return EraserWidthModeForRevision(
+			eraserWidthModeRevision_.load(std::memory_order_acquire));
+	}
+
+	uint32_t WindowController::ActiveEraserWidthModeRevision() const noexcept
+	{
+		return eraserWidthModeRevision_.load(std::memory_order_acquire);
+	}
+
 	bool WindowController::ConfigureDrawingCursor(
 		DrawingTool tool, const DrawingCursorAppearance& appearance)
 	{
@@ -1467,6 +1478,14 @@ namespace draw3
 		case WM_KEYDOWN:
 			switch (wParam)
 			{
+			case 'C':
+				if ((lParam & kPreviousKeyStateMask) == 0 &&
+					ActiveTool() == DrawingTool::Eraser)
+				{
+					eraserWidthModeRevision_.fetch_add(1, std::memory_order_acq_rel);
+					RequestDrawingCursorRender(); // 模式变化需立即刷新 Hover 尺寸并唤醒绘制线程。
+				}
+				return 0;
 			case '0':
 			case VK_NUMPAD0:
 				if ((lParam & kPreviousKeyStateMask) == 0)

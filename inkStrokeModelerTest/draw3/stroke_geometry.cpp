@@ -229,6 +229,466 @@ namespace draw3
 
 	}
 
+	void SpeedEraserOcController::Reset(float positionX, float positionY,
+		double timeSeconds, SpeedEraserStartKind startKind) noexcept
+	{
+		segments_.fill({});
+		segmentStart_ = 0;
+		segmentCount_ = 0;
+		acceptedPositionX_ = std::isfinite(positionX) ? positionX : 0.0f;
+		acceptedPositionY_ = std::isfinite(positionY) ? positionY : 0.0f;
+		acceptedTime_ = std::isfinite(timeSeconds) ? timeSeconds : 0.0;
+		lastAdvanceTime_ = acceptedTime_;
+		pauseTime_ = 0.0;
+		decreaseCandidateTime_ = 0.0;
+		middleReachedTime_ = 0.0;
+		reverseCandidateTime_ = 0.0;
+		turnGuardUntil_ = 0.0;
+		turnGuardHardDeadline_ = 0.0;
+		totalTravelDip_ = 0.0f;
+		directionTravelDip_ = 0.0f;
+		directionSumX_ = 0.0f;
+		directionSumY_ = 0.0f;
+		reliableDirectionX_ = 0.0f;
+		reliableDirectionY_ = 0.0f;
+		reverseDirectionX_ = 0.0f;
+		reverseDirectionY_ = 0.0f;
+		reverseTravelDip_ = 0.0f;
+		turnRearmTravelDip_ = 8.0f;
+		turnGuardDiameter_ = kSpeedEraserMinimumDiameterPx;
+		currentDiameter_ = kSpeedEraserMinimumDiameterPx;
+		targetDiameter_ = kSpeedEraserMinimumDiameterPx;
+		touchStartup_ = startKind == SpeedEraserStartKind::Touch;
+		initialized_ = true;
+		paused_ = false;
+		hasReliableDirection_ = false;
+		reverseCandidate_ = false;
+		decreaseCandidate_ = false;
+		decreaseCandidateCoherent_ = false;
+		waitAtMiddle_ = false;
+	}
+
+	void SpeedEraserOcController::AddSegment(const MotionSegment& segment) noexcept
+	{
+		constexpr double kMotionWindowSeconds = 0.064;
+		const double expiredBefore = segment.endTime - kMotionWindowSeconds;
+		while (segmentCount_ > 0 &&
+			segments_[segmentStart_].endTime <= expiredBefore)
+		{
+			segmentStart_ = (segmentStart_ + 1) % kSegmentCapacity;
+			--segmentCount_;
+		}
+		if (segmentCount_ == kSegmentCapacity)
+		{
+			segmentStart_ = (segmentStart_ + 1) % kSegmentCapacity;
+			--segmentCount_;
+		}
+		segments_[(segmentStart_ + segmentCount_) % kSegmentCapacity] = segment;
+		++segmentCount_;
+	}
+
+	float SpeedEraserOcController::MotionDistance(double timeSeconds) const noexcept
+	{
+		constexpr double kMotionWindowSeconds = 0.064;
+		if (!initialized_ || !std::isfinite(timeSeconds)) return 0.0f;
+		const double windowStart = timeSeconds - kMotionWindowSeconds;
+		float distance = 0.0f;
+		for (size_t offset = 0; offset < segmentCount_; ++offset)
+		{
+			const MotionSegment& segment =
+				segments_[(segmentStart_ + offset) % kSegmentCapacity];
+			if (segment.endTime < windowStart || segment.startTime > timeSeconds) continue;
+			const double duration = segment.endTime - segment.startTime;
+			if (duration <= 0.000001)
+			{
+				distance += segment.distanceDip;
+				continue;
+			}
+			const double overlapStart = std::max(segment.startTime, windowStart);
+			const double overlapEnd = std::min(segment.endTime, timeSeconds);
+			if (overlapEnd <= overlapStart) continue;
+			distance += segment.distanceDip * static_cast<float>(
+				(overlapEnd - overlapStart) / duration);
+		}
+		return distance;
+	}
+
+	float SpeedEraserOcController::ResolveTargetDiameter(double timeSeconds) const noexcept
+	{
+		const float distance = MotionDistance(timeSeconds);
+		float target = kSpeedEraserMinimumDiameterPx;
+		if (distance > 3.0f)
+		{
+			const float ratio = std::clamp((distance - 3.0f) / 21.0f, 0.0f, 1.0f);
+			target = LerpFloat(kSpeedEraserNormalDiameterPx,
+				kSpeedEraserMaximumDiameterPx, ratio);
+		}
+		else if (distance > 0.75f)
+		{
+			const float ratio = std::clamp((distance - 0.75f) / 2.25f, 0.0f, 1.0f);
+			target = LerpFloat(kSpeedEraserMinimumDiameterPx,
+				kSpeedEraserNormalDiameterPx, ratio);
+		}
+
+		if (!touchStartup_) return target;
+		float startupLimit = kSpeedEraserMinimumDiameterPx;
+		if (totalTravelDip_ > 20.0f)
+		{
+			const float ratio = std::clamp((totalTravelDip_ - 20.0f) / 12.0f, 0.0f, 1.0f);
+			startupLimit = LerpFloat(kSpeedEraserNormalDiameterPx,
+				kSpeedEraserMaximumDiameterPx, ratio);
+		}
+		else if (totalTravelDip_ > 8.0f)
+		{
+			const float ratio = std::clamp((totalTravelDip_ - 8.0f) / 12.0f, 0.0f, 1.0f);
+			startupLimit = LerpFloat(kSpeedEraserMinimumDiameterPx,
+				kSpeedEraserNormalDiameterPx, ratio);
+		}
+		return std::min(target, startupLimit);
+	}
+
+	void SpeedEraserOcController::UpdateDirection(const MotionSegment& segment,
+		float previousWindowDistance, double timeSeconds) noexcept
+	{
+		constexpr float kReverseDot = -0.70710678f; // 135°。
+		constexpr double kReverseConfirmationSeconds = 0.110;
+		constexpr float kDirectionMinimumTravelDip = 1.5f;
+		constexpr float kTurnRearmTravelDip = 8.0f;
+		const auto normalize = [](float& x, float& y) noexcept
+		{
+			const float length = std::hypot(x, y);
+			if (length <= 0.0001f) return false;
+			x /= length;
+			y /= length;
+			return true;
+		};
+
+		if (reverseCandidate_ &&
+			timeSeconds - reverseCandidateTime_ > kReverseConfirmationSeconds)
+		{
+			reverseCandidate_ = false;
+			reverseTravelDip_ = 0.0f;
+		}
+
+		const float reliableDot = hasReliableDirection_
+			? segment.directionX * reliableDirectionX_ +
+				segment.directionY * reliableDirectionY_ : 1.0f;
+		if (!reverseCandidate_ && hasReliableDirection_ && reliableDot <= kReverseDot &&
+			previousWindowDistance >= 3.0f && turnRearmTravelDip_ >= kTurnRearmTravelDip)
+		{
+			reverseCandidate_ = true;
+			reverseCandidateTime_ = timeSeconds;
+			reverseDirectionX_ = segment.directionX;
+			reverseDirectionY_ = segment.directionY;
+			reverseTravelDip_ = segment.distanceDip;
+			turnGuardDiameter_ = currentDiameter_;
+		}
+		else if (reverseCandidate_)
+		{
+			const float reverseDot = segment.directionX * reverseDirectionX_ +
+				segment.directionY * reverseDirectionY_;
+			if (reverseDot >= 0.5f)
+			{
+				reverseDirectionX_ += segment.directionX * segment.distanceDip;
+				reverseDirectionY_ += segment.directionY * segment.distanceDip;
+				normalize(reverseDirectionX_, reverseDirectionY_);
+				reverseTravelDip_ += segment.distanceDip;
+			}
+			else if (reliableDot > kReverseDot)
+			{
+				reverseCandidate_ = false;
+				reverseTravelDip_ = 0.0f;
+			}
+		}
+
+		if (reverseCandidate_ && reverseTravelDip_ >= kDirectionMinimumTravelDip &&
+			timeSeconds - reverseCandidateTime_ <= kReverseConfirmationSeconds)
+		{
+			// 可靠折返只保护一次；必须继续移动足够距离后才重新布防。
+			turnGuardUntil_ = timeSeconds + 0.120;
+			turnGuardHardDeadline_ = reverseCandidateTime_ + 0.160;
+			turnGuardDiameter_ = std::max(turnGuardDiameter_, currentDiameter_);
+			reliableDirectionX_ = reverseDirectionX_;
+			reliableDirectionY_ = reverseDirectionY_;
+			hasReliableDirection_ = normalize(
+				reliableDirectionX_, reliableDirectionY_);
+			directionTravelDip_ = reverseTravelDip_;
+			directionSumX_ = reliableDirectionX_ * directionTravelDip_;
+			directionSumY_ = reliableDirectionY_ * directionTravelDip_;
+			turnRearmTravelDip_ = 0.0f;
+			reverseCandidate_ = false;
+			reverseTravelDip_ = 0.0f;
+			decreaseCandidate_ = false;
+			return;
+		}
+
+		if (reverseCandidate_) return;
+		turnRearmTravelDip_ = std::min(kTurnRearmTravelDip,
+			turnRearmTravelDip_ + segment.distanceDip);
+		if (hasReliableDirection_ && reliableDot >= 0.5f)
+		{
+			directionSumX_ = reliableDirectionX_ * std::min(directionTravelDip_, 8.0f) +
+				segment.directionX * segment.distanceDip;
+			directionSumY_ = reliableDirectionY_ * std::min(directionTravelDip_, 8.0f) +
+				segment.directionY * segment.distanceDip;
+			directionTravelDip_ = std::min(8.0f,
+				directionTravelDip_ + segment.distanceDip);
+			reliableDirectionX_ = directionSumX_;
+			reliableDirectionY_ = directionSumY_;
+			hasReliableDirection_ = normalize(
+				reliableDirectionX_, reliableDirectionY_);
+			return;
+		}
+		if (!hasReliableDirection_ && directionTravelDip_ > 0.0f)
+		{
+			float provisionalX = directionSumX_;
+			float provisionalY = directionSumY_;
+			if (normalize(provisionalX, provisionalY) &&
+				segment.directionX * provisionalX + segment.directionY * provisionalY >= 0.5f)
+			{
+				directionSumX_ += segment.directionX * segment.distanceDip;
+				directionSumY_ += segment.directionY * segment.distanceDip;
+				directionTravelDip_ += segment.distanceDip;
+				if (directionTravelDip_ >= kDirectionMinimumTravelDip)
+				{
+					reliableDirectionX_ = directionSumX_;
+					reliableDirectionY_ = directionSumY_;
+					hasReliableDirection_ = normalize(
+						reliableDirectionX_, reliableDirectionY_);
+				}
+				return;
+			}
+		}
+
+		directionSumX_ = segment.directionX * segment.distanceDip;
+		directionSumY_ = segment.directionY * segment.distanceDip;
+		directionTravelDip_ = segment.distanceDip;
+		hasReliableDirection_ = false;
+		if (directionTravelDip_ >= kDirectionMinimumTravelDip)
+		{
+			reliableDirectionX_ = directionSumX_;
+			reliableDirectionY_ = directionSumY_;
+			hasReliableDirection_ = normalize(
+				reliableDirectionX_, reliableDirectionY_);
+		}
+	}
+
+	float SpeedEraserOcController::StepDiameter(
+		double timeSeconds, bool coherentMotionUpdate) noexcept
+	{
+		if (!initialized_ || paused_ || !std::isfinite(timeSeconds))
+			return currentDiameter_;
+		timeSeconds = std::max(timeSeconds, lastAdvanceTime_);
+		const double previousAdvanceTime = lastAdvanceTime_;
+		const double deltaSeconds = std::max(0.0, timeSeconds - previousAdvanceTime);
+		lastAdvanceTime_ = timeSeconds;
+
+		if (reverseCandidate_ && timeSeconds - reverseCandidateTime_ > 0.110)
+		{
+			reverseCandidate_ = false;
+			reverseTravelDip_ = 0.0f;
+		}
+		float requestedTarget = ResolveTargetDiameter(timeSeconds);
+		const double guardDeadline = std::min(turnGuardUntil_, turnGuardHardDeadline_);
+		if (guardDeadline > timeSeconds)
+		{
+			requestedTarget = std::max(requestedTarget, turnGuardDiameter_);
+			decreaseCandidate_ = false;
+		}
+		else if (turnGuardUntil_ > 0.0)
+		{
+			turnGuardUntil_ = 0.0;
+			turnGuardHardDeadline_ = 0.0;
+			// 保护消费后再累计 8 DIP，避免短幅往返在保护期内提前重装而永久锁住大尺寸。
+			turnRearmTravelDip_ = 0.0f;
+		}
+		targetDiameter_ = std::clamp(requestedTarget,
+			kSpeedEraserMinimumDiameterPx, kSpeedEraserMaximumDiameterPx);
+
+		if (targetDiameter_ >= currentDiameter_)
+		{
+			decreaseCandidate_ = false;
+			waitAtMiddle_ = false;
+			middleReachedTime_ = 0.0;
+			currentDiameter_ = std::min(targetDiameter_, currentDiameter_ +
+				static_cast<float>(900.0 * deltaSeconds));
+			return currentDiameter_;
+		}
+
+		if (currentDiameter_ - targetDiameter_ < 4.0f && !decreaseCandidate_)
+		{
+			if (targetDiameter_ <= kSpeedEraserMinimumDiameterPx + 0.05f &&
+				MotionDistance(timeSeconds) <= 0.0001f)
+			{
+				// 小于 4px 的滞回残差不进入候选；运动窗清空后仍按 release 速率归零，
+				// 避免 20–24px 的轻微 attack 永久维持 Hover 动画。
+				currentDiameter_ = std::max(targetDiameter_, currentDiameter_ -
+					static_cast<float>(500.0 * deltaSeconds));
+				return currentDiameter_;
+			}
+			targetDiameter_ = currentDiameter_;
+			return currentDiameter_;
+		}
+		const bool coherentDecreaseMotion = coherentMotionUpdate &&
+			MotionDistance(timeSeconds) >= 0.75f &&
+			hasReliableDirection_ && !reverseCandidate_;
+		if (!decreaseCandidate_)
+		{
+			decreaseCandidate_ = true;
+			decreaseCandidateTime_ = timeSeconds;
+			decreaseCandidateCoherent_ = coherentDecreaseMotion;
+			return currentDiameter_;
+		}
+		// 4px 只控制是否进入减小候选；一旦进入便必须能释放到真实目标，
+		// 否则会永久停在 20–24px 并让 Hover 绘制线程持续唤醒。
+		decreaseCandidateCoherent_ = decreaseCandidateCoherent_ || coherentDecreaseMotion;
+
+		const float resistance = std::clamp(
+			(currentDiameter_ - kSpeedEraserNormalDiameterPx) /
+			(kSpeedEraserMaximumDiameterPx - kSpeedEraserNormalDiameterPx), 0.0f, 1.0f);
+		const double confirmationSeconds =
+			(decreaseCandidateCoherent_ ? 0.060 : 0.110) + 0.030 * resistance;
+		const double releaseStart = decreaseCandidateTime_ + confirmationSeconds;
+		const double releaseDelta = std::max(0.0,
+			timeSeconds - std::max(previousAdvanceTime, releaseStart));
+		if (releaseDelta <= 0.0) return currentDiameter_;
+
+		float effectiveTarget = targetDiameter_;
+		if (currentDiameter_ > kSpeedEraserNormalDiameterPx + 0.01f &&
+			targetDiameter_ < kSpeedEraserNormalDiameterPx)
+		{
+			effectiveTarget = kSpeedEraserNormalDiameterPx;
+			waitAtMiddle_ = true;
+			middleReachedTime_ = 0.0;
+		}
+		else if (waitAtMiddle_ && targetDiameter_ < kSpeedEraserNormalDiameterPx)
+		{
+			if (middleReachedTime_ <= 0.0) middleReachedTime_ = timeSeconds;
+			if (timeSeconds - middleReachedTime_ < 0.060)
+				effectiveTarget = kSpeedEraserNormalDiameterPx;
+			else
+				waitAtMiddle_ = false;
+		}
+		else if (targetDiameter_ >= kSpeedEraserNormalDiameterPx)
+		{
+			waitAtMiddle_ = false;
+			middleReachedTime_ = 0.0;
+		}
+
+		currentDiameter_ = std::max(effectiveTarget, currentDiameter_ -
+			static_cast<float>(500.0 * releaseDelta));
+		if (waitAtMiddle_ && currentDiameter_ <= kSpeedEraserNormalDiameterPx + 0.01f)
+		{
+			currentDiameter_ = kSpeedEraserNormalDiameterPx;
+			if (middleReachedTime_ <= 0.0) middleReachedTime_ = timeSeconds;
+		}
+		return currentDiameter_;
+	}
+
+	float SpeedEraserOcController::UpdatePosition(float positionX, float positionY,
+		double timeSeconds, float dpiScale) noexcept
+	{
+		if (!initialized_)
+		{
+			Reset(positionX, positionY, timeSeconds);
+			return currentDiameter_;
+		}
+		if (paused_) return currentDiameter_;
+		if (!std::isfinite(positionX) || !std::isfinite(positionY) ||
+			!std::isfinite(timeSeconds) || !std::isfinite(dpiScale) || dpiScale <= 0.0f)
+			return Advance(timeSeconds);
+		timeSeconds = std::max(timeSeconds, acceptedTime_);
+		const float deltaX = (positionX - acceptedPositionX_) / dpiScale;
+		const float deltaY = (positionY - acceptedPositionY_) / dpiScale;
+		const float distanceDip = std::hypot(deltaX, deltaY);
+		if (distanceDip < 0.25f) return StepDiameter(timeSeconds);
+
+		const float previousWindowDistance = MotionDistance(timeSeconds);
+		MotionSegment segment;
+		segment.startTime = acceptedTime_;
+		segment.endTime = timeSeconds;
+		segment.distanceDip = distanceDip;
+		segment.directionX = deltaX / distanceDip;
+		segment.directionY = deltaY / distanceDip;
+		acceptedPositionX_ = positionX;
+		acceptedPositionY_ = positionY;
+		acceptedTime_ = timeSeconds;
+		totalTravelDip_ += distanceDip;
+		AddSegment(segment);
+		UpdateDirection(segment, previousWindowDistance, timeSeconds);
+		return StepDiameter(timeSeconds, true);
+	}
+
+	float SpeedEraserOcController::Advance(double timeSeconds) noexcept
+	{
+		return StepDiameter(timeSeconds);
+	}
+
+	void SpeedEraserOcController::ShiftTimeBase(double deltaSeconds) noexcept
+	{
+		if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0) return;
+		for (size_t offset = 0; offset < segmentCount_; ++offset)
+		{
+			MotionSegment& segment = segments_[(segmentStart_ + offset) % kSegmentCapacity];
+			segment.startTime += deltaSeconds;
+			segment.endTime += deltaSeconds;
+		}
+		acceptedTime_ += deltaSeconds;
+		lastAdvanceTime_ += deltaSeconds;
+		if (decreaseCandidateTime_ > 0.0) decreaseCandidateTime_ += deltaSeconds;
+		if (middleReachedTime_ > 0.0) middleReachedTime_ += deltaSeconds;
+		if (reverseCandidateTime_ > 0.0) reverseCandidateTime_ += deltaSeconds;
+		if (turnGuardUntil_ > 0.0) turnGuardUntil_ += deltaSeconds;
+		if (turnGuardHardDeadline_ > 0.0) turnGuardHardDeadline_ += deltaSeconds;
+	}
+
+	void SpeedEraserOcController::PauseForReconnect(double timeSeconds) noexcept
+	{
+		if (!initialized_ || paused_ || !std::isfinite(timeSeconds)) return;
+		StepDiameter(timeSeconds);
+		paused_ = true;
+		pauseTime_ = std::max(timeSeconds, lastAdvanceTime_);
+	}
+
+	float SpeedEraserOcController::ResumeFromReconnect(float positionX,
+		float positionY, double timeSeconds, float dpiScale) noexcept
+	{
+		if (!std::isfinite(positionX) || !std::isfinite(positionY) ||
+			!std::isfinite(timeSeconds) || !std::isfinite(dpiScale) || dpiScale <= 0.0f)
+			return currentDiameter_; // 非法桥接输入不得污染暂停态和内部时间基准。
+		if (!initialized_)
+		{
+			Reset(positionX, positionY, timeSeconds);
+			return currentDiameter_;
+		}
+		const double resumeTime = std::max(
+			timeSeconds, std::max(lastAdvanceTime_, acceptedTime_));
+		if (paused_)
+		{
+			ShiftTimeBase(std::max(0.0, resumeTime - pauseTime_));
+			paused_ = false;
+			pauseTime_ = 0.0;
+		}
+		// 桥接段以极短合成时长进入路程窗，保留状态且不把断触间隙误判为停笔。
+		acceptedTime_ = resumeTime - 0.000001;
+		return UpdatePosition(positionX, positionY, resumeTime, dpiScale);
+	}
+
+	bool SpeedEraserOcController::NeedsAnimation(double timeSeconds) const noexcept
+	{
+		if (!initialized_ || paused_ || !std::isfinite(timeSeconds)) return false;
+		if (currentDiameter_ > kSpeedEraserMinimumDiameterPx + 0.05f ||
+			std::abs(targetDiameter_ - currentDiameter_) > 0.05f || decreaseCandidate_ ||
+			reverseCandidate_ || waitAtMiddle_ || turnGuardUntil_ > timeSeconds) return true;
+		for (size_t offset = 0; offset < segmentCount_; ++offset)
+		{
+			const MotionSegment& segment =
+				segments_[(segmentStart_ + offset) % kSegmentCapacity];
+			if (segment.endTime + 0.064 > timeSeconds) return true;
+		}
+		return false;
+	}
+
 	StrokeWidthEstimator::StrokeWidthEstimator(float baseDiameterValue, float expectedSpeedValue)
 		: baseDiameter(baseDiameterValue), minDiameter(baseDiameterValue * 0.8f),
 		maxDiameter(baseDiameterValue * 1.4f), expectedSpeed(std::max(1.0f, expectedSpeedValue)),
@@ -809,7 +1269,30 @@ namespace draw3
 		if (stroke.visualStableFrameCount >= kVisualStableRequiredFrames) stroke.idleFrozen = true; // 冻结后不再持续喂入相同坐标。
 	}
 
-	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed)
+	float InterpolateSpeedEraserDiameter(
+		const SpeedEraserWidthInterval& interval, double pointTimeSeconds) noexcept
+	{
+		const float startDiameter = std::isfinite(interval.startDiameter)
+			? std::clamp(interval.startDiameter, kSpeedEraserMinimumDiameterPx,
+				kSpeedEraserMaximumDiameterPx)
+			: kSpeedEraserMinimumDiameterPx;
+		const float endDiameter = std::isfinite(interval.endDiameter)
+			? std::clamp(interval.endDiameter, kSpeedEraserMinimumDiameterPx,
+				kSpeedEraserMaximumDiameterPx)
+			: startDiameter;
+		if (!std::isfinite(pointTimeSeconds) ||
+			!std::isfinite(interval.startTimeSeconds) ||
+			!std::isfinite(interval.endTimeSeconds) ||
+			interval.endTimeSeconds <= interval.startTimeSeconds)
+			return endDiameter;
+		const float ratio = static_cast<float>(std::clamp(
+			(pointTimeSeconds - interval.startTimeSeconds) /
+			(interval.endTimeSeconds - interval.startTimeSeconds), 0.0, 1.0));
+		return LerpFloat(startDiameter, endDiameter, ratio);
+	}
+
+	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed,
+		const SpeedEraserWidthInterval* speedEraserWidth)
 	{
 		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
 		{
@@ -827,6 +1310,16 @@ namespace draw3
 			case StrokeWidthMode::LaserPressure:
 				point = stroke.widthEstimator.AppendLaserPressure(result);
 				break;
+			case StrokeWidthMode::SpeedEraser:
+			{
+				const float diameter = speedEraserWidth
+					? InterpolateSpeedEraserDiameter(
+						*speedEraserWidth, result.time.Value())
+					: stroke.widthEstimator.baseDiameter;
+				point = { result.position.x, result.position.y, diameter * 0.5f,
+					static_cast<float>(result.time.Value()) };
+				break;
+			}
 			case StrokeWidthMode::SimulatedPressure:
 			default:
 				point = stroke.widthEstimator.Append(result, inputSpeed);

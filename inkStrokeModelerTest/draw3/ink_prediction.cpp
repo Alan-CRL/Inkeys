@@ -848,14 +848,23 @@ namespace draw3
 		const InterruptedStrokeReconnectIdentity& previous,
 		const InterruptedStrokeReconnectIdentity& current) noexcept
 	{
-		return IsInterruptedStrokeReconnectDeviceSupported(previous.deviceType) &&
-			IsInterruptedStrokeReconnectDeviceSupported(current.deviceType) &&
+		return IsInterruptedStrokeReconnectIdentitySupported(previous) &&
+			IsInterruptedStrokeReconnectIdentitySupported(current) &&
 			previous.deviceType == current.deviceType &&
 			previous.selectedTool == current.selectedTool &&
 			previous.tool == current.tool &&
 			previous.widthMode == current.widthMode &&
 			previous.invertedCursor == current.invertedCursor &&
 			previous.suppressPressure == current.suppressPressure;
+	}
+
+	bool IsInterruptedStrokeReconnectIdentitySupported(
+		const InterruptedStrokeReconnectIdentity& identity) noexcept
+	{
+		constexpr uint32_t kEraserDrawingToolValue = 2; // DrawingTool::Eraser 的 append-only 数值。
+		if (identity.deviceType == InputDeviceType::Touch) return true;
+		return identity.deviceType == InputDeviceType::Pen && identity.invertedCursor &&
+			identity.tool == kEraserDrawingToolValue;
 	}
 
 	bool IsInterruptedStrokeReconnectDeviceSupported(InputDeviceType deviceType) noexcept

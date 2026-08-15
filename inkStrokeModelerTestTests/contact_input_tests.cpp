@@ -22,6 +22,7 @@
 
 import draw3.contact_input;
 import draw3.haptic_feedback;
+import draw3.ink_document;
 import draw3.ink_prediction;
 import draw3.pen_cursor;
 import draw3.realtime_stylus;
@@ -1361,11 +1362,31 @@ namespace
 			TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(
 				supported, supported));
 		}
+		const draw3::InterruptedStrokeReconnectIdentity invertedPenEraser{
+			draw3::InputDeviceType::Pen, 0, 2,
+			draw3::StrokeWidthMode::SpeedEraser, true, true
+		};
+		TEST_CHECK(state, draw3::IsInterruptedStrokeReconnectIdentitySupported(identity));
+		TEST_CHECK(state, draw3::IsInterruptedStrokeReconnectIdentitySupported(
+			invertedPenEraser));
+		TEST_CHECK(state, draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(
+			invertedPenEraser, invertedPenEraser));
+		const draw3::InterruptedStrokeReconnectIdentity normalPenEraser{
+			draw3::InputDeviceType::Pen, 2, 2,
+			draw3::StrokeWidthMode::SpeedEraser, false, false
+		};
+		const draw3::InterruptedStrokeReconnectIdentity invertedPenInk{
+			draw3::InputDeviceType::Pen, 0, 0,
+			draw3::StrokeWidthMode::Fixed, true, true
+		};
+		TEST_CHECK(state, !draw3::IsInterruptedStrokeReconnectIdentitySupported(
+			normalPenEraser));
+		TEST_CHECK(state, !draw3::IsInterruptedStrokeReconnectIdentitySupported(
+			invertedPenInk));
 		changed.deviceType = draw3::InputDeviceType::Pen;
 		TEST_CHECK(state, !draw3::AreInterruptedStrokeReconnectIdentitiesCompatible(identity, changed));
 		for (const draw3::InputDeviceType unsupportedDeviceType : {
-			draw3::InputDeviceType::Pen, draw3::InputDeviceType::MouseLeft,
-			draw3::InputDeviceType::MouseRight })
+			draw3::InputDeviceType::MouseLeft, draw3::InputDeviceType::MouseRight })
 		{
 			const draw3::InterruptedStrokeReconnectIdentity unsupported{
 				unsupportedDeviceType, 0, 0, draw3::StrokeWidthMode::Fixed, false, false
@@ -1412,6 +1433,330 @@ namespace
 		draw3::InterruptedStrokeReconnectResult same = matched;
 		TEST_CHECK(state, draw3::IsBetterInterruptedStrokeReconnectMatch(
 			same, 1100, matched, 1000));
+	}
+
+	void TestSpeedEraserOcController(TestState& state)
+	{
+		using draw3::SpeedEraserOcController;
+		using draw3::SpeedEraserStartKind;
+
+		SpeedEraserOcController dpiOne;
+		SpeedEraserOcController dpiTwo;
+		dpiOne.Reset(0.0f, 0.0f, 0.0);
+		dpiTwo.Reset(0.0f, 0.0f, 0.0);
+		for (int index = 1; index <= 48; ++index)
+		{
+			const double time = static_cast<double>(index) / 120.0;
+			const float distanceDip = static_cast<float>(time * 100.0);
+			dpiOne.UpdatePosition(distanceDip, 0.0f, time, 1.0f);
+			dpiTwo.UpdatePosition(distanceDip * 2.0f, 0.0f, time, 2.0f);
+		}
+		TEST_CHECK(state, NearlyEqual(dpiOne.Diameter(), dpiTwo.Diameter(), 0.01f));
+		TEST_CHECK(state, dpiOne.Diameter() > 60.0f && dpiOne.Diameter() < 100.0f);
+
+		auto sampleRateDiameter = [](int samplesPerSecond)
+		{
+			SpeedEraserOcController controller;
+			controller.Reset(0.0f, 0.0f, 0.0);
+			const int sampleCount = samplesPerSecond / 2;
+			for (int index = 1; index <= sampleCount; ++index)
+			{
+				const double time = static_cast<double>(index) /
+					static_cast<double>(samplesPerSecond);
+				controller.UpdatePosition(static_cast<float>(time * 100.0),
+					0.0f, time, 1.0f);
+			}
+			return controller.Diameter();
+		};
+		const float diameter60 = sampleRateDiameter(60);
+		const float diameter120 = sampleRateDiameter(120);
+		const float diameter240 = sampleRateDiameter(240);
+		TEST_CHECK(state, std::abs(diameter60 - diameter120) <= 3.0f);
+		TEST_CHECK(state, std::abs(diameter120 - diameter240) <= 3.0f);
+		TEST_CHECK(state, diameter120 > 60.0f && diameter120 < 100.0f);
+
+		SpeedEraserOcController lowAmplitudeRecovery;
+		lowAmplitudeRecovery.Reset(0.0f, 0.0f, 0.0);
+		double lowAmplitudeTime = 0.010;
+		lowAmplitudeRecovery.UpdatePosition(
+			0.9f, 0.0f, lowAmplitudeTime, 1.0f);
+		TEST_CHECK(state, lowAmplitudeRecovery.Diameter() > 21.5f &&
+			lowAmplitudeRecovery.Diameter() < 22.5f);
+		for (int index = 0; index < 30; ++index)
+		{
+			lowAmplitudeTime += 1.0 / 120.0;
+			lowAmplitudeRecovery.Advance(lowAmplitudeTime);
+		}
+		TEST_CHECK(state, lowAmplitudeRecovery.Diameter() <= 20.05f);
+		TEST_CHECK(state, !lowAmplitudeRecovery.NeedsAnimation(
+			lowAmplitudeTime + 0.100));
+
+		SpeedEraserOcController touch;
+		touch.Reset(0.0f, 0.0f, 0.0, SpeedEraserStartKind::Touch);
+		touch.UpdatePosition(12.0f, 0.0f, 0.012, 1.0f);
+		TEST_CHECK(state, touch.TargetDiameter() <= 31.0f);
+		TEST_CHECK(state, touch.Diameter() <= 31.0f);
+
+		SpeedEraserOcController turnaround;
+		turnaround.Reset(0.0f, 0.0f, 0.0);
+		double time = 0.0;
+		float position = 0.0f;
+		for (int index = 0; index < 60; ++index)
+		{
+			time += 1.0 / 120.0;
+			position += 400.0f / 120.0f;
+			turnaround.UpdatePosition(position, 0.0f, time, 1.0f);
+		}
+		const float beforeTurn = turnaround.Diameter();
+		float minimumAtTurn = beforeTurn;
+		for (int index = 0; index < 20; ++index)
+		{
+			time += 1.0 / 120.0;
+			position -= 400.0f / 120.0f;
+			minimumAtTurn = std::min(minimumAtTurn,
+				turnaround.UpdatePosition(position, 0.0f, time, 1.0f));
+		}
+		TEST_CHECK(state, beforeTurn > 190.0f);
+		TEST_CHECK(state, minimumAtTurn >= beforeTurn - 5.0f);
+
+		SpeedEraserOcController slowing;
+		slowing.Reset(0.0f, 0.0f, 0.0);
+		time = 0.0;
+		position = 0.0f;
+		for (int index = 0; index < 60; ++index)
+		{
+			time += 1.0 / 120.0;
+			position += 500.0f / 120.0f;
+			slowing.UpdatePosition(position, 0.0f, time, 1.0f);
+		}
+		const double slowdownStart = time;
+		float earlySlowDiameter = slowing.Diameter();
+		for (int index = 0; index < 54; ++index)
+		{
+			time += 1.0 / 120.0;
+			position += 20.0f / 120.0f;
+			const float diameter = slowing.UpdatePosition(position, 0.0f, time, 1.0f);
+			if (time - slowdownStart >= 0.18 && earlySlowDiameter > 190.0f)
+				earlySlowDiameter = diameter;
+		}
+		TEST_CHECK(state, earlySlowDiameter < 190.0f);
+		TEST_CHECK(state, slowing.Diameter() <= 52.0f);
+
+		SpeedEraserOcController coherentRelease;
+		coherentRelease.Reset(0.0f, 0.0f, 0.0);
+		double coherentTime = 0.0;
+		float coherentPosition = 0.0f;
+		for (int index = 0; index < 60; ++index)
+		{
+			coherentTime += 1.0 / 120.0;
+			coherentPosition += 500.0f / 120.0f;
+			coherentRelease.UpdatePosition(
+				coherentPosition, 0.0f, coherentTime, 1.0f);
+		}
+		const float coherentHighDiameter = coherentRelease.Diameter();
+		coherentTime += 0.065;
+		coherentPosition += 0.8f;
+		coherentRelease.UpdatePosition(
+			coherentPosition, 0.0f, coherentTime, 1.0f);
+		const double coherentCandidateTime = coherentTime;
+		coherentRelease.Advance(coherentCandidateTime + 0.085);
+		TEST_CHECK(state, NearlyEqual(
+			coherentRelease.Diameter(), coherentHighDiameter, 0.1f));
+		coherentRelease.Advance(coherentCandidateTime + 0.095);
+		TEST_CHECK(state, coherentRelease.Diameter() < coherentHighDiameter - 1.0f);
+
+		SpeedEraserOcController zeroMotionRelease;
+		zeroMotionRelease.Reset(0.0f, 0.0f, 0.0);
+		double zeroMotionTime = 0.0;
+		float zeroMotionPosition = 0.0f;
+		for (int index = 0; index < 60; ++index)
+		{
+			zeroMotionTime += 1.0 / 120.0;
+			zeroMotionPosition += 500.0f / 120.0f;
+			zeroMotionRelease.UpdatePosition(
+				zeroMotionPosition, 0.0f, zeroMotionTime, 1.0f);
+		}
+		const float zeroMotionHighDiameter = zeroMotionRelease.Diameter();
+		zeroMotionTime += 0.065;
+		zeroMotionRelease.Advance(zeroMotionTime); // 没有新位移，必须走 110–140ms 确认。
+		const double zeroMotionCandidateTime = zeroMotionTime;
+		zeroMotionRelease.Advance(zeroMotionCandidateTime + 0.130);
+		TEST_CHECK(state, NearlyEqual(
+			zeroMotionRelease.Diameter(), zeroMotionHighDiameter, 0.1f));
+		zeroMotionRelease.Advance(zeroMotionCandidateTime + 0.145);
+		TEST_CHECK(state, zeroMotionRelease.Diameter() < zeroMotionHighDiameter - 1.0f);
+
+		double irregularRecoveryTime = zeroMotionCandidateTime + 0.145;
+		for (int index = 0; index < 250; ++index)
+		{
+			irregularRecoveryTime += 0.007;
+			zeroMotionRelease.Advance(irregularRecoveryTime);
+		}
+		TEST_CHECK(state, zeroMotionRelease.Diameter() <= 20.05f);
+		TEST_CHECK(state, !zeroMotionRelease.NeedsAnimation(
+			irregularRecoveryTime + 0.100));
+
+		SpeedEraserOcController finiteResumeControl;
+		SpeedEraserOcController invalidResume;
+		finiteResumeControl.Reset(0.0f, 0.0f, 0.0);
+		invalidResume.Reset(0.0f, 0.0f, 0.0);
+		finiteResumeControl.UpdatePosition(10.0f, 0.0f, 0.100, 1.0f);
+		invalidResume.UpdatePosition(10.0f, 0.0f, 0.100, 1.0f);
+		invalidResume.ResumeFromReconnect(12.0f, 0.0f,
+			(std::numeric_limits<double>::quiet_NaN)(), 1.0f);
+		finiteResumeControl.UpdatePosition(20.0f, 0.0f, 0.200, 1.0f);
+		invalidResume.UpdatePosition(20.0f, 0.0f, 0.200, 1.0f);
+		TEST_CHECK(state, NearlyEqual(invalidResume.TargetDiameter(),
+			finiteResumeControl.TargetDiameter(), 0.01f));
+		TEST_CHECK(state, NearlyEqual(invalidResume.Diameter(),
+			finiteResumeControl.Diameter(), 0.01f));
+		invalidResume.PauseForReconnect(0.200);
+		const float invalidPauseDiameter = invalidResume.Diameter();
+		invalidResume.ResumeFromReconnect(22.0f, 0.0f,
+			(std::numeric_limits<double>::infinity)(), 1.0f);
+		TEST_CHECK(state, invalidResume.IsPaused());
+		TEST_CHECK(state, NearlyEqual(
+			invalidResume.Diameter(), invalidPauseDiameter, 0.01f));
+		invalidResume.ResumeFromReconnect(22.0f, 0.0f, 0.250, 1.0f);
+		TEST_CHECK(state, !invalidResume.IsPaused());
+
+		const float diameterBeforePause = turnaround.Diameter();
+		turnaround.PauseForReconnect(time);
+		TEST_CHECK(state, turnaround.IsPaused());
+		turnaround.ResumeFromReconnect(position + 6.0f, 0.0f, time + 0.050, 1.0f);
+		TEST_CHECK(state, !turnaround.IsPaused());
+		TEST_CHECK(state, turnaround.Diameter() >= diameterBeforePause - 0.1f);
+
+		for (int index = 0; index < 80; ++index)
+		{
+			time += 0.010;
+			slowing.Advance(time);
+		}
+		TEST_CHECK(state, slowing.Diameter() <= 20.1f);
+		TEST_CHECK(state, !slowing.NeedsAnimation(time + 0.100));
+
+		SpeedEraserOcController shortOscillation;
+		shortOscillation.Reset(0.0f, 0.0f, 0.0);
+		double oscillationTime = 0.0;
+		float oscillationPosition = 0.0f;
+		for (int index = 0; index < 60; ++index)
+		{
+			oscillationTime += 1.0 / 120.0;
+			oscillationPosition += 500.0f / 120.0f;
+			shortOscillation.UpdatePosition(
+				oscillationPosition, 0.0f, oscillationTime, 1.0f);
+		}
+		const float highOscillationDiameter = shortOscillation.Diameter();
+		for (int index = 0; index < 600; ++index)
+		{
+			oscillationTime += 1.0 / 120.0;
+			const float direction = ((index / 8) & 1) == 0 ? 1.0f : -1.0f;
+			oscillationPosition += direction * (60.0f / 120.0f);
+			shortOscillation.UpdatePosition(
+				oscillationPosition, 0.0f, oscillationTime, 1.0f);
+		}
+		TEST_CHECK(state, highOscillationDiameter > 190.0f);
+		TEST_CHECK(state, shortOscillation.Diameter() <= 65.0f);
+
+		SpeedEraserOcController slowTouch;
+		SpeedEraserOcController fastTouch;
+		slowTouch.Reset(0.0f, 0.0f, 0.0, SpeedEraserStartKind::Touch);
+		fastTouch.Reset(0.0f, 0.0f, 0.0, SpeedEraserStartKind::Touch);
+		double touchTime = 0.0;
+		for (int index = 1; index <= 60; ++index)
+		{
+			touchTime = static_cast<double>(index) / 120.0;
+			slowTouch.UpdatePosition(static_cast<float>(touchTime * 8.0),
+				0.0f, touchTime, 1.0f);
+			fastTouch.UpdatePosition(static_cast<float>(touchTime * 400.0),
+				0.0f, touchTime, 1.0f);
+		}
+		TEST_CHECK(state, slowTouch.Diameter() <= 20.1f);
+		TEST_CHECK(state, fastTouch.Diameter() > 150.0f);
+		slowTouch.PauseForReconnect(touchTime);
+		TEST_CHECK(state, slowTouch.IsPaused() && !fastTouch.IsPaused());
+		fastTouch.PauseForReconnect(touchTime);
+		TEST_CHECK(state, slowTouch.IsPaused() && fastTouch.IsPaused());
+		slowTouch.ResumeFromReconnect(6.0f, 0.0f, touchTime + 0.030, 1.0f);
+		TEST_CHECK(state, !slowTouch.IsPaused() && fastTouch.IsPaused());
+		fastTouch.ResumeFromReconnect(208.0f, 0.0f, touchTime + 0.050, 1.0f);
+		TEST_CHECK(state, !slowTouch.IsPaused() && !fastTouch.IsPaused());
+		TEST_CHECK(state, fastTouch.Diameter() > slowTouch.Diameter() + 100.0f);
+
+		draw3::ActiveStroke modeledWidth(
+			draw3::kSpeedEraserMinimumDiameterPx, 500.0f,
+			draw3::StrokeWidthMode::SpeedEraser);
+		for (int index = 0; index < 3; ++index)
+		{
+			ink::stroke_model::Result result;
+			result.position = { static_cast<float>(index * 20), 100.0f };
+			result.time = ink::stroke_model::Time(static_cast<double>(index) * 0.5);
+			modeledWidth.modeledResults.push_back(result);
+		}
+		const draw3::SpeedEraserWidthInterval widthInterval{
+			0.0, 1.0, draw3::kSpeedEraserMinimumDiameterPx,
+			draw3::kSpeedEraserMaximumDiameterPx
+		};
+		draw3::AppendNewModeledPoints(modeledWidth, -1.0f, &widthInterval);
+		TEST_CHECK(state, modeledWidth.realPoints.size() == 3);
+		TEST_CHECK(state, NearlyEqual(modeledWidth.realPoints[0].r, 10.0f));
+		TEST_CHECK(state, NearlyEqual(modeledWidth.realPoints[1].r, 55.0f));
+		TEST_CHECK(state, NearlyEqual(modeledWidth.realPoints[2].r, 100.0f));
+
+		std::vector<draw3::InkPoint> storedScratch;
+		const std::optional<draw3::InkStroke> stored = draw3::FinalizeStoredStroke(
+			modeledWidth, { draw3::StoredInkType::Eraser, 0, 1.0f, 0 },
+			0.0, storedScratch);
+		TEST_CHECK(state, stored.has_value());
+		TEST_CHECK(state, stored && stored->Points().size() == 3);
+		if (stored && stored->Points().size() == 3)
+		{
+			TEST_CHECK(state, NearlyEqual(stored->Points()[0].width, 20.0f));
+			TEST_CHECK(state, NearlyEqual(stored->Points()[1].width, 110.0f));
+			TEST_CHECK(state, NearlyEqual(stored->Points()[2].width, 200.0f));
+		}
+
+		const std::array<draw3::InkPoint, 1> smallPoint{
+			draw3::InkPoint{ 256.0f, 256.0f, 10.0f, 0.0f }
+		};
+		const std::array<draw3::InkPoint, 1> largePoint{
+			draw3::InkPoint{ 256.0f, 256.0f, 100.0f, 0.0f }
+		};
+		const RECT smallDirty = draw3::RectFromStrokePoints(smallPoint, 512, 512);
+		const RECT largeDirty = draw3::RectFromStrokePoints(largePoint, 512, 512);
+		TEST_CHECK(state, largeDirty.left < smallDirty.left);
+		TEST_CHECK(state, largeDirty.top < smallDirty.top);
+		TEST_CHECK(state, largeDirty.right > smallDirty.right);
+		TEST_CHECK(state, largeDirty.bottom > smallDirty.bottom);
+		TEST_CHECK(state, largeDirty.left == 153 && largeDirty.top == 153 &&
+			largeDirty.right == 359 && largeDirty.bottom == 359);
+
+		draw3::DrawingCursorAppearance smallCursorAppearance;
+		smallCursorAppearance.shape = draw3::DrawingCursorShape::EraserGripCircle;
+		smallCursorAppearance.width = 20.0f;
+		smallCursorAppearance.height = 20.0f;
+		smallCursorAppearance.outlineWidth = 0.8f;
+		draw3::DrawingCursorAppearance largeCursorAppearance = smallCursorAppearance;
+		largeCursorAppearance.width = 200.0f;
+		largeCursorAppearance.height = 200.0f;
+		largeCursorAppearance.outlineWidth = 8.0f;
+		const draw3::DrawingCursorVisual smallCursor =
+			draw3::MakeTouchEraserDrawingCursorVisual(
+				256.0f, 256.0f, smallCursorAppearance);
+		const draw3::DrawingCursorVisual largeCursor =
+			draw3::MakeTouchEraserDrawingCursorVisual(
+				256.0f, 256.0f, largeCursorAppearance);
+		const RECT smallCursorDirty = draw3::DrawingCursorVisualBounds(
+			smallCursor, 512, 512);
+		const RECT largeCursorDirty = draw3::DrawingCursorVisualBounds(
+			largeCursor, 512, 512);
+		TEST_CHECK(state, smallCursor.visible && largeCursor.visible);
+		TEST_CHECK(state, !draw3::AreDrawingCursorVisualsEquivalent(
+			smallCursor, largeCursor));
+		TEST_CHECK(state, largeCursorDirty.left < smallCursorDirty.left &&
+			largeCursorDirty.top < smallCursorDirty.top &&
+			largeCursorDirty.right > smallCursorDirty.right &&
+			largeCursorDirty.bottom > smallCursorDirty.bottom);
 	}
 
 	void TestInterruptedStrokeReconnectModelLifecycle(TestState& state)
@@ -1791,6 +2136,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestRtsTouchDownCursorInvalidation(state);
 	TestRtsDecoderAndBindingHotPath(state);
 	TestInputWidthModesAndHardwarePressure(state);
+	TestSpeedEraserOcController(state);
 	TestInterruptedStrokeReconnectPolicy(state);
 	TestInterruptedStrokeReconnectModelLifecycle(state);
 	TestInvertedPenPolicy(state);

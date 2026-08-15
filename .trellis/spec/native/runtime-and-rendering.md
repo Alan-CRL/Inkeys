@@ -40,10 +40,67 @@
 |---|---:|---|---|---|
 | Pen | 5px base; hardware 1–7px | active configured mode | per-device fixed/simulated/hardware | real tail + prediction + taper |
 | Highlighter | 6.25×50px fixed vertical nib | enabled from Down | fixed | rectangle sweep primitives, no taper |
-| Eraser | 50px | disabled | fixed | real points directly committed to L1 |
+| Eraser | fixed 50px; speed 20–200px | disabled | fixed/speed OC | real points directly committed to L1 |
 | Laser | 5px solid (1.67px core) + 5px diffuse/side | active configured mode | Pen laser pressure; Mouse/Touch fixed | stable premultiplied color + per-stroke coverage scratch, never L2 |
 
 这是当前实验实现。预测时长、目标帧率、笔宽、live-tip 和几何阈值默认都是实验参数；只有公开接口、持久化格式或明确兼容要求已经依赖某值时，该值才升级为兼容契约。
+
+## Scenario: Speed Eraser OC
+
+### 1. Scope / Trigger
+
+修改 `EraserWidthMode`、`SpeedEraserOcController`、橡皮 Hover/Contact cursor、断触续接或动态 Stored Eraser 宽度时，必须应用本节。
+
+### 2. Signatures
+
+- `EraserWidthMode { Fixed, Speed }`、`WindowController::ActiveEraserWidthMode/ActiveEraserWidthModeRevision`
+- `StrokeWidthMode::SpeedEraser`
+- `SpeedEraserOcController::{Reset, UpdatePosition, Advance, PauseForReconnect, ResumeFromReconnect, Diameter, TargetDiameter, NeedsAnimation}`
+- `SpeedEraserWidthInterval`、`InterpolateSpeedEraserDiameter`
+- `IsInterruptedStrokeReconnectIdentitySupported`
+
+### 3. Contracts
+
+- `3` 只选择 Eraser；仅选中 Eraser 时，非自动重复的 `C` 在固定 50px 与笔速模式间切换。每次切换必须递增原子 revision，即使绘制线程只观察到 `Speed→Fixed→Speed` 的最终 Speed，也必须淘汰旧 Hover OC。
+- 空闲批次首个 Down 同时锁定工具、Eraser mode 和 mode revision；同批后加入 contact、活动 runtime 与断触候选沿用该快照。Fixed 批次在接触中切换 Speed 后，几何和 contact cursor 都不得读取 Speed Hover lane。
+- OC 的运动窗口为最近 64ms 的累计 DIP 路程；原始像素位移先除 `dpiScale`，小于 0.25 DIP 的抖动累计到有效段。`0.75/3/24 DIP` 映射到 `20/50/200px`，输出宽度继续是物理像素。
+- 增大按 900px/s；减小目标至少低 4px 才进入候选，但进入后必须能精确释放到目标。新的一致方向运动使用 60–90ms 确认，没有新运动或方向不明使用 110–140ms；回落按 500px/s，大尺寸先到 50px 并稳定 60ms。
+- 达到 135°、旧窗口至少 3 DIP 且 110ms 内反向累计 1.5 DIP 才启动转折保护；保护最长 120ms、连续硬上限 160ms，消费后再移动 8 DIP 才能重装。持续短幅往返最终仍须恢复，稳定后 `NeedsAnimation` 必须为 false。
+- 每个 Touch runtime 独占从 20px 开始的 OC，并按累计 `0–8/8–20/20–32 DIP` 逐级开放 `20/50/200px` 上限。Mouse、普通 Pen Eraser、倒转 Pen Eraser 使用三条独立 Hover lane；Down 复制匹配 lane，正常 Up 只在 revision 未变化时交回。
+- Hover handback 只接受 `sample.qpc >= Up qpc` 且落在有界窗口内的新样本；旧 mailbox 样本不得重新初始化 lane。Hover 静止时只在 OC 尚未收敛期间按帧推进，收敛后必须回到 blocking dequeue。
+- Touch 与倒转且实际工具为 Eraser 的 Pen 可进入断触候选；普通 Pen 和 Mouse 不可进入。候选期间 OC 冻结全部时间基准，成功续接时平移 QPC 基准并加入桥接 DIP；NaN/Inf/非法 scale 必须无副作用拒绝。
+- Speed Eraser 禁用 prediction、L0 taper 和实时笔锋；每次原始输入间的模型点按模型时间插值 OC 直径，真实点直接提交 L1。逐点半径必须原样进入 Stored Stroke、history footprint、Undo/Redo、页面重放和 cursor 旧/新 dirty bounds，不修改 GPU/HLSL 点格式。
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| 非 Eraser 工具按 `C` 或按键自动重复 | no-op，不改变 mode/revision |
+| 活动批次中切换 mode | runtime 几何、cursor 与断触身份继续使用 Down 时 revision |
+| 64ms 窗口清空且直径残留在 20–24px | 按 500px/s 收敛到 20px，随后 `NeedsAnimation=false` |
+| 真实折返满足角度/路程/时限 | 取消本次减小并有界保宽；未重新移动 8 DIP 不得再次保护 |
+| Hover handback 收到早于 Up 或晚于 deadline 的样本 | 拒绝继承；后续新样本从 20px 初始化 |
+| reconnect bridge 含 NaN/Inf 或 `dpiScale<=0` | OC 暂停态、直径、位置和时间基准均保持不变 |
+| 普通 Pen 或 Mouse Up | 立即完成，不进入 reconnect 候选 |
+| Touch 点按/短划 | 由累计启动路程限制直径，不得因瞬时高速度直接放大到 200px |
+
+### 5. Good / Base / Bad Cases
+
+- Good：Mouse Hover 已形成 120px OC，Down 首点继承同一尺寸；倒转 Pen 断触 50ms 后桥接并继续原 OC，Stored Stroke 保留逐点宽度。
+- Base：Fixed 模式始终为 50px；Touch 点按为 20px；普通 Pen/Mouse 物理 Up 立即完成。
+- Bad：用窗口首尾位移估速、在每个转折点直接缩到 20px、多个 contact 共用一个 OC、或 mode 切换后改写活动 runtime。
+
+### 6. Tests Required
+
+- 覆盖不同 DPI 与 60/120/240Hz 的非封顶轨迹、900/500px/s 速率、两类确认窗口、135° 折返、硬上限、8 DIP 重装和非整步长最终恢复到 20px 后零动画。
+- 覆盖 Touch 启动上限、双指隔离、三条 Hover lane、快速 mode revision 往返、Up 前旧样本拒绝、Hover→Down 连续和 Fixed 批次 cursor 锁定。
+- 覆盖 Touch/倒转 Pen 续接冻结与桥接、普通 Pen/Mouse 拒绝、非有限重连输入，以及动态半径的模型插值、Stored/重放和 dirty bounds。
+
+### 7. Wrong vs Correct
+
+Wrong：`每帧瞬时速度 -> 转折点速度为 0 -> 立即缩小`，或 `C 切换 -> 所有活动/候选 runtime 改用新模式`。
+
+Correct：`64ms DIP 累计路程 -> 非对称确认/释放 + 有界转折保护 -> 每 runtime 独立 OC`；mode/revision 只在批次首个 Down 锁定，Hover lane 只服务匹配的新批次。
 
 ## Scenario: Analytic Line And Rounded Rectangle Tools
 
@@ -227,7 +284,7 @@ Correct：关闭时直接回收后续 Touch 的 consumer slot；该手指必须�
 - 自定义 Pen/Highlighter/Eraser 光标属于 L0 帧的最终瞬态视觉：先把 dirty 区域按 `L2 + L1 + L0` 合成到 backbuffer，再逐枚绘制 cursor。禁止把 cursor 写入共享 `layerL0`、L1、L2、ActiveStroke、contact payload、reconnect 或 metrics。
 - shader shape type `4/5/6` 分别表示 Cursor Circle、Rectangle、EraserGripCircle；复用两项 `InkPoint`、48 字节全局常量和 resolve dual-source blend，直接输出 premultiplied Add 与 Retain。尺寸变化只能更新常量/primitive，不创建尺寸相关纹理或 `HCURSOR`。
 - Pen 直径为 `max(当前基准画笔粗细, 5px * dpiScale)`；Highlighter 为 6.25x50px 固定竖直矩形。二者使用当前 RGB 和 `#B8B8B8` 细内描边，压力不改变 cursor 尺寸。`translucentInkCursorEnabled=false` 时 Pen authority 的整体与填充 Alpha 都为 1；开启后恢复 25% fill Alpha，且 fill Alpha 不得降低 outline Alpha。
-- EraserGripCircle 直径直接复用 50px 画布擦除宽度，不乘 DPI、不设最小值；主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Pen Hover 默认整体 Alpha 1，半透明开关开启后为 0.5；Contact 始终为 1。Touch Eraser Contact 始终为 1，不受开关影响。
+- EraserGripCircle 直径复用当前批次或匹配 Hover lane 的画布擦除宽度：Fixed 为 50px，Speed 为 20–200px；不再乘 DPI。主体纯白，圆环宽度为 4%D，两条圆头竖线宽度为 10%D、中心偏移为 12%D、半高为 24%D，结构颜色为 `#CFCFCF`。Pen Hover 默认整体 Alpha 1，半透明开关开启后为 0.5；Contact 始终为 1。Touch Eraser Contact 始终为 1，不受开关影响。
 - RTS InAir/Down/Packets 发布 X/Y/QPC、inverted 和 contact；StylusUp 只清除 Pen 样本，不把终态坐标冒充 Hover。后续真实 InAir 包才允许重新显示 Hover。InAir/Packets 只解码批次最后一个包；`Packets` 成功解码后的顺序固定为 `PublishMove -> PublishPenCursor -> diagnostics`，即使 Move 发布失败也继续更新 cursor mailbox。所有 Pen 样本都继续写入 writer latch + sequence mailbox；`inContact=false` 保持 sticky cursor render wake，`inContact=true` 不逐样本请求 render/control wake，由已有活动帧读取最新坐标。RTS 回调不得等待、分配、调用 D3D 或 `SetCursor`。
 - Windows 8+ 动态解析 Pointer API，并区分 `Unknown/Pen/Mouse/Touch`；`WM_POINTERENTER/UPDATE` 使用 `GetPointerInfo/GetPointerPenInfo` 继续发布 Pen 坐标，包括 Contact 样本，不能依赖首个 RTS Down。它与 RTS 共用相同 mailbox/wake 规则；禁止为了去重而停止发布 Contact 坐标。`WM_POINTERUP` 同样只清除 Pen 样本，后续 Update 才恢复 Hover。每个有效 RTS Pen 样本都必须明确取得 Pen authority。旧系统由 RTS Pen 样本和非 promoted Mouse 消息回退。Pointer authority 仍为 Pen 且 Pen 样本有效时，低优先级 `WM_MOUSE*` 不得抢占；Pen/Touch authority 下的孤立 Mouse ButtonUp 必须忽略，避免终态兼容消息重新生成 Hover。Mouse 使用 `TrackMouseEvent/WM_MOUSELEAVE` 清理。
 - Pen/Touch 离开后应清除其可见样本，但保留最后设备 authority 作为“当前无光标”状态；`WM_POINTERLEAVE` 无法取得 pointer type 时，只要旧 authority 或有效样本表明是 Pen，仍按 Pen 离开处理。禁止将 authority 立即改为 Unknown 而使旧 Mouse 样本复活。只有新的非 promoted `WM_MOUSE*` 才能明确切换到 Mouse 并恢复鼠标。
@@ -357,8 +414,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 ### 3. Contracts
 
 - 开关默认开启，外部通过 `DrawingController::SetInterruptedStrokeReconnectEnabled/GetInterruptedStrokeReconnectEnabled` 运行时读写；关闭时发布 control wake，已有候选立即按保存的 Up 完成，并保留原先 Down 出队和立即 `kUp` 顺序。
-- 断触修正仅支持 Touch。Touch 物理 Up 在 80ms 窗口内先作为 `kMove` 输入并冻结 modeler、真实点、prediction、L0/L1 CPU 状态、提交游标、宽度估算器和旧 handle；Pen/Mouse Up 始终立即发送 `kUp`，Cancelled 立即终结。
-- 候选和新 Down 都必须是 Touch，并具有有效末速和末端方向；批次选择工具、有效工具、宽度模式、倒转状态和压力屏蔽策略必须完全一致。Up 的 `kMove` 成功后必须在新 Down 出队前冻结匹配专用 prediction，保证同帧 Up→Down 使用最新状态。
+- 断触修正支持全部 Touch，以及倒转且实际工具为 Eraser 的 Pen。物理 Up 在 80ms 窗口内先作为 `kMove` 输入并冻结 modeler、真实点、prediction、L0/L1 CPU 状态、提交游标、宽度/OC 状态和旧 handle；普通 Pen、Mouse Up 始终立即发送 `kUp`，Cancelled 立即终结。
+- 候选和新 Down 必须同为 Touch，或同为倒转 Pen Eraser，并具有有效末速和末端方向；批次选择工具、有效工具、宽度模式、倒转状态和压力屏蔽策略必须完全一致。Up 的 `kMove` 成功后必须在新 Down 出队前冻结匹配专用 prediction，保证同帧 Up→Down 使用最新状态。
 - prediction 有有效位置和正时域时，按 Down 间隔在预测时域内插值，超出时域使用最后预测位置；以 `selectedPredictionPosition - modeledPositionAtUp` 得到模型预测位移，再平移到物理 Up 坐标生成预测落点，禁止直接把预测终点瞬时速度方向与整段曲线桥接弦做硬比较。
 - prediction 路径要求新 Down 到预测落点的误差不超过 `4px*dpiScale + 0.35*predictedDistance + 0.75*forecastAverageSpeed*beyondHorizon`；桥接距离上限按 `referenceSpeed=max(forecastAverageSpeed,recentFilteredInputSpeed)` 计算为 `clamp(referenceSpeed*gap*1.75 + 4px*dpiScale, 64px*dpiScale, 256px*dpiScale)`，且必须在完成方向与落点诊断后才以该上限拒绝。边界比较额外允许 `0.5px*dpiScale` 数值容差；终点速度只用于诊断。
 - 冻结预测端点失败后，先在预测弦可靠、桥接夹角不超过 35°、相对 `referenceSpeed` 的速度比位于 `[0.35, 2.75]` 且 Down 超过预测时域时尝试加速自适应走廊：`adaptedDistance=max(predictedDistance,referenceSpeed*gap)`，桥接向预测弦投影后的纵向误差与横向误差必须分别不超过 `4px*dpiScale + 0.50*adaptedDistance`；禁止再次叠加时域外不确定度。
@@ -375,7 +432,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 
 | Condition | Required behavior |
 |---|---|
-| Pen/Mouse Up | 立即发送 `kUp`，不得进入候选或匹配断触修正 |
+| 普通 Pen/Mouse Up | 立即发送 `kUp`，不得进入候选或匹配断触修正 |
+| 倒转 Pen Eraser Up | 与 Touch 使用相同候选窗口；身份或运动不匹配时正常完成 |
 | 运行中关闭开关 | 发布 control wake；已有 Touch 候选立即按保存 Up 完成，之后的 Down/Up 使用原队列顺序 |
 | Up 无有效末速/方向 | 立即发送 `kUp`，不进入候选 |
 | Cancelled | 立即终结，不可续接 |
@@ -399,7 +457,7 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - Good：预测只覆盖 17ms、实际间隔 70ms，但预测弦与桥接夹角 10°、抬笔前输入速度高于预测平均速度且速度比约 1.0；冻结端点失败后按加速走廊命中。
 - Good：圆弧桥接与 19ms 短预测弦偏差 68°，但与预测末端速度方向偏差 30°，速度比和纵横误差均通过；第二方向走廊命中且不提高全局 35°。
 - Good：波浪线在 30ms 内恢复，预测仍覆盖该时刻但位移严重偏短；桥接与末端速度方向偏差 1°、速度比 1.75 且纵横误差通过，严格时域内走廊命中。
-- Base：未命中的 Touch 普通笔、荧光笔和橡皮按独立笔画处理，旧候选按 deadline 正常收尾；Pen/Mouse 从不进入续接候选。
+- Base：未命中的 Touch 普通笔、荧光笔、橡皮和倒转 Pen Eraser 按独立笔画处理，旧候选按 deadline 正常收尾；普通 Pen/Mouse 从不进入续接候选。
 - Bad：物理 Up 立即 `kUp` 后尝试 Reset/拼接新模型，或用预测终点瞬时切线对整段曲线桥接弦做 35° 硬拒绝。
 - Bad：把 `matchScore` 全局放宽以接纳加速样本，导致 90° 以上的人工重新落笔一起误连；或模拟开关关闭后仍在每个 Move 上查状态和加锁。
 
@@ -408,11 +466,11 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - 精确覆盖 80ms、prediction 位置时域插值/末状态、预测位移与终点切线反向仍命中、预测落点误差与数值容差、时域外不确定度、64–256px 动态预测上限、35°/32px 回退边界、DPI 缩放和 RTS 速度尖峰抑制。
 - 覆盖高速直线略超基础上限、慢到快圆弧/波浪线加速走廊命中、预测弦超过 35°但末端速度方向走廊命中、时域内 35ms/15°/[0.5,2.0] 严格终速走廊、对应间隔/角度/速度比越界拒绝，并断言 `predictionExtrapolated`、两个终速走廊标记与横向/纵向误差。
 - 分别以模拟开关 true/false 构建；false 的 Release 编译必须选择原始 Down/Move/Up 直接发布分支。
-- 覆盖 Touch 支持、Pen/MouseLeft/MouseRight 拒绝、三类工具以及全部身份字段不一致拒绝。
+- 覆盖 Touch 与倒转 Pen Eraser 支持、普通 Pen/MouseLeft/MouseRight 拒绝、三类 Touch 工具以及全部身份字段不一致拒绝。
 - 覆盖预测距离比例误差/角度/距离/Up 时间的多候选确定性选择、候选上限和超时策略。
 - 同一 modeler 依次接收 `Down → Move → 暂留 Up(kMove) → 新 Down(kMove) → Up`；橡皮使用 Disabled predictor。
 - 静态检查功能关闭时保留旧队列顺序，仅候选时 timer period 已结束且 deadline 可自行唤醒。
-- 实体 Touch 验证续接、主动分笔不误连、快速断触、resize、new-page 和三类工具；实体 Pen/Mouse 验证 Up 立即收尾且不续接，`SendInput` 不能替代 RTS 硬件验证。
+- 实体 Touch 验证续接、主动分笔不误连、快速断触、resize、new-page 和三类工具；实体倒转 Pen 验证 Eraser 续接，普通 Pen/Mouse 验证 Up 立即收尾且不续接，`SendInput` 不能替代 RTS 硬件验证。
 
 ### 7. Wrong vs Correct
 

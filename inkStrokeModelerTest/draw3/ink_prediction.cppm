@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -57,8 +58,99 @@ export namespace draw3
 		std::atomic<uint32_t> encoded_ = 0;
 	};
 
-	// 选择当前工具的宽度来源；LaserPressure 使用独立比例，不改变普通 Pen 的压感契约。
-	enum class StrokeWidthMode { SimulatedPressure, HardwarePressure, LaserPressure, Fixed };
+	// 选择当前工具的宽度来源；LaserPressure 与 SpeedEraser 使用各自独立策略。
+	enum class StrokeWidthMode { SimulatedPressure, HardwarePressure, LaserPressure, Fixed, SpeedEraser };
+
+	inline constexpr float kSpeedEraserMinimumDiameterPx = 20.0f;
+	inline constexpr float kSpeedEraserNormalDiameterPx = 50.0f;
+	inline constexpr float kSpeedEraserMaximumDiameterPx = 200.0f;
+
+	enum class SpeedEraserStartKind : uint32_t { Hover, Touch };
+
+	// 以 DIP 路程、转折保护和非对称时间滞回维护单个指针的笔速橡皮直径。
+	class SpeedEraserOcController
+	{
+	public:
+		void Reset(float positionX, float positionY, double timeSeconds,
+			SpeedEraserStartKind startKind = SpeedEraserStartKind::Hover) noexcept;
+		float UpdatePosition(float positionX, float positionY,
+			double timeSeconds, float dpiScale) noexcept;
+		float Advance(double timeSeconds) noexcept;
+		void PauseForReconnect(double timeSeconds) noexcept;
+		float ResumeFromReconnect(float positionX, float positionY,
+			double timeSeconds, float dpiScale) noexcept;
+		float Diameter() const noexcept { return currentDiameter_; }
+		float TargetDiameter() const noexcept { return targetDiameter_; }
+		bool IsPaused() const noexcept { return paused_; }
+		bool NeedsAnimation(double timeSeconds) const noexcept;
+
+	private:
+		struct MotionSegment
+		{
+			double startTime = 0.0;
+			double endTime = 0.0;
+			float distanceDip = 0.0f;
+			float directionX = 0.0f;
+			float directionY = 0.0f;
+		};
+
+		static constexpr size_t kSegmentCapacity = 64;
+		std::array<MotionSegment, kSegmentCapacity> segments_ = {};
+		size_t segmentStart_ = 0;
+		size_t segmentCount_ = 0;
+		float acceptedPositionX_ = 0.0f;
+		float acceptedPositionY_ = 0.0f;
+		double acceptedTime_ = 0.0;
+		double lastAdvanceTime_ = 0.0;
+		double pauseTime_ = 0.0;
+		double decreaseCandidateTime_ = 0.0;
+		double middleReachedTime_ = 0.0;
+		double reverseCandidateTime_ = 0.0;
+		double turnGuardUntil_ = 0.0;
+		double turnGuardHardDeadline_ = 0.0;
+		float totalTravelDip_ = 0.0f;
+		float directionTravelDip_ = 0.0f;
+		float directionSumX_ = 0.0f;
+		float directionSumY_ = 0.0f;
+		float reliableDirectionX_ = 0.0f;
+		float reliableDirectionY_ = 0.0f;
+		float reverseDirectionX_ = 0.0f;
+		float reverseDirectionY_ = 0.0f;
+		float reverseTravelDip_ = 0.0f;
+		float turnRearmTravelDip_ = 8.0f;
+		float turnGuardDiameter_ = kSpeedEraserMinimumDiameterPx;
+		float currentDiameter_ = kSpeedEraserMinimumDiameterPx;
+		float targetDiameter_ = kSpeedEraserMinimumDiameterPx;
+		bool touchStartup_ = false;
+		bool initialized_ = false;
+		bool paused_ = false;
+		bool hasReliableDirection_ = false;
+		bool reverseCandidate_ = false;
+		bool decreaseCandidate_ = false;
+		bool decreaseCandidateCoherent_ = false;
+		bool waitAtMiddle_ = false;
+
+		void AddSegment(const MotionSegment& segment) noexcept;
+		void UpdateDirection(const MotionSegment& segment,
+			float previousWindowDistance, double timeSeconds) noexcept;
+		void ShiftTimeBase(double deltaSeconds) noexcept;
+		float MotionDistance(double timeSeconds) const noexcept;
+		float ResolveTargetDiameter(double timeSeconds) const noexcept;
+		float StepDiameter(double timeSeconds,
+			bool coherentMotionUpdate = false) noexcept;
+	};
+
+	struct SpeedEraserWidthInterval
+	{
+		double startTimeSeconds = 0.0;
+		double endTimeSeconds = 0.0;
+		float startDiameter = kSpeedEraserMinimumDiameterPx;
+		float endDiameter = kSpeedEraserMinimumDiameterPx;
+	};
+
+	// 按模型点时间在相邻两次真实输入的 OC 直径间插值。
+	float InterpolateSpeedEraserDiameter(
+		const SpeedEraserWidthInterval& interval, double pointTimeSeconds) noexcept;
 
 	inline constexpr InkPredictionMode kActivePredictionMode = InkPredictionMode::Kalman;
 	inline constexpr LiveTipLengthMode kActiveLiveTipLengthMode = LiveTipLengthMode::Normal;
@@ -359,7 +451,10 @@ export namespace draw3
 	bool AreInterruptedStrokeReconnectIdentitiesCompatible(
 		const InterruptedStrokeReconnectIdentity& previous,
 		const InterruptedStrokeReconnectIdentity& current) noexcept;
-	// 断触修正只面向容易发生物理断触的 Touch 输入。
+	// 资格保留全部 Touch，并额外放行倒转且实际工具为 Eraser 的 Pen。
+	bool IsInterruptedStrokeReconnectIdentitySupported(
+		const InterruptedStrokeReconnectIdentity& identity) noexcept;
+	// 保留设备级 Touch 查询，调用方不得据此放行任意 Pen。
 	bool IsInterruptedStrokeReconnectDeviceSupported(InputDeviceType deviceType) noexcept;
 	// 多候选命中时按归一化落点误差、角度、距离和较新的 Up 确定唯一候选。
 	bool IsBetterInterruptedStrokeReconnectMatch(
@@ -520,8 +615,9 @@ export namespace draw3
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);
 	// 在视觉稳定后冻结停笔输入。
 	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds);
-	// 转换尚未处理的真实建模结果。
-	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed = -1.0f);
+	// 转换尚未处理的真实建模结果；SpeedEraser 必须显式提供本次原始输入宽度区间。
+	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed = -1.0f,
+		const SpeedEraserWidthInterval* speedEraserWidth = nullptr);
 	// 使用笔宽估算器副本重建预测绘制点。
 	void RebuildPredictedPoints(ActiveStroke& stroke);
 	// 返回预测末端相对真实末端的时长。

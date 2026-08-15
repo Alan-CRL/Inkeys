@@ -54,6 +54,7 @@ namespace draw3
 		constexpr float kHalfPi = kPi * 0.5f;
 		constexpr float kTwoPi = kPi * 2.0f;
 		constexpr double kInputSpeedSmoothingSeconds = 0.060;
+		constexpr double kSpeedEraserHoverHandbackWindowSeconds = 0.250;
 		constexpr double kMaximumLaserHoldDurationSeconds = 24.0 * 60.0 * 60.0;
 		constexpr size_t kPreheatedStrokeCount = 16;
 
@@ -100,6 +101,12 @@ namespace draw3
 				durationTicks >= static_cast<double>(maximumDelta)) return false;
 			deadlineQpc = originQpc + static_cast<int64_t>(durationTicks);
 			return true;
+		}
+
+		double AbsoluteQpcSeconds(int64_t qpc, int64_t qpcFrequency) noexcept
+		{
+			if (qpc < 0 || qpcFrequency <= 0) return 0.0;
+			return static_cast<double>(qpc) / static_cast<double>(qpcFrequency);
 		}
 
 		float DiameterForTool(DrawingTool tool)
@@ -367,6 +374,8 @@ namespace draw3
 			ContactHandle handle = {};
 			DrawingTool selectedTool = DrawingTool::Pen;
 			DrawingTool tool = DrawingTool::Pen;
+			EraserWidthMode eraserWidthMode = EraserWidthMode::Fixed;
+			uint32_t eraserWidthModeRevision = 0;
 			bool suppressPressure = false;
 			ContactSnapshot lastSpeedSnapshot = {};
 			ContactSnapshot lastInputSnapshot = {};
@@ -378,6 +387,9 @@ namespace draw3
 			float lastPressure = -1.0f;
 			float lastTilt = -1.0f;
 			float lastOrientation = -1.0f;
+			SpeedEraserOcController speedEraserOc;
+			double speedEraserModelTime = 0.0;
+			float speedEraserModelDiameter = kSpeedEraserMinimumDiameterPx;
 			RECT visibleDirty = {};
 			std::vector<InkPoint> rebuildPoints;
 			std::vector<ink::stroke_model::Result> reconnectPredictedResults;
@@ -406,6 +418,60 @@ namespace draw3
 			float laserParticleTangentY = 0.0f;
 			bool hasLaserParticleTangent = false;
 		};
+
+		void AppendRuntimeModeledPoints(RuntimeStroke& runtime,
+			float inputSpeed, double currentInputTime)
+		{
+			if (runtime.stroke.widthMode != StrokeWidthMode::SpeedEraser)
+			{
+				AppendNewModeledPoints(runtime.stroke, inputSpeed);
+				return;
+			}
+			const SpeedEraserWidthInterval widthInterval{
+				runtime.speedEraserModelTime,
+				currentInputTime,
+				runtime.speedEraserModelDiameter,
+				runtime.speedEraserOc.Diameter()
+			};
+			AppendNewModeledPoints(runtime.stroke, inputSpeed, &widthInterval);
+			// 纯帧 Advance 不更新这里；下一份 raw snapshot 仍从上次模型输入宽度插值。
+			runtime.speedEraserModelTime = currentInputTime;
+			runtime.speedEraserModelDiameter = runtime.speedEraserOc.Diameter();
+		}
+
+		struct SpeedEraserHoverLane
+		{
+			SpeedEraserOcController controller;
+			uint64_t lastSampleSequence = 0;
+			bool initialized = false;
+			bool contactOwned = false;
+			bool sampleVisible = false;
+			bool hoverWasEligible = false;
+			bool preserveNextHover = false;
+			int64_t preserveNextHoverDeadlineQpc = 0;
+			int64_t minimumHoverSampleQpc = 0;
+
+			void Invalidate() noexcept
+			{
+				lastSampleSequence = 0;
+				initialized = false;
+				contactOwned = false;
+				sampleVisible = false;
+				hoverWasEligible = false;
+				preserveNextHover = false;
+				preserveNextHoverDeadlineQpc = 0;
+				minimumHoverSampleQpc = 0;
+			}
+		};
+
+		void ApplySpeedEraserCursorDiameter(
+			DrawingCursorAppearance& appearance, float diameter) noexcept
+		{
+			if (!std::isfinite(diameter) || diameter <= 0.0f) return;
+			appearance.width = diameter;
+			appearance.height = diameter;
+			appearance.outlineWidth = diameter * 0.04f;
+		}
 
 		struct CanvasGestureContactRuntime
 		{
@@ -1490,6 +1556,11 @@ namespace draw3
 		}
 		std::vector<RuntimeStroke*> active;
 		active.reserve(kPreheatedStrokeCount);
+		SpeedEraserHoverLane mouseEraserHoverLane;
+		SpeedEraserHoverLane penEraserHoverLane;
+		SpeedEraserHoverLane invertedPenEraserHoverLane;
+		uint32_t observedEraserWidthModeRevision =
+			window_.ActiveEraserWidthModeRevision();
 		CanvasTouchGestureState touchGesture;
 		CanvasPanMotionState panMotion;
 		std::vector<CanvasGestureContactRuntime> gestureContacts;
@@ -1639,6 +1710,98 @@ namespace draw3
 			input_.TryReadSnapshot(runtime.handle, latest);
 			return latest.phase != ContactPhase::Up &&
 				latest.phase != ContactPhase::Cancelled;
+		};
+
+		auto speedEraserHoverLaneFor = [&](InputDeviceType deviceType,
+			bool inverted) -> SpeedEraserHoverLane*
+		{
+			if (deviceType == InputDeviceType::MouseLeft ||
+				deviceType == InputDeviceType::MouseRight)
+				return &mouseEraserHoverLane;
+			if (deviceType == InputDeviceType::Pen)
+				return inverted ? &invertedPenEraserHoverLane : &penEraserHoverLane;
+			return nullptr;
+		};
+
+		auto synchronizeSpeedEraserHoverMode = [&]() noexcept
+		{
+			const uint32_t revision = window_.ActiveEraserWidthModeRevision();
+			if (revision != observedEraserWidthModeRevision)
+			{
+				mouseEraserHoverLane.Invalidate();
+				penEraserHoverLane.Invalidate();
+				invertedPenEraserHoverLane.Invalidate();
+				observedEraserWidthModeRevision = revision;
+			}
+			return revision;
+		};
+
+		auto initializeSpeedEraserController = [&](RuntimeStroke& runtime,
+			const ContactSnapshot& down)
+		{
+			const double downSeconds = AbsoluteQpcSeconds(down.qpc, qpcFrequency);
+			if (runtime.metricDeviceType == InputDeviceType::Touch)
+			{
+				runtime.speedEraserOc.Reset(down.position.x, down.position.y,
+					downSeconds, SpeedEraserStartKind::Touch);
+				return;
+			}
+			SpeedEraserHoverLane* lane = speedEraserHoverLaneFor(
+				runtime.metricDeviceType, runtime.invertedCursor);
+			if (lane && lane->preserveNextHover &&
+				(lane->preserveNextHoverDeadlineQpc <= 0 ||
+					down.qpc > lane->preserveNextHoverDeadlineQpc))
+			{
+				// Up 后长期未收到真实 Hover 时，下一次 Down 不继承陈旧 OC。
+				lane->Invalidate();
+			}
+			if (lane && lane->initialized && !lane->contactOwned)
+			{
+				runtime.speedEraserOc = lane->controller; // Down 继承 Hover 的完整方向与滞回状态。
+				runtime.speedEraserOc.UpdatePosition(
+					down.position.x, down.position.y, downSeconds, configuration_.dpiScale);
+			}
+			else
+			{
+				runtime.speedEraserOc.Reset(down.position.x, down.position.y,
+					downSeconds, SpeedEraserStartKind::Hover);
+			}
+			if (lane)
+			{
+				lane->contactOwned = true;
+				lane->sampleVisible = false;
+				lane->preserveNextHover = false;
+				lane->preserveNextHoverDeadlineQpc = 0;
+				lane->minimumHoverSampleQpc = 0;
+			}
+		};
+
+		auto handBackSpeedEraserController = [&](RuntimeStroke& runtime)
+		{
+			if (runtime.stroke.widthMode != StrokeWidthMode::SpeedEraser) return;
+			SpeedEraserHoverLane* lane = speedEraserHoverLaneFor(
+				runtime.metricDeviceType, runtime.invertedCursor);
+			if (!lane) return; // Touch 每个 contact 独占 OC，不进入 Hover lane。
+			if (!runtime.cancelled &&
+				window_.ActiveEraserWidthModeRevision() ==
+					runtime.eraserWidthModeRevision &&
+				runtime.eraserWidthMode == EraserWidthMode::Speed)
+			{
+				lane->controller = runtime.speedEraserOc;
+				lane->initialized = true;
+				lane->contactOwned = false;
+				lane->sampleVisible = false;
+				lane->lastSampleSequence = 0;
+				lane->preserveNextHover = TryAddQpcDuration(
+					runtime.lastInputSnapshot.qpc, qpcFrequency,
+					kSpeedEraserHoverHandbackWindowSeconds,
+					lane->preserveNextHoverDeadlineQpc);
+				lane->minimumHoverSampleQpc = runtime.lastInputSnapshot.qpc;
+				if (!lane->preserveNextHover)
+					lane->Invalidate();
+				return;
+			}
+			lane->Invalidate(); // Cancel 或模式不一致时，下次 Speed Hover 从 20px 重新开始。
 		};
 
 		auto cancelTouchDrawingForPan = [&]()
@@ -1928,6 +2091,10 @@ namespace draw3
 					}
 				}
 				DrawingTool batchTool = window_.ActiveTool();
+				uint32_t batchEraserWidthModeRevision =
+					synchronizeSpeedEraserHoverMode();
+				EraserWidthMode batchEraserWidthMode = EraserWidthModeForRevision(
+					batchEraserWidthModeRevision);
 				bool hasActiveBatchContact = false;
 				bool hasActiveLaserTouchContact = false;
 				for (RuntimeStroke* activeRuntime : active)
@@ -1936,7 +2103,12 @@ namespace draw3
 						runtimeContactPhysicallyLive(*activeRuntime))
 					{
 						if (!hasActiveBatchContact)
-							batchTool = activeRuntime->selectedTool; // 仍有真实落笔时，新 contact 必须沿用当前批次工具。
+						{
+							batchTool = activeRuntime->selectedTool; // 后加入 contact 沿用首个物理批次状态。
+							batchEraserWidthMode = activeRuntime->eraserWidthMode;
+							batchEraserWidthModeRevision =
+								activeRuntime->eraserWidthModeRevision;
+						}
 						hasActiveBatchContact = true;
 						hasActiveLaserTouchContact = hasActiveLaserTouchContact ||
 							(activeRuntime->selectedTool == DrawingTool::Laser &&
@@ -1968,7 +2140,10 @@ namespace draw3
 					? ResolveStrokeWidthMode(deviceType,
 						inputWidthModeSettings_.Get(), downPressure)
 					: tool == DrawingTool::Laser && deviceType == InputDeviceType::Pen
-						? StrokeWidthMode::LaserPressure : StrokeWidthMode::Fixed;
+						? StrokeWidthMode::LaserPressure
+						: tool == DrawingTool::Eraser &&
+							batchEraserWidthMode == EraserWidthMode::Speed
+							? StrokeWidthMode::SpeedEraser : StrokeWidthMode::Fixed;
 				const InterruptedStrokeReconnectIdentity downIdentity{
 					deviceType,
 					static_cast<uint32_t>(batchTool),
@@ -1983,14 +2158,17 @@ namespace draw3
 				RuntimeStroke* diagnosticRuntime = nullptr;
 				InterruptedStrokeReconnectResult diagnosticResult;
 				if (GetInterruptedStrokeReconnectEnabled() &&
-					IsInterruptedStrokeReconnectDeviceSupported(deviceType) &&
+					IsInterruptedStrokeReconnectIdentitySupported(downIdentity) &&
 					tool != DrawingTool::Laser && !IsShapeDrawingTool(tool))
 				{
 					for (RuntimeStroke* candidate : active)
 					{
 						if (!candidate || !candidate->awaitingReconnect || candidate->ended) continue;
+						InterruptedStrokeReconnectIdentity candidateDownIdentity = downIdentity;
+						// C 在候选窗口内切换时，候选仍按原批次宽度模式续接。
+						candidateDownIdentity.widthMode = candidate->stroke.widthMode;
 						if (!AreInterruptedStrokeReconnectIdentitiesCompatible(
-							ReconnectIdentity(*candidate), downIdentity))
+							ReconnectIdentity(*candidate), candidateDownIdentity))
 						{
 							if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 							{
@@ -2109,6 +2287,8 @@ namespace draw3
 					const uint32_t reconnectPreviousContactId =
 						reconnectRuntime->handle.record->ContactId();
 					const uint64_t reconnectPreviousGeneration = reconnectRuntime->handle.generation;
+					const SpeedEraserOcController reconnectOcBefore =
+						reconnectRuntime->speedEraserOc;
 					ContactSnapshot modelDown = down;
 					modelDown.pressure = downPressure;
 					float lastPressure = reconnectRuntime->lastPressure;
@@ -2122,6 +2302,13 @@ namespace draw3
 					double inputTime = QpcDeltaSeconds(
 						down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency);
 					inputTime = std::max(inputTime, reconnectRuntime->lastModelInputTime + 0.000001);
+					if (reconnectRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
+					{
+						// 先恢复 OC 并加入桥接 DIP，再把同一份 raw Down 送入 modeler。
+						reconnectRuntime->speedEraserOc.ResumeFromReconnect(
+							down.position.x, down.position.y,
+							AbsoluteQpcSeconds(down.qpc, qpcFrequency), configuration_.dpiScale);
+					}
 					const Input reconnectInput{
 						.event_type = Input::EventType::kMove,
 						.position = Vec2(down.position.x, down.position.y),
@@ -2141,8 +2328,8 @@ namespace draw3
 							1.0 - std::exp(-gapSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);
 						reconnectRuntime->filteredInputSpeed +=
 							(reconnectResult.bridgeSpeed - reconnectRuntime->filteredInputSpeed) * alpha;
-						AppendNewModeledPoints(reconnectRuntime->stroke,
-							reconnectRuntime->filteredInputSpeed);
+						AppendRuntimeModeledPoints(*reconnectRuntime,
+							reconnectRuntime->filteredInputSpeed, inputTime);
 						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 						{
 							const size_t lastPointIndex = reconnectRuntime->stroke.realPoints.size();
@@ -2156,6 +2343,7 @@ namespace draw3
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						reconnectRuntime->handle = handle;
 						reconnectRuntime->lastSpeedSnapshot = down;
+						reconnectRuntime->lastInputSnapshot = down;
 						reconnectRuntime->lastModelSnapshot = modelDown;
 						reconnectRuntime->lastConsumedSequence = down.sequence;
 						reconnectRuntime->lastModelInputTime = inputTime;
@@ -2226,6 +2414,8 @@ namespace draw3
 					}
 					else
 					{
+						if (reconnectRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
+							reconnectRuntime->speedEraserOc = reconnectOcBefore;
 						std::cout << "Failed to continue interrupted stroke: " << status.message() << std::endl;
 					}
 				}
@@ -2253,6 +2443,8 @@ namespace draw3
 				else runtime->viewport = {};
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
+				runtime->eraserWidthMode = batchEraserWidthMode;
+				runtime->eraserWidthModeRevision = batchEraserWidthModeRevision;
 				runtime->suppressPressure = suppressPressure;
 				runtime->ended = false;
 				runtime->cancelled = false;
@@ -2276,8 +2468,15 @@ namespace draw3
 				runtime->laserLayerId = 0;
 				ResetLaserParticleEmitterState(*runtime);
 				runtime->metricEligibleQpc = down.qpc;
-				const float baseDiameter = DiameterForTool(runtime->tool) *
+				float baseDiameter = DiameterForTool(runtime->tool) *
 					(runtime->tool == DrawingTool::Laser ? configuration_.dpiScale : 1.0f);
+				if (widthMode == StrokeWidthMode::SpeedEraser)
+				{
+					initializeSpeedEraserController(*runtime, down);
+					baseDiameter = runtime->speedEraserOc.Diameter();
+				}
+				runtime->speedEraserModelTime = 0.0;
+				runtime->speedEraserModelDiameter = baseDiameter;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
 					widthMode, highlighter);
@@ -2291,6 +2490,8 @@ namespace draw3
 					input_.PublishCancelled(handle.record->TabletContextId(),
 						handle.record->ContactId(), cancelled);
 					input_.Recycle(handle);
+					runtime->cancelled = true;
+					handBackSpeedEraserController(*runtime);
 					runtime->handle = {};
 					runtime->inUse = false;
 					return false;
@@ -2345,6 +2546,8 @@ namespace draw3
 					input_.PublishCancelled(handle.record->TabletContextId(),
 						handle.record->ContactId(), cancelled);
 					input_.Recycle(handle);
+					runtime->cancelled = true;
+					handBackSpeedEraserController(*runtime);
 					runtime->handle = {};
 					runtime->inUse = false;
 					return false;
@@ -2352,7 +2555,7 @@ namespace draw3
 				if (runtime->shape.active)
 					ExtractShapeModeledEndpoint(*runtime);
 				else
-					AppendNewModeledPoints(stroke);
+					AppendRuntimeModeledPoints(*runtime, -1.0f, 0.0);
 				if (runtime->tool == DrawingTool::Laser)
 				{
 					const WindowSize laserSize = window_.Size();
@@ -2429,8 +2632,10 @@ namespace draw3
 		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
 			const ContactSnapshot& snapshot, double inputTime)
 			{
-				const float radius = runtime.stroke.realPoints.empty()
-					? runtime.stroke.inputStartPoint.r : runtime.stroke.realPoints.back().r;
+				const float radius = runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser
+					? runtime.speedEraserOc.Diameter() * 0.5f
+					: runtime.stroke.realPoints.empty()
+						? runtime.stroke.inputStartPoint.r : runtime.stroke.realPoints.back().r;
 				const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
 					radius, static_cast<float>(inputTime) };
 				if (runtime.stroke.realPoints.empty())
@@ -2448,8 +2653,18 @@ namespace draw3
 			};
 
 		auto completeModelUp = [&](RuntimeStroke& runtime,
-			const ContactSnapshot& snapshot, bool cancelled)
+			const ContactSnapshot& snapshot, bool cancelled,
+			int64_t controllerResumeQpc = 0)
 			{
+				if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser &&
+					runtime.speedEraserOc.IsPaused())
+				{
+					const int64_t resumeQpc = controllerResumeQpc > 0
+						? controllerResumeQpc : snapshot.qpc;
+					runtime.speedEraserOc.ResumeFromReconnect(
+						snapshot.position.x, snapshot.position.y,
+						AbsoluteQpcSeconds(resumeQpc, qpcFrequency), configuration_.dpiScale);
+				}
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
@@ -2473,7 +2688,7 @@ namespace draw3
 					upInput, runtime.stroke.modeledResults); status.ok())
 				{
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
-					else AppendNewModeledPoints(runtime.stroke);
+					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
 				}
 				else
 				{
@@ -2528,11 +2743,18 @@ namespace draw3
 					touchGesture.OnTouchUp(runtime.touchGestureKey);
 				const bool deferUp = snapshot.phase == ContactPhase::Up &&
 					GetInterruptedStrokeReconnectEnabled() &&
-					IsInterruptedStrokeReconnectDeviceSupported(runtime.metricDeviceType) &&
+					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
 					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 				runtime.laserParticleMovedThisFrame = positionMoved;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
+				if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser)
+				{
+					// 每份 raw snapshot 先推进 OC；即使本次不进入 modeler，也要累计停笔时间。
+					runtime.speedEraserOc.UpdatePosition(
+						snapshot.position.x, snapshot.position.y,
+						AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency), configuration_.dpiScale);
+				}
 				if (!terminal && !positionMoved && !stylusStateChanged && !shapeRawChanged)
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
 
@@ -2580,7 +2802,7 @@ namespace draw3
 				{
 					modelUpdateSucceeded = true;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
-					else AppendNewModeledPoints(runtime.stroke, inputSpeed);
+					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
 				}
 				else
 				{
@@ -2639,6 +2861,12 @@ namespace draw3
 								runtime.reconnectPredictedResults.clear();
 						}
 						runtime.awaitingReconnect = true;
+						if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser)
+						{
+							// 候选窗口冻结 OC；成功续接时再平移时间基准并加入桥接路程。
+							runtime.speedEraserOc.PauseForReconnect(
+								AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
+						}
 						const bool anotherPenContactActive = std::any_of(active.begin(), active.end(),
 							[&](const RuntimeStroke* candidate)
 							{
@@ -3067,6 +3295,108 @@ namespace draw3
 		uint64_t multipleCursorSourceTraceKey = 0;
 #endif
 
+		auto updateSpeedEraserHoverLanes = [&](int64_t nowQpc)
+		{
+			const uint32_t currentRevision = synchronizeSpeedEraserHoverMode();
+			const EraserWidthMode currentMode =
+				EraserWidthModeForRevision(currentRevision);
+			if (currentMode != EraserWidthMode::Speed) return false;
+
+			DrawingCursorSample penSample;
+			DrawingCursorSample mouseSample;
+			window_.ReadPenCursorSample(penSample);
+			window_.ReadMouseCursorSample(mouseSample);
+			if (window_.TouchPanActive() || suppressPenUntilRelease ||
+				window_.PenContactSuppressedForTouchPan())
+				penSample.valid = false;
+			const DrawingTool selectedTool = window_.ActiveTool();
+			const bool selectedToolSupportsOverride = selectedTool == DrawingTool::Pen ||
+				selectedTool == DrawingTool::Highlighter || IsShapeDrawingTool(selectedTool);
+			const bool invertedPenEraser = penSample.inverted &&
+				(selectedTool == DrawingTool::Eraser || ShouldUseInvertedPenEraser(
+					InputDeviceType::Pen, true, effectiveInvertedPenEraserEnabled,
+					selectedToolSupportsOverride));
+			const bool normalPenEraser = !penSample.inverted &&
+				selectedTool == DrawingTool::Eraser;
+			const bool mouseEraser = selectedTool == DrawingTool::Eraser;
+			const double nowSeconds = AbsoluteQpcSeconds(nowQpc, qpcFrequency);
+
+			auto updateLane = [&](SpeedEraserHoverLane& lane,
+				const DrawingCursorSample& sample, bool tracksSample)
+			{
+				const bool rawEligibleHover =
+					tracksSample && sample.valid && !sample.inContact;
+				const bool wasEligibleHover = lane.hoverWasEligible;
+				const bool preservedHoverArrived = lane.preserveNextHover &&
+					rawEligibleHover && sample.qpc >= lane.minimumHoverSampleQpc &&
+					nowQpc <= lane.preserveNextHoverDeadlineQpc &&
+					sample.qpc <= lane.preserveNextHoverDeadlineQpc;
+				if (lane.preserveNextHover && !preservedHoverArrived &&
+					(lane.preserveNextHoverDeadlineQpc <= 0 ||
+						nowQpc > lane.preserveNextHoverDeadlineQpc))
+				{
+					const int64_t expiredDeadline = lane.preserveNextHoverDeadlineQpc;
+					lane.initialized = false;
+					lane.lastSampleSequence = 0;
+					lane.preserveNextHover = false;
+					lane.preserveNextHoverDeadlineQpc = 0;
+					if (expiredDeadline > 0)
+					{
+						const int64_t postDeadlineFloor = expiredDeadline <
+							(std::numeric_limits<int64_t>::max)()
+							? expiredDeadline + 1 : expiredDeadline;
+						lane.minimumHoverSampleQpc = std::max(
+							lane.minimumHoverSampleQpc, postDeadlineFloor);
+					}
+					// 窗口内产生但延迟滞留的 mailbox 样本也不能在超时后重建 lane。
+				}
+				const bool meetsHandbackFloor = lane.minimumHoverSampleQpc <= 0 ||
+					sample.qpc >= lane.minimumHoverSampleQpc;
+				const bool eligibleHover = rawEligibleHover && meetsHandbackFloor;
+				lane.hoverWasEligible = eligibleHover;
+				if (!eligibleHover && wasEligibleHover && !lane.contactOwned &&
+					!lane.preserveNextHover)
+				{
+					// 离开或切换 lane 后再次出现必须从最小直径开始。
+					lane.initialized = false;
+					lane.lastSampleSequence = 0;
+				}
+				lane.sampleVisible = eligibleHover && !lane.contactOwned;
+				if (!lane.sampleVisible) return false;
+				const float diameterBefore = lane.initialized
+					? lane.controller.Diameter() : kSpeedEraserMinimumDiameterPx;
+				const double sampleSeconds = AbsoluteQpcSeconds(sample.qpc, qpcFrequency);
+				if (!lane.initialized)
+				{
+					lane.controller.Reset(sample.x, sample.y,
+						sampleSeconds, SpeedEraserStartKind::Hover);
+					lane.initialized = true;
+					lane.lastSampleSequence = sample.sequence;
+				}
+				else if (sample.sequence != lane.lastSampleSequence)
+				{
+					lane.controller.UpdatePosition(
+						sample.x, sample.y, sampleSeconds, configuration_.dpiScale);
+					lane.lastSampleSequence = sample.sequence;
+				}
+				lane.preserveNextHover = false;
+				lane.preserveNextHoverDeadlineQpc = 0;
+				lane.minimumHoverSampleQpc = 0;
+				lane.controller.Advance(nowSeconds);
+				const bool diameterChanged = std::abs(
+					lane.controller.Diameter() - diameterBefore) > 0.001f;
+				return diameterChanged || lane.controller.NeedsAnimation(nowSeconds);
+			};
+
+			const bool mouseAnimating = updateLane(
+				mouseEraserHoverLane, mouseSample, mouseEraser);
+			const bool penAnimating = updateLane(
+				penEraserHoverLane, penSample, normalPenEraser);
+			const bool invertedPenAnimating = updateLane(
+				invertedPenEraserHoverLane, penSample, invertedPenEraser);
+			return mouseAnimating || penAnimating || invertedPenAnimating;
+		};
+
 		auto buildDrawingCursorVisuals = [&]()
 		{
 			currentCursorVisuals.clear();
@@ -3080,6 +3410,24 @@ namespace draw3
 				penSample.valid = false;
 			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
+			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
+			const bool primaryUsesPen = cursorAuthority == DrawingCursorPointerAuthority::Pen ||
+				(cursorAuthority == DrawingCursorPointerAuthority::Unknown && penSample.valid);
+			const bool primaryUsesMouse = cursorAuthority == DrawingCursorPointerAuthority::Mouse ||
+				(cursorAuthority == DrawingCursorPointerAuthority::Unknown &&
+					!penSample.valid && mouseSample.valid);
+			const RuntimeStroke* primaryRuntime = nullptr;
+			for (const RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect) continue;
+				if ((primaryUsesPen && runtime->metricDeviceType == InputDeviceType::Pen) ||
+					(primaryUsesMouse && (runtime->metricDeviceType == InputDeviceType::MouseLeft ||
+						runtime->metricDeviceType == InputDeviceType::MouseRight)))
+				{
+					primaryRuntime = runtime;
+					break;
+				}
+			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			bool primaryCursorSourceVisible = false;
 			size_t runtimeCursorSourceCount = 0;
@@ -3100,7 +3448,7 @@ namespace draw3
 			}
 			else
 			{
-				const DrawingCursorVisual primary = ResolvePrimaryDrawingCursorVisual(
+				DrawingCursorVisual primary = ResolvePrimaryDrawingCursorVisual(
 					penSample, mouseSample, window_.CursorOwner(),
 					window_.CursorAppearanceForTool(cursorTool),
 					window_.CursorAppearanceForTool(DrawingTool::Eraser),
@@ -3108,6 +3456,27 @@ namespace draw3
 					drawingCursorDuringContactEnabled_.load(std::memory_order_acquire),
 					translucentInkCursorEnabled_.load(std::memory_order_acquire),
 					mouseUsesSystemCursor);
+				if (primary.visible &&
+					primary.appearance.shape == DrawingCursorShape::EraserGripCircle)
+				{
+					float dynamicDiameter = -1.0f;
+					if (primaryRuntime && primaryRuntime->tool == DrawingTool::Eraser &&
+						primaryRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
+						dynamicDiameter = primaryRuntime->speedEraserOc.Diameter();
+					else if (!primaryRuntime &&
+						window_.ActiveEraserWidthMode() == EraserWidthMode::Speed)
+					{
+						SpeedEraserHoverLane* lane = primaryUsesMouse
+							? &mouseEraserHoverLane
+							: primaryUsesPen
+								? (penSample.inverted ? &invertedPenEraserHoverLane :
+									&penEraserHoverLane) : nullptr;
+						if (lane && lane->initialized && lane->sampleVisible &&
+							!lane->contactOwned)
+							dynamicDiameter = lane->controller.Diameter();
+					}
+					ApplySpeedEraserCursorDiameter(primary.appearance, dynamicDiameter);
+				}
 				if (primary.visible)
 				{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -3137,8 +3506,12 @@ namespace draw3
 					runtime->metricDeviceType != InputDeviceType::Touch ||
 					runtime->tool != DrawingTool::Eraser) continue;
 				const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
+				DrawingCursorAppearance touchAppearance = eraserAppearance;
+				if (runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
+					ApplySpeedEraserCursorDiameter(
+						touchAppearance, runtime->speedEraserOc.Diameter());
 				const DrawingCursorVisual touchVisual = MakeTouchEraserDrawingCursorVisual(
-					snapshot.position.x, snapshot.position.y, eraserAppearance);
+					snapshot.position.x, snapshot.position.y, touchAppearance);
 				if (touchVisual.visible)
 				{
 					currentCursorVisuals.push_back(touchVisual);
@@ -4077,6 +4450,8 @@ namespace draw3
 
 			LARGE_INTEGER animationQpc = {};
 			QueryPerformanceCounter(&animationQpc);
+			const bool speedEraserHoverAnimating =
+				updateSpeedEraserHoverLanes(animationQpc.QuadPart);
 			const LaserTrailPhase previousLaserPhase = laserLifecycle.phase;
 			const float previousLaserOpacity = laserOpacity;
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
@@ -4157,6 +4532,7 @@ namespace draw3
 				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
 				!gestureContacts.empty() || viewportRefreshPending || viewportRecoveryPending;
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
+				!speedEraserHoverAnimating &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty) &&
 				!compositionMaintenance.empty())
 			{
@@ -4188,6 +4564,7 @@ namespace draw3
 			}
 
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
+				!speedEraserHoverAnimating &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
 			{
 				if (hapticContinuousActive && haptics_)
@@ -4286,7 +4663,8 @@ namespace draw3
 						oldest = runtime;
 				}
 				if (!oldest) break;
-				completeModelUp(*oldest, oldest->deferredUpSnapshot, false);
+				completeModelUp(*oldest, oldest->deferredUpSnapshot, false,
+					frameQpc.QuadPart);
 				hasEndedStroke = true;
 				--reconnectEvictionCount;
 			}
@@ -4299,8 +4677,18 @@ namespace draw3
 					(interruptedStrokeReconnectEnabled &&
 						!IsInterruptedStrokeReconnectExpired(
 							runtime->reconnectDeadlineQpc, frameQpc.QuadPart))) continue;
-				completeModelUp(*runtime, runtime->deferredUpSnapshot, false);
+				completeModelUp(*runtime, runtime->deferredUpSnapshot, false,
+					frameQpc.QuadPart);
 				hasEndedStroke = true;
+			}
+			const double frameAbsoluteSeconds = AbsoluteQpcSeconds(
+				frameQpc.QuadPart, qpcFrequency);
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+					runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) continue;
+				runtime->speedEraserOc.Advance(frameAbsoluteSeconds);
+				// 按住静止时只推进光标 OC；模型宽度边界仍保留到下一份 raw snapshot。
 			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
@@ -4892,11 +5280,14 @@ namespace draw3
 							metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
 								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
 								runtime->metricEligibleQpc);
+						handBackSpeedEraserController(*runtime);
 						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
 						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
 						runtime->handle = {};
 						runtime->selectedTool = DrawingTool::Pen;
 						runtime->tool = DrawingTool::Pen;
+						runtime->eraserWidthMode = EraserWidthMode::Fixed;
+						runtime->eraserWidthModeRevision = 0;
 						runtime->suppressPressure = false;
 						runtime->lastInputSnapshot = {};
 						runtime->invertedCursor = false;
@@ -4911,6 +5302,8 @@ namespace draw3
 						runtime->reconnectDeadlineQpc = 0;
 						runtime->reconnectPredictedResults.clear();
 						runtime->reconnectManualTestRanges.clear();
+						runtime->speedEraserModelTime = 0.0;
+						runtime->speedEraserModelDiameter = kSpeedEraserMinimumDiameterPx;
 						runtime->shape.Reset();
 						runtime->viewport = {};
 						runtime->laserParticleSeed = 0;
@@ -5178,7 +5571,8 @@ namespace draw3
 					l0PointCount, workMs, previousFrameMs, allIdleFrozen); // Debug 输出全部活动 contact 的聚合帧率。
 				lastActiveFrameStartMs = frameStartMs;
 			}
-			else if (navigationActive || laserLifecycle.phase == LaserTrailPhase::Fade ||
+			else if (navigationActive || speedEraserHoverAnimating ||
+				laserLifecycle.phase == LaserTrailPhase::Fade ||
 				laserParticleSnapshot.hasActive)
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
