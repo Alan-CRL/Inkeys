@@ -80,8 +80,11 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 | `E` | 选择圆角矩形边框工具 |
 | `R` | 选择圆角填充矩形工具 |
 | `5` / 小键盘 `5` | 撤回当前页最后一笔 |
+| `6` / 小键盘 `6` | 重做当前页最近撤回的一笔 |
 | `8` / 小键盘 `8` | 返回上一页 |
 | `9` / 小键盘 `9` | 退出 |
+
+撤回与重做按页独立保留；翻页、Resize 和移动视口不会清空重做。撤回后只要成功写入新的 Stored Stroke，该页旧的重做分支会立即丢弃，随后按 `6` 不会恢复旧分支。
 
 当前测试参数中，普通笔、四种 Shape 和激光笔基准直径为 `5px`，荧光笔和橡皮为 `50px`；应在没有活动落笔时选择 `1/2/3/4/Q/W/E/R`，下一批落笔会使用该工具。Shape 使用固定宽度和 `4 DIP` 圆角，不使用压力、倾角或笔锋；虚线的可见线段与可见空隙接近 `1:1`。这些值由 `DrawingController` 固定，是实验参数而非稳定产品配置。激光笔默认在最后一根接触抬起后满亮保留 `3.0s`，再用 `0.8s` 淡出；粒子默认开启，可通过 `DrawingController` 外部 setter 关闭。
 
@@ -96,6 +99,6 @@ MSBuild.exe .\inkStrokeModelerTest.sln /m /p:Configuration=Debug /p:Platform=ARM
 
 ## 已知范围
 
-当前仍是实验程序，不包含 redo、UInk 编解码或 Shape 的外部文件兼容。Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标，但当前测试程序的 DWM、透明呈现和 resize 路径尚未在该环境完成验证，不能视为已保证能力。
+当前仍是实验程序，不包含 UInk 编解码或 Shape 的外部文件兼容；重做也只保存在当前进程的运行时 sidecar 中，不进入持久格式。Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标，但当前测试程序的 DWM、透明呈现和 resize 路径尚未在该环境完成验证，不能视为已保证能力。
 
 更详细的第一阶段历史设计与计划见 `Inkeys_D3D11_Ink_Renderer_Refactor_Plan_Phase1_Update.md`；面向后续 AI 开发与审查的约束见 `.trellis/spec/`。当阶段说明与当前源码不一致时，源码记录现有行为，阶段说明记录历史设计或计划；必须明确标记差异并等待当前需求或专门架构决定，不自动把任一方提升为最终规范。

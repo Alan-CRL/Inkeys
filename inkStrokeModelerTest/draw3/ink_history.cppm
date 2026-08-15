@@ -175,7 +175,7 @@ export namespace draw3
 		size_t visibleBarrierCount_ = 0;
 	};
 
-	// Runtime sidecar 只隐藏最后可见项；不删除 Stroke，也不暴露 redo。
+	// Runtime sidecar 只切换尾部可见性；Stroke 保持 append-only，redo 分支可逻辑丢弃。
 	class CanvasRuntimeHistory
 	{
 	public:
@@ -184,6 +184,10 @@ export namespace draw3
 		std::optional<RenderItemId> LastVisibleItem() const noexcept;
 		bool UndoLastVisible(RenderItemId expected);
 		std::optional<RenderItemId> UndoLastVisible();
+		std::optional<RenderItemId> LastRedoItem() const noexcept;
+		bool RedoLastUndone(RenderItemId expected);
+		void DiscardRedoBranch() noexcept;
+		size_t RedoDepth() const noexcept;
 		bool UpdateItemGeometry(RenderItemId id, StrokeTileFootprint footprint);
 		bool SetItemBarrier(RenderItemId id, bool barrier);
 
@@ -208,6 +212,7 @@ export namespace draw3
 		uint64_t revision_ = 0;
 		uint32_t nextItemGeneration_ = 1;
 		std::optional<uint32_t> lastVisibleIndex_;
+		std::vector<RenderItemId> redoItems_;
 	};
 
 	struct UndoCacheEntryId

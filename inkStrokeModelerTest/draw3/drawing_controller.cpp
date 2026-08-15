@@ -1528,6 +1528,8 @@ namespace draw3
 		std::vector<LaserParticleEmissionRequest> laserParticleEmissionRequests;
 		laserParticleEmissionRequests.reserve(kLaserReservedContactCount);
 		HighlighterGeometry completedHighlighterScratch;
+		std::vector<InkPoint> redoRebuildPoints;
+		HighlighterGeometry redoHighlighterScratch;
 		LaserParticleDirtyTracker laserParticleDirtyTracker;
 		const LaserParticleConfig laserParticleConfiguration =
 			IsValidLaserParticleConfig(configuration_.laserParticleConfig)
@@ -3477,6 +3479,196 @@ namespace draw3
 			std::cout << std::endl;
 		};
 
+		auto redoCurrentPage = [&](RECT& frameDirty)
+		{
+			const auto requestAuthoritativeRecovery = [&]()
+			{
+				viewportVisibleClear = false;
+				viewportRefreshPending = true;
+				viewportRefreshClearsTransient = false;
+			};
+			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
+			{
+				std::cout << "[Redo] result=noop reason=no_canvas" << std::endl;
+				return;
+			}
+			InkPage* page = document_->PageAt(currentPageIndex_);
+			InkCanvas* canvas = page
+				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			const std::optional<RenderItemId> itemId = runtime.history.LastRedoItem();
+			if (!page || !canvas || !itemId)
+			{
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" result=noop reason=empty" << std::endl;
+				return;
+			}
+
+			const RenderItemState* item = runtime.history.Find(*itemId);
+			const std::span<const InkStroke> strokes = canvas->Strokes();
+			if (!item || itemId->index >= runtime.beforeStates.size() ||
+				itemId->index >= runtime.afterStates.size() ||
+				item->strokeIndex >= strokes.size())
+			{
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" result=noop reason=history_mismatch" << std::endl;
+				return;
+			}
+			const InkRasterStateToken beforeState = runtime.beforeStates[itemId->index];
+			const InkRasterStateToken afterState = runtime.afterStates[itemId->index];
+			if (runtime.rasterState != beforeState)
+			{
+				requestAuthoritativeRecovery();
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" item=" << itemId->index <<
+					" result=failed reason=raster_state" << std::endl;
+				return;
+			}
+
+			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
+			const HistoryCanvasIdentity canvasIdentity = {
+				page->PageGuid(), kDefaultDeviceKey };
+			const InkHistoryRasterKey rasterKey = currentRasterKey();
+			const WindowSize size = window_.Size();
+			const InkViewport viewport = canvas->Viewport();
+			const auto restoreHiddenTiles = [&]()
+			{
+				const CompositionRestoreRequest request = {
+					canvasIdentity,
+					rasterKey,
+					canvas,
+					&runtime.history,
+					affectedTiles,
+					runtime.history.Items().size(),
+					viewport.x,
+					viewport.y,
+					size.width,
+					size.height,
+					true
+				};
+				return historyGpuCache.RestoreComposition(request);
+			};
+
+			const char* basePath = "trusted_l2";
+			RECT dirty = {};
+			if (!viewportVisibleClear)
+			{
+				// 动态恢复未完成时，先把候选下方的隐藏态背景补成权威 L2。
+				const CompositionRestoreResult restored = restoreHiddenTiles();
+				UnionRectInPlace(dirty, restored.dirty);
+				basePath = CompositionRestorePathName(restored.path);
+				if (restored.path == CompositionRestorePath::Failed)
+				{
+					requestAuthoritativeRecovery();
+					UnionRectInPlace(frameDirty, dirty);
+					std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+						" item=" << itemId->index <<
+						" result=failed reason=base_restore" << std::endl;
+					return;
+				}
+			}
+
+			renderer_.ClearOperatorLayer(renderer_.layerL1);
+			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			const StoredStrokeRasterTarget target = {
+				&renderer_.layerL1, viewport.x, viewport.y, size.width, size.height
+			};
+			const StoredStrokeRasterResult raster = DrawStoredStroke(
+				strokes[item->strokeIndex], renderer_, target,
+				redoRebuildPoints, redoHighlighterScratch);
+			const RECT redoDirty = ClampRectToCanvas(
+				raster.dirty, size.width, size.height);
+			if (!raster.succeeded)
+			{
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				UnionRectInPlace(frameDirty, dirty);
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" item=" << itemId->index << " base=" << basePath <<
+					" result=failed reason=raster" << std::endl;
+				return;
+			}
+
+			const HotPreimageCaptureResult preimageCapture =
+				historyGpuCache.CapturePreimage({
+					canvasIdentity,
+					*itemId,
+					rasterKey,
+					beforeState,
+					afterState,
+					item->undoTiles,
+					viewport.x,
+					viewport.y,
+					size.width,
+					size.height
+				});
+			bool submitted = true;
+			if (!IsEmptyRect(redoDirty))
+			{
+				submitted = renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
+					renderer_.layerL1, renderer_.layerL0, redoDirty);
+			}
+
+			const auto rollbackRedoPixels = [&]()
+			{
+				const CompositionRestoreResult rollback = restoreHiddenTiles();
+				UnionRectInPlace(dirty, redoDirty);
+				UnionRectInPlace(dirty, rollback.dirty);
+				if (rollback.path == CompositionRestorePath::Failed)
+					requestAuthoritativeRecovery();
+				return rollback.path;
+			};
+			if (!submitted)
+			{
+				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+					historyGpuCache.CancelPreimage(preimageCapture.ticket);
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				const CompositionRestorePath rollbackPath = rollbackRedoPixels();
+				UnionRectInPlace(frameDirty, dirty);
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" item=" << itemId->index << " base=" << basePath <<
+					" result=failed reason=resolve rollback=" <<
+					CompositionRestorePathName(rollbackPath) << std::endl;
+				return;
+			}
+
+			// GPU 画面成功后才提交 visibility；失败仍可再次按 6 重试。
+			if (!runtime.history.RedoLastUndone(*itemId))
+			{
+				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+					historyGpuCache.CancelPreimage(preimageCapture.ticket);
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				const CompositionRestorePath rollbackPath = rollbackRedoPixels();
+				UnionRectInPlace(frameDirty, dirty);
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" item=" << itemId->index << " base=" << basePath <<
+					" result=failed reason=visibility rollback=" <<
+					CompositionRestorePathName(rollbackPath) << std::endl;
+				return;
+			}
+
+			runtime.rasterState = afterState;
+			bool hotRearmed = false;
+			if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+			{
+				hotRearmed = historyGpuCache.CommitPreimage(preimageCapture.ticket);
+				if (!hotRearmed)
+					historyGpuCache.CancelPreimage(preimageCapture.ticket);
+			}
+			renderer_.ClearOperatorLayer(renderer_.layerL1);
+			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			UnionRectInPlace(dirty, redoDirty);
+			UnionRectInPlace(frameDirty, dirty);
+			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(
+				viewportVisibleClear, true);
+			std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+				" item=" << itemId->index << " base=" << basePath <<
+				" path=direct_draw hot_rearmed=" << (hotRearmed ? "true" : "false") <<
+				" redo_remaining=" << runtime.history.RedoDepth() << std::endl;
+		};
+
 		auto processCanvasCommands = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
 			bool& forceFullPresent, int width, int height)
@@ -3484,13 +3676,20 @@ namespace draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
-				// 页面、撤回和键盘平移都以命令时刻的固定视口为起点。
+				// 页面、撤回/重做和键盘平移都以命令时刻的固定视口为起点。
 				interruptNavigationForPenOrMouse("canvas-command");
 				if (command.type == CanvasCommandType::Undo)
 				{
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
 					undoCurrentPage(frameDirty);
+					continue;
+				}
+				if (command.type == CanvasCommandType::Redo)
+				{
+					renderer_.InvalidateTrustedL2Snapshot();
+					trustedSnapshotSignatureValid = false;
+					redoCurrentPage(frameDirty);
 					continue;
 				}
 				if (!document_) continue;
@@ -4548,11 +4747,13 @@ namespace draw3
 							? canvas->AppendStroke(std::move(*finalizedStroke)) : std::nullopt;
 						if (strokeIndex)
 						{
+							CanvasPageRuntimeState& pageRuntime =
+								pageRuntimeStates[currentPageIndex_];
+							// Stored Stroke 已改变文档分支，后续失败也不能恢复旧 redo 候选。
+							pageRuntime.history.DiscardRedoBranch();
 							// 文档对象先成为真值，再从刚追加的同一 Stroke 完成首次 L2 绘制。
 							const std::span<const InkStroke> strokes = canvas->Strokes();
 							const InkStroke& storedStroke = strokes[*strokeIndex];
-							CanvasPageRuntimeState& pageRuntime =
-								pageRuntimeStates[currentPageIndex_];
 							std::optional<StrokeTileFootprint> footprint =
 								BuildStrokeTileFootprint(storedStroke);
 							const std::optional<RenderItemId> renderItem = footprint

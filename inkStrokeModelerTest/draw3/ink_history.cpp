@@ -925,6 +925,7 @@ namespace draw3
 		const RenderItemId result = items_.back().id;
 		AddVisibleCompositionTiles(items_.back().compositionTiles);
 		lastVisibleIndex_ = result.index;
+		redoItems_.clear();
 		if (nextItemGeneration_ == (std::numeric_limits<uint32_t>::max)())
 			nextItemGeneration_ = 0;
 		else ++nextItemGeneration_;
@@ -953,10 +954,47 @@ namespace draw3
 		RemoveVisibleCompositionTiles(item->compositionTiles);
 		item->visible = false;
 		lastVisibleIndex_ = item->previousVisibleIndex;
+		redoItems_.push_back(expected);
 		if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
 			++item->contentGeneration;
 		if (revision_ != (std::numeric_limits<uint64_t>::max)()) ++revision_;
 		return true;
+	}
+
+	std::optional<RenderItemId> CanvasRuntimeHistory::LastRedoItem() const noexcept
+	{
+		if (redoItems_.empty()) return std::nullopt;
+		const RenderItemId id = redoItems_.back();
+		const RenderItemState* item = Find(id);
+		if (!item || item->visible || item->previousVisibleIndex != lastVisibleIndex_)
+			return std::nullopt;
+		return id;
+	}
+
+	bool CanvasRuntimeHistory::RedoLastUndone(RenderItemId expected)
+	{
+		if (LastRedoItem() != expected) return false;
+		RenderItemState* item = FindMutable(expected);
+		if (!item || item->visible ||
+			!compositionTree_.SetItemVisibility(expected, true)) return false;
+		AddVisibleCompositionTiles(item->compositionTiles);
+		item->visible = true;
+		lastVisibleIndex_ = expected.index;
+		redoItems_.pop_back();
+		if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
+			++item->contentGeneration;
+		if (revision_ != (std::numeric_limits<uint64_t>::max)()) ++revision_;
+		return true;
+	}
+
+	void CanvasRuntimeHistory::DiscardRedoBranch() noexcept
+	{
+		redoItems_.clear();
+	}
+
+	size_t CanvasRuntimeHistory::RedoDepth() const noexcept
+	{
+		return redoItems_.size();
 	}
 
 	bool CanvasRuntimeHistory::UpdateItemGeometry(

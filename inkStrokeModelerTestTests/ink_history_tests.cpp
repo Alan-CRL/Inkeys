@@ -329,6 +329,69 @@ namespace
 		INK_HISTORY_CHECK(history.CompositionTree().TileGeneration(*root, tileB) >
 			rootBVisibilityBefore);
 
+		// Redo 按 Undo 的反序恢复，并同步可见 Tile、可见链和树 generation。
+		draw3::CanvasRuntimeHistory redoHistory;
+		INK_HISTORY_CHECK(!redoHistory.LastRedoItem().has_value());
+		INK_HISTORY_CHECK(redoHistory.RedoDepth() == 0u);
+		INK_HISTORY_CHECK(!redoHistory.RedoLastUndone({ 0, 1 }));
+		const auto redoA = redoHistory.AppendStroke(0, MakeFootprint(tileA));
+		const auto redoB = redoHistory.AppendStroke(1, MakeFootprint(tileB, 20.0f));
+		const auto redoC = redoHistory.AppendStroke(2, MakeFootprint(tileC, 40.0f));
+		INK_HISTORY_CHECK(redoA && redoB && redoC);
+		const auto redoRoot = redoHistory.CompositionTree().RootNode();
+		INK_HISTORY_CHECK(redoRoot.has_value());
+		INK_HISTORY_CHECK(redoHistory.UndoLastVisible(*redoC));
+		INK_HISTORY_CHECK(redoHistory.UndoLastVisible(*redoB));
+		INK_HISTORY_CHECK(redoHistory.LastVisibleItem() == redoA);
+		INK_HISTORY_CHECK(redoHistory.LastRedoItem() == redoB);
+		INK_HISTORY_CHECK(redoHistory.RedoDepth() == 2u);
+		const uint64_t redoRevisionBeforeMismatch = redoHistory.Revision();
+		INK_HISTORY_CHECK(!redoHistory.RedoLastUndone(*redoC));
+		INK_HISTORY_CHECK(redoHistory.LastVisibleItem() == redoA);
+		INK_HISTORY_CHECK(redoHistory.RedoDepth() == 2u);
+		INK_HISTORY_CHECK(redoHistory.Revision() == redoRevisionBeforeMismatch);
+		INK_HISTORY_CHECK(!redoHistory.Find(*redoB)->visible);
+		INK_HISTORY_CHECK(!redoHistory.Find(*redoC)->visible);
+		const uint64_t redoBGenerationBefore =
+			redoHistory.CompositionTree().TileGeneration(*redoRoot, tileB);
+		INK_HISTORY_CHECK(redoHistory.RedoLastUndone(*redoB));
+		INK_HISTORY_CHECK(redoHistory.Find(*redoB)->visible);
+		INK_HISTORY_CHECK(redoHistory.LastVisibleItem() == redoB);
+		INK_HISTORY_CHECK(redoHistory.LastRedoItem() == redoC);
+		INK_HISTORY_CHECK(redoHistory.RedoDepth() == 1u);
+		INK_HISTORY_CHECK(redoHistory.CompositionTree().TileGeneration(
+			*redoRoot, tileB) > redoBGenerationBefore);
+		INK_HISTORY_CHECK(redoHistory.VisibleCompositionTiles(
+			{ 256.0f, 0.0f, 512.0f, 256.0f }) ==
+			std::vector<draw3::SignedTileCoordinate>{ tileB });
+		INK_HISTORY_CHECK(redoHistory.RedoLastUndone(*redoC));
+		INK_HISTORY_CHECK(redoHistory.LastVisibleItem() == redoC);
+		INK_HISTORY_CHECK(!redoHistory.LastRedoItem().has_value());
+		INK_HISTORY_CHECK(redoHistory.RedoDepth() == 0u);
+
+		INK_HISTORY_CHECK(redoHistory.UndoLastVisible(*redoC));
+		redoHistory.DiscardRedoBranch();
+		INK_HISTORY_CHECK(!redoHistory.LastRedoItem().has_value());
+		INK_HISTORY_CHECK(!redoHistory.RedoLastUndone(*redoC));
+		const auto redoBranch = redoHistory.AppendStroke(
+			3, MakeFootprint(tileA, 60.0f));
+		INK_HISTORY_CHECK(redoBranch.has_value());
+		INK_HISTORY_CHECK(redoHistory.LastVisibleItem() == redoBranch);
+		INK_HISTORY_CHECK(redoHistory.RedoDepth() == 0u);
+
+		// 每页持有独立 sidecar；操作另一页不能消费或清空本页 redo。
+		draw3::CanvasRuntimeHistory otherPageHistory;
+		const auto otherPageItem = otherPageHistory.AppendStroke(
+			0, MakeFootprint(tileC, 80.0f));
+		INK_HISTORY_CHECK(otherPageItem.has_value());
+		INK_HISTORY_CHECK(redoHistory.UndoLastVisible(*redoBranch));
+		INK_HISTORY_CHECK(redoHistory.LastRedoItem() == redoBranch);
+		INK_HISTORY_CHECK(!otherPageHistory.LastRedoItem().has_value());
+		INK_HISTORY_CHECK(otherPageHistory.LastVisibleItem() == otherPageItem);
+		INK_HISTORY_CHECK(otherPageHistory.UndoLastVisible(*otherPageItem));
+		INK_HISTORY_CHECK(otherPageHistory.LastRedoItem() == otherPageItem);
+		INK_HISTORY_CHECK(redoHistory.LastRedoItem() == redoBranch);
+
 		// 可见链让连续撤回和隐藏分支后的 append 都保持 O(1) 尾部定位。
 		draw3::CanvasRuntimeHistory visibleChain;
 		std::vector<draw3::RenderItemId> chainIds;
@@ -342,9 +405,11 @@ namespace
 		for (size_t index = 0; index < 64; ++index)
 			INK_HISTORY_CHECK(visibleChain.UndoLastVisible().has_value());
 		INK_HISTORY_CHECK(visibleChain.LastVisibleItem() == chainIds[31]);
+		INK_HISTORY_CHECK(visibleChain.RedoDepth() == 64u);
 		const std::optional<draw3::RenderItemId> chainBranch = visibleChain.AppendStroke(
 			96, MakeFootprint(tileC, 2000.0f));
 		INK_HISTORY_CHECK(chainBranch.has_value());
+		INK_HISTORY_CHECK(visibleChain.RedoDepth() == 0u);
 		INK_HISTORY_CHECK(visibleChain.Find(*chainBranch)->previousVisibleIndex == 31u);
 		INK_HISTORY_CHECK(visibleChain.UndoLastVisible() == chainBranch);
 		INK_HISTORY_CHECK(visibleChain.LastVisibleItem() == chainIds[31]);

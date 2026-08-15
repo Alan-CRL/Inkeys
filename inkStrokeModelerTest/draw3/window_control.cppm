@@ -50,7 +50,8 @@ export namespace draw3
 		Undo,
 		NextPage,
 		PreviousPage,
-		TranslateViewport
+		TranslateViewport,
+		Redo
 	};
 
 	struct CanvasCommand

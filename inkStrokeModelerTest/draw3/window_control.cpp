@@ -1521,6 +1521,11 @@ namespace draw3
 				if ((lParam & kPreviousKeyStateMask) == 0)
 					QueueCanvasCommand({ CanvasCommandType::Undo });
 				return 0;
+			case '6':
+			case VK_NUMPAD6:
+				if ((lParam & kPreviousKeyStateMask) == 0)
+					QueueCanvasCommand({ CanvasCommandType::Redo });
+				return 0;
 			case '8':
 			case VK_NUMPAD8:
 				if ((lParam & kPreviousKeyStateMask) == 0)
