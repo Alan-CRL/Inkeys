@@ -204,6 +204,7 @@ using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
 using Inkeys::UI::Bar::AdvanceBarBottomDockSpring;
 using Inkeys::UI::Bar::BarBottomDockMode;
 using Inkeys::UI::Bar::BarBottomDockPhase;
+using Inkeys::UI::Bar::BarBottomDockSettleDistanceDip;
 using Inkeys::UI::Bar::BarBottomDockSpringState;
 using Inkeys::UI::Bar::BarBottomDockVerticalMapping;
 using Inkeys::UI::Bar::ClampBarBottomDockMainCenterScreenX;
@@ -386,11 +387,15 @@ struct BarRenderLoopState
 	BarUiValueClass displayCenterX{ 0.0 };
 	BarUiValueClass displayCenterY{ 0.0 };
 	BarBottomDockSpringState bottomDockSpring{};
+	BarBottomDockSpringState bottomDockCaptureBottomSpring{};
 	BarBottomDockVerticalMapping bottomDockMapping{};
 	double bottomDockPreviousDirectOffsetDip = 0.0;
 	double bottomDockObservedBoundsOffsetDip =
 		std::numeric_limits<double>::infinity();
+	double bottomDockObservedCaptureBottomOffsetDip =
+		std::numeric_limits<double>::infinity();
 	bool bottomDockVisualActive = false;
+	bool bottomDockCaptureBottomActive = false;
 	bool bottomDockRecoverySeeded = false;
 	BarBottomDockMode bottomDockFrameMode = BarBottomDockMode::BottomDocked;
 	BarBottomDockPhase bottomDockFramePhase = BarBottomDockPhase::Stable;
@@ -6655,7 +6660,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		pickerPreview->fill->SetDirect(RGB(displayR, displayG, displayB));
 		}
 
-	// 按住时抓取点直接跟手；脱离或松手后才交给欠阻尼弹簧恢复。
+	// 抓取点直接跟手；捕获下端点和松手形变分别由独立弹簧恢复。
 	{
 		const BarBottomDockMode dockMode = frame.bottomDockMode;
 		const BarBottomDockPhase dockPhase = frame.bottomDockPhase;
@@ -6671,6 +6676,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			frame.bottomDockTransitionTranslation;
 		const unsigned long long frameTransitionSerial =
 			frame.bottomDockTransitionSerial;
+		const BarBottomDockMode previousFrameMode =
+			state.bottomDockFrameMode;
 		state.bottomDockFrameTransitionSerial = frameTransitionSerial;
 		state.bottomDockFrameTransitionTranslation =
 			frameTransitionTranslation;
@@ -6679,6 +6686,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockFrameRecoveryActive = floatingRecoveryActive;
 		const double previousVisualOffsetDip =
 			state.bottomDockSpring.positionDip;
+		const double previousCaptureBottomOffsetDip =
+			state.bottomDockCaptureBottomSpring.positionDip;
 		bool springActive = false;
 		if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
 		{
@@ -6719,6 +6728,27 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			springActive = spring.active;
 			state.bottomDockPreviousDirectOffsetDip = spring.positionDip;
 		}
+		if (previousFrameMode == BarBottomDockMode::Floating
+			&& dockMode == BarBottomDockMode::BottomDocked)
+		{
+			// 窗口先切到 dock y，但下端点从捕获前的可见位置开始回弹。
+			state.bottomDockCaptureBottomSpring.positionDip =
+				state.bottomDockSpring.positionDip;
+			state.bottomDockCaptureBottomSpring.velocityDipPerSecond = 0.0;
+			state.bottomDockCaptureBottomActive = abs(
+				state.bottomDockCaptureBottomSpring.positionDip)
+				> BarBottomDockSettleDistanceDip;
+		}
+		bool captureBottomSpringActive = false;
+		if (state.bottomDockCaptureBottomActive)
+		{
+			const auto captureBottomSpring = AdvanceBarBottomDockSpring(
+				state.bottomDockCaptureBottomSpring, 0.0,
+				animationDtSeconds, true == BarUiAnimationEnabled);
+			captureBottomSpringActive = captureBottomSpring.active;
+			state.bottomDockCaptureBottomActive = captureBottomSpring.active;
+		}
+		else state.bottomDockCaptureBottomSpring.positionDip = 0.0;
 
 		const double strokeWidthDip = state.superellipseMap[
 			BarUISetSuperellipseEnum::MainButton]->ft.has_value()
@@ -6731,15 +6761,21 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		state.bottomDockMapping = dockMode == BarBottomDockMode::BottomDocked
 			? ResolveBarBottomDockVerticalMapping(
 				baseTopDip, baseBottomDip,
-				state.bottomDockSpring.positionDip)
+				state.bottomDockSpring.positionDip,
+				state.bottomDockCaptureBottomSpring.positionDip)
 			: ResolveBarBottomDockRecoveringVerticalMapping(
 				baseTopDip, baseBottomDip,
-				state.bottomDockSpring.positionDip);
+				state.bottomDockSpring.positionDip,
+				state.bottomDockCaptureBottomSpring.positionDip);
 		state.bottomDockVisualActive = springActive
-			|| abs(state.bottomDockSpring.positionDip) > 0.000001;
+			|| captureBottomSpringActive
+			|| abs(state.bottomDockSpring.positionDip) > 0.000001
+			|| abs(state.bottomDockCaptureBottomSpring.positionDip) > 0.000001;
 		const bool visualChanged = abs(previousVisualOffsetDip
-			- state.bottomDockSpring.positionDip) > 0.000001;
-		if (visualChanged || springActive)
+			- state.bottomDockSpring.positionDip) > 0.000001
+			|| abs(previousCaptureBottomOffsetDip
+				- state.bottomDockCaptureBottomSpring.positionDip) > 0.000001;
+		if (visualChanged || springActive || captureBottomSpringActive)
 		{
 			needRendering = true;
 			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
@@ -6748,7 +6784,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
 		}
-		if (!dockDragActive && !springActive)
+		if (!dockDragActive && !springActive && !captureBottomSpringActive)
 		{
 			owner_.bottomDockPhase.store(
 				BarBottomDockPhase::Stable, memory_order_release);
@@ -7011,7 +7047,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const bool bottomDockBoundsChanged = !isfinite(
 			state.bottomDockObservedBoundsOffsetDip)
 			|| abs(state.bottomDockObservedBoundsOffsetDip
-				- state.bottomDockSpring.positionDip) > 0.000001;
+				- state.bottomDockSpring.positionDip) > 0.000001
+			|| !isfinite(state.bottomDockObservedCaptureBottomOffsetDip)
+			|| abs(state.bottomDockObservedCaptureBottomOffsetDip
+				- state.bottomDockCaptureBottomSpring.positionDip) > 0.000001;
 		const bool collectVisibleContentBoundsForWindowSizing =
 			capacityEpochChanged
 			|| state.displayTransitionActive
@@ -7296,6 +7335,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				bottomDockElasticBaseBounds;
 			state.bottomDockObservedBoundsOffsetDip =
 				state.bottomDockSpring.positionDip;
+			state.bottomDockObservedCaptureBottomOffsetDip =
+				state.bottomDockCaptureBottomSpring.positionDip;
 		}
 		else
 		{

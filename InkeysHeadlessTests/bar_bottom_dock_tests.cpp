@@ -196,6 +196,26 @@ int RunBarBottomDockTests()
 	Check(Near(compressed.visualTopDip, 20.0) && Near(compressed.scaleY, 0.75)
 		&& Near(compressed.rigidOverlayTranslationYDip, 20.0),
 		"downward grip compresses body and translates rigid overlays");
+	const auto captureAboveStart = ResolveBarBottomDockVerticalMapping(
+		0.0, 80.0, -12.0, -12.0);
+	const auto captureAboveProgress = ResolveBarBottomDockVerticalMapping(
+		0.0, 80.0, -12.0, -6.0);
+	Check(Near(captureAboveStart.visualTopDip, -12.0)
+		&& Near(captureAboveStart.visualBottomDip, 68.0)
+		&& Near(captureAboveStart.scaleY, 1.0)
+		&& Near(captureAboveProgress.visualTopDip, -12.0)
+		&& Near(captureAboveProgress.visualBottomDip, 74.0),
+		"capture from above keeps the first frame continuous then animates the bottom edge");
+	const auto captureBelowStart = ResolveBarBottomDockVerticalMapping(
+		0.0, 80.0, 12.0, 12.0);
+	const auto captureBelowProgress = ResolveBarBottomDockVerticalMapping(
+		0.0, 80.0, 12.0, 6.0);
+	Check(Near(captureBelowStart.visualTopDip, 12.0)
+		&& Near(captureBelowStart.visualBottomDip, 92.0)
+		&& Near(captureBelowStart.scaleY, 1.0)
+		&& Near(captureBelowProgress.visualTopDip, 12.0)
+		&& Near(captureBelowProgress.visualBottomDip, 86.0),
+		"capture from below keeps the first frame continuous then compresses toward dock");
 	const auto detachedDown = ResolveBarBottomDockRecoveringVerticalMapping(
 		20.0, 100.0, 20.0);
 	Check(Near(detachedDown.visualTopDip, 20.0)
@@ -265,14 +285,15 @@ int RunBarBottomDockTests()
 		&& Near(rigidLight.radiusY, 90.0),
 		"rigid cursor light inverse translation preserves screen geometry");
 
-	auto CheckDetachContinuity = [&](double offsetDip, std::string_view name)
+	auto CheckDetachContinuity = [&](double offsetDip,
+		double captureBottomOffsetDip, std::string_view name)
 		{
 			const double zoom = 1.5;
 			const auto dockedMapping = ResolveBarBottomDockVerticalMapping(
-				100.0, 180.0, offsetDip);
+				100.0, 180.0, offsetDip, captureBottomOffsetDip);
 			const auto recoveryMapping =
 				ResolveBarBottomDockRecoveringVerticalMapping(
-					100.0, 180.0, offsetDip);
+					100.0, 180.0, offsetDip, captureBottomOffsetDip);
 			const double windowShiftPx = offsetDip * zoom;
 			const double dockedTopPx = dockedMapping.visualTopDip * zoom;
 			const double dockedBottomPx = dockedMapping.visualBottomDip * zoom;
@@ -287,10 +308,12 @@ int RunBarBottomDockTests()
 				&& Near(dockedBottomPx, recoveryBottomPx)
 				&& Near(dockedGripPx, recoveryGripPx), name);
 		};
-	CheckDetachContinuity(20.0,
+	CheckDetachContinuity(20.0, 0.0,
 		"downward detach preserves body and rigid grip in screen space");
-	CheckDetachContinuity(-20.0,
+	CheckDetachContinuity(-20.0, 0.0,
 		"upward detach preserves body and rigid grip in screen space");
+	CheckDetachContinuity(-12.0, -6.0,
+		"detach during capture preserves the animated bottom edge");
 
 	BarBottomDockSpringState spring{ 20.0, 0.0 };
 	bool sawOvershoot = false;
@@ -306,6 +329,13 @@ int RunBarBottomDockTests()
 	Check(!active && Near(spring.positionDip, 0.0)
 		&& Near(spring.velocityDipPerSecond, 0.0),
 		"spring settles and stops requesting frames");
+	BarBottomDockSpringState captureBottomSpring{ -12.0, 0.0 };
+	const auto captureBottomFirstFrame = AdvanceBarBottomDockSpring(
+		captureBottomSpring, 0.0, 1.0 / 60.0, true);
+	Check(captureBottomFirstFrame.active
+		&& captureBottomFirstFrame.positionDip > -12.0
+		&& captureBottomFirstFrame.positionDip < 0.0,
+		"captured bottom edge advances over time instead of snapping to dock");
 	BarBottomDockSpringState disabledSpring{ -15.0, 100.0 };
 	const auto disabled = AdvanceBarBottomDockSpring(
 		disabledSpring, 0.0, 0.016, false);

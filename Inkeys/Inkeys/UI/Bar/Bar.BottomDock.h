@@ -478,7 +478,8 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline BarBottomDockVerticalMapping
 		ResolveBarBottomDockVerticalMapping(double baseTopDip,
-			double baseBottomDip, double elasticOffsetDip) noexcept
+			double baseBottomDip, double elasticOffsetDip,
+			double captureBottomOffsetDip = 0.0) noexcept
 	{
 		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
 		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
@@ -486,15 +487,21 @@ namespace Inkeys::UI::Bar
 		elasticOffsetDip = std::clamp(
 			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
 			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
-		const double visualTop = std::min(baseBottomDip - 0.000001,
+		captureBottomOffsetDip = std::clamp(
+			std::isfinite(captureBottomOffsetDip)
+				? captureBottomOffsetDip : 0.0,
+			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		// 捕获首帧下端点保留原屏幕位置，再独立弹向 dock 线。
+		const double visualBottom = baseBottomDip + captureBottomOffsetDip;
+		const double visualTop = std::min(visualBottom - 0.000001,
 			baseTopDip + elasticOffsetDip);
 		const double baseHeight = baseBottomDip - baseTopDip;
 		return {
 			baseTopDip,
 			baseBottomDip,
 			visualTop,
-			baseBottomDip,
-			(baseBottomDip - visualTop) / baseHeight,
+			visualBottom,
+			(visualBottom - visualTop) / baseHeight,
 			(baseTopDip + baseBottomDip) / 2.0 + elasticOffsetDip,
 			elasticOffsetDip,
 		};
@@ -502,7 +509,8 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline BarBottomDockVerticalMapping
 		ResolveBarBottomDockRecoveringVerticalMapping(double baseTopDip,
-			double baseBottomDip, double elasticOffsetDip) noexcept
+			double baseBottomDip, double elasticOffsetDip,
+			double captureBottomOffsetDip = 0.0) noexcept
 	{
 		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
 		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
@@ -510,8 +518,12 @@ namespace Inkeys::UI::Bar
 		elasticOffsetDip = std::clamp(
 			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
 			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		captureBottomOffsetDip = std::clamp(
+			std::isfinite(captureBottomOffsetDip)
+				? captureBottomOffsetDip : 0.0,
+			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
 		const double visualBottom = std::max(baseTopDip + 0.000001,
-			baseBottomDip - elasticOffsetDip);
+			baseBottomDip - elasticOffsetDip + captureBottomOffsetDip);
 		const double baseHeight = baseBottomDip - baseTopDip;
 		return {
 			baseTopDip,
