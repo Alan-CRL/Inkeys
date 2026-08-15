@@ -208,6 +208,11 @@ using Inkeys::UI::Bar::BarBottomDockPhase;
 using Inkeys::UI::Bar::BarBottomDockSettleDistanceDip;
 using Inkeys::UI::Bar::BarBottomDockSpringState;
 using Inkeys::UI::Bar::BarBottomDockVerticalMapping;
+using Inkeys::UI::Bar::BarBottomDockTargetIndicatorCornerRadiusDip;
+using Inkeys::UI::Bar::BarBottomDockTargetIndicatorFadeInSeconds;
+using Inkeys::UI::Bar::BarBottomDockTargetIndicatorFadeOutSeconds;
+using Inkeys::UI::Bar::BarBottomDockTargetIndicatorPeakOpacity;
+using Inkeys::UI::Bar::BarBottomDockTargetIndicatorAction;
 using Inkeys::UI::Bar::ClampBarBottomDockMainCenterScreenX;
 using Inkeys::UI::Bar::ResolveBarBottomDockCenterScreenY;
 using Inkeys::UI::Bar::ResolveBarBottomDockCapacityEnvelope;
@@ -215,6 +220,8 @@ using Inkeys::UI::Bar::ResolveBarBottomDockElasticOffsetForScreenGrip;
 using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
 using Inkeys::UI::Bar::ResolveBarBottomDockLine;
+using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorGeometry;
+using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorAction;
 using Inkeys::UI::Bar::ResolveBarBottomDockBodyLocalLight;
 using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringVerticalMapping;
 using Inkeys::UI::Bar::ResolveBarBottomDockRigidLocalLight;
@@ -240,6 +247,7 @@ enum class BarDirtyFixedVisual : BarDirtyVisualKey
 	MoreGroup = 0xFFFF000000000004ULL,
 	PrimaryLight = 0xFFFF000000000005ULL,
 	CursorLight = 0xFFFF000000000006ULL,
+	DockTargetIndicator = 0xFFFF000000000007ULL,
 };
 
 [[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -398,6 +406,9 @@ struct BarRenderLoopState
 	bool bottomDockVisualActive = false;
 	bool bottomDockCaptureBottomActive = false;
 	bool bottomDockRecoverySeeded = false;
+	BarUiValueClass bottomDockTargetIndicatorProgress{ 0.0 };
+	bool bottomDockTargetIndicatorCaptureActive = false;
+	bool bottomDockTargetIndicatorBoundsVisible = false;
 	BarBottomDockMode bottomDockFrameMode = BarBottomDockMode::BottomDocked;
 	BarBottomDockPhase bottomDockFramePhase = BarBottomDockPhase::Stable;
 	bool bottomDockFrameRecoveryActive = false;
@@ -4851,6 +4862,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		BarDirtyFixedVisual::GeometryAttributeGroup);
 	const BarDirtyVisualKey moreDirtyKey = GetBarDirtyVisualKey(
 		BarDirtyFixedVisual::MoreGroup);
+	const BarDirtyVisualKey dockTargetIndicatorDirtyKey = GetBarDirtyVisualKey(
+		BarDirtyFixedVisual::DockTargetIndicator);
 
 	auto AdvanceAnimation = [&](auto& animation, bool forceReplace,
 		BarDirtyVisualKey dirtyKey = 0) -> void
@@ -5048,6 +5061,9 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
+			if (state.bottomDockTargetIndicatorProgress.val > 0.000001)
+				state.dirtyRegionTracker.MarkChanged(
+					dockTargetIndicatorDirtyKey);
 		}
 		else if (change && key == BarUISetShapeEnum::DrawAttributeBar)
 			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
@@ -6680,6 +6696,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			frame.bottomDockTransitionSerial;
 		const BarBottomDockMode previousFrameMode =
 			state.bottomDockFrameMode;
+		const double previousTargetIndicatorProgress =
+			state.bottomDockTargetIndicatorProgress.val;
 		state.bottomDockFrameTransitionSerial = frameTransitionSerial;
 		state.bottomDockFrameTransitionTranslation =
 			frameTransitionTranslation;
@@ -6751,6 +6769,62 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCaptureBottomActive = captureBottomSpring.active;
 		}
 		else state.bottomDockCaptureBottomSpring.positionDip = 0.0;
+		const auto targetIndicatorAction =
+			ResolveBarBottomDockTargetIndicatorAction(
+				previousFrameMode, dockMode, dockPhase,
+				state.bottomDockTargetIndicatorCaptureActive,
+				state.bottomDockCaptureBottomActive
+					|| captureBottomSpringActive);
+		if (targetIndicatorAction
+			== BarBottomDockTargetIndicatorAction::FadeIn)
+		{
+			// 只有真实进入 Capturing 才显示目标提示，预览区和快速穿越不显示。
+			state.bottomDockTargetIndicatorCaptureActive = true;
+			if (BarUiAnimationEnabled)
+			{
+				const BarUiCurveSpecClass fadeInCurve{
+					BarUiCurveEnum::EaseOutCubic,
+					BarUiCurveEnum::EaseOutCubic, 0.0, false };
+				state.bottomDockTargetIndicatorProgress.SetTar(
+					1.0, BarBottomDockTargetIndicatorFadeInSeconds,
+					nullopt, false, fadeInCurve);
+			}
+			else state.bottomDockTargetIndicatorProgress.SetDirect(1.0);
+		}
+		else if (targetIndicatorAction
+			== BarBottomDockTargetIndicatorAction::FadeOut)
+		{
+			state.bottomDockTargetIndicatorCaptureActive = false;
+			if (BarUiAnimationEnabled)
+			{
+				const BarUiCurveSpecClass fadeOutCurve{
+					BarUiCurveEnum::EaseInOutCubic,
+					BarUiCurveEnum::EaseInOutCubic, 0.0, false };
+				state.bottomDockTargetIndicatorProgress.SetTar(
+					0.0, BarBottomDockTargetIndicatorFadeOutSeconds,
+					nullopt, false, fadeOutCurve);
+			}
+			else state.bottomDockTargetIndicatorProgress.SetDirect(0.0);
+		}
+		else if (targetIndicatorAction
+			== BarBottomDockTargetIndicatorAction::HideImmediately)
+		{
+			// 脱离流程不保留目标提示，避免把 dock 目标误当成悬浮落点。
+			state.bottomDockTargetIndicatorCaptureActive = false;
+			state.bottomDockTargetIndicatorProgress.SetDirect(0.0);
+		}
+		if (!state.bottomDockTargetIndicatorProgress.IsSame())
+			ChangeValue(state.bottomDockTargetIndicatorProgress, false,
+				dockTargetIndicatorDirtyKey);
+		const bool targetIndicatorProgressChanged =
+			abs(previousTargetIndicatorProgress
+				- state.bottomDockTargetIndicatorProgress.val) > 0.000001;
+		if (targetIndicatorProgressChanged)
+		{
+			needRendering = true;
+			state.dirtyRegionTracker.MarkChanged(
+				dockTargetIndicatorDirtyKey);
+		}
 
 		const double strokeWidthDip = state.superellipseMap[
 			BarUISetSuperellipseEnum::MainButton]->ft.has_value()
@@ -7006,6 +7080,31 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			mainButton->x.val - mainButton->w.val / 2.0,
 			mainButton->y.val - mainButton->h.val / 2.0));
 		mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
+		const auto dockTargetIndicatorGeometry =
+			ResolveBarBottomDockTargetIndicatorGeometry(
+				mainBar->inhX, mainBar->w.val,
+				state.bottomDockMapping.baseBottomDip);
+		const bool dockTargetIndicatorVisible =
+			state.bottomDockTargetIndicatorProgress.val > 0.000001;
+		RECT dockTargetIndicatorBounds{};
+		if (dockTargetIndicatorVisible)
+		{
+			const LONG antialiasPadding =
+				BarRenderingAttribute::dirtyAntialiasPadding;
+			dockTargetIndicatorBounds = RECT{
+				static_cast<LONG>(floor(
+					dockTargetIndicatorGeometry.leftDip * frameZoom))
+					- antialiasPadding,
+				static_cast<LONG>(floor(
+					dockTargetIndicatorGeometry.topDip * frameZoom))
+					- antialiasPadding,
+				static_cast<LONG>(ceil(
+					dockTargetIndicatorGeometry.rightDip * frameZoom))
+					+ antialiasPadding,
+				static_cast<LONG>(ceil(
+					dockTargetIndicatorGeometry.bottomDip * frameZoom))
+					+ antialiasPadding };
+		}
 		auto drawButton =
 			state.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Draw)];
 		drawButton->button.Inherit(
@@ -7072,6 +7171,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.drawAttributeOverflowPopupProgress.IsSame()
 			|| !state.drawAttributePenTypeMenuProgress.IsSame()
 			|| !state.drawAttributeColorPickerProgress.IsSame()
+			|| !state.bottomDockTargetIndicatorProgress.IsSame()
+			|| state.bottomDockTargetIndicatorBoundsVisible
 			|| bottomDockBoundsChanged
 			|| frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
@@ -7332,6 +7433,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 		if (collectVisibleContentBoundsForWindowSizing)
 		{
+			if (dockTargetIndicatorVisible)
+				UnionBarWindowRect(
+					visibleContentBounds, dockTargetIndicatorBounds);
 			state.cachedVisibleContentBounds = visibleContentBounds;
 			state.cachedBottomDockElasticBaseBounds =
 				bottomDockElasticBaseBounds;
@@ -7339,6 +7443,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				state.bottomDockSpring.positionDip;
 			state.bottomDockObservedCaptureBottomOffsetDip =
 				state.bottomDockCaptureBottomSpring.positionDip;
+			state.bottomDockTargetIndicatorBoundsVisible =
+				dockTargetIndicatorVisible;
 		}
 		else
 		{
@@ -7365,6 +7471,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			BarDirtyFixedVisual::PrimaryLight);
 		const BarDirtyVisualKey cursorLightKey = GetBarDirtyVisualKey(
 			BarDirtyFixedVisual::CursorLight);
+		const BarDirtyVisualKey dockTargetIndicatorKey = GetBarDirtyVisualKey(
+			BarDirtyFixedVisual::DockTargetIndicator);
 		const bool observeMainGroup =
 			state.dirtyRegionTracker.ShouldObserve(mainGroupKey);
 		const bool observeDrawAttributeGroup =
@@ -7377,6 +7485,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.dirtyRegionTracker.ShouldObserve(primaryLightKey);
 		const bool observeCursorLight =
 			state.dirtyRegionTracker.ShouldObserve(cursorLightKey);
+		const bool observeDockTargetIndicator =
+			state.dirtyRegionTracker.ShouldObserve(dockTargetIndicatorKey);
 		auto SyncRegisteredButtonPresentedBounds =
 			[&](BarButtonClass* button)
 			{
@@ -7771,6 +7881,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		if (observeCursorLight)
 			state.dirtyRegionTracker.Observe(
 				cursorLightKey, cursorLightDamageBounds);
+		if (observeDockTargetIndicator)
+			state.dirtyRegionTracker.Observe(
+				dockTargetIndicatorKey, dockTargetIndicatorBounds);
 
 		D2D1_RECT_F debugTextLayoutRect{};
 		RECT currentDebugTextBounds{};
@@ -7887,6 +8000,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.drawAttributeOverflowPopupProgress.IsSame()
 			|| !state.drawAttributePenTypeMenuProgress.IsSame()
 			|| !state.drawAttributeColorPickerProgress.IsSame()
+			|| !state.bottomDockTargetIndicatorProgress.IsSame()
 			|| reserveThicknessInteractionEnvelope
 			|| reserveThicknessTargetEnvelope
 			|| reserveBottomDockVisualEnvelope;
@@ -8376,6 +8490,36 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// TODO 绘制纯白全透明警告用户开启 aero
 			auto obj = BarUISetWordEnum::BackgroundWarning;
 			state.spec.Word(barDeviceContext, *state.wordMap[obj], state.wordMap[obj]->Inherit(), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
+		}
+
+		if (dockTargetIndicatorVisible)
+		{
+			// 目标区固定在未形变 dock 几何下，并先于 Bar 内容绘制。
+			SetBaseTransform();
+			const double opacity = clamp(
+				static_cast<double>(
+					state.bottomDockTargetIndicatorProgress.val),
+				0.0, 1.0) * BarBottomDockTargetIndicatorPeakOpacity;
+			if (auto brush = state.spec.GetFrameSolidColorBrush(
+				barDeviceContext,
+				GetThemeColor(BarThemeColorEnum::DockTarget), opacity))
+			{
+				const D2D1_ROUNDED_RECT targetRect{
+					D2D1::RectF(
+						static_cast<FLOAT>(
+							dockTargetIndicatorGeometry.leftDip * frameZoom),
+						static_cast<FLOAT>(
+							dockTargetIndicatorGeometry.topDip * frameZoom),
+						static_cast<FLOAT>(
+							dockTargetIndicatorGeometry.rightDip * frameZoom),
+						static_cast<FLOAT>(
+							dockTargetIndicatorGeometry.bottomDip * frameZoom)),
+					static_cast<FLOAT>(
+						BarBottomDockTargetIndicatorCornerRadiusDip * frameZoom),
+					static_cast<FLOAT>(
+						BarBottomDockTargetIndicatorCornerRadiusDip * frameZoom) };
+				barDeviceContext->FillRoundedRectangle(&targetRect, brush);
+			}
 		}
 
 		using enum BarUiInheritEnum;

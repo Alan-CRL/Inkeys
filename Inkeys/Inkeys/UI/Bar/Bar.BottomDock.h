@@ -18,6 +18,12 @@ namespace Inkeys::UI::Bar
 	inline constexpr double BarBottomDockSpringStepSeconds = 1.0 / 120.0;
 	inline constexpr double BarBottomDockSettleDistanceDip = 0.15;
 	inline constexpr double BarBottomDockSettleVelocityDipPerSecond = 4.0;
+	inline constexpr double BarBottomDockTargetIndicatorOutsetDip = 3.0;
+	inline constexpr double BarBottomDockTargetIndicatorHeightDip = 80.0;
+	inline constexpr double BarBottomDockTargetIndicatorCornerRadiusDip = 8.0;
+	inline constexpr double BarBottomDockTargetIndicatorPeakOpacity = 0.22;
+	inline constexpr double BarBottomDockTargetIndicatorFadeInSeconds = 0.16;
+	inline constexpr double BarBottomDockTargetIndicatorFadeOutSeconds = 0.20;
 
 	enum class BarBottomDockMode
 	{
@@ -33,6 +39,65 @@ namespace Inkeys::UI::Bar
 		Detaching,
 		Recovering,
 	};
+
+	struct BarBottomDockTargetIndicatorGeometry
+	{
+		double leftDip = 0.0;
+		double topDip = 0.0;
+		double rightDip = 0.0;
+		double bottomDip = 0.0;
+	};
+
+	[[nodiscard]] inline bool IsBarBottomDockEntryCapture(
+		BarBottomDockMode previousMode, BarBottomDockMode currentMode,
+		BarBottomDockPhase currentPhase) noexcept
+	{
+		return previousMode == BarBottomDockMode::Floating
+			&& currentMode == BarBottomDockMode::BottomDocked
+			&& currentPhase == BarBottomDockPhase::Capturing;
+	}
+
+	enum class BarBottomDockTargetIndicatorAction
+	{
+		None,
+		FadeIn,
+		FadeOut,
+		HideImmediately,
+	};
+
+	[[nodiscard]] inline BarBottomDockTargetIndicatorAction
+		ResolveBarBottomDockTargetIndicatorAction(
+			BarBottomDockMode previousMode, BarBottomDockMode currentMode,
+			BarBottomDockPhase currentPhase, bool indicatorCaptureActive,
+			bool captureBottomActive) noexcept
+	{
+		if (currentMode == BarBottomDockMode::Floating
+			|| currentPhase == BarBottomDockPhase::Detaching)
+			return BarBottomDockTargetIndicatorAction::HideImmediately;
+		if (IsBarBottomDockEntryCapture(
+			previousMode, currentMode, currentPhase))
+			return BarBottomDockTargetIndicatorAction::FadeIn;
+		if (indicatorCaptureActive && !captureBottomActive)
+			return BarBottomDockTargetIndicatorAction::FadeOut;
+		return BarBottomDockTargetIndicatorAction::None;
+	}
+
+	[[nodiscard]] inline BarBottomDockTargetIndicatorGeometry
+		ResolveBarBottomDockTargetIndicatorGeometry(
+			double mainBarLeftDip, double mainBarWidthDip,
+			double dockLineDip) noexcept
+	{
+		if (!std::isfinite(mainBarLeftDip)) mainBarLeftDip = 0.0;
+		if (!std::isfinite(mainBarWidthDip) || mainBarWidthDip < 0.0)
+			mainBarWidthDip = 0.0;
+		if (!std::isfinite(dockLineDip)) dockLineDip = 0.0;
+		return {
+			mainBarLeftDip - BarBottomDockTargetIndicatorOutsetDip,
+			dockLineDip - BarBottomDockTargetIndicatorHeightDip,
+			mainBarLeftDip + mainBarWidthDip
+				+ BarBottomDockTargetIndicatorOutsetDip,
+			dockLineDip };
+	}
 
 	struct BarBottomDockEnvironment
 	{

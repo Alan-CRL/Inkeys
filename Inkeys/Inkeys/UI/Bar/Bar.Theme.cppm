@@ -27,6 +27,7 @@ export enum class BarThemeColorEnum : int
 	PressedFill,
 	SubtleFill,
 	SwatchFrame,
+	DockTarget,
 };
 
 // 画笔颜色预设，保持当前色块顺序和值不变。
@@ -66,6 +67,7 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 		case BarThemeColorEnum::PressedFill: return RGB(64, 72, 80);
 		case BarThemeColorEnum::SubtleFill: return RGB(0, 140, 105);
 		case BarThemeColorEnum::SwatchFrame: return RGB(176, 176, 176);
+		case BarThemeColorEnum::DockTarget: return RGB(0, 120, 212);
 		default: return RGB(27, 27, 27);
 		}
 	}
@@ -79,6 +81,7 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 	case BarThemeColorEnum::PressedFill: return RGB(127, 127, 127);
 	case BarThemeColorEnum::SubtleFill: return RGB(127, 127, 127);
 	case BarThemeColorEnum::SwatchFrame: return RGB(80, 80, 80);
+	case BarThemeColorEnum::DockTarget: return RGB(76, 158, 255);
 	default: return RGB(255, 255, 255);
 	}
 }

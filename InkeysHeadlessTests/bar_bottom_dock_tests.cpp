@@ -113,6 +113,60 @@ int RunBarBottomDockTests()
 		&& ResolveBarMainBarRightSide(499.99, 1000.0)
 		&& !ResolveBarMainBarRightSide(500.01, 1000.0),
 		"main bar reverses only after crossing the horizontal center line");
+	const auto targetIndicator = ResolveBarBottomDockTargetIndicatorGeometry(
+		-120.0, 360.0, 688.0);
+	Check(Near(targetIndicator.leftDip, -123.0)
+		&& Near(targetIndicator.topDip, 608.0)
+		&& Near(targetIndicator.rightDip, 243.0)
+		&& Near(targetIndicator.bottomDip, 688.0),
+		"dock target indicator follows main bar x and keeps normal geometry");
+	for (double zoom : { 1.0, 1.5 })
+	{
+		Check(Near((targetIndicator.rightDip - targetIndicator.leftDip) * zoom,
+			(360.0 + 2.0 * BarBottomDockTargetIndicatorOutsetDip) * zoom)
+			&& Near((targetIndicator.bottomDip - targetIndicator.topDip) * zoom,
+				BarBottomDockTargetIndicatorHeightDip * zoom),
+			"dock target indicator zoom is applied exactly once");
+	}
+	Check(IsBarBottomDockEntryCapture(
+		BarBottomDockMode::Floating, BarBottomDockMode::BottomDocked,
+		BarBottomDockPhase::Capturing)
+		&& !IsBarBottomDockEntryCapture(
+			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
+			BarBottomDockPhase::Dragging)
+		&& !IsBarBottomDockEntryCapture(
+			BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
+			BarBottomDockPhase::Detaching)
+		&& !IsBarBottomDockEntryCapture(
+			BarBottomDockMode::Floating, BarBottomDockMode::Floating,
+			BarBottomDockPhase::Detaching),
+		"dock target indicator starts only for a real entry capture");
+	Check(ResolveBarBottomDockTargetIndicatorAction(
+		BarBottomDockMode::Floating, BarBottomDockMode::BottomDocked,
+		BarBottomDockPhase::Capturing, false, true)
+			== BarBottomDockTargetIndicatorAction::FadeIn
+		&& ResolveBarBottomDockTargetIndicatorAction(
+			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
+			BarBottomDockPhase::Capturing, true, true)
+			== BarBottomDockTargetIndicatorAction::None
+		&& ResolveBarBottomDockTargetIndicatorAction(
+			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
+			BarBottomDockPhase::Stable, true, false)
+			== BarBottomDockTargetIndicatorAction::FadeOut,
+		"dock target indicator fades in and out around capture settling");
+	Check(ResolveBarBottomDockTargetIndicatorAction(
+		BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
+		BarBottomDockPhase::Detaching, true, true)
+			== BarBottomDockTargetIndicatorAction::HideImmediately
+		&& ResolveBarBottomDockTargetIndicatorAction(
+			BarBottomDockMode::Floating, BarBottomDockMode::Floating,
+			BarBottomDockPhase::Detaching, false, false)
+			== BarBottomDockTargetIndicatorAction::HideImmediately
+		&& ResolveBarBottomDockTargetIndicatorAction(
+			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
+			BarBottomDockPhase::Dragging, false, false)
+			== BarBottomDockTargetIndicatorAction::None,
+		"dock target indicator never starts during dock dragging or detaching");
 
 	BarBottomDockEnvironment environment{
 		RECT{ 0, 0, 1920, 1080 }, RECT{ 0, 0, 1920, 1032 }, 1.5 };

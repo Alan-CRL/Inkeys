@@ -34,6 +34,12 @@
 - [x] 使用 ARM64 host MSBuild 构建完整 `InkeysRepo.sln /m:1 /p:Configuration=Debug /p:Platform=ARM64`，超时至少 5 分钟。
 - [x] 审查最终 diff，不包含现有 `Inkeys/PptCOM.dll`，不启动 GUI、不提交、不推送。
 
+## Phase 5：捕获目标提示
+
+- [x] 增加目标提示纯逻辑几何与捕获入口判定，并补充 Headless 覆盖。
+- [x] 接入主题蓝色、淡入淡出状态、独立 dirty/capacity 和 base-transform D2D 绘制。
+- [x] 重新运行任务校验、`git diff --check`、全部 Headless 测试与 ARM64 Debug Solution 构建。
+
 ## 验证结果（2026-08-14）
 
 - `python ./.trellis/scripts/task.py validate 08-14-ui3-bar-bottom-dock-elastic`：通过；大型规范文件仅有注入截断警告。
