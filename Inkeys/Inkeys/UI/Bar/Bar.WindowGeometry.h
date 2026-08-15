@@ -272,10 +272,11 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] constexpr POINT BarLayoutToScreenPoint(
-		POINT layoutPoint, POINT monitorOrigin) noexcept
+		POINT layoutPoint, POINT monitorOrigin,
+		POINT presentedTranslation = {}) noexcept
 	{
-		layoutPoint.x += monitorOrigin.x;
-		layoutPoint.y += monitorOrigin.y;
+		layoutPoint.x += monitorOrigin.x + presentedTranslation.x;
+		layoutPoint.y += monitorOrigin.y + presentedTranslation.y;
 		return layoutPoint;
 	}
 

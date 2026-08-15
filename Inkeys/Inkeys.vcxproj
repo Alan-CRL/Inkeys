@@ -396,6 +396,7 @@
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
 	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />

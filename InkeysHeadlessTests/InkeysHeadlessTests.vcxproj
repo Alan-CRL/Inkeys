@@ -109,6 +109,7 @@
 	<ClCompile Include="ppt_ui_tests.cpp" />
 	<ClCompile Include="display_tests.cpp" />
 	<ClCompile Include="bar_display_transition_tests.cpp" />
+	<ClCompile Include="bar_bottom_dock_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />
 	<ClCompile Include="message_tests.cpp" />

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认 UI3 Bar、线程所有权和完整 Solution 构建边界"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守 Bar 串行渲染、ULW 直移、dirty 与 idle 合同"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"核对鼠标与触摸输入一致性及高频路径约束"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"保持 C++ module、并发、注释和最小修改约定"}
+{"file":".trellis/tasks/08-14-ui3-bar-bottom-dock-elastic/research/current-bar-drag-display-contract.md","reason":"提供当前拖动、显示和渲染接管事实"}

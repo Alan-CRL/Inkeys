@@ -59,21 +59,34 @@ void BarUISetClass::PublishDisplaySnapshot(
 {
 	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
 	if (!monitor) return;
-	pendingDisplayLeft.store(monitor->bounds.left, memory_order_release);
-	pendingDisplayTop.store(monitor->bounds.top, memory_order_release);
-	pendingDisplayRight.store(monitor->bounds.right, memory_order_release);
-	pendingDisplayBottom.store(monitor->bounds.bottom, memory_order_release);
-	pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
-		USER_DEFAULT_SCREEN_DPI, memory_order_release);
-	pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+	{
+		lock_guard lock(pendingDisplayPublishMutex);
+		// 奇数 serial 表示发布中；读方只接受同一偶数 serial 的完整快照。
+		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+		pendingDisplayLeft.store(monitor->bounds.left, memory_order_relaxed);
+		pendingDisplayTop.store(monitor->bounds.top, memory_order_relaxed);
+		pendingDisplayRight.store(monitor->bounds.right, memory_order_relaxed);
+		pendingDisplayBottom.store(monitor->bounds.bottom, memory_order_relaxed);
+		pendingWorkAreaLeft.store(monitor->workArea.left, memory_order_relaxed);
+		pendingWorkAreaTop.store(monitor->workArea.top, memory_order_relaxed);
+		pendingWorkAreaRight.store(monitor->workArea.right, memory_order_relaxed);
+		pendingWorkAreaBottom.store(monitor->workArea.bottom, memory_order_relaxed);
+		pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
+			USER_DEFAULT_SCREEN_DPI, memory_order_relaxed);
+		pendingDisplaySerial.fetch_add(1, memory_order_release);
+	}
 	UpdateRendering(false);
 }
 
 void BarUISetClass::PublishWindowDpi(UINT dpi) noexcept
 {
 	if (!dpi) return;
-	pendingDisplayDpi.store(dpi, memory_order_release);
-	pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+	{
+		lock_guard lock(pendingDisplayPublishMutex);
+		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+		pendingDisplayDpi.store(dpi, memory_order_relaxed);
+		pendingDisplaySerial.fetch_add(1, memory_order_release);
+	}
 	UpdateRendering(false);
 }
 

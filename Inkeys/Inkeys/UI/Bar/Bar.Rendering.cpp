@@ -335,6 +335,8 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	if (!isfinite(zoom) || zoom <= 0.0) zoom = 0.0;
 	frameLightRadius = static_cast<FLOAT>(BarBorderLightRadius * zoom);
 	frameCursorLightRadius = static_cast<FLOAT>(BarBorderCursorLightRadius * zoom);
+	SetFrameCursorLightLocalGeometry(frameCursorLight,
+		D2D1::SizeF(frameCursorLightRadius, frameCursorLightRadius));
 
 	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
 	bool dynamicEdgeLightingEnabled = edgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
@@ -819,10 +821,14 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 {
 	COLORREF rgb = color & 0x00FFFFFF;
 	D2D1_POINT_2F center = framePrimaryLight;
-	if (lightSource == BarBorderLightSourceEnum::Cursor) center = frameCursorLight;
-	FLOAT radius = lightSource == BarBorderLightSourceEnum::Cursor
-		? frameCursorLightRadius : frameLightRadius;
-	if (radius <= 0.0F) return nullptr;
+	D2D1_SIZE_F radius = D2D1::SizeF(frameLightRadius, frameLightRadius);
+	if (lightSource == BarBorderLightSourceEnum::Cursor)
+	{
+		center = frameLocalCursorLight;
+		radius = D2D1::SizeF(
+			frameLocalCursorLightRadiusX, frameLocalCursorLightRadiusY);
+	}
+	if (radius.width <= 0.0F || radius.height <= 0.0F) return nullptr;
 
 	for (auto& cache : frameGradientBrushCache)
 	{
@@ -831,8 +837,8 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 			// 颜色停靠点长期复用，动态光位置与半径只更新画刷的轻量属性。
 			cache.brush->SetCenter(center);
 			cache.brush->SetGradientOriginOffset(D2D1::Point2F());
-			cache.brush->SetRadiusX(radius);
-			cache.brush->SetRadiusY(radius);
+			cache.brush->SetRadiusX(radius.width);
+			cache.brush->SetRadiusY(radius.height);
 			return cache.brush.Get();
 		}
 	}
@@ -857,7 +863,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 		cache.lightSource = lightSource;
 		hr = deviceContext->CreateRadialGradientBrush(
 			D2D1::RadialGradientBrushProperties(
-				center, D2D1::Point2F(), radius, radius),
+				center, D2D1::Point2F(), radius.width, radius.height),
 			stopCollection.Get(), &cache.brush);
 		if (SUCCEEDED(hr))
 		{
@@ -2132,21 +2138,25 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	lightBounds.top -= lightBoundsOutset;
 	lightBounds.right += lightBoundsOutset;
 	lightBounds.bottom += lightBoundsOutset;
-	auto LightIntersectsBounds = [&](D2D1_POINT_2F point, FLOAT radius) -> bool
+	auto LightIntersectsBounds = [&](D2D1_POINT_2F point,
+		FLOAT radiusX, FLOAT radiusY) -> bool
 		{
+			if (radiusX <= 0.0F || radiusY <= 0.0F) return false;
 			FLOAT nearestX = clamp(point.x, lightBounds.left, lightBounds.right);
 			FLOAT nearestY = clamp(point.y, lightBounds.top, lightBounds.bottom);
-			FLOAT deltaX = point.x - nearestX;
-			FLOAT deltaY = point.y - nearestY;
-			return deltaX * deltaX + deltaY * deltaY <= radius * radius;
+			FLOAT deltaX = (point.x - nearestX) / radiusX;
+			FLOAT deltaY = (point.y - nearestY) / radiusY;
+			return deltaX * deltaX + deltaY * deltaY <= 1.0F;
 		};
 	bool drawPrimaryLight = edgeLightingEnabled
 		&& lightOpacity > 0.0F && primaryLightEnabled
-		&& LightIntersectsBounds(framePrimaryLight, frameLightRadius);
+		&& LightIntersectsBounds(
+			framePrimaryLight, frameLightRadius, frameLightRadius);
 	bool drawCursorLight = edgeLightingEnabled
 		&& lightOpacity > 0.0F && frameCursorLightVisible
 		&& cursorLightIntensity > 0.0F
-		&& LightIntersectsBounds(frameCursorLight, frameCursorLightRadius);
+		&& LightIntersectsBounds(frameLocalCursorLight,
+			frameLocalCursorLightRadiusX, frameLocalCursorLightRadiusY);
 	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
 			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);

@@ -1,0 +1,33 @@
+{
+  "id": "ui3-bar-bottom-dock-elastic",
+  "name": "ui3-bar-bottom-dock-elastic",
+  "title": "UI3 Bar 底栏模式与弹性吸附",
+  "description": "为 UI3 Bar 增加默认底栏布局、任务栏工作区对齐、20 DIP 双向吸附及弹性果冻形变。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "native-desktop UI3 Bar placement, drag interaction and layered-window rendering",
+  "package": "native-desktop",
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-14",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "08-01-render-pipeline-refactor",
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Bar",
+    "Inkeys/Inkeys/Display",
+    "InkeysHeadlessTests"
+  ],
+  "notes": "Do not start before the unified display-management baseline is stable. No GUI launch, commit or push in this task.",
+  "meta": {
+    "depends_on": "08-14-unified-display-management-ui3-dpi",
+    "baseline_commit": "47acefc5"
+  }
+}

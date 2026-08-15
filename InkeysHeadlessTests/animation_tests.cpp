@@ -33,6 +33,7 @@ int RunSettingSessionStateTests();
 int RunPptUiTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
+int RunBarBottomDockTests();
 
 namespace
 {
@@ -900,6 +901,7 @@ int main(int argc, char** argv)
 	failureCount += RunPptUiTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
+	failureCount += RunBarBottomDockTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

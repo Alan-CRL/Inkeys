@@ -11,6 +11,14 @@ import :Main;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
+	if (barUISet.IsBottomDockLayoutLocked())
+	{
+		// 底栏及脱离回弹阶段保持主栏右展、次级面板向上，避免拖动中翻边。
+		widgetPosition.mainBar = true;
+		widgetPosition.primaryBar = false;
+		return;
+	}
+
 	// 获取主按钮中心位置
 	double x = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
 	double y = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton]->GetY() * tarZoom;

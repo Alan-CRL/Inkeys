@@ -107,6 +107,17 @@ public:
 	{
 		frameDiffuseMaskGeometryScale = scale > 0.0 ? scale : 1.0;
 	}
+	void SetFrameCursorLightLocalGeometry(
+		D2D1_POINT_2F center, D2D1_SIZE_F radius) noexcept
+	{
+		frameLocalCursorLight = center;
+		frameLocalCursorLightRadiusX =
+			std::isfinite(radius.width) && radius.width > 0.0F
+				? radius.width : 0.0F;
+		frameLocalCursorLightRadiusY =
+			std::isfinite(radius.height) && radius.height > 0.0F
+				? radius.height : 0.0F;
+	}
 
 public:
 	BarUISetClass* barUISetClass = nullptr;
@@ -283,11 +294,14 @@ protected:
 	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();
 	D2D1_POINT_2F framePrimaryLightTarget = D2D1::Point2F();
 	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
+	D2D1_POINT_2F frameLocalCursorLight = D2D1::Point2F();
 	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameCursorLightIntensityStart = 0.0F;
 	FLOAT frameCursorLightIntensityTarget = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
 	FLOAT frameCursorLightRadius = 0.0F;
+	FLOAT frameLocalCursorLightRadiusX = 0.0F;
+	FLOAT frameLocalCursorLightRadiusY = 0.0F;
 	BarBorderPrimaryAnchorEnum framePrimaryLightAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	bool framePrimaryLightAnchorInitialized = false;
 	bool framePrimaryLightAnimating = false;

@@ -22,7 +22,8 @@
     "08-12-ui3-draw3-win32-himsg",
     "08-12-pptcom-ui3-multi-window-rendering",
     "08-13-unified-render-pipeline-setting",
-    "08-14-unified-display-management-ui3-dpi"
+    "08-14-unified-display-management-ui3-dpi",
+    "08-14-ui3-bar-bottom-dock-elastic"
   ],
   "parent": null,
   "relatedFiles": [

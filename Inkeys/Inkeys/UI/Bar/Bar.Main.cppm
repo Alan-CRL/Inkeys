@@ -7,6 +7,7 @@ module;
 #include <wrl/client.h>
 #include <array>
 #include <cstdint>
+#include "Bar.BottomDock.h"
 
 export module Inkeys.UI.Bar:Main;
 
@@ -232,6 +233,46 @@ enum class BarDirectWindowDragPhase : std::uint8_t
 	Absorbing,
 };
 
+struct BarSeekResult
+{
+	double rawPathLength = 0.0;
+	bool moved = false;
+	bool captured = false;
+	bool detached = false;
+	bool modeChanged = false;
+	bool allowClick = true;
+};
+
+struct BarPendingDisplaySnapshot
+{
+	RECT bounds{ 0, 0, 1, 1 };
+	RECT workArea{ 0, 0, 1, 1 };
+	UINT dpi = USER_DEFAULT_SCREEN_DPI;
+	unsigned long long serial = 0;
+};
+
+struct BarBottomDockPresentedSnapshot
+{
+	Inkeys::UI::Bar::BarBottomDockMode mode =
+		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
+	Inkeys::UI::Bar::BarBottomDockPhase phase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	bool recoveryActive = false;
+	Inkeys::UI::Bar::BarBottomDockVerticalMapping mapping{};
+	double elasticOffsetDip = 0.0;
+	double rigidTranslationDip = 0.0;
+	double zoom = 1.0;
+	POINT monitorOrigin{};
+	RECT monitorBounds{ 0, 0, 1, 1 };
+	RECT workArea{ 0, 0, 1, 1 };
+	unsigned long long displaySerial = 0;
+	POINT directTranslation{};
+	double mainCenterScreenX = 0.0;
+	double mainCenterScreenY = 0.0;
+	unsigned long long transitionSerial = 0;
+	unsigned long long serial = 0;
+};
+
 // UI 总集
 export class BarUISetClass
 {
@@ -292,10 +333,33 @@ public:
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;
 	void PublishWindowDpi(UINT dpi) noexcept;
+	BarPendingDisplaySnapshot PendingDisplaySnapshot() const noexcept
+	{
+		for (;;)
+		{
+			const auto serialBefore = pendingDisplaySerial.load(
+				memory_order_acquire);
+			if ((serialBefore & 1ULL) != 0) continue;
+			BarPendingDisplaySnapshot snapshot{
+				RECT{
+					pendingDisplayLeft.load(memory_order_relaxed),
+					pendingDisplayTop.load(memory_order_relaxed),
+					pendingDisplayRight.load(memory_order_relaxed),
+					pendingDisplayBottom.load(memory_order_relaxed) },
+				RECT{
+					pendingWorkAreaLeft.load(memory_order_relaxed),
+					pendingWorkAreaTop.load(memory_order_relaxed),
+					pendingWorkAreaRight.load(memory_order_relaxed),
+					pendingWorkAreaBottom.load(memory_order_relaxed) },
+				pendingDisplayDpi.load(memory_order_relaxed),
+				serialBefore };
+			if (pendingDisplaySerial.load(memory_order_acquire) == serialBefore)
+				return snapshot;
+		}
+	}
 	POINT PresentedMonitorOrigin() const noexcept
 	{
-		return POINT{ presentedMonitorOriginX.load(memory_order_acquire),
-			presentedMonitorOriginY.load(memory_order_acquire) };
+		return BottomDockPresentedSnapshot().monitorOrigin;
 	}
 	POINT DirectWindowPresentedTranslation(bool ignoreWhileDragging = false) const noexcept
 	{
@@ -303,13 +367,145 @@ public:
 			&& directWindowDragPhase.load(memory_order_acquire)
 				== BarDirectWindowDragPhase::Dragging)
 			return {};
-		return POINT{
-			directWindowPresentedTranslationX.load(memory_order_acquire),
-			directWindowPresentedTranslationY.load(memory_order_acquire) };
+		return BottomDockPresentedSnapshot().directTranslation;
+	}
+	bool IsBottomDockLayoutLocked() const noexcept
+	{
+		return bottomDockMode.load(memory_order_acquire)
+			== Inkeys::UI::Bar::BarBottomDockMode::BottomDocked
+			|| bottomDockRecoveryActive.load(memory_order_acquire);
+	}
+	BarBottomDockPresentedSnapshot BottomDockPresentedSnapshot() const noexcept
+	{
+		for (;;)
+		{
+			const auto serialBefore = bottomDockPresentedMappingSerial.load(
+				memory_order_acquire);
+			if ((serialBefore & 1ULL) != 0) continue;
+			BarBottomDockPresentedSnapshot snapshot{};
+			snapshot.mode = bottomDockPresentedMode.load(memory_order_relaxed);
+			snapshot.phase = bottomDockPresentedPhase.load(memory_order_relaxed);
+			snapshot.recoveryActive =
+				bottomDockPresentedRecoveryActive.load(memory_order_relaxed);
+			snapshot.mapping.baseTopDip = bottomDockPresentedBaseTopDip.load(
+				memory_order_relaxed);
+			snapshot.mapping.baseBottomDip =
+				bottomDockPresentedBaseBottomDip.load(memory_order_relaxed);
+			snapshot.mapping.visualTopDip = bottomDockPresentedVisualTopDip.load(
+				memory_order_relaxed);
+			snapshot.mapping.visualBottomDip =
+				bottomDockPresentedVisualBottomDip.load(memory_order_relaxed);
+			snapshot.mapping.scaleY = max(0.000001,
+				bottomDockPresentedScaleY.load(memory_order_relaxed));
+			snapshot.mapping.rigidGripYDip =
+				bottomDockPresentedRigidGripYDip.load(memory_order_relaxed);
+			snapshot.elasticOffsetDip = bottomDockPresentedElasticOffsetDip.load(
+				memory_order_relaxed);
+			snapshot.rigidTranslationDip =
+				bottomDockPresentedRigidTranslationDip.load(memory_order_relaxed);
+			snapshot.mapping.rigidOverlayTranslationYDip =
+				snapshot.rigidTranslationDip;
+			snapshot.zoom = Inkeys::UI::Bar::NormalizeBarBottomDockZoom(
+				bottomDockPresentedZoom.load(memory_order_relaxed));
+			snapshot.monitorOrigin = POINT{
+				presentedMonitorOriginX.load(memory_order_relaxed),
+				presentedMonitorOriginY.load(memory_order_relaxed) };
+			snapshot.monitorBounds = RECT{
+				bottomDockPresentedDisplayLeft.load(memory_order_relaxed),
+				bottomDockPresentedDisplayTop.load(memory_order_relaxed),
+				bottomDockPresentedDisplayRight.load(memory_order_relaxed),
+				bottomDockPresentedDisplayBottom.load(memory_order_relaxed) };
+			snapshot.workArea = RECT{
+				bottomDockPresentedWorkAreaLeft.load(memory_order_relaxed),
+				bottomDockPresentedWorkAreaTop.load(memory_order_relaxed),
+				bottomDockPresentedWorkAreaRight.load(memory_order_relaxed),
+				bottomDockPresentedWorkAreaBottom.load(memory_order_relaxed) };
+			snapshot.displaySerial =
+				bottomDockPresentedDisplaySerial.load(memory_order_relaxed);
+			snapshot.directTranslation = POINT{
+				bottomDockPresentedDirectTranslationX.load(memory_order_relaxed),
+				bottomDockPresentedDirectTranslationY.load(memory_order_relaxed) };
+			snapshot.mainCenterScreenX =
+				bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
+			snapshot.mainCenterScreenY =
+				bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+			snapshot.transitionSerial =
+				bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
+			snapshot.serial = serialBefore;
+			if (bottomDockPresentedMappingSerial.load(memory_order_acquire)
+				== serialBefore) return snapshot;
+		}
+	}
+	int BottomDockRigidHitTestY(int visualY) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(static_cast<double>(visualY)
+			- snapshot.rigidTranslationDip * snapshot.zoom));
+	}
+	int BottomDockRigidVisualY(int rigidY) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(static_cast<double>(rigidY)
+			+ snapshot.rigidTranslationDip * snapshot.zoom));
+	}
+	int BottomDockBodyHitTestY(int visualY) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
+				static_cast<double>(visualY), snapshot.mapping, snapshot.zoom)));
+	}
+	int BottomDockBodyHitTestYFromRigid(int rigidY,
+		int* visualY = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const int resolvedVisualY = static_cast<int>(lround(
+			static_cast<double>(rigidY)
+				+ snapshot.rigidTranslationDip * snapshot.zoom));
+		if (visualY) *visualY = resolvedVisualY;
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
+				static_cast<double>(resolvedVisualY), snapshot.mapping,
+				snapshot.zoom)));
+	}
+	RECT BottomDockBodyVisualBounds(RECT bounds) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return Inkeys::UI::Bar::TransformBarBottomDockBodyRect(
+			bounds, snapshot.mapping, snapshot.zoom);
+	}
+	RECT BottomDockRigidVisualBounds(RECT bounds) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+			snapshot.rigidTranslationDip, snapshot.zoom);
 	}
 protected:
+	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
+	void RebaseBottomDockPresentedWindow(POINT directTranslation,
+		POINT screenDelta = {}) noexcept
+	{
+		directWindowPresentedTranslationX.store(
+			directTranslation.x, memory_order_relaxed);
+		directWindowPresentedTranslationY.store(
+			directTranslation.y, memory_order_relaxed);
+		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_acq_rel);
+		bottomDockPresentedDirectTranslationX.store(
+			directTranslation.x, memory_order_relaxed);
+		bottomDockPresentedDirectTranslationY.store(
+			directTranslation.y, memory_order_relaxed);
+		bottomDockPresentedMainCenterScreenX.store(
+			bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
+			memory_order_relaxed);
+		bottomDockPresentedMainCenterScreenY.store(
+			bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed)
+				+ screenDelta.y,
+			memory_order_relaxed);
+		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
+	}
 	// 拖动交互
-	double Seek(const ExMessage& msg);
+	BarSeekResult Seek(const ExMessage& msg);
 	bool SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled);
 	void ActivateBorderCursorTracking(HWND hWnd);
 	void RegisterBorderCursorLight(HWND hWnd);
@@ -324,7 +520,7 @@ protected:
 	void CloseThicknessSlider(bool cancelCapture);
 	void CloseColorPicker(bool cancelCapture);
 	void ShutdownWindowInput(HWND hWnd);
-	void RefreshBorderCursorVisibleRegions(double frameZoom);
+	void RefreshBorderCursorVisibleRegions();
 	bool IsBorderCursorLightNearVisibleRegion(POINT screenPoint);
 	std::atomic<unsigned long long> mainButtonClickPulseSerial = 0;
 	Inkeys::UI::Bar::BarToggleClickCoalescer toggleClickCoalescer;
@@ -358,13 +554,58 @@ protected:
 	bool committedWindowScreenBoundsReady = false;
 	Inkeys::Display::Subscription displaySubscription;
 	atomic<unsigned long long> pendingDisplaySerial = 0;
+	mutex pendingDisplayPublishMutex;
 	atomic<LONG> pendingDisplayLeft = 0;
 	atomic<LONG> pendingDisplayTop = 0;
 	atomic<LONG> pendingDisplayRight = 1;
 	atomic<LONG> pendingDisplayBottom = 1;
+	atomic<LONG> pendingWorkAreaLeft = 0;
+	atomic<LONG> pendingWorkAreaTop = 0;
+	atomic<LONG> pendingWorkAreaRight = 1;
+	atomic<LONG> pendingWorkAreaBottom = 1;
 	atomic<UINT> pendingDisplayDpi = USER_DEFAULT_SCREEN_DPI;
 	atomic<LONG> presentedMonitorOriginX = 0;
 	atomic<LONG> presentedMonitorOriginY = 0;
+	// 交互线程发布目标，渲染线程只回写当前视觉偏移与恢复完成状态。
+	atomic<Inkeys::UI::Bar::BarBottomDockMode> bottomDockMode =
+		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
+	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	atomic<double> bottomDockElasticOffsetDip = 0.0;
+	atomic<unsigned long long> bottomDockPresentedMappingSerial = 0;
+	atomic<Inkeys::UI::Bar::BarBottomDockMode> bottomDockPresentedMode =
+		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
+	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPresentedPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	atomic<bool> bottomDockPresentedRecoveryActive = false;
+	atomic<double> bottomDockPresentedElasticOffsetDip = 0.0;
+	atomic<double> bottomDockPresentedBaseTopDip = 0.0;
+	atomic<double> bottomDockPresentedBaseBottomDip = 0.0;
+	atomic<double> bottomDockPresentedVisualTopDip = 0.0;
+	atomic<double> bottomDockPresentedVisualBottomDip = 0.0;
+	atomic<double> bottomDockPresentedScaleY = 1.0;
+	atomic<double> bottomDockPresentedRigidGripYDip = 0.0;
+	atomic<double> bottomDockPresentedRigidTranslationDip = 0.0;
+	atomic<double> bottomDockPresentedZoom = 1.0;
+	atomic<LONG> bottomDockPresentedDisplayLeft = 0;
+	atomic<LONG> bottomDockPresentedDisplayTop = 0;
+	atomic<LONG> bottomDockPresentedDisplayRight = 1;
+	atomic<LONG> bottomDockPresentedDisplayBottom = 1;
+	atomic<LONG> bottomDockPresentedWorkAreaLeft = 0;
+	atomic<LONG> bottomDockPresentedWorkAreaTop = 0;
+	atomic<LONG> bottomDockPresentedWorkAreaRight = 1;
+	atomic<LONG> bottomDockPresentedWorkAreaBottom = 1;
+	atomic<unsigned long long> bottomDockPresentedDisplaySerial = 0;
+	atomic<LONG> bottomDockPresentedDirectTranslationX = 0;
+	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
+	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
+	atomic<bool> bottomDockDragActive = false;
+	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
+	atomic<bool> bottomDockRecoveryActive = false;
+	atomic<unsigned long long> bottomDockTransitionSerial = 0;
+	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;
+	atomic<unsigned long long> bottomDockPresentedTransitionSerial = 0;
 
 	friend class BarUIRendering;
 	friend class BarRenderLoopCoordinator;

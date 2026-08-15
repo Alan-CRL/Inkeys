@@ -9,6 +9,7 @@ module;
 #include "../../../IdtState.h"
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
+#include "Bar.BottomDock.h"
 #include "Bar.WindowGeometry.h"
 
 module Inkeys.UI.Bar;
@@ -37,6 +38,8 @@ constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
 constexpr UINT BarColorPickerCaptureMessage = WM_APP + 0x34;
 constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
 constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
+constexpr short BarTouchDirectDragScreenMessageMarker = SHRT_MIN + 2;
+constexpr short BarTouchCancelScreenMessageMarker = SHRT_MIN + 3;
 constexpr WPARAM BarThicknessSliderCaptureStop = 0;
 constexpr WPARAM BarThicknessSliderCaptureStart = 1;
 constexpr WPARAM BarThicknessSliderCaptureCancel = 2;
@@ -183,26 +186,47 @@ bool IsBarThicknessPrecisionDragHit(
 		== BarThicknessFineDialHitZone::Drag;
 }
 
-void MarkBarTouchPointerMessage(ExMessage& message, bool cancelled = false)
+void MarkBarTouchPointerMessage(ExMessage& message, bool cancelled = false,
+	bool directDragScreenSample = false)
 {
 	// 非滚轮鼠标消息不使用 wheel，保留触摸转单指的来源标记。
 	message.wheel = cancelled
-		? BarTouchCancelMessageMarker
-		: BarTouchPointerMessageMarker;
+		? (directDragScreenSample
+			? BarTouchCancelScreenMessageMarker
+			: BarTouchCancelMessageMarker)
+		: (directDragScreenSample
+			? BarTouchDirectDragScreenMessageMarker
+			: BarTouchPointerMessageMarker);
 }
 
 bool IsBarTouchPointerMessage(const ExMessage& message)
 {
 	return message.message != WM_MOUSEWHEEL
 		&& (message.wheel == BarTouchPointerMessageMarker
-			|| message.wheel == BarTouchCancelMessageMarker);
+			|| message.wheel == BarTouchCancelMessageMarker
+			|| message.wheel == BarTouchDirectDragScreenMessageMarker
+			|| message.wheel == BarTouchCancelScreenMessageMarker);
 }
 
 bool IsBarTouchCancelMessage(const ExMessage& message)
 {
 	return message.message != WM_MOUSEWHEEL
-		&& message.wheel == BarTouchCancelMessageMarker;
+		&& (message.wheel == BarTouchCancelMessageMarker
+			|| message.wheel == BarTouchCancelScreenMessageMarker);
 }
+
+bool IsBarTouchScreenMessage(const ExMessage& message)
+{
+	return message.message != WM_MOUSEWHEEL
+		&& (message.wheel == BarTouchDirectDragScreenMessageMarker
+			|| message.wheel == BarTouchCancelScreenMessageMarker);
+}
+
+struct BarTouchScreenSample
+{
+	POINT point{};
+	bool ready = false;
+};
 
 bool IsBarCoordinateMessage(UINT message)
 {
@@ -229,45 +253,110 @@ bool IsBarCoordinateMessage(UINT message)
 	}
 }
 
+void ApplyBarBottomDockRigidHitTest(ExMessage& message)
+{
+	if (!IsBarCoordinateMessage(message.message)
+		|| IsBarTouchScreenMessage(message))
+		return;
+	message.y = static_cast<short>(clamp(
+		barUISet.BottomDockRigidHitTestY(message.y),
+		static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
+}
+
+void ApplyBarBottomDockBodyHitTestFromRigid(
+	ExMessage& message, int* visualY = nullptr)
+{
+	if (!IsBarCoordinateMessage(message.message)
+		|| IsBarTouchScreenMessage(message))
+	{
+		if (visualY) *visualY = message.y;
+		return;
+	}
+	message.y = static_cast<short>(clamp(
+		barUISet.BottomDockBodyHitTestYFromRigid(
+			message.y, visualY),
+		static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
+}
+
 bool BarScreenToLayout(
 	POINT& point, bool preserveScreenDuringDirectDrag = false)
 {
-	POINT presentedTranslation{};
+	const auto presented = barUISet.BottomDockPresentedSnapshot();
+	POINT presentedTranslation = presented.directTranslation;
 	// WM_TOUCH 拖动采样保留物理屏幕坐标；其他命中和光源始终跟随实际 HWND。
-	presentedTranslation = barUISet.DirectWindowPresentedTranslation(
-		preserveScreenDuringDirectDrag);
+	if (preserveScreenDuringDirectDrag)
+		presentedTranslation =
+			barUISet.DirectWindowPresentedTranslation(true);
 	point = Inkeys::UI::Bar::BarScreenToLayoutPoint(
-		point, barUISet.PresentedMonitorOrigin(),
+		point, presented.monitorOrigin,
 		presentedTranslation);
 	return true;
 }
 
 bool BarLayoutToScreen(POINT& point)
 {
+	const auto presented = barUISet.BottomDockPresentedSnapshot();
 	point = Inkeys::UI::Bar::BarLayoutToScreenPoint(
-		point, barUISet.PresentedMonitorOrigin());
+		point, presented.monitorOrigin, presented.directTranslation);
 	return true;
 }
 
-bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd)
+void PrepareBarInteractionMessage(ExMessage& message,
+	bool preserveTouchScreenCoordinates,
+	BarTouchScreenSample* touchScreenSample = nullptr)
+{
+	if (touchScreenSample) touchScreenSample->ready = false;
+	if (IsBarTouchScreenMessage(message))
+	{
+		const POINT screenPoint{ message.x, message.y };
+		if (touchScreenSample)
+		{
+			touchScreenSample->point = screenPoint;
+			touchScreenSample->ready = true;
+		}
+		if (preserveTouchScreenCoordinates) return;
+
+		const bool cancelled = IsBarTouchCancelMessage(message);
+		POINT layoutPoint = screenPoint;
+		BarScreenToLayout(layoutPoint);
+		message.x = static_cast<short>(clamp<LONG>(
+			layoutPoint.x, SHRT_MIN, SHRT_MAX));
+		message.y = static_cast<short>(clamp<LONG>(
+			layoutPoint.y, SHRT_MIN, SHRT_MAX));
+		MarkBarTouchPointerMessage(message, cancelled, false);
+	}
+	ApplyBarBottomDockRigidHitTest(message);
+}
+
+bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
+	bool preserveTouchScreenCoordinates = false,
+	BarTouchScreenSample* touchScreenSample = nullptr)
 {
 	// 保持原有轮询粒度，同时让退出时的 join 可终止。
 	while (!offSignal)
 	{
 		if (Inkeys::Window::TryGet(hWnd, message,
-			static_cast<Inkeys::Message::Filter>(filter))) return true;
+			static_cast<Inkeys::Message::Filter>(filter)))
+		{
+			// 普通命中在消费时转换；拖动循环保留整次 contact 的绝对屏幕采样。
+			PrepareBarInteractionMessage(message,
+				preserveTouchScreenCoordinates, touchScreenSample);
+			return true;
+		}
 		this_thread::sleep_for(chrono::milliseconds(1));
 	}
 	return false;
 }
 
 bool TryGetBarInteractionMessage(
-	ExMessage* message, BYTE filter, bool removeMessage, HWND hWnd)
+	ExMessage* message, BYTE filter, bool removeMessage, HWND hWnd,
+	BarTouchScreenSample* touchScreenSample = nullptr)
 {
 	// 旧交互路径全部是成功即消费，HiMsg 不提供 peek 语义。
 	if (!message || !removeMessage || !Inkeys::Window::TryGet(
 		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter)))
 		return false;
+	PrepareBarInteractionMessage(*message, false, touchScreenSample);
 	return true;
 }
 
@@ -386,6 +475,8 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			POINT point{};
 			bool pointAvailable = GetCursorPos(&point)
 				&& BarScreenToLayout(point);
+			if (pointAvailable)
+				point.y = barUISet.BottomDockRigidHitTestY(point.y);
 			auto infoHit = barUISet.shapeMap[annotation
 				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit
 				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoHit];
@@ -634,7 +725,6 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 				pt.x = static_cast<LONG>(xO + 0.5);
 				pt.y = static_cast<LONG>(yO + 0.5);
-				BarScreenToLayout(pt, true);
 
 				if ((ti.dwFlags & TOUCHEVENTF_DOWN) && (isPrimaryTouch || canLockFallbackTouch))
 				{
@@ -651,7 +741,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.x = activeTouchX;
 							msgMouse.y = activeTouchY;
 							msgMouse.lbutton = false;
-							MarkBarTouchPointerMessage(msgMouse, true);
+							MarkBarTouchPointerMessage(msgMouse, true, true);
 
 							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
@@ -675,7 +765,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.x = pt.x;
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
-							MarkBarTouchPointerMessage(msgMouse);
+							MarkBarTouchPointerMessage(msgMouse, false, true);
 
 							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
@@ -697,7 +787,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.x = pt.x;
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = true;
-							MarkBarTouchPointerMessage(msgMouse);
+							MarkBarTouchPointerMessage(msgMouse, false, true);
 
 							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
@@ -721,7 +811,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 							msgMouse.x = pt.x;
 							msgMouse.y = pt.y;
 							msgMouse.lbutton = false;
-							MarkBarTouchPointerMessage(msgMouse);
+							MarkBarTouchPointerMessage(msgMouse, false, true);
 
 							(void)Inkeys::Window::Enqueue(hWnd, msgMouse);
 						}
@@ -895,7 +985,7 @@ namespace
 {
 struct BarInteractionMemberAccess
 {
-	double (BarUISetClass::*seek)(const ExMessage&) = nullptr;
+	BarSeekResult (BarUISetClass::*seek)(const ExMessage&) = nullptr;
 	void (BarUISetClass::*closeThicknessOverflowTooltip)() = nullptr;
 	void (BarUISetClass::*closeDrawAttributeTooltips)() = nullptr;
 	void (BarUISetClass::*closePenTypeMenu)() = nullptr;
@@ -1975,6 +2065,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 	BarInteractionStageResult PollInteractionMessage()
 		{
+		currentTouchScreenSample.ready = false;
 		if ((thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
 			|| thicknessFineDialPhase == ThicknessFineDialPhase::Settling)
 			&& !barState.drawAttributeBar.thicknessFineDialPhysicsActive)
@@ -1993,7 +2084,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (thicknessPhysicsPolling)
 		{
 			if (!TryGetBarInteractionMessage(
-				&msg, EM_MOUSE | EM_KEY, true, floating_window))
+				&msg, EM_MOUSE | EM_KEY, true, floating_window,
+				&currentTouchScreenSample))
 			{
 				AdvanceThicknessFineDialPhysics();
 				std::this_thread::sleep_for(
@@ -2004,7 +2096,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			thicknessFineDialPhysicsClockNeedsReset = true;
 		}
 		else if (!WaitForBarInteractionMessage(
-			msg, EM_MOUSE | EM_KEY, floating_window))
+			msg, EM_MOUSE | EM_KEY, floating_window, false,
+			&currentTouchScreenSample))
 			return BarInteractionStageResult::Shutdown;
 		return BarInteractionStageResult::PassThrough;
 		}
@@ -2177,6 +2270,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					UpdateRendering(false);
 
 				BarButtonClass* currentHoveredButton = nullptr;
+				const int mainBodyHitTestY =
+					barUISet.BottomDockBodyHitTestYFromRigid(msg.y);
 				if (!barState.fold && !colorPickerOccludes
 					&& !penTypeMenuOccludes)
 				{
@@ -2189,7 +2284,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						bool isColorSelector = temp->name.enable.tar
 							&& temp->name.content.GetTar().substr(0, 7) == L"__color";
 						if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
-						if (temp->button.IsClick(msg.x, msg.y, barStyle.zoom))
+						if (temp->button.IsClick(
+							msg.x, mainBodyHitTestY, barStyle.zoom))
 						{
 							currentHoveredButton = temp;
 							break;
@@ -2900,6 +2996,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 	BarInteractionStageResult HandleMainButtonAndBarPointerStage()
 	{
 			bool continueFlag = true;
+			const short rigidMessageY = msg.y;
+			int visualMessageY = rigidMessageY;
+			ApplyBarBottomDockBodyHitTestFromRigid(msg, &visualMessageY);
 
 			// 主按钮
 			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
@@ -2907,8 +3006,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
-					double moveDis = Seek(msg);
-					if (moveDis <= 20)
+					// Seek 需要按下时的真实视觉坐标，不能把主体逆形变坐标当作抓取点。
+					ExMessage seekMessage = msg;
+					seekMessage.y = static_cast<short>(clamp(
+						visualMessageY, static_cast<int>(SHRT_MIN),
+						static_cast<int>(SHRT_MAX)));
+					const BarSeekResult seekResult = Seek(seekMessage);
+					if (seekResult.allowClick)
 					{
 						if (barUISet.TryBeginToggle(BarToggleChannel::Main))
 						{
@@ -2969,6 +3073,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								{
 									return BarInteractionStageResult::Shutdown;
 								}
+								ApplyBarBottomDockBodyHitTestFromRigid(msg);
 								if (doubleClickContinuation || temp->button.IsClick(msg.x, msg.y, barStyle.zoom))
 								{
 									if (!msg.lbutton)
@@ -3012,6 +3117,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 				}
 			}
+			msg.y = rigidMessageY;
 			return continueFlag
 				? BarInteractionStageResult::PassThrough
 				: BarInteractionStageResult::Consumed;
@@ -4922,9 +5028,21 @@ private:
 		barUISet.UpdateRendering(updateState);
 	}
 
-	double Seek(const ExMessage& message)
+	BarSeekResult Seek(const ExMessage& message)
 	{
-		return (barUISet.*memberAccess.seek)(message);
+		ExMessage seekMessage = message;
+		if (currentTouchScreenSample.ready
+			&& IsBarTouchPointerMessage(message))
+		{
+			seekMessage.x = static_cast<short>(clamp<LONG>(
+				currentTouchScreenSample.point.x, SHRT_MIN, SHRT_MAX));
+			seekMessage.y = static_cast<short>(clamp<LONG>(
+				currentTouchScreenSample.point.y, SHRT_MIN, SHRT_MAX));
+			MarkBarTouchPointerMessage(seekMessage,
+				IsBarTouchCancelMessage(message), true);
+		}
+		currentTouchScreenSample.ready = false;
+		return (barUISet.*memberAccess.seek)(seekMessage);
 	}
 
 	void CloseThicknessOverflowTooltip()
@@ -4981,6 +5099,7 @@ private:
 	IdtAtomic<BarButtonHoverStageEnum>& geometryCloseHoverStage;
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
 	BarInteractionMemberAccess memberAccess;
+	BarTouchScreenSample currentTouchScreenSample{};
 
 	ExMessage msg{};
 	BarButtonClass* lastClickedMainBarButton = nullptr;
@@ -5338,36 +5457,47 @@ bool BarUISetClass::ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs)
 	return false;
 }
 
-void BarUISetClass::RefreshBorderCursorVisibleRegions(double frameZoom)
+void BarUISetClass::RefreshBorderCursorVisibleRegions()
 {
 	array<RECT, 6> nextRegions{};
 	size_t nextCount = 0;
-	auto AddShape = [&](const shared_ptr<BarUiShapeClass>& shape)
+	const auto bottomDockSnapshot = BottomDockPresentedSnapshot();
+	const double frameZoom = bottomDockSnapshot.zoom;
+	auto AddShape = [&](const shared_ptr<BarUiShapeClass>& shape, bool body)
 		{
 			if (!shape || !shape->enable.val || shape->pct.val <= 0.000001
 				|| nextCount >= nextRegions.size())
 				return;
-			nextRegions[nextCount++] = BarRenderingAttribute::GetWeigetRect(
-				*shape, frameZoom);
+			RECT bounds = BarRenderingAttribute::GetWeigetRect(*shape, frameZoom);
+			nextRegions[nextCount++] = body
+				? TransformBarBottomDockBodyRect(
+					bounds, bottomDockSnapshot.mapping, frameZoom)
+				: Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+					bottomDockSnapshot.rigidTranslationDip, frameZoom);
 		};
 	auto AddSuperellipse = [&](const shared_ptr<BarUiSuperellipseClass>& superellipse)
 		{
 			if (!superellipse || !superellipse->enable.val
 				|| superellipse->pct.val <= 0.000001 || nextCount >= nextRegions.size())
 				return;
-			nextRegions[nextCount++] =
-				BarRenderingAttribute::GetWeigetRect(*superellipse, frameZoom);
+			RECT bounds = BarRenderingAttribute::GetWeigetRect(
+				*superellipse, frameZoom);
+			nextRegions[nextCount++] = TransformBarBottomDockBodyRect(
+				bounds, bottomDockSnapshot.mapping, frameZoom);
 		};
 
 	AddSuperellipse(superellipseMap[BarUISetSuperellipseEnum::MainButton]);
-	AddShape(shapeMap[BarUISetShapeEnum::MainBar]);
-	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar]);
-	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar]);
-	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel]);
-	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble]);
+	AddShape(shapeMap[BarUISetShapeEnum::MainBar], true);
+	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar], false);
+	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
+	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel], false);
+	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble], false);
 
 	// 距离判断统一在屏幕坐标完成，避免接受区内外分别换算客户区坐标。
-	POINT clientOrigin = barUISet.PresentedMonitorOrigin();
+	POINT clientOrigin = bottomDockSnapshot.monitorOrigin;
+	const POINT directTranslation = bottomDockSnapshot.directTranslation;
+	clientOrigin.x += directTranslation.x;
+	clientOrigin.y += directTranslation.y;
 	if (!floating_window)
 	{
 		nextCount = 0;
@@ -5395,8 +5525,7 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 		visibleRegionCount = borderCursorVisibleRegionCount;
 	}
 
-	double zoom = barStyle.zoom;
-	if (!isfinite(zoom) || zoom <= 0.0) return false;
+	const double zoom = BottomDockPresentedSnapshot().zoom;
 	double distanceLimit = BarBorderCursorLightRadius * zoom;
 	if (distanceLimit <= 0.0) return false;
 	double distanceLimitSquared = distanceLimit * distanceLimit;
@@ -5416,23 +5545,34 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 }
 
 // 拖动交互
-double BarUISetClass::Seek(const ExMessage& msg)
+BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 {
+	using namespace Inkeys::UI::Bar;
+	BarSeekResult result;
 	auto IsLeftButtonDown = []() -> bool
 		{
 			// HWND 移动后可能收不到抬手消息，拖动循环必须以系统实时按键态结束。
 			return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 		};
-	bool touchGesture = IsBarTouchPointerMessage(msg);
+	const bool touchGesture = IsBarTouchPointerMessage(msg);
+	if (touchGesture && IsBarTouchCancelMessage(msg))
+	{
+		result.allowClick = false;
+		return result;
+	}
 	if ((touchGesture && (!msg.lbutton || IsBarTouchCancelMessage(msg)))
-		|| (!touchGesture && !IsLeftButtonDown())) return 0;
+		|| (!touchGesture && !IsLeftButtonDown())) return result;
 
 	auto mainButton = superellipseMap[BarUISetSuperellipseEnum::MainButton];
-	if (!mainButton) return 0;
+	if (!mainButton) return result;
 
-	double ret = 0.0;
-	double tarZoom = barStyle.zoom;
-	if (!isfinite(tarZoom) || tarZoom <= 0.0) return 0;
+	const BarPendingDisplaySnapshot initialDisplaySnapshot =
+		PendingDisplaySnapshot();
+	auto ResolveInteractionZoom = [&](const BarPendingDisplaySnapshot& snapshot)
+		{
+			return ResolveBarBottomDockInteractionZoom(snapshot.dpi,
+				static_cast<double>(barStyle.configZoom));
+		};
 	// 吸收阶段不含 ULW；若恰好撞上，只等待这段极短的布局接管。
 	for (;;)
 	{
@@ -5440,7 +5580,7 @@ double BarUISetClass::Seek(const ExMessage& msg)
 		if (directWindowDragPhase.compare_exchange_weak(
 			expected, BarDirectWindowDragPhase::Dragging,
 			memory_order_acq_rel, memory_order_acquire)) break;
-		if (expected == BarDirectWindowDragPhase::Dragging) return 0;
+		if (expected == BarDirectWindowDragPhase::Dragging) return result;
 		lock_guard lock(directWindowDragMutex);
 	}
 	auto FinishDirectWindowDrag = [&]()
@@ -5449,145 +5589,524 @@ double BarUISetClass::Seek(const ExMessage& msg)
 				BarDirectWindowDragPhase::Idle, memory_order_release);
 		};
 
-	// HWND 对应当前已显示位置；从 val 起算可避免打断旧动画时跳到尚未呈现的 tar。
-	const double initialMainX = mainButton->x.val;
-	const double initialMainY = mainButton->y.val;
-	const LONG dragBaseX = directWindowDragTranslationX.load(memory_order_acquire);
-	const LONG dragBaseY = directWindowDragTranslationY.load(memory_order_acquire);
-	double appliedDeltaX = static_cast<double>(dragBaseX);
-	double appliedDeltaY = static_cast<double>(dragBaseY);
+	const BarBottomDockPresentedSnapshot initialPresentedSnapshot =
+		BottomDockPresentedSnapshot();
+	const double presentedZoom = initialPresentedSnapshot.zoom;
+	double interactionZoom = presentedZoom;
+	double maximumInteractionZoom = interactionZoom;
+	const double initialTargetZoom =
+		ResolveInteractionZoom(initialDisplaySnapshot);
+	const bool initialDisplayTransitionPending =
+		initialDisplaySnapshot.serial
+			!= initialPresentedSnapshot.displaySerial
+		|| abs(initialTargetZoom - presentedZoom) > 0.000001;
+	const POINT initialMonitorOrigin = initialPresentedSnapshot.monitorOrigin;
+	const POINT initialPresentedTranslation =
+		initialPresentedSnapshot.directTranslation;
+	const BarBottomDockMode initialMode = initialPresentedSnapshot.mode;
+	const BarBottomDockPhase initialPhase = initialPresentedSnapshot.phase;
+	const bool initialRecoveryActive =
+		initialPresentedSnapshot.recoveryActive;
+	const double initialPresentedElasticDip =
+		initialPresentedSnapshot.elasticOffsetDip;
+	const auto deferredTransitionBeforeGesture =
+		bottomDockDeferredTransitionSerial.load(memory_order_acquire);
+	const bool presentedStateRebaseRequired =
+		initialDisplayTransitionPending
+		|| deferredTransitionBeforeGesture
+			> initialPresentedSnapshot.transitionSerial
+		|| bottomDockMode.load(memory_order_acquire) != initialMode
+		|| bottomDockPhase.load(memory_order_acquire) != initialPhase
+		|| bottomDockRecoveryActive.load(memory_order_acquire)
+			!= initialRecoveryActive
+		|| abs(bottomDockElasticOffsetDip.load(memory_order_acquire)
+			- initialPresentedElasticDip) > 0.000001;
+	unsigned long long gestureRebaseSerial = 0;
+	if (presentedStateRebaseRequired)
+	{
+		// 上一手势可能尚未提交 ULW；新手势先撤回到同一份已呈现 tuple。
+		bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		bottomDockMode.store(initialMode, memory_order_relaxed);
+		bottomDockPhase.store(initialPhase, memory_order_relaxed);
+		bottomDockRecoveryActive.store(
+			initialRecoveryActive, memory_order_relaxed);
+		bottomDockElasticOffsetDip.store(
+			initialPresentedElasticDip, memory_order_relaxed);
+		directWindowDragTranslationX.store(
+			initialPresentedTranslation.x, memory_order_relaxed);
+		directWindowDragTranslationY.store(
+			initialPresentedTranslation.y, memory_order_relaxed);
+		gestureRebaseSerial = bottomDockTransitionSerial.fetch_add(
+			1, memory_order_acq_rel) + 1;
+		bottomDockDeferredTransitionSerial.store(
+			gestureRebaseSerial, memory_order_release);
+	}
+	double baseMainCenterScreenX =
+		initialPresentedSnapshot.mainCenterScreenX
+		- initialPresentedTranslation.x;
+	double baseMainCenterScreenY =
+		initialPresentedSnapshot.mainCenterScreenY
+		- initialPresentedTranslation.y;
+	LONG appliedDeltaX = directWindowDragTranslationX.load(memory_order_acquire);
+	LONG appliedDeltaY = directWindowDragTranslationY.load(memory_order_acquire);
 	bool directMoveFailed = false;
-	auto ApplyPointerDelta = [&](double totalDeltaX, double totalDeltaY)
+
+	BarBottomDockEnvironment environment{
+		initialPresentedSnapshot.monitorBounds,
+		initialPresentedSnapshot.workArea,
+		interactionZoom };
+	unsigned long long observedDisplaySerial =
+		initialPresentedSnapshot.displaySerial;
+	bool displayEnvironmentAwaited = initialDisplayTransitionPending;
+	unsigned long long requestedDisplaySerial = initialDisplaySnapshot.serial;
+	double requestedDisplayZoom = initialTargetZoom;
+	const double bodyHeightDip = 80.0;
+	const double strokeWidthDip = mainButton->ft.has_value()
+		? max(0.0, static_cast<double>(mainButton->ft.value().tar)) : 0.0;
+	const double visibleHalfWidthDip = mainButton->GetW() / 2.0
+		+ strokeWidthDip / 2.0;
+	auto VisibleHalfHeightScreen = [&]()
 		{
-			// 临时限制主按钮整体始终留在主屏幕内，先不处理贴边隐藏和多显示器。
-			double frameHalf = 0.0;
-			if (mainButton->ft.has_value()) frameHalf = max(0.0, mainButton->ft.value().tar / 2.0);
+			return (bodyHeightDip + strokeWidthDip)
+				* interactionZoom / 2.0;
+		};
 
-			double minX = mainButton->GetW() / 2.0 + frameHalf;
-			double minY = mainButton->GetH() / 2.0 + frameHalf;
-			double maxX = static_cast<double>(barWindow.w) / tarZoom - mainButton->GetW() / 2.0 - frameHalf;
-			double maxY = static_cast<double>(barWindow.h) / tarZoom - mainButton->GetH() / 2.0 - frameHalf;
+	POINT startPointer{};
+	if (touchGesture)
+	{
+		if (IsBarTouchScreenMessage(msg))
+			startPointer = POINT{ msg.x, msg.y };
+		else startPointer = POINT{
+			msg.x + initialMonitorOrigin.x + initialPresentedTranslation.x,
+			msg.y + initialMonitorOrigin.y + initialPresentedTranslation.y };
+	}
+	else if (!GetCursorPos(&startPointer))
+	{
+		// 初始采样失败等价于取消手势，不能把默认结果误当成一次点击。
+		result.allowClick = false;
+		FinishDirectWindowDrag();
+		if (!offSignal) UpdateRendering(false);
+		return result;
+	}
+	POINT previousPointer = startPointer;
+	const double actualMainCenterScreenX =
+		initialPresentedSnapshot.mainCenterScreenX;
+	const double actualMainCenterScreenY =
+		initialPresentedSnapshot.mainCenterScreenY;
+	double grabOffsetScreenX = startPointer.x - actualMainCenterScreenX;
+	double grabOffsetScreenY = startPointer.y
+		- (actualMainCenterScreenY
+			+ initialPresentedSnapshot.rigidTranslationDip * presentedZoom);
+	bottomDockDragRigidGripScreenY.store(
+		startPointer.y - grabOffsetScreenY, memory_order_release);
+	const double initialFloatingVisibleBottomScreenY =
+		startPointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
+	const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+		ResolveBarBottomDockLine(
+			environment.monitorBounds, environment.workArea),
+		bodyHeightDip, strokeWidthDip, interactionZoom);
+	BarBottomDockDragTracker dockTracker;
+	dockTracker.Begin(initialMode, startPointer.y,
+		initialFloatingVisibleBottomScreenY,
+		initialDockCenterScreenY + grabOffsetScreenY, environment);
+	bottomDockDragActive.store(true, memory_order_release);
+	bottomDockPhase.store(initialMode == BarBottomDockMode::BottomDocked
+		? BarBottomDockPhase::Dragging : initialPhase, memory_order_release);
+	if (initialMode == BarBottomDockMode::BottomDocked
+		|| presentedStateRebaseRequired)
+		bottomDockElasticOffsetDip.store(
+			initialPresentedElasticDip, memory_order_release);
+	UpdateRendering(false);
 
-			if (maxX < minX) maxX = minX;
-			if (maxY < minY) maxY = minY;
-
-			double nextX = clamp(initialMainX
-				+ (static_cast<double>(dragBaseX) + totalDeltaX) / tarZoom,
-				minX, maxX);
-			double nextY = clamp(initialMainY
-				+ (static_cast<double>(dragBaseY) + totalDeltaY) / tarZoom,
-				minY, maxY);
-			LONG pixelDeltaX = static_cast<LONG>(lround((nextX - initialMainX) * tarZoom));
-			LONG pixelDeltaY = static_cast<LONG>(lround((nextY - initialMainY) * tarZoom));
-			if (pixelDeltaX == static_cast<LONG>(lround(appliedDeltaX))
-				&& pixelDeltaY == static_cast<LONG>(lround(appliedDeltaY))) return false;
-			directWindowDragTranslationX.store(pixelDeltaX, memory_order_release);
-			directWindowDragTranslationY.store(pixelDeltaY, memory_order_release);
+	double maximumElasticTravelScreen = 0.0;
+	double lastPublishedElasticDip = initialPresentedElasticDip;
+	bool downwardDetachSeen = false;
+	bool downwardDetachBlockedAtRelease = false;
+	bool gestureCancelled = false;
+	unsigned long long awaitedTransitionSerial = gestureRebaseSerial;
+	auto PublishPresentationBarrier = [&]()
+		{
+			// 缩放或显示参数改变时，先让 ULW 提交新尺寸，再允许直移旧位图。
+			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+			const auto barrierSerial = bottomDockTransitionSerial.fetch_add(
+				1, memory_order_acq_rel) + 1;
+			bottomDockDeferredTransitionSerial.store(
+				barrierSerial, memory_order_release);
+			awaitedTransitionSerial = barrierSerial;
+			UpdateRendering(false);
+		};
+	struct DockPublication
+	{
+		bool visualChanged = false;
+		unsigned long long transitionSerial = 0;
+	};
+	auto PublishDockUpdate = [&](const BarBottomDockDragUpdate& update)
+		{
+			DockPublication publication;
+			publication.visualChanged = update.modeChanged
+				|| abs(update.elasticOffsetDip - lastPublishedElasticDip) > 0.000001;
+			bottomDockMode.store(update.mode, memory_order_release);
+			bottomDockPhase.store(update.phase, memory_order_release);
+			bottomDockElasticOffsetDip.store(
+				update.elasticOffsetDip, memory_order_release);
+			if (update.detached)
 			{
-				unique_lock lock(directWindowDragMutex, try_to_lock);
-				if (lock.owns_lock())
-				{
-					RECT currentWindowRect{};
-					if (committedWindowScreenBoundsReady)
-						currentWindowRect = committedWindowScreenBounds;
-					else if (!GetWindowRect(floating_window, &currentWindowRect))
-					{
-						directMoveFailed = true;
-						return false;
-					}
-					const POINT desiredTranslation{
-						directWindowDragTranslationX.load(memory_order_acquire),
-						directWindowDragTranslationY.load(memory_order_acquire) };
-					const POINT presentedTranslation{
-						directWindowPresentedTranslationX.load(memory_order_acquire),
-						directWindowPresentedTranslationY.load(memory_order_acquire) };
-					const POINT moveDelta =
-						Inkeys::UI::Bar::ResolveBarDirectWindowMoveDelta(
-							desiredTranslation, presentedTranslation);
-					if ((moveDelta.x != 0 || moveDelta.y != 0)
-						&& !SetWindowPos(floating_window, nullptr,
-							currentWindowRect.left + moveDelta.x,
-							currentWindowRect.top + moveDelta.y, 0, 0,
-							SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE))
-					{
-						directWindowDragTranslationX.store(
-							static_cast<LONG>(lround(appliedDeltaX)), memory_order_release);
-						directWindowDragTranslationY.store(
-							static_cast<LONG>(lround(appliedDeltaY)), memory_order_release);
-						directMoveFailed = true;
-						return false;
-					}
-					if (moveDelta.x != 0 || moveDelta.y != 0)
-					{
-						committedWindowScreenBounds =
-							Inkeys::UI::Bar::TranslateBarWindowRect(
-								currentWindowRect, moveDelta);
-						committedWindowScreenBoundsReady = true;
-						directWindowPresentedTranslationX.store(
-							desiredTranslation.x, memory_order_release);
-						directWindowPresentedTranslationY.store(
-							desiredTranslation.y, memory_order_release);
-					}
-				}
-				else UpdateRendering(false);
+				bottomDockRecoveryActive.store(true, memory_order_release);
+				downwardDetachSeen = update.elasticOffsetDip > 0.0;
 			}
-			ret += hypot(static_cast<double>(pixelDeltaX) - appliedDeltaX,
-				static_cast<double>(pixelDeltaY) - appliedDeltaY);
-			appliedDeltaX = static_cast<double>(pixelDeltaX);
-			appliedDeltaY = static_cast<double>(pixelDeltaY);
-			return true;
+			else if (update.captured)
+			{
+				bottomDockRecoveryActive.store(false, memory_order_release);
+				downwardDetachSeen = false;
+			}
+			if (update.modeChanged)
+			{
+				result.captured = result.captured || update.captured;
+				result.detached = result.detached || update.detached;
+				result.modeChanged = true;
+				result.allowClick = false;
+				// 偶数 serial 发布在模式、阶段和形变量之后，渲染帧可据此建立呈现屏障。
+				publication.transitionSerial =
+					bottomDockTransitionSerial.fetch_add(
+						1, memory_order_acq_rel) + 1;
+			}
+			maximumElasticTravelScreen = max(maximumElasticTravelScreen,
+				abs(update.elasticOffsetDip - initialPresentedElasticDip)
+					* interactionZoom);
+			lastPublishedElasticDip = update.elasticOffsetDip;
+			return publication;
+		};
+
+	auto ApplyAbsolutePointer = [&](POINT pointer)
+		{
+			const double stepX = static_cast<double>(pointer.x - previousPointer.x);
+			const double stepY = static_cast<double>(pointer.y - previousPointer.y);
+			const double stepLength = hypot(stepX, stepY);
+			result.rawPathLength += stepLength;
+			result.moved = result.moved || stepLength > 0.0;
+			previousPointer = pointer;
+			auto RebasePointerToPresented = [&](const auto& presented)
+				{
+					baseMainCenterScreenX = presented.mainCenterScreenX
+						- presented.directTranslation.x;
+					baseMainCenterScreenY = presented.mainCenterScreenY
+						- presented.directTranslation.y;
+					grabOffsetScreenX = pointer.x - presented.mainCenterScreenX;
+					grabOffsetScreenY = pointer.y
+						- (presented.mainCenterScreenY
+							+ presented.rigidTranslationDip * presented.zoom);
+					const double floatingBottom = pointer.y - grabOffsetScreenY
+						+ VisibleHalfHeightScreen();
+					const double dockCenter = ResolveBarBottomDockCenterScreenY(
+						ResolveBarBottomDockLine(
+							environment.monitorBounds, environment.workArea),
+						bodyHeightDip, strokeWidthDip, interactionZoom);
+					dockTracker.RebaseDockGrip(
+						dockCenter + grabOffsetScreenY, floatingBottom);
+					appliedDeltaX = directWindowDragTranslationX.load(
+						memory_order_acquire);
+					appliedDeltaY = directWindowDragTranslationY.load(
+						memory_order_acquire);
+				};
+			auto AdoptPresentedEnvironment = [&](const auto& presented)
+				{
+					interactionZoom = presented.zoom;
+					maximumInteractionZoom = max(
+						maximumInteractionZoom, interactionZoom);
+					environment = BarBottomDockEnvironment{
+						presented.monitorBounds,
+						presented.workArea,
+						interactionZoom };
+					observedDisplaySerial = presented.displaySerial;
+					requestedDisplaySerial = presented.displaySerial;
+					requestedDisplayZoom = interactionZoom;
+				};
+
+			const auto presented = BottomDockPresentedSnapshot();
+			const bool presentedEnvironmentChanged =
+				presented.displaySerial != observedDisplaySerial
+				|| abs(presented.zoom - interactionZoom) > 0.000001;
+			bool pointerRebasedToPresented = false;
+			if (presentedEnvironmentChanged)
+			{
+				// 真实上屏的环境立即接管阈值；形态 barrier 可继续等待自己的 serial。
+				AdoptPresentedEnvironment(presented);
+				RebasePointerToPresented(presented);
+				pointerRebasedToPresented = true;
+				displayEnvironmentAwaited = false;
+			}
+			if (awaitedTransitionSerial != 0
+				&& presented.transitionSerial >= awaitedTransitionSerial)
+			{
+				if (displayEnvironmentAwaited)
+					AdoptPresentedEnvironment(presented);
+				// 对应形态/位移已经接管 HWND，吸收新基准后释放 barrier。
+				if (!pointerRebasedToPresented)
+					RebasePointerToPresented(presented);
+				awaitedTransitionSerial = 0;
+				displayEnvironmentAwaited = false;
+			}
+			const BarPendingDisplaySnapshot latestDisplaySnapshot =
+				PendingDisplaySnapshot();
+			const double latestZoom = ResolveInteractionZoom(
+				latestDisplaySnapshot);
+			const unsigned long long comparisonSerial = displayEnvironmentAwaited
+				? requestedDisplaySerial : observedDisplaySerial;
+			const double comparisonZoom = displayEnvironmentAwaited
+				? requestedDisplayZoom : interactionZoom;
+			if (latestDisplaySnapshot.serial != comparisonSerial
+				|| abs(latestZoom - comparisonZoom) > 0.000001)
+			{
+				// 等待期间只为真正的新目标建立屏障，连续采样不会重复推进 serial。
+				requestedDisplaySerial = latestDisplaySnapshot.serial;
+				requestedDisplayZoom = latestZoom;
+				displayEnvironmentAwaited = true;
+				bottomDockDragRigidGripScreenY.store(
+					pointer.y - grabOffsetScreenY, memory_order_release);
+				PublishPresentationBarrier();
+			}
+			bottomDockDragRigidGripScreenY.store(
+				pointer.y - grabOffsetScreenY, memory_order_release);
+
+			const double floatingVisibleBottomScreenY =
+				pointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
+			const BarBottomDockDragUpdate dockUpdate = dockTracker.Update(
+				pointer.y, floatingVisibleBottomScreenY, environment);
+
+			double desiredMainCenterScreenX = pointer.x - grabOffsetScreenX;
+			desiredMainCenterScreenX = ClampBarBottomDockMainCenterScreenX(
+				desiredMainCenterScreenX, environment.monitorBounds,
+				visibleHalfWidthDip, interactionZoom);
+			double desiredMainCenterScreenY = 0.0;
+			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
+				desiredMainCenterScreenY =
+					dockUpdate.constrainedGripScreenY - grabOffsetScreenY;
+			else
+			{
+				const double rawMainCenterScreenY =
+					pointer.y - grabOffsetScreenY;
+				desiredMainCenterScreenY = rawMainCenterScreenY;
+				const double minimumY = environment.monitorBounds.top
+					+ VisibleHalfHeightScreen();
+				const double maximumY = max(minimumY,
+					static_cast<double>(environment.monitorBounds.bottom)
+						- VisibleHalfHeightScreen());
+				desiredMainCenterScreenY = clamp(
+					desiredMainCenterScreenY, minimumY, maximumY);
+				const double dockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+					ResolveBarBottomDockLine(environment.monitorBounds,
+						environment.workArea), bodyHeightDip,
+					strokeWidthDip, interactionZoom);
+				downwardDetachBlockedAtRelease =
+					ShouldKeepBarBottomDockedAfterBlockedDownwardRelease(
+						downwardDetachSeen, rawMainCenterScreenY,
+						maximumY, dockCenterScreenY);
+			}
+			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
+				downwardDetachBlockedAtRelease = false;
+
+			const LONG pixelDeltaX = static_cast<LONG>(lround(
+				desiredMainCenterScreenX - baseMainCenterScreenX));
+			const LONG pixelDeltaY = static_cast<LONG>(lround(
+				desiredMainCenterScreenY - baseMainCenterScreenY));
+			const bool translationChanged = pixelDeltaX != appliedDeltaX
+				|| pixelDeltaY != appliedDeltaY;
+			if (dockUpdate.modeChanged)
+			{
+				// 奇数 serial 先封住帧快照，随后位移与形态作为一个转换发布。
+				bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+			}
+			if (translationChanged)
+			{
+				directWindowDragTranslationX.store(
+					pixelDeltaX, memory_order_release);
+				directWindowDragTranslationY.store(
+					pixelDeltaY, memory_order_release);
+			}
+			const DockPublication publication = PublishDockUpdate(dockUpdate);
+			if (dockUpdate.modeChanged)
+			{
+				// 捕获/脱离必须先由 ULW 同帧提交新位图和新位置，
+				// 在此之前禁止当前或后续采样用 SetWindowPos 移动上一帧位图。
+				bottomDockDeferredTransitionSerial.store(
+					publication.transitionSerial, memory_order_release);
+				awaitedTransitionSerial = publication.transitionSerial;
+			}
+			bool requestRendering = publication.visualChanged;
+			if (translationChanged)
+			{
+				const bool deferDirectMove = awaitedTransitionSerial != 0;
+				if (!deferDirectMove)
+				{
+					unique_lock lock(directWindowDragMutex, try_to_lock);
+					if (lock.owns_lock())
+					{
+						RECT currentWindowRect{};
+						if (committedWindowScreenBoundsReady)
+							currentWindowRect = committedWindowScreenBounds;
+						else if (!GetWindowRect(floating_window, &currentWindowRect))
+						{
+							directMoveFailed = true;
+							return false;
+						}
+						const POINT desiredTranslation{ pixelDeltaX, pixelDeltaY };
+						const POINT presentedTranslation{
+							directWindowPresentedTranslationX.load(memory_order_acquire),
+							directWindowPresentedTranslationY.load(memory_order_acquire) };
+						const POINT moveDelta = ResolveBarDirectWindowMoveDelta(
+							desiredTranslation, presentedTranslation);
+						if ((moveDelta.x != 0 || moveDelta.y != 0)
+							&& !SetWindowPos(floating_window, nullptr,
+								currentWindowRect.left + moveDelta.x,
+								currentWindowRect.top + moveDelta.y, 0, 0,
+								SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE))
+						{
+							directWindowDragTranslationX.store(
+								appliedDeltaX, memory_order_release);
+							directWindowDragTranslationY.store(
+								appliedDeltaY, memory_order_release);
+							directMoveFailed = true;
+							return false;
+						}
+						if (moveDelta.x != 0 || moveDelta.y != 0)
+						{
+							committedWindowScreenBounds = TranslateBarWindowRect(
+								currentWindowRect, moveDelta);
+							committedWindowScreenBoundsReady = true;
+							RebaseBottomDockPresentedWindow(
+								desiredTranslation, moveDelta);
+							// 第三光源接受区是屏幕缓存，HWND 直移后同步平移，不能等下一次 ULW。
+							lock_guard lightLock(borderCursorLightMutex);
+							for (size_t regionIndex = 0;
+								regionIndex < borderCursorVisibleRegionCount;
+								++regionIndex)
+							{
+								RECT& region = borderCursorVisibleRegions[regionIndex];
+								region.left += moveDelta.x;
+								region.right += moveDelta.x;
+								region.top += moveDelta.y;
+								region.bottom += moveDelta.y;
+							}
+						}
+					}
+					else requestRendering = true;
+				}
+				else requestRendering = true;
+				appliedDeltaX = pixelDeltaX;
+				appliedDeltaY = pixelDeltaY;
+			}
+			if (requestRendering) UpdateRendering(false);
+			return translationChanged || publication.visualChanged;
 		};
 
 	if (touchGesture)
 	{
-		// DOWN 在进入 Dragging 前已减去补偿，后续 MOVE 保留屏幕相对坐标。
-		double startX = static_cast<double>(msg.x
-			+ directWindowPresentedTranslationX.load(memory_order_acquire));
-		double startY = static_cast<double>(msg.y
-			+ directWindowPresentedTranslationY.load(memory_order_acquire));
 		ExMessage touchMessage = msg;
 		while (!offSignal && !directMoveFailed)
 		{
 			if (!WaitForBarInteractionMessage(
-				touchMessage, EM_MOUSE, floating_window)) break;
+				touchMessage, EM_MOUSE, floating_window, true))
+			{
+				gestureCancelled = true;
+				break;
+			}
 			if (!IsBarTouchPointerMessage(touchMessage)) continue;
-			if (IsBarTouchCancelMessage(touchMessage)) break;
+			if (IsBarTouchCancelMessage(touchMessage))
+			{
+				gestureCancelled = true;
+				break;
+			}
 
-			double currentX = static_cast<double>(touchMessage.x);
-			double currentY = static_cast<double>(touchMessage.y);
-			(void)ApplyPointerDelta(currentX - startX, currentY - startY);
-
-			if (!touchMessage.lbutton || touchMessage.message == WM_LBUTTONUP) break;
+			POINT pointer{};
+			if (IsBarTouchScreenMessage(touchMessage))
+				pointer = POINT{ touchMessage.x, touchMessage.y };
+			else pointer = POINT{
+				touchMessage.x + initialMonitorOrigin.x
+					+ initialPresentedTranslation.x,
+				touchMessage.y + initialMonitorOrigin.y
+					+ initialPresentedTranslation.y };
+			(void)ApplyAbsolutePointer(pointer);
+			if (!touchMessage.lbutton
+				|| touchMessage.message == WM_LBUTTONUP) break;
 		}
 	}
 	else
 	{
-		POINT point{};
-		if (!GetCursorPos(&point))
-		{
-			FinishDirectWindowDrag();
-			// 直移已经暂停过 Bar 客户端，早退也必须重新请求一次完整呈现。
-			if (!offSignal) UpdateRendering(false);
-			return 0;
-		}
-		double startX = static_cast<double>(point.x);
-		double startY = static_cast<double>(point.y);
+		POINT point = startPointer;
 		while (!offSignal && !directMoveFailed)
 		{
 			if (!IsLeftButtonDown()) break;
-			if (!GetCursorPos(&point)) break;
-
-			double currentX = static_cast<double>(point.x);
-			double currentY = static_cast<double>(point.y);
-			if (!ApplyPointerDelta(currentX - startX, currentY - startY)
-				&& !directMoveFailed)
+			if (!GetCursorPos(&point))
+			{
+				gestureCancelled = true;
+				break;
+			}
+			if (!ApplyAbsolutePointer(point) && !directMoveFailed)
 				this_thread::sleep_for(chrono::milliseconds(15));
 		}
 	}
+
+	if (directMoveFailed)
+	{
+		const bool rollbackModeChanged = bottomDockMode.load(
+			memory_order_acquire) != initialMode;
+		if (rollbackModeChanged)
+			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		bottomDockMode.store(initialMode, memory_order_release);
+		bottomDockPhase.store(initialPhase, memory_order_release);
+		bottomDockElasticOffsetDip.store(
+			initialPresentedElasticDip, memory_order_release);
+		bottomDockRecoveryActive.store(
+			initialRecoveryActive, memory_order_release);
+		if (rollbackModeChanged)
+		{
+			const auto rollbackSerial = bottomDockTransitionSerial.fetch_add(
+				1, memory_order_acq_rel) + 1;
+			bottomDockDeferredTransitionSerial.store(
+				rollbackSerial, memory_order_release);
+		}
+	}
+	else
+	{
+		dockTracker.End();
+		const BarBottomDockMode finalMode = downwardDetachBlockedAtRelease
+			? BarBottomDockMode::BottomDocked : dockTracker.Mode();
+		const double currentVisualOffset =
+			BottomDockPresentedSnapshot().elasticOffsetDip;
+		const bool needsRecovery = abs(currentVisualOffset)
+			> BarBottomDockSettleDistanceDip
+			|| abs(dockTracker.ElasticOffsetDip())
+				> BarBottomDockSettleDistanceDip;
+		const bool releaseModeChanged = bottomDockMode.load(
+			memory_order_acquire) != finalMode;
+		if (releaseModeChanged)
+			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		bottomDockMode.store(finalMode, memory_order_release);
+		bottomDockPhase.store(needsRecovery
+			? BarBottomDockPhase::Recovering
+			: BarBottomDockPhase::Stable, memory_order_release);
+		bottomDockElasticOffsetDip.store(needsRecovery
+			? dockTracker.ElasticOffsetDip() : 0.0, memory_order_release);
+		bottomDockRecoveryActive.store(
+			finalMode == BarBottomDockMode::Floating && needsRecovery,
+			memory_order_release);
+		if (releaseModeChanged)
+		{
+			const auto releaseSerial = bottomDockTransitionSerial.fetch_add(
+				1, memory_order_acq_rel) + 1;
+			bottomDockDeferredTransitionSerial.store(
+				releaseSerial, memory_order_release);
+		}
+	}
+	bottomDockDragActive.store(false, memory_order_release);
 	FinishDirectWindowDrag();
 	// 松手只发布接管请求；布局值由渲染线程吸收，避免和动画线程并发写对象。
 	if (!offSignal) UpdateRendering(false);
-	return ret;
+	result.allowClick = ShouldAllowBarBottomDockClick(
+		directMoveFailed, gestureCancelled, result.modeChanged,
+		result.rawPathLength, maximumElasticTravelScreen,
+		maximumInteractionZoom);
+	return result;
 }
 
 namespace Inkeys::UI::Bar

@@ -139,9 +139,14 @@ namespace
 		constexpr POINT directTranslation{ 180, -40 };
 		constexpr POINT translatedLayout = BarScreenToLayoutPoint(
 			screenPoint, monitorOrigin, directTranslation);
+		constexpr POINT translatedRoundTrip = BarLayoutToScreenPoint(
+			translatedLayout, monitorOrigin, directTranslation);
 		Check(translatedLayout.x == layout.x - directTranslation.x
 			&& translatedLayout.y == layout.y - directTranslation.y,
 			"unabsorbed direct-window movement preserves layout hit coordinates");
+		Check(translatedRoundTrip.x == screenPoint.x
+			&& translatedRoundTrip.y == screenPoint.y,
+			"screen and layout mapping includes unabsorbed direct translation both ways");
 		constexpr POINT followUpDelta = ResolveBarDirectWindowMoveDelta(
 			POINT{ 260, 20 }, directTranslation);
 		Check(followUpDelta.x == 80 && followUpDelta.y == 60,
