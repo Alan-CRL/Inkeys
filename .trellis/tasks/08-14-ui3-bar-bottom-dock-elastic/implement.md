@@ -23,6 +23,7 @@
 - [x] 将鼠标/触摸统一为连续绝对屏幕采样；把 `Seek` 改为结构化结果并实现无跳变捕获、脱离和重基准。
 - [x] 保持 x 轴独立直移、主按钮可见夹取和 ULW desired/presented translation 协议。
 - [x] 对主体应用纵向 group transform；主按钮背景和主图标共同形变，次级面板单独刚性绘制，并同步命中、边框光效与阴影。
+- [x] 拖动按住期间延迟 idle viewport 收缩，鼠标静止不改变 HWND 大小，抬手后再按最终外框收敛。
 - [x] 为弹性阶段加入一次性 capacity 包络和局部 dirty union；收敛后停止续帧。
 
 ## Phase 4：验证

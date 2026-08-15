@@ -371,6 +371,13 @@ namespace Inkeys::UI::Bar
 		bool changed = false;
 	};
 
+	[[nodiscard]] constexpr bool ShouldSettleBarWindowViewport(
+		bool idleSettlePending, bool bottomDockDragActive) noexcept
+	{
+		// 按住拖动时即使输入暂时静止，也保留交互开始时预留的窗口包络。
+		return idleSettlePending && !bottomDockDragActive;
+	}
+
 	// 动画期间只允许扩张；进入 idle 的最后一帧才按当前外框一次收缩。
 	class BarWindowViewportController
 	{

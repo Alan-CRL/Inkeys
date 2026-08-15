@@ -193,6 +193,7 @@ using Inkeys::UI::Bar::IsBarWindowRectEmpty;
 using Inkeys::UI::Bar::ResolveBarWindowCapacity;
 using Inkeys::UI::Bar::ResolveBarWindowAnimatedRect;
 using Inkeys::UI::Bar::ResolveBarWindowAnimationRange;
+using Inkeys::UI::Bar::ShouldSettleBarWindowViewport;
 using Inkeys::UI::Bar::ResolveBarThicknessPreviewEnvelope;
 using Inkeys::UI::Bar::ResolveBarThicknessPreviewReservationMode;
 using Inkeys::UI::Bar::ResolveBarDirectWindowTranslationAfterAbsorb;
@@ -8244,7 +8245,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			viewportTranslation.x = frameAnchor.x - state.committedAnchor.x;
 			viewportTranslation.y = frameAnchor.y - state.committedAnchor.y;
 		}
-		const bool settleViewport = state.debugFrameSleepLatch.IsPending();
+		const bool settleViewport = ShouldSettleBarWindowViewport(
+			state.debugFrameSleepLatch.IsPending(), frame.bottomDockDragActive);
 		const BarWindowViewportDecision viewportDecision =
 			state.viewportController.Resolve(
 				currentContentBounds, predictedEnvelope, layoutBounds,

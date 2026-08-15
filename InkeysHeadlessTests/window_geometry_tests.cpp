@@ -208,6 +208,30 @@ namespace
 			"whole-Bar drag translates the reservation without resizing");
 	}
 
+	void TestBottomDockDragDefersViewportSettle()
+	{
+		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
+		BarWindowViewportController controller;
+		auto reserved = controller.Resolve(
+			RECT{ 820, 420, 920, 520 }, RECT{ 760, 360, 1000, 580 },
+			layoutBounds, 4, false);
+		controller.Commit(reserved.viewport);
+
+		const bool pausedSettle = ShouldSettleBarWindowViewport(true, true);
+		auto paused = controller.Resolve(
+			RECT{ 820, 420, 920, 520 }, RECT{}, layoutBounds, 4, pausedSettle);
+		Check(!pausedSettle && !paused.changed
+			&& SameBarWindowRect(paused.viewport, reserved.viewport),
+			"paused bottom-dock drag keeps the reserved HWND size");
+
+		const bool releasedSettle = ShouldSettleBarWindowViewport(true, false);
+		auto released = controller.Resolve(
+			RECT{ 820, 420, 920, 520 }, RECT{}, layoutBounds, 4, releasedSettle);
+		Check(releasedSettle && released.changed
+			&& SameBarWindowRect(released.viewport, RECT{ 816, 416, 924, 524 }),
+			"bottom-dock release permits one final viewport resize");
+	}
+
 	void TestLayoutClipping()
 	{
 		constexpr RECT layoutBounds{ 0, 0, 1000, 800 };
@@ -293,6 +317,7 @@ int RunWindowGeometryTests()
 	TestThicknessPreviewInteractionEnvelope();
 	TestViewportResizeKeepsLayoutInputStable();
 	TestBatchExpansionAndIdleShrink();
+	TestBottomDockDragDefersViewportSettle();
 	TestLayoutClipping();
 	TestCapacityFallbackExpansion();
 	TestReservedEnvelopeStaysInsideCapacity();
