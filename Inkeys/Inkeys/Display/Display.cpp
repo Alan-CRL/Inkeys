@@ -25,11 +25,17 @@ namespace
 
 	struct Subscriber
 	{
-		std::uint64_t id = 0;
 		ChangeCallback callback;
+		std::uint64_t lastGeneration = 0;
 		std::size_t activeCalls = 0;
 		bool removing = false;
 		std::condition_variable drained;
+	};
+
+	struct Publication
+	{
+		SnapshotPtr snapshot;
+		std::shared_ptr<Subscriber> target;
 	};
 
 	std::mutex refreshMutex;
@@ -37,10 +43,9 @@ namespace
 	std::mutex publicationMutex;
 	std::atomic<SnapshotPtr> currentSnapshot;
 	std::vector<std::shared_ptr<Subscriber>> subscribers;
-	std::deque<SnapshotPtr> pendingPublications;
+	std::deque<Publication> pendingPublications;
 	bool publicationDrainActive = false;
 	std::uint64_t nextGeneration = 1;
-	std::uint64_t nextSubscriberId = 1;
 	bool shuttingDown = false;
 	thread_local Subscriber* executingSubscriber = nullptr;
 
@@ -305,6 +310,26 @@ namespace
 		return snapshot;
 	}
 
+	void InvokeSubscriber(const std::shared_ptr<Subscriber>& subscriber,
+		const SnapshotPtr& snapshot)
+	{
+		{
+			std::scoped_lock lock(subscriberMutex);
+			if (subscriber->removing || !snapshot ||
+				snapshot->generation <= subscriber->lastGeneration) return;
+			// 先登记代次再离锁调用，嵌套订阅也不会重入或倒序收到快照。
+			subscriber->lastGeneration = snapshot->generation;
+			++subscriber->activeCalls;
+		}
+		auto* previousExecuting = executingSubscriber;
+		executingSubscriber = subscriber.get();
+		try { subscriber->callback(snapshot); }
+		catch (...) {}
+		executingSubscriber = previousExecuting;
+		std::scoped_lock lock(subscriberMutex);
+		if (--subscriber->activeCalls == 0) subscriber->drained.notify_all();
+	}
+
 	void PublishCallbacks(const SnapshotPtr& snapshot)
 	{
 		std::vector<std::shared_ptr<Subscriber>> callbacks;
@@ -313,26 +338,13 @@ namespace
 			callbacks = subscribers;
 		}
 		for (const auto& subscriber : callbacks)
-		{
-			{
-				std::scoped_lock lock(subscriberMutex);
-				if (subscriber->removing) continue;
-				++subscriber->activeCalls;
-			}
-			auto* previousExecuting = executingSubscriber;
-			executingSubscriber = subscriber.get();
-			try { subscriber->callback(snapshot); }
-			catch (...) {}
-			executingSubscriber = previousExecuting;
-			std::scoped_lock lock(subscriberMutex);
-			if (--subscriber->activeCalls == 0) subscriber->drained.notify_all();
-		}
+			InvokeSubscriber(subscriber, snapshot);
 	}
 
-	[[nodiscard]] bool QueuePublication(const SnapshotPtr& snapshot)
+	[[nodiscard]] bool QueuePublicationLocked(const SnapshotPtr& snapshot,
+		std::shared_ptr<Subscriber> target = {})
 	{
-		std::scoped_lock lock(publicationMutex);
-		pendingPublications.push_back(snapshot);
+		pendingPublications.push_back({ snapshot, std::move(target) });
 		if (publicationDrainActive) return false;
 		publicationDrainActive = true;
 		return true;
@@ -342,7 +354,7 @@ namespace
 	{
 		for (;;)
 		{
-			SnapshotPtr snapshot;
+			Publication publication;
 			{
 				std::scoped_lock lock(publicationMutex);
 				if (pendingPublications.empty())
@@ -350,23 +362,25 @@ namespace
 					publicationDrainActive = false;
 					return;
 				}
-				snapshot = std::move(pendingPublications.front());
+				publication = std::move(pendingPublications.front());
 				pendingPublications.pop_front();
 			}
-			PublishCallbacks(snapshot);
+			if (publication.target)
+				InvokeSubscriber(publication.target, publication.snapshot);
+			else
+				PublishCallbacks(publication.snapshot);
 		}
 	}
 
-	void Unsubscribe(std::uint64_t id) noexcept
+	void Unsubscribe(const std::shared_ptr<void>& opaqueState) noexcept
 	{
-		if (!id) return;
+		if (!opaqueState) return;
+		const auto subscriber = std::static_pointer_cast<Subscriber>(opaqueState);
 		std::unique_lock lock(subscriberMutex);
 		const auto iterator = std::find_if(subscribers.begin(), subscribers.end(),
-			[id](const auto& subscriber) { return subscriber->id == id; });
-		if (iterator == subscribers.end()) return;
-		const auto subscriber = *iterator;
+			[&subscriber](const auto& value) { return value == subscriber; });
+		if (iterator != subscribers.end()) subscribers.erase(iterator);
 		subscriber->removing = true;
-		subscribers.erase(iterator);
 		if (executingSubscriber != subscriber.get())
 			subscriber->drained.wait(lock,
 				[&subscriber] { return subscriber->activeCalls == 0; });
@@ -444,7 +458,7 @@ namespace Inkeys::Display
 	Subscription::~Subscription() { Reset(); }
 
 	Subscription::Subscription(Subscription&& other) noexcept
-		: id_(std::exchange(other.id_, 0))
+		: state_(std::move(other.state_))
 	{
 	}
 
@@ -453,15 +467,15 @@ namespace Inkeys::Display
 		if (this != &other)
 		{
 			Reset();
-			id_ = std::exchange(other.id_, 0);
+			state_ = std::move(other.state_);
 		}
 		return *this;
 	}
 
 	void Subscription::Reset() noexcept
 	{
-		const auto id = std::exchange(id_, 0);
-		Unsubscribe(id);
+		auto state = std::move(state_);
+		Unsubscribe(state);
 	}
 
 	bool Initialize()
@@ -497,8 +511,11 @@ namespace Inkeys::Display
 				return enumerationSucceeded;
 			next->generation = nextGeneration++;
 			published = std::make_shared<const Snapshot>(std::move(*next));
-			currentSnapshot.store(published, std::memory_order_release);
-			drainPublications = QueuePublication(published);
+			{
+				std::scoped_lock lock(publicationMutex);
+				currentSnapshot.store(published, std::memory_order_release);
+				drainPublications = QueuePublicationLocked(published);
+			}
 		}
 		// 快照先完整发布，再在所有内部锁之外通知订阅者。
 		if (drainPublications) DrainPublications();
@@ -507,23 +524,28 @@ namespace Inkeys::Display
 
 	void Shutdown() noexcept
 	{
-		std::scoped_lock refreshLock(refreshMutex);
 		std::vector<std::shared_ptr<Subscriber>> removed;
 		{
-			std::unique_lock lock(subscriberMutex);
-			shuttingDown = true;
-			removed.swap(subscribers);
-			for (const auto& subscriber : removed) subscriber->removing = true;
-			for (const auto& subscriber : removed)
-				if (executingSubscriber != subscriber.get())
-					subscriber->drained.wait(lock,
-						[&subscriber] { return subscriber->activeCalls == 0; });
+			std::scoped_lock refreshLock(refreshMutex);
+			{
+				std::scoped_lock lock(subscriberMutex);
+				shuttingDown = true;
+				removed.swap(subscribers);
+				for (const auto& subscriber : removed) subscriber->removing = true;
+			}
+			{
+				std::scoped_lock lock(publicationMutex);
+				pendingPublications.clear();
+				currentSnapshot.store(SnapshotPtr{}, std::memory_order_release);
+			}
 		}
+		std::unique_lock lock(subscriberMutex);
+		for (const auto& subscriber : removed)
 		{
-			std::scoped_lock lock(publicationMutex);
-			pendingPublications.clear();
+			if (executingSubscriber == subscriber.get()) continue;
+			subscriber->drained.wait(lock,
+				[&subscriber] { return subscriber->activeCalls == 0; });
 		}
-		currentSnapshot.store(SnapshotPtr{}, std::memory_order_release);
 	}
 
 	SnapshotPtr GetSnapshot() noexcept
@@ -536,29 +558,22 @@ namespace Inkeys::Display
 		if (!callback) return {};
 		auto subscriber = std::make_shared<Subscriber>();
 		SnapshotPtr snapshot;
+		bool drainPublications = false;
 		{
 			std::scoped_lock lock(subscriberMutex);
 			if (shuttingDown) return {};
-			subscriber->id = nextSubscriberId++;
 			subscriber->callback = std::move(callback);
-			subscriber->activeCalls = 1;
 			subscribers.push_back(subscriber);
+		}
+		{
+			std::scoped_lock lock(publicationMutex);
 			snapshot = currentSnapshot.load(std::memory_order_acquire);
+			// 首次通知与刷新共用队列，保证每个订阅者看到的 generation 单调且不重复。
+			if (snapshot)
+				drainPublications = QueuePublicationLocked(snapshot, subscriber);
 		}
-		// 首次通知也在锁外执行，订阅者可安全读取其他模块状态。
-		if (snapshot)
-		{
-			auto* previousExecuting = executingSubscriber;
-			executingSubscriber = subscriber.get();
-			try { subscriber->callback(snapshot); }
-			catch (...) {}
-			executingSubscriber = previousExecuting;
-		}
-		{
-			std::scoped_lock lock(subscriberMutex);
-			if (--subscriber->activeCalls == 0) subscriber->drained.notify_all();
-		}
-		return Subscription(subscriber->id);
+		if (drainPublications) DrainPublications();
+		return Subscription(subscriber);
 	}
 
 	WNDPROC WindowProc() noexcept { return DisplayWindowProc; }

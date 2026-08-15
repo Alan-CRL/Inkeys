@@ -7,6 +7,21 @@
 5. 添加显示、PPT、Bar headless 测试；确认配置/COM ABI 未变、旧符号没有编译引用。
 6. 运行 `git diff --check`、ARM64 Debug headless 测试和 ARM64 host MSBuild 完整 Solution 构建；可见窗口场景只记录人工验收步骤。
 
+## 完成状态（2026-08-15）
+
+- [x] 建立 `Inkeys.Display` 并迁移旧消费者，删除旧显示管理全局与源码。
+- [x] PPT UI3 使用主屏快照重排，支持 DPI/位置/尺寸过渡、运行时纠偏和拖动延迟。
+- [x] Bar UI3 使用同一显示 tuple；后续底栏任务继续复用 bounds/workArea/DPI serial，并保留悬浮模式显示过渡。
+- [x] 首次订阅与刷新共用 publication 队列；generation 去重、嵌套订阅、并发 Reset/Shutdown drain 已有 headless 回归。
+- [x] 旧符号搜索、工程登记、CRLF/BOM、`git diff --check`、headless 与完整 ARM64 Debug Solution 构建通过。
+
+## 最终验证结果
+
+- `InkeysHeadlessTests.exe --no-window`：通过，输出 `PASS animation correctness`。
+- ARM64 host MSBuild 构建 `InkeysRepo.sln /m /p:Configuration=Debug /p:Platform=ARM64`：通过；仅有仓库既有数值窄化警告。
+- `IdtDisplayManagement|MainMonitor|DisplaysNumber|DisplaysInfo` 静态搜索：无结果。
+- 未启动可见窗口；真实显示器切换与 PowerPoint/WPS 场景尚未自动验证。
+
 ## 验证命令
 
 ```powershell

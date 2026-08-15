@@ -64,6 +64,16 @@
 4. 改变持锁范围、在锁内新增 COM/I/O/窗口调用或更换线程类型，都属于并发行为变更，需要专门验证，不能从通用建议自动实施。
 5. detached thread 是当前实现事实，不等于已确认缺陷，也不等于推荐的新线程模型；快速退出安全性需按具体调用点验证。
 
+## 显示快照与订阅合同
+
+`【直接确认】` `Inkeys.Display` 是主程序显示器枚举、主屏/虚拟桌面、工作区、有效 DPI、方向与 EDID 物理尺寸的统一来源。消费者不得恢复 `MainMonitor`、`DisplaysInfo` 等拆分全局状态。
+
+- 每次业务操作或渲染帧只保留一个 `SnapshotPtr`，从同一快照读取 bounds、workArea、DPI、方向和 EDID；不得分别调用或缓存字段后拼出跨 generation 状态。
+- 刷新先在局部完整构造候选快照；只有语义变化才递增 generation。新快照原子发布后，首次订阅通知和后续刷新通知都进入同一串行 publication 队列；单个订阅者不得重复或倒序收到 generation。
+- publication 回调在 Display 内部锁外执行。回调只发布目标或请求 UI 客户端，不直接操作 HWND/D2D 资源，也不能要求调用方持有 Display 内部锁。
+- `Subscription::Reset()` 与 `Shutdown()` 返回前必须等待该订阅者正在执行的回调退出；回调自行注销时不得等待自身。Shutdown 先禁止新刷新并清空发布状态，再在刷新锁外 drain 回调，避免回调重入 `Refresh()` 时死锁。
+- 后续枚举失败保留最后一个有效快照；首次失败发布显式 `fallback`，其 EDID 仍为 unknown。不得用系统指标伪造物理尺寸。
+
 ## 最小变更边界
 
 - `【直接确认；AGENTS.md】` 只修改完成任务所需的部分，不做未要求的优化。

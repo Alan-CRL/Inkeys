@@ -9,6 +9,7 @@ module;
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 export module Inkeys.Display;
@@ -80,11 +81,12 @@ export namespace Inkeys::Display
 		Subscription& operator=(Subscription&& other) noexcept;
 
 		void Reset() noexcept;
-		[[nodiscard]] explicit operator bool() const noexcept { return id_ != 0; }
+		[[nodiscard]] explicit operator bool() const noexcept { return state_ != nullptr; }
 
 	private:
-		explicit Subscription(std::uint64_t id) noexcept : id_(id) {}
-		std::uint64_t id_ = 0;
+		explicit Subscription(std::shared_ptr<void> state) noexcept
+			: state_(std::move(state)) {}
+		std::shared_ptr<void> state_;
 		friend Subscription Subscribe(ChangeCallback callback);
 	};
 

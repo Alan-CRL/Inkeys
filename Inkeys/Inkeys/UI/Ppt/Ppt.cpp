@@ -297,13 +297,26 @@ namespace Inkeys::UI::Ppt
 			return Mask(RenderClient::PptExitShow);
 		}
 
-		[[nodiscard]] RECT PrimaryDisplayBounds() noexcept
+		struct PrimaryDisplayLayout
+		{
+			RECT bounds{};
+			float dpiScale = 1.0F;
+		};
+
+		[[nodiscard]] PrimaryDisplayLayout ReadPrimaryDisplayLayout(
+			RenderClient client) noexcept
 		{
 			const auto snapshot = Inkeys::Display::GetSnapshot();
 			if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr)
-				return monitor->bounds;
-			return RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN),
-				GetSystemMetrics(SM_CYSCREEN) };
+				return { monitor->bounds, NormalizePptDpiScale(
+					static_cast<float>(monitor->effectiveDpiX
+						? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI) /
+					static_cast<float>(USER_DEFAULT_SCREEN_DPI)) };
+			return {
+				RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN),
+					GetSystemMetrics(SM_CYSCREEN) },
+				DpiScale(client),
+			};
 		}
 
 		[[nodiscard]] LayoutConfiguration ReadConfiguration()
@@ -340,9 +353,10 @@ namespace Inkeys::UI::Ppt
 		[[nodiscard]] Layout CalculateLayout(RenderClient client, ClientState& state,
 			std::chrono::steady_clock::time_point now)
 		{
-			const RECT monitor = PrimaryDisplayBounds();
+			const auto display = ReadPrimaryDisplayLayout(client);
+			const RECT monitor = display.bounds;
 			const auto runtime = ResolveRuntimeLayoutConfiguration(monitor,
-				ReadConfiguration(), DpiScale(client));
+				ReadConfiguration(), display.dpiScale);
 			const auto resolved = ResolveControlLayout(ControlFor(client), monitor,
 				runtime.configuration, presentationVisible.load(std::memory_order_acquire),
 				runtime.dpiScale);
@@ -712,8 +726,9 @@ namespace Inkeys::UI::Ppt
 							movedState.geometryStarted = pausedAt;
 						}
 						state.dragStart = event.screen;
-						state.dragMonitor = PrimaryDisplayBounds();
-						state.dragDpiScale = DpiScale(client);
+						const auto display = ReadPrimaryDisplayLayout(client);
+						state.dragMonitor = display.bounds;
+						state.dragDpiScale = display.dpiScale;
 						state.dragStartWidth = IsBottom(client) ? snapshot.bottomPairWidth
 							: IsMiddle(client) ? snapshot.middlePairWidth
 							: snapshot.exitWidth;
@@ -1379,7 +1394,8 @@ namespace Inkeys::UI::Ppt
 				message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE))
 			{
 				const auto client = ClientFor(role);
-				if (message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE)
+				if (message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE ||
+					message == WM_DPICHANGED)
 					(void)Inkeys::Display::Refresh(message == WM_DISPLAYCHANGE
 						? Inkeys::Display::ChangeReason::Display
 						: Inkeys::Display::ChangeReason::Settings);

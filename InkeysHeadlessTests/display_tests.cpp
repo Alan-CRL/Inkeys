@@ -5,11 +5,15 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <span>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 import Inkeys.Display;
 
@@ -118,7 +122,87 @@ int RunDisplayTests()
 		duplicate->generation == firstPublished->generation && callbackCount == 1,
 		"semantically equal refresh does not advance generation or notify");
 	subscription.Reset();
-	Inkeys::Display::Shutdown();
+
+	std::vector<int> nestedOrder;
+	Inkeys::Display::Subscription nestedSubscription;
+	auto outerSubscription = Inkeys::Display::Subscribe(
+		[&](Inkeys::Display::SnapshotPtr)
+		{
+			nestedOrder.push_back(1);
+			nestedSubscription = Inkeys::Display::Subscribe(
+				[&](Inkeys::Display::SnapshotPtr) { nestedOrder.push_back(2); });
+			nestedOrder.push_back(3);
+		});
+	Check(nestedOrder == std::vector<int>{ 1, 3, 2 },
+		"nested subscription callbacks stay serialized in publication order");
+	outerSubscription.Reset();
+	nestedSubscription.Reset();
+
+	std::promise<void> firstEnteredPromise;
+	auto firstEntered = firstEnteredPromise.get_future();
+	std::promise<void> releaseFirstPromise;
+	const auto releaseFirst = releaseFirstPromise.get_future().share();
+	std::thread publicationThread([&]
+		{
+			auto blocking = Inkeys::Display::Subscribe(
+				[&](Inkeys::Display::SnapshotPtr)
+				{
+					firstEnteredPromise.set_value();
+					releaseFirst.wait();
+				});
+			blocking.Reset();
+		});
+	firstEntered.wait();
+
+	std::promise<void> secondEnteredPromise;
+	auto secondEntered = secondEnteredPromise.get_future();
+	std::promise<void> releaseSecondPromise;
+	const auto releaseSecond = releaseSecondPromise.get_future().share();
+	auto blockingSubscription = Inkeys::Display::Subscribe(
+		[&](Inkeys::Display::SnapshotPtr)
+		{
+			secondEnteredPromise.set_value();
+			releaseSecond.wait();
+		});
+	releaseFirstPromise.set_value();
+	secondEntered.wait();
+
+	std::promise<void> shutdownFinishedPromise;
+	auto shutdownFinished = shutdownFinishedPromise.get_future();
+	std::thread shutdownThread([&]
+		{
+			Inkeys::Display::Shutdown();
+			shutdownFinishedPromise.set_value();
+		});
+	const auto shutdownDeadline = std::chrono::steady_clock::now() +
+		std::chrono::seconds(1);
+	while (Inkeys::Display::GetSnapshot() &&
+		std::chrono::steady_clock::now() < shutdownDeadline)
+		std::this_thread::yield();
+	Check(!Inkeys::Display::GetSnapshot(),
+		"shutdown blocks new publications before draining callbacks");
+
+	std::promise<void> resetFinishedPromise;
+	auto resetFinished = resetFinishedPromise.get_future();
+	std::promise<void> resetStartedPromise;
+	auto resetStarted = resetStartedPromise.get_future();
+	std::thread resetThread([&]
+		{
+			resetStartedPromise.set_value();
+			blockingSubscription.Reset();
+			resetFinishedPromise.set_value();
+		});
+	resetStarted.wait();
+	Check(shutdownFinished.wait_for(std::chrono::milliseconds(20)) ==
+		std::future_status::timeout,
+		"shutdown waits for an executing subscription callback");
+	Check(resetFinished.wait_for(std::chrono::milliseconds(20)) ==
+		std::future_status::timeout,
+		"subscription reset still waits after shutdown removes the subscriber");
+	releaseSecondPromise.set_value();
+	resetThread.join();
+	shutdownThread.join();
+	publicationThread.join();
 	Check(!Inkeys::Display::GetSnapshot(), "shutdown releases the published snapshot");
 	return failureCount;
 }

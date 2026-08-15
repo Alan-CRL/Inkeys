@@ -19,18 +19,23 @@
 
 ## Acceptance Criteria
 
-- [ ] `Inkeys.Display` 能生成一致的全显示器快照，并在语义变化时递增 generation、通知订阅者。
-- [ ] EDID 缺失或无效时保持 unknown；旋转显示器的物理宽高按当前方向提供，同时保留原始值。
-- [ ] 编译路径不再依赖 `IdtDisplayManagement.h/.cpp`、`MainMonitor` 或 `DisplaysNumber`。
-- [ ] PPT 在分辨率缩小、主屏原点改变、100% 与 150% DPI 往返时，五窗保持可见且尺寸/位置连续过渡。
-- [ ] Bar 在屏内时保持主按钮局部中心，在越界时以动画回到最近的可见位置，并使用过渡中的缩放做命中和脏区计算。
-- [ ] 自动纠偏不写入 `pptcom_configuration.json`，不改变 PPT COM 接口。
-- [ ] 新增 headless 单元测试覆盖快照、EDID、PPT 重排和 Bar 显示过渡算法。
-- [ ] `InkeysHeadlessTests.exe --no-window` 通过，`InkeysRepo.sln` 的 `Debug | ARM64` 完整构建通过，`git diff --check` 无问题。
+- [x] `Inkeys.Display` 能生成一致的全显示器快照，并在语义变化时递增 generation、通知订阅者。
+- [x] EDID 缺失或无效时保持 unknown；旋转显示器的物理宽高按当前方向提供，同时保留原始值。
+- [x] 编译路径不再依赖 `IdtDisplayManagement.h/.cpp`、`MainMonitor` 或 `DisplaysNumber`。
+- [x] PPT 在分辨率缩小、主屏原点改变、100% 与 150% DPI 往返时，五窗保持可见且尺寸/位置连续过渡。
+- [x] Bar 在屏内时保持主按钮局部中心，在越界时以动画回到最近的可见位置，并使用过渡中的缩放做命中和脏区计算。
+- [x] 自动纠偏不写入 `pptcom_configuration.json`，不改变 PPT COM 接口。
+- [x] 新增 headless 单元测试覆盖快照、EDID、PPT 重排和 Bar 显示过渡算法。
+- [x] `InkeysHeadlessTests.exe --no-window` 通过，`InkeysRepo.sln` 的 `Debug | ARM64` 完整构建通过，`git diff --check` 无问题。
 
 ## Notes
 
 - Setting UI 不做动态 DPI；仅迁移它读取显示器信息的路径。
 - 所有 UI 本任务仍固定在主显示器，并按完整显示器范围定位。
 - 不实现 Draw3 多屏绘图、手掌橡皮阈值、像素/物理距离业务换算或直线拉直业务接口。
-- 不覆盖现有 `Inkeys/PptCOM.dll` 修改，不提交 commit，不由代理启动可见窗口。
+- 不覆盖现有 `Inkeys/PptCOM.dll` 修改；除非用户后续明确要求，否则不提交 commit；不由代理启动可见窗口。
+
+## 验收说明（2026-08-15）
+
+- 代码、纯逻辑测试、无窗口并发回归、旧符号清理和 ARM64 Debug 完整构建已完成。
+- 真实分辨率、方向、缩放切换，以及 PowerPoint/WPS 五窗和 Bar 动画手感仍保留为维护者人工验收；代理未启动可见窗口。
