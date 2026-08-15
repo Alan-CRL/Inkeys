@@ -18,6 +18,7 @@
 | Inkeys 原生桌面程序 | [native-desktop/index.md](native-desktop/index.md) | [目录](native-desktop/directory-structure.md)、[构建/兼容](native-desktop/build-and-compatibility.md)、[C++](native-desktop/cpp-conventions.md)、[渲染/UI](native-desktop/rendering-and-ui.md)、[输入/墨迹](native-desktop/input-and-ink.md)、[错误/资源](native-desktop/errors-logging-and-resources.md)、[配置/i18n/资源](native-desktop/configuration-i18n-and-assets.md) |
 | PowerPoint/WPS COM 桥接 | [ppt-interop/index.md](ppt-interop/index.md) | [COM 契约与数据流](ppt-interop/com-contract.md) |
 | 思考清单 | [guides/index.md](guides/index.md) | guides 是 Trellis 通用提示，不是 Inkeys 架构事实；其中 Web/API 示例需映射到本项目实际层 |
+| Draw3 迁移兼容 | [native-desktop/index.md](native-desktop/index.md) | [Draw3 集成契约](native-desktop/draw3-integration.md)、[Draw3 shader 迁移](native-desktop/draw3-shaders.md) |
 
 **【直接确认】** Timeout/InkeysTimeout 是独立 Solution，未出现在 InkeysRepo.sln、主项目、当前 Windows CI 构建或 Inkeys/exe 中。**【待确认】** 它是否属于当前产品发布范围；native-desktop 只记录其仓库和工程边界。
 
@@ -39,3 +40,5 @@
 3. 规范中的代码路径是可核对的依据。若代码与文档不一致，应先重新调查，再更新规范。
 4. “待确认”不是默认决策；命中上方实施前决策门时必须先询问开发者。其他事实性问题只有在任务明确授权时，才能用构建或运行证据补全。
 5. Vcpkg 是第三方依赖子模块，Inkeys/additional、Inkeys/HiEasyX、Timeout/InkeysTimeout/json 也包含外部代码。除任务明确要求外，不把第三方实现当作本项目风格样本。
+
+6. Draw3 迁移代码必须遵守 native-desktop 的外部 Drawpad HWND、独立 D3D 设备、透明呈现回退和单一 RTS producer 契约；源仓库的 standalone demo 不属于主产品入口。

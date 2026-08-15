@@ -1,0 +1,117 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Tests">
+      <UniqueIdentifier>{B6A1B2D3-D7E9-4C69-94D0-7A96F74882F7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="draw3">
+      <UniqueIdentifier>{9826D1A9-17C5-44CF-A305-2AD89F56E4E1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="canvas_navigation_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="contact_input_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+	<ClCompile Include="highlighter_geometry_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="ink_document_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="ink_history_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="laser_incremental_coverage_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="pen_cursor_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+    <ClCompile Include="runtime_benchmark.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\haptic_feedback.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\canvas_navigation.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\canvas_navigation.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history_gpu.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history_gpu.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\pen_cursor.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\runtime_metrics.cpp">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\runtime_metrics.cppm">
+	  <Filter>draw3</Filter>
+	</ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_primitives.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_laser.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer_snapshot.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\renderer.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\laser_particles.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\laser_particle_system.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\laser_particles.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\stroke_geometry.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\win7_compat.cpp">
+      <Filter>draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cppm">
+      <Filter>draw3</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

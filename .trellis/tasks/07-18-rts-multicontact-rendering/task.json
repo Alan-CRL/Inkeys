@@ -1,0 +1,32 @@
+{
+  "id": "rts-multicontact-rendering",
+  "name": "rts-multicontact-rendering",
+  "title": "RTS multi-contact rendering",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-07-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-19-rts-contact-pool-lock-free",
+    "07-19-draw3-runtime-validation",
+    "07-19-highlighter-start-cap-stability",
+    "07-20-rts-pen-pressure-stylus-state",
+    "07-20-rts-inverted-pen-eraser"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "All three child implementations and automated gates pass. Pen/Touch manual matrix, grouped commit confirmation and archive remain pending.",
+  "meta": {}
+}

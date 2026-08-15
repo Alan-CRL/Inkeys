@@ -95,3 +95,12 @@ Found a new "didn't think of that" moment? Add it to the relevant guide.
 ---
 
 **Core Principle**: 30 minutes of thinking saves 3 hours of debugging.
+
+## Draw3 Cross-Layer Triggers
+
+For Draw3 migration work, also check these boundaries before changing code:
+
+- `InkPoint`, `HighlighterPrimitive`, constant buffers, and HLSL register layouts.
+- L0/L1/L2 commit, composition, clear, and resize semantics.
+- Window-procedure to drawing-thread mailboxes and transparent-presenter fallback.
+- Residual `main2.cpp`, `main3.cpp`, `renderer2.h`, `shader.hlsl`, or `ResTest/` references.

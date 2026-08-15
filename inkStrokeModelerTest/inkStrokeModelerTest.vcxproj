@@ -1,0 +1,464 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{a49d68f7-0a7e-4160-9c96-6b59b0c9aa85}</ProjectGuid>
+    <RootNamespace>inkStrokeModelerTest</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;DRAW3_RTS_DIAGNOSTICS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>./additional;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>./lib/lib32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>./additional;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>./lib/lib32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;DRAW3_RTS_DIAGNOSTICS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>./additional;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>./lib/lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <Profile>true</Profile>
+    </Link>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>./additional;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>./lib/lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;DRAW3_RTS_DIAGNOSTICS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>./additional;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>./lib/libArm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>./additional;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>./lib/libArm64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+    <Manifest>
+      <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="draw3\contact_input.cpp" />
+    <ClCompile Include="draw3\contact_input.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\diagnostics.cpp" />
+    <ClCompile Include="draw3\diagnostics.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\drawing_controller.cpp" />
+    <ClCompile Include="draw3\drawing_controller.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\graphics_initialization.cpp" />
+    <ClCompile Include="draw3\graphics_initialization.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\haptic_feedback.cpp" />
+	<ClCompile Include="draw3\haptic_feedback.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\canvas_navigation.cpp" />
+	<ClCompile Include="draw3\canvas_navigation.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\ink_document.cpp" />
+	<ClCompile Include="draw3\ink_document.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\ink_history.cpp" />
+	<ClCompile Include="draw3\ink_history.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\ink_history_gpu.cpp" />
+	<ClCompile Include="draw3\ink_history_gpu.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\ink_prediction.cpp" />
+	<ClCompile Include="draw3\stroke_geometry.cpp" />
+	<ClCompile Include="draw3\win7_compat.cpp" />
+	<ClCompile Include="draw3\ink_prediction.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\laser_particles.cpp" />
+	<ClCompile Include="draw3\laser_particle_system.cpp" />
+    <ClCompile Include="draw3\laser_particles.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+	<ClCompile Include="draw3\pen_cursor.cpp" />
+	<ClCompile Include="draw3\pen_cursor.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="draw3\realtime_stylus.cpp" />
+    <ClCompile Include="draw3\realtime_stylus.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\runtime_metrics.cpp" />
+    <ClCompile Include="draw3\runtime_metrics.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+	<ClCompile Include="draw3\renderer.cpp" />
+	<ClCompile Include="draw3\renderer_primitives.cpp" />
+	<ClCompile Include="draw3\renderer_laser.cpp" />
+	<ClCompile Include="draw3\renderer_snapshot.cpp" />
+    <ClCompile Include="draw3\renderer.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\transparent_presentation.cpp" />
+    <ClCompile Include="draw3\transparent_presentation.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="draw3\window_control.cpp" />
+	<ClCompile Include="draw3\window_performance_hud.cpp" />
+    <ClCompile Include="draw3\window_control.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="main.cpp" />
+    <None Include="main3.cpp" />
+    <None Include="ink.hlsli" />
+    <None Include="laserParticleCommon.hlsli" />
+    <None Include="laserParticleEmitCS.hlsl" />
+    <None Include="laserParticleEmitCS.cso" />
+    <None Include="laserParticleUpdateCS.hlsl" />
+    <None Include="laserParticleUpdateCS.cso" />
+    <None Include="inkPixelShader.cso" />
+    <None Include="inkVertexShader.cso" />
+    <None Include="main2.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="renderer2.h" />
+    <ClInclude Include="laserParticleResource.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shader.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="inkPixelShader.hlsl">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="inkVertexShader.hlsl">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(Filename).cso</ObjectFileOutput>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\inkPixelShader.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)inkPixelShader.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\inkVertexShader.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Vertex</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)inkVertexShader.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\laserParticleUpdateCS.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)laserParticleUpdateCS.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\laserParticleEmitCS.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)laserParticleEmitCS.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableOptimizations>false</DisableOptimizations>
+      <EnableDebuggingInformation>false</EnableDebuggingInformation>
+      <AdditionalOptions>/O3 /Qstrip_debug %(AdditionalOptions)</AdditionalOptions>
+      <Visible>false</Visible>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="inkStrokeModelerTest.rc" />
+    <ResourceCompile Include="laserParticleShaders.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <!-- FXC 10.1 不接受源文件开头的 UTF-8 BOM，编译前只在中间目录生成无 BOM 副本。 -->
+  <Target Name="PrepareFxcCompatibleHlsl" BeforeTargets="FxCompile"
+          Inputs="$(ProjectDir)ink.hlsli;$(ProjectDir)laserParticleCommon.hlsli;$(ProjectDir)inkPixelShader.hlsl;$(ProjectDir)inkVertexShader.hlsl;$(ProjectDir)laserParticleUpdateCS.hlsl;$(ProjectDir)laserParticleEmitCS.hlsl"
+          Outputs="$(IntDir)fxc_utf8\ink.hlsli;$(IntDir)fxc_utf8\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\inkPixelShader.hlsl;$(IntDir)fxc_utf8\inkVertexShader.hlsl;$(IntDir)fxc_utf8\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\laserParticleEmitCS.hlsl">
+    <MakeDir Directories="$(IntDir)fxc_utf8" />
+    <ReadLinesFromFile File="$(ProjectDir)ink.hlsli">
+      <Output TaskParameter="Lines" ItemName="_FxcInkIncludeLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)inkPixelShader.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcPixelShaderLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)inkVertexShader.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcVertexShaderLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)laserParticleCommon.hlsli">
+      <Output TaskParameter="Lines" ItemName="_FxcLaserParticleIncludeLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)laserParticleUpdateCS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcLaserParticleUpdateLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)laserParticleEmitCS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_FxcLaserParticleEmitLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\ink.hlsli" Lines="@(_FxcInkIncludeLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\laserParticleCommon.hlsli" Lines="@(_FxcLaserParticleIncludeLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\inkPixelShader.hlsl" Lines="@(_FxcPixelShaderLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\inkVertexShader.hlsl" Lines="@(_FxcVertexShaderLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\laserParticleUpdateCS.hlsl" Lines="@(_FxcLaserParticleUpdateLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\laserParticleEmitCS.hlsl" Lines="@(_FxcLaserParticleEmitLines)" Overwrite="true" Encoding="ASCII" />
+  </Target>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

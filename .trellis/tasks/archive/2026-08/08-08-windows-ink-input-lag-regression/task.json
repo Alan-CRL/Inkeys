@@ -1,0 +1,33 @@
+{
+  "id": "windows-ink-input-lag-regression",
+  "name": "windows-ink-input-lag-regression",
+  "title": "Windows Ink 输入回归诊断调查",
+  "description": "只增加低扰动诊断与构建验证，等待真实 Pen/Mouse session；禁止修改生产输入行为。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-08",
+  "completedAt": "2026-08-09",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "inkStrokeModelerTest/draw3/diagnostics.cppm",
+    "inkStrokeModelerTest/draw3/diagnostics.cpp",
+    "inkStrokeModelerTest/draw3/realtime_stylus.cpp",
+    "inkStrokeModelerTest/draw3/drawing_controller.cpp",
+    "inkStrokeModelerTest/main.cpp",
+    "inkStrokeModelerTestTests/contact_input_tests.cpp"
+  ],
+  "notes": "949752a 仅为本轮诊断构建基底，不视为已证明根因或已完成修复。",
+  "meta": {}
+}

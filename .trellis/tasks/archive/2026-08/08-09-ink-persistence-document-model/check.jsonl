@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"新增 C++20 文档模块并修改模块依赖与工程接线"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"修改完成态 Stroke、逐笔 L2 提交与新建页运行时语义"}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"核对窗口线程请求边界与绘制线程 GPU 清理职责"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"执行 ARM64 全解决方案构建、测试和静态质量门槛"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对窗口请求到 CPU 文档、operator layer 和 presenter 的完整数据流"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"核对输入控制文档镜像及既有几何和 operator helper 复用"}

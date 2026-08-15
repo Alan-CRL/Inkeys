@@ -28,3 +28,17 @@
 /.agents/
 /.codex/
 /.zcode/
+
+# Imported Draw3 experiment outputs
+/TestResults/
+/Release/
+/Debug/
+/x64/
+/ARM64/
+/Win32/
+/inkStrokeModelerTest/inkStrokeModelerTest/
+/inkStrokeModelerTest/Release/
+/inkStrokeModelerTest/Debug/
+/inkStrokeModelerTest/x64/
+/inkStrokeModelerTest/ARM64/
+/auto upload.bat
