@@ -7657,10 +7657,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				const bool includeDraw = drawVisual && observeDrawAttributeGroup;
 				const bool includeGeometry = geometryVisual
 					&& observeGeometryAttributeGroup;
-				const auto transform = (mainVisual || moreVisual
-					|| drawVisual || geometryVisual)
-					? BottomDockBoundsTransform::Rigid
-					: BottomDockBoundsTransform::None;
+				const auto transform = mainVisual
+					? BottomDockBoundsTransform::Body
+					: ((moreVisual || drawVisual || geometryVisual)
+						? BottomDockBoundsTransform::Rigid
+						: BottomDockBoundsTransform::None);
 				RECT bounds = ObserveSvg(svg.get(),
 					includeMain || includeMore || includeDraw || includeGeometry,
 					transform);
@@ -9859,7 +9860,8 @@ else
 					state.spec.Superellipse(barDeviceContext, *state.superellipseMap[obj], BarUiInheritClass(state.superellipseMap[obj]->inhX, state.superellipseMap[obj]->inhY), &state.current, true);
 
 				{
-					SetRigidTransform();
+					// 主图标随按钮本体共同拉伸，不再固定在虚拟抓取点上。
+					SetBodyTransform();
 					auto obj = BarUISetSvgEnum::logo1;
 						state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 					}
