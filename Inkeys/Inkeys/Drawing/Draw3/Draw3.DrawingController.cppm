@@ -35,7 +35,7 @@ export namespace Inkeys::Drawing::Draw3
 		void (*commandProcessed)(void*, CanvasCommandType,
 			std::size_t, std::size_t) = nullptr;
 		void (*documentReady)(void*, std::size_t, std::size_t) = nullptr;
-		void (*currentPageContentChanged)(void*, bool) = nullptr;
+		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
 		void (*controlWake)(void*) = nullptr;
 	};
 
@@ -116,5 +116,6 @@ export namespace Inkeys::Drawing::Draw3
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;
 		bool graphicsRecoveryPending_ = false;
+		std::uint64_t currentContentRevision_ = 0;
 	};
 }

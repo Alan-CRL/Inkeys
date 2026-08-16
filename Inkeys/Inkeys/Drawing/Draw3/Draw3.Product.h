@@ -11,13 +11,16 @@ namespace Inkeys::Drawing::Draw3
 	// 创建 HWND 前由透明呈现模块探测是否应预置不可变的 DComp 样式。
 	bool ShouldPreconfigureNoRedirectionBitmap();
 	Host& ProductHost() noexcept;
-	bool StartProduct(HWND drawpad, HostStyleCallbacks callbacks = {},
+	bool StartProduct(HWND drawpad, HWND drawpadPresentation,
+		HostStyleCallbacks callbacks = {},
 		HostStartOptions options = {});
 	void StopProduct() noexcept;
 	bool ProductRunning() noexcept;
 	bool ProductFirstFrameReady() noexcept;
 	HostRuntimeSnapshot ProductRuntimeSnapshot() noexcept;
 	bool WaitForProductContentRevision(std::uint64_t revision,
+		std::uint32_t timeoutMilliseconds) noexcept;
+	bool WaitForProductRuntimeRevision(std::uint64_t revision,
 		std::uint32_t timeoutMilliseconds) noexcept;
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 	void PublishProductState(const Bridge::ProductState& state) noexcept;

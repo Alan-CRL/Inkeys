@@ -86,36 +86,41 @@ void ReconcileDraw3Presentation()
 {
 	std::scoped_lock lock(draw3PresentationMutex);
 	const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-	const bool selectionMode = Inkeys::Drawing::Draw3::ProductHost()
-		.ProductBridge().Snapshot().selectionMode;
+	const bool selectionMode = runtime.selectionMode;
 	auto& service = Inkeys::Window::GetService();
 	using Inkeys::Window::WindowRole;
 
 	Inkeys::UI::Bar::SetCurrentPageHasContent(runtime.currentPageHasContent);
-	const auto presentationPlan =
-		Inkeys::Drawing::Draw3::ResolveDrawpadPresentationPlan(
-			selectionMode, runtime.currentPageHasContent);
-	for (const auto action : presentationPlan.actions)
+	const auto expectedTarget = selectionMode
+		? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+		: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
+	const bool targetReady = runtime.requestedOutputTarget == expectedTarget &&
+		runtime.readyOutputTarget == expectedTarget &&
+		runtime.readyOutputRevision == runtime.requestedOutputRevision &&
+		runtime.presentedContentRevision == runtime.contentRevision;
+	if (!runtime.firstFrameReady || !targetReady) return;
+
+	Inkeys::Window::DrawpadSurfaceVisibility visibility;
+	switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
+		selectionMode, runtime.currentPageHasContent,
+		runtime.auxiliaryFullFrameClean))
 	{
-		switch (action)
-		{
-		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::EnableClickThrough:
-			(void)service.SetClickThrough(WindowRole::Drawpad, true);
-			break;
-		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::DisableClickThrough:
-			(void)service.SetClickThrough(WindowRole::Drawpad, false);
-			break;
-		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::Show:
-			(void)service.Show(WindowRole::Drawpad);
-			break;
-		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::Hide:
-			(void)service.Hide(WindowRole::Drawpad);
-			break;
-		}
+	case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Primary:
+		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary; break;
+	case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Presentation:
+		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Presentation; break;
+	case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Hidden:
+	default:
+		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Hidden; break;
 	}
+	(void)service.SetDrawpadSurfaceVisibility(visibility);
 
 	const HWND drawpad = service.Handle(WindowRole::Drawpad);
-	IdtWindowsIsVisible.drawpadWindow = drawpad && IsWindowVisible(drawpad);
+	const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+	IdtWindowsIsVisible.drawpadWindow = drawpad && presentation &&
+		service.Ready(WindowRole::Drawpad) &&
+		service.Ready(WindowRole::DrawpadPresentation) &&
+		Inkeys::Drawing::Draw3::ProductFirstFrameReady();
 }
 
 bool SetPenWidth(float targetWidth, bool setMemory)
@@ -272,16 +277,16 @@ bool ChangeStateModeToTouchTest()
 void StateMonitoring()
 {
 	auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-	std::uint64_t revision = snapshot.contentRevision;
+	std::uint64_t revision = snapshot.runtimeRevision;
 	ReconcileDraw3Presentation();
 	while (!offSignal)
 	{
-		// 超时只负责检查退出；内容变化由条件变量即时唤醒。
-		(void)Inkeys::Drawing::Draw3::WaitForProductContentRevision(revision, 250);
+		// 内容、目标就绪和全帧 clean 共享一个 revision，避免快速切换漏掉握手。
+		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
 		if (offSignal) break;
 		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-		if (snapshot.contentRevision == revision) continue;
-		revision = snapshot.contentRevision;
+		if (snapshot.runtimeRevision == revision) continue;
+		revision = snapshot.runtimeRevision;
 		ReconcileDraw3Presentation();
 	}
 }

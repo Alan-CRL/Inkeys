@@ -13,10 +13,11 @@
 ## 阶段 2：外部 HWND Host 与透明呈现
 
 - [x] 将 Draw3 `WindowController` 拆为外部 HWND 适配器/mailbox，移除产品路径的窗口创建、topmost 和销毁职责。
-- [x] 在现有 Drawpad WindowSpec 中按能力探测预置 DComp 所需样式，并通过 Window Service 管理 style/click-through；不可变样式失败时明确进入回退/失败路径。
-- [x] 让 Draw3 presenter 接受现有 Drawpad HWND，保留独立 D3D11.1 device、swap chain、DComp/DWM/ULW 资源。
+- [x] 在 Window Service 创建主 Drawpad 与 presentation-only sibling；主窗按能力探测预置 DComp 样式，辅助窗固定 layered/transparent，三态可见性由 owner thread 批量切换。
+- [x] 让 Draw3 presenter 接受双 HWND，共用独立 D3D11.1 device、单一 swap chain、renderer/final backbuffer，并保留主 DComp/DWM/ULW 与辅助 ULW target。
 - [x] 修正 ULW alpha/dirty-rect 行为，确保透明背景和窗口链不被整窗覆盖。
 - [x] 添加 presenter 模式选择、样式合同和 shutdown 顺序的无窗口测试。
+- [x] 添加输出 generation、内容 revision、全帧 clean 握手，选择态先预热隐藏目标；Laser/粒子淡出后才隐藏空辅助窗。
 - [x] 回滚点：Draw3 host 可编译但不接管 `drawpad_main`。
 
 ## 阶段 3：输入、绘制与产品命令接线
@@ -44,13 +45,13 @@
 - [x] 运行 `InkeysHeadlessTests` 的无窗口模式和迁入的 Draw3 纯逻辑测试。
 - [x] 不启动 Inkeys GUI、draw3 demo 或任何可见测试窗口，不使用 computer-use。
 
-## 当前验证状态（2026-08-15）
+## 当前验证状态（2026-08-16）
 
 - 来源快照 `8d045298eaaac76f752b4f8b5f3303b3520e50b7`、文件映射、资源 ID 和排除清单已完成静态审计。
 - 源任务历史已统一移动到 `.trellis/tasks/archive/2026-08/draw3-source/`；5 个源 active task 保留原状态但不污染目标 active task 列表。
 - `InkeysRepo.sln Debug|ARM64` 与 `Release|ARM64` 已用 ARM64 MSBuild `/m:1` 构建通过，`PptCOM`、`Inkeys` 和 `InkeysHeadlessTests` 均成功。
 - `Build\\ARM64\\Debug\\InkeysHeadlessTests.exe --no-window` 通过：`PASS animation correctness`。
-- `Build\\ARM64\\Debug\\Inkeys.exe --draw3-hidden-test` 通过（退出码 0）：真实 D3D11.1 硬件、隐藏 Drawpad HWND、DComp/DWM2/DWM/ULW presenter、命令/resize/停止流程均执行，未显示产品窗口；旧 DComp HWND 上的 ULW 启动按真实不可变样式失败并完整清理 Host，随后按顺序销毁旧链、重建唯一 legacy HWND 并验证所有 fallback。
+- `Build\\ARM64\\Debug\\Inkeys.exe --draw3-hidden-test` 通过（退出码 0）：真实 D3D11.1 硬件、主/辅助隐藏 HWND、DComp/DWM2/DWM/ULW、双目标 generation/clean、命令/resize/停止流程均执行；旧 DComp 主 HWND 上的 ULW 启动按真实不可变样式失败并完整清理 Host，随后重建 legacy 主/辅助窗口链并验证所有 fallback。
 - 最终已删除激光增量 benchmark/诊断结构和热路径诊断计时；Ink Stroke Modeler/Abseil `.cc` 全部删除，`type_matchers.h` 等头文件保留，不引入 gtest/gmock 产品依赖。
 - 最终 `git diff --check`、迁入文件 CRLF/BOM 与静态合同检查通过；实现修改保持未提交且未 push。
 

@@ -67,12 +67,16 @@ namespace Inkeys::Drawing::Draw3
 			spec.role = role;
 			spec.className = className;
 			spec.title = L"Inkeys Draw3 hidden integration test";
-			spec.x = 32;
-			spec.y = 48;
+			spec.x = -32000;
+			spec.y = -32000;
 			spec.width = width;
 			spec.height = height;
 			spec.style = WS_POPUP | WS_CLIPCHILDREN;
-			spec.exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT;
+			spec.exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+			if (role == Inkeys::Window::WindowRole::DrawpadPresentation)
+				spec.exStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
+			else if (role != Inkeys::Window::WindowRole::Drawpad)
+				spec.exStyle |= WS_EX_TRANSPARENT;
 			spec.windowProc = windowProc;
 			spec.visible = false;
 			spec.bindMessages = false;
@@ -101,14 +105,27 @@ namespace Inkeys::Drawing::Draw3
 				break;
 			}
 			Check(correctModeStyle, "presenter mode style contract", failures);
-			return Check((style & (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT)) ==
-				(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT) &&
+			return Check((style & (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) ==
+				(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) &&
+				(style & WS_EX_TRANSPARENT) == 0 &&
 				(style & WS_EX_TOPMOST) == 0,
-				"no-activate tool-window click-through contract", failures) && correctModeStyle;
+				"primary Drawpad has no click-through style", failures) && correctModeStyle;
+		}
+
+		bool CheckPresentationWindowStyle(HWND presentation, int& failures)
+		{
+			const auto style = static_cast<DWORD>(GetWindowLongPtrW(
+				presentation, GWL_EXSTYLE));
+			return Check((style & (WS_EX_LAYERED | WS_EX_TRANSPARENT |
+				WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) ==
+				(WS_EX_LAYERED | WS_EX_TRANSPARENT |
+					WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW),
+				"selection ULW window has fixed click-through style", failures);
 		}
 
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
-			HWND magnifierHost, HWND freeze, HWND drawpad, HostPresentationMode requiredMode,
+			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
+			HostPresentationMode requiredMode,
 			bool allowDirectComposition, bool exerciseCommands,
 			bool exerciseUlwDirtyRect, int& failures)
 		{
@@ -118,7 +135,7 @@ namespace Inkeys::Drawing::Draw3
 			HostStartOptions options{ requiredMode };
 			options.enableHiddenTestContactInjection = exerciseCommands;
 			options.allowDirectComposition = allowDirectComposition;
-			if (!Check(StartProduct(drawpad, callbacks, options),
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
 				"start real Draw3 host", failures))
 				return false;
 
@@ -134,13 +151,55 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(snapshot.presentationMode != HostPresentationMode::Automatic,
 					"automatic fallback selected a real backend", failures);
 			modeSucceeded &= CheckPresentationStyle(drawpad, snapshot.presentationMode, failures);
+			modeSucceeded &= CheckPresentationWindowStyle(presentation, failures);
 			modeSucceeded &= Check(styleContext.callCount.load(std::memory_order_acquire) >
 				styleCallsBefore, "presenter used Window Service style callback", failures);
 			modeSucceeded &= Check(!IsWindowVisible(magnifierHost) && !IsWindowVisible(freeze) &&
-				!IsWindowVisible(drawpad), "all integration HWNDs remain invisible", failures);
+				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"all integration HWNDs remain invisible", failures);
 			modeSucceeded &= Check(GetWindow(freeze, GW_OWNER) == magnifierHost &&
-				GetWindow(drawpad, GW_OWNER) == freeze,
-				"owner chain remains magnifier-freeze-drawpad", failures);
+				GetWindow(drawpad, GW_OWNER) == freeze &&
+				GetWindow(presentation, GW_OWNER) == freeze,
+				"drawpad and presentation remain Freeze siblings", failures);
+			modeSucceeded &= Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.selectionMode &&
+					state.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
+					state.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+					state.readyOutputRevision == state.requestedOutputRevision &&
+					state.presentedContentRevision == state.contentRevision &&
+					state.auxiliaryFullFrameClean;
+			}), "initial selection ULW target completes a clean frame", failures);
+			const auto initialSelection = ProductHost().RuntimeSnapshot();
+			Bridge::ProductState drawingState{};
+			drawingState.selectionMode = false;
+			PublishProductState(drawingState);
+			modeSucceeded &= Check(WaitUntil([initialSelection]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return !state.selectionMode &&
+					state.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+					state.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+					state.readyOutputRevision == state.requestedOutputRevision &&
+					state.requestedOutputRevision > initialSelection.requestedOutputRevision &&
+					state.presentedContentRevision == state.contentRevision;
+			}), "drawing mode preheats the primary target before readiness", failures);
+			const auto primaryReady = ProductHost().RuntimeSnapshot();
+			Bridge::ProductState selectionState{};
+			selectionState.selectionMode = true;
+			PublishProductState(selectionState);
+			modeSucceeded &= Check(WaitUntil([primaryReady]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.selectionMode &&
+					state.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
+					state.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+					state.readyOutputRevision == state.requestedOutputRevision &&
+					state.requestedOutputRevision > primaryReady.requestedOutputRevision &&
+					state.presentedContentRevision == state.contentRevision &&
+					state.auxiliaryFullFrameClean;
+			}), "selection mode advances generation and restores clean ULW", failures);
 
 			if (exerciseCommands)
 			{
@@ -291,6 +350,13 @@ namespace Inkeys::Drawing::Draw3
 							state.committedWidth == 384 && state.committedHeight == 256 &&
 							state.successfulPresentCount > beforeResize.successfulPresentCount;
 					}), "resize rebuilt and presented real Draw3 resources", failures);
+				RECT presentationBounds = {};
+				GetWindowRect(presentation, &presentationBounds);
+				modeSucceeded &= Check(presentationBounds.left == resizedBounds.left &&
+					presentationBounds.top == resizedBounds.top &&
+					presentationBounds.right - presentationBounds.left == 384 &&
+					presentationBounds.bottom - presentationBounds.top == 256,
+					"resize keeps selection ULW bounds synchronized", failures);
 			}
 
 			if (exerciseUlwDirtyRect)
@@ -335,8 +401,10 @@ namespace Inkeys::Drawing::Draw3
 			const auto stopElapsed = std::chrono::steady_clock::now() - stopStarted;
 			modeSucceeded &= Check(stopElapsed < 10s && !ProductRunning() &&
 				!ProductFirstFrameReady(), "bounded complete Draw3 stop", failures);
-			modeSucceeded &= Check(IsWindow(drawpad) && !IsWindowVisible(drawpad) &&
-				GetWindow(drawpad, GW_OWNER) == freeze,
+			modeSucceeded &= Check(IsWindow(drawpad) && IsWindow(presentation) &&
+				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation) &&
+				GetWindow(drawpad, GW_OWNER) == freeze &&
+				GetWindow(presentation, GW_OWNER) == freeze,
 				"Host stop leaves hidden Window Service HWND intact", failures);
 			return modeSucceeded;
 		}
@@ -364,6 +432,10 @@ namespace Inkeys::Drawing::Draw3
 					L"Inkeys.Draw3.Hidden.Magnifier." + suffix, DefWindowProcW, 320, 240));
 				specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Freeze,
 					L"Inkeys.Draw3.Hidden.Freeze." + suffix, DefWindowProcW, 320, 240));
+				specs.push_back(MakeHiddenSpec(
+					Inkeys::Window::WindowRole::DrawpadPresentation,
+					L"Inkeys.Draw3.Hidden.Presentation." + suffix,
+					DefWindowProcW, 320, 240));
 				auto drawpadSpec = MakeHiddenSpec(Inkeys::Window::WindowRole::Drawpad,
 					L"Inkeys.Draw3.Hidden.Drawpad." + suffix, DrawpadMsgCallback, 320, 240);
 				if (dcompCompatible) drawpadSpec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
@@ -377,13 +449,31 @@ namespace Inkeys::Drawing::Draw3
 				return 1;
 			const HWND dcompMagnifierHost = service.Handle(Inkeys::Window::WindowRole::MagnifierHost);
 			const HWND dcompFreeze = service.Handle(Inkeys::Window::WindowRole::Freeze);
+			const HWND dcompPresentation = service.Handle(
+				Inkeys::Window::WindowRole::DrawpadPresentation);
 			const HWND dcompDrawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
-			Check(dcompMagnifierHost && dcompFreeze && dcompDrawpad, "hidden DComp HWND creation", failures);
+			Check(dcompMagnifierHost && dcompFreeze && dcompPresentation && dcompDrawpad,
+				"hidden DComp HWND creation", failures);
 			Check(!IsWindowVisible(dcompMagnifierHost) && !IsWindowVisible(dcompFreeze) &&
-				!IsWindowVisible(dcompDrawpad), "DComp HWND creation never shows UI", failures);
+				!IsWindowVisible(dcompPresentation) && !IsWindowVisible(dcompDrawpad),
+				"DComp HWND creation never shows UI", failures);
+			Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
+				!IsWindowVisible(dcompDrawpad) && IsWindowVisible(dcompPresentation),
+				"presentation visibility selects only the auxiliary window", failures);
+			Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Primary) &&
+				IsWindowVisible(dcompDrawpad) && !IsWindowVisible(dcompPresentation),
+				"primary visibility selects only the Drawpad window", failures);
+			Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
+				!IsWindowVisible(dcompDrawpad) && !IsWindowVisible(dcompPresentation),
+				"hidden visibility leaves both windows hidden", failures);
 			RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
+				dcompPresentation,
 				HostPresentationMode::Automatic, true, true, false, failures);
 			RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
+				dcompPresentation,
 				HostPresentationMode::DirectCompositionVisualTree, true, false, false, failures);
 			// Windows 可能把创建期 NOREDIRECTIONBITMAP 固化；回调结果必须与真实样式一致，不能伪造 legacy fallback。
 			const bool clearReported = service.SetExtendedStyleFlags(
@@ -398,14 +488,16 @@ namespace Inkeys::Drawing::Draw3
 				const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
 				HostStartOptions legacyOnDcompOptions{ HostPresentationMode::UlwDirtyRect };
 				legacyOnDcompOptions.allowDirectComposition = false;
-				Check(!StartProduct(dcompDrawpad, callbacks, legacyOnDcompOptions),
+				Check(!StartProduct(dcompDrawpad, dcompPresentation, callbacks,
+					legacyOnDcompOptions),
 					"legacy presenter rejects immutable DComp HWND", failures);
 				Check(!ProductRunning() && !ProductFirstFrameReady(),
 					"failed legacy startup fully stops Draw3 host", failures);
 			}
 			StopProduct();
 			service.StopAndJoin();
-			Check(!IsWindow(dcompMagnifierHost) && !IsWindow(dcompFreeze) && !IsWindow(dcompDrawpad),
+			Check(!IsWindow(dcompMagnifierHost) && !IsWindow(dcompFreeze) &&
+				!IsWindow(dcompPresentation) && !IsWindow(dcompDrawpad),
 				"Window Service destroys DComp-compatible hidden HWNDs", failures);
 
 			// DWM/ULW 需要可切换的初始重定向表面；停止上一宿主后重建唯一的测试 Drawpad HWND。
@@ -413,21 +505,30 @@ namespace Inkeys::Drawing::Draw3
 				return 1;
 			const HWND legacyMagnifierHost = service.Handle(Inkeys::Window::WindowRole::MagnifierHost);
 			const HWND legacyFreeze = service.Handle(Inkeys::Window::WindowRole::Freeze);
+			const HWND legacyPresentation = service.Handle(
+				Inkeys::Window::WindowRole::DrawpadPresentation);
 			const HWND legacyDrawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
-			Check(legacyMagnifierHost && legacyFreeze && legacyDrawpad, "hidden DWM HWND creation", failures);
+			Check(legacyMagnifierHost && legacyFreeze && legacyPresentation && legacyDrawpad,
+				"hidden DWM HWND creation", failures);
 			Check(!IsWindowVisible(legacyMagnifierHost) && !IsWindowVisible(legacyFreeze) &&
-				!IsWindowVisible(legacyDrawpad), "DWM HWND creation never shows UI", failures);
+				!IsWindowVisible(legacyPresentation) && !IsWindowVisible(legacyDrawpad),
+				"DWM HWND creation never shows UI", failures);
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
+				legacyPresentation,
 				HostPresentationMode::Automatic, false, false, false, failures);
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
+				legacyPresentation,
 				HostPresentationMode::DwmBlurBehind2, false, false, false, failures);
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
+				legacyPresentation,
 				HostPresentationMode::DwmBlurBehind, false, false, false, failures);
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
+				legacyPresentation,
 				HostPresentationMode::UlwDirtyRect, false, true, true, failures);
 			StopProduct();
 			service.StopAndJoin();
-			Check(!IsWindow(legacyMagnifierHost) && !IsWindow(legacyFreeze) && !IsWindow(legacyDrawpad),
+			Check(!IsWindow(legacyMagnifierHost) && !IsWindow(legacyFreeze) &&
+				!IsWindow(legacyPresentation) && !IsWindow(legacyDrawpad),
 				"Window Service destroys DWM-compatible hidden HWNDs", failures);
 		}
 		catch (...)

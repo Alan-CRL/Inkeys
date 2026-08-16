@@ -8,8 +8,8 @@
 namespace
 {
 	using namespace Inkeys::Drawing::Draw3::Bridge;
-	using Inkeys::Drawing::Draw3::DrawpadPresentationAction;
-	using Inkeys::Drawing::Draw3::ResolveDrawpadPresentationPlan;
+	using Inkeys::Drawing::Draw3::DrawpadPresentationSurface;
+	using Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface;
 	using Inkeys::Drawing::Draw3::TimerPeriodController;
 
 	struct TimerPeriodCalls
@@ -220,20 +220,18 @@ namespace
 
 	void TestDrawpadPresentationPlan(int& failures)
 	{
-		const auto emptySelection = ResolveDrawpadPresentationPlan(true, false);
-		if (!Expect(emptySelection.actions[0] == DrawpadPresentationAction::DisableClickThrough &&
-			emptySelection.actions[1] == DrawpadPresentationAction::Hide,
-			"empty selection clears click-through before hiding")) ++failures;
-
-		const auto contentSelection = ResolveDrawpadPresentationPlan(true, true);
-		if (!Expect(contentSelection.actions[0] == DrawpadPresentationAction::EnableClickThrough &&
-			contentSelection.actions[1] == DrawpadPresentationAction::Show,
-			"content selection enables click-through before showing")) ++failures;
-
-		const auto drawing = ResolveDrawpadPresentationPlan(false, false);
-		if (!Expect(drawing.actions[0] == DrawpadPresentationAction::DisableClickThrough &&
-			drawing.actions[1] == DrawpadPresentationAction::Show,
-			"drawing mode clears click-through before showing")) ++failures;
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true) ==
+			DrawpadPresentationSurface::Hidden,
+			"clean empty selection hides both drawpad surfaces")) ++failures;
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false) ==
+			DrawpadPresentationSurface::Presentation,
+			"empty selection waits for full-frame clean")) ++failures;
+		if (!Expect(ResolveDrawpadPresentationSurface(true, true, false) ==
+			DrawpadPresentationSurface::Presentation,
+			"content selection uses the auxiliary surface")) ++failures;
+		if (!Expect(ResolveDrawpadPresentationSurface(false, false, true) ==
+			DrawpadPresentationSurface::Primary,
+			"drawing mode uses the primary surface")) ++failures;
 	}
 }
 

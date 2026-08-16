@@ -20,6 +20,7 @@ export namespace Inkeys::Window
 		MagnifierHost,
 		MagnifierChild,
 		Freeze,
+		DrawpadPresentation,
 		Drawpad,
 		PptBottomLeft,
 		PptBottomRight,
@@ -30,6 +31,13 @@ export namespace Inkeys::Window
 		Setting,
 		DisplayObserver,
 		Count,
+	};
+
+	enum class DrawpadSurfaceVisibility : std::uint8_t
+	{
+		Primary,
+		Presentation,
+		Hidden,
 	};
 
 	struct WindowSpec
@@ -90,6 +98,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool Show(WindowRole role);
 		[[nodiscard]] bool Hide(WindowRole role);
 		[[nodiscard]] bool HideAllUserWindows();
+		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
+			DrawpadSurfaceVisibility visibility);
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
 		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。

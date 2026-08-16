@@ -4,19 +4,17 @@
 
 ## 输入归一化链
 
-`【直接确认】` 当前输入主链位于 `Inkeys/IdtRts.cpp`、`IdtRts.h` 和 `IdtDrawpad.cpp`：
+`【直接确认】` 当前产品输入主链位于 `Draw3.RealtimeStylus.*`、`Draw3.ContactInput.*` 和 `Draw3.DrawingController.*`；Draw2 输入源码保留但不参与产品编译或启动：
 
 ~~~text
-RealTimeStylus packet ─┐
-                      ├─> 每个接触点的 TouchMode 数据、TouchPos、TouchList/TouchTemp
-Win32 mouse fallback ─┘                              │
-                                                     ├─> MultiFingerDrawing
-                                                     └─> DrawpadDrawing / history / PptImg
+主 Drawpad RealTimeStylus ─> ContactInputCoordinator mailbox
+                                        │
+                                        └─> DrawingController / document / runtime history / final backbuffer
 ~~~
 
-`CSyncEventHandlerRTS` 实现 `IStylusSyncPlugin`，从 RealTimeStylus packet 读取 X/Y、normal pressure、contact width/height 和 cursor 信息，并区分 touch、pen、mouse 及 inverted pen。这里的 `TouchMode` 是接触点模式数据/类型的一部分，不应误写成一个独立的全局模式开关。
+`RealTimeStylusInput` 是主 Drawpad 的唯一 RTS producer，并保留 `SetAllTabletsMode(TRUE)`；辅助 DrawpadPresentation 不绑定 RTS、WndProc mailbox 或输入门禁。`CSyncEventHandlerRTS`/`TouchMode` 描述仅属于保留的 Draw2 历史实现，不应反推 Draw3 的产品选择模式。
 
-`SafeRTSInit` 用原生 SEH 包住 RTS 初始化；失败路径设置 `useMouseInput`。`DrawpadMsgCallback` 再把 Win32 mouse 消息写入相同的触摸/接触状态链。
+Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 producer，再唤醒并结束绘制线程；`DrawpadMsgCallback` 只把主 Drawpad 消息转发到唯一 Host。
 
 `【合理推断】` 需要让鼠标、笔、触摸行为一致的改动，优先放在两条输入已汇合的位置；如果只改 `CSyncEventHandlerRTS` 或只改 `DrawpadMsgCallback`，需明确另一条路径为何不适用。
 
@@ -80,4 +78,4 @@ Win32 mouse fallback ─┘                              │
 
 建议按改动范围手工覆盖：mouse down/move/up、压感笔与 inverted pen、单/多点触摸、各工具、快速/长笔画、窗口边缘/多显示器、清屏/撤销/恢复、PPT 翻页及活动笔画时退出。
 
-`【待确认】` 仓库未发现自动化输入/墨迹测试项目；正式发布冒烟清单、设备矩阵和通过标准需维护者提供。
+`【直接确认】` `InkeysHeadlessTests` 覆盖 Draw3 bridge/timer/纯逻辑；`--draw3-hidden-test` 通过隐藏主/辅助 HWND 覆盖唯一 Host mailbox、真实绘制线程、history/Clear、双 target 和退出路径。真实笔、触摸屏与驱动设备矩阵仍需维护者提供。

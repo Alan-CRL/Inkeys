@@ -9,7 +9,7 @@
 | `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | `Inkeys.UI.RenderPipeline` 的共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 是独立客户端，经自己的 device context、GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*`、`Bar.RenderLoop.cpp` |
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
 | 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 共享 WARP D3D11 device/immediate context；Setting 独占传统 discard swap chain、RTV、SRV 和 ImGui session | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
-| 主画板 | `【直接确认】` Draw2 暂时继续负责墨迹；未来 Draw3 复用现有 Drawpad HWND | `Inkeys.Graphics.DibSurface` + GDI+ 笔画、软件合成、分层窗口 | `IdtDrawpad.cpp::DrawpadDrawing`、`IdtImage.cpp` |
+| 主画板 | `【直接确认】` Draw3 已接管 Window Service 的主 Drawpad；选择态使用同一 Host 的 presentation-only sibling | Draw3 独立 D3D11.1 device、单一 swap chain/final backbuffer，以及主 DComp/DWM/ULW + 辅助 ULW target | `Draw3.Host.*`、`Draw3.TransparentPresentation.*`、`draw3-integration.md` |
 | PPT 控件 | `【直接确认】` UI3 五个独立 owned layered HWND | 与 Bar/Setting 共享 D3D11 epoch；每窗独立 D2D device context/target/GDI interop，并由 RenderPipeline 线程串行 ULW 呈现 | `Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
 
@@ -866,13 +866,14 @@ queue.push(std::move(command));
 
 ### 1. Scope / Trigger
 
-创建或操作 Mag、Freeze、Drawpad、五个 UI3 PPT 窗口、UI3 Bar、Setting、DisplayObserver，或迁移 Draw2 图像/消息路径时适用。HiEasyX/EasyX 已从源码、工程和链接中删除，不得重新引入。
+创建或操作 Mag、Freeze、Drawpad/DrawpadPresentation、五个 UI3 PPT 窗口、UI3 Bar、Setting、DisplayObserver，或迁移 Draw2 图像/消息路径时适用。HiEasyX/EasyX 已从源码、工程和链接中删除，不得重新引入。
 
 ### 2. Signatures
 
 ~~~cpp
 Window::Service::Start(std::vector<WindowSpec>) -> bool;
 Window::Service::SetBounds(WindowRole, RECT) -> bool;
+Window::Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility) -> bool;
 Window::Service::SetClickThrough(WindowRole, bool) -> bool;
 Window::Service::RequestTopmostRefresh() -> bool;
 Window::Service::PromotePptWindow(WindowRole) -> bool;
@@ -886,9 +887,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 3. Contracts
 
-- Window Service 的受管线程拥有 Mag host/child、Freeze、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
+- Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
-- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
+- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。DrawpadPresentation 固定 layered/transparent/noactivate/toolwindow 且低于主 Drawpad；五个 PPT HWND 与 Bar 都是主 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
 - Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -911,7 +912,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Drawpad 线程仅 present HDC；尺寸和穿透切换通过 Window Service；Bar 与五个 PPT 是同 owner 的兄弟窗口，PPT 前置始终止于 Bar 正下方。
+- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Bar 与五个 PPT 是同 owner 的兄弟窗口，PPT 前置始终止于 Bar 正下方。
 - Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
 - Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，历史上会导致绘制卡顿或闪烁。
 
@@ -928,9 +929,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 // Wrong：从 Drawpad 渲染线程直接修改所属线程状态。
 SetWindowLongPtrW(drawpad, GWL_EXSTYLE, style | WS_EX_TRANSPARENT);
 
-// Correct：由 Window Service 投递到 HWND 所属线程。
-Inkeys::Window::GetService().SetClickThrough(
-    Inkeys::Window::WindowRole::Drawpad, true);
+// Correct：主 Drawpad 样式不变；目标内容就绪后由 Window Service 互斥切换 surface。
+Inkeys::Window::GetService().SetDrawpadSurfaceVisibility(
+    Inkeys::Window::DrawpadSurfaceVisibility::Presentation);
 ~~~
 
 ~~~cpp

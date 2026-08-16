@@ -1377,10 +1377,17 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				spec.height = overlayHeight;
 				spec.style = overlayStyle;
 				spec.exStyle = overlayExStyle | extraStyle;
-				if (role == Inkeys::Window::WindowRole::Drawpad)
+				if (role == Inkeys::Window::WindowRole::DrawpadPresentation)
+				{
+					// 选择态仅用此窗口 ULW 呈现；固定透明样式不能随模式切换。
+					spec.exStyle = WS_EX_LAYERED | WS_EX_TRANSPARENT |
+						WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+					spec.bindMessages = false;
+				}
+				else if (role == Inkeys::Window::WindowRole::Drawpad)
 				{
 					// DComp 的不可变样式只在能力探测通过时预置；否则保留可切换的 DWM/ULW HWND。
-					spec.exStyle = (spec.exStyle & ~WS_EX_LAYERED) | WS_EX_TRANSPARENT;
+					spec.exStyle &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
 					if (preferDraw3DirectComposition)
 						spec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
 				}
@@ -1410,6 +1417,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			};
 		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
 			DefWindowProcW, WS_EX_TRANSPARENT, {});
+		AddOverlayWindow(Inkeys::Window::WindowRole::DrawpadPresentation,
+			L"Inkeys2.Presentation;", L"Inkeys DrawpadPresentationWindow",
+			DefWindowProcW, 0, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::Drawpad, L"Inkeys2;", L"Inkeys DrawpadWindow",
 			DrawpadMsgCallback, 0, [createdDrawpadHwnd, disableGestureFuc](HWND hwnd)
 			{
@@ -1477,7 +1487,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				createdDrawpadHwnd->store(nullptr, std::memory_order_release);
 				const bool started = windowService.Start(windowSpecs);
 				if (started) RefreshWindowHandles();
-				return started && drawpad_window;
+				return started && drawpad_window && windowService.Handle(
+					Inkeys::Window::WindowRole::DrawpadPresentation);
 			};
 		if (!StartWindowService())
 		{
@@ -1500,7 +1511,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		bool draw3Started = Inkeys::Drawing::Draw3::StartProduct(
-			drawpad_window, draw3StyleCallbacks, draw3StartOptions);
+			drawpad_window, windowService.Handle(
+				Inkeys::Window::WindowRole::DrawpadPresentation),
+			draw3StyleCallbacks, draw3StartOptions);
 		if (!draw3Started && preferDraw3DirectComposition)
 		{
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
@@ -1511,14 +1524,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			{
 				if (spec.role != Inkeys::Window::WindowRole::Drawpad) continue;
 				spec.exStyle &= ~(WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED);
-				spec.exStyle |= WS_EX_TRANSPARENT;
 				break;
 			}
 			if (StartWindowService())
 			{
 				draw3StartOptions.allowDirectComposition = false;
 				draw3Started = Inkeys::Drawing::Draw3::StartProduct(
-					drawpad_window, draw3StyleCallbacks, draw3StartOptions);
+					drawpad_window, windowService.Handle(
+						Inkeys::Window::WindowRole::DrawpadPresentation),
+					draw3StyleCallbacks, draw3StartOptions);
 			}
 		}
 		if (!draw3Started)

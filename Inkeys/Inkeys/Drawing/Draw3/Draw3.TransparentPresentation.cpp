@@ -306,6 +306,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 				lastObservation.premultipliedAlphaValid = premultipliedAlphaValid;
+				lastObservation.updatedRegionAllZeroAlpha = allZeroAlpha;
 				lastObservation.fullFrameAllZeroAlpha = presentFull && allZeroAlpha &&
 					dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
 					dirty.bottom == dibHeight;
@@ -472,7 +473,8 @@ namespace Inkeys::Drawing::Draw3
 
 	struct TransparentPresentationController::Impl
 	{
-		HWND window = nullptr;
+		HWND primaryWindow = nullptr;
+		HWND selectionWindow = nullptr;
 		GraphicsDeviceResources* graphics = nullptr;
 		InkRenderer* renderer = nullptr;
 		TransparentPresentationCallbacks callbacks = {};
@@ -484,14 +486,20 @@ namespace Inkeys::Drawing::Draw3
 		bool recoveryPending = false;
 		HRESULT lastFailure = S_OK;
 		TransparentPresentationOptions options = {};
-		UlwDirtyRectPresenter ulwPresenter;
+		TransparentOutputTarget requestedOutputTarget =
+			TransparentOutputTarget::PrimaryDrawpad;
+		std::uint64_t requestedOutputRevision = 0;
+		TransparentPresentObservation lastObservation{};
+		UlwDirtyRectPresenter primaryUlwPresenter;
+		UlwDirtyRectPresenter selectionUlwPresenter;
 		DirectCompositionPresenter directCompositionPresenter;
 		DwmBlurBehindPresenter dwmBlurPresenter;
 		DwmExtendedFramePresenter dwmExtendedPresenter;
 
 		void ResetPresenters()
 		{
-			ulwPresenter.Reset();
+			primaryUlwPresenter.Reset();
+			selectionUlwPresenter.Reset();
 			directCompositionPresenter.Reset();
 			dwmBlurPresenter.Reset();
 			dwmExtendedPresenter.Reset();
@@ -523,7 +531,7 @@ namespace Inkeys::Drawing::Draw3
 
 		bool ConfigureWindow(TransparentPresentMode mode)
 		{
-			return ApplyExternalWindowStyle(window, callbacks,
+			return ApplyExternalWindowStyle(primaryWindow, callbacks,
 				IsDirectCompositionMode(mode), IsUlwMode(mode));
 		}
 
@@ -541,11 +549,11 @@ namespace Inkeys::Drawing::Draw3
 			if (IsDwmGlassMode(mode))
 			{
 				const bool waitable = (description.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) != 0;
-				LogDwmModeDiagnostics(TransparentPresentModeName(mode), window, "Before CreateSwapChainForHwnd");
+				LogDwmModeDiagnostics(TransparentPresentModeName(mode), primaryWindow, "Before CreateSwapChainForHwnd");
 				LogSwapChainDescription(TransparentPresentModeName(mode),
 					waitable ? "Trying waitable premultiplied alpha" : "Trying premultiplied alpha", description);
 			}
-			result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), window, &description, nullptr, nullptr,
+			result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), primaryWindow, &description, nullptr, nullptr,
 				swapChain.ReleaseAndGetAddressOf()); // DWM/ULW 路径绑定到实际 HWND。
 			if (FAILED(result) && IsDwmGlassMode(mode))
 			{
@@ -557,7 +565,7 @@ namespace Inkeys::Drawing::Draw3
 				LogSwapChainDescription(TransparentPresentModeName(mode),
 					(description.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) != 0
 					? "Trying waitable unspecified alpha" : "Trying unspecified alpha", description);
-				result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), window, &description, nullptr, nullptr,
+				result = graphics->factory->CreateSwapChainForHwnd(graphics->device.Get(), primaryWindow, &description, nullptr, nullptr,
 					swapChain.ReleaseAndGetAddressOf());
 			}
 			return SUCCEEDED(result) && swapChain ? S_OK : (FAILED(result) ? result : E_FAIL);
@@ -637,19 +645,26 @@ namespace Inkeys::Drawing::Draw3
 
 		bool InitializePresenter()
 		{
+			bool primaryInitialized = false;
 			switch (activeMode)
 			{
 			case TransparentPresentMode::UlwDirtyRect:
-				return ulwPresenter.Initialize(window, graphics->device.Get(), graphics->context.Get(), width, height);
+				primaryInitialized = primaryUlwPresenter.Initialize(primaryWindow,
+					graphics->device.Get(), graphics->context.Get(), width, height); break;
 			case TransparentPresentMode::DirectCompositionVisualTree:
-				return directCompositionPresenter.Initialize(window, graphics->dxgiDevice.Get(), swapChain.Get(), callbacks);
+				primaryInitialized = directCompositionPresenter.Initialize(primaryWindow,
+					graphics->dxgiDevice.Get(), swapChain.Get(), callbacks); break;
 			case TransparentPresentMode::DwmBlurBehind:
-				return dwmBlurPresenter.Initialize(window, callbacks);
+				primaryInitialized = dwmBlurPresenter.Initialize(primaryWindow, callbacks); break;
 			case TransparentPresentMode::DwmBlurBehind2:
-				return dwmExtendedPresenter.Initialize(window, callbacks);
+				primaryInitialized = dwmExtendedPresenter.Initialize(primaryWindow, callbacks); break;
 			default:
 				return false;
 			}
+			if (!primaryInitialized) return false;
+			// 辅助窗出生即带固定 layered/transparent 样式，只建立 CPU 读回目标。
+			return selectionUlwPresenter.Initialize(selectionWindow,
+				graphics->device.Get(), graphics->context.Get(), width, height);
 		}
 
 		bool TryInitialize(TransparentPresentMode mode)
@@ -661,7 +676,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::cout << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
 					<< " exStyle=0x" << std::hex
-					<< static_cast<unsigned long>(GetWindowLongPtrW(window, GWL_EXSTYLE))
+					<< static_cast<unsigned long>(GetWindowLongPtrW(primaryWindow, GWL_EXSTYLE))
 					<< std::dec << " lastError=" << GetLastError() << std::endl;
 				return false;
 			}
@@ -717,22 +732,28 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!impl_) return;
 		impl_->ReleaseAttempt();
-		impl_->window = nullptr;
+		impl_->primaryWindow = nullptr;
+		impl_->selectionWindow = nullptr;
 		impl_->graphics = nullptr;
 		impl_->renderer = nullptr;
 		impl_->callbacks = {};
 		impl_->width = 0;
 		impl_->height = 0;
 		impl_->options = {};
+		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
+		impl_->requestedOutputRevision = 0;
+		impl_->lastObservation = {};
 		impl_->recoveryPending = false;
 		impl_->lastFailure = S_OK;
 	}
 
-	bool TransparentPresentationController::Initialize(HWND window, GraphicsDeviceResources& graphics,
+	bool TransparentPresentationController::Initialize(HWND primaryWindow, HWND selectionWindow,
+		GraphicsDeviceResources& graphics,
 		InkRenderer& renderer, UINT width, UINT height, TransparentPresentationCallbacks callbacks,
 		TransparentPresentationOptions options)
 	{
-		impl_->window = window;
+		impl_->primaryWindow = primaryWindow;
+		impl_->selectionWindow = selectionWindow;
 		impl_->graphics = &graphics;
 		impl_->renderer = &renderer;
 		impl_->callbacks = callbacks;
@@ -741,6 +762,11 @@ namespace Inkeys::Drawing::Draw3
 		impl_->options = options;
 		impl_->recoveryPending = false;
 		impl_->lastFailure = S_OK;
+		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
+		impl_->requestedOutputRevision = 0;
+		impl_->lastObservation = {};
+		if (!primaryWindow || !selectionWindow || !IsWindow(primaryWindow) ||
+			!IsWindow(selectionWindow)) return false;
 		if (options.requireMode)
 		{
 			const bool initialized = impl_->TryInitialize(options.requiredMode);
@@ -763,9 +789,31 @@ namespace Inkeys::Drawing::Draw3
 		return false;
 	}
 
+	std::uint64_t TransparentPresentationController::SetOutputTarget(
+		TransparentOutputTarget target) noexcept
+	{
+		if (impl_->requestedOutputTarget == target)
+			return impl_->requestedOutputRevision;
+		impl_->requestedOutputTarget = target;
+		if (++impl_->requestedOutputRevision == 0)
+			++impl_->requestedOutputRevision;
+		return impl_->requestedOutputRevision;
+	}
+
+	TransparentOutputTarget TransparentPresentationController::RequestedOutputTarget() const noexcept
+	{
+		return impl_->requestedOutputTarget;
+	}
+
+	std::uint64_t TransparentPresentationController::RequestedOutputRevision() const noexcept
+	{
+		return impl_->requestedOutputRevision;
+	}
+
 	bool TransparentPresentationController::RecoverFromRuntimeFailure()
 	{
-		if (!impl_ || !impl_->recoveryPending || !impl_->window ||
+		if (!impl_ || !impl_->recoveryPending || !impl_->primaryWindow ||
+			!impl_->selectionWindow ||
 			!impl_->graphics || !impl_->renderer) return false;
 		const HRESULT failure = impl_->lastFailure;
 		const bool deviceLost = IsGraphicsDeviceLostError(failure);
@@ -773,7 +821,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->recoveryPending = false;
 		impl_->ReleaseAttempt();
 		RECT clientRect = {};
-		if (GetClientRect(impl_->window, &clientRect) &&
+		if (GetClientRect(impl_->primaryWindow, &clientRect) &&
 			clientRect.right > clientRect.left && clientRect.bottom > clientRect.top)
 		{
 			impl_->width = static_cast<UINT>(clientRect.right - clientRect.left);
@@ -793,8 +841,7 @@ namespace Inkeys::Drawing::Draw3
 
 		if (impl_->options.requireMode)
 		{
-			// 强制后端用于隐藏测试；普通 presenter 失败时不能静默切换模式。
-			if (!deviceLost) return false;
+			// 强制后端也先完整重建一次；辅助 ULW 运行期失败不能退回主窗穿透。
 			if (impl_->TryInitialize(impl_->options.requiredMode))
 			{
 				impl_->lastFailure = S_OK;
@@ -807,7 +854,8 @@ namespace Inkeys::Drawing::Draw3
 
 		const size_t failedIndex = TransparentPresentModeIndex(failedMode);
 		const size_t automaticBeginIndex = impl_->options.allowDirectComposition ? 0 : 1;
-		const size_t beginIndex = deviceLost ? automaticBeginIndex : failedIndex + 1;
+		const size_t beginIndex = deviceLost ? automaticBeginIndex :
+			(std::max)(automaticBeginIndex, failedIndex);
 		for (size_t index = beginIndex; index < ARRAYSIZE(kTransparentPresentModes); ++index)
 		{
 			if (impl_->TryInitialize(kTransparentPresentModes[index]))
@@ -829,35 +877,52 @@ namespace Inkeys::Drawing::Draw3
 		switch (impl_->activeMode)
 		{
 		case TransparentPresentMode::UlwDirtyRect:
-			succeeded = impl_->ulwPresenter.Resize(width, height); break;
+			succeeded = impl_->primaryUlwPresenter.Resize(width, height); break;
 		case TransparentPresentMode::DirectCompositionVisualTree:
 			succeeded = true; break;
 		case TransparentPresentMode::DwmBlurBehind:
-			LogDwmModeDiagnostics("DwmBlurBehind", impl_->window, "Resize");
+			LogDwmModeDiagnostics("DwmBlurBehind", impl_->primaryWindow, "Resize");
 			succeeded = impl_->dwmBlurPresenter.Update(); break;
 		case TransparentPresentMode::DwmBlurBehind2:
-			LogDwmModeDiagnostics("DwmBlurBehind2", impl_->window, "Resize");
+			LogDwmModeDiagnostics("DwmBlurBehind2", impl_->primaryWindow, "Resize");
 			succeeded = impl_->dwmExtendedPresenter.Update(); break;
 		default: break;
 		}
+		if (succeeded)
+			succeeded = impl_->selectionUlwPresenter.Resize(width, height);
 		if (!succeeded) impl_->SetFailure(E_FAIL);
 		return succeeded;
 	}
 
-	bool TransparentPresentationController::Present(RECT dirty, bool presentFull)
+	bool TransparentPresentationController::Present(
+		RECT dirty, bool presentFull, std::uint64_t contentRevision)
 	{
 		bool succeeded = false;
-		if (IsUlwMode(impl_->activeMode))
+		const TransparentOutputTarget target = impl_->requestedOutputTarget;
+		if (target == TransparentOutputTarget::SelectionUlw)
 		{
-			succeeded = impl_->ulwPresenter.Present(impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
+			succeeded = impl_->selectionUlwPresenter.Present(
+				impl_->renderer->backBufferTexture.Get(), dirty, presentFull);
+			impl_->lastObservation = impl_->selectionUlwPresenter.lastObservation;
+			if (!succeeded) impl_->SetFailure(E_FAIL);
+		}
+		else if (IsUlwMode(impl_->activeMode))
+		{
+			succeeded = impl_->primaryUlwPresenter.Present(
+				impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
+			impl_->lastObservation = impl_->primaryUlwPresenter.lastObservation;
 			if (!succeeded) impl_->SetFailure(E_FAIL);
 		}
 		else
 		{
 			const HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
 			succeeded = SUCCEEDED(result);
+			impl_->lastObservation = {};
 			if (!succeeded) impl_->SetFailure(result);
 		}
+		impl_->lastObservation.outputTarget = target;
+		impl_->lastObservation.outputRevision = impl_->requestedOutputRevision;
+		impl_->lastObservation.presentedContentRevision = contentRevision;
 		if (!succeeded && !impl_->presentFailureLogged)
 		{
 			std::cout << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
@@ -898,8 +963,7 @@ namespace Inkeys::Drawing::Draw3
 
 	TransparentPresentObservation TransparentPresentationController::LastPresentObservation() const
 	{
-		return IsUlwMode(impl_->activeMode)
-			? impl_->ulwPresenter.lastObservation : TransparentPresentObservation{};
+		return impl_->lastObservation;
 	}
 
 	bool TransparentPresentationController::IsGpuTransparentComposition() const

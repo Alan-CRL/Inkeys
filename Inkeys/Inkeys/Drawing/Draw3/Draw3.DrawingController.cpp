@@ -1309,7 +1309,8 @@ namespace Inkeys::Drawing::Draw3
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
 	{
 		const double presentStartMs = GetQpcTimeMilliseconds();
-		const bool succeeded = presentation_.Present(dirty, presentFull);
+		const bool succeeded = presentation_.Present(
+			dirty, presentFull, currentContentRevision_);
 		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
 		lastPresentSucceeded_ = succeeded;
 		if (metrics_) metrics_->RecordPresent(lastPresentDurationMs_);
@@ -1396,12 +1397,23 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
+		bool publishedCurrentPageHasContent = false;
+		bool contentRevisionNeedsPresent = false;
+		auto currentPageHasContent = [&]() noexcept
+		{
+			return currentPageIndex_ < pageRuntimeStates.size() &&
+				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
+		};
 		auto publishCurrentPageContent = [&]()
 		{
-			const bool hasContent = currentPageIndex_ < pageRuntimeStates.size() &&
-				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
+			const bool hasContent = currentPageHasContent();
+			if (hasContent == publishedCurrentPageHasContent) return;
+			publishedCurrentPageHasContent = hasContent;
+			if (++currentContentRevision_ == 0) ++currentContentRevision_;
+			contentRevisionNeedsPresent = true;
 			if (observer_.currentPageContentChanged)
-				observer_.currentPageContentChanged(observer_.context, hasContent);
+				observer_.currentPageContentChanged(
+					observer_.context, hasContent, currentContentRevision_);
 		};
 		publishCurrentPageContent();
 		uint64_t nextRasterStateToken = 1;
@@ -3338,6 +3350,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			currentCursorVisuals.clear();
 			laserTipDots.clear();
+			if (window_.SelectionMode()) return; // 选择态只呈现画布和瞬态层，不保留绘制光标。
 			DrawingCursorSample penSample;
 			DrawingCursorSample mouseSample;
 			window_.ReadPenCursorSample(penSample);
@@ -4184,16 +4197,30 @@ namespace Inkeys::Drawing::Draw3
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();
 		renderer_.WarmUpShapeShaders();
+		bool appliedSelectionMode = window_.SelectionMode();
+		bool auxiliaryCleanVerificationPending = appliedSelectionMode;
 		while (true)
 		{
+			const bool selectionMode = window_.SelectionMode();
+			const TransparentOutputTarget expectedOutputTarget = selectionMode
+				? TransparentOutputTarget::SelectionUlw
+				: TransparentOutputTarget::PrimaryDrawpad;
+			const bool outputTargetChanged = appliedSelectionMode != selectionMode ||
+				presentation_.RequestedOutputTarget() != expectedOutputTarget;
+			if (outputTargetChanged)
+			{
+				presentation_.SetOutputTarget(expectedOutputTarget);
+				appliedSelectionMode = selectionMode;
+				auxiliaryCleanVerificationPending = selectionMode;
+			}
 			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
-			timerPeriod.SetSelectionMode(window_.SelectionMode());
+			timerPeriod.SetSelectionMode(selectionMode);
 			currentProductVisualStyle = window_.ProductVisualStyleSnapshot();
 			const double frameStartMs = GetQpcTimeMilliseconds();
 			if (metrics_) metrics_->BeginFrame();
 			lastPresentDurationMs_ = 0.0;
 			lastPresentSucceeded_ = false;
-			bool forceFullPresent = false;
+			bool forceFullPresent = outputTargetChanged || contentRevisionNeedsPresent;
 			RECT viewportRecoveryDirty = {};
 			if (graphicsRecoveryPending_)
 			{
@@ -4606,6 +4633,14 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
 			const bool particleAnimationActive = laserParticleSnapshot.hasActive;
+			if (selectionMode && !currentPageHasContent() &&
+				auxiliaryCleanVerificationPending && active.empty() &&
+				laserLifecycle.phase == LaserTrailPhase::Inactive &&
+				!particleAnimationActive)
+			{
+				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
+				forceFullPresent = true;
+			}
 			if (laserOpacityChanged)
 			{
 				UnionRectInPlace(frameDirty, laserStableBounds);
@@ -5560,6 +5595,21 @@ namespace Inkeys::Drawing::Draw3
 					renderer_.DrawTransientDrawingCursor(visual);
 				presentSucceeded = PresentFrame(
 					frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
+			}
+			if (presentSucceeded)
+			{
+				contentRevisionNeedsPresent = false;
+				if (selectionMode &&
+					presentation_.RequestedOutputTarget() ==
+						TransparentOutputTarget::SelectionUlw)
+				{
+					const TransparentPresentObservation observation =
+						presentation_.LastPresentObservation();
+					if (observation.fullFrameAllZeroAlpha)
+						auxiliaryCleanVerificationPending = false;
+					else if (!observation.updatedRegionAllZeroAlpha)
+						auxiliaryCleanVerificationPending = true;
+				}
 			}
 			previousCursorVisuals = currentCursorVisuals;
 			previousLaserParticleBounds = currentLaserParticleBounds;

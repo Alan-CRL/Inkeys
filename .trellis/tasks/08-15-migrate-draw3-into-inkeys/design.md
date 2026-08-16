@@ -2,7 +2,7 @@
 
 ## 1. 边界与原则
 
-Draw3 作为 Inkeys Drawpad 的新实现进入主进程，但不成为新的顶层产品窗口。Window Service 继续唯一拥有 `WindowRole::Drawpad` HWND、owner 链和窗口线程；Draw3 唯一拥有该 HWND 的墨迹输入、独立 D3D 资源、交换链及透明呈现资源。
+Draw3 作为 Inkeys Drawpad 的新实现进入主进程。Window Service 唯一拥有主 `WindowRole::Drawpad` 和 presentation-only `WindowRole::DrawpadPresentation` sibling HWND、owner 层级和窗口线程；Draw3 仍只有一套 Host、墨迹输入、独立 D3D 资源、交换链、document/history 与绘制线程。
 
 迁移采用“先完整导入、再最小适配”的方式。源仓库 `.git` 历史不直接嵌套进工作树；以来源清单和必要许可文件保留追溯性，当前工作树继续使用 InkeysRepo 的单一 `.git`。
 
@@ -20,15 +20,15 @@ Draw3 作为 Inkeys Drawpad 的新实现进入主进程，但不成为新的顶�
 
 产品启动顺序：
 
-1. Window Service 创建既有 Drawpad HWND，并预置透明呈现所需扩展样式。
+1. Window Service 创建主 Drawpad 及固定 layered/transparent 的辅助呈现 HWND，并预置主 presenter 所需扩展样式。
 2. `drawpad_main` 的兼容入口改为创建 Draw3 host/runtime，不再启动 Draw2 detached workers；失败时只记录错误并结束，不回退到第二个 Drawpad。
-3. Draw3 host 以外部 HWND 初始化独立 `GraphicsDeviceResources`、presenter、renderer、输入队列和 RTS。
+3. Draw3 host 以两个外部 HWND 初始化共享 renderer/backbuffer 的主 presenter 与辅助 ULW target；RTS 和 mailbox 仅绑定主 HWND。
 4. Bar/PPT 通过桥接发布工具状态和命令，Draw3 绘制循环消费。
 5. 退出时先停止命令生产与 RTS，再唤醒并结束绘制循环，随后释放 presenter/swap chain/device，最后由 Window Service 销毁 HWND。
 
-Draw3 host 不调用 `CreateWindowEx`、`DestroyWindow` 或独立窗口线程；窗口 resize、style、click-through 与可见性修改通过 Window Service 或 Drawpad WndProc 所在线程执行。
+Draw3 host 不调用 `CreateWindowEx`、`DestroyWindow` 或独立窗口线程；窗口 resize、style 与三态可见性修改通过 Window Service 或 Drawpad WndProc 所在线程执行。
 
-窗口层级合同：`MagnifierHost -> Freeze -> Drawpad` 是根/遮罩 owner 链，PPT/Bar 是 Drawpad 上方的 owned popup；Draw3 不调用 `SetWindowPos`、不设置 topmost、不改 owner，置顶或 bounds 更新只由 Window Service 在 owner thread 刷新根窗口。presenter 只提交 Drawpad 的客户区像素，因此 ULW 的透明像素不会把下层 Drawpad 内容整窗覆盖。
+窗口层级合同：`MagnifierHost -> Freeze -> {DrawpadPresentation, Drawpad}`，辅助窗低于主 Drawpad/PPT/Bar，PPT/Bar 仍 owned 到主 Drawpad。Draw3 不调用 `SetWindowPos`、不设置 topmost、不改 owner；Window Service 同步两窗 bounds，并批量保证 `Primary/Presentation/Hidden` 中至多一窗可见。
 
 ## 4. 窗口消息与命令桥
 
@@ -44,6 +44,8 @@ Draw3 host 不调用 `CreateWindowEx`、`DestroyWindow` 或独立窗口线程；
 
 Draw3 `RealTimeStylusInput` 是 Drawpad 的唯一 RTS producer。Draw2 `IdtRts` 不参与产品编译或至少不再初始化。Draw3 RTS 绑定现有 Drawpad HWND，发布到 `ContactInputCoordinator`；绘制线程独占消费。
 
+RTS 保持 `SetAllTabletsMode(TRUE)`，选择模式不通过丢弃 RTS contact 或输入门禁实现；鼠标消息穿透由辅助窗固定 `WS_EX_TRANSPARENT` 提供。
+
 保留 Draw3 速度橡皮（`SpeedEraserOcController`）和固定橡皮；删除旧 Draw2 压感橡皮的宽度计算、常量、配置与 UI 入口。普通 Pen/Highlighter 的压力宽度仍按 Draw3 压力链处理，倒置笔端只映射到当前 Draw3 橡皮模式。
 
 ## 6. 图形设备与透明呈现
@@ -55,9 +57,12 @@ Draw3 `RealTimeStylusInput` 是 Drawpad 的唯一 RTS producer。Draw2 `IdtRts` 
 - DComp：Drawpad 创建时预置 `WS_EX_NOREDIRECTIONBITMAP`，使用 Draw3 自有 composition swap chain、DComp device/target/visual。
 - DWM2/DWM/Win7：使用 Draw3 自有 HWND swap chain 与兼容 alpha fallback。
 - ULW：使用 staging texture、top-down 32-bit DIB、premultiplied alpha 和 dirty rect；透明像素不得被提升成可见不透明背景。
+- 选择辅助窗：长期持有第二个 ULW readback target，但读取同一最终 backbuffer，不创建第二套 swapchain、renderer、history 或绘制线程；最终帧包含 L2、L1/L0、Laser 和粒子，选择态不合成绘制光标。
 - 目标 HWND 已由 Window Service 创建，presenter 不直接重写 owner/z-order；样式切换通过 Window Service 线程执行。
 
-模式降级必须可重复初始化且可完整释放。创建期 `WS_EX_NOREDIRECTIONBITMAP` 在绑定 DComp 后可能不可清除：DComp 启动失败时，Window Service 在任何窗口显示及 Setting 初始化前停止整条隐藏窗口链，再顺序重建唯一的 legacy-compatible HWND 链；新 Draw3 Host 跳过 DComp 并按 DWM2 -> DWM -> ULW 回退。两个 Drawpad HWND 不同时存在。设备丢失时优先在原 HWND 上重建 DComp 设备相关资源，HWND 所有权不变化。
+输出切换采用单调 generation。隐藏目标必须先完成全量 Present；只有请求/就绪目标和 revision 一致且已呈现当前内容 revision 时才能换窗。选择无历史内容时，Laser/粒子继续在辅助窗淡出，最后强制完整 ULW Present，只有全帧 alpha 为零才进入 `Hidden`。
+
+模式降级必须可重复初始化且可完整释放。创建期 `WS_EX_NOREDIRECTIONBITMAP` 在绑定 DComp 后可能不可清除：DComp 启动失败时，Window Service 在任何窗口显示及 Setting 初始化前停止整条隐藏窗口链，再顺序重建 legacy-compatible 主 HWND 与辅助 sibling；新 Draw3 Host 跳过 DComp 并按 DWM2 -> DWM -> ULW 回退。两个主 HWND generation 不同时存在。设备丢失时重建主 presenter 与辅助 ULW target，HWND 所有权不变化。
 
 ## 7. 历史、页面和未完成功能
 

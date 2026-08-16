@@ -61,7 +61,8 @@ namespace
 		{
 		case WindowRole::MagnifierHost: return 0;
 		case WindowRole::Freeze: return 1;
-		case WindowRole::Drawpad: return 2;
+		case WindowRole::DrawpadPresentation: return 2;
+		case WindowRole::Drawpad: return 3;
 		default: return -1;
 		}
 	}
@@ -73,6 +74,7 @@ namespace
 		case WindowRole::MagnifierHost: return L"Inkeys.Window.MagnifierHost";
 		case WindowRole::MagnifierChild: return L"Inkeys.Window.MagnifierChild";
 		case WindowRole::Freeze: return L"Inkeys.Window.Freeze";
+		case WindowRole::DrawpadPresentation: return L"Inkeys.Window.DrawpadPresentation";
 		case WindowRole::Drawpad: return L"Inkeys.Window.Drawpad";
 		case WindowRole::PptBottomLeft: return L"Inkeys.Window.PptBottomLeft";
 		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
@@ -193,6 +195,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::MagnifierChild,
 				WindowRole::Freeze,
+				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
@@ -296,6 +299,16 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
+			DrawpadSurfaceVisibility visibility)
+		{
+			Command command;
+			command.type = CommandType::SetDrawpadSurfaceVisibility;
+			command.role = WindowRole::Drawpad;
+			command.drawpadVisibility = visibility;
+			return Submit(std::move(command));
+		}
+
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled)
 		{
 			Command command;
@@ -361,6 +374,7 @@ namespace Inkeys::Window
 			Show,
 			Hide,
 			HideAll,
+			SetDrawpadSurfaceVisibility,
 			SetBounds,
 			SetClickThrough,
 			SetExtendedStyleFlags,
@@ -376,6 +390,8 @@ namespace Inkeys::Window
 			WindowRole role = WindowRole::Bar;
 			RECT bounds{};
 			bool enabled = false;
+			DrawpadSurfaceVisibility drawpadVisibility =
+				DrawpadSurfaceVisibility::Hidden;
 			DWORD setMask = 0;
 			DWORD clearMask = 0;
 			Message::BindOptions bindOptions{};
@@ -552,6 +568,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::MagnifierChild,
 				WindowRole::Freeze,
+				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
@@ -590,6 +607,9 @@ namespace Inkeys::Window
 					roleOwner = Handle(WindowRole::MagnifierHost);
 				else if (role == WindowRole::DisplayObserver)
 					roleOwner = HWND_MESSAGE;
+				else if (role == WindowRole::DrawpadPresentation ||
+					role == WindowRole::Drawpad)
+					roleOwner = Handle(WindowRole::Freeze);
 				else if (IsUiPopup(role))
 					roleOwner = Handle(WindowRole::Drawpad);
 				if (!CreateWindowFor(*spec, roleOwner, threadId))
@@ -598,8 +618,9 @@ namespace Inkeys::Window
 					configured_[RoleIndex(role)].store(false, std::memory_order_release);
 					continue;
 				}
-				if (role != WindowRole::MagnifierChild
-					&& role != WindowRole::DisplayObserver && !IsUiPopup(role))
+				if (role != WindowRole::MagnifierChild &&
+					role != WindowRole::DisplayObserver && !IsUiPopup(role) &&
+					role != WindowRole::DrawpadPresentation)
 					owner = Handle(role);
 			}
 			return true;
@@ -755,6 +776,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::Drawpad,
+				WindowRole::DrawpadPresentation,
 				WindowRole::Freeze,
 				WindowRole::MagnifierChild,
 				WindowRole::MagnifierHost,
@@ -931,12 +953,13 @@ namespace Inkeys::Window
 				return true;
 			case CommandType::HideAll:
 				return false;
+			case CommandType::SetDrawpadSurfaceVisibility:
+				return ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
 			case CommandType::SetBounds:
-				return SetWindowPos(
-					hwnd, nullptr,
-					command.bounds.left,
-					command.bounds.top,
-					command.bounds.right - command.bounds.left,
+				if (command.role == WindowRole::Drawpad)
+					return ApplyDrawpadBounds(command.bounds);
+				return SetWindowPos(hwnd, nullptr, command.bounds.left,
+					command.bounds.top, command.bounds.right - command.bounds.left,
 					command.bounds.bottom - command.bounds.top,
 					SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
 			case CommandType::SetClickThrough:
@@ -1018,6 +1041,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::MagnifierChild,
 				WindowRole::Freeze,
+				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
@@ -1032,6 +1056,64 @@ namespace Inkeys::Window
 					ShowWindow(hwnd, SW_HIDE);
 			}
 			return true;
+		}
+
+		[[nodiscard]] bool ApplyDrawpadSurfaceVisibility(
+			DrawpadSurfaceVisibility visibility) noexcept
+		{
+			const HWND primary = Handle(WindowRole::Drawpad);
+			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
+			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
+				return false;
+
+			HDWP positions = BeginDeferWindowPos(2);
+			if (positions)
+			{
+				const UINT primaryFlags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+					SWP_NOACTIVATE | (visibility == DrawpadSurfaceVisibility::Primary
+						? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
+				const UINT presentationFlags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+					SWP_NOACTIVATE | (visibility == DrawpadSurfaceVisibility::Presentation
+						? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
+				positions = DeferWindowPos(positions, primary, nullptr,
+					0, 0, 0, 0, primaryFlags);
+				if (positions)
+					positions = DeferWindowPos(positions, presentation, nullptr,
+						0, 0, 0, 0, presentationFlags);
+				if (positions && EndDeferWindowPos(positions)) return true;
+			}
+
+			// 批量切换失败时先清空两窗可见性，再显示唯一目标，禁止 alpha 叠加。
+			ShowWindow(primary, SW_HIDE);
+			ShowWindow(presentation, SW_HIDE);
+			if (visibility == DrawpadSurfaceVisibility::Primary)
+				ShowWindow(primary, SW_SHOWNOACTIVATE);
+			else if (visibility == DrawpadSurfaceVisibility::Presentation)
+				ShowWindow(presentation, SW_SHOWNOACTIVATE);
+			return (visibility == DrawpadSurfaceVisibility::Primary
+				? IsWindowVisible(primary) != FALSE
+				: visibility == DrawpadSurfaceVisibility::Presentation
+					? IsWindowVisible(presentation) != FALSE
+					: IsWindowVisible(primary) == FALSE &&
+						IsWindowVisible(presentation) == FALSE);
+		}
+
+		[[nodiscard]] bool ApplyDrawpadBounds(const RECT& bounds) noexcept
+		{
+			const HWND primary = Handle(WindowRole::Drawpad);
+			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
+			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
+				return false;
+			const int width = bounds.right - bounds.left;
+			const int height = bounds.bottom - bounds.top;
+			HDWP positions = BeginDeferWindowPos(2);
+			if (!positions) return false;
+			positions = DeferWindowPos(positions, primary, nullptr,
+				bounds.left, bounds.top, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+			if (positions)
+				positions = DeferWindowPos(positions, presentation, nullptr,
+					bounds.left, bounds.top, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+			return positions && EndDeferWindowPos(positions) != FALSE;
 		}
 
 		[[nodiscard]] bool CreateDynamic(const WindowSpec& spec)
@@ -1054,11 +1136,18 @@ namespace Inkeys::Window
 				owner = Handle(WindowRole::Drawpad);
 				if (!owner) return false;
 			}
+			else if (spec.role == WindowRole::DrawpadPresentation ||
+				spec.role == WindowRole::Drawpad)
+			{
+				owner = Handle(WindowRole::Freeze);
+				if (!owner) return false;
+			}
 			else if (!IsSetting(spec.role))
 			{
 				constexpr WindowRole chain[] = {
 					WindowRole::MagnifierHost,
 					WindowRole::Freeze,
+					WindowRole::DrawpadPresentation,
 					WindowRole::Drawpad,
 				};
 				const int position = OverlayChainPosition(spec.role);
@@ -1092,6 +1181,7 @@ namespace Inkeys::Window
 			constexpr WindowRole chain[] = {
 				WindowRole::MagnifierHost,
 				WindowRole::Freeze,
+				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
 			};
 			for (int index = position + 1; index < static_cast<int>(std::size(chain)); ++index)
@@ -1162,6 +1252,10 @@ namespace Inkeys::Window
 	bool Service::Show(WindowRole role) { return impl_->Show(role); }
 	bool Service::Hide(WindowRole role) { return impl_->Hide(role); }
 	bool Service::HideAllUserWindows() { return impl_->HideAllUserWindows(); }
+	bool Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility visibility)
+	{
+		return impl_->SetDrawpadSurfaceVisibility(visibility);
+	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
 	bool Service::SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)

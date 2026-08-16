@@ -5,6 +5,7 @@
 #endif
 
 #include <dxgi1_2.h>
+#include <cstdint>
 #include <memory>
 #include <windows.h>
 
@@ -26,6 +27,12 @@ export namespace Inkeys::Drawing::Draw3
 
 	inline constexpr TransparentPresentMode kPreferredTransparentPresentMode =
 		TransparentPresentMode::DirectCompositionVisualTree;
+
+	enum class TransparentOutputTarget : std::uint8_t
+	{
+		PrimaryDrawpad,
+		SelectionUlw,
+	};
 
 	using SetWindowStyleCallback = bool(*)(
 		void* context, DWORD setMask, DWORD clearMask);
@@ -49,7 +56,12 @@ export namespace Inkeys::Drawing::Draw3
 		bool ulw = false;
 		bool usedDirtyRect = false;
 		bool premultipliedAlphaValid = true;
+		bool updatedRegionAllZeroAlpha = false;
 		bool fullFrameAllZeroAlpha = false;
+		TransparentOutputTarget outputTarget =
+			TransparentOutputTarget::PrimaryDrawpad;
+		std::uint64_t outputRevision = 0;
+		std::uint64_t presentedContentRevision = 0;
 	};
 
 	// 返回透明呈现模式的日志名称。
@@ -67,15 +79,21 @@ export namespace Inkeys::Drawing::Draw3
 		TransparentPresentationController& operator=(const TransparentPresentationController&) = delete;
 
 		// 按首选模式和回退链创建交换链、渲染器及 presenter。
-		bool Initialize(HWND window, GraphicsDeviceResources& graphics, InkRenderer& renderer,
+		bool Initialize(HWND primaryWindow, HWND selectionWindow,
+			GraphicsDeviceResources& graphics, InkRenderer& renderer,
 			UINT width, UINT height, TransparentPresentationCallbacks callbacks = {},
 			TransparentPresentationOptions options = {});
+		// 只记录绘制线程请求；目标首个完整帧成功前不会改变窗口可见性。
+		std::uint64_t SetOutputTarget(TransparentOutputTarget target) noexcept;
+		TransparentOutputTarget RequestedOutputTarget() const noexcept;
+		std::uint64_t RequestedOutputRevision() const noexcept;
 		// 通知当前 presenter 窗口尺寸已经改变。
 		bool Resize(UINT width, UINT height);
 		// 释放交换链和透明 presenter，但不触碰外部 HWND 生命周期。
 		void Shutdown() noexcept;
 		// 呈现指定脏矩形或整张画布。
-		bool Present(RECT dirty, bool presentFull);
+		bool Present(RECT dirty, bool presentFull,
+			std::uint64_t contentRevision = 0);
 		// 在 DWM 合成状态变化后刷新玻璃效果。
 		bool RefreshAfterCompositionChanged();
 		// Resize 等外部图形操作失败后，记录当前设备状态并安排恢复。

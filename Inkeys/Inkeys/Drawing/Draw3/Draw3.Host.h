@@ -34,6 +34,12 @@ namespace Inkeys::Drawing::Draw3
 		DwmBlurBehind2,
 	};
 
+	enum class HostOutputTarget : std::uint8_t
+	{
+		PrimaryDrawpad,
+		SelectionUlw,
+	};
+
 	struct HostStartOptions
 	{
 		HostPresentationMode requiredPresentationMode = HostPresentationMode::Automatic;
@@ -72,6 +78,14 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
 		std::uint64_t contentRevision = 0;
+		bool selectionMode = true;
+		HostOutputTarget requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		std::uint64_t requestedOutputRevision = 0;
+		HostOutputTarget readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		std::uint64_t readyOutputRevision = 0;
+		std::uint64_t presentedContentRevision = 0;
+		bool auxiliaryFullFrameClean = false;
+		std::uint64_t runtimeRevision = 0;
 		RECT lastDirtyRect{};
 	};
 
@@ -84,7 +98,8 @@ namespace Inkeys::Drawing::Draw3
 		Host(const Host&) = delete;
 		Host& operator=(const Host&) = delete;
 
-		bool Start(HWND drawpad, HostStyleCallbacks styleCallbacks = {},
+		bool Start(HWND drawpad, HWND drawpadPresentation,
+			HostStyleCallbacks styleCallbacks = {},
 			HostStartOptions options = {});
 		void Stop() noexcept;
 		bool Running() const noexcept;
@@ -92,6 +107,8 @@ namespace Inkeys::Drawing::Draw3
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
 		// 内容 revision 变化或超时后返回；用于产品状态线程即时响应绘制线程更新。
 		bool WaitForContentRevision(std::uint64_t revision,
+			std::uint32_t timeoutMilliseconds) const noexcept;
+		bool WaitForRuntimeRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 

@@ -35,6 +35,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic_bool running = false;
 		std::atomic_bool firstFrameReady = false;
 		std::atomic<HWND> attachedWindow = nullptr;
+		std::atomic<HWND> attachedPresentationWindow = nullptr;
 		std::atomic<HostPresentationMode> presentationMode = HostPresentationMode::Automatic;
 		std::atomic<std::uint64_t> presentCount = 0;
 		std::atomic<std::uint64_t> successfulPresentCount = 0;
@@ -55,6 +56,16 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
 		std::atomic<std::uint64_t> contentRevision = 0;
+		std::atomic_bool selectionMode = true;
+		std::atomic<HostOutputTarget> requestedOutputTarget =
+			HostOutputTarget::PrimaryDrawpad;
+		std::atomic<std::uint64_t> requestedOutputRevision = 0;
+		std::atomic<HostOutputTarget> readyOutputTarget =
+			HostOutputTarget::PrimaryDrawpad;
+		std::atomic<std::uint64_t> readyOutputRevision = 0;
+		std::atomic<std::uint64_t> presentedContentRevision = 0;
+		std::atomic_bool auxiliaryFullFrameClean = false;
+		std::atomic<std::uint64_t> runtimeRevision = 0;
 		std::atomic<LONG> lastDirtyLeft = 0;
 		std::atomic<LONG> lastDirtyTop = 0;
 		std::atomic<LONG> lastDirtyRight = 0;
@@ -69,6 +80,8 @@ namespace Inkeys::Drawing::Draw3
 		std::condition_variable startupCondition;
 		mutable std::mutex contentMutex;
 		mutable std::condition_variable contentCondition;
+		mutable std::mutex runtimeMutex;
+		mutable std::condition_variable runtimeCondition;
 		bool graphicsReady = false;
 		bool stylusDecision = false;
 		bool stylusSucceeded = false;
@@ -91,6 +104,22 @@ namespace Inkeys::Drawing::Draw3
 		static bool IsRequiredMode(HostPresentationMode mode) noexcept
 		{
 			return mode != HostPresentationMode::Automatic;
+		}
+
+		static HostOutputTarget ToHostOutputTarget(
+			TransparentOutputTarget target) noexcept
+		{
+			return target == TransparentOutputTarget::SelectionUlw
+				? HostOutputTarget::SelectionUlw
+				: HostOutputTarget::PrimaryDrawpad;
+		}
+
+		void PublishRuntimeRevision() noexcept
+		{
+			if (runtimeRevision.fetch_add(1, std::memory_order_release) ==
+				(std::numeric_limits<std::uint64_t>::max)())
+				runtimeRevision.store(1, std::memory_order_release);
+			runtimeCondition.notify_all();
 		}
 
 		static TransparentPresentMode ToTransparentMode(HostPresentationMode mode) noexcept
@@ -125,6 +154,16 @@ namespace Inkeys::Drawing::Draw3
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
 			contentRevision.store(0, std::memory_order_release);
+			selectionMode.store(true, std::memory_order_release);
+			requestedOutputTarget.store(
+				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
+			requestedOutputRevision.store(0, std::memory_order_release);
+			readyOutputTarget.store(
+				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
+			readyOutputRevision.store(0, std::memory_order_release);
+			presentedContentRevision.store(0, std::memory_order_release);
+			auxiliaryFullFrameClean.store(false, std::memory_order_release);
+			runtimeRevision.store(0, std::memory_order_release);
 			lastDirtyLeft.store(0, std::memory_order_release);
 			lastDirtyTop.store(0, std::memory_order_release);
 			lastDirtyRight.store(0, std::memory_order_release);
@@ -152,13 +191,47 @@ namespace Inkeys::Drawing::Draw3
 			self->lastDirtyTop.store(dirty.top, std::memory_order_relaxed);
 			self->lastDirtyRight.store(dirty.right, std::memory_order_relaxed);
 			self->lastDirtyBottom.store(dirty.bottom, std::memory_order_relaxed);
-			if (!observation.ulw) return;
-			if (observation.usedDirtyRect)
-				self->ulwDirtyRectPresentCount.fetch_add(1, std::memory_order_acq_rel);
-			if (!observation.premultipliedAlphaValid)
-				self->ulwPremultipliedAlphaFailureCount.fetch_add(1, std::memory_order_acq_rel);
-			if (observation.fullFrameAllZeroAlpha)
-				self->ulwTransparentFullFrameVerified.store(true, std::memory_order_release);
+			bool runtimeChanged = false;
+			const HostOutputTarget outputTarget =
+				ToHostOutputTarget(observation.outputTarget);
+			runtimeChanged = self->requestedOutputTarget.exchange(
+				outputTarget, std::memory_order_acq_rel) != outputTarget || runtimeChanged;
+			runtimeChanged = self->requestedOutputRevision.exchange(
+				observation.outputRevision, std::memory_order_acq_rel) !=
+				observation.outputRevision || runtimeChanged;
+			if (succeeded)
+			{
+				runtimeChanged = self->presentedContentRevision.exchange(
+					observation.presentedContentRevision, std::memory_order_acq_rel) !=
+					observation.presentedContentRevision || runtimeChanged;
+				if (presentFull)
+				{
+					runtimeChanged = self->readyOutputTarget.exchange(
+						outputTarget, std::memory_order_acq_rel) != outputTarget || runtimeChanged;
+					runtimeChanged = self->readyOutputRevision.exchange(
+						observation.outputRevision, std::memory_order_acq_rel) !=
+						observation.outputRevision || runtimeChanged;
+				}
+				if (outputTarget == HostOutputTarget::SelectionUlw)
+				{
+					bool clean = self->auxiliaryFullFrameClean.load(
+						std::memory_order_acquire);
+					if (observation.fullFrameAllZeroAlpha) clean = true;
+					else if (presentFull || !observation.updatedRegionAllZeroAlpha) clean = false;
+					runtimeChanged = self->auxiliaryFullFrameClean.exchange(
+						clean, std::memory_order_acq_rel) != clean || runtimeChanged;
+				}
+			}
+			if (observation.ulw)
+			{
+				if (observation.usedDirtyRect)
+					self->ulwDirtyRectPresentCount.fetch_add(1, std::memory_order_acq_rel);
+				if (!observation.premultipliedAlphaValid)
+					self->ulwPremultipliedAlphaFailureCount.fetch_add(1, std::memory_order_acq_rel);
+				if (observation.fullFrameAllZeroAlpha)
+					self->ulwTransparentFullFrameVerified.store(true, std::memory_order_release);
+			}
+			if (runtimeChanged) self->PublishRuntimeRevision();
 		}
 
 		static void ObserveResized(void* context, int width, int height)
@@ -201,18 +274,20 @@ namespace Inkeys::Drawing::Draw3
 			self->pageCount.store(pages, std::memory_order_release);
 		}
 
-		static void ObserveCurrentPageContent(void* context, bool hasContent)
+		static void ObserveCurrentPageContent(
+			void* context, bool hasContent, std::uint64_t revision)
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
 			{
 				std::scoped_lock lock(self->contentMutex);
-				if (self->currentPageHasContent.load(std::memory_order_relaxed) == hasContent)
-					return;
+				if (self->currentPageHasContent.load(
+					std::memory_order_relaxed) == hasContent) return;
 				self->currentPageHasContent.store(hasContent, std::memory_order_release);
-				self->contentRevision.fetch_add(1, std::memory_order_release);
+				self->contentRevision.store(revision, std::memory_order_release);
 			}
 			self->contentCondition.notify_all();
+			self->PublishRuntimeRevision();
 		}
 
 		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
@@ -229,6 +304,9 @@ namespace Inkeys::Drawing::Draw3
 			if (state.revision == appliedBridgeRevision) return;
 			appliedBridgeRevision = state.revision;
 			window.SetSelectionMode(state.selectionMode);
+			if (selectionMode.exchange(state.selectionMode,
+				std::memory_order_acq_rel) != state.selectionMode)
+				PublishRuntimeRevision();
 			DrawingTool tool = DrawingTool::Pen;
 			switch (state.tool)
 			{
@@ -286,10 +364,14 @@ namespace Inkeys::Drawing::Draw3
 			self->PumpBridgeCommands();
 		}
 
-		bool Start(HWND hwnd, HostStyleCallbacks styleCallbacks, HostStartOptions options)
+		bool Start(HWND hwnd, HWND presentationHwnd,
+			HostStyleCallbacks styleCallbacks, HostStartOptions options)
 		{
 			if (running.load(std::memory_order_acquire) ||
-				attachedWindow.load(std::memory_order_acquire) || !hwnd || !IsWindow(hwnd)) return false;
+				attachedWindow.load(std::memory_order_acquire) ||
+				attachedPresentationWindow.load(std::memory_order_acquire) ||
+				!hwnd || !presentationHwnd || !IsWindow(hwnd) ||
+				!IsWindow(presentationHwnd)) return false;
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
@@ -297,10 +379,12 @@ namespace Inkeys::Drawing::Draw3
 			startOptions = options;
 			hiddenTestContactInjectionEnabled = options.enableHiddenTestContactInjection;
 			attachedWindow.store(hwnd, std::memory_order_release);
+			attachedPresentationWindow.store(presentationHwnd, std::memory_order_release);
 			ExternalWindowCallbacks windowCallbacks{};
 			if (!window.AttachExternal(hwnd, windowCallbacks))
 			{
 				attachedWindow.store(nullptr, std::memory_order_release);
+				attachedPresentationWindow.store(nullptr, std::memory_order_release);
 				hiddenTestContactInjectionEnabled = false;
 				return false;
 			}
@@ -323,6 +407,8 @@ namespace Inkeys::Drawing::Draw3
 				try
 				{
 					const HWND windowHandle = attachedWindow.load(std::memory_order_acquire);
+					const HWND presentationWindowHandle =
+						attachedPresentationWindow.load(std::memory_order_acquire);
 					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
 					if (graphicsInitialized)
 					{
@@ -339,7 +425,8 @@ namespace Inkeys::Drawing::Draw3
 							ToTransparentMode(startOptions.requiredPresentationMode);
 						presentationOptions.allowDirectComposition =
 							startOptions.allowDirectComposition;
-						graphicsInitialized = presentation.Initialize(windowHandle, graphics, renderer,
+						graphicsInitialized = presentation.Initialize(windowHandle,
+							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),
 							static_cast<UINT>((std::max)(1, size.height)), presentationCallbacks,
 							presentationOptions);
@@ -380,6 +467,9 @@ namespace Inkeys::Drawing::Draw3
 								presentation, configuration, observer);
 							// 首帧清屏和所有 Renderer 访问均发生在 Draw3 绘制线程。
 							PumpBridgeState();
+							presentation.SetOutputTarget(window.SelectionMode()
+								? TransparentOutputTarget::SelectionUlw
+								: TransparentOutputTarget::PrimaryDrawpad);
 							drawing->ClearCanvas();
 							initialized = lastPresentSucceeded.load(std::memory_order_acquire);
 							firstFrameReady.store(initialized, std::memory_order_release);
@@ -429,6 +519,7 @@ namespace Inkeys::Drawing::Draw3
 				graphics = {};
 				running.store(false, std::memory_order_release);
 				contentCondition.notify_all();
+				runtimeCondition.notify_all();
 			});
 
 		std::unique_lock lock(startupMutex);
@@ -440,6 +531,7 @@ namespace Inkeys::Drawing::Draw3
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
 			attachedWindow.store(nullptr, std::memory_order_release);
+			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			return false;
@@ -479,6 +571,7 @@ namespace Inkeys::Drawing::Draw3
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
 			attachedWindow.store(nullptr, std::memory_order_release);
+			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			return false;
@@ -489,6 +582,7 @@ namespace Inkeys::Drawing::Draw3
 		void Stop() noexcept
 		{
 			if (!attachedWindow.load(std::memory_order_acquire) &&
+				!attachedPresentationWindow.load(std::memory_order_acquire) &&
 				!running.load(std::memory_order_acquire)) return;
 			bridge.Stop();
 			// 先停止 RTS producer，再唤醒绘制线程，确保不再产生新的 contact。
@@ -501,18 +595,21 @@ namespace Inkeys::Drawing::Draw3
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
 			attachedWindow.store(nullptr, std::memory_order_release);
+			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			running.store(false, std::memory_order_release);
 			contentCondition.notify_all();
+			runtimeCondition.notify_all();
 		}
 	};
 
 	Host::Host() : impl_(std::make_unique<Impl>()) {}
 	Host::~Host() { Stop(); }
-	bool Host::Start(HWND drawpad, HostStyleCallbacks callbacks, HostStartOptions options)
+	bool Host::Start(HWND drawpad, HWND drawpadPresentation,
+		HostStyleCallbacks callbacks, HostStartOptions options)
 	{
-		return impl_->Start(drawpad, callbacks, options);
+		return impl_->Start(drawpad, drawpadPresentation, callbacks, options);
 	}
 	void Host::Stop() noexcept { impl_->Stop(); }
 	bool Host::Running() const noexcept { return impl_->running.load(std::memory_order_acquire); }
@@ -563,11 +660,37 @@ namespace Inkeys::Drawing::Draw3
 		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
+		snapshot.selectionMode = impl_->selectionMode.load(std::memory_order_acquire);
+		snapshot.requestedOutputTarget =
+			impl_->requestedOutputTarget.load(std::memory_order_acquire);
+		snapshot.requestedOutputRevision =
+			impl_->requestedOutputRevision.load(std::memory_order_acquire);
+		snapshot.readyOutputTarget =
+			impl_->readyOutputTarget.load(std::memory_order_acquire);
+		snapshot.readyOutputRevision =
+			impl_->readyOutputRevision.load(std::memory_order_acquire);
+		snapshot.presentedContentRevision =
+			impl_->presentedContentRevision.load(std::memory_order_acquire);
+		snapshot.auxiliaryFullFrameClean =
+			impl_->auxiliaryFullFrameClean.load(std::memory_order_acquire);
+		snapshot.runtimeRevision = impl_->runtimeRevision.load(std::memory_order_acquire);
 		snapshot.lastDirtyRect.left = impl_->lastDirtyLeft.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.top = impl_->lastDirtyTop.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.bottom = impl_->lastDirtyBottom.load(std::memory_order_relaxed);
 		return snapshot;
+	}
+
+	bool Host::WaitForRuntimeRevision(std::uint64_t revision,
+		std::uint32_t timeoutMilliseconds) const noexcept
+	{
+		std::unique_lock lock(impl_->runtimeMutex);
+		return impl_->runtimeCondition.wait_for(lock,
+			std::chrono::milliseconds(timeoutMilliseconds), [this, revision]
+			{
+				return impl_->runtimeRevision.load(std::memory_order_acquire) != revision ||
+					!impl_->running.load(std::memory_order_acquire);
+			});
 	}
 
 	bool Host::WaitForContentRevision(std::uint64_t revision,
