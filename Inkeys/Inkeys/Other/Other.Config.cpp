@@ -18,6 +18,14 @@ namespace
 	template <typename T>
 	inline constexpr bool InkeysConfigDependentFalseV = false;
 
+	constexpr bool IsRetiredLegacyBarButtonId(std::string_view id) noexcept
+	{
+		return id == "Inkeys.Bar.Pierce";
+	}
+
+	static_assert(IsRetiredLegacyBarButtonId("Inkeys.Bar.Pierce"));
+	static_assert(!Inkeys::IsFixedButtonsA2Id("Inkeys.Bar.Pierce"));
+
 	bool OccupyConfigFileForRead(HANDLE* hFile, const std::wstring& filePath)
 	{
 		if (!std::filesystem::exists(filePath)) return false;
@@ -746,7 +754,9 @@ namespace Inkeys
 		}
 
 		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
-		TryMigrateLegacyBarButtonLayout(parsedRoot);
+		// 直接写回完整迁移文档；不能依赖 Bar 后续恰好再次规范化 A1/A2。
+		if (TryMigrateLegacyBarButtonLayout(parsedRoot))
+			(void)WriteDocumentToFile(GetFilePath(), parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;
 		hasLoadedDocument = true;
@@ -819,6 +829,8 @@ namespace Inkeys
 
 // 旧布局中的 Divider 不迁入三区配置；交界分割线改由运行时注入。
 			if (IsRuntimeBoundaryDividerId(id)) continue;
+			// 旧 Pierce 已退出产品合同，迁移时直接丢弃而不是伪装成扩展按钮。
+			if (IsRetiredLegacyBarButtonId(id)) continue;
 			if (IsFixedButtonsA1Id(id)) fixedA1Json.append(makeFixedObject(id));
 			else if (IsFixedButtonsA2Id(id)) fixedA2Json.append(makeFixedObject(id));
 			else extensionJson.append(makeExtensionObject(id, visible));

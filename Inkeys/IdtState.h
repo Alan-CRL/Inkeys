@@ -102,8 +102,10 @@ bool ChangeStateModeToPen();
 bool ChangeStateModeToShape();
 bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();
-// 将旧 UI 的穿透/工具状态发布到 Draw3 bridge。
+// 将当前工具与显式选择模式发布到 Draw3 bridge。
 void SyncDraw3State();
+// 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
+void ReconcileDraw3Presentation();
 
 void StateMonitoring();
 

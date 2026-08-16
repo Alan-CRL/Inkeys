@@ -27,6 +27,7 @@ import Inkeys.Other.Config;
 import Inkeys.Message;
 import Inkeys.Window;
 import Inkeys.Display;
+import Inkeys.Drawing.Draw3.diagnostics;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -74,6 +75,30 @@ namespace
 	// PptCOM 会长期持有该地址；不要把原子包装对象强转成 LONG 指针。
 	LONG offSignalInterop = 0;
 	Inkeys::Display::Subscription displaySubscription;
+
+#ifndef IDT_RELEASE
+	void InitializeDebugConsole()
+	{
+		static std::once_flag consoleOnce;
+		std::call_once(consoleOnce, []
+			{
+				AllocConsole();
+
+				FILE* fp;
+				freopen_s(&fp, "CONOUT$", "w", stdout);
+				freopen_s(&fp, "CONOUT$", "w", stderr);
+				freopen_s(&fp, "CONIN$", "r", stdin);
+				std::ios::sync_with_stdio(true);
+				std::wcout.clear();
+				std::wcin.clear();
+				std::wcerr.clear();
+				std::cout.clear();
+				std::cin.clear();
+				std::cerr.clear();
+				std::wcout.imbue(std::locale("chs"));
+			});
+	}
+#endif
 }
 
 void SetOffSignal(int signal)
@@ -101,6 +126,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
+
+#ifndef IDT_RELEASE
+	bool pptComConsoleOutputEnabled = false;
+	bool draw3ConsoleOutputEnabled = false;
+#endif
 
 	// 路径预处理
 	{
@@ -1044,6 +1074,19 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+		#ifndef IDT_RELEASE
+			pptComConsoleOutputEnabled =
+				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
+			draw3ConsoleOutputEnabled =
+				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
+				draw3ConsoleOutputEnabled);
+			if (draw3ConsoleOutputEnabled)
+			{
+				// Draw3 启动前完成绑定，才能看到设备和驱动环境信息。
+				InitializeDebugConsole();
+			}
+		#endif
 			double animationSpeedRate = static_cast<double>(
 				config.Experimental.Inkeys3.UI3.Animation.SpeedRate);
 			animationSpeedRate = isfinite(animationSpeedRate)
@@ -1497,19 +1540,17 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 		// Host 启动会清空桥接队列；首帧前重新发布当前 UI 状态。
 		SyncDraw3State();
-		// Draw3 首帧完成后才由 Window Service 显示 Drawpad，避免透明窗口先覆盖底层。
-		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady() ||
-			!windowService.Show(Inkeys::Window::WindowRole::Drawpad))
+		// 首帧完成后按“模式 + 当前页内容”决定显隐；初始空选择页保持隐藏。
+		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady())
 		{
-			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧显示 Drawpad 失败");
+			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧准备失败");
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
-		// 兼容旧启动监视器的状态标记不再由 Draw2 文件维护。
-		IdtWindowsIsVisible.drawpadWindow = true;
+		ReconcileDraw3Presentation();
 		magnificationCreateReady = magnifierWindow && magnifierChild;
 
 		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
@@ -1531,39 +1572,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	if (magnificationCreateReady) magnifierThread = jthread(MagnifierThread);
 
 	// 启动 PPT 联动插件
+	#ifndef IDT_RELEASE
+	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled)
+	{
+		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
+		InitializeDebugConsole();
+	}
+	#endif
 	jthread pptLinkageThread(PPTLinkageMain);
 
 	IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
 
 #pragma endregion
-
-	// 创建测试控制台
-	{
-	#ifndef IDT_RELEASE
-		{
-			AllocConsole();
-
-			FILE* fp;
-			freopen_s(&fp, "CONOUT$", "w", stdout);
-			freopen_s(&fp, "CONOUT$", "w", stderr);
-			freopen_s(&fp, "CONIN$", "r", stdin);
-
-			// 让 C++ 流重新与 C 的 FILE* 同步
-			// true = 同步；不传参数的重载在 C++11 之后是被弃用的（某些编译器行为不定）
-			std::ios::sync_with_stdio(true);
-
-			// 清空原来的缓冲（保证重新绑定后生效）
-			std::wcout.clear();
-			std::wcin.clear();
-			std::wcerr.clear();
-			std::cout.clear();
-			std::cin.clear();
-			std::cerr.clear();
-
-			std::wcout.imbue(std::locale("chs"));
-		}
-	#endif
-	}
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 

@@ -53,6 +53,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<int> committedHeight = 0;
 		std::atomic<std::size_t> currentPageIndex = 0;
 		std::atomic<std::size_t> pageCount = 0;
+		std::atomic_bool currentPageHasContent = false;
+		std::atomic<std::uint64_t> contentRevision = 0;
 		std::atomic<LONG> lastDirtyLeft = 0;
 		std::atomic<LONG> lastDirtyTop = 0;
 		std::atomic<LONG> lastDirtyRight = 0;
@@ -65,6 +67,8 @@ namespace Inkeys::Drawing::Draw3
 		HostStartOptions startOptions = {};
 		std::mutex startupMutex;
 		std::condition_variable startupCondition;
+		mutable std::mutex contentMutex;
+		mutable std::condition_variable contentCondition;
 		bool graphicsReady = false;
 		bool stylusDecision = false;
 		bool stylusSucceeded = false;
@@ -119,6 +123,8 @@ namespace Inkeys::Drawing::Draw3
 			lastPresentSucceeded.store(false, std::memory_order_release);
 			currentPageIndex.store(0, std::memory_order_release);
 			pageCount.store(0, std::memory_order_release);
+			currentPageHasContent.store(false, std::memory_order_release);
+			contentRevision.store(0, std::memory_order_release);
 			lastDirtyLeft.store(0, std::memory_order_release);
 			lastDirtyTop.store(0, std::memory_order_release);
 			lastDirtyRight.store(0, std::memory_order_release);
@@ -195,6 +201,20 @@ namespace Inkeys::Drawing::Draw3
 			self->pageCount.store(pages, std::memory_order_release);
 		}
 
+		static void ObserveCurrentPageContent(void* context, bool hasContent)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			{
+				std::scoped_lock lock(self->contentMutex);
+				if (self->currentPageHasContent.load(std::memory_order_relaxed) == hasContent)
+					return;
+				self->currentPageHasContent.store(hasContent, std::memory_order_release);
+				self->contentRevision.fetch_add(1, std::memory_order_release);
+			}
+			self->contentCondition.notify_all();
+		}
+
 		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
 		{
 			const auto* callbacks = static_cast<const HostStyleCallbacks*>(context);
@@ -208,14 +228,7 @@ namespace Inkeys::Drawing::Draw3
 			const Bridge::ProductState state = bridge.Snapshot();
 			if (state.revision == appliedBridgeRevision) return;
 			appliedBridgeRevision = state.revision;
-			// 穿透样式只能经 Window Service owner thread 修改，Draw3 不直接改 HWND。
-			if (styleCallbacks.setExtendedStyleFlags)
-			{
-				const DWORD setMask = state.clickThrough ? WS_EX_TRANSPARENT : 0;
-				const DWORD clearMask = state.clickThrough ? 0 : WS_EX_TRANSPARENT;
-				(void)styleCallbacks.setExtendedStyleFlags(
-					styleCallbacks.context, setMask, clearMask);
-			}
+			window.SetSelectionMode(state.selectionMode);
 			DrawingTool tool = DrawingTool::Pen;
 			switch (state.tool)
 			{
@@ -360,7 +373,8 @@ namespace Inkeys::Drawing::Draw3
 								CreateStrokeModelConfiguration(GetDpiForWindow(windowHandle));
 							const DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
-								&ObserveCommand, &ObserveDocument, &ConsumeBridge
+								&ObserveCommand, &ObserveDocument,
+								&ObserveCurrentPageContent, &ConsumeBridge
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -414,6 +428,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer.ReleaseResources();
 				graphics = {};
 				running.store(false, std::memory_order_release);
+				contentCondition.notify_all();
 			});
 
 		std::unique_lock lock(startupMutex);
@@ -489,6 +504,7 @@ namespace Inkeys::Drawing::Draw3
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
 			running.store(false, std::memory_order_release);
+			contentCondition.notify_all();
 		}
 	};
 
@@ -542,11 +558,28 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.committedHeight = impl_->committedHeight.load(std::memory_order_acquire);
 		snapshot.currentPageIndex = impl_->currentPageIndex.load(std::memory_order_acquire);
 		snapshot.pageCount = impl_->pageCount.load(std::memory_order_acquire);
+		snapshot.contentRevision = impl_->contentRevision.load(std::memory_order_acquire);
+		// revision 的 release 发布发生在内容布尔值之后；先 acquire revision，
+		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
+		snapshot.currentPageHasContent =
+			impl_->currentPageHasContent.load(std::memory_order_acquire);
 		snapshot.lastDirtyRect.left = impl_->lastDirtyLeft.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.top = impl_->lastDirtyTop.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.bottom = impl_->lastDirtyBottom.load(std::memory_order_relaxed);
 		return snapshot;
+	}
+
+	bool Host::WaitForContentRevision(std::uint64_t revision,
+		std::uint32_t timeoutMilliseconds) const noexcept
+	{
+		std::unique_lock lock(impl_->contentMutex);
+		return impl_->contentCondition.wait_for(lock,
+			std::chrono::milliseconds(timeoutMilliseconds), [this, revision]
+			{
+				return impl_->contentRevision.load(std::memory_order_acquire) != revision ||
+					!impl_->running.load(std::memory_order_acquire);
+			});
 	}
 
 	bool Host::PublishHiddenTestContact(WPARAM phaseValue, LPARAM position) noexcept

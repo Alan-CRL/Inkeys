@@ -160,7 +160,6 @@ struct BarRenderFrameSnapshot
 	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenBrush1;
 	COLORREF brush1Color = RGB(0, 0, 0);
 	COLORREF highlighterColor = RGB(0, 0, 0);
-	bool penetrate = false;
 	unsigned long long demandGeneration = 0;
 	double zoom = 1.0;
 	double animationDtSeconds = 0.0;
@@ -728,7 +727,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	frame.penMode = stateMode.Pen.ModeSelect;
 	frame.brush1Color = stateMode.Pen.Brush1.color;
 	frame.highlighterColor = stateMode.Pen.Highlighter1.color;
-	frame.penetrate = static_cast<bool>(penetrate.select);
 
 	return BarRenderLoopStageResult::Proceed;
 }
@@ -2440,7 +2438,6 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Recall, BarButtonPresetEnum::Draw);
-			AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze);
 		}
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
@@ -6911,8 +6908,7 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 			static_cast<int>(frameDrawingState.stateMode),
 			static_cast<int>(frameDrawingState.penMode),
 			frameDrawingState.brush1Color,
-			frameDrawingState.highlighterColor,
-			frameDrawingState.penetrate);
+			frameDrawingState.highlighterColor);
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;

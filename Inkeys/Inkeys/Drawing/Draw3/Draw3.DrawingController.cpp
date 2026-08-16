@@ -24,6 +24,8 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#include "Draw3.TimerPeriod.h"
+
 #pragma comment(lib, "winmm.lib")
 
 module Inkeys.Drawing.Draw3.drawing_controller;
@@ -37,6 +39,16 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		bool BeginOneMillisecondTimerPeriod(void*, unsigned int period) noexcept
+		{
+			return timeBeginPeriod(period) == TIMERR_NOERROR;
+		}
+
+		void EndOneMillisecondTimerPeriod(void*, unsigned int period) noexcept
+		{
+			timeEndPeriod(period);
+		}
+
 		const DirectX::XMFLOAT4 kHighlighterCompositeColor(1.0f, 0.0f, 0.0f, 0.35f);
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
@@ -1384,6 +1396,14 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<CanvasPageRuntimeState> pageRuntimeStates;
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
+		auto publishCurrentPageContent = [&]()
+		{
+			const bool hasContent = currentPageIndex_ < pageRuntimeStates.size() &&
+				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
+			if (observer_.currentPageContentChanged)
+				observer_.currentPageContentChanged(observer_.context, hasContent);
+		};
+		publishCurrentPageContent();
 		uint64_t nextRasterStateToken = 1;
 		auto allocateRasterStateToken = [&]()
 		{
@@ -3199,8 +3219,8 @@ namespace Inkeys::Drawing::Draw3
 			lastNavigationQpc = nowQpc;
 		};
 
-		bool timerPeriodActive = false;
-		bool timerPeriodAttempted = false;
+		TimerPeriodController timerPeriod({ nullptr,
+			&BeginOneMillisecondTimerPeriod, &EndOneMillisecondTimerPeriod });
 		double lastActiveFrameStartMs = 0.0;
 		bool hapticContinuousActive = false;
 		std::vector<DrawingCursorVisual> previousCursorVisuals;
@@ -3633,7 +3653,7 @@ namespace Inkeys::Drawing::Draw3
 			forceFullPresent = true;
 		};
 
-			auto undoCurrentPage = [&](RECT& frameDirty)
+			auto undoCurrentPage = [&](RECT& frameDirty) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
 			{
@@ -3644,7 +3664,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
 			{
 				std::cout << "[Undo] result=noop reason=no_canvas" << std::endl;
-				return;
+				return false;
 			}
 			InkPage* page = document_->PageAt(currentPageIndex_);
 			InkCanvas* canvas = page
@@ -3655,14 +3675,14 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=empty" << std::endl;
-				return;
+				return false;
 			}
 			const RenderItemState* item = runtime.history.Find(*itemId);
 			if (!item || itemId->index >= runtime.beforeStates.size())
 			{
 				std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=history_mismatch" << std::endl;
-				return;
+				return false;
 			}
 			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
 			const size_t restoreRangeEnd = static_cast<size_t>(itemId->index) + 1;
@@ -3683,7 +3703,7 @@ namespace Inkeys::Drawing::Draw3
 					requestAuthoritativeRecovery();
 					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
 						" result=failed reason=visibility" << std::endl;
-					return;
+					return false;
 				}
 				runtime.rasterState = hotRestore.restoredState;
 				dirty = hotRestore.dirty;
@@ -3736,7 +3756,7 @@ namespace Inkeys::Drawing::Draw3
 						" item=" << itemId->index <<
 						" result=failed reason=restore rollback=" <<
 						CompositionRestorePathName(rollback.path) << std::endl;
-					return;
+					return false;
 				}
 				// 候选画面成功后才提交 visibility，避免失败时丢失历史状态。
 				if (!runtime.history.UndoLastVisible(*itemId))
@@ -3748,7 +3768,7 @@ namespace Inkeys::Drawing::Draw3
 					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
 						" result=failed reason=visibility rollback=" <<
 						CompositionRestorePathName(rollback.path) << std::endl;
-					return;
+					return false;
 				}
 				runtime.rasterState = beforeState;
 				dirty = restored.dirty;
@@ -3765,9 +3785,10 @@ namespace Inkeys::Drawing::Draw3
 				" hot_remaining=" << hotRemaining;
 			if (historyEnd) std::cout << " history_end=true";
 			std::cout << std::endl;
+			return true;
 		};
 
-		auto redoCurrentPage = [&](RECT& frameDirty)
+		auto redoCurrentPage = [&](RECT& frameDirty) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
 			{
@@ -3778,7 +3799,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
 			{
 				std::cout << "[Redo] result=noop reason=no_canvas" << std::endl;
-				return;
+				return false;
 			}
 			InkPage* page = document_->PageAt(currentPageIndex_);
 			InkCanvas* canvas = page
@@ -3789,7 +3810,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=empty" << std::endl;
-				return;
+				return false;
 			}
 
 			const RenderItemState* item = runtime.history.Find(*itemId);
@@ -3800,7 +3821,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=history_mismatch" << std::endl;
-				return;
+				return false;
 			}
 			const InkRasterStateToken beforeState = runtime.beforeStates[itemId->index];
 			const InkRasterStateToken afterState = runtime.afterStates[itemId->index];
@@ -3810,7 +3831,7 @@ namespace Inkeys::Drawing::Draw3
 				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index <<
 					" result=failed reason=raster_state" << std::endl;
-				return;
+				return false;
 			}
 
 			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
@@ -3852,7 +3873,7 @@ namespace Inkeys::Drawing::Draw3
 					std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 						" item=" << itemId->index <<
 						" result=failed reason=base_restore" << std::endl;
-					return;
+					return false;
 				}
 			}
 
@@ -3874,7 +3895,7 @@ namespace Inkeys::Drawing::Draw3
 				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index << " base=" << basePath <<
 					" result=failed reason=raster" << std::endl;
-				return;
+				return false;
 			}
 
 			const HotPreimageCaptureResult preimageCapture =
@@ -3918,7 +3939,7 @@ namespace Inkeys::Drawing::Draw3
 					" item=" << itemId->index << " base=" << basePath <<
 					" result=failed reason=resolve rollback=" <<
 					CompositionRestorePathName(rollbackPath) << std::endl;
-				return;
+				return false;
 			}
 
 			// GPU 画面成功后才提交 visibility；失败仍可再次按 6 重试。
@@ -3934,7 +3955,7 @@ namespace Inkeys::Drawing::Draw3
 					" item=" << itemId->index << " base=" << basePath <<
 					" result=failed reason=visibility rollback=" <<
 					CompositionRestorePathName(rollbackPath) << std::endl;
-				return;
+				return false;
 			}
 
 			runtime.rasterState = afterState;
@@ -3955,6 +3976,52 @@ namespace Inkeys::Drawing::Draw3
 				" item=" << itemId->index << " base=" << basePath <<
 				" path=direct_draw hot_rearmed=" << (hotRearmed ? "true" : "false") <<
 				" redo_remaining=" << runtime.history.RedoDepth() << std::endl;
+			return true;
+		};
+
+		auto clearCurrentPage = [&](RECT& frameDirty,
+			LaserParticleDirtySnapshot& particleSnapshot,
+			bool& forceFullPresent, int width, int height) -> bool
+		{
+			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
+				return false;
+			InkPage* page = document_->PageAt(currentPageIndex_);
+			InkCanvas* canvas = page
+				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!canvas) return false;
+
+			// Clear 截断当前页全部文档与历史；viewport 留在 Canvas 对象中。
+			canvas->ClearStrokes();
+			CanvasPageRuntimeState freshRuntime;
+			freshRuntime.rasterState = allocateRasterStateToken();
+			pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
+
+			historyGpuCache.DiscardHotPreimages();
+			historyGpuCache.DiscardCompositionCache();
+			compositionMaintenance.clear();
+			if (rasterPipelineGeneration ==
+				(std::numeric_limits<uint64_t>::max)())
+				rasterPipelineGeneration = 1;
+			else ++rasterPipelineGeneration;
+
+			renderer_.InvalidateTrustedL2Snapshot();
+			trustedSnapshotSignatureValid = false;
+			viewportTilePlan = {};
+			viewportTilePlanIndex = 0;
+			viewportRecoveryPending = false;
+			viewportRefreshPending = false;
+			viewportRefreshClearsTransient = false;
+			viewportVisibleClear = true;
+			pendingLaserBakeDirty = {};
+			laserTipDots.clear();
+			laserParticleEmissionRequests.clear();
+			previousCursorVisuals.clear();
+			currentCursorVisuals.clear();
+			laserIncrementalEnsureAttempted = false;
+			resetGpuForPageSwitch(frameDirty, particleSnapshot,
+				forceFullPresent, width, height);
+			publishCurrentPageContent();
+			return true;
 		};
 
 		auto processCanvasCommands = [&](RECT& frameDirty,
@@ -3974,8 +4041,9 @@ namespace Inkeys::Drawing::Draw3
 				interruptNavigationForPenOrMouse("canvas-command");
 				if (command.type == CanvasCommandType::Clear)
 				{
-					// Clear 只在无活动 contact 时执行，避免破坏实时 stroke 的 L0 状态。
-					ClearCanvas();
+					// Clear 只在无活动 contact 时执行，并永久截断当前页撤回/重做分支。
+					(void)clearCurrentPage(frameDirty, particleSnapshot,
+						forceFullPresent, width, height);
 					reportCommand(command.type);
 					continue;
 				}
@@ -3983,7 +4051,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
-					undoCurrentPage(frameDirty);
+					if (undoCurrentPage(frameDirty)) publishCurrentPageContent();
 					reportCommand(command.type);
 					continue;
 				}
@@ -3991,7 +4059,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
-					redoCurrentPage(frameDirty);
+					if (redoCurrentPage(frameDirty)) publishCurrentPageContent();
 					reportCommand(command.type);
 					continue;
 				}
@@ -4109,6 +4177,7 @@ namespace Inkeys::Drawing::Draw3
 					" current=" << (currentPageIndex_ + 1) << " count=" <<
 					document_->Pages().size() << " path=" <<
 					CompositionRestorePathName(restored.path) << std::endl;
+				publishCurrentPageContent();
 				reportCommand(command.type);
 			}
 		};
@@ -4117,6 +4186,8 @@ namespace Inkeys::Drawing::Draw3
 		renderer_.WarmUpShapeShaders();
 		while (true)
 		{
+			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
+			timerPeriod.SetSelectionMode(window_.SelectionMode());
 			currentProductVisualStyle = window_.ProductVisualStyleSnapshot();
 			const double frameStartMs = GetQpcTimeMilliseconds();
 			if (metrics_) metrics_->BeginFrame();
@@ -4603,12 +4674,6 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				lastActiveFrameStartMs = 0.0;
-				if (timerPeriodActive)
-				{
-					timeEndPeriod(1);
-					timerPeriodActive = false;
-				}
-				timerPeriodAttempted = false;
 				if (laserLifecycle.phase == LaserTrailPhase::Hold)
 				{
 					if (input_.TryDequeue(record))
@@ -4729,13 +4794,6 @@ namespace Inkeys::Drawing::Draw3
 			pendingLaserBakeDirty = {};
 
 			const bool hasPhysicalContact = HasPhysicalContact(active);
-			if ((hasPhysicalContact || laserLifecycle.phase == LaserTrailPhase::Fade ||
-				laserParticleSnapshot.hasActive) &&
-				!timerPeriodAttempted)
-			{
-				timerPeriodAttempted = true;
-				timerPeriodActive = timeBeginPeriod(1) == TIMERR_NOERROR; // 只为成功的请求配对 timeEndPeriod。
-			}
 			const auto frameToolIterator = std::find_if(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime)
 					{ return runtime && !runtime->ended && !runtime->awaitingReconnect; });
@@ -5167,6 +5225,8 @@ namespace Inkeys::Drawing::Draw3
 							InkRasterStateToken afterState = pageRuntime.rasterState;
 							if (renderItem && renderItem->index == pageRuntime.beforeStates.size())
 							{
+								// 进入 runtime history 即成为“有内容”，GPU 呈现失败不回滚文档真值。
+								publishCurrentPageContent();
 								const InkRasterStateToken beforeState = pageRuntime.rasterState;
 								afterState = allocateRasterStateToken();
 								pageRuntime.beforeStates.push_back(beforeState);
@@ -5558,12 +5618,6 @@ namespace Inkeys::Drawing::Draw3
 			else if (!active.empty())
 			{
 				lastActiveFrameStartMs = 0.0;
-				if (timerPeriodActive)
-				{
-					timeEndPeriod(1);
-					timerPeriodActive = false;
-				}
-				timerPeriodAttempted = false;
 				int64_t nearestDeadlineQpc = (std::numeric_limits<int64_t>::max)();
 				for (const RuntimeStroke* runtime : active)
 				{
@@ -5586,7 +5640,6 @@ namespace Inkeys::Drawing::Draw3
 
 		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 		if (haptics_) haptics_->StopFeedback();
-		if (timerPeriodActive) timeEndPeriod(1);
 		if (drawingPriorityRaised)
 			SetThreadPriority(GetCurrentThread(), originalThreadPriority);
 	}

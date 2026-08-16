@@ -276,13 +276,6 @@ void BarButtonSetClass::PresetInitialization()
 							barUISet.barState.geometryAttribute = false;
 							barUISet.barState.drawAttribute = true;
 						}
-
-						// 当穿透模式下再次点击绘制按钮，则退出穿透
-						if (penetrate.select)
-						{
-							penetrate.select = false;
-							SyncDraw3State();
-						}
 					}
 				};
 		}
@@ -441,13 +434,6 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					// 当穿透模式下只能先退出穿透，再清空（比较糟糕的 inkeys2 架构导致的）
-					if (penetrate.select)
-					{
-						penetrate.select = false;
-						if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
-						SyncDraw3State();
-					}
 					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
 						Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
 				};
@@ -457,58 +443,11 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
-	// 穿透
-	{
-		BarButtonClass* obj = new BarButtonClass;
-		{
-			obj->size = BarButtonSizeEnum::twoOne;
-			obj->preset = BarButtonPresetEnum::Pierce;
-			obj->hide = false;
-		}
-
-		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"穿透", 0.0);
-			obj->name.enable.Initialization(true);
-		}
-		{
-			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
-			obj->button.enable.Initialization(true);
-		}
-		{
-			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
-			obj->icon.InitializationFromResource(L"UI", L"barPierce");
-			obj->icon.enable.Initialization(true);
-		}
-
-		{
-			obj->clickFunc = [&]() -> void
-				{
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
-					{
-						if (penetrate.select)
-						{
-							penetrate.select = false;
-							if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
-							SyncDraw3State();
-						}
-						else
-						{
-							if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
-							penetrate.select = true;
-							SyncDraw3State();
-						}
-					}
-				};
-		}
-
-		obj->state = &barButtonState[(int)obj->preset.load()];
-		preset[(int)obj->preset.load()] = obj;
-	}
 	// 定格
 	{
 		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtonSizeEnum::twoOne;
+			obj->size = BarButtonSizeEnum::twoTwo;
 			obj->preset = BarButtonPresetEnum::Freeze;
 			obj->hide = false;
 		}
@@ -534,7 +473,6 @@ void BarButtonSetClass::PresetInitialization()
 					if (FreezeFrame.mode != 1)
 					{
 						FreezeFrame.mode = 1;
-						penetrate.select = false;
 						SyncDraw3State();
 
 						if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
@@ -596,7 +534,6 @@ void BarButtonSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtonPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
 	// Divider 不进 A1 配置 required 集；仅作运行时交界注入模板（可多实例拷贝）。
 	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtonPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
-	RegisterButton(Inkeys::BarButtonId::Pierce, preset[(int)BarButtonPresetEnum::Pierce], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtonPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtonPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
 	RegisterLayoutMarker(Inkeys::BarButtonId::MoreBoundary);
@@ -1105,14 +1042,29 @@ void BarButtonSetClass::Load()
 	const std::vector<Inkeys::BarFixedButtonLayoutEntry> defaultA2 =
 		Inkeys::MakeDefaultFixedButtonsA2().Snapshot();
 
+	const std::vector<Inkeys::BarFixedButtonLayoutEntry> configuredA1 =
+		Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot();
+	const std::vector<Inkeys::BarFixedButtonLayoutEntry> configuredA2 =
+		Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot();
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalizedA1 = NormalizeFixedZone(
-		Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot(),
+		configuredA1,
 		defaultA1,
 		BarButtonLayoutZoneEnum::FixedA1);
 	std::vector<Inkeys::BarFixedButtonLayoutEntry> normalizedA2 = NormalizeFixedZone(
-		Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot(),
+		configuredA2,
 		defaultA2,
 		BarButtonLayoutZoneEnum::FixedA2);
+	auto fixedEntriesEqual = [](const auto& left, const auto& right)
+		{
+			if (left.size() != right.size()) return false;
+			for (size_t index = 0; index < left.size(); ++index)
+				if (left[index].Id != right[index].Id ||
+					left[index].Size != right[index].Size) return false;
+			return true;
+		};
+	const bool fixedLayoutMigrated =
+		!fixedEntriesEqual(configuredA1, normalizedA1) ||
+		!fixedEntriesEqual(configuredA2, normalizedA2);
 
 	vector<shared_ptr<BarButtonClass>> activeButtons;
 	AppendFixedButtons(normalizedA1, activeButtons);
@@ -1153,6 +1105,8 @@ void BarButtonSetClass::Load()
 	// 只规范化 A1/A2；运行时投影不读取、修改或写回持久化 B 区。
 	Inkeys::config.UI.Bar.FixedButtonsA1.Replace(std::move(normalizedA1));
 	Inkeys::config.UI.Bar.FixedButtonsA2.Replace(std::move(normalizedA2));
+	if (fixedLayoutMigrated)
+		(void)Inkeys::config.Write(); // 旧 {Pierce, Freeze} A2 规范化后立即写回。
 }
 
 void BarButtonSetClass::SyncLegacyExtensionButtons()
@@ -1196,8 +1150,9 @@ void BarButtonSetClass::PresetHoming()
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 
-	// 进入非绘制模式需要隐藏无用按钮
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
+		&& !Inkeys::UI::Bar::CurrentPageHasContent())
 	{
 		// 显示状态变化
 		preset[(int)BarButtonPresetEnum::Eraser]->hide = true;
@@ -1205,10 +1160,6 @@ void BarButtonSetClass::PresetHoming()
 		preset[(int)BarButtonPresetEnum::Recall]->hide = true;
 		//preset[(int)BarButtonPresetEnum::Redo]->hide = true;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = true;
-		preset[(int)BarButtonPresetEnum::Pierce]->hide = true;
-
-		// 显示尺寸变化
-		preset[(int)BarButtonPresetEnum::Freeze]->size = BarButtonSizeEnum::twoTwo;
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
@@ -1222,14 +1173,9 @@ void BarButtonSetClass::PresetHoming()
 		preset[(int)BarButtonPresetEnum::Recall]->hide = false;
 		//preset[(int)BarButtonPresetEnum::Redo]->hide = false;
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
-		preset[(int)BarButtonPresetEnum::Pierce]->hide = false;
-
-		// 显示尺寸变化
-		preset[(int)BarButtonPresetEnum::Freeze]->size = BarButtonSizeEnum::twoOne;
-
-		// 显示名称变化
+		// 选择按钮不再承载清空语义。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", L"选择(清空)");
+			L"barSelect", L"选择");
 	}
 }
 void BarButtonSetClass::CalcState()
@@ -1251,10 +1197,6 @@ void BarButtonSetClass::CalcState()
 		else barButtonState[(int)BarButtonPresetEnum::Geometry].state = BarWidgetState::None;
 	}
 
-	{
-		if (penetrate.select) barButtonState[(int)BarButtonPresetEnum::Pierce].state = BarWidgetState::Selected;
-		else barButtonState[(int)BarButtonPresetEnum::Pierce].state = BarWidgetState::None;
-	}
 	{
 		if (FreezeFrame.mode == 1) barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;

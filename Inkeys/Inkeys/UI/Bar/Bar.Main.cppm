@@ -625,10 +625,13 @@ namespace Inkeys::UI::Bar
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetDebugOptions(bool enable, bool showFrameRate);
+	export void SetCurrentPageHasContent(bool hasContent) noexcept;
+	export bool CurrentPageHasContent() noexcept;
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	bool InitializeWindow(BarUISetClass& barUISet);
 	void InitializeUI(BarUISetClass& barUISet);
+	void SetContentStateUpdatesReady(bool ready) noexcept;
 };

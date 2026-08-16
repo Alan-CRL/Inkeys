@@ -68,6 +68,9 @@ namespace PptCOM
         void EndSlideShow();
         void ViewSlideShow();
         void ActivateSildeShowWindow();
+
+        // 追加在接口末尾，保持既有 COM 方法顺序不变。
+        void SetConsoleOutputEnabled(bool enabled);
     }
 
     [ComVisible(true)]
@@ -125,6 +128,28 @@ namespace PptCOM
         {
             string ret = "20260627a";
             return ret;
+        }
+
+        public void SetConsoleOutputEnabled(bool enabled)
+        {
+            // 托管 Console 独立开关，避免 Draw3 分配控制台后带出 PptCOM 日志。
+            if (!enabled)
+            {
+                Console.SetOut(TextWriter.Null);
+                Console.SetError(TextWriter.Null);
+                return;
+            }
+
+            try
+            {
+                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+            }
+            catch
+            {
+                Console.SetOut(TextWriter.Null);
+                Console.SetError(TextWriter.Null);
+            }
         }
 
         // 过程函数

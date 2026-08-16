@@ -33,6 +33,12 @@ import Inkeys.Conv.Text;
 // Interaction 实现单元独占窗口消息状态；协调器仅通过窄接口读取或投递。
 bool ReadColorPickerEntryPressed();
 void RequestBarBorderCursorSuspend();
+
+namespace
+{
+	IdtAtomic<bool> currentPageHasContent = false;
+	std::atomic_bool contentStateUpdatesReady = false;
+}
 extern constexpr double BarButtonPressScale = 0.95;
 extern constexpr double BarButtonHoverFadeDur = 5.0;
 // Rendering 与 topology 共享同一组 module-linkage 常量，拆分后不复制数值。
@@ -242,6 +248,26 @@ namespace Inkeys::UI::Bar
 		BarUiDebugFrameRateEnabled = showFrameRate;
 		// 渲染线程会比较新旧选项，只在需要时清除 FPS 文字或红框。
 		barUISet.UpdateRendering(false);
+	}
+
+	void SetCurrentPageHasContent(bool hasContent) noexcept
+	{
+		if (static_cast<bool>(currentPageHasContent) == hasContent) return;
+		currentPageHasContent = hasContent;
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	bool CurrentPageHasContent() noexcept
+	{
+		return currentPageHasContent;
+	}
+
+	void SetContentStateUpdatesReady(bool ready) noexcept
+	{
+		contentStateUpdatesReady.store(ready, std::memory_order_release);
+		// 初始化窗口内可能已收到内容变化，再做一次完整状态同步。
+		if (ready) barUISet.UpdateRendering();
 	}
 
 

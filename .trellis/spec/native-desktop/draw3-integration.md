@@ -75,6 +75,61 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做和页面切换接入已验证实现；保存、超级恢复、自动直线拉直和输入测试保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
 
+## Scenario: 选择模式、当前页内容与 Clear 截断
+
+### 1. Scope / Trigger
+
+修改产品模式桥接、Drawpad 显隐/消息穿透、Bar 选择布局、runtime history、Clear/Undo/Redo、页面切换或高精度计时器时必须应用本合同。
+
+### 2. Signatures
+
+- `Bridge::ProductState::selectionMode : bool`，默认 `true`；不得从 `WS_EX_TRANSPARENT` 反推模式。
+- `DrawingControllerRuntimeObserver::currentPageContentChanged(void*, bool)`。
+- `HostRuntimeSnapshot::{currentPageHasContent, contentRevision}` 与 `WaitForContentRevision(revision, timeoutMilliseconds)`。
+- `InkCanvas::ClearStrokes()`。
+- `ResolveDrawpadPresentationPlan(selectionMode, currentPageHasContent)`，固定返回两步样式/可见性操作。
+- `TimerPeriodController::SetSelectionMode(bool)`。
+
+### 3. Contracts
+
+- 当前页内容真值唯一来自 `CanvasRuntimeHistory::LastVisibleItem().has_value()`。Pen、Highlighter、Shape 和 Eraser history 都算内容；Laser 不算；Eraser 即使把视觉画面擦空仍算；Undo 到无可见项、Clear 或切到空页才为无内容。
+- DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后发布内容布尔值。Host 只在布尔值变化时递增单调 `contentRevision`，并通过条件变量唤醒消费者。
+- presentation 状态固定为：`选择+无内容 = DisableClickThrough -> Hide`；`选择+有内容 = EnableClickThrough -> Show`；`非选择 = DisableClickThrough -> Show`。模式切换必须发布状态后立即 reconcile，不能只等待内容 revision。
+- Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与非选择均保持完整布局，选择按钮文字恒为“选择”。产品路径不再注册或读取 Pierce/`penetrate.select`。
+- Clear 只截断当前页：清 Stroke，并以全新 runtime 替换 history、undo/redo、before/after raster state，再分配新 raster token；丢弃热前像、composition cache/维护、恢复计划和 trusted L2，重置 Laser/粒子/瞬态层并全量透明呈现。保留当前页 viewport 和其他页面；之后 Undo/Redo 必须为空操作。
+- `timeBeginPeriod(1)` 只在进入非选择模式时幂等尝试；回到选择或绘制线程退出时，仅对成功 begin 配对 `timeEndPeriod(1)`。begin 失败后同一次绘制停留不重试，必须离开并重新进入绘制模式。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| 初始选择空页 / 清空后选择 | 先清穿透，再隐藏 Drawpad；Bar 精简 |
+| 空选择进入绘制但未落笔，再选择 | 重新进入隐藏空页状态 |
+| 选择且有 history | Drawpad 可见且穿透；Bar 保持完整 |
+| 选择可见态 Clear 或 Undo 到无内容 | revision 变化后立即清样式并隐藏 |
+| Eraser 在空页形成 history 或擦到视觉空白 | `currentPageHasContent=true` |
+| Clear 后 Undo/Redo | 命令可消费但内容、revision 和画面保持空；旧 Stroke 不恢复 |
+| 切换空页/有内容页 | 发布对应布尔值；其他页 history 与当前页 viewport 不受 Clear 影响 |
+| `timeBeginPeriod(1)` 失败 | 不调用 end；同次非选择停留不重试 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：有一笔的选择态保持穿透可见，Clear 后同一 content revision 通知使样式先清除、窗口再隐藏；另一页的 Eraser history 仍存在。
+- Base：初始选择空页不显示 Drawpad；进入 Pen 后立即清穿透并显示，未落笔返回选择再次隐藏。
+- Bad：用窗口穿透样式推断选择模式、视觉像素是否为空推断内容，或把 Clear 实现成一条可撤回的普通 history 项。
+
+### 6. Tests Required
+
+- Headless 覆盖三种 presentation 两步顺序，以及 timer begin/end 幂等、失败、模式往返和析构清理。
+- 隐藏 HWND 集成覆盖 Stored Stroke 内容发布、空页/有内容页切换、空页 Eraser history、Clear 后 Undo/Redo 不恢复、其他页内容保留和 content revision 单调变化。
+- 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
+
+### 7. Wrong vs Correct
+
+Wrong：`selection = current WS_EX_TRANSPARENT`，或 `Clear -> append erase/blank history -> Undo 可恢复旧画面`。
+
+Correct：`显式 selectionMode + LastVisibleItem 内容真值 -> 有序 presentation plan`；`Clear -> 新 runtime/raster token + GPU/瞬态全清 -> Undo/Redo 空操作`。
+
 ## Presenter 合同
 
 - Draw3 自己创建 D3D11.1 hardware-first/WARP-fallback device/context、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。

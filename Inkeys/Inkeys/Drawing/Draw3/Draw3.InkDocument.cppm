@@ -111,6 +111,8 @@ export namespace Inkeys::Drawing::Draw3
 
 		// 非法 Stroke 不改变容器；成功时返回不会随扩容变化的索引。
 		std::optional<size_t> AppendStroke(InkStroke stroke);
+		// 清空当前 Canvas 的全部最终 Stroke；viewport 保持不变。
+		void ClearStrokes() noexcept;
 
 	private:
 		friend class InkPage;

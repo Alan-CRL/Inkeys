@@ -120,7 +120,7 @@ namespace
 
 		if (message == WM_MOUSEWHEEL
 			&& stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection
-			&& !penetrate.select && PptInfoState.TotalPage != -1)
+			&& PptInfoState.TotalPage != -1)
 		{
 			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
 			const short wheel = GET_WHEEL_DELTA_WPARAM(mouse->mouseData);
@@ -132,8 +132,7 @@ namespace
 		if ((message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN
 			|| message == WM_RBUTTONDOWN)
 			&& setlist.regularSetting.clickRecover
-			&& (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
-				|| penetrate.select))
+			&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
 		{
 			ScheduleClickCollapse();
 		}

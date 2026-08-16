@@ -263,7 +263,7 @@ RECT BarUIRendering::GetFrameCursorLightDamageBounds() const noexcept
 
 bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	int drawingMode, int penMode, COLORREF brush1Color,
-	COLORREF highlighterColor, bool penetrateSelected)
+	COLORREF highlighterColor)
 {
 	const bool previousEdgeLightingEnabled = frameEdgeLightingEnabled;
 	const bool previousPrimaryLightAvailable = framePrimaryLightAnchorInitialized;
@@ -436,8 +436,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 		}
 
 		frameDrawingUsesPenColor =
-			(drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen)
-				&& !penetrateSelected)
+			drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen)
 			|| drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape);
 	}
 

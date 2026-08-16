@@ -47,7 +47,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		float widthDip = 2.0f;
-		bool clickThrough = true;
+		bool selectionMode = true;
 		std::uint32_t page = 0;
 		bool hasPage = false;
 		std::uint64_t revision = 0;

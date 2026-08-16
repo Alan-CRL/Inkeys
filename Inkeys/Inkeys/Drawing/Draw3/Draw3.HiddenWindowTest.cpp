@@ -164,31 +164,121 @@ namespace Inkeys::Drawing::Draw3
 							state.inputMovePublished >= beforeContact.inputMovePublished + 2 &&
 							state.inputTerminalPublished > beforeContact.inputTerminalPublished &&
 							state.inputRecycled > beforeContact.inputRecycled &&
-							state.successfulPresentCount > beforeContact.successfulPresentCount;
+							state.successfulPresentCount > beforeContact.successfulPresentCount &&
+							state.currentPageHasContent;
 					}), "hidden contact reached Draw3 consumer and presented", failures);
 
 				modeSucceeded &= Check(WaitUntil([]
 					{
 						return ProductHost().RuntimeSnapshot().pageCount >= 1;
 					}), "document initialized on drawing thread", failures);
-				constexpr Bridge::CommandType commands[] = {
-					Bridge::CommandType::Clear,
-					Bridge::CommandType::Undo,
-					Bridge::CommandType::Redo,
-					Bridge::CommandType::NextPage,
-					Bridge::CommandType::PreviousPage,
-				};
-				for (const auto command : commands)
-					modeSucceeded &= Check(PublishProductCommand(command) ==
-						Bridge::CommandResult::Accepted, "bridge command accepted", failures);
-				modeSucceeded &= Check(WaitUntil([]
+				auto pageZeroContent = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(pageZeroContent.currentPageHasContent &&
+					pageZeroContent.contentRevision > beforeContact.contentRevision,
+					"stored stroke publishes current page content", failures);
+
+				const auto beforeNextPage = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::NextPage) ==
+					Bridge::CommandResult::Accepted, "next page command accepted", failures);
+				modeSucceeded &= Check(WaitUntil([beforeNextPage]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();
-						return state.clearCommandCount >= 1 && state.undoCommandCount >= 1 &&
-							state.redoCommandCount >= 1 && state.nextPageCommandCount >= 1 &&
-							state.previousPageCommandCount >= 1 && state.pageCount >= 2 &&
-							state.currentPageIndex == 0;
-					}), "clear undo redo and page commands executed", failures);
+						return state.nextPageCommandCount > beforeNextPage.nextPageCommandCount &&
+							state.pageCount >= 2 && state.currentPageIndex == 1 &&
+							!state.currentPageHasContent;
+					}), "switching to a blank page publishes no content", failures);
+				const auto pageOneEmpty = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(pageOneEmpty.contentRevision >
+					pageZeroContent.contentRevision,
+					"content revision advances on a boolean state change", failures);
+
+				// 空页上的橡皮虽然视觉仍为空，也必须作为历史内容保留。
+				Bridge::ProductState eraserState{};
+				eraserState.tool = Bridge::Tool::FixedEraser;
+				eraserState.selectionMode = false;
+				PublishProductState(eraserState);
+				const auto beforeEraser = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 72, 88) &&
+					postContact(HiddenTestContactPhase::Move, 112, 104) &&
+					postContact(HiddenTestContactPhase::Up, 144, 120),
+					"post eraser history sequence on blank page", failures);
+				modeSucceeded &= Check(WaitUntil([beforeEraser, pageOneEmpty]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.inputDownPublished > beforeEraser.inputDownPublished &&
+							state.inputTerminalPublished > beforeEraser.inputTerminalPublished &&
+							state.inputRecycled > beforeEraser.inputRecycled &&
+							state.currentPageHasContent &&
+							state.contentRevision > pageOneEmpty.contentRevision;
+					}), "eraser history counts as content on a visually blank page", failures);
+
+				const auto beforePreviousPage = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) ==
+					Bridge::CommandResult::Accepted, "previous page command accepted", failures);
+				modeSucceeded &= Check(WaitUntil([beforePreviousPage]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.previousPageCommandCount >
+							beforePreviousPage.previousPageCommandCount &&
+							state.currentPageIndex == 0 && state.currentPageHasContent;
+					}), "returning to the first page restores its content state", failures);
+
+				const auto beforeClear = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Clear) ==
+					Bridge::CommandResult::Accepted, "clear command accepted", failures);
+				modeSucceeded &= Check(WaitUntil([beforeClear]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.clearCommandCount > beforeClear.clearCommandCount &&
+							!state.currentPageHasContent &&
+							state.contentRevision > beforeClear.contentRevision;
+					}), "clear permanently publishes an empty current page", failures);
+				const auto afterClear = ProductHost().RuntimeSnapshot();
+
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+					Bridge::CommandResult::Accepted, "undo after clear accepted", failures);
+				modeSucceeded &= Check(WaitUntil([afterClear]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.undoCommandCount > afterClear.undoCommandCount;
+					}), "undo after clear was consumed", failures);
+				const auto afterUndo = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(!afterUndo.currentPageHasContent &&
+					afterUndo.contentRevision == afterClear.contentRevision,
+					"undo cannot recover content removed by clear", failures);
+
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
+					Bridge::CommandResult::Accepted, "redo after clear accepted", failures);
+				modeSucceeded &= Check(WaitUntil([afterUndo]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.redoCommandCount > afterUndo.redoCommandCount;
+					}), "redo after clear was consumed", failures);
+				const auto afterRedo = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(!afterRedo.currentPageHasContent &&
+					afterRedo.contentRevision == afterClear.contentRevision,
+					"redo cannot recover content removed by clear", failures);
+
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::NextPage) ==
+					Bridge::CommandResult::Accepted, "next page after clear accepted", failures);
+				modeSucceeded &= Check(WaitUntil([afterRedo]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.nextPageCommandCount > afterRedo.nextPageCommandCount &&
+							state.currentPageIndex == 1 && state.currentPageHasContent &&
+							state.contentRevision > afterRedo.contentRevision;
+					}), "clear preserves content on other pages", failures);
+				const auto restoredOtherPage = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) ==
+					Bridge::CommandResult::Accepted, "return to cleared page accepted", failures);
+				modeSucceeded &= Check(WaitUntil([restoredOtherPage]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.previousPageCommandCount >
+							 restoredOtherPage.previousPageCommandCount &&
+							state.currentPageIndex == 0 && !state.currentPageHasContent &&
+							state.contentRevision > restoredOtherPage.contentRevision;
+					}), "cleared page remains empty after page round-trip", failures);
 
 				const auto beforeResize = ProductHost().RuntimeSnapshot();
 				const RECT resizedBounds{ 44, 56, 428, 312 };
@@ -213,7 +303,7 @@ namespace Inkeys::Drawing::Draw3
 					"ULW full frame is transparent premultiplied BGRA", failures);
 				Bridge::ProductState eraserState{};
 				eraserState.tool = Bridge::Tool::FixedEraser;
-				eraserState.clickThrough = true;
+				eraserState.selectionMode = false;
 				PublishProductState(eraserState);
 				const auto beforeDirtyPresent = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(PostMessageW(drawpad, WM_MOUSEMOVE, 0,

@@ -40,7 +40,6 @@ void TopWindow()
 	{
 		if (IdtWindowsIsVisible.floatingWindow
 			&& IdtWindowsIsVisible.pptWindow
-			&& IdtWindowsIsVisible.drawpadWindow
 			&& IdtWindowsIsVisible.freezeWindow)
 		{
 			IdtWindowsIsVisible.allCompleted = true;
@@ -63,7 +62,7 @@ void TopWindow()
 	}
 
 	(void)service.Show(Inkeys::Window::WindowRole::Freeze);
-	(void)service.Show(Inkeys::Window::WindowRole::Drawpad);
+	// Drawpad 已由 Draw3 首帧握手确认，显隐只能交给选择/内容状态机。
 	// PPT 五窗按各自配置决定显隐，TopWindow 只负责唤醒其首次提交。
 	(void)service.Show(Inkeys::Window::WindowRole::PptBottomLeft);
 	(void)service.Show(Inkeys::Window::WindowRole::PptBottomRight);

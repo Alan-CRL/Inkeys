@@ -104,4 +104,7 @@ export namespace Inkeys::Drawing::Draw3
 	void LogSwapChainRuntimeDescription(const char* modeName, IDXGISwapChain1* swapChain, const char* stage);
 	// 输出当前 DXGI 适配器和驱动信息。
 	void LogAdapterDiagnostics(IDXGIAdapter* adapter);
+	// 启动环境诊断独立受设置控制，避免只开启 PptCOM 时泄漏 Draw3 信息。
+	void SetStartupEnvironmentDiagnosticsEnabled(bool enabled) noexcept;
+	bool StartupEnvironmentDiagnosticsEnabled() noexcept;
 }

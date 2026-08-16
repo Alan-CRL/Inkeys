@@ -33,7 +33,6 @@ enum class BarButtonPresetEnum : int
 	Redo,
 	Clean,
 
-	Pierce,
 	Freeze,
 
 	More,

@@ -348,6 +348,18 @@ namespace Inkeys::Drawing::Draw3
 		RequestControlWake();
 	}
 
+	bool WindowController::SelectionMode() const noexcept
+	{
+		return selectionMode_.load(std::memory_order_acquire);
+	}
+
+	void WindowController::SetSelectionMode(bool enabled) noexcept
+	{
+		if (selectionMode_.exchange(enabled, std::memory_order_acq_rel) == enabled)
+			return;
+		RequestControlWake();
+	}
+
 	EraserWidthMode WindowController::ActiveEraserWidthMode() const noexcept
 	{
 		return EraserWidthModeForRevision(

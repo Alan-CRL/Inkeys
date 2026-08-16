@@ -113,6 +113,11 @@ namespace Inkeys::Drawing::Draw3
 		return strokes_.size() - 1;
 	}
 
+	void InkCanvas::ClearStrokes() noexcept
+	{
+		strokes_.clear();
+	}
+
 	InkPage::InkPage(InkGuid pageGuid) noexcept : pageGuid_(pageGuid) {}
 
 	const InkGuid& InkPage::PageGuid() const noexcept

@@ -98,8 +98,12 @@ namespace Inkeys::Drawing::Draw3
 			resources.driverType = D3D_DRIVER_TYPE_HARDWARE;
 		}
 
-		std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
-		std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+		if (StartupEnvironmentDiagnosticsEnabled())
+		{
+			// 恢复启动时的设备环境输出，但不影响始终保留的错误诊断。
+			std::cout << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
+			std::cout << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+		}
 
 		resources.dxgiDevice.Reset();
 		result = resources.device.As(&resources.dxgiDevice); // 使用类型安全的 QueryInterface 获取 DXGI 设备。
@@ -116,7 +120,8 @@ namespace Inkeys::Drawing::Draw3
 			LogHResult("IDXGIDevice1::GetAdapter", result);
 			return false;
 		}
-		LogAdapterDiagnostics(resources.adapter.Get());
+		if (StartupEnvironmentDiagnosticsEnabled())
+			LogAdapterDiagnostics(resources.adapter.Get());
 
 		result = resources.adapter->GetParent(__uuidof(IDXGIFactory2),
 			reinterpret_cast<void**>(resources.factory.ReleaseAndGetAddressOf())); // 交换链必须由同一适配器的 factory 创建。

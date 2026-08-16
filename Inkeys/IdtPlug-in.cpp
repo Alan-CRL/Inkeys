@@ -165,6 +165,13 @@ bool CheckPptCom()
 	try
 	{
 		_com_util::CheckError(pptCom.CreateInstance(_uuidof(PptCOMServer)));
+		// 在任何 PptCOM 诊断输出前应用独立开关。
+	#ifndef IDT_RELEASE
+		pptCom->SetConsoleOutputEnabled(
+			static_cast<bool>(Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM));
+	#else
+		pptCom->SetConsoleOutputEnabled(false);
+	#endif
 	}
 	catch (_com_error err)
 	{
@@ -425,13 +432,6 @@ bool StartPptTakeoverAnnotation(int toolType)
 {
 	if (toolType != 1) return false;
 
-	if (penetrate.select)
-	{
-		penetrate.select = false;
-		if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
-		SyncDraw3State();
-	}
-
 	bool res = true;
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 		res = ChangeStateModeToPen();
@@ -646,8 +646,7 @@ void PPTLinkageMain()
 			ViewPptShow();
 			continue;
 		}
-		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection &&
-			!penetrate.select)
+		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 		{
 			if (!CheckEndShow.Check())
 			{

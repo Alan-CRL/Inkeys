@@ -35,6 +35,7 @@ export namespace Inkeys::Drawing::Draw3
 		void (*commandProcessed)(void*, CanvasCommandType,
 			std::size_t, std::size_t) = nullptr;
 		void (*documentReady)(void*, std::size_t, std::size_t) = nullptr;
+		void (*currentPageContentChanged)(void*, bool) = nullptr;
 		void (*controlWake)(void*) = nullptr;
 	};
 

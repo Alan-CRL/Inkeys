@@ -51,6 +51,17 @@ namespace Inkeys::Drawing::Draw3
 			productHost.FirstFrameReady();
 	}
 
+	HostRuntimeSnapshot ProductRuntimeSnapshot() noexcept
+	{
+		return productHost.RuntimeSnapshot();
+	}
+
+	bool WaitForProductContentRevision(std::uint64_t revision,
+		std::uint32_t timeoutMilliseconds) noexcept
+	{
+		return productHost.WaitForContentRevision(revision, timeoutMilliseconds);
+	}
+
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		if (productStopping.load(std::memory_order_acquire))

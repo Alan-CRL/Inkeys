@@ -5,12 +5,17 @@
 #include "IdtPlug-in.h"
 #include "Inkeys/Business/LegacyDrawState.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <thread>
+
+import Inkeys.UI.Bar;
+import Inkeys.Window;
 
 StateModeClass stateMode;
 
@@ -18,6 +23,7 @@ namespace
 {
 	using Inkeys::Drawing::Draw3::Bridge::ProductState;
 	using Inkeys::Drawing::Draw3::Bridge::Tool;
+	std::mutex draw3PresentationMutex;
 
 	std::uint32_t ColorRefToRgba(COLORREF color) noexcept
 	{
@@ -64,9 +70,8 @@ namespace
 		state.tool = CurrentDraw3Tool();
 		state.widthDip = (std::max)(0.1f, GetPenWidth());
 		state.colorRgba = ColorRefToRgba(GetPenColor());
-		state.clickThrough =
-			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection ||
-			penetrate.select;
+		state.selectionMode =
+			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
 	}
 }
@@ -74,6 +79,43 @@ namespace
 void SyncDraw3State()
 {
 	PublishDraw3State();
+	ReconcileDraw3Presentation();
+}
+
+void ReconcileDraw3Presentation()
+{
+	std::scoped_lock lock(draw3PresentationMutex);
+	const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+	const bool selectionMode = Inkeys::Drawing::Draw3::ProductHost()
+		.ProductBridge().Snapshot().selectionMode;
+	auto& service = Inkeys::Window::GetService();
+	using Inkeys::Window::WindowRole;
+
+	Inkeys::UI::Bar::SetCurrentPageHasContent(runtime.currentPageHasContent);
+	const auto presentationPlan =
+		Inkeys::Drawing::Draw3::ResolveDrawpadPresentationPlan(
+			selectionMode, runtime.currentPageHasContent);
+	for (const auto action : presentationPlan.actions)
+	{
+		switch (action)
+		{
+		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::EnableClickThrough:
+			(void)service.SetClickThrough(WindowRole::Drawpad, true);
+			break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::DisableClickThrough:
+			(void)service.SetClickThrough(WindowRole::Drawpad, false);
+			break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::Show:
+			(void)service.Show(WindowRole::Drawpad);
+			break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationAction::Hide:
+			(void)service.Hide(WindowRole::Drawpad);
+			break;
+		}
+	}
+
+	const HWND drawpad = service.Handle(WindowRole::Drawpad);
+	IdtWindowsIsVisible.drawpadWindow = drawpad && IsWindowVisible(drawpad);
 }
 
 bool SetPenWidth(float targetWidth, bool setMemory)
@@ -173,19 +215,18 @@ COLORREF GetPenColor()
 bool ChangeStateModeToSelection()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-	// selection 必须恢复旧 UI 的定格/穿透状态，同时不再等待 Draw2 绘制全局。
-	if (!FreezeFrame.select || penetrate.select)
+	// selection 保留由定格按钮显式进入的定格状态。
+	if (!FreezeFrame.select)
 	{
 		FreezeFrame.mode = 0;
 		FreezeFrame.select = false;
 	}
-	if (penetrate.select) penetrate.select = false;
 	if (state == 1.1) state = 1;
 	stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 	stateMode.laserActive = false;
 	BackgroundColorMode = 0;
-	PublishDraw3State();
+	SyncDraw3State();
 	return true;
 }
 
@@ -196,7 +237,7 @@ bool ChangeStateModeToPen()
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
 	stateMode.laserActive = false;
 	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
-	PublishDraw3State();
+	SyncDraw3State();
 	return true;
 }
 
@@ -207,7 +248,7 @@ bool ChangeStateModeToShape()
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
 	stateMode.laserActive = false;
 	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
-	PublishDraw3State();
+	SyncDraw3State();
 	return true;
 }
 
@@ -218,7 +259,7 @@ bool ChangeStateModeToEraser()
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
 	stateMode.laserActive = false;
 	BackgroundColorMode = 0;
-	PublishDraw3State();
+	SyncDraw3State();
 	return true;
 }
 
@@ -230,9 +271,19 @@ bool ChangeStateModeToTouchTest()
 
 void StateMonitoring()
 {
-	// Draw3 bridge 自己维护状态快照，旧的自动重启监视器不再介入绘制。
+	auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+	std::uint64_t revision = snapshot.contentRevision;
+	ReconcileDraw3Presentation();
 	while (!offSignal)
-		std::this_thread::sleep_for(std::chrono::milliseconds(250));
+	{
+		// 超时只负责检查退出；内容变化由条件变量即时唤醒。
+		(void)Inkeys::Drawing::Draw3::WaitForProductContentRevision(revision, 250);
+		if (offSignal) break;
+		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		if (snapshot.contentRevision == revision) continue;
+		revision = snapshot.contentRevision;
+		ReconcileDraw3Presentation();
+	}
 }
 
 bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)

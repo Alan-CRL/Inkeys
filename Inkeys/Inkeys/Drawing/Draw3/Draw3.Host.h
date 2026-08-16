@@ -70,6 +70,8 @@ namespace Inkeys::Drawing::Draw3
 		int committedHeight = 0;
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
+		bool currentPageHasContent = false;
+		std::uint64_t contentRevision = 0;
 		RECT lastDirtyRect{};
 	};
 
@@ -88,6 +90,9 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 内容 revision 变化或超时后返回；用于产品状态线程即时响应绘制线程更新。
+		bool WaitForContentRevision(std::uint64_t revision,
+			std::uint32_t timeoutMilliseconds) const noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 		Bridge::StateBridge& ProductBridge() noexcept;

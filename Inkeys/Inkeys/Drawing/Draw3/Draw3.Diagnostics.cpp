@@ -26,6 +26,8 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		std::atomic<bool> startupEnvironmentDiagnosticsEnabled = false;
+
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
 			static HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE); // 缓存控制台句柄，减少每帧日志开销。
@@ -678,5 +680,15 @@ namespace Inkeys::Drawing::Draw3
 		{
 			LogHResult("IDXGIAdapter::CheckInterfaceSupport(IDXGIDevice)", result);
 		}
+	}
+
+	void SetStartupEnvironmentDiagnosticsEnabled(bool enabled) noexcept
+	{
+		startupEnvironmentDiagnosticsEnabled.store(enabled, std::memory_order_release);
+	}
+
+	bool StartupEnvironmentDiagnosticsEnabled() noexcept
+	{
+		return startupEnvironmentDiagnosticsEnabled.load(std::memory_order_acquire);
 	}
 }

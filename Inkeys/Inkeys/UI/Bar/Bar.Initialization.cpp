@@ -5,6 +5,7 @@ module;
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDraw.h"
 #include "../../../IdtState.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
 
 module Inkeys.UI.Bar;
@@ -123,6 +124,9 @@ namespace Inkeys::UI::Bar
 
 		barUISet.barMedia.LoadFormat();
 
+		// 首次布局直接读取 Draw3 内容快照，避免依赖监控线程稍后的修订通知。
+		SetCurrentPageHasContent(
+			Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
 		// 初始化 按钮 们
 		barUISet.barButtonSet.PresetInitialization();
 		barUISet.barButtonSet.RegisterBuiltInComponents();
@@ -130,10 +134,14 @@ namespace Inkeys::UI::Bar
 			barUISet.barButtonSet.Load();
 			barUISet.barButtonSet.StateUpdate();
 		}
+		SetContentStateUpdatesReady(true);
 
 		barUISet.barState.PositionUpdate(barUISet.barStyle.zoom);
 		if (offSignal)
+		{
+			SetContentStateUpdatesReady(false);
 			return;
+		}
 
 		// Hook 自有 jthread，并在创建它的线程卸载。
 		(void)Inkeys::Input::MouseHook::Start([&]()
@@ -148,6 +156,7 @@ namespace Inkeys::UI::Bar
 		// 等待
 
 		while (!offSignal) this_thread::sleep_for(chrono::milliseconds(100));
+		SetContentStateUpdatesReady(false);
 		// 先停止输入生产者，再由窗口线程撤销计时器、Raw Input 与 capture。
 		Inkeys::Input::MouseHook::Stop();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。

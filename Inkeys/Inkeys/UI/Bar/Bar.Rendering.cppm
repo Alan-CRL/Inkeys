@@ -65,7 +65,7 @@ public:
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	bool PrepareFrameLighting(double animationDtSeconds,
 		int drawingMode, int penMode, COLORREF brush1Color,
-		COLORREF highlighterColor, bool penetrateSelected);
+		COLORREF highlighterColor);
 	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;
 	[[nodiscard]] RECT GetFrameCursorLightDamageBounds() const noexcept;
 	[[nodiscard]] bool DidFramePrimaryLightChange() const noexcept
