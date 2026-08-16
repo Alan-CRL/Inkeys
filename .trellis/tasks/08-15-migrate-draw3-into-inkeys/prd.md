@@ -6,7 +6,7 @@
 
 ## Requirements
 
-- 完整导入 Draw3 的一方源码、模块、着色器、资源和可复用测试，保留来源说明；不复制源仓库的 `.git` 目录、构建产物和独立示例程序入口。
+- 完整导入 Draw3 的模块、着色器、资源、第三方头文件、固定版本模型库和可复用测试，保留来源说明；不复制源仓库的 `.git` 目录、其他构建产物和独立示例程序入口。
 - 将导入内容重命名并整理到 Inkeys 项目内，更新 `Inkeys.vcxproj` 与 `.filters`，同时同步本次迁移发现的 Trellis 原生桌面规范。
 - `Inkeys/IdtDrawpad.cpp` 及 Draw2 相关实现继续保留在仓库，但不得再参与 Inkeys 产品编译或启动；处理其剩余引用，禁止 Draw2 detached 绘制/输入线程运行。
 - Draw3 复用 Window Service 创建的现有 `WindowRole::Drawpad` HWND，并接管其消息、输入和绘制；不得在产品路径创建第二个 Drawpad 顶层窗口。
@@ -23,7 +23,7 @@
 
 ## Acceptance Criteria
 
-- [x] Draw3 所需源码、模块、着色器、资源和第三方一方依赖均在当前仓库内，并有可追溯的来源说明。
+- [x] Draw3 所需模块、着色器、资源、第三方头文件和三架构固定模型库均在当前仓库内，并有可追溯的来源说明。
 - [x] `InkeysRepo.sln` 的 `Debug|ARM64` 使用 ARM64 MSBuild 完整构建通过，且 `PptCOM.csproj` 依赖正常参与构建。
 - [x] `Inkeys/IdtDrawpad.cpp` 仍存在，但 `Inkeys.vcxproj`/`.filters` 中不再作为 `ClCompile` 编译。
 - [x] 产品启动路径不再创建 Draw3 独立 HWND，不再启动 Draw2 绘制线程或 Draw2 RTS；Draw3 复用 `WindowRole::Drawpad`。
@@ -43,10 +43,10 @@
 ## Migration Record
 
 - 目标仓库分支：`draw`；源仓库：`https://github.com/Alan-CRL/Inkeys3-Draw3`；源 commit：`8d04529`。
-- 唯一历史合并提交：`1bc302d1 merge: import Draw3 source history`。该提交之后的实现修改保持未提交且不 push。
-- 文件映射：Draw3 模块、Host、Bridge、Product、透明 presenter 和 shader 迁入 `Inkeys/Inkeys/Drawing/Draw3/`；Ink Stroke Modeler 迁入 `Inkeys/additional/ink_stroke_modeler/`；Abseil 运行时源迁入 `Inkeys/additional/absl/`。
+- 历史合并提交：`1bc302d1 merge: import Draw3 source history`；首轮实现提交：`fc9a8b8 feat(draw3): integrate Draw3 drawpad runtime`。后续固定库调整保持未提交且不 push。
+- 文件映射：Draw3 模块、Host、Bridge、Product、透明 presenter 和 shader 迁入 `Inkeys/Inkeys/Drawing/Draw3/`；Ink Stroke Modeler/Abseil 头文件迁入 `Inkeys/additional/`；三架构固定库保留在 `inkStrokeModelerTest/lib/`。
 - shader 资源 ID 由源 101--104 映射到目标 301--304，名称统一为 `IDR_DRAW3_*`；不覆盖目标 `resource.h`。
-- 排除项：源 `main.cpp`、独立 demo/测试窗口、可见 performance HUD、`Vcpkg/`、`.git/.vs`、ARM64/Win32/x64/Release/TestResults 构建输出和 `.lib/.dll` 预编译库。
+- 排除项：源 `main.cpp`、独立 demo/测试窗口、可见 performance HUD、`.git/.vs`、ARM64/Win32/x64/Release/TestResults 构建输出和第三方 `.cc`；仅保留固定版本 `ink_stroke_modeler_merge.lib`。
 - 所有权记录：Window Service 唯一创建/显示/隐藏/销毁 Drawpad HWND；Draw3 独立拥有 D3D11.1 device/context、DXGI swap chain、透明 presenter 和绘制线程；Draw3 是唯一 RTS producer；Drawpad owner 链保持 `MagnifierHost -> Freeze -> Drawpad -> PPT/Bar`。
 - 源任务历史：统一移动到 `.trellis/tasks/archive/2026-08/draw3-source/`；5 个源 `in_progress` 任务位于其 `active/` 子目录，原已完成记录按 2026-07/08 月份保留，不覆盖目标任务。
 

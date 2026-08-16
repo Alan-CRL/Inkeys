@@ -5,8 +5,8 @@
 - [x] 固化源仓库 commit、文件清单、许可证和编译配置；排除 `.git`、`.vs`、输出目录及独立 EXE 入口。
 - [x] 复制并重命名 Draw3 模块、一方依赖、shader/资源到 Inkeys 目录，保持源编码与换行。
 - [x] 更新 `Inkeys.vcxproj`、`.filters`、模块依赖与链接库，使导入代码在产品工程中可编译。
-- [x] 核对映射：`draw3/*.cpp|*.cppm -> Inkeys/Inkeys/Drawing/Draw3/Draw3.*`，HLSL/CSO -> `Drawing/Draw3/Assets`，`additional/{ink_stroke_modeler,absl}` -> `Inkeys/additional/`；shader 资源 ID 301-304 只能在 `Inkeys/resource.h`/`Inkeys/Inkeys.rc` 使用。
-- [x] 明确排除源 `main.cpp`、demo/性能 HUD、独立测试窗口、Vcpkg、`.git/.vs`、ARM64/Win32/x64/Release/TestResults 输出和 `.lib/.dll` 预编译库。
+- [x] 核对映射：`draw3/*.cpp|*.cppm -> Inkeys/Inkeys/Drawing/Draw3/Draw3.*`，HLSL/CSO -> `Drawing/Draw3/Assets`，第三方头文件 -> `Inkeys/additional/`，固定库 -> `inkStrokeModelerTest/lib/`；shader 资源 ID 301-304 只能在 `Inkeys/resource.h`/`Inkeys/Inkeys.rc` 使用。
+- [x] 明确排除源 `main.cpp`、demo/性能 HUD、独立测试窗口、`.git/.vs`、ARM64/Win32/x64/Release/TestResults 输出和第三方 `.cc`；保留三架构 `ink_stroke_modeler_merge.lib`。
 - [x] 将可复用纯逻辑测试登记到 `InkeysHeadlessTests`。
 - [x] 回滚点：仅撤销新增文件和工程登记，不触碰现有 Draw2 启动路径。
 
@@ -51,7 +51,7 @@
 - `InkeysRepo.sln Debug|ARM64` 与 `Release|ARM64` 已用 ARM64 MSBuild `/m:1` 构建通过，`PptCOM`、`Inkeys` 和 `InkeysHeadlessTests` 均成功。
 - `Build\\ARM64\\Debug\\InkeysHeadlessTests.exe --no-window` 通过：`PASS animation correctness`。
 - `Build\\ARM64\\Debug\\Inkeys.exe --draw3-hidden-test` 通过（退出码 0）：真实 D3D11.1 硬件、隐藏 Drawpad HWND、DComp/DWM2/DWM/ULW presenter、命令/resize/停止流程均执行，未显示产品窗口；旧 DComp HWND 上的 ULW 启动按真实不可变样式失败并完整清理 Host，随后按顺序销毁旧链、重建唯一 legacy HWND 并验证所有 fallback。
-- 最终已删除激光增量 benchmark/诊断结构和热路径诊断计时；`type_matchers.cc` 作为测试辅助源码登记为 `None`，不引入 gtest/gmock 产品依赖。
+- 最终已删除激光增量 benchmark/诊断结构和热路径诊断计时；Ink Stroke Modeler/Abseil `.cc` 全部删除，`type_matchers.h` 等头文件保留，不引入 gtest/gmock 产品依赖。
 - 最终 `git diff --check`、迁入文件 CRLF/BOM 与静态合同检查通过；实现修改保持未提交且未 push。
 
 ## Review Gates

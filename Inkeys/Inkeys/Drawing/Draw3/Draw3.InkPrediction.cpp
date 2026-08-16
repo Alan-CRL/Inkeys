@@ -13,6 +13,8 @@
 #include <span>
 #include <windows.h>
 
+// 沿用 Draw3 固定版本模型库，避免产品构建隐式漂移上游实现。
+#pragma comment(lib, "ink_stroke_modeler_merge.lib")
 
 module Inkeys.Drawing.Draw3.ink_prediction;
 

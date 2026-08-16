@@ -9,12 +9,12 @@ Draw3 作为 Inkeys Drawpad 的新实现进入主进程，但不成为新的顶�
 ## 2. 目录与工程集成
 
 - Draw3 产品代码放入 `Inkeys/Inkeys/Drawing/Draw3/`，模块名保持 `Inkeys.Drawing.Draw3.*` 或使用项目既有前缀统一重命名。
-- Draw3 自带的一方 Ink Stroke Modeler 代码放入 `Inkeys/additional/ink_stroke_modeler/`，仅按 ARM64 源码编译；源工程的预编译库、构建输出和 Vcpkg 不纳入产品。
+- Draw3 自带的 Ink Stroke Modeler/Abseil 头文件放入 `Inkeys/additional/`；产品按平台链接源快照的固定版本 `ink_stroke_modeler_merge.lib`，不编译第三方 `.cc`。
 - 着色器源码进入 Draw3 子目录；CSO 由现有工程构建步骤生成或以明确资源项登记，不依赖源仓库输出目录。
 - 独立 `main.cpp`、实验窗口入口和可见测试程序不进入产品编译。
 - Draw2 文件保留，但从 `ClCompile`/module 项中移至 `None`；`IdtState` 只提供兼容 facade，转发到 Draw3 bridge，不再维护 Draw2 绘制全局。
 
-文件映射固定为 `source draw3/*.cpp|*.cppm -> Inkeys/Inkeys/Drawing/Draw3/Draw3.*`、shader/HLSL -> `Inkeys/Inkeys/Drawing/Draw3/Assets/`、一方 `ink_stroke_modeler`/`absl` -> `Inkeys/additional/`；源 `Vcpkg`、`.git`、`.vs`、构建输出、预编译库、demo `main.cpp`、窗口性能 HUD 和独立测试工程均排除。产品 shader 资源 ID `301..304` 分别对应 ink pixel、ink vertex、laser update CS、laser emit CS，统一在 `Inkeys/resource.h`/`Inkeys/Inkeys.rc` 登记。
+文件映射固定为 `source draw3/*.cpp|*.cppm -> Inkeys/Inkeys/Drawing/Draw3/Draw3.*`、shader/HLSL -> `Inkeys/Inkeys/Drawing/Draw3/Assets/`、`ink_stroke_modeler`/`absl` 头文件 -> `Inkeys/additional/`、固定库 -> `inkStrokeModelerTest/lib/lib{32,64,Arm64}/`；源 `.git`、`.vs`、构建输出、第三方 `.cc`、demo `main.cpp`、窗口性能 HUD 和独立测试工程均排除。产品 shader 资源 ID `301..304` 分别对应 ink pixel、ink vertex、laser update CS、laser emit CS，统一在 `Inkeys/resource.h`/`Inkeys/Inkeys.rc` 登记。
 
 ## 3. 生命周期
 

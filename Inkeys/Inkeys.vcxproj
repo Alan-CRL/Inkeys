@@ -100,6 +100,13 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <!-- 沿用 Draw3 固定版本库，并按目标架构选择对应二进制。 -->
+    <VcpkgConfiguration Condition="'$(Configuration)'=='Debug'">Release</VcpkgConfiguration>
+    <InkStrokeModelerLibraryDirectory Condition="'$(Platform)'=='Win32'">..\inkStrokeModelerTest\lib\lib32</InkStrokeModelerLibraryDirectory>
+    <InkStrokeModelerLibraryDirectory Condition="'$(Platform)'=='x64'">..\inkStrokeModelerTest\lib\lib64</InkStrokeModelerLibraryDirectory>
+    <InkStrokeModelerLibraryDirectory Condition="'$(Platform)'=='ARM64'">..\inkStrokeModelerTest\lib\libArm64</InkStrokeModelerLibraryDirectory>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
@@ -162,6 +169,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -184,7 +192,7 @@
       <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
@@ -201,9 +209,10 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
@@ -224,7 +233,7 @@
       <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
@@ -263,7 +272,7 @@
       <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
     </Link>
@@ -280,7 +289,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
@@ -302,7 +311,7 @@
       <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -317,6 +326,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -341,7 +351,7 @@
       <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.02</MinimumRequiredVersion>
     </Link>
@@ -359,7 +369,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
@@ -382,7 +392,7 @@
       <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -658,100 +668,6 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
-    <ClCompile Include="additional\ink_stroke_modeler\types.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\params.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\utils.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc" />
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc" />
-    <ClCompile Include="additional\absl\status\status.cc" />
-    <ClCompile Include="additional\absl\status\statusor.cc" />
-    <ClCompile Include="additional\absl\status\status_payload_printer.cc" />
-    <ClCompile Include="additional\absl\status\internal\status_internal.cc" />
-    <ClCompile Include="additional\absl\strings\numbers.cc" />
-    <ClCompile Include="additional\absl\strings\str_cat.cc" />
-    <ClCompile Include="additional\absl\strings\substitute.cc" />
-    <ClCompile Include="additional\absl\strings\internal\stringify_sink.cc" />
-    <ClCompile Include="additional\absl\strings\internal\str_format\arg.cc" />
-    <ClCompile Include="additional\absl\strings\internal\str_format\bind.cc" />
-    <ClCompile Include="additional\absl\strings\internal\str_format\float_conversion.cc" />
-    <ClCompile Include="additional\absl\base\internal\raw_logging.cc" />
-    <ClCompile Include="additional\absl\base\internal\spinlock.cc" />
-    <ClCompile Include="additional\absl\base\internal\spinlock_wait.cc" />
-    <ClCompile Include="additional\absl\base\internal\strerror.cc" />
-    <ClCompile Include="additional\absl\base\internal\cycleclock.cc" />
-    <ClCompile Include="additional\absl\base\internal\sysinfo.cc" />
-    <ClCompile Include="additional\absl\base\internal\low_level_alloc.cc" />
-    <ClCompile Include="additional\absl\base\internal\thread_identity.cc" />
-    <ClCompile Include="additional\absl\debugging\leak_check.cc" />
-    <ClCompile Include="additional\absl\debugging\symbolize.cc" />
-    <ClCompile Include="additional\absl\numeric\int128.cc" />
-    <ClCompile Include="additional\absl\synchronization\mutex.cc" />
-    <ClCompile Include="additional\absl\synchronization\internal\create_thread_identity.cc" />
-    <ClCompile Include="additional\absl\synchronization\internal\graphcycles.cc" />
-    <ClCompile Include="additional\absl\synchronization\internal\kernel_timeout.cc" />
-    <ClCompile Include="additional\absl\synchronization\internal\per_thread_sem.cc" />
-    <ClCompile Include="additional\absl\synchronization\internal\waiter_base.cc" />
-    <ClCompile Include="additional\absl\synchronization\internal\win32_waiter.cc" />
-    <ClCompile Include="additional\absl\debugging\stacktrace.cc" />
-    <ClCompile Include="additional\absl\time\clock.cc" />
-    <ClCompile Include="additional\absl\time\time.cc" />
-    <ClCompile Include="additional\absl\time\duration.cc" />
-    <ClCompile Include="additional\absl\time\civil_time.cc" />
-    <ClCompile Include="additional\absl\time\format.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\civil_time_detail.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_fixed.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_format.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_if.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_info.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_impl.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_libc.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_lookup.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_posix.cc" />
-    <ClCompile Include="additional\absl\time\internal\cctz\src\zone_info_source.cc" />
-    <ClCompile Include="additional\absl\crc\internal\crc.cc" />
-    <ClCompile Include="additional\absl\crc\internal\crc_cord_state.cc" />
-    <ClCompile Include="additional\absl\crc\internal\crc_memcpy_fallback.cc" />
-    <ClCompile Include="additional\absl\crc\internal\crc_x86_arm_combined.cc" />
-    <ClCompile Include="additional\absl\crc\crc32c.cc" />
-    <ClCompile Include="additional\absl\strings\ascii.cc" />
-    <ClCompile Include="additional\absl\strings\charconv.cc" />
-    <ClCompile Include="additional\absl\strings\cord.cc" />
-    <ClCompile Include="additional\absl\strings\escaping.cc">
-      <ObjectFileName>$(IntDir)absl_strings_escaping.obj</ObjectFileName>
-    </ClCompile>
-    <ClCompile Include="additional\absl\strings\match.cc" />
-    <ClCompile Include="additional\absl\strings\internal\charconv_bigint.cc" />
-    <ClCompile Include="additional\absl\strings\internal\charconv_parse.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cord_internal.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cord_rep_btree.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cord_rep_btree_navigator.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cord_rep_btree_reader.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cord_rep_consume.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cord_rep_crc.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cordz_handle.cc" />
-    <ClCompile Include="additional\absl\strings\internal\cordz_info.cc" />
-    <ClCompile Include="additional\absl\strings\internal\escaping.cc">
-      <ObjectFileName>$(IntDir)absl_strings_internal_escaping.obj</ObjectFileName>
-    </ClCompile>
-    <ClCompile Include="additional\absl\strings\internal\memutil.cc" />
-    <ClCompile Include="additional\absl\strings\internal\str_format\extension.cc" />
-    <ClCompile Include="additional\absl\strings\internal\str_format\output.cc" />
-    <ClCompile Include="additional\absl\strings\internal\str_format\parser.cc" />
-    <ClCompile Include="additional\absl\strings\internal\utf8.cc" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- Abseil 源码需要屏蔽 Windows min/max 宏；只作用于该目录。 -->
-    <ClCompile Update="additional\absl\**\*.cc">
-      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Inkeys.rc" />
@@ -853,7 +769,6 @@
     <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso" />
     <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl" />
     <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso" />
-    <None Include="additional\ink_stroke_modeler\internal\type_matchers.cc" />
     <None Include="additional\ink_stroke_modeler\README.md" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
