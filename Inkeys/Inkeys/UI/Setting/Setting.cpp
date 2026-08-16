@@ -62,8 +62,10 @@ namespace
 
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
-	atomic<bool> settingDwmFrameEnabled = false;
 	atomic<bool> settingWindowActive = true;
+	atomic<Inkeys::UI::Setting::InteractiveWindowOperation>
+		settingInteractiveOperation =
+		Inkeys::UI::Setting::InteractiveWindowOperation::None;
 	atomic<LRESULT> settingCaptionPressedHit = HTNOWHERE;
 	mutex settingLifecycleMutex;
 	// Win32 backend 会调用 SetCapture/ReleaseCapture/IME，可能同步重入同一 WndProc。
@@ -100,6 +102,23 @@ namespace
 			? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : USER_DEFAULT_SCREEN_DPI;
 		if (screen) ReleaseDC(nullptr, screen);
 		return fallback ? fallback : USER_DEFAULT_SCREEN_DPI;
+	}
+
+	[[nodiscard]] bool AdjustSettingWindowRectForDpi(
+		RECT& rect, UINT dpi) noexcept
+	{
+		using AdjustWindowRectExForDpiProc = BOOL(WINAPI*)(
+			LPRECT, DWORD, BOOL, DWORD, UINT);
+		static const auto adjustWindowRectExForDpi =
+			reinterpret_cast<AdjustWindowRectExForDpiProc>(GetProcAddress(
+				GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
+		if (adjustWindowRectExForDpi)
+			return adjustWindowRectExForDpi(&rect,
+				Inkeys::Window::SettingWindowStyle, FALSE,
+				Inkeys::Window::SettingWindowExStyle, dpi) != FALSE;
+		// Win7 回退使用系统 DPI 下的标准 frame 换算。
+		return AdjustWindowRectEx(&rect, Inkeys::Window::SettingWindowStyle,
+			FALSE, Inkeys::Window::SettingWindowExStyle) != FALSE;
 	}
 
 	void UpdateSettingScale(UINT dpi) noexcept
@@ -151,29 +170,6 @@ namespace
 				&darkFrame, sizeof(darkFrame));
 	}
 
-	[[nodiscard]] int QuerySettingSystemMetric(HWND hwnd, int metric) noexcept
-	{
-		using GetSystemMetricsForDpiProc = int(WINAPI*)(int, UINT);
-		static const auto getSystemMetricsForDpi =
-			reinterpret_cast<GetSystemMetricsForDpiProc>(GetProcAddress(
-				GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
-		return getSystemMetricsForDpi
-			? getSystemMetricsForDpi(metric, QuerySettingDpi(hwnd))
-			: GetSystemMetrics(metric);
-	}
-
-	[[nodiscard]] int QuerySettingFrameWidth(HWND hwnd) noexcept
-	{
-		return QuerySettingSystemMetric(hwnd, SM_CXSIZEFRAME)
-			+ QuerySettingSystemMetric(hwnd, SM_CXPADDEDBORDER);
-	}
-
-	[[nodiscard]] int QuerySettingFrameHeight(HWND hwnd) noexcept
-	{
-		return QuerySettingSystemMetric(hwnd, SM_CYSIZEFRAME)
-			+ QuerySettingSystemMetric(hwnd, SM_CXPADDEDBORDER);
-	}
-
 	[[nodiscard]] float QuerySettingCaptionButtonWidth(
 		HWND /*hwnd*/, float titleBarHeight) noexcept
 	{
@@ -205,52 +201,6 @@ namespace
 			QuerySettingCaptionButtonWidth(hwnd, titleBarHeight),
 			settingTitleTextWidth, settingVersionTextWidth);
 		return settingTitleBarGeometry;
-	}
-
-	[[nodiscard]] bool ApplySettingDwmFrame(HWND hwnd) noexcept
-	{
-		BOOL compositionEnabled = FALSE;
-		const bool frameEnabled = hwnd
-			&& SUCCEEDED(DwmIsCompositionEnabled(&compositionEnabled))
-			&& compositionEnabled;
-		if (frameEnabled)
-		{
-			// 保留 DWM non-client rendering，但不要再把 frame 延伸到
-			// 不透明的 D3D11/ImGui client surface 下面。真正可见的 1px
-			// non-client border 由 WM_NCCALCSIZE 留出，DWM 因而可以正常
-			// 绘制系统活动/非活动边框与阴影，而不会产生“被 client 覆盖”的
-			// extended-frame 假边框。
-			const DWMNCRENDERINGPOLICY renderingPolicy = DWMNCRP_ENABLED;
-			(void)DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY,
-				&renderingPolicy, sizeof(renderingPolicy));
-
-			const MARGINS frameMargins{ 0, 0, 0, 0 };
-			(void)DwmExtendFrameIntoClientArea(hwnd, &frameMargins);
-
-			// Windows 11 enhancement。旧系统不认识这些 attribute 时只会
-			// 返回失败，不影响 Win7 SP1 + KB2670838 的基础自绘 chrome。
-			const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_DEFAULT;
-			(void)DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-				&preference, sizeof(preference));
-
-			// 不是自定义颜色：显式恢复为“系统默认边框策略”。这样即使同一
-			// HWND 之前曾被其它路径改过 DWMWA_BORDER_COLOR，也会重新服从
-			// Windows 的 active/inactive 与“在标题栏和窗口边框上显示强调色”
-			// 用户设置。Windows 10/7 不支持该属性时安全失败。
-			const COLORREF defaultBorderColor = static_cast<COLORREF>(0xFFFFFFFFu);
-			(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
-				&defaultBorderColor, sizeof(defaultBorderColor));
-		}
-		settingDwmFrameEnabled.store(frameEnabled, memory_order_release);
-		return frameEnabled;
-	}
-
-	void RefreshSettingNonClientFrame(HWND hwnd) noexcept
-	{
-		(void)ApplySettingDwmFrame(hwnd);
-		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-			SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE
-			| SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 
 	[[nodiscard]] bool LoadSettingWindowIconTexture(HWND hwnd) noexcept
@@ -314,29 +264,10 @@ namespace
 		return loaded;
 	}
 
-	[[nodiscard]] LRESULT HitTestSettingWindow(HWND hwnd, LPARAM lParam) noexcept
+	[[nodiscard]] LRESULT HitTestSettingClientTitleBar(
+		HWND hwnd, LPARAM lParam) noexcept
 	{
-		RECT bounds{};
-		if (!GetWindowRect(hwnd, &bounds)) return HTCLIENT;
 		const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-		if (!IsZoomed(hwnd))
-		{
-			const int frameWidth = QuerySettingFrameWidth(hwnd);
-			const int frameHeight = QuerySettingFrameHeight(hwnd);
-			const bool left = point.x < bounds.left + frameWidth;
-			const bool right = point.x >= bounds.right - frameWidth;
-			const bool top = point.y < bounds.top + frameHeight;
-			const bool bottom = point.y >= bounds.bottom - frameHeight;
-			if (top && left) return HTTOPLEFT;
-			if (top && right) return HTTOPRIGHT;
-			if (bottom && left) return HTBOTTOMLEFT;
-			if (bottom && right) return HTBOTTOMRIGHT;
-			if (left) return HTLEFT;
-			if (right) return HTRIGHT;
-			if (top) return HTTOP;
-			if (bottom) return HTBOTTOM;
-		}
-
 		POINT clientPoint = point;
 		if (!ScreenToClient(hwnd, &clientPoint)) return HTCLIENT;
 		const auto geometry = ResolveSettingTitleBarGeometry(hwnd);
@@ -909,132 +840,198 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	// 自绘 TitleBar/Caption Buttons 是 Win7+ 的固定 UI，不依赖 DWM。
-	// settingDwmFrameEnabled 只表示“系统 DWM 增强（阴影/边框/圆角）可用”。
-	constexpr bool customFrame = true;
-	if (customFrame)
+	// 保留 WS_THICKFRAME 的窗口语义，但不让原生 sizing frame 占用客户区。
+	switch (msg)
 	{
-		// Chrome 消息先于 ImGui：Win32 独占 resize、拖拽、Snap 与系统命令。
-		switch (msg)
+	case WM_NCCALCSIZE:
+	{
+		// 最大化时把 non-client geometry 完全交还 Windows。
+		//
+		// Windows 自己负责：
+		// - maximized frame
+		// - work area
+		// - taskbar
+		// - multi-monitor
+		// - DPI
+		// - maximized 边缘裁切
+		if (::IsZoomed(hWnd))
 		{
-		case WM_NCCALCSIZE:
+			return ::DefWindowProcW(
+				hWnd,
+				msg,
+				wParam,
+				lParam);
+		}
+
+		// 普通窗口状态：
+		// 自定义为四边统一 1px non-client frame。
+		if (wParam && lParam)
 		{
-			// 不再把整个 HWND 无条件变成 client area。DWM 可用且窗口未
-			// 最大化时，四周留下 1 个真实 non-client pixel，供系统绘制
-			// 默认 active/inactive（含用户强调色）边框。标题栏本身仍完全
-			// 由 Inkeys 绘制；Win7 无 DWM 时则自然退化为方形 full-client。
-			const bool keepDwmBorder = settingDwmFrameEnabled.load(
-				memory_order_acquire) && !IsZoomed(hWnd);
-			if (wParam)
-			{
-				auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
-				if (params)
-				{
-					if (IsZoomed(hWnd))
-					{
-						// 最大化保留系统 sizing frame inset，客户区不会越过工作区。
-						const int frameWidth = QuerySettingFrameWidth(hWnd);
-						const int frameHeight = QuerySettingFrameHeight(hWnd);
-						if (params->rgrc[0].right - params->rgrc[0].left > frameWidth * 2)
-						{
-							params->rgrc[0].left += frameWidth;
-							params->rgrc[0].right -= frameWidth;
-						}
-						if (params->rgrc[0].bottom - params->rgrc[0].top > frameHeight * 2)
-						{
-							params->rgrc[0].top += frameHeight;
-							params->rgrc[0].bottom -= frameHeight;
-						}
-					}
-					else if (keepDwmBorder
-						&& params->rgrc[0].right - params->rgrc[0].left > 2
-						&& params->rgrc[0].bottom - params->rgrc[0].top > 2)
-					{
-						++params->rgrc[0].left;
-						++params->rgrc[0].top;
-						--params->rgrc[0].right;
-						--params->rgrc[0].bottom;
-					}
-				}
-			}
-			else if (keepDwmBorder && lParam)
-			{
-				auto* rect = reinterpret_cast<RECT*>(lParam);
-				if (rect->right - rect->left > 2 && rect->bottom - rect->top > 2)
-				{
-					++rect->left;
-					++rect->top;
-					--rect->right;
-					--rect->bottom;
-				}
-			}
+			auto* params =
+				reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+
+			constexpr LONG kVisibleFrame = 1;
+
+			params->rgrc[0].left += kVisibleFrame;
+			params->rgrc[0].top += kVisibleFrame;
+			params->rgrc[0].right -= kVisibleFrame;
+			params->rgrc[0].bottom -= kVisibleFrame;
+
 			return 0;
 		}
-		case WM_NCHITTEST:
-			return HitTestSettingWindow(hWnd, lParam);
-		case WM_NCLBUTTONDOWN:
+
+		return ::DefWindowProcW(
+			hWnd,
+			msg,
+			wParam,
+			lParam);
+	}
+
+	case WM_NCPAINT:
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+
+	case WM_NCHITTEST:
+	{
+		// 自己统一四边的 resize hit zone。
+		// 视觉上的顶部 frame 只有 1px，但 hit zone 使用系统真实 sizing frame 厚度。
+		RECT frame{};
+		if (AdjustSettingWindowRectForDpi(frame, QuerySettingDpi(hWnd)))
 		{
-			const LRESULT hit = static_cast<LRESULT>(wParam);
-			if (IsSettingCaptionHit(hit))
+			const LONG resizeX = max<LONG>(1, -frame.left);
+			const LONG resizeY = max<LONG>(1, -frame.top);
+
+			RECT windowRect{};
+			if (::GetWindowRect(hWnd, &windowRect))
 			{
-				settingCaptionPressedHit.store(hit, memory_order_release);
-				Inkeys::UI::RenderPipeline::Request(
-					Inkeys::UI::RenderPipeline::Client::Settings);
-				return 0;
+				const LONG x = GET_X_LPARAM(lParam);
+				const LONG y = GET_Y_LPARAM(lParam);
+
+				const bool onLeft =
+					x >= windowRect.left &&
+					x < windowRect.left + resizeX;
+
+				const bool onRight =
+					x < windowRect.right &&
+					x >= windowRect.right - resizeX;
+
+				const bool onTop =
+					y >= windowRect.top &&
+					y < windowRect.top + resizeY;
+
+				const bool onBottom =
+					y < windowRect.bottom &&
+					y >= windowRect.bottom - resizeY;
+
+				if (onTop && onLeft)       return HTTOPLEFT;
+				if (onTop && onRight)      return HTTOPRIGHT;
+				if (onBottom && onLeft)    return HTBOTTOMLEFT;
+				if (onBottom && onRight)   return HTBOTTOMRIGHT;
+
+				if (onTop)                 return HTTOP;
+				if (onBottom)              return HTBOTTOM;
+				if (onLeft)                return HTLEFT;
+				if (onRight)               return HTRIGHT;
 			}
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 		}
-		case WM_NCLBUTTONUP:
+
+		const LRESULT nativeHit =
+			::DefWindowProcW(hWnd, msg, wParam, lParam);
+
+		if (nativeHit != HTCLIENT)
+			return nativeHit;
+
+		return HitTestSettingClientTitleBar(hWnd, lParam);
+	}
+
+	case WM_NCLBUTTONDOWN:
+	{
+		const LRESULT hit = static_cast<LRESULT>(wParam);
+		const auto operation =
+			Inkeys::UI::Setting::InteractiveOperationFromHitTest(hit);
+		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None)
+			settingInteractiveOperation.store(operation, memory_order_release);
+		if (IsSettingCaptionHit(hit))
 		{
-			const LRESULT pressed = settingCaptionPressedHit.exchange(
-				HTNOWHERE, memory_order_acq_rel);
-			const LRESULT released = HitTestSettingWindow(hWnd, lParam);
-			if (IsSettingCaptionHit(pressed))
-			{
-				if (released == pressed) InvokeSettingCaptionCommand(hWnd, pressed);
-				Inkeys::UI::RenderPipeline::Request(
-					Inkeys::UI::RenderPipeline::Client::Settings);
-				return 0;
-			}
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-		}
-		case WM_NCLBUTTONDBLCLK:
-		case WM_NCRBUTTONDOWN:
-		case WM_NCRBUTTONUP:
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-		case WM_NCMOUSEMOVE:
-			// 拖窗时 wParam == HTCAPTION。不要在系统 move loop 的每一次
-			// NC mouse move 都唤醒 D3D11/ImGui 渲染，否则会和窗口移动抢
-			// UI 线程/呈现节奏造成明显卡顿。仅 caption button hover 需要刷新。
-			if (IsSettingCaptionHit(static_cast<LRESULT>(wParam)))
-				Inkeys::UI::RenderPipeline::Request(
-					Inkeys::UI::RenderPipeline::Client::Settings);
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-		case WM_NCMOUSELEAVE:
-			settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+			settingCaptionPressedHit.store(hit, memory_order_release);
 			Inkeys::UI::RenderPipeline::Request(
 				Inkeys::UI::RenderPipeline::Client::Settings);
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-		case WM_CANCELMODE:
-		case WM_CAPTURECHANGED:
-			settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
-			break;
-		case WM_NCACTIVATE:
-			settingWindowActive.store(wParam != FALSE, memory_order_release);
+			return 0;
+		}
+		const LRESULT result = ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None
+			&& settingInteractiveOperation.load(memory_order_acquire) == operation)
+		{
+			settingInteractiveOperation.store(
+				Inkeys::UI::Setting::InteractiveWindowOperation::None,
+				memory_order_release);
 			Inkeys::UI::RenderPipeline::Request(
 				Inkeys::UI::RenderPipeline::Client::Settings);
-			// 默认 DWM border 仍由 DefWindowProc 更新活动/非活动状态。
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-		case WM_SYSCOMMAND:
-			if ((wParam & 0xFFF0) == SC_CLOSE)
-			{
-				Inkeys::UI::Setting::Hide();
-				return 0;
-			}
-			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-		default:
-			break;
 		}
+		return result;
+	}
+	case WM_NCLBUTTONUP:
+	{
+		const LRESULT pressed = settingCaptionPressedHit.exchange(
+			HTNOWHERE, memory_order_acq_rel);
+		const LRESULT released = HitTestSettingClientTitleBar(hWnd, lParam);
+		if (IsSettingCaptionHit(pressed))
+		{
+			if (released == pressed) InvokeSettingCaptionCommand(hWnd, pressed);
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::Client::Settings);
+			return 0;
+		}
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+	}
+	case WM_NCLBUTTONDBLCLK:
+	case WM_NCRBUTTONDOWN:
+	case WM_NCRBUTTONUP:
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+	case WM_NCMOUSEMOVE:
+		// 拖窗时不持续唤醒 D3D11；仅 caption button hover 需要刷新。
+		if (IsSettingCaptionHit(static_cast<LRESULT>(wParam)))
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::Client::Settings);
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+	case WM_NCMOUSELEAVE:
+		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+	case WM_CANCELMODE:
+	case WM_CAPTURECHANGED:
+		settingCaptionPressedHit.store(HTNOWHERE, memory_order_release);
+		break;
+	case WM_NCACTIVATE:
+		settingWindowActive.store(wParam != FALSE, memory_order_release);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+	case WM_SYSCOMMAND:
+	{
+		const auto operation =
+			Inkeys::UI::Setting::InteractiveOperationFromSystemCommand(wParam);
+		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None)
+			settingInteractiveOperation.store(operation, memory_order_release);
+		if ((wParam & 0xFFF0) == SC_CLOSE)
+		{
+			Inkeys::UI::Setting::Hide();
+			return 0;
+		}
+		const LRESULT result = ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		if (operation != Inkeys::UI::Setting::InteractiveWindowOperation::None
+			&& settingInteractiveOperation.load(memory_order_acquire) == operation)
+		{
+			settingInteractiveOperation.store(
+				Inkeys::UI::Setting::InteractiveWindowOperation::None,
+				memory_order_release);
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::Client::Settings);
+		}
+		return result;
+	}
+	default:
+		break;
 	}
 
 	if (Inkeys::UI::Setting::IsVisible())
@@ -1051,41 +1048,56 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 	switch (msg)
 	{
-	case WM_CREATE:
-		RefreshSettingNonClientFrame(hWnd);
-		return 0;
 	case WM_GETMINMAXINFO:
 	{
-		auto* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
-		if (!minMaxInfo) return 0;
-		int minimumWidth = Inkeys::UI::Setting::ScaleDip(
-			Inkeys::UI::Setting::MinimumWidthDip, settingGlobalScale);
-		int minimumHeight = Inkeys::UI::Setting::ScaleDip(
-			Inkeys::UI::Setting::MinimumHeightDip, settingGlobalScale);
-		if (const HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST))
-		{
-			MONITORINFO monitorInfo{ sizeof(monitorInfo) };
-			if (GetMonitorInfoW(monitor, &monitorInfo))
-			{
-				const int workWidth = monitorInfo.rcWork.right
-					- monitorInfo.rcWork.left;
-				const int workHeight = monitorInfo.rcWork.bottom
-					- monitorInfo.rcWork.top;
-				minimumWidth = Inkeys::UI::Setting::ResolveWindowExtent(
-					Inkeys::UI::Setting::MinimumWidthDip,
-					settingGlobalScale, workWidth);
-				minimumHeight = Inkeys::UI::Setting::ResolveWindowExtent(
-					Inkeys::UI::Setting::MinimumHeightDip,
-					settingGlobalScale, workHeight);
-			}
-		}
-		minMaxInfo->ptMinTrackSize = { minimumWidth, minimumHeight };
+		auto* minMaxInfo =
+			reinterpret_cast<MINMAXINFO*>(lParam);
+
+		if (!minMaxInfo)
+			return 0;
+
+		RECT minimumRect{
+			0,
+			0,
+			Inkeys::UI::Setting::ScaleDip(
+				Inkeys::UI::Setting::MinimumWidthDip,
+				settingGlobalScale),
+			Inkeys::UI::Setting::ScaleDip(
+				Inkeys::UI::Setting::MinimumHeightDip,
+				settingGlobalScale)
+		};
+
+		(void)AdjustSettingWindowRectForDpi(
+			minimumRect,
+			QuerySettingDpi(hWnd));
+
+		minMaxInfo->ptMinTrackSize.x =
+			minimumRect.right - minimumRect.left;
+
+		minMaxInfo->ptMinTrackSize.y =
+			minimumRect.bottom - minimumRect.top;
+
 		return 0;
 	}
+
+	case WM_ENTERSIZEMOVE:
+		// 未知入口默认按 Size 处理，优先保证 live resize 不停帧。
+		if (settingInteractiveOperation.load(memory_order_acquire)
+			== Inkeys::UI::Setting::InteractiveWindowOperation::None)
+			settingInteractiveOperation.store(
+				Inkeys::UI::Setting::InteractiveWindowOperation::Size,
+				memory_order_release);
+		return 0;
+	case WM_EXITSIZEMOVE:
+		settingInteractiveOperation.store(
+			Inkeys::UI::Setting::InteractiveWindowOperation::None,
+			memory_order_release);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::Client::Settings);
+		return 0;
 	case WM_DPICHANGED:
 	{
 		UpdateSettingScale(LOWORD(wParam));
-		(void)ApplySettingDwmFrame(hWnd);
 		{
 			lock_guard stateLock(settingStateMutex);
 			// DPI 变化只请求字体图集重建，普通窗口缩放不触碰字体资源。
@@ -1101,12 +1113,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		return 0;
 	}
-	case WM_DWMCOMPOSITIONCHANGED:
-	case WM_DWMCOLORIZATIONCOLORCHANGED:
-		RefreshSettingNonClientFrame(hWnd);
-		Inkeys::UI::RenderPipeline::Request(
-			Inkeys::UI::RenderPipeline::Client::Settings);
-		return 0;
 	case WM_THEMECHANGED:
 	case WM_SETTINGCHANGE:
 		settingThemeSerial.fetch_add(1, memory_order_release);
@@ -1116,9 +1122,6 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_ACTIVATE:
 		settingWindowActive.store(LOWORD(wParam) != WA_INACTIVE,
 			memory_order_release);
-		// 让 DWM 重新应用系统默认 active/inactive border 状态。
-		if (settingDwmFrameEnabled.load(memory_order_acquire))
-			(void)ApplySettingDwmFrame(hWnd);
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		break;
@@ -1133,25 +1136,18 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				static_cast<UINT>(LOWORD(lParam)),
 				static_cast<UINT>(HIWORD(lParam)));
 		}
+		// UI 线程只发布最新尺寸，ResizeBuffers 仍由渲染线程执行。
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::Client::Settings);
 		return 0;
-	case WM_SYSCOMMAND:
-		// 非 DWM 回退路径同样保持“关闭即隐藏”。
-		if ((wParam & 0xFFF0) == SC_CLOSE)
-		{
-			Inkeys::UI::Setting::Hide();
-			return 0;
-		}
-
-		break;
-
 	case WM_CLOSE:
 		Inkeys::UI::Setting::Hide();
 		return 0;
 	case WM_DESTROY:
 	{
-		settingDwmFrameEnabled.store(false, memory_order_release);
+		settingInteractiveOperation.store(
+			Inkeys::UI::Setting::InteractiveWindowOperation::None,
+			memory_order_release);
 		// 防御其他流氓软件关闭我的窗口
 		return 0;
 	}
@@ -4105,6 +4101,11 @@ namespace
 			settingConsumedThemeSerial = themeSerial;
 		}
 
+		// 只有 Move 可复用 compositor 缓存；Size 必须继续 resize/render/present。
+		if (settingInteractiveOperation.load(memory_order_acquire)
+			== Inkeys::UI::Setting::InteractiveWindowOperation::Move)
+			return FrameResult::Idle;
+
 		if (decision.createPresentation && !g_pSwapChain)
 		{
 			if (!CreatePresentation(setting_window, context.epoch))
@@ -4172,6 +4173,16 @@ namespace Inkeys::UI::Setting
 		lock_guard lock(settingLifecycleMutex);
 		if (settingInitialized.load(memory_order_acquire)) return true;
 		if (!setting_window || !settingBusinessQueue.Start()) return false;
+		RECT client{};
+		if (GetClientRect(setting_window, &client))
+		{
+			SettingWindowWidth = static_cast<int>(client.right - client.left);
+			SettingWindowHeight = static_cast<int>(client.bottom - client.top);
+			lock_guard stateLock(settingStateMutex);
+			settingSessionState.QueueResize(
+				static_cast<UINT>(SettingWindowWidth),
+				static_cast<UINT>(SettingWindowHeight));
+		}
 		if (!Inkeys::UI::RenderPipeline::Register(
 			Inkeys::UI::RenderPipeline::Client::Settings, RenderSettingFrame))
 		{
@@ -4209,6 +4220,8 @@ namespace Inkeys::UI::Setting
 	{
 		unique_lock lifecycleLock(settingLifecycleMutex);
 		if (!settingInitialized.exchange(false, memory_order_acq_rel)) return;
+		settingInteractiveOperation.store(
+			InteractiveWindowOperation::None, memory_order_release);
 		{
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);
@@ -4250,6 +4263,9 @@ namespace Inkeys::UI::Setting
 	void Hide()
 	{
 		if (!settingInitialized.load(memory_order_acquire)) return;
+		// Hide 可能由 modal loop 外部触发，不能依赖随后一定收到 EXIT。
+		settingInteractiveOperation.store(
+			InteractiveWindowOperation::None, memory_order_release);
 		{
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetVisible(false);

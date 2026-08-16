@@ -134,15 +134,17 @@ int RunWindowTests()
 
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
-	check((settingStyle & (WS_CAPTION | WS_CLIPCHILDREN | WS_THICKFRAME
-		| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)) ==
-		(WS_CAPTION | WS_CLIPCHILDREN | WS_THICKFRAME
-			| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)
-		&& (settingStyle & WS_POPUP) == 0,
-		"setting standard overlapped style");
+	check((settingStyle & SettingWindowStyle) == SettingWindowStyle
+		&& (settingStyle & WS_CAPTION) == 0,
+		"setting native sizing frame without native caption");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");
+	RECT settingClient{};
+	check(GetClientRect(setting, &settingClient)
+		&& settingClient.right - settingClient.left == 160
+		&& settingClient.bottom - settingClient.top == 90,
+		"setting spec dimensions describe the client area");
 	check(reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0)) != nullptr,
 		"setting icon");
 	check(service.Title(WindowRole::Setting) == L"Window test Setting", "title helper");

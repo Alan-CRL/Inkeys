@@ -644,13 +644,53 @@ namespace Inkeys::Window
 
 			DWORD style = spec.style;
 			DWORD exStyle = spec.exStyle;
+			int windowX = spec.x;
+			int windowY = spec.y;
+			int windowWidth = spec.width;
+			int windowHeight = spec.height;
 			if (IsSetting(spec.role))
 			{
-				// 标准 overlapped style 保留 DWM 外框、Snap 与系统菜单；caption 视觉由客户区自绘。
-				style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
-				exStyle = (exStyle | WS_EX_APPWINDOW) &
+				// Windows 拥有 sizing frame，Setting 只在客户区绘制 caption。
+				style = SettingWindowStyle;
+				exStyle = (exStyle | SettingWindowExStyle) &
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
 				owner = nullptr;
+
+				// Setting spec 的宽高表示期望客户区；恢复原生边框后换算为 window rect。
+				RECT adjusted{ 0, 0, spec.width, spec.height };
+				if (AdjustWindowRectEx(&adjusted, style, FALSE, exStyle))
+				{
+					windowWidth = adjusted.right - adjusted.left;
+					windowHeight = adjusted.bottom - adjusted.top;
+					const POINT center{
+						spec.x + spec.width / 2,
+						spec.y + spec.height / 2 };
+					windowX = center.x - windowWidth / 2;
+					windowY = center.y - windowHeight / 2;
+
+					const HMONITOR monitor = MonitorFromPoint(
+						center, MONITOR_DEFAULTTONEAREST);
+					MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+					if (monitor && GetMonitorInfoW(monitor, &monitorInfo))
+					{
+						const int workWidth = monitorInfo.rcWork.right
+							- monitorInfo.rcWork.left;
+						const int workHeight = monitorInfo.rcWork.bottom
+							- monitorInfo.rcWork.top;
+						if (windowWidth > workWidth) windowWidth = workWidth;
+						if (windowHeight > workHeight) windowHeight = workHeight;
+						windowX = center.x - windowWidth / 2;
+						windowY = center.y - windowHeight / 2;
+						if (windowX < monitorInfo.rcWork.left)
+							windowX = monitorInfo.rcWork.left;
+						if (windowY < monitorInfo.rcWork.top)
+							windowY = monitorInfo.rcWork.top;
+						if (windowX + windowWidth > monitorInfo.rcWork.right)
+							windowX = monitorInfo.rcWork.right - windowWidth;
+						if (windowY + windowHeight > monitorInfo.rcWork.bottom)
+							windowY = monitorInfo.rcWork.bottom - windowHeight;
+					}
+				}
 			}
 			else if (IsDisplayObserver(spec.role))
 			{
@@ -675,10 +715,10 @@ namespace Inkeys::Window
 				record.className.c_str(),
 				spec.title.c_str(),
 				style,
-				spec.x,
-				spec.y,
-				spec.width,
-				spec.height,
+				windowX,
+				windowY,
+				windowWidth,
+				windowHeight,
 				owner,
 				nullptr,
 				instance,

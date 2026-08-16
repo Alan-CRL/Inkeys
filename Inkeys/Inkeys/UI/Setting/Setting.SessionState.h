@@ -13,6 +13,44 @@ namespace Inkeys::UI::Setting
 			|| result == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
 	}
 
+	enum class InteractiveWindowOperation : std::uint8_t
+	{
+		None,
+		Move,
+		Size,
+	};
+
+	[[nodiscard]] constexpr InteractiveWindowOperation
+		InteractiveOperationFromHitTest(LRESULT hit) noexcept
+	{
+		if (hit == HTCAPTION) return InteractiveWindowOperation::Move;
+		switch (hit)
+		{
+		case HTLEFT:
+		case HTRIGHT:
+		case HTTOP:
+		case HTBOTTOM:
+		case HTTOPLEFT:
+		case HTTOPRIGHT:
+		case HTBOTTOMLEFT:
+		case HTBOTTOMRIGHT:
+			return InteractiveWindowOperation::Size;
+		default:
+			return InteractiveWindowOperation::None;
+		}
+	}
+
+	[[nodiscard]] constexpr InteractiveWindowOperation
+		InteractiveOperationFromSystemCommand(WPARAM command) noexcept
+	{
+		switch (command & 0xFFF0U)
+		{
+		case SC_MOVE: return InteractiveWindowOperation::Move;
+		case SC_SIZE: return InteractiveWindowOperation::Size;
+		default: return InteractiveWindowOperation::None;
+		}
+	}
+
 	struct ResizeSnapshot
 	{
 		std::uint64_t serial = 0;

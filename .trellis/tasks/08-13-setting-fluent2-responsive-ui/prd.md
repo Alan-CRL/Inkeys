@@ -22,7 +22,7 @@
 - R8：窗口使用自绘 Fluent 标题栏，同时保留原生拖动、八方向缩放、最小化、最大化、还原、系统菜单、Snap 和 Win+方向键行为。
 - R9：默认窗口为 `960×700 DIP`，最小客户区约 `720×520 DIP`；进程内 Hide/Show 保留窗口状态，进程重启不持久化位置和尺寸。
 - R10：DPI 使用 `systemDpiScale × settingGlobalScale`，自定义倍率统一为 `1.0–2.0`；系统 DPI 或倍率变化才重建字体，普通 resize 只重排和 resize buffers。
-- R11：跟随 Windows 明暗、高对比主题，不新增持久化主题配置。
+- R11：为优先完成浅色视觉修正，Setting 运行时暂时固定使用 ImFluent Light preset，不跟随 Windows 暗色或高对比主题；保留既有主题消息刷新边界，不新增持久化主题配置，后续恢复动态主题另立任务。
 - R12：导航按逻辑 DIP 响应：`>=900` LeftOpen、`760–899` LeftCompact、`<760` CompactOverlay；所有页面共享同一导航数据源。
 - R13：主页完全替换星空/视差，提供作者/软件概览、外部链接和固定宽高比教程图片预留区。
 - R14：迁移所有现有页面的视觉控件，同时保留业务状态、配置持久化、异步 FIFO 和运行时同步行为。
@@ -43,7 +43,7 @@
 - [ ] 隐藏或显示期间的 device epoch 改变均正确重建 resident device resources，无持续内存增长。
 - [ ] 所有原设置页面均可访问，业务交互、保存、异步操作和即时同步行为保持不变。
 - [ ] 主页、导航、控件和标题栏符合 Fluent2/WinUI3 视觉方向，窗口在宽、中、窄三档无重叠或裁切。
-- [ ] 拖动、自由缩放、双击标题栏、最小化、最大化、系统菜单、Snap、Win+方向键、多 DPI 和主题切换正常。
+- [ ] 拖动、自由缩放、双击标题栏、最小化、最大化、系统菜单、Snap、Win+方向键和多 DPI 正常；切换 Windows 明暗/高对比后 Setting 仍保持浅色 preset。
 - [ ] ARM64 Debug 完整 Solution 构建、headless tests 和 `git diff --check` 通过；真实窗口完成动态检查。
 - [ ] 可见空闲帧时间相对同等旧页面无超过约 10% 的持续回退，打开/缩放/切页无明显卡顿或资源增长。
 - [ ] 导航、页面标题、设置卡片、ToggleSwitch、ComboBox、Button 和 Slider 的视觉及动画与固定 ImFluent Demo 的 Fluent2 语言一致，不再混用旧伪 Fluent 控件。
@@ -54,4 +54,5 @@
 - GIF、视频解码与播放。
 - 动画禁用和低功耗专门优化。
 - 新的主题或窗口位置持久化配置。
+- 暗色、高对比样式适配，以及恢复跟随 Windows 主题。
 - 恢复旧 IdtFloating 或替换共享 WARP/CSO 渲染路径。

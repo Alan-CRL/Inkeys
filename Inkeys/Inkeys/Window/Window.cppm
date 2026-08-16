@@ -32,6 +32,10 @@ export namespace Inkeys::Window
 		Count,
 	};
 
+	inline constexpr DWORD SettingWindowStyle = WS_POPUP | WS_THICKFRAME
+		| WS_CLIPCHILDREN | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+	inline constexpr DWORD SettingWindowExStyle = WS_EX_APPWINDOW;
+
 	struct WindowSpec
 	{
 		WindowRole role = WindowRole::Bar;

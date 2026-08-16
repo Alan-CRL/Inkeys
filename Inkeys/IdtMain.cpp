@@ -1351,9 +1351,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		settingSpec.y = SettingWindowY;
 		settingSpec.width = SettingWindowWidth;
 		settingSpec.height = SettingWindowHeight;
-		settingSpec.style = WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME
-			| WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
-		settingSpec.exStyle = WS_EX_APPWINDOW;
+		settingSpec.style = Inkeys::Window::SettingWindowStyle;
+		settingSpec.exStyle = Inkeys::Window::SettingWindowExStyle;
 		settingSpec.windowProc = Inkeys::UI::Setting::WindowProc();
 		settingSpec.largeIcon = applicationIcon;
 		settingSpec.smallIcon = applicationIcon;

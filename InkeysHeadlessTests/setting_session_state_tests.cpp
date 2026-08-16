@@ -18,7 +18,20 @@ int RunSettingSessionStateTests()
 {
 	using Inkeys::UI::Setting::SessionState;
 	using Inkeys::UI::Setting::NavigationLayout;
+	using Inkeys::UI::Setting::InteractiveWindowOperation;
 	int failures = 0;
+
+	if (!Expect(Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTCAPTION)
+		== InteractiveWindowOperation::Move
+		&& Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTBOTTOMRIGHT)
+		== InteractiveWindowOperation::Size
+		&& Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTMAXBUTTON)
+		== InteractiveWindowOperation::None
+		&& Inkeys::UI::Setting::InteractiveOperationFromSystemCommand(SC_MOVE | 2)
+		== InteractiveWindowOperation::Move
+		&& Inkeys::UI::Setting::InteractiveOperationFromSystemCommand(SC_SIZE | 8)
+		== InteractiveWindowOperation::Size,
+		"interactive move and size inputs resolve independently")) ++failures;
 
 	if (!Expect(Inkeys::UI::Setting::NormalizeUserScale(0.5F) == 1.0F
 		&& Inkeys::UI::Setting::NormalizeUserScale(2.5F) == 2.0F
@@ -91,10 +104,12 @@ int RunSettingSessionStateTests()
 	if (!Expect(Inkeys::UI::Setting::ResolveThemeMode(false, true)
 		== Inkeys::UI::Setting::ThemeMode::Light
 		&& Inkeys::UI::Setting::ResolveThemeMode(false, false)
-		== Inkeys::UI::Setting::ThemeMode::Dark
+		== Inkeys::UI::Setting::ThemeMode::Light
 		&& Inkeys::UI::Setting::ResolveThemeMode(true, true)
-		== Inkeys::UI::Setting::ThemeMode::HighContrast,
-		"high contrast overrides the Windows app theme")) ++failures;
+		== Inkeys::UI::Setting::ThemeMode::Light
+		&& Inkeys::UI::Setting::ResolveThemeMode(true, false)
+		== Inkeys::UI::Setting::ThemeMode::Light,
+		"settings temporarily remains light for every system theme")) ++failures;
 
 	SessionState state;
 

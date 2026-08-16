@@ -10,9 +10,9 @@ namespace Inkeys::UI::Setting
 	};
 
 	[[nodiscard]] inline constexpr ThemeMode ResolveThemeMode(
-		bool highContrast, bool appsUseLightTheme) noexcept
+		bool /*highContrast*/, bool /*appsUseLightTheme*/) noexcept
 	{
-		if (highContrast) return ThemeMode::HighContrast;
-		return appsUseLightTheme ? ThemeMode::Light : ThemeMode::Dark;
+		// 浅色样式调整完成前，Settings 暂不跟随系统主题切换。
+		return ThemeMode::Light;
 	}
 }
