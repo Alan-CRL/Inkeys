@@ -1,421 +1,250 @@
 ﻿#include "IdtState.h"
 
+#include "IdtConfiguration.h"
 #include "IdtDraw.h"
-#include "IdtDrawpad.h"
-#include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtPlug-in.h"
+#include "Inkeys/Business/LegacyDrawState.hpp"
+#include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
-#include "IdtConfiguration.h"
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <thread>
 
 StateModeClass stateMode;
 
+namespace
+{
+	using Inkeys::Drawing::Draw3::Bridge::ProductState;
+	using Inkeys::Drawing::Draw3::Bridge::Tool;
+
+	std::uint32_t ColorRefToRgba(COLORREF color) noexcept
+	{
+		return (static_cast<std::uint32_t>(GetRValue(color)) << 24) |
+			(static_cast<std::uint32_t>(GetGValue(color)) << 16) |
+			(static_cast<std::uint32_t>(GetBValue(color)) << 8) | 0xffu;
+	}
+
+	Tool CurrentDraw3Tool() noexcept
+	{
+		if (stateMode.laserActive) return Tool::Laser;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser)
+		{
+			return Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
+				setlist.eraserSetting.eraserMode) == 1
+				? Tool::SpeedEraser
+				: Tool::FixedEraser;
+		}
+
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+		{
+			switch (stateMode.Shape.ModeSelect)
+			{
+			case ShapeModeSelectEnum::IdtShapeStraightLine1:
+				return Tool::SolidLine;
+			case ShapeModeSelectEnum::IdtShapeDashedLine1:
+				return Tool::DashedLine;
+			case ShapeModeSelectEnum::IdtShapeRectangle1:
+				return Tool::OutlineRectangle;
+			default:
+				return Tool::SolidLine;
+			}
+		}
+
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+			return Tool::Highlighter;
+		return Tool::Pen;
+	}
+
+	void PublishDraw3State() noexcept
+	{
+		ProductState state{};
+		state.tool = CurrentDraw3Tool();
+		state.widthDip = (std::max)(0.1f, GetPenWidth());
+		state.colorRgba = ColorRefToRgba(GetPenColor());
+		state.clickThrough =
+			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection ||
+			penetrate.select;
+		Inkeys::Drawing::Draw3::PublishProductState(state);
+	}
+}
+
+void SyncDraw3State()
+{
+	PublishDraw3State();
+}
+
 bool SetPenWidth(float targetWidth, bool setMemory)
 {
+	if (targetWidth <= 0.0f) return false;
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) stateMode.Pen.Brush1.width = targetWidth;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) stateMode.Pen.Highlighter1.width = targetWidth;
-		else return false;
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
+			stateMode.Pen.Brush1.width = targetWidth;
+		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+			stateMode.Pen.Highlighter1.width = targetWidth;
+		else
+			return false;
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.width = targetWidth;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.width = targetWidth;
-		else return false;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
+			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+			stateMode.Shape.StraightLine1.width = targetWidth;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
+			stateMode.Shape.Rectangle1.width = targetWidth;
+		else
+			return false;
 	}
-	else return false;
+	else
+		return false;
 
 	if (setMemory) SetMemory();
-
+	PublishDraw3State();
 	return true;
 }
+
 bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) stateMode.Pen.Brush1.color = targetColor;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) stateMode.Pen.Highlighter1.color = targetColor;
-		else return false;
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
+			stateMode.Pen.Brush1.color = targetColor;
+		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+			stateMode.Pen.Highlighter1.color = targetColor;
+		else
+			return false;
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.color = targetColor;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.color = targetColor;
-		else return false;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
+			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+			stateMode.Shape.StraightLine1.color = targetColor;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
+			stateMode.Shape.Rectangle1.color = targetColor;
+		else
+			return false;
 	}
-	else return false;
+	else
+		return false;
 
 	if (setMemory) SetMemory();
-
-	// 临时方案：改变 UI 背景颜色
-	if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-	else BackgroundColorMode = 1;
-
+	BackgroundColorMode = computeContrast(targetColor, RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	PublishDraw3State();
 	return true;
 }
+
 float GetPenWidth()
 {
-	float ret = 0.0f;
-
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) ret = stateMode.Pen.Brush1.width;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) ret = stateMode.Pen.Highlighter1.width;
+		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+			? stateMode.Pen.Highlighter1.width
+			: stateMode.Pen.Brush1.width;
 	}
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) ret = stateMode.Pen.Brush1.width;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) ret = stateMode.Pen.Brush1.width;
+		return stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+			? stateMode.Shape.Rectangle1.width
+			: stateMode.Shape.StraightLine1.width;
 	}
-
-	return ret;
+	return stateMode.Pen.Brush1.width;
 }
+
 COLORREF GetPenColor()
 {
-	COLORREF ret = RGBA(0, 0, 0, 255);
-
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) ret = stateMode.Pen.Brush1.color;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) ret = stateMode.Pen.Highlighter1.color;
+		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+			? stateMode.Pen.Highlighter1.color
+			: stateMode.Pen.Brush1.color;
 	}
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) ret = stateMode.Pen.Brush1.color;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) ret = stateMode.Pen.Brush1.color;
+		return stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+			? stateMode.Shape.Rectangle1.color
+			: stateMode.Shape.StraightLine1.color;
 	}
-	return ret;
+	return stateMode.Pen.Brush1.color;
 }
 
 bool ChangeStateModeToSelection()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-
-	// 标识绘制等待
+	// selection 必须恢复旧 UI 的定格/穿透状态，同时不再等待 Draw2 绘制全局。
+	if (!FreezeFrame.select || penetrate.select)
 	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
+		FreezeFrame.mode = 0;
+		FreezeFrame.select = false;
 	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
-		if (penetrate.select) penetrate.select = false;
-
-		if (state == 1.1) state = 1;
-
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		BackgroundColorMode = 0;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	if (penetrate.select) penetrate.select = false;
+	if (state == 1.1) state = 1;
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+	stateMode.laserActive = false;
+	BackgroundColorMode = 0;
+	PublishDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToPen()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		COLORREF targetColor;
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-		{
-			if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
-		}
-		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-		{
-			if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
-		}
-
-		if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-		else BackgroundColorMode = 1;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+	stateMode.laserActive = false;
+	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	PublishDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToShape()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		COLORREF targetColor;
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-		{
-			if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
-		}
-		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-		{
-			if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
-		}
-
-		if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-		else BackgroundColorMode = 1;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
+	stateMode.laserActive = false;
+	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	PublishDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToEraser()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		BackgroundColorMode = 0;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
+	stateMode.laserActive = false;
+	BackgroundColorMode = 0;
+	PublishDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToTouchTest()
 {
-	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtTouchTest;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtTouchTest;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
-	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtTouchTest;
-	return true;
+	// 输入测试尚未接入 Draw3，入口由设置页隐藏。
+	return false;
 }
 
-// 状态监测
 void StateMonitoring()
 {
-	chrono::high_resolution_clock::time_point StateMonitoringManipulated = chrono::high_resolution_clock::now();
+	// Draw3 bridge 自己维护状态快照，旧的自动重启监视器不再介入绘制。
 	while (!offSignal)
-	{
-		if (penetrate.select)
-		{
-			// 穿透状态可以跨越程序退出，内层等待也必须可中断。
-			while (!offSignal && penetrate.select)
-				this_thread::sleep_for(chrono::milliseconds(100));
-			StateMonitoringManipulated = chrono::high_resolution_clock::now();
-		}
-
-		if (stateMode.StateModeSelect == stateMode.StateModeSelectTarget && stateMode.StateModeSelect == stateMode.StateModeSelectEcho) StateMonitoringManipulated = chrono::high_resolution_clock::now();
-		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StateMonitoringManipulated).count() >= 3000 && !offSignal)
-		{
-			MessageBox(floating_window, L"There is a problem with the state of the whiteboard, click OK to restart 智绘教Inkeys to try to solve the problem.(#6)\n画板状态出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。(#6)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			RestartProgram();
-
-			return;
-		}
-
-		this_thread::sleep_for(chrono::milliseconds(500));
-	}
+		std::this_thread::sleep_for(std::chrono::milliseconds(250));
 }
 
 bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
 {
+	if (!stateModeInfo) return false;
+	stateModeInfo->brushWidth = GetPenWidth();
+	stateModeInfo->brushColor = GetPenColor();
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
-
-			stateModeInfo->brushMode = 1;
-		}
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Highlighter1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Highlighter1.color;
-
-			stateModeInfo->brushMode = 2;
-		}
-		else return false;
-	}
+		stateModeInfo->brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 2.0f : 1.0f;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
-
-			stateModeInfo->brushMode = 3;
-		}
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
-
-			stateModeInfo->brushMode = 4;
-		}
-		else return false;
-	}
-	else return false;
-
+		stateModeInfo->brushMode = stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1 ? 4.0f : 3.0f;
+	else
+		return false;
 	return true;
 }

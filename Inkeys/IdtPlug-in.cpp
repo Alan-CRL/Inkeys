@@ -33,17 +33,15 @@ import Inkeys.Window;
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
-#include "IdtDrawpad.h"
 #include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtMagnification.h"
-#include "IdtRts.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 #include "IdtOther.h"
-#include "IdtHistoricalDrawpad.h"
 #include "IdtImage.h"
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtI18n.h"
+#include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 
 #include <objbase.h>
 #include <psapi.h>
@@ -431,12 +429,18 @@ bool StartPptTakeoverAnnotation(int toolType)
 	{
 		penetrate.select = false;
 		if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+		SyncDraw3State();
 	}
 
 	bool res = true;
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 		res = ChangeStateModeToPen();
-	if (res) stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+	if (res)
+	{
+		stateMode.laserActive = false;
+		stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+		SyncDraw3State();
+	}
 
 	barUISet.barButtonSet.UpdateDrawButtonStyle();
 	barUISet.UpdateRendering();
@@ -451,6 +455,7 @@ void PptInfo()
 	bool Initialization = false; // 控件初始化完毕
 	int publishedCurrentPage = -2;
 	int publishedTotalPage = -2;
+	int requestedDraw3Page = -2;
 	for (; !offSignal;)
 	{
 		// Ppt 信息监测 | 控件信息加载
@@ -492,6 +497,9 @@ void PptInfo()
 
 			FreezePPT = false;
 			Initialization = false;
+			requestedDraw3Page = -2;
+			PptInfoStateBuffer.CurrentPage = -1;
+			PptInfoStateBuffer.TotalPage = -1;
 		}
 		else if (Initialization && PptInfoState.TotalPage != -1 && config.PlugIn.PPTHelper.AutoTakeOver && !pptTakeoverConsumedInCurrentShow)
 		{
@@ -510,6 +518,32 @@ void PptInfo()
 					}
 				}
 			}
+		}
+
+		if (PptInfoState.CurrentPage > 0 && PptInfoState.TotalPage > 0)
+		{
+			if (requestedDraw3Page != PptInfoState.CurrentPage)
+			{
+				// COM 页码是唯一事实源，Draw3 只接收零基绝对页码，避免双重相对翻页。
+				Inkeys::Drawing::Draw3::PublishProductPage(
+					static_cast<std::uint32_t>(PptInfoState.CurrentPage - 1));
+				requestedDraw3Page = PptInfoState.CurrentPage;
+			}
+			const auto draw3Snapshot = Inkeys::Drawing::Draw3::ProductHost().RuntimeSnapshot();
+			if (draw3Snapshot.running &&
+				draw3Snapshot.currentPageIndex ==
+					static_cast<std::size_t>(PptInfoState.CurrentPage - 1))
+			{
+				// UI 页码只反映 Draw3 文档已经完成的页面切换。
+				PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage;
+				PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
+			}
+		}
+		else
+		{
+			requestedDraw3Page = -2;
+			PptInfoStateBuffer.CurrentPage = -1;
+			PptInfoStateBuffer.TotalPage = -1;
 		}
 
 		Inkeys::UI::Ppt::PublishPresentationVisible(Initialization);

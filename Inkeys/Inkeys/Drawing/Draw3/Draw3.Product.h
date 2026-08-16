@@ -1,0 +1,26 @@
+#pragma once
+
+#include "Draw3.Bridge.h"
+#include "Draw3.Host.h"
+
+#include <windows.h>
+
+namespace Inkeys::Drawing::Draw3
+{
+	// 产品只允许这一份 Host；Window Service 仍拥有 Drawpad HWND。
+	// 创建 HWND 前由透明呈现模块探测是否应预置不可变的 DComp 样式。
+	bool ShouldPreconfigureNoRedirectionBitmap();
+	Host& ProductHost() noexcept;
+	bool StartProduct(HWND drawpad, HostStyleCallbacks callbacks = {},
+		HostStartOptions options = {});
+	void StopProduct() noexcept;
+	bool ProductRunning() noexcept;
+	bool ProductFirstFrameReady() noexcept;
+	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+	void PublishProductState(const Bridge::ProductState& state) noexcept;
+	void PublishProductPage(std::uint32_t page) noexcept;
+	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept;
+}
+
+// Window Service 的 Drawpad WndProc 入口；不创建或销毁 HWND。
+LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

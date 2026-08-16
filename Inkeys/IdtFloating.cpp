@@ -358,7 +358,6 @@ namespace
 				&& mouseClickCollapseDeadline <= now;
 			const bool collapseMouseUp = mouseUpCollapsePending
 				&& mouseUpCollapseDeadline <= now;
-			const UINT mouseUpMessage = mouseUpCollapseMessage;
 			if (collapseClick) mouseClickCollapsePending = false;
 			if (collapseMouseUp) mouseUpCollapsePending = false;
 
@@ -376,8 +375,7 @@ namespace
 					if (IDTLogger)
 						IDTLogger->info("[鼠标钩子][MouseUpCollapse] 修正错误的抬起");
 
-					// 手动触发通知
-					HandleMouseInput(drawpad_window, mouseUpMessage, 0, 0);
+					// Draw3 RTS 是唯一输入 producer；旧的兼容 MouseUp 不再补发到 Drawpad。
 				}
 				confirmaNoMouUpSignal = false;
 			}

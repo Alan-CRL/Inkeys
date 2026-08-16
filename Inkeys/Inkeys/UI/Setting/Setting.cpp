@@ -4,22 +4,21 @@ module;
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtHistoricalDrawpad.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtImage.h"
 #include "../../../IdtMagnification.h"
 #include "../../../IdtOther.h"
 #include "../../../IdtPlug-in.h"
-#include "../../../IdtRts.h"
 #include "../../../IdtState.h"
+#include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <algorithm>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
@@ -1195,7 +1194,8 @@ SettingSessionCoroutine RunSettingSession()
 		bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
 		bool PointAdsorption = setlist.pointAdsorption;
 		bool SmoothWriting = setlist.smoothWriting;
-		int EraserMode = setlist.eraserSetting.eraserMode;
+		int EraserMode = Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
+			setlist.eraserSetting.eraserMode);
 		bool HideTouchPointer = setlist.hideTouchPointer;
 
 		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
@@ -1539,13 +1539,7 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 
-					// 调试软件
-					{
-						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,660.0f * settingGlobalScale });
-						ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-						if (Widgets::button.Navigation(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str(), { 150.0f * settingGlobalScale,30.0f * settingGlobalScale }, settingTab == settingTabEnum::tab9, Widgets::FluentColor::TextPrimary, ImVec2(0.5f, 0.5f))) settingTab = settingTabEnum::tab9;
-					}
+					// Draw3 输入测试和程序调测尚未准备好，暂时隐藏入口。
 
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -1995,6 +1989,8 @@ SettingSessionCoroutine RunSettingSession()
 						}
 						ImGui::EndChild();
 					}
+					// Draw3 的文件保存与超级恢复尚未准备好，保留兼容配置代码但隐藏入口。
+#if 0
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -2119,6 +2115,7 @@ SettingSessionCoroutine RunSettingSession()
 						}
 						ImGui::EndChild();
 					}
+#endif
 
 					{
 						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
@@ -3720,7 +3717,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("绘制#2", { settingItemWidth * settingGlobalScale,245.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("绘制#2", { settingItemWidth * settingGlobalScale,100.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3729,6 +3726,8 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.AIDraw.N).c_str());
 						}
 
+						// Draw3 的自动直线拉直尚未准备好，保留兼容配置代码但隐藏卡片。
+#if 0
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -3799,6 +3798,7 @@ SettingSessionCoroutine RunSettingSession()
 							}
 							ImGui::EndChild();
 						}
+#endif
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -3938,24 +3938,26 @@ SettingSessionCoroutine RunSettingSession()
 
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 
-								vector<char*> vec;
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode3)).c_str()));
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode2)).c_str()));
-								vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode1)).c_str()));
+				vector<char*> vec;
+				// Draw3 只保留速度橡皮和固定橡皮，压感模式不再显示。
+				vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode2)).c_str()));
+				vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode1)).c_str()));
 
-								if (Widgets::combo.Begin("##橡皮粗细计算方式", vec[EraserMode], static_cast<int>(vec.size())))
-								{
-									for (int i = 0; i < vec.size(); i++)
+				const int eraserIndex = (std::clamp)(EraserMode, 1, 2) - 1;
+				if (Widgets::combo.Begin("##橡皮粗细计算方式", vec[eraserIndex], static_cast<int>(vec.size())))
+				{
+					for (int i = 0; i < vec.size(); i++)
 									{
 										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
 
-										bool is_selected = (EraserMode == i);
-										if (Widgets::combo.Selectable(vec[i], is_selected))
-										{
-											EraserMode = i;
+						bool is_selected = (eraserIndex == i);
+						if (Widgets::combo.Selectable(vec[i], is_selected))
+						{
+							EraserMode = i + 1;
 											if (setlist.eraserSetting.eraserMode != EraserMode)
 											{
 												setlist.eraserSetting.eraserMode = EraserMode;
+												SyncDraw3State();
 												WriteSetting();
 											}
 										}
@@ -4048,8 +4050,7 @@ SettingSessionCoroutine RunSettingSession()
 									setlist.performanceSetting.preparationQuantity = PreparationQuantity;
 									WriteSetting();
 
-									// 落笔预备
-									ResetPrepareCanvas();
+									// Draw3 尚未支持落笔预备画布，保留配置但不启动 Draw2 worker。
 								}
 							}
 							{
@@ -8528,7 +8529,8 @@ SettingSessionCoroutine RunSettingSession()
 
 				// ---------------------
 
-				// 程序调测
+				// 程序调测（Draw3 输入测试未准备好，产品编译路径隐藏）
+#if 0
 				case settingTabEnum::tab9:
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
@@ -8760,6 +8762,7 @@ SettingSessionCoroutine RunSettingSession()
 					ImGui::EndChild();
 					break;
 				}
+#endif
 				}
 
 				// 底栏：更新信息提示栏

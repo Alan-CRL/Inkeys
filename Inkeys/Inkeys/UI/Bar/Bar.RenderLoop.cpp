@@ -7,7 +7,6 @@ module;
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
@@ -3120,19 +3119,19 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						{ BarUISetShapeEnum::DrawAttributeBar_Laser,
 							BarUISetSvgEnum::DrawAttributeBar_Laser,
 							BarUISetWordEnum::DrawAttributeBar_Laser,
-							40.0, false, false, false, nullptr, nullptr },
+							40.0, true, stateMode.laserActive, false, nullptr, nullptr },
 						{ BarUISetShapeEnum::DrawAttributeBar_Highlight1,
 							BarUISetSvgEnum::DrawAttributeBar_Highlight1,
 							BarUISetWordEnum::DrawAttributeBar_Highlight1,
 							75.0, true,
-							stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1,
+							!stateMode.laserActive && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1,
 							state.barState.drawAttributeBar.highlight1Press,
 							&state.drawAttributeHighlightHoverStage, &state.drawAttributeHighlightPressScale },
 						{ BarUISetShapeEnum::DrawAttributeBar_Brush1,
 							BarUISetSvgEnum::DrawAttributeBar_Brush1,
 							BarUISetWordEnum::DrawAttributeBar_Brush1,
 							110.0, true,
-							stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1,
+							!stateMode.laserActive && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1,
 							state.barState.drawAttributeBar.brush1Press,
 							&state.drawAttributeBrushHoverStage, &state.drawAttributeBrushPressScale },
 						{ BarUISetShapeEnum::DrawAttributeBar_SoftPen,

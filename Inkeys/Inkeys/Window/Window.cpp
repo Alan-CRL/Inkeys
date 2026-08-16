@@ -305,6 +305,17 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] bool SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
+		{
+			if ((setMask & clearMask) != 0) return false;
+			Command command;
+			command.type = CommandType::SetExtendedStyleFlags;
+			command.role = role;
+			command.setMask = setMask;
+			command.clearMask = clearMask;
+			return Submit(std::move(command));
+		}
+
 		[[nodiscard]] bool RequestTopmostRefresh()
 		{
 			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
@@ -352,6 +363,7 @@ namespace Inkeys::Window
 			HideAll,
 			SetBounds,
 			SetClickThrough,
+			SetExtendedStyleFlags,
 			RefreshTopmost,
 			PromotePpt,
 			BindMessages,
@@ -364,6 +376,8 @@ namespace Inkeys::Window
 			WindowRole role = WindowRole::Bar;
 			RECT bounds{};
 			bool enabled = false;
+			DWORD setMask = 0;
+			DWORD clearMask = 0;
 			Message::BindOptions bindOptions{};
 			std::optional<WindowSpec> spec;
 			std::shared_ptr<std::promise<bool>> completion;
@@ -939,6 +953,25 @@ namespace Inkeys::Window
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
 					SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
 			}
+			case CommandType::SetExtendedStyleFlags:
+			{
+				LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+				exStyle |= static_cast<LONG_PTR>(command.setMask);
+				exStyle &= ~static_cast<LONG_PTR>(command.clearMask);
+				SetLastError(ERROR_SUCCESS);
+				const LONG_PTR previous = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle);
+				if (!previous && GetLastError() != ERROR_SUCCESS) return false;
+				if (!SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+					SWP_NOACTIVATE | SWP_FRAMECHANGED)) return false;
+				// 某些 DComp HWND 会拒绝清除 NOREDIRECTIONBITMAP；写后核对，禁止误报后端切换成功。
+				SetLastError(ERROR_SUCCESS);
+				const LONG_PTR applied = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+				if (!applied && GetLastError() != ERROR_SUCCESS) return false;
+				return (applied & static_cast<LONG_PTR>(command.setMask)) ==
+					static_cast<LONG_PTR>(command.setMask) &&
+					(applied & static_cast<LONG_PTR>(command.clearMask)) == 0;
+			}
 			case CommandType::RefreshTopmost:
 			{
 				const HWND root = OverlayRoot();
@@ -1131,6 +1164,10 @@ namespace Inkeys::Window
 	bool Service::HideAllUserWindows() { return impl_->HideAllUserWindows(); }
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
+	bool Service::SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
+	{
+		return impl_->SetExtendedStyleFlags(role, setMask, clearMask);
+	}
 	bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
 	bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
 	bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }

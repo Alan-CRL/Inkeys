@@ -4,7 +4,6 @@ module;
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include <d2d1helper.h>
@@ -3186,7 +3185,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								if (button.closePanel)
 									barState.geometryAttribute = false;
 								else if (button.shapeMode.has_value())
+								{
 									stateMode.Shape.ModeSelect = button.shapeMode.value();
+									SyncDraw3State();
+								}
 								else SetPenWidth(static_cast<float>(
 									GetBarThicknessPresetPx(
 										PenModeSelectEnum::IdtPenBrush1,
@@ -4881,6 +4883,34 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					}
 				}
 
+				// 激光笔
+				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					continueFlag = false;
+					if (msg.message == WM_LBUTTONDOWN)
+					{
+						while (true)
+						{
+							if (!WaitForBarInteractionMessage(msg, EM_MOUSE, floating_window))
+								return BarInteractionStageResult::Shutdown;
+							if (obj->IsClick(msg.x, msg.y, barStyle.zoom) && !msg.lbutton)
+							{
+								ClosePenTypeMenu();
+								stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+								stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+								stateMode.laserActive = true;
+								SyncDraw3State();
+								barButtonSet.UpdateDrawButtonStyle();
+								UpdateRendering();
+								break;
+							}
+							if (!obj->IsClick(msg.x, msg.y, barStyle.zoom)) break;
+						}
+						SuppressHoverUntilPointerMove();
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
+					}
+				}
+
 				// 画笔
 				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 				{
@@ -4909,8 +4939,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									if (barState.drawAttributeBar.thicknessViewMode
 										== ThicknessViewMode::FineDial)
 										CancelThicknessFineDialSelection();
+									stateMode.laserActive = false;
 									stateMode.Pen.ModeSelect =
 										PenModeSelectEnum::IdtPenBrush1;
+									SyncDraw3State();
 									barButtonSet.UpdateDrawButtonStyle();
 									UpdateRendering();
 								}
@@ -4954,8 +4986,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									if (barState.drawAttributeBar.thicknessViewMode
 										== ThicknessViewMode::FineDial)
 										CancelThicknessFineDialSelection();
+									stateMode.laserActive = false;
 									stateMode.Pen.ModeSelect =
 										PenModeSelectEnum::IdtPenHighlighter1;
+									SyncDraw3State();
 									barButtonSet.UpdateDrawButtonStyle();
 									UpdateRendering();
 								}

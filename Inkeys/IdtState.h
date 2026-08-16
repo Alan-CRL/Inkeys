@@ -52,8 +52,8 @@ public:
 	StateModeSelectEnum StateModeSelect = StateModeSelectEnum::IdtSelection;
 	StateModeSelectEnum StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
 	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-
-	IdtAtomic<bool> cleanPageSign = false;
+	// Draw3 激光是独立工具状态，不复用旧笔型枚举值。
+	bool laserActive = false;
 
 	struct
 	{
@@ -102,6 +102,8 @@ bool ChangeStateModeToPen();
 bool ChangeStateModeToShape();
 bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();
+// 将旧 UI 的穿透/工具状态发布到 Draw3 bridge。
+void SyncDraw3State();
 
 void StateMonitoring();
 

@@ -103,6 +103,27 @@
     <Filter Include="Modules\Inkeys\UI\RenderPipeline\Assets\ImGui">
       <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\Drawing">
+      <UniqueIdentifier>{b5d8b49f-6ec9-4d29-8d42-44fba8d79a21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Drawing\Draw3">
+      <UniqueIdentifier>{9a9df82f-6a35-4e7d-9c25-2d7d15b0ab10}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Drawing\Draw3\Assets">
+      <UniqueIdentifier>{7f6b3f95-73e8-4a57-8b4c-cc1a4d28d6a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\InkStrokeModeler">
+      <UniqueIdentifier>{a4d8ecb4-7cb8-45ba-9df2-8ad865d84a78}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Additional\InkStrokeModeler">
+      <UniqueIdentifier>{7c224ccd-9ef5-462f-a9ab-2c461fcf90f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Additional\Abseil">
+      <UniqueIdentifier>{28b10c1c-a4c5-4c96-9228-4f53ffb8c2d8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="资源文件\Draw3">
+      <UniqueIdentifier>{c55da2a9-5b3b-4a22-9f8a-9a0b450a4a42}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -291,6 +312,18 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Graphics\Surface.Core.hpp">
       <Filter>Modules\Inkeys\Graphics</Filter>
     </ClInclude>
@@ -302,6 +335,12 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
       <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\**\*.h">
+      <Filter>头文件\Additional\InkStrokeModeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\**\*.h">
+      <Filter>头文件\Additional\InkStrokeModeler</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -326,18 +365,18 @@
     <ClCompile Include="IdtMain.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtDrawpad.cpp">
+    <None Include="IdtDrawpad.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtRts.cpp">
+    </None>
+    <None Include="IdtRts.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
+    </None>
     <ClCompile Include="IdtImage.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtHistoricalDrawpad.cpp">
+    <None Include="IdtHistoricalDrawpad.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
+    </None>
     <ClCompile Include="IdtFreezeFrame.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -351,6 +390,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtState.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDrawpadFacade.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IdtI18n.cpp">
@@ -431,9 +473,9 @@
     <ClCompile Include="ExtraInclude.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="IdtDrawpadList.cpp">
+    <None Include="IdtDrawpadList.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
+    </None>
     <ClCompile Include="Launch\IdtLaunchState.cpp">
       <Filter>源文件\Launch</Filter>
     </ClCompile>
@@ -593,9 +635,6 @@
     <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
-    <ClCompile Include="IdtHistoricalDrawpad.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
@@ -649,6 +688,390 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Display\Display.cpp">
       <Filter>Modules\Inkeys\Display</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DrawingController.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.GraphicsInitialization.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.GraphicsInitialization.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkDocument.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkDocument.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistory.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistory.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistoryGpu.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistoryGpu.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkPrediction.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkPrediction.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.LaserParticles.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.LaserParticles.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.LaserParticleSystem.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Renderer.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Renderer.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Win7Compat.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WindowControl.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WindowControl.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Bridge.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\types.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\params.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\utils.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\status\status.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\status\statusor.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\status\status_payload_printer.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\status\internal\status_internal.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\numbers.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\str_cat.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\substitute.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\stringify_sink.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\str_format\arg.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\str_format\bind.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\str_format\float_conversion.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\raw_logging.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\spinlock.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\spinlock_wait.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\strerror.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\cycleclock.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\sysinfo.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\low_level_alloc.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\base\internal\thread_identity.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\debugging\leak_check.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\debugging\symbolize.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\numeric\int128.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\mutex.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\internal\create_thread_identity.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\internal\graphcycles.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\internal\kernel_timeout.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\internal\per_thread_sem.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\internal\waiter_base.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\synchronization\internal\win32_waiter.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\debugging\stacktrace.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\clock.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\time.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\duration.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\civil_time.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\format.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\civil_time_detail.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_fixed.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_format.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_if.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_info.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_impl.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_libc.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_lookup.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\time_zone_posix.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\time\internal\cctz\src\zone_info_source.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\crc\internal\crc.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\crc\internal\crc_cord_state.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\crc\internal\crc_memcpy_fallback.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\crc\internal\crc_x86_arm_combined.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\crc\crc32c.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\ascii.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\charconv.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\cord.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\escaping.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\match.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\charconv_bigint.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\charconv_parse.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cord_internal.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cord_rep_btree.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cord_rep_btree_navigator.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cord_rep_btree_reader.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cord_rep_consume.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cord_rep_crc.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cordz_handle.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\cordz_info.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\escaping.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\memutil.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\str_format\extension.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\str_format\output.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\str_format\parser.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\absl\strings\internal\utf8.cc">
+      <Filter>源文件\Additional\Abseil</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -995,6 +1418,42 @@
     <None Include="IdtWindow.h">
       <Filter>头文件</Filter>
     </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="additional\ink_stroke_modeler\internal\type_matchers.cc">
+      <Filter>源文件\Additional\InkStrokeModeler</Filter>
+    </None>
+    <None Include="additional\ink_stroke_modeler\README.md">
+      <Filter>头文件\Additional\InkStrokeModeler</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\ttf\Segoe Fluent Icons.ttf">
@@ -1033,6 +1492,18 @@
     </FxCompile>
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>

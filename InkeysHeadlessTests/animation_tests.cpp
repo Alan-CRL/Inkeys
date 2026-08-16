@@ -34,6 +34,8 @@ int RunPptUiTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
+int RunDraw3BridgeTests();
+int RunDraw3ContactInputTests();
 
 namespace
 {
@@ -902,6 +904,8 @@ int main(int argc, char** argv)
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();
+	failureCount += RunDraw3BridgeTests();
+	failureCount += RunDraw3ContactInputTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

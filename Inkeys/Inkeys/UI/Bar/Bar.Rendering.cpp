@@ -8,7 +8,6 @@ module;
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
 #include <cstdio>

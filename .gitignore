@@ -16,6 +16,7 @@
 /Inkeys/Build/
 /InkeysHeadlessTests/Build/
 /PptCOM/Build/
+/Inkeys/Inkeys/Drawing/Draw3/Assets/*.cso
 
 # Project-local cache
 /packages/

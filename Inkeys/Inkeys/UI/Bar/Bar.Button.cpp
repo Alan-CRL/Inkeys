@@ -4,10 +4,8 @@ module;
 
 // 历史遗留问题
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtHistoricalDrawpad.h"
-#include "../../../IdtImage.h"
 #include "../../../IdtState.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../Window/Window.Legacy.hpp"
@@ -263,6 +261,12 @@ void BarButtonSetClass::PresetInitialization()
 					}
 					else
 					{
+						if (stateMode.laserActive)
+						{
+							stateMode.laserActive = false;
+							SyncDraw3State();
+							this->UpdateDrawButtonStyle();
+						}
 						if (!barUISet.TryBeginToggle(
 							BarToggleChannel::DrawAttribute)) return;
 						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
@@ -274,7 +278,11 @@ void BarButtonSetClass::PresetInitialization()
 						}
 
 						// 当穿透模式下再次点击绘制按钮，则退出穿透
-						if (penetrate.select) penetrate.select = false;
+						if (penetrate.select)
+						{
+							penetrate.select = false;
+							SyncDraw3State();
+						}
 					}
 				};
 		}
@@ -396,11 +404,8 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					// 额外的检查
-					if (!RecallImage.empty() || (!FirstDraw && RecallImagePeak == 0))
-					{
-						IdtRecall();
-					}
+					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
+						Inkeys::Drawing::Draw3::Bridge::CommandType::Undo);
 
 					// TODO 撤回库重做后需要试试检测撤回状态，要支持按键变灰
 				};
@@ -441,8 +446,10 @@ void BarButtonSetClass::PresetInitialization()
 					{
 						penetrate.select = false;
 						if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+						SyncDraw3State();
 					}
-					stateMode.cleanPageSign = true;
+					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
+						Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
 				};
 		}
 
@@ -482,11 +489,13 @@ void BarButtonSetClass::PresetInitialization()
 						{
 							penetrate.select = false;
 							if (FreezeFrame.mode == 2) FreezeFrame.mode = 1;
+							SyncDraw3State();
 						}
 						else
 						{
 							if (FreezeFrame.mode == 1) FreezeFrame.mode = 2;
 							penetrate.select = true;
+							SyncDraw3State();
 						}
 					}
 				};
@@ -526,6 +535,7 @@ void BarButtonSetClass::PresetInitialization()
 					{
 						FreezeFrame.mode = 1;
 						penetrate.select = false;
+						SyncDraw3State();
 
 						if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
 					}
@@ -533,6 +543,7 @@ void BarButtonSetClass::PresetInitialization()
 					{
 						FreezeFrame.mode = 0;
 						FreezeFrame.select = false;
+						SyncDraw3State();
 					}
 				};
 		}
@@ -780,9 +791,10 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
+	bool laser = selected && stateMode.laserActive;
 	bool highlighter =
-		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
-	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0);
+		!laser && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
+	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0) + (laser ? 4 : 0);
 	if (drawButtonStyleKey == styleKey) return;
 
 	lock_guard<mutex> lock(mtx);
@@ -790,8 +802,8 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 	auto button = preset[(int)BarButtonPresetEnum::Draw];
 	if (!button) return;
 	button->TransitionContent(
-		highlighter ? L"barHighlighter1" : L"barBrush1",
-		selected ? (highlighter ? L"荧光笔" : L"硬笔") : L"绘制");
+		laser ? L"barLaser" : (highlighter ? L"barHighlighter1" : L"barBrush1"),
+		selected ? (laser ? L"激光笔" : (highlighter ? L"荧光笔" : L"硬笔")) : L"绘制");
 	drawButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateEraserButtonStyle()

@@ -343,6 +343,14 @@ IDR_SHADERS1            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Ass
 
 IDR_SHADERS2            SHADERS                 "Inkeys\\UI\\RenderPipeline\\Assets\\ImGui\\imgui_vs.cso"
 
+IDR_DRAW3_INK_PIXEL_SHADER SHADER                "Inkeys\\Drawing\\Draw3\\Assets\\inkPixelShader.cso"
+
+IDR_DRAW3_INK_VERTEX_SHADER SHADER               "Inkeys\\Drawing\\Draw3\\Assets\\inkVertexShader.cso"
+
+IDR_DRAW3_LASER_UPDATE_CS SHADER                 "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleUpdateCS.cso"
+
+IDR_DRAW3_LASER_EMIT_CS SHADER                   "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleEmitCS.cso"
+
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
 

@@ -92,6 +92,9 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool HideAllUserWindows();
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
+		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
+		[[nodiscard]] bool SetExtendedStyleFlags(
+			WindowRole role, DWORD setMask, DWORD clearMask);
 		[[nodiscard]] bool RequestTopmostRefresh();
 		[[nodiscard]] bool PromotePptWindow(WindowRole role);
 

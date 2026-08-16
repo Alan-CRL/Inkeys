@@ -94,6 +94,9 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
@@ -110,6 +113,8 @@
 	<ClCompile Include="display_tests.cpp" />
 	<ClCompile Include="bar_display_transition_tests.cpp" />
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
+	<ClCompile Include="draw3_bridge_tests.cpp" />
+	<ClCompile Include="draw3_contact_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />
 	<ClCompile Include="message_tests.cpp" />
@@ -118,6 +123,7 @@
   </ItemGroup>
   <ItemGroup>
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

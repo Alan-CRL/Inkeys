@@ -46,6 +46,8 @@ import Inkeys.Display;
 #include "IdtState.h"
 #include "IdtTime.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
+#include "Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.h"
+#include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
@@ -95,6 +97,11 @@ using namespace Inkeys;
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 {
+	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
+
 	// 路径预处理
 	{
 		globalPath = GetCurrentExeDirectory() + L"\\";
@@ -896,7 +903,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				setlist.smoothWriting = true;
 
 				{
-					setlist.eraserSetting.eraserMode = 0;
+					// Draw3 不再支持压感橡皮；旧默认值归一化为速度橡皮。
+					setlist.eraserSetting.eraserMode = 1;
 
 					float drawingScale = GetDrawingScale();
 					setlist.eraserSetting.eraserSize = static_cast<int>(60 * drawingScale);
@@ -1282,6 +1290,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		const int overlayHeight = primaryMonitor ? primaryMonitor->pixelHeight : GetSystemMetrics(SM_CYSCREEN);
 		HICON applicationIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ICON1));
 		std::vector<Inkeys::Window::WindowSpec> windowSpecs;
+		auto createdDrawpadHwnd = std::make_shared<std::atomic<HWND>>(nullptr);
+		const bool preferDraw3DirectComposition =
+			Inkeys::Drawing::Draw3::ShouldPreconfigureNoRedirectionBitmap();
 
 		Inkeys::Window::WindowSpec magnifierHost;
 		magnifierHost.role = Inkeys::Window::WindowRole::MagnifierHost;
@@ -1323,6 +1334,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				spec.height = overlayHeight;
 				spec.style = overlayStyle;
 				spec.exStyle = overlayExStyle | extraStyle;
+				if (role == Inkeys::Window::WindowRole::Drawpad)
+				{
+					// DComp 的不可变样式只在能力探测通过时预置；否则保留可切换的 DWM/ULW HWND。
+					spec.exStyle = (spec.exStyle & ~WS_EX_LAYERED) | WS_EX_TRANSPARENT;
+					if (preferDraw3DirectComposition)
+						spec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
+				}
 				spec.windowProc = proc;
 				spec.created = created;
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
@@ -1350,7 +1368,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
 			DefWindowProcW, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::Drawpad, L"Inkeys2;", L"Inkeys DrawpadWindow",
-			DrawpadMsgCallback, 0, disableGestureFuc);
+			DrawpadMsgCallback, 0, [createdDrawpadHwnd, disableGestureFuc](HWND hwnd)
+			{
+				// created 回调只发布 HWND；Draw3 在 Window Service 完成创建后再同步启动。
+				disableGestureFuc(hwnd);
+				createdDrawpadHwnd->store(hwnd, std::memory_order_release);
+			});
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomLeft,
 			L"Inkeys4.BottomLeft;", L"Inkeys Ppt Bottom Left",
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
@@ -1397,27 +1420,96 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		windowSpecs.push_back(std::move(displayObserver));
 
 		auto& windowService = Inkeys::Window::GetService();
-		if (!windowService.Start(std::move(windowSpecs)))
+		auto RefreshWindowHandles = [&]()
+			{
+				magnifierWindow = windowService.Handle(Inkeys::Window::WindowRole::MagnifierHost);
+				magnifierChild = windowService.Handle(Inkeys::Window::WindowRole::MagnifierChild);
+				freeze_window = windowService.Handle(Inkeys::Window::WindowRole::Freeze);
+				drawpad_window = createdDrawpadHwnd->load(std::memory_order_acquire);
+				floating_window = windowService.Handle(Inkeys::Window::WindowRole::Bar);
+				setting_window = windowService.Handle(Inkeys::Window::WindowRole::Setting);
+			};
+		auto StartWindowService = [&]()
+			{
+				createdDrawpadHwnd->store(nullptr, std::memory_order_release);
+				const bool started = windowService.Start(windowSpecs);
+				if (started) RefreshWindowHandles();
+				return started && drawpad_window;
+			};
+		if (!StartWindowService())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Win32 窗口服务启动失败");
-			SetOffSignal(1);
-			Inkeys::UI::RenderPipeline::Shutdown();
-			return 1;
-		}
-		magnifierWindow = windowService.Handle(Inkeys::Window::WindowRole::MagnifierHost);
-		magnifierChild = windowService.Handle(Inkeys::Window::WindowRole::MagnifierChild);
-		freeze_window = windowService.Handle(Inkeys::Window::WindowRole::Freeze);
-		drawpad_window = windowService.Handle(Inkeys::Window::WindowRole::Drawpad);
-		floating_window = windowService.Handle(Inkeys::Window::WindowRole::Bar);
-		setting_window = windowService.Handle(Inkeys::Window::WindowRole::Setting);
-		if (!setting_window || !Inkeys::UI::Setting::Initialize())
-		{
-			IDTLogger->critical("[主线程][IdtMain] Setting 渲染客户端初始化失败");
 			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
+		// Draw3 只附着 Window Service 已创建的 HWND；样式变更仍回到 owner thread。
+		Inkeys::Drawing::Draw3::HostStyleCallbacks draw3StyleCallbacks{
+			&windowService,
+			[](void* context, DWORD setMask, DWORD clearMask) -> bool
+			{
+				auto* service = static_cast<Inkeys::Window::Service*>(context);
+				return service && service->SetExtendedStyleFlags(
+					Inkeys::Window::WindowRole::Drawpad, setMask, clearMask);
+			}
+		};
+		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
+		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
+		bool draw3Started = Inkeys::Drawing::Draw3::StartProduct(
+			drawpad_window, draw3StyleCallbacks, draw3StartOptions);
+		if (!draw3Started && preferDraw3DirectComposition)
+		{
+			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
+			IDTLogger->warn("[主线程][IdtMain] Draw3 DComp 初始化失败，重建隐藏窗口链并回退 DWM/ULW");
+			Inkeys::Drawing::Draw3::StopProduct();
+			windowService.StopAndJoin();
+			for (auto& spec : windowSpecs)
+			{
+				if (spec.role != Inkeys::Window::WindowRole::Drawpad) continue;
+				spec.exStyle &= ~(WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED);
+				spec.exStyle |= WS_EX_TRANSPARENT;
+				break;
+			}
+			if (StartWindowService())
+			{
+				draw3StartOptions.allowDirectComposition = false;
+				draw3Started = Inkeys::Drawing::Draw3::StartProduct(
+					drawpad_window, draw3StyleCallbacks, draw3StartOptions);
+			}
+		}
+		if (!draw3Started)
+		{
+			IDTLogger->critical("[主线程][IdtMain] Draw3 Host 初始化失败");
+			SetOffSignal(1);
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
+		if (!setting_window || !Inkeys::UI::Setting::Initialize())
+		{
+			IDTLogger->critical("[主线程][IdtMain] Setting 渲染客户端初始化失败");
+			Inkeys::Drawing::Draw3::StopProduct();
+			SetOffSignal(1);
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
+		// Host 启动会清空桥接队列；首帧前重新发布当前 UI 状态。
+		SyncDraw3State();
+		// Draw3 首帧完成后才由 Window Service 显示 Drawpad，避免透明窗口先覆盖底层。
+		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady() ||
+			!windowService.Show(Inkeys::Window::WindowRole::Drawpad))
+		{
+			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧显示 Drawpad 失败");
+			Inkeys::Drawing::Draw3::StopProduct();
+			SetOffSignal(1);
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
+		// 兼容旧启动监视器的状态标记不再由 Draw2 文件维护。
+		IdtWindowsIsVisible.drawpadWindow = true;
 		magnificationCreateReady = magnifierWindow && magnifierChild;
 
 		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
@@ -1425,18 +1517,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}
-	// RealTimeStylus触控库
-	{
-		if (useMouseInput == false) InitRTSLogic();
-
-		thread(RTSSpeed).detach();
-		rtsWait = false;
-	}
+	// Draw3 Host 已初始化唯一 RTS producer；不再启动 Draw2 RTS/速度线程。
+	rtsWait = false;
 #pragma region 线程
 
 	jthread topWindowThread(TopWindow);
 	jthread ui3InitializationThread(Inkeys::UI::Bar::Initialization);
-	jthread drawpadMainThread(drawpad_main);
 	jthread freezeFrameThread(FreezeFrameWindow);
 	jthread stateMonitoringThread(StateMonitoring);
 
@@ -1485,12 +1571,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
 	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
-	if (drawpadMainThread.joinable()) drawpadMainThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();
 	if (stateMonitoringThread.joinable()) stateMonitoringThread.join();
 	if (magnifierThread.joinable()) magnifierThread.join();
 	if (pptLinkageThread.joinable()) pptLinkageThread.join();
 	if (topWindowThread.joinable()) topWindowThread.join();
+	// 先停止 Draw3 设备/RTS，再由 Window Service 销毁其拥有的 Drawpad HWND。
+	Inkeys::Drawing::Draw3::StopProduct();
 	Inkeys::Window::GetService().StopAndJoin();
 	Inkeys::UI::RenderPipeline::Shutdown();
 	displaySubscription.Reset();
@@ -1504,7 +1591,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		int WaitingCount = 0;
 		for (; WaitingCount < 20; WaitingCount++)
 		{
-			if (!GetStatus("drawpad_main") && !GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
+			if (!GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
 		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");

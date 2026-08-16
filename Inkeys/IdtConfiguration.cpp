@@ -3,6 +3,7 @@ import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
 
 #include "IdtConfiguration.h"
+#include "Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include "IdtState.h"
 
@@ -165,7 +166,8 @@ bool ReadSetting()
 		if (setlistVal.isMember("EraserSetting") && setlistVal["EraserSetting"].isObject())
 		{
 			if (setlistVal["EraserSetting"].isMember("EraserMode") && setlistVal["EraserSetting"]["EraserMode"].isInt())
-				setlist.eraserSetting.eraserMode = setlistVal["EraserSetting"]["EraserMode"].asInt();
+				setlist.eraserSetting.eraserMode = Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
+					setlistVal["EraserSetting"]["EraserMode"].asInt());
 			if (setlistVal["EraserSetting"].isMember("EraserSize") && setlistVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = setlistVal["EraserSetting"]["EraserSize"].asInt();
 		}
@@ -442,6 +444,7 @@ string CaptureSettingJson()
 		setlistVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
 		setlistVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
 		{
+			setlist.eraserSetting.eraserMode = setlist.eraserSetting.eraserMode == 1 ? 1 : 2;
 			setlistVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
 			setlistVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
 		}
