@@ -670,3 +670,24 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Status
 
 [OK] **Completed**
+
+
+## Session 27: 完善设置窗口样式并固定浅色主题
+
+**Date**: 2026-08-16
+**Task**: 完善设置窗口样式并固定浅色主题
+**Branch**: `fluent`
+
+### Summary
+
+同步 Setting native frame、Move/Size 与浅色主题合同，固定 ImFluent Light preset，补齐 headless 断言并通过 ARM64 Debug 完整构建和无窗口测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a237ddf` | (see git log) |
+
+### Status
+
+[OK] **Completed**
