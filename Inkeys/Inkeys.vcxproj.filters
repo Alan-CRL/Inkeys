@@ -112,14 +112,149 @@
     <Filter Include="Modules\Inkeys\Drawing\Draw3\Assets">
       <UniqueIdentifier>{7f6b3f95-73e8-4a57-8b4c-cc1a4d28d6a4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Additional\InkStrokeModeler">
-      <UniqueIdentifier>{a4d8ecb4-7cb8-45ba-9df2-8ad865d84a78}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\absl">
+      <UniqueIdentifier>{e65baef5-4ba2-47e1-19b1-ce2bccc03345}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\Additional\InkStrokeModeler">
-      <UniqueIdentifier>{7c224ccd-9ef5-462f-a9ab-2c461fcf90f2}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\absl\algorithm">
+      <UniqueIdentifier>{f7bbdd28-e946-e6e4-ae64-879a114af2d8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\Additional\Abseil">
-      <UniqueIdentifier>{28b10c1c-a4c5-4c96-9228-4f53ffb8c2d8}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\absl\base">
+      <UniqueIdentifier>{75cc4af6-90c6-e28a-7c8f-4508fd650b26}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\base\internal">
+      <UniqueIdentifier>{3bb71593-05d5-888f-2204-fc4548411003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\cleanup">
+      <UniqueIdentifier>{9cdc562d-dfae-e601-c020-56e3c37d2e5d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\cleanup\internal">
+      <UniqueIdentifier>{bac91a32-b8c0-a39e-209e-12e86912c8a2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\container">
+      <UniqueIdentifier>{20d9eac6-b972-81b2-2b3b-b5a8049395f6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\container\internal">
+      <UniqueIdentifier>{8a5e9963-a4b8-2ab7-b58b-622553234693}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\crc">
+      <UniqueIdentifier>{d6195527-bdf8-4d9b-bd32-b4496f9421b7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\crc\internal">
+      <UniqueIdentifier>{f8006de4-1297-0f80-ece6-c646a6def3f4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\debugging">
+      <UniqueIdentifier>{423d8359-9e52-83f5-7f32-fa831ac8eaa9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\debugging\internal">
+      <UniqueIdentifier>{91f6c716-d31e-863a-2063-db48084a50e6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\flags">
+      <UniqueIdentifier>{d4d25222-e3c1-df1e-9142-c13cbb3013f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\flags\internal">
+      <UniqueIdentifier>{7d0495a7-7bfd-719b-8f93-01c1b59c74f7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\functional">
+      <UniqueIdentifier>{05b708d6-26af-22da-56ca-afcc12f40b66}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\functional\internal">
+      <UniqueIdentifier>{d0905133-d771-dedf-b0cc-bd111b9f8f43}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\hash">
+      <UniqueIdentifier>{f97cb80b-4246-55f7-d28e-ea41862c9f3b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\hash\internal">
+      <UniqueIdentifier>{0663c0b0-ea1e-6634-3a5e-9bde4860b460}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\log">
+      <UniqueIdentifier>{6561b15b-bc3a-d6e7-1714-87c1ff2c2fcb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\log\internal">
+      <UniqueIdentifier>{3c52fb40-eb68-d0a4-4753-1c5efac70870}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\memory">
+      <UniqueIdentifier>{7f1ed984-91ae-8320-3d2a-dabe83c99d54}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\meta">
+      <UniqueIdentifier>{42c39b56-96a3-2eaa-85c6-2ec891ef19c6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\numeric">
+      <UniqueIdentifier>{5e6052b6-7983-303a-d745-2ad8f3728ea6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\numeric\internal">
+      <UniqueIdentifier>{f1feb553-879e-a97f-d4d3-ef9575b4e283}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\profiling">
+      <UniqueIdentifier>{f9b676c7-9c9d-51d3-7890-cda9c5820137}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\profiling\internal">
+      <UniqueIdentifier>{6c617244-df8c-5658-cf46-c9e6fb4a1a74}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\random">
+      <UniqueIdentifier>{6b6b3d3c-2230-93e8-3495-3a923d68256c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\random\internal">
+      <UniqueIdentifier>{e100b5c1-6602-3765-1358-1657c278f4f1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\status">
+      <UniqueIdentifier>{ad017afd-886b-16b1-225e-c3df885160ed}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\status\internal">
+      <UniqueIdentifier>{477ee382-d4a3-aace-5b51-21bc052ee4f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\strings">
+      <UniqueIdentifier>{37566e87-daf6-a9f3-08c2-ed81fb39c1b7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\strings\internal">
+      <UniqueIdentifier>{14ed9c04-f511-6cb8-5863-c21e6d15d3f4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\strings\internal\str_format">
+      <UniqueIdentifier>{eeda2b6b-32f8-3c0f-4c6c-5f218d46655b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\synchronization">
+      <UniqueIdentifier>{938fc2f9-9e81-f18d-0723-4a8bcc844f09}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\synchronization\internal">
+      <UniqueIdentifier>{fec6c3f6-7e33-6f52-9d60-d030d85fcf06}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\time">
+      <UniqueIdentifier>{d387d1a2-154e-4896-351a-2e54db9e22d2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\time\internal">
+      <UniqueIdentifier>{beec9c27-62ec-8cf3-a205-54591d3ab497}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\time\internal\cctz">
+      <UniqueIdentifier>{a5a7cc11-f5b1-3b45-dfe1-1c0bccaef941}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\time\internal\cctz\include">
+      <UniqueIdentifier>{b1e142c5-e6ce-7e69-b4ab-689727905eb5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\time\internal\cctz\include\cctz">
+      <UniqueIdentifier>{e22a77df-cafd-7f5b-d574-15415c8ddc4f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\time\internal\cctz\src">
+      <UniqueIdentifier>{7678edbb-2895-f367-82be-a65921a2998b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\types">
+      <UniqueIdentifier>{18563aa0-910c-5644-7eb0-ce0a6d810490}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\types\internal">
+      <UniqueIdentifier>{e371ccbd-b762-d0c9-0780-130f2e243e2d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\absl\utility">
+      <UniqueIdentifier>{036668b1-4716-70c5-f282-a50fc925bf21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ink_stroke_modeler">
+      <UniqueIdentifier>{a9852e09-005a-8d1d-707d-24a783e1f4f9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ink_stroke_modeler\internal">
+      <UniqueIdentifier>{ff737c06-c2a3-f862-3c5e-6464d24c39f6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ink_stroke_modeler\internal\prediction">
+      <UniqueIdentifier>{97d2c963-e4ae-4187-a880-7d1d75237cf3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ink_stroke_modeler\internal\prediction\kalman_filter">
+      <UniqueIdentifier>{1b084974-3785-4860-fbae-9be2c27d1b04}</UniqueIdentifier>
     </Filter>
     <Filter Include="资源文件\Draw3">
       <UniqueIdentifier>{c55da2a9-5b3b-4a22-9f8a-9a0b450a4a42}</UniqueIdentifier>
@@ -336,11 +471,1043 @@
     <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
       <Filter>Modules\Inkeys\Window</Filter>
     </ClInclude>
-    <ClInclude Include="additional\ink_stroke_modeler\**\*.h">
-      <Filter>头文件\Additional\InkStrokeModeler</Filter>
+    <ClInclude Include="additional\absl\algorithm\algorithm.h">
+      <Filter>头文件\Additional\absl\algorithm</Filter>
     </ClInclude>
-    <ClInclude Include="additional\absl\**\*.h">
-      <Filter>头文件\Additional\InkStrokeModeler</Filter>
+    <ClInclude Include="additional\absl\algorithm\container.h">
+      <Filter>头文件\Additional\absl\algorithm</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\attributes.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\call_once.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\casts.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\config.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\const_init.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\dynamic_annotations.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\fast_type_id.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\atomic_hook.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\cycleclock.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\cycleclock_config.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\direct_mmap.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\dynamic_annotations.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\endian.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\errno_saver.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\hide_ptr.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\identity.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\iterator_traits.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\low_level_alloc.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\low_level_scheduling.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\nullability_deprecated.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\per_thread_tls.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\poison.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\pretty_function.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\raw_logging.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\scheduling_mode.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\scoped_set_env.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\spinlock.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\spinlock_wait.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\strerror.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\sysinfo.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\thread_identity.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\throw_delegate.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\tracing.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\tsan_mutex_interface.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\unaligned_access.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\unscaledcycleclock.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\internal\unscaledcycleclock_config.h">
+      <Filter>头文件\Additional\absl\base\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\log_severity.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\macros.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\no_destructor.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\nullability.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\optimization.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\options.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\policy_checks.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\port.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\prefetch.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\base\thread_annotations.h">
+      <Filter>头文件\Additional\absl\base</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\cleanup\cleanup.h">
+      <Filter>头文件\Additional\absl\cleanup</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\cleanup\internal\cleanup.h">
+      <Filter>头文件\Additional\absl\cleanup\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\btree_map.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\btree_set.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\fixed_array.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\flat_hash_map.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\flat_hash_set.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\hash_container_defaults.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\inlined_vector.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\btree.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\btree_container.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\common.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\common_policy_traits.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\compressed_tuple.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\container_memory.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\hash_function_defaults.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\hash_policy_traits.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\hashtable_control_bytes.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\hashtable_debug.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\hashtable_debug_hooks.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\hashtablez_sampler.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\inlined_vector.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\layout.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\node_slot_policy.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\raw_hash_map.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\raw_hash_set.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\raw_hash_set_resize_impl.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\internal\tracked.h">
+      <Filter>头文件\Additional\absl\container\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\node_hash_map.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\container\node_hash_set.h">
+      <Filter>头文件\Additional\absl\container</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\crc32c.h">
+      <Filter>头文件\Additional\absl\crc</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\cpu_detect.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc32_x86_arm_combined_simd.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc32c.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc32c_inline.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc_cord_state.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc_internal.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\crc_memcpy.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\non_temporal_arm_intrinsics.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\crc\internal\non_temporal_memcpy.h">
+      <Filter>头文件\Additional\absl\crc\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\failure_signal_handler.h">
+      <Filter>头文件\Additional\absl\debugging</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\address_is_readable.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\addresses.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\bounded_utf8_length_sequence.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\decode_rust_punycode.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\demangle.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\demangle_rust.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\elf_mem_image.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\examine_stack.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\stack_consumption.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\stacktrace_config.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\symbolize.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\utf8_for_code_point.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\internal\vdso_support.h">
+      <Filter>头文件\Additional\absl\debugging\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\leak_check.h">
+      <Filter>头文件\Additional\absl\debugging</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\stacktrace.h">
+      <Filter>头文件\Additional\absl\debugging</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\debugging\symbolize.h">
+      <Filter>头文件\Additional\absl\debugging</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\commandlineflag.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\config.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\declare.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\flag.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\commandlineflag.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\flag.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\parse.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\path_util.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\private_handle_accessor.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\program_name.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\registry.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\sequence_lock.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\internal\usage.h">
+      <Filter>头文件\Additional\absl\flags\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\marshalling.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\parse.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\reflection.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\usage.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\flags\usage_config.h">
+      <Filter>头文件\Additional\absl\flags</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\any_invocable.h">
+      <Filter>头文件\Additional\absl\functional</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\bind_front.h">
+      <Filter>头文件\Additional\absl\functional</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\function_ref.h">
+      <Filter>头文件\Additional\absl\functional</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\internal\any_invocable.h">
+      <Filter>头文件\Additional\absl\functional\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\internal\front_binder.h">
+      <Filter>头文件\Additional\absl\functional\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\internal\function_ref.h">
+      <Filter>头文件\Additional\absl\functional\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\functional\overload.h">
+      <Filter>头文件\Additional\absl\functional</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\hash\hash.h">
+      <Filter>头文件\Additional\absl\hash</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\hash\internal\city.h">
+      <Filter>头文件\Additional\absl\hash\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\hash\internal\hash.h">
+      <Filter>头文件\Additional\absl\hash\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\hash\internal\low_level_hash.h">
+      <Filter>头文件\Additional\absl\hash\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\hash\internal\spy_hash_state.h">
+      <Filter>头文件\Additional\absl\hash\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\hash\internal\weakly_mixed_integer.h">
+      <Filter>头文件\Additional\absl\hash\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\absl_check.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\absl_log.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\absl_vlog_is_on.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\check.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\die_if_null.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\flags.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\globals.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\initialize.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\append_truncated.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\check_impl.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\check_op.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\conditions.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\config.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\flags.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\fnmatch.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\globals.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\log_format.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\log_impl.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\log_message.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\log_sink_set.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\nullguard.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\nullstream.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\proto.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\strip.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\structured.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\structured_proto.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\vlog_config.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\internal\voidify.h">
+      <Filter>头文件\Additional\absl\log\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\log.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\log_entry.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\log_sink.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\log_sink_registry.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\log_streamer.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\scoped_mock_log.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\structured.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\log\vlog_is_on.h">
+      <Filter>头文件\Additional\absl\log</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\memory\memory.h">
+      <Filter>头文件\Additional\absl\memory</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\meta\type_traits.h">
+      <Filter>头文件\Additional\absl\meta</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\numeric\bits.h">
+      <Filter>头文件\Additional\absl\numeric</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\numeric\int128.h">
+      <Filter>头文件\Additional\absl\numeric</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\numeric\internal\bits.h">
+      <Filter>头文件\Additional\absl\numeric\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\numeric\internal\representation.h">
+      <Filter>头文件\Additional\absl\numeric\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\profiling\internal\exponential_biased.h">
+      <Filter>头文件\Additional\absl\profiling\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\profiling\internal\periodic_sampler.h">
+      <Filter>头文件\Additional\absl\profiling\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\profiling\internal\sample_recorder.h">
+      <Filter>头文件\Additional\absl\profiling\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\bernoulli_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\beta_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\bit_gen_ref.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\discrete_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\distributions.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\exponential_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\gaussian_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\chi_square.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\distribution_caller.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\entropy_pool.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\explicit_seed_seq.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\fast_uniform_bits.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\fastmath.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\generate_real.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\iostream_state_saver.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\mock_helpers.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\mock_overload_set.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\mock_validators.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\nanobenchmark.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\nonsecure_base.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\pcg_engine.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\platform.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\randen.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\randen_detect.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\randen_engine.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\randen_hwaes.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\randen_slow.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\randen_traits.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\salted_seed_seq.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\seed_material.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\sequence_urbg.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\traits.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\uniform_helper.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\internal\wide_multiply.h">
+      <Filter>头文件\Additional\absl\random\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\log_uniform_int_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\mock_distributions.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\mocking_bit_gen.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\poisson_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\random.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\seed_gen_exception.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\seed_sequences.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\uniform_int_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\uniform_real_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\random\zipf_distribution.h">
+      <Filter>头文件\Additional\absl\random</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\internal\status_internal.h">
+      <Filter>头文件\Additional\absl\status\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\internal\status_matchers.h">
+      <Filter>头文件\Additional\absl\status\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\internal\statusor_internal.h">
+      <Filter>头文件\Additional\absl\status\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\status.h">
+      <Filter>头文件\Additional\absl\status</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\status_matchers.h">
+      <Filter>头文件\Additional\absl\status</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\status_payload_printer.h">
+      <Filter>头文件\Additional\absl\status</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\status\statusor.h">
+      <Filter>头文件\Additional\absl\status</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\ascii.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\charconv.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\charset.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\cord.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\cord_analysis.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\cord_buffer.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\escaping.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\has_absl_stringify.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\has_ostream_operator.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\charconv_bigint.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\charconv_parse.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_data_edge.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_internal.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_btree.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_btree_navigator.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_btree_reader.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_consume.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_crc.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_flat.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_functions.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_handle.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_info.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_sample_token.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_statistics.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_update_scope.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\cordz_update_tracker.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\damerau_levenshtein_distance.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\escaping.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\memutil.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\ostringstream.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\pow10_helper.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\resize_uninitialized.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\stl_type_traits.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\arg.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\bind.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\checker.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\constexpr_parser.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\extension.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\float_conversion.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\output.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_format\parser.h">
+      <Filter>头文件\Additional\absl\strings\internal\str_format</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_join_internal.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\str_split_internal.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\string_constant.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\stringify_sink.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\internal\utf8.h">
+      <Filter>头文件\Additional\absl\strings\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\match.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\numbers.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\str_cat.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\str_format.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\str_join.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\str_replace.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\str_split.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\string_view.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\strip.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\strings\substitute.h">
+      <Filter>头文件\Additional\absl\strings</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\barrier.h">
+      <Filter>头文件\Additional\absl\synchronization</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\blocking_counter.h">
+      <Filter>头文件\Additional\absl\synchronization</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\create_thread_identity.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\futex.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\futex_waiter.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\graphcycles.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\kernel_timeout.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\per_thread_sem.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\pthread_waiter.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\sem_waiter.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\stdcpp_waiter.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\thread_pool.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\waiter.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\waiter_base.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\internal\win32_waiter.h">
+      <Filter>头文件\Additional\absl\synchronization\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\mutex.h">
+      <Filter>头文件\Additional\absl\synchronization</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\synchronization\notification.h">
+      <Filter>头文件\Additional\absl\synchronization</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\civil_time.h">
+      <Filter>头文件\Additional\absl\time</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\clock.h">
+      <Filter>头文件\Additional\absl\time</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\civil_time.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\include\cctz</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\civil_time_detail.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\include\cctz</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\time_zone.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\include\cctz</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\zone_info_source.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\include\cctz</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_fixed.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_if.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_impl.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_info.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_libc.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_posix.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\internal\cctz\src\tzfile.h">
+      <Filter>头文件\Additional\absl\time\internal\cctz\src</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\time\time.h">
+      <Filter>头文件\Additional\absl\time</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\types\any.h">
+      <Filter>头文件\Additional\absl\types</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\types\compare.h">
+      <Filter>头文件\Additional\absl\types</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\types\internal\span.h">
+      <Filter>头文件\Additional\absl\types\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\types\optional.h">
+      <Filter>头文件\Additional\absl\types</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\types\span.h">
+      <Filter>头文件\Additional\absl\types</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\types\variant.h">
+      <Filter>头文件\Additional\absl\types</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\absl\utility\utility.h">
+      <Filter>头文件\Additional\absl\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\internal_types.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\position_modeler.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\input_predictor.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal\prediction\kalman_filter</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal\prediction</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\type_matchers.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\utils.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\validation.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\internal\wobble_smoother.h">
+      <Filter>头文件\Additional\ink_stroke_modeler\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\numbers.h">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\params.h">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\stroke_modeler.h">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ink_stroke_modeler\types.h">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1197,7 +2364,7 @@
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </None>
     <None Include="additional\ink_stroke_modeler\README.md">
-      <Filter>头文件\Additional\InkStrokeModeler</Filter>
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
