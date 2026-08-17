@@ -29,8 +29,18 @@ export namespace Inkeys::Message
 		return static_cast<Filter>(static_cast<BYTE>(lhs) | static_cast<BYTE>(rhs));
 	}
 
-	// Win32 会在触摸后继续派发兼容鼠标消息；手工转译 WM_TOUCH 时必须过滤这一副本。
+	// Win32 会在接触后继续派发兼容鼠标消息；手工转译 WM_TOUCH 时必须过滤这一副本。
+	// Pen 与 Touch 的低位分类在同一次接触中不保证稳定，输入归属只认 Pointer 来源。
+	[[nodiscard]] bool IsPointerGeneratedMouseMessage(
+		UINT message,
+		ULONG_PTR extraInfo) noexcept;
+
 	[[nodiscard]] bool IsTouchGeneratedMouseMessage(
+		UINT message,
+		ULONG_PTR extraInfo) noexcept;
+
+	// 仅供诊断显示来源分类；交互层不能据此拆分一条 Pointer 接触。
+	[[nodiscard]] bool IsPenGeneratedMouseMessage(
 		UINT message,
 		ULONG_PTR extraInfo) noexcept;
 

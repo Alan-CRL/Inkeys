@@ -1207,6 +1207,10 @@ namespace Inkeys::Drawing::Draw3
 			RequestControlWake();
 			return 0;
 
+		case WM_MOUSEACTIVATE:
+			// Drawpad 从创建起不可激活；返回值仍允许本次鼠标消息继续投递。
+			return MA_NOACTIVATE;
+
 		case WM_ERASEBKGND:
 			if (gpuTransparent) return 1; // 阻止 GDI 擦背景，避免透明区域闪烁。
 			break;

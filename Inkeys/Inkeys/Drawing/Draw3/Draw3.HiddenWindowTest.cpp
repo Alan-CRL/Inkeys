@@ -152,6 +152,10 @@ namespace Inkeys::Drawing::Draw3
 					"automatic fallback selected a real backend", failures);
 			modeSucceeded &= CheckPresentationStyle(drawpad, snapshot.presentationMode, failures);
 			modeSucceeded &= CheckPresentationWindowStyle(presentation, failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, WM_MOUSEACTIVATE,
+				reinterpret_cast<WPARAM>(drawpad),
+				MAKELPARAM(HTCLIENT, WM_LBUTTONDOWN)) == MA_NOACTIVATE,
+				"primary Drawpad mouse input never activates the overlay", failures);
 			modeSucceeded &= Check(styleContext.callCount.load(std::memory_order_acquire) >
 				styleCallsBefore, "presenter used Window Service style callback", failures);
 			modeSucceeded &= Check(!IsWindowVisible(magnifierHost) && !IsWindowVisible(freeze) &&

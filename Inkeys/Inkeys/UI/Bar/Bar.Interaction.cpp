@@ -430,6 +430,10 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	switch (msg)
 	{
+	case WM_MOUSEACTIVATE:
+		// Bar 从创建起不激活；返回该值仍会继续投递本次鼠标点击。
+		return MA_NOACTIVATE;
+
 	case WM_INPUT:
 	{
 		// Raw Input 只负责唤醒并读取系统光标，WM_INPUT 仍交给默认过程完成清理。
@@ -832,9 +836,17 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case WM_RBUTTONUP:
 	case WM_RBUTTONDBLCLK:
 	case WM_MOUSEMOVE:
+	case WM_MOUSEWHEEL:
+	case WM_MOUSEHWHEEL:
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP:
+	case WM_MBUTTONDBLCLK:
+	case WM_XBUTTONDOWN:
+	case WM_XBUTTONUP:
+	case WM_XBUTTONDBLCLK:
 	{
-		// 触摸已由 WM_TOUCH 单独合成；笔的兼容鼠标消息仍进入统一 ExMessage 路径。
-		if (Inkeys::Message::IsTouchGeneratedMouseMessage(
+		// Pen 与 Touch 均由 WM_TOUCH 合成；系统兼容鼠标副本不能再次进入 Bar。
+		if (Inkeys::Message::IsPointerGeneratedMouseMessage(
 			msg, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
 			return 0;
 		if (msg == WM_MOUSEMOVE) barUISet.ActivateBorderCursorTracking(hWnd);
@@ -3075,7 +3087,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								ApplyBarBottomDockBodyHitTestFromRigid(msg);
 								if (doubleClickContinuation || temp->button.IsClick(msg.x, msg.y, barStyle.zoom))
 								{
-									if (!msg.lbutton)
+									// Move 缺少 MK_LBUTTON 不能代表抬起，点击只在明确 Up 后执行。
+									if (msg.message == WM_LBUTTONUP && !msg.lbutton)
 									{
 										ClosePenTypeMenu();
 										if (temp->preset == BarButtonPresetEnum::More)
@@ -4628,43 +4641,65 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			{
 
 				// 颜色选择
-				if (continueFlag)
+				if (continueFlag && msg.message == WM_LBUTTONDOWN)
 				{
-					for (int i = static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1); i <= static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect11); i++)
+					shared_ptr<BarUiShapeClass> activeSwatch;
+					for (int i = static_cast<int>(
+						BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
+						i <= static_cast<int>(
+							BarUISetShapeEnum::DrawAttributeBar_ColorSelect11); i++)
 					{
-						auto enumValue = static_cast<BarUISetShapeEnum>(i);
-
-						if (auto obj = shapeMap[enumValue]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						auto swatch = shapeMap[static_cast<BarUISetShapeEnum>(i)];
+						if (swatch && swatch->IsClick(
+							msg.x, msg.y, barStyle.zoom))
 						{
-							continueFlag = false;
-							if (msg.lbutton)
+							activeSwatch = swatch;
+							break;
+						}
+					}
+
+					if (activeSwatch)
+					{
+						continueFlag = false;
+						auto ApplySwatch = [&](const shared_ptr<BarUiShapeClass>& swatch)
 							{
-								SetPenColor(Inkeys::Color::SetAlphaR(obj->fill.value().tar, 255));
+								SetPenColor(Inkeys::Color::SetAlphaR(
+									swatch->fill.value().tar, 255));
 								if (barState.drawAttributeBar.colorPickerOpen)
 									ProjectCurrentColorPickerPoint();
 								UpdateRendering();
+							};
+						ApplySwatch(activeSwatch);
 
-								while (true)
-								{
-									if (!WaitForBarInteractionMessage(
-										msg, EM_MOUSE, floating_window))
-									{
-										return BarInteractionStageResult::Shutdown;
-									}
+						// 只有色块内的 Down 才启动拖选，穿过间隙后仍可切到新色块。
+						while (true)
+						{
+							if (!WaitForBarInteractionMessage(
+								msg, EM_MOUSE, floating_window))
+							{
+								return BarInteractionStageResult::Shutdown;
+							}
+							if (!msg.lbutton) break;
 
-									if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
-									{
-										if (!msg.lbutton) break;
-									}
-									else break;
-								}
-
-								SuppressHoverUntilPointerMove();
-									ClearBarInteractionMessages(EM_MOUSE, floating_window);
+							for (int i = static_cast<int>(
+								BarUISetShapeEnum::DrawAttributeBar_ColorSelect1);
+								i <= static_cast<int>(
+									BarUISetShapeEnum::DrawAttributeBar_ColorSelect11); i++)
+							{
+								auto swatch = shapeMap[
+									static_cast<BarUISetShapeEnum>(i)];
+								if (!swatch || swatch == activeSwatch
+									|| !swatch->IsClick(
+										msg.x, msg.y, barStyle.zoom))
+									continue;
+								activeSwatch = swatch;
+								ApplySwatch(activeSwatch);
+								break;
 							}
 						}
 
-						if (!continueFlag) break;
+						SuppressHoverUntilPointerMove();
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 				}
 
@@ -6148,8 +6183,9 @@ namespace Inkeys::UI::Bar
 	Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
-		if (Inkeys::Message::IsTouchGeneratedMouseMessage(
-			message, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
+		const auto extraInfo = static_cast<ULONG_PTR>(GetMessageExtraInfo());
+		if (Inkeys::Message::IsPointerGeneratedMouseMessage(
+			message, extraInfo))
 			return { Inkeys::Message::Action::Discard, 0 };
 		if (!IsBarCoordinateMessage(message)) return {};
 

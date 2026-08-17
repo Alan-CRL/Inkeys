@@ -126,12 +126,34 @@ int RunMessageTests()
 		WM_XBUTTONDBLCLK,
 	};
 	for (const auto message : touchCompatibleMessages)
+	{
+		check(IsPointerGeneratedMouseMessage(message, touchMouseExtraInfo),
+			"touch-compatible pointer mouse detection");
 		check(IsTouchGeneratedMouseMessage(message, touchMouseExtraInfo),
 			"touch-compatible mouse detection");
+		check(!IsPenGeneratedMouseMessage(message, touchMouseExtraInfo),
+			"touch-compatible mouse excluded from pen");
+		check(IsPenGeneratedMouseMessage(message, penMouseExtraInfo),
+			"pen-compatible mouse detection");
+		check(IsPointerGeneratedMouseMessage(message, penMouseExtraInfo),
+			"pen-compatible pointer mouse detection");
+		check(!IsTouchGeneratedMouseMessage(message, penMouseExtraInfo),
+			"pen-compatible mouse excluded from touch");
+	}
+	// 实机日志中同一支笔的 Up 低位会从 0x69 变为 0xE9；归属判断不能依赖该位。
+	check(IsPointerGeneratedMouseMessage(WM_LBUTTONDOWN, 0xFF515769u)
+		&& IsPointerGeneratedMouseMessage(WM_LBUTTONUP, 0xFF5157E9u),
+		"pointer mouse ownership stable across pen contact");
+	check(!IsPointerGeneratedMouseMessage(WM_LBUTTONDOWN, 0),
+		"real mouse excluded from pointer compatibility");
 	check(!IsTouchGeneratedMouseMessage(WM_LBUTTONDOWN, 0), "real mouse preserved");
-	check(!IsTouchGeneratedMouseMessage(WM_LBUTTONDOWN, penMouseExtraInfo),
-		"pen-compatible mouse preserved");
+	check(!IsPenGeneratedMouseMessage(WM_LBUTTONDOWN, 0),
+		"real mouse excluded from pen");
 	check(!IsTouchGeneratedMouseMessage(WM_TOUCH, touchMouseExtraInfo),
 		"non-mouse touch message preserved");
+	check(!IsPenGeneratedMouseMessage(WM_TOUCH, penMouseExtraInfo),
+		"non-mouse pen message preserved");
+	check(!IsPointerGeneratedMouseMessage(WM_TOUCH, penMouseExtraInfo),
+		"WM_TOUCH excluded from pointer mouse compatibility");
 	return failures;
 }

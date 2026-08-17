@@ -123,13 +123,19 @@ namespace Inkeys::Drawing::Draw3
 			return static_cast<double>(qpc) / static_cast<double>(qpcFrequency);
 		}
 
-		float DiameterForTool(DrawingTool tool)
+		float DiameterForTool(DrawingTool tool,
+			const ProductVisualStyle& visualStyle)
 		{
 			if (tool == DrawingTool::Pen || tool == DrawingTool::Highlighter ||
 				IsShapeDrawingTool(tool))
-				return (std::max)(0.1f, currentProductVisualStyle.widthDip);
+				return (std::max)(0.1f, visualStyle.widthDip);
 			if (tool == DrawingTool::Laser) return kLaserDiameter;
 			return kWideToolDiameter;
+		}
+
+		float DiameterForTool(DrawingTool tool)
+		{
+			return DiameterForTool(tool, currentProductVisualStyle);
 		}
 
 		ShapePrimitiveKind ShapeKindForTool(DrawingTool tool) noexcept
@@ -181,10 +187,11 @@ namespace Inkeys::Drawing::Draw3
 			return lastValue;
 		}
 
-		DirectX::XMFLOAT4 ColorForTool(DrawingTool tool)
+		DirectX::XMFLOAT4 ColorForTool(DrawingTool tool,
+			const ProductVisualStyle& visualStyle)
 		{
 			if (tool == DrawingTool::Eraser) return kTransparentLayerClearColor;
-			const uint32_t rgba = currentProductVisualStyle.colorRgba;
+			const uint32_t rgba = visualStyle.colorRgba;
 			DirectX::XMFLOAT4 productColor(
 				static_cast<float>((rgba >> 24) & 0xffu) / 255.0f,
 				static_cast<float>((rgba >> 16) & 0xffu) / 255.0f,
@@ -196,6 +203,11 @@ namespace Inkeys::Drawing::Draw3
 				return productColor;
 			}
 			return productColor;
+		}
+
+		DirectX::XMFLOAT4 ColorForTool(DrawingTool tool)
+		{
+			return ColorForTool(tool, currentProductVisualStyle);
 		}
 
 		bool TryCreateInkGuid(InkGuid& output) noexcept
@@ -314,10 +326,11 @@ namespace Inkeys::Drawing::Draw3
 			return channel(color.x) << 16 | channel(color.y) << 8 | channel(color.z);
 		}
 
-		std::optional<StoredInkStyle> StoredStyleForTool(DrawingTool tool) noexcept
+		std::optional<StoredInkStyle> StoredStyleForTool(DrawingTool tool,
+			const ProductVisualStyle& visualStyle) noexcept
 		{
 			StoredInkStyle style;
-			const DirectX::XMFLOAT4 color = ColorForTool(tool);
+			const DirectX::XMFLOAT4 color = ColorForTool(tool, visualStyle);
 			style.fallbackRgb = PackStoredRgb(color);
 			style.texture = 0;
 			switch (tool)
@@ -400,6 +413,7 @@ namespace Inkeys::Drawing::Draw3
 			ContactHandle handle = {};
 			DrawingTool selectedTool = DrawingTool::Pen;
 			DrawingTool tool = DrawingTool::Pen;
+			ProductVisualStyle visualStyle = {};
 			EraserWidthMode eraserWidthMode = EraserWidthMode::Fixed;
 			uint32_t eraserWidthModeRevision = 0;
 			bool suppressPressure = false;
@@ -992,7 +1006,7 @@ namespace Inkeys::Drawing::Draw3
 				if (stroke.committedHighlighterGeometry.primitives.empty()) return {};
 				renderer.SetOperatorTarget(renderer.layerL1);
 				renderer.DrawHighlighterPrimitives(stroke.committedHighlighterGeometry.primitives,
-					ColorForTool(runtime.tool));
+					ColorForTool(runtime.tool, runtime.visualStyle));
 				return ClampRectToCanvas(stroke.committedHighlighterGeometry.bounds, width, height);
 			}
 			std::array<InkPoint, 1> fallbackPoint = {};
@@ -1012,7 +1026,8 @@ namespace Inkeys::Drawing::Draw3
 			renderer.SetOperatorTarget(renderer.layerL1);
 			const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
-			renderer.DrawStrokeOrDot(stablePoints, ColorForTool(runtime.tool),
+			renderer.DrawStrokeOrDot(stablePoints,
+				ColorForTool(runtime.tool, runtime.visualStyle),
 				StrokeShape::RoundCapsule, operatorKind);
 			return RectFromStrokePoints(stablePoints, width, height);
 		}
@@ -1028,17 +1043,28 @@ namespace Inkeys::Drawing::Draw3
 			};
 			for (ShapePrimitiveKind kind : kKinds)
 			{
+				const RuntimeStroke* batchStyle = nullptr;
+				const auto flushBatch = [&]
+				{
+					if (!batchStyle || scratch.empty()) return;
+					renderer.SetOperatorTarget(renderer.layerL0);
+					renderer.DrawShapePrimitives(scratch, kind,
+						ColorForTool(DrawingTool::Pen, batchStyle->visualStyle));
+					scratch.clear();
+				};
 				scratch.clear();
 				for (const RuntimeStroke* runtime : active)
 				{
 					if (!runtime || runtime->ended || !runtime->shape.active ||
 						runtime->shape.kind != kind) continue;
+					if (batchStyle && batchStyle->visualStyle.colorRgba !=
+						runtime->visualStyle.colorRgba)
+						flushBatch();
+					// 只合并相邻同色 Shape，避免中途改色后重排笔划覆盖顺序。
+					if (scratch.empty()) batchStyle = runtime;
 					scratch.push_back(runtime->shape.primitive);
 				}
-				if (scratch.empty()) continue;
-				renderer.SetOperatorTarget(renderer.layerL0);
-				renderer.DrawShapePrimitives(scratch, kind,
-					ColorForTool(DrawingTool::Pen));
+				flushBatch();
 			}
 		}
 
@@ -1072,7 +1098,8 @@ namespace Inkeys::Drawing::Draw3
 					? ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height)
 					: RectFromStrokePoints(stroke.l0DrawPoints, width, height);
 				if (runtime->tool != DrawingTool::Eraser && !stroke.l0DrawPoints.empty())
-					DrawL0LiveComposite(stroke, ColorForTool(runtime->tool),
+					DrawL0LiveComposite(stroke,
+						ColorForTool(runtime->tool, runtime->visualStyle),
 						StrokeShape::RoundCapsule, renderer, false);
 				UnionRectInPlace(dirty, stroke.currentL0Rect);
 			}
@@ -2399,6 +2426,8 @@ namespace Inkeys::Drawing::Draw3
 				else runtime->viewport = {};
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
+				// 产品样式与工具一样在 Down 时锁存，活动笔划和断触续接不读取后续修改。
+				runtime->visualStyle = window_.ProductVisualStyleSnapshot();
 				runtime->eraserWidthMode = batchEraserWidthMode;
 				runtime->eraserWidthModeRevision = batchEraserWidthModeRevision;
 				runtime->suppressPressure = suppressPressure;
@@ -2424,7 +2453,8 @@ namespace Inkeys::Drawing::Draw3
 				runtime->laserLayerId = 0;
 				ResetLaserParticleEmitterState(*runtime);
 				runtime->metricEligibleQpc = down.qpc;
-				float baseDiameter = DiameterForTool(runtime->tool) *
+				float baseDiameter = DiameterForTool(
+					runtime->tool, runtime->visualStyle) *
 					(runtime->tool == DrawingTool::Laser ? configuration_.dpiScale : 1.0f);
 				if (widthMode == StrokeWidthMode::SpeedEraser)
 				{
@@ -5114,7 +5144,8 @@ namespace Inkeys::Drawing::Draw3
 						? CommitEraserRealPointsToL1(stroke, StrokeShape::RoundCapsule,
 							renderer_, size.width, size.height)
 						: CommitStablePrefixToL1(stroke, liveTipProtectionSeconds,
-							GetPredictionDurationSeconds(stroke), ColorForTool(runtime->tool),
+							GetPredictionDurationSeconds(stroke),
+							ColorForTool(runtime->tool, runtime->visualStyle),
 							StrokeShape::RoundCapsule, renderer_, size.width, size.height);
 				}
 				if (eraser)
@@ -5223,7 +5254,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!runtime->cancelled)
 					{
 						const std::optional<StoredInkStyle> style =
-							StoredStyleForTool(runtime->tool);
+							StoredStyleForTool(runtime->tool, runtime->visualStyle);
 						const double completedTipTaperSeconds = runtime->tool == DrawingTool::Pen
 							? ResolveLiveTipTaperDurationSeconds(runtime->stroke.widthMode,
 								configuration_.liveTipDurationSeconds) : 0.0;
@@ -5397,6 +5428,7 @@ namespace Inkeys::Drawing::Draw3
 						runtime->handle = {};
 						runtime->selectedTool = DrawingTool::Pen;
 						runtime->tool = DrawingTool::Pen;
+						runtime->visualStyle = {};
 						runtime->eraserWidthMode = EraserWidthMode::Fixed;
 						runtime->eraserWidthModeRevision = 0;
 						runtime->suppressPressure = false;
@@ -5443,7 +5475,8 @@ namespace Inkeys::Drawing::Draw3
 						if (runtime->tool != DrawingTool::Eraser &&
 							runtime->tool != DrawingTool::Laser && !runtime->shape.active &&
 							!runtime->stroke.l0DrawPoints.empty())
-							DrawL0LiveComposite(runtime->stroke, ColorForTool(runtime->tool),
+							DrawL0LiveComposite(runtime->stroke,
+								ColorForTool(runtime->tool, runtime->visualStyle),
 								StrokeShape::RoundCapsule, renderer_, false);
 					}
 					DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch);

@@ -8,29 +8,12 @@ module Inkeys.Message;
 
 namespace
 {
-	[[nodiscard]] HiMsg::MessageFilter ToHiMsg(Inkeys::Message::Filter filter) noexcept
-	{
-		return static_cast<HiMsg::MessageFilter>(static_cast<BYTE>(filter));
-	}
+	constexpr ULONG_PTR PointerMouseSignature = 0xFF515700u;
+	constexpr ULONG_PTR PointerMouseSignatureMask = 0xFFFFFF00u;
+	constexpr ULONG_PTR PointerMouseTouchFlag = 0x00000080u;
 
-	[[nodiscard]] HiMsg::MessageReply ToHiMsg(Inkeys::Message::Reply reply) noexcept
+	[[nodiscard]] bool IsMouseMessage(UINT message) noexcept
 	{
-		return {
-			static_cast<HiMsg::MessageAction>(static_cast<int>(reply.action)),
-			reply.result,
-		};
-	}
-}
-
-namespace Inkeys::Message
-{
-	bool IsTouchGeneratedMouseMessage(UINT message, ULONG_PTR extraInfo) noexcept
-	{
-		constexpr ULONG_PTR pointerMouseSignature = 0xFF515700u;
-		constexpr ULONG_PTR pointerMouseSignatureMask = 0xFFFFFF00u;
-		constexpr ULONG_PTR pointerMouseTouchFlag = 0x00000080u;
-
-		bool mouseMessage = false;
 		switch (message)
 		{
 		case WM_MOUSEMOVE:
@@ -48,15 +31,50 @@ namespace Inkeys::Message
 		case WM_XBUTTONDOWN:
 		case WM_XBUTTONUP:
 		case WM_XBUTTONDBLCLK:
-			mouseMessage = true;
-			break;
+			return true;
 		default:
-			break;
+			return false;
 		}
+	}
 
-		return mouseMessage
-			&& (extraInfo & pointerMouseSignatureMask) == pointerMouseSignature
-			&& (extraInfo & pointerMouseTouchFlag) != 0;
+	[[nodiscard]] bool HasPointerMouseSignature(ULONG_PTR extraInfo) noexcept
+	{
+		return (extraInfo & PointerMouseSignatureMask) == PointerMouseSignature;
+	}
+
+	[[nodiscard]] HiMsg::MessageFilter ToHiMsg(Inkeys::Message::Filter filter) noexcept
+	{
+		return static_cast<HiMsg::MessageFilter>(static_cast<BYTE>(filter));
+	}
+
+	[[nodiscard]] HiMsg::MessageReply ToHiMsg(Inkeys::Message::Reply reply) noexcept
+	{
+		return {
+			static_cast<HiMsg::MessageAction>(static_cast<int>(reply.action)),
+			reply.result,
+		};
+	}
+}
+
+namespace Inkeys::Message
+{
+	bool IsPointerGeneratedMouseMessage(
+		UINT message,
+		ULONG_PTR extraInfo) noexcept
+	{
+		return IsMouseMessage(message) && HasPointerMouseSignature(extraInfo);
+	}
+
+	bool IsTouchGeneratedMouseMessage(UINT message, ULONG_PTR extraInfo) noexcept
+	{
+		return IsPointerGeneratedMouseMessage(message, extraInfo)
+			&& (extraInfo & PointerMouseTouchFlag) != 0;
+	}
+
+	bool IsPenGeneratedMouseMessage(UINT message, ULONG_PTR extraInfo) noexcept
+	{
+		return IsPointerGeneratedMouseMessage(message, extraInfo)
+			&& (extraInfo & PointerMouseTouchFlag) == 0;
 	}
 
 	class Channel::Impl

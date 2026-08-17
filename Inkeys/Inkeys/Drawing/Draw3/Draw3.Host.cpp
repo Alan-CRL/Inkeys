@@ -304,9 +304,8 @@ namespace Inkeys::Drawing::Draw3
 			if (state.revision == appliedBridgeRevision) return;
 			appliedBridgeRevision = state.revision;
 			window.SetSelectionMode(state.selectionMode);
-			if (selectionMode.exchange(state.selectionMode,
-				std::memory_order_acq_rel) != state.selectionMode)
-				PublishRuntimeRevision();
+			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
+				std::memory_order_acq_rel) != state.selectionMode;
 			DrawingTool tool = DrawingTool::Pen;
 			switch (state.tool)
 			{
@@ -334,6 +333,8 @@ namespace Inkeys::Drawing::Draw3
 				requestedProductPage = true;
 				requestedProductPageIndex = state.page;
 			}
+			// 显隐线程观察到新模式前，工具、橡皮模式和样式必须已完整应用。
+			if (selectionChanged) PublishRuntimeRevision();
 		}
 
 		void PumpBridgeCommands()

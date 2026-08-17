@@ -98,7 +98,10 @@ void ReconcileDraw3Presentation()
 		runtime.readyOutputTarget == expectedTarget &&
 		runtime.readyOutputRevision == runtime.requestedOutputRevision &&
 		runtime.presentedContentRevision == runtime.contentRevision;
-	if (!runtime.firstFrameReady || !targetReady) return;
+	if (!runtime.firstFrameReady) return;
+	// 离开选择后先让主 Drawpad 接管输入，避免等待预热帧时首个 Down 穿到下层窗口。
+	// 选择态仍必须等待辅助 ULW 内容就绪，防止旧帧或双窗 alpha 叠加。
+	if (selectionMode && !targetReady) return;
 
 	Inkeys::Window::DrawpadSurfaceVisibility visibility;
 	switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
