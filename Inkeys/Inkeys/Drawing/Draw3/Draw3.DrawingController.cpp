@@ -24,6 +24,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#include "Draw3.Bridge.h"
 #include "Draw3.TimerPeriod.h"
 
 #pragma comment(lib, "winmm.lib")
@@ -49,7 +50,6 @@ namespace Inkeys::Drawing::Draw3
 			timeEndPeriod(period);
 		}
 
-		const DirectX::XMFLOAT4 kHighlighterCompositeColor(1.0f, 0.0f, 0.0f, 0.35f);
 		const DirectX::XMFLOAT4 kMultiContactInkColor(1.0f, 0.0f, 0.0f, 1.0f);
 		const DirectX::XMFLOAT4 kReconnectManualTestColor(0.0f, 1.0f, 0.0f, 1.0f);
 		constexpr float kPenDiameter = 5.0f;
@@ -58,6 +58,8 @@ namespace Inkeys::Drawing::Draw3
 		constexpr float kMinimumPenCursorDiameterAt96Dpi = 5.0f;
 		constexpr float kPenTipCursorFillAlpha = 0.25f;
 		constexpr float kWideToolDiameter = 50.0f;
+		// 荧光笔几何当前在 StrokeGeometry 中固定为 50px 长边，光标必须跟随实际笔迹。
+		constexpr float kHighlighterStrokeDiameterPx = 50.0f;
 		constexpr float kReconnectManualTestRadiusPx = 4.0f;
 		constexpr float kRawMoveThresholdPx = 0.25f;
 		constexpr float kStylusPressureEpsilon = 0.0001f;
@@ -138,6 +140,13 @@ namespace Inkeys::Drawing::Draw3
 			return DiameterForTool(tool, currentProductVisualStyle);
 		}
 
+		float CanvasDiameterForTool(DrawingTool tool,
+			const ProductVisualStyle& visualStyle, float dpiScale) noexcept
+		{
+			const float diameter = DiameterForTool(tool, visualStyle);
+			return tool == DrawingTool::Laser ? diameter * dpiScale : diameter;
+		}
+
 		ShapePrimitiveKind ShapeKindForTool(DrawingTool tool) noexcept
 		{
 			switch (tool)
@@ -199,7 +208,8 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<float>(rgba & 0xffu) / 255.0f);
 			if (tool == DrawingTool::Highlighter)
 			{
-				productColor.w = (std::min)(productColor.w, kHighlighterCompositeColor.w);
+				productColor.w = (std::min)(productColor.w,
+					Bridge::kHighlighterCompositeOpacity);
 				return productColor;
 			}
 			return productColor;
@@ -208,6 +218,50 @@ namespace Inkeys::Drawing::Draw3
 		DirectX::XMFLOAT4 ColorForTool(DrawingTool tool)
 		{
 			return ColorForTool(tool, currentProductVisualStyle);
+		}
+
+		bool ProductVisualStyleEqual(const ProductVisualStyle& left,
+			const ProductVisualStyle& right) noexcept
+		{
+			return left.colorRgba == right.colorRgba && left.widthDip == right.widthDip;
+		}
+
+		void ConfigureProductInkCursorAppearances(WindowController& window,
+			const ProductVisualStyle& visualStyle, float dpiScale)
+		{
+			const DirectX::XMFLOAT4 penColor = ColorForTool(
+				DrawingTool::Pen, visualStyle);
+			const float penCursorDiameter = std::max(
+				CanvasDiameterForTool(DrawingTool::Pen, visualStyle, dpiScale),
+				kMinimumPenCursorDiameterAt96Dpi * dpiScale);
+			DrawingCursorAppearance penAppearance = {
+				DrawingCursorShape::Circle,
+				penCursorDiameter,
+				penCursorDiameter,
+				penColor.x,
+				penColor.y,
+				penColor.z
+			};
+			penAppearance.fillAlpha = kPenTipCursorFillAlpha;
+			window.ConfigureDrawingCursor(DrawingTool::Pen, penAppearance);
+
+			const DirectX::XMFLOAT4 highlighterColor = ColorForTool(
+				DrawingTool::Highlighter, visualStyle);
+			// 荧光笔绘制几何不读取 widthDip，避免用产品快照虚构与笔迹不一致的光标。
+			const float highlighterDiameter = kHighlighterStrokeDiameterPx;
+			DrawingCursorAppearance highlighterAppearance = {
+				DrawingCursorShape::Rectangle,
+				highlighterDiameter / kHighlighterNibAspectRatio,
+				highlighterDiameter,
+				highlighterColor.x,
+				highlighterColor.y,
+				highlighterColor.z
+			};
+			// Shader 的最终填充 alpha=opacity*fillAlpha，与荧光笔实际合成保持一致。
+			highlighterAppearance.opacity = highlighterColor.w;
+			highlighterAppearance.fillAlpha = 1.0f;
+			window.ConfigureDrawingCursor(DrawingTool::Highlighter,
+				highlighterAppearance);
 		}
 
 		bool TryCreateInkGuid(InkGuid& output) noexcept
@@ -1128,31 +1182,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 		currentProductVisualStyle = window_.ProductVisualStyleSnapshot();
 		window_.SetMouseUsesSystemCursor(configuration_.mouseUsesSystemCursor);
-		const DirectX::XMFLOAT4 penColor = ColorForTool(DrawingTool::Pen);
-		const float penCursorDiameter = std::max(
-			DiameterForTool(DrawingTool::Pen),
-			kMinimumPenCursorDiameterAt96Dpi * configuration_.dpiScale);
-		DrawingCursorAppearance penCursorAppearance = {
-			DrawingCursorShape::Circle,
-			penCursorDiameter,
-			penCursorDiameter,
-			penColor.x,
-			penColor.y,
-			penColor.z
-		};
-		penCursorAppearance.fillAlpha = kPenTipCursorFillAlpha;
-		window_.ConfigureDrawingCursor(DrawingTool::Pen, penCursorAppearance);
-		const DirectX::XMFLOAT4 highlighterColor = ColorForTool(DrawingTool::Highlighter);
-		DrawingCursorAppearance highlighterCursorAppearance = {
-			DrawingCursorShape::Rectangle,
-			DiameterForTool(DrawingTool::Highlighter) / kHighlighterNibAspectRatio,
-			DiameterForTool(DrawingTool::Highlighter),
-			highlighterColor.x,
-			highlighterColor.y,
-			highlighterColor.z
-		};
-		highlighterCursorAppearance.fillAlpha = kPenTipCursorFillAlpha;
-		window_.ConfigureDrawingCursor(DrawingTool::Highlighter, highlighterCursorAppearance);
+		ConfigureProductInkCursorAppearances(window_, currentProductVisualStyle,
+			configuration_.dpiScale);
 		// 橡皮实际模型使用画布像素宽度，光标不能再次乘 DPI。
 		const float eraserCursorDiameter = kWideToolDiameter;
 		DrawingCursorAppearance eraserAppearance = {
@@ -1168,8 +1199,8 @@ namespace Inkeys::Drawing::Draw3
 		eraserAppearance.outlineGreen = 207.0f / 255.0f;
 		eraserAppearance.outlineBlue = 207.0f / 255.0f;
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
-		const float laserSolidDiameter =
-			kLaserSolidDiameterAt96Dpi * configuration_.dpiScale;
+		const float laserSolidDiameter = CanvasDiameterForTool(
+			DrawingTool::Laser, currentProductVisualStyle, configuration_.dpiScale);
 		DrawingCursorAppearance laserAppearance = {
 			DrawingCursorShape::Circle,
 			laserSolidDiameter,
@@ -2453,9 +2484,8 @@ namespace Inkeys::Drawing::Draw3
 				runtime->laserLayerId = 0;
 				ResetLaserParticleEmitterState(*runtime);
 				runtime->metricEligibleQpc = down.qpc;
-				float baseDiameter = DiameterForTool(
-					runtime->tool, runtime->visualStyle) *
-					(runtime->tool == DrawingTool::Laser ? configuration_.dpiScale : 1.0f);
+				float baseDiameter = CanvasDiameterForTool(
+					runtime->tool, runtime->visualStyle, configuration_.dpiScale);
 				if (widthMode == StrokeWidthMode::SpeedEraser)
 				{
 					initializeSpeedEraserController(*runtime, down);
@@ -4245,7 +4275,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
 			timerPeriod.SetSelectionMode(selectionMode);
-			currentProductVisualStyle = window_.ProductVisualStyleSnapshot();
+			const ProductVisualStyle nextProductVisualStyle =
+				window_.ProductVisualStyleSnapshot();
+			if (!ProductVisualStyleEqual(
+				currentProductVisualStyle, nextProductVisualStyle))
+			{
+				currentProductVisualStyle = nextProductVisualStyle;
+				// Hover 跟随最新产品样式；已开始的笔画仍读取 Down 时锁存的 visualStyle。
+				ConfigureProductInkCursorAppearances(window_, currentProductVisualStyle,
+					configuration_.dpiScale);
+			}
 			const double frameStartMs = GetQpcTimeMilliseconds();
 			if (metrics_) metrics_->BeginFrame();
 			lastPresentDurationMs_ = 0.0;

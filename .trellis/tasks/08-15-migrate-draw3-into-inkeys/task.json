@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "08-17-draw3-tool-cursor-visuals"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "Initial source-history merge is 1bc302d1. Draw3 integration and fixed stroke modeler library changes have been committed; the task remains active for follow-up work. ARM64 Debug/Release solution builds, no-window logic tests, and hidden DComp/DWM2/DWM/ULW tests passed. Source task history is under archive/2026-08/draw3-source.",

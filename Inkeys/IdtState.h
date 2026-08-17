@@ -96,6 +96,7 @@ bool SetPenWidth(float targetWidth, bool setMemory = true);
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
 float GetPenWidth();
 COLORREF GetPenColor();
+float GetEffectivePenOpacity();
 
 bool ChangeStateModeToSelection();
 bool ChangeStateModeToPen();

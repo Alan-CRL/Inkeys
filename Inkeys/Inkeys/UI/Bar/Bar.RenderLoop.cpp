@@ -1196,16 +1196,14 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			state.barState.drawAttributeBar.colorPickerHoldLocked ? 1.0 : 0.0,
 			BarColorPickerHoldHintAnimationDur);
 		{
-			// Draw2 绘制源色时忽略通道 alpha，最终透明度只由 stroke 层的 130/255 决定。
+			// 显示 Draw3 当前工具的最终合成透明度，不沿用 Draw2 的 130/255 常量。
 			COLORREF penColor = GetPenColor();
 			double displayR = GetRValue(penColor);
 			double displayG = GetGValue(penColor);
 			double displayB = GetBValue(penColor);
-			double strokeAlpha =
-				stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
-					? (130.0 / 255.0) : 1.0;
 			double displayOpacity = clamp(
-				strokeAlpha * 100.0, 0.0, 100.0);
+				static_cast<double>(GetEffectivePenOpacity()) * 100.0,
+				0.0, 100.0);
 			bool pickerDragging =
 				state.barState.drawAttributeBar.colorPickerPointerPressed;
 			if (!state.drawAttributeColorPickerDisplayInitialized)

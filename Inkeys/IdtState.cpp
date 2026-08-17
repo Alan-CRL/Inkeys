@@ -220,6 +220,15 @@ COLORREF GetPenColor()
 	return stateMode.Pen.Brush1.color;
 }
 
+float GetEffectivePenOpacity()
+{
+	// Laser 不复用已记忆的 Pen.ModeSelect；当前只有荧光笔使用固定半透明合成。
+	return !stateMode.laserActive &&
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+		? Inkeys::Drawing::Draw3::Bridge::kHighlighterCompositeOpacity : 1.0f;
+}
+
 bool ChangeStateModeToSelection()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;

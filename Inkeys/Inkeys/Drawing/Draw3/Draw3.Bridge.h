@@ -7,6 +7,9 @@
 
 namespace Inkeys::Drawing::Draw3::Bridge
 {
+	// 产品 UI 与 Draw3 光标/笔迹共同使用的最终荧光笔透明度。
+	inline constexpr float kHighlighterCompositeOpacity = 0.35f;
+
 	// 产品层固定工具编号；不要把旧 Draw2 的模式值直接暴露给 Draw3。
 	enum class Tool : std::uint8_t
 	{

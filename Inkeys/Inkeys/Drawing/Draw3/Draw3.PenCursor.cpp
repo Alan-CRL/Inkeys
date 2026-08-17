@@ -283,15 +283,16 @@ namespace Inkeys::Drawing::Draw3
 		visual.y = sample->y;
 		visual.appearance = eraser ? eraserAppearance : selectedAppearance;
 		if (eraser && sample->inContact) visual.appearance.opacity = 1.0f;
-		if (pen && !translucentInkCursorEnabled)
+		if (pen && !eraser && !translucentInkCursorEnabled &&
+			visual.appearance.opacity >= 1.0f)
 		{
-			// 正常模式同时提高整体和填充 Alpha，保留原轮廓、颜色与尺寸。
+			// 只把普通不透明 Pen 提升为实心；荧光笔和 Eraser Hover 保留工具 alpha。
 			visual.appearance.opacity = 1.0f;
 			visual.appearance.fillAlpha = 1.0f;
 		}
-		else if (!pen && !eraser)
+		else if (!pen && !eraser && visual.appearance.opacity >= 1.0f)
 		{
-			// Mouse 不继承 Ink 半透明模式；使用应用光标时也始终保持正常 Alpha。
+			// Mouse 的普通 Pen 应用光标保持正常 Alpha，部分透明工具仍使用真实 alpha。
 			visual.appearance.opacity = 1.0f;
 			visual.appearance.fillAlpha = 1.0f;
 		}

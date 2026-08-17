@@ -76,6 +76,54 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做和页面切换接入已验证实现；保存、超级恢复、自动直线拉直和输入测试保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
 
+## Scenario: 工具光标样式与有效透明度
+
+### 1. Scope / Trigger
+
+修改 Pen、Highlighter、Eraser 或 Laser 的颜色、粗细、光标可见性、透明度或 Bar 显示值时必须应用本合同。
+
+### 2. Signatures
+
+- `Bridge::ProductState { tool, colorRgba, widthDip, revision }`
+- `GetEffectivePenOpacity() -> float`
+- `WindowController::SetProductVisualStyle(colorRgba, widthDip)` / `ProductVisualStyleSnapshot()`
+- `ConfigureDrawingCursor(tool, appearance)` / `ResolvePrimaryDrawingCursorVisual(...)`
+
+### 3. Contracts
+
+- `stateMode` 只保存产品工具意图；`laserActive` 以独立覆盖位优先映射为 Laser，不污染已记忆的 `Pen.ModeSelect`。
+- bridge 只跨线程传递稳定工具、RGB 和粗细快照；活动笔画在 Down 时锁存 `ProductVisualStyle`，Hover 光标在帧边界跟随最新快照。
+- 普通笔光标直径是 `max(widthDip, 5 DIP * dpiScale)`；只有最小光标值按 DPI 缩放，实际笔画粗细不重复缩放。
+- 荧光笔当前绘制几何固定为 `6.25 × 50 px`，光标必须复用该尺寸；最终 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。
+- Eraser Hover 整体 alpha 为 `0.5`，Contact 为 `1.0`；这一规则同时适用固定/速度橡皮、鼠标和倒转笔橡皮。
+- Laser 当前没有产品宽度 state；光标与笔迹必须共用 `kLaserSolidDiameterAt96Dpi * dpiScale`。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| 颜色/粗细在 Hover 期间改变 | 下一光标帧使用新样式；已 Down 笔画不重染 |
+| 荧光笔经过 Pen 默认 alpha 归一化 | 仍保持 `0.35`，不提升为 `1.0` |
+| 橡皮 Hover / Contact | 分别为 `0.5` / `1.0` |
+| Laser 尺寸调整 | 同时修改共享直径来源，不单改光标或笔迹 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：颜色/粗细快照由绘制线程在帧边界消费，光标立即更新，活动笔画保持 Down 样式。
+- Base：没有样式变化时不重复配置 appearance。
+- Bad：让 resolver 无条件覆盖工具 alpha，或用普通笔宽度暗中驱动 Laser。
+
+### 6. Tests Required
+
+- 纯逻辑测试覆盖荧光笔 `0.35`、橡皮 Hover/Contact、鼠标、倒转笔和 Touch Contact。
+- 静态检查普通笔最小 DIP 直径、荧光笔实际 `6.25 × 50 px` 尺寸以及 Laser 光标/笔迹共享 helper。
+- 完整 ARM64 `Debug|ARM64` Solution 构建，再运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-hidden-test`。
+
+### 7. Wrong vs Correct
+
+- Wrong：`Pen sample -> opacity = 1.0`，把 Highlighter 或 Eraser Hover 当普通笔处理。
+- Correct：只对原本不透明的普通 Pen/Mouse appearance 做默认归一化，部分透明工具保留自身 alpha。
+
 ## Scenario: 选择模式、当前页内容与 Clear 截断
 
 ### 1. Scope / Trigger
