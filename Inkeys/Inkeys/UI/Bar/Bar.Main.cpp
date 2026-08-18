@@ -251,6 +251,13 @@ namespace Inkeys::UI::Bar
 		BarUiDebugFrameRateEnabled = showFrameRate;
 		// 渲染线程会比较新旧选项，只在需要时清除 FPS 文字或红框。
 		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::WhiteboardMask());
+	}
+
+	bool DebugModeEnabled() noexcept
+	{
+		return BarUiDebugModeEnabled;
 	}
 
 	void SetCurrentPageHasContent(bool hasContent) noexcept

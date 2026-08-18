@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -46,18 +46,20 @@ namespace
 		Check(left.bounds.left == monitor.left + 5
 			&& left.bounds.bottom == monitor.bottom - 5
 			&& left.bounds.right - left.bounds.left == 195
-			&& left.bounds.bottom - left.bounds.top == 60,
-			"left control uses fixed 195x60 DIP and five DIP margin");
+			&& left.bounds.bottom - left.bounds.top == 70,
+			"left control uses fixed 195x70 DIP and five DIP margin");
 		Check(right.bounds.right == monitor.right - 5
 			&& right.bounds.top == left.bounds.top,
 			"right control mirrors against the monitor edge");
 		Check(left.currentPage.top < left.totalPage.top
-			&& left.currentPage.bottom <= left.totalPage.bottom,
-			"current page occupies the stronger upper text tier");
+			&& left.currentPage.bottom <= left.totalPage.bottom
+			&& left.previous.left == 5 && left.previous.right == 65
+			&& left.next.left == 130 && left.next.right == 190,
+			"page controls keep separate arrow and page-number tiers");
 
 		const auto scaled = ResolveControlLayout(monitor, 1.5F, true);
 		Check(scaled.bounds.right - scaled.bounds.left == 293
-			&& scaled.bounds.bottom - scaled.bounds.top == 90,
+			&& scaled.bounds.bottom - scaled.bounds.top == 105,
 			"layout converts DIP to physical pixels at monitor DPI");
 	}
 
@@ -72,12 +74,18 @@ namespace
 			== static_cast<unsigned>(WindowRole::WhiteboardRight) + 1,
 			"whiteboard roles stay between drawpad and PPT roles");
 
-		Inkeys::Window::Service service;
-		Check(service.OverlayTopmost(), "overlay defaults to topmost mode");
-		(void)service.SetOverlayTopmost(false);
-		Check(!service.OverlayTopmost(), "notopmost mode persists without a refresh target");
-		(void)service.SetOverlayTopmost(true);
-		Check(service.OverlayTopmost(), "topmost mode restores persistently");
+			Inkeys::Window::Service service;
+			Check(service.OverlayTopmost(), "overlay defaults to topmost mode");
+			Check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
+			(void)service.SetOverlayTopmost(false);
+			Check(!service.OverlayTopmost(), "notopmost mode persists without a refresh target");
+			(void)service.SetOverlayFullscreen(true);
+			Check(service.OverlayFullscreen() && !service.OverlayTopmost(),
+				"fullscreen mark persists independently of topmost");
+			(void)service.SetOverlayFullscreen(false);
+			(void)service.SetOverlayTopmost(true);
+			Check(service.OverlayTopmost() && !service.OverlayFullscreen(),
+				"topmost restore keeps fullscreen independently cleared");
 	}
 }
 

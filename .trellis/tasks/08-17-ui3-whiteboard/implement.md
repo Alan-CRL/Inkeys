@@ -3,7 +3,7 @@
 ## Ordered Checklist
 
 1. 扩展 Draw3 bridge、Host snapshot 和 DrawingController workspace/page runtime；加入白板输出目标与平移门控。
-2. 扩展 WindowRole、owner/ready/hide 映射和持久 topmost 模式，修正周期性 TopWindow 强制 TOPMOST。
+2. 扩展 WindowRole、owner/ready/hide 映射、持久 topmost 模式和 Freeze 全屏标记，修正周期性 TopWindow 强制 TOPMOST。
 3. 新增 `Inkeys.UI.Whiteboard` UI3 模块、固定左右控件、Freeze 背景客户端和资源加载。
 4. 在主线程注册白板窗口和 UI3 client，接入 StateMonitoring 的进入/退出事务与 PPT 同步门控。
 5. 扩展 BarButton、A2 migration、动态图标/文字/尺寸和白板专用底栏动画锁。

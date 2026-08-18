@@ -10,7 +10,8 @@
 
 namespace Inkeys::UI::Bar
 {
-	inline constexpr double BarBottomDockThresholdDip = 20.0;
+		inline constexpr double BarBottomDockThresholdDip = 20.0;
+		inline constexpr double BarWhiteboardBottomInsetDip = 5.0;
 	inline constexpr double BarBottomDockVisualLimitDip = 24.0;
 	inline constexpr double BarBottomDockSpringOmega = 18.0;
 	inline constexpr double BarBottomDockSpringDampingRatio = 0.72;
@@ -99,12 +100,14 @@ namespace Inkeys::UI::Bar
 			dockLineDip };
 	}
 
-	struct BarBottomDockEnvironment
-	{
-		RECT monitorBounds{};
-		RECT workArea{};
-		double zoom = 1.0;
-	};
+		struct BarBottomDockEnvironment
+		{
+			RECT monitorBounds{};
+			RECT workArea{};
+			double zoom = 1.0;
+			double insetDip = 0.0;
+			double dpiScale = 1.0;
+		};
 
 	[[nodiscard]] inline double NormalizeBarBottomDockZoom(double zoom) noexcept
 	{
@@ -124,22 +127,38 @@ namespace Inkeys::UI::Bar
 		return NormalizeBarBottomDockZoom(dpiScale * configZoom);
 	}
 
-	[[nodiscard]] inline double ResolveBarBottomDockLine(
-		const RECT& monitorBounds, const RECT& workArea) noexcept
-	{
-		const bool monitorValid = monitorBounds.right > monitorBounds.left
-			&& monitorBounds.bottom > monitorBounds.top;
-		if (!monitorValid) return static_cast<double>(monitorBounds.bottom);
-		const bool workAreaValid = workArea.right > workArea.left
-			&& workArea.bottom > workArea.top
-			&& workArea.left >= monitorBounds.left
-			&& workArea.top >= monitorBounds.top
-			&& workArea.right <= monitorBounds.right
-			&& workArea.bottom <= monitorBounds.bottom;
-		return static_cast<double>(workAreaValid
-			&& workArea.bottom < monitorBounds.bottom
-			? workArea.bottom : monitorBounds.bottom);
-	}
+		[[nodiscard]] inline double ResolveBarBottomDockInsetPixels(
+			double insetDip, double dpiScale) noexcept
+		{
+			insetDip = std::max(0.0, std::isfinite(insetDip) ? insetDip : 0.0);
+			dpiScale = NormalizeBarBottomDockZoom(
+				std::isfinite(dpiScale) && dpiScale > 0.0 ? dpiScale : 1.0);
+			return std::round(insetDip * dpiScale);
+		}
+
+		[[nodiscard]] inline double ResolveBarBottomDockLine(
+			const RECT& monitorBounds, const RECT& workArea,
+			double insetDip = 0.0, double dpiScale = 1.0) noexcept
+		{
+			const bool monitorValid = monitorBounds.right > monitorBounds.left
+				&& monitorBounds.bottom > monitorBounds.top;
+			if (!monitorValid) return static_cast<double>(monitorBounds.bottom);
+			const double insetPx = ResolveBarBottomDockInsetPixels(insetDip, dpiScale);
+			if (insetPx > 0.0)
+			{
+				// 白板铺满显示器后，底栏贴屏幕底边再上移统一边距，不再跟任务栏工作区。
+				return static_cast<double>(monitorBounds.bottom) - insetPx;
+			}
+			const bool workAreaValid = workArea.right > workArea.left
+				&& workArea.bottom > workArea.top
+				&& workArea.left >= monitorBounds.left
+				&& workArea.top >= monitorBounds.top
+				&& workArea.right <= monitorBounds.right
+				&& workArea.bottom <= monitorBounds.bottom;
+			return static_cast<double>(workAreaValid
+				&& workArea.bottom < monitorBounds.bottom
+				? workArea.bottom : monitorBounds.bottom);
+		}
 
 	[[nodiscard]] inline double ResolveBarVisibleBorderBottomScreen(
 		double centerScreenY, double bodyHeightDip,
@@ -272,8 +291,9 @@ namespace Inkeys::UI::Bar
 			const BarBottomDockEnvironment& environment) noexcept
 		{
 			const double zoom = NormalizeBarBottomDockZoom(environment.zoom);
-			const double dockLine = ResolveBarBottomDockLine(
-				environment.monitorBounds, environment.workArea);
+				const double dockLine = ResolveBarBottomDockLine(
+					environment.monitorBounds, environment.workArea,
+					environment.insetDip, environment.dpiScale);
 			const double thresholdScreen = BarBottomDockThresholdDip * zoom;
 			BarBottomDockDragUpdate result;
 			result.mode = mode_;

@@ -12,7 +12,7 @@
 1. Bar Whiteboard 按钮或关闭按钮只发布 `RequestWhiteboardActive(bool)`。
 2. StateMonitoring 进入 `Entering`/`Exiting` 阶段，暂停/恢复 PPT UI 和页码发布。
 3. Draw3 `ProductState.workspace` 改变后，DrawingController 在无 active contact 时交换文档、页索引和页面运行时缓存，并发布新的 runtime snapshot。
-4. runtime 确认目标 workspace 后，协调器显示/隐藏 Whiteboard UI、设置 Drawpad 呈现目标、切换 Bar 底栏专用状态，并设置 Window Service topmost 模式。
+4. runtime 确认目标 workspace 后，协调器显示/隐藏 Whiteboard UI、设置 Drawpad 呈现目标、切换 Bar 底栏专用状态，先标记 Freeze 全屏再切换 Window Service topmost 模式。
 5. Whiteboard 翻页回调提交现有 NextPage/PreviousPage command；UI 页码只使用 Draw3 已完成切换的 snapshot。
 
 ## Public Contracts
@@ -20,6 +20,7 @@
 - `Bridge::Workspace { Presentation, Whiteboard }`。
 - `Bridge::ProductState.workspace` 与 `HostRuntimeSnapshot.workspace`。
 - Window Service 增加 `SetOverlayTopmost(bool)`，`RefreshTopmost` 读取持久化目标并对 owner root 使用 `HWND_TOPMOST`/`HWND_NOTOPMOST`。
+- Window Service 增加 `SetOverlayFullscreen(bool)`；刷新时对 Freeze HWND 调用 `ITaskbarList2::MarkFullscreenWindow`，让无焦点全屏窗仍能让任务栏退出工作区。
 - Whiteboard 模块提供 `Initialize`, `Shutdown`, `WindowProc`, `PublishActive`, `PublishPageState`，以及上一页/下一页业务回调。
 - Bar 提供白板激活状态和专用底栏进入/解除接口；所有 UI 线程请求必须异步化。
 

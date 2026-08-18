@@ -1,5 +1,7 @@
 module;
 
+#include <objbase.h>
+#include <shobjidl.h>
 #include <windows.h>
 
 #include <array>
@@ -343,16 +345,28 @@ namespace Inkeys::Window
 			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
 		}
 
-		[[nodiscard]] bool SetOverlayTopmost(bool topmost)
-		{
-			overlayTopmost_.store(topmost, std::memory_order_release);
-			return RequestTopmostRefresh();
-		}
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost)
+			{
+				overlayTopmost_.store(topmost, std::memory_order_release);
+				return RequestTopmostRefresh();
+			}
 
-		[[nodiscard]] bool OverlayTopmost() const noexcept
-		{
-			return overlayTopmost_.load(std::memory_order_acquire);
-		}
+			[[nodiscard]] bool OverlayTopmost() const noexcept
+			{
+				return overlayTopmost_.load(std::memory_order_acquire);
+			}
+
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen)
+			{
+				overlayFullscreen_.store(fullscreen, std::memory_order_release);
+				if (!running_.load(std::memory_order_acquire)) return true;
+				return RequestTopmostRefresh();
+			}
+
+			[[nodiscard]] bool OverlayFullscreen() const noexcept
+			{
+				return overlayFullscreen_.load(std::memory_order_acquire);
+			}
 
 		[[nodiscard]] bool PromotePptWindow(WindowRole role)
 		{
@@ -448,9 +462,10 @@ namespace Inkeys::Window
 			return IsValidRole(role) ? &records_[RoleIndex(role)] : nullptr;
 		}
 
-		void ResetState()
-		{
-			overlayTopmost_.store(true, std::memory_order_release);
+			void ResetState()
+			{
+				overlayTopmost_.store(true, std::memory_order_release);
+				overlayFullscreen_.store(false, std::memory_order_release);
 			for (auto& spec : specs_)
 				spec.reset();
 			for (auto& configured : configured_)
@@ -516,29 +531,34 @@ namespace Inkeys::Window
 			}
 		}
 
-		void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise)
-		{
-			const DWORD threadId = GetCurrentThreadId();
-			(settingGroup ? settingThreadId_ : overlayThreadId_).store(
-				threadId, std::memory_order_release);
-			bool created = false;
-			try
+			void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise)
 			{
-				created = CreateGroup(settingGroup, threadId);
-				readyPromise.set_value(created);
-			}
-			catch (...)
-			{
-				try { readyPromise.set_value(false); }
-				catch (...) {}
-			}
-			if (!created)
-			{
-				DestroyGroup(settingGroup);
+				const DWORD threadId = GetCurrentThreadId();
 				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
-					0, std::memory_order_release);
-				return;
-			}
+					threadId, std::memory_order_release);
+				const HRESULT comInit = settingGroup ? E_FAIL : CoInitializeEx(
+					nullptr, COINIT_APARTMENTTHREADED);
+				const bool comOwned = !settingGroup &&
+					(comInit == S_OK || comInit == S_FALSE);
+				bool created = false;
+				try
+				{
+					created = CreateGroup(settingGroup, threadId);
+					readyPromise.set_value(created);
+				}
+				catch (...)
+				{
+					try { readyPromise.set_value(false); }
+					catch (...) {}
+				}
+				if (!created)
+				{
+					DestroyGroup(settingGroup);
+					(settingGroup ? settingThreadId_ : overlayThreadId_).store(
+						0, std::memory_order_release);
+					if (comOwned) CoUninitialize();
+					return;
+				}
 
 			HANDLE eventHandle = settingGroup ? settingEvent_ : overlayEvent_;
 			std::stop_callback stopCallback(token, [eventHandle]
@@ -577,11 +597,18 @@ namespace Inkeys::Window
 					DrainCommands(queue);
 			}
 
-			FailPendingCommands(queue);
-			DestroyGroup(settingGroup);
-			(settingGroup ? settingThreadId_ : overlayThreadId_).store(
-				0, std::memory_order_release);
-		}
+				FailPendingCommands(queue);
+				if (!settingGroup)
+				{
+					overlayFullscreen_.store(false, std::memory_order_release);
+					if (const HWND root = OverlayRoot())
+						ApplyOverlayFullscreen(root);
+				}
+				DestroyGroup(settingGroup);
+				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
+					0, std::memory_order_release);
+				if (comOwned) CoUninitialize();
+			}
 
 		[[nodiscard]] bool CreateGroup(bool settingGroup, DWORD threadId)
 		{
@@ -1020,14 +1047,17 @@ namespace Inkeys::Window
 					static_cast<LONG_PTR>(command.setMask) &&
 					(applied & static_cast<LONG_PTR>(command.clearMask)) == 0;
 			}
-			case CommandType::RefreshTopmost:
-			{
-				const HWND root = OverlayRoot();
-				// Win32 会让 owned popup 跟随 owner 进入 topmost band；这里只操作链根。
-				return root && SetWindowPos(
-					root, overlayTopmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
-			}
+				case CommandType::RefreshTopmost:
+				{
+					const HWND root = OverlayRoot();
+					// Win32 会让 owned popup 跟随 owner 进入 topmost band；这里只操作链根。
+					if (!root || !SetWindowPos(
+						root, overlayTopmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+						return false;
+					ApplyOverlayFullscreen(root);
+					return true;
+				}
 			case CommandType::PromotePpt:
 			{
 				if (!IsPpt(command.role)) return false;
@@ -1200,8 +1230,28 @@ namespace Inkeys::Window
 			return true;
 		}
 
-		[[nodiscard]] bool CanChangeChainRole(WindowRole role) const noexcept
-		{
+			void ApplyOverlayFullscreen(HWND root) noexcept
+			{
+				const bool fullscreen = overlayFullscreen_.load(std::memory_order_acquire);
+				HWND target = Handle(WindowRole::Freeze);
+				if (!target || !IsWindow(target)) target = root;
+				if (!target || !IsWindow(target)) return;
+
+				// Explorer 只把“前台全屏窗”当成覆盖任务栏的信号；无焦点 overlay
+				// 必须额外走 ITaskbarList2，否则 NOTOPMOST 全屏会被任务栏盖住。
+				// 标记 Freeze 本体，避免 MagnifierHost 的 avoidFullScreen 少 1px 失效。
+				ITaskbarList2* taskbar = nullptr;
+				const HRESULT created = CoCreateInstance(
+					CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
+					__uuidof(ITaskbarList2), reinterpret_cast<void**>(&taskbar));
+				if (FAILED(created) || !taskbar) return;
+				if (SUCCEEDED(taskbar->HrInit()))
+					(void)taskbar->MarkFullscreenWindow(target, fullscreen ? TRUE : FALSE);
+				taskbar->Release();
+			}
+
+			[[nodiscard]] bool CanChangeChainRole(WindowRole role) const noexcept
+			{
 			const int position = OverlayChainPosition(role);
 			if (position < 0)
 				return true;
@@ -1240,9 +1290,10 @@ namespace Inkeys::Window
 		HANDLE settingEvent_ = nullptr;
 		CommandQueue overlayCommands_;
 		CommandQueue settingCommands_;
-		std::mutex lifecycleMutex_;
-		std::atomic_bool overlayTopmost_ = true;
-	};
+			std::mutex lifecycleMutex_;
+			std::atomic_bool overlayTopmost_ = true;
+			std::atomic_bool overlayFullscreen_ = false;
+		};
 
 	Service::Service(std::size_t messageCapacity)
 		: impl_(std::make_unique<Impl>(messageCapacity))
@@ -1290,11 +1341,16 @@ namespace Inkeys::Window
 	{
 		return impl_->SetExtendedStyleFlags(role, setMask, clearMask);
 	}
-	bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
-	bool Service::SetOverlayTopmost(bool topmost) { return impl_->SetOverlayTopmost(topmost); }
-	bool Service::OverlayTopmost() const noexcept { return impl_->OverlayTopmost(); }
-	bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
-	bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
+		bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+		bool Service::SetOverlayTopmost(bool topmost) { return impl_->SetOverlayTopmost(topmost); }
+		bool Service::OverlayTopmost() const noexcept { return impl_->OverlayTopmost(); }
+		bool Service::SetOverlayFullscreen(bool fullscreen)
+		{
+			return impl_->SetOverlayFullscreen(fullscreen);
+		}
+		bool Service::OverlayFullscreen() const noexcept { return impl_->OverlayFullscreen(); }
+		bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
+		bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
 	bool Service::UnbindMessages(WindowRole role) { return impl_->UnbindMessages(role); }
 
 	bool Service::Enqueue(WindowRole role, Message::Message message)

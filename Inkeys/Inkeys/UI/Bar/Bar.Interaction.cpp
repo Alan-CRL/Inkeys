@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -5722,10 +5722,23 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	LONG appliedDeltaY = directWindowDragTranslationY.load(memory_order_acquire);
 	bool directMoveFailed = false;
 
-	BarBottomDockEnvironment environment{
-		initialPresentedSnapshot.monitorBounds,
-		initialPresentedSnapshot.workArea,
-		interactionZoom };
+		auto ResolveDockInsetDip = []() noexcept
+			{
+				return Inkeys::UI::Bar::WhiteboardActive()
+					? BarWhiteboardBottomInsetDip : 0.0;
+			};
+		auto ResolveDockDpiScale = [](UINT dpi) noexcept
+			{
+				return clamp(
+					static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
+					static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+			};
+		BarBottomDockEnvironment environment{
+			initialPresentedSnapshot.monitorBounds,
+			initialPresentedSnapshot.workArea,
+			interactionZoom,
+			ResolveDockInsetDip(),
+			ResolveDockDpiScale(initialPresentedSnapshot.dpi) };
 	unsigned long long observedDisplaySerial =
 		initialPresentedSnapshot.displaySerial;
 	bool displayEnvironmentAwaited = initialDisplayTransitionPending;
@@ -5772,10 +5785,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		startPointer.y - grabOffsetScreenY, memory_order_release);
 	const double initialFloatingVisibleBottomScreenY =
 		startPointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
-	const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
-		ResolveBarBottomDockLine(
-			environment.monitorBounds, environment.workArea),
-		bodyHeightDip, strokeWidthDip, interactionZoom);
+		const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+			ResolveBarBottomDockLine(
+				environment.monitorBounds, environment.workArea,
+				environment.insetDip, environment.dpiScale),
+			bodyHeightDip, strokeWidthDip, interactionZoom);
 	BarBottomDockDragTracker dockTracker;
 	dockTracker.Begin(initialMode, startPointer.y,
 		initialFloatingVisibleBottomScreenY,
@@ -5868,10 +5882,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							+ presented.rigidTranslationDip * presented.zoom);
 					const double floatingBottom = pointer.y - grabOffsetScreenY
 						+ VisibleHalfHeightScreen();
-					const double dockCenter = ResolveBarBottomDockCenterScreenY(
-						ResolveBarBottomDockLine(
-							environment.monitorBounds, environment.workArea),
-						bodyHeightDip, strokeWidthDip, interactionZoom);
+						const double dockCenter = ResolveBarBottomDockCenterScreenY(
+							ResolveBarBottomDockLine(
+								environment.monitorBounds, environment.workArea,
+								environment.insetDip, environment.dpiScale),
+							bodyHeightDip, strokeWidthDip, interactionZoom);
 					dockTracker.RebaseDockGrip(
 						dockCenter + grabOffsetScreenY, floatingBottom);
 					appliedDeltaX = directWindowDragTranslationX.load(
@@ -5884,10 +5899,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 					interactionZoom = presented.zoom;
 					maximumInteractionZoom = max(
 						maximumInteractionZoom, interactionZoom);
-					environment = BarBottomDockEnvironment{
-						presented.monitorBounds,
-						presented.workArea,
-						interactionZoom };
+						environment = BarBottomDockEnvironment{
+							presented.monitorBounds,
+							presented.workArea,
+							interactionZoom,
+							ResolveDockInsetDip(),
+							ResolveDockDpiScale(presented.dpi) };
 					observedDisplaySerial = presented.displaySerial;
 					requestedDisplaySerial = presented.displaySerial;
 					requestedDisplayZoom = interactionZoom;
@@ -5971,10 +5988,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 						- VisibleHalfHeightScreen());
 				desiredMainCenterScreenY = clamp(
 					desiredMainCenterScreenY, minimumY, maximumY);
-				const double dockCenterScreenY = ResolveBarBottomDockCenterScreenY(
-					ResolveBarBottomDockLine(environment.monitorBounds,
-						environment.workArea), bodyHeightDip,
-					strokeWidthDip, interactionZoom);
+					const double dockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+						ResolveBarBottomDockLine(environment.monitorBounds,
+							environment.workArea, environment.insetDip,
+							environment.dpiScale), bodyHeightDip,
+						strokeWidthDip, interactionZoom);
 				downwardDetachBlockedAtRelease =
 					ShouldKeepBarBottomDockedAfterBlockedDownwardRelease(
 						downwardDetachSeen, rawMainCenterScreenY,
@@ -6246,6 +6264,14 @@ namespace Inkeys::UI::Bar
 		message.message = keyDown ? WM_KEYDOWN : WM_KEYUP;
 		message.vkcode = vkCode;
 		return Inkeys::Window::Enqueue(floating_window, message);
+	}
+
+	void NotifyWhiteboardControlPointerActivity(bool inside) noexcept
+	{
+		if (offSignal || !floating_window || !IsWindow(floating_window)) return;
+		// 白板翻页栏只转发自然鼠标进入/离开，第三光仍由 Bar 的同一状态机维护。
+		if (inside) barUISet.ActivateBorderCursorTracking(floating_window);
+		else barUISet.RegisterBorderCursorLight(floating_window);
 	}
 
 	void NotifyCanvasDrawingStarted()

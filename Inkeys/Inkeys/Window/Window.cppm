@@ -107,10 +107,13 @@ export namespace Inkeys::Window
 		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
 		[[nodiscard]] bool SetExtendedStyleFlags(
 			WindowRole role, DWORD setMask, DWORD clearMask);
-		[[nodiscard]] bool RequestTopmostRefresh();
-		[[nodiscard]] bool SetOverlayTopmost(bool topmost);
-		[[nodiscard]] bool OverlayTopmost() const noexcept;
-		[[nodiscard]] bool PromotePptWindow(WindowRole role);
+			[[nodiscard]] bool RequestTopmostRefresh();
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
+			[[nodiscard]] bool OverlayTopmost() const noexcept;
+			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen);
+			[[nodiscard]] bool OverlayFullscreen() const noexcept;
+			[[nodiscard]] bool PromotePptWindow(WindowRole role);
 
 		[[nodiscard]] bool BindMessages(
 			WindowRole role,

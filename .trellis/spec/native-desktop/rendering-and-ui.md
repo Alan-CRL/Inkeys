@@ -875,8 +875,10 @@ Window::Service::Start(std::vector<WindowSpec>) -> bool;
 Window::Service::SetBounds(WindowRole, RECT) -> bool;
 Window::Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility) -> bool;
 Window::Service::SetClickThrough(WindowRole, bool) -> bool;
-Window::Service::RequestTopmostRefresh() -> bool;
-Window::Service::PromotePptWindow(WindowRole) -> bool;
+	Window::Service::RequestTopmostRefresh() -> bool;
+	Window::Service::SetOverlayTopmost(bool) -> bool;
+	Window::Service::SetOverlayFullscreen(bool) -> bool;
+	Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
 
@@ -889,7 +891,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
-- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。DrawpadPresentation 固定 layered/transparent/noactivate/toolwindow 且低于主 Drawpad；五个 PPT HWND 与 Bar 都是主 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
+- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。DrawpadPresentation 固定 layered/transparent/noactivate/toolwindow 且低于主 Drawpad；五个 PPT HWND 与 Bar 都是主 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，禁止周期逐窗口重排。无焦点 overlay 不会被 Explorer 当成普通全屏窗；白板期间必须对 Freeze HWND 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除该标记。不得为全屏去掉 `WS_EX_NOACTIVATE`。
 - Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -921,7 +923,8 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
 - Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
-- 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
+- Window 测试还需覆盖持久 `SetOverlayTopmost` 与 `SetOverlayFullscreen`；后者不得改变 topmost 位，退出或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。
+- 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。白板全屏必须确认任务栏按普通全屏窗让出，且主栏/翻页栏底边都距屏幕底边 `5 DIP`。
 
 ### 7. Wrong vs Correct
 

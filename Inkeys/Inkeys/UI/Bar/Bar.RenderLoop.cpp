@@ -216,26 +216,38 @@ using Inkeys::UI::Bar::ResolveBarBottomDockCenterScreenY;
 using Inkeys::UI::Bar::ResolveBarBottomDockCapacityEnvelope;
 using Inkeys::UI::Bar::ResolveBarBottomDockElasticOffsetForScreenGrip;
 using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
-using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
-using Inkeys::UI::Bar::ResolveBarBottomDockLine;
-using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorGeometry;
-using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorAction;
-using Inkeys::UI::Bar::ResolveBarBottomDockBodyLocalLight;
-using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringVerticalMapping;
-using Inkeys::UI::Bar::ResolveBarBottomDockRigidLocalLight;
-using Inkeys::UI::Bar::ResolveBarBottomDockVerticalMapping;
-using Inkeys::UI::Bar::ResolveBarBottomDockVisualEnvelope;
-using Inkeys::UI::Bar::TranslateBarBottomDockRigidRect;
-using Inkeys::UI::Bar::TransformBarBottomDockBodyRect;
+	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
+	using Inkeys::UI::Bar::ResolveBarBottomDockLine;
+	using Inkeys::UI::Bar::BarWhiteboardBottomInsetDip;
+	using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorGeometry;
+	using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorAction;
+	using Inkeys::UI::Bar::ResolveBarBottomDockBodyLocalLight;
+	using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringVerticalMapping;
+	using Inkeys::UI::Bar::ResolveBarBottomDockRigidLocalLight;
+	using Inkeys::UI::Bar::ResolveBarBottomDockVerticalMapping;
+	using Inkeys::UI::Bar::ResolveBarBottomDockVisualEnvelope;
+	using Inkeys::UI::Bar::TranslateBarBottomDockRigidRect;
+	using Inkeys::UI::Bar::TransformBarBottomDockBodyRect;
 
-enum class BarRenderLoopStageResult
-{
-	Proceed,
-	Continue,
-	Idle,
-	DeviceLost,
-	Stop,
-};
+	enum class BarRenderLoopStageResult
+	{
+		Proceed,
+		Continue,
+		Idle,
+		DeviceLost,
+		Stop,
+	};
+
+	[[nodiscard]] double CurrentBarBottomDockLine(
+		const RECT& monitorBounds, const RECT& workArea, UINT dpi) noexcept
+	{
+		const double dpiScale = clamp(
+			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
+			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+		const double insetDip = Inkeys::UI::Bar::WhiteboardActive()
+			? BarWhiteboardBottomInsetDip : 0.0;
+		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
+	}
 
 enum class BarDirtyFixedVisual : BarDirtyVisualKey
 {
@@ -382,10 +394,11 @@ struct BarRenderLoopState
 	SIZE capacitySize{};
 	double capacityZoom = 0.0;
 	bool capacityOriginInitialized = false;
-	POINT monitorOrigin{};
-	RECT activeMonitorBounds{};
-	RECT activeWorkArea{};
-	unsigned long long observedDisplaySerial = 0;
+		POINT monitorOrigin{};
+		RECT activeMonitorBounds{};
+		RECT activeWorkArea{};
+		UINT activeDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+		unsigned long long observedDisplaySerial = 0;
 	bool displayTransitionInitialized = false;
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
@@ -742,12 +755,13 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	const auto serial = targetDisplay.serial;
 	const bool dragging = owner_.directWindowDragPhase.load(memory_order_acquire)
 		== BarDirectWindowDragPhase::Dragging;
-	const RECT targetBounds = targetDisplay.bounds;
-	const RECT targetWorkArea = targetDisplay.workArea;
-	const UINT targetDpi = targetDisplay.dpi;
-	const double targetDpiScale = clamp(
-		static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
-		static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+		const RECT targetBounds = targetDisplay.bounds;
+		const RECT targetWorkArea = targetDisplay.workArea;
+		const UINT targetDpi = targetDisplay.dpi;
+		state.activeDisplayDpi = targetDpi;
+		const double targetDpiScale = clamp(
+			static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
+			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 	const double configZoom = max(0.01,
 		static_cast<double>(state.barStyle.configZoom));
 	const double targetZoom = targetDpiScale * configZoom;
@@ -755,9 +769,10 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 
 	if (!state.displayTransitionInitialized)
 	{
-		state.activeMonitorBounds = targetBounds;
-		state.activeWorkArea = targetWorkArea;
-		state.monitorOrigin = { targetBounds.left, targetBounds.top };
+			state.activeMonitorBounds = targetBounds;
+			state.activeWorkArea = targetWorkArea;
+			state.activeDisplayDpi = targetDpi;
+			state.monitorOrigin = { targetBounds.left, targetBounds.top };
 		state.displayDpiScale.SetDirect(targetDpiScale);
 		const double initialZoom = targetDpiScale * configZoom;
 		state.displayCenterX.SetDirect(mainButton->x.val * initialZoom);
@@ -790,16 +805,17 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 					oldScreenCenterX, targetBounds,
 					mainButton->GetW() / 2.0
 						+ frameHalf / targetZoom, targetZoom);
-			const double dockLine = ResolveBarBottomDockLine(
-				targetBounds, targetWorkArea);
-			const double targetScreenCenterY = ResolveBarBottomDockCenterScreenY(
-				dockLine, state.mainButtonBaseSize,
-				mainButton->ft.has_value()
-					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
-				targetZoom);
-			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-			state.activeMonitorBounds = targetBounds;
-			state.activeWorkArea = targetWorkArea;
+				const double dockLine = CurrentBarBottomDockLine(
+					targetBounds, targetWorkArea, targetDpi);
+				const double targetScreenCenterY = ResolveBarBottomDockCenterScreenY(
+					dockLine, state.mainButtonBaseSize,
+					mainButton->ft.has_value()
+						? static_cast<double>(mainButton->ft.value().tar) : 0.0,
+					targetZoom);
+				state.monitorOrigin = { targetBounds.left, targetBounds.top };
+				state.activeMonitorBounds = targetBounds;
+				state.activeWorkArea = targetWorkArea;
+				state.activeDisplayDpi = targetDpi;
 			state.displayCenterX.SetDirect(
 				targetScreenCenterX - targetBounds.left);
 			state.displayCenterY.SetDirect(
@@ -813,10 +829,11 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				halfWidth, halfHeight);
 
 			// 先改坐标原点，再以等价局部起点启动动画，屏幕坐标不会发生首帧跳变。
-			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-			state.activeMonitorBounds = targetBounds;
-			state.activeWorkArea = targetWorkArea;
-			state.displayCenterX.SetDirect(placement.startLocalCenterX);
+				state.monitorOrigin = { targetBounds.left, targetBounds.top };
+				state.activeMonitorBounds = targetBounds;
+				state.activeWorkArea = targetWorkArea;
+				state.activeDisplayDpi = targetDpi;
+				state.displayCenterX.SetDirect(placement.startLocalCenterX);
 			state.displayCenterY.SetDirect(placement.startLocalCenterY);
 			state.displayCenterX.SetTar(placement.targetLocalCenterX, 0.4);
 			state.displayCenterY.SetTar(placement.targetLocalCenterY, 0.4);
@@ -845,17 +862,18 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				+ state.displayCenterY.val;
 			const POINT directTranslation =
 				frame.bottomDockTransitionTranslation;
-			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-			state.activeMonitorBounds = targetBounds;
-			state.activeWorkArea = targetWorkArea;
-			state.displayCenterX.SetDirect(
-				currentBaseCenterScreenX - targetBounds.left);
-			if (frame.bottomDockMode == BarBottomDockMode::BottomDocked)
-			{
-				const double targetDockCenterScreenY =
-					ResolveBarBottomDockCenterScreenY(
-						ResolveBarBottomDockLine(targetBounds, targetWorkArea),
-						state.mainButtonBaseSize,
+				state.monitorOrigin = { targetBounds.left, targetBounds.top };
+				state.activeMonitorBounds = targetBounds;
+				state.activeWorkArea = targetWorkArea;
+				state.activeDisplayDpi = targetDpi;
+				state.displayCenterX.SetDirect(
+					currentBaseCenterScreenX - targetBounds.left);
+				if (frame.bottomDockMode == BarBottomDockMode::BottomDocked)
+				{
+					const double targetDockCenterScreenY =
+						ResolveBarBottomDockCenterScreenY(
+							CurrentBarBottomDockLine(targetBounds, targetWorkArea, targetDpi),
+							state.mainButtonBaseSize,
 						mainButton->ft.has_value()
 							? static_cast<double>(mainButton->ft.value().tar)
 							: 0.0,
@@ -909,18 +927,19 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	const double currentZoom = currentDpiScale * configZoom;
 	state.barStyle.dpiZoom = currentDpiScale;
 	state.barStyle.zoom = currentZoom;
-	if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
-		state.whiteboardDockAnimationActive = false;
-	if (!dragging && state.initialBottomDockPlacementApplied
-		&& !state.whiteboardDockAnimationActive
-		&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
-	{
-		const double dockLine = ResolveBarBottomDockLine(
-			state.activeMonitorBounds, state.activeWorkArea);
-		state.displayCenterY.SetDirect(ResolveBarBottomDockCenterScreenY(
-			dockLine, state.mainButtonBaseSize,
-			mainButton->ft.has_value()
-				? static_cast<double>(mainButton->ft.value().tar) : 0.0,
+		if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
+			state.whiteboardDockAnimationActive = false;
+		if (!dragging && state.initialBottomDockPlacementApplied
+			&& !state.whiteboardDockAnimationActive
+			&& !state.whiteboardDockPlacementPending
+			&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
+		{
+			const double dockLine = CurrentBarBottomDockLine(
+				state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+			state.displayCenterY.SetDirect(ResolveBarBottomDockCenterScreenY(
+				dockLine, state.mainButtonBaseSize,
+				mainButton->ft.has_value()
+					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
 			currentZoom) - state.monitorOrigin.y);
 	}
 	mainButton->x.SetDirect(state.displayCenterX.val / currentZoom);
@@ -2477,9 +2496,9 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 					state.activeMonitorBounds, bodyLeftDip, bodyRightDip,
 					mainButton->GetW() / 2.0 + mainFrameHalfDip,
 					placementZoom);
-			const double dockLine = ResolveBarBottomDockLine(
-				state.activeMonitorBounds, state.activeWorkArea);
-			const double strokeWidthDip = max(
+				const double dockLine = CurrentBarBottomDockLine(
+					state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+				const double strokeWidthDip = max(
 				mainButton->ft.has_value()
 					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
 				mainBar->ft.has_value()
@@ -11111,10 +11130,12 @@ else
 							state.activeWorkArea.top, memory_order_relaxed);
 						owner_.bottomDockPresentedWorkAreaRight.store(
 							state.activeWorkArea.right, memory_order_relaxed);
-						owner_.bottomDockPresentedWorkAreaBottom.store(
-							state.activeWorkArea.bottom, memory_order_relaxed);
-						owner_.bottomDockPresentedDisplaySerial.store(
-							state.observedDisplaySerial, memory_order_relaxed);
+							owner_.bottomDockPresentedWorkAreaBottom.store(
+								state.activeWorkArea.bottom, memory_order_relaxed);
+							owner_.bottomDockPresentedDisplayDpi.store(
+								state.activeDisplayDpi, memory_order_relaxed);
+							owner_.bottomDockPresentedDisplaySerial.store(
+								state.observedDisplaySerial, memory_order_relaxed);
 						owner_.bottomDockPresentedDirectTranslationX.store(
 							directTranslation.x, memory_order_relaxed);
 						owner_.bottomDockPresentedDirectTranslationY.store(

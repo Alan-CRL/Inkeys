@@ -8,15 +8,15 @@
 
 - 白板使用独立的 Draw3 文档和页索引；内容只保留在本次进程内，退出后再次进入仍保留，程序重启后清空。
 - 复用 `WindowRole::Freeze` 绘制完整主显示器范围，背景色为 `#123B32`；旧定格、恢复提示和 PPT loading 呈现不得覆盖白板。
-- 增加独立 UI3 左下、右下翻页栏，固定位置、`195x60 DIP`，距左右/底部边缘 `5 DIP`；每栏显示上一页、当前页码、总页码、下一页。
+- 增加独立 UI3 左下、右下翻页栏，固定位置、`195x70 DIP`，距左右/底部边缘 `5 DIP`；每栏显示上一页、当前页码、总页码、下一页。
 - 当前页码较大且加粗，总页码较小且颜色较浅；第一页上一页禁用，下一页在末页追加空白页，切换期间控件不可重复提交。
 - 白板激活时隐藏 PPT 控件并暂停 PPT 到 Draw3 的页码发布；退出后恢复 PPT 控件并按最新 COM 页码同步。
 - A2 固定按钮归一化为 `Whiteboard(twoOne)` 与 `Freeze(twoOne)`；白板激活时隐藏 Freeze，Whiteboard 扩展为 `twoTwo`，图标切换为关闭 SVG，文字为“关闭白板”。
 - 进入白板强制关闭定格；绘制属性区保持展开（主栏折叠除外），不使用选择 ULW。
 - 白板选择模式只作为拖动状态，图标不变；暂不支持画布平移，选择模式不可绘制；白板始终使用主 Drawpad，即使当前页为空也不隐藏。
-- 进入白板自动将主栏动画停靠到底部中央，保留进入前的左右展开方向；专用停靠锁期间禁止水平滑动。
+- 进入白板自动将主栏动画停靠到屏幕底边再上移 `5 DIP` 的中央，保留进入前的左右展开方向；专用停靠锁期间禁止水平滑动。该边距与左右翻页栏的左右/底部边距相同，不再跟随任务栏工作区。
 - 手动离开/重新进入底栏或收起主栏时清除专用停靠锁；白板期间仍执行普通底部吸附，但不显示蓝色目标矩形。
-- 白板激活期间整个 overlay owner 链使用 `HWND_NOTOPMOST`，退出后恢复 `HWND_TOPMOST`；不因 UIAccess 增加特殊分支。
+- 白板激活期间整个 overlay owner 链使用 `HWND_NOTOPMOST`，并通过 Window Service 把 Freeze 标成系统全屏窗，使任务栏按普通全屏窗口让出；退出后清除全屏标记并恢复 `HWND_TOPMOST`。不因 UIAccess 增加特殊分支，也不为全屏去 `WS_EX_NOACTIVATE`。
 - 新增 Whiteboard SVG 资源，使用现有动态着色资源管线并统一为 24px 视觉规格。
 
 ## Acceptance Criteria
@@ -26,8 +26,8 @@
 - [ ] 翻页只影响白板文档；白板页内容、PPT 页内容和页码彼此不串线，下一页能创建空白页，第一页上一页禁用。
 - [ ] 白板选择模式使用主 Drawpad，不出现 Selection ULW，不发生画布平移或笔画提交；绘制模式仍可绘制。
 - [ ] 进入和退出白板时 Draw3 工作区切换等待活动 contact 收尾，不强制取消笔画；切换后的页面内容完整呈现。
-- [ ] 自动底栏动画保持原左右方向；专用锁解除后普通拖动、底部吸附和收起操作正常，且不显示蓝色目标背景。
-- [ ] Window Service 的 owner 顺序和持续 topmost/not-topmost 状态正确，周期性 TopWindow 不会覆盖白板的 `NOTOPMOST`。
+- [ ] 自动底栏动画保持原左右方向，稳定后主栏可见底边与左右翻页栏底边都距屏幕底边 `5 DIP`；专用锁解除后普通拖动、底部吸附和收起操作正常，且不显示蓝色目标背景。
+- [ ] Window Service 的 owner 顺序、持续 topmost/not-topmost 以及 Freeze 全屏标记正确，周期性 TopWindow 不会覆盖白板的 `NOTOPMOST` 或清掉全屏标记。
 - [ ] 通过 Draw3 bridge、Window、Bar bottom dock、PPT UI 和新增 UI3 白板 headless 测试，并完成完整 `InkeysRepo.sln` Debug|ARM64 编译。
 
 ## Scope Boundaries

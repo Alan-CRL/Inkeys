@@ -1417,9 +1417,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				else if (role == Inkeys::Window::WindowRole::WhiteboardLeft ||
 					role == Inkeys::Window::WindowRole::WhiteboardRight)
 				{
-					// 白板翻页栏始终是固定 195x60 DIP，不参与位置持久化。
+					// 白板翻页栏始终是固定 195x70 DIP，不参与位置持久化。
 					spec.width = 195;
-					spec.height = 60;
+					spec.height = 70;
 					spec.bindMessages = false;
 				}
 				windowSpecs.push_back(std::move(spec));

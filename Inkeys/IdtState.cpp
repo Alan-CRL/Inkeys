@@ -407,9 +407,10 @@ void StateMonitoring()
 			Inkeys::UI::Whiteboard::PublishPageState(
 				static_cast<int>(snapshot.currentPageIndex + 1),
 				static_cast<int>(snapshot.pageCount), false);
-			Inkeys::UI::Bar::SetWhiteboardActive(true);
-			(void)Inkeys::Window::GetService().SetOverlayTopmost(false);
-			whiteboardPhase.store(WhiteboardPhase::Active,
+				Inkeys::UI::Bar::SetWhiteboardActive(true);
+				(void)Inkeys::Window::GetService().SetOverlayFullscreen(true);
+				(void)Inkeys::Window::GetService().SetOverlayTopmost(false);
+				whiteboardPhase.store(WhiteboardPhase::Active,
 				std::memory_order_release);
 			continue;
 		}
@@ -475,10 +476,11 @@ void StateMonitoring()
 			Inkeys::UI::Whiteboard::PublishActive(false);
 			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false)) continue;
 
-			SetWhiteboardFreezeSurfaceOwned(false);
-			Inkeys::UI::Bar::SetWhiteboardActive(false);
-			(void)Inkeys::Window::GetService().SetOverlayTopmost(true);
-			whiteboardPhase.store(WhiteboardPhase::Inactive,
+				SetWhiteboardFreezeSurfaceOwned(false);
+				Inkeys::UI::Bar::SetWhiteboardActive(false);
+				(void)Inkeys::Window::GetService().SetOverlayFullscreen(false);
+				(void)Inkeys::Window::GetService().SetOverlayTopmost(true);
+				whiteboardPhase.store(WhiteboardPhase::Inactive,
 				std::memory_order_release);
 			ReconcileDraw3Presentation();
 		}

@@ -184,12 +184,18 @@ int RunWindowTests()
 		&& !(GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST),
 		"non-root has no independent topmost before refresh");
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
-	check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
-		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-		"persistent overlay notopmost refresh");
-	check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
-		&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-		"persistent overlay topmost restore");
+		check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
+			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+			"persistent overlay notopmost refresh");
+		check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
+		check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
+			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+			"fullscreen mark persists independently of topmost");
+		check(service.SetOverlayFullscreen(false) && !service.OverlayFullscreen(),
+			"fullscreen mark clears without restoring topmost");
+		check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
+			&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+			"persistent overlay topmost restore");
 	const HWND focusBeforePromote = Service::LastFocusWindow();
 	check(service.PromotePptWindow(WindowRole::PptMiddleRight), "promote ppt below bar");
 	check(GetWindow(bar, GW_HWNDNEXT) == pptMiddleRight

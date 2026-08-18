@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -6,6 +6,7 @@ module;
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
 
 export module Inkeys.UI.Bar:Rendering;
@@ -18,6 +19,29 @@ import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.Whiteboard;
+
+export namespace Inkeys::UI::Bar
+{
+	using WhiteboardControlHitTarget =
+		Inkeys::UI::Whiteboard::ControlHitTarget;
+	using WhiteboardControlLayout =
+		Inkeys::UI::Whiteboard::ControlLayout;
+	using WhiteboardControlRenderState =
+		Inkeys::UI::Whiteboard::ControlRenderState;
+	using WhiteboardControlRenderResult =
+		Inkeys::UI::Whiteboard::ControlRenderResult;
+
+	[[nodiscard]] WhiteboardControlLayout ResolveWhiteboardControlLayout(
+		RECT primaryBounds, float dpiScale, bool left) noexcept;
+	[[nodiscard]] WhiteboardControlRenderResult RenderWhiteboardControl(
+		ID2D1DeviceContext* deviceContext,
+		const WhiteboardControlRenderState& state,
+		float dpiScale,
+		bool left,
+		std::chrono::steady_clock::time_point frameTime);
+	void NotifyWhiteboardControlPointerActivity(bool inside) noexcept;
+}
 
 using Ui3RenderDeviceEpoch = Inkeys::UI::RenderPipeline::DeviceEpoch;
 
@@ -61,6 +85,12 @@ public:
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
+	Inkeys::UI::Bar::WhiteboardControlRenderResult WhiteboardControl(
+		ID2D1DeviceContext* deviceContext,
+		const Inkeys::UI::Bar::WhiteboardControlRenderState& state,
+		float dpiScale,
+		bool left,
+		std::chrono::steady_clock::time_point frameTime);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	bool PrepareFrameLighting(double animationDtSeconds,
