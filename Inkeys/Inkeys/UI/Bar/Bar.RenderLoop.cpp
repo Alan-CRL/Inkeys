@@ -389,6 +389,8 @@ struct BarRenderLoopState
 	bool displayTransitionInitialized = false;
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
+	bool whiteboardDockPlacementPending = false;
+	bool whiteboardDockAnimationActive = false;
 	double displayCapacityZoom = 1.0;
 	BarUiValueClass displayDpiScale{ 1.0 };
 	BarUiValueClass displayCenterX{ 0.0 };
@@ -907,7 +909,10 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	const double currentZoom = currentDpiScale * configZoom;
 	state.barStyle.dpiZoom = currentDpiScale;
 	state.barStyle.zoom = currentZoom;
+	if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
+		state.whiteboardDockAnimationActive = false;
 	if (!dragging && state.initialBottomDockPlacementApplied
+		&& !state.whiteboardDockAnimationActive
 		&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
 	{
 		const double dockLine = ResolveBarBottomDockLine(
@@ -2441,7 +2446,9 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 		}
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
-		if (!state.initialBottomDockPlacementApplied
+		const bool whiteboardDockPlacement =
+			state.whiteboardDockPlacementPending;
+		if ((!state.initialBottomDockPlacementApplied || whiteboardDockPlacement)
 			&& state.displayTransitionInitialized)
 		{
 			// 完整主栏宽度首次可用后再整体居中，避免用占位宽度产生首帧偏移。
@@ -2455,10 +2462,16 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			double mainBarFrameHalfDip = mainBar->ft.has_value()
 				? max(0.0, static_cast<double>(mainBar->ft.value().tar) / 2.0)
 				: 0.0;
-			const double bodyLeftDip = -mainButton->GetW() / 2.0
-				- mainFrameHalfDip;
-			const double bodyRightDip = mainButton->GetW() / 2.0
-				+ 10.0 + totalWidth + mainBarFrameHalfDip;
+			const bool opensRight = whiteboardDockPlacement
+				? static_cast<bool>(state.barState.widgetPosition.mainBar) : true;
+			const double bodyLeftDip = opensRight
+				? -mainButton->GetW() / 2.0 - mainFrameHalfDip
+				: -mainButton->GetW() / 2.0 - 10.0 - totalWidth
+					- mainBarFrameHalfDip;
+			const double bodyRightDip = opensRight
+				? mainButton->GetW() / 2.0 + 10.0 + totalWidth
+					+ mainBarFrameHalfDip
+				: mainButton->GetW() / 2.0 + mainFrameHalfDip;
 			const double screenCenterX =
 				ResolveBarBottomDockInitialMainCenterScreenX(
 					state.activeMonitorBounds, bodyLeftDip, bodyRightDip,
@@ -2475,15 +2488,35 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				dockLine, state.mainButtonBaseSize,
 				strokeWidthDip, placementZoom);
 
-			mainButton->x.SetDirect(
-				(screenCenterX - state.monitorOrigin.x) / placementZoom);
-			mainButton->y.SetDirect(
-				(screenCenterY - state.monitorOrigin.y) / placementZoom);
-			state.displayCenterX.SetDirect(screenCenterX - state.monitorOrigin.x);
-			state.displayCenterY.SetDirect(screenCenterY - state.monitorOrigin.y);
+			if (whiteboardDockPlacement)
+			{
+				// 白板入口只在首次就位时播放 0.4s 动画，后续靠近底部仍交给原吸附状态机。
+				state.displayCenterX.SetTar(
+					screenCenterX - state.monitorOrigin.x, 0.4);
+				state.displayCenterY.SetTar(
+					screenCenterY - state.monitorOrigin.y, 0.4);
+				state.displayTransitionActive = true;
+				state.whiteboardDockAnimationActive = true;
+			}
+			else
+			{
+				mainButton->x.SetDirect(
+					(screenCenterX - state.monitorOrigin.x) / placementZoom);
+				mainButton->y.SetDirect(
+					(screenCenterY - state.monitorOrigin.y) / placementZoom);
+				state.displayCenterX.SetDirect(screenCenterX - state.monitorOrigin.x);
+				state.displayCenterY.SetDirect(screenCenterY - state.monitorOrigin.y);
+			}
 			state.barState.fold = false;
-			state.barState.widgetPosition.mainBar = true;
+			if (!whiteboardDockPlacement)
+				state.barState.widgetPosition.mainBar = true;
 			state.barState.widgetPosition.primaryBar = false;
+			if (whiteboardDockPlacement)
+			{
+				state.barState.drawAttribute = true;
+				state.barState.geometryAttribute = false;
+				state.whiteboardDockPlacementPending = false;
+			}
 			state.initialBottomDockPlacementApplied = true;
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
@@ -6771,7 +6804,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				state.bottomDockTargetIndicatorCaptureActive,
 				state.bottomDockCaptureBottomActive
 					|| captureBottomSpringActive);
-		if (targetIndicatorAction
+		if (Inkeys::UI::Bar::HideWhiteboardSnapIndicator())
+		{
+			// 白板保留捕获和回弹本身，只隐藏蓝色目标矩形。
+			state.bottomDockTargetIndicatorCaptureActive = false;
+			state.bottomDockTargetIndicatorProgress.SetDirect(0.0);
+		}
+		else if (targetIndicatorAction
 			== BarBottomDockTargetIndicatorAction::FadeIn)
 		{
 			// 只有真实进入 Capturing 才显示目标提示，预览区和快速穿越不显示。
@@ -11281,6 +11320,22 @@ BarRenderLoopCoordinator::RenderFrame(
 		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
 		owner_.directWindowDragPhase.store(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
+	}
+	if (Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest())
+	{
+		// 模式和几何作为同一事务发布；布局阶段在完整主栏宽度可用后求居中目标。
+		owner_.bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		owner_.bottomDockMode.store(
+			BarBottomDockMode::BottomDocked, memory_order_relaxed);
+		owner_.bottomDockPhase.store(
+			BarBottomDockPhase::Stable, memory_order_relaxed);
+		owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
+		owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+		const auto transitionSerial = owner_.bottomDockTransitionSerial.fetch_add(
+			1, memory_order_acq_rel) + 1;
+		owner_.bottomDockDeferredTransitionSerial.store(
+			transitionSerial, memory_order_release);
+		state.whiteboardDockPlacementPending = true;
 	}
 	// 底栏形态、抓取点和直移必须整帧共用同一偶数 serial，
 	// 显示过渡、布局和 ULW 不能各自读取不同时刻的原子值。

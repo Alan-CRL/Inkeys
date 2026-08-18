@@ -38,6 +38,9 @@ namespace Inkeys::UI::RenderPipeline
 			Client::PptMiddleRight,
 			Client::PptExitShow,
 			Client::Settings,
+			Client::WhiteboardFreeze,
+			Client::WhiteboardLeft,
+			Client::WhiteboardRight,
 		};
 
 		[[nodiscard]] constexpr std::size_t Index(Client client) noexcept

@@ -84,7 +84,8 @@ export namespace Inkeys::Drawing::Draw3
 		PreviousPage,
 		TranslateViewport,
 		Redo,
-		SetPage
+		SetPage,
+		SetWorkspace
 	};
 
 	struct CanvasCommand
@@ -93,6 +94,7 @@ export namespace Inkeys::Drawing::Draw3
 		float deltaX = 0.0f;
 		float deltaY = 0.0f;
 		std::size_t pageIndex = 0;
+		std::uint8_t workspace = 0;
 	};
 
 	using SetExtendedStyleFlagsCallback = bool(*)(

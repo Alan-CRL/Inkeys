@@ -47,7 +47,10 @@ int RunWindowTests()
 	magnifierChildSpec.className = L"Static";
 	specs.push_back(std::move(magnifierChildSpec));
 	specs.push_back(makeSpec(WindowRole::Freeze, L"Freeze"));
+	specs.push_back(makeSpec(WindowRole::DrawpadPresentation, L"DrawpadPresentation"));
 	specs.push_back(makeSpec(WindowRole::Drawpad, L"Drawpad"));
+	specs.push_back(makeSpec(WindowRole::WhiteboardLeft, L"WhiteboardLeft"));
+	specs.push_back(makeSpec(WindowRole::WhiteboardRight, L"WhiteboardRight"));
 	specs.push_back(makeSpec(WindowRole::PptBottomLeft, L"PptBottomLeft"));
 	specs.push_back(makeSpec(WindowRole::PptBottomRight, L"PptBottomRight"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
@@ -71,7 +74,10 @@ int RunWindowTests()
 		WindowRole::MagnifierHost,
 		WindowRole::MagnifierChild,
 		WindowRole::Freeze,
+		WindowRole::DrawpadPresentation,
 		WindowRole::Drawpad,
+		WindowRole::WhiteboardLeft,
+		WindowRole::WhiteboardRight,
 		WindowRole::PptBottomLeft,
 		WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft,
@@ -93,7 +99,10 @@ int RunWindowTests()
 	const DWORD overlayThread = service.OwnerThreadId(WindowRole::MagnifierHost);
 	check(service.OwnerThreadId(WindowRole::MagnifierChild) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Freeze) == overlayThread
+		&& service.OwnerThreadId(WindowRole::DrawpadPresentation) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Drawpad) == overlayThread
+		&& service.OwnerThreadId(WindowRole::WhiteboardLeft) == overlayThread
+		&& service.OwnerThreadId(WindowRole::WhiteboardRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomLeft) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleLeft) == overlayThread
@@ -108,7 +117,10 @@ int RunWindowTests()
 	const HWND magnifierHost = service.Handle(WindowRole::MagnifierHost);
 	const HWND magnifierChild = service.Handle(WindowRole::MagnifierChild);
 	const HWND freeze = service.Handle(WindowRole::Freeze);
+	const HWND drawpadPresentation = service.Handle(WindowRole::DrawpadPresentation);
 	const HWND drawpad = service.Handle(WindowRole::Drawpad);
+	const HWND whiteboardLeft = service.Handle(WindowRole::WhiteboardLeft);
+	const HWND whiteboardRight = service.Handle(WindowRole::WhiteboardRight);
 	const HWND pptBottomLeft = service.Handle(WindowRole::PptBottomLeft);
 	const HWND pptBottomRight = service.Handle(WindowRole::PptBottomRight);
 	const HWND pptMiddleLeft = service.Handle(WindowRole::PptMiddleLeft);
@@ -120,7 +132,12 @@ int RunWindowTests()
 	check(service.OverlayRoot() == magnifierHost, "overlay root");
 	check(GetParent(magnifierChild) == magnifierHost, "magnifier child parent");
 	check(GetWindow(freeze, GW_OWNER) == magnifierHost, "freeze owner");
+	check(GetWindow(drawpadPresentation, GW_OWNER) == freeze,
+		"drawpad presentation freeze owner");
 	check(GetWindow(drawpad, GW_OWNER) == freeze, "drawpad owner");
+	check(GetWindow(whiteboardLeft, GW_OWNER) == drawpad
+		&& GetWindow(whiteboardRight, GW_OWNER) == drawpad,
+		"whiteboard controls drawpad owner");
 	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
@@ -167,6 +184,12 @@ int RunWindowTests()
 		&& !(GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST),
 		"non-root has no independent topmost before refresh");
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
+	check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
+		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"persistent overlay notopmost refresh");
+	check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
+		&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"persistent overlay topmost restore");
 	const HWND focusBeforePromote = Service::LastFocusWindow();
 	check(service.PromotePptWindow(WindowRole::PptMiddleRight), "promote ppt below bar");
 	check(GetWindow(bar, GW_HWNDNEXT) == pptMiddleRight

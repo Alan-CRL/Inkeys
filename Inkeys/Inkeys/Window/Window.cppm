@@ -22,6 +22,8 @@ export namespace Inkeys::Window
 		Freeze,
 		DrawpadPresentation,
 		Drawpad,
+		WhiteboardLeft,
+		WhiteboardRight,
 		PptBottomLeft,
 		PptBottomRight,
 		PptMiddleLeft,
@@ -106,6 +108,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool SetExtendedStyleFlags(
 			WindowRole role, DWORD setMask, DWORD clearMask);
 		[[nodiscard]] bool RequestTopmostRefresh();
+		[[nodiscard]] bool SetOverlayTopmost(bool topmost);
+		[[nodiscard]] bool OverlayTopmost() const noexcept;
 		[[nodiscard]] bool PromotePptWindow(WindowRole role);
 
 		[[nodiscard]] bool BindMessages(

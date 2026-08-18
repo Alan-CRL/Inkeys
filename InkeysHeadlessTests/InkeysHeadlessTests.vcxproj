@@ -92,6 +92,7 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Whiteboard\Whiteboard.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
@@ -110,6 +111,7 @@
 	<ClCompile Include="render_scheduler_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
+	<ClCompile Include="whiteboard_ui_tests.cpp" />
 	<ClCompile Include="display_tests.cpp" />
 	<ClCompile Include="bar_display_transition_tests.cpp" />
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />

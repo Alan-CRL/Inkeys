@@ -3034,6 +3034,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							else
 							{
 								barState.fold = true;
+								Inkeys::UI::Bar::ClearWhiteboardDockLock();
 								barState.moreExpanded = false;
 								CloseThicknessSlider(true);
 								CloseColorPicker(true);
@@ -5673,6 +5674,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	const POINT initialPresentedTranslation =
 		initialPresentedSnapshot.directTranslation;
 	const BarBottomDockMode initialMode = initialPresentedSnapshot.mode;
+	bool whiteboardDockLocked = WhiteboardDockLockActive();
 	const BarBottomDockPhase initialPhase = initialPresentedSnapshot.phase;
 	const bool initialRecoveryActive =
 		initialPresentedSnapshot.recoveryActive;
@@ -5941,8 +5943,15 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				pointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
 			const BarBottomDockDragUpdate dockUpdate = dockTracker.Update(
 				pointer.y, floatingVisibleBottomScreenY, environment);
+			if (whiteboardDockLocked && dockUpdate.modeChanged)
+			{
+				// 手动离开或重新捕获底栏后即恢复普通拖动，不再保留专用横向锁。
+				ClearWhiteboardDockLock();
+				whiteboardDockLocked = false;
+			}
 
-			double desiredMainCenterScreenX = pointer.x - grabOffsetScreenX;
+			double desiredMainCenterScreenX = whiteboardDockLocked
+				? actualMainCenterScreenX : pointer.x - grabOffsetScreenX;
 			desiredMainCenterScreenX = ClampBarBottomDockMainCenterScreenX(
 				desiredMainCenterScreenX, environment.monitorBounds,
 				visibleHalfWidthDip, interactionZoom);

@@ -501,7 +501,10 @@ void PptInfo()
 			PptInfoStateBuffer.CurrentPage = -1;
 			PptInfoStateBuffer.TotalPage = -1;
 		}
-		else if (Initialization && PptInfoState.TotalPage != -1 && config.PlugIn.PPTHelper.AutoTakeOver && !pptTakeoverConsumedInCurrentShow)
+		else if (Initialization && PptInfoState.TotalPage != -1
+			&& !WhiteboardTransactionActive()
+			&& config.PlugIn.PPTHelper.AutoTakeOver
+			&& !pptTakeoverConsumedInCurrentShow)
 		{
 			int toolType = GetPptSlideShowAnnotationTool();
 			if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
@@ -518,6 +521,17 @@ void PptInfo()
 					}
 				}
 			}
+		}
+
+		if (WhiteboardTransactionActive())
+		{
+			// 白板页码完全独立；隐藏 PPT 控件并强制退出后重新发布 COM 当前页。
+			requestedDraw3Page = -2;
+			publishedCurrentPage = -2;
+			publishedTotalPage = -2;
+			Inkeys::UI::Ppt::PublishPresentationVisible(false);
+			this_thread::sleep_for(chrono::milliseconds(500));
+			continue;
 		}
 
 		if (PptInfoState.CurrentPage > 0 && PptInfoState.TotalPage > 0)

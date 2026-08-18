@@ -38,6 +38,9 @@ namespace
 {
 	IdtAtomic<bool> currentPageHasContent = false;
 	std::atomic_bool contentStateUpdatesReady = false;
+	std::atomic_bool whiteboardActive = false;
+	std::atomic_bool whiteboardBottomDockRequested = false;
+	std::atomic_bool whiteboardDockLockActive = false;
 }
 extern constexpr double BarButtonPressScale = 0.95;
 extern constexpr double BarButtonHoverFadeDur = 5.0;
@@ -261,6 +264,55 @@ namespace Inkeys::UI::Bar
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;
+	}
+
+	void SetWhiteboardActive(bool active) noexcept
+	{
+		const bool changed = whiteboardActive.exchange(active,
+			std::memory_order_acq_rel) != active;
+		if (active) RequestWhiteboardBottomDock();
+		else
+		{
+			whiteboardBottomDockRequested.store(false, std::memory_order_release);
+			whiteboardDockLockActive.store(false, std::memory_order_release);
+		}
+		if (changed || contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	bool WhiteboardActive() noexcept
+	{
+		return whiteboardActive.load(std::memory_order_acquire);
+	}
+
+	void RequestWhiteboardBottomDock() noexcept
+	{
+		whiteboardDockLockActive.store(true, std::memory_order_release);
+		whiteboardBottomDockRequested.store(true, std::memory_order_release);
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering(false);
+	}
+
+	bool ConsumeWhiteboardBottomDockRequest() noexcept
+	{
+		return whiteboardBottomDockRequested.exchange(false,
+			std::memory_order_acq_rel);
+	}
+
+	bool WhiteboardDockLockActive() noexcept
+	{
+		return whiteboardDockLockActive.load(std::memory_order_acquire);
+	}
+
+	void ClearWhiteboardDockLock() noexcept
+	{
+		whiteboardBottomDockRequested.store(false, std::memory_order_release);
+		whiteboardDockLockActive.store(false, std::memory_order_release);
+	}
+
+	bool HideWhiteboardSnapIndicator() noexcept
+	{
+		return WhiteboardActive();
 	}
 
 	void SetContentStateUpdatesReady(bool ready) noexcept

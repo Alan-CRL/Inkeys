@@ -13,7 +13,35 @@ import Inkeys.Display;
 #include "IdtPlug-in.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
+#include <atomic>
+#include <mutex>
+
 int FreezeRecall;
+
+namespace
+{
+	std::mutex freezeSurfaceMutex;
+	std::atomic_bool whiteboardFreezeSurfaceOwned = false;
+}
+
+void SetWhiteboardFreezeSurfaceOwned(bool owned) noexcept
+{
+	whiteboardFreezeSurfaceOwned.store(owned, std::memory_order_release);
+}
+
+bool WhiteboardFreezeSurfaceOwned() noexcept
+{
+	return whiteboardFreezeSurfaceOwned.load(std::memory_order_acquire);
+}
+
+bool SubmitFreezeSurface(HWND hwnd, UPDATELAYEREDWINDOWINFO* info,
+	bool whiteboardOwner) noexcept
+{
+	if (!hwnd || !info || WhiteboardFreezeSurfaceOwned() != whiteboardOwner) return false;
+	std::scoped_lock lock(freezeSurfaceMutex);
+	if (WhiteboardFreezeSurfaceOwned() != whiteboardOwner) return false;
+	return UpdateLayeredWindowIndirect(hwnd, info) != FALSE;
+}
 
 void FreezeFrameWindow()
 {
@@ -62,7 +90,7 @@ void FreezeFrameWindow()
 	ulwi.dwFlags = ULW_ALPHA;
 
 	ulwi.hdcSrc = freeze_background.dc();
-	UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+	(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 	IdtWindowsIsVisible.freezeWindow = true;
 	//ShowWindow(freeze_window, SW_SHOW);
@@ -75,6 +103,7 @@ void FreezeFrameWindow()
 	while (!offSignal)
 	{
 		this_thread::sleep_for(chrono::milliseconds(20));
+		if (WhiteboardFreezeSurfaceOwned()) continue;
 
 		if (magnificationReady)
 		{
@@ -113,7 +142,7 @@ void FreezeFrameWindow()
 						graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
 
 						ulwi.hdcSrc = freeze_background.dc();
-						UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+						(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 						FreezeRecall -= 10;
 
@@ -121,7 +150,7 @@ void FreezeFrameWindow()
 						{
 							freeze_background.clear();
 							ulwi.hdcSrc = freeze_background.dc();
-							UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+							(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 							if (FreezeRecall <= 0) FreezeRecall = 0;
 							break;
@@ -138,7 +167,7 @@ void FreezeFrameWindow()
 			{
 			freeze_background.clear();
 			ulwi.hdcSrc = freeze_background.dc();
-				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 				RequestUpdateMagWindow = 0;
 				show_freeze_window = false;
@@ -157,7 +186,7 @@ void FreezeFrameWindow()
 				freeze_background.clear();
 
 				ulwi.hdcSrc = freeze_background.dc();
-				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 				show_freeze_window = true;
 			}
 
@@ -196,7 +225,7 @@ void FreezeFrameWindow()
 				}
 
 				ulwi.hdcSrc = freeze_background.dc();
-				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 				//FocusPptShow();
 
@@ -232,7 +261,7 @@ void FreezeFrameWindow()
 				graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
 
 				ulwi.hdcSrc = freeze_background.dc();
-				UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 				FreezeRecall -= 10;
 				this_thread::sleep_for(chrono::milliseconds(20));
@@ -242,7 +271,7 @@ void FreezeFrameWindow()
 					freeze_background.clear();
 
 					ulwi.hdcSrc = freeze_background.dc();
-					UpdateLayeredWindowIndirect(freeze_window, &ulwi);
+					(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
 					if (FreezeRecall <= 0) FreezeRecall = 0;
 					break;

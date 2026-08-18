@@ -838,6 +838,8 @@
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />
@@ -1130,6 +1132,8 @@
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
+    <None Include="src\UI\barWhiteboard.svg" />
+    <None Include="src\UI\barDismiss.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
     <None Include="src\UI\barInfo.svg" />

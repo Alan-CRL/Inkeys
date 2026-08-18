@@ -2,6 +2,7 @@
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
+#include "IdtFreezeFrame.h"
 #include "IdtPlug-in.h"
 #include "Inkeys/Business/LegacyDrawState.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
@@ -9,12 +10,15 @@
 #include "Inkeys/Window/Window.Legacy.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <thread>
 
 import Inkeys.UI.Bar;
+import Inkeys.UI.Ppt;
+import Inkeys.UI.Whiteboard;
 import Inkeys.Window;
 
 StateModeClass stateMode;
@@ -23,7 +27,21 @@ namespace
 {
 	using Inkeys::Drawing::Draw3::Bridge::ProductState;
 	using Inkeys::Drawing::Draw3::Bridge::Tool;
+	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
+
+	enum class WhiteboardPhase : std::uint8_t
+	{
+		Inactive,
+		Entering,
+		Active,
+		Exiting,
+	};
+
+	std::atomic_bool whiteboardDesired = false;
+	std::atomic_bool whiteboardPreviousRequested = false;
+	std::atomic_bool whiteboardNextRequested = false;
+	std::atomic<WhiteboardPhase> whiteboardPhase = WhiteboardPhase::Inactive;
 
 	std::uint32_t ColorRefToRgba(COLORREF color) noexcept
 	{
@@ -87,11 +105,17 @@ void ReconcileDraw3Presentation()
 	std::scoped_lock lock(draw3PresentationMutex);
 	const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 	const bool selectionMode = runtime.selectionMode;
+	const bool whiteboard = runtime.workspace ==
+		Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
 	auto& service = Inkeys::Window::GetService();
 	using Inkeys::Window::WindowRole;
 
-	Inkeys::UI::Bar::SetCurrentPageHasContent(runtime.currentPageHasContent);
-	const auto expectedTarget = selectionMode
+	// 白板空页仍保留完整绘制栏和主 Drawpad；选择只表示拖动态，不切辅助 ULW。
+	Inkeys::UI::Bar::SetCurrentPageHasContent(
+		whiteboard || runtime.currentPageHasContent);
+	const auto expectedTarget =
+		Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
+			selectionMode, runtime.workspace)
 		? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
 		: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
 	const bool targetReady = runtime.requestedOutputTarget == expectedTarget &&
@@ -101,10 +125,14 @@ void ReconcileDraw3Presentation()
 	if (!runtime.firstFrameReady) return;
 	// 离开选择后先让主 Drawpad 接管输入，避免等待预热帧时首个 Down 穿到下层窗口。
 	// 选择态仍必须等待辅助 ULW 内容就绪，防止旧帧或双窗 alpha 叠加。
-	if (selectionMode && !targetReady) return;
+	if (selectionMode && !whiteboard && !targetReady) return;
 
 	Inkeys::Window::DrawpadSurfaceVisibility visibility;
-	switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
+	if (whiteboard)
+	{
+		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary;
+	}
+	else switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
 		selectionMode, runtime.currentPageHasContent,
 		runtime.auxiliaryFullFrameClean))
 	{
@@ -124,6 +152,46 @@ void ReconcileDraw3Presentation()
 		service.Ready(WindowRole::Drawpad) &&
 		service.Ready(WindowRole::DrawpadPresentation) &&
 		Inkeys::Drawing::Draw3::ProductFirstFrameReady();
+}
+
+void RequestWhiteboardActive(bool active) noexcept
+{
+	whiteboardDesired.store(active, std::memory_order_release);
+	if (!active)
+	{
+		whiteboardPreviousRequested.store(false, std::memory_order_release);
+		whiteboardNextRequested.store(false, std::memory_order_release);
+	}
+}
+
+bool WhiteboardRequested() noexcept
+{
+	return whiteboardDesired.load(std::memory_order_acquire);
+}
+
+bool WhiteboardActive() noexcept
+{
+	return whiteboardPhase.load(std::memory_order_acquire) ==
+		WhiteboardPhase::Active;
+}
+
+bool WhiteboardTransactionActive() noexcept
+{
+	return whiteboardDesired.load(std::memory_order_acquire) ||
+		whiteboardPhase.load(std::memory_order_acquire) !=
+		WhiteboardPhase::Inactive;
+}
+
+void RequestWhiteboardPreviousPage() noexcept
+{
+	if (WhiteboardActive())
+		whiteboardPreviousRequested.store(true, std::memory_order_release);
+}
+
+void RequestWhiteboardNextPage() noexcept
+{
+	if (WhiteboardActive())
+		whiteboardNextRequested.store(true, std::memory_order_release);
 }
 
 bool SetPenWidth(float targetWidth, bool setMemory)
@@ -281,6 +349,10 @@ void StateMonitoring()
 {
 	auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 	std::uint64_t revision = snapshot.runtimeRevision;
+	bool pageSwitching = false;
+	bool requestedPreviousPage = false;
+	std::size_t requestedPageIndex = 0;
+	std::uint64_t pageCommandCountBeforeRequest = 0;
 	ReconcileDraw3Presentation();
 	while (!offSignal)
 	{
@@ -288,9 +360,128 @@ void StateMonitoring()
 		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
 		if (offSignal) break;
 		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-		if (snapshot.runtimeRevision == revision) continue;
-		revision = snapshot.runtimeRevision;
-		ReconcileDraw3Presentation();
+		const bool runtimeChanged = snapshot.runtimeRevision != revision;
+		if (runtimeChanged)
+		{
+			revision = snapshot.runtimeRevision;
+			ReconcileDraw3Presentation();
+		}
+
+		WhiteboardPhase phase = whiteboardPhase.load(std::memory_order_acquire);
+		const bool desired = whiteboardDesired.load(std::memory_order_acquire);
+		if (phase == WhiteboardPhase::Inactive && desired)
+		{
+			// 进入事务先隔离 PPT 和旧定格，再异步请求 Draw3 交换工作区。
+			whiteboardPhase.store(WhiteboardPhase::Entering,
+				std::memory_order_release);
+			Inkeys::UI::Ppt::PublishPresentationVisible(false);
+			FreezeFrame.mode = 0;
+			FreezeFrame.select = false;
+			FreezePPT = false;
+			Inkeys::Drawing::Draw3::PublishProductWorkspace(
+				Workspace::Whiteboard);
+			continue;
+		}
+
+		if (phase == WhiteboardPhase::Entering)
+		{
+			if (!desired)
+			{
+				whiteboardPhase.store(WhiteboardPhase::Exiting,
+					std::memory_order_release);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					Workspace::Presentation);
+				continue;
+			}
+			if (snapshot.workspace != Workspace::Whiteboard) continue;
+
+			if (!Inkeys::UI::Whiteboard::Active())
+			{
+				SetWhiteboardFreezeSurfaceOwned(true);
+				Inkeys::UI::Whiteboard::PublishPageState(
+					static_cast<int>(snapshot.currentPageIndex + 1),
+					static_cast<int>(snapshot.pageCount), true);
+				Inkeys::UI::Whiteboard::PublishActive(true);
+			}
+			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
+			Inkeys::UI::Whiteboard::PublishPageState(
+				static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), false);
+			Inkeys::UI::Bar::SetWhiteboardActive(true);
+			(void)Inkeys::Window::GetService().SetOverlayTopmost(false);
+			whiteboardPhase.store(WhiteboardPhase::Active,
+				std::memory_order_release);
+			continue;
+		}
+
+		if (phase == WhiteboardPhase::Active)
+		{
+			if (!desired)
+			{
+				pageSwitching = false;
+				Inkeys::UI::Whiteboard::PublishPageState(
+					static_cast<int>(snapshot.currentPageIndex + 1),
+					static_cast<int>(snapshot.pageCount), true);
+				whiteboardPhase.store(WhiteboardPhase::Exiting,
+					std::memory_order_release);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					Workspace::Presentation);
+				continue;
+			}
+
+			if (pageSwitching)
+			{
+				const std::uint64_t completed = requestedPreviousPage
+					? snapshot.previousPageCommandCount
+					: snapshot.nextPageCommandCount;
+				if (snapshot.currentPageIndex == requestedPageIndex ||
+					completed != pageCommandCountBeforeRequest)
+					pageSwitching = false;
+			}
+			if (!pageSwitching && snapshot.workspace == Workspace::Whiteboard)
+			{
+				const bool previous = whiteboardPreviousRequested.exchange(
+					false, std::memory_order_acq_rel);
+				const bool next = whiteboardNextRequested.exchange(
+					false, std::memory_order_acq_rel);
+				if (previous && snapshot.currentPageIndex > 0)
+				{
+					requestedPageIndex = snapshot.currentPageIndex - 1;
+					requestedPreviousPage = true;
+					pageCommandCountBeforeRequest = snapshot.previousPageCommandCount;
+					pageSwitching = Inkeys::Drawing::Draw3::PublishProductCommand(
+						Inkeys::Drawing::Draw3::Bridge::CommandType::PreviousPage) ==
+						Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
+				}
+				else if (next)
+				{
+					requestedPageIndex = snapshot.currentPageIndex + 1;
+					requestedPreviousPage = false;
+					pageCommandCountBeforeRequest = snapshot.nextPageCommandCount;
+					pageSwitching = Inkeys::Drawing::Draw3::PublishProductCommand(
+						Inkeys::Drawing::Draw3::Bridge::CommandType::NextPage) ==
+						Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
+				}
+			}
+			Inkeys::UI::Whiteboard::PublishPageState(
+				static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), pageSwitching);
+			continue;
+		}
+
+		if (phase == WhiteboardPhase::Exiting)
+		{
+			if (snapshot.workspace != Workspace::Presentation) continue;
+			Inkeys::UI::Whiteboard::PublishActive(false);
+			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false)) continue;
+
+			SetWhiteboardFreezeSurfaceOwned(false);
+			Inkeys::UI::Bar::SetWhiteboardActive(false);
+			(void)Inkeys::Window::GetService().SetOverlayTopmost(true);
+			whiteboardPhase.store(WhiteboardPhase::Inactive,
+				std::memory_order_release);
+			ReconcileDraw3Presentation();
+		}
 	}
 }
 

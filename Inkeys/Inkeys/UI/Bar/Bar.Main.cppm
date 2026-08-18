@@ -627,6 +627,13 @@ namespace Inkeys::UI::Bar
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export bool CurrentPageHasContent() noexcept;
+	export void SetWhiteboardActive(bool active) noexcept;
+	export bool WhiteboardActive() noexcept;
+	export void RequestWhiteboardBottomDock() noexcept;
+	export bool ConsumeWhiteboardBottomDockRequest() noexcept;
+	export bool WhiteboardDockLockActive() noexcept;
+	export void ClearWhiteboardDockLock() noexcept;
+	export bool HideWhiteboardSnapIndicator() noexcept;
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);

@@ -50,9 +50,14 @@ namespace
 			&& role <= WindowRole::PptExitShow;
 	}
 
+	[[nodiscard]] constexpr bool IsWhiteboard(WindowRole role) noexcept
+	{
+		return role == WindowRole::WhiteboardLeft || role == WindowRole::WhiteboardRight;
+	}
+
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
 	{
-		return IsPpt(role) || role == WindowRole::Bar;
+		return IsPpt(role) || IsWhiteboard(role) || role == WindowRole::Bar;
 	}
 
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
@@ -76,6 +81,8 @@ namespace
 		case WindowRole::Freeze: return L"Inkeys.Window.Freeze";
 		case WindowRole::DrawpadPresentation: return L"Inkeys.Window.DrawpadPresentation";
 		case WindowRole::Drawpad: return L"Inkeys.Window.Drawpad";
+		case WindowRole::WhiteboardLeft: return L"Inkeys.Window.WhiteboardLeft";
+		case WindowRole::WhiteboardRight: return L"Inkeys.Window.WhiteboardRight";
 		case WindowRole::PptBottomLeft: return L"Inkeys.Window.PptBottomLeft";
 		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
@@ -197,6 +204,8 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -334,6 +343,17 @@ namespace Inkeys::Window
 			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
 		}
 
+		[[nodiscard]] bool SetOverlayTopmost(bool topmost)
+		{
+			overlayTopmost_.store(topmost, std::memory_order_release);
+			return RequestTopmostRefresh();
+		}
+
+		[[nodiscard]] bool OverlayTopmost() const noexcept
+		{
+			return overlayTopmost_.load(std::memory_order_acquire);
+		}
+
 		[[nodiscard]] bool PromotePptWindow(WindowRole role)
 		{
 			if (!IsPpt(role)) return false;
@@ -430,6 +450,7 @@ namespace Inkeys::Window
 
 		void ResetState()
 		{
+			overlayTopmost_.store(true, std::memory_order_release);
 			for (auto& spec : specs_)
 				spec.reset();
 			for (auto& configured : configured_)
@@ -570,6 +591,8 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -775,6 +798,8 @@ namespace Inkeys::Window
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptBottomLeft,
+				WindowRole::WhiteboardRight,
+				WindowRole::WhiteboardLeft,
 				WindowRole::Drawpad,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Freeze,
@@ -1000,7 +1025,7 @@ namespace Inkeys::Window
 				const HWND root = OverlayRoot();
 				// Win32 会让 owned popup 跟随 owner 进入 topmost band；这里只操作链根。
 				return root && SetWindowPos(
-					root, HWND_TOPMOST, 0, 0, 0, 0,
+					root, overlayTopmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
 			}
 			case CommandType::PromotePpt:
@@ -1043,6 +1068,8 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -1190,7 +1217,7 @@ namespace Inkeys::Window
 			}
 			if (role == WindowRole::Drawpad)
 			{
-				for (auto popup = WindowRole::PptBottomLeft;
+				for (auto popup = WindowRole::WhiteboardLeft;
 					popup <= WindowRole::Bar;
 					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))
 					if (Handle(popup)) return false;
@@ -1214,6 +1241,7 @@ namespace Inkeys::Window
 		CommandQueue overlayCommands_;
 		CommandQueue settingCommands_;
 		std::mutex lifecycleMutex_;
+		std::atomic_bool overlayTopmost_ = true;
 	};
 
 	Service::Service(std::size_t messageCapacity)
@@ -1263,6 +1291,8 @@ namespace Inkeys::Window
 		return impl_->SetExtendedStyleFlags(role, setMask, clearMask);
 	}
 	bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+	bool Service::SetOverlayTopmost(bool topmost) { return impl_->SetOverlayTopmost(topmost); }
+	bool Service::OverlayTopmost() const noexcept { return impl_->OverlayTopmost(); }
 	bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
 	bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
 	bool Service::UnbindMessages(WindowRole role) { return impl_->UnbindMessages(role); }
