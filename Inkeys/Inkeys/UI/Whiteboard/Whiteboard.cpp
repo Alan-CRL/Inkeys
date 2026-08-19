@@ -135,6 +135,17 @@ namespace Inkeys::UI::Whiteboard
 		{
 			std::vector<WidgetSpec> widgets;
 			widgets.reserve(3);
+			const COLORREF darkPressedFill = GetThemeColor(
+				BarThemeModeEnum::Dark, BarThemeColorEnum::PressedFill);
+			const COLORREF darkText = GetThemeColor(
+				BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary);
+			auto ApplyDarkBarColors = [&](WidgetSpec& widget)
+			{
+				// 独立白板 surface 显式复用 Bar 深色主题，避免未绑定全局样式时回退到浅色。
+				widget.useThemeColors = false;
+				widget.fill = darkPressedFill;
+				widget.content = darkText;
+			};
 			WidgetSpec previous;
 			previous.id = WidgetIds[0];
 			previous.enabled = false;
@@ -142,6 +153,7 @@ namespace Inkeys::UI::Whiteboard
 			previous.secondaryText = L"左翻页";
 			previous.iconAngle = -90.0;
 			previous.onClick = [] { InvokePageCallback(0); };
+			ApplyDarkBarColors(previous);
 			widgets.push_back(std::move(previous));
 
 			WidgetSpec page;
@@ -154,6 +166,7 @@ namespace Inkeys::UI::Whiteboard
 			page.secondaryFontSizeDip = 13.0;
 			page.secondaryOffsetYDip = 20.0;
 			page.secondarySlotHeightDip = 25.0;
+			ApplyDarkBarColors(page);
 			widgets.push_back(std::move(page));
 
 			WidgetSpec next;
@@ -163,6 +176,7 @@ namespace Inkeys::UI::Whiteboard
 			next.secondaryText = L"右翻页";
 			next.iconAngle = 90.0;
 			next.onClick = [] { InvokePageCallback(1); };
+			ApplyDarkBarColors(next);
 			widgets.push_back(std::move(next));
 			return widgets;
 		}
@@ -172,8 +186,12 @@ namespace Inkeys::UI::Whiteboard
 			const auto bounds = PrimaryBounds();
 			const float scale = DpiScale(nullptr);
 			Inkeys::UI::Bar::BarSurfaceBackgroundSpec background;
-			// 控件外框沿用 Bar 的 Surface/SurfaceFrame 主题，不再维护白板颜色副本。
-			background.useThemeColors = true;
+			// 独立 surface 不能依赖全局 BarStyle 指针，直接使用主栏深色颜色。
+			background.useThemeColors = false;
+			background.fill = GetThemeColor(
+				BarThemeModeEnum::Dark, BarThemeColorEnum::Surface);
+			background.frame = GetThemeColor(
+				BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame);
 			background.cornerRadiusDip = BarMainBarCornerRadiusDip;
 			background.frameThicknessDip = BarButtonFrameThicknessDip;
 			background.fillOpacity = BarMainBarFillOpacity;
