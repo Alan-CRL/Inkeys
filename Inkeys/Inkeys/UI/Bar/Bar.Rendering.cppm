@@ -19,31 +19,6 @@ import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.RenderPipeline;
-import Inkeys.UI.Whiteboard;
-
-export namespace Inkeys::UI::Bar
-{
-	using WhiteboardControlHitTarget =
-		Inkeys::UI::Whiteboard::ControlHitTarget;
-	using WhiteboardControlLayout =
-		Inkeys::UI::Whiteboard::ControlLayout;
-	using WhiteboardControlRenderState =
-		Inkeys::UI::Whiteboard::ControlRenderState;
-	using WhiteboardControlRenderResult =
-		Inkeys::UI::Whiteboard::ControlRenderResult;
-
-	[[nodiscard]] WhiteboardControlLayout ResolveWhiteboardControlLayout(
-		RECT primaryBounds, float dpiScale, bool left) noexcept;
-	[[nodiscard]] WhiteboardControlRenderResult RenderWhiteboardControl(
-		ID2D1DeviceContext* deviceContext,
-		const WhiteboardControlRenderState& state,
-		float dpiScale,
-		bool left,
-		POINT screenOrigin,
-		std::chrono::steady_clock::time_point frameTime);
-	void NotifyWhiteboardControlPointerActivity(bool inside) noexcept;
-}
-
 using Ui3RenderDeviceEpoch = Inkeys::UI::RenderPipeline::DeviceEpoch;
 
 constexpr double BarSvgRasterUpscaleThreshold = 1.35;
@@ -73,6 +48,19 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Eraser,
 	Geometry,
 };
+
+// Surface Scene 只消费已经计算完成的共享第一光源，不复制 MainBar 的状态机。
+export struct BarUiFrameLightingSnapshot
+{
+	D2D1_POINT_2F primaryLight = D2D1::Point2F();
+	FLOAT primaryRadius = 0.0F;
+	COLORREF drawingPenColor = RGB(0, 0, 0);
+	double drawingPenColorBlend = 0.0;
+	double drawingLightOpacity = 1.0;
+	bool primaryLightVisible = false;
+	bool edgeLightingEnabled = false;
+};
+
 // 具体渲染
 class BarUIRendering
 {
@@ -86,13 +74,6 @@ public:
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
 	bool Png(ID2D1DeviceContext* deviceContext, BarUiPNGClass& png, const BarUiInheritClass& inh);
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
-	Inkeys::UI::Bar::WhiteboardControlRenderResult WhiteboardControl(
-		ID2D1DeviceContext* deviceContext,
-		const Inkeys::UI::Bar::WhiteboardControlRenderState& state,
-		float dpiScale,
-		bool left,
-		POINT screenOrigin,
-		std::chrono::steady_clock::time_point frameTime);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	bool PrepareFrameLighting(double animationDtSeconds,
@@ -108,6 +89,15 @@ public:
 	{
 		return frameCursorLightChanged;
 	}
+	[[nodiscard]] BarUiFrameLightingSnapshot
+		SnapshotFrameLighting() const noexcept;
+	void SetFrameLightingSnapshot(
+		const BarUiFrameLightingSnapshot& snapshot) noexcept;
+	// Surface 只提供本地指针与 selected 能力，淡入/淡出仍沿用 Bar 光源参数。
+	[[nodiscard]] bool PrepareSurfaceCursorLight(
+		double animationDtSeconds,
+		D2D1_POINT_2F localCursor,
+		bool cursorTargetVisible) noexcept;
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;

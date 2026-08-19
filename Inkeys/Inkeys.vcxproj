@@ -913,6 +913,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />

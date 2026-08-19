@@ -6265,14 +6265,6 @@ namespace Inkeys::UI::Bar
 		return Inkeys::Window::Enqueue(floating_window, message);
 	}
 
-	void NotifyWhiteboardControlPointerActivity(bool inside) noexcept
-	{
-		if (offSignal || !floating_window || !IsWindow(floating_window)) return;
-		// 白板翻页栏只转发自然鼠标进入/离开，第三光仍由 Bar 的同一状态机维护。
-		if (inside) barUISet.ActivateBorderCursorTracking(floating_window);
-		else barUISet.RegisterBorderCursorLight(floating_window);
-	}
-
 	void NotifyCanvasDrawingStarted()
 	{
 		// 只在首个并发笔迹进入时通知窗口线程，避免每个采样或多指笔迹重复切换状态。

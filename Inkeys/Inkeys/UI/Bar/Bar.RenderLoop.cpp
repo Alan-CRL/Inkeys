@@ -22,6 +22,7 @@ module;
 module Inkeys.UI.Bar;
 import :Main;
 import :Rendering;
+import :Scene;
 import :Layout;
 import :Atomic;
 import :Zoom;
@@ -6963,6 +6964,25 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 			static_cast<int>(frameDrawingState.penMode),
 			frameDrawingState.brush1Color,
 			frameDrawingState.highlighterColor);
+	}
+	// 主栏仍独占光源状态机；这里只发布屏幕坐标快照给订阅的 Whiteboard Surface。
+	{
+		const auto lighting = state.spec.SnapshotFrameLighting();
+		const POINT directTranslation{
+			owner_.directWindowDragTranslationX.load(memory_order_acquire),
+			owner_.directWindowDragTranslationY.load(memory_order_acquire) };
+		Inkeys::UI::Bar::BarSurfaceSharedPrimaryLight sharedLight;
+		sharedLight.screenX = static_cast<double>(state.monitorOrigin.x)
+			+ lighting.primaryLight.x + directTranslation.x;
+		sharedLight.screenY = static_cast<double>(state.monitorOrigin.y)
+			+ lighting.primaryLight.y + directTranslation.y;
+		sharedLight.radiusPixels = lighting.primaryRadius;
+		sharedLight.drawingPenColor = lighting.drawingPenColor;
+		sharedLight.drawingPenColorBlend = lighting.drawingPenColorBlend;
+		sharedLight.drawingLightOpacity = lighting.drawingLightOpacity;
+		sharedLight.visible = lighting.primaryLightVisible;
+		sharedLight.edgeLightingEnabled = lighting.edgeLightingEnabled;
+		Inkeys::UI::Bar::BarSurfaceScene::PublishSharedPrimaryLight(sharedLight);
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;

@@ -1685,6 +1685,15 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>

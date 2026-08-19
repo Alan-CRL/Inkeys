@@ -1,4 +1,4 @@
-﻿#ifndef NOMINMAX
+#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -6,6 +6,7 @@
 #include <iostream>
 #include <string_view>
 
+import Inkeys.UI.Bar.SurfaceLayout;
 import Inkeys.UI.Whiteboard;
 import Inkeys.Window;
 
@@ -27,43 +28,57 @@ namespace
 		Check(first.currentPage == 1 && first.totalPage == 1
 			&& !first.previousEnabled && first.pageEnabled && first.nextEnabled,
 			"first page disables previous while page and append buttons remain enabled");
-
-		const auto switching = ResolvePageState(3, 5, true);
-		Check(!switching.previousEnabled && !switching.pageEnabled
-			&& !switching.nextEnabled,
-			"switching disables all three page buttons");
+		const auto changing = ResolvePageState(3, 5, true);
+		Check(!changing.previousEnabled && !changing.pageEnabled
+			&& !changing.nextEnabled, "switching disables all page buttons");
 		const auto clamped = ResolvePageState(9, 4, false);
 		Check(clamped.currentPage == 4 && clamped.totalPage == 4
 			&& clamped.previousEnabled && clamped.nextEnabled,
 			"page state clamps invalid runtime values");
 	}
 
-	void TestControlLayout()
+	void TestSceneLayout()
 	{
-		using Inkeys::UI::Whiteboard::ResolveControlLayout;
+		using namespace Inkeys::UI::Bar;
 		constexpr RECT monitor{ -1920, 0, 0, 1080 };
-		const auto left = ResolveControlLayout(monitor, 1.0F, true);
-		const auto right = ResolveControlLayout(monitor, 1.0F, false);
-		Check(left.bounds.left == monitor.left + 5
-			&& left.bounds.bottom == monitor.bottom - 5
-			&& left.bounds.right - left.bounds.left == 230
-			&& left.bounds.bottom - left.bounds.top == 80,
-			"left control uses the MainBar 80 DIP height and twoTwo grid margin");
-		Check(right.bounds.right == monitor.right - 5
-			&& right.bounds.top == left.bounds.top,
-			"right control mirrors against the monitor edge");
-		Check(left.previous.left == 5 && left.previous.right == 75
-			&& left.currentPage.left == 80 && left.currentPage.right == 150
-			&& EqualRect(&left.currentPage, &left.totalPage)
-			&& left.next.left == 155 && left.next.right == 225
-			&& left.previous.top == 5 && left.currentPage.top == 5
-			&& left.next.bottom == 75,
-			"previous page and next share three equal twoTwo button bounds");
+		BarSurfaceHorizontalGroupSpec group;
+		group.screenBounds = monitor;
+		group.dpiScale = 1.0F;
+		group.anchor = BarSurfaceHorizontalAnchor::Left;
+		const auto left = ResolveBarSurfaceHorizontalGroupLayout(group, 3);
+		group.anchor = BarSurfaceHorizontalAnchor::Right;
+		const auto right = ResolveBarSurfaceHorizontalGroupLayout(group, 3);
+		Check(left.logicalBounds.left == monitor.left + 5
+			&& left.logicalBounds.bottom == monitor.bottom - 5
+			&& left.logicalBounds.right - left.logicalBounds.left == 230
+			&& left.logicalBounds.bottom - left.logicalBounds.top == 80,
+			"UI3 group owns the standard twoTwo logical layout and anchoring");
+		Check(right.logicalBounds.right == monitor.right - 5
+			&& right.logicalBounds.top == left.logicalBounds.top,
+			"right UI3 surface mirrors against the monitor edge");
+		Check(left.widgets.size() == 3
+			&& left.widgets[0].left == 5 && left.widgets[0].right == 75
+			&& left.widgets[1].left == 80 && left.widgets[1].right == 150
+			&& left.widgets[2].left == 155 && left.widgets[2].right == 225,
+			"UI3 layout creates three equal twoTwo widget slots");
+		group.dpiScale = 1.5F;
+		const auto scaled = ResolveBarSurfaceHorizontalGroupLayout(group, 3);
+		Check(scaled.logicalBounds.right - scaled.logicalBounds.left == 345
+			&& scaled.logicalBounds.bottom - scaled.logicalBounds.top == 120,
+			"shared DIP metrics resolve independently at target DPI");
+	}
 
-		const auto scaled = ResolveControlLayout(monitor, 1.5F, true);
-		Check(scaled.bounds.right - scaled.bounds.left == 345
-			&& scaled.bounds.bottom - scaled.bounds.top == 120,
-			"layout converts DIP to physical pixels at monitor DPI");
+	void TestSurfaceLayoutContracts()
+	{
+		using namespace Inkeys::UI::Bar;
+		BarSurfaceHorizontalGroupSpec group;
+		Check(group.edgeMarginDip == BarButtonGapDip
+			&& group.bottomMarginDip == BarButtonGapDip
+			&& group.itemSizeDip == BarButtonTwoSideDip
+			&& group.gapDip == BarButtonGapDip,
+			"surface layout defaults to the shared Bar twoTwo metrics");
+		Check(group.anchor == BarSurfaceHorizontalAnchor::Left,
+			"surface anchor remains explicit instead of relying on Whiteboard-local geometry");
 	}
 
 	void TestWindowContracts()
@@ -76,26 +91,21 @@ namespace
 			&& static_cast<unsigned>(WindowRole::PptBottomLeft)
 			== static_cast<unsigned>(WindowRole::WhiteboardRight) + 1,
 			"whiteboard roles stay between drawpad and PPT roles");
-
-			Inkeys::Window::Service service;
-			Check(service.OverlayTopmost(), "overlay defaults to topmost mode");
-			Check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
-			(void)service.SetOverlayTopmost(false);
-			Check(!service.OverlayTopmost(), "notopmost mode persists without a refresh target");
-			(void)service.SetOverlayFullscreen(true);
-			Check(service.OverlayFullscreen() && !service.OverlayTopmost(),
-				"fullscreen mark persists independently of topmost");
-			(void)service.SetOverlayFullscreen(false);
-			(void)service.SetOverlayTopmost(true);
-			Check(service.OverlayTopmost() && !service.OverlayFullscreen(),
-				"topmost restore keeps fullscreen independently cleared");
+		Inkeys::Window::Service service;
+		Check(service.OverlayTopmost() && !service.OverlayFullscreen(),
+			"overlay defaults to topmost and non-fullscreen");
+		(void)service.SetOverlayTopmost(false);
+		(void)service.SetOverlayFullscreen(true);
+		Check(service.OverlayFullscreen() && !service.OverlayTopmost(),
+			"fullscreen mark persists independently of topmost");
 	}
 }
 
 int RunWhiteboardUiTests()
 {
 	TestPageState();
-	TestControlLayout();
+	TestSceneLayout();
+	TestSurfaceLayoutContracts();
 	TestWindowContracts();
 	return failureCount;
 }

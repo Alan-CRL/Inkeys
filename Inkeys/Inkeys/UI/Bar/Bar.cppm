@@ -4,3 +4,4 @@ export import :Theme;
 export import :Main;
 export import :Layout;
 export import :Zoom;
+export import :Scene;

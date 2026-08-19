@@ -613,8 +613,6 @@ protected:
 	friend class BarUIRendering;
 	friend class BarRenderLoopCoordinator;
 	friend LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-	friend void Inkeys::UI::Bar::NotifyWhiteboardControlPointerActivity(
-		bool inside) noexcept;
 };
 // 全局 Bar UI 集合
 export extern BarUISetClass barUISet;
