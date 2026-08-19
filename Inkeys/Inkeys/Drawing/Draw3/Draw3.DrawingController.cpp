@@ -263,6 +263,19 @@ namespace Inkeys::Drawing::Draw3
 			highlighterAppearance.fillAlpha = 1.0f;
 			window.ConfigureDrawingCursor(DrawingTool::Highlighter,
 				highlighterAppearance);
+
+			const float laserSolidDiameter = CanvasDiameterForTool(
+				DrawingTool::Laser, visualStyle, dpiScale);
+			DrawingCursorAppearance laserAppearance = {
+				DrawingCursorShape::Circle,
+				laserSolidDiameter,
+				laserSolidDiameter,
+				1.0f, 1.0f, 1.0f
+			};
+			laserAppearance.fillAlpha = 1.0f;
+			laserAppearance.outlineWidth = 0.0f;
+			// 与 Down 时 CanvasDiameterForTool 使用同一条 DIP -> canvas px 链路。
+			window.ConfigureDrawingCursor(DrawingTool::Laser, laserAppearance);
 		}
 
 		bool TryCreateInkGuid(InkGuid& output) noexcept
@@ -1200,17 +1213,6 @@ namespace Inkeys::Drawing::Draw3
 		eraserAppearance.outlineGreen = 207.0f / 255.0f;
 		eraserAppearance.outlineBlue = 207.0f / 255.0f;
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
-		const float laserSolidDiameter = CanvasDiameterForTool(
-			DrawingTool::Laser, currentProductVisualStyle, configuration_.dpiScale);
-		DrawingCursorAppearance laserAppearance = {
-			DrawingCursorShape::Circle,
-			laserSolidDiameter,
-			laserSolidDiameter,
-			1.0f, 1.0f, 1.0f
-		};
-		laserAppearance.fillAlpha = 1.0f;
-		laserAppearance.outlineWidth = 0.0f;
-		window_.ConfigureDrawingCursor(DrawingTool::Laser, laserAppearance);
 		renderer_.ConfigureLaserStyle(configuration_.dpiScale);
 		renderer_.ConfigureShapePrimitives(configuration_.dpiScale);
 		renderer_.ConfigureLaserParticles(

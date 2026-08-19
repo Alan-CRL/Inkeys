@@ -285,6 +285,32 @@ export
 			GetBarLaserThicknessPresetDip(index) * dpiZoom)));
 	}
 
+	bool IsBarThicknessPresetSelected(PenModeSelectEnum mode,
+		size_t index, double dpiZoom)
+	{
+		if (stateMode.laserActive)
+		{
+			// 激光状态保存 DIP，选中身份不能与仅供视觉尺寸的像素值比较。
+			return abs(static_cast<double>(GetPenWidth())
+				- static_cast<double>(GetBarLaserThicknessPresetDip(index)))
+				< 0.001;
+		}
+		return static_cast<int>(lround(clamp(
+			static_cast<double>(max(0.0f, GetPenWidth())), 0.0, 999.0)))
+			== GetBarThicknessPresetPx(mode, index, dpiZoom);
+	}
+
+	double GetBarCurrentPenThicknessVisualWidth(double dpiZoom)
+	{
+		if (stateMode.laserActive)
+		{
+			// Bar 预览在 96-DPI D2D 空间绘制，激光 DIP 只在边界转换一次。
+			return max(0.0, static_cast<double>(GetPenWidth())
+				* max(0.0, dpiZoom));
+		}
+		return max(0.0, static_cast<double>(GetPenWidth()));
+	}
+
 	bool IsLaserThicknessPresetMode()
 	{
 		return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
