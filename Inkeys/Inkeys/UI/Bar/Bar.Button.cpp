@@ -731,7 +731,10 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 	bool laser = selected && stateMode.laserActive;
 	bool highlighter =
 		!laser && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
-	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0) + (laser ? 4 : 0);
+	bool hardPen = selected && !laser && !highlighter &&
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen;
+	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0) +
+		(laser ? 4 : 0) + (hardPen ? 8 : 0);
 	if (drawButtonStyleKey == styleKey) return;
 
 	lock_guard<mutex> lock(mtx);
@@ -739,8 +742,10 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 	auto button = preset[(int)BarButtonPresetEnum::Draw];
 	if (!button) return;
 	button->TransitionContent(
-		laser ? L"barLaser" : (highlighter ? L"barHighlighter1" : L"barBrush1"),
-		selected ? (laser ? L"激光笔" : (highlighter ? L"荧光笔" : L"硬笔")) : L"绘制");
+		laser ? L"barLaser" : (highlighter ? L"barHighlighter1" :
+			(hardPen ? L"barBrush1" : L"barBrush2")),
+		selected ? (laser ? L"激光笔" : (highlighter ? L"荧光笔" :
+			(hardPen ? L"硬笔" : L"软笔"))) : L"绘制");
 	drawButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateEraserButtonStyle()

@@ -490,6 +490,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					&& !barUISet.barState.fold
 					&& (annotation
 						? static_cast<bool>(drawAttribute.penTypeMenuOpen)
+							&& !stateMode.laserActive
 							&& PenModeSupportsAnnotationLine(
 								stateMode.Pen.ModeSelect)
 						: static_cast<bool>(
@@ -1019,6 +1020,7 @@ private:
 	{
 		None,
 		DrawAttributeBrush,
+		DrawAttributeSoftPen,
 		DrawAttributeLaser,
 		DrawAttributeHighlight,
 		DrawAttributePenTypeExtension,
@@ -1072,6 +1074,7 @@ public:
 		shapeMap(owner.shapeMap),
 		superellipseMap(owner.superellipseMap),
 		drawAttributeBrushHoverStage(owner.drawAttributeBrushHoverStage),
+		drawAttributeSoftPenHoverStage(owner.drawAttributeSoftPenHoverStage),
 		drawAttributeLaserHoverStage(owner.drawAttributeLaserHoverStage),
 		drawAttributeHighlightHoverStage(owner.drawAttributeHighlightHoverStage),
 		drawAttributePenTypeExtensionHoverStage(
@@ -1111,10 +1114,14 @@ private:
 		{
 			switch (target)
 			{
-			case IndependentHoverTargetEnum::DrawAttributeBrush:
+		case IndependentHoverTargetEnum::DrawAttributeBrush:
 				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct,
 					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value(),
 					&drawAttributeBrushHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeSoftPen:
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_SoftPen]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_SoftPen]->fill.value(),
+					&drawAttributeSoftPenHoverStage };
 			case IndependentHoverTargetEnum::DrawAttributeLaser:
 				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]->pct,
 					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]->fill.value(),
@@ -1678,7 +1685,7 @@ private:
 					return static_cast<int>(lround(max(
 						0.0f, stateMode.Pen.Brush1.width)))
 						!= GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenBrush1, index,
+							PenModeSelectEnum::IdtPenSoftPen, index,
 							barStyle.dpiZoom);
 				}
 				case IndependentHoverTargetEnum::GeometryClose:
@@ -1692,7 +1699,10 @@ private:
 			{
 			case IndependentHoverTargetEnum::DrawAttributeBrush:
 				return stateMode.laserActive
-					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1;
+					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHardPen;
+			case IndependentHoverTargetEnum::DrawAttributeSoftPen:
+				return stateMode.laserActive
+					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenSoftPen;
 			case IndependentHoverTargetEnum::DrawAttributeLaser:
 				return !stateMode.laserActive;
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
@@ -1738,6 +1748,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			case IndependentHoverTargetEnum::DrawAttributeAnnotationClose:
 				return !barState.fold
 					&& barState.drawAttributeBar.penTypeMenuOpen
+					&& !stateMode.laserActive
 					&& barState.drawAttributeBar.thicknessAnnotationPinned
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect);
@@ -2506,11 +2517,18 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							IndependentHoverTargetEnum::DrawAttributeLaser;
 					}
 					else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
-					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1
+					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHardPen
 					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeBrush;
+					}
+					else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_SoftPen];
+						stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenSoftPen
+						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeSoftPen;
 					}
 					else if (auto obj =
 						shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
@@ -3231,7 +3249,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								}
 								else SetPenWidth(static_cast<float>(
 									GetBarThicknessPresetPx(
-										PenModeSelectEnum::IdtPenBrush1,
+										PenModeSelectEnum::IdtPenSoftPen,
 										button.thicknessPresetIndex,
 										barStyle.dpiZoom)));
 								UpdateRendering();
@@ -5010,15 +5028,15 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (!msg.lbutton)
 							{
 								if (stateMode.laserActive || stateMode.Pen.ModeSelect
-									!= PenModeSelectEnum::IdtPenBrush1)
+									!= PenModeSelectEnum::IdtPenHardPen)
 								{
 									ClosePenTypeMenu();
 									if (barState.drawAttributeBar.thicknessViewMode
 										== ThicknessViewMode::FineDial)
 										CancelThicknessFineDialSelection();
 									stateMode.laserActive = false;
-									stateMode.Pen.ModeSelect =
-										PenModeSelectEnum::IdtPenBrush1;
+					stateMode.Pen.ModeSelect =
+						PenModeSelectEnum::IdtPenHardPen;
 									SyncDraw3State();
 									barButtonSet.UpdateDrawButtonStyle();
 									UpdateRendering();
@@ -5032,6 +5050,52 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						barState.drawAttributeBar.brush1Press = false; UpdateRendering(false);
 						SuppressHoverUntilPointerMove();
 
+						ClearBarInteractionMessages(EM_MOUSE, floating_window);
+					}
+				}
+
+				// 软笔：默认画笔，和硬笔共用粗细/颜色但保持独立按钮状态。
+				if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_SoftPen];
+					continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+				{
+					continueFlag = false;
+					if (msg.message == WM_LBUTTONDOWN)
+					{
+						barState.drawAttributeBar.softPenPress = true;
+						StopIndependentHover(hoveredIndependentButton, true, true);
+						hoveredIndependentButton = IndependentHoverTargetEnum::None;
+						UpdateRendering(false);
+						while (true)
+						{
+							if (!WaitForBarInteractionMessage(
+								msg, EM_MOUSE, floating_window))
+								return BarInteractionStageResult::Shutdown;
+							if (obj->IsClick(msg.x, msg.y, barStyle.zoom))
+							{
+								if (!msg.lbutton)
+								{
+									if (stateMode.laserActive || stateMode.Pen.ModeSelect
+										!= PenModeSelectEnum::IdtPenSoftPen)
+									{
+										ClosePenTypeMenu();
+										if (barState.drawAttributeBar.thicknessViewMode
+											== ThicknessViewMode::FineDial)
+											CancelThicknessFineDialSelection();
+										stateMode.laserActive = false;
+										stateMode.Pen.ModeSelect =
+											PenModeSelectEnum::IdtPenSoftPen;
+										SyncDraw3State();
+										barButtonSet.UpdateDrawButtonStyle();
+										UpdateRendering();
+									}
+									break;
+								}
+							}
+							else break;
+						}
+						barState.drawAttributeBar.softPenPress = false;
+						UpdateRendering(false);
+						SuppressHoverUntilPointerMove();
 						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 				}
@@ -5190,6 +5254,7 @@ private:
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum,
 		shared_ptr<BarUiSuperellipseClass>>& superellipseMap;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeBrushHoverStage;
+	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeSoftPenHoverStage;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeLaserHoverStage;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeHighlightHoverStage;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributePenTypeExtensionHoverStage;

@@ -1,4 +1,4 @@
-﻿#include "IdtState.h"
+﻿﻿#include "IdtState.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
@@ -61,6 +61,9 @@ namespace
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
 			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 			return Tool::Highlighter;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
+			return Tool::HardPen;
 		return Tool::Pen;
 	}
 
@@ -134,7 +137,8 @@ bool SetPenWidth(float targetWidth, bool setMemory)
 		stateMode.Pen.Laser.width = targetWidth;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen ||
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
 			stateMode.Pen.Brush1.width = targetWidth;
 		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 			stateMode.Pen.Highlighter1.width = targetWidth;
@@ -163,7 +167,8 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen ||
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
 			stateMode.Pen.Brush1.color = targetColor;
 		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
 			stateMode.Pen.Highlighter1.color = targetColor;

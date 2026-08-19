@@ -40,14 +40,13 @@ export
 	bool PenModeUsesCurvedThicknessPreview(PenModeSelectEnum mode)
 	{
 		// 未来软笔、激光笔接入实际模式枚举后，只需在这里扩展。
-		return mode == PenModeSelectEnum::IdtPenBrush1;
+		return mode == PenModeSelectEnum::IdtPenSoftPen;
 	}
 
 	bool PenModeSupportsAnnotationLine(PenModeSelectEnum mode)
 	{
 		// 激光笔不显示标注线入口；未来软笔模式在这里加入。
-		return mode == PenModeSelectEnum::IdtPenBrush1
-			|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+		return mode == PenModeSelectEnum::IdtPenSoftPen;
 	}
 
 	struct BarThicknessSliderRange
@@ -61,7 +60,7 @@ export
 		PenModeSelectEnum mode, double dpiZoom)
 	{
 		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) dpiZoom = 1.0;
-		if (mode == PenModeSelectEnum::IdtPenBrush1)
+		if (mode == PenModeSelectEnum::IdtPenSoftPen)
 		{
 			int maximum = max(1, static_cast<int>(lround(
 				BarThicknessSliderHardPenMaxDip * dpiZoom)));
@@ -85,7 +84,7 @@ export
 	{
 		if (!isfinite(trackTravel) || trackTravel <= 0.0) return 0.0;
 		const auto brushRange = GetBarThicknessSliderRange(
-			PenModeSelectEnum::IdtPenBrush1, dpiZoom);
+			PenModeSelectEnum::IdtPenSoftPen, dpiZoom);
 		const double brushRangeSpan = static_cast<double>(
 			brushRange.max - brushRange.min);
 		if (!brushRange.supported || brushRangeSpan <= 0.0) return 0.0;
@@ -265,7 +264,7 @@ export
 		if (index >= 3 || !isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
 		// 预设只跟随系统 DPI，不能再叠加 UI 配置缩放。
 		const double* presets = nullptr;
-		if (mode == PenModeSelectEnum::IdtPenBrush1)
+		if (mode == PenModeSelectEnum::IdtPenSoftPen)
 			presets = BarBrushThicknessPresetDip;
 		else if (mode == PenModeSelectEnum::IdtPenHighlighter1)
 			presets = BarHighlighterThicknessPresetDip;
@@ -320,7 +319,7 @@ export
 	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode)
 	{
 		return !stateMode.laserActive
-			&& (mode == PenModeSelectEnum::IdtPenBrush1
+			&& (mode == PenModeSelectEnum::IdtPenSoftPen
 			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}
 

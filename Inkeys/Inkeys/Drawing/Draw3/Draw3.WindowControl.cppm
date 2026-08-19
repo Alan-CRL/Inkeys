@@ -1,4 +1,4 @@
-﻿module;
+﻿﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -24,13 +24,14 @@ export namespace Inkeys::Drawing::Draw3
 	enum class DrawingTool
 	{
 		Pen = 0,
-		Highlighter = 1,
-		Eraser = 2,
-		Laser = 3,
-		SolidLine = 4,
-		DashedLine = 5,
-		OutlineRectangle = 6,
-		FilledRectangle = 7
+		HardPen = 1,
+		Highlighter = 2,
+		Eraser = 3,
+		Laser = 4,
+		SolidLine = 5,
+		DashedLine = 6,
+		OutlineRectangle = 7,
+		FilledRectangle = 8
 	};
 
 	// 橡皮宽度模式由窗口线程低频发布，绘制线程在物理批次首个 Down 锁定。

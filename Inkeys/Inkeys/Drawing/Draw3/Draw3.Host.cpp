@@ -309,6 +309,7 @@ namespace Inkeys::Drawing::Draw3
 			DrawingTool tool = DrawingTool::Pen;
 			switch (state.tool)
 			{
+			case Bridge::Tool::HardPen: tool = DrawingTool::HardPen; break;
 			case Bridge::Tool::Highlighter: tool = DrawingTool::Highlighter; break;
 			case Bridge::Tool::FixedEraser:
 			case Bridge::Tool::SpeedEraser: tool = DrawingTool::Eraser; break;

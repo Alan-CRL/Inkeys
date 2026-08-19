@@ -14,6 +14,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	enum class Tool : std::uint8_t
 	{
 		Pen,
+		HardPen,
 		Highlighter,
 		FixedEraser,
 		SpeedEraser,

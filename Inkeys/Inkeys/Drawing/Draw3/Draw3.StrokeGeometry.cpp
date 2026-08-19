@@ -1,4 +1,4 @@
-﻿module;
+﻿﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -91,14 +91,14 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
-		void IncludeHighlighterSweepBounds(RECT& bounds, const InkPoint& p1, const InkPoint& p2)
+		void IncludeHighlighterSweepBounds(RECT& bounds, const InkPoint& p1, const InkPoint& p2,
+			DirectX::XMFLOAT2 halfSize)
 		{
-			const float halfWidth = kHighlighterRadiusPx / kHighlighterNibAspectRatio;
 			IncludeHighlighterBounds(bounds,
-				std::min(p1.x, p2.x) - halfWidth,
-				std::min(p1.y, p2.y) - kHighlighterRadiusPx,
-				std::max(p1.x, p2.x) + halfWidth,
-				std::max(p1.y, p2.y) + kHighlighterRadiusPx);
+				std::min(p1.x, p2.x) - halfSize.x,
+				std::min(p1.y, p2.y) - halfSize.y,
+				std::max(p1.x, p2.x) + halfSize.x,
+				std::max(p1.y, p2.y) + halfSize.y);
 		}
 
 		std::optional<ShapePrimitiveKind> ShapeKindForStoredType(
@@ -783,8 +783,12 @@ namespace Inkeys::Drawing::Draw3
 		geometry.primitives.clear();
 		geometry.bounds = {};
 		if (inputPoints.empty()) return;
-		const DirectX::XMFLOAT2 halfSize = {
-			kHighlighterRadiusPx / kHighlighterNibAspectRatio, kHighlighterRadiusPx };
+		const auto ResolveHalfSize = [](const InkPoint& point) noexcept
+		{
+			const float halfHeight = std::max(0.5f, point.r);
+			return DirectX::XMFLOAT2{
+				halfHeight / kHighlighterNibAspectRatio, halfHeight };
+		};
 		geometry.primitives.reserve(inputPoints.size());
 		InkPoint previous = inputPoints.front();
 		for (size_t index = 1; index < inputPoints.size(); ++index)
@@ -797,9 +801,14 @@ namespace Inkeys::Drawing::Draw3
 			HighlighterPrimitive primitive;
 			primitive.p1 = { previous.x, previous.y };
 			primitive.p2 = { current.x, current.y };
-			primitive.halfSize = halfSize;
+			const DirectX::XMFLOAT2 previousHalfSize = ResolveHalfSize(previous);
+			const DirectX::XMFLOAT2 currentHalfSize = ResolveHalfSize(current);
+			primitive.halfSize = {
+				(previousHalfSize.x + currentHalfSize.x) * 0.5f,
+				(previousHalfSize.y + currentHalfSize.y) * 0.5f };
 			geometry.primitives.push_back(primitive);
-			IncludeHighlighterSweepBounds(geometry.bounds, previous, current);
+			IncludeHighlighterSweepBounds(geometry.bounds, previous, current,
+				primitive.halfSize);
 			previous = current;
 		}
 		if (geometry.primitives.empty())
@@ -807,9 +816,10 @@ namespace Inkeys::Drawing::Draw3
 			HighlighterPrimitive primitive;
 			primitive.p1 = { previous.x, previous.y };
 			primitive.p2 = primitive.p1;
-			primitive.halfSize = halfSize;
+			primitive.halfSize = ResolveHalfSize(previous);
 			geometry.primitives.push_back(primitive);
-			IncludeHighlighterSweepBounds(geometry.bounds, previous, previous);
+			IncludeHighlighterSweepBounds(geometry.bounds, previous, previous,
+				primitive.halfSize);
 		}
 	}
 
@@ -943,9 +953,10 @@ namespace Inkeys::Drawing::Draw3
 		{
 			return highlighter
 				? std::pair<double, double>{
-					kHighlighterRadiusPx / kHighlighterNibAspectRatio +
-						kHighlighterBoundsPaddingPx,
-					kHighlighterRadiusPx + kHighlighterBoundsPaddingPx }
+					static_cast<double>(point.width) * 0.5 /
+						kHighlighterNibAspectRatio + kHighlighterBoundsPaddingPx,
+					static_cast<double>(point.width) * 0.5 +
+						kHighlighterBoundsPaddingPx }
 				: std::pair<double, double>{
 					static_cast<double>(point.width) * 0.5 + 3.0,
 					static_cast<double>(point.width) * 0.5 + 3.0 };

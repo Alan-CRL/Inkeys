@@ -538,7 +538,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	bool penLightColorChanged = false;
 	int desiredColorSource = drawingMode
 		== static_cast<int>(StateModeSelectEnum::IdtShape)
-		? static_cast<int>(PenModeSelectEnum::IdtPenBrush1) : penMode;
+		? static_cast<int>(PenModeSelectEnum::IdtPenSoftPen) : penMode;
 	if (frameDrawingUsesPenColor)
 	{
 		bool desiredSourceIsHighlighter = desiredColorSource
@@ -622,7 +622,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	}
 	if (frameDrawingPenColorCarriesHighlighterHistory
 		&& frameDrawingPenColorSource
-			== static_cast<int>(PenModeSelectEnum::IdtPenBrush1)
+			== static_cast<int>(PenModeSelectEnum::IdtPenSoftPen)
 		&& !frameDrawingPenColorAnimating
 		&& (frameDrawingPenColor & 0x00FFFFFF)
 			== (desiredDrawingPenColor & 0x00FFFFFF))

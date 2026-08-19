@@ -24,6 +24,7 @@ public:
 	struct
 	{
 		IdtAtomic<bool> brush1Press = false;
+		IdtAtomic<bool> softPenPress = false;
 		IdtAtomic<bool> laserPress = false;
 		IdtAtomic<bool> highlight1Press = false;
 		IdtAtomic<bool> penTypeMenuOpen = false;

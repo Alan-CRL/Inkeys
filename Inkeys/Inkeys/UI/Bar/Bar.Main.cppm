@@ -307,6 +307,7 @@ public:
 
 	// 绘制属性按钮同样复用自身背景层，仅单独记录悬停动画阶段。
 	IdtAtomic<BarButtonHoverStageEnum> drawAttributeBrushHoverStage = BarButtonHoverStageEnum::None;
+	IdtAtomic<BarButtonHoverStageEnum> drawAttributeSoftPenHoverStage = BarButtonHoverStageEnum::None;
 	IdtAtomic<BarButtonHoverStageEnum> drawAttributeLaserHoverStage = BarButtonHoverStageEnum::None;
 	IdtAtomic<BarButtonHoverStageEnum> drawAttributeHighlightHoverStage = BarButtonHoverStageEnum::None;
 	IdtAtomic<BarButtonHoverStageEnum> drawAttributePenTypeExtensionHoverStage = BarButtonHoverStageEnum::None;

@@ -1,4 +1,4 @@
-﻿module;
+﻿﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -128,7 +128,8 @@ namespace Inkeys::Drawing::Draw3
 		float DiameterForTool(DrawingTool tool,
 			const ProductVisualStyle& visualStyle)
 		{
-			if (tool == DrawingTool::Pen || tool == DrawingTool::Highlighter ||
+			if (tool == DrawingTool::Pen || tool == DrawingTool::HardPen ||
+				tool == DrawingTool::Highlighter ||
 				IsShapeDrawingTool(tool))
 				return (std::max)(0.1f, visualStyle.widthDip);
 			if (tool == DrawingTool::Laser)
@@ -248,8 +249,8 @@ namespace Inkeys::Drawing::Draw3
 
 			const DirectX::XMFLOAT4 highlighterColor = ColorForTool(
 				DrawingTool::Highlighter, visualStyle);
-			// 荧光笔绘制几何不读取 widthDip，避免用产品快照虚构与笔迹不一致的光标。
-			const float highlighterDiameter = kHighlighterStrokeDiameterPx;
+			// 荧光笔几何和光标共用产品宽度，保持预览、实际笔迹与光标一致。
+			const float highlighterDiameter = std::max(1.0f, visualStyle.widthDip);
 			DrawingCursorAppearance highlighterAppearance = {
 				DrawingCursorShape::Rectangle,
 				highlighterDiameter / kHighlighterNibAspectRatio,
@@ -404,6 +405,7 @@ namespace Inkeys::Drawing::Draw3
 			switch (tool)
 			{
 			case DrawingTool::Pen:
+			case DrawingTool::HardPen:
 				style.inkType = StoredInkType::Pen;
 				style.opacity = color.w;
 				return style;
@@ -848,6 +850,7 @@ namespace Inkeys::Drawing::Draw3
 			switch (tool)
 			{
 			case DrawingTool::Highlighter: return "Highlighter";
+			case DrawingTool::HardPen: return "HardPen";
 			case DrawingTool::Eraser: return "Eraser";
 			case DrawingTool::Laser: return "Laser";
 			case DrawingTool::SolidLine: return "SolidLine";
@@ -2140,7 +2143,8 @@ namespace Inkeys::Drawing::Draw3
 					return false;
 				}
 				const bool selectedToolSupportsOverride =
-					batchTool == DrawingTool::Pen || batchTool == DrawingTool::Highlighter ||
+					batchTool == DrawingTool::Pen || batchTool == DrawingTool::HardPen ||
+					batchTool == DrawingTool::Highlighter ||
 					IsShapeDrawingTool(batchTool);
 				bool effectiveInvertedPenEraserEnabled = false;
 				if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
@@ -2156,8 +2160,12 @@ namespace Inkeys::Drawing::Draw3
 				const StrokeWidthMode widthMode = tool == DrawingTool::Pen
 					? ResolveStrokeWidthMode(deviceType,
 						inputWidthModeSettings_.Get(), downPressure)
-					: tool == DrawingTool::Laser && deviceType == InputDeviceType::Pen
-						? StrokeWidthMode::LaserPressure
+					: tool == DrawingTool::HardPen
+						? StrokeWidthMode::Fixed
+					: tool == DrawingTool::Laser
+						? (deviceType == InputDeviceType::Pen
+							? StrokeWidthMode::LaserPressure
+							: StrokeWidthMode::SimulatedPressure)
 						: tool == DrawingTool::Eraser &&
 							batchEraserWidthMode == EraserWidthMode::Speed
 							? StrokeWidthMode::SpeedEraser : StrokeWidthMode::Fixed;
@@ -3323,6 +3331,7 @@ namespace Inkeys::Drawing::Draw3
 				penSample.valid = false;
 			const DrawingTool selectedTool = window_.ActiveTool();
 			const bool selectedToolSupportsOverride = selectedTool == DrawingTool::Pen ||
+				selectedTool == DrawingTool::HardPen ||
 				selectedTool == DrawingTool::Highlighter || IsShapeDrawingTool(selectedTool);
 			const bool invertedPenEraser = penSample.inverted &&
 				(selectedTool == DrawingTool::Eraser || ShouldUseInvertedPenEraser(
@@ -5150,13 +5159,14 @@ namespace Inkeys::Drawing::Draw3
 				if (runtime->awaitingReconnect && !runtime->reconnectVisualRefresh)
 					continue; // 暂留候选保持上一帧 L0/L1，不制造脏区或重复 prediction。
 				const bool eraser = runtime->tool == DrawingTool::Eraser;
+				const bool hardPen = runtime->tool == DrawingTool::HardPen;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				if (!eraser)
 					otherLiveLayerNeedsRebuild = true;
 				// 保护窗口仍按配置 live-tip 时长推进 L1；taper 仅在非硬件压感普通笔上叠加。
 				const double liveTipProtectionSeconds =
-					eraser || highlighter ? 0.0 : configuration_.liveTipDurationSeconds;
-				const double liveTipTaperSeconds = eraser || highlighter
+					eraser || highlighter || hardPen ? 0.0 : configuration_.liveTipDurationSeconds;
+				const double liveTipTaperSeconds = eraser || highlighter || hardPen
 					? 0.0
 					: ResolveLiveTipTaperDurationSeconds(
 						stroke.widthMode, configuration_.liveTipDurationSeconds);

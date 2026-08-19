@@ -1,4 +1,4 @@
-﻿#pragma once
+﻿﻿#pragma once
 
 #include "IdtMain.h"
 
@@ -13,7 +13,11 @@ enum class StateModeSelectEnum
 };
 enum class PenModeSelectEnum
 {
-	IdtPenBrush1,
+	// Brush1 是历史名称，当前默认工具语义为软笔；保留别名避免旧调用失效。
+	IdtPenSoftPen = 0,
+	IdtPenBrush1 = IdtPenSoftPen,
+	IdtPenHardPen,
+	IdtPenBrush2 = IdtPenHardPen,
 	IdtPenHighlighter1
 };
 enum class ShapeModeSelectEnum
@@ -33,7 +37,7 @@ public:
 	StateModeClass()
 	{
 		{
-			Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+			Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
 			Pen.Brush1.width = Pen.Brush1.widthPreset = 3;
 			Pen.Brush1.color = RGBA(255, 16, 0, 255);
 			Pen.Highlighter1.width = Pen.Highlighter1.widthPreset = 35;
