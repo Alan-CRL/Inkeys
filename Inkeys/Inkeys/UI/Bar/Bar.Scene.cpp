@@ -398,11 +398,12 @@ namespace Inkeys::UI::Bar
 			{
 				widget.button->icon.InitializationFromResource(L"UI",
 					widget.spec.iconResource);
-				widget.button->icon.SetWH(
-					std::isfinite(widget.spec.iconSizeDip)
-						? widget.spec.iconSizeDip : BarButtonTwoTwoIconSizeDip,
-					std::isfinite(widget.spec.iconSizeDip)
-						? widget.spec.iconSizeDip : BarButtonTwoTwoIconSizeDip);
+				const double iconSize = std::isfinite(widget.spec.iconSizeDip)
+					? widget.spec.iconSizeDip : BarButtonTwoTwoIconSizeDip;
+				widget.button->icon.SetWH(iconSize, iconSize);
+				// 独立 surface 不经过主栏的几何动画队列，SVG 尺寸必须立即写入 val，避免 Svg 的零尺寸保护跳过绘制。
+				widget.button->icon.w.SetDirect(iconSize);
+				widget.button->icon.h.SetDirect(iconSize);
 				widget.button->icon.enable.Initialization(true);
 				widget.button->icon.pct.SetDirect(1.0);
 				if (widget.spec.iconAngle.has_value())
