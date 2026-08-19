@@ -96,7 +96,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 - 普通笔光标直径是 `max(widthDip, 5 DIP * dpiScale)`；只有最小光标值按 DPI 缩放，实际笔画粗细不重复缩放。
 - 荧光笔当前绘制几何固定为 `6.25 × 50 px`，光标必须复用该尺寸；最终 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。
 - Eraser Hover 整体 alpha 为 `0.5`，Contact 为 `1.0`；这一规则同时适用固定/速度橡皮、鼠标和倒转笔橡皮。
-- Laser 当前没有产品宽度 state；光标与笔迹必须共用 `kLaserSolidDiameterAt96Dpi * dpiScale`。
+- Laser 以 `stateMode.Pen.Laser.width` 保存独立 DIP 宽度，默认细/中/粗为 `3/5/7`；产品状态、笔迹和光标必须共用该值，并仅在画布端乘 `dpiScale`。
 
 ### 4. Validation & Error Matrix
 

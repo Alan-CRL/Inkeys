@@ -38,6 +38,10 @@ public:
 			Pen.Brush1.color = RGBA(255, 16, 0, 255);
 			Pen.Highlighter1.width = Pen.Highlighter1.widthPreset = 35;
 			Pen.Highlighter1.color = RGBA(255, 30, 207, 255); // TODO 后续添加透明度选项
+			Pen.Laser.widthPreset[0] = 3.0f;
+			Pen.Laser.widthPreset[1] = 5.0f;
+			Pen.Laser.widthPreset[2] = 7.0f;
+			Pen.Laser.width = Pen.Laser.widthPreset[1];
 		}
 		{
 			Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
@@ -73,6 +77,12 @@ public:
 
 			float widthPreset;
 		}Highlighter1;
+		struct
+		{
+			float width;
+			// 激光笔固定使用细/中/粗三档，不与墨迹笔型共享记忆值。
+			float widthPreset[3];
+		}Laser;
 	}Pen;
 	struct
 	{

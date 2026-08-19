@@ -1152,6 +1152,7 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			frameDrawingState.penMode, state.barStyle.dpiZoom);
 		bool thicknessSliderAvailable =
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+				&& !stateMode.laserActive
 				&& thicknessSliderRange.supported
 				&& state.barState.drawAttribute && !state.barState.fold;
 		bool colorPickerAvailable =
@@ -3142,6 +3143,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						double layoutScale = drawAttributeLayoutScale;
 
 						bool buttonShowsExtension = button.selected
+							&& !stateMode.laserActive
 							&& PenModeSupportsAnnotationLine(
 								stateMode.Pen.ModeSelect);
 						shape->x.SetTar(BarDrawAttributePenTypeLeft * layoutScale);
@@ -3219,6 +3221,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 
 				double layoutScale = drawAttributeLayoutScale;
 				bool extensionVisible = state.barState.drawAttribute && !state.barState.fold
+					&& !stateMode.laserActive
 					&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 					double extensionY = stateMode.Pen.ModeSelect
 						== PenModeSelectEnum::IdtPenHighlighter1 ? 75.0 : 110.0;
@@ -3364,8 +3367,9 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			bool thicknessControlsExchangeDirect =
 				state.drawAttributeThicknessHoldExchangeProgress.val > 0.000001
 				|| state.drawAttributeThicknessHoldExchangeProgress.tar > 0.000001;
-bool thicknessPresetMode =
-							PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
+						bool laserThicknessPresetMode = IsLaserThicknessPresetMode();
+						bool thicknessPresetMode = laserThicknessPresetMode
+							|| PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
 						// 预设选中只看真实粗细；左下角数字由动画值驱动。
 						int actualThickness = static_cast<int>(lround(clamp(
 							static_cast<double>(max(0.0f, GetPenWidth())),
@@ -3384,14 +3388,23 @@ bool thicknessPresetMode =
 								BarDrawAttributeThicknessControlHeight * layoutScale);
 							shape->h.SetTar(
 								BarDrawAttributeThicknessControlHeight * layoutScale);
-							shape->rw.value().SetTar(4.0 * layoutScale);
-							shape->rh.value().SetTar(4.0 * layoutScale);
-							shape->fill.value().SetTar(selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::PressedFill));
-							shape->frame.value().SetTar(selected
-								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::TextPrimary));
+									shape->rw.value().SetTar(laserThicknessPresetMode
+										? BarDrawAttributeThicknessControlHeight * layoutScale / 2.0
+										: 4.0 * layoutScale);
+									shape->rh.value().SetTar(laserThicknessPresetMode
+										? BarDrawAttributeThicknessControlHeight * layoutScale / 2.0
+										: 4.0 * layoutScale);
+									const COLORREF laserRed = RGB(255, 11, 30);
+									shape->fill.value().SetTar(laserThicknessPresetMode
+										? laserRed
+										: (selected
+											? GetThemeColor(BarThemeColorEnum::Accent)
+											: GetThemeColor(BarThemeColorEnum::PressedFill)));
+									shape->frame.value().SetTar(laserThicknessPresetMode
+										? laserRed
+										: (selected
+											? GetThemeColor(BarThemeColorEnum::Accent)
+											: GetThemeColor(BarThemeColorEnum::TextPrimary)));
 
 							if (!visible)
 							{
@@ -3410,28 +3423,31 @@ bool thicknessPresetMode =
 							}
 							else
 							{
-								double shapeOpacity = pressed ? 0.10
-									: (selected ? 0.20 : 0.0);
+								double shapeOpacity = laserThicknessPresetMode
+									? (selected ? 0.20 : 0.0)
+									: (pressed ? 0.10 : (selected ? 0.20 : 0.0));
 								if (thicknessControlsExchangeDirect)
 									shape->pct.SetDirect(
 										shapeOpacity * thicknessControlOpacity);
+								else if (laserThicknessPresetMode)
+									shape->pct.SetTar(shapeOpacity);
 								else if (pressed) shape->pct.SetTar(0.10);
 								else if (selected) shape->pct.SetTar(0.20);
 								else if (hoverStage == BarButtonHoverStageEnum::None
 									|| thicknessControlOpacity < 0.999999)
 									shape->pct.SetTar(0.0);
-								double frameLightOpacity = selected
+							double frameLightOpacity = laserThicknessPresetMode ? 0.0
+								: (selected
 									? (pressed ? BarButtonPressedLightOpacity : 1.0)
-										* thicknessControlOpacity
-									: 0.0;
+										* thicknessControlOpacity : 0.0);
 								if (thicknessControlsExchangeDirect)
 									shape->frameLightPct.value().SetDirect(
 										frameLightOpacity);
 								else shape->frameLightPct.value().SetTar(
 									frameLightOpacity);
-								if (numberWord)
+									if (numberWord && !laserThicknessPresetMode)
 								{
-									if (thicknessControlsExchangeDirect)
+										if (thicknessControlsExchangeDirect)
 										numberWord->pct.SetDirect(
 											thicknessControlOpacity);
 									else numberWord->pct.SetTar(1.0);
@@ -3484,10 +3500,15 @@ bool thicknessPresetMode =
 						&state.drawAttributeThicknessMediumPressScale,
 						&state.drawAttributeThicknessCoarsePressScale,
 					};
-for (size_t i = 0; i < 3; ++i)
+						for (size_t i = 0; i < 3; ++i)
 						{
-							int presetPx = GetBarThicknessPresetPx(
-								stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom);
+							int presetPx = laserThicknessPresetMode
+								? GetBarLaserThicknessPresetPx(i, state.barStyle.dpiZoom)
+								: GetBarThicknessPresetPx(
+									stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom);
+							int presetWidth = laserThicknessPresetMode
+								? static_cast<int>(lround(
+									GetBarLaserThicknessPresetDip(i))) : presetPx;
 							auto numberWord = state.wordMap[presetWords[i]];
 							wstring numberText = to_wstring(presetPx);
 							numberWord->content.SetTar(numberText);
@@ -3497,11 +3518,13 @@ for (size_t i = 0; i < 3; ++i)
 										* (BarDrawAttributeThicknessControlHeight
 											+ BarDrawAttributeGap),
 								state.barState.drawAttribute && thicknessPresetMode,
-								actualThickness == presetPx, *presetPresses[i],
-								*presetHoverStages[i], *presetPressScales[i]);
+									actualThickness == presetWidth, *presetPresses[i],
+															*presetHoverStages[i], *presetPressScales[i]);
+							if (laserThicknessPresetMode)
+								numberWord->pct.SetTar(0.0);
 						}
 						bool adjustVisible = state.barState.drawAttribute
-							&& thicknessPresetMode;
+							&& thicknessPresetMode && !laserThicknessPresetMode;
 					ConfigureThicknessButton(
 						BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust, nullptr,
 						BarDrawAttributeThicknessAdjustX, adjustVisible,
@@ -3536,6 +3559,7 @@ for (size_t i = 0; i < 3; ++i)
 					bool tooltipBaseVisible =
 						state.barState.drawAttribute && !state.barState.fold;
 					bool annotationSupported = tooltipBaseVisible
+						&& !stateMode.laserActive
 						&& state.barState.drawAttributeBar.penTypeMenuOpen
 						&& PenModeSupportsAnnotationLine(
 							stateMode.Pen.ModeSelect);
@@ -5197,6 +5221,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	auto penTypeExtension = state.shapeMap[
 		BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
 	bool penTypeExtensionVisible = state.barState.drawAttribute && !state.barState.fold
+		&& !stateMode.laserActive
 		&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 	UpdateHoverAnimation(penTypeExtension->pct,
 		&penTypeExtension->fill.value(),
@@ -5228,17 +5253,20 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			1.0 - static_cast<double>(
 				state.drawAttributeThicknessHoldExchangeProgress.val),
 			0.0, 1.0);
-		bool thicknessPresetMode =
-			PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
+		bool laserThicknessPresetMode = IsLaserThicknessPresetMode();
+		bool thicknessPresetMode = laserThicknessPresetMode
+			|| PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
 		// 悬停动画同样只按真实粗细判断预设选中，避免拖动候选值误亮按钮。
 		int actualThickness = static_cast<int>(lround(clamp(
 			static_cast<double>(max(0.0f, GetPenWidth())), 0.0, 999.0)));
 		for (size_t i = 0; i < 3; ++i)
 		{
 			auto shape = state.shapeMap[thicknessPresetShapes[i]];
-			bool selected = actualThickness
-				== GetBarThicknessPresetPx(
+		int presetWidth = laserThicknessPresetMode
+				? static_cast<int>(lround(GetBarLaserThicknessPresetDip(i)))
+				: GetBarThicknessPresetPx(
 					stateMode.Pen.ModeSelect, i, state.barStyle.dpiZoom);
+			bool selected = actualThickness == presetWidth;
 			UpdateHoverAnimation(shape->pct, &shape->fill.value(),
 				*thicknessPresetHoverStages[i],
 				state.barState.drawAttribute && thicknessPresetMode,
@@ -5247,7 +5275,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		auto thicknessAdjust =
 			state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
 		bool thicknessAdjustVisible =
-			state.barState.drawAttribute && thicknessPresetMode;
+			state.barState.drawAttribute && thicknessPresetMode
+			&& !laserThicknessPresetMode;
 	UpdateHoverAnimation(thicknessAdjust->pct, &thicknessAdjust->fill.value(),
 		state.drawAttributeThicknessAdjustHoverStage, thicknessAdjustVisible,
 		thicknessControlOpacity >= 0.999999
@@ -8933,7 +8962,42 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									previewClip,
 									D2D1_ANTIALIAS_MODE_ALIASED);
 
-							if (previewMorph <= 0.5 && solidBrush
+							if (stateMode.laserActive && previewThickness > 0.0F)
+							{
+								// 激光预览使用实体红色外套和三分之一直径的白色内芯。
+								ID2D1SolidColorBrush* laserOuterBrush =
+									state.spec.GetFrameSolidColorBrush(
+										barDeviceContext, RGB(255, 11, 30),
+										baseThicknessOpacity);
+								ID2D1SolidColorBrush* laserInnerBrush =
+									state.spec.GetFrameSolidColorBrush(
+										barDeviceContext, RGB(255, 255, 255),
+										baseThicknessOpacity);
+								if (laserOuterBrush)
+								{
+									D2D1_ROUNDED_RECT outer{
+										previewRect, previewThickness / 2.0F,
+										previewThickness / 2.0F };
+									barDeviceContext->FillRoundedRectangle(
+										&outer, laserOuterBrush);
+								}
+								if (laserInnerBrush)
+								{
+									FLOAT innerThickness = max(0.1F,
+										previewThickness / 3.0F);
+									D2D1_RECT_F innerRect = D2D1::RectF(
+										previewRect.left,
+										centerY - innerThickness / 2.0F,
+										previewRect.right,
+										centerY + innerThickness / 2.0F);
+									D2D1_ROUNDED_RECT inner{
+										innerRect, innerThickness / 2.0F,
+										innerThickness / 2.0F };
+									barDeviceContext->FillRoundedRectangle(
+										&inner, laserInnerBrush);
+								}
+							}
+							else if (previewMorph <= 0.5 && solidBrush
 								&& previewThickness > 0.0F)
 							{
 								FLOAT startX = min(previewRect.right,
@@ -9044,7 +9108,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								activationPreviewOpacity),
 								0.0, 1.0)
 								* contentOpacity * panelExpandedProgress;
-							if (fineDialOpacity > 0.000001)
+							if (!stateMode.laserActive && fineDialOpacity > 0.000001)
 							{
 							auto logicalRange = GetBarThicknessSliderRange(
 								frameDrawingState.penMode, state.barStyle.dpiZoom);
@@ -9510,15 +9574,43 @@ bool presetButton = button.presetIndex >= 0;
 								state.spec.Svg(barDeviceContext, *adjustSvg,
 									adjustSvg->Inherit(Center, *shape));
 							}
-else
+							else
 								{
 									// 数字可能只作为圆点透明度来源，也要刷新继承坐标供 dirty 计算使用。
 									BarUiInheritClass numberInherit =
 										numberWord->Inherit(TopLeft, *panel);
-									int actualPx = GetBarThicknessPresetPx(
-										stateMode.Pen.ModeSelect,
-										button.presetIndex, state.barStyle.dpiZoom);
-									if (highlighterPreset)
+									bool laserPreset = IsLaserThicknessPresetMode();
+									int actualPx = laserPreset
+										? GetBarLaserThicknessPresetPx(
+											button.presetIndex, state.barStyle.dpiZoom)
+										: GetBarThicknessPresetPx(
+											stateMode.Pen.ModeSelect,
+											button.presetIndex, state.barStyle.dpiZoom);
+									if (laserPreset)
+									{
+										ID2D1SolidColorBrush* buttonBrush =
+											state.spec.GetFrameSolidColorBrush(
+												barDeviceContext, RGB(255, 11, 30),
+												contentOpacity);
+										if (buttonBrush && contentOpacity > 0.000001
+											&& uiZoom > 0.0f)
+										{
+											FLOAT centerX = static_cast<FLOAT>(
+												(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
+											FLOAT centerY = static_cast<FLOAT>(
+												(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
+											FLOAT innerDiameter = max(1.0f,
+												static_cast<FLOAT>(min(
+													shape->w.val, shape->h.val) * uiZoom) - 8.0f * uiZoom);
+											FLOAT diameter = min(static_cast<FLOAT>(
+												actualPx * panelAnimationScale), innerDiameter);
+											D2D1_ELLIPSE ellipse = D2D1::Ellipse(
+												D2D1::Point2F(centerX, centerY),
+												diameter / 2.0f, diameter / 2.0f);
+											barDeviceContext->FillEllipse(&ellipse, buttonBrush);
+										}
+									}
+									else if (highlighterPreset)
 									{
 										// 荧光笔预设始终显示数字，不再画圆点。
 										if (buttonOpacity > 0.000001 && numberWord)

@@ -46,8 +46,9 @@ export
 	bool PenModeSupportsAnnotationLine(PenModeSelectEnum mode)
 	{
 		// 激光笔不显示标注线入口；未来软笔模式在这里加入。
-		return mode == PenModeSelectEnum::IdtPenBrush1
-			|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+		return !stateMode.laserActive
+			&& (mode == PenModeSelectEnum::IdtPenBrush1
+			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}
 
 	struct BarThicknessSliderRange
@@ -273,10 +274,29 @@ export
 		return max(1, static_cast<int>(lround(presets[index] * dpiZoom)));
 	}
 
+	float GetBarLaserThicknessPresetDip(size_t index)
+	{
+		return index < 3 ? stateMode.Pen.Laser.widthPreset[index] : 0.0f;
+	}
+
+	int GetBarLaserThicknessPresetPx(size_t index, double dpiZoom)
+	{
+		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
+		return max(1, static_cast<int>(lround(
+			GetBarLaserThicknessPresetDip(index) * dpiZoom)));
+	}
+
+	bool IsLaserThicknessPresetMode()
+	{
+		return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& stateMode.laserActive;
+	}
+
 	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode)
 	{
-		return mode == PenModeSelectEnum::IdtPenBrush1
-			|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+		return !stateMode.laserActive
+			&& (mode == PenModeSelectEnum::IdtPenBrush1
+			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}
 
 	COLORREF GetBarReadableTextColor(COLORREF background)
