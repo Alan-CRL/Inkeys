@@ -13,12 +13,15 @@
 
 export module Inkeys.UI.Whiteboard;
 
+import Inkeys.UI.Bar.Metrics;
+
 export namespace Inkeys::UI::Whiteboard
 {
 	enum class ControlHitTarget : std::uint8_t
 	{
 		None,
 		Previous,
+		Page,
 		Next,
 	};
 
@@ -33,6 +36,7 @@ export namespace Inkeys::UI::Whiteboard
 		int currentPage = 1;
 		int totalPage = 1;
 		bool previousEnabled = false;
+		bool pageEnabled = true;
 		bool nextEnabled = true;
 		bool switching = false;
 	};
@@ -51,6 +55,7 @@ export namespace Inkeys::UI::Whiteboard
 		int currentPage = 1;
 		int totalPage = 1;
 		bool previousEnabled = false;
+		bool pageEnabled = true;
 		bool nextEnabled = true;
 		ControlHitTarget hover = ControlHitTarget::None;
 		ControlHitTarget pressed = ControlHitTarget::None;
@@ -73,6 +78,7 @@ export namespace Inkeys::UI::Whiteboard
 		state.currentPage = std::clamp(currentPage, 1, state.totalPage);
 		state.switching = switching;
 		state.previousEnabled = !switching && state.currentPage > 1;
+		state.pageEnabled = !switching;
 		state.nextEnabled = !switching;
 		return state;
 	}
@@ -84,18 +90,23 @@ export namespace Inkeys::UI::Whiteboard
 		dpiScale = std::clamp(dpiScale, 0.5F, 4.0F);
 		const auto px = [dpiScale](float dip) noexcept
 			{ return static_cast<LONG>(std::lround(dip * dpiScale)); };
-		const LONG width = px(195.0F);
-		const LONG height = px(70.0F);
-		const LONG margin = px(5.0F);
+		const LONG margin = px(static_cast<float>(BarButtonGapDip));
+		const LONG button = px(static_cast<float>(BarButtonTwoSideDip));
+		const LONG width = px(static_cast<float>(BarButtonTwoSideDip * 3.0
+			+ BarButtonGapDip * 4.0));
+		const LONG height = px(static_cast<float>(BarMainBarHeightDip));
 		const LONG x = left ? primaryBounds.left + margin
 			: primaryBounds.right - margin - width;
 		const LONG y = primaryBounds.bottom - margin - height;
 		ControlLayout layout;
 		layout.bounds = { x, y, x + width, y + height };
-		layout.previous = { px(5.0F), px(5.0F), px(65.0F), px(65.0F) };
-		layout.currentPage = { px(65.0F), px(5.0F), px(130.0F), px(41.0F) };
-		layout.totalPage = { px(65.0F), px(36.0F), px(130.0F), px(65.0F) };
-		layout.next = { px(130.0F), px(5.0F), px(190.0F), px(65.0F) };
+		const LONG first = margin;
+		const LONG second = first + button + margin;
+		const LONG third = second + button + margin;
+		layout.previous = { first, margin, first + button, margin + button };
+		layout.currentPage = { second, margin, second + button, margin + button };
+		layout.totalPage = layout.currentPage;
+		layout.next = { third, margin, third + button, margin + button };
 		return layout;
 	}
 

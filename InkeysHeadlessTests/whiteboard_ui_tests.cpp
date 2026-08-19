@@ -25,12 +25,13 @@ namespace
 		using Inkeys::UI::Whiteboard::ResolvePageState;
 		const auto first = ResolvePageState(1, 1, false);
 		Check(first.currentPage == 1 && first.totalPage == 1
-			&& !first.previousEnabled && first.nextEnabled,
-			"first page disables previous and keeps append enabled");
+			&& !first.previousEnabled && first.pageEnabled && first.nextEnabled,
+			"first page disables previous while page and append buttons remain enabled");
 
 		const auto switching = ResolvePageState(3, 5, true);
-		Check(!switching.previousEnabled && !switching.nextEnabled,
-			"switching disables both page buttons");
+		Check(!switching.previousEnabled && !switching.pageEnabled
+			&& !switching.nextEnabled,
+			"switching disables all three page buttons");
 		const auto clamped = ResolvePageState(9, 4, false);
 		Check(clamped.currentPage == 4 && clamped.totalPage == 4
 			&& clamped.previousEnabled && clamped.nextEnabled,
@@ -45,21 +46,23 @@ namespace
 		const auto right = ResolveControlLayout(monitor, 1.0F, false);
 		Check(left.bounds.left == monitor.left + 5
 			&& left.bounds.bottom == monitor.bottom - 5
-			&& left.bounds.right - left.bounds.left == 195
-			&& left.bounds.bottom - left.bounds.top == 70,
-			"left control uses fixed 195x70 DIP and five DIP margin");
+			&& left.bounds.right - left.bounds.left == 230
+			&& left.bounds.bottom - left.bounds.top == 80,
+			"left control uses the MainBar 80 DIP height and twoTwo grid margin");
 		Check(right.bounds.right == monitor.right - 5
 			&& right.bounds.top == left.bounds.top,
 			"right control mirrors against the monitor edge");
-		Check(left.currentPage.top < left.totalPage.top
-			&& left.currentPage.bottom <= left.totalPage.bottom
-			&& left.previous.left == 5 && left.previous.right == 65
-			&& left.next.left == 130 && left.next.right == 190,
-			"page controls keep separate arrow and page-number tiers");
+		Check(left.previous.left == 5 && left.previous.right == 75
+			&& left.currentPage.left == 80 && left.currentPage.right == 150
+			&& EqualRect(&left.currentPage, &left.totalPage)
+			&& left.next.left == 155 && left.next.right == 225
+			&& left.previous.top == 5 && left.currentPage.top == 5
+			&& left.next.bottom == 75,
+			"previous page and next share three equal twoTwo button bounds");
 
 		const auto scaled = ResolveControlLayout(monitor, 1.5F, true);
-		Check(scaled.bounds.right - scaled.bounds.left == 293
-			&& scaled.bounds.bottom - scaled.bounds.top == 105,
+		Check(scaled.bounds.right - scaled.bounds.left == 345
+			&& scaled.bounds.bottom - scaled.bounds.top == 120,
 			"layout converts DIP to physical pixels at monitor DPI");
 	}
 

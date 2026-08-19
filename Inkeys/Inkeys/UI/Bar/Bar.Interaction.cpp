@@ -23,9 +23,6 @@ import Inkeys.Other.Inputs;
 import Inkeys.Window;
 import Inkeys.Display;
 using Inkeys::UI::Bar::BarToggleChannel;
-constexpr double BarButtonHoverOpacity = 0.18;
-constexpr double BarButtonHoverShowDur = 0.24;
-constexpr double BarButtonHoverExitDur = 0.24;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
@@ -1229,9 +1226,10 @@ private:
 			const BarUiCurveSpecClass hoverShowCurve{
 				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 			hoverFill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill),
-				BarButtonHoverShowDur, hoverShowCurve);
+				BarButtonHoverTransitionDuration, hoverShowCurve);
 			hoverPct->SetTar(
-				BarButtonHoverOpacity, BarButtonHoverShowDur, nullopt, true, hoverShowCurve);
+				BarButtonHoverOpacity, BarButtonHoverTransitionDuration,
+				nullopt, true, hoverShowCurve);
 			*hoverStage = BarButtonHoverStageEnum::Showing;
 			UpdateRendering(false);
 		}
@@ -1258,7 +1256,8 @@ private:
 				const BarUiCurveSpecClass hoverExitCurve{
 					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 				hoverPct->SetTar(
-					0.0, BarButtonHoverExitDur, nullopt, true, hoverExitCurve);
+					0.0, BarButtonHoverTransitionDuration,
+					nullopt, true, hoverExitCurve);
 			}
 			UpdateRendering(false);
 		}

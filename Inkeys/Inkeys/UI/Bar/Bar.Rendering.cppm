@@ -39,6 +39,7 @@ export namespace Inkeys::UI::Bar
 		const WhiteboardControlRenderState& state,
 		float dpiScale,
 		bool left,
+		POINT screenOrigin,
 		std::chrono::steady_clock::time_point frameTime);
 	void NotifyWhiteboardControlPointerActivity(bool inside) noexcept;
 }
@@ -90,6 +91,7 @@ public:
 		const Inkeys::UI::Bar::WhiteboardControlRenderState& state,
 		float dpiScale,
 		bool left,
+		POINT screenOrigin,
 		std::chrono::steady_clock::time_point frameTime);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);

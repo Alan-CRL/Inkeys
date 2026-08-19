@@ -919,6 +919,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp" />

@@ -93,6 +93,7 @@ namespace Inkeys::UI::Whiteboard
 			int committedCurrentPage = -1;
 			int committedTotalPage = -1;
 			bool committedPreviousEnabled = false;
+			bool committedPageEnabled = false;
 			bool committedNextEnabled = false;
 			bool committedDebug = false;
 			bool finalDebugFramePending = false;
@@ -107,6 +108,7 @@ namespace Inkeys::UI::Whiteboard
 				committedCurrentPage = -1;
 				committedTotalPage = -1;
 				committedPreviousEnabled = false;
+				committedPageEnabled = false;
 				committedNextEnabled = false;
 				committedDebug = false;
 				finalDebugFramePending = false;
@@ -156,6 +158,7 @@ namespace Inkeys::UI::Whiteboard
 		{
 			const auto layout = ResolveControlLayout({}, DpiScale(hwnd), true);
 			if (PtInRect(&layout.previous, point)) return BarHitTarget::Previous;
+			if (PtInRect(&layout.currentPage, point)) return BarHitTarget::Page;
 			if (PtInRect(&layout.next, point)) return BarHitTarget::Next;
 			return BarHitTarget::None;
 		}
@@ -167,6 +170,7 @@ namespace Inkeys::UI::Whiteboard
 				totalPage.load(std::memory_order_acquire),
 				switching.load(std::memory_order_acquire));
 			return target == BarHitTarget::Previous ? page.previousEnabled
+				: target == BarHitTarget::Page ? page.pageEnabled
 				: target == BarHitTarget::Next ? page.nextEnabled : false;
 		}
 
@@ -183,8 +187,10 @@ namespace Inkeys::UI::Whiteboard
 			{
 				std::scoped_lock lock(callbackMutex);
 				callback = target == BarHitTarget::Previous
-					? business.previousPage : business.nextPage;
+					? business.previousPage
+					: target == BarHitTarget::Next ? business.nextPage : nullptr;
 			}
+			// Page 按钮保留完整交互视觉，当前点击语义明确为 no-op。
 			if (callback && TargetEnabled(target)) callback();
 		}
 
@@ -328,7 +334,8 @@ namespace Inkeys::UI::Whiteboard
 			const bool resetNow = resetVisuals[index].exchange(
 				false, std::memory_order_acq_rel);
 			Inkeys::UI::Bar::WhiteboardControlRenderState renderState{
-				page.currentPage, page.totalPage, page.previousEnabled, page.nextEnabled,
+				page.currentPage, page.totalPage, page.previousEnabled,
+				page.pageEnabled, page.nextEnabled,
 				hoverNow, pressedNow,
 				POINT{ pointerX[index].load(std::memory_order_acquire),
 					pointerY[index].load(std::memory_order_acquire) },
@@ -338,7 +345,9 @@ namespace Inkeys::UI::Whiteboard
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
 			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
 			const auto drawResult = Inkeys::UI::Bar::RenderWhiteboardControl(
-				context, renderState, scale, left, frameContext.frameTime);
+				context, renderState, scale, left,
+				POINT{ layout.bounds.left, layout.bounds.top },
+				frameContext.frameTime);
 			const bool debug = Inkeys::UI::Bar::DebugModeEnabled();
 			const bool businessChanged = resetNow
 				|| presentation.committedGeneration != frameContext.epoch.generation
@@ -348,6 +357,7 @@ namespace Inkeys::UI::Whiteboard
 				|| presentation.committedCurrentPage != page.currentPage
 				|| presentation.committedTotalPage != page.totalPage
 				|| presentation.committedPreviousEnabled != page.previousEnabled
+				|| presentation.committedPageEnabled != page.pageEnabled
 				|| presentation.committedNextEnabled != page.nextEnabled
 				|| presentation.committedDebug != debug;
 			const bool renderingActive = drawResult.animationActive || businessChanged;
@@ -389,6 +399,7 @@ namespace Inkeys::UI::Whiteboard
 			presentation.committedCurrentPage = page.currentPage;
 			presentation.committedTotalPage = page.totalPage;
 			presentation.committedPreviousEnabled = page.previousEnabled;
+			presentation.committedPageEnabled = page.pageEnabled;
 			presentation.committedNextEnabled = page.nextEnabled;
 			presentation.committedDebug = debug;
 			presentation.committedGeneration = frameContext.epoch.generation;

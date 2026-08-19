@@ -161,6 +161,18 @@ export
 		bool continueTimelinePhase = false;
 	};
 
+	// 主栏普通按钮与 Whiteboard 标准按钮共用同一按压/回弹曲线。
+	inline BarUiCurveSpecClass BarButtonPressCurve() noexcept
+	{
+		return { BarUiCurveEnum::EaseOutCubic,
+			BarUiCurveEnum::EaseOutCubic, 0.0, false };
+	}
+	inline BarUiCurveSpecClass BarButtonReleaseCurve() noexcept
+	{
+		return { BarUiCurveEnum::EaseOutBack,
+			BarUiCurveEnum::EaseOutBack, 0.0, false };
+	}
+
 	// 一组关联动画共用线性时间轴；中途修改目标时复用剩余时长。
 	class BarUiTimelineClass
 	{

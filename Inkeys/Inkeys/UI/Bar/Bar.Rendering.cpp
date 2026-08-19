@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
@@ -25,9 +25,11 @@ import :State;
 import :Button;
 import :Format;
 import :RenderingAttribute;
+import :Layout;
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.Window;
 
 namespace
 {
@@ -2841,21 +2843,15 @@ namespace Inkeys::UI::Bar
 {
 	namespace
 	{
-		constexpr double WhiteboardControlWidthDip = 195.0;
-		constexpr double WhiteboardControlHeightDip = 70.0;
-		constexpr double WhiteboardControlMarginDip = 5.0;
-		constexpr double WhiteboardButtonPressScale = 0.95;
-		constexpr double WhiteboardButtonHoverOpacity = 0.18;
-		constexpr double WhiteboardButtonPressedOpacity = 0.10;
-		constexpr double WhiteboardButtonTransitionSeconds = 0.24;
-		constexpr double WhiteboardFrameOpacity = 0.96;
-		constexpr double WhiteboardFrameBorderOpacity = 0.30;
-
 		struct WhiteboardButtonVisual
 		{
 			BarUiShapeClass shape;
-			BarUiWordClass glyph;
+			BarUiSVGClass icon;
+			BarUiWordClass primaryText;
+			BarUiWordClass secondaryText;
 			BarUiValueClass pressScale{ 1.0 };
+			bool hasIcon = false;
+			bool hasPageText = false;
 			bool initialized = false;
 		};
 
@@ -2863,9 +2859,8 @@ namespace Inkeys::UI::Bar
 		{
 			BarUiShapeClass frame;
 			WhiteboardButtonVisual previous;
+			WhiteboardButtonVisual page;
 			WhiteboardButtonVisual next;
-			BarUiWordClass currentPage;
-			BarUiWordClass totalPage;
 			std::chrono::steady_clock::time_point lastFrame{};
 			bool initialized = false;
 		};
@@ -2878,49 +2873,80 @@ namespace Inkeys::UI::Bar
 		}
 
 		void InitializeWhiteboardButton(WhiteboardButtonVisual& visual,
-			double x, double y, bool next)
+			double x, double y, optional<double> iconAngle,
+			bool pageText = false)
 		{
-			const COLORREF frameColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
-			visual.shape.Initialization(x, y, 60.0, 60.0,
-				9.0, 9.0, 1.0, GetThemeColor(BarThemeColorEnum::PressedFill), frameColor);
+			visual.shape.Initialization(x, y, BarButtonTwoSideDip,
+				BarButtonTwoSideDip, BarButtonCornerRadiusDip,
+				BarButtonCornerRadiusDip, BarButtonFrameThicknessDip,
+				GetThemeColor(BarThemeColorEnum::PressedFill),
+				GetThemeColor(BarThemeColorEnum::TextPrimary));
 			visual.shape.enable.Initialization(true);
 			visual.shape.pct.Initialization(0.0);
-			visual.shape.framePct.emplace(0.22);
-			visual.shape.frameLightPct.emplace(1.0);
+			visual.shape.framePct.emplace(0.0);
+			visual.shape.frameLightPct.emplace(0.0);
 			visual.shape.frameRendering = BarUiFrameRenderingEnum::PointLight;
-			visual.shape.frameCursorLightIntensityScale = 0.30;
-			visual.glyph.Initialization(x, y, 60.0, 60.0,
-				next ? L">" : L"<", 30.0,
-				GetThemeColor(BarThemeColorEnum::TextPrimary));
-			visual.glyph.enable.Initialization(true);
-			visual.glyph.pct.Initialization(1.0);
+			visual.shape.framePrimaryLightEnabled = false;
+			visual.shape.frameCursorLightIntensityScale =
+				BarButtonCursorLightIntensity;
+			if (iconAngle.has_value())
+			{
+				visual.icon.Initialization(0.0, 0.0,
+					GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+				visual.icon.InitializationFromResource(L"UI", L"barMore");
+				visual.icon.SetWH(BarButtonTwoTwoIconSizeDip,
+					BarButtonTwoTwoIconSizeDip);
+				visual.icon.x.SetDirect(0.0);
+				visual.icon.y.SetDirect(BarButtonTwoTwoIconOffsetYDip);
+				visual.icon.angle.SetDirect(iconAngle.value());
+				visual.icon.enable.Initialization(true);
+				visual.icon.pct.Initialization(1.0);
+				visual.hasIcon = true;
+			}
+			if (pageText)
+			{
+				visual.primaryText.Initialization(0.0,
+					BarButtonTwoTwoIconOffsetYDip,
+					BarButtonTwoSideDip, BarButtonTwoTwoIconSizeDip,
+					L"1", BarButtonTwoTwoIconSizeDip,
+					GetThemeColor(BarThemeColorEnum::TextPrimary));
+				visual.secondaryText.Initialization(0.0,
+					BarButtonTwoTwoLabelOffsetYDip,
+					BarButtonTwoSideDip, BarButtonTwoTwoLabelHeightDip,
+					L"/1", BarButtonTwoTwoLabelFontSizeDip,
+					GetThemeColor(BarThemeColorEnum::TextPrimary));
+				visual.primaryText.enable.Initialization(true);
+				visual.secondaryText.enable.Initialization(true);
+				visual.primaryText.pct.Initialization(1.0);
+				visual.secondaryText.pct.Initialization(1.0);
+				visual.hasPageText = true;
+			}
 			visual.pressScale.SetDirect(1.0);
 			visual.initialized = true;
 		}
 
 		void InitializeWhiteboardVisual(WhiteboardControlVisual& visual)
 		{
-			const COLORREF surface = GetThemeColor(BarThemeColorEnum::Surface);
-			const COLORREF frame = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
-			visual.frame.Initialization(0.0, 0.0,
-				WhiteboardControlWidthDip, WhiteboardControlHeightDip,
-				12.0, 12.0, 1.0, surface, frame);
+			const double width = BarButtonTwoSideDip * 3.0
+				+ BarButtonGapDip * 4.0;
+			visual.frame.Initialization(0.0, 0.0, width,
+				BarMainBarHeightDip, BarMainBarCornerRadiusDip,
+				BarMainBarCornerRadiusDip, BarButtonFrameThicknessDip,
+				GetThemeColor(BarThemeColorEnum::Surface),
+				GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 			visual.frame.enable.Initialization(true);
-			visual.frame.pct.Initialization(WhiteboardFrameOpacity);
-			visual.frame.framePct.emplace(WhiteboardFrameBorderOpacity);
-			visual.frame.frameLightPct.emplace(1.0);
+			visual.frame.pct.Initialization(BarMainBarFillOpacity);
+			visual.frame.framePct.emplace(BarMainBarFrameOpacity);
 			visual.frame.frameRendering = BarUiFrameRenderingEnum::PointLight;
-			visual.frame.frameCursorLightIntensityScale = 0.30;
-			InitializeWhiteboardButton(visual.previous, 5.0, 5.0, false);
-			InitializeWhiteboardButton(visual.next, 130.0, 5.0, true);
-			visual.currentPage.Initialization(65.0, 5.0, 65.0, 36.0,
-				L"1", 22.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-			visual.totalPage.Initialization(65.0, 38.0, 65.0, 27.0,
-				L"/1", 12.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-			visual.currentPage.enable.Initialization(true);
-			visual.totalPage.enable.Initialization(true);
-			visual.currentPage.pct.Initialization(1.0);
-			visual.totalPage.pct.Initialization(0.78);
+			visual.frame.frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
+			InitializeWhiteboardButton(visual.previous, BarButtonGapDip,
+				BarButtonGapDip, -90.0);
+			InitializeWhiteboardButton(visual.page,
+				BarButtonGapDip * 2.0 + BarButtonTwoSideDip,
+				BarButtonGapDip, nullopt, true);
+			InitializeWhiteboardButton(visual.next,
+				BarButtonGapDip * 3.0 + BarButtonTwoSideDip * 2.0,
+				BarButtonGapDip, 90.0);
 			visual.initialized = true;
 		}
 
@@ -2928,18 +2954,39 @@ namespace Inkeys::UI::Bar
 			bool enabled, bool hovered, bool pressed)
 		{
 			const double opacity = !enabled ? 0.0
-				: pressed ? WhiteboardButtonPressedOpacity
-				: hovered ? WhiteboardButtonHoverOpacity : 0.0;
+				: pressed ? BarButtonPressedOpacity
+				: hovered ? BarButtonHoverOpacity : 0.0;
 			const COLORREF fill = GetThemeColor(BarThemeColorEnum::PressedFill);
 			if (visual.shape.fill.has_value()) visual.shape.fill->SetTar(fill,
-				WhiteboardButtonTransitionSeconds);
-			visual.shape.pct.SetTar(opacity, WhiteboardButtonTransitionSeconds);
-			visual.pressScale.SetTar(pressed ? WhiteboardButtonPressScale : 1.0,
-				WhiteboardButtonTransitionSeconds);
-			visual.glyph.color.SetTar(GetThemeColor(
-				BarThemeColorEnum::TextPrimary));
-			visual.glyph.pct.SetTar(enabled ? 1.0 : 0.30,
-				WhiteboardButtonTransitionSeconds);
+				BarButtonHoverTransitionDuration);
+			visual.shape.pct.SetTar(opacity, BarButtonHoverTransitionDuration);
+			visual.shape.frameLightPct->SetTar(enabled && (hovered || pressed)
+				? (pressed ? BarButtonPressedLightOpacity : 1.0) : 0.0,
+				BarButtonHoverTransitionDuration);
+			visual.pressScale.SetTar(pressed ? BarButtonPressScale : 1.0,
+				BarUiDefaultOperationDur, nullopt, false,
+				pressed ? BarButtonPressCurve() : BarButtonReleaseCurve());
+			if (visual.hasIcon)
+			{
+				visual.icon.color1->SetTar(GetThemeColor(
+					BarThemeColorEnum::TextPrimary));
+				visual.icon.pct.SetTar(enabled ? 1.0
+					: BarButtonDisabledContentOpacity,
+					BarButtonHoverTransitionDuration);
+			}
+			if (visual.hasPageText)
+			{
+				const COLORREF textColor = GetThemeColor(
+					BarThemeColorEnum::TextPrimary);
+				visual.primaryText.color.SetTar(textColor);
+				visual.secondaryText.color.SetTar(textColor);
+				visual.primaryText.pct.SetTar(enabled ? 1.0
+					: BarButtonDisabledContentOpacity,
+					BarButtonHoverTransitionDuration);
+				visual.secondaryText.pct.SetTar(enabled ? 1.0
+					: BarButtonDisabledContentOpacity,
+					BarButtonHoverTransitionDuration);
+			}
 		}
 
 		bool AdvanceWhiteboardVisual(WhiteboardControlVisual& visual,
@@ -2957,22 +3004,39 @@ namespace Inkeys::UI::Bar
 			const BarUiAnimationAdvanceContextClass context{
 				dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
 			const bool previousEnabled = state.previousEnabled;
+			const bool pageEnabled = state.pageEnabled;
 			const bool nextEnabled = state.nextEnabled;
 			SetWhiteboardButtonTargets(visual.previous, previousEnabled,
 				state.hover == WhiteboardControlHitTarget::Previous,
 				state.pressed == WhiteboardControlHitTarget::Previous);
+			SetWhiteboardButtonTargets(visual.page, pageEnabled,
+				state.hover == WhiteboardControlHitTarget::Page,
+				state.pressed == WhiteboardControlHitTarget::Page);
 			SetWhiteboardButtonTargets(visual.next, nextEnabled,
 				state.hover == WhiteboardControlHitTarget::Next,
 				state.pressed == WhiteboardControlHitTarget::Next);
 			bool active = false;
-			for (WhiteboardButtonVisual* button : { &visual.previous, &visual.next })
+			for (WhiteboardButtonVisual* button : {
+				&visual.previous, &visual.page, &visual.next })
 			{
 				active = BarUiAdvanceAnimation(button->shape.pct, context).active || active;
 				if (button->shape.fill.has_value())
 					active = BarUiAdvanceAnimation(button->shape.fill.value(), context).active || active;
+				if (button->shape.frameLightPct.has_value())
+					active = BarUiAdvanceAnimation(button->shape.frameLightPct.value(), context).active || active;
 				active = BarUiAdvanceAnimation(button->pressScale, context).active || active;
-				active = BarUiAdvanceAnimation(button->glyph.color, context).active || active;
-				active = BarUiAdvanceAnimation(button->glyph.pct, context).active || active;
+				if (button->hasIcon)
+				{
+					active = BarUiAdvanceAnimation(button->icon.color1.value(), context).active || active;
+					active = BarUiAdvanceAnimation(button->icon.pct, context).active || active;
+				}
+				if (button->hasPageText)
+				{
+					active = BarUiAdvanceAnimation(button->primaryText.color, context).active || active;
+					active = BarUiAdvanceAnimation(button->secondaryText.color, context).active || active;
+					active = BarUiAdvanceAnimation(button->primaryText.pct, context).active || active;
+					active = BarUiAdvanceAnimation(button->secondaryText.pct, context).active || active;
+				}
 			}
 			return active;
 		}
@@ -2994,6 +3058,7 @@ BarUIRendering::WhiteboardControl(
 		const Inkeys::UI::Bar::WhiteboardControlRenderState& state,
 		float dpiScale,
 		bool left,
+		POINT screenOrigin,
 		std::chrono::steady_clock::time_point frameTime)
 	{
 		using namespace Inkeys::UI::Bar;
@@ -3014,67 +3079,86 @@ BarUIRendering::WhiteboardControl(
 		const auto savedCursor = frameLocalCursorLight;
 		const auto savedCursorRadiusX = frameLocalCursorLightRadiusX;
 		const auto savedCursorRadiusY = frameLocalCursorLightRadiusY;
-		// 复用 Bar 已推进的第一/第三光源状态，只把几何映射到当前控件。
-		framePrimaryLight = D2D1::Point2F(
-			static_cast<FLOAT>(WhiteboardControlWidthDip * dpiScale * 0.5),
-			static_cast<FLOAT>(WhiteboardControlHeightDip * dpiScale));
+		const auto savedFrameLightRadius = frameLightRadius;
+		const auto savedFrameCursorLightRadius = frameCursorLightRadius;
+		const double sourceZoom = isfinite(savedZoom) && savedZoom > 0.0
+			? savedZoom : 1.0;
+		// Bar 光源先还原到屏幕坐标，再映射到当前分层窗口的本地像素。
+		RECT barBounds{};
+		const HWND barHwnd = Inkeys::Window::GetService().Handle(
+			Inkeys::Window::WindowRole::Bar);
+		const bool hasBarBounds = barHwnd && GetWindowRect(barHwnd, &barBounds);
+		if (hasBarBounds)
+		{
+			framePrimaryLight = D2D1::Point2F(
+				static_cast<FLOAT>(barBounds.left
+					+ savedPrimary.x - screenOrigin.x),
+				static_cast<FLOAT>(barBounds.top
+					+ savedPrimary.y - screenOrigin.y));
+		}
+		else framePrimaryLight = D2D1::Point2F(-10000.0F, -10000.0F);
+		frameLightRadius = static_cast<FLOAT>(
+			savedFrameLightRadius / sourceZoom * dpiScale);
+		frameCursorLightRadius = static_cast<FLOAT>(
+			savedFrameCursorLightRadius / sourceZoom * dpiScale);
 		if (state.pointerKnown)
 			SetFrameCursorLightLocalGeometry(
 				D2D1::Point2F(static_cast<FLOAT>(state.pointer.x),
 					static_cast<FLOAT>(state.pointer.y)),
-				D2D1::SizeF(static_cast<FLOAT>(BarBorderCursorLightRadius * dpiScale),
-					static_cast<FLOAT>(BarBorderCursorLightRadius * dpiScale)));
+				D2D1::SizeF(frameCursorLightRadius, frameCursorLightRadius));
 		else SetFrameCursorLightLocalGeometry(
 			D2D1::Point2F(-10000.0F, -10000.0F), D2D1::SizeF());
 		frameZoom = dpiScale;
 		const bool animationActive = AdvanceWhiteboardVisual(visual, state, frameTime);
-		visual.currentPage.content.SetVal(std::to_wstring(
+		visual.page.primaryText.content.SetVal(std::to_wstring(
 			(std::max)(1, state.currentPage)));
-		visual.totalPage.content.SetVal(L"/" + std::to_wstring(
+		visual.page.secondaryText.content.SetVal(L"/" + std::to_wstring(
 			(std::max)(1, state.totalPage)));
-		visual.currentPage.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-		visual.totalPage.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
 		visual.frame.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));
 		visual.frame.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-		const BarUiInheritClass origin(0.0, 0.0);
-		result.rendered = Shape(deviceContext, visual.frame, origin)
-			&& Shape(deviceContext, visual.previous.shape,
-				BarUiInheritClass(5.0, 5.0))
-			&& Shape(deviceContext, visual.next.shape,
-				BarUiInheritClass(130.0, 5.0));
-		if (result.rendered)
+		result.rendered = Shape(deviceContext, visual.frame,
+			BarUiInheritClass(0.0, 0.0));
+		auto DrawButton = [&](WhiteboardButtonVisual& button)
 		{
-			for (WhiteboardButtonVisual* button : { &visual.previous, &visual.next })
+			const BarUiInheritClass buttonInherit(
+				button.shape.x.val, button.shape.y.val);
+			button.shape.UpInh(buttonInherit);
+			if (!Shape(deviceContext, button.shape, buttonInherit)) return;
+			const double scale = clamp(static_cast<double>(button.pressScale.val),
+				BarButtonPressScale, 1.0);
+			const FLOAT cx = static_cast<FLOAT>(
+				(buttonInherit.x + button.shape.w.val * 0.5) * dpiScale);
+			const FLOAT cy = static_cast<FLOAT>(
+				(buttonInherit.y + button.shape.h.val * 0.5) * dpiScale);
+			D2D1_MATRIX_3X2_F original;
+			deviceContext->GetTransform(&original);
+			deviceContext->SetTransform(D2D1::Matrix3x2F::Scale(
+				static_cast<FLOAT>(scale), static_cast<FLOAT>(scale),
+				D2D1::Point2F(cx, cy)) * original);
+			if (button.hasIcon)
+				(void)Svg(deviceContext, button.icon,
+					button.icon.Inherit(BarUiInheritEnum::Center, button.shape));
+			if (button.hasPageText)
 			{
-				const double scale = clamp(static_cast<double>(button->pressScale.val),
-					WhiteboardButtonPressScale, 1.0);
-				const FLOAT cx = static_cast<FLOAT>(
-					(button->shape.x.val + button->shape.w.val * 0.5) * dpiScale);
-				const FLOAT cy = static_cast<FLOAT>(
-					(button->shape.y.val + button->shape.h.val * 0.5) * dpiScale);
-				D2D1_MATRIX_3X2_F original;
-				deviceContext->GetTransform(&original);
-				deviceContext->SetTransform(D2D1::Matrix3x2F::Scale(
-					static_cast<FLOAT>(scale), static_cast<FLOAT>(scale),
-					D2D1::Point2F(cx, cy)) * original);
-				result.rendered = Word(deviceContext, button->glyph,
-					BarUiInheritClass(button->glyph.x.val, button->glyph.y.val),
-					DWRITE_FONT_WEIGHT_BOLD) && result.rendered;
-				deviceContext->SetTransform(original);
+				(void)Word(deviceContext, button.primaryText,
+					button.primaryText.Inherit(BarUiInheritEnum::Center,
+						button.shape), DWRITE_FONT_WEIGHT_BOLD);
+				(void)Word(deviceContext, button.secondaryText,
+					button.secondaryText.Inherit(BarUiInheritEnum::Center,
+						button.shape), DWRITE_FONT_WEIGHT_BOLD);
 			}
-			result.rendered = Word(deviceContext, visual.currentPage,
-				BarUiInheritClass(65.0, 5.0), DWRITE_FONT_WEIGHT_BOLD)
-				&& result.rendered;
-			// 总页数也使用加粗字重，但保持较小字号和较低透明度。
-			result.rendered = Word(deviceContext, visual.totalPage,
-				BarUiInheritClass(65.0, 36.0), DWRITE_FONT_WEIGHT_BOLD)
-				&& result.rendered;
-		}
+			deviceContext->SetTransform(original);
+		};
+		DrawButton(visual.previous);
+		DrawButton(visual.page);
+		DrawButton(visual.next);
 		frameZoom = savedZoom;
 		framePrimaryLight = savedPrimary;
 		frameLocalCursorLight = savedCursor;
 		frameLocalCursorLightRadiusX = savedCursorRadiusX;
 		frameLocalCursorLightRadiusY = savedCursorRadiusY;
+		frameLightRadius = savedFrameLightRadius;
+		frameCursorLightRadius = savedFrameCursorLightRadius;
 		result.animationActive = animationActive;
 		return result;
 	}
@@ -3087,9 +3171,10 @@ namespace Inkeys::UI::Bar
 		const WhiteboardControlRenderState& state,
 		float dpiScale,
 		bool left,
+		POINT screenOrigin,
 		std::chrono::steady_clock::time_point frameTime)
 	{
 		return barUISet.spec.WhiteboardControl(
-			deviceContext, state, dpiScale, left, frameTime);
+			deviceContext, state, dpiScale, left, screenOrigin, frameTime);
 	}
 }

@@ -36,13 +36,10 @@ import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 
-// Rendering 只读 Main 的 module-linkage 常量，公式保持单一定义。
+// Rendering 只读取 Layout/Animation 导出的共享按钮参数。
 bool ReadColorPickerEntryPressed();
 void RequestBarBorderCursorSuspend();
-extern const double BarButtonPressScale;
 extern const double BarButtonHoverFadeDur;
-extern const double BarButtonCursorLightIntensity;
-extern const double BarButtonPressedLightOpacity;
 extern const double BarDrawAttributeExpandedHeight;
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
@@ -455,10 +452,8 @@ struct BarRenderLoopState
 	int mainLogoInkColorSource = -1;
 	bool mainLogoInkCarriesHighlighterHistory = false;
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
-	const BarUiCurveSpecClass buttonPressCurve{
-		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
-	const BarUiCurveSpecClass buttonReleaseCurve{
-		BarUiCurveEnum::EaseOutBack, BarUiCurveEnum::EaseOutBack, 0.0, false };
+	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
+	const BarUiCurveSpecClass buttonReleaseCurve = BarButtonReleaseCurve();
 	optional<double> mainBarLayoutWidth;
 	BarUiValueClass drawAttributePenThickness{ max(0.0f, GetPenWidth()) };
 	bool drawAttributePenThicknessInitialized =
@@ -1806,9 +1801,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			|| (!state.barState.fold && mainBar->x.tar == 0.0);
 // 与下方布局共用：间隙 5，1*1 边长 32.5，使
 			// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
-			constexpr double barBtnGap = 5.0;
-			constexpr double barBtnOne = 32.5; // (70 - gap) / 2，保持正方形
-			constexpr double barBtnTwo = barBtnOne * 2.0 + barBtnGap; // 70
+			constexpr double barBtnGap = BarButtonGapDip;
+			constexpr double barBtnOne = BarButtonOneSideDip;
+			constexpr double barBtnTwo = BarButtonTwoSideDip;
 			constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
 			constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
 			auto CalculateButtonLayoutWidth = [&]()
@@ -4634,8 +4629,8 @@ for (size_t i = 0; i < 3; ++i)
 			forcedStartRow, true);
 		int totalRows = max(1, max(explicitRows, forcedRows));
 
-		constexpr double one = 32.5;
-		constexpr double step = 37.5;
+		constexpr double one = BarButtonOneSideDip;
+		constexpr double step = BarButtonOneSideDip + BarButtonGapDip;
 		double contentWidth = subColumns * one
 			+ max(0, subColumns - 1) * BarMorePanelGap;
 		double gridHeight = totalRows * one
@@ -4770,8 +4765,8 @@ for (size_t i = 0; i < 3; ++i)
 		{
 			BarButtonClass* button = placement.button.get();
 			if (!button) continue;
-			double width = (placement.columnSpan == 2 ? 70.0 : one);
-			double height = (placement.rowSpan == 2 ? 70.0 : one);
+			double width = (placement.columnSpan == 2 ? BarButtonTwoSideDip : one);
+			double height = (placement.rowSpan == 2 ? BarButtonTwoSideDip : one);
 			if (button->size == BarButtonSizeEnum::oneTwo) width = 10.0;
 			double logicalX = BarMorePanelPadding
 				+ placement.column * step + width / 2.0;
@@ -4871,14 +4866,15 @@ for (size_t i = 0; i < 3; ++i)
 			}
 			else if (button->size == BarButtonSizeEnum::twoTwo)
 			{
-				button->icon.SetWH(28.0 * scale, 28.0 * scale);
+				button->icon.SetWH(BarButtonTwoTwoIconSizeDip * scale,
+					BarButtonTwoTwoIconSizeDip * scale);
 				button->icon.x.SetDirect(0.0);
-				button->icon.y.SetDirect(-10.0 * scale);
+				button->icon.y.SetDirect(BarButtonTwoTwoIconOffsetYDip * scale);
 				button->name.x.SetDirect(0.0);
-				button->name.y.SetDirect(20.0 * scale);
-				button->name.w.SetDirect(70.0 * scale);
-				button->name.h.SetDirect(25.0 * scale);
-				button->name.size.SetDirect(13.0 * scale);
+				button->name.y.SetDirect(BarButtonTwoTwoLabelOffsetYDip * scale);
+				button->name.w.SetDirect(BarButtonTwoSideDip * scale);
+				button->name.h.SetDirect(BarButtonTwoTwoLabelHeightDip * scale);
+				button->name.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip * scale);
 				button->name.pct.SetDirect(opacityProgress);
 			}
 			else

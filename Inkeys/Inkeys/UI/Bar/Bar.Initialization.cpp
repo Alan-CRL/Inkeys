@@ -23,7 +23,6 @@ import Inkeys.Window;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
-extern const double BarButtonCursorLightIntensity;
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
 extern const double BarDrawAttributeCompactHeight;
@@ -248,9 +247,14 @@ namespace Inkeys::UI::Bar
 			}
 			// 主栏
 			{
-				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				shape->pct.Initialization(0.8);
-				shape->framePct = BarUiPctClass(0.18);
+				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,
+					BarMainBarWidthDip, BarMainBarHeightDip,
+					BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip,
+					BarButtonFrameThicknessDip,
+					GetThemeColor(BarThemeColorEnum::Surface),
+					GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				shape->pct.Initialization(BarMainBarFillOpacity);
+				shape->framePct = BarUiPctClass(BarMainBarFrameOpacity);
 				shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 				shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				shape->w.mod = BarUiValueModeEnum::Variable;
