@@ -220,7 +220,9 @@ namespace Inkeys::UI::Whiteboard
 				page.pageEnabled, std::to_wstring(page.currentPage),
 				L"/" + std::to_wstring(page.totalPage));
 			(void)controlScenes[index].SetWidgetState(WidgetIds[2], true,
-				page.nextEnabled, {}, L"右翻页");
+				page.nextEnabled, {}, page.nextIsAdd ? L"加页" : L"右翻页",
+				page.nextIsAdd ? L"barAdd" : L"barMore",
+				page.nextIsAdd ? 0.0 : 90.0);
 		}
 
 		void ConfigureBackgroundScene(const RECT& bounds, float scale)
@@ -522,7 +524,9 @@ namespace Inkeys::UI::Whiteboard
 				state.pageEnabled, std::to_wstring(state.currentPage),
 				L"/" + std::to_wstring(state.totalPage));
 			(void)scene.SetWidgetState(WidgetIds[2], true,
-				state.nextEnabled, {}, L"右翻页");
+				state.nextEnabled, {}, state.nextIsAdd ? L"加页" : L"右翻页",
+				state.nextIsAdd ? L"barAdd" : L"barMore",
+				state.nextIsAdd ? 0.0 : 90.0);
 		}
 		RequestControls();
 	}

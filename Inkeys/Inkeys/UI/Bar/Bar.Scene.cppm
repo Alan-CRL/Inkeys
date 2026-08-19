@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -157,7 +157,9 @@ export namespace Inkeys::UI::Bar
 			const BarSurfaceHorizontalGroupSpec& group);
 		bool SetWidgets(std::span<const BarSurfaceWidgetSpec> widgets);
 		bool SetWidgetState(BarSurfaceWidgetId id, bool visible, bool enabled,
-			std::wstring primaryText = {}, std::wstring secondaryText = {});
+			std::wstring primaryText = {}, std::wstring secondaryText = {},
+			std::optional<std::wstring> iconResource = std::nullopt,
+			std::optional<double> iconAngle = std::nullopt);
 		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);

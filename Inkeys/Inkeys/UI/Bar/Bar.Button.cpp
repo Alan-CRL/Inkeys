@@ -1195,14 +1195,10 @@ void BarButtonSetClass::ResetIconCaches()
 void BarButtonSetClass::PresetHoming()
 {
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
-	if (whiteboard)
-	{
-		barUISet.barState.drawAttribute = !barUISet.barState.fold;
-		barUISet.barState.geometryAttribute = false;
-	}
-	else if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	if (whiteboard) barUISet.barState.geometryAttribute = false;
+	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
 	{
 		barUISet.barState.drawAttribute = false;
 	}

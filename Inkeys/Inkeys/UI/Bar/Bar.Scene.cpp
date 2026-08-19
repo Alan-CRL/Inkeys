@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -472,9 +472,26 @@ namespace Inkeys::UI::Bar
 					active = active || result.active;
 					if (result.changed) IncludeDamageLocked(widget.lastPixels);
 				};
+				if (widget.button->icon.AdvanceContentTransition(dt, speed))
+				{
+					active = true;
+					IncludeDamageLocked(widget.lastPixels);
+				}
+				if (widget.button->name.AdvanceContentTransition(dt, speed))
+				{
+					active = true;
+					IncludeDamageLocked(widget.lastPixels);
+				}
+				if (widget.hasSecondary
+					&& widget.secondary.AdvanceContentTransition(dt, speed))
+				{
+					active = true;
+					IncludeDamageLocked(widget.lastPixels);
+				}
 				include(BarUiAdvanceAnimation(widget.button->button.pct, context));
 				include(BarUiAdvanceAnimation(widget.button->button.frameLightPct.value(), context));
 				include(BarUiAdvanceAnimation(widget.button->pressScale, context));
+				include(BarUiAdvanceAnimation(widget.button->icon.angle, context));
 				include(BarUiAdvanceAnimation(widget.button->icon.pct, context));
 				include(BarUiAdvanceAnimation(widget.button->name.pct, context));
 				if (widget.hasSecondary)
@@ -691,7 +708,9 @@ namespace Inkeys::UI::Bar
 	}
 
 	bool BarSurfaceScene::SetWidgetState(BarSurfaceWidgetId id, bool visible,
-		bool enabled, std::wstring primaryText, std::wstring secondaryText)
+		bool enabled, std::wstring primaryText, std::wstring secondaryText,
+		std::optional<std::wstring> iconResource,
+		std::optional<double> iconAngle)
 	{
 		BarSurfaceHooks hooks;
 		bool changed = false;
@@ -699,17 +718,42 @@ namespace Inkeys::UI::Bar
 			std::lock_guard lock(impl_->mutex);
 			auto* widget = impl_->FindWidgetLocked(id);
 			if (!widget) return false;
+			const bool iconChanged = iconResource.has_value()
+				&& widget->spec.iconResource != *iconResource;
+			const bool angleChanged = iconAngle.has_value()
+				&& (!widget->spec.iconAngle.has_value()
+					|| *widget->spec.iconAngle != *iconAngle);
 			changed = widget->spec.visible != visible
 				|| widget->spec.enabled != enabled
 				|| widget->spec.primaryText != primaryText
-				|| widget->spec.secondaryText != secondaryText;
+				|| widget->spec.secondaryText != secondaryText
+				|| iconChanged || angleChanged;
 			if (!changed) return true;
 			impl_->IncludeDamageLocked(widget->lastPixels);
 			widget->spec.visible = visible;
 			widget->spec.enabled = enabled;
 			widget->spec.primaryText = std::move(primaryText);
 			widget->spec.secondaryText = std::move(secondaryText);
-			widget->button->name.content.SetVal(widget->spec.primaryText);
+			if (iconChanged)
+			{
+				widget->spec.iconResource = std::move(*iconResource);
+				if (!widget->spec.iconResource.empty())
+				{
+					// SVG 与文字在同一时间轴中淡出、替换并回弹，保持主栏内容切换节奏。
+					(void)widget->button->icon.TransitionToResource(
+						L"UI", widget->spec.iconResource);
+					widget->button->icon.enable.val = true;
+					widget->button->icon.enable.tar = true;
+				}
+			}
+			if (angleChanged)
+			{
+				widget->spec.iconAngle = *iconAngle;
+				widget->button->icon.angle.SetTar(*iconAngle,
+					BarUiDefaultOperationDur);
+			}
+			(void)widget->button->name.TransitionToString(
+				widget->spec.primaryText);
 			widget->button->name.enable.val = !widget->spec.primaryText.empty();
 			widget->button->name.enable.tar = !widget->spec.primaryText.empty();
 			widget->button->userVisible = visible;
@@ -719,7 +763,8 @@ namespace Inkeys::UI::Bar
 			widget->hasSecondary = !widget->spec.secondaryText.empty();
 			if (widget->hasSecondary)
 			{
-				widget->secondary.content.SetVal(widget->spec.secondaryText);
+				(void)widget->secondary.TransitionToString(
+					widget->spec.secondaryText);
 				widget->secondary.enable.val = true;
 				widget->secondary.enable.tar = true;
 			}

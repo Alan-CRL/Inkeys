@@ -274,6 +274,12 @@ namespace Inkeys::UI::Bar
 	{
 		const bool changed = whiteboardActive.exchange(active,
 			std::memory_order_acq_rel) != active;
+		if (changed && active)
+		{
+			// 进入白板默认使用拖拽模式，绘制属性保持收起；后续由用户按钮控制展开。
+			barUISet.barState.drawAttribute = false;
+			barUISet.barState.geometryAttribute = false;
+		}
 		if (active) RequestWhiteboardBottomDock();
 		else
 		{

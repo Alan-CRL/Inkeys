@@ -23,6 +23,7 @@ export namespace Inkeys::UI::Whiteboard
 		bool previousEnabled = false;
 		bool pageEnabled = true;
 		bool nextEnabled = true;
+		bool nextIsAdd = false;
 		bool switching = false;
 	};
 
@@ -36,6 +37,7 @@ export namespace Inkeys::UI::Whiteboard
 		state.previousEnabled = !switching && state.currentPage > 1;
 		state.pageEnabled = !switching;
 		state.nextEnabled = !switching;
+		state.nextIsAdd = !switching && state.currentPage >= state.totalPage;
 		return state;
 	}
 

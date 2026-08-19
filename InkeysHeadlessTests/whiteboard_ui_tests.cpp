@@ -26,14 +26,17 @@ namespace
 		using Inkeys::UI::Whiteboard::ResolvePageState;
 		const auto first = ResolvePageState(1, 1, false);
 		Check(first.currentPage == 1 && first.totalPage == 1
-			&& !first.previousEnabled && first.pageEnabled && first.nextEnabled,
+			&& !first.previousEnabled && first.pageEnabled && first.nextEnabled
+			&& first.nextIsAdd,
 			"first page disables previous while page and append buttons remain enabled");
 		const auto changing = ResolvePageState(3, 5, true);
 		Check(!changing.previousEnabled && !changing.pageEnabled
-			&& !changing.nextEnabled, "switching disables all page buttons");
+			&& !changing.nextEnabled && !changing.nextIsAdd,
+			"switching disables all page buttons");
 		const auto clamped = ResolvePageState(9, 4, false);
 		Check(clamped.currentPage == 4 && clamped.totalPage == 4
-			&& clamped.previousEnabled && clamped.nextEnabled,
+			&& clamped.previousEnabled && clamped.nextEnabled
+			&& clamped.nextIsAdd,
 			"page state clamps invalid runtime values");
 	}
 
