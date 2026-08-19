@@ -278,6 +278,7 @@ struct BarRenderLoopState
 		pngMap(owner.pngMap),
 		wordMap(owner.wordMap),
 		drawAttributeBrushHoverStage(owner.drawAttributeBrushHoverStage),
+		drawAttributeLaserHoverStage(owner.drawAttributeLaserHoverStage),
 		drawAttributeHighlightHoverStage(owner.drawAttributeHighlightHoverStage),
 		drawAttributePenTypeExtensionHoverStage(
 			owner.drawAttributePenTypeExtensionHoverStage),
@@ -334,6 +335,8 @@ struct BarRenderLoopState
 	decltype(BarUISetClass::wordMap)& wordMap;
 	decltype(BarUISetClass::drawAttributeBrushHoverStage)&
 		drawAttributeBrushHoverStage;
+	decltype(BarUISetClass::drawAttributeLaserHoverStage)&
+		drawAttributeLaserHoverStage;
 	decltype(BarUISetClass::drawAttributeHighlightHoverStage)&
 		drawAttributeHighlightHoverStage;
 	decltype(BarUISetClass::drawAttributePenTypeExtensionHoverStage)&
@@ -581,6 +584,7 @@ struct BarRenderLoopState
 		+ BarThicknessTooltipLineGap + overflowPopupBodySize.height)
 		+ BarThicknessTooltipPadding * 2.0;
 	BarUiValueClass drawAttributeBrushPressScale{ 1.0 };
+	BarUiValueClass drawAttributeLaserPressScale{ 1.0 };
 	BarUiValueClass drawAttributeHighlightPressScale{ 1.0 };
 	BarUiValueClass drawAttributePenTypeExtensionPressScale{ 1.0 };
 	BarUiValueClass drawAttributePenTypeFreeLinePressScale{ 1.0 };
@@ -3198,7 +3202,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						{ BarUISetShapeEnum::DrawAttributeBar_Laser,
 							BarUISetSvgEnum::DrawAttributeBar_Laser,
 							BarUISetWordEnum::DrawAttributeBar_Laser,
-							40.0, true, stateMode.laserActive, false, nullptr, nullptr },
+							40.0, true, stateMode.laserActive,
+							state.barState.drawAttributeBar.laserPress,
+							&state.drawAttributeLaserHoverStage,
+							&state.drawAttributeLaserPressScale },
 						{ BarUISetShapeEnum::DrawAttributeBar_Highlight1,
 							BarUISetSvgEnum::DrawAttributeBar_Highlight1,
 							BarUISetWordEnum::DrawAttributeBar_Highlight1,
@@ -5097,6 +5104,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 	}
 	if (!state.drawAttributeBrushPressScale.IsSame()) ChangeValue(state.drawAttributeBrushPressScale, false, drawAttributeDirtyKey);
+	if (!state.drawAttributeLaserPressScale.IsSame()) ChangeValue(state.drawAttributeLaserPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributeHighlightPressScale.IsSame()) ChangeValue(state.drawAttributeHighlightPressScale, false, drawAttributeDirtyKey);
 	if (!state.drawAttributePenTypeExtensionPressScale.IsSame())
 		ChangeValue(state.drawAttributePenTypeExtensionPressScale, false, drawAttributeDirtyKey);
@@ -5291,6 +5299,10 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	UpdateHoverAnimation(drawAttributeBrush->pct, &drawAttributeBrush->fill.value(),
 		state.drawAttributeBrushHoverStage, state.barState.drawAttribute,
 		stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1);
+	auto drawAttributeLaser = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser];
+	UpdateHoverAnimation(drawAttributeLaser->pct, &drawAttributeLaser->fill.value(),
+		state.drawAttributeLaserHoverStage, state.barState.drawAttribute,
+		!stateMode.laserActive);
 	auto drawAttributeHighlight = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
 	UpdateHoverAnimation(drawAttributeHighlight->pct, &drawAttributeHighlight->fill.value(),
 		state.drawAttributeHighlightHoverStage, state.barState.drawAttribute,
@@ -5298,6 +5310,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	auto penTypeExtension = state.shapeMap[
 		BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
 	bool penTypeExtensionVisible = state.barState.drawAttribute && !state.barState.fold
+		&& !stateMode.laserActive
 		&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 	UpdateHoverAnimation(penTypeExtension->pct,
 		&penTypeExtension->fill.value(),
@@ -5653,8 +5666,8 @@ double baseThumbDiameter =
 			sliderThumb->pct.SetDirect(0.0);
 		}
 		// 扩展入口与菜单都使用当前选中笔型的动画几何，资格失效时立即清除命中。
-		bool annotationCapability =
-			PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
+		bool annotationCapability = !stateMode.laserActive
+			&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 		bool extensionInteractive = state.barState.drawAttribute && !state.barState.fold
 			&& annotationCapability;
 		// 面板收拢时视觉继续跟随当前透明度；命中仍由目标态立即关闭。
@@ -8806,7 +8819,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								BarUISetWordEnum::DrawAttributeBar_Brush2, nullptr },
 							{ BarUISetShapeEnum::DrawAttributeBar_Laser,
 								BarUISetSvgEnum::DrawAttributeBar_Laser,
-								BarUISetWordEnum::DrawAttributeBar_Laser, nullptr },
+								BarUISetWordEnum::DrawAttributeBar_Laser,
+								&state.drawAttributeLaserPressScale },
 							{ BarUISetShapeEnum::DrawAttributeBar_Highlight1,
 								BarUISetSvgEnum::DrawAttributeBar_Highlight1,
 								BarUISetWordEnum::DrawAttributeBar_Highlight1,

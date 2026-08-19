@@ -1019,6 +1019,7 @@ private:
 	{
 		None,
 		DrawAttributeBrush,
+		DrawAttributeLaser,
 		DrawAttributeHighlight,
 		DrawAttributePenTypeExtension,
 		DrawAttributePenTypeFreeLine,
@@ -1071,6 +1072,7 @@ public:
 		shapeMap(owner.shapeMap),
 		superellipseMap(owner.superellipseMap),
 		drawAttributeBrushHoverStage(owner.drawAttributeBrushHoverStage),
+		drawAttributeLaserHoverStage(owner.drawAttributeLaserHoverStage),
 		drawAttributeHighlightHoverStage(owner.drawAttributeHighlightHoverStage),
 		drawAttributePenTypeExtensionHoverStage(
 			owner.drawAttributePenTypeExtensionHoverStage),
@@ -1113,6 +1115,10 @@ private:
 				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->pct,
 					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1]->fill.value(),
 					&drawAttributeBrushHoverStage };
+			case IndependentHoverTargetEnum::DrawAttributeLaser:
+				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]->pct,
+					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser]->fill.value(),
+					&drawAttributeLaserHoverStage };
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
 				return { &shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->pct,
 					&shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1]->fill.value(),
@@ -1687,6 +1693,8 @@ private:
 			case IndependentHoverTargetEnum::DrawAttributeBrush:
 				return stateMode.laserActive
 					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1;
+			case IndependentHoverTargetEnum::DrawAttributeLaser:
+				return !stateMode.laserActive;
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
 				return stateMode.laserActive
 					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1;
@@ -1802,9 +1810,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		}
 
 	bool AnnotationTooltipAvailable()
-		{
-			return barState.drawAttribute && !barState.fold
-				&& barState.drawAttributeBar.penTypeMenuOpen
+	{
+		return barState.drawAttribute && !barState.fold
+			&& !stateMode.laserActive
+			&& barState.drawAttributeBar.penTypeMenuOpen
 				&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 		}
 
@@ -2078,6 +2087,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 	BarInteractionStageResult FinishInteraction()
 		{
+			barState.drawAttributeBar.laserPress = false;
 			CloseThicknessSlider(false);
 			CloseColorPicker(false);
 			ClosePenTypeMenu();
@@ -2488,7 +2498,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (currentIndependentButton == IndependentHoverTargetEnum::None)
 				{
-					if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
+					if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser];
+						!stateMode.laserActive
+						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+					{
+						currentIndependentButton =
+							IndependentHoverTargetEnum::DrawAttributeLaser;
+					}
+					else if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Brush1];
 					stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1
 					&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 					{
@@ -4940,12 +4957,18 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						barState.drawAttributeBar.laserPress = true;
+						StopIndependentHover(hoveredIndependentButton, true, true);
+						hoveredIndependentButton = IndependentHoverTargetEnum::None;
+						UpdateRendering(false);
+						bool clickCompleted = false;
 						while (true)
 						{
 							if (!WaitForBarInteractionMessage(msg, EM_MOUSE, floating_window))
 								return BarInteractionStageResult::Shutdown;
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom) && !msg.lbutton)
 							{
+								clickCompleted = true;
 								ClosePenTypeMenu();
 								CloseThicknessSlider(true);
 								stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
@@ -4958,7 +4981,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							}
 							if (!obj->IsClick(msg.x, msg.y, barStyle.zoom)) break;
 						}
-						SuppressHoverUntilPointerMove();
+						barState.drawAttributeBar.laserPress = false;
+						UpdateRendering(false);
+						if (clickCompleted) SuppressHoverUntilPointerMove();
 						ClearBarInteractionMessages(EM_MOUSE, floating_window);
 					}
 				}
@@ -5165,6 +5190,7 @@ private:
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum,
 		shared_ptr<BarUiSuperellipseClass>>& superellipseMap;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeBrushHoverStage;
+	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeLaserHoverStage;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributeHighlightHoverStage;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributePenTypeExtensionHoverStage;
 	IdtAtomic<BarButtonHoverStageEnum>& drawAttributePenTypeFreeLineHoverStage;
