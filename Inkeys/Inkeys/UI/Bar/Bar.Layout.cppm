@@ -273,10 +273,29 @@ export
 		return max(1, static_cast<int>(lround(presets[index] * dpiZoom)));
 	}
 
+	float GetBarLaserThicknessPresetDip(size_t index)
+	{
+		return index < 3 ? stateMode.Pen.Laser.widthPreset[index] : 0.0f;
+	}
+
+	int GetBarLaserThicknessPresetPx(size_t index, double dpiZoom)
+	{
+		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
+		return max(1, static_cast<int>(lround(
+			GetBarLaserThicknessPresetDip(index) * dpiZoom)));
+	}
+
+	bool IsLaserThicknessPresetMode()
+	{
+		return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& stateMode.laserActive;
+	}
+
 	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode)
 	{
-		return mode == PenModeSelectEnum::IdtPenBrush1
-			|| mode == PenModeSelectEnum::IdtPenHighlighter1;
+		return !stateMode.laserActive
+			&& (mode == PenModeSelectEnum::IdtPenBrush1
+			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}
 
 	COLORREF GetBarReadableTextColor(COLORREF background)

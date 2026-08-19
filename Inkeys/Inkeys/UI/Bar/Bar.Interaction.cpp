@@ -1318,6 +1318,7 @@ private:
 		{
 			return stateMode.StateModeSelect
 				== StateModeSelectEnum::IdtPen
+				&& !stateMode.laserActive
 				&& barState.drawAttribute && !barState.fold
 				&& GetBarThicknessSliderRange(
 					stateMode.Pen.ModeSelect,
@@ -1684,16 +1685,20 @@ private:
 			switch (target)
 			{
 			case IndependentHoverTargetEnum::DrawAttributeBrush:
-				return stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1;
+				return stateMode.laserActive
+					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenBrush1;
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
-				return stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1;
+				return stateMode.laserActive
+					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenHighlighter1;
 			case IndependentHoverTargetEnum::DrawAttributePenTypeExtension:
 				return !barState.fold
+					&& !stateMode.laserActive
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect)
 					&& !barState.drawAttributeBar.penTypeExtensionPress;
 			case IndependentHoverTargetEnum::DrawAttributePenTypeFreeLine:
 				return !barState.fold
+					&& !stateMode.laserActive
 					&& barState.drawAttributeBar.penTypeMenuOpen
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect)
@@ -1702,16 +1707,21 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				case IndependentHoverTargetEnum::DrawAttributeThicknessMedium:
 				case IndependentHoverTargetEnum::DrawAttributeThicknessCoarse:
 				{
-					if (!PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect))
+					bool laserPresetMode = IsLaserThicknessPresetMode();
+					if (!laserPresetMode
+						&& !PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect))
 						return false;
 					size_t index = static_cast<size_t>(target)
 						- static_cast<size_t>(
 							IndependentHoverTargetEnum::DrawAttributeThicknessFine);
 					int displayedThickness =
 						static_cast<int>(lround(max(0.0f, GetPenWidth())));
-					return displayedThickness
-						!= GetBarThicknessPresetPx(
+					int presetWidth = laserPresetMode
+						? static_cast<int>(lround(
+							GetBarLaserThicknessPresetDip(index)))
+						: GetBarThicknessPresetPx(
 							stateMode.Pen.ModeSelect, index, barStyle.dpiZoom);
+					return displayedThickness != presetWidth;
 				}
 			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
 				return ThicknessSliderAvailable()
@@ -4723,11 +4733,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust,
 							&barState.drawAttributeBar.thicknessAdjustPress, -1 },
 					};
-					bool thicknessPresetMode =
-						PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
+					bool laserThicknessPresetMode = IsLaserThicknessPresetMode();
+					bool thicknessPresetMode = laserThicknessPresetMode
+						|| PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
 						for (const auto& button : thicknessButtons)
 						{
-							bool visible = thicknessPresetMode;
+							bool visible = thicknessPresetMode
+								&& (!laserThicknessPresetMode || button.presetIndex >= 0);
 							auto obj = shapeMap[button.shape];
 							if (!visible || !obj
 								|| !obj->IsClick(msg.x, msg.y, barStyle.zoom))
@@ -4769,7 +4781,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											{
 												if (fineDialAtPress)
 													CancelThicknessFineDialSelection();
-												SetPenWidth(static_cast<float>(
+												if (laserThicknessPresetMode)
+													SetPenWidth(GetBarLaserThicknessPresetDip(
+														button.presetIndex));
+												else SetPenWidth(static_cast<float>(
 													GetBarThicknessPresetPx(
 														stateMode.Pen.ModeSelect,
 														button.presetIndex,
@@ -4835,6 +4850,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				// 当前选中且支持标注线的笔型才拥有扩展菜单入口。
 				if (continueFlag && barState.drawAttribute
 					&& !barState.fold
+					&& !stateMode.laserActive
 					&& PenModeSupportsAnnotationLine(
 						stateMode.Pen.ModeSelect))
 				{
@@ -4931,6 +4947,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (obj->IsClick(msg.x, msg.y, barStyle.zoom) && !msg.lbutton)
 							{
 								ClosePenTypeMenu();
+								CloseThicknessSlider(true);
 								stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 								stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
 								stateMode.laserActive = true;
@@ -4967,7 +4984,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (!msg.lbutton)
 							{
-								if (stateMode.Pen.ModeSelect
+								if (stateMode.laserActive || stateMode.Pen.ModeSelect
 									!= PenModeSelectEnum::IdtPenBrush1)
 								{
 									ClosePenTypeMenu();
@@ -5014,7 +5031,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (!msg.lbutton)
 							{
-								if (stateMode.Pen.ModeSelect
+								if (stateMode.laserActive || stateMode.Pen.ModeSelect
 									!= PenModeSelectEnum::IdtPenHighlighter1)
 								{
 									ClosePenTypeMenu();
