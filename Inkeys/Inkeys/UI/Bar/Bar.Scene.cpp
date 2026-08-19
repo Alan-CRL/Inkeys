@@ -718,6 +718,8 @@ namespace Inkeys::UI::Bar
 			std::lock_guard lock(impl_->mutex);
 			auto* widget = impl_->FindWidgetLocked(id);
 			if (!widget) return false;
+			const bool primaryTextChanged = widget->spec.primaryText != primaryText;
+			const bool secondaryTextChanged = widget->spec.secondaryText != secondaryText;
 			const bool iconChanged = iconResource.has_value()
 				&& widget->spec.iconResource != *iconResource;
 			const bool angleChanged = iconAngle.has_value()
@@ -725,8 +727,8 @@ namespace Inkeys::UI::Bar
 					|| *widget->spec.iconAngle != *iconAngle);
 			changed = widget->spec.visible != visible
 				|| widget->spec.enabled != enabled
-				|| widget->spec.primaryText != primaryText
-				|| widget->spec.secondaryText != secondaryText
+				|| primaryTextChanged
+				|| secondaryTextChanged
 				|| iconChanged || angleChanged;
 			if (!changed) return true;
 			impl_->IncludeDamageLocked(widget->lastPixels);
@@ -752,8 +754,9 @@ namespace Inkeys::UI::Bar
 				widget->button->icon.angle.SetTar(*iconAngle,
 					BarUiDefaultOperationDur);
 			}
-			(void)widget->button->name.TransitionToString(
-				widget->spec.primaryText);
+			if (primaryTextChanged)
+				(void)widget->button->name.TransitionToString(
+					widget->spec.primaryText);
 			widget->button->name.enable.val = !widget->spec.primaryText.empty();
 			widget->button->name.enable.tar = !widget->spec.primaryText.empty();
 			widget->button->userVisible = visible;
@@ -763,8 +766,9 @@ namespace Inkeys::UI::Bar
 			widget->hasSecondary = !widget->spec.secondaryText.empty();
 			if (widget->hasSecondary)
 			{
-				(void)widget->secondary.TransitionToString(
-					widget->spec.secondaryText);
+				if (secondaryTextChanged)
+					(void)widget->secondary.TransitionToString(
+						widget->spec.secondaryText);
 				widget->secondary.enable.val = true;
 				widget->secondary.enable.tar = true;
 			}

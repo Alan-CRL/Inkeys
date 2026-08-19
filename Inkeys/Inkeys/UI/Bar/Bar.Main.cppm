@@ -330,6 +330,8 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
+	void CollapseAuxiliaryPanels(bool cancelCapture = true);
 	void StartDisplayTracking();
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;

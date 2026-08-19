@@ -37,7 +37,8 @@ export namespace Inkeys::UI::Whiteboard
 		state.previousEnabled = !switching && state.currentPage > 1;
 		state.pageEnabled = !switching;
 		state.nextEnabled = !switching;
-		state.nextIsAdd = !switching && state.currentPage >= state.totalPage;
+		// 加页语义跟随当前页是否为末页，即使追加过程中的按钮暂时禁用也不切回箭头。
+		state.nextIsAdd = state.currentPage >= state.totalPage;
 		return state;
 	}
 

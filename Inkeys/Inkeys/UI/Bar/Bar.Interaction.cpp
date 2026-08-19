@@ -971,6 +971,17 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 	picker.colorPickerPointerCapture = false;
 }
 
+void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
+{
+	barState.drawAttribute = false;
+	barState.geometryAttribute = false;
+	barState.moreExpanded = false;
+	ClosePenTypeMenu();
+	CloseDrawAttributeTooltips();
+	CloseThicknessSlider(cancelCapture);
+	CloseColorPicker(cancelCapture);
+}
+
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
 	if (!hWnd) return;

@@ -754,6 +754,18 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 
 void BarButtonSetClass::StateUpdate()
 {
+	static int lastToolStateKey = -1;
+	const int toolStateKey =
+		(static_cast<int>(stateMode.StateModeSelect) << 8)
+		| (static_cast<int>(stateMode.Pen.ModeSelect) << 4)
+		| (static_cast<int>(stateMode.Shape.ModeSelect) << 1)
+		| (stateMode.laserActive ? 1 : 0);
+	if (lastToolStateKey != toolStateKey)
+	{
+		// 工具、笔型或激光状态切换时只保留主栏，避免旧属性浮层残留。
+		barUISet.CollapseAuxiliaryPanels(true);
+		lastToolStateKey = toolStateKey;
+	}
 	CalcState();
 	PresetHoming();
 	UpdateDrawButtonStyle();

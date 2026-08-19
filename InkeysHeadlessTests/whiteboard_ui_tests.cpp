@@ -33,6 +33,9 @@ namespace
 		Check(!changing.previousEnabled && !changing.pageEnabled
 			&& !changing.nextEnabled && !changing.nextIsAdd,
 			"switching disables all page buttons");
+		const auto appending = ResolvePageState(1, 1, true);
+		Check(!appending.nextEnabled && appending.nextIsAdd,
+			"appending keeps the add-page content while the request is in flight");
 		const auto clamped = ResolvePageState(9, 4, false);
 		Check(clamped.currentPage == 4 && clamped.totalPage == 4
 			&& clamped.previousEnabled && clamped.nextEnabled
