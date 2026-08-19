@@ -129,10 +129,7 @@ void ReconcileDraw3Presentation()
 bool SetPenWidth(float targetWidth, bool setMemory)
 {
 	if (targetWidth <= 0.0f) return false;
-	// 激光笔是独立工具，优先截获粗细修改以免影响画笔记忆值。
-	if (stateMode.laserActive)
-		stateMode.Pen.Laser.width = targetWidth;
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
 			stateMode.Pen.Brush1.width = targetWidth;
@@ -191,7 +188,6 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 
 float GetPenWidth()
 {
-	if (stateMode.laserActive) return stateMode.Pen.Laser.width;
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1

@@ -131,8 +131,7 @@ namespace Inkeys::Drawing::Draw3
 			if (tool == DrawingTool::Pen || tool == DrawingTool::Highlighter ||
 				IsShapeDrawingTool(tool))
 				return (std::max)(0.1f, visualStyle.widthDip);
-			if (tool == DrawingTool::Laser)
-				return (std::max)(0.1f, visualStyle.widthDip);
+			if (tool == DrawingTool::Laser) return kLaserDiameter;
 			return kWideToolDiameter;
 		}
 
