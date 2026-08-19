@@ -8954,13 +8954,22 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								&& !laserShellVisible;
 							bool laserPreviewActive = stateMode.laserActive
 								|| laserShellVisible || laserCoreMorph;
+							double laserShellProgress = clamp(static_cast<double>(
+								state.drawAttributeLaserShellProgress.val), 0.0, 1.0);
+							FLOAT laserCorePreviewThickness = max(0.0f,
+								static_cast<FLOAT>(state.drawAttributeLaserCoreThickness.val));
+							FLOAT laserOuterPreviewThickness = max(0.0f,
+								static_cast<FLOAT>(state.drawAttributeLaserOuterThickness.val));
+							// 红壳展开时整体预览厚度也沿进度插值，避免白芯几何宽度跳变。
+							FLOAT laserEnvelopeThickness = laserCorePreviewThickness
+								+ (laserOuterPreviewThickness - laserCorePreviewThickness)
+									* static_cast<FLOAT>(laserShellProgress);
 							// 展开静止后保持真实设备 px；面板动画时只补上同一几何缩放倍率。
 							FLOAT requestedThickness = max(0.0f,
 								static_cast<FLOAT>((laserPreviewActive
-									? (laserCoreMorph
-										? state.drawAttributeLaserCoreThickness.val
-										: state.drawAttributeLaserOuterThickness.val)
-									: state.drawAttributePenThickness.val)
+									? laserEnvelopeThickness
+									: static_cast<FLOAT>(
+										state.drawAttributePenThickness.val))
 									* panelAnimationScale));
 							double previewAreaHeight =
 								previewGeometry.previewBottom
@@ -9083,17 +9092,19 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								FLOAT coreWidth = max(0.1F, static_cast<FLOAT>(
 									state.drawAttributeLaserCoreThickness.val
 									* panelAnimationScale));
-								FLOAT redWidth = coreWidth
-									+ (outerWidth - coreWidth) * shellProgress;
+									FLOAT redWidth = coreWidth
+										+ (outerWidth - coreWidth) * shellProgress;
 								auto DrawLaserCurve = [&](COLORREF color, FLOAT width)
 								{
 									auto brush = state.spec.GetFrameSolidColorBrush(
 										barDeviceContext, color, baseThicknessOpacity);
 									if (!brush || width <= 0.0F) return;
+									// 红壳展开期间，端点内缩也跟随插值宽度，避免白芯长度突然跳变。
+									FLOAT pathWidth = redWidth;
 									FLOAT startX = min(previewRect.right,
-										previewRect.left + outerWidth / 2.0F);
+										previewRect.left + pathWidth / 2.0F);
 									FLOAT endX = max(startX,
-										previewRect.right - outerWidth / 2.0F);
+										previewRect.right - pathWidth / 2.0F);
 									FLOAT span = max(0.0F, endX - startX);
 									auto strokeStyle = state.spec.GetThicknessPreviewStrokeStyle();
 									if (!strokeStyle) return;
