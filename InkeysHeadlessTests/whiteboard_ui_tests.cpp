@@ -30,12 +30,21 @@ namespace
 			&& first.nextIsAdd,
 			"first page disables previous while page and append buttons remain enabled");
 		const auto changing = ResolvePageState(3, 5, true);
-		Check(!changing.previousEnabled && !changing.pageEnabled
-			&& !changing.nextEnabled && !changing.nextIsAdd,
-			"switching disables all page buttons");
+		Check(changing.previousEnabled && changing.pageEnabled
+			&& changing.nextEnabled && !changing.previousInteractive
+			&& !changing.pageInteractive && !changing.nextInteractive
+			&& !changing.nextIsAdd,
+			"switching locks input without changing page button visuals");
 		const auto appending = ResolvePageState(1, 1, true);
-		Check(!appending.nextEnabled && appending.nextIsAdd,
+		Check(appending.nextEnabled && !appending.nextInteractive
+			&& appending.nextIsAdd,
 			"appending keeps the add-page content while the request is in flight");
+		const auto latchedArrow = ResolvePageState(3, 3, true, false);
+		Check(latchedArrow.nextIsAdd == false,
+			"latched next visual stays an arrow during a page transaction");
+		const auto latchedAdd = ResolvePageState(3, 4, true, true);
+		Check(latchedAdd.nextIsAdd,
+			"latched add visual ignores intermediate page totals");
 		const auto clamped = ResolvePageState(9, 4, false);
 		Check(clamped.currentPage == 4 && clamped.totalPage == 4
 			&& clamped.previousEnabled && clamped.nextEnabled

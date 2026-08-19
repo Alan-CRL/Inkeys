@@ -48,6 +48,8 @@ export namespace Inkeys::UI::Bar
 		BarSurfaceDipRect bounds{};
 		bool visible = true;
 		bool enabled = true;
+		// 临时输入锁不改变控件的 enabled 外观和内容透明度。
+		bool interactive = true;
 		bool selected = false;
 		std::wstring iconResource;
 		std::wstring primaryText;
@@ -73,6 +75,7 @@ export namespace Inkeys::UI::Bar
 		RECT localPixels{};
 		bool visible = false;
 		bool enabled = false;
+		bool interactive = false;
 		bool selected = false;
 	};
 
@@ -160,6 +163,7 @@ export namespace Inkeys::UI::Bar
 			std::wstring primaryText = {}, std::wstring secondaryText = {},
 			std::optional<std::wstring> iconResource = std::nullopt,
 			std::optional<double> iconAngle = std::nullopt);
+		bool SetWidgetInteractive(BarSurfaceWidgetId id, bool interactive);
 		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);

@@ -2528,8 +2528,6 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			state.barState.widgetPosition.primaryBar = false;
 			if (whiteboardDockPlacement)
 			{
-				state.barState.drawAttribute = true;
-				state.barState.geometryAttribute = false;
 				state.whiteboardDockPlacementPending = false;
 			}
 			state.initialBottomDockPlacementApplied = true;

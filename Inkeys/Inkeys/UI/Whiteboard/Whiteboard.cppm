@@ -3,6 +3,7 @@ module;
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <windows.h>
 
 export module Inkeys.UI.Whiteboard;
@@ -23,22 +24,31 @@ export namespace Inkeys::UI::Whiteboard
 		bool previousEnabled = false;
 		bool pageEnabled = true;
 		bool nextEnabled = true;
+		bool previousInteractive = false;
+		bool pageInteractive = true;
+		bool nextInteractive = true;
 		bool nextIsAdd = false;
 		bool switching = false;
 	};
 
 	[[nodiscard]] inline PageState ResolvePageState(
-		int currentPage, int totalPage, bool switching) noexcept
+		int currentPage, int totalPage, bool switching,
+		std::optional<bool> latchedNextIsAdd = std::nullopt) noexcept
 	{
 		PageState state;
 		state.totalPage = (std::max)(1, totalPage);
 		state.currentPage = std::clamp(currentPage, 1, state.totalPage);
 		state.switching = switching;
-		state.previousEnabled = !switching && state.currentPage > 1;
-		state.pageEnabled = !switching;
-		state.nextEnabled = !switching;
-		// 加页语义跟随当前页是否为末页，即使追加过程中的按钮暂时禁用也不切回箭头。
+		// enabled 表示稳定的业务语义；翻页事务只锁住输入，不改变视觉状态。
+		state.previousEnabled = state.currentPage > 1;
+		state.pageEnabled = true;
+		state.nextEnabled = true;
+		state.previousInteractive = !switching && state.previousEnabled;
+		state.pageInteractive = !switching && state.pageEnabled;
+		state.nextInteractive = !switching && state.nextEnabled;
 		state.nextIsAdd = state.currentPage >= state.totalPage;
+		if (switching && latchedNextIsAdd.has_value())
+			state.nextIsAdd = *latchedNextIsAdd;
 		return state;
 	}
 

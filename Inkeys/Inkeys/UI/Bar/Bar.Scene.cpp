@@ -279,7 +279,7 @@ namespace Inkeys::UI::Bar
 			if (!pointerKnown || hovered == BarSurfaceNoWidget) return false;
 			const auto* widget = FindWidgetLocked(hovered);
 			return widget && widget->spec.visible && widget->spec.enabled
-				&& widget->spec.selected;
+				&& widget->spec.interactive && widget->spec.selected;
 		}
 
 		void InitializeBackgroundLocked()
@@ -413,7 +413,7 @@ namespace Inkeys::UI::Bar
 			widget.lastPixels = DipToPixels(widget.spec.bounds, dpiScale);
 		}
 
-		void ApplyButtonTargetsLocked(Widget& widget)
+		void ApplyButtonInteractionTargetsLocked(Widget& widget)
 		{
 			const bool enabled = widget.spec.visible && widget.spec.enabled;
 			const double opacity = !enabled ? 0.0
@@ -430,6 +430,12 @@ namespace Inkeys::UI::Bar
 				widget.pressed ? BarButtonPressScale : 1.0,
 				static_cast<double>(BarUiDefaultOperationDur), std::nullopt,
 				false, widget.pressed ? BarButtonPressCurve() : BarButtonReleaseCurve());
+		}
+
+		void ApplyButtonTargetsLocked(Widget& widget)
+		{
+			ApplyButtonInteractionTargetsLocked(widget);
+			const bool enabled = widget.spec.visible && widget.spec.enabled;
 			// 禁用只关闭交互和背景反馈，内容仍以低透明度可读。
 			const double contentOpacity = enabled ? 1.0
 				: BarButtonDisabledContentOpacity;
@@ -511,7 +517,8 @@ namespace Inkeys::UI::Bar
 			const double yDip = static_cast<double>(localPixels.y) / scale;
 			for (auto it = widgets.rbegin(); it != widgets.rend(); ++it)
 			{
-				if (!it->spec.visible || !it->spec.enabled) continue;
+				if (!it->spec.visible || !it->spec.enabled
+					|| !it->spec.interactive) continue;
 				const auto& bounds = it->spec.bounds;
 				if (xDip >= bounds.left && xDip < bounds.right
 					&& yDip >= bounds.top && yDip < bounds.bottom)
@@ -676,7 +683,7 @@ namespace Inkeys::UI::Bar
 				continue;
 			}
 			const RECT oldPixels = existing->lastPixels;
-			const bool oldSpec = existing->spec.visible == spec.visible
+			const bool visualSpec = existing->spec.visible == spec.visible
 				&& existing->spec.enabled == spec.enabled
 				&& existing->spec.selected == spec.selected
 				&& existing->spec.bounds.left == spec.bounds.left
@@ -686,13 +693,38 @@ namespace Inkeys::UI::Bar
 				&& existing->spec.iconResource == spec.iconResource
 				&& existing->spec.primaryText == spec.primaryText
 				&& existing->spec.secondaryText == spec.secondaryText;
-			if (oldSpec) continue;
+			if (visualSpec && existing->spec.interactive == spec.interactive)
+				continue;
+			if (visualSpec)
+			{
+				// interactive 只更新输入状态，避免重建按钮并重置内容动画。
+				impl_->IncludeDamageLocked(existing->lastPixels);
+				existing->spec.interactive = spec.interactive;
+				if (!spec.interactive)
+				{
+					existing->hover = false;
+					if (impl_->hovered == existing->spec.id)
+						impl_->hovered = BarSurfaceNoWidget;
+					if (impl_->pressed == existing->spec.id)
+					{
+						existing->pressed = false;
+						impl_->pressed = BarSurfaceNoWidget;
+						impl_->pointerCaptured = false;
+					}
+				}
+				impl_->ApplyButtonInteractionTargetsLocked(*existing);
+				impl_->IncludeDamageLocked(existing->lastPixels);
+				changed = true;
+				continue;
+			}
 			impl_->IncludeDamageLocked(oldPixels);
 			const bool hover = existing->hover;
 			const bool pressed = existing->pressed;
 			existing->spec = std::move(spec);
-			existing->hover = hover && existing->spec.visible;
-			existing->pressed = pressed && existing->spec.visible;
+			existing->hover = hover && existing->spec.visible
+				&& existing->spec.interactive;
+			existing->pressed = pressed && existing->spec.visible
+				&& existing->spec.interactive;
 			impl_->InitializeButtonLocked(*existing);
 			impl_->IncludeDamageLocked(existing->lastPixels);
 			changed = true;
@@ -777,9 +809,14 @@ namespace Inkeys::UI::Bar
 				widget->secondary.enable.val = false;
 				widget->secondary.enable.tar = false;
 			}
-			if (!visible && impl_->hovered == id) impl_->hovered = BarSurfaceNoWidget;
+			if (!visible && impl_->hovered == id)
+			{
+				impl_->hovered = BarSurfaceNoWidget;
+				widget->hover = false;
+			}
 			if (!visible && impl_->pressed == id)
 			{
+				widget->pressed = false;
 				impl_->pressed = BarSurfaceNoWidget;
 				impl_->pointerCaptured = false;
 			}
@@ -791,6 +828,39 @@ namespace Inkeys::UI::Bar
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
 		}
+		return true;
+	}
+
+	bool BarSurfaceScene::SetWidgetInteractive(
+		BarSurfaceWidgetId id, bool interactive)
+	{
+		BarSurfaceHooks hooks;
+		{
+			std::lock_guard lock(impl_->mutex);
+			auto* widget = impl_->FindWidgetLocked(id);
+			if (!widget) return false;
+			if (widget->spec.interactive == interactive) return true;
+			impl_->IncludeDamageLocked(widget->lastPixels);
+			widget->spec.interactive = interactive;
+			if (!interactive)
+			{
+				if (impl_->hovered == id)
+					impl_->hovered = BarSurfaceNoWidget;
+				widget->hover = false;
+				if (impl_->pressed == id)
+				{
+					widget->pressed = false;
+					impl_->pressed = BarSurfaceNoWidget;
+					impl_->pointerCaptured = false;
+				}
+			}
+			// 仅更新按压/悬停反馈；enabled 内容目标保持不变。
+			impl_->ApplyButtonInteractionTargetsLocked(*widget);
+			impl_->IncludeDamageLocked(widget->lastPixels);
+			hooks = impl_->hooks;
+		}
+		if (hooks.invalidate) hooks.invalidate();
+		if (hooks.wake) hooks.wake();
 		return true;
 	}
 
@@ -999,6 +1069,7 @@ namespace Inkeys::UI::Bar
 			result.widgets.push_back(BarSurfaceWidgetLayout{
 				widget.spec.id, widget.lastPixels,
 				widget.spec.visible, widget.spec.enabled,
+				widget.spec.interactive,
 				widget.spec.selected });
 		return result;
 	}

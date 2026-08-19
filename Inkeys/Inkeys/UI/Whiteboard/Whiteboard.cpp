@@ -11,6 +11,7 @@ module;
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -60,6 +61,13 @@ namespace Inkeys::UI::Whiteboard
 		std::atomic_int currentPage = 1;
 		std::atomic_int totalPage = 1;
 		std::atomic_bool switching = false;
+		enum class NextButtonVisual : std::uint8_t
+		{
+			Arrow,
+			Add,
+		};
+		std::mutex pageStateMutex;
+		std::optional<NextButtonVisual> latchedNextVisual;
 		std::array<Scene, 2> controlScenes{};
 		Scene backgroundScene;
 		std::array<RECT, 2> configuredControlScreens{};
@@ -69,6 +77,25 @@ namespace Inkeys::UI::Whiteboard
 		Inkeys::Display::Subscription displaySubscription;
 		std::mutex callbackMutex;
 		BusinessCallbacks business;
+
+		[[nodiscard]] NextButtonVisual ResolveNextButtonVisual(
+			int current, int total) noexcept
+		{
+			return current >= (std::max)(1, total)
+				? NextButtonVisual::Add : NextButtonVisual::Arrow;
+		}
+
+		[[nodiscard]] PageState PublishedPageState() noexcept
+		{
+			std::scoped_lock lock(pageStateMutex);
+			const bool isSwitching = switching.load(std::memory_order_acquire);
+			PageState state = ResolvePageState(
+				currentPage.load(std::memory_order_acquire),
+				totalPage.load(std::memory_order_acquire), isSwitching);
+			if (isSwitching && latchedNextVisual.has_value())
+				state.nextIsAdd = *latchedNextVisual == NextButtonVisual::Add;
+			return state;
+		}
 
 		[[nodiscard]] RECT PrimaryBounds() noexcept
 		{
@@ -181,6 +208,25 @@ namespace Inkeys::UI::Whiteboard
 			return widgets;
 		}
 
+		void ApplyPageState(Scene& scene, const PageState& page)
+		{
+			(void)scene.SetWidgetState(WidgetIds[0], true,
+				page.previousEnabled, {}, L"左翻页");
+			(void)scene.SetWidgetInteractive(
+				WidgetIds[0], page.previousInteractive);
+			(void)scene.SetWidgetState(WidgetIds[1], true,
+				page.pageEnabled, std::to_wstring(page.currentPage),
+				L"/" + std::to_wstring(page.totalPage));
+			(void)scene.SetWidgetInteractive(
+				WidgetIds[1], page.pageInteractive);
+			(void)scene.SetWidgetState(WidgetIds[2], true,
+				page.nextEnabled, {}, page.nextIsAdd ? L"加页" : L"右翻页",
+				page.nextIsAdd ? L"barAdd" : L"barMore",
+				page.nextIsAdd ? 0.0 : 90.0);
+			(void)scene.SetWidgetInteractive(
+				WidgetIds[2], page.nextInteractive);
+		}
+
 		void ConfigureControlScene(std::size_t index)
 		{
 			const auto bounds = PrimaryBounds();
@@ -210,19 +256,7 @@ namespace Inkeys::UI::Whiteboard
 				{}, [index] { RequestSurface(index); } });
 			configuredControlScreens[index] = bounds;
 			configuredControlScales[index] = scale;
-			const PageState page = ResolvePageState(
-				currentPage.load(std::memory_order_acquire),
-				totalPage.load(std::memory_order_acquire),
-				switching.load(std::memory_order_acquire));
-			(void)controlScenes[index].SetWidgetState(WidgetIds[0], true,
-				page.previousEnabled, {}, L"左翻页");
-			(void)controlScenes[index].SetWidgetState(WidgetIds[1], true,
-				page.pageEnabled, std::to_wstring(page.currentPage),
-				L"/" + std::to_wstring(page.totalPage));
-			(void)controlScenes[index].SetWidgetState(WidgetIds[2], true,
-				page.nextEnabled, {}, page.nextIsAdd ? L"加页" : L"右翻页",
-				page.nextIsAdd ? L"barAdd" : L"barMore",
-				page.nextIsAdd ? 0.0 : 90.0);
+			ApplyPageState(controlScenes[index], PublishedPageState());
 		}
 
 		void ConfigureBackgroundScene(const RECT& bounds, float scale)
@@ -508,26 +542,36 @@ namespace Inkeys::UI::Whiteboard
 
 	void PublishPageState(int current, int total, bool changing) noexcept
 	{
-		const bool currentChanged = currentPage.exchange(
-			current, std::memory_order_acq_rel) != current;
-		const bool totalChanged = totalPage.exchange(
-			total, std::memory_order_acq_rel) != total;
-		const bool switchingChanged = switching.exchange(
-			changing, std::memory_order_acq_rel) != changing;
-		if (!(currentChanged || totalChanged || switchingChanged)) return;
-		const PageState state = ResolvePageState(current, total, changing);
-		for (auto& scene : controlScenes)
+		bool currentChanged = false;
+		bool totalChanged = false;
+		bool switchingChanged = false;
+		PageState state;
 		{
-			(void)scene.SetWidgetState(WidgetIds[0], true,
-				state.previousEnabled, {}, L"左翻页");
-			(void)scene.SetWidgetState(WidgetIds[1], true,
-				state.pageEnabled, std::to_wstring(state.currentPage),
-				L"/" + std::to_wstring(state.totalPage));
-			(void)scene.SetWidgetState(WidgetIds[2], true,
-				state.nextEnabled, {}, state.nextIsAdd ? L"加页" : L"右翻页",
-				state.nextIsAdd ? L"barAdd" : L"barMore",
-				state.nextIsAdd ? 0.0 : 90.0);
+			std::scoped_lock lock(pageStateMutex);
+			const int previousCurrent = currentPage.load(std::memory_order_relaxed);
+			const int previousTotal = totalPage.load(std::memory_order_relaxed);
+			const bool previousSwitching = switching.load(std::memory_order_relaxed);
+			currentChanged = previousCurrent != current;
+			totalChanged = previousTotal != total;
+			switchingChanged = previousSwitching != changing;
+			if (!previousSwitching && changing)
+			{
+				// 翻页事务开始时锁存稳定视觉语义，忽略中途的业务发布顺序。
+				latchedNextVisual = ResolveNextButtonVisual(
+					previousCurrent, previousTotal);
+			}
+			currentPage.store(current, std::memory_order_relaxed);
+			totalPage.store(total, std::memory_order_relaxed);
+			switching.store(changing, std::memory_order_release);
+			state = ResolvePageState(current, total, changing);
+			if (changing && latchedNextVisual.has_value())
+				state.nextIsAdd = *latchedNextVisual == NextButtonVisual::Add;
+			if (!changing)
+				latchedNextVisual.reset();
 		}
+		if (!(currentChanged || totalChanged || switchingChanged)) return;
+		for (auto& scene : controlScenes)
+			ApplyPageState(scene, state);
 		RequestControls();
 	}
 
