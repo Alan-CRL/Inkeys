@@ -12,6 +12,8 @@ export module Inkeys.UI.Bar:Layout;
 import :UI;
 import :Theme;
 
+import Inkeys.UI.Bar.Animation;
+
 import Inkeys.Conv.Color;
 
 namespace
@@ -43,10 +45,24 @@ export
 		return mode == PenModeSelectEnum::IdtPenSoftPen;
 	}
 
+	BarThicknessPreviewVisualKind ResolveBarThicknessPreviewVisualKind(
+		PenModeSelectEnum mode, bool laserActive = false)
+	{
+		if (laserActive) return BarThicknessPreviewVisualKind::Laser;
+		if (mode == PenModeSelectEnum::IdtPenHighlighter1)
+			return BarThicknessPreviewVisualKind::Highlighter;
+		if (mode == PenModeSelectEnum::IdtPenHardPen)
+			return BarThicknessPreviewVisualKind::HardPen;
+		if (mode == PenModeSelectEnum::IdtPenSoftPen)
+			return BarThicknessPreviewVisualKind::SoftPen;
+		return BarThicknessPreviewVisualKind::Unsupported;
+	}
+
 	bool PenModeSupportsAnnotationLine(PenModeSelectEnum mode)
 	{
-		// 激光笔不显示标注线入口；未来软笔模式在这里加入。
-		return mode == PenModeSelectEnum::IdtPenSoftPen;
+		// 扩展入口由三种可切换笔型共用，激光笔不参与。
+		return BarPenTypeSupportsExtension(
+			ResolveBarThicknessPreviewVisualKind(mode));
 	}
 
 	bool PenModeUsesBrushThickness(PenModeSelectEnum mode)

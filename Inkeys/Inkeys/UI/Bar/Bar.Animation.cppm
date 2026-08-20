@@ -135,6 +135,123 @@ export
 		}
 	}
 
+	// 粗细预览、快捷按钮与笔型扩展共用的纯状态计算，供渲染和 HeadlessTests 使用。
+	enum class BarThicknessPreviewVisualKind : uint8_t
+	{
+		SoftPen,
+		HardPen,
+		Highlighter,
+		Laser,
+		Unsupported,
+	};
+
+	struct BarThicknessPreviewMorphSample
+	{
+		double curveProgress = 1.0;
+		double highlighterProgress = 0.0;
+	};
+
+	inline BarThicknessPreviewMorphSample ResolveBarThicknessPreviewMorph(
+		double highlighterMorph) noexcept
+	{
+		highlighterMorph = clamp(highlighterMorph, 0.0, 1.0);
+		return {
+			clamp(1.0 - highlighterMorph * 2.0, 0.0, 1.0),
+			clamp((highlighterMorph - 0.5) * 2.0, 0.0, 1.0),
+		};
+	}
+
+	enum class BarThicknessPresetVisualKind : uint8_t
+	{
+		Circle,
+		Number,
+	};
+
+	inline BarThicknessPresetVisualKind ResolveBarThicknessPresetVisualKind(
+		BarThicknessPreviewVisualKind penKind) noexcept
+	{
+		return penKind == BarThicknessPreviewVisualKind::Highlighter
+			? BarThicknessPresetVisualKind::Number
+			: BarThicknessPresetVisualKind::Circle;
+	}
+
+	struct BarThicknessPresetOpacitySample
+	{
+		double circleOpacity = 0.0;
+		double numberOpacity = 0.0;
+	};
+
+	inline BarThicknessPresetOpacitySample ResolveBarThicknessPresetOpacity(
+		double numberProgress) noexcept
+	{
+		numberProgress = clamp(numberProgress, 0.0, 1.0);
+		return {
+			clamp(1.0 - numberProgress * 2.0, 0.0, 1.0),
+			clamp(numberProgress * 2.0 - 1.0, 0.0, 1.0),
+		};
+	}
+
+	inline bool BarThicknessPresetRetargetsCircle(
+		BarThicknessPresetVisualKind targetKind) noexcept
+	{
+		return targetKind == BarThicknessPresetVisualKind::Circle;
+	}
+
+	inline bool BarThicknessPresetRetargetsNumber(
+		BarThicknessPresetVisualKind currentKind,
+		BarThicknessPresetVisualKind targetKind) noexcept
+	{
+		return targetKind == BarThicknessPresetVisualKind::Number
+			&& currentKind != targetKind;
+	}
+
+	inline bool BarPenTypeSupportsExtension(
+		BarThicknessPreviewVisualKind kind) noexcept
+	{
+		return kind == BarThicknessPreviewVisualKind::SoftPen
+			|| kind == BarThicknessPreviewVisualKind::HardPen
+			|| kind == BarThicknessPreviewVisualKind::Highlighter;
+	}
+
+	struct BarPenTypeExtensionAnchor
+	{
+		double x = 0.0;
+		double y = 0.0;
+	};
+
+	inline BarPenTypeExtensionAnchor ResolveBarPenTypeExtensionAnchor(
+		double selectedButtonCurrentX, double selectedButtonCurrentY,
+		double dividerOffsetX) noexcept
+	{
+		return {
+			selectedButtonCurrentX + dividerOffsetX,
+			selectedButtonCurrentY,
+		};
+	}
+
+	inline COLORREF ResolveBarPenTypeExtensionColor(
+		COLORREF selectedButtonCurrentColor) noexcept
+	{
+		return selectedButtonCurrentColor;
+	}
+
+	struct BarPenTypeExtensionPresentation
+	{
+		bool interactive = false;
+		double opacity = 0.0;
+	};
+
+	inline BarPenTypeExtensionPresentation ResolveBarPenTypeExtensionPresentation(
+		bool targetInteractive, double visualProgress,
+		double contentOpacity) noexcept
+	{
+		return {
+			targetInteractive,
+			clamp(visualProgress, 0.0, 1.0)
+				* clamp(contentOpacity, 0.0, 1.0),
+		};
+	}
+
 	// 从曲线中途续接时，单调曲线截取并归一化尾段；Back 为避免非单调除法而重建剩余段。
 	inline double BarUiApplyCurveRange(BarUiCurveEnum curve, double startProgress, double progress)
 	{

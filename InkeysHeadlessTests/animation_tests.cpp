@@ -54,6 +54,189 @@ namespace
 		return std::abs(lhs - rhs) <= epsilon;
 	}
 
+	void TestBarThicknessVisualTransitions()
+	{
+		constexpr std::array<double, 5> progressSamples{
+			0.0, 0.25, 0.5, 0.75, 1.0 };
+		double previousCurve = 1.0;
+		double previousHighlighter = 0.0;
+		for (double progress : progressSamples)
+		{
+			auto sample = ResolveBarThicknessPreviewMorph(progress);
+			Check(sample.curveProgress <= previousCurve + 0.000001,
+				"thickness preview curve changes continuously");
+			Check(sample.highlighterProgress
+				>= previousHighlighter - 0.000001,
+				"thickness preview corners change continuously");
+			previousCurve = sample.curveProgress;
+			previousHighlighter = sample.highlighterProgress;
+		}
+		auto laserStart = ResolveBarThicknessPreviewMorph(0.0);
+		auto highlighterEnd = ResolveBarThicknessPreviewMorph(1.0);
+		Check(Near(laserStart.curveProgress, 1.0)
+			&& Near(laserStart.highlighterProgress, 0.0)
+			&& Near(highlighterEnd.curveProgress, 0.0)
+			&& Near(highlighterEnd.highlighterProgress, 1.0),
+			"laser and highlighter geometry use exact endpoints");
+
+		// 实际推进并中途反向，验证 SetTar 从当前帧值续接而不是跳回端点。
+		BarUiValueClass previewMorph(1.0);
+		previewMorph.SetTar(0.0, 1.0);
+		BarUiAdvanceAnimation(previewMorph,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		double reverseAnchor = previewMorph.val;
+		Check(reverseAnchor > 0.0 && reverseAnchor < 1.0,
+			"laser highlighter transition reaches an intermediate frame");
+		Check(previewMorph.SetTar(1.0, 1.0)
+			&& Near(previewMorph.startV, reverseAnchor)
+			&& Near(previewMorph.val, reverseAnchor),
+			"laser highlighter reversal captures the current geometry");
+		BarUiAdvanceAnimation(previewMorph,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		Check(previewMorph.val > reverseAnchor && previewMorph.val < 1.0,
+			"laser highlighter reversal advances toward the new endpoint");
+
+		BarUiValueClass laserShellProgress(0.0);
+		laserShellProgress.SetTar(1.0, 1.0);
+		BarUiAdvanceAnimation(laserShellProgress,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		double shellReverseAnchor = laserShellProgress.val;
+		constexpr COLORREF highlighterColor = RGB(80, 180, 120);
+		constexpr COLORREF laserColor = RGB(255, 11, 30);
+		COLORREF enteringColor = MixBarUiColor(
+			highlighterColor, laserColor, shellReverseAnchor);
+		Check(enteringColor != highlighterColor && enteringColor != laserColor,
+			"laser highlighter color has an intermediate frame");
+		laserShellProgress.SetTar(0.0, 1.0);
+		Check(Near(laserShellProgress.startV, shellReverseAnchor)
+			&& Near(laserShellProgress.val, shellReverseAnchor),
+			"laser color reversal preserves the current blend");
+		BarUiAdvanceAnimation(laserShellProgress,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		Check(laserShellProgress.val < shellReverseAnchor
+			&& laserShellProgress.val > 0.0,
+			"laser color reversal resumes toward highlighter");
+
+		auto circleStart = ResolveBarThicknessPresetOpacity(0.0);
+		auto contentGap = ResolveBarThicknessPresetOpacity(0.5);
+		auto numberEnd = ResolveBarThicknessPresetOpacity(1.0);
+		Check(Near(circleStart.circleOpacity, 1.0)
+			&& Near(circleStart.numberOpacity, 0.0)
+			&& Near(contentGap.circleOpacity, 0.0)
+			&& Near(contentGap.numberOpacity, 0.0)
+			&& Near(numberEnd.circleOpacity, 0.0)
+			&& Near(numberEnd.numberOpacity, 1.0),
+			"preset content retires outgoing before revealing incoming");
+		Check(!BarThicknessPresetRetargetsCircle(
+			BarThicknessPresetVisualKind::Number),
+			"circle to number freezes outgoing circle diameter");
+		Check(!BarThicknessPresetRetargetsNumber(
+			BarThicknessPresetVisualKind::Number,
+			BarThicknessPresetVisualKind::Circle),
+			"number to circle freezes outgoing number value");
+		Check(BarThicknessPresetRetargetsCircle(
+			BarThicknessPresetVisualKind::Circle),
+			"circle to circle permits diameter morph");
+		BarThicknessPresetVisualKind currentPresetKind =
+			BarThicknessPresetVisualKind::Circle;
+		double lockedCircleDiameter = 6.0;
+		int lockedNumberValue = 50;
+		auto RetargetPreset = [&](BarThicknessPresetVisualKind targetKind,
+			double targetCircleDiameter, int targetNumberValue)
+		{
+			if (targetKind != currentPresetKind)
+			{
+				if (BarThicknessPresetRetargetsNumber(
+					currentPresetKind, targetKind))
+					lockedNumberValue = targetNumberValue;
+				currentPresetKind = targetKind;
+			}
+			if (BarThicknessPresetRetargetsCircle(currentPresetKind))
+				lockedCircleDiameter = targetCircleDiameter;
+		};
+		RetargetPreset(BarThicknessPresetVisualKind::Number, 70.0, 70);
+		Check(Near(lockedCircleDiameter, 6.0) && lockedNumberValue == 70,
+			"circle to number freezes the circle and latches incoming text");
+		RetargetPreset(BarThicknessPresetVisualKind::Circle, 3.0, 3);
+		Check(Near(lockedCircleDiameter, 3.0) && lockedNumberValue == 70,
+			"number to circle freezes outgoing text and retargets the circle");
+
+		BarUiValueClass circleDiameter(3.0);
+		circleDiameter.SetTar(6.0, 1.0);
+		BarUiAdvanceAnimation(circleDiameter,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		Check(Near(circleDiameter.val, 4.5),
+			"pen to laser circle diameter has an intermediate value");
+
+		BarUiValueClass presetNumberProgress(0.0);
+		presetNumberProgress.SetTar(1.0, 1.0);
+		BarUiAdvanceAnimation(presetNumberProgress,
+			BarUiAnimationAdvanceContextClass{ 0.75, 1.0, true, false });
+		double presetReverseAnchor = presetNumberProgress.val;
+		presetNumberProgress.SetTar(0.0, 1.0);
+		Check(Near(presetNumberProgress.startV, presetReverseAnchor)
+			&& Near(presetNumberProgress.val, presetReverseAnchor),
+			"number circle reversal preserves current opacity progress");
+		BarUiAdvanceAnimation(presetNumberProgress,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		Check(presetNumberProgress.val < presetReverseAnchor,
+			"number circle reversal advances without endpoint flash");
+		Check(ResolveBarThicknessPresetVisualKind(
+			BarThicknessPreviewVisualKind::SoftPen)
+				== BarThicknessPresetVisualKind::Circle
+			&& ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::HardPen)
+				== BarThicknessPresetVisualKind::Circle
+			&& ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::Highlighter)
+				== BarThicknessPresetVisualKind::Number
+			&& ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::Laser)
+				== BarThicknessPresetVisualKind::Circle,
+			"draw attribute initializes the correct preset semantic for every tool");
+		BarUiValueClass initializedHighlighterProgress(
+			ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::Highlighter)
+				== BarThicknessPresetVisualKind::Number ? 1.0 : 0.0);
+		Check(initializedHighlighterProgress.IsSame()
+			&& Near(initializedHighlighterProgress.val, 1.0),
+			"highlighter initializes directly in the stable number state");
+
+		Check(BarPenTypeSupportsExtension(
+			BarThicknessPreviewVisualKind::SoftPen)
+			&& BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::HardPen)
+			&& BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::Highlighter)
+			&& !BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::Laser)
+			&& !BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::Unsupported),
+			"pen type extension eligibility matches all four tools");
+		auto anchor = ResolveBarPenTypeExtensionAnchor(42.5, 73.25, 18.0);
+		Check(Near(anchor.x, 60.5) && Near(anchor.y, 73.25),
+			"extension anchor follows selected button current geometry");
+		BarUiValueClass extensionProgress(1.0);
+		extensionProgress.SetTar(0.0, 1.0);
+		BarUiAdvanceAnimation(extensionProgress,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		auto fadingExtension = ResolveBarPenTypeExtensionPresentation(
+			false, extensionProgress.val, 0.8);
+		Check(!fadingExtension.interactive
+			&& fadingExtension.opacity > 0.0
+			&& fadingExtension.opacity < 0.8,
+			"extension disables hit immediately while its visual fades");
+		BarUiColorClass selectedButtonColor(RGB(40, 40, 40));
+		selectedButtonColor.SetTar(RGB(0, 180, 190), 1.0);
+		BarUiAdvanceAnimation(selectedButtonColor,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		COLORREF extensionColor = ResolveBarPenTypeExtensionColor(
+			selectedButtonColor.val);
+		Check(extensionColor == static_cast<COLORREF>(selectedButtonColor.val)
+			&& extensionColor != RGB(0, 180, 190),
+			"extension color follows button animation instead of jumping to accent");
+	}
+
 	double ApplyLegacyPowCurve(BarUiCurveEnum curve, double progress)
 	{
 		constexpr double back = 1.1;
@@ -886,6 +1069,7 @@ int main(int argc, char** argv)
 	}
 
 	TestCurvesAndTimelines();
+	TestBarThicknessVisualTransitions();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
 	TestConcurrentAnimationPublication();
