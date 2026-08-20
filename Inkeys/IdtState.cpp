@@ -458,8 +458,8 @@ void StateMonitoring()
 				SetWhiteboardFreezeSurfaceOwned(false);
 				Inkeys::UI::Bar::SetWhiteboardActive(false);
 				(void)service.SetOverlayFullscreen(false);
-				(void)service.SetOverlayTopmost(true);
 				(void)service.LeaveWhiteboardWindowMode();
+				(void)service.SetOverlayTopmost(true);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
 					Workspace::Presentation);
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
@@ -578,10 +578,14 @@ void StateMonitoring()
 			(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardLeft);
 			(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardRight);
 			(void)service.Hide(Inkeys::Window::WindowRole::Freeze);
+			// Presentation 辅助输出始终不参与输入；显式恢复其 click-through，
+			// 防止 Whiteboard 期间的窗口样式切换把旧命中状态带回桌面。
+			(void)service.SetClickThrough(
+				Inkeys::Window::WindowRole::DrawpadPresentation, true);
 			const bool presentationWindowStateReady =
 				service.SetOverlayFullscreen(false) &&
-				service.SetOverlayTopmost(true) &&
 				service.LeaveWhiteboardWindowMode() &&
+				service.SetOverlayTopmost(true) &&
 				service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, snapshot.selectionMode);
 			if (!presentationWindowStateReady) continue;

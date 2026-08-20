@@ -282,6 +282,9 @@ namespace Inkeys::UI::Bar
 		if (active) RequestWhiteboardBottomDock();
 		else
 		{
+			// 退出白板后主栏回到 Presentation 的收起态，避免下一次桌面点击
+			// 被残留的 bottom dock 或辅助面板重新唤醒。
+			barUISet.barState.fold = true;
 			whiteboardBottomDockRequested.store(false, std::memory_order_release);
 			whiteboardDockLockActive.store(false, std::memory_order_release);
 		}

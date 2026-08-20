@@ -1324,12 +1324,15 @@ namespace Inkeys::Window
 					static_cast<LONG_PTR>(command.setMask) &&
 					(applied & static_cast<LONG_PTR>(command.clearMask)) == 0;
 			}
-				case CommandType::RefreshTopmost:
+			case CommandType::RefreshTopmost:
 				{
 					const HWND root = OverlayRoot();
 					// Win32 会让 owned popup 跟随 owner 进入 topmost band；这里只操作链根。
+					// Whiteboard 是普通可激活窗口组，任何外部刷新都不得把它重新推回 TOPMOST。
+					const bool keepTopmost = overlayTopmost_.load(std::memory_order_acquire)
+						&& !whiteboardWindowMode_.load(std::memory_order_acquire);
 					if (!root || !SetWindowPos(
-						root, overlayTopmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+						root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
 						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
 						return false;
 					ApplyOverlayFullscreen(root);

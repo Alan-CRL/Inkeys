@@ -339,6 +339,12 @@ namespace Inkeys::UI::Whiteboard
 			auto* context = scene.DeviceContext();
 			auto* gdi = scene.GdiInteropRenderTarget();
 			if (!context || !gdi) return PresentStatus::Retry;
+			// Scene 接口返回的是借用指针；present 事务内额外持有强引用，
+			// 即使设备 epoch 切换触发缓存清理，也不会让当前 COM 对象提前析构。
+			ComPtr<ID2D1DeviceContext> contextLease(context);
+			ComPtr<ID2D1GdiInteropRenderTarget> gdiLease(gdi);
+			context = contextLease.Get();
+			gdi = gdiLease.Get();
 			context->BeginDraw();
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
 			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
@@ -371,7 +377,9 @@ namespace Inkeys::UI::Whiteboard
 			}
 			HDC source = nullptr;
 			bool presented = false;
-			if (SUCCEEDED(gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source)) && source)
+			HRESULT getDcHr = gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source);
+			HRESULT releaseDcHr = S_OK;
+			if (SUCCEEDED(getDcHr) && source)
 			{
 				POINT destination{ presentationBounds.left, presentationBounds.top };
 				POINT sourcePoint{};
@@ -402,18 +410,21 @@ namespace Inkeys::UI::Whiteboard
 					? SubmitFreezeSurface(hwnd, &info, true)
 					: UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
 				if (destinationDc) ReleaseDC(nullptr, destinationDc);
-				(void)gdi->ReleaseDC(nullptr);
+				releaseDcHr = gdi->ReleaseDC(nullptr);
 			}
+			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
 			const HRESULT endDrawHr = context->EndDraw();
 			scene.HandleFrameEndDrawResult(endDrawHr);
 		(void)drawResult;
-		if (IsDeviceLost(endDrawHr))
+		if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
+			|| IsDeviceLost(endDrawHr))
 		{
 			scene.ReleaseDeviceResources();
 			return PresentStatus::DeviceLost;
 		}
-		if (FAILED(endDrawHr))
+		if (FAILED(getDcHr) || FAILED(releaseDcHr) || FAILED(endDrawHr))
 		{
+			// GDI interop 与 EndDraw 同属一次 present；任一步失败都重建本窗 target。
 			scene.ReleaseDeviceResources();
 			return PresentStatus::Retry;
 		}
@@ -423,6 +434,7 @@ namespace Inkeys::UI::Whiteboard
 			const std::size_t index = *debugIndex;
 			if (debugMode)
 			{
+				// 记录业务 dirty 区和实际绿色 present 框，下一帧才能准确擦除旧框。
 				previousDebugDirtyFrames[index] = drawResult.damage;
 				previousDebugPresentedFrames[index] = debugPresentDamage;
 			}
