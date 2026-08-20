@@ -29,6 +29,7 @@ import Inkeys.UI.Setting;
 using Inkeys::Business::BuiltInComponentAction;
 using Inkeys::Business::ExecuteBuiltInComponentAction;
 using Inkeys::UI::Bar::BarToggleChannel;
+using Inkeys::UI::Bar::ResolveBarDrawButtonToggleDecision;
 
 bool BarButtonClass::TransitionContent(
 	const wstring& iconResourceName, const wstring& label)
@@ -261,21 +262,23 @@ void BarButtonSetClass::PresetInitialization()
 					}
 					else
 					{
-						if (stateMode.laserActive)
+						if (!barUISet.TryBeginToggle(
+							BarToggleChannel::DrawAttribute)) return;
+						const auto decision = ResolveBarDrawButtonToggleDecision(
+							barUISet.barState.drawAttribute, stateMode.laserActive);
+						if (decision.deactivateLaser)
 						{
 							stateMode.laserActive = false;
 							SyncDraw3State();
 							this->UpdateDrawButtonStyle();
 						}
-						if (!barUISet.TryBeginToggle(
-							BarToggleChannel::DrawAttribute)) return;
-						if (barUISet.barState.drawAttribute) barUISet.barState.drawAttribute = false;
-						else
+						if (decision.openDrawAttribute)
 						{
 							barUISet.barState.moreExpanded = false;
 							barUISet.barState.geometryAttribute = false;
-							barUISet.barState.drawAttribute = true;
 						}
+						barUISet.barState.drawAttribute =
+							decision.openDrawAttribute;
 					}
 				};
 		}

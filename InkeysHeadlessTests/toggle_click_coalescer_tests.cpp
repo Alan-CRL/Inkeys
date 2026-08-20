@@ -61,6 +61,23 @@ namespace
 		Check(coalescer.TryBegin(BarToggleChannel::Main, start - 1ms),
 			"non-monotonic injected time rebases the channel");
 	}
+
+	void TestDrawButtonTogglePreservesLaserWhenClosing()
+	{
+		const auto closeLaser = ResolveBarDrawButtonToggleDecision(true, true);
+		Check(!closeLaser.openDrawAttribute && !closeLaser.deactivateLaser,
+			"closing draw attributes preserves Laser");
+
+		const auto openLaser = ResolveBarDrawButtonToggleDecision(false, true);
+		Check(openLaser.openDrawAttribute && openLaser.deactivateLaser,
+			"opening draw attributes returns to the remembered base pen");
+
+		const auto closePen = ResolveBarDrawButtonToggleDecision(true, false);
+		const auto openPen = ResolveBarDrawButtonToggleDecision(false, false);
+		Check(!closePen.openDrawAttribute && !closePen.deactivateLaser
+			&& openPen.openDrawAttribute && !openPen.deactivateLaser,
+			"non-Laser draw attribute toggles do not change the tool");
+	}
 }
 
 int RunToggleClickCoalescerTests()
@@ -69,5 +86,6 @@ int RunToggleClickCoalescerTests()
 	TestSameChannelMergesWithinWindow();
 	TestChannelsAreIndependent();
 	TestNonMonotonicTimeStartsNewWindow();
+	TestDrawButtonTogglePreservesLaserWhenClosing();
 	return failureCount;
 }
