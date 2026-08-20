@@ -1,0 +1,29 @@
+{
+  "id": "migrate-draw3-into-inkeys",
+  "name": "migrate-draw3-into-inkeys",
+  "title": "迁移 Draw3 并接管 Inkeys Drawpad",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-08-15",
+  "completedAt": "2026-08-20",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-17-draw3-tool-cursor-visuals",
+    "08-18-laser-pointer-independent-width"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Initial source-history merge is 1bc302d1. Draw3 integration and its 08-17/08-18 follow-up tasks are complete. ARM64 Debug/Release solution builds, no-window logic tests, and hidden DComp/DWM2/DWM/ULW tests passed. Source task history is under archive/2026-08/draw3-source.",
+  "meta": {}
+}
