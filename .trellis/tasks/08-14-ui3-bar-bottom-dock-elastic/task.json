@@ -19,7 +19,7 @@
   "pr_url": null,
   "subtasks": [],
   "children": [],
-  "parent": "08-01-render-pipeline-refactor",
+  "parent": null,
   "relatedFiles": [
     "Inkeys/Inkeys/UI/Bar",
     "Inkeys/Inkeys/Display",
