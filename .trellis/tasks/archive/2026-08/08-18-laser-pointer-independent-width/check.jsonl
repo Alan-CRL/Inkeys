@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"复核 C++ 状态边界、编码和最小修改"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"复核 Bar 复合动画、反向切换、命中与视觉退场"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"复核 IdtState、Bridge、Host 与 Draw3 产品数据流"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"复核工具宽度、压力、预测、几何和光标一致性"}
+{"check":"commit-audit","command":"git log/show for 2026-08-18..2026-08-20","result":"pass","details":"5d0777b6 was fully reverted by 540cd8b9; final behavior is supplied by 39c32be1, 9064374b, 18619a41, 5f6201c4, 97b90fba, 6dccc597 and a6bf819c. 9c9faeed changes Trellis only."}
+{"check":"build-debug","command":"ARM64 MSBuild.exe InkeysRepo.sln /m:1 /p:Configuration=Debug /p:Platform=ARM64","result":"pass","details":"Re-run against current HEAD on 2026-08-20: PptCOM.csproj, Inkeys.exe and InkeysHeadlessTests.exe built successfully; only three pre-existing hashlib++ C4267 warnings were reported."}
+{"check":"build-release","command":"ARM64 MSBuild.exe InkeysRepo.sln /m:1 /p:Configuration=Release /p:Platform=ARM64","result":"pass","details":"Full Release ARM64 solution build passed during the final implementation round."}
+{"check":"headless-animation","command":"Build\\ARM64\\Debug\\InkeysHeadlessTests.exe --no-window","result":"pass","details":"Re-run after the current HEAD build on 2026-08-20: PASS animation correctness; covers preview morph, reversal, preset latching/morph and extension eligibility/visual state."}
+{"check":"static","command":"git diff --check plus final product path audit","result":"pass","details":"No whitespace errors; state/tool/width/pressure/cursor and Bar interaction/render state flows match the recovered requirements."}
