@@ -55,8 +55,61 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
 | concurrentqueue | 1.0.4#1 |
 | unordered-dense | 4.7.0 |
 | spdlog | 1.17.0 |
+| opencv4 | 4.10.0#3 |
 
 `【直接确认】` `Vcpkg` 是第三方依赖子模块。本项目代码任务不得递归修改它；依赖变更应同时审查 manifest、triplet、许可和随附第三方产物。
+
+## Scenario: OpenCV manifest 静态接入
+
+### 1. Scope / Trigger
+
+当任务引入或调整 OpenCV 时，使用根 manifest 和现有 x86/x64/ARM64 v143 静态 triplet；不直接修改 `Vcpkg/` port。
+
+### 2. Signatures
+
+~~~json
+{
+  "name": "opencv4",
+  "default-features": false,
+  "features": ["dshow", "msmf", "intrinsics", "thread"]
+}
+~~~
+
+override 必须使用 `{"name":"opencv4","version":"4.10.0","port-version":3}`；该 port 在当前版本库采用 `version` 方案，不使用 `version-string`。
+
+### 3. Contracts
+
+- `builtin-baseline` 保持 `99a97de2cb371449d4fb9dc970f2ac562d689ec2`。
+- 直接 feature 集合只有 `dshow`、`msmf`、`intrinsics`、`thread`；不启用 default features、world、FFmpeg、DNN、GUI、TBB 或 OpenMP。
+- `VCPKG_CRT_LINKAGE` 和 `VCPKG_LIBRARY_LINKAGE` 均为 `static`，工具集为 v143。
+- 对外许可声明复用 `ThirdpartyLicenses/Apache License 2.0`。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理 |
+| --- | --- |
+| manifest 解析为其他 OpenCV 版本 | 停止，核对 baseline 和 override，不自动升级 |
+| 安装 feature 出现额外项 | 停止，检查 `default-features:false` 和依赖图 |
+| 产物出现 OpenCV/FFmpeg DLL | 停止，检查 triplet 和 OpenCV features |
+| ARM64 完整 Solution 构建失败 | 保留 vcpkg/buildtrees 日志；不用动态链接或默认 features 规避 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：`opencv4 4.10.0#3` 在 `arm64-windows-static-v143` 安装，只列出四个指定 feature，完整 Solution 通过。
+- Base：官方 port 生成额外静态模块库；未被符号引用的对象不进入 EXE，不因此引入 overlay-port。
+- Bad：使用 `opencv`、开启默认 features、新建重复 triplet 或在第一阶段修改 `BUILD_LIST`。
+
+### 6. Tests Required
+
+- JSON 解析并断言 baseline、dependency features 和 override。
+- 使用 ARM64 host MSBuild 构建 `InkeysRepo.sln` 的 `Debug|ARM64`。
+- 检查 `VcpkgInstalled/Arm64/vcpkg/status` 中版本/四个 feature，并用 PE 导入表确认最终 EXE 无 OpenCV/FFmpeg 动态依赖。
+
+### 7. Wrong vs Correct
+
+Wrong：`"opencv"` 或缺省 `default-features:false`。
+
+Correct：使用上述 `opencv4` 对象和四个显式 feature，版本通过 `version` + `port-version` 锁定。
 
 ## PptCOM 构建链
 

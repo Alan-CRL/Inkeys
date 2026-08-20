@@ -44,6 +44,10 @@ Component: ocornut/imgui (https://github.com/ocornut/imgui)
 License: MIT License
 Copyright / Notes: Copyright (c) 2014-2025 Omar Cornut
 
+Component: OpenCV (https://opencv.org/)
+License: Apache License 2.0
+Copyright / Notes: Copyright (C) 2000-2026 OpenCV contributors
+
 Component: openssl/openssl (https://github.com/openssl/openssl)
 License: Apache License 2.0
 Copyright / Notes: Copyright (c) 1998-2025 The OpenSSL Project Authors. Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson. All rights reserved.

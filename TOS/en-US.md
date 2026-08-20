@@ -253,6 +253,7 @@ We hereby express our gratitude to these open-source projects and their contribu
 | **[mohabouje/WinToast](https://github.com/mohabouje/WinToast)** | MIT License | Copyright (C) 2016–2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com> |
 | **[nothings/stb](https://github.com/nothings/stb)** | MIT License | Copyright (c) 2017 Sean Barrett |
 | **[ocornut/imgui](https://github.com/ocornut/imgui)** | MIT License | Copyright (c) 2014–2025 Omar Cornut |
+| **[OpenCV](https://opencv.org/)** | Apache License 2.0 | Copyright (C) 2000–2026 OpenCV contributors |
 | **[openssl/openssl](https://github.com/openssl/openssl)** | Apache License 2.0 | Copyright (c) 1998–2025 The OpenSSL Project Authors. Copyright (c) 1995–1998 Eric A. Young, Tim J. Hudson. All rights reserved. |
 | **[sammycage/lunasvg](https://github.com/sammycage/lunasvg)** | MIT License | Copyright (c) 2007–2010 Baptiste Lepilleur and The JsonCpp Authors |
 | **[sammycage/plutovg](https://github.com/sammycage/plutovg)** | MIT License | Copyright (c) 2020–2025 Samuel Ugochukwu <sammycageagle@gmail.com> |

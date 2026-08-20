@@ -11,7 +11,17 @@
     "magic-enum",
     "concurrentqueue",
     "unordered-dense",
-    "spdlog"
+    "spdlog",
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "dshow",
+        "msmf",
+        "intrinsics",
+        "thread"
+      ]
+    }
   ],
   "overrides": [
     {
@@ -49,6 +59,11 @@
     {
       "name": "spdlog",
       "version": "1.17.0"
+    },
+    {
+      "name": "opencv4",
+      "version": "4.10.0",
+      "port-version": 3
     }
   ]
 }

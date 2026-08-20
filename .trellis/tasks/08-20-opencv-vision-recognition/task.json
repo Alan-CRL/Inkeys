@@ -1,0 +1,31 @@
+{
+  "id": "opencv-vision-recognition",
+  "name": "opencv-vision-recognition",
+  "title": "OpenCV 视觉模块与图形识别",
+  "description": "规划 OpenCV 内部封装、墨迹图形识别、摄像头展台、文档扫描与 Windows 兼容验证。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "draw",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-20-opencv-vcpkg-integration"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "kind": "epic",
+    "planned": "future"
+  }
+}
