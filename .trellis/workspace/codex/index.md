@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-08-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~72 | Active |
+| `journal-1.md` | ~93 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-08-20 | Preserve pen selection across UI3 tool toggles | `75c54c0d` | `draw` |
 | 3 | 2026-08-20 | 清理并归档已完成 Trellis 任务 | `09082259`, `10b9753c` | `draw` |
 | 2 | 2026-08-20 | 修复绘制属性笔型与激光预览动画 | `ea277bf2`, `ae914033`, `cf05a3d` | `draw` |
 | 1 | 2026-08-17 | 修复 Draw3 工具光标与透明度 | `ca8d06e` | `draw` |

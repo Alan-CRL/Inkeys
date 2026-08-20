@@ -70,3 +70,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: Preserve pen selection across UI3 tool toggles
+
+**Date**: 2026-08-20
+**Task**: Preserve pen selection across UI3 tool toggles
+**Branch**: `draw`
+
+### Summary
+
+Separated remembered Laser selection from the active top-level tool, removed pen mutations from draw-attribute toggles, unified UI3 pen selection publishing, and added headless regression coverage.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `75c54c0d` | (see git log) |
+
+### Status
+
+[OK] **Completed**
