@@ -9,6 +9,19 @@
 
 namespace Inkeys::UI::Bar
 {
+	// Debug 框颜色和线宽由 Bar/Whiteboard 共同使用，避免两套语义漂移。
+	inline constexpr FLOAT BarDebugFrameWidth = 1.0F;
+	inline constexpr FLOAT BarDebugDirtyFrameInset = 2.5F;
+	inline constexpr FLOAT BarDebugWindowFrameInset = BarDebugFrameWidth / 2.0F;
+	inline constexpr COLORREF BarDebugDirtyColor = RGB(255, 0, 0);
+	inline constexpr COLORREF BarDebugPresentedColor = RGB(0, 255, 0);
+
+	[[nodiscard]] inline constexpr COLORREF ResolveBarDebugFrameColor(
+		bool finalIdleFrame) noexcept
+	{
+		return finalIdleFrame ? BarDebugPresentedColor : BarDebugDirtyColor;
+	}
+
 	using BarDirtyVisualKey = std::uint64_t;
 
 	class BarDirtyRegionTracker

@@ -1425,7 +1425,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				windowSpecs.push_back(std::move(spec));
 			};
 		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
-			DefWindowProcW, WS_EX_TRANSPARENT, {});
+			nullptr, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::DrawpadPresentation,
 			L"Inkeys2.Presentation;", L"Inkeys DrawpadPresentationWindow",
 			DefWindowProcW, 0, {});

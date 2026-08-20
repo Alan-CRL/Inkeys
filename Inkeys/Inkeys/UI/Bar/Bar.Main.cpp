@@ -289,6 +289,11 @@ namespace Inkeys::UI::Bar
 			barUISet.UpdateRendering();
 	}
 
+	void CollapseAuxiliaryPanels(bool cancelCapture) noexcept
+	{
+		barUISet.CollapseAuxiliaryPanels(cancelCapture);
+	}
+
 	bool WhiteboardActive() noexcept
 	{
 		return whiteboardActive.load(std::memory_order_acquire);

@@ -27,6 +27,7 @@ namespace Inkeys::Drawing::Draw3
 	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept;
 	void PublishProductPage(std::uint32_t page) noexcept;
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept;
+	void SetProductActivationAllowed(bool enabled) noexcept;
 }
 
 // Window Service 的 Drawpad WndProc 入口；不创建或销毁 HWND。

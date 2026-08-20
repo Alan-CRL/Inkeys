@@ -634,6 +634,7 @@ namespace Inkeys::UI::Bar
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export bool CurrentPageHasContent() noexcept;
 	export void SetWhiteboardActive(bool active) noexcept;
+	export void CollapseAuxiliaryPanels(bool cancelCapture = true) noexcept;
 	export bool WhiteboardActive() noexcept;
 	export void RequestWhiteboardBottomDock() noexcept;
 	export bool ConsumeWhiteboardBottomDockRequest() noexcept;

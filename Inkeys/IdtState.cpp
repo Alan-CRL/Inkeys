@@ -92,6 +92,26 @@ namespace
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
 	}
+
+	[[nodiscard]] bool Draw3WorkspaceReady(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		Workspace workspace) noexcept
+	{
+		if (!runtime.firstFrameReady || runtime.workspace != workspace)
+			return false;
+		const auto expectedTarget =
+			Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
+				runtime.selectionMode, workspace)
+			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
+		if (workspace == Workspace::Presentation && runtime.selectionMode &&
+			!runtime.currentPageHasContent && !runtime.auxiliaryFullFrameClean)
+			return false;
+		return runtime.requestedOutputTarget == expectedTarget &&
+			runtime.readyOutputTarget == expectedTarget &&
+			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
+			runtime.presentedContentRevision == runtime.contentRevision;
+	}
 }
 
 void SyncDraw3State()
@@ -353,6 +373,7 @@ void StateMonitoring()
 	bool requestedPreviousPage = false;
 	std::size_t requestedPageIndex = 0;
 	std::uint64_t pageCommandCountBeforeRequest = 0;
+	auto& service = Inkeys::Window::GetService();
 	ReconcileDraw3Presentation();
 	while (!offSignal)
 	{
@@ -371,9 +392,24 @@ void StateMonitoring()
 		const bool desired = whiteboardDesired.load(std::memory_order_acquire);
 		if (phase == WhiteboardPhase::Inactive && desired)
 		{
-			// 进入事务先隔离 PPT 和旧定格，再异步请求 Draw3 交换工作区。
+			// Enter 先锁住辅助面板和指针，再由 Window Service 统一切换 HWND 样式。
 			whiteboardPhase.store(WhiteboardPhase::Entering,
 				std::memory_order_release);
+			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+			Inkeys::UI::Whiteboard::CancelPointerCapture();
+			// Enter 尚未完成 Draw3 首帧握手前，左右白板栏保持隐藏且不可命中。
+			(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardLeft);
+			(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardRight);
+			if (!service.EnterWhiteboardWindowMode())
+			{
+				// 样式事务失败时保持 Presentation，下一轮仍可重试进入。
+				whiteboardPhase.store(WhiteboardPhase::Inactive,
+					std::memory_order_release);
+				continue;
+			}
+			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+			(void)service.SetClickThrough(
+				Inkeys::Window::WindowRole::Drawpad, true);
 			Inkeys::UI::Ppt::PublishPresentationVisible(false);
 			FreezeFrame.mode = 0;
 			FreezeFrame.select = false;
@@ -387,30 +423,51 @@ void StateMonitoring()
 		{
 			if (!desired)
 			{
+				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Whiteboard::PublishPageState(
+					static_cast<int>(snapshot.currentPageIndex + 1),
+					static_cast<int>(snapshot.pageCount), true);
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
 					Workspace::Presentation);
 				continue;
 			}
-			if (snapshot.workspace != Workspace::Whiteboard) continue;
+			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
 
-			if (!Inkeys::UI::Whiteboard::Active())
-			{
-				SetWhiteboardFreezeSurfaceOwned(true);
-				Inkeys::UI::Whiteboard::PublishPageState(
-					static_cast<int>(snapshot.currentPageIndex + 1),
-					static_cast<int>(snapshot.pageCount), true);
-				Inkeys::UI::Whiteboard::PublishActive(true);
-			}
-			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
+			SetWhiteboardFreezeSurfaceOwned(true);
 			Inkeys::UI::Whiteboard::PublishPageState(
 				static_cast<int>(snapshot.currentPageIndex + 1),
 				static_cast<int>(snapshot.pageCount), false);
-				Inkeys::UI::Bar::SetWhiteboardActive(true);
-				(void)Inkeys::Window::GetService().SetOverlayFullscreen(true);
-				(void)Inkeys::Window::GetService().SetOverlayTopmost(false);
-				whiteboardPhase.store(WhiteboardPhase::Active,
+			Inkeys::UI::Whiteboard::PublishActive(true);
+			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
+			Inkeys::UI::Bar::SetWhiteboardActive(true);
+			const bool whiteboardWindowStateReady =
+				service.SetOverlayFullscreen(true) &&
+				service.SetOverlayTopmost(false) &&
+				service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, false);
+			if (!whiteboardWindowStateReady)
+			{
+				// Enter 的窗口状态未完整收敛时回滚 UI/Freeze，再等待下一次请求重试。
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Whiteboard::PublishActive(false);
+				SetWhiteboardFreezeSurfaceOwned(false);
+				Inkeys::UI::Bar::SetWhiteboardActive(false);
+				(void)service.SetOverlayFullscreen(false);
+				(void)service.SetOverlayTopmost(true);
+				(void)service.LeaveWhiteboardWindowMode();
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					Workspace::Presentation);
+				whiteboardPhase.store(WhiteboardPhase::Exiting,
+					std::memory_order_release);
+				continue;
+			}
+			Inkeys::Drawing::Draw3::SetProductActivationAllowed(true);
+			whiteboardPhase.store(WhiteboardPhase::Active,
 				std::memory_order_release);
 			continue;
 		}
@@ -420,9 +477,17 @@ void StateMonitoring()
 			if (!desired)
 			{
 				pageSwitching = false;
+				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+				// Exit 一旦请求就先撤掉白板命中窗口，等待 Presentation 接管期间不再消费点击。
+				(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardLeft);
+				(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardRight);
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
 				Inkeys::UI::Whiteboard::PublishPageState(
 					static_cast<int>(snapshot.currentPageIndex + 1),
 					static_cast<int>(snapshot.pageCount), true);
+				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
@@ -472,15 +537,56 @@ void StateMonitoring()
 
 		if (phase == WhiteboardPhase::Exiting)
 		{
-			if (snapshot.workspace != Workspace::Presentation) continue;
+			if (desired)
+			{
+				// Exit 尚未完成时重新进入，重新走 Enter 的窗口/输出握手。
+				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardLeft);
+				(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardRight);
+				if (!service.EnterWhiteboardWindowMode())
+				{
+					// 重入也必须等待完整的窗口样式事务，不复用半套状态。
+					whiteboardPhase.store(WhiteboardPhase::Exiting,
+						std::memory_order_release);
+					continue;
+				}
+				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Ppt::PublishPresentationVisible(false);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					Workspace::Whiteboard);
+				whiteboardPhase.store(WhiteboardPhase::Entering,
+					std::memory_order_release);
+				continue;
+			}
+			if (!Draw3WorkspaceReady(snapshot, Workspace::Presentation)) continue;
+
+			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。
 			Inkeys::UI::Whiteboard::PublishActive(false);
 			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false)) continue;
 
-				SetWhiteboardFreezeSurfaceOwned(false);
-				Inkeys::UI::Bar::SetWhiteboardActive(false);
-				(void)Inkeys::Window::GetService().SetOverlayFullscreen(false);
-				(void)Inkeys::Window::GetService().SetOverlayTopmost(true);
-				whiteboardPhase.store(WhiteboardPhase::Inactive,
+			Inkeys::UI::Whiteboard::PublishPageState(
+				static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), false);
+			// 退出事务结算后立即按 COM 当前放映状态恢复 PPT 控件，不等待下一轮轮询。
+			Inkeys::UI::Ppt::PublishPresentationVisible(
+				PptInfoState.TotalPage > 0);
+			SetWhiteboardFreezeSurfaceOwned(false);
+			Inkeys::UI::Bar::SetWhiteboardActive(false);
+			(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardLeft);
+			(void)service.Hide(Inkeys::Window::WindowRole::WhiteboardRight);
+			(void)service.Hide(Inkeys::Window::WindowRole::Freeze);
+			const bool presentationWindowStateReady =
+				service.SetOverlayFullscreen(false) &&
+				service.SetOverlayTopmost(true) &&
+				service.LeaveWhiteboardWindowMode() &&
+				service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, snapshot.selectionMode);
+			if (!presentationWindowStateReady) continue;
+			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+			whiteboardPhase.store(WhiteboardPhase::Inactive,
 				std::memory_order_release);
 			ReconcileDraw3Presentation();
 		}

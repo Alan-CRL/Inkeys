@@ -196,6 +196,10 @@ using Inkeys::UI::Bar::ResolveBarDirectWindowTranslationAfterAbsorb;
 using Inkeys::UI::Bar::TranslateBarWindowRect;
 using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
+using Inkeys::UI::Bar::ResolveBarDebugFrameColor;
+using Inkeys::UI::Bar::BarDebugFrameWidth;
+using Inkeys::UI::Bar::BarDebugDirtyFrameInset;
+using Inkeys::UI::Bar::BarDebugWindowFrameInset;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
 using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
 using Inkeys::UI::Bar::AdvanceBarBottomDockSpring;
@@ -10986,11 +10990,11 @@ else
 				if (debugTarget.bottom > debugWindowHeight) debugTarget.bottom = debugWindowHeight;
 			}
 
-			COLORREF frame = state.debugFrameSleepLatch.IsPending()
-				? RGB(0, 255, 0) : RGB(255, 0, 0);
-			constexpr FLOAT debugFrameWidth = 1.0F;
-			constexpr FLOAT dirtyFrameInset = 2.5F;
-			constexpr FLOAT windowFrameInset = debugFrameWidth / 2.0F;
+			COLORREF frame = ResolveBarDebugFrameColor(
+				state.debugFrameSleepLatch.IsPending());
+			constexpr FLOAT debugFrameWidth = BarDebugFrameWidth;
+			constexpr FLOAT dirtyFrameInset = BarDebugDirtyFrameInset;
+			constexpr FLOAT windowFrameInset = BarDebugWindowFrameInset;
 			// 脏区框比 HWND 框再内缩 2px，最终全脏帧仍能同时辨认绿框与蓝框。
 			D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 				static_cast<FLOAT>(debugTarget.left) + dirtyFrameInset,
@@ -11015,7 +11019,7 @@ else
 				static_cast<FLOAT>(debugWindowTarget.bottom) - windowFrameInset), 0, 0);
 			ID2D1SolidColorBrush* windowBrush =
 				state.spec.GetFrameSolidColorBrush(
-					barDeviceContext, RGB(0, 120, 255), 1.0);
+					barDeviceContext, RGB(0, 120, 255), debugFrameWidth);
 			if (windowBrush)
 				barDeviceContext->DrawRoundedRectangle(
 					&windowRect, windowBrush, debugFrameWidth);

@@ -125,6 +125,14 @@ namespace Inkeys::Drawing::Draw3
 			return Bridge::CommandResult::NotRunning;
 		return productHost.PublishCommand(command);
 	}
+
+	void SetProductActivationAllowed(bool enabled) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return;
+		std::scoped_lock callLock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire)) return;
+		productHost.SetActivationAllowed(enabled);
+	}
 }
 
 LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)

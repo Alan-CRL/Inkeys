@@ -42,6 +42,35 @@ export namespace Inkeys::Window
 		Hidden,
 	};
 
+	enum class OverlayActivationMode : std::uint8_t
+	{
+		Presentation,
+		Whiteboard,
+	};
+
+	struct OverlayActivationStyle
+	{
+		DWORD setExStyle = 0;
+		DWORD clearExStyle = 0;
+		bool taskbarAnchor = false;
+		bool acceptsActivation = false;
+	};
+
+	[[nodiscard]] constexpr OverlayActivationStyle ResolveOverlayActivationStyle(
+		WindowRole role, OverlayActivationMode mode) noexcept
+	{
+		if (mode == OverlayActivationMode::Whiteboard)
+		{
+			if (role == WindowRole::Freeze)
+				return { WS_EX_APPWINDOW, WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+					true, true };
+			if (role == WindowRole::Drawpad)
+				return { WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, false, true };
+		}
+		return { WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, WS_EX_APPWINDOW,
+			false, false };
+	}
+
 	struct WindowSpec
 	{
 		WindowRole role = WindowRole::Bar;
@@ -107,6 +136,13 @@ export namespace Inkeys::Window
 		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
 		[[nodiscard]] bool SetExtendedStyleFlags(
 			WindowRole role, DWORD setMask, DWORD clearMask);
+		// Whiteboard 统一切换 taskbar/activation 样式，所有 HWND 操作仍在 owner thread。
+		[[nodiscard]] bool EnterWhiteboardWindowMode();
+		[[nodiscard]] bool LeaveWhiteboardWindowMode();
+		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
+		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
+		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
+		[[nodiscard]] bool CancelPointerCapture();
 			[[nodiscard]] bool RequestTopmostRefresh();
 			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
 			[[nodiscard]] bool OverlayTopmost() const noexcept;

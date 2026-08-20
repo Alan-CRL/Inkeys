@@ -211,6 +211,42 @@ int RunWindowTests()
 	check(Service::LastFocusWindow() == focusBeforePromote,
 		"reshow ppt does not activate");
 
+	// 白板模式只把 Freeze 变成 taskbar anchor，其余窗口仍保持 owned popup。
+	for (const auto role : {
+		WindowRole::MagnifierHost, WindowRole::Freeze,
+		WindowRole::DrawpadPresentation, WindowRole::Drawpad,
+		WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
+		WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
+		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+		WindowRole::PptExitShow, WindowRole::Bar })
+		check(service.Show(role), "show whiteboard group member");
+	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
+	const auto whiteboardFreezeExStyle = static_cast<DWORD>(
+		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
+	const auto whiteboardDrawpadExStyle = static_cast<DWORD>(
+		GetWindowLongPtrW(drawpad, GWL_EXSTYLE));
+	check((whiteboardFreezeExStyle & WS_EX_APPWINDOW) != 0
+		&& (whiteboardFreezeExStyle & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) == 0,
+		"whiteboard Freeze is the only activatable taskbar anchor");
+	check((whiteboardDrawpadExStyle & WS_EX_TOOLWINDOW) != 0
+		&& (whiteboardDrawpadExStyle & WS_EX_NOACTIVATE) == 0,
+		"whiteboard Drawpad accepts activation without a taskbar button");
+	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
+	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
+		&& !IsWindowVisible(whiteboardLeft) && !IsWindowVisible(whiteboardRight)
+		&& !IsWindowVisible(bar), "minimize hides the complete whiteboard group");
+	check(service.RestoreWhiteboardWindowGroup(), "restore whiteboard window group");
+	check(IsWindowVisible(freeze) && IsWindowVisible(drawpad)
+		&& IsWindowVisible(whiteboardLeft) && IsWindowVisible(whiteboardRight)
+		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
+	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
+	const auto presentationFreezeExStyle = static_cast<DWORD>(
+		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
+	check((presentationFreezeExStyle & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) ==
+		(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+		&& (presentationFreezeExStyle & WS_EX_APPWINDOW) == 0,
+		"leaving whiteboard restores presentation overlay style");
+
 	for (const auto role : roles)
 	{
 		if (role != WindowRole::DisplayObserver)

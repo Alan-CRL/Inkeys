@@ -790,6 +790,10 @@ namespace Inkeys::Drawing::Draw3
 			return PublishHiddenTestContact(wParam, lParam) ? 0 : -1;
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
 	}
+	void Host::SetActivationAllowed(bool enabled) noexcept
+	{
+		impl_->window.SetActivationAllowed(enabled);
+	}
 	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
 	void Host::PublishState(const Bridge::ProductState& state) noexcept
 	{

@@ -243,7 +243,8 @@ protected:
 		ComPtr<ID2D1LinearGradientBrush> brush;
 	};
 
-	ID2D1RadialGradientBrush* GetFrameGradientBrush(
+	// 返回强引用，避免缓存扩容或换 epoch 时使当前帧仍在使用的 brush 失效。
+	ComPtr<ID2D1RadialGradientBrush> GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);

@@ -406,6 +406,13 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		barUISet.ShutdownWindowInput(hWnd);
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
 	}
+	if (msg == WM_CANCELMODE)
+	{
+		// Whiteboard Exit 会通过 Window Service 广播取消消息，清掉 Bar 的捕获和浮层输入。
+		barUISet.ShutdownWindowInput(hWnd);
+		barUISet.UpdateRendering(false);
+		return 0;
+	}
 	// 关闭后不允许迟到的计时器或 Raw Input 重新建立交互/追踪状态。
 	if (offSignal) return DefWindowProcW(hWnd, msg, wParam, lParam);
 	if (msg == WM_DPICHANGED || msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)

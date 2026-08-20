@@ -941,7 +941,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 			|| edgeLightingStateChanged);
 }
 
-ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
+ComPtr<ID2D1RadialGradientBrush> BarUIRendering::GetFrameGradientBrush(
 	ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource)
 {
 	COLORREF rgb = color & 0x00FFFFFF;
@@ -964,7 +964,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 			cache.brush->SetGradientOriginOffset(D2D1::Point2F());
 			cache.brush->SetRadiusX(radius.width);
 			cache.brush->SetRadiusY(radius.height);
-			return cache.brush.Get();
+			return cache.brush;
 		}
 	}
 	if (frameGradientUnavailable) return nullptr;
@@ -996,7 +996,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 			if (frameGradientBrushCache.size() >= 32)
 				frameGradientBrushCache.erase(frameGradientBrushCache.begin());
 			frameGradientBrushCache.emplace_back(move(cache));
-			return frameGradientBrushCache.back().brush.Get();
+			return frameGradientBrushCache.back().brush;
 		}
 	}
 
@@ -2246,8 +2246,8 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	FLOAT diffuseOpacity = static_cast<FLOAT>(
 		BarBorderFrameDiffuseOpacity
 		+ (BarBorderPenDiffuseOpacity - BarBorderFrameDiffuseOpacity) * penColorBlend);
-	ID2D1RadialGradientBrush* primaryBrush = nullptr;
-	ID2D1RadialGradientBrush* cursorBrush = nullptr;
+	ComPtr<ID2D1RadialGradientBrush> primaryBrush;
+	ComPtr<ID2D1RadialGradientBrush> cursorBrush;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
 	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
@@ -2349,13 +2349,13 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 				if (drawPrimaryLight)
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
-						exactMask, *roundedRect, primaryBrush,
+						exactMask, *roundedRect, primaryBrush.Get(),
 						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
 				}
 				if (drawCursorLight)
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
-						exactMask, *roundedRect, cursorBrush,
+						exactMask, *roundedRect, cursorBrush.Get(),
 						CompositeOpacity(lightOpacity * cursorLightIntensity
 							* diffuseSourceOpacity));
 				}
@@ -2374,13 +2374,13 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 					if (drawPrimaryLight)
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
-							geometryBounds, primaryBrush,
+							geometryBounds, primaryBrush.Get(),
 							CompositeOpacity(lightOpacity * diffuseSourceOpacity));
 					}
 					if (drawCursorLight)
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
-							geometryBounds, cursorBrush,
+							geometryBounds, cursorBrush.Get(),
 							CompositeOpacity(lightOpacity * cursorLightIntensity
 								* diffuseSourceOpacity));
 					}
@@ -2390,8 +2390,8 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		}
 
 	}
-	DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
-	DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
+	DrawLightPass(primaryBrush.Get(), static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
+	DrawLightPass(cursorBrush.Get(), cursorLightIntensity, strokeWidth);
 	return true;
 }
 

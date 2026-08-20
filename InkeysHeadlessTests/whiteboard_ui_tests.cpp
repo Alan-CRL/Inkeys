@@ -23,6 +23,7 @@ namespace
 
 	void TestPageState()
 	{
+		using Inkeys::UI::Whiteboard::PageStateTransaction;
 		using Inkeys::UI::Whiteboard::ResolvePageState;
 		const auto first = ResolvePageState(1, 1, false);
 		Check(first.currentPage == 1 && first.totalPage == 1
@@ -50,6 +51,37 @@ namespace
 			&& clamped.previousEnabled && clamped.nextEnabled
 			&& clamped.nextIsAdd,
 			"page state clamps invalid runtime values");
+
+		PageStateTransaction append;
+		(void)append.Publish(3, 3, false);
+		const auto appendStart = append.Publish(3, 4, true);
+		const auto appendMoved = append.Publish(4, 4, true);
+		const auto appendDone = append.Publish(4, 4, false);
+		Check(appendStart.nextIsAdd && appendMoved.nextIsAdd && appendDone.nextIsAdd,
+			"append visual stays stable through a page transaction");
+
+		PageStateTransaction toLast;
+		(void)toLast.Publish(2, 3, false);
+		const auto arrowDuringSwitch = toLast.Publish(3, 3, true);
+		const auto addAfterSwitch = toLast.Publish(3, 3, false);
+		Check(!arrowDuringSwitch.nextIsAdd && addAfterSwitch.nextIsAdd,
+			"last-page arrow changes to add only after switching settles");
+
+		PageStateTransaction fromFirst;
+		(void)fromFirst.Publish(1, 3, false);
+		const auto disabledDuringSwitch = fromFirst.Publish(2, 3, true);
+		const auto enabledAfterSwitch = fromFirst.Publish(2, 3, false);
+		Check(!disabledDuringSwitch.previousEnabled &&
+			enabledAfterSwitch.previousEnabled,
+			"previous visual stays disabled while leaving the first page");
+
+		PageStateTransaction initialSwitch;
+		const auto firstSwitch = initialSwitch.Publish(2, 5, true);
+		Check(firstSwitch.currentPage == 2 && firstSwitch.totalPage == 5 &&
+			firstSwitch.previousEnabled && !firstSwitch.nextIsAdd &&
+			!firstSwitch.previousInteractive && !firstSwitch.pageInteractive &&
+			!firstSwitch.nextInteractive,
+			"first switching publish uses the real page instead of 1/1");
 	}
 
 	void TestSceneLayout()
@@ -99,6 +131,8 @@ namespace
 	void TestWindowContracts()
 	{
 		using Inkeys::Window::WindowRole;
+		using Inkeys::Window::OverlayActivationMode;
+		using Inkeys::Window::ResolveOverlayActivationStyle;
 		Check(static_cast<unsigned>(WindowRole::WhiteboardLeft)
 			== static_cast<unsigned>(WindowRole::Drawpad) + 1
 			&& static_cast<unsigned>(WindowRole::WhiteboardRight)
@@ -113,6 +147,24 @@ namespace
 		(void)service.SetOverlayFullscreen(true);
 		Check(service.OverlayFullscreen() && !service.OverlayTopmost(),
 			"fullscreen mark persists independently of topmost");
+		const auto whiteboardFreeze = ResolveOverlayActivationStyle(
+			WindowRole::Freeze, OverlayActivationMode::Whiteboard);
+		const auto whiteboardDrawpad = ResolveOverlayActivationStyle(
+			WindowRole::Drawpad, OverlayActivationMode::Whiteboard);
+		const auto presentationDrawpad = ResolveOverlayActivationStyle(
+			WindowRole::Drawpad, OverlayActivationMode::Presentation);
+		Check((whiteboardFreeze.setExStyle & WS_EX_APPWINDOW) != 0 &&
+			(whiteboardFreeze.clearExStyle & WS_EX_NOACTIVATE) != 0 &&
+			whiteboardFreeze.taskbarAnchor && whiteboardFreeze.acceptsActivation,
+			"Freeze is the only Whiteboard taskbar and activation anchor");
+		Check((whiteboardDrawpad.setExStyle & WS_EX_TOOLWINDOW) != 0 &&
+			(whiteboardDrawpad.clearExStyle & WS_EX_NOACTIVATE) != 0 &&
+			whiteboardDrawpad.acceptsActivation,
+			"Whiteboard Drawpad accepts activation without a taskbar button");
+		Check((presentationDrawpad.setExStyle & WS_EX_NOACTIVATE) != 0 &&
+			(presentationDrawpad.clearExStyle & WS_EX_APPWINDOW) != 0 &&
+			!presentationDrawpad.acceptsActivation,
+			"Presentation overlays remain no-activate and tool-window only");
 	}
 }
 

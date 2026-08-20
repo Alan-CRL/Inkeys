@@ -23,6 +23,7 @@ module;
 #include <windowsx.h>
 
 #include "../../../IdtFreezeFrame.h"
+#include "../Bar/Bar.DirtyRegion.h"
 
 module Inkeys.UI.Whiteboard;
 
@@ -43,6 +44,13 @@ namespace Inkeys::UI::Whiteboard
 		using Scene = Inkeys::UI::Bar::BarSurfaceScene;
 		using WidgetSpec = Inkeys::UI::Bar::BarSurfaceWidgetSpec;
 		using WidgetId = Inkeys::UI::Bar::BarSurfaceWidgetId;
+		using Inkeys::UI::Bar::BarDirtyRegionTracker;
+		using Inkeys::UI::Bar::ResolveBarDebugDamage;
+		using Inkeys::UI::Bar::BarDebugFrameWidth;
+		using Inkeys::UI::Bar::BarDebugDirtyFrameInset;
+		using Inkeys::UI::Bar::BarDebugWindowFrameInset;
+		using Inkeys::UI::Bar::BarDebugDirtyColor;
+		using Inkeys::UI::Bar::BarDebugPresentedColor;
 
 		constexpr std::array<Client, 3> Clients{
 			Client::WhiteboardFreeze,
@@ -61,40 +69,29 @@ namespace Inkeys::UI::Whiteboard
 		std::atomic_int currentPage = 1;
 		std::atomic_int totalPage = 1;
 		std::atomic_bool switching = false;
-		enum class NextButtonVisual : std::uint8_t
-		{
-			Arrow,
-			Add,
-		};
 		std::mutex pageStateMutex;
-		std::optional<NextButtonVisual> latchedNextVisual;
+		PageStateTransaction pageTransaction;
+		// Present 事务覆盖 BeginDraw -> Render -> GetDC -> EndDraw，退出 reset 必须等待它。
+		std::mutex renderTransactionMutex;
 		std::array<Scene, 2> controlScenes{};
 		Scene backgroundScene;
 		std::array<RECT, 2> configuredControlScreens{};
 		std::array<float, 2> configuredControlScales{ 0.0F, 0.0F };
+		std::array<RECT, 2> previousDebugDirtyFrames{};
+		std::array<RECT, 2> previousDebugPresentedFrames{};
+		std::array<bool, 2> observedDebugModes{ false, false };
+		// owner thread 在渲染事务锁被占用时不能同步清理 Scene，先记录待处理取消。
+		std::array<std::atomic_bool, 2> pendingPointerCancel{};
 		RECT configuredBackgroundScreen{};
 		float configuredBackgroundScale = 0.0F;
 		Inkeys::Display::Subscription displaySubscription;
 		std::mutex callbackMutex;
 		BusinessCallbacks business;
 
-		[[nodiscard]] NextButtonVisual ResolveNextButtonVisual(
-			int current, int total) noexcept
-		{
-			return current >= (std::max)(1, total)
-				? NextButtonVisual::Add : NextButtonVisual::Arrow;
-		}
-
 		[[nodiscard]] PageState PublishedPageState() noexcept
 		{
 			std::scoped_lock lock(pageStateMutex);
-			const bool isSwitching = switching.load(std::memory_order_acquire);
-			PageState state = ResolvePageState(
-				currentPage.load(std::memory_order_acquire),
-				totalPage.load(std::memory_order_acquire), isSwitching);
-			if (isSwitching && latchedNextVisual.has_value())
-				state.nextIsAdd = *latchedNextVisual == NextButtonVisual::Add;
-			return state;
+			return pageTransaction.Snapshot();
 		}
 
 		[[nodiscard]] RECT PrimaryBounds() noexcept
@@ -146,6 +143,13 @@ namespace Inkeys::UI::Whiteboard
 			Inkeys::UI::RenderPipeline::Request(
 				Inkeys::UI::RenderPipeline::Mask(Client::WhiteboardLeft)
 				| Inkeys::UI::RenderPipeline::Mask(Client::WhiteboardRight));
+		}
+
+		void ConsumePendingPointerCancel(std::size_t index, Scene& scene) noexcept
+		{
+			if (pendingPointerCancel[index].exchange(false,
+				std::memory_order_acq_rel))
+				scene.CancelPointer();
 		}
 
 		void InvokePageCallback(std::size_t index)
@@ -293,9 +297,31 @@ namespace Inkeys::UI::Whiteboard
 			DeviceLost,
 		};
 
+		void DrawDebugFrame(ID2D1DeviceContext* context, const RECT& bounds,
+			COLORREF color, FLOAT inset) noexcept
+		{
+			if (!context || BarDirtyRegionTracker::IsEmpty(bounds)) return;
+			const RECT clipped = bounds;
+			const D2D1_ROUNDED_RECT frame = D2D1::RoundedRect(D2D1::RectF(
+				static_cast<FLOAT>(clipped.left) + inset,
+				static_cast<FLOAT>(clipped.top) + inset,
+				static_cast<FLOAT>(clipped.right) - inset,
+				static_cast<FLOAT>(clipped.bottom) - inset), 0.0F, 0.0F);
+			if (frame.rect.right <= frame.rect.left || frame.rect.bottom <= frame.rect.top)
+				return;
+			ComPtr<ID2D1SolidColorBrush> brush;
+			const D2D1_COLOR_F brushColor = D2D1::ColorF(
+				static_cast<FLOAT>(GetRValue(color)) / 255.0F,
+				static_cast<FLOAT>(GetGValue(color)) / 255.0F,
+				static_cast<FLOAT>(GetBValue(color)) / 255.0F, 1.0F);
+			if (FAILED(context->CreateSolidColorBrush(brushColor, &brush)) || !brush)
+				return;
+			context->DrawRoundedRectangle(&frame, brush.Get(), BarDebugFrameWidth);
+		}
+
 		[[nodiscard]] PresentStatus PresentScene(Scene& scene, HWND hwnd,
 			const FrameContext& frameContext, const RECT& presentationBounds,
-			bool freezeOwner) noexcept
+			bool freezeOwner, std::optional<std::size_t> debugIndex = std::nullopt) noexcept
 		{
 			const UINT width = static_cast<UINT>(presentationBounds.right
 				- presentationBounds.left);
@@ -317,6 +343,32 @@ namespace Inkeys::UI::Whiteboard
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
 			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
 			const auto drawResult = scene.Render(context, frameContext.frameTime);
+			const bool debugMode = Inkeys::UI::Bar::DebugModeEnabled();
+			RECT businessDamage = drawResult.damage;
+			RECT debugPresentDamage{};
+			if (debugIndex.has_value())
+			{
+				const std::size_t index = *debugIndex;
+				RECT previousFrame = previousDebugDirtyFrames[index];
+				BarDirtyRegionTracker::UnionInPlace(
+					previousFrame, previousDebugPresentedFrames[index]);
+				const auto debugDamage = ResolveBarDebugDamage(
+					businessDamage, {}, previousFrame, {}, debugMode, false);
+				debugPresentDamage = debugDamage.presentDamage;
+				if (debugMode)
+				{
+					// 红框标记业务 dirty，绿框标记本次实际 present 覆盖区。
+					DrawDebugFrame(context, businessDamage,
+						BarDebugDirtyColor, BarDebugDirtyFrameInset);
+					DrawDebugFrame(context, debugDamage.presentDamage,
+						BarDebugPresentedColor, BarDebugWindowFrameInset);
+				}
+				else
+				{
+					// Debug 关闭时仍提交旧框所在区域，确保上一帧残留被擦除。
+					businessDamage = debugPresentDamage;
+				}
+			}
 			HDC source = nullptr;
 			bool presented = false;
 			if (SUCCEEDED(gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source)) && source)
@@ -336,6 +388,11 @@ namespace Inkeys::UI::Whiteboard
 				info.hdcDst = destinationDc;
 				info.pblend = &blend;
 				RECT dirty = scene.PendingDamage();
+				if (debugIndex.has_value())
+				{
+					// 覆盖层不进入业务 damage，但旧/新框都必须进入提交擦除区。
+					BarDirtyRegionTracker::UnionInPlace(dirty, debugPresentDamage);
+				}
 				if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
 					dirty = RECT{ 0, 0, static_cast<LONG>(width),
 						static_cast<LONG>(height) };
@@ -360,7 +417,22 @@ namespace Inkeys::UI::Whiteboard
 			scene.ReleaseDeviceResources();
 			return PresentStatus::Retry;
 		}
-		return presented ? PresentStatus::Success : PresentStatus::Retry;
+		if (!presented) return PresentStatus::Retry;
+		if (debugIndex.has_value())
+		{
+			const std::size_t index = *debugIndex;
+			if (debugMode)
+			{
+				previousDebugDirtyFrames[index] = drawResult.damage;
+				previousDebugPresentedFrames[index] = debugPresentDamage;
+			}
+			else
+			{
+				previousDebugDirtyFrames[index] = {};
+				previousDebugPresentedFrames[index] = {};
+			}
+		}
+		return PresentStatus::Success;
 		}
 
 		FrameResult RenderBackground(const FrameContext& frameContext)
@@ -376,20 +448,37 @@ namespace Inkeys::UI::Whiteboard
 			}
 			const RECT bounds = PrimaryBounds();
 			const float scale = DpiScale(hwnd);
-			if (!EqualRect(&configuredBackgroundScreen, &bounds)
-				|| configuredBackgroundScale != scale)
-				ConfigureBackgroundScene(bounds, scale);
-			const RECT presentation = backgroundScene.PresentationBounds();
-			const auto presentStatus = PresentScene(backgroundScene, hwnd,
-				frameContext, presentation, true);
+			PresentStatus presentStatus = PresentStatus::Retry;
+			RECT presentation{};
+			bool animationActive = false;
+			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				if (!EqualRect(&configuredBackgroundScreen, &bounds)
+					|| configuredBackgroundScale != scale)
+					ConfigureBackgroundScene(bounds, scale);
+				presentation = backgroundScene.PresentationBounds();
+				presentStatus = PresentScene(backgroundScene, hwnd,
+					frameContext, presentation, true);
+				if (presentStatus == PresentStatus::Success)
+				{
+					animationActive = backgroundScene.AnimationActive();
+					(void)backgroundScene.ConsumeDamage();
+				}
+			}
 			if (presentStatus != PresentStatus::Success)
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
+			// Exit 可能在 present 期间提交；不要在已取消后重新显示 Freeze。
+			if (!active.load(std::memory_order_acquire))
+			{
+				(void)Inkeys::Window::GetService().Hide(WindowRole::Freeze);
+				committedBackgroundActive.store(false, std::memory_order_release);
+				return FrameResult::Idle;
+			}
 			(void)Inkeys::Window::GetService().SetBounds(WindowRole::Freeze, presentation);
 			(void)Inkeys::Window::GetService().Show(WindowRole::Freeze);
-			(void)backgroundScene.ConsumeDamage();
 			committedBackgroundActive.store(true, std::memory_order_release);
-			return backgroundScene.AnimationActive() ? FrameResult::Continue
+			return animationActive ? FrameResult::Continue
 				: FrameResult::Idle;
 		}
 
@@ -398,27 +487,61 @@ namespace Inkeys::UI::Whiteboard
 			auto& service = Inkeys::Window::GetService();
 			const HWND hwnd = service.Handle(ControlRoles[index]);
 			if (!hwnd) return FrameResult::Retry;
-			if (!active.load(std::memory_order_acquire))
+			PresentStatus presentStatus = PresentStatus::Retry;
+			RECT presentation{};
+			bool animationActive = false;
+			bool inactive = false;
+			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				ConsumePendingPointerCancel(index, controlScenes[index]);
+				if (!active.load(std::memory_order_acquire))
+				{
+					controlScenes[index].Reset();
+					previousDebugDirtyFrames[index] = {};
+					previousDebugPresentedFrames[index] = {};
+					observedDebugModes[index] = Inkeys::UI::Bar::DebugModeEnabled();
+					inactive = true;
+				}
+				else
+				{
+					const bool debugMode = Inkeys::UI::Bar::DebugModeEnabled();
+					if (observedDebugModes[index] != debugMode)
+					{
+						observedDebugModes[index] = debugMode;
+						// Debug 开关只触发一次完整重绘，关闭后可擦除上一帧框。
+						controlScenes[index].Invalidate();
+					}
+					const RECT screen = PrimaryBounds();
+					const float scale = DpiScale(hwnd);
+					if (!EqualRect(&configuredControlScreens[index], &screen)
+						|| configuredControlScales[index] != scale)
+						ConfigureControlScene(index);
+					presentation = controlScenes[index].PresentationBounds();
+					presentStatus = PresentScene(controlScenes[index], hwnd,
+						frameContext, presentation, false, index);
+					if (presentStatus == PresentStatus::Success)
+					{
+						animationActive = controlScenes[index].AnimationActive();
+						(void)controlScenes[index].ConsumeDamage();
+					}
+				}
+			}
+			if (inactive)
 			{
 				(void)service.Hide(ControlRoles[index]);
-				controlScenes[index].Reset();
 				return FrameResult::Idle;
 			}
-			const RECT screen = PrimaryBounds();
-			const float scale = DpiScale(hwnd);
-			if (!EqualRect(&configuredControlScreens[index], &screen)
-				|| configuredControlScales[index] != scale)
-				ConfigureControlScene(index);
-			const RECT presentation = controlScenes[index].PresentationBounds();
-			const auto presentStatus = PresentScene(controlScenes[index], hwnd,
-				frameContext, presentation, false);
 			if (presentStatus != PresentStatus::Success)
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
+			if (!active.load(std::memory_order_acquire))
+			{
+				(void)service.Hide(ControlRoles[index]);
+				return FrameResult::Idle;
+			}
 			(void)service.SetBounds(ControlRoles[index], presentation);
 			(void)service.Show(ControlRoles[index]);
-			(void)controlScenes[index].ConsumeDamage();
-			return controlScenes[index].AnimationActive() ? FrameResult::Continue
+			return animationActive ? FrameResult::Continue
 				: FrameResult::Idle;
 		}
 
@@ -434,8 +557,15 @@ namespace Inkeys::UI::Whiteboard
 		{
 			const std::size_t index = SurfaceIndex(hwnd);
 			Scene& scene = controlScenes[index];
+			const bool pointerMessage = message == WM_MOUSEMOVE
+				|| message == WM_MOUSELEAVE || message == WM_LBUTTONDOWN
+				|| message == WM_LBUTTONUP;
+			// 关闭/切换期间丢弃排队的鼠标消息，避免迟到 Up 触发翻页回调。
+			if (pointerMessage && !active.load(std::memory_order_acquire)) return 0;
 			if (message == WM_MOUSEMOVE)
 			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				ConsumePendingPointerCancel(index, scene);
 				TRACKMOUSEEVENT tracking{ sizeof(tracking), TME_LEAVE, hwnd, 0 };
 				TrackMouseEvent(&tracking);
 				const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -447,11 +577,15 @@ namespace Inkeys::UI::Whiteboard
 			}
 			if (message == WM_MOUSELEAVE)
 			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				ConsumePendingPointerCancel(index, scene);
 				scene.PointerLeave();
 				return 0;
 			}
 			if (message == WM_LBUTTONDOWN)
 			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				ConsumePendingPointerCancel(index, scene);
 				const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 				if (const auto logical = scene.PresentationToLogical(point))
 				{
@@ -462,6 +596,8 @@ namespace Inkeys::UI::Whiteboard
 			}
 			if (message == WM_LBUTTONUP)
 			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				ConsumePendingPointerCancel(index, scene);
 				const POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 				if (const auto logical = scene.PresentationToLogical(point))
 					scene.PointerUp(*logical);
@@ -472,7 +608,16 @@ namespace Inkeys::UI::Whiteboard
 			}
 			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
 			{
+				std::unique_lock renderLock(renderTransactionMutex, std::try_to_lock);
+				if (!renderLock.owns_lock())
+				{
+					pendingPointerCancel[index].store(true,
+						std::memory_order_release);
+					return 0;
+				}
 				scene.CancelPointer();
+				pendingPointerCancel[index].store(false,
+					std::memory_order_release);
 				return 0;
 			}
 			if (message == WM_ERASEBKGND) return 1;
@@ -486,6 +631,13 @@ namespace Inkeys::UI::Whiteboard
 		{
 			std::scoped_lock lock(callbackMutex);
 			business = std::move(callbacks);
+		}
+		{
+			std::scoped_lock lock(pageStateMutex);
+			pageTransaction.Reset();
+			currentPage.store(1, std::memory_order_relaxed);
+			totalPage.store(1, std::memory_order_relaxed);
+			switching.store(false, std::memory_order_relaxed);
 		}
 		ConfigureControlScene(0);
 		ConfigureControlScene(1);
@@ -511,20 +663,34 @@ namespace Inkeys::UI::Whiteboard
 	void Shutdown() noexcept
 	{
 		if (!initialized.exchange(false, std::memory_order_acq_rel)) return;
+		active.store(false, std::memory_order_release);
 		displaySubscription.Reset();
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
+		// Service 操作必须在事务锁外执行，避免 owner thread 的输入消息反向等待渲染锁。
 		for (const WindowRole role : ControlRoles)
 			(void)Inkeys::Window::GetService().Hide(role);
 		(void)Inkeys::Window::GetService().Hide(WindowRole::Freeze);
-		for (auto& scene : controlScenes)
 		{
-			scene.Reset();
-			scene.ReleaseDeviceResources();
+			std::unique_lock renderLock(renderTransactionMutex);
+			for (auto& scene : controlScenes)
+			{
+				scene.Reset();
+				scene.ReleaseDeviceResources();
+			}
+			for (auto& pending : pendingPointerCancel)
+				pending.store(false, std::memory_order_release);
+			backgroundScene.Reset();
+			backgroundScene.ReleaseDeviceResources();
 		}
-		backgroundScene.Reset();
-		backgroundScene.ReleaseDeviceResources();
 		committedBackgroundActive.store(false, std::memory_order_release);
+		{
+			std::scoped_lock pageLock(pageStateMutex);
+			pageTransaction.Reset();
+			currentPage.store(1, std::memory_order_relaxed);
+			totalPage.store(1, std::memory_order_relaxed);
+			switching.store(false, std::memory_order_relaxed);
+		}
 		std::scoped_lock lock(callbackMutex);
 		business = {};
 	}
@@ -533,43 +699,61 @@ namespace Inkeys::UI::Whiteboard
 
 	void PublishActive(bool value) noexcept
 	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		std::unique_lock renderLock(renderTransactionMutex);
+		if (!initialized.load(std::memory_order_acquire)) return;
 		if (active.exchange(value, std::memory_order_acq_rel) == value) return;
 		if (!value)
-			for (auto& scene : controlScenes) scene.Reset();
+		{
+			for (std::size_t index = 0; index < controlScenes.size(); ++index)
+			{
+				pendingPointerCancel[index].store(false,
+					std::memory_order_release);
+				controlScenes[index].Reset();
+			}
+		}
 		RequestControls();
 		Inkeys::UI::RenderPipeline::Request(Client::WhiteboardFreeze);
 	}
 
+	void CancelPointerCapture() noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		// 先让 owner thread 释放系统捕获；窗口过程拿不到事务锁时由 pending 标志补偿清理。
+		(void)Inkeys::Window::GetService().CancelPointerCapture();
+		std::unique_lock renderLock(renderTransactionMutex);
+		if (!initialized.load(std::memory_order_acquire)) return;
+		for (std::size_t index = 0; index < controlScenes.size(); ++index)
+		{
+			pendingPointerCancel[index].store(false,
+				std::memory_order_release);
+			controlScenes[index].CancelPointer();
+		}
+		RequestControls();
+	}
+
 	void PublishPageState(int current, int total, bool changing) noexcept
 	{
+		if (!initialized.load(std::memory_order_acquire)) return;
 		bool currentChanged = false;
 		bool totalChanged = false;
 		bool switchingChanged = false;
 		PageState state;
 		{
 			std::scoped_lock lock(pageStateMutex);
-			const int previousCurrent = currentPage.load(std::memory_order_relaxed);
-			const int previousTotal = totalPage.load(std::memory_order_relaxed);
-			const bool previousSwitching = switching.load(std::memory_order_relaxed);
-			currentChanged = previousCurrent != current;
-			totalChanged = previousTotal != total;
-			switchingChanged = previousSwitching != changing;
-			if (!previousSwitching && changing)
-			{
-				// 翻页事务开始时锁存稳定视觉语义，忽略中途的业务发布顺序。
-				latchedNextVisual = ResolveNextButtonVisual(
-					previousCurrent, previousTotal);
-			}
-			currentPage.store(current, std::memory_order_relaxed);
-			totalPage.store(total, std::memory_order_relaxed);
-			switching.store(changing, std::memory_order_release);
-			state = ResolvePageState(current, total, changing);
-			if (changing && latchedNextVisual.has_value())
-				state.nextIsAdd = *latchedNextVisual == NextButtonVisual::Add;
-			if (!changing)
-				latchedNextVisual.reset();
+			if (!initialized.load(std::memory_order_acquire)) return;
+			const PageState previous = pageTransaction.Snapshot();
+			state = pageTransaction.Publish(current, total, changing);
+			currentChanged = previous.currentPage != state.currentPage;
+			totalChanged = previous.totalPage != state.totalPage;
+			switchingChanged = previous.switching != state.switching;
+			currentPage.store(state.currentPage, std::memory_order_relaxed);
+			totalPage.store(state.totalPage, std::memory_order_relaxed);
+			switching.store(state.switching, std::memory_order_release);
 		}
 		if (!(currentChanged || totalChanged || switchingChanged)) return;
+		// 页码发布来自状态线程，必须与 RenderFrame 共用 present 事务锁。
+		std::unique_lock renderLock(renderTransactionMutex);
 		for (auto& scene : controlScenes)
 			ApplyPageState(scene, state);
 		RequestControls();

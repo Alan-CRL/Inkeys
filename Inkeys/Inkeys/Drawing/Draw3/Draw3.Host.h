@@ -116,6 +116,8 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge& ProductBridge() noexcept;
 		void PublishState(const Bridge::ProductState& state) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		// 生命周期事务控制 Drawpad 是否允许本次鼠标输入激活窗口。
+		void SetActivationAllowed(bool enabled) noexcept;
 
 	private:
 		bool PublishHiddenTestContact(WPARAM phase, LPARAM position) noexcept;
