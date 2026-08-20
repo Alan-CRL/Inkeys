@@ -410,10 +410,10 @@ def cmd_create(args: argparse.Namespace) -> int:
     # Handle --parent: establish bidirectional link
     if args.parent:
         parent_dir = resolve_task_dir(args.parent, repo_root)
-        parent_json_path = parent_dir / FILE_TASK_JSON
-        if not parent_json_path.is_file():
+        if not parent_dir or not (parent_dir / FILE_TASK_JSON).is_file():
             print(colored(f"Warning: Parent task.json not found: {args.parent}", Colors.YELLOW), file=sys.stderr)
         else:
+            parent_json_path = parent_dir / FILE_TASK_JSON
             parent_data = read_json(parent_json_path)
             if parent_data:
                 # Add child to parent's children list
@@ -723,6 +723,14 @@ def cmd_add_subtask(args: argparse.Namespace) -> int:
     parent_dir = resolve_task_dir(args.parent_dir, repo_root)
     child_dir = resolve_task_dir(args.child_dir, repo_root)
 
+    if not parent_dir:
+        print(colored(f"Error: Parent task.json not found: {args.parent_dir}", Colors.RED), file=sys.stderr)
+        return 1
+
+    if not child_dir:
+        print(colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED), file=sys.stderr)
+        return 1
+
     parent_json_path = parent_dir / FILE_TASK_JSON
     child_json_path = child_dir / FILE_TASK_JSON
 
@@ -776,6 +784,14 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
     parent_dir = resolve_task_dir(args.parent_dir, repo_root)
     child_dir = resolve_task_dir(args.child_dir, repo_root)
 
+    if not parent_dir:
+        print(colored(f"Error: Parent task.json not found: {args.parent_dir}", Colors.RED), file=sys.stderr)
+        return 1
+
+    if not child_dir:
+        print(colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED), file=sys.stderr)
+        return 1
+
     parent_json_path = parent_dir / FILE_TASK_JSON
     child_json_path = child_dir / FILE_TASK_JSON
 
@@ -827,6 +843,12 @@ def cmd_set_branch(args: argparse.Namespace) -> int:
         print("Usage: python task.py set-branch <task-dir> <branch-name>")
         return 1
 
+    if not target_dir:
+        # target_dir is None here, so it must not appear in the message. This
+        # is also the branch a ref pointing outside the repo lands in.
+        print(colored(f"Error: Task not found: {args.dir}", Colors.RED))
+        return 1
+
     task_json = target_dir / FILE_TASK_JSON
     if not task_json.is_file():
         print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
@@ -861,6 +883,12 @@ def cmd_set_base_branch(args: argparse.Namespace) -> int:
         print("This sets the target branch for PR (the branch your feature will merge into).")
         return 1
 
+    if not target_dir:
+        # target_dir is None here, so it must not appear in the message. This
+        # is also the branch a ref pointing outside the repo lands in.
+        print(colored(f"Error: Task not found: {args.dir}", Colors.RED))
+        return 1
+
     task_json = target_dir / FILE_TASK_JSON
     if not task_json.is_file():
         print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
@@ -893,6 +921,12 @@ def cmd_set_scope(args: argparse.Namespace) -> int:
         print("Usage: python task.py set-scope <task-dir> <scope>")
         return 1
 
+    if not target_dir:
+        # target_dir is None here, so it must not appear in the message. This
+        # is also the branch a ref pointing outside the repo lands in.
+        print(colored(f"Error: Task not found: {args.dir}", Colors.RED))
+        return 1
+
     task_json = target_dir / FILE_TASK_JSON
     if not task_json.is_file():
         print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
@@ -923,6 +957,12 @@ def cmd_set_meta(args: argparse.Namespace) -> int:
     if not key:
         print(colored("Error: Missing arguments", Colors.RED))
         print("Usage: python task.py set-meta <task-dir> <key> <value>")
+        return 1
+
+    if not target_dir:
+        # target_dir is None here, so it must not appear in the message. This
+        # is also the branch a ref pointing outside the repo lands in.
+        print(colored(f"Error: Task not found: {args.dir}", Colors.RED))
         return 1
 
     task_json = target_dir / FILE_TASK_JSON
