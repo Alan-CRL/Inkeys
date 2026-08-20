@@ -348,6 +348,29 @@ export
 		return max(coreThickness, currentShellThickness);
 	}
 
+	struct BarLaserPreviewLayerGeometry
+	{
+		double endpointDiameter = 0.0;
+		double horizontalInset = 0.0;
+	};
+
+	inline BarLaserPreviewLayerGeometry ResolveBarLaserPreviewLayerGeometry(
+		double layerThickness, double animatedOuterDiameter,
+		double sliderProgress, double sliderTrackThickness) noexcept
+	{
+		layerThickness = max(0.0, layerThickness);
+		animatedOuterDiameter = max(0.0, animatedOuterDiameter);
+		sliderTrackThickness = max(0.0, sliderTrackThickness);
+		sliderProgress = clamp(sliderProgress, 0.0, 1.0);
+		// Slider 展开时端点圆心与芯宽同步收向轨道，避免两套几何在交接帧错位。
+		const double endpointDiameter = animatedOuterDiameter
+			+ (sliderTrackThickness - animatedOuterDiameter) * sliderProgress;
+		return {
+			endpointDiameter,
+			max(0.0, (endpointDiameter - layerThickness) / 2.0),
+		};
+	}
+
 	struct BarPenTypeExtensionAnchor
 	{
 		double x = 0.0;

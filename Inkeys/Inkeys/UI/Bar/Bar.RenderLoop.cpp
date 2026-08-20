@@ -9266,6 +9266,16 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								+ (trackThickness
 									- normalPreviewEnvelopeThickness)
 									* sliderProgress);
+							FLOAT normalEndpointDiameter = min(
+								laserOuterPreviewThickness
+									* static_cast<FLOAT>(panelAnimationScale),
+								maxPreviewThickness);
+							const auto previewLayerGeometry =
+								ResolveBarLaserPreviewLayerGeometry(
+									previewThickness, normalEndpointDiameter,
+									sliderProgress, trackThickness);
+							FLOAT previewEndpointDiameter = static_cast<FLOAT>(
+								previewLayerGeometry.endpointDiameter);
 							// Preview 使用完整左右边界，进入 Slider 时再平滑收进内容内边距。
 							FLOAT left = static_cast<FLOAT>((
 								previewGeometry.previewLeft
@@ -9290,7 +9300,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									- BarDrawAttributeCompactScale)
 								/ (1.0 - BarDrawAttributeCompactScale),
 								0.0, 1.0);
-							FLOAT radius = previewThickness / 2.0F;
 							FLOAT availableAmplitude = max(0.0F,
 								(maxPreviewThickness - previewEnvelopeThickness)
 									/ 2.0F);
@@ -9354,9 +9363,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								FLOAT coreWidth = max(0.1F, static_cast<FLOAT>(
 									state.drawAttributeLaserCoreThickness.val
 									* panelAnimationScale));
-								FLOAT redWidth = coreWidth
+								FLOAT normalRedWidth = coreWidth
 									+ (outerWidth - coreWidth)
 										* static_cast<FLOAT>(laserShellProgress);
+								FLOAT redWidth = static_cast<FLOAT>(normalRedWidth
+									+ (trackThickness - normalRedWidth)
+										* sliderProgress);
 								auto DrawLayer = [&](COLORREF color, FLOAT width,
 									double opacity)
 								{
@@ -9367,14 +9379,18 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									D2D1_RECT_F layerRect = D2D1::RectF(
 										previewRect.left, centerY - width / 2.0F,
 										previewRect.right, centerY + width / 2.0F);
+									const auto layerGeometry =
+										ResolveBarLaserPreviewLayerGeometry(
+											width, normalEndpointDiameter,
+											sliderProgress, trackThickness);
+									FLOAT horizontalInset = static_cast<FLOAT>(
+										layerGeometry.horizontalInset);
+									layerRect.left = min(layerRect.right,
+										layerRect.left + horizontalInset);
+									layerRect.right = max(layerRect.left,
+										layerRect.right - horizontalInset);
 									if (previewMorph > 0.5)
 									{
-										FLOAT horizontalInset = max(
-											0.0F, (redWidth - width) / 2.0F);
-										layerRect.left = min(layerRect.right,
-											layerRect.left + horizontalInset);
-										layerRect.right = max(layerRect.left,
-											layerRect.right - horizontalInset);
 										FLOAT roundRadius = width / 2.0F
 											* static_cast<FLOAT>(1.0 - highlighterProgress);
 										roundRadius = static_cast<FLOAT>(roundRadius
@@ -9386,9 +9402,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 										return;
 									}
 									FLOAT startX = min(layerRect.right,
-										layerRect.left + redWidth / 2.0F);
+										previewRect.left
+											+ previewEndpointDiameter / 2.0F);
 									FLOAT endX = max(startX,
-										layerRect.right - redWidth / 2.0F);
+										previewRect.right
+											- previewEndpointDiameter / 2.0F);
 									FLOAT span = max(0.0F, endX - startX);
 									auto strokeStyle = state.spec.GetThicknessPreviewStrokeStyle();
 									D2D1_MATRIX_3X2_F originalTransform{};
@@ -9428,17 +9446,27 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								&& previewThickness > 0.0F)
 							{
 								FLOAT startX = min(previewRect.right,
-									previewRect.left + radius);
+									previewRect.left
+										+ previewEndpointDiameter / 2.0F);
 								FLOAT endX = max(startX,
-									previewRect.right - radius);
+									previewRect.right
+										- previewEndpointDiameter / 2.0F);
 								FLOAT span = max(0.0F, endX - startX);
 								FLOAT signedAmplitude = curveDirection * amplitude;
 								D2D1_MATRIX_3X2_F originalTransform{};
 								barDeviceContext->GetTransform(&originalTransform);
 								auto DrawFallback = [&]()
 								{
+									D2D1_RECT_F fallbackRect = previewRect;
+									FLOAT horizontalInset = static_cast<FLOAT>(
+										previewLayerGeometry.horizontalInset);
+									fallbackRect.left = min(fallbackRect.right,
+										fallbackRect.left + horizontalInset);
+									fallbackRect.right = max(fallbackRect.left,
+										fallbackRect.right - horizontalInset);
 									D2D1_ROUNDED_RECT fallback{
-										previewRect, radius, radius };
+										fallbackRect, previewThickness / 2.0F,
+										previewThickness / 2.0F };
 									barDeviceContext->FillRoundedRectangle(
 										&fallback, solidBrush);
 								};
@@ -9480,6 +9508,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 							}
 							else if (previewThickness > 0.0F)
 							{
+								D2D1_RECT_F semanticRect = previewRect;
+								FLOAT horizontalInset = static_cast<FLOAT>(
+									previewLayerGeometry.horizontalInset);
+								semanticRect.left = min(semanticRect.right,
+									semanticRect.left + horizontalInset);
+								semanticRect.right = max(semanticRect.left,
+									semanticRect.right - horizontalInset);
 								FLOAT normalPreviewRadius =
 									previewThickness / 2.0F
 									* static_cast<FLOAT>(
@@ -9490,7 +9525,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 										- normalPreviewRadius)
 										* sliderProgress);
 								D2D1_ROUNDED_RECT roundedPreview{
-									previewRect,
+									semanticRect,
 									previewRadius, previewRadius };
 								FLOAT normalLeftOpacity = static_cast<FLOAT>(
 									1.0 - 0.65 * highlighterProgress);
@@ -9501,10 +9536,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								ID2D1LinearGradientBrush* gradientBrush =
 									state.spec.GetThicknessPreviewGradientBrush(
 										barDeviceContext, previewColor,
-										D2D1::Point2F(
-											previewRect.left, centerY),
-										D2D1::Point2F(
-											previewRect.right, centerY),
+									D2D1::Point2F(
+										semanticRect.left, centerY),
+									D2D1::Point2F(
+										semanticRect.right, centerY),
 										leftOpacity,
 										static_cast<FLOAT>(semanticOpacity));
 								ID2D1Brush* previewBrush =

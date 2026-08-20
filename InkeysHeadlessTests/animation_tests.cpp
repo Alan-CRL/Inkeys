@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -382,6 +382,98 @@ namespace
 			&& Near(ResolveBarLaserPreviewEnvelopeThickness(6.0, 2.0, 0.5),
 				6.0),
 			"laser preview envelope contains both core and current shell widths");
+
+		constexpr double previewLeft = 10.0;
+		constexpr double previewRight = 110.0;
+		auto ResolveRoundedLayerCenters = [&](double layerThickness,
+			const BarLaserPreviewLayerGeometry& geometry)
+			{
+				return std::pair{
+					previewLeft + geometry.horizontalInset + layerThickness / 2.0,
+					previewRight - geometry.horizontalInset - layerThickness / 2.0,
+				};
+			};
+		const auto laserCoreLayer = ResolveBarLaserPreviewLayerGeometry(
+			2.0, 6.0, 0.0, 2.0);
+		const auto laserCoreCenters = ResolveRoundedLayerCenters(
+			2.0, laserCoreLayer);
+		bool shellCentersStayAligned = true;
+		for (double shellProgress : { 0.0, 0.5, 1.0 })
+		{
+			double shellThickness = 2.0 + (6.0 - 2.0) * shellProgress;
+			auto shellLayer = ResolveBarLaserPreviewLayerGeometry(
+				shellThickness, 6.0, 0.0, 2.0);
+			auto shellCenters = ResolveRoundedLayerCenters(
+				shellThickness, shellLayer);
+			shellCentersStayAligned = shellCentersStayAligned
+				&& Near(shellCenters.first, laserCoreCenters.first)
+				&& Near(shellCenters.second, laserCoreCenters.second);
+		}
+		Check(shellCentersStayAligned
+			&& Near(laserCoreCenters.first, previewLeft + 3.0)
+			&& Near(laserCoreCenters.second, previewRight - 3.0),
+			"laser core and shell share cap centers throughout shell reveal");
+
+		auto ResolveCenterSpan = [&](double animatedOuterDiameter)
+			{
+				auto geometry = ResolveBarLaserPreviewLayerGeometry(
+					2.0, animatedOuterDiameter, 0.0, 2.0);
+				return (previewRight - previewLeft) - geometry.endpointDiameter;
+			};
+		BarUiValueClass thinPenEndpoint(3.0);
+		thinPenEndpoint.SetTar(6.0, 0.4);
+		double thinStartSpan = ResolveCenterSpan(thinPenEndpoint.val);
+		BarUiAdvanceAnimation(thinPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thinMiddleSpan = ResolveCenterSpan(thinPenEndpoint.val);
+		BarUiAdvanceAnimation(thinPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thinEndSpan = ResolveCenterSpan(thinPenEndpoint.val);
+		Check(thinStartSpan > thinMiddleSpan && thinMiddleSpan > thinEndSpan
+			&& Near(thinEndSpan, previewRight - previewLeft - 6.0),
+			"thin pen entry continuously narrows the laser core center span");
+		BarUiValueClass thickPenEndpoint(12.0);
+		thickPenEndpoint.SetTar(6.0, 0.4);
+		double thickStartSpan = ResolveCenterSpan(thickPenEndpoint.val);
+		BarUiAdvanceAnimation(thickPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thickMiddleSpan = ResolveCenterSpan(thickPenEndpoint.val);
+		BarUiAdvanceAnimation(thickPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thickEndSpan = ResolveCenterSpan(thickPenEndpoint.val);
+		Check(thickStartSpan < thickMiddleSpan && thickMiddleSpan < thickEndSpan
+			&& Near(thickEndSpan, previewRight - previewLeft - 6.0),
+			"thick pen entry continuously widens the laser core center span");
+
+		double reverseStartDiameter = thinPenEndpoint.val;
+		thinPenEndpoint.SetTar(3.0, 0.4);
+		Check(Near(thinPenEndpoint.val, reverseStartDiameter),
+			"laser endpoint reverse preserves the handoff frame");
+		BarUiAdvanceAnimation(thinPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		Check(ResolveCenterSpan(thinPenEndpoint.val)
+			> ResolveCenterSpan(reverseStartDiameter),
+			"laser endpoint reverse continues from the current span");
+
+		auto sliderMiddleCoreLayer = ResolveBarLaserPreviewLayerGeometry(
+			2.0, 6.0, 0.5, 2.0);
+		auto sliderMiddleShellLayer = ResolveBarLaserPreviewLayerGeometry(
+			4.0, 6.0, 0.5, 2.0);
+		auto sliderTrackLayer = ResolveBarLaserPreviewLayerGeometry(
+			2.0, 6.0, 1.0, 2.0);
+		auto sliderMiddleCoreCenters = ResolveRoundedLayerCenters(
+			2.0, sliderMiddleCoreLayer);
+		auto sliderMiddleShellCenters = ResolveRoundedLayerCenters(
+			4.0, sliderMiddleShellLayer);
+		Check(Near(sliderMiddleCoreLayer.endpointDiameter, 4.0)
+			&& Near(sliderMiddleCoreLayer.horizontalInset, 1.0)
+			&& Near(sliderMiddleShellLayer.endpointDiameter, 4.0)
+			&& Near(sliderMiddleShellLayer.horizontalInset, 0.0)
+			&& Near(sliderMiddleCoreCenters.first, sliderMiddleShellCenters.first)
+			&& Near(sliderMiddleCoreCenters.second, sliderMiddleShellCenters.second)
+			&& Near(sliderTrackLayer.endpointDiameter, 2.0)
+			&& Near(sliderTrackLayer.horizontalInset, 0.0),
+			"slider morph keeps layer centers aligned while moving to the track");
 	}
 
 	double ApplyLegacyPowCurve(BarUiCurveEnum curve, double progress)

@@ -21,6 +21,7 @@
 7. 红壳先绘制、白芯后绘制；红壳进度控制从芯宽到外宽的揭示，进度为零时红壳完全被白芯遮住。预览包络只读取阶段化芯宽/壳宽，不能提前读取新工具的逻辑粗细。
 8. 任一阶段中途反向必须从当前视觉值续接。Laser 稳态下切换 `3/5/7 DIP` 仍保持内外宽同步动画。
 9. Slider、FineDial、快捷预设、真实笔宽、Draw3 Bridge、配置格式和工具语义保持不变。
+10. Laser 白芯与红壳始终共享由阶段化 outer thickness 决定的两端圆心；从更细/更粗的非 Laser 笔切入时，白芯水平长度随 outer thickness 连续收窄/拓宽，Slider 展开时端点直径与芯宽一起连续趋向轨道粗细。
 
 ## Acceptance Criteria
 
@@ -31,6 +32,7 @@
 - [ ] Laser 退出到任一非 Laser 笔型时，白芯仅在红壳完全隐藏后开始改变。
 - [ ] Highlighter 与 Laser 双向切换时，宽度、颜色、圆角和渐变连续，不出现渐变矩形瞬切白色胶囊。
 - [ ] 快速反向、面板关闭重开和 Laser 稳态粗细切换不跳回端点、不残留动画或交互状态。
+- [ ] Laser 白芯与红壳在壳进度 `0`、中间值和 `1` 时两端圆心一致；细笔/粗笔切入及 Slider morph 期间水平长度连续。
 - [ ] ARM64 Debug 完整 Solution 构建、无窗口 HeadlessTests 和 `git diff --check` 通过。
 
 ## Out Of Scope

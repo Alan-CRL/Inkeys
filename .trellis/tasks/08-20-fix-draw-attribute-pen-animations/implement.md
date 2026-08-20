@@ -12,3 +12,4 @@
 - [x] 最终 Trellis 全量审查修复初始化文件 BOM 与旧测试语义，重新通过完整 ARM64 Debug Solution、HeadlessTests 和差异检查。
 - [x] 同步 `.trellis/spec/native-desktop/rendering-and-ui.md` 的六阶段时序、Hold 策略、包络与回归测试合同。
 - [x] 修复帧内复用 solid brush 被红壳改色后继续用于 semantic core，导致 Laser 白芯变红；保持状态机与动画 target 不变。
+- [x] 让 Laser 白芯与红壳共用阶段化 outer thickness 的端点圆心，覆盖曲线、fallback、Highlighter 圆角矩形及 Slider morph，并验证细笔/粗笔切入时水平长度连续。

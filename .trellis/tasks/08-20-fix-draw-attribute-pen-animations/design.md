@@ -26,6 +26,8 @@
 
 预览先以当前红壳宽度绘制实体红层，再绘制统一语义芯层。语义芯层继续使用现有路径、圆角、渐变和 Slider morph，只把颜色按白色混合进度插值。预览包络取芯宽和当前壳宽最大值，不读取尚未进入当前阶段的逻辑目标宽度。
 
+白芯和红壳的曲线端点不再按各自当前 stroke width 独立计算，而是共用阶段化 outer thickness 作为端点直径。圆角矩形使用 `(endpointDiameter - layerThickness) / 2` 的水平 inset，因此壳进度为零时红层被白芯完全覆盖，展开后两层端点圆心仍一致。Slider morph 将 endpoint diameter、core thickness 和当前 shell thickness 一起连续插值到 track thickness。
+
 任务只增加 Bar 内部状态和供 HeadlessTests 使用的纯阶段 helper；不改变应用公开接口、配置或 Draw3 数据流。回滚仅涉及 Bar 与动画测试文件。
 
 ## 5. 验证
