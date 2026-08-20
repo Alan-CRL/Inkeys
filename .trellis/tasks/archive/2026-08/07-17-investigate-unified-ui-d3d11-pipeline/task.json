@@ -3,7 +3,7 @@
   "name": "investigate-unified-ui-d3d11-pipeline",
   "title": "调查 Bar 与 Setting UI 统一 D3D11 设备和串行渲染管道",
   "description": "仅调查：统一 Bar UI 与 Setting UI 的 D3D11.1 设备、ImGui CSO 着色器加载、串行渲染时序，以及 Setting 普通窗口化可行性；暂不修改产品代码。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "AlanCRL",
   "assignee": "AlanCRL",
   "createdAt": "2026-07-17",
-  "completedAt": null,
+  "completedAt": "2026-08-20",
   "branch": null,
   "base_branch": "feature/settings",
   "worktree_path": null,
@@ -26,4 +26,3 @@
     "after": "08-01-render-pipeline-refactor"
   }
 }
-
