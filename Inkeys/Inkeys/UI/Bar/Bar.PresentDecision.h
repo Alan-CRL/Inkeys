@@ -9,6 +9,69 @@
 
 namespace Inkeys::UI::Bar
 {
+	enum class BarPresentMappingMode : unsigned char
+	{
+		LocalDirty,
+		FullReplacement,
+	};
+
+	struct BarPresentMappingTuple
+	{
+		POINT source{};
+		SIZE windowSize{};
+		SIZE targetCapacity{};
+		std::uint64_t deviceGeneration = 0;
+	};
+
+	[[nodiscard]] constexpr bool IsSameBarPresentMapping(
+		const BarPresentMappingTuple& left,
+		const BarPresentMappingTuple& right) noexcept
+	{
+		return left.source.x == right.source.x
+			&& left.source.y == right.source.y
+			&& left.windowSize.cx == right.windowSize.cx
+			&& left.windowSize.cy == right.windowSize.cy
+			&& left.targetCapacity.cx == right.targetCapacity.cx
+			&& left.targetCapacity.cy == right.targetCapacity.cy
+			&& left.deviceGeneration == right.deviceGeneration;
+	}
+
+	class BarPresentMappingTracker
+	{
+	public:
+		[[nodiscard]] constexpr BarPresentMappingMode Resolve(
+			const BarPresentMappingTuple& candidate) const noexcept
+		{
+			return hasPresentedMapping
+				&& IsSameBarPresentMapping(lastPresentedMapping, candidate)
+				? BarPresentMappingMode::LocalDirty
+				: BarPresentMappingMode::FullReplacement;
+		}
+
+		constexpr void CommitPresented(
+			const BarPresentMappingTuple& candidate) noexcept
+		{
+			// 只由完整呈现事务的成功路径推进，失败重试仍覆盖整窗。
+			lastPresentedMapping = candidate;
+			hasPresentedMapping = true;
+		}
+
+		[[nodiscard]] constexpr bool HasPresentedMapping() const noexcept
+		{
+			return hasPresentedMapping;
+		}
+
+		[[nodiscard]] constexpr BarPresentMappingTuple LastPresentedMapping()
+			const noexcept
+		{
+			return lastPresentedMapping;
+		}
+
+	private:
+		BarPresentMappingTuple lastPresentedMapping{};
+		bool hasPresentedMapping = false;
+	};
+
 	[[nodiscard]] constexpr bool IsBarSharedDeviceLost(HRESULT hr) noexcept
 	{
 		return hr == DXGI_ERROR_DEVICE_REMOVED

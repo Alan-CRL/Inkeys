@@ -270,6 +270,9 @@ struct BarBottomDockPresentedSnapshot
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
+	bool indicatorVisible = false;
+	bool indicatorOccluding = false;
+	RECT indicatorBounds{};
 	unsigned long long transitionSerial = 0;
 	unsigned long long serial = 0;
 };
@@ -435,6 +438,15 @@ public:
 				bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.mainCenterScreenY =
 				bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+			snapshot.indicatorVisible =
+				bottomDockIndicatorPresentedVisible.load(memory_order_relaxed);
+			snapshot.indicatorOccluding =
+				bottomDockIndicatorPresentedOccluding.load(memory_order_relaxed);
+			snapshot.indicatorBounds = RECT{
+				bottomDockIndicatorPresentedLeft.load(memory_order_relaxed),
+				bottomDockIndicatorPresentedTop.load(memory_order_relaxed),
+				bottomDockIndicatorPresentedRight.load(memory_order_relaxed),
+				bottomDockIndicatorPresentedBottom.load(memory_order_relaxed) };
 			snapshot.transitionSerial =
 				bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
 			snapshot.serial = serialBefore;
@@ -485,6 +497,13 @@ public:
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
 			snapshot.rigidTranslationDip, snapshot.zoom);
+	}
+	bool IsBottomDockIndicatorPresentedAt(LONG x, LONG y) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return Inkeys::UI::Bar::IsBarBottomDockIndicatorHit(
+			snapshot.indicatorVisible && snapshot.indicatorOccluding,
+			snapshot.indicatorBounds, x, y);
 	}
 protected:
 	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
@@ -607,6 +626,12 @@ protected:
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
+	atomic<bool> bottomDockIndicatorPresentedVisible = false;
+	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
+	atomic<LONG> bottomDockIndicatorPresentedLeft = 0;
+	atomic<LONG> bottomDockIndicatorPresentedTop = 0;
+	atomic<LONG> bottomDockIndicatorPresentedRight = 0;
+	atomic<LONG> bottomDockIndicatorPresentedBottom = 0;
 	atomic<bool> bottomDockDragActive = false;
 	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
 	atomic<bool> bottomDockRecoveryActive = false;

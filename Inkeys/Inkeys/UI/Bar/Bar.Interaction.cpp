@@ -2173,6 +2173,70 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		return BarInteractionStageResult::PassThrough;
 		}
 
+	BarInteractionStageResult HandleBottomDockIndicatorOcclusion()
+	{
+		if (!IsBarCoordinateMessage(msg.message)
+			|| !barUISet.IsBottomDockIndicatorPresentedAt(msg.x, msg.y))
+			return BarInteractionStageResult::PassThrough;
+
+		// 只消费成功呈现的指示器像素，并同步撤销下层控件候选状态。
+		if (hoveredMainBarButton)
+		{
+			StopMainBarButtonHover(hoveredMainBarButton, true);
+			hoveredMainBarButton = nullptr;
+		}
+		if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+		{
+			StopIndependentHover(hoveredIndependentButton, true);
+			hoveredIndependentButton = IndependentHoverTargetEnum::None;
+		}
+		for (int id = 0; id < barButtonSet.tot; ++id)
+		{
+			auto button = barButtonSet.buttonList.Get(id);
+			if (button && button->state
+				&& button->state->emph == BarWidgetEmphasize::Pressed)
+				button->state->emph = BarWidgetEmphasize::None;
+		}
+		lastClickedMainBarButton = nullptr;
+		auto& draw = barState.drawAttributeBar;
+		draw.brush1Press = false;
+		draw.softPenPress = false;
+		draw.laserPress = false;
+		draw.highlight1Press = false;
+		draw.penTypeExtensionPress = false;
+		draw.penTypeFreeLinePress = false;
+		draw.thicknessFinePress = false;
+		draw.thicknessMediumPress = false;
+		draw.thicknessCoarsePress = false;
+		draw.thicknessAdjustPress = false;
+		draw.thicknessSliderHover = false;
+		draw.thicknessSliderPressed = false;
+		draw.thicknessSliderDragging = false;
+		draw.thicknessPreviewDragging = false;
+		draw.thicknessSliderCapture = false;
+		draw.thicknessFineDialDragging = false;
+		draw.thicknessAnnotationHover = false;
+		draw.thicknessAnnotationHoverGrace = false;
+		draw.thicknessAnnotationClosePress = false;
+		draw.thicknessOverflowHover = false;
+		draw.thicknessOverflowHoverGrace = false;
+		draw.thicknessOverflowClosePress = false;
+		draw.colorPickerTonePress = false;
+		draw.colorPickerClosePress = false;
+		draw.colorPickerPointerPressed = false;
+		draw.colorPickerPointerCapture = false;
+		barState.moreClosePress = false;
+		barState.geometryAttributeBar.straightLinePress = false;
+		barState.geometryAttributeBar.rectanglePress = false;
+		barState.geometryAttributeBar.thicknessFinePress = false;
+		barState.geometryAttributeBar.thicknessMediumPress = false;
+		barState.geometryAttributeBar.thicknessCoarsePress = false;
+		barState.geometryAttributeBar.closePress = false;
+		if (GetCapture() == floating_window) ReleaseCapture();
+		UpdateRendering(false);
+		return BarInteractionStageResult::Consumed;
+	}
+
 	BarInteractionStageResult HandleCommonHoverAndOcclusion()
 	{
 		if (!ColorPickerAvailable()
@@ -5186,6 +5250,11 @@ public:
 			if (keyboardResult == BarInteractionStageResult::Shutdown) break;
 			if (keyboardResult == BarInteractionStageResult::Consumed) continue;
 
+			const auto dockIndicatorResult =
+				HandleBottomDockIndicatorOcclusion();
+			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
+			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
+
 			const auto hoverResult = HandleCommonHoverAndOcclusion();
 			if (hoverResult == BarInteractionStageResult::Shutdown) break;
 			if (hoverResult == BarInteractionStageResult::Consumed) continue;
@@ -5726,6 +5795,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 {
 	using namespace Inkeys::UI::Bar;
 	BarSeekResult result;
+	if (IsBottomDockIndicatorPresentedAt(msg.x, msg.y))
+	{
+		result.allowClick = false;
+		return result;
+	}
 	auto IsLeftButtonDown = []() -> bool
 		{
 			// HWND 移动后可能收不到抬手消息，拖动循环必须以系统实时按键态结束。
@@ -6309,6 +6383,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		directMoveFailed, gestureCancelled, result.modeChanged,
 		result.rawPathLength, maximumElasticTravelScreen,
 		maximumInteractionZoom);
+	POINT releasePoint{};
+	if (result.allowClick && GetCursorPos(&releasePoint)
+		&& BarScreenToLayout(releasePoint)
+		&& IsBottomDockIndicatorPresentedAt(releasePoint.x, releasePoint.y))
+		result.allowClick = false;
 	return result;
 }
 

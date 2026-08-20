@@ -1,0 +1,29 @@
+{
+  "id": "ui3-bar-bottom-dock-feedback",
+  "name": "ui3-bar-bottom-dock-feedback",
+  "title": "UI3 Bar 底栏吸附视觉反馈与残影修复",
+  "description": "修复 UI3 Bar 底栏吸附窗口跳变残影，重做吸附背景板并新增可阻止点击穿透的底栏交互指示器。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-08-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "package": "native-desktop",
+    "depends_on": "08-14-ui3-bar-bottom-dock-elastic"
+  }
+}

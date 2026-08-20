@@ -38,6 +38,14 @@
       "Recall": "超级恢复",
       "Freeze": "定格",
       "Pierce": "穿透"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "底栏模式",
+        "Centered": "居中"
+      }
     }
   },
   "SettingsUI":

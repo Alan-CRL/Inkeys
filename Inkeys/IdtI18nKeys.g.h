@@ -42,6 +42,14 @@ inline constexpr struct I18nKeyRoot
             const char* Freeze = "UI/Operate/Freeze";
             const char* Pierce = "UI/Operate/Pierce";
         } Operate{};
+        struct Node__UI__Bar
+        {
+            struct Node__UI__Bar__BottomDock
+            {
+                const char* Mode = "UI/Bar/BottomDock/Mode";
+                const char* Centered = "UI/Bar/BottomDock/Centered";
+            } BottomDock{};
+        } Bar{};
     } UI{};
     struct Node__SettingsUI
     {

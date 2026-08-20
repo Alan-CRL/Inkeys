@@ -38,6 +38,14 @@
       "Recall": "Restore",
       "Freeze": "Hold",
       "Pierce": "Pass"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "Bottom bar mode",
+        "Centered": "Centered"
+      }
     }
   },
   "SettingsUI":

@@ -1,0 +1,40 @@
+# Implementation Plan
+
+## Preconditions
+
+- [x] 确认依赖任务 `08-14-ui3-bar-bottom-dock-elastic` 的状态机与现有 Headless 测试基线可用。
+- [x] 读取 `native-desktop`、共享指南及任务引用的渲染规范。
+- [x] 在写代码前确认工作区差异，保留用户已有修改。
+
+## Ordered Work
+
+1. [x] 在窗口几何/呈现纯逻辑层加入 local-dirty 与 full-replacement 决策及成功 tuple 合同。
+2. [x] 修改 Bar 呈现循环：变化帧完整清除、`prcDirty=nullptr`，仅成功后发布 tuple；补充失败重试测试。
+3. [x] 将旧捕获提示几何替换为背景板联合外接矩形 helper，并实现独立显示生命周期。
+4. [x] 增加缓存 premultiplied D2D bitmap 装饰层、失效条件和资源释放，按固定顺序合成。
+5. [x] 增加交互指示器几何、文本测量、自适应宽度和显示生命周期，并在主栏内容之后绘制。
+6. [x] 扩展成功呈现快照，并在全部 Bar 输入阶段之前实现指示器消息消费及 hover/pressed 清理。
+7. [x] 添加 `UI.Bar.BottomDock.Mode`、`UI.Bar.BottomDock.Centered` 翻译，运行 i18n sync 并检查生成差异。
+8. [x] 扩充 Headless 测试，覆盖呈现决策、几何、DPI、动画反向、语言宽度和命中阻断。
+9. [x] 更新 `native-desktop` 渲染规范，记录 source/size 变化时的整窗替换与装饰层单提交合同。
+
+## Validation
+
+- [x] `pwsh -NoProfile -File Scripts/i18n.ps1 check`
+- [x] 运行仓库中全部 `InkeysHeadlessTests.exe --no-window`。
+- [x] `git diff --check`
+- [x] 使用 ARM64 `MSBuild.exe` 构建完整 `InkeysRepo.sln`：`Debug | ARM64`，超时至少 5 分钟。
+- [x] 静态复核只有一次最终 GDI/ULW 提交，且未启动可见 GUI。
+
+验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；`Build\\ARM64\\Debug\\InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；未启动 GUI。
+
+## Risk And Rollback Points
+
+- 呈现快照推进：失败路径若误更新会使重试漏掉整窗替换；先用纯逻辑测试锁定，再改 ULW 调用。
+- D2D target 切换：必须恢复主 target 并处理设备丢失；以局部资源封装降低泄漏或错 target 风险。
+- 输入遮挡：必须使用成功呈现快照，避免不可见区域抢占输入；保留现有阶段顺序，仅在最前方增加 blocker。
+- i18n 生成物：只通过脚本更新；生成异常时回退源翻译差异并重新 sync。
+
+## Manual Follow-Up
+
+维护者手工验证自由主栏从上下方进入捕获区、快速跨阈值、100%/150% DPI、动画开关及脏区调试开关下均无重复上半栏、残影或点击穿透。本轮不自动启动 GUI。

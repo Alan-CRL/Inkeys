@@ -19,12 +19,15 @@ namespace Inkeys::UI::Bar
 	inline constexpr double BarBottomDockSpringStepSeconds = 1.0 / 120.0;
 	inline constexpr double BarBottomDockSettleDistanceDip = 0.15;
 	inline constexpr double BarBottomDockSettleVelocityDipPerSecond = 4.0;
-	inline constexpr double BarBottomDockTargetIndicatorOutsetDip = 3.0;
-	inline constexpr double BarBottomDockTargetIndicatorHeightDip = 80.0;
-	inline constexpr double BarBottomDockTargetIndicatorCornerRadiusDip = 8.0;
-	inline constexpr double BarBottomDockTargetIndicatorPeakOpacity = 0.22;
-	inline constexpr double BarBottomDockTargetIndicatorFadeInSeconds = 0.16;
-	inline constexpr double BarBottomDockTargetIndicatorFadeOutSeconds = 0.20;
+	inline constexpr double BarBottomDockFeedbackOutsetDip = 10.0;
+	inline constexpr double BarBottomDockBackgroundCornerRadiusDip = 10.0;
+	inline constexpr double BarBottomDockBackgroundPeakOpacity = 0.18;
+	inline constexpr double BarBottomDockIndicatorTopInsetDip = 5.0;
+	inline constexpr double BarBottomDockIndicatorHeightDip = 20.0;
+	inline constexpr double BarBottomDockIndicatorCornerRadiusDip = 6.0;
+	inline constexpr double BarBottomDockIndicatorHorizontalPaddingDip = 12.0;
+	inline constexpr double BarBottomDockFeedbackFadeInSeconds = 0.16;
+	inline constexpr double BarBottomDockFeedbackFadeOutSeconds = 0.20;
 
 	enum class BarBottomDockMode
 	{
@@ -41,7 +44,7 @@ namespace Inkeys::UI::Bar
 		Recovering,
 	};
 
-	struct BarBottomDockTargetIndicatorGeometry
+	struct BarBottomDockFeedbackGeometry
 	{
 		double leftDip = 0.0;
 		double topDip = 0.0;
@@ -58,46 +61,98 @@ namespace Inkeys::UI::Bar
 			&& currentPhase == BarBottomDockPhase::Capturing;
 	}
 
-	enum class BarBottomDockTargetIndicatorAction
+	enum class BarBottomDockFeedbackAction
 	{
 		None,
 		FadeIn,
 		FadeOut,
-		HideImmediately,
 	};
 
-	[[nodiscard]] inline BarBottomDockTargetIndicatorAction
-		ResolveBarBottomDockTargetIndicatorAction(
-			BarBottomDockMode previousMode, BarBottomDockMode currentMode,
-			BarBottomDockPhase currentPhase, bool indicatorCaptureActive,
-			bool captureBottomActive) noexcept
+	[[nodiscard]] inline BarBottomDockFeedbackAction
+		ResolveBarBottomDockFeedbackAction(
+			bool wasVisibleTarget, bool isVisibleTarget) noexcept
 	{
-		if (currentMode == BarBottomDockMode::Floating
-			|| currentPhase == BarBottomDockPhase::Detaching)
-			return BarBottomDockTargetIndicatorAction::HideImmediately;
-		if (IsBarBottomDockEntryCapture(
-			previousMode, currentMode, currentPhase))
-			return BarBottomDockTargetIndicatorAction::FadeIn;
-		if (indicatorCaptureActive && !captureBottomActive)
-			return BarBottomDockTargetIndicatorAction::FadeOut;
-		return BarBottomDockTargetIndicatorAction::None;
+		if (!wasVisibleTarget && isVisibleTarget)
+			return BarBottomDockFeedbackAction::FadeIn;
+		if (wasVisibleTarget && !isVisibleTarget)
+			return BarBottomDockFeedbackAction::FadeOut;
+		return BarBottomDockFeedbackAction::None;
 	}
 
-	[[nodiscard]] inline BarBottomDockTargetIndicatorGeometry
-		ResolveBarBottomDockTargetIndicatorGeometry(
-			double mainBarLeftDip, double mainBarWidthDip,
+	[[nodiscard]] inline bool ResolveBarBottomDockBackgroundTarget(
+		BarBottomDockMode previousMode, BarBottomDockMode currentMode,
+		BarBottomDockPhase currentPhase, bool dragActive,
+		bool springActive, bool captureLatched) noexcept
+	{
+		if (IsBarBottomDockEntryCapture(
+			previousMode, currentMode, currentPhase)) return true;
+		return captureLatched && currentMode == BarBottomDockMode::BottomDocked
+			&& (dragActive || springActive);
+	}
+
+	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
+		BarBottomDockMode currentMode, bool dragActive) noexcept
+	{
+		return currentMode == BarBottomDockMode::BottomDocked && dragActive;
+	}
+
+	[[nodiscard]] inline BarBottomDockFeedbackGeometry
+		ResolveBarBottomDockBackgroundGeometry(
+			const BarBottomDockFeedbackGeometry& mainButton,
+			const BarBottomDockFeedbackGeometry& mainBar,
 			double dockLineDip) noexcept
 	{
-		if (!std::isfinite(mainBarLeftDip)) mainBarLeftDip = 0.0;
-		if (!std::isfinite(mainBarWidthDip) || mainBarWidthDip < 0.0)
-			mainBarWidthDip = 0.0;
-		if (!std::isfinite(dockLineDip)) dockLineDip = 0.0;
+		auto FiniteOrZero = [](double value) noexcept
+			{ return std::isfinite(value) ? value : 0.0; };
+		auto Normalize = [&](const BarBottomDockFeedbackGeometry& input) noexcept
+			{
+				BarBottomDockFeedbackGeometry result{
+					FiniteOrZero(input.leftDip), FiniteOrZero(input.topDip),
+					FiniteOrZero(input.rightDip), FiniteOrZero(input.bottomDip) };
+				if (result.rightDip < result.leftDip)
+					std::swap(result.leftDip, result.rightDip);
+				if (result.bottomDip < result.topDip)
+					std::swap(result.topDip, result.bottomDip);
+				return result;
+			};
+		const auto button = Normalize(mainButton);
+		const auto bar = Normalize(mainBar);
+		double left = std::min(button.leftDip, bar.leftDip);
+		double top = std::min(button.topDip, bar.topDip);
+		double right = std::max(button.rightDip, bar.rightDip);
+		if (!std::isfinite(dockLineDip)) dockLineDip = std::max(
+			button.bottomDip, bar.bottomDip);
 		return {
-			mainBarLeftDip - BarBottomDockTargetIndicatorOutsetDip,
-			dockLineDip - BarBottomDockTargetIndicatorHeightDip,
-			mainBarLeftDip + mainBarWidthDip
-				+ BarBottomDockTargetIndicatorOutsetDip,
+			left - BarBottomDockFeedbackOutsetDip,
+			top - BarBottomDockFeedbackOutsetDip,
+			right + BarBottomDockFeedbackOutsetDip,
 			dockLineDip };
+	}
+
+	[[nodiscard]] inline BarBottomDockFeedbackGeometry
+		ResolveBarBottomDockIndicatorGeometry(
+			const BarBottomDockFeedbackGeometry& background,
+			double actualLabelWidthDip,
+			double reservedLabelWidthDip) noexcept
+	{
+		actualLabelWidthDip = std::max(0.0, std::isfinite(actualLabelWidthDip)
+			? actualLabelWidthDip : 0.0);
+		reservedLabelWidthDip = std::max(0.0,
+			std::isfinite(reservedLabelWidthDip) ? reservedLabelWidthDip : 0.0);
+		const double width = std::max(actualLabelWidthDip, reservedLabelWidthDip)
+			+ BarBottomDockIndicatorHorizontalPaddingDip * 2.0;
+		const double center = (background.leftDip + background.rightDip) / 2.0;
+		const double top = background.topDip + BarBottomDockIndicatorTopInsetDip;
+		return { center - width / 2.0, top, center + width / 2.0,
+			top + BarBottomDockIndicatorHeightDip };
+	}
+
+	[[nodiscard]] inline bool IsBarBottomDockIndicatorHit(
+		bool visible, const RECT& bounds, LONG x, LONG y) noexcept
+	{
+		return visible && bounds.right > bounds.left && bounds.bottom > bounds.top
+			&& x >= bounds.left && x < bounds.right
+			&& y >= bounds.top && y < bounds.bottom;
 	}
 
 		struct BarBottomDockEnvironment

@@ -122,21 +122,48 @@ int RunBarBottomDockTests()
 		&& ResolveBarMainBarRightSide(499.99, 1000.0)
 		&& !ResolveBarMainBarRightSide(500.01, 1000.0),
 		"main bar reverses only after crossing the horizontal center line");
-	const auto targetIndicator = ResolveBarBottomDockTargetIndicatorGeometry(
-		-120.0, 360.0, 688.0);
-	Check(Near(targetIndicator.leftDip, -123.0)
-		&& Near(targetIndicator.topDip, 608.0)
-		&& Near(targetIndicator.rightDip, 243.0)
-		&& Near(targetIndicator.bottomDip, 688.0),
-		"dock target indicator follows main bar x and keeps normal geometry");
+	const auto dockBackground = ResolveBarBottomDockBackgroundGeometry(
+		BarBottomDockFeedbackGeometry{ -40.0, 608.0, 40.0, 688.0 },
+		BarBottomDockFeedbackGeometry{ -40.0, 608.0, 320.0, 688.0 },
+		688.0);
+	Check(Near(dockBackground.leftDip, -50.0)
+		&& Near(dockBackground.topDip, 598.0)
+		&& Near(dockBackground.rightDip, 330.0)
+		&& Near(dockBackground.bottomDip, 688.0),
+		"dock background expands three sides and keeps the dock edge flush");
 	for (double zoom : { 1.0, 1.5 })
-	{
-		Check(Near((targetIndicator.rightDip - targetIndicator.leftDip) * zoom,
-			(360.0 + 2.0 * BarBottomDockTargetIndicatorOutsetDip) * zoom)
-			&& Near((targetIndicator.bottomDip - targetIndicator.topDip) * zoom,
-				BarBottomDockTargetIndicatorHeightDip * zoom),
-			"dock target indicator zoom is applied exactly once");
-	}
+		Check(Near((dockBackground.rightDip - dockBackground.leftDip) * zoom,
+			380.0 * zoom)
+			&& Near((dockBackground.bottomDip - dockBackground.topDip) * zoom,
+				90.0 * zoom),
+			"dock feedback zoom is applied exactly once");
+	const auto normalizedBackground = ResolveBarBottomDockBackgroundGeometry(
+		BarBottomDockFeedbackGeometry{
+			std::numeric_limits<double>::quiet_NaN(), 30.0, -20.0, 10.0 },
+		BarBottomDockFeedbackGeometry{ 40.0, 20.0, 10.0, 60.0 },
+		std::numeric_limits<double>::quiet_NaN());
+	Check(Near(normalizedBackground.leftDip, -30.0)
+		&& Near(normalizedBackground.topDip, 0.0)
+		&& Near(normalizedBackground.rightDip, 50.0)
+		&& Near(normalizedBackground.bottomDip, 60.0),
+		"dock background normalizes reversed and non-finite rectangles");
+	const auto dockIndicator = ResolveBarBottomDockIndicatorGeometry(
+		dockBackground, 52.0, 88.0);
+	Check(Near(dockIndicator.leftDip, 84.0)
+		&& Near(dockIndicator.topDip, 603.0)
+		&& Near(dockIndicator.rightDip, 196.0)
+		&& Near(dockIndicator.bottomDip, 623.0),
+		"dock indicator uses reserved text width and fixed insets");
+	const auto actualWiderIndicator = ResolveBarBottomDockIndicatorGeometry(
+		dockBackground, 120.0, 88.0);
+	Check(Near(actualWiderIndicator.rightDip - actualWiderIndicator.leftDip,
+		144.0), "dock indicator expands for a wider current language");
+	Check(IsBarBottomDockIndicatorHit(true, RECT{ 34, 603, 146, 623 }, 34, 603)
+		&& !IsBarBottomDockIndicatorHit(
+			true, RECT{ 34, 603, 146, 623 }, 146, 610)
+		&& !IsBarBottomDockIndicatorHit(
+			false, RECT{ 34, 603, 146, 623 }, 60, 610),
+		"indicator hit test follows visible half-open presented bounds");
 	Check(IsBarBottomDockEntryCapture(
 		BarBottomDockMode::Floating, BarBottomDockMode::BottomDocked,
 		BarBottomDockPhase::Capturing)
@@ -150,32 +177,33 @@ int RunBarBottomDockTests()
 			BarBottomDockMode::Floating, BarBottomDockMode::Floating,
 			BarBottomDockPhase::Detaching),
 		"dock target indicator starts only for a real entry capture");
-	Check(ResolveBarBottomDockTargetIndicatorAction(
+	Check(ResolveBarBottomDockBackgroundTarget(
 		BarBottomDockMode::Floating, BarBottomDockMode::BottomDocked,
-		BarBottomDockPhase::Capturing, false, true)
-			== BarBottomDockTargetIndicatorAction::FadeIn
-		&& ResolveBarBottomDockTargetIndicatorAction(
+		BarBottomDockPhase::Capturing, true, true, false)
+		&& ResolveBarBottomDockBackgroundTarget(
 			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
-			BarBottomDockPhase::Capturing, true, true)
-			== BarBottomDockTargetIndicatorAction::None
-		&& ResolveBarBottomDockTargetIndicatorAction(
+			BarBottomDockPhase::Recovering, false, true, true)
+		&& !ResolveBarBottomDockBackgroundTarget(
 			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
-			BarBottomDockPhase::Stable, true, false)
-			== BarBottomDockTargetIndicatorAction::FadeOut,
-		"dock target indicator fades in and out around capture settling");
-	Check(ResolveBarBottomDockTargetIndicatorAction(
-		BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
-		BarBottomDockPhase::Detaching, true, true)
-			== BarBottomDockTargetIndicatorAction::HideImmediately
-		&& ResolveBarBottomDockTargetIndicatorAction(
-			BarBottomDockMode::Floating, BarBottomDockMode::Floating,
-			BarBottomDockPhase::Detaching, false, false)
-			== BarBottomDockTargetIndicatorAction::HideImmediately
-		&& ResolveBarBottomDockTargetIndicatorAction(
-			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
-			BarBottomDockPhase::Dragging, false, false)
-			== BarBottomDockTargetIndicatorAction::None,
-		"dock target indicator never starts during dock dragging or detaching");
+			BarBottomDockPhase::Stable, false, false, true)
+		&& !ResolveBarBottomDockBackgroundTarget(
+			BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
+			BarBottomDockPhase::Detaching, true, true, true),
+		"dock background spans real capture through settled rebound");
+	Check(ResolveBarBottomDockIndicatorTarget(
+		BarBottomDockMode::BottomDocked, true)
+		&& !ResolveBarBottomDockIndicatorTarget(
+			BarBottomDockMode::BottomDocked, false)
+		&& !ResolveBarBottomDockIndicatorTarget(
+			BarBottomDockMode::Floating, true),
+		"dock indicator follows only an active docked drag");
+	Check(ResolveBarBottomDockFeedbackAction(false, true)
+		== BarBottomDockFeedbackAction::FadeIn
+		&& ResolveBarBottomDockFeedbackAction(true, false)
+			== BarBottomDockFeedbackAction::FadeOut
+		&& ResolveBarBottomDockFeedbackAction(true, true)
+			== BarBottomDockFeedbackAction::None,
+		"feedback animations reverse from their current visibility target");
 
 	BarBottomDockEnvironment environment{
 		RECT{ 0, 0, 1920, 1080 }, RECT{ 0, 0, 1920, 1032 }, 1.5 };
