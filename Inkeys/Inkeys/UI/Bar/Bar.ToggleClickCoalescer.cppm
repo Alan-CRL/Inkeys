@@ -22,15 +22,13 @@ export namespace Inkeys::UI::Bar
 	struct BarDrawButtonToggleDecision
 	{
 		bool openDrawAttribute = false;
-		bool deactivateLaser = false;
 	};
 
 	inline BarDrawButtonToggleDecision ResolveBarDrawButtonToggleDecision(
-		bool drawAttributeOpen, bool laserActive) noexcept
+		bool drawAttributeOpen) noexcept
 	{
-		const bool openDrawAttribute = !drawAttributeOpen;
-		// 展开基础笔属性时退出 Laser；单纯收起面板必须保留当前 Laser。
-		return { openDrawAttribute, openDrawAttribute && laserActive };
+		// 属性面板只负责显隐，不能改写最后选择的笔型。
+		return { !drawAttributeOpen };
 	}
 
 	class BarToggleClickCoalescer

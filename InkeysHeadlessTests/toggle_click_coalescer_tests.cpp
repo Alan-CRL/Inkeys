@@ -2,6 +2,8 @@
 #include <iostream>
 #include <string_view>
 
+#include "../Inkeys/Inkeys/Business/PenToolState.hpp"
+
 import Inkeys.UI.Bar.ToggleClickCoalescer;
 
 namespace
@@ -62,21 +64,31 @@ namespace
 			"non-monotonic injected time rebases the channel");
 	}
 
-	void TestDrawButtonTogglePreservesLaserWhenClosing()
+	void TestDrawButtonToggleNeverChangesPenType()
 	{
-		const auto closeLaser = ResolveBarDrawButtonToggleDecision(true, true);
-		Check(!closeLaser.openDrawAttribute && !closeLaser.deactivateLaser,
+		const auto closeLaser = ResolveBarDrawButtonToggleDecision(true);
+		Check(!closeLaser.openDrawAttribute,
 			"closing draw attributes preserves Laser");
 
-		const auto openLaser = ResolveBarDrawButtonToggleDecision(false, true);
-		Check(openLaser.openDrawAttribute && openLaser.deactivateLaser,
-			"opening draw attributes returns to the remembered base pen");
+		const auto openLaser = ResolveBarDrawButtonToggleDecision(false);
+		Check(openLaser.openDrawAttribute,
+			"opening draw attributes preserves Laser");
 
-		const auto closePen = ResolveBarDrawButtonToggleDecision(true, false);
-		const auto openPen = ResolveBarDrawButtonToggleDecision(false, false);
-		Check(!closePen.openDrawAttribute && !closePen.deactivateLaser
-			&& openPen.openDrawAttribute && !openPen.deactivateLaser,
+		const auto closePen = ResolveBarDrawButtonToggleDecision(true);
+		const auto openPen = ResolveBarDrawButtonToggleDecision(false);
+		Check(!closePen.openDrawAttribute && openPen.openDrawAttribute,
 			"non-Laser draw attribute toggles do not change the tool");
+	}
+
+	void TestRememberedLaserOnlyActivatesInPenMode()
+	{
+		using Inkeys::Business::IsLaserToolActive;
+		Check(IsLaserToolActive(true, true),
+			"remembered Laser activates in Pen mode");
+		Check(!IsLaserToolActive(false, true),
+			"Selection Eraser and Shape override remembered Laser");
+		Check(!IsLaserToolActive(true, false),
+			"base pen stays active when Laser is not remembered");
 	}
 }
 
@@ -86,6 +98,7 @@ int RunToggleClickCoalescerTests()
 	TestSameChannelMergesWithinWindow();
 	TestChannelsAreIndependent();
 	TestNonMonotonicTimeStartsNewWindow();
-	TestDrawButtonTogglePreservesLaserWhenClosing();
+	TestDrawButtonToggleNeverChangesPenType();
+	TestRememberedLaserOnlyActivatesInPenMode();
 	return failureCount;
 }

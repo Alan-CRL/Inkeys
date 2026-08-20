@@ -60,7 +60,7 @@ public:
 	StateModeSelectEnum StateModeSelect = StateModeSelectEnum::IdtSelection;
 	StateModeSelectEnum StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
 	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-	// Draw3 激光是独立工具状态，不复用旧笔型枚举值。
+	// 记录最后选择的笔型是否为 Laser；离开 Pen 时保留，返回 Pen 时恢复。
 	bool laserActive = false;
 
 	struct
@@ -106,6 +106,8 @@ public:
 };
 extern StateModeClass stateMode;
 
+bool IsLaserPenSelected() noexcept;
+bool IsLaserToolActive() noexcept;
 bool SetPenWidth(float targetWidth, bool setMemory = true);
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
 float GetPenWidth();

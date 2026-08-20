@@ -404,6 +404,7 @@
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
+	<ClInclude Include="Inkeys\Business\PenToolState.hpp" />
 	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />

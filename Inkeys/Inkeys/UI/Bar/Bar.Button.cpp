@@ -265,13 +265,7 @@ void BarButtonSetClass::PresetInitialization()
 						if (!barUISet.TryBeginToggle(
 							BarToggleChannel::DrawAttribute)) return;
 						const auto decision = ResolveBarDrawButtonToggleDecision(
-							barUISet.barState.drawAttribute, stateMode.laserActive);
-						if (decision.deactivateLaser)
-						{
-							stateMode.laserActive = false;
-							SyncDraw3State();
-							this->UpdateDrawButtonStyle();
-						}
+							barUISet.barState.drawAttribute);
 						if (decision.openDrawAttribute)
 						{
 							barUISet.barState.moreExpanded = false;
@@ -768,10 +762,10 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 {
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-	bool laser = selected && stateMode.laserActive;
+	bool laser = IsLaserPenSelected();
 	bool highlighter =
 		!laser && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
-	bool hardPen = selected && !laser && !highlighter &&
+	bool hardPen = !laser && !highlighter &&
 		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen;
 	int styleKey = (selected ? 2 : 0) + (highlighter ? 1 : 0) +
 		(laser ? 4 : 0) + (hardPen ? 8 : 0);

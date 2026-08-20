@@ -91,7 +91,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ### 3. Contracts
 
-- `stateMode` 只保存产品工具意图；`laserActive` 以独立覆盖位优先映射为 Laser，不污染已记忆的 `Pen.ModeSelect`。
+- `stateMode` 只保存产品工具意图；`laserActive` 记录最后选择的 Pen 子类型是否为 Laser，不污染已记忆的 `Pen.ModeSelect`。它仅在顶层模式为 Pen 时映射为 Laser；选择、橡皮和图形必须覆盖当前工具但保留该记忆，返回 Pen 时恢复 Laser。
 - bridge 只跨线程传递稳定工具、RGB 和粗细快照；活动笔画在 Down 时锁存 `ProductVisualStyle`，Hover 光标在帧边界跟随最新快照。
 - 普通笔光标直径是 `max(widthDip, 5 DIP * dpiScale)`；只有最小光标值按 DPI 缩放，实际笔画粗细不重复缩放。
 - 荧光笔当前绘制几何固定为 `6.25 × 50 px`，光标必须复用该尺寸；最终 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。
@@ -106,6 +106,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 | 荧光笔经过 Pen 默认 alpha 归一化 | 仍保持 `0.35`，不提升为 `1.0` |
 | 橡皮 Hover / Contact | 分别为 `0.5` / `1.0` |
 | Laser 尺寸调整 | 同时修改共享直径来源，不单改光标或笔迹 |
+| 记忆 Laser 后切换到选择/橡皮/图形 | 当前工具按顶层模式发布，Laser 记忆保留；返回 Pen 后重新发布 Laser |
 
 ### 5. Good / Base / Bad Cases
 

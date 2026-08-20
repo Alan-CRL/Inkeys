@@ -432,15 +432,14 @@ bool StartPptTakeoverAnnotation(int toolType)
 {
 	if (toolType != 1) return false;
 
+	// PPT 接管明确强制软笔，先覆盖笔型再发布，避免短暂发布 Laser。
+	stateMode.laserActive = false;
+	stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 	bool res = true;
 	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 		res = ChangeStateModeToPen();
-	if (res)
-	{
-		stateMode.laserActive = false;
-		stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+	else
 		SyncDraw3State();
-	}
 
 	barUISet.barButtonSet.UpdateDrawButtonStyle();
 	barUISet.UpdateRendering();

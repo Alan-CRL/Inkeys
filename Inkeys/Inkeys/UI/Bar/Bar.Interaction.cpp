@@ -4991,10 +4991,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								clickCompleted = true;
 								ClosePenTypeMenu();
 								CloseThicknessSlider(true);
-								stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-								stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
 								stateMode.laserActive = true;
-								SyncDraw3State();
+								ChangeStateModeToPen();
 								barButtonSet.UpdateDrawButtonStyle();
 								UpdateRendering();
 								break;
@@ -5037,9 +5035,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										== ThicknessViewMode::FineDial)
 										CancelThicknessFineDialSelection();
 									stateMode.laserActive = false;
-					stateMode.Pen.ModeSelect =
-						PenModeSelectEnum::IdtPenHardPen;
-									SyncDraw3State();
+									stateMode.Pen.ModeSelect =
+										PenModeSelectEnum::IdtPenHardPen;
+									ChangeStateModeToPen();
 									barButtonSet.UpdateDrawButtonStyle();
 									UpdateRendering();
 								}
@@ -5086,7 +5084,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										stateMode.laserActive = false;
 										stateMode.Pen.ModeSelect =
 											PenModeSelectEnum::IdtPenSoftPen;
-										SyncDraw3State();
+										ChangeStateModeToPen();
 										barButtonSet.UpdateDrawButtonStyle();
 										UpdateRendering();
 									}
@@ -5132,7 +5130,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									stateMode.laserActive = false;
 									stateMode.Pen.ModeSelect =
 										PenModeSelectEnum::IdtPenHighlighter1;
-									SyncDraw3State();
+									ChangeStateModeToPen();
 									barButtonSet.UpdateDrawButtonStyle();
 									UpdateRendering();
 								}

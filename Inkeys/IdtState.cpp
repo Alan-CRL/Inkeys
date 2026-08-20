@@ -5,6 +5,7 @@
 #include "IdtFreezeFrame.h"
 #include "IdtPlug-in.h"
 #include "Inkeys/Business/LegacyDrawState.hpp"
+#include "Inkeys/Business/PenToolState.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
@@ -52,7 +53,7 @@ namespace
 
 	Tool CurrentDraw3Tool() noexcept
 	{
-		if (stateMode.laserActive) return Tool::Laser;
+		if (IsLaserToolActive()) return Tool::Laser;
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser)
 		{
 			return Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
@@ -177,6 +178,18 @@ void ReconcileDraw3Presentation()
 		Inkeys::Drawing::Draw3::ProductFirstFrameReady();
 }
 
+bool IsLaserPenSelected() noexcept
+{
+	return stateMode.laserActive;
+}
+
+bool IsLaserToolActive() noexcept
+{
+	return Inkeys::Business::IsLaserToolActive(
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen,
+		IsLaserPenSelected());
+}
+
 void RequestWhiteboardActive(bool active) noexcept
 {
 	whiteboardDesired.store(active, std::memory_order_release);
@@ -220,8 +233,8 @@ void RequestWhiteboardNextPage() noexcept
 bool SetPenWidth(float targetWidth, bool setMemory)
 {
 	if (targetWidth <= 0.0f) return false;
-	// laserActive 覆盖残留 Pen.ModeSelect，避免改写底层笔型的记忆粗细。
-	if (stateMode.laserActive)
+	// 仅活动 Laser 使用独立粗细；其他顶层工具不能被笔型记忆覆盖。
+	if (IsLaserToolActive())
 		stateMode.Pen.Laser.width = targetWidth;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
@@ -284,7 +297,7 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 
 float GetPenWidth()
 {
-	if (stateMode.laserActive) return stateMode.Pen.Laser.width;
+	if (IsLaserToolActive()) return stateMode.Pen.Laser.width;
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
@@ -320,7 +333,7 @@ COLORREF GetPenColor()
 float GetEffectivePenOpacity()
 {
 	// Laser 不复用已记忆的 Pen.ModeSelect；当前只有荧光笔使用固定半透明合成。
-	return !stateMode.laserActive &&
+	return !IsLaserToolActive() &&
 		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
 		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
 		? Inkeys::Drawing::Draw3::Bridge::kHighlighterCompositeOpacity : 1.0f;
@@ -338,7 +351,6 @@ bool ChangeStateModeToSelection()
 	if (state == 1.1) state = 1;
 	stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-	stateMode.laserActive = false;
 	BackgroundColorMode = 0;
 	SyncDraw3State();
 	return true;
@@ -349,7 +361,6 @@ bool ChangeStateModeToPen()
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
 	stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
-	stateMode.laserActive = false;
 	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
 	SyncDraw3State();
 	return true;
@@ -360,7 +371,6 @@ bool ChangeStateModeToShape()
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
 	stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
-	stateMode.laserActive = false;
 	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
 	SyncDraw3State();
 	return true;
@@ -371,7 +381,6 @@ bool ChangeStateModeToEraser()
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
 	stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
-	stateMode.laserActive = false;
 	BackgroundColorMode = 0;
 	SyncDraw3State();
 	return true;
