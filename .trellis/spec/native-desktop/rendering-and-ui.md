@@ -34,7 +34,7 @@
 - Setting 借用同一 D3D11 device/immediate context，但独占 discard swap chain、RTV、纹理 SRV 和 ImGui backend/session；
 - 主画板不是 D2D target。
 
-`【直接确认】` `IdtD2DPreparation.*`、旧图形全局和 `Inkeys.UI.RenderScheduler` 已从产品工程移除。新增 Bar/PPT/Setting 图形资产必须沿用 RenderPipeline 的共享生命周期；Draw2、白板、定格和其他背景窗口不因本合同自动迁移。
+`【直接确认】` `IdtD2DPreparation.*`、旧图形全局和 `Inkeys.UI.RenderScheduler` 已从产品工程移除。新增 Bar/PPT/Setting/Whiteboard UI 图形资产必须沿用 RenderPipeline 的共享生命周期；Draw2、legacy Freeze 和其他背景窗口不因本合同自动迁移。
 
 ## `Inkeys.UI.Bar`
 
@@ -862,6 +862,70 @@ command.configSnapshot = std::make_shared<Inkeys::Config>(Inkeys::config);
 queue.push(std::move(command));
 ~~~
 
+## Whiteboard 分页与 workspace 生命周期合同
+
+### 1. Scope / Trigger
+
+修改 Whiteboard 左右分页 UI、页码发布、Draw3 workspace 切换、辅助面板收起、taskbar/activation 或退出恢复时适用。该功能横跨 `IdtState`、Draw3、Bar、Whiteboard Scene 与 Window Service，任何一层都不得自行推导另一层尚未确认的稳定状态。
+
+### 2. Signatures
+
+~~~cpp
+PageStateTransaction::Publish(int currentPage, int totalPage, bool switching)
+    -> PageState;
+Whiteboard::PublishPageState(int currentPage, int totalPage, bool switching)
+    -> void;
+Bar::CollapseAuxiliaryPanels(bool cancelCapture = true) -> void;
+Window::Service::EnterWhiteboardWindowMode() -> bool;
+Window::Service::LeaveWhiteboardWindowMode() -> bool;
+Window::Service::MinimizeWhiteboardWindowGroup() -> bool;
+Window::Service::RestoreWhiteboardWindowGroup() -> bool;
+~~~
+
+### 3. Contracts
+
+- 每侧分页控件固定为 `230x80 DIP`，使用三个真实 Bar `twoTwo` 按钮。布局、SVG 变换、颜色、光效、动画曲线与 dirty/present 计算来自 Bar 的单一来源；页码按钮保持标准交互视觉，但业务命令为 no-op。
+- `totalPage` 至少为 1，`currentPage` 限制到 `[1, totalPage]`。首次发布若直接为 `switching=true`，稳定基线必须来自该次真实输入。
+- 进入翻页事务时锁存上一稳定帧的 Previous enabled 与 Add/Arrow；事务中只把三个 `interactive` 置 false，未变化的 SVG 和文字不得重启动画。追加页事务全程保持 Add，事务完成后才接受新的边界语义。
+- `Inactive / Entering / Active / Exiting` 的每次 workspace 转换都先调用 `CollapseAuxiliaryPanels(true)` 并撤销 Whiteboard capture。进入稳定白板时绘制属性、几何属性、更多、笔菜单和粗细预览均保持关闭。
+- Freeze 是 Whiteboard mode 的唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 可激活但保留 `WS_EX_TOOLWINDOW`，其余辅助窗口不进入任务栏。整个 owner group 保持 `HWND_NOTOPMOST`，最小化/恢复只恢复此前可见成员。
+- 退出必须恢复 `DrawpadPresentation` click-through、Bar `fold=true` 与 dock request/lock。顺序固定为 `LeaveWhiteboardWindowMode()` 后 `SetOverlayTopmost(true)`；不得让 style 事务覆盖恢复后的 Z 序。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| `3/3 -> 3/4 -> 4/4` 且 switching | 右按钮始终为 Add；三个按钮只锁输入 |
+| 普通翻页进入末页 | 事务中保持 Arrow，稳定后才转 Add |
+| 首次发布即 switching | Previous/Add 基线来自真实页码，不从内部 `1/1` 泄漏 |
+| Enter/Exit 中途反向请求 | 回到完整的另一状态事务；不复用半套 style 或 renderer 状态 |
+| Whiteboard group 最小化/恢复 | Freeze 作为组锚点；仅恢复快照中可见的成员 |
+| 窗口状态调用失败 | phase 不发布假稳定态，下一轮继续收敛或回滚 Presentation |
+
+### 5. Good / Base / Bad Cases
+
+- Good：追加页时只改变真实变化的当前页/总页数，Add 和未变化文字不闪回 Arrow 或重启动画。
+- Base：第一页 Previous 禁用，离开第一页的事务结束后变为启用。
+- Bad：把 `switching` 映射到 `enabled=false` 或依据每个中间 snapshot 重算 Add/Arrow，导致文字、图标和尺寸反复切换。
+
+### 6. Tests Required
+
+- Headless 覆盖页码归一化、追加页、到末页、离开第一页、首次 switching、按钮 no-op、标准 Bar 布局与窗口 activation style/group 状态。
+- 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 与 `Debug|x64`，并执行两架构 `InkeysHeadlessTests.exe --no-window`。
+- GUI 环境另行执行连续 50 次 Enter/Exit、任务栏最小化/恢复、桌面首次点击穿透和辅助面板默认关闭验收；无窗口测试不得冒充这些结果。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：翻页中间快照改变稳定视觉语义。
+state.nextIsAdd = currentPage >= totalPage;
+state.nextEnabled = !switching;
+
+// Correct：事务只关闭输入，边界视觉来自上一稳定帧。
+state = transaction.Publish(currentPage, totalPage, switching);
+// state.nextInteractive == false while switching
+~~~
+
 ## Win32 Window、DibSurface 与 HiMsg 合同
 
 ### 1. Scope / Trigger
@@ -875,10 +939,14 @@ Window::Service::Start(std::vector<WindowSpec>) -> bool;
 Window::Service::SetBounds(WindowRole, RECT) -> bool;
 Window::Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility) -> bool;
 Window::Service::SetClickThrough(WindowRole, bool) -> bool;
-	Window::Service::RequestTopmostRefresh() -> bool;
-	Window::Service::SetOverlayTopmost(bool) -> bool;
-	Window::Service::SetOverlayFullscreen(bool) -> bool;
-	Window::Service::PromotePptWindow(WindowRole) -> bool;
+Window::Service::EnterWhiteboardWindowMode() -> bool;
+Window::Service::LeaveWhiteboardWindowMode() -> bool;
+Window::Service::MinimizeWhiteboardWindowGroup() -> bool;
+Window::Service::RestoreWhiteboardWindowGroup() -> bool;
+Window::Service::RequestTopmostRefresh() -> bool;
+Window::Service::SetOverlayTopmost(bool) -> bool;
+Window::Service::SetOverlayFullscreen(bool) -> bool;
+Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
 
@@ -889,9 +957,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 3. Contracts
 
-- Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
+- Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、左右 Whiteboard、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
-- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。DrawpadPresentation 固定 layered/transparent/noactivate/toolwindow 且低于主 Drawpad；五个 PPT HWND 与 Bar 都是主 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，禁止周期逐窗口重排。无焦点 overlay 不会被 Explorer 当成普通全屏窗；白板期间必须对 Freeze HWND 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除该标记。不得为全屏去掉 `WS_EX_NOACTIVATE`。
+- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> Whiteboard/PPT/Bar}`；Mag 缺失时 Freeze 为根。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
 - Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -905,6 +973,8 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | `beforeCreate`、注册类、CreateWindow、HiMsg bind 或 `created` 失败 | 回滚 HWND、channel、class、thread id 和已激活 lifecycle；optional role 不拖垮同组 |
 | 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
+| Whiteboard window mode 切换失败 | 回滚已修改成员的 style/visibility，不发布稳定 workspace 状态 |
+| Whiteboard group 收到最小化/恢复 | 保存成员可见性；恢复时只显示此前可见成员，不激活辅助窗 |
 | Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |
@@ -923,7 +993,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
 - Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
-- Window 测试还需覆盖持久 `SetOverlayTopmost` 与 `SetOverlayFullscreen`；后者不得改变 topmost 位，退出或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。
+- Window 测试还需覆盖持久 `SetOverlayTopmost`、`SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。白板全屏必须确认任务栏按普通全屏窗让出，且主栏/翻页栏底边都距屏幕底边 `5 DIP`。
 
 ### 7. Wrong vs Correct

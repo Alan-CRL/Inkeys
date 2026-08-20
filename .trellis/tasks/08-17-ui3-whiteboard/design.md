@@ -2,37 +2,42 @@
 
 ## Boundaries
 
-- `Inkeys.UI.Whiteboard` 只负责三个 RenderPipeline 客户端、固定布局、输入命中和显示状态；页面业务通过回调异步提交。
-- `IdtState`/白板协调器负责工作区事务、PPT 同步门控、Freeze 状态和 Bar/Window Service 联动。
-- Draw3 bridge 用显式 `Workspace` 字段区分 Presentation 与 Whiteboard；DrawingController 维护两套文档运行时。
-- Window Service 继续拥有全部 HWND；Freeze HWND 在白板期间由 UI3 独占呈现，旧 Freeze 线程通过共享所有权门控。
+- `Inkeys.UI.Whiteboard` 管理 Freeze 背景及左右两个 RenderPipeline 客户端，分页视觉由 `BarSurfaceScene` 持有，业务层只接收上一页/下一页回调。
+- `IdtState` 以 `Inactive / Entering / Active / Exiting` 协调 Draw3 workspace、PPT 可见性、Bar、Whiteboard 与 Window Service。
+- Draw3 bridge 通过 `Workspace { Presentation, Whiteboard }` 隔离两套文档运行时；workspace 切换等待活动 contact 收尾。
+- Window Service 拥有全部 HWND、style、owner、taskbar、topmost、最小化/恢复和 click-through 状态。
 
-## Data Flow
+## Paging Contract
 
-1. Bar Whiteboard 按钮或关闭按钮只发布 `RequestWhiteboardActive(bool)`。
-2. StateMonitoring 进入 `Entering`/`Exiting` 阶段，暂停/恢复 PPT UI 和页码发布。
-3. Draw3 `ProductState.workspace` 改变后，DrawingController 在无 active contact 时交换文档、页索引和页面运行时缓存，并发布新的 runtime snapshot。
-4. runtime 确认目标 workspace 后，协调器显示/隐藏 Whiteboard UI、设置 Drawpad 呈现目标、切换 Bar 底栏专用状态，先标记 Freeze 全屏再切换 Window Service topmost 模式。
-5. Whiteboard 翻页回调提交现有 NextPage/PreviousPage command；UI 页码只使用 Draw3 已完成切换的 snapshot。
+`PageStateTransaction::Publish(currentPage, totalPage, switching)` 先把总页数归一化到至少 1，再把当前页限制在有效范围。首次发布即使处于 `switching=true`，也从真实输入建立稳定基线。
 
-## Public Contracts
+事务从稳定帧进入 `switching=true` 时锁存 Previous enabled 与右按钮 Add/Arrow 语义；事务中的业务页码仍可更新，但三个按钮全部不可交互。回到 `switching=false` 后才接受新的稳定边界语义。因此追加页 `3/3 -> 3/4 -> 4/4` 全程保持 Add，到末页的普通翻页则在事务完成后由 Arrow 变 Add。
 
-- `Bridge::Workspace { Presentation, Whiteboard }`。
-- `Bridge::ProductState.workspace` 与 `HostRuntimeSnapshot.workspace`。
-- Window Service 增加 `SetOverlayTopmost(bool)`，`RefreshTopmost` 读取持久化目标并对 owner root 使用 `HWND_TOPMOST`/`HWND_NOTOPMOST`。
-- Window Service 增加 `SetOverlayFullscreen(bool)`；刷新时对 Freeze HWND 调用 `ITaskbarList2::MarkFullscreenWindow`，让无焦点全屏窗仍能让任务栏退出工作区。
-- Whiteboard 模块提供 `Initialize`, `Shutdown`, `WindowProc`, `PublishActive`, `PublishPageState`，以及上一页/下一页业务回调。
-- Bar 提供白板激活状态和专用底栏进入/解除接口；所有 UI 线程请求必须异步化。
+页码按钮保持真实 `twoTwo` 命中和动画，但命令为 no-op。Scene 只对变化的文字或 SVG 建立过渡，未变化内容继续使用原视觉状态。
 
-## Compatibility
+## Window And Lifecycle Contract
 
-- Presentation 工作区继续沿用现有 selection/output 逻辑；仅在 Whiteboard 中强制 PrimaryDrawpad 并关闭 selection ULW。
-- 旧 A2 Pierce/Freeze 配置在读取时归一化为 Whiteboard/Freeze 两个 `twoOne` 项。
-- 旧 Freeze 定格线程保留原功能，但在白板工作区跳过任何 legacy surface 提交；切换期间使用共享互斥避免与 UI3 对同一 HWND 并发提交。
-- 新窗口角色加入 OverlayReady、HideAll、owner/role 映射和主线程创建顺序，不改变 Setting 生命周期。
+进入顺序：收起辅助面板并撤 capture，隐藏分页窗，执行 `EnterWhiteboardWindowMode()`，禁止 Draw3 激活并临时设置 Drawpad click-through，切换 Draw3 workspace；待 Whiteboard 首帧和 Freeze 背景就绪后显示 UI，设置 fullscreen、NOTOPMOST 和 Drawpad 可交互，最后进入 Active。
+
+Freeze 在 Whiteboard mode 中是唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`。窗口组仍由 Freeze owner 链组织，最小化时保存成员可见性，恢复时仅恢复此前可见成员。
+
+退出顺序：先隐藏分页窗口并停止命中，切回 Presentation workspace；待 Presentation 首帧可接管后关闭 Whiteboard、恢复 PPT、释放 Freeze ownership、恢复 Bar 折叠/dock 与 Presentation click-through。必须先 `LeaveWhiteboardWindowMode()`，再 `SetOverlayTopmost(true)`，防止 style 事务覆盖恢复后的 Z 序。
+
+## Rendering And Resource Lifetime
+
+分页控件通过 `BarSurfaceScene`、`BarSurfaceLayout`、`Bar.Metrics` 和 Bar animation/theme 单一来源渲染。Whiteboard 调试覆盖层与 Bar 一致：红框是业务 dirty，绿框是实际 present union；绿框本身只扩大 present damage，不写回业务 dirty。
+
+Scene/renderer 暴露的 `ID2D1DeviceContext*` 和 `ID2D1GdiInteropRenderTarget*` 是借用指针。每次 `BeginDraw -> Render -> GetDC/ReleaseDC -> EndDraw` 事务必须用本地 `ComPtr` 租约延长其生命周期至 `EndDraw`。`GetDC`、`ReleaseDC` 或 `EndDraw` 任一失败都按同一 present 事务失败处理并重建该窗口资源。
 
 ## Failure Handling
 
-- Draw3 workspace switch 只排队，不取消 active contact；若设备/文档创建失败，保持旧 workspace 并将 UI 回滚到旧状态。
-- UI3 client 或窗口创建失败时初始化返回失败，主线程按现有 UI3 启动失败路径退出。
-- topmost 模式变更失败记录日志，但不修改已确认的 workspace 状态；下一次 refresh 重试。
+- `EnterWhiteboardWindowMode()` 或窗口状态收敛失败：隐藏 Whiteboard UI、恢复 Presentation workspace，下一轮允许重试。
+- Draw3 workspace 尚未产出可接管帧：保持当前可见 workspace，不让两个 renderer 并发提交同一目标。
+- 单窗口 target/ULW 失败：仅重建对应客户端；共享 device 丢失继续走 RenderPipeline epoch 恢复。
+- 退出恢复未完全成功：保持 `Exiting`，下一轮继续收敛，不发布假的 `Inactive`。
+
+## Compatibility
+
+- Presentation 保持既有 selection/output 逻辑；Whiteboard 强制主 Drawpad 且关闭 Selection ULW。
+- 旧 A2 Pierce/Freeze 配置继续在读取时归一化为 Whiteboard/Freeze。
+- legacy Freeze 线程保留，但 Whiteboard 持有 Freeze surface 时不提交；所有权切换以首帧握手避免双写。
