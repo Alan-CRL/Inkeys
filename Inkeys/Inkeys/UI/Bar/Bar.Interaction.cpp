@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -1704,6 +1704,7 @@ private:
 				return stateMode.laserActive
 					|| stateMode.Pen.ModeSelect != PenModeSelectEnum::IdtPenSoftPen;
 			case IndependentHoverTargetEnum::DrawAttributeLaser:
+				// 和其他笔型按钮一致：未选中时显示悬停层，选中时由选中态背景接管。
 				return !stateMode.laserActive;
 			case IndependentHoverTargetEnum::DrawAttributeHighlight:
 				return stateMode.laserActive
@@ -2510,8 +2511,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				if (currentIndependentButton == IndependentHoverTargetEnum::None)
 				{
 					if (auto obj = shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser];
-						!stateMode.laserActive
-						&& obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+						obj && obj->IsClick(msg.x, msg.y, barStyle.zoom))
 					{
 						currentIndependentButton =
 							IndependentHoverTargetEnum::DrawAttributeLaser;
@@ -3314,11 +3314,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									gesturePenMode, barStyle.dpiZoom);
 								float initialWidth = GetPenWidth();
 								float finalWidth = initialWidth;
-								int lastCandidateWidth =
-									static_cast<int>(lround(initialWidth));
-								bool candidateWidthIsInteger =
-									abs(static_cast<double>(initialWidth)
-										- lastCandidateWidth) <= 0.000001;
+								double lastCandidateWidth = initialWidth;
 								bool candidateChanged = false;
 								bool gestureDragged = false;
 								bool hoverAtPress = barState.drawAttributeBar
@@ -3361,12 +3357,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											static_cast<double>(range.min),
 											static_cast<double>(range.max)));
 										finalWidth = initialWidth;
-										lastCandidateWidth = clamp(
-											static_cast<int>(lround(initialWidth)),
-											range.min, range.max);
-										candidateWidthIsInteger = abs(
-											static_cast<double>(initialWidth)
-												- lastCandidateWidth) <= 0.000001;
+										lastCandidateWidth = initialWidth;
 									}
 								}
 
@@ -3471,10 +3462,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											rawWidth,
 											static_cast<double>(range.min),
 											static_cast<double>(range.max));
-										return static_cast<float>(clamp(
-											static_cast<int>(lround(
-												clampedWidth)),
-											range.min, range.max));
+										return static_cast<float>(clampedWidth);
 									};
 								auto ProjectRelativePreviewWidth =
 									[&](double screenX) -> float
@@ -3488,9 +3476,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										double clampedWidth = clamp(rawWidth,
 											static_cast<double>(range.min),
 											static_cast<double>(range.max));
-										return static_cast<float>(clamp(
-											static_cast<int>(lround(clampedWidth)),
-											range.min, range.max));
+										return static_cast<float>(clampedWidth);
 									};
 								auto ApplyCandidateWidth =
 									[&](float targetWidth,
@@ -3501,16 +3487,17 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											.thicknessSliderHoldLocked)
 											return false;
 
-										int roundedWidth = static_cast<int>(
-											lround(targetWidth));
-										if (roundedWidth == lastCandidateWidth
-											&& candidateWidthIsInteger)
+										double clampedWidth = clamp(
+										static_cast<double>(targetWidth),
+										static_cast<double>(range.min),
+										static_cast<double>(range.max));
+										if (abs(clampedWidth
+											- static_cast<double>(lastCandidateWidth))
+											<= 0.000001)
 											return false;
 
-										lastCandidateWidth = roundedWidth;
-										candidateWidthIsInteger = true;
-										finalWidth = static_cast<float>(
-											roundedWidth);
+										lastCandidateWidth = static_cast<float>(clampedWidth);
+										finalWidth = static_cast<float>(lastCandidateWidth);
 										candidateChanged = abs(
 											static_cast<double>(
 												finalWidth - initialWidth))
@@ -3547,8 +3534,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										thicknessFineDialRawValue = nextRawValue;
 										int candidate =
 											PublishThicknessFineDialCandidate();
-										lastCandidateWidth = candidate;
-										candidateWidthIsInteger = true;
+										lastCandidateWidth = static_cast<float>(candidate);
 										finalWidth = static_cast<float>(candidate);
 										candidateChanged = abs(
 											static_cast<double>(finalWidth - initialWidth))
@@ -3817,8 +3803,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											finalWidth = initialWidth;
 											lastCandidateWidth = static_cast<int>(
 												lround(initialWidth));
-											candidateWidthIsInteger = abs(static_cast<double>(
-												initialWidth) - lastCandidateWidth) <= 0.000001;
 											candidateChanged = false;
 											double committedNormalized = range.max > range.min
 												? clamp((static_cast<double>(initialWidth) - range.min)

@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtState.h"
 #include <d2d1helper.h>
@@ -49,6 +49,13 @@ export
 		return mode == PenModeSelectEnum::IdtPenSoftPen;
 	}
 
+	bool PenModeUsesBrushThickness(PenModeSelectEnum mode)
+	{
+		// 软笔与硬笔共用 Brush1 的粗细/颜色记忆，UI 量程也必须一致。
+		return mode == PenModeSelectEnum::IdtPenSoftPen
+			|| mode == PenModeSelectEnum::IdtPenHardPen;
+	}
+
 	struct BarThicknessSliderRange
 	{
 		int min = 0;
@@ -60,7 +67,7 @@ export
 		PenModeSelectEnum mode, double dpiZoom)
 	{
 		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) dpiZoom = 1.0;
-		if (mode == PenModeSelectEnum::IdtPenSoftPen)
+		if (PenModeUsesBrushThickness(mode))
 		{
 			int maximum = max(1, static_cast<int>(lround(
 				BarThicknessSliderHardPenMaxDip * dpiZoom)));
@@ -264,7 +271,7 @@ export
 		if (index >= 3 || !isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
 		// 预设只跟随系统 DPI，不能再叠加 UI 配置缩放。
 		const double* presets = nullptr;
-		if (mode == PenModeSelectEnum::IdtPenSoftPen)
+		if (PenModeUsesBrushThickness(mode))
 			presets = BarBrushThicknessPresetDip;
 		else if (mode == PenModeSelectEnum::IdtPenHighlighter1)
 			presets = BarHighlighterThicknessPresetDip;
@@ -319,7 +326,7 @@ export
 	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode)
 	{
 		return !stateMode.laserActive
-			&& (mode == PenModeSelectEnum::IdtPenSoftPen
+			&& (PenModeUsesBrushThickness(mode)
 			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}
 

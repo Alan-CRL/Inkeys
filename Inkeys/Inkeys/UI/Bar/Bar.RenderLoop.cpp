@@ -5389,10 +5389,10 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		&drawAttributeSoftPen->fill.value(), state.drawAttributeSoftPenHoverStage,
 		state.barState.drawAttribute, stateMode.Pen.ModeSelect
 			!= PenModeSelectEnum::IdtPenSoftPen);
-	auto drawAttributeLaser = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser];
-	UpdateHoverAnimation(drawAttributeLaser->pct, &drawAttributeLaser->fill.value(),
-		state.drawAttributeLaserHoverStage, state.barState.drawAttribute,
-		!stateMode.laserActive);
+						auto drawAttributeLaser = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Laser];
+					UpdateHoverAnimation(drawAttributeLaser->pct, &drawAttributeLaser->fill.value(),
+						state.drawAttributeLaserHoverStage, state.barState.drawAttribute,
+						true);
 	auto drawAttributeHighlight = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_Highlight1];
 	UpdateHoverAnimation(drawAttributeHighlight->pct, &drawAttributeHighlight->fill.value(),
 		state.drawAttributeHighlightHoverStage, state.barState.drawAttribute,
@@ -5813,15 +5813,22 @@ double baseThumbDiameter =
 				: 0.0);
 		extensionDivider->rw->SetDirect(BarUiDividerRadius * panelScale);
 		extensionDivider->rh->SetDirect(BarUiDividerRadius * panelScale);
-		extensionDivider->Inherit(BarUiInheritEnum::TopLeft, *panel);
+						extensionDivider->Inherit(BarUiInheritEnum::TopLeft, *panel);
 		extensionArrow->x.SetDirect(
 		triggerX + (triggerWidth - 18.0 * panelScale) / 2.0);
 		extensionArrow->y.SetDirect(
 		triggerY + (triggerHeight - 18.0 * panelScale) / 2.0);
 		extensionArrow->w.SetDirect(18.0 * panelScale);
 		extensionArrow->h.SetDirect(18.0 * panelScale);
-		extensionArrow->pct.SetDirect(
-			extensionVisualVisible ? contentOpacity : 0.0);
+					extensionArrow->pct.SetDirect(
+						extensionVisualVisible ? contentOpacity : 0.0);
+					if (stateMode.laserActive)
+					{
+						// 激光选中时三角与分割线属于无效能力，立即清掉残留动画帧。
+						extensionHit->pct.SetDirect(0.0);
+						extensionDivider->pct.SetDirect(0.0);
+						extensionArrow->pct.SetDirect(0.0);
+					}
 		extensionArrow->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 		// 浮窗始终从 Thumb 锚点等比展开；完整布局独立计算，保证圆和文字不被裁切。
@@ -7365,7 +7372,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| std::any_of(
 				state.drawAttributeThicknessPresetCircleDiameter.begin(),
 				state.drawAttributeThicknessPresetCircleDiameter.end(),
-				[](const BarUiValueClass& value) { return !value.IsSame(); })
+				[](BarUiValueClass& value) { return !value.IsSame(); })
 			|| !state.drawAttributeThicknessSliderNormalized.IsSame()
 			|| !state.drawAttributeThicknessPreviewNumberInsideProgress.IsSame()
 			|| !state.drawAttributeThicknessPreviewPopupProgress.IsSame()
@@ -8204,7 +8211,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| std::any_of(
 				state.drawAttributeThicknessPresetCircleDiameter.begin(),
 				state.drawAttributeThicknessPresetCircleDiameter.end(),
-				[](const BarUiValueClass& value) { return !value.IsSame(); })
+				[](BarUiValueClass& value) { return !value.IsSame(); })
 			|| !state.drawAttributeThicknessPreviewPopupProgress.IsSame()
 			|| !state.drawAttributeThicknessPreviewPopupRetargetProgress.IsSame()
 			|| !state.drawAttributeThicknessFineDialProgress.IsSame()

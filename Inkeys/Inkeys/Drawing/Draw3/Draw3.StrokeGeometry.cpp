@@ -1,4 +1,4 @@
-﻿﻿module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -32,7 +32,6 @@ namespace Inkeys::Drawing::Draw3
 		// L0 笔锋只做公切线安全投影，允许比稳定笔宽更快收细，但仍严格小于 1。
 		constexpr float kCapsuleRadiusSlope = 0.95f;
 		constexpr float kHighlighterDuplicateDistancePx = 0.25f;
-		constexpr float kHighlighterRadiusPx = 25.0f;
 		constexpr float kHighlighterBoundsPaddingPx = 3.0f;
 		constexpr float kShapeBoundsPaddingPx = 3.0f;
 		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,

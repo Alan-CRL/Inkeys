@@ -1,4 +1,4 @@
-﻿﻿module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX

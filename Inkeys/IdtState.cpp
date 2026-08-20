@@ -1,4 +1,4 @@
-﻿﻿#include "IdtState.h"
+﻿#include "IdtState.h"
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
