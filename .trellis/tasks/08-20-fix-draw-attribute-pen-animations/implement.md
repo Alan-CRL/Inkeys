@@ -11,3 +11,4 @@
 - [x] 审查纠正 `LeavingShell` 提前读取新笔宽的问题：增加 `Hold/Laser/NonLaser` 纯目标策略，锁存 Laser 芯/壳 target，并用 `max(core, current shell)` 计算预览包络。
 - [x] 最终 Trellis 全量审查修复初始化文件 BOM 与旧测试语义，重新通过完整 ARM64 Debug Solution、HeadlessTests 和差异检查。
 - [x] 同步 `.trellis/spec/native-desktop/rendering-and-ui.md` 的六阶段时序、Hold 策略、包络与回归测试合同。
+- [x] 修复帧内复用 solid brush 被红壳改色后继续用于 semantic core，导致 Laser 白芯变红；保持状态机与动画 target 不变。

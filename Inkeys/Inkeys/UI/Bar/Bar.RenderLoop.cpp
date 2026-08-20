@@ -9326,10 +9326,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								sliderProgress);
 							// semantic 芯层始终独立存在，白色与笔色在同一条曲线上连续插值。
 							double semanticOpacity = baseThicknessOpacity;
-							ID2D1SolidColorBrush* solidBrush =
-								state.spec.GetFrameSolidColorBrush(
-									barDeviceContext, previewColor,
-									semanticOpacity);
 							D2D1_RECT_F previewClip = D2D1::RectF(
 								static_cast<FLOAT>(
 									previewGeometry.previewLeft * uiZoom),
@@ -9423,6 +9419,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								DrawLayer(RGB(255, 11, 30), redWidth, 1.0);
 							};
 							DrawLaserOverlay();
+							// 帧内 solid brush 会复用并改色；红壳画完后必须重新设为芯层颜色。
+							ID2D1SolidColorBrush* solidBrush =
+								state.spec.GetFrameSolidColorBrush(
+									barDeviceContext, previewColor,
+									semanticOpacity);
 							if (previewMorph <= 0.5 && solidBrush
 								&& previewThickness > 0.0F)
 							{

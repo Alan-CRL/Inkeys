@@ -783,6 +783,7 @@ double ResolveBarLaserPreviewEnvelopeThickness(
 - Laser 预览固定使用 `NonLaserStable -> EnteringCore -> EnteringShell -> LaserStable -> LeavingShell -> LeavingCore`。进入时芯宽、颜色、曲率/圆角和荧光渐变先在 `0.4s` 内连续到达白色芯端点，随后红壳再用 `0.4s` 从芯宽展开；退出时先收红壳，再改变 semantic core。
 - `EnteringShell` 与 `LeavingShell` 对 core thickness、outer thickness、morph 和 white mix 使用 `Hold` 目标策略，不得用已经切换的逻辑笔宽重新提交 target。只有红壳完全隐藏并进入 `LeavingCore` 后，才允许芯层转向非 Laser 目标；反向切换继续使用锁存的 Laser target。
 - 红壳先绘制、semantic core 后绘制。预览包络使用 `max(coreThickness, currentShellThickness)` 约束曲线振幅和裁剪，但 semantic core 的实际绘制宽度仍只读取 core thickness，不能被红壳宽度替代。
+- `GetFrameSolidColorBrush` 返回帧内复用的可变 solid brush；后续调用会原地改色。不得跨另一处 `GetFrameSolidColorBrush` 调用保留画刷颜色假设；红壳绘制后必须紧邻 semantic core 绘制重新提交 `previewColor`，否则白芯会继承红壳颜色。
 - 颜色、曲率、圆角矩形进度、外套宽度和内芯宽度均从当前值续接，中途反向不得回到任一端点；Laser 稳态的 `3/5/7 DIP` 切换同时 retarget 芯宽和外宽。
 - Circle/Number 切换时锁存 outgoing 内容：Circle -> Number 先保持旧圆直径并淡出，再显示已锁存的新数字；Number -> Circle 先保持旧数字并淡出，再显示圆。Circle -> Circle 才允许直径连续 retarget；切换中点旧新内容透明度均为零。
 - 工具失去扩展资格时，命中区和按压状态立即失效，arrow/divider 的视觉则按 current progress 退场；其几何锚点和颜色必须派生 selected button 的当前 `x/y/frame`，不能读取新目标位置或首帧直接改 Accent。
@@ -796,6 +797,7 @@ double ResolveBarLaserPreviewEnvelopeThickness(
 | Laser -> Highlighter | 红壳完全隐藏前 core/outer/morph/white target 保持 Laser 端点；之后才连续恢复渐变矩形 |
 | Pen <-> Laser 中途反向 | `EnteringCore <-> LeavingCore` 从当前芯值反向；`EnteringShell <-> LeavingShell` 只反向 shell progress，并保留锁存 target |
 | Laser 稳态切换粗细 | core 与 outer 同时连续 retarget，shell 保持完全展开 |
+| 红壳与白芯同帧绘制 | 红壳先画；其后重新以 `previewColor` 配置帧内 solid brush，再画白芯或渐变失败 fallback |
 | Circle <-> Number 中途反向 | 从当前透明度继续；outgoing 内容和尺寸保持锁存 |
 | Laser 使扩展入口失效 | 命中立即归零；arrow/divider 平滑退场且不残留 |
 | 离开 Pen 后以 Highlighter 重进 | 首帧直接为稳定数字，不出现圆形过渡 |
@@ -804,11 +806,11 @@ double ResolveBarLaserPreviewEnvelopeThickness(
 
 - Good：阶段 helper 决定 `Hold/Laser/NonLaser`，`LeavingShell` 只提交 shell target；红壳隐藏的交接帧进入 `LeavingCore` 后才提交新笔型语义。
 - Base：稳态 SoftPen/HardPen/Laser 为 Circle，Highlighter 为 Number；超出按钮内框的 Circle 仍按既有规则显示真实数字。
-- Bad：目标工具一改变就在 `LeavingShell` 使用新 `penThickness` 计算 `core = penThickness / 3` 和 outer；红壳尚未隐藏时白芯及包络已经改向，造成跳宽或闪现。
+- Bad：目标工具一改变就在 `LeavingShell` 使用新 `penThickness` 计算芯壳目标，或在红壳改色前缓存共享 solid brush 并用于后绘白芯；前者造成跳宽，后者使白芯变红。
 
 #### 6. Tests Required
 
-- Headless 覆盖 0/25/50/75/100% 正反切换、六阶段首帧/中间帧/交接帧/终点、`Hold/Laser/NonLaser` 目标策略、锁存 target、芯/壳包络、Circle/Number 锁存、Circle -> Circle 直径、四种工具初始化语义和扩展入口资格/当前锚点/当前颜色。
+- Headless 覆盖 0/25/50/75/100% 正反切换、六阶段首帧/中间帧/交接帧/终点、`Hold/Laser/NonLaser` 目标策略、锁存 target、芯/壳包络、颜色端点/反向、Circle/Number 锁存、Circle -> Circle 直径、四种工具初始化语义和扩展入口资格/当前锚点/当前颜色。帧内 D2D brush 身份由绘制顺序静态审查和完整构建验证。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64` 与 `Release | ARM64`；受限环境只运行 `InkeysHeadlessTests.exe --no-window`，不得启动 GUI。
 
 #### 7. Wrong vs Correct
@@ -823,6 +825,16 @@ auto policy = ResolveBarLaserPreviewTargetPolicy(phase);
 if (policy.core != BarLaserPreviewSemanticTarget::Hold)
 	SubmitCoreTarget(policy.core);
 shell.SetTar(policy.shellExpanded ? 1.0 : 0.0, duration);
+
+// Wrong：保存芯层 brush 后，红壳调用把同一帧内 brush 原地改成红色。
+auto coreBrush = GetFrameSolidColorBrush(previewColor, opacity);
+DrawLaserShell();
+DrawCore(coreBrush);
+
+// Correct：红壳画完后紧邻芯层重新配置共享 brush。
+DrawLaserShell();
+auto coreBrush = GetFrameSolidColorBrush(previewColor, opacity);
+DrawCore(coreBrush);
 ~~~
 
 ### UI3 展开按钮点击合并合同
