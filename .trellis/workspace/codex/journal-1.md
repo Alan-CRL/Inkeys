@@ -48,3 +48,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 清理并归档已完成 Trellis 任务
+
+**Date**: 2026-08-20
+**Task**: 清理并归档已完成 Trellis 任务
+**Branch**: `draw`
+
+### Summary
+
+提交 08-15 与 08-18 既有归档资料，归档 07-17、08-01、08-12、08-13 和 08-14 unified display；解绑并保留 UI3 Bar bottom dock elastic 为唯一活动任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `09082259` | (see git log) |
+| `10b9753c` | (see git log) |
+
+### Status
+
+[OK] **Completed**
