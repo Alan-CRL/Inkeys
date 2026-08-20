@@ -53,9 +53,18 @@ int RunBarBottomDockTests()
 	Check(ResolveBarBottomDockLine(
 		monitor, RECT{ 100, 49, 2020, 1082 }) == 1130.0,
 		"work area outside monitor top falls back");
-	Check(ResolveBarBottomDockLine(
-		monitor, RECT{ 100, 50, 2021, 1082 }) == 1130.0,
-		"work area outside monitor right falls back");
+		Check(ResolveBarBottomDockLine(
+			monitor, RECT{ 100, 50, 2021, 1082 }) == 1130.0,
+			"work area outside monitor right falls back");
+		Check(ResolveBarBottomDockLine(
+			monitor, RECT{ 100, 50, 2020, 1082 }, 5.0, 1.0) == 1125.0,
+			"whiteboard inset uses monitor bottom minus five DIP");
+		Check(ResolveBarBottomDockLine(
+			monitor, RECT{ 100, 50, 2020, 1082 }, 5.0, 1.5) == 1122.0,
+			"whiteboard inset converts DIP with monitor DPI only");
+		Check(Near(ResolveBarBottomDockInsetPixels(5.0, 1.0), 5.0)
+			&& Near(ResolveBarBottomDockInsetPixels(5.0, 1.5), 8.0),
+			"five DIP inset matches page-bar physical margin");
 
 	for (double zoom : { 1.0, 1.5, 1.875 })
 	{

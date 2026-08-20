@@ -22,6 +22,7 @@ module;
 module Inkeys.UI.Bar;
 import :Main;
 import :Rendering;
+import :Scene;
 import :Layout;
 import :Atomic;
 import :Zoom;
@@ -36,13 +37,10 @@ import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 
-// Rendering 只读 Main 的 module-linkage 常量，公式保持单一定义。
+// Rendering 只读取 Layout/Animation 导出的共享按钮参数。
 bool ReadColorPickerEntryPressed();
 void RequestBarBorderCursorSuspend();
-extern const double BarButtonPressScale;
 extern const double BarButtonHoverFadeDur;
-extern const double BarButtonCursorLightIntensity;
-extern const double BarButtonPressedLightOpacity;
 extern const double BarDrawAttributeExpandedHeight;
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
@@ -198,6 +196,10 @@ using Inkeys::UI::Bar::ResolveBarDirectWindowTranslationAfterAbsorb;
 using Inkeys::UI::Bar::TranslateBarWindowRect;
 using Inkeys::UI::Bar::UnionBarWindowRect;
 using Inkeys::UI::Bar::ResolveBarDebugDamage;
+using Inkeys::UI::Bar::ResolveBarDebugFrameColor;
+using Inkeys::UI::Bar::BarDebugFrameWidth;
+using Inkeys::UI::Bar::BarDebugDirtyFrameInset;
+using Inkeys::UI::Bar::BarDebugWindowFrameInset;
 using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
 using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
 using Inkeys::UI::Bar::AdvanceBarBottomDockSpring;
@@ -216,26 +218,38 @@ using Inkeys::UI::Bar::ResolveBarBottomDockCenterScreenY;
 using Inkeys::UI::Bar::ResolveBarBottomDockCapacityEnvelope;
 using Inkeys::UI::Bar::ResolveBarBottomDockElasticOffsetForScreenGrip;
 using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
-using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
-using Inkeys::UI::Bar::ResolveBarBottomDockLine;
-using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorGeometry;
-using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorAction;
-using Inkeys::UI::Bar::ResolveBarBottomDockBodyLocalLight;
-using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringVerticalMapping;
-using Inkeys::UI::Bar::ResolveBarBottomDockRigidLocalLight;
-using Inkeys::UI::Bar::ResolveBarBottomDockVerticalMapping;
-using Inkeys::UI::Bar::ResolveBarBottomDockVisualEnvelope;
-using Inkeys::UI::Bar::TranslateBarBottomDockRigidRect;
-using Inkeys::UI::Bar::TransformBarBottomDockBodyRect;
+	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
+	using Inkeys::UI::Bar::ResolveBarBottomDockLine;
+	using Inkeys::UI::Bar::BarWhiteboardBottomInsetDip;
+	using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorGeometry;
+	using Inkeys::UI::Bar::ResolveBarBottomDockTargetIndicatorAction;
+	using Inkeys::UI::Bar::ResolveBarBottomDockBodyLocalLight;
+	using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringVerticalMapping;
+	using Inkeys::UI::Bar::ResolveBarBottomDockRigidLocalLight;
+	using Inkeys::UI::Bar::ResolveBarBottomDockVerticalMapping;
+	using Inkeys::UI::Bar::ResolveBarBottomDockVisualEnvelope;
+	using Inkeys::UI::Bar::TranslateBarBottomDockRigidRect;
+	using Inkeys::UI::Bar::TransformBarBottomDockBodyRect;
 
-enum class BarRenderLoopStageResult
-{
-	Proceed,
-	Continue,
-	Idle,
-	DeviceLost,
-	Stop,
-};
+	enum class BarRenderLoopStageResult
+	{
+		Proceed,
+		Continue,
+		Idle,
+		DeviceLost,
+		Stop,
+	};
+
+	[[nodiscard]] double CurrentBarBottomDockLine(
+		const RECT& monitorBounds, const RECT& workArea, UINT dpi) noexcept
+	{
+		const double dpiScale = clamp(
+			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
+			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+		const double insetDip = Inkeys::UI::Bar::WhiteboardActive()
+			? BarWhiteboardBottomInsetDip : 0.0;
+		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
+	}
 
 enum class BarDirtyFixedVisual : BarDirtyVisualKey
 {
@@ -408,13 +422,16 @@ struct BarRenderLoopState
 	SIZE capacitySize{};
 	double capacityZoom = 0.0;
 	bool capacityOriginInitialized = false;
-	POINT monitorOrigin{};
-	RECT activeMonitorBounds{};
-	RECT activeWorkArea{};
-	unsigned long long observedDisplaySerial = 0;
+		POINT monitorOrigin{};
+		RECT activeMonitorBounds{};
+		RECT activeWorkArea{};
+		UINT activeDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+		unsigned long long observedDisplaySerial = 0;
 	bool displayTransitionInitialized = false;
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
+	bool whiteboardDockPlacementPending = false;
+	bool whiteboardDockAnimationActive = false;
 	double displayCapacityZoom = 1.0;
 	BarUiValueClass displayDpiScale{ 1.0 };
 	BarUiValueClass displayCenterX{ 0.0 };
@@ -466,10 +483,8 @@ struct BarRenderLoopState
 	int mainLogoInkColorSource = -1;
 	bool mainLogoInkCarriesHighlighterHistory = false;
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
-	const BarUiCurveSpecClass buttonPressCurve{
-		BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
-	const BarUiCurveSpecClass buttonReleaseCurve{
-		BarUiCurveEnum::EaseOutBack, BarUiCurveEnum::EaseOutBack, 0.0, false };
+	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
+	const BarUiCurveSpecClass buttonReleaseCurve = BarButtonReleaseCurve();
 	optional<double> mainBarLayoutWidth;
 	BarUiValueClass drawAttributePenThickness{ max(0.0f, GetPenWidth()) };
 	bool drawAttributePenThicknessInitialized =
@@ -808,12 +823,13 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	const auto serial = targetDisplay.serial;
 	const bool dragging = owner_.directWindowDragPhase.load(memory_order_acquire)
 		== BarDirectWindowDragPhase::Dragging;
-	const RECT targetBounds = targetDisplay.bounds;
-	const RECT targetWorkArea = targetDisplay.workArea;
-	const UINT targetDpi = targetDisplay.dpi;
-	const double targetDpiScale = clamp(
-		static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
-		static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+		const RECT targetBounds = targetDisplay.bounds;
+		const RECT targetWorkArea = targetDisplay.workArea;
+		const UINT targetDpi = targetDisplay.dpi;
+		state.activeDisplayDpi = targetDpi;
+		const double targetDpiScale = clamp(
+			static_cast<double>(targetDpi ? targetDpi : USER_DEFAULT_SCREEN_DPI) /
+			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 	const double configZoom = max(0.01,
 		static_cast<double>(state.barStyle.configZoom));
 	const double targetZoom = targetDpiScale * configZoom;
@@ -821,9 +837,10 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 
 	if (!state.displayTransitionInitialized)
 	{
-		state.activeMonitorBounds = targetBounds;
-		state.activeWorkArea = targetWorkArea;
-		state.monitorOrigin = { targetBounds.left, targetBounds.top };
+			state.activeMonitorBounds = targetBounds;
+			state.activeWorkArea = targetWorkArea;
+			state.activeDisplayDpi = targetDpi;
+			state.monitorOrigin = { targetBounds.left, targetBounds.top };
 		state.displayDpiScale.SetDirect(targetDpiScale);
 		const double initialZoom = targetDpiScale * configZoom;
 		state.displayCenterX.SetDirect(mainButton->x.val * initialZoom);
@@ -856,16 +873,17 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 					oldScreenCenterX, targetBounds,
 					mainButton->GetW() / 2.0
 						+ frameHalf / targetZoom, targetZoom);
-			const double dockLine = ResolveBarBottomDockLine(
-				targetBounds, targetWorkArea);
-			const double targetScreenCenterY = ResolveBarBottomDockCenterScreenY(
-				dockLine, state.mainButtonBaseSize,
-				mainButton->ft.has_value()
-					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
-				targetZoom);
-			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-			state.activeMonitorBounds = targetBounds;
-			state.activeWorkArea = targetWorkArea;
+				const double dockLine = CurrentBarBottomDockLine(
+					targetBounds, targetWorkArea, targetDpi);
+				const double targetScreenCenterY = ResolveBarBottomDockCenterScreenY(
+					dockLine, state.mainButtonBaseSize,
+					mainButton->ft.has_value()
+						? static_cast<double>(mainButton->ft.value().tar) : 0.0,
+					targetZoom);
+				state.monitorOrigin = { targetBounds.left, targetBounds.top };
+				state.activeMonitorBounds = targetBounds;
+				state.activeWorkArea = targetWorkArea;
+				state.activeDisplayDpi = targetDpi;
 			state.displayCenterX.SetDirect(
 				targetScreenCenterX - targetBounds.left);
 			state.displayCenterY.SetDirect(
@@ -879,10 +897,11 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				halfWidth, halfHeight);
 
 			// 先改坐标原点，再以等价局部起点启动动画，屏幕坐标不会发生首帧跳变。
-			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-			state.activeMonitorBounds = targetBounds;
-			state.activeWorkArea = targetWorkArea;
-			state.displayCenterX.SetDirect(placement.startLocalCenterX);
+				state.monitorOrigin = { targetBounds.left, targetBounds.top };
+				state.activeMonitorBounds = targetBounds;
+				state.activeWorkArea = targetWorkArea;
+				state.activeDisplayDpi = targetDpi;
+				state.displayCenterX.SetDirect(placement.startLocalCenterX);
 			state.displayCenterY.SetDirect(placement.startLocalCenterY);
 			state.displayCenterX.SetTar(placement.targetLocalCenterX, 0.4);
 			state.displayCenterY.SetTar(placement.targetLocalCenterY, 0.4);
@@ -911,17 +930,18 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 				+ state.displayCenterY.val;
 			const POINT directTranslation =
 				frame.bottomDockTransitionTranslation;
-			state.monitorOrigin = { targetBounds.left, targetBounds.top };
-			state.activeMonitorBounds = targetBounds;
-			state.activeWorkArea = targetWorkArea;
-			state.displayCenterX.SetDirect(
-				currentBaseCenterScreenX - targetBounds.left);
-			if (frame.bottomDockMode == BarBottomDockMode::BottomDocked)
-			{
-				const double targetDockCenterScreenY =
-					ResolveBarBottomDockCenterScreenY(
-						ResolveBarBottomDockLine(targetBounds, targetWorkArea),
-						state.mainButtonBaseSize,
+				state.monitorOrigin = { targetBounds.left, targetBounds.top };
+				state.activeMonitorBounds = targetBounds;
+				state.activeWorkArea = targetWorkArea;
+				state.activeDisplayDpi = targetDpi;
+				state.displayCenterX.SetDirect(
+					currentBaseCenterScreenX - targetBounds.left);
+				if (frame.bottomDockMode == BarBottomDockMode::BottomDocked)
+				{
+					const double targetDockCenterScreenY =
+						ResolveBarBottomDockCenterScreenY(
+							CurrentBarBottomDockLine(targetBounds, targetWorkArea, targetDpi),
+							state.mainButtonBaseSize,
 						mainButton->ft.has_value()
 							? static_cast<double>(mainButton->ft.value().tar)
 							: 0.0,
@@ -975,15 +995,19 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 	const double currentZoom = currentDpiScale * configZoom;
 	state.barStyle.dpiZoom = currentDpiScale;
 	state.barStyle.zoom = currentZoom;
-	if (!dragging && state.initialBottomDockPlacementApplied
-		&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
-	{
-		const double dockLine = ResolveBarBottomDockLine(
-			state.activeMonitorBounds, state.activeWorkArea);
-		state.displayCenterY.SetDirect(ResolveBarBottomDockCenterScreenY(
-			dockLine, state.mainButtonBaseSize,
-			mainButton->ft.has_value()
-				? static_cast<double>(mainButton->ft.value().tar) : 0.0,
+		if (state.whiteboardDockAnimationActive && !state.displayTransitionActive)
+			state.whiteboardDockAnimationActive = false;
+		if (!dragging && state.initialBottomDockPlacementApplied
+			&& !state.whiteboardDockAnimationActive
+			&& !state.whiteboardDockPlacementPending
+			&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
+		{
+			const double dockLine = CurrentBarBottomDockLine(
+				state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+			state.displayCenterY.SetDirect(ResolveBarBottomDockCenterScreenY(
+				dockLine, state.mainButtonBaseSize,
+				mainButton->ft.has_value()
+					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
 			currentZoom) - state.monitorOrigin.y);
 	}
 	mainButton->x.SetDirect(state.displayCenterX.val / currentZoom);
@@ -1997,9 +2021,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			|| (!state.barState.fold && mainBar->x.tar == 0.0);
 // 与下方布局共用：间隙 5，1*1 边长 32.5，使
 			// 2*1 = 两枚 1*1 + 间隙，2*2 = 两枚 2*1 + 间隙 = 四枚 1*1，且各处间隙一致。
-			constexpr double barBtnGap = 5.0;
-			constexpr double barBtnOne = 32.5; // (70 - gap) / 2，保持正方形
-			constexpr double barBtnTwo = barBtnOne * 2.0 + barBtnGap; // 70
+			constexpr double barBtnGap = BarButtonGapDip;
+			constexpr double barBtnOne = BarButtonOneSideDip;
+			constexpr double barBtnTwo = BarButtonTwoSideDip;
 			constexpr double barBtnOneStep = barBtnOne + barBtnGap; // 37.5
 			constexpr double barBtnTwoStep = barBtnTwo + barBtnGap; // 75
 			auto CalculateButtonLayoutWidth = [&]()
@@ -2656,7 +2680,9 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 		}
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
-		if (!state.initialBottomDockPlacementApplied
+		const bool whiteboardDockPlacement =
+			state.whiteboardDockPlacementPending;
+		if ((!state.initialBottomDockPlacementApplied || whiteboardDockPlacement)
 			&& state.displayTransitionInitialized)
 		{
 			// 完整主栏宽度首次可用后再整体居中，避免用占位宽度产生首帧偏移。
@@ -2670,18 +2696,24 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			double mainBarFrameHalfDip = mainBar->ft.has_value()
 				? max(0.0, static_cast<double>(mainBar->ft.value().tar) / 2.0)
 				: 0.0;
-			const double bodyLeftDip = -mainButton->GetW() / 2.0
-				- mainFrameHalfDip;
-			const double bodyRightDip = mainButton->GetW() / 2.0
-				+ 10.0 + totalWidth + mainBarFrameHalfDip;
+			const bool opensRight = whiteboardDockPlacement
+				? static_cast<bool>(state.barState.widgetPosition.mainBar) : true;
+			const double bodyLeftDip = opensRight
+				? -mainButton->GetW() / 2.0 - mainFrameHalfDip
+				: -mainButton->GetW() / 2.0 - 10.0 - totalWidth
+					- mainBarFrameHalfDip;
+			const double bodyRightDip = opensRight
+				? mainButton->GetW() / 2.0 + 10.0 + totalWidth
+					+ mainBarFrameHalfDip
+				: mainButton->GetW() / 2.0 + mainFrameHalfDip;
 			const double screenCenterX =
 				ResolveBarBottomDockInitialMainCenterScreenX(
 					state.activeMonitorBounds, bodyLeftDip, bodyRightDip,
 					mainButton->GetW() / 2.0 + mainFrameHalfDip,
 					placementZoom);
-			const double dockLine = ResolveBarBottomDockLine(
-				state.activeMonitorBounds, state.activeWorkArea);
-			const double strokeWidthDip = max(
+				const double dockLine = CurrentBarBottomDockLine(
+					state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi);
+				const double strokeWidthDip = max(
 				mainButton->ft.has_value()
 					? static_cast<double>(mainButton->ft.value().tar) : 0.0,
 				mainBar->ft.has_value()
@@ -2690,15 +2722,33 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				dockLine, state.mainButtonBaseSize,
 				strokeWidthDip, placementZoom);
 
-			mainButton->x.SetDirect(
-				(screenCenterX - state.monitorOrigin.x) / placementZoom);
-			mainButton->y.SetDirect(
-				(screenCenterY - state.monitorOrigin.y) / placementZoom);
-			state.displayCenterX.SetDirect(screenCenterX - state.monitorOrigin.x);
-			state.displayCenterY.SetDirect(screenCenterY - state.monitorOrigin.y);
+			if (whiteboardDockPlacement)
+			{
+				// 白板入口只在首次就位时播放 0.4s 动画，后续靠近底部仍交给原吸附状态机。
+				state.displayCenterX.SetTar(
+					screenCenterX - state.monitorOrigin.x, 0.4);
+				state.displayCenterY.SetTar(
+					screenCenterY - state.monitorOrigin.y, 0.4);
+				state.displayTransitionActive = true;
+				state.whiteboardDockAnimationActive = true;
+			}
+			else
+			{
+				mainButton->x.SetDirect(
+					(screenCenterX - state.monitorOrigin.x) / placementZoom);
+				mainButton->y.SetDirect(
+					(screenCenterY - state.monitorOrigin.y) / placementZoom);
+				state.displayCenterX.SetDirect(screenCenterX - state.monitorOrigin.x);
+				state.displayCenterY.SetDirect(screenCenterY - state.monitorOrigin.y);
+			}
 			state.barState.fold = false;
-			state.barState.widgetPosition.mainBar = true;
+			if (!whiteboardDockPlacement)
+				state.barState.widgetPosition.mainBar = true;
 			state.barState.widgetPosition.primaryBar = false;
+			if (whiteboardDockPlacement)
+			{
+				state.whiteboardDockPlacementPending = false;
+			}
 			state.initialBottomDockPlacementApplied = true;
 			state.unclassifiedDamagePending = true;
 			state.dirtyRegionTracker.ForceFullDamage();
@@ -4790,8 +4840,8 @@ for (size_t i = 0; i < 3; ++i)
 			forcedStartRow, true);
 		int totalRows = max(1, max(explicitRows, forcedRows));
 
-		constexpr double one = 32.5;
-		constexpr double step = 37.5;
+		constexpr double one = BarButtonOneSideDip;
+		constexpr double step = BarButtonOneSideDip + BarButtonGapDip;
 		double contentWidth = subColumns * one
 			+ max(0, subColumns - 1) * BarMorePanelGap;
 		double gridHeight = totalRows * one
@@ -4926,8 +4976,8 @@ for (size_t i = 0; i < 3; ++i)
 		{
 			BarButtonClass* button = placement.button.get();
 			if (!button) continue;
-			double width = (placement.columnSpan == 2 ? 70.0 : one);
-			double height = (placement.rowSpan == 2 ? 70.0 : one);
+			double width = (placement.columnSpan == 2 ? BarButtonTwoSideDip : one);
+			double height = (placement.rowSpan == 2 ? BarButtonTwoSideDip : one);
 			if (button->size == BarButtonSizeEnum::oneTwo) width = 10.0;
 			double logicalX = BarMorePanelPadding
 				+ placement.column * step + width / 2.0;
@@ -5027,14 +5077,15 @@ for (size_t i = 0; i < 3; ++i)
 			}
 			else if (button->size == BarButtonSizeEnum::twoTwo)
 			{
-				button->icon.SetWH(28.0 * scale, 28.0 * scale);
+				button->icon.SetWH(BarButtonTwoTwoIconSizeDip * scale,
+					BarButtonTwoTwoIconSizeDip * scale);
 				button->icon.x.SetDirect(0.0);
-				button->icon.y.SetDirect(-10.0 * scale);
+				button->icon.y.SetDirect(BarButtonTwoTwoIconOffsetYDip * scale);
 				button->name.x.SetDirect(0.0);
-				button->name.y.SetDirect(20.0 * scale);
-				button->name.w.SetDirect(70.0 * scale);
-				button->name.h.SetDirect(25.0 * scale);
-				button->name.size.SetDirect(13.0 * scale);
+				button->name.y.SetDirect(BarButtonTwoTwoLabelOffsetYDip * scale);
+				button->name.w.SetDirect(BarButtonTwoSideDip * scale);
+				button->name.h.SetDirect(BarButtonTwoTwoLabelHeightDip * scale);
+				button->name.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip * scale);
 				button->name.pct.SetDirect(opacityProgress);
 			}
 			else
@@ -7052,7 +7103,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				state.bottomDockTargetIndicatorCaptureActive,
 				state.bottomDockCaptureBottomActive
 					|| captureBottomSpringActive);
-		if (targetIndicatorAction
+		if (Inkeys::UI::Bar::HideWhiteboardSnapIndicator())
+		{
+			// 白板保留捕获和回弹本身，只隐藏蓝色目标矩形。
+			state.bottomDockTargetIndicatorCaptureActive = false;
+			state.bottomDockTargetIndicatorProgress.SetDirect(0.0);
+		}
+		else if (targetIndicatorAction
 			== BarBottomDockTargetIndicatorAction::FadeIn)
 		{
 			// 只有真实进入 Capturing 才显示目标提示，预览区和快速穿越不显示。
@@ -7190,6 +7247,25 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 			static_cast<int>(frameDrawingState.penMode),
 			frameDrawingState.brush1Color,
 			frameDrawingState.highlighterColor);
+	}
+	// 主栏仍独占光源状态机；这里只发布屏幕坐标快照给订阅的 Whiteboard Surface。
+	{
+		const auto lighting = state.spec.SnapshotFrameLighting();
+		const POINT directTranslation{
+			owner_.directWindowDragTranslationX.load(memory_order_acquire),
+			owner_.directWindowDragTranslationY.load(memory_order_acquire) };
+		Inkeys::UI::Bar::BarSurfaceSharedPrimaryLight sharedLight;
+		sharedLight.screenX = static_cast<double>(state.monitorOrigin.x)
+			+ lighting.primaryLight.x + directTranslation.x;
+		sharedLight.screenY = static_cast<double>(state.monitorOrigin.y)
+			+ lighting.primaryLight.y + directTranslation.y;
+		sharedLight.radiusPixels = lighting.primaryRadius;
+		sharedLight.drawingPenColor = lighting.drawingPenColor;
+		sharedLight.drawingPenColorBlend = lighting.drawingPenColorBlend;
+		sharedLight.drawingLightOpacity = lighting.drawingLightOpacity;
+		sharedLight.visible = lighting.primaryLightVisible;
+		sharedLight.edgeLightingEnabled = lighting.edgeLightingEnabled;
+		Inkeys::UI::Bar::BarSurfaceScene::PublishSharedPrimaryLight(sharedLight);
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
@@ -8255,6 +8331,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		ID2D1DeviceContext* barDeviceContext = state.spec.GetDeviceContext();
 		ID2D1GdiInteropRenderTarget* barGdiInterop =
 			state.spec.GetGdiInteropRenderTarget();
+		// 保持当前 present 所借用的 D2D/GDI COM 对象存活到 EndDraw 完成。
+		Microsoft::WRL::ComPtr<ID2D1DeviceContext> barDeviceContextLease(
+			barDeviceContext);
+		Microsoft::WRL::ComPtr<ID2D1GdiInteropRenderTarget> barGdiInteropLease(
+			barGdiInterop);
+		barDeviceContext = barDeviceContextLease.Get();
+		barGdiInterop = barGdiInteropLease.Get();
 		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
 			state.unclassifiedDamagePending);
 		const bool reserveThicknessInteractionEnvelope =
@@ -11451,11 +11534,11 @@ bool presetButton = button.presetIndex >= 0;
 				if (debugTarget.bottom > debugWindowHeight) debugTarget.bottom = debugWindowHeight;
 			}
 
-			COLORREF frame = state.debugFrameSleepLatch.IsPending()
-				? RGB(0, 255, 0) : RGB(255, 0, 0);
-			constexpr FLOAT debugFrameWidth = 1.0F;
-			constexpr FLOAT dirtyFrameInset = 2.5F;
-			constexpr FLOAT windowFrameInset = debugFrameWidth / 2.0F;
+			COLORREF frame = ResolveBarDebugFrameColor(
+				state.debugFrameSleepLatch.IsPending());
+			constexpr FLOAT debugFrameWidth = BarDebugFrameWidth;
+			constexpr FLOAT dirtyFrameInset = BarDebugDirtyFrameInset;
+			constexpr FLOAT windowFrameInset = BarDebugWindowFrameInset;
 			// 脏区框比 HWND 框再内缩 2px，最终全脏帧仍能同时辨认绿框与蓝框。
 			D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
 				static_cast<FLOAT>(debugTarget.left) + dirtyFrameInset,
@@ -11480,7 +11563,7 @@ bool presetButton = button.presetIndex >= 0;
 				static_cast<FLOAT>(debugWindowTarget.bottom) - windowFrameInset), 0, 0);
 			ID2D1SolidColorBrush* windowBrush =
 				state.spec.GetFrameSolidColorBrush(
-					barDeviceContext, RGB(0, 120, 255), 1.0);
+					barDeviceContext, RGB(0, 120, 255), debugFrameWidth);
 			if (windowBrush)
 				barDeviceContext->DrawRoundedRectangle(
 					&windowRect, windowBrush, debugFrameWidth);
@@ -11609,10 +11692,12 @@ bool presetButton = button.presetIndex >= 0;
 							state.activeWorkArea.top, memory_order_relaxed);
 						owner_.bottomDockPresentedWorkAreaRight.store(
 							state.activeWorkArea.right, memory_order_relaxed);
-						owner_.bottomDockPresentedWorkAreaBottom.store(
-							state.activeWorkArea.bottom, memory_order_relaxed);
-						owner_.bottomDockPresentedDisplaySerial.store(
-							state.observedDisplaySerial, memory_order_relaxed);
+							owner_.bottomDockPresentedWorkAreaBottom.store(
+								state.activeWorkArea.bottom, memory_order_relaxed);
+							owner_.bottomDockPresentedDisplayDpi.store(
+								state.activeDisplayDpi, memory_order_relaxed);
+							owner_.bottomDockPresentedDisplaySerial.store(
+								state.observedDisplaySerial, memory_order_relaxed);
 						owner_.bottomDockPresentedDirectTranslationX.store(
 							directTranslation.x, memory_order_relaxed);
 						owner_.bottomDockPresentedDirectTranslationY.store(
@@ -11818,6 +11903,22 @@ BarRenderLoopCoordinator::RenderFrame(
 		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
 		owner_.directWindowDragPhase.store(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
+	}
+	if (Inkeys::UI::Bar::ConsumeWhiteboardBottomDockRequest())
+	{
+		// 模式和几何作为同一事务发布；布局阶段在完整主栏宽度可用后求居中目标。
+		owner_.bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		owner_.bottomDockMode.store(
+			BarBottomDockMode::BottomDocked, memory_order_relaxed);
+		owner_.bottomDockPhase.store(
+			BarBottomDockPhase::Stable, memory_order_relaxed);
+		owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
+		owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+		const auto transitionSerial = owner_.bottomDockTransitionSerial.fetch_add(
+			1, memory_order_acq_rel) + 1;
+		owner_.bottomDockDeferredTransitionSerial.store(
+			transitionSerial, memory_order_release);
+		state.whiteboardDockPlacementPending = true;
 	}
 	// 底栏形态、抓取点和直移必须整帧共用同一偶数 serial，
 	// 显示过渡、布局和 ULW 不能各自读取不同时刻的原子值。

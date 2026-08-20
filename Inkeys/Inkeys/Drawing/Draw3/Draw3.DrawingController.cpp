@@ -1444,6 +1444,7 @@ namespace Inkeys::Drawing::Draw3
 	void DrawingController::Run()
 	{
 		using namespace ink::stroke_model;
+		Bridge::Workspace activeWorkspace = Bridge::Workspace::Presentation;
 		InkGuid workspaceGuid;
 		if (!TryCreateInkGuid(workspaceGuid)) return;
 		document_.emplace(workspaceGuid);
@@ -2647,7 +2648,15 @@ namespace Inkeys::Drawing::Draw3
 						observer_.controlWake(observer_.context);
 					return;
 				}
-				initializeStroke(ContactHandle{ record, record->Generation() }); // 出队后立即固定本地 generation。
+				const ContactHandle handle{ record, record->Generation() };
+				if (activeWorkspace == Bridge::Workspace::Whiteboard &&
+					window_.SelectionMode())
+				{
+					// 白板“拖动”暂不启用平移，也不能让主 Drawpad 继续落笔。
+					input_.Recycle(handle);
+					return;
+				}
+				initializeStroke(handle); // 出队后立即固定本地 generation。
 			};
 
 		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
@@ -3712,6 +3721,23 @@ namespace Inkeys::Drawing::Draw3
 			pageRuntimeStates.back().rasterState = allocateRasterStateToken();
 			return pageIndex;
 		};
+		// PPT 与白板分别保留文档、页索引和撤回/重做运行时。
+		std::optional<InkCanvasCollection> secondaryDocument;
+		std::vector<CanvasPageRuntimeState> secondaryPageRuntimeStates;
+		size_t secondaryPageIndex = 0;
+		auto createSecondaryWorkspace = [&]() -> bool
+		{
+			InkGuid whiteboardGuid;
+			if (!TryCreateInkGuid(whiteboardGuid)) return false;
+			InkCanvasCollection whiteboardDocument(whiteboardGuid);
+			const auto firstPage = TryAppendBlankPage(whiteboardDocument);
+			if (!firstPage) return false;
+			secondaryDocument.emplace(std::move(whiteboardDocument));
+			secondaryPageRuntimeStates.emplace_back();
+			secondaryPageRuntimeStates.back().rasterState = allocateRasterStateToken();
+			secondaryPageIndex = *firstPage;
+			return true;
+		};
 
 			auto resetGpuForPageSwitch = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
@@ -4122,6 +4148,57 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				if (command.type == CanvasCommandType::SetWorkspace)
+				{
+					const auto target = static_cast<Bridge::Workspace>(command.workspace);
+					if ((target != Bridge::Workspace::Presentation &&
+						target != Bridge::Workspace::Whiteboard) || target == activeWorkspace)
+						continue;
+					if (target == Bridge::Workspace::Whiteboard && !secondaryDocument &&
+						!createSecondaryWorkspace())
+						continue;
+
+					std::swap(document_, secondaryDocument);
+					std::swap(pageRuntimeStates, secondaryPageRuntimeStates);
+					std::swap(currentPageIndex_, secondaryPageIndex);
+					activeWorkspace = target;
+					// 旧文档的 GPU 热像、分块维护和瞬态图层不可跨工作区复用。
+					historyGpuCache.DiscardHotPreimages();
+					historyGpuCache.DiscardCompositionCache();
+					compositionMaintenance.clear();
+					if (rasterPipelineGeneration ==
+						(std::numeric_limits<uint64_t>::max)()) rasterPipelineGeneration = 1;
+					else ++rasterPipelineGeneration;
+					renderer_.InvalidateTrustedL2Snapshot();
+					trustedSnapshotSignatureValid = false;
+					viewportTilePlan = {};
+					viewportTilePlanIndex = 0;
+					viewportRecoveryPending = false;
+					viewportRefreshPending = false;
+					viewportRefreshClearsTransient = false;
+					viewportVisibleClear = true;
+					pendingLaserBakeDirty = {};
+					laserTipDots.clear();
+					laserParticleEmissionRequests.clear();
+					previousCursorVisuals.clear();
+					currentCursorVisuals.clear();
+					laserIncrementalEnsureAttempted = false;
+					publishedCurrentPageHasContent = !currentPageHasContent();
+					resetGpuForPageSwitch(frameDirty, particleSnapshot,
+						forceFullPresent, width, height);
+					const CompositionRestoreResult restored = restorePageContent(
+						currentPageIndex_, width, height, false);
+					if (restored.path == CompositionRestorePath::Failed)
+					{
+						viewportVisibleClear = false;
+						viewportRefreshPending = true;
+					}
+					publishCurrentPageContent();
+					if (observer_.workspaceChanged)
+						observer_.workspaceChanged(observer_.context, activeWorkspace,
+							currentPageIndex_, document_ ? document_->Pages().size() : 0);
+					continue;
+				}
 				// 页面、撤回/重做和键盘平移都以命令时刻的固定视口为起点。
 				interruptNavigationForPenOrMouse("canvas-command");
 				if (command.type == CanvasCommandType::Clear)
@@ -4155,6 +4232,12 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::TranslateViewport)
 				{
+					// 白板拖动态暂不启用画布平移。
+					if (activeWorkspace == Bridge::Workspace::Whiteboard)
+					{
+						reportCommand(command.type);
+						continue;
+					}
 					InkPage* page = document_->PageAt(currentPageIndex_);
 					InkCanvas* canvas = page
 						? page->FindCanvas(kDefaultDeviceKey) : nullptr;
@@ -4274,7 +4357,9 @@ namespace Inkeys::Drawing::Draw3
 		while (true)
 		{
 			const bool selectionMode = window_.SelectionMode();
-			const TransparentOutputTarget expectedOutputTarget = selectionMode
+			const bool selectionUsesAuxiliary =
+				selectionMode && activeWorkspace == Bridge::Workspace::Presentation;
+			const TransparentOutputTarget expectedOutputTarget = selectionUsesAuxiliary
 				? TransparentOutputTarget::SelectionUlw
 				: TransparentOutputTarget::PrimaryDrawpad;
 			const bool outputTargetChanged = appliedSelectionMode != selectionMode ||
@@ -4283,7 +4368,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				presentation_.SetOutputTarget(expectedOutputTarget);
 				appliedSelectionMode = selectionMode;
-				auxiliaryCleanVerificationPending = selectionMode;
+				auxiliaryCleanVerificationPending = selectionUsesAuxiliary;
 			}
 			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
 			timerPeriod.SetSelectionMode(selectionMode);

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 #include <windows.h>
+#include "Draw3.Bridge.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
@@ -36,6 +37,7 @@ export namespace Inkeys::Drawing::Draw3
 			std::size_t, std::size_t) = nullptr;
 		void (*documentReady)(void*, std::size_t, std::size_t) = nullptr;
 		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
+		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t) = nullptr;
 		void (*controlWake)(void*) = nullptr;
 	};
 

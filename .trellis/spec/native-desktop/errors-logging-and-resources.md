@@ -154,6 +154,68 @@ CrashHandler::Shutdown();
 SetOffSignal(1);
 ~~~
 
+## D2D/GDI present 借用资源事务合同
+
+### 1. Scope / Trigger
+
+当 Bar、Whiteboard 或其他 RenderPipeline 客户端从 renderer/scene 取得 raw `ID2D1DeviceContext*`、`ID2D1GdiInteropRenderTarget*` 并跨越 `BeginDraw`、GDI interop 或 `EndDraw` 使用时适用。ARM64 上资源重建更容易暴露借用指针在事务中失效的问题。
+
+### 2. Signatures
+
+~~~cpp
+BarSurfaceRenderResult BarSurfaceScene::Render(
+    ID2D1DeviceContext* deviceContext, ...);
+HRESULT ID2D1GdiInteropRenderTarget::GetDC(D2D1_DC_INITIALIZE_MODE, HDC*);
+HRESULT ID2D1GdiInteropRenderTarget::ReleaseDC(const RECT* update);
+HRESULT ID2D1DeviceContext::EndDraw();
+~~~
+
+### 3. Contracts
+
+- Scene/renderer 返回的 raw COM 指针是借用引用，不转移所有权。调用方必须立即用本地 `Microsoft::WRL::ComPtr` 建立本帧 lease，并持有到对应 `EndDraw` 返回。
+- `BeginDraw -> Render -> GetDC -> ULW -> ReleaseDC -> EndDraw` 是一个提交事务。不得在 `GetDC` 或 ULW 成功后提前释放 context/interop，也不得因中途失败跳过 `ReleaseDC`/`EndDraw` 结算。
+- 只有所有阶段成功后才推进业务 damage、viewport 与 debug 快照。红框记录业务 dirty；绿框记录实际 present union，上一帧绿框只参与下一帧擦除，不得写回业务 dirty。
+- 任一阶段失败时保留请求并强制下一帧全脏；target/device 分类继续沿用 RenderPipeline 的局部重建与 device epoch 恢复规则。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| renderer 在调用期间替换内部 COM owner | 本地 lease 保证旧对象存活到 `EndDraw` |
+| `GetDC` 失败 | 不调用 ULW；仍结算 `EndDraw`，快照不推进 |
+| ULW 或 `ReleaseDC` 失败 | 完成可执行的 release/end，标记整笔事务失败 |
+| `EndDraw` 返回 recreate target | 丢弃该窗口资源并全脏重试，不发布成功快照 |
+| debug 绿色 present 框扩大提交范围 | 只更新 presented-frame 快照，不污染业务 dirty |
+
+### 5. Good / Base / Bad Cases
+
+- Good：ARM64/x64 都以局部 `ComPtr` 持有 context 与 GDI interop，所有退出分支在 lease 析构前完成 `EndDraw`。
+- Base：无 debug overlay 时 present damage 等于本帧业务 damage，成功后推进两类快照。
+- Bad：只保存 Scene 返回的 raw pointer，或把 `previousDebugPresentedFrames` 写成业务 `drawResult.damage`；前者可能 use-after-release，后者无法可靠擦除上一帧绿框。
+
+### 6. Tests Required
+
+- Headless 对纯 damage transaction 断言失败不推进、成功才推进，以及红/绿框 union 的下一帧擦除范围。
+- 完整 `Debug|ARM64` 与 `Debug|x64` Solution 构建及两架构 `--no-window` 测试。
+- D2D Debug Layer 与重复进入/退出需要在允许 GUI 的独立阶段验证；静态 COM lease 审计不能替代运行时 layer 输出。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：raw pointer 的所有者可能在 EndDraw 前重建。
+auto* context = renderer.DeviceContext();
+context->BeginDraw();
+RenderAndPresent(context);
+context->EndDraw();
+
+// Correct：本帧持有借用对象，事务结算后再释放 lease。
+Microsoft::WRL::ComPtr<ID2D1DeviceContext> context = renderer.DeviceContext();
+Microsoft::WRL::ComPtr<ID2D1GdiInteropRenderTarget> interop = renderer.GdiInterop();
+context->BeginDraw();
+RenderAndPresent(context.Get(), interop.Get());
+const HRESULT endDrawResult = context->EndDraw();
+~~~
+
 ## 待确认风险（不是已确认缺陷）
 
 - `D2DShutdown`：`IdtD2DPreparation.cpp` 有声明/定义，但全仓静态搜索未找到调用。需确认是否有意依赖进程退出，影响未来 Codex 是否可以复用或调整 D2D 生命周期。

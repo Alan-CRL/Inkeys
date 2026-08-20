@@ -25,6 +25,18 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		FilledRectangle
 	};
 
+	enum class Workspace : std::uint8_t
+	{
+		Presentation,
+		Whiteboard,
+	};
+
+	constexpr bool SelectionUsesAuxiliaryOutput(
+		bool selectionMode, Workspace workspace) noexcept
+	{
+		return selectionMode && workspace == Workspace::Presentation;
+	}
+
 	enum class CommandType : std::uint8_t
 	{
 		Clear,
@@ -54,6 +66,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool selectionMode = true;
 		std::uint32_t page = 0;
 		bool hasPage = false;
+		Workspace workspace = Workspace::Presentation;
 		std::uint64_t revision = 0;
 	};
 

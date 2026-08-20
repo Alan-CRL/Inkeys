@@ -15,6 +15,7 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.Whiteboard;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
 import Inkeys.Net.Update;
@@ -1413,10 +1414,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 								hwnd, message, wParam, lParam);
 						};
 				}
+				else if (role == Inkeys::Window::WindowRole::WhiteboardLeft ||
+					role == Inkeys::Window::WindowRole::WhiteboardRight)
+				{
+					// 白板翻页栏始终是固定 195x70 DIP，不参与位置持久化。
+					spec.width = 195;
+					spec.height = 70;
+					spec.bindMessages = false;
+				}
 				windowSpecs.push_back(std::move(spec));
 			};
 		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
-			DefWindowProcW, WS_EX_TRANSPARENT, {});
+			nullptr, WS_EX_TRANSPARENT, {});
 		AddOverlayWindow(Inkeys::Window::WindowRole::DrawpadPresentation,
 			L"Inkeys2.Presentation;", L"Inkeys DrawpadPresentationWindow",
 			DefWindowProcW, 0, {});
@@ -1427,6 +1436,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				disableGestureFuc(hwnd);
 				createdDrawpadHwnd->store(hwnd, std::memory_order_release);
 			});
+		AddOverlayWindow(Inkeys::Window::WindowRole::WhiteboardLeft,
+			L"Inkeys3.WhiteboardLeft;", L"Inkeys Whiteboard Left",
+			Inkeys::UI::Whiteboard::WindowProc(), 0, touchRegisterFuc);
+		AddOverlayWindow(Inkeys::Window::WindowRole::WhiteboardRight,
+			L"Inkeys3.WhiteboardRight;", L"Inkeys Whiteboard Right",
+			Inkeys::UI::Whiteboard::WindowProc(), 0, touchRegisterFuc);
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomLeft,
 			L"Inkeys4.BottomLeft;", L"Inkeys Ppt Bottom Left",
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
@@ -1552,12 +1567,26 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
+		if (!Inkeys::UI::Whiteboard::Initialize({
+			[] { RequestWhiteboardPreviousPage(); },
+			[] { RequestWhiteboardNextPage(); },
+			}))
+		{
+			IDTLogger->critical("[主线程][IdtMain] Whiteboard 渲染客户端初始化失败");
+			Inkeys::UI::Setting::Shutdown();
+			Inkeys::Drawing::Draw3::StopProduct();
+			SetOffSignal(1);
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
 		// Host 启动会清空桥接队列；首帧前重新发布当前 UI 状态。
 		SyncDraw3State();
 		// 首帧完成后按“模式 + 当前页内容”决定显隐；初始空选择页保持隐藏。
 		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧准备失败");
+			Inkeys::UI::Whiteboard::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
 			windowService.StopAndJoin();
@@ -1603,6 +1632,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
 	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
+	Inkeys::UI::Whiteboard::Shutdown();
 	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();

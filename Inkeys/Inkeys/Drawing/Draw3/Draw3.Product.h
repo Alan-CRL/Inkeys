@@ -24,8 +24,10 @@ namespace Inkeys::Drawing::Draw3
 		std::uint32_t timeoutMilliseconds) noexcept;
 	LRESULT ForwardProductMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 	void PublishProductState(const Bridge::ProductState& state) noexcept;
+	void PublishProductWorkspace(Bridge::Workspace workspace) noexcept;
 	void PublishProductPage(std::uint32_t page) noexcept;
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept;
+	void SetProductActivationAllowed(bool enabled) noexcept;
 }
 
 // Window Service 的 Drawpad WndProc 入口；不创建或销毁 HWND。

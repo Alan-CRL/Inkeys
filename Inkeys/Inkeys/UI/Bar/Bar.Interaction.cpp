@@ -23,9 +23,6 @@ import Inkeys.Other.Inputs;
 import Inkeys.Window;
 import Inkeys.Display;
 using Inkeys::UI::Bar::BarToggleChannel;
-constexpr double BarButtonHoverOpacity = 0.18;
-constexpr double BarButtonHoverShowDur = 0.24;
-constexpr double BarButtonHoverExitDur = 0.24;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
@@ -408,6 +405,13 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 		barUISet.ShutdownWindowInput(hWnd);
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
+	}
+	if (msg == WM_CANCELMODE)
+	{
+		// Whiteboard Exit 会通过 Window Service 广播取消消息，清掉 Bar 的捕获和浮层输入。
+		barUISet.ShutdownWindowInput(hWnd);
+		barUISet.UpdateRendering(false);
+		return 0;
 	}
 	// 关闭后不允许迟到的计时器或 Raw Input 重新建立交互/追踪状态。
 	if (offSignal) return DefWindowProcW(hWnd, msg, wParam, lParam);
@@ -975,6 +979,17 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 	picker.colorPickerPointerCapture = false;
 }
 
+void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
+{
+	barState.drawAttribute = false;
+	barState.geometryAttribute = false;
+	barState.moreExpanded = false;
+	ClosePenTypeMenu();
+	CloseDrawAttributeTooltips();
+	CloseThicknessSlider(cancelCapture);
+	CloseColorPicker(cancelCapture);
+}
+
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
 	if (!hWnd) return;
@@ -1242,9 +1257,10 @@ private:
 			const BarUiCurveSpecClass hoverShowCurve{
 				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 			hoverFill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill),
-				BarButtonHoverShowDur, hoverShowCurve);
+				BarButtonHoverTransitionDuration, hoverShowCurve);
 			hoverPct->SetTar(
-				BarButtonHoverOpacity, BarButtonHoverShowDur, nullopt, true, hoverShowCurve);
+				BarButtonHoverOpacity, BarButtonHoverTransitionDuration,
+				nullopt, true, hoverShowCurve);
 			*hoverStage = BarButtonHoverStageEnum::Showing;
 			UpdateRendering(false);
 		}
@@ -1271,7 +1287,8 @@ private:
 				const BarUiCurveSpecClass hoverExitCurve{
 					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
 				hoverPct->SetTar(
-					0.0, BarButtonHoverExitDur, nullopt, true, hoverExitCurve);
+					0.0, BarButtonHoverTransitionDuration,
+					nullopt, true, hoverExitCurve);
 			}
 			UpdateRendering(false);
 		}
@@ -3079,6 +3096,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							else
 							{
 								barState.fold = true;
+								Inkeys::UI::Bar::ClearWhiteboardDockLock();
 								barState.moreExpanded = false;
 								CloseThicknessSlider(true);
 								CloseColorPicker(true);
@@ -5765,6 +5783,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	const POINT initialPresentedTranslation =
 		initialPresentedSnapshot.directTranslation;
 	const BarBottomDockMode initialMode = initialPresentedSnapshot.mode;
+	bool whiteboardDockLocked = WhiteboardDockLockActive();
 	const BarBottomDockPhase initialPhase = initialPresentedSnapshot.phase;
 	const bool initialRecoveryActive =
 		initialPresentedSnapshot.recoveryActive;
@@ -5812,10 +5831,23 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	LONG appliedDeltaY = directWindowDragTranslationY.load(memory_order_acquire);
 	bool directMoveFailed = false;
 
-	BarBottomDockEnvironment environment{
-		initialPresentedSnapshot.monitorBounds,
-		initialPresentedSnapshot.workArea,
-		interactionZoom };
+		auto ResolveDockInsetDip = []() noexcept
+			{
+				return Inkeys::UI::Bar::WhiteboardActive()
+					? BarWhiteboardBottomInsetDip : 0.0;
+			};
+		auto ResolveDockDpiScale = [](UINT dpi) noexcept
+			{
+				return clamp(
+					static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
+					static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
+			};
+		BarBottomDockEnvironment environment{
+			initialPresentedSnapshot.monitorBounds,
+			initialPresentedSnapshot.workArea,
+			interactionZoom,
+			ResolveDockInsetDip(),
+			ResolveDockDpiScale(initialPresentedSnapshot.dpi) };
 	unsigned long long observedDisplaySerial =
 		initialPresentedSnapshot.displaySerial;
 	bool displayEnvironmentAwaited = initialDisplayTransitionPending;
@@ -5862,10 +5894,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		startPointer.y - grabOffsetScreenY, memory_order_release);
 	const double initialFloatingVisibleBottomScreenY =
 		startPointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
-	const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
-		ResolveBarBottomDockLine(
-			environment.monitorBounds, environment.workArea),
-		bodyHeightDip, strokeWidthDip, interactionZoom);
+		const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+			ResolveBarBottomDockLine(
+				environment.monitorBounds, environment.workArea,
+				environment.insetDip, environment.dpiScale),
+			bodyHeightDip, strokeWidthDip, interactionZoom);
 	BarBottomDockDragTracker dockTracker;
 	dockTracker.Begin(initialMode, startPointer.y,
 		initialFloatingVisibleBottomScreenY,
@@ -5958,10 +5991,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							+ presented.rigidTranslationDip * presented.zoom);
 					const double floatingBottom = pointer.y - grabOffsetScreenY
 						+ VisibleHalfHeightScreen();
-					const double dockCenter = ResolveBarBottomDockCenterScreenY(
-						ResolveBarBottomDockLine(
-							environment.monitorBounds, environment.workArea),
-						bodyHeightDip, strokeWidthDip, interactionZoom);
+						const double dockCenter = ResolveBarBottomDockCenterScreenY(
+							ResolveBarBottomDockLine(
+								environment.monitorBounds, environment.workArea,
+								environment.insetDip, environment.dpiScale),
+							bodyHeightDip, strokeWidthDip, interactionZoom);
 					dockTracker.RebaseDockGrip(
 						dockCenter + grabOffsetScreenY, floatingBottom);
 					appliedDeltaX = directWindowDragTranslationX.load(
@@ -5974,10 +6008,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 					interactionZoom = presented.zoom;
 					maximumInteractionZoom = max(
 						maximumInteractionZoom, interactionZoom);
-					environment = BarBottomDockEnvironment{
-						presented.monitorBounds,
-						presented.workArea,
-						interactionZoom };
+						environment = BarBottomDockEnvironment{
+							presented.monitorBounds,
+							presented.workArea,
+							interactionZoom,
+							ResolveDockInsetDip(),
+							ResolveDockDpiScale(presented.dpi) };
 					observedDisplaySerial = presented.displaySerial;
 					requestedDisplaySerial = presented.displaySerial;
 					requestedDisplayZoom = interactionZoom;
@@ -6033,8 +6069,15 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				pointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
 			const BarBottomDockDragUpdate dockUpdate = dockTracker.Update(
 				pointer.y, floatingVisibleBottomScreenY, environment);
+			if (whiteboardDockLocked && dockUpdate.modeChanged)
+			{
+				// 手动离开或重新捕获底栏后即恢复普通拖动，不再保留专用横向锁。
+				ClearWhiteboardDockLock();
+				whiteboardDockLocked = false;
+			}
 
-			double desiredMainCenterScreenX = pointer.x - grabOffsetScreenX;
+			double desiredMainCenterScreenX = whiteboardDockLocked
+				? actualMainCenterScreenX : pointer.x - grabOffsetScreenX;
 			desiredMainCenterScreenX = ClampBarBottomDockMainCenterScreenX(
 				desiredMainCenterScreenX, environment.monitorBounds,
 				visibleHalfWidthDip, interactionZoom);
@@ -6054,10 +6097,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 						- VisibleHalfHeightScreen());
 				desiredMainCenterScreenY = clamp(
 					desiredMainCenterScreenY, minimumY, maximumY);
-				const double dockCenterScreenY = ResolveBarBottomDockCenterScreenY(
-					ResolveBarBottomDockLine(environment.monitorBounds,
-						environment.workArea), bodyHeightDip,
-					strokeWidthDip, interactionZoom);
+					const double dockCenterScreenY = ResolveBarBottomDockCenterScreenY(
+						ResolveBarBottomDockLine(environment.monitorBounds,
+							environment.workArea, environment.insetDip,
+							environment.dpiScale), bodyHeightDip,
+						strokeWidthDip, interactionZoom);
 				downwardDetachBlockedAtRelease =
 					ShouldKeepBarBottomDockedAfterBlockedDownwardRelease(
 						downwardDetachSeen, rawMainCenterScreenY,

@@ -12,6 +12,12 @@ import :Main;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {
+	if (Inkeys::UI::Bar::WhiteboardDockLockActive())
+	{
+		// 白板首次自动贴底期间保留进入前的左右展开方向，仅固定次级面板向上。
+		widgetPosition.primaryBar = false;
+		return;
+	}
 	if (barUISet.IsBottomDockLayoutLocked())
 	{
 		// 拖动中逻辑坐标不变；抬手吸收 x 后允许按中轴触发现有横向换边动画。

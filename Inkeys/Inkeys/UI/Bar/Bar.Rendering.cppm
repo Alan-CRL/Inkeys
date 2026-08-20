@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -6,6 +6,7 @@ module;
 #include <dwrite_1.h>
 #include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
 
 export module Inkeys.UI.Bar:Rendering;
@@ -18,7 +19,6 @@ import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.RenderPipeline;
-
 using Ui3RenderDeviceEpoch = Inkeys::UI::RenderPipeline::DeviceEpoch;
 
 constexpr double BarSvgRasterUpscaleThreshold = 1.35;
@@ -48,6 +48,19 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Eraser,
 	Geometry,
 };
+
+// Surface Scene 只消费已经计算完成的共享第一光源，不复制 MainBar 的状态机。
+export struct BarUiFrameLightingSnapshot
+{
+	D2D1_POINT_2F primaryLight = D2D1::Point2F();
+	FLOAT primaryRadius = 0.0F;
+	COLORREF drawingPenColor = RGB(0, 0, 0);
+	double drawingPenColorBlend = 0.0;
+	double drawingLightOpacity = 1.0;
+	bool primaryLightVisible = false;
+	bool edgeLightingEnabled = false;
+};
+
 // 具体渲染
 class BarUIRendering
 {
@@ -76,6 +89,15 @@ public:
 	{
 		return frameCursorLightChanged;
 	}
+	[[nodiscard]] BarUiFrameLightingSnapshot
+		SnapshotFrameLighting() const noexcept;
+	void SetFrameLightingSnapshot(
+		const BarUiFrameLightingSnapshot& snapshot) noexcept;
+	// Surface 只提供本地指针与 selected 能力，淡入/淡出仍沿用 Bar 光源参数。
+	[[nodiscard]] bool PrepareSurfaceCursorLight(
+		double animationDtSeconds,
+		D2D1_POINT_2F localCursor,
+		bool cursorTargetVisible) noexcept;
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
@@ -221,7 +243,8 @@ protected:
 		ComPtr<ID2D1LinearGradientBrush> brush;
 	};
 
-	ID2D1RadialGradientBrush* GetFrameGradientBrush(
+	// 返回强引用，避免缓存扩容或换 epoch 时使当前帧仍在使用的 brush 失效。
+	ComPtr<ID2D1RadialGradientBrush> GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);

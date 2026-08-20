@@ -214,6 +214,7 @@ namespace Inkeys::Drawing::Draw3
 		fullPresentRequested_.store(false, std::memory_order_release);
 		compositionChangedRequested_.store(false, std::memory_order_release);
 		drawingCursorRenderRequested_.store(false, std::memory_order_release);
+		activationAllowed_.store(false, std::memory_order_release);
 		window_.store(window, std::memory_order_release);
 		size_.width = (std::max)(0L, client.right - client.left);
 		size_.height = (std::max)(0L, client.bottom - client.top);
@@ -238,6 +239,7 @@ namespace Inkeys::Drawing::Draw3
 			RemovePropW(window, MICROSOFT_TABLETPENSERVICE_PROPERTY);
 		}
 		inputCoordinator_.store(nullptr, std::memory_order_release);
+		activationAllowed_.store(false, std::memory_order_release);
 		penCursorSample_.Clear();
 		mouseCursorSample_.Clear();
 		cursorOwner_.store(DrawingCursorPointerAuthority::Unknown,
@@ -358,6 +360,11 @@ namespace Inkeys::Drawing::Draw3
 		if (selectionMode_.exchange(enabled, std::memory_order_acq_rel) == enabled)
 			return;
 		RequestControlWake();
+	}
+
+	void WindowController::SetActivationAllowed(bool enabled) noexcept
+	{
+		activationAllowed_.store(enabled, std::memory_order_release);
 	}
 
 	EraserWidthMode WindowController::ActiveEraserWidthMode() const noexcept
@@ -1208,8 +1215,9 @@ namespace Inkeys::Drawing::Draw3
 			return 0;
 
 		case WM_MOUSEACTIVATE:
-			// Drawpad 从创建起不可激活；返回值仍允许本次鼠标消息继续投递。
-			return MA_NOACTIVATE;
+			// 只由 Enter/Exit 事务切换，避免每帧抢焦点或在 Presentation 中激活。
+			return activationAllowed_.load(std::memory_order_acquire)
+				? MA_ACTIVATE : MA_NOACTIVATE;
 
 		case WM_ERASEBKGND:
 			if (gpuTransparent) return 1; // 阻止 GDI 擦背景，避免透明区域闪烁。

@@ -53,6 +53,8 @@ namespace
 			"default snapshot starts at revision zero")) ++failures;
 		if (!Expect(initial.selectionMode,
 			"default product state starts in selection mode")) ++failures;
+		if (!Expect(initial.workspace == Workspace::Presentation,
+			"default product state starts in presentation workspace")) ++failures;
 
 		ProductState first{};
 		first.colorRgba = 0x12345678u;
@@ -78,14 +80,16 @@ namespace
 		ProductState pageState = secondSnapshot;
 		pageState.page = 6;
 		pageState.hasPage = true;
+		pageState.workspace = Workspace::Whiteboard;
 		bridge.PublishState(pageState);
-		ProductState toolOnlyState{};
+		ProductState toolOnlyState = bridge.Snapshot();
 		toolOnlyState.tool = Tool::Laser;
 		bridge.PublishState(toolOnlyState);
 		const ProductState preservedPage = bridge.Snapshot();
 		if (!Expect(preservedPage.tool == Tool::Laser && preservedPage.hasPage
-			&& preservedPage.page == 6,
-			"tool state publication preserves the absolute product page")) ++failures;
+			&& preservedPage.page == 6
+			&& preservedPage.workspace == Workspace::Whiteboard,
+			"tool state publication preserves page and workspace")) ++failures;
 	}
 
 	void TestCommandQueue(int& failures)
@@ -220,6 +224,10 @@ namespace
 
 	void TestDrawpadPresentationPlan(int& failures)
 	{
+		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
+			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)
+			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard),
+			"whiteboard selection stays on the primary drawpad")) ++failures;
 		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true) ==
 			DrawpadPresentationSurface::Hidden,
 			"clean empty selection hides both drawpad surfaces")) ++failures;

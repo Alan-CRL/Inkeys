@@ -33,6 +33,7 @@ enum class BarButtonPresetEnum : int
 	Redo,
 	Clean,
 
+	Whiteboard,
 	Freeze,
 
 	More,
@@ -236,6 +237,7 @@ bool RegisterButton(
 		void RegisterBuiltInComponents();
 		void StateUpdate();
 		void UpdateDrawButtonStyle();
+		void UpdateWhiteboardButtonStyle();
 
 		void Load();
 		void SyncLegacyExtensionButtons();
@@ -268,6 +270,7 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 
 		mutable shared_mutex registrationMutex;
 		IdtAtomic<int> drawButtonStyleKey = -1;
+		IdtAtomic<int> whiteboardButtonStyleKey = -1;
 		IdtAtomic<int> eraserButtonStyleKey = -1;
 		IdtAtomic<int> geometryButtonStyleKey = -1;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;

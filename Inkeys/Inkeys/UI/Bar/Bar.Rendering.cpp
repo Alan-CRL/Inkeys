@@ -12,7 +12,10 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include <cstdio>
 #include <d2d1effects.h>
+#include <algorithm>
+#include <cmath>
 #include <limits>
+#include <memory>
 
 #pragma comment(lib, "dxguid.lib")
 
@@ -24,9 +27,11 @@ import :State;
 import :Button;
 import :Format;
 import :RenderingAttribute;
+import :Layout;
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.Window;
 
 namespace
 {
@@ -229,6 +234,128 @@ void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
 			"[BarUIRendering::HandleFrameEndDrawResult] A8 预模糊遮罩提交失败，本设备停用柔光遮罩, hr=0x{:08X}",
 			static_cast<unsigned int>(endDrawResult));
 	}
+}
+BarUiFrameLightingSnapshot BarUIRendering::SnapshotFrameLighting() const noexcept
+{
+	return {
+		framePrimaryLight,
+		frameLightRadius,
+		frameDrawingPenColor,
+		frameDrawingPenColorBlend,
+		frameDrawingLightOpacity,
+		framePrimaryLightAnchorInitialized && frameLightRadius > 0.0F,
+		frameEdgeLightingEnabled,
+	};
+}
+
+void BarUIRendering::SetFrameLightingSnapshot(
+	const BarUiFrameLightingSnapshot& snapshot) noexcept
+{
+	framePrimaryLight = snapshot.primaryLight;
+	framePrimaryLightStart = snapshot.primaryLight;
+	framePrimaryLightTarget = snapshot.primaryLight;
+	frameLightRadius = std::isfinite(snapshot.primaryRadius)
+		&& snapshot.primaryRadius > 0.0F ? snapshot.primaryRadius : 0.0F;
+	framePrimaryLightAnchorInitialized = snapshot.primaryLightVisible
+		&& frameLightRadius > 0.0F;
+	framePrimaryLightAnimating = false;
+	frameEdgeLightingEnabled = snapshot.edgeLightingEnabled;
+	frameDrawingPenColor = snapshot.drawingPenColor;
+	frameDrawingPenColorStart = snapshot.drawingPenColor;
+	frameDrawingPenColorTarget = snapshot.drawingPenColor;
+	frameDrawingPenColorBlend = std::clamp(
+		snapshot.drawingPenColorBlend, 0.0, 1.0);
+	frameDrawingPenColorBlendStart = frameDrawingPenColorBlend;
+	frameDrawingPenColorBlendTarget = frameDrawingPenColorBlend;
+	frameDrawingLightOpacity = std::clamp(
+		snapshot.drawingLightOpacity, 0.0, 1.0);
+	frameDrawingLightOpacityStart = frameDrawingLightOpacity;
+	frameDrawingPenColorInitialized = true;
+	frameDrawingPenColorAnimating = false;
+	frameDrawingModeTransitionAnimating = false;
+	// Scene 不继承 MainBar 的鼠标光；按钮仅在自身 selected 时才可提供第三光。
+	frameCursorLightVisible = false;
+	frameCursorLightIntensity = 0.0F;
+	frameCursorLightIntensityStart = 0.0F;
+	frameCursorLightIntensityTarget = 0.0F;
+	frameCursorLightAnimating = false;
+	frameLocalCursorLightRadiusX = 0.0F;
+	frameLocalCursorLightRadiusY = 0.0F;
+}
+
+bool BarUIRendering::PrepareSurfaceCursorLight(
+	double animationDtSeconds, D2D1_POINT_2F localCursor,
+	bool cursorTargetVisible) noexcept
+{
+	const D2D1_POINT_2F previousCursor = frameLocalCursorLight;
+	const FLOAT previousRadius = frameLocalCursorLightRadiusX;
+	const FLOAT previousIntensity = frameCursorLightIntensity;
+	const bool previousVisible = frameCursorLightVisible;
+
+	frameCursorLight = localCursor;
+	frameLocalCursorLight = localCursor;
+	const FLOAT cursorRadius = static_cast<FLOAT>(
+		BarBorderCursorLightRadius * max(0.0, frameZoom));
+	frameCursorLightRadius = cursorRadius;
+	frameLocalCursorLightRadiusX = cursorRadius;
+	frameLocalCursorLightRadiusY = cursorRadius;
+
+	const bool targetVisible = cursorTargetVisible
+		&& frameEdgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
+	const FLOAT targetIntensity = targetVisible
+		? static_cast<FLOAT>(BarBorderLightIntensity) : 0.0F;
+	const bool animationEnabled = BarUiAnimationEnabled;
+	double speed = BarUiAnimationSpeedRate;
+	if (!std::isfinite(speed)) speed = 1.0;
+	speed = std::clamp(speed, 0.1, 5.0);
+	if (!std::isfinite(animationDtSeconds) || animationDtSeconds < 0.0)
+		animationDtSeconds = 0.0;
+	animationDtSeconds = std::clamp(animationDtSeconds, 0.0, 0.05);
+
+	if (frameCursorLightIntensityTarget != targetIntensity)
+	{
+		frameCursorLightIntensityStart = frameCursorLightIntensity;
+		frameCursorLightIntensityTarget = targetIntensity;
+		frameCursorLightFadeElapsed = 0.0;
+		frameCursorLightAnimating = animationEnabled
+			&& std::abs(frameCursorLightIntensityStart - targetIntensity) > 0.0001F;
+	}
+	if (!animationEnabled)
+	{
+		frameCursorLightIntensity = targetIntensity;
+		frameCursorLightAnimating = false;
+		frameCursorLightFadeElapsed = 0.0;
+	}
+	else if (frameCursorLightAnimating)
+	{
+		frameCursorLightFadeElapsed += animationDtSeconds * speed;
+		const double progress = std::clamp(
+			frameCursorLightFadeElapsed / BarBorderCursorFadeInDur, 0.0, 1.0);
+		const double curved = ApplyBorderLightSmoothstep(progress);
+		frameCursorLightIntensity = static_cast<FLOAT>(
+			frameCursorLightIntensityStart
+			+ (frameCursorLightIntensityTarget - frameCursorLightIntensityStart)
+			* curved);
+		if (progress >= 1.0)
+		{
+			frameCursorLightIntensity = frameCursorLightIntensityTarget;
+			frameCursorLightAnimating = false;
+		}
+	}
+	else frameCursorLightIntensity = frameCursorLightIntensityTarget;
+	frameCursorLightVisible = frameCursorLightIntensity > 0.0001F;
+
+	const auto pointChanged = [](D2D1_POINT_2F left, D2D1_POINT_2F right)
+		{
+			return std::abs(left.x - right.x) > 0.01F
+				|| std::abs(left.y - right.y) > 0.01F;
+		};
+	const bool changed = previousVisible != frameCursorLightVisible
+		|| std::abs(previousIntensity - frameCursorLightIntensity) > 0.0001F
+		|| std::abs(previousRadius - frameLocalCursorLightRadiusX) > 0.01F
+		|| pointChanged(previousCursor, frameLocalCursorLight);
+	frameCursorLightChanged = changed || frameCursorLightAnimating;
+	return frameCursorLightChanged;
 }
 
 RECT BarUIRendering::GetFramePrimaryLightDamageBounds() const noexcept
@@ -814,7 +941,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 			|| edgeLightingStateChanged);
 }
 
-ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
+ComPtr<ID2D1RadialGradientBrush> BarUIRendering::GetFrameGradientBrush(
 	ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource)
 {
 	COLORREF rgb = color & 0x00FFFFFF;
@@ -837,7 +964,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 			cache.brush->SetGradientOriginOffset(D2D1::Point2F());
 			cache.brush->SetRadiusX(radius.width);
 			cache.brush->SetRadiusY(radius.height);
-			return cache.brush.Get();
+			return cache.brush;
 		}
 	}
 	if (frameGradientUnavailable) return nullptr;
@@ -869,7 +996,7 @@ ID2D1RadialGradientBrush* BarUIRendering::GetFrameGradientBrush(
 			if (frameGradientBrushCache.size() >= 32)
 				frameGradientBrushCache.erase(frameGradientBrushCache.begin());
 			frameGradientBrushCache.emplace_back(move(cache));
-			return frameGradientBrushCache.back().brush.Get();
+			return frameGradientBrushCache.back().brush;
 		}
 	}
 
@@ -2119,8 +2246,8 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	FLOAT diffuseOpacity = static_cast<FLOAT>(
 		BarBorderFrameDiffuseOpacity
 		+ (BarBorderPenDiffuseOpacity - BarBorderFrameDiffuseOpacity) * penColorBlend);
-	ID2D1RadialGradientBrush* primaryBrush = nullptr;
-	ID2D1RadialGradientBrush* cursorBrush = nullptr;
+	ComPtr<ID2D1RadialGradientBrush> primaryBrush;
+	ComPtr<ID2D1RadialGradientBrush> cursorBrush;
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
 		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
 	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
@@ -2222,13 +2349,13 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 				if (drawPrimaryLight)
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
-						exactMask, *roundedRect, primaryBrush,
+						exactMask, *roundedRect, primaryBrush.Get(),
 						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
 				}
 				if (drawCursorLight)
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
-						exactMask, *roundedRect, cursorBrush,
+						exactMask, *roundedRect, cursorBrush.Get(),
 						CompositeOpacity(lightOpacity * cursorLightIntensity
 							* diffuseSourceOpacity));
 				}
@@ -2247,13 +2374,13 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 					if (drawPrimaryLight)
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
-							geometryBounds, primaryBrush,
+							geometryBounds, primaryBrush.Get(),
 							CompositeOpacity(lightOpacity * diffuseSourceOpacity));
 					}
 					if (drawCursorLight)
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
-							geometryBounds, cursorBrush,
+							geometryBounds, cursorBrush.Get(),
 							CompositeOpacity(lightOpacity * cursorLightIntensity
 								* diffuseSourceOpacity));
 					}
@@ -2263,8 +2390,8 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		}
 
 	}
-	DrawLightPass(primaryBrush, static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
-	DrawLightPass(cursorBrush, cursorLightIntensity, strokeWidth);
+	DrawLightPass(primaryBrush.Get(), static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
+	DrawLightPass(cursorBrush.Get(), cursorLightIntensity, strokeWidth);
 	return true;
 }
 

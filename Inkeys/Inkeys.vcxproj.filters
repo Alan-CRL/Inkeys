@@ -61,6 +61,9 @@
     <Filter Include="Modules\Inkeys\UI\Ppt">
       <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\UI\Whiteboard">
+      <UniqueIdentifier>{5de71bc8-ced2-45ae-bffd-b081b69eb30a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\UI\RenderPipeline">
       <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
     </Filter>
@@ -1682,6 +1685,15 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
@@ -1759,6 +1771,12 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
@@ -2286,6 +2304,12 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barFreeze.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barWhiteboard.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barDismiss.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barEraser.svg">

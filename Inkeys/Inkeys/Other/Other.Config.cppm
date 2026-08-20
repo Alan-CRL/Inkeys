@@ -30,6 +30,7 @@ export namespace Inkeys
 		inline constexpr char Geometry[] = "Inkeys.Bar.Geometry";
 		inline constexpr char Recall[] = "Inkeys.Bar.Recall";
 		inline constexpr char Clean[] = "Inkeys.Bar.Clean";
+		inline constexpr char Whiteboard[] = "Inkeys.Bar.Whiteboard";
 		inline constexpr char Freeze[] = "Inkeys.Bar.Freeze";
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
@@ -123,7 +124,8 @@ export namespace Inkeys
 		inline BarButtonSizeKind DefaultSizeForBarButtonId(std::string_view id)
 		{
 			if (id == BarButtonId::Divider) return BarButtonSizeKind::OneTwo;
-			if (id == BarButtonId::Freeze) return BarButtonSizeKind::TwoTwo;
+			if (id == BarButtonId::Whiteboard || id == BarButtonId::Freeze)
+				return BarButtonSizeKind::TwoOne;
 			return BarButtonSizeKind::TwoTwo;
 		}
 
@@ -145,7 +147,7 @@ inline bool IsFixedButtonsA1Id(std::string_view id)
 
 		inline constexpr bool IsFixedButtonsA2Id(std::string_view id)
 		{
-			return id == BarButtonId::Freeze;
+			return id == BarButtonId::Whiteboard || id == BarButtonId::Freeze;
 		}
 
 		inline bool IsOfficialFixedBarButtonId(std::string_view id)
@@ -211,7 +213,8 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 		inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA2()
 		{
 			return {
-				{ BarButtonId::Freeze, BarButtonSizeKind::TwoTwo },
+				{ BarButtonId::Whiteboard, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::Freeze, BarButtonSizeKind::TwoOne },
 			};
 		}
 	}

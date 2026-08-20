@@ -1,0 +1,30 @@
+{
+  "id": "ui3-whiteboard",
+  "name": "ui3-whiteboard",
+  "title": "UI3 白板工作区",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-08-17",
+  "completedAt": null,
+  "branch": "feature/whiteboard",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "584b420804b47ae9c792ce8ffadd4322b50da86b",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "实现和自动验证已完成；受无窗口约束，50 次 Enter/Exit、任务栏最小化/恢复、桌面首次点击穿透与 D2D Debug Layer 验收待执行。",
+  "meta": {
+    "implementation": "complete",
+    "automated_validation": "passed",
+    "manual_gui_validation": "pending"
+  }
+}

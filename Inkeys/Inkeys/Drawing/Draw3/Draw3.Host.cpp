@@ -57,6 +57,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic_bool currentPageHasContent = false;
 		std::atomic<std::uint64_t> contentRevision = 0;
 		std::atomic_bool selectionMode = true;
+		std::atomic<Bridge::Workspace> workspace = Bridge::Workspace::Presentation;
 		std::atomic<HostOutputTarget> requestedOutputTarget =
 			HostOutputTarget::PrimaryDrawpad;
 		std::atomic<std::uint64_t> requestedOutputRevision = 0;
@@ -155,6 +156,7 @@ namespace Inkeys::Drawing::Draw3
 			currentPageHasContent.store(false, std::memory_order_release);
 			contentRevision.store(0, std::memory_order_release);
 			selectionMode.store(true, std::memory_order_release);
+			workspace.store(Bridge::Workspace::Presentation, std::memory_order_release);
 			requestedOutputTarget.store(
 				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
 			requestedOutputRevision.store(0, std::memory_order_release);
@@ -290,6 +292,27 @@ namespace Inkeys::Drawing::Draw3
 			self->PublishRuntimeRevision();
 		}
 
+		static void ObserveWorkspace(void* context, Bridge::Workspace value,
+			std::size_t currentPage, std::size_t pages)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			self->workspace.store(value, std::memory_order_release);
+			self->currentPageIndex.store(currentPage, std::memory_order_release);
+			self->pageCount.store(pages, std::memory_order_release);
+			self->requestedProductPage = false;
+			self->PublishRuntimeRevision();
+			const Bridge::Workspace desired = self->bridge.Snapshot().workspace;
+			if (desired != value)
+			{
+				// 活动 contact 延迟期间目标可能再次变化；确认旧请求后立即补发最新目标。
+				CanvasCommand workspaceCommand;
+				workspaceCommand.type = CanvasCommandType::SetWorkspace;
+				workspaceCommand.workspace = static_cast<std::uint8_t>(desired);
+				self->window.EnqueueCanvasCommand(workspaceCommand);
+			}
+		}
+
 		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
 		{
 			const auto* callbacks = static_cast<const HostStyleCallbacks*>(context);
@@ -324,7 +347,17 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
-			if (state.hasPage && (!requestedProductPage ||
+			if (workspace.load(std::memory_order_acquire) != state.workspace)
+			{
+				CanvasCommand workspaceCommand;
+				workspaceCommand.type = CanvasCommandType::SetWorkspace;
+				workspaceCommand.workspace = static_cast<std::uint8_t>(state.workspace);
+				window.EnqueueCanvasCommand(workspaceCommand);
+			}
+			if (state.workspace == Bridge::Workspace::Presentation &&
+				workspace.load(std::memory_order_acquire) ==
+					Bridge::Workspace::Presentation &&
+				state.hasPage && (!requestedProductPage ||
 				requestedProductPageIndex != state.page))
 			{
 				CanvasCommand pageCommand;
@@ -463,7 +496,7 @@ namespace Inkeys::Drawing::Draw3
 							const DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
-								&ObserveCurrentPageContent, &ConsumeBridge
+								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -663,6 +696,7 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
 		snapshot.selectionMode = impl_->selectionMode.load(std::memory_order_acquire);
+		snapshot.workspace = impl_->workspace.load(std::memory_order_acquire);
 		snapshot.requestedOutputTarget =
 			impl_->requestedOutputTarget.load(std::memory_order_acquire);
 		snapshot.requestedOutputRevision =
@@ -756,6 +790,10 @@ namespace Inkeys::Drawing::Draw3
 			impl_->hiddenTestContactInjectionEnabled)
 			return PublishHiddenTestContact(wParam, lParam) ? 0 : -1;
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
+	}
+	void Host::SetActivationAllowed(bool enabled) noexcept
+	{
+		impl_->window.SetActivationAllowed(enabled);
 	}
 	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
 	void Host::PublishState(const Bridge::ProductState& state) noexcept

@@ -38,12 +38,12 @@ namespace
 {
 	IdtAtomic<bool> currentPageHasContent = false;
 	std::atomic_bool contentStateUpdatesReady = false;
+	std::atomic_bool whiteboardActive = false;
+	std::atomic_bool whiteboardBottomDockRequested = false;
+	std::atomic_bool whiteboardDockLockActive = false;
 }
-extern constexpr double BarButtonPressScale = 0.95;
 extern constexpr double BarButtonHoverFadeDur = 5.0;
 // Rendering 与 topology 共享同一组 module-linkage 常量，拆分后不复制数值。
-extern constexpr double BarButtonCursorLightIntensity = 0.30;
-extern constexpr double BarButtonPressedLightOpacity = 0.5;
 extern constexpr double BarDrawAttributeExpandedHeight = 185.0;
 extern constexpr double BarDrawAttributeCompactWidth = 60.0;
 extern constexpr double BarDrawAttributeCompactScale =
@@ -248,6 +248,13 @@ namespace Inkeys::UI::Bar
 		BarUiDebugFrameRateEnabled = showFrameRate;
 		// 渲染线程会比较新旧选项，只在需要时清除 FPS 文字或红框。
 		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::WhiteboardMask());
+	}
+
+	bool DebugModeEnabled() noexcept
+	{
+		return BarUiDebugModeEnabled;
 	}
 
 	void SetCurrentPageHasContent(bool hasContent) noexcept
@@ -261,6 +268,68 @@ namespace Inkeys::UI::Bar
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;
+	}
+
+	void SetWhiteboardActive(bool active) noexcept
+	{
+		const bool changed = whiteboardActive.exchange(active,
+			std::memory_order_acq_rel) != active;
+		if (changed)
+		{
+			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
+			barUISet.CollapseAuxiliaryPanels(true);
+		}
+		if (active) RequestWhiteboardBottomDock();
+		else
+		{
+			// 退出白板后主栏回到 Presentation 的收起态，避免下一次桌面点击
+			// 被残留的 bottom dock 或辅助面板重新唤醒。
+			barUISet.barState.fold = true;
+			whiteboardBottomDockRequested.store(false, std::memory_order_release);
+			whiteboardDockLockActive.store(false, std::memory_order_release);
+		}
+		if (changed || contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	void CollapseAuxiliaryPanels(bool cancelCapture) noexcept
+	{
+		barUISet.CollapseAuxiliaryPanels(cancelCapture);
+	}
+
+	bool WhiteboardActive() noexcept
+	{
+		return whiteboardActive.load(std::memory_order_acquire);
+	}
+
+	void RequestWhiteboardBottomDock() noexcept
+	{
+		whiteboardDockLockActive.store(true, std::memory_order_release);
+		whiteboardBottomDockRequested.store(true, std::memory_order_release);
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering(false);
+	}
+
+	bool ConsumeWhiteboardBottomDockRequest() noexcept
+	{
+		return whiteboardBottomDockRequested.exchange(false,
+			std::memory_order_acq_rel);
+	}
+
+	bool WhiteboardDockLockActive() noexcept
+	{
+		return whiteboardDockLockActive.load(std::memory_order_acquire);
+	}
+
+	void ClearWhiteboardDockLock() noexcept
+	{
+		whiteboardBottomDockRequested.store(false, std::memory_order_release);
+		whiteboardDockLockActive.store(false, std::memory_order_release);
+	}
+
+	bool HideWhiteboardSnapIndicator() noexcept
+	{
+		return WhiteboardActive();
 	}
 
 	void SetContentStateUpdatesReady(bool ready) noexcept

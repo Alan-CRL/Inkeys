@@ -838,6 +838,8 @@
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />
@@ -911,12 +913,16 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp" />
@@ -1130,6 +1136,8 @@
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
+    <None Include="src\UI\barWhiteboard.svg" />
+    <None Include="src\UI\barDismiss.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
     <None Include="src\UI\barInfo.svg" />

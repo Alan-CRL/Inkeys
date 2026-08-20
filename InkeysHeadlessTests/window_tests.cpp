@@ -47,7 +47,10 @@ int RunWindowTests()
 	magnifierChildSpec.className = L"Static";
 	specs.push_back(std::move(magnifierChildSpec));
 	specs.push_back(makeSpec(WindowRole::Freeze, L"Freeze"));
+	specs.push_back(makeSpec(WindowRole::DrawpadPresentation, L"DrawpadPresentation"));
 	specs.push_back(makeSpec(WindowRole::Drawpad, L"Drawpad"));
+	specs.push_back(makeSpec(WindowRole::WhiteboardLeft, L"WhiteboardLeft"));
+	specs.push_back(makeSpec(WindowRole::WhiteboardRight, L"WhiteboardRight"));
 	specs.push_back(makeSpec(WindowRole::PptBottomLeft, L"PptBottomLeft"));
 	specs.push_back(makeSpec(WindowRole::PptBottomRight, L"PptBottomRight"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
@@ -71,7 +74,10 @@ int RunWindowTests()
 		WindowRole::MagnifierHost,
 		WindowRole::MagnifierChild,
 		WindowRole::Freeze,
+		WindowRole::DrawpadPresentation,
 		WindowRole::Drawpad,
+		WindowRole::WhiteboardLeft,
+		WindowRole::WhiteboardRight,
 		WindowRole::PptBottomLeft,
 		WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft,
@@ -93,7 +99,10 @@ int RunWindowTests()
 	const DWORD overlayThread = service.OwnerThreadId(WindowRole::MagnifierHost);
 	check(service.OwnerThreadId(WindowRole::MagnifierChild) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Freeze) == overlayThread
+		&& service.OwnerThreadId(WindowRole::DrawpadPresentation) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Drawpad) == overlayThread
+		&& service.OwnerThreadId(WindowRole::WhiteboardLeft) == overlayThread
+		&& service.OwnerThreadId(WindowRole::WhiteboardRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomLeft) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleLeft) == overlayThread
@@ -108,7 +117,10 @@ int RunWindowTests()
 	const HWND magnifierHost = service.Handle(WindowRole::MagnifierHost);
 	const HWND magnifierChild = service.Handle(WindowRole::MagnifierChild);
 	const HWND freeze = service.Handle(WindowRole::Freeze);
+	const HWND drawpadPresentation = service.Handle(WindowRole::DrawpadPresentation);
 	const HWND drawpad = service.Handle(WindowRole::Drawpad);
+	const HWND whiteboardLeft = service.Handle(WindowRole::WhiteboardLeft);
+	const HWND whiteboardRight = service.Handle(WindowRole::WhiteboardRight);
 	const HWND pptBottomLeft = service.Handle(WindowRole::PptBottomLeft);
 	const HWND pptBottomRight = service.Handle(WindowRole::PptBottomRight);
 	const HWND pptMiddleLeft = service.Handle(WindowRole::PptMiddleLeft);
@@ -120,7 +132,12 @@ int RunWindowTests()
 	check(service.OverlayRoot() == magnifierHost, "overlay root");
 	check(GetParent(magnifierChild) == magnifierHost, "magnifier child parent");
 	check(GetWindow(freeze, GW_OWNER) == magnifierHost, "freeze owner");
+	check(GetWindow(drawpadPresentation, GW_OWNER) == freeze,
+		"drawpad presentation freeze owner");
 	check(GetWindow(drawpad, GW_OWNER) == freeze, "drawpad owner");
+	check(GetWindow(whiteboardLeft, GW_OWNER) == drawpad
+		&& GetWindow(whiteboardRight, GW_OWNER) == drawpad,
+		"whiteboard controls drawpad owner");
 	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
@@ -167,6 +184,18 @@ int RunWindowTests()
 		&& !(GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST),
 		"non-root has no independent topmost before refresh");
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
+		check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
+			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+			"persistent overlay notopmost refresh");
+		check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
+		check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
+			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+			"fullscreen mark persists independently of topmost");
+		check(service.SetOverlayFullscreen(false) && !service.OverlayFullscreen(),
+			"fullscreen mark clears without restoring topmost");
+		check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
+			&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+			"persistent overlay topmost restore");
 	const HWND focusBeforePromote = Service::LastFocusWindow();
 	check(service.PromotePptWindow(WindowRole::PptMiddleRight), "promote ppt below bar");
 	check(GetWindow(bar, GW_HWNDNEXT) == pptMiddleRight
@@ -181,6 +210,42 @@ int RunWindowTests()
 		"reshown ppt remains drawpad sibling below bar");
 	check(Service::LastFocusWindow() == focusBeforePromote,
 		"reshow ppt does not activate");
+
+	// 白板模式只把 Freeze 变成 taskbar anchor，其余窗口仍保持 owned popup。
+	for (const auto role : {
+		WindowRole::MagnifierHost, WindowRole::Freeze,
+		WindowRole::DrawpadPresentation, WindowRole::Drawpad,
+		WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
+		WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
+		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+		WindowRole::PptExitShow, WindowRole::Bar })
+		check(service.Show(role), "show whiteboard group member");
+	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
+	const auto whiteboardFreezeExStyle = static_cast<DWORD>(
+		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
+	const auto whiteboardDrawpadExStyle = static_cast<DWORD>(
+		GetWindowLongPtrW(drawpad, GWL_EXSTYLE));
+	check((whiteboardFreezeExStyle & WS_EX_APPWINDOW) != 0
+		&& (whiteboardFreezeExStyle & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) == 0,
+		"whiteboard Freeze is the only activatable taskbar anchor");
+	check((whiteboardDrawpadExStyle & WS_EX_TOOLWINDOW) != 0
+		&& (whiteboardDrawpadExStyle & WS_EX_NOACTIVATE) == 0,
+		"whiteboard Drawpad accepts activation without a taskbar button");
+	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
+	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
+		&& !IsWindowVisible(whiteboardLeft) && !IsWindowVisible(whiteboardRight)
+		&& !IsWindowVisible(bar), "minimize hides the complete whiteboard group");
+	check(service.RestoreWhiteboardWindowGroup(), "restore whiteboard window group");
+	check(IsWindowVisible(freeze) && IsWindowVisible(drawpad)
+		&& IsWindowVisible(whiteboardLeft) && IsWindowVisible(whiteboardRight)
+		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
+	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
+	const auto presentationFreezeExStyle = static_cast<DWORD>(
+		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
+	check((presentationFreezeExStyle & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) ==
+		(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+		&& (presentationFreezeExStyle & WS_EX_APPWINDOW) == 0,
+		"leaving whiteboard restores presentation overlay style");
 
 	for (const auto role : roles)
 	{

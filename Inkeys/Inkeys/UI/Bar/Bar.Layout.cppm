@@ -9,6 +9,8 @@
 
 export module Inkeys.UI.Bar:Layout;
 
+export import Inkeys.UI.Bar.Metrics;
+
 import :UI;
 import :Theme;
 

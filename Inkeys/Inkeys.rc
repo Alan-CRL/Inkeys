@@ -293,6 +293,10 @@ BARLASER                UI                      "src\\UI\\barLaser.svg"
 
 BARFREEZE               UI                      "src\\UI\\barFreeze.svg"
 
+BARWHITEBOARD           UI                      "src\\UI\\barWhiteboard.svg"
+
+BARDISMISS              UI                      "src\\UI\\barDismiss.svg"
+
 BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
 BARERASER               UI                      "src\\UI\\barEraser.svg"
@@ -332,6 +336,8 @@ BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
 BARMORE                 UI                      "src\\UI\\barMore.svg"
+
+BARADD                  UI                      "src\\UI\\barAdd.svg"
 
 
 /////////////////////////////////////////////////////////////////////////////

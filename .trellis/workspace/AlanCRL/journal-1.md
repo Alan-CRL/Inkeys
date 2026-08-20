@@ -847,3 +847,48 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Status
 
 [OK] **Completed**
+
+
+## Session 27: 恢复 UI3 Whiteboard Trellis 记录并审计近两日提交
+
+**Date**: 2026-08-20
+**Task**: UI3 白板工作区
+**Branch**: `feature/whiteboard`
+
+### Summary
+
+恢复 hooks 缺失期间的 Whiteboard Trellis 记录：将分页控件更新为 `230x80 DIP`、三个标准 Bar `twoTwo` 按钮和稳定分页事务；记录 workspace 切换时辅助面板收起、Freeze taskbar/activation anchor、窗口组最小化/恢复、NOTOPMOST、退出 click-through/Bar/dock 恢复，以及 D2D/GDI present 资源租约与红/绿 debug frame 合同。
+
+逐提交复查近 48 小时的 10 个 Whiteboard 提交，确认最终代码与回归测试覆盖对应修复。`f375df9f update trellis` 仅更新 Trellis 框架，不计入 Whiteboard 实现审计，也未回退。更早的 `57ae9c09 feat(ui3): add whiteboard workspace` 作为本轮审计范围之前的实现基线保留。
+
+### Git Commits Audited
+
+| Hash | Message |
+|------|---------|
+| `f73e563f` | fix(ui3): align whiteboard controls with bar rendering |
+| `5f4156c2` | refactor(ui3): standardize whiteboard bar controls |
+| `bee31492` | feat(ui3): add whiteboard bottom paging control |
+| `d88aef17` | fix(ui3): align whiteboard paging theme |
+| `786212cc` | fix(ui3): render whiteboard paging svgs |
+| `436f9a90` | fix(ui3): stabilize whiteboard paging controls |
+| `02102c8d` | fix(ui3): stabilize whiteboard paging state transitions |
+| `341b6632` | fix(ui3): separate whiteboard paging input lock |
+| `2e21bf87` | chore(ui3): checkpoint whiteboard lifecycle changes |
+| `584b4208` | fix(ui3): harden whiteboard lifecycle transitions |
+
+### Validation
+
+- Trellis context JSONL validation passed。
+- `git show --check` for all 10 Whiteboard commits passed。
+- `git diff --check` passed。
+- Full `InkeysRepo.sln` `Debug|ARM64` build passed。
+- Full `InkeysRepo.sln` `Debug|x64` build passed；仅有既有 `hashlib++` C4267 warnings。
+- ARM64/x64 `InkeysHeadlessTests.exe --no-window` both returned `PASS animation correctness`。
+
+### Remaining GUI Acceptance
+
+受仓库无窗口执行约束，本会话未运行连续 50 次 Whiteboard Enter/Exit、任务栏最小化/恢复、桌面首次点击穿透和 D2D Debug Layer。任务保持 `in_progress`，`implementation=complete`、`automated_validation=passed`、`manual_gui_validation=pending`。
+
+### Status
+
+[IN PROGRESS] **Automated validation passed; GUI acceptance pending**

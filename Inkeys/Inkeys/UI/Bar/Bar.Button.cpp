@@ -443,11 +443,46 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
+	// 白板
+	{
+		BarButtonClass* obj = new BarButtonClass;
+		{
+			obj->size = BarButtonSizeEnum::twoOne;
+			obj->preset = BarButtonPresetEnum::Whiteboard;
+			obj->hide = false;
+		}
+
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"白板", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0,
+				nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
+		}
+		{
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barWhiteboard");
+			obj->icon.enable.Initialization(true);
+		}
+
+		{
+			obj->clickFunc = []() -> void
+				{
+					RequestWhiteboardActive(!WhiteboardRequested());
+				};
+		}
+
+		obj->state = &barButtonState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
+
 	// 定格
 	{
 		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->size = BarButtonSizeEnum::twoOne;
 			obj->preset = BarButtonPresetEnum::Freeze;
 			obj->hide = false;
 		}
@@ -534,6 +569,7 @@ void BarButtonSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Clean, preset[(int)BarButtonPresetEnum::Clean], false, BarButtonLayoutZoneEnum::FixedA1);
 	// Divider 不进 A1 配置 required 集；仅作运行时交界注入模板（可多实例拷贝）。
 	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtonPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
+	RegisterButton(Inkeys::BarButtonId::Whiteboard, preset[(int)BarButtonPresetEnum::Whiteboard], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtonPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtonPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
 	RegisterLayoutMarker(Inkeys::BarButtonId::MoreBoundary);
@@ -718,9 +754,22 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 
 void BarButtonSetClass::StateUpdate()
 {
+	static int lastToolStateKey = -1;
+	const int toolStateKey =
+		(static_cast<int>(stateMode.StateModeSelect) << 8)
+		| (static_cast<int>(stateMode.Pen.ModeSelect) << 4)
+		| (static_cast<int>(stateMode.Shape.ModeSelect) << 1)
+		| (stateMode.laserActive ? 1 : 0);
+	if (lastToolStateKey != toolStateKey)
+	{
+		// 工具、笔型或激光状态切换时只保留主栏，避免旧属性浮层残留。
+		barUISet.CollapseAuxiliaryPanels(true);
+		lastToolStateKey = toolStateKey;
+	}
 	CalcState();
 	PresetHoming();
 	UpdateDrawButtonStyle();
+	UpdateWhiteboardButtonStyle();
 	UpdateEraserButtonStyle();
 	UpdateGeometryButtonStyle();
 }
@@ -747,6 +796,27 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 		selected ? (laser ? L"激光笔" : (highlighter ? L"荧光笔" :
 			(hardPen ? L"硬笔" : L"软笔"))) : L"绘制");
 	drawButtonStyleKey = styleKey;
+}
+void BarButtonSetClass::UpdateWhiteboardButtonStyle()
+{
+	static mutex mtx;
+	const bool active = Inkeys::UI::Bar::WhiteboardActive();
+	const int styleKey = active ? 1 : 0;
+	if (whiteboardButtonStyleKey == styleKey) return;
+
+	lock_guard<mutex> lock(mtx);
+	if (whiteboardButtonStyleKey == styleKey) return;
+	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
+	auto freeze = preset[(int)BarButtonPresetEnum::Freeze];
+	if (!whiteboard || !freeze) return;
+	whiteboard->hide = false;
+	whiteboard->size = active
+		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
+	freeze->size = BarButtonSizeEnum::twoOne;
+	freeze->hide = active;
+	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
+		active ? L"关闭白板" : L"白板");
+	whiteboardButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateEraserButtonStyle()
 {
@@ -1141,22 +1211,25 @@ void BarButtonSetClass::ResetIconCaches()
 
 void BarButtonSetClass::PresetHoming()
 {
-	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
+	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
+	if (whiteboard) barUISet.barState.geometryAttribute = false;
+	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible())
+		|| !preset[(int)BarButtonPresetEnum::Draw]->IsVisible()))
 	{
 		barUISet.barState.drawAttribute = false;
 	}
-	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
+	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtShape
 		|| barUISet.barState.fold
-		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible())
+		|| !preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()))
 	{
 		barUISet.barState.geometryAttribute = false;
 	}
 	if (barUISet.barState.fold) barUISet.barState.moreExpanded = false;
 
 	// 只有“选择 + 空页”使用精简布局；有历史内容时保留完整绘制按钮。
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
+	if (!whiteboard
+		&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
 		&& !Inkeys::UI::Bar::CurrentPageHasContent())
 	{
 		// 显示状态变化
@@ -1168,7 +1241,7 @@ void BarButtonSetClass::PresetHoming()
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", L"选择");
+			L"barSelect", whiteboard ? L"拖动" : L"选择");
 	}
 	else
 	{
@@ -1180,7 +1253,7 @@ void BarButtonSetClass::PresetHoming()
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
 		// 选择按钮不再承载清空语义。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", L"选择");
+			L"barSelect", whiteboard ? L"拖动" : L"选择");
 	}
 }
 void BarButtonSetClass::CalcState()
@@ -1205,6 +1278,11 @@ void BarButtonSetClass::CalcState()
 	{
 		if (FreezeFrame.mode == 1) barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;
+	}
+	{
+		barButtonState[(int)BarButtonPresetEnum::Whiteboard].state =
+			Inkeys::UI::Bar::WhiteboardActive()
+			? BarWidgetState::Selected : BarWidgetState::None;
 	}
 
 	{

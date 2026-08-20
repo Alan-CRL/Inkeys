@@ -1,5 +1,7 @@
 module;
 
+#include <objbase.h>
+#include <shobjidl.h>
 #include <windows.h>
 
 #include <array>
@@ -50,9 +52,14 @@ namespace
 			&& role <= WindowRole::PptExitShow;
 	}
 
+	[[nodiscard]] constexpr bool IsWhiteboard(WindowRole role) noexcept
+	{
+		return role == WindowRole::WhiteboardLeft || role == WindowRole::WhiteboardRight;
+	}
+
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
 	{
-		return IsPpt(role) || role == WindowRole::Bar;
+		return IsPpt(role) || IsWhiteboard(role) || role == WindowRole::Bar;
 	}
 
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
@@ -76,6 +83,8 @@ namespace
 		case WindowRole::Freeze: return L"Inkeys.Window.Freeze";
 		case WindowRole::DrawpadPresentation: return L"Inkeys.Window.DrawpadPresentation";
 		case WindowRole::Drawpad: return L"Inkeys.Window.Drawpad";
+		case WindowRole::WhiteboardLeft: return L"Inkeys.Window.WhiteboardLeft";
+		case WindowRole::WhiteboardRight: return L"Inkeys.Window.WhiteboardRight";
 		case WindowRole::PptBottomLeft: return L"Inkeys.Window.PptBottomLeft";
 		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
@@ -91,6 +100,37 @@ namespace
 	[[nodiscard]] LRESULT CALLBACK DefaultWindowProc(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
+		// 白板锚点收到系统最小化/恢复消息时，统一协调整个 owned window 组。
+		// 该过程运行在 Window Service owner thread，Service 内部会直接执行命令，避免自锁。
+		if (message == WM_SYSCOMMAND || message == WM_SIZE)
+		{
+			auto& service = Inkeys::Window::GetService();
+			const bool whiteboardAnchor = service.WhiteboardWindowMode()
+				&& service.Handle(WindowRole::Freeze) == hwnd;
+			if (whiteboardAnchor)
+			{
+				if (message == WM_SYSCOMMAND)
+				{
+					const UINT command = static_cast<UINT>(wParam & 0xfff0u);
+					if (command == SC_MINIMIZE)
+					{
+						if (service.MinimizeWhiteboardWindowGroup()) return 0;
+					}
+					else if (command == SC_RESTORE)
+					{
+						if (service.RestoreWhiteboardWindowGroup()) return 0;
+					}
+				}
+				else if (wParam == SIZE_MINIMIZED)
+				{
+					if (service.MinimizeWhiteboardWindowGroup()) return 0;
+				}
+				else if (wParam == SIZE_RESTORED)
+				{
+					if (service.RestoreWhiteboardWindowGroup()) return 0;
+				}
+			}
+		}
 		if (message == WM_CLOSE)
 		{
 			DestroyWindow(hwnd);
@@ -197,6 +237,8 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -329,10 +371,65 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] bool EnterWhiteboardWindowMode()
+		{
+			return Submit(WindowRole::Freeze, CommandType::SetWhiteboardWindowMode,
+				true);
+		}
+
+		[[nodiscard]] bool LeaveWhiteboardWindowMode()
+		{
+			return Submit(WindowRole::Freeze, CommandType::SetWhiteboardWindowMode,
+				false);
+		}
+
+		[[nodiscard]] bool WhiteboardWindowMode() const noexcept
+		{
+			return whiteboardWindowMode_.load(std::memory_order_acquire);
+		}
+
+		[[nodiscard]] bool MinimizeWhiteboardWindowGroup()
+		{
+			return Submit(WindowRole::Freeze, CommandType::MinimizeWhiteboardGroup);
+		}
+
+		[[nodiscard]] bool RestoreWhiteboardWindowGroup()
+		{
+			return Submit(WindowRole::Freeze, CommandType::RestoreWhiteboardGroup);
+		}
+
+		[[nodiscard]] bool CancelPointerCapture()
+		{
+			return Submit(WindowRole::Freeze, CommandType::CancelPointerCapture);
+		}
+
 		[[nodiscard]] bool RequestTopmostRefresh()
 		{
 			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
 		}
+
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost)
+			{
+				overlayTopmost_.store(topmost, std::memory_order_release);
+				return RequestTopmostRefresh();
+			}
+
+			[[nodiscard]] bool OverlayTopmost() const noexcept
+			{
+				return overlayTopmost_.load(std::memory_order_acquire);
+			}
+
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen)
+			{
+				overlayFullscreen_.store(fullscreen, std::memory_order_release);
+				if (!running_.load(std::memory_order_acquire)) return true;
+				return RequestTopmostRefresh();
+			}
+
+			[[nodiscard]] bool OverlayFullscreen() const noexcept
+			{
+				return overlayFullscreen_.load(std::memory_order_acquire);
+			}
 
 		[[nodiscard]] bool PromotePptWindow(WindowRole role)
 		{
@@ -378,6 +475,10 @@ namespace Inkeys::Window
 			SetBounds,
 			SetClickThrough,
 			SetExtendedStyleFlags,
+			SetWhiteboardWindowMode,
+			MinimizeWhiteboardGroup,
+			RestoreWhiteboardGroup,
+			CancelPointerCapture,
 			RefreshTopmost,
 			PromotePpt,
 			BindMessages,
@@ -394,6 +495,7 @@ namespace Inkeys::Window
 				DrawpadSurfaceVisibility::Hidden;
 			DWORD setMask = 0;
 			DWORD clearMask = 0;
+			bool whiteboardMode = false;
 			Message::BindOptions bindOptions{};
 			std::optional<WindowSpec> spec;
 			std::shared_ptr<std::promise<bool>> completion;
@@ -428,8 +530,13 @@ namespace Inkeys::Window
 			return IsValidRole(role) ? &records_[RoleIndex(role)] : nullptr;
 		}
 
-		void ResetState()
-		{
+			void ResetState()
+			{
+				overlayTopmost_.store(true, std::memory_order_release);
+				overlayFullscreen_.store(false, std::memory_order_release);
+				whiteboardWindowMode_.store(false, std::memory_order_release);
+				whiteboardGroupMinimized_.store(false, std::memory_order_release);
+				whiteboardVisibleBeforeMinimize_.fill(false);
 			for (auto& spec : specs_)
 				spec.reset();
 			for (auto& configured : configured_)
@@ -495,29 +602,34 @@ namespace Inkeys::Window
 			}
 		}
 
-		void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise)
-		{
-			const DWORD threadId = GetCurrentThreadId();
-			(settingGroup ? settingThreadId_ : overlayThreadId_).store(
-				threadId, std::memory_order_release);
-			bool created = false;
-			try
+			void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise)
 			{
-				created = CreateGroup(settingGroup, threadId);
-				readyPromise.set_value(created);
-			}
-			catch (...)
-			{
-				try { readyPromise.set_value(false); }
-				catch (...) {}
-			}
-			if (!created)
-			{
-				DestroyGroup(settingGroup);
+				const DWORD threadId = GetCurrentThreadId();
 				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
-					0, std::memory_order_release);
-				return;
-			}
+					threadId, std::memory_order_release);
+				const HRESULT comInit = settingGroup ? E_FAIL : CoInitializeEx(
+					nullptr, COINIT_APARTMENTTHREADED);
+				const bool comOwned = !settingGroup &&
+					(comInit == S_OK || comInit == S_FALSE);
+				bool created = false;
+				try
+				{
+					created = CreateGroup(settingGroup, threadId);
+					readyPromise.set_value(created);
+				}
+				catch (...)
+				{
+					try { readyPromise.set_value(false); }
+					catch (...) {}
+				}
+				if (!created)
+				{
+					DestroyGroup(settingGroup);
+					(settingGroup ? settingThreadId_ : overlayThreadId_).store(
+						0, std::memory_order_release);
+					if (comOwned) CoUninitialize();
+					return;
+				}
 
 			HANDLE eventHandle = settingGroup ? settingEvent_ : overlayEvent_;
 			std::stop_callback stopCallback(token, [eventHandle]
@@ -556,11 +668,18 @@ namespace Inkeys::Window
 					DrainCommands(queue);
 			}
 
-			FailPendingCommands(queue);
-			DestroyGroup(settingGroup);
-			(settingGroup ? settingThreadId_ : overlayThreadId_).store(
-				0, std::memory_order_release);
-		}
+				FailPendingCommands(queue);
+				if (!settingGroup)
+				{
+					overlayFullscreen_.store(false, std::memory_order_release);
+					if (const HWND root = OverlayRoot())
+						ApplyOverlayFullscreen(root);
+				}
+				DestroyGroup(settingGroup);
+				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
+					0, std::memory_order_release);
+				if (comOwned) CoUninitialize();
+			}
 
 		[[nodiscard]] bool CreateGroup(bool settingGroup, DWORD threadId)
 		{
@@ -570,6 +689,8 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -775,6 +896,8 @@ namespace Inkeys::Window
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptBottomLeft,
+				WindowRole::WhiteboardRight,
+				WindowRole::WhiteboardLeft,
 				WindowRole::Drawpad,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Freeze,
@@ -862,6 +985,15 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] bool Submit(WindowRole role, CommandType type, bool mode)
+		{
+			Command command;
+			command.type = type;
+			command.role = role;
+			command.whiteboardMode = mode;
+			return Submit(std::move(command));
+		}
+
 		[[nodiscard]] bool Submit(Command command)
 		{
 			if (!running_.load(std::memory_order_acquire) || !IsValidRole(command.role))
@@ -905,10 +1037,207 @@ namespace Inkeys::Window
 			}
 		}
 
+		[[nodiscard]] bool ApplyWhiteboardWindowMode(bool whiteboard)
+		{
+			if (whiteboardWindowMode_.load(std::memory_order_acquire) == whiteboard)
+				return true;
+			constexpr WindowRole roles[] = {
+				WindowRole::MagnifierHost,
+				WindowRole::Freeze,
+				WindowRole::DrawpadPresentation,
+				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
+				WindowRole::PptBottomLeft,
+				WindowRole::PptBottomRight,
+				WindowRole::PptMiddleLeft,
+				WindowRole::PptMiddleRight,
+				WindowRole::PptExitShow,
+				WindowRole::Bar,
+			};
+			struct WindowStyleSnapshot
+			{
+				HWND hwnd = nullptr;
+				LONG_PTR exStyle = 0;
+				bool visible = false;
+				bool iconic = false;
+				bool styleApplied = false;
+			};
+			std::vector<WindowStyleSnapshot> snapshots;
+			snapshots.reserve(std::size(roles));
+			auto RestoreVisibility = [](const WindowStyleSnapshot& snapshot) noexcept
+			{
+				if (!snapshot.hwnd || !IsWindow(snapshot.hwnd)) return;
+				if (snapshot.visible)
+					ShowWindow(snapshot.hwnd, snapshot.iconic
+						? SW_SHOWMINNOACTIVE : SW_SHOWNOACTIVATE);
+				else
+					ShowWindow(snapshot.hwnd, SW_HIDE);
+			};
+			auto RestoreSnapshot = [&](const WindowStyleSnapshot& snapshot) noexcept
+			{
+				if (!snapshot.hwnd || !IsWindow(snapshot.hwnd)) return;
+				if (snapshot.styleApplied)
+				{
+					SetLastError(ERROR_SUCCESS);
+					(void)SetWindowLongPtrW(snapshot.hwnd, GWL_EXSTYLE,
+						snapshot.exStyle);
+					(void)SetWindowPos(snapshot.hwnd, nullptr, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+						SWP_NOACTIVATE | SWP_FRAMECHANGED);
+				}
+				RestoreVisibility(snapshot);
+			};
+			bool succeeded = true;
+			for (const WindowRole role : roles)
+			{
+				const auto* record = Record(role);
+				const HWND hwnd = record ? record->hwnd.load(std::memory_order_acquire)
+					: nullptr;
+				if (!record || !hwnd || !IsWindow(hwnd)) continue;
+				const auto target = ResolveOverlayActivationStyle(role,
+					whiteboard ? OverlayActivationMode::Whiteboard
+						: OverlayActivationMode::Presentation);
+				const DWORD baseStyle = record->activeSpec
+					? record->activeSpec->exStyle : 0;
+				const LONG_PTR desired = static_cast<LONG_PTR>(
+					(baseStyle | target.setExStyle) & ~target.clearExStyle);
+				SetLastError(ERROR_SUCCESS);
+				const LONG_PTR previousStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+				if (!previousStyle && GetLastError() != ERROR_SUCCESS)
+				{
+					succeeded = false;
+					break;
+				}
+				snapshots.push_back({ hwnd, previousStyle,
+					IsWindowVisible(hwnd) != FALSE, IsIconic(hwnd) != FALSE, false });
+				// Shell 要求动态 APPWINDOW/TOOLWINDOW 先隐藏，再 FrameChanged 后恢复。
+				ShowWindow(hwnd, SW_HIDE);
+				SetLastError(ERROR_SUCCESS);
+				const LONG_PTR previous = SetWindowLongPtrW(
+					hwnd, GWL_EXSTYLE, desired);
+				if (!previous && GetLastError() != ERROR_SUCCESS)
+				{
+					succeeded = false;
+					break;
+				}
+				snapshots.back().styleApplied = true;
+				if (!SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+					SWP_NOACTIVATE | SWP_FRAMECHANGED))
+				{
+					succeeded = false;
+					break;
+				}
+				RestoreVisibility(snapshots.back());
+			}
+			if (!succeeded)
+			{
+				// 任一 HWND 失败时恢复整组，禁止进入半套 taskbar/activation 样式。
+				for (std::size_t index = snapshots.size(); index > 0; --index)
+					RestoreSnapshot(snapshots[index - 1]);
+				return false;
+			}
+			if (succeeded)
+			{
+				whiteboardWindowMode_.store(whiteboard, std::memory_order_release);
+				whiteboardGroupMinimized_.store(false, std::memory_order_release);
+				whiteboardVisibleBeforeMinimize_.fill(false);
+			}
+			return succeeded;
+		}
+
+		[[nodiscard]] bool ApplyMinimizeWhiteboardGroup() noexcept
+		{
+			if (!whiteboardWindowMode_.load(std::memory_order_acquire)) return false;
+			if (whiteboardGroupMinimized_.load(std::memory_order_acquire)) return true;
+			constexpr WindowRole roles[] = {
+				WindowRole::MagnifierHost, WindowRole::Freeze,
+				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
+				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
+				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+				WindowRole::PptExitShow, WindowRole::Bar,
+			};
+			for (const WindowRole role : roles)
+			{
+				const HWND hwnd = Handle(role);
+				if (!hwnd || !IsWindow(hwnd)) continue;
+				whiteboardVisibleBeforeMinimize_[RoleIndex(role)] =
+					IsWindowVisible(hwnd) != FALSE;
+			}
+			const HWND anchor = Handle(WindowRole::Freeze);
+			if (!anchor || !IsWindow(anchor)) return false;
+			// 先锁存状态再触发 WM_SIZE，避免系统消息重入时再次递归最小化。
+			whiteboardGroupMinimized_.store(true, std::memory_order_release);
+			ShowWindow(anchor, SW_MINIMIZE);
+			for (const WindowRole role : roles)
+			{
+				if (role == WindowRole::Freeze) continue;
+				if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
+					ShowWindow(hwnd, SW_HIDE);
+			}
+			return true;
+		}
+
+		[[nodiscard]] bool ApplyRestoreWhiteboardGroup() noexcept
+		{
+			if (!whiteboardWindowMode_.load(std::memory_order_acquire)) return false;
+			if (!whiteboardGroupMinimized_.load(std::memory_order_acquire)) return true;
+			constexpr WindowRole roles[] = {
+				WindowRole::MagnifierHost, WindowRole::Freeze,
+				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
+				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
+				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+				WindowRole::PptExitShow, WindowRole::Bar,
+			};
+			const HWND anchor = Handle(WindowRole::Freeze);
+			if (!anchor || !IsWindow(anchor)) return false;
+			// 先释放锁存再触发 WM_SIZE，系统恢复消息只需观察到一次结算。
+			whiteboardGroupMinimized_.store(false, std::memory_order_release);
+			ShowWindow(anchor, SW_RESTORE);
+			if (!whiteboardVisibleBeforeMinimize_[RoleIndex(WindowRole::Freeze)])
+				ShowWindow(anchor, SW_HIDE);
+			for (const WindowRole role : roles)
+			{
+				if (role == WindowRole::Freeze) continue;
+				if (!whiteboardVisibleBeforeMinimize_[RoleIndex(role)]) continue;
+				if (const HWND hwnd = Handle(role); hwnd && IsWindow(hwnd))
+					ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+			}
+			return true;
+		}
+
+		[[nodiscard]] bool ApplyCancelPointerCapture() noexcept
+		{
+			constexpr WindowRole roles[] = {
+				WindowRole::Drawpad, WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight, WindowRole::Bar,
+			};
+			for (const WindowRole role : roles)
+			{
+				const HWND hwnd = Handle(role);
+				if (!hwnd || !IsWindow(hwnd)) continue;
+				SendMessageW(hwnd, WM_CANCELMODE, 0, 0);
+				if (GetCapture() == hwnd) ReleaseCapture();
+			}
+			return true;
+		}
+
 		[[nodiscard]] bool Execute(const Command& command)
 		{
 			if (command.type == CommandType::HideAll)
 				return HideUserWindowsInGroup(IsSetting(command.role));
+			// 这些事务可能需要处理一组 HWND，不能被单角色 HWND 前置检查短路。
+			if (command.type == CommandType::SetWhiteboardWindowMode)
+				return ApplyWhiteboardWindowMode(command.whiteboardMode);
+			if (command.type == CommandType::MinimizeWhiteboardGroup)
+				return ApplyMinimizeWhiteboardGroup();
+			if (command.type == CommandType::RestoreWhiteboardGroup)
+				return ApplyRestoreWhiteboardGroup();
+			if (command.type == CommandType::CancelPointerCapture)
+				return ApplyCancelPointerCapture();
 			auto* record = Record(command.role);
 			const HWND hwnd = record ? record->hwnd.load(std::memory_order_acquire) : nullptr;
 			if (command.type == CommandType::Create)
@@ -996,13 +1325,19 @@ namespace Inkeys::Window
 					(applied & static_cast<LONG_PTR>(command.clearMask)) == 0;
 			}
 			case CommandType::RefreshTopmost:
-			{
-				const HWND root = OverlayRoot();
-				// Win32 会让 owned popup 跟随 owner 进入 topmost band；这里只操作链根。
-				return root && SetWindowPos(
-					root, HWND_TOPMOST, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
-			}
+				{
+					const HWND root = OverlayRoot();
+					// Win32 会让 owned popup 跟随 owner 进入 topmost band；这里只操作链根。
+					// Whiteboard 是普通可激活窗口组，任何外部刷新都不得把它重新推回 TOPMOST。
+					const bool keepTopmost = overlayTopmost_.load(std::memory_order_acquire)
+						&& !whiteboardWindowMode_.load(std::memory_order_acquire);
+					if (!root || !SetWindowPos(
+						root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+						return false;
+					ApplyOverlayFullscreen(root);
+					return true;
+				}
 			case CommandType::PromotePpt:
 			{
 				if (!IsPpt(command.role)) return false;
@@ -1043,6 +1378,8 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
+				WindowRole::WhiteboardLeft,
+				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -1173,8 +1510,28 @@ namespace Inkeys::Window
 			return true;
 		}
 
-		[[nodiscard]] bool CanChangeChainRole(WindowRole role) const noexcept
-		{
+			void ApplyOverlayFullscreen(HWND root) noexcept
+			{
+				const bool fullscreen = overlayFullscreen_.load(std::memory_order_acquire);
+				HWND target = Handle(WindowRole::Freeze);
+				if (!target || !IsWindow(target)) target = root;
+				if (!target || !IsWindow(target)) return;
+
+				// Explorer 只把“前台全屏窗”当成覆盖任务栏的信号；无焦点 overlay
+				// 必须额外走 ITaskbarList2，否则 NOTOPMOST 全屏会被任务栏盖住。
+				// 标记 Freeze 本体，避免 MagnifierHost 的 avoidFullScreen 少 1px 失效。
+				ITaskbarList2* taskbar = nullptr;
+				const HRESULT created = CoCreateInstance(
+					CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
+					__uuidof(ITaskbarList2), reinterpret_cast<void**>(&taskbar));
+				if (FAILED(created) || !taskbar) return;
+				if (SUCCEEDED(taskbar->HrInit()))
+					(void)taskbar->MarkFullscreenWindow(target, fullscreen ? TRUE : FALSE);
+				taskbar->Release();
+			}
+
+			[[nodiscard]] bool CanChangeChainRole(WindowRole role) const noexcept
+			{
 			const int position = OverlayChainPosition(role);
 			if (position < 0)
 				return true;
@@ -1190,7 +1547,7 @@ namespace Inkeys::Window
 			}
 			if (role == WindowRole::Drawpad)
 			{
-				for (auto popup = WindowRole::PptBottomLeft;
+				for (auto popup = WindowRole::WhiteboardLeft;
 					popup <= WindowRole::Bar;
 					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))
 					if (Handle(popup)) return false;
@@ -1214,7 +1571,12 @@ namespace Inkeys::Window
 		CommandQueue overlayCommands_;
 		CommandQueue settingCommands_;
 		std::mutex lifecycleMutex_;
-	};
+			std::atomic_bool overlayTopmost_ = true;
+			std::atomic_bool overlayFullscreen_ = false;
+			std::atomic_bool whiteboardWindowMode_ = false;
+			std::atomic_bool whiteboardGroupMinimized_ = false;
+			std::array<bool, RoleCount> whiteboardVisibleBeforeMinimize_{};
+		};
 
 	Service::Service(std::size_t messageCapacity)
 		: impl_(std::make_unique<Impl>(messageCapacity))
@@ -1258,13 +1620,44 @@ namespace Inkeys::Window
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
-	bool Service::SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
-	{
-		return impl_->SetExtendedStyleFlags(role, setMask, clearMask);
-	}
-	bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
-	bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
-	bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
+		bool Service::SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
+		{
+			return impl_->SetExtendedStyleFlags(role, setMask, clearMask);
+		}
+		bool Service::EnterWhiteboardWindowMode()
+		{
+			return impl_->EnterWhiteboardWindowMode();
+		}
+		bool Service::LeaveWhiteboardWindowMode()
+		{
+			return impl_->LeaveWhiteboardWindowMode();
+		}
+		bool Service::WhiteboardWindowMode() const noexcept
+		{
+			return impl_->WhiteboardWindowMode();
+		}
+		bool Service::MinimizeWhiteboardWindowGroup()
+		{
+			return impl_->MinimizeWhiteboardWindowGroup();
+		}
+		bool Service::RestoreWhiteboardWindowGroup()
+		{
+			return impl_->RestoreWhiteboardWindowGroup();
+		}
+		bool Service::CancelPointerCapture()
+		{
+			return impl_->CancelPointerCapture();
+		}
+		bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+		bool Service::SetOverlayTopmost(bool topmost) { return impl_->SetOverlayTopmost(topmost); }
+		bool Service::OverlayTopmost() const noexcept { return impl_->OverlayTopmost(); }
+		bool Service::SetOverlayFullscreen(bool fullscreen)
+		{
+			return impl_->SetOverlayFullscreen(fullscreen);
+		}
+		bool Service::OverlayFullscreen() const noexcept { return impl_->OverlayFullscreen(); }
+		bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
+		bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
 	bool Service::UnbindMessages(WindowRole role) { return impl_->UnbindMessages(role); }
 
 	bool Service::Enqueue(WindowRole role, Message::Message message)

@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -15,7 +15,7 @@ import :UI;
 import :State;
 import :Button;
 import :Format;
-import :Rendering;
+export import :Rendering;
 import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
@@ -262,10 +262,11 @@ struct BarBottomDockPresentedSnapshot
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
 	double zoom = 1.0;
-	POINT monitorOrigin{};
-	RECT monitorBounds{ 0, 0, 1, 1 };
-	RECT workArea{ 0, 0, 1, 1 };
-	unsigned long long displaySerial = 0;
+		POINT monitorOrigin{};
+		RECT monitorBounds{ 0, 0, 1, 1 };
+		RECT workArea{ 0, 0, 1, 1 };
+		UINT dpi = USER_DEFAULT_SCREEN_DPI;
+		unsigned long long displaySerial = 0;
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
@@ -331,6 +332,8 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
+	void CollapseAuxiliaryPanels(bool cancelCapture = true);
 	void StartDisplayTracking();
 	void StopDisplayTracking() noexcept;
 	void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot) noexcept;
@@ -417,12 +420,13 @@ public:
 				bottomDockPresentedDisplayTop.load(memory_order_relaxed),
 				bottomDockPresentedDisplayRight.load(memory_order_relaxed),
 				bottomDockPresentedDisplayBottom.load(memory_order_relaxed) };
-			snapshot.workArea = RECT{
-				bottomDockPresentedWorkAreaLeft.load(memory_order_relaxed),
-				bottomDockPresentedWorkAreaTop.load(memory_order_relaxed),
-				bottomDockPresentedWorkAreaRight.load(memory_order_relaxed),
-				bottomDockPresentedWorkAreaBottom.load(memory_order_relaxed) };
-			snapshot.displaySerial =
+				snapshot.workArea = RECT{
+					bottomDockPresentedWorkAreaLeft.load(memory_order_relaxed),
+					bottomDockPresentedWorkAreaTop.load(memory_order_relaxed),
+					bottomDockPresentedWorkAreaRight.load(memory_order_relaxed),
+					bottomDockPresentedWorkAreaBottom.load(memory_order_relaxed) };
+				snapshot.dpi = bottomDockPresentedDisplayDpi.load(memory_order_relaxed);
+				snapshot.displaySerial =
 				bottomDockPresentedDisplaySerial.load(memory_order_relaxed);
 			snapshot.directTranslation = POINT{
 				bottomDockPresentedDirectTranslationX.load(memory_order_relaxed),
@@ -596,8 +600,9 @@ protected:
 	atomic<LONG> bottomDockPresentedWorkAreaLeft = 0;
 	atomic<LONG> bottomDockPresentedWorkAreaTop = 0;
 	atomic<LONG> bottomDockPresentedWorkAreaRight = 1;
-	atomic<LONG> bottomDockPresentedWorkAreaBottom = 1;
-	atomic<unsigned long long> bottomDockPresentedDisplaySerial = 0;
+		atomic<LONG> bottomDockPresentedWorkAreaBottom = 1;
+		atomic<UINT> bottomDockPresentedDisplayDpi = USER_DEFAULT_SCREEN_DPI;
+		atomic<unsigned long long> bottomDockPresentedDisplaySerial = 0;
 	atomic<LONG> bottomDockPresentedDirectTranslationX = 0;
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
@@ -627,8 +632,17 @@ namespace Inkeys::UI::Bar
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetDebugOptions(bool enable, bool showFrameRate);
+	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export bool CurrentPageHasContent() noexcept;
+	export void SetWhiteboardActive(bool active) noexcept;
+	export void CollapseAuxiliaryPanels(bool cancelCapture = true) noexcept;
+	export bool WhiteboardActive() noexcept;
+	export void RequestWhiteboardBottomDock() noexcept;
+	export bool ConsumeWhiteboardBottomDockRequest() noexcept;
+	export bool WhiteboardDockLockActive() noexcept;
+	export void ClearWhiteboardDockLock() noexcept;
+	export bool HideWhiteboardSnapIndicator() noexcept;
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
 	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
