@@ -3,7 +3,7 @@
   "name": "render-pipeline-refactor",
   "title": "渲染管线重构",
   "description": "未来大任务：弃用 UI2、多窗口拆分、IdtWindows 模块化、PPT 控件迁 UI3、UI3/Settings/PPT/背景窗统一 D3D11.1 WARP 串行渲染。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": "native-desktop windowing and shared D3D11.1 WARP serial render pipeline",
   "package": "native-desktop",
@@ -11,7 +11,7 @@
   "creator": "AlanCRL",
   "assignee": "AlanCRL",
   "createdAt": "2026-08-01",
-  "completedAt": null,
+  "completedAt": "2026-08-20",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -22,8 +22,7 @@
     "08-12-ui3-draw3-win32-himsg",
     "08-12-pptcom-ui3-multi-window-rendering",
     "08-13-unified-render-pipeline-setting",
-    "08-14-unified-display-management-ui3-dpi",
-    "08-14-ui3-bar-bottom-dock-elastic"
+    "08-14-unified-display-management-ui3-dpi"
   ],
   "parent": null,
   "relatedFiles": [
