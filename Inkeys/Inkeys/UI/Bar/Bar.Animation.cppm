@@ -13,6 +13,7 @@ module;
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 export module Inkeys.UI.Bar.Animation;
@@ -211,6 +212,140 @@ export
 		return kind == BarThicknessPreviewVisualKind::SoftPen
 			|| kind == BarThicknessPreviewVisualKind::HardPen
 			|| kind == BarThicknessPreviewVisualKind::Highlighter;
+	}
+
+	enum class BarPenTypeExtensionSlot : uint8_t
+	{
+		SoftPen,
+		HardPen,
+		Highlighter,
+		Count,
+	};
+
+	inline optional<BarPenTypeExtensionSlot> ResolveBarPenTypeExtensionSlot(
+		BarThicknessPreviewVisualKind kind) noexcept
+	{
+		switch (kind)
+		{
+		case BarThicknessPreviewVisualKind::SoftPen:
+			return BarPenTypeExtensionSlot::SoftPen;
+		case BarThicknessPreviewVisualKind::HardPen:
+			return BarPenTypeExtensionSlot::HardPen;
+		case BarThicknessPreviewVisualKind::Highlighter:
+			return BarPenTypeExtensionSlot::Highlighter;
+		default:
+			return nullopt;
+		}
+	}
+
+	inline wstring_view ResolveBarAnnotationPopupTitle(
+		BarThicknessPreviewVisualKind anchorKind) noexcept
+	{
+		return anchorKind == BarThicknessPreviewVisualKind::SoftPen
+			? L"标注线（粗细固定，暂未支持）"
+			: L"启用标注线（暂不可用）";
+	}
+
+	// Laser 预览的阶段只由当前视觉端点决定，反向时不重置任何动画值。
+	enum class BarLaserPreviewPhase : uint8_t
+	{
+		NonLaserStable,
+		EnteringCore,
+		EnteringShell,
+		LaserStable,
+		LeavingShell,
+		LeavingCore,
+	};
+
+	inline BarLaserPreviewPhase ResolveBarLaserPreviewPhase(
+		BarLaserPreviewPhase phase, bool targetLaser,
+		bool coreAtLaserEndpoint, bool coreAtNonLaserEndpoint,
+		bool shellHidden, bool shellExpanded) noexcept
+	{
+		switch (phase)
+		{
+		case BarLaserPreviewPhase::NonLaserStable:
+			return targetLaser
+				? BarLaserPreviewPhase::EnteringCore : phase;
+		case BarLaserPreviewPhase::EnteringCore:
+			if (!targetLaser) return BarLaserPreviewPhase::LeavingCore;
+			return coreAtLaserEndpoint
+				? BarLaserPreviewPhase::EnteringShell : phase;
+		case BarLaserPreviewPhase::EnteringShell:
+			if (!targetLaser) return BarLaserPreviewPhase::LeavingShell;
+			return shellExpanded
+				? BarLaserPreviewPhase::LaserStable : phase;
+		case BarLaserPreviewPhase::LaserStable:
+			return targetLaser
+				? phase : BarLaserPreviewPhase::LeavingShell;
+		case BarLaserPreviewPhase::LeavingShell:
+			if (targetLaser) return BarLaserPreviewPhase::EnteringShell;
+			return shellHidden
+				? BarLaserPreviewPhase::LeavingCore : phase;
+		case BarLaserPreviewPhase::LeavingCore:
+			if (targetLaser) return BarLaserPreviewPhase::EnteringCore;
+			return coreAtNonLaserEndpoint
+				? BarLaserPreviewPhase::NonLaserStable : phase;
+		default:
+			return targetLaser ? BarLaserPreviewPhase::EnteringCore
+				: BarLaserPreviewPhase::LeavingCore;
+		}
+	}
+
+	enum class BarLaserPreviewSemanticTarget : uint8_t
+	{
+		Hold,
+		Laser,
+		NonLaser,
+	};
+
+	struct BarLaserPreviewTargetPolicy
+	{
+		BarLaserPreviewSemanticTarget core =
+			BarLaserPreviewSemanticTarget::Hold;
+		BarLaserPreviewSemanticTarget outer =
+			BarLaserPreviewSemanticTarget::Hold;
+		bool shellExpanded = false;
+	};
+
+	inline BarLaserPreviewTargetPolicy ResolveBarLaserPreviewTargetPolicy(
+		BarLaserPreviewPhase phase) noexcept
+	{
+		switch (phase)
+		{
+		case BarLaserPreviewPhase::NonLaserStable:
+			return { BarLaserPreviewSemanticTarget::NonLaser,
+				BarLaserPreviewSemanticTarget::NonLaser, false };
+		case BarLaserPreviewPhase::EnteringCore:
+			return { BarLaserPreviewSemanticTarget::Laser,
+				BarLaserPreviewSemanticTarget::Laser, false };
+		case BarLaserPreviewPhase::EnteringShell:
+			return { BarLaserPreviewSemanticTarget::Hold,
+				BarLaserPreviewSemanticTarget::Hold, true };
+		case BarLaserPreviewPhase::LaserStable:
+			return { BarLaserPreviewSemanticTarget::Laser,
+				BarLaserPreviewSemanticTarget::Laser, true };
+		case BarLaserPreviewPhase::LeavingShell:
+			return { BarLaserPreviewSemanticTarget::Hold,
+				BarLaserPreviewSemanticTarget::Hold, false };
+		case BarLaserPreviewPhase::LeavingCore:
+			return { BarLaserPreviewSemanticTarget::NonLaser,
+				BarLaserPreviewSemanticTarget::NonLaser, false };
+		default:
+			return {};
+		}
+	}
+
+	inline double ResolveBarLaserPreviewEnvelopeThickness(
+		double coreThickness, double outerThickness,
+		double shellProgress) noexcept
+	{
+		coreThickness = max(0.0, coreThickness);
+		outerThickness = max(0.0, outerThickness);
+		shellProgress = clamp(shellProgress, 0.0, 1.0);
+		const double currentShellThickness = coreThickness
+			+ (outerThickness - coreThickness) * shellProgress;
+		return max(coreThickness, currentShellThickness);
 	}
 
 	struct BarPenTypeExtensionAnchor

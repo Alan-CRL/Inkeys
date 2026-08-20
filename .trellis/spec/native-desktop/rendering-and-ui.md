@@ -767,11 +767,23 @@ BarThicknessPresetOpacitySample ResolveBarThicknessPresetOpacity(
 	double numberProgress) noexcept;
 BarPenTypeExtensionPresentation ResolveBarPenTypeExtensionPresentation(
 	bool targetInteractive, double visualProgress, double contentOpacity) noexcept;
+BarLaserPreviewPhase ResolveBarLaserPreviewPhase(
+	BarLaserPreviewPhase phase, bool targetLaser,
+	bool coreAtLaserEndpoint, bool coreAtNonLaserEndpoint,
+	bool shellHidden, bool shellExpanded) noexcept;
+BarLaserPreviewTargetPolicy ResolveBarLaserPreviewTargetPolicy(
+	BarLaserPreviewPhase phase) noexcept;
+double ResolveBarLaserPreviewEnvelopeThickness(
+	double coreThickness, double outerThickness,
+	double shellProgress) noexcept;
 ~~~
 
 #### 3. Contracts
 
-- outgoing session 不得独占或替换 semantic preview；Laser 红色外套和白色内芯是语义预览之上的 overlay，并与语义层读取同一个当前 morph。颜色、曲率、圆角矩形进度、外套宽度和内芯宽度均从当前值续接，中途反向不得回到任一端点。
+- Laser 预览固定使用 `NonLaserStable -> EnteringCore -> EnteringShell -> LaserStable -> LeavingShell -> LeavingCore`。进入时芯宽、颜色、曲率/圆角和荧光渐变先在 `0.4s` 内连续到达白色芯端点，随后红壳再用 `0.4s` 从芯宽展开；退出时先收红壳，再改变 semantic core。
+- `EnteringShell` 与 `LeavingShell` 对 core thickness、outer thickness、morph 和 white mix 使用 `Hold` 目标策略，不得用已经切换的逻辑笔宽重新提交 target。只有红壳完全隐藏并进入 `LeavingCore` 后，才允许芯层转向非 Laser 目标；反向切换继续使用锁存的 Laser target。
+- 红壳先绘制、semantic core 后绘制。预览包络使用 `max(coreThickness, currentShellThickness)` 约束曲线振幅和裁剪，但 semantic core 的实际绘制宽度仍只读取 core thickness，不能被红壳宽度替代。
+- 颜色、曲率、圆角矩形进度、外套宽度和内芯宽度均从当前值续接，中途反向不得回到任一端点；Laser 稳态的 `3/5/7 DIP` 切换同时 retarget 芯宽和外宽。
 - Circle/Number 切换时锁存 outgoing 内容：Circle -> Number 先保持旧圆直径并淡出，再显示已锁存的新数字；Number -> Circle 先保持旧数字并淡出，再显示圆。Circle -> Circle 才允许直径连续 retarget；切换中点旧新内容透明度均为零。
 - 工具失去扩展资格时，命中区和按压状态立即失效，arrow/divider 的视觉则按 current progress 退场；其几何锚点和颜色必须派生 selected button 的当前 `x/y/frame`，不能读取新目标位置或首帧直接改 Accent。
 - 重新进入 Pen 面板时按当前工具直接初始化稳定 Circle/Number 语义；不得从离开前工具制造一次假的内容切换。动画中的状态不得仅按 `laserActive`、`ModeSelect` 等目标布尔量选择互斥绘制分支。
@@ -780,34 +792,37 @@ BarPenTypeExtensionPresentation ResolveBarPenTypeExtensionPresentation(
 
 | 条件 | 必须行为 |
 | --- | --- |
-| Laser <-> Highlighter | 语义线、红壳、白芯和圆/数字在同一时间线上连续交接，无端点闪回 |
-| Pen <-> Laser | 白芯、外套和快捷圆直径从当前值连续变化 |
+| Highlighter -> Laser | 渐变、圆角、颜色和芯宽先连续到白芯端点，之后红壳才出现 |
+| Laser -> Highlighter | 红壳完全隐藏前 core/outer/morph/white target 保持 Laser 端点；之后才连续恢复渐变矩形 |
+| Pen <-> Laser 中途反向 | `EnteringCore <-> LeavingCore` 从当前芯值反向；`EnteringShell <-> LeavingShell` 只反向 shell progress，并保留锁存 target |
+| Laser 稳态切换粗细 | core 与 outer 同时连续 retarget，shell 保持完全展开 |
 | Circle <-> Number 中途反向 | 从当前透明度继续；outgoing 内容和尺寸保持锁存 |
 | Laser 使扩展入口失效 | 命中立即归零；arrow/divider 平滑退场且不残留 |
 | 离开 Pen 后以 Highlighter 重进 | 首帧直接为稳定数字，不出现圆形过渡 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：同一 progress 同时解析形状与内容透明度，overlay 只增加视觉层，不接管语义层生命周期。
+- Good：阶段 helper 决定 `Hold/Laser/NonLaser`，`LeavingShell` 只提交 shell target；红壳隐藏的交接帧进入 `LeavingCore` 后才提交新笔型语义。
 - Base：稳态 SoftPen/HardPen/Laser 为 Circle，Highlighter 为 Number；超出按钮内框的 Circle 仍按既有规则显示真实数字。
-- Bad：目标工具一改变就替换文字或圆直径，或者等 Laser shell 完全收起后才启动 semantic morph；两者都会在切换中暴露错误端点。
+- Bad：目标工具一改变就在 `LeavingShell` 使用新 `penThickness` 计算 `core = penThickness / 3` 和 outer；红壳尚未隐藏时白芯及包络已经改向，造成跳宽或闪现。
 
 #### 6. Tests Required
 
-- Headless 覆盖 0/25/50/75/100% 正反切换、中途反向、Circle/Number 锁存、Circle -> Circle 直径、四种工具初始化语义和扩展入口资格/当前锚点/当前颜色。
+- Headless 覆盖 0/25/50/75/100% 正反切换、六阶段首帧/中间帧/交接帧/终点、`Hold/Laser/NonLaser` 目标策略、锁存 target、芯/壳包络、Circle/Number 锁存、Circle -> Circle 直径、四种工具初始化语义和扩展入口资格/当前锚点/当前颜色。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64` 与 `Release | ARM64`；受限环境只运行 `InkeysHeadlessTests.exe --no-window`，不得启动 GUI。
 
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：目标布尔量立即切换互斥内容，outgoing 状态无法完成退场。
-if (laserActive) DrawLaserOnly();
-else DrawSemanticOnly();
+// Wrong：LeavingShell 读取新工具宽度，红壳退场期间白芯提前改变。
+core.SetTar(penThickness / 3.0, duration);
+outer.SetTar(penThickness, duration);
 
-// Correct：语义层始终绘制，Laser overlay 和内容交接读取当前动画进度。
-DrawSemanticPreview(currentMorph);
-DrawLaserOverlay(currentMorph, currentShellProgress);
-auto opacity = ResolveBarThicknessPresetOpacity(currentNumberProgress);
+// Correct：Hold 阶段只改变 shell；LeavingCore 才提交非 Laser 语义。
+auto policy = ResolveBarLaserPreviewTargetPolicy(phase);
+if (policy.core != BarLaserPreviewSemanticTarget::Hold)
+	SubmitCoreTarget(policy.core);
+shell.SetTar(policy.shellExpanded ? 1.0 : 0.0, duration);
 ~~~
 
 ### UI3 展开按钮点击合并合同

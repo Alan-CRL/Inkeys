@@ -487,6 +487,11 @@ struct BarRenderLoopState
 		stateMode.laserActive
 			? GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom) / 3.0
 			: GetBarCurrentPenThicknessVisualWidth(barStyle.dpiZoom) };
+	BarUiValueClass drawAttributeLaserCoreWhiteMix{
+		stateMode.laserActive ? 1.0 : 0.0 };
+	BarLaserPreviewPhase drawAttributeLaserPhase = stateMode.laserActive
+		? BarLaserPreviewPhase::LaserStable
+		: BarLaserPreviewPhase::NonLaserStable;
 	// 快捷按钮独立于笔形预览 morph，0=实心圆，1=荧光笔数字。
 	BarUiValueClass drawAttributeThicknessPresetNumberProgress{
 		ResolveBarThicknessPresetVisualKind(
@@ -500,12 +505,18 @@ struct BarRenderLoopState
 	std::array<BarUiValueClass, 3>
 		drawAttributeThicknessPresetCircleDiameter{};
 	std::array<int, 3> drawAttributeThicknessPresetNumberValues{};
-	bool drawAttributeLaserTargetWasActive = stateMode.laserActive;
-	// 扩展入口的视觉进度独立于命中区，失去资格时只退场不瞬间裁掉。
-	BarUiValueClass drawAttributePenTypeExtensionProgress{
-		!stateMode.laserActive
-			&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect)
-			? 1.0 : 0.0 };
+	// 三种笔型各自保留退场进度，互切时不会把同一个视觉瞬移到新锚点。
+	std::array<BarUiValueClass, 3> drawAttributePenTypeExtensionProgress{
+		BarUiValueClass(!stateMode.laserActive
+			&& stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen
+			? 1.0 : 0.0),
+		BarUiValueClass(!stateMode.laserActive
+			&& stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen
+			? 1.0 : 0.0),
+		BarUiValueClass(!stateMode.laserActive
+			&& stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+			? 1.0 : 0.0),
+	};
 	BarUiValueClass drawAttributeThicknessSliderProgress{ 0.0 };
 	BarUiValueClass drawAttributeThicknessSliderTrackOpacity{ 0.0 };
 	BarUiValueClass drawAttributeThicknessFineDialProgress{ 0.0 };
@@ -597,6 +608,7 @@ struct BarRenderLoopState
 	D2D1_SIZE_F annotationPopupTitleSize = spec.MeasureText(
 		L"启用标注线（暂不可用）",
 		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+	wstring annotationPopupTitleText = L"启用标注线（暂不可用）";
 	D2D1_SIZE_F annotationPopupBodySize = spec.MeasureText(
 		L"锁定绘制方向仅为水平、竖直或斜45°",
 		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
@@ -1804,14 +1816,17 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				{
 					state.drawAttributePenPreviewMorph.SetDirect(penPreviewMorph);
 					state.drawAttributePenPreviewMorphInitialized = true;
+					state.drawAttributeLaserCoreWhiteMix.SetDirect(
+						stateMode.laserActive ? 1.0 : 0.0);
+					state.drawAttributeLaserShellProgress.SetDirect(
+						stateMode.laserActive ? 1.0 : 0.0);
+					state.drawAttributeLaserOuterThickness.SetDirect(penThickness);
+					state.drawAttributeLaserCoreThickness.SetDirect(
+						stateMode.laserActive ? penThickness / 3.0 : penThickness);
+					state.drawAttributeLaserPhase = stateMode.laserActive
+						? BarLaserPreviewPhase::LaserStable
+						: BarLaserPreviewPhase::NonLaserStable;
 				}
-				else state.drawAttributePenPreviewMorph.SetTar(
-					penPreviewMorph, operationDur);
-
-				const bool laserBecameActive = stateMode.laserActive
-					&& !state.drawAttributeLaserTargetWasActive;
-				const bool laserBecameInactive = !stateMode.laserActive
-					&& state.drawAttributeLaserTargetWasActive;
 				const auto presetTargetKind = ResolveBarThicknessPresetVisualKind(
 					ResolveBarThicknessPreviewVisualKind(
 						stateMode.Pen.ModeSelect, stateMode.laserActive));
@@ -1880,39 +1895,62 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					state.drawAttributeThicknessPresetNumberProgress.SetTar(
 						presetNumberProgressTarget, operationDur);
 				}
-				const bool laserShellVisible =
-					state.drawAttributeLaserShellProgress.val > 0.001
-					|| state.drawAttributeLaserShellProgress.tar > 0.001;
-				if (laserBecameActive)
+				if (!initializePenVisuals)
 				{
-					// 进入时先锁住当前普通预览宽度，再把核心收敛到激光内芯。
-					if (!laserShellVisible)
+					constexpr double endpointEpsilon = 0.000001;
+					auto IsTarget = [&](BarUiValueClass& value, double target)
 					{
-						state.drawAttributeLaserOuterThickness.SetDirect(penThickness);
-						state.drawAttributeLaserCoreThickness.SetDirect(
-							state.drawAttributePenThickness.val);
+						return value.IsSame()
+							&& abs(static_cast<double>(value.val) - target)
+								<= endpointEpsilon;
+					};
+					const double laserCoreThickness = penThickness / 3.0;
+					const bool coreAtLaserEndpoint =
+						IsTarget(state.drawAttributeLaserCoreThickness,
+							laserCoreThickness)
+						&& IsTarget(state.drawAttributeLaserOuterThickness,
+							penThickness)
+						&& IsTarget(state.drawAttributePenPreviewMorph, 0.0)
+						&& IsTarget(state.drawAttributeLaserCoreWhiteMix, 1.0);
+					const bool coreAtNonLaserEndpoint =
+						IsTarget(state.drawAttributeLaserCoreThickness, penThickness)
+						&& IsTarget(state.drawAttributePenPreviewMorph,
+							normalPenPreviewMorph)
+						&& IsTarget(state.drawAttributeLaserCoreWhiteMix, 0.0);
+					state.drawAttributeLaserPhase = ResolveBarLaserPreviewPhase(
+						state.drawAttributeLaserPhase, stateMode.laserActive,
+						coreAtLaserEndpoint, coreAtNonLaserEndpoint,
+						IsTarget(state.drawAttributeLaserShellProgress, 0.0),
+						IsTarget(state.drawAttributeLaserShellProgress, 1.0));
+
+					const auto targetPolicy = ResolveBarLaserPreviewTargetPolicy(
+						state.drawAttributeLaserPhase);
+					// Hold 阶段不重新提交 target，确保红壳退场期间锁住 Laser 端点。
+					if (targetPolicy.core
+						== BarLaserPreviewSemanticTarget::Laser)
+					{
+						state.drawAttributeLaserCoreThickness.SetTar(
+							laserCoreThickness, operationDur);
+						state.drawAttributePenPreviewMorph.SetTar(0.0, operationDur);
+						state.drawAttributeLaserCoreWhiteMix.SetTar(1.0, operationDur);
 					}
-				}
-				if (stateMode.laserActive)
-				{
-					state.drawAttributeLaserOuterThickness.SetTar(
-						penThickness, operationDur);
-					state.drawAttributeLaserCoreThickness.SetTar(
-						penThickness / 3.0, operationDur);
-					state.drawAttributeLaserShellProgress.SetTar(1.0, operationDur);
-				}
-				else if (laserBecameInactive || laserShellVisible)
-				{
-					// 退出时只收缩红壳；核心和外壳宽度在收缩期间保持激光值。
-					state.drawAttributeLaserShellProgress.SetTar(0.0, operationDur);
-					if (!laserShellVisible
-						&& state.drawAttributeLaserShellProgress.IsSame())
+					else if (targetPolicy.core
+						== BarLaserPreviewSemanticTarget::NonLaser)
+					{
 						state.drawAttributeLaserCoreThickness.SetTar(
 							penThickness, operationDur);
+						state.drawAttributePenPreviewMorph.SetTar(
+							normalPenPreviewMorph, operationDur);
+						state.drawAttributeLaserCoreWhiteMix.SetTar(0.0, operationDur);
+					}
+					if (targetPolicy.outer
+						!= BarLaserPreviewSemanticTarget::Hold)
+						state.drawAttributeLaserOuterThickness.SetTar(
+							penThickness, operationDur);
+					state.drawAttributeLaserShellProgress.SetTar(
+						targetPolicy.shellExpanded ? 1.0 : 0.0,
+						operationDur);
 				}
-				else state.drawAttributeLaserCoreThickness.SetTar(
-					penThickness, operationDur);
-				state.drawAttributeLaserTargetWasActive = stateMode.laserActive;
 
 				// 圆点位置按当前笔形量程归一化；笔形切换时对 0–1 做动画，不直接用旧宽度/新量程瞬算。
 				auto thicknessSliderRange = GetBarThicknessSliderRange(
@@ -1946,8 +1984,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 				state.drawAttributePenPreviewMorphInitialized = false;
 				state.drawAttributeThicknessSliderNormalizedInitialized = false;
 				state.drawAttributeLaserShellProgress.SetDirect(0.0);
-				// 离开 Pen 即结束激光会话；重新进入 Laser 时从当前真实粗细重新锁存 core/outer。
-				state.drawAttributeLaserTargetWasActive = false;
+				state.drawAttributeLaserCoreWhiteMix.SetDirect(0.0);
+				state.drawAttributeLaserPhase = BarLaserPreviewPhase::NonLaserStable;
 				state.drawAttributeThicknessPresetNumberProgress.SetDirect(0.0);
 				state.drawAttributeThicknessPresetVisualKind =
 					BarThicknessPresetVisualKind::Circle;
@@ -3409,11 +3447,21 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				bool extensionVisible = state.barState.drawAttribute && !state.barState.fold
 					&& !stateMode.laserActive
 					&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
-				if (forNum == 1)
-					state.drawAttributePenTypeExtensionProgress.SetDirect(
-						extensionVisible ? 1.0 : 0.0);
-				else state.drawAttributePenTypeExtensionProgress.SetTar(
-					extensionVisible ? 1.0 : 0.0, operationDur);
+				auto selectedExtensionSlot = ResolveBarPenTypeExtensionSlot(
+					ResolveBarThicknessPreviewVisualKind(
+						stateMode.Pen.ModeSelect, false));
+				for (size_t slot = 0;
+					slot < state.drawAttributePenTypeExtensionProgress.size(); ++slot)
+				{
+					double target = extensionVisible && selectedExtensionSlot
+						&& slot == static_cast<size_t>(*selectedExtensionSlot)
+						? 1.0 : 0.0;
+					if (forNum == 1)
+						state.drawAttributePenTypeExtensionProgress[slot]
+							.SetDirect(target);
+					else state.drawAttributePenTypeExtensionProgress[slot]
+						.SetTar(target, operationDur);
+				}
 				auto extensionHit = state.shapeMap[
 					BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
 					extensionHit->fill->SetTar(
@@ -5074,12 +5122,14 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			ChangeValue(state.drawAttributeLaserOuterThickness, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeLaserCoreThickness.IsSame())
 			ChangeValue(state.drawAttributeLaserCoreThickness, false, drawAttributeDirtyKey);
+		if (!state.drawAttributeLaserCoreWhiteMix.IsSame())
+			ChangeValue(state.drawAttributeLaserCoreWhiteMix, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessPresetNumberProgress.IsSame())
 			ChangeValue(state.drawAttributeThicknessPresetNumberProgress, false,
 				drawAttributeDirtyKey);
-		if (!state.drawAttributePenTypeExtensionProgress.IsSame())
-			ChangeValue(state.drawAttributePenTypeExtensionProgress, false,
-				drawAttributeDirtyKey);
+		for (auto& progress : state.drawAttributePenTypeExtensionProgress)
+			if (!progress.IsSame())
+				ChangeValue(progress, false, drawAttributeDirtyKey);
 		for (auto& diameter : state.drawAttributeThicknessPresetCircleDiameter)
 			if (!diameter.IsSame()) ChangeValue(diameter, false, drawAttributeDirtyKey);
 		if (!state.drawAttributeThicknessSliderNormalized.IsSame())
@@ -5744,10 +5794,17 @@ double baseThumbDiameter =
 			&& PenModeSupportsAnnotationLine(stateMode.Pen.ModeSelect);
 		bool extensionInteractive = state.barState.drawAttribute && !state.barState.fold
 			&& annotationCapability;
+		auto currentExtensionSlot = ResolveBarPenTypeExtensionSlot(
+			ResolveBarThicknessPreviewVisualKind(
+				stateMode.Pen.ModeSelect, false));
+		double currentExtensionProgress = currentExtensionSlot
+			? static_cast<double>(state.drawAttributePenTypeExtensionProgress[
+				static_cast<size_t>(*currentExtensionSlot)].val)
+			: 0.0;
 		const auto extensionPresentation =
 			ResolveBarPenTypeExtensionPresentation(
 				extensionInteractive,
-				state.drawAttributePenTypeExtensionProgress.val,
+				currentExtensionProgress,
 				contentOpacity);
 		auto GetPenTypeShape = [&](PenModeSelectEnum mode)
 			-> shared_ptr<BarUiShapeClass>
@@ -6091,6 +6148,31 @@ double baseThumbDiameter =
 			? static_cast<PenModeSelectEnum>(static_cast<int>(
 				state.barState.drawAttributeBar.penTypeMenuAnchorMode))
 			: stateMode.Pen.ModeSelect;
+		const wstring_view annotationPopupTitle = ResolveBarAnnotationPopupTitle(
+			ResolveBarThicknessPreviewVisualKind(menuAnchorMode, false));
+		if (annotationPopupTitle != state.annotationPopupTitleText)
+		{
+			// 浮窗文案跟随打开时锁存的锚点，不跟随全局笔型跳变。
+			state.annotationPopupTitleText.assign(annotationPopupTitle);
+			auto titleWord = state.wordMap[
+				BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText];
+			titleWord->content.SetVal(state.annotationPopupTitleText);
+			titleWord->content.SetTar(state.annotationPopupTitleText);
+			state.annotationPopupTitleSize = state.spec.MeasureText(
+				state.annotationPopupTitleText,
+				BarThicknessTooltipTitleFontSize,
+				DWRITE_FONT_WEIGHT_SEMI_BOLD);
+			state.annotationPopupWidth = ceil(max(
+				state.annotationPopupTitleSize.width,
+				state.annotationPopupBodySize.width))
+				+ BarThicknessTooltipPadding * 2.0
+				+ BarThicknessTooltipCloseReserve;
+			state.annotationPopupHeight = ceil(
+				state.annotationPopupTitleSize.height
+				+ BarThicknessTooltipLineGap
+				+ state.annotationPopupBodySize.height)
+				+ BarThicknessTooltipPadding * 2.0;
+		}
 		auto menuAnchorShape = GetPenTypeShape(menuAnchorMode);
 		double menuTriggerX = menuAnchorShape
 			? menuAnchorShape->x.val
@@ -7359,8 +7441,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.drawAttributeLaserShellProgress.IsSame()
 			|| !state.drawAttributeLaserOuterThickness.IsSame()
 			|| !state.drawAttributeLaserCoreThickness.IsSame()
+			|| !state.drawAttributeLaserCoreWhiteMix.IsSame()
 			|| !state.drawAttributeThicknessPresetNumberProgress.IsSame()
-			|| !state.drawAttributePenTypeExtensionProgress.IsSame()
+			|| std::any_of(
+				state.drawAttributePenTypeExtensionProgress.begin(),
+				state.drawAttributePenTypeExtensionProgress.end(),
+				[](BarUiValueClass& value) { return !value.IsSame(); })
 			|| std::any_of(
 				state.drawAttributeThicknessPresetCircleDiameter.begin(),
 				state.drawAttributeThicknessPresetCircleDiameter.end(),
@@ -8199,8 +8285,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.drawAttributeLaserShellProgress.IsSame()
 			|| !state.drawAttributeLaserOuterThickness.IsSame()
 			|| !state.drawAttributeLaserCoreThickness.IsSame()
+			|| !state.drawAttributeLaserCoreWhiteMix.IsSame()
 			|| !state.drawAttributeThicknessPresetNumberProgress.IsSame()
-			|| !state.drawAttributePenTypeExtensionProgress.IsSame()
+			|| std::any_of(
+				state.drawAttributePenTypeExtensionProgress.begin(),
+				state.drawAttributePenTypeExtensionProgress.end(),
+				[](BarUiValueClass& value) { return !value.IsSame(); })
 			|| std::any_of(
 				state.drawAttributeThicknessPresetCircleDiameter.begin(),
 				state.drawAttributeThicknessPresetCircleDiameter.end(),
@@ -8999,12 +9089,88 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					}
 					state.spec.Shape(barDeviceContext, *extensionHit,
 						extensionHit->Inherit(TopLeft, *panel));
-					state.spec.Svg(barDeviceContext, *extensionArrow,
-						extensionArrow->Inherit(TopLeft, *panel));
 					barDeviceContext->SetTransform(extensionTransform);
-					// 分割线不继承入口按压缩放，避免按下时产生位移或闪烁。
-					state.spec.Shape(barDeviceContext, *extensionDivider,
-						extensionDivider->Inherit(TopLeft, *panel));
+
+					struct ExtensionVisual
+					{
+						PenModeSelectEnum mode;
+						BarUISetShapeEnum shape;
+						BarUISetWordEnum word;
+						BarPenTypeExtensionSlot slot;
+					};
+					const ExtensionVisual extensionVisuals[] =
+					{
+						{ PenModeSelectEnum::IdtPenSoftPen,
+							BarUISetShapeEnum::DrawAttributeBar_SoftPen,
+							BarUISetWordEnum::DrawAttributeBar_SoftPen,
+							BarPenTypeExtensionSlot::SoftPen },
+						{ PenModeSelectEnum::IdtPenHardPen,
+							BarUISetShapeEnum::DrawAttributeBar_Brush1,
+							BarUISetWordEnum::DrawAttributeBar_Brush1,
+							BarPenTypeExtensionSlot::HardPen },
+						{ PenModeSelectEnum::IdtPenHighlighter1,
+							BarUISetShapeEnum::DrawAttributeBar_Highlight1,
+							BarUISetWordEnum::DrawAttributeBar_Highlight1,
+							BarPenTypeExtensionSlot::Highlighter },
+					};
+					for (const auto& visual : extensionVisuals)
+					{
+						double progress = clamp(static_cast<double>(
+							state.drawAttributePenTypeExtensionProgress[
+								static_cast<size_t>(visual.slot)].val), 0.0, 1.0);
+						if (progress <= 0.000001) continue;
+						auto anchorShape = state.shapeMap[visual.shape];
+						double opacity = progress * clamp(static_cast<double>(
+							state.wordMap[visual.word]->pct.val), 0.0, 1.0);
+						double visualX = anchorShape->x.val
+							+ BarDrawAttributePenTypeExtensionDividerX * panelGeometryScale;
+						double visualY = anchorShape->y.val;
+						double visualWidth = BarDrawAttributePenTypeExtensionWidth
+							* panelGeometryScale;
+						double visualHeight = BarDrawAttributePenTypeButtonHeight
+							* panelGeometryScale;
+						extensionDivider->x.SetDirect(visualX);
+						extensionDivider->y.SetDirect(visualY
+							+ BarDrawAttributeGap * panelGeometryScale);
+						extensionDivider->w.SetDirect(
+							BarUiDividerWidth * panelGeometryScale);
+						extensionDivider->h.SetDirect(max(0.0, visualHeight
+							- BarDrawAttributeGap * 2.0 * panelGeometryScale));
+						extensionDivider->pct.SetDirect(0.30 * opacity);
+						extensionDivider->frameLightPct->SetDirect(opacity);
+						extensionArrow->x.SetDirect(visualX
+							+ (visualWidth - 18.0 * panelGeometryScale) / 2.0);
+						extensionArrow->y.SetDirect(visualY
+							+ (visualHeight - 18.0 * panelGeometryScale) / 2.0);
+						extensionArrow->w.SetDirect(18.0 * panelGeometryScale);
+						extensionArrow->h.SetDirect(18.0 * panelGeometryScale);
+						extensionArrow->pct.SetDirect(opacity);
+						COLORREF color = anchorShape->frame.has_value()
+							? static_cast<COLORREF>(anchorShape->frame->val)
+							: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						extensionArrow->color1->SetDirect(color);
+						extensionDivider->fill->SetDirect(color);
+						extensionDivider->frame->SetDirect(color);
+						bool currentVisual = visual.mode == stateMode.Pen.ModeSelect
+							&& !stateMode.laserActive;
+						if (currentVisual && abs(extensionScale - 1.0) > 0.000001)
+							barDeviceContext->SetTransform(
+								D2D1::Matrix3x2F::Scale(
+									static_cast<FLOAT>(extensionScale),
+									static_cast<FLOAT>(extensionScale),
+									D2D1::Point2F(
+										static_cast<FLOAT>((panel->inhX + visualX
+											+ visualWidth / 2.0) * frameZoom),
+										static_cast<FLOAT>((panel->inhY + visualY
+											+ visualHeight / 2.0) * frameZoom)))
+								* extensionTransform);
+						state.spec.Svg(barDeviceContext, *extensionArrow,
+							extensionArrow->Inherit(TopLeft, *panel));
+						barDeviceContext->SetTransform(extensionTransform);
+						// 分割线始终保持锚点，不继承按压缩放。
+						state.spec.Shape(barDeviceContext, *extensionDivider,
+							extensionDivider->Inherit(TopLeft, *panel));
+					}
 				}
 					// 粗细调节区域
 					{
@@ -9056,25 +9222,24 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								static_cast<FLOAT>(state.drawAttributeLaserCoreThickness.val));
 							FLOAT laserOuterPreviewThickness = max(0.0f,
 								static_cast<FLOAT>(state.drawAttributeLaserOuterThickness.val));
-							// 红壳展开时整体预览厚度也沿进度插值，避免白芯几何宽度跳变。
-							FLOAT laserEnvelopeThickness = laserCorePreviewThickness
-								+ (laserOuterPreviewThickness - laserCorePreviewThickness)
-									* static_cast<FLOAT>(laserShellProgress);
-							// 展开静止后保持真实设备 px；面板动画时只补上同一几何缩放倍率。
-							FLOAT requestedThickness = max(0.0f,
-								static_cast<FLOAT>(max(
-									static_cast<double>(state.drawAttributePenThickness.val),
-									laserShellProgress > 0.000001
-										? static_cast<double>(laserEnvelopeThickness) : 0.0)
-									* panelAnimationScale));
+							// 包络取芯宽与当前壳宽的较大值，但语义芯仍只用自身宽度绘制。
+							FLOAT requestedThickness = static_cast<FLOAT>(
+								ResolveBarLaserPreviewEnvelopeThickness(
+									laserCorePreviewThickness,
+									laserOuterPreviewThickness,
+									laserShellProgress) * panelAnimationScale);
+							FLOAT requestedCoreThickness = laserCorePreviewThickness
+								* static_cast<FLOAT>(panelAnimationScale);
 							double previewAreaHeight =
 								previewGeometry.previewBottom
 									- previewGeometry.previewTop;
 							FLOAT maxPreviewThickness = max(1.0f,
 								static_cast<FLOAT>(
 									previewAreaHeight * uiZoom));
-							FLOAT normalPreviewThickness =
+							FLOAT normalPreviewEnvelopeThickness =
 								min(requestedThickness, maxPreviewThickness);
+							FLOAT normalPreviewThickness =
+								min(requestedCoreThickness, maxPreviewThickness);
 							double sliderProgress = clamp(
 								static_cast<double>(
 									state.drawAttributeThicknessSliderProgress.val),
@@ -9095,6 +9260,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								normalPreviewThickness
 								+ (trackThickness
 									- normalPreviewThickness)
+									* sliderProgress);
+							FLOAT previewEnvelopeThickness = static_cast<FLOAT>(
+								normalPreviewEnvelopeThickness
+								+ (trackThickness
+									- normalPreviewEnvelopeThickness)
 									* sliderProgress);
 							// Preview 使用完整左右边界，进入 Slider 时再平滑收进内容内边距。
 							FLOAT left = static_cast<FLOAT>((
@@ -9122,7 +9292,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								0.0, 1.0);
 							FLOAT radius = previewThickness / 2.0F;
 							FLOAT availableAmplitude = max(0.0F,
-								(maxPreviewThickness - previewThickness)
+								(maxPreviewThickness - previewEnvelopeThickness)
 									/ 2.0F);
 							FLOAT amplitude = min(
 								maxPreviewThickness * 0.34F,
@@ -9150,9 +9320,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									BarThemeColorEnum::Accent),
 								state.drawAttributeThicknessSliderAccentOpacity.val);
 							COLORREF previewColor = MixBarUiColor(
-								contentColor, trackColor,
+								MixBarUiColor(contentColor, RGB(255, 255, 255),
+									state.drawAttributeLaserCoreWhiteMix.val),
+								trackColor,
 								sliderProgress);
-							// semantic 层保持完整底色，Laser 外壳随后使用显式颜色插值覆盖。
+							// semantic 芯层始终独立存在，白色与笔色在同一条曲线上连续插值。
 							double semanticOpacity = baseThicknessOpacity;
 							ID2D1SolidColorBrush* solidBrush =
 								state.spec.GetFrameSolidColorBrush(
@@ -9175,7 +9347,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									previewClip,
 									D2D1_ANTIALIAS_MODE_ALIASED);
 
-							// Laser overlay 与 semantic 层读取同一个形状进度，红壳和白芯只保留各自宽度。
+							// 红壳先画，芯层后画；进度为 0 时红壳与芯等宽而被完全遮住。
 							auto DrawLaserOverlay = [&]()
 							{
 								if (!laserPreviewActive || laserShellProgress <= 0.000001)
@@ -9248,12 +9420,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									}
 									barDeviceContext->SetTransform(originalTransform);
 								};
-								// semantic 底层保持完整，红壳和白芯用同一进度覆盖，颜色与渐变都连续交接。
-								DrawLayer(RGB(255, 11, 30), redWidth,
-									laserShellProgress);
-								DrawLayer(RGB(255, 255, 255), coreWidth,
-									laserShellProgress);
+								DrawLayer(RGB(255, 11, 30), redWidth, 1.0);
 							};
+							DrawLaserOverlay();
 							if (previewMorph <= 0.5 && solidBrush
 								&& previewThickness > 0.0F)
 							{
@@ -9347,8 +9516,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 										&roundedPreview, previewBrush);
 								}
 							}
-							// 最后叠加红壳/白芯，确保边框比例不会被 semantic 层覆盖。
-							DrawLaserOverlay();
 							if (previewClipPushed)
 								barDeviceContext->PopAxisAlignedClip();
 

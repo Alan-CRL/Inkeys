@@ -96,26 +96,26 @@ namespace
 		Check(previewMorph.val > reverseAnchor && previewMorph.val < 1.0,
 			"laser highlighter reversal advances toward the new endpoint");
 
-		BarUiValueClass laserShellProgress(0.0);
-		laserShellProgress.SetTar(1.0, 1.0);
-		BarUiAdvanceAnimation(laserShellProgress,
+		BarUiValueClass laserCoreWhiteMix(0.0);
+		laserCoreWhiteMix.SetTar(1.0, 1.0);
+		BarUiAdvanceAnimation(laserCoreWhiteMix,
 			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
-		double shellReverseAnchor = laserShellProgress.val;
+		double whiteReverseAnchor = laserCoreWhiteMix.val;
 		constexpr COLORREF highlighterColor = RGB(80, 180, 120);
-		constexpr COLORREF laserColor = RGB(255, 11, 30);
+		constexpr COLORREF laserCoreColor = RGB(255, 255, 255);
 		COLORREF enteringColor = MixBarUiColor(
-			highlighterColor, laserColor, shellReverseAnchor);
-		Check(enteringColor != highlighterColor && enteringColor != laserColor,
-			"laser highlighter color has an intermediate frame");
-		laserShellProgress.SetTar(0.0, 1.0);
-		Check(Near(laserShellProgress.startV, shellReverseAnchor)
-			&& Near(laserShellProgress.val, shellReverseAnchor),
-			"laser color reversal preserves the current blend");
-		BarUiAdvanceAnimation(laserShellProgress,
+			highlighterColor, laserCoreColor, whiteReverseAnchor);
+		Check(enteringColor != highlighterColor && enteringColor != laserCoreColor,
+			"laser core color has an intermediate white blend");
+		laserCoreWhiteMix.SetTar(0.0, 1.0);
+		Check(Near(laserCoreWhiteMix.startV, whiteReverseAnchor)
+			&& Near(laserCoreWhiteMix.val, whiteReverseAnchor),
+			"laser core color reversal preserves the current blend");
+		BarUiAdvanceAnimation(laserCoreWhiteMix,
 			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
-		Check(laserShellProgress.val < shellReverseAnchor
-			&& laserShellProgress.val > 0.0,
-			"laser color reversal resumes toward highlighter");
+		Check(laserCoreWhiteMix.val < whiteReverseAnchor
+			&& laserCoreWhiteMix.val > 0.0,
+			"laser core color reversal resumes toward highlighter");
 
 		auto circleStart = ResolveBarThicknessPresetOpacity(0.0);
 		auto contentGap = ResolveBarThicknessPresetOpacity(0.5);
@@ -235,6 +235,153 @@ namespace
 		Check(extensionColor == static_cast<COLORREF>(selectedButtonColor.val)
 			&& extensionColor != RGB(0, 180, 190),
 			"extension color follows button animation instead of jumping to accent");
+
+		auto softSlot = ResolveBarPenTypeExtensionSlot(
+			BarThicknessPreviewVisualKind::SoftPen);
+		auto hardSlot = ResolveBarPenTypeExtensionSlot(
+			BarThicknessPreviewVisualKind::HardPen);
+		auto highlighterSlot = ResolveBarPenTypeExtensionSlot(
+			BarThicknessPreviewVisualKind::Highlighter);
+		Check(softSlot && hardSlot && highlighterSlot
+			&& *softSlot != *hardSlot && *softSlot != *highlighterSlot
+			&& *hardSlot != *highlighterSlot
+			&& !ResolveBarPenTypeExtensionSlot(
+				BarThicknessPreviewVisualKind::Laser),
+			"every supported pen owns an independent extension slot");
+		BarUiValueClass oldExtension(1.0);
+		BarUiValueClass newExtension(0.0);
+		oldExtension.SetTar(0.0, 0.4);
+		newExtension.SetTar(1.0, 0.4);
+		BarUiAdvanceAnimation(oldExtension,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		BarUiAdvanceAnimation(newExtension,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		Check(oldExtension.val > 0.0 && oldExtension.val < 1.0
+			&& newExtension.val > 0.0 && newExtension.val < 1.0,
+			"old and new pen extension visuals cross fade together");
+		Check(ResolveBarAnnotationPopupTitle(
+			BarThicknessPreviewVisualKind::SoftPen)
+				== L"标注线（粗细固定，暂未支持）"
+			&& ResolveBarAnnotationPopupTitle(
+				BarThicknessPreviewVisualKind::HardPen)
+				== L"启用标注线（暂不可用）"
+			&& ResolveBarAnnotationPopupTitle(
+				BarThicknessPreviewVisualKind::Highlighter)
+				== L"启用标注线（暂不可用）",
+			"annotation popup title follows its latched pen anchor");
+
+		auto phase = BarLaserPreviewPhase::NonLaserStable;
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, false, true, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringCore,
+			"laser entry starts with the core phase");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, false, false, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringCore,
+			"laser shell waits for the core endpoint");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, true, false, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringShell,
+			"laser shell starts after the core endpoint");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, true, false, false, true);
+		Check(phase == BarLaserPreviewPhase::LaserStable,
+			"laser entry reaches its stable phase");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, true, false, false, true);
+		Check(phase == BarLaserPreviewPhase::LeavingShell,
+			"laser exit retires the shell first");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, true, false, true, false);
+		Check(phase == BarLaserPreviewPhase::LeavingCore,
+			"laser core changes only after the shell is hidden");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, false, true, true, false);
+		Check(phase == BarLaserPreviewPhase::NonLaserStable,
+			"laser exit reaches the non-laser endpoint");
+
+		phase = BarLaserPreviewPhase::EnteringShell;
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, true, false, false, false);
+		Check(phase == BarLaserPreviewPhase::LeavingShell,
+			"shell reversal continues from its current value");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, true, false, false, false);
+		Check(phase == BarLaserPreviewPhase::EnteringShell,
+			"shell can reverse back toward laser without resetting");
+		phase = BarLaserPreviewPhase::LeavingCore;
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, false, false, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringCore,
+			"core reversal continues from its current semantic values");
+
+		const auto enteringCorePolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::EnteringCore);
+		const auto enteringShellPolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::EnteringShell);
+		const auto leavingShellPolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::LeavingShell);
+		const auto leavingCorePolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::LeavingCore);
+		Check(enteringCorePolicy.core
+				== BarLaserPreviewSemanticTarget::Laser
+			&& enteringCorePolicy.outer
+				== BarLaserPreviewSemanticTarget::Laser
+			&& !enteringCorePolicy.shellExpanded,
+			"entering core targets laser semantics while shell stays hidden");
+		Check(enteringShellPolicy.core
+				== BarLaserPreviewSemanticTarget::Hold
+			&& enteringShellPolicy.outer
+				== BarLaserPreviewSemanticTarget::Hold
+			&& enteringShellPolicy.shellExpanded,
+			"entering shell keeps the latched laser endpoints");
+		Check(leavingShellPolicy.core
+				== BarLaserPreviewSemanticTarget::Hold
+			&& leavingShellPolicy.outer
+				== BarLaserPreviewSemanticTarget::Hold
+			&& !leavingShellPolicy.shellExpanded,
+			"leaving shell changes only the shell target");
+		Check(leavingCorePolicy.core
+				== BarLaserPreviewSemanticTarget::NonLaser
+			&& leavingCorePolicy.outer
+				== BarLaserPreviewSemanticTarget::NonLaser
+			&& !leavingCorePolicy.shellExpanded,
+			"leaving core finally targets non-laser semantics");
+
+		double lockedCoreTarget = 2.0;
+		double lockedOuterTarget = 6.0;
+		double lockedMorphTarget = 0.0;
+		double lockedWhiteTarget = 1.0;
+		const double newNonLaserThickness = 18.0;
+		auto ApplySemanticPolicy = [&](BarLaserPreviewTargetPolicy policy)
+		{
+			if (policy.core == BarLaserPreviewSemanticTarget::NonLaser)
+			{
+				lockedCoreTarget = newNonLaserThickness;
+				lockedMorphTarget = 1.0;
+				lockedWhiteTarget = 0.0;
+			}
+			if (policy.outer == BarLaserPreviewSemanticTarget::NonLaser)
+				lockedOuterTarget = newNonLaserThickness;
+		};
+		ApplySemanticPolicy(leavingShellPolicy);
+		Check(Near(lockedCoreTarget, 2.0)
+			&& Near(lockedOuterTarget, 6.0)
+			&& Near(lockedMorphTarget, 0.0)
+			&& Near(lockedWhiteTarget, 1.0),
+			"leaving shell preserves every latched laser target");
+		ApplySemanticPolicy(leavingCorePolicy);
+		Check(Near(lockedCoreTarget, newNonLaserThickness)
+			&& Near(lockedOuterTarget, newNonLaserThickness)
+			&& Near(lockedMorphTarget, 1.0)
+			&& Near(lockedWhiteTarget, 0.0),
+			"leaving core releases all semantics toward the new pen");
+
+		Check(Near(ResolveBarLaserPreviewEnvelopeThickness(2.0, 6.0, 0.5),
+			4.0)
+			&& Near(ResolveBarLaserPreviewEnvelopeThickness(6.0, 2.0, 0.5),
+				6.0),
+			"laser preview envelope contains both core and current shell widths");
 	}
 
 	double ApplyLegacyPowCurve(BarUiCurveEnum curve, double progress)

@@ -929,8 +929,8 @@ namespace Inkeys::UI::Bar
 						barUISet.svgMap[
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck] = menuCheck;
 
-auto annotationLabel = make_shared<BarUiWordClass>(
-								0.0, 0.0, 80.0, 24.0, L"标注线（硬笔）", 13.0,
+						auto annotationLabel = make_shared<BarUiWordClass>(
+								0.0, 0.0, 80.0, 24.0, L"标注线", 13.0,
 								RGB(200, 200, 200));
 							annotationLabel->pct.Initialization(0.0);
 							annotationLabel->enable.Initialization(true);
