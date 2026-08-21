@@ -80,12 +80,13 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline bool ResolveBarBottomDockBackgroundTarget(
-		BarBottomDockMode previousMode, BarBottomDockMode currentMode,
-		BarBottomDockPhase currentPhase, bool dragActive,
-		bool springActive, bool captureLatched) noexcept
+		BarBottomDockMode currentMode, bool dragActive,
+		bool springActive, bool captureLatched,
+		unsigned long long observedCaptureEventGeneration,
+		unsigned long long captureEventGeneration) noexcept
 	{
-		if (IsBarBottomDockEntryCapture(
-			previousMode, currentMode, currentPhase)) return true;
+		if (captureEventGeneration != observedCaptureEventGeneration
+			&& currentMode == BarBottomDockMode::BottomDocked) return true;
 		return captureLatched && currentMode == BarBottomDockMode::BottomDocked
 			&& (dragActive || springActive);
 	}
@@ -322,6 +323,13 @@ namespace Inkeys::UI::Bar
 		bool detached = false;
 		bool modeChanged = false;
 	};
+
+	[[nodiscard]] inline bool ShouldPublishBarBottomDockCaptureEvent(
+		const BarBottomDockDragUpdate& update) noexcept
+	{
+		return update.captured && !update.detached && update.modeChanged
+			&& update.mode == BarBottomDockMode::BottomDocked;
+	}
 
 	class BarBottomDockDragTracker
 	{

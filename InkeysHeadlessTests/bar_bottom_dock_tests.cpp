@@ -178,18 +178,16 @@ int RunBarBottomDockTests()
 			BarBottomDockPhase::Detaching),
 		"dock target indicator starts only for a real entry capture");
 	Check(ResolveBarBottomDockBackgroundTarget(
-		BarBottomDockMode::Floating, BarBottomDockMode::BottomDocked,
-		BarBottomDockPhase::Capturing, true, true, false)
+		BarBottomDockMode::BottomDocked, true, true, false, 4, 5)
 		&& ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
-			BarBottomDockPhase::Recovering, false, true, true)
+			BarBottomDockMode::BottomDocked, false, true, true, 5, 5)
 		&& !ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
-			BarBottomDockPhase::Stable, false, false, true)
+			BarBottomDockMode::BottomDocked, false, false, true, 5, 5)
 		&& !ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
-			BarBottomDockPhase::Detaching, true, true, true),
-		"dock background spans real capture through settled rebound");
+			BarBottomDockMode::Floating, true, true, true, 4, 5)
+		&& !ResolveBarBottomDockBackgroundTarget(
+			BarBottomDockMode::BottomDocked, true, false, false, 5, 5),
+		"dock background consumes only a new dock capture event and spans rebound");
 	Check(ResolveBarBottomDockIndicatorTarget(
 		BarBottomDockMode::BottomDocked, true)
 		&& !ResolveBarBottomDockIndicatorTarget(
@@ -213,8 +211,32 @@ int RunBarBottomDockTests()
 	auto capturedAbove = tracker.Update(966.0, 1017.0, environment);
 	Check(capturedAbove.captured
 		&& capturedAbove.mode == BarBottomDockMode::BottomDocked
+		&& capturedAbove.phase == BarBottomDockPhase::Capturing
 		&& Near(capturedAbove.elasticOffsetDip, -10.0),
 		"approach from above captures with stretch offset");
+	unsigned long long captureEventGeneration = 0;
+	if (ShouldPublishBarBottomDockCaptureEvent(capturedAbove))
+		++captureEventGeneration;
+	auto draggingAfterCapture = tracker.Update(966.0, 1017.0, environment);
+	const bool backgroundLatched = ResolveBarBottomDockBackgroundTarget(
+		draggingAfterCapture.mode, true, false, false,
+		0, captureEventGeneration);
+	const auto observedCaptureEventGeneration = captureEventGeneration;
+	Check(draggingAfterCapture.phase == BarBottomDockPhase::Dragging
+		&& captureEventGeneration == 1
+		&& !ShouldPublishBarBottomDockCaptureEvent(draggingAfterCapture)
+		&& backgroundLatched
+		&& ResolveBarBottomDockBackgroundTarget(
+			draggingAfterCapture.mode, true, false, backgroundLatched,
+			observedCaptureEventGeneration, captureEventGeneration)
+		&& !ResolveBarBottomDockBackgroundTarget(
+			draggingAfterCapture.mode, true, false, false,
+			observedCaptureEventGeneration, captureEventGeneration),
+		"persistent capture event survives phase overwrite and failed present retry");
+	Check(ResolveBarBottomDockBackgroundTarget(
+		BarBottomDockMode::BottomDocked, true, false, false,
+		std::numeric_limits<unsigned long long>::max(), 0),
+		"capture event generation wrap remains observable");
 	auto exactDetachThreshold = tracker.Update(
 		capturedAbove.stableGripScreenY + 30.0, 1047.0, environment);
 	Check(!exactDetachThreshold.detached
@@ -266,6 +288,7 @@ int RunBarBottomDockTests()
 	Check(fastCross.captured && fastCross.detached
 		&& fastCross.mode == BarBottomDockMode::Floating
 		&& fastCross.phase == BarBottomDockPhase::Detaching
+		&& !ShouldPublishBarBottomDockCaptureEvent(fastCross)
 		&& Near(fastCross.elasticOffsetDip, BarBottomDockThresholdDip),
 		"fast segment consumes capture and detach without a docked stall");
 	auto fastCrossRecovery = tracker.Update(1036.0, 1066.0, environment);

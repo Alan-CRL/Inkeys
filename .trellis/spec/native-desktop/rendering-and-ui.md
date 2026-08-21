@@ -477,6 +477,64 @@ if (averages.updated)
 		averages.unlimitedFramesPerSecond);
 ~~~
 
+### UI3 跨线程瞬时交互事件合同
+
+#### 1. Scope / Trigger
+
+交互线程产生只持续一个输入采样的 phase，而渲染线程必须可靠观察该事件时适用。底栏 `Capturing` 是当前实例：下一次同点采样即可把 phase 改为 `Dragging`，因此 phase 只能描述当前状态，不能兼作事件通知。
+
+#### 2. Signatures
+
+~~~cpp
+std::atomic<unsigned long long> bottomDockTransitionSerial;
+std::atomic<unsigned long long> bottomDockCaptureEventGeneration;
+
+bool ShouldPublishBarBottomDockCaptureEvent(
+	const BarBottomDockDragUpdate& update) noexcept;
+~~~
+
+#### 3. Contracts
+
+- 真实 `captured && !detached && modeChanged && mode == BottomDocked` 才推进 capture generation；快速跨过捕获和脱离阈值的同一次采样不得发布事件。
+- generation 必须与关联的 mode、phase 和拖动 tuple 一起写在既有 transition serial 的奇偶 seqlock 事务内；渲染线程只接受前后 serial 相同且为偶数的快照。
+- 渲染生命周期以 `captureEventGeneration != observedCaptureEventGeneration` 识别新事件，不得依赖采样时恰好看到 `phase == Capturing`。generation 允许无符号回绕，比较只判断不等。
+- 渲染线程采到 generation 后立即更新 observed 值，即使当前 mode 已经脱离底栏；旧事件不得延迟到后续手势重放。呈现失败只影响像素快照，已经建立的背景生命周期继续按既有失败重试合同收敛。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| `Capturing` 后下一采样立即为 `Dragging` | generation 仍触发一次背景板生命周期 |
+| 单采样同时 capture 和 detach | 不推进 generation，不显示迟到背景板 |
+| 当前不是 `BottomDocked` 时读到新 generation | 消费事件但不显示；后续手势不得重放 |
+| generation 从最大值回绕到 0 | 仍以不等关系识别为新事件 |
+| seqlock 读取期间 serial 改变或为奇数 | 丢弃候选并重新读取完整 tuple |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：交互线程发布一次 capture generation；渲染线程即使只看到后续 `Dragging` 也能启动背景板。
+- Base：稳定拖动不重复推进 generation，背景板由已锁存生命周期维持。
+- Bad：渲染线程只检查瞬时 `Capturing`；调度时序稍慢就永久错过提示背景。
+
+#### 6. Tests Required
+
+- Headless 使用真实 tracker 连续执行 `Floating -> BottomDocked/Capturing -> BottomDocked/Dragging`，断言 phase 已覆盖但 generation 仍启动背景板。
+- 覆盖同采样 capture+detach、不重复发布、事件消费、呈现失败重试和 generation 回绕；完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：瞬时 phase 可能在线程调度之间被下一次输入覆盖。
+showBackground = frame.phase == BarBottomDockPhase::Capturing;
+
+// Correct：事件代数与状态一起原子发布，渲染只比较新旧代数。
+if (ShouldPublishBarBottomDockCaptureEvent(update))
+	bottomDockCaptureEventGeneration.fetch_add(1, std::memory_order_relaxed);
+showBackground = frame.captureEventGeneration != observedGeneration
+	&& frame.mode == BarBottomDockMode::BottomDocked;
+observedGeneration = frame.captureEventGeneration;
+~~~
+
 ### UI3 共享设备、串行帧与光影缓存契约
 
 #### 1. Scope / Trigger

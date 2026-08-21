@@ -176,6 +176,7 @@ struct BarRenderFrameSnapshot
 	double bottomDockDragRigidGripScreenY = 0.0;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
+	unsigned long long bottomDockCaptureEventGeneration = 0;
 };
 
 using Inkeys::UI::Bar::BarDirtyRegionTracker;
@@ -289,7 +290,8 @@ struct BarRenderLoopState
 {
 	explicit BarRenderLoopState(
 		BarUISetClass& owner,
-		std::atomic<unsigned long long>& mainButtonPulseSerial)
+		std::atomic<unsigned long long>& mainButtonPulseSerial,
+		std::atomic<unsigned long long>& captureEventGeneration)
 		: barWindow(owner.barWindow),
 		barMedia(owner.barMedia),
 		barButtonSet(owner.barButtonSet),
@@ -333,7 +335,9 @@ struct BarRenderLoopState
 		geometryThicknessCoarseHoverStage(owner.geometryThicknessCoarseHoverStage),
 		geometryCloseHoverStage(owner.geometryCloseHoverStage),
 		mainButtonClickPulseSerial(mainButtonPulseSerial),
-		presentDecision()
+		presentDecision(),
+		bottomDockObservedCaptureEventGeneration(
+			captureEventGeneration.load(memory_order_acquire))
 	{
 		auto range = GetBarThicknessSliderRange(
 			stateMode.Pen.ModeSelect, barStyle.dpiZoom);
@@ -463,6 +467,7 @@ struct BarRenderLoopState
 	bool bottomDockBackgroundTarget = false;
 	bool bottomDockTargetIndicatorTarget = false;
 	bool bottomDockTargetIndicatorBoundsVisible = false;
+	unsigned long long bottomDockObservedCaptureEventGeneration = 0;
 	Microsoft::WRL::ComPtr<ID2D1Bitmap1> bottomDockBackgroundBitmap;
 	unsigned long long bottomDockBackgroundBitmapDeviceGeneration = 0;
 	UINT32 bottomDockBackgroundBitmapWidth = 0;
@@ -793,7 +798,8 @@ void BarUISetClass::StopRendering()
 
 BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
 	: owner_(owner),
-	state_(make_unique<BarRenderLoopState>(owner, owner.mainButtonClickPulseSerial))
+	state_(make_unique<BarRenderLoopState>(owner,
+		owner.mainButtonClickPulseSerial, owner.bottomDockCaptureEventGeneration))
 {
 	blend_.BlendOp = AC_SRC_OVER;
 	blend_.BlendFlags = 0;
@@ -7122,8 +7128,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| captureBottomSpringActive
 			|| state.bottomDockCaptureBottomActive;
 		bool backgroundTarget = ResolveBarBottomDockBackgroundTarget(
-			previousFrameMode, dockMode, dockPhase, dockDragActive,
-			springFeedbackActive, state.bottomDockBackgroundTarget);
+			dockMode, dockDragActive, springFeedbackActive,
+			state.bottomDockBackgroundTarget,
+			state.bottomDockObservedCaptureEventGeneration,
+			frame.bottomDockCaptureEventGeneration);
+		// 持久事件一经采样即消费；当前不是 BottomDocked 时不能留到以后误触发。
+		state.bottomDockObservedCaptureEventGeneration =
+			frame.bottomDockCaptureEventGeneration;
 		bool indicatorTarget = ResolveBarBottomDockIndicatorTarget(
 			dockMode, dockDragActive);
 		if (Inkeys::UI::Bar::HideWhiteboardSnapIndicator())
@@ -12112,6 +12123,8 @@ BarRenderLoopCoordinator::RenderFrame(
 		if ((frame.bottomDockTransitionSerial & 1ULL) != 0) continue;
 		frame.bottomDockMode = owner_.bottomDockMode.load(memory_order_relaxed);
 		frame.bottomDockPhase = owner_.bottomDockPhase.load(memory_order_relaxed);
+		frame.bottomDockCaptureEventGeneration =
+			owner_.bottomDockCaptureEventGeneration.load(memory_order_relaxed);
 		frame.bottomDockDragActive = owner_.bottomDockDragActive.load(
 			memory_order_relaxed);
 		frame.bottomDockRecoveryActive = owner_.bottomDockRecoveryActive.load(
