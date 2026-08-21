@@ -58,6 +58,14 @@ namespace Inkeys::UI::Bar
 		FadeOut,
 	};
 
+	enum class BarBottomDockIndicatorContentAction
+	{
+		None,
+		ExpandFrame,
+		SwapText,
+		ShrinkFrame,
+	};
+
 	[[nodiscard]] inline BarBottomDockFeedbackAction
 		ResolveBarBottomDockFeedbackAction(
 			bool wasVisibleTarget, bool isVisibleTarget) noexcept
@@ -67,6 +75,26 @@ namespace Inkeys::UI::Bar
 		if (wasVisibleTarget && !isVisibleTarget)
 			return BarBottomDockFeedbackAction::FadeOut;
 		return BarBottomDockFeedbackAction::None;
+	}
+
+	[[nodiscard]] inline BarBottomDockIndicatorContentAction
+		ResolveBarBottomDockIndicatorContentAction(
+			double currentTextWidthDip, double targetTextWidthDip,
+			bool textMatchesTarget) noexcept
+	{
+		currentTextWidthDip = std::max(0.0,
+			std::isfinite(currentTextWidthDip) ? currentTextWidthDip : 0.0);
+		targetTextWidthDip = std::max(0.0,
+			std::isfinite(targetTextWidthDip) ? targetTextWidthDip : 0.0);
+		if (!textMatchesTarget)
+			return currentTextWidthDip + 0.000001 < targetTextWidthDip
+				? BarBottomDockIndicatorContentAction::ExpandFrame
+				: BarBottomDockIndicatorContentAction::SwapText;
+		if (currentTextWidthDip > targetTextWidthDip + 0.000001)
+			return BarBottomDockIndicatorContentAction::ShrinkFrame;
+		if (currentTextWidthDip + 0.000001 < targetTextWidthDip)
+			return BarBottomDockIndicatorContentAction::ExpandFrame;
+		return BarBottomDockIndicatorContentAction::None;
 	}
 
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
@@ -83,6 +111,26 @@ namespace Inkeys::UI::Bar
 	{
 		return ResolveBarBottomDockIndicatorTarget(
 			currentMode, dragActive, mainBarExpanded, true);
+	}
+
+	struct BarBottomDockIndicatorGestureEligibility
+	{
+		bool centerCaptureActive = false;
+		bool eligible = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockIndicatorGestureEligibility
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			bool floatingOriginEligible, bool previousCenterCaptureActive,
+			bool centerCaptured, bool centerDetached,
+			bool verticallyDocked) noexcept
+	{
+		bool centerCaptureActive = previousCenterCaptureActive;
+		if (centerCaptured && verticallyDocked) centerCaptureActive = true;
+		else if (centerDetached || !verticallyDocked)
+			centerCaptureActive = false;
+		return { centerCaptureActive,
+			floatingOriginEligible || centerCaptureActive };
 	}
 
 	[[nodiscard]] inline BarBottomDockFeedbackGeometry
@@ -728,7 +776,8 @@ namespace Inkeys::UI::Bar
 	[[nodiscard]] inline BarBottomDockHorizontalMapping
 		ResolveBarBottomDockHorizontalMapping(double baseLeftDip,
 			double baseRightDip, double elasticOffsetDip,
-			double centerTranslationDip = 0.0) noexcept
+			double mainButtonCenterDip,
+			double captureFarEdgeOffsetDip = 0.0) noexcept
 	{
 		if (!std::isfinite(baseLeftDip)) baseLeftDip = 0.0;
 		if (!std::isfinite(baseRightDip) || baseRightDip <= baseLeftDip)
@@ -736,26 +785,87 @@ namespace Inkeys::UI::Bar
 		elasticOffsetDip = std::clamp(
 			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
 			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
-		centerTranslationDip = std::clamp(
-			std::isfinite(centerTranslationDip) ? centerTranslationDip : 0.0,
+		captureFarEdgeOffsetDip = std::clamp(
+			std::isfinite(captureFarEdgeOffsetDip)
+				? captureFarEdgeOffsetDip : 0.0,
 			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
-		const double center = (baseLeftDip + baseRightDip) / 2.0
-			+ centerTranslationDip;
-		const double width = baseRightDip - baseLeftDip
-			+ std::abs(elasticOffsetDip);
-		// 横向果冻始终以联合外框中心为轴，不改变居中锚点。
-		return { baseLeftDip, baseRightDip, center - width / 2.0,
-			center + width / 2.0, width / (baseRightDip - baseLeftDip),
-			centerTranslationDip };
+		mainButtonCenterDip = std::clamp(
+			std::isfinite(mainButtonCenterDip) ? mainButtonCenterDip
+				: (baseLeftDip + baseRightDip) / 2.0,
+			baseLeftDip, baseRightDip);
+		const bool mainButtonOnLeft = mainButtonCenterDip
+			<= (baseLeftDip + baseRightDip) / 2.0;
+		double visualLeft = 0.0;
+		double visualRight = 0.0;
+		if (mainButtonOnLeft)
+		{
+			const double gripVisual = mainButtonCenterDip + elasticOffsetDip;
+			visualRight = baseRightDip + captureFarEdgeOffsetDip;
+			const double gripToFar = std::max(
+				0.000001, baseRightDip - mainButtonCenterDip);
+			const double scale = (visualRight - gripVisual) / gripToFar;
+			visualLeft = gripVisual
+				+ (baseLeftDip - mainButtonCenterDip) * scale;
+		}
+		else
+		{
+			visualLeft = baseLeftDip + captureFarEdgeOffsetDip;
+			const double gripVisual = mainButtonCenterDip + elasticOffsetDip;
+			const double farToGrip = std::max(
+				0.000001, mainButtonCenterDip - baseLeftDip);
+			const double scale = (gripVisual - visualLeft) / farToGrip;
+			visualRight = gripVisual
+				+ (baseRightDip - mainButtonCenterDip) * scale;
+		}
+		visualRight = std::max(visualLeft + 0.000001, visualRight);
+		const double width = visualRight - visualLeft;
+		// 主按钮中心精确跟手，另一端吸附到稳定居中外框；越过中心后自然压缩。
+		return { baseLeftDip, baseRightDip, visualLeft, visualRight,
+			width / (baseRightDip - baseLeftDip), 0.0 };
 	}
 
 	[[nodiscard]] inline BarBottomDockHorizontalMapping
 		ResolveBarBottomDockRecoveringHorizontalMapping(double baseLeftDip,
-			double baseRightDip, double elasticOffsetDip) noexcept
+			double baseRightDip, double elasticOffsetDip,
+			double mainButtonCenterDip) noexcept
 	{
-		// HWND 已跟随原始指针移动；反向平移保持脱离首帧像素连续。
-		return ResolveBarBottomDockHorizontalMapping(baseLeftDip, baseRightDip,
-			elasticOffsetDip, -elasticOffsetDip);
+		if (!std::isfinite(baseLeftDip)) baseLeftDip = 0.0;
+		if (!std::isfinite(baseRightDip) || baseRightDip <= baseLeftDip)
+			baseRightDip = baseLeftDip + 1.0;
+		elasticOffsetDip = std::clamp(
+			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
+			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		mainButtonCenterDip = std::clamp(
+			std::isfinite(mainButtonCenterDip) ? mainButtonCenterDip
+				: (baseLeftDip + baseRightDip) / 2.0,
+			baseLeftDip, baseRightDip);
+		const bool mainButtonOnLeft = mainButtonCenterDip
+			<= (baseLeftDip + baseRightDip) / 2.0;
+		// HWND 已回到原始指针位置；反向移动远端保持脱离首帧像素连续。
+		double visualLeft = 0.0;
+		double visualRight = 0.0;
+		if (mainButtonOnLeft)
+		{
+			const double gripToFar = std::max(
+				0.000001, baseRightDip - mainButtonCenterDip);
+			const double scale = (baseRightDip - elasticOffsetDip
+				- mainButtonCenterDip) / gripToFar;
+			visualLeft = mainButtonCenterDip
+				+ (baseLeftDip - mainButtonCenterDip) * scale;
+			visualRight = baseRightDip - elasticOffsetDip;
+		}
+		else
+		{
+			visualLeft = baseLeftDip - elasticOffsetDip;
+			const double farToGrip = std::max(
+				0.000001, mainButtonCenterDip - baseLeftDip);
+			const double scale = (mainButtonCenterDip - visualLeft) / farToGrip;
+			visualRight = mainButtonCenterDip
+				+ (baseRightDip - mainButtonCenterDip) * scale;
+		}
+		const double width = std::max(0.000001, visualRight - visualLeft);
+		return { baseLeftDip, baseRightDip, visualLeft,
+			visualLeft + width, width / (baseRightDip - baseLeftDip), 0.0 };
 	}
 
 	[[nodiscard]] inline double MapBarBottomDockBodyPixelX(

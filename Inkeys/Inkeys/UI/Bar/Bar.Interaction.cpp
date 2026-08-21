@@ -6034,9 +6034,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		actualMainCenterScreenX + bodyToMainCenterScreenX,
 		initialMode == BarBottomDockMode::BottomDocked,
 		!barState.fold, environment);
+	const bool floatingIndicatorGestureEligible =
+		initialMode == BarBottomDockMode::Floating && !barState.fold;
+	bool centerIndicatorGestureActive = false;
 	bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
 	bottomDockIndicatorGestureEligible.store(
-		initialMode == BarBottomDockMode::Floating && !barState.fold,
+		floatingIndicatorGestureEligible,
 		memory_order_relaxed);
 	bottomDockDragActive.store(true, memory_order_relaxed);
 	bottomDockPhase.store(initialMode == BarBottomDockMode::BottomDocked
@@ -6091,6 +6094,23 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			bottomDockCenterPhase.store(centerUpdate.phase, memory_order_release);
 			bottomDockCenterElasticOffsetDip.store(
 				centerUpdate.elasticOffsetDip, memory_order_release);
+			const auto indicatorEligibility = Inkeys::UI::Bar::
+				ResolveBarBottomDockIndicatorGestureEligibility(
+					floatingIndicatorGestureEligible,
+					centerIndicatorGestureActive,
+					centerUpdate.captured
+						&& centerUpdate.mode == BarBottomDockCenterMode::Centered,
+					centerUpdate.detached,
+					update.mode == BarBottomDockMode::BottomDocked);
+			centerIndicatorGestureActive =
+				indicatorEligibility.centerCaptureActive;
+			const bool nextIndicatorGestureEligible = indicatorEligibility.eligible;
+			publication.visualChanged = publication.visualChanged
+				|| bottomDockIndicatorGestureEligible.load(memory_order_relaxed)
+					!= nextIndicatorGestureEligible;
+			// 底栏起始手势仅在本次真正进入居中捕获带后获得提示资格。
+			bottomDockIndicatorGestureEligible.store(
+				nextIndicatorGestureEligible, memory_order_release);
 			if (update.detached)
 			{
 				bottomDockRecoveryActive.store(true, memory_order_release);

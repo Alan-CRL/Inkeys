@@ -215,7 +215,24 @@ int RunBarBottomDockTests()
 			BarBottomDockMode::BottomDocked, true, false)
 		&& !ResolveBarBottomDockIndicatorTarget(
 			BarBottomDockMode::BottomDocked, true, true, false),
-		"dock indicator additionally requires a floating-origin gesture");
+		"dock indicator additionally requires a gesture eligibility latch");
+	const auto bottomOriginCenterCapture =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			false, false, true, false, true);
+	const auto bottomOriginCenterDetach =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			false, bottomOriginCenterCapture.centerCaptureActive,
+			false, true, true);
+	const auto floatingOriginCenterDetach =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			true, true, false, true, true);
+	Check(bottomOriginCenterCapture.centerCaptureActive
+		&& bottomOriginCenterCapture.eligible
+		&& !bottomOriginCenterDetach.centerCaptureActive
+		&& !bottomOriginCenterDetach.eligible
+		&& !floatingOriginCenterDetach.centerCaptureActive
+		&& floatingOriginCenterDetach.eligible,
+		"bottom-origin gestures show only while their center capture is active");
 	Check(ResolveBarBottomDockFeedbackAction(false, true)
 		== BarBottomDockFeedbackAction::FadeIn
 		&& ResolveBarBottomDockFeedbackAction(true, false)
@@ -223,6 +240,15 @@ int RunBarBottomDockTests()
 		&& ResolveBarBottomDockFeedbackAction(true, true)
 			== BarBottomDockFeedbackAction::None,
 		"feedback animations reverse from their current visibility target");
+	Check(ResolveBarBottomDockIndicatorContentAction(48.0, 96.0, false)
+		== BarBottomDockIndicatorContentAction::ExpandFrame
+		&& ResolveBarBottomDockIndicatorContentAction(96.0, 48.0, false)
+			== BarBottomDockIndicatorContentAction::SwapText
+		&& ResolveBarBottomDockIndicatorContentAction(96.0, 48.0, true)
+			== BarBottomDockIndicatorContentAction::ShrinkFrame
+		&& ResolveBarBottomDockIndicatorContentAction(48.0, 48.0, true)
+			== BarBottomDockIndicatorContentAction::None,
+		"indicator expands before swapping wider text and shrinks only after swap");
 
 	BarBottomDockEnvironment environment{
 		RECT{ 0, 0, 1920, 1080 }, RECT{ 0, 0, 1920, 1032 }, 1.5 };
@@ -383,25 +409,33 @@ int RunBarBottomDockTests()
 		&& Near(detachedUp.visualBottomDip, 80.0)
 		&& Near(detachedUp.scaleY, 1.25),
 		"upward detach preserves the stretched frame while the window moves");
-	const auto horizontalStretch = ResolveBarBottomDockHorizontalMapping(
-		100.0, 500.0, 20.0);
-	Check(Near(horizontalStretch.visualLeftDip, 90.0)
-		&& Near(horizontalStretch.visualRightDip, 510.0)
-		&& Near(horizontalStretch.MapX(300.0), 300.0)
-		&& Near(horizontalStretch.UnmapX(300.0), 300.0),
-		"horizontal jelly expands symmetrically and preserves body center");
+	const auto rightExpandedStretch = ResolveBarBottomDockHorizontalMapping(
+		100.0, 500.0, -20.0, 140.0);
+	const auto rightExpandedCompress = ResolveBarBottomDockHorizontalMapping(
+		100.0, 500.0, 20.0, 140.0);
+	const auto leftExpandedStretch = ResolveBarBottomDockHorizontalMapping(
+		100.0, 500.0, 20.0, 460.0);
+	Check(Near(rightExpandedStretch.MapX(140.0), 120.0)
+		&& Near(rightExpandedStretch.visualRightDip, 500.0)
+		&& Near(rightExpandedCompress.MapX(140.0), 160.0)
+		&& Near(rightExpandedCompress.visualRightDip, 500.0)
+		&& Near(leftExpandedStretch.visualLeftDip, 100.0)
+		&& Near(leftExpandedStretch.MapX(460.0), 480.0),
+		"horizontal jelly keeps the far edge fixed and the main-button center exact");
 	const auto horizontalCaptureStart = ResolveBarBottomDockHorizontalMapping(
-		100.0, 500.0, 20.0, 20.0);
+		100.0, 500.0, -20.0, 140.0, -20.0);
 	const auto horizontalDetachStart =
 		ResolveBarBottomDockRecoveringHorizontalMapping(
-			120.0, 520.0, 20.0);
-	Check(Near(horizontalCaptureStart.visualLeftDip, 110.0)
-		&& Near(horizontalCaptureStart.visualRightDip, 530.0)
-		&& Near(horizontalCaptureStart.rigidOverlayTranslationXDip, 20.0)
-		&& Near(horizontalDetachStart.visualLeftDip, 90.0)
-		&& Near(horizontalDetachStart.visualRightDip, 510.0)
-		&& Near(horizontalDetachStart.rigidOverlayTranslationXDip, -20.0),
-		"horizontal capture and detach preserve the previous screen-space center");
+			100.0, 500.0, 20.0, 140.0);
+	Check(Near(horizontalCaptureStart.visualLeftDip, 80.0)
+		&& Near(horizontalCaptureStart.visualRightDip, 480.0)
+		&& Near(horizontalCaptureStart.MapX(140.0), 120.0)
+		&& Near(horizontalDetachStart.MapX(140.0), 140.0)
+		&& Near(horizontalDetachStart.visualLeftDip + 20.0,
+			rightExpandedCompress.visualLeftDip)
+		&& Near(horizontalDetachStart.visualRightDip + 20.0,
+			rightExpandedCompress.visualRightDip),
+		"horizontal capture and detach preserve the previous screen-space pixels");
 
 	const RECT logicalBody{ 10, 0, 110, 80 };
 	Check(RectEquals(TransformBarBottomDockBodyRect(
@@ -409,8 +443,8 @@ int RunBarBottomDockTests()
 		"body dirty bounds use the same endpoint mapping as drawing");
 	Check(RectEquals(TransformBarBottomDockBodyRect(
 		RECT{ 15, 0, 165, 120 },
-		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, 20.0),
-		compressed, 1.5), RECT{ 0, 30, 180, 120 }),
+		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, 20.0, 30.0),
+		compressed, 1.5), RECT{ 52, 30, 165, 120 }),
 		"two-axis dirty bounds use the same composed mapping as drawing");
 	Check(RectEquals(TranslateBarBottomDockRigidRect(
 		logicalBody, 20.0, 1.5), RECT{ 10, 30, 110, 110 }),

@@ -30,6 +30,9 @@
 20. [x] 增加启动稳定居中、折叠退出和展开阈值内无提示自动居中的生命周期。
 21. [x] 将指示器门禁改为仅浮动起始手势，并增加“底栏模式 / 底栏模式 · 居中”内容切换和无裁切动态宽度。
 22. [x] 更新 native-desktop 两轴呈现规范，运行完整质量门且不启动 GUI、不提交 commit。
+23. [x] 将水平果冻改为按主按钮展开侧固定远端、抓取侧跟手，并覆盖捕获/脱离首帧连续性及左右镜像。
+24. [x] 允许底栏起始手势在本次 `Free → Centered` 后显示居中提示，离开居中带或松手后淡出。
+25. [x] 将指示器内容切换拆成“先扩框后换字 / 先换字后缩框”的串行时间线，并重新运行完整质量门。
 
 ## Validation
 
@@ -41,7 +44,7 @@
 - [x] 重新运行上述全部验证，确认新指示器样式未引入第二 target 或 GUI 启动。
 - [x] 新增水平居中状态机后重新运行以上全部验证。
 
-验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平捕获阈值、快速跨带、两轴组合映射、折叠门禁、提示资格与 150% DPI/Back 包络均有 Headless 覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
+验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平捕获阈值、快速跨带、抓手精确跟随、固定远端拉伸/压缩、捕获与脱离首帧连续、底栏起始居中提示资格、串行文字/宽度切换及 150% DPI/Back 包络均有 Headless 或静态覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
 
 ## Risk And Rollback Points
 

@@ -154,6 +154,14 @@ enum class ThicknessFineDialRangeTransitionPhase
 	RetireOldRange,
 };
 
+enum class BarBottomDockIndicatorContentPhase
+{
+	Stable,
+	ExpandingFrame,
+	SwappingText,
+	ShrinkingFrame,
+};
+
 struct BarRenderFrameSnapshot
 {
 	StateModeSelectEnum stateMode = StateModeSelectEnum::IdtSelection;
@@ -220,6 +228,7 @@ using Inkeys::UI::Bar::BarBottomDockVerticalMapping;
 using Inkeys::UI::Bar::BarBottomDockHorizontalMapping;
 using Inkeys::UI::Bar::BarBottomDockFeedbackAction;
 using Inkeys::UI::Bar::BarBottomDockFeedbackGeometry;
+using Inkeys::UI::Bar::BarBottomDockIndicatorContentAction;
 using Inkeys::UI::Bar::BarBottomDockIndicatorCornerRadiusDip;
 using Inkeys::UI::Bar::BarBottomDockIndicatorHeightDip;
 using Inkeys::UI::Bar::BarPresentMappingMode;
@@ -233,6 +242,7 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockLine;
 	using Inkeys::UI::Bar::BarWhiteboardBottomInsetDip;
 	using Inkeys::UI::Bar::ResolveBarBottomDockFeedbackAction;
+	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorContentAction;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorGeometry;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorScaledGeometry;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorTarget;
@@ -461,8 +471,8 @@ struct BarRenderLoopState
 	BarBottomDockVerticalMapping bottomDockMapping{};
 	BarBottomDockHorizontalMapping bottomDockHorizontalMapping{};
 	BarBottomDockSpringState bottomDockCenterSpring{};
-	BarBottomDockSpringState bottomDockCenterCaptureTranslationSpring{};
-	bool bottomDockCenterCaptureTranslationActive = false;
+	BarBottomDockSpringState bottomDockCenterCaptureFarEdgeSpring{};
+	bool bottomDockCenterCaptureFarEdgeActive = false;
 	bool bottomDockCenterRecoverySeeded = false;
 	double bottomDockPreviousDirectOffsetDip = 0.0;
 	double bottomDockObservedBoundsOffsetDip =
@@ -476,6 +486,11 @@ struct BarRenderLoopState
 	BarUiWordClass bottomDockIndicatorWord{
 		0.0, 0.0, 0.0, BarBottomDockIndicatorHeightDip, L"",
 		BarButtonTwoTwoLabelFontSizeDip, RGB(255, 255, 255) };
+	BarUiValueClass bottomDockIndicatorTextWidthDip{ 0.0 };
+	BarBottomDockIndicatorContentPhase bottomDockIndicatorContentPhase =
+		BarBottomDockIndicatorContentPhase::Stable;
+	wstring bottomDockIndicatorDesiredLabel;
+	bool bottomDockIndicatorHiddenContentPrepared = false;
 	bool bottomDockIndicatorTextTransitionActive = false;
 	bool bottomDockTargetIndicatorTarget = false;
 	bool bottomDockTargetIndicatorBoundsVisible = false;
@@ -7080,8 +7095,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCaptureBottomSpring.positionDip;
 		const double previousCenterOffsetDip =
 			state.bottomDockCenterSpring.positionDip;
-		const double previousCenterCaptureTranslationDip =
-			state.bottomDockCenterCaptureTranslationSpring.positionDip;
+		const double previousCenterCaptureFarEdgeDip =
+			state.bottomDockCenterCaptureFarEdgeSpring.positionDip;
 		bool springActive = false;
 		if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
 		{
@@ -7175,9 +7190,19 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			IW(I18nKey.UI.Bar.BottomDock.Mode);
 		const wstring centeredIndicatorLabel = normalIndicatorLabel
 			+ L" · " + IW(I18nKey.UI.Bar.BottomDock.Centered);
-		const wstring desiredIndicatorLabel = centerMode
+		wstring desiredIndicatorLabel = centerMode
 			== BarBottomDockCenterMode::Centered
 			? centeredIndicatorLabel : normalIndicatorLabel;
+		if (!indicatorTarget
+			&& state.bottomDockTargetIndicatorProgress.val > 0.000001)
+		{
+			// 淡出期间保留最后一次提示语，不在缩小过程中交换内容。
+			if (!state.bottomDockIndicatorDesiredLabel.empty())
+				desiredIndicatorLabel = state.bottomDockIndicatorDesiredLabel;
+			else if (!state.bottomDockIndicatorWord.content.GetVal().empty())
+				desiredIndicatorLabel =
+					state.bottomDockIndicatorWord.content.GetVal();
+		}
 		if (state.bottomDockTargetIndicatorProgress.val <= 0.000001)
 		{
 			// 首次显现前直接准备正确文案，不播放一次不可见的交换。
@@ -7186,16 +7211,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				desiredIndicatorLabel);
 			state.bottomDockIndicatorWord.contentScale = 1.0;
 			state.bottomDockIndicatorWord.contentPct = 1.0;
+			state.bottomDockIndicatorDesiredLabel = desiredIndicatorLabel;
+			state.bottomDockIndicatorContentPhase =
+				BarBottomDockIndicatorContentPhase::Stable;
+			state.bottomDockIndicatorHiddenContentPrepared = true;
 			state.bottomDockIndicatorTextTransitionActive = false;
 		}
-		else if (state.bottomDockIndicatorWord.content.GetVal()
-			!= desiredIndicatorLabel)
-		{
-			state.bottomDockIndicatorTextTransitionActive =
-				state.bottomDockIndicatorWord.TransitionToString(
-					desiredIndicatorLabel, BarUiDefaultOperationDur, 0.5, 0.8)
-				|| state.bottomDockIndicatorTextTransitionActive;
-		}
+		else state.bottomDockIndicatorDesiredLabel = desiredIndicatorLabel;
 		if (state.bottomDockIndicatorTextTransitionActive)
 		{
 			if (state.bottomDockIndicatorWord.AdvanceContentTransition(
@@ -7225,6 +7247,9 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.dirtyRegionTracker.MarkChanged(
 				dockTargetIndicatorDirtyKey);
 		}
+		if (!state.bottomDockIndicatorTextWidthDip.IsSame())
+			ChangeValue(state.bottomDockIndicatorTextWidthDip, false,
+				dockTargetIndicatorDirtyKey);
 
 		const double strokeWidthDip = state.superellipseMap[
 			BarUISetSuperellipseEnum::MainButton]->ft.has_value()
@@ -7324,32 +7349,35 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		if (previousFrameCenterMode == BarBottomDockCenterMode::Free
 			&& centerMode == BarBottomDockCenterMode::Centered)
 		{
-			// HWND 先对齐屏幕中心，主体从上次成功像素位置水平回弹进入。
-			state.bottomDockCenterCaptureTranslationSpring.positionDip =
+			// HWND 先对齐逻辑中心，远端从上次成功像素弹入；主按钮侧继续跟手。
+			state.bottomDockCenterCaptureFarEdgeSpring.positionDip =
 				centerInputOffsetDip;
-			state.bottomDockCenterCaptureTranslationSpring.velocityDipPerSecond = 0.0;
-			state.bottomDockCenterCaptureTranslationActive = abs(centerInputOffsetDip)
+			state.bottomDockCenterCaptureFarEdgeSpring.velocityDipPerSecond = 0.0;
+			state.bottomDockCenterCaptureFarEdgeActive = abs(centerInputOffsetDip)
 				> BarBottomDockSettleDistanceDip;
 		}
-		bool centerCaptureTranslationActive = false;
-		if (state.bottomDockCenterCaptureTranslationActive)
+		bool centerCaptureFarEdgeActive = false;
+		if (state.bottomDockCenterCaptureFarEdgeActive)
 		{
-			const auto captureTranslation = AdvanceBarBottomDockSpring(
-				state.bottomDockCenterCaptureTranslationSpring, 0.0,
+			const auto captureFarEdge = AdvanceBarBottomDockSpring(
+				state.bottomDockCenterCaptureFarEdgeSpring, 0.0,
 				animationDtSeconds, true == BarUiAnimationEnabled);
-			centerCaptureTranslationActive = captureTranslation.active;
-			state.bottomDockCenterCaptureTranslationActive =
-				captureTranslation.active;
+			centerCaptureFarEdgeActive = captureFarEdge.active;
+			state.bottomDockCenterCaptureFarEdgeActive =
+				captureFarEdge.active;
 		}
-		else state.bottomDockCenterCaptureTranslationSpring.positionDip = 0.0;
+		else state.bottomDockCenterCaptureFarEdgeSpring.positionDip = 0.0;
+		const double mainButtonCenterDip = state.superellipseMap[
+			BarUISetSuperellipseEnum::MainButton]->x.val;
 		state.bottomDockHorizontalMapping = centerMode
 			== BarBottomDockCenterMode::Centered
 			? ResolveBarBottomDockHorizontalMapping(baseLeftDip, baseRightDip,
 				state.bottomDockCenterSpring.positionDip,
-				state.bottomDockCenterCaptureTranslationSpring.positionDip)
+				mainButtonCenterDip,
+				state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
 			: ResolveBarBottomDockRecoveringHorizontalMapping(
 				baseLeftDip, baseRightDip,
-				state.bottomDockCenterSpring.positionDip);
+				state.bottomDockCenterSpring.positionDip, mainButtonCenterDip);
 		if (!state.barState.fold)
 		{
 			BarButtonClass* rigidAnchorButton = nullptr;
@@ -7388,7 +7416,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| abs(state.bottomDockSpring.positionDip) > 0.000001
 			|| abs(state.bottomDockCaptureBottomSpring.positionDip) > 0.000001
 			|| centerSpringActive
-			|| centerCaptureTranslationActive
+			|| centerCaptureFarEdgeActive
 			|| abs(state.bottomDockCenterSpring.positionDip) > 0.000001;
 		const bool visualChanged = abs(previousVisualOffsetDip
 			- state.bottomDockSpring.positionDip) > 0.000001
@@ -7396,11 +7424,11 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				- state.bottomDockCaptureBottomSpring.positionDip) > 0.000001
 			|| abs(previousCenterOffsetDip
 				- state.bottomDockCenterSpring.positionDip) > 0.000001
-			|| abs(previousCenterCaptureTranslationDip
-				- state.bottomDockCenterCaptureTranslationSpring.positionDip)
+			|| abs(previousCenterCaptureFarEdgeDip
+				- state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
 				> 0.000001;
 		if (visualChanged || springActive || captureBottomSpringActive
-			|| centerSpringActive || centerCaptureTranslationActive)
+			|| centerSpringActive || centerCaptureFarEdgeActive)
 		{
 			needRendering = true;
 			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
@@ -7414,7 +7442,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			const bool settleVerticalPhase = owner_.bottomDockPhase.load(
 				memory_order_acquire) != BarBottomDockPhase::Stable;
 			const bool settleCenterPhase = !centerSpringActive
-				&& !centerCaptureTranslationActive
+				&& !centerCaptureFarEdgeActive
 				&& owner_.bottomDockCenterPhase.load(memory_order_acquire)
 					!= BarBottomDockPhase::Stable;
 			const bool clearFloatingRecovery =
@@ -7438,7 +7466,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 						1, memory_order_acq_rel) + 1;
 			}
 			state.bottomDockFramePhase = BarBottomDockPhase::Stable;
-			if (!centerSpringActive && !centerCaptureTranslationActive)
+			if (!centerSpringActive && !centerCaptureFarEdgeActive)
 			{
 				state.bottomDockFrameCenterPhase = BarBottomDockPhase::Stable;
 				state.bottomDockCenterRecoverySeeded = false;
@@ -7589,6 +7617,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
+	const BarDirtyVisualKey dockTargetIndicatorDirtyKey = GetBarDirtyVisualKey(
+		BarDirtyFixedVisual::DockTargetIndicator);
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
 	const bool debugFrameRateEnabled = debugModeEnabled
 		&& true == BarUiDebugFrameRateEnabled;
@@ -7720,19 +7750,143 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				return measured;
 			};
 		D2D1_SIZE_F dockModeTextSize = MeasureDockText(dockModeLabel);
-		if (state.bottomDockIndicatorTextTransitionActive)
+		const auto desiredDockModeTextSize = MeasureDockText(
+			state.bottomDockIndicatorDesiredLabel.empty()
+				? dockModeLabel : state.bottomDockIndicatorDesiredLabel);
+		const double desiredTextWidthDip = max(0.0,
+			static_cast<double>(desiredDockModeTextSize.width));
+		auto StartIndicatorWidth = [&](double targetWidthDip,
+			BarBottomDockIndicatorContentPhase phase)
+			{
+				targetWidthDip = max(0.0, targetWidthDip);
+				if (!BarUiAnimationEnabled)
+					state.bottomDockIndicatorTextWidthDip.SetDirect(targetWidthDip);
+				else state.bottomDockIndicatorTextWidthDip.SetTar(
+					targetWidthDip, BarUiDefaultOperationDur);
+				state.bottomDockIndicatorContentPhase = phase;
+				state.dirtyRegionTracker.MarkChanged(
+					dockTargetIndicatorDirtyKey);
+				state.presentDecision.AddDemand({ true, false, false });
+			};
+		auto StartIndicatorTextSwap = [&]()
+			{
+				if (state.bottomDockIndicatorWord.content.GetVal()
+					== state.bottomDockIndicatorDesiredLabel
+					&& !state.bottomDockIndicatorTextTransitionActive)
+					return;
+				if (!BarUiAnimationEnabled)
+				{
+					state.bottomDockIndicatorWord.CancelContentTransition();
+					state.bottomDockIndicatorWord.content.Initialization(
+						state.bottomDockIndicatorDesiredLabel);
+					state.bottomDockIndicatorWord.contentScale = 1.0;
+					state.bottomDockIndicatorWord.contentPct = 1.0;
+					state.bottomDockIndicatorTextWidthDip.SetDirect(
+						desiredTextWidthDip);
+					state.bottomDockIndicatorTextTransitionActive = false;
+					state.bottomDockIndicatorContentPhase =
+						BarBottomDockIndicatorContentPhase::Stable;
+					state.dirtyRegionTracker.MarkChanged(
+						dockTargetIndicatorDirtyKey);
+					state.presentDecision.AddDemand({ true, false, false });
+					return;
+				}
+				state.bottomDockIndicatorTextTransitionActive =
+					state.bottomDockIndicatorWord.TransitionToString(
+						state.bottomDockIndicatorDesiredLabel,
+						BarUiDefaultOperationDur, 0.5, 0.8)
+					|| state.bottomDockIndicatorTextTransitionActive;
+				state.bottomDockIndicatorContentPhase =
+					BarBottomDockIndicatorContentPhase::SwappingText;
+				state.dirtyRegionTracker.MarkChanged(
+					dockTargetIndicatorDirtyKey);
+				state.presentDecision.AddDemand({ true, false, false });
+			};
+		if (state.bottomDockIndicatorHiddenContentPrepared
+			|| state.bottomDockTargetIndicatorProgress.val <= 0.000001)
 		{
-			// 交换期间同时容纳新旧文字，变窄只会在中点换字完成后发生。
-			const auto centeredSize = MeasureDockText(
-				IW(I18nKey.UI.Bar.BottomDock.Mode) + L" · "
-				+ IW(I18nKey.UI.Bar.BottomDock.Centered));
-			const auto normalSize = MeasureDockText(
-				IW(I18nKey.UI.Bar.BottomDock.Mode));
-			dockModeTextSize.width = max({ dockModeTextSize.width,
-				centeredSize.width, normalSize.width });
-			dockModeTextSize.height = max({ dockModeTextSize.height,
-				centeredSize.height, normalSize.height });
+			// 隐藏态已直接换成目标文字，首个可见帧也必须同步准备足够宽度。
+			state.bottomDockIndicatorTextWidthDip.SetDirect(desiredTextWidthDip);
+			state.bottomDockIndicatorContentPhase =
+				BarBottomDockIndicatorContentPhase::Stable;
+			state.bottomDockIndicatorHiddenContentPrepared = false;
 		}
+		else
+		{
+			const double currentWidthDip = max(0.0, static_cast<double>(
+				state.bottomDockIndicatorTextWidthDip.val));
+			const bool textMatches = state.bottomDockIndicatorWord.content.GetVal()
+				== state.bottomDockIndicatorDesiredLabel
+				&& !state.bottomDockIndicatorTextTransitionActive;
+			switch (state.bottomDockIndicatorContentPhase)
+			{
+			case BarBottomDockIndicatorContentPhase::Stable:
+				switch (ResolveBarBottomDockIndicatorContentAction(
+					currentWidthDip, desiredTextWidthDip, textMatches))
+				{
+				case BarBottomDockIndicatorContentAction::ExpandFrame:
+					StartIndicatorWidth(desiredTextWidthDip,
+						BarBottomDockIndicatorContentPhase::ExpandingFrame);
+					break;
+				case BarBottomDockIndicatorContentAction::SwapText:
+					StartIndicatorTextSwap();
+					break;
+				case BarBottomDockIndicatorContentAction::ShrinkFrame:
+					StartIndicatorWidth(desiredTextWidthDip,
+						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
+					break;
+				case BarBottomDockIndicatorContentAction::None:
+					break;
+				}
+				break;
+			case BarBottomDockIndicatorContentPhase::ExpandingFrame:
+				if (textMatches && desiredTextWidthDip + 0.000001
+					< state.bottomDockIndicatorTextWidthDip.tar)
+					StartIndicatorWidth(desiredTextWidthDip,
+						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
+				else if (desiredTextWidthDip
+					> state.bottomDockIndicatorTextWidthDip.tar + 0.000001)
+					StartIndicatorWidth(desiredTextWidthDip,
+						BarBottomDockIndicatorContentPhase::ExpandingFrame);
+				break;
+			case BarBottomDockIndicatorContentPhase::SwappingText:
+				if (!textMatches) StartIndicatorTextSwap();
+				else if (currentWidthDip > desiredTextWidthDip + 0.000001)
+					StartIndicatorWidth(desiredTextWidthDip,
+						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
+				else state.bottomDockIndicatorContentPhase =
+					BarBottomDockIndicatorContentPhase::Stable;
+				break;
+			case BarBottomDockIndicatorContentPhase::ShrinkingFrame:
+				if (!textMatches)
+				{
+					if (currentWidthDip + 0.000001 < desiredTextWidthDip)
+						StartIndicatorWidth(desiredTextWidthDip,
+							BarBottomDockIndicatorContentPhase::ExpandingFrame);
+					else StartIndicatorTextSwap();
+				}
+				break;
+			}
+			if (state.bottomDockIndicatorContentPhase
+				== BarBottomDockIndicatorContentPhase::ExpandingFrame
+				&& state.bottomDockIndicatorTextWidthDip.IsSame())
+			{
+				if (state.bottomDockIndicatorWord.content.GetVal()
+					!= state.bottomDockIndicatorDesiredLabel)
+					StartIndicatorTextSwap();
+				else state.bottomDockIndicatorContentPhase =
+					BarBottomDockIndicatorContentPhase::Stable;
+			}
+			else if (state.bottomDockIndicatorContentPhase
+				== BarBottomDockIndicatorContentPhase::ShrinkingFrame
+				&& state.bottomDockIndicatorTextWidthDip.IsSame())
+				state.bottomDockIndicatorContentPhase =
+					BarBottomDockIndicatorContentPhase::Stable;
+		}
+		dockModeTextSize.width = static_cast<FLOAT>(max(0.0,
+			static_cast<double>(state.bottomDockIndicatorTextWidthDip.val)));
+		dockModeTextSize.height = max(dockModeTextSize.height,
+			desiredDockModeTextSize.height);
 		const double dockVisibleMainBarTopDip =
 			state.bottomDockMapping.MapY(dockMainBarVisibleBounds.topDip);
 		auto MapIndicatorHorizontal = [&](BarBottomDockFeedbackGeometry bounds)
@@ -7748,6 +7902,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				MapIndicatorHorizontal(dockMainButtonVisibleBounds),
 				MapIndicatorHorizontal(dockMainBarVisibleBounds),
 				dockModeTextSize.width, dockModeTextSize.height,
+				dockVisibleMainBarTopDip);
+		D2D1_SIZE_F dockModeReservationTextSize = dockModeTextSize;
+		dockModeReservationTextSize.width = max(
+			dockModeReservationTextSize.width,
+			desiredDockModeTextSize.width);
+		const auto dockTargetIndicatorReservationGeometry =
+			ResolveBarBottomDockIndicatorGeometry(
+				MapIndicatorHorizontal(dockMainButtonVisibleBounds),
+				MapIndicatorHorizontal(dockMainBarVisibleBounds),
+				dockModeReservationTextSize.width,
+				dockModeReservationTextSize.height,
 				dockVisibleMainBarTopDip);
 		auto ValueRange = [](const auto& value)
 			{
@@ -7765,7 +7930,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0;
 		const RECT dockTargetIndicatorEnvelopeBounds =
 			ResolveBarBottomDockIndicatorVisualEnvelope(
-				dockTargetIndicatorGeometry, maximumIndicatorScale,
+				dockTargetIndicatorReservationGeometry, maximumIndicatorScale,
 				BarButtonFrameThicknessDip, indicatorGaussianOutsetDip,
 				frameZoom, BarRenderingAttribute::dirtyAntialiasPadding);
 		// 与绘制属性提示浮窗一致：透明度裁剪，Back 的缩放上溢保留。
