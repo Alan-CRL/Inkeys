@@ -85,6 +85,9 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 ### 2. Signatures
 
 - `Inkeys.CV.ShapeRecognition::RecognizeInkShape(std::span<const InkStrokeView>, float dpiScale) noexcept -> ShapeResult`；导出接口不得包含 `cv::` 类型，OpenCV 头文件只存在于实现单元。
+- `RecognizeInkShape(..., ShapeRecognitionDiagnostics* diagnostics = nullptr) noexcept`；诊断结构只含自有枚举、标量、数组和矩形，不得暴露 `cv::` 类型。
+- `Experimental.Inkeys3.ConsoleOutput.ShapeRecognition : bool = false`；`SetShapeRecognitionDiagnosticsEnabled(bool)` 只在进程启动读取配置后设置。
+- `BuildShapeCorrectionPlan(..., ShapeRecognitionDatasetDiagnostics* diagnostics = nullptr) noexcept` 与 `WriteShapeRecognitionDatasetDiagnostics(...) noexcept` 分离采集和输出。
 - `InkStroke::{RenderOnlyWhenLatest(), SetRenderOnlyWhenLatest(bool)}` 保存独立于 Undo 的内容元数据。
 - `RenderItemState::{active, renderOnlyWhenLatest, visible}` 中 `active` 表示未撤回，`visible` 表示实际参与合成。
 - `CanvasRuntimeHistory::{SetRenderOnlyWhenLatest(...), ClearLatestConditionalGroup()}` 负责条件尾组重算和新分支固化。
@@ -93,6 +96,9 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 - 当前 MVP 只识别水平/竖直矩形。候选必须以最新 Stroke 结尾，由最近最多 6 条连续、同样式、active 且 effectively visible 的 Pen 构成；遇到其他工具、条件/隐藏项、Redo 间隙或样式变化立即截断，并从最大后缀向小后缀尝试。
 - 只有绘制 contact、手势手指、重连候选、导航和待处理输入全部为空，且最终 Pen 已提交后才消费一次触发。识别失败不反复尝试同一 history revision。
+- 数据集诊断默认关闭且只在非 Release 实验页显示；开关文案必须说明下次启动生效。独立开启时应在 Draw3 启动前分配控制台，但不得顺带开启 Draw3 设备/驱动环境诊断。
+- 同一次最终抬笔尝试只读取一次诊断原子开关。关闭时不得构造 dataset/attempt 容器或格式化字符串，并向 CV/adapter 传 `nullptr`；开启时从最大到最小后缀记录候选停止原因、笔画/点数、DPI、样式、输入与视觉边界、实际中位笔宽、替换宽度、所有几何指标/阈值、置信度、结果和明确拒绝码。
+- `median_width` 必须来自视觉诊断的实际输入中位宽；`replacement_width` 只在生成修正结果时赋值，拒绝样本保持 0。诊断 writer 必须 `noexcept` 并在分配/控制台异常时关闭失败，不能终止绘制线程。
 - 识别器最多处理每笔 1024 个采样点、总计 4096 点；非法坐标/DPI、超限、OpenCV 异常或任一硬门槛失败都返回 `Unknown`。矩形硬门槛包括最小尺寸/长宽比、矩形度、四角简化、局部与整边偏轴、单边/总覆盖、离边比例、逐笔边带比例和周长比；阈值变化必须同步正反样本。
 - 条件可见性按 active 序列从后向前计算：`visible = active && (!renderOnlyWhenLatest || 后方不存在 active 非条件项)`。修正时原稿设为条件项，追加的 `OutlineRectangle` 保持非条件；因此矩形存在时隐藏原稿，撤回矩形后末尾条件原稿整体恢复可见。
 - 撤回矩形仍只消耗一个历史项；之后原稿按原 Stroke 顺序逐笔撤回。Redo 先隐藏条件原稿再恢复矩形。撤回矩形后追加新内容时，必须先把当前末尾条件组固化为普通内容并同步 document sidecar，再丢弃 Redo 分支。
@@ -103,6 +109,9 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 | 条件 | 必需结果 |
 |---|---|
 | 输入非法、OpenCV 异常、低置信度或负类冲突 | 返回 `Unknown`，原稿与 history 不变 |
+| 诊断关闭 | 仅一次 atomic load；不构造报告、不格式化、不输出 |
+| 候选在样式/工具/history 边界截断 | 输出真实 collection stop reason；恰好 6 笔不得覆盖已记录的 `history_start` 等原因 |
+| 诊断格式化或控制台写入异常 | 吞掉诊断异常，识别、修正与绘制线程继续正常运行 |
 | history/document 预演或修正 Stroke 追加失败 | 回滚暂存尾项，不设置条件标记 |
 | GPU restore 在提交前失败或可能部分写入 | 用旧 history 重放受影响 Tile；仍失败则请求权威刷新，CPU 状态保持旧值 |
 | Undo/Redo 可见性重算失败 | 不推进 active 游标或 redo 栈，并恢复旧条件可见性 |
@@ -111,21 +120,23 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 ### 5. Good / Base / Bad Cases
 
 - Good：四笔矩形被替换为同色、同透明度、同中位笔宽的 `OutlineRectangle`；Undo 一次恢复全部原稿，Redo 再次隐藏原稿并显示矩形。
+- Good：开启数据集输出后，每次最终抬笔用 `begin/attempt/geometry/fit/thresholds/outcome/end` 记录全部后缀；拒绝样本仍保留真实 `median_width`、DPI、视觉边界及首个拒绝原因。
 - Base：候选不是矩形或仍有活动输入时完全保持普通 Pen 流程；单笔闭合、乱序反向、允许的小断角和重复边仍按同一合同判断。
-- Bad：把 `renderOnlyWhenLatest` 当作 `active=false`、只更新 document 或 history 一侧、跨过隐藏/异样式项拼候选，或在 GPU restore 前提交 CPU 游标。
+- Bad：把 `renderOnlyWhenLatest` 当作 `active=false`、只更新 document 或 history 一侧、跨过隐藏/异样式项拼候选、用 replacement width 冒充拒绝样本中位笔宽，或在 GPU restore 前提交 CPU 游标。
 
 ### 6. Tests Required
 
 - 识别正例覆盖标准四笔、单笔闭合、乱序/反向、轻微抖动、小断角和重复边；负例覆盖小图形、U/C、圆/椭圆、三角形、平行四边形、倾斜矩形、X、缺边、局部锯齿/过大转角、内部乱画和最新无关笔画。
 - History 覆盖修正、Undo、原稿逐笔 Undo、Redo、Redo 分支丢弃、页面隔离、条件尾组 Tile 可见性及可见性操作失败回滚。
 - 触发门分别断言绘制 contact、手势、重连、导航和 pending input 阻止识别，全抬起后同一 revision 只执行一次。
+- 诊断测试覆盖默认关闭/独立切换、accepted 与明确拒绝码、无候选/非 Pen/样式边界、6 笔 history start、formatter 的 DPI/视觉边界/中位宽与替换宽度区分，以及 writer 关闭失败。
 - 构建完整 `InkeysRepo.sln Debug|ARM64`，运行 `InkeysHeadlessTests.exe --no-window` 与 `Inkeys.exe --draw3-hidden-test`；linker map 只允许 OpenCV core/imgproc 对象进入 EXE，PE 导入和输出目录不得出现 OpenCV/FFmpeg DLL。
 
 ### 7. Wrong vs Correct
 
-Wrong：`标记原稿 inactive -> 追加 Shape -> GPU 失败后再猜测恢复`。
+Wrong：`标记原稿 inactive -> 追加 Shape -> GPU 失败后再猜测恢复`；或每层重复读取开关并让拒绝样本输出 `median_width=0`。
 
-Correct：`复制 history 预演条件可见性 -> 恢复 footprint union -> 成功后原子提交 metadata/history/raster state`。
+Correct：`复制 history 预演条件可见性 -> 恢复 footprint union -> 成功后原子提交 metadata/history/raster state`；诊断在 latch 消费后快照一次开关，按需采集自有类型指标并关闭失败输出。
 
 ## Scenario: 工具光标样式与有效透明度
 

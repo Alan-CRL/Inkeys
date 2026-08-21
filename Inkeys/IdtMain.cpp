@@ -29,6 +29,7 @@ import Inkeys.Message;
 import Inkeys.Window;
 import Inkeys.Display;
 import Inkeys.Drawing.Draw3.diagnostics;
+import Inkeys.Drawing.Draw3.shape_recognition;
 
 #include "IdtMain.h"
 #include "resource.h"
@@ -131,6 +132,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 #ifndef IDT_RELEASE
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
+	bool shapeRecognitionConsoleOutputEnabled = false;
 #endif
 
 	// 路径预处理
@@ -1080,9 +1082,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 			draw3ConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+			shapeRecognitionConsoleOutputEnabled =
+				config.Experimental.Inkeys3.ConsoleOutput.ShapeRecognition;
 			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
 				draw3ConsoleOutputEnabled);
-			if (draw3ConsoleOutputEnabled)
+			Inkeys::Drawing::Draw3::SetShapeRecognitionDiagnosticsEnabled(
+				shapeRecognitionConsoleOutputEnabled);
+			if (draw3ConsoleOutputEnabled || shapeRecognitionConsoleOutputEnabled)
 			{
 				// Draw3 启动前完成绑定，才能看到设备和驱动环境信息。
 				InitializeDebugConsole();
@@ -1616,7 +1622,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 启动 PPT 联动插件
 	#ifndef IDT_RELEASE
-	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled)
+	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled &&
+		!shapeRecognitionConsoleOutputEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();

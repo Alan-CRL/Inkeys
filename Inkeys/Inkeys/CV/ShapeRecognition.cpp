@@ -216,22 +216,74 @@ namespace Inkeys::CV
 		}
 	}
 
-	ShapeResult RecognizeInkShape(
-		std::span<const InkStrokeView> strokes, float dpiScale) noexcept
+	const char* ShapeRecognitionRejectReasonName(
+		ShapeRecognitionRejectReason reason) noexcept
 	{
+		switch (reason)
+		{
+		case ShapeRecognitionRejectReason::None: return "none";
+		case ShapeRecognitionRejectReason::InvalidStrokeCount: return "invalid_stroke_count";
+		case ShapeRecognitionRejectReason::InvalidDpiScale: return "invalid_dpi_scale";
+		case ShapeRecognitionRejectReason::SourcePointLimit: return "source_point_limit";
+		case ShapeRecognitionRejectReason::StrokeResamplingFailed: return "stroke_resampling_failed";
+		case ShapeRecognitionRejectReason::InvalidSampleSet: return "invalid_sample_set";
+		case ShapeRecognitionRejectReason::InvalidMedianWidth: return "invalid_median_width";
+		case ShapeRecognitionRejectReason::HullTooSmall: return "hull_too_small";
+		case ShapeRecognitionRejectReason::InvalidHullGeometry: return "invalid_hull_geometry";
+		case ShapeRecognitionRejectReason::HullIsNotQuadrilateral: return "hull_not_quadrilateral";
+		case ShapeRecognitionRejectReason::InvalidBounds: return "invalid_bounds";
+		case ShapeRecognitionRejectReason::ShapeTooSmall: return "shape_too_small";
+		case ShapeRecognitionRejectReason::AspectRatioTooLarge: return "aspect_ratio_too_large";
+		case ShapeRecognitionRejectReason::RectangularityTooLow: return "rectangularity_too_low";
+		case ShapeRecognitionRejectReason::PathLengthRatioOutOfRange: return "path_ratio_out_of_range";
+		case ShapeRecognitionRejectReason::StrokeEdgeRatioTooLow: return "stroke_edge_ratio_too_low";
+		case ShapeRecognitionRejectReason::OffEdgeRatioTooHigh: return "off_edge_ratio_too_high";
+		case ShapeRecognitionRejectReason::EdgeCoverageTooLow: return "edge_coverage_too_low";
+		case ShapeRecognitionRejectReason::InvalidLineFit: return "invalid_line_fit";
+		case ShapeRecognitionRejectReason::AxisDeviationTooLarge: return "axis_deviation_too_large";
+		case ShapeRecognitionRejectReason::TotalCoverageTooLow: return "total_coverage_too_low";
+		case ShapeRecognitionRejectReason::ConfidenceTooLow: return "confidence_too_low";
+		case ShapeRecognitionRejectReason::OpenCvException: return "opencv_exception";
+		default: return "unexpected_exception";
+		}
+	}
+
+	ShapeResult RecognizeInkShape(
+		std::span<const InkStrokeView> strokes, float dpiScale,
+		ShapeRecognitionDiagnostics* diagnostics) noexcept
+	{
+		if (diagnostics)
+		{
+			*diagnostics = {};
+			diagnostics->inputStrokeCount = strokes.size();
+			diagnostics->dpiScale = dpiScale;
+		}
+		const auto reject = [&](ShapeRecognitionRejectReason reason) noexcept
+		{
+			if (diagnostics)
+			{
+				diagnostics->accepted = false;
+				diagnostics->rejectionReason = reason;
+			}
+			return ShapeResult{};
+		};
 		try
 		{
-			if (strokes.empty() || strokes.size() > kMaximumStrokeCount ||
-				!std::isfinite(dpiScale) || dpiScale <= 0.0f || dpiScale > 16.0f)
-				return {};
+			if (strokes.empty() || strokes.size() > kMaximumStrokeCount)
+				return reject(ShapeRecognitionRejectReason::InvalidStrokeCount);
+			if (!std::isfinite(dpiScale) || dpiScale <= 0.0f || dpiScale > 16.0f)
+				return reject(ShapeRecognitionRejectReason::InvalidDpiScale);
 			std::size_t sourcePointCount = 0;
 			for (const InkStrokeView& stroke : strokes)
 			{
 				if (stroke.points.size() > kMaximumSourcePoints ||
-					sourcePointCount > kMaximumSourcePoints - stroke.points.size()) return {};
+					sourcePointCount > kMaximumSourcePoints - stroke.points.size())
+					return reject(ShapeRecognitionRejectReason::SourcePointLimit);
 				sourcePointCount += stroke.points.size();
 			}
-			if (sourcePointCount > kMaximumSourcePoints) return {};
+			if (diagnostics) diagnostics->sourcePointCount = sourcePointCount;
+			if (sourcePointCount > kMaximumSourcePoints)
+				return reject(ShapeRecognitionRejectReason::SourcePointLimit);
 
 			const std::size_t perStrokeBudget = std::min(kMaximumPointsPerStroke,
 				kMaximumTotalPoints / strokes.size());
@@ -244,32 +296,50 @@ namespace Inkeys::CV
 			for (std::size_t index = 0; index < strokes.size(); ++index)
 			{
 				if (!ResampleStroke(strokes[index].points,
-					perStrokeBudget, dpiScale, sampled[index])) return {};
+					perStrokeBudget, dpiScale, sampled[index]))
+					return reject(ShapeRecognitionRejectReason::StrokeResamplingFailed);
 				sourcePathLength += sampled[index].sourceLength;
-				if (!std::isfinite(sourcePathLength)) return {};
+				if (!std::isfinite(sourcePathLength))
+					return reject(ShapeRecognitionRejectReason::InvalidSampleSet);
 				for (const InkPoint& point : sampled[index].points)
 				{
 					allPoints.emplace_back(point.x, point.y);
 					if (point.width > 0.0f) widths.push_back(point.width);
 				}
 			}
+			if (diagnostics)
+			{
+				diagnostics->sampledPointCount = allPoints.size();
+				diagnostics->sourcePathLength = sourcePathLength;
+			}
 			if (allPoints.size() < 4 || allPoints.size() > kMaximumTotalPoints ||
-				widths.empty()) return {};
+				widths.empty()) return reject(ShapeRecognitionRejectReason::InvalidSampleSet);
 			const auto medianPosition = widths.begin() + widths.size() / 2;
 			std::nth_element(widths.begin(), medianPosition, widths.end());
 			const float medianWidth = *medianPosition;
-			if (!std::isfinite(medianWidth) || medianWidth <= 0.0f) return {};
+			if (diagnostics) diagnostics->medianWidth = medianWidth;
+			if (!std::isfinite(medianWidth) || medianWidth <= 0.0f)
+				return reject(ShapeRecognitionRejectReason::InvalidMedianWidth);
 
 			std::vector<cv::Point2f> hull;
 			cv::convexHull(allPoints, hull, true, true);
-			if (hull.size() < 4) return {};
+			if (diagnostics) diagnostics->hullPointCount = hull.size();
+			if (hull.size() < 4) return reject(ShapeRecognitionRejectReason::HullTooSmall);
 			const double hullPerimeter = cv::arcLength(hull, true);
 			const double hullArea = std::abs(cv::contourArea(hull));
+			if (diagnostics)
+			{
+				diagnostics->hullPerimeter = static_cast<float>(hullPerimeter);
+				diagnostics->hullArea = static_cast<float>(hullArea);
+			}
 			if (!std::isfinite(hullPerimeter) || !std::isfinite(hullArea) ||
-				hullPerimeter <= 0.0 || hullArea <= 0.0) return {};
+				hullPerimeter <= 0.0 || hullArea <= 0.0)
+				return reject(ShapeRecognitionRejectReason::InvalidHullGeometry);
 			std::vector<cv::Point2f> quad;
 			cv::approxPolyDP(hull, quad, hullPerimeter * 0.02, true);
-			if (quad.size() != 4 || !cv::isContourConvex(quad)) return {};
+			if (diagnostics) diagnostics->approximatedCornerCount = quad.size();
+			if (quad.size() != 4 || !cv::isContourConvex(quad))
+				return reject(ShapeRecognitionRejectReason::HullIsNotQuadrilateral);
 
 			float left = allPoints.front().x;
 			float right = left;
@@ -286,21 +356,46 @@ namespace Inkeys::CV
 			const float height = bottom - top;
 			const float shortSide = std::min(width, height);
 			const float longSide = std::max(width, height);
+			const float minimumShortSide = std::max(
+				32.0f * dpiScale, 8.0f * medianWidth);
+			const float aspectRatio = shortSide > 0.0f
+				? longSide / shortSide : (std::numeric_limits<float>::infinity)();
+			if (diagnostics)
+			{
+				diagnostics->bounds = { left, top, right, bottom };
+				diagnostics->shortSide = shortSide;
+				diagnostics->longSide = longSide;
+				diagnostics->minimumShortSide = minimumShortSide;
+				diagnostics->aspectRatio = aspectRatio;
+			}
 			if (!std::isfinite(shortSide) || !std::isfinite(longSide) ||
-				shortSide < std::max(32.0f * dpiScale, 8.0f * medianWidth) ||
-				longSide / shortSide > kMaximumAspectRatio) return {};
+				shortSide <= 0.0f || longSide <= 0.0f)
+				return reject(ShapeRecognitionRejectReason::InvalidBounds);
+			if (shortSide < minimumShortSide)
+				return reject(ShapeRecognitionRejectReason::ShapeTooSmall);
+			if (aspectRatio > kMaximumAspectRatio)
+				return reject(ShapeRecognitionRejectReason::AspectRatioTooLarge);
 			const float rectangleArea = width * height;
 			const float rectangularity = static_cast<float>(hullArea) / rectangleArea;
+			if (diagnostics) diagnostics->rectangularity = rectangularity;
 			if (!std::isfinite(rectangularity) ||
-				rectangularity < kMinimumRectangularity || rectangularity > 1.01f) return {};
+				rectangularity < kMinimumRectangularity || rectangularity > 1.01f)
+				return reject(ShapeRecognitionRejectReason::RectangularityTooLow);
 
 			const AxisAlignedRectangle rectangle{ left, top, right, bottom };
 			const std::array<float, 4> edgeLengths = { width, height, width, height };
 			const float perimeter = 2.0f * (width + height);
 			const float pathRatio = sourcePathLength / perimeter;
+			if (diagnostics)
+			{
+				diagnostics->rectanglePerimeter = perimeter;
+				diagnostics->pathPerimeterRatio = pathRatio;
+			}
 			if (!std::isfinite(pathRatio) || pathRatio < kMinimumPathPerimeterRatio ||
-				pathRatio > kMaximumPathPerimeterRatio) return {};
+				pathRatio > kMaximumPathPerimeterRatio)
+				return reject(ShapeRecognitionRejectReason::PathLengthRatioOutOfRange);
 			const float edgeBand = std::max(3.0f * dpiScale, 1.5f * medianWidth);
+			if (diagnostics) diagnostics->edgeBand = edgeBand;
 			const float minimumLongSegmentLength =
 				std::max(8.0f * dpiScale, 2.0f * medianWidth);
 
@@ -308,6 +403,7 @@ namespace Inkeys::CV
 			std::array<std::vector<cv::Point2f>, 4> edgePoints;
 			float totalSegmentLength = 0.0f;
 			float offEdgeLength = 0.0f;
+			float minimumStrokeOnEdgeRatio = 1.0f;
 			for (const SampledStroke& stroke : sampled)
 			{
 				float strokeLength = 0.0f;
@@ -350,12 +446,27 @@ namespace Inkeys::CV
 					intervals[edge].push_back({ projectionBegin, projectionEnd });
 					strokeOnEdgeLength += segmentLength;
 				}
-				if (strokeLength <= 0.0f ||
-					strokeOnEdgeLength / strokeLength < 1.0f - kMaximumOffEdgeRatio - 0.08f)
-					return {};
+				const float strokeOnEdgeRatio = strokeLength > 0.0f
+					? strokeOnEdgeLength / strokeLength : 0.0f;
+				minimumStrokeOnEdgeRatio = std::min(
+					minimumStrokeOnEdgeRatio, strokeOnEdgeRatio);
+				if (strokeLength <= 0.0f || strokeOnEdgeRatio < 0.80f)
+				{
+					if (diagnostics)
+						diagnostics->minimumStrokeOnEdgeRatio = minimumStrokeOnEdgeRatio;
+					return reject(ShapeRecognitionRejectReason::StrokeEdgeRatioTooLow);
+				}
 			}
-			if (totalSegmentLength <= 0.0f ||
-				offEdgeLength / totalSegmentLength > kMaximumOffEdgeRatio) return {};
+			const float offEdgeRatio = totalSegmentLength > 0.0f
+				? offEdgeLength / totalSegmentLength
+				: (std::numeric_limits<float>::infinity)();
+			if (diagnostics)
+			{
+				diagnostics->minimumStrokeOnEdgeRatio = minimumStrokeOnEdgeRatio;
+				diagnostics->offEdgeRatio = offEdgeRatio;
+			}
+			if (totalSegmentLength <= 0.0f || offEdgeRatio > kMaximumOffEdgeRatio)
+				return reject(ShapeRecognitionRejectReason::OffEdgeRatioTooHigh);
 
 			float maximumAxisDeviation = 0.0f;
 			double longSegmentWeightedDeviation = 0.0;
@@ -385,7 +496,8 @@ namespace Inkeys::CV
 					if (maximumDistance > edgeBand) continue;
 					const float deviation = SegmentAxisDeviationDegrees(
 						deltaX, deltaY, edge == 0 || edge == 2);
-					if (!std::isfinite(deviation)) return {};
+					if (!std::isfinite(deviation))
+						return reject(ShapeRecognitionRejectReason::InvalidLineFit);
 					maximumAxisDeviation = std::max(maximumAxisDeviation, deviation);
 					longSegmentWeightedDeviation += deviation * segmentLength;
 					longSegmentTotalLength += segmentLength;
@@ -399,13 +511,15 @@ namespace Inkeys::CV
 			{
 				const float covered = MergedCoverage(intervals[edge], edgeLengths[edge]);
 				coverages[edge] = covered / edgeLengths[edge];
+				if (diagnostics) diagnostics->edgeCoverage[edge] = coverages[edge];
 				if (coverages[edge] < kMinimumEdgeCoverage || edgePoints[edge].size() < 2)
-					return {};
+					return reject(ShapeRecognitionRejectReason::EdgeCoverageTooLow);
 				coveredPerimeter += covered;
 				cv::Vec4f line = {};
 				cv::fitLine(edgePoints[edge], line, cv::DIST_L2, 0.0, 0.01, 0.01);
 				const float deviation = AxisDeviationDegrees(line, edge == 0 || edge == 2);
-				if (!std::isfinite(deviation)) return {};
+				if (!std::isfinite(deviation))
+					return reject(ShapeRecognitionRejectReason::InvalidLineFit);
 				maximumAxisDeviation = std::max(maximumAxisDeviation, deviation);
 				edgeWeightedAxisDeviation += deviation * edgeLengths[edge];
 			}
@@ -415,13 +529,22 @@ namespace Inkeys::CV
 			{
 				const float longSegmentAverage = static_cast<float>(
 					longSegmentWeightedDeviation / longSegmentTotalLength);
-				if (!std::isfinite(longSegmentAverage)) return {};
+				if (!std::isfinite(longSegmentAverage))
+					return reject(ShapeRecognitionRejectReason::InvalidLineFit);
 				weightedAxisDeviation = std::max(
 					weightedAxisDeviation, longSegmentAverage);
 			}
-			if (totalCoverage < kMinimumTotalCoverage ||
-				maximumAxisDeviation > kMaximumAxisDeviationDegrees ||
-				weightedAxisDeviation > kMaximumAverageAxisDeviationDegrees) return {};
+			if (diagnostics)
+			{
+				diagnostics->totalCoverage = totalCoverage;
+				diagnostics->maximumAxisDeviationDegrees = maximumAxisDeviation;
+				diagnostics->weightedAxisDeviationDegrees = weightedAxisDeviation;
+			}
+			if (totalCoverage < kMinimumTotalCoverage)
+				return reject(ShapeRecognitionRejectReason::TotalCoverageTooLow);
+			if (maximumAxisDeviation > kMaximumAxisDeviationDegrees ||
+				weightedAxisDeviation > kMaximumAverageAxisDeviationDegrees)
+				return reject(ShapeRecognitionRejectReason::AxisDeviationTooLarge);
 
 			const std::array<InkPoint, 4> corners = {
 				InkPoint{ left, top, medianWidth }, InkPoint{ right, top, medianWidth },
@@ -438,9 +561,9 @@ namespace Inkeys::CV
 				worstCornerScore = std::min(worstCornerScore,
 					Clamp01(1.0f - nearest / cornerTolerance));
 			}
+			if (diagnostics) diagnostics->worstCornerScore = worstCornerScore;
 
 			const float worstCoverage = *std::min_element(coverages.begin(), coverages.end());
-			const float offEdgeRatio = offEdgeLength / totalSegmentLength;
 			// 这些量本身已是 0..1 比例；硬门槛先拒绝低质量候选，
 			// 置信度保留实际覆盖率，避免把允许的小断角再次过度惩罚。
 			const float rectangularityScore = Clamp01(rectangularity);
@@ -454,16 +577,23 @@ namespace Inkeys::CV
 				0.22f * edgeCoverageScore + 0.10f * totalCoverageScore +
 				0.14f * axisScore + 0.14f * straightnessScore +
 				0.18f * worstCornerScore;
-			if (!std::isfinite(confidence) || confidence < kMinimumConfidence) return {};
+			if (diagnostics) diagnostics->confidence = confidence;
+			if (!std::isfinite(confidence) || confidence < kMinimumConfidence)
+				return reject(ShapeRecognitionRejectReason::ConfidenceTooLow);
+			if (diagnostics)
+			{
+				diagnostics->accepted = true;
+				diagnostics->rejectionReason = ShapeRecognitionRejectReason::None;
+			}
 			return { ShapeType::AxisAlignedRectangle, confidence, rectangle };
 		}
 		catch (const cv::Exception&)
 		{
-			return {};
+			return reject(ShapeRecognitionRejectReason::OpenCvException);
 		}
 		catch (...)
 		{
-			return {};
+			return reject(ShapeRecognitionRejectReason::UnexpectedException);
 		}
 	}
 }

@@ -52,3 +52,9 @@ Draw3 contact lifecycle
 - OpenCV 实现只使用 core/imgproc 的 CPU 算法，不引入摄像头、GUI、文件编解码或 Win10 API。
 - 所有输入必须 finite，尺寸/计数计算先检查范围；`noexcept` 边界捕获 `cv::Exception`、`std::bad_alloc` 与其他异常并返回 Unknown。
 - 识别失败完全保留既有绘制行为；可通过移除适配器调用和新增模块登记回滚，不改变文件格式或 shader ABI。
+
+## Dataset Diagnostics
+
+- `Inkeys.CV.ShapeRecognition` 用自有 `ShapeRecognitionDiagnostics` 返回拒绝原因、固定阈值和阶段指标；仍不向接口暴露 `cv::` 类型。Draw3 适配器补充候选收集停止原因、样式、footprint 计划结果和逐后缀 attempt。
+- `DrawingController` 只在全抬起 latch 被消费后读取一次诊断原子开关；开关关闭时向适配器传空指针，不构造报告或 `ostringstream`。开启时即使没有修正计划也输出拒绝报告，现有修正成功/失败日志使用同一开关。
+- 配置归属 `Inkeys.Other.Config`，设置卡片仅存在于 `#ifndef IDT_RELEASE`。`IdtMain` 在 Draw3 Host 启动前同步开关；ShapeRecognition 可独立触发控制台分配，但不启用 Draw3 设备环境输出。仅 PptCOM 开启时继续延迟分配控制台，避免带出 Draw3 启动日志。

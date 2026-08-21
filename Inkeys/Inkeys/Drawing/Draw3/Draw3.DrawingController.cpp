@@ -3826,7 +3826,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		auto applyShapeCorrection = [&](ShapeCorrectionPlan plan,
-			RECT& frameDirty) -> bool
+			RECT& frameDirty, bool diagnosticsEnabled) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
 			{
@@ -3883,8 +3883,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				std::cout << "[ShapeRecognition] result=failed reason=preview_allocation"
-					<< std::endl;
+				if (diagnosticsEnabled)
+					std::cout << "[ShapeRecognition] result=failed reason=preview_allocation"
+						<< std::endl;
 				return false;
 			}
 
@@ -3902,8 +3903,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				std::cout << "[ShapeRecognition] result=failed reason=document_append"
-					<< std::endl;
+				if (diagnosticsEnabled)
+					std::cout << "[ShapeRecognition] result=failed reason=document_append"
+						<< std::endl;
 				return false;
 			}
 			if (!appendedStroke || *appendedStroke != replacementStrokeIndex)
@@ -3954,8 +3956,9 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, rollback.dirty);
 				if (rollback.path == CompositionRestorePath::Failed || !documentRolledBack)
 					requestAuthoritativeRecovery();
-				std::cout << "[ShapeRecognition] result=failed reason=restore rollback=" <<
-					CompositionRestorePathName(rollback.path) << std::endl;
+				if (diagnosticsEnabled)
+					std::cout << "[ShapeRecognition] result=failed reason=restore rollback=" <<
+						CompositionRestorePathName(rollback.path) << std::endl;
 				return false;
 			}
 
@@ -3996,10 +3999,11 @@ namespace Inkeys::Drawing::Draw3
 			UnionRectInPlace(frameDirty, restored.dirty);
 			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(
 				viewportVisibleClear, true);
-			std::cout << "[ShapeRecognition] page=" << (currentPageIndex_ + 1) <<
-				" item=" << correctionId->index << " confidence=" << plan.confidence <<
-				" path=" << CompositionRestorePathName(restored.path) <<
-				" hot_captured=" << (hotCaptured ? "true" : "false") << std::endl;
+			if (diagnosticsEnabled)
+				std::cout << "[ShapeRecognition] page=" << (currentPageIndex_ + 1) <<
+					" item=" << correctionId->index << " confidence=" << plan.confidence <<
+					" path=" << CompositionRestorePathName(restored.path) <<
+					" hot_captured=" << (hotCaptured ? "true" : "false") << std::endl;
 			return true;
 		};
 
@@ -4733,10 +4737,17 @@ namespace Inkeys::Drawing::Draw3
 			if (!shapeRecognitionTrigger.ConsumeIfReady(
 				page->PageGuid(), runtime.history.Revision(), idleState)) return false;
 
+			const bool diagnosticsEnabled = ShapeRecognitionDiagnosticsEnabled();
+			std::optional<ShapeRecognitionDatasetDiagnostics> diagnostics;
+			if (diagnosticsEnabled) diagnostics.emplace();
 			std::optional<ShapeCorrectionPlan> plan = BuildShapeCorrectionPlan(
-				*canvas, runtime.history, configuration_.dpiScale);
+				*canvas, runtime.history, configuration_.dpiScale,
+				diagnostics ? &*diagnostics : nullptr);
+			if (diagnostics)
+				WriteShapeRecognitionDatasetDiagnostics(*diagnostics);
 			if (!plan) return false;
-			return applyShapeCorrection(std::move(*plan), frameDirty);
+			return applyShapeCorrection(
+				std::move(*plan), frameDirty, diagnosticsEnabled);
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();

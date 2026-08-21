@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -30,12 +32,18 @@ namespace
 		return { { x0, y0, width }, { x1, y1, width } };
 	}
 
-	bool RecognizesRectangle(const std::vector<CvStroke>& strokes)
+	Inkeys::CV::ShapeResult RecognizeShape(const std::vector<CvStroke>& strokes,
+		Inkeys::CV::ShapeRecognitionDiagnostics* diagnostics = nullptr)
 	{
 		std::vector<Inkeys::CV::InkStrokeView> views;
 		views.reserve(strokes.size());
 		for (const CvStroke& stroke : strokes) views.push_back({ stroke });
-		return Inkeys::CV::RecognizeInkShape(views, 1.0f).type ==
+		return Inkeys::CV::RecognizeInkShape(views, 1.0f, diagnostics);
+	}
+
+	bool RecognizesRectangle(const std::vector<CvStroke>& strokes)
+	{
+		return RecognizeShape(strokes).type ==
 			Inkeys::CV::ShapeType::AxisAlignedRectangle;
 	}
 
@@ -147,6 +155,37 @@ namespace
 				60.0f + 40.0f * std::sin(angle), 5.0f });
 		}
 		if (!Expect(!RecognizesRectangle({ circle }), "ellipse")) ++failures;
+
+		Inkeys::CV::ShapeRecognitionDiagnostics acceptedDiagnostics;
+		const Inkeys::CV::ShapeResult accepted = RecognizeShape(
+			StandardRectangle(), &acceptedDiagnostics);
+		if (!Expect(accepted.type == Inkeys::CV::ShapeType::AxisAlignedRectangle &&
+			acceptedDiagnostics.accepted &&
+			acceptedDiagnostics.rejectionReason ==
+				Inkeys::CV::ShapeRecognitionRejectReason::None &&
+			acceptedDiagnostics.sourcePointCount == 8 &&
+			acceptedDiagnostics.sampledPointCount >= 4 &&
+			acceptedDiagnostics.sampledPointCount <=
+				acceptedDiagnostics.thresholds.maximumTotalSampledPoints &&
+			acceptedDiagnostics.confidence >=
+				acceptedDiagnostics.thresholds.minimumConfidence,
+			"accepted sample exposes complete diagnostics")) ++failures;
+
+		Inkeys::CV::ShapeRecognitionDiagnostics smallDiagnostics;
+		const Inkeys::CV::ShapeResult small = RecognizeShape({
+			Line(0.0f, 0.0f, 20.0f, 0.0f), Line(20.0f, 0.0f, 20.0f, 20.0f),
+			Line(20.0f, 20.0f, 0.0f, 20.0f), Line(0.0f, 20.0f, 0.0f, 0.0f) },
+			&smallDiagnostics);
+		if (!Expect(small.type == Inkeys::CV::ShapeType::Unknown &&
+			!smallDiagnostics.accepted &&
+			smallDiagnostics.rejectionReason ==
+				Inkeys::CV::ShapeRecognitionRejectReason::ShapeTooSmall &&
+			smallDiagnostics.shortSide == 20.0f &&
+			smallDiagnostics.minimumShortSide == 40.0f &&
+			smallDiagnostics.thresholds.minimumShortSideWidthMultiple == 8.0f &&
+			std::string_view(Inkeys::CV::ShapeRecognitionRejectReasonName(
+				smallDiagnostics.rejectionReason)) == "shape_too_small",
+			"rejected sample exposes reason metric and threshold")) ++failures;
 		return failures;
 	}
 
@@ -243,13 +282,24 @@ namespace
 			if (!index || !footprint || !history.AppendStroke(*index, *footprint))
 				return failures + 1;
 		}
-		const auto plan = BuildShapeCorrectionPlan(*canvas, history, 1.0f);
+		ShapeRecognitionDatasetDiagnostics acceptedDataset;
+		const auto plan = BuildShapeCorrectionPlan(
+			*canvas, history, 1.0f, &acceptedDataset);
 		if (!Expect(plan.has_value() && plan->sourceItems.size() == 4 &&
 			plan->replacement.Style().inkType == StoredInkType::OutlineRectangle &&
 			plan->replacement.Style().fallbackRgb == style.fallbackRgb &&
 			plan->replacement.Style().opacity == style.opacity &&
 			plan->replacement.Points()[0].width == 5.0f,
 			"adapter preserves style and all source strokes")) ++failures;
+		if (!Expect(acceptedDataset.accepted &&
+			acceptedDataset.acceptedStrokeCount == 4 &&
+			acceptedDataset.collectedStrokeCount == 4 &&
+			acceptedDataset.attempts.size() == 1 &&
+			acceptedDataset.attempts.front().outcome ==
+				ShapeRecognitionAttemptOutcome::Accepted &&
+			acceptedDataset.attempts.front().vision.accepted &&
+			acceptedDataset.attempts.front().sourcePointCount == 8,
+			"adapter reports accepted maximum suffix")) ++failures;
 		if (!Expect(canvas->SetStrokeRenderOnlyWhenLatest(0, true) &&
 			canvas->Strokes()[0].RenderOnlyWhenLatest() &&
 			canvas->SetStrokeRenderOnlyWhenLatest(0, false) &&
@@ -268,6 +318,112 @@ namespace
 		if (!Expect(!canvas->RollbackLastStroke(*unrelatedIndex - 1) &&
 			canvas->RollbackLastStroke(*unrelatedIndex) && canvas->Strokes().size() == 4,
 			"uncommitted tail rollback is index-guarded")) ++failures;
+
+		std::array<std::uint8_t, 16> diagnosticBytes = {};
+		diagnosticBytes[15] = 2;
+		InkPage diagnosticPage{ InkGuid(diagnosticBytes) };
+		InkCanvas* diagnosticCanvas = diagnosticPage.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasRuntimeHistory diagnosticHistory;
+		ShapeRecognitionDatasetDiagnostics collectionDiagnostics;
+		if (!Expect(diagnosticCanvas &&
+			!BuildShapeCorrectionPlan(*diagnosticCanvas, diagnosticHistory, 1.0f,
+				&collectionDiagnostics).has_value() &&
+			collectionDiagnostics.collectionStopReason ==
+				ShapeCandidateCollectionStopReason::NoActiveItem,
+			"adapter reports no active candidate")) ++failures;
+
+		StoredInkStyle highlighterStyle = style;
+		highlighterStyle.inkType = StoredInkType::Highlighter;
+		const auto highlighterIndex = diagnosticCanvas->AppendStroke(InkStroke(
+			highlighterStyle, { { 0.0f, 0.0f, 5.0f }, { 100.0f, 0.0f, 5.0f } }));
+		const auto highlighterFootprint = highlighterIndex
+			? BuildStrokeTileFootprint(diagnosticCanvas->Strokes()[*highlighterIndex])
+			: std::nullopt;
+		if (!highlighterIndex || !highlighterFootprint ||
+			!diagnosticHistory.AppendStroke(*highlighterIndex, *highlighterFootprint))
+			return failures + 1;
+		if (!Expect(!BuildShapeCorrectionPlan(*diagnosticCanvas, diagnosticHistory,
+			1.0f, &collectionDiagnostics).has_value() &&
+			collectionDiagnostics.collectionStopReason ==
+				ShapeCandidateCollectionStopReason::NonPenStroke &&
+			collectionDiagnostics.collectedStrokeCount == 0,
+			"adapter reports non-pen boundary")) ++failures;
+
+		diagnosticBytes[15] = 3;
+		InkPage stylePage{ InkGuid(diagnosticBytes) };
+		InkCanvas* styleCanvas = stylePage.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasRuntimeHistory styleHistory;
+		StoredInkStyle alternateStyle = style;
+		alternateStyle.fallbackRgb = 0x654321u;
+		const std::array<StoredInkStyle, 2> styles = { style, alternateStyle };
+		for (std::size_t index = 0; index < styles.size(); ++index)
+		{
+			const auto strokeIndex = styleCanvas->AppendStroke(InkStroke(styles[index],
+				{ { 10.0f, 20.0f + static_cast<float>(index) * 80.0f, 5.0f },
+				{ 130.0f, 20.0f + static_cast<float>(index) * 80.0f, 5.0f } }));
+			const auto footprint = strokeIndex
+				? BuildStrokeTileFootprint(styleCanvas->Strokes()[*strokeIndex])
+				: std::nullopt;
+			if (!strokeIndex || !footprint ||
+				!styleHistory.AppendStroke(*strokeIndex, *footprint)) return failures + 1;
+		}
+		if (!Expect(!BuildShapeCorrectionPlan(*styleCanvas, styleHistory, 1.0f,
+			&collectionDiagnostics).has_value() &&
+			collectionDiagnostics.collectionStopReason ==
+				ShapeCandidateCollectionStopReason::StyleMismatch &&
+			collectionDiagnostics.collectedStrokeCount == 1 &&
+			collectionDiagnostics.attempts.size() == 1,
+			"adapter reports style boundary before vision attempt")) ++failures;
+
+		diagnosticBytes[15] = 4;
+		InkPage sixStrokePage{ InkGuid(diagnosticBytes) };
+		InkCanvas* sixStrokeCanvas = sixStrokePage.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasRuntimeHistory sixStrokeHistory;
+		for (std::size_t index = 0; index < 6; ++index)
+		{
+			const float y = 20.0f + static_cast<float>(index) * 10.0f;
+			const auto strokeIndex = sixStrokeCanvas->AppendStroke(InkStroke(
+				style, { { 10.0f, y, 5.0f }, { 130.0f, y, 5.0f } }));
+			const auto footprint = strokeIndex
+				? BuildStrokeTileFootprint(sixStrokeCanvas->Strokes()[*strokeIndex])
+				: std::nullopt;
+			if (!strokeIndex || !footprint ||
+				!sixStrokeHistory.AppendStroke(*strokeIndex, *footprint)) return failures + 1;
+		}
+		if (!Expect(!BuildShapeCorrectionPlan(*sixStrokeCanvas, sixStrokeHistory, 1.0f,
+			&collectionDiagnostics).has_value() &&
+			collectionDiagnostics.collectedStrokeCount == 6 &&
+			collectionDiagnostics.collectionStopReason ==
+				ShapeCandidateCollectionStopReason::HistoryStart,
+			"six-stroke history start is not reported as a truncated candidate")) ++failures;
+
+		ShapeRecognitionDatasetDiagnostics formatterDiagnostics;
+		formatterDiagnostics.attempts.emplace_back();
+		auto& formatterAttempt = formatterDiagnostics.attempts.front();
+		formatterAttempt.vision.dpiScale = 1.5f;
+		formatterAttempt.vision.medianWidth = 7.0f;
+		formatterAttempt.vision.bounds = { 1.0f, 2.0f, 31.0f, 42.0f };
+		formatterAttempt.representativeWidth = 0.0f;
+		std::ostringstream capturedDatasetOutput;
+		std::streambuf* previousOutput = std::cout.rdbuf(capturedDatasetOutput.rdbuf());
+		WriteShapeRecognitionDatasetDiagnostics(formatterDiagnostics);
+		std::cout.rdbuf(previousOutput);
+		const std::string formattedDataset = capturedDatasetOutput.str();
+		if (!Expect(formattedDataset.find("dpi_scale=1.5000") != std::string::npos &&
+			formattedDataset.find("median_width=7.0000") != std::string::npos &&
+			formattedDataset.find("replacement_width=0.0000") != std::string::npos &&
+			formattedDataset.find("vision_bounds=[1.0000,2.0000,31.0000,42.0000]") !=
+				std::string::npos,
+			"dataset formatter preserves rejected-sample scale and geometry")) ++failures;
+
+		if (!Expect(!ShapeRecognitionDiagnosticsEnabled(),
+			"dataset diagnostics default disabled")) ++failures;
+		SetShapeRecognitionDiagnosticsEnabled(true);
+		if (!Expect(ShapeRecognitionDiagnosticsEnabled(),
+			"dataset diagnostics can be enabled independently")) ++failures;
+		SetShapeRecognitionDiagnosticsEnabled(false);
+		if (!Expect(!ShapeRecognitionDiagnosticsEnabled(),
+			"dataset diagnostics can be disabled independently")) ++failures;
 
 		if (!Expect(CanAttemptShapeRecognition({}), "idle trigger accepts once ready")) ++failures;
 		if (!Expect(!CanAttemptShapeRecognition({ true, false, false, false, false }) &&

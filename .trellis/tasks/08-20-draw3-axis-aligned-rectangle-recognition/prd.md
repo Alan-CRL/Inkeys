@@ -26,6 +26,7 @@
 - R12：撤回修正结果后开始新分支时，先清除已恢复原稿的条件标记，再丢弃 Redo，确保新普通内容不会再次隐藏原稿。
 - R13：修正结果的 footprint、dirty rect、热前像、局部 composition restore 和 ordered replay 覆盖原稿与矩形 Tile 的并集。GPU 修正失败保留原稿；可能部分改写 L2 时恢复受影响 Tile，恢复失败则请求权威刷新。
 - R14：页面切换、Clear、Undo/Redo 和历史缓存继续遵守现有每页隔离与绘制线程所有权，不新增窗口线程 D3D 操作。
+- R15：Debug 构建提供默认关闭的 `Experimental.Inkeys3.ConsoleOutput.ShapeRecognition` 数据集诊断开关。开启后，每次最终全抬起识别尝试都输出候选收集停止原因、逐后缀接受/拒绝原因、样式、边界、点数、几何指标和对应阈值；关闭时不构造报告、不格式化文本，也不输出现有 `[ShapeRecognition]` 修正日志。该开关可独立分配控制台，不得联动开启 Draw3 设备环境诊断。
 
 ## Acceptance Criteria
 
@@ -37,9 +38,10 @@
 - [ ] `InkeysRepo.sln Debug|ARM64` 使用 ARM64 Host MSBuild 构建通过，`InkeysHeadlessTests.exe --no-window` 与 `Inkeys.exe --draw3-hidden-test` 通过。
 - [ ] 最终链接只使用静态 OpenCV；输出目录不存在 OpenCV/world/FFmpeg/插件 DLL。
 - [ ] `git diff --check`、变更范围和原文件 BOM/CRLF 检查通过；不启动可见窗口、不创建 commit、不归档任务。
+- [ ] 数据集诊断默认关闭且可独立启用；正例报告 accepted，负例和候选前置边界具有稳定原因，关闭时识别热路径没有报告构造或格式化开销。
 
 ## Out Of Scope
 
 - 倾斜矩形、圆、椭圆、三角形、平行四边形及多分类竞争。
-- `.uink` 文件读写、摄像头、扫描、识别开关、停笔手势和任何可见 UI。
+- `.uink` 文件读写、摄像头、扫描、用户侧识别功能开关、停笔手势和任何发布版可见 UI。
 - 修改 OpenCV vcpkg 配置、overlay-port、HLSL 或参考快照 `inkStrokeModelerTest/`。

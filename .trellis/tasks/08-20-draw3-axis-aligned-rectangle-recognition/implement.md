@@ -10,7 +10,8 @@
 6. 在 DrawingController 的最终 Stroke 提交与全接触抬起门之后接入一次性识别，复用现有 Shape shader 和样式路径。
 7. 在 `Inkeys.vcxproj` 与 `InkeysHeadlessTests.vcxproj` 登记新模块/实现；不修改 HLSL、资源 ID 或参考快照。
 8. 增加识别正反样本、条件历史、Undo/Redo/新分支/页面隔离及触发门测试。
-9. 运行静态检查、ARM64 完整 Solution 构建和两套无窗口测试；审查 OpenCV 静态链接、输出 DLL、编码/CRLF 和变更范围。
+9. 增加默认关闭的 Debug 数据集诊断：记录 CV 阶段指标/阈值、适配层候选边界和逐后缀结果，通过独立配置控制控制台；关闭时不构造报告或格式化输出。
+10. 运行静态检查、ARM64 完整 Solution 构建和两套无窗口测试；审查 OpenCV 静态链接、输出 DLL、编码/CRLF 和变更范围。
 
 ## Validation Commands
 
@@ -24,6 +25,7 @@ git diff --check
 - 用 vcpkg installed 元数据与 linker map/import 检查确认使用 `opencv_core4`、`opencv_imgproc4` 及必要 zlib 静态库。
 - 递归检查最终输出中不存在 `opencv*.dll`、`opencv_world*.dll`、FFmpeg 或 OpenCV plugin DLL。
 - 检查所有既有修改文件保持 UTF-8 BOM/无 BOM 与 CRLF/LF 原状；新 C++ 产品文件遵循相邻模块的 UTF-8 BOM + CRLF。
+- Headless 覆盖诊断 accepted/reject reason、阈值/指标、候选前置边界和开关默认值；静态核对关闭路径传空指针且不进入 formatter。
 
 ## Risk And Rollback Points
 

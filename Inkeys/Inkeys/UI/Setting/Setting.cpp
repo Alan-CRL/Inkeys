@@ -1306,6 +1306,8 @@ SettingSessionCoroutine RunSettingSession()
 			#ifndef IDT_RELEASE
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool ShapeRecognitionConsoleOutput =
+					Inkeys::config.Experimental.Inkeys3.ConsoleOutput.ShapeRecognition;
 			#endif
 			}Inkeys3;
 		}Experimental;
@@ -8203,7 +8205,7 @@ SettingSessionCoroutine RunSettingSession()
 						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 340.0f : 265.0f)
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
-						inkeys3PanelHeight += 150.0f;
+						inkeys3PanelHeight += 225.0f;
 					#endif
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
@@ -8400,6 +8402,37 @@ SettingSessionCoroutine RunSettingSession()
 								{
 									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3 =
 										Experimental.Inkeys3.Draw3ConsoleOutput;
+									QueueConfigWrite();
+								}
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("图形识别数据集输出", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted("图形识别数据集输出");
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+								ImGui::TextUnformatted("下次启动时向控制台输出图形识别样本与判定指标。");
+								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, 25.0f * settingGlobalScale });
+								Widgets::toggle.ToggleBool("##图形识别数据集输出",
+									&Experimental.Inkeys3.ShapeRecognitionConsoleOutput);
+								if (Inkeys::config.Experimental.Inkeys3.ConsoleOutput.ShapeRecognition
+									!= Experimental.Inkeys3.ShapeRecognitionConsoleOutput)
+								{
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.ShapeRecognition =
+										Experimental.Inkeys3.ShapeRecognitionConsoleOutput;
 									QueueConfigWrite();
 								}
 								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
