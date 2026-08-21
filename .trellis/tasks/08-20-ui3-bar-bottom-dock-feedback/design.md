@@ -2,7 +2,7 @@
 
 ## Boundaries
 
-本任务限定在 UI3 Bar 的底栏纯逻辑、渲染循环、窗口呈现事务、输入分发、i18n 资源和 Headless 测试。底栏状态机、20 DIP 捕获阈值、弹性形变算法及窗口唯一 ULW 提交链保持不变。
+本任务限定在 UI3 Bar 的底栏纯逻辑、渲染循环、窗口呈现事务、输入分发、i18n 资源和 Headless 测试。竖向底栏状态机保持不变，新增正交的水平居中状态；20 DIP 捕获阈值、弹簧常量及窗口唯一 ULW 提交链继续复用。
 
 ## Presentation Transaction
 
@@ -17,7 +17,7 @@
 
 ## Visual Lifecycles
 
-交互指示器使用单一 0–1 视觉进度同时驱动透明度和中心等比缩放，动画时长直接复用绘制属性笔类型菜单中问号提示浮窗使用的 `BarUiDefaultOperationDur`，并服从全局动画开关。正在拖动、处于 Docked 且主栏已展开时目标进度为 1；主栏收起、抬手或脱离底栏后目标进度为 0。进入使用 `EaseOutBack`，退出使用 `EaseInBack`，透明度单独裁剪到 `[0, 1]`，缩放保留 Back 上溢。
+交互指示器使用单一 0–1 视觉进度同时驱动透明度和中心等比缩放，动画时长直接复用绘制属性笔类型菜单中问号提示浮窗使用的 `BarUiDefaultOperationDur`，并服从全局动画开关。手势开始时从成功呈现快照锁存是否来自 `Floating`；只有合资格手势进入 Docked 且主栏已展开时目标进度为 1，从 Docked 开始的手势始终为 0。主栏收起、抬手或脱离底栏后目标进度为 0。进入使用 `EaseOutBack`，退出使用 `EaseInBack`，透明度单独裁剪到 `[0, 1]`，缩放保留 Back 上溢。
 
 快速捕获后立即脱离或动画中途收起主栏时，从当前视觉进度连续反向，不重置动画进度；全局动画关闭时直接切换到完整尺寸或零尺寸。
 
@@ -25,7 +25,19 @@
 
 指示器 helper 直接接收正常形态下主按钮和主栏的可见描边边界及实际文字宽高：取两者联合外框的水平中心，竖直中心取经过底栏形变映射后的主栏可见上边框；高度固定为 30 DIP，圆角 6 DIP。文本布局使用现有字体集合和主栏标准 2x2 按钮的 13 DIP 字号。
 
-宽度解析不再读取预留标签。单侧 padding 为 `max(0, (30 DIP - actualTextHeight) / 2)`，最终宽度为 `actualTextWidth + 2 * padding`；中心缩放 helper 围绕完整几何中心生成实际绘制和命中边界。两个 helper 保持纯逻辑，便于 Headless 覆盖语言宽度、异常 metrics、100%/150% 缩放和 Back 上溢。
+单侧 padding 为 `max(0, (30 DIP - actualTextHeight) / 2)`，最终宽度为 `actualTextWidth + 2 * padding`；中心缩放 helper 围绕完整几何中心生成实际绘制和命中边界。渲染线程持有一个持久 `BarUiWordClass`：可见状态在“底栏模式”与“底栏模式 · 居中”之间复用 `TransitionToString`，变宽在换字中点前完成、变窄在中点后完成；隐藏时直接准备下次正确文案。helper 保持纯逻辑，便于 Headless 覆盖语言宽度、异常 metrics、100%/150% 缩放和 Back 上溢。
+
+## Horizontal Center State
+
+水平状态由 `BarBottomDockCenterMode { Free, Centered }` 与独立阶段组成，和竖向模式在同一个 transition serial 中发布。交互侧以最后成功呈现的主按钮/主栏联合外框中心为基准：竖向已 Docked、主栏展开且原始外框中心进入 `monitorBounds` 中点两侧 20 DIP 时捕获；严格越界时脱离。竖向脱离或折叠会强制水平进入 Free 恢复。
+
+渲染侧持有水平捕获平移和形变弹簧。捕获首帧从当前成功呈现像素播入，再把逻辑基础外框锚到显示器中心；脱离首帧从上一视觉中心反推恢复平移，避免 HWND 直接位移与 D2D 映射发生跳变。水平映射围绕联合外框中心对称拉伸，和竖向映射组成同一个二维仿射映射。基础主栏参与形变；绘制属性、几何属性和 More 等根面板按各自按钮锚点的映射差值做刚性平移。
+
+折叠目标发布时水平模式退出但主按钮 X 不变。底栏重新展开时，渲染线程用最终展开联合外框判断 20 DIP 捕获带；符合时建立无提示的程序化 Capturing。启动已有的中置展开布局直接发布 `Centered / Stable`。
+
+## Two-Axis Presentation
+
+成功呈现快照加入水平模式、阶段、弹性、映射和基础外框中心。输入重基准、直接移动失败回滚、DPI/显示器切换和 ULW 失败重试都必须原子处理两轴 tuple。dirty、viewport、PointLight 逆映射、命中和成功边界统一使用二维映射；容量包络同时预留横纵 24 DIP 形变及 Gaussian 外扩。
 
 ## Indicator Rendering And Lighting
 

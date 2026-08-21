@@ -28,6 +28,12 @@ namespace Inkeys::UI::Bar
 		BottomDocked,
 	};
 
+	enum class BarBottomDockCenterMode
+	{
+		Free,
+		Centered,
+	};
+
 	enum class BarBottomDockPhase
 	{
 		Stable,
@@ -65,10 +71,18 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
 		BarBottomDockMode currentMode, bool dragActive,
-		bool mainBarExpanded) noexcept
+		bool mainBarExpanded, bool floatingGestureEligible) noexcept
 	{
 		return currentMode == BarBottomDockMode::BottomDocked
-			&& dragActive && mainBarExpanded;
+			&& dragActive && mainBarExpanded && floatingGestureEligible;
+	}
+
+	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
+		BarBottomDockMode currentMode, bool dragActive,
+		bool mainBarExpanded) noexcept
+	{
+		return ResolveBarBottomDockIndicatorTarget(
+			currentMode, dragActive, mainBarExpanded, true);
 	}
 
 	[[nodiscard]] inline BarBottomDockFeedbackGeometry
@@ -332,6 +346,199 @@ namespace Inkeys::UI::Bar
 			mainVisibleHalfWidthDip, zoom);
 	}
 
+	[[nodiscard]] inline double ResolveBarBottomDockMonitorCenterScreenX(
+		const RECT& monitorBounds) noexcept
+	{
+		return (static_cast<double>(monitorBounds.left)
+			+ static_cast<double>(monitorBounds.right)) / 2.0;
+	}
+
+	[[nodiscard]] inline bool ShouldCaptureBarBottomDockCenter(
+		bool verticallyDocked, bool mainBarExpanded,
+		double bodyCenterScreenX, const RECT& monitorBounds,
+		double zoom) noexcept
+	{
+		if (!verticallyDocked || !mainBarExpanded
+			|| monitorBounds.right <= monitorBounds.left
+			|| !std::isfinite(bodyCenterScreenX))
+			return false;
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		return std::abs(bodyCenterScreenX
+			- ResolveBarBottomDockMonitorCenterScreenX(monitorBounds))
+			<= BarBottomDockThresholdDip * zoom;
+	}
+
+	struct BarBottomDockCenterDragUpdate
+	{
+		BarBottomDockCenterMode mode = BarBottomDockCenterMode::Free;
+		BarBottomDockPhase phase = BarBottomDockPhase::Stable;
+		double monitorCenterScreenX = 0.0;
+		double stableCenterScreenX = 0.0;
+		double constrainedCenterScreenX = 0.0;
+		double elasticOffsetDip = 0.0;
+		bool captured = false;
+		bool detached = false;
+		bool modeChanged = false;
+	};
+
+	class BarBottomDockCenterDragTracker
+	{
+	public:
+		void Begin(BarBottomDockCenterMode mode,
+			double rawBodyCenterScreenX,
+			bool verticallyDocked, bool mainBarExpanded,
+			const BarBottomDockEnvironment& environment) noexcept
+		{
+			const bool enabled = verticallyDocked && mainBarExpanded
+				&& environment.monitorBounds.right
+					> environment.monitorBounds.left;
+			mode_ = enabled ? mode : BarBottomDockCenterMode::Free;
+			phase_ = BarBottomDockPhase::Dragging;
+			stableCenterScreenX_ = ResolveBarBottomDockMonitorCenterScreenX(
+				environment.monitorBounds);
+			previousRawBodyCenterScreenX_ = std::isfinite(rawBodyCenterScreenX)
+				? rawBodyCenterScreenX : stableCenterScreenX_;
+			const double zoom = NormalizeBarBottomDockZoom(environment.zoom);
+			elasticOffsetDip_ = mode_ == BarBottomDockCenterMode::Centered
+				? std::clamp((previousRawBodyCenterScreenX_
+					- stableCenterScreenX_) / zoom,
+					-BarBottomDockThresholdDip, BarBottomDockThresholdDip)
+				: 0.0;
+		}
+
+		[[nodiscard]] BarBottomDockCenterDragUpdate Update(
+			double rawBodyCenterScreenX,
+			bool verticallyDocked, bool mainBarExpanded,
+			const BarBottomDockEnvironment& environment) noexcept
+		{
+			const double zoom = NormalizeBarBottomDockZoom(environment.zoom);
+			const double thresholdScreen = BarBottomDockThresholdDip * zoom;
+			const bool enabled = verticallyDocked && mainBarExpanded
+				&& environment.monitorBounds.right
+					> environment.monitorBounds.left;
+			const double monitorCenter = ResolveBarBottomDockMonitorCenterScreenX(
+				environment.monitorBounds);
+			if (!std::isfinite(rawBodyCenterScreenX))
+				rawBodyCenterScreenX = previousRawBodyCenterScreenX_;
+
+			BarBottomDockCenterDragUpdate result;
+			if (mode_ == BarBottomDockCenterMode::Free
+				&& phase_ == BarBottomDockPhase::Detaching)
+				phase_ = BarBottomDockPhase::Recovering;
+
+			if (!enabled)
+			{
+				if (mode_ == BarBottomDockCenterMode::Centered)
+				{
+					mode_ = BarBottomDockCenterMode::Free;
+					phase_ = BarBottomDockPhase::Detaching;
+					result.detached = true;
+					result.modeChanged = true;
+				}
+				else if (phase_ != BarBottomDockPhase::Recovering)
+					phase_ = BarBottomDockPhase::Dragging;
+			}
+			else if (mode_ == BarBottomDockCenterMode::Free)
+			{
+				const double currentDistance = rawBodyCenterScreenX - monitorCenter;
+				const double previousDistance =
+					previousRawBodyCenterScreenX_ - monitorCenter;
+				const bool inCaptureBand = std::isfinite(currentDistance)
+					&& std::abs(currentDistance) <= thresholdScreen;
+				const bool segmentTouchesCaptureBand =
+					std::isfinite(currentDistance)
+					&& std::isfinite(previousDistance)
+					&& std::min(previousDistance, currentDistance) <= thresholdScreen
+					&& std::max(previousDistance, currentDistance) >= -thresholdScreen;
+				if (inCaptureBand)
+				{
+					stableCenterScreenX_ = monitorCenter;
+					elasticOffsetDip_ = std::clamp(currentDistance / zoom,
+						-BarBottomDockThresholdDip, BarBottomDockThresholdDip);
+					mode_ = BarBottomDockCenterMode::Centered;
+					phase_ = BarBottomDockPhase::Capturing;
+					result.captured = true;
+					result.modeChanged = true;
+				}
+				else if (segmentTouchesCaptureBand)
+				{
+					// 高速横穿捕获带时消费完整线段，最终保持 Free 并连续恢复。
+					stableCenterScreenX_ = monitorCenter;
+					elasticOffsetDip_ = std::copysign(
+						BarBottomDockThresholdDip, currentDistance);
+					phase_ = BarBottomDockPhase::Detaching;
+					result.captured = true;
+					result.detached = true;
+					result.modeChanged = true;
+				}
+			}
+			else
+			{
+				stableCenterScreenX_ = monitorCenter;
+				const double offsetScreen = rawBodyCenterScreenX - monitorCenter;
+				elasticOffsetDip_ = std::clamp(offsetScreen / zoom,
+					-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+				if (std::abs(offsetScreen) > thresholdScreen)
+				{
+					mode_ = BarBottomDockCenterMode::Free;
+					phase_ = BarBottomDockPhase::Detaching;
+					result.detached = true;
+					result.modeChanged = true;
+				}
+				else phase_ = BarBottomDockPhase::Dragging;
+			}
+
+			previousRawBodyCenterScreenX_ = rawBodyCenterScreenX;
+			result.mode = mode_;
+			result.phase = phase_;
+			result.monitorCenterScreenX = monitorCenter;
+			result.stableCenterScreenX = stableCenterScreenX_;
+			result.constrainedCenterScreenX =
+				mode_ == BarBottomDockCenterMode::Centered
+				? stableCenterScreenX_ : rawBodyCenterScreenX;
+			result.elasticOffsetDip = elasticOffsetDip_;
+			return result;
+		}
+
+		void Rebase(double rawBodyCenterScreenX,
+			const RECT& monitorBounds) noexcept
+		{
+			stableCenterScreenX_ = ResolveBarBottomDockMonitorCenterScreenX(
+				monitorBounds);
+			previousRawBodyCenterScreenX_ = std::isfinite(rawBodyCenterScreenX)
+				? rawBodyCenterScreenX : stableCenterScreenX_;
+		}
+
+		void End() noexcept
+		{
+			phase_ = std::abs(elasticOffsetDip_) > BarBottomDockSettleDistanceDip
+				? BarBottomDockPhase::Recovering : BarBottomDockPhase::Stable;
+		}
+
+		void SetSettled() noexcept
+		{
+			phase_ = BarBottomDockPhase::Stable;
+			elasticOffsetDip_ = 0.0;
+		}
+
+		[[nodiscard]] BarBottomDockCenterMode Mode() const noexcept
+		{
+			return mode_;
+		}
+		[[nodiscard]] BarBottomDockPhase Phase() const noexcept { return phase_; }
+		[[nodiscard]] double ElasticOffsetDip() const noexcept
+		{
+			return elasticOffsetDip_;
+		}
+
+	private:
+		BarBottomDockCenterMode mode_ = BarBottomDockCenterMode::Free;
+		BarBottomDockPhase phase_ = BarBottomDockPhase::Stable;
+		double previousRawBodyCenterScreenX_ = 0.0;
+		double stableCenterScreenX_ = 0.0;
+		double elasticOffsetDip_ = 0.0;
+	};
+
 	struct BarBottomDockDragUpdate
 	{
 		BarBottomDockMode mode = BarBottomDockMode::Floating;
@@ -497,6 +704,76 @@ namespace Inkeys::UI::Bar
 		}
 	};
 
+	struct BarBottomDockHorizontalMapping
+	{
+		double baseLeftDip = 0.0;
+		double baseRightDip = 0.0;
+		double visualLeftDip = 0.0;
+		double visualRightDip = 0.0;
+		double scaleX = 1.0;
+		double rigidOverlayTranslationXDip = 0.0;
+
+		[[nodiscard]] double MapX(double valueDip) const noexcept
+		{
+			return visualLeftDip + (valueDip - baseLeftDip) * scaleX;
+		}
+
+		[[nodiscard]] double UnmapX(double valueDip) const noexcept
+		{
+			return baseLeftDip + (valueDip - visualLeftDip)
+				/ std::max(0.000001, scaleX);
+		}
+	};
+
+	[[nodiscard]] inline BarBottomDockHorizontalMapping
+		ResolveBarBottomDockHorizontalMapping(double baseLeftDip,
+			double baseRightDip, double elasticOffsetDip,
+			double centerTranslationDip = 0.0) noexcept
+	{
+		if (!std::isfinite(baseLeftDip)) baseLeftDip = 0.0;
+		if (!std::isfinite(baseRightDip) || baseRightDip <= baseLeftDip)
+			baseRightDip = baseLeftDip + 1.0;
+		elasticOffsetDip = std::clamp(
+			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
+			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		centerTranslationDip = std::clamp(
+			std::isfinite(centerTranslationDip) ? centerTranslationDip : 0.0,
+			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		const double center = (baseLeftDip + baseRightDip) / 2.0
+			+ centerTranslationDip;
+		const double width = baseRightDip - baseLeftDip
+			+ std::abs(elasticOffsetDip);
+		// 横向果冻始终以联合外框中心为轴，不改变居中锚点。
+		return { baseLeftDip, baseRightDip, center - width / 2.0,
+			center + width / 2.0, width / (baseRightDip - baseLeftDip),
+			centerTranslationDip };
+	}
+
+	[[nodiscard]] inline BarBottomDockHorizontalMapping
+		ResolveBarBottomDockRecoveringHorizontalMapping(double baseLeftDip,
+			double baseRightDip, double elasticOffsetDip) noexcept
+	{
+		// HWND 已跟随原始指针移动；反向平移保持脱离首帧像素连续。
+		return ResolveBarBottomDockHorizontalMapping(baseLeftDip, baseRightDip,
+			elasticOffsetDip, -elasticOffsetDip);
+	}
+
+	[[nodiscard]] inline double MapBarBottomDockBodyPixelX(
+		double valuePx, const BarBottomDockHorizontalMapping& mapping,
+		double zoom) noexcept
+	{
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		return mapping.MapX(valuePx / zoom) * zoom;
+	}
+
+	[[nodiscard]] inline double UnmapBarBottomDockBodyPixelX(
+		double valuePx, const BarBottomDockHorizontalMapping& mapping,
+		double zoom) noexcept
+	{
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		return mapping.UnmapX(valuePx / zoom) * zoom;
+	}
+
 	[[nodiscard]] inline double MapBarBottomDockBodyPixelY(
 		double valuePx, const BarBottomDockVerticalMapping& mapping,
 		double zoom) noexcept
@@ -524,6 +801,7 @@ namespace Inkeys::UI::Bar
 	[[nodiscard]] inline BarBottomDockLocalLightGeometry
 		ResolveBarBottomDockBodyLocalLight(double centerXPx,
 			double centerYPx, double radiusPx,
+			const BarBottomDockHorizontalMapping& horizontalMapping,
 			const BarBottomDockVerticalMapping& mapping,
 			double zoom) noexcept
 	{
@@ -531,13 +809,16 @@ namespace Inkeys::UI::Bar
 		if (!std::isfinite(centerYPx)) centerYPx = 0.0;
 		radiusPx = std::max(0.0,
 			std::isfinite(radiusPx) ? radiusPx : 0.0);
+		const double scaleX = std::max(0.000001,
+			std::isfinite(horizontalMapping.scaleX)
+				? horizontalMapping.scaleX : 1.0);
 		const double scaleY = std::max(0.000001,
 			std::isfinite(mapping.scaleY) ? mapping.scaleY : 1.0);
 		// 光标点已经位于视觉坐标；绘制到形变组前先逆映射，避免再变换一次。
 		return {
-			centerXPx,
+			UnmapBarBottomDockBodyPixelX(centerXPx, horizontalMapping, zoom),
 			UnmapBarBottomDockBodyPixelY(centerYPx, mapping, zoom),
-			radiusPx,
+			radiusPx / scaleX,
 			radiusPx / scaleY,
 		};
 	}
@@ -545,18 +826,21 @@ namespace Inkeys::UI::Bar
 	[[nodiscard]] inline BarBottomDockLocalLightGeometry
 		ResolveBarBottomDockRigidLocalLight(double centerXPx,
 			double centerYPx, double radiusPx,
-			double translationDip, double zoom) noexcept
+			double translationXDip, double translationYDip,
+			double zoom) noexcept
 	{
 		if (!std::isfinite(centerXPx)) centerXPx = 0.0;
 		if (!std::isfinite(centerYPx)) centerYPx = 0.0;
 		radiusPx = std::max(0.0,
 			std::isfinite(radiusPx) ? radiusPx : 0.0);
 		zoom = NormalizeBarBottomDockZoom(zoom);
-		translationDip = std::isfinite(translationDip)
-			? translationDip : 0.0;
+		translationXDip = std::isfinite(translationXDip)
+			? translationXDip : 0.0;
+		translationYDip = std::isfinite(translationYDip)
+			? translationYDip : 0.0;
 		return {
-			centerXPx,
-			centerYPx - translationDip * zoom,
+			centerXPx - translationXDip * zoom,
+			centerYPx - translationYDip * zoom,
 			radiusPx,
 			radiusPx,
 		};
@@ -580,6 +864,45 @@ namespace Inkeys::UI::Bar
 		};
 	}
 
+	[[nodiscard]] inline BarBottomDockLocalLightGeometry
+		ResolveBarBottomDockRigidLocalLight(double centerXPx,
+			double centerYPx, double radiusPx,
+			double translationDip, double zoom) noexcept
+	{
+		return ResolveBarBottomDockRigidLocalLight(centerXPx, centerYPx,
+			radiusPx, 0.0, translationDip, zoom);
+	}
+
+	[[nodiscard]] inline BarBottomDockLocalLightGeometry
+		ResolveBarBottomDockBodyLocalLight(double centerXPx,
+			double centerYPx, double radiusPx,
+			const BarBottomDockVerticalMapping& mapping,
+			double zoom) noexcept
+	{
+		return ResolveBarBottomDockBodyLocalLight(centerXPx, centerYPx,
+			radiusPx, BarBottomDockHorizontalMapping{}, mapping, zoom);
+	}
+
+	[[nodiscard]] inline RECT TransformBarBottomDockBodyRect(
+		const RECT& bounds, const BarBottomDockHorizontalMapping& horizontal,
+		const BarBottomDockVerticalMapping& vertical, double zoom) noexcept
+	{
+		if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
+			return {};
+		const double mappedLeft = MapBarBottomDockBodyPixelX(
+			static_cast<double>(bounds.left), horizontal, zoom);
+		const double mappedRight = MapBarBottomDockBodyPixelX(
+			static_cast<double>(bounds.right), horizontal, zoom);
+		const RECT verticalBounds = TransformBarBottomDockBodyRect(
+			bounds, vertical, zoom);
+		return RECT{
+			static_cast<LONG>(std::floor(std::min(mappedLeft, mappedRight))),
+			verticalBounds.top,
+			static_cast<LONG>(std::ceil(std::max(mappedLeft, mappedRight))),
+			verticalBounds.bottom,
+		};
+	}
+
 	[[nodiscard]] inline RECT TranslateBarBottomDockRigidRect(
 		const RECT& bounds, double translationDip, double zoom) noexcept
 	{
@@ -596,16 +919,36 @@ namespace Inkeys::UI::Bar
 		};
 	}
 
+	[[nodiscard]] inline RECT TranslateBarBottomDockRigidRect(
+		const RECT& bounds, double translationXDip,
+		double translationYDip, double zoom) noexcept
+	{
+		RECT translated = TranslateBarBottomDockRigidRect(
+			bounds, translationYDip, zoom);
+		if (translated.right <= translated.left) return {};
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		const double translationPx = (std::isfinite(translationXDip)
+			? translationXDip : 0.0) * zoom;
+		translated.left = static_cast<LONG>(std::floor(
+			translated.left + translationPx));
+		translated.right = static_cast<LONG>(std::ceil(
+			translated.right + translationPx));
+		return translated;
+	}
+
 	[[nodiscard]] inline RECT ResolveBarBottomDockVisualEnvelope(
 		const RECT& bounds, double zoom) noexcept
 	{
 		if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
 			return {};
 		zoom = NormalizeBarBottomDockZoom(zoom);
+		const LONG horizontalPadding = static_cast<LONG>(
+			std::ceil(BarBottomDockVisualLimitDip * zoom));
 		const LONG verticalPadding = static_cast<LONG>(
 			std::ceil(BarBottomDockVisualLimitDip * zoom));
-		return RECT{ bounds.left, bounds.top - verticalPadding,
-			bounds.right, bounds.bottom + verticalPadding };
+		return RECT{ bounds.left - horizontalPadding,
+			bounds.top - verticalPadding, bounds.right + horizontalPadding,
+			bounds.bottom + verticalPadding };
 	}
 
 	[[nodiscard]] inline RECT ResolveBarBottomDockCapacityEnvelope(

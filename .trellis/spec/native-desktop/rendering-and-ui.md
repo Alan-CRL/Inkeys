@@ -476,6 +476,60 @@ if (averages.updated)
 		averages.unlimitedFramesPerSecond);
 ~~~
 
+### UI3 Bar 底栏二维吸附事务合同
+
+#### 1. Scope / Trigger
+
+修改 UI3 Bar 的底栏捕获、主按钮直拖、水平居中、弹性映射、成功呈现快照或吸附提示时适用。水平居中是竖向 `Floating / BottomDocked` 的正交状态，不得把两轴合并成互斥枚举。
+
+#### 2. Signatures
+
+~~~cpp
+enum class BarBottomDockCenterMode : std::uint8_t { Free, Centered };
+
+struct BarBottomDockHorizontalMapping;
+struct BarBottomDockPresentedSnapshot;
+~~~
+
+#### 3. Contracts
+
+- 水平捕获目标是当前显示器 `monitorBounds` 的水平中点；参与居中的几何只包含主按钮、主栏及可见描边的联合外框。扩展面板不参与中心计算或拉伸，只按其按钮锚点的二维映射差值刚性跟随。
+- 水平捕获只在竖向已 `BottomDocked`、主栏展开且联合外框中心进入 `BarBottomDockThresholdDip` 时生效；边界值允许捕获，严格越界立即脱离。折叠或竖向脱离必须结束水平捕获。
+- 横纵 mode、phase、elastic offset、直接窗口位移和显示环境共用 `bottomDockTransitionSerial` 的同一发布事务。交互线程必须先计算完整两轴候选，再发布偶数稳定 serial；渲染线程不得提交只包含一轴新状态的帧。
+- 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。
+- 主按钮与主栏使用同一个二维主体映射。绘制、dirty、viewport/capacity、PointLight 逆映射、第三光源接受区和成功命中边界必须从同一映射解析；两轴 24 DIP 视觉限值、Gaussian 外扩和抗锯齿余量都进入保守包络。
+- 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于阈值内时无提示捕获。
+- 底栏提示资格在手势开始时从成功呈现模式锁存：只有从 `Floating` 开始的展开主栏手势进入底栏后可显示；从 `BottomDocked` 开始的手势即使中途脱离再捕获也不得显示。普通/居中文案切换只在已显示期间复用主栏文字时间线，命中仍只发布成功呈现的实际外框。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 同一采样同时进入竖向和水平捕获带 | 两轴与窗口位移一次发布，首个成功帧连续 |
+| 居中拖动严格超过 20 DIP | 水平进入 Free/Detaching，竖向底栏可保持 |
+| 竖向脱离或主栏折叠 | 水平停止捕获并连续恢复，不保留不可见约束 |
+| 底栏起始手势再次拖入中心 | 可进入居中，但不显示模式提示 |
+| 呈现或直接移动失败 | 两轴成功快照都不推进，下帧从旧 tuple 完整恢复 |
+
+#### 5. Tests Required
+
+- Headless 覆盖阈值边界、高速跨带、横纵同帧捕获、折叠门禁、展开自动捕获、左右展开联合外框和 100%/150% DPI。
+- Headless 覆盖二维中心不变量、扩展面板锚点、完整包络、失败快照以及浮动/底栏起始手势的提示资格。
+- 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工检查横纵果冻叠加、脏区调试、动画关闭和多显示器切换。
+
+#### 6. Wrong vs Correct
+
+~~~cpp
+// Wrong：分别发布横纵模式，渲染线程可能观察到半个吸附转换。
+bottomDockMode.store(nextVertical);
+bottomDockCenterMode.store(nextHorizontal);
+
+// Correct：在同一 transition serial 内发布完整两轴 tuple。
+BeginBottomDockTransition();
+PublishBottomDockAxes(nextVertical, nextHorizontal, translation);
+EndBottomDockTransition();
+~~~
+
 ### UI3 共享设备、串行帧与光影缓存契约
 
 #### 1. Scope / Trigger

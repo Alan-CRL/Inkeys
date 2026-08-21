@@ -24,6 +24,12 @@
 14. [x] 将指示器显示/隐藏时长改为问号提示浮窗使用的默认操作时长，保留中心等比 Back 显示与缩小隐藏，并验证快速反向连续。
 15. [x] 修正指示器 dirty/viewport 包络，覆盖旧新边界、Back 顶端极值、缩放描边、固定 Gaussian 外扩和抗锯齿余量；补充回归测试。
 16. [x] 重新运行完整质量门且不启动 GUI。
+17. [x] 增加水平居中 mode/tracker、捕获带、联合外框中心和二维映射纯逻辑，并补齐快速跨带、折叠及 DPI 测试。
+18. [x] 扩展成功呈现快照和交互发布 tuple，把横纵模式、阶段、形变量与直接窗口位移放入同一 transition serial；补齐失败回滚和显示重基准。
+19. [x] 在渲染循环实现居中锚定、水平捕获/恢复弹簧、两轴主体映射、扩展面板刚性跟随、光源逆映射及完整 dirty/viewport 包络。
+20. [x] 增加启动稳定居中、折叠退出和展开阈值内无提示自动居中的生命周期。
+21. [x] 将指示器门禁改为仅浮动起始手势，并增加“底栏模式 / 底栏模式 · 居中”内容切换和无裁切动态宽度。
+22. [x] 更新 native-desktop 两轴呈现规范，运行完整质量门且不启动 GUI、不提交 commit。
 
 ## Validation
 
@@ -33,8 +39,9 @@
 - [x] 使用 ARM64 `MSBuild.exe` 构建完整 `InkeysRepo.sln`：`Debug | ARM64`，超时至少 5 分钟。
 - [x] 静态复核只有一次最终 GDI/ULW 提交，且未启动可见 GUI。
 - [x] 重新运行上述全部验证，确认新指示器样式未引入第二 target 或 GUI 启动。
+- [x] 新增水平居中状态机后重新运行以上全部验证。
 
-验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；新增 150% DPI/Back 峰值包络回归覆盖最顶端光晕；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
+验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平捕获阈值、快速跨带、两轴组合映射、折叠门禁、提示资格与 150% DPI/Back 包络均有 Headless 覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
 
 ## Risk And Rollback Points
 

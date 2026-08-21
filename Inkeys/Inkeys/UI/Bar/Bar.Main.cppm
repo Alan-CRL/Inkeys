@@ -259,6 +259,12 @@ struct BarBottomDockPresentedSnapshot
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	bool recoveryActive = false;
 	Inkeys::UI::Bar::BarBottomDockVerticalMapping mapping{};
+	Inkeys::UI::Bar::BarBottomDockCenterMode centerMode =
+		Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
+	Inkeys::UI::Bar::BarBottomDockPhase centerPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	Inkeys::UI::Bar::BarBottomDockHorizontalMapping horizontalMapping{};
+	double centerElasticOffsetDip = 0.0;
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
 	double zoom = 1.0;
@@ -270,6 +276,7 @@ struct BarBottomDockPresentedSnapshot
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
+	double bodyCenterScreenX = 0.0;
 	bool indicatorVisible = false;
 	bool indicatorOccluding = false;
 	RECT indicatorBounds{};
@@ -292,6 +299,24 @@ public:
 	bool TryBeginToggle(Inkeys::UI::Bar::BarToggleChannel channel)
 	{
 		return toggleClickCoalescer.TryBegin(channel);
+	}
+	void RequestBottomDockCenterAfterExpand() noexcept
+	{
+		bottomDockCenterAutoCaptureRequested.store(true, memory_order_release);
+	}
+	void ClearBottomDockCenterForFold() noexcept
+	{
+		bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		bottomDockCenterMode.store(
+			Inkeys::UI::Bar::BarBottomDockCenterMode::Free,
+			memory_order_relaxed);
+		bottomDockCenterPhase.store(
+			Inkeys::UI::Bar::BarBottomDockPhase::Stable,
+			memory_order_relaxed);
+		bottomDockCenterElasticOffsetDip.store(0.0, memory_order_relaxed);
+		bottomDockDeferredTransitionSerial.store(
+			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel) + 1,
+			memory_order_release);
 	}
 
 public:
@@ -413,6 +438,25 @@ public:
 				bottomDockPresentedRigidTranslationDip.load(memory_order_relaxed);
 			snapshot.mapping.rigidOverlayTranslationYDip =
 				snapshot.rigidTranslationDip;
+			snapshot.centerMode = bottomDockPresentedCenterMode.load(
+				memory_order_relaxed);
+			snapshot.centerPhase = bottomDockPresentedCenterPhase.load(
+				memory_order_relaxed);
+			snapshot.horizontalMapping.baseLeftDip =
+				bottomDockPresentedBaseLeftDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.baseRightDip =
+				bottomDockPresentedBaseRightDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.visualLeftDip =
+				bottomDockPresentedVisualLeftDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.visualRightDip =
+				bottomDockPresentedVisualRightDip.load(memory_order_relaxed);
+			snapshot.horizontalMapping.scaleX = max(0.000001,
+				bottomDockPresentedScaleX.load(memory_order_relaxed));
+			snapshot.horizontalMapping.rigidOverlayTranslationXDip =
+				bottomDockPresentedRigidTranslationXDip.load(
+					memory_order_relaxed);
+			snapshot.centerElasticOffsetDip =
+				bottomDockPresentedCenterElasticOffsetDip.load(memory_order_relaxed);
 			snapshot.zoom = Inkeys::UI::Bar::NormalizeBarBottomDockZoom(
 				bottomDockPresentedZoom.load(memory_order_relaxed));
 			snapshot.monitorOrigin = POINT{
@@ -438,6 +482,8 @@ public:
 				bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.mainCenterScreenY =
 				bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+			snapshot.bodyCenterScreenX =
+				bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed);
 			snapshot.indicatorVisible =
 				bottomDockIndicatorPresentedVisible.load(memory_order_relaxed);
 			snapshot.indicatorOccluding =
@@ -473,6 +519,42 @@ public:
 			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
 				static_cast<double>(visualY), snapshot.mapping, snapshot.zoom)));
 	}
+	int BottomDockRigidHitTestX(int visualX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(static_cast<double>(visualX)
+			- snapshot.horizontalMapping.rigidOverlayTranslationXDip
+				* snapshot.zoom));
+	}
+	int BottomDockRigidVisualX(int rigidX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(static_cast<double>(rigidX)
+			+ snapshot.horizontalMapping.rigidOverlayTranslationXDip
+				* snapshot.zoom));
+	}
+	int BottomDockBodyHitTestX(int visualX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelX(
+				static_cast<double>(visualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
+	int BottomDockBodyHitTestXFromRigid(int rigidX,
+		int* visualX = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const int resolvedVisualX = static_cast<int>(lround(
+			static_cast<double>(rigidX)
+				+ snapshot.horizontalMapping.rigidOverlayTranslationXDip
+					* snapshot.zoom));
+		if (visualX) *visualX = resolvedVisualX;
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelX(
+				static_cast<double>(resolvedVisualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
 	int BottomDockBodyHitTestYFromRigid(int rigidY,
 		int* visualY = nullptr) const noexcept
 	{
@@ -490,12 +572,13 @@ public:
 	{
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return Inkeys::UI::Bar::TransformBarBottomDockBodyRect(
-			bounds, snapshot.mapping, snapshot.zoom);
+			bounds, snapshot.horizontalMapping, snapshot.mapping, snapshot.zoom);
 	}
 	RECT BottomDockRigidVisualBounds(RECT bounds) const noexcept
 	{
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+			snapshot.horizontalMapping.rigidOverlayTranslationXDip,
 			snapshot.rigidTranslationDip, snapshot.zoom);
 	}
 	bool IsBottomDockIndicatorPresentedAt(LONG x, LONG y) const noexcept
@@ -526,6 +609,10 @@ protected:
 		bottomDockPresentedMainCenterScreenY.store(
 			bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed)
 				+ screenDelta.y,
+			memory_order_relaxed);
+		bottomDockPresentedBodyCenterScreenX.store(
+			bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
 			memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
@@ -597,6 +684,13 @@ protected:
 	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPhase =
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	atomic<double> bottomDockElasticOffsetDip = 0.0;
+	atomic<Inkeys::UI::Bar::BarBottomDockCenterMode> bottomDockCenterMode =
+		Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
+	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockCenterPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	atomic<double> bottomDockCenterElasticOffsetDip = 0.0;
+	atomic<bool> bottomDockIndicatorGestureEligible = false;
+	atomic<bool> bottomDockCenterAutoCaptureRequested = false;
 	atomic<unsigned long long> bottomDockPresentedMappingSerial = 0;
 	atomic<Inkeys::UI::Bar::BarBottomDockMode> bottomDockPresentedMode =
 		Inkeys::UI::Bar::BarBottomDockMode::BottomDocked;
@@ -611,6 +705,18 @@ protected:
 	atomic<double> bottomDockPresentedScaleY = 1.0;
 	atomic<double> bottomDockPresentedRigidGripYDip = 0.0;
 	atomic<double> bottomDockPresentedRigidTranslationDip = 0.0;
+	atomic<Inkeys::UI::Bar::BarBottomDockCenterMode>
+		bottomDockPresentedCenterMode =
+			Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
+	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPresentedCenterPhase =
+		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
+	atomic<double> bottomDockPresentedCenterElasticOffsetDip = 0.0;
+	atomic<double> bottomDockPresentedBaseLeftDip = 0.0;
+	atomic<double> bottomDockPresentedBaseRightDip = 0.0;
+	atomic<double> bottomDockPresentedVisualLeftDip = 0.0;
+	atomic<double> bottomDockPresentedVisualRightDip = 0.0;
+	atomic<double> bottomDockPresentedScaleX = 1.0;
+	atomic<double> bottomDockPresentedRigidTranslationXDip = 0.0;
 	atomic<double> bottomDockPresentedZoom = 1.0;
 	atomic<LONG> bottomDockPresentedDisplayLeft = 0;
 	atomic<LONG> bottomDockPresentedDisplayTop = 0;
@@ -626,6 +732,7 @@ protected:
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
+	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
 	atomic<bool> bottomDockIndicatorPresentedVisible = false;
 	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
 	atomic<LONG> bottomDockIndicatorPresentedLeft = 0;

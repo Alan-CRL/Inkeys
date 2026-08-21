@@ -212,8 +212,10 @@ int RunBarBottomDockTests()
 		&& !ResolveBarBottomDockIndicatorTarget(
 			BarBottomDockMode::Floating, true, true)
 		&& !ResolveBarBottomDockIndicatorTarget(
-			BarBottomDockMode::BottomDocked, true, false),
-		"dock indicator requires an active docked drag and expanded main bar");
+			BarBottomDockMode::BottomDocked, true, false)
+		&& !ResolveBarBottomDockIndicatorTarget(
+			BarBottomDockMode::BottomDocked, true, true, false),
+		"dock indicator additionally requires a floating-origin gesture");
 	Check(ResolveBarBottomDockFeedbackAction(false, true)
 		== BarBottomDockFeedbackAction::FadeIn
 		&& ResolveBarBottomDockFeedbackAction(true, false)
@@ -302,6 +304,42 @@ int RunBarBottomDockTests()
 			-BarBottomDockThresholdDip),
 		"fast reverse segment consumes both thresholds symmetrically");
 
+	BarBottomDockCenterDragTracker centerTracker;
+	centerTracker.Begin(BarBottomDockCenterMode::Free, 900.0,
+		true, true, environment);
+	auto exactCenterCapture = centerTracker.Update(990.0,
+		true, true, environment);
+	Check(exactCenterCapture.captured
+		&& exactCenterCapture.mode == BarBottomDockCenterMode::Centered
+		&& Near(exactCenterCapture.constrainedCenterScreenX, 960.0)
+		&& Near(exactCenterCapture.elasticOffsetDip, 20.0),
+		"horizontal center capture includes the exact twenty DIP boundary");
+	auto exactCenterDetach = centerTracker.Update(990.0,
+		true, true, environment);
+	Check(!exactCenterDetach.detached
+		&& exactCenterDetach.mode == BarBottomDockCenterMode::Centered,
+		"horizontal center remains captured at the inclusive boundary");
+	auto outsideCenterDetach = centerTracker.Update(990.01,
+		true, true, environment);
+	Check(outsideCenterDetach.detached
+		&& outsideCenterDetach.mode == BarBottomDockCenterMode::Free,
+		"horizontal center detaches strictly outside twenty DIP");
+	BarBottomDockCenterDragTracker foldedCenterTracker;
+	foldedCenterTracker.Begin(BarBottomDockCenterMode::Free, 960.0,
+		true, false, environment);
+	const auto foldedCenter = foldedCenterTracker.Update(960.0,
+		true, false, environment);
+	Check(foldedCenter.mode == BarBottomDockCenterMode::Free
+		&& !foldedCenter.captured
+		&& !ShouldCaptureBarBottomDockCenter(
+			true, false, 960.0, environment.monitorBounds, environment.zoom),
+		"folded main bar cannot enter centered mode");
+	Check(ShouldCaptureBarBottomDockCenter(
+		true, true, 990.0, environment.monitorBounds, environment.zoom)
+		&& !ShouldCaptureBarBottomDockCenter(
+			false, true, 960.0, environment.monitorBounds, environment.zoom),
+		"horizontal capture uses monitor center and vertical dock gate");
+
 	const auto stretched = ResolveBarBottomDockVerticalMapping(0.0, 80.0, -20.0);
 	Check(Near(stretched.visualTopDip, -20.0) && Near(stretched.scaleY, 1.25)
 		&& Near(stretched.rigidGripYDip, 20.0)
@@ -345,20 +383,47 @@ int RunBarBottomDockTests()
 		&& Near(detachedUp.visualBottomDip, 80.0)
 		&& Near(detachedUp.scaleY, 1.25),
 		"upward detach preserves the stretched frame while the window moves");
+	const auto horizontalStretch = ResolveBarBottomDockHorizontalMapping(
+		100.0, 500.0, 20.0);
+	Check(Near(horizontalStretch.visualLeftDip, 90.0)
+		&& Near(horizontalStretch.visualRightDip, 510.0)
+		&& Near(horizontalStretch.MapX(300.0), 300.0)
+		&& Near(horizontalStretch.UnmapX(300.0), 300.0),
+		"horizontal jelly expands symmetrically and preserves body center");
+	const auto horizontalCaptureStart = ResolveBarBottomDockHorizontalMapping(
+		100.0, 500.0, 20.0, 20.0);
+	const auto horizontalDetachStart =
+		ResolveBarBottomDockRecoveringHorizontalMapping(
+			120.0, 520.0, 20.0);
+	Check(Near(horizontalCaptureStart.visualLeftDip, 110.0)
+		&& Near(horizontalCaptureStart.visualRightDip, 530.0)
+		&& Near(horizontalCaptureStart.rigidOverlayTranslationXDip, 20.0)
+		&& Near(horizontalDetachStart.visualLeftDip, 90.0)
+		&& Near(horizontalDetachStart.visualRightDip, 510.0)
+		&& Near(horizontalDetachStart.rigidOverlayTranslationXDip, -20.0),
+		"horizontal capture and detach preserve the previous screen-space center");
 
 	const RECT logicalBody{ 10, 0, 110, 80 };
 	Check(RectEquals(TransformBarBottomDockBodyRect(
 		logicalBody, compressed, 1.5), RECT{ 10, 30, 110, 90 }),
 		"body dirty bounds use the same endpoint mapping as drawing");
+	Check(RectEquals(TransformBarBottomDockBodyRect(
+		RECT{ 15, 0, 165, 120 },
+		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, 20.0),
+		compressed, 1.5), RECT{ 0, 30, 180, 120 }),
+		"two-axis dirty bounds use the same composed mapping as drawing");
 	Check(RectEquals(TranslateBarBottomDockRigidRect(
 		logicalBody, 20.0, 1.5), RECT{ 10, 30, 110, 110 }),
 		"rigid panel dirty bounds only translate");
+	Check(RectEquals(TranslateBarBottomDockRigidRect(
+		logicalBody, -20.0, 20.0, 1.5), RECT{ -20, 30, 80, 110 }),
+		"rigid panel dirty bounds compose horizontal and vertical translation");
 	Check(RectEquals(ResolveBarBottomDockVisualEnvelope(
-		RECT{ 10, 20, 110, 120 }, 1.5), RECT{ 10, -16, 110, 156 }),
-		"elastic capacity reserves the full twenty-four DIP envelope once");
+		RECT{ 10, 20, 110, 120 }, 1.5), RECT{ -26, -16, 146, 156 }),
+		"elastic capacity reserves the full two-axis twenty-four DIP envelope once");
 	Check(RectEquals(ResolveBarBottomDockCapacityEnvelope(
 		RECT{ 10, 50, 110, 150 }, 1.5),
-		RECT{ 10, 14, 110, 186 }),
+		RECT{ -26, 14, 146, 186 }),
 		"capacity envelope is derived from the untransformed baseline");
 	Check(ShouldKeepBarBottomDockedAfterBlockedDownwardRelease(
 		true, 1040.0, 1039.25, 1039.0)
@@ -394,9 +459,9 @@ int RunBarBottomDockTests()
 		&& Near(bodyLight.radiusY * stretched.scaleY, 90.0),
 		"body cursor light inverse mapping preserves its visual center and radius");
 	const auto rigidLight = ResolveBarBottomDockRigidLocalLight(
-		240.0, 315.0, 90.0, 20.0, 1.5);
+		240.0, 315.0, 90.0, -20.0, 20.0, 1.5);
 	Check(Near(rigidLight.centerY + 20.0 * 1.5, 315.0)
-		&& Near(rigidLight.centerX, 240.0)
+		&& Near(rigidLight.centerX - 20.0 * 1.5, 240.0)
 		&& Near(rigidLight.radiusX, 90.0)
 		&& Near(rigidLight.radiusY, 90.0),
 		"rigid cursor light inverse translation preserves screen geometry");
