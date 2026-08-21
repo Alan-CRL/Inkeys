@@ -85,19 +85,23 @@ export namespace Inkeys::Drawing::Draw3
 		uint16_t texture = 0;
 	};
 
-	// 一条不可变的最终墨迹，只保存重放显示所需的数据。
+	// 最终墨迹只保存重放数据；条件渲染标记是独立于 Undo 的持久元数据。
 	class InkStroke
 	{
 	public:
-		InkStroke(StoredInkStyle style, std::vector<StoredInkPoint> points) noexcept;
+		InkStroke(StoredInkStyle style, std::vector<StoredInkPoint> points,
+			bool renderOnlyWhenLatest = false) noexcept;
 
 		const StoredInkStyle& Style() const noexcept;
 		std::span<const StoredInkPoint> Points() const noexcept;
+		bool RenderOnlyWhenLatest() const noexcept;
+		void SetRenderOnlyWhenLatest(bool enabled) noexcept;
 		bool IsValid() const noexcept;
 
 	private:
 		StoredInkStyle style_ = {};
 		std::vector<StoredInkPoint> points_;
+		bool renderOnlyWhenLatest_ = false;
 	};
 
 	class InkCanvas
@@ -111,6 +115,9 @@ export namespace Inkeys::Drawing::Draw3
 
 		// 非法 Stroke 不改变容器；成功时返回不会随扩容变化的索引。
 		std::optional<size_t> AppendStroke(InkStroke stroke);
+		bool SetStrokeRenderOnlyWhenLatest(size_t strokeIndex, bool enabled) noexcept;
+		// 仅供尚未提交 history 的事务回滚，且只能移除刚追加的尾项。
+		bool RollbackLastStroke(size_t expectedIndex) noexcept;
 		// 清空当前 Canvas 的全部最终 Stroke；viewport 保持不变。
 		void ClearStrokes() noexcept;
 

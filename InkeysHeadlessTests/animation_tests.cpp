@@ -37,6 +37,7 @@ int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
+int RunDraw3ShapeRecognitionTests();
 
 namespace
 {
@@ -1331,6 +1332,7 @@ int main(int argc, char** argv)
 	failureCount += RunBarBottomDockTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
+	failureCount += RunDraw3ShapeRecognitionTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

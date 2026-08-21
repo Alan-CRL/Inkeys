@@ -35,6 +35,7 @@ import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.canvas_navigation;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.pen_cursor;
+import Inkeys.Drawing.Draw3.shape_recognition;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -382,6 +383,34 @@ namespace Inkeys::Drawing::Draw3
 			for (SignedTileCoordinate tile : history.VisibleCompositionTiles({
 				coverage.left, coverage.top, coverage.right, coverage.bottom }))
 				tiles.push_back({ tile.x, tile.y });
+			return tiles;
+		}
+
+		void NormalizeSignedTiles(std::vector<SignedTileCoordinate>& tiles)
+		{
+			std::sort(tiles.begin(), tiles.end());
+			tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
+		}
+
+		std::vector<SignedTileCoordinate> CollectVisibilityDeltaTiles(
+			const CanvasRuntimeHistory& before,
+			const CanvasRuntimeHistory& after,
+			std::span<const SignedTileCoordinate> requiredTiles)
+		{
+			std::vector<SignedTileCoordinate> tiles(
+				requiredTiles.begin(), requiredTiles.end());
+			const std::span<const RenderItemState> beforeItems = before.Items();
+			const std::span<const RenderItemState> afterItems = after.Items();
+			const size_t count = std::min(beforeItems.size(), afterItems.size());
+			for (size_t index = 0; index < count; ++index)
+			{
+				if (beforeItems[index].visible == afterItems[index].visible) continue;
+				tiles.insert(tiles.end(), beforeItems[index].compositionTiles.begin(),
+					beforeItems[index].compositionTiles.end());
+				tiles.insert(tiles.end(), afterItems[index].compositionTiles.begin(),
+					afterItems[index].compositionTiles.end());
+			}
+			NormalizeSignedTiles(tiles);
 			return tiles;
 		}
 
@@ -1589,6 +1618,7 @@ namespace Inkeys::Drawing::Draw3
 		CanvasPanMotionState panMotion;
 		std::vector<CanvasGestureContactRuntime> gestureContacts;
 		gestureContacts.reserve(kPreheatedStrokeCount);
+		ShapeRecognitionTriggerLatch shapeRecognitionTrigger;
 		bool suppressPenUntilRelease = false;
 		CanvasVector previousPanCentroid = {};
 		bool panCentroidValid = false;
@@ -2155,6 +2185,8 @@ namespace Inkeys::Drawing::Draw3
 					down.isInvertedCursor, effectiveInvertedPenEraserEnabled,
 					selectedToolSupportsOverride);
 				const DrawingTool tool = invertedEraser ? DrawingTool::Eraser : batchTool;
+				if (tool != DrawingTool::Pen && tool != DrawingTool::HardPen)
+					shapeRecognitionTrigger.Invalidate();
 				const bool suppressPressure = deviceType == InputDeviceType::Pen && down.isInvertedCursor;
 				const float downPressure = ResolveStylusPressureForModel(
 					deviceType, down.isInvertedCursor, down.pressure);
@@ -3764,6 +3796,213 @@ namespace Inkeys::Drawing::Draw3
 			forceFullPresent = true;
 		};
 
+		auto solidifyLatestConditionalGroup = [&](InkCanvas& canvas,
+			CanvasRuntimeHistory& history) -> bool
+		{
+			const std::optional<RenderItemId> latest = history.LastVisibleItem();
+			const RenderItemState* latestItem = latest ? history.Find(*latest) : nullptr;
+			if (!latestItem || !latestItem->renderOnlyWhenLatest) return true;
+			const std::vector<RenderItemId> cleared =
+				history.ClearLatestConditionalGroup();
+			if (cleared.empty()) return false;
+			size_t synchronizedCount = 0;
+			for (RenderItemId id : cleared)
+			{
+				const RenderItemState* item = history.Find(id);
+				if (!item || !canvas.SetStrokeRenderOnlyWhenLatest(
+					item->strokeIndex, false)) break;
+				++synchronizedCount;
+			}
+			if (synchronizedCount == cleared.size()) return true;
+
+			// 文档与 sidecar 必须一起回滚，避免条件标记只存在于一侧。
+			for (size_t index = 0; index < synchronizedCount; ++index)
+			{
+				const RenderItemState* item = history.Find(cleared[index]);
+				if (item) canvas.SetStrokeRenderOnlyWhenLatest(item->strokeIndex, true);
+			}
+			(void)history.SetRenderOnlyWhenLatest(cleared, true);
+			return false;
+		};
+
+		auto applyShapeCorrection = [&](ShapeCorrectionPlan plan,
+			RECT& frameDirty) -> bool
+		{
+			const auto requestAuthoritativeRecovery = [&]()
+			{
+				viewportVisibleClear = false;
+				viewportRefreshPending = true;
+				viewportRefreshClearsTransient = false;
+			};
+			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size() ||
+				plan.sourceItems.empty() || !plan.replacement.IsValid() ||
+				plan.replacement.Style().inkType != StoredInkType::OutlineRectangle)
+				return false;
+			InkPage* page = document_->PageAt(currentPageIndex_);
+			InkCanvas* canvas = page
+				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!page || !canvas) return false;
+			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			if (runtime.history.LastVisibleItem() != plan.sourceItems.back() ||
+				runtime.history.Items().size() != runtime.beforeStates.size() ||
+				runtime.beforeStates.size() != runtime.afterStates.size()) return false;
+
+			std::vector<size_t> sourceStrokeIndices;
+			std::optional<CanvasRuntimeHistory> historyPreview;
+			std::optional<RenderItemId> correctionId;
+			const RenderItemState* correctionItem = nullptr;
+			std::vector<SignedTileCoordinate> affectedTiles;
+			const size_t replacementStrokeIndex = canvas->Strokes().size();
+			const size_t replacementItemIndex = runtime.history.Items().size();
+			try
+			{
+				sourceStrokeIndices.reserve(plan.sourceItems.size());
+				const std::span<const InkStroke> strokes = canvas->Strokes();
+				for (RenderItemId id : plan.sourceItems)
+				{
+					const RenderItemState* item = runtime.history.Find(id);
+					if (!item || !item->active || !item->visible ||
+						item->renderOnlyWhenLatest || item->strokeIndex >= strokes.size() ||
+						strokes[item->strokeIndex].Style().inkType != StoredInkType::Pen ||
+						strokes[item->strokeIndex].RenderOnlyWhenLatest()) return false;
+					sourceStrokeIndices.push_back(item->strokeIndex);
+				}
+				historyPreview.emplace(runtime.history);
+				if (!historyPreview->SetRenderOnlyWhenLatest(plan.sourceItems, true))
+					return false;
+				correctionId = historyPreview->AppendStroke(
+					replacementStrokeIndex, plan.footprint, true, false);
+				if (!correctionId || correctionId->index != replacementItemIndex)
+					return false;
+				correctionItem = historyPreview->Find(*correctionId);
+				if (!correctionItem) return false;
+				affectedTiles = CollectVisibilityDeltaTiles(runtime.history,
+					*historyPreview, correctionItem->compositionTiles);
+				runtime.beforeStates.reserve(replacementItemIndex + 1);
+				runtime.afterStates.reserve(replacementItemIndex + 1);
+			}
+			catch (...)
+			{
+				std::cout << "[ShapeRecognition] result=failed reason=preview_allocation"
+					<< std::endl;
+				return false;
+			}
+
+			const InkRasterStateToken beforeState = runtime.rasterState;
+			const InkRasterStateToken afterState = allocateRasterStateToken();
+			const HistoryCanvasIdentity canvasIdentity = {
+				page->PageGuid(), kDefaultDeviceKey };
+			const InkHistoryRasterKey rasterKey = currentRasterKey();
+			const WindowSize size = window_.Size();
+			const InkViewport viewport = canvas->Viewport();
+			std::optional<size_t> appendedStroke;
+			try
+			{
+				appendedStroke = canvas->AppendStroke(std::move(plan.replacement));
+			}
+			catch (...)
+			{
+				std::cout << "[ShapeRecognition] result=failed reason=document_append"
+					<< std::endl;
+				return false;
+			}
+			if (!appendedStroke || *appendedStroke != replacementStrokeIndex)
+			{
+				if (appendedStroke) (void)canvas->RollbackLastStroke(*appendedStroke);
+				return false;
+			}
+			runtime.beforeStates.push_back(beforeState);
+			runtime.afterStates.push_back(afterState);
+
+			const HotPreimageCaptureResult preimageCapture =
+				historyGpuCache.CapturePreimage({
+					canvasIdentity, *correctionId, rasterKey, beforeState, afterState,
+					correctionItem->undoTiles, viewport.x, viewport.y,
+					size.width, size.height
+				});
+			const CompositionRestoreRequest request = {
+				canvasIdentity, rasterKey, canvas, &*historyPreview,
+				affectedTiles, historyPreview->Items().size(),
+				viewport.x, viewport.y, size.width, size.height, true
+			};
+			const CompositionRestoreResult restored =
+				historyGpuCache.RestoreComposition(request);
+			const auto restoreOriginalTiles = [&]()
+			{
+				const CompositionRestoreRequest rollbackRequest = {
+					canvasIdentity, rasterKey, canvas, &runtime.history,
+					affectedTiles, runtime.history.Items().size(),
+					viewport.x, viewport.y, size.width, size.height, true
+				};
+				return historyGpuCache.RestoreComposition(rollbackRequest);
+			};
+			const auto discardStagedCorrection = [&]()
+			{
+				runtime.beforeStates.pop_back();
+				runtime.afterStates.pop_back();
+				return canvas->RollbackLastStroke(replacementStrokeIndex);
+			};
+			if (restored.path == CompositionRestorePath::Failed)
+			{
+				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+					historyGpuCache.CancelPreimage(preimageCapture.ticket);
+				const CompositionRestoreResult rollback = restoreOriginalTiles();
+				const bool documentRolledBack = discardStagedCorrection();
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				UnionRectInPlace(frameDirty, restored.dirty);
+				UnionRectInPlace(frameDirty, rollback.dirty);
+				if (rollback.path == CompositionRestorePath::Failed || !documentRolledBack)
+					requestAuthoritativeRecovery();
+				std::cout << "[ShapeRecognition] result=failed reason=restore rollback=" <<
+					CompositionRestorePathName(rollback.path) << std::endl;
+				return false;
+			}
+
+			size_t metadataCount = 0;
+			for (size_t strokeIndex : sourceStrokeIndices)
+			{
+				if (!canvas->SetStrokeRenderOnlyWhenLatest(strokeIndex, true)) break;
+				++metadataCount;
+			}
+			if (metadataCount != sourceStrokeIndices.size())
+			{
+				for (size_t index = 0; index < metadataCount; ++index)
+					canvas->SetStrokeRenderOnlyWhenLatest(sourceStrokeIndices[index], false);
+				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+					historyGpuCache.CancelPreimage(preimageCapture.ticket);
+				const CompositionRestoreResult rollback = restoreOriginalTiles();
+				const bool documentRolledBack = discardStagedCorrection();
+				UnionRectInPlace(frameDirty, restored.dirty);
+				UnionRectInPlace(frameDirty, rollback.dirty);
+				if (rollback.path == CompositionRestorePath::Failed || !documentRolledBack)
+					requestAuthoritativeRecovery();
+				return false;
+			}
+
+			runtime.history = std::move(*historyPreview);
+			runtime.rasterState = afterState;
+			bool hotCaptured = false;
+			if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+			{
+				hotCaptured = historyGpuCache.CommitPreimage(preimageCapture.ticket);
+				if (!hotCaptured)
+					historyGpuCache.CancelPreimage(preimageCapture.ticket);
+			}
+			renderer_.ClearOperatorLayer(renderer_.layerL1);
+			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			renderer_.InvalidateTrustedL2Snapshot();
+			trustedSnapshotSignatureValid = false;
+			UnionRectInPlace(frameDirty, restored.dirty);
+			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(
+				viewportVisibleClear, true);
+			std::cout << "[ShapeRecognition] page=" << (currentPageIndex_ + 1) <<
+				" item=" << correctionId->index << " confidence=" << plan.confidence <<
+				" path=" << CompositionRestorePathName(restored.path) <<
+				" hot_captured=" << (hotCaptured ? "true" : "false") << std::endl;
+			return true;
+		};
+
 			auto undoCurrentPage = [&](RECT& frameDirty) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
@@ -3795,7 +4034,31 @@ namespace Inkeys::Drawing::Draw3
 					" result=noop reason=history_mismatch" << std::endl;
 				return false;
 			}
-			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
+			std::optional<CanvasRuntimeHistory> conditionalPreview;
+			if (!item->renderOnlyWhenLatest && item->previousVisibleIndex &&
+				*item->previousVisibleIndex < runtime.history.Items().size())
+			{
+				const RenderItemState& previous =
+					runtime.history.Items()[*item->previousVisibleIndex];
+				if (previous.active && previous.renderOnlyWhenLatest)
+				{
+					try
+					{
+						conditionalPreview.emplace(runtime.history);
+						if (!conditionalPreview->UndoLastVisible(*itemId))
+							conditionalPreview.reset();
+					}
+					catch (...)
+					{
+						std::cout << "[Undo] result=failed reason=preview_allocation" << std::endl;
+						return false;
+					}
+				}
+			}
+			const std::vector<SignedTileCoordinate> affectedTiles = conditionalPreview
+				? CollectVisibilityDeltaTiles(runtime.history, *conditionalPreview,
+					item->compositionTiles)
+				: item->compositionTiles;
 			const size_t restoreRangeEnd = static_cast<size_t>(itemId->index) + 1;
 			const HistoryCanvasIdentity canvasIdentity = {
 				page->PageGuid(), kDefaultDeviceKey };
@@ -3809,7 +4072,10 @@ namespace Inkeys::Drawing::Draw3
 			RECT dirty = {};
 			if (hotRestore.restored)
 			{
-				if (!runtime.history.UndoLastVisible(*itemId))
+				const bool visibilityCommitted = conditionalPreview
+					? (runtime.history = std::move(*conditionalPreview), true)
+					: runtime.history.UndoLastVisible(*itemId);
+				if (!visibilityCommitted)
 				{
 					requestAuthoritativeRecovery();
 					std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
@@ -3845,7 +4111,7 @@ namespace Inkeys::Drawing::Draw3
 					canvasIdentity,
 					rasterKey,
 					canvas,
-					&runtime.history,
+					conditionalPreview ? &*conditionalPreview : &runtime.history,
 					affectedTiles,
 					restoreRangeEnd,
 					viewport.x,
@@ -3853,7 +4119,7 @@ namespace Inkeys::Drawing::Draw3
 					size.width,
 					size.height,
 					true,
-					*itemId
+					conditionalPreview ? std::nullopt : std::optional<RenderItemId>(*itemId)
 				};
 				const CompositionRestoreResult restored =
 					historyGpuCache.RestoreComposition(request);
@@ -3870,7 +4136,10 @@ namespace Inkeys::Drawing::Draw3
 					return false;
 				}
 				// 候选画面成功后才提交 visibility，避免失败时丢失历史状态。
-				if (!runtime.history.UndoLastVisible(*itemId))
+				const bool visibilityCommitted = conditionalPreview
+					? (runtime.history = std::move(*conditionalPreview), true)
+					: runtime.history.UndoLastVisible(*itemId);
+				if (!visibilityCommitted)
 				{
 					const CompositionRestoreResult rollback = restoreOriginalTiles();
 					requestAuthoritativeRecovery();
@@ -3945,7 +4214,29 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 
-			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
+			std::optional<CanvasRuntimeHistory> conditionalPreview;
+			const std::optional<RenderItemId> currentActive = runtime.history.LastVisibleItem();
+			const RenderItemState* currentActiveItem = currentActive
+				? runtime.history.Find(*currentActive) : nullptr;
+			if (!item->renderOnlyWhenLatest && currentActiveItem &&
+				currentActiveItem->renderOnlyWhenLatest)
+			{
+				try
+				{
+					conditionalPreview.emplace(runtime.history);
+					if (!conditionalPreview->RedoLastUndone(*itemId))
+						conditionalPreview.reset();
+				}
+				catch (...)
+				{
+					std::cout << "[Redo] result=failed reason=preview_allocation" << std::endl;
+					return false;
+				}
+			}
+			const std::vector<SignedTileCoordinate> affectedTiles = conditionalPreview
+				? CollectVisibilityDeltaTiles(runtime.history, *conditionalPreview,
+					item->compositionTiles)
+				: item->compositionTiles;
 			const HistoryCanvasIdentity canvasIdentity = {
 				page->PageGuid(), kDefaultDeviceKey };
 			const InkHistoryRasterKey rasterKey = currentRasterKey();
@@ -3968,6 +4259,67 @@ namespace Inkeys::Drawing::Draw3
 				};
 				return historyGpuCache.RestoreComposition(request);
 			};
+
+			if (conditionalPreview)
+			{
+				RECT dirty = {};
+				if (!viewportVisibleClear)
+				{
+					const CompositionRestoreResult base = restoreHiddenTiles();
+					UnionRectInPlace(dirty, base.dirty);
+					if (base.path == CompositionRestorePath::Failed)
+					{
+						requestAuthoritativeRecovery();
+						UnionRectInPlace(frameDirty, dirty);
+						return false;
+					}
+				}
+				const HotPreimageCaptureResult preimageCapture =
+					historyGpuCache.CapturePreimage({
+						canvasIdentity, *itemId, rasterKey, beforeState, afterState,
+						item->undoTiles, viewport.x, viewport.y,
+						size.width, size.height
+					});
+				const CompositionRestoreRequest request = {
+					canvasIdentity, rasterKey, canvas, &*conditionalPreview,
+					affectedTiles, conditionalPreview->Items().size(),
+					viewport.x, viewport.y, size.width, size.height, true
+				};
+				const CompositionRestoreResult restored =
+					historyGpuCache.RestoreComposition(request);
+				UnionRectInPlace(dirty, restored.dirty);
+				if (restored.path == CompositionRestorePath::Failed)
+				{
+					if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+						historyGpuCache.CancelPreimage(preimageCapture.ticket);
+					const CompositionRestoreResult rollback = restoreHiddenTiles();
+					UnionRectInPlace(dirty, rollback.dirty);
+					if (rollback.path == CompositionRestorePath::Failed)
+						requestAuthoritativeRecovery();
+					UnionRectInPlace(frameDirty, dirty);
+					return false;
+				}
+				runtime.history = std::move(*conditionalPreview);
+				runtime.rasterState = afterState;
+				bool hotRearmed = false;
+				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
+				{
+					hotRearmed = historyGpuCache.CommitPreimage(preimageCapture.ticket);
+					if (!hotRearmed)
+						historyGpuCache.CancelPreimage(preimageCapture.ticket);
+				}
+				renderer_.ClearOperatorLayer(renderer_.layerL1);
+				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				UnionRectInPlace(frameDirty, dirty);
+				viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(
+					viewportVisibleClear, true);
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" item=" << itemId->index << " path=conditional_restore base=" <<
+					CompositionRestorePathName(restored.path) << " hot_rearmed=" <<
+					(hotRearmed ? "true" : "false") << " redo_remaining=" <<
+					runtime.history.RedoDepth() << std::endl;
+				return true;
+			}
 
 			const char* basePath = "trusted_l2";
 			RECT dirty = {};
@@ -4148,6 +4500,7 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				shapeRecognitionTrigger.Invalidate();
 				if (command.type == CanvasCommandType::SetWorkspace)
 				{
 					const auto target = static_cast<Bridge::Workspace>(command.workspace);
@@ -4348,6 +4701,42 @@ namespace Inkeys::Drawing::Draw3
 				publishCurrentPageContent();
 				reportCommand(command.type);
 			}
+		};
+
+		auto attemptPendingShapeRecognition = [&](bool navigationActive,
+			RECT& frameDirty) -> bool
+		{
+			if (!shapeRecognitionTrigger.Pending()) return false;
+			if (!document_ || currentPageIndex_ >= pageRuntimeStates.size())
+			{
+				shapeRecognitionTrigger.Invalidate();
+				return false;
+			}
+			InkPage* page = document_->PageAt(currentPageIndex_);
+			InkCanvas* canvas = page
+				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+			if (!page || !canvas)
+			{
+				shapeRecognitionTrigger.Invalidate();
+				return false;
+			}
+			const bool reconnectPending = std::any_of(active.begin(), active.end(),
+				[](const RuntimeStroke* runtime)
+				{
+					return runtime && runtime->awaitingReconnect;
+				});
+			const ShapeRecognitionIdleState idleState = {
+				HasPhysicalContact(active), !gestureContacts.empty(), reconnectPending,
+				navigationActive, input_.HasPendingWork()
+			};
+			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			if (!shapeRecognitionTrigger.ConsumeIfReady(
+				page->PageGuid(), runtime.history.Revision(), idleState)) return false;
+
+			std::optional<ShapeCorrectionPlan> plan = BuildShapeCorrectionPlan(
+				*canvas, runtime.history, configuration_.dpiScale);
+			if (!plan) return false;
+			return applyShapeCorrection(std::move(*plan), frameDirty);
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();
@@ -4832,6 +5221,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool navigationActive = touchGesture.PanActive() ||
 				touchGesture.InertiaCandidateActive() || panMotion.inertiaActive ||
 				!gestureContacts.empty() || viewportRefreshPending || viewportRecoveryPending;
+			(void)attemptPendingShapeRecognition(navigationActive, frameDirty);
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
 				!speedEraserHoverAnimating &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty) &&
@@ -5408,12 +5798,44 @@ namespace Inkeys::Drawing::Draw3
 						InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
 						InkCanvas* canvas = page
 							? page->FindCanvas(kDefaultDeviceKey) : nullptr;
-						const std::optional<size_t> strokeIndex = finalizedStroke && canvas
-							? canvas->AppendStroke(std::move(*finalizedStroke)) : std::nullopt;
+						std::optional<size_t> strokeIndex;
+						if (finalizedStroke && canvas)
+						{
+							try
+							{
+								strokeIndex = canvas->AppendStroke(std::move(*finalizedStroke));
+							}
+							catch (...)
+							{
+								std::cout << "[InkHistory] failed to append completed stroke document"
+									<< std::endl;
+							}
+						}
 						if (strokeIndex)
 						{
 							CanvasPageRuntimeState& pageRuntime =
 								pageRuntimeStates[currentPageIndex_];
+							bool conditionalGroupSolidified = false;
+							try
+							{
+								conditionalGroupSolidified =
+									solidifyLatestConditionalGroup(*canvas, pageRuntime.history);
+							}
+							catch (...)
+							{
+								conditionalGroupSolidified = false;
+							}
+							if (!conditionalGroupSolidified)
+							{
+								const bool documentRolledBack =
+									canvas->RollbackLastStroke(*strokeIndex);
+								shapeRecognitionTrigger.Invalidate();
+								std::cout << "[InkHistory] failed to solidify conditional branch page=" <<
+									(currentPageIndex_ + 1) << " document_rollback=" <<
+									(documentRolledBack ? "true" : "false") << std::endl;
+								UnionRectInPlace(frameDirty, runtime->visibleDirty);
+								continue;
+							}
 							// Stored Stroke 已改变文档分支，后续失败也不能恢复旧 redo 候选。
 							pageRuntime.history.DiscardRedoBranch();
 							// 文档对象先成为真值，再从刚追加的同一 Stroke 完成首次 L2 绘制。
@@ -5532,9 +5954,14 @@ namespace Inkeys::Drawing::Draw3
 										(currentPageIndex_ + 1) << " item=" << *strokeIndex <<
 										std::endl;
 								}
+								if (storedStroke.Style().inkType == StoredInkType::Pen)
+									shapeRecognitionTrigger.Arm(
+										page->PageGuid(), pageRuntime.history.Revision());
+								else shapeRecognitionTrigger.Invalidate();
 							}
 							else
 							{
+								shapeRecognitionTrigger.Invalidate();
 								std::cout << "[InkHistory] failed to append render item page=" <<
 									(currentPageIndex_ + 1) << " stroke=" << *strokeIndex <<
 									std::endl;

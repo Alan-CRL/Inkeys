@@ -52,8 +52,9 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	InkStroke::InkStroke(StoredInkStyle style,
-		std::vector<StoredInkPoint> points) noexcept
-		: style_(style), points_(std::move(points)) {}
+		std::vector<StoredInkPoint> points, bool renderOnlyWhenLatest) noexcept
+		: style_(style), points_(std::move(points)),
+		renderOnlyWhenLatest_(renderOnlyWhenLatest) {}
 
 	const StoredInkStyle& InkStroke::Style() const noexcept
 	{
@@ -63,6 +64,16 @@ namespace Inkeys::Drawing::Draw3
 	std::span<const StoredInkPoint> InkStroke::Points() const noexcept
 	{
 		return { points_.data(), points_.size() };
+	}
+
+	bool InkStroke::RenderOnlyWhenLatest() const noexcept
+	{
+		return renderOnlyWhenLatest_;
+	}
+
+	void InkStroke::SetRenderOnlyWhenLatest(bool enabled) noexcept
+	{
+		renderOnlyWhenLatest_ = enabled;
 	}
 
 	bool InkStroke::IsValid() const noexcept
@@ -111,6 +122,21 @@ namespace Inkeys::Drawing::Draw3
 		if (!stroke.IsValid()) return std::nullopt;
 		strokes_.push_back(std::move(stroke));
 		return strokes_.size() - 1;
+	}
+
+	bool InkCanvas::SetStrokeRenderOnlyWhenLatest(
+		size_t strokeIndex, bool enabled) noexcept
+	{
+		if (strokeIndex >= strokes_.size()) return false;
+		strokes_[strokeIndex].SetRenderOnlyWhenLatest(enabled);
+		return true;
+	}
+
+	bool InkCanvas::RollbackLastStroke(size_t expectedIndex) noexcept
+	{
+		if (strokes_.empty() || expectedIndex + 1 != strokes_.size()) return false;
+		strokes_.pop_back();
+		return true;
 	}
 
 	void InkCanvas::ClearStrokes() noexcept

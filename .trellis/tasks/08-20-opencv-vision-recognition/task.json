@@ -19,7 +19,8 @@
   "pr_url": null,
   "subtasks": [],
   "children": [
-    "08-20-opencv-vcpkg-integration"
+    "08-20-opencv-vcpkg-integration",
+    "08-20-draw3-axis-aligned-rectangle-recognition"
   ],
   "parent": null,
   "relatedFiles": [],

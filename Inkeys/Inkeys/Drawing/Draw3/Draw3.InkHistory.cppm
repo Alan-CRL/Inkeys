@@ -82,6 +82,9 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		RenderItemId id = {};
 		size_t strokeIndex = 0;
+		bool active = true;
+		bool renderOnlyWhenLatest = false;
+		// visible 是由 active 序列反向推导出的有效合成可见性。
 		bool visible = true;
 		bool compositionBarrier = false;
 		InkPixelBounds pixelBounds = {};
@@ -175,17 +178,22 @@ export namespace Inkeys::Drawing::Draw3
 		size_t visibleBarrierCount_ = 0;
 	};
 
-	// Runtime sidecar 只切换尾部可见性；Stroke 保持 append-only，redo 分支可逻辑丢弃。
+	// Runtime sidecar 分离撤回 active 与条件渲染后的有效 visible。
 	class CanvasRuntimeHistory
 	{
 	public:
 		std::optional<RenderItemId> AppendStroke(size_t strokeIndex,
-			StrokeTileFootprint footprint, bool affineOperator = true);
+			StrokeTileFootprint footprint, bool affineOperator = true,
+			bool renderOnlyWhenLatest = false);
 		std::optional<RenderItemId> LastVisibleItem() const noexcept;
 		bool UndoLastVisible(RenderItemId expected);
 		std::optional<RenderItemId> UndoLastVisible();
 		std::optional<RenderItemId> LastRedoItem() const noexcept;
 		bool RedoLastUndone(RenderItemId expected);
+		bool SetRenderOnlyWhenLatest(
+			std::span<const RenderItemId> items, bool enabled);
+		// 新分支开始前固化当前恢复的末尾条件组，并返回需同步到文档的项。
+		std::vector<RenderItemId> ClearLatestConditionalGroup();
 		void DiscardRedoBranch() noexcept;
 		size_t RedoDepth() const noexcept;
 		bool UpdateItemGeometry(RenderItemId id, StrokeTileFootprint footprint);
@@ -201,6 +209,10 @@ export namespace Inkeys::Drawing::Draw3
 
 	private:
 		RenderItemState* FindMutable(RenderItemId id) noexcept;
+		bool SetEffectiveVisibility(RenderItemState& item, bool visible);
+		bool SetTrailingConditionalVisibility(
+			std::optional<uint32_t> start, bool visible);
+		bool RecomputeEffectiveVisibility();
 		void AddVisibleCompositionTiles(
 			std::span<const SignedTileCoordinate> tiles);
 		void RemoveVisibleCompositionTiles(
@@ -213,6 +225,7 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t nextItemGeneration_ = 1;
 		std::optional<uint32_t> lastVisibleIndex_;
 		std::vector<RenderItemId> redoItems_;
+		size_t conditionalItemCount_ = 0;
 	};
 
 	struct UndoCacheEntryId

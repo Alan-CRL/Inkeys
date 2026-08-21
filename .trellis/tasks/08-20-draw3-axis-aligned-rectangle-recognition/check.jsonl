@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"检查 Draw3 产品边界、绘制线程、页面与无窗口集成合同。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查完整 ARM64 构建、静态 OpenCV 和 Win7 兼容声明。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"检查 history active/effective visibility、事务式 Undo/Redo 与 Tile 恢复。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"执行静态审查、测试和变更范围质量门。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"确认 OutlineRectangle、history pass、dirty bounds 和 CPU/GPU 合同未破坏。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核触发、文档、历史和 GPU 失败恢复的跨层一致性。"}

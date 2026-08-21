@@ -17,6 +17,7 @@
 ## Task Map
 
 - `08-20-opencv-vcpkg-integration`：当前阶段，完成 vcpkg 静态依赖、第三方声明与 ARM64 构建。
+- `08-20-draw3-axis-aligned-rectangle-recognition`：当前实施阶段，建立 OpenCV 隔离识别层、Draw3 水平矩形修正与条件渲染历史语义。
 - 后续子任务：`InkeysCV` 契约与 ShapeRecognizer、摄像头采集、文档扫描/图像处理、Windows 版本与设备验证。
 
 ## Acceptance Criteria
@@ -29,4 +30,4 @@
 
 ## Current Scope Boundary
 
-当前只实施 `opencv-vcpkg-integration` 子任务。不在本阶段创建 `InkeysCV` 源码、识别算法、摄像头运行时或扫描 UI。
+当前实施 `draw3-axis-aligned-rectangle-recognition` 子任务，只建立水平/竖直矩形识别与 Draw3 条件渲染闭环；倾斜矩形、其他图形、摄像头运行时和扫描 UI 仍延后。

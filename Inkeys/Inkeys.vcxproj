@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM64">
@@ -399,6 +399,11 @@
     <Manifest>
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
     </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(VcpkgInstalledDir)$(VcpkgTriplet)\include\opencv4;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
@@ -959,6 +964,10 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DrawingController.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\CV\ShapeRecognition.cpp" />
+    <ClCompile Include="Inkeys\CV\ShapeRecognition.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.GraphicsInitialization.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.GraphicsInitialization.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -993,6 +1002,10 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>

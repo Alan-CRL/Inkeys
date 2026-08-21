@@ -900,7 +900,8 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	std::optional<RenderItemId> CanvasRuntimeHistory::AppendStroke(
-		size_t strokeIndex, StrokeTileFootprint footprint, bool affineOperator)
+		size_t strokeIndex, StrokeTileFootprint footprint, bool affineOperator,
+		bool renderOnlyWhenLatest)
 	{
 		if (!IsValidBounds(footprint.pixelBounds) ||
 			items_.size() >= (std::numeric_limits<uint32_t>::max)() ||
@@ -910,12 +911,15 @@ namespace Inkeys::Drawing::Draw3
 		RenderItemState state;
 		state.id = { static_cast<uint32_t>(items_.size()), nextItemGeneration_ };
 		state.strokeIndex = strokeIndex;
+		state.active = true;
+		state.renderOnlyWhenLatest = renderOnlyWhenLatest;
 		state.visible = true;
 		state.compositionBarrier = !affineOperator;
 		state.pixelBounds = footprint.pixelBounds;
 		state.undoTiles = std::move(footprint.undoTiles);
 		state.compositionTiles = std::move(footprint.compositionTiles);
 		state.previousVisibleIndex = lastVisibleIndex_;
+		const std::optional<uint32_t> previousActiveIndex = lastVisibleIndex_;
 		items_.push_back(std::move(state));
 		if (!compositionTree_.AppendRenderItem(items_.back()))
 		{
@@ -924,6 +928,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 		const RenderItemId result = items_.back().id;
 		AddVisibleCompositionTiles(items_.back().compositionTiles);
+		if (renderOnlyWhenLatest) ++conditionalItemCount_;
+		else SetTrailingConditionalVisibility(previousActiveIndex, false);
 		lastVisibleIndex_ = result.index;
 		redoItems_.clear();
 		if (nextItemGeneration_ == (std::numeric_limits<uint32_t>::max)())
@@ -950,13 +956,26 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (LastVisibleItem() != expected) return false;
 		RenderItemState* item = FindMutable(expected);
-		if (!item || !compositionTree_.SetItemVisibility(expected, false)) return false;
-		RemoveVisibleCompositionTiles(item->compositionTiles);
-		item->visible = false;
-		lastVisibleIndex_ = item->previousVisibleIndex;
+		if (!item || !item->active) return false;
+		const std::optional<uint32_t> previousActiveIndex = item->previousVisibleIndex;
+		// redo push 可能分配；先完成它，失败时不得提前推进 active 游标。
 		redoItems_.push_back(expected);
-		if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
-			++item->contentGeneration;
+		if (!SetEffectiveVisibility(*item, false))
+		{
+			redoItems_.pop_back();
+			return false;
+		}
+		if (!item->renderOnlyWhenLatest &&
+			!SetTrailingConditionalVisibility(previousActiveIndex, true))
+		{
+			// 条件组可能已更新一部分；按旧状态整体隐藏后再恢复目标项。
+			(void)SetTrailingConditionalVisibility(previousActiveIndex, false);
+			(void)SetEffectiveVisibility(*item, true);
+			redoItems_.pop_back();
+			return false;
+		}
+		item->active = false;
+		lastVisibleIndex_ = previousActiveIndex;
 		if (revision_ != (std::numeric_limits<uint64_t>::max)()) ++revision_;
 		return true;
 	}
@@ -966,7 +985,7 @@ namespace Inkeys::Drawing::Draw3
 		if (redoItems_.empty()) return std::nullopt;
 		const RenderItemId id = redoItems_.back();
 		const RenderItemState* item = Find(id);
-		if (!item || item->visible || item->previousVisibleIndex != lastVisibleIndex_)
+		if (!item || item->active || item->previousVisibleIndex != lastVisibleIndex_)
 			return std::nullopt;
 		return id;
 	}
@@ -975,16 +994,135 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (LastRedoItem() != expected) return false;
 		RenderItemState* item = FindMutable(expected);
-		if (!item || item->visible ||
-			!compositionTree_.SetItemVisibility(expected, true)) return false;
-		AddVisibleCompositionTiles(item->compositionTiles);
-		item->visible = true;
+		if (!item || item->active) return false;
+		const bool hidesConditionalTail = !item->renderOnlyWhenLatest;
+		if (hidesConditionalTail &&
+			!SetTrailingConditionalVisibility(lastVisibleIndex_, false))
+		{
+			(void)SetTrailingConditionalVisibility(lastVisibleIndex_, true);
+			return false;
+		}
+		if (!SetEffectiveVisibility(*item, true))
+		{
+			if (hidesConditionalTail)
+				(void)SetTrailingConditionalVisibility(lastVisibleIndex_, true);
+			return false;
+		}
+		item->active = true;
 		lastVisibleIndex_ = expected.index;
 		redoItems_.pop_back();
-		if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
-			++item->contentGeneration;
 		if (revision_ != (std::numeric_limits<uint64_t>::max)()) ++revision_;
 		return true;
+	}
+
+	bool CanvasRuntimeHistory::SetEffectiveVisibility(
+		RenderItemState& item, bool visible)
+	{
+		if (item.visible == visible) return true;
+		if (!compositionTree_.SetItemVisibility(item.id, visible)) return false;
+		if (visible) AddVisibleCompositionTiles(item.compositionTiles);
+		else RemoveVisibleCompositionTiles(item.compositionTiles);
+		item.visible = visible;
+		if (item.contentGeneration != (std::numeric_limits<uint64_t>::max)())
+			++item.contentGeneration;
+		return true;
+	}
+
+	bool CanvasRuntimeHistory::SetTrailingConditionalVisibility(
+		std::optional<uint32_t> start, bool visible)
+	{
+		if (conditionalItemCount_ == 0) return true;
+		std::optional<uint32_t> current = start;
+		while (current && *current < items_.size())
+		{
+			RenderItemState& item = items_[*current];
+			if (!item.active || !item.renderOnlyWhenLatest) break;
+			if (!SetEffectiveVisibility(item, visible)) return false;
+			current = item.previousVisibleIndex;
+		}
+		return true;
+	}
+
+	bool CanvasRuntimeHistory::RecomputeEffectiveVisibility()
+	{
+		bool laterActiveNonConditionalItem = false;
+		for (size_t index = items_.size(); index > 0; --index)
+		{
+			RenderItemState& item = items_[index - 1];
+			const bool effectiveVisible = item.active &&
+				(!item.renderOnlyWhenLatest || !laterActiveNonConditionalItem);
+			if (!SetEffectiveVisibility(item, effectiveVisible)) return false;
+			if (item.active && !item.renderOnlyWhenLatest)
+				laterActiveNonConditionalItem = true;
+		}
+		return true;
+	}
+
+	bool CanvasRuntimeHistory::SetRenderOnlyWhenLatest(
+		std::span<const RenderItemId> items, bool enabled)
+	{
+		std::vector<RenderItemId> changedItems;
+		changedItems.reserve(items.size());
+		for (RenderItemId id : items)
+		{
+			const RenderItemState* item = Find(id);
+			if (!item || !item->active) return false;
+			if (item->renderOnlyWhenLatest != enabled &&
+				std::find(changedItems.begin(), changedItems.end(), id) ==
+				changedItems.end())
+				changedItems.push_back(id);
+		}
+		if (changedItems.empty()) return true;
+		if (!enabled && changedItems.size() > conditionalItemCount_) return false;
+		const size_t previousConditionalItemCount = conditionalItemCount_;
+		for (RenderItemId id : changedItems)
+		{
+			RenderItemState* item = FindMutable(id);
+			item->renderOnlyWhenLatest = enabled;
+			if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
+				++item->contentGeneration;
+		}
+		if (enabled) conditionalItemCount_ += changedItems.size();
+		else conditionalItemCount_ -= changedItems.size();
+		if (!RecomputeEffectiveVisibility())
+		{
+			for (RenderItemId id : changedItems)
+			{
+				RenderItemState* item = FindMutable(id);
+				item->renderOnlyWhenLatest = !enabled;
+				if (item->contentGeneration != (std::numeric_limits<uint64_t>::max)())
+					++item->contentGeneration;
+			}
+			conditionalItemCount_ = previousConditionalItemCount;
+			(void)RecomputeEffectiveVisibility();
+			return false;
+		}
+		if (revision_ != (std::numeric_limits<uint64_t>::max)()) ++revision_;
+		return true;
+	}
+
+	std::vector<RenderItemId> CanvasRuntimeHistory::ClearLatestConditionalGroup()
+	{
+		std::vector<RenderItemId> cleared;
+		std::optional<uint32_t> current = lastVisibleIndex_;
+		while (current && *current < items_.size())
+		{
+			const RenderItemState& item = items_[*current];
+			if (!item.active || !item.renderOnlyWhenLatest) break;
+			cleared.push_back(item.id);
+			current = item.previousVisibleIndex;
+		}
+		if (cleared.empty() || cleared.size() > conditionalItemCount_) return {};
+		for (RenderItemId id : cleared)
+		{
+			RenderItemState& item = items_[id.index];
+			item.renderOnlyWhenLatest = false;
+			if (item.contentGeneration != (std::numeric_limits<uint64_t>::max)())
+				++item.contentGeneration;
+		}
+		conditionalItemCount_ -= cleared.size();
+		if (revision_ != (std::numeric_limits<uint64_t>::max)()) ++revision_;
+		return cleared;
 	}
 
 	void CanvasRuntimeHistory::DiscardRedoBranch() noexcept

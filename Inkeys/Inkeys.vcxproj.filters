@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -114,6 +114,9 @@
     </Filter>
     <Filter Include="Modules\Inkeys\Drawing\Draw3\Assets">
       <UniqueIdentifier>{7f6b3f95-73e8-4a57-8b4c-cc1a4d28d6a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\CV">
+      <UniqueIdentifier>{C994C3B2-0A3A-4DF5-92C5-8AF5B019C602}</UniqueIdentifier>
     </Filter>
     <Filter Include="头文件\Additional\absl">
       <UniqueIdentifier>{e65baef5-4ba2-47e1-19b1-ce2bccc03345}</UniqueIdentifier>
@@ -1883,6 +1886,12 @@
     <ClCompile Include="Inkeys\Display\Display.cpp">
       <Filter>Modules\Inkeys\Display</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\CV\ShapeRecognition.cpp">
+      <Filter>Modules\Inkeys\CV</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\CV\ShapeRecognition.cppm">
+      <Filter>Modules\Inkeys\CV</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -1962,6 +1971,12 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRecognition.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Renderer.cpp">

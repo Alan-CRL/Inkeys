@@ -76,6 +76,57 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做和页面切换接入已验证实现；保存、超级恢复、自动直线拉直和输入测试保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
 
+## Scenario: 图形识别与条件渲染修正
+
+### 1. Scope / Trigger
+
+修改 Draw3 图形识别、自动修正、`.uink` 条件渲染映射、runtime history 可见性或修正结果的 Undo/Redo/GPU 恢复时必须应用本合同。
+
+### 2. Signatures
+
+- `Inkeys.CV.ShapeRecognition::RecognizeInkShape(std::span<const InkStrokeView>, float dpiScale) noexcept -> ShapeResult`；导出接口不得包含 `cv::` 类型，OpenCV 头文件只存在于实现单元。
+- `InkStroke::{RenderOnlyWhenLatest(), SetRenderOnlyWhenLatest(bool)}` 保存独立于 Undo 的内容元数据。
+- `RenderItemState::{active, renderOnlyWhenLatest, visible}` 中 `active` 表示未撤回，`visible` 表示实际参与合成。
+- `CanvasRuntimeHistory::{SetRenderOnlyWhenLatest(...), ClearLatestConditionalGroup()}` 负责条件尾组重算和新分支固化。
+
+### 3. Contracts
+
+- 当前 MVP 只识别水平/竖直矩形。候选必须以最新 Stroke 结尾，由最近最多 6 条连续、同样式、active 且 effectively visible 的 Pen 构成；遇到其他工具、条件/隐藏项、Redo 间隙或样式变化立即截断，并从最大后缀向小后缀尝试。
+- 只有绘制 contact、手势手指、重连候选、导航和待处理输入全部为空，且最终 Pen 已提交后才消费一次触发。识别失败不反复尝试同一 history revision。
+- 识别器最多处理每笔 1024 个采样点、总计 4096 点；非法坐标/DPI、超限、OpenCV 异常或任一硬门槛失败都返回 `Unknown`。矩形硬门槛包括最小尺寸/长宽比、矩形度、四角简化、局部与整边偏轴、单边/总覆盖、离边比例、逐笔边带比例和周长比；阈值变化必须同步正反样本。
+- 条件可见性按 active 序列从后向前计算：`visible = active && (!renderOnlyWhenLatest || 后方不存在 active 非条件项)`。修正时原稿设为条件项，追加的 `OutlineRectangle` 保持非条件；因此矩形存在时隐藏原稿，撤回矩形后末尾条件原稿整体恢复可见。
+- 撤回矩形仍只消耗一个历史项；之后原稿按原 Stroke 顺序逐笔撤回。Redo 先隐藏条件原稿再恢复矩形。撤回矩形后追加新内容时，必须先把当前末尾条件组固化为普通内容并同步 document sidecar，再丢弃 Redo 分支。
+- 修正、Undo 和 Redo 的 dirty rect、热前像与 composition restore 必须覆盖原稿和矩形 footprint 的 Tile 并集。先用预演 history 生成目标画面，GPU 成功后才提交 CPU history、document 元数据、raster token 和 redo 游标。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| 输入非法、OpenCV 异常、低置信度或负类冲突 | 返回 `Unknown`，原稿与 history 不变 |
+| history/document 预演或修正 Stroke 追加失败 | 回滚暂存尾项，不设置条件标记 |
+| GPU restore 在提交前失败或可能部分写入 | 用旧 history 重放受影响 Tile；仍失败则请求权威刷新，CPU 状态保持旧值 |
+| Undo/Redo 可见性重算失败 | 不推进 active 游标或 redo 栈，并恢复旧条件可见性 |
+| 撤回修正后追加普通 Stroke | 条件标记先固化，原稿保持可见，旧矩形不可再 Redo |
+
+### 5. Good / Base / Bad Cases
+
+- Good：四笔矩形被替换为同色、同透明度、同中位笔宽的 `OutlineRectangle`；Undo 一次恢复全部原稿，Redo 再次隐藏原稿并显示矩形。
+- Base：候选不是矩形或仍有活动输入时完全保持普通 Pen 流程；单笔闭合、乱序反向、允许的小断角和重复边仍按同一合同判断。
+- Bad：把 `renderOnlyWhenLatest` 当作 `active=false`、只更新 document 或 history 一侧、跨过隐藏/异样式项拼候选，或在 GPU restore 前提交 CPU 游标。
+
+### 6. Tests Required
+
+- 识别正例覆盖标准四笔、单笔闭合、乱序/反向、轻微抖动、小断角和重复边；负例覆盖小图形、U/C、圆/椭圆、三角形、平行四边形、倾斜矩形、X、缺边、局部锯齿/过大转角、内部乱画和最新无关笔画。
+- History 覆盖修正、Undo、原稿逐笔 Undo、Redo、Redo 分支丢弃、页面隔离、条件尾组 Tile 可见性及可见性操作失败回滚。
+- 触发门分别断言绘制 contact、手势、重连、导航和 pending input 阻止识别，全抬起后同一 revision 只执行一次。
+- 构建完整 `InkeysRepo.sln Debug|ARM64`，运行 `InkeysHeadlessTests.exe --no-window` 与 `Inkeys.exe --draw3-hidden-test`；linker map 只允许 OpenCV core/imgproc 对象进入 EXE，PE 导入和输出目录不得出现 OpenCV/FFmpeg DLL。
+
+### 7. Wrong vs Correct
+
+Wrong：`标记原稿 inactive -> 追加 Shape -> GPU 失败后再猜测恢复`。
+
+Correct：`复制 history 预演条件可见性 -> 恢复 footprint union -> 成功后原子提交 metadata/history/raster state`。
+
 ## Scenario: 工具光标样式与有效透明度
 
 ### 1. Scope / Trigger

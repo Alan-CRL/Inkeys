@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认产品 C++20 module、Draw3 所有权与完整 Solution 构建边界。"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"遵守 Draw3 绘制线程、history、页面、工具样式和隐藏测试合同。"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"确认最终 Stroke、接触状态与输入汇合点。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"遵守模块命名、中文关键注释、编码和最小改动规则。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"遵守 OpenCV 静态依赖、ARM64 Host MSBuild 与 Win7 目标边界。"}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"遵守 Stored Stroke、runtime history、热前像、composition cache、ordered replay 与 dirty rect 合同。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"执行业务源码、GPU 状态与无窗口验证质量门。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"复用 OutlineRectangle shape 并保持 history pass、bounds 和 operator 合同。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 contact、document、history、GPU composition 与 presenter 的完整数据流。"}
