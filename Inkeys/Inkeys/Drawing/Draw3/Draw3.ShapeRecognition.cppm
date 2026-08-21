@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 export module Inkeys.Drawing.Draw3.shape_recognition;
@@ -86,6 +87,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		std::size_t strokeCount = 0;
 		std::size_t sourcePointCount = 0;
+		std::vector<RenderItemId> sourceItems;
 		InkPixelBounds bounds = {};
 		StoredInkStyle style = {};
 		float representativeWidth = 0.0f;
@@ -94,12 +96,23 @@ export namespace Inkeys::Drawing::Draw3
 			ShapeRecognitionAttemptOutcome::VisionRejected;
 	};
 
+	struct ShapeRecognitionStrokePathDiagnostics
+	{
+		RenderItemId itemId = {};
+		std::size_t strokeIndex = 0;
+		std::size_t sourcePointCount = 0;
+		bool pathTruncated = false;
+		std::vector<CV::InkPoint> pointsDip;
+	};
+
 	struct ShapeRecognitionDatasetDiagnostics
 	{
 		ShapeCandidateCollectionStopReason collectionStopReason =
 			ShapeCandidateCollectionStopReason::None;
 		std::size_t collectedStrokeCount = 0;
 		std::size_t collectedPointCount = 0;
+		float dpiScale = 0.0f;
+		std::vector<ShapeRecognitionStrokePathDiagnostics> strokes;
 		std::vector<ShapeRecognitionAttemptDiagnostics> attempts;
 		std::size_t acceptedStrokeCount = 0;
 		bool accepted = false;
@@ -107,6 +120,8 @@ export namespace Inkeys::Drawing::Draw3
 
 	void SetShapeRecognitionDiagnosticsEnabled(bool enabled) noexcept;
 	bool ShapeRecognitionDiagnosticsEnabled() noexcept;
+	// ShapeRecognition 与 RTS 共用单次文本写入，避免重定向文件中的记录交错。
+	void WriteShapeRecognitionConsoleText(std::string_view text) noexcept;
 	const char* ShapeCandidateCollectionStopReasonName(
 		ShapeCandidateCollectionStopReason reason) noexcept;
 	void WriteShapeRecognitionDatasetDiagnostics(

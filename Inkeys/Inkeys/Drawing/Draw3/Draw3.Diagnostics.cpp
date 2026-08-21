@@ -17,10 +17,13 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <string_view>
 #include <thread>
 #include <windows.h>
 
 module Inkeys.Drawing.Draw3.diagnostics;
+
+import Inkeys.Drawing.Draw3.shape_recognition;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -129,8 +132,7 @@ namespace Inkeys::Drawing::Draw3
 		void WriteRtsTraceLine(const char* text, size_t length) noexcept
 		{
 			if (!text || length == 0) return;
-			std::cout.write(text, static_cast<std::streamsize>(length));
-			std::cout.flush();
+			WriteShapeRecognitionConsoleText(std::string_view(text, length));
 		}
 
 		RtsContactTraceSlot* FindRtsContactSlot(

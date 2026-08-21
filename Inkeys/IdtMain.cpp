@@ -56,6 +56,7 @@ import Inkeys.Drawing.Draw3.shape_recognition;
 
 #include <lm.h>
 #include <shellscalingapi.h>
+#include <shellapi.h>
 #include <shlobj.h>
 #pragma comment(lib, "netapi32.lib")
 
@@ -79,17 +80,45 @@ namespace
 	Inkeys::Display::Subscription displaySubscription;
 
 #ifndef IDT_RELEASE
+	bool HasUsableStandardOutput() noexcept
+	{
+		const HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (!output || output == INVALID_HANDLE_VALUE) return false;
+		const DWORD type = GetFileType(output);
+		if (type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE) return true;
+		DWORD consoleMode = 0;
+		return type == FILE_TYPE_CHAR && GetConsoleMode(output, &consoleMode);
+	}
+
+	bool HasCommandLineSwitch(const wchar_t* first, const wchar_t* second) noexcept
+	{
+		int argumentCount = 0;
+		LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
+		if (!arguments) return false;
+		bool found = false;
+		for (int index = 1; index < argumentCount && !found; ++index)
+		{
+			found = CompareStringOrdinal(arguments[index], -1, first, -1, TRUE) == CSTR_EQUAL ||
+				CompareStringOrdinal(arguments[index], -1, second, -1, TRUE) == CSTR_EQUAL;
+		}
+		LocalFree(arguments);
+		return found;
+	}
+
 	void InitializeDebugConsole()
 	{
 		static std::once_flag consoleOnce;
 		std::call_once(consoleOnce, []
 			{
-				AllocConsole();
-
-				FILE* fp;
-				freopen_s(&fp, "CONOUT$", "w", stdout);
-				freopen_s(&fp, "CONOUT$", "w", stderr);
-				freopen_s(&fp, "CONIN$", "r", stdin);
+				// PowerShell 已提供文件/管道 stdout 时必须保留，不能重绑回 CONOUT$。
+				if (!HasUsableStandardOutput())
+				{
+					AllocConsole();
+					FILE* fp = nullptr;
+					freopen_s(&fp, "CONOUT$", "w", stdout);
+					freopen_s(&fp, "CONOUT$", "w", stderr);
+					freopen_s(&fp, "CONIN$", "r", stdin);
+				}
 				std::ios::sync_with_stdio(true);
 				std::wcout.clear();
 				std::wcin.clear();
@@ -133,6 +162,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool shapeRecognitionConsoleOutputEnabled = false;
+	const bool rtsTraceCommandLineEnabled = HasCommandLineSwitch(
+		L"-rts-trace", L"--rts-trace");
 #endif
 
 	// 路径预处理
@@ -1084,15 +1115,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
 			shapeRecognitionConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.ShapeRecognition;
+			if (draw3ConsoleOutputEnabled || shapeRecognitionConsoleOutputEnabled ||
+				rtsTraceCommandLineEnabled)
+			{
+				// 先保留或建立 stdout，再输出数据集启动标识。
+				InitializeDebugConsole();
+			}
 			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
 				draw3ConsoleOutputEnabled);
 			Inkeys::Drawing::Draw3::SetShapeRecognitionDiagnosticsEnabled(
 				shapeRecognitionConsoleOutputEnabled);
-			if (draw3ConsoleOutputEnabled || shapeRecognitionConsoleOutputEnabled)
-			{
-				// Draw3 启动前完成绑定，才能看到设备和驱动环境信息。
-				InitializeDebugConsole();
-			}
 		#endif
 			double animationSpeedRate = static_cast<double>(
 				config.Experimental.Inkeys3.UI3.Animation.SpeedRate);
@@ -1531,6 +1563,9 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
+	#ifndef IDT_RELEASE
+		draw3StartOptions.enableRtsTrace = rtsTraceCommandLineEnabled;
+	#endif
 		bool draw3Started = Inkeys::Drawing::Draw3::StartProduct(
 			drawpad_window, windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation),
@@ -1623,7 +1658,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	// 启动 PPT 联动插件
 	#ifndef IDT_RELEASE
 	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled &&
-		!shapeRecognitionConsoleOutputEnabled)
+		!shapeRecognitionConsoleOutputEnabled && !rtsTraceCommandLineEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();

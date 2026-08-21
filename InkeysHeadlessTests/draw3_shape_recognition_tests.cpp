@@ -33,12 +33,13 @@ namespace
 	}
 
 	Inkeys::CV::ShapeResult RecognizeShape(const std::vector<CvStroke>& strokes,
-		Inkeys::CV::ShapeRecognitionDiagnostics* diagnostics = nullptr)
+		Inkeys::CV::ShapeRecognitionDiagnostics* diagnostics = nullptr,
+		float dpiScale = 1.0f)
 	{
 		std::vector<Inkeys::CV::InkStrokeView> views;
 		views.reserve(strokes.size());
 		for (const CvStroke& stroke : strokes) views.push_back({ stroke });
-		return Inkeys::CV::RecognizeInkShape(views, 1.0f, diagnostics);
+		return Inkeys::CV::RecognizeInkShape(views, dpiScale, diagnostics);
 	}
 
 	bool RecognizesRectangle(const std::vector<CvStroke>& strokes)
@@ -57,6 +58,21 @@ namespace
 		};
 	}
 
+	std::vector<CvStroke> ScaleStrokes(
+		std::vector<CvStroke> strokes, float scale)
+	{
+		for (CvStroke& stroke : strokes)
+		{
+			for (CvPoint& point : stroke)
+			{
+				point.x *= scale;
+				point.y *= scale;
+				point.width *= scale;
+			}
+		}
+		return strokes;
+	}
+
 	int RunRecognitionSamples()
 	{
 		int failures = 0;
@@ -66,6 +82,32 @@ namespace
 			{ 10.0f, 20.0f, 5.0f }, { 130.0f, 20.0f, 5.0f },
 			{ 130.0f, 100.0f, 5.0f }, { 10.0f, 100.0f, 5.0f },
 			{ 10.0f, 20.0f, 5.0f } } }), "single closed stroke")) ++failures;
+		Inkeys::CV::ShapeRecognitionDiagnostics roughDiagnostics;
+		const std::vector<CvStroke> roughRectangle = { {
+			{ 12.0f, 23.0f, 4.2f }, { 35.0f, 18.0f, 5.1f },
+			{ 72.0f, 22.0f, 5.8f }, { 128.0f, 17.0f, 4.7f },
+			{ 133.0f, 43.0f, 5.4f }, { 129.0f, 76.0f, 6.1f },
+			{ 134.0f, 101.0f, 4.9f }, { 99.0f, 97.0f, 5.6f },
+			{ 61.0f, 103.0f, 4.3f }, { 14.0f, 98.0f, 5.2f },
+			{ 8.0f, 72.0f, 5.9f }, { 13.0f, 42.0f, 4.6f },
+			{ 12.0f, 23.0f, 5.0f } } };
+		const Inkeys::CV::ShapeResult rough = RecognizeShape(
+			roughRectangle, &roughDiagnostics);
+		if (!Expect(rough.type == Inkeys::CV::ShapeType::AxisAlignedRectangle &&
+			roughDiagnostics.selectedApproximationEpsilonRatio >= 0.02f &&
+			roughDiagnostics.edgeBandDip >=
+				roughDiagnostics.thresholds.minimumEdgeBandDip,
+			"rough pressure-varying single stroke")) ++failures;
+		Inkeys::CV::ShapeRecognitionDiagnostics multiScaleDiagnostics;
+		const Inkeys::CV::ShapeResult multiScale = RecognizeShape({ {
+			{ 10.0f, 20.0f, 6.0f }, { 70.0f, 8.0f, 6.0f },
+			{ 130.0f, 20.0f, 6.0f }, { 130.0f, 100.0f, 6.0f },
+			{ 10.0f, 100.0f, 6.0f }, { 10.0f, 20.0f, 6.0f } } },
+			&multiScaleDiagnostics);
+		if (!Expect(multiScale.type == Inkeys::CV::ShapeType::AxisAlignedRectangle &&
+			multiScaleDiagnostics.approximationCornerCounts[0] == 5 &&
+			multiScaleDiagnostics.selectedApproximationEpsilonRatio > 0.02f,
+			"five-corner hull falls back to a coarser quad")) ++failures;
 		if (!Expect(RecognizesRectangle({ {
 			{ 10.0f, 100.0f, 5.0f }, { 10.0f, 20.0f, 5.0f },
 			{ 130.0f, 20.0f, 5.0f } }, {
@@ -94,6 +136,18 @@ namespace
 		auto repeated = StandardRectangle();
 		repeated.push_back(Line(10.0f, 20.5f, 130.0f, 20.5f));
 		if (!Expect(RecognizesRectangle(repeated), "repeated edge")) ++failures;
+
+		Inkeys::CV::ShapeRecognitionDiagnostics dpi1Diagnostics;
+		Inkeys::CV::ShapeRecognitionDiagnostics dpi2Diagnostics;
+		const Inkeys::CV::ShapeResult dpi1 = RecognizeShape(
+			roughRectangle, &dpi1Diagnostics, 1.0f);
+		const Inkeys::CV::ShapeResult dpi2 = RecognizeShape(
+			ScaleStrokes(roughRectangle, 2.0f), &dpi2Diagnostics, 2.0f);
+		if (!Expect(dpi1.type == Inkeys::CV::ShapeType::AxisAlignedRectangle &&
+			dpi2.type == Inkeys::CV::ShapeType::AxisAlignedRectangle &&
+			std::abs(dpi1.rectangle.left - dpi2.rectangle.left / 2.0f) < 0.01f &&
+			std::abs(dpi1Diagnostics.edgeBandDip - dpi2Diagnostics.edgeBandDip) < 0.01f,
+			"DPI-scaled recognition is DIP-equivalent")) ++failures;
 
 		if (!Expect(!RecognizesRectangle({
 			Line(0.0f, 0.0f, 20.0f, 0.0f), Line(20.0f, 0.0f, 20.0f, 20.0f),
@@ -161,6 +215,9 @@ namespace
 			StandardRectangle(), &acceptedDiagnostics);
 		if (!Expect(accepted.type == Inkeys::CV::ShapeType::AxisAlignedRectangle &&
 			acceptedDiagnostics.accepted &&
+			acceptedDiagnostics.failedConditionCount == 0 &&
+			acceptedDiagnostics.strokes[0].sampledPoints.size() ==
+				acceptedDiagnostics.strokes[0].sampledPointCount &&
 			acceptedDiagnostics.rejectionReason ==
 				Inkeys::CV::ShapeRecognitionRejectReason::None &&
 			acceptedDiagnostics.sourcePointCount == 8 &&
@@ -184,7 +241,11 @@ namespace
 			smallDiagnostics.minimumShortSide == 40.0f &&
 			smallDiagnostics.thresholds.minimumShortSideWidthMultiple == 8.0f &&
 			std::string_view(Inkeys::CV::ShapeRecognitionRejectReasonName(
-				smallDiagnostics.rejectionReason)) == "shape_too_small",
+				smallDiagnostics.rejectionReason)) == "shape_too_small" &&
+			smallDiagnostics.failedConditionCount >= 1 &&
+			std::isfinite(smallDiagnostics.edgeCoverage[0]) &&
+			std::isfinite(smallDiagnostics.totalCoverage) &&
+			std::isfinite(smallDiagnostics.confidence),
 			"rejected sample exposes reason metric and threshold")) ++failures;
 		return failures;
 	}
@@ -298,8 +359,42 @@ namespace
 			acceptedDataset.attempts.front().outcome ==
 				ShapeRecognitionAttemptOutcome::Accepted &&
 			acceptedDataset.attempts.front().vision.accepted &&
-			acceptedDataset.attempts.front().sourcePointCount == 8,
+			acceptedDataset.attempts.front().sourcePointCount == 8 &&
+			acceptedDataset.attempts.front().sourceItems.size() == 4 &&
+			acceptedDataset.strokes.size() == 4 &&
+			acceptedDataset.strokes.front().pointsDip.size() == 2 &&
+			acceptedDataset.strokes.front().pointsDip.front().x == 10.0f,
 			"adapter reports accepted maximum suffix")) ++failures;
+
+		std::array<std::uint8_t, 16> pressureBytes = {};
+		pressureBytes[15] = 7;
+		InkPage pressurePage{ InkGuid(pressureBytes) };
+		InkCanvas* pressureCanvas = pressurePage.GetOrCreateCanvas(kDefaultDeviceKey);
+		CanvasRuntimeHistory pressureHistory;
+		const std::array<float, 4> pressureWidths = { 3.5f, 5.0f, 6.5f, 4.2f };
+		const std::vector<CvStroke> pressureRectangle = StandardRectangle();
+		for (std::size_t index = 0; index < pressureRectangle.size(); ++index)
+		{
+			std::vector<StoredInkPoint> points;
+			for (const CvPoint& point : pressureRectangle[index])
+				points.push_back({ point.x, point.y, pressureWidths[index] });
+			const auto strokeIndex = pressureCanvas->AppendStroke(
+				InkStroke(style, std::move(points)));
+			const auto footprint = strokeIndex
+				? BuildStrokeTileFootprint(pressureCanvas->Strokes()[*strokeIndex])
+				: std::nullopt;
+			if (!strokeIndex || !footprint ||
+				!pressureHistory.AppendStroke(*strokeIndex, *footprint))
+				return failures + 1;
+		}
+		ShapeRecognitionDatasetDiagnostics pressureDataset;
+		const auto pressurePlan = BuildShapeCorrectionPlan(
+			*pressureCanvas, pressureHistory, 1.0f, &pressureDataset);
+		if (!Expect(pressurePlan.has_value() && pressurePlan->sourceItems.size() == 4 &&
+			pressureDataset.collectedStrokeCount == 4 &&
+			pressureDataset.collectionStopReason ==
+				ShapeCandidateCollectionStopReason::HistoryStart,
+			"pressure width changes do not split one pen style")) ++failures;
 		if (!Expect(canvas->SetStrokeRenderOnlyWhenLatest(0, true) &&
 			canvas->Strokes()[0].RenderOnlyWhenLatest() &&
 			canvas->SetStrokeRenderOnlyWhenLatest(0, false) &&
@@ -403,16 +498,42 @@ namespace
 		formatterAttempt.vision.dpiScale = 1.5f;
 		formatterAttempt.vision.medianWidth = 7.0f;
 		formatterAttempt.vision.bounds = { 1.0f, 2.0f, 31.0f, 42.0f };
+		formatterAttempt.vision.rejectionReason =
+			Inkeys::CV::ShapeRecognitionRejectReason::ShapeTooSmall;
+		formatterAttempt.vision.failedConditions[0] =
+			Inkeys::CV::ShapeRecognitionRejectReason::ShapeTooSmall;
+		formatterAttempt.vision.failedConditionCount = 1;
+		formatterAttempt.vision.inputStrokeCount = 1;
+		formatterAttempt.vision.strokes[0].sourcePointCount = 2;
+		formatterAttempt.vision.strokes[0].sampledPointCount = 2;
+		formatterAttempt.vision.strokes[0].sampledPoints = {
+			{ 1.5f, 3.0f, 4.5f }, { 6.0f, 7.5f, 4.5f } };
 		formatterAttempt.representativeWidth = 0.0f;
+		formatterDiagnostics.dpiScale = 1.5f;
+		formatterDiagnostics.strokes.push_back({
+			{ 3, 7 }, 11, 2, false,
+			{ { 1.0f, 2.0f, 3.0f }, { 4.0f, 5.0f, 3.0f } } });
 		std::ostringstream capturedDatasetOutput;
 		std::streambuf* previousOutput = std::cout.rdbuf(capturedDatasetOutput.rdbuf());
 		WriteShapeRecognitionDatasetDiagnostics(formatterDiagnostics);
 		std::cout.rdbuf(previousOutput);
 		const std::string formattedDataset = capturedDatasetOutput.str();
 		if (!Expect(formattedDataset.find("dpi_scale=1.5000") != std::string::npos &&
-			formattedDataset.find("median_width=7.0000") != std::string::npos &&
-			formattedDataset.find("replacement_width=0.0000") != std::string::npos &&
-			formattedDataset.find("vision_bounds=[1.0000,2.0000,31.0000,42.0000]") !=
+			formattedDataset.find("record=startup format_version=2") != std::string::npos &&
+			formattedDataset.find("record=stroke") != std::string::npos &&
+			formattedDataset.find("stroke_id=7:3") != std::string::npos &&
+			formattedDataset.find("points_dip=[(1.0000:2.0000:3.0000)") !=
+				std::string::npos &&
+			formattedDataset.find("sampled_points_dip=[(1.0000:2.0000:3.0000)") !=
+				std::string::npos &&
+			formattedDataset.find("median_width_px=7.0000") != std::string::npos &&
+			formattedDataset.find("median_width_dip=4.6667") != std::string::npos &&
+			formattedDataset.find("replacement_width_px=0.0000") != std::string::npos &&
+			formattedDataset.find("vision_bounds_px=[1.0000,2.0000,31.0000,42.0000]") !=
+				std::string::npos &&
+			formattedDataset.find("primary_reject_reason=shape_too_small") !=
+				std::string::npos &&
+			formattedDataset.find("failed_conditions=[shape_too_small]") !=
 				std::string::npos,
 			"dataset formatter preserves rejected-sample scale and geometry")) ++failures;
 

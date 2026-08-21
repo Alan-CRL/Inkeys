@@ -19,9 +19,11 @@ Draw3 contact lifecycle
 ## Recognition Contract
 
 - 每个 Stroke 先按弧长均匀降采样到最多 1024 点，所有 Stroke 总计不超过 4096 点；原始顺序和 Stroke 边界保留。
-- 用全部点的 `convexHull` 得到候选外包络与轴对齐 bounding rectangle；`approxPolyDP(0.02 × hull perimeter)` 必须得到四角。
+- 用全部点的 `convexHull` 得到候选外包络与轴对齐 bounding rectangle；`approxPolyDP` 分别用周长 `2%/3%/4%/5%` 简化，多尺度中存在与包围框四角距离相符的凸四边形才算四角证据，避免局部手抖产生第五个凸点后直接早退。
 - 用 hull 面积与 bounding rectangle 面积计算矩形度，并对有效长段调用 `fitLine` 评估水平/竖直偏轴。
-- 以和笔宽、DPI 成比例的边带把采样段分配到上/右/下/左边；沿边区间合并后计算单边及总覆盖，另外累计离边长度、每笔边带占比、总路径长度与角点连接质量。
+- 先在 DIP 中以固定下限、短边比例和笔宽倍数合成 `6–14 DIP` 自适应边带，再统一转换到画布像素。边带把采样段分配到上/右/下/左边；沿边区间合并后计算单边及总覆盖，另外累计离边长度、每笔边带占比、总路径长度与角点连接质量。
+- 跨 Stroke 样式一致性只比较 Pen 类型、RGB、opacity 和 texture；点宽受压力影响，只用于几何容差和最终矩形代表宽度，不作为切断候选的稳定样式属性。
+- `fitLine` 检查整边方向，原始长段偏轴同时按全局和每条矩形边分别加权；后者专门阻止整体拟合为水平但局部持续锯齿的边。
 - 只返回规范化的 `{left, top, right, bottom}`。综合分数通过全部硬门槛后才有意义；任一硬门槛失败立即返回 Unknown。
 - Draw3 从最多 6 条的最大后缀开始尝试，命中即停止，使重复描边与构成矩形的所有相邻笔画一起隐藏；更小后缀只用于排除更早无关 Pen Stroke。
 
@@ -55,6 +57,11 @@ Draw3 contact lifecycle
 
 ## Dataset Diagnostics
 
-- `Inkeys.CV.ShapeRecognition` 用自有 `ShapeRecognitionDiagnostics` 返回拒绝原因、固定阈值和阶段指标；仍不向接口暴露 `cv::` 类型。Draw3 适配器补充候选收集停止原因、样式、footprint 计划结果和逐后缀 attempt。
+- `Inkeys.CV.ShapeRecognition` 用自有 `ShapeRecognitionDiagnostics` 返回拒绝原因、阈值、多尺度四角证据、DIP/px 容差和阶段指标；仍不向接口暴露 `cv::` 类型。Draw3 适配器补充候选收集停止原因、样式、footprint 计划结果和逐后缀 attempt。
 - `DrawingController` 只在全抬起 latch 被消费后读取一次诊断原子开关；开关关闭时向适配器传空指针，不构造报告或 `ostringstream`。开启时即使没有修正计划也输出拒绝报告，现有修正成功/失败日志使用同一开关。
 - 配置归属 `Inkeys.Other.Config`，设置卡片仅存在于 `#ifndef IDT_RELEASE`。`IdtMain` 在 Draw3 Host 启动前同步开关；ShapeRecognition 可独立触发控制台分配，但不启用 Draw3 设备环境输出。仅 PptCOM 开启时继续延迟分配控制台，避免带出 Draw3 启动日志。
+- 数据输出继续使用控制台，便于用户通过 PowerShell 重定向为原始数据集。首次启用时输出唯一启动记录，包含格式版本、`session_id`、进程 ID 和启动时间；进程内 `pen_up_id` 单调递增，每个后缀 `candidate_id` 可由会话与抬笔事件稳定定位，Stroke 使用 history/render item 的稳定标识或该次候选内稳定序号。
+- 每个候选输出按 Stroke 分组的识别输入点，坐标和宽度统一输出为 DIP，同时保留 `dpi_scale` 以及必要的 px 边界，确保日志可重放且能与 `-rts-trace` 的输入路径交叉核对。文本记录使用单行、带显式 record type 的机器可解析格式，路径点不得拆成无法归属的散行。
+- 诊断模式下硬门槛仍决定产品结果，但实现应继续计算所有在当前几何阶段可安全得到的证据，分别记录首个 `primary_reject_reason` 和完整 `failed_conditions`；包括 hull/多尺度近似顶点、选中四角、边分配、覆盖区间、每边最大缺口、距离残差分位数、每 Stroke 对各边贡献和轴向指标。诊断异常继续失败关闭，不得影响绘制线程。
+- 产品 Debug 入口对 `lpCmdLine` 做局部、只读的 token 检查，接受 `-rts-trace` 与 `--rts-trace`，并在 Draw3 Host 创建时把覆盖值传给现有 RTS diagnostics；不重写旧的 `*` 分隔命令处理。该参数与图形识别诊断互不隐式启用，但允许同时开启；任一诊断要求控制台时应在 Draw3 启动前完成绑定。二者共用控制台时必须通过共享的原子行写入边界避免内容交错，识别记录携带启动/抬笔 ID，不能改变 RTS 路径、识别触发或修正时序。
+- Debug 输出初始化先检查继承的 `STD_OUTPUT_HANDLE`/`STD_ERROR_HANDLE`。若 stdout 是有效磁盘文件或管道，则保留 CRT/iostream 到该目标的绑定，不调用覆盖它的 `freopen_s("CONOUT$")`；仅在没有可用重定向时分配并绑定调试控制台。这样 PowerShell 的 `>`/`2>&1` 与 `Start-Process -RedirectStandardOutput` 都可直接采集完整日志。

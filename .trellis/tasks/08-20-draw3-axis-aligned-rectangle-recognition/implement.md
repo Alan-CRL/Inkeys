@@ -12,6 +12,8 @@
 8. 增加识别正反样本、条件历史、Undo/Redo/新分支/页面隔离及触发门测试。
 9. 增加默认关闭的 Debug 数据集诊断：记录 CV 阶段指标/阈值、适配层候选边界和逐后缀结果，通过独立配置控制控制台；关闭时不构造报告或格式化输出。
 10. 运行静态检查、ARM64 完整 Solution 构建和两套无窗口测试；审查 OpenCV 静态链接、输出 DLL、编码/CRLF 和变更范围。
+11. 用真实数据集日志校准手绘容差：移除压力点宽样式门槛，将绝对容差改为 DIP，多尺度评估四角，并用粗糙矩形、压力变化、低采样、1x/2x DPI 等价与既有负例共同锁定阈值。
+12. 扩展控制台数据集协议：增加启动/session/pen-up/candidate/stroke 标识和分笔 DIP 路径；诊断模式继续计算所有安全指标并输出完整失败集合、边覆盖缺口、残差与 Stroke 边贡献；验证可与 `-rts-trace` 同时重定向采集。
 
 ## Validation Commands
 
@@ -26,6 +28,7 @@ git diff --check
 - 递归检查最终输出中不存在 `opencv*.dll`、`opencv_world*.dll`、FFmpeg 或 OpenCV plugin DLL。
 - 检查所有既有修改文件保持 UTF-8 BOM/无 BOM 与 CRLF/LF 原状；新 C++ 产品文件遵循相邻模块的 UTF-8 BOM + CRLF。
 - Headless 覆盖诊断 accepted/reject reason、阈值/指标、候选前置边界和开关默认值；静态核对关闭路径传空指针且不进入 formatter。
+- Headless 覆盖启动标识只输出一次、ID 单调且可关联、DIP 路径保持 Stroke 边界、首次拒绝后仍保留可计算指标，以及 `-rts-trace` 参数不与 ShapeRecognition 诊断互斥。
 
 ## Risk And Rollback Points
 

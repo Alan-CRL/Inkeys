@@ -45,6 +45,8 @@ namespace Inkeys::Drawing::Draw3
 		HostPresentationMode requiredPresentationMode = HostPresentationMode::Automatic;
 		// 仅 --draw3-hidden-test 开启合成 mailbox contact 注入，正式产品保持关闭。
 		bool enableHiddenTestContactInjection = false;
+		// Debug 命令行可显式开启 RTS 数据路径；不与其他控制台开关联动。
+		bool enableRtsTrace = false;
 		// legacy-compatible HWND 重启后禁止再次选择 DComp。
 		bool allowDirectComposition = true;
 	};

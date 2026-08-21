@@ -576,6 +576,11 @@ namespace Inkeys::Drawing::Draw3
 		bool stylusInitialized = false;
 		try
 		{
+		#if defined(DRAW3_RTS_DIAGNOSTICS)
+			// 窗口光标与唯一 RTS producer 共享同一显式诊断状态。
+			window.SetRtsTraceEnabled(startOptions.enableRtsTrace);
+			stylus.SetRtsTraceEnabled(startOptions.enableRtsTrace);
+		#endif
 			stylusInitialized = stylus.Initialize(hwnd, input, &window);
 		}
 		catch (...)
