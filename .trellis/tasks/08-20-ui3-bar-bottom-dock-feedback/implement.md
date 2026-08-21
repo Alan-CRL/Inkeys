@@ -20,6 +20,10 @@
 10. [x] 复用主栏 Surface、SurfaceFrame、TextPrimary、13 DIP 按钮字体及第一/第三 PointLight，删除蓝色不透明专用绘制。
 11. [x] 为显示/隐藏加入与绘制属性提示浮窗一致的中心等比 Back 回弹，并增加主栏折叠门禁；成功快照继续发布实际缩放命中边界。
 12. [x] 扩充 Headless 与静态覆盖，验证动态 metrics、异常输入、DPI、中心缩放、折叠门禁、光源 dirty 和输入遮挡保持不变。
+13. [x] 将指示器文字改为主栏按钮的粗体 `TextPrimary`，并让基础边框、第一/第三 PointLight 的透明度、颜色和强度与主栏本体完全一致。
+14. [x] 将指示器显示/隐藏时长改为问号提示浮窗使用的默认操作时长，保留中心等比 Back 显示与缩小隐藏，并验证快速反向连续。
+15. [x] 修正指示器 dirty/viewport 包络，覆盖旧新边界、Back 顶端极值、缩放描边、固定 Gaussian 外扩和抗锯齿余量；补充回归测试。
+16. [x] 重新运行完整质量门且不启动 GUI。
 
 ## Validation
 
@@ -30,7 +34,7 @@
 - [x] 静态复核只有一次最终 GDI/ULW 提交，且未启动可见 GUI。
 - [x] 重新运行上述全部验证，确认新指示器样式未引入第二 target 或 GUI 启动。
 
-验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
+验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；新增 150% DPI/Back 峰值包络回归覆盖最顶端光晕；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
 
 ## Risk And Rollback Points
 

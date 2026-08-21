@@ -17,7 +17,7 @@
 
 ## Visual Lifecycles
 
-交互指示器使用单一 0–1 视觉进度同时驱动透明度和中心等比缩放，复用现有 160 ms fade-in、200 ms fade-out 和全局动画开关。正在拖动、处于 Docked 且主栏已展开时目标进度为 1；主栏收起、抬手或脱离底栏后目标进度为 0。进入使用 `EaseOutBack`，退出使用 `EaseInBack`，透明度单独裁剪到 `[0, 1]`，缩放保留 Back 上溢以形成与绘制属性提示浮窗一致的回弹。
+交互指示器使用单一 0–1 视觉进度同时驱动透明度和中心等比缩放，动画时长直接复用绘制属性笔类型菜单中问号提示浮窗使用的 `BarUiDefaultOperationDur`，并服从全局动画开关。正在拖动、处于 Docked 且主栏已展开时目标进度为 1；主栏收起、抬手或脱离底栏后目标进度为 0。进入使用 `EaseOutBack`，退出使用 `EaseInBack`，透明度单独裁剪到 `[0, 1]`，缩放保留 Back 上溢。
 
 快速捕获后立即脱离或动画中途收起主栏时，从当前视觉进度连续反向，不重置动画进度；全局动画关闭时直接切换到完整尺寸或零尺寸。
 
@@ -29,9 +29,9 @@
 
 ## Indicator Rendering And Lighting
 
-指示器仍在主栏及面板内容之后、调试覆盖层之前绘制。Surface 使用主栏 `Surface` 色、80% 峰值不透明度，1 DIP 边框使用 `SurfaceFrame` 色、18% 峰值不透明度，文字使用未选中按钮的 `TextPrimary` 色。边框走 `BarUiFrameRenderingEnum::PointLight`，启用第一光源并使用标准按钮的第三光源强度；中心缩放时复用完整尺寸的 diffuse mask 归一逻辑。
+指示器仍在主栏及面板内容之后、调试覆盖层之前绘制。Surface 使用主栏 `Surface` 色、80% 峰值不透明度，1 DIP 边框使用 `SurfaceFrame` 色、18% 峰值不透明度，文字使用未选中按钮的 `TextPrimary` 色和粗体字重。边框走 `BarUiFrameRenderingEnum::PointLight`，其 `framePct`、`frameLightPct`、第一光源、第三光源比例和光色与主栏本体保持一致；中心缩放时复用完整尺寸的 diffuse mask 归一逻辑。
 
-指示器不加入长期 `shapeMap`，而是在单帧内构造瞬态 Shape 并沿用唯一主 target。dirty 事务显式合并缩放前后外框以及第一/第三光源影响范围；成功呈现快照发布实际缩放后的命中边界。第三光源可见区域列表从同一成功快照追加指示器区域，失败帧不得提前发布。
+指示器不加入长期 `shapeMap`，而是在单帧内构造瞬态 Shape 并沿用唯一主 target。dirty 事务显式合并缩放前后外框以及第一/第三光源影响范围；viewport 预测使用同一 Back 极值，并额外覆盖随缩放变化的描边、固定 Gaussian 外扩与抗锯齿余量，禁止吸附首帧裁掉最上缘。成功呈现快照发布实际缩放后的命中边界。第三光源可见区域列表从同一成功快照追加指示器区域，失败帧不得提前发布。
 
 ## Input Occlusion
 

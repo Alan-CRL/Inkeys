@@ -21,8 +21,6 @@ namespace Inkeys::UI::Bar
 	inline constexpr double BarBottomDockSettleVelocityDipPerSecond = 4.0;
 	inline constexpr double BarBottomDockIndicatorHeightDip = 30.0;
 	inline constexpr double BarBottomDockIndicatorCornerRadiusDip = 6.0;
-	inline constexpr double BarBottomDockFeedbackFadeInSeconds = 0.16;
-	inline constexpr double BarBottomDockFeedbackFadeOutSeconds = 0.20;
 
 	enum class BarBottomDockMode
 	{
@@ -156,6 +154,41 @@ namespace Inkeys::UI::Bar
 	[[nodiscard]] inline double NormalizeBarBottomDockZoom(double zoom) noexcept
 	{
 		return std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
+	}
+
+	[[nodiscard]] inline RECT ResolveBarBottomDockIndicatorVisualEnvelope(
+		const BarBottomDockFeedbackGeometry& geometry,
+		double scale, double strokeWidthDip, double gaussianOutsetDip,
+		double zoom, LONG antialiasPaddingPx) noexcept
+	{
+		scale = std::max(0.0, std::isfinite(scale) ? scale : 0.0);
+		if (scale <= 0.0) return {};
+		strokeWidthDip = std::max(0.0,
+			std::isfinite(strokeWidthDip) ? strokeWidthDip : 0.0);
+		gaussianOutsetDip = std::max(0.0,
+			std::isfinite(gaussianOutsetDip) ? gaussianOutsetDip : 0.0);
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		antialiasPaddingPx = std::max(0L, antialiasPaddingPx);
+
+		const auto scaled = ResolveBarBottomDockIndicatorScaledGeometry(
+			geometry, scale);
+		if (scaled.rightDip <= scaled.leftDip
+			|| scaled.bottomDip <= scaled.topDip)
+			return {};
+		// Back 超调、随比例描边和固定 Gaussian 外扩共用同一个权威包络。
+		const LONG visualPadding = static_cast<LONG>(std::ceil(
+			(strokeWidthDip * scale + gaussianOutsetDip) * zoom))
+			+ antialiasPaddingPx;
+		return RECT{
+			static_cast<LONG>(std::floor(scaled.leftDip * zoom))
+				- visualPadding,
+			static_cast<LONG>(std::floor(scaled.topDip * zoom))
+				- visualPadding,
+			static_cast<LONG>(std::ceil(scaled.rightDip * zoom))
+				+ visualPadding,
+			static_cast<LONG>(std::ceil(scaled.bottomDip * zoom))
+				+ visualPadding,
+		};
 	}
 
 	[[nodiscard]] inline double ResolveBarBottomDockInteractionZoom(

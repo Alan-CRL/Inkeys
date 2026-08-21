@@ -184,6 +184,21 @@ int RunBarBottomDockTests()
 		&& Near(hiddenIndicator.rightDip, 140.0)
 		&& Near(hiddenIndicator.bottomDip, 608.0),
 		"dock indicator scales equally around its center and hides at zero");
+	const RECT indicatorVisualEnvelope =
+		ResolveBarBottomDockIndicatorVisualEnvelope(
+			dockIndicator, 1.1, 1.0, 6.0, 1.5, 3);
+	const RECT indicatorBackPeakEnvelope =
+		ResolveBarBottomDockIndicatorVisualEnvelope(
+			dockIndicator, 1.2, 1.0, 6.0, 1.5, 3);
+	Check(RectEquals(indicatorVisualEnvelope, RECT{ 139, 873, 281, 951 })
+		&& RectEquals(indicatorBackPeakEnvelope,
+			RECT{ 134, 871, 286, 953 })
+		&& indicatorBackPeakEnvelope.top < indicatorVisualEnvelope.top,
+		"indicator envelope covers Back overshoot stroke Gaussian and AA top edge");
+	Check(RectEquals(ResolveBarBottomDockIndicatorVisualEnvelope(
+		dockIndicator, std::numeric_limits<double>::quiet_NaN(),
+		1.0, 6.0, 1.5, 3), RECT{}),
+		"invalid indicator scale produces no visual envelope");
 	Check(IsBarBottomDockIndicatorHit(true, RECT{ 106, 593, 174, 623 }, 106, 593)
 		&& !IsBarBottomDockIndicatorHit(
 			true, RECT{ 106, 593, 174, 623 }, 174, 610)

@@ -212,8 +212,6 @@ using Inkeys::UI::Bar::BarBottomDockSpringState;
 using Inkeys::UI::Bar::BarBottomDockVerticalMapping;
 using Inkeys::UI::Bar::BarBottomDockFeedbackAction;
 using Inkeys::UI::Bar::BarBottomDockFeedbackGeometry;
-using Inkeys::UI::Bar::BarBottomDockFeedbackFadeInSeconds;
-using Inkeys::UI::Bar::BarBottomDockFeedbackFadeOutSeconds;
 using Inkeys::UI::Bar::BarBottomDockIndicatorCornerRadiusDip;
 using Inkeys::UI::Bar::BarBottomDockIndicatorHeightDip;
 using Inkeys::UI::Bar::BarPresentMappingMode;
@@ -230,6 +228,7 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorGeometry;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorScaledGeometry;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorTarget;
+	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorVisualEnvelope;
 	using Inkeys::UI::Bar::ResolveBarBottomDockBodyLocalLight;
 	using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringVerticalMapping;
 	using Inkeys::UI::Bar::ResolveBarBottomDockRigidLocalLight;
@@ -7128,8 +7127,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 					target ? BarUiCurveEnum::EaseOutBack
 						: BarUiCurveEnum::EaseInBack, 0.0, false };
 				progress.SetTar(target ? 1.0 : 0.0,
-					target ? BarBottomDockFeedbackFadeInSeconds
-						: BarBottomDockFeedbackFadeOutSeconds,
+					BarUiDefaultOperationDur,
 					nullopt, false, curve);
 			};
 		ApplyFeedbackTarget(state.bottomDockTargetIndicatorProgress,
@@ -7439,7 +7437,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		IDWriteTextFormat* dockModeTextFormat = state.barMedia.formatCache->GetFormat(
 			L"HarmonyOS Sans SC", static_cast<FLOAT>(
 				BarButtonTwoTwoLabelFontSizeDip * frameZoom),
-			context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
+			context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_BOLD,
 			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, L"zh-cn",
 			DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 		auto MeasureDockText = [&](const wstring& text)
@@ -7469,6 +7467,25 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				dockMainButtonVisibleBounds, dockMainBarVisibleBounds,
 				dockModeTextSize.width, dockModeTextSize.height,
 				dockVisibleMainBarTopDip);
+		auto ValueRange = [](const auto& value)
+			{
+				const auto first = BarUiGetCurveExtrema(value.activeCurve);
+				const auto second = BarUiGetCurveExtrema(value.activeMiddleCurve);
+				return ResolveBarWindowAnimationRange(
+					value.val, value.startV, value.tar,
+					value.hasMiddleV, value.middleV,
+					{ first.minimum, first.maximum },
+					{ second.minimum, second.maximum });
+			};
+		const double maximumIndicatorScale = max(0.0,
+			ValueRange(state.bottomDockTargetIndicatorProgress).maximum);
+		const double indicatorGaussianOutsetDip = BarUiEdgeLightingEnabled
+			? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0;
+		const RECT dockTargetIndicatorEnvelopeBounds =
+			ResolveBarBottomDockIndicatorVisualEnvelope(
+				dockTargetIndicatorGeometry, maximumIndicatorScale,
+				BarButtonFrameThicknessDip, indicatorGaussianOutsetDip,
+				frameZoom, BarRenderingAttribute::dirtyAntialiasPadding);
 		// 与绘制属性提示浮窗一致：透明度裁剪，Back 的缩放上溢保留。
 		const double dockTargetIndicatorScale = max(0.0, static_cast<double>(
 			state.bottomDockTargetIndicatorProgress.val));
@@ -7481,29 +7498,18 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			&& dockTargetIndicatorScale > 0.000001;
 		RECT dockTargetIndicatorBounds{};
 		RECT dockTargetIndicatorHitBounds{};
-		auto FeedbackBounds = [&](const BarBottomDockFeedbackGeometry& geometry,
-			LONG padding)
-			{
-				return RECT{
-					static_cast<LONG>(floor(geometry.leftDip * frameZoom)) - padding,
-					static_cast<LONG>(floor(geometry.topDip * frameZoom)) - padding,
-					static_cast<LONG>(ceil(geometry.rightDip * frameZoom)) + padding,
-					static_cast<LONG>(ceil(geometry.bottomDip * frameZoom)) + padding };
-			};
 		if (dockTargetIndicatorVisible)
 		{
-			// 描边随中心缩放，Gaussian 光晕保持固定外扩，避免缩小时裁边。
-			const double lightOutsetDip = BarButtonFrameThicknessDip
-				* dockTargetIndicatorScale
-				+ (BarUiEdgeLightingEnabled
-					? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0);
-			const LONG lightPadding = static_cast<LONG>(ceil(
-				lightOutsetDip * frameZoom))
-				+ BarRenderingAttribute::dirtyAntialiasPadding;
-			dockTargetIndicatorBounds = FeedbackBounds(
-				dockTargetIndicatorVisualGeometry, lightPadding);
-			dockTargetIndicatorHitBounds = FeedbackBounds(
-				dockTargetIndicatorVisualGeometry, 0);
+			// 实际 dirty 与峰值 viewport 共用同一包络，覆盖描边及 Gaussian 外扩。
+			dockTargetIndicatorBounds =
+				ResolveBarBottomDockIndicatorVisualEnvelope(
+					dockTargetIndicatorGeometry, dockTargetIndicatorScale,
+					BarButtonFrameThicknessDip, indicatorGaussianOutsetDip,
+					frameZoom, BarRenderingAttribute::dirtyAntialiasPadding);
+			dockTargetIndicatorHitBounds =
+				ResolveBarBottomDockIndicatorVisualEnvelope(
+					dockTargetIndicatorGeometry, dockTargetIndicatorScale,
+					0.0, 0.0, frameZoom, 0);
 		}
 		auto drawButton =
 			state.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Draw)];
@@ -8353,6 +8359,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| frame.bottomDockRecoveryActive
 			|| state.bottomDockVisualActive;
 		RECT capacityContentBounds = currentContentBounds;
+		// 首帧就为 Back 峰值预留 target，避免动画顶端先越过 capacity 再扩容。
+		UnionBarWindowRect(capacityContentBounds,
+			dockTargetIndicatorEnvelopeBounds);
 		if (reserveBottomDockCapacity)
 			UnionBarWindowRect(capacityContentBounds,
 				ResolveBarBottomDockCapacityEnvelope(
@@ -8464,16 +8473,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		if (reserveAnimationEnvelope)
 		{
 			// 只传播实际动画段的 Back 极值，禁止把绝对坐标或整张 capacity 放大。
-			auto ValueRange = [](const auto& value)
-				{
-					const auto first = BarUiGetCurveExtrema(value.activeCurve);
-					const auto second = BarUiGetCurveExtrema(value.activeMiddleCurve);
-					return ResolveBarWindowAnimationRange(
-						value.val, value.startV, value.tar,
-						value.hasMiddleV, value.middleV,
-						{ first.minimum, first.maximum },
-						{ second.minimum, second.maximum });
-				};
 			auto AddRanges = [](BarWindowScalarRange left,
 				BarWindowScalarRange right)
 				{
@@ -8797,23 +8796,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			AddInheritedVisual(state.shapeMap[BarUISetShapeEnum::MorePanel],
 				mainBarX, mainBarY, mainBar->inhX + mainBar->w.val / 2.0,
 				mainBar->inhY + mainBar->h.val / 2.0);
-			const double maximumIndicatorScale = max(0.0,
-				ValueRange(state.bottomDockTargetIndicatorProgress).maximum);
 			if (maximumIndicatorScale > 0.000001)
 			{
-				// 批次开始即预留 Back 极值，动画中不因逐帧放大反复 resize。
-				const auto indicatorEnvelopeGeometry =
-					ResolveBarBottomDockIndicatorScaledGeometry(
-						dockTargetIndicatorGeometry, maximumIndicatorScale);
-				const double lightOutsetDip = BarButtonFrameThicknessDip
-					* maximumIndicatorScale
-					+ (BarUiEdgeLightingEnabled
-						? BarRenderingAttribute::pointLightDiffuseExtraWidth : 0.0);
-				const LONG indicatorEnvelopePadding = static_cast<LONG>(ceil(
-					lightOutsetDip * frameZoom))
-					+ BarRenderingAttribute::dirtyAntialiasPadding;
-				UnionBarWindowRect(predictedEnvelope, FeedbackBounds(
-					indicatorEnvelopeGeometry, indicatorEnvelopePadding));
+				// viewport 与 capacity 使用完全相同的 Back/描边/Gaussian 峰值。
+				UnionBarWindowRect(predictedEnvelope,
+					dockTargetIndicatorEnvelopeBounds);
 			}
 			if (reserveBottomDockVisualEnvelope)
 			{
@@ -11570,13 +11557,13 @@ bool presetButton = button.presetIndex >= 0;
 			indicatorShape.framePct = BarUiPctClass(
 				BarMainBarFrameOpacity * dockTargetIndicatorOpacity);
 			indicatorShape.frameLightPct = BarUiPctClass(
-				dockTargetIndicatorOpacity);
+				BarMainBarFrameOpacity * dockTargetIndicatorOpacity);
 			indicatorShape.frameRendering = BarUiFrameRenderingEnum::PointLight;
 			indicatorShape.frameLightColor =
 				BarUiFrameLightColorEnum::PenWhenDrawing;
 			indicatorShape.framePrimaryLightEnabled = true;
-			indicatorShape.frameCursorLightIntensityScale =
-				BarButtonCursorLightIntensity;
+			// 与主栏一致：第一光源和第三鼠标光均使用完整强度，再乘 18% 边框基线。
+			indicatorShape.frameCursorLightIntensityScale = 1.0;
 			// 几何使用实际缩放尺寸，diffuse mask 仍归一到完整尺寸复用缓存。
 			state.spec.SetFrameDiffuseMaskGeometryScale(
 				1.0 / dockTargetIndicatorScale);
