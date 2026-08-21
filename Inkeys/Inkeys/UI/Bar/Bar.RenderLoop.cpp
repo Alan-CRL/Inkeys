@@ -176,7 +176,6 @@ struct BarRenderFrameSnapshot
 	double bottomDockDragRigidGripScreenY = 0.0;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
-	unsigned long long bottomDockCaptureEventGeneration = 0;
 };
 
 using Inkeys::UI::Bar::BarDirtyRegionTracker;
@@ -211,8 +210,6 @@ using Inkeys::UI::Bar::BarBottomDockPhase;
 using Inkeys::UI::Bar::BarBottomDockSettleDistanceDip;
 using Inkeys::UI::Bar::BarBottomDockSpringState;
 using Inkeys::UI::Bar::BarBottomDockVerticalMapping;
-using Inkeys::UI::Bar::BarBottomDockBackgroundCornerRadiusDip;
-using Inkeys::UI::Bar::BarBottomDockBackgroundPeakOpacity;
 using Inkeys::UI::Bar::BarBottomDockFeedbackAction;
 using Inkeys::UI::Bar::BarBottomDockFeedbackGeometry;
 using Inkeys::UI::Bar::BarBottomDockFeedbackFadeInSeconds;
@@ -229,8 +226,6 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
 	using Inkeys::UI::Bar::ResolveBarBottomDockLine;
 	using Inkeys::UI::Bar::BarWhiteboardBottomInsetDip;
-	using Inkeys::UI::Bar::ResolveBarBottomDockBackgroundGeometry;
-	using Inkeys::UI::Bar::ResolveBarBottomDockBackgroundTarget;
 	using Inkeys::UI::Bar::ResolveBarBottomDockFeedbackAction;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorGeometry;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorTarget;
@@ -290,8 +285,7 @@ struct BarRenderLoopState
 {
 	explicit BarRenderLoopState(
 		BarUISetClass& owner,
-		std::atomic<unsigned long long>& mainButtonPulseSerial,
-		std::atomic<unsigned long long>& captureEventGeneration)
+		std::atomic<unsigned long long>& mainButtonPulseSerial)
 		: barWindow(owner.barWindow),
 		barMedia(owner.barMedia),
 		barButtonSet(owner.barButtonSet),
@@ -335,9 +329,7 @@ struct BarRenderLoopState
 		geometryThicknessCoarseHoverStage(owner.geometryThicknessCoarseHoverStage),
 		geometryCloseHoverStage(owner.geometryCloseHoverStage),
 		mainButtonClickPulseSerial(mainButtonPulseSerial),
-		presentDecision(),
-		bottomDockObservedCaptureEventGeneration(
-			captureEventGeneration.load(memory_order_acquire))
+		presentDecision()
 	{
 		auto range = GetBarThicknessSliderRange(
 			stateMode.Pen.ModeSelect, barStyle.dpiZoom);
@@ -462,18 +454,9 @@ struct BarRenderLoopState
 	bool bottomDockVisualActive = false;
 	bool bottomDockCaptureBottomActive = false;
 	bool bottomDockRecoverySeeded = false;
-	BarUiValueClass bottomDockBackgroundProgress{ 0.0 };
 	BarUiValueClass bottomDockTargetIndicatorProgress{ 0.0 };
-	bool bottomDockBackgroundTarget = false;
 	bool bottomDockTargetIndicatorTarget = false;
 	bool bottomDockTargetIndicatorBoundsVisible = false;
-	unsigned long long bottomDockObservedCaptureEventGeneration = 0;
-	Microsoft::WRL::ComPtr<ID2D1Bitmap1> bottomDockBackgroundBitmap;
-	unsigned long long bottomDockBackgroundBitmapDeviceGeneration = 0;
-	UINT32 bottomDockBackgroundBitmapWidth = 0;
-	UINT32 bottomDockBackgroundBitmapHeight = 0;
-	double bottomDockBackgroundBitmapZoom = 0.0;
-	unsigned int bottomDockBackgroundBitmapStyleVersion = 0;
 	BarBottomDockMode bottomDockFrameMode = BarBottomDockMode::BottomDocked;
 	BarBottomDockPhase bottomDockFramePhase = BarBottomDockPhase::Stable;
 	bool bottomDockFrameRecoveryActive = false;
@@ -799,7 +782,7 @@ void BarUISetClass::StopRendering()
 BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
 	: owner_(owner),
 	state_(make_unique<BarRenderLoopState>(owner,
-		owner.mainButtonClickPulseSerial, owner.bottomDockCaptureEventGeneration))
+		owner.mainButtonClickPulseSerial))
 {
 	blend_.BlendOp = AC_SRC_OVER;
 	blend_.BlendFlags = 0;
@@ -7049,8 +7032,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			frame.bottomDockTransitionSerial;
 		const BarBottomDockMode previousFrameMode =
 			state.bottomDockFrameMode;
-		const double previousBackgroundProgress =
-			state.bottomDockBackgroundProgress.val;
 		const double previousTargetIndicatorProgress =
 			state.bottomDockTargetIndicatorProgress.val;
 		state.bottomDockFrameTransitionSerial = frameTransitionSerial;
@@ -7124,24 +7105,10 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCaptureBottomActive = captureBottomSpring.active;
 		}
 		else state.bottomDockCaptureBottomSpring.positionDip = 0.0;
-		const bool springFeedbackActive = springActive
-			|| captureBottomSpringActive
-			|| state.bottomDockCaptureBottomActive;
-		bool backgroundTarget = ResolveBarBottomDockBackgroundTarget(
-			dockMode, dockDragActive, springFeedbackActive,
-			state.bottomDockBackgroundTarget,
-			state.bottomDockObservedCaptureEventGeneration,
-			frame.bottomDockCaptureEventGeneration);
-		// 持久事件一经采样即消费；当前不是 BottomDocked 时不能留到以后误触发。
-		state.bottomDockObservedCaptureEventGeneration =
-			frame.bottomDockCaptureEventGeneration;
 		bool indicatorTarget = ResolveBarBottomDockIndicatorTarget(
 			dockMode, dockDragActive);
 		if (Inkeys::UI::Bar::HideWhiteboardSnapIndicator())
-		{
-			backgroundTarget = false;
 			indicatorTarget = false;
-		}
 		auto ApplyFeedbackTarget = [&](BarUiValueClass& progress,
 			bool& previousTarget, bool target)
 			{
@@ -7164,20 +7131,13 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 						: BarBottomDockFeedbackFadeOutSeconds,
 					nullopt, false, curve);
 			};
-		ApplyFeedbackTarget(state.bottomDockBackgroundProgress,
-			state.bottomDockBackgroundTarget, backgroundTarget);
 		ApplyFeedbackTarget(state.bottomDockTargetIndicatorProgress,
 			state.bottomDockTargetIndicatorTarget, indicatorTarget);
-		if (!state.bottomDockBackgroundProgress.IsSame())
-			ChangeValue(state.bottomDockBackgroundProgress, false,
-				dockTargetIndicatorDirtyKey);
 		if (!state.bottomDockTargetIndicatorProgress.IsSame())
 			ChangeValue(state.bottomDockTargetIndicatorProgress, false,
 				dockTargetIndicatorDirtyKey);
 		const bool targetIndicatorProgressChanged =
-			abs(previousBackgroundProgress
-				- state.bottomDockBackgroundProgress.val) > 0.000001
-			|| abs(previousTargetIndicatorProgress
+			abs(previousTargetIndicatorProgress
 				- state.bottomDockTargetIndicatorProgress.val) > 0.000001;
 		if (targetIndicatorProgressChanged)
 		{
@@ -7462,20 +7422,18 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			? max(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
 		const double mainBarStroke = mainBar->ft.has_value()
 			? max(0.0, static_cast<double>(mainBar->ft->val)) : 0.0;
-		const auto dockBackgroundGeometry = ResolveBarBottomDockBackgroundGeometry(
-			{
+		const BarBottomDockFeedbackGeometry dockMainButtonVisibleBounds{
 				mainButton->x.val - (mainButton->w.val + mainButtonStroke) / 2.0,
 				mainButton->y.val - (mainButton->h.val + mainButtonStroke) / 2.0,
 				mainButton->x.val + (mainButton->w.val + mainButtonStroke) / 2.0,
 				mainButton->y.val + (mainButton->h.val + mainButtonStroke) / 2.0,
-			},
-			{
+			};
+		const BarBottomDockFeedbackGeometry dockMainBarVisibleBounds{
 				mainBar->inhX - mainBarStroke / 2.0,
 				mainBar->inhY - mainBarStroke / 2.0,
 				mainBar->inhX + mainBar->w.val + mainBarStroke / 2.0,
 				mainBar->inhY + mainBar->h.val + mainBarStroke / 2.0,
-			},
-			state.bottomDockMapping.baseBottomDip);
+			};
 		const wstring dockModeLabel = IW(I18nKey.UI.Bar.BottomDock.Mode);
 		const wstring dockReservedLabel = dockModeLabel + L" · "
 			+ IW(I18nKey.UI.Bar.BottomDock.Centered);
@@ -7504,13 +7462,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		dockModeTextWidthDip = MeasureDockText(dockModeLabel);
 		dockReservedTextWidthDip = MeasureDockText(dockReservedLabel);
 		const auto dockTargetIndicatorGeometry =
-			ResolveBarBottomDockIndicatorGeometry(dockBackgroundGeometry,
+			ResolveBarBottomDockIndicatorGeometry(
+				dockMainButtonVisibleBounds, dockMainBarVisibleBounds,
 				dockModeTextWidthDip, dockReservedTextWidthDip);
-		const bool dockBackgroundVisible =
-			state.bottomDockBackgroundProgress.val > 0.000001;
 		const bool dockTargetIndicatorVisible =
 			state.bottomDockTargetIndicatorProgress.val > 0.000001;
-		RECT dockBackgroundBounds{};
 		RECT dockTargetIndicatorBounds{};
 		RECT dockTargetIndicatorHitBounds{};
 		auto FeedbackBounds = [&](const BarBottomDockFeedbackGeometry& geometry)
@@ -7522,8 +7478,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					static_cast<LONG>(ceil(geometry.rightDip * frameZoom)) + padding,
 					static_cast<LONG>(ceil(geometry.bottomDip * frameZoom)) + padding };
 			};
-		if (dockBackgroundVisible)
-			dockBackgroundBounds = FeedbackBounds(dockBackgroundGeometry);
 		if (dockTargetIndicatorVisible)
 		{
 			dockTargetIndicatorBounds = FeedbackBounds(
@@ -7617,7 +7571,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.drawAttributeOverflowPopupProgress.IsSame()
 			|| !state.drawAttributePenTypeMenuProgress.IsSame()
 			|| !state.drawAttributeColorPickerProgress.IsSame()
-			|| !state.bottomDockBackgroundProgress.IsSame()
 			|| !state.bottomDockTargetIndicatorProgress.IsSame()
 			|| state.bottomDockTargetIndicatorBoundsVisible
 			|| bottomDockBoundsChanged
@@ -7880,8 +7833,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 		if (collectVisibleContentBoundsForWindowSizing)
 		{
-			if (dockBackgroundVisible)
-				UnionBarWindowRect(visibleContentBounds, dockBackgroundBounds);
 			if (dockTargetIndicatorVisible)
 				UnionBarWindowRect(
 					visibleContentBounds, dockTargetIndicatorBounds);
@@ -7893,7 +7844,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.bottomDockObservedCaptureBottomOffsetDip =
 				state.bottomDockCaptureBottomSpring.positionDip;
 			state.bottomDockTargetIndicatorBoundsVisible =
-				dockBackgroundVisible || dockTargetIndicatorVisible;
+				dockTargetIndicatorVisible;
 		}
 		else
 		{
@@ -8332,10 +8283,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				cursorLightKey, cursorLightDamageBounds);
 		if (observeDockTargetIndicator)
 		{
-			RECT feedbackBounds = dockBackgroundBounds;
-			UnionBarWindowRect(feedbackBounds, dockTargetIndicatorBounds);
 			state.dirtyRegionTracker.Observe(
-				dockTargetIndicatorKey, feedbackBounds);
+				dockTargetIndicatorKey, dockTargetIndicatorBounds);
 		}
 
 		D2D1_RECT_F debugTextLayoutRect{};
@@ -8411,7 +8360,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| previousTargetSize.height != static_cast<UINT32>(state.capacitySize.cy);
 		if (deviceGenerationChanged || targetSizeChanged)
 		{
-			state.bottomDockBackgroundBitmap.Reset();
 			state.barDeviceResourceFailureGeneration = 0;
 			state.presentDecision.ResetFailureRecovery();
 			state.presentDecision.RequireFullDirtyRetry();
@@ -8474,7 +8422,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.drawAttributeOverflowPopupProgress.IsSame()
 			|| !state.drawAttributePenTypeMenuProgress.IsSame()
 			|| !state.drawAttributeColorPickerProgress.IsSame()
-			|| !state.bottomDockBackgroundProgress.IsSame()
 			|| !state.bottomDockTargetIndicatorProgress.IsSame()
 			|| reserveThicknessInteractionEnvelope
 			|| reserveThicknessTargetEnvelope
@@ -8962,78 +8909,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						static_cast<FLOAT>(rigidCursorLight.radiusY)));
 				barDeviceContext->SetTransform(rigidTransform);
 			};
-		constexpr unsigned int bottomDockBackgroundStyleVersion = 1;
-		const UINT32 dockBackgroundBitmapWidth = max<UINT32>(1,
-			static_cast<UINT32>(ceil(max(0.0,
-				dockBackgroundGeometry.rightDip
-					- dockBackgroundGeometry.leftDip) * frameZoom)));
-		const UINT32 dockBackgroundBitmapHeight = max<UINT32>(1,
-			static_cast<UINT32>(ceil(max(0.0,
-				dockBackgroundGeometry.bottomDip
-					- dockBackgroundGeometry.topDip) * frameZoom)));
-		const bool rebuildDockBackground = dockBackgroundVisible
-			&& (!state.bottomDockBackgroundBitmap
-				|| state.bottomDockBackgroundBitmapDeviceGeneration
-					!= epoch.generation
-				|| state.bottomDockBackgroundBitmapWidth
-					!= dockBackgroundBitmapWidth
-				|| state.bottomDockBackgroundBitmapHeight
-					!= dockBackgroundBitmapHeight
-				|| abs(state.bottomDockBackgroundBitmapZoom - frameZoom)
-					> 0.000001
-				|| state.bottomDockBackgroundBitmapStyleVersion
-					!= bottomDockBackgroundStyleVersion);
-		if (rebuildDockBackground)
-		{
-			state.bottomDockBackgroundBitmap.Reset();
-			Microsoft::WRL::ComPtr<ID2D1Image> mainTarget;
-			barDeviceContext->GetTarget(&mainTarget);
-			const auto bitmapProperties = D2D1::BitmapProperties1(
-				D2D1_BITMAP_OPTIONS_TARGET,
-				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-					D2D1_ALPHA_MODE_PREMULTIPLIED), 96.0F, 96.0F);
-			HRESULT cacheHr = barDeviceContext->CreateBitmap(
-				D2D1::SizeU(dockBackgroundBitmapWidth,
-					dockBackgroundBitmapHeight), nullptr, 0,
-				&bitmapProperties, &state.bottomDockBackgroundBitmap);
-			if (SUCCEEDED(cacheHr) && state.bottomDockBackgroundBitmap)
-			{
-				barDeviceContext->SetTarget(state.bottomDockBackgroundBitmap.Get());
-				barDeviceContext->SetTransform(D2D1::Matrix3x2F::Identity());
-				barDeviceContext->BeginDraw();
-				barDeviceContext->Clear(D2D1::ColorF(0, 0.0F));
-				Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
-				cacheHr = barDeviceContext->CreateSolidColorBrush(
-					D2D1::ColorF(0x0078D4,
-						static_cast<FLOAT>(BarBottomDockBackgroundPeakOpacity)),
-					&brush);
-				if (SUCCEEDED(cacheHr) && brush)
-				{
-					const D2D1_ROUNDED_RECT backgroundRect = D2D1::RoundedRect(
-						D2D1::RectF(0.0F, 0.0F,
-							static_cast<FLOAT>(dockBackgroundBitmapWidth),
-							static_cast<FLOAT>(dockBackgroundBitmapHeight)),
-						static_cast<FLOAT>(
-							BarBottomDockBackgroundCornerRadiusDip * frameZoom),
-						static_cast<FLOAT>(
-							BarBottomDockBackgroundCornerRadiusDip * frameZoom));
-					barDeviceContext->FillRoundedRectangle(&backgroundRect, brush.Get());
-				}
-				const HRESULT cacheEndDrawHr = barDeviceContext->EndDraw();
-				if (FAILED(cacheHr) || FAILED(cacheEndDrawHr))
-					state.bottomDockBackgroundBitmap.Reset();
-			}
-			barDeviceContext->SetTarget(mainTarget.Get());
-			if (state.bottomDockBackgroundBitmap)
-			{
-				state.bottomDockBackgroundBitmapDeviceGeneration = epoch.generation;
-				state.bottomDockBackgroundBitmapWidth = dockBackgroundBitmapWidth;
-				state.bottomDockBackgroundBitmapHeight = dockBackgroundBitmapHeight;
-				state.bottomDockBackgroundBitmapZoom = frameZoom;
-				state.bottomDockBackgroundBitmapStyleVersion =
-					bottomDockBackgroundStyleVersion;
-			}
-		}
 		SetBaseTransform();
 		barDeviceContext->BeginDraw();
 		state.spec.PushFrameDirtyClip(barDeviceContext, presentDirtyRect);
@@ -9047,21 +8922,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			// TODO 绘制纯白全透明警告用户开启 aero
 			auto obj = BarUISetWordEnum::BackgroundWarning;
 			state.spec.Word(barDeviceContext, *state.wordMap[obj], state.wordMap[obj]->Inherit(), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
-		}
-
-		if (dockBackgroundVisible && state.bottomDockBackgroundBitmap)
-		{
-			// 背景缓存先于全部 Bar 内容合成，仍沿用唯一主呈现事务。
-			SetBaseTransform();
-			const D2D1_RECT_F destination = D2D1::RectF(
-				static_cast<FLOAT>(dockBackgroundGeometry.leftDip * frameZoom),
-				static_cast<FLOAT>(dockBackgroundGeometry.topDip * frameZoom),
-				static_cast<FLOAT>(dockBackgroundGeometry.rightDip * frameZoom),
-				static_cast<FLOAT>(dockBackgroundGeometry.bottomDip * frameZoom));
-			barDeviceContext->DrawBitmap(state.bottomDockBackgroundBitmap.Get(),
-				&destination, static_cast<FLOAT>(clamp(
-					static_cast<double>(state.bottomDockBackgroundProgress.val),
-					0.0, 1.0)), D2D1_INTERPOLATION_MODE_LINEAR);
 		}
 
 		using enum BarUiInheritEnum;
@@ -11966,7 +11826,6 @@ bool presetButton = button.presetIndex >= 0;
 			|| presentAttempt.HasSharedDeviceLoss())
 		{
 			// 本地 target 失效或共享 device 丢失都先释放 Bar 的 per-window 资源。
-			state.bottomDockBackgroundBitmap.Reset();
 			state.spec.DiscardDeviceResources();
 		}
 		state.barMedia.formatCache->Clean();
@@ -12123,8 +11982,6 @@ BarRenderLoopCoordinator::RenderFrame(
 		if ((frame.bottomDockTransitionSerial & 1ULL) != 0) continue;
 		frame.bottomDockMode = owner_.bottomDockMode.load(memory_order_relaxed);
 		frame.bottomDockPhase = owner_.bottomDockPhase.load(memory_order_relaxed);
-		frame.bottomDockCaptureEventGeneration =
-			owner_.bottomDockCaptureEventGeneration.load(memory_order_relaxed);
 		frame.bottomDockDragActive = owner_.bottomDockDragActive.load(
 			memory_order_relaxed);
 		frame.bottomDockRecoveryActive = owner_.bottomDockRecoveryActive.load(

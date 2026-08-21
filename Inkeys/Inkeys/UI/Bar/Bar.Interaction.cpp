@@ -6031,12 +6031,6 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				result.detached = result.detached || update.detached;
 				result.modeChanged = true;
 				result.allowClick = false;
-				if (ShouldPublishBarBottomDockCaptureEvent(update))
-				{
-					// 捕获 generation 与 mode/phase 同处 seqlock 事务，避免渲染漏掉瞬态 Capturing。
-					bottomDockCaptureEventGeneration.fetch_add(
-						1, memory_order_relaxed);
-				}
 				// 偶数 serial 发布在模式、阶段和形变量之后，渲染帧可据此建立呈现屏障。
 				publication.transitionSerial =
 					bottomDockTransitionSerial.fetch_add(

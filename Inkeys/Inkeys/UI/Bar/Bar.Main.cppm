@@ -636,7 +636,6 @@ protected:
 	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
 	atomic<bool> bottomDockRecoveryActive = false;
 	atomic<unsigned long long> bottomDockTransitionSerial = 0;
-	atomic<unsigned long long> bottomDockCaptureEventGeneration = 0;
 	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;
 	atomic<unsigned long long> bottomDockPresentedTransitionSerial = 0;
 

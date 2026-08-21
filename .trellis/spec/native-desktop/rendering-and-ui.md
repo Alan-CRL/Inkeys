@@ -368,7 +368,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - 粗细 Slider/FineDial 连续手势的完整交互域必须复用 `GetBarThicknessSliderRange(currentPenMode, dpiZoom).max`，在按下/捕获首帧按最大端滑块位置计算完整 Preview Popup。包络同时覆盖 DPI 换算后的最大圆、数字从圆外迁入圆内的最宽 Surface、Slider/FineDial 两个目标位置、Popup Back 极值，以及实际可见描边、PointLight `pointLightDiffuseExtraWidth` 和抗锯齿外扩；捕获、拖动与 FineDial 物理期间保持该预约，候选粗细逐帧增长不得再次 resize。
 - Popup 已可见时，粗细快捷按钮或切换笔型产生的程序化动画必须在首个变化帧按 `drawAttributePenThickness.tar`、滑块归一化目标和 FineDial 目标位置预留紧致包络，并覆盖当前到目标的动画段、数字内外迁移与 Popup 回弹；不得等动画结束后才按实际内容追扩，也不得因此退化为预留当前笔型完整量程。
 - 绘制使用布局坐标，D2D 帧 transform 统一平移 `-capacityOrigin`；ULW 在同一次调用中提交 `pptDst/psize/pptSrc/prcDirty`。Bar 原生鼠标消息必须在窗口线程入队时就用当次 Win32 消息的屏幕位置固化为 monitor-local layout 坐标，然后丢弃 HiMsg 默认 client 副本；合成触摸、Raw Input 和计时器重新命中也必须在生产时转成同一 layout 空间。禁止在交互线程出队时再读取新 viewport 解释旧 client 坐标，否则 resize 恰好夹在入队/出队之间时会出现一次命中跳变。
-- 保持单次 GDI interop 链：`GetDC(D2D1_DC_INITIALIZE_MODE_COPY) → UpdateLayeredWindowIndirect → ReleaseDC`。不得在没有端到端数据的情况下加入 CPU staging bitmap、DIB Section、`CopyFromBitmap`、`Map` 或脏行 `memcpy`；这些会引入额外拷贝和更复杂的持久像素一致性。同一渲染线程、同一 D2D device context 上缓存的小尺寸 premultiplied `ID2D1Bitmap1` 装饰 target 不属于 CPU staging，但切换 target 后必须恢复主 target，并继续通过唯一主 `BeginDraw/EndDraw` 与唯一 GDI/ULW 链提交；禁止为装饰层增加第二次 ULW。
+- 保持单次 GDI interop 链：`GetDC(D2D1_DC_INITIALIZE_MODE_COPY) → UpdateLayeredWindowIndirect → ReleaseDC`。不得在没有端到端数据的情况下加入 CPU staging bitmap、DIB Section、`CopyFromBitmap`、`Map` 或脏行 `memcpy`；这些会引入额外拷贝和更复杂的持久像素一致性。
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可推进业务 damage、viewport controller、mapping tuple、交互命中边界和调试覆盖快照；失败时保留请求并强制下一帧全脏。ULW 已成功但后续阶段失败时，真实 HWND 已经改变，但任何内部呈现快照仍不推进，下帧继续按旧成功 tuple 判定整窗替换并重新对齐。输入消息已在窗口线程入队时固化为 layout 坐标，不依赖异步 viewport 快照发布。
 - `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制脏区框和 HWND 框；活动帧 damage 用红框，idle 前最后一帧将上一帧红框原位改为绿框，当前真实 HWND 边界用蓝框。`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字；文字不得显示“休眠”，也不得单独形成持续呈现需求或维持 60 FPS。
@@ -387,7 +387,6 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 | 整栏拖动 | 平移 HWND 与容量原点；尺寸不变时不重建 target |
 | 首次呈现，或 source/window size/target capacity/device generation 改变 | 清除完整候选 HWND，`pptDst/psize/pptSrc` 同次提交且 `prcDirty=nullptr`；`pptSrc + psize` 不得越出 target |
 | 成功 tuple 稳定 | 允许以同一 damage 约束 D2D clip/Clear 和非空 `prcDirty` |
-| 缓存 D2D 装饰层失效或重建失败 | device/DPI/尺寸/样式变化时重建；失败可跳过本帧装饰，但必须恢复主 target，且不得新增 GDI/ULW 提交 |
 | 单控件移动/缩放 | 提交旧边界与新边界的并集 |
 | 控件出现或消失 | 空边界与非空边界按同一变化键解析 |
 | 更多/绘制属性快速交替后主栏立即收缩 | Main/More 组先同步本帧按钮组合坐标，再把成功呈现的旧组边界与当前新组边界合并；最左旧像素不得漏算 |
@@ -477,64 +476,6 @@ if (averages.updated)
 		averages.unlimitedFramesPerSecond);
 ~~~
 
-### UI3 跨线程瞬时交互事件合同
-
-#### 1. Scope / Trigger
-
-交互线程产生只持续一个输入采样的 phase，而渲染线程必须可靠观察该事件时适用。底栏 `Capturing` 是当前实例：下一次同点采样即可把 phase 改为 `Dragging`，因此 phase 只能描述当前状态，不能兼作事件通知。
-
-#### 2. Signatures
-
-~~~cpp
-std::atomic<unsigned long long> bottomDockTransitionSerial;
-std::atomic<unsigned long long> bottomDockCaptureEventGeneration;
-
-bool ShouldPublishBarBottomDockCaptureEvent(
-	const BarBottomDockDragUpdate& update) noexcept;
-~~~
-
-#### 3. Contracts
-
-- 真实 `captured && !detached && modeChanged && mode == BottomDocked` 才推进 capture generation；快速跨过捕获和脱离阈值的同一次采样不得发布事件。
-- generation 必须与关联的 mode、phase 和拖动 tuple 一起写在既有 transition serial 的奇偶 seqlock 事务内；渲染线程只接受前后 serial 相同且为偶数的快照。
-- 渲染生命周期以 `captureEventGeneration != observedCaptureEventGeneration` 识别新事件，不得依赖采样时恰好看到 `phase == Capturing`。generation 允许无符号回绕，比较只判断不等。
-- 渲染线程采到 generation 后立即更新 observed 值，即使当前 mode 已经脱离底栏；旧事件不得延迟到后续手势重放。呈现失败只影响像素快照，已经建立的背景生命周期继续按既有失败重试合同收敛。
-
-#### 4. Validation & Error Matrix
-
-| 条件 | 必须行为 |
-| --- | --- |
-| `Capturing` 后下一采样立即为 `Dragging` | generation 仍触发一次背景板生命周期 |
-| 单采样同时 capture 和 detach | 不推进 generation，不显示迟到背景板 |
-| 当前不是 `BottomDocked` 时读到新 generation | 消费事件但不显示；后续手势不得重放 |
-| generation 从最大值回绕到 0 | 仍以不等关系识别为新事件 |
-| seqlock 读取期间 serial 改变或为奇数 | 丢弃候选并重新读取完整 tuple |
-
-#### 5. Good / Base / Bad Cases
-
-- Good：交互线程发布一次 capture generation；渲染线程即使只看到后续 `Dragging` 也能启动背景板。
-- Base：稳定拖动不重复推进 generation，背景板由已锁存生命周期维持。
-- Bad：渲染线程只检查瞬时 `Capturing`；调度时序稍慢就永久错过提示背景。
-
-#### 6. Tests Required
-
-- Headless 使用真实 tracker 连续执行 `Floating -> BottomDocked/Capturing -> BottomDocked/Dragging`，断言 phase 已覆盖但 generation 仍启动背景板。
-- 覆盖同采样 capture+detach、不重复发布、事件消费、呈现失败重试和 generation 回绕；完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`。
-
-#### 7. Wrong vs Correct
-
-~~~cpp
-// Wrong：瞬时 phase 可能在线程调度之间被下一次输入覆盖。
-showBackground = frame.phase == BarBottomDockPhase::Capturing;
-
-// Correct：事件代数与状态一起原子发布，渲染只比较新旧代数。
-if (ShouldPublishBarBottomDockCaptureEvent(update))
-	bottomDockCaptureEventGeneration.fetch_add(1, std::memory_order_relaxed);
-showBackground = frame.captureEventGeneration != observedGeneration
-	&& frame.mode == BarBottomDockMode::BottomDocked;
-observedGeneration = frame.captureEventGeneration;
-~~~
-
 ### UI3 共享设备、串行帧与光影缓存契约
 
 #### 1. Scope / Trigger
@@ -592,7 +533,7 @@ void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 - 反复展开/收起绘制属性和两个提示浮窗；同一完整几何变体在动画期间最多产生一次遮罩 cache miss，动画终点不得新增 miss；第三光源 diffuse 亮度必须连续，第一光源全程保持原效果。
 - Windows 7 SP1 + KB2670838 需单独实机验证 feature level 回退、A8 target、Gaussian、`FillOpacityMask`、传统 discard swap chain 和 layered-window 脏区；仅完成静态审计时必须明确未做此项。
 - 在支持设备上循环执行 WARP → Hardware → WARP 帧边界切换，覆盖动画中、资源重建失败与 Hardware 准备失败；断言旧 epoch 在发布前始终可用。
-- 后续每接入一个共享设备客户端，都要并发触发其交互与 Bar 装饰帧，断言帧串行、交互优先、无自旋和跨 device 资源复用。
+- 后续每接入一个共享设备客户端，都要并发触发其交互与 Bar 帧，断言帧串行、交互优先、无自旋和跨 device 资源复用。
 - 视觉对比基础灰边、硬光、圆角九宫格遮罩接缝和超椭圆量化伸缩；允许经产品确认的轻微 diffuse 像素差异，不允许边缘断裂或残影。
 
 #### 7. Wrong vs Correct

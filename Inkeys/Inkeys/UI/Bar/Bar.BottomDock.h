@@ -19,9 +19,6 @@ namespace Inkeys::UI::Bar
 	inline constexpr double BarBottomDockSpringStepSeconds = 1.0 / 120.0;
 	inline constexpr double BarBottomDockSettleDistanceDip = 0.15;
 	inline constexpr double BarBottomDockSettleVelocityDipPerSecond = 4.0;
-	inline constexpr double BarBottomDockFeedbackOutsetDip = 10.0;
-	inline constexpr double BarBottomDockBackgroundCornerRadiusDip = 10.0;
-	inline constexpr double BarBottomDockBackgroundPeakOpacity = 0.18;
 	inline constexpr double BarBottomDockIndicatorTopInsetDip = 5.0;
 	inline constexpr double BarBottomDockIndicatorHeightDip = 20.0;
 	inline constexpr double BarBottomDockIndicatorCornerRadiusDip = 6.0;
@@ -52,15 +49,6 @@ namespace Inkeys::UI::Bar
 		double bottomDip = 0.0;
 	};
 
-	[[nodiscard]] inline bool IsBarBottomDockEntryCapture(
-		BarBottomDockMode previousMode, BarBottomDockMode currentMode,
-		BarBottomDockPhase currentPhase) noexcept
-	{
-		return previousMode == BarBottomDockMode::Floating
-			&& currentMode == BarBottomDockMode::BottomDocked
-			&& currentPhase == BarBottomDockPhase::Capturing;
-	}
-
 	enum class BarBottomDockFeedbackAction
 	{
 		None,
@@ -79,18 +67,6 @@ namespace Inkeys::UI::Bar
 		return BarBottomDockFeedbackAction::None;
 	}
 
-	[[nodiscard]] inline bool ResolveBarBottomDockBackgroundTarget(
-		BarBottomDockMode currentMode, bool dragActive,
-		bool springActive, bool captureLatched,
-		unsigned long long observedCaptureEventGeneration,
-		unsigned long long captureEventGeneration) noexcept
-	{
-		if (captureEventGeneration != observedCaptureEventGeneration
-			&& currentMode == BarBottomDockMode::BottomDocked) return true;
-		return captureLatched && currentMode == BarBottomDockMode::BottomDocked
-			&& (dragActive || springActive);
-	}
-
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
 		BarBottomDockMode currentMode, bool dragActive) noexcept
 	{
@@ -98,10 +74,11 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline BarBottomDockFeedbackGeometry
-		ResolveBarBottomDockBackgroundGeometry(
+		ResolveBarBottomDockIndicatorGeometry(
 			const BarBottomDockFeedbackGeometry& mainButton,
 			const BarBottomDockFeedbackGeometry& mainBar,
-			double dockLineDip) noexcept
+			double actualLabelWidthDip,
+			double reservedLabelWidthDip) noexcept
 	{
 		auto FiniteOrZero = [](double value) noexcept
 			{ return std::isfinite(value) ? value : 0.0; };
@@ -118,32 +95,17 @@ namespace Inkeys::UI::Bar
 			};
 		const auto button = Normalize(mainButton);
 		const auto bar = Normalize(mainBar);
-		double left = std::min(button.leftDip, bar.leftDip);
-		double top = std::min(button.topDip, bar.topDip);
-		double right = std::max(button.rightDip, bar.rightDip);
-		if (!std::isfinite(dockLineDip)) dockLineDip = std::max(
-			button.bottomDip, bar.bottomDip);
-		return {
-			left - BarBottomDockFeedbackOutsetDip,
-			top - BarBottomDockFeedbackOutsetDip,
-			right + BarBottomDockFeedbackOutsetDip,
-			dockLineDip };
-	}
-
-	[[nodiscard]] inline BarBottomDockFeedbackGeometry
-		ResolveBarBottomDockIndicatorGeometry(
-			const BarBottomDockFeedbackGeometry& background,
-			double actualLabelWidthDip,
-			double reservedLabelWidthDip) noexcept
-	{
 		actualLabelWidthDip = std::max(0.0, std::isfinite(actualLabelWidthDip)
 			? actualLabelWidthDip : 0.0);
 		reservedLabelWidthDip = std::max(0.0,
 			std::isfinite(reservedLabelWidthDip) ? reservedLabelWidthDip : 0.0);
 		const double width = std::max(actualLabelWidthDip, reservedLabelWidthDip)
 			+ BarBottomDockIndicatorHorizontalPaddingDip * 2.0;
-		const double center = (background.leftDip + background.rightDip) / 2.0;
-		const double top = background.topDip + BarBottomDockIndicatorTopInsetDip;
+		const double center = (std::min(button.leftDip, bar.leftDip)
+			+ std::max(button.rightDip, bar.rightDip)) / 2.0;
+		// 指示器保留原背景板时期的位置：联合可见描边顶部上移 5 DIP。
+		const double top = std::min(button.topDip, bar.topDip)
+			- BarBottomDockIndicatorTopInsetDip;
 		return { center - width / 2.0, top, center + width / 2.0,
 			top + BarBottomDockIndicatorHeightDip };
 	}
@@ -323,13 +285,6 @@ namespace Inkeys::UI::Bar
 		bool detached = false;
 		bool modeChanged = false;
 	};
-
-	[[nodiscard]] inline bool ShouldPublishBarBottomDockCaptureEvent(
-		const BarBottomDockDragUpdate& update) noexcept
-	{
-		return update.captured && !update.detached && update.modeChanged
-			&& update.mode == BarBottomDockMode::BottomDocked;
-	}
 
 	class BarBottomDockDragTracker
 	{

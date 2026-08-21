@@ -122,40 +122,44 @@ int RunBarBottomDockTests()
 		&& ResolveBarMainBarRightSide(499.99, 1000.0)
 		&& !ResolveBarMainBarRightSide(500.01, 1000.0),
 		"main bar reverses only after crossing the horizontal center line");
-	const auto dockBackground = ResolveBarBottomDockBackgroundGeometry(
-		BarBottomDockFeedbackGeometry{ -40.0, 608.0, 40.0, 688.0 },
-		BarBottomDockFeedbackGeometry{ -40.0, 608.0, 320.0, 688.0 },
-		688.0);
-	Check(Near(dockBackground.leftDip, -50.0)
-		&& Near(dockBackground.topDip, 598.0)
-		&& Near(dockBackground.rightDip, 330.0)
-		&& Near(dockBackground.bottomDip, 688.0),
-		"dock background expands three sides and keeps the dock edge flush");
-	for (double zoom : { 1.0, 1.5 })
-		Check(Near((dockBackground.rightDip - dockBackground.leftDip) * zoom,
-			380.0 * zoom)
-			&& Near((dockBackground.bottomDip - dockBackground.topDip) * zoom,
-				90.0 * zoom),
-			"dock feedback zoom is applied exactly once");
-	const auto normalizedBackground = ResolveBarBottomDockBackgroundGeometry(
-		BarBottomDockFeedbackGeometry{
-			std::numeric_limits<double>::quiet_NaN(), 30.0, -20.0, 10.0 },
-		BarBottomDockFeedbackGeometry{ 40.0, 20.0, 10.0, 60.0 },
-		std::numeric_limits<double>::quiet_NaN());
-	Check(Near(normalizedBackground.leftDip, -30.0)
-		&& Near(normalizedBackground.topDip, 0.0)
-		&& Near(normalizedBackground.rightDip, 50.0)
-		&& Near(normalizedBackground.bottomDip, 60.0),
-		"dock background normalizes reversed and non-finite rectangles");
+	const BarBottomDockFeedbackGeometry dockMainButtonBounds{
+		-40.0, 608.0, 40.0, 688.0 };
+	const BarBottomDockFeedbackGeometry dockMainBarBounds{
+		-40.0, 608.0, 320.0, 688.0 };
 	const auto dockIndicator = ResolveBarBottomDockIndicatorGeometry(
-		dockBackground, 52.0, 88.0);
+		dockMainButtonBounds, dockMainBarBounds, 52.0, 88.0);
 	Check(Near(dockIndicator.leftDip, 84.0)
 		&& Near(dockIndicator.topDip, 603.0)
 		&& Near(dockIndicator.rightDip, 196.0)
 		&& Near(dockIndicator.bottomDip, 623.0),
-		"dock indicator uses reserved text width and fixed insets");
+		"dock indicator uses visible-stroke union and reserved text width");
+	const auto normalizedDockIndicator = ResolveBarBottomDockIndicatorGeometry(
+		BarBottomDockFeedbackGeometry{
+			std::numeric_limits<double>::quiet_NaN(), 30.0, -20.0, 10.0 },
+		BarBottomDockFeedbackGeometry{ 40.0, 60.0, 10.0, 20.0 },
+		52.0, 88.0);
+	Check(Near(normalizedDockIndicator.leftDip, -46.0)
+		&& Near(normalizedDockIndicator.topDip, 5.0)
+		&& Near(normalizedDockIndicator.rightDip, 66.0)
+		&& Near(normalizedDockIndicator.bottomDip, 25.0),
+		"dock indicator normalizes non-finite and reversed visible bounds");
+	for (double zoom : { 1.0, 1.5 })
+	{
+		const double centerPx = (dockIndicator.leftDip
+			+ dockIndicator.rightDip) * zoom / 2.0;
+		const double topPx = dockIndicator.topDip * zoom;
+		const double widthPx = (dockIndicator.rightDip
+			- dockIndicator.leftDip) * zoom;
+		const double heightPx = (dockIndicator.bottomDip
+			- dockIndicator.topDip) * zoom;
+		Check(Near(centerPx, 140.0 * zoom)
+			&& Near(topPx, 603.0 * zoom)
+			&& Near(widthPx, 112.0 * zoom)
+			&& Near(heightPx, 20.0 * zoom),
+			"dock indicator center top width and height scale exactly once");
+	}
 	const auto actualWiderIndicator = ResolveBarBottomDockIndicatorGeometry(
-		dockBackground, 120.0, 88.0);
+		dockMainButtonBounds, dockMainBarBounds, 120.0, 88.0);
 	Check(Near(actualWiderIndicator.rightDip - actualWiderIndicator.leftDip,
 		144.0), "dock indicator expands for a wider current language");
 	Check(IsBarBottomDockIndicatorHit(true, RECT{ 34, 603, 146, 623 }, 34, 603)
@@ -164,30 +168,6 @@ int RunBarBottomDockTests()
 		&& !IsBarBottomDockIndicatorHit(
 			false, RECT{ 34, 603, 146, 623 }, 60, 610),
 		"indicator hit test follows visible half-open presented bounds");
-	Check(IsBarBottomDockEntryCapture(
-		BarBottomDockMode::Floating, BarBottomDockMode::BottomDocked,
-		BarBottomDockPhase::Capturing)
-		&& !IsBarBottomDockEntryCapture(
-			BarBottomDockMode::BottomDocked, BarBottomDockMode::BottomDocked,
-			BarBottomDockPhase::Dragging)
-		&& !IsBarBottomDockEntryCapture(
-			BarBottomDockMode::BottomDocked, BarBottomDockMode::Floating,
-			BarBottomDockPhase::Detaching)
-		&& !IsBarBottomDockEntryCapture(
-			BarBottomDockMode::Floating, BarBottomDockMode::Floating,
-			BarBottomDockPhase::Detaching),
-		"dock target indicator starts only for a real entry capture");
-	Check(ResolveBarBottomDockBackgroundTarget(
-		BarBottomDockMode::BottomDocked, true, true, false, 4, 5)
-		&& ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::BottomDocked, false, true, true, 5, 5)
-		&& !ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::BottomDocked, false, false, true, 5, 5)
-		&& !ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::Floating, true, true, true, 4, 5)
-		&& !ResolveBarBottomDockBackgroundTarget(
-			BarBottomDockMode::BottomDocked, true, false, false, 5, 5),
-		"dock background consumes only a new dock capture event and spans rebound");
 	Check(ResolveBarBottomDockIndicatorTarget(
 		BarBottomDockMode::BottomDocked, true)
 		&& !ResolveBarBottomDockIndicatorTarget(
@@ -214,29 +194,9 @@ int RunBarBottomDockTests()
 		&& capturedAbove.phase == BarBottomDockPhase::Capturing
 		&& Near(capturedAbove.elasticOffsetDip, -10.0),
 		"approach from above captures with stretch offset");
-	unsigned long long captureEventGeneration = 0;
-	if (ShouldPublishBarBottomDockCaptureEvent(capturedAbove))
-		++captureEventGeneration;
 	auto draggingAfterCapture = tracker.Update(966.0, 1017.0, environment);
-	const bool backgroundLatched = ResolveBarBottomDockBackgroundTarget(
-		draggingAfterCapture.mode, true, false, false,
-		0, captureEventGeneration);
-	const auto observedCaptureEventGeneration = captureEventGeneration;
-	Check(draggingAfterCapture.phase == BarBottomDockPhase::Dragging
-		&& captureEventGeneration == 1
-		&& !ShouldPublishBarBottomDockCaptureEvent(draggingAfterCapture)
-		&& backgroundLatched
-		&& ResolveBarBottomDockBackgroundTarget(
-			draggingAfterCapture.mode, true, false, backgroundLatched,
-			observedCaptureEventGeneration, captureEventGeneration)
-		&& !ResolveBarBottomDockBackgroundTarget(
-			draggingAfterCapture.mode, true, false, false,
-			observedCaptureEventGeneration, captureEventGeneration),
-		"persistent capture event survives phase overwrite and failed present retry");
-	Check(ResolveBarBottomDockBackgroundTarget(
-		BarBottomDockMode::BottomDocked, true, false, false,
-		std::numeric_limits<unsigned long long>::max(), 0),
-		"capture event generation wrap remains observable");
+	Check(draggingAfterCapture.phase == BarBottomDockPhase::Dragging,
+		"capturing advances to dragging on the next sample");
 	auto exactDetachThreshold = tracker.Update(
 		capturedAbove.stableGripScreenY + 30.0, 1047.0, environment);
 	Check(!exactDetachThreshold.detached
@@ -288,7 +248,6 @@ int RunBarBottomDockTests()
 	Check(fastCross.captured && fastCross.detached
 		&& fastCross.mode == BarBottomDockMode::Floating
 		&& fastCross.phase == BarBottomDockPhase::Detaching
-		&& !ShouldPublishBarBottomDockCaptureEvent(fastCross)
 		&& Near(fastCross.elasticOffsetDip, BarBottomDockThresholdDip),
 		"fast segment consumes capture and detach without a docked stall");
 	auto fastCrossRecovery = tracker.Update(1036.0, 1066.0, environment);
