@@ -19,10 +19,8 @@ namespace Inkeys::UI::Bar
 	inline constexpr double BarBottomDockSpringStepSeconds = 1.0 / 120.0;
 	inline constexpr double BarBottomDockSettleDistanceDip = 0.15;
 	inline constexpr double BarBottomDockSettleVelocityDipPerSecond = 4.0;
-	inline constexpr double BarBottomDockIndicatorTopInsetDip = 5.0;
-	inline constexpr double BarBottomDockIndicatorHeightDip = 20.0;
+	inline constexpr double BarBottomDockIndicatorHeightDip = 30.0;
 	inline constexpr double BarBottomDockIndicatorCornerRadiusDip = 6.0;
-	inline constexpr double BarBottomDockIndicatorHorizontalPaddingDip = 12.0;
 	inline constexpr double BarBottomDockFeedbackFadeInSeconds = 0.16;
 	inline constexpr double BarBottomDockFeedbackFadeOutSeconds = 0.20;
 
@@ -68,9 +66,11 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
-		BarBottomDockMode currentMode, bool dragActive) noexcept
+		BarBottomDockMode currentMode, bool dragActive,
+		bool mainBarExpanded) noexcept
 	{
-		return currentMode == BarBottomDockMode::BottomDocked && dragActive;
+		return currentMode == BarBottomDockMode::BottomDocked
+			&& dragActive && mainBarExpanded;
 	}
 
 	[[nodiscard]] inline BarBottomDockFeedbackGeometry
@@ -78,7 +78,8 @@ namespace Inkeys::UI::Bar
 			const BarBottomDockFeedbackGeometry& mainButton,
 			const BarBottomDockFeedbackGeometry& mainBar,
 			double actualLabelWidthDip,
-			double reservedLabelWidthDip) noexcept
+			double actualLabelHeightDip,
+			double visibleMainBarTopDip) noexcept
 	{
 		auto FiniteOrZero = [](double value) noexcept
 			{ return std::isfinite(value) ? value : 0.0; };
@@ -97,17 +98,42 @@ namespace Inkeys::UI::Bar
 		const auto bar = Normalize(mainBar);
 		actualLabelWidthDip = std::max(0.0, std::isfinite(actualLabelWidthDip)
 			? actualLabelWidthDip : 0.0);
-		reservedLabelWidthDip = std::max(0.0,
-			std::isfinite(reservedLabelWidthDip) ? reservedLabelWidthDip : 0.0);
-		const double width = std::max(actualLabelWidthDip, reservedLabelWidthDip)
-			+ BarBottomDockIndicatorHorizontalPaddingDip * 2.0;
+		actualLabelHeightDip = std::max(0.0,
+			std::isfinite(actualLabelHeightDip) ? actualLabelHeightDip : 0.0);
+		visibleMainBarTopDip = std::isfinite(visibleMainBarTopDip)
+			? visibleMainBarTopDip : bar.topDip;
+		// 高度扣除实际文字高度后的单侧余量同时作为水平内边距。
+		const double padding = std::max(0.0,
+			(BarBottomDockIndicatorHeightDip - actualLabelHeightDip) / 2.0);
+		const double width = actualLabelWidthDip + padding * 2.0;
 		const double center = (std::min(button.leftDip, bar.leftDip)
 			+ std::max(button.rightDip, bar.rightDip)) / 2.0;
-		// 指示器保留原背景板时期的位置：联合可见描边顶部上移 5 DIP。
-		const double top = std::min(button.topDip, bar.topDip)
-			- BarBottomDockIndicatorTopInsetDip;
+		const double top = visibleMainBarTopDip
+			- BarBottomDockIndicatorHeightDip / 2.0;
 		return { center - width / 2.0, top, center + width / 2.0,
 			top + BarBottomDockIndicatorHeightDip };
+	}
+
+	[[nodiscard]] inline BarBottomDockFeedbackGeometry
+		ResolveBarBottomDockIndicatorScaledGeometry(
+			const BarBottomDockFeedbackGeometry& geometry,
+			double scale) noexcept
+	{
+		auto FiniteOrZero = [](double value) noexcept
+			{ return std::isfinite(value) ? value : 0.0; };
+		double left = FiniteOrZero(geometry.leftDip);
+		double top = FiniteOrZero(geometry.topDip);
+		double right = FiniteOrZero(geometry.rightDip);
+		double bottom = FiniteOrZero(geometry.bottomDip);
+		if (right < left) std::swap(left, right);
+		if (bottom < top) std::swap(top, bottom);
+		scale = std::max(0.0, std::isfinite(scale) ? scale : 0.0);
+		const double centerX = (left + right) / 2.0;
+		const double centerY = (top + bottom) / 2.0;
+		const double halfWidth = (right - left) * scale / 2.0;
+		const double halfHeight = (bottom - top) * scale / 2.0;
+		return { centerX - halfWidth, centerY - halfHeight,
+			centerX + halfWidth, centerY + halfHeight };
 	}
 
 	[[nodiscard]] inline bool IsBarBottomDockIndicatorHit(

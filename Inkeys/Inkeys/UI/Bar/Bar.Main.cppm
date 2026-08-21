@@ -564,7 +564,7 @@ protected:
 	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
 		BarBorderCursorTrackingStateEnum::Dormant;
 	ULONGLONG borderCursorGraceDeadlineTick = 0;
-	array<RECT, 6> borderCursorVisibleRegions{};
+	array<RECT, 7> borderCursorVisibleRegions{};
 	size_t borderCursorVisibleRegionCount = 0;
 
 	// ULW 与主按钮直移共用几何锁；位移使用原子目标，交互线程不等待慢提交。

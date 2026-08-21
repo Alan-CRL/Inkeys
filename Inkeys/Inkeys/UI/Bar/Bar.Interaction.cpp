@@ -5705,7 +5705,7 @@ bool BarUISetClass::ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs)
 
 void BarUISetClass::RefreshBorderCursorVisibleRegions()
 {
-	array<RECT, 6> nextRegions{};
+	array<RECT, 7> nextRegions{};
 	size_t nextCount = 0;
 	const auto bottomDockSnapshot = BottomDockPresentedSnapshot();
 	const double frameZoom = bottomDockSnapshot.zoom;
@@ -5738,6 +5738,16 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel], false);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble], false);
+	if (bottomDockSnapshot.indicatorVisible
+		&& bottomDockSnapshot.indicatorBounds.right
+			> bottomDockSnapshot.indicatorBounds.left
+		&& bottomDockSnapshot.indicatorBounds.bottom
+			> bottomDockSnapshot.indicatorBounds.top
+		&& nextCount < nextRegions.size())
+	{
+		// 指示器只使用成功呈现边界，第三光源邻域不能领先于屏幕像素。
+		nextRegions[nextCount++] = bottomDockSnapshot.indicatorBounds;
+	}
 
 	// 距离判断统一在屏幕坐标完成，避免接受区内外分别换算客户区坐标。
 	POINT clientOrigin = bottomDockSnapshot.monitorOrigin;
@@ -5763,7 +5773,7 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 
 bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 {
-	array<RECT, 6> visibleRegions{};
+	array<RECT, 7> visibleRegions{};
 	size_t visibleRegionCount = 0;
 	{
 		lock_guard lock(borderCursorLightMutex);

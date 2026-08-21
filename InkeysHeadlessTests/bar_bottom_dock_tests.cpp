@@ -127,21 +127,21 @@ int RunBarBottomDockTests()
 	const BarBottomDockFeedbackGeometry dockMainBarBounds{
 		-40.0, 608.0, 320.0, 688.0 };
 	const auto dockIndicator = ResolveBarBottomDockIndicatorGeometry(
-		dockMainButtonBounds, dockMainBarBounds, 52.0, 88.0);
-	Check(Near(dockIndicator.leftDip, 84.0)
-		&& Near(dockIndicator.topDip, 603.0)
-		&& Near(dockIndicator.rightDip, 196.0)
+		dockMainButtonBounds, dockMainBarBounds, 52.0, 14.0, 608.0);
+	Check(Near(dockIndicator.leftDip, 106.0)
+		&& Near(dockIndicator.topDip, 593.0)
+		&& Near(dockIndicator.rightDip, 174.0)
 		&& Near(dockIndicator.bottomDip, 623.0),
-		"dock indicator uses visible-stroke union and reserved text width");
+		"dock indicator uses equal text padding and centers on main bar top");
 	const auto normalizedDockIndicator = ResolveBarBottomDockIndicatorGeometry(
 		BarBottomDockFeedbackGeometry{
 			std::numeric_limits<double>::quiet_NaN(), 30.0, -20.0, 10.0 },
 		BarBottomDockFeedbackGeometry{ 40.0, 60.0, 10.0, 20.0 },
-		52.0, 88.0);
-	Check(Near(normalizedDockIndicator.leftDip, -46.0)
+		52.0, 14.0, std::numeric_limits<double>::quiet_NaN());
+	Check(Near(normalizedDockIndicator.leftDip, -24.0)
 		&& Near(normalizedDockIndicator.topDip, 5.0)
-		&& Near(normalizedDockIndicator.rightDip, 66.0)
-		&& Near(normalizedDockIndicator.bottomDip, 25.0),
+		&& Near(normalizedDockIndicator.rightDip, 44.0)
+		&& Near(normalizedDockIndicator.bottomDip, 35.0),
 		"dock indicator normalizes non-finite and reversed visible bounds");
 	for (double zoom : { 1.0, 1.5 })
 	{
@@ -153,28 +153,52 @@ int RunBarBottomDockTests()
 		const double heightPx = (dockIndicator.bottomDip
 			- dockIndicator.topDip) * zoom;
 		Check(Near(centerPx, 140.0 * zoom)
-			&& Near(topPx, 603.0 * zoom)
-			&& Near(widthPx, 112.0 * zoom)
-			&& Near(heightPx, 20.0 * zoom),
+			&& Near(topPx, 593.0 * zoom)
+			&& Near(widthPx, 68.0 * zoom)
+			&& Near(heightPx, 30.0 * zoom),
 			"dock indicator center top width and height scale exactly once");
 	}
 	const auto actualWiderIndicator = ResolveBarBottomDockIndicatorGeometry(
-		dockMainButtonBounds, dockMainBarBounds, 120.0, 88.0);
+		dockMainButtonBounds, dockMainBarBounds, 120.0, 14.0, 608.0);
 	Check(Near(actualWiderIndicator.rightDip - actualWiderIndicator.leftDip,
-		144.0), "dock indicator expands for a wider current language");
-	Check(IsBarBottomDockIndicatorHit(true, RECT{ 34, 603, 146, 623 }, 34, 603)
+		136.0), "dock indicator expands only for the current language text");
+	const auto invalidMetricsIndicator = ResolveBarBottomDockIndicatorGeometry(
+		dockMainButtonBounds, dockMainBarBounds,
+		std::numeric_limits<double>::quiet_NaN(), -1.0, 608.0);
+	const auto tallTextIndicator = ResolveBarBottomDockIndicatorGeometry(
+		dockMainButtonBounds, dockMainBarBounds, 52.0, 42.0, 608.0);
+	Check(Near(invalidMetricsIndicator.rightDip
+		- invalidMetricsIndicator.leftDip, 30.0)
+		&& Near(tallTextIndicator.rightDip - tallTextIndicator.leftDip, 52.0),
+		"dock indicator clamps invalid metrics and never uses negative padding");
+	const auto scaledIndicator = ResolveBarBottomDockIndicatorScaledGeometry(
+		dockIndicator, 1.1);
+	const auto hiddenIndicator = ResolveBarBottomDockIndicatorScaledGeometry(
+		dockIndicator, std::numeric_limits<double>::quiet_NaN());
+	Check(Near(scaledIndicator.leftDip, 102.6)
+		&& Near(scaledIndicator.topDip, 591.5)
+		&& Near(scaledIndicator.rightDip, 177.4)
+		&& Near(scaledIndicator.bottomDip, 624.5)
+		&& Near(hiddenIndicator.leftDip, 140.0)
+		&& Near(hiddenIndicator.topDip, 608.0)
+		&& Near(hiddenIndicator.rightDip, 140.0)
+		&& Near(hiddenIndicator.bottomDip, 608.0),
+		"dock indicator scales equally around its center and hides at zero");
+	Check(IsBarBottomDockIndicatorHit(true, RECT{ 106, 593, 174, 623 }, 106, 593)
 		&& !IsBarBottomDockIndicatorHit(
-			true, RECT{ 34, 603, 146, 623 }, 146, 610)
+			true, RECT{ 106, 593, 174, 623 }, 174, 610)
 		&& !IsBarBottomDockIndicatorHit(
-			false, RECT{ 34, 603, 146, 623 }, 60, 610),
+			false, RECT{ 106, 593, 174, 623 }, 120, 610),
 		"indicator hit test follows visible half-open presented bounds");
 	Check(ResolveBarBottomDockIndicatorTarget(
-		BarBottomDockMode::BottomDocked, true)
+		BarBottomDockMode::BottomDocked, true, true)
 		&& !ResolveBarBottomDockIndicatorTarget(
-			BarBottomDockMode::BottomDocked, false)
+			BarBottomDockMode::BottomDocked, false, true)
 		&& !ResolveBarBottomDockIndicatorTarget(
-			BarBottomDockMode::Floating, true),
-		"dock indicator follows only an active docked drag");
+			BarBottomDockMode::Floating, true, true)
+		&& !ResolveBarBottomDockIndicatorTarget(
+			BarBottomDockMode::BottomDocked, true, false),
+		"dock indicator requires an active docked drag and expanded main bar");
 	Check(ResolveBarBottomDockFeedbackAction(false, true)
 		== BarBottomDockFeedbackAction::FadeIn
 		&& ResolveBarBottomDockFeedbackAction(true, false)
