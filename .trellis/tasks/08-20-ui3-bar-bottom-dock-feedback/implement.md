@@ -42,6 +42,7 @@
 32. [x] 为非拖动居中态加入逐帧联合外框中心补偿，并只在成功呈现且布局稳定后吸收到基础锚点。
 33. [x] 首次激活提示时立即把 Back 峰值、描边、第一/第三光源、Gaussian 和抗锯齿包络加入业务 damage，失败提交继续保留。
 34. [x] 运行本轮全部质量门并静态复核成功快照、单 target/单 ULW 合同，不启动 GUI、不提交 commit。
+35. [x] 修复指示器稳定显示时未继承底栏二维映射变化键的问题，覆盖上拉果冻期间旧新完整光影外框并重新运行质量门。
 
 ## Validation
 
@@ -54,8 +55,9 @@
 - [x] 新增水平居中状态机后重新运行以上全部验证。
 - [x] 完成本轮刚性抓手、远端连续性和提示锁存修复后重新运行以上全部验证。
 - [x] 完成本轮提示生命周期、首次显现脏区、40 DIP 水平阈值和动态布局居中后重新运行以上全部验证。
+- [x] 完成提示框随底栏竖向果冻移动的 dirty 回归修复后重新运行以上全部验证。
 
-验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平 40 DIP/竖向 20 DIP 阈值、刚性主按钮、主栏远端重基准、提示手势锁存、首次显现完整光影包络、非拖动布局逐帧严格居中、成功快照实际联合中心及两轴 dirty/光源/命中均有 Headless 或静态覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
+验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平 40 DIP/竖向 20 DIP 阈值、刚性主按钮、主栏远端重基准、提示手势锁存、首次显现完整光影包络、竖向果冻移动时提示框旧新完整光影包络、非拖动布局逐帧严格居中、成功快照实际联合中心及两轴 dirty/光源/命中均有 Headless 或静态覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
 
 ## Risk And Rollback Points
 

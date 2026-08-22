@@ -4,11 +4,13 @@
 #include <Windows.h>
 
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <string_view>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
 
 namespace
 {
@@ -199,6 +201,32 @@ int RunBarBottomDockTests()
 		dockIndicator, std::numeric_limits<double>::quiet_NaN(),
 		1.0, 6.0, 1.5, 3), RECT{}),
 		"invalid indicator scale produces no visual envelope");
+	const auto pulledVerticalMapping = ResolveBarBottomDockVerticalMapping(
+		608.0, 688.0, -20.0);
+	const auto pulledDockIndicator = ResolveBarBottomDockIndicatorGeometry(
+		dockMainButtonBounds, dockMainBarBounds, 52.0, 14.0,
+		pulledVerticalMapping.MapY(dockMainBarBounds.topDip));
+	const RECT pulledIndicatorEnvelope =
+		ResolveBarBottomDockIndicatorVisualEnvelope(
+			pulledDockIndicator, 1.0, 1.0, 6.0, 1.0, 3);
+	const RECT stableIndicatorEnvelope =
+		ResolveBarBottomDockIndicatorVisualEnvelope(
+			dockIndicator, 1.0, 1.0, 6.0, 1.0, 3);
+	BarDirtyRegionTracker indicatorDirtyTracker;
+	constexpr std::uint64_t indicatorDirtyKey = 1;
+	const RECT indicatorWindow{ 0, 0, 1920, 1080 };
+	indicatorDirtyTracker.BeginFrame(indicatorWindow);
+	indicatorDirtyTracker.Observe(indicatorDirtyKey, stableIndicatorEnvelope);
+	indicatorDirtyTracker.CommitPresented();
+	indicatorDirtyTracker.BeginFrame(indicatorWindow);
+	indicatorDirtyTracker.MarkChanged(indicatorDirtyKey);
+	indicatorDirtyTracker.Observe(indicatorDirtyKey, pulledIndicatorEnvelope);
+	const RECT pulledIndicatorDamage =
+		indicatorDirtyTracker.ResolveDamage(false);
+	Check(pulledIndicatorEnvelope.top < stableIndicatorEnvelope.top
+		&& pulledIndicatorDamage.top <= pulledIndicatorEnvelope.top
+		&& pulledIndicatorDamage.bottom >= stableIndicatorEnvelope.bottom,
+		"vertical dock jelly damages old and new indicator light envelopes");
 	Check(IsBarBottomDockIndicatorHit(true, RECT{ 106, 593, 174, 623 }, 106, 593)
 		&& !IsBarBottomDockIndicatorHit(
 			true, RECT{ 106, 593, 174, 623 }, 174, 610)

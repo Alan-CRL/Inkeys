@@ -7499,6 +7499,14 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
+			if (state.bottomDockTargetIndicatorTarget
+				|| state.bottomDockTargetIndicatorProgress.val > 0.000001
+				|| state.bottomDockTargetIndicatorBoundsVisible)
+			{
+				// 提示框锚在形变后的主栏上边框；自身动画不变时也必须提交旧新光影外框。
+				state.dirtyRegionTracker.MarkChanged(
+					dockTargetIndicatorDirtyKey);
+			}
 		}
 		if (!dockDragActive && !springActive && !captureBottomSpringActive)
 		{
