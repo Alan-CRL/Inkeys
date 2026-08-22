@@ -216,23 +216,36 @@ int RunBarBottomDockTests()
 		&& !ResolveBarBottomDockIndicatorTarget(
 			BarBottomDockMode::BottomDocked, true, true, false),
 		"dock indicator additionally requires a gesture eligibility latch");
-	const auto bottomOriginCenterCapture =
+	const auto floatingEntry =
 		ResolveBarBottomDockIndicatorGestureEligibility(
-			false, false, true, false, true);
-	const auto bottomOriginCenterDetach =
+			false, true, false, true, true);
+	const auto centeredOriginDetach =
 		ResolveBarBottomDockIndicatorGestureEligibility(
-			false, bottomOriginCenterCapture.centerCaptureActive,
-			false, true, true);
-	const auto floatingOriginCenterDetach =
+			false, false, true, true, true);
+	const auto sameGestureRecapture =
 		ResolveBarBottomDockIndicatorGestureEligibility(
-			true, true, false, true, true);
-	Check(bottomOriginCenterCapture.centerCaptureActive
-		&& bottomOriginCenterCapture.eligible
-		&& bottomOriginCenterDetach.centerCaptureActive
-		&& bottomOriginCenterDetach.eligible
-		&& floatingOriginCenterDetach.centerCaptureActive
-		&& floatingOriginCenterDetach.eligible,
-		"a center capture keeps the indicator eligible through detach and recapture");
+			centeredOriginDetach.gestureActive, false, true, true, true);
+	const auto sameGestureUnchanged =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			sameGestureRecapture.gestureActive, false, false, true, true);
+	const auto leftBottomDock =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			sameGestureRecapture.gestureActive, false, false, false, true);
+	const auto foldedGesture =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			true, false, false, true, false);
+	const auto unchangedBottomGesture =
+		ResolveBarBottomDockIndicatorGestureEligibility(
+			false, false, false, true, true);
+	Check(floatingEntry.gestureActive && floatingEntry.eligible
+		&& centeredOriginDetach.gestureActive && centeredOriginDetach.eligible
+		&& sameGestureRecapture.gestureActive && sameGestureRecapture.eligible
+		&& sameGestureUnchanged.gestureActive && sameGestureUnchanged.eligible
+		&& !leftBottomDock.gestureActive && !leftBottomDock.eligible
+		&& !foldedGesture.gestureActive && !foldedGesture.eligible
+		&& !unchangedBottomGesture.gestureActive
+		&& !unchangedBottomGesture.eligible,
+		"indicator latches on bottom entry or either center-mode transition only");
 	Check(ResolveBarBottomDockFeedbackAction(false, true)
 		== BarBottomDockFeedbackAction::FadeIn
 		&& ResolveBarBottomDockFeedbackAction(true, false)
@@ -331,26 +344,26 @@ int RunBarBottomDockTests()
 		"fast reverse segment consumes both thresholds symmetrically");
 
 	BarBottomDockCenterDragTracker centerTracker;
-	centerTracker.Begin(BarBottomDockCenterMode::Free, 900.0,
+	centerTracker.Begin(BarBottomDockCenterMode::Free, 880.0,
 		true, true, environment);
-	auto exactCenterCapture = centerTracker.Update(990.0,
+	auto exactCenterCapture = centerTracker.Update(1020.0,
 		true, true, environment);
 	Check(exactCenterCapture.captured
 		&& exactCenterCapture.mode == BarBottomDockCenterMode::Centered
 		&& Near(exactCenterCapture.constrainedCenterScreenX, 960.0)
-		&& Near(exactCenterCapture.elasticOffsetDip, 20.0),
-		"horizontal center capture includes the exact twenty DIP boundary");
-	auto exactCenterDetach = centerTracker.Update(990.0,
+		&& Near(exactCenterCapture.elasticOffsetDip, 40.0),
+		"horizontal center capture includes the exact forty DIP boundary");
+	auto exactCenterDetach = centerTracker.Update(1020.0,
 		true, true, environment);
 	Check(!exactCenterDetach.detached
 		&& exactCenterDetach.mode == BarBottomDockCenterMode::Centered,
 		"horizontal center remains captured at the inclusive boundary");
-	auto outsideCenterDetach = centerTracker.Update(990.01,
+	auto outsideCenterDetach = centerTracker.Update(1020.01,
 		true, true, environment);
 	Check(outsideCenterDetach.detached
 		&& outsideCenterDetach.mode == BarBottomDockCenterMode::Free,
-		"horizontal center detaches strictly outside twenty DIP");
-	centerTracker.Begin(BarBottomDockCenterMode::Free, 930.0,
+		"horizontal center detaches strictly outside forty DIP");
+	centerTracker.Begin(BarBottomDockCenterMode::Free, 880.0,
 		true, true, environment);
 	const auto stableCapture = centerTracker.Update(950.0,
 		true, true, environment);
@@ -358,9 +371,9 @@ int RunBarBottomDockTests()
 		true, true, environment);
 	const auto pushedInside = centerTracker.Update(970.0,
 		true, true, environment);
-	const auto stableDetach = centerTracker.Update(991.0,
+	const auto stableDetach = centerTracker.Update(1021.0,
 		true, true, environment);
-	const auto stableRecapture = centerTracker.Update(989.0,
+	const auto stableRecapture = centerTracker.Update(1019.0,
 		true, true, environment);
 	Check(stableCapture.mode == BarBottomDockCenterMode::Centered
 		&& repeatedInside.mode == BarBottomDockCenterMode::Centered
@@ -380,10 +393,18 @@ int RunBarBottomDockTests()
 			true, false, 960.0, environment.monitorBounds, environment.zoom),
 		"folded main bar cannot enter centered mode");
 	Check(ShouldCaptureBarBottomDockCenter(
-		true, true, 990.0, environment.monitorBounds, environment.zoom)
+		true, true, 900.0, environment.monitorBounds, environment.zoom)
+		&& ShouldCaptureBarBottomDockCenter(
+			true, true, 960.0, environment.monitorBounds, environment.zoom)
+		&& ShouldCaptureBarBottomDockCenter(
+		true, true, 1020.0, environment.monitorBounds, environment.zoom)
+		&& !ShouldCaptureBarBottomDockCenter(
+			true, true, 899.99, environment.monitorBounds, environment.zoom)
+		&& !ShouldCaptureBarBottomDockCenter(
+			true, true, 1020.01, environment.monitorBounds, environment.zoom)
 		&& !ShouldCaptureBarBottomDockCenter(
 			false, true, 960.0, environment.monitorBounds, environment.zoom),
-		"horizontal capture uses monitor center and vertical dock gate");
+		"horizontal capture uses the forty DIP monitor-center band and dock gate");
 
 	const auto stretched = ResolveBarBottomDockVerticalMapping(0.0, 80.0, -20.0);
 	Check(Near(stretched.visualTopDip, -20.0) && Near(stretched.scaleY, 1.25)
@@ -442,6 +463,32 @@ int RunBarBottomDockTests()
 		&& Near(leftExpandedStretch.visualRightDip, 440.0)
 		&& Near(rightExpandedStretch.rigidGripTranslationXDip, -20.0),
 		"horizontal jelly moves the near edge with the rigid grip and fixes the far edge");
+	const double animatedCenterCorrection =
+		ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true, 930.0, 960.0);
+	const auto centeredAnimatedMapping =
+		TranslateBarBottomDockHorizontalMapping(
+			ResolveBarBottomDockHorizontalMapping(
+				800.0, 1060.0, true, 0.0),
+			animatedCenterCorrection);
+	Check(Near(animatedCenterCorrection, 30.0)
+		&& Near((centeredAnimatedMapping.visualLeftDip
+			+ centeredAnimatedMapping.visualRightDip) / 2.0, 960.0)
+		&& Near(centeredAnimatedMapping.rigidGripTranslationXDip, 30.0)
+		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Capturing, true, true, 930.0, 960.0), 0.0)
+		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Capturing, false, true, 930.0, 960.0), 0.0)
+		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			true, BarBottomDockCenterMode::Free,
+			BarBottomDockPhase::Stable, false, true, 930.0, 960.0), 0.0)
+		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, false, 930.0, 960.0), 0.0),
+		"stable centered layout translates the animated union without retargeting drag frames");
 	const auto horizontalCaptureStart = ResolveBarBottomDockHorizontalMapping(
 		180.0, 500.0, true, -20.0, -20.0);
 	const double detachedFarOffset = ResolveBarBottomDockRebasedFarEdgeOffsetDip(

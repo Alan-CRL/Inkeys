@@ -10,7 +10,8 @@
 
 namespace Inkeys::UI::Bar
 {
-		inline constexpr double BarBottomDockThresholdDip = 20.0;
+	inline constexpr double BarBottomDockThresholdDip = 20.0;
+	inline constexpr double BarBottomDockCenterThresholdDip = 40.0;
 		inline constexpr double BarWhiteboardBottomInsetDip = 5.0;
 	inline constexpr double BarBottomDockVisualLimitDip = 24.0;
 	inline constexpr double BarBottomDockSpringOmega = 18.0;
@@ -99,10 +100,10 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
 		BarBottomDockMode currentMode, bool dragActive,
-		bool mainBarExpanded, bool floatingGestureEligible) noexcept
+		bool mainBarExpanded, bool gestureEligible) noexcept
 	{
 		return currentMode == BarBottomDockMode::BottomDocked
-			&& dragActive && mainBarExpanded && floatingGestureEligible;
+			&& dragActive && mainBarExpanded && gestureEligible;
 	}
 
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(
@@ -115,23 +116,22 @@ namespace Inkeys::UI::Bar
 
 	struct BarBottomDockIndicatorGestureEligibility
 	{
-		bool centerCaptureActive = false;
+		bool gestureActive = false;
 		bool eligible = false;
 	};
 
 	[[nodiscard]] inline BarBottomDockIndicatorGestureEligibility
 		ResolveBarBottomDockIndicatorGestureEligibility(
-			bool floatingOriginEligible, bool previousCenterCaptureActive,
-			bool centerCaptured, bool centerDetached,
-			bool verticallyDocked) noexcept
+			bool previousGestureActive, bool enteredBottomDock,
+			bool centerModeChanged, bool verticallyDocked,
+			bool mainBarExpanded) noexcept
 	{
-		bool centerCaptureActive = previousCenterCaptureActive;
-		if (centerCaptured && verticallyDocked) centerCaptureActive = true;
-		else if (!verticallyDocked)
-			centerCaptureActive = false;
-		(void)centerDetached;
-		return { centerCaptureActive,
-			floatingOriginEligible || centerCaptureActive };
+		bool gestureActive = previousGestureActive;
+		if (!verticallyDocked || !mainBarExpanded)
+			gestureActive = false;
+		else if (enteredBottomDock || centerModeChanged)
+			gestureActive = true;
+		return { gestureActive, gestureActive };
 	}
 
 	[[nodiscard]] inline BarBottomDockFeedbackGeometry
@@ -414,7 +414,7 @@ namespace Inkeys::UI::Bar
 		zoom = NormalizeBarBottomDockZoom(zoom);
 		return std::abs(bodyCenterScreenX
 			- ResolveBarBottomDockMonitorCenterScreenX(monitorBounds))
-			<= BarBottomDockThresholdDip * zoom;
+			<= BarBottomDockCenterThresholdDip * zoom;
 	}
 
 	struct BarBottomDockCenterDragUpdate
@@ -451,7 +451,8 @@ namespace Inkeys::UI::Bar
 			elasticOffsetDip_ = mode_ == BarBottomDockCenterMode::Centered
 				? std::clamp((previousRawBodyCenterScreenX_
 					- stableCenterScreenX_) / zoom,
-					-BarBottomDockThresholdDip, BarBottomDockThresholdDip)
+					-BarBottomDockCenterThresholdDip,
+					BarBottomDockCenterThresholdDip)
 				: 0.0;
 		}
 
@@ -461,7 +462,7 @@ namespace Inkeys::UI::Bar
 			const BarBottomDockEnvironment& environment) noexcept
 		{
 			const double zoom = NormalizeBarBottomDockZoom(environment.zoom);
-			const double thresholdScreen = BarBottomDockThresholdDip * zoom;
+			const double thresholdScreen = BarBottomDockCenterThresholdDip * zoom;
 			const bool enabled = verticallyDocked && mainBarExpanded
 				&& environment.monitorBounds.right
 					> environment.monitorBounds.left;
@@ -503,7 +504,8 @@ namespace Inkeys::UI::Bar
 				{
 					stableCenterScreenX_ = monitorCenter;
 					elasticOffsetDip_ = std::clamp(currentDistance / zoom,
-						-BarBottomDockThresholdDip, BarBottomDockThresholdDip);
+						-BarBottomDockCenterThresholdDip,
+						BarBottomDockCenterThresholdDip);
 					mode_ = BarBottomDockCenterMode::Centered;
 					phase_ = BarBottomDockPhase::Capturing;
 					result.captured = true;
@@ -514,7 +516,7 @@ namespace Inkeys::UI::Bar
 					// 高速横穿捕获带时消费完整线段，最终保持 Free 并连续恢复。
 					stableCenterScreenX_ = monitorCenter;
 					elasticOffsetDip_ = std::copysign(
-						BarBottomDockThresholdDip, currentDistance);
+						BarBottomDockCenterThresholdDip, currentDistance);
 					phase_ = BarBottomDockPhase::Detaching;
 					result.captured = true;
 					result.detached = true;
@@ -774,6 +776,34 @@ namespace Inkeys::UI::Bar
 				/ std::max(0.000001, scaleX);
 		}
 	};
+
+	[[nodiscard]] inline double ResolveBarBottomDockCenteredLayoutCorrectionDip(
+		bool verticallyDocked, BarBottomDockCenterMode centerMode,
+		BarBottomDockPhase centerPhase, bool dragActive,
+		bool mainBarExpanded, double currentBodyCenterDip,
+		double monitorCenterDip) noexcept
+	{
+		if (!verticallyDocked || centerMode != BarBottomDockCenterMode::Centered
+			|| centerPhase != BarBottomDockPhase::Stable
+			|| dragActive || !mainBarExpanded
+			|| !std::isfinite(currentBodyCenterDip)
+			|| !std::isfinite(monitorCenterDip))
+			return 0.0;
+		return monitorCenterDip - currentBodyCenterDip;
+	}
+
+	[[nodiscard]] inline BarBottomDockHorizontalMapping
+		TranslateBarBottomDockHorizontalMapping(
+			BarBottomDockHorizontalMapping mapping,
+			double translationDip) noexcept
+	{
+		translationDip = std::isfinite(translationDip) ? translationDip : 0.0;
+		mapping.visualLeftDip += translationDip;
+		mapping.visualRightDip += translationDip;
+		mapping.rigidGripTranslationXDip += translationDip;
+		mapping.rigidOverlayTranslationXDip += translationDip;
+		return mapping;
+	}
 
 	[[nodiscard]] inline BarBottomDockHorizontalMapping
 		ResolveBarBottomDockHorizontalMapping(double baseLeftDip,

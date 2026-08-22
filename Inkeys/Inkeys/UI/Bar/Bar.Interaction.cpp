@@ -6049,12 +6049,10 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		initialPresentedSnapshot.rawBodyCenterScreenX,
 		initialMode == BarBottomDockMode::BottomDocked,
 		!barState.fold, environment);
-	const bool floatingIndicatorGestureEligible =
-		initialMode == BarBottomDockMode::Floating && !barState.fold;
-	bool centerIndicatorGestureActive = false;
+	bool dockIndicatorGestureActive = false;
 	bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
 	bottomDockIndicatorGestureEligible.store(
-		floatingIndicatorGestureEligible,
+		false,
 		memory_order_relaxed);
 	bottomDockDragActive.store(true, memory_order_relaxed);
 	bottomDockPhase.store(initialMode == BarBottomDockMode::BottomDocked
@@ -6111,19 +6109,18 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				centerUpdate.elasticOffsetDip, memory_order_release);
 			const auto indicatorEligibility = Inkeys::UI::Bar::
 				ResolveBarBottomDockIndicatorGestureEligibility(
-					floatingIndicatorGestureEligible,
-					centerIndicatorGestureActive,
-					centerUpdate.captured
-						&& centerUpdate.mode == BarBottomDockCenterMode::Centered,
-					centerUpdate.detached,
-					update.mode == BarBottomDockMode::BottomDocked);
-			centerIndicatorGestureActive =
-				indicatorEligibility.centerCaptureActive;
+					dockIndicatorGestureActive,
+					update.captured
+						&& update.mode == BarBottomDockMode::BottomDocked,
+					centerUpdate.modeChanged,
+					update.mode == BarBottomDockMode::BottomDocked,
+					!barState.fold);
+			dockIndicatorGestureActive = indicatorEligibility.gestureActive;
 			const bool nextIndicatorGestureEligible = indicatorEligibility.eligible;
 			publication.visualChanged = publication.visualChanged
 				|| bottomDockIndicatorGestureEligible.load(memory_order_relaxed)
 					!= nextIndicatorGestureEligible;
-			// 底栏起始手势仅在本次真正进入居中捕获带后获得提示资格。
+			// 竖向进入底栏或水平模式切换后锁存；仅离开底栏、折叠或结束手势清除。
 			bottomDockIndicatorGestureEligible.store(
 				nextIndicatorGestureEligible, memory_order_release);
 			if (update.detached)

@@ -265,6 +265,7 @@ struct BarBottomDockPresentedSnapshot
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	Inkeys::UI::Bar::BarBottomDockHorizontalMapping horizontalMapping{};
 	double centerElasticOffsetDip = 0.0;
+	double centeredLayoutCorrectionDip = 0.0;
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
 	double zoom = 1.0;
@@ -278,6 +279,7 @@ struct BarBottomDockPresentedSnapshot
 	double mainCenterScreenY = 0.0;
 	double rawMainCenterScreenX = 0.0;
 	double bodyCenterScreenX = 0.0;
+	double visualBodyCenterScreenX = 0.0;
 	double rawBodyCenterScreenX = 0.0;
 	bool indicatorVisible = false;
 	bool indicatorOccluding = false;
@@ -462,6 +464,9 @@ public:
 					memory_order_relaxed);
 			snapshot.centerElasticOffsetDip =
 				bottomDockPresentedCenterElasticOffsetDip.load(memory_order_relaxed);
+			snapshot.centeredLayoutCorrectionDip =
+				bottomDockPresentedCenteredLayoutCorrectionDip.load(
+					memory_order_relaxed);
 			snapshot.zoom = Inkeys::UI::Bar::NormalizeBarBottomDockZoom(
 				bottomDockPresentedZoom.load(memory_order_relaxed));
 			snapshot.monitorOrigin = POINT{
@@ -491,6 +496,9 @@ public:
 				bottomDockPresentedRawMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.bodyCenterScreenX =
 				bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed);
+			snapshot.visualBodyCenterScreenX =
+				bottomDockPresentedVisualBodyCenterScreenX.load(
+					memory_order_relaxed);
 			snapshot.rawBodyCenterScreenX =
 				bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed);
 			snapshot.indicatorVisible =
@@ -756,6 +764,7 @@ protected:
 	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPresentedCenterPhase =
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	atomic<double> bottomDockPresentedCenterElasticOffsetDip = 0.0;
+	atomic<double> bottomDockPresentedCenteredLayoutCorrectionDip = 0.0;
 	atomic<double> bottomDockPresentedBaseLeftDip = 0.0;
 	atomic<double> bottomDockPresentedBaseRightDip = 0.0;
 	atomic<double> bottomDockPresentedVisualLeftDip = 0.0;
@@ -780,6 +789,7 @@ protected:
 	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
 	atomic<double> bottomDockPresentedRawMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedVisualBodyCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedRawBodyCenterScreenX = 0.0;
 	atomic<bool> bottomDockIndicatorPresentedVisible = false;
 	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
