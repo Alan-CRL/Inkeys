@@ -3152,11 +3152,22 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			const short rigidMessageY = msg.y;
 			int visualMessageX = rigidMessageX;
 			int visualMessageY = rigidMessageY;
+			ExMessage gripMessage = msg;
+			gripMessage.x = static_cast<short>(clamp(
+				barUISet.BottomDockGripHitTestXFromRigid(
+					rigidMessageX, &visualMessageX),
+				static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
+			gripMessage.y = static_cast<short>(clamp(
+				barUISet.BottomDockBodyHitTestYFromRigid(
+					rigidMessageY, &visualMessageY),
+				static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
+
+			// 普通主栏控件继续使用主体逆映射，主按钮单独使用刚性抓手逆映射。
 			ApplyBarBottomDockBodyHitTestFromRigid(
-				msg, &visualMessageY, &visualMessageX);
+				msg, nullptr, nullptr);
 
 			// 主按钮
-			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && obj->IsClick(msg.x, msg.y, barStyle.zoom))
+			if (auto obj = superellipseMap[BarUISetSuperellipseEnum::MainButton]; continueFlag && obj->IsClick(gripMessage.x, gripMessage.y, barStyle.zoom))
 			{
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
@@ -5744,8 +5755,11 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 			RECT bounds = BarRenderingAttribute::GetWeigetRect(*shape, frameZoom);
 			nextRegions[nextCount++] = body
 				? TransformBarBottomDockBodyRect(
-					bounds, bottomDockSnapshot.mapping, frameZoom)
+					bounds, bottomDockSnapshot.horizontalMapping,
+					bottomDockSnapshot.mapping, frameZoom)
 				: Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+					bottomDockSnapshot.horizontalMapping
+						.rigidOverlayTranslationXDip,
 					bottomDockSnapshot.rigidTranslationDip, frameZoom);
 		};
 	auto AddSuperellipse = [&](const shared_ptr<BarUiSuperellipseClass>& superellipse)
@@ -5755,8 +5769,9 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 				return;
 			RECT bounds = BarRenderingAttribute::GetWeigetRect(
 				*superellipse, frameZoom);
-			nextRegions[nextCount++] = TransformBarBottomDockBodyRect(
-				bounds, bottomDockSnapshot.mapping, frameZoom);
+			nextRegions[nextCount++] = Inkeys::UI::Bar::TransformBarBottomDockGripRect(
+				bounds, bottomDockSnapshot.horizontalMapping,
+				bottomDockSnapshot.mapping, frameZoom);
 		};
 
 	AddSuperellipse(superellipseMap[BarUISetSuperellipseEnum::MainButton]);
@@ -5945,14 +5960,14 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			gestureRebaseSerial, memory_order_release);
 	}
 	double baseMainCenterScreenX =
-		initialPresentedSnapshot.mainCenterScreenX
+		initialPresentedSnapshot.rawMainCenterScreenX
 		- initialPresentedTranslation.x;
 	double baseMainCenterScreenY =
 		initialPresentedSnapshot.mainCenterScreenY
 		- initialPresentedTranslation.y;
 	double bodyToMainCenterScreenX =
-		initialPresentedSnapshot.bodyCenterScreenX
-			- initialPresentedSnapshot.mainCenterScreenX;
+		initialPresentedSnapshot.rawBodyCenterScreenX
+			- initialPresentedSnapshot.rawMainCenterScreenX;
 	LONG appliedDeltaX = directWindowDragTranslationX.load(memory_order_acquire);
 	LONG appliedDeltaY = directWindowDragTranslationY.load(memory_order_acquire);
 	bool directMoveFailed = false;
@@ -6031,7 +6046,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		initialDockCenterScreenY + grabOffsetScreenY, environment);
 	BarBottomDockCenterDragTracker centerTracker;
 	centerTracker.Begin(initialCenterMode,
-		actualMainCenterScreenX + bodyToMainCenterScreenX,
+		initialPresentedSnapshot.rawBodyCenterScreenX,
 		initialMode == BarBottomDockMode::BottomDocked,
 		!barState.fold, environment);
 	const bool floatingIndicatorGestureEligible =
@@ -6150,15 +6165,16 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			result.rawPathLength += stepLength;
 			result.moved = result.moved || stepLength > 0.0;
 			previousPointer = pointer;
-			auto RebasePointerToPresented = [&](const auto& presented)
+			auto RebasePointerForPresentedEnvironment = [&](const auto& presented)
 				{
-					baseMainCenterScreenX = presented.mainCenterScreenX
+					// 显示环境变化只消费未形变坐标；视觉果冻不能回灌抓手和捕获阈值。
+					baseMainCenterScreenX = presented.rawMainCenterScreenX
 						- presented.directTranslation.x;
 					baseMainCenterScreenY = presented.mainCenterScreenY
 						- presented.directTranslation.y;
-					bodyToMainCenterScreenX = presented.bodyCenterScreenX
-						- presented.mainCenterScreenX;
-					grabOffsetScreenX = pointer.x - presented.mainCenterScreenX;
+					bodyToMainCenterScreenX = presented.rawBodyCenterScreenX
+						- presented.rawMainCenterScreenX;
+					grabOffsetScreenX = pointer.x - presented.rawMainCenterScreenX;
 					grabOffsetScreenY = pointer.y
 						- (presented.mainCenterScreenY
 							+ presented.rigidTranslationDip * presented.zoom);
@@ -6172,7 +6188,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 					dockTracker.RebaseDockGrip(
 						dockCenter + grabOffsetScreenY, floatingBottom);
 					centerTracker.Rebase(
-						presented.bodyCenterScreenX,
+						presented.rawBodyCenterScreenX,
 						presented.monitorBounds);
 					appliedDeltaX = directWindowDragTranslationX.load(
 						memory_order_acquire);
@@ -6199,13 +6215,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			const bool presentedEnvironmentChanged =
 				presented.displaySerial != observedDisplaySerial
 				|| abs(presented.zoom - interactionZoom) > 0.000001;
-			bool pointerRebasedToPresented = false;
 			if (presentedEnvironmentChanged)
 			{
 				// 真实上屏的环境立即接管阈值；形态 barrier 可继续等待自己的 serial。
 				AdoptPresentedEnvironment(presented);
-				RebasePointerToPresented(presented);
-				pointerRebasedToPresented = true;
+				RebasePointerForPresentedEnvironment(presented);
 				displayEnvironmentAwaited = false;
 			}
 			if (awaitedTransitionSerial != 0
@@ -6213,9 +6227,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			{
 				if (displayEnvironmentAwaited)
 					AdoptPresentedEnvironment(presented);
-				// 对应形态/位移已经接管 HWND，吸收新基准后释放 barrier。
-				if (!pointerRebasedToPresented)
-					RebasePointerToPresented(presented);
+				// 形态 barrier 只确认 HWND 位移已上屏，禁止用形变结果重设抓取基准。
+				appliedDeltaX = directWindowDragTranslationX.load(
+					memory_order_acquire);
+				appliedDeltaY = directWindowDragTranslationY.load(
+					memory_order_acquire);
 				awaitedTransitionSerial = 0;
 				displayEnvironmentAwaited = false;
 			}

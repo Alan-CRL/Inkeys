@@ -249,6 +249,7 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorVisualEnvelope;
 	using Inkeys::UI::Bar::ResolveBarBottomDockHorizontalMapping;
 	using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringHorizontalMapping;
+	using Inkeys::UI::Bar::ResolveBarBottomDockRebasedFarEdgeOffsetDip;
 	using Inkeys::UI::Bar::ResolveBarBottomDockMonitorCenterScreenX;
 	using Inkeys::UI::Bar::BarBottomDockThresholdDip;
 	using Inkeys::UI::Bar::BarBottomDockVisualLimitDip;
@@ -259,6 +260,7 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockVisualEnvelope;
 	using Inkeys::UI::Bar::TranslateBarBottomDockRigidRect;
 	using Inkeys::UI::Bar::TransformBarBottomDockBodyRect;
+	using Inkeys::UI::Bar::TransformBarBottomDockGripRect;
 
 	enum class BarRenderLoopStageResult
 	{
@@ -7077,8 +7079,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			frame.bottomDockTransitionSerial;
 		const BarBottomDockMode previousFrameMode =
 			state.bottomDockFrameMode;
-		const BarBottomDockCenterMode previousFrameCenterMode =
-			state.bottomDockFrameCenterMode;
 		const double previousTargetIndicatorProgress =
 			state.bottomDockTargetIndicatorProgress.val;
 		state.bottomDockFrameTransitionSerial = frameTransitionSerial;
@@ -7272,10 +7272,14 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			BarUISetSuperellipseEnum::MainButton]->x.val
 			+ (state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->w.val
 				+ strokeWidthDip) / 2.0;
+		const double mainBarLeftDip = dockMainBar->inhX
+			- mainBarStrokeDip / 2.0;
+		const double mainBarRightDip = dockMainBar->inhX
+			+ dockMainBar->w.val + mainBarStrokeDip / 2.0;
 		const double baseLeftDip = min(mainButtonLeftDip,
-			dockMainBar->inhX - mainBarStrokeDip / 2.0);
+			mainBarLeftDip);
 		const double baseRightDip = max(mainButtonRightDip,
-			dockMainBar->inhX + dockMainBar->w.val + mainBarStrokeDip / 2.0);
+			mainBarRightDip);
 		const double baseBodyCenterDip = (baseLeftDip + baseRightDip) / 2.0;
 		const double monitorCenterLocalDip = (
 			ResolveBarBottomDockMonitorCenterScreenX(state.activeMonitorBounds)
@@ -7346,18 +7350,32 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				state.bottomDockCenterSpring, 0.0, animationDtSeconds,
 				true == BarUiAnimationEnabled).active;
 		}
-		if (previousFrameCenterMode == BarBottomDockCenterMode::Free
-			&& centerMode == BarBottomDockCenterMode::Centered)
+		const auto presentedCenterSnapshot = owner_.BottomDockPresentedSnapshot();
+		bool centerFarEdgeJustSeeded = false;
+		if (presentedCenterSnapshot.centerMode != centerMode)
 		{
-			// HWND 先对齐逻辑中心，远端从上次成功像素弹入；主按钮侧继续跟手。
+			// 两种方向的切换都从最后成功呈现远端重基准，失败帧不会污染连续性。
+			const bool opensRight = state.barState.widgetPosition.mainBar;
+			const double presentedFarEdgeDip = opensRight
+				? presentedCenterSnapshot.horizontalMapping.visualRightDip
+				: presentedCenterSnapshot.horizontalMapping.visualLeftDip;
+			const double nextBaseFarEdgeDip = opensRight
+				? mainBarRightDip : mainBarLeftDip;
 			state.bottomDockCenterCaptureFarEdgeSpring.positionDip =
-				centerInputOffsetDip;
+				ResolveBarBottomDockRebasedFarEdgeOffsetDip(
+					presentedFarEdgeDip,
+					presentedCenterSnapshot.directTranslation.x,
+					frameTransitionTranslation.x,
+					nextBaseFarEdgeDip, frameZoom);
 			state.bottomDockCenterCaptureFarEdgeSpring.velocityDipPerSecond = 0.0;
-			state.bottomDockCenterCaptureFarEdgeActive = abs(centerInputOffsetDip)
+			state.bottomDockCenterCaptureFarEdgeActive = abs(
+				state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
 				> BarBottomDockSettleDistanceDip;
+			centerFarEdgeJustSeeded = true;
 		}
 		bool centerCaptureFarEdgeActive = false;
-		if (state.bottomDockCenterCaptureFarEdgeActive)
+		if (state.bottomDockCenterCaptureFarEdgeActive
+			&& !centerFarEdgeJustSeeded)
 		{
 			const auto captureFarEdge = AdvanceBarBottomDockSpring(
 				state.bottomDockCenterCaptureFarEdgeSpring, 0.0,
@@ -7366,18 +7384,20 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCenterCaptureFarEdgeActive =
 				captureFarEdge.active;
 		}
+		else if (centerFarEdgeJustSeeded)
+			centerCaptureFarEdgeActive =
+				state.bottomDockCenterCaptureFarEdgeActive;
 		else state.bottomDockCenterCaptureFarEdgeSpring.positionDip = 0.0;
-		const double mainButtonCenterDip = state.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->x.val;
+		const bool opensRight = state.barState.widgetPosition.mainBar;
 		state.bottomDockHorizontalMapping = centerMode
 			== BarBottomDockCenterMode::Centered
-			? ResolveBarBottomDockHorizontalMapping(baseLeftDip, baseRightDip,
+			? ResolveBarBottomDockHorizontalMapping(
+				mainBarLeftDip, mainBarRightDip, opensRight,
 				state.bottomDockCenterSpring.positionDip,
-				mainButtonCenterDip,
 				state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
 			: ResolveBarBottomDockRecoveringHorizontalMapping(
-				baseLeftDip, baseRightDip,
-				state.bottomDockCenterSpring.positionDip, mainButtonCenterDip);
+				mainBarLeftDip, mainBarRightDip, opensRight,
+				state.bottomDockCenterCaptureFarEdgeSpring.positionDip);
 		if (!state.barState.fold)
 		{
 			BarButtonClass* rigidAnchorButton = nullptr;
@@ -7897,9 +7917,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					bounds.rightDip);
 				return bounds;
 			};
+		auto MapIndicatorGripHorizontal = [&](BarBottomDockFeedbackGeometry bounds)
+			{
+				const double offset = state.bottomDockHorizontalMapping
+					.rigidGripTranslationXDip;
+				bounds.leftDip += offset;
+				bounds.rightDip += offset;
+				return bounds;
+			};
 		const auto dockTargetIndicatorGeometry =
 			ResolveBarBottomDockIndicatorGeometry(
-				MapIndicatorHorizontal(dockMainButtonVisibleBounds),
+				MapIndicatorGripHorizontal(dockMainButtonVisibleBounds),
 				MapIndicatorHorizontal(dockMainBarVisibleBounds),
 				dockModeTextSize.width, dockModeTextSize.height,
 				dockVisibleMainBarTopDip);
@@ -7909,7 +7937,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			desiredDockModeTextSize.width);
 		const auto dockTargetIndicatorReservationGeometry =
 			ResolveBarBottomDockIndicatorGeometry(
-				MapIndicatorHorizontal(dockMainButtonVisibleBounds),
+				MapIndicatorGripHorizontal(dockMainButtonVisibleBounds),
 				MapIndicatorHorizontal(dockMainBarVisibleBounds),
 				dockModeReservationTextSize.width,
 				dockModeReservationTextSize.height,
@@ -8040,6 +8068,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| !state.bottomDockTargetIndicatorProgress.IsSame()
 			|| state.bottomDockTargetIndicatorBoundsVisible
 			|| bottomDockBoundsChanged
+			|| state.bottomDockVisualActive
 			|| frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
 			|| state.debugFrameSleepLatch.IsPending();
@@ -8103,6 +8132,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		{
 			None,
 			Body,
+			Grip,
 			Rigid,
 		};
 		auto TransformBottomDockBounds = [&](RECT bounds,
@@ -8110,6 +8140,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			{
 				if (transform == BottomDockBoundsTransform::Body)
 					return TransformBarBottomDockBodyRect(
+						bounds, state.bottomDockHorizontalMapping,
+						state.bottomDockMapping, frameZoom);
+				if (transform == BottomDockBoundsTransform::Grip)
+					return TransformBarBottomDockGripRect(
 						bounds, state.bottomDockHorizontalMapping,
 						state.bottomDockMapping, frameZoom);
 				if (transform == BottomDockBoundsTransform::Rigid)
@@ -8297,7 +8331,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			RECT mainButtonBounds = BarRenderingAttribute::GetWeigetRect(
 				*mainButton, static_cast<double>(frameZoom));
 			IncludeVisibleBounds(mainButtonBounds,
-				BottomDockBoundsTransform::Body);
+				BottomDockBoundsTransform::Grip);
 		}
 		}
 		if (collectVisibleContentBoundsForWindowSizing)
@@ -8474,7 +8508,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				return bounds;
 			};
 		auto ObserveSuperellipse = [&](const BarUiSuperellipseClass* shape,
-			bool includeGroup) -> RECT
+			bool includeGroup, BottomDockBoundsTransform transform) -> RECT
 			{
 				if (!shape) return {};
 				const BarDirtyVisualKey visualKey = GetBarDirtyVisualKey(shape);
@@ -8500,7 +8534,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						BarRenderingAttribute::GetWeigetRect(
 							*shape, static_cast<double>(frameZoom)));
 				bounds = TransformBottomDockBounds(
-					bounds, BottomDockBoundsTransform::Body);
+				bounds, transform);
 				if (observeVisual || includeGroup)
 					state.dirtyRegionTracker.Observe(visualKey, bounds);
 				if (lightCandidate)
@@ -8508,14 +8542,14 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					const RECT contentBounds = TransformBottomDockBounds(
 						GetContentBounds(shape->inhX, shape->inhY,
 							shape->w.val, shape->h.val),
-						BottomDockBoundsTransform::Body);
+						transform);
 					if (observePrimaryLight && shape->framePrimaryLightEnabled)
 						BarRenderingAttribute::UnionRectInPlace(
 							primaryLightDamageBounds,
 							ResolveBarLightBorderDamage(
 								bounds, contentBounds,
 								ResolvePrimaryLightInfluence(
-									BottomDockBoundsTransform::Body)));
+								transform)));
 					if (observeCursorLight
 						&& shape->frameCursorLightIntensityScale > 0.0)
 						BarRenderingAttribute::UnionRectInPlace(
@@ -8616,7 +8650,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 		for (const auto& [visual, shape] : state.superellipseMap)
 		{
-			RECT bounds = ObserveSuperellipse(shape.get(), observeMainGroup);
+			RECT bounds = ObserveSuperellipse(shape.get(), observeMainGroup,
+				BottomDockBoundsTransform::Grip);
 			if (observeMainGroup) AddGroupBounds(mainGroupBounds, bounds);
 		}
 		if (!lightOnlyFrame)
@@ -8639,7 +8674,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				const bool includeGeometry = geometryVisual
 					&& observeGeometryAttributeGroup;
 				const auto transform = mainVisual
-					? BottomDockBoundsTransform::Body
+					? BottomDockBoundsTransform::Grip
 					: ((moreVisual || drawVisual || geometryVisual)
 						? BottomDockBoundsTransform::Rigid
 						: BottomDockBoundsTransform::None);
@@ -8686,7 +8721,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				const bool includeGeometry = geometryVisual
 					&& observeGeometryAttributeGroup;
 				const auto transform = mainVisual
-					? BottomDockBoundsTransform::Body
+					? BottomDockBoundsTransform::Grip
 					: ((drawVisual || geometryVisual)
 						? BottomDockBoundsTransform::Rigid
 						: BottomDockBoundsTransform::None);
@@ -9365,6 +9400,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			D2D1::Matrix3x2F::Scale(bodyScaleX, bodyScaleY)
 			* D2D1::Matrix3x2F::Translation(bodyTranslationX, bodyTranslationY)
 			* baseTransform;
+		const FLOAT gripTranslationX = static_cast<FLOAT>(
+			state.bottomDockHorizontalMapping.rigidGripTranslationXDip
+				* frameZoom);
+		const D2D1_MATRIX_3X2_F gripTransform =
+			D2D1::Matrix3x2F::Scale(1.0f, bodyScaleY)
+			* D2D1::Matrix3x2F::Translation(
+				gripTranslationX, bodyTranslationY) * baseTransform;
 		const D2D1_MATRIX_3X2_F rigidTransform =
 			D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(
 				state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip
@@ -9375,6 +9417,15 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.spec.frameCursorLight.x, state.spec.frameCursorLight.y,
 			state.spec.frameCursorLightRadius,
 			state.bottomDockHorizontalMapping,
+			state.bottomDockMapping, frameZoom);
+		const BarBottomDockHorizontalMapping gripHorizontalMapping{
+			0.0, 1.0,
+			state.bottomDockHorizontalMapping.rigidGripTranslationXDip,
+			1.0 + state.bottomDockHorizontalMapping.rigidGripTranslationXDip,
+			1.0, state.bottomDockHorizontalMapping.rigidGripTranslationXDip, 0.0 };
+		const auto gripCursorLight = ResolveBarBottomDockBodyLocalLight(
+			state.spec.frameCursorLight.x, state.spec.frameCursorLight.y,
+			state.spec.frameCursorLightRadius, gripHorizontalMapping,
 			state.bottomDockMapping, frameZoom);
 		const auto rigidCursorLight = ResolveBarBottomDockRigidLocalLight(
 			state.spec.frameCursorLight.x, state.spec.frameCursorLight.y,
@@ -9397,6 +9448,15 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					D2D1::SizeF(static_cast<FLOAT>(bodyCursorLight.radiusX),
 						static_cast<FLOAT>(bodyCursorLight.radiusY)));
 				barDeviceContext->SetTransform(bodyTransform);
+			};
+		auto SetGripTransform = [&]()
+			{
+				state.spec.SetFrameCursorLightLocalGeometry(
+					D2D1::Point2F(static_cast<FLOAT>(gripCursorLight.centerX),
+						static_cast<FLOAT>(gripCursorLight.centerY)),
+					D2D1::SizeF(static_cast<FLOAT>(gripCursorLight.radiusX),
+						static_cast<FLOAT>(gripCursorLight.radiusY)));
+				barDeviceContext->SetTransform(gripTransform);
 			};
 		auto SetRigidTransform = [&]()
 			{
@@ -11132,13 +11192,13 @@ bool presetButton = button.presetIndex >= 0;
 
 			// 主按钮
 				{
-					SetBodyTransform();
+					SetGripTransform();
 					auto obj = BarUISetSuperellipseEnum::MainButton;
 					state.spec.Superellipse(barDeviceContext, *state.superellipseMap[obj], BarUiInheritClass(state.superellipseMap[obj]->inhX, state.superellipseMap[obj]->inhY), &state.current, true);
 
 				{
-					// 主图标随按钮本体共同拉伸，不再固定在虚拟抓取点上。
-					SetBodyTransform();
+					// Logo 与主按钮共用刚性水平抓手，只叠加既有竖向果冻。
+					SetGripTransform();
 					auto obj = BarUISetSvgEnum::logo1;
 						state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 					}
@@ -12303,6 +12363,9 @@ bool presetButton = button.presetIndex >= 0;
 				memory_order_relaxed);
 			owner_.bottomDockPresentedScaleX.store(
 				state.bottomDockHorizontalMapping.scaleX, memory_order_relaxed);
+			owner_.bottomDockPresentedRigidGripTranslationXDip.store(
+				state.bottomDockHorizontalMapping.rigidGripTranslationXDip,
+				memory_order_relaxed);
 			owner_.bottomDockPresentedRigidTranslationXDip.store(
 				state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 				memory_order_relaxed);
@@ -12337,7 +12400,8 @@ bool presetButton = button.presetIndex >= 0;
 				directTranslation.y, memory_order_relaxed);
 			owner_.bottomDockPresentedMainCenterScreenX.store(
 				state.monitorOrigin.x
-					+ state.bottomDockHorizontalMapping.MapX(mainButton->x.val)
+					+ (mainButton->x.val + state.bottomDockHorizontalMapping
+						.rigidGripTranslationXDip)
 						* frame.zoom
 					+ directTranslation.x,
 				memory_order_relaxed);
@@ -12345,11 +12409,28 @@ bool presetButton = button.presetIndex >= 0;
 				state.monitorOrigin.y + mainButton->y.val * frame.zoom
 					+ directTranslation.y,
 				memory_order_relaxed);
+			owner_.bottomDockPresentedRawMainCenterScreenX.store(
+				state.monitorOrigin.x + (mainButton->x.val
+					+ state.bottomDockHorizontalMapping.rigidGripTranslationXDip)
+					* frame.zoom
+					+ directTranslation.x,
+				memory_order_relaxed);
 			owner_.bottomDockPresentedBodyCenterScreenX.store(
 				state.monitorOrigin.x
 					+ (state.bottomDockHorizontalMapping.visualLeftDip
 						+ state.bottomDockHorizontalMapping.visualRightDip)
 						* frame.zoom / 2.0
+					+ directTranslation.x,
+				memory_order_relaxed);
+			const double rawBodyCenterDip = (
+				min(dockMainButtonVisibleBounds.leftDip,
+					dockMainBarVisibleBounds.leftDip)
+				+ max(dockMainButtonVisibleBounds.rightDip,
+					dockMainBarVisibleBounds.rightDip)) / 2.0;
+			owner_.bottomDockPresentedRawBodyCenterScreenX.store(
+				state.monitorOrigin.x + (rawBodyCenterDip
+					+ state.bottomDockHorizontalMapping.rigidGripTranslationXDip)
+					* frame.zoom
 					+ directTranslation.x,
 				memory_order_relaxed);
 			owner_.bottomDockPresentedTransitionSerial.store(

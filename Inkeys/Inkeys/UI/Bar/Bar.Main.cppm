@@ -276,7 +276,9 @@ struct BarBottomDockPresentedSnapshot
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
+	double rawMainCenterScreenX = 0.0;
 	double bodyCenterScreenX = 0.0;
+	double rawBodyCenterScreenX = 0.0;
 	bool indicatorVisible = false;
 	bool indicatorOccluding = false;
 	RECT indicatorBounds{};
@@ -452,6 +454,9 @@ public:
 				bottomDockPresentedVisualRightDip.load(memory_order_relaxed);
 			snapshot.horizontalMapping.scaleX = max(0.000001,
 				bottomDockPresentedScaleX.load(memory_order_relaxed));
+			snapshot.horizontalMapping.rigidGripTranslationXDip =
+				bottomDockPresentedRigidGripTranslationXDip.load(
+					memory_order_relaxed);
 			snapshot.horizontalMapping.rigidOverlayTranslationXDip =
 				bottomDockPresentedRigidTranslationXDip.load(
 					memory_order_relaxed);
@@ -482,8 +487,12 @@ public:
 				bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.mainCenterScreenY =
 				bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+			snapshot.rawMainCenterScreenX =
+				bottomDockPresentedRawMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.bodyCenterScreenX =
 				bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed);
+			snapshot.rawBodyCenterScreenX =
+				bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed);
 			snapshot.indicatorVisible =
 				bottomDockIndicatorPresentedVisible.load(memory_order_relaxed);
 			snapshot.indicatorOccluding =
@@ -541,6 +550,28 @@ public:
 				static_cast<double>(visualX), snapshot.horizontalMapping,
 				snapshot.zoom)));
 	}
+	int BottomDockGripHitTestX(int visualX) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockGripPixelX(
+				static_cast<double>(visualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
+	int BottomDockGripHitTestXFromRigid(int rigidX,
+		int* visualX = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const int resolvedVisualX = static_cast<int>(lround(
+			static_cast<double>(rigidX)
+				+ snapshot.horizontalMapping.rigidOverlayTranslationXDip
+					* snapshot.zoom));
+		if (visualX) *visualX = resolvedVisualX;
+		return static_cast<int>(lround(
+			Inkeys::UI::Bar::UnmapBarBottomDockGripPixelX(
+				static_cast<double>(resolvedVisualX), snapshot.horizontalMapping,
+				snapshot.zoom)));
+	}
 	int BottomDockBodyHitTestXFromRigid(int rigidX,
 		int* visualX = nullptr) const noexcept
 	{
@@ -572,6 +603,12 @@ public:
 	{
 		const auto snapshot = BottomDockPresentedSnapshot();
 		return Inkeys::UI::Bar::TransformBarBottomDockBodyRect(
+			bounds, snapshot.horizontalMapping, snapshot.mapping, snapshot.zoom);
+	}
+	RECT BottomDockGripVisualBounds(RECT bounds) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		return Inkeys::UI::Bar::TransformBarBottomDockGripRect(
 			bounds, snapshot.horizontalMapping, snapshot.mapping, snapshot.zoom);
 	}
 	RECT BottomDockRigidVisualBounds(RECT bounds) const noexcept
@@ -610,8 +647,16 @@ protected:
 			bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed)
 				+ screenDelta.y,
 			memory_order_relaxed);
+		bottomDockPresentedRawMainCenterScreenX.store(
+			bottomDockPresentedRawMainCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
+			memory_order_relaxed);
 		bottomDockPresentedBodyCenterScreenX.store(
 			bottomDockPresentedBodyCenterScreenX.load(memory_order_relaxed)
+				+ screenDelta.x,
+			memory_order_relaxed);
+		bottomDockPresentedRawBodyCenterScreenX.store(
+			bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed)
 				+ screenDelta.x,
 			memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
@@ -716,6 +761,7 @@ protected:
 	atomic<double> bottomDockPresentedVisualLeftDip = 0.0;
 	atomic<double> bottomDockPresentedVisualRightDip = 0.0;
 	atomic<double> bottomDockPresentedScaleX = 1.0;
+	atomic<double> bottomDockPresentedRigidGripTranslationXDip = 0.0;
 	atomic<double> bottomDockPresentedRigidTranslationXDip = 0.0;
 	atomic<double> bottomDockPresentedZoom = 1.0;
 	atomic<LONG> bottomDockPresentedDisplayLeft = 0;
@@ -732,7 +778,9 @@ protected:
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
+	atomic<double> bottomDockPresentedRawMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
+	atomic<double> bottomDockPresentedRawBodyCenterScreenX = 0.0;
 	atomic<bool> bottomDockIndicatorPresentedVisible = false;
 	atomic<bool> bottomDockIndicatorPresentedOccluding = false;
 	atomic<LONG> bottomDockIndicatorPresentedLeft = 0;

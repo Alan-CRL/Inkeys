@@ -228,11 +228,11 @@ int RunBarBottomDockTests()
 			true, true, false, true, true);
 	Check(bottomOriginCenterCapture.centerCaptureActive
 		&& bottomOriginCenterCapture.eligible
-		&& !bottomOriginCenterDetach.centerCaptureActive
-		&& !bottomOriginCenterDetach.eligible
-		&& !floatingOriginCenterDetach.centerCaptureActive
+		&& bottomOriginCenterDetach.centerCaptureActive
+		&& bottomOriginCenterDetach.eligible
+		&& floatingOriginCenterDetach.centerCaptureActive
 		&& floatingOriginCenterDetach.eligible,
-		"bottom-origin gestures show only while their center capture is active");
+		"a center capture keeps the indicator eligible through detach and recapture");
 	Check(ResolveBarBottomDockFeedbackAction(false, true)
 		== BarBottomDockFeedbackAction::FadeIn
 		&& ResolveBarBottomDockFeedbackAction(true, false)
@@ -350,6 +350,25 @@ int RunBarBottomDockTests()
 	Check(outsideCenterDetach.detached
 		&& outsideCenterDetach.mode == BarBottomDockCenterMode::Free,
 		"horizontal center detaches strictly outside twenty DIP");
+	centerTracker.Begin(BarBottomDockCenterMode::Free, 930.0,
+		true, true, environment);
+	const auto stableCapture = centerTracker.Update(950.0,
+		true, true, environment);
+	const auto repeatedInside = centerTracker.Update(950.0,
+		true, true, environment);
+	const auto pushedInside = centerTracker.Update(970.0,
+		true, true, environment);
+	const auto stableDetach = centerTracker.Update(991.0,
+		true, true, environment);
+	const auto stableRecapture = centerTracker.Update(989.0,
+		true, true, environment);
+	Check(stableCapture.mode == BarBottomDockCenterMode::Centered
+		&& repeatedInside.mode == BarBottomDockCenterMode::Centered
+		&& !repeatedInside.modeChanged
+		&& pushedInside.mode == BarBottomDockCenterMode::Centered
+		&& stableDetach.mode == BarBottomDockCenterMode::Free
+		&& stableRecapture.mode == BarBottomDockCenterMode::Centered,
+		"raw pointer samples do not oscillate after a presented barrier");
 	BarBottomDockCenterDragTracker foldedCenterTracker;
 	foldedCenterTracker.Begin(BarBottomDockCenterMode::Free, 960.0,
 		true, false, environment);
@@ -410,27 +429,29 @@ int RunBarBottomDockTests()
 		&& Near(detachedUp.scaleY, 1.25),
 		"upward detach preserves the stretched frame while the window moves");
 	const auto rightExpandedStretch = ResolveBarBottomDockHorizontalMapping(
-		100.0, 500.0, -20.0, 140.0);
+		180.0, 500.0, true, -20.0);
 	const auto rightExpandedCompress = ResolveBarBottomDockHorizontalMapping(
-		100.0, 500.0, 20.0, 140.0);
+		180.0, 500.0, true, 20.0);
 	const auto leftExpandedStretch = ResolveBarBottomDockHorizontalMapping(
-		100.0, 500.0, 20.0, 460.0);
-	Check(Near(rightExpandedStretch.MapX(140.0), 120.0)
+		100.0, 420.0, false, 20.0);
+	Check(Near(rightExpandedStretch.visualLeftDip, 160.0)
 		&& Near(rightExpandedStretch.visualRightDip, 500.0)
-		&& Near(rightExpandedCompress.MapX(140.0), 160.0)
+		&& Near(rightExpandedCompress.visualLeftDip, 200.0)
 		&& Near(rightExpandedCompress.visualRightDip, 500.0)
 		&& Near(leftExpandedStretch.visualLeftDip, 100.0)
-		&& Near(leftExpandedStretch.MapX(460.0), 480.0),
-		"horizontal jelly keeps the far edge fixed and the main-button center exact");
+		&& Near(leftExpandedStretch.visualRightDip, 440.0)
+		&& Near(rightExpandedStretch.rigidGripTranslationXDip, -20.0),
+		"horizontal jelly moves the near edge with the rigid grip and fixes the far edge");
 	const auto horizontalCaptureStart = ResolveBarBottomDockHorizontalMapping(
-		100.0, 500.0, -20.0, 140.0, -20.0);
+		180.0, 500.0, true, -20.0, -20.0);
+	const double detachedFarOffset = ResolveBarBottomDockRebasedFarEdgeOffsetDip(
+		rightExpandedCompress.visualRightDip, 0.0, 20.0, 500.0, 1.0);
 	const auto horizontalDetachStart =
 		ResolveBarBottomDockRecoveringHorizontalMapping(
-			100.0, 500.0, 20.0, 140.0);
-	Check(Near(horizontalCaptureStart.visualLeftDip, 80.0)
+			180.0, 500.0, true, detachedFarOffset);
+	Check(Near(horizontalCaptureStart.visualLeftDip, 160.0)
 		&& Near(horizontalCaptureStart.visualRightDip, 480.0)
-		&& Near(horizontalCaptureStart.MapX(140.0), 120.0)
-		&& Near(horizontalDetachStart.MapX(140.0), 140.0)
+		&& Near(horizontalCaptureStart.rigidGripTranslationXDip, -20.0)
 		&& Near(horizontalDetachStart.visualLeftDip + 20.0,
 			rightExpandedCompress.visualLeftDip)
 		&& Near(horizontalDetachStart.visualRightDip + 20.0,
@@ -443,9 +464,18 @@ int RunBarBottomDockTests()
 		"body dirty bounds use the same endpoint mapping as drawing");
 	Check(RectEquals(TransformBarBottomDockBodyRect(
 		RECT{ 15, 0, 165, 120 },
-		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, 20.0, 30.0),
-		compressed, 1.5), RECT{ 52, 30, 165, 120 }),
+		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, true, 20.0),
+		compressed, 1.5), RECT{ 45, 30, 165, 120 }),
 		"two-axis dirty bounds use the same composed mapping as drawing");
+	Check(RectEquals(TransformBarBottomDockGripRect(
+		logicalBody,
+		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, true, 20.0),
+		compressed, 1.5), RECT{ 40, 30, 140, 90 }),
+		"main grip keeps its horizontal size while composing vertical jelly");
+	Check(Near(UnmapBarBottomDockGripPixelX(
+		90.0, ResolveBarBottomDockHorizontalMapping(
+			10.0, 110.0, true, 20.0), 1.5), 60.0),
+		"main grip hit testing removes only the rigid horizontal translation");
 	Check(RectEquals(TranslateBarBottomDockRigidRect(
 		logicalBody, 20.0, 1.5), RECT{ 10, 30, 110, 110 }),
 		"rigid panel dirty bounds only translate");

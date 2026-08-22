@@ -33,6 +33,10 @@
 23. [x] 将水平果冻改为按主按钮展开侧固定远端、抓取侧跟手，并覆盖捕获/脱离首帧连续性及左右镜像。
 24. [x] 允许底栏起始手势在本次 `Free → Centered` 后显示居中提示，离开居中带或松手后淡出。
 25. [x] 将指示器内容切换拆成“先扩框后换字 / 先换字后缩框”的串行时间线，并重新运行完整质量门。
+26. [x] 将水平绘制拆为主按钮/Logo 刚性抓手、主栏主体仿射形变和扩展面板锚点刚性跟随，补齐独立 dirty、光源及命中逆映射。
+27. [x] 从最后成功呈现远端按 HWND 位移重基准捕获/脱离弹簧，并禁止形态 barrier 把视觉中心回灌未形变 tracker 基准。
+28. [x] 将底栏起始手势的居中提示资格改为首次捕获后锁存，覆盖 `Free → Centered → Free → Centered` 的连续矩形和双向文案切换。
+29. [x] 运行本轮全部质量门并静态复核单 target/单 ULW 合同，不启动 GUI、不提交 commit。
 
 ## Validation
 
@@ -43,8 +47,9 @@
 - [x] 静态复核只有一次最终 GDI/ULW 提交，且未启动可见 GUI。
 - [x] 重新运行上述全部验证，确认新指示器样式未引入第二 target 或 GUI 启动。
 - [x] 新增水平居中状态机后重新运行以上全部验证。
+- [x] 完成本轮刚性抓手、远端连续性和提示锁存修复后重新运行以上全部验证。
 
-验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平捕获阈值、快速跨带、抓手精确跟随、固定远端拉伸/压缩、捕获与脱离首帧连续、底栏起始居中提示资格、串行文字/宽度切换及 150% DPI/Back 包络均有 Headless 或静态覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
+验证结果：ARM64-host `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过；仓库中四个现存 `InkeysHeadlessTests.exe --no-window` 均输出 `PASS animation correctness`；i18n 英文与繁中均为 `274/274 translated`；水平捕获阈值、刚性主按钮、主栏远端重基准、左右拉伸/压缩、形态 barrier 不回灌 tracker、底栏手势提示锁存、串行文字/宽度切换及两轴 dirty/光源/命中均有 Headless 或静态覆盖；`git diff --check` 通过；静态确认保持单 target、单次最终 GDI/ULW 提交，未启动 GUI。
 
 ## Risk And Rollback Points
 
