@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-08-23
+- **Total Sessions**: 6
+- **Last Active**: 2026-08-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~114 | Active |
+| `journal-1.md` | ~135 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-08-24 | 合并白板与 PPT 底部翻页窗口 | `be95a7bf` | `draw` |
 | 5 | 2026-08-23 | Fix centered bar expand and collapse animation | `07849596` | `draw` |
 | 4 | 2026-08-20 | Preserve pen selection across UI3 tool toggles | `75c54c0d` | `draw` |
 | 3 | 2026-08-20 | 清理并归档已完成 Trellis 任务 | `09082259`, `10b9753c` | `draw` |

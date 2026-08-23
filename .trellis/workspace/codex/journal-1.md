@@ -112,3 +112,24 @@ Stable centered bottom-dock frames now derive the main-button root from animated
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: 合并白板与 PPT 底部翻页窗口
+
+**Date**: 2026-08-24
+**Task**: 合并白板与 PPT 底部翻页窗口
+**Branch**: `draw`
+
+### Summary
+
+删除独立 Whiteboard 左右 HWND，让白板与 PPT 复用 PptBottomLeft/PptBottomRight；增加三态 owner 门禁、切换回滚和呈现并发保护，并通过 Debug ARM64 完整构建及无窗口测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `be95a7bf` | (see git log) |
+
+### Status
+
+[OK] **Completed**
