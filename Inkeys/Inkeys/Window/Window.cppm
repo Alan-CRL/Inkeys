@@ -22,8 +22,6 @@ export namespace Inkeys::Window
 		Freeze,
 		DrawpadPresentation,
 		Drawpad,
-		WhiteboardLeft,
-		WhiteboardRight,
 		PptBottomLeft,
 		PptBottomRight,
 		PptMiddleLeft,
@@ -34,6 +32,22 @@ export namespace Inkeys::Window
 		DisplayObserver,
 		Count,
 	};
+
+	enum class SharedPageHostOwner : std::uint8_t
+	{
+		Presentation,
+		TransitionHidden,
+		Whiteboard,
+	};
+
+	// mode 先于 Whiteboard active 发布，二者共同形成共享分页宿主的三态门禁。
+	[[nodiscard]] constexpr SharedPageHostOwner ResolveSharedPageHostOwner(
+		bool whiteboardWindowMode, bool whiteboardActive) noexcept
+	{
+		if (!whiteboardWindowMode) return SharedPageHostOwner::Presentation;
+		return whiteboardActive ? SharedPageHostOwner::Whiteboard
+			: SharedPageHostOwner::TransitionHidden;
+	}
 
 	enum class DrawpadSurfaceVisibility : std::uint8_t
 	{

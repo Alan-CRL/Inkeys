@@ -58,8 +58,8 @@ namespace Inkeys::UI::Whiteboard
 			Client::WhiteboardRight,
 		};
 		constexpr std::array<WindowRole, 2> ControlRoles{
-			WindowRole::WhiteboardLeft,
-			WindowRole::WhiteboardRight,
+			WindowRole::PptBottomLeft,
+			WindowRole::PptBottomRight,
 		};
 		constexpr std::array<WidgetId, 3> WidgetIds{ 1, 2, 3 };
 
@@ -73,6 +73,8 @@ namespace Inkeys::UI::Whiteboard
 		PageStateTransaction pageTransaction;
 		// Present 事务覆盖 BeginDraw -> Render -> GetDC -> EndDraw，退出 reset 必须等待它。
 		std::mutex renderTransactionMutex;
+		// 只串行化共享宿主的最终显隐与 Active 发布，WndProc 不使用此锁。
+		std::mutex controlPresentationMutex;
 		std::array<Scene, 2> controlScenes{};
 		Scene backgroundScene;
 		std::array<RECT, 2> configuredControlScreens{};
@@ -128,7 +130,7 @@ namespace Inkeys::UI::Whiteboard
 
 		[[nodiscard]] std::size_t SurfaceIndex(HWND hwnd) noexcept
 		{
-			return Inkeys::Window::GetService().Handle(WindowRole::WhiteboardRight) == hwnd
+			return Inkeys::Window::GetService().Handle(WindowRole::PptBottomRight) == hwnd
 				? 1u : 0u;
 		}
 
@@ -499,56 +501,65 @@ namespace Inkeys::UI::Whiteboard
 			auto& service = Inkeys::Window::GetService();
 			const HWND hwnd = service.Handle(ControlRoles[index]);
 			if (!hwnd) return FrameResult::Retry;
-			PresentStatus presentStatus = PresentStatus::Retry;
+
 			RECT presentation{};
 			bool animationActive = false;
-			bool inactive = false;
 			{
 				std::unique_lock renderLock(renderTransactionMutex);
 				ConsumePendingPointerCancel(index, controlScenes[index]);
-				if (!active.load(std::memory_order_acquire))
+				const auto owner = Inkeys::Window::ResolveSharedPageHostOwner(
+					service.WhiteboardWindowMode(),
+					active.load(std::memory_order_acquire));
+				if (owner != Inkeys::Window::SharedPageHostOwner::Whiteboard)
 				{
 					controlScenes[index].Reset();
 					previousDebugDirtyFrames[index] = {};
 					previousDebugPresentedFrames[index] = {};
 					observedDebugModes[index] = Inkeys::UI::Bar::DebugModeEnabled();
-					inactive = true;
+					renderLock.unlock();
+					if (owner == Inkeys::Window::SharedPageHostOwner::TransitionHidden)
+					{
+						std::scoped_lock presentationLock(controlPresentationMutex);
+						if (Inkeys::Window::ResolveSharedPageHostOwner(
+							service.WhiteboardWindowMode(),
+							active.load(std::memory_order_acquire)) ==
+							Inkeys::Window::SharedPageHostOwner::TransitionHidden)
+							(void)service.Hide(ControlRoles[index]);
+					}
+					return FrameResult::Idle;
 				}
-				else
+
+				const bool debugMode = Inkeys::UI::Bar::DebugModeEnabled();
+				if (observedDebugModes[index] != debugMode)
 				{
-					const bool debugMode = Inkeys::UI::Bar::DebugModeEnabled();
-					if (observedDebugModes[index] != debugMode)
-					{
-						observedDebugModes[index] = debugMode;
-						// Debug 开关只触发一次完整重绘，关闭后可擦除上一帧框。
-						controlScenes[index].Invalidate();
-					}
-					const RECT screen = PrimaryBounds();
-					const float scale = DpiScale(hwnd);
-					if (!EqualRect(&configuredControlScreens[index], &screen)
-						|| configuredControlScales[index] != scale)
-						ConfigureControlScene(index);
-					presentation = controlScenes[index].PresentationBounds();
-					presentStatus = PresentScene(controlScenes[index], hwnd,
-						frameContext, presentation, false, index);
-					if (presentStatus == PresentStatus::Success)
-					{
-						animationActive = controlScenes[index].AnimationActive();
-						(void)controlScenes[index].ConsumeDamage();
-					}
+					observedDebugModes[index] = debugMode;
+					// Debug 开关只触发一次完整重绘，关闭后可擦除上一帧框。
+					controlScenes[index].Invalidate();
 				}
+				const RECT screen = PrimaryBounds();
+				const float scale = DpiScale(hwnd);
+				if (!EqualRect(&configuredControlScreens[index], &screen)
+					|| configuredControlScales[index] != scale)
+					ConfigureControlScene(index);
+				presentation = controlScenes[index].PresentationBounds();
+				const PresentStatus presentStatus = PresentScene(controlScenes[index], hwnd,
+					frameContext, presentation, false, index);
+				if (presentStatus != PresentStatus::Success)
+					return presentStatus == PresentStatus::DeviceLost
+						? FrameResult::DeviceLost : FrameResult::Retry;
+				animationActive = controlScenes[index].AnimationActive();
+				(void)controlScenes[index].ConsumeDamage();
 			}
-			if (inactive)
+
+			// Window Service 可能同步回入 WndProc，不能持有 Scene/渲染事务锁。
+			std::scoped_lock presentationLock(controlPresentationMutex);
+			const auto owner = Inkeys::Window::ResolveSharedPageHostOwner(
+				service.WhiteboardWindowMode(),
+				active.load(std::memory_order_acquire));
+			if (owner != Inkeys::Window::SharedPageHostOwner::Whiteboard)
 			{
-				(void)service.Hide(ControlRoles[index]);
-				return FrameResult::Idle;
-			}
-			if (presentStatus != PresentStatus::Success)
-				return presentStatus == PresentStatus::DeviceLost
-					? FrameResult::DeviceLost : FrameResult::Retry;
-			if (!active.load(std::memory_order_acquire))
-			{
-				(void)service.Hide(ControlRoles[index]);
+				if (owner == Inkeys::Window::SharedPageHostOwner::TransitionHidden)
+					(void)service.Hide(ControlRoles[index]);
 				return FrameResult::Idle;
 			}
 			(void)service.SetBounds(ControlRoles[index], presentation);
@@ -573,7 +584,10 @@ namespace Inkeys::UI::Whiteboard
 				|| message == WM_MOUSELEAVE || message == WM_LBUTTONDOWN
 				|| message == WM_LBUTTONUP;
 			// 关闭/切换期间丢弃排队的鼠标消息，避免迟到 Up 触发翻页回调。
-			if (pointerMessage && !active.load(std::memory_order_acquire)) return 0;
+			if (pointerMessage && Inkeys::Window::ResolveSharedPageHostOwner(
+				Inkeys::Window::GetService().WhiteboardWindowMode(),
+				active.load(std::memory_order_acquire)) !=
+				Inkeys::Window::SharedPageHostOwner::Whiteboard) return 0;
 			if (message == WM_MOUSEMOVE)
 			{
 				std::unique_lock renderLock(renderTransactionMutex);
@@ -680,9 +694,13 @@ namespace Inkeys::UI::Whiteboard
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
 		// Service 操作必须在事务锁外执行，避免 owner thread 的输入消息反向等待渲染锁。
-		for (const WindowRole role : ControlRoles)
-			(void)Inkeys::Window::GetService().Hide(role);
-		(void)Inkeys::Window::GetService().Hide(WindowRole::Freeze);
+		auto& service = Inkeys::Window::GetService();
+		if (service.WhiteboardWindowMode())
+		{
+			for (const WindowRole role : ControlRoles)
+				(void)service.Hide(role);
+		}
+		(void)service.Hide(WindowRole::Freeze);
 		{
 			std::unique_lock renderLock(renderTransactionMutex);
 			for (auto& scene : controlScenes)
@@ -712,6 +730,8 @@ namespace Inkeys::UI::Whiteboard
 	void PublishActive(bool value) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
+		// 与最终 Show 串行化；false 返回后不会再有旧 Whiteboard 帧显示。
+		std::unique_lock presentationLock(controlPresentationMutex);
 		std::unique_lock renderLock(renderTransactionMutex);
 		if (!initialized.load(std::memory_order_acquire)) return;
 		if (active.exchange(value, std::memory_order_acq_rel) == value) return;

@@ -49,8 +49,6 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::Freeze, L"Freeze"));
 	specs.push_back(makeSpec(WindowRole::DrawpadPresentation, L"DrawpadPresentation"));
 	specs.push_back(makeSpec(WindowRole::Drawpad, L"Drawpad"));
-	specs.push_back(makeSpec(WindowRole::WhiteboardLeft, L"WhiteboardLeft"));
-	specs.push_back(makeSpec(WindowRole::WhiteboardRight, L"WhiteboardRight"));
 	specs.push_back(makeSpec(WindowRole::PptBottomLeft, L"PptBottomLeft"));
 	specs.push_back(makeSpec(WindowRole::PptBottomRight, L"PptBottomRight"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
@@ -76,8 +74,6 @@ int RunWindowTests()
 		WindowRole::Freeze,
 		WindowRole::DrawpadPresentation,
 		WindowRole::Drawpad,
-		WindowRole::WhiteboardLeft,
-		WindowRole::WhiteboardRight,
 		WindowRole::PptBottomLeft,
 		WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft,
@@ -101,8 +97,6 @@ int RunWindowTests()
 		&& service.OwnerThreadId(WindowRole::Freeze) == overlayThread
 		&& service.OwnerThreadId(WindowRole::DrawpadPresentation) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Drawpad) == overlayThread
-		&& service.OwnerThreadId(WindowRole::WhiteboardLeft) == overlayThread
-		&& service.OwnerThreadId(WindowRole::WhiteboardRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomLeft) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptBottomRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleLeft) == overlayThread
@@ -119,8 +113,6 @@ int RunWindowTests()
 	const HWND freeze = service.Handle(WindowRole::Freeze);
 	const HWND drawpadPresentation = service.Handle(WindowRole::DrawpadPresentation);
 	const HWND drawpad = service.Handle(WindowRole::Drawpad);
-	const HWND whiteboardLeft = service.Handle(WindowRole::WhiteboardLeft);
-	const HWND whiteboardRight = service.Handle(WindowRole::WhiteboardRight);
 	const HWND pptBottomLeft = service.Handle(WindowRole::PptBottomLeft);
 	const HWND pptBottomRight = service.Handle(WindowRole::PptBottomRight);
 	const HWND pptMiddleLeft = service.Handle(WindowRole::PptMiddleLeft);
@@ -135,9 +127,6 @@ int RunWindowTests()
 	check(GetWindow(drawpadPresentation, GW_OWNER) == freeze,
 		"drawpad presentation freeze owner");
 	check(GetWindow(drawpad, GW_OWNER) == freeze, "drawpad owner");
-	check(GetWindow(whiteboardLeft, GW_OWNER) == drawpad
-		&& GetWindow(whiteboardRight, GW_OWNER) == drawpad,
-		"whiteboard controls drawpad owner");
 	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
@@ -215,7 +204,6 @@ int RunWindowTests()
 	for (const auto role : {
 		WindowRole::MagnifierHost, WindowRole::Freeze,
 		WindowRole::DrawpadPresentation, WindowRole::Drawpad,
-		WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
 		WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
 		WindowRole::PptExitShow, WindowRole::Bar })
@@ -233,11 +221,11 @@ int RunWindowTests()
 		"whiteboard Drawpad accepts activation without a taskbar button");
 	check(service.MinimizeWhiteboardWindowGroup(), "minimize whiteboard window group");
 	check(IsIconic(freeze) && !IsWindowVisible(drawpad)
-		&& !IsWindowVisible(whiteboardLeft) && !IsWindowVisible(whiteboardRight)
+		&& !IsWindowVisible(pptBottomLeft) && !IsWindowVisible(pptBottomRight)
 		&& !IsWindowVisible(bar), "minimize hides the complete whiteboard group");
 	check(service.RestoreWhiteboardWindowGroup(), "restore whiteboard window group");
 	check(IsWindowVisible(freeze) && IsWindowVisible(drawpad)
-		&& IsWindowVisible(whiteboardLeft) && IsWindowVisible(whiteboardRight)
+		&& IsWindowVisible(pptBottomLeft) && IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
 	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
 	const auto presentationFreezeExStyle = static_cast<DWORD>(

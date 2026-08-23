@@ -52,14 +52,9 @@ namespace
 			&& role <= WindowRole::PptExitShow;
 	}
 
-	[[nodiscard]] constexpr bool IsWhiteboard(WindowRole role) noexcept
-	{
-		return role == WindowRole::WhiteboardLeft || role == WindowRole::WhiteboardRight;
-	}
-
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
 	{
-		return IsPpt(role) || IsWhiteboard(role) || role == WindowRole::Bar;
+		return IsPpt(role) || role == WindowRole::Bar;
 	}
 
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
@@ -83,8 +78,6 @@ namespace
 		case WindowRole::Freeze: return L"Inkeys.Window.Freeze";
 		case WindowRole::DrawpadPresentation: return L"Inkeys.Window.DrawpadPresentation";
 		case WindowRole::Drawpad: return L"Inkeys.Window.Drawpad";
-		case WindowRole::WhiteboardLeft: return L"Inkeys.Window.WhiteboardLeft";
-		case WindowRole::WhiteboardRight: return L"Inkeys.Window.WhiteboardRight";
 		case WindowRole::PptBottomLeft: return L"Inkeys.Window.PptBottomLeft";
 		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
@@ -237,8 +230,6 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -689,8 +680,6 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -896,8 +885,6 @@ namespace Inkeys::Window
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptBottomLeft,
-				WindowRole::WhiteboardRight,
-				WindowRole::WhiteboardLeft,
 				WindowRole::Drawpad,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Freeze,
@@ -1046,8 +1033,6 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -1154,7 +1139,6 @@ namespace Inkeys::Window
 			constexpr WindowRole roles[] = {
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
 				WindowRole::PptExitShow, WindowRole::Bar,
@@ -1187,7 +1171,6 @@ namespace Inkeys::Window
 			constexpr WindowRole roles[] = {
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft, WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
 				WindowRole::PptExitShow, WindowRole::Bar,
@@ -1212,8 +1195,8 @@ namespace Inkeys::Window
 		[[nodiscard]] bool ApplyCancelPointerCapture() noexcept
 		{
 			constexpr WindowRole roles[] = {
-				WindowRole::Drawpad, WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight, WindowRole::Bar,
+				WindowRole::Drawpad, WindowRole::PptBottomLeft,
+				WindowRole::PptBottomRight, WindowRole::Bar,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1378,8 +1361,6 @@ namespace Inkeys::Window
 				WindowRole::Freeze,
 				WindowRole::DrawpadPresentation,
 				WindowRole::Drawpad,
-				WindowRole::WhiteboardLeft,
-				WindowRole::WhiteboardRight,
 				WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
@@ -1547,7 +1528,7 @@ namespace Inkeys::Window
 			}
 			if (role == WindowRole::Drawpad)
 			{
-				for (auto popup = WindowRole::WhiteboardLeft;
+				for (auto popup = WindowRole::PptBottomLeft;
 					popup <= WindowRole::Bar;
 					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))
 					if (Handle(popup)) return false;

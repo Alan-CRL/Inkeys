@@ -26,6 +26,7 @@ module;
 module Inkeys.UI.Ppt;
 
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.Whiteboard;
 import Inkeys.Window;
 import Inkeys.Other.Config;
 import Inkeys.Display;
@@ -200,6 +201,8 @@ namespace Inkeys::UI::Ppt
 		Inkeys::Display::Subscription displaySubscription;
 		std::mutex callbackMutex;
 		std::mutex configurationMutex;
+		// 与可见性发布串行化，保证切换返回后底部共享窗不再收到 PPT 迟到提交。
+		std::mutex sharedPageHostMutex;
 		BusinessCallbacks business;
 		LayoutConfiguration configuration;
 		std::array<Inkeys::Graphics::DibSurface, 6> iconSurfaces;
@@ -266,6 +269,28 @@ namespace Inkeys::UI::Ppt
 		[[nodiscard]] constexpr std::size_t DragGroup(RenderClient client) noexcept
 		{
 			return IsBottom(client) ? 0U : IsMiddle(client) ? 1U : 2U;
+		}
+
+		[[nodiscard]] Inkeys::Window::SharedPageHostOwner CurrentSharedPageHostOwner() noexcept
+		{
+			return Inkeys::Window::ResolveSharedPageHostOwner(
+				Inkeys::Window::GetService().WhiteboardWindowMode(),
+				Inkeys::UI::Whiteboard::Active());
+		}
+
+		void ResetSharedPageHostInput(RenderClient client, ClientState& state) noexcept
+		{
+			{
+				std::scoped_lock lock(state.inputMutex);
+				state.input.clear();
+			}
+			state.hover = HitTarget::None;
+			state.pressed = HitTarget::None;
+			state.dragging = false;
+			state.pressStarted = {};
+			state.lastRepeat = {};
+			state.shown = false;
+			groupDragging[DragGroup(client)].store(false, std::memory_order_release);
 		}
 
 		[[nodiscard]] float DpiScale(RenderClient client) noexcept
@@ -1126,7 +1151,29 @@ namespace Inkeys::UI::Ppt
 		[[nodiscard]] FrameResult RenderFrame(
 			RenderClient client, const FrameContext& frameContext)
 		{
+			const auto role = RoleFor(client);
+			auto& service = Inkeys::Window::GetService();
 			auto& state = states[Index(client)];
+			std::unique_lock<std::mutex> sharedHostLock;
+			if (IsBottom(client))
+			{
+				sharedHostLock = std::unique_lock(sharedPageHostMutex);
+				const auto owner = CurrentSharedPageHostOwner();
+				if (owner != Inkeys::Window::SharedPageHostOwner::Presentation)
+				{
+					ResetSharedPageHostInput(client, state);
+					// Whiteboard owner 可能已经呈现首帧；只有 Transition hidden 能隐藏。
+					if (owner == Inkeys::Window::SharedPageHostOwner::TransitionHidden)
+						(void)service.Hide(role);
+					return FrameResult::Idle;
+				}
+				if (!presentationVisible.load(std::memory_order_acquire))
+				{
+					ResetSharedPageHostInput(client, state);
+					(void)service.Hide(role);
+					return FrameResult::Idle;
+				}
+			}
 			const Layout layout = CalculateLayout(client, state, frameContext.frameTime);
 			const auto input = DrainInput(client, state, layout);
 			// 成对控件共享拖拽门闩，直移期间配对窗口也不得进入 D2D/ULW。
@@ -1141,8 +1188,6 @@ namespace Inkeys::UI::Ppt
 				layout.animationActive ||
 				state.pressed == HitTarget::Previous || state.pressed == HitTarget::Next;
 
-			const auto role = RoleFor(client);
-			auto& service = Inkeys::Window::GetService();
 			if (!layout.visible)
 			{
 				if (state.shown)
@@ -1260,12 +1305,18 @@ namespace Inkeys::UI::Ppt
 				info.pblend = &blend;
 				info.dwFlags = ULW_ALPHA;
 				info.prcDirty = &dirty;
-				presented = UpdateLayeredWindowIndirect(service.Handle(role), &info);
+				const bool ownsSharedHost = !IsBottom(client) ||
+					(CurrentSharedPageHostOwner() ==
+						Inkeys::Window::SharedPageHostOwner::Presentation &&
+						presentationVisible.load(std::memory_order_acquire));
+				if (ownsSharedHost)
+					presented = UpdateLayeredWindowIndirect(service.Handle(role), &info);
 				if (!presented) presentError = GetLastError();
 				releaseDcHr = state.target.gdi->ReleaseDC(nullptr);
 			}
 			const HRESULT endDrawHr = context->EndDraw();
-			if (FAILED(getDcHr) || FAILED(releaseDcHr) || FAILED(endDrawHr) || !presented)
+			// 即使 owner 在 present 后变化，也必须先分类本帧的设备/target 错误。
+			if (FAILED(getDcHr) || FAILED(releaseDcHr) || FAILED(endDrawHr))
 			{
 				state.committedGeneration = 0;
 				if (IsLocalTargetLost(getDcHr) || IsLocalTargetLost(releaseDcHr) ||
@@ -1280,6 +1331,20 @@ namespace Inkeys::UI::Ppt
 					state.target.Reset();
 					return FrameResult::DeviceLost;
 				}
+				return FrameResult::Retry;
+			}
+			if (IsBottom(client) &&
+				(CurrentSharedPageHostOwner() !=
+					Inkeys::Window::SharedPageHostOwner::Presentation ||
+					!presentationVisible.load(std::memory_order_acquire)))
+			{
+				state.committedGeneration = 0;
+				ResetSharedPageHostInput(client, state);
+				return FrameResult::Idle;
+			}
+			if (!presented)
+			{
+				state.committedGeneration = 0;
 				(void)presentError;
 				return FrameResult::Retry;
 			}
@@ -1348,6 +1413,15 @@ namespace Inkeys::UI::Ppt
 			WPARAM wParam, LPARAM lParam)
 		{
 			const auto role = Inkeys::Window::RoleFromHandle(hwnd);
+			if (IsPptRole(role) && role <= WindowRole::PptBottomRight &&
+				(message == WM_CANCELMODE || message == WM_CAPTURECHANGED))
+				touches[Index(role)] = {};
+			if (IsPptRole(role) && role <= WindowRole::PptBottomRight &&
+				Inkeys::Window::GetService().WhiteboardWindowMode())
+			{
+				// mode 门禁先于 Active，使过渡期消息也进入 Whiteboard 的丢弃路径。
+				return Inkeys::UI::Whiteboard::WindowProc()(hwnd, message, wParam, lParam);
+			}
 			if (message == WM_TABLET_QUERYSYSTEMGESTURESTATUS)
 				return TABLET_DISABLE_PRESSANDHOLD | TABLET_DISABLE_PENTAPFEEDBACK |
 					TABLET_DISABLE_PENBARRELFEEDBACK | TABLET_DISABLE_FLICKS;
@@ -1565,8 +1639,11 @@ namespace Inkeys::UI::Ppt
 
 	void PublishPresentationVisible(bool visible) noexcept
 	{
-		if (presentationVisible.exchange(visible, std::memory_order_acq_rel) == visible)
-			return;
+		{
+			std::scoped_lock lock(sharedPageHostMutex);
+			if (presentationVisible.exchange(visible,
+				std::memory_order_acq_rel) == visible) return;
+		}
 		Inkeys::UI::RenderPipeline::Request(
 			Inkeys::UI::RenderPipeline::PptMask());
 	}

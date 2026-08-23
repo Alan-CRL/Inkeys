@@ -1414,14 +1414,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 								hwnd, message, wParam, lParam);
 						};
 				}
-				else if (role == Inkeys::Window::WindowRole::WhiteboardLeft ||
-					role == Inkeys::Window::WindowRole::WhiteboardRight)
-				{
-					// 白板翻页栏始终是固定 195x70 DIP，不参与位置持久化。
-					spec.width = 195;
-					spec.height = 70;
-					spec.bindMessages = false;
-				}
 				windowSpecs.push_back(std::move(spec));
 			};
 		AddOverlayWindow(Inkeys::Window::WindowRole::Freeze, L"Inkeys1;", L"Inkeys FreezeWindow",
@@ -1436,12 +1428,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				disableGestureFuc(hwnd);
 				createdDrawpadHwnd->store(hwnd, std::memory_order_release);
 			});
-		AddOverlayWindow(Inkeys::Window::WindowRole::WhiteboardLeft,
-			L"Inkeys3.WhiteboardLeft;", L"Inkeys Whiteboard Left",
-			Inkeys::UI::Whiteboard::WindowProc(), 0, touchRegisterFuc);
-		AddOverlayWindow(Inkeys::Window::WindowRole::WhiteboardRight,
-			L"Inkeys3.WhiteboardRight;", L"Inkeys Whiteboard Right",
-			Inkeys::UI::Whiteboard::WindowProc(), 0, touchRegisterFuc);
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptBottomLeft,
 			L"Inkeys4.BottomLeft;", L"Inkeys Ppt Bottom Left",
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);

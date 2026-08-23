@@ -133,13 +133,24 @@ namespace
 		using Inkeys::Window::WindowRole;
 		using Inkeys::Window::OverlayActivationMode;
 		using Inkeys::Window::ResolveOverlayActivationStyle;
-		Check(static_cast<unsigned>(WindowRole::WhiteboardLeft)
+		Check(static_cast<unsigned>(WindowRole::PptBottomLeft)
 			== static_cast<unsigned>(WindowRole::Drawpad) + 1
-			&& static_cast<unsigned>(WindowRole::WhiteboardRight)
-			== static_cast<unsigned>(WindowRole::WhiteboardLeft) + 1
-			&& static_cast<unsigned>(WindowRole::PptBottomLeft)
-			== static_cast<unsigned>(WindowRole::WhiteboardRight) + 1,
-			"whiteboard roles stay between drawpad and PPT roles");
+			&& static_cast<unsigned>(WindowRole::PptBottomRight)
+			== static_cast<unsigned>(WindowRole::PptBottomLeft) + 1,
+			"shared bottom page hosts follow drawpad without duplicate whiteboard roles");
+		using Inkeys::Window::ResolveSharedPageHostOwner;
+		using Inkeys::Window::SharedPageHostOwner;
+		Check(ResolveSharedPageHostOwner(false, false) ==
+			SharedPageHostOwner::Presentation
+			&& ResolveSharedPageHostOwner(false, true) ==
+			SharedPageHostOwner::Presentation,
+			"presentation mode owns shared page hosts regardless of stale active state");
+		Check(ResolveSharedPageHostOwner(true, false) ==
+			SharedPageHostOwner::TransitionHidden,
+			"whiteboard mode remains hidden until whiteboard publishes active");
+		Check(ResolveSharedPageHostOwner(true, true) ==
+			SharedPageHostOwner::Whiteboard,
+			"active whiteboard exclusively owns shared page hosts");
 		Inkeys::Window::Service service;
 		Check(service.OverlayTopmost() && !service.OverlayFullscreen(),
 			"overlay defaults to topmost and non-fullscreen");
