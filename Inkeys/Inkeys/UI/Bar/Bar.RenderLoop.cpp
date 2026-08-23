@@ -247,14 +247,10 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorScaledGeometry;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorTarget;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorVisualEnvelope;
-	using Inkeys::UI::Bar::ResolveBarBottomDockCenteredLayoutCorrectionDip;
+	using Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootPlacement;
+	using Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootRange;
 	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainBarSide;
-	using Inkeys::UI::Bar::ResolveBarBottomDockMainBarSideDecision;
-	using Inkeys::UI::Bar::ShouldCommitBarBottomDockStableMainBarSide;
-	using Inkeys::UI::Bar::ShouldQueueBarBottomDockCenteredLayoutRebase;
-	using Inkeys::UI::Bar::QueueBarBottomDockCenteredLayoutRebase;
-	using Inkeys::UI::Bar::BeginBarBottomDockCenteredLayoutRebase;
-	using Inkeys::UI::Bar::CompleteBarBottomDockCenteredLayoutRebase;
+	using Inkeys::UI::Bar::ShouldDeriveBarBottomDockCenteredRoot;
 	using Inkeys::UI::Bar::ResolveBarBottomDockHorizontalMapping;
 	using Inkeys::UI::Bar::ResolveBarBottomDockRecoveringHorizontalMapping;
 	using Inkeys::UI::Bar::ResolveBarBottomDockRebasedFarEdgeOffsetDip;
@@ -269,7 +265,6 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
 	using Inkeys::UI::Bar::TranslateBarBottomDockRigidRect;
 	using Inkeys::UI::Bar::TransformBarBottomDockBodyRect;
 	using Inkeys::UI::Bar::TransformBarBottomDockGripRect;
-	using Inkeys::UI::Bar::TranslateBarBottomDockHorizontalMapping;
 
 	enum class BarRenderLoopStageResult
 	{
@@ -485,28 +480,6 @@ struct BarRenderLoopState
 	BarBottomDockSpringState bottomDockCenterCaptureFarEdgeSpring{};
 	bool bottomDockCenterCaptureFarEdgeActive = false;
 	bool bottomDockCenterRecoverySeeded = false;
-	double bottomDockCenteredLayoutCorrectionXDip = 0.0;
-	double bottomDockCenteredLayoutRebaseCandidateDip = 0.0;
-	Inkeys::UI::Bar::BarBottomDockCenteredLayoutRebaseState
-		bottomDockCenteredLayoutRebase{};
-	struct CenteredLayoutRebaseBackup
-	{
-		bool valid = false;
-		double mainButtonXDip = 0.0;
-		double displayCenterXPx = 0.0;
-		Inkeys::UI::Bar::BarBottomDockHorizontalMapping horizontalMapping{};
-		double centeredCorrectionDip = 0.0;
-		bool bottomDockVisualActive = false;
-		POINT committedAnchor{};
-		bool committedAnchorInitialized = false;
-		bool widgetMainBarSide = true;
-		bool widgetPrimaryBarSide = false;
-		bool currentLayoutSide = true;
-		bool stablePresentedSide = true;
-		bool centeredSide = true;
-		bool centeredSideLatched = false;
-		bool sideSwitchBatchActive = false;
-	} bottomDockCenteredLayoutRebaseBackup{};
 	double bottomDockPreviousDirectOffsetDip = 0.0;
 	double bottomDockObservedBoundsOffsetDip =
 		std::numeric_limits<double>::infinity();
@@ -552,10 +525,6 @@ struct BarRenderLoopState
 	bool unclassifiedDamagePending = false;
 	unsigned long long presentAttemptFrameSerial = 0;
 	bool mainBarLayoutSide = barState.widgetPosition.mainBar;
-	bool mainBarStablePresentedSide = barState.widgetPosition.mainBar;
-	bool mainBarCenteredSide = barState.widgetPosition.mainBar;
-	bool mainBarCenteredSideLatched = false;
-	bool mainBarSideSwitchBatchActive = false;
 	bool drawAttributeLayoutSide = barState.widgetPosition.primaryBar;
 	bool drawAttributeLayoutOpen = barState.drawAttribute;
 	bool geometryAttributeLayoutSide = barState.widgetPosition.primaryBar;
@@ -768,31 +737,6 @@ struct BarRenderLoopState
 {
 	auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 	return mainBar && (mainBar->x.hasMiddleV || mainBar->w.hasMiddleV);
-}
-
-[[nodiscard]] bool HasBarMainBarSideSwitchKeyframe(
-	BarRenderLoopState& state) noexcept
-{
-	auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
-	if (mainBar && (mainBar->x.hasMiddleV || mainBar->w.hasMiddleV
-		|| mainBar->pct.hasMiddleV
-		|| (mainBar->framePct.has_value()
-			&& mainBar->framePct.value().hasMiddleV)))
-		return true;
-
-	const int buttonCount = state.barButtonSet.tot.load();
-	for (int index = 0; index < buttonCount; ++index)
-	{
-		BarButtonClass* button = state.barButtonSet.buttonList.Get(index);
-		if (!button) continue;
-		if (button->button.x.hasMiddleV || button->button.y.hasMiddleV
-			|| button->button.pct.hasMiddleV
-			|| button->icon.pct.hasMiddleV || button->name.pct.hasMiddleV
-			|| (button->button.frameLightPct.has_value()
-				&& button->button.frameLightPct.value().hasMiddleV))
-			return true;
-	}
-	return false;
 }
 
 // 渲染线程的阶段协调器仅在当前 module 内可见，不扩大 BarUISetClass 的公开接口。
@@ -1312,37 +1256,18 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			frame.bottomDockMode == BarBottomDockMode::BottomDocked
 			&& frame.bottomDockCenterMode == BarBottomDockCenterMode::Centered
 			&& !state.barState.fold;
-		const auto mainBarSideDecision =
-			ResolveBarBottomDockMainBarSideDecision(
-				centeredMainBarSideLocked,
-				state.barState.widgetPosition.mainBar,
-				state.mainBarLayoutSide,
-				state.mainBarStablePresentedSide,
-				state.mainBarCenteredSideLatched,
-				state.mainBarCenteredSide,
-				state.mainBarSideSwitchBatchActive,
-				HasBarMainBarSideSwitchKeyframe(state));
-		state.mainBarCenteredSide = mainBarSideDecision.centeredSide;
-		state.mainBarCenteredSideLatched =
-			mainBarSideDecision.centeredSideLatched;
-		bool currentMainBarSide = mainBarSideDecision.effectiveSide;
+		// 居中态由根节点位置维持联合中心，不再根据窗口 X 反复重判展开方向。
+		bool currentMainBarSide = centeredMainBarSideLocked
+			? state.mainBarLayoutSide
+			: static_cast<bool>(state.barState.widgetPosition.mainBar);
 		state.barState.widgetPosition.mainBar = currentMainBarSide;
 		const bool mainBarSideChanged = !state.barState.fold
 			&& currentMainBarSide != state.mainBarLayoutSide;
-		// 居中态只取消既存换向批次；新的换向关键帧仅允许在非居中布局创建。
-		bool mainBarSideSwitch = mainBarSideChanged
-			&& !centeredMainBarSideLocked;
-		const bool cancelCenteredMainBarSideSwitch =
-			mainBarSideDecision.cancelSideSwitchBatch;
-		if (mainBarSideSwitch)
-			state.mainBarSideSwitchBatchActive = true;
-		else if (cancelCenteredMainBarSideSwitch)
-			state.mainBarSideSwitchBatchActive = false;
+		bool mainBarSideSwitch = mainBarSideChanged;
 		// 浮层展开状态直接映射到硬编码入口的选中态，复用普通按钮颜色。
 		if (auto moreButton = state.barButtonSet.GetMoreButton())
 			moreButton->localState.state = (!state.barState.fold && state.barState.moreExpanded)
 				? BarWidgetState::Selected : BarWidgetState::None;
-		// 当前目标方向与成功稳定方向分开推进；失败呈现不能改写后者。
 		state.mainBarLayoutSide = currentMainBarSide;
 		bool currentDrawAttributeSide = state.barState.widgetPosition.primaryBar;
 		const bool drawAttributeSideChanged = state.barState.drawAttribute
@@ -2211,28 +2136,24 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 		bool mainBarLayoutExpands = mainBarLayoutChange
 			&& layoutTotalWidth > state.mainBarLayoutWidth.value();
 		// 布局变化会取代仍在运行的换边关键帧；即使某个控件目标没变，也必须从当前值重建。
-		bool interruptingMainBarSideSwitch = !cancelCenteredMainBarSideSwitch
-			&& mainBarLayoutChange && state.mainBarTimeline.IsActive()
+		bool interruptingMainBarSideSwitch = mainBarLayoutChange
+			&& state.mainBarTimeline.IsActive()
 			&& HasBarMainBarSideSwitchGeometryKeyframe(state);
 		// 新操作创建完整批次；批次进入后半程后，新布局不再压缩到旧截止时间。
 		bool lateMainBarLayoutChange = !state.barState.fold && state.mainBarTimeline.IsActive()
 			&& mainBarLayoutChange && !state.mainBarTimeline.CanJoin();
 		// 后半程布局变化会重开完整批次；目标未变的在途布局值也要从当前值同步重启。
 		bool forceRestartMainBarLayout = mainBarFoldChange
-			|| lateMainBarLayoutChange || cancelCenteredMainBarSideSwitch;
+			|| lateMainBarLayoutChange;
 		// 超过加入阈值后会创建新批次，此时旧换边中点已经失效，不能在新批次中再次收窄。
 		bool continueMainBarSideSwitchKeyframe = interruptingMainBarSideSwitch
-			&& !lateMainBarLayoutChange && !cancelCenteredMainBarSideSwitch;
+			&& !lateMainBarLayoutChange;
 		bool restartMainBarTimeline = mainBarFoldChange || mainBarSideSwitch
-			|| lateMainBarLayoutChange || cancelCenteredMainBarSideSwitch
+			|| lateMainBarLayoutChange
 			|| (!state.barState.fold && !state.mainBarTimeline.IsActive() && mainBarLayoutChange);
 		if (restartMainBarTimeline)
 		{
-			if (cancelCenteredMainBarSideSwitch)
-				state.mainBarBatchCurve = layoutTotalWidth > mainBar->w.val + 0.000001
-					? BarUiCurveEnum::EaseOutBack
-					: BarUiCurveEnum::EaseOutCubic;
-			else if (mainBarSideSwitch) state.mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
+			if (mainBarSideSwitch) state.mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 			else if (mainBarFoldChange)
 				state.mainBarBatchCurve = state.barState.fold
 				? BarUiCurveEnum::EaseInBack : BarUiCurveEnum::EaseOutBack;
@@ -2762,26 +2683,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						SyncValueDuration(temp->name.size);
 						SyncPctDuration(temp->name.pct);
 
-						if (cancelCenteredMainBarSideSwitch)
-						{
-							// 仅清除换向中点；按压倍率等独立动画保持原语义。
-							temp->button.x.SetTar(temp->button.x.tar,
-								operationDur, nullopt, true, syncedValueCurve);
-							temp->button.y.SetTar(temp->button.y.tar,
-								operationDur, nullopt, true, syncedValueCurve);
-							temp->button.pct.SetTar(
-								temp->button.pct.tar, operationDur,
-								nullopt, true, syncedPctCurve);
-							if (temp->button.frameLightPct.has_value())
-								temp->button.frameLightPct.value().SetTar(
-									temp->button.frameLightPct.value().tar,
-									operationDur, nullopt, true, syncedPctCurve);
-							temp->icon.pct.SetTar(temp->icon.pct.tar,
-								operationDur, nullopt, true, syncedPctCurve);
-							temp->name.pct.SetTar(temp->name.pct.tar,
-								operationDur, nullopt, true, syncedPctCurve);
-						}
-						else if (mainBarSideSwitch || continueMainBarSideSwitchKeyframe)
+						if (mainBarSideSwitch || continueMainBarSideSwitchKeyframe)
 						{
 							// 换边中点将整个按钮组合隐藏，再从主按钮下方展开到新位置。
 							const BarUiCurveSpecClass& pctCurve = mainBarSideSwitch
@@ -2957,11 +2859,9 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 					forceRestartMainBarLayout, syncedValueCurve);
 
 				state.shapeMap[BarUISetShapeEnum::MainBar]->pct.SetTar(
-					0.8, operationDur, nullopt,
-					cancelCenteredMainBarSideSwitch, syncedPctCurve);
+					0.8, operationDur, nullopt, false, syncedPctCurve);
 				state.shapeMap[BarUISetShapeEnum::MainBar]->framePct.value().SetTar(
-					0.18, operationDur, nullopt,
-					cancelCenteredMainBarSideSwitch, syncedPctCurve);
+					0.18, operationDur, nullopt, false, syncedPctCurve);
 			}
 			if (mainBarSideSwitch || continueMainBarSideSwitchKeyframe)
 			{
@@ -5289,6 +5189,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		BarDirtyFixedVisual::MoreGroup);
 	const BarDirtyVisualKey dockTargetIndicatorDirtyKey = GetBarDirtyVisualKey(
 		BarDirtyFixedVisual::DockTargetIndicator);
+	bool centeredRootChanged = false;
 
 	auto AdvanceAnimation = [&](auto& animation, bool forceReplace,
 		BarDirtyVisualKey dirtyKey = 0) -> void
@@ -5893,6 +5794,61 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	for (const shared_ptr<BarButtonClass>& button :
 		animatedMoreSnapshot.forcedOverflow)
 		UpdateRegisteredButtonAnimation(button.get(), true);
+
+	{
+		auto mainButton =
+			state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		auto mainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
+		auto SpringPending = [](const BarBottomDockSpringState& spring) noexcept
+			{
+				return !isfinite(spring.positionDip)
+					|| !isfinite(spring.velocityDipPerSecond)
+					|| abs(spring.positionDip) > BarBottomDockSettleDistanceDip
+					|| abs(spring.velocityDipPerSecond)
+						> Inkeys::UI::Bar::BarBottomDockSettleVelocityDipPerSecond;
+			};
+		const bool centerSpringPending =
+			SpringPending(state.bottomDockCenterSpring);
+		const bool centerFarEdgeSpringPending =
+			state.bottomDockCenterCaptureFarEdgeActive
+			|| SpringPending(state.bottomDockCenterCaptureFarEdgeSpring);
+		if (ShouldDeriveBarBottomDockCenteredRoot(
+			frame.bottomDockMode == BarBottomDockMode::BottomDocked,
+			frame.bottomDockCenterMode, frame.bottomDockCenterPhase,
+			frame.bottomDockDragActive, !state.barState.fold,
+			centerSpringPending, centerFarEdgeSpringPending,
+			state.displayTransitionActive))
+		{
+			const double mainButtonStrokeDip = mainButton->ft.has_value()
+				? max(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
+			const double mainBarStrokeDip = mainBar->ft.has_value()
+				? max(0.0, static_cast<double>(mainBar->ft->val)) : 0.0;
+			const double monitorCenterLocalDip = (
+				ResolveBarBottomDockMonitorCenterScreenX(
+					state.activeMonitorBounds)
+					- state.monitorOrigin.x
+					- frame.bottomDockTransitionTranslation.x)
+				/ max(0.000001, frameZoom);
+			const auto placement = ResolveBarBottomDockCenteredRootPlacement(
+				monitorCenterLocalDip,
+				mainButton->w.val + mainButtonStrokeDip,
+				mainBar->x.val, mainBar->w.val + mainBarStrokeDip);
+			if (placement.valid)
+			{
+				const double previousMainCenterDip = mainButton->x.val;
+				// 下游绝对几何派生前先更新根节点，整个既有继承树同帧跟随。
+				mainButton->x.SetDirect(placement.mainCenterDip);
+				state.displayCenterX.SetDirect(
+					placement.mainCenterDip * frameZoom);
+				mainButton->UpInh(BarUiInheritClass(
+					mainButton->x.val - mainButton->w.val / 2.0,
+					mainButton->y.val - mainButton->h.val / 2.0));
+				mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
+				centeredRootChanged = abs(previousMainCenterDip
+					- placement.mainCenterDip) > 0.000001;
+			}
+		}
+	}
 
 	// 提示控件全部从动画中的粗细区域派生，换边时随面板收拢到叹号锚点。
 	{
@@ -7217,8 +7173,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockCenterSpring.positionDip;
 		const double previousCenterCaptureFarEdgeDip =
 			state.bottomDockCenterCaptureFarEdgeSpring.positionDip;
-		const double previousCenteredLayoutCorrectionDip =
-			state.bottomDockCenteredLayoutCorrectionXDip;
 		bool springActive = false;
 		if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
 		{
@@ -7377,30 +7331,26 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			ChangeValue(state.bottomDockIndicatorTextWidthDip, false,
 				dockTargetIndicatorDirtyKey);
 
-		const double strokeWidthDip = state.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->ft.has_value()
+		auto dockMainButton = state.superellipseMap[
+			BarUISetSuperellipseEnum::MainButton];
+		const double strokeWidthDip = dockMainButton->ft.has_value()
 			? max(0.0, static_cast<double>(state.superellipseMap[
 				BarUISetSuperellipseEnum::MainButton]->ft.value().val)) : 0.0;
 		const double outerHeightDip = state.mainButtonBaseSize + strokeWidthDip;
-		const double baseTopDip = state.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->y.val - outerHeightDip / 2.0;
+		const double baseTopDip = dockMainButton->y.val - outerHeightDip / 2.0;
 		const double baseBottomDip = baseTopDip + outerHeightDip;
 		auto dockMainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 		dockMainBar->Inherit(BarUiInheritEnum::Center,
-			*state.superellipseMap[BarUISetSuperellipseEnum::MainButton]);
+			*dockMainButton);
 		const double mainBarStrokeDip = dockMainBar->ft.has_value()
 			? max(0.0, static_cast<double>(dockMainBar->ft->val)) : 0.0;
-		const double mainButtonLeftDip = state.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->x.val
-			- (state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->w.val
-				+ strokeWidthDip) / 2.0;
-		const double mainButtonRightDip = state.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->x.val
-			+ (state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->w.val
-				+ strokeWidthDip) / 2.0;
-		const double mainBarLeftDip = dockMainBar->inhX
+		double mainButtonLeftDip = dockMainButton->x.val
+			- (dockMainButton->w.val + strokeWidthDip) / 2.0;
+		double mainButtonRightDip = dockMainButton->x.val
+			+ (dockMainButton->w.val + strokeWidthDip) / 2.0;
+		double mainBarLeftDip = dockMainBar->inhX
 			- mainBarStrokeDip / 2.0;
-		const double mainBarRightDip = dockMainBar->inhX
+		double mainBarRightDip = dockMainBar->inhX
 			+ dockMainBar->w.val + mainBarStrokeDip / 2.0;
 		const double baseLeftDip = min(mainButtonLeftDip,
 			mainBarLeftDip);
@@ -7524,51 +7474,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			: ResolveBarBottomDockRecoveringHorizontalMapping(
 				mainBarLeftDip, mainBarRightDip, opensRight,
 				state.bottomDockCenterCaptureFarEdgeSpring.positionDip);
-		const double mappedMainButtonLeftDip = mainButtonLeftDip
-			+ state.bottomDockHorizontalMapping.rigidGripTranslationXDip;
-		const double mappedMainButtonRightDip = mainButtonRightDip
-			+ state.bottomDockHorizontalMapping.rigidGripTranslationXDip;
-		const double mappedMainBarLeftDip =
-			state.bottomDockHorizontalMapping.MapX(mainBarLeftDip);
-		const double mappedMainBarRightDip =
-			state.bottomDockHorizontalMapping.MapX(mainBarRightDip);
-		const double currentVisualBodyCenterDip = (
-			min(mappedMainButtonLeftDip, mappedMainBarLeftDip)
-			+ max(mappedMainButtonRightDip, mappedMainBarRightDip)) / 2.0;
-		const double centeredLayoutCorrectionDip =
-			ResolveBarBottomDockCenteredLayoutCorrectionDip(
-				dockMode == BarBottomDockMode::BottomDocked,
-				centerMode, centerPhase, dockDragActive, !state.barState.fold,
-				currentVisualBodyCenterDip, monitorCenterLocalDip);
-		// 非拖动的居中态按当前插值宽度逐帧补偿，主栏展开动画不会带偏中心。
-		state.bottomDockHorizontalMapping =
-			TranslateBarBottomDockHorizontalMapping(
-				state.bottomDockHorizontalMapping,
-				centeredLayoutCorrectionDip);
-		state.bottomDockCenteredLayoutCorrectionXDip =
-			centeredLayoutCorrectionDip;
-		const bool centeredLayoutReadyToRebase =
-			ShouldQueueBarBottomDockCenteredLayoutRebase(
-				dockMode == BarBottomDockMode::BottomDocked,
-				centerMode, centerPhase, dockDragActive, !state.barState.fold,
-				state.mainBarTimeline.IsActive(), dockMainBar->x.IsSame(),
-				dockMainBar->w.IsSame(), centerSpringActive,
-				centerCaptureFarEdgeActive,
-				!state.displayTransitionActive && state.displayCenterX.IsSame(),
-				state.bottomDockCenteredLayoutRebase.pending,
-				state.bottomDockCenteredLayoutRebase.inFlight,
-				centeredLayoutCorrectionDip);
-		// 本帧只生成候选；必须先成功显示该补偿，下一强制帧才能重基准。
-		state.bottomDockCenteredLayoutRebaseCandidateDip =
-			centeredLayoutReadyToRebase
-				? centeredLayoutCorrectionDip : 0.0;
-		if (centeredLayoutReadyToRebase)
-		{
-			// 时间线结束后的第一稳定帧也要形成成功屏障，不能因像素未变化直接休眠。
-			needRendering = true;
-			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-				BarDirtyFixedVisual::MainGroup));
-		}
 		if (!state.barState.fold)
 		{
 			BarButtonClass* rigidAnchorButton = nullptr;
@@ -7609,7 +7514,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| centerSpringActive
 			|| centerCaptureFarEdgeActive
 			|| abs(state.bottomDockCenterSpring.positionDip) > 0.000001
-			|| abs(centeredLayoutCorrectionDip) > 0.000001;
+			|| centeredRootChanged;
 		const bool visualChanged = abs(previousVisualOffsetDip
 			- state.bottomDockSpring.positionDip) > 0.000001
 			|| abs(previousCaptureBottomOffsetDip
@@ -7619,8 +7524,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| abs(previousCenterCaptureFarEdgeDip
 				- state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
 				> 0.000001
-			|| abs(previousCenteredLayoutCorrectionDip
-				- centeredLayoutCorrectionDip) > 0.000001;
+			|| centeredRootChanged;
 		if (visualChanged || springActive || captureBottomSpringActive
 			|| centerSpringActive || centerCaptureFarEdgeActive)
 		{
@@ -7757,14 +7661,10 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	}
 	const bool retryingNonSleepVisual = state.presentDecision.HasPendingVisual()
 		&& !state.debugFrameSleepLatch.IsPending();
-	const bool centeredLayoutRebaseActive =
-		state.bottomDockCenteredLayoutRebase.pending
-		|| state.bottomDockCenteredLayoutRebase.inFlight;
 	const bool hasActiveRendering = needRendering
 		|| sustainRendering
 		|| needBorderLightingRendering
 		|| needRenderOnce
-		|| centeredLayoutRebaseActive
 		|| state.unclassifiedDamagePending
 		|| retryingNonSleepVisual
 		|| state.presentDecision.HasPendingLighting()
@@ -7809,8 +7709,7 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		state.unclassifiedDamagePending = true;
 	}
 	state.presentDecision.AddDemand({
-		needRendering || sustainRendering || debugRendering
-			|| centeredLayoutRebaseActive,
+		needRendering || sustainRendering || debugRendering,
 		needBorderLightingRendering,
 		needRenderOnce,
 		});
@@ -9165,10 +9064,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						center.minimum - size.maximum / 2.0,
 						center.maximum - size.minimum / 2.0 };
 				};
-			auto RangeSpan = [](BarWindowScalarRange range)
-				{
-					return max(0.0, range.maximum - range.minimum);
-				};
 			struct PredictedVisualExtent
 			{
 				bool visible = false;
@@ -9228,29 +9123,52 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					UnionBarWindowRect(predictedEnvelope, rootEnvelope);
 				};
 
-			const auto mainButtonX = ValueRange(mainButton->x);
+			BarWindowScalarRange mainButtonX = ValueRange(mainButton->x);
 			const auto mainButtonY = ValueRange(mainButton->y);
+			const auto mainBarOffsetX = ValueRange(mainBar->x);
+			const auto mainBarWidth = ValueRange(mainBar->w);
+			if (ShouldDeriveBarBottomDockCenteredRoot(
+				state.bottomDockFrameMode == BarBottomDockMode::BottomDocked,
+				state.bottomDockFrameCenterMode,
+				state.bottomDockFrameCenterPhase,
+				frame.bottomDockDragActive, !state.barState.fold,
+				false, false, state.displayTransitionActive))
+			{
+				const auto mainButtonWidth = ValueRange(mainButton->w);
+				const auto mainButtonStroke = mainButton->ft.has_value()
+					? ValueRange(mainButton->ft.value())
+					: BarWindowScalarRange{};
+				const auto mainBarStroke = mainBar->ft.has_value()
+					? ValueRange(mainBar->ft.value())
+					: BarWindowScalarRange{};
+				const double monitorCenterLocalDip = (
+					ResolveBarBottomDockMonitorCenterScreenX(
+						state.activeMonitorBounds)
+						- state.monitorOrigin.x
+						- frame.bottomDockTransitionTranslation.x)
+					/ max(0.000001, frameZoom);
+				const auto centeredRootRange =
+					ResolveBarBottomDockCenteredRootRange(
+						monitorCenterLocalDip,
+						max(0.0, mainButtonWidth.minimum
+							+ mainButtonStroke.minimum),
+						max(0.0, mainButtonWidth.maximum
+							+ mainButtonStroke.maximum),
+						mainBarOffsetX.minimum, mainBarOffsetX.maximum,
+						max(0.0, mainBarWidth.minimum
+							+ mainBarStroke.minimum),
+						max(0.0, mainBarWidth.maximum
+							+ mainBarStroke.maximum));
+				// 用主栏完整动画 range 反推根节点范围，提前覆盖收缩时的水平位移。
+				if (centeredRootRange.valid)
+					mainButtonX = {
+						centeredRootRange.minimumDip,
+						centeredRootRange.maximumDip };
+			}
 			AddRoot(mainButtonX, mainButtonY, mainButton);
-			const auto mainBarX = AddRanges(mainButtonX, ValueRange(mainBar->x));
+			const auto mainBarX = AddRanges(mainButtonX, mainBarOffsetX);
 			const auto mainBarY = AddRanges(mainButtonY, ValueRange(mainBar->y));
 			AddRoot(mainBarX, mainBarY, mainBar);
-			double centeredLayoutPredictionOutsetDip = 0.0;
-			if (state.bottomDockFrameMode == BarBottomDockMode::BottomDocked
-				&& state.bottomDockFrameCenterMode
-					== BarBottomDockCenterMode::Centered
-				&& state.bottomDockFrameCenterPhase == BarBottomDockPhase::Stable
-				&& !frame.bottomDockDragActive && !state.barState.fold
-				&& state.mainBarTimeline.IsActive())
-			{
-				const double mainButtonEdgeTravelDip = RangeSpan(mainButtonX)
-					+ RangeSpan(ValueRange(mainButton->w)) / 2.0;
-				const double mainBarEdgeTravelDip = RangeSpan(mainBarX)
-					+ RangeSpan(ValueRange(mainBar->w)) / 2.0;
-				// 居中补偿也会刚性移动扩展面板，提前按完整布局 range 预留 X 包络。
-				centeredLayoutPredictionOutsetDip = abs(
-					state.bottomDockCenteredLayoutCorrectionXDip)
-					+ max(mainButtonEdgeTravelDip, mainBarEdgeTravelDip);
-			}
 
 			const auto mainBarLeft = SubtractHalfRange(
 				mainBarX, ValueRange(mainBar->w));
@@ -9501,14 +9419,6 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				UnionBarWindowRect(predictedEnvelope,
 					dockTargetIndicatorEnvelopeBounds);
 			}
-			if (centeredLayoutPredictionOutsetDip > 0.000001
-				&& !IsBarWindowRectEmpty(predictedEnvelope))
-			{
-				const LONG centeredLayoutPredictionOutsetPx = static_cast<LONG>(
-					ceil(centeredLayoutPredictionOutsetDip * frameZoom));
-				predictedEnvelope.left -= centeredLayoutPredictionOutsetPx;
-				predictedEnvelope.right += centeredLayoutPredictionOutsetPx;
-			}
 			if (reserveBottomDockVisualEnvelope)
 			{
 				// 以未形变布局一次性预留上下 24 DIP，拖动中 viewport 不随偏移反复改尺寸。
@@ -9544,8 +9454,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.capacitySize,
 			epoch.generation };
 		const bool requiresFullReplacement =
-			state.bottomDockCenteredLayoutRebase.inFlight
-			|| state.presentMappingTracker.Resolve(candidatePresentMapping)
+			state.presentMappingTracker.Resolve(candidatePresentMapping)
 				== BarPresentMappingMode::FullReplacement;
 		POINT committedSource{};
 		if (state.viewportController.Initialized())
@@ -12572,9 +12481,6 @@ bool presetButton = button.presetIndex >= 0;
 				state.bottomDockFrameCenterPhase, memory_order_relaxed);
 			owner_.bottomDockPresentedCenterElasticOffsetDip.store(
 				state.bottomDockCenterSpring.positionDip, memory_order_relaxed);
-			owner_.bottomDockPresentedCenteredLayoutCorrectionDip.store(
-				state.bottomDockCenteredLayoutCorrectionXDip,
-				memory_order_relaxed);
 			owner_.bottomDockPresentedBaseLeftDip.store(
 				state.bottomDockHorizontalMapping.baseLeftDip,
 				memory_order_relaxed);
@@ -12695,42 +12601,6 @@ bool presetButton = button.presetIndex >= 0;
 				1, memory_order_release);
 			// 第三光源接受区也只消费完整成功事务对应的几何。
 			owner_.RefreshBorderCursorVisibleRegions();
-			const bool centeredExpanded =
-				state.bottomDockFrameMode == BarBottomDockMode::BottomDocked
-				&& state.bottomDockFrameCenterMode
-					== BarBottomDockCenterMode::Centered
-				&& !state.barState.fold;
-			if (ShouldCommitBarBottomDockStableMainBarSide(
-				true, !state.barState.fold, centeredExpanded,
-				state.mainBarSideSwitchBatchActive,
-				state.mainBarTimeline.IsActive(), mainBar->x.IsSame(),
-				mainBar->w.IsSame(),
-				HasBarMainBarSideSwitchKeyframe(state)))
-			{
-				// 真实换向只有在稳定像素成功提交后才成为下一次居中的锁存方向。
-				state.mainBarStablePresentedSide = state.mainBarLayoutSide;
-				state.mainBarSideSwitchBatchActive = false;
-			}
-
-			const bool centeredLayoutRebaseCommitted =
-				state.bottomDockCenteredLayoutRebase.inFlight;
-			if (centeredLayoutRebaseCommitted)
-			{
-				state.bottomDockCenteredLayoutRebase =
-					CompleteBarBottomDockCenteredLayoutRebase(
-						state.bottomDockCenteredLayoutRebase, true);
-				state.bottomDockCenteredLayoutRebaseBackup.valid = false;
-			}
-			else if (abs(state.bottomDockCenteredLayoutRebaseCandidateDip)
-				> 0.000001)
-			{
-				// 补偿像素已经成功显示；下一帧再做可回滚的等价重基准。
-				state.bottomDockCenteredLayoutRebase =
-					QueueBarBottomDockCenteredLayoutRebase(
-						state.bottomDockCenteredLayoutRebase,
-						state.bottomDockCenteredLayoutRebaseCandidateDip);
-			}
-			state.bottomDockCenteredLayoutRebaseCandidateDip = 0.0;
 			state.bottomDockIndicatorRevealDamagePending = false;
 			state.committedAnchor = POINT{
 				static_cast<LONG>(lround(mainButton->x.val * frameZoom)),
@@ -12749,39 +12619,6 @@ bool presetButton = button.presetIndex >= 0;
 		}
 		else
 		{
-			if (state.bottomDockCenteredLayoutRebase.inFlight
-				&& state.bottomDockCenteredLayoutRebaseBackup.valid)
-			{
-				// 重基准属于呈现事务；任一阶段失败都恢复上一成功帧对应的完整 tuple。
-				auto& backup = state.bottomDockCenteredLayoutRebaseBackup;
-				mainButton->x.SetDirect(backup.mainButtonXDip);
-				state.displayCenterX.SetDirect(backup.displayCenterXPx);
-				state.bottomDockHorizontalMapping = backup.horizontalMapping;
-				state.bottomDockCenteredLayoutCorrectionXDip =
-					backup.centeredCorrectionDip;
-				state.bottomDockVisualActive = backup.bottomDockVisualActive;
-				state.committedAnchor = backup.committedAnchor;
-				state.committedAnchorInitialized =
-					backup.committedAnchorInitialized;
-				state.barState.widgetPosition.mainBar = backup.widgetMainBarSide;
-				state.barState.widgetPosition.primaryBar =
-					backup.widgetPrimaryBarSide;
-				state.mainBarLayoutSide = backup.currentLayoutSide;
-				state.mainBarStablePresentedSide = backup.stablePresentedSide;
-				state.mainBarCenteredSide = backup.centeredSide;
-				state.mainBarCenteredSideLatched =
-					backup.centeredSideLatched;
-				state.mainBarSideSwitchBatchActive =
-					backup.sideSwitchBatchActive;
-				state.bottomDockCenteredLayoutRebase =
-					CompleteBarBottomDockCenteredLayoutRebase(
-						state.bottomDockCenteredLayoutRebase, false);
-				backup.valid = false;
-				state.bottomDockCenteredLayoutRebaseCandidateDip = 0.0;
-				state.unclassifiedDamagePending = true;
-			}
-			// 未提交帧不能把候选补偿升级为下一阶段事务。
-			state.bottomDockCenteredLayoutRebaseCandidateDip = 0.0;
 			state.dirtyRegionTracker.RetainForRetry(true);
 			if (!state.barPresentFailureLogged && IDTLogger)
 				IDTLogger->error(
@@ -12993,50 +12830,11 @@ BarRenderLoopCoordinator::RenderFrame(
 		// 首次方向缓存先于 PositionUpdate 建立，避免桌面默认侧或白板既有侧被覆盖。
 		state.barState.widgetPosition.mainBar = initialSide;
 		state.mainBarLayoutSide = initialSide;
-		state.mainBarStablePresentedSide = initialSide;
-		state.mainBarCenteredSide = initialSide;
 	}
 	ApplyDisplayTransition(state, frame);
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	state.spec.SetFrameZoom(frame.zoom);
-	const auto rebaseBeforeBegin = state.bottomDockCenteredLayoutRebase;
-	const auto rebaseAfterBegin = BeginBarBottomDockCenteredLayoutRebase(
-		rebaseBeforeBegin);
-	if (!rebaseBeforeBegin.inFlight && rebaseAfterBegin.inFlight)
-	{
-		auto mainButton = state.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton];
-		auto& backup = state.bottomDockCenteredLayoutRebaseBackup;
-		backup.valid = true;
-		backup.mainButtonXDip = mainButton->x.val;
-		backup.displayCenterXPx = state.displayCenterX.val;
-		backup.horizontalMapping = state.bottomDockHorizontalMapping;
-		backup.centeredCorrectionDip =
-			state.bottomDockCenteredLayoutCorrectionXDip;
-		backup.bottomDockVisualActive = state.bottomDockVisualActive;
-		backup.committedAnchor = state.committedAnchor;
-		backup.committedAnchorInitialized = state.committedAnchorInitialized;
-		backup.widgetMainBarSide = state.barState.widgetPosition.mainBar;
-		backup.widgetPrimaryBarSide = state.barState.widgetPosition.primaryBar;
-		backup.currentLayoutSide = state.mainBarLayoutSide;
-		backup.stablePresentedSide = state.mainBarStablePresentedSide;
-		backup.centeredSide = state.mainBarCenteredSide;
-		backup.centeredSideLatched = state.mainBarCenteredSideLatched;
-		backup.sideSwitchBatchActive = state.mainBarSideSwitchBatchActive;
-
-		state.bottomDockCenteredLayoutRebase = rebaseAfterBegin;
-		const double correctionDip = rebaseAfterBegin.correctionDip;
-		// 新基础坐标配合零补偿仍落在上一成功帧的同一屏幕像素。
-		mainButton->x.SetDirect(mainButton->x.val + correctionDip);
-		state.displayCenterX.SetDirect(mainButton->x.val * frame.zoom);
-		if (state.committedAnchorInitialized)
-			state.committedAnchor.x = static_cast<LONG>(lround(
-				mainButton->x.val * frame.zoom));
-		state.bottomDockCenteredLayoutRebaseCandidateDip = 0.0;
-		state.unclassifiedDamagePending = true;
-		state.dirtyRegionTracker.ForceFullDamage();
-	}
 	SubmitTargetsAndLayout(state, frame);
 	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame)
 		|| state.displayTransitionActive;

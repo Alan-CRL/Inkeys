@@ -374,6 +374,17 @@ namespace Inkeys::UI::Bar
 		return mainCenterX <= monitorWidth / 2.0;
 	}
 
+	[[nodiscard]] inline bool ResolveBarBottomDockPositionMainBarSide(
+		BarBottomDockCenterMode presentedCenterMode,
+		double mainCenterX, double windowWidth, bool currentSide) noexcept
+	{
+		// 居中态保持当前布局方向；未初始化窗口也不能参与重新分类。
+		if (presentedCenterMode == BarBottomDockCenterMode::Centered
+			|| !std::isfinite(windowWidth) || windowWidth <= 0.0)
+			return currentSide;
+		return ResolveBarMainBarRightSide(mainCenterX, windowWidth);
+	}
+
 	[[nodiscard]] inline double ResolveBarBottomDockInitialMainCenterScreenX(
 		const RECT& monitorBounds, double bodyLeftFromMainCenterDip,
 		double bodyRightFromMainCenterDip, double mainVisibleHalfWidthDip,
@@ -777,19 +788,125 @@ namespace Inkeys::UI::Bar
 		}
 	};
 
-	[[nodiscard]] inline double ResolveBarBottomDockCenteredLayoutCorrectionDip(
+	struct BarBottomDockCenteredRootPlacement
+	{
+		double mainCenterDip = 0.0;
+		double bodyLeftDip = 0.0;
+		double bodyRightDip = 0.0;
+		bool valid = false;
+	};
+
+	struct BarBottomDockCenteredRootRange
+	{
+		double minimumDip = 0.0;
+		double maximumDip = 0.0;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline bool ShouldDeriveBarBottomDockCenteredRoot(
 		bool verticallyDocked, BarBottomDockCenterMode centerMode,
 		BarBottomDockPhase centerPhase, bool dragActive,
-		bool mainBarExpanded, double currentBodyCenterDip,
-		double monitorCenterDip) noexcept
+		bool mainBarExpanded, bool centerSpringActive,
+		bool farEdgeSpringActive, bool displayTransitionActive) noexcept
 	{
-		if (!verticallyDocked || centerMode != BarBottomDockCenterMode::Centered
-			|| centerPhase != BarBottomDockPhase::Stable
-			|| dragActive || !mainBarExpanded
-			|| !std::isfinite(currentBodyCenterDip)
-			|| !std::isfinite(monitorCenterDip))
-			return 0.0;
-		return monitorCenterDip - currentBodyCenterDip;
+		return verticallyDocked
+			&& centerMode == BarBottomDockCenterMode::Centered
+			&& centerPhase == BarBottomDockPhase::Stable
+			&& !dragActive && mainBarExpanded
+			&& !centerSpringActive && !farEdgeSpringActive
+			&& !displayTransitionActive;
+	}
+
+	[[nodiscard]] inline BarBottomDockCenteredRootPlacement
+		ResolveBarBottomDockCenteredRootPlacement(
+			double monitorCenterDip, double mainButtonVisibleWidthDip,
+			double mainBarCenterOffsetDip,
+			double mainBarVisibleWidthDip) noexcept
+	{
+		if (!std::isfinite(monitorCenterDip)
+			|| !std::isfinite(mainButtonVisibleWidthDip)
+			|| !std::isfinite(mainBarCenterOffsetDip)
+			|| !std::isfinite(mainBarVisibleWidthDip)
+			|| mainButtonVisibleWidthDip <= 0.0
+			|| mainBarVisibleWidthDip <= 0.0)
+			return {};
+
+		const double relativeLeftDip = std::min(
+			-mainButtonVisibleWidthDip / 2.0,
+			mainBarCenterOffsetDip - mainBarVisibleWidthDip / 2.0);
+		const double relativeRightDip = std::max(
+			mainButtonVisibleWidthDip / 2.0,
+			mainBarCenterOffsetDip + mainBarVisibleWidthDip / 2.0);
+		const double mainCenterDip = monitorCenterDip
+			- (relativeLeftDip + relativeRightDip) / 2.0;
+		return {
+			mainCenterDip,
+			mainCenterDip + relativeLeftDip,
+			mainCenterDip + relativeRightDip,
+			true,
+		};
+	}
+
+	[[nodiscard]] inline BarBottomDockCenteredRootRange
+		ResolveBarBottomDockCenteredRootRange(
+			double monitorCenterDip,
+			double mainButtonVisibleWidthMinimumDip,
+			double mainButtonVisibleWidthMaximumDip,
+			double mainBarCenterOffsetMinimumDip,
+			double mainBarCenterOffsetMaximumDip,
+			double mainBarVisibleWidthMinimumDip,
+			double mainBarVisibleWidthMaximumDip) noexcept
+	{
+		if (!std::isfinite(monitorCenterDip)
+			|| !std::isfinite(mainButtonVisibleWidthMinimumDip)
+			|| !std::isfinite(mainButtonVisibleWidthMaximumDip)
+			|| !std::isfinite(mainBarCenterOffsetMinimumDip)
+			|| !std::isfinite(mainBarCenterOffsetMaximumDip)
+			|| !std::isfinite(mainBarVisibleWidthMinimumDip)
+			|| !std::isfinite(mainBarVisibleWidthMaximumDip)
+			|| mainButtonVisibleWidthMinimumDip < 0.0
+			|| mainButtonVisibleWidthMaximumDip <= 0.0
+			|| mainButtonVisibleWidthMinimumDip
+				> mainButtonVisibleWidthMaximumDip
+			|| mainBarCenterOffsetMinimumDip
+				> mainBarCenterOffsetMaximumDip
+			|| mainBarVisibleWidthMinimumDip < 0.0
+			|| mainBarVisibleWidthMaximumDip <= 0.0
+			|| mainBarVisibleWidthMinimumDip
+				> mainBarVisibleWidthMaximumDip)
+			return {};
+
+		const double buttonHalfMinimum =
+			mainButtonVisibleWidthMinimumDip / 2.0;
+		const double buttonHalfMaximum =
+			mainButtonVisibleWidthMaximumDip / 2.0;
+		const double barHalfMinimum = mainBarVisibleWidthMinimumDip / 2.0;
+		const double barHalfMaximum = mainBarVisibleWidthMaximumDip / 2.0;
+		const double barLeftMinimum =
+			mainBarCenterOffsetMinimumDip - barHalfMaximum;
+		const double barLeftMaximum =
+			mainBarCenterOffsetMaximumDip - barHalfMinimum;
+		const double barRightMinimum =
+			mainBarCenterOffsetMinimumDip + barHalfMinimum;
+		const double barRightMaximum =
+			mainBarCenterOffsetMaximumDip + barHalfMaximum;
+		const double relativeLeftMinimum = std::min(
+			-buttonHalfMaximum, barLeftMinimum);
+		const double relativeLeftMaximum = std::min(
+			-buttonHalfMinimum, barLeftMaximum);
+		const double relativeRightMinimum = std::max(
+			buttonHalfMinimum, barRightMinimum);
+		const double relativeRightMaximum = std::max(
+			buttonHalfMaximum, barRightMaximum);
+		const double bodyCenterMinimum =
+			(relativeLeftMinimum + relativeRightMinimum) / 2.0;
+		const double bodyCenterMaximum =
+			(relativeLeftMaximum + relativeRightMaximum) / 2.0;
+		return {
+			monitorCenterDip - bodyCenterMaximum,
+			monitorCenterDip - bodyCenterMinimum,
+			true,
+		};
 	}
 
 	[[nodiscard]] inline bool ResolveBarBottomDockInitialMainBarSide(
@@ -797,128 +914,6 @@ namespace Inkeys::UI::Bar
 	{
 		// 桌面首次放置固定为主按钮居左；白板入口继续沿用自己的方向。
 		return whiteboardPlacement ? currentSide : true;
-	}
-
-	struct BarBottomDockMainBarSideDecision
-	{
-		bool effectiveSide = true;
-		bool centeredSide = true;
-		bool centeredSideLatched = false;
-		bool cancelSideSwitchBatch = false;
-	};
-
-	[[nodiscard]] inline BarBottomDockMainBarSideDecision
-		ResolveBarBottomDockMainBarSideDecision(
-			bool centeredExpanded, bool requestedSide,
-			bool currentLayoutSide, bool stablePresentedSide,
-			bool centeredSideLatched, bool centeredSide,
-			bool sideSwitchBatchActive,
-			bool sideSwitchKeyframePresent) noexcept
-	{
-		if (!centeredExpanded)
-			return { requestedSide, centeredSide, false, false };
-
-		const bool lockedSide = centeredSideLatched
-			? centeredSide : stablePresentedSide;
-		return {
-			lockedSide,
-			lockedSide,
-			true,
-			sideSwitchBatchActive || sideSwitchKeyframePresent
-				|| currentLayoutSide != lockedSide,
-		};
-	}
-
-	[[nodiscard]] inline bool ShouldCommitBarBottomDockStableMainBarSide(
-		bool presentSucceeded, bool mainBarExpanded,
-		bool centeredExpanded, bool sideSwitchBatchActive,
-		bool mainBarTimelineActive, bool mainBarXSettled,
-		bool mainBarWidthSettled,
-		bool sideSwitchKeyframePresent) noexcept
-	{
-		return presentSucceeded && mainBarExpanded && !centeredExpanded
-			&& sideSwitchBatchActive && !mainBarTimelineActive
-			&& mainBarXSettled && mainBarWidthSettled
-			&& !sideSwitchKeyframePresent;
-	}
-
-	[[nodiscard]] inline bool ShouldQueueBarBottomDockCenteredLayoutRebase(
-		bool verticallyDocked, BarBottomDockCenterMode centerMode,
-		BarBottomDockPhase centerPhase, bool dragActive,
-		bool mainBarExpanded, bool mainBarTimelineActive,
-		bool mainBarXSettled, bool mainBarWidthSettled,
-		bool centerSpringActive, bool farEdgeSpringActive,
-		bool displayPositionSettled, bool rebasePending,
-		bool rebaseInFlight, double correctionDip) noexcept
-	{
-		return verticallyDocked
-			&& centerMode == BarBottomDockCenterMode::Centered
-			&& centerPhase == BarBottomDockPhase::Stable
-			&& !dragActive && mainBarExpanded
-			&& !mainBarTimelineActive
-			&& mainBarXSettled && mainBarWidthSettled
-			&& !centerSpringActive && !farEdgeSpringActive
-			&& displayPositionSettled
-			&& !rebasePending && !rebaseInFlight
-			&& std::isfinite(correctionDip)
-			&& std::abs(correctionDip) > 0.000001;
-	}
-
-	struct BarBottomDockCenteredLayoutRebaseState
-	{
-		double correctionDip = 0.0;
-		bool pending = false;
-		bool inFlight = false;
-	};
-
-	[[nodiscard]] inline BarBottomDockCenteredLayoutRebaseState
-		QueueBarBottomDockCenteredLayoutRebase(
-			BarBottomDockCenteredLayoutRebaseState state,
-			double correctionDip) noexcept
-	{
-		if (state.pending || state.inFlight || !std::isfinite(correctionDip)
-			|| std::abs(correctionDip) <= 0.000001)
-			return state;
-		state.correctionDip = correctionDip;
-		state.pending = true;
-		return state;
-	}
-
-	[[nodiscard]] inline BarBottomDockCenteredLayoutRebaseState
-		BeginBarBottomDockCenteredLayoutRebase(
-			BarBottomDockCenteredLayoutRebaseState state) noexcept
-	{
-		if (state.pending && !state.inFlight)
-			state.inFlight = true;
-		return state;
-	}
-
-	[[nodiscard]] inline BarBottomDockCenteredLayoutRebaseState
-		CompleteBarBottomDockCenteredLayoutRebase(
-			BarBottomDockCenteredLayoutRebaseState state,
-			bool presentSucceeded) noexcept
-	{
-		if (!state.inFlight) return state;
-		state.inFlight = false;
-		if (presentSucceeded)
-		{
-			state.pending = false;
-			state.correctionDip = 0.0;
-		}
-		return state;
-	}
-
-	[[nodiscard]] inline BarBottomDockHorizontalMapping
-		TranslateBarBottomDockHorizontalMapping(
-			BarBottomDockHorizontalMapping mapping,
-			double translationDip) noexcept
-	{
-		translationDip = std::isfinite(translationDip) ? translationDip : 0.0;
-		mapping.visualLeftDip += translationDip;
-		mapping.visualRightDip += translationDip;
-		mapping.rigidGripTranslationXDip += translationDip;
-		mapping.rigidOverlayTranslationXDip += translationDip;
-		return mapping;
 	}
 
 	[[nodiscard]] inline BarBottomDockHorizontalMapping

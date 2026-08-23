@@ -124,6 +124,23 @@ int RunBarBottomDockTests()
 		&& ResolveBarMainBarRightSide(499.99, 1000.0)
 		&& !ResolveBarMainBarRightSide(500.01, 1000.0),
 		"main bar reverses only after crossing the horizontal center line");
+	Check(!ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Centered, 100.0, 1000.0, false)
+		&& ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Centered, 900.0, 1000.0, true)
+		&& ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Free, 900.0, 0.0, true)
+		&& !ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Free, 100.0,
+			std::numeric_limits<double>::quiet_NaN(), false)
+		&& ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Free, 900.0,
+			std::numeric_limits<double>::infinity(), true)
+		&& ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Free, 100.0, 1000.0, false)
+		&& !ResolveBarBottomDockPositionMainBarSide(
+			BarBottomDockCenterMode::Free, 900.0, 1000.0, true),
+		"centered and invalid-width position updates preserve the current layout side");
 	const BarBottomDockFeedbackGeometry dockMainButtonBounds{
 		-40.0, 608.0, 40.0, 688.0 };
 	const BarBottomDockFeedbackGeometry dockMainBarBounds{
@@ -491,124 +508,82 @@ int RunBarBottomDockTests()
 		&& Near(leftExpandedStretch.visualRightDip, 440.0)
 		&& Near(rightExpandedStretch.rigidGripTranslationXDip, -20.0),
 		"horizontal jelly moves the near edge with the rigid grip and fixes the far edge");
-	const double animatedCenterCorrection =
-		ResolveBarBottomDockCenteredLayoutCorrectionDip(
+	Check(ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true, 930.0, 960.0);
-	const auto centeredAnimatedMapping =
-		TranslateBarBottomDockHorizontalMapping(
-			ResolveBarBottomDockHorizontalMapping(
-				800.0, 1060.0, true, 0.0),
-			animatedCenterCorrection);
-	Check(Near(animatedCenterCorrection, 30.0)
-		&& Near((centeredAnimatedMapping.visualLeftDip
-			+ centeredAnimatedMapping.visualRightDip) / 2.0, 960.0)
-		&& Near(centeredAnimatedMapping.rigidGripTranslationXDip, 30.0)
-		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Capturing, true, true, 930.0, 960.0), 0.0)
-		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Capturing, false, true, 930.0, 960.0), 0.0)
-		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			BarBottomDockPhase::Stable, false, true,
+			false, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			false, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Free,
-			BarBottomDockPhase::Stable, false, true, 930.0, 960.0), 0.0)
-		&& Near(ResolveBarBottomDockCenteredLayoutCorrectionDip(
+			BarBottomDockPhase::Stable, false, true,
+			false, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
 			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, false, 930.0, 960.0), 0.0),
-		"stable centered layout translates the animated union without retargeting drag frames");
+			BarBottomDockPhase::Capturing, false, true,
+			false, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, true, true,
+			false, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, false,
+			false, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			true, false, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, false)
+		&& !ShouldDeriveBarBottomDockCenteredRoot(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true),
+		"only a stable idle centered bottom dock derives the root position");
+	const auto centeredRight = ResolveBarBottomDockCenteredRootPlacement(
+		960.0, 80.0, 250.0, 400.0);
+	const auto centeredLeft = ResolveBarBottomDockCenteredRootPlacement(
+		960.0, 80.0, -250.0, 400.0);
+	const auto centeredStroke = ResolveBarBottomDockCenteredRootPlacement(
+		960.0, 82.0, 251.0, 402.0);
+	const auto invalidCenteredRoot = ResolveBarBottomDockCenteredRootPlacement(
+		960.0, 0.0, 250.0, 400.0);
+	const auto centeredRootRange = ResolveBarBottomDockCenteredRootRange(
+		960.0, 82.0, 82.0, 150.0, 251.0, 202.0, 402.0);
+	const auto invalidCenteredRootRange = ResolveBarBottomDockCenteredRootRange(
+		960.0, 82.0, 82.0, 251.0, 150.0, 202.0, 402.0);
+	Check(centeredRight.valid && Near(centeredRight.mainCenterDip, 755.0)
+		&& Near(centeredRight.bodyLeftDip, 715.0)
+		&& Near(centeredRight.bodyRightDip, 1205.0)
+		&& Near((centeredRight.bodyLeftDip + centeredRight.bodyRightDip)
+			/ 2.0, 960.0)
+		&& centeredLeft.valid && Near(centeredLeft.mainCenterDip, 1165.0)
+		&& Near(centeredLeft.bodyLeftDip, 715.0)
+		&& Near(centeredLeft.bodyRightDip, 1205.0),
+		"centered root preserves the visible union center on either side");
+	Check(centeredStroke.valid
+		&& Near(centeredStroke.mainCenterDip, 754.5)
+		&& Near((centeredStroke.bodyLeftDip + centeredStroke.bodyRightDip)
+			/ 2.0, 960.0)
+		&& !invalidCenteredRoot.valid,
+		"centered root includes visible strokes and rejects invalid geometry");
+	Check(centeredRootRange.valid
+		&& Near(centeredRootRange.minimumDip, 754.5)
+		&& Near(centeredRootRange.maximumDip, 860.0)
+		&& centeredStroke.mainCenterDip >= centeredRootRange.minimumDip
+		&& centeredStroke.mainCenterDip <= centeredRootRange.maximumDip
+		&& !invalidCenteredRootRange.valid,
+		"centered root range conservatively reserves the full animated parent travel");
 	Check(ResolveBarBottomDockInitialMainBarSide(false, false)
 		&& ResolveBarBottomDockInitialMainBarSide(false, true)
 		&& !ResolveBarBottomDockInitialMainBarSide(true, false)
 		&& ResolveBarBottomDockInitialMainBarSide(true, true),
 		"desktop initial placement opens right while whiteboard preserves its side");
-	const auto freeSideDecision = ResolveBarBottomDockMainBarSideDecision(
-		false, false, true, true, true, true, false, false);
-	const auto centeredSideDecision = ResolveBarBottomDockMainBarSideDecision(
-		true, false, false, true, false, false, true, true);
-	const auto retainedCenteredSideDecision =
-		ResolveBarBottomDockMainBarSideDecision(
-			true, false, true, false, true, true, false, false);
-	Check(!freeSideDecision.effectiveSide
-		&& !freeSideDecision.centeredSideLatched
-		&& centeredSideDecision.effectiveSide
-		&& centeredSideDecision.centeredSide
-		&& centeredSideDecision.centeredSideLatched
-		&& centeredSideDecision.cancelSideSwitchBatch
-		&& retainedCenteredSideDecision.effectiveSide
-		&& retainedCenteredSideDecision.centeredSideLatched
-		&& !retainedCenteredSideDecision.cancelSideSwitchBatch,
-		"centered layout latches the last successfully presented side and cancels stale switching");
-	Check(!ShouldCommitBarBottomDockStableMainBarSide(
-			false, true, false, true, false, true, true, false)
-		&& !ShouldCommitBarBottomDockStableMainBarSide(
-			true, true, true, true, false, true, true, false)
-		&& !ShouldCommitBarBottomDockStableMainBarSide(
-			true, true, false, true, true, true, true, false)
-		&& !ShouldCommitBarBottomDockStableMainBarSide(
-			true, true, false, true, false, false, true, false)
-		&& !ShouldCommitBarBottomDockStableMainBarSide(
-			true, true, false, true, false, true, false, false)
-		&& !ShouldCommitBarBottomDockStableMainBarSide(
-			true, true, false, true, false, true, true, true)
-		&& ShouldCommitBarBottomDockStableMainBarSide(
-			true, true, false, true, false, true, true, false),
-		"stable side advances only after a settled non-centered switch is presented");
-	Check(!ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			true, true, true, false, false, true, false, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, false, true, false, false, true, false, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, false, false, false, true, false, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, true, true, false, true, false, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, true, false, true, true, false, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, true, false, false, false, false, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, true, false, false, true, true, false, 30.0)
-		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, true, false, false, true, false, true, 30.0)
-		&& ShouldQueueBarBottomDockCenteredLayoutRebase(
-			true, BarBottomDockCenterMode::Centered,
-			BarBottomDockPhase::Stable, false, true,
-			false, true, true, false, false, true, false, false, 30.0),
-		"centered rebase waits for layout, springs, display position, and an idle transaction");
-	auto rebase = QueueBarBottomDockCenteredLayoutRebase({}, 30.0);
-	const auto ignoredQueue = QueueBarBottomDockCenteredLayoutRebase(rebase, 40.0);
-	rebase = BeginBarBottomDockCenteredLayoutRebase(rebase);
-	const auto failedRebase = CompleteBarBottomDockCenteredLayoutRebase(
-		rebase, false);
-	const auto retriedRebase = BeginBarBottomDockCenteredLayoutRebase(
-		failedRebase);
-	const auto committedRebase = CompleteBarBottomDockCenteredLayoutRebase(
-		retriedRebase, true);
-	Check(rebase.pending && rebase.inFlight && Near(rebase.correctionDip, 30.0)
-		&& ignoredQueue.pending && !ignoredQueue.inFlight
-		&& Near(ignoredQueue.correctionDip, 30.0)
-		&& failedRebase.pending && !failedRebase.inFlight
-		&& Near(failedRebase.correctionDip, 30.0)
-		&& retriedRebase.pending && retriedRebase.inFlight
-		&& !committedRebase.pending && !committedRebase.inFlight
-		&& Near(committedRebase.correctionDip, 0.0),
-		"centered rebase retries the same tuple after failure and clears only on success");
 	const auto horizontalCaptureStart = ResolveBarBottomDockHorizontalMapping(
 		180.0, 500.0, true, -20.0, -20.0);
 	const double detachedFarOffset = ResolveBarBottomDockRebasedFarEdgeOffsetDip(
@@ -677,11 +652,15 @@ int RunBarBottomDockTests()
 		&& publishingFrameTranslation.x == 10
 		&& publishingFrameTranslation.y == 20,
 		"stale or in-flight transition frames retain their matching translation");
+	const double mappedHorizontalSample = MapBarBottomDockBodyPixelX(
+		315.0, rightExpandedStretch, 1.5);
 	const double mappedSample = MapBarBottomDockBodyPixelY(
 		67.5, stretched, 1.5);
-	Check(Near(UnmapBarBottomDockBodyPixelY(
-		mappedSample, stretched, 1.5), 67.5),
-		"body hit testing is the exact inverse of drawing");
+	Check(Near(UnmapBarBottomDockBodyPixelX(
+			mappedHorizontalSample, rightExpandedStretch, 1.5), 315.0)
+		&& Near(UnmapBarBottomDockBodyPixelY(
+			mappedSample, stretched, 1.5), 67.5),
+		"body hit testing inverts both non-identity drawing axes");
 	const auto bodyLight = ResolveBarBottomDockBodyLocalLight(
 		240.0, mappedSample, 90.0, stretched, 1.5);
 	Check(Near(MapBarBottomDockBodyPixelY(

@@ -498,9 +498,11 @@ struct BarBottomDockPresentedSnapshot;
 - 横纵 mode、phase、elastic offset、直接窗口位移和显示环境共用 `bottomDockTransitionSerial` 的同一发布事务。交互线程必须先计算完整两轴候选，再发布偶数稳定 serial；渲染线程不得提交只包含一轴新状态的帧。
 - 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平 tracker 的输入必须是指针驱动、未形变的主体中心；形态呈现 barrier 只能确认窗口位移已提交，不得用视觉主体中心改写抓取偏移或 tracker 基准。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。
 - 主按钮及 Logo 使用水平刚性抓手映射并保留既有竖向果冻；主栏背景、普通按钮、图标和文字使用独立二维主体映射。主栏近端随抓手移动，远端吸附稳定居中边界：右向展开从中心左侧进入时拉伸、越过中心后压缩，左向展开镜像；捕获、脱离和恢复中重新捕获的远端都必须从上一成功像素按新旧 HWND 位移反推。绘制、dirty、viewport/capacity、PointLight 逆映射、第三光源接受区和命中必须按刚性抓手/主体映射分类；两轴 24 DIP 视觉限值、Gaussian 外扩和抗锯齿余量都进入保守包络。
-- 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。渲染线程分别维护当前布局目标、最后成功稳定呈现方向、居中会话锁存方向和显式换向批次；进入居中只锁存最后成功稳定方向，只有非居中真实换向完全收敛并成功呈现后才能推进稳定方向。
-- 居中展开帧必须在动画推进前检查显式换向批次，以及主栏、按钮位置、图标/文字透明度和边框光透明度上的完整换向中点。发现遗留批次时，从当前视觉值重启普通布局批次，并对主栏 `x/w/pct/framePct`、按钮位置、按钮/图标/文字透明度和边框光透明度显式提交 `forceRestart + nullopt`；展开使用 `EaseOutBack`，收缩使用 `EaseOutCubic`。不得改变动画值类型的全局同目标语义，主按钮点击脉冲等独立关键帧仍须保留。
-- 非拖动的 `BottomDocked + Centered + Expanded` 每帧以当前插值联合外框求中心补偿并统一平移水平映射。重基准资格必须同时等待主栏时间线、主栏 `x/w`、显示位置动画和水平弹簧全部收敛，且无 pending/in-flight 事务。补偿成功显示后只排队；下一强制帧在提交前吸收主按钮/display center/committed anchor，并以完整 dirty、空 `prcDirty` 执行整窗 ULW 替换。失败时恢复锚点、映射、补偿、方向 tuple 和 pending 后重试，成功后才发布匹配命中快照并清除事务；pending/in-flight 不得关闭最终休眠 latch，成功后还必须自动提交一次紧致 viewport 空闲帧。
+- 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。稳定居中展开时保持渲染线程当前布局方向，不得因动态 HWND 包络重新换边；离开居中后普通换向仍按既有关键帧执行。
+- 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时只有有限且大于零的窗口宽度才允许按中轴重新分类。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
+- `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或显示切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因居中而重启，属性面板、More、Popup 和提示框不得参与中心计算。捕获、拖拽、脱离、恢复、Free、浮动、折叠、白板放置和显示切换继续由原状态机持有根位置。
+- 稳定居中不得再维护逐帧 layout correction、补偿平移、pending/in-flight rebase、方向锁存或遗留换向清理状态。viewport 预测必须从主栏 `x/w` 和描边的完整动画 range 保守反推根节点 X range，并把该 range 传播给主按钮、主栏及继承子视觉；禁止用全局 correction outset 扩张包络来代替真实父几何范围。
+- 一次二维主体命中必须先捕获一个成功呈现快照，再由同一 tuple 同时逆映射 X/Y；禁止两个轴分别读取 `BottomDockPresentedSnapshot()`，否则并发发布可能组合出从未成功呈现的映射。普通主栏按钮使用主体 X/Y，More 等刚性覆盖层继续使用原始刚性坐标，不能为复用而原地改写消息。
 - 提示资格在手势内锁存：浮动主栏真实进入底栏，或 `Free / Centered` 发生任意双向切换时建立；底栏内起拖但未发生转换时不显示。资格建立后，Free 阶段显示“底栏模式”，Centered 阶段显示“底栏模式 · 居中”；只有松手、折叠、取消或竖向脱离时清除，同一手势重新进入底栏可以再次建立。文案变宽必须先完成外框扩宽再交换文字，变窄必须先完成文字交换再缩窄外框；命中仍只发布成功呈现的实际外框。首次激活帧即使缩放仍为零，也必须把上次成功外框、当前外框和覆盖 Back 峰值、描边、第一/第三光源、Gaussian 与抗锯齿的完整包络并入 damage；失败呈现保留该 damage。
 - 指示器的锚点是底栏二维映射的下游几何。映射变化时，只要指示器正在显示、退场或仍有上次成功边界，就必须标记其稳定视觉键并观察同源完整光影包络；不得因指示器自身文字、样式和显隐进度未变而跳过旧新边界 damage。
 - 点击后的悬停抑制以物理屏幕坐标为准：窗口重基准产生的同坐标相对消息不得重新悬停；同一识别区域内只要收到一次真实屏幕坐标变化的 `WM_MOUSEMOVE` 就必须解除抑制，点击不是恢复条件。
@@ -514,13 +516,16 @@ struct BarBottomDockPresentedSnapshot;
 | 竖向脱离或主栏折叠 | 水平停止捕获并连续恢复，不保留不可见约束 |
 | 底栏起始手势 `Free → Centered → Free → Centered` | 提示矩形持续可见，文案在普通/居中之间按防裁切时序双向切换 |
 | 呈现或直接移动失败 | 两轴成功快照都不推进，下帧从旧 tuple 完整恢复 |
-| 居中态仍有换向 `middleV` | 推进动画前清除全部换向中点，从当前视觉值进入普通同步布局批次 |
-| 居中重基准 ULW 失败 | 锚点、映射、补偿、方向和命中快照全部保持上一成功 tuple，pending 继续重试 |
+| 稳定居中主栏 `x/w` 正在变化 | 每帧从当前值反推主按钮根节点，联合可见中心保持显示器中点 |
+| 捕获、拖拽、弹簧或显示切换 | 禁止根节点反推，原位置所有者继续工作 |
+| 居中态或窗口宽度为 0/非有限 | `PositionUpdate()` 保持当前布局方向，不创建换向批次 |
+| 呈现快照在一次 hover 换算期间更新 | 本次 X/Y 仍全部使用已捕获的旧成功 tuple；下一消息再使用新 tuple |
+| ULW/EndDraw 失败 | 现有 dirty/present 事务保留重试；不存在额外居中 rebase 状态 |
 
 #### 5. Tests Required
 
 - Headless 覆盖水平 `-40/0/+40 DIP` 边界、严格越界、高速跨带、横纵同帧捕获、折叠门禁、展开自动捕获、左右展开联合外框和 100%/150% DPI；竖向 20 DIP 边界另行保持。
-- Headless 覆盖二维中心不变量、动画中布局补偿、桌面/白板初始方向、稳定方向成功推进、居中换向批次取消、两阶段重基准失败重试、扩展面板锚点、首次显现完整光影包络、失败快照，以及浮动进入/底栏双向切换/未切换手势的提示资格。
+- Headless 覆盖稳定居中根节点所有权矩阵、左右展开、可见描边、无效几何、Draw → Selection 宽度单调与逐帧联合中心不变量、桌面/白板初始方向、零宽/非有限宽度方向保持、主体 X/Y 非恒等映射往返、扩展面板锚点、首次显现完整光影包络、失败快照，以及浮动进入/底栏双向切换/未切换手势的提示资格。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工检查横纵果冻叠加、脏区调试、动画关闭和多显示器切换。
 
 #### 6. Wrong vs Correct
@@ -534,6 +539,22 @@ bottomDockCenterMode.store(nextHorizontal);
 BeginBottomDockTransition();
 PublishBottomDockAxes(nextVertical, nextHorizontal, translation);
 EndBottomDockTransition();
+~~~
+
+~~~cpp
+// Wrong：先平移视觉映射补偿中心，再等待未来成功帧把补偿吸收进根节点。
+mapping = Translate(mapping, center - VisualBodyCenter(mapping));
+QueueCenteredLayoutRebase(mapping.translation);
+
+// Correct：主栏动画先正常推进，稳定居中态直接从当前子几何反推根节点。
+const auto placement = ResolveCenteredRoot(
+	monitorCenter, buttonVisibleWidth, mainBar.x.val, mainBarVisibleWidth);
+mainButton.x.SetDirect(placement.mainCenterDip);
+mainBar.Inherit(Center, mainButton);
+
+// 二维命中仍必须从一次成功快照同时逆映射两轴。
+const auto presented = BottomDockPresentedSnapshot();
+const POINT body = UnmapBodyPoint(msg.x, msg.y, presented);
 ~~~
 
 ### UI3 共享设备、串行帧与光影缓存契约

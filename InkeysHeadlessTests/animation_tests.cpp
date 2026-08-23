@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+
 import Inkeys.UI.Bar.Animation;
 
 int RunWakeSignalTests();
@@ -674,6 +676,55 @@ namespace
 		Check(Near(value.startV, interruptedAt), "interruption captures current visual value");
 		Check(value.SetTar(20.0, 1.0, std::nullopt, true),
 			"force restart accepts the same target");
+
+		// 模拟 Draw 到 Selection：主栏自身只推进 x/w，根节点每帧由联合边界反推。
+		BarUiValueClass centeredCollapseX(250.0);
+		BarUiValueClass centeredCollapseWidth(400.0);
+		const BarUiCurveSpecClass centeredCollapseCurve{
+			BarUiCurveEnum::EaseOutCubic,
+			BarUiCurveEnum::EaseOutCubic,
+			0.0,
+			false,
+		};
+		bool collapseWidthMonotonic = true;
+		bool centeredBodyInvariant = true;
+		double previousCollapseWidth = centeredCollapseWidth.val;
+		double previousRootCenter = 0.0;
+		bool rootMovedWithCollapse = false;
+		centeredCollapseX.SetTar(
+			150.0, 0.4, std::nullopt, false, centeredCollapseCurve);
+		centeredCollapseWidth.SetTar(
+			200.0, 0.4, std::nullopt, false, centeredCollapseCurve);
+		for (int frame = 0; frame < 30; ++frame)
+		{
+			BarUiAdvanceAnimation(centeredCollapseX,
+				BarUiAnimationAdvanceContextClass{
+					1.0 / 60.0, 1.0, true, false });
+			BarUiAdvanceAnimation(centeredCollapseWidth,
+				BarUiAnimationAdvanceContextClass{
+					1.0 / 60.0, 1.0, true, false });
+			const auto placement =
+				Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootPlacement(
+					960.0, 80.0, centeredCollapseX.val,
+					centeredCollapseWidth.val);
+			collapseWidthMonotonic &= centeredCollapseWidth.val
+				<= previousCollapseWidth + 0.000001;
+			centeredBodyInvariant &= placement.valid
+				&& Near((placement.bodyLeftDip + placement.bodyRightDip)
+					/ 2.0, 960.0);
+			if (frame > 0)
+				rootMovedWithCollapse |= placement.mainCenterDip
+					> previousRootCenter + 0.000001;
+			previousCollapseWidth = centeredCollapseWidth.val;
+			previousRootCenter = placement.mainCenterDip;
+		}
+		Check(collapseWidthMonotonic && centeredBodyInvariant
+			&& rootMovedWithCollapse && centeredCollapseX.IsSame()
+			&& centeredCollapseWidth.IsSame()
+			&& Near(centeredCollapseX.val, 150.0)
+			&& Near(centeredCollapseWidth.val, 200.0)
+			&& Near(previousRootCenter, 855.0),
+			"centered Draw to Selection collapse keeps every presented union centered");
 
 		BarUiValueClass middle(0.0);
 		middle.SetTar(1.0, 1.0, 0.8);

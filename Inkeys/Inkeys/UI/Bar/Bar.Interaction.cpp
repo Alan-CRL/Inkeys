@@ -2409,8 +2409,28 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					UpdateRendering(false);
 
 				BarButtonClass* currentHoveredButton = nullptr;
-				const int mainBodyHitTestY =
-					barUISet.BottomDockBodyHitTestYFromRigid(msg.y);
+				// 普通主栏的双轴命中必须来自同一个成功呈现 tuple。
+				const auto mainBodyPresented =
+					barUISet.BottomDockPresentedSnapshot();
+				const int mainBodyVisualX = static_cast<int>(lround(
+					static_cast<double>(msg.x)
+						+ mainBodyPresented.horizontalMapping
+							.rigidOverlayTranslationXDip
+							* mainBodyPresented.zoom));
+				const int mainBodyVisualY = static_cast<int>(lround(
+					static_cast<double>(msg.y)
+						+ mainBodyPresented.rigidTranslationDip
+							* mainBodyPresented.zoom));
+				const int mainBodyHitTestX = static_cast<int>(lround(
+					Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelX(
+						static_cast<double>(mainBodyVisualX),
+						mainBodyPresented.horizontalMapping,
+						mainBodyPresented.zoom)));
+				const int mainBodyHitTestY = static_cast<int>(lround(
+					Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
+						static_cast<double>(mainBodyVisualY),
+						mainBodyPresented.mapping,
+						mainBodyPresented.zoom)));
 				if (!barState.fold && !colorPickerOccludes
 					&& !penTypeMenuOccludes)
 				{
@@ -2424,7 +2444,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							&& temp->name.content.GetTar().substr(0, 7) == L"__color";
 						if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
 						if (temp->button.IsClick(
-							msg.x, mainBodyHitTestY, barStyle.zoom))
+							mainBodyHitTestX, mainBodyHitTestY, barStyle.zoom))
 						{
 							currentHoveredButton = temp;
 							break;

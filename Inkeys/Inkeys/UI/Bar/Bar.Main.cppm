@@ -265,7 +265,6 @@ struct BarBottomDockPresentedSnapshot
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	Inkeys::UI::Bar::BarBottomDockHorizontalMapping horizontalMapping{};
 	double centerElasticOffsetDip = 0.0;
-	double centeredLayoutCorrectionDip = 0.0;
 	double elasticOffsetDip = 0.0;
 	double rigidTranslationDip = 0.0;
 	double zoom = 1.0;
@@ -464,9 +463,6 @@ public:
 					memory_order_relaxed);
 			snapshot.centerElasticOffsetDip =
 				bottomDockPresentedCenterElasticOffsetDip.load(memory_order_relaxed);
-			snapshot.centeredLayoutCorrectionDip =
-				bottomDockPresentedCenteredLayoutCorrectionDip.load(
-					memory_order_relaxed);
 			snapshot.zoom = Inkeys::UI::Bar::NormalizeBarBottomDockZoom(
 				bottomDockPresentedZoom.load(memory_order_relaxed));
 			snapshot.monitorOrigin = POINT{
@@ -764,7 +760,6 @@ protected:
 	atomic<Inkeys::UI::Bar::BarBottomDockPhase> bottomDockPresentedCenterPhase =
 		Inkeys::UI::Bar::BarBottomDockPhase::Stable;
 	atomic<double> bottomDockPresentedCenterElasticOffsetDip = 0.0;
-	atomic<double> bottomDockPresentedCenteredLayoutCorrectionDip = 0.0;
 	atomic<double> bottomDockPresentedBaseLeftDip = 0.0;
 	atomic<double> bottomDockPresentedBaseRightDip = 0.0;
 	atomic<double> bottomDockPresentedVisualLeftDip = 0.0;

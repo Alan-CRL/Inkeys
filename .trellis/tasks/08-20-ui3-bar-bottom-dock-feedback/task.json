@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "08-23-ui3-centered-bar-collapse-animation-root-fix"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

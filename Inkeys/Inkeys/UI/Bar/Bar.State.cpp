@@ -20,13 +20,16 @@ void BarStateClass::PositionUpdate(double tarZoom)
 	}
 	if (barUISet.IsBottomDockLayoutLocked())
 	{
-		// 拖动中逻辑坐标不变；抬手吸收 x 后允许按中轴触发现有横向换边动画。
-		double x = barUISet.superellipseMap[
-			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
-		double monW = static_cast<double>(barUISet.barWindow.w);
-		widgetPosition.mainBar = Inkeys::UI::Bar::ResolveBarMainBarRightSide(x, monW);
 		// 底栏及脱离回弹阶段仍强制次级面板向上，避免纵向翻边。
 		widgetPosition.primaryBar = false;
+		const auto presented = barUISet.BottomDockPresentedSnapshot();
+		const double x = barUISet.superellipseMap[
+			BarUISetSuperellipseEnum::MainButton]->GetX() * tarZoom;
+		const double windowWidth = static_cast<double>(barUISet.barWindow.w);
+		widgetPosition.mainBar =
+			Inkeys::UI::Bar::ResolveBarBottomDockPositionMainBarSide(
+				presented.centerMode, x, windowWidth,
+				widgetPosition.mainBar);
 		return;
 	}
 
