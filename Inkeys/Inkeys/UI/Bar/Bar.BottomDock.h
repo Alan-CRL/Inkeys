@@ -792,6 +792,122 @@ namespace Inkeys::UI::Bar
 		return monitorCenterDip - currentBodyCenterDip;
 	}
 
+	[[nodiscard]] inline bool ResolveBarBottomDockInitialMainBarSide(
+		bool whiteboardPlacement, bool currentSide) noexcept
+	{
+		// 桌面首次放置固定为主按钮居左；白板入口继续沿用自己的方向。
+		return whiteboardPlacement ? currentSide : true;
+	}
+
+	struct BarBottomDockMainBarSideDecision
+	{
+		bool effectiveSide = true;
+		bool centeredSide = true;
+		bool centeredSideLatched = false;
+		bool cancelSideSwitchBatch = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockMainBarSideDecision
+		ResolveBarBottomDockMainBarSideDecision(
+			bool centeredExpanded, bool requestedSide,
+			bool currentLayoutSide, bool stablePresentedSide,
+			bool centeredSideLatched, bool centeredSide,
+			bool sideSwitchBatchActive,
+			bool sideSwitchKeyframePresent) noexcept
+	{
+		if (!centeredExpanded)
+			return { requestedSide, centeredSide, false, false };
+
+		const bool lockedSide = centeredSideLatched
+			? centeredSide : stablePresentedSide;
+		return {
+			lockedSide,
+			lockedSide,
+			true,
+			sideSwitchBatchActive || sideSwitchKeyframePresent
+				|| currentLayoutSide != lockedSide,
+		};
+	}
+
+	[[nodiscard]] inline bool ShouldCommitBarBottomDockStableMainBarSide(
+		bool presentSucceeded, bool mainBarExpanded,
+		bool centeredExpanded, bool sideSwitchBatchActive,
+		bool mainBarTimelineActive, bool mainBarXSettled,
+		bool mainBarWidthSettled,
+		bool sideSwitchKeyframePresent) noexcept
+	{
+		return presentSucceeded && mainBarExpanded && !centeredExpanded
+			&& sideSwitchBatchActive && !mainBarTimelineActive
+			&& mainBarXSettled && mainBarWidthSettled
+			&& !sideSwitchKeyframePresent;
+	}
+
+	[[nodiscard]] inline bool ShouldQueueBarBottomDockCenteredLayoutRebase(
+		bool verticallyDocked, BarBottomDockCenterMode centerMode,
+		BarBottomDockPhase centerPhase, bool dragActive,
+		bool mainBarExpanded, bool mainBarTimelineActive,
+		bool mainBarXSettled, bool mainBarWidthSettled,
+		bool centerSpringActive, bool farEdgeSpringActive,
+		bool displayPositionSettled, bool rebasePending,
+		bool rebaseInFlight, double correctionDip) noexcept
+	{
+		return verticallyDocked
+			&& centerMode == BarBottomDockCenterMode::Centered
+			&& centerPhase == BarBottomDockPhase::Stable
+			&& !dragActive && mainBarExpanded
+			&& !mainBarTimelineActive
+			&& mainBarXSettled && mainBarWidthSettled
+			&& !centerSpringActive && !farEdgeSpringActive
+			&& displayPositionSettled
+			&& !rebasePending && !rebaseInFlight
+			&& std::isfinite(correctionDip)
+			&& std::abs(correctionDip) > 0.000001;
+	}
+
+	struct BarBottomDockCenteredLayoutRebaseState
+	{
+		double correctionDip = 0.0;
+		bool pending = false;
+		bool inFlight = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockCenteredLayoutRebaseState
+		QueueBarBottomDockCenteredLayoutRebase(
+			BarBottomDockCenteredLayoutRebaseState state,
+			double correctionDip) noexcept
+	{
+		if (state.pending || state.inFlight || !std::isfinite(correctionDip)
+			|| std::abs(correctionDip) <= 0.000001)
+			return state;
+		state.correctionDip = correctionDip;
+		state.pending = true;
+		return state;
+	}
+
+	[[nodiscard]] inline BarBottomDockCenteredLayoutRebaseState
+		BeginBarBottomDockCenteredLayoutRebase(
+			BarBottomDockCenteredLayoutRebaseState state) noexcept
+	{
+		if (state.pending && !state.inFlight)
+			state.inFlight = true;
+		return state;
+	}
+
+	[[nodiscard]] inline BarBottomDockCenteredLayoutRebaseState
+		CompleteBarBottomDockCenteredLayoutRebase(
+			BarBottomDockCenteredLayoutRebaseState state,
+			bool presentSucceeded) noexcept
+	{
+		if (!state.inFlight) return state;
+		state.inFlight = false;
+		if (presentSucceeded)
+		{
+			state.pending = false;
+			state.correctionDip = 0.0;
+		}
+		return state;
+	}
+
 	[[nodiscard]] inline BarBottomDockHorizontalMapping
 		TranslateBarBottomDockHorizontalMapping(
 			BarBottomDockHorizontalMapping mapping,

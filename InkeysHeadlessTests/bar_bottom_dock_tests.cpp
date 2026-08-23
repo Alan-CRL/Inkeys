@@ -517,6 +517,98 @@ int RunBarBottomDockTests()
 			true, BarBottomDockCenterMode::Centered,
 			BarBottomDockPhase::Stable, false, false, 930.0, 960.0), 0.0),
 		"stable centered layout translates the animated union without retargeting drag frames");
+	Check(ResolveBarBottomDockInitialMainBarSide(false, false)
+		&& ResolveBarBottomDockInitialMainBarSide(false, true)
+		&& !ResolveBarBottomDockInitialMainBarSide(true, false)
+		&& ResolveBarBottomDockInitialMainBarSide(true, true),
+		"desktop initial placement opens right while whiteboard preserves its side");
+	const auto freeSideDecision = ResolveBarBottomDockMainBarSideDecision(
+		false, false, true, true, true, true, false, false);
+	const auto centeredSideDecision = ResolveBarBottomDockMainBarSideDecision(
+		true, false, false, true, false, false, true, true);
+	const auto retainedCenteredSideDecision =
+		ResolveBarBottomDockMainBarSideDecision(
+			true, false, true, false, true, true, false, false);
+	Check(!freeSideDecision.effectiveSide
+		&& !freeSideDecision.centeredSideLatched
+		&& centeredSideDecision.effectiveSide
+		&& centeredSideDecision.centeredSide
+		&& centeredSideDecision.centeredSideLatched
+		&& centeredSideDecision.cancelSideSwitchBatch
+		&& retainedCenteredSideDecision.effectiveSide
+		&& retainedCenteredSideDecision.centeredSideLatched
+		&& !retainedCenteredSideDecision.cancelSideSwitchBatch,
+		"centered layout latches the last successfully presented side and cancels stale switching");
+	Check(!ShouldCommitBarBottomDockStableMainBarSide(
+			false, true, false, true, false, true, true, false)
+		&& !ShouldCommitBarBottomDockStableMainBarSide(
+			true, true, true, true, false, true, true, false)
+		&& !ShouldCommitBarBottomDockStableMainBarSide(
+			true, true, false, true, true, true, true, false)
+		&& !ShouldCommitBarBottomDockStableMainBarSide(
+			true, true, false, true, false, false, true, false)
+		&& !ShouldCommitBarBottomDockStableMainBarSide(
+			true, true, false, true, false, true, false, false)
+		&& !ShouldCommitBarBottomDockStableMainBarSide(
+			true, true, false, true, false, true, true, true)
+		&& ShouldCommitBarBottomDockStableMainBarSide(
+			true, true, false, true, false, true, true, false),
+		"stable side advances only after a settled non-centered switch is presented");
+	Check(!ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			true, true, true, false, false, true, false, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, false, true, false, false, true, false, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, false, false, false, true, false, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, true, false, true, false, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, false, true, true, false, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, false, false, false, false, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, false, false, true, true, false, 30.0)
+		&& !ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, false, false, true, false, true, 30.0)
+		&& ShouldQueueBarBottomDockCenteredLayoutRebase(
+			true, BarBottomDockCenterMode::Centered,
+			BarBottomDockPhase::Stable, false, true,
+			false, true, true, false, false, true, false, false, 30.0),
+		"centered rebase waits for layout, springs, display position, and an idle transaction");
+	auto rebase = QueueBarBottomDockCenteredLayoutRebase({}, 30.0);
+	const auto ignoredQueue = QueueBarBottomDockCenteredLayoutRebase(rebase, 40.0);
+	rebase = BeginBarBottomDockCenteredLayoutRebase(rebase);
+	const auto failedRebase = CompleteBarBottomDockCenteredLayoutRebase(
+		rebase, false);
+	const auto retriedRebase = BeginBarBottomDockCenteredLayoutRebase(
+		failedRebase);
+	const auto committedRebase = CompleteBarBottomDockCenteredLayoutRebase(
+		retriedRebase, true);
+	Check(rebase.pending && rebase.inFlight && Near(rebase.correctionDip, 30.0)
+		&& ignoredQueue.pending && !ignoredQueue.inFlight
+		&& Near(ignoredQueue.correctionDip, 30.0)
+		&& failedRebase.pending && !failedRebase.inFlight
+		&& Near(failedRebase.correctionDip, 30.0)
+		&& retriedRebase.pending && retriedRebase.inFlight
+		&& !committedRebase.pending && !committedRebase.inFlight
+		&& Near(committedRebase.correctionDip, 0.0),
+		"centered rebase retries the same tuple after failure and clears only on success");
 	const auto horizontalCaptureStart = ResolveBarBottomDockHorizontalMapping(
 		180.0, 500.0, true, -20.0, -20.0);
 	const double detachedFarOffset = ResolveBarBottomDockRebasedFarEdgeOffsetDip(
