@@ -519,6 +519,16 @@ public:
 		return static_cast<int>(lround(static_cast<double>(visualY)
 			- snapshot.rigidTranslationDip * snapshot.zoom));
 	}
+	POINT BottomDockRigidHitTestPoint(POINT visualPoint) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const auto resolved = Inkeys::UI::Bar::
+			ResolveBarBottomDockRigidHitTestPoint(
+				visualPoint.x, visualPoint.y, snapshot.horizontalMapping,
+				snapshot.mapping, snapshot.zoom);
+		return POINT{ static_cast<LONG>(lround(resolved.logicalX)),
+			static_cast<LONG>(lround(resolved.logicalY)) };
+	}
 	int BottomDockRigidVisualY(int rigidY) const noexcept
 	{
 		const auto snapshot = BottomDockPresentedSnapshot();
@@ -602,6 +612,34 @@ public:
 			Inkeys::UI::Bar::UnmapBarBottomDockBodyPixelY(
 				static_cast<double>(resolvedVisualY), snapshot.mapping,
 				snapshot.zoom)));
+	}
+	POINT BottomDockBodyHitTestPointFromRigid(POINT rigidPoint,
+		POINT* visualPoint = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const auto resolved = Inkeys::UI::Bar::
+			ResolveBarBottomDockBodyHitTestPointFromRigid(
+				rigidPoint.x, rigidPoint.y, snapshot.horizontalMapping,
+				snapshot.mapping, snapshot.zoom);
+		if (visualPoint)
+			*visualPoint = POINT{ static_cast<LONG>(lround(resolved.visualX)),
+				static_cast<LONG>(lround(resolved.visualY)) };
+		return POINT{ static_cast<LONG>(lround(resolved.logicalX)),
+			static_cast<LONG>(lround(resolved.logicalY)) };
+	}
+	POINT BottomDockGripHitTestPointFromRigid(POINT rigidPoint,
+		POINT* visualPoint = nullptr) const noexcept
+	{
+		const auto snapshot = BottomDockPresentedSnapshot();
+		const auto resolved = Inkeys::UI::Bar::
+			ResolveBarBottomDockGripHitTestPointFromRigid(
+				rigidPoint.x, rigidPoint.y, snapshot.horizontalMapping,
+				snapshot.mapping, snapshot.zoom);
+		if (visualPoint)
+			*visualPoint = POINT{ static_cast<LONG>(lround(resolved.visualX)),
+				static_cast<LONG>(lround(resolved.visualY)) };
+		return POINT{ static_cast<LONG>(lround(resolved.logicalX)),
+			static_cast<LONG>(lround(resolved.logicalY)) };
 	}
 	RECT BottomDockBodyVisualBounds(RECT bounds) const noexcept
 	{

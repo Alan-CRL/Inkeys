@@ -254,11 +254,13 @@ void ApplyBarBottomDockRigidHitTest(ExMessage& message)
 	if (!IsBarCoordinateMessage(message.message)
 		|| IsBarTouchScreenMessage(message))
 		return;
+	const POINT logicalPoint = barUISet.BottomDockRigidHitTestPoint(
+		POINT{ message.x, message.y });
 	message.y = static_cast<short>(clamp(
-		barUISet.BottomDockRigidHitTestY(message.y),
+		static_cast<int>(logicalPoint.y),
 		static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
 	message.x = static_cast<short>(clamp(
-		barUISet.BottomDockRigidHitTestX(message.x),
+		static_cast<int>(logicalPoint.x),
 		static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
 }
 
@@ -272,12 +274,16 @@ void ApplyBarBottomDockBodyHitTestFromRigid(
 		if (visualX) *visualX = message.x;
 		return;
 	}
+	POINT visualPoint{};
+	const POINT logicalPoint = barUISet.BottomDockBodyHitTestPointFromRigid(
+		POINT{ message.x, message.y }, &visualPoint);
+	if (visualY) *visualY = visualPoint.y;
+	if (visualX) *visualX = visualPoint.x;
 	message.y = static_cast<short>(clamp(
-		barUISet.BottomDockBodyHitTestYFromRigid(
-			message.y, visualY),
+		static_cast<int>(logicalPoint.y),
 		static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
 	message.x = static_cast<short>(clamp(
-		barUISet.BottomDockBodyHitTestXFromRigid(message.x, visualX),
+		static_cast<int>(logicalPoint.x),
 		static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
 }
 
@@ -3173,14 +3179,18 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			int visualMessageX = rigidMessageX;
 			int visualMessageY = rigidMessageY;
 			ExMessage gripMessage = msg;
+			POINT gripVisualPoint{};
+			const POINT gripLogicalPoint =
+				barUISet.BottomDockGripHitTestPointFromRigid(
+					POINT{ rigidMessageX, rigidMessageY }, &gripVisualPoint);
 			gripMessage.x = static_cast<short>(clamp(
-				barUISet.BottomDockGripHitTestXFromRigid(
-					rigidMessageX, &visualMessageX),
+				static_cast<int>(gripLogicalPoint.x),
 				static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
 			gripMessage.y = static_cast<short>(clamp(
-				barUISet.BottomDockBodyHitTestYFromRigid(
-					rigidMessageY, &visualMessageY),
+				static_cast<int>(gripLogicalPoint.y),
 				static_cast<int>(SHRT_MIN), static_cast<int>(SHRT_MAX)));
+			visualMessageX = gripVisualPoint.x;
+			visualMessageY = gripVisualPoint.y;
 
 			// 普通主栏控件继续使用主体逆映射，主按钮单独使用刚性抓手逆映射。
 			ApplyBarBottomDockBodyHitTestFromRigid(

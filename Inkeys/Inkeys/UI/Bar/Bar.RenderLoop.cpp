@@ -238,6 +238,8 @@ using Inkeys::UI::Bar::ResolveBarBottomDockCenterScreenY;
 using Inkeys::UI::Bar::ResolveBarBottomDockCapacityEnvelope;
 using Inkeys::UI::Bar::ResolveBarBottomDockElasticOffsetForScreenGrip;
 using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
+	using Inkeys::UI::Bar::ShouldDeferBarBottomDockReleaseHandoff;
+	using Inkeys::UI::Bar::ShouldForceBarFullWindowReplacement;
 	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
 	using Inkeys::UI::Bar::ResolveBarBottomDockLine;
 	using Inkeys::UI::Bar::BarWhiteboardBottomInsetDip;
@@ -9453,9 +9455,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				candidateViewport.bottom - candidateViewport.top },
 			state.capacitySize,
 			epoch.generation };
-		const bool requiresFullReplacement =
-			state.presentMappingTracker.Resolve(candidatePresentMapping)
-				== BarPresentMappingMode::FullReplacement;
+		const BarPresentMappingMode presentMappingMode =
+			state.presentMappingTracker.Resolve(candidatePresentMapping);
 		POINT committedSource{};
 		if (state.viewportController.Initialized())
 		{
@@ -9473,7 +9474,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				!= committedViewport.right - committedViewport.left
 			|| candidateViewport.bottom - candidateViewport.top
 				!= committedViewport.bottom - committedViewport.top;
-		if (viewportMappingChanged || requiresFullReplacement)
+		const bool forceFullWindowReplacement =
+			ShouldForceBarFullWindowReplacement(
+				viewportMappingChanged, presentMappingMode);
+		if (forceFullWindowReplacement)
 		{
 			// 映射 tuple 变化会重新解释整张 HWND，本帧必须清除并替换完整候选范围。
 			state.dirtyRegionTracker.ForceFullDamage();
@@ -9490,12 +9494,12 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		RECT debugTarget = debugDamage.frameTarget;
 		RECT currentDebugFrameBounds = debugModeEnabled ? debugTarget : RECT{};
 		RECT presentDirty = debugDamage.presentDamage;
-		if (requiresFullReplacement) presentDirty = candidateViewport;
-		if ((viewportMappingChanged || state.debugOverlayRefreshPending)
+		if (forceFullWindowReplacement) presentDirty = candidateViewport;
+		if ((forceFullWindowReplacement || state.debugOverlayRefreshPending)
 			&& !IsBarWindowRectEmpty(state.lastPresentedDebugWindowBounds))
 			UnionBarWindowRect(presentDirty,
 				state.lastPresentedDebugWindowBounds);
-		if (debugModeEnabled && (viewportMappingChanged
+		if (debugModeEnabled && (forceFullWindowReplacement
 			|| state.debugOverlayRefreshPending))
 			UnionBarWindowRect(presentDirty, candidateViewport);
 		presentDirty = IntersectBarWindowRect(presentDirty, candidateViewport);
@@ -12386,13 +12390,17 @@ bool presetButton = button.presetIndex >= 0;
 			const POINT latestDirectTranslation{
 				owner_.directWindowDragTranslationX.load(memory_order_acquire),
 				owner_.directWindowDragTranslationY.load(memory_order_acquire) };
+			const POINT presentedDirectTranslation{
+				owner_.directWindowPresentedTranslationX.load(memory_order_acquire),
+				owner_.directWindowPresentedTranslationY.load(memory_order_acquire) };
 			const auto transitionSerialAfter =
 				owner_.bottomDockTransitionSerial.load(memory_order_acquire);
+			// 过期帧留在锁内读取到的实际 HWND 位置，不能把交互线程的直移拉回旧帧。
 			directTranslation = ResolveBarBottomDockFrameTranslation(
 				state.bottomDockFrameTransitionSerial,
 				transitionSerialBefore, transitionSerialAfter,
 				latestDirectTranslation,
-				state.bottomDockFrameTransitionTranslation);
+				presentedDirectTranslation);
 			presentedDestination = {
 				state.monitorOrigin.x + candidateViewport.left + directTranslation.x,
 				state.monitorOrigin.y + candidateViewport.top + directTranslation.y };
@@ -12410,7 +12418,7 @@ bool presetButton = button.presetIndex >= 0;
 					ulwi.psize = &presentedSize;
 					ulwi.pptSrc = &ptSrc;
 					ulwi.hdcSrc = hdc;
-					ulwi.prcDirty = requiresFullReplacement ? nullptr : &target;
+					ulwi.prcDirty = forceFullWindowReplacement ? nullptr : &target;
 					updateLayeredWindowSucceeded =
 						UpdateLayeredWindowIndirect(floating_window, &ulwi);
 					if (!updateLayeredWindowSucceeded)
@@ -12818,6 +12826,14 @@ BarRenderLoopCoordinator::RenderFrame(
 			owner_.directWindowDragTranslationY.load(memory_order_relaxed) };
 		if (owner_.bottomDockTransitionSerial.load(memory_order_acquire)
 			== frame.bottomDockTransitionSerial) break;
+	}
+	if (ShouldDeferBarBottomDockReleaseHandoff(
+		frame.bottomDockDragActive,
+		expectedPhase == BarDirectWindowDragPhase::Dragging,
+		directTranslationPending))
+	{
+		// 松手 tuple 已发布但直移所有权尚未交接，下一帧必须先吸收再布局。
+		return FrameResult::Retry;
 	}
 	frame.bottomDockLayoutLocked =
 		frame.bottomDockMode == BarBottomDockMode::BottomDocked

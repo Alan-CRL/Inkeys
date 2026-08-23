@@ -16,6 +16,7 @@ namespace
 	using Inkeys::UI::Bar::BarPresentMappingTracker;
 	using Inkeys::UI::Bar::BarPresentMappingTuple;
 	using Inkeys::UI::Bar::IsBarSharedDeviceLost;
+	using Inkeys::UI::Bar::ShouldForceBarFullWindowReplacement;
 
 	int failureCount = 0;
 
@@ -298,6 +299,13 @@ namespace
 		tracker.CommitPresented(baseline);
 		Check(tracker.Resolve(baseline) == BarPresentMappingMode::LocalDirty,
 			"stable successful mapping allows local dirty");
+		Check(!ShouldForceBarFullWindowReplacement(
+				false, BarPresentMappingMode::LocalDirty)
+			&& ShouldForceBarFullWindowReplacement(
+				true, BarPresentMappingMode::LocalDirty)
+			&& ShouldForceBarFullWindowReplacement(
+				false, BarPresentMappingMode::FullReplacement),
+			"viewport and present mapping share one full replacement decision");
 
 		constexpr std::array changedMappings{
 			BarPresentMappingTuple{

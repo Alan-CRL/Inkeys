@@ -990,6 +990,14 @@ namespace Inkeys::UI::Bar
 		return valuePx - mapping.rigidGripTranslationXDip * zoom;
 	}
 
+	struct BarBottomDockHitTestPoint
+	{
+		double logicalX = 0.0;
+		double logicalY = 0.0;
+		double visualX = 0.0;
+		double visualY = 0.0;
+	};
+
 	[[nodiscard]] inline double MapBarBottomDockBodyPixelY(
 		double valuePx, const BarBottomDockVerticalMapping& mapping,
 		double zoom) noexcept
@@ -1004,6 +1012,65 @@ namespace Inkeys::UI::Bar
 	{
 		zoom = NormalizeBarBottomDockZoom(zoom);
 		return mapping.UnmapY(valuePx / zoom) * zoom;
+	}
+
+	[[nodiscard]] inline BarBottomDockHitTestPoint
+		ResolveBarBottomDockRigidHitTestPoint(double visualX, double visualY,
+			const BarBottomDockHorizontalMapping& horizontalMapping,
+			const BarBottomDockVerticalMapping& verticalMapping,
+			double zoom) noexcept
+	{
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		return {
+			visualX - horizontalMapping.rigidOverlayTranslationXDip * zoom,
+			visualY - verticalMapping.rigidOverlayTranslationYDip * zoom,
+			visualX,
+			visualY,
+		};
+	}
+
+	[[nodiscard]] inline BarBottomDockHitTestPoint
+		ResolveBarBottomDockBodyHitTestPointFromRigid(
+			double rigidX, double rigidY,
+			const BarBottomDockHorizontalMapping& horizontalMapping,
+			const BarBottomDockVerticalMapping& verticalMapping,
+			double zoom) noexcept
+	{
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		const double visualX = std::round(rigidX
+			+ horizontalMapping.rigidOverlayTranslationXDip * zoom);
+		const double visualY = std::round(rigidY
+			+ verticalMapping.rigidOverlayTranslationYDip * zoom);
+		return {
+			UnmapBarBottomDockBodyPixelX(
+				visualX, horizontalMapping, zoom),
+			UnmapBarBottomDockBodyPixelY(
+				visualY, verticalMapping, zoom),
+			visualX,
+			visualY,
+		};
+	}
+
+	[[nodiscard]] inline BarBottomDockHitTestPoint
+		ResolveBarBottomDockGripHitTestPointFromRigid(
+			double rigidX, double rigidY,
+			const BarBottomDockHorizontalMapping& horizontalMapping,
+			const BarBottomDockVerticalMapping& verticalMapping,
+			double zoom) noexcept
+	{
+		zoom = NormalizeBarBottomDockZoom(zoom);
+		const double visualX = std::round(rigidX
+			+ horizontalMapping.rigidOverlayTranslationXDip * zoom);
+		const double visualY = std::round(rigidY
+			+ verticalMapping.rigidOverlayTranslationYDip * zoom);
+		return {
+			UnmapBarBottomDockGripPixelX(
+				visualX, horizontalMapping, zoom),
+			UnmapBarBottomDockBodyPixelY(
+				visualY, verticalMapping, zoom),
+			visualX,
+			visualY,
+		};
 	}
 
 	struct BarBottomDockLocalLightGeometry
@@ -1212,17 +1279,25 @@ namespace Inkeys::UI::Bar
 				<= dockCenterScreenY + toleranceScreenPx;
 	}
 
+	[[nodiscard]] constexpr bool ShouldDeferBarBottomDockReleaseHandoff(
+		bool dragActive, bool directDragStillOwnsWindow,
+		bool directTranslationPending) noexcept
+	{
+		return !dragActive && directDragStillOwnsWindow
+			&& directTranslationPending;
+	}
+
 	[[nodiscard]] inline POINT ResolveBarBottomDockFrameTranslation(
 		unsigned long long frameTransitionSerial,
 		unsigned long long observedSerialBefore,
 		unsigned long long observedSerialAfter,
-		POINT latestTranslation, POINT frameTranslation) noexcept
+		POINT latestTranslation, POINT presentedTranslation) noexcept
 	{
 		// serial 为偶数且提交前后未变化时，最新位移仍属于当前形态。
 		const bool frameStillCurrent = (frameTransitionSerial & 1ULL) == 0
 			&& observedSerialBefore == frameTransitionSerial
 			&& observedSerialAfter == frameTransitionSerial;
-		return frameStillCurrent ? latestTranslation : frameTranslation;
+		return frameStillCurrent ? latestTranslation : presentedTranslation;
 	}
 
 	[[nodiscard]] inline BarBottomDockVerticalMapping

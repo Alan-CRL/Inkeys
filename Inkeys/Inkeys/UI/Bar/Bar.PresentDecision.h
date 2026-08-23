@@ -15,6 +15,14 @@ namespace Inkeys::UI::Bar
 		FullReplacement,
 	};
 
+	[[nodiscard]] constexpr bool ShouldForceBarFullWindowReplacement(
+		bool viewportMappingChanged,
+		BarPresentMappingMode presentMappingMode) noexcept
+	{
+		return viewportMappingChanged
+			|| presentMappingMode == BarPresentMappingMode::FullReplacement;
+	}
+
 	struct BarPresentMappingTuple
 	{
 		POINT source{};

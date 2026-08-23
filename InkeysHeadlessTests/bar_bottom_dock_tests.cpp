@@ -639,19 +639,24 @@ int RunBarBottomDockTests()
 			false, 1040.0, 1039.25, 1039.0),
 		"downward release re-docks only when the visible constraint blocks it");
 	const POINT latestTranslation{ 30, 40 };
-	const POINT frameTranslation{ 10, 20 };
+	const POINT presentedTranslation{ 17, 23 };
 	const POINT currentFrameTranslation = ResolveBarBottomDockFrameTranslation(
-		4, 4, 4, latestTranslation, frameTranslation);
+		4, 4, 4, latestTranslation, presentedTranslation);
 	Check(currentFrameTranslation.x == 30 && currentFrameTranslation.y == 40,
 		"current transition frame may consume the latest drag translation");
 	const POINT staleFrameTranslation = ResolveBarBottomDockFrameTranslation(
-		4, 6, 6, latestTranslation, frameTranslation);
+		4, 6, 6, latestTranslation, presentedTranslation);
 	const POINT publishingFrameTranslation = ResolveBarBottomDockFrameTranslation(
-		4, 5, 5, latestTranslation, frameTranslation);
-	Check(staleFrameTranslation.x == 10 && staleFrameTranslation.y == 20
-		&& publishingFrameTranslation.x == 10
-		&& publishingFrameTranslation.y == 20,
-		"stale or in-flight transition frames retain their matching translation");
+		4, 5, 5, latestTranslation, presentedTranslation);
+	Check(staleFrameTranslation.x == 17 && staleFrameTranslation.y == 23
+		&& publishingFrameTranslation.x == 17
+		&& publishingFrameTranslation.y == 23,
+		"stale or in-flight transition frames retain the actual HWND translation");
+	Check(ShouldDeferBarBottomDockReleaseHandoff(false, true, true)
+		&& !ShouldDeferBarBottomDockReleaseHandoff(true, true, true)
+		&& !ShouldDeferBarBottomDockReleaseHandoff(false, false, true)
+		&& !ShouldDeferBarBottomDockReleaseHandoff(false, true, false),
+		"release waits only while pending direct translation still owns the window");
 	const double mappedHorizontalSample = MapBarBottomDockBodyPixelX(
 		315.0, rightExpandedStretch, 1.5);
 	const double mappedSample = MapBarBottomDockBodyPixelY(
@@ -661,6 +666,30 @@ int RunBarBottomDockTests()
 		&& Near(UnmapBarBottomDockBodyPixelY(
 			mappedSample, stretched, 1.5), 67.5),
 		"body hit testing inverts both non-identity drawing axes");
+	const BarBottomDockHorizontalMapping hitHorizontal{
+		10.0, 110.0, 30.0, 90.0, 0.6, 12.0, -8.0 };
+	const BarBottomDockVerticalMapping hitVertical{
+		20.0, 100.0, 35.0, 95.0, 0.75, 0.0, 6.0 };
+	const auto rigidHit = ResolveBarBottomDockRigidHitTestPoint(
+		180.0, 150.0, hitHorizontal, hitVertical, 1.5);
+	const auto bodyHit = ResolveBarBottomDockBodyHitTestPointFromRigid(
+		rigidHit.logicalX, rigidHit.logicalY,
+		hitHorizontal, hitVertical, 1.5);
+	const auto gripHit = ResolveBarBottomDockGripHitTestPointFromRigid(
+		rigidHit.logicalX, rigidHit.logicalY,
+		hitHorizontal, hitVertical, 1.5);
+	Check(Near(rigidHit.logicalX, 192.0)
+		&& Near(rigidHit.logicalY, 141.0)
+		&& Near(bodyHit.visualX, 180.0)
+		&& Near(bodyHit.visualY, 150.0)
+		&& Near(bodyHit.logicalX,
+			UnmapBarBottomDockBodyPixelX(180.0, hitHorizontal, 1.5))
+		&& Near(bodyHit.logicalY,
+			UnmapBarBottomDockBodyPixelY(150.0, hitVertical, 1.5))
+		&& Near(gripHit.logicalX,
+			UnmapBarBottomDockGripPixelX(180.0, hitHorizontal, 1.5))
+		&& Near(gripHit.logicalY, bodyHit.logicalY),
+		"combined body and grip hit tests map both axes from one tuple");
 	const auto bodyLight = ResolveBarBottomDockBodyLocalLight(
 		240.0, mappedSample, 90.0, stretched, 1.5);
 	Check(Near(MapBarBottomDockBodyPixelY(
