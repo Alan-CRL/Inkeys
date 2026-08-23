@@ -91,3 +91,24 @@ Separated remembered Laser selection from the active top-level tool, removed pen
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: Fix centered bar expand and collapse animation
+
+**Date**: 2026-08-23
+**Task**: Fix centered bar expand and collapse animation
+**Branch**: `draw`
+
+### Summary
+
+Stable centered bottom-dock frames now derive the main-button root from animated main-bar geometry before descendant layout; removed correction/rebase state, preserved input mapping, and passed ARM64 Debug build plus headless tests.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `07849596` | (see git log) |
+
+### Status
+
+[OK] **Completed**
