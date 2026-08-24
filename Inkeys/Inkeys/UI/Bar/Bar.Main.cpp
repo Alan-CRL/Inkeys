@@ -45,7 +45,7 @@ namespace
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
 }
-extern constexpr double BarButtonHoverFadeDur = 5.0;
+extern constexpr double BarButtonHoverFadeDur = BarButtonHoverFadeDurationSeconds;
 // Rendering 与 topology 共享同一组 module-linkage 常量，拆分后不复制数值。
 extern constexpr double BarDrawAttributeExpandedHeight = 185.0;
 extern constexpr double BarDrawAttributeCompactWidth = 60.0;

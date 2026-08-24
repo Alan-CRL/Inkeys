@@ -15,6 +15,7 @@
 | HLSL source/output | `.vcxproj`, `.rc`, `resource.h`, `.hlsl/.hlsli`, `.cso` |
 | Transparent fallback | `transparent_presentation.cppm`, `transparent_presentation.cpp` |
 | Input controls | `window_control.cppm`, `window_control.cpp`, `README.md` |
+| UI3 Bar 按钮行为 | `native-desktop/rendering-and-ui.md` 的 “PageControl 与 Bar 按钮单一来源合同”；Main Bar 与跨 HWND PageControl 必须调用同一运行时，独立资源不得复制行为 |
 
 ## Existing Helpers to Reuse
 
@@ -38,5 +39,6 @@
 - [ ] 搜索过被修改的名称和值。
 - [ ] 所有 CPU/GPU 镜像已列出并同步。
 - [ ] 没有重新实现现有矩形、操作层或日志帮助函数。
+- [ ] 跨 HWND 复用 UI3 Bar 按钮时，Main Bar 与消费者调用同一 layout/interaction/advance/draw/hit/damage 入口，而不是只共享常量、类型或底层绘图原语。
 - [ ] 抽取没有把语义不同的工具或 presenter 强行合并。
 - [ ] README、架构说明和 Spec 中的稳定规则已同步。

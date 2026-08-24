@@ -51,7 +51,16 @@ namespace Inkeys::UI::PageControl
 		constexpr WidgetId PreviousWidget = 2;
 		constexpr WidgetId PageWidget = 3;
 		constexpr WidgetId NextWidget = 4;
-		constexpr auto LayoutTransitionDuration = 240ms;
+		[[nodiscard]] double LayoutTransitionDurationSeconds() noexcept
+		{
+			return BarButtonDefaultOperationDurationSeconds;
+		}
+
+		[[nodiscard]] std::chrono::milliseconds LayoutTransitionWallDuration() noexcept
+		{
+			return std::chrono::milliseconds(static_cast<long long>(std::lround(
+				LayoutTransitionDurationSeconds() * 1000.0)));
+		}
 		constexpr auto LongPressDelay = 500ms;
 		constexpr auto LongPressInterval = 120ms;
 		constexpr auto ExternalPressDuration = 110ms;
@@ -269,8 +278,7 @@ namespace Inkeys::UI::PageControl
 				BarThemeModeEnum::Dark, BarThemeColorEnum::Surface);
 			background.frame = GetThemeColor(
 				BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame);
-			background.cornerRadiusDip = whiteboard
-				? BarMainBarCornerRadiusDip : BarButtonCornerRadiusDip;
+			background.cornerRadiusDip = BarMainBarCornerRadiusDip;
 			background.frameThicknessDip =
 				BarButtonFrameThicknessDip;
 			background.fillOpacity = BarMainBarFillOpacity;
@@ -283,60 +291,67 @@ namespace Inkeys::UI::PageControl
 			const PptState& ppt, const WhiteboardState& whiteboard)
 		{
 			std::vector<WidgetSpec> widgets(4);
+			const auto inputPolicy = ResolveWorkspaceInputPolicy(mode);
 			auto& drag = widgets[0];
 			drag.id = DragWidget;
 			drag.kind = Inkeys::UI::Bar::BarSurfaceWidgetKind::DragHandle;
 			drag.visible = mode != WorkspaceMode::Hidden;
-			drag.enabled = drag.visible;
-			drag.interactive = drag.visible;
+			drag.enabled = inputPolicy.drag;
+			drag.interactive = inputPolicy.drag;
+			drag.dragOpacity = mode == WorkspaceMode::PptCompact ? 0.72 : 0.0;
 			ApplyDarkTheme(drag);
 
 			auto& previous = widgets[1];
 			previous.id = PreviousWidget;
-			previous.iconResource = L"barMore";
-			previous.iconSizeDip = mode == WorkspaceMode::WhiteboardExpanded
-				? BarButtonTwoTwoIconSizeDip : 18.0;
+			previous.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
+				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo
+				: Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardOneOne;
+			const auto previousContent = ResolveDirectionContentPolicy(
+				mode, false, false);
+			previous.iconResource = previousContent.icon;
+			previous.secondaryText = previousContent.label;
 			previous.onClick = [index] { InvokeDirection(index, false); };
 			ApplyDarkTheme(previous);
 
 			auto& page = widgets[2];
 			page.id = PageWidget;
-			page.primaryFontSizeDip = mode == WorkspaceMode::WhiteboardExpanded
-				? 28.0 : 15.0;
-			page.secondaryFontSizeDip = mode == WorkspaceMode::WhiteboardExpanded
-				? 13.0 : 13.0;
+			page.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
+				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo
+				: (index >= 2
+					? Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageVertical
+					: Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageHorizontal);
 			ApplyDarkTheme(page);
 
 			auto& next = widgets[3];
 			next.id = NextWidget;
-			next.iconSizeDip = mode == WorkspaceMode::WhiteboardExpanded
-				? BarButtonTwoTwoIconSizeDip : 18.0;
+			next.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
+				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo
+				: Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardOneOne;
+			const auto nextContent = ResolveDirectionContentPolicy(
+				mode, true, whiteboard.nextIsAdd);
+			next.iconResource = nextContent.icon;
+			next.secondaryText = nextContent.label;
 			next.onClick = [index] { InvokeDirection(index, true); };
 			ApplyDarkTheme(next);
 
 			if (mode == WorkspaceMode::WhiteboardExpanded)
 			{
-				// 白板仍只呈现三枚按钮；页码按钮顶部 10 DIP 复用为专属拖动条。
-				drag.bounds = { 80.0, 5.0, 150.0, 15.0 };
+				// Whiteboard 固定三枚真实 2x2 按钮；PPT-only Drag 槽向外侧收拢。
+				drag.bounds = index == 0
+					? Inkeys::UI::Bar::BarSurfaceDipRect{ 5.0, 5.0, 5.0, 75.0 }
+					: Inkeys::UI::Bar::BarSurfaceDipRect{ 225.0, 5.0, 225.0, 75.0 };
 				previous.bounds = { 5.0, 5.0, 75.0, 75.0 };
 				page.bounds = { 80.0, 5.0, 150.0, 75.0 };
 				next.bounds = { 155.0, 5.0, 225.0, 75.0 };
 				previous.enabled = whiteboard.previousEnabled;
 				previous.interactive = whiteboard.previousInteractive;
-				previous.secondaryText = L"左翻页";
 				previous.iconAngle = -90.0;
 				page.enabled = whiteboard.pageEnabled;
 				page.interactive = whiteboard.pageInteractive;
 				page.primaryText = std::to_wstring(whiteboard.currentPage);
 				page.secondaryText = L"/" + std::to_wstring(whiteboard.totalPage);
-				page.primaryOffsetYDip = -10.0;
-				page.primarySlotHeightDip = 28.0;
-				page.secondaryOffsetYDip = 20.0;
-				page.secondarySlotHeightDip = 25.0;
 				next.enabled = whiteboard.nextEnabled;
 				next.interactive = whiteboard.nextInteractive;
-				next.secondaryText = whiteboard.nextIsAdd ? L"加页" : L"右翻页";
-				next.iconResource = whiteboard.nextIsAdd ? L"barAdd" : L"barMore";
 				next.iconAngle = whiteboard.nextIsAdd ? 0.0 : 90.0;
 			}
 			else
@@ -356,22 +371,16 @@ namespace Inkeys::UI::PageControl
 				{
 					previous.iconAngle = 180.0;
 					next.iconAngle = 0.0;
-					page.primaryOffsetYDip = -10.0;
-					page.secondaryOffsetYDip = 10.0;
 				}
 				else if (right)
 				{
 					previous.iconAngle = -90.0;
 					next.iconAngle = 90.0;
-					page.primaryOffsetXDip = -13.0;
-					page.secondaryOffsetXDip = 13.0;
 				}
 				else
 				{
 					previous.iconAngle = -90.0;
 					next.iconAngle = 90.0;
-					page.primaryOffsetXDip = -13.0;
-					page.secondaryOffsetXDip = 13.0;
 				}
 				previous.enabled = previous.interactive = true;
 				page.enabled = page.interactive = true;
@@ -379,8 +388,6 @@ namespace Inkeys::UI::PageControl
 				const int maximum = vertical ? 999 : 9999;
 				page.primaryText = PageNumber(ppt.currentPage, maximum);
 				page.secondaryText = L"/" + PageNumber(ppt.totalPage, maximum);
-				page.primarySlotHeightDip = 18.0;
-				page.secondarySlotHeightDip = 18.0;
 			}
 			return widgets;
 		}
@@ -420,7 +427,8 @@ namespace Inkeys::UI::PageControl
 			const double elapsed = std::chrono::duration<double, std::milli>(
 				now - animation.started).count();
 			const double progress = (std::clamp)(elapsed
-				/ static_cast<double>(LayoutTransitionDuration.count()), 0.0, 1.0);
+				/ static_cast<double>(LayoutTransitionWallDuration().count()),
+				0.0, 1.0);
 			const double value = Ease(progress);
 			auto Mix = [value](double start, double target)
 			{
@@ -492,16 +500,6 @@ namespace Inkeys::UI::PageControl
 			return result;
 		}
 
-		[[nodiscard]] std::optional<RECT> MainBarObstacle() noexcept
-		{
-			const HWND hwnd = Inkeys::Window::GetService().Handle(WindowRole::Bar);
-			RECT bounds{};
-			if (!hwnd || !IsWindowVisible(hwnd) || !GetWindowRect(hwnd, &bounds)
-				|| bounds.right <= bounds.left || bounds.bottom <= bounds.top)
-				return std::nullopt;
-			return bounds;
-		}
-
 		void ConfigureSurface(std::size_t index, WorkspaceMode desiredMode,
 			const PptState& ppt, const WhiteboardState& whiteboard,
 			const RECT& monitor, const ResolvedSurfaceLayout& target,
@@ -530,8 +528,9 @@ namespace Inkeys::UI::PageControl
 				if (fadeAtTarget)
 				{
 					state.scene.SetOpacity(1.0,
-						static_cast<double>(LayoutTransitionDuration.count()));
-					state.layoutTransitionUntil = now + LayoutTransitionDuration;
+						LayoutTransitionDurationSeconds());
+					state.layoutTransitionUntil = now
+						+ LayoutTransitionWallDuration();
 				}
 				state.sceneConfigured = true;
 				state.configuredMode = visualMode;
@@ -544,10 +543,10 @@ namespace Inkeys::UI::PageControl
 				const bool animateLayout = ShouldAnimateWorkspaceLayout(SurfaceFor(index),
 						state.configuredMode, visualMode, state.targetVisible);
 				(void)state.scene.TransitionLayout(background, widgets,
-					animateLayout
-						? static_cast<double>(LayoutTransitionDuration.count()) : 0.0);
+					animateLayout ? LayoutTransitionDurationSeconds() : 0.0);
 				if (modeChanged)
-					state.layoutTransitionUntil = now + LayoutTransitionDuration;
+					state.layoutTransitionUntil = now
+						+ LayoutTransitionWallDuration();
 				state.configuredMode = visualMode;
 				state.observedRevision = revision;
 			}
@@ -579,8 +578,9 @@ namespace Inkeys::UI::PageControl
 			if (state.targetVisible != wasVisible)
 			{
 				state.scene.SetOpacity(state.targetVisible ? 1.0 : 0.0,
-					static_cast<double>(LayoutTransitionDuration.count()));
-				state.layoutTransitionUntil = now + LayoutTransitionDuration;
+					LayoutTransitionDurationSeconds());
+				state.layoutTransitionUntil = now
+					+ LayoutTransitionWallDuration();
 			}
 			const bool animateBounds = state.bounds.initialized
 				&& (wasVisible || state.targetVisible)
@@ -775,40 +775,16 @@ namespace Inkeys::UI::PageControl
 			return result;
 		}
 
-		[[nodiscard]] bool DragLayoutCollides(Surface moved,
+		[[nodiscard]] bool DragLayoutCollides(
 			const RECT& monitor, float dpiScale, const PptState& source,
-			const WhiteboardState& whiteboard,
 			const PptLayoutState& layout) noexcept
 		{
 			PptState candidate = source;
 			candidate.layout = layout;
 			const LONG gap = static_cast<LONG>(std::lround(
 				PageControlGapDip * NormalizeScale(dpiScale)));
-			const bool bottom = moved == Surface::BottomLeft
-				|| moved == Surface::BottomRight;
-			const std::array<Surface, 2> group = bottom
-				? std::array<Surface, 2>{ Surface::BottomLeft, Surface::BottomRight }
-				: std::array<Surface, 2>{ Surface::MiddleLeft, Surface::MiddleRight };
-			const std::array<Surface, 2> other = bottom
-				? std::array<Surface, 2>{ Surface::MiddleLeft, Surface::MiddleRight }
-				: std::array<Surface, 2>{ Surface::BottomLeft, Surface::BottomRight };
-			const auto obstacle = MainBarObstacle();
-			for (const Surface item : group)
-			{
-				const auto current = ResolveSurfaceLayout(item, monitor,
-					dpiScale, candidate, whiteboard);
-				if (obstacle.has_value()
-					&& OverlapsWithGap(current.logicalBounds, *obstacle, gap))
-					return true;
-				for (const Surface otherItem : other)
-				{
-					const auto otherLayout = ResolveSurfaceLayout(otherItem,
-						monitor, dpiScale, candidate, whiteboard);
-					if (otherLayout.visible && OverlapsWithGap(current.logicalBounds,
-						otherLayout.logicalBounds, gap)) return true;
-				}
-			}
-			return false;
+			return PageControlGroupsOverlap(
+				monitor, dpiScale, candidate, gap);
 		}
 
 		void SetBoundsDirect(AnimatedBounds& bounds, const RECT& target,
@@ -884,17 +860,15 @@ namespace Inkeys::UI::PageControl
 			const RECT monitor = PrimaryBounds();
 			const float dpiScale = DpiScale(nullptr);
 			PptState ppt;
-			WhiteboardState whiteboard;
 			{
 				std::scoped_lock lock(snapshotMutex);
 				ppt = publishedPpt;
-				whiteboard = publishedWhiteboard;
 			}
 			candidate = ClampPageControlLayout(moved, monitor,
-				dpiScale, whiteboard, candidate);
+				dpiScale, candidate);
 			const PptLayoutState previousLayout = state.feasibleLayout;
-			if (DragLayoutCollides(moved, monitor, dpiScale,
-				ppt, whiteboard, candidate)) candidate = state.feasibleLayout;
+			if (DragLayoutCollides(monitor, dpiScale,
+				ppt, candidate)) candidate = state.feasibleLayout;
 			PptState previousPpt = ppt;
 			PptState candidatePpt = ppt;
 			previousPpt.layout = previousLayout;
@@ -908,9 +882,9 @@ namespace Inkeys::UI::PageControl
 			{
 				const Surface pairSurface = SurfaceFor(pair[item]);
 				const auto previous = ResolveSurfaceLayout(pairSurface, monitor,
-					dpiScale, previousPpt, whiteboard);
+					dpiScale, previousPpt, {});
 				layouts[item] = ResolveSurfaceLayout(pairSurface, monitor,
-					dpiScale, candidatePpt, whiteboard);
+					dpiScale, candidatePpt, {});
 				translations[item] = POINT{
 					layouts[item].logicalBounds.left - previous.logicalBounds.left,
 					layouts[item].logicalBounds.top - previous.logicalBounds.top };
@@ -986,9 +960,7 @@ namespace Inkeys::UI::PageControl
 			auto renderSnapshot = SnapshotForRender();
 			auto& ppt = renderSnapshot.ppt;
 			const auto& whiteboard = renderSnapshot.whiteboard;
-			const auto obstacle = MainBarObstacle();
-			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale,
-				ppt, whiteboard, obstacle ? &*obstacle : nullptr);
+			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt);
 			const Surface surface = SurfaceFor(index);
 			const WorkspaceMode mode = ResolveWorkspaceMode(
 				surface, ppt, whiteboard);
@@ -1017,7 +989,8 @@ namespace Inkeys::UI::PageControl
 						state.externalPressNext ? NextWidget : PreviousWidget, active);
 					if (!active) state.externalPressUntil = {};
 				}
-				if (state.pressStarted.time_since_epoch().count() != 0
+				if (ResolveWorkspaceInputPolicy(mode).longPress
+					&& state.pressStarted.time_since_epoch().count() != 0
 					&& frameContext.frameTime - state.pressStarted >= LongPressDelay
 					&& frameContext.frameTime - state.lastRepeat >= LongPressInterval)
 				{
@@ -1241,21 +1214,25 @@ namespace Inkeys::UI::PageControl
 					state.dragStartScreen = local;
 					ClientToScreen(hwnd, &state.dragStartScreen);
 					auto [ppt, whiteboard] = Snapshot();
+					(void)whiteboard;
 					const RECT monitor = PrimaryBounds();
-					const auto obstacle = MainBarObstacle();
-					ppt = ResolveRuntimePageControlLayout(monitor, DpiScale(hwnd),
-						ppt, whiteboard, obstacle ? &*obstacle : nullptr);
+					ppt = ResolveRuntimePageControlLayout(
+						monitor, DpiScale(hwnd), ppt);
 					state.dragStartLayout = ppt.layout;
 					state.feasibleLayout = ppt.layout;
 				}
 				else if (result.pressed == PreviousWidget
 					|| result.pressed == NextWidget)
 				{
-					state.pressedNext = result.pressed == NextWidget;
-					state.pressStarted = std::chrono::steady_clock::now();
-					state.lastRepeat = state.pressStarted;
-					state.repeatTriggered = false;
-					RequestSurface(index);
+					if (ResolveWorkspaceInputPolicy(
+						state.configuredMode).longPress)
+					{
+						state.pressedNext = result.pressed == NextWidget;
+						state.pressStarted = std::chrono::steady_clock::now();
+						state.lastRepeat = state.pressStarted;
+						state.repeatTriggered = false;
+						RequestSurface(index);
+					}
 				}
 				return 0;
 			}
@@ -1309,7 +1286,9 @@ namespace Inkeys::UI::PageControl
 				bool invoke = false;
 				{
 					std::unique_lock renderLock(renderTransactionMutex);
-					invoke = state.targetVisible && !state.inputLocked;
+					invoke = state.targetVisible && !state.inputLocked
+						&& ResolveWorkspaceInputPolicy(
+							state.configuredMode).wheel;
 				}
 				if (invoke) InvokeDirection(
 					index, GET_WHEEL_DELTA_WPARAM(wParam) < 0);

@@ -11,6 +11,7 @@ module;
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <string_view>
 
 export module Inkeys.UI.PageControl;
 
@@ -30,6 +31,43 @@ export namespace Inkeys::UI::PageControl
 		PptCompact,
 		WhiteboardExpanded,
 	};
+
+	struct WorkspaceInputPolicy
+	{
+		bool click = false;
+		bool drag = false;
+		bool longPress = false;
+		bool wheel = false;
+		bool persistPosition = false;
+	};
+
+	[[nodiscard]] constexpr WorkspaceInputPolicy ResolveWorkspaceInputPolicy(
+		WorkspaceMode mode) noexcept
+	{
+		// 共享按钮实例不代表共享工作区业务能力。
+		if (mode == WorkspaceMode::PptCompact)
+			return { true, true, true, true, true };
+		if (mode == WorkspaceMode::WhiteboardExpanded)
+			return { true, false, false, false, false };
+		return {};
+	}
+
+	struct DirectionContentPolicy
+	{
+		std::wstring_view icon;
+		std::wstring_view label;
+	};
+
+	[[nodiscard]] constexpr DirectionContentPolicy ResolveDirectionContentPolicy(
+		WorkspaceMode mode, bool next, bool nextIsAdd) noexcept
+	{
+		if (mode != WorkspaceMode::WhiteboardExpanded)
+			return { L"barMore", {} };
+		if (!next) return { L"barMore", L"左翻页" };
+		return nextIsAdd
+			? DirectionContentPolicy{ L"barAdd", L"加页" }
+			: DirectionContentPolicy{ L"barMore", L"右翻页" };
+	}
 
 	inline constexpr double PptCompactLongSideDip = 165.0;
 	inline constexpr double PptCompactShortSideDip = 42.5;
@@ -397,13 +435,10 @@ export namespace Inkeys::UI::PageControl
 		LONG y = monitor.top;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			const LONG offsetX = static_cast<LONG>(std::lround(
-				ppt.layout.bottomPairWidth));
-			const LONG offsetY = static_cast<LONG>(std::lround(
-				ppt.layout.bottomPairHeight));
-			x = left ? monitor.left + edge + offsetX
-				: monitor.right - edge - offsetX - width;
-			y = monitor.bottom - edge - offsetY - height;
+			// Whiteboard 始终锚定左右下角，不读取或继承 PPT 用户位置。
+			x = left ? monitor.left + edge
+				: monitor.right - edge - width;
+			y = monitor.bottom - edge - height;
 		}
 		else if (result.vertical)
 		{
@@ -441,7 +476,7 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] inline PptLayoutState ClampPageControlLayout(
 		Surface moved, const RECT& monitor, float dpiScale,
-		const WhiteboardState& whiteboard, PptLayoutState layout) noexcept
+		PptLayoutState layout) noexcept
 	{
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
@@ -451,13 +486,10 @@ export namespace Inkeys::UI::PageControl
 			|| moved == Surface::BottomRight;
 		if (bottom)
 		{
-			const bool expanded = whiteboard.expandedLayoutTarget;
 			const float scale = NormalizeScale(dpiScale)
-				* (expanded ? 1.0F : NormalizeScale(layout.bottomPairScale));
-			const double controlWidth = expanded
-				? WhiteboardWidthDip : PptCompactLongSideDip;
-			const double controlHeight = expanded
-				? WhiteboardHeightDip : PptCompactShortSideDip;
+				* NormalizeScale(layout.bottomPairScale);
+			const double controlWidth = PptCompactLongSideDip;
+			const double controlHeight = PptCompactShortSideDip;
 			layout.bottomPairWidth = (std::clamp)(layout.bottomPairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
 					- static_cast<float>((controlWidth + PageControlGapDip) * scale)));
@@ -484,34 +516,19 @@ export namespace Inkeys::UI::PageControl
 		return layout;
 	}
 
-	[[nodiscard]] inline bool PageControlGroupOverlapsObstacle(
-		Surface first, Surface second, const RECT& monitor, float dpiScale,
-		const PptState& ppt, const WhiteboardState& whiteboard,
-		const RECT& obstacle, LONG gap) noexcept
-	{
-		for (const Surface surface : { first, second })
-		{
-			const auto layout = ResolveSurfaceLayout(surface, monitor,
-				dpiScale, ppt, whiteboard);
-			if (layout.visible
-				&& OverlapsWithGap(layout.logicalBounds, obstacle, gap)) return true;
-		}
-		return false;
-	}
-
 	[[nodiscard]] inline bool PageControlGroupsOverlap(
 		const RECT& monitor, float dpiScale, const PptState& ppt,
-		const WhiteboardState& whiteboard, LONG gap) noexcept
+		LONG gap) noexcept
 	{
 		for (const Surface bottom : { Surface::BottomLeft, Surface::BottomRight })
 		{
 			const auto bottomLayout = ResolveSurfaceLayout(bottom, monitor,
-				dpiScale, ppt, whiteboard);
+				dpiScale, ppt, {});
 			if (!bottomLayout.visible) continue;
 			for (const Surface middle : { Surface::MiddleLeft, Surface::MiddleRight })
 			{
 				const auto middleLayout = ResolveSurfaceLayout(middle, monitor,
-					dpiScale, ppt, whiteboard);
+					dpiScale, ppt, {});
 				if (middleLayout.visible && OverlapsWithGap(bottomLayout.logicalBounds,
 					middleLayout.logicalBounds, gap)) return true;
 			}
@@ -520,11 +537,9 @@ export namespace Inkeys::UI::PageControl
 	}
 
 	[[nodiscard]] inline PptState ResolveRuntimePageControlLayout(
-		const RECT& monitor, float dpiScale, PptState ppt,
-		const WhiteboardState& whiteboard,
-		const RECT* mainBarObstacle = nullptr) noexcept
+		const RECT& monitor, float dpiScale, PptState ppt) noexcept
 	{
-		if (!ppt.presentationVisible && !whiteboard.expandedLayoutTarget) return ppt;
+		if (!ppt.presentationVisible) return ppt;
 		const float normalizedDpi = NormalizeScale(dpiScale);
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
@@ -532,11 +547,8 @@ export namespace Inkeys::UI::PageControl
 			monitor.bottom - monitor.top));
 		const LONG gap = static_cast<LONG>(std::lround(
 			PageControlGapDip * normalizedDpi));
-		const bool bottomVisible = whiteboard.expandedLayoutTarget
-			|| (ppt.presentationVisible && ppt.layout.showBottomPair);
-		const bool middleVisible = ppt.presentationVisible
-			&& !whiteboard.expandedLayoutTarget
-			&& ppt.layout.showMiddlePair;
+		const bool bottomVisible = ppt.layout.showBottomPair;
+		const bool middleVisible = ppt.layout.showMiddlePair;
 
 		auto FitScale = [&](bool visible, double controlWidth,
 			double controlHeight, float& userScale)
@@ -550,17 +562,16 @@ export namespace Inkeys::UI::PageControl
 			userScale = (std::min)(NormalizeScale(userScale),
 				(std::max)(1.0F / 128.0F, maximum));
 		};
-		if (!whiteboard.expandedLayoutTarget)
-			FitScale(bottomVisible, PptCompactLongSideDip,
-				PptCompactShortSideDip, ppt.layout.bottomPairScale);
+		FitScale(bottomVisible, PptCompactLongSideDip,
+			PptCompactShortSideDip, ppt.layout.bottomPairScale);
 		FitScale(middleVisible, PptCompactShortSideDip,
 			PptCompactLongSideDip, ppt.layout.middlePairScale);
 		if (bottomVisible)
 			ppt.layout = ClampPageControlLayout(Surface::BottomLeft,
-				monitor, normalizedDpi, whiteboard, ppt.layout);
+				monitor, normalizedDpi, ppt.layout);
 		if (middleVisible)
 			ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-				monitor, normalizedDpi, whiteboard, ppt.layout);
+				monitor, normalizedDpi, ppt.layout);
 
 		auto TryNearest = [](float start, float minimum, float maximum,
 			auto&& invalid, float& resolved)
@@ -587,50 +598,17 @@ export namespace Inkeys::UI::PageControl
 			return false;
 		};
 
-		// 主栏优先于分页组；底部组先固定，再让侧边组避让两者。
-		if (bottomVisible && mainBarObstacle)
-		{
-			for (int attempt = 0; attempt < 24; ++attempt)
-			{
-				ppt.layout = ClampPageControlLayout(Surface::BottomLeft,
-					monitor, normalizedDpi, whiteboard, ppt.layout);
-				PptLayoutState maximum = ppt.layout;
-				maximum.bottomPairHeight = height;
-				maximum = ClampPageControlLayout(Surface::BottomLeft,
-					monitor, normalizedDpi, whiteboard, maximum);
-				float resolved = ppt.layout.bottomPairHeight;
-				const bool found = TryNearest(ppt.layout.bottomPairHeight, 0.0F,
-					maximum.bottomPairHeight, [&](float candidate)
-					{
-						PptState next = ppt;
-						next.layout.bottomPairHeight = candidate;
-						return PageControlGroupOverlapsObstacle(
-							Surface::BottomLeft, Surface::BottomRight,
-							monitor, normalizedDpi, next, whiteboard,
-							*mainBarObstacle, gap);
-					}, resolved);
-				if (found)
-				{
-					ppt.layout.bottomPairHeight = resolved;
-					break;
-				}
-				if (whiteboard.expandedLayoutTarget
-					|| ppt.layout.bottomPairScale <= 1.0F / 128.0F) break;
-				ppt.layout.bottomPairScale = (std::max)(1.0F / 128.0F,
-					ppt.layout.bottomPairScale * 0.75F);
-			}
-		}
-
+		// 自动纠偏固定底部组，只让侧边组寻找最近可行位置。
 		if (middleVisible)
 		{
 			for (int attempt = 0; attempt < 24; ++attempt)
 			{
 				ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, normalizedDpi, whiteboard, ppt.layout);
+					monitor, normalizedDpi, ppt.layout);
 				PptLayoutState upper = ppt.layout;
 				upper.middlePairHeight = height;
 				upper = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, normalizedDpi, whiteboard, upper);
+					monitor, normalizedDpi, upper);
 				const float limit = upper.middlePairHeight;
 				float resolved = ppt.layout.middlePairHeight;
 				const bool found = TryNearest(ppt.layout.middlePairHeight,
@@ -638,13 +616,8 @@ export namespace Inkeys::UI::PageControl
 					{
 						PptState next = ppt;
 						next.layout.middlePairHeight = candidate;
-						const bool barCollision = mainBarObstacle
-							&& PageControlGroupOverlapsObstacle(
-								Surface::MiddleLeft, Surface::MiddleRight,
-								monitor, normalizedDpi, next, whiteboard,
-								*mainBarObstacle, gap);
-						return barCollision || PageControlGroupsOverlap(
-							monitor, normalizedDpi, next, whiteboard, gap);
+						return PageControlGroupsOverlap(
+							monitor, normalizedDpi, next, gap);
 					}, resolved);
 				if (found)
 				{

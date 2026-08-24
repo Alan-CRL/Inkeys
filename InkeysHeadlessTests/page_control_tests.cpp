@@ -53,8 +53,27 @@ namespace
 		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == 160.0
 			&& right[1].bounds.left == 5.0 && right[0].bounds.right == 160.0,
 			"horizontal drag slot stays on the outer edge");
+		Check(left[0].bounds.right == left[1].bounds.left
+			&& right[3].bounds.right == right[0].bounds.left
+			&& side[0].bounds.bottom == side[1].bounds.top,
+			"drag divider lane touches the adjacent arrow without a third gap");
 		Check(side[0].bounds.top == 5.0 && side[3].bounds.bottom == 160.0,
 			"side layout keeps the drag slot above three compact buttons");
+		const auto pptPrevious = ResolveDirectionContentPolicy(
+			WorkspaceMode::PptCompact, false, false);
+		const auto whiteboardPrevious = ResolveDirectionContentPolicy(
+			WorkspaceMode::WhiteboardExpanded, false, false);
+		const auto whiteboardNext = ResolveDirectionContentPolicy(
+			WorkspaceMode::WhiteboardExpanded, true, false);
+		const auto whiteboardAdd = ResolveDirectionContentPolicy(
+			WorkspaceMode::WhiteboardExpanded, true, true);
+		Check(pptPrevious.icon == L"barMore" && pptPrevious.label.empty()
+			&& whiteboardPrevious.icon == pptPrevious.icon
+			&& whiteboardNext.icon == pptPrevious.icon,
+			"ordinary arrows keep the same SVG across workspaces");
+		Check(whiteboardAdd.icon == L"barAdd"
+			&& whiteboardAdd.label == L"加页",
+			"only whiteboard Add changes SVG and label semantics");
 	}
 
 	void TestWorkspaceAndDpiLayouts()
@@ -87,14 +106,21 @@ namespace
 
 		whiteboard.expandedLayoutTarget = true;
 		whiteboard.active = true;
+		ppt.layout.bottomPairWidth = 123.0F;
+		ppt.layout.bottomPairHeight = 77.0F;
 		const auto expanded = ResolveSurfaceLayout(Surface::BottomLeft,
+			monitor, 1.0F, ppt, whiteboard);
+		const auto expandedRight = ResolveSurfaceLayout(Surface::BottomRight,
 			monitor, 1.0F, ppt, whiteboard);
 		const auto hiddenSide = ResolveSurfaceLayout(Surface::MiddleLeft,
 			monitor, 1.0F, ppt, whiteboard);
 		Check(expanded.mode == WorkspaceMode::WhiteboardExpanded
 			&& Width(expanded.logicalBounds) == 230
-			&& Height(expanded.logicalBounds) == 80,
-			"PPT bottom host resolves the expanded whiteboard shape");
+			&& Height(expanded.logicalBounds) == 80
+			&& expanded.logicalBounds.left == 5
+			&& expanded.logicalBounds.bottom == monitor.bottom - 5
+			&& expandedRight.logicalBounds.right == monitor.right - 5,
+			"whiteboard ignores PPT offsets and stays at fixed bottom corners");
 		Check(hiddenSide.mode == WorkspaceMode::Hidden && !hiddenSide.visible,
 			"whiteboard workspace hides PPT side controls");
 
@@ -136,6 +162,17 @@ namespace
 			&& ShouldLockSurfaceInput(true, false, true)
 			&& !ShouldLockSurfaceInput(true, false, false),
 			"surface input stays locked while hidden or transitioning");
+		const auto pptInput = ResolveWorkspaceInputPolicy(
+			WorkspaceMode::PptCompact);
+		const auto whiteboardInput = ResolveWorkspaceInputPolicy(
+			WorkspaceMode::WhiteboardExpanded);
+		Check(pptInput.click && pptInput.drag && pptInput.longPress
+			&& pptInput.wheel && pptInput.persistPosition,
+			"PPT compact keeps its complete input policy");
+		Check(whiteboardInput.click && !whiteboardInput.drag
+			&& !whiteboardInput.longPress && !whiteboardInput.wheel
+			&& !whiteboardInput.persistPosition,
+			"whiteboard accepts clicks without inheriting PPT input");
 
 		Check(ShouldFlashPptSurface(Surface::BottomLeft, ppt, whiteboard)
 			&& !ShouldFlashPptSurface(Surface::MiddleLeft, ppt, whiteboard),
@@ -262,19 +299,14 @@ namespace
 		ppt.layout.showMiddlePair = true;
 		ppt.layout.middlePairHeight = -212.5F;
 		const PptState saved = ppt;
-		WhiteboardState whiteboard;
-		const RECT mainBar{ 0, 520, 800, 560 };
 
 		const auto resolved = ResolveRuntimePageControlLayout(
-			monitor, 1.0F, ppt, whiteboard, &mainBar);
-		Check(!PageControlGroupOverlapsObstacle(Surface::BottomLeft,
-			Surface::BottomRight, monitor, 1.0F, resolved, whiteboard,
-			mainBar, 5), "main bar is the highest-priority obstacle");
-		Check(!PageControlGroupOverlapsObstacle(Surface::MiddleLeft,
-			Surface::MiddleRight, monitor, 1.0F, resolved, whiteboard,
-			mainBar, 5), "side pair also avoids the main bar");
+			monitor, 1.0F, ppt);
 		Check(!PageControlGroupsOverlap(monitor, 1.0F,
-			resolved, whiteboard, 5), "side pair avoids the resolved bottom pair");
+			resolved, 5), "side pair avoids the fixed bottom pair");
+		Check(resolved.layout.bottomPairHeight
+			== saved.layout.bottomPairHeight,
+			"runtime collision keeps the bottom pair at its user position");
 		Check(ppt.layout.bottomPairHeight == saved.layout.bottomPairHeight
 			&& ppt.layout.middlePairHeight == saved.layout.middlePairHeight,
 			"runtime collision fallback never mutates saved positions");
@@ -292,7 +324,7 @@ namespace
 		extreme.layout.middlePairScale = 3.0F;
 		const PptState original = extreme;
 		const auto fitted = ResolveRuntimePageControlLayout(
-			tinyMonitor, 1.5F, extreme, {});
+			tinyMonitor, 1.5F, extreme);
 		for (const auto surface : { Surface::BottomLeft, Surface::BottomRight,
 			Surface::MiddleLeft, Surface::MiddleRight })
 		{
@@ -304,7 +336,7 @@ namespace
 				&& layout.logicalBounds.bottom <= tinyMonitor.bottom,
 				"tiny monitor keeps every compact surface on screen");
 		}
-		Check(!PageControlGroupsOverlap(tinyMonitor, 1.5F, fitted, {}, 8),
+		Check(!PageControlGroupsOverlap(tinyMonitor, 1.5F, fitted, 8),
 			"tiny monitor fitting keeps bottom and side groups separated");
 		Check(extreme.layout.bottomPairWidth == original.layout.bottomPairWidth
 			&& extreme.layout.middlePairHeight == original.layout.middlePairHeight
@@ -312,16 +344,14 @@ namespace
 			&& extreme.layout.middlePairScale == original.layout.middlePairScale,
 			"tiny monitor fitting does not mutate the published PPT snapshot");
 
-		whiteboard.expandedLayoutTarget = true;
-		whiteboard.active = true;
 		PptLayoutState dragged = saved.layout;
 		dragged.bottomPairWidth = 10000.0F;
 		dragged.bottomPairHeight = 10000.0F;
 		const auto clamped = ClampPageControlLayout(Surface::BottomLeft,
-			monitor, 1.0F, whiteboard, dragged);
-		Check(clamped.bottomPairWidth == 165.0F
-			&& clamped.bottomPairHeight == 510.0F,
-			"whiteboard drag clamp uses expanded 230x80 dimensions");
+			monitor, 1.0F, dragged);
+		Check(clamped.bottomPairWidth == 230.0F
+			&& clamped.bottomPairHeight == 547.5F,
+			"PPT drag clamp uses compact geometry only");
 	}
 
 	void TestA2ProjectionAndMigration()

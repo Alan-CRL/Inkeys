@@ -52,6 +52,8 @@ export namespace Inkeys::UI::Bar
 	{
 		BarSurfaceWidgetId id = BarSurfaceNoWidget;
 		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
+		BarButtonVisualLayoutKind layoutKind =
+			BarButtonVisualLayoutKind::Custom;
 		BarSurfaceDipRect bounds{};
 		bool visible = true;
 		bool enabled = true;
@@ -68,11 +70,14 @@ export namespace Inkeys::UI::Bar
 		double primaryFontSizeDip = BarButtonTwoTwoIconSizeDip;
 		double primaryOffsetXDip = 0.0;
 		double primaryOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
+		double primarySlotWidthDip = 0.0;
 		double primarySlotHeightDip = BarButtonTwoTwoIconSizeDip;
 		double secondaryFontSizeDip = BarButtonTwoTwoLabelFontSizeDip;
 		double secondaryOffsetXDip = 0.0;
 		double secondaryOffsetYDip = BarButtonTwoTwoLabelOffsetYDip;
+		double secondarySlotWidthDip = 0.0;
 		double secondarySlotHeightDip = BarButtonTwoTwoLabelHeightDip;
+		double dragOpacity = 0.72;
 		COLORREF fill = RGB(0, 0, 0);
 		COLORREF content = RGB(0, 0, 0);
 		bool useThemeColors = true;
@@ -173,7 +178,7 @@ export namespace Inkeys::UI::Bar
 		// 复用稳定 id，从当前呈现几何连续过渡到新背景和按钮布局。
 		bool TransitionLayout(const BarSurfaceBackgroundSpec& background,
 			std::span<const BarSurfaceWidgetSpec> widgets,
-			double durationMilliseconds = 200.0);
+			double durationSeconds = 0.2);
 		bool SetWidgetState(BarSurfaceWidgetId id, bool visible, bool enabled,
 			std::wstring primaryText = {}, std::wstring secondaryText = {},
 			std::optional<std::wstring> iconResource = std::nullopt,
@@ -184,7 +189,7 @@ export namespace Inkeys::UI::Bar
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);
 		void SetOpacity(double opacity,
-			double durationMilliseconds = 200.0) noexcept;
+			double durationSeconds = 0.2) noexcept;
 		void SetDamageOutsetDip(double outsetDip) noexcept;
 		void SetHooks(BarSurfaceHooks hooks);
 		// 订阅者只在共享第一光源的最终像素变化时被唤醒。

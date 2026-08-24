@@ -108,6 +108,10 @@ public:
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
 	}
+	[[nodiscard]] double GetFrameZoom() const noexcept
+	{
+		return frameZoom;
+	}
 	HRESULT EnsureDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
 	[[nodiscard]] ID2D1DeviceContext* GetDeviceContext() const noexcept

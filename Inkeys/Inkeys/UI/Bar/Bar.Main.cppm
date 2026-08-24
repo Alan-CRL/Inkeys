@@ -69,6 +69,36 @@ protected:
 // 前向声明
 class BarUISetClass;
 class BarRenderLoopCoordinator;
+
+namespace Inkeys::UI::Bar
+{
+	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
+	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept;
+	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
+		bool preserveVisual = false) noexcept;
+	bool UpdateBarButtonHoverVisual(BarButtonClass& button, bool visible,
+		bool hoverAllowed, double fadeDurationSeconds) noexcept;
+	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
+	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
+		bool visible, bool enabled, bool selected,
+		double durationSeconds) noexcept;
+
+	struct BarButtonDrawOptions
+	{
+		BarUiWordClass* secondary = nullptr;
+		DWRITE_FONT_WEIGHT primaryWeight = DWRITE_FONT_WEIGHT_BOLD;
+		DWRITE_FONT_WEIGHT secondaryWeight = DWRITE_FONT_WEIGHT_NORMAL;
+	};
+
+	bool DrawBarButtonVisual(BarUIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
+		const BarUiInheritClass& inherit,
+		const BarButtonDrawOptions& options = {});
+	bool DrawBarBackgroundVisual(BarUIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarUiShapeClass& background,
+		const BarUiInheritClass& inherit, RECT* targetRect = nullptr,
+		bool clip = false);
+}
 // 控件枚举
 enum class BarUISetShapeEnum : int
 {

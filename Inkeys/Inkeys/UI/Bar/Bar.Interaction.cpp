@@ -24,6 +24,9 @@ import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Display;
 using Inkeys::UI::Bar::BarToggleChannel;
+using Inkeys::UI::Bar::SetBarButtonPressedVisual;
+using Inkeys::UI::Bar::StartBarButtonHoverVisual;
+using Inkeys::UI::Bar::StopBarButtonHoverVisual;
 constexpr ULONGLONG BarBorderCursorGraceDurationMs = 5000;
 constexpr UINT_PTR BarBorderCursorGraceTimerId = 0x494B4301;
 constexpr UINT BarThicknessTooltipHoverGraceMs = 100;
@@ -1309,29 +1312,16 @@ private:
 
 	void StartMainBarButtonHover(BarButtonClass* button)
 		{
-			if (button && button->preset != BarButtonPresetEnum::Divider
-				&& button->button.fill.has_value())
-				StartHover(&button->button.pct, &button->button.fill.value(), &button->hoverStage);
+			if (button && StartBarButtonHoverVisual(*button))
+				UpdateRendering(false);
 		}
 
 	void StopMainBarButtonHover(
 		BarButtonClass* button, bool immediate, bool preserveVisual = false)
 		{
 			if (!button) return;
-			if (button->preset == BarButtonPresetEnum::Divider)
-			{
-				// 不通过 StopHover 清零 Shape 透明度，否则会连分隔线本体一起隐藏。
-				button->hoverStage = BarButtonHoverStageEnum::None;
-				button->state->emph = BarWidgetEmphasize::None;
-				button->pressScale.SetDirect(1.0);
-				button->button.pct.animateWhenDisabled = false;
-				if (button->button.fill.has_value())
-					button->button.fill.value().animateWhenDisabled = false;
-				return;
-			}
-			StopHover(&button->button.pct,
-				button->button.fill.has_value() ? &button->button.fill.value() : nullptr,
-				&button->hoverStage, immediate, preserveVisual);
+			if (StopBarButtonHoverVisual(
+				*button, immediate, preserveVisual)) UpdateRendering(false);
 		}
 
 	void StartIndependentHover(IndependentHoverTargetEnum target)
@@ -2217,7 +2207,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			auto button = barButtonSet.buttonList.Get(id);
 			if (button && button->state
 				&& button->state->emph == BarWidgetEmphasize::Pressed)
-				button->state->emph = BarWidgetEmphasize::None;
+				SetBarButtonPressedVisual(*button, false);
 		}
 		lastClickedMainBarButton = nullptr;
 		auto& draw = barState.drawAttributeBar;
@@ -3127,7 +3117,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN)
 						{
-							button->state->emph = BarWidgetEmphasize::Pressed;
+							SetBarButtonPressedVisual(*button, true);
 							StopMainBarButtonHover(hoveredMainBarButton, true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
@@ -3148,7 +3138,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									break;
 								}
 							}
-							button->state->emph = BarWidgetEmphasize::None;
+							SetBarButtonPressedVisual(*button, false);
 							UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
 							ClearBarInteractionMessages(EM_MOUSE, floating_window);
@@ -3269,7 +3259,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{
 							bool clickCompleted = false;
 							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
-							temp->state->emph = BarWidgetEmphasize::Pressed;
+							SetBarButtonPressedVisual(*temp, true);
 							StopMainBarButtonHover(hoveredMainBarButton, true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
@@ -3315,7 +3305,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								}
 								else break;
 							}
-							temp->state->emph = BarWidgetEmphasize::None; UpdateRendering(false);
+							SetBarButtonPressedVisual(*temp, false); UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
 
 							// 成功点击后保留队列中的下一击；拖出取消时仍清理本轮残留消息。
@@ -6404,9 +6394,6 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							committedWindowScreenBounds = TranslateBarWindowRect(
 								currentWindowRect, moveDelta);
 							committedWindowScreenBoundsReady = true;
-							// HWND 直移不会等待下一次 Bar present，立即让分页控件重算避让。
-							Inkeys::UI::RenderPipeline::Request(
-								Inkeys::UI::RenderPipeline::PptPageMask());
 							RebaseBottomDockPresentedWindow(
 								desiredTranslation, moveDelta);
 							// 第三光源接受区是屏幕缓存，HWND 直移后同步平移，不能等下一次 ULW。

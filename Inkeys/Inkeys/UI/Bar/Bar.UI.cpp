@@ -82,31 +82,29 @@ void BarUiShapeClass::Initialization(double xT, double yT, double wT, double hT,
 	if (fillT.has_value()) { fill = BarUiColorClass(); fill.value().Initialization(fillT.value()); }
 	if (frameT.has_value()) { frame = BarUiColorClass(); frame.value().Initialization(frameT.value()); }
 }
-bool BarUiShapeClass::IsClick(int mx, int my, double zoom, double epsilon)
+bool BarUiRoundedRectContainsPoint(int mx, int my, double zoom,
+	double leftDip, double topDip, double widthDip, double heightDip,
+	double radiusXDip, double radiusYDip, double epsilon) noexcept
 {
-	// 保证有效参数
-	if (w.val <= 0.0 || h.val <= 0.0 || (rw.has_value() && rw.value().val < 0.0) || (rh.has_value() && rh.value().val < 0.0)) return false;
+	if (widthDip <= 0.0 || heightDip <= 0.0
+		|| radiusXDip < 0.0 || radiusYDip < 0.0) return false;
 
-	// 初始化值
-	double xO = inhX * zoom;
-	double yO = inhY * zoom;
+	double xO = leftDip * zoom;
+	double yO = topDip * zoom;
 
-	// 折算为半径
-	double rx = 0.0;
-	double ry = 0.0;
-	if (rw.has_value()) rx = clamp(rw.value().val * zoom, 0.0, (w.val * zoom) / 2.0);
-	if (rh.has_value()) ry = clamp(rh.value().val * zoom, 0.0, (h.val * zoom) / 2.0);
+	double rx = clamp(radiusXDip * zoom, 0.0, (widthDip * zoom) / 2.0);
+	double ry = clamp(radiusYDip * zoom, 0.0, (heightDip * zoom) / 2.0);
 
 	// 矩形区域内才有可能
-	if (static_cast<double>(mx) < xO - epsilon || static_cast<double>(mx) > xO + (w.val * zoom) + epsilon ||
-		static_cast<double>(my) < yO - epsilon || static_cast<double>(my) > yO + (h.val * zoom) + epsilon)
+	if (static_cast<double>(mx) < xO - epsilon || static_cast<double>(mx) > xO + (widthDip * zoom) + epsilon ||
+		static_cast<double>(my) < yO - epsilon || static_cast<double>(my) > yO + (heightDip * zoom) + epsilon)
 		return false;
 
 	// “内矩形”范围
 	double ix0 = xO + rx;         // 内部矩形左
-	double ix1 = xO + (w.val * zoom) - rx; // 内部矩形右
+	double ix1 = xO + (widthDip * zoom) - rx; // 内部矩形右
 	double iy0 = yO + ry;         // 上
-	double iy1 = yO + h.val * zoom - ry; // 下
+	double iy1 = yO + heightDip * zoom - ry; // 下
 
 	// 若点在内矩形，直接返回
 	if (static_cast<double>(mx) >= ix0 - epsilon && static_cast<double>(mx) <= ix1 + epsilon &&
@@ -133,6 +131,18 @@ bool BarUiShapeClass::IsClick(int mx, int my, double zoom, double epsilon)
 	}
 	// 若rx或ry为0，则为直角矩形，已在前面矩形段判断过
 	return false;
+}
+
+bool BarUiShapeClass::IsClick(int mx, int my, double zoom, double epsilon)
+{
+	const double width = static_cast<double>(w.val);
+	const double height = static_cast<double>(h.val);
+	const double radiusX = rw.has_value()
+		? static_cast<double>(rw->val) : 0.0;
+	const double radiusY = rh.has_value()
+		? static_cast<double>(rh->val) : 0.0;
+	return BarUiRoundedRectContainsPoint(mx, my, zoom,
+		inhX, inhY, width, height, radiusX, radiusY, epsilon);
 }
 
 //// 单个超椭圆控件

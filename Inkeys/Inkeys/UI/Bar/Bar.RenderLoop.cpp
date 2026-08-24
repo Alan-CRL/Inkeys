@@ -39,6 +39,14 @@ import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 
+using Inkeys::UI::Bar::BarButtonVisualLayoutKind;
+using Inkeys::UI::Bar::DrawBarBackgroundVisual;
+using Inkeys::UI::Bar::DrawBarButtonVisual;
+using Inkeys::UI::Bar::ResolveBarButtonVisualMetrics;
+using Inkeys::UI::Bar::SetBarButtonPressedVisual;
+using Inkeys::UI::Bar::StopBarButtonHoverVisual;
+using Inkeys::UI::Bar::UpdateBarButtonHoverVisual;
+
 // Rendering 只读取 Layout/Animation 导出的共享按钮参数。
 bool ReadColorPickerEntryPressed();
 void RequestBarBorderCursorSuspend();
@@ -2281,11 +2289,22 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							double buttonLightOpacity = buttonLightVisible
 								? (temp->state->emph == BarWidgetEmphasize::Pressed
 									? BarButtonPressedLightOpacity : 1.0) : 0.0;
-							temp->button.frameLightPct.value().SetTar(buttonLightOpacity, operationDur);
+								temp->button.frameLightPct.value().SetTar(buttonLightOpacity, operationDur);
 						}
+						const bool colorSelector = temp->size == BarButtonSizeEnum::oneOne
+							&& temp->name.enable.tar
+							&& temp->name.content.GetTar().starts_with(L"__color");
+						if (!colorSelector)
+							Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(
+								*temp, !state.barState.fold && temp->IsVisible(),
+								temp->button.enable.tar,
+								temp->state->state == BarWidgetState::Selected,
+								operationDur);
 
 						if (temp->size == BarButtonSizeEnum::oneOne)
 						{
+							const auto metrics = ResolveBarButtonVisualMetrics(
+								BarButtonVisualLayoutKind::StandardOneOne);
 							// 特殊设定：是否是颜色选择器
 							bool isColorSelector = (temp->name.enable.tar && temp->name.content.GetTar().substr(0, 7) == L"__color");
 
@@ -2316,8 +2335,8 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 												temp->button.pct.SetTar(0.0, operationDur);
 										}
 									}
-								temp->button.w.SetTar(barBtnOne, operationDur);
-								temp->button.h.SetTar(barBtnOne, operationDur);
+								temp->button.w.SetTar(metrics.buttonWidthDip, operationDur);
+								temp->button.h.SetTar(metrics.buttonHeightDip, operationDur);
 
 								if (!isColorSelector)
 								{
@@ -2329,10 +2348,10 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 							if (temp->icon.enable.tar)
 							{
 								if (isColorSelector) temp->icon.SetWH(nullopt, 10.0); // 颜色选择器中的图标即为标识选中该颜色，所以需要较小尺寸
-								else temp->icon.SetWH(nullopt, 20.0);
+								else temp->icon.SetWH(nullopt, metrics.iconSizeDip);
 
-								temp->icon.x.SetTar(0.0);
-								temp->icon.y.SetTar(0.0);
+								temp->icon.x.SetTar(metrics.iconOffsetXDip);
+								temp->icon.y.SetTar(metrics.iconOffsetYDip);
 								if (state.barState.fold || !temp->IsVisible())
 								{
 									temp->icon.pct.SetTar(0.0, operationDur);
@@ -2392,6 +2411,8 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 						}
 						if (temp->size == BarButtonSizeEnum::twoOne)
 						{
+							const auto metrics = ResolveBarButtonVisualMetrics(
+								BarButtonVisualLayoutKind::StandardTwoOne);
 							if (yO > barBtnGap)
 							{
 								// 如果当前位置处于第二行，且容不下一个 2*1 的按钮，则换行到更右侧
@@ -2425,8 +2446,8 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 										else if (temp->hoverStage == BarButtonHoverStageEnum::None)
 											temp->button.pct.SetTar(0.0, operationDur);
 										}
-									temp->button.w.SetTar(barBtnTwo, operationDur);
-									temp->button.h.SetTar(barBtnOne, operationDur);
+								temp->button.w.SetTar(metrics.buttonWidthDip, operationDur);
+								temp->button.h.SetTar(metrics.buttonHeightDip, operationDur);
 
 							if (temp->state->state == BarWidgetState::Selected)
 								temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
@@ -2434,10 +2455,10 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 							}
 							if (temp->icon.enable.tar)
 							{
-								temp->icon.SetWH(nullopt, 18.0);
+								temp->icon.SetWH(nullopt, metrics.iconSizeDip);
 
-								temp->icon.x.SetTar(-21.0); // 靠左对齐（70 宽内：左 5 + icon 18 + 间隙，右侧留给文字）
-								temp->icon.y.SetTar(0.0);
+								temp->icon.x.SetTar(metrics.iconOffsetXDip); // 靠左对齐，右侧留给文字。
+								temp->icon.y.SetTar(metrics.iconOffsetYDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->icon.pct.SetTar(0.0, operationDur);
 								else
 								{
@@ -2449,17 +2470,17 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 							}
 							if (temp->name.enable.tar)
 							{
-temp->name.x.SetTar(11.5); // 右对齐
-									temp->name.y.SetTar(0.0);
-									temp->name.w.SetTar(37); // 70px 宽度中除去左侧 icon 占用的 18px + 5px * 2 的空隙,考虑自身右侧还有 5px 的间隙
-									temp->name.h.SetTar(barBtnOne);
+temp->name.x.SetTar(metrics.primaryOffsetXDip); // 右侧文字槽与共享 2x1 metrics 一致。
+									temp->name.y.SetTar(metrics.primaryOffsetYDip);
+									temp->name.w.SetTar(metrics.primarySlotWidthDip);
+									temp->name.h.SetTar(metrics.primarySlotHeightDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 								else temp->name.pct.SetTar(1.0, operationDur);
 
 								if (temp->state->state == BarWidgetState::Selected)
 									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
 								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
-								temp->name.size.SetTar(12.0);
+									temp->name.size.SetTar(metrics.primaryFontSizeDip);
 							}
 
 							// 记录目标绘制位置
@@ -2492,6 +2513,8 @@ temp->name.x.SetTar(11.5); // 右对齐
 						}
 						if (temp->size == BarButtonSizeEnum::twoTwo)
 						{
+							const auto metrics = ResolveBarButtonVisualMetrics(
+								BarButtonVisualLayoutKind::StandardTwoTwo);
 							if (yO > barBtnGap)
 							{
 								yO = barBtnGap;
@@ -2520,8 +2543,8 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 									else if (temp->hoverStage == BarButtonHoverStageEnum::None)
 										temp->button.pct.SetTar(0.0, operationDur);
 									}
-								temp->button.w.SetTar(barBtnTwo, operationDur);
-								temp->button.h.SetTar(barBtnTwo, operationDur);
+								temp->button.w.SetTar(metrics.buttonWidthDip, operationDur);
+								temp->button.h.SetTar(metrics.buttonHeightDip, operationDur);
 
 							if (temp->state->state == BarWidgetState::Selected)
 								temp->button.fill.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
@@ -2536,9 +2559,9 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 									temp->preset == BarButtonPresetEnum::More;
 								temp->icon.SetWH(nullopt,
 									enlargedMoreIcon ? 34.0
-									: (enlargedGeometryIcon ? 34.0 : 28.0));
-								temp->icon.x.SetTar(0.0);
-								temp->icon.y.SetTar(-10.0);
+									: (enlargedGeometryIcon ? 34.0 : metrics.iconSizeDip));
+								temp->icon.x.SetTar(metrics.iconOffsetXDip);
+								temp->icon.y.SetTar(metrics.iconOffsetYDip);
 								if (state.barState.fold || !temp->IsVisible())
 								{
 									temp->icon.pct.SetTar(0.0, operationDur);
@@ -2553,10 +2576,10 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 							}
 							if (temp->name.enable.tar)
 							{
-temp->name.x.SetTar(0.0);
-									temp->name.y.SetTar(20.0);
-									temp->name.w.SetTar(barBtnTwo);
-									temp->name.h.SetTar(25.0);
+temp->name.x.SetTar(metrics.primaryOffsetXDip);
+									temp->name.y.SetTar(metrics.primaryOffsetYDip);
+									temp->name.w.SetTar(metrics.primarySlotWidthDip);
+									temp->name.h.SetTar(metrics.primarySlotHeightDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
 								else temp->name.pct.SetTar(1.0, operationDur);
 
@@ -2564,7 +2587,7 @@ temp->name.x.SetTar(0.0);
 									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
 								else temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
 
-								temp->name.size.SetTar(13.0);
+									temp->name.size.SetTar(metrics.primaryFontSizeDip);
 							}
 
 							// 记录目标绘制位置
@@ -5130,34 +5153,42 @@ for (size_t i = 0; i < 3; ++i)
 			}
 			if (button->size == BarButtonSizeEnum::oneOne)
 			{
-				button->icon.SetWH(20.0 * scale, 20.0 * scale);
-				button->icon.x.SetDirect(0.0);
-				button->icon.y.SetDirect(0.0);
+				const auto metrics = ResolveBarButtonVisualMetrics(
+					BarButtonVisualLayoutKind::StandardOneOne);
+				button->icon.SetWH(metrics.iconSizeDip * scale,
+					metrics.iconSizeDip * scale);
+				button->icon.x.SetDirect(metrics.iconOffsetXDip * scale);
+				button->icon.y.SetDirect(metrics.iconOffsetYDip * scale);
 				button->name.pct.SetDirect(0.0);
 			}
 			else if (button->size == BarButtonSizeEnum::twoOne)
 			{
-				button->icon.SetWH(18.0 * scale, 18.0 * scale);
-				button->icon.x.SetDirect(-21.0 * scale);
-				button->icon.y.SetDirect(0.0);
-				button->name.x.SetDirect(11.5 * scale);
-				button->name.y.SetDirect(0.0);
-				button->name.w.SetDirect(37.0 * scale);
-				button->name.h.SetDirect(one * scale);
-				button->name.size.SetDirect(12.0 * scale);
+				const auto metrics = ResolveBarButtonVisualMetrics(
+					BarButtonVisualLayoutKind::StandardTwoOne);
+				button->icon.SetWH(metrics.iconSizeDip * scale,
+					metrics.iconSizeDip * scale);
+				button->icon.x.SetDirect(metrics.iconOffsetXDip * scale);
+				button->icon.y.SetDirect(metrics.iconOffsetYDip * scale);
+				button->name.x.SetDirect(metrics.primaryOffsetXDip * scale);
+				button->name.y.SetDirect(metrics.primaryOffsetYDip * scale);
+				button->name.w.SetDirect(metrics.primarySlotWidthDip * scale);
+				button->name.h.SetDirect(metrics.primarySlotHeightDip * scale);
+				button->name.size.SetDirect(metrics.primaryFontSizeDip * scale);
 				button->name.pct.SetDirect(opacityProgress);
 			}
 			else if (button->size == BarButtonSizeEnum::twoTwo)
 			{
-				button->icon.SetWH(BarButtonTwoTwoIconSizeDip * scale,
-					BarButtonTwoTwoIconSizeDip * scale);
-				button->icon.x.SetDirect(0.0);
-				button->icon.y.SetDirect(BarButtonTwoTwoIconOffsetYDip * scale);
-				button->name.x.SetDirect(0.0);
-				button->name.y.SetDirect(BarButtonTwoTwoLabelOffsetYDip * scale);
-				button->name.w.SetDirect(BarButtonTwoSideDip * scale);
-				button->name.h.SetDirect(BarButtonTwoTwoLabelHeightDip * scale);
-				button->name.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip * scale);
+				const auto metrics = ResolveBarButtonVisualMetrics(
+					BarButtonVisualLayoutKind::StandardTwoTwo);
+				button->icon.SetWH(metrics.iconSizeDip * scale,
+					metrics.iconSizeDip * scale);
+				button->icon.x.SetDirect(metrics.iconOffsetXDip * scale);
+				button->icon.y.SetDirect(metrics.iconOffsetYDip * scale);
+				button->name.x.SetDirect(metrics.primaryOffsetXDip * scale);
+				button->name.y.SetDirect(metrics.primaryOffsetYDip * scale);
+				button->name.w.SetDirect(metrics.primarySlotWidthDip * scale);
+				button->name.h.SetDirect(metrics.primarySlotHeightDip * scale);
+				button->name.size.SetDirect(metrics.primaryFontSizeDip * scale);
 				button->name.pct.SetDirect(opacityProgress);
 			}
 			else
@@ -5696,24 +5727,20 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		const auto buttonDirtyKey = GetBarDirtyVisualKey(&temp->button);
 		const auto iconDirtyKey = GetBarDirtyVisualKey(&temp->icon);
 		const auto nameDirtyKey = GetBarDirtyVisualKey(&temp->name);
-		BarUiColorClass* hoverFill = temp->button.fill.has_value()
-			? &temp->button.fill.value() : nullptr;
 		bool isDivider = temp->preset == BarButtonPresetEnum::Divider;
 		if (isDivider)
 		{
 			// 分隔线只推进几何/光影属性，清除旧按钮状态且不改写第三光透明度。
-			temp->hoverStage = BarButtonHoverStageEnum::None;
-			temp->state->emph = BarWidgetEmphasize::None;
-			temp->pressScale.SetDirect(1.0);
-			temp->button.pct.animateWhenDisabled = false;
-			if (hoverFill) hoverFill->animateWhenDisabled = false;
+			(void)StopBarButtonHoverVisual(*temp, true);
+			SetBarButtonPressedVisual(*temp, false);
 		}
 		else
 		{
-			UpdateHoverAnimation(temp->button.pct, hoverFill, temp->hoverStage,
+			(void)UpdateBarButtonHoverVisual(*temp,
 				!state.barState.fold && temp->IsVisible()
 					&& (!moreItem || state.barState.moreExpanded),
-				temp->state->state != BarWidgetState::Selected);
+				temp->state->state != BarWidgetState::Selected,
+				BarButtonHoverFadeDurationSeconds);
 			if (moreItem)
 			{
 				bool pressed = temp->state->emph == BarWidgetEmphasize::Pressed;
@@ -11156,7 +11183,10 @@ bool presetButton = button.presetIndex >= 0;
 				{
 					SetBodyTransform();
 					auto obj = BarUISetShapeEnum::MainBar;
-					state.spec.Shape(barDeviceContext, *state.shapeMap[obj], BarUiInheritClass(state.shapeMap[obj]->inhX, state.shapeMap[obj]->inhY), &state.current, true);
+					DrawBarBackgroundVisual(state.spec, barDeviceContext,
+						*state.shapeMap[obj], BarUiInheritClass(
+							state.shapeMap[obj]->inhX, state.shapeMap[obj]->inhY),
+						&state.current, true);
 
 					for (int id = 0; id < state.barButtonSet.tot; id++)
 					{
@@ -11165,51 +11195,8 @@ bool presetButton = button.presetIndex >= 0;
 
 						BarUiInheritClass buttonInherit = temp->button.Inherit(
 							CenterFromTopLeft, *state.shapeMap[BarUISetShapeEnum::MainBar]);
-						double pressScale = temp->pressScale.val;
-						if (!isfinite(pressScale) || pressScale <= 0.0) pressScale = 1.0;
-						D2D1_MATRIX_3X2_F originalTransform;
-						barDeviceContext->GetTransform(&originalTransform);
-						bool transformChanged = abs(pressScale - 1.0) > 0.000001;
-						if (transformChanged)
-						{
-							// 整个按钮组合围绕背景中心缩放，组件自身的布局值和命中区域保持不变。
-							FLOAT centerX = static_cast<FLOAT>(
-								(buttonInherit.x + temp->button.w.val / 2.0) * frameZoom);
-							FLOAT centerY = static_cast<FLOAT>(
-								(buttonInherit.y + temp->button.h.val / 2.0) * frameZoom);
-							D2D1_MATRIX_3X2_F scaleTransform = D2D1::Matrix3x2F::Scale(
-								static_cast<FLOAT>(pressScale), static_cast<FLOAT>(pressScale),
-								D2D1::Point2F(centerX, centerY));
-							barDeviceContext->SetTransform(scaleTransform * originalTransform);
-						}
-
-						state.spec.Shape(barDeviceContext, temp->button, buttonInherit);
-						if (temp->preset == BarButtonPresetEnum::Divider)
-						{
-							// Divider 是纯 Shape 视觉，不绘制占位 SVG 或文字层。
-							if (transformChanged) barDeviceContext->SetTransform(originalTransform);
-							continue;
-						}
-						BarUiInheritClass iconInherit = temp->icon.Inherit(Center, temp->button);
-						if (temp->iconKind == BarButtonIconKindEnum::Png)
-						{
-							// PNG 复用 SVG 图标控制器的布局与透明度动画，仅替换最终绘制载荷。
-							temp->pngIcon.x.SetDirect(temp->icon.x.val);
-							temp->pngIcon.y.SetDirect(temp->icon.y.val);
-							temp->pngIcon.w.SetDirect(temp->icon.w.val);
-							temp->pngIcon.h.SetDirect(temp->icon.h.val);
-							temp->pngIcon.angle.SetDirect(temp->icon.angle.val);
-							temp->pngIcon.pct.SetDirect(temp->icon.pct.val);
-							temp->pngIcon.enable.val = temp->icon.enable.val;
-							temp->pngIcon.enable.tar = temp->icon.enable.tar;
-							state.spec.Png(barDeviceContext, temp->pngIcon, temp->pngIcon.UpInh(iconInherit));
-						}
-						else
-						{
-							state.spec.Svg(barDeviceContext, temp->icon, iconInherit);
-						}
-						state.spec.Word(barDeviceContext, temp->name, temp->name.Inherit(Center, temp->button));
-						if (transformChanged) barDeviceContext->SetTransform(originalTransform);
+						DrawBarButtonVisual(state.spec, barDeviceContext,
+							*temp, buttonInherit);
 					}
 				};
 
@@ -11233,50 +11220,8 @@ bool presetButton = button.presetIndex >= 0;
 							BarUiInheritClass buttonInherit = button->button.Inherit(
 								CenterFromTopLeft,
 								*state.shapeMap[BarUISetShapeEnum::MainBar]);
-							double pressScale = button->pressScale.val;
-							if (!isfinite(pressScale) || pressScale <= 0.0)
-								pressScale = 1.0;
-							D2D1_MATRIX_3X2_F originalTransform;
-							barDeviceContext->GetTransform(&originalTransform);
-							bool transformChanged = abs(pressScale - 1.0) > 0.000001;
-							if (transformChanged)
-							{
-								FLOAT centerX = static_cast<FLOAT>(
-									(buttonInherit.x + button->button.w.val / 2.0)
-									* frameZoom);
-								FLOAT centerY = static_cast<FLOAT>(
-									(buttonInherit.y + button->button.h.val / 2.0)
-									* frameZoom);
-								barDeviceContext->SetTransform(
-									D2D1::Matrix3x2F::Scale(
-										static_cast<FLOAT>(pressScale),
-										static_cast<FLOAT>(pressScale),
-										D2D1::Point2F(centerX, centerY))
-									* originalTransform);
-							}
-							state.spec.Shape(barDeviceContext, button->button,
-								buttonInherit);
-							BarUiInheritClass iconInherit = button->icon.Inherit(
-								Center, button->button);
-							if (button->iconKind == BarButtonIconKindEnum::Png)
-							{
-								button->pngIcon.x.SetDirect(button->icon.x.val);
-								button->pngIcon.y.SetDirect(button->icon.y.val);
-								button->pngIcon.w.SetDirect(button->icon.w.val);
-								button->pngIcon.h.SetDirect(button->icon.h.val);
-								button->pngIcon.angle.SetDirect(button->icon.angle.val);
-								button->pngIcon.pct.SetDirect(button->icon.pct.val);
-								button->pngIcon.enable.val = button->icon.enable.val;
-								button->pngIcon.enable.tar = button->icon.enable.tar;
-								state.spec.Png(barDeviceContext, button->pngIcon,
-									button->pngIcon.UpInh(iconInherit));
-							}
-							else state.spec.Svg(barDeviceContext, button->icon,
-								iconInherit);
-							state.spec.Word(barDeviceContext, button->name,
-								button->name.Inherit(Center, button->button));
-							if (transformChanged)
-								barDeviceContext->SetTransform(originalTransform);
+							DrawBarButtonVisual(state.spec, barDeviceContext,
+								*button, buttonInherit);
 						};
 					BarMoreButtonSnapshotClass moreSnapshot =
 						state.barButtonSet.GetMoreButtonSnapshot();
@@ -12452,19 +12397,8 @@ bool presetButton = button.presetIndex >= 0;
 				presentedDestination.x, presentedDestination.y,
 				presentedDestination.x + presentedSize.cx,
 				presentedDestination.y + presentedSize.cy };
-			const bool committedWindowBoundsChanged =
-				!owner_.committedWindowScreenBoundsReady
-				|| !Inkeys::UI::Bar::SameBarWindowRect(
-					owner_.committedWindowScreenBounds,
-					committedWindowScreenBounds);
 			owner_.committedWindowScreenBounds = committedWindowScreenBounds;
 			owner_.committedWindowScreenBoundsReady = true;
-			if (committedWindowBoundsChanged)
-			{
-				// 分页控件只使用成功呈现的主栏矩形避让，失败帧不得推进碰撞状态。
-				Inkeys::UI::RenderPipeline::Request(
-					Inkeys::UI::RenderPipeline::PptPageMask());
-			}
 			owner_.directWindowPresentedTranslationX.store(
 				directTranslation.x, memory_order_release);
 			owner_.directWindowPresentedTranslationY.store(

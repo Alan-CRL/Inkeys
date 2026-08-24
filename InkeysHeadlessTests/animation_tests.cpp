@@ -20,6 +20,7 @@
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.Bar.Metrics;
 
 int RunWakeSignalTests();
 int RunPresentDecisionTests();
@@ -56,6 +57,35 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestSharedBarButtonRuntime()
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto oneOne = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardOneOne);
+		const auto twoOne = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardTwoOne);
+		const auto twoTwo = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardTwoTwo);
+		Check(Near(oneOne.buttonWidthDip, BarButtonOneSideDip)
+			&& Near(oneOne.buttonHeightDip, BarButtonOneSideDip)
+			&& Near(oneOne.iconSizeDip, 20.0)
+			&& Near(oneOne.iconOffsetXDip, 0.0)
+			&& Near(oneOne.iconOffsetYDip, 0.0),
+			"shared oneOne metrics match Main Bar");
+		Check(Near(twoOne.buttonWidthDip, BarButtonTwoSideDip)
+			&& Near(twoOne.buttonHeightDip, BarButtonOneSideDip)
+			&& Near(twoOne.iconSizeDip, 18.0)
+			&& Near(twoOne.iconOffsetXDip, -21.0)
+			&& Near(twoOne.primaryOffsetXDip, 11.5),
+			"shared twoOne metrics match Main Bar");
+		Check(Near(twoTwo.buttonWidthDip, BarButtonTwoSideDip)
+			&& Near(twoTwo.buttonHeightDip, BarButtonTwoSideDip)
+			&& Near(twoTwo.iconSizeDip, BarButtonTwoTwoIconSizeDip)
+			&& Near(twoTwo.iconOffsetYDip, BarButtonTwoTwoIconOffsetYDip)
+			&& Near(twoTwo.primaryOffsetYDip, BarButtonTwoTwoLabelOffsetYDip),
+			"shared twoTwo metrics match Main Bar");
 	}
 
 	void TestBarThicknessVisualTransitions()
@@ -1361,6 +1391,7 @@ int main(int argc, char** argv)
 	}
 
 	TestCurvesAndTimelines();
+	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
