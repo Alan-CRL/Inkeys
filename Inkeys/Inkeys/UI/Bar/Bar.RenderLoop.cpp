@@ -12448,11 +12448,23 @@ bool presetButton = button.presetIndex >= 0;
 			state.dirtyRegionTracker.CommitPresented();
 			state.viewportController.Commit(candidateViewport);
 			state.presentMappingTracker.CommitPresented(candidatePresentMapping);
-			owner_.committedWindowScreenBounds = RECT{
+			const RECT committedWindowScreenBounds{
 				presentedDestination.x, presentedDestination.y,
 				presentedDestination.x + presentedSize.cx,
 				presentedDestination.y + presentedSize.cy };
+			const bool committedWindowBoundsChanged =
+				!owner_.committedWindowScreenBoundsReady
+				|| !Inkeys::UI::Bar::SameBarWindowRect(
+					owner_.committedWindowScreenBounds,
+					committedWindowScreenBounds);
+			owner_.committedWindowScreenBounds = committedWindowScreenBounds;
 			owner_.committedWindowScreenBoundsReady = true;
+			if (committedWindowBoundsChanged)
+			{
+				// 分页控件只使用成功呈现的主栏矩形避让，失败帧不得推进碰撞状态。
+				Inkeys::UI::RenderPipeline::Request(
+					Inkeys::UI::RenderPipeline::PptPageMask());
+			}
 			owner_.directWindowPresentedTranslationX.store(
 				directTranslation.x, memory_order_release);
 			owner_.directWindowPresentedTranslationY.store(

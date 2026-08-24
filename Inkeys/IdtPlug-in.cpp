@@ -597,11 +597,11 @@ void PPTLinkageMain()
 	});
 	if (pptUiReady)
 	{
-		// 未放映时五个 PPT 窗口不会提交首帧；客户端注册完成即代表启动门禁已就绪。
+		// 未放映时四个 PPT 分页窗口不会提交首帧；客户端注册完成即代表启动门禁已就绪。
 		IdtWindowsIsVisible.pptWindow = true;
 	}
 	else if (IDTLogger)
-		IDTLogger->error("[PPT 线程][PPTLinkageMain] UI3 五窗口客户端注册失败");
+		IDTLogger->error("[PPT 线程][PPTLinkageMain] UI3 四窗口客户端注册失败");
 
 	thread(GetPptState).detach();
 	thread(PptInfo).detach();
@@ -663,13 +663,13 @@ void PPTLinkageMain()
 		{
 			if (!CheckEndShow.Check())
 			{
-				pptUiPageCommandOutstanding = false;
+				Inkeys::UI::Bar::CompleteEndShowRequest();
 				continue;
 			}
 			ChangeStateModeToSelection();
 		}
 		EndPptShow();
-		pptUiPageCommandOutstanding = false;
+		Inkeys::UI::Bar::CompleteEndShowRequest();
 	}
 	Inkeys::UI::Ppt::Shutdown();
 	{

@@ -1225,23 +1225,18 @@ SettingSessionCoroutine RunSettingSession()
 		float PptUiWidgetScale = 1.0f, PptUiWidgetScaleRecord = 1.0f;
 		float BottomSideBothWidgetScale = pptComSetlist.bottomSideBothWidgetScale, BottomSideBothWidgetScaleRecord = pptComSetlist.bottomSideBothWidgetScale;
 		float MiddleSideBothWidgetScale = pptComSetlist.middleSideBothWidgetScale, MiddleSideBothWidgetScaleRecord = pptComSetlist.middleSideBothWidgetScale;
-		float BottomSideMiddleWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale, BottomSideMiddleWidgetScaleRecord = pptComSetlist.bottomSideMiddleWidgetScale;
 		bool BottomSideBothWidgetScaleUnifie = true;
 		bool MiddleSideBothWidgetScaleUnifie = true;
-		bool BottomSideMiddleWidgetScaleUnifie = false;
 
 		bool PptComFixedHandWriting = pptComSetlist.fixedHandWriting;
 		bool PptComShowLoadingScreen = pptComSetlist.showLoadingScreen;
 		bool MemoryWidgetPosition = pptComSetlist.memoryWidgetPosition;
 		bool ShowBottomBoth = pptComSetlist.showBottomBoth;
 		bool ShowMiddleBoth = pptComSetlist.showMiddleBoth;
-		bool ShowBottomMiddle = pptComSetlist.showBottomMiddle;
 		float BottomBothWidth = pptComSetlist.bottomBothWidth;
 		float BottomBothHeight = pptComSetlist.bottomBothHeight;
 		float MiddleBothWidth = pptComSetlist.middleBothWidth;
 		float MiddleBothHeight = pptComSetlist.middleBothHeight;
-		float BottomMiddleWidth = pptComSetlist.bottomMiddleWidth;
-		float BottomMiddleHeight = pptComSetlist.bottomMiddleHeight;
 
 		//bool AutoKillWpsProcess = pptComSetlist.autoKillWpsProcess;
 
@@ -5181,35 +5176,6 @@ SettingSessionCoroutine RunSettingSession()
 										}
 									}
 
-									// Separator
-									cursosPosY = ImGui::GetCursorPosY();
-									{
-										ImGui::SetCursorPosY(cursosPosY + 20.0f * settingGlobalScale);
-										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Separator, Widgets::FluentColor::Divider);
-										ImGui::Separator();
-									}
-
-									cursosPosY = ImGui::GetCursorPosY();
-									{
-										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
-										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomMiddle).c_str());
-									}
-									{
-										ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-										Widgets::toggle.ToggleBool("##显示底部主栏控件", &ShowBottomMiddle);
-
-										if (pptComSetlist.showBottomMiddle != ShowBottomMiddle)
-										{
-											pptComSetlist.showBottomMiddle = ShowBottomMiddle;
-											PptComWriteSetting();
-
-											Inkeys::UI::Ppt::NotifyConfigurationChanged(
-												Inkeys::UI::Ppt::ConfigGroup::ExitShow);
-										}
-									}
-
 									{
 										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
@@ -5262,8 +5228,6 @@ SettingSessionCoroutine RunSettingSession()
 											pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
 											pptComSetlist.middleBothWidth = MiddleBothWidth = 0;
 											pptComSetlist.middleBothHeight = MiddleBothHeight = 0;
-											pptComSetlist.bottomMiddleWidth = BottomMiddleWidth = 0;
-											pptComSetlist.bottomMiddleHeight = BottomMiddleHeight = 0;
 
 											PptComWriteSetting();
 											Inkeys::UI::Ppt::NotifyConfigurationChanged(
@@ -5323,7 +5287,7 @@ SettingSessionCoroutine RunSettingSession()
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-								ImGui::BeginChild("PPT演示助手#5", { settingItemWidth * settingGlobalScale,215.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+								ImGui::BeginChild("PPT演示助手#5", { settingItemWidth * settingGlobalScale,155.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 								{
 									ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -5386,17 +5350,12 @@ SettingSessionCoroutine RunSettingSession()
 											{
 												if (MiddleSideBothWidgetScaleUnifie)
 													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideBothWidgetScale;
-												if (BottomSideMiddleWidgetScaleUnifie)
-													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = BottomSideBothWidgetScale;
 											}
 											Inkeys::UI::Ppt::NotifyConfigurationChanged(
 												Inkeys::UI::Ppt::ConfigGroup::BottomPair);
 											if (BottomSideBothWidgetScaleUnifie && MiddleSideBothWidgetScaleUnifie)
 												Inkeys::UI::Ppt::NotifyConfigurationChanged(
 													Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
-											if (BottomSideBothWidgetScaleUnifie && BottomSideMiddleWidgetScaleUnifie)
-												Inkeys::UI::Ppt::NotifyConfigurationChanged(
-													Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 										}
 									}
 									{
@@ -5419,8 +5378,6 @@ SettingSessionCoroutine RunSettingSession()
 											{
 												if (MiddleSideBothWidgetScaleUnifie)
 													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideBothWidgetScale;
-												if (BottomSideMiddleWidgetScaleUnifie)
-													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = BottomSideBothWidgetScale;
 											}
 										}
 									}
@@ -5438,11 +5395,6 @@ SettingSessionCoroutine RunSettingSession()
 												if (MiddleSideBothWidgetScaleUnifie)
 												{
 													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = pptComSetlist.middleSideBothWidgetScale;
-													PptComWriteSetting();
-												}
-												else if (BottomSideMiddleWidgetScaleUnifie)
-												{
-													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale;
 													PptComWriteSetting();
 												}
 											}
@@ -5501,17 +5453,12 @@ SettingSessionCoroutine RunSettingSession()
 											{
 												if (BottomSideBothWidgetScaleUnifie)
 													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = MiddleSideBothWidgetScale;
-												if (BottomSideMiddleWidgetScaleUnifie)
-													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = MiddleSideBothWidgetScale;
 											}
 											Inkeys::UI::Ppt::NotifyConfigurationChanged(
 												Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
 											if (MiddleSideBothWidgetScaleUnifie && BottomSideBothWidgetScaleUnifie)
 												Inkeys::UI::Ppt::NotifyConfigurationChanged(
 													Inkeys::UI::Ppt::ConfigGroup::BottomPair);
-											if (MiddleSideBothWidgetScaleUnifie && BottomSideMiddleWidgetScaleUnifie)
-												Inkeys::UI::Ppt::NotifyConfigurationChanged(
-													Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 										}
 									}
 									{
@@ -5534,8 +5481,6 @@ SettingSessionCoroutine RunSettingSession()
 											{
 												if (BottomSideBothWidgetScaleUnifie)
 													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = MiddleSideBothWidgetScale;
-												if (BottomSideMiddleWidgetScaleUnifie)
-													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = MiddleSideBothWidgetScale;
 											}
 										}
 									}
@@ -5555,11 +5500,6 @@ SettingSessionCoroutine RunSettingSession()
 													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = pptComSetlist.bottomSideBothWidgetScale;
 													PptComWriteSetting();
 												}
-												else if (BottomSideMiddleWidgetScaleUnifie)
-												{
-													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = pptComSetlist.bottomSideMiddleWidgetScale;
-													PptComWriteSetting();
-												}
 											}
 										}
 									}
@@ -5571,128 +5511,6 @@ SettingSessionCoroutine RunSettingSession()
 									}
 									ImGui::EndChild();
 								}
-								{
-									ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-									PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-									PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-									ImGui::BeginChild("状态控件缩放", { settingItemWidth * settingGlobalScale,60.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-									float cursosPosY = 0;
-									{
-										ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 22.0f * settingGlobalScale });
-										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-										ImGui::TextUnformatted(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.State.BottomSideMiddle).c_str());
-									}
-									{
-										ImGui::SetCursorPos({ 220.0f * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
-										ImGui::PushItemWidth(300.0f * settingGlobalScale);
-
-										ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-										Widgets::slider.Float("##底部主栏控件缩放", &BottomSideMiddleWidgetScale, 0.5f, 3.0f, "");
-										BottomSideMiddleWidgetScale = round(BottomSideMiddleWidgetScale * 100) / 100;
-
-										ImGui::PopItemWidth();
-
-										bool isItemHovered = ImGui::IsItemHovered();
-										bool isItemActive = ImGui::IsItemActive();
-										if (isItemActive) allItemActive = true;
-
-										if (ImGui::IsItemHovered())
-										{
-											PushFontNum++, ImFontMain->Scale = 0.5f, ImGui::PushFont(ImFontMain);
-
-											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_PopupBg, Widgets::FluentColor::White);
-											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Border, Widgets::FluentColor::ControlStroke);
-											PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextPrimary);
-											PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f * settingGlobalScale);
-											PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * settingGlobalScale, 8.0f * settingGlobalScale));
-
-											ImGui::BeginTooltip();
-
-											ImGui::TextUnformatted(vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(BottomSideMiddleWidgetScale)).c_str());
-
-											ImGui::EndTooltip();
-										}
-										if (BottomSideMiddleWidgetScale != BottomSideMiddleWidgetScaleRecord)
-										{
-											pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
-											if (BottomSideMiddleWidgetScaleUnifie)
-											{
-												if (BottomSideBothWidgetScaleUnifie)
-													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = BottomSideMiddleWidgetScale;
-												if (MiddleSideBothWidgetScaleUnifie)
-													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideMiddleWidgetScale;
-											}
-											Inkeys::UI::Ppt::NotifyConfigurationChanged(
-												Inkeys::UI::Ppt::ConfigGroup::ExitShow);
-											if (BottomSideMiddleWidgetScaleUnifie && BottomSideBothWidgetScaleUnifie)
-												Inkeys::UI::Ppt::NotifyConfigurationChanged(
-													Inkeys::UI::Ppt::ConfigGroup::BottomPair);
-											if (BottomSideMiddleWidgetScaleUnifie && MiddleSideBothWidgetScaleUnifie)
-												Inkeys::UI::Ppt::NotifyConfigurationChanged(
-													Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
-										}
-									}
-									{
-										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-										PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-
-										string temp = vformat(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind), make_format_args(BottomSideMiddleWidgetScale)).c_str();
-										ImVec2 tempVec = ImGui::CalcTextSize(temp.c_str());
-
-										ImGui::SameLine(); ImGui::SetCursorPos({ ImGui::GetCursorPosX() - 15.0f * settingGlobalScale - tempVec.x, cursosPosY + 10.0f * settingGlobalScale + (30.0f * settingGlobalScale - tempVec.y) / 2.0f });
-										ImGui::TextUnformatted(temp.c_str());
-									}
-									{
-										ImGui::SetCursorPos({ settingRightButtonPairLeftX * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
-										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-										if (Widgets::button.Standard((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset) + "##3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
-										{
-											pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = 1.0f;
-											if (BottomSideMiddleWidgetScaleUnifie)
-											{
-												if (BottomSideBothWidgetScaleUnifie)
-													pptComSetlist.bottomSideBothWidgetScale = BottomSideBothWidgetScale = BottomSideMiddleWidgetScale;
-												if (MiddleSideBothWidgetScaleUnifie)
-													pptComSetlist.middleSideBothWidgetScale = MiddleSideBothWidgetScale = BottomSideMiddleWidgetScale;
-											}
-										}
-									}
-									{
-										ImGui::SetCursorPos({ settingRightButtonX * settingGlobalScale, cursosPosY + 15.0f * settingGlobalScale });
-										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-										if (Widgets::button.AccentToggle((IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync) + "##3").c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }, BottomSideMiddleWidgetScaleUnifie))
-										{
-											if (BottomSideMiddleWidgetScaleUnifie) BottomSideMiddleWidgetScaleUnifie = false;
-											else
-											{
-												BottomSideMiddleWidgetScaleUnifie = true;
-
-												if (BottomSideBothWidgetScaleUnifie)
-												{
-													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = pptComSetlist.bottomSideBothWidgetScale;
-													PptComWriteSetting();
-												}
-												else if (MiddleSideBothWidgetScaleUnifie)
-												{
-													pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale = pptComSetlist.middleSideBothWidgetScale;
-													PptComWriteSetting();
-												}
-											}
-										}
-									}
-
-									{
-										if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-										if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-										while (PushFontNum) PushFontNum--, ImGui::PopFont();
-									}
-									ImGui::EndChild();
-								}
-
 								// Extra2
 								if (!allItemActive)
 								{
@@ -5711,14 +5529,6 @@ SettingSessionCoroutine RunSettingSession()
 										PptComWriteSetting();
 										Inkeys::UI::Ppt::NotifyConfigurationChanged(
 											Inkeys::UI::Ppt::ConfigGroup::MiddlePair);
-									}
-									if (BottomSideMiddleWidgetScale != BottomSideMiddleWidgetScaleRecord)
-									{
-										BottomSideMiddleWidgetScaleRecord = BottomSideMiddleWidgetScale;
-										pptComSetlist.bottomSideMiddleWidgetScale = BottomSideMiddleWidgetScale;
-										PptComWriteSetting();
-										Inkeys::UI::Ppt::NotifyConfigurationChanged(
-											Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 									}
 								}
 

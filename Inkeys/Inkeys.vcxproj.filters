@@ -61,6 +61,9 @@
     <Filter Include="Modules\Inkeys\UI\Ppt">
       <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\UI\PageControl">
+      <UniqueIdentifier>{164ef41b-2085-4bcb-8854-3f3277726105}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\UI\Whiteboard">
       <UniqueIdentifier>{5de71bc8-ced2-45ae-bffd-b081b69eb30a}</UniqueIdentifier>
     </Filter>
@@ -277,6 +280,9 @@
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.A2.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
@@ -1771,6 +1777,12 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm">
+      <Filter>Modules\Inkeys\UI\PageControl</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp">
+      <Filter>Modules\Inkeys\UI\PageControl</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>

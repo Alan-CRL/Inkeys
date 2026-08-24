@@ -36,7 +36,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 
 - wWinMain 位于 Inkeys/IdtMain.cpp。新增其他入口会改变现有进程模型，属于架构变更，而不是本 Spec 已批准的路线。
 - Draw3 由唯一 Host/RTS 绑定 Window Service 已创建的主 `WindowRole::Drawpad` HWND；同一 Host 可把 `WindowRole::DrawpadPresentation` sibling 作为 selection-only ULW 呈现目标，但辅助窗不绑定输入、document 或第二套 runtime。Draw3 的 D3D11.1 device、swap chain 和 DComp/DWM/ULW presenter 均独立于 `Inkeys.UI.RenderPipeline`，资源 ID 301-304 由 `draw3-integration.md` 统一维护。
-- `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、五个 PPT 控件与 Setting 共享同一 device epoch 和唯一串行渲染线程。
+- `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、`Inkeys.UI.PageControl` 的四个分页客户端、Whiteboard Freeze 与 Setting 共享同一 device epoch 和唯一串行渲染线程。
 - 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它复用 RenderPipeline 的 WARP device/immediate context，并独占 discard swap chain、RTV、图片 SRV 和 ImGui session。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。
 - 画布合成、撤销历史和按 PPT 页保存的墨迹彼此有关，不能只验证屏幕上的即时笔迹。

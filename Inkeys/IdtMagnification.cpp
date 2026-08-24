@@ -145,8 +145,7 @@ void MagnifierThread()
 				Inkeys::Window::WindowRole::PptBottomLeft,
 				Inkeys::Window::WindowRole::PptBottomRight,
 				Inkeys::Window::WindowRole::PptMiddleLeft,
-				Inkeys::Window::WindowRole::PptMiddleRight,
-				Inkeys::Window::WindowRole::PptExitShow })
+				Inkeys::Window::WindowRole::PptMiddleRight })
 			{
 				if (const HWND hwnd = windowService.Handle(role)) hwndList.emplace_back(hwnd);
 			}

@@ -9,6 +9,7 @@ module;
 
 #include "../../../IdtConfiguration.h"
 #include "../../Window/Window.Legacy.hpp"
+#include "Bar.A2.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -522,6 +523,41 @@ void BarButtonSetClass::PresetInitialization()
 		preset[(int)obj->preset.load()] = obj;
 	}
 
+	// 结束放映
+	{
+		BarButtonClass* obj = new BarButtonClass;
+		{
+			obj->size = BarButtonSizeEnum::twoTwo;
+			obj->preset = BarButtonPresetEnum::EndShow;
+			obj->hide = true;
+		}
+
+		{
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"结束放映", 0.0);
+			obj->name.enable.Initialization(true);
+		}
+		{
+			obj->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0,
+				nullopt, defaultButtonFill, nullopt);
+			obj->button.enable.Initialization(true);
+		}
+		{
+			// 复用旧结束放映窗口的 ppt3 PNG，动画状态仍由 SVG 载体统一驱动。
+			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+			obj->icon.enable.Initialization(true);
+			obj->pngIcon.Initialization(0.0, 0.0);
+			(void)obj->pngIcon.InitializationFromResource(L"PNG", L"ppt3");
+			obj->pngIcon.enable.Initialization(true);
+			obj->icon.rW = obj->pngIcon.rW;
+			obj->icon.rH = obj->pngIcon.rH;
+			obj->iconKind = BarButtonIconKindEnum::Png;
+		}
+
+		obj->clickFunc = []() { Inkeys::UI::Bar::RequestEndShow(); };
+		obj->state = &barButtonState[(int)obj->preset.load()];
+		preset[(int)obj->preset.load()] = obj;
+	}
+
 	// 设置
 	{
 		BarButtonClass* obj = new BarButtonClass;
@@ -568,6 +604,7 @@ void BarButtonSetClass::PresetInitialization()
 	RegisterButton(Inkeys::BarButtonId::Divider, preset[(int)BarButtonPresetEnum::Divider], true, BarButtonLayoutZoneEnum::FixedA1);
 	RegisterButton(Inkeys::BarButtonId::Whiteboard, preset[(int)BarButtonPresetEnum::Whiteboard], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Freeze, preset[(int)BarButtonPresetEnum::Freeze], false, BarButtonLayoutZoneEnum::FixedA2);
+	RegisterButton(Inkeys::BarButtonId::EndShow, preset[(int)BarButtonPresetEnum::EndShow], false, BarButtonLayoutZoneEnum::FixedA2);
 	RegisterButton(Inkeys::BarButtonId::Setting, preset[(int)BarButtonPresetEnum::Setting], false, BarButtonLayoutZoneEnum::Extension);
 	RegisterLayoutMarker(Inkeys::BarButtonId::MoreBoundary);
 
@@ -786,19 +823,25 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 {
 	static mutex mtx;
 	const bool active = Inkeys::UI::Bar::WhiteboardActive();
-	const int styleKey = active ? 1 : 0;
+	const bool presentation = Inkeys::UI::Bar::PptPresentationActive();
+	const auto projection = Inkeys::UI::Bar::ResolveBarA2Projection(
+		presentation, active);
+	const int styleKey = active ? 2 : (presentation ? 1 : 0);
 	if (whiteboardButtonStyleKey == styleKey) return;
 
 	lock_guard<mutex> lock(mtx);
 	if (whiteboardButtonStyleKey == styleKey) return;
 	auto whiteboard = preset[(int)BarButtonPresetEnum::Whiteboard];
 	auto freeze = preset[(int)BarButtonPresetEnum::Freeze];
-	if (!whiteboard || !freeze) return;
+	auto endShow = preset[(int)BarButtonPresetEnum::EndShow];
+	if (!whiteboard || !freeze || !endShow) return;
 	whiteboard->hide = false;
-	whiteboard->size = active
+	whiteboard->size = projection.whiteboardTwoTwo
 		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
 	freeze->size = BarButtonSizeEnum::twoOne;
-	freeze->hide = active;
+	freeze->hide = !projection.freezeVisible;
+	endShow->size = BarButtonSizeEnum::twoTwo;
+	endShow->hide = !projection.endShowVisible;
 	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
 		active ? L"关闭白板" : L"白板");
 	whiteboardButtonStyleKey = styleKey;
@@ -899,6 +942,15 @@ std::vector<Inkeys::BarFixedButtonLayoutEntry> BarButtonSetClass::NormalizeFixed
 	{
 		if (Inkeys::IsRuntimeBoundaryDividerId(entry.Id)) continue;
 		configuredWithoutDivider.push_back(entry);
+	}
+	// 旧 A2 只有 Whiteboard/Freeze；两种合法顺序都保留，并在末尾补 EndShow。
+	if (zone == BarButtonLayoutZoneEnum::FixedA2
+		&& configuredWithoutDivider.size() == 2)
+	{
+		if (Inkeys::UI::Bar::IsLegacyBarA2Pair(
+			configuredWithoutDivider[0].Id, configuredWithoutDivider[1].Id))
+			configuredWithoutDivider.push_back({ Inkeys::BarButtonId::EndShow,
+				Inkeys::BarButtonSizeKind::TwoTwo });
 	}
 
 	// 旧版默认顺序只迁移一次；其他合法自定义排列仍按原顺序保留。

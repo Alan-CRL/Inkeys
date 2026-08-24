@@ -25,7 +25,8 @@ IdtMain: COM + activation context + PptCOM.dll
   → PptCOM::PptComService 绑定 PowerPoint 或 WPS并写 native 页码
   → IdtDrawpad 检测页码变化，保存/恢复 PptImg[页]
   → 更新 PptInfoStateBuffer
-  → Inkeys.UI.Ppt 的四个页码窗口按需显示缓冲页码
+  → Inkeys.UI.Ppt 把缓冲页码发布给 Inkeys.UI.PageControl 的四个共享窗口
+  → 主栏 A2 EndShow 把结束请求投递到同一 PPT 业务队列
   → UI3 交互队列把翻页/结束等业务命令投递回 IdtPlug-in 的 PPT 业务线程
 ~~~
 

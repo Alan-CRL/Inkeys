@@ -49,7 +49,7 @@ namespace
 	[[nodiscard]] constexpr bool IsPpt(WindowRole role) noexcept
 	{
 		return role >= WindowRole::PptBottomLeft
-			&& role <= WindowRole::PptExitShow;
+			&& role <= WindowRole::PptMiddleRight;
 	}
 
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
@@ -82,7 +82,6 @@ namespace
 		case WindowRole::PptBottomRight: return L"Inkeys.Window.PptBottomRight";
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
 		case WindowRole::PptMiddleRight: return L"Inkeys.Window.PptMiddleRight";
-		case WindowRole::PptExitShow: return L"Inkeys.Window.PptExitShow";
 		case WindowRole::Bar: return L"Inkeys.Window.Bar";
 		case WindowRole::Setting: return L"Inkeys.Window.Setting";
 		case WindowRole::DisplayObserver: return L"Inkeys.Window.DisplayObserver";
@@ -234,7 +233,6 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 				WindowRole::DisplayObserver,
 			};
@@ -684,7 +682,6 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 				WindowRole::DisplayObserver,
 			};
@@ -880,7 +877,6 @@ namespace Inkeys::Window
 		{
 			constexpr WindowRole overlayDestructionOrder[] = {
 				WindowRole::Bar,
-				WindowRole::PptExitShow,
 				WindowRole::PptMiddleRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
@@ -1037,7 +1033,6 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 			};
 			struct WindowStyleSnapshot
@@ -1076,6 +1071,12 @@ namespace Inkeys::Window
 			bool succeeded = true;
 			for (const WindowRole role : roles)
 			{
+				// 分页 HWND 与 Bar 的激活样式不变，不能为无效重写制造隐藏帧。
+				if (!RequiresOverlayActivationStyleTransition(role,
+					whiteboard ? OverlayActivationMode::Presentation
+						: OverlayActivationMode::Whiteboard,
+					whiteboard ? OverlayActivationMode::Whiteboard
+						: OverlayActivationMode::Presentation)) continue;
 				const auto* record = Record(role);
 				const HWND hwnd = record ? record->hwnd.load(std::memory_order_acquire)
 					: nullptr;
@@ -1083,10 +1084,6 @@ namespace Inkeys::Window
 				const auto target = ResolveOverlayActivationStyle(role,
 					whiteboard ? OverlayActivationMode::Whiteboard
 						: OverlayActivationMode::Presentation);
-				const DWORD baseStyle = record->activeSpec
-					? record->activeSpec->exStyle : 0;
-				const LONG_PTR desired = static_cast<LONG_PTR>(
-					(baseStyle | target.setExStyle) & ~target.clearExStyle);
 				SetLastError(ERROR_SUCCESS);
 				const LONG_PTR previousStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
 				if (!previousStyle && GetLastError() != ERROR_SUCCESS)
@@ -1094,6 +1091,10 @@ namespace Inkeys::Window
 					succeeded = false;
 					break;
 				}
+				// 只切换激活策略负责的位，保留 click-through 等运行时样式。
+				const LONG_PTR desired =
+					(previousStyle | static_cast<LONG_PTR>(target.setExStyle))
+					& ~static_cast<LONG_PTR>(target.clearExStyle);
 				snapshots.push_back({ hwnd, previousStyle,
 					IsWindowVisible(hwnd) != FALSE, IsIconic(hwnd) != FALSE, false });
 				// Shell 要求动态 APPWINDOW/TOOLWINDOW 先隐藏，再 FrameChanged 后恢复。
@@ -1141,7 +1142,7 @@ namespace Inkeys::Window
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow, WindowRole::Bar,
+				WindowRole::Bar,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -1173,7 +1174,7 @@ namespace Inkeys::Window
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow, WindowRole::Bar,
+				WindowRole::Bar,
 			};
 			const HWND anchor = Handle(WindowRole::Freeze);
 			if (!anchor || !IsWindow(anchor)) return false;
@@ -1365,7 +1366,6 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::PptExitShow,
 				WindowRole::Bar,
 			};
 			for (const auto role : overlayRoles)

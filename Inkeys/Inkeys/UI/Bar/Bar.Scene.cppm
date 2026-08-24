@@ -42,9 +42,16 @@ export namespace Inkeys::UI::Bar
 	using BarSurfaceWidgetId = std::uint32_t;
 	inline constexpr BarSurfaceWidgetId BarSurfaceNoWidget = 0;
 
+	enum class BarSurfaceWidgetKind : std::uint8_t
+	{
+		Button,
+		DragHandle,
+	};
+
 	struct BarSurfaceWidgetSpec
 	{
 		BarSurfaceWidgetId id = BarSurfaceNoWidget;
+		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
 		BarSurfaceDipRect bounds{};
 		bool visible = true;
 		bool enabled = true;
@@ -56,11 +63,14 @@ export namespace Inkeys::UI::Bar
 		std::wstring secondaryText;
 		std::optional<double> iconAngle;
 		double iconSizeDip = BarButtonTwoTwoIconSizeDip;
+		double iconOffsetXDip = 0.0;
 		double iconOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
 		double primaryFontSizeDip = BarButtonTwoTwoIconSizeDip;
+		double primaryOffsetXDip = 0.0;
 		double primaryOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
 		double primarySlotHeightDip = BarButtonTwoTwoIconSizeDip;
 		double secondaryFontSizeDip = BarButtonTwoTwoLabelFontSizeDip;
+		double secondaryOffsetXDip = 0.0;
 		double secondaryOffsetYDip = BarButtonTwoTwoLabelOffsetYDip;
 		double secondarySlotHeightDip = BarButtonTwoTwoLabelHeightDip;
 		COLORREF fill = RGB(0, 0, 0);
@@ -72,6 +82,7 @@ export namespace Inkeys::UI::Bar
 	struct BarSurfaceWidgetLayout
 	{
 		BarSurfaceWidgetId id = BarSurfaceNoWidget;
+		BarSurfaceWidgetKind kind = BarSurfaceWidgetKind::Button;
 		RECT localPixels{};
 		bool visible = false;
 		bool enabled = false;
@@ -159,14 +170,21 @@ export namespace Inkeys::UI::Bar
 			std::span<const BarSurfaceWidgetSpec> widgets,
 			const BarSurfaceHorizontalGroupSpec& group);
 		bool SetWidgets(std::span<const BarSurfaceWidgetSpec> widgets);
+		// 复用稳定 id，从当前呈现几何连续过渡到新背景和按钮布局。
+		bool TransitionLayout(const BarSurfaceBackgroundSpec& background,
+			std::span<const BarSurfaceWidgetSpec> widgets,
+			double durationMilliseconds = 200.0);
 		bool SetWidgetState(BarSurfaceWidgetId id, bool visible, bool enabled,
 			std::wstring primaryText = {}, std::wstring secondaryText = {},
 			std::optional<std::wstring> iconResource = std::nullopt,
 			std::optional<double> iconAngle = std::nullopt);
 		bool SetWidgetInteractive(BarSurfaceWidgetId id, bool interactive);
 		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
+		bool SetWidgetExternalPressed(BarSurfaceWidgetId id, bool pressed);
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);
+		void SetOpacity(double opacity,
+			double durationMilliseconds = 200.0) noexcept;
 		void SetDamageOutsetDip(double outsetDip) noexcept;
 		void SetHooks(BarSurfaceHooks hooks);
 		// 订阅者只在共享第一光源的最终像素变化时被唤醒。
@@ -200,7 +218,8 @@ export namespace Inkeys::UI::Bar
 		BarSurfacePointerResult PointerMove(POINT localPixels) noexcept;
 		BarSurfacePointerResult PointerLeave() noexcept;
 		BarSurfacePointerResult PointerDown(POINT localPixels) noexcept;
-		BarSurfacePointerResult PointerUp(POINT localPixels) noexcept;
+		BarSurfacePointerResult PointerUp(
+			POINT localPixels, bool invokeCallback = true) noexcept;
 		BarSurfacePointerResult CancelPointer() noexcept;
 
 		// 渲染线程调用；该函数只提交本 surface 的 Shape/Button，不改变其他 Bar client。

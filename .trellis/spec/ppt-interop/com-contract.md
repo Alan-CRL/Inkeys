@@ -64,7 +64,7 @@
 1. `IdtMain.cpp::wWinMain` 调用 `CoInitializeEx`，准备/激活 PptCOM manifest context 并 `LoadLibrary` DLL；
 2. `IdtPlug-in.cpp::CheckPptCom` 创建服务，调用 `CheckCOM` 与 `Initialization`，再写入受保护的服务槽；
 3. `GetPptState` 取得快照并运行 `PptComService`；
-4. `PPTLinkageMain` 注册 `Inkeys.UI.Ppt` 五个渲染客户端，并启动 `GetPptState`、`PptInfo` 与 PPT 业务队列；
+4. `PPTLinkageMain` 通过 `Inkeys.UI.Ppt` 租用 `Inkeys.UI.PageControl` 的四个渲染客户端，并启动 `GetPptState`、`PptInfo` 与 PPT 业务队列；
 5. UI3 回调只向业务队列提交请求，业务线程再通过 `NextPptSlides`、`PreviousPptSlides` 等取得服务快照并执行 COM 或模态确认；
 6. 退出路径通过 `offSignal`、服务 reset、COM/activation-context/module 清理收束。
 
@@ -102,7 +102,7 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 2. `IdtPlug-in.cpp::PptInfo` 观察放映状态，并在放映结束时清理 `PptImg` 等状态；
 3. `IdtDrawpad.cpp` 比较 COM 状态与 buffer，换页前保存当前 `drawpad` 到 `PptImg.Image[页]`，再恢复目标页或清空画布；
 4. 画布处理完成后更新 `PptInfoStateBuffer`；源码注释明确 buffer 要等 `DrawpadDrawing` 加载 PPT 画布后再同步；
-5. `Inkeys.UI.Ppt::PublishPageState` 将缓冲状态发布给四个页码窗口；结束放映窗不参与页码计算，交互命令投递到 PPT 业务线程后再调用 COM 服务。
+5. `Inkeys.UI.Ppt::PublishPageState` 将缓冲状态发布给 `Inkeys.UI.PageControl` 的四个页码窗口；主栏 A2 EndShow 不参与页码计算，其点击回调只向 PPT 业务线程投递一次请求，再沿用确认与 COM 服务调用流程。
 
 `【直接确认】` UI3 渲染回调与 COM/模态业务之间以队列隔离。新增 PPT UI 命令时，渲染线程只能复制不可变请求数据并入队；不得在共享 UI3 调度线程内直接调用 Office COM、`PptComWriteSetting()` 或结束放映确认，否则任一阻塞都会饿死 Bar 与其余 PPT 窗口。
 

@@ -408,6 +408,7 @@
 	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.A2.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
@@ -837,6 +838,8 @@
 	<ClCompile Include="Inkeys\Window\Window.cppm" />
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
+	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm" />
+	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
 	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm" />

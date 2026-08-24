@@ -25,6 +25,7 @@ namespace
 
 	static_assert(IsRetiredLegacyBarButtonId("Inkeys.Bar.Pierce"));
 	static_assert(!Inkeys::IsFixedButtonsA2Id("Inkeys.Bar.Pierce"));
+	static_assert(Inkeys::IsFixedButtonsA2Id(Inkeys::BarButtonId::EndShow));
 
 	bool OccupyConfigFileForRead(HANDLE* hFile, const std::wstring& filePath)
 	{

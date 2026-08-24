@@ -1395,13 +1395,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				spec.windowProc = proc;
 				spec.created = created;
 				if (role >= Inkeys::Window::WindowRole::PptBottomLeft &&
-					role <= Inkeys::Window::WindowRole::PptExitShow)
+					role <= Inkeys::Window::WindowRole::PptMiddleRight)
 				{
-					// 五个 HWND 只覆盖控件自身，固定 backing 由 PPT 渲染客户端按缩放提交。
-					spec.width = (role == Inkeys::Window::WindowRole::PptExitShow) ? 70 :
-						(role <= Inkeys::Window::WindowRole::PptBottomRight ? 195 : 60);
-					spec.height = role <= Inkeys::Window::WindowRole::PptBottomRight ||
-						role == Inkeys::Window::WindowRole::PptExitShow ? 60 : 185;
+					// 底部共享窗预留白板 2x2 形态容量，透明区由 PageControl 穿透命中。
+					spec.width = role <= Inkeys::Window::WindowRole::PptBottomRight
+						? 230 : 43;
+					spec.height = role <= Inkeys::Window::WindowRole::PptBottomRight
+						? 80 : 165;
 					spec.bindMessages = false;
 				}
 				else if (role == Inkeys::Window::WindowRole::Bar)
@@ -1439,9 +1439,6 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
 		AddOverlayWindow(Inkeys::Window::WindowRole::PptMiddleRight,
 			L"Inkeys4.MiddleRight;", L"Inkeys Ppt Middle Right",
-			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
-		AddOverlayWindow(Inkeys::Window::WindowRole::PptExitShow,
-			L"Inkeys4.ExitShow;", L"Inkeys Ppt Exit Show",
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc);
 		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
 			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc);

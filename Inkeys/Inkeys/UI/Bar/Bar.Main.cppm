@@ -858,6 +858,11 @@ namespace Inkeys::UI::Bar
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;
 	export bool CurrentPageHasContent() noexcept;
+	export void SetPptPresentationActive(bool active) noexcept;
+	export bool PptPresentationActive() noexcept;
+	export void SetEndShowCallback(std::function<void()> callback);
+	export void RequestEndShow();
+	export void CompleteEndShowRequest() noexcept;
 	export void SetWhiteboardActive(bool active) noexcept;
 	export void CollapseAuxiliaryPanels(bool cancelCapture = true) noexcept;
 	export bool WhiteboardActive() noexcept;

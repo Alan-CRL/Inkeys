@@ -10,7 +10,7 @@
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
 | 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 共享 WARP D3D11 device/immediate context；Setting 独占传统 discard swap chain、RTV、SRV 和 ImGui session | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
 | 主画板 | `【直接确认】` Draw3 已接管 Window Service 的主 Drawpad；选择态使用同一 Host 的 presentation-only sibling | Draw3 独立 D3D11.1 device、单一 swap chain/final backbuffer，以及主 DComp/DWM/ULW + 辅助 ULW target | `Draw3.Host.*`、`Draw3.TransparentPresentation.*`、`draw3-integration.md` |
-| PPT / Whiteboard 分页控件 | `【直接确认】` UI3 五个 owned layered HWND；`PptBottomLeft/PptBottomRight` 同时作为 Whiteboard 左右分页宿主 | 与 Bar/Setting 共享 D3D11 epoch；PPT 与 Whiteboard 保留各自的 D2D device context/target/GDI interop，并由 RenderPipeline 线程按 owner 串行 ULW 呈现 | `Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/Whiteboard/Whiteboard.*`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*` |
+| PPT / Whiteboard 分页控件 | `【直接确认】` `Inkeys.UI.PageControl` 独占四个 owned layered HWND；`PptBottomLeft/PptBottomRight` 在 PPT 与 Whiteboard 间连续切换布局 | 与 Bar/Setting 共享 D3D11 epoch；PageControl 独占四套 Scene/device context/target/GDI interop，PPT 与 Whiteboard 只发布状态和业务回调 | `Inkeys/Inkeys/UI/PageControl/PageControl.*`、`Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/Whiteboard/Whiteboard.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
 
 `Experimental.Inkeys3.UI3` 名下的 Animation、EdgeLighting 和 Debug 仍是 UI3 功能配置，不是路由开关。旧路由 JSON key 只能清理，不能恢复读取或写入。
@@ -29,7 +29,7 @@
 
 `【直接确认】` 消费者并不相同：
 
-- `DeviceEpoch` 由 Bar、五个 PPT、三个 Whiteboard 渲染客户端和 Setting 共用；各渲染客户端仍持有自己的 D2D device context、target bitmap 和 GDI interop，共享底部 HWND 不共享这些 per-client 资源；
+- `DeviceEpoch` 由 Bar、PageControl 四个分页客户端、Whiteboard Freeze 和 Setting 共用；每个客户端仍持有自己的 D2D device context、target bitmap 和 GDI interop，共享底部 HWND 只有 PageControl 一个呈现所有者；
 - `SharedAssets` 中的 D2D 1.1 factory、DWrite factory/font collection 被 Bar/PPT 文字资源使用；
 - Setting 借用同一 D3D11 device/immediate context，但独占 discard swap chain、RTV、纹理 SRV 和 ImGui backend/session；
 - 主画板不是 D2D target。
@@ -111,14 +111,14 @@ clock.Rebase();
 
 #### 1. Scope / Trigger
 
-新增或修改 Bar、五个 PPT HWND、Whiteboard clients、Settings、请求唤醒、动画续帧、target/device 失败恢复或渲染线程退出时适用。当前固定顺序为 Bar、PPT 底部左、PPT 底部右、中部左、中部右、结束放映、Settings、Whiteboard Freeze、Whiteboard 左、Whiteboard 右。
+新增或修改 Bar、PageControl 四个分页 HWND、Whiteboard Freeze、Settings、请求唤醒、动画续帧、target/device 失败恢复或渲染线程退出时适用。当前固定顺序为 Bar、PPT 底部左、PPT 底部右、中部左、中部右、Settings、Whiteboard Freeze。
 
 #### 2. Signatures
 
 ~~~cpp
 enum class Client : std::uint8_t {
 	Bar, PptBottomLeft, PptBottomRight, PptMiddleLeft,
-	PptMiddleRight, PptExitShow, Settings, Count
+	PptMiddleRight, Settings, WhiteboardFreeze, Count
 };
 
 enum class FrameResult : std::uint8_t {
@@ -144,6 +144,7 @@ bool Scheduler::PostControl(ControlTask);
 - 设备恢复失败时保留 recovery pending 状态，后续 16,666,667 ns 节拍只重试恢复；恢复成功前禁止调用任何客户端或向旧 epoch 提交。`Stop()` 后清空请求位、控制位和 event 状态，Scheduler 重启不得回放旧请求。
 - `PostControl` 用于必须在渲染线程执行的会话销毁等生命周期任务；FIFO 控制任务在每轮设备恢复重试前执行，因此 recovery pending 不得阻塞 Setting teardown。停止接收任务后投递必须失败，调用者不得无限等待未入队任务。
 - 所有客户端共享 D3D11/D2D device，但各自持有 device context、target bitmap、GDI interop 和 ULW 状态。COM、配置写盘、模态确认或其他可能阻塞的业务回调必须投递到业务线程，不能在调度回调内直接执行。客户端也不得调用 `HighPrecisionWait`、`Sleep` 或条件变量做本地帧等待；最多 60 FPS 的节拍只由共享调度器负责。
+- `PptPageMask()` 固定只包含四个 PageControl 槽；`WhiteboardMask()` 包含 Freeze 与两个底部 PageControl 槽。结束放映是 Bar A2 的业务按钮，不得重新增加独立 RenderPipeline client。
 - 主按钮直拖激活时，Bar 仍须推进并呈现已有动画；直接 `SetWindowPos` 与 ULW 提交共用同一几何锁，交互线程只能 `try_lock`，不得等待可能包含 `GetDC/ULW` 的慢提交。拖动累计屏幕位移必须同时叠加到 ULW `pptDst`，允许动画帧改变 viewport 大小而不把窗口拉回；松手后由渲染线程把位移吸收到主按钮布局并重基准脏区快照，吸收前后的屏幕到布局转换继续扣除尚未接管的位移，保证快速下一段拖动命中和坐标连续。
 
 #### 4. Validation & Error Matrix
@@ -166,13 +167,13 @@ bool Scheduler::PostControl(ControlTask);
 #### 5. Good / Base / Bad Cases
 
 - Good：Settings 可见时独自连续返回 `Continue`，未变化的 Bar/PPT 不进入回调；隐藏后全部 idle，唯一事件无限等待。
-- Base：页码变化只请求四个页码窗；结束放映窗和 Settings 不计算。
+- Base：页码变化只请求四个分页窗；A2 结束放映按钮随 Bar 状态刷新，不占独立客户端。
 - Bad：Bar 观察到进程退出就返回 `Stop`，导致渲染线程先退出而 Setting shutdown 永久等待 session drain。
 
 #### 6. Tests Required
 
 - Headless 断言请求位合并、固定顺序、并发请求不丢失、Settings 独自 60 FPS/隐藏 idle、`Continue/Retry` 局部续帧、`DeviceLost` 全槽请求、恢复失败重试、同步注销、restart 清理和相邻帧不少于约 16 ms。
-- 窗口测试断言 Bar/五个 PPT HWND 生命周期、共享底部角色和 Z 序；完整 Solution `Debug|ARM64` 构建验证 module/project 登记。
+- 窗口测试断言 Bar/四个 PageControl HWND 生命周期、共享底部角色和 Z 序；完整 Solution `Debug|ARM64` 构建验证 module/project 登记。
 - 手工验证静止休眠、Bar 直移期间 PPT 更新、设备/DPI 切换、PowerPoint/WPS 长按与拖动；自动测试不能替代真实 Office/WPS 和显示器切换。
 
 #### 7. Wrong vs Correct
@@ -206,55 +207,60 @@ if (offSignal) return FrameResult::Stop;
 if (offSignal) return FrameResult::Idle;
 ~~~
 
-### UI3 PPT 控件内部几何合同
+### UI3 PageControl 几何与交互合同
 
 #### 1. Scope / Trigger
 
-修改五个 PPT 控件的拖动柄、按钮、页码文字框、命中区或 DPI 缩放时适用。控件内部几何使用 96 DPI 逻辑坐标，绘制时统一乘窗口 scale。
+修改 PPT/Whiteboard 共享分页窗口、BarSurface widget、布局过渡、拖动、碰撞或 DPI 缩放时适用。控件内部几何使用 96 DPI 逻辑坐标，绘制时统一乘窗口 scale。
 
 #### 2. Signatures
 
 ~~~cpp
-ControlVisualGeometry ResolveControlVisualGeometry(Control) noexcept;
-PageText ResolvePageText(Control, int currentPage, int totalPage);
-bool IsInPageHitArea(Control, float x, float y) noexcept;
+WorkspaceMode ResolveWorkspaceMode(Surface, const PptState&,
+    const WhiteboardState&) noexcept;
+std::array<PptWidgetContract, 4> ResolvePptWidgetContracts(Surface) noexcept;
+PptState ResolveRuntimePageControlLayout(const RECT& monitor, float dpiScale,
+    PptState, const WhiteboardState&, const RECT* mainBarObstacle) noexcept;
 ~~~
 
 #### 3. Contracts
 
-- 底部左、底部结束拖动柄为 `x=8, y=15..45` 的竖线；底部右镜像为 `x=187`；中部左右为 `y=8, x=15..45` 的横线。线宽 2，使用圆头和深灰色。
-- 中部按钮固定为上一页 `y=15..65`、下一页 `y=130..180`，在 `60x185` backing 中保持左右和底部各 5px 间距。
-- 页码沿用 `HarmonyOS Sans SC` 自定义字体集合；未知当前页/总页分别显示 `-` 和 `/-`；底部页码上限 9999，中部页码上限 999，文字禁止自动换行。
-- 文本绘制框与点击热区是相关但不同的合同：底部页码列整窗高度可点击，中部 `y=70..125` 在整窗宽度内可点击。视觉框不得缩窄既有点击热区。
+- PPT 底部可见外框固定为 `165x42.5 DIP`，两侧为 `42.5x165 DIP`；外边距与按钮间距均为 `5 DIP`。底部依次放置 `10 DIP` 拖动条、`32.5` 上一页、`70` 页码、`32.5` 下一页，右侧窗口镜像拖动条位置；侧边窗口按同一尺寸竖排。
+- 翻页按钮只显示箭头。页码按钮显示加粗当前页和常规字重 `/总页数`，未知值显示 `-`/`/-`；底部上限 9999、侧边上限 999。页码按钮保留 Bar 按压反馈，但回调必须是 no-op。
+- `DragHandle` 是唯一拖动入口：参与命中和 capture，但不得产生 hover、pressed 或 click 视觉。白板 `230x80 DIP` 布局在中间页码按钮顶部复用 `70x10 DIP` 拖动条，命中优先级高于重叠页码按钮。
+- `BarSurfaceScene::TransitionLayout` 必须按稳定 widget ID 从当前呈现几何重新定向背景和按钮的 x/y/宽高；图标和文字变化沿用内容淡出、替换和回弹。过渡、渐显和退场期间 PageControl 锁定输入。
+- 运行时碰撞以主栏当前可见屏幕矩形为最高优先级，随后固定底部组并让侧边组避让；显示器适配和冲突回退只修改发布快照的运行时副本，不写回保存配置。主栏成功提交的新矩形必须唤醒四个分页客户端。
 
 #### 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
 | --- | --- |
-| DPI/用户缩放变化 | 所有逻辑几何和 stroke width 乘同一 scale |
+| DPI/用户缩放变化 | 紧凑 PPT 几何、边框和拖动条统一缩放；Whiteboard 保持 `230x80 DIP` |
 | 当前页或总页为负数 | 使用占位符，不渲染 `-1` |
-| 指针位于页码文字左右空白 | 中部窗口仍执行页码点击，不转为拖动 |
-| 指针位于页码列上下空白 | 底部窗口仍执行页码点击，不转为拖动 |
+| 点击页码按钮 | 只产生按钮反馈，不投递翻页、ViewShow 或拖动 |
+| 按下拖动条 | 捕获并移动成对控件；无 hover/press/click 视觉 |
+| 主栏移动后与分页组冲突 | 只调整运行时位置；用户保存的 offset/scale 不变 |
+| PPT surface 隐藏或 Whiteboard expanded target | 键盘外部按压不得让隐藏 surface 显示或截获输入 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：绘制、命中和测试读取同一逻辑几何，热区通过独立 helper 保留兼容范围。
-- Base：默认 scale 下拖动柄、按钮和页码与迁移前布局一致。
-- Bad：只移动 D2D 按钮矩形，不同步命中区、图标和脏区边界；或直接 `to_wstring(-1)`。
+- Good：绘制、命中、碰撞和测试读取同一稳定 ID 几何；反向布局切换从当前插值值重新定向。
+- Base：默认 scale 下 PPT 为紧凑深色 Bar 样式，Whiteboard 为三枚既有 `70x70 DIP` 按钮。
+- Bad：保留页码区域拖动、在隐藏 surface 上触发外部按压，或主栏冲突时覆盖用户保存位置。
 
 #### 6. Tests Required
 
-- Headless 断言五窗拖动柄方向/坐标、中部按钮外边距、页码框、未知值、数值上限和热区边界。
-- 完整 Solution `Debug|ARM64` 构建；真实 PowerPoint/WPS 中手工检查不同 scale/DPI 下的线宽、文本裁切和页码点击。
+- Headless 断言四窗紧凑尺寸、DPI/极小屏适配、拖动条专属拖动、页码 no-op/混合字重、外部按压可见性、稳定 ID 反向过渡和碰撞回退。
+- 完整 Solution `Debug|ARM64` 构建；真实 PowerPoint/WPS 中手工检查不同 scale/DPI 下的光影、文本裁切、长按、滚轮和触摸拖动。
 
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：文字框变窄时顺带缩窄既有页码点击区。
-return Contains(geometry.currentPage);
+// Wrong：页码区域继续兼任窗口拖动。
+if (pageBounds.Contains(point)) BeginDrag();
 
-// Correct：视觉框负责排版，兼容热区由明确合同派生。
-return IsInPageHitArea(control, x, y);
+// Correct：只有 DragHandle 命中才能开始成对拖动。
+if (hit.widgetKind == BarSurfaceWidgetKind::DragHandle) BeginPairDrag();
 ~~~
 
 ### UI3 基于变化的脏区事务合同
@@ -1096,7 +1102,7 @@ queue.push(std::move(command));
 
 ### 1. Scope / Trigger
 
-修改 Whiteboard 左右分页 UI、页码发布、Draw3 workspace 切换、辅助面板收起、taskbar/activation 或退出恢复时适用。该功能横跨 `IdtState`、Draw3、Bar、Whiteboard Scene 与 Window Service，任何一层都不得自行推导另一层尚未确认的稳定状态。
+修改 PageControl 的 Whiteboard 布局、页码发布、Draw3 workspace 切换、辅助面板收起、taskbar/activation 或退出恢复时适用。该功能横跨 `IdtState`、Draw3、Bar、PageControl 与 Window Service，任何一层都不得自行推导另一层尚未确认的稳定状态。
 
 ### 2. Signatures
 
@@ -1105,8 +1111,10 @@ PageStateTransaction::Publish(int currentPage, int totalPage, bool switching)
     -> PageState;
 Whiteboard::PublishPageState(int currentPage, int totalPage, bool switching)
     -> void;
-Window::ResolveSharedPageHostOwner(bool whiteboardWindowMode, bool whiteboardActive)
-    -> SharedPageHostOwner;
+Whiteboard::PublishExpandedLayoutTarget(bool expanded) -> void;
+PageControl::PublishWhiteboardState(const WhiteboardState&) -> void;
+PageControl::ResolveWorkspaceMode(Surface, const PptState&,
+    const WhiteboardState&) -> WorkspaceMode;
 Bar::CollapseAuxiliaryPanels(bool cancelCapture = true) -> void;
 Window::Service::EnterWhiteboardWindowMode() -> bool;
 Window::Service::LeaveWhiteboardWindowMode() -> bool;
@@ -1117,10 +1125,10 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 ### 3. Contracts
 
 - 每侧分页控件固定为 `230x80 DIP`，使用三个真实 Bar `twoTwo` 按钮。布局、SVG 变换、颜色、光效、动画曲线与 dirty/present 计算来自 Bar 的单一来源；页码按钮保持标准交互视觉，但业务命令为 no-op。
-- `PptBottomLeft/PptBottomRight` 是 Presentation 与 Whiteboard 共用的唯一左右底部分页 HWND；不得恢复 `WhiteboardLeft/WhiteboardRight` 窗口角色、窗口规格或句柄。两种工作区仍保留独立 renderer、Scene、输入和业务命令。
-- 共享宿主只有三个 owner 状态：`mode=false` 时仅 PPT 可提交和消费输入；`mode=true && active=false` 时保持隐藏且双方都不可消费；`mode=true && active=true` 时仅 Whiteboard 可提交和消费。inactive Whiteboard 和 active Whiteboard 期间的 PPT 回调都不得隐藏另一 owner 已显示的共享窗。
-- Whiteboard 的 Scene/present 事务锁只保护 D2D、GDI interop 与 Scene 状态；同步 `Window::Service::Hide/SetBounds/Show` 必须在该锁外执行，避免 owner thread 的 WndProc 反向等待。最终显隐与 `PublishActive(false)` 使用 WndProc 不获取的独立交接锁串行化，保证停用返回后没有迟到 Whiteboard `Show`。
-- Enter 先撤销 capture、发布 PPT 不可见并隐藏共享宿主，再进入 Whiteboard window mode；若 mode 事务失败，立即按 `PptInfoState.TotalPage > 0` 恢复 PPT 可见性。Whiteboard 首帧就绪后才发布 active。Exit 先同步发布 Whiteboard inactive 并隐藏共享宿主，成功离开 Whiteboard window mode 后才按 COM 状态恢复 PPT 可见性。
+- `PptBottomLeft/PptBottomRight` 是 Presentation 与 Whiteboard 共用的唯一左右底部分页 HWND；不得恢复 `WhiteboardLeft/WhiteboardRight` 窗口角色、窗口规格或句柄。`Inkeys.UI.PageControl` 是两种工作区唯一的 renderer、Scene、输入和呈现所有者，PPT/Whiteboard 只发布状态与业务回调。
+- PageControl 的稳定态为 `Hidden / PptCompact / WhiteboardExpanded`。`WhiteboardState::expandedLayoutTarget` 对底部 surface 的优先级高于 PPT visible，并隐藏两侧；背景 `active` 只表示 Draw3 Whiteboard 首帧已就绪后的 Freeze 目标。两者不一致时 PageControl 必须锁定输入，不再使用 Presentation/Whiteboard 双 renderer owner 或 `TransitionHidden` 中间 owner。
+- PageControl 的 Scene/present 事务锁只保护 D2D、GDI interop 与 Scene 状态；同步 `Window::Service::Hide/SetBounds/Show` 必须在该锁外执行。由于只有一个呈现所有者，迟到帧必须消费最新快照后重新定向，不能靠调用方抢先隐藏共享 HWND 仲裁。
+- Enter 先撤销 capture 并进入 Whiteboard window mode；PPT 可见状态保持当前 COM 事实。窗口模式事务成功后立即发布 expanded 目标，使已显示 PPT 底栏从当前帧连续形变；原本未显示时直接使用 `230x80 DIP` 最终几何渐显。Whiteboard 背景 active 仍须等待 Draw3 Whiteboard 首帧就绪。Exit 先发布 compact 目标并关闭背景 active；不得在交接前后显式隐藏两个共享底部 HWND。Exiting 期间反向重入先恢复 expanded 目标，从当前插值值重新定向，再等待 Draw3/Freeze readiness，期间保持输入锁定。
 - `totalPage` 至少为 1，`currentPage` 限制到 `[1, totalPage]`。首次发布若直接为 `switching=true`，稳定基线必须来自该次真实输入。
 - 进入翻页事务时锁存上一稳定帧的 Previous enabled 与 Add/Arrow；事务中只把三个 `interactive` 置 false，未变化的 SVG 和文字不得重启动画。追加页事务全程保持 Add，事务完成后才接受新的边界语义。
 - `Inactive / Entering / Active / Exiting` 的每次 workspace 转换都先调用 `CollapseAuxiliaryPanels(true)` 并撤销 Whiteboard capture。进入稳定白板时绘制属性、几何属性、更多、笔菜单和粗细预览均保持关闭。
@@ -1134,9 +1142,9 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 | `3/3 -> 3/4 -> 4/4` 且 switching | 右按钮始终为 Add；三个按钮只锁输入 |
 | 普通翻页进入末页 | 事务中保持 Arrow，稳定后才转 Add |
 | 首次发布即 switching | Previous/Add 基线来自真实页码，不从内部 `1/1` 泄漏 |
-| Enter/Exit 中途反向请求 | 回到完整的另一状态事务；不复用半套 style 或 renderer 状态 |
+| Enter/Exit 中途反向请求 | 先切换 expanded 目标并回到完整的另一状态事务；PageControl 从当前插值值重新定向且共享 HWND 不隐藏，背景 active 不提前发布 |
 | `EnterWhiteboardWindowMode()` 失败 | Window Service 回滚 Presentation style；PPT 可见性按当前 COM 页数恢复 |
-| Whiteboard present 与 `PublishActive(false)` 交错 | present 先结算 D2D 事务；独立交接锁决定最终 show/skip，且不在 Scene 锁内同步调用 Window Service |
+| PageControl present 与 `PublishActive(false)` 交错 | present 先结算 D2D 事务；下一帧按最新快照反向重定向，且不在 Scene 锁内同步调用 Window Service |
 | Whiteboard group 最小化/恢复 | Freeze 作为组锚点；仅恢复快照中可见的成员 |
 | 窗口状态调用失败 | phase 不发布假稳定态，下一轮继续收敛或回滚 Presentation |
 
@@ -1148,7 +1156,7 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 
 ### 6. Tests Required
 
-- Headless 覆盖页码归一化、追加页、到末页、离开第一页、首次 switching、按钮 no-op、标准 Bar 布局与窗口 activation style/group 状态；静态审查 Whiteboard 的同步 Window Service 调用不位于 Scene/present 事务锁内。
+- Headless 覆盖页码归一化、追加页、到末页、离开第一页、首次 switching、按钮 no-op、PPT/Whiteboard 双向布局、反向重入、首次渐显、输入门禁与窗口 activation style/group 状态；静态审查 workspace 交接不显式隐藏共享底部 HWND。
 - 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 与 `Debug|x64`，并执行两架构 `InkeysHeadlessTests.exe --no-window`。
 - GUI 环境另行执行连续 50 次 Enter/Exit、任务栏最小化/恢复、桌面首次点击穿透和辅助面板默认关闭验收；无窗口测试不得冒充这些结果。
 
@@ -1165,22 +1173,22 @@ state = transaction.Publish(currentPage, totalPage, switching);
 ~~~
 
 ~~~cpp
-// Wrong：同步 Window Service 可能回入 WndProc，并等待当前持有的 Scene 锁。
-std::scoped_lock sceneLock(renderTransactionMutex);
-service.Show(WindowRole::PptBottomLeft);
+// Wrong：双 renderer 交接靠隐藏共享 HWND 仲裁，连续布局必然断帧。
+ppt.PublishVisible(false);
+service.Hide(WindowRole::PptBottomLeft);
 
-// Correct：先结算 Scene/present，再用 WndProc 不获取的交接锁复核 owner 并显示。
-FinishPresentTransaction();
-std::scoped_lock handoffLock(controlPresentationMutex);
-if (CurrentOwner() == SharedPageHostOwner::Whiteboard)
-	service.Show(WindowRole::PptBottomLeft);
+// Correct：单一 PageControl 根据两份快照从当前帧重定向布局。
+pageControl.PublishWhiteboardState({
+    .expandedLayoutTarget = true,
+    .active = false, // Draw3/Freeze 尚未就绪，输入继续锁定。
+});
 ~~~
 
 ## Win32 Window、DibSurface 与 HiMsg 合同
 
 ### 1. Scope / Trigger
 
-创建或操作 Mag、Freeze、Drawpad/DrawpadPresentation、五个 UI3 PPT 窗口（其中底部两个由 Whiteboard 复用）、UI3 Bar、Setting、DisplayObserver，或迁移 Draw2 图像/消息路径时适用。HiEasyX/EasyX 已从源码、工程和链接中删除，不得重新引入。
+创建或操作 Mag、Freeze、Drawpad/DrawpadPresentation、四个 UI3 PageControl 窗口（其中底部两个由 Whiteboard 复用）、UI3 Bar、Setting、DisplayObserver，或迁移 Draw2 图像/消息路径时适用。HiEasyX/EasyX 已从源码、工程和链接中删除，不得重新引入。
 
 ### 2. Signatures
 
@@ -1207,7 +1215,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 3. Contracts
 
-- Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；Whiteboard 复用两个 `PptBottom*` HWND，不再创建独立左右窗口。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
+- Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、四个 PageControl HWND、Bar、Setting 和 DisplayObserver；Whiteboard 复用两个 `PptBottom*` HWND，不再创建独立左右窗口。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
 - Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
@@ -1234,7 +1242,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Bar 与五个 PPT 是同 owner 的兄弟窗口，PPT 前置始终止于 Bar 正下方。
+- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Bar 与四个 PageControl HWND 是同 owner 的兄弟窗口，分页窗前置始终止于 Bar 正下方。
 - Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
 - Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，历史上会导致绘制卡顿或闪烁。
 

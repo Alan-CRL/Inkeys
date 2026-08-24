@@ -32,6 +32,7 @@ export namespace Inkeys
 		inline constexpr char Clean[] = "Inkeys.Bar.Clean";
 		inline constexpr char Whiteboard[] = "Inkeys.Bar.Whiteboard";
 		inline constexpr char Freeze[] = "Inkeys.Bar.Freeze";
+		inline constexpr char EndShow[] = "Inkeys.Bar.EndShow";
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
 
@@ -147,7 +148,8 @@ inline bool IsFixedButtonsA1Id(std::string_view id)
 
 		inline constexpr bool IsFixedButtonsA2Id(std::string_view id)
 		{
-			return id == BarButtonId::Whiteboard || id == BarButtonId::Freeze;
+			return id == BarButtonId::Whiteboard || id == BarButtonId::Freeze
+				|| id == BarButtonId::EndShow;
 		}
 
 		inline bool IsOfficialFixedBarButtonId(std::string_view id)
@@ -215,6 +217,7 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 			return {
 				{ BarButtonId::Whiteboard, BarButtonSizeKind::TwoOne },
 				{ BarButtonId::Freeze, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::EndShow, BarButtonSizeKind::TwoTwo },
 			};
 		}
 	}

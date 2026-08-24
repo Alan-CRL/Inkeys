@@ -35,6 +35,7 @@ enum class BarButtonPresetEnum : int
 
 	Whiteboard,
 	Freeze,
+	EndShow,
 
 	More,
 	Setting

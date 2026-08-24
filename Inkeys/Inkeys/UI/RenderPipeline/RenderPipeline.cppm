@@ -68,11 +68,8 @@ export namespace Inkeys::UI::RenderPipeline
 		PptBottomRight,
 		PptMiddleLeft,
 		PptMiddleRight,
-		PptExitShow,
 		Settings,
 		WhiteboardFreeze,
-		WhiteboardLeft,
-		WhiteboardRight,
 		Count,
 	};
 
@@ -106,13 +103,13 @@ export namespace Inkeys::UI::RenderPipeline
 
 	[[nodiscard]] constexpr ClientMask PptMask() noexcept
 	{
-		return PptPageMask() | Mask(Client::PptExitShow);
+		return PptPageMask();
 	}
 
 	[[nodiscard]] constexpr ClientMask WhiteboardMask() noexcept
 	{
-		return Mask(Client::WhiteboardFreeze) | Mask(Client::WhiteboardLeft) |
-			Mask(Client::WhiteboardRight);
+		return Mask(Client::WhiteboardFreeze)
+			| Mask(Client::PptBottomLeft) | Mask(Client::PptBottomRight);
 	}
 
 	struct DispatchDecision

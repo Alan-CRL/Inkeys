@@ -142,6 +142,7 @@ export namespace Inkeys::UI::Whiteboard
 	bool Initialize(BusinessCallbacks callbacks);
 	void Shutdown() noexcept;
 	[[nodiscard]] WNDPROC WindowProc() noexcept;
+	void PublishExpandedLayoutTarget(bool expanded) noexcept;
 	void PublishActive(bool active) noexcept;
 	void CancelPointerCapture() noexcept;
 	void PublishPageState(int currentPage, int totalPage, bool switching) noexcept;

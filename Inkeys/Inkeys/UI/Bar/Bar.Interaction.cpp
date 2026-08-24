@@ -20,6 +20,7 @@ import :Theme;
 import Inkeys.Conv.Color;
 import Inkeys.Message;
 import Inkeys.Other.Inputs;
+import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Display;
 using Inkeys::UI::Bar::BarToggleChannel;
@@ -6403,6 +6404,9 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							committedWindowScreenBounds = TranslateBarWindowRect(
 								currentWindowRect, moveDelta);
 							committedWindowScreenBoundsReady = true;
+							// HWND 直移不会等待下一次 Bar present，立即让分页控件重算避让。
+							Inkeys::UI::RenderPipeline::Request(
+								Inkeys::UI::RenderPipeline::PptPageMask());
 							RebaseBottomDockPresentedWindow(
 								desiredTranslation, moveDelta);
 							// 第三光源接受区是屏幕缓存，HWND 直移后同步平移，不能等下一次 ULW。

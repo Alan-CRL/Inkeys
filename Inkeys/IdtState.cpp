@@ -424,10 +424,7 @@ void StateMonitoring()
 				std::memory_order_release);
 			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
 			Inkeys::UI::Whiteboard::CancelPointerCapture();
-			// 先同步停住 PPT，再隐藏共享宿主并建立 Transition hidden 门禁。
-			Inkeys::UI::Ppt::PublishPresentationVisible(false);
-			(void)service.Hide(Inkeys::Window::WindowRole::PptBottomLeft);
-			(void)service.Hide(Inkeys::Window::WindowRole::PptBottomRight);
+			// PageControl 是共享宿主的唯一所有者；保留 PPT 状态并连续形变。
 			if (!service.EnterWhiteboardWindowMode())
 			{
 				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
@@ -437,6 +434,8 @@ void StateMonitoring()
 					std::memory_order_release);
 				continue;
 			}
+			// 几何目标不等待 Draw3 首帧；背景 active 仍在 Entering 就绪后发布。
+			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 			(void)service.SetClickThrough(
 				Inkeys::Window::WindowRole::Drawpad, true);
@@ -453,6 +452,7 @@ void StateMonitoring()
 			if (!desired)
 			{
 				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 				(void)service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, true);
 				Inkeys::UI::Whiteboard::PublishPageState(
@@ -484,8 +484,6 @@ void StateMonitoring()
 				(void)service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, true);
 				Inkeys::UI::Whiteboard::PublishActive(false);
-				(void)service.Hide(Inkeys::Window::WindowRole::PptBottomLeft);
-				(void)service.Hide(Inkeys::Window::WindowRole::PptBottomRight);
 				SetWhiteboardFreezeSurfaceOwned(false);
 				Inkeys::UI::Bar::SetWhiteboardActive(false);
 				(void)service.SetOverlayFullscreen(false);
@@ -510,10 +508,9 @@ void StateMonitoring()
 				pageSwitching = false;
 				Inkeys::UI::Whiteboard::CancelPointerCapture();
 				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
-				// PublishActive 与白板 present 同步；返回后再隐藏共享宿主，杜绝迟到 show。
+				// 单一 PageControl 从当前白板帧反向重定向，不插入隐藏帧。
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 				Inkeys::UI::Whiteboard::PublishActive(false);
-				(void)service.Hide(Inkeys::Window::WindowRole::PptBottomLeft);
-				(void)service.Hide(Inkeys::Window::WindowRole::PptBottomRight);
 				(void)service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, true);
 				Inkeys::UI::Whiteboard::PublishPageState(
@@ -571,11 +568,10 @@ void StateMonitoring()
 		{
 			if (desired)
 			{
-				// Exit 尚未完成时重新进入，重新走 Enter 的窗口/输出握手。
+				// 先从当前插值帧重定向；背景仍等待 Draw3 Whiteboard 首帧。
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
 				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
 				Inkeys::UI::Whiteboard::CancelPointerCapture();
-				(void)service.Hide(Inkeys::Window::WindowRole::PptBottomLeft);
-				(void)service.Hide(Inkeys::Window::WindowRole::PptBottomRight);
 				if (!service.EnterWhiteboardWindowMode())
 				{
 					// 重入也必须等待完整的窗口样式事务，不复用半套状态。
@@ -586,13 +582,13 @@ void StateMonitoring()
 				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 				(void)service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, true);
-				Inkeys::UI::Ppt::PublishPresentationVisible(false);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
 					Workspace::Whiteboard);
 				whiteboardPhase.store(WhiteboardPhase::Entering,
 					std::memory_order_release);
 				continue;
 			}
+			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
 			if (!Draw3WorkspaceReady(snapshot, Workspace::Presentation)) continue;
 
 			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。
@@ -604,8 +600,6 @@ void StateMonitoring()
 				static_cast<int>(snapshot.pageCount), false);
 			SetWhiteboardFreezeSurfaceOwned(false);
 			Inkeys::UI::Bar::SetWhiteboardActive(false);
-			(void)service.Hide(Inkeys::Window::WindowRole::PptBottomLeft);
-			(void)service.Hide(Inkeys::Window::WindowRole::PptBottomRight);
 			(void)service.Hide(Inkeys::Window::WindowRole::Freeze);
 			// Presentation 辅助输出始终不参与输入；显式恢复其 click-through，
 			// 防止 Whiteboard 期间的窗口样式切换把旧命中状态带回桌面。
@@ -618,7 +612,7 @@ void StateMonitoring()
 				service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, snapshot.selectionMode);
 			if (!presentationWindowStateReady) continue;
-			// 只有 Presentation window mode 完整恢复后，PPT renderer 才能接管共享宿主。
+			// window mode 恢复后重发 COM 事实；PageControl 始终是共享宿主唯一所有者。
 			Inkeys::UI::Ppt::PublishPresentationVisible(
 				PptInfoState.TotalPage > 0);
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);

@@ -33,6 +33,7 @@ int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
+int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
@@ -1376,6 +1377,7 @@ int main(int argc, char** argv)
 	failureCount += RunRenderSchedulerTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
+	failureCount += RunPageControlTests();
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();

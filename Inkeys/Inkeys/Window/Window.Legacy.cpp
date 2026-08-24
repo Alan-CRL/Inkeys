@@ -68,7 +68,6 @@ void TopWindow()
 	(void)service.Show(Inkeys::Window::WindowRole::PptBottomRight);
 	(void)service.Show(Inkeys::Window::WindowRole::PptMiddleLeft);
 	(void)service.Show(Inkeys::Window::WindowRole::PptMiddleRight);
-	(void)service.Show(Inkeys::Window::WindowRole::PptExitShow);
 	(void)service.Show(Inkeys::Window::WindowRole::Bar);
 	while (rtsWait && !offSignal)
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));

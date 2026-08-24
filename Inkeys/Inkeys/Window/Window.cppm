@@ -26,28 +26,11 @@ export namespace Inkeys::Window
 		PptBottomRight,
 		PptMiddleLeft,
 		PptMiddleRight,
-		PptExitShow,
 		Bar,
 		Setting,
 		DisplayObserver,
 		Count,
 	};
-
-	enum class SharedPageHostOwner : std::uint8_t
-	{
-		Presentation,
-		TransitionHidden,
-		Whiteboard,
-	};
-
-	// mode 先于 Whiteboard active 发布，二者共同形成共享分页宿主的三态门禁。
-	[[nodiscard]] constexpr SharedPageHostOwner ResolveSharedPageHostOwner(
-		bool whiteboardWindowMode, bool whiteboardActive) noexcept
-	{
-		if (!whiteboardWindowMode) return SharedPageHostOwner::Presentation;
-		return whiteboardActive ? SharedPageHostOwner::Whiteboard
-			: SharedPageHostOwner::TransitionHidden;
-	}
 
 	enum class DrawpadSurfaceVisibility : std::uint8_t
 	{
@@ -83,6 +66,16 @@ export namespace Inkeys::Window
 		}
 		return { WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, WS_EX_APPWINDOW,
 			false, false };
+	}
+
+	[[nodiscard]] constexpr bool RequiresOverlayActivationStyleTransition(
+		WindowRole role, OverlayActivationMode from,
+		OverlayActivationMode to) noexcept
+	{
+		const auto before = ResolveOverlayActivationStyle(role, from);
+		const auto after = ResolveOverlayActivationStyle(role, to);
+		return before.setExStyle != after.setExStyle
+			|| before.clearExStyle != after.clearExStyle;
 	}
 
 	struct WindowSpec

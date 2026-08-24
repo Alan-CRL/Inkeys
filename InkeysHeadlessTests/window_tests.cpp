@@ -53,7 +53,6 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptBottomRight, L"PptBottomRight"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleLeft, L"PptMiddleLeft"));
 	specs.push_back(makeSpec(WindowRole::PptMiddleRight, L"PptMiddleRight"));
-	specs.push_back(makeSpec(WindowRole::PptExitShow, L"PptExitShow"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
 	settingSpec.style = WS_POPUP;
@@ -78,7 +77,6 @@ int RunWindowTests()
 		WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft,
 		WindowRole::PptMiddleRight,
-		WindowRole::PptExitShow,
 		WindowRole::Bar,
 		WindowRole::Setting,
 		WindowRole::DisplayObserver,
@@ -101,7 +99,6 @@ int RunWindowTests()
 		&& service.OwnerThreadId(WindowRole::PptBottomRight) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleLeft) == overlayThread
 		&& service.OwnerThreadId(WindowRole::PptMiddleRight) == overlayThread
-		&& service.OwnerThreadId(WindowRole::PptExitShow) == overlayThread
 		&& service.OwnerThreadId(WindowRole::Bar) == overlayThread
 		&& service.OwnerThreadId(WindowRole::DisplayObserver) == overlayThread,
 		"single overlay owner thread");
@@ -117,7 +114,6 @@ int RunWindowTests()
 	const HWND pptBottomRight = service.Handle(WindowRole::PptBottomRight);
 	const HWND pptMiddleLeft = service.Handle(WindowRole::PptMiddleLeft);
 	const HWND pptMiddleRight = service.Handle(WindowRole::PptMiddleRight);
-	const HWND pptExitShow = service.Handle(WindowRole::PptExitShow);
 	const HWND bar = service.Handle(WindowRole::Bar);
 	const HWND setting = service.Handle(WindowRole::Setting);
 	const HWND observer = service.Handle(WindowRole::DisplayObserver);
@@ -130,8 +126,7 @@ int RunWindowTests()
 	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
-		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad
-		&& GetWindow(pptExitShow, GW_OWNER) == drawpad, "five ppt drawpad owner");
+		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad, "four ppt drawpad owner");
 	check(GetWindow(bar, GW_OWNER) == drawpad, "bar drawpad owner");
 	check(GetWindow(setting, GW_OWNER) == nullptr, "setting no owner");
 	check(FindWindowExW(HWND_MESSAGE, nullptr,
@@ -206,7 +201,7 @@ int RunWindowTests()
 		WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 		WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
-		WindowRole::PptExitShow, WindowRole::Bar })
+		WindowRole::Bar })
 		check(service.Show(role), "show whiteboard group member");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
 	const auto whiteboardFreezeExStyle = static_cast<DWORD>(

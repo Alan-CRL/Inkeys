@@ -8,6 +8,7 @@ module;
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
+#include "Bar.A2.h"
 #include "Bar.PresentDecision.h"
 #include <limits>
 
@@ -38,6 +39,8 @@ namespace
 {
 	IdtAtomic<bool> currentPageHasContent = false;
 	std::atomic_bool contentStateUpdatesReady = false;
+	std::atomic_bool pptPresentationActive = false;
+	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
 	std::atomic_bool whiteboardActive = false;
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
@@ -268,6 +271,35 @@ namespace Inkeys::UI::Bar
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;
+	}
+
+	void SetPptPresentationActive(bool active) noexcept
+	{
+		if (pptPresentationActive.exchange(active, std::memory_order_acq_rel)
+			== active) return;
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	bool PptPresentationActive() noexcept
+	{
+		return pptPresentationActive.load(std::memory_order_acquire);
+	}
+
+	void SetEndShowCallback(std::function<void()> callback)
+	{
+		endShowDispatcher.Set(std::move(callback));
+	}
+
+	void RequestEndShow()
+	{
+		// 回调只投递原 PPT 业务队列，不能在 Bar 输入线程持锁执行。
+		(void)endShowDispatcher.Dispatch();
+	}
+
+	void CompleteEndShowRequest() noexcept
+	{
+		endShowDispatcher.Complete();
 	}
 
 	void SetWhiteboardActive(bool active) noexcept

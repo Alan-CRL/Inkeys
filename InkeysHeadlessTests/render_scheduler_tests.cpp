@@ -47,12 +47,12 @@ int RunRenderSchedulerTests()
 		std::jthread secondRequester([&]
 			{
 				for (int index = 0; index < 100; ++index)
-					concurrentState.Request(Mask(Client::PptExitShow));
+					concurrentState.Request(Mask(Client::WhiteboardFreeze));
 			});
 		firstRequester.join();
 		secondRequester.join();
 		if (!Expect(concurrentState.TakeRequested() ==
-			(Mask(Client::Bar) | Mask(Client::PptExitShow)),
+			(Mask(Client::Bar) | Mask(Client::WhiteboardFreeze)),
 			"concurrent requests merge without loss")) ++failures;
 	}
 
@@ -60,10 +60,10 @@ int RunRenderSchedulerTests()
 	results.fill(FrameResult::Idle);
 	results[static_cast<std::size_t>(Client::PptBottomLeft)] = FrameResult::Continue;
 	results[static_cast<std::size_t>(Client::PptMiddleRight)] = FrameResult::Retry;
-	state.Request(Mask(Client::PptExitShow));
+	state.Request(Mask(Client::WhiteboardFreeze));
 	const ClientMask all = (ClientMask{ 1 } << static_cast<unsigned>(Client::Count)) - 1;
 	const auto continued = state.Complete(first, all, results);
-	if (!Expect(continued.next == (first | Mask(Client::PptExitShow)),
+	if (!Expect(continued.next == (first | Mask(Client::WhiteboardFreeze)),
 		"continue retry and concurrent request survive")) ++failures;
 	if (!Expect(!continued.sleep, "active clients do not sleep")) ++failures;
 
@@ -132,7 +132,7 @@ int RunRenderSchedulerTests()
 		bool release = false;
 		std::atomic_bool stop = false;
 		std::atomic_bool unregisterReturned = false;
-		(void)scheduler.Register(Client::PptExitShow, [&](const auto&)
+		(void)scheduler.Register(Client::WhiteboardFreeze, [&](const auto&)
 			{
 				std::unique_lock lock(mutex);
 				entered = true;
@@ -147,7 +147,7 @@ int RunRenderSchedulerTests()
 		}
 		std::jthread unregisterThread([&]
 			{
-				scheduler.Unregister(Client::PptExitShow);
+				scheduler.Unregister(Client::WhiteboardFreeze);
 				unregisterReturned = true;
 			});
 		std::this_thread::sleep_for(10ms);

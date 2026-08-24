@@ -42,22 +42,22 @@ namespace
 		Check(bottomLeft.expanded.left - monitor.left ==
 			monitor.right - bottomRight.expanded.right,
 			"bottom pair mirrors around monitor center");
-		Check(bottomLeft.backing.cx == 195 && bottomLeft.backing.cy == 60,
-			"bottom backing uses legacy dimensions");
+		Check(bottomLeft.backing.cx == 165 && bottomLeft.backing.cy == 43,
+			"bottom backing uses compact bar dimensions");
 
 		const auto middleLeft = ResolveControlLayout(
 			Control::MiddleLeft, monitor, config, false);
 		const auto middleRight = ResolveControlLayout(
 			Control::MiddleRight, monitor, config, false);
-		const auto exit = ResolveControlLayout(Control::ExitShow, monitor, config, false);
 		Check(middleLeft.hidden.right < monitor.left &&
 			middleRight.hidden.left > monitor.right,
 			"middle controls hide on their respective sides");
-		Check(exit.hidden.top > monitor.bottom, "exit control hides below monitor");
+		Check(SameRect(bottomLeft.expanded, bottomLeft.hidden),
+			"bottom controls fade at their target position");
 
 		const auto scaled = ResolveControlLayout(
 			Control::BottomLeft, monitor, config, true, 1.5F);
-		Check(scaled.backing.cx == 293 && scaled.backing.cy == 90,
+		Check(scaled.backing.cx == 248 && scaled.backing.cy == 64,
 			"DPI changes physical backing size");
 		auto movedConfig = config;
 		movedConfig.bottomPairWidth += 40.0F;
@@ -82,22 +82,20 @@ namespace
 		config.bottomPairWidth = 10000.0F;
 		config.bottomPairHeight = -10.0F;
 		auto clamped = ClampPptDrag(Control::BottomLeft, monitor, config);
-		Check(clamped.bottomPairWidth == 295.0F && clamped.bottomPairHeight == 0.0F,
+		Check(clamped.bottomPairWidth == 330.0F && clamped.bottomPairHeight == 0.0F,
 			"bottom drag clamps to monitor boundaries");
 
 		config.showBottomPair = true;
-		config.showMiddlePair = false;
-		config.showExit = true;
+		config.showMiddlePair = true;
 		config.bottomPairWidth = 0.0F;
 		config.bottomPairHeight = 0.0F;
-		config.exitWidth = 0.0F;
-		config.exitHeight = 0.0F;
+		config.middlePairHeight = 0.0F;
 		Check(!PptDragCollides(Control::BottomLeft, monitor, config),
 			"separated visible groups do not collide");
-		config.exitWidth = -395.0F;
+		config.middlePairHeight = -312.5F;
 		Check(PptDragCollides(Control::BottomLeft, monitor, config),
 			"overlapping visible groups collide");
-		config.showExit = false;
+		config.showMiddlePair = false;
 		Check(!PptDragCollides(Control::BottomLeft, monitor, config),
 			"hidden groups are ignored by collision checks");
 	}
@@ -128,34 +126,31 @@ namespace
 		const auto bottomLeft = ResolveControlVisualGeometry(Control::BottomLeft);
 		const auto bottomRight = ResolveControlVisualGeometry(Control::BottomRight);
 		const auto middleLeft = ResolveControlVisualGeometry(Control::MiddleLeft);
-		const auto exit = ResolveControlVisualGeometry(Control::ExitShow);
-		Check(bottomLeft.dragHandle.x1 == 8.0F && bottomLeft.dragHandle.x2 == 8.0F &&
-			bottomLeft.dragHandle.y1 == 15.0F && bottomLeft.dragHandle.y2 == 45.0F,
-			"bottom-left restores vertical drag handle");
-		Check(bottomRight.dragHandle.x1 == 187.0F &&
-			bottomRight.dragHandle.x2 == 187.0F,
+		Check(bottomLeft.dragHandle.x1 == 10.0F && bottomLeft.dragHandle.x2 == 10.0F &&
+			bottomLeft.dragHandle.y1 == 11.25F && bottomLeft.dragHandle.y2 == 31.25F,
+			"bottom-left uses compact vertical drag handle");
+		Check(bottomRight.dragHandle.x1 == 155.0F &&
+			bottomRight.dragHandle.x2 == 155.0F,
 			"bottom-right drag handle mirrors at trailing edge");
-		Check(middleLeft.dragHandle.y1 == 8.0F && middleLeft.dragHandle.y2 == 8.0F &&
-			middleLeft.dragHandle.x1 == 15.0F && middleLeft.dragHandle.x2 == 45.0F,
-			"middle controls restore horizontal drag handle");
-		Check(exit.dragHandle.x1 == 8.0F && exit.dragHandle.x2 == 8.0F,
-			"exit control restores vertical drag handle");
+		Check(middleLeft.dragHandle.y1 == 10.0F && middleLeft.dragHandle.y2 == 10.0F &&
+			middleLeft.dragHandle.x1 == 11.25F && middleLeft.dragHandle.x2 == 31.25F,
+			"middle controls use compact horizontal drag handle");
 
-		Check(middleLeft.previous.top == 15.0F && middleLeft.previous.bottom == 65.0F &&
-			middleLeft.next.top == 130.0F && middleLeft.next.bottom == 180.0F,
+		Check(middleLeft.previous.top == 15.0F && middleLeft.previous.bottom == 47.5F &&
+			middleLeft.next.top == 127.5F && middleLeft.next.bottom == 160.0F,
 			"middle buttons keep balanced outer spacing");
-		Check(middleLeft.currentPage.top == 70.0F &&
-			middleLeft.currentPage.bottom == 110.0F &&
-			middleLeft.totalPage.top == 100.0F &&
-			middleLeft.totalPage.bottom == 125.0F,
-			"middle page text uses legacy centered bounds");
-		Check(IsInPageHitArea(Control::BottomLeft, 70.0F, 0.0F) &&
-			IsInPageHitArea(Control::BottomLeft, 120.0F, 60.0F) &&
-			!IsInPageHitArea(Control::BottomLeft, 69.0F, 30.0F),
+		Check(middleLeft.currentPage.top == 52.5F &&
+			middleLeft.currentPage.bottom == 87.5F &&
+			middleLeft.totalPage.top == 87.5F &&
+			middleLeft.totalPage.bottom == 122.5F,
+			"middle page text uses compact centered bounds");
+		Check(IsInPageHitArea(Control::BottomLeft, 52.5F, 0.0F) &&
+			IsInPageHitArea(Control::BottomLeft, 122.5F, 42.5F) &&
+			!IsInPageHitArea(Control::BottomLeft, 52.0F, 30.0F),
 			"bottom page hit area keeps full control height");
-		Check(IsInPageHitArea(Control::MiddleLeft, 0.0F, 70.0F) &&
-			IsInPageHitArea(Control::MiddleLeft, 60.0F, 125.0F) &&
-			!IsInPageHitArea(Control::MiddleLeft, 30.0F, 126.0F),
+		Check(IsInPageHitArea(Control::MiddleLeft, 0.0F, 52.5F) &&
+			IsInPageHitArea(Control::MiddleLeft, 42.5F, 122.5F) &&
+			!IsInPageHitArea(Control::MiddleLeft, 30.0F, 123.0F),
 			"middle page hit area keeps full control width");
 
 		const auto unknown = ResolvePageText(Control::BottomLeft, -1, -1);
@@ -177,16 +172,13 @@ namespace
 		config.bottomPairHeight = -100.0F;
 		config.middlePairWidth = 10000.0F;
 		config.middlePairHeight = 10000.0F;
-		config.exitWidth = 10000.0F;
-		config.exitHeight = -100.0F;
 		config.showMiddlePair = true;
 		config.bottomPairScale = 2.0F;
 		config.middlePairScale = 2.0F;
-		config.exitScale = 2.0F;
 		const auto runtime = ResolveRuntimeLayoutConfiguration(
 			monitor, config, 1.5F);
 		for (const auto control : { Control::BottomLeft, Control::BottomRight,
-			Control::MiddleLeft, Control::MiddleRight, Control::ExitShow })
+			Control::MiddleLeft, Control::MiddleRight })
 		{
 			const auto layout = ResolveControlLayout(control, monitor,
 				runtime.configuration, true, runtime.dpiScale);
@@ -210,17 +202,14 @@ namespace
 		extreme.bottomPairHeight = 10000.0F;
 		extreme.middlePairWidth = 10000.0F;
 		extreme.middlePairHeight = 10000.0F;
-		extreme.exitWidth = 10000.0F;
-		extreme.exitHeight = 10000.0F;
 		extreme.bottomPairScale = 3.0F;
 		extreme.middlePairScale = 3.0F;
-		extreme.exitScale = 3.0F;
 		extreme.showMiddlePair = true;
 		const auto original = extreme;
 		const auto fitted = ResolveRuntimeLayoutConfiguration(
 			tinyMonitor, extreme, 1.5F);
 		for (const auto control : { Control::BottomLeft, Control::BottomRight,
-			Control::MiddleLeft, Control::MiddleRight, Control::ExitShow })
+			Control::MiddleLeft, Control::MiddleRight })
 		{
 			const auto layout = ResolveControlLayout(control, tinyMonitor,
 				fitted.configuration, true, fitted.dpiScale);
@@ -230,14 +219,11 @@ namespace
 				layout.expanded.bottom <= tinyMonitor.bottom,
 				"extreme monitor uses runtime-only group fitting");
 		}
-		Check(!PptDragCollides(Control::ExitShow, tinyMonitor,
-			fitted.configuration, fitted.dpiScale) &&
-			!PptDragCollides(Control::MiddleLeft, tinyMonitor,
+		Check(!PptDragCollides(Control::MiddleLeft, tinyMonitor,
 				fitted.configuration, fitted.dpiScale),
-			"lower-priority PPT groups are corrected after collisions");
+			"lower-priority side group is corrected after collisions");
 		Check(extreme.bottomPairWidth == original.bottomPairWidth &&
-			extreme.middlePairScale == original.middlePairScale &&
-			extreme.exitScale == original.exitScale,
+			extreme.middlePairScale == original.middlePairScale,
 			"runtime correction does not mutate persisted configuration input");
 	}
 }

@@ -19,7 +19,6 @@ export namespace Inkeys::UI::Ppt
 		BottomRight,
 		MiddleLeft,
 		MiddleRight,
-		ExitShow,
 	};
 
 	struct LayoutConfiguration
@@ -93,30 +92,26 @@ export namespace Inkeys::UI::Ppt
 		if (control == Control::BottomLeft || control == Control::BottomRight)
 		{
 			const bool left = control == Control::BottomLeft;
-			const float inset = left ? 15.0F : 5.0F;
 			geometry.dragHandle = left
-				? VisualLine{ 8.0F, 15.0F, 8.0F, 45.0F }
-				: VisualLine{ 187.0F, 15.0F, 187.0F, 45.0F };
-			geometry.previous = { inset, 5.0F, inset + 50.0F, 55.0F };
-			geometry.currentPage = { inset + 55.0F, 5.0F,
-				inset + 120.0F, 40.0F };
-			geometry.totalPage = { inset + 55.0F, 30.0F,
-				inset + 120.0F, 60.0F };
-			geometry.next = { inset + 125.0F, 5.0F,
-				inset + 175.0F, 55.0F };
-		}
-		else if (control == Control::MiddleLeft || control == Control::MiddleRight)
-		{
-			geometry.dragHandle = { 15.0F, 8.0F, 45.0F, 8.0F };
-			geometry.previous = { 5.0F, 15.0F, 55.0F, 65.0F };
-			geometry.currentPage = { 5.0F, 70.0F, 55.0F, 110.0F };
-			geometry.totalPage = { 5.0F, 100.0F, 55.0F, 125.0F };
-			geometry.next = { 5.0F, 130.0F, 55.0F, 180.0F };
+				? VisualLine{ 10.0F, 11.25F, 10.0F, 31.25F }
+				: VisualLine{ 155.0F, 11.25F, 155.0F, 31.25F };
+			const float buttonInset = left ? 15.0F : 5.0F;
+			geometry.previous = { buttonInset, 5.0F,
+				buttonInset + 32.5F, 37.5F };
+			geometry.currentPage = { buttonInset + 37.5F, 5.0F,
+				buttonInset + 72.5F, 37.5F };
+			geometry.totalPage = { buttonInset + 72.5F, 5.0F,
+				buttonInset + 107.5F, 37.5F };
+			geometry.next = { buttonInset + 112.5F, 5.0F,
+				buttonInset + 145.0F, 37.5F };
 		}
 		else
 		{
-			geometry.dragHandle = { 8.0F, 15.0F, 8.0F, 45.0F };
-			geometry.action = { 15.0F, 5.0F, 65.0F, 55.0F };
+			geometry.dragHandle = { 11.25F, 10.0F, 31.25F, 10.0F };
+			geometry.previous = { 5.0F, 15.0F, 37.5F, 47.5F };
+			geometry.currentPage = { 5.0F, 52.5F, 37.5F, 87.5F };
+			geometry.totalPage = { 5.0F, 87.5F, 37.5F, 122.5F };
+			geometry.next = { 5.0F, 127.5F, 37.5F, 160.0F };
 		}
 		return geometry;
 	}
@@ -138,10 +133,8 @@ export namespace Inkeys::UI::Ppt
 	{
 		const auto geometry = ResolveControlVisualGeometry(control);
 		if (control == Control::BottomLeft || control == Control::BottomRight)
-			return x >= geometry.currentPage.left && x <= geometry.currentPage.right;
-		if (control == Control::MiddleLeft || control == Control::MiddleRight)
-			return y >= geometry.currentPage.top && y <= geometry.totalPage.bottom;
-		return false;
+			return x >= geometry.currentPage.left && x <= geometry.totalPage.right;
+		return y >= geometry.currentPage.top && y <= geometry.totalPage.bottom;
 	}
 
 	struct DragResolution
@@ -214,41 +207,30 @@ export namespace Inkeys::UI::Ppt
 		{
 			result.scale = NormalizePptRuntimeControlScale(config.bottomPairScale) * normalizedDpi;
 			result.backing = {
-				static_cast<LONG>((std::max)(1.0F, std::round(195.0F * result.scale))),
-				static_cast<LONG>((std::max)(1.0F, std::round(60.0F * result.scale))) };
+				static_cast<LONG>((std::max)(1.0F, std::round(165.0F * result.scale))),
+				static_cast<LONG>((std::max)(1.0F, std::round(42.5F * result.scale))) };
 			const bool left = control == Control::BottomLeft;
 			x = left ? config.bottomPairWidth + 5.0F * result.scale
-				: width - config.bottomPairWidth - 200.0F * result.scale;
-			y = height - config.bottomPairHeight - 65.0F * result.scale;
+				: width - config.bottomPairWidth - 170.0F * result.scale;
+			y = height - config.bottomPairHeight - 47.5F * result.scale;
 			hiddenX = x;
-			hiddenY = height + 5.0F * result.scale;
+			// 底栏在目标位置渐显，不再从屏幕外飞入。
+			hiddenY = y;
 			result.enabled = presentationVisible && config.showBottomPair;
 		}
 		else if (control == Control::MiddleLeft || control == Control::MiddleRight)
 		{
 			result.scale = NormalizePptRuntimeControlScale(config.middlePairScale) * normalizedDpi;
 			result.backing = {
-				static_cast<LONG>((std::max)(1.0F, std::round(60.0F * result.scale))),
-				static_cast<LONG>((std::max)(1.0F, std::round(185.0F * result.scale))) };
+				static_cast<LONG>((std::max)(1.0F, std::round(42.5F * result.scale))),
+				static_cast<LONG>((std::max)(1.0F, std::round(165.0F * result.scale))) };
 			const bool left = control == Control::MiddleLeft;
 			x = left ? config.middlePairWidth + 5.0F * result.scale
-				: width - config.middlePairWidth - 65.0F * result.scale;
-			y = height / 2.0F - config.middlePairHeight - 92.5F * result.scale;
-			hiddenX = left ? -65.0F * result.scale : width + 5.0F * result.scale;
+				: width - config.middlePairWidth - 47.5F * result.scale;
+			y = height / 2.0F - config.middlePairHeight - 82.5F * result.scale;
+			hiddenX = left ? -47.5F * result.scale : width + 5.0F * result.scale;
 			hiddenY = y;
 			result.enabled = presentationVisible && config.showMiddlePair;
-		}
-		else
-		{
-			result.scale = NormalizePptRuntimeControlScale(config.exitScale) * normalizedDpi;
-			result.backing = {
-				static_cast<LONG>((std::max)(1.0F, std::round(70.0F * result.scale))),
-				static_cast<LONG>((std::max)(1.0F, std::round(60.0F * result.scale))) };
-			x = width / 2.0F + config.exitWidth - 35.0F * result.scale;
-			y = height - config.exitHeight - 65.0F * result.scale;
-			hiddenX = x;
-			hiddenY = height + 5.0F * result.scale;
-			result.enabled = presentationVisible && config.showExit;
 		}
 
 		auto MakeRect = [&](float left, float top)
@@ -283,31 +265,21 @@ export namespace Inkeys::UI::Ppt
 		{
 			const float scale = NormalizePptRuntimeControlScale(next.bottomPairScale) * normalizedDpi;
 			next.bottomPairWidth = std::clamp(next.bottomPairWidth, 0.0F,
-				(std::max)(0.0F, width / 2.0F - 205.0F * scale));
+				(std::max)(0.0F, width / 2.0F - 170.0F * scale));
 			next.bottomPairHeight = std::clamp(next.bottomPairHeight, 0.0F,
-				(std::max)(0.0F, height - 70.0F * scale));
+				(std::max)(0.0F, height - 52.5F * scale));
 		}
 		else if (control == Control::MiddleLeft || control == Control::MiddleRight)
 		{
 			const float scale = NormalizePptRuntimeControlScale(next.middlePairScale) * normalizedDpi;
 			const float horizontalLimit = (std::max)(0.0F,
-				width / 2.0F - 65.0F * scale);
+				width / 2.0F - 47.5F * scale);
 			const float verticalLimit = (std::max)(0.0F,
-				height / 2.0F - 97.5F * scale);
+				height / 2.0F - 87.5F * scale);
 			next.middlePairWidth = std::clamp(next.middlePairWidth,
 				0.0F, horizontalLimit);
 			next.middlePairHeight = std::clamp(next.middlePairHeight,
 				-verticalLimit, verticalLimit);
-		}
-		else
-		{
-			const float scale = NormalizePptRuntimeControlScale(next.exitScale) * normalizedDpi;
-			const float horizontalLimit = (std::max)(0.0F,
-				width / 2.0F - 40.0F * scale);
-			next.exitWidth = std::clamp(next.exitWidth,
-				-horizontalLimit, horizontalLimit);
-			next.exitHeight = std::clamp(next.exitHeight, 0.0F,
-				(std::max)(0.0F, height - 70.0F * scale));
 		}
 		return next;
 	}
@@ -317,24 +289,19 @@ export namespace Inkeys::UI::Ppt
 	{
 		const bool bottom = control == Control::BottomLeft ||
 			control == Control::BottomRight;
-		const bool middle = control == Control::MiddleLeft ||
-			control == Control::MiddleRight;
-		const float commonScale = (std::min)({
+		const float commonScale = (std::min)(
 			NormalizePptRuntimeControlScale(config.bottomPairScale),
-			NormalizePptRuntimeControlScale(config.middlePairScale),
-			NormalizePptRuntimeControlScale(config.exitScale) }) *
+			NormalizePptRuntimeControlScale(config.middlePairScale)) *
 			NormalizePptDpiScale(dpiScale);
 		const LONG gap = static_cast<LONG>(std::lround(10.0F * commonScale));
-		constexpr std::array<Control, 5> controls{
+		constexpr std::array<Control, 4> controls{
 			Control::BottomLeft, Control::BottomRight, Control::MiddleLeft,
-			Control::MiddleRight, Control::ExitShow };
+			Control::MiddleRight };
 		for (const auto moved : controls)
 		{
 			const bool movedInGroup = bottom
 				? (moved == Control::BottomLeft || moved == Control::BottomRight)
-				: middle
-					? (moved == Control::MiddleLeft || moved == Control::MiddleRight)
-					: moved == Control::ExitShow;
+				: (moved == Control::MiddleLeft || moved == Control::MiddleRight);
 			if (!movedInGroup) continue;
 			const auto movedLayout = ResolveControlLayout(moved, monitor, config, true,
 				dpiScale);
@@ -342,9 +309,7 @@ export namespace Inkeys::UI::Ppt
 			{
 				const bool otherInGroup = bottom
 					? (other == Control::BottomLeft || other == Control::BottomRight)
-					: middle
-						? (other == Control::MiddleLeft || other == Control::MiddleRight)
-						: other == Control::ExitShow;
+					: (other == Control::MiddleLeft || other == Control::MiddleRight);
 				if (otherInGroup) continue;
 				const auto otherLayout = ResolveControlLayout(other, monitor, config, true,
 					dpiScale);
@@ -373,12 +338,10 @@ export namespace Inkeys::UI::Ppt
 					height / (baseHeight * fittedDpi));
 				scale = (std::min)(scale, (std::max)(1.0F / 128.0F, maximum));
 			};
-		Fit(configuration.showBottomPair, 410.0F, 70.0F,
+		Fit(configuration.showBottomPair, 350.0F, 52.5F,
 			configuration.bottomPairScale);
-		Fit(configuration.showMiddlePair, 130.0F, 195.0F,
+		Fit(configuration.showMiddlePair, 95.0F, 175.0F,
 			configuration.middlePairScale);
-		Fit(configuration.showExit, 80.0F, 70.0F,
-			configuration.exitScale);
 
 		if (configuration.showBottomPair)
 			configuration = ClampPptDrag(Control::BottomLeft, monitor,
@@ -399,11 +362,6 @@ export namespace Inkeys::UI::Ppt
 			}
 		};
 		const bool showMiddlePair = configuration.showMiddlePair;
-		configuration.showMiddlePair = false;
-		if (configuration.showExit)
-			ResolveLowerPriority(Control::ExitShow, configuration.exitScale,
-				configuration.exitWidth, configuration.exitHeight);
-		configuration.showMiddlePair = showMiddlePair;
 		if (showMiddlePair)
 			ResolveLowerPriority(Control::MiddleLeft, configuration.middlePairScale,
 				configuration.middlePairWidth, configuration.middlePairHeight);

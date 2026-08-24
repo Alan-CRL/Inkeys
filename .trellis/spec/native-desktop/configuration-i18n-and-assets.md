@@ -134,7 +134,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
-- A2 默认 required：仅 `Freeze/twoTwo`；Setting 属于 Extension 的显式 More 项。`Pierce` 已退出产品合同，新 A2 配置不接受该 ID；旧 `ButtonLayout` 迁移时丢弃 Pierce，已有 `{Pierce, Freeze}` A2 由严校验重置为 Freeze 并立即写回。
+- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。`Pierce` 已退出产品合同，新 A2 配置不接受该 ID。
+- A2 运行时投影固定为：桌面显示 Whiteboard `twoOne` + Freeze `twoOne`；PPT 放映显示 Whiteboard `twoTwo` + EndShow `twoTwo`；全屏 Whiteboard 只显示“关闭白板” `twoTwo`。Freeze 在 PPT/Whiteboard 隐藏，EndShow 在非 PPT 或 Whiteboard 隐藏；这些是运行时 `hide/size`，不改写 A2 持久化顺序。
 - **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。当前虚拟投影始终包含 More 与 Setting，因此主栏恒按 `A1 | Divider | 最多两个 B 实体 | More | Divider | A2` 构建；旧组件全关时仍保留两条 Divider。Divider 保留 `oneTwo` 的两行布局占用，但只绘制 `1x50` DIP、圆角 `0.5` 的 Shape 细线并垂直居中；SurfaceFrame 填充透明度为 `0.30`，不得加载或绘制 SVG；PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。它不增加主栏横向宽度，而是居中复用上一组尾端已有的 `5` DIP 间隙；前组小按钮留下未填满列时必须先封列，再从新列排下一组，统一横坐标镜像继续保证左右布局对称。
 - **交界分割线交互**：Divider 必须从主栏悬停动画推进、指针扫描及点击/按压命中入口显式排除。遗留 hover、pressed、pressScale 状态应恢复为 `None/None/1.0`；不得通过禁用 Shape 或把可见态 `frameLightPct` 清零来实现不可交互，否则会错误关闭第三鼠标光。
 - **固定 More 入口**：运行时在 B 末尾、`B|A2` Divider 前注入一个硬编码 More 按钮。它不登记到 `ExtensionButtons`，不进入配置；主栏折叠时隐藏，浮层打开时使用普通按钮的 `Selected` 视觉状态。
@@ -168,7 +169,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | B 含未注册的 `Inkeys.*` 或非点分/空段 Id | 剔除；已注册 Setting/MoreBoundary 保留 |
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
-| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃，或把 A2 严校验为单独 `Freeze/twoTwo` 并写回；不注册 Pierce 实体 |
+| 旧 A2 恰好为 Whiteboard/Freeze（任一顺序） | 保留相对顺序，在末尾追加 EndShow 并规范化默认尺寸 |
+| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不注册 Pierce 实体 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
 | 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
@@ -200,7 +202,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
 - 手工验证 0/1/2/3+ 个旧组件的主栏容量、MoreBoundary 两组顺序、分割线条件、上下展开物理行方向、与绘制属性一致的时长及 Back/Sine 动画、隐藏态 Selected 青色同步、More 固定小三角、右上角 X 悬停/按压/拖出，以及 `closeMoreAfterAction=false` 保持打开。
 - 手工验证主栏两条 Divider 保持 `oneTwo` 两行布局占用但只绘制垂直居中的 `1x50` DIP 纯 Shape，以及 `0.30` 填充/第三光强度、5 DIP 间隙居中、半列封列、左右镜像；指针经过/按下不产生背景、缩放或点击。
-- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；静态断言/测试确认 A2 默认只有 Freeze、旧 Pierce 被迁移且新配置不接受；无自动化 UI 测试时记录未做运行验证。
+- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；Headless/静态断言确认旧 Whiteboard/Freeze 顺序迁移、A2 三态可见性、EndShow 单次业务投递、旧 Pierce 被迁移且新配置不接受；无自动化 UI 测试时记录未做运行验证。
 
 ### 7. Wrong vs Correct
 
