@@ -230,6 +230,9 @@ PptState ResolveRuntimePageControlLayout(const RECT& monitor, float dpiScale,
 - `DragHandle` 是唯一拖动入口：参与命中和 capture，但不得产生 hover、pressed 或 click 视觉。白板 `230x80 DIP` 布局在中间页码按钮顶部复用 `70x10 DIP` 拖动条，命中优先级高于重叠页码按钮。
 - `BarSurfaceScene::TransitionLayout` 必须按稳定 widget ID 从当前呈现几何重新定向背景和按钮的 x/y/宽高；图标和文字变化沿用内容淡出、替换和回弹。过渡、渐显和退场期间 PageControl 锁定输入。
 - 运行时碰撞以主栏当前可见屏幕矩形为最高优先级，随后固定底部组并让侧边组避让；显示器适配和冲突回退只修改发布快照的运行时副本，不写回保存配置。主栏成功提交的新矩形必须唤醒四个分页客户端。
+- PPT/Whiteboard 目标隐藏后，HWND 只在固定退场时限内继续显示；共享光源或 Scene 的其他持续动画不得延长窗口生命周期。退场结束必须调用 `Window::Service::Hide`，失败则保留 `Retry`。
+- 拖动消息在窗口线程中直接成对移动 HWND，不等待 RenderPipeline/Window Service 往返。只有两个窗口都成功提交后才推进可行布局与发布快照；渲染帧在提交 bounds 前复核直移 revision，过期帧返回 `Retry`，不得把窗口拉回旧坐标。松手后才发布布局 revision、请求重绘并按配置持久化。
+- `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制 PageControl 的调试覆盖层：活动 damage 为红框，idle 前最终 damage 为绿框，当前 HWND 边界为蓝框；覆盖层必须绘制在同一个 D2D/ULW 事务内，关闭时全量替换一次以清除旧像素。
 
 #### 4. Validation & Error Matrix
 
@@ -239,6 +242,9 @@ PptState ResolveRuntimePageControlLayout(const RECT& monitor, float dpiScale,
 | 当前页或总页为负数 | 使用占位符，不渲染 `-1` |
 | 点击页码按钮 | 只产生按钮反馈，不投递翻页、ViewShow 或拖动 |
 | 按下拖动条 | 捕获并移动成对控件；无 hover/press/click 视觉 |
+| 拖动期间旧渲染帧晚到 | revision 不匹配时跳过 bounds 提交并重试；保持已经直移的成对 HWND 位置 |
+| PPT 退出且共享光源仍活动 | 只完成固定退场动画，随后隐藏四个目标窗口，不因 Scene activity 常驻 |
+| 调试模式切换 | 开启显示红/绿 damage 框和蓝色 HWND 框；关闭后清除全部旧框 |
 | 主栏移动后与分页组冲突 | 只调整运行时位置；用户保存的 offset/scale 不变 |
 | PPT surface 隐藏或 Whiteboard expanded target | 键盘外部按压不得让隐藏 surface 显示或截获输入 |
 
@@ -250,7 +256,7 @@ PptState ResolveRuntimePageControlLayout(const RECT& monitor, float dpiScale,
 
 #### 6. Tests Required
 
-- Headless 断言四窗紧凑尺寸、DPI/极小屏适配、拖动条专属拖动、页码 no-op/混合字重、外部按压可见性、稳定 ID 反向过渡和碰撞回退。
+- Headless 断言四窗紧凑尺寸、DPI/极小屏适配、拖动条专属拖动、页码 no-op/混合字重、外部按压可见性、稳定 ID 反向过渡、有限退场窗口和碰撞回退。
 - 完整 Solution `Debug|ARM64` 构建；真实 PowerPoint/WPS 中手工检查不同 scale/DPI 下的光影、文本裁切、长按、滚轮和触摸拖动。
 
 #### 7. Wrong vs Correct

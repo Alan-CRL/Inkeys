@@ -127,6 +127,10 @@ namespace
 			&& ShouldPreserveSurfaceBoundsWhileHiding(Surface::BottomRight)
 			&& !ShouldPreserveSurfaceBoundsWhileHiding(Surface::MiddleLeft),
 			"hidden bottom hosts fade at the current frame while side hosts slide out");
+		Check(ShouldKeepPageControlWindowVisible(true, false)
+			&& ShouldKeepPageControlWindowVisible(false, true)
+			&& !ShouldKeepPageControlWindowVisible(false, false),
+			"hidden HWND survives only for its bounded exit transition");
 		Check(ShouldLockSurfaceInput(false, false, false)
 			&& ShouldLockSurfaceInput(true, true, false)
 			&& ShouldLockSurfaceInput(true, false, true)

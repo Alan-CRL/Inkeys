@@ -275,8 +275,8 @@ namespace Inkeys::UI::Ppt
 			Inkeys::UI::PageControl::QueuePptWheel(delta);
 	}
 
-	void SetDebugEnabled(bool) noexcept
+	void SetDebugEnabled(bool enabled) noexcept
 	{
-		// PageControl 使用 Bar 的统一诊断和 dirty-region 路径。
+		Inkeys::UI::PageControl::SetDebugEnabled(enabled);
 	}
 }

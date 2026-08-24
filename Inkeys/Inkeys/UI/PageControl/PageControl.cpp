@@ -10,6 +10,8 @@ module;
 #include <dxgi.h>
 #include <wrl/client.h>
 
+#include "../Bar/Bar.DirtyRegion.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -120,6 +122,8 @@ namespace Inkeys::UI::PageControl
 		std::atomic_uint referenceCount = 0;
 		std::atomic_bool initialized = false;
 		std::atomic_uint64_t publishedRevision = 1;
+		std::atomic_uint64_t directMoveRevision = 1;
+		std::atomic_bool debugEnabled = false;
 		std::mutex lifecycleMutex;
 		std::mutex snapshotMutex;
 		std::mutex callbackMutex;
@@ -579,7 +583,8 @@ namespace Inkeys::UI::PageControl
 
 		[[nodiscard]] PresentStatus PresentScene(Scene& scene, HWND hwnd,
 			const FrameContext& frameContext, const RECT& presentationBounds,
-			SIZE backingCapacity, bool forceFullReplacement) noexcept
+			SIZE backingCapacity, bool forceFullReplacement,
+			bool showDebugFrames, bool finalIdleFrame) noexcept
 		{
 			const UINT width = static_cast<UINT>(presentationBounds.right
 				- presentationBounds.left);
@@ -601,6 +606,45 @@ namespace Inkeys::UI::PageControl
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
 			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
 			(void)scene.Render(context.Get(), frameContext.frameTime);
+			RECT dirty = scene.PendingDamage();
+			if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
+				dirty = RECT{ 0, 0, static_cast<LONG>(width),
+					static_cast<LONG>(height) };
+			if (showDebugFrames)
+			{
+				// 红/绿框表示本帧 damage，蓝框直接表示当前 HWND 提交边界。
+				ComPtr<ID2D1SolidColorBrush> damageBrush;
+				ComPtr<ID2D1SolidColorBrush> windowBrush;
+				const COLORREF damageColor =
+					Inkeys::UI::Bar::ResolveBarDebugFrameColor(finalIdleFrame);
+				(void)context->CreateSolidColorBrush(D2D1::ColorF(
+					GetRValue(damageColor) / 255.0F,
+					GetGValue(damageColor) / 255.0F,
+					GetBValue(damageColor) / 255.0F, 1.0F), &damageBrush);
+				(void)context->CreateSolidColorBrush(D2D1::ColorF(
+					0.0F, 120.0F / 255.0F, 1.0F, 1.0F), &windowBrush);
+				constexpr FLOAT frameWidth = Inkeys::UI::Bar::BarDebugFrameWidth;
+				constexpr FLOAT dirtyInset =
+					Inkeys::UI::Bar::BarDebugDirtyFrameInset;
+				constexpr FLOAT windowInset =
+					Inkeys::UI::Bar::BarDebugWindowFrameInset;
+				const D2D1_RECT_F damageRect = D2D1::RectF(
+					static_cast<FLOAT>((std::max)(0L, dirty.left)) + dirtyInset,
+					static_cast<FLOAT>((std::max)(0L, dirty.top)) + dirtyInset,
+					static_cast<FLOAT>((std::min)(static_cast<LONG>(width), dirty.right))
+						- dirtyInset,
+					static_cast<FLOAT>((std::min)(static_cast<LONG>(height), dirty.bottom))
+						- dirtyInset);
+				if (damageBrush && damageRect.right > damageRect.left
+					&& damageRect.bottom > damageRect.top)
+					context->DrawRectangle(&damageRect, damageBrush.Get(), frameWidth);
+				const D2D1_RECT_F windowRect = D2D1::RectF(
+					windowInset, windowInset,
+					static_cast<FLOAT>(width) - windowInset,
+					static_cast<FLOAT>(height) - windowInset);
+				if (windowBrush)
+					context->DrawRectangle(&windowRect, windowBrush.Get(), frameWidth);
+			}
 			HDC source = nullptr;
 			bool presented = false;
 			HRESULT getDcHr = gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source);
@@ -618,11 +662,8 @@ namespace Inkeys::UI::PageControl
 				info.pptSrc = &sourcePoint;
 				info.hdcSrc = source;
 				info.pblend = &blend;
-				RECT dirty = scene.PendingDamage();
-				if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
-					dirty = RECT{ 0, 0, static_cast<LONG>(width),
-						static_cast<LONG>(height) };
-				info.prcDirty = forceFullReplacement ? nullptr : &dirty;
+				info.prcDirty = forceFullReplacement || showDebugFrames
+					? nullptr : &dirty;
 				info.dwFlags = ULW_ALPHA;
 				presented = UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
 				releaseDcHr = gdi->ReleaseDC(nullptr);
@@ -681,6 +722,55 @@ namespace Inkeys::UI::PageControl
 			return false;
 		}
 
+		void SetBoundsDirect(AnimatedBounds& bounds, const RECT& target,
+			double scale) noexcept
+		{
+			bounds.left = bounds.startLeft = target.left;
+			bounds.top = bounds.startTop = target.top;
+			bounds.right = bounds.startRight = target.right;
+			bounds.bottom = bounds.startBottom = target.bottom;
+			bounds.scale = bounds.startScale = scale;
+			bounds.target = target;
+			bounds.targetScale = scale;
+			bounds.initialized = true;
+			bounds.active = false;
+		}
+
+		[[nodiscard]] bool MovePairWindowsDirect(
+			const std::array<std::size_t, 2>& indices,
+			const std::array<POINT, 2>& translations) noexcept
+		{
+			auto& service = Inkeys::Window::GetService();
+			std::array<HWND, 2> handles{};
+			std::array<RECT, 2> original{};
+			for (std::size_t item = 0; item < indices.size(); ++item)
+			{
+				handles[item] = service.Handle(Roles[indices[item]]);
+				if (!handles[item] || !GetWindowRect(handles[item], &original[item]))
+					return false;
+			}
+
+			HDWP batch = BeginDeferWindowPos(static_cast<int>(indices.size()));
+			if (!batch) return false;
+			constexpr UINT flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+				| SWP_NOOWNERZORDER | SWP_NOSENDCHANGING;
+			for (std::size_t item = 0; item < indices.size(); ++item)
+			{
+				batch = DeferWindowPos(batch, handles[item], nullptr,
+					original[item].left + translations[item].x,
+					original[item].top + translations[item].y,
+					0, 0, flags);
+				if (!batch) return false;
+			}
+			if (EndDeferWindowPos(batch)) return true;
+
+			// 批量提交失败时恢复两个窗口，内部布局也不会前进。
+			for (std::size_t item = 0; item < indices.size(); ++item)
+				(void)SetWindowPos(handles[item], nullptr,
+					original[item].left, original[item].top, 0, 0, flags);
+			return false;
+		}
+
 		void UpdateDrag(std::size_t index, POINT screen)
 		{
 			auto& state = surfaces[index];
@@ -713,15 +803,47 @@ namespace Inkeys::UI::PageControl
 			}
 			candidate = ClampPageControlLayout(moved, monitor,
 				dpiScale, whiteboard, candidate);
+			const PptLayoutState previousLayout = state.feasibleLayout;
 			if (DragLayoutCollides(moved, monitor, dpiScale,
 				ppt, whiteboard, candidate)) candidate = state.feasibleLayout;
-			else state.feasibleLayout = candidate;
+			PptState previousPpt = ppt;
+			PptState candidatePpt = ppt;
+			previousPpt.layout = previousLayout;
+			candidatePpt.layout = candidate;
+			const std::array<std::size_t, 2> pair = bottom
+				? std::array<std::size_t, 2>{ 0, 1 }
+				: std::array<std::size_t, 2>{ 2, 3 };
+			std::array<ResolvedSurfaceLayout, 2> layouts{};
+			std::array<POINT, 2> translations{};
+			for (std::size_t item = 0; item < pair.size(); ++item)
+			{
+				const Surface pairSurface = SurfaceFor(pair[item]);
+				const auto previous = ResolveSurfaceLayout(pairSurface, monitor,
+					dpiScale, previousPpt, whiteboard);
+				layouts[item] = ResolveSurfaceLayout(pairSurface, monitor,
+					dpiScale, candidatePpt, whiteboard);
+				translations[item] = POINT{
+					layouts[item].logicalBounds.left - previous.logicalBounds.left,
+					layouts[item].logicalBounds.top - previous.logicalBounds.top };
+			}
+			if (translations[0].x == 0 && translations[0].y == 0
+				&& translations[1].x == 0 && translations[1].y == 0) return;
+			std::scoped_lock presentationLock(presentationMutex);
+			if (!MovePairWindowsDirect(pair, translations)) return;
+			state.feasibleLayout = candidate;
 			{
 				std::scoped_lock lock(snapshotMutex);
 				publishedPpt.layout = candidate;
-				publishedRevision.fetch_add(1, std::memory_order_release);
 			}
-			RequestAll();
+			for (std::size_t item = 0; item < pair.size(); ++item)
+			{
+				auto& pairState = surfaces[pair[item]];
+				SetBoundsDirect(pairState.bounds, layouts[item].logicalBounds,
+					layouts[item].scale);
+				(void)pairState.scene.SetBounds(layouts[item].logicalBounds,
+					layouts[item].scale);
+			}
+			directMoveRevision.fetch_add(1, std::memory_order_release);
 		}
 
 		void PersistDragPosition(const PptLayoutState& layout)
@@ -766,6 +888,8 @@ namespace Inkeys::UI::PageControl
 			if (!initialized.load(std::memory_order_acquire))
 				return FrameResult::Idle;
 			auto& service = Inkeys::Window::GetService();
+			const std::uint64_t frameDirectMoveRevision =
+				directMoveRevision.load(std::memory_order_acquire);
 			const HWND hwnd = service.Handle(Roles[index]);
 			if (!hwnd) return FrameResult::Retry;
 			const RECT monitor = PrimaryBounds();
@@ -825,10 +949,15 @@ namespace Inkeys::UI::PageControl
 					state.scene.PresentationOutsetPixels(), state.bounds.scale,
 					target.scale);
 				state.backingCapacity = backing.size;
-				keepAnimating = state.bounds.active || state.scene.AnimationActive()
-					|| state.pressStarted.time_since_epoch().count() != 0
-					|| state.externalPressUntil.time_since_epoch().count() != 0;
-				shouldShow = state.targetVisible || keepAnimating;
+				const bool exitTransitionActive = !state.targetVisible
+					&& frameContext.frameTime < state.layoutTransitionUntil;
+				const bool visibleAnimation = state.targetVisible
+					&& (state.bounds.active || state.scene.AnimationActive()
+						|| state.pressStarted.time_since_epoch().count() != 0
+						|| state.externalPressUntil.time_since_epoch().count() != 0);
+				keepAnimating = exitTransitionActive || visibleAnimation;
+				shouldShow = ShouldKeepPageControlWindowVisible(
+					state.targetVisible, exitTransitionActive);
 				if (shouldShow)
 				{
 					const bool presentationSizeChanged =
@@ -846,7 +975,9 @@ namespace Inkeys::UI::PageControl
 						|| presentationSizeChanged || backingChanged || deviceChanged;
 					presentStatus = PresentScene(state.scene, hwnd,
 						frameContext, presentation, backing.size,
-						forceFullReplacement);
+						forceFullReplacement,
+						debugEnabled.load(std::memory_order_acquire),
+						!keepAnimating);
 					if (presentStatus == PresentStatus::Success)
 					{
 						(void)state.scene.ConsumeDamage();
@@ -866,6 +997,10 @@ namespace Inkeys::UI::PageControl
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
 			std::scoped_lock presentationLock(presentationMutex);
+			// 拖动期间产生的过期帧不能把已经直移的 HWND 拉回旧坐标。
+			if (frameDirectMoveRevision
+				!= directMoveRevision.load(std::memory_order_acquire))
+				return FrameResult::Retry;
 			bool boundsApplied = true;
 			bool visibilityApplied = false;
 			if (shouldShow)
@@ -1029,6 +1164,7 @@ namespace Inkeys::UI::PageControl
 			{
 				PptLayoutState persisted{};
 				bool persist = false;
+				bool dragEnded = false;
 				bool shouldInvokeClick = false;
 				Inkeys::UI::Bar::BarSurfaceWidgetId clicked =
 					Inkeys::UI::Bar::BarSurfaceNoWidget;
@@ -1050,15 +1186,22 @@ namespace Inkeys::UI::PageControl
 						(void)whiteboard;
 						persisted = ppt.layout;
 						persist = persisted.rememberPosition;
+						dragEnded = true;
 					}
 					state.dragging = false;
 					state.pressStarted = {};
 					state.repeatTriggered = false;
 				}
 				if (GetCapture() == hwnd) ReleaseCapture();
+				if (dragEnded)
+				{
+					std::scoped_lock lock(snapshotMutex);
+					publishedRevision.fetch_add(1, std::memory_order_relaxed);
+				}
 				if (shouldInvokeClick
 					&& (clicked == PreviousWidget || clicked == NextWidget))
 					InvokeDirection(index, clicked == NextWidget);
+				if (dragEnded) RequestAll();
 				if (persist) PersistDragPosition(persisted);
 				return 0;
 			}
@@ -1211,6 +1354,18 @@ namespace Inkeys::UI::PageControl
 			|| delta == 0) return;
 		InvokeDirection(0, delta < 0);
 		FlashPptDirection(delta < 0);
+	}
+
+	void SetDebugEnabled(bool enabled) noexcept
+	{
+		if (debugEnabled.exchange(enabled, std::memory_order_acq_rel) == enabled)
+			return;
+		{
+			std::unique_lock renderLock(renderTransactionMutex);
+			// 开关调试框后全量替换一次，确保旧覆盖层不会留在 layered bitmap。
+			for (auto& surface : surfaces) surface.forceFullPresentation = true;
+		}
+		RequestAll();
 	}
 
 	void NotifyLayoutChanged() noexcept

@@ -215,6 +215,13 @@ export namespace Inkeys::UI::PageControl
 			|| surface == Surface::BottomRight;
 	}
 
+	[[nodiscard]] constexpr bool ShouldKeepPageControlWindowVisible(
+		bool targetVisible, bool exitTransitionActive) noexcept
+	{
+		// Scene 可能因共享光源持续报告动画；隐藏生命周期只由固定退场时限保活。
+		return targetVisible || exitTransitionActive;
+	}
+
 	[[nodiscard]] constexpr bool ShouldLockSurfaceInput(
 		bool targetVisible, bool transitionActive,
 		bool workspaceSwitching) noexcept
@@ -597,6 +604,7 @@ export namespace Inkeys::UI::PageControl
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept;
 	void FlashPptDirection(bool next) noexcept;
 	void QueuePptWheel(short delta) noexcept;
+	void SetDebugEnabled(bool enabled) noexcept;
 	void NotifyLayoutChanged() noexcept;
 	void CancelPointerCapture() noexcept;
 }
