@@ -30,6 +30,15 @@ namespace
 	using Inkeys::Drawing::Draw3::Bridge::Tool;
 	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
+	std::atomic_bool draw3PresentationRetryPending = false;
+	bool draw3PresentationFailureActive = false;
+
+	enum class Draw3PresentationReconcileResult : std::uint8_t
+	{
+		Waiting,
+		Applied,
+		Retry,
+	};
 
 	enum class WhiteboardPhase : std::uint8_t
 	{
@@ -116,6 +125,147 @@ namespace
 			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
 			runtime.presentedContentRevision == runtime.contentRevision;
 	}
+
+	[[nodiscard]] const char* OutputTargetName(
+		Inkeys::Drawing::Draw3::HostOutputTarget target) noexcept
+	{
+		return target == Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+			? "selection-ulw" : "primary-drawpad";
+	}
+
+	[[nodiscard]] const char* SurfaceVisibilityName(
+		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
+	{
+		switch (visibility)
+		{
+		case Inkeys::Window::DrawpadSurfaceVisibility::Primary:
+			return "primary";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Presentation:
+			return "presentation";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Hidden:
+		default:
+			return "hidden";
+		}
+	}
+
+	void LogDraw3PresentationFailure(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
+	{
+		if (!IDTLogger) return;
+		auto& service = Inkeys::Window::GetService();
+		const HWND primary = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+		const HWND presentation = service.Handle(
+			Inkeys::Window::WindowRole::DrawpadPresentation);
+		RECT primaryBounds{};
+		RECT presentationBounds{};
+		if (primary) (void)GetWindowRect(primary, &primaryBounds);
+		if (presentation) (void)GetWindowRect(presentation, &presentationBounds);
+		const HWND primaryOwner = primary ? GetWindow(primary, GW_OWNER) : nullptr;
+		const HWND presentationOwner = presentation
+			? GetWindow(presentation, GW_OWNER) : nullptr;
+		const LONG_PTR primaryExStyle = primary
+			? GetWindowLongPtrW(primary, GWL_EXSTYLE) : 0;
+		const LONG_PTR presentationExStyle = presentation
+			? GetWindowLongPtrW(presentation, GWL_EXSTYLE) : 0;
+		IDTLogger->warn(
+			"[状态线程][ReconcileDraw3Presentation] surface 切换失败, "
+			"surface={}, requested={}@{}, ready={}@{}, content={}/{}, "
+			"firstFrame={}, clean={}, primary={{hwnd=0x{:X},owner=0x{:X},visible={},topmost={},rect=({},{},{},{})}}, "
+			"presentation={{hwnd=0x{:X},owner=0x{:X},visible={},topmost={},rect=({},{},{},{})}}",
+			SurfaceVisibilityName(visibility),
+			OutputTargetName(runtime.requestedOutputTarget),
+			runtime.requestedOutputRevision,
+			OutputTargetName(runtime.readyOutputTarget),
+			runtime.readyOutputRevision,
+			runtime.presentedContentRevision, runtime.contentRevision,
+			runtime.firstFrameReady, runtime.auxiliaryFullFrameClean,
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(primary)),
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(primaryOwner)),
+			primary && IsWindowVisible(primary),
+			(primaryExStyle & WS_EX_TOPMOST) != 0,
+			primaryBounds.left, primaryBounds.top,
+			primaryBounds.right, primaryBounds.bottom,
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(presentation)),
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(presentationOwner)),
+			presentation && IsWindowVisible(presentation),
+			(presentationExStyle & WS_EX_TOPMOST) != 0,
+			presentationBounds.left, presentationBounds.top,
+			presentationBounds.right, presentationBounds.bottom);
+	}
+
+	[[nodiscard]] Draw3PresentationReconcileResult
+		ReconcileDraw3PresentationState()
+	{
+		std::scoped_lock lock(draw3PresentationMutex);
+		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const bool selectionMode = runtime.selectionMode;
+		const bool whiteboard = runtime.workspace ==
+			Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
+		auto& service = Inkeys::Window::GetService();
+		using Inkeys::Window::WindowRole;
+
+		// 白板空页仍保留完整绘制栏和主 Drawpad；选择只表示拖动态，不切辅助 ULW。
+		Inkeys::UI::Bar::SetCurrentPageHasContent(
+			whiteboard || runtime.currentPageHasContent);
+		const auto expectedTarget =
+			Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
+				selectionMode, runtime.workspace)
+			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
+		const bool targetReady = runtime.requestedOutputTarget == expectedTarget &&
+			runtime.readyOutputTarget == expectedTarget &&
+			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
+			runtime.presentedContentRevision == runtime.contentRevision;
+		if (!runtime.firstFrameReady ||
+			(selectionMode && !whiteboard && !targetReady))
+		{
+			draw3PresentationRetryPending.store(false, std::memory_order_release);
+			draw3PresentationFailureActive = false;
+			return Draw3PresentationReconcileResult::Waiting;
+		}
+
+		Inkeys::Window::DrawpadSurfaceVisibility visibility;
+		if (whiteboard)
+		{
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary;
+		}
+		else switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
+			selectionMode, runtime.currentPageHasContent,
+			runtime.auxiliaryFullFrameClean))
+		{
+		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Primary:
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary; break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Presentation:
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Presentation; break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Hidden:
+		default:
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Hidden; break;
+		}
+
+		if (!service.SetDrawpadSurfaceVisibility(visibility))
+		{
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			if (!draw3PresentationFailureActive)
+				LogDraw3PresentationFailure(runtime, visibility);
+			draw3PresentationFailureActive = true;
+			return Draw3PresentationReconcileResult::Retry;
+		}
+
+		draw3PresentationRetryPending.store(false, std::memory_order_release);
+		if (draw3PresentationFailureActive && IDTLogger)
+			IDTLogger->info(
+				"[状态线程][ReconcileDraw3Presentation] surface 切换已恢复, surface={}",
+				SurfaceVisibilityName(visibility));
+		draw3PresentationFailureActive = false;
+		const HWND drawpad = service.Handle(WindowRole::Drawpad);
+		const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+		IdtWindowsIsVisible.drawpadWindow = drawpad && presentation &&
+			service.Ready(WindowRole::Drawpad) &&
+			service.Ready(WindowRole::DrawpadPresentation) &&
+			runtime.firstFrameReady;
+		return Draw3PresentationReconcileResult::Applied;
+	}
 }
 
 void SyncDraw3State()
@@ -126,56 +276,7 @@ void SyncDraw3State()
 
 void ReconcileDraw3Presentation()
 {
-	std::scoped_lock lock(draw3PresentationMutex);
-	const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-	const bool selectionMode = runtime.selectionMode;
-	const bool whiteboard = runtime.workspace ==
-		Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
-	auto& service = Inkeys::Window::GetService();
-	using Inkeys::Window::WindowRole;
-
-	// 白板空页仍保留完整绘制栏和主 Drawpad；选择只表示拖动态，不切辅助 ULW。
-	Inkeys::UI::Bar::SetCurrentPageHasContent(
-		whiteboard || runtime.currentPageHasContent);
-	const auto expectedTarget =
-		Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
-			selectionMode, runtime.workspace)
-		? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
-		: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
-	const bool targetReady = runtime.requestedOutputTarget == expectedTarget &&
-		runtime.readyOutputTarget == expectedTarget &&
-		runtime.readyOutputRevision == runtime.requestedOutputRevision &&
-		runtime.presentedContentRevision == runtime.contentRevision;
-	if (!runtime.firstFrameReady) return;
-	// 离开选择后先让主 Drawpad 接管输入，避免等待预热帧时首个 Down 穿到下层窗口。
-	// 选择态仍必须等待辅助 ULW 内容就绪，防止旧帧或双窗 alpha 叠加。
-	if (selectionMode && !whiteboard && !targetReady) return;
-
-	Inkeys::Window::DrawpadSurfaceVisibility visibility;
-	if (whiteboard)
-	{
-		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary;
-	}
-	else switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
-		selectionMode, runtime.currentPageHasContent,
-		runtime.auxiliaryFullFrameClean))
-	{
-	case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Primary:
-		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary; break;
-	case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Presentation:
-		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Presentation; break;
-	case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Hidden:
-	default:
-		visibility = Inkeys::Window::DrawpadSurfaceVisibility::Hidden; break;
-	}
-	(void)service.SetDrawpadSurfaceVisibility(visibility);
-
-	const HWND drawpad = service.Handle(WindowRole::Drawpad);
-	const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
-	IdtWindowsIsVisible.drawpadWindow = drawpad && presentation &&
-		service.Ready(WindowRole::Drawpad) &&
-		service.Ready(WindowRole::DrawpadPresentation) &&
-		Inkeys::Drawing::Draw3::ProductFirstFrameReady();
+	(void)ReconcileDraw3PresentationState();
 }
 
 bool IsLaserPenSelected() noexcept
@@ -412,6 +513,10 @@ void StateMonitoring()
 		if (runtimeChanged)
 		{
 			revision = snapshot.runtimeRevision;
+		}
+		if (runtimeChanged || draw3PresentationRetryPending.load(
+			std::memory_order_acquire))
+		{
 			ReconcileDraw3Presentation();
 		}
 

@@ -472,7 +472,10 @@ namespace Inkeys::Window
 			PromotePpt,
 			BindMessages,
 			UnbindMessages,
+			Count,
 		};
+		static constexpr std::size_t CommandCount =
+			static_cast<std::size_t>(CommandType::Count);
 
 		struct Command
 		{
@@ -519,6 +522,74 @@ namespace Inkeys::Window
 			return IsValidRole(role) ? &records_[RoleIndex(role)] : nullptr;
 		}
 
+		[[nodiscard]] static bool ShouldReportCommandFailure(
+			CommandType type) noexcept
+		{
+			return type == CommandType::Show || type == CommandType::Hide ||
+				type == CommandType::SetDrawpadSurfaceVisibility ||
+				type == CommandType::SetBounds ||
+				type == CommandType::RefreshTopmost ||
+				type == CommandType::PromotePpt;
+		}
+
+		[[nodiscard]] static const wchar_t* CommandName(
+			CommandType type) noexcept
+		{
+			switch (type)
+			{
+			case CommandType::Show: return L"Show";
+			case CommandType::Hide: return L"Hide";
+			case CommandType::SetDrawpadSurfaceVisibility:
+				return L"SetDrawpadSurfaceVisibility";
+			case CommandType::SetBounds: return L"SetBounds";
+			case CommandType::RefreshTopmost: return L"RefreshTopmost";
+			case CommandType::PromotePpt: return L"PromotePpt";
+			default: return L"Other";
+			}
+		}
+
+		void ReportCommandResult(const Command& command, bool succeeded,
+			DWORD error, HWND hwnd) noexcept
+		{
+			if (!ShouldReportCommandFailure(command.type) ||
+				!IsValidRole(command.role)) return;
+			auto& failureActive = commandFailureActive_[
+				static_cast<std::size_t>(command.type)][RoleIndex(command.role)];
+			const bool recovered = succeeded && failureActive;
+			if (succeeded)
+			{
+				if (!recovered) return;
+				failureActive = false;
+			}
+			else
+			{
+				if (failureActive) return;
+				failureActive = true;
+			}
+
+			RECT bounds{};
+			if (hwnd) (void)GetWindowRect(hwnd, &bounds);
+			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
+			const LONG_PTR exStyle = hwnd
+				? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			wchar_t diagnostic[640]{};
+			swprintf_s(diagnostic,
+				L"Inkeys.Window command %s: operation=%s role=%u error=%lu "
+				L"hwnd=0x%llX owner=0x%llX valid=%d visible=%d topmost=%d "
+				L"bounds=(%ld,%ld,%ld,%ld)\n",
+				recovered ? L"recovered" : L"failed", CommandName(command.type),
+				static_cast<unsigned>(command.role),
+				error,
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
+				hwnd && IsWindow(hwnd) ? 1 : 0,
+				hwnd && IsWindowVisible(hwnd) ? 1 : 0,
+				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
+				bounds.left, bounds.top, bounds.right, bounds.bottom);
+			OutputDebugStringW(diagnostic);
+			std::fwprintf(stderr, L"%s", diagnostic);
+		}
+
 			void ResetState()
 			{
 				overlayTopmost_.store(true, std::memory_order_release);
@@ -542,6 +613,8 @@ namespace Inkeys::Window
 				record.lifecycleActive = false;
 				record.className.clear();
 			}
+			for (auto& commandFailures : commandFailureActive_)
+				commandFailures.fill(false);
 			{
 				std::scoped_lock lock(overlayCommands_.mutex, settingCommands_.mutex);
 				overlayCommands_.commands.clear();
@@ -1230,7 +1303,11 @@ namespace Inkeys::Window
 				return DestroyDynamic(command.role);
 			if (command.type != CommandType::RefreshTopmost
 				&& (!record || !hwnd || !IsWindow(hwnd)))
+			{
+				ReportCommandResult(command, false,
+					ERROR_INVALID_WINDOW_HANDLE, hwnd);
 				return false;
+			}
 
 			switch (command.type)
 			{
@@ -1238,6 +1315,9 @@ namespace Inkeys::Window
 			case CommandType::Destroy:
 				return false;
 			case CommandType::Show:
+			{
+				bool succeeded = true;
+				DWORD error = ERROR_SUCCESS;
 				if (IsSetting(command.role))
 				{
 					ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
@@ -1252,29 +1332,58 @@ namespace Inkeys::Window
 					if (IsPpt(command.role))
 					{
 						const HWND bar = Handle(WindowRole::Bar);
-						if (!bar || !IsWindow(bar) ||
-							!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
-								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) ||
-							!SetWindowPos(hwnd, bar, 0, 0, 0, 0,
-								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-							return false;
+						if (!bar || !IsWindow(bar))
+						{
+							succeeded = false;
+							error = ERROR_INVALID_WINDOW_HANDLE;
+						}
+						else
+						{
+							SetLastError(ERROR_SUCCESS);
+							succeeded = SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
+								SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+							if (succeeded)
+								succeeded = SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+									SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+							if (!succeeded) error = GetLastError();
+						}
 					}
 				}
-				return true;
+				ReportCommandResult(command, succeeded,
+					error == ERROR_SUCCESS && !succeeded ? ERROR_GEN_FAILURE : error,
+					hwnd);
+				return succeeded;
+			}
 			case CommandType::Hide:
 				ShowWindow(hwnd, SW_HIDE);
+				ReportCommandResult(command, true, ERROR_SUCCESS, hwnd);
 				return true;
 			case CommandType::HideAll:
 				return false;
 			case CommandType::SetDrawpadSurfaceVisibility:
-				return ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
+			{
+				SetLastError(ERROR_SUCCESS);
+				const bool succeeded =
+					ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
+			}
 			case CommandType::SetBounds:
-				if (command.role == WindowRole::Drawpad)
-					return ApplyDrawpadBounds(command.bounds);
-				return SetWindowPos(hwnd, nullptr, command.bounds.left,
-					command.bounds.top, command.bounds.right - command.bounds.left,
-					command.bounds.bottom - command.bounds.top,
-					SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+			{
+				SetLastError(ERROR_SUCCESS);
+				const bool succeeded = command.role == WindowRole::Drawpad
+					? ApplyDrawpadBounds(command.bounds)
+					: SetWindowPos(hwnd, nullptr, command.bounds.left,
+						command.bounds.top, command.bounds.right - command.bounds.left,
+						command.bounds.bottom - command.bounds.top,
+						SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
+			}
 			case CommandType::SetClickThrough:
 			{
 				LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -1315,10 +1424,16 @@ namespace Inkeys::Window
 					// Whiteboard 是普通可激活窗口组，任何外部刷新都不得把它重新推回 TOPMOST。
 					const bool keepTopmost = overlayTopmost_.load(std::memory_order_acquire)
 						&& !whiteboardWindowMode_.load(std::memory_order_acquire);
-					if (!root || !SetWindowPos(
+					SetLastError(ERROR_SUCCESS);
+					const bool succeeded = root && SetWindowPos(
 						root, keepTopmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-						return false;
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+					DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+					if (!root) error = ERROR_INVALID_WINDOW_HANDLE;
+					else if (!succeeded && error == ERROR_SUCCESS)
+						error = ERROR_GEN_FAILURE;
+					ReportCommandResult(command, succeeded, error, root);
+					if (!succeeded) return false;
 					ApplyOverlayFullscreen(root);
 					return true;
 				}
@@ -1326,12 +1441,23 @@ namespace Inkeys::Window
 			{
 				if (!IsPpt(command.role)) return false;
 				const HWND bar = Handle(WindowRole::Bar);
-				if (!bar || !IsWindow(bar)) return false;
+				if (!bar || !IsWindow(bar))
+				{
+					ReportCommandResult(command, false,
+						ERROR_INVALID_WINDOW_HANDLE, hwnd);
+					return false;
+				}
 				// no-activate 窗口没有焦点自动排序：Bar 固定最上，交互 PPT 紧随其后。
-				if (!SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return false;
-				return SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+				SetLastError(ERROR_SUCCESS);
+				bool succeeded = SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+				if (succeeded)
+					succeeded = SetWindowPos(hwnd, bar, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
+				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
 			}
 			case CommandType::BindMessages:
 				if (!record->channel) return false;
@@ -1343,6 +1469,8 @@ namespace Inkeys::Window
 				if (!record->channel || !record->messagesBound) return false;
 				record->messagesBound = !record->channel->Unbind(hwnd);
 				return !record->messagesBound;
+			case CommandType::Count:
+				return false;
 			}
 			return false;
 		}
@@ -1382,8 +1510,12 @@ namespace Inkeys::Window
 			const HWND primary = Handle(WindowRole::Drawpad);
 			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
 			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
+			{
+				SetLastError(ERROR_INVALID_WINDOW_HANDLE);
 				return false;
+			}
 
+			DWORD deferredError = ERROR_SUCCESS;
 			HDWP positions = BeginDeferWindowPos(2);
 			if (positions)
 			{
@@ -1395,11 +1527,22 @@ namespace Inkeys::Window
 						? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
 				positions = DeferWindowPos(positions, primary, nullptr,
 					0, 0, 0, 0, primaryFlags);
-				if (positions)
+				if (!positions)
+					deferredError = GetLastError();
+				else
+				{
 					positions = DeferWindowPos(positions, presentation, nullptr,
 						0, 0, 0, 0, presentationFlags);
-				if (positions && EndDeferWindowPos(positions)) return true;
+					if (!positions) deferredError = GetLastError();
+				}
+				if (positions)
+				{
+					if (EndDeferWindowPos(positions)) return true;
+					deferredError = GetLastError();
+				}
 			}
+			else
+				deferredError = GetLastError();
 
 			// 批量切换失败时先清空两窗可见性，再显示唯一目标，禁止 alpha 叠加。
 			ShowWindow(primary, SW_HIDE);
@@ -1408,12 +1551,20 @@ namespace Inkeys::Window
 				ShowWindow(primary, SW_SHOWNOACTIVATE);
 			else if (visibility == DrawpadSurfaceVisibility::Presentation)
 				ShowWindow(presentation, SW_SHOWNOACTIVATE);
-			return (visibility == DrawpadSurfaceVisibility::Primary
+			const bool fallbackSucceeded = visibility == DrawpadSurfaceVisibility::Primary
 				? IsWindowVisible(primary) != FALSE
 				: visibility == DrawpadSurfaceVisibility::Presentation
 					? IsWindowVisible(presentation) != FALSE
 					: IsWindowVisible(primary) == FALSE &&
-						IsWindowVisible(presentation) == FALSE);
+						IsWindowVisible(presentation) == FALSE;
+			if (fallbackSucceeded)
+			{
+				SetLastError(ERROR_SUCCESS);
+				return true;
+			}
+			SetLastError(deferredError == ERROR_SUCCESS
+				? ERROR_GEN_FAILURE : deferredError);
+			return false;
 		}
 
 		[[nodiscard]] bool ApplyDrawpadBounds(const RECT& bounds) noexcept
@@ -1421,7 +1572,10 @@ namespace Inkeys::Window
 			const HWND primary = Handle(WindowRole::Drawpad);
 			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
 			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
+			{
+				SetLastError(ERROR_INVALID_WINDOW_HANDLE);
 				return false;
+			}
 			const int width = bounds.right - bounds.left;
 			const int height = bounds.bottom - bounds.top;
 			HDWP positions = BeginDeferWindowPos(2);
@@ -1552,6 +1706,8 @@ namespace Inkeys::Window
 		CommandQueue overlayCommands_;
 		CommandQueue settingCommands_;
 		std::mutex lifecycleMutex_;
+		std::array<std::array<bool, RoleCount>, CommandCount>
+			commandFailureActive_{};
 			std::atomic_bool overlayTopmost_ = true;
 			std::atomic_bool overlayFullscreen_ = false;
 			std::atomic_bool whiteboardWindowMode_ = false;

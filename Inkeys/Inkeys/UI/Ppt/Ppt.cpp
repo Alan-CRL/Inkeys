@@ -3,6 +3,7 @@ module;
 #include <windows.h>
 
 #include <atomic>
+#include <cwchar>
 #include <mutex>
 #include <utility>
 
@@ -12,18 +13,67 @@ module Inkeys.UI.Ppt;
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar;
+import Inkeys.Window;
 
 namespace Inkeys::UI::Ppt
 {
 	namespace
 	{
+		struct TopmostRefreshState
+		{
+			bool presentationVisible = false;
+			bool pending = false;
+			bool inFlight = false;
+		};
+
+		[[nodiscard]] bool BeginTopmostRefreshPublication(
+			TopmostRefreshState& state, bool visible) noexcept
+		{
+			if (visible && !state.presentationVisible) state.pending = true;
+			state.presentationVisible = visible;
+			if (!visible) state.pending = false;
+			if (!state.pending || state.inFlight) return false;
+			state.inFlight = true;
+			return true;
+		}
+
+		void CompleteTopmostRefresh(
+			TopmostRefreshState& state, bool succeeded) noexcept
+		{
+			state.inFlight = false;
+			if (succeeded) state.pending = false;
+		}
+
 		std::atomic_bool initialized = false;
 		std::mutex stateMutex;
 		BusinessCallbacks business;
 		LayoutConfiguration configuration;
-		bool presentationVisible = false;
+		TopmostRefreshState topmostRefresh;
+		bool topmostRefreshFailureLogged = false;
 		int currentPage = -1;
 		int totalPage = -1;
+
+		void LogTopmostRefreshState(bool recovered) noexcept
+		{
+			auto& service = Inkeys::Window::GetService();
+			const HWND root = service.OverlayRoot();
+			RECT bounds{};
+			if (root) (void)GetWindowRect(root, &bounds);
+			const HWND owner = root ? GetWindow(root, GW_OWNER) : nullptr;
+			const LONG_PTR exStyle = root
+				? GetWindowLongPtrW(root, GWL_EXSTYLE) : 0;
+			wchar_t message[512]{};
+			swprintf_s(message,
+				L"[Ppt] topmost refresh %s: hwnd=0x%llX owner=0x%llX "
+				L"visible=%d topmost=%d bounds=(%ld,%ld,%ld,%ld)\n",
+				recovered ? L"recovered" : L"failed",
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(root)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
+				root && IsWindowVisible(root) ? 1 : 0,
+				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
+				bounds.left, bounds.top, bounds.right, bounds.bottom);
+			OutputDebugStringW(message);
+		}
 
 		[[nodiscard]] LayoutConfiguration SnapshotLegacyConfiguration()
 		{
@@ -66,7 +116,7 @@ namespace Inkeys::UI::Ppt
 			Inkeys::UI::PageControl::PptState state;
 			{
 				std::scoped_lock lock(stateMutex);
-				state.presentationVisible = presentationVisible;
+				state.presentationVisible = topmostRefresh.presentationVisible;
 				state.currentPage = currentPage;
 				state.totalPage = totalPage;
 				state.layout = ToPageLayout(configuration);
@@ -104,7 +154,8 @@ namespace Inkeys::UI::Ppt
 			std::scoped_lock lock(stateMutex);
 			business = std::move(callbacks);
 			configuration = SnapshotLegacyConfiguration();
-			presentationVisible = false;
+			topmostRefresh = {};
+			topmostRefreshFailureLogged = false;
 			currentPage = -1;
 			totalPage = -1;
 		}
@@ -136,7 +187,8 @@ namespace Inkeys::UI::Ppt
 		if (!initialized.exchange(false, std::memory_order_acq_rel)) return;
 		{
 			std::scoped_lock lock(stateMutex);
-			presentationVisible = false;
+			topmostRefresh = {};
+			topmostRefreshFailureLogged = false;
 		}
 		PublishSnapshot();
 		Inkeys::UI::Bar::SetEndShowCallback({});
@@ -154,11 +206,37 @@ namespace Inkeys::UI::Ppt
 	void PublishPresentationVisible(bool visible) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
+		bool requestTopmostRefresh = false;
 		{
 			std::scoped_lock lock(stateMutex);
-			presentationVisible = visible;
+			// 进入放映只抬升 owner 树根；失败后由后续 500ms 状态发布重试。
+			requestTopmostRefresh = BeginTopmostRefreshPublication(
+				topmostRefresh, visible);
+			if (!visible) topmostRefreshFailureLogged = false;
 		}
 		PublishSnapshot();
+		if (!requestTopmostRefresh) return;
+
+		const bool refreshed =
+			Inkeys::Window::GetService().RequestTopmostRefresh();
+		bool logFailure = false;
+		bool logRecovery = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			CompleteTopmostRefresh(topmostRefresh, refreshed);
+			if (refreshed)
+			{
+				logRecovery = topmostRefreshFailureLogged;
+				topmostRefreshFailureLogged = false;
+			}
+			else if (topmostRefresh.pending && !topmostRefreshFailureLogged)
+			{
+				topmostRefreshFailureLogged = true;
+				logFailure = true;
+			}
+		}
+		if (logFailure) LogTopmostRefreshState(false);
+		else if (logRecovery) LogTopmostRefreshState(true);
 	}
 
 	void PublishPageState(int current, int total) noexcept

@@ -15,6 +15,7 @@ module;
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cwchar>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -112,6 +113,7 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t committedDeviceGeneration = 0;
 			bool committedPresentationReady = false;
 			bool forceFullPresentation = true;
+			bool windowCommitFailureActive = false;
 		};
 
 		std::array<SurfaceState, 4> surfaces;
@@ -732,6 +734,32 @@ namespace Inkeys::UI::PageControl
 			if (callback) callback(layout);
 		}
 
+		void LogWindowCommitState(std::size_t index, HWND hwnd,
+			bool shouldShow, bool boundsApplied, bool visibilityApplied,
+			bool recovered) noexcept
+		{
+			RECT bounds{};
+			if (hwnd) (void)GetWindowRect(hwnd, &bounds);
+			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
+			const LONG_PTR exStyle = hwnd
+				? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			wchar_t message[640]{};
+			swprintf_s(message,
+				L"[PageControl] window commit %s: role=%u hwnd=0x%llX "
+				L"owner=0x%llX visible=%d topmost=%d bounds=(%ld,%ld,%ld,%ld) "
+				L"shouldShow=%d present=success setBounds=%d visibility=%d\n",
+				recovered ? L"recovered" : L"failed",
+				static_cast<unsigned>(Roles[index]),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
+				hwnd && IsWindowVisible(hwnd) ? 1 : 0,
+				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
+				bounds.left, bounds.top, bounds.right, bounds.bottom,
+				shouldShow ? 1 : 0, boundsApplied ? 1 : 0,
+				visibilityApplied ? 1 : 0);
+			OutputDebugStringW(message);
+		}
+
 		FrameResult RenderSurface(std::size_t index,
 			const FrameContext& frameContext)
 		{
@@ -838,13 +866,31 @@ namespace Inkeys::UI::PageControl
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
 			std::scoped_lock presentationLock(presentationMutex);
+			bool boundsApplied = true;
+			bool visibilityApplied = false;
 			if (shouldShow)
 			{
-				(void)service.SetBounds(Roles[index], presentation);
-				(void)service.Show(Roles[index]);
+				boundsApplied = service.SetBounds(Roles[index], presentation);
+				if (boundsApplied)
+					visibilityApplied = service.Show(Roles[index]);
 			}
 			else
-				(void)service.Hide(Roles[index]);
+				visibilityApplied = service.Hide(Roles[index]);
+			auto& state = surfaces[index];
+			if (!visibilityApplied || (shouldShow && !boundsApplied))
+			{
+				if (!state.windowCommitFailureActive)
+					LogWindowCommitState(index, hwnd, shouldShow,
+						boundsApplied, visibilityApplied, false);
+				state.windowCommitFailureActive = true;
+				return FrameResult::Retry;
+			}
+			if (state.windowCommitFailureActive)
+			{
+				state.windowCommitFailureActive = false;
+				LogWindowCommitState(index, hwnd, shouldShow,
+					boundsApplied, visibilityApplied, true);
+			}
 			return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
 		}
 

@@ -17,6 +17,56 @@ IdtWindowsIsVisibleStruct IdtWindowsIsVisible;
 bool rtsWait = true;
 bool topWindowNow = false;
 
+namespace
+{
+	struct OverlaySnapshotRole
+	{
+		Inkeys::Window::WindowRole role;
+		const char* name;
+	};
+
+	constexpr OverlaySnapshotRole OverlaySnapshotRoles[] = {
+		{ Inkeys::Window::WindowRole::MagnifierHost, "MagnifierHost" },
+		{ Inkeys::Window::WindowRole::Freeze, "Freeze" },
+		{ Inkeys::Window::WindowRole::DrawpadPresentation, "DrawpadPresentation" },
+		{ Inkeys::Window::WindowRole::Drawpad, "Drawpad" },
+		{ Inkeys::Window::WindowRole::PptBottomLeft, "PptBottomLeft" },
+		{ Inkeys::Window::WindowRole::PptBottomRight, "PptBottomRight" },
+		{ Inkeys::Window::WindowRole::PptMiddleLeft, "PptMiddleLeft" },
+		{ Inkeys::Window::WindowRole::PptMiddleRight, "PptMiddleRight" },
+		{ Inkeys::Window::WindowRole::Bar, "Bar" },
+	};
+
+	void LogTopmostRefreshSnapshot(
+		Inkeys::Window::Service& service, bool recovered) noexcept
+	{
+		if (!IDTLogger) return;
+		const char* transition = recovered ? "recovered" : "failed";
+		IDTLogger->warn(
+			"[窗口线程][TopWindow] topmost refresh {}: overlayTopmost={} whiteboardMode={}",
+			transition, service.OverlayTopmost(), service.WhiteboardWindowMode());
+		// 只在失败状态转换时抓取整棵 owner 树，避免周期刷新产生常态日志。
+		for (const auto& snapshotRole : OverlaySnapshotRoles)
+		{
+			const HWND hwnd = service.Handle(snapshotRole.role);
+			RECT bounds{};
+			if (hwnd) (void)GetWindowRect(hwnd, &bounds);
+			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
+			const LONG_PTR exStyle = hwnd
+				? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			IDTLogger->warn(
+				"[窗口线程][TopWindow] role={} hwnd=0x{:X} owner=0x{:X} "
+				"valid={} visible={} topmost={} bounds=({},{},{},{})",
+				snapshotRole.name,
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
+				hwnd && IsWindow(hwnd), hwnd && IsWindowVisible(hwnd),
+				(exStyle & WS_EX_TOPMOST) != 0,
+				bounds.left, bounds.top, bounds.right, bounds.bottom);
+		}
+	}
+}
+
 HWND GetLastFocusWindow()
 {
 	return Inkeys::Window::Service::LastFocusWindow();
@@ -73,9 +123,20 @@ void TopWindow()
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	if (!offSignal) CrashHandler::IsSecond(false);
 
+	bool topmostRefreshFailureActive = false;
 	while (!offSignal)
 	{
-		(void)service.RequestTopmostRefresh();
+		const bool refreshed = service.RequestTopmostRefresh();
+		if (!refreshed && !topmostRefreshFailureActive)
+		{
+			topmostRefreshFailureActive = true;
+			LogTopmostRefreshSnapshot(service, false);
+		}
+		else if (refreshed && topmostRefreshFailureActive)
+		{
+			topmostRefreshFailureActive = false;
+			LogTopmostRefreshSnapshot(service, true);
+		}
 		int ticks = 300;
 		switch (setlist.topSleepTime)
 		{

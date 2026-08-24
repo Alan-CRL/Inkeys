@@ -8,6 +8,77 @@
 
 import Inkeys.Window;
 
+namespace
+{
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool ContainsWindow(
+		const std::array<HWND, WindowCount>& windows, HWND candidate) noexcept
+	{
+		for (const HWND hwnd : windows)
+			if (hwnd == candidate) return true;
+		return false;
+	}
+
+	[[nodiscard]] int ZOrderIndex(HWND target) noexcept
+	{
+		int index = 0;
+		for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+			hwnd = GetWindow(hwnd, GW_HWNDNEXT), ++index)
+		{
+			if (hwnd == target) return index;
+		}
+		return -1;
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsContinuousOwnerTree(
+		const std::array<HWND, WindowCount>& windows) noexcept
+	{
+		int first = -1;
+		int last = -1;
+		std::size_t found = 0;
+		int index = 0;
+		for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+			hwnd = GetWindow(hwnd, GW_HWNDNEXT), ++index)
+		{
+			if (!ContainsWindow(windows, hwnd)) continue;
+			if (first < 0) first = index;
+			last = index;
+			++found;
+		}
+		return found == WindowCount && first >= 0
+			&& last - first + 1 == static_cast<int>(WindowCount);
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsOwnerTreeAbove(
+		const std::array<HWND, WindowCount>& windows, HWND reference) noexcept
+	{
+		const int referenceIndex = ZOrderIndex(reference);
+		if (referenceIndex < 0) return false;
+		for (const HWND hwnd : windows)
+		{
+			const int index = ZOrderIndex(hwnd);
+			if (index < 0 || index >= referenceIndex) return false;
+		}
+		return true;
+	}
+
+	template<std::size_t WindowCount>
+	[[nodiscard]] bool IsOwnerTreeBelow(
+		const std::array<HWND, WindowCount>& windows, HWND reference) noexcept
+	{
+		const int referenceIndex = ZOrderIndex(reference);
+		if (referenceIndex < 0) return false;
+		for (const HWND hwnd : windows)
+		{
+			const int index = ZOrderIndex(hwnd);
+			if (index <= referenceIndex) return false;
+		}
+		return true;
+	}
+}
+
 int RunWindowTests()
 {
 	using namespace Inkeys::Window;
@@ -117,6 +188,27 @@ int RunWindowTests()
 	const HWND bar = service.Handle(WindowRole::Bar);
 	const HWND setting = service.Handle(WindowRole::Setting);
 	const HWND observer = service.Handle(WindowRole::DisplayObserver);
+	const std::array overlayOwnerTree{
+		magnifierHost,
+		freeze,
+		drawpadPresentation,
+		drawpad,
+		pptBottomLeft,
+		pptBottomRight,
+		pptMiddleLeft,
+		pptMiddleRight,
+		bar,
+	};
+	const std::array nonRootOverlayWindows{
+		freeze,
+		drawpadPresentation,
+		drawpad,
+		pptBottomLeft,
+		pptBottomRight,
+		pptMiddleLeft,
+		pptMiddleRight,
+		bar,
+	};
 	check(service.OverlayRoot() == magnifierHost, "overlay root");
 	check(GetParent(magnifierChild) == magnifierHost, "magnifier child parent");
 	check(GetWindow(freeze, GW_OWNER) == magnifierHost, "freeze owner");
@@ -162,24 +254,58 @@ int RunWindowTests()
 		&& (GetWindowLongPtrW(setting, GWL_STYLE) & WS_VISIBLE), "show command");
 	check(service.Hide(WindowRole::Setting)
 		&& !(GetWindowLongPtrW(setting, GWL_STYLE) & WS_VISIBLE), "hide command");
-	check(!(GetWindowLongPtrW(freeze, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(drawpad, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(pptBottomLeft, GWL_EXSTYLE) & WS_EX_TOPMOST)
-		&& !(GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST),
+	bool nonRootTopmost = false;
+	for (const HWND hwnd : nonRootOverlayWindows)
+		nonRootTopmost = nonRootTopmost
+			|| (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+	check(!nonRootTopmost,
 		"non-root has no independent topmost before refresh");
+
+	// 竞争窗保持隐藏，验证根刷新会把完整 owner 树作为连续整体抬升。
+	const HWND competingTopmost = CreateWindowExW(
+		WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+		L"Static", L"Window test competing topmost", WS_POPUP,
+		400, 400, 120, 80, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+	check(competingTopmost != nullptr, "create hidden competing topmost");
+	if (competingTopmost)
+	{
+		check(SetWindowPos(competingTopmost, HWND_TOPMOST, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE,
+			"position hidden competing topmost");
+		check(!IsWindowVisible(magnifierHost)
+			&& !IsWindowVisible(competingTopmost),
+			"topmost ordering probe remains hidden");
+		check(IsContinuousOwnerTree(overlayOwnerTree)
+			&& IsOwnerTreeBelow(overlayOwnerTree, competingTopmost),
+			"competing topmost starts above continuous owner tree");
+	}
 	check(service.RequestTopmostRefresh(), "root-only topmost refresh");
-		check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
-			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-			"persistent overlay notopmost refresh");
-		check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
-		check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
-			&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-			"fullscreen mark persists independently of topmost");
-		check(service.SetOverlayFullscreen(false) && !service.OverlayFullscreen(),
-			"fullscreen mark clears without restoring topmost");
-		check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
-			&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
-			"persistent overlay topmost restore");
+	check((GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0,
+		"overlay root receives topmost style");
+	if (competingTopmost)
+	{
+		check(IsContinuousOwnerTree(overlayOwnerTree)
+			&& IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
+			"hidden root refresh raises continuous owner tree above competitor");
+	}
+	check(service.SetOverlayTopmost(false) && !service.OverlayTopmost()
+		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"persistent overlay notopmost refresh");
+	if (competingTopmost)
+		check(IsOwnerTreeBelow(overlayOwnerTree, competingTopmost),
+			"notopmost owner tree returns below competing topmost");
+	check(!service.OverlayFullscreen(), "overlay defaults to non-fullscreen");
+	check(service.SetOverlayFullscreen(true) && service.OverlayFullscreen()
+		&& !(GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"fullscreen mark persists independently of topmost");
+	check(service.SetOverlayFullscreen(false) && !service.OverlayFullscreen(),
+		"fullscreen mark clears without restoring topmost");
+	check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
+		&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
+		"persistent overlay topmost restore");
+	if (competingTopmost)
+		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
+			"topmost restore raises the complete owner tree again");
 	const HWND focusBeforePromote = Service::LastFocusWindow();
 	check(service.PromotePptWindow(WindowRole::PptMiddleRight), "promote ppt below bar");
 	check(GetWindow(bar, GW_HWNDNEXT) == pptMiddleRight
@@ -194,6 +320,12 @@ int RunWindowTests()
 		"reshown ppt remains drawpad sibling below bar");
 	check(Service::LastFocusWindow() == focusBeforePromote,
 		"reshow ppt does not activate");
+	if (competingTopmost)
+		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
+			"bar and promoted ppt remain above competing topmost");
+	if (competingTopmost)
+		check(DestroyWindow(competingTopmost) != FALSE,
+			"destroy hidden competing topmost");
 
 	// 白板模式只把 Freeze 变成 taskbar anchor，其余窗口仍保持 owned popup。
 	for (const auto role : {

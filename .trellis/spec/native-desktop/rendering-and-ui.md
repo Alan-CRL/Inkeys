@@ -1217,7 +1217,8 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、四个 PageControl HWND、Bar、Setting 和 DisplayObserver；Whiteboard 复用两个 `PptBottom*` HWND，不再创建独立左右窗口。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
-- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
+- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。Win32 会把根的 topmost band 变化传播给 owned popup；刷新后非根出现 `WS_EX_TOPMOST` 不能证明代码对它执行了独立置顶，必须审查 `SetWindowPos` 调用点。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
+- PPT 可见性 `false -> true` 发布完成后立即请求一次根置顶刷新；成功后连续可见状态去重，失败时保留 pending 并由既有 500ms 发布节拍重试，离开放映取消 pending。PageControl 的 present 成功不代表 HWND 提交完成：`SetBounds/Show/Hide` 任一步失败都返回 RenderPipeline `Retry`。Draw3 surface 切换失败同样保留 reconciliation pending，由既有 250ms 状态节拍重试；只有窗口提交成功后才更新 drawpad ready 事实。
 - Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
@@ -1236,15 +1237,18 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |
+| PPT 进入放映时根刷新失败 | 保留一次 refresh pending；后续状态发布继续请求根刷新，成功或离开放映后清除 |
+| PageControl 的 bounds/show/hide 失败 | 当前 surface 返回 `FrameResult::Retry`，不回滚目标可见性或改用节点级 `HWND_TOPMOST` |
+| Drawpad surface 显隐提交失败 | 不发布假完成的 ready 事实；即使 Draw3 runtime revision 不变也按 250ms 节拍继续收敛 |
 | 未配置上述 callback 的其他 HiMsg binding | 保持库默认行为，系统触摸兼容 mouse 正常入队 |
 | 队列满或 shutdown | `Enqueue` 返回 false；队列满增加 dropped count，shutdown 不再接收 |
 | DIB 创建或 resize 失败 | 原 surface 保持有效，临时 GDI 资源全部释放 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Bar 与四个 PageControl HWND 是同 owner 的兄弟窗口，分页窗前置始终止于 Bar 正下方。
-- Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
-- Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，历史上会导致绘制卡顿或闪烁。
+- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；根刷新整体抬升 owner 树，Bar 与目标 PageControl 只在树内用 `HWND_TOP` 保持顺序。
+- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
+- Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，或在窗口提交失败后返回 Idle，都会让 owner 树与目标 UI 长期不收敛。
 
 ### 6. Tests Required
 
@@ -1252,9 +1256,22 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
 - Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
 - Window 测试还需覆盖持久 `SetOverlayTopmost`、`SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。
+- 允许创建隐藏 HWND 时，Window 测试需创建一个 ownerless 外部 topmost 竞争窗：先确认它位于完整 owner 树之上，再刷新根并确认每个 overlay popup 都越过竞争窗；同时断言根保持隐藏、Bar 位于目标 PPT 之上且前台/焦点不变化。禁止用“刷新后非根没有 `WS_EX_TOPMOST`”判断独立置顶，因为该位可由 Win32 owner 传播。
+- RenderPipeline 测试需保留 `Retry` 会再次调度的合同；若没有稳定的 Win32 失败注入边界，PageControl/Draw3 的失败映射通过生产分支静态审查和完整集成构建验证，不得为单测扩大 module 公共 API。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。白板全屏必须确认任务栏按普通全屏窗让出，且主栏/翻页栏底边都距屏幕底边 `5 DIP`。
 
 ### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：逐节点进入 topmost band，并把传播后的 ex-style 当成调用证据。
+SetWindowPos(bar, HWND_TOPMOST, 0, 0, 0, 0, flags);
+assert((GetWindowLongPtrW(drawpad, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0);
+
+// Correct：外部层级只刷新根；Bar/PPT 仅维护 owner 树内顺序。
+service.RequestTopmostRefresh();
+SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0, flags);
+SetWindowPos(ppt, bar, 0, 0, 0, 0, flags);
+~~~
 
 ~~~cpp
 // Wrong：从 Drawpad 渲染线程直接修改所属线程状态。
