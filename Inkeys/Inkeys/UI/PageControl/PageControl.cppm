@@ -151,6 +151,51 @@ export namespace Inkeys::UI::PageControl
 		bool switching = false;
 	};
 
+	[[nodiscard]] inline bool ArePptStatesEquivalent(
+		const PptState& left, const PptState& right) noexcept
+	{
+		auto SameFloat = [](float first, float second) noexcept
+			{
+				return first == second
+					|| (std::isnan(first) && std::isnan(second));
+			};
+		return left.presentationVisible == right.presentationVisible
+			&& left.currentPage == right.currentPage
+			&& left.totalPage == right.totalPage
+			&& SameFloat(left.layout.bottomPairWidth,
+				right.layout.bottomPairWidth)
+			&& SameFloat(left.layout.bottomPairHeight,
+				right.layout.bottomPairHeight)
+			&& SameFloat(left.layout.middlePairWidth,
+				right.layout.middlePairWidth)
+			&& SameFloat(left.layout.middlePairHeight,
+				right.layout.middlePairHeight)
+			&& SameFloat(left.layout.bottomPairScale,
+				right.layout.bottomPairScale)
+			&& SameFloat(left.layout.middlePairScale,
+				right.layout.middlePairScale)
+			&& left.layout.showBottomPair == right.layout.showBottomPair
+			&& left.layout.showMiddlePair == right.layout.showMiddlePair
+			&& left.layout.rememberPosition == right.layout.rememberPosition;
+	}
+
+	[[nodiscard]] constexpr bool AreWhiteboardStatesEquivalent(
+		const WhiteboardState& left, const WhiteboardState& right) noexcept
+	{
+		return left.expandedLayoutTarget == right.expandedLayoutTarget
+			&& left.active == right.active
+			&& left.currentPage == right.currentPage
+			&& left.totalPage == right.totalPage
+			&& left.previousEnabled == right.previousEnabled
+			&& left.previousInteractive == right.previousInteractive
+			&& left.pageEnabled == right.pageEnabled
+			&& left.pageInteractive == right.pageInteractive
+			&& left.nextEnabled == right.nextEnabled
+			&& left.nextInteractive == right.nextInteractive
+			&& left.nextIsAdd == right.nextIsAdd
+			&& left.switching == right.switching;
+	}
+
 	struct PptCallbacks
 	{
 		std::function<void()> previousPage;
@@ -177,6 +222,42 @@ export namespace Inkeys::UI::PageControl
 	{
 		if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
 		return std::clamp(scale, 1.0F / 128.0F, 4.0F);
+	}
+
+	[[nodiscard]] inline bool ShouldApplyPageControlSceneBounds(
+		bool applied, const RECT& previousBounds, float previousScale,
+		const RECT& candidateBounds, float candidateScale) noexcept
+	{
+		candidateScale = NormalizeScale(candidateScale);
+		return !applied
+			|| previousBounds.left != candidateBounds.left
+			|| previousBounds.top != candidateBounds.top
+			|| previousBounds.right != candidateBounds.right
+			|| previousBounds.bottom != candidateBounds.bottom
+			|| previousScale != candidateScale;
+	}
+
+	struct PageControlDebugWindowDamagePolicy
+	{
+		bool includePreviousWindow = false;
+		bool includeCurrentWindow = false;
+	};
+
+	[[nodiscard]] constexpr PageControlDebugWindowDamagePolicy
+		ResolvePageControlDebugWindowDamagePolicy(
+			bool forceFullReplacement, bool overlayRefreshPending,
+			bool debugEnabled) noexcept
+	{
+		const bool replaceOverlay = forceFullReplacement || overlayRefreshPending;
+		return { replaceOverlay, debugEnabled && replaceOverlay };
+	}
+
+	[[nodiscard]] constexpr bool ShouldTreatPageControlDamageAsActiveDebugFrame(
+		bool debugEnabled, bool businessDamagePending,
+		bool forceFullReplacement, bool finalFramePending) noexcept
+	{
+		return debugEnabled && (businessDamagePending || forceFullReplacement)
+			&& !finalFramePending;
 	}
 
 	[[nodiscard]] inline WorkspaceMode ResolveWorkspaceMode(

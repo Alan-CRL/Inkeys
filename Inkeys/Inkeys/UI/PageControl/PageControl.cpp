@@ -27,6 +27,7 @@ module;
 module Inkeys.UI.PageControl;
 
 import Inkeys.UI.Bar;
+import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 import Inkeys.Message;
@@ -92,6 +93,9 @@ namespace Inkeys::UI::PageControl
 			Scene scene;
 			WorkspaceMode configuredMode = WorkspaceMode::Hidden;
 			AnimatedBounds bounds;
+			RECT appliedSceneBounds{};
+			float appliedSceneScale = 1.0F;
+			bool appliedSceneBoundsReady = false;
 			bool sceneConfigured = false;
 			bool targetVisible = false;
 			bool inputLocked = true;
@@ -116,6 +120,10 @@ namespace Inkeys::UI::PageControl
 			bool committedPresentationReady = false;
 			bool forceFullPresentation = true;
 			bool windowCommitFailureActive = false;
+			RECT lastPresentedDebugFrameBounds{};
+			RECT lastPresentedDebugWindowBounds{};
+			Inkeys::UI::Bar::DebugFrameSleepLatch debugFrameSleepLatch;
+			bool debugOverlayRefreshPending = false;
 		};
 
 		std::array<SurfaceState, 4> surfaces;
@@ -382,6 +390,21 @@ namespace Inkeys::UI::PageControl
 			return EqualRect(&left, &right) != FALSE;
 		}
 
+		bool ApplySceneBounds(SurfaceState& state, const RECT& bounds,
+			float scale) noexcept
+		{
+			const float normalizedScale = NormalizeScale(scale);
+			if (!ShouldApplyPageControlSceneBounds(
+				state.appliedSceneBoundsReady, state.appliedSceneBounds,
+				state.appliedSceneScale, bounds, normalizedScale)) return true;
+			if (!state.scene.SetBounds(bounds, normalizedScale)) return false;
+			// Scene::SetBounds 即使输入不变也会唤醒；仅在成功应用后推进缓存。
+			state.appliedSceneBounds = bounds;
+			state.appliedSceneScale = normalizedScale;
+			state.appliedSceneBoundsReady = true;
+			return true;
+		}
+
 		[[nodiscard]] double Ease(double progress) noexcept
 		{
 			progress = (std::clamp)(progress, 0.0, 1.0);
@@ -514,12 +537,11 @@ namespace Inkeys::UI::PageControl
 				state.configuredMode = visualMode;
 				state.observedRevision = revision;
 			}
-			else if (modeChanged || contentChanged)
+			else if (modeChanged)
 			{
 				const auto background = BuildBackground(index, visualMode);
 				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
-				const bool animateLayout = !modeChanged
-					|| ShouldAnimateWorkspaceLayout(SurfaceFor(index),
+				const bool animateLayout = ShouldAnimateWorkspaceLayout(SurfaceFor(index),
 						state.configuredMode, visualMode, state.targetVisible);
 				(void)state.scene.TransitionLayout(background, widgets,
 					animateLayout
@@ -527,6 +549,20 @@ namespace Inkeys::UI::PageControl
 				if (modeChanged)
 					state.layoutTransitionUntil = now + LayoutTransitionDuration;
 				state.configuredMode = visualMode;
+				state.observedRevision = revision;
+			}
+			else if (contentChanged)
+			{
+				// 相同布局只更新稳定 widget；TransitionLayout 会无条件扩大为整窗 damage。
+				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
+				for (const auto& widget : widgets)
+				{
+					(void)state.scene.SetWidgetState(widget.id, widget.visible,
+						widget.enabled, widget.primaryText, widget.secondaryText,
+						widget.iconResource, widget.iconAngle);
+					(void)state.scene.SetWidgetInteractive(
+						widget.id, widget.interactive);
+				}
 				state.observedRevision = revision;
 			}
 
@@ -564,7 +600,7 @@ namespace Inkeys::UI::PageControl
 			state.inputLocked = ShouldLockSurfaceInput(state.targetVisible,
 				now < state.layoutTransitionUntil,
 				WhiteboardWorkspaceSwitching(whiteboard));
-			(void)state.scene.SetBounds(CurrentBounds(state.bounds),
+			(void)ApplySceneBounds(state, CurrentBounds(state.bounds),
 				static_cast<float>(state.bounds.scale));
 		}
 
@@ -581,35 +617,85 @@ namespace Inkeys::UI::PageControl
 			DeviceLost,
 		};
 
-		[[nodiscard]] PresentStatus PresentScene(Scene& scene, HWND hwnd,
+		struct PresentSceneResult
+		{
+			PresentStatus status = PresentStatus::Retry;
+			bool continueRendering = false;
+			RECT debugFrameBounds{};
+			RECT debugWindowBounds{};
+		};
+
+		[[nodiscard]] PresentSceneResult PresentScene(SurfaceState& state, HWND hwnd,
 			const FrameContext& frameContext, const RECT& presentationBounds,
 			SIZE backingCapacity, bool forceFullReplacement,
-			bool showDebugFrames, bool finalIdleFrame) noexcept
+			bool showDebugFrames, bool lifecycleRendering) noexcept
 		{
+			PresentSceneResult result;
 			const UINT width = static_cast<UINT>(presentationBounds.right
 				- presentationBounds.left);
 			const UINT height = static_cast<UINT>(presentationBounds.bottom
 				- presentationBounds.top);
-			if (!hwnd || width == 0 || height == 0) return PresentStatus::Retry;
-			const HRESULT resourceHr = scene.EnsureDeviceResources(
+			if (!hwnd || width == 0 || height == 0) return result;
+			const HRESULT resourceHr = state.scene.EnsureDeviceResources(
 				frameContext.epoch,
 				static_cast<UINT>((std::max)(1L, backingCapacity.cx)),
 				static_cast<UINT>((std::max)(1L, backingCapacity.cy)));
-			if (FAILED(resourceHr)) return IsDeviceLost(resourceHr)
-				? PresentStatus::DeviceLost : PresentStatus::Retry;
-			auto* rawContext = scene.DeviceContext();
-			auto* rawGdi = scene.GdiInteropRenderTarget();
-			if (!rawContext || !rawGdi) return PresentStatus::Retry;
+			if (FAILED(resourceHr))
+			{
+				result.status = IsDeviceLost(resourceHr)
+					? PresentStatus::DeviceLost : PresentStatus::Retry;
+				return result;
+			}
+			auto* rawContext = state.scene.DeviceContext();
+			auto* rawGdi = state.scene.GdiInteropRenderTarget();
+			if (!rawContext || !rawGdi) return result;
 			ComPtr<ID2D1DeviceContext> context(rawContext);
 			ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
 			context->BeginDraw();
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
 			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
-			(void)scene.Render(context.Get(), frameContext.frameTime);
-			RECT dirty = scene.PendingDamage();
-			if (dirty.right <= dirty.left || dirty.bottom <= dirty.top)
-				dirty = RECT{ 0, 0, static_cast<LONG>(width),
+			const auto renderResult = state.scene.Render(
+				context.Get(), frameContext.frameTime);
+			RECT businessDamage = state.scene.PendingDamage();
+			const bool businessDamagePending =
+				!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(businessDamage);
+			const bool retryingNonSleepVisual =
+				ShouldTreatPageControlDamageAsActiveDebugFrame(
+					showDebugFrames, businessDamagePending, forceFullReplacement,
+					state.debugFrameSleepLatch.IsPending());
+			const bool hasActiveRendering = lifecycleRendering
+				|| renderResult.animationActive || retryingNonSleepVisual;
+			const bool finalIdleFrame = state.debugFrameSleepLatch.Update(
+				showDebugFrames, hasActiveRendering);
+			// 最终绿框就在当前帧提交，成功后应直接休眠，不能再唤醒一帧红框。
+			result.continueRendering = hasActiveRendering;
+			if (!businessDamagePending && !finalIdleFrame
+				&& !state.debugOverlayRefreshPending)
+			{
+				// 非调试请求缺少分类 damage 时仍安全回退整窗。
+				businessDamage = RECT{ 0, 0, static_cast<LONG>(width),
 					static_cast<LONG>(height) };
+			}
+			const auto debugDamage = Inkeys::UI::Bar::ResolveBarDebugDamage(
+				businessDamage, {}, state.lastPresentedDebugFrameBounds, {},
+				showDebugFrames, finalIdleFrame);
+			RECT frameTarget = debugDamage.frameTarget;
+			RECT presentDirty = debugDamage.presentDamage;
+			const RECT windowTarget{ 0, 0, static_cast<LONG>(width),
+				static_cast<LONG>(height) };
+			const auto debugWindowDamage =
+				ResolvePageControlDebugWindowDamagePolicy(forceFullReplacement,
+					state.debugOverlayRefreshPending, showDebugFrames);
+			if (debugWindowDamage.includePreviousWindow)
+				Inkeys::UI::Bar::BarDirtyRegionTracker::UnionInPlace(
+					presentDirty, state.lastPresentedDebugWindowBounds);
+			if (debugWindowDamage.includeCurrentWindow)
+				Inkeys::UI::Bar::BarDirtyRegionTracker::UnionInPlace(
+					presentDirty, windowTarget);
+			presentDirty = Inkeys::UI::Bar::IntersectBarDirtyRect(
+				presentDirty, windowTarget);
+			if (Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(presentDirty))
+				presentDirty = windowTarget;
 			if (showDebugFrames)
 			{
 				// 红/绿框表示本帧 damage，蓝框直接表示当前 HWND 提交边界。
@@ -629,11 +715,11 @@ namespace Inkeys::UI::PageControl
 				constexpr FLOAT windowInset =
 					Inkeys::UI::Bar::BarDebugWindowFrameInset;
 				const D2D1_RECT_F damageRect = D2D1::RectF(
-					static_cast<FLOAT>((std::max)(0L, dirty.left)) + dirtyInset,
-					static_cast<FLOAT>((std::max)(0L, dirty.top)) + dirtyInset,
-					static_cast<FLOAT>((std::min)(static_cast<LONG>(width), dirty.right))
+					static_cast<FLOAT>((std::max)(0L, frameTarget.left)) + dirtyInset,
+					static_cast<FLOAT>((std::max)(0L, frameTarget.top)) + dirtyInset,
+					static_cast<FLOAT>((std::min)(static_cast<LONG>(width), frameTarget.right))
 						- dirtyInset,
-					static_cast<FLOAT>((std::min)(static_cast<LONG>(height), dirty.bottom))
+					static_cast<FLOAT>((std::min)(static_cast<LONG>(height), frameTarget.bottom))
 						- dirtyInset);
 				if (damageBrush && damageRect.right > damageRect.left
 					&& damageRect.bottom > damageRect.top)
@@ -662,28 +748,31 @@ namespace Inkeys::UI::PageControl
 				info.pptSrc = &sourcePoint;
 				info.hdcSrc = source;
 				info.pblend = &blend;
-				info.prcDirty = forceFullReplacement || showDebugFrames
-					? nullptr : &dirty;
+				info.prcDirty = forceFullReplacement ? nullptr : &presentDirty;
 				info.dwFlags = ULW_ALPHA;
 				presented = UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
 				releaseDcHr = gdi->ReleaseDC(nullptr);
 			}
 			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
 			const HRESULT endDrawHr = context->EndDraw();
-			scene.HandleFrameEndDrawResult(endDrawHr);
+			state.scene.HandleFrameEndDrawResult(endDrawHr);
 			if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
 				|| IsDeviceLost(endDrawHr))
 			{
-				scene.ReleaseDeviceResources();
-				return PresentStatus::DeviceLost;
+				state.scene.ReleaseDeviceResources();
+				result.status = PresentStatus::DeviceLost;
+				return result;
 			}
 			if (FAILED(getDcHr) || FAILED(releaseDcHr)
 				|| FAILED(endDrawHr) || !presented)
 			{
-				scene.ReleaseDeviceResources();
-				return PresentStatus::Retry;
+				state.scene.ReleaseDeviceResources();
+				return result;
 			}
-			return PresentStatus::Success;
+			result.status = PresentStatus::Success;
+			result.debugFrameBounds = showDebugFrames ? frameTarget : RECT{};
+			result.debugWindowBounds = showDebugFrames ? windowTarget : RECT{};
+			return result;
 		}
 
 		[[nodiscard]] bool DragLayoutCollides(Surface moved,
@@ -840,7 +929,7 @@ namespace Inkeys::UI::PageControl
 				auto& pairState = surfaces[pair[item]];
 				SetBoundsDirect(pairState.bounds, layouts[item].logicalBounds,
 					layouts[item].scale);
-				(void)pairState.scene.SetBounds(layouts[item].logicalBounds,
+				(void)ApplySceneBounds(pairState, layouts[item].logicalBounds,
 					layouts[item].scale);
 			}
 			directMoveRevision.fetch_add(1, std::memory_order_release);
@@ -973,11 +1062,14 @@ namespace Inkeys::UI::PageControl
 							!= frameContext.epoch.generation;
 					const bool forceFullReplacement = state.forceFullPresentation
 						|| presentationSizeChanged || backingChanged || deviceChanged;
-					presentStatus = PresentScene(state.scene, hwnd,
+					const auto presentResult = PresentScene(state, hwnd,
 						frameContext, presentation, backing.size,
 						forceFullReplacement,
 						debugEnabled.load(std::memory_order_acquire),
-						!keepAnimating);
+						keepAnimating);
+					presentStatus = presentResult.status;
+					keepAnimating = keepAnimating
+						|| presentResult.continueRendering;
 					if (presentStatus == PresentStatus::Success)
 					{
 						(void)state.scene.ConsumeDamage();
@@ -986,6 +1078,13 @@ namespace Inkeys::UI::PageControl
 						state.committedDeviceGeneration = frameContext.epoch.generation;
 						state.committedPresentationReady = true;
 						state.forceFullPresentation = false;
+						// 调试快照也属于呈现事务，失败帧不能提前推进绿框锁存。
+						state.lastPresentedDebugFrameBounds =
+							presentResult.debugFrameBounds;
+						state.lastPresentedDebugWindowBounds =
+							presentResult.debugWindowBounds;
+						state.debugOverlayRefreshPending = false;
+						(void)state.debugFrameSleepLatch.CommitPresented();
 					}
 					else
 						state.forceFullPresentation = true;
@@ -1310,6 +1409,7 @@ namespace Inkeys::UI::PageControl
 	{
 		{
 			std::scoped_lock lock(snapshotMutex);
+			if (ArePptStatesEquivalent(publishedPpt, state)) return;
 			publishedPpt = state;
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}
@@ -1320,6 +1420,7 @@ namespace Inkeys::UI::PageControl
 	{
 		{
 			std::scoped_lock lock(snapshotMutex);
+			if (AreWhiteboardStatesEquivalent(publishedWhiteboard, state)) return;
 			publishedWhiteboard = state;
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}
@@ -1362,8 +1463,9 @@ namespace Inkeys::UI::PageControl
 			return;
 		{
 			std::unique_lock renderLock(renderTransactionMutex);
-			// 开关调试框后全量替换一次，确保旧覆盖层不会留在 layered bitmap。
-			for (auto& surface : surfaces) surface.forceFullPresentation = true;
+			// 与主栏一致，只在开关边界刷新整层覆盖；稳定蓝框不扩大后续 dirty。
+			for (auto& surface : surfaces)
+				surface.debugOverlayRefreshPending = true;
 		}
 		RequestAll();
 	}

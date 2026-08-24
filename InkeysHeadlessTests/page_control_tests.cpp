@@ -194,6 +194,65 @@ namespace
 			"reverse re-entry immediately retargets expanded from the current frame");
 	}
 
+	void TestDirtyInvalidationDeduplication()
+	{
+		constexpr RECT firstBounds{ 10, 20, 175, 63 };
+		constexpr RECT movedBounds{ 11, 20, 176, 63 };
+		Check(ShouldApplyPageControlSceneBounds(false, {}, 1.0F,
+			firstBounds, 1.0F), "scene bounds are applied initially");
+		Check(!ShouldApplyPageControlSceneBounds(true, firstBounds, 1.0F,
+			firstBounds, 1.0F), "stable scene bounds do not self-wake rendering");
+		Check(ShouldApplyPageControlSceneBounds(true, firstBounds, 1.0F,
+			movedBounds, 1.0F)
+			&& ShouldApplyPageControlSceneBounds(true, firstBounds, 1.0F,
+				firstBounds, 1.25F),
+			"real geometry or scale changes still invalidate the scene");
+
+		PptState ppt;
+		PptState changedPpt = ppt;
+		Check(ArePptStatesEquivalent(ppt, changedPpt),
+			"identical PPT snapshots are deduplicated");
+		changedPpt.currentPage = 2;
+		Check(!ArePptStatesEquivalent(ppt, changedPpt),
+			"PPT page changes still publish");
+		changedPpt = ppt;
+		changedPpt.layout.bottomPairWidth = 12.0F;
+		Check(!ArePptStatesEquivalent(ppt, changedPpt),
+			"PPT layout changes still publish");
+
+		WhiteboardState whiteboard;
+		WhiteboardState changedWhiteboard = whiteboard;
+		Check(AreWhiteboardStatesEquivalent(whiteboard, changedWhiteboard),
+			"identical whiteboard snapshots are deduplicated");
+		changedWhiteboard.switching = true;
+		Check(!AreWhiteboardStatesEquivalent(whiteboard, changedWhiteboard),
+			"whiteboard transition changes still publish");
+
+		const auto stableDebugWindow =
+			ResolvePageControlDebugWindowDamagePolicy(false, false, true);
+		const auto disablingDebug =
+			ResolvePageControlDebugWindowDamagePolicy(false, true, false);
+		const auto enablingDebug =
+			ResolvePageControlDebugWindowDamagePolicy(false, true, true);
+		Check(!stableDebugWindow.includePreviousWindow
+			&& !stableDebugWindow.includeCurrentWindow,
+			"stable blue window frame never expands prcDirty to the full window");
+		Check(disablingDebug.includePreviousWindow
+			&& !disablingDebug.includeCurrentWindow
+			&& enablingDebug.includePreviousWindow
+			&& enablingDebug.includeCurrentWindow,
+			"debug toggle clears the old frame and draws the new frame only when enabled");
+		Check(!ShouldTreatPageControlDamageAsActiveDebugFrame(
+			false, true, false, false)
+			&& !ShouldTreatPageControlDamageAsActiveDebugFrame(
+				false, false, true, false)
+			&& ShouldTreatPageControlDamageAsActiveDebugFrame(
+				true, true, false, false)
+			&& !ShouldTreatPageControlDamageAsActiveDebugFrame(
+				true, true, false, true),
+			"business damage schedules a final debug frame only while debug is enabled");
+	}
+
 	void TestRuntimeCollisionFallback()
 	{
 		constexpr RECT monitor{ 0, 0, 800, 600 };
@@ -308,6 +367,7 @@ int RunPageControlTests()
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndFlashPolicy();
 	TestWhiteboardLayoutTargetAndReadiness();
+	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();
 	TestA2ProjectionAndMigration();
 	return failureCount;

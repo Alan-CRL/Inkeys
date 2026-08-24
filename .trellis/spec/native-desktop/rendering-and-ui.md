@@ -232,7 +232,7 @@ PptState ResolveRuntimePageControlLayout(const RECT& monitor, float dpiScale,
 - 运行时碰撞以主栏当前可见屏幕矩形为最高优先级，随后固定底部组并让侧边组避让；显示器适配和冲突回退只修改发布快照的运行时副本，不写回保存配置。主栏成功提交的新矩形必须唤醒四个分页客户端。
 - PPT/Whiteboard 目标隐藏后，HWND 只在固定退场时限内继续显示；共享光源或 Scene 的其他持续动画不得延长窗口生命周期。退场结束必须调用 `Window::Service::Hide`，失败则保留 `Retry`。
 - 拖动消息在窗口线程中直接成对移动 HWND，不等待 RenderPipeline/Window Service 往返。只有两个窗口都成功提交后才推进可行布局与发布快照；渲染帧在提交 bounds 前复核直移 revision，过期帧返回 `Retry`，不得把窗口拉回旧坐标。松手后才发布布局 revision、请求重绘并按配置持久化。
-- `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制 PageControl 的调试覆盖层：活动 damage 为红框，idle 前最终 damage 为绿框，当前 HWND 边界为蓝框；覆盖层必须绘制在同一个 D2D/ULW 事务内，关闭时全量替换一次以清除旧像素。
+- `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制 PageControl 的调试覆盖层：活动 damage 为红框，idle 前最终 damage 为绿框，当前 HWND 边界为蓝框；稳定蓝框不得扩大 `prcDirty`，同 mode 内容更新必须保留 widget 级 damage。覆盖层与 damage/debug latch 必须在同一个 D2D/ULW 成功事务后提交，失败时保留待重试状态；最终绿框成功后直接休眠，关闭时只全量替换一次以清除旧像素。
 
 #### 4. Validation & Error Matrix
 
