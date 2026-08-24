@@ -273,14 +273,29 @@ void BarUIRendering::SetFrameLightingSnapshot(
 	frameDrawingPenColorInitialized = true;
 	frameDrawingPenColorAnimating = false;
 	frameDrawingModeTransitionAnimating = false;
-	// Scene 不继承 MainBar 的鼠标光；按钮仅在自身 selected 时才可提供第三光。
+	// 共享快照只同步第一光源，不得打断 Surface 本地鼠标光的淡入淡出。
+}
+
+void BarUIRendering::ResetSurfaceCursorLight() noexcept
+{
+	frameCursorLight = D2D1::Point2F();
+	frameLocalCursorLight = D2D1::Point2F();
 	frameCursorLightVisible = false;
 	frameCursorLightIntensity = 0.0F;
 	frameCursorLightIntensityStart = 0.0F;
 	frameCursorLightIntensityTarget = 0.0F;
-	frameCursorLightAnimating = false;
+	frameCursorLightRadius = 0.0F;
 	frameLocalCursorLightRadiusX = 0.0F;
 	frameLocalCursorLightRadiusY = 0.0F;
+	frameCursorLightAnimating = false;
+	frameCursorLightWasAnimating = false;
+	frameCursorLightChanged = false;
+	frameCursorLightFadeElapsed = 0.0;
+}
+
+bool BarUIRendering::CanSurfaceCursorLightActivate() const noexcept
+{
+	return frameEdgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
 }
 
 bool BarUIRendering::PrepareSurfaceCursorLight(
@@ -350,10 +365,13 @@ bool BarUIRendering::PrepareSurfaceCursorLight(
 			return std::abs(left.x - right.x) > 0.01F
 				|| std::abs(left.y - right.y) > 0.01F;
 		};
+	const bool lightWasOrIsVisible = previousVisible || frameCursorLightVisible
+		|| previousIntensity > 0.0001F || frameCursorLightIntensity > 0.0001F;
 	const bool changed = previousVisible != frameCursorLightVisible
 		|| std::abs(previousIntensity - frameCursorLightIntensity) > 0.0001F
-		|| std::abs(previousRadius - frameLocalCursorLightRadiusX) > 0.01F
-		|| pointChanged(previousCursor, frameLocalCursorLight);
+		|| (lightWasOrIsVisible
+			&& (std::abs(previousRadius - frameLocalCursorLightRadiusX) > 0.01F
+				|| pointChanged(previousCursor, frameLocalCursorLight)));
 	frameCursorLightChanged = changed || frameCursorLightAnimating;
 	return frameCursorLightChanged;
 }

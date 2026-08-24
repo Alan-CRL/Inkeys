@@ -14,6 +14,8 @@ module;
 #include <utility>
 #include <windows.h>
 
+#include "Bar.DirtyRegion.h"
+
 module Inkeys.UI.Bar;
 import :Scene;
 import :Main;
@@ -128,6 +130,38 @@ namespace Inkeys::UI::Bar
 
 	}
 
+	struct BarSurfaceLightBorder
+	{
+		RECT outerBounds{};
+		RECT contentBounds{};
+		bool contributes = false;
+	};
+
+	struct BarSurfaceCursorLightDamageResolution
+	{
+		RECT current{};
+		RECT damage{};
+	};
+
+	[[nodiscard]] BarSurfaceCursorLightDamageResolution
+		ResolveBarSurfaceCursorLightDamage(
+		const RECT& previous,
+		const RECT& influenceBounds,
+		std::span<const BarSurfaceLightBorder> borders) noexcept
+	{
+		BarSurfaceCursorLightDamageResolution result;
+		for (const auto& border : borders)
+		{
+			if (!border.contributes) continue;
+			BarDirtyRegionTracker::UnionInPlace(result.current,
+				ResolveBarLightBorderDamage(border.outerBounds,
+					border.contentBounds, influenceBounds));
+		}
+		result.damage = previous;
+		BarDirtyRegionTracker::UnionInPlace(result.damage, result.current);
+		return result;
+	}
+
 	struct BarSurfaceScene::Impl
 	{
 		struct Widget
@@ -168,6 +202,7 @@ namespace Inkeys::UI::Bar
 		LONG appliedSharedPrimaryLightOutset = -1;
 		POINT pointerLocal{};
 		bool pointerKnown = false;
+		RECT cursorLightDamageBounds{};
 
 		[[nodiscard]] RECT WidgetPixelsLocked(const Widget& widget) const noexcept
 		{
@@ -232,6 +267,109 @@ namespace Inkeys::UI::Bar
 			return RECT{ 0, 0,
 				logicalBounds.right - logicalBounds.left + outset * 2,
 				logicalBounds.bottom - logicalBounds.top + outset * 2 };
+		}
+
+		void IncludePresentationDamageLocked(const RECT& rect) noexcept
+		{
+			const RECT damage = ClipToSurface(rect, PresentationLocalRect());
+			if (IsEmpty(damage)) return;
+			UnionInPlace(pendingDamage, damage);
+			invalidated = true;
+		}
+
+		[[nodiscard]] BarSurfaceLightBorder ShapeLightBorderLocked(
+			const BarUiShapeClass& shape, double visualScale = 1.0) const noexcept
+		{
+			BarSurfaceLightBorder result;
+			if (!std::isfinite(visualScale) || visualScale <= 0.0
+				|| !shape.enable.val || !shape.frame.has_value()
+				|| shape.frameRendering != BarUiFrameRenderingEnum::PointLight
+				|| shape.w.val <= 0.0 || shape.h.val <= 0.0
+				|| shape.frameCursorLightIntensityScale <= 0.0)
+				return result;
+
+			double lightOpacity = shape.frameLightPct.has_value()
+				? static_cast<double>(shape.frameLightPct->val)
+				: (shape.framePct.has_value()
+					? static_cast<double>(shape.framePct->val)
+					: static_cast<double>(shape.pct.val));
+			if (!shape.frameLightPct.has_value()
+				&& shape.frameLightOpacitySource
+					== BarUiFrameLightOpacitySourceEnum::ObjectPct)
+				lightOpacity = static_cast<double>(shape.pct.val);
+			const double frameThickness = shape.ft.has_value()
+				? static_cast<double>(shape.ft->val) : 4.0;
+			if (!std::isfinite(lightOpacity) || lightOpacity <= 0.0001
+				|| !std::isfinite(frameThickness) || frameThickness <= 0.0)
+				return result;
+
+			const double scale = static_cast<double>(dpiScale);
+			const LONG outset = DamageOutsetPixels();
+			const double halfWidth = shape.w.val * visualScale / 2.0;
+			const double halfHeight = shape.h.val * visualScale / 2.0;
+			result.contentBounds = RECT{
+				static_cast<LONG>(std::floor(
+					(shape.x.val - halfWidth) * scale)) + outset,
+				static_cast<LONG>(std::floor(
+					(shape.y.val - halfHeight) * scale)) + outset,
+				static_cast<LONG>(std::ceil(
+					(shape.x.val + halfWidth) * scale)) + outset,
+				static_cast<LONG>(std::ceil(
+					(shape.y.val + halfHeight) * scale)) + outset,
+			};
+			const LONG frameOutset = static_cast<LONG>(std::ceil((
+				frameThickness + BarRenderingAttribute::pointLightDiffuseExtraWidth)
+				* scale * visualScale))
+				+ BarRenderingAttribute::dirtyAntialiasPadding;
+			result.outerBounds = Inflate(result.contentBounds, frameOutset);
+			result.contributes = true;
+			return result;
+		}
+
+		[[nodiscard]] bool HasCursorLightBorderLocked() const noexcept
+		{
+			if (surfaceOpacity.val <= 0.0001) return false;
+			if (background.visible
+				&& ShapeLightBorderLocked(backgroundShape).contributes)
+				return true;
+			for (const auto& widget : widgets)
+			{
+				if (!widget.button || !widget.spec.visible
+					|| widget.spec.kind != BarSurfaceWidgetKind::Button)
+					continue;
+				if (ShapeLightBorderLocked(widget.button->button,
+					widget.button->pressScale.val).contributes)
+					return true;
+			}
+			return false;
+		}
+
+		void UpdateCursorLightDamageLocked(bool cursorLightChanged) noexcept
+		{
+			std::vector<BarSurfaceLightBorder> borders;
+			borders.reserve(widgets.size() + 1);
+			const bool surfaceVisible = surfaceOpacity.val > 0.0001;
+			if (surfaceVisible && background.visible)
+				borders.push_back(ShapeLightBorderLocked(backgroundShape));
+			if (surfaceVisible)
+			{
+				for (const auto& widget : widgets)
+				{
+					if (!widget.button || !widget.spec.visible
+						|| widget.spec.kind != BarSurfaceWidgetKind::Button)
+						continue;
+					borders.push_back(ShapeLightBorderLocked(
+						widget.button->button, widget.button->pressScale.val));
+				}
+			}
+			const auto resolved = ResolveBarSurfaceCursorLightDamage(
+				cursorLightDamageBounds,
+				rendererOwner.spec.GetFrameCursorLightDamageBounds(), borders);
+			const bool boundsChanged = !EqualRect(
+				&cursorLightDamageBounds, &resolved.current);
+			if (cursorLightChanged || boundsChanged)
+				IncludePresentationDamageLocked(resolved.damage);
+			cursorLightDamageBounds = resolved.current;
 		}
 
 		[[nodiscard]] std::optional<POINT> LogicalPointFromPresentation(
@@ -314,7 +452,7 @@ namespace Inkeys::UI::Bar
 			if (!pointerKnown || hovered == BarSurfaceNoWidget) return false;
 			const auto* widget = FindWidgetLocked(hovered);
 			return widget && widget->spec.visible && widget->spec.enabled
-				&& widget->spec.interactive && widget->spec.selected
+				&& widget->spec.interactive
 				&& widget->spec.kind == BarSurfaceWidgetKind::Button;
 		}
 
@@ -513,9 +651,9 @@ namespace Inkeys::UI::Bar
 			const D2D1_POINT_2F cursor = D2D1::Point2F(
 				static_cast<FLOAT>(pointerLocal.x + outset),
 				static_cast<FLOAT>(pointerLocal.y + outset));
-			if (rendererOwner.spec.PrepareSurfaceCursorLight(
-				dt, cursor, CursorLightTargetLocked()))
-				IncludeFullDamageLocked();
+			const bool cursorLightChanged =
+				rendererOwner.spec.PrepareSurfaceCursorLight(
+					dt, cursor, CursorLightTargetLocked());
 			const BarUiAnimationAdvanceContextClass context{
 				dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
 			bool active = false;
@@ -578,6 +716,8 @@ namespace Inkeys::UI::Bar
 					IncludeDamageLocked(widget.lastPixels);
 				}
 			}
+			UpdateCursorLightDamageLocked(cursorLightChanged);
+			active = active || rendererOwner.spec.IsSurfaceCursorLightAnimating();
 			animationActive = active;
 			return active;
 		}
@@ -1264,7 +1404,9 @@ namespace Inkeys::UI::Bar
 			else
 			{
 				impl_->rendererOwner.spec.SetFrameLightingSnapshot({});
+				impl_->rendererOwner.spec.ResetSurfaceCursorLight();
 				impl_->appliedSharedPrimaryLight = {};
+				impl_->cursorLightDamageBounds = {};
 			}
 			impl_->IncludeFullDamageLocked();
 			hooks = impl_->hooks;
@@ -1311,6 +1453,8 @@ namespace Inkeys::UI::Bar
 			impl_->pointerCaptured = false;
 			impl_->pointerKnown = false;
 			impl_->pointerLocal = {};
+			impl_->rendererOwner.spec.ResetSurfaceCursorLight();
+			impl_->cursorLightDamageBounds = {};
 			impl_->lastFrame = {};
 			impl_->animationActive = false;
 			impl_->pendingDamage = {};
@@ -1449,8 +1593,11 @@ namespace Inkeys::UI::Bar
 	{
 		BarSurfacePointerResult result;
 		BarSurfaceHooks hooks;
+		bool requestRender = false;
 		{
 			std::lock_guard lock(impl_->mutex);
+			const bool previousCursorTarget = impl_->CursorLightTargetLocked();
+			const POINT previousPointer = impl_->pointerLocal;
 			impl_->pointerLocal = localPixels;
 			impl_->pointerKnown = true;
 			const auto next = impl_->HitTestLocked(localPixels);
@@ -1459,25 +1606,42 @@ namespace Inkeys::UI::Bar
 			{
 				if (auto* old = impl_->FindWidgetLocked(impl_->hovered))
 				{
-					old->hover = false;
-					impl_->ApplyButtonInteractionTargetsLocked(*old);
-					impl_->IncludeDamageLocked(old->lastPixels);
+					if (old->spec.kind == BarSurfaceWidgetKind::Button)
+					{
+						old->hover = false;
+						impl_->ApplyButtonInteractionTargetsLocked(*old);
+						impl_->IncludeDamageLocked(old->lastPixels);
+						requestRender = true;
+					}
 				}
 				if (auto* current = impl_->FindWidgetLocked(next))
 				{
 					current->hover = current->spec.kind
 						== BarSurfaceWidgetKind::Button;
-					impl_->ApplyButtonInteractionTargetsLocked(*current);
-					impl_->IncludeDamageLocked(current->lastPixels);
+					if (current->spec.kind == BarSurfaceWidgetKind::Button)
+					{
+						impl_->ApplyButtonInteractionTargetsLocked(*current);
+						impl_->IncludeDamageLocked(current->lastPixels);
+						requestRender = true;
+					}
 				}
 				impl_->hovered = next;
 			}
+			const bool currentCursorTarget = impl_->CursorLightTargetLocked();
+			const bool pointerMoved = previousPointer.x != localPixels.x
+				|| previousPointer.y != localPixels.y;
+			// 同一 Button 内的移动也要推进第三光；DragHandle/空白不单独唤醒。
+			requestRender = requestRender
+				|| previousCursorTarget != currentCursorTarget
+				|| (currentCursorTarget && pointerMoved
+					&& impl_->rendererOwner.spec.CanSurfaceCursorLightActivate()
+					&& impl_->HasCursorLightBorderLocked());
 			result.hover = impl_->hovered;
 			result.pressed = impl_->pressed;
 			result.consumed = result.hover != BarSurfaceNoWidget;
 			hooks = impl_->hooks;
 		}
-		if (result.hoverChanged)
+		if (requestRender)
 		{
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();
@@ -1489,22 +1653,29 @@ namespace Inkeys::UI::Bar
 	{
 		BarSurfacePointerResult result;
 		BarSurfaceHooks hooks;
+		bool requestRender = false;
 		{
 			std::lock_guard lock(impl_->mutex);
+			const bool previousCursorTarget = impl_->CursorLightTargetLocked();
 			impl_->pointerKnown = false;
 			result.hoverChanged = impl_->hovered != BarSurfaceNoWidget;
 			if (auto* old = impl_->FindWidgetLocked(impl_->hovered))
 			{
-				old->hover = false;
-				impl_->ApplyButtonInteractionTargetsLocked(*old);
-				impl_->IncludeDamageLocked(old->lastPixels);
+				if (old->spec.kind == BarSurfaceWidgetKind::Button)
+				{
+					old->hover = false;
+					impl_->ApplyButtonInteractionTargetsLocked(*old);
+					impl_->IncludeDamageLocked(old->lastPixels);
+					requestRender = true;
+				}
 			}
 			impl_->hovered = BarSurfaceNoWidget;
+			requestRender = requestRender || previousCursorTarget;
 			result.hover = BarSurfaceNoWidget;
 			result.pressed = impl_->pressed;
 			hooks = impl_->hooks;
 		}
-		if (result.hoverChanged)
+		if (requestRender)
 		{
 			if (hooks.invalidate) hooks.invalidate();
 			if (hooks.wake) hooks.wake();

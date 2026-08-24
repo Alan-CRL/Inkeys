@@ -93,11 +93,17 @@ public:
 		SnapshotFrameLighting() const noexcept;
 	void SetFrameLightingSnapshot(
 		const BarUiFrameLightingSnapshot& snapshot) noexcept;
-	// Surface 只提供本地指针与 selected 能力，淡入/淡出仍沿用 Bar 光源参数。
+	// Surface 只提供本地指针命中，淡入/淡出仍沿用 Bar 光源参数。
 	[[nodiscard]] bool PrepareSurfaceCursorLight(
 		double animationDtSeconds,
 		D2D1_POINT_2F localCursor,
 		bool cursorTargetVisible) noexcept;
+	void ResetSurfaceCursorLight() noexcept;
+	[[nodiscard]] bool IsSurfaceCursorLightAnimating() const noexcept
+	{
+		return frameCursorLightAnimating;
+	}
+	[[nodiscard]] bool CanSurfaceCursorLightActivate() const noexcept;
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
