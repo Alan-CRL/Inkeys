@@ -1,4 +1,4 @@
-#include "Draw3.HiddenWindowTest.h"
+﻿#include "Draw3.HiddenWindowTest.h"
 #include "Draw3.Product.h"
 
 import Inkeys.Window;
@@ -295,7 +295,7 @@ namespace Inkeys::Drawing::Draw3
 						return state.clearCommandCount > beforeClear.clearCommandCount &&
 							!state.currentPageHasContent &&
 							state.contentRevision > beforeClear.contentRevision;
-					}), "clear permanently publishes an empty current page", failures);
+					}), "clear history item publishes an empty current page", failures);
 				const auto afterClear = ProductHost().RuntimeSnapshot();
 
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
@@ -303,24 +303,27 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([afterClear]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();
-						return state.undoCommandCount > afterClear.undoCommandCount;
-					}), "undo after clear was consumed", failures);
+						return state.undoCommandCount > afterClear.undoCommandCount &&
+							state.currentPageHasContent &&
+							state.contentRevision > afterClear.contentRevision;
+					}), "undo restores content removed by clear", failures);
 				const auto afterUndo = ProductHost().RuntimeSnapshot();
-				modeSucceeded &= Check(!afterUndo.currentPageHasContent &&
-					afterUndo.contentRevision == afterClear.contentRevision,
-					"undo cannot recover content removed by clear", failures);
+				modeSucceeded &= Check(afterUndo.currentPageHasContent,
+					"undo clear republishes current page content", failures);
 
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
 					Bridge::CommandResult::Accepted, "redo after clear accepted", failures);
 				modeSucceeded &= Check(WaitUntil([afterUndo]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();
-						return state.redoCommandCount > afterUndo.redoCommandCount;
-					}), "redo after clear was consumed", failures);
+						return state.redoCommandCount > afterUndo.redoCommandCount &&
+							!state.currentPageHasContent &&
+							state.contentRevision > afterUndo.contentRevision;
+					}), "redo reapplies clear history item", failures);
 				const auto afterRedo = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(!afterRedo.currentPageHasContent &&
-					afterRedo.contentRevision == afterClear.contentRevision,
-					"redo cannot recover content removed by clear", failures);
+					afterRedo.contentRevision > afterUndo.contentRevision,
+					"redo clear republishes the empty current page", failures);
 
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::NextPage) ==
 					Bridge::CommandResult::Accepted, "next page after clear accepted", failures);

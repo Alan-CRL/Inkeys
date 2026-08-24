@@ -1467,7 +1467,7 @@ namespace Inkeys::Drawing::Draw3
 		auto currentPageHasContent = [&]() noexcept
 		{
 			return currentPageIndex_ < pageRuntimeStates.size() &&
-				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
+				pageRuntimeStates[currentPageIndex_].history.HasVisibleContent();
 		};
 		auto publishCurrentPageContent = [&]()
 		{
@@ -3764,6 +3764,36 @@ namespace Inkeys::Drawing::Draw3
 			forceFullPresent = true;
 		};
 
+		auto resetGpuForClear = [&](RECT& frameDirty,
+			LaserParticleDirtySnapshot& particleSnapshot,
+			bool& forceFullPresent, int width, int height)
+		{
+			// Clear 只淘汰 GPU 派生状态，CPU Stroke 与 runtime history 必须保留。
+			historyGpuCache.DiscardHotPreimages();
+			historyGpuCache.DiscardCompositionCache();
+			compositionMaintenance.clear();
+			if (rasterPipelineGeneration ==
+				(std::numeric_limits<uint64_t>::max)())
+				rasterPipelineGeneration = 1;
+			else ++rasterPipelineGeneration;
+			renderer_.InvalidateTrustedL2Snapshot();
+			trustedSnapshotSignatureValid = false;
+			viewportTilePlan = {};
+			viewportTilePlanIndex = 0;
+			viewportRecoveryPending = false;
+			viewportRefreshPending = false;
+			viewportRefreshClearsTransient = false;
+			viewportVisibleClear = true;
+			pendingLaserBakeDirty = {};
+			laserTipDots.clear();
+			laserParticleEmissionRequests.clear();
+			previousCursorVisuals.clear();
+			currentCursorVisuals.clear();
+			laserIncrementalEnsureAttempted = false;
+			resetGpuForPageSwitch(frameDirty, particleSnapshot,
+				forceFullPresent, width, height);
+		};
+
 			auto undoCurrentPage = [&](RECT& frameDirty) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
@@ -3899,7 +3929,9 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
-		auto redoCurrentPage = [&](RECT& frameDirty) -> bool
+		auto redoCurrentPage = [&](RECT& frameDirty,
+			LaserParticleDirtySnapshot& particleSnapshot,
+			bool& forceFullPresent, int width, int height) -> bool
 		{
 			const auto requestAuthoritativeRecovery = [&]()
 			{
@@ -3928,7 +3960,8 @@ namespace Inkeys::Drawing::Draw3
 			const std::span<const InkStroke> strokes = canvas->Strokes();
 			if (!item || itemId->index >= runtime.beforeStates.size() ||
 				itemId->index >= runtime.afterStates.size() ||
-				item->strokeIndex >= strokes.size())
+				(item->kind == RenderItemKind::Stroke &&
+					item->strokeIndex >= strokes.size()))
 			{
 				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" result=noop reason=history_mismatch" << std::endl;
@@ -3943,6 +3976,31 @@ namespace Inkeys::Drawing::Draw3
 					" item=" << itemId->index <<
 					" result=failed reason=raster_state" << std::endl;
 				return false;
+			}
+			if (item->kind == RenderItemKind::Clear)
+			{
+				resetGpuForClear(frameDirty, particleSnapshot,
+					forceFullPresent, width, height);
+				// 透明画面就绪后才提交 Clear visibility；异常时按隐藏态 history 回滚。
+				if (!runtime.history.RedoLastUndone(*itemId))
+				{
+					const CompositionRestoreResult rollback = restorePageContent(
+						currentPageIndex_, width, height, true);
+					UnionRectInPlace(frameDirty, rollback.dirty);
+					if (rollback.path == CompositionRestorePath::Failed)
+						requestAuthoritativeRecovery();
+					std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+						" item=" << itemId->index <<
+						" result=failed reason=clear_visibility rollback=" <<
+						CompositionRestorePathName(rollback.path) << std::endl;
+					return false;
+				}
+				runtime.rasterState = afterState;
+				std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
+					" item=" << itemId->index <<
+					" path=clear redo_remaining=" <<
+					runtime.history.RedoDepth() << std::endl;
+				return true;
 			}
 
 			const std::vector<SignedTileCoordinate> affectedTiles = item->compositionTiles;
@@ -4101,37 +4159,25 @@ namespace Inkeys::Drawing::Draw3
 				? page->FindCanvas(kDefaultDeviceKey) : nullptr;
 			if (!canvas) return false;
 
-			// Clear 截断当前页全部文档与历史；viewport 留在 Canvas 对象中。
-			canvas->ClearStrokes();
-			CanvasPageRuntimeState freshRuntime;
-			freshRuntime.rasterState = allocateRasterStateToken();
-			pageRuntimeStates[currentPageIndex_] = std::move(freshRuntime);
-
-			historyGpuCache.DiscardHotPreimages();
-			historyGpuCache.DiscardCompositionCache();
-			compositionMaintenance.clear();
-			if (rasterPipelineGeneration ==
-				(std::numeric_limits<uint64_t>::max)())
-				rasterPipelineGeneration = 1;
-			else ++rasterPipelineGeneration;
-
-			renderer_.InvalidateTrustedL2Snapshot();
-			trustedSnapshotSignatureValid = false;
-			viewportTilePlan = {};
-			viewportTilePlanIndex = 0;
-			viewportRecoveryPending = false;
-			viewportRefreshPending = false;
-			viewportRefreshClearsTransient = false;
-			viewportVisibleClear = true;
-			pendingLaserBakeDirty = {};
-			laserTipDots.clear();
-			laserParticleEmissionRequests.clear();
-			previousCursorVisuals.clear();
-			currentCursorVisuals.clear();
-			laserIncrementalEnsureAttempted = false;
-			resetGpuForPageSwitch(frameDirty, particleSnapshot,
+			CanvasPageRuntimeState& runtime = pageRuntimeStates[currentPageIndex_];
+			const InkRasterStateToken beforeState = runtime.rasterState;
+			const std::optional<RenderItemId> clearItem = runtime.history.AppendClear();
+			if (!clearItem)
+			{
+				std::cout << "[Clear] page=" << (currentPageIndex_ + 1) <<
+					" result=noop reason=empty" << std::endl;
+				return false;
+			}
+			const InkRasterStateToken afterState = allocateRasterStateToken();
+			// history 与 raster token 使用相同下标，Undo/Redo 才能事务式恢复。
+			runtime.beforeStates.push_back(beforeState);
+			runtime.afterStates.push_back(afterState);
+			runtime.rasterState = afterState;
+			resetGpuForClear(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
 			publishCurrentPageContent();
+			std::cout << "[Clear] page=" << (currentPageIndex_ + 1) <<
+				" item=" << clearItem->index << " path=history" << std::endl;
 			return true;
 		};
 
@@ -4203,7 +4249,7 @@ namespace Inkeys::Drawing::Draw3
 				interruptNavigationForPenOrMouse("canvas-command");
 				if (command.type == CanvasCommandType::Clear)
 				{
-					// Clear 只在无活动 contact 时执行，并永久截断当前页撤回/重做分支。
+					// Clear 只在无活动 contact 时执行，并作为当前页 history 操作排队。
 					(void)clearCurrentPage(frameDirty, particleSnapshot,
 						forceFullPresent, width, height);
 					reportCommand(command.type);
@@ -4221,7 +4267,8 @@ namespace Inkeys::Drawing::Draw3
 				{
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
-					if (redoCurrentPage(frameDirty)) publishCurrentPageContent();
+					if (redoCurrentPage(frameDirty, particleSnapshot,
+						forceFullPresent, width, height)) publishCurrentPageContent();
 					reportCommand(command.type);
 					continue;
 				}

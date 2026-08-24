@@ -78,9 +78,16 @@ export namespace draw3
 		friend bool operator==(const RenderItemId&, const RenderItemId&) noexcept = default;
 	};
 
+	enum class RenderItemKind : uint8_t
+	{
+		Stroke,
+		Clear
+	};
+
 	struct RenderItemState
 	{
 		RenderItemId id = {};
+		RenderItemKind kind = RenderItemKind::Stroke;
 		size_t strokeIndex = 0;
 		bool visible = true;
 		bool compositionBarrier = false;
@@ -181,7 +188,10 @@ export namespace draw3
 	public:
 		std::optional<RenderItemId> AppendStroke(size_t strokeIndex,
 			StrokeTileFootprint footprint, bool affineOperator = true);
+		// 把当前有效内容追加为一条可撤回的透明清空操作；空内容不追加。
+		std::optional<RenderItemId> AppendClear();
 		std::optional<RenderItemId> LastVisibleItem() const noexcept;
+		bool HasVisibleContent() const noexcept;
 		bool UndoLastVisible(RenderItemId expected);
 		std::optional<RenderItemId> UndoLastVisible();
 		std::optional<RenderItemId> LastRedoItem() const noexcept;
@@ -200,6 +210,7 @@ export namespace draw3
 		const CompositionRangeTree& CompositionTree() const noexcept;
 
 	private:
+		std::optional<RenderItemId> AppendRenderItem(RenderItemState state);
 		RenderItemState* FindMutable(RenderItemId id) noexcept;
 		void AddVisibleCompositionTiles(
 			std::span<const SignedTileCoordinate> tiles);

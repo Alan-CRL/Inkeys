@@ -902,19 +902,64 @@ namespace draw3
 	std::optional<RenderItemId> CanvasRuntimeHistory::AppendStroke(
 		size_t strokeIndex, StrokeTileFootprint footprint, bool affineOperator)
 	{
-		if (!IsValidBounds(footprint.pixelBounds) ||
-			items_.size() >= (std::numeric_limits<uint32_t>::max)() ||
-			nextItemGeneration_ == 0) return std::nullopt;
-		NormalizeTiles(footprint.undoTiles);
-		NormalizeTiles(footprint.compositionTiles);
 		RenderItemState state;
-		state.id = { static_cast<uint32_t>(items_.size()), nextItemGeneration_ };
+		state.kind = RenderItemKind::Stroke;
 		state.strokeIndex = strokeIndex;
-		state.visible = true;
 		state.compositionBarrier = !affineOperator;
 		state.pixelBounds = footprint.pixelBounds;
 		state.undoTiles = std::move(footprint.undoTiles);
 		state.compositionTiles = std::move(footprint.compositionTiles);
+		return AppendRenderItem(std::move(state));
+	}
+
+	std::optional<RenderItemId> CanvasRuntimeHistory::AppendClear()
+	{
+		if (!HasVisibleContent()) return std::nullopt;
+		RenderItemState state;
+		state.kind = RenderItemKind::Clear;
+		state.compositionBarrier = true;
+		bool hasBounds = false;
+		std::optional<uint32_t> visibleIndex = lastVisibleIndex_;
+		while (visibleIndex && *visibleIndex < items_.size())
+		{
+			const RenderItemState& item = items_[*visibleIndex];
+			if (!item.visible) return std::nullopt;
+			if (item.kind == RenderItemKind::Clear) break;
+			if (!hasBounds)
+			{
+				state.pixelBounds = item.pixelBounds;
+				hasBounds = true;
+			}
+			else
+			{
+				state.pixelBounds.left = (std::min)(
+					state.pixelBounds.left, item.pixelBounds.left);
+				state.pixelBounds.top = (std::min)(
+					state.pixelBounds.top, item.pixelBounds.top);
+				state.pixelBounds.right = (std::max)(
+					state.pixelBounds.right, item.pixelBounds.right);
+				state.pixelBounds.bottom = (std::max)(
+					state.pixelBounds.bottom, item.pixelBounds.bottom);
+			}
+			state.undoTiles.insert(state.undoTiles.end(),
+				item.undoTiles.begin(), item.undoTiles.end());
+			state.compositionTiles.insert(state.compositionTiles.end(),
+				item.compositionTiles.begin(), item.compositionTiles.end());
+			visibleIndex = item.previousVisibleIndex;
+		}
+		return hasBounds ? AppendRenderItem(std::move(state)) : std::nullopt;
+	}
+
+	std::optional<RenderItemId> CanvasRuntimeHistory::AppendRenderItem(
+		RenderItemState state)
+	{
+		if (!IsValidBounds(state.pixelBounds) ||
+			items_.size() >= (std::numeric_limits<uint32_t>::max)() ||
+			nextItemGeneration_ == 0) return std::nullopt;
+		NormalizeTiles(state.undoTiles);
+		NormalizeTiles(state.compositionTiles);
+		state.id = { static_cast<uint32_t>(items_.size()), nextItemGeneration_ };
+		state.visible = true;
 		state.previousVisibleIndex = lastVisibleIndex_;
 		items_.push_back(std::move(state));
 		if (!compositionTree_.AppendRenderItem(items_.back()))
@@ -937,6 +982,12 @@ namespace draw3
 	{
 		if (!lastVisibleIndex_ || *lastVisibleIndex_ >= items_.size()) return std::nullopt;
 		return items_[*lastVisibleIndex_].id;
+	}
+
+	bool CanvasRuntimeHistory::HasVisibleContent() const noexcept
+	{
+		const std::optional<RenderItemId> item = LastVisibleItem();
+		return item && items_[item->index].kind == RenderItemKind::Stroke;
 	}
 
 	std::optional<RenderItemId> CanvasRuntimeHistory::UndoLastVisible()

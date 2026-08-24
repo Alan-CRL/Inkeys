@@ -469,6 +469,64 @@ namespace
 			draw3::HotPreimageScreenRect{ 128, 128, 130, 130 }));
 	}
 
+	void TestClearHistory(int& failures)
+	{
+		const draw3::SignedTileCoordinate tileA{ 0, 0 };
+		const draw3::SignedTileCoordinate tileB{ 1, 0 };
+		const draw3::SignedTileCoordinate tileC{ 2, 0 };
+		draw3::CanvasRuntimeHistory history;
+		INK_HISTORY_CHECK(!history.HasVisibleContent());
+		INK_HISTORY_CHECK(!history.AppendClear().has_value());
+
+		const auto strokeA = history.AppendStroke(0, MakeFootprint(tileA));
+		const auto strokeB = history.AppendStroke(1, MakeFootprint(tileB, 20.0f));
+		INK_HISTORY_CHECK(strokeA && strokeB && history.HasVisibleContent());
+		const auto clear = history.AppendClear();
+		INK_HISTORY_CHECK(clear.has_value());
+		INK_HISTORY_CHECK(history.LastVisibleItem() == clear);
+		INK_HISTORY_CHECK(!history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.Items()[clear->index].kind ==
+			draw3::RenderItemKind::Clear);
+		INK_HISTORY_CHECK(history.Items()[clear->index].compositionBarrier);
+		INK_HISTORY_CHECK(ContainsTile(
+			history.Items()[clear->index].compositionTiles, tileA));
+		INK_HISTORY_CHECK(ContainsTile(
+			history.Items()[clear->index].compositionTiles, tileB));
+		INK_HISTORY_CHECK(!history.AppendClear().has_value());
+
+		const auto strokeC = history.AppendStroke(2, MakeFootprint(tileC, 40.0f));
+		INK_HISTORY_CHECK(strokeC && history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.UndoLastVisible(*strokeC));
+		INK_HISTORY_CHECK(!history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.UndoLastVisible(*clear));
+		INK_HISTORY_CHECK(history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.LastVisibleItem() == strokeB);
+		INK_HISTORY_CHECK(history.UndoLastVisible(*strokeB));
+		INK_HISTORY_CHECK(history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.UndoLastVisible(*strokeA));
+		INK_HISTORY_CHECK(!history.HasVisibleContent());
+
+		INK_HISTORY_CHECK(history.RedoLastUndone(*strokeA));
+		INK_HISTORY_CHECK(history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.RedoLastUndone(*strokeB));
+		INK_HISTORY_CHECK(history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.RedoLastUndone(*clear));
+		INK_HISTORY_CHECK(!history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.RedoLastUndone(*strokeC));
+		INK_HISTORY_CHECK(history.HasVisibleContent());
+
+		// Undo Clear 后的新 Clear 建立分支，不能让旧 C 或旧 Clear 再次 Redo。
+		INK_HISTORY_CHECK(history.UndoLastVisible(*strokeC));
+		INK_HISTORY_CHECK(history.UndoLastVisible(*clear));
+		INK_HISTORY_CHECK(history.RedoDepth() == 2u);
+		const auto branchClear = history.AppendClear();
+		INK_HISTORY_CHECK(branchClear.has_value());
+		INK_HISTORY_CHECK(!history.HasVisibleContent());
+		INK_HISTORY_CHECK(history.RedoDepth() == 0u);
+		INK_HISTORY_CHECK(!history.LastRedoItem().has_value());
+		INK_HISTORY_CHECK(!history.RedoLastUndone(*clear));
+	}
+
 	void TestCompositionLru(int& failures)
 	{
 		draw3::CompositionCachePlanner defaults;
@@ -526,6 +584,7 @@ int RunInkHistoryTests()
 	TestPoliciesAndUndoBudget(failures);
 	TestSparseFootprints(failures);
 	TestHistoryAndRangeTree(failures);
+	TestClearHistory(failures);
 	TestVisibleTileIndexAndHotScreenRects(failures);
 	TestCompositionLru(failures);
 	if (failures == 0) std::cout << "All ink history tests passed." << std::endl;

@@ -546,6 +546,15 @@ namespace Inkeys::Drawing::Draw3
 			renderer->context->ClearRenderTargetView(targets[1], retainClear);
 		}
 
+		void ClearOperatorToTransparent(OperatorPage& page, uint32_t slice)
+		{
+			ClearOperator(page, slice);
+			const float transparent[4] = {};
+			// Clear 历史项使用 Add=0、Retain=0，覆盖其下方的全部墨迹。
+			renderer->context->ClearRenderTargetView(
+				page.retainRTVs[slice].Get(), transparent);
+		}
+
 		void CopyOperator(OperatorPage& source, uint32_t sourceSlice,
 			OperatorPage& destination, uint32_t destinationSlice)
 		{
@@ -733,6 +742,11 @@ namespace Inkeys::Drawing::Draw3
 		bool RasterItem(const InkCanvas& canvas, const RenderItemState& item,
 			SignedTileCoordinate tile, OperatorPage& destination, uint32_t slice)
 		{
+			if (item.kind == RenderItemKind::Clear)
+			{
+				ClearOperatorToTransparent(destination, slice);
+				return true;
+			}
 			if (item.strokeIndex >= canvas.Strokes().size()) return false;
 			ClearOperator(destination, slice);
 			OperatorLayerResources targetLayer;
@@ -764,8 +778,14 @@ namespace Inkeys::Drawing::Draw3
 			for (size_t index = std::min(begin, end); index < end; ++index)
 			{
 				const RenderItemState& item = items[index];
-				if (!item.visible || !ContainsTile(item.compositionTiles, tile) ||
-					item.strokeIndex >= canvas.Strokes().size()) continue;
+				if (!item.visible || !ContainsTile(item.compositionTiles, tile)) continue;
+				if (item.kind == RenderItemKind::Clear)
+				{
+					if (!ClearL2Tile(tile, viewportX, viewportY, width, height))
+						return false;
+					continue;
+				}
+				if (item.strokeIndex >= canvas.Strokes().size()) continue;
 				renderer->ClearOperatorLayer(renderer->layerL1);
 				const StoredStrokeRasterTarget target = {
 					&renderer->layerL1, viewportX, viewportY, width, height };

@@ -3305,6 +3305,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												}
 											}
 										}
+										else if (temp->preset == BarButtonPresetEnum::Clean)
+											barButtonSet.ExecuteClearClick(doubleClickContinuation);
 										else if (temp->clickFunc) temp->clickFunc();
 										lastClickedMainBarButton = temp;
 										clickCompleted = true;
