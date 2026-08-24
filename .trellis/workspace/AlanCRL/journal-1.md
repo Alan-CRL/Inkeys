@@ -892,3 +892,24 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Status
 
 [IN PROGRESS] **Automated validation passed; GUI acceptance pending**
+
+
+## Session 27: Draw3 可撤回清空与选择语义
+
+**Date**: 2026-08-24
+**Task**: Draw3 可撤回清空与选择语义
+**Branch**: `chore/draw3`
+
+### Summary
+
+将 Clear 改为可撤回/重做的 history barrier，修正清空按钮的空画布选择与双击清空并进入选择语义，补齐 CPU、无窗口和隐藏 HWND 验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b44dec66` | (see git log) |
+
+### Status
+
+[OK] **Completed**
