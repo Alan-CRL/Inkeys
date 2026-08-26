@@ -139,16 +139,21 @@ export namespace Inkeys::UI::Bar
 		std::function<void()> wake;
 	};
 
-	// MainBar 以全局像素发布第一光源；各 Scene 在自己的 presentation target 内映射。
-	struct BarSurfaceSharedPrimaryLight
+	// Main Bar 以屏幕像素发布两路光源；各 Surface 只做本地 presentation 映射。
+	struct BarSurfaceSharedLighting
 	{
-		double screenX = 0.0;
-		double screenY = 0.0;
-		double radiusPixels = 0.0;
+		double primaryScreenX = 0.0;
+		double primaryScreenY = 0.0;
+		double primaryRadiusPixels = 0.0;
+		double cursorScreenX = 0.0;
+		double cursorScreenY = 0.0;
+		double cursorRadiusPixels = 0.0;
+		double cursorIntensity = 0.0;
 		COLORREF drawingPenColor = RGB(0, 0, 0);
 		double drawingPenColorBlend = 0.0;
 		double drawingLightOpacity = 1.0;
-		bool visible = false;
+		bool primaryVisible = false;
+		bool cursorVisible = false;
 		bool edgeLightingEnabled = false;
 	};
 
@@ -192,10 +197,10 @@ export namespace Inkeys::UI::Bar
 			double durationSeconds = 0.2) noexcept;
 		void SetDamageOutsetDip(double outsetDip) noexcept;
 		void SetHooks(BarSurfaceHooks hooks);
-		// 订阅者只在共享第一光源的最终像素变化时被唤醒。
-		void SetSharedPrimaryLightSubscribed(bool subscribed) noexcept;
-		static void PublishSharedPrimaryLight(
-			const BarSurfaceSharedPrimaryLight& light) noexcept;
+		// 两路光源都由 Main Bar 计算；Surface 不创建本地第三光源状态。
+		void SetSharedLightingSubscribed(bool subscribed) noexcept;
+		static void PublishSharedLighting(
+			const BarSurfaceSharedLighting& lighting) noexcept;
 
 		void Reset() noexcept;
 		void ReleaseDeviceResources() noexcept;

@@ -237,20 +237,35 @@ void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
 }
 BarUiFrameLightingSnapshot BarUIRendering::SnapshotFrameLighting() const noexcept
 {
-	return {
-		framePrimaryLight,
-		frameLightRadius,
-		frameDrawingPenColor,
-		frameDrawingPenColorBlend,
-		frameDrawingLightOpacity,
-		framePrimaryLightAnchorInitialized && frameLightRadius > 0.0F,
-		frameEdgeLightingEnabled,
-	};
+	BarUiFrameLightingSnapshot snapshot;
+	snapshot.primaryLight = framePrimaryLight;
+	snapshot.primaryRadius = frameLightRadius;
+	snapshot.cursorLight = frameCursorLight;
+	snapshot.cursorScreenLight = frameCursorScreenLight;
+	snapshot.cursorRadius = frameCursorLightRadius;
+	snapshot.cursorIntensity = frameCursorLightIntensity;
+	snapshot.drawingPenColor = frameDrawingPenColor;
+	snapshot.drawingPenColorBlend = frameDrawingPenColorBlend;
+	snapshot.drawingLightOpacity = frameDrawingLightOpacity;
+	snapshot.primaryLightVisible = framePrimaryLightAnchorInitialized
+		&& frameLightRadius > 0.0F;
+	snapshot.cursorLightVisible = frameCursorLightVisible
+		&& frameCursorLightRadius > 0.0F;
+	snapshot.edgeLightingEnabled = frameEdgeLightingEnabled;
+	return snapshot;
 }
 
 void BarUIRendering::SetFrameLightingSnapshot(
 	const BarUiFrameLightingSnapshot& snapshot) noexcept
 {
+	const D2D1_POINT_2F previousPrimary = framePrimaryLight;
+	const FLOAT previousPrimaryRadius = frameLightRadius;
+	const bool previousPrimaryVisible = framePrimaryLightAnchorInitialized;
+	const D2D1_POINT_2F previousCursor = frameCursorLight;
+	const FLOAT previousCursorRadius = frameCursorLightRadius;
+	const FLOAT previousCursorIntensity = frameCursorLightIntensity;
+	const bool previousCursorVisible = frameCursorLightVisible;
+	const bool previousEdgeLightingEnabled = frameEdgeLightingEnabled;
 	framePrimaryLight = snapshot.primaryLight;
 	framePrimaryLightStart = snapshot.primaryLight;
 	framePrimaryLightTarget = snapshot.primaryLight;
@@ -259,6 +274,23 @@ void BarUIRendering::SetFrameLightingSnapshot(
 	framePrimaryLightAnchorInitialized = snapshot.primaryLightVisible
 		&& frameLightRadius > 0.0F;
 	framePrimaryLightAnimating = false;
+	frameCursorLight = snapshot.cursorLight;
+	frameCursorScreenLight = snapshot.cursorScreenLight;
+	frameCursorLightRadius = std::isfinite(snapshot.cursorRadius)
+		&& snapshot.cursorRadius > 0.0F ? snapshot.cursorRadius : 0.0F;
+	frameCursorLightIntensity = std::isfinite(snapshot.cursorIntensity)
+		? std::clamp(snapshot.cursorIntensity, 0.0F, 1.0F) : 0.0F;
+	frameCursorLightIntensityStart = frameCursorLightIntensity;
+	frameCursorLightIntensityTarget = frameCursorLightIntensity;
+	frameCursorLightVisible = snapshot.cursorLightVisible
+		&& frameCursorLightRadius > 0.0F
+		&& frameCursorLightIntensity > 0.0001F;
+	frameCursorInputAvailable = frameCursorLightVisible;
+	frameCursorLightAnimating = false;
+	frameCursorLightWasAnimating = false;
+	frameCursorLightFadeElapsed = 0.0;
+	SetFrameCursorLightLocalGeometry(frameCursorLight,
+		D2D1::SizeF(frameCursorLightRadius, frameCursorLightRadius));
 	frameEdgeLightingEnabled = snapshot.edgeLightingEnabled;
 	frameDrawingPenColor = snapshot.drawingPenColor;
 	frameDrawingPenColorStart = snapshot.drawingPenColor;
@@ -273,107 +305,23 @@ void BarUIRendering::SetFrameLightingSnapshot(
 	frameDrawingPenColorInitialized = true;
 	frameDrawingPenColorAnimating = false;
 	frameDrawingModeTransitionAnimating = false;
-	// 共享快照只同步第一光源，不得打断 Surface 本地鼠标光的淡入淡出。
-}
-
-void BarUIRendering::ResetSurfaceCursorLight() noexcept
-{
-	frameCursorLight = D2D1::Point2F();
-	frameLocalCursorLight = D2D1::Point2F();
-	frameCursorLightVisible = false;
-	frameCursorLightIntensity = 0.0F;
-	frameCursorLightIntensityStart = 0.0F;
-	frameCursorLightIntensityTarget = 0.0F;
-	frameCursorLightRadius = 0.0F;
-	frameLocalCursorLightRadiusX = 0.0F;
-	frameLocalCursorLightRadiusY = 0.0F;
-	frameCursorLightAnimating = false;
-	frameCursorLightWasAnimating = false;
-	frameCursorLightChanged = false;
-	frameCursorLightFadeElapsed = 0.0;
-}
-
-bool BarUIRendering::CanSurfaceCursorLightActivate() const noexcept
-{
-	return frameEdgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
-}
-
-bool BarUIRendering::PrepareSurfaceCursorLight(
-	double animationDtSeconds, D2D1_POINT_2F localCursor,
-	bool cursorTargetVisible) noexcept
-{
-	const D2D1_POINT_2F previousCursor = frameLocalCursorLight;
-	const FLOAT previousRadius = frameLocalCursorLightRadiusX;
-	const FLOAT previousIntensity = frameCursorLightIntensity;
-	const bool previousVisible = frameCursorLightVisible;
-
-	frameCursorLight = localCursor;
-	frameLocalCursorLight = localCursor;
-	const FLOAT cursorRadius = static_cast<FLOAT>(
-		BarBorderCursorLightRadius * max(0.0, frameZoom));
-	frameCursorLightRadius = cursorRadius;
-	frameLocalCursorLightRadiusX = cursorRadius;
-	frameLocalCursorLightRadiusY = cursorRadius;
-
-	const bool targetVisible = cursorTargetVisible
-		&& frameEdgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
-	const FLOAT targetIntensity = targetVisible
-		? static_cast<FLOAT>(BarBorderLightIntensity) : 0.0F;
-	const bool animationEnabled = BarUiAnimationEnabled;
-	double speed = BarUiAnimationSpeedRate;
-	if (!std::isfinite(speed)) speed = 1.0;
-	speed = std::clamp(speed, 0.1, 5.0);
-	if (!std::isfinite(animationDtSeconds) || animationDtSeconds < 0.0)
-		animationDtSeconds = 0.0;
-	animationDtSeconds = std::clamp(animationDtSeconds, 0.0, 0.05);
-
-	if (frameCursorLightIntensityTarget != targetIntensity)
-	{
-		frameCursorLightIntensityStart = frameCursorLightIntensity;
-		frameCursorLightIntensityTarget = targetIntensity;
-		frameCursorLightFadeElapsed = 0.0;
-		frameCursorLightAnimating = animationEnabled
-			&& std::abs(frameCursorLightIntensityStart - targetIntensity) > 0.0001F;
-	}
-	if (!animationEnabled)
-	{
-		frameCursorLightIntensity = targetIntensity;
-		frameCursorLightAnimating = false;
-		frameCursorLightFadeElapsed = 0.0;
-	}
-	else if (frameCursorLightAnimating)
-	{
-		frameCursorLightFadeElapsed += animationDtSeconds * speed;
-		const double progress = std::clamp(
-			frameCursorLightFadeElapsed / BarBorderCursorFadeInDur, 0.0, 1.0);
-		const double curved = ApplyBorderLightSmoothstep(progress);
-		frameCursorLightIntensity = static_cast<FLOAT>(
-			frameCursorLightIntensityStart
-			+ (frameCursorLightIntensityTarget - frameCursorLightIntensityStart)
-			* curved);
-		if (progress >= 1.0)
-		{
-			frameCursorLightIntensity = frameCursorLightIntensityTarget;
-			frameCursorLightAnimating = false;
-		}
-	}
-	else frameCursorLightIntensity = frameCursorLightIntensityTarget;
-	frameCursorLightVisible = frameCursorLightIntensity > 0.0001F;
-
-	const auto pointChanged = [](D2D1_POINT_2F left, D2D1_POINT_2F right)
+	auto PointChanged = [](D2D1_POINT_2F left, D2D1_POINT_2F right)
 		{
 			return std::abs(left.x - right.x) > 0.01F
 				|| std::abs(left.y - right.y) > 0.01F;
 		};
-	const bool lightWasOrIsVisible = previousVisible || frameCursorLightVisible
-		|| previousIntensity > 0.0001F || frameCursorLightIntensity > 0.0001F;
-	const bool changed = previousVisible != frameCursorLightVisible
-		|| std::abs(previousIntensity - frameCursorLightIntensity) > 0.0001F
-		|| (lightWasOrIsVisible
-			&& (std::abs(previousRadius - frameLocalCursorLightRadiusX) > 0.01F
-				|| pointChanged(previousCursor, frameLocalCursorLight)));
-	frameCursorLightChanged = changed || frameCursorLightAnimating;
-	return frameCursorLightChanged;
+	framePrimaryLightChanged = previousEdgeLightingEnabled
+		!= frameEdgeLightingEnabled
+		|| previousPrimaryVisible != framePrimaryLightAnchorInitialized
+		|| PointChanged(previousPrimary, framePrimaryLight)
+		|| std::abs(previousPrimaryRadius - frameLightRadius) > 0.01F;
+	frameCursorLightChanged = previousEdgeLightingEnabled
+		!= frameEdgeLightingEnabled
+		|| previousCursorVisible != frameCursorLightVisible
+		|| PointChanged(previousCursor, frameCursorLight)
+		|| std::abs(previousCursorRadius - frameCursorLightRadius) > 0.01F
+		|| std::abs(previousCursorIntensity
+			- frameCursorLightIntensity) > 0.0001F;
 }
 
 RECT BarUIRendering::GetFramePrimaryLightDamageBounds() const noexcept
@@ -591,6 +539,7 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 	{
 		lock_guard lock(barUISetClass->borderCursorLightMutex);
 		frameCursorLight = barUISetClass->borderCursorLightPoint;
+		frameCursorScreenLight = barUISetClass->borderCursorLightScreenPoint;
 		cursorSerial = barUISetClass->borderCursorLightSerial;
 		cursorInputAvailable = barUISetClass->borderCursorInputAvailable
 			&& barUISetClass->borderCursorLightReady;

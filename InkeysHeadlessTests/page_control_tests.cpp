@@ -3,12 +3,15 @@
 #endif
 #include <Windows.h>
 
+#include <cmath>
 #include <iostream>
 #include <string_view>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
 
 import Inkeys.UI.PageControl;
+import Inkeys.UI.Bar.Metrics;
+import Inkeys.UI.Bar.SurfaceLayout;
 
 namespace
 {
@@ -31,6 +34,42 @@ namespace
 	LONG Height(const RECT& bounds) noexcept
 	{
 		return bounds.bottom - bounds.top;
+	}
+
+	void TestSharedButtonInheritance()
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto icon = ResolveBarButtonChildTopLeft(
+			100.0, 200.0, 70.0, 70.0,
+			0.0, -10.0, 28.0, 28.0);
+		const auto primary = ResolveBarButtonChildTopLeft(
+			100.0, 200.0, 70.0, 70.0,
+			0.0, 20.0, 70.0, 25.0);
+		const auto secondary = ResolveBarButtonChildTopLeft(
+			100.0, 200.0, 70.0, 70.0,
+			6.0, 0.0, 20.0, 18.0);
+		auto Near = [](double left, double right)
+			{
+				return std::abs(left - right) < 0.000001;
+			};
+		Check(Near(icon.x, 121.0) && Near(icon.y, 211.0),
+			"SVG inherits the explicit button position instead of stale cache");
+		Check(Near(primary.x, 100.0) && Near(primary.y, 242.5)
+			&& Near(secondary.x, 131.0) && Near(secondary.y, 226.0),
+			"primary and secondary text share the same button parent");
+	}
+
+	void TestSharedSurfaceLightingMapping()
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto primary = ResolveBarSurfaceScreenPoint(
+			140.0, 260.0, 100, 200, 7);
+		const auto cursor = ResolveBarSurfaceScreenPoint(
+			175.0, 285.0, 100, 200, 7);
+		Check(primary.x == 47.0 && primary.y == 67.0,
+			"shared primary light maps from screen into presentation pixels");
+		Check(cursor.x == 82.0 && cursor.y == 92.0,
+			"surface maps the Main Bar cursor without creating a local position");
 	}
 
 	void TestCompactWidgetContracts()
@@ -157,6 +196,15 @@ namespace
 			&& ShouldKeepPageControlWindowVisible(false, true)
 			&& !ShouldKeepPageControlWindowVisible(false, false),
 			"hidden HWND survives only for its bounded exit transition");
+		Check(ShouldSubscribePageControlLighting(true, false)
+			&& ShouldSubscribePageControlLighting(false, true)
+			&& !ShouldSubscribePageControlLighting(false, false),
+			"shared lighting subscribes only while visible or exiting");
+		Check(ShouldNotifyPageControlCursorEntered(false, false, false)
+			&& !ShouldNotifyPageControlCursorEntered(true, false, false)
+			&& !ShouldNotifyPageControlCursorEntered(false, true, false)
+			&& !ShouldNotifyPageControlCursorEntered(false, false, true),
+			"only the first real mouse move activates shared cursor lighting");
 		Check(ShouldLockSurfaceInput(false, false, false)
 			&& ShouldLockSurfaceInput(true, true, false)
 			&& ShouldLockSurfaceInput(true, false, true)
@@ -393,6 +441,8 @@ namespace
 
 int RunPageControlTests()
 {
+	TestSharedButtonInheritance();
+	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndFlashPolicy();

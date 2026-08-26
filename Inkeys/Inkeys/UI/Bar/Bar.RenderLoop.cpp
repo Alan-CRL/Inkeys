@@ -7653,24 +7653,29 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 			frameDrawingState.brush1Color,
 			frameDrawingState.highlighterColor);
 	}
-	// 主栏仍独占光源状态机；这里只发布屏幕坐标快照给订阅的 Whiteboard Surface。
+	// 主栏独占两路光源状态机；跨 HWND Surface 只消费最终屏幕坐标快照。
 	{
 		const auto lighting = state.spec.SnapshotFrameLighting();
 		const POINT directTranslation{
 			owner_.directWindowDragTranslationX.load(memory_order_acquire),
 			owner_.directWindowDragTranslationY.load(memory_order_acquire) };
-		Inkeys::UI::Bar::BarSurfaceSharedPrimaryLight sharedLight;
-		sharedLight.screenX = static_cast<double>(state.monitorOrigin.x)
+		Inkeys::UI::Bar::BarSurfaceSharedLighting sharedLighting;
+		sharedLighting.primaryScreenX = static_cast<double>(state.monitorOrigin.x)
 			+ lighting.primaryLight.x + directTranslation.x;
-		sharedLight.screenY = static_cast<double>(state.monitorOrigin.y)
+		sharedLighting.primaryScreenY = static_cast<double>(state.monitorOrigin.y)
 			+ lighting.primaryLight.y + directTranslation.y;
-		sharedLight.radiusPixels = lighting.primaryRadius;
-		sharedLight.drawingPenColor = lighting.drawingPenColor;
-		sharedLight.drawingPenColorBlend = lighting.drawingPenColorBlend;
-		sharedLight.drawingLightOpacity = lighting.drawingLightOpacity;
-		sharedLight.visible = lighting.primaryLightVisible;
-		sharedLight.edgeLightingEnabled = lighting.edgeLightingEnabled;
-		Inkeys::UI::Bar::BarSurfaceScene::PublishSharedPrimaryLight(sharedLight);
+		sharedLighting.primaryRadiusPixels = lighting.primaryRadius;
+		sharedLighting.cursorScreenX = lighting.cursorScreenLight.x;
+		sharedLighting.cursorScreenY = lighting.cursorScreenLight.y;
+		sharedLighting.cursorRadiusPixels = lighting.cursorRadius;
+		sharedLighting.cursorIntensity = lighting.cursorIntensity;
+		sharedLighting.drawingPenColor = lighting.drawingPenColor;
+		sharedLighting.drawingPenColorBlend = lighting.drawingPenColorBlend;
+		sharedLighting.drawingLightOpacity = lighting.drawingLightOpacity;
+		sharedLighting.primaryVisible = lighting.primaryLightVisible;
+		sharedLighting.cursorVisible = lighting.cursorLightVisible;
+		sharedLighting.edgeLightingEnabled = lighting.edgeLightingEnabled;
+		Inkeys::UI::Bar::BarSurfaceScene::PublishSharedLighting(sharedLighting);
 	}
 	bool sustainRendering = true == BarAtomic::sustainFlag;
 	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
@@ -8515,12 +8520,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			[&](BarButtonClass* button)
 			{
 				if (!button) return;
-				button->button.Inherit(
+				const auto buttonInherit = button->button.Inherit(
 					BarUiInheritEnum::CenterFromTopLeft, *mainBar);
-				button->icon.Inherit(
-					BarUiInheritEnum::Center, button->button);
-				button->name.Inherit(
-					BarUiInheritEnum::Center, button->button);
+				(void)Inkeys::UI::Bar::PrepareBarButtonVisualInheritance(
+					*button, buttonInherit);
 			};
 		// 功能组必须使用本帧绘制坐标，不能提交上一帧的继承位置快照。
 		if (observeMainGroup)

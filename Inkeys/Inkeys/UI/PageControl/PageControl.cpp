@@ -106,8 +106,10 @@ namespace Inkeys::UI::PageControl
 			float appliedSceneScale = 1.0F;
 			bool appliedSceneBoundsReady = false;
 			bool sceneConfigured = false;
+			bool lightingSubscribed = false;
 			bool targetVisible = false;
 			bool inputLocked = true;
+			bool borderCursorPointerInside = false;
 			bool dragging = false;
 			bool repeatTriggered = false;
 			bool pressedNext = false;
@@ -519,7 +521,6 @@ namespace Inkeys::UI::PageControl
 				const auto background = BuildBackground(index, visualMode);
 				const auto widgets = BuildWidgets(index, visualMode, ppt, whiteboard);
 				(void)state.scene.Configure(background, widgets);
-				state.scene.SetSharedPrimaryLightSubscribed(true);
 				state.scene.SetHooks({ {}, [index] { RequestSurface(index); } });
 				const bool fadeAtTarget = desiredMode != WorkspaceMode::Hidden
 					&& index < 2;
@@ -600,6 +601,11 @@ namespace Inkeys::UI::PageControl
 			state.inputLocked = ShouldLockSurfaceInput(state.targetVisible,
 				now < state.layoutTransitionUntil,
 				WhiteboardWorkspaceSwitching(whiteboard));
+			if (state.inputLocked && state.borderCursorPointerInside)
+			{
+				state.borderCursorPointerInside = false;
+				Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
+			}
 			(void)ApplySceneBounds(state, CurrentBounds(state.bounds),
 				static_cast<float>(state.bounds.scale));
 		}
@@ -982,6 +988,15 @@ namespace Inkeys::UI::PageControl
 				ConfigureSurface(index, mode, ppt, whiteboard, monitor, target,
 					renderSnapshot.revision,
 					frameContext.frameTime);
+				const bool shouldSubscribeLighting =
+					ShouldSubscribePageControlLighting(state.targetVisible,
+						frameContext.frameTime < state.layoutTransitionUntil);
+				if (state.lightingSubscribed != shouldSubscribeLighting)
+				{
+					state.scene.SetSharedLightingSubscribed(
+						shouldSubscribeLighting);
+					state.lightingSubscribed = shouldSubscribeLighting;
+				}
 				if (state.externalPressUntil.time_since_epoch().count() != 0)
 				{
 					const bool active = frameContext.frameTime < state.externalPressUntil;
@@ -1098,6 +1113,8 @@ namespace Inkeys::UI::PageControl
 				LogWindowCommitState(index, hwnd, shouldShow,
 					boundsApplied, visibilityApplied, true);
 			}
+			Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
+				static_cast<unsigned int>(index), presentation, shouldShow);
 			return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
 		}
 
@@ -1181,6 +1198,14 @@ namespace Inkeys::UI::PageControl
 				ClientToScreen(hwnd, &screen);
 				std::unique_lock renderLock(renderTransactionMutex);
 				if (!state.targetVisible || state.inputLocked) return 0;
+				if (ShouldNotifyPageControlCursorEntered(
+					state.borderCursorPointerInside, translatingTouch,
+					Inkeys::Message::IsPointerGeneratedMouseMessage(
+						message, static_cast<ULONG_PTR>(GetMessageExtraInfo()))))
+				{
+					state.borderCursorPointerInside = true;
+					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerEntered();
+				}
 				if (state.dragging)
 				{
 					UpdateDrag(index, screen);
@@ -1194,8 +1219,15 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_MOUSELEAVE)
 			{
-				std::unique_lock renderLock(renderTransactionMutex);
-				if (!state.dragging) state.scene.PointerLeave();
+				bool notifyBorderCursor = false;
+				{
+					std::unique_lock renderLock(renderTransactionMutex);
+					notifyBorderCursor = state.borderCursorPointerInside;
+					state.borderCursorPointerInside = false;
+					if (!state.dragging) state.scene.PointerLeave();
+				}
+				if (notifyBorderCursor)
+					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
 				return 0;
 			}
 			if (message == WM_LBUTTONDOWN)
@@ -1360,7 +1392,12 @@ namespace Inkeys::UI::PageControl
 		for (const Client client : Clients)
 			Inkeys::UI::RenderPipeline::Unregister(client);
 		auto& service = Inkeys::Window::GetService();
-		for (const WindowRole role : Roles) (void)service.Hide(role);
+		for (std::size_t index = 0; index < Roles.size(); ++index)
+		{
+			if (service.Hide(Roles[index]))
+				Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
+					static_cast<unsigned int>(index), {}, false);
+		}
 		std::unique_lock renderLock(renderTransactionMutex);
 		for (auto& surface : surfaces)
 		{

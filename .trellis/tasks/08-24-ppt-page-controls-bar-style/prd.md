@@ -15,7 +15,7 @@
 1. **单一按钮实现**：各分页窗口可独立持有 `BarButtonClass` 实例和 D2D 资源，但按钮尺寸解析、内部布局、图标/文字定位、hover、press、内容转换、绘制、dirty 和命中必须调用主栏使用的同一实现。共享常量、底层 Shape/SVG/Word 或近似动画均不构成复用；PageControl 中禁止保留镜像状态机。
 2. **所有权边界**：`Inkeys.UI.PageControl` 只拥有四个分页 HWND/RenderPipeline 客户端、每窗渲染资源、分页组拓扑与锚点、状态路由、PPT 专属拖动条/页码内容策略和业务回调。`Inkeys.UI.Ppt` 与 `Inkeys.UI.Whiteboard` 只发布业务状态及回调。
 3. **稳定实例形变**：底部每个 surface 的 Previous、Page、Next 是跨 `PptCompact`/`WhiteboardExpanded` 的三枚稳定按钮实例；切换只改变同一实例的尺寸、位置和内容，不创建第二套按钮、不交换 renderer owner。PPT 宽页码形态与 Whiteboard 中间 `2x2` 页码按钮是同一实例。
-4. **共享背景合同**：分页外层背景的深色填充、边框、第一/第三光源、绘制和 dirty 直接复用主栏背景实现。PageControl 只提供子控件联合外框目标，并将背景与按钮放入同一 Bar 动画批次。紧凑态和 Whiteboard 的外框圆角必须直接读取主栏 `BarMainBarCornerRadiusDip`，按钮圆角必须直接读取 `BarButtonCornerRadiusDip`（当前分别为 `8/4 DIP`），边框和内边距同样使用主栏单一来源；禁止在 PageControl 复制数值。
+4. **共享背景合同**：分页外层背景的深色填充、边框、第一/第三光源、绘制和 dirty 直接复用主栏背景实现。PageControl 只提供子控件联合外框目标，并将背景与按钮放入同一 Bar 动画批次。紧凑态和 Whiteboard 的外框圆角必须直接读取主栏 `BarMainBarCornerRadiusDip`，按钮圆角必须直接读取 `BarButtonCornerRadiusDip`（当前分别为 `8/4 DIP`），边框和内边距同样使用主栏单一来源；禁止在 PageControl 复制数值。第三光源不得由分页本地鼠标位置生成：四个 HWND 只加入主栏唯一的接收窗口/可见区域集合，并消费同一屏幕坐标、半径、强度、`Dormant/Inside/Grace` 与 5 秒期限。
 5. **固定几何**：PPT 底部外框为 `165x42.5 DIP`，两侧为 `42.5x165 DIP`；PPT 拖动槽 `10 DIP`、箭头按钮 `32.5x32.5 DIP`、页码按钮横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距和真实按钮之间的间距为 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个 `5 DIP` 间距。Whiteboard 外框为 `230x80 DIP`，包含三枚 `70x70 DIP` 标准 `2x2` 按钮。
 6. **页码内容**：底部页码把加粗当前页和常规字重 `/总页数` 作为整体测量并水平居中；两侧将当前页置上、`/总页数` 置下并整体垂直居中；Whiteboard 使用标准 `2x2` 上方主内容槽和下方标签槽。PPT 未知值继续显示 `-`/`/-`，底部和侧边分别保留 `9999/999` 显示上限。三种形态共用内容状态，禁止用分页专用固定偏移模拟居中。页码按钮始终 no-op，但保留标准 Bar hover/press。
 7. **SVG 与内容动画**：普通 Previous/Next 始终复用同一 `barMore` SVG 实例，通过方向变换表示语义；PPT Arrow 与 Whiteboard Arrow 之间只缩放/移动同一 SVG 并动画标签显隐。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才以主栏内容转换在 `barMore`/`右翻页` 与 `barAdd`/`加页` 间切换；几何、SVG 和标签在同一批次并行推进，未变化语义不得重启动画。
@@ -29,6 +29,8 @@
 ## Acceptance Criteria
 
 - [x] Main Bar 与 PageControl 对同一按钮输入调用同一 Bar metrics、hover/press、draw、背景 draw 和圆角 hit 实现；PageControl 不再设置标准按钮 SVG/文字偏移或拥有本地 hover/pressed visual state。
+- [x] 共享 draw 以显式父级 `inherit` 同步按钮、SVG 和主/次文字；PageControl 非零局部原点不再读取默认或上一帧父缓存。
+- [x] PageControl 删除本地第三光源 prepare/reset；真实鼠标进入/离开四窗只通知 Main Bar，成功窗口提交发布屏幕边界，分页绘制消费 Main Bar 最终光源快照。
 - [x] Headless 直接验证共享 `1x1/2x1/2x2` metrics、PPT/Whiteboard 输入策略、Arrow/Add 语义、固定位置和 PPT-only 碰撞；生产调用点静态确认两类宿主消费同一按钮运行时，最终 damage/present union 仍由各 HWND 宿主按共享视觉几何映射。
 - [x] PPT→Whiteboard→PPT 全程保留相同按钮 ID/实例；普通 Arrow 不发生 SVG 资源转换，Arrow/Add 只在语义真实变化时随几何同批转换一次。
 - [x] Whiteboard 固定位置且无法拖动、滚轮、长按或持久化位置；PPT 的拖动、长按、滚轮、键盘闪按和位置/缩放配置保持。

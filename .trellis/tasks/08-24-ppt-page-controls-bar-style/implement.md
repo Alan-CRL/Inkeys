@@ -69,3 +69,10 @@
 - [x] 使用 ARM64 版 `MSBuild.exe` 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64`，超时不少于 5 分钟。
 - [x] 运行 `Build\ARM64\Debug\InkeysHeadlessTests.exe --no-window`。
 - [x] 记录未执行的真实 PowerPoint/WPS、鼠标/触摸、光影、DPI 与连续工作区切换设备验收；按仓库约束未启动 GUI。
+
+## 7. 设备验收后修正
+
+- [x] 修复共享 draw 的隐藏父缓存前置条件：显式 `inherit` 同步按钮父坐标，SVG 与主/次文字通过同一轻量计算解析；Main Bar dirty 同样调用该入口。
+- [x] 删除 Surface 本地第三光源 prepare/reset，将 Main Bar 的最终 cursor 坐标、半径、强度和可见性纳入共享光源快照。
+- [x] 四个 PageControl HWND 加入 Main Bar 唯一接收窗口和可见区域集合；真实鼠标进入/离开通知既有 `Dormant/Inside/Grace`，成功窗口提交才发布边界。
+- [x] 增加非零父原点与屏幕光源映射 headless 回归；重新通过完整 `Debug|ARM64` Solution 构建和 ARM64 `--no-window`。

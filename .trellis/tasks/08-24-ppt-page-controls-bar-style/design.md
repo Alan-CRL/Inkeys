@@ -12,7 +12,7 @@
 - `Inkeys.UI.Whiteboard`：保留页数据、事务语义和换页回调，只发布 Whiteboard 快照；不拥有分页 renderer，也不继承 PPT 输入能力。
 - Window/RenderPipeline：继续保留 `PptBottomLeft`、`PptBottomRight`、`PptMiddleLeft`、`PptMiddleRight` 四个客户端；`PptExitShow` 保持删除。
 
-`BarSurfaceScene` 不得继续作为第二套按钮引擎。若 Whiteboard Freeze 或分页 backing 仍需要它的设备资源/透明 surface 能力，可将其收窄为不含 Button/DragHandle 行为的 surface host，或由 PageControl 的现有呈现封装替代；两种选择都必须让按钮完全委托给共享 Bar 运行时。
+`BarSurfaceScene` 不得继续作为第二套按钮引擎。它可以保存每窗稳定按钮实例、PPT-only DragHandle 和 `hovered/pressed` id 路由，但标准按钮的内部位置、hover/press、内容转换、动画值、draw 与圆角 hit 必须完全委托共享 Bar 入口；Scene 只负责把共享结果映射到本窗资源、damage 和 present。
 
 ## 共享 Bar 按钮运行时
 
@@ -21,6 +21,10 @@ Bar 层已落地以下共享边界；后续调整必须同步更新项目 code-s
 ~~~cpp
 BarButtonVisualMetrics ResolveBarButtonVisualMetrics(
     BarButtonVisualLayoutKind) noexcept;
+BarButtonVisualPoint ResolveBarButtonChildTopLeft(...) noexcept;
+BarButtonVisualInheritance PrepareBarButtonVisualInheritance(
+    BarButtonClass&, const BarUiInheritClass&,
+    BarUiWordClass* secondary = nullptr) noexcept;
 bool StartBarButtonHoverVisual(BarButtonClass&) noexcept;
 bool StopBarButtonHoverVisual(
     BarButtonClass&, bool immediate, bool preserveVisual = false) noexcept;
@@ -51,6 +55,7 @@ bool BarUiRoundedRectContainsPoint(
 - `TransitionContent` 的淡出/资源替换/回弹和同批次重定向；
 - Shape/SVG/Word/PointLight 绘制、内容缩放、命中与实际动画几何；
 - 旧/新外框、光影、抗锯齿与内容转换共同产生的保守 damage。
+- 显式按钮父级 `inherit` 先写回按钮继承坐标，再以同一个共享计算解析 SVG 与主/次文字；dirty 和 draw 不得各用一份父坐标。
 
 Main Bar 必须先迁移到这些入口，再接入 PageControl；只让 PageControl 使用新 helper、而 Main Bar 继续走旧局部逻辑，仍视为两套实现。
 
@@ -68,6 +73,8 @@ PageControl 可以决定四个控件在 surface 内的顺序、横/竖方向、�
 | Whiteboard | BottomLeft/Right | `5 + Previous(70) + 5 + Page(70) + 5 + Next(70) + 5` |
 
 Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只存在于真实按钮之间，因此长边保持 `165 DIP`。背景外框由子控件联合目标加主栏内边距得到；紧凑/展开外框直接读取 `BarMainBarCornerRadiusDip`，按钮直接读取 `BarButtonCornerRadiusDip`，边框/内边距也使用主栏单一来源（当前为 `8/4/1/5 DIP`）。Background 与三个按钮共享一个 `BarUiTimelineClass`/批次上下文，PageControl 不复制这些数值。
+
+第一/第三光源都由 Main Bar 发布最终屏幕像素快照。四个 PageControl HWND 只在真实鼠标进入/离开时通知主栏唯一 `Dormant/Inside/Grace` 状态机，并在成功窗口提交后发布可见屏幕边界；Raw Input、5 秒 timer、半径和生命周期强度均不在 Surface 内重建。
 
 ## 页码与 SVG 内容
 
@@ -117,6 +124,7 @@ PageControl 仍负责 stable backing capacity、logical/presentation 坐标、UL
 ## 验证设计
 
 - 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage。
+- 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
 - PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle 时序、反向重入和首次渐显。
 - 输入矩阵测试：Whiteboard 拒绝 drag/wheel/long-press/persist，PPT 保留；切换期间 capture/input 门禁正确。
 - 碰撞测试：无 Bar 参数/障碍，bottom 优先、middle 回退、手动 pair 不推动另一 pair、自动结果不写保存状态。

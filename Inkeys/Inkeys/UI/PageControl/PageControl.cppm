@@ -337,8 +337,22 @@ export namespace Inkeys::UI::PageControl
 	[[nodiscard]] constexpr bool ShouldKeepPageControlWindowVisible(
 		bool targetVisible, bool exitTransitionActive) noexcept
 	{
-		// Scene 可能因共享光源持续报告动画；隐藏生命周期只由固定退场时限保活。
+		// 共享光源请求不得延长隐藏生命周期；只由固定退场时限保活。
 		return targetVisible || exitTransitionActive;
+	}
+
+	[[nodiscard]] constexpr bool ShouldSubscribePageControlLighting(
+		bool targetVisible, bool exitTransitionActive) noexcept
+	{
+		return targetVisible || exitTransitionActive;
+	}
+
+	[[nodiscard]] constexpr bool ShouldNotifyPageControlCursorEntered(
+		bool alreadyInside, bool translatingTouch,
+		bool pointerGeneratedMouse) noexcept
+	{
+		return !alreadyInside && !translatingTouch
+			&& !pointerGeneratedMouse;
 	}
 
 	[[nodiscard]] constexpr bool ShouldLockSurfaceInput(

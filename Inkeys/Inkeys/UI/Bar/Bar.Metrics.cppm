@@ -63,6 +63,25 @@ export namespace Inkeys::UI::Bar
 		double secondarySlotHeightDip = 0.0;
 	};
 
+	struct BarButtonVisualPoint
+	{
+		double x = 0.0;
+		double y = 0.0;
+	};
+
+	// 子内容始终以调用方给出的按钮左上角为父级，不能读取历史 inh 缓存。
+	[[nodiscard]] constexpr BarButtonVisualPoint
+		ResolveBarButtonChildTopLeft(double parentX, double parentY,
+			double parentWidth, double parentHeight,
+			double childOffsetX, double childOffsetY,
+			double childWidth, double childHeight) noexcept
+	{
+		return {
+			parentX + parentWidth / 2.0 + childOffsetX - childWidth / 2.0,
+			parentY + parentHeight / 2.0 + childOffsetY - childHeight / 2.0,
+		};
+	}
+
 	[[nodiscard]] inline BarButtonVisualMetrics ResolveBarButtonVisualMetrics(
 		BarButtonVisualLayoutKind layoutKind) noexcept
 	{

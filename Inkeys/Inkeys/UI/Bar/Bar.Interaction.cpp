@@ -36,6 +36,7 @@ constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
 constexpr UINT BarThicknessSliderCaptureMessage = WM_APP + 0x33;
 constexpr UINT BarColorPickerCaptureMessage = WM_APP + 0x34;
+constexpr UINT BarBorderCursorSurfacePointerMessage = WM_APP + 0x35;
 constexpr short BarTouchPointerMessageMarker = SHRT_MIN;
 constexpr short BarTouchCancelMessageMarker = SHRT_MIN + 1;
 constexpr short BarTouchDirectDragScreenMessageMarker = SHRT_MIN + 2;
@@ -75,6 +76,47 @@ constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
 std::atomic_uint BarCanvasDrawingActivityCount = 0;
 // 消息线程拥有入口按压态，渲染线程只通过只读接口取得缩放目标。
 IdtAtomic<bool> BarColorPickerEntryPressed = false;
+
+namespace
+{
+	constexpr std::array<Inkeys::Window::WindowRole, 4>
+		BorderCursorSurfaceRoles{
+			Inkeys::Window::WindowRole::PptBottomLeft,
+			Inkeys::Window::WindowRole::PptBottomRight,
+			Inkeys::Window::WindowRole::PptMiddleLeft,
+			Inkeys::Window::WindowRole::PptMiddleRight,
+		};
+	std::mutex borderCursorSurfaceRegionMutex;
+	std::array<RECT, BorderCursorSurfaceRoles.size()>
+		borderCursorSurfaceRegions{};
+	std::array<bool, BorderCursorSurfaceRoles.size()>
+		borderCursorSurfaceRegionVisible{};
+
+	struct BorderCursorSurfaceRegionSnapshot
+	{
+		std::array<RECT, BorderCursorSurfaceRoles.size()> bounds{};
+		std::array<bool, BorderCursorSurfaceRoles.size()> visible{};
+	};
+
+	[[nodiscard]] BorderCursorSurfaceRegionSnapshot
+		SnapshotBorderCursorSurfaceRegions() noexcept
+	{
+		std::lock_guard lock(borderCursorSurfaceRegionMutex);
+		return { borderCursorSurfaceRegions,
+			borderCursorSurfaceRegionVisible };
+	}
+
+	[[nodiscard]] bool IsBorderCursorAcceptingWindow(
+		HWND barWindow, HWND candidate) noexcept
+	{
+		if (!candidate) return false;
+		if (candidate == barWindow) return true;
+		auto& service = Inkeys::Window::GetService();
+		for (const auto role : BorderCursorSurfaceRoles)
+			if (candidate == service.Handle(role)) return true;
+		return false;
+	}
+}
 
 bool ReadColorPickerEntryPressed()
 {
@@ -586,6 +628,22 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case BarCanvasDrawingActivityMessage:
 	{
 		barUISet.HandleCanvasDrawingActivity(hWnd, wParam != 0);
+		return 0;
+	}
+
+	case BarBorderCursorSurfacePointerMessage:
+	{
+		if (wParam != 0)
+			barUISet.ActivateBorderCursorTracking(hWnd);
+		else
+		{
+			// PageControl 的真实离开与 Bar 自身 WM_MOUSELEAVE 使用同一解锁语义。
+			{
+				lock_guard lock(barUISet.borderCursorLightMutex);
+				barUISet.borderCursorActivationBlockedUntilLeave = false;
+			}
+			barUISet.RegisterBorderCursorLight(hWnd);
+		}
 		return 0;
 	}
 
@@ -5570,13 +5628,19 @@ void BarUISetClass::ActivateBorderCursorTracking(HWND hWnd)
 		borderCursorLightNearVisibleRegion = cursorNearVisibleRegion;
 		D2D1_POINT_2F nextPoint = D2D1::Point2F(
 			static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
+		const D2D1_POINT_2F nextScreenPoint = D2D1::Point2F(
+			static_cast<FLOAT>(screenPoint.x), static_cast<FLOAT>(screenPoint.y));
 		// Inside 始终发布真实光标点，不能依赖首帧可见区域缓存已经完成。
 		bool cursorChanged = !borderCursorLightReady
-			|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
+			|| nextPoint.x != borderCursorLightPoint.x
+			|| nextPoint.y != borderCursorLightPoint.y
+			|| nextScreenPoint.x != borderCursorLightScreenPoint.x
+			|| nextScreenPoint.y != borderCursorLightScreenPoint.y;
 		borderCursorLightReady = true;
 		if (cursorChanged)
 		{
 			borderCursorLightPoint = nextPoint;
+			borderCursorLightScreenPoint = nextScreenPoint;
 			++borderCursorLightSerial;
 		}
 		else if (proximityChanged) ++borderCursorLightSerial;
@@ -5597,7 +5661,8 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 
 	POINT screenPoint{};
 	if (!GetCursorPos(&screenPoint)) return;
-	if (WindowFromPoint(screenPoint) == hWnd)
+	if (IsBorderCursorAcceptingWindow(
+		hWnd, WindowFromPoint(screenPoint)))
 	{
 		ActivateBorderCursorTracking(hWnd);
 		return;
@@ -5650,12 +5715,18 @@ void BarUISetClass::RegisterBorderCursorLight(HWND hWnd)
 		{
 			D2D1_POINT_2F nextPoint = D2D1::Point2F(
 				static_cast<FLOAT>(clientPoint.x), static_cast<FLOAT>(clientPoint.y));
+			const D2D1_POINT_2F nextScreenPoint = D2D1::Point2F(
+				static_cast<FLOAT>(screenPoint.x), static_cast<FLOAT>(screenPoint.y));
 			// 跨出 240px 时发布最后一个位置，让 240px 径向渐变自然落到 0。
 			cursorChanged = !borderCursorLightReady
-				|| nextPoint.x != borderCursorLightPoint.x || nextPoint.y != borderCursorLightPoint.y;
+				|| nextPoint.x != borderCursorLightPoint.x
+				|| nextPoint.y != borderCursorLightPoint.y
+				|| nextScreenPoint.x != borderCursorLightScreenPoint.x
+				|| nextScreenPoint.y != borderCursorLightScreenPoint.y;
 			if (cursorChanged)
 			{
 				borderCursorLightPoint = nextPoint;
+				borderCursorLightScreenPoint = nextScreenPoint;
 				borderCursorLightReady = true;
 				++borderCursorLightSerial;
 			}
@@ -5708,7 +5779,9 @@ void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 	UpdateRendering(false);
 
 	POINT screenPoint{};
-	if (!GetCursorPos(&screenPoint) || WindowFromPoint(screenPoint) == hWnd) return;
+	if (!GetCursorPos(&screenPoint)
+		|| IsBorderCursorAcceptingWindow(
+			hWnd, WindowFromPoint(screenPoint))) return;
 
 	// 落笔只在消息接收区外一次性关闭第三鼠标光，第一光源与后续绘制过程保持独立。
 	SuspendBorderCursorTracking(hWnd);
@@ -5721,9 +5794,12 @@ void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeav
 	if (waitForMouseLeave && hWnd)
 	{
 		POINT screenPoint{};
-		if (GetCursorPos(&screenPoint) && WindowFromPoint(screenPoint) == hWnd)
+		const HWND receivingWindow = GetCursorPos(&screenPoint)
+			? WindowFromPoint(screenPoint) : nullptr;
+		if (IsBorderCursorAcceptingWindow(hWnd, receivingWindow))
 		{
-			TRACKMOUSEEVENT trackMouseEvent{ sizeof(TRACKMOUSEEVENT), TME_LEAVE, hWnd, 0 };
+			TRACKMOUSEEVENT trackMouseEvent{
+				sizeof(TRACKMOUSEEVENT), TME_LEAVE, receivingWindow, 0 };
 			blockActivationUntilLeave = TrackMouseEvent(&trackMouseEvent) != FALSE;
 		}
 	}
@@ -5848,9 +5924,10 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 	double distanceLimit = BarBorderCursorLightRadius * zoom;
 	if (distanceLimit <= 0.0) return false;
 	double distanceLimitSquared = distanceLimit * distanceLimit;
-	for (size_t i = 0; i < visibleRegionCount; i++)
-	{
-		const RECT& region = visibleRegions[i];
+	auto IsNear = [&](const RECT& region)
+		{
+			if (region.right <= region.left || region.bottom <= region.top)
+				return false;
 		double dx = 0.0;
 		double dy = 0.0;
 		if (screenPoint.x < region.left) dx = static_cast<double>(region.left - screenPoint.x);
@@ -5858,7 +5935,19 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 		if (screenPoint.y < region.top) dy = static_cast<double>(region.top - screenPoint.y);
 		else if (screenPoint.y > region.bottom) dy = static_cast<double>(screenPoint.y - region.bottom);
 		double distanceSquared = dx * dx + dy * dy;
-		if (distanceSquared <= distanceLimitSquared) return true;
+		return distanceSquared <= distanceLimitSquared;
+		};
+	for (size_t i = 0; i < visibleRegionCount; i++)
+		if (IsNear(visibleRegions[i])) return true;
+
+	const auto surfaceRegions = SnapshotBorderCursorSurfaceRegions();
+	auto& service = Inkeys::Window::GetService();
+	for (std::size_t index = 0; index < surfaceRegions.bounds.size(); ++index)
+	{
+		if (!surfaceRegions.visible[index]
+			|| !IsNear(surfaceRegions.bounds[index])) continue;
+		const HWND surface = service.Handle(BorderCursorSurfaceRoles[index]);
+		if (surface && IsWindowVisible(surface)) return true;
 	}
 	return false;
 }
@@ -6557,6 +6646,37 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 
 namespace Inkeys::UI::Bar
 {
+	void NotifyBorderCursorSurfacePointerEntered() noexcept
+	{
+		if (!offSignal && floating_window)
+			PostMessage(floating_window,
+				BarBorderCursorSurfacePointerMessage, 1, 0);
+	}
+
+	void NotifyBorderCursorSurfacePointerLeft() noexcept
+	{
+		if (!offSignal && floating_window)
+			PostMessage(floating_window,
+				BarBorderCursorSurfacePointerMessage, 0, 0);
+	}
+
+	void PublishBorderCursorSurfaceBounds(
+		unsigned int index, const RECT& bounds, bool visible) noexcept
+	{
+		if (index >= borderCursorSurfaceRegions.size()) return;
+		const bool valid = visible && bounds.right > bounds.left
+			&& bounds.bottom > bounds.top;
+		bool leftVisibleSurface = false;
+		{
+			std::lock_guard lock(borderCursorSurfaceRegionMutex);
+			leftVisibleSurface = borderCursorSurfaceRegionVisible[index]
+				&& !valid;
+			borderCursorSurfaceRegions[index] = valid ? bounds : RECT{};
+			borderCursorSurfaceRegionVisible[index] = valid;
+		}
+		if (leftVisibleSurface) NotifyBorderCursorSurfacePointerLeft();
+	}
+
 	Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{

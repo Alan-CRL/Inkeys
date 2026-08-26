@@ -220,6 +220,14 @@ if (offSignal) return FrameResult::Idle;
 ~~~cpp
 BarButtonVisualMetrics ResolveBarButtonVisualMetrics(
     BarButtonVisualLayoutKind) noexcept;
+BarButtonVisualPoint ResolveBarButtonChildTopLeft(
+    double parentX, double parentY,
+    double parentWidth, double parentHeight,
+    double childOffsetX, double childOffsetY,
+    double childWidth, double childHeight) noexcept;
+BarButtonVisualInheritance PrepareBarButtonVisualInheritance(
+    BarButtonClass&, const BarUiInheritClass&,
+    BarUiWordClass* secondary = nullptr) noexcept;
 bool StartBarButtonHoverVisual(BarButtonClass&) noexcept;
 bool StopBarButtonHoverVisual(
     BarButtonClass&, bool immediate, bool preserveVisual = false) noexcept;
@@ -241,6 +249,11 @@ bool BarUiRoundedRectContainsPoint(
     double widthDip, double heightDip, double radiusXDip,
     double radiusYDip, double epsilon = 1e-6) noexcept;
 
+void NotifyBorderCursorSurfacePointerEntered() noexcept;
+void NotifyBorderCursorSurfacePointerLeft() noexcept;
+void PublishBorderCursorSurfaceBounds(
+    unsigned int index, const RECT&, bool visible) noexcept;
+
 WorkspaceMode ResolveWorkspaceMode(
     Surface, const PptState&, const WhiteboardState&) noexcept;
 WorkspaceInputPolicy ResolveWorkspaceInputPolicy(WorkspaceMode) noexcept;
@@ -259,9 +272,11 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 
 - Main Bar 必须先迁移到共享 Bar 按钮入口，随后 PageControl 才能接入。若 Main Bar 仍使用 RenderLoop/Interaction 局部算法而 PageControl 单独使用新 helper，仍是两套实现。
 - 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 三枚实例跨 `PptCompact/WhiteboardExpanded` 稳定，Middle 只切 `Hidden/PptCompact`。
-- `BarSurfaceScene` 不得拥有 Button/DragHandle 的 hover、press、内容位置、advance、draw、hit 或 damage 状态机。若保留它，只能作为不含按钮语义的 background/surface resource host。
+- `BarSurfaceScene` 可以保存每窗稳定 `BarButtonClass`、PPT-only DragHandle 和 `hovered/pressed` id 路由，但不得定义另一套视觉算法或分页专用数值。标准按钮的内部位置、hover/press、内容转换、draw、圆角 hit 和动画值必须调用上述 Bar 入口；Scene 只把共享结果映射到本窗 damage/present。
 - PPT 外框：Bottom `165x42.5 DIP`，Middle `42.5x165 DIP`；Drag slot `10 DIP`、Arrow `32.5x32.5 DIP`、Page 横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距与真实按钮间距 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 外框 `230x80 DIP`，三枚标准 `70x70 DIP` `2x2` 按钮。
-- 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。
+- 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
+- `DrawBarButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveBarButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
+- 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
 - Page 在三种形态中是同一实例。横向页码对加粗当前页与常规 `/总页数` 做整体测量并居中；竖向使用上下行并整体居中；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 在所有模式均 no-op，但使用标准 hover/press。
 - 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及 Whiteboard 标签；不得为同资源启动替换。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
 - DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮。它是 PPT 唯一拖动入口，无 hover/press/click/selected/content 视觉。Whiteboard 不创建 DragHandle hit region。
@@ -287,6 +302,8 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 | 页码按钮点击 | 只产生标准 press 视觉，业务 no-op |
 | 旧 render/direct-move revision 交错 | 过期帧 `Retry`，不得拉回已提交 HWND |
 | 目标隐藏但光源仍动画 | 固定退场后隐藏 HWND，不能由光源延长生命周期 |
+| 分页按钮位于非零 Surface 原点 | 按钮背景、SVG、主文字和次文字从同一显式父坐标解析，不得回落到 `(0,0)` 或上一帧缓存 |
+| 鼠标从分页 HWND 移到画布 | 进入同一个 `Grace`，区域外坐标继续由 Bar Raw Input 发布；绝对 5 秒截止不被移动重置，随后从当前强度淡出 |
 
 #### 5. Good / Base / Bad Cases
 
@@ -301,6 +318,7 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 - PageControl headless 覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 同批单次转换、DragHandle 时序、首次渐显、反向重入和有限退场。
 - 输入矩阵覆盖 PPT drag/long-press/wheel/keyboard/persist 保留，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。
 - 碰撞覆盖手动 pair 最近可行位置、bottom 优先/middle 回退、极小屏运行时 scale、输入/保存快照不变，并静态断言无 Bar obstacle 参数/查询/通知。
+- Headless 直接断言非零父原点下的标准按钮子内容坐标，以及屏幕光源点到 Surface presentation 点的映射；静态审查分页不再调用本地 cursor-light prepare/reset，且四个 HWND 的进入/离开与成功呈现边界只通知 Main Bar 全局状态机。
 - 回归 EndShow/A2、四窗口生命周期、owner/Z 序、旧 JSON、COM/WPS、`PptInfoStateBuffer` 与页级墨迹；执行完整 `Debug|ARM64` Solution 构建和 ARM64 `--no-window` 测试。
 
 #### 7. Wrong vs Correct
@@ -320,6 +338,14 @@ RetargetBarButtonInteractionVisual(
     button, visible, enabled, selected, durationSeconds);
 DrawBarButtonVisual(renderer, context, button, inherit, drawOptions);
 ppt = ResolveRuntimePageControlLayout(monitor, dpi, ppt);
+
+// Wrong：Surface 从本地鼠标消息创建第三光源，离窗后失去全局坐标和 5 秒期限。
+renderer.PrepareSurfaceCursorLight(dt, localCursor, hoveredButton);
+
+// Correct：分页只登记接收窗口和呈现边界，绘制消费 Main Bar 的最终共享光源快照。
+NotifyBorderCursorSurfacePointerEntered();
+PublishBorderCursorSurfaceBounds(index, presentedBounds, true);
+scene.SetSharedLightingSubscribed(true);
 ~~~
 
 ### UI3 基于变化的脏区事务合同
@@ -781,6 +807,10 @@ namespace Inkeys::UI::Bar
 {
 	export void NotifyCanvasDrawingStarted();
 	export void NotifyCanvasDrawingEnded();
+	export void NotifyBorderCursorSurfacePointerEntered() noexcept;
+	export void NotifyBorderCursorSurfacePointerLeft() noexcept;
+	export void PublishBorderCursorSurfaceBounds(
+		unsigned int index, const RECT& bounds, bool visible) noexcept;
 }
 ~~~
 
@@ -788,13 +818,15 @@ namespace Inkeys::UI::Bar
 
 #### 3. Contracts
 
-- `Dormant`：第三光源目标透明度为 0，鼠标 Raw Input 必须注销；仅 UI3 窗口自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。
-- `Inside`：注册鼠标 `RIDEV_INPUTSINK`；首次离开实际接收消息的窗口区域时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。
+- `Dormant`：第三光源目标透明度为 0，鼠标 Raw Input 必须注销；仅 Bar 或四个 PageControl HWND 自然收到真实 `WM_MOUSEMOVE` 才能进入 `Inside`。触摸/笔生成的兼容 mouse 不得激活。
+- `Inside`：唯一 Bar HWND 注册鼠标 `RIDEV_INPUTSINK`；首次离开 Bar 与四个 PageControl 的实际接收消息区域集合时进入 `Grace`，并记录 `GetTickCount64() + 5000` 的绝对截止时间。PageControl 不得注册第二份 Raw Input 或 timer。
 - `Grace`：区域外移动不得重置截止时间。第三光源使用独立的 `240 × barStyle.zoom` 径向渐变；已发布 UI 外框只用于判断光圈是否可能命中 UI，从而裁剪渲染唤醒，不得作为全局亮度乘数。
 - 同一控件的同一边框像素上，第三光源贡献只由光标到该像素的距离、生命周期强度和控件固定比例决定；光标是否位于接受消息区域、主栏或其他可见区域内不得改变该贡献。第一光源可独立影响最终合成结果，不属于该一致性契约。
 - `Grace → Inside`：重新进入实际接收消息区域时取消定时器；仅回到 240px 邻域不能从 `Dormant` 唤醒。
 - `Grace → Dormant`：绝对截止时间到达，或画布开始真实绘制时，注销 Raw Input 并从当前强度平滑淡出。落笔时若光标仍在 UI3 接收区，区域内后续移动不得重新激活；必须先收到离开，再由下一次自然进入激活。
 - 5 秒等待使用窗口定时器，不得新增轮询线程或靠持续渲染计时。
+- Main Bar 每个实际光源帧以屏幕物理像素发布第三光源位置、`240 × barStyle.zoom` 半径、当前生命周期强度和可见性；PageControl 只映射到各自 presentation target。分页本地 hover 与第三光源是两条状态：hover 可快速退出，不能据此清零或重新创建第三光源。
+- PageControl 只有在完整 present 与 `SetBounds/Show` 成功后才发布该 HWND 的屏幕边界；成功隐藏发布空边界。该列表只参与 Grace 邻域唤醒裁剪，不能改变亮度、截止时间或 `WindowFromPoint` 的实际接收判断。
 - 并发笔迹由原子 activity count 合并：`0 → 1` 才向 Bar 窗口线程发送 Started，结束通知只负责把 activity count 安全归零，不维持绘图静默状态。
 - Bar 窗口线程收到 Started 时只做一次落笔检查：若系统光标位于实际接收消息窗口之外，则让第三光源进入 `Dormant` 并注销 Raw Input；若仍在接收区内则不改变第三光源。后续绘制过程和抬笔不再持续控制光影。
 - 落笔通知不得参与 `BarUiEdgeLightingEnabled`、第一光源、光色过渡或普通 UI 动画门禁；画布线程仍只能通过通知接口请求第三光源休眠，不得直接写 UI、D2D 或 Raw Input 状态。
@@ -808,6 +840,8 @@ namespace Inkeys::UI::Bar
 | 窗口定时器创建失败 | 立即进入 `Dormant`，不得无限保留全局跟踪 |
 | 动画关闭 | 立即隐藏第三光源并请求休眠 |
 | 触摸模拟鼠标消息 | 不得激活第三光源；画布休眠仅由 Draw2 统一落笔派发边界通知，不由模拟鼠标消息重复通知 |
+| 鼠标从 PageControl 移到画布 | 由 Bar HWND 的同一 timer 进入 Grace；Raw Input 继续发布屏幕点，5 秒后淡出 |
+| PageControl HWND 移动、隐藏或提交失败 | 只发布最后成功可见边界；失败候选不得进入邻域列表 |
 | 笔迹在取得 Canvas 前提前返回 | RAII guard 仍必须发送 Ended，activity count 最终回到 0 |
 | 多指笔迹交错结束 | activity count 最终回到 0；不得因任一笔仍活动而持续压制第一光源或 UI 动画 |
 | Started 窗口消息迟到 | 窗口线程以当前原子 count 复核；计数已归零时忽略过期消息 |
@@ -826,6 +860,7 @@ namespace Inkeys::UI::Bar
 - 性能验证至少比较 `Dormant` 与持续全局移动时的 CPU；`Dormant` 中不得出现由第三光源导致的持续渲染唤醒。
 - UI 接收区外落笔后确认第三光源立即休眠；整笔持续期间移动并抬笔，第一光源、光色过渡和普通 UI 动画始终不受影响。
 - 多指和快速连续短笔迹下记录 activity count，确认最终归零且不存在绘图静默门禁。
+- Headless 覆盖屏幕点到 PageControl presentation 点的坐标映射；生产静态审查四窗只调用通知/边界发布接口，且不存在 Surface 本地 cursor-light prepare/reset。
 
 #### 7. Wrong vs Correct
 
@@ -848,6 +883,16 @@ cursorIntensity = lifecycleIntensity * nearestVisibleRegionIntensity;
 // Correct：区域距离只裁剪唤醒；第三光源贡献由自身 240px 径向画刷决定。
 cursorIntensity = lifecycleIntensity * controlIntensityScale;
 cursorRadius = 240.0 * zoom;
+~~~
+
+~~~cpp
+// Wrong：PageControl 用本地 hover 位置创建另一束鼠标光，离开 HWND 后即失去全局更新。
+surfaceRenderer.PrepareSurfaceCursorLight(dt, localCursor, hoveredButton);
+
+// Correct：分页只通知唯一状态机，并消费 Main Bar 发布的最终屏幕光源快照。
+NotifyBorderCursorSurfacePointerEntered();
+PublishBorderCursorSurfaceBounds(index, presentedBounds, true);
+scene.SetSharedLightingSubscribed(true);
 ~~~
 
 ~~~cpp

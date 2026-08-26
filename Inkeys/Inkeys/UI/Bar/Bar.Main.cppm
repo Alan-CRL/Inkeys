@@ -7,6 +7,7 @@
 #include <wrl/client.h>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include "Bar.BottomDock.h"
 
 export module Inkeys.UI.Bar:Main;
@@ -90,6 +91,20 @@ namespace Inkeys::UI::Bar
 		DWRITE_FONT_WEIGHT secondaryWeight = DWRITE_FONT_WEIGHT_NORMAL;
 	};
 
+	struct BarButtonVisualInheritance
+	{
+		BarUiInheritClass button;
+		BarUiInheritClass icon;
+		BarUiInheritClass primary;
+		std::optional<BarUiInheritClass> secondary;
+	};
+
+	// 显式父坐标是唯一真值；绘制与 dirty 必须先建立同一条继承链。
+	[[nodiscard]] BarButtonVisualInheritance
+		PrepareBarButtonVisualInheritance(BarButtonClass& button,
+			const BarUiInheritClass& inherit,
+			BarUiWordClass* secondary = nullptr) noexcept;
+
 	bool DrawBarButtonVisual(BarUIRendering& renderer,
 		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
 		const BarUiInheritClass& inherit,
@@ -98,6 +113,12 @@ namespace Inkeys::UI::Bar
 		ID2D1DeviceContext* deviceContext, BarUiShapeClass& background,
 		const BarUiInheritClass& inherit, RECT* targetRect = nullptr,
 		bool clip = false);
+
+	// PageControl 只登记窗口事实；第三光源仍由 Main Bar 的唯一状态机拥有。
+	export void NotifyBorderCursorSurfacePointerEntered() noexcept;
+	export void NotifyBorderCursorSurfacePointerLeft() noexcept;
+	export void PublishBorderCursorSurfaceBounds(
+		unsigned int index, const RECT& bounds, bool visible) noexcept;
 }
 // 控件枚举
 enum class BarUISetShapeEnum : int
@@ -697,6 +718,7 @@ public:
 			snapshot.indicatorVisible && snapshot.indicatorOccluding,
 			snapshot.indicatorBounds, x, y);
 	}
+
 protected:
 	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
 	void RebaseBottomDockPresentedWindow(POINT directTranslation,
@@ -756,6 +778,7 @@ protected:
 
 	mutex borderCursorLightMutex;
 	D2D1_POINT_2F borderCursorLightPoint = D2D1::Point2F();
+	D2D1_POINT_2F borderCursorLightScreenPoint = D2D1::Point2F();
 	unsigned long long borderCursorLightSerial = 0;
 	bool borderCursorInputAvailable = false;
 	bool borderCursorLightReady = false;
