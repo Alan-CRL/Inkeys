@@ -274,16 +274,17 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 - 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 三枚实例跨 `PptCompact/WhiteboardExpanded` 稳定，Middle 只切 `Hidden/PptCompact`。
 - `BarSurfaceScene` 可以保存每窗稳定 `BarButtonClass`、PPT-only DragHandle 和 `hovered/pressed` id 路由，但不得定义另一套视觉算法或分页专用数值。标准按钮的内部位置、hover/press、内容转换、draw、圆角 hit 和动画值必须调用上述 Bar 入口；Scene 只把共享结果映射到本窗 damage/present。
 - PPT 外框：Bottom `165x42.5 DIP`，Middle `42.5x165 DIP`；Drag slot `10 DIP`、Arrow `32.5x32.5 DIP`、Page 横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距与真实按钮间距 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 外框 `230x80 DIP`，三枚标准 `70x70 DIP` `2x2` 按钮。
-- 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
+- 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `BarButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
 - `DrawBarButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveBarButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
 - 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
-- Page 在三种形态中是同一实例。横向页码对加粗当前页与常规 `/总页数` 做整体测量并居中；竖向使用上下行并整体居中；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 在所有模式均 no-op，但使用标准 hover/press。
+- Page 在三种形态中是同一实例。横向页码对加粗当前页与常规 `/总页数` 做整体测量并居中；竖向使用上下行并整体居中；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 数值变化必须走共享 Scene 的即时内容策略：取消旧文字 transition、同帧替换主/次字符串，并直接应用本次重新测量的槽位；不得调用 `TransitionToString`。Page 在所有模式均 no-op，但使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
 - 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及 Whiteboard 标签；不得为同资源启动替换。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
-- DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮。它是 PPT 唯一拖动入口，无 hover/press/click/selected/content 视觉。Whiteboard 不创建 DragHandle hit region。
+- DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮，无 hover/press/click/selected/content 视觉。PPT 成对拖动可从 DragHandle、Page 和未被 Previous/Next 占用的真实圆角背景开始；透明 presentation margin、圆角外像素和 diffuse 光晕继续 `HTTRANSPARENT`，不能把整个矩形 HWND 当作背景。Previous/Next 永远是纯按钮。Page 按下先产生标准 press，超过 `SM_CXDRAG/SM_CYDRAG` 对应系统阈值后取消 press 并转为拖动，阈值内抬起仍为 no-op。Whiteboard 不创建 DragHandle 或 drag candidate。
 - PPT 保留 drag、scale、persist、long-press、wheel、keyboard flash；Whiteboard 只保留普通 mouse/pen/single-touch click 与标准 hover/press，不继承 PPT 输入。Whiteboard switching 只关闭 interactive，未变化视觉保持稳定。
-- Enter 开始即 cancel capture、关闭 DragHandle hit；背景、三枚按钮、Drag slot/opacity、SVG/文字和 HWND bounds 使用同一批次从当前成功呈现值重定向。PPT 底栏可见时同时移动到 Whiteboard 固定 `5 DIP` 角落并形变；不可见时直接用最终几何渐显。Exit 反向返回 PPT 最新运行时位置，稳定 PptCompact 成功呈现后才恢复 DragHandle hit。
+- Enter 开始即 cancel capture、关闭 DragHandle hit；Window Service 撤销必须广播 Drawpad、四个 PageControl HWND 与 Bar。PageControl 的 `WM_CANCELMODE` 在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后才调用可能重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。背景、三枚按钮、Drag slot/opacity、SVG/文字和 HWND bounds 使用同一批次从当前成功呈现值重定向。PPT 底栏可见时同时移动到 Whiteboard 固定 `5 DIP` 角落并形变；不可见时直接用最终几何渐显。Exit 反向返回 PPT 最新运行时位置，稳定 PptCompact 成功呈现后才恢复 DragHandle hit。
 - PPT 碰撞只包含 bottom/middle pair 与屏幕越界。手动拖动不推动另一 pair；自动纠偏 bottom 优先、middle 最近位置/极端运行时缩放回退，且不写保存配置。Bar HWND、MainButton、主栏移动和 Whiteboard 均不参与求解或唤醒。
-- PageControl 继续拥有 stable backing、logical/presentation 映射、direct-move revision、ULW/Window 提交与调试覆盖层事务。共享 Bar 运行时返回 animation/damage，不直接调用 Window Service；隐藏生命周期不得被光源动画无限延长。
+- PageControl 继续拥有 stable backing、logical/presentation 映射、direct-move revision、ULW/Window 提交与调试覆盖层事务。共享 Bar 运行时返回 animation/damage，不直接调用 Window Service；隐藏生命周期不得被光源动画无限延长。渲染线程可在 `presentationMutex` 内同步等待 Window Service owner，因此 owner WndProc 绝不能阻塞等待该锁；拖动直移只允许 `try_lock`，失败消息由下一次基于原始 drag 起点的绝对位移自然追赶，成功后以 `directMoveRevision` 淘汰过期渲染提交。
+- `PptInfoState` 是 COM 页状态事实，`PptInfoStateBuffer` 仍只在 Draw3 到达对应零基页后前进，PageControl 只消费 buffer。现有 PowerPoint/WPS COM ABI 不增加 native wait handle，因此 native 对共享 COM 状态使用不超过 `50ms` 的有界检查；检测到目标变化后发布 Draw3 绝对页，Draw3 在 current page/page count 真实变化时推进 `runtimeRevision` 并通知 `WaitForProductRuntimeRevision`。禁止继续用固定 `500ms` 睡眠等待 Draw3，也禁止为追求即时数字而提前发布未 ready 的 COM 页码。
 
 #### 4. Validation & Error Matrix
 
@@ -300,6 +301,12 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 | Main Bar 移动或尺寸变化 | 不请求 PageControl 碰撞重算，不改变分页位置 |
 | PPT 当前页或总页未知/超出显示上限 | 使用 `-`/`/-`；Bottom/Middle 分别限制到 `9999/999`，不改变业务页码 |
 | 页码按钮点击 | 只产生标准 press 视觉，业务 no-op |
+| Page 按下后在系统阈值内抬起 | 取消 press，业务 no-op，不写位置 |
+| Page 或非箭头背景移动超过系统阈值 | 取消 Page press 并开始成对拖动；Previous/Next 永不转换 |
+| 指针位于透明 margin 或背景圆角外 | 返回 `HTTRANSPARENT`；不得启动背景拖动或截获下层窗口输入 |
+| render 正持有呈现锁并同步等待 owner | owner 的拖动消息 `try_lock` 失败后立即返回，不得等待或冻结 UI |
+| COM 页状态已变化、Draw3 尚未到达 | 请求绝对页并等待 runtime revision；PageControl 继续显示上一 buffer 页码 |
+| Draw3 到达目标页 | runtime revision 唤醒状态线程，同轮推进 buffer 并发布即时数字文本 |
 | 旧 render/direct-move revision 交错 | 过期帧 `Retry`，不得拉回已提交 HWND |
 | 目标隐藏但光源仍动画 | 固定退场后隐藏 HWND，不能由光源延长生命周期 |
 | 分页按钮位于非零 Surface 原点 | 按钮背景、SVG、主文字和次文字从同一显式父坐标解析，不得回落到 `(0,0)` 或上一帧缓存 |
@@ -316,7 +323,10 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 
 - 共享 Bar 等价测试必须让 Main Bar 与 PageControl 直接调用同一导出入口，逐项断言 `oneOne/twoOne/twoTwo` 外框、内容槽、hover/press 时间样本、press transform、hit 和 damage；禁止在测试中复制产品公式。
 - PageControl headless 覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 同批单次转换、DragHandle 时序、首次渐显、反向重入和有限退场。
-- 输入矩阵覆盖 PPT drag/long-press/wheel/keyboard/persist 保留，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。
+- 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、long-press/wheel/keyboard/persist 保留，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。
+- Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；Scene 源码审查确认即时 Page 槽位使用 `SetDirect`，而 Arrow/Add 仍走 Animated 中点转换。
+- Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口，PPT 状态线程只以不超过 `50ms` 检查 COM，共享 buffer 仍等待 Draw3-ready。
+- PageControl 输入测试覆盖圆角背景门禁策略；源码审查背景命中读取 Scene 当前动画 Shape，Window Service capture 撤销包含四个 PageControl 角色，且 `ReleaseCapture` 位于呈现锁外。
 - 碰撞覆盖手动 pair 最近可行位置、bottom 优先/middle 回退、极小屏运行时 scale、输入/保存快照不变，并静态断言无 Bar obstacle 参数/查询/通知。
 - Headless 直接断言非零父原点下的标准按钮子内容坐标，以及屏幕光源点到 Surface presentation 点的映射；静态审查分页不再调用本地 cursor-light prepare/reset，且四个 HWND 的进入/离开与成功呈现边界只通知 Main Bar 全局状态机。
 - 回归 EndShow/A2、四窗口生命周期、owner/Z 序、旧 JSON、COM/WPS、`PptInfoStateBuffer` 与页级墨迹；执行完整 `Debug|ARM64` Solution 构建和 ARM64 `--no-window` 测试。

@@ -99,10 +99,85 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 `【直接确认】` 数据不是一步直达：
 
 1. managed `PptComService` 通过 unsafe 指针写 `PptInfoState.TotalPage/CurrentPage`；
-2. `IdtPlug-in.cpp::PptInfo` 观察放映状态，并在放映结束时清理 `PptImg` 等状态；
-3. `IdtDrawpad.cpp` 比较 COM 状态与 buffer，换页前保存当前 `drawpad` 到 `PptImg.Image[页]`，再恢复目标页或清空画布；
-4. 画布处理完成后更新 `PptInfoStateBuffer`；源码注释明确 buffer 要等 `DrawpadDrawing` 加载 PPT 画布后再同步；
-5. `Inkeys.UI.Ppt::PublishPageState` 将缓冲状态发布给 `Inkeys.UI.PageControl` 的四个页码窗口；主栏 A2 EndShow 不参与页码计算，其点击回调只向 PPT 业务线程投递一次请求，再沿用确认与 COM 服务调用流程。
+2. `IdtPlug-in.cpp::PptInfo` 最多每 `50ms` 复核一次 COM 事实；有效页码以零基绝对页请求发布给运行中的 Draw3 Host。发布入口对相同页面幂等，Host 未运行时返回失败，Host 重启清空 bridge 后下一轮会重新发布，不得把未被运行实例接受的请求记作已发送；
+3. Draw3 在绘制线程完成页面切换，并由 document/command observer 发布真实 `currentPageIndex/pageCount`。任一值变化都会推进 `runtimeRevision` 并唤醒 `WaitForProductRuntimeRevision`；
+4. `PptInfo` 被 native revision 唤醒或达到 `50ms` 上限后读取一致 runtime snapshot，只有 Draw3 已到达 COM 对应绝对页时才推进 `PptInfoStateBuffer`；
+5. `Inkeys.UI.Ppt::PublishPageState` 只把 ready buffer 发布给 `Inkeys.UI.PageControl` 四窗，Page 数字使用共享即时文字事务；主栏 A2 EndShow 不参与页码计算，其点击回调只向 PPT 业务线程投递一次请求，再沿用确认与 COM 服务调用流程。
+
+## Scenario: COM 事实到 Draw3-ready 页码发布
+
+### 1. Scope / Trigger
+
+当 native 读取 managed 写入的页码、向 Draw3 发布绝对页请求，或把完成状态交给分页 UI 时，必须使用本节。该链路跨越 COM、Draw3 和 UI；修改 native 签名或等待语义时，即使 COM 接口不变，也必须同步更新本节与无窗口测试。
+
+### 2. Signatures
+
+~~~cpp
+bool Inkeys::Drawing::Draw3::PublishProductPage(std::uint32_t page) noexcept;
+HostRuntimeSnapshot Inkeys::Drawing::Draw3::ProductRuntimeSnapshot() noexcept;
+bool Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(
+    std::uint64_t revision, std::uint32_t timeoutMilliseconds) noexcept;
+void Inkeys::UI::Ppt::PublishPageState(
+    int currentPage, int totalPage) noexcept;
+~~~
+
+`PublishProductPage` 的 `page` 是零基绝对页；COM 的 `CurrentPage` 是一基页，调用前必须减一。该 native `bool` 不是 COM ABI：它只表示运行中的 Host 是否已接受该目标（相同 bridge 目标也算幂等成功）。
+
+### 3. Contracts
+
+- 请求前置：`CurrentPage > 0 && TotalPage > 0`；请求值为 `CurrentPage - 1`。
+- `PublishProductPage == false`：Host 正在停止或尚未运行；调用方不得缓存为已发送，下一次不超过 `50ms` 的复核必须重试。
+- `PublishProductPage == true`：目标已写入运行中 Host 的 bridge，或 bridge 已持有完全相同的绝对页；这不等价于 Draw3 已完成页面切换。
+- ready 条件：同一个 runtime snapshot 同时满足 `running` 且 `currentPageIndex == CurrentPage - 1`，此时才把 COM 的当前页/总页数写入 `PptInfoStateBuffer`。
+- observer 只有在 `currentPageIndex` 或 `pageCount` 真实变化时推进 `runtimeRevision`；推进和停止通知必须与等待使用的 mutex 建立条件变量握手，避免丢失唤醒。
+- 等待上限为 `50ms`，用于复核没有 native wait handle 的 COM 事实；revision 变化或 Host 停止应提前唤醒。
+- 放映结束时 `PptInfoStateBuffer` 重置为 `-1/-1`，并清空 `PptImg.IsSave`、`PptImg.IsSaved` 与 `PptImg.Image`；不得把旧演示文稿的 ready 状态或页级墨迹带入下一次放映。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| COM 页码或总页数 `<= 0` | 不发布 Draw3 页请求；ready buffer 保持/重置为未知状态 |
+| Host 未运行或正在停止 | `PublishProductPage` 返回 `false`，本轮不推进 ready buffer，最多 `50ms` 后重试 |
+| Host 已接受但 runtime 页仍不匹配 | 等待 revision 或 `50ms` 上限；UI 继续显示上一个 ready buffer |
+| runtime 页匹配 COM 目标 | 同轮推进 `PptInfoStateBuffer`，再调用 `PublishPageState` |
+| 仅页数变化 | observer 也推进 revision 并唤醒 waiter |
+| Host 停止 | stop 通知唤醒 waiter；调用方重新进入未运行重试路径 |
+| 放映结束 | 发布不可见/未知页，并清空 `PptImg` 三个缓存字段 |
+
+### 5. Good/Base/Bad Cases
+
+- Good：COM 从第 2 页跳到第 8 页，native 发布绝对页 `7`；Draw3 observer 到达 `7` 后推进 revision，等待立即返回并发布 `8/总页数`。
+- Base：COM 页不变，`PublishProductPage` 对同一绝对页幂等成功；runtime 也未变化时最多等待 `50ms` 后复核，不重启动画或提前改 UI。
+- Bad：Host 启动前的请求返回 `false`；不得把它记作已发送。Host 启动后下一轮必须重新发布，否则 UI 会永久停留在旧 ready 页。
+
+### 6. Tests Required
+
+- `draw3_bridge_tests`：断言页索引变化与页数变化各自只推进一次 revision，稳定值不推进；waiter 在 publish 和 stop 时均被唤醒，并以重复并发交接覆盖通知边界。
+- 产品调用点静态检查：两处 Draw3 document/command observer 都调用同一个 `HostRuntimeRevisionSignal::PublishPageChange`。
+- `IdtPlug-in.cpp` 静态检查：没有用于 Draw3 完成等待的固定 `500ms` sleep；页请求失败不会推进 buffer；ready 比较使用同一轮 COM 快照。
+- PageControl/动画测试：数值走 Immediate，旧关键帧被取消且不能在下一帧回写；Arrow/Add 仍走 Animated。
+- 完整 `Debug|ARM64` Solution 构建及 ARM64 `--no-window` 测试通过；真实 PowerPoint/WPS 快速跳页与结束重开留给设备验收。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：COM 一变化就更新 UI，并用固定长睡眠猜测 Draw3 已完成。
+PublishProductPage(currentPage - 1);
+PptInfoStateBuffer.CurrentPage = currentPage;
+Sleep(500);
+
+// Correct：请求可重试；只有 Draw3-ready snapshot 才推进 UI buffer。
+const bool accepted = PublishProductPage(currentPage - 1);
+const auto runtime = ProductRuntimeSnapshot();
+if (accepted && runtime.running
+    && runtime.currentPageIndex == static_cast<std::size_t>(currentPage - 1))
+    PptInfoStateBuffer.CurrentPage = currentPage;
+else
+    (void)WaitForProductRuntimeRevision(runtime.runtimeRevision, 50);
+~~~
+
+`【直接确认】` 这条两阶段发布链没有改变 COM ABI：managed 仍只写既有三个 `int*` 槽，未新增 COM 方法、native wait handle、GUID 或方法顺序。`50ms` 是 native 对无事件 COM 事实的有界复核上限，不能用固定长睡眠替代，也不能绕过 Draw3-ready buffer 追求数字即时显示。
 
 `【直接确认】` UI3 渲染回调与 COM/模态业务之间以队列隔离。新增 PPT UI 命令时，渲染线程只能复制不可变请求数据并入队；不得在共享 UI3 调度线程内直接调用 Office COM、`PptComWriteSetting()` 或结束放映确认，否则任一阻塞都会饿死 Bar 与其余 PPT 窗口。
 

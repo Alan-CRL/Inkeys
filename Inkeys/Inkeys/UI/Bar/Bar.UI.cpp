@@ -709,6 +709,26 @@ bool BarUiWordClass::TransitionToString(const wstring& contentT, optional<double
 			return true;
 		});
 }
+bool BarUiWordClass::SetStringImmediate(const wstring& contentT)
+{
+	return ApplyBarImmediateContentUpdate(contentTransitionTimeline,
+		[&]
+		{
+			return content.GetVal() != contentT || content.GetTar() != contentT;
+		},
+		[&]
+		{
+			// 实时数字必须同时撤销旧中点替换，避免下一帧把旧页码写回来。
+			content.Initialization(contentT);
+			transitionContent.Initialization(contentT);
+			contentScale = 1.0;
+			contentPct = 1.0;
+			contentTransitionStartScale = 1.0;
+			contentTransitionStartPct = 1.0;
+			contentTransitionMiddleScale = 0.8;
+			contentTransitionKeyframeProgress = 0.5;
+		});
+}
 bool BarUiWordClass::AdvanceContentTransition(double dt, double speedRate)
 {
 	struct TransitionSnapshot

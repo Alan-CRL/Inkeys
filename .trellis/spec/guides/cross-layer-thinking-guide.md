@@ -38,6 +38,22 @@ Win32 window message
 
 依据：`WindowController::HandleWindowMessage`、`ConsumeResizeRequest`、`DrawingController::ProcessPendingResize`。
 
+### Owner WndProc to render/presentation thread
+
+- owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；失败的移动消息立即丢弃，下一条基于原始 drag 起点的绝对位移负责追赶。
+- `ReleaseCapture` 会同步重入 `WM_CAPTURECHANGED`。PageControl 的 `WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
+- 透明 presentation margin 与共享圆角背景之外的像素必须继续返回 `HTTRANSPARENT`。PPT 的“非按钮背景可拖动”只覆盖实际背景 shape，不等于整个矩形 HWND 都可接收输入。
+
+依据：`PageControlWindowProc`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
+
+### Event-backed two-stage state publication
+
+- 跨层状态先区分事实源与 ready 状态：COM 页码是外部事实，Draw3 document runtime 是 native ready，`PptInfoStateBuffer` 是 UI 可发布边界；后层不得提前复述前层尚未完成的目标。
+- 外部来源没有 native 事件时使用短且有上限的复核；进入 native runtime 后以单调 revision + condition variable 唤醒，并始终保留 predicate 与超时。事件只减少等待延迟，不能跳过 ready 判定。
+- Host 启停会重置 bridge。发布入口只能在运行实例实际接受请求后报告成功，并对相同绝对状态幂等；调用方周期复核，使重启后自动重发，而不是缓存一个可能在 reset 中丢失的“已发送”标志。
+
+依据：`PptInfo`、`PublishProductPage`、`HostRuntimeRevisionSignal`、`PptInfoStateBuffer`。
+
 ### Model to render points
 
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。

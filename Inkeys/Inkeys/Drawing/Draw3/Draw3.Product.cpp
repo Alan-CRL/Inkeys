@@ -104,16 +104,19 @@ namespace Inkeys::Drawing::Draw3
 		productHost.PublishState(state);
 	}
 
-	void PublishProductPage(std::uint32_t page) noexcept
+	bool PublishProductPage(std::uint32_t page) noexcept
 	{
-		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productStopping.load(std::memory_order_acquire)) return false;
 		std::scoped_lock callLock(productCallMutex);
-		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productStopping.load(std::memory_order_acquire)
+			|| !productHost.Running()) return false;
 		// 页码只覆盖快照中的页面字段，避免 PPT 线程回写陈旧工具状态。
 		Bridge::ProductState state = productHost.ProductBridge().Snapshot();
+		if (state.hasPage && state.page == page) return true;
 		state.page = page;
 		state.hasPage = true;
 		productHost.PublishState(state);
+		return true;
 	}
 
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept

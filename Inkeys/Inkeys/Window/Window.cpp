@@ -1270,7 +1270,8 @@ namespace Inkeys::Window
 		{
 			constexpr WindowRole roles[] = {
 				WindowRole::Drawpad, WindowRole::PptBottomLeft,
-				WindowRole::PptBottomRight, WindowRole::Bar,
+				WindowRole::PptBottomRight, WindowRole::PptMiddleLeft,
+				WindowRole::PptMiddleRight, WindowRole::Bar,
 			};
 			for (const WindowRole role : roles)
 			{

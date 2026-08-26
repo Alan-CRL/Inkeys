@@ -80,14 +80,41 @@ namespace
 		Check(left[0].role == PptWidgetRole::DragHandle
 			&& left[0].dragSource && !left[0].hoverVisual
 			&& !left[0].pressVisual && !left[0].invokesBusinessAction,
-			"drag handle is the only visual-free drag source");
-		Check(!left[1].dragSource && !left[2].dragSource && !left[3].dragSource,
-			"buttons never act as drag sources");
+			"drag handle remains a visual-free immediate drag source");
+		Check(!left[1].dragSource && left[2].dragSource
+			&& !left[3].dragSource && left[2].immediateTextUpdate,
+			"page is draggable with immediate numbers while arrows stay pure buttons");
+		Check(CanStartPptDrag(PptPointerRegion::Background)
+			&& CanStartPptDrag(PptPointerRegion::DragHandle)
+			&& CanStartPptDrag(PptPointerRegion::Page)
+			&& !CanStartPptDrag(PptPointerRegion::Previous)
+			&& !CanStartPptDrag(PptPointerRegion::Next)
+			&& StartsPptDragImmediately(PptPointerRegion::DragHandle)
+			&& !StartsPptDragImmediately(PptPointerRegion::Page),
+			"PPT drag routing includes background and page but excludes arrows");
+		Check(ShouldAcceptPageControlClientHit(
+			WorkspaceMode::PptCompact, true, false)
+			&& !ShouldAcceptPageControlClientHit(
+				WorkspaceMode::PptCompact, false, false)
+			&& ShouldAcceptPageControlClientHit(
+				WorkspaceMode::WhiteboardExpanded, true, true)
+			&& !ShouldAcceptPageControlClientHit(
+				WorkspaceMode::WhiteboardExpanded, true, false),
+			"transparent rounded corners pass through while PPT background remains draggable");
+		constexpr POINT dragStart{ 100, 100 };
+		Check(!HasExceededPptDragThreshold(
+			dragStart, POINT{ 103, 102 }, 8, 6)
+			&& HasExceededPptDragThreshold(
+				dragStart, POINT{ 104, 102 }, 8, 6)
+			&& HasExceededPptDragThreshold(
+				dragStart, POINT{ 100, 103 }, 8, 6),
+			"page press converts to drag only after the centered system threshold");
 		Check(!left[1].displaysText && !left[3].displaysText
 			&& left[1].invokesBusinessAction && left[3].invokesBusinessAction,
 			"compact arrows contain no labels and keep page actions");
 		Check(left[2].displaysText && !left[2].invokesBusinessAction
-			&& left[2].primaryTextBold && left[2].secondaryTextNormal,
+			&& left[2].primaryTextBold && left[2].secondaryTextNormal
+			&& left[2].immediateTextUpdate,
 			"page button is a visual no-op with mixed page-number weights");
 		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == 160.0
 			&& right[1].bounds.left == 5.0 && right[0].bounds.right == 160.0,

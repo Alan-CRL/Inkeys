@@ -781,8 +781,6 @@ namespace Inkeys::UI::Bar
 			backgroundShape.frameLightColor =
 				BarUiFrameLightColorEnum::PenWhenDrawing;
 			backgroundShape.framePrimaryLightEnabled = true;
-			backgroundShape.frameCursorLightIntensityScale =
-				BarButtonCursorLightIntensity;
 			backgroundShape.pct.SetDirect((std::clamp)(background.fillOpacity,
 				0.0, 1.0));
 			if (!backgroundShape.framePct.has_value())
@@ -1148,6 +1146,21 @@ namespace Inkeys::UI::Bar
 			}
 			return BarSurfaceNoWidget;
 		}
+
+		[[nodiscard]] bool HitTestBackgroundLocked(POINT localPixels) const noexcept
+		{
+			if (!background.visible || !backgroundShape.enable.val) return false;
+			const double width = static_cast<double>(backgroundShape.w.val);
+			const double height = static_cast<double>(backgroundShape.h.val);
+			const double left = static_cast<double>(backgroundShape.x.val) - width / 2.0;
+			const double top = static_cast<double>(backgroundShape.y.val) - height / 2.0;
+			const double radiusX = backgroundShape.rw.has_value()
+				? static_cast<double>(backgroundShape.rw->val) : 0.0;
+			const double radiusY = backgroundShape.rh.has_value()
+				? static_cast<double>(backgroundShape.rh->val) : 0.0;
+			return BarUiRoundedRectContainsPoint(localPixels.x, localPixels.y,
+				dpiScale, left, top, width, height, radiusX, radiusY);
+		}
 	};
 
 	BarSurfaceScene::BarSurfaceScene()
@@ -1323,6 +1336,7 @@ namespace Inkeys::UI::Bar
 				&& existing->spec.iconResource == spec.iconResource
 				&& existing->spec.primaryText == spec.primaryText
 				&& existing->spec.secondaryText == spec.secondaryText
+				&& existing->spec.textUpdateMode == spec.textUpdateMode
 				&& existing->spec.iconAngle == spec.iconAngle
 				&& existing->spec.iconSizeDip == spec.iconSizeDip
 				&& existing->spec.iconOffsetXDip == spec.iconOffsetXDip
@@ -1501,21 +1515,37 @@ namespace Inkeys::UI::Bar
 					widget->button->icon.angle.SetTar(
 						*widget->spec.iconAngle, durationMilliseconds);
 				if (primaryChanged)
-					(void)widget->button->name.TransitionToString(
-						widget->spec.primaryText, durationMilliseconds);
+				{
+					if (widget->spec.textUpdateMode
+						== BarSurfaceTextUpdateMode::Immediate)
+						(void)widget->button->name.SetStringImmediate(
+							widget->spec.primaryText);
+					else
+						(void)widget->button->name.TransitionToString(
+							widget->spec.primaryText, durationMilliseconds);
+				}
 				if (secondaryChanged)
-					(void)widget->secondary.TransitionToString(
-						widget->spec.secondaryText, durationMilliseconds);
-				const bool keepPrimaryForExit = primaryChanged
-					&& widget->spec.primaryText.empty()
-					&& widget->button->name.enable.val;
+				{
+					if (widget->spec.textUpdateMode
+						== BarSurfaceTextUpdateMode::Immediate)
+						(void)widget->secondary.SetStringImmediate(
+							widget->spec.secondaryText);
+					else
+						(void)widget->secondary.TransitionToString(
+							widget->spec.secondaryText, durationMilliseconds);
+				}
+				const bool keepPrimaryForExit = ShouldKeepBarContentVisibleForExit(
+					widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+					primaryChanged, widget->spec.primaryText.empty(),
+					widget->button->name.enable.val);
 				widget->button->name.enable.val = keepPrimaryForExit
 					|| !widget->spec.primaryText.empty();
 				widget->button->name.enable.tar =
 					widget->button->name.enable.val;
-				const bool keepSecondaryForExit = secondaryChanged
-					&& widget->spec.secondaryText.empty()
-					&& widget->secondary.enable.val;
+				const bool keepSecondaryForExit = ShouldKeepBarContentVisibleForExit(
+					widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+					secondaryChanged, widget->spec.secondaryText.empty(),
+					widget->secondary.enable.val);
 				widget->hasSecondary = keepSecondaryForExit
 					|| !widget->spec.secondaryText.empty();
 				widget->secondary.enable.val = widget->hasSecondary;
@@ -1585,18 +1615,29 @@ namespace Inkeys::UI::Bar
 			widget->spec.secondaryText = std::move(secondaryText);
 			impl_->ApplySharedButtonMetricsLocked(*widget);
 			const double buttonWidth = widget->spec.bounds.Width();
-			widget->button->name.x.SetTar(widget->spec.primaryOffsetXDip,
-				BarUiDefaultOperationDur);
-			widget->button->name.w.SetTar(
-				widget->spec.primarySlotWidthDip > 0.0
-					? widget->spec.primarySlotWidthDip : buttonWidth,
-				BarUiDefaultOperationDur);
-			widget->secondary.x.SetTar(widget->spec.secondaryOffsetXDip,
-				BarUiDefaultOperationDur);
-			widget->secondary.w.SetTar(
-				widget->spec.secondarySlotWidthDip > 0.0
-					? widget->spec.secondarySlotWidthDip : buttonWidth,
-				BarUiDefaultOperationDur);
+			const double primaryWidth = widget->spec.primarySlotWidthDip > 0.0
+				? widget->spec.primarySlotWidthDip : buttonWidth;
+			const double secondaryWidth = widget->spec.secondarySlotWidthDip > 0.0
+				? widget->spec.secondarySlotWidthDip : buttonWidth;
+			if (widget->spec.textUpdateMode
+				== BarSurfaceTextUpdateMode::Immediate)
+			{
+				widget->button->name.x.SetDirect(widget->spec.primaryOffsetXDip);
+				widget->button->name.w.SetDirect(primaryWidth);
+				widget->secondary.x.SetDirect(widget->spec.secondaryOffsetXDip);
+				widget->secondary.w.SetDirect(secondaryWidth);
+			}
+			else
+			{
+				widget->button->name.x.SetTar(widget->spec.primaryOffsetXDip,
+					BarUiDefaultOperationDur);
+				widget->button->name.w.SetTar(primaryWidth,
+					BarUiDefaultOperationDur);
+				widget->secondary.x.SetTar(widget->spec.secondaryOffsetXDip,
+					BarUiDefaultOperationDur);
+				widget->secondary.w.SetTar(secondaryWidth,
+					BarUiDefaultOperationDur);
+			}
 			if (iconChanged)
 			{
 				widget->spec.iconResource = std::move(*iconResource);
@@ -1616,11 +1657,19 @@ namespace Inkeys::UI::Bar
 					BarUiDefaultOperationDur);
 			}
 			if (primaryTextChanged)
-				(void)widget->button->name.TransitionToString(
-					widget->spec.primaryText);
-			const bool keepPrimaryForExit = primaryTextChanged
-				&& widget->spec.primaryText.empty()
-				&& widget->button->name.enable.val;
+			{
+				if (widget->spec.textUpdateMode
+					== BarSurfaceTextUpdateMode::Immediate)
+					(void)widget->button->name.SetStringImmediate(
+						widget->spec.primaryText);
+				else
+					(void)widget->button->name.TransitionToString(
+						widget->spec.primaryText);
+			}
+			const bool keepPrimaryForExit = ShouldKeepBarContentVisibleForExit(
+				widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+				primaryTextChanged, widget->spec.primaryText.empty(),
+				widget->button->name.enable.val);
 			widget->button->name.enable.val = keepPrimaryForExit
 				|| !widget->spec.primaryText.empty();
 			widget->button->name.enable.tar = widget->button->name.enable.val;
@@ -1628,16 +1677,24 @@ namespace Inkeys::UI::Bar
 			widget->button->hide = !visible;
 			widget->button->button.enable.val = visible;
 			widget->button->button.enable.tar = visible;
-			const bool keepSecondaryForExit = secondaryTextChanged
-				&& widget->spec.secondaryText.empty()
-				&& widget->secondary.enable.val;
+			const bool keepSecondaryForExit = ShouldKeepBarContentVisibleForExit(
+				widget->spec.textUpdateMode == BarSurfaceTextUpdateMode::Animated,
+				secondaryTextChanged, widget->spec.secondaryText.empty(),
+				widget->secondary.enable.val);
 			widget->hasSecondary = keepSecondaryForExit
 				|| !widget->spec.secondaryText.empty();
 			if (widget->hasSecondary)
 			{
 				if (secondaryTextChanged)
-					(void)widget->secondary.TransitionToString(
-						widget->spec.secondaryText);
+				{
+					if (widget->spec.textUpdateMode
+						== BarSurfaceTextUpdateMode::Immediate)
+						(void)widget->secondary.SetStringImmediate(
+							widget->spec.secondaryText);
+					else
+						(void)widget->secondary.TransitionToString(
+							widget->spec.secondaryText);
+				}
 				widget->secondary.enable.val = true;
 				widget->secondary.enable.tar = true;
 			}
@@ -2001,6 +2058,12 @@ namespace Inkeys::UI::Bar
 	{
 		std::lock_guard lock(impl_->mutex);
 		return impl_->LogicalPointFromPresentation(presentationLocalPixels);
+	}
+
+	bool BarSurfaceScene::HitTestBackground(POINT localPixels) const noexcept
+	{
+		std::lock_guard lock(impl_->mutex);
+		return impl_->HitTestBackgroundLocked(localPixels);
 	}
 
 	BarSurfaceWidgetId BarSurfaceScene::HitTest(POINT localPixels) const noexcept

@@ -76,3 +76,12 @@
 - [x] 删除 Surface 本地第三光源 prepare/reset，将 Main Bar 的最终 cursor 坐标、半径、强度和可见性纳入共享光源快照。
 - [x] 四个 PageControl HWND 加入 Main Bar 唯一接收窗口和可见区域集合；真实鼠标进入/离开通知既有 `Dormant/Inside/Grace`，成功窗口提交才发布边界。
 - [x] 增加非零父原点与屏幕光源映射 headless 回归；重新通过完整 `Debug|ARM64` Solution 构建和 ARM64 `--no-window`。
+
+## 8. 第二轮设备验收修正
+
+- [x] 删除分页背景对 `BarButtonCursorLightIntensity` 的误用，使 PageControl 外框和 Main Bar 外框保持相同第三光源强度比例。
+- [x] 恢复 PPT DragHandle、Page 和非箭头背景的成对拖动；Previous/Next 保持纯按钮，Page 在越过系统 drag threshold 后取消 press 并转为拖动，Whiteboard 输入不变。
+- [x] owner WndProc 对 `presentationMutex` 只允许 `try_lock`；失败的移动消息可丢弃并由下一条绝对位移追赶，禁止与同步 Window Service 提交形成等待环。
+- [x] 为 Page 数值启用共享 Scene 即时内容策略，取消旧 transition 并同帧更新字符串/测量槽；Arrow/Add SVG 与标签仍走共享转换。
+- [x] 将 PPT 页状态发布改为 COM 最多 `50ms` 有界检查 + Draw3 `runtimeRevision` 事件等待；revision publish/stop notify 与 waiter 使用同一 mutex 建立握手，保持 `PptInfoStateBuffer` 和 COM ABI 不变。
+- [x] 补齐背景强度、拖动分类/阈值、即时文字和 Draw3 runtime revision 回归；再次通过 `git diff --check`、ARM64 完整构建和 `--no-window`。

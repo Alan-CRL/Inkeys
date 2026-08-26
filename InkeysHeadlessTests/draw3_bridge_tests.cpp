@@ -1,9 +1,13 @@
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TimerPeriod.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <thread>
 
 namespace
 {
@@ -241,6 +245,79 @@ namespace
 			DrawpadPresentationSurface::Primary,
 			"drawing mode uses the primary surface")) ++failures;
 	}
+
+	void TestPageRuntimeRevisionPolicy(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
+		HostRuntimeRevisionSignal signal;
+		std::atomic_bool running = true;
+		const std::uint64_t initialRevision = signal.Revision();
+		if (!Expect(!signal.PublishPageChange(2, 8, 2, 8)
+			&& signal.Revision() == initialRevision
+			&& !signal.WaitForChange(initialRevision, 1, running),
+			"stable page runtime neither publishes nor wakes")) ++failures;
+
+		std::atomic_bool pageWaitCompleted = false;
+		std::jthread pageWaiter([&]
+			{
+				pageWaitCompleted.store(signal.WaitForChange(
+					initialRevision, 1000, running), std::memory_order_release);
+			});
+		const bool pagePublished = signal.PublishPageChange(2, 8, 3, 8);
+		pageWaiter.join();
+		const std::uint64_t pageRevision = signal.Revision();
+		if (!Expect(pagePublished && pageRevision != initialRevision
+			&& pageWaitCompleted.load(std::memory_order_acquire),
+			"page index change publishes revision and wakes waiter")) ++failures;
+
+		std::atomic_bool countWaitCompleted = false;
+		std::jthread countWaiter([&]
+			{
+				countWaitCompleted.store(signal.WaitForChange(
+					pageRevision, 1000, running), std::memory_order_release);
+			});
+		const bool countPublished = signal.PublishPageChange(3, 8, 3, 9);
+		countWaiter.join();
+		if (!Expect(countPublished && signal.Revision() != pageRevision
+			&& countWaitCompleted.load(std::memory_order_acquire),
+			"page count change publishes revision and wakes waiter")) ++failures;
+
+		bool repeatedWakePrompt = true;
+		for (int iteration = 0; iteration < 64 && repeatedWakePrompt; ++iteration)
+		{
+			const std::uint64_t revision = signal.Revision();
+			std::atomic_bool waitEntered = false;
+			std::atomic_bool waitCompleted = false;
+			std::jthread waiter([&]
+				{
+					waitEntered.store(true, std::memory_order_release);
+					waitCompleted.store(signal.WaitForChange(
+						revision, 1000, running), std::memory_order_release);
+				});
+			while (!waitEntered.load(std::memory_order_acquire)) std::this_thread::yield();
+			const auto publishedAt = std::chrono::steady_clock::now();
+			signal.Publish();
+			waiter.join();
+			repeatedWakePrompt = waitCompleted.load(std::memory_order_acquire)
+				&& std::chrono::steady_clock::now() - publishedAt
+				< std::chrono::milliseconds(750);
+		}
+		if (!Expect(repeatedWakePrompt,
+			"repeated revision handoff cannot lose the condition-variable wake")) ++failures;
+
+		const std::uint64_t stopRevision = signal.Revision();
+		std::atomic_bool stopWaitCompleted = false;
+		std::jthread stopWaiter([&]
+			{
+				stopWaitCompleted.store(signal.WaitForChange(
+					stopRevision, 1000, running), std::memory_order_release);
+			});
+		running.store(false, std::memory_order_release);
+		signal.NotifyAll();
+		stopWaiter.join();
+		if (!Expect(stopWaitCompleted.load(std::memory_order_acquire),
+			"host stop notification releases runtime waiter")) ++failures;
+	}
 }
 
 int RunDraw3BridgeTests()
@@ -252,5 +329,6 @@ int RunDraw3BridgeTests()
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
 	TestDrawpadPresentationPlan(failures);
+	TestPageRuntimeRevisionPolicy(failures);
 	return failures;
 }

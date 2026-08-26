@@ -73,6 +73,8 @@ namespace
 	condition_variable pptUiBusinessCondition;
 	deque<PptUiBusinessRequest> pptUiBusinessCommands;
 	atomic_bool pptUiPageCommandOutstanding = false;
+	constexpr auto PptPageStateCheckInterval = chrono::milliseconds(50);
+	constexpr auto PptVisibilityPublishInterval = chrono::milliseconds(500);
 
 	void QueuePptUiBusinessCommand(PptUiBusinessCommand command)
 	{
@@ -454,11 +456,37 @@ void PptInfo()
 	bool Initialization = false; // 控件初始化完毕
 	int publishedCurrentPage = -2;
 	int publishedTotalPage = -2;
-	int requestedDraw3Page = -2;
+	int publishedPresentationVisible = -1;
+	auto nextVisibilityPublication = chrono::steady_clock::time_point::min();
+	auto PublishPresentationVisibility = [&](bool visible)
+		{
+			const auto now = chrono::steady_clock::now();
+			const int encoded = visible ? 1 : 0;
+			if (publishedPresentationVisible == encoded
+				&& now < nextVisibilityPublication) return;
+			publishedPresentationVisible = encoded;
+			nextVisibilityPublication = now + PptVisibilityPublishInterval;
+			Inkeys::UI::Ppt::PublishPresentationVisible(visible);
+		};
+	auto WaitForPageStateProgress = []
+		{
+			const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+			if (runtime.running)
+			{
+				(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(
+					runtime.runtimeRevision,
+					static_cast<std::uint32_t>(PptPageStateCheckInterval.count()));
+			}
+			else
+				this_thread::sleep_for(PptPageStateCheckInterval);
+		};
 	for (; !offSignal;)
 	{
+		// COM 事件直接写共享状态；单轮使用一致快照，最迟 50ms 再复核。
+		const int observedCurrentPage = PptInfoState.CurrentPage;
+		const int observedTotalPage = PptInfoState.TotalPage;
 		// Ppt 信息监测 | 控件信息加载
-		if (!Initialization && PptInfoState.TotalPage != -1)
+		if (!Initialization && observedTotalPage != -1)
 		{
 			pptTakeoverConsumedInCurrentShow = false;
 
@@ -478,7 +506,7 @@ void PptInfo()
 			if (!ppt_title_recond[ppt_title] && pptComSetlist.showLoadingScreen) FreezePPT = true;
 			Initialization = true;
 		}
-		else if (Initialization && PptInfoState.TotalPage == -1)
+		else if (Initialization && observedTotalPage == -1)
 		{
 			pptTakeoverConsumedInCurrentShow = false;
 
@@ -496,11 +524,10 @@ void PptInfo()
 
 			FreezePPT = false;
 			Initialization = false;
-			requestedDraw3Page = -2;
 			PptInfoStateBuffer.CurrentPage = -1;
 			PptInfoStateBuffer.TotalPage = -1;
 		}
-		else if (Initialization && PptInfoState.TotalPage != -1
+		else if (Initialization && observedTotalPage != -1
 			&& !WhiteboardTransactionActive()
 			&& config.PlugIn.PPTHelper.AutoTakeOver
 			&& !pptTakeoverConsumedInCurrentShow)
@@ -525,41 +552,35 @@ void PptInfo()
 		if (WhiteboardTransactionActive())
 		{
 			// 白板页码完全独立；隐藏 PPT 控件并强制退出后重新发布 COM 当前页。
-			requestedDraw3Page = -2;
 			publishedCurrentPage = -2;
 			publishedTotalPage = -2;
-			Inkeys::UI::Ppt::PublishPresentationVisible(false);
-			this_thread::sleep_for(chrono::milliseconds(500));
+			PublishPresentationVisibility(false);
+			WaitForPageStateProgress();
 			continue;
 		}
 
-		if (PptInfoState.CurrentPage > 0 && PptInfoState.TotalPage > 0)
+		if (observedCurrentPage > 0 && observedTotalPage > 0)
 		{
-			if (requestedDraw3Page != PptInfoState.CurrentPage)
-			{
-				// COM 页码是唯一事实源，Draw3 只接收零基绝对页码，避免双重相对翻页。
-				Inkeys::Drawing::Draw3::PublishProductPage(
-					static_cast<std::uint32_t>(PptInfoState.CurrentPage - 1));
-				requestedDraw3Page = PptInfoState.CurrentPage;
-			}
+			// Host 重启会清空 bridge；每轮幂等复核，且仅运行中的 Host 接受请求。
+			const bool pageRequested = Inkeys::Drawing::Draw3::PublishProductPage(
+				static_cast<std::uint32_t>(observedCurrentPage - 1));
 			const auto draw3Snapshot = Inkeys::Drawing::Draw3::ProductHost().RuntimeSnapshot();
-			if (draw3Snapshot.running &&
+			if (pageRequested && draw3Snapshot.running &&
 				draw3Snapshot.currentPageIndex ==
-					static_cast<std::size_t>(PptInfoState.CurrentPage - 1))
+					static_cast<std::size_t>(observedCurrentPage - 1))
 			{
 				// UI 页码只反映 Draw3 文档已经完成的页面切换。
-				PptInfoStateBuffer.CurrentPage = PptInfoState.CurrentPage;
-				PptInfoStateBuffer.TotalPage = PptInfoState.TotalPage;
+				PptInfoStateBuffer.CurrentPage = observedCurrentPage;
+				PptInfoStateBuffer.TotalPage = observedTotalPage;
 			}
 		}
 		else
 		{
-			requestedDraw3Page = -2;
 			PptInfoStateBuffer.CurrentPage = -1;
 			PptInfoStateBuffer.TotalPage = -1;
 		}
 
-		Inkeys::UI::Ppt::PublishPresentationVisible(Initialization);
+		PublishPresentationVisibility(Initialization);
 		// 只发布画板已经完成换页后的缓冲页码，不能直接使用 COM 写入值。
 		if (publishedCurrentPage != PptInfoStateBuffer.CurrentPage ||
 			publishedTotalPage != PptInfoStateBuffer.TotalPage)
@@ -570,7 +591,8 @@ void PptInfo()
 				publishedCurrentPage, publishedTotalPage);
 		}
 
-		this_thread::sleep_for(chrono::milliseconds(500));
+		// Draw3 完成页切换会立即唤醒；50ms 仅用于没有 native 事件的 COM 状态复核。
+		WaitForPageStateProgress();
 	}
 }
 void PPTLinkageMain()

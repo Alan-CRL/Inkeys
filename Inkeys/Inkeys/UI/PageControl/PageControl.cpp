@@ -51,6 +51,15 @@ namespace Inkeys::UI::PageControl
 		constexpr WidgetId PreviousWidget = 2;
 		constexpr WidgetId PageWidget = 3;
 		constexpr WidgetId NextWidget = 4;
+		[[nodiscard]] constexpr PptPointerRegion PointerRegionForWidget(
+			WidgetId widget) noexcept
+		{
+			if (widget == DragWidget) return PptPointerRegion::DragHandle;
+			if (widget == PreviousWidget) return PptPointerRegion::Previous;
+			if (widget == PageWidget) return PptPointerRegion::Page;
+			if (widget == NextWidget) return PptPointerRegion::Next;
+			return PptPointerRegion::Background;
+		}
 		[[nodiscard]] double LayoutTransitionDurationSeconds() noexcept
 		{
 			return BarButtonDefaultOperationDurationSeconds;
@@ -111,6 +120,7 @@ namespace Inkeys::UI::PageControl
 			bool inputLocked = true;
 			bool borderCursorPointerInside = false;
 			bool dragging = false;
+			bool dragPending = false;
 			bool repeatTriggered = false;
 			bool pressedNext = false;
 			DWORD touchId = 0;
@@ -317,6 +327,8 @@ namespace Inkeys::UI::PageControl
 
 			auto& page = widgets[2];
 			page.id = PageWidget;
+			page.textUpdateMode =
+				Inkeys::UI::Bar::BarSurfaceTextUpdateMode::Immediate;
 			page.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
 				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo
 				: (index >= 2
@@ -897,7 +909,10 @@ namespace Inkeys::UI::PageControl
 			}
 			if (translations[0].x == 0 && translations[0].y == 0
 				&& translations[1].x == 0 && translations[1].y == 0) return;
-			std::scoped_lock presentationLock(presentationMutex);
+			// 渲染线程可能持锁同步等待当前 owner；WndProc 只能尝试，不能形成等待环。
+			std::unique_lock presentationLock(
+				presentationMutex, std::try_to_lock);
+			if (!presentationLock.owns_lock()) return;
 			if (!MovePairWindowsDirect(pair, translations)) return;
 			state.feasibleLayout = candidate;
 			{
@@ -1186,9 +1201,14 @@ namespace Inkeys::UI::PageControl
 				GetWindowRect(hwnd, &window);
 				const POINT local{ GET_X_LPARAM(lParam) - window.left,
 					GET_Y_LPARAM(lParam) - window.top };
-				return state.scene.HitTestPresentation(local)
-					== Inkeys::UI::Bar::BarSurfaceNoWidget
-					? HTTRANSPARENT : HTCLIENT;
+				const auto logical = state.scene.PresentationToLogical(local);
+				if (!logical.has_value()) return HTTRANSPARENT;
+				const bool backgroundHit = state.scene.HitTestBackground(*logical);
+				const bool widgetHit = state.scene.HitTest(*logical)
+					!= Inkeys::UI::Bar::BarSurfaceNoWidget;
+				// PPT 外框空白也属于拖动面；Whiteboard 仍只接收真实按钮。
+				return ShouldAcceptPageControlClientHit(state.configuredMode,
+					backgroundHit, widgetHit) ? HTCLIENT : HTTRANSPARENT;
 			}
 			if (message == WM_MOUSEMOVE)
 			{
@@ -1206,11 +1226,21 @@ namespace Inkeys::UI::PageControl
 					state.borderCursorPointerInside = true;
 					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerEntered();
 				}
+				if (state.dragPending && HasExceededPptDragThreshold(
+					state.dragStartScreen, screen, GetSystemMetrics(SM_CXDRAG),
+					GetSystemMetrics(SM_CYDRAG)))
+				{
+					state.dragPending = false;
+					state.dragging = true;
+					// Page 的标准 press 到阈值为止；转拖动时必须撤销而不是触发点击。
+					state.scene.CancelPointer();
+				}
 				if (state.dragging)
 				{
 					UpdateDrag(index, screen);
 					return 0;
 				}
+				if (state.dragPending) return 0;
 				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 				if (const auto logical = state.scene.PresentationToLogical(local))
 					state.scene.PointerMove(*logical);
@@ -1237,12 +1267,21 @@ namespace Inkeys::UI::PageControl
 				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 				const auto logical = state.scene.PresentationToLogical(local);
 				if (!logical.has_value()) return 0;
-				const auto result = state.scene.PointerDown(*logical);
-				if (!result.consumed) return 0;
+				const auto hit = state.scene.HitTest(*logical);
+				const auto region = PointerRegionForWidget(hit);
+				const auto inputPolicy = ResolveWorkspaceInputPolicy(
+					state.configuredMode);
+				const bool dragCandidate = inputPolicy.drag
+					&& CanStartPptDrag(region);
+				const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoWidget
+					? Inkeys::UI::Bar::BarSurfacePointerResult{}
+					: state.scene.PointerDown(*logical);
+				if (!result.consumed && !dragCandidate) return 0;
 				SetCapture(hwnd);
-				if (result.pressed == DragWidget)
+				if (dragCandidate)
 				{
-					state.dragging = true;
+					state.dragging = StartsPptDragImmediately(region);
+					state.dragPending = !state.dragging;
 					state.dragStartScreen = local;
 					ClientToScreen(hwnd, &state.dragStartScreen);
 					auto [ppt, whiteboard] = Snapshot();
@@ -1297,6 +1336,7 @@ namespace Inkeys::UI::PageControl
 						dragEnded = true;
 					}
 					state.dragging = false;
+					state.dragPending = false;
 					state.pressStarted = {};
 					state.repeatTriggered = false;
 				}
@@ -1328,13 +1368,18 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
 			{
-				std::unique_lock renderLock(renderTransactionMutex);
-				state.scene.CancelPointer();
-				state.dragging = false;
-				state.pressStarted = {};
-				state.repeatTriggered = false;
-				state.touchActive = false;
-				state.touchId = 0;
+				{
+					std::unique_lock renderLock(renderTransactionMutex);
+					state.scene.CancelPointer();
+					state.dragging = false;
+					state.dragPending = false;
+					state.pressStarted = {};
+					state.repeatTriggered = false;
+					state.touchActive = false;
+					state.touchId = 0;
+				}
+				// ReleaseCapture 会同步重入 WM_CAPTURECHANGED，必须在呈现锁外执行。
+				if (message == WM_CANCELMODE && GetCapture() == hwnd) ReleaseCapture();
 				return 0;
 			}
 			if (message == WM_ERASEBKGND) return 1;
@@ -1503,6 +1548,7 @@ namespace Inkeys::UI::PageControl
 		{
 			surface.scene.CancelPointer();
 			surface.dragging = false;
+			surface.dragPending = false;
 			surface.pressStarted = {};
 			surface.repeatTriggered = false;
 			surface.touchActive = false;

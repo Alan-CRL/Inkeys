@@ -52,6 +52,14 @@ export namespace Inkeys::UI::PageControl
 		return {};
 	}
 
+	[[nodiscard]] constexpr bool ShouldAcceptPageControlClientHit(
+		WorkspaceMode mode, bool backgroundHit, bool widgetHit) noexcept
+	{
+		if (!backgroundHit) return false;
+		const auto policy = ResolveWorkspaceInputPolicy(mode);
+		return policy.drag || (policy.click && widgetHit);
+	}
+
 	struct DirectionContentPolicy
 	{
 		std::wstring_view icon;
@@ -87,6 +95,45 @@ export namespace Inkeys::UI::PageControl
 		Next,
 	};
 
+	enum class PptPointerRegion : std::uint8_t
+	{
+		Background,
+		DragHandle,
+		Previous,
+		Page,
+		Next,
+	};
+
+	[[nodiscard]] constexpr bool CanStartPptDrag(
+		PptPointerRegion region) noexcept
+	{
+		return region == PptPointerRegion::Background
+			|| region == PptPointerRegion::DragHandle
+			|| region == PptPointerRegion::Page;
+	}
+
+	[[nodiscard]] constexpr bool StartsPptDragImmediately(
+		PptPointerRegion region) noexcept
+	{
+		return region == PptPointerRegion::DragHandle;
+	}
+
+	[[nodiscard]] constexpr bool HasExceededPptDragThreshold(
+		POINT start, POINT current, int thresholdWidth,
+		int thresholdHeight) noexcept
+	{
+		const long long dx = current.x >= start.x
+			? static_cast<long long>(current.x) - start.x
+			: static_cast<long long>(start.x) - current.x;
+		const long long dy = current.y >= start.y
+			? static_cast<long long>(current.y) - start.y
+			: static_cast<long long>(start.y) - current.y;
+		const long long width = (std::max)(1, thresholdWidth);
+		const long long height = (std::max)(1, thresholdHeight);
+		// SM_CXDRAG/SM_CYDRAG 描述以按下点为中心的矩形，越过半宽即开始拖动。
+		return dx * 2 >= width || dy * 2 >= height;
+	}
+
 	struct DipRect
 	{
 		double left = 0.0;
@@ -102,6 +149,7 @@ export namespace Inkeys::UI::PageControl
 		bool displaysText = false;
 		bool invokesBusinessAction = false;
 		bool dragSource = false;
+		bool immediateTextUpdate = false;
 		bool hoverVisual = true;
 		bool pressVisual = true;
 		bool primaryTextBold = false;
@@ -141,13 +189,13 @@ export namespace Inkeys::UI::PageControl
 		}
 		return {
 			PptWidgetContract{ PptWidgetRole::DragHandle, drag,
-				false, false, true, false, false, false, false },
+				false, false, true, false, false, false, false, false },
 			PptWidgetContract{ PptWidgetRole::Previous, previous,
-				false, true, false, true, true, false, false },
+				false, true, false, false, true, true, false, false },
 			PptWidgetContract{ PptWidgetRole::Page, page,
-				true, false, false, true, true, true, true },
+				true, false, true, true, true, true, true, true },
 			PptWidgetContract{ PptWidgetRole::Next, next,
-				false, true, false, true, true, false, false },
+				false, true, false, false, true, true, false, false },
 		};
 	}
 

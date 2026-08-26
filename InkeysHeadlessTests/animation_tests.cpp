@@ -938,6 +938,37 @@ namespace
 			});
 		Check(!oldGenerationCurrent, "cancel rejects the prior generation");
 
+		BarUiKeyframeTimelineClass immediateTimeline;
+		immediateTimeline.Start(1.0, 0.5);
+		std::wstring currentImmediate = L"old";
+		std::wstring targetImmediate = L"old";
+		std::wstring pendingImmediate = L"stale";
+		double immediateScale = 0.8;
+		double immediateOpacity = 0.4;
+		const bool immediateChanged = ApplyBarImmediateContentUpdate(
+			immediateTimeline,
+			[&]
+			{
+				return currentImmediate != L"fresh"
+					|| targetImmediate != L"fresh";
+			},
+			[&]
+			{
+				currentImmediate = targetImmediate = pendingImmediate = L"fresh";
+				immediateScale = 1.0;
+				immediateOpacity = 1.0;
+			});
+		const auto cancelledAdvance = immediateTimeline.Advance(1.0, 1.0);
+		Check(immediateChanged && !immediateTimeline.IsActive()
+			&& !cancelledAdvance.reachedKeyframe
+			&& currentImmediate == L"fresh" && targetImmediate == L"fresh"
+			&& pendingImmediate == L"fresh" && Near(immediateScale, 1.0)
+			&& Near(immediateOpacity, 1.0),
+			"immediate content cancels stale keyframe without a late rewrite");
+		Check(ShouldKeepBarContentVisibleForExit(true, true, true, true)
+			&& !ShouldKeepBarContentVisibleForExit(false, true, true, true),
+			"only animated empty content remains visible for its exit transition");
+
 		std::wstring requestedTarget = L"old";
 		uint64_t requestedGeneration = 0;
 		auto TransitionTo = [&](const std::wstring& target)

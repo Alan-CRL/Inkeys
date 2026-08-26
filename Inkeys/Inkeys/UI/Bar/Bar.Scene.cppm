@@ -48,6 +48,12 @@ export namespace Inkeys::UI::Bar
 		DragHandle,
 	};
 
+	enum class BarSurfaceTextUpdateMode : std::uint8_t
+	{
+		Animated,
+		Immediate,
+	};
+
 	struct BarSurfaceWidgetSpec
 	{
 		BarSurfaceWidgetId id = BarSurfaceNoWidget;
@@ -63,6 +69,8 @@ export namespace Inkeys::UI::Bar
 		std::wstring iconResource;
 		std::wstring primaryText;
 		std::wstring secondaryText;
+		BarSurfaceTextUpdateMode textUpdateMode =
+			BarSurfaceTextUpdateMode::Animated;
 		std::optional<double> iconAngle;
 		double iconSizeDip = BarButtonTwoTwoIconSizeDip;
 		double iconOffsetXDip = 0.0;
@@ -221,6 +229,8 @@ export namespace Inkeys::UI::Bar
 		// 由 HWND 局部坐标转为逻辑内容坐标；透明 presentation margin 返回 nullopt。
 		[[nodiscard]] std::optional<POINT> PresentationToLogical(
 			POINT presentationLocalPixels) const noexcept;
+		// 与背景实际绘制使用同一动画圆角，透明 margin/圆角像素不参与命中。
+		[[nodiscard]] bool HitTestBackground(POINT localPixels) const noexcept;
 		[[nodiscard]] BarSurfaceWidgetId HitTest(POINT localPixels) const noexcept;
 		[[nodiscard]] BarSurfaceWidgetId HitTestPresentation(
 			POINT presentationLocalPixels) const noexcept;

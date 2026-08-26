@@ -74,11 +74,11 @@ PageControl 可以决定四个控件在 surface 内的顺序、横/竖方向、�
 
 Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只存在于真实按钮之间，因此长边保持 `165 DIP`。背景外框由子控件联合目标加主栏内边距得到；紧凑/展开外框直接读取 `BarMainBarCornerRadiusDip`，按钮直接读取 `BarButtonCornerRadiusDip`，边框/内边距也使用主栏单一来源（当前为 `8/4/1/5 DIP`）。Background 与三个按钮共享一个 `BarUiTimelineClass`/批次上下文，PageControl 不复制这些数值。
 
-第一/第三光源都由 Main Bar 发布最终屏幕像素快照。四个 PageControl HWND 只在真实鼠标进入/离开时通知主栏唯一 `Dormant/Inside/Grace` 状态机，并在成功窗口提交后发布可见屏幕边界；Raw Input、5 秒 timer、半径和生命周期强度均不在 Surface 内重建。
+第一/第三光源都由 Main Bar 发布最终屏幕像素快照。四个 PageControl HWND 只在真实鼠标进入/离开时通知主栏唯一 `Dormant/Inside/Grace` 状态机，并在成功窗口提交后发布可见屏幕边界；Raw Input、5 秒 timer、半径和生命周期强度均不在 Surface 内重建。分页外框与 Main Bar 外框都保留背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`；只有真实按钮使用 `BarButtonCursorLightIntensity`，PageControl 不增加亮度补偿常量。
 
 ## 页码与 SVG 内容
 
-- Page 保持同一实例。PPT 横向使用一个测量后的混合字重行；PPT 竖向使用上下两行；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 未知值保留 `-`/`/-`，Bottom/Middle 分别保留 `9999/999` 显示上限。内容布局策略只能提供 text run、字重和槽类型，不能设置分页专用绝对偏移。
+- Page 保持同一实例。PPT 横向使用一个测量后的混合字重行；PPT 竖向使用上下两行；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 未知值保留 `-`/`/-`，Bottom/Middle 分别保留 `9999/999` 显示上限。内容布局策略只能提供 text run、字重和槽类型，不能设置分页专用绝对偏移。Page 的主/次数字文字采用共享 Scene 的即时内容策略：取消旧文字转换、同帧替换字符串并直接应用重新测量后的槽位；该策略不改变 Arrow/Add SVG 和语义标签的共享转换动画。
 - Previous/Next 的 Arrow 统一保留同一 `barMore` SVG 对象；工作区切换只改变现有对象的尺寸、位置、角度和标签透明度，不调用资源替换。
 - Whiteboard Next 的语义确实在 Arrow/Add 间变化时，才调用同一个按钮的内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”。几何与内容共享批次并行推进；事务锁存保证未变化语义不重启。
 
@@ -88,13 +88,13 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 | --- | --- | --- |
 | 普通 click/tap 与标准 hover/press | 是 | 是 |
 | Page 业务动作 | no-op | no-op |
-| DragHandle 成对拖动 | 是，仅 DragHandle | 否 |
+| 成对拖动 | 是，DragHandle、Page 与非箭头背景 | 否 |
 | 长按连续翻页 | 是 | 否 |
 | 滚轮翻页 | 是 | 否 |
 | 位置/缩放与持久化 | 是 | 否 |
 | 翻页事务只锁 interactive | 不适用既有 PPT 命令门禁 | 是，视觉保持稳定 |
 
-PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragHandle 命中优先，其他区域委托共享 Bar 命中/指针入口。Whiteboard 不构造 DragHandle hit region。键盘闪按只对当前可见、可交互的 PPT Arrow 调用共享 pressed 入口。
+PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragHandle 命中优先，Previous/Next 始终委托共享 Bar 按钮入口且不得发起拖动。Page 和非箭头背景建立 drag candidate：Page 先显示共享 press，指针越过 `SM_CXDRAG/SM_CYDRAG` 对应阈值后取消按钮 capture 并进入成对拖动；未越过阈值的 Page 抬起保持 no-op。Whiteboard 不构造 DragHandle 或 drag candidate。键盘闪按只对当前可见、可交互的 PPT Arrow 调用共享 pressed 入口。
 
 ## 工作区动画与窗口提交
 
@@ -106,6 +106,12 @@ PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragH
 - Reverse：布局、屏幕位置、DragHandle、SVG/文字全部从当前动画值重新定向；共享 HWND 不经过隐藏 owner。
 
 PageControl 仍负责 stable backing capacity、logical/presentation 坐标、ULW 提交和窗口 revision；共享 Bar 运行时只返回视觉状态、damage 与 animation-active，不直接调用 Window Service。
+
+owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可能同步等待 Window Service owner 执行 `SetBounds/Show/Hide`。拖动直移只能 `try_lock` 呈现锁，失败时跳过本条 `WM_MOUSEMOVE`，下一条消息仍按原始 drag 起点计算最新候选；成功直移后递增 `directMoveRevision`，使过期渲染提交返回 `Retry`。Scene/D2D 状态仍由 `renderTransactionMutex` 保护，业务回调继续在该锁外执行。Window Service 的 cancel capture 必须覆盖四个 PageControl HWND；`WM_CANCELMODE` 在 `renderTransactionMutex` 内清状态，释放该锁后再调用会同步重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。
+
+## PPT 页状态发布
+
+`PptInfoState` 继续代表 COM 事实，`PptInfoStateBuffer` 继续代表 Draw3 已完成切换的事实。PowerPoint 事件会即时写入共享状态，但现有 COM ABI 没有 native wait handle；因此 native 以最多 `50ms` 的有界节拍检查 COM 状态，检测到目标页后调用返回 `bool` 的 `PublishProductPage`。该入口只在 Host 运行时接受请求，对相同绝对页幂等成功；失败请求不得被调用方缓存，Host 启动或 reset 后由下一轮自动重发。Draw3 Host 的两个 observer 都通过 `HostRuntimeRevisionSignal` 在页索引或页数真实变化时递增 `runtimeRevision`，并以同一 mutex/condition-variable 握手唤醒 `WaitForProductRuntimeRevision`；PPT 状态线程复核 runtime 后才发布 buffer。不得把 UI 直接绑定到 `PptInfoState`，也不得恢复固定 `500ms` 轮询等待 Draw3。
 
 ## PPT 碰撞与位置
 
@@ -123,9 +129,10 @@ PageControl 仍负责 stable backing capacity、logical/presentation 坐标、UL
 
 ## 验证设计
 
-- 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage。
+- 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage；背景外框强度保持 `1.0`，数字即时策略不残留 content transition。
 - 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
-- PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle 时序、反向重入和首次渐显。
+- PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle/Page/背景拖动候选、Arrow 拒绝拖动、系统阈值转换、反向重入和首次渐显。
+- PPT/Draw3 状态测试：页命令完成会推进 runtime revision 并唤醒 waiter；UI 页码只发布 Draw3-ready buffer，且 native COM 检查节拍不超过 `50ms`。
 - 输入矩阵测试：Whiteboard 拒绝 drag/wheel/long-press/persist，PPT 保留；切换期间 capture/input 门禁正确。
 - 碰撞测试：无 Bar 参数/障碍，bottom 优先、middle 回退、手动 pair 不推动另一 pair、自动结果不写保存状态。
 - 回归：EndShow/A2、窗口生命周期、owner/Z 序、COM buffer 与旧 JSON 静态/无窗口测试保持。

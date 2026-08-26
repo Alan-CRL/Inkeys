@@ -66,7 +66,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::uint64_t> readyOutputRevision = 0;
 		std::atomic<std::uint64_t> presentedContentRevision = 0;
 		std::atomic_bool auxiliaryFullFrameClean = false;
-		std::atomic<std::uint64_t> runtimeRevision = 0;
+		Detail::HostRuntimeRevisionSignal runtimeRevision;
 		std::atomic<LONG> lastDirtyLeft = 0;
 		std::atomic<LONG> lastDirtyTop = 0;
 		std::atomic<LONG> lastDirtyRight = 0;
@@ -81,8 +81,6 @@ namespace Inkeys::Drawing::Draw3
 		std::condition_variable startupCondition;
 		mutable std::mutex contentMutex;
 		mutable std::condition_variable contentCondition;
-		mutable std::mutex runtimeMutex;
-		mutable std::condition_variable runtimeCondition;
 		bool graphicsReady = false;
 		bool stylusDecision = false;
 		bool stylusSucceeded = false;
@@ -117,10 +115,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void PublishRuntimeRevision() noexcept
 		{
-			if (runtimeRevision.fetch_add(1, std::memory_order_release) ==
-				(std::numeric_limits<std::uint64_t>::max)())
-				runtimeRevision.store(1, std::memory_order_release);
-			runtimeCondition.notify_all();
+			runtimeRevision.Publish();
 		}
 
 		static TransparentPresentMode ToTransparentMode(HostPresentationMode mode) noexcept
@@ -165,7 +160,7 @@ namespace Inkeys::Drawing::Draw3
 			readyOutputRevision.store(0, std::memory_order_release);
 			presentedContentRevision.store(0, std::memory_order_release);
 			auxiliaryFullFrameClean.store(false, std::memory_order_release);
-			runtimeRevision.store(0, std::memory_order_release);
+			runtimeRevision.Reset();
 			lastDirtyLeft.store(0, std::memory_order_release);
 			lastDirtyTop.store(0, std::memory_order_release);
 			lastDirtyRight.store(0, std::memory_order_release);
@@ -250,8 +245,10 @@ namespace Inkeys::Drawing::Draw3
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
-			self->currentPageIndex.store(currentPage, std::memory_order_release);
-			self->pageCount.store(pages, std::memory_order_release);
+			const std::size_t previousPage = self->currentPageIndex.exchange(
+				currentPage, std::memory_order_acq_rel);
+			const std::size_t previousCount = self->pageCount.exchange(
+				pages, std::memory_order_acq_rel);
 			switch (type)
 			{
 			case CanvasCommandType::Clear:
@@ -266,14 +263,20 @@ namespace Inkeys::Drawing::Draw3
 				self->previousPageCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
 			default: break;
 			}
+			(void)self->runtimeRevision.PublishPageChange(
+				previousPage, previousCount, currentPage, pages);
 		}
 
 		static void ObserveDocument(void* context, std::size_t currentPage, std::size_t pages)
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
-			self->currentPageIndex.store(currentPage, std::memory_order_release);
-			self->pageCount.store(pages, std::memory_order_release);
+			const std::size_t previousPage = self->currentPageIndex.exchange(
+				currentPage, std::memory_order_acq_rel);
+			const std::size_t previousCount = self->pageCount.exchange(
+				pages, std::memory_order_acq_rel);
+			(void)self->runtimeRevision.PublishPageChange(
+				previousPage, previousCount, currentPage, pages);
 		}
 
 		static void ObserveCurrentPageContent(
@@ -554,7 +557,7 @@ namespace Inkeys::Drawing::Draw3
 				graphics = {};
 				running.store(false, std::memory_order_release);
 				contentCondition.notify_all();
-				runtimeCondition.notify_all();
+				runtimeRevision.NotifyAll();
 			});
 
 		std::unique_lock lock(startupMutex);
@@ -635,7 +638,7 @@ namespace Inkeys::Drawing::Draw3
 			firstFrameReady.store(false, std::memory_order_release);
 			running.store(false, std::memory_order_release);
 			contentCondition.notify_all();
-			runtimeCondition.notify_all();
+			runtimeRevision.NotifyAll();
 		}
 	};
 
@@ -709,7 +712,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->presentedContentRevision.load(std::memory_order_acquire);
 		snapshot.auxiliaryFullFrameClean =
 			impl_->auxiliaryFullFrameClean.load(std::memory_order_acquire);
-		snapshot.runtimeRevision = impl_->runtimeRevision.load(std::memory_order_acquire);
+		snapshot.runtimeRevision = impl_->runtimeRevision.Revision();
 		snapshot.lastDirtyRect.left = impl_->lastDirtyLeft.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.top = impl_->lastDirtyTop.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
@@ -720,13 +723,8 @@ namespace Inkeys::Drawing::Draw3
 	bool Host::WaitForRuntimeRevision(std::uint64_t revision,
 		std::uint32_t timeoutMilliseconds) const noexcept
 	{
-		std::unique_lock lock(impl_->runtimeMutex);
-		return impl_->runtimeCondition.wait_for(lock,
-			std::chrono::milliseconds(timeoutMilliseconds), [this, revision]
-			{
-				return impl_->runtimeRevision.load(std::memory_order_acquire) != revision ||
-					!impl_->running.load(std::memory_order_acquire);
-			});
+		return impl_->runtimeRevision.WaitForChange(
+			revision, timeoutMilliseconds, impl_->running);
 	}
 
 	bool Host::WaitForContentRevision(std::uint64_t revision,

@@ -3,12 +3,80 @@
 #include "Draw3.Bridge.h"
 
 #include <windows.h>
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <condition_variable>
+#include <limits>
 #include <memory>
+#include <mutex>
 
 namespace Inkeys::Drawing::Draw3
 {
+	namespace Detail
+	{
+		// Host 与无窗口测试共用真实 revision 发布/等待实现，不以测试专用 helper 代替唤醒链。
+		class HostRuntimeRevisionSignal
+		{
+		public:
+			void Reset() noexcept
+			{
+				revision_.store(0, std::memory_order_release);
+			}
+			void Publish() noexcept
+			{
+				{
+					// 与 waiter 建立 mutex 握手，避免谓词检查后、进入等待前丢失通知。
+					std::scoped_lock lock(mutex_);
+					if (revision_.fetch_add(1, std::memory_order_acq_rel) ==
+						(std::numeric_limits<std::uint64_t>::max)())
+						revision_.store(1, std::memory_order_release);
+				}
+				condition_.notify_all();
+			}
+			bool PublishPageChange(
+				std::size_t previousPage, std::size_t previousCount,
+				std::size_t currentPage, std::size_t currentCount) noexcept
+			{
+				if (previousPage == currentPage && previousCount == currentCount)
+					return false;
+				Publish();
+				return true;
+			}
+			[[nodiscard]] std::uint64_t Revision() const noexcept
+			{
+				return revision_.load(std::memory_order_acquire);
+			}
+			bool WaitForChange(std::uint64_t revision,
+				std::uint32_t timeoutMilliseconds,
+				const std::atomic_bool& running) const noexcept
+			{
+				std::unique_lock lock(mutex_);
+				return condition_.wait_for(lock,
+					std::chrono::milliseconds(timeoutMilliseconds),
+					[this, revision, &running]
+					{
+						return Revision() != revision
+							|| !running.load(std::memory_order_acquire);
+					});
+			}
+			void NotifyAll() const noexcept
+			{
+				{
+					// 停止状态由外部原子发布；这里同步 waiter 的检查/休眠边界。
+					std::scoped_lock lock(mutex_);
+				}
+				condition_.notify_all();
+			}
+
+		private:
+			std::atomic<std::uint64_t> revision_ = 0;
+			mutable std::mutex mutex_;
+			mutable std::condition_variable condition_;
+		};
+	}
+
 	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一 RTS 生产。
 	inline constexpr UINT kDraw3HiddenTestContactMessage = WM_APP + 0x3D3u;
 	enum class HiddenTestContactPhase : std::uint32_t

@@ -662,6 +662,30 @@ export
 		uint64_t generation = 0;
 	};
 
+	// 实时内容更新与旧关键帧取消必须处于同一事务，避免旧帧在返回后覆盖新内容。
+	template <typename Changed, typename Apply>
+	bool ApplyBarImmediateContentUpdate(
+		BarUiKeyframeTimelineClass& timeline,
+		Changed&& changed, Apply&& apply)
+	{
+		return timeline.Transaction(
+			[&](BarUiKeyframeTimelineClass::LockedView& locked)
+			{
+				const bool contentChanged = static_cast<bool>(changed());
+				const bool result = locked.IsActive() || contentChanged;
+				locked.Cancel();
+				apply();
+				return result;
+			});
+	}
+
+	[[nodiscard]] constexpr bool ShouldKeepBarContentVisibleForExit(
+		bool animated, bool contentChanged,
+		bool targetEmpty, bool currentlyVisible) noexcept
+	{
+		return animated && contentChanged && targetEmpty && currentlyVisible;
+	}
+
 	struct BarUiAnimationAdvanceContextClass;
 	struct BarUiAnimationAdvanceResultClass;
 

@@ -396,6 +396,7 @@ public:
 	void Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
 	bool TransitionToString(const wstring& contentT, optional<double> durT = nullopt,
 		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool SetStringImmediate(const wstring& contentT);
 	bool AdvanceContentTransition(double dt, double speedRate);
 	void CancelContentTransition();
 
