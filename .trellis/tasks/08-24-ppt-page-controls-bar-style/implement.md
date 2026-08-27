@@ -1,6 +1,6 @@
 # PPT 翻页控件主栏化：实施计划
 
-阶段 0–9 记录既有实现与设备验收历史；本轮发现的旧交互回归由阶段 10 覆盖，不回写已完成阶段的勾选状态。
+阶段 0–10 记录既有实现与设备验收历史；本轮启动输入、键盘式长按与触摸转译修正由阶段 11 覆盖，不回写已完成阶段的勾选状态。
 
 ## 0. 开工门禁与基线
 
@@ -106,3 +106,11 @@
 - [x] 为 Draw3 controller/Host 增加物理 contact 聚合活动通知，覆盖 Down 后提前 continue、多 contact 去重，以及 stop/异常 active 清理。
 - [x] 产品层将 Draw3 Started/Ended 转发给 Bar；首次 Started 收起主栏次级界面但不改变主栏 fold/PageControl，并无条件让第三光源进入带 wait-for-leave 门禁的 `Dormant`。
 - [x] 更新 PageControl/Draw3 headless 回归，执行 `git diff --check`、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI。
+
+## 11. 启动输入、键盘式长按与触摸转译修正
+
+- [x] Hidden 初始 Scene 直接提交 opacity `0`；可见/退场 transition deadline 纳入 PageControl `Continue` 判定，保证没有 Bar/光源外部请求时到期帧仍自行重算并解除 `inputLocked`。
+- [x] Arrow Down 快照 `SPI_GETKEYBOARDDELAY/SPI_GETKEYBOARDSPEED`，按 `250ms * (delay + 1)` 与 `2.5..30 次/秒` 解析 timing；保留立即一次、配置门禁、capture/hit 停止和 COM outstanding 合并，不追赶迟到节拍。
+- [x] PageControl WndProc 返回与 Bar 一致的 Tablet 手势禁用标志；补齐 primary 缺失 fallback、活动 id 替换 cancel、primary/最后坐标锁存和单触点 Move/Up，复用现有 mouse press/drag/long-press 路径。
+- [x] Headless 覆盖 timing 边界、transition deadline 续帧和触摸锁状态；静态确认四个 HWND 已注册 touch/禁用边缘手势且系统兼容 mouse 去重仍存在。
+- [x] 对照更新后的 code-spec 执行 `git diff --check`、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI、不提交 commit。

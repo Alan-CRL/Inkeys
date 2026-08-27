@@ -1818,17 +1818,25 @@ namespace Inkeys::UI::Bar
 	}
 
 	void BarSurfaceScene::SetOpacity(
-		double opacity, double durationMilliseconds) noexcept
+		double opacity, double durationSeconds) noexcept
 	{
 		if (!std::isfinite(opacity)) opacity = 1.0;
-		if (!std::isfinite(durationMilliseconds) || durationMilliseconds < 0.0)
-			durationMilliseconds = BarUiDefaultOperationDur;
+		if (!std::isfinite(durationSeconds) || durationSeconds < 0.0)
+			durationSeconds = BarUiDefaultOperationDur;
 		BarSurfaceHooks hooks;
 		{
 			std::lock_guard lock(impl_->mutex);
-			impl_->surfaceOpacity.SetTar((std::clamp)(opacity, 0.0, 1.0),
-				durationMilliseconds);
-			impl_->animationActive = true;
+			const double target = (std::clamp)(opacity, 0.0, 1.0);
+			if (durationSeconds == 0.0)
+			{
+				// Hidden 初始态必须同时提交 current/target，不能留下无人推进的动画。
+				impl_->surfaceOpacity.SetDirect(target);
+			}
+			else
+			{
+				impl_->surfaceOpacity.SetTar(target, durationSeconds);
+				impl_->animationActive = true;
+			}
 			impl_->IncludeFullDamageLocked();
 			hooks = impl_->hooks;
 		}

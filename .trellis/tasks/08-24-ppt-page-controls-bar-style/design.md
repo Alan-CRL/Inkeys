@@ -96,9 +96,15 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 
 PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragHandle 命中优先，Previous/Next 始终委托共享 Bar 按钮入口且不得发起拖动。Page 和非箭头背景建立 drag candidate：Page 先显示共享 press，指针越过 `SM_CXDRAG/SM_CYDRAG` 对应阈值后取消按钮 capture 并进入成对拖动；未越过阈值且在 Page 上抬起时调用 `ViewShow`。Whiteboard 不构造 DragHandle 或 drag candidate。
 
-PPT Arrow 在 Pointer Down 时立即投递一次 Previous/Next，并记录真实按压起点；只有快照 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时，才在 `400ms` 后首次重复，此后以 `15ms` 检查节拍尝试投递。既有 `pptUiPageCommandOutstanding` 继续合并尚未完成的 COM 请求。移出按钮、Pointer Up、`WM_CANCELMODE/WM_CAPTURECHANGED` 或工作区切换必须清除 press 与重复状态。键盘 Hook 和滚轮不再写入合成 pressed 截止时间；真实 Pointer 的共享 Bar hover/press 保持不变。
+PPT Arrow 在 Pointer Down 时立即投递一次 Previous/Next，并记录真实按压起点，同时通过 `SystemParametersInfoW` 快照 `SPI_GETKEYBOARDDELAY/SPI_GETKEYBOARDSPEED`。delay `0..3` 映射为 `250/500/750/1000ms`；speed `0..31` 按 `2.5..30 次/秒` 线性映射为后续间隔，查询失败字段分别回退到 `1/31`。只有快照 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时才按本次 timing 重复。首次实际重复以当前帧锚定，使第二次至少等待完整 interval；后续轻微帧迟到按计划 deadline 推进以保留平均 rate，落后至少一个完整 interval 时只触发一次并从当前帧重新锚定，不追赶积压。既有 `pptUiPageCommandOutstanding` 继续合并尚未完成的 COM 请求。移出按钮、Pointer Up、`WM_CANCELMODE/WM_CAPTURECHANGED` 或工作区切换必须清除 press、timing 与重复状态。键盘 Hook 和滚轮不再写入合成 pressed 截止时间；真实 Pointer 的共享 Bar hover/press 保持不变。
 
 每个有效 PPT Pointer Down 在业务分派前调用 `Window::Service::PromotePptWindow(surfaceRole)`；该调用只重排 owner 树内 PPT 层级，目标仍在 Bar 正下方且不得激活窗口。DragHandle 的纯平移继续使用 `SWP_NOZORDER`，因为层级已在 Down 边界维护。
+
+## 启动门禁与触摸转译
+
+Scene 首次配置 Hidden surface 时以直接赋值同时建立 opacity current/target `0`；后续显示才建立真实 `0 -> 1` 动画。`layoutTransitionUntil` 与 Scene/bounds active 同为调度事实：期限内始终返回 `Continue`，每帧重算 `inputLocked`；到期帧自行解锁并转 Idle，不能等待 Bar 的共享光源或鼠标消息偶然唤醒。
+
+四个 PageControl HWND 的创建注册保持 `RegisterTouchWindow(hwnd, 0)` 和 `DisableEdgeGestures(hwnd, true)`。WndProc 对 `WM_TABLET_QUERYSYSTEMGESTURESTATUS` 返回与 Bar 一致的禁用 press-and-hold、tap feedback、Touch UI 和 flick 标志。每个 Surface 锁存一个触点 id、primary 身份和最后 client 坐标；一批 `WM_TOUCH` 先保序处理 primary、再处理 non-primary，整批无 primary 时仅锁第一个 DOWN。新合格 DOWN 替换旧 id 时先走 cancel 路径撤销 press/capture且不触发 click，再锁定新 id；同批迟到的旧 fallback Up 必须忽略。只有活动 id 的 Move/Up 转译为现有 mouse 输入，Up/cancel/workspace 切换清空锁存。系统兼容 mouse 仍由来源签名过滤，因此触摸长按和真实鼠标最终共用一条 Arrow press/repeat 状态机。
 
 ## Draw3 绘制活动桥接
 
@@ -144,7 +150,8 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 - 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage；背景外框强度保持 `1.0`，数字即时策略不残留 content transition。
 - 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
 - PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle/Page/背景拖动候选、Arrow 拒绝拖动、系统阈值转换、反向重入和首次渐显。
-- PPT 输入测试：Page 阈值内短按调用预览，Arrow Down 立即一次、`399ms` 无重复、`400ms` 首次重复、后续 `15ms` 检查，配置关闭和移出/Up/Cancel 停止；静态确认 Pointer Down 调用最近交互层级维护且无合成按键闪按状态。
+- PPT 输入测试：Page 阈值内短按调用预览，Arrow Down 立即一次；覆盖 delay `0..3`、speed `0/31`、越界限制和查询失败默认值，并按解析后的首次 delay/后续 interval 断言重复，配置关闭和移出/Up/Cancel 停止；静态确认 Pointer Down 调用最近交互层级维护且无合成按键闪按状态。
+- 启动/触摸测试：Hidden→Visible 在没有 Bar 请求时持续到 deadline 后自行解锁；触摸纯状态覆盖 primary、无 primary fallback、多指忽略、替换 cancel、新 id Move/Up 和 cancel 清理，静态确认四窗创建注册与 Tablet 手势返回值。
 - Draw3 活动测试：聚合状态 `false→true→true→false` 只发布一次 Start/End，多 contact 不重复，Host stop/异常 active 清理补 End；静态确认产品回调链收起次级 UI 且 Started 无条件进入带 wait-for-leave 的第三光源 `Dormant`。
 - PPT/Draw3 状态测试：页命令完成会推进 runtime revision 并唤醒 waiter；UI 页码只发布 Draw3-ready buffer，且 native COM 检查节拍不超过 `50ms`。
 - 输入矩阵测试：Whiteboard 拒绝 drag/wheel/long-press/persist，PPT 保留；切换期间 capture/input 门禁正确。

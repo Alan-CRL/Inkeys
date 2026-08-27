@@ -3,6 +3,7 @@
 #endif
 #include <Windows.h>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -365,22 +366,172 @@ namespace
 			&& !whiteboardPress.invokeOnPointerDown
 			&& !whiteboardPress.trackLongPress,
 			"PPT arrows invoke on down and only configured presses repeat");
+		const auto defaultTiming = ResolvePptKeyboardRepeatTiming(
+			PptKeyboardDelayFallback, PptKeyboardSpeedFallback);
+		const auto slowTiming = ResolvePptKeyboardRepeatTiming(0, 0);
+		const auto clampedTiming = ResolvePptKeyboardRepeatTiming(99, 99);
+		constexpr std::array expectedKeyboardDelays{
+			std::chrono::milliseconds(250), std::chrono::milliseconds(500),
+			std::chrono::milliseconds(750), std::chrono::milliseconds(1000) };
+		bool allKeyboardDelaysMatch = true;
+		for (unsigned int delay = 0; delay < expectedKeyboardDelays.size(); ++delay)
+		{
+			allKeyboardDelaysMatch = allKeyboardDelaysMatch
+				&& ResolvePptKeyboardRepeatTiming(delay, 31).initialDelay
+					== expectedKeyboardDelays[delay];
+		}
+		Check(defaultTiming.initialDelay == std::chrono::milliseconds(500)
+			&& defaultTiming.repeatInterval == std::chrono::milliseconds(33)
+			&& slowTiming.initialDelay == std::chrono::milliseconds(250)
+			&& slowTiming.repeatInterval == std::chrono::milliseconds(400)
+			&& clampedTiming.initialDelay == std::chrono::milliseconds(1000)
+			&& clampedTiming.repeatInterval == std::chrono::milliseconds(33)
+			&& allKeyboardDelaysMatch,
+			"PPT repeat timing follows clamped Windows keyboard delay and rate");
 		Check(!ShouldTriggerPptLongPressRepeat(true,
-			std::chrono::milliseconds(399), std::chrono::milliseconds(399))
+			std::chrono::milliseconds(249), false, {}, slowTiming)
 			&& ShouldTriggerPptLongPressRepeat(true,
-				std::chrono::milliseconds(400), std::chrono::milliseconds(400))
+				std::chrono::milliseconds(250), false, {}, slowTiming)
 			&& !ShouldTriggerPptLongPressRepeat(true,
-				std::chrono::milliseconds(414), std::chrono::milliseconds(14))
+				std::chrono::milliseconds(649), true,
+				std::chrono::milliseconds(399), slowTiming)
 			&& ShouldTriggerPptLongPressRepeat(true,
-				std::chrono::milliseconds(415), std::chrono::milliseconds(15))
+				std::chrono::milliseconds(650), true,
+				std::chrono::milliseconds(400), slowTiming)
 			&& !ShouldTriggerPptLongPressRepeat(false,
-				std::chrono::seconds(1), std::chrono::seconds(1)),
-			"PPT long press uses the original 400ms and 15ms schedule");
+				std::chrono::seconds(1), false, {}, defaultTiming),
+			"first keyboard repeat uses delay and later repeats use the rate interval");
+		using RepeatClock = std::chrono::steady_clock;
+		const auto pressStarted = RepeatClock::time_point(std::chrono::seconds(1));
+		const PptKeyboardRepeatTiming quantizedTiming{
+			std::chrono::milliseconds(500), std::chrono::milliseconds(34) };
+		const auto firstAnchor = ResolvePptLongPressRepeatAnchor(
+			{}, pressStarted + std::chrono::milliseconds(516),
+			false, quantizedTiming);
+		const auto secondAnchor = ResolvePptLongPressRepeatAnchor(
+			firstAnchor, pressStarted + std::chrono::milliseconds(550),
+			true, quantizedTiming);
+		const auto quantizedAnchor = ResolvePptLongPressRepeatAnchor(
+			secondAnchor, pressStarted + std::chrono::milliseconds(600),
+			true, quantizedTiming);
+		const auto lateAnchor = ResolvePptLongPressRepeatAnchor(
+			quantizedAnchor, pressStarted + std::chrono::milliseconds(700),
+			true, quantizedTiming);
+		Check(firstAnchor == pressStarted + std::chrono::milliseconds(516)
+			&& secondAnchor == pressStarted + std::chrono::milliseconds(550)
+			&& quantizedAnchor == pressStarted + std::chrono::milliseconds(584)
+			&& lateAnchor == pressStarted + std::chrono::milliseconds(700),
+			"repeat anchor protects the second interval and drops overdue backlog");
 		Check(ShouldKeepPptLongPressTracking(true, true, true)
 			&& !ShouldKeepPptLongPressTracking(false, true, true)
 			&& !ShouldKeepPptLongPressTracking(true, false, true)
 			&& !ShouldKeepPptLongPressTracking(true, true, false),
 			"configuration, capture loss, and pointer leave stop repetition");
+		Check(ShouldContinuePageControlFrame(false, true, false, false, false)
+			&& ShouldContinuePageControlFrame(true, true, false, false, false)
+			&& ShouldContinuePageControlFrame(true, false, true, false, false)
+			&& ShouldContinuePageControlFrame(true, false, false, true, false)
+			&& ShouldContinuePageControlFrame(true, false, false, false, true)
+			&& !ShouldContinuePageControlFrame(true, false, false, false, false)
+			&& !ShouldContinuePageControlFrame(false, false, true, true, true),
+			"transition deadline keeps PageControl scheduled until input can unlock");
+		using TransitionClock = std::chrono::steady_clock;
+		const auto transitionStarted = TransitionClock::time_point(
+			std::chrono::seconds(2));
+		const auto transitionDeadline = transitionStarted
+			+ std::chrono::milliseconds(200);
+		const auto frameBeforeDeadline = transitionDeadline
+			- std::chrono::milliseconds(1);
+		const auto frameAtDeadline = transitionDeadline;
+		const auto frameAfterDeadline = transitionDeadline
+			+ std::chrono::milliseconds(17);
+		const auto deadlineActive = [transitionDeadline](auto frame) noexcept
+			{
+				return frame < transitionDeadline;
+			};
+		Check(ShouldLockSurfaceInput(true,
+				deadlineActive(transitionStarted), false)
+			&& ShouldContinuePageControlFrame(true,
+				deadlineActive(transitionStarted), false, false, false)
+			&& ShouldLockSurfaceInput(true,
+				deadlineActive(frameBeforeDeadline), false)
+			&& ShouldContinuePageControlFrame(true,
+				deadlineActive(frameBeforeDeadline), false, false, false)
+			&& !ShouldLockSurfaceInput(true,
+				deadlineActive(frameAtDeadline), false)
+			&& !ShouldContinuePageControlFrame(true,
+				deadlineActive(frameAtDeadline), false, false, false)
+			&& !ShouldLockSurfaceInput(true,
+				deadlineActive(frameAfterDeadline), false)
+			&& !ShouldContinuePageControlFrame(true,
+				deadlineActive(frameAfterDeadline), false, false, false),
+			"deadline frames keep input locked and self-schedule exactly until expiry");
+	}
+
+	void TestTouchTranslationPolicy()
+	{
+		Check(PageControlTabletGestureStatusFlags
+			== (0x00000001U | 0x00000008U | 0x00000100U
+				| 0x00000200U | 0x00010000U),
+			"PageControl disables the same Tablet gestures as the Bar");
+
+		PageControlTouchLockState state;
+		auto decision = ResolvePageControlTouchSample(
+			state, 10, true, false, false, true, true, false);
+		state = decision.state;
+		Check(decision.message == PageControlTouchMessage::Down
+			&& !decision.cancelPrevious && state.active && state.primary
+			&& state.id == 10,
+			"primary touch locks and translates one pointer down");
+		decision = ResolvePageControlTouchSample(
+			state, 11, false, true, false, false, false, false);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.id == 10,
+			"non-active touch movement is ignored");
+		decision = ResolvePageControlTouchSample(
+			state, 10, false, false, true, true, true, false);
+		state = decision.state;
+		Check(decision.message == PageControlTouchMessage::Up && !state.active,
+			"active primary up releases the touch lock");
+
+		decision = ResolvePageControlTouchSample(
+			state, 20, true, false, false, false, false, false);
+		state = decision.state;
+		Check(decision.message == PageControlTouchMessage::Down
+			&& decision.fallbackLocked && state.active && !state.primary
+			&& state.id == 20,
+			"first down becomes the fallback when a batch has no primary flag");
+		decision = ResolvePageControlTouchSample(
+			state, 21, true, false, false, false, false,
+			decision.fallbackLocked);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.id == 20,
+			"fallback batch ignores additional touch downs");
+
+		decision = ResolvePageControlTouchSample(
+			state, 30, true, false, false, true, true, false);
+		state = decision.state;
+		Check(decision.cancelPrevious
+			&& decision.message == PageControlTouchMessage::Down
+			&& state.active && state.primary && state.id == 30,
+			"new primary touch cancels the old fallback before taking ownership");
+		decision = ResolvePageControlTouchSample(
+			state, 20, false, false, true, false, true, false);
+		Check(decision.message == PageControlTouchMessage::None
+			&& decision.state.active && decision.state.primary
+			&& decision.state.id == 30,
+			"old fallback up cannot click after a primary replacement");
+		decision = ResolvePageControlTouchSample(
+			state, 30, false, true, false, true, true, false);
+		state = decision.state;
+		Check(decision.message == PageControlTouchMessage::Move
+			&& state.active && state.id == 30,
+			"replacement touch continues through the shared move path");
+		decision = ResolvePageControlTouchSample(
+			state, 30, false, false, true, true, true, false);
+		Check(decision.message == PageControlTouchMessage::Up
+			&& !decision.state.active,
+			"replacement touch up clears the lock");
 	}
 
 	void TestWhiteboardLayoutTargetAndReadiness()
@@ -597,6 +748,7 @@ int RunPageControlTests()
 	TestDragPureTranslationAndRevisionGate();
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndInputPolicy();
+	TestTouchTranslationPolicy();
 	TestWhiteboardLayoutTargetAndReadiness();
 	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();

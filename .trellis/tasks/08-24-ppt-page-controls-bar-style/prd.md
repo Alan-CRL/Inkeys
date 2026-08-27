@@ -19,7 +19,7 @@
 5. **固定几何**：PPT 底部外框为 `165x42.5 DIP`，两侧为 `42.5x165 DIP`；PPT 拖动槽 `10 DIP`、箭头按钮 `32.5x32.5 DIP`、页码按钮横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距和真实按钮之间的间距为 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个 `5 DIP` 间距。Whiteboard 外框为 `230x80 DIP`，包含三枚 `70x70 DIP` 标准 `2x2` 按钮。
 6. **页码内容**：底部页码把加粗当前页和常规字重 `/总页数` 作为整体测量并水平居中；两侧将当前页置上、`/总页数` 置下并整体垂直居中；Whiteboard 使用标准 `2x2` 上方主内容槽和下方标签槽。PPT 未知值继续显示 `-`/`/-`，底部和侧边分别保留 `9999/999` 显示上限。三种形态共用内容状态，禁止用分页专用固定偏移模拟居中。数值变化必须在收到已确认状态的同一更新中直接替换文字并重新测量，不运行 `TransitionToString`；Arrow/Add SVG 与语义标签仍使用共享内容转换。PPT 页码短按调用既有 `ViewShow` 打开 PPT 预览，Whiteboard 页码保持 no-op；两者都保留标准 Bar hover/press。
 7. **SVG 与内容动画**：普通 Previous/Next 始终复用同一 `barMore` SVG 实例，通过方向变换表示语义；PPT Arrow 与 Whiteboard Arrow 之间只缩放/移动同一 SVG 并动画标签显隐。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才以主栏内容转换在 `barMore`/`右翻页` 与 `barAdd`/`加页` 间切换；几何、SVG 和标签在同一批次并行推进，未变化语义不得重启动画。
-8. **PPT 专属输入**：拖动条独立于 Bar 按钮体系，只参与命中、capture 和成对拖动，不产生按钮视觉；但 PPT 成对拖动手势可从 DragHandle、页码按钮和未被 Previous/Next 占用的真实圆角外框背景开始。Previous/Next 始终是纯按钮，按下或拖出都不得转换成拖动。Page 按下先保留标准 press，移动越过系统 drag threshold 后取消 press 并转换成拖动；阈值内且仍在 Page 上抬起时调用 `ViewShow`，不得写入位置。箭头按下立即翻一页；`EnablePageButtonLongPress=true` 时持续按住 `400ms` 后开始按 `15ms` 检查节拍重复，移出箭头、抬起、capture cancel 或工作区切换立即停止；配置关闭时只保留按下时的一次翻页。PPT 保留位置/缩放、滚轮、DPI 和位置持久化；删除键盘 Hook 和滚轮合成的按钮闪按反馈，但保留真实鼠标/笔/触摸产生的标准 hover/press。
+8. **PPT 专属输入**：拖动条独立于 Bar 按钮体系，只参与命中、capture 和成对拖动，不产生按钮视觉；但 PPT 成对拖动手势可从 DragHandle、页码按钮和未被 Previous/Next 占用的真实圆角外框背景开始。Previous/Next 始终是纯按钮，按下或拖出都不得转换成拖动。Page 按下先保留标准 press，移动越过系统 drag threshold 后取消 press 并转换成拖动；阈值内且仍在 Page 上抬起时调用 `ViewShow`，不得写入位置。箭头按下立即翻一页；`EnablePageButtonLongPress=true` 时在 Pointer Down 快照系统 `SPI_GETKEYBOARDDELAY/SPI_GETKEYBOARDSPEED`，首次重复与后续间隔模拟真实键盘，COM outstanding 只合并未完成命令而不形成积压追赶。移出箭头、抬起、capture cancel 或工作区切换立即停止；配置关闭时只保留按下时的一次翻页。PPT 保留位置/缩放、滚轮、DPI 和位置持久化；删除键盘 Hook 和滚轮合成的按钮闪按反馈，但保留真实鼠标/笔/触摸产生的标准 hover/press。
 9. **Whiteboard 输入隔离**：Whiteboard 只接受普通鼠标、笔和单指触摸点击并使用标准 Bar hover/press；不得继承拖动、缩放、位置记忆、长按或滚轮。翻页事务只关闭 `interactive`，未变化的 Arrow/Add/文字和启用视觉保持稳定，不得以禁用变灰模拟锁定。
 10. **拖动条过渡**：进入 Whiteboard 起始即撤销 capture 并关闭拖动条命中；视觉随共享批次淡出且 `10 DIP` 槽位同步收拢。退出时槽位展开、拖动条淡入，只有紧凑布局成功呈现后恢复命中。反向切换从当前透明度和槽位几何重定向，禁止瞬间移除槽位或过渡期捕获输入。
 11. **碰撞边界**：PPT 只处理底部一对、侧边一对之间的冲突和屏幕越界；主栏、主按钮和 Bar HWND 不参与，也不触发重算。手动拖动只移动命中对并停在最近可行位置；显示/DPI/缩放纠偏保留底部对、让侧边对寻找最近位置，极端不足时只降低侧边对运行时缩放。自动纠偏不得写入保存配置。
@@ -28,6 +28,7 @@
 14. **页状态时效**：`PptInfoStateBuffer` 仍只在 Draw3 已到达 COM 目标页后更新，UI 不得提前显示尚未完成画板切换的页码。PowerPoint/WPS 共享内存状态在不扩展 COM ABI 的前提下以不超过 `50ms` 的有界节拍检查；Draw3 完成等待必须复用 `WaitForProductRuntimeRevision` 事件唤醒，禁止继续用固定 `500ms` 睡眠串联两阶段。
 15. **最近交互层级**：任一可交互 PPT PageControl 收到有效 Pointer Down 时，目标窗口必须通过 `PromotePptWindow` 移到其他 PPT 窗口之上、Bar 之下，不激活窗口、不进入 topmost band；拖动直移的 `SWP_NOZORDER` 不得替代这次交互层级维护。
 16. **Draw3 绘制活动**：Draw3 必须按所有物理 contact 的聚合状态发布 `0→1` Started 与 `1→0` Ended，多个 contact 不重复通知；停止或异常退出时若仍 active 必须补 Ended。首次 Started 收起绘制属性、几何属性、更多、笔型、粗细、颜色和提示等主栏次级界面，但不改变主栏 `fold`、不隐藏 PageControl。Started 还必须无条件让第三鼠标光进入 `Dormant`；若光标仍在 Bar/PageControl 实际接收区，则阻止重新激活直到真实离开后再次自然进入。第一光源、颜色过渡和普通 UI 动画不得因绘制持续而被压制。
+17. **启动输入与触摸生命周期**：首次 Hidden 配置必须提交真实透明度 `0`；Hidden→Visible 的 transition deadline 自身必须维持 PageControl 续帧和输入锁，期限后无须 Bar 或光源消息也能自行解锁。四个 PageControl HWND 继续创建触摸注册与边缘手势禁用，并在 WndProc 禁用 press-and-hold/flick 等 Tablet 手势；`WM_TOUCH` 必须支持 primary 缺失时锁定首个 DOWN、活动触点替换 cancel、最后坐标锁存和单触点 Move/Up，保证触摸长按可进入与鼠标相同的箭头重复路径。
 
 ## Acceptance Criteria
 
@@ -44,7 +45,8 @@
 - [x] 分页外框与 Main Bar 外框对同一共享光源快照使用相同强度比例；不得把按钮强度比例写入分页背景。
 - [x] PPT 的 DragHandle、Page 和非箭头背景均可拖动，Previous/Next 不可拖动；owner WndProc 在拖动中不得等待可能正同步等待该 owner 的呈现锁。
 - [x] PPT 数值页码不运行内容转换，且从 COM 状态变化到 Draw3-ready 发布不再包含固定 `500ms + 200ms` 延迟。
-- [x] PPT Page 阈值内短按打开预览；箭头按下立即翻页，并严格遵守配置开关、`400ms` 首次重复与 `15ms` 检查节拍，移出/抬起/cancel 后不再重复。
+- [x] PPT Page 阈值内短按打开预览；箭头按下立即翻页，并严格遵守配置开关和 Pointer Down 快照的系统键盘 delay/rate，移出/抬起/cancel 后不再重复且迟到节拍不追赶。
+- [x] PageControl 首次显示无需 Bar 外部消息即可完成渐显并在 deadline 后自行解锁；四窗禁用 Tablet 手势，primary/fallback 单触点转译、替换 cancel 与触摸长按路径通过 headless/静态回归。
 - [x] 键盘与滚轮不再合成 Arrow pressed 闪按；真实 Pointer press 视觉保持，最近交互 PPT 窗口位于其他 PPT 窗口之上且始终低于 Bar。
 - [x] Draw3 物理 contact 聚合只成对发布一次 Started/Ended，停止/异常路径不泄漏；Started 收起主栏次级界面并让第三鼠标光进入带 wait-for-leave 门禁的 `Dormant`，主栏展开状态、PageControl、第一光源和普通动画不受影响。
 

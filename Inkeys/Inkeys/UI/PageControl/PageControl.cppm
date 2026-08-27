@@ -53,8 +53,30 @@ export namespace Inkeys::UI::PageControl
 		return {};
 	}
 
-	inline constexpr std::chrono::milliseconds PptLongPressDelay{ 400 };
-	inline constexpr std::chrono::milliseconds PptLongPressInterval{ 15 };
+	inline constexpr unsigned int PptKeyboardDelayFallback = 1;
+	inline constexpr unsigned int PptKeyboardSpeedFallback = 31;
+
+	struct PptKeyboardRepeatTiming
+	{
+		std::chrono::milliseconds initialDelay{ 500 };
+		std::chrono::milliseconds repeatInterval{ 33 };
+	};
+
+	[[nodiscard]] constexpr PptKeyboardRepeatTiming
+		ResolvePptKeyboardRepeatTiming(
+			unsigned int keyboardDelay, unsigned int keyboardSpeed) noexcept
+	{
+		keyboardDelay = (std::min)(keyboardDelay, 3U);
+		keyboardSpeed = (std::min)(keyboardSpeed, 31U);
+		// Windows 只公开序号和 2.5..30 Hz 范围，按频率线性映射后取最近毫秒。
+		const unsigned int repeatRateNumerator = 155U + 55U * keyboardSpeed;
+		const unsigned int repeatIntervalMilliseconds =
+			(62000U + repeatRateNumerator / 2U) / repeatRateNumerator;
+		return {
+			std::chrono::milliseconds(250U * (keyboardDelay + 1U)),
+			std::chrono::milliseconds(repeatIntervalMilliseconds),
+		};
+	}
 
 	struct PptDirectionPressPolicy
 	{
@@ -79,10 +101,95 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] constexpr bool ShouldTriggerPptLongPressRepeat(
 		bool repeatEnabled, std::chrono::steady_clock::duration held,
-		std::chrono::steady_clock::duration sinceLastRepeat) noexcept
+		bool hasRepeated,
+		std::chrono::steady_clock::duration sinceLastRepeat,
+		const PptKeyboardRepeatTiming& timing) noexcept
 	{
-		return repeatEnabled && held >= PptLongPressDelay
-			&& sinceLastRepeat >= PptLongPressInterval;
+		return repeatEnabled && held >= timing.initialDelay
+			&& (!hasRepeated || sinceLastRepeat >= timing.repeatInterval);
+	}
+
+	[[nodiscard]] constexpr std::chrono::steady_clock::time_point
+		ResolvePptLongPressRepeatAnchor(
+			std::chrono::steady_clock::time_point lastRepeat,
+			std::chrono::steady_clock::time_point now, bool hasRepeated,
+			const PptKeyboardRepeatTiming& timing) noexcept
+	{
+		if (!hasRepeated) return now;
+		const auto scheduled = lastRepeat + timing.repeatInterval;
+		// 轻微帧量化保留计划相位；严重迟到从当前时刻重锚，禁止追赶积压。
+		return now - scheduled >= timing.repeatInterval ? now : scheduled;
+	}
+
+	inline constexpr std::uint32_t PageControlTabletGestureStatusFlags =
+		0x00000001U | 0x00000008U | 0x00000100U
+		| 0x00000200U | 0x00010000U;
+
+	struct PageControlTouchLockState
+	{
+		std::uint32_t id = 0;
+		bool active = false;
+		bool primary = false;
+	};
+
+	enum class PageControlTouchMessage : std::uint8_t
+	{
+		None,
+		Down,
+		Move,
+		Up,
+	};
+
+	struct PageControlTouchDecision
+	{
+		PageControlTouchLockState state;
+		PageControlTouchMessage message = PageControlTouchMessage::None;
+		bool cancelPrevious = false;
+		bool fallbackLocked = false;
+	};
+
+	[[nodiscard]] constexpr PageControlTouchDecision
+		ResolvePageControlTouchSample(
+			PageControlTouchLockState current, std::uint32_t id,
+			bool down, bool move, bool up, bool primary,
+			bool batchHasPrimary, bool fallbackLocked) noexcept
+	{
+		PageControlTouchDecision result{ current,
+			PageControlTouchMessage::None, false, fallbackLocked };
+		const bool canLockFallback = !batchHasPrimary
+			&& !result.state.active && !result.fallbackLocked;
+		// 某些触摸驱动不提供 PRIMARY，此时一批只允许首个 DOWN 兜底接管。
+		if (down && (primary || canLockFallback))
+		{
+			if (result.state.active && result.state.id != id)
+			{
+				result.state = {};
+				result.cancelPrevious = true;
+			}
+			if (!result.state.active)
+			{
+				result.state = { id, true, primary };
+				result.message = PageControlTouchMessage::Down;
+				if (!primary) result.fallbackLocked = true;
+			}
+		}
+
+		const bool canTranslate = result.state.active
+			&& result.state.id == id
+			&& (primary || !result.state.primary || !batchHasPrimary);
+		if (result.message == PageControlTouchMessage::None
+			&& move && canTranslate)
+		{
+			result.state.primary = result.state.primary || primary;
+			result.message = PageControlTouchMessage::Move;
+		}
+		else if (result.message == PageControlTouchMessage::None
+			&& up && canTranslate)
+		{
+			result.state = {};
+			result.message = PageControlTouchMessage::Up;
+		}
+		return result;
 	}
 
 	[[nodiscard]] constexpr bool ShouldAcceptPageControlClientHit(
@@ -630,6 +737,16 @@ export namespace Inkeys::UI::PageControl
 		bool workspaceSwitching) noexcept
 	{
 		return !targetVisible || transitionActive || workspaceSwitching;
+	}
+
+	[[nodiscard]] constexpr bool ShouldContinuePageControlFrame(
+		bool targetVisible, bool transitionDeadlineActive,
+		bool boundsAnimationActive, bool sceneAnimationActive,
+		bool longPressActive) noexcept
+	{
+		return transitionDeadlineActive || (targetVisible
+			&& (boundsAnimationActive || sceneAnimationActive
+				|| longPressActive));
 	}
 
 	[[nodiscard]] constexpr bool WhiteboardWorkspaceSwitching(

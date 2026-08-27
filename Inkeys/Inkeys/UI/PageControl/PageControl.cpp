@@ -8,6 +8,7 @@ module;
 #include <windowsx.h>
 #include <d2d1_1.h>
 #include <dxgi.h>
+#include <tpcshrd.h>
 #include <wrl/client.h>
 
 #include "../Bar/Bar.DirtyRegion.h"
@@ -71,6 +72,19 @@ namespace Inkeys::UI::PageControl
 		{
 			return std::chrono::milliseconds(static_cast<long long>(std::lround(
 				LayoutTransitionDurationSeconds() * 1000.0)));
+		}
+
+		[[nodiscard]] PptKeyboardRepeatTiming QueryPptKeyboardRepeatTiming() noexcept
+		{
+			UINT keyboardDelay = PptKeyboardDelayFallback;
+			UINT keyboardSpeed = PptKeyboardSpeedFallback;
+			if (!SystemParametersInfoW(
+				SPI_GETKEYBOARDDELAY, 0, &keyboardDelay, 0))
+				keyboardDelay = PptKeyboardDelayFallback;
+			if (!SystemParametersInfoW(
+				SPI_GETKEYBOARDSPEED, 0, &keyboardSpeed, 0))
+				keyboardSpeed = PptKeyboardSpeedFallback;
+			return ResolvePptKeyboardRepeatTiming(keyboardDelay, keyboardSpeed);
 		}
 		constexpr auto DragCandidateTraceInterval = 100ms;
 
@@ -160,6 +174,8 @@ namespace Inkeys::UI::PageControl
 			bool pressedNext = false;
 			DWORD touchId = 0;
 			bool touchActive = false;
+			bool touchPrimary = false;
+			POINT touchLastClient{};
 			POINT dragStartScreen{};
 			PptLayoutState dragStartLayout{};
 			PptLayoutState feasibleLayout{};
@@ -168,6 +184,7 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t suppressedPresentationBusyTraces = 0;
 			std::chrono::steady_clock::time_point pressStarted{};
 			std::chrono::steady_clock::time_point lastRepeat{};
+			PptKeyboardRepeatTiming repeatTiming{};
 			std::chrono::steady_clock::time_point layoutTransitionUntil{};
 			std::uint64_t observedRevision = 0;
 			SIZE backingCapacity{ 1, 1 };
@@ -1439,14 +1456,23 @@ namespace Inkeys::UI::PageControl
 				{
 					state.pressStarted = {};
 					state.lastRepeat = {};
+					state.repeatTiming = {};
 				}
+				const bool hasRepeated =
+					state.lastRepeat.time_since_epoch().count() != 0;
 				if (state.pressStarted.time_since_epoch().count() != 0
 					&& ShouldTriggerPptLongPressRepeat(
 						directionPressPolicy.trackLongPress,
 						frameContext.frameTime - state.pressStarted,
-						frameContext.frameTime - state.lastRepeat))
+						hasRepeated,
+						hasRepeated
+							? frameContext.frameTime - state.lastRepeat
+							: std::chrono::steady_clock::duration::zero(),
+						state.repeatTiming))
 				{
-					state.lastRepeat = frameContext.frameTime;
+					state.lastRepeat = ResolvePptLongPressRepeatAnchor(
+						state.lastRepeat, frameContext.frameTime,
+						hasRepeated, state.repeatTiming);
 					repeatDirection = true;
 					repeatNext = state.pressedNext;
 				}
@@ -1462,12 +1488,14 @@ namespace Inkeys::UI::PageControl
 					state.scene.PresentationOutsetPixels(), state.bounds.scale,
 					target.scale);
 				state.backingCapacity = backing.size;
+				const bool transitionDeadlineActive =
+					frameContext.frameTime < state.layoutTransitionUntil;
 				const bool exitTransitionActive = !state.targetVisible
-					&& frameContext.frameTime < state.layoutTransitionUntil;
-				const bool visibleAnimation = state.targetVisible
-					&& (state.bounds.active || state.scene.AnimationActive()
-						|| state.pressStarted.time_since_epoch().count() != 0);
-				keepAnimating = exitTransitionActive || visibleAnimation;
+					&& transitionDeadlineActive;
+				keepAnimating = ShouldContinuePageControlFrame(
+					state.targetVisible, transitionDeadlineActive,
+					state.bounds.active, state.scene.AnimationActive(),
+					state.pressStarted.time_since_epoch().count() != 0);
 				shouldShow = ShouldKeepPageControlWindowVisible(
 					state.targetVisible, exitTransitionActive);
 				if (shouldShow)
@@ -1607,6 +1635,8 @@ namespace Inkeys::UI::PageControl
 				&& !translatingTouch
 				&& Inkeys::Message::IsTouchGeneratedMouseMessage(
 					message, GetMessageExtraInfo())) return 0;
+			if (message == WM_TABLET_QUERYSYSTEMGESTURESTATUS)
+				return static_cast<LRESULT>(PageControlTabletGestureStatusFlags);
 			if (message == WM_TOUCH)
 			{
 				const UINT count = LOWORD(wParam);
@@ -1615,43 +1645,67 @@ namespace Inkeys::UI::PageControl
 					reinterpret_cast<HTOUCHINPUT>(lParam), count,
 					inputs.data(), sizeof(TOUCHINPUT)))
 				{
+					const bool hasPrimaryTouch = std::any_of(
+						inputs.begin(), inputs.end(),
+						[](const TOUCHINPUT& input) noexcept
+						{
+							return (input.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
+						});
+					// 同批 primary 必须先接管，避免旧 fallback 先 Up 误触发 click。
+					std::stable_partition(inputs.begin(), inputs.end(),
+						[](const TOUCHINPUT& input) noexcept
+						{
+							return (input.dwFlags & TOUCHEVENTF_PRIMARY) != 0;
+						});
+					bool fallbackTouchLocked = false;
 					for (const auto& input : inputs)
 					{
-						UINT translated = 0;
+						POINT local{ TOUCH_COORD_TO_PIXEL(input.x),
+							TOUCH_COORD_TO_PIXEL(input.y) };
+						ScreenToClient(hwnd, &local);
+						PageControlTouchLockState current;
 						{
 							std::unique_lock renderLock(renderTransactionMutex);
-							const bool primary = (input.dwFlags
-								& TOUCHEVENTF_PRIMARY) != 0;
-							if ((input.dwFlags & TOUCHEVENTF_DOWN)
-								&& primary && !state.touchActive)
-							{
-								state.touchActive = true;
-								state.touchId = input.dwID;
-								translated = WM_LBUTTONDOWN;
-							}
-							else if (state.touchActive && state.touchId == input.dwID)
-							{
-								if (input.dwFlags & TOUCHEVENTF_MOVE)
-									translated = WM_MOUSEMOVE;
-								else if (input.dwFlags & TOUCHEVENTF_UP)
-								{
-									state.touchActive = false;
-									state.touchId = 0;
-									translated = WM_LBUTTONUP;
-								}
-							}
+							current = { state.touchId, state.touchActive,
+								state.touchPrimary };
 						}
-						if (translated != 0)
+						const auto decision = ResolvePageControlTouchSample(
+							current, input.dwID,
+							(input.dwFlags & TOUCHEVENTF_DOWN) != 0,
+							(input.dwFlags & TOUCHEVENTF_MOVE) != 0,
+							(input.dwFlags & TOUCHEVENTF_UP) != 0,
+							(input.dwFlags & TOUCHEVENTF_PRIMARY) != 0,
+							hasPrimaryTouch, fallbackTouchLocked);
+						fallbackTouchLocked = decision.fallbackLocked;
+						if (decision.cancelPrevious)
 						{
-							POINT local{ TOUCH_COORD_TO_PIXEL(input.x),
-								TOUCH_COORD_TO_PIXEL(input.y) };
-							ScreenToClient(hwnd, &local);
 							translatingTouch = true;
-							(void)PageControlWindowProc(hwnd, translated,
-								translated == WM_LBUTTONUP ? 0 : MK_LBUTTON,
-								MAKELPARAM(local.x, local.y));
+							(void)PageControlWindowProc(
+								hwnd, WM_CANCELMODE, 0, 0);
 							translatingTouch = false;
 						}
+						{
+							std::unique_lock renderLock(renderTransactionMutex);
+							state.touchId = decision.state.id;
+							state.touchActive = decision.state.active;
+							state.touchPrimary = decision.state.primary;
+							if (decision.message != PageControlTouchMessage::None)
+								state.touchLastClient = decision.state.active
+									? local : POINT{};
+						}
+						UINT translated = 0;
+						if (decision.message == PageControlTouchMessage::Down)
+							translated = WM_LBUTTONDOWN;
+						else if (decision.message == PageControlTouchMessage::Move)
+							translated = WM_MOUSEMOVE;
+						else if (decision.message == PageControlTouchMessage::Up)
+							translated = WM_LBUTTONUP;
+						if (translated == 0) continue;
+						translatingTouch = true;
+						(void)PageControlWindowProc(hwnd, translated,
+							translated == WM_LBUTTONUP ? 0 : MK_LBUTTON,
+							MAKELPARAM(local.x, local.y));
+						translatingTouch = false;
 					}
 				}
 				CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(lParam));
@@ -1723,6 +1777,7 @@ namespace Inkeys::UI::PageControl
 						// 拖出箭头后本次按压彻底取消，移回也不能重新启动长按。
 						state.pressStarted = {};
 						state.lastRepeat = {};
+						state.repeatTiming = {};
 					}
 				}
 				if (logical) state.scene.PointerMove(*logical);
@@ -1739,6 +1794,7 @@ namespace Inkeys::UI::PageControl
 					if (!state.dragging) state.scene.PointerLeave();
 					state.pressStarted = {};
 					state.lastRepeat = {};
+					state.repeatTiming = {};
 				}
 				if (notifyBorderCursor)
 					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
@@ -1806,7 +1862,8 @@ namespace Inkeys::UI::PageControl
 						{
 							state.pressedNext = invokeNext;
 							state.pressStarted = std::chrono::steady_clock::now();
-							state.lastRepeat = state.pressStarted;
+							state.lastRepeat = {};
+							state.repeatTiming = QueryPptKeyboardRepeatTiming();
 							RequestSurface(index);
 						}
 					}
@@ -1854,6 +1911,7 @@ namespace Inkeys::UI::PageControl
 					state.suppressedPresentationBusyTraces = 0;
 					state.pressStarted = {};
 					state.lastRepeat = {};
+					state.repeatTiming = {};
 				}
 				const auto dragRelease = hadDragTracking
 					? EndDragTracking(dragPairIndex, dragEnded)
@@ -1942,8 +2000,11 @@ namespace Inkeys::UI::PageControl
 					state.suppressedPresentationBusyTraces = 0;
 					state.pressStarted = {};
 					state.lastRepeat = {};
+					state.repeatTiming = {};
 					state.touchActive = false;
 					state.touchId = 0;
+					state.touchPrimary = false;
+					state.touchLastClient = {};
 				}
 				if (rollbackDrag)
 				{
@@ -2134,8 +2195,11 @@ namespace Inkeys::UI::PageControl
 				surface.suppressedPresentationBusyTraces = 0;
 				surface.pressStarted = {};
 				surface.lastRepeat = {};
+				surface.repeatTiming = {};
 				surface.touchActive = false;
 				surface.touchId = 0;
+				surface.touchPrimary = false;
+				surface.touchLastClient = {};
 			}
 		}
 		for (std::size_t pairIndex = 0;
