@@ -1580,6 +1580,15 @@ namespace Inkeys::Drawing::Draw3
 		}
 		std::vector<RuntimeStroke*> active;
 		active.reserve(kPreheatedStrokeCount);
+		bool publishedDrawingActivity = false;
+		auto reconcileDrawingActivity = [&]() noexcept
+		{
+			const bool activeNow = HasPhysicalContact(active);
+			if (activeNow == publishedDrawingActivity) return;
+			publishedDrawingActivity = activeNow;
+			if (observer_.drawingActivityChanged)
+				observer_.drawingActivityChanged(observer_.context, activeNow);
+		};
 		SpeedEraserHoverLane mouseEraserHoverLane;
 		SpeedEraserHoverLane penEraserHoverLane;
 		SpeedEraserHoverLane invertedPenEraserHoverLane;
@@ -2657,6 +2666,12 @@ namespace Inkeys::Drawing::Draw3
 					return;
 				}
 				initializeStroke(handle); // 出队后立即固定本地 generation。
+			};
+			auto processCommandAndReconcile = [&](ContactRecord* record)
+			{
+				processCommand(record);
+				// Down 后部分路径会直接 continue，必须在命令边界立即发布 0→1。
+				reconcileDrawingActivity();
 			};
 
 		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
@@ -4588,7 +4603,7 @@ namespace Inkeys::Drawing::Draw3
 					priorityMouseInContact)))
 			{
 				// 导航推进前先按输入 QPC 归类，避免最后 Touch Up 附近的 Pen 被补画。
-				while (input_.TryDequeue(record)) processCommand(record);
+				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
 			}
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
 			LARGE_INTEGER navigationQpc = {};
@@ -4840,7 +4855,7 @@ namespace Inkeys::Drawing::Draw3
 				// 每个 tile 之间先检查输入，避免后台预建拉长下一笔 Down 的排队时间。
 				if (input_.TryDequeue(record))
 				{
-					processCommand(record);
+					processCommandAndReconcile(record);
 					continue;
 				}
 				const CompositionMaintenanceItem maintenance =
@@ -4879,7 +4894,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (input_.TryDequeue(record))
 					{
-						processCommand(record);
+						processCommandAndReconcile(record);
 						if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 						continue;
 					}
@@ -4893,7 +4908,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						// 内部状态异常时退回可靠阻塞，避免溢出后忙循环。
 						input_.WaitDequeue(record);
-						processCommand(record);
+						processCommandAndReconcile(record);
 						if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 						continue;
 					}
@@ -4908,12 +4923,12 @@ namespace Inkeys::Drawing::Draw3
 				// 二次排空后才等待；竞态窗口内到达的命令会留下信号量计数。
 				if (input_.TryDequeue(record))
 				{
-					processCommand(record);
+					processCommandAndReconcile(record);
 					if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 					continue;
 				}
 				input_.WaitDequeue(record);
-				processCommand(record);
+				processCommandAndReconcile(record);
 				if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 				continue;
 			}
@@ -4933,7 +4948,7 @@ namespace Inkeys::Drawing::Draw3
 				GetInterruptedStrokeReconnectEnabled();
 			if (!interruptedStrokeReconnectEnabled)
 			{
-				while (input_.TryDequeue(record)) processCommand(record);
+				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
 				// 关闭开关时保留原先的 Down 出队顺序，确保它是完整的回滚点。
 			}
 			// 先把旧 contact 的 Up 转成候选，同帧随后出队的新 Down 才能看到它。
@@ -4965,7 +4980,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			if (interruptedStrokeReconnectEnabled)
-				while (input_.TryDequeue(record)) processCommand(record);
+				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
 			for (RuntimeStroke* runtime : active)
 			{
 				if (!runtime || !runtime->awaitingReconnect ||
@@ -5796,6 +5811,8 @@ namespace Inkeys::Drawing::Draw3
 			previousCanvasFrameWorkMilliseconds = (std::max)(0.0,
 				canvasFrameElapsedMilliseconds - lastPresentDurationMs_);
 			previousCanvasPresentMilliseconds = lastPresentDurationMs_;
+			// Up/Cancel 的 Stored 提交与 active 回收完成后再发布最终 1→0。
+			reconcileDrawingActivity();
 			const bool hasPhysicalContactAfterFrame = HasPhysicalContact(active);
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();

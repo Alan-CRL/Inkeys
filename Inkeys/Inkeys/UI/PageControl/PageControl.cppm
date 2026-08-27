@@ -8,6 +8,7 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -50,6 +51,38 @@ export namespace Inkeys::UI::PageControl
 		if (mode == WorkspaceMode::WhiteboardExpanded)
 			return { true, false, false, false, false };
 		return {};
+	}
+
+	inline constexpr std::chrono::milliseconds PptLongPressDelay{ 400 };
+	inline constexpr std::chrono::milliseconds PptLongPressInterval{ 15 };
+
+	struct PptDirectionPressPolicy
+	{
+		bool invokeOnPointerDown = false;
+		bool trackLongPress = false;
+	};
+
+	[[nodiscard]] constexpr PptDirectionPressPolicy
+		ResolvePptDirectionPressPolicy(
+			WorkspaceMode mode, bool longPressEnabled) noexcept
+	{
+		if (mode != WorkspaceMode::PptCompact) return {};
+		return { true, longPressEnabled };
+	}
+
+	[[nodiscard]] constexpr bool ShouldKeepPptLongPressTracking(
+		bool repeatEnabled, bool captureOwned,
+		bool sameDirectionHit) noexcept
+	{
+		return repeatEnabled && captureOwned && sameDirectionHit;
+	}
+
+	[[nodiscard]] constexpr bool ShouldTriggerPptLongPressRepeat(
+		bool repeatEnabled, std::chrono::steady_clock::duration held,
+		std::chrono::steady_clock::duration sinceLastRepeat) noexcept
+	{
+		return repeatEnabled && held >= PptLongPressDelay
+			&& sinceLastRepeat >= PptLongPressInterval;
 	}
 
 	[[nodiscard]] constexpr bool ShouldAcceptPageControlClientHit(
@@ -193,7 +226,7 @@ export namespace Inkeys::UI::PageControl
 			PptWidgetContract{ PptWidgetRole::Previous, previous,
 				false, true, false, false, true, true, false, false },
 			PptWidgetContract{ PptWidgetRole::Page, page,
-				true, false, true, true, true, true, true, true },
+				true, true, true, true, true, true, true, true },
 			PptWidgetContract{ PptWidgetRole::Next, next,
 				false, true, false, false, true, true, false, false },
 		};
@@ -356,6 +389,7 @@ export namespace Inkeys::UI::PageControl
 	struct PptState
 	{
 		bool presentationVisible = false;
+		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
 		PptLayoutState layout;
@@ -387,6 +421,7 @@ export namespace Inkeys::UI::PageControl
 					|| (std::isnan(first) && std::isnan(second));
 			};
 		return left.presentationVisible == right.presentationVisible
+			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
 			&& SameFloat(left.layout.bottomPairWidth,
@@ -427,6 +462,7 @@ export namespace Inkeys::UI::PageControl
 	{
 		std::function<void()> previousPage;
 		std::function<void()> nextPage;
+		std::function<void()> viewShow;
 		std::function<void(PptLayoutState)> persistPosition;
 	};
 
@@ -634,15 +670,6 @@ export namespace Inkeys::UI::PageControl
 				targetContent.cy + targetOutset * 2 }),
 		};
 		return { resolved, resolved.cx != current.cx || resolved.cy != current.cy };
-	}
-
-	[[nodiscard]] inline bool ShouldFlashPptSurface(
-		Surface surface, const PptState& ppt,
-		const WhiteboardState& whiteboard) noexcept
-	{
-		return !WhiteboardWorkspaceSwitching(whiteboard)
-			&& ResolveWorkspaceMode(surface, ppt, whiteboard)
-			== WorkspaceMode::PptCompact;
 	}
 
 	[[nodiscard]] inline ResolvedSurfaceLayout ResolveSurfaceLayout(
@@ -904,7 +931,6 @@ export namespace Inkeys::UI::PageControl
 	void SetWhiteboardCallbacks(WhiteboardCallbacks callbacks);
 	void PublishPptState(const PptState& state) noexcept;
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept;
-	void FlashPptDirection(bool next) noexcept;
 	void QueuePptWheel(short delta) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;
 	void NotifyLayoutChanged() noexcept;

@@ -13,7 +13,8 @@ namespace Inkeys::Drawing::Draw3
 	Host& ProductHost() noexcept;
 	bool StartProduct(HWND drawpad, HWND drawpadPresentation,
 		HostStyleCallbacks callbacks = {},
-		HostStartOptions options = {});
+		HostStartOptions options = {},
+		HostRuntimeCallbacks runtimeCallbacks = {});
 	void StopProduct() noexcept;
 	bool ProductRunning() noexcept;
 	bool ProductFirstFrameReady() noexcept;

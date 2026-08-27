@@ -67,6 +67,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::uint64_t> presentedContentRevision = 0;
 		std::atomic_bool auxiliaryFullFrameClean = false;
 		Detail::HostRuntimeRevisionSignal runtimeRevision;
+		Detail::HostDrawingActivityState drawingActivity;
 		std::atomic<LONG> lastDirtyLeft = 0;
 		std::atomic<LONG> lastDirtyTop = 0;
 		std::atomic<LONG> lastDirtyRight = 0;
@@ -76,6 +77,7 @@ namespace Inkeys::Drawing::Draw3
 		bool requestedProductPage = false;
 		std::uint32_t requestedProductPageIndex = 0;
 		HostStyleCallbacks styleCallbacks = {};
+		HostRuntimeCallbacks runtimeCallbacks = {};
 		HostStartOptions startOptions = {};
 		std::mutex startupMutex;
 		std::condition_variable startupCondition;
@@ -161,6 +163,7 @@ namespace Inkeys::Drawing::Draw3
 			presentedContentRevision.store(0, std::memory_order_release);
 			auxiliaryFullFrameClean.store(false, std::memory_order_release);
 			runtimeRevision.Reset();
+			drawingActivity.Reset();
 			lastDirtyLeft.store(0, std::memory_order_release);
 			lastDirtyTop.store(0, std::memory_order_release);
 			lastDirtyRight.store(0, std::memory_order_release);
@@ -316,6 +319,21 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		static void ObserveDrawingActivity(void* context, bool active) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			(void)self->drawingActivity.Publish(active,
+				self->runtimeCallbacks.context,
+				self->runtimeCallbacks.drawingActivityChanged);
+		}
+
+		void EndDrawingActivity() noexcept
+		{
+			(void)drawingActivity.EndIfActive(runtimeCallbacks.context,
+				runtimeCallbacks.drawingActivityChanged);
+		}
+
 		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
 		{
 			const auto* callbacks = static_cast<const HostStyleCallbacks*>(context);
@@ -403,7 +421,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		bool Start(HWND hwnd, HWND presentationHwnd,
-			HostStyleCallbacks styleCallbacks, HostStartOptions options)
+			HostStyleCallbacks styleCallbacks, HostStartOptions options,
+			HostRuntimeCallbacks runtimeCallbacks)
 		{
 			if (running.load(std::memory_order_acquire) ||
 				attachedWindow.load(std::memory_order_acquire) ||
@@ -414,6 +433,7 @@ namespace Inkeys::Drawing::Draw3
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
 			this->styleCallbacks = styleCallbacks;
+			this->runtimeCallbacks = runtimeCallbacks;
 			startOptions = options;
 			hiddenTestContactInjectionEnabled = options.enableHiddenTestContactInjection;
 			attachedWindow.store(hwnd, std::memory_order_release);
@@ -499,7 +519,8 @@ namespace Inkeys::Drawing::Draw3
 							const DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
-								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge
+								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge,
+								&ObserveDrawingActivity
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -550,6 +571,8 @@ namespace Inkeys::Drawing::Draw3
 						window.RequestExit();
 					}
 				}
+				// Run 正常、异常或 stop 返回时都补齐活动结束，再释放 controller。
+				EndDrawingActivity();
 				// GPU 资源在拥有它们的绘制线程释放，避免跨线程访问 Renderer。
 				if (drawing) drawing.reset();
 				presentation.Shutdown();
@@ -566,12 +589,14 @@ namespace Inkeys::Drawing::Draw3
 		{
 			lock.unlock();
 			if (drawingThread.joinable()) drawingThread.join();
+			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
 			attachedWindow.store(nullptr, std::memory_order_release);
 			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
+			runtimeCallbacks = {};
 			return false;
 		}
 
@@ -606,12 +631,14 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.request_stop();
 			startupCondition.notify_all();
 			if (drawingThread.joinable()) drawingThread.join();
+			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
 			attachedWindow.store(nullptr, std::memory_order_release);
 			attachedPresentationWindow.store(nullptr, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = false;
 			firstFrameReady.store(false, std::memory_order_release);
+			runtimeCallbacks = {};
 			return false;
 		}
 		return true;
@@ -621,7 +648,12 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (!attachedWindow.load(std::memory_order_acquire) &&
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
-				!running.load(std::memory_order_acquire)) return;
+				!running.load(std::memory_order_acquire))
+			{
+				EndDrawingActivity();
+				runtimeCallbacks = {};
+				return;
+			}
 			bridge.Stop();
 			// 先停止 RTS producer，再唤醒绘制线程，确保不再产生新的 contact。
 			stylus.Shutdown();
@@ -630,6 +662,7 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.request_stop();
 			startupCondition.notify_all();
 			if (drawingThread.joinable()) drawingThread.join();
+			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
 			attachedWindow.store(nullptr, std::memory_order_release);
@@ -639,15 +672,18 @@ namespace Inkeys::Drawing::Draw3
 			running.store(false, std::memory_order_release);
 			contentCondition.notify_all();
 			runtimeRevision.NotifyAll();
+			runtimeCallbacks = {};
 		}
 	};
 
 	Host::Host() : impl_(std::make_unique<Impl>()) {}
 	Host::~Host() { Stop(); }
 	bool Host::Start(HWND drawpad, HWND drawpadPresentation,
-		HostStyleCallbacks callbacks, HostStartOptions options)
+		HostStyleCallbacks callbacks, HostStartOptions options,
+		HostRuntimeCallbacks runtimeCallbacks)
 	{
-		return impl_->Start(drawpad, drawpadPresentation, callbacks, options);
+		return impl_->Start(drawpad, drawpadPresentation, callbacks, options,
+			runtimeCallbacks);
 	}
 	void Host::Stop() noexcept { impl_->Stop(); }
 	bool Host::Running() const noexcept { return impl_->running.load(std::memory_order_acquire); }

@@ -13,6 +13,7 @@ module Inkeys.UI.Ppt;
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar;
+import Inkeys.Other.Config;
 import Inkeys.Window;
 
 namespace Inkeys::UI::Ppt
@@ -117,6 +118,8 @@ namespace Inkeys::UI::Ppt
 			{
 				std::scoped_lock lock(stateMutex);
 				state.presentationVisible = topmostRefresh.presentationVisible;
+				state.longPressEnabled =
+					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
 				state.currentPage = currentPage;
 				state.totalPage = totalPage;
 				state.layout = ToPageLayout(configuration);
@@ -174,6 +177,7 @@ namespace Inkeys::UI::Ppt
 		Inkeys::UI::PageControl::SetPptCallbacks({
 			std::move(callbackSnapshot.previousPage),
 			std::move(callbackSnapshot.nextPage),
+			std::move(callbackSnapshot.viewShow),
 			PersistPageLayout,
 		});
 		Inkeys::UI::Bar::SetEndShowCallback(
@@ -248,12 +252,6 @@ namespace Inkeys::UI::Ppt
 			totalPage = total;
 		}
 		PublishSnapshot();
-	}
-
-	void FlashPageDirection(bool next) noexcept
-	{
-		if (initialized.load(std::memory_order_acquire))
-			Inkeys::UI::PageControl::FlashPptDirection(next);
 	}
 
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept

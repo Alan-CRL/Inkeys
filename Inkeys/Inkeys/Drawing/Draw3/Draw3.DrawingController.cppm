@@ -39,6 +39,7 @@ export namespace Inkeys::Drawing::Draw3
 		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
 		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t) = nullptr;
 		void (*controlWake)(void*) = nullptr;
+		void (*drawingActivityChanged)(void*, bool) = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

@@ -318,6 +318,39 @@ namespace
 		if (!Expect(stopWaitCompleted.load(std::memory_order_acquire),
 			"host stop notification releases runtime waiter")) ++failures;
 	}
+
+	struct DrawingActivityCalls
+	{
+		int started = 0;
+		int ended = 0;
+	};
+
+	void RecordDrawingActivity(void* context, bool active) noexcept
+	{
+		auto* calls = static_cast<DrawingActivityCalls*>(context);
+		if (!calls) return;
+		if (active) ++calls->started;
+		else ++calls->ended;
+	}
+
+	void TestDrawingActivityLifecycle(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostDrawingActivityState;
+		HostDrawingActivityState state;
+		DrawingActivityCalls calls;
+		if (!Expect(!state.Publish(false, &calls, &RecordDrawingActivity)
+			&& state.Publish(true, &calls, &RecordDrawingActivity)
+			&& !state.Publish(true, &calls, &RecordDrawingActivity)
+			&& state.Publish(false, &calls, &RecordDrawingActivity)
+			&& calls.started == 1 && calls.ended == 1 && !state.Active(),
+			"false-to-true-to-true-to-false publishes one start and end")) ++failures;
+
+		state.Publish(true, &calls, &RecordDrawingActivity);
+		if (!Expect(state.EndIfActive(&calls, &RecordDrawingActivity)
+			&& !state.EndIfActive(&calls, &RecordDrawingActivity)
+			&& calls.started == 2 && calls.ended == 2 && !state.Active(),
+			"host stop or exception completes one active drawing interval")) ++failures;
+	}
 }
 
 int RunDraw3BridgeTests()
@@ -330,5 +363,6 @@ int RunDraw3BridgeTests()
 	TestTimerPeriodController(failures);
 	TestDrawpadPresentationPlan(failures);
 	TestPageRuntimeRevisionPolicy(failures);
+	TestDrawingActivityLifecycle(failures);
 	return failures;
 }

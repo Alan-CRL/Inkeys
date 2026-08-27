@@ -442,7 +442,6 @@ export namespace Inkeys::UI::Ppt
 	[[nodiscard]] WNDPROC WindowProc() noexcept;
 	void PublishPresentationVisible(bool visible) noexcept;
 	void PublishPageState(int currentPage, int totalPage) noexcept;
-	void FlashPageDirection(bool next) noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
 	void QueueGlobalWheel(short delta) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;

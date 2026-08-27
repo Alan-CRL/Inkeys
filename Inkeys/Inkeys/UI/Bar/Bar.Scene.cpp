@@ -506,7 +506,6 @@ namespace Inkeys::UI::Bar
 			BarUiShapeClass dragHandle;
 			BarUiWordClass secondary;
 			bool hasSecondary = false;
-			bool externalPressed = false;
 			RECT lastPixels{};
 		};
 
@@ -981,7 +980,7 @@ namespace Inkeys::UI::Bar
 			}
 			const bool enabled = widget.spec.visible && widget.spec.enabled;
 			SetBarButtonPressedVisual(*widget.button,
-				pressed == widget.spec.id || widget.externalPressed);
+				pressed == widget.spec.id);
 			widget.button->state->state = widget.spec.selected
 				? BarWidgetState::Selected : BarWidgetState::None;
 			RetargetBarButtonInteractionVisual(*widget.button,
@@ -1770,27 +1769,6 @@ namespace Inkeys::UI::Bar
 			impl_->IncludeDamageLocked(widget->lastPixels);
 			widget->spec.selected = selected;
 			impl_->ApplyButtonTargetsLocked(*widget);
-			impl_->IncludeDamageLocked(widget->lastPixels);
-			hooks = impl_->hooks;
-		}
-		if (hooks.invalidate) hooks.invalidate();
-		if (hooks.wake) hooks.wake();
-		return true;
-	}
-
-	bool BarSurfaceScene::SetWidgetExternalPressed(
-		BarSurfaceWidgetId id, bool pressed)
-	{
-		BarSurfaceHooks hooks;
-		{
-			std::lock_guard lock(impl_->mutex);
-			auto* widget = impl_->FindWidgetLocked(id);
-			if (!widget || widget->spec.kind != BarSurfaceWidgetKind::Button)
-				return false;
-			if (widget->externalPressed == pressed) return true;
-			impl_->IncludeDamageLocked(widget->lastPixels);
-			widget->externalPressed = pressed;
-			impl_->ApplyButtonInteractionTargetsLocked(*widget);
 			impl_->IncludeDamageLocked(widget->lastPixels);
 			hooks = impl_->hooks;
 		}

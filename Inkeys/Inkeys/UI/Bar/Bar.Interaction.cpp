@@ -5769,22 +5769,11 @@ void BarUISetClass::HandleCanvasDrawingActivity(HWND hWnd, bool started)
 		return;
 
 	// UI3 落笔时固定收起次级面板；主栏本身保持用户当前的展开状态。
-	barState.drawAttribute = false;
-	barState.geometryAttribute = false;
-	barState.moreExpanded = false;
-	ClosePenTypeMenu();
-	CloseDrawAttributeTooltips();
-	CloseThicknessSlider(true);
-	CloseColorPicker(true);
+	CollapseAuxiliaryPanels(true);
 	UpdateRendering(false);
 
-	POINT screenPoint{};
-	if (!GetCursorPos(&screenPoint)
-		|| IsBorderCursorAcceptingWindow(
-			hWnd, WindowFromPoint(screenPoint))) return;
-
-	// 落笔只在消息接收区外一次性关闭第三鼠标光，第一光源与后续绘制过程保持独立。
-	SuspendBorderCursorTracking(hWnd);
+	// 即使光标仍在 Bar/PageControl 内也先休眠，并等待真实离开后再允许激活。
+	SuspendBorderCursorTracking(hWnd, true);
 }
 
 void BarUISetClass::SuspendBorderCursorTracking(HWND hWnd, bool waitForMouseLeave)

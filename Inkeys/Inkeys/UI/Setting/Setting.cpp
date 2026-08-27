@@ -5761,6 +5761,8 @@ SettingSessionCoroutine RunSettingSession()
 										{
 											Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress = value;
 											QueueConfigWrite();
+											Inkeys::UI::Ppt::NotifyConfigurationChanged(
+												Inkeys::UI::Ppt::ConfigGroup::All);
 										}
 									}
 

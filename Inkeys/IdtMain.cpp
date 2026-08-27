@@ -1508,10 +1508,18 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
+		Inkeys::Drawing::Draw3::HostRuntimeCallbacks draw3RuntimeCallbacks{
+			nullptr,
+			[](void*, bool active) noexcept
+			{
+				if (active) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
+				else Inkeys::UI::Bar::NotifyCanvasDrawingEnded();
+			}
+		};
 		bool draw3Started = Inkeys::Drawing::Draw3::StartProduct(
 			drawpad_window, windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation),
-			draw3StyleCallbacks, draw3StartOptions);
+			draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks);
 		if (!draw3Started && preferDraw3DirectComposition)
 		{
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
@@ -1530,7 +1538,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				draw3Started = Inkeys::Drawing::Draw3::StartProduct(
 					drawpad_window, windowService.Handle(
 						Inkeys::Window::WindowRole::DrawpadPresentation),
-					draw3StyleCallbacks, draw3StartOptions);
+					draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks);
 			}
 		}
 		if (!draw3Started)

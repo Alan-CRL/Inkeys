@@ -19,11 +19,13 @@ namespace Inkeys::Drawing::Draw3
 	Host& ProductHost() noexcept { return productHost; }
 
 	bool StartProduct(HWND drawpad, HWND drawpadPresentation,
-		HostStyleCallbacks callbacks, HostStartOptions options)
+		HostStyleCallbacks callbacks, HostStartOptions options,
+		HostRuntimeCallbacks runtimeCallbacks)
 	{
 		std::scoped_lock lock(productMutex);
 		if (productStopping.load(std::memory_order_acquire)) return false;
-		return productHost.Start(drawpad, drawpadPresentation, callbacks, options);
+		return productHost.Start(drawpad, drawpadPresentation, callbacks, options,
+			runtimeCallbacks);
 	}
 
 	void StopProduct() noexcept

@@ -55,6 +55,15 @@ Win32 window message
 
 依据：`PptInfo`、`PublishProductPage`、`HostRuntimeRevisionSignal`、`PptInfoStateBuffer`。
 
+### Drawing engine replacement to product UI
+
+- Draw2/Draw3 等绘制引擎替换不能只对照墨迹、页面和呈现结果；必须从旧绘制活动入口反查所有产品副作用，包括 Bar 次级界面收起、第三鼠标光休眠、capture/cancel、窗口层级和业务回调。
+- 绘制核心只发布全部 physical contact 的聚合活动状态，不直接依赖 UI。Controller 在命令边界与帧末发布 `0→1/1→0`，Host 再去重并在正常退出、异常和 stop/join 后补 false，产品层最后转发给 Bar。
+- 迁移既有控件时逐项对照手势阶段和配置传播：可命中区域、Down/Up 触发点、系统拖动阈值、长按首次延迟/重复节拍、移出与 capture cancel，以及键盘/滚轮是否只执行业务而不伪造 Pointer 视觉。
+- 回归测试至少同时覆盖纯逻辑时序、跨层 callback 链和源码静态入口；只测试末端状态 helper 不能证明上游引擎确实发出了事件。
+
+依据：`MultiFingerDrawing`、`DrawingControllerRuntimeObserver`、`HostRuntimeCallbacks`、`PageControlWindowProc`、`HandleCanvasDrawingActivity`。
+
 ### Model to render points
 
 - 原始鼠标速度只用于普通笔宽估算，预测点继承最后真实笔宽。

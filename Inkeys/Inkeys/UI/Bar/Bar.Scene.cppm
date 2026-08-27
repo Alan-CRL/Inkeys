@@ -198,7 +198,6 @@ export namespace Inkeys::UI::Bar
 			std::optional<double> iconAngle = std::nullopt);
 		bool SetWidgetInteractive(BarSurfaceWidgetId id, bool interactive);
 		bool SetWidgetSelected(BarSurfaceWidgetId id, bool selected);
-		bool SetWidgetExternalPressed(BarSurfaceWidgetId id, bool pressed);
 		bool SetBounds(RECT logicalBounds, float dpiScale) noexcept;
 		void SetBackground(const BarSurfaceBackgroundSpec& background);
 		void SetOpacity(double opacity,

@@ -3,6 +3,7 @@
 #endif
 #include <Windows.h>
 
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <string_view>
@@ -112,10 +113,10 @@ namespace
 		Check(!left[1].displaysText && !left[3].displaysText
 			&& left[1].invokesBusinessAction && left[3].invokesBusinessAction,
 			"compact arrows contain no labels and keep page actions");
-		Check(left[2].displaysText && !left[2].invokesBusinessAction
+		Check(left[2].displaysText && left[2].invokesBusinessAction
 			&& left[2].primaryTextBold && left[2].secondaryTextNormal
 			&& left[2].immediateTextUpdate,
-			"page button is a visual no-op with mixed page-number weights");
+			"PPT page button opens preview with mixed page-number weights");
 		Check(left[0].bounds.left == 5.0 && left[3].bounds.right == 160.0
 			&& right[1].bounds.left == 5.0 && right[0].bounds.right == 160.0,
 			"horizontal drag slot stays on the outer edge");
@@ -302,7 +303,7 @@ namespace
 			"inactive PPT and whiteboard resolve hidden");
 	}
 
-	void TestWorkspaceTransitionAndFlashPolicy()
+	void TestWorkspaceTransitionAndInputPolicy()
 	{
 		PptState ppt;
 		ppt.presentationVisible = true;
@@ -353,18 +354,33 @@ namespace
 			&& !whiteboardInput.persistPosition,
 			"whiteboard accepts clicks without inheriting PPT input");
 
-		Check(ShouldFlashPptSurface(Surface::BottomLeft, ppt, whiteboard)
-			&& !ShouldFlashPptSurface(Surface::MiddleLeft, ppt, whiteboard),
-			"keyboard feedback targets only visible PPT surfaces");
-		whiteboard.expandedLayoutTarget = true;
-		whiteboard.active = true;
-		Check(!ShouldFlashPptSurface(Surface::BottomLeft, ppt, whiteboard),
-			"keyboard PPT feedback stays disabled in whiteboard");
-		whiteboard.expandedLayoutTarget = false;
-		whiteboard.active = false;
-		ppt.presentationVisible = false;
-		Check(!ShouldFlashPptSurface(Surface::BottomLeft, ppt, whiteboard),
-			"keyboard PPT feedback stays disabled outside presentation");
+		const auto disabledPress = ResolvePptDirectionPressPolicy(
+			WorkspaceMode::PptCompact, false);
+		const auto enabledPress = ResolvePptDirectionPressPolicy(
+			WorkspaceMode::PptCompact, true);
+		const auto whiteboardPress = ResolvePptDirectionPressPolicy(
+			WorkspaceMode::WhiteboardExpanded, true);
+		Check(disabledPress.invokeOnPointerDown && !disabledPress.trackLongPress
+			&& enabledPress.invokeOnPointerDown && enabledPress.trackLongPress
+			&& !whiteboardPress.invokeOnPointerDown
+			&& !whiteboardPress.trackLongPress,
+			"PPT arrows invoke on down and only configured presses repeat");
+		Check(!ShouldTriggerPptLongPressRepeat(true,
+			std::chrono::milliseconds(399), std::chrono::milliseconds(399))
+			&& ShouldTriggerPptLongPressRepeat(true,
+				std::chrono::milliseconds(400), std::chrono::milliseconds(400))
+			&& !ShouldTriggerPptLongPressRepeat(true,
+				std::chrono::milliseconds(414), std::chrono::milliseconds(14))
+			&& ShouldTriggerPptLongPressRepeat(true,
+				std::chrono::milliseconds(415), std::chrono::milliseconds(15))
+			&& !ShouldTriggerPptLongPressRepeat(false,
+				std::chrono::seconds(1), std::chrono::seconds(1)),
+			"PPT long press uses the original 400ms and 15ms schedule");
+		Check(ShouldKeepPptLongPressTracking(true, true, true)
+			&& !ShouldKeepPptLongPressTracking(false, true, true)
+			&& !ShouldKeepPptLongPressTracking(true, false, true)
+			&& !ShouldKeepPptLongPressTracking(true, true, false),
+			"configuration, capture loss, and pointer leave stop repetition");
 	}
 
 	void TestWhiteboardLayoutTargetAndReadiness()
@@ -379,7 +395,6 @@ namespace
 				== WorkspaceMode::WhiteboardExpanded
 			&& !whiteboard.active
 			&& WhiteboardWorkspaceSwitching(whiteboard)
-			&& !ShouldFlashPptSurface(Surface::BottomLeft, ppt, whiteboard)
 			&& ShouldLockSurfaceInput(true, false,
 				WhiteboardWorkspaceSwitching(whiteboard)),
 			"expanded target starts before background readiness and locks input");
@@ -391,8 +406,7 @@ namespace
 		whiteboard.expandedLayoutTarget = false;
 		Check(ResolveWorkspaceMode(Surface::BottomLeft, ppt, whiteboard)
 				== WorkspaceMode::PptCompact
-			&& WhiteboardWorkspaceSwitching(whiteboard)
-			&& !ShouldFlashPptSurface(Surface::BottomLeft, ppt, whiteboard),
+			&& WhiteboardWorkspaceSwitching(whiteboard),
 			"exit retargets compact before the background becomes inactive");
 		whiteboard.active = false;
 		Check(!WhiteboardWorkspaceSwitching(whiteboard),
@@ -431,6 +445,10 @@ namespace
 		changedPpt.currentPage = 2;
 		Check(!ArePptStatesEquivalent(ppt, changedPpt),
 			"PPT page changes still publish");
+		changedPpt = ppt;
+		changedPpt.longPressEnabled = true;
+		Check(!ArePptStatesEquivalent(ppt, changedPpt),
+			"PPT long-press configuration changes publish immediately");
 		changedPpt = ppt;
 		changedPpt.layout.bottomPairWidth = 12.0F;
 		Check(!ArePptStatesEquivalent(ppt, changedPpt),
@@ -578,7 +596,7 @@ int RunPageControlTests()
 	TestDragCommitHandoff();
 	TestDragPureTranslationAndRevisionGate();
 	TestWorkspaceAndDpiLayouts();
-	TestWorkspaceTransitionAndFlashPolicy();
+	TestWorkspaceTransitionAndInputPolicy();
 	TestWhiteboardLayoutTargetAndReadiness();
 	TestDirtyInvalidationDeduplication();
 	TestRuntimeCollisionFallback();

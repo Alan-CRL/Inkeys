@@ -8,7 +8,7 @@
 
 - `Inkeys.UI.Bar`：拥有按钮/背景的尺寸解析、内部内容布局、hover/press 状态机、内容转换、动画推进、绘制、命中和 damage 算法。Main Bar 与 PageControl 必须调用相同导出入口。
 - `Inkeys.UI.PageControl`：拥有四个共享 HWND/RenderPipeline 客户端、每窗资源、surface 拓扑与屏幕锚点、PPT 专属拖动条、页码内容请求、工作区状态机和业务回调路由；不得解释 Bar 按钮内部视觉状态。
-- `Inkeys.UI.Ppt`：保留 COM/WPS 状态、页级墨迹、翻页命令、用户位置/缩放配置，只向 PageControl 发布不可变 PPT 快照和回调。
+- `Inkeys.UI.Ppt`：保留 COM/WPS 状态、页级墨迹、翻页/预览命令、用户位置/缩放配置；向 PageControl 发布不可变 PPT 快照、`longPressEnabled` 和 Previous/Next/ViewShow/Persist 回调，不让 PageControl 直接读取全局配置。
 - `Inkeys.UI.Whiteboard`：保留页数据、事务语义和换页回调，只发布 Whiteboard 快照；不拥有分页 renderer，也不继承 PPT 输入能力。
 - Window/RenderPipeline：继续保留 `PptBottomLeft`、`PptBottomRight`、`PptMiddleLeft`、`PptMiddleRight` 四个客户端；`PptExitShow` 保持删除。
 
@@ -87,14 +87,26 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 | 能力 | PPT | Whiteboard |
 | --- | --- | --- |
 | 普通 click/tap 与标准 hover/press | 是 | 是 |
-| Page 业务动作 | no-op | no-op |
+| Page 业务动作 | 阈值内短按调用 `ViewShow` | no-op |
 | 成对拖动 | 是，DragHandle、Page 与非箭头背景 | 否 |
 | 长按连续翻页 | 是 | 否 |
 | 滚轮翻页 | 是 | 否 |
 | 位置/缩放与持久化 | 是 | 否 |
 | 翻页事务只锁 interactive | 不适用既有 PPT 命令门禁 | 是，视觉保持稳定 |
 
-PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragHandle 命中优先，Previous/Next 始终委托共享 Bar 按钮入口且不得发起拖动。Page 和非箭头背景建立 drag candidate：Page 先显示共享 press，指针越过 `SM_CXDRAG/SM_CYDRAG` 对应阈值后取消按钮 capture 并进入成对拖动；未越过阈值的 Page 抬起保持 no-op。Whiteboard 不构造 DragHandle 或 drag candidate。键盘闪按只对当前可见、可交互的 PPT Arrow 调用共享 pressed 入口。
+PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragHandle 命中优先，Previous/Next 始终委托共享 Bar 按钮入口且不得发起拖动。Page 和非箭头背景建立 drag candidate：Page 先显示共享 press，指针越过 `SM_CXDRAG/SM_CYDRAG` 对应阈值后取消按钮 capture 并进入成对拖动；未越过阈值且在 Page 上抬起时调用 `ViewShow`。Whiteboard 不构造 DragHandle 或 drag candidate。
+
+PPT Arrow 在 Pointer Down 时立即投递一次 Previous/Next，并记录真实按压起点；只有快照 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时，才在 `400ms` 后首次重复，此后以 `15ms` 检查节拍尝试投递。既有 `pptUiPageCommandOutstanding` 继续合并尚未完成的 COM 请求。移出按钮、Pointer Up、`WM_CANCELMODE/WM_CAPTURECHANGED` 或工作区切换必须清除 press 与重复状态。键盘 Hook 和滚轮不再写入合成 pressed 截止时间；真实 Pointer 的共享 Bar hover/press 保持不变。
+
+每个有效 PPT Pointer Down 在业务分派前调用 `Window::Service::PromotePptWindow(surfaceRole)`；该调用只重排 owner 树内 PPT 层级，目标仍在 Bar 正下方且不得激活窗口。DragHandle 的纯平移继续使用 `SWP_NOZORDER`，因为层级已在 Down 边界维护。
+
+## Draw3 绘制活动桥接
+
+`DrawingController` 以所有 physical contact 的聚合 bool 为唯一事实。所有 `processCommand(record)` 路径和帧末都通过同一个 reconcile 比较上次发布状态：只在 `false→true` 调用 runtime observer 的 `drawingActivityChanged(context, true)`，只在 `true→false` 调用 `drawingActivityChanged(context, false)`。这样既覆盖 Down 后提前 `continue`，也避免多 contact 重复通知。
+
+Host 通过启动时注入的 runtime callback 把聚合变化送到产品层，产品层再调用 `Bar::NotifyCanvasDrawingStarted/Ended`；Draw3 核心不依赖 Bar。Host 保存已发布 active 状态并去重，`Run()` 异常退出或 Host stop 时若仍 active 必须补发一次 false，防止 Bar activity count 泄漏。
+
+Bar 在首次 Started 上调用既有 `CollapseAuxiliaryPanels(true)` 路径，关闭绘制/几何属性、更多、笔型、粗细、颜色与提示浮层，但不改变 `barState.fold`，也不隐藏 PageControl。第三光源处理无条件调用 `SuspendBorderCursorTracking(hWnd, true)`：立即进入 `Dormant` 并注销 Raw Input；若当前光标仍在 Bar 或 PageControl 接收 HWND，`true` 建立 `TME_LEAVE` 门禁，只有真实离开后下一次自然进入才可重新激活。Ended 只平衡 activity count，不恢复光影或次级界面。
 
 ## 工作区动画与窗口提交
 
@@ -132,6 +144,8 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 - 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage；背景外框强度保持 `1.0`，数字即时策略不残留 content transition。
 - 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
 - PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle/Page/背景拖动候选、Arrow 拒绝拖动、系统阈值转换、反向重入和首次渐显。
+- PPT 输入测试：Page 阈值内短按调用预览，Arrow Down 立即一次、`399ms` 无重复、`400ms` 首次重复、后续 `15ms` 检查，配置关闭和移出/Up/Cancel 停止；静态确认 Pointer Down 调用最近交互层级维护且无合成按键闪按状态。
+- Draw3 活动测试：聚合状态 `false→true→true→false` 只发布一次 Start/End，多 contact 不重复，Host stop/异常 active 清理补 End；静态确认产品回调链收起次级 UI 且 Started 无条件进入带 wait-for-leave 的第三光源 `Dormant`。
 - PPT/Draw3 状态测试：页命令完成会推进 runtime revision 并唤醒 waiter；UI 页码只发布 Draw3-ready buffer，且 native COM 检查节拍不超过 `50ms`。
 - 输入矩阵测试：Whiteboard 拒绝 drag/wheel/long-press/persist，PPT 保留；切换期间 capture/input 门禁正确。
 - 碰撞测试：无 Bar 参数/障碍，bottom 优先、middle 回退、手动 pair 不推动另一 pair、自动结果不写保存状态。

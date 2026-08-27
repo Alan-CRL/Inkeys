@@ -1,5 +1,7 @@
 # PPT 翻页控件主栏化：实施计划
 
+阶段 0–9 记录既有实现与设备验收历史；本轮发现的旧交互回归由阶段 10 覆盖，不回写已完成阶段的勾选状态。
+
 ## 0. 开工门禁与基线
 
 - [x] 在开始产品代码前重新阅读收敛后的 `prd.md`、`design.md` 和 `.trellis/spec/native-desktop/rendering-and-ui.md` PageControl 合同。
@@ -94,3 +96,13 @@
 - [x] publication 不自动请求 pair；仅锁竞争、非纯平移或窗口移动失败保留 latest-wins pending 并显式请求 render fallback，松手一次 `RequestAll` 吸收最终 Scene/layout。
 - [x] mailbox/layout/bounds 先于 release revision 发布，所有 revision 写点由 `dragCommitMutex` 串行；渲染在 `ConfigureSurface/PresentScene` 前及窗口提交后执行两道 stale gate。
 - [x] 通过 `git diff --check`、ARM64 完整构建和 `--no-window`，且未启动 GUI。
+
+## 10. 原始交互与 Draw3 绘制活动回归修正
+
+- [x] 为 `PptCallbacks` 恢复 `ViewShow`，Page 阈值内短按打开预览；DragHandle/Page/真实圆角背景的拖动区域及 Arrow 纯按钮边界保持。
+- [x] 恢复 Arrow Down 立即翻页、`400ms` 后按 `15ms` 检查节拍长按重复，并由 PPT 快照传播 `EnablePageButtonLongPress`；移出/Up/cancel/切换立即停止。
+- [x] 删除键盘 Hook 与滚轮合成的 Arrow pressed 闪按及其 external press 状态/测试；真实 Pointer hover/press 不变。
+- [x] 有效 PPT Pointer Down 调用 `PromotePptWindow`，维持目标高于其他 PPT、低于 Bar且不激活。
+- [x] 为 Draw3 controller/Host 增加物理 contact 聚合活动通知，覆盖 Down 后提前 continue、多 contact 去重，以及 stop/异常 active 清理。
+- [x] 产品层将 Draw3 Started/Ended 转发给 Bar；首次 Started 收起主栏次级界面但不改变主栏 fold/PageControl，并无条件让第三光源进入带 wait-for-leave 门禁的 `Dormant`。
+- [x] 更新 PageControl/Draw3 headless 回归，执行 `git diff --check`、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI。

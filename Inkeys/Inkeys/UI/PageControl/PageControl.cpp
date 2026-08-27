@@ -72,9 +72,6 @@ namespace Inkeys::UI::PageControl
 			return std::chrono::milliseconds(static_cast<long long>(std::lround(
 				LayoutTransitionDurationSeconds() * 1000.0)));
 		}
-		constexpr auto LongPressDelay = 500ms;
-		constexpr auto LongPressInterval = 120ms;
-		constexpr auto ExternalPressDuration = 110ms;
 		constexpr auto DragCandidateTraceInterval = 100ms;
 
 		[[nodiscard]] const char* SurfaceName(std::size_t index) noexcept
@@ -160,7 +157,6 @@ namespace Inkeys::UI::PageControl
 			bool borderCursorPointerInside = false;
 			bool dragging = false;
 			bool dragPending = false;
-			bool repeatTriggered = false;
 			bool pressedNext = false;
 			DWORD touchId = 0;
 			bool touchActive = false;
@@ -172,8 +168,6 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t suppressedPresentationBusyTraces = 0;
 			std::chrono::steady_clock::time_point pressStarted{};
 			std::chrono::steady_clock::time_point lastRepeat{};
-			std::chrono::steady_clock::time_point externalPressUntil{};
-			bool externalPressNext = false;
 			std::chrono::steady_clock::time_point layoutTransitionUntil{};
 			std::uint64_t observedRevision = 0;
 			SIZE backingCapacity{ 1, 1 };
@@ -520,6 +514,16 @@ namespace Inkeys::UI::PageControl
 				else if (ppt.presentationVisible)
 					callback = next ? pptCallbacks.nextPage
 						: pptCallbacks.previousPage;
+			}
+			if (callback) callback();
+		}
+
+		void InvokePptPreview()
+		{
+			std::function<void()> callback;
+			{
+				std::scoped_lock lock(callbackMutex);
+				callback = pptCallbacks.viewShow;
 			}
 			if (callback) callback();
 		}
@@ -1429,20 +1433,20 @@ namespace Inkeys::UI::PageControl
 						shouldSubscribeLighting);
 					state.lightingSubscribed = shouldSubscribeLighting;
 				}
-				if (state.externalPressUntil.time_since_epoch().count() != 0)
+				const auto directionPressPolicy =
+					ResolvePptDirectionPressPolicy(mode, ppt.longPressEnabled);
+				if (!directionPressPolicy.trackLongPress)
 				{
-					const bool active = frameContext.frameTime < state.externalPressUntil;
-					(void)state.scene.SetWidgetExternalPressed(
-						state.externalPressNext ? NextWidget : PreviousWidget, active);
-					if (!active) state.externalPressUntil = {};
+					state.pressStarted = {};
+					state.lastRepeat = {};
 				}
-				if (ResolveWorkspaceInputPolicy(mode).longPress
-					&& state.pressStarted.time_since_epoch().count() != 0
-					&& frameContext.frameTime - state.pressStarted >= LongPressDelay
-					&& frameContext.frameTime - state.lastRepeat >= LongPressInterval)
+				if (state.pressStarted.time_since_epoch().count() != 0
+					&& ShouldTriggerPptLongPressRepeat(
+						directionPressPolicy.trackLongPress,
+						frameContext.frameTime - state.pressStarted,
+						frameContext.frameTime - state.lastRepeat))
 				{
 					state.lastRepeat = frameContext.frameTime;
-					state.repeatTriggered = true;
 					repeatDirection = true;
 					repeatNext = state.pressedNext;
 				}
@@ -1462,8 +1466,7 @@ namespace Inkeys::UI::PageControl
 					&& frameContext.frameTime < state.layoutTransitionUntil;
 				const bool visibleAnimation = state.targetVisible
 					&& (state.bounds.active || state.scene.AnimationActive()
-						|| state.pressStarted.time_since_epoch().count() != 0
-						|| state.externalPressUntil.time_since_epoch().count() != 0);
+						|| state.pressStarted.time_since_epoch().count() != 0);
 				keepAnimating = exitTransitionActive || visibleAnimation;
 				shouldShow = ShouldKeepPageControlWindowVisible(
 					state.targetVisible, exitTransitionActive);
@@ -1707,8 +1710,22 @@ namespace Inkeys::UI::PageControl
 				}
 				if (state.dragPending) return 0;
 				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				if (const auto logical = state.scene.PresentationToLogical(local))
-					state.scene.PointerMove(*logical);
+				const auto logical = state.scene.PresentationToLogical(local);
+				if (state.pressStarted.time_since_epoch().count() != 0)
+				{
+					const WidgetId expected = state.pressedNext
+						? NextWidget : PreviousWidget;
+					const bool sameDirectionHit = logical.has_value()
+						&& state.scene.HitTest(*logical) == expected;
+					if (!ShouldKeepPptLongPressTracking(true,
+						GetCapture() == hwnd, sameDirectionHit))
+					{
+						// 拖出箭头后本次按压彻底取消，移回也不能重新启动长按。
+						state.pressStarted = {};
+						state.lastRepeat = {};
+					}
+				}
+				if (logical) state.scene.PointerMove(*logical);
 				else state.scene.PointerLeave();
 				return 0;
 			}
@@ -1720,6 +1737,8 @@ namespace Inkeys::UI::PageControl
 					notifyBorderCursor = state.borderCursorPointerInside;
 					state.borderCursorPointerInside = false;
 					if (!state.dragging) state.scene.PointerLeave();
+					state.pressStarted = {};
+					state.lastRepeat = {};
 				}
 				if (notifyBorderCursor)
 					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
@@ -1727,62 +1746,75 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_LBUTTONDOWN)
 			{
-				std::unique_lock renderLock(renderTransactionMutex);
-				if (!state.targetVisible || state.inputLocked) return 0;
-				const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				const auto logical = state.scene.PresentationToLogical(local);
-				if (!logical.has_value()) return 0;
-				const auto hit = state.scene.HitTest(*logical);
-				const auto region = PointerRegionForWidget(hit);
-				const auto inputPolicy = ResolveWorkspaceInputPolicy(
-					state.configuredMode);
-				const bool dragCandidate = inputPolicy.drag
-					&& CanStartPptDrag(region);
-				const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoWidget
-					? Inkeys::UI::Bar::BarSurfacePointerResult{}
-					: state.scene.PointerDown(*logical);
-				if (!result.consumed && !dragCandidate) return 0;
-				SetCapture(hwnd);
-				if (dragCandidate)
+				bool promotePpt = false;
+				bool invokeDirectionOnDown = false;
+				bool invokeNext = false;
 				{
-					state.dragging = StartsPptDragImmediately(region);
-					state.dragPending = !state.dragging;
-					state.dragStartScreen = local;
-					ClientToScreen(hwnd, &state.dragStartScreen);
+					std::unique_lock renderLock(renderTransactionMutex);
+					if (!state.targetVisible || state.inputLocked) return 0;
+					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+					const auto logical = state.scene.PresentationToLogical(local);
+					if (!logical.has_value()) return 0;
+					const auto hit = state.scene.HitTest(*logical);
+					const auto region = PointerRegionForWidget(hit);
+					const auto inputPolicy = ResolveWorkspaceInputPolicy(
+						state.configuredMode);
+					const bool dragCandidate = inputPolicy.drag
+						&& CanStartPptDrag(region);
+					const auto result = hit == Inkeys::UI::Bar::BarSurfaceNoWidget
+						? Inkeys::UI::Bar::BarSurfacePointerResult{}
+						: state.scene.PointerDown(*logical);
+					if (!result.consumed && !dragCandidate) return 0;
+					SetCapture(hwnd);
+					promotePpt = state.configuredMode == WorkspaceMode::PptCompact;
 					auto [ppt, whiteboard] = Snapshot();
 					(void)whiteboard;
-					const RECT monitor = PrimaryBounds();
-					ppt = ResolveRuntimePageControlLayout(
-						monitor, DpiScale(hwnd), ppt);
-					state.dragStartLayout = ppt.layout;
-					state.feasibleLayout = ppt.layout;
-					state.lastDragCandidateTrace = {};
-					state.suppressedDirectCandidateTraces = 0;
-					state.suppressedPresentationBusyTraces = 0;
-					BeginDragTracking(DragPairIndex(index), ppt.layout);
-					TraceDrag("down surface=%s region=%s immediate=%d "
-						"start=(%ld,%ld) position=(%.1f,%.1f)",
-						SurfaceName(index), PointerRegionName(region),
-						state.dragging ? 1 : 0,
-						state.dragStartScreen.x, state.dragStartScreen.y,
-						DragPairIndex(index) == 0 ? ppt.layout.bottomPairWidth
-							: ppt.layout.middlePairWidth,
-						DragPairIndex(index) == 0 ? ppt.layout.bottomPairHeight
-							: ppt.layout.middlePairHeight);
-				}
-				else if (result.pressed == PreviousWidget
-					|| result.pressed == NextWidget)
-				{
-					if (ResolveWorkspaceInputPolicy(
-						state.configuredMode).longPress)
+					if (dragCandidate)
 					{
-						state.pressedNext = result.pressed == NextWidget;
-						state.pressStarted = std::chrono::steady_clock::now();
-						state.lastRepeat = state.pressStarted;
-						state.repeatTriggered = false;
-						RequestSurface(index);
+						state.dragging = StartsPptDragImmediately(region);
+						state.dragPending = !state.dragging;
+						state.dragStartScreen = local;
+						ClientToScreen(hwnd, &state.dragStartScreen);
+						const RECT monitor = PrimaryBounds();
+						ppt = ResolveRuntimePageControlLayout(
+							monitor, DpiScale(hwnd), ppt);
+						state.dragStartLayout = ppt.layout;
+						state.feasibleLayout = ppt.layout;
+						state.lastDragCandidateTrace = {};
+						state.suppressedDirectCandidateTraces = 0;
+						state.suppressedPresentationBusyTraces = 0;
+						BeginDragTracking(DragPairIndex(index), ppt.layout);
+						TraceDrag("down surface=%s region=%s immediate=%d "
+							"start=(%ld,%ld) position=(%.1f,%.1f)",
+							SurfaceName(index), PointerRegionName(region),
+							state.dragging ? 1 : 0,
+							state.dragStartScreen.x, state.dragStartScreen.y,
+							DragPairIndex(index) == 0 ? ppt.layout.bottomPairWidth
+								: ppt.layout.middlePairWidth,
+							DragPairIndex(index) == 0 ? ppt.layout.bottomPairHeight
+								: ppt.layout.middlePairHeight);
+					}
+					else if (result.pressed == PreviousWidget
+						|| result.pressed == NextWidget)
+					{
+						const auto pressPolicy = ResolvePptDirectionPressPolicy(
+							state.configuredMode, ppt.longPressEnabled);
+						invokeDirectionOnDown = pressPolicy.invokeOnPointerDown;
+						invokeNext = result.pressed == NextWidget;
+						if (ShouldKeepPptLongPressTracking(
+							pressPolicy.trackLongPress, GetCapture() == hwnd, true))
+						{
+							state.pressedNext = invokeNext;
+							state.pressStarted = std::chrono::steady_clock::now();
+							state.lastRepeat = state.pressStarted;
+							RequestSurface(index);
+						}
 					}
 				}
+				// Z 序和业务回调都可能同步进入 Window Service，必须位于 Scene 锁外。
+				if (promotePpt)
+					(void)Inkeys::Window::GetService().PromotePptWindow(Roles[index]);
+				if (invokeDirectionOnDown) InvokeDirection(index, invokeNext);
 				return 0;
 			}
 			if (message == WM_LBUTTONUP)
@@ -1793,13 +1825,15 @@ namespace Inkeys::UI::PageControl
 				std::uint64_t suppressedDirectCandidateTraces = 0;
 				std::uint64_t suppressedPresentationBusyTraces = 0;
 				bool shouldInvokeClick = false;
+				WorkspaceMode releasedMode = WorkspaceMode::Hidden;
 				Inkeys::UI::Bar::BarSurfaceWidgetId clicked =
 					Inkeys::UI::Bar::BarSurfaceNoWidget;
 				{
 					std::unique_lock renderLock(renderTransactionMutex);
 					const POINT local{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 					const bool acceptInput = !state.inputLocked && state.targetVisible;
-					shouldInvokeClick = acceptInput && !state.repeatTriggered;
+					shouldInvokeClick = acceptInput;
+					releasedMode = state.configuredMode;
 					if (acceptInput)
 					{
 						if (const auto logical = state.scene.PresentationToLogical(local))
@@ -1819,7 +1853,7 @@ namespace Inkeys::UI::PageControl
 					state.suppressedDirectCandidateTraces = 0;
 					state.suppressedPresentationBusyTraces = 0;
 					state.pressStarted = {};
-					state.repeatTriggered = false;
+					state.lastRepeat = {};
 				}
 				const auto dragRelease = hadDragTracking
 					? EndDragTracking(dragPairIndex, dragEnded)
@@ -1830,7 +1864,11 @@ namespace Inkeys::UI::PageControl
 					std::scoped_lock lock(snapshotMutex);
 					publishedRevision.fetch_add(1, std::memory_order_relaxed);
 				}
-				if (shouldInvokeClick
+				if (shouldInvokeClick && releasedMode == WorkspaceMode::PptCompact
+					&& clicked == PageWidget)
+					InvokePptPreview();
+				else if (shouldInvokeClick
+					&& releasedMode != WorkspaceMode::PptCompact
 					&& (clicked == PreviousWidget || clicked == NextWidget))
 					InvokeDirection(index, clicked == NextWidget);
 				if (dragRelease.tracked)
@@ -1903,7 +1941,7 @@ namespace Inkeys::UI::PageControl
 					state.suppressedDirectCandidateTraces = 0;
 					state.suppressedPresentationBusyTraces = 0;
 					state.pressStarted = {};
-					state.repeatTriggered = false;
+					state.lastRepeat = {};
 					state.touchActive = false;
 					state.touchId = 0;
 				}
@@ -2045,26 +2083,6 @@ namespace Inkeys::UI::PageControl
 		RequestAll();
 	}
 
-	void FlashPptDirection(bool next) noexcept
-	{
-		const auto until = std::chrono::steady_clock::now()
-			+ ExternalPressDuration;
-		const auto [ppt, whiteboard] = Snapshot();
-		std::unique_lock renderLock(renderTransactionMutex);
-		for (std::size_t index = 0; index < surfaces.size(); ++index)
-		{
-			if (!ShouldFlashPptSurface(SurfaceFor(index), ppt, whiteboard))
-				continue;
-			surfaces[index].externalPressNext = next;
-			surfaces[index].externalPressUntil = until;
-			if (surfaces[index].sceneConfigured)
-				(void)surfaces[index].scene.SetWidgetExternalPressed(
-					next ? NextWidget : PreviousWidget, true);
-		}
-		renderLock.unlock();
-		RequestAll();
-	}
-
 	void QueuePptWheel(short delta) noexcept
 	{
 		const auto [ppt, whiteboard] = Snapshot();
@@ -2072,7 +2090,6 @@ namespace Inkeys::UI::PageControl
 			|| whiteboard.active || WhiteboardWorkspaceSwitching(whiteboard)
 			|| delta == 0) return;
 		InvokeDirection(0, delta < 0);
-		FlashPptDirection(delta < 0);
 	}
 
 	void SetDebugEnabled(bool enabled) noexcept
@@ -2116,7 +2133,7 @@ namespace Inkeys::UI::PageControl
 				surface.suppressedDirectCandidateTraces = 0;
 				surface.suppressedPresentationBusyTraces = 0;
 				surface.pressStarted = {};
-				surface.repeatTriggered = false;
+				surface.lastRepeat = {};
 				surface.touchActive = false;
 				surface.touchId = 0;
 			}

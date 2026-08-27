@@ -75,6 +75,35 @@ namespace Inkeys::Drawing::Draw3
 			mutable std::mutex mutex_;
 			mutable std::condition_variable condition_;
 		};
+
+		class HostDrawingActivityState
+		{
+		public:
+			using Callback = void (*)(void*, bool) noexcept;
+
+			void Reset() noexcept
+			{
+				active_.store(false, std::memory_order_release);
+			}
+			bool Publish(bool active, void* context, Callback callback) noexcept
+			{
+				if (active_.exchange(active, std::memory_order_acq_rel) == active)
+					return false;
+				if (callback) callback(context, active);
+				return true;
+			}
+			bool EndIfActive(void* context, Callback callback) noexcept
+			{
+				return Publish(false, context, callback);
+			}
+			[[nodiscard]] bool Active() const noexcept
+			{
+				return active_.load(std::memory_order_acquire);
+			}
+
+		private:
+			std::atomic_bool active_ = false;
+		};
 	}
 
 	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一 RTS 生产。
@@ -91,6 +120,12 @@ namespace Inkeys::Drawing::Draw3
 	{
 		void* context = nullptr;
 		bool (*setExtendedStyleFlags)(void*, DWORD, DWORD) = nullptr;
+	};
+
+	struct HostRuntimeCallbacks
+	{
+		void* context = nullptr;
+		void (*drawingActivityChanged)(void*, bool) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t
@@ -169,7 +204,8 @@ namespace Inkeys::Drawing::Draw3
 
 		bool Start(HWND drawpad, HWND drawpadPresentation,
 			HostStyleCallbacks styleCallbacks = {},
-			HostStartOptions options = {});
+			HostStartOptions options = {},
+			HostRuntimeCallbacks runtimeCallbacks = {});
 		void Stop() noexcept;
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
