@@ -107,7 +107,7 @@ PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragH
 
 PageControl 仍负责 stable backing capacity、logical/presentation 坐标、ULW 提交和窗口 revision；共享 Bar 运行时只返回视觉状态、damage 与 animation-active，不直接调用 Window Service。
 
-owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可能同步等待 Window Service owner 执行 `SetBounds/Show/Hide`。拖动直移只能 `try_lock` 呈现锁，失败时跳过本条 `WM_MOUSEMOVE`，下一条消息仍按原始 drag 起点计算最新候选；成功直移后递增 `directMoveRevision`，使过期渲染提交返回 `Retry`。Scene/D2D 状态仍由 `renderTransactionMutex` 保护，业务回调继续在该锁外执行。Window Service 的 cancel capture 必须覆盖四个 PageControl HWND；`WM_CANCELMODE` 在 `renderTransactionMutex` 内清状态，释放该锁后再调用会同步重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。
+owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可能同步等待 Window Service owner 执行 `SetBounds/Show/Hide`。每条拖动消息先按原始 drag 起点计算并发布 latest-wins 绝对候选，publication 本身不请求 pair。纯平移以 candidate logical bounds 加减当前稳定 presentation outset 得到绝对窗口目标；`try_lock` 成功后顺序 `SetWindowPos` 两窗，第二窗失败时回滚第一窗。两窗成功才更新两个 `SurfaceState.bounds`、mailbox/direct revision 与共享光源接收边界，不调用 `ApplySceneBounds`、不产生 Scene damage、不请求 pair；只有锁竞争、非纯平移或窗口移动失败请求 pair render fallback。mailbox/layout/bounds 必须先完成，再以 release store 发布由 `dragCommitMutex` 串行的单调 revision；渲染帧以 acquire 读取，并在取得 `renderTransactionMutex` 后、`ConfigureSurface/PresentScene` 前复核，窗口提交后保留第二次复核，过期帧直接 `Retry`。松手只 `RequestAll` 一次吸收最终 Scene/layout，并只在 pending 候选已提交或明确回滚后交还窗口所有权。Scene/D2D 状态仍由 `renderTransactionMutex` 保护，业务回调继续在该锁外执行。Window Service 的 cancel capture 必须覆盖四个 PageControl HWND；`WM_CANCELMODE` 在 `renderTransactionMutex` 内清状态，释放该锁后再调用会同步重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。
 
 ## PPT 页状态发布
 

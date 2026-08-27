@@ -212,6 +212,147 @@ export namespace Inkeys::UI::PageControl
 		bool rememberPosition = true;
 	};
 
+	inline constexpr std::uint8_t PptDragCommittedSurfaceMask = 0x03;
+
+	// latest-wins mailbox 只保存绝对布局；产品代码在外层负责线程同步和窗口提交。
+	struct PptDragCommitTracker
+	{
+		PptLayoutState layout{};
+		PptLayoutState committedLayout{};
+		std::uint64_t revision = 0;
+		std::uint8_t committedSurfaceMask = PptDragCommittedSurfaceMask;
+		bool ownsLayout = false;
+		bool pending = false;
+		bool released = false;
+		bool persistencePending = false;
+	};
+
+	struct PptDragPublicationResult
+	{
+		bool replacedPending = false;
+		std::uint64_t replacedRevision = 0;
+		bool requestPair = false;
+	};
+
+	struct PptDragReleaseResult
+	{
+		PptLayoutState layout{};
+		std::uint64_t revision = 0;
+		bool tracked = false;
+		bool pending = false;
+		bool persist = false;
+	};
+
+	struct PptDragRollbackResult
+	{
+		PptLayoutState layout{};
+		std::uint64_t revision = 0;
+		bool tracked = false;
+		bool discardedPending = false;
+	};
+
+	inline void BeginPptDragTracking(PptDragCommitTracker& tracker,
+		const PptLayoutState& layout) noexcept
+	{
+		if (!tracker.ownsLayout)
+		{
+			tracker.committedLayout = layout;
+			tracker.revision = 0;
+			tracker.committedSurfaceMask = PptDragCommittedSurfaceMask;
+			tracker.pending = false;
+		}
+		tracker.layout = layout;
+		tracker.ownsLayout = true;
+		tracker.released = false;
+		tracker.persistencePending = false;
+	}
+
+	[[nodiscard]] inline PptDragPublicationResult PublishPptDragCandidate(
+		PptDragCommitTracker& tracker, const PptLayoutState& layout,
+		std::uint64_t revision) noexcept
+	{
+		const PptDragPublicationResult result{
+			tracker.pending,
+			tracker.pending ? tracker.revision : 0,
+			false,
+		};
+		tracker.layout = layout;
+		tracker.revision = revision;
+		tracker.committedSurfaceMask = 0;
+		tracker.ownsLayout = true;
+		tracker.pending = true;
+		tracker.released = false;
+		tracker.persistencePending = false;
+		return result;
+	}
+
+	[[nodiscard]] inline bool MarkPptDragSurfaceCommitted(
+		PptDragCommitTracker& tracker, std::uint64_t revision,
+		std::uint8_t surfaceMask) noexcept
+	{
+		if (!tracker.pending || tracker.revision != revision
+			|| (surfaceMask & PptDragCommittedSurfaceMask) == 0)
+			return false;
+		tracker.committedSurfaceMask |= static_cast<std::uint8_t>(
+			surfaceMask & PptDragCommittedSurfaceMask);
+		if (tracker.committedSurfaceMask != PptDragCommittedSurfaceMask)
+			return false;
+		tracker.pending = false;
+		tracker.committedLayout = tracker.layout;
+		if (tracker.released && !tracker.persistencePending)
+			tracker.ownsLayout = false;
+		return true;
+	}
+
+	[[nodiscard]] inline PptDragReleaseResult ReleasePptDragTracking(
+		PptDragCommitTracker& tracker, bool persist) noexcept
+	{
+		if (!tracker.ownsLayout) return {};
+		tracker.released = true;
+		tracker.persistencePending = persist && tracker.layout.rememberPosition;
+		const PptDragReleaseResult result{
+			tracker.layout,
+			tracker.revision,
+			true,
+			tracker.pending,
+			tracker.persistencePending,
+		};
+		if (!tracker.pending && !tracker.persistencePending)
+			tracker.ownsLayout = false;
+		return result;
+	}
+
+	[[nodiscard]] inline bool CompletePptDragPersistence(
+		PptDragCommitTracker& tracker, std::uint64_t revision) noexcept
+	{
+		if (!tracker.ownsLayout || tracker.revision != revision
+			|| !tracker.persistencePending)
+			return false;
+		tracker.persistencePending = false;
+		if (tracker.released && !tracker.pending)
+			tracker.ownsLayout = false;
+		return true;
+	}
+
+	[[nodiscard]] inline PptDragRollbackResult RollbackPptDragTracking(
+		PptDragCommitTracker& tracker) noexcept
+	{
+		if (!tracker.ownsLayout) return {};
+		const PptDragRollbackResult result{
+			tracker.committedLayout,
+			tracker.revision,
+			true,
+			tracker.pending,
+		};
+		tracker.layout = tracker.committedLayout;
+		tracker.committedSurfaceMask = PptDragCommittedSurfaceMask;
+		tracker.pending = false;
+		tracker.released = true;
+		tracker.persistencePending = false;
+		tracker.ownsLayout = false;
+		return result;
+	}
+
 	struct PptState
 	{
 		bool presentationVisible = false;
@@ -308,6 +449,51 @@ export namespace Inkeys::UI::PageControl
 	{
 		if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
 		return std::clamp(scale, 1.0F / 128.0F, 4.0F);
+	}
+
+	struct PptDragPresentationTarget
+	{
+		RECT bounds{};
+		LONG deltaX = 0;
+		LONG deltaY = 0;
+		bool pureTranslation = false;
+	};
+
+	[[nodiscard]] inline PptDragPresentationTarget
+		ResolvePptDragPresentationTarget(
+			const ResolvedSurfaceLayout& previous,
+			const ResolvedSurfaceLayout& candidate,
+			LONG presentationOutsetPixels) noexcept
+	{
+		PptDragPresentationTarget result;
+		result.deltaX = candidate.logicalBounds.left
+			- previous.logicalBounds.left;
+		result.deltaY = candidate.logicalBounds.top
+			- previous.logicalBounds.top;
+		result.pureTranslation = previous.mode == candidate.mode
+			&& previous.visible && candidate.visible
+			&& NormalizeScale(previous.scale) == NormalizeScale(candidate.scale)
+			&& candidate.logicalBounds.right - previous.logicalBounds.right
+				== result.deltaX
+			&& candidate.logicalBounds.bottom - previous.logicalBounds.bottom
+				== result.deltaY;
+		if (!result.pureTranslation) return result;
+
+		// 目标使用候选的绝对逻辑位置，锁忙后覆盖旧候选也不会少走位移。
+		const LONG outset = (std::max)(0L, presentationOutsetPixels);
+		result.bounds = RECT{
+			candidate.logicalBounds.left - outset,
+			candidate.logicalBounds.top - outset,
+			candidate.logicalBounds.right + outset,
+			candidate.logicalBounds.bottom + outset,
+		};
+		return result;
+	}
+
+	[[nodiscard]] constexpr bool IsPageControlFrameRevisionCurrent(
+		std::uint64_t frameRevision, std::uint64_t currentRevision) noexcept
+	{
+		return frameRevision == currentRevision;
 	}
 
 	[[nodiscard]] inline bool ShouldApplyPageControlSceneBounds(

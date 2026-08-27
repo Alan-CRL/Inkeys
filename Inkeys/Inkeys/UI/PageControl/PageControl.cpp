@@ -17,6 +17,8 @@ module;
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <cwchar>
 #include <mutex>
 #include <optional>
@@ -73,6 +75,43 @@ namespace Inkeys::UI::PageControl
 		constexpr auto LongPressDelay = 500ms;
 		constexpr auto LongPressInterval = 120ms;
 		constexpr auto ExternalPressDuration = 110ms;
+		constexpr auto DragCandidateTraceInterval = 100ms;
+
+		[[nodiscard]] const char* SurfaceName(std::size_t index) noexcept
+		{
+			constexpr std::array names{
+				"bottom-left", "bottom-right", "middle-left", "middle-right" };
+			return index < names.size() ? names[index] : "unknown";
+		}
+
+		[[nodiscard]] const char* PointerRegionName(
+			PptPointerRegion region) noexcept
+		{
+			switch (region)
+			{
+			case PptPointerRegion::Background: return "background";
+			case PptPointerRegion::DragHandle: return "drag-handle";
+			case PptPointerRegion::Previous: return "previous";
+			case PptPointerRegion::Page: return "page";
+			case PptPointerRegion::Next: return "next";
+			}
+			return "unknown";
+		}
+
+		void TraceDrag(const char* format, ...) noexcept
+		{
+			char detail[768]{};
+			va_list arguments;
+			va_start(arguments, format);
+			(void)_vsnprintf_s(detail, sizeof(detail), _TRUNCATE,
+				format, arguments);
+			va_end(arguments);
+			char line[896]{};
+			(void)sprintf_s(line, "[PageControlDrag][tid=%lu] %s\n",
+				static_cast<unsigned long>(GetCurrentThreadId()), detail);
+			(void)std::fputs(line, stdout);
+			OutputDebugStringA(line);
+		}
 
 		constexpr std::array<Client, 4> Clients{
 			Client::PptBottomLeft,
@@ -128,6 +167,9 @@ namespace Inkeys::UI::PageControl
 			POINT dragStartScreen{};
 			PptLayoutState dragStartLayout{};
 			PptLayoutState feasibleLayout{};
+			std::chrono::steady_clock::time_point lastDragCandidateTrace{};
+			std::uint64_t suppressedDirectCandidateTraces = 0;
+			std::uint64_t suppressedPresentationBusyTraces = 0;
 			std::chrono::steady_clock::time_point pressStarted{};
 			std::chrono::steady_clock::time_point lastRepeat{};
 			std::chrono::steady_clock::time_point externalPressUntil{};
@@ -147,6 +189,19 @@ namespace Inkeys::UI::PageControl
 			bool debugOverlayRefreshPending = false;
 		};
 
+		// 成功/锁忙属于鼠标热路径；有界采样，并在下一条日志累计省略数量。
+		[[nodiscard]] bool ShouldTraceDragCandidate(
+			SurfaceState& state,
+			std::chrono::steady_clock::time_point now) noexcept
+		{
+			if (state.lastDragCandidateTrace.time_since_epoch().count() != 0
+				&& now - state.lastDragCandidateTrace
+					< DragCandidateTraceInterval)
+				return false;
+			state.lastDragCandidateTrace = now;
+			return true;
+		}
+
 		std::array<SurfaceState, 4> surfaces;
 		std::atomic_uint referenceCount = 0;
 		std::atomic_bool initialized = false;
@@ -158,6 +213,8 @@ namespace Inkeys::UI::PageControl
 		std::mutex callbackMutex;
 		std::mutex renderTransactionMutex;
 		std::mutex presentationMutex;
+		std::mutex dragCommitMutex;
+		std::array<PptDragCommitTracker, 2> dragCommitTrackers;
 		PptState publishedPpt;
 		WhiteboardState publishedWhiteboard;
 		PptCallbacks pptCallbacks;
@@ -193,6 +250,208 @@ namespace Inkeys::UI::PageControl
 		void RequestSurface(std::size_t index) noexcept
 		{
 			Inkeys::UI::RenderPipeline::Request(Clients[index]);
+		}
+
+		[[nodiscard]] constexpr std::size_t DragPairIndex(
+			std::size_t surfaceIndex) noexcept
+		{
+			return surfaceIndex < 2 ? 0 : 1;
+		}
+
+		[[nodiscard]] constexpr std::array<std::size_t, 2> DragPair(
+			std::size_t pairIndex) noexcept
+		{
+			return pairIndex == 0
+				? std::array<std::size_t, 2>{ 0, 1 }
+				: std::array<std::size_t, 2>{ 2, 3 };
+		}
+
+		[[nodiscard]] constexpr std::uint8_t DragSurfaceCommitMask(
+			std::size_t surfaceIndex) noexcept
+		{
+			return static_cast<std::uint8_t>(1U << (surfaceIndex % 2));
+		}
+
+		void RequestDragPair(std::size_t pairIndex) noexcept
+		{
+			const auto pair = DragPair(pairIndex);
+			Inkeys::UI::RenderPipeline::Request(
+				Inkeys::UI::RenderPipeline::Mask(Clients[pair[0]])
+				| Inkeys::UI::RenderPipeline::Mask(Clients[pair[1]]));
+		}
+
+		void CopyDragPairPosition(std::size_t pairIndex,
+			const PptLayoutState& source, PptLayoutState& target) noexcept
+		{
+			if (pairIndex == 0)
+			{
+				target.bottomPairWidth = source.bottomPairWidth;
+				target.bottomPairHeight = source.bottomPairHeight;
+			}
+			else
+			{
+				target.middlePairWidth = source.middlePairWidth;
+				target.middlePairHeight = source.middlePairHeight;
+			}
+		}
+
+		[[nodiscard]] bool SameDragPairPosition(std::size_t pairIndex,
+			const PptLayoutState& left, const PptLayoutState& right) noexcept
+		{
+			return pairIndex == 0
+				? left.bottomPairWidth == right.bottomPairWidth
+					&& left.bottomPairHeight == right.bottomPairHeight
+				: left.middlePairWidth == right.middlePairWidth
+					&& left.middlePairHeight == right.middlePairHeight;
+		}
+
+		void BeginDragTracking(std::size_t pairIndex,
+			const PptLayoutState& layout) noexcept
+		{
+			std::scoped_lock lock(dragCommitMutex);
+			BeginPptDragTracking(dragCommitTrackers[pairIndex], layout);
+		}
+
+		struct DragPublicationSnapshot
+		{
+			PptLayoutState layout{};
+			std::uint64_t revision = 0;
+			bool replacedPending = false;
+			std::uint64_t replacedRevision = 0;
+		};
+
+		[[nodiscard]] DragPublicationSnapshot PublishDragCandidate(
+			std::size_t pairIndex, const PptLayoutState& candidate) noexcept
+		{
+			DragPublicationSnapshot result;
+			{
+				std::scoped_lock dragLock(dragCommitMutex);
+				std::scoped_lock snapshotLock(snapshotMutex);
+				result.revision = directMoveRevision.load(
+					std::memory_order_relaxed) + 1;
+				result.layout = publishedPpt.layout;
+				CopyDragPairPosition(pairIndex, candidate, result.layout);
+				auto& tracker = dragCommitTrackers[pairIndex];
+				if (!tracker.ownsLayout)
+					BeginPptDragTracking(tracker, publishedPpt.layout);
+				const auto publication = PublishPptDragCandidate(
+					tracker, result.layout, result.revision);
+				result.replacedPending = publication.replacedPending;
+				result.replacedRevision = publication.replacedRevision;
+				publishedPpt.layout = result.layout;
+				// 先写完整 mailbox/layout，再以 release revision 对渲染线程发布。
+				directMoveRevision.store(
+					result.revision, std::memory_order_release);
+			}
+			return result;
+		}
+
+		struct DragCommitSnapshot
+		{
+			PptLayoutState layout{};
+			std::uint64_t revision = 0;
+			std::uint8_t committedSurfaceMask = 0;
+			bool matched = false;
+			bool completed = false;
+			bool released = false;
+			std::uint64_t directRevision = 0;
+		};
+
+		[[nodiscard]] DragCommitSnapshot ObservePendingDrag(
+			std::size_t surfaceIndex, std::uint64_t revision) noexcept
+		{
+			std::scoped_lock lock(dragCommitMutex);
+			const auto& tracker = dragCommitTrackers[
+				DragPairIndex(surfaceIndex)];
+			if (!tracker.pending || tracker.revision != revision) return {};
+			return { tracker.layout, tracker.revision,
+				tracker.committedSurfaceMask, true, false, tracker.released };
+		}
+
+		[[nodiscard]] DragCommitSnapshot CommitDragSurface(
+			std::size_t surfaceIndex, std::uint64_t revision) noexcept
+		{
+			std::scoped_lock lock(dragCommitMutex);
+			auto& tracker = dragCommitTrackers[DragPairIndex(surfaceIndex)];
+			if (!tracker.pending || tracker.revision != revision) return {};
+			DragCommitSnapshot result{ tracker.layout, tracker.revision,
+				tracker.committedSurfaceMask, true, false, tracker.released };
+			result.completed = MarkPptDragSurfaceCommitted(tracker, revision,
+				DragSurfaceCommitMask(surfaceIndex));
+			result.committedSurfaceMask = tracker.committedSurfaceMask;
+			return result;
+		}
+
+		[[nodiscard]] DragCommitSnapshot CommitDragPairDirect(
+			std::size_t pairIndex, std::uint64_t revision) noexcept
+		{
+			std::scoped_lock lock(dragCommitMutex);
+			auto& tracker = dragCommitTrackers[pairIndex];
+			if (!tracker.pending || tracker.revision != revision) return {};
+			DragCommitSnapshot result{ tracker.layout, tracker.revision,
+				tracker.committedSurfaceMask, true, false, tracker.released };
+			result.completed = MarkPptDragSurfaceCommitted(tracker, revision,
+				PptDragCommittedSurfaceMask);
+			result.committedSurfaceMask = tracker.committedSurfaceMask;
+			if (result.completed)
+			{
+				result.directRevision = directMoveRevision.load(
+					std::memory_order_relaxed) + 1;
+				// SurfaceState.bounds 已在 renderTransactionMutex 内写完，再发布提交 revision。
+				directMoveRevision.store(
+					result.directRevision, std::memory_order_release);
+			}
+			return result;
+		}
+
+		[[nodiscard]] PptDragReleaseResult EndDragTracking(
+			std::size_t pairIndex, bool persist) noexcept
+		{
+			std::scoped_lock lock(dragCommitMutex);
+			return ReleasePptDragTracking(
+				dragCommitTrackers[pairIndex], persist);
+		}
+
+		void FinishDragPersistence(std::size_t pairIndex,
+			std::uint64_t revision) noexcept
+		{
+			std::scoped_lock lock(dragCommitMutex);
+			(void)CompletePptDragPersistence(
+				dragCommitTrackers[pairIndex], revision);
+		}
+
+		[[nodiscard]] PptDragRollbackResult RollbackDragTracking(
+			std::size_t pairIndex) noexcept
+		{
+			PptDragRollbackResult result;
+			{
+				std::scoped_lock dragLock(dragCommitMutex);
+				auto& tracker = dragCommitTrackers[pairIndex];
+				result = RollbackPptDragTracking(tracker);
+				if (!result.tracked) return result;
+				std::scoped_lock snapshotLock(snapshotMutex);
+				CopyDragPairPosition(pairIndex, result.layout,
+					publishedPpt.layout);
+				if (result.discardedPending)
+				{
+					const auto rollbackRevision = directMoveRevision.load(
+						std::memory_order_relaxed) + 1;
+					directMoveRevision.store(
+						rollbackRevision, std::memory_order_release);
+				}
+			}
+			return result;
+		}
+
+		void PreserveOwnedDragLayouts(PptState& state) noexcept
+		{
+			for (std::size_t pairIndex = 0;
+				pairIndex < dragCommitTrackers.size(); ++pairIndex)
+			{
+				const auto& tracker = dragCommitTrackers[pairIndex];
+				if (tracker.ownsLayout)
+					CopyDragPairPosition(pairIndex, tracker.layout, state.layout);
+			}
 		}
 
 		[[nodiscard]] std::pair<PptState, WhiteboardState> Snapshot() noexcept
@@ -819,42 +1078,106 @@ namespace Inkeys::UI::PageControl
 			bounds.active = false;
 		}
 
+		void ApplyDragPairBoundsDirect(std::size_t pairIndex,
+			const PptLayoutState& layout) noexcept
+		{
+			auto [ppt, whiteboard] = Snapshot();
+			(void)whiteboard;
+			ppt.presentationVisible = true;
+			CopyDragPairPosition(pairIndex, layout, ppt.layout);
+			const RECT monitor = PrimaryBounds();
+			const float dpiScale = DpiScale(nullptr);
+			const auto pair = DragPair(pairIndex);
+			std::unique_lock renderLock(renderTransactionMutex);
+			for (const std::size_t surfaceIndex : pair)
+			{
+				const auto target = ResolveSurfaceLayout(
+					SurfaceFor(surfaceIndex), monitor, dpiScale, ppt, {});
+				auto& pairState = surfaces[surfaceIndex];
+				SetBoundsDirect(pairState.bounds, target.logicalBounds,
+					target.scale);
+				(void)ApplySceneBounds(pairState, target.logicalBounds,
+					target.scale);
+			}
+		}
+
 		[[nodiscard]] bool MovePairWindowsDirect(
 			const std::array<std::size_t, 2>& indices,
-			const std::array<POINT, 2>& translations) noexcept
+			const std::array<RECT, 2>& targets,
+			std::uint64_t revision) noexcept
 		{
 			auto& service = Inkeys::Window::GetService();
 			std::array<HWND, 2> handles{};
 			std::array<RECT, 2> original{};
+			const std::size_t pairIndex = DragPairIndex(indices[0]);
 			for (std::size_t item = 0; item < indices.size(); ++item)
 			{
 				handles[item] = service.Handle(Roles[indices[item]]);
-				if (!handles[item] || !GetWindowRect(handles[item], &original[item]))
+				if (!handles[item])
+				{
+					TraceDrag("move-pair pair=%s revision=%llu result=failed "
+						"stage=%s-handle surface=%s error=0",
+						pairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(revision),
+						item == 0 ? "first" : "second",
+						SurfaceName(indices[item]));
 					return false;
+				}
+				if (!GetWindowRect(handles[item], &original[item]))
+				{
+					const DWORD error = GetLastError();
+					TraceDrag("move-pair pair=%s revision=%llu result=failed "
+						"stage=%s-get-window-rect surface=%s error=%lu",
+						pairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(revision),
+						item == 0 ? "first" : "second",
+						SurfaceName(indices[item]),
+						static_cast<unsigned long>(error));
+					return false;
+				}
 			}
 
-			HDWP batch = BeginDeferWindowPos(static_cast<int>(indices.size()));
-			if (!batch) return false;
 			constexpr UINT flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
 				| SWP_NOOWNERZORDER | SWP_NOSENDCHANGING;
-			for (std::size_t item = 0; item < indices.size(); ++item)
+			SetLastError(ERROR_SUCCESS);
+			if (!SetWindowPos(handles[0], nullptr,
+				targets[0].left, targets[0].top, 0, 0, flags))
 			{
-				batch = DeferWindowPos(batch, handles[item], nullptr,
-					original[item].left + translations[item].x,
-					original[item].top + translations[item].y,
-					0, 0, flags);
-				if (!batch) return false;
+				const DWORD error = GetLastError();
+				TraceDrag("move-pair pair=%s revision=%llu result=failed "
+					"stage=first-set-window-pos surface=%s error=%lu",
+					pairIndex == 0 ? "bottom" : "middle",
+					static_cast<unsigned long long>(revision),
+					SurfaceName(indices[0]),
+					static_cast<unsigned long>(error));
+				return false;
 			}
-			if (EndDeferWindowPos(batch)) return true;
 
-			// 批量提交失败时恢复两个窗口，内部布局也不会前进。
-			for (std::size_t item = 0; item < indices.size(); ++item)
-				(void)SetWindowPos(handles[item], nullptr,
-					original[item].left, original[item].top, 0, 0, flags);
+			SetLastError(ERROR_SUCCESS);
+			if (SetWindowPos(handles[1], nullptr,
+				targets[1].left, targets[1].top, 0, 0, flags)) return true;
+
+			const DWORD secondError = GetLastError();
+			// 第二窗失败时恢复已移动的第一窗，pair 由渲染 fallback 再整体收敛。
+			SetLastError(ERROR_SUCCESS);
+			const bool rollbackSucceeded = SetWindowPos(handles[0], nullptr,
+				original[0].left, original[0].top, 0, 0, flags) != FALSE;
+			const DWORD rollbackError = rollbackSucceeded
+				? ERROR_SUCCESS : GetLastError();
+			TraceDrag("move-pair pair=%s revision=%llu result=failed "
+				"stage=second-set-window-pos surface=%s error=%lu "
+				"rollback_stage=first-set-window-pos rollback=%d rollback_error=%lu",
+				pairIndex == 0 ? "bottom" : "middle",
+				static_cast<unsigned long long>(revision),
+				SurfaceName(indices[1]),
+				static_cast<unsigned long>(secondError),
+				rollbackSucceeded ? 1 : 0,
+				static_cast<unsigned long>(rollbackError));
 			return false;
 		}
 
-		void UpdateDrag(std::size_t index, POINT screen)
+		// 调用方必须持有 renderTransactionMutex；直移和 bounds 提交共享同一事务。
+		void UpdateDragLocked(std::size_t index, POINT screen)
 		{
 			auto& state = surfaces[index];
 			const Surface moved = SurfaceFor(index);
@@ -884,60 +1207,150 @@ namespace Inkeys::UI::PageControl
 			}
 			candidate = ClampPageControlLayout(moved, monitor,
 				dpiScale, candidate);
-			const PptLayoutState previousLayout = state.feasibleLayout;
-			if (DragLayoutCollides(monitor, dpiScale,
-				ppt, candidate)) candidate = state.feasibleLayout;
+			const std::size_t pairIndex = bottom ? 0 : 1;
+			PptLayoutState mergedCandidate = ppt.layout;
+			CopyDragPairPosition(pairIndex, candidate, mergedCandidate);
+			if (DragLayoutCollides(monitor, dpiScale, ppt, mergedCandidate))
+				CopyDragPairPosition(pairIndex,
+					state.feasibleLayout, mergedCandidate);
+			candidate = mergedCandidate;
+			if (SameDragPairPosition(pairIndex,
+				candidate, state.feasibleLayout)) return;
+			const PptLayoutState previousFeasible = state.feasibleLayout;
+			state.feasibleLayout = candidate;
+			const auto publication = PublishDragCandidate(pairIndex, candidate);
 			PptState previousPpt = ppt;
+			CopyDragPairPosition(pairIndex, previousFeasible, previousPpt.layout);
 			PptState candidatePpt = ppt;
-			previousPpt.layout = previousLayout;
-			candidatePpt.layout = candidate;
-			const std::array<std::size_t, 2> pair = bottom
-				? std::array<std::size_t, 2>{ 0, 1 }
-				: std::array<std::size_t, 2>{ 2, 3 };
-			std::array<ResolvedSurfaceLayout, 2> layouts{};
-			std::array<POINT, 2> translations{};
+			candidatePpt.layout = publication.layout;
+			const auto pair = DragPair(pairIndex);
+			std::array<ResolvedSurfaceLayout, 2> candidateLayouts{};
+			std::array<PptDragPresentationTarget, 2> directTargets{};
+			std::array<RECT, 2> presentationTargets{};
 			for (std::size_t item = 0; item < pair.size(); ++item)
 			{
 				const Surface pairSurface = SurfaceFor(pair[item]);
-				const auto previous = ResolveSurfaceLayout(pairSurface, monitor,
-					dpiScale, previousPpt, {});
-				layouts[item] = ResolveSurfaceLayout(pairSurface, monitor,
+				const auto previousLayout = ResolveSurfaceLayout(pairSurface,
+					monitor, dpiScale, previousPpt, {});
+				candidateLayouts[item] = ResolveSurfaceLayout(pairSurface, monitor,
 					dpiScale, candidatePpt, {});
-				translations[item] = POINT{
-					layouts[item].logicalBounds.left - previous.logicalBounds.left,
-					layouts[item].logicalBounds.top - previous.logicalBounds.top };
+				auto& pairState = surfaces[pair[item]];
+				directTargets[item] = ResolvePptDragPresentationTarget(
+					previousLayout, candidateLayouts[item],
+					pairState.scene.PresentationOutsetPixels());
+				presentationTargets[item] = directTargets[item].bounds;
 			}
-			if (translations[0].x == 0 && translations[0].y == 0
-				&& translations[1].x == 0 && translations[1].y == 0) return;
+			if (!directTargets[0].pureTranslation
+				|| !directTargets[1].pureTranslation)
+			{
+				TraceDrag("candidate pair=%s revision=%llu result=fallback "
+					"reason=non-translation pending=1 request_pair=1",
+					pairIndex == 0 ? "bottom" : "middle",
+					static_cast<unsigned long long>(publication.revision));
+				RequestDragPair(pairIndex);
+				return;
+			}
+
 			// 渲染线程可能持锁同步等待当前 owner；WndProc 只能尝试，不能形成等待环。
 			std::unique_lock presentationLock(
 				presentationMutex, std::try_to_lock);
-			if (!presentationLock.owns_lock()) return;
-			if (!MovePairWindowsDirect(pair, translations)) return;
-			state.feasibleLayout = candidate;
+			if (!presentationLock.owns_lock())
 			{
-				std::scoped_lock lock(snapshotMutex);
-				publishedPpt.layout = candidate;
+				const auto traceNow = std::chrono::steady_clock::now();
+				if (ShouldTraceDragCandidate(state, traceNow))
+				{
+					TraceDrag("candidate pair=%s revision=%llu result=fallback "
+						"reason=presentation-lock-busy replaced=%d old_revision=%llu "
+						"pending=1 request_pair=1 suppressed_direct=%llu "
+						"suppressed_lock_busy=%llu",
+						pairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(publication.revision),
+						publication.replacedPending ? 1 : 0,
+						static_cast<unsigned long long>(publication.replacedRevision),
+						static_cast<unsigned long long>(
+							state.suppressedDirectCandidateTraces),
+						static_cast<unsigned long long>(
+							state.suppressedPresentationBusyTraces));
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
+				}
+				else ++state.suppressedPresentationBusyTraces;
+				RequestDragPair(pairIndex);
+				return;
 			}
+			if (!MovePairWindowsDirect(
+				pair, presentationTargets, publication.revision))
+			{
+				TraceDrag("candidate pair=%s revision=%llu result=fallback "
+					"reason=window-move-failed pending=1 request_pair=1",
+					pairIndex == 0 ? "bottom" : "middle",
+					static_cast<unsigned long long>(publication.revision));
+				RequestDragPair(pairIndex);
+				return;
+			}
+			// 纯平移不触碰 Scene；松手后的唯一 RequestAll 再吸收最终布局。
 			for (std::size_t item = 0; item < pair.size(); ++item)
+				SetBoundsDirect(surfaces[pair[item]].bounds,
+					candidateLayouts[item].logicalBounds,
+					candidateLayouts[item].scale);
+			const auto committed = CommitDragPairDirect(
+				pairIndex, publication.revision);
+			if (committed.completed)
 			{
-				auto& pairState = surfaces[pair[item]];
-				SetBoundsDirect(pairState.bounds, layouts[item].logicalBounds,
-					layouts[item].scale);
-				(void)ApplySceneBounds(pairState, layouts[item].logicalBounds,
-					layouts[item].scale);
+				for (std::size_t item = 0; item < pair.size(); ++item)
+					Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
+						static_cast<unsigned int>(pair[item]),
+						presentationTargets[item], true);
+				const auto traceNow = std::chrono::steady_clock::now();
+				if (ShouldTraceDragCandidate(state, traceNow))
+				{
+					TraceDrag("candidate pair=%s revision=%llu result=direct "
+						"replaced=%d old_revision=%llu position=(%.1f,%.1f) "
+						"delta=(%ld,%ld),(%ld,%ld) targets=(%ld,%ld),(%ld,%ld) "
+						"direct_move_revision=%llu pending=0 request_pair=0 "
+						"suppressed_direct=%llu suppressed_lock_busy=%llu",
+						pairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(publication.revision),
+						publication.replacedPending ? 1 : 0,
+						static_cast<unsigned long long>(publication.replacedRevision),
+						pairIndex == 0 ? publication.layout.bottomPairWidth
+							: publication.layout.middlePairWidth,
+						pairIndex == 0 ? publication.layout.bottomPairHeight
+							: publication.layout.middlePairHeight,
+						directTargets[0].deltaX, directTargets[0].deltaY,
+						directTargets[1].deltaX, directTargets[1].deltaY,
+						presentationTargets[0].left, presentationTargets[0].top,
+						presentationTargets[1].left, presentationTargets[1].top,
+						static_cast<unsigned long long>(committed.directRevision),
+						static_cast<unsigned long long>(
+							state.suppressedDirectCandidateTraces),
+						static_cast<unsigned long long>(
+							state.suppressedPresentationBusyTraces));
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
+				}
+				else ++state.suppressedDirectCandidateTraces;
 			}
-			directMoveRevision.fetch_add(1, std::memory_order_release);
+			else
+			{
+				TraceDrag("candidate pair=%s revision=%llu result=fallback "
+					"reason=superseded pending=1 request_pair=1",
+					pairIndex == 0 ? "bottom" : "middle",
+					static_cast<unsigned long long>(publication.revision));
+				RequestDragPair(pairIndex);
+			}
 		}
 
-		void PersistDragPosition(const PptLayoutState& layout)
+		[[nodiscard]] bool PersistDragPosition(const PptLayoutState& layout)
 		{
 			std::function<void(PptLayoutState)> callback;
 			{
 				std::scoped_lock lock(callbackMutex);
 				callback = pptCallbacks.persistPosition;
 			}
-			if (callback) callback(layout);
+			if (!callback) return false;
+			callback(layout);
+			return true;
 		}
 
 		void LogWindowCommitState(std::size_t index, HWND hwnd,
@@ -999,6 +1412,10 @@ namespace Inkeys::UI::PageControl
 			bool repeatNext = false;
 			{
 				std::unique_lock renderLock(renderTransactionMutex);
+				// 直移可在 frame 取快照后完成；旧帧不得先以 ULW 覆盖新 HWND 坐标。
+				if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
+					directMoveRevision.load(std::memory_order_acquire)))
+					return FrameResult::Retry;
 				auto& state = surfaces[index];
 				ConfigureSurface(index, mode, ppt, whiteboard, monitor, target,
 					renderSnapshot.revision,
@@ -1100,9 +1517,27 @@ namespace Inkeys::UI::PageControl
 					? FrameResult::DeviceLost : FrameResult::Retry;
 			std::scoped_lock presentationLock(presentationMutex);
 			// 拖动期间产生的过期帧不能把已经直移的 HWND 拉回旧坐标。
-			if (frameDirectMoveRevision
-				!= directMoveRevision.load(std::memory_order_acquire))
+			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
+				directMoveRevision.load(std::memory_order_acquire)))
 				return FrameResult::Retry;
+			const auto pendingDrag = ObservePendingDrag(
+				index, frameDirectMoveRevision);
+			if (pendingDrag.matched)
+				TraceDrag("consume consumer=render surface=%s revision=%llu "
+					"stage=attempt committed_mask=%u released=%d",
+					SurfaceName(index),
+					static_cast<unsigned long long>(pendingDrag.revision),
+					static_cast<unsigned>(pendingDrag.committedSurfaceMask),
+					pendingDrag.released ? 1 : 0);
+			if (pendingDrag.matched && !shouldShow)
+			{
+				TraceDrag("consume consumer=render surface=%s revision=%llu "
+					"result=deferred reason=surface-hidden pending=1",
+					SurfaceName(index),
+					static_cast<unsigned long long>(pendingDrag.revision));
+				RequestDragPair(DragPairIndex(index));
+				return FrameResult::Retry;
+			}
 			bool boundsApplied = true;
 			bool visibilityApplied = false;
 			if (shouldShow)
@@ -1116,6 +1551,12 @@ namespace Inkeys::UI::PageControl
 			auto& state = surfaces[index];
 			if (!visibilityApplied || (shouldShow && !boundsApplied))
 			{
+				if (pendingDrag.matched)
+					TraceDrag("consume consumer=render surface=%s revision=%llu "
+						"result=failed set_bounds=%d visibility=%d pending=1",
+						SurfaceName(index),
+						static_cast<unsigned long long>(pendingDrag.revision),
+						boundsApplied ? 1 : 0, visibilityApplied ? 1 : 0);
 				if (!state.windowCommitFailureActive)
 					LogWindowCommitState(index, hwnd, shouldShow,
 						boundsApplied, visibilityApplied, false);
@@ -1128,6 +1569,26 @@ namespace Inkeys::UI::PageControl
 				LogWindowCommitState(index, hwnd, shouldShow,
 					boundsApplied, visibilityApplied, true);
 			}
+			// owner 可能在同步窗口提交期间发布了更新候选；旧提交必须继续重试。
+			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
+				directMoveRevision.load(std::memory_order_acquire)))
+			{
+				if (pendingDrag.matched)
+					TraceDrag("consume consumer=render surface=%s revision=%llu "
+						"result=stale-after-window-commit pending=1",
+						SurfaceName(index),
+						static_cast<unsigned long long>(pendingDrag.revision));
+				return FrameResult::Retry;
+			}
+			const auto dragCommit = CommitDragSurface(
+				index, frameDirectMoveRevision);
+			if (dragCommit.matched)
+				TraceDrag("consume consumer=render surface=%s revision=%llu "
+					"result=committed committed_mask=%u pending=%d",
+					SurfaceName(index),
+					static_cast<unsigned long long>(dragCommit.revision),
+					static_cast<unsigned>(dragCommit.committedSurfaceMask),
+					dragCommit.completed ? 0 : 1);
 			Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
 				static_cast<unsigned int>(index), presentation, shouldShow);
 			return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
@@ -1232,12 +1693,16 @@ namespace Inkeys::UI::PageControl
 				{
 					state.dragPending = false;
 					state.dragging = true;
+					TraceDrag("threshold surface=%s start=(%ld,%ld) current=(%ld,%ld) "
+						"result=dragging",
+						SurfaceName(index), state.dragStartScreen.x,
+						state.dragStartScreen.y, screen.x, screen.y);
 					// Page 的标准 press 到阈值为止；转拖动时必须撤销而不是触发点击。
 					state.scene.CancelPointer();
 				}
 				if (state.dragging)
 				{
-					UpdateDrag(index, screen);
+					UpdateDragLocked(index, screen);
 					return 0;
 				}
 				if (state.dragPending) return 0;
@@ -1291,6 +1756,19 @@ namespace Inkeys::UI::PageControl
 						monitor, DpiScale(hwnd), ppt);
 					state.dragStartLayout = ppt.layout;
 					state.feasibleLayout = ppt.layout;
+					state.lastDragCandidateTrace = {};
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
+					BeginDragTracking(DragPairIndex(index), ppt.layout);
+					TraceDrag("down surface=%s region=%s immediate=%d "
+						"start=(%ld,%ld) position=(%.1f,%.1f)",
+						SurfaceName(index), PointerRegionName(region),
+						state.dragging ? 1 : 0,
+						state.dragStartScreen.x, state.dragStartScreen.y,
+						DragPairIndex(index) == 0 ? ppt.layout.bottomPairWidth
+							: ppt.layout.middlePairWidth,
+						DragPairIndex(index) == 0 ? ppt.layout.bottomPairHeight
+							: ppt.layout.middlePairHeight);
 				}
 				else if (result.pressed == PreviousWidget
 					|| result.pressed == NextWidget)
@@ -1309,9 +1787,11 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_LBUTTONUP)
 			{
-				PptLayoutState persisted{};
-				bool persist = false;
 				bool dragEnded = false;
+				bool hadDragTracking = false;
+				std::size_t dragPairIndex = DragPairIndex(index);
+				std::uint64_t suppressedDirectCandidateTraces = 0;
+				std::uint64_t suppressedPresentationBusyTraces = 0;
 				bool shouldInvokeClick = false;
 				Inkeys::UI::Bar::BarSurfaceWidgetId clicked =
 					Inkeys::UI::Bar::BarSurfaceNoWidget;
@@ -1327,19 +1807,23 @@ namespace Inkeys::UI::PageControl
 						else state.scene.CancelPointer();
 					}
 					else state.scene.CancelPointer();
-					if (acceptInput && state.dragging)
-					{
-						const auto [ppt, whiteboard] = Snapshot();
-						(void)whiteboard;
-						persisted = ppt.layout;
-						persist = persisted.rememberPosition;
-						dragEnded = true;
-					}
+					hadDragTracking = state.dragging || state.dragPending;
+					dragEnded = acceptInput && state.dragging;
 					state.dragging = false;
 					state.dragPending = false;
+					suppressedDirectCandidateTraces =
+						state.suppressedDirectCandidateTraces;
+					suppressedPresentationBusyTraces =
+						state.suppressedPresentationBusyTraces;
+					state.lastDragCandidateTrace = {};
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
 					state.pressStarted = {};
 					state.repeatTriggered = false;
 				}
+				const auto dragRelease = hadDragTracking
+					? EndDragTracking(dragPairIndex, dragEnded)
+					: PptDragReleaseResult{};
 				if (GetCapture() == hwnd) ReleaseCapture();
 				if (dragEnded)
 				{
@@ -1349,8 +1833,47 @@ namespace Inkeys::UI::PageControl
 				if (shouldInvokeClick
 					&& (clicked == PreviousWidget || clicked == NextWidget))
 					InvokeDirection(index, clicked == NextWidget);
+				if (dragRelease.tracked)
+				{
+					TraceDrag("up surface=%s pair=%s revision=%llu dragged=%d "
+						"pending=%d persist=%d position=(%.1f,%.1f) "
+						"suppressed_direct=%llu suppressed_lock_busy=%llu",
+						SurfaceName(index),
+						dragPairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(dragRelease.revision),
+						dragEnded ? 1 : 0, dragRelease.pending ? 1 : 0,
+						dragRelease.persist ? 1 : 0,
+						dragPairIndex == 0
+							? dragRelease.layout.bottomPairWidth
+							: dragRelease.layout.middlePairWidth,
+						dragPairIndex == 0
+							? dragRelease.layout.bottomPairHeight
+							: dragRelease.layout.middlePairHeight,
+						static_cast<unsigned long long>(
+							suppressedDirectCandidateTraces),
+						static_cast<unsigned long long>(
+							suppressedPresentationBusyTraces));
+					if (dragRelease.pending) RequestDragPair(dragPairIndex);
+				}
 				if (dragEnded) RequestAll();
-				if (persist) PersistDragPosition(persisted);
+				if (dragRelease.persist)
+				{
+					const bool dispatched = PersistDragPosition(dragRelease.layout);
+					TraceDrag("persist pair=%s revision=%llu dispatched=%d "
+						"position=(%.1f,%.1f) pending=%d",
+						dragPairIndex == 0 ? "bottom" : "middle",
+						static_cast<unsigned long long>(dragRelease.revision),
+						dispatched ? 1 : 0,
+						dragPairIndex == 0
+							? dragRelease.layout.bottomPairWidth
+							: dragRelease.layout.middlePairWidth,
+						dragPairIndex == 0
+							? dragRelease.layout.bottomPairHeight
+							: dragRelease.layout.middlePairHeight,
+						dragRelease.pending ? 1 : 0);
+					FinishDragPersistence(
+						dragPairIndex, dragRelease.revision);
+				}
 				return 0;
 			}
 			if (message == WM_MOUSEWHEEL)
@@ -1368,15 +1891,42 @@ namespace Inkeys::UI::PageControl
 			}
 			if (message == WM_CANCELMODE || message == WM_CAPTURECHANGED)
 			{
+				bool rollbackDrag = false;
+				const std::size_t dragPairIndex = DragPairIndex(index);
 				{
 					std::unique_lock renderLock(renderTransactionMutex);
+					rollbackDrag = state.dragging || state.dragPending;
 					state.scene.CancelPointer();
 					state.dragging = false;
 					state.dragPending = false;
+					state.lastDragCandidateTrace = {};
+					state.suppressedDirectCandidateTraces = 0;
+					state.suppressedPresentationBusyTraces = 0;
 					state.pressStarted = {};
 					state.repeatTriggered = false;
 					state.touchActive = false;
 					state.touchId = 0;
+				}
+				if (rollbackDrag)
+				{
+					const auto rollback = RollbackDragTracking(dragPairIndex);
+					if (rollback.tracked)
+					{
+						if (rollback.discardedPending)
+							ApplyDragPairBoundsDirect(
+								dragPairIndex, rollback.layout);
+						TraceDrag("cancel surface=%s pair=%s revision=%llu "
+							"discarded_pending=%d rollback_position=(%.1f,%.1f)",
+							SurfaceName(index),
+							dragPairIndex == 0 ? "bottom" : "middle",
+							static_cast<unsigned long long>(rollback.revision),
+							rollback.discardedPending ? 1 : 0,
+							dragPairIndex == 0 ? rollback.layout.bottomPairWidth
+								: rollback.layout.middlePairWidth,
+							dragPairIndex == 0 ? rollback.layout.bottomPairHeight
+								: rollback.layout.middlePairHeight);
+						RequestDragPair(dragPairIndex);
+					}
 				}
 				// ReleaseCapture 会同步重入 WM_CAPTURECHANGED，必须在呈现锁外执行。
 				if (message == WM_CANCELMODE && GetCapture() == hwnd) ReleaseCapture();
@@ -1443,6 +1993,10 @@ namespace Inkeys::UI::PageControl
 				Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
 					static_cast<unsigned int>(index), {}, false);
 		}
+		{
+			std::scoped_lock dragLock(dragCommitMutex);
+			dragCommitTrackers = {};
+		}
 		std::unique_lock renderLock(renderTransactionMutex);
 		for (auto& surface : surfaces)
 		{
@@ -1468,10 +2022,13 @@ namespace Inkeys::UI::PageControl
 
 	void PublishPptState(const PptState& state) noexcept
 	{
+		PptState merged = state;
 		{
-			std::scoped_lock lock(snapshotMutex);
-			if (ArePptStatesEquivalent(publishedPpt, state)) return;
-			publishedPpt = state;
+			std::scoped_lock dragLock(dragCommitMutex);
+			PreserveOwnedDragLayouts(merged);
+			std::scoped_lock snapshotLock(snapshotMutex);
+			if (ArePptStatesEquivalent(publishedPpt, merged)) return;
+			publishedPpt = merged;
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}
 		RequestAll();
@@ -1543,16 +2100,45 @@ namespace Inkeys::UI::PageControl
 	void CancelPointerCapture() noexcept
 	{
 		(void)Inkeys::Window::GetService().CancelPointerCapture();
-		std::unique_lock renderLock(renderTransactionMutex);
-		for (auto& surface : surfaces)
+		std::array<bool, 2> rollbackPairs{};
 		{
-			surface.scene.CancelPointer();
-			surface.dragging = false;
-			surface.dragPending = false;
-			surface.pressStarted = {};
-			surface.repeatTriggered = false;
-			surface.touchActive = false;
-			surface.touchId = 0;
+			std::unique_lock renderLock(renderTransactionMutex);
+			for (std::size_t index = 0; index < surfaces.size(); ++index)
+			{
+				auto& surface = surfaces[index];
+				rollbackPairs[DragPairIndex(index)] =
+					rollbackPairs[DragPairIndex(index)]
+					|| surface.dragging || surface.dragPending;
+				surface.scene.CancelPointer();
+				surface.dragging = false;
+				surface.dragPending = false;
+				surface.lastDragCandidateTrace = {};
+				surface.suppressedDirectCandidateTraces = 0;
+				surface.suppressedPresentationBusyTraces = 0;
+				surface.pressStarted = {};
+				surface.repeatTriggered = false;
+				surface.touchActive = false;
+				surface.touchId = 0;
+			}
+		}
+		for (std::size_t pairIndex = 0;
+			pairIndex < rollbackPairs.size(); ++pairIndex)
+		{
+			if (!rollbackPairs[pairIndex]) continue;
+			const auto rollback = RollbackDragTracking(pairIndex);
+			if (!rollback.tracked) continue;
+			if (rollback.discardedPending)
+				ApplyDragPairBoundsDirect(pairIndex, rollback.layout);
+			TraceDrag("cancel-all pair=%s revision=%llu discarded_pending=%d "
+				"rollback_position=(%.1f,%.1f)",
+				pairIndex == 0 ? "bottom" : "middle",
+				static_cast<unsigned long long>(rollback.revision),
+				rollback.discardedPending ? 1 : 0,
+				pairIndex == 0 ? rollback.layout.bottomPairWidth
+					: rollback.layout.middlePairWidth,
+				pairIndex == 0 ? rollback.layout.bottomPairHeight
+					: rollback.layout.middlePairHeight);
+			RequestDragPair(pairIndex);
 		}
 		RequestAll();
 	}

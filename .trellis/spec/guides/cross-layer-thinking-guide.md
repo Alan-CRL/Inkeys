@@ -40,11 +40,12 @@ Win32 window message
 
 ### Owner WndProc to render/presentation thread
 
-- owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；失败的移动消息立即丢弃，下一条基于原始 drag 起点的绝对位移负责追赶。
+- owner WndProc 不得阻塞等待一个可能被渲染线程持有、且渲染线程又可能同步等待 owner 执行 Window Service 提交的锁。PageControl 直移只能 `try_lock`；每个候选先发布 latest-wins 绝对布局，锁忙或窗口移动失败时保留 pending 并显式请求 pair render，下一条输入或渲染兜底都必须收敛到最新绝对目标，不能假定一定还有后续 `WM_MOUSEMOVE`。
+- PageControl 纯平移成功只顺序移动成对 HWND、推进内部 bounds/mailbox revision 并同步第三光源接受区；不得调用 `Scene::SetBounds`、制造 visual damage 或请求渲染。渲染帧在取得 `renderTransactionMutex` 后、进入 Configure/ULW 前必须复核直移 revision，避免旧快照在直移后把窗口拉回。
 - `ReleaseCapture` 会同步重入 `WM_CAPTURECHANGED`。PageControl 的 `WM_CANCELMODE` 必须先在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后再调用 `ReleaseCapture`；Window Service 撤销必须覆盖四个 PageControl HWND。对 `SetWindowPos`、同步 `SendMessage` 等其他可重入调用，应按实际重入消息审查其是否会再次取得调用点仍持有的非递归锁，不能用笼统的“线程安全”判断代替锁图。
 - 透明 presentation margin 与共享圆角背景之外的像素必须继续返回 `HTTRANSPARENT`。PPT 的“非按钮背景可拖动”只覆盖实际背景 shape，不等于整个矩形 HWND 都可接收输入。
 
-依据：`PageControlWindowProc`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
+依据：`PageControlWindowProc`、`PptDragCommitTracker`、`RenderSurface`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
 
 ### Event-backed two-stage state publication
 

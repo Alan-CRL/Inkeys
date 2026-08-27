@@ -81,7 +81,16 @@
 
 - [x] 删除分页背景对 `BarButtonCursorLightIntensity` 的误用，使 PageControl 外框和 Main Bar 外框保持相同第三光源强度比例。
 - [x] 恢复 PPT DragHandle、Page 和非箭头背景的成对拖动；Previous/Next 保持纯按钮，Page 在越过系统 drag threshold 后取消 press 并转为拖动，Whiteboard 输入不变。
-- [x] owner WndProc 对 `presentationMutex` 只允许 `try_lock`；失败的移动消息可丢弃并由下一条绝对位移追赶，禁止与同步 Window Service 提交形成等待环。
+- [x] owner WndProc 对 `presentationMutex` 只允许 `try_lock`；每次移动先发布 latest-wins 绝对候选并请求命中 pair，锁失败后由渲染提交继续消费，禁止依赖下一条可能被合并的 `WM_MOUSEMOVE`，也禁止与同步 Window Service 提交形成等待环。
+- [x] 拖动 mailbox headless 注入一次锁竞争，覆盖候选覆盖、双 HWND 确认、松手所有权与取消回滚；PageControl 临时控制台日志无开关记录按下、发布、锁忙、owner/render 消费、成对直移和持久化结果。
 - [x] 为 Page 数值启用共享 Scene 即时内容策略，取消旧 transition 并同帧更新字符串/测量槽；Arrow/Add SVG 与标签仍走共享转换。
 - [x] 将 PPT 页状态发布改为 COM 最多 `50ms` 有界检查 + Draw3 `runtimeRevision` 事件等待；revision publish/stop notify 与 waiter 使用同一 mutex 建立握手，保持 `PptInfoStateBuffer` 和 COM ABI 不变。
 - [x] 补齐背景强度、拖动分类/阈值、即时文字和 Draw3 runtime revision 回归；再次通过 `git diff --check`、ARM64 完整构建和 `--no-window`。
+
+## 9. 第三轮设备验收拖动卡顿修正
+
+- [x] 删除 `BeginDeferWindowPos/DeferWindowPos`，改为顺序 `SetWindowPos` 两窗；第二窗失败时回滚第一窗并记录 first/second/rollback error。
+- [x] 纯平移由 candidate logical bounds 与稳定 presentation outset 直接生成绝对目标；成功路径只更新 bounds/mailbox/revision/共享光源接收区，不调用 `ApplySceneBounds` 或请求 pair。
+- [x] publication 不自动请求 pair；仅锁竞争、非纯平移或窗口移动失败保留 latest-wins pending 并显式请求 render fallback，松手一次 `RequestAll` 吸收最终 Scene/layout。
+- [x] mailbox/layout/bounds 先于 release revision 发布，所有 revision 写点由 `dragCommitMutex` 串行；渲染在 `ConfigureSurface/PresentScene` 前及窗口提交后执行两道 stale gate。
+- [x] 通过 `git diff --check`、ARM64 完整构建和 `--no-window`，且未启动 GUI。

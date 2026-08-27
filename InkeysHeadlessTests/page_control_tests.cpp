@@ -142,6 +142,110 @@ namespace
 			"only whiteboard Add changes SVG and label semantics");
 	}
 
+	void TestDragCommitHandoff()
+	{
+		PptLayoutState initial;
+		initial.bottomPairWidth = 20.0F;
+		initial.bottomPairHeight = 30.0F;
+		PptDragCommitTracker tracker;
+		BeginPptDragTracking(tracker, initial);
+
+		PptLayoutState first = initial;
+		first.bottomPairWidth = 40.0F;
+		const auto firstPublication = PublishPptDragCandidate(
+			tracker, first, 10);
+		Check(!firstPublication.requestPair && !firstPublication.replacedPending
+			&& tracker.pending && tracker.ownsLayout,
+			"direct drag publication stays pending without eagerly requesting its pair");
+
+		PptLayoutState latest = first;
+		latest.bottomPairWidth = 65.0F;
+		latest.bottomPairHeight = 45.0F;
+		const auto latestPublication = PublishPptDragCandidate(
+			tracker, latest, 11);
+		Check(!latestPublication.requestPair
+			&& latestPublication.replacedPending
+			&& latestPublication.replacedRevision == 10
+			&& tracker.revision == 11
+			&& tracker.layout.bottomPairWidth == 65.0F
+			&& tracker.layout.bottomPairHeight == 45.0F,
+			"candidate payload is complete before the outer revision publication");
+		Check(!MarkPptDragSurfaceCommitted(tracker, 10, 0x01)
+			&& tracker.pending,
+			"stale render acknowledgement cannot clear the latest candidate");
+
+		// 注入一次 try_lock 竞争：fallback 显式请求 pair，mailbox 保留最终候选。
+		const bool presentationLockAvailable = false;
+		const bool fallbackRequestedPair = !presentationLockAvailable;
+		if (presentationLockAvailable)
+			(void)MarkPptDragSurfaceCommitted(
+				tracker, 11, PptDragCommittedSurfaceMask);
+		Check(fallbackRequestedPair && tracker.pending
+			&& tracker.layout.bottomPairWidth == 65.0F,
+			"presentation lock contention retains the final movement sample");
+
+		const auto release = ReleasePptDragTracking(tracker, true);
+		Check(release.tracked && release.pending && release.persist
+			&& tracker.ownsLayout,
+			"mouse release retains ownership while the latest candidate is pending");
+		Check(!MarkPptDragSurfaceCommitted(tracker, 11, 0x01)
+			&& tracker.pending && tracker.committedSurfaceMask == 0x01,
+			"one rendered HWND cannot complete a pair drag");
+		Check(MarkPptDragSurfaceCommitted(tracker, 11, 0x02)
+			&& !tracker.pending && tracker.ownsLayout,
+			"both render clients consume the latest candidate without another move");
+		Check(CompletePptDragPersistence(tracker, 11)
+			&& !tracker.ownsLayout,
+			"layout ownership releases only after commit and persistence complete");
+
+		BeginPptDragTracking(tracker, latest);
+		PptLayoutState cancelled = latest;
+		cancelled.bottomPairWidth = 90.0F;
+		(void)PublishPptDragCandidate(tracker, cancelled, 12);
+		const auto rollback = RollbackPptDragTracking(tracker);
+		Check(rollback.tracked && rollback.discardedPending
+			&& rollback.layout.bottomPairWidth == 65.0F
+			&& !tracker.pending && !tracker.ownsLayout,
+			"cancel explicitly rolls an uncommitted candidate back");
+	}
+
+	void TestDragPureTranslationAndRevisionGate()
+	{
+		ResolvedSurfaceLayout previous;
+		previous.logicalBounds = RECT{ 100, 200, 265, 243 };
+		previous.scale = 1.0F;
+		previous.mode = WorkspaceMode::PptCompact;
+		previous.visible = true;
+		ResolvedSurfaceLayout candidate = previous;
+		candidate.logicalBounds = RECT{ 140, 230, 305, 273 };
+
+		const auto target = ResolvePptDragPresentationTarget(
+			previous, candidate, 18);
+		Check(target.pureTranslation && target.deltaX == 40
+			&& target.deltaY == 30
+			&& target.bounds.left == 122 && target.bounds.top == 212
+			&& target.bounds.right == 323 && target.bounds.bottom == 291,
+			"pure drag resolves an absolute presentation target with stable outset");
+
+		ResolvedSurfaceLayout latest = candidate;
+		latest.logicalBounds = RECT{ 190, 260, 355, 303 };
+		const auto latestTarget = ResolvePptDragPresentationTarget(
+			candidate, latest, 18);
+		Check(latestTarget.pureTranslation
+			&& latestTarget.bounds.left == 172
+			&& latestTarget.bounds.top == 242,
+			"latest absolute target catches up after an earlier candidate was deferred");
+
+		ResolvedSurfaceLayout resized = latest;
+		++resized.logicalBounds.right;
+		Check(!ResolvePptDragPresentationTarget(
+			latest, resized, 18).pureTranslation,
+			"size changes leave the direct path for render fallback");
+		Check(IsPageControlFrameRevisionCurrent(17, 17)
+			&& !IsPageControlFrameRevisionCurrent(17, 18),
+			"frame revision gate rejects stale work before presentation");
+	}
+
 	void TestWorkspaceAndDpiLayouts()
 	{
 		constexpr RECT monitor{ 0, 0, 1920, 1080 };
@@ -471,6 +575,8 @@ int RunPageControlTests()
 	TestSharedButtonInheritance();
 	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();
+	TestDragCommitHandoff();
+	TestDragPureTranslationAndRevisionGate();
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndFlashPolicy();
 	TestWhiteboardLayoutTargetAndReadiness();

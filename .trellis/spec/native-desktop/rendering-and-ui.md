@@ -264,6 +264,12 @@ PptState ResolveRuntimePageControlLayout(
 ResolvedSurfaceLayout ResolveSurfaceLayout(
     Surface, const RECT& monitor, float dpiScale,
     const PptState&, const WhiteboardState&) noexcept;
+PptDragPresentationTarget ResolvePptDragPresentationTarget(
+    const ResolvedSurfaceLayout& previous,
+    const ResolvedSurfaceLayout& candidate,
+    LONG presentationOutsetPixels) noexcept;
+bool IsPageControlFrameRevisionCurrent(
+    uint64_t frameRevision, uint64_t currentRevision) noexcept;
 ~~~
 
 `ResolveRuntimePageControlLayout` 不得接收 Bar/MainButton 障碍或 Whiteboard 位置状态。PageControl 可以提供 surface 内控件拓扑和锚点，但标准按钮内部几何、交互、动画、绘制和 damage 只能来自上述 Bar 边界。
@@ -283,7 +289,8 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 - PPT 保留 drag、scale、persist、long-press、wheel、keyboard flash；Whiteboard 只保留普通 mouse/pen/single-touch click 与标准 hover/press，不继承 PPT 输入。Whiteboard switching 只关闭 interactive，未变化视觉保持稳定。
 - Enter 开始即 cancel capture、关闭 DragHandle hit；Window Service 撤销必须广播 Drawpad、四个 PageControl HWND 与 Bar。PageControl 的 `WM_CANCELMODE` 在 `renderTransactionMutex` 内清 pointer/drag/touch 状态，释放该锁后才调用可能重入 `WM_CAPTURECHANGED` 的 `ReleaseCapture`。背景、三枚按钮、Drag slot/opacity、SVG/文字和 HWND bounds 使用同一批次从当前成功呈现值重定向。PPT 底栏可见时同时移动到 Whiteboard 固定 `5 DIP` 角落并形变；不可见时直接用最终几何渐显。Exit 反向返回 PPT 最新运行时位置，稳定 PptCompact 成功呈现后才恢复 DragHandle hit。
 - PPT 碰撞只包含 bottom/middle pair 与屏幕越界。手动拖动不推动另一 pair；自动纠偏 bottom 优先、middle 最近位置/极端运行时缩放回退，且不写保存配置。Bar HWND、MainButton、主栏移动和 Whiteboard 均不参与求解或唤醒。
-- PageControl 继续拥有 stable backing、logical/presentation 映射、direct-move revision、ULW/Window 提交与调试覆盖层事务。共享 Bar 运行时返回 animation/damage，不直接调用 Window Service；隐藏生命周期不得被光源动画无限延长。渲染线程可在 `presentationMutex` 内同步等待 Window Service owner，因此 owner WndProc 绝不能阻塞等待该锁；拖动直移只允许 `try_lock`，失败消息由下一次基于原始 drag 起点的绝对位移自然追赶，成功后以 `directMoveRevision` 淘汰过期渲染提交。
+- PageControl 继续拥有 stable backing、logical/presentation 映射、direct-move revision、ULW/Window 提交与调试覆盖层事务。共享 Bar 运行时返回 animation/damage，不直接调用 Window Service；隐藏生命周期不得被光源动画无限延长。渲染线程可在 `presentationMutex` 内同步等待 Window Service owner，因此 owner WndProc 绝不能阻塞等待该锁。每次拖动采样必须先按原始 drag 起点计算并发布 latest-wins 绝对候选；发布本身不得请求 pair。直移目标必须分别解析上一 feasible layout 与当前 candidate layout，确认尺寸、scale、mode 仅发生平移，再由 candidate logical bounds 加减当前不变的 presentation outset 得到绝对 HWND 目标；不得依赖上一候选已成功提交，也不得为取得目标调用 `ApplySceneBounds`。
+- `presentationMutex.try_lock()` 成功后，owner 依次对两个 HWND 调用 `SetWindowPos`；第一窗失败直接保留 pending，第二窗失败必须把第一窗回滚到 original，并记录 first/second/rollback 阶段及 Win32 error。两窗成功后才对两个 `SurfaceState.bounds` 调用 `SetBoundsDirect`、提交 mailbox/direct-move revision，并立即发布两个 cursor-light 接收边界；mailbox/layout/bounds payload 必须先完整写入，再以 release store 发布单调且由 `dragCommitMutex` 串行的 revision。该热路径不得调用 `ApplySceneBounds`、产生 Scene damage 或请求 pair。只有锁竞争、非纯平移或窗口移动失败走 pair render fallback。较新的候选可以覆盖旧候选，但 fallback 必须保留最新候选，不能依赖另一条可能被合并的 `WM_MOUSEMOVE`。渲染帧以 acquire 读取 revision，取得 `renderTransactionMutex` 后、`ConfigureSurface/PresentScene` 前必须复核，窗口提交后继续第二次复核；任一过期帧均返回 `Retry`，不得先以旧 ULW 拉回 HWND。松手只 `RequestAll` 一次让 Scene/layout 吸收最终位置，并且不得在最新候选成功提交或明确回滚前清除 pending 所有权。
 - `PptInfoState` 是 COM 页状态事实，`PptInfoStateBuffer` 仍只在 Draw3 到达对应零基页后前进，PageControl 只消费 buffer。现有 PowerPoint/WPS COM ABI 不增加 native wait handle，因此 native 对共享 COM 状态使用不超过 `50ms` 的有界检查；检测到目标变化后发布 Draw3 绝对页，Draw3 在 current page/page count 真实变化时推进 `runtimeRevision` 并通知 `WaitForProductRuntimeRevision`。禁止继续用固定 `500ms` 睡眠等待 Draw3，也禁止为追求即时数字而提前发布未 ready 的 COM 页码。
 
 #### 4. Validation & Error Matrix
@@ -304,10 +311,13 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 | Page 按下后在系统阈值内抬起 | 取消 press，业务 no-op，不写位置 |
 | Page 或非箭头背景移动超过系统阈值 | 取消 Page press 并开始成对拖动；Previous/Next 永不转换 |
 | 指针位于透明 margin 或背景圆角外 | 返回 `HTTRANSPARENT`；不得启动背景拖动或截获下层窗口输入 |
-| render 正持有呈现锁并同步等待 owner | owner 的拖动消息 `try_lock` 失败后立即返回，不得等待或冻结 UI |
+| 纯平移且呈现锁与两窗直移均成功 | 两窗顺序直移；只更新 bounds/mailbox/revision/接收边界，不调用 `ApplySceneBounds`、不产生 damage、不请求 pair |
+| render 正持有呈现锁并同步等待 owner | owner 不等待；保存最新绝对拖动候选并请求命中 pair，锁释放后即使没有新的 `WM_MOUSEMOVE` 也必须收敛到该候选 |
+| 第一窗移动失败 | 保留 pending 并请求 pair；日志包含 first 阶段和 Win32 error |
+| 第二窗移动失败 | 第一窗回滚 original，保留 pending 并请求 pair；日志包含 second/rollback 阶段及两个 error |
 | COM 页状态已变化、Draw3 尚未到达 | 请求绝对页并等待 runtime revision；PageControl 继续显示上一 buffer 页码 |
 | Draw3 到达目标页 | runtime revision 唤醒状态线程，同轮推进 buffer 并发布即时数字文本 |
-| 旧 render/direct-move revision 交错 | 过期帧 `Retry`，不得拉回已提交 HWND |
+| render 已取 frame revision、随后 owner 完成直移 | 取得 render transaction 锁后、`ConfigureSurface/PresentScene` 前即 `Retry`；窗口提交后的第二次 revision gate 仍保留 |
 | 目标隐藏但光源仍动画 | 固定退场后隐藏 HWND，不能由光源延长生命周期 |
 | 分页按钮位于非零 Surface 原点 | 按钮背景、SVG、主文字和次文字从同一显式父坐标解析，不得回落到 `(0,0)` 或上一帧缓存 |
 | 鼠标从分页 HWND 移到画布 | 进入同一个 `Grace`，区域外坐标继续由 Bar Raw Input 发布；绝对 5 秒截止不被移动重置，随后从当前强度淡出 |
@@ -315,15 +325,19 @@ ResolvedSurfaceLayout ResolveSurfaceLayout(
 #### 5. Good / Base / Bad Cases
 
 - Good：Main Bar 与 PageControl 各自拥有按钮实例/target，却共同调用一套 layout/interaction/advance/draw/hit/damage；PPT→Whiteboard 只改变稳定实例目标。
+- Good：连续纯平移只顺序移动两个 HWND 并发布一条候选日志；Scene 不产生整窗 damage，松手时才由一次 `RequestAll` 吸收最终布局。
+- Good：唯一一条 `WM_MOUSEMOVE` 到达时呈现锁正被占用；WndProc 保存最新绝对候选并唤醒 pair，锁释放后无需第二条移动消息也能完成直移。
 - Base：默认 DPI 下 PPT 为紧凑深色 Bar surface，Whiteboard 为固定三枚 `2x2`；普通 Arrow 只缩放，Add 才转换内容。
 - Bad：`BarSurfaceScene` 继续维护 local hover/pressed，PageControl 设置 `18 DIP` icon 或 `±13 DIP` text offset，或者复制主栏曲线后声称“复用”。
 - Bad：把 Whiteboard 拖动条叠在 Page 上、让 Whiteboard 继承 PPT wheel/long-press/persist，或把 Bar HWND 传入碰撞求解。
+- Bad：`presentationMutex.try_lock()` 失败后直接丢弃本次候选，并假定下一条 `WM_MOUSEMOVE` 一定会补偿；消息合并或松手会让控件保持原位。
+- Bad：每个 candidate 先 `SetBoundsDirect + ApplySceneBounds` 再求 HWND 位置，或直移成功后固定请求 pair；两者都会把纯平移放大成整窗 damage 与约 60 FPS render fallback。
 
 #### 6. Tests Required
 
 - 共享 Bar 等价测试必须让 Main Bar 与 PageControl 直接调用同一导出入口，逐项断言 `oneOne/twoOne/twoTwo` 外框、内容槽、hover/press 时间样本、press transform、hit 和 damage；禁止在测试中复制产品公式。
 - PageControl headless 覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 同批单次转换、DragHandle 时序、首次渐显、反向重入和有限退场。
-- 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、long-press/wheel/keyboard/persist 保留，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。
+- 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、long-press/wheel/keyboard/persist 保留，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。拖动提交仲裁必须断言 publication 不自动请求 pair、纯平移由 candidate logical bounds 与稳定 outset 生成绝对 target，并可注入一次呈现锁竞争，确认 fallback 显式请求 pair且只保存最新候选；还要覆盖两窗 commit、第二窗失败的第一窗回滚、松手 ownership，以及进入 `ConfigureSurface/PresentScene` 前和窗口提交后的两道 stale revision gate。
 - Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；Scene 源码审查确认即时 Page 槽位使用 `SetDirect`，而 Arrow/Add 仍走 Animated 中点转换。
 - Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口，PPT 状态线程只以不超过 `50ms` 检查 COM，共享 buffer 仍等待 Draw3-ready。
 - PageControl 输入测试覆盖圆角背景门禁策略；源码审查背景命中读取 Scene 当前动画 Shape，Window Service capture 撤销包含四个 PageControl 角色，且 `ReleaseCapture` 位于呈现锁外。
@@ -356,6 +370,22 @@ renderer.PrepareSurfaceCursorLight(dt, localCursor, hoveredButton);
 NotifyBorderCursorSurfacePointerEntered();
 PublishBorderCursorSurfaceBounds(index, presentedBounds, true);
 scene.SetSharedLightingSubscribed(true);
+
+// Wrong：非阻塞抢锁失败后丢弃唯一一次移动采样。
+std::unique_lock lock(presentationMutex, std::try_to_lock);
+if (!lock.owns_lock()) return;
+
+// Correct：先发布 latest-wins 绝对目标；只有 fallback 请求 pair。
+pendingDrag.Publish(candidateLayout, dragRevision);
+if (!lock.owns_lock()) {
+    RequestPair(pair);
+    return;
+}
+if (MovePairWindowsSequentially(candidatePresentationBounds)) {
+    SetBoundsDirect(candidateLogicalBounds);
+    CommitLatestPendingDrag();
+    PublishBorderCursorSurfaceBounds();
+}
 ~~~
 
 ### UI3 基于变化的脏区事务合同
