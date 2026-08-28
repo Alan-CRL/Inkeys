@@ -217,6 +217,18 @@ export namespace Inkeys::UI::PageControl
 			: DirectionContentPolicy{ L"barMore", L"右翻页" };
 	}
 
+	[[nodiscard]] constexpr double ResolveDirectionIconAngle(
+		Surface surface, WorkspaceMode mode,
+		bool next, bool nextIsAdd) noexcept
+	{
+		if (mode == WorkspaceMode::WhiteboardExpanded)
+			return next && nextIsAdd ? 0.0 : next ? 90.0 : -90.0;
+		const bool vertical = surface == Surface::MiddleLeft
+			|| surface == Surface::MiddleRight;
+		// barMore 原始方向朝上：竖栏 Previous 向上，Next 向下。
+		return vertical ? (next ? 180.0 : 0.0) : (next ? 90.0 : -90.0);
+	}
+
 	inline constexpr double PptCompactLongSideDip = 165.0;
 	inline constexpr double PptCompactShortSideDip = 42.5;
 	inline constexpr double PptDragHandleSlotDip = 10.0;

@@ -602,6 +602,8 @@ namespace Inkeys::UI::PageControl
 				mode, false, false);
 			previous.iconResource = previousContent.icon;
 			previous.secondaryText = previousContent.label;
+			previous.iconAngle = ResolveDirectionIconAngle(
+				SurfaceFor(index), mode, false, false);
 			previous.onClick = [index] { InvokeDirection(index, false); };
 			ApplyDarkTheme(previous);
 
@@ -625,6 +627,8 @@ namespace Inkeys::UI::PageControl
 				mode, true, whiteboard.nextIsAdd);
 			next.iconResource = nextContent.icon;
 			next.secondaryText = nextContent.label;
+			next.iconAngle = ResolveDirectionIconAngle(
+				SurfaceFor(index), mode, true, whiteboard.nextIsAdd);
 			next.onClick = [index] { InvokeDirection(index, true); };
 			ApplyDarkTheme(next);
 
@@ -639,19 +643,16 @@ namespace Inkeys::UI::PageControl
 				next.bounds = { 155.0, 5.0, 225.0, 75.0 };
 				previous.enabled = whiteboard.previousEnabled;
 				previous.interactive = whiteboard.previousInteractive;
-				previous.iconAngle = -90.0;
 				page.enabled = whiteboard.pageEnabled;
 				page.interactive = whiteboard.pageInteractive;
 				page.primaryText = std::to_wstring(whiteboard.currentPage);
 				page.secondaryText = L"/" + std::to_wstring(whiteboard.totalPage);
 				next.enabled = whiteboard.nextEnabled;
 				next.interactive = whiteboard.nextInteractive;
-				next.iconAngle = whiteboard.nextIsAdd ? 0.0 : 90.0;
 			}
 			else
 			{
 				const bool vertical = index >= 2;
-				const bool right = index == 1;
 				const auto contracts = ResolvePptWidgetContracts(SurfaceFor(index));
 				drag.bounds = { contracts[0].bounds.left, contracts[0].bounds.top,
 					contracts[0].bounds.right, contracts[0].bounds.bottom };
@@ -661,21 +662,6 @@ namespace Inkeys::UI::PageControl
 					contracts[2].bounds.right, contracts[2].bounds.bottom };
 				next.bounds = { contracts[3].bounds.left, contracts[3].bounds.top,
 					contracts[3].bounds.right, contracts[3].bounds.bottom };
-				if (vertical)
-				{
-					previous.iconAngle = 180.0;
-					next.iconAngle = 0.0;
-				}
-				else if (right)
-				{
-					previous.iconAngle = -90.0;
-					next.iconAngle = 90.0;
-				}
-				else
-				{
-					previous.iconAngle = -90.0;
-					next.iconAngle = 90.0;
-				}
 				previous.enabled = previous.interactive = true;
 				page.enabled = page.interactive = true;
 				next.enabled = next.interactive = true;

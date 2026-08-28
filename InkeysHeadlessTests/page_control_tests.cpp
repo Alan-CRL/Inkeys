@@ -142,6 +142,26 @@ namespace
 		Check(whiteboardAdd.icon == L"barAdd"
 			&& whiteboardAdd.label == L"加页",
 			"only whiteboard Add changes SVG and label semantics");
+		Check(ResolveDirectionIconAngle(Surface::MiddleLeft,
+			WorkspaceMode::PptCompact, false, false) == 0.0
+			&& ResolveDirectionIconAngle(Surface::MiddleLeft,
+				WorkspaceMode::PptCompact, true, false) == 180.0
+			&& ResolveDirectionIconAngle(Surface::MiddleRight,
+				WorkspaceMode::PptCompact, false, false) == 0.0
+			&& ResolveDirectionIconAngle(Surface::MiddleRight,
+				WorkspaceMode::PptCompact, true, false) == 180.0,
+			"both vertical PPT controls point Previous up and Next down");
+		Check(ResolveDirectionIconAngle(Surface::BottomLeft,
+			WorkspaceMode::PptCompact, false, false) == -90.0
+			&& ResolveDirectionIconAngle(Surface::BottomRight,
+				WorkspaceMode::PptCompact, true, false) == 90.0
+			&& ResolveDirectionIconAngle(Surface::BottomLeft,
+				WorkspaceMode::WhiteboardExpanded, false, false) == -90.0
+			&& ResolveDirectionIconAngle(Surface::BottomRight,
+				WorkspaceMode::WhiteboardExpanded, true, false) == 90.0
+			&& ResolveDirectionIconAngle(Surface::BottomRight,
+				WorkspaceMode::WhiteboardExpanded, true, true) == 0.0,
+			"bottom PPT and Whiteboard direction angles remain unchanged");
 	}
 
 	void TestDragCommitHandoff()
