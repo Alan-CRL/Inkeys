@@ -623,12 +623,15 @@ namespace Inkeys::UI::PageControl
 			next.layoutKind = mode == WorkspaceMode::WhiteboardExpanded
 				? Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardTwoTwo
 				: Inkeys::UI::Bar::BarButtonVisualLayoutKind::StandardOneOne;
+			const bool nextIsEndShow = IsPptEndPage(
+				ppt.currentPage, ppt.totalPage);
 			const auto nextContent = ResolveDirectionContentPolicy(
-				mode, true, whiteboard.nextIsAdd);
+				mode, true, whiteboard.nextIsAdd, nextIsEndShow);
 			next.iconResource = nextContent.icon;
 			next.secondaryText = nextContent.label;
 			next.iconAngle = ResolveDirectionIconAngle(
-				SurfaceFor(index), mode, true, whiteboard.nextIsAdd);
+				SurfaceFor(index), mode, true, whiteboard.nextIsAdd,
+				nextIsEndShow);
 			next.onClick = [index] { InvokeDirection(index, true); };
 			ApplyDarkTheme(next);
 

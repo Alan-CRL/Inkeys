@@ -206,9 +206,18 @@ export namespace Inkeys::UI::PageControl
 		std::wstring_view label;
 	};
 
-	[[nodiscard]] constexpr DirectionContentPolicy ResolveDirectionContentPolicy(
-		WorkspaceMode mode, bool next, bool nextIsAdd) noexcept
+	[[nodiscard]] constexpr bool IsPptEndPage(
+		int currentPage, int totalPage) noexcept
 	{
+		return totalPage > 0 && currentPage < 0;
+	}
+
+	[[nodiscard]] constexpr DirectionContentPolicy ResolveDirectionContentPolicy(
+		WorkspaceMode mode, bool next, bool nextIsAdd,
+		bool nextIsEndShow = false) noexcept
+	{
+		if (mode == WorkspaceMode::PptCompact && next && nextIsEndShow)
+			return { L"barEndShow", {} };
 		if (mode != WorkspaceMode::WhiteboardExpanded)
 			return { L"barMore", {} };
 		if (!next) return { L"barMore", L"左翻页" };
@@ -219,8 +228,10 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] constexpr double ResolveDirectionIconAngle(
 		Surface surface, WorkspaceMode mode,
-		bool next, bool nextIsAdd) noexcept
+		bool next, bool nextIsAdd, bool nextIsEndShow = false) noexcept
 	{
+		if (mode == WorkspaceMode::PptCompact && next && nextIsEndShow)
+			return 0.0;
 		if (mode == WorkspaceMode::WhiteboardExpanded)
 			return next && nextIsAdd ? 0.0 : next ? 90.0 : -90.0;
 		const bool vertical = surface == Surface::MiddleLeft

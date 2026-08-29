@@ -114,3 +114,10 @@
 - [x] PageControl WndProc 返回与 Bar 一致的 Tablet 手势禁用标志；补齐 primary 缺失 fallback、活动 id 替换 cancel、primary/最后坐标锁存和单触点 Move/Up，复用现有 mouse press/drag/long-press 路径。
 - [x] Headless 覆盖 timing 边界、transition deadline 续帧和触摸锁状态；静态确认四个 HWND 已注册 touch/禁用边缘手势且系统兼容 mouse 去重仍存在。
 - [x] 对照更新后的 code-spec 执行 `git diff --check`、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI、不提交 commit。
+
+## 12. EndShow 图标与 PPT 结束页内容切换
+
+- [x] 新增符合主栏 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG，注册为 `UI` 资源；Main Bar A2 EndShow 改用该 SVG 和主题 `TextPrimary`，删除该按钮的 `ppt3` PNG 特例。
+- [x] 在 PageControl 单一内容策略中识别 `totalPage > 0 && currentPage < 0`，让 Bottom/Middle 的稳定 Next 实例使用 `barEndShow` 与 `0°`；有效页恢复后回到各 surface 的 `barMore` 角度，点击/长按继续调用 NextPage。
+- [x] 复用 `BarSurfaceScene::SetWidgetState` 既有 `TransitionToResource` 中点动画，不新增分页专用动画；补齐结束页判定、资源/角度矩阵、未知状态负向和稳定回调回归。
+- [x] 更新 code-spec，执行 `git diff --check`、EOL/BOM 审计、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI。

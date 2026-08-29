@@ -337,6 +337,8 @@ BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 
 BARMORE                 UI                      "src\\UI\\barMore.svg"
 
+BARENDSHOW              UI                      "src\\UI\\barEndShow.svg"
+
 BARADD                  UI                      "src\\UI\\barAdd.svg"
 
 

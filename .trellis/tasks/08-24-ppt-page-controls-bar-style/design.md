@@ -81,6 +81,7 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 - Page 保持同一实例。PPT 横向使用一个测量后的混合字重行；PPT 竖向使用上下两行；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 未知值保留 `-`/`/-`，Bottom/Middle 分别保留 `9999/999` 显示上限。内容布局策略只能提供 text run、字重和槽类型，不能设置分页专用绝对偏移。Page 的主/次数字文字采用共享 Scene 的即时内容策略：取消旧文字转换、同帧替换字符串并直接应用重新测量后的槽位；该策略不改变 Arrow/Add SVG 和语义标签的共享转换动画。
 - Previous/Next 的 Arrow 统一保留同一 `barMore` SVG 对象；工作区切换只改变现有对象的尺寸、位置、角度和标签透明度，不调用资源替换。
 - Whiteboard Next 的语义确实在 Arrow/Add 间变化时，才调用同一个按钮的内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”。几何与内容共享批次并行推进；事务锁存保证未变化语义不重启。
+- EndShow 使用主栏标准 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG；A2 与 PageControl 共用该主题着色资源，不再使用固定黑色 `ppt3` PNG。PPT `totalPage > 0 && currentPage < 0` 时，Bottom/Middle 的稳定 Next 实例通过现有 `TransitionToResource` 中点动画从 `barMore` 切到正向 `0°` 的 `barEndShow`；当前页恢复有效时反向切回各 surface 的箭头资源/角度。该视觉语义不改变 NextPage 输入回调或长按节奏。
 
 ## 输入所有权
 
@@ -150,6 +151,7 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 - 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage；背景外框强度保持 `1.0`，数字即时策略不残留 content transition。
 - 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
 - PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle/Page/背景拖动候选、Arrow 拒绝拖动、系统阈值转换、反向重入和首次渐显。
+- EndShow 状态测试：只有总页数有效且当前页缺失时识别结束页；Bottom/Middle 两侧使用同一 `barEndShow`、`0°` 目标，并验证有效页/结束页往返只改变稳定 Next 的 Animated 内容目标，不改变 NextPage 回调。
 - PPT 输入测试：Page 阈值内短按调用预览，Arrow Down 立即一次；覆盖 delay `0..3`、speed `0/31`、越界限制和查询失败默认值，并按解析后的首次 delay/后续 interval 断言重复，配置关闭和移出/Up/Cancel 停止；静态确认 Pointer Down 调用最近交互层级维护且无合成按键闪按状态。
 - 启动/触摸测试：Hidden→Visible 在没有 Bar 请求时持续到 deadline 后自行解锁；触摸纯状态覆盖 primary、无 primary fallback、多指忽略、替换 cancel、新 id Move/Up 和 cancel 清理，静态确认四窗创建注册与 Tablet 手势返回值。
 - Draw3 活动测试：聚合状态 `false→true→true→false` 只发布一次 Start/End，多 contact 不重复，Host stop/异常 active 清理补 End；静态确认产品回调链收起次级 UI 且 Started 无条件进入带 wait-for-leave 的第三光源 `Dormant`。

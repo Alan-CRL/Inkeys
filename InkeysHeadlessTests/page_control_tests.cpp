@@ -164,6 +164,39 @@ namespace
 			"bottom PPT and Whiteboard direction angles remain unchanged");
 	}
 
+	void TestEndShowContentTargets()
+	{
+		Check(IsPptEndPage(-1, 12)
+			&& !IsPptEndPage(-1, -1)
+			&& !IsPptEndPage(-1, 0)
+			&& !IsPptEndPage(12, 12),
+			"PPT end page requires a valid total and a missing current page");
+
+		constexpr std::array surfaces{
+			Surface::BottomLeft, Surface::BottomRight,
+			Surface::MiddleLeft, Surface::MiddleRight,
+		};
+		for (const auto surface : surfaces)
+		{
+			const auto endTarget = ResolveDirectionContentPolicy(
+				WorkspaceMode::PptCompact, true, false, true);
+			Check(endTarget.icon == L"barEndShow" && endTarget.label.empty()
+				&& ResolveDirectionIconAngle(surface,
+					WorkspaceMode::PptCompact, true, false, true) == 0.0,
+				"all PPT Next surfaces target the EndShow SVG at zero degrees");
+
+			const bool vertical = surface == Surface::MiddleLeft
+				|| surface == Surface::MiddleRight;
+			const auto recoveredTarget = ResolveDirectionContentPolicy(
+				WorkspaceMode::PptCompact, true, false, false);
+			Check(recoveredTarget.icon == L"barMore"
+				&& ResolveDirectionIconAngle(surface,
+					WorkspaceMode::PptCompact, true, false, false)
+					== (vertical ? 180.0 : 90.0),
+				"valid PPT pages recover each Next surface arrow target");
+		}
+	}
+
 	void TestDragCommitHandoff()
 	{
 		PptLayoutState initial;
@@ -764,6 +797,7 @@ int RunPageControlTests()
 	TestSharedButtonInheritance();
 	TestSharedSurfaceLightingMapping();
 	TestCompactWidgetContracts();
+	TestEndShowContentTargets();
 	TestDragCommitHandoff();
 	TestDragPureTranslationAndRevisionGate();
 	TestWorkspaceAndDpiLayouts();

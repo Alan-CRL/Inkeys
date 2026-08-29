@@ -542,15 +542,9 @@ void BarButtonSetClass::PresetInitialization()
 			obj->button.enable.Initialization(true);
 		}
 		{
-			// 复用旧结束放映窗口的 ppt3 PNG，动画状态仍由 SVG 载体统一驱动。
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, nullopt);
+			obj->icon.InitializationFromResource(L"UI", L"barEndShow");
 			obj->icon.enable.Initialization(true);
-			obj->pngIcon.Initialization(0.0, 0.0);
-			(void)obj->pngIcon.InitializationFromResource(L"PNG", L"ppt3");
-			obj->pngIcon.enable.Initialization(true);
-			obj->icon.rW = obj->pngIcon.rW;
-			obj->icon.rH = obj->pngIcon.rH;
-			obj->iconKind = BarButtonIconKindEnum::Png;
 		}
 
 		obj->clickFunc = []() { Inkeys::UI::Bar::RequestEndShow(); };
