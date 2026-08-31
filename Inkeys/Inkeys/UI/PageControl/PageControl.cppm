@@ -86,10 +86,11 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] constexpr PptDirectionPressPolicy
 		ResolvePptDirectionPressPolicy(
-			WorkspaceMode mode, bool longPressEnabled) noexcept
+			WorkspaceMode mode, bool longPressEnabled,
+			bool repeatable = true) noexcept
 	{
 		if (mode != WorkspaceMode::PptCompact) return {};
-		return { true, longPressEnabled };
+		return { true, longPressEnabled && repeatable };
 	}
 
 	[[nodiscard]] constexpr bool ShouldKeepPptLongPressTracking(
@@ -210,6 +211,28 @@ export namespace Inkeys::UI::PageControl
 		int currentPage, int totalPage) noexcept
 	{
 		return totalPage > 0 && currentPage < 0;
+	}
+
+	enum class PptDirectionAction : std::uint8_t
+	{
+		PreviousPage,
+		NextPage,
+		EndShow,
+	};
+
+	[[nodiscard]] constexpr PptDirectionAction ResolvePptDirectionAction(
+		bool next, int currentPage, int totalPage) noexcept
+	{
+		if (!next) return PptDirectionAction::PreviousPage;
+		return IsPptEndPage(currentPage, totalPage)
+			? PptDirectionAction::EndShow
+			: PptDirectionAction::NextPage;
+	}
+
+	[[nodiscard]] constexpr bool IsPptDirectionActionRepeatable(
+		PptDirectionAction action) noexcept
+	{
+		return action != PptDirectionAction::EndShow;
 	}
 
 	[[nodiscard]] constexpr DirectionContentPolicy ResolveDirectionContentPolicy(
@@ -593,6 +616,7 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> previousPage;
 		std::function<void()> nextPage;
 		std::function<void()> viewShow;
+		std::function<void()> endShow;
 		std::function<void(PptLayoutState)> persistPosition;
 	};
 

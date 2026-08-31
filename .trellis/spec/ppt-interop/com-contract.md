@@ -104,7 +104,7 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 4. `PptInfo` 被 native revision 唤醒或达到 `50ms` 上限后读取一致 runtime snapshot，只有 Draw3 已到达 COM 对应绝对页时才推进 `PptInfoStateBuffer`；
 5. `PptInfo` 当前只把 ready buffer 传给 `Inkeys.UI.Ppt::PublishPageState`；结束页已在 buffer 中归一为 `-1/-1`，所以 PageControl 无法观察 managed 保留的 `-1/有效总页数`。
 
-`【实施合同】` 修复后的第 5 步必须由 `Inkeys.UI.Ppt::ResolvePageStateForPublication` 把 COM 事实与 ready buffer 解析为 UI 三态：有效页使用 ready buffer，结束页投影为 `-1/有效总页数`，未放映/已结束为 `-1/-1`；`PublishPageState` 再发布给 `Inkeys.UI.PageControl` 四窗。Page 数字使用共享即时文字事务；主栏 A2 EndShow 不参与页码计算，其点击回调只向 PPT 业务线程投递一次请求，再沿用确认与 COM 服务调用流程。
+`【实施合同】` 修复后的第 5 步必须由 `Inkeys.UI.Ppt::ResolvePageStateForPublication` 把 COM 事实与 ready buffer 解析为 UI 三态：有效页使用 ready buffer，结束页投影为 `-1/有效总页数`，未放映/已结束为 `-1/-1`；`PublishPageState` 再发布给 `Inkeys.UI.PageControl` 四窗。Page 数字使用共享即时文字事务；主栏 A2 EndShow 不参与页码计算。PageControl 的结束页 Next 与 A2 必须共享 `Bar::RequestEndShow` 单请求 dispatcher，只向 PPT 业务线程投递一次请求，再沿用确认与 COM 服务调用流程；不得把结束页动作继续投递为会被 native 丢弃的普通 Next。
 
 ## Scenario: COM 事实到 Draw3-ready 页码发布
 
@@ -129,6 +129,10 @@ Inkeys::UI::Ppt::ResolvePageStateForPublication(
     int observedCurrentPage, int observedTotalPage) noexcept;
 void Inkeys::UI::Ppt::PublishPageState(
     int currentPage, int totalPage) noexcept;
+Inkeys::UI::PageControl::PptDirectionAction
+Inkeys::UI::PageControl::ResolvePptDirectionAction(
+    bool next, int currentPage, int totalPage) noexcept;
+void Inkeys::UI::Bar::RequestEndShow();
 ~~~
 
 `PublishProductPage` 的 `page` 是零基绝对页；COM 的 `CurrentPage` 是一基页，调用前必须减一。该 native `bool` 不是 COM ABI：它只表示运行中的 Host 是否已接受该目标（相同 bridge 目标也算幂等成功）。
@@ -142,6 +146,7 @@ void Inkeys::UI::Ppt::PublishPageState(
 - `PptInfoStateBuffer` 只表达 Draw3-ready 的有效页；结束放映页没有 Draw3 页，因此 buffer 必须保持/重置为 `-1/-1`，不得为了图标切换写入 `-1/有效总页数`。
 - UI 解析规则：`observedTotalPage <= 0` 或 `observedCurrentPage == 0` 返回 `-1/-1`；`observedTotalPage > 0 && observedCurrentPage < 0` 返回 `-1/observedTotalPage`；两者均为正数时返回 ready buffer。
 - 发布去重比较解析结果，不只比较 buffer。结束页恢复出有效 COM 页后，即使 Draw3 尚未 ready、解析结果暂为 `-1/-1`，也必须先触发箭头恢复；ready 后再即时更新页码。
+- 结束页动作规则：PageControl 必须用同一已发布二元组解析 Next 动作；`-1/有效总页数` 返回 `EndShow` 并通过 `PptCallbacks::endShow -> Bar::RequestEndShow` 复用 A2 dispatcher，未知 `-1/-1` 不得误路由。结束页 Down 不建立 repeat；普通 Next hold 转入结束页时至多在下一次合法重复投递一次 EndShow 后停止。
 - observer 只有在 `currentPageIndex` 或 `pageCount` 真实变化时推进 `runtimeRevision`；推进和停止通知必须与等待使用的 mutex 建立条件变量握手，避免丢失唤醒。
 - 等待上限为 `50ms`，用于复核没有 native wait handle 的 COM 事实；revision 变化或 Host 停止应提前唤醒。
 - 放映结束时 `PptInfoStateBuffer` 重置为 `-1/-1`，并清空 `PptImg.IsSave`、`PptImg.IsSaved` 与 `PptImg.Image`；不得把旧演示文稿的 ready 状态或页级墨迹带入下一次放映。
@@ -151,7 +156,7 @@ void Inkeys::UI::Ppt::PublishPageState(
 | 条件 | 必须行为 |
 | --- | --- |
 | `observedTotalPage <= 0` | 不发布 Draw3 页请求；UI 为 `-1/-1`，放映结束流程清空 ready buffer 与 `PptImg` |
-| `observedTotalPage > 0 && observedCurrentPage < 0` | 不发布 Draw3 页请求；ready buffer 保持 `-1/-1`，UI 单独发布 `-1/observedTotalPage` |
+| `observedTotalPage > 0 && observedCurrentPage < 0` | 不发布 Draw3 页请求；ready buffer 保持 `-1/-1`，UI 发布 `-1/observedTotalPage`；Next 单次路由到共享 EndShow dispatcher |
 | `observedTotalPage > 0 && observedCurrentPage == 0` | 视为非法/未知状态；不发布 Draw3 页请求，UI 为 `-1/-1`，不得误判结束页 |
 | 非 busy `GetCurrentSlideIndex` 失败但总页数仍有效 | 当前 ABI 与结束页共用 `-1/有效总页数`；按既有 sentinel 投影，并纳入真实 Office/WPS 恢复验收，不得宣称已严格区分错误态 |
 | Host 未运行或正在停止 | `PublishProductPage` 返回 `false`，本轮不推进 ready buffer，最多 `50ms` 后重试 |
@@ -164,9 +169,10 @@ void Inkeys::UI::Ppt::PublishPageState(
 
 ### 5. Good/Base/Bad Cases
 
-- Good：COM 从 `12/12` 进入结束页后变为 `-1/12`，ready buffer 仍为 `-1/-1`，UI 发布 `-1/12`；返回有效页时先发布非结束态恢复箭头，Draw3 到达目标后再发布有效页码。
+- Good：COM 从 `12/12` 进入结束页后变为 `-1/12`，ready buffer 仍为 `-1/-1`，UI 发布 `-1/12`；Next 复用 A2 dispatcher 完成确认/退出且不重复；返回有效页时先恢复箭头/NextPage，Draw3 到达目标后再发布有效页码。
 - Base：COM 页不变，`PublishProductPage` 对同一绝对页幂等成功；runtime 也未变化时最多等待 `50ms` 后复核，不重启动画或提前改 UI。
 - Bad：只在 PageControl 测试中手工构造 `-1/12`，而生产 `PptInfo` 继续只发布被归一化的 `-1/-1` buffer；测试会通过，但 EndShow 分支在真实放映中永远不可达。
+- Bad：只验证 `barEndShow` 资源目标，却让 `InvokeDirection` 固定调用 `nextPage`；native 在 `CurrentPage == -1` 时丢弃请求，图标正确但无法结束放映。
 
 ### 6. Tests Required
 
@@ -174,7 +180,7 @@ void Inkeys::UI::Ppt::PublishPageState(
 - 产品调用点静态检查：两处 Draw3 document/command observer 都调用同一个 `HostRuntimeRevisionSignal::PublishPageChange`。
 - `ppt_ui_tests`：直接调用生产 `ResolvePageStateForPublication`，断言有效 ready 页、结束页、未知态、非法零页、恢复未 ready 和恢复 ready 的精确二元组。
 - `IdtPlug-in.cpp` 静态检查：没有用于 Draw3 完成等待的固定 `500ms` sleep；页请求失败不会推进 buffer；ready 比较使用同一轮 COM 快照；发布前调用生产解析器而不是直接发布 buffer。
-- PageControl/动画测试：数值走 Immediate，旧关键帧被取消且不能在下一帧回写；Arrow/Add 与 Arrow/EndShow 仍走 Animated，并覆盖 `barMore -> barEndShow -> barMore`。
+- PageControl/动画测试：数值走 Immediate，旧关键帧被取消且不能在下一帧回写；Arrow/Add 与 Arrow/EndShow 仍走 Animated，并覆盖 `barMore -> barEndShow -> barMore`、有效页 Next、结束页 EndShow、恢复 Next，以及 EndShow 不可重复。
 - 完整 `Debug|ARM64` Solution 构建及 ARM64 `--no-window` 测试通过；真实 PowerPoint/WPS 快速跳页与结束重开留给设备验收。
 - 真实设备额外覆盖短暂页码读取失败后恢复；若产品要求错误态绝不显示 EndShow，必须另行设计显式 managed/native 状态，不能在 native 根据延迟或重复次数猜测。
 
@@ -202,6 +208,14 @@ const auto publication = ResolvePageStateForPublication(
     PptInfoStateBuffer.CurrentPage, PptInfoStateBuffer.TotalPage,
     observedCurrentPage, observedTotalPage);
 PublishPageState(publication.currentPage, publication.totalPage);
+
+// Wrong：结束页图标已切换，业务仍投递普通 Next 并被 native 丢弃。
+callback = pptCallbacks.nextPage;
+
+// Correct：同一 UI 二元组把结束页 Next 解析到共享 EndShow dispatcher。
+callback = ResolvePptDirectionAction(next, currentPage, totalPage)
+    == PptDirectionAction::EndShow
+    ? pptCallbacks.endShow : pptCallbacks.nextPage;
 ~~~
 
 `【直接确认】` managed 当前只写既有三个 `int*` 槽。`【实施合同】` 本修复不得新增 COM 方法、native wait handle、GUID 或方法顺序；`50ms` 继续作为 native 对无事件 COM 事实的有界复核上限，不能用固定长睡眠替代，也不能绕过 Draw3-ready buffer 追求有效页数字即时显示。结束页投影是无对应 Draw3 页面的 UI 语义例外，不改变 buffer 所有权。

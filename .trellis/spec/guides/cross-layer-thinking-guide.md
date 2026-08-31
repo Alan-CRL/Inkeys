@@ -50,6 +50,7 @@ Win32 window message
 ### Event-backed two-stage state publication
 
 - 跨层状态先区分事实源与 ready 状态：COM 页码是外部事实，Draw3 document runtime 是 native ready，`PptInfoStateBuffer` 是 UI 可发布边界；后层不得提前复述前层尚未完成的目标。
+- 同一发布状态若同时驱动视觉与业务动作，验收必须贯通事实源、发布值、视觉解析、动作解析和最终 dispatcher/业务入口；只在末端测试中手工构造状态并验证图标，不能证明生产状态可达或交互语义已经同步切换。
 - 外部来源没有 native 事件时使用短且有上限的复核；进入 native runtime 后以单调 revision + condition variable 唤醒，并始终保留 predicate 与超时。事件只减少等待延迟，不能跳过 ready 判定。
 - Host 启停会重置 bridge。发布入口只能在运行实例实际接受请求后报告成功，并对相同绝对状态幂等；调用方周期复核，使重启后自动重发，而不是缓存一个可能在 reset 中丢失的“已发送”标志。
 

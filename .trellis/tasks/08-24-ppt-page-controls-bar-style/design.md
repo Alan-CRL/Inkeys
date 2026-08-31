@@ -81,7 +81,7 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 - Page 保持同一实例。PPT 横向使用一个测量后的混合字重行；PPT 竖向使用上下两行；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 未知值保留 `-`/`/-`，Bottom/Middle 分别保留 `9999/999` 显示上限。内容布局策略只能提供 text run、字重和槽类型，不能设置分页专用绝对偏移。Page 的主/次数字文字采用共享 Scene 的即时内容策略：取消旧文字转换、同帧替换字符串并直接应用重新测量后的槽位；该策略不改变 Arrow/Add SVG 和语义标签的共享转换动画。
 - Previous/Next 的 Arrow 统一保留同一 `barMore` SVG 对象；工作区切换只改变现有对象的尺寸、位置、角度和标签透明度，不调用资源替换。
 - Whiteboard Next 的语义确实在 Arrow/Add 间变化时，才调用同一个按钮的内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”。几何与内容共享批次并行推进；事务锁存保证未变化语义不重启。
-- EndShow 使用主栏标准 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG；A2 与 PageControl 共用该主题着色资源，不再使用固定黑色 `ppt3` PNG。PageControl 只消费 `Inkeys.UI.Ppt` 已解析的 UI 页状态：`totalPage > 0 && currentPage < 0` 时，Bottom/Middle 的稳定 Next 实例通过现有 `TransitionToResource` 中点动画从 `barMore` 切到正向 `0°` 的 `barEndShow`；状态恢复为非结束页时反向切回各 surface 的箭头资源/角度。该视觉语义不改变 NextPage 输入回调或长按节奏。
+- EndShow 使用主栏标准 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG；A2 与 PageControl 共用该主题着色资源，不再使用固定黑色 `ppt3` PNG。PageControl 只消费 `Inkeys.UI.Ppt` 已解析的 UI 页状态：`totalPage > 0 && currentPage < 0` 时，Bottom/Middle 的稳定 Next 实例通过现有 `TransitionToResource` 中点动画从 `barMore` 切到正向 `0°` 的 `barEndShow`；状态恢复为非结束页时反向切回各 surface 的箭头资源/角度。同一个 UI 快照还通过 `ResolvePptDirectionAction` 把结束页 Next 路由到 `Bar::RequestEndShow`，复用 A2 dispatcher、确认和 `EndPptShow`；结束页 Down 只投递一次且不建立 repeat，按住普通 Next 后进入结束页则在下一次合法重复投递一次 EndShow 并清除 repeat。
 
 ## 输入所有权
 
@@ -97,7 +97,7 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 
 PageControl 先按当前成功呈现快照逆映射坐标；PptCompact 下 DragHandle 命中优先，Previous/Next 始终委托共享 Bar 按钮入口且不得发起拖动。Page 和非箭头背景建立 drag candidate：Page 先显示共享 press，指针越过 `SM_CXDRAG/SM_CYDRAG` 对应阈值后取消按钮 capture 并进入成对拖动；未越过阈值且在 Page 上抬起时调用 `ViewShow`。Whiteboard 不构造 DragHandle 或 drag candidate。
 
-PPT Arrow 在 Pointer Down 时立即投递一次 Previous/Next，并记录真实按压起点，同时通过 `SystemParametersInfoW` 快照 `SPI_GETKEYBOARDDELAY/SPI_GETKEYBOARDSPEED`。delay `0..3` 映射为 `250/500/750/1000ms`；speed `0..31` 按 `2.5..30 次/秒` 线性映射为后续间隔，查询失败字段分别回退到 `1/31`。只有快照 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时才按本次 timing 重复。首次实际重复以当前帧锚定，使第二次至少等待完整 interval；后续轻微帧迟到按计划 deadline 推进以保留平均 rate，落后至少一个完整 interval 时只触发一次并从当前帧重新锚定，不追赶积压。既有 `pptUiPageCommandOutstanding` 继续合并尚未完成的 COM 请求。移出按钮、Pointer Up、`WM_CANCELMODE/WM_CAPTURECHANGED` 或工作区切换必须清除 press、timing 与重复状态。键盘 Hook 和滚轮不再写入合成 pressed 截止时间；真实 Pointer 的共享 Bar hover/press 保持不变。
+PPT 普通 Arrow 在 Pointer Down 时立即投递一次 Previous/Next，并记录真实按压起点，同时通过 `SystemParametersInfoW` 快照 `SPI_GETKEYBOARDDELAY/SPI_GETKEYBOARDSPEED`。delay `0..3` 映射为 `250/500/750/1000ms`；speed `0..31` 按 `2.5..30 次/秒` 线性映射为后续间隔，查询失败字段分别回退到 `1/31`。只有快照 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时才按本次 timing 重复。首次实际重复以当前帧锚定，使第二次至少等待完整 interval；后续轻微帧迟到按计划 deadline 推进以保留平均 rate，落后至少一个完整 interval 时只触发一次并从当前帧重新锚定，不追赶积压。既有 `pptUiPageCommandOutstanding` 继续合并尚未完成的 COM 请求。结束页 Next 复用 EndShow 的单请求 dispatcher，不读取键盘 repeat timing；普通 Next 的既有 hold 若在重复前进入结束页，则下一次合法 repeat 改投 EndShow 并立即清除 tracking。移出按钮、Pointer Up、`WM_CANCELMODE/WM_CAPTURECHANGED` 或工作区切换必须清除 press、timing 与重复状态。键盘 Hook 和滚轮不再写入合成 pressed 截止时间；真实 Pointer 的共享 Bar hover/press 保持不变。
 
 每个有效 PPT Pointer Down 在业务分派前调用 `Window::Service::PromotePptWindow(surfaceRole)`；该调用只重排 owner 树内 PPT 层级，目标仍在 Bar 正下方且不得激活窗口。DragHandle 的纯平移继续使用 `SWP_NOZORDER`，因为层级已在 Down 边界维护。
 
@@ -164,7 +164,7 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 - 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage；背景外框强度保持 `1.0`，数字即时策略不残留 content transition。
 - 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
 - PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle/Page/背景拖动候选、Arrow 拒绝拖动、系统阈值转换、反向重入和首次渐显。
-- EndShow 状态测试：`ppt_ui_tests` 直接调用生产 `ResolvePageStateForPublication`，覆盖有效 ready 页、结束页 `-1/有效总页数`、未知 `-1/-1`、非法 `0/有效总页数`、结束页恢复但 Draw3 未 ready、恢复 ready 六种状态；`page_control_tests` 再验证 Bottom/Middle 两侧使用同一 `barEndShow`、`0°` 目标，并验证往返只改变稳定 Next 的 Animated 内容目标，不改变 NextPage 回调。
+- EndShow 状态测试：`ppt_ui_tests` 直接调用生产 `ResolvePageStateForPublication`，覆盖有效 ready 页、结束页 `-1/有效总页数`、未知 `-1/-1`、非法 `0/有效总页数`、结束页恢复但 Draw3 未 ready、恢复 ready 六种状态；`page_control_tests` 再验证 Bottom/Middle 两侧使用同一 `barEndShow`、`0°` 目标，并断言有效页 Next、结束页 EndShow、恢复后的 Next 动作解析，以及 EndShow 单次/不重复策略。
 - PPT 输入测试：Page 阈值内短按调用预览，Arrow Down 立即一次；覆盖 delay `0..3`、speed `0/31`、越界限制和查询失败默认值，并按解析后的首次 delay/后续 interval 断言重复，配置关闭和移出/Up/Cancel 停止；静态确认 Pointer Down 调用最近交互层级维护且无合成按键闪按状态。
 - 启动/触摸测试：Hidden→Visible 在没有 Bar 请求时持续到 deadline 后自行解锁；触摸纯状态覆盖 primary、无 primary fallback、多指忽略、替换 cancel、新 id Move/Up 和 cancel 清理，静态确认四窗创建注册与 Tablet 手势返回值。
 - Draw3 活动测试：聚合状态 `false→true→true→false` 只发布一次 Start/End，多 contact 不重复，Host stop/异常 active 清理补 End；静态确认产品回调链收起次级 UI 且 Started 无条件进入带 wait-for-leave 的第三光源 `Dormant`。

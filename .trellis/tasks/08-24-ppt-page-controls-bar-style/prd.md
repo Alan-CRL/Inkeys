@@ -30,7 +30,7 @@
 15. **最近交互层级**：任一可交互 PPT PageControl 收到有效 Pointer Down 时，目标窗口必须通过 `PromotePptWindow` 移到其他 PPT 窗口之上、Bar 之下，不激活窗口、不进入 topmost band；拖动直移的 `SWP_NOZORDER` 不得替代这次交互层级维护。
 16. **Draw3 绘制活动**：Draw3 必须按所有物理 contact 的聚合状态发布 `0→1` Started 与 `1→0` Ended，多个 contact 不重复通知；停止或异常退出时若仍 active 必须补 Ended。首次 Started 收起绘制属性、几何属性、更多、笔型、粗细、颜色和提示等主栏次级界面，但不改变主栏 `fold`、不隐藏 PageControl。Started 还必须无条件让第三鼠标光进入 `Dormant`；若光标仍在 Bar/PageControl 实际接收区，则阻止重新激活直到真实离开后再次自然进入。第一光源、颜色过渡和普通 UI 动画不得因绘制持续而被压制。
 17. **启动输入与触摸生命周期**：首次 Hidden 配置必须提交真实透明度 `0`；Hidden→Visible 的 transition deadline 自身必须维持 PageControl 续帧和输入锁，期限后无须 Bar 或光源消息也能自行解锁。四个 PageControl HWND 继续创建触摸注册与边缘手势禁用，并在 WndProc 禁用 press-and-hold/flick 等 Tablet 手势；`WM_TOUCH` 必须支持 primary 缺失时锁定首个 DOWN、活动触点替换 cancel、最后坐标锁存和单触点 Move/Up，保证触摸长按可进入与鼠标相同的箭头重复路径。
-18. **结束放映图标与结束页语义**：深色主题下 EndShow 必须使用与主栏其他图标一致的主题白色 SVG，采用统一的 `24x24` 画布、圆角端点/连接和相近线宽；Main Bar A2 与 PageControl 共用同一 `barEndShow` 资源，不再复用黑色 `ppt3` PNG。`PptInfo` 必须把 COM 的结束页事实投影为 PageControl 可观察的 `currentPage=-1/totalPage>0`，且有效页始终继续取 Draw3-ready buffer。PPT UI 快照满足该结束页组合时，四个 PageControl 的 Next 稳定按钮实例把 `barMore` 动画切换为 `barEndShow` 且保持正向 `0°`；COM 恢复有效页后立即反向切回各 surface 的箭头角度，页码仍等待 Draw3-ready 后更新。资源替换复用 Whiteboard Arrow/Add 的共享中点内容转换，点击和长按仍走既有 NextPage 回调，不改 EndShow A2 回调或 COM 协议。
+18. **结束放映图标与结束页语义**：深色主题下 EndShow 必须使用与主栏其他图标一致的主题白色 SVG，采用统一的 `24x24` 画布、圆角端点/连接和相近线宽；Main Bar A2 与 PageControl 共用同一 `barEndShow` 资源，不再复用黑色 `ppt3` PNG。`PptInfo` 必须把 COM 的结束页事实投影为 PageControl 可观察的 `currentPage=-1/totalPage>0`，且有效页始终继续取 Draw3-ready buffer。PPT UI 快照满足该结束页组合时，四个 PageControl 的 Next 稳定按钮实例把 `barMore` 动画切换为 `barEndShow` 且保持正向 `0°`；COM 恢复有效页后立即反向切回各 surface 的箭头角度，页码仍等待 Draw3-ready 后更新。资源替换复用 Whiteboard Arrow/Add 的共享中点内容转换；结束页 Next 必须复用 Main Bar A2 的 EndShow dispatcher、确认和 COM 退出流程，单次投递且不进入长按重复，普通有效页仍走 NextPage，不改 COM 协议。
 
 ## Acceptance Criteria
 
@@ -51,7 +51,7 @@
 - [x] PageControl 首次显示无需 Bar 外部消息即可完成渐显并在 deadline 后自行解锁；四窗禁用 Tablet 手势，primary/fallback 单触点转译、替换 cancel 与触摸长按路径通过 headless/静态回归。
 - [x] 键盘与滚轮不再合成 Arrow pressed 闪按；真实 Pointer press 视觉保持，最近交互 PPT 窗口位于其他 PPT 窗口之上且始终低于 Bar。
 - [x] Draw3 物理 contact 聚合只成对发布一次 Started/Ended，停止/异常路径不泄漏；Started 收起主栏次级界面并让第三鼠标光进入带 wait-for-leave 门禁的 `Dormant`，主栏展开状态、PageControl、第一光源和普通动画不受影响。
-- [x] EndShow A2 使用主题白色且符合主栏线条/圆角风格的共享 `barEndShow` SVG；生产发布链必须覆盖有效页 -> 结束页 -> 有效页，使底部与两侧 Next 在同一稳定按钮上动画切换为该图标再切回箭头。结束页不得污染 Draw3-ready buffer，`-1/-1` 不得误判，点击/长按行为不变。
+- [x] EndShow A2 使用主题白色且符合主栏线条/圆角风格的共享 `barEndShow` SVG；生产发布链必须覆盖有效页 -> 结束页 -> 有效页，使底部与两侧 Next 在同一稳定按钮上动画切换为该图标再切回箭头。结束页不得污染 Draw3-ready buffer，`-1/-1` 不得误判；结束页 Next 单次复用 A2 EndShow 业务流且不长按重复，恢复有效页后继续普通 NextPage。
 
 ## Out of Scope
 

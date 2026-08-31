@@ -128,3 +128,9 @@
 - [x] `PptInfo` 保持结束页时 `PptInfoStateBuffer == -1/-1`，改为比较并发布解析后的 UI 状态；不得把 raw COM 结束页写入 buffer，不扩展 managed pointer、COM 接口、TLB 或业务命令。
 - [x] 在 `ppt_ui_tests` 覆盖有效页、结束页、未知态、非法零页及结束页 -> 恢复未 ready -> 恢复 ready；在 `page_control_tests` 覆盖生产解析结果驱动四个 Next 的 `barMore -> barEndShow -> barMore` 目标与稳定回调。
 - [x] 对照 `ppt-interop/com-contract.md` 与 `native-desktop/rendering-and-ui.md` 执行 `git diff --check`、EOL/BOM 审计、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI、不提交 commit。
+
+## 14. EndShow Next 业务路由恢复
+
+- [x] 对照迁移前 UI2 行为，让 PageControl 在 `totalPage > 0 && currentPage < 0` 时把 Next 路由到现有 A2 EndShow dispatcher、确认和 `EndPptShow`，有效页仍走 NextPage。
+- [x] 结束页 Down 只投递一次且不建立长按重复；按住普通 Next 后进入结束页时，下一次合法重复至多投递一次 EndShow 并清除 tracking。
+- [x] 补齐动作解析与 repeat 门禁 headless 回归，同步 code-spec 后执行 `git diff --check`、EOL/BOM、ARM64 完整构建和 `--no-window`；不启动 GUI、不提交 commit。

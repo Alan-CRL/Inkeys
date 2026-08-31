@@ -178,6 +178,21 @@ namespace
 			&& !IsPptEndPage(-1, -1)
 			&& !IsPptEndPage(-1, 0),
 			"PPT end page requires a valid total and a missing current page");
+		Check(ResolvePptDirectionAction(false,
+			ready.currentPage, ready.totalPage)
+				== PptDirectionAction::PreviousPage
+			&& ResolvePptDirectionAction(true,
+				ready.currentPage, ready.totalPage)
+				== PptDirectionAction::NextPage
+			&& ResolvePptDirectionAction(true,
+				endPage.currentPage, endPage.totalPage)
+				== PptDirectionAction::EndShow
+			&& ResolvePptDirectionAction(true, -1, -1)
+				== PptDirectionAction::NextPage
+			&& IsPptDirectionActionRepeatable(PptDirectionAction::PreviousPage)
+			&& IsPptDirectionActionRepeatable(PptDirectionAction::NextPage)
+			&& !IsPptDirectionActionRepeatable(PptDirectionAction::EndShow),
+			"only the published PPT end page routes Next to EndShow");
 
 		constexpr std::array surfaces{
 			Surface::BottomLeft, Surface::BottomRight,
@@ -213,7 +228,7 @@ namespace
 					== (vertical ? 180.0 : 90.0)
 				&& contracts[3].role == PptWidgetRole::Next
 				&& contracts[3].invokesBusinessAction,
-				"valid recovery restores arrows without changing the Next callback");
+				"valid recovery restores arrows and the normal Next action");
 		}
 	}
 
@@ -434,11 +449,15 @@ namespace
 			WorkspaceMode::PptCompact, true);
 		const auto whiteboardPress = ResolvePptDirectionPressPolicy(
 			WorkspaceMode::WhiteboardExpanded, true);
+		const auto endShowPress = ResolvePptDirectionPressPolicy(
+			WorkspaceMode::PptCompact, true, false);
 		Check(disabledPress.invokeOnPointerDown && !disabledPress.trackLongPress
 			&& enabledPress.invokeOnPointerDown && enabledPress.trackLongPress
 			&& !whiteboardPress.invokeOnPointerDown
-			&& !whiteboardPress.trackLongPress,
-			"PPT arrows invoke on down and only configured presses repeat");
+			&& !whiteboardPress.trackLongPress
+			&& endShowPress.invokeOnPointerDown
+			&& !endShowPress.trackLongPress,
+			"PPT arrows invoke on down while EndShow and disabled presses do not repeat");
 		const auto defaultTiming = ResolvePptKeyboardRepeatTiming(
 			PptKeyboardDelayFallback, PptKeyboardSpeedFallback);
 		const auto slowTiming = ResolvePptKeyboardRepeatTiming(0, 0);

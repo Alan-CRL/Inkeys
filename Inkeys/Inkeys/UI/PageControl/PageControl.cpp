@@ -529,8 +529,22 @@ namespace Inkeys::UI::PageControl
 					callback = next ? whiteboardCallbacks.nextPage
 						: whiteboardCallbacks.previousPage;
 				else if (ppt.presentationVisible)
-					callback = next ? pptCallbacks.nextPage
-						: pptCallbacks.previousPage;
+				{
+					// 结束页 Next 复用 A2 的确认/退出队列，普通页仍保持翻页回调。
+					switch (ResolvePptDirectionAction(
+						next, ppt.currentPage, ppt.totalPage))
+					{
+					case PptDirectionAction::PreviousPage:
+						callback = pptCallbacks.previousPage;
+						break;
+					case PptDirectionAction::NextPage:
+						callback = pptCallbacks.nextPage;
+						break;
+					case PptDirectionAction::EndShow:
+						callback = pptCallbacks.endShow;
+						break;
+					}
+				}
 			}
 			if (callback) callback();
 		}
@@ -1464,6 +1478,14 @@ namespace Inkeys::UI::PageControl
 						hasRepeated, state.repeatTiming);
 					repeatDirection = true;
 					repeatNext = state.pressedNext;
+					if (!IsPptDirectionActionRepeatable(ResolvePptDirectionAction(
+						repeatNext, ppt.currentPage, ppt.totalPage)))
+					{
+						// 按住 Next 进入结束页时只投递一次 EndShow，随后终止重复。
+						state.pressStarted = {};
+						state.lastRepeat = {};
+						state.repeatTiming = {};
+					}
 				}
 				presentation = state.scene.PresentationBounds();
 				const SIZE presentationSize{
@@ -1842,10 +1864,13 @@ namespace Inkeys::UI::PageControl
 					else if (result.pressed == PreviousWidget
 						|| result.pressed == NextWidget)
 					{
-						const auto pressPolicy = ResolvePptDirectionPressPolicy(
-							state.configuredMode, ppt.longPressEnabled);
-						invokeDirectionOnDown = pressPolicy.invokeOnPointerDown;
 						invokeNext = result.pressed == NextWidget;
+						const bool repeatable = IsPptDirectionActionRepeatable(
+							ResolvePptDirectionAction(
+								invokeNext, ppt.currentPage, ppt.totalPage));
+						const auto pressPolicy = ResolvePptDirectionPressPolicy(
+							state.configuredMode, ppt.longPressEnabled, repeatable);
+						invokeDirectionOnDown = pressPolicy.invokeOnPointerDown;
 						if (ShouldKeepPptLongPressTracking(
 							pressPolicy.trackLongPress, GetCapture() == hwnd, true))
 						{

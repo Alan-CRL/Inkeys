@@ -174,14 +174,14 @@ namespace Inkeys::UI::Ppt
 			std::scoped_lock lock(stateMutex);
 			callbackSnapshot = business;
 		}
+		Inkeys::UI::Bar::SetEndShowCallback(callbackSnapshot.endShow);
 		Inkeys::UI::PageControl::SetPptCallbacks({
 			std::move(callbackSnapshot.previousPage),
 			std::move(callbackSnapshot.nextPage),
 			std::move(callbackSnapshot.viewShow),
+			[] { Inkeys::UI::Bar::RequestEndShow(); },
 			PersistPageLayout,
 		});
-		Inkeys::UI::Bar::SetEndShowCallback(
-			std::move(callbackSnapshot.endShow));
 		PublishSnapshot();
 		return true;
 	}
