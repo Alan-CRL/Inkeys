@@ -133,3 +133,24 @@ Stable centered bottom-dock frames now derive the main-button root from animated
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: Restore PPT end show action
+
+**Date**: 2026-08-31
+**Task**: Restore PPT end show action
+**Branch**: `draw`
+
+### Summary
+
+Restored PageControl end-page Next routing through the shared A2 EndShow dispatcher, kept valid-page Next behavior, prevented EndShow repeat, added regression coverage, and synchronized Trellis cross-layer contracts.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `07b0c208` | (see git log) |
+
+### Status
+
+[OK] **Completed**
