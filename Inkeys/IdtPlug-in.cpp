@@ -581,12 +581,15 @@ void PptInfo()
 		}
 
 		PublishPresentationVisibility(Initialization);
-		// 只发布画板已经完成换页后的缓冲页码，不能直接使用 COM 写入值。
-		if (publishedCurrentPage != PptInfoStateBuffer.CurrentPage ||
-			publishedTotalPage != PptInfoStateBuffer.TotalPage)
+		// 有效页继续取 Draw3-ready 缓冲；结束页只在 UI 发布边界保留总页数。
+		const auto publication = Inkeys::UI::Ppt::ResolvePageStateForPublication(
+			PptInfoStateBuffer.CurrentPage, PptInfoStateBuffer.TotalPage,
+			observedCurrentPage, observedTotalPage);
+		if (publishedCurrentPage != publication.currentPage ||
+			publishedTotalPage != publication.totalPage)
 		{
-			publishedCurrentPage = PptInfoStateBuffer.CurrentPage;
-			publishedTotalPage = PptInfoStateBuffer.TotalPage;
+			publishedCurrentPage = publication.currentPage;
+			publishedTotalPage = publication.totalPage;
 			Inkeys::UI::Ppt::PublishPageState(
 				publishedCurrentPage, publishedTotalPage);
 		}

@@ -118,6 +118,13 @@
 ## 12. EndShow 图标与 PPT 结束页内容切换
 
 - [x] 新增符合主栏 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG，注册为 `UI` 资源；Main Bar A2 EndShow 改用该 SVG 和主题 `TextPrimary`，删除该按钮的 `ppt3` PNG 特例。
-- [x] 在 PageControl 单一内容策略中识别 `totalPage > 0 && currentPage < 0`，让 Bottom/Middle 的稳定 Next 实例使用 `barEndShow` 与 `0°`；有效页恢复后回到各 surface 的 `barMore` 角度，点击/长按继续调用 NextPage。
-- [x] 复用 `BarSurfaceScene::SetWidgetState` 既有 `TransitionToResource` 中点动画，不新增分页专用动画；补齐结束页判定、资源/角度矩阵、未知状态负向和稳定回调回归。
+- [x] 在 PageControl 单一内容消费策略中识别 `totalPage > 0 && currentPage < 0`，让 Bottom/Middle 的稳定 Next 实例使用 `barEndShow` 与 `0°`；非结束状态回到各 surface 的 `barMore` 角度，点击/长按继续调用 NextPage。
+- [x] 复用 `BarSurfaceScene::SetWidgetState` 既有 `TransitionToResource` 中点动画，不新增分页专用动画；补齐内容纯函数的结束页判定、资源/角度矩阵和未知状态负向回归。
 - [x] 更新 code-spec，执行 `git diff --check`、EOL/BOM 审计、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI。
+
+## 13. EndShow 生产状态链路补齐
+
+- [x] 在 `Inkeys.UI.Ppt` 增加可由 headless 直接调用的纯解析器：有效页返回 Draw3-ready buffer，`observedTotalPage > 0 && observedCurrentPage < 0` 返回 `-1/observedTotalPage`，未放映/已结束及非法零页返回 `-1/-1`。
+- [x] `PptInfo` 保持结束页时 `PptInfoStateBuffer == -1/-1`，改为比较并发布解析后的 UI 状态；不得把 raw COM 结束页写入 buffer，不扩展 managed pointer、COM 接口、TLB 或业务命令。
+- [x] 在 `ppt_ui_tests` 覆盖有效页、结束页、未知态、非法零页及结束页 -> 恢复未 ready -> 恢复 ready；在 `page_control_tests` 覆盖生产解析结果驱动四个 Next 的 `barMore -> barEndShow -> barMore` 目标与稳定回调。
+- [x] 对照 `ppt-interop/com-contract.md` 与 `native-desktop/rendering-and-ui.md` 执行 `git diff --check`、EOL/BOM 审计、ARM64 `InkeysRepo.sln` `Debug|ARM64` 完整构建和 ARM64 `InkeysHeadlessTests.exe --no-window`；不启动 GUI、不提交 commit。

@@ -85,6 +85,21 @@ export namespace Inkeys::UI::Ppt
 		std::wstring total;
 	};
 
+	struct PageStatePublication
+	{
+		int currentPage = -1;
+		int totalPage = -1;
+	};
+
+	[[nodiscard]] constexpr PageStatePublication ResolvePageStateForPublication(
+		int readyCurrentPage, int readyTotalPage,
+		int observedCurrentPage, int observedTotalPage) noexcept
+	{
+		if (observedTotalPage <= 0 || observedCurrentPage == 0) return {};
+		if (observedCurrentPage < 0) return { -1, observedTotalPage };
+		return { readyCurrentPage, readyTotalPage };
+	}
+
 	[[nodiscard]] inline ControlVisualGeometry ResolveControlVisualGeometry(
 		Control control) noexcept
 	{

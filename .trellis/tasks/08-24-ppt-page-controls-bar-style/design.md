@@ -81,7 +81,7 @@ Drag 是 divider lane，与相邻 Arrow 槽位直接相接；`5 DIP` 间距只�
 - Page 保持同一实例。PPT 横向使用一个测量后的混合字重行；PPT 竖向使用上下两行；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 未知值保留 `-`/`/-`，Bottom/Middle 分别保留 `9999/999` 显示上限。内容布局策略只能提供 text run、字重和槽类型，不能设置分页专用绝对偏移。Page 的主/次数字文字采用共享 Scene 的即时内容策略：取消旧文字转换、同帧替换字符串并直接应用重新测量后的槽位；该策略不改变 Arrow/Add SVG 和语义标签的共享转换动画。
 - Previous/Next 的 Arrow 统一保留同一 `barMore` SVG 对象；工作区切换只改变现有对象的尺寸、位置、角度和标签透明度，不调用资源替换。
 - Whiteboard Next 的语义确实在 Arrow/Add 间变化时，才调用同一个按钮的内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”。几何与内容共享批次并行推进；事务锁存保证未变化语义不重启。
-- EndShow 使用主栏标准 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG；A2 与 PageControl 共用该主题着色资源，不再使用固定黑色 `ppt3` PNG。PPT `totalPage > 0 && currentPage < 0` 时，Bottom/Middle 的稳定 Next 实例通过现有 `TransitionToResource` 中点动画从 `barMore` 切到正向 `0°` 的 `barEndShow`；当前页恢复有效时反向切回各 surface 的箭头资源/角度。该视觉语义不改变 NextPage 输入回调或长按节奏。
+- EndShow 使用主栏标准 `24x24`、圆角端点/连接和相近线宽的 `barEndShow` SVG；A2 与 PageControl 共用该主题着色资源，不再使用固定黑色 `ppt3` PNG。PageControl 只消费 `Inkeys.UI.Ppt` 已解析的 UI 页状态：`totalPage > 0 && currentPage < 0` 时，Bottom/Middle 的稳定 Next 实例通过现有 `TransitionToResource` 中点动画从 `barMore` 切到正向 `0°` 的 `barEndShow`；状态恢复为非结束页时反向切回各 surface 的箭头资源/角度。该视觉语义不改变 NextPage 输入回调或长按节奏。
 
 ## 输入所有权
 
@@ -130,7 +130,19 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 
 ## PPT 页状态发布
 
-`PptInfoState` 继续代表 COM 事实，`PptInfoStateBuffer` 继续代表 Draw3 已完成切换的事实。PowerPoint 事件会即时写入共享状态，但现有 COM ABI 没有 native wait handle；因此 native 以最多 `50ms` 的有界节拍检查 COM 状态，检测到目标页后调用返回 `bool` 的 `PublishProductPage`。该入口只在 Host 运行时接受请求，对相同绝对页幂等成功；失败请求不得被调用方缓存，Host 启动或 reset 后由下一轮自动重发。Draw3 Host 的两个 observer 都通过 `HostRuntimeRevisionSignal` 在页索引或页数真实变化时递增 `runtimeRevision`，并以同一 mutex/condition-variable 握手唤醒 `WaitForProductRuntimeRevision`；PPT 状态线程复核 runtime 后才发布 buffer。不得把 UI 直接绑定到 `PptInfoState`，也不得恢复固定 `500ms` 轮询等待 Draw3。
+`PptInfoState` 继续代表 COM 事实，`PptInfoStateBuffer` 继续代表 Draw3 已完成切换的有效页事实。PowerPoint 事件会即时写入共享状态，但现有 COM ABI 没有 native wait handle；因此 native 以最多 `50ms` 的有界节拍检查 COM 状态，检测到目标页后调用返回 `bool` 的 `PublishProductPage`。该入口只在 Host 运行时接受请求，对相同绝对页幂等成功；失败请求不得被调用方缓存，Host 启动或 reset 后由下一轮自动重发。Draw3 Host 的两个 observer 都通过 `HostRuntimeRevisionSignal` 在页索引或页数真实变化时递增 `runtimeRevision`，并以同一 mutex/condition-variable 握手唤醒 `WaitForProductRuntimeRevision`；PPT 状态线程复核 runtime 后才推进 buffer。不得把普通有效页 UI 直接绑定到 `PptInfoState`，也不得恢复固定 `500ms` 轮询等待 Draw3。
+
+结束放映页没有对应的 Draw3 页面，因此在 `Inkeys.UI.Ppt` 导出纯解析器 `ResolvePageStateForPublication(readyCurrentPage, readyTotalPage, observedCurrentPage, observedTotalPage)`，由 `PptInfo` 在调用 `PublishPageState` 前统一解析，不直接改变 `PptInfoStateBuffer`：
+
+| 同轮 COM 事实 | UI 发布值 | 说明 |
+| --- | --- | --- |
+| `observedTotalPage <= 0` 或 `observedCurrentPage == 0` | `-1/-1` | 未放映、已结束或非法状态，不显示 EndShow 语义 |
+| `observedTotalPage > 0 && observedCurrentPage < 0` | `-1/observedTotalPage` | 结束放映页；仅向 UI 暴露语义，buffer 仍为 `-1/-1` |
+| `observedTotalPage > 0 && observedCurrentPage > 0` | `readyCurrentPage/readyTotalPage` | 有效页只使用 Draw3-ready buffer；若恢复尚未 ready，则暂为 `-1/-1` 并已切回箭头 |
+
+发布去重必须比较解析后的 `currentPage/totalPage`，因此 `有效页 -> 结束页 -> 有效页` 即使 buffer 在结束页被清空，也会分别触发 EndShow 内容转换、箭头反向转换和后续页码即时更新。该投影不新增 managed pointer、COM 方法、GUID 或 TLB 顺序。
+
+方案取舍：不把 `-1/有效总页数` 写入 `PptInfoStateBuffer`，因为该对象同时约束 Draw3-ready 与页级墨迹消费者；不扩展 COM ABI，避免为一个现有 sentinel 语义改动 C#/TLB/native/deployment；也不在 PageControl 再读取 raw COM，全局状态线程仍是唯一解析边界。将二元组投影集中为 `Inkeys.UI.Ppt` 的纯函数，既保留最小改动，也让 headless 能覆盖真实生产决策。
 
 ## PPT 碰撞与位置
 
@@ -143,6 +155,7 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 ## 兼容、风险与回滚
 
 - 保留 EndShow A2、旧 JSON 读写、PPT/WPS COM、`PptInfoStateBuffer`、页级墨迹、四 HWND owner/Z 序和 RenderPipeline 线程模型。
+- `PptCOM` 的非 busy `GetCurrentSlideIndex` 失败也可能暂时写出 `CurrentPage=-1/TotalPage>0`，与既有结束页 sentinel 无法仅靠当前 ABI 区分。本任务沿用该既有语义并保留最小 native UI 投影；真实 PowerPoint/WPS 必须手工覆盖结束页、短暂 COM 失败和恢复。若产品要求严格区分错误态，需另立跨 C#/TLB/native 的显式状态合同，不得在本修复内暗增启发式。
 - 主要风险是从 Main RenderLoop/Interaction 抽取共享入口时改变主栏现有行为。迁移顺序必须先为 Main Bar 建立等价测试，再让 PageControl 接入；任一阶段失败可回滚到上一阶段而不触碰业务层。
 - 不以继续修改 `BarSurfaceScene::ApplyButtonInteractionTargetsLocked`、分页 icon offset 或专用 duration 作为回滚/临时完成方案；这些路径本身就是要移除的错误所有权。
 
@@ -151,11 +164,11 @@ owner WndProc 不得等待 `presentationMutex`：渲染线程持有该锁时可�
 - 共享运行时纯测试：相同 request/state/time 对 Main Bar 与 PageControl 产生相同外框、内容槽、hover/press、transform、hit 和 damage；背景外框强度保持 `1.0`，数字即时策略不残留 content transition。
 - 坐标/光源纯测试：非零 Surface 原点下 SVG/文字继承显式按钮父级；共享屏幕光源点按 logical bounds 与 presentation outset 映射，不读取分页本地指针。
 - PageControl 状态测试：实例 ID 稳定、普通 Arrow 不换资源、Arrow/Add 单次同批转换、DragHandle/Page/背景拖动候选、Arrow 拒绝拖动、系统阈值转换、反向重入和首次渐显。
-- EndShow 状态测试：只有总页数有效且当前页缺失时识别结束页；Bottom/Middle 两侧使用同一 `barEndShow`、`0°` 目标，并验证有效页/结束页往返只改变稳定 Next 的 Animated 内容目标，不改变 NextPage 回调。
+- EndShow 状态测试：`ppt_ui_tests` 直接调用生产 `ResolvePageStateForPublication`，覆盖有效 ready 页、结束页 `-1/有效总页数`、未知 `-1/-1`、非法 `0/有效总页数`、结束页恢复但 Draw3 未 ready、恢复 ready 六种状态；`page_control_tests` 再验证 Bottom/Middle 两侧使用同一 `barEndShow`、`0°` 目标，并验证往返只改变稳定 Next 的 Animated 内容目标，不改变 NextPage 回调。
 - PPT 输入测试：Page 阈值内短按调用预览，Arrow Down 立即一次；覆盖 delay `0..3`、speed `0/31`、越界限制和查询失败默认值，并按解析后的首次 delay/后续 interval 断言重复，配置关闭和移出/Up/Cancel 停止；静态确认 Pointer Down 调用最近交互层级维护且无合成按键闪按状态。
 - 启动/触摸测试：Hidden→Visible 在没有 Bar 请求时持续到 deadline 后自行解锁；触摸纯状态覆盖 primary、无 primary fallback、多指忽略、替换 cancel、新 id Move/Up 和 cancel 清理，静态确认四窗创建注册与 Tablet 手势返回值。
 - Draw3 活动测试：聚合状态 `false→true→true→false` 只发布一次 Start/End，多 contact 不重复，Host stop/异常 active 清理补 End；静态确认产品回调链收起次级 UI 且 Started 无条件进入带 wait-for-leave 的第三光源 `Dormant`。
-- PPT/Draw3 状态测试：页命令完成会推进 runtime revision 并唤醒 waiter；UI 页码只发布 Draw3-ready buffer，且 native COM 检查节拍不超过 `50ms`。
+- PPT/Draw3 状态测试：页命令完成会推进 runtime revision 并唤醒 waiter；有效页码只发布 Draw3-ready buffer，结束页只发布 UI 投影且不写 buffer，native COM 检查节拍不超过 `50ms`。
 - 输入矩阵测试：Whiteboard 拒绝 drag/wheel/long-press/persist，PPT 保留；切换期间 capture/input 门禁正确。
 - 碰撞测试：无 Bar 参数/障碍，bottom 优先、middle 回退、手动 pair 不推动另一 pair、自动结果不写保存状态。
 - 回归：EndShow/A2、窗口生命周期、owner/Z 序、COM buffer 与旧 JSON 静态/无窗口测试保持。

@@ -164,6 +164,33 @@ namespace
 			"middle page values retain three-digit cap");
 	}
 
+	void TestPageStatePublication()
+	{
+		const auto ready = ResolvePageStateForPublication(7, 12, 7, 12);
+		Check(ready.currentPage == 7 && ready.totalPage == 12,
+			"valid COM page publishes the Draw3-ready state");
+
+		const auto endPage = ResolvePageStateForPublication(-1, -1, -1, 12);
+		Check(endPage.currentPage == -1 && endPage.totalPage == 12,
+			"end page preserves the observed total only at the UI boundary");
+
+		const auto unknown = ResolvePageStateForPublication(7, 12, -1, -1);
+		const auto zeroPage = ResolvePageStateForPublication(7, 12, 0, 12);
+		Check(unknown.currentPage == -1 && unknown.totalPage == -1
+			&& zeroPage.currentPage == -1 && zeroPage.totalPage == -1,
+			"unknown and zero-page COM states do not publish EndShow");
+
+		const auto recoveryNotReady = ResolvePageStateForPublication(
+			-1, -1, 8, 12);
+		Check(recoveryNotReady.currentPage == -1
+			&& recoveryNotReady.totalPage == -1,
+			"valid COM recovery waits for Draw3-ready page data");
+
+		const auto recoveryReady = ResolvePageStateForPublication(8, 12, 8, 12);
+		Check(recoveryReady.currentPage == 8 && recoveryReady.totalPage == 12,
+			"Draw3-ready recovery publishes the valid page tuple");
+	}
+
 	void TestDisplayReflowAndTransition()
 	{
 		const RECT monitor{ -800, 0, 0, 600 };
@@ -234,6 +261,7 @@ int RunPptUiTests()
 	TestAnimationAndDrag();
 	TestDamageTransactions();
 	TestVisualGeometryAndPageText();
+	TestPageStatePublication();
 	TestDisplayReflowAndTransition();
 	return failureCount;
 }

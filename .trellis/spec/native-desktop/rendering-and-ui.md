@@ -211,7 +211,7 @@ if (offSignal) return FrameResult::Idle;
 
 #### 1. Scope / Trigger
 
-修改 Main Bar 按钮、PPT/Whiteboard 共享分页窗口、分页背景、PageControl 输入/动画/碰撞或相关 headless 测试时适用。这里的“复用 Bar”表示 Main Bar 与 PageControl 调用同一行为实现；共享数值、底层 Shape/SVG/Word 或复制状态机均不满足合同。
+修改 Main Bar 按钮、PPT/Whiteboard 共享分页窗口、PPT 页状态发布、分页背景、PageControl 输入/动画/碰撞或相关 headless 测试时适用。这里的“复用 Bar”表示 Main Bar 与 PageControl 调用同一行为实现；共享数值、底层 Shape/SVG/Word 或复制状态机均不满足合同。
 
 #### 2. Signatures
 
@@ -320,6 +320,18 @@ bool ShouldContinuePageControlFrame(
     bool longPressActive) noexcept;
 ~~~
 
+EndShow 生产状态补齐后的 `Inkeys.UI.Ppt` 实施合同为：
+
+~~~cpp
+struct PageStatePublication {
+    int currentPage = -1;
+    int totalPage = -1;
+};
+constexpr PageStatePublication ResolvePageStateForPublication(
+    int readyCurrentPage, int readyTotalPage,
+    int observedCurrentPage, int observedTotalPage) noexcept;
+~~~
+
 `ResolveRuntimePageControlLayout` 不得接收 Bar/MainButton 障碍或 Whiteboard 位置状态。PageControl 可以提供 surface 内控件拓扑和锚点，但标准按钮内部几何、交互、动画、绘制和 damage 只能来自上述 Bar 边界。
 
 #### 3. Contracts
@@ -333,7 +345,7 @@ bool ShouldContinuePageControlFrame(
 - 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
 - Page 在三种形态中是同一实例。横向页码对加粗当前页与常规 `/总页数` 做整体测量并居中；竖向使用上下行并整体居中；Whiteboard 使用标准 `2x2` 主内容/标签槽。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。Page 数值变化必须走共享 Scene 的即时内容策略：取消旧文字 transition、同帧替换主/次字符串，并直接应用本次重新测量的槽位；不得调用 `TransitionToString`。PPT Page 在系统拖动阈值内短按并仍命中时调用既有 `ViewShow` 打开预览，Whiteboard Page 保持 no-op；两者都使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
 - 普通 Previous/Next 始终保留同一 `barMore` SVG 对象，只动画尺寸/位置/角度及 Whiteboard 标签；不得为同资源启动替换。`barMore` 的 `0°` 基准朝上，`MiddleLeft/MiddleRight` 必须统一使用 Previous `0°`（向上）、Next `180°`（向下），不得按左右侧镜像；Bottom PPT/Whiteboard 继续使用 Previous `-90°`、Next `90°`，Whiteboard Add 使用 `0°`。只有 Whiteboard Next 的 Arrow/Add 语义真实变化时，才用共享内容转换切换 `barMore`/`barAdd` 与“右翻页”/“加页”，并与几何同批并行推进。
-- EndShow A2 与 PageControl 必须共用主栏 `UI/barEndShow` SVG；深色主题由 `TextPrimary` 着色为白色，资源本身遵循主栏 `24x24` 画布、圆角端点/连接和相近线宽，不得继续用固定黑色 `ppt3` PNG。PPT 仅在 `totalPage > 0 && currentPage < 0` 时视为结束放映页：Bottom/Middle 的稳定 Next 实例通过现有 Animated 中点内容转换把 `barMore` 切为正向 `0°` 的 `barEndShow`，当前页恢复有效时反向切回各 surface 的箭头角度；未知 `-1/-1` 不得误判。该内容变化不替换按钮、不改变 NextPage click/long-press 路由，也不复用 A2 EndShow 业务回调。
+- EndShow A2 与 PageControl 必须共用主栏 `UI/barEndShow` SVG；深色主题由 `TextPrimary` 着色为白色，资源本身遵循主栏 `24x24` 画布、圆角端点/连接和相近线宽，不得继续用固定黑色 `ppt3` PNG。PageControl 仅在 UI 发布态 `totalPage > 0 && currentPage < 0` 时视为结束放映页：Bottom/Middle 的稳定 Next 实例通过现有 Animated 中点内容转换把 `barMore` 切为正向 `0°` 的 `barEndShow`，状态离开结束页后反向切回各 surface 的箭头角度；未知 `-1/-1` 不得误判。该内容变化不替换按钮、不改变 NextPage click/long-press 路由，也不复用 A2 EndShow 业务回调。
 - DragHandle 是 PageControl 自有且仅 PptCompact 存在的 shape/hit region，不属于 Bar 按钮，无 hover/press/click/selected/content 视觉。PPT 成对拖动可从 DragHandle、Page 和未被 Previous/Next 占用的真实圆角背景开始；透明 presentation margin、圆角外像素和 diffuse 光晕继续 `HTTRANSPARENT`，不能把整个矩形 HWND 当作背景。Previous/Next 永远是纯按钮。Page 按下先产生标准 press，超过 `SM_CXDRAG/SM_CYDRAG` 对应系统阈值后取消 press 并转为拖动，阈值内且仍命中 Page 时抬起调用 `ViewShow`，不写位置。Whiteboard 不创建 DragHandle 或 drag candidate。
 - PPT Arrow 的 Pointer Down 立即投递一次 Previous/Next，并在该次 Down 边界通过 `SPI_GETKEYBOARDDELAY` / `SPI_GETKEYBOARDSPEED` 快照系统键盘重复设置；一次按压中途不得重新读取或改变节奏。`keyboardDelay` 先限制到 `0..3`，首次重复延迟为 `250ms * (delay + 1)`；`keyboardSpeed` 先限制到 `0..31`，按 Windows 文档给出的 `2.5..30 次/秒` 线性换算并取最近毫秒作为后续重复间隔。任一 SPI 查询失败时仅该字段回退到 `delay=1` / `speed=31`，按压仍可继续。只有 PPT 快照发布的 `longPressEnabled=true`、指针仍命中同一 Arrow 且 capture 有效时才重复。首次实际重复以当前帧锚定，保证第二次至少等待完整 interval；第二次起以计划 deadline 推进 repeat anchor，避免 60 FPS 把 `34ms` 等间隔量化成固定 `50ms`。若实际帧已落后计划 deadline 至少一个完整 interval，则只触发一次并以当前时刻重新锚定，不追赶积压。既有 COM outstanding gate 继续合并未完成命令。移出 Arrow、Pointer Up、capture cancel 或 workspace 切换立即停止。Whiteboard 不继承 long-press；键盘 Hook 与 wheel 不得合成 Arrow pressed 闪按，真实 Pointer 的标准 hover/press 保留。
 - 每个有效 PPT Pointer Down 都调用 `PromotePptWindow(surfaceRole)`，把最近交互窗放到其他 PPT 窗口之上、Bar 正下方，不激活窗口；纯平移继续使用 `SWP_NOZORDER`。
@@ -343,7 +355,7 @@ bool ShouldContinuePageControlFrame(
 - PPT 碰撞只包含 bottom/middle pair 与屏幕越界。手动拖动不推动另一 pair；自动纠偏 bottom 优先、middle 最近位置/极端运行时缩放回退，且不写保存配置。Bar HWND、MainButton、主栏移动和 Whiteboard 均不参与求解或唤醒。
 - PageControl 继续拥有 stable backing、logical/presentation 映射、direct-move revision、ULW/Window 提交与调试覆盖层事务。共享 Bar 运行时返回 animation/damage，不直接调用 Window Service；隐藏生命周期不得被光源动画无限延长。渲染线程可在 `presentationMutex` 内同步等待 Window Service owner，因此 owner WndProc 绝不能阻塞等待该锁。每次拖动采样必须先按原始 drag 起点计算并发布 latest-wins 绝对候选；发布本身不得请求 pair。直移目标必须分别解析上一 feasible layout 与当前 candidate layout，确认尺寸、scale、mode 仅发生平移，再由 candidate logical bounds 加减当前不变的 presentation outset 得到绝对 HWND 目标；不得依赖上一候选已成功提交，也不得为取得目标调用 `ApplySceneBounds`。
 - `presentationMutex.try_lock()` 成功后，owner 依次对两个 HWND 调用 `SetWindowPos`；第一窗失败直接保留 pending，第二窗失败必须把第一窗回滚到 original，并记录 first/second/rollback 阶段及 Win32 error。两窗成功后才对两个 `SurfaceState.bounds` 调用 `SetBoundsDirect`、提交 mailbox/direct-move revision，并立即发布两个 cursor-light 接收边界；mailbox/layout/bounds payload 必须先完整写入，再以 release store 发布单调且由 `dragCommitMutex` 串行的 revision。该热路径不得调用 `ApplySceneBounds`、产生 Scene damage 或请求 pair。只有锁竞争、非纯平移或窗口移动失败走 pair render fallback。较新的候选可以覆盖旧候选，但 fallback 必须保留最新候选，不能依赖另一条可能被合并的 `WM_MOUSEMOVE`。渲染帧以 acquire 读取 revision，取得 `renderTransactionMutex` 后、`ConfigureSurface/PresentScene` 前必须复核，窗口提交后继续第二次复核；任一过期帧均返回 `Retry`，不得先以旧 ULW 拉回 HWND。松手只 `RequestAll` 一次让 Scene/layout 吸收最终位置，并且不得在最新候选成功提交或明确回滚前清除 pending 所有权。
-- `PptInfoState` 是 COM 页状态事实，`PptInfoStateBuffer` 仍只在 Draw3 到达对应零基页后前进，PageControl 只消费 buffer。现有 PowerPoint/WPS COM ABI 不增加 native wait handle，因此 native 对共享 COM 状态使用不超过 `50ms` 的有界检查；检测到目标变化后发布 Draw3 绝对页，Draw3 在 current page/page count 真实变化时推进 `runtimeRevision` 并通知 `WaitForProductRuntimeRevision`。禁止继续用固定 `500ms` 睡眠等待 Draw3，也禁止为追求即时数字而提前发布未 ready 的 COM 页码。
+- `PptInfoState` 是 COM 页状态事实，`PptInfoStateBuffer` 仍只在 Draw3 到达对应零基有效页后前进。`PptInfo` 必须通过 `Inkeys.UI.Ppt::ResolvePageStateForPublication` 解析 UI 状态：有效 COM 页返回 ready buffer；`observedTotalPage > 0 && observedCurrentPage < 0` 只向 UI 投影 `-1/observedTotalPage`，buffer 保持 `-1/-1`；总页无效或当前页为 `0` 返回 `-1/-1`。发布去重比较解析结果，使结束页进入/恢复都能请求 PageControl 内容转换。现有 PowerPoint/WPS COM ABI 不增加 native wait handle，因此 native 对共享 COM 状态使用不超过 `50ms` 的有界检查；检测到目标变化后发布 Draw3 绝对页，Draw3 在 current page/page count 真实变化时推进 `runtimeRevision` 并通知 `WaitForProductRuntimeRevision`。禁止继续用固定 `500ms` 睡眠等待 Draw3，也禁止为追求即时有效页数字而提前发布未 ready 的 COM 页码。
 
 #### 4. Validation & Error Matrix
 
@@ -352,8 +364,9 @@ bool ShouldContinuePageControlFrame(
 | Main Bar 与 PageControl 对相同 button request/state/time 结果不同 | 测试失败；修共享实现，禁止在 PageControl 加补偿常量 |
 | PPT Arrow 进入 Whiteboard Arrow | 保留同一 `barMore` SVG，只缩放/移动并显示标签 |
 | Whiteboard Next Arrow↔Add | 同一按钮在同一批次转换 SVG、标签与几何；语义未变不重启 |
-| PPT 有总页数但当前页缺失 | 四个 surface 的 Next 在同一稳定实例上动画切为 `barEndShow`/`0°`；业务仍为 NextPage |
-| PPT 当前页恢复有效或状态为 `-1/-1` | 前者动画切回各 surface 的 `barMore` 角度；后者不进入 EndShow 语义 |
+| raw COM 为 `-1/有效总页数`、ready buffer 为 `-1/-1` | UI 解析为 `-1/有效总页数`；四个 surface 的 Next 在同一稳定实例上动画切为 `barEndShow`/`0°`，buffer 与业务路由不变 |
+| raw COM 恢复有效、Draw3 尚未 ready | UI 先离开 EndShow 语义并切回各 surface 的 `barMore` 角度；页码保持未知直到 ready |
+| raw COM/发布态为 `-1/-1` 或 `0/有效总页数` | 不进入 EndShow 语义；不得沿用上一次 EndShow 目标 |
 | Enter 时 DragHandle 正在 capture | 立即 cancel、关闭 hit；slot/opacity 从当前值收拢 |
 | Exit/Enter 中途反向 | 背景、按钮、内容、DragHandle 和 HWND bounds 从当前插值值重定向 |
 | Whiteboard 收到 drag/wheel/long-press | 不捕获、不持久化、不投递对应业务；普通 click/tap 保留 |
@@ -388,6 +401,7 @@ bool ShouldContinuePageControlFrame(
 - Good：连续纯平移只顺序移动两个 HWND 并发布一条候选日志；Scene 不产生整窗 damage，松手时才由一次 `RequestAll` 吸收最终布局。
 - Good：唯一一条 `WM_MOUSEMOVE` 到达时呈现锁正被占用；WndProc 保存最新绝对候选并唤醒 pair，锁释放后无需第二条移动消息也能完成直移。
 - Good：用户键盘设置为 delay 1/speed 31 时，触摸或鼠标长按在约 `500ms` 后首次重复，后续约 `33ms` 一次；轻微帧量化保留计划相位，渲染或 COM 严重迟到只跳过该次机会，不追赶积压。
+- Good：最后一页进入结束页时 raw COM 从 `12/12` 变为 `-1/12`，UI 在不污染 ready buffer 的前提下驱动稳定 Next 转为 EndShow；返回有效页先恢复 Arrow，Draw3-ready 后再更新数字。
 - Base：默认 DPI 下 PPT 为紧凑深色 Bar surface，Whiteboard 为固定三枚 `2x2`；普通 Arrow 只缩放，Add 才转换内容。
 - Bad：`BarSurfaceScene` 继续维护 local hover/pressed，PageControl 设置 `18 DIP` icon 或 `±13 DIP` text offset，或者复制主栏曲线后声称“复用”。
 - Bad：把 Whiteboard 拖动条叠在 Page 上、让 Whiteboard 继承 PPT wheel/long-press/persist，或把 Bar HWND 传入碰撞求解。
@@ -398,11 +412,11 @@ bool ShouldContinuePageControlFrame(
 #### 6. Tests Required
 
 - 共享 Bar 等价测试必须让 Main Bar 与 PageControl 直接调用同一导出入口，逐项断言 `oneOne/twoOne/twoTwo` 外框、内容槽、hover/press 时间样本、press transform、hit 和 damage；禁止在测试中复制产品公式。
-- PageControl headless 覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 与 Arrow/EndShow 同批中点转换目标、EndShow 有效/未知状态判定及四 surface 资源/角度矩阵、DragHandle 时序、首次渐显、反向重入和有限退场。
+- `ppt_ui_tests` 必须直接调用生产 `ResolvePageStateForPublication`，覆盖有效 ready 页、结束页、未知态、非法零页、结束页恢复但 Draw3 未 ready、恢复 ready；PageControl headless 再覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 与 Arrow/EndShow 同批中点转换目标及四 surface 资源/角度矩阵、DragHandle 时序、首次渐显、反向重入和有限退场。
 - 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、Page 预览、long-press/wheel/persist，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。长按测试必须覆盖 delay `0..3`、speed `0/31` 和越界限制、默认回退 `500ms/约33ms`、Down 立即一次、首次 deadline 前无重复、deadline 到达后一次、后续 interval、`34ms` 在 60 FPS 下保留计划相位、落后一个 interval 时跳过积压、配置关闭与移出/Up/cancel 停止；静态确认每次有效 Arrow Down 只快照一次 SPI、不存在 keyboard/wheel 合成 press，并确认有效 PPT Down 调用 `PromotePptWindow`。触摸纯测试覆盖 primary、无 primary fallback、多指忽略、活动 id 替换 cancel、新 id Move/Up、替换后旧 fallback Up 被忽略和 cancel 清理；静态确认同批先保序处理 primary、四窗注册触摸、禁用边缘/Tablet 手势且兼容 mouse 副本仍被过滤。拖动提交仲裁必须断言 publication 不自动请求 pair、纯平移由 candidate logical bounds 与稳定 outset 生成绝对 target，并可注入一次呈现锁竞争，确认 fallback 显式请求 pair且只保存最新候选；还要覆盖两窗 commit、第二窗失败的第一窗回滚、松手 ownership，以及进入 `ConfigureSurface/PresentScene` 前和窗口提交后的两道 stale revision gate。
 - 生命周期 headless 必须让 Hidden→Visible 在没有任何 Bar/光源外部请求时推进到 deadline 后一帧，断言 deadline 活跃期间续帧且输入锁定、到期自行 Idle/解锁；源码审查初始 Hidden 使用直接透明度 `0` 而不是未消费的零时长动画 target。
 - Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；Scene 源码审查确认即时 Page 槽位使用 `SetDirect`，而 Arrow/Add 仍走 Animated 中点转换。
-- Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口，PPT 状态线程只以不超过 `50ms` 检查 COM，共享 buffer 仍等待 Draw3-ready。
+- Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口，PPT 状态线程只以不超过 `50ms` 检查 COM，共享 buffer 仍等待 Draw3-ready，结束页仅经 UI 解析器投影。
 - PageControl 输入测试覆盖圆角背景门禁策略；源码审查背景命中读取 Scene 当前动画 Shape，Window Service capture 撤销包含四个 PageControl 角色，且 `ReleaseCapture` 位于呈现锁外。
 - 碰撞覆盖手动 pair 最近可行位置、bottom 优先/middle 回退、极小屏运行时 scale、输入/保存快照不变，并静态断言无 Bar obstacle 参数/查询/通知。
 - Headless 直接断言非零父原点下的标准按钮子内容坐标，以及屏幕光源点到 Surface presentation 点的映射；静态审查分页不再调用本地 cursor-light prepare/reset，且四个 HWND 的进入/离开与成功呈现边界只通知 Main Bar 全局状态机。
@@ -465,6 +479,15 @@ return scene.AnimationActive() ? FrameResult::Continue : FrameResult::Idle;
 return ShouldContinuePageControlFrame(visible, now < transitionUntil,
     bounds.active, scene.AnimationActive(), longPressActive)
         ? FrameResult::Continue : FrameResult::Idle;
+
+// Wrong：只发布已被结束页分支归一化的 buffer，PageControl 永远收不到 -1/总页数。
+PublishPageState(buffer.CurrentPage, buffer.TotalPage);
+
+// Correct：buffer 只表达 Draw3-ready；结束页在 UI 发布边界单独投影。
+const auto publication = ResolvePageStateForPublication(
+    buffer.CurrentPage, buffer.TotalPage,
+    observedCurrentPage, observedTotalPage);
+PublishPageState(publication.currentPage, publication.totalPage);
 ~~~
 
 ### UI3 基于变化的脏区事务合同

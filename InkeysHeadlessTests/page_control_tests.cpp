@@ -14,6 +14,7 @@
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar.Metrics;
 import Inkeys.UI.Bar.SurfaceLayout;
+import Inkeys.UI.Ppt;
 
 namespace
 {
@@ -166,10 +167,16 @@ namespace
 
 	void TestEndShowContentTargets()
 	{
-		Check(IsPptEndPage(-1, 12)
+		const auto ready = Inkeys::UI::Ppt::ResolvePageStateForPublication(
+			12, 12, 12, 12);
+		const auto endPage = Inkeys::UI::Ppt::ResolvePageStateForPublication(
+			-1, -1, -1, 12);
+		const auto recoveryNotReady =
+			Inkeys::UI::Ppt::ResolvePageStateForPublication(-1, -1, 12, 12);
+		Check(IsPptEndPage(endPage.currentPage, endPage.totalPage)
+			&& !IsPptEndPage(ready.currentPage, ready.totalPage)
 			&& !IsPptEndPage(-1, -1)
-			&& !IsPptEndPage(-1, 0)
-			&& !IsPptEndPage(12, 12),
+			&& !IsPptEndPage(-1, 0),
 			"PPT end page requires a valid total and a missing current page");
 
 		constexpr std::array surfaces{
@@ -178,22 +185,35 @@ namespace
 		};
 		for (const auto surface : surfaces)
 		{
+			const auto readyTarget = ResolveDirectionContentPolicy(
+				WorkspaceMode::PptCompact, true, false,
+				IsPptEndPage(ready.currentPage, ready.totalPage));
 			const auto endTarget = ResolveDirectionContentPolicy(
-				WorkspaceMode::PptCompact, true, false, true);
-			Check(endTarget.icon == L"barEndShow" && endTarget.label.empty()
+				WorkspaceMode::PptCompact, true, false,
+				IsPptEndPage(endPage.currentPage, endPage.totalPage));
+			Check(readyTarget.icon == L"barMore"
+				&& endTarget.icon == L"barEndShow" && endTarget.label.empty()
 				&& ResolveDirectionIconAngle(surface,
-					WorkspaceMode::PptCompact, true, false, true) == 0.0,
-				"all PPT Next surfaces target the EndShow SVG at zero degrees");
+					WorkspaceMode::PptCompact, true, false,
+					IsPptEndPage(endPage.currentPage, endPage.totalPage)) == 0.0,
+				"production end-page projection retargets every Next to EndShow");
 
 			const bool vertical = surface == Surface::MiddleLeft
 				|| surface == Surface::MiddleRight;
 			const auto recoveredTarget = ResolveDirectionContentPolicy(
-				WorkspaceMode::PptCompact, true, false, false);
+				WorkspaceMode::PptCompact, true, false,
+				IsPptEndPage(recoveryNotReady.currentPage,
+					recoveryNotReady.totalPage));
+			const auto contracts = ResolvePptWidgetContracts(surface);
 			Check(recoveredTarget.icon == L"barMore"
 				&& ResolveDirectionIconAngle(surface,
-					WorkspaceMode::PptCompact, true, false, false)
-					== (vertical ? 180.0 : 90.0),
-				"valid PPT pages recover each Next surface arrow target");
+					WorkspaceMode::PptCompact, true, false,
+					IsPptEndPage(recoveryNotReady.currentPage,
+						recoveryNotReady.totalPage))
+					== (vertical ? 180.0 : 90.0)
+				&& contracts[3].role == PptWidgetRole::Next
+				&& contracts[3].invokesBusinessAction,
+				"valid recovery restores arrows without changing the Next callback");
 		}
 	}
 

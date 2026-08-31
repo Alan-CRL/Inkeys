@@ -9,6 +9,7 @@
 - 当前 `BarSurfaceScene` 只复用了 Bar 的底层类型、主题常量和 Shape/SVG/Word 绘制，却自行维护按钮布局、hover/press、内容位置、动画推进、命中和 damage；主栏并不消费这套按钮状态机。
 - 该分叉已经造成悬停/按下动画、SVG 位置、Whiteboard 拖动和碰撞范围偏离原始需求，继续修补分页专用参数不能恢复单一行为来源。
 - `PptBottomLeft`、`PptBottomRight`、`PptMiddleLeft`、`PptMiddleRight` 四个共享宿主、EndShow A2 按钮、COM/WPS 与页级墨迹业务保持现有边界；本轮只纠正分页视觉/输入架构及被错误固化的规范与测试。
+- 最新提交 `a6e575e0` 已实现 EndShow SVG 与 PageControl 消费策略，但生产链路仍不可达：managed 在结束页保留 `CurrentPage=-1/TotalPage>0`（`PptCOM/PptCOM.cs:1351`），`PptInfo` 却先把 `PptInfoStateBuffer` 归一为 `-1/-1`，随后只发布该 buffer（`Inkeys/IdtPlug-in.cpp:562`、`Inkeys/IdtPlug-in.cpp:583`）；现有 headless 只直接调用内容纯函数（`InkeysHeadlessTests/page_control_tests.cpp:167`），没有覆盖 COM 事实到 UI 状态的生产投影。
 
 ## Requirements
 
@@ -25,11 +26,11 @@
 11. **碰撞边界**：PPT 只处理底部一对、侧边一对之间的冲突和屏幕越界；主栏、主按钮和 Bar HWND 不参与，也不触发重算。手动拖动只移动命中对并停在最近可行位置；显示/DPI/缩放纠偏保留底部对、让侧边对寻找最近位置，极端不足时只降低侧边对运行时缩放。自动纠偏不得写入保存配置。
 12. **工作区位置与状态机**：Whiteboard 固定在左右下角 `5 DIP`，不读取 PPT 位置/缩放且不进入 PPT 碰撞求解。可见 PPT 底栏进入 Whiteboard 时，从当前实际位置同时动画到固定位置并形变；退出返回 PPT 最新运行时位置。反向切换从当前插值值重定向并全程锁输入。PPT 底栏原本不可见时，Whiteboard 直接以最终位置/几何渐显。
 13. **既有业务兼容**：保留四个共享窗口、侧栏既有侧向显隐、底栏原位渐显、EndShow A2/配置迁移、旧 JSON 兼容字段、`PptInfoStateBuffer`、COM ABI、PowerPoint/WPS 支持范围、画布换页顺序和页级墨迹存储。
-14. **页状态时效**：`PptInfoStateBuffer` 仍只在 Draw3 已到达 COM 目标页后更新，UI 不得提前显示尚未完成画板切换的页码。PowerPoint/WPS 共享内存状态在不扩展 COM ABI 的前提下以不超过 `50ms` 的有界节拍检查；Draw3 完成等待必须复用 `WaitForProductRuntimeRevision` 事件唤醒，禁止继续用固定 `500ms` 睡眠串联两阶段。
+14. **页状态时效**：`PptInfoStateBuffer` 仍只在 Draw3 已到达 COM 目标页后更新，UI 不得提前显示尚未完成画板切换的有效页码。结束页不是 Draw3 页面：当同轮 COM 快照为 `observedTotalPage > 0 && observedCurrentPage < 0` 时，只允许在 UI 发布边界投影为 `-1/observedTotalPage`，不得把该组合写入 `PptInfoStateBuffer`；未放映、放映已结束或非法 `currentPage == 0` 必须投影为 `-1/-1`。PowerPoint/WPS 共享内存状态在不扩展 COM ABI 的前提下以不超过 `50ms` 的有界节拍检查；Draw3 完成等待必须复用 `WaitForProductRuntimeRevision` 事件唤醒，禁止继续用固定 `500ms` 睡眠串联两阶段。
 15. **最近交互层级**：任一可交互 PPT PageControl 收到有效 Pointer Down 时，目标窗口必须通过 `PromotePptWindow` 移到其他 PPT 窗口之上、Bar 之下，不激活窗口、不进入 topmost band；拖动直移的 `SWP_NOZORDER` 不得替代这次交互层级维护。
 16. **Draw3 绘制活动**：Draw3 必须按所有物理 contact 的聚合状态发布 `0→1` Started 与 `1→0` Ended，多个 contact 不重复通知；停止或异常退出时若仍 active 必须补 Ended。首次 Started 收起绘制属性、几何属性、更多、笔型、粗细、颜色和提示等主栏次级界面，但不改变主栏 `fold`、不隐藏 PageControl。Started 还必须无条件让第三鼠标光进入 `Dormant`；若光标仍在 Bar/PageControl 实际接收区，则阻止重新激活直到真实离开后再次自然进入。第一光源、颜色过渡和普通 UI 动画不得因绘制持续而被压制。
 17. **启动输入与触摸生命周期**：首次 Hidden 配置必须提交真实透明度 `0`；Hidden→Visible 的 transition deadline 自身必须维持 PageControl 续帧和输入锁，期限后无须 Bar 或光源消息也能自行解锁。四个 PageControl HWND 继续创建触摸注册与边缘手势禁用，并在 WndProc 禁用 press-and-hold/flick 等 Tablet 手势；`WM_TOUCH` 必须支持 primary 缺失时锁定首个 DOWN、活动触点替换 cancel、最后坐标锁存和单触点 Move/Up，保证触摸长按可进入与鼠标相同的箭头重复路径。
-18. **结束放映图标与结束页语义**：深色主题下 EndShow 必须使用与主栏其他图标一致的主题白色 SVG，采用统一的 `24x24` 画布、圆角端点/连接和相近线宽；Main Bar A2 与 PageControl 共用同一 `barEndShow` 资源，不再复用黑色 `ppt3` PNG。PPT 快照满足 `totalPage > 0 && currentPage < 0` 时，四个 PageControl 的 Next 稳定按钮实例把 `barMore` 动画切换为 `barEndShow` 且保持正向 `0°`；当前页恢复有效时反向切回各 surface 的箭头角度。资源替换复用 Whiteboard Arrow/Add 的共享中点内容转换，点击和长按仍走既有 NextPage 回调，不改 EndShow A2 回调或 COM 协议。
+18. **结束放映图标与结束页语义**：深色主题下 EndShow 必须使用与主栏其他图标一致的主题白色 SVG，采用统一的 `24x24` 画布、圆角端点/连接和相近线宽；Main Bar A2 与 PageControl 共用同一 `barEndShow` 资源，不再复用黑色 `ppt3` PNG。`PptInfo` 必须把 COM 的结束页事实投影为 PageControl 可观察的 `currentPage=-1/totalPage>0`，且有效页始终继续取 Draw3-ready buffer。PPT UI 快照满足该结束页组合时，四个 PageControl 的 Next 稳定按钮实例把 `barMore` 动画切换为 `barEndShow` 且保持正向 `0°`；COM 恢复有效页后立即反向切回各 surface 的箭头角度，页码仍等待 Draw3-ready 后更新。资源替换复用 Whiteboard Arrow/Add 的共享中点内容转换，点击和长按仍走既有 NextPage 回调，不改 EndShow A2 回调或 COM 协议。
 
 ## Acceptance Criteria
 
@@ -50,7 +51,7 @@
 - [x] PageControl 首次显示无需 Bar 外部消息即可完成渐显并在 deadline 后自行解锁；四窗禁用 Tablet 手势，primary/fallback 单触点转译、替换 cancel 与触摸长按路径通过 headless/静态回归。
 - [x] 键盘与滚轮不再合成 Arrow pressed 闪按；真实 Pointer press 视觉保持，最近交互 PPT 窗口位于其他 PPT 窗口之上且始终低于 Bar。
 - [x] Draw3 物理 contact 聚合只成对发布一次 Started/Ended，停止/异常路径不泄漏；Started 收起主栏次级界面并让第三鼠标光进入带 wait-for-leave 门禁的 `Dormant`，主栏展开状态、PageControl、第一光源和普通动画不受影响。
-- [x] EndShow A2 使用主题白色且符合主栏线条/圆角风格的共享 `barEndShow` SVG；PPT 结束页时底部与两侧 Next 在同一稳定按钮上动画切换为该图标，恢复有效页时动画切回箭头，点击/长按行为不变。
+- [x] EndShow A2 使用主题白色且符合主栏线条/圆角风格的共享 `barEndShow` SVG；生产发布链必须覆盖有效页 -> 结束页 -> 有效页，使底部与两侧 Next 在同一稳定按钮上动画切换为该图标再切回箭头。结束页不得污染 Draw3-ready buffer，`-1/-1` 不得误判，点击/长按行为不变。
 
 ## Out of Scope
 
