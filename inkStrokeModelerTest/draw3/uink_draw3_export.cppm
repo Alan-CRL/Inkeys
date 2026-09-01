@@ -7,29 +7,40 @@
 
 export module draw3.uink_draw3_export;
 
-export import draw3.ink_document;
 export import draw3.uink_model;
 
 export namespace draw3::uink
 {
-	struct Draw3UInkDeviceMapping
+	enum class Draw3UInkStrokeKind : uint8_t
 	{
-		DeviceKey sourceDevice;
-		UInkDevice targetDevice;
+		Pen,
+		Highlighter,
+		Eraser,
+		SolidLine,
+		DashedLine,
+		OutlineRectangle,
+		FilledRectangle,
 	};
 
-	struct Draw3UInkCaptureOptions
+	struct Draw3UInkStrokeStyle
 	{
-		UInkGuid fileGuid;
-		std::optional<std::string> workspaceName;
-		std::vector<Draw3UInkDeviceMapping> devices;
-		float dpiScale = 1.0f;
+		Draw3UInkStrokeKind kind = Draw3UInkStrokeKind::Pen;
+		float opacity = 1.0f;
+		uint32_t fallbackRgb = 0;
+		uint32_t texture = 0;
+	};
+
+	struct Draw3UInkPoint
+	{
+		float x = 0.0f;
+		float y = 0.0f;
+		float width = 1.0f;
 	};
 
 	struct Draw3UInkStrokeSnapshot
 	{
-		StoredInkStyle style;
-		std::vector<StoredInkPoint> points;
+		Draw3UInkStrokeStyle style;
+		std::vector<Draw3UInkPoint> points;
 		uint32_t undoId = 0;
 		bool renderOnlyWhenLatest = false;
 	};
@@ -73,13 +84,6 @@ export namespace draw3::uink
 		bool assignedIndependentUndoGroups = false;
 	};
 
-	struct Draw3UInkCaptureResult
-	{
-		Draw3UInkExportStatus status = Draw3UInkExportStatus::InvalidSnapshot;
-		std::optional<Draw3UInkExportSnapshot> snapshot;
-		std::vector<UInkDiagnostic> diagnostics;
-	};
-
 	struct Draw3UInkExportResult
 	{
 		Draw3UInkExportStatus status = Draw3UInkExportStatus::InvalidSnapshot;
@@ -87,10 +91,6 @@ export namespace draw3::uink
 		Draw3UInkCapabilityReport capabilities;
 		std::vector<UInkDiagnostic> diagnostics;
 	};
-
-	Draw3UInkCaptureResult CaptureDraw3UInkExportSnapshot(
-		const InkCanvasCollection& collection,
-		const Draw3UInkCaptureOptions& options);
 
 	Draw3UInkExportResult ExportDraw3SnapshotToUInk(
 		const Draw3UInkExportSnapshot& snapshot);

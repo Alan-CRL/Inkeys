@@ -37,6 +37,7 @@ export namespace draw3::uink
 	{
 		SaveExistingLogicalFile,
 		SaveAsNewLogicalFile,
+		CreateNewLogicalFileWithIdentity,
 		NormalizeImportedWithExplicitLoss
 	};
 

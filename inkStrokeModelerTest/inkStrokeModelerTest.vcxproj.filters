@@ -43,6 +43,7 @@
 	<ClCompile Include="draw3\uink_codec.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_file.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_draw3_export.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+	<ClCompile Include="draw3\uink_draw3_capture.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\canvas_navigation.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history_gpu.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
@@ -65,6 +66,7 @@
 	<ClCompile Include="draw3\uink_codec_encode.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_file.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_draw3_export.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+	<ClCompile Include="draw3\uink_draw3_capture.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\canvas_navigation.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history_gpu.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>

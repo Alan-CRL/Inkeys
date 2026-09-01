@@ -1904,6 +1904,17 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>

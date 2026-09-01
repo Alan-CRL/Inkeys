@@ -14,6 +14,7 @@
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
+import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.ink_document;
@@ -39,6 +40,8 @@ export namespace Inkeys::Drawing::Draw3
 		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
 		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t) = nullptr;
 		void (*controlWake)(void*) = nullptr;
+		void (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
+			draw3::uink::Draw3UInkExportSnapshot&&) = nullptr;
 		void (*drawingActivityChanged)(void*, bool) = nullptr;
 	};
 

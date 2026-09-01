@@ -75,7 +75,74 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ## 功能边界
 
-桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做和页面切换接入已验证实现；保存、超级恢复、自动直线拉直和输入测试保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换和 Desktop UInk 自动保存已接入；手动保存、Whiteboard/PPT 自动保存、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+
+## Scenario: Desktop UInk 自动保存事务与退出屏障
+
+### 1. Scope / Trigger
+
+修改 Draw3 workspace、Clear/Undo/Redo、正常退出、`saveSetting.enable`、UInk 完整保存、每日索引或 Host/controller/worker 生命周期时必须应用本合同。Whiteboard、PPT 自动保存和跨 Clear 恢复不在本合同范围内。
+
+### 2. Signatures
+
+- `Bridge::Workspace { Desktop, Whiteboard, Presentation }`。
+- `DesktopAutoSavePolicy::ShouldCapture(workspace, enabled, hasVisibleContent) -> bool` 与 `CompleteDesktopClear()`。
+- `DesktopAutoSaveService::Submit(DesktopAutoSaveTrigger, Draw3UInkExportSnapshot)`、`CloseAndDrain()`。
+- `Bridge::CommandType::PrepareExitAutoSave` / `CanvasCommandType::PrepareExitAutoSave`。
+- 产品根路径：`GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave"`。
+
+### 3. Contracts
+
+- 自动保存只接受 `Desktop + Eligible + saveSetting.enable + 当前页非空`。主画布进入 `Presentation` 后资格变为 `PptTouched`；返回 Desktop 不恢复，只有 Desktop Clear 完成后的新空区间恢复 `Eligible`。Whiteboard 不改变主画布资格。
+- 触发点只有 Desktop Clear 的破坏操作之前和正常退出安全点。Undo/Redo（包括未来跨 Clear 撤销）不得调用自动保存；空画布或开关关闭时不得捕获快照、入队或创建目录。
+- DrawingController 线程只按 runtime history 捕获当前可见、完全自有的 CPU 快照；UInk 编码、文件和索引 I/O 由 Host 拥有的单一可 join 串行 worker 执行。worker 不得持有 controller/GPU 引用，也不得 detach。
+- 布局固定为 `desktop/YYYY-MM-DD/HHmmssfff_<saveRequestId-short>[_suffix].uink` 和同目录 version 1 `index.json`。请求创建时固定 `saveRequestId`、`fileGuid`、`sessionId`、`sequenceInSession`、本地日期和带时区 `createdAt`；同一请求幂等，不同请求使用 create-new 且永不覆盖。
+- UInk 必须先 durable commit 并校验身份；每日索引随后在由规范化根路径与日期派生的 named mutex 内重读、自校验并原子替换。索引失败保留孤儿 UInk 和最后有效索引，不删除未知文件。
+- `saveDays` 不连接新 UInk；本合同不允许自动过期、容量裁剪、启动清理或历史删除。产品代码只可清理当前事务尚未发布的已知临时文件。
+- 正常退出顺序固定为停止新命令/contact producer -> controller 存活时执行最终捕获屏障 -> 关闭提交端 -> `CloseAndDrain()` 等全部请求进入 Committed/Failed -> 销毁 controller/worker。不得用会主动放弃已接受写入的硬超时。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| Whiteboard、Presentation 或 `PptTouched` 返回 Desktop | 不捕获、不入队、不创建索引项 |
+| Desktop Clear 且符合条件 | 先捕获不可变快照并接受请求，再立即 Clear，不等待磁盘 |
+| Undo/Redo、空画布、开关关闭 | 自动保存零调用；已有请求继续收敛 |
+| 同毫秒不同请求或目标名已存在 | 使用唯一身份/安全后缀 create-new，绝不覆盖 |
+| 相同 `saveRequestId` 重试 | 校验绑定 `fileGuid` 后复用，索引不重复 |
+| UInk 写入失败 | 不修改索引，请求 Failed |
+| UInk 成功、索引失败 | 保留孤儿与旧索引，记录诊断，请求 Failed |
+| 主索引损坏但备份有效 | 使用有效备份继续；主备均无效时隔离当日索引写入 |
+| 正常退出存在慢写或失败 | 等待明确终态后继续退出，不弹阻塞窗口、不伪报成功 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：连续两个 Desktop Clear 各捕获一份不可变快照，UI 立即清空，worker 串行生成两个独立 UInk 和有序索引项；退出再排空剩余请求。
+- Base：开关关闭、空 Desktop、Whiteboard 或 PPT 只执行原业务行为，`AutoSave` 根目录可以完全不存在。
+- Bad：在 Clear 调用栈同步编码/写盘、用日期或数组下标充当唯一身份、让多个 detached writer 覆写同一 JSON，或在索引失败后删除未知 UInk。
+
+### 6. Tests Required
+
+- 纯 CPU 测试覆盖三态、`Eligible/PptTouched`、Clear/Exit 门控、Undo/Redo/空画布、可见快照与快照后继续绘制不变。
+- 存储测试覆盖同毫秒/候选名碰撞、幂等重试、两个 writer、跨午夜、UInk/索引故障、孤儿保留、主备恢复、损坏 schema/时间/GUID/序号/重复路径以及未知文件保留。
+- 生命周期测试覆盖慢写 drain、提交端关闭、FIFO 最终屏障、controller 存活期捕获和失败退出。
+- 使用 ARM64 原生 MSBuild 全量 Rebuild `InkeysRepo.sln Debug|ARM64`，运行 `inkStrokeModelerTestTests.exe`、`InkeysHeadlessTests.exe --no-window` 与 `git diff --check`。人工产品验证未完成前任务保持 active。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：绘制线程同步写文件，且后台线程脱离 Host 生命周期。
+if (clear) {
+    SaveUInk(currentDocument, dateName);
+    std::thread(UpdateGlobalIndex).detach();
+}
+
+// Correct：安全点只产生值快照；owned worker 串行提交，退出显式排空。
+if (policy.ShouldCapture(workspace, enabled, hasVisibleContent))
+    autoSave.Submit(DesktopAutoSaveTrigger::Clear, CaptureVisibleSnapshot());
+ClearCurrentInterval();
+// Host stop: PrepareExitAutoSave -> CloseAndDrain -> destroy controller/worker.
+~~~
 
 ## Scenario: 工具光标样式与有效透明度
 

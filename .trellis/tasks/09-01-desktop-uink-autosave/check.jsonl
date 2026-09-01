@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native/index.md","reason":"Check C++ ownership, exception boundaries, module reuse and tests."}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"Check full ARM64 solution build, project entries and generated artifacts."}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"Check drawing-thread snapshot boundary and shutdown ordering."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"Check Bridge three-state contract, Host lifecycle and no-window tests."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check save switch restoration remains minimal and saveDays stays hidden."}
+{"file":".trellis/tasks/09-01-desktop-uink-autosave/research/current-state-and-risks.md","reason":"Reconcile implementation with the investigated Draw2 and Draw3 risks."}

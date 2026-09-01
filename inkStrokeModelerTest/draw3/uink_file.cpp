@@ -654,6 +654,12 @@ namespace draw3::uink
 			return true;
 		}
 
+		bool IsCreateNewMode(UInkSaveMode mode) noexcept
+		{
+			return mode == UInkSaveMode::SaveAsNewLogicalFile ||
+				mode == UInkSaveMode::CreateNewLogicalFileWithIdentity;
+		}
+
 		uint64_t ExpectedObjectCount(const UInkDocument& document) noexcept
 		{
 			uint64_t count = 1 + (document.headerExtension ? 1 : 0);
@@ -873,7 +879,7 @@ namespace draw3::uink
 				result.status = UInkSaveStatus::InvalidSession;
 				return result;
 			}
-			if (options.mode != UInkSaveMode::SaveAsNewLogicalFile)
+			if (!IsCreateNewMode(options.mode))
 			{
 				const std::optional<std::wstring> source = NormalizePath(session.sourcePath);
 				if (!source || !SamePath(*source, *target) || !session.sourceRevision)
@@ -951,7 +957,7 @@ namespace draw3::uink
 			}
 
 			std::wstring committedBackupPath;
-			if (options.mode == UInkSaveMode::SaveAsNewLogicalFile)
+			if (IsCreateNewMode(options.mode))
 			{
 				if (PathExists(*target))
 				{

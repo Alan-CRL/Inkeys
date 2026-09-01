@@ -57,17 +57,19 @@ namespace
 			"default snapshot starts at revision zero")) ++failures;
 		if (!Expect(initial.selectionMode,
 			"default product state starts in selection mode")) ++failures;
-		if (!Expect(initial.workspace == Workspace::Presentation,
-			"default product state starts in presentation workspace")) ++failures;
+		if (!Expect(initial.workspace == Workspace::Desktop,
+			"default product state starts in desktop workspace")) ++failures;
 
 		ProductState first{};
 		first.colorRgba = 0x12345678u;
 		first.widthDip = 4.5f;
+		first.autoSaveEnabled = true;
 		first.revision = 99;
 		bridge.PublishState(first);
 		const ProductState firstSnapshot = bridge.Snapshot();
 		if (!Expect(firstSnapshot.colorRgba == 0x12345678u
 			&& firstSnapshot.widthDip == 4.5f
+			&& firstSnapshot.autoSaveEnabled
 			&& firstSnapshot.revision == 1,
 			"publish owns the next revision")) ++failures;
 
@@ -94,6 +96,24 @@ namespace
 			&& preservedPage.page == 6
 			&& preservedPage.workspace == Workspace::Whiteboard,
 			"tool state publication preserves page and workspace")) ++failures;
+
+		if (!Expect(bridge.PublishWorkspace(Workspace::Desktop),
+			"explicit desktop publication changes workspace")) ++failures;
+		const ProductState desktop = bridge.Snapshot();
+		if (!Expect(desktop.workspace == Workspace::Desktop && !desktop.hasPage
+			&& desktop.page == 0,
+			"desktop publication clears stale PPT page identity")) ++failures;
+		if (!Expect(!bridge.PublishWorkspace(Workspace::Desktop),
+			"repeated desktop publication is idempotent")) ++failures;
+		if (!Expect(bridge.PublishWorkspace(Workspace::Presentation)
+			&& bridge.Snapshot().workspace == Workspace::Presentation
+			&& bridge.Snapshot().presentationVisitEpoch == 1,
+			"presentation is an explicit third workspace")) ++failures;
+		if (!Expect(bridge.PublishWorkspace(Workspace::Desktop)
+			&& bridge.Snapshot().presentationVisitEpoch == 1
+			&& bridge.PublishWorkspace(Workspace::Presentation)
+			&& bridge.Snapshot().presentationVisitEpoch == 2,
+			"presentation visits survive latest-state coalescing")) ++failures;
 	}
 
 	void TestCommandQueue(int& failures)
@@ -127,7 +147,8 @@ namespace
 		if (!Expect(bridge.Publish(CommandType::Save) == CommandResult::Unsupported
 			&& bridge.Publish(CommandType::SuperRecovery) == CommandResult::Unsupported
 			&& bridge.Publish(CommandType::AutoStraighten) == CommandResult::Unsupported
-			&& bridge.Publish(CommandType::InputTest) == CommandResult::Unsupported,
+			&& bridge.Publish(CommandType::InputTest) == CommandResult::Unsupported
+			&& bridge.Publish(CommandType::PrepareExitAutoSave) == CommandResult::Unsupported,
 			"not-ready commands remain explicitly unsupported")) ++failures;
 
 		if (!Expect(bridge.Publish(CommandType::NextPage) == CommandResult::Accepted,
@@ -139,10 +160,10 @@ namespace
 		bridge.Publish(CommandType::PreviousPage);
 		bridge.Stop();
 		if (!Expect(!bridge.Running()
-			&& !bridge.TryConsume(command)
+			&& bridge.TryConsume(command) && command.type == CommandType::PreviousPage
 			&& bridge.Publish(CommandType::Clear) == CommandResult::NotRunning
 			&& bridge.Publish(CommandType::Save) == CommandResult::NotRunning,
-			"stop closes and clears the command bridge")) ++failures;
+			"stop closes producers and preserves accepted commands")) ++failures;
 
 		ProductState stoppedState{};
 		stoppedState.colorRgba = 0xFFFFFFFFu;
@@ -160,6 +181,23 @@ namespace
 		if (!Expect(bridge.Publish(CommandType::Redo) == CommandResult::Accepted
 			&& bridge.TryConsume(command) && command.sequence == 1,
 			"reset restarts command sequence")) ++failures;
+
+		bridge.Reset();
+		bridge.Publish(CommandType::Clear);
+		if (!Expect(bridge.StopWithFinalCommand(CommandType::PrepareExitAutoSave)
+			&& bridge.TryConsume(command) && command.type == CommandType::Clear
+			&& bridge.TryConsume(command) &&
+				command.type == CommandType::PrepareExitAutoSave
+			&& !bridge.TryConsume(command),
+			"shutdown barrier stays behind every accepted command")) ++failures;
+
+		StateBridge fullBridge(1);
+		if (!Expect(fullBridge.Publish(CommandType::Undo) == CommandResult::Accepted
+			&& fullBridge.StopWithFinalCommand(CommandType::PrepareExitAutoSave)
+			&& fullBridge.TryConsume(command) && command.type == CommandType::Undo
+			&& fullBridge.TryConsume(command) &&
+				command.type == CommandType::PrepareExitAutoSave,
+			"shutdown barrier bypasses a full business queue")) ++failures;
 	}
 
 	void TestEraserModeMapping(int& failures)
@@ -228,7 +266,8 @@ namespace
 
 	void TestDrawpadPresentationPlan(int& failures)
 	{
-		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
+		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Desktop)
+			&& SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
 			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)
 			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard),
 			"whiteboard selection stays on the primary drawpad")) ++failures;

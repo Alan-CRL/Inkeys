@@ -30,6 +30,7 @@ import draw3.runtime_metrics;
 
 int RunHighlighterGeometryTests();
 int RunCanvasNavigationTests();
+int RunDesktopAutoSaveTests();
 int RunInkDocumentTests();
 int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
@@ -2145,6 +2146,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestPerformanceHudMetrics(state);
 	state.failures += RunHighlighterGeometryTests();
 	state.failures += RunCanvasNavigationTests();
+	state.failures += RunDesktopAutoSaveTests();
 	state.failures += RunInkDocumentTests();
 	state.failures += RunInkHistoryTests();
 	state.failures += RunLaserIncrementalCoverageTests();

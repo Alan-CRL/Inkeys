@@ -288,6 +288,10 @@
 	<ClCompile Include="draw3\uink_draw3_export.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="draw3\uink_draw3_capture.cpp" />
+	<ClCompile Include="draw3\uink_draw3_capture.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
 	<ClCompile Include="draw3\ink_history.cpp" />
 	<ClCompile Include="draw3\ink_history.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>

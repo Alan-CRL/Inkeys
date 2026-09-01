@@ -1508,6 +1508,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
+		draw3StartOptions.autoSaveRoot =
+			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
 		Inkeys::Drawing::Draw3::HostRuntimeCallbacks draw3RuntimeCallbacks{
 			nullptr,
 			[](void*, bool active) noexcept

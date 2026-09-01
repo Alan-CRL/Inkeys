@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <cstddef>
 #include <deque>
 #include <mutex>
+#include <optional>
 
 namespace Inkeys::Drawing::Draw3::Bridge
 {
@@ -27,14 +28,15 @@ namespace Inkeys::Drawing::Draw3::Bridge
 
 	enum class Workspace : std::uint8_t
 	{
-		Presentation,
+		Desktop,
 		Whiteboard,
+		Presentation,
 	};
 
 	constexpr bool SelectionUsesAuxiliaryOutput(
 		bool selectionMode, Workspace workspace) noexcept
 	{
-		return selectionMode && workspace == Workspace::Presentation;
+		return selectionMode && workspace != Workspace::Whiteboard;
 	}
 
 	enum class CommandType : std::uint8_t
@@ -47,7 +49,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Save,
 		SuperRecovery,
 		AutoStraighten,
-		InputTest
+		InputTest,
+		PrepareExitAutoSave,
 	};
 
 	enum class CommandResult : std::uint8_t
@@ -64,9 +67,12 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint32_t colorRgba = 0x000000FFu;
 		float widthDip = 2.0f;
 		bool selectionMode = true;
+		bool autoSaveEnabled = false;
 		std::uint32_t page = 0;
 		bool hasPage = false;
-		Workspace workspace = Workspace::Presentation;
+		Workspace workspace = Workspace::Desktop;
+		// 即使最新状态已回到 Desktop，也不能丢失中间发生过的 PPT 访问。
+		std::uint64_t presentationVisitEpoch = 0;
 		std::uint64_t revision = 0;
 	};
 
@@ -92,18 +98,23 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	public:
 		explicit StateBridge(std::size_t capacity = 256) noexcept;
 		void PublishState(ProductState state) noexcept;
+		// workspace 使用独立事务发布，使 Desktop/Whiteboard 能明确清除旧 PPT 页状态。
+		bool PublishWorkspace(Workspace workspace) noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
 		bool TryConsume(Command& command) noexcept;
 		// 每次 Host 启动前清空旧命令并重新开放桥接。
 		void Reset() noexcept;
 		void Stop() noexcept;
+		// 正常退出保留已接受命令，并在 FIFO 尾部加入最终自动保存屏障。
+		bool StopWithFinalCommand(CommandType finalCommand) noexcept;
 		bool Running() const noexcept;
 
 	private:
 		mutable std::mutex mutex_;
 		ProductState state_{};
 		std::deque<Command> commands_;
+		std::optional<Command> finalCommand_;
 		std::size_t capacity_ = 256;
 		std::uint64_t nextSequence_ = 1;
 		bool running_ = true;

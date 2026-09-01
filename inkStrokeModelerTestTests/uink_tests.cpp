@@ -27,7 +27,7 @@
 #include <vector>
 
 import draw3.uink_codec;
-import draw3.uink_draw3_export;
+import draw3.uink_draw3_capture;
 import draw3.uink_file;
 
 namespace
@@ -1765,6 +1765,21 @@ namespace
 		UINK_CHECK(state, saveAsRead.document &&
 			saveAsRead.document->canvases[0].pageGuid == originalPageGuid);
 
+		const std::wstring retainedIdentityPath =
+			temporary.File(L"create-new-retained-identity.uink");
+		UInkSaveOptions retainedIdentityOptions;
+		retainedIdentityOptions.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+		const UInkSaveResult retainedIdentity = SaveUInkFile(
+			retainedIdentityPath, *session, retainedIdentityOptions);
+		UINK_CHECK(state, retainedIdentity.status == UInkSaveStatus::Committed);
+		const UInkReadResult retainedIdentityRead = ReadUInkFile(retainedIdentityPath);
+		UINK_CHECK(state, retainedIdentityRead.document &&
+			retainedIdentityRead.document->header.guid == originalGuid);
+		const std::vector<std::byte> retainedIdentityBytes = ReadBytes(retainedIdentityPath);
+		UINK_CHECK(state, SaveUInkFile(retainedIdentityPath, *session,
+			retainedIdentityOptions).status == UInkSaveStatus::SourceChanged);
+		UINK_CHECK(state, ReadBytes(retainedIdentityPath) == retainedIdentityBytes);
+
 		// 读取返回后不持有编辑期句柄，调用方可以立即获取独占访问。
 		HANDLE exclusive = CreateFileW(sourcePath.c_str(), GENERIC_READ, 0, nullptr,
 			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -2553,7 +2568,8 @@ namespace
 		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
 			Draw3UInkExportStatus::InvalidSourceStroke);
 		invalid = *captured.snapshot;
-		invalid.canvases[0].strokes[0].style.inkType = static_cast<StoredInkType>(255);
+		invalid.canvases[0].strokes[0].style.kind =
+			static_cast<Draw3UInkStrokeKind>(255);
 		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
 			Draw3UInkExportStatus::InvalidSourceStroke);
 		invalid = *captured.snapshot;

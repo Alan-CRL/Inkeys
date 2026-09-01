@@ -33,6 +33,12 @@ namespace
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
 
+	Workspace CurrentPrimaryWorkspace() noexcept
+	{
+		return PptInfoState.TotalPage > 0
+			? Workspace::Presentation : Workspace::Desktop;
+	}
+
 	enum class Draw3PresentationReconcileResult : std::uint8_t
 	{
 		Waiting,
@@ -103,6 +109,7 @@ namespace
 		state.colorRgba = ColorRefToRgba(GetPenColor());
 		state.selectionMode =
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+		state.autoSaveEnabled = setlist.saveSetting.enable;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
 	}
 
@@ -117,7 +124,7 @@ namespace
 				runtime.selectionMode, workspace)
 			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
 			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
-		if (workspace == Workspace::Presentation && runtime.selectionMode &&
+		if (workspace != Workspace::Whiteboard && runtime.selectionMode &&
 			!runtime.currentPageHasContent && !runtime.auxiliaryFullFrameClean)
 			return false;
 		return runtime.requestedOutputTarget == expectedTarget &&
@@ -566,7 +573,7 @@ void StateMonitoring()
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					Workspace::Presentation);
+					CurrentPrimaryWorkspace());
 				continue;
 			}
 			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
@@ -595,7 +602,7 @@ void StateMonitoring()
 				(void)service.LeaveWhiteboardWindowMode();
 				(void)service.SetOverlayTopmost(true);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					Workspace::Presentation);
+					CurrentPrimaryWorkspace());
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
 				continue;
@@ -625,7 +632,7 @@ void StateMonitoring()
 				whiteboardPhase.store(WhiteboardPhase::Exiting,
 					std::memory_order_release);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
-					Workspace::Presentation);
+					CurrentPrimaryWorkspace());
 				continue;
 			}
 
@@ -694,7 +701,8 @@ void StateMonitoring()
 				continue;
 			}
 			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
-			if (!Draw3WorkspaceReady(snapshot, Workspace::Presentation)) continue;
+			const Workspace primaryWorkspace = CurrentPrimaryWorkspace();
+			if (!Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
 
 			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。
 			Inkeys::UI::Whiteboard::PublishActive(false);

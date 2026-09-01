@@ -86,7 +86,9 @@ export namespace Inkeys::Drawing::Draw3
 		TranslateViewport,
 		Redo,
 		SetPage,
-		SetWorkspace
+		SetWorkspace,
+		ObservePresentationVisit,
+		PrepareExitAutoSave,
 	};
 
 	struct CanvasCommand
@@ -148,6 +150,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 选择模式与穿透样式解耦；绘制线程据此管理高精度计时器。
 		bool SelectionMode() const noexcept;
 		void SetSelectionMode(bool enabled) noexcept;
+		bool AutoSaveEnabled() const noexcept;
+		void SetAutoSaveEnabled(bool enabled) noexcept;
 		// Presentation 保持 click-through/不激活；白板绘制面由生命周期事务显式开放激活。
 		void SetActivationAllowed(bool enabled) noexcept;
 		// 返回当前橡皮宽度模式；活动批次仍使用其 Down 时锁定值。
@@ -244,6 +248,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<uint32_t> activeTouchContactCount_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<bool> selectionMode_ = true;
+		std::atomic<bool> autoSaveEnabled_ = false;
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
 		// 产品颜色按 0xRRGGBBAA 保存，默认使用不透明黑色。

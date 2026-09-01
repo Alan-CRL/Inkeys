@@ -559,6 +559,12 @@ void PptInfo()
 			continue;
 		}
 
+		// PPT COM 真值只在非白板事务中发布；结束放映后明确恢复普通桌面身份。
+		Inkeys::Drawing::Draw3::PublishProductWorkspace(
+			observedTotalPage > 0
+				? Inkeys::Drawing::Draw3::Bridge::Workspace::Presentation
+				: Inkeys::Drawing::Draw3::Bridge::Workspace::Desktop);
+
 		if (observedCurrentPage > 0 && observedTotalPage > 0)
 		{
 			// Host 重启会清空 bridge；每轮幂等复核，且仅运行中的 Host 接受请求。

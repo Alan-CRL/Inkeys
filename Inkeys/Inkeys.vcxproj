@@ -950,6 +950,27 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_model.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_model.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_codec.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_codec_encode.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_codec.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_export.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_export.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>

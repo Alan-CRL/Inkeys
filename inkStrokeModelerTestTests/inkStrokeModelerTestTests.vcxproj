@@ -52,6 +52,8 @@
   <ImportGroup Label="Shared" />
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
+	<!-- Debug 测试沿用项目既有 /MT 配置，因此 Vcpkg 也必须选择 Release 静态库。 -->
+	<VcpkgConfiguration Condition="'$(Configuration)'=='Debug'">Release</VcpkgConfiguration>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
@@ -102,7 +104,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
 	<ClCompile Include="canvas_navigation_tests.cpp" />
-    <ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="desktop_autosave_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
 	<ClCompile Include="ink_document_tests.cpp" />
 	<ClCompile Include="ink_history_tests.cpp" />
@@ -110,6 +113,10 @@
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
 	<ClCompile Include="uink_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" Link="draw3\Draw3.AutoSave.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm" Link="draw3\Draw3.AutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm" Link="draw3\contact_input.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -145,6 +152,10 @@
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="draw3\uink_draw3_export.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="draw3\uink_draw3_export.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cpp" Link="draw3\uink_draw3_capture.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cppm" Link="draw3\uink_draw3_capture.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp" Link="draw3\ink_history.cpp" />

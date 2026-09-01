@@ -438,6 +438,25 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		std::optional<draw3::uink::Draw3UInkStrokeKind> UInkKindForStoredType(
+			StoredInkType type) noexcept
+		{
+			using draw3::uink::Draw3UInkStrokeKind;
+			switch (type)
+			{
+			case StoredInkType::Pen: return Draw3UInkStrokeKind::Pen;
+			case StoredInkType::Highlighter: return Draw3UInkStrokeKind::Highlighter;
+			case StoredInkType::Eraser: return Draw3UInkStrokeKind::Eraser;
+			case StoredInkType::SolidLine: return Draw3UInkStrokeKind::SolidLine;
+			case StoredInkType::DashedLine: return Draw3UInkStrokeKind::DashedLine;
+			case StoredInkType::OutlineRectangle:
+				return Draw3UInkStrokeKind::OutlineRectangle;
+			case StoredInkType::FilledRectangle:
+				return Draw3UInkStrokeKind::FilledRectangle;
+			default: return std::nullopt;
+			}
+		}
+
 		struct ReconnectManualTestRange
 		{
 			size_t firstPointIndex = 0;
@@ -1444,7 +1463,8 @@ namespace Inkeys::Drawing::Draw3
 	void DrawingController::Run()
 	{
 		using namespace ink::stroke_model;
-		Bridge::Workspace activeWorkspace = Bridge::Workspace::Presentation;
+		Bridge::Workspace activeWorkspace = Bridge::Workspace::Desktop;
+		DesktopAutoSavePolicy desktopAutoSavePolicy;
 		InkGuid workspaceGuid;
 		if (!TryCreateInkGuid(workspaceGuid)) return;
 		document_.emplace(workspaceGuid);
@@ -1479,6 +1499,84 @@ namespace Inkeys::Drawing::Draw3
 			if (observer_.currentPageContentChanged)
 				observer_.currentPageContentChanged(
 					observer_.context, hasContent, currentContentRevision_);
+		};
+		auto captureDesktopAutoSave = [&](DesktopAutoSaveTrigger trigger) -> bool
+		{
+			if (!observer_.desktopAutoSaveRequested ||
+				!desktopAutoSavePolicy.ShouldCapture(activeWorkspace,
+					window_.AutoSaveEnabled(), currentPageHasContent()) ||
+				!document_ || currentPageIndex_ >= pageRuntimeStates.size()) return false;
+			try
+			{
+				const InkPage* page = document_->PageAt(currentPageIndex_);
+				const InkCanvas* canvas = page
+					? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+				if (!page || !canvas) return false;
+				const std::optional<draw3::uink::UInkGuid> fileGuid =
+					draw3::uink::CreateUInkGuid();
+				if (!fileGuid) return false;
+
+				const double startedMilliseconds = GetQpcTimeMilliseconds();
+				draw3::uink::Draw3UInkExportSnapshot snapshot;
+				snapshot.fileGuid = *fileGuid;
+				snapshot.workspaceGuid = draw3::uink::UInkGuid(
+					document_->WorkspaceGuid().Bytes());
+				snapshot.workspaceName = "Desktop";
+				snapshot.dpiScale = configuration_.dpiScale;
+				snapshot.assignedIndependentUndoGroups = true;
+				draw3::uink::Draw3UInkCanvasSnapshot outputCanvas;
+				outputCanvas.pageGuid = draw3::uink::UInkGuid(page->PageGuid().Bytes());
+				// 每个自动保存文件只表示当前区间的一页，索引负责历史顺序。
+				outputCanvas.pageIndex = 0;
+				outputCanvas.pageNumber = 1;
+				outputCanvas.viewport = {
+					canvas->Viewport().x, canvas->Viewport().y, canvas->Viewport().scale };
+				const std::span<const InkStroke> strokes = canvas->Strokes();
+				const CanvasRuntimeHistory& history =
+					pageRuntimeStates[currentPageIndex_].history;
+				for (const RenderItemState& item : history.Items())
+				{
+					if (!item.visible) continue;
+					if (item.strokeIndex >= strokes.size())
+					{
+						std::fputs("[Draw3.AutoSave] action=capture result=failed reason=history_mismatch\n",
+							stderr);
+						return false;
+					}
+					const InkStroke& stroke = strokes[item.strokeIndex];
+					const std::optional<draw3::uink::Draw3UInkStrokeKind> kind =
+						UInkKindForStoredType(stroke.Style().inkType);
+					if (!kind) return false;
+					draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
+					outputStroke.style = { *kind, stroke.Style().opacity,
+						stroke.Style().fallbackRgb, stroke.Style().texture };
+					outputStroke.undoId =
+						static_cast<std::uint32_t>(outputCanvas.strokes.size());
+					outputStroke.points.reserve(stroke.Points().size());
+					for (const StoredInkPoint& point : stroke.Points())
+						outputStroke.points.push_back({ point.x, point.y, point.width });
+					outputCanvas.strokes.push_back(std::move(outputStroke));
+				}
+				if (outputCanvas.strokes.empty()) return false;
+				const std::size_t strokeCount = outputCanvas.strokes.size();
+				snapshot.canvases.push_back(std::move(outputCanvas));
+				const std::uint64_t estimatedBytes =
+					EstimateDesktopAutoSaveSnapshotBytes(snapshot);
+				observer_.desktopAutoSaveRequested(
+					observer_.context, trigger, std::move(snapshot));
+				std::fprintf(stdout,
+					"[Draw3.AutoSave] action=capture trigger=%s strokes=%zu bytes=%llu elapsed_ms=%.3f\n",
+					trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", strokeCount,
+					static_cast<unsigned long long>(estimatedBytes),
+					GetQpcTimeMilliseconds() - startedMilliseconds);
+				return true;
+			}
+			catch (...)
+			{
+				std::fputs("[Draw3.AutoSave] action=capture result=failed reason=exception\n",
+					stderr);
+				return false;
+			}
 		};
 		publishCurrentPageContent();
 		uint64_t nextRasterStateToken = 1;
@@ -4163,20 +4261,43 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				if (command.type == CanvasCommandType::ObservePresentationVisit)
+				{
+					// latest-state 合并不能抹掉已发生的 PPT 污染事实。
+					desktopAutoSavePolicy.ObserveWorkspace(Bridge::Workspace::Presentation);
+					continue;
+				}
 				if (command.type == CanvasCommandType::SetWorkspace)
 				{
 					const auto target = static_cast<Bridge::Workspace>(command.workspace);
-					if ((target != Bridge::Workspace::Presentation &&
+					if ((target != Bridge::Workspace::Desktop &&
+						target != Bridge::Workspace::Presentation &&
 						target != Bridge::Workspace::Whiteboard) || target == activeWorkspace)
 						continue;
-					if (target == Bridge::Workspace::Whiteboard && !secondaryDocument &&
+					const bool crossesWhiteboardBoundary =
+						(activeWorkspace == Bridge::Workspace::Whiteboard) !=
+						(target == Bridge::Workspace::Whiteboard);
+					if (crossesWhiteboardBoundary &&
+						target == Bridge::Workspace::Whiteboard && !secondaryDocument &&
 						!createSecondaryWorkspace())
 						continue;
 
-					std::swap(document_, secondaryDocument);
-					std::swap(pageRuntimeStates, secondaryPageRuntimeStates);
-					std::swap(currentPageIndex_, secondaryPageIndex);
+					// 当前阶段 Desktop/PPT 共用主画布；Whiteboard 始终切换到独立画布。
+					if (crossesWhiteboardBoundary)
+					{
+						std::swap(document_, secondaryDocument);
+						std::swap(pageRuntimeStates, secondaryPageRuntimeStates);
+						std::swap(currentPageIndex_, secondaryPageIndex);
+					}
 					activeWorkspace = target;
+					desktopAutoSavePolicy.ObserveWorkspace(target);
+					if (!crossesWhiteboardBoundary)
+					{
+						if (observer_.workspaceChanged)
+							observer_.workspaceChanged(observer_.context, activeWorkspace,
+								currentPageIndex_, document_ ? document_->Pages().size() : 0);
+						continue;
+					}
 					// 旧文档的 GPU 热像、分块维护和瞬态图层不可跨工作区复用。
 					historyGpuCache.DiscardHotPreimages();
 					historyGpuCache.DiscardCompositionCache();
@@ -4218,9 +4339,19 @@ namespace Inkeys::Drawing::Draw3
 				interruptNavigationForPenOrMouse("canvas-command");
 				if (command.type == CanvasCommandType::Clear)
 				{
-					// Clear 只在无活动 contact 时执行，并永久截断当前页撤回/重做分支。
-					(void)clearCurrentPage(frameDirty, particleSnapshot,
+					// Desktop Clear 先固定当前区间，再永久截断当前页撤回/重做分支。
+					(void)captureDesktopAutoSave(DesktopAutoSaveTrigger::Clear);
+					const bool cleared = clearCurrentPage(frameDirty, particleSnapshot,
 						forceFullPresent, width, height);
+					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
+						desktopAutoSavePolicy.CompleteDesktopClear();
+					reportCommand(command.type);
+					continue;
+				}
+				if (command.type == CanvasCommandType::PrepareExitAutoSave)
+				{
+					// 回执是退出排空屏障：此时最终快照已经同步进入后台保存队列。
+					(void)captureDesktopAutoSave(DesktopAutoSaveTrigger::Exit);
 					reportCommand(command.type);
 					continue;
 				}
@@ -4373,7 +4504,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const bool selectionMode = window_.SelectionMode();
 			const bool selectionUsesAuxiliary =
-				selectionMode && activeWorkspace == Bridge::Workspace::Presentation;
+				Bridge::SelectionUsesAuxiliaryOutput(selectionMode, activeWorkspace);
 			const TransparentOutputTarget expectedOutputTarget = selectionUsesAuxiliary
 				? TransparentOutputTarget::SelectionUlw
 				: TransparentOutputTarget::PrimaryDrawpad;

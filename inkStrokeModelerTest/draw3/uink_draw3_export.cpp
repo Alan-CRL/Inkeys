@@ -24,11 +24,6 @@ namespace draw3::uink
 {
 	namespace
 	{
-		UInkGuid ConvertGuid(const InkGuid& guid) noexcept
-		{
-			return UInkGuid(guid.Bytes());
-		}
-
 		void AddExportDiagnostic(std::vector<UInkDiagnostic>& diagnostics,
 			std::string path)
 		{
@@ -36,42 +31,43 @@ namespace draw3::uink
 				UInkDiagnosticSeverity::Error, 0, 0, std::move(path), 0 });
 		}
 
-		const Draw3UInkDeviceMapping* FindDeviceMapping(
-			const std::vector<Draw3UInkDeviceMapping>& mappings, DeviceKey key) noexcept
-		{
-			for (const Draw3UInkDeviceMapping& mapping : mappings)
-				if (mapping.sourceDevice == key) return &mapping;
-			return nullptr;
-		}
-
 		bool IsFinitePositive(float value) noexcept
 		{
 			return std::isfinite(value) && value > 0.0f;
 		}
 
-		bool IsKnownStoredInkType(StoredInkType type) noexcept
+		bool IsShapeKind(Draw3UInkStrokeKind kind) noexcept
 		{
-			return type == StoredInkType::Pen || type == StoredInkType::Highlighter ||
-				type == StoredInkType::Eraser || IsStoredShapeType(type);
+			return kind == Draw3UInkStrokeKind::SolidLine ||
+				kind == Draw3UInkStrokeKind::DashedLine ||
+				kind == Draw3UInkStrokeKind::OutlineRectangle ||
+				kind == Draw3UInkStrokeKind::FilledRectangle;
+		}
+
+		bool IsKnownStrokeKind(Draw3UInkStrokeKind kind) noexcept
+		{
+			return kind == Draw3UInkStrokeKind::Pen ||
+				kind == Draw3UInkStrokeKind::Highlighter ||
+				kind == Draw3UInkStrokeKind::Eraser || IsShapeKind(kind);
 		}
 
 		bool ValidateSnapshotStroke(const Draw3UInkStrokeSnapshot& stroke) noexcept
 		{
-			if (!IsKnownStoredInkType(stroke.style.inkType) || stroke.style.texture != 0 ||
+			if (!IsKnownStrokeKind(stroke.style.kind) || stroke.style.texture != 0 ||
 				stroke.points.empty() || !std::isfinite(stroke.style.opacity) ||
 				stroke.style.opacity < 0.0f || stroke.style.opacity > 1.0f ||
 				stroke.style.fallbackRgb > 0xffffff) return false;
-			for (const StoredInkPoint& point : stroke.points)
+			for (const Draw3UInkPoint& point : stroke.points)
 			{
 				if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
 					!IsFinitePositive(point.width)) return false;
 			}
-			if (IsStoredShapeType(stroke.style.inkType))
+			if (IsShapeKind(stroke.style.kind))
 			{
 				if (stroke.points.size() != 2 || stroke.points[0].width != stroke.points[1].width)
 					return false;
-				if ((stroke.style.inkType == StoredInkType::OutlineRectangle ||
-					stroke.style.inkType == StoredInkType::FilledRectangle) &&
+				if ((stroke.style.kind == Draw3UInkStrokeKind::OutlineRectangle ||
+					stroke.style.kind == Draw3UInkStrokeKind::FilledRectangle) &&
 					(stroke.points[0].x == stroke.points[1].x ||
 						stroke.points[0].y == stroke.points[1].y)) return false;
 			}
@@ -91,7 +87,7 @@ namespace draw3::uink
 			stroke.color = ConvertColor(source.style.fallbackRgb);
 			stroke.opacity = source.style.opacity;
 			stroke.width = source.points[0].width;
-			if (source.style.inkType == StoredInkType::DashedLine)
+			if (source.style.kind == Draw3UInkStrokeKind::DashedLine)
 			{
 				// 与 draw3 HLSL 的中心段和中心间隔保持一致。
 				stroke.dashArray = { stroke.width * 4.0f, stroke.width * 6.0f };
@@ -102,18 +98,18 @@ namespace draw3::uink
 		UInkContent ConvertStroke(const Draw3UInkStrokeSnapshot& source,
 			uint32_t contentId, float dpiScale, Draw3UInkCapabilityReport& report)
 		{
-			if (!IsStoredShapeType(source.style.inkType))
+			if (!IsShapeKind(source.style.kind))
 			{
 				UInkInk ink;
 				ink.contentId = contentId;
 				ink.undoId = source.undoId;
-				switch (source.style.inkType)
+				switch (source.style.kind)
 				{
-				case StoredInkType::Eraser:
+				case Draw3UInkStrokeKind::Eraser:
 					ink.declaredInkType = 0;
 					ink.effectiveKind = UInkInkKind::Erase;
 					break;
-				case StoredInkType::Highlighter:
+				case Draw3UInkStrokeKind::Highlighter:
 					ink.declaredInkType = 2;
 					ink.effectiveKind = UInkInkKind::Highlighter;
 					++report.approximatedHighlighterNibCount;
@@ -129,7 +125,7 @@ namespace draw3::uink
 				ink.effectiveTexture = 0;
 				ink.renderOnlyWhenLatest = source.renderOnlyWhenLatest;
 				ink.points.reserve(source.points.size());
-				for (const StoredInkPoint& point : source.points)
+				for (const Draw3UInkPoint& point : source.points)
 					ink.points.push_back({ point.x, point.y, point.width, std::nullopt });
 				++report.inkCount;
 				return ink;
@@ -139,8 +135,8 @@ namespace draw3::uink
 			shape.contentId = contentId;
 			shape.undoId = source.undoId;
 			shape.renderOnlyWhenLatest = source.renderOnlyWhenLatest;
-			if (source.style.inkType == StoredInkType::SolidLine ||
-				source.style.inkType == StoredInkType::DashedLine)
+			if (source.style.kind == Draw3UInkStrokeKind::SolidLine ||
+				source.style.kind == Draw3UInkStrokeKind::DashedLine)
 			{
 				shape.declaredShapeType = 0;
 				UInkLineGeometry line;
@@ -166,7 +162,7 @@ namespace draw3::uink
 				rectangle.cornerRadiusX = radius;
 				rectangle.cornerRadiusY = radius;
 				shape.geometry = rectangle;
-				if (source.style.inkType == StoredInkType::OutlineRectangle)
+				if (source.style.kind == Draw3UInkStrokeKind::OutlineRectangle)
 					shape.stroke = ConvertStrokeStyle(source);
 				else
 				{
@@ -178,108 +174,6 @@ namespace draw3::uink
 			}
 			++report.shapeCount;
 			return shape;
-		}
-	}
-
-	Draw3UInkCaptureResult CaptureDraw3UInkExportSnapshot(
-		const InkCanvasCollection& collection,
-		const Draw3UInkCaptureOptions& options)
-	{
-		Draw3UInkCaptureResult result;
-		try
-		{
-			if (options.fileGuid.IsZero() || collection.WorkspaceGuid().IsZero() ||
-				!std::isfinite(options.dpiScale) || options.dpiScale <= 0.0f)
-			{
-				result.status = Draw3UInkExportStatus::InvalidIdentity;
-				AddExportDiagnostic(result.diagnostics, "snapshot.identity");
-				return result;
-			}
-			std::set<uint64_t> sourceDevices;
-			std::set<std::array<uint8_t, 16>> targetDevices;
-			for (const Draw3UInkDeviceMapping& mapping : options.devices)
-			{
-				if (mapping.targetDevice.guid.IsZero() ||
-					!sourceDevices.insert(mapping.sourceDevice.Value()).second ||
-					!targetDevices.insert(mapping.targetDevice.guid.Bytes()).second)
-				{
-					result.status = Draw3UInkExportStatus::InvalidIdentity;
-					AddExportDiagnostic(result.diagnostics, "snapshot.devices");
-					return result;
-				}
-			}
-
-			Draw3UInkExportSnapshot snapshot;
-			snapshot.fileGuid = options.fileGuid;
-			snapshot.workspaceGuid = ConvertGuid(collection.WorkspaceGuid());
-			snapshot.workspaceName = options.workspaceName;
-			snapshot.dpiScale = options.dpiScale;
-			snapshot.assignedIndependentUndoGroups = true;
-			for (const Draw3UInkDeviceMapping& mapping : options.devices)
-				snapshot.devices.push_back(mapping.targetDevice);
-
-			for (size_t pageIndex = 0; pageIndex < collection.Pages().size(); ++pageIndex)
-			{
-				const InkPage& page = collection.Pages()[pageIndex];
-				if (page.PageGuid().IsZero())
-				{
-					result.status = Draw3UInkExportStatus::InvalidIdentity;
-					AddExportDiagnostic(result.diagnostics, "snapshot.page.canvas");
-					return result;
-				}
-				if (page.Canvases().empty())
-				{
-					// 不伪造 Device/viewport，也不静默遗漏 draw3 中仍存在的空页面。
-					result.status = Draw3UInkExportStatus::InvalidSnapshot;
-					AddExportDiagnostic(result.diagnostics, "snapshot.page.canvas");
-					return result;
-				}
-				for (const InkCanvas& sourceCanvas : page.Canvases())
-				{
-					Draw3UInkCanvasSnapshot canvas;
-					if (!options.devices.empty())
-					{
-						const Draw3UInkDeviceMapping* mapping =
-							FindDeviceMapping(options.devices, sourceCanvas.Device());
-						if (!mapping)
-						{
-							result.status = Draw3UInkExportStatus::MissingDeviceMapping;
-							AddExportDiagnostic(result.diagnostics, "snapshot.canvas.device");
-							return result;
-						}
-						canvas.deviceGuid = mapping->targetDevice.guid;
-					}
-					else if (sourceCanvas.Device() != kDefaultDeviceKey)
-					{
-						result.status = Draw3UInkExportStatus::MissingDeviceMapping;
-						return result;
-					}
-					canvas.pageGuid = ConvertGuid(page.PageGuid());
-					canvas.pageIndex = static_cast<uint32_t>(pageIndex);
-					canvas.pageNumber = static_cast<uint32_t>(pageIndex + 1);
-					canvas.viewport = { sourceCanvas.Viewport().x,
-						sourceCanvas.Viewport().y, sourceCanvas.Viewport().scale };
-					canvas.strokes.reserve(sourceCanvas.Strokes().size());
-					for (size_t strokeIndex = 0; strokeIndex < sourceCanvas.Strokes().size(); ++strokeIndex)
-					{
-						const InkStroke& stroke = sourceCanvas.Strokes()[strokeIndex];
-						Draw3UInkStrokeSnapshot copy;
-						copy.style = stroke.Style();
-						copy.points.assign(stroke.Points().begin(), stroke.Points().end());
-						copy.undoId = static_cast<uint32_t>(strokeIndex);
-						canvas.strokes.push_back(std::move(copy));
-					}
-					snapshot.canvases.push_back(std::move(canvas));
-				}
-			}
-			result.status = Draw3UInkExportStatus::Success;
-			result.snapshot = std::move(snapshot);
-			return result;
-		}
-		catch (...)
-		{
-			result.status = Draw3UInkExportStatus::InvalidSnapshot;
-			return result;
 		}
 	}
 

@@ -362,6 +362,16 @@ namespace Inkeys::Drawing::Draw3
 		RequestControlWake();
 	}
 
+	bool WindowController::AutoSaveEnabled() const noexcept
+	{
+		return autoSaveEnabled_.load(std::memory_order_acquire);
+	}
+
+	void WindowController::SetAutoSaveEnabled(bool enabled) noexcept
+	{
+		autoSaveEnabled_.store(enabled, std::memory_order_release);
+	}
+
 	void WindowController::SetActivationAllowed(bool enabled) noexcept
 	{
 		activationAllowed_.store(enabled, std::memory_order_release);

@@ -1988,14 +1988,13 @@ SettingSessionCoroutine RunSettingSession()
 						}
 						ImGui::EndChild();
 					}
-					// Draw3 的文件保存与超级恢复尚未准备好，保留兼容配置代码但隐藏入口。
-#if 0
+					// 当前只开放桌面自动保存；历史界面、保存时长和自动删除均留待后续任务。
 					{
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("配置保存#2", { settingItemWidth * settingGlobalScale,175.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("配置保存#2", { settingItemWidth * settingGlobalScale,105.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -2031,6 +2030,7 @@ SettingSessionCoroutine RunSettingSession()
 								if (setlist.saveSetting.enable != SaveSetting.Enable)
 								{
 									setlist.saveSetting.enable = SaveSetting.Enable;
+									SyncDraw3State();
 									WriteSetting();
 								}
 							}
@@ -2042,6 +2042,7 @@ SettingSessionCoroutine RunSettingSession()
 							}
 							ImGui::EndChild();
 						}
+#if 0
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -2106,6 +2107,7 @@ SettingSessionCoroutine RunSettingSession()
 							}
 							ImGui::EndChild();
 						}
+#endif
 
 						{
 							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -2114,7 +2116,6 @@ SettingSessionCoroutine RunSettingSession()
 						}
 						ImGui::EndChild();
 					}
-#endif
 
 					{
 						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;

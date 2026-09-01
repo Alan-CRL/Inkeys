@@ -1,6 +1,7 @@
 #include "Draw3.Host.h"
 
 import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
 import Inkeys.Drawing.Draw3.ink_prediction;
@@ -18,12 +19,14 @@ import Inkeys.Drawing.Draw3.window_control;
 #include <limits>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 namespace Inkeys::Drawing::Draw3
 {
 	struct Host::Impl
 	{
 		Bridge::StateBridge bridge;
+		DesktopAutoSaveService autoSave;
 		ContactInputCoordinator input;
 		WindowController window;
 		GraphicsDeviceResources graphics;
@@ -57,7 +60,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic_bool currentPageHasContent = false;
 		std::atomic<std::uint64_t> contentRevision = 0;
 		std::atomic_bool selectionMode = true;
-		std::atomic<Bridge::Workspace> workspace = Bridge::Workspace::Presentation;
+		std::atomic<Bridge::Workspace> workspace = Bridge::Workspace::Desktop;
 		std::atomic<HostOutputTarget> requestedOutputTarget =
 			HostOutputTarget::PrimaryDrawpad;
 		std::atomic<std::uint64_t> requestedOutputRevision = 0;
@@ -74,6 +77,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<LONG> lastDirtyBottom = 0;
 		bool hiddenTestContactInjectionEnabled = false;
 		std::uint64_t appliedBridgeRevision = (std::numeric_limits<std::uint64_t>::max)();
+		std::uint64_t appliedPresentationVisitEpoch = 0;
 		bool requestedProductPage = false;
 		std::uint32_t requestedProductPageIndex = 0;
 		HostStyleCallbacks styleCallbacks = {};
@@ -83,6 +87,9 @@ namespace Inkeys::Drawing::Draw3
 		std::condition_variable startupCondition;
 		mutable std::mutex contentMutex;
 		mutable std::condition_variable contentCondition;
+		std::mutex exitAutoSaveMutex;
+		std::condition_variable exitAutoSaveCondition;
+		bool exitAutoSavePrepared = false;
 		bool graphicsReady = false;
 		bool stylusDecision = false;
 		bool stylusSucceeded = false;
@@ -153,7 +160,7 @@ namespace Inkeys::Drawing::Draw3
 			currentPageHasContent.store(false, std::memory_order_release);
 			contentRevision.store(0, std::memory_order_release);
 			selectionMode.store(true, std::memory_order_release);
-			workspace.store(Bridge::Workspace::Presentation, std::memory_order_release);
+			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
 			requestedOutputTarget.store(
 				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
 			requestedOutputRevision.store(0, std::memory_order_release);
@@ -169,8 +176,13 @@ namespace Inkeys::Drawing::Draw3
 			lastDirtyRight.store(0, std::memory_order_release);
 			lastDirtyBottom.store(0, std::memory_order_release);
 			appliedBridgeRevision = (std::numeric_limits<std::uint64_t>::max)();
+			appliedPresentationVisitEpoch = 0;
 			requestedProductPage = false;
 			requestedProductPageIndex = 0;
+			{
+				std::scoped_lock lock(exitAutoSaveMutex);
+				exitAutoSavePrepared = false;
+			}
 		}
 
 		static void ObservePresented(void* context, bool succeeded, RECT dirty,
@@ -264,6 +276,13 @@ namespace Inkeys::Drawing::Draw3
 				self->nextPageCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
 			case CanvasCommandType::PreviousPage:
 				self->previousPageCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
+			case CanvasCommandType::PrepareExitAutoSave:
+				{
+					std::scoped_lock lock(self->exitAutoSaveMutex);
+					self->exitAutoSavePrepared = true;
+				}
+				self->exitAutoSaveCondition.notify_all();
+				break;
 			default: break;
 			}
 			(void)self->runtimeRevision.PublishPageChange(
@@ -319,6 +338,23 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		static void ObserveDesktopAutoSave(void* context,
+			DesktopAutoSaveTrigger trigger,
+			draw3::uink::Draw3UInkExportSnapshot&& snapshot)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			const DesktopAutoSaveSubmitStatus status = self->autoSave.Submit(
+				trigger, std::move(snapshot));
+			if (status == DesktopAutoSaveSubmitStatus::Accepted ||
+				status == DesktopAutoSaveSubmitStatus::Existing) return;
+			const char* reason = status == DesktopAutoSaveSubmitStatus::Closed
+				? "closed" : "invalid";
+			std::fprintf(stderr,
+				"[Draw3.AutoSave] action=submit trigger=%s result=failed reason=%s\n",
+				trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", reason);
+		}
+
 		static void ObserveDrawingActivity(void* context, bool active) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
@@ -348,6 +384,7 @@ namespace Inkeys::Drawing::Draw3
 			if (state.revision == appliedBridgeRevision) return;
 			appliedBridgeRevision = state.revision;
 			window.SetSelectionMode(state.selectionMode);
+			window.SetAutoSaveEnabled(state.autoSaveEnabled);
 			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
 				std::memory_order_acq_rel) != state.selectionMode;
 			DrawingTool tool = DrawingTool::Pen;
@@ -368,6 +405,13 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
+			if (state.presentationVisitEpoch != appliedPresentationVisitEpoch)
+			{
+				appliedPresentationVisitEpoch = state.presentationVisitEpoch;
+				CanvasCommand presentationVisit;
+				presentationVisit.type = CanvasCommandType::ObservePresentationVisit;
+				window.EnqueueCanvasCommand(presentationVisit);
+			}
 			if (workspace.load(std::memory_order_acquire) != state.workspace)
 			{
 				CanvasCommand workspaceCommand;
@@ -405,6 +449,8 @@ namespace Inkeys::Drawing::Draw3
 				case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
 				case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
 				case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
+				case Bridge::CommandType::PrepareExitAutoSave:
+					canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
 				default: continue;
 				}
 				window.EnqueueCanvasCommand(canvas);
@@ -446,6 +492,9 @@ namespace Inkeys::Drawing::Draw3
 				hiddenTestContactInjectionEnabled = false;
 				return false;
 			}
+			autoSave.CloseAndDrain();
+			if (!options.autoSaveRoot.empty() && !autoSave.Start(options.autoSaveRoot))
+				std::fputs("[Draw3.AutoSave] action=start result=failed\n", stderr);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection);
 			window.SetInputCoordinator(&input);
 			// 启动握手保证绘制线程先拥有独立 GPU 资源，再启用唯一 RTS producer。
@@ -520,6 +569,7 @@ namespace Inkeys::Drawing::Draw3
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
 								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge,
+								&ObserveDesktopAutoSave,
 								&ObserveDrawingActivity
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
@@ -580,6 +630,7 @@ namespace Inkeys::Drawing::Draw3
 				graphics = {};
 				running.store(false, std::memory_order_release);
 				contentCondition.notify_all();
+				exitAutoSaveCondition.notify_all();
 				runtimeRevision.NotifyAll();
 			});
 
@@ -589,6 +640,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			lock.unlock();
 			if (drawingThread.joinable()) drawingThread.join();
+			autoSave.CloseAndDrain();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
@@ -631,6 +683,7 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.request_stop();
 			startupCondition.notify_all();
 			if (drawingThread.joinable()) drawingThread.join();
+			autoSave.CloseAndDrain();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
@@ -650,13 +703,38 @@ namespace Inkeys::Drawing::Draw3
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
 				!running.load(std::memory_order_acquire))
 			{
+				autoSave.CloseAndDrain();
 				EndDrawingActivity();
 				runtimeCallbacks = {};
 				return;
 			}
-			bridge.Stop();
-			// 先停止 RTS producer，再唤醒绘制线程，确保不再产生新的 contact。
+			{
+				std::scoped_lock lock(exitAutoSaveMutex);
+				exitAutoSavePrepared = false;
+			}
+			// 关闭产品命令生产端，并把退出保存屏障排在所有已接受命令之后。
+			const bool exitBarrierQueued = bridge.StopWithFinalCommand(
+				Bridge::CommandType::PrepareExitAutoSave);
+			// 再停止 RTS producer；Shutdown 会为仍活动的 contact 发布终止事件。
 			stylus.Shutdown();
+			input.PublishControlWake();
+			if (exitBarrierQueued)
+			{
+				std::unique_lock lock(exitAutoSaveMutex);
+				exitAutoSaveCondition.wait(lock, [this]
+					{
+						return exitAutoSavePrepared ||
+							!running.load(std::memory_order_acquire);
+					});
+				if (!exitAutoSavePrepared)
+					std::fputs("[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n",
+						stderr);
+			}
+			else
+				std::fputs("[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n",
+					stderr);
+			// worker 无超时排空后才允许绘制线程销毁 Document/Controller。
+			autoSave.CloseAndDrain();
 			window.RequestExit();
 			input.PublishControlWake();
 			if (drawingThread.joinable()) drawingThread.request_stop();

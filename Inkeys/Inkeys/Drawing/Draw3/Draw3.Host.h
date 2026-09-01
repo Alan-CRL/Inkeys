@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <string>
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -150,6 +151,8 @@ namespace Inkeys::Drawing::Draw3
 		bool enableHiddenTestContactInjection = false;
 		// legacy-compatible HWND 重启后禁止再次选择 DComp。
 		bool allowDirectComposition = true;
+		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
+		std::wstring autoSaveRoot;
 	};
 
 	// 原子快照仅用于无窗口验收和故障诊断，不暴露 Renderer/Document 所有权。
@@ -182,7 +185,7 @@ namespace Inkeys::Drawing::Draw3
 		bool currentPageHasContent = false;
 		std::uint64_t contentRevision = 0;
 		bool selectionMode = true;
-		Bridge::Workspace workspace = Bridge::Workspace::Presentation;
+		Bridge::Workspace workspace = Bridge::Workspace::Desktop;
 		HostOutputTarget requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
 		HostOutputTarget readyOutputTarget = HostOutputTarget::PrimaryDrawpad;

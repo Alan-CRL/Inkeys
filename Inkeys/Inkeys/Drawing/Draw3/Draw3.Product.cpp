@@ -92,6 +92,7 @@ namespace Inkeys::Drawing::Draw3
 		merged.widthDip = state.widthDip;
 		merged.colorRgba = state.colorRgba;
 		merged.selectionMode = state.selectionMode;
+		merged.autoSaveEnabled = state.autoSaveEnabled;
 		productHost.PublishState(merged);
 	}
 
@@ -100,10 +101,8 @@ namespace Inkeys::Drawing::Draw3
 		if (productStopping.load(std::memory_order_acquire)) return;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire)) return;
-		Bridge::ProductState state = productHost.ProductBridge().Snapshot();
-		state.workspace = workspace;
-		state.hasPage = false;
-		productHost.PublishState(state);
+		if (productHost.ProductBridge().PublishWorkspace(workspace))
+			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
 
 	bool PublishProductPage(std::uint32_t page) noexcept
