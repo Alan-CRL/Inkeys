@@ -30,6 +30,9 @@
 	<ClCompile Include="pen_cursor_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
+	<ClCompile Include="uink_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
     <ClCompile Include="runtime_benchmark.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -53,6 +56,15 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm">
 	  <Filter>draw3</Filter>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp">
 	  <Filter>draw3</Filter>
 	</ClCompile>

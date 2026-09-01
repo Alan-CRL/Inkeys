@@ -109,6 +109,7 @@
 	<ClCompile Include="laser_incremental_coverage_tests.cpp" />
 	<ClCompile Include="pen_cursor_tests.cpp" />
 	<ClCompile Include="runtime_benchmark.cpp" />
+	<ClCompile Include="uink_tests.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cppm" Link="draw3\contact_input.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
@@ -127,6 +128,23 @@
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cpp" Link="draw3\ink_document.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_document.cppm" Link="draw3\ink_document.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp" Link="draw3\uink_model.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm" Link="draw3\uink_model.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp" Link="draw3\uink_codec.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp" Link="draw3\uink_codec_encode.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="draw3\uink_codec.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="draw3\uink_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="draw3\uink_file.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="draw3\uink_draw3_export.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="draw3\uink_draw3_export.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp" Link="draw3\ink_history.cpp" />

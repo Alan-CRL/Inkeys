@@ -35,6 +35,7 @@ int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
 int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
+int RunUInkTests();
 
 namespace
 {
@@ -2148,6 +2149,7 @@ int wmain(int argc, wchar_t* argv[])
 	state.failures += RunInkHistoryTests();
 	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();
+	state.failures += RunUInkTests();
 	if (state.failures == 0)
 	{
 		std::cout << "All draw3 contact input tests passed." << std::endl;
