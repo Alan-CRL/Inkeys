@@ -88,7 +88,7 @@ struct Request {
 - `owner != nullptr` 时禁止 `ownerlessTopmostAtCreation`；owner 无效、非本进程 HWND 或组合不合法时不创建自绘 HWND，直接 fallback。
 - `Reliability::CriticalNoWait` 只接受 ownerless 请求，不执行 owner 健康探测、禁用或焦点恢复；带 owner 的 Critical 请求直接 fallback。
 - `defaultResult` 必须属于当前按钮组合。`dismissEnabled == false` 时关闭按钮强制隐藏，`Esc`、`Alt+F4` 和 `WM_CLOSE` 均不结束窗口。
-- `showCloseButton == false` 只隐藏 glyph；若 dismiss 已启用，`Esc`/`Alt+F4` 仍按同一 dismiss 结果工作。
+- `showCloseButton == false` 只隐藏 glyph；若 dismiss 已启用，`Esc`/`Alt+F4` 等 close command 仍可工作，但按按钮组合解析为已批准的安全结果，不盲目采用自定义 `dismissResult`。
 - 内置按钮文字不依赖产品 i18n：通过 Win32 thread/user UI language 在 `zh-CN`（确定/取消/是/否）、`zh-TW`（確定/取消/是/否）和英文（OK/Cancel/Yes/No）三组中选择，其他语言回退英文；自定义按钮文字和更多 locale 留待后续扩展。
 - 像素图标入口在 `Show()` 内完成受检复制。资源图标使用“模块句柄 + PNG resource type/name(ID)”描述，调用方不传文件路径或需托管的 `HBITMAP`；任何 icon-only 校验/复制失败都按无图标继续，不把装饰错误升级为整框 fallback。
 - 若自绘与 `MessageBoxW` 都失败，返回 `Result::Failed`。
@@ -162,7 +162,7 @@ GDI+ 生命周期完全属于 MessageBox 模块：
 - `WM_NCHITTEST` 先调用 `DwmDefWindowProc`，再按自绘关闭按钮、标题拖动区和客户区覆盖结果；永不返回八个 resize hit-test。
 - `WM_GETMINMAXINFO` 把 min/max track size 固定为当前布局尺寸。
 - `WM_SYSCOMMAND` 拦截 `SC_SIZE`、`SC_MINIMIZE`、`SC_MAXIMIZE`；caption 双击不改变尺寸。
-- `SC_CLOSE` 与 `WM_CLOSE` 都转入统一 `TryDismiss()`；dismiss 禁用时同步灰掉 system menu 的 Close，避免出现可点击但无效的系统入口。
+- `SC_CLOSE` 与 `WM_CLOSE` 都转入统一 `TryCloseCommand()`；dismiss 禁用时同步灰掉 system menu 的 Close，避免出现可点击但无效的系统入口。
 - 顶部未落入 close hitbox 的拖动区域返回 `HTCAPTION`，正文、图标和按钮区域返回 `HTCLIENT`。
 - Windows 11 动态设置 immersive dark mode 与 `DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND`；API/attribute 不可用时静默退化。
 - DWM 负责真实外部阴影与系统圆角；客户区只在同一条像素对齐的闭合路径内绘制 `1 DIP` 边框，四边不分别计算。
@@ -241,11 +241,30 @@ WndProc 只修改 UI 线程私有状态：
 
 - 鼠标移动更新 hover；按下后 `SetCapture`；仅在同一按钮内释放才激活。
 - `WM_CAPTURECHANGED`、失焦或取消操作清除 pressed，避免卡住。
-- `Tab/Shift+Tab` 在 command-area 可用按钮间循环；初始焦点为 `defaultResult` 对应按钮。标题 close 按 caption command 处理，不作为 Tab stop，键盘等价入口为 `Esc/Alt+F4`。
-- `Enter` 激活默认按钮；`Space` 激活当前焦点按钮。
-- `Esc`、`Alt+F4`、自绘 close glyph 和 `WM_CLOSE` 全部调用同一个 `TryDismiss()`。
-- dismiss 未启用时 `TryDismiss()` 只发出必要的重绘/系统提示反馈，不关闭、不伪造结果。
+- 状态拆为 `focusedButton`（逻辑焦点）、`keyboardFocusVisible`（输入模态）和 HWND 实际 focus。`focusedButton` 初值仍为 `defaultResult` 对应索引；首帧 `keyboardFocusVisible=false`，renderer 仅在该值为 true 且 HWND 当前拥有键盘焦点时绘制双层白色焦点框。
+- `Tab/Shift+Tab` 调用同一个 enabled-button 导航 helper 并首尾循环；`Left/Right` 复用相同的跳过禁用项规则，但按 LTR 空间方向移动并在两端停止，不 wrap。即使单按钮或已在边界，一次有效导航键也会进入 keyboard focus visual。`Up/Down` 不参与水平 command group。
+- `Enter` 与 `Space` 都提交 `focusedButton` 对应结果。由于逻辑焦点在创建时已指向默认按钮，所以未发生导航时仍激活默认按钮；一旦 Tab、方向键或 pointer focus 改变逻辑焦点，Enter 不得绕回 `request->defaultResult`。
+- pointer down 到 command button 时更新 `focusedButton` 并切回 pointer focus visual；仅移动鼠标/hover 不清除已存在的 keyboard focus visual。`WM_KILLFOCUS` 使焦点框不可见但保留逻辑索引，重新获得实际焦点后按最后输入模态恢复；pointer 激活仍不显示键盘框。
+- 标题 close 按 caption command 处理，不作为 Tab/方向键 stop。`Esc`、`Alt+F4`、`SC_CLOSE`、`WM_CLOSE` 和自绘 close glyph 全部调用一个 `ResolveCloseCommand()`；resolver 只返回“提交哪个 Result / 无操作”，最终仍经 `CommitResult()` 的单次原子门。
 - 结果只允许从 `Pending` 原子地转换一次；重复点击、重复 close、销毁消息或提交后的清理失败不得覆盖首个结果，也不得触发第二个 fallback 对话框。
+
+用户已批准并由实现采用的 close-command 表：
+
+| 条件（按优先级） | `ResolveCloseCommand()` |
+| --- | --- |
+| `dismissEnabled == false` | 无操作；关闭 glyph 和 system-menu Close 保持禁用 |
+| `showCloseButton == true` | 提交现有 `dismissResult`，与点击 X 相同 |
+| X 隐藏且 `Buttons::OkCancel` | 提交 `Cancel`，优先安全按钮而不是自定义 dismissResult |
+| X 隐藏且 `Buttons::Ok` | 提交 `Ok`，视为确认已读 |
+| X 隐藏且 `Buttons::YesNo`、dismiss 显式启用 | 提交唯一合法的 `Dismissed` |
+| X 隐藏且 `Buttons::YesNo`、dismiss 默认禁用 | 无操作，绝不合成为 `No` |
+
+其他键盘入口保持明确边界：
+
+- `Alt+Space` 继续由标准 `WS_SYSMENU` 打开窗口菜单；其中 Close 最终仍进入 `SC_CLOSE -> ResolveCloseCommand()`。禁用 close 时菜单项同步灰显。
+- 数字小键盘 Enter 与主 Enter 都表现为 `VK_RETURN`；key repeat 沿用 Win32 重复消息，结果提交门保证激活只生效一次。
+- 不新增 `Up/Down`、`Home/End`、`PageUp/PageDown`、`F6`、`Ctrl+W`/`Ctrl+F4` 或 access key；本地化按钮没有 mnemonic 元数据，不能凭英文首字母伪造快捷键。
+- `Alt+Tab`、`Alt+Esc`、Print Screen 等系统级组合交还 Windows，不由 MessageBox 截获。
 
 MVP 不注册 UI Automation provider。键盘焦点、焦点框、颜色对比与完整键盘可达性属于验收项，但验收报告必须明确屏幕阅读器语义不等价于 WinUI 3 ContentDialog。
 

@@ -513,6 +513,8 @@ namespace Inkeys::UI::MessageBox::Detail
 			int hoveredButton = -1;
 			int pressedButton = -1;
 			int focusedButton = 0;
+			bool keyboardFocusVisible = false;
+			bool windowFocused = false;
 			bool closeHovered = false;
 			bool closePressed = false;
 			bool trackingMouse = false;
@@ -543,7 +545,8 @@ namespace Inkeys::UI::MessageBox::Detail
 			[[nodiscard]] int ButtonAt(POINT point) const noexcept
 			{
 				for (int index = 0; index < layout.buttonCount; ++index)
-					if (PtInRect(&layout.buttonSpecs[index].bounds, point)) return index;
+					if (layout.buttonSpecs[index].enabled
+						&& PtInRect(&layout.buttonSpecs[index].bounds, point)) return index;
 				return -1;
 			}
 
@@ -565,9 +568,66 @@ namespace Inkeys::UI::MessageBox::Detail
 				PostQuitMessage(0);
 			}
 
-			void TryDismiss() noexcept
+			[[nodiscard]] Result ResolveCloseCommand() const noexcept
 			{
-				if (request->dismissEnabled) CommitResult(request->dismissResult);
+				if (request->showCloseButton) return request->dismissResult;
+				switch (request->buttons)
+				{
+				case Buttons::Ok:
+					return Result::Ok;
+				case Buttons::OkCancel:
+					return Result::Cancel;
+				case Buttons::YesNo:
+					return Result::Dismissed;
+				default:
+					return Result::Failed;
+				}
+			}
+
+			void TryCloseCommand() noexcept
+			{
+				if (!request->dismissEnabled) return;
+				const Result closeResult = ResolveCloseCommand();
+				if (closeResult != Result::Failed) CommitResult(closeResult);
+			}
+
+			void MoveFocus(int direction, bool wrap) noexcept
+			{
+				keyboardFocusVisible = true;
+				if (direction == 0 || layout.buttonCount <= 0)
+				{
+					RequestRepaint();
+					return;
+				}
+
+				int candidate = focusedButton;
+				if (candidate < 0 || candidate >= layout.buttonCount)
+					candidate = direction > 0 ? -1 : layout.buttonCount;
+				for (int step = 0; step < layout.buttonCount; ++step)
+				{
+					int next = candidate + direction;
+					if (wrap)
+					{
+						next %= layout.buttonCount;
+						if (next < 0) next += layout.buttonCount;
+					}
+					else if (next < 0 || next >= layout.buttonCount)
+						break;
+					candidate = next;
+					if (layout.buttonSpecs[candidate].enabled)
+					{
+						focusedButton = candidate;
+						break;
+					}
+				}
+				RequestRepaint();
+			}
+
+			void ActivateFocusedButton() noexcept
+			{
+				if (focusedButton < 0 || focusedButton >= layout.buttonCount
+					|| !layout.buttonSpecs[focusedButton].enabled) return;
+				CommitResult(layout.buttonSpecs[focusedButton].result);
 			}
 
 			[[nodiscard]] bool WordFits(Graphics& graphics, const Font& font,
@@ -826,7 +886,8 @@ namespace Inkeys::UI::MessageBox::Detail
 					static_cast<REAL>(std::max(1, ScaleDipValue(1, layout.dpi))));
 				graphics.DrawPath(&border, &path);
 
-				if (button.enabled && focusedButton == index)
+				if (button.enabled && keyboardFocusVisible && windowFocused
+					&& focusedButton == index)
 				{
 					const REAL oneDip = static_cast<REAL>(layout.dpi) / 96.0f;
 					const REAL twoDip = oneDip * 2.0f;
@@ -1092,14 +1153,14 @@ namespace Inkeys::UI::MessageBox::Detail
 				case SC_MAXIMIZE:
 					return 0;
 				case SC_CLOSE:
-					session->TryDismiss();
+					session->TryCloseCommand();
 					return 0;
 				default:
 					break;
 				}
 				break;
 			case WM_CLOSE:
-				session->TryDismiss();
+				session->TryCloseCommand();
 				return 0;
 			case AbortDialogMessage:
 				session->abortRequested.store(true, std::memory_order_release);
@@ -1141,6 +1202,8 @@ namespace Inkeys::UI::MessageBox::Detail
 				return 0;
 			case WM_LBUTTONDOWN:
 			{
+				// 指针取得焦点时保留逻辑按钮，但切换为无焦点框的 pointer 模态。
+				session->keyboardFocusVisible = false;
 				SetFocus(hwnd);
 				POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 				session->pressedButton = session->ButtonAt(point);
@@ -1165,7 +1228,7 @@ namespace Inkeys::UI::MessageBox::Detail
 					session->CommitResult(session->layout.buttonSpecs[pressed].result);
 				else if (closePressed && session->HasCloseButton()
 					&& PtInRect(&session->layout.closeBounds, point))
-					session->TryDismiss();
+					session->TryCloseCommand();
 				else session->RequestRepaint();
 				return 0;
 			}
@@ -1178,7 +1241,6 @@ namespace Inkeys::UI::MessageBox::Detail
 				}
 				return 0;
 			case WM_CANCELMODE:
-			case WM_KILLFOCUS:
 				if (session->pressedButton >= 0 || session->closePressed)
 				{
 					session->pressedButton = -1;
@@ -1187,30 +1249,37 @@ namespace Inkeys::UI::MessageBox::Detail
 					session->RequestRepaint();
 				}
 				return 0;
+			case WM_SETFOCUS:
+				session->windowFocused = true;
+				if (session->keyboardFocusVisible) session->RequestRepaint();
+				return 0;
+			case WM_KILLFOCUS:
+				session->windowFocused = false;
+				session->pressedButton = -1;
+				session->closePressed = false;
+				if (GetCapture() == hwnd) ReleaseCapture();
+				session->RequestRepaint();
+				return 0;
 			case WM_GETDLGCODE:
 				return DLGC_WANTALLKEYS;
 			case WM_KEYDOWN:
 				switch (wParam)
 				{
 				case VK_TAB:
-				{
-					const int direction = GetKeyState(VK_SHIFT) < 0 ? -1 : 1;
-					session->focusedButton = (session->focusedButton + direction
-						+ session->layout.buttonCount) % session->layout.buttonCount;
-					session->RequestRepaint();
+					session->MoveFocus(GetKeyState(VK_SHIFT) < 0 ? -1 : 1, true);
 					return 0;
-				}
+				case VK_LEFT:
+					session->MoveFocus(-1, false);
+					return 0;
+				case VK_RIGHT:
+					session->MoveFocus(1, false);
+					return 0;
 				case VK_RETURN:
-					session->CommitResult(session->request->defaultResult);
-					return 0;
 				case VK_SPACE:
-					if (session->focusedButton >= 0
-						&& session->focusedButton < session->layout.buttonCount)
-						session->CommitResult(session->layout.buttonSpecs[
-							session->focusedButton].result);
+					session->ActivateFocusedButton();
 					return 0;
 				case VK_ESCAPE:
-					session->TryDismiss();
+					session->TryCloseCommand();
 					return 0;
 				default:
 					break;
@@ -1219,7 +1288,7 @@ namespace Inkeys::UI::MessageBox::Detail
 			case WM_SYSKEYDOWN:
 				if (wParam == VK_F4)
 				{
-					session->TryDismiss();
+					session->TryCloseCommand();
 					return 0;
 				}
 				break;
@@ -1240,6 +1309,10 @@ namespace Inkeys::UI::MessageBox::Detail
 					if (nextSurface.Create(session->layout.width,
 						session->layout.height))
 					{
+						if (previousFocusedButton >= 0
+							&& previousFocusedButton < session->layout.buttonCount
+							&& session->layout.buttonSpecs[previousFocusedButton].enabled)
+							session->focusedButton = previousFocusedButton;
 						int x = suggested.left;
 						int y = suggested.top;
 						x = std::clamp(x, static_cast<int>(session->workArea.left),

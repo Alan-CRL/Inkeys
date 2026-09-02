@@ -500,6 +500,16 @@ namespace
 
 	struct HiddenWindowContext
 	{
+		enum class KeyboardScenario
+		{
+			DefaultEnter,
+			TabEnter,
+			ShiftTabEnter,
+			LeftTwiceEnter,
+			RightTwiceEnter,
+			PointerSecondaryEnter,
+		};
+
 		HWND owner = nullptr;
 		HWND dialog = nullptr;
 		bool styleValid = false;
@@ -510,6 +520,8 @@ namespace
 		bool selectSecondary = false;
 		bool dismissWithEscape = false;
 		bool dismissWithAltF4 = false;
+		bool dismissWithSystemClose = false;
+		bool dismissWithWindowClose = false;
 		bool clickClose = false;
 		bool dismissThenEnter = false;
 		bool exerciseDpi = false;
@@ -527,7 +539,20 @@ namespace
 		LONG_PTR observedStyle = 0;
 		LONG_PTR observedExStyle = 0;
 		HWND observedOwner = nullptr;
+		KeyboardScenario keyboardScenario = KeyboardScenario::DefaultEnter;
 	};
+
+	void SendShiftTab(HWND hwnd) noexcept
+	{
+		BYTE keyboardState[256]{};
+		if (!GetKeyboardState(keyboardState)) return;
+		const BYTE previousShift = keyboardState[VK_SHIFT];
+		keyboardState[VK_SHIFT] = static_cast<BYTE>(previousShift | 0x80);
+		if (SetKeyboardState(keyboardState))
+			SendMessageW(hwnd, WM_KEYDOWN, VK_TAB, 0);
+		keyboardState[VK_SHIFT] = previousShift;
+		(void)SetKeyboardState(keyboardState);
+	}
 
 	void InspectAndClose(HWND hwnd, void* opaque) noexcept
 	{
@@ -641,6 +666,16 @@ namespace
 			PostMessageW(hwnd, WM_SYSKEYDOWN, VK_F4, 0);
 			return;
 		}
+		if (context.dismissWithSystemClose)
+		{
+			SendMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+			return;
+		}
+		if (context.dismissWithWindowClose)
+		{
+			SendMessageW(hwnd, WM_CLOSE, 0, 0);
+			return;
+		}
 		if (context.clickClose)
 		{
 			RECT client{};
@@ -674,6 +709,41 @@ namespace
 			SendMessageW(hwnd, WM_KEYDOWN, VK_TAB, 0);
 			PostMessageW(hwnd, WM_KEYDOWN, VK_SPACE, 0);
 			return;
+		}
+		switch (context.keyboardScenario)
+		{
+		case HiddenWindowContext::KeyboardScenario::TabEnter:
+			SendMessageW(hwnd, WM_KEYDOWN, VK_TAB, 0);
+			break;
+		case HiddenWindowContext::KeyboardScenario::ShiftTabEnter:
+			SendShiftTab(hwnd);
+			break;
+		case HiddenWindowContext::KeyboardScenario::LeftTwiceEnter:
+			SendMessageW(hwnd, WM_KEYDOWN, VK_LEFT, 0);
+			SendMessageW(hwnd, WM_KEYDOWN, VK_LEFT, 0);
+			break;
+		case HiddenWindowContext::KeyboardScenario::RightTwiceEnter:
+			SendMessageW(hwnd, WM_KEYDOWN, VK_RIGHT, 0);
+			SendMessageW(hwnd, WM_KEYDOWN, VK_RIGHT, 0);
+			break;
+		case HiddenWindowContext::KeyboardScenario::PointerSecondaryEnter:
+		{
+			RECT client{};
+			GetClientRect(hwnd, &client);
+			const UINT dpi = ResolveTestDpi(hwnd);
+			const POINT secondaryPoint{
+				client.right * 3 / 4,
+				client.bottom - MessageBoxTest::ScaleDip(40, dpi),
+			};
+			SendMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON,
+				MAKELPARAM(secondaryPoint.x, secondaryPoint.y));
+			// 在按钮外释放，避免 click 提交；随后 Enter 应使用 pointer 更新的逻辑焦点。
+			SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(0, 0));
+			break;
+		}
+		case HiddenWindowContext::KeyboardScenario::DefaultEnter:
+		default:
+			break;
 		}
 		PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0);
 	}
@@ -748,6 +818,27 @@ namespace
 			{ InspectAndClose, &altContext, 40 }) == Result::Dismissed,
 			"Alt+F4 uses explicit dismissed result without close glyph");
 
+		auto hiddenOkCancel = MakeOkCancelRequest(L"Close command",
+			L"A hidden title glyph resolves to Cancel.");
+		hiddenOkCancel.owner = backdrop.Get();
+		hiddenOkCancel.showCloseButton = false;
+		hiddenOkCancel.dismissResult = Result::Ok;
+		HiddenWindowContext windowCloseContext{ backdrop.Get() };
+		windowCloseContext.dismissWithWindowClose = true;
+		Check(MessageBoxTest::ShowAutomated(hiddenOkCancel,
+			{ InspectAndClose, &windowCloseContext, 40 }) == Result::Cancel,
+			"WM_CLOSE resolves hidden-glyph OK/Cancel to Cancel");
+
+		auto hiddenOk = MakeOkRequest(L"Close command",
+			L"A hidden title glyph resolves an OK-only dialog to OK.");
+		hiddenOk.owner = backdrop.Get();
+		hiddenOk.showCloseButton = false;
+		HiddenWindowContext systemCloseContext{ backdrop.Get() };
+		systemCloseContext.dismissWithSystemClose = true;
+		Check(MessageBoxTest::ShowAutomated(hiddenOk,
+			{ InspectAndClose, &systemCloseContext, 40 }) == Result::Ok,
+			"SC_CLOSE resolves hidden-glyph OK-only to OK");
+
 		auto closeRequest = MakeOkCancelRequest(L"Close?", L"Use the title close command.");
 		closeRequest.owner = backdrop.Get();
 		HiddenWindowContext closeContext{ backdrop.Get() };
@@ -765,6 +856,16 @@ namespace
 		Check(closeResult == Result::Cancel,
 			"custom title close uses the dismiss result");
 
+		auto configuredClose = MakeOkCancelRequest(L"Configured close",
+			L"The visible glyph keeps its configured result.");
+		configuredClose.owner = backdrop.Get();
+		configuredClose.dismissResult = Result::Ok;
+		HiddenWindowContext configuredCloseContext{ backdrop.Get() };
+		configuredCloseContext.clickClose = true;
+		Check(MessageBoxTest::ShowAutomated(configuredClose,
+			{ InspectAndClose, &configuredCloseContext, 40 }) == Result::Ok,
+			"visible title close keeps the configured dismiss result");
+
 		auto singleCommit = MakeOkCancelRequest(L"One result", L"Dismiss wins once.");
 		singleCommit.owner = backdrop.Get();
 		HiddenWindowContext singleCommitContext{ backdrop.Get() };
@@ -781,6 +882,44 @@ namespace
 		Check(MessageBoxTest::ShowAutomated(secondaryDefault,
 			{ InspectAndClose, &secondaryDefaultContext, 40 }) == Result::Cancel,
 			"Enter activates a configured secondary default");
+
+		auto tabEnter = MakeOkCancelRequest(L"Tab focus",
+			L"Enter follows the logical focus after Tab.");
+		tabEnter.owner = backdrop.Get();
+		HiddenWindowContext tabEnterContext{ backdrop.Get() };
+		tabEnterContext.keyboardScenario =
+			HiddenWindowContext::KeyboardScenario::TabEnter;
+		Check(MessageBoxTest::ShowAutomated(tabEnter,
+			{ InspectAndClose, &tabEnterContext, 40 }) == Result::Cancel,
+			"Enter activates the button selected by Tab");
+
+		HiddenWindowContext shiftTabContext{ backdrop.Get() };
+		shiftTabContext.keyboardScenario =
+			HiddenWindowContext::KeyboardScenario::ShiftTabEnter;
+		Check(MessageBoxTest::ShowAutomated(secondaryDefault,
+			{ InspectAndClose, &shiftTabContext, 40 }) == Result::Ok,
+			"Shift+Tab cycles backward and Enter follows focus");
+
+		HiddenWindowContext leftBoundaryContext{ backdrop.Get() };
+		leftBoundaryContext.keyboardScenario =
+			HiddenWindowContext::KeyboardScenario::LeftTwiceEnter;
+		Check(MessageBoxTest::ShowAutomated(secondaryDefault,
+			{ InspectAndClose, &leftBoundaryContext, 40 }) == Result::Ok,
+			"Left moves once and stops at the first button");
+
+		HiddenWindowContext rightBoundaryContext{ backdrop.Get() };
+		rightBoundaryContext.keyboardScenario =
+			HiddenWindowContext::KeyboardScenario::RightTwiceEnter;
+		Check(MessageBoxTest::ShowAutomated(tabEnter,
+			{ InspectAndClose, &rightBoundaryContext, 40 }) == Result::Cancel,
+			"Right moves once and stops at the last button");
+
+		HiddenWindowContext pointerFocusContext{ backdrop.Get() };
+		pointerFocusContext.keyboardScenario =
+			HiddenWindowContext::KeyboardScenario::PointerSecondaryEnter;
+		Check(MessageBoxTest::ShowAutomated(tabEnter,
+			{ InspectAndClose, &pointerFocusContext, 40 }) == Result::Cancel,
+			"pointer press updates logical focus used by Enter");
 
 		auto invalidDecoration = MakeOkRequest(L"Missing icon",
 			L"The message still renders when PNG lookup fails.");
@@ -980,6 +1119,7 @@ namespace
 	{
 		Default,
 		FocusSecondary,
+		FocusSecondaryHoverPrimary,
 		HoverPrimary,
 		HoverClose,
 		PressSecondary,
@@ -987,6 +1127,8 @@ namespace
 	constexpr std::size_t MinimumCloseHoverPixels = 300;
 	constexpr std::size_t MinimumFocusOuterPixels = 180;
 	constexpr std::size_t MinimumFocusInnerPixels = 80;
+	constexpr std::size_t MaximumHiddenFocusOuterPixels = 40;
+	constexpr std::size_t MaximumHiddenFocusInnerPixels = 40;
 
 	struct VisualCaptureContext
 	{
@@ -1008,6 +1150,9 @@ namespace
 		std::size_t focusOuterPixels = 0;
 		std::size_t focusInnerPixels = 0;
 		bool usedPrintWindow = false;
+		int focusButtonCount = 1;
+		int focusButtonIndex = 0;
+		bool expectKeyboardFocus = false;
 	};
 
 	void CaptureWindowRegion(HWND hwnd, VisualCaptureContext& context) noexcept
@@ -1094,18 +1239,27 @@ namespace
 				? 0 : dialogBounds.left - bounds.left;
 			const int dialogOffsetY = context.usedPrintWindow
 				? 0 : dialogBounds.top - bounds.top;
-			if (context.interaction == VisualInteraction::FocusSecondary
+			if (context.focusButtonCount > 0
+				&& context.focusButtonIndex >= 0
+				&& context.focusButtonIndex < context.focusButtonCount
 				&& GetClientRect(hwnd, &client))
 			{
 				const UINT dpi = ResolveTestDpi(hwnd);
 				const int padding = MessageBoxTest::ScaleDip(24, dpi);
 				const int gap = MessageBoxTest::ScaleDip(8, dpi);
 				const int buttonHeight = MessageBoxTest::ScaleDip(32, dpi);
-				const int slotWidth = (client.right - padding * 2 - gap) / 2;
+				const int slotWidth = (client.right - padding * 2
+					- gap * (context.focusButtonCount - 1))
+					/ context.focusButtonCount;
+				const int left = padding + context.focusButtonIndex
+					* (slotWidth + gap);
+				const int right = context.focusButtonIndex + 1
+					== context.focusButtonCount
+					? client.right - padding : left + slotWidth;
 				focusedButton = {
-					padding + slotWidth + gap,
+					left,
 					client.bottom - padding - buttonHeight,
-					client.right - padding,
+					right,
 					client.bottom - padding };
 				focusOuterExtent = std::max(1, MessageBoxTest::ScaleDip(3, dpi));
 				focusInnerExtent = std::max(1, MessageBoxTest::ScaleDip(1, dpi));
@@ -1159,14 +1313,18 @@ namespace
 				&& context.darkPixels > 5000
 				&& (!context.requireErrorColor || context.errorPixels > 150)
 				&& (context.interaction != VisualInteraction::HoverPrimary
+					&& context.interaction
+						!= VisualInteraction::FocusSecondaryHoverPrimary
 					|| context.hoverAccentPixels > 500)
 				&& (context.interaction != VisualInteraction::HoverClose
 					|| context.closeHoverPixels > MinimumCloseHoverPixels)
 				&& (context.interaction != VisualInteraction::PressSecondary
 					|| context.pressedNeutralPixels > 500)
-				&& (context.interaction != VisualInteraction::FocusSecondary
-					|| context.focusOuterPixels > MinimumFocusOuterPixels
-					&& context.focusInnerPixels > MinimumFocusInnerPixels);
+				&& (context.expectKeyboardFocus
+					? context.focusOuterPixels > MinimumFocusOuterPixels
+						&& context.focusInnerPixels > MinimumFocusInnerPixels
+					: context.focusOuterPixels < MaximumHiddenFocusOuterPixels
+						&& context.focusInnerPixels < MaximumHiddenFocusInnerPixels);
 
 			Gdiplus::GdiplusStartupInput startupInput;
 			ULONG_PTR token = 0;
@@ -1220,9 +1378,18 @@ namespace
 		const UINT dpi = ResolveTestDpi(hwnd);
 		const int y = client.bottom - MessageBoxTest::ScaleDip(40, dpi);
 		POINT interactionPoint{};
-		if (context.interaction == VisualInteraction::FocusSecondary)
+		if (context.interaction == VisualInteraction::FocusSecondary
+			|| context.interaction
+				== VisualInteraction::FocusSecondaryHoverPrimary)
 		{
 			SendMessageW(hwnd, WM_KEYDOWN, VK_TAB, 0);
+			if (context.interaction
+				== VisualInteraction::FocusSecondaryHoverPrimary)
+			{
+				interactionPoint = { client.right / 4, y };
+				SendMessageW(hwnd, WM_MOUSEMOVE, 0,
+					MAKELPARAM(interactionPoint.x, interactionPoint.y));
+			}
 		}
 		else if (context.interaction == VisualInteraction::HoverPrimary)
 		{
@@ -1240,6 +1407,7 @@ namespace
 		}
 		else if (context.interaction == VisualInteraction::PressSecondary)
 		{
+			SendMessageW(hwnd, WM_KEYDOWN, VK_TAB, 0);
 			interactionPoint = { client.right * 3 / 4, y };
 			SendMessageW(hwnd, WM_MOUSEMOVE, 0,
 				MAKELPARAM(interactionPoint.x, interactionPoint.y));
@@ -1256,6 +1424,8 @@ namespace
 				MAKELPARAM(interactionPoint.x, interactionPoint.y));
 		else PostMessageW(hwnd, WM_KEYDOWN,
 			context.interaction == VisualInteraction::FocusSecondary
+				|| context.interaction
+					== VisualInteraction::FocusSecondaryHoverPrimary
 				? VK_SPACE : VK_RETURN, 0);
 	}
 }
@@ -1321,11 +1491,17 @@ int RunMessageBoxVisualTests(const char* outputDirectory)
 	PrintCaptureFailure("OK", okCapture);
 	Check(okCapture.saved, "visual OK screenshot saved");
 	Check(okCapture.pixelsValid, "visual OK pixels validated");
+	Check(okCapture.focusOuterPixels < MaximumHiddenFocusOuterPixels
+		&& okCapture.focusInnerPixels < MaximumHiddenFocusInnerPixels,
+		"initial pointer-neutral frame has no keyboard focus visual");
 	Check(okCapture.dialog && !IsWindow(okCapture.dialog),
 		"visual OK dialog destroyed");
 
 	VisualCaptureContext noCapture{ output / "02-yes-no-focus.png", backdrop.Get() };
 	noCapture.interaction = VisualInteraction::FocusSecondary;
+	noCapture.focusButtonCount = 2;
+	noCapture.focusButtonIndex = 1;
+	noCapture.expectKeyboardFocus = true;
 	auto yesNo = MakeYesNoRequest(L"End presentation?",
 		L"Continuing will clear the current canvas. Do you want to proceed?");
 	yesNo.owner = backdrop.Get();
@@ -1367,6 +1543,8 @@ int RunMessageBoxVisualTests(const char* outputDirectory)
 	VisualCaptureContext pressedCapture{
 		output / "05-secondary-pressed.png", backdrop.Get() };
 	pressedCapture.interaction = VisualInteraction::PressSecondary;
+	pressedCapture.focusButtonCount = 2;
+	pressedCapture.focusButtonIndex = 1;
 	auto pressedRequest = MakeYesNoRequest(L"Pressed state",
 		L"The secondary action remains legible while pressed.");
 	pressedRequest.owner = backdrop.Get();
@@ -1376,6 +1554,9 @@ int RunMessageBoxVisualTests(const char* outputDirectory)
 	PrintCaptureFailure("Pressed", pressedCapture);
 	Check(pressedCapture.saved && pressedCapture.pixelsValid,
 		"visual secondary pressed screenshot validated");
+	Check(pressedCapture.focusOuterPixels < MaximumHiddenFocusOuterPixels
+		&& pressedCapture.focusInnerPixels < MaximumHiddenFocusInnerPixels,
+		"pointer press keeps the keyboard focus visual hidden");
 
 	VisualCaptureContext closeHoverCapture{
 		output / "06-close-hover.png", backdrop.Get() };
@@ -1391,6 +1572,26 @@ int RunMessageBoxVisualTests(const char* outputDirectory)
 		"visual close hover screenshot validated");
 	Check(closeHoverCapture.closeHoverPixels > MinimumCloseHoverPixels,
 		"visual close hover fill token validated");
+
+	VisualCaptureContext focusHoverCapture{
+		output / "07-focus-preserved-on-hover.png", backdrop.Get() };
+	focusHoverCapture.interaction = VisualInteraction::FocusSecondaryHoverPrimary;
+	focusHoverCapture.focusButtonCount = 2;
+	focusHoverCapture.focusButtonIndex = 1;
+	focusHoverCapture.expectKeyboardFocus = true;
+	auto focusHoverRequest = MakeYesNoRequest(L"Keyboard focus",
+		L"Pointer hover does not clear the existing keyboard focus visual.");
+	focusHoverRequest.owner = backdrop.Get();
+	Check(MessageBoxTest::ShowAutomated(focusHoverRequest,
+		{ CaptureAndClose, &focusHoverCapture, 220 }) == Result::No,
+		"visual keyboard focus survives pointer hover");
+	PrintCaptureFailure("Focus hover", focusHoverCapture);
+	Check(focusHoverCapture.saved && focusHoverCapture.pixelsValid,
+		"visual focus-preserving hover screenshot validated");
+	Check(focusHoverCapture.hoverAccentPixels > 500
+		&& focusHoverCapture.focusOuterPixels > MinimumFocusOuterPixels
+		&& focusHoverCapture.focusInnerPixels > MinimumFocusInnerPixels,
+		"pointer hover preserves the keyboard focus double stroke");
 
 	Check(IsWindowEnabled(backdrop.Get()) != FALSE,
 		"visual backdrop restored after all dialogs");

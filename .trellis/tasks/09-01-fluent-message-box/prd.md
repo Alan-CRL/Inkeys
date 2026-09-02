@@ -32,7 +32,7 @@
 - 底部独立按钮区域，首版至少支持单按钮确认和双按钮 Yes/No 组合。
 - 为迁移主工程现有产品调用，首版按钮组合还需包含 OK/Cancel。
 - 标准按钮文字不依赖产品 i18n；首版按 Win32 UI language 提供简体中文、繁体中文和英文三组，其他语言回退英文。
-- 标题栏关闭、`Esc` 与 `Alt+F4` 统一走同一个可配置 dismiss 路径；未配置 dismiss 时三者均不得关闭窗口。
+- 标题栏关闭、`Esc`、`Alt+F4`、system-menu Close 与 `WM_CLOSE` 统一走同一个 close-command resolver；X 可见时使用配置的 dismiss 结果，X 隐藏时按按钮组合选择安全退出结果，dismiss 禁用时全部无操作。
 - `OK` 预设的 dismiss 结果为 `OK`，`OK/Cancel` 为 `Cancel`；`Yes/No` 默认不允许 dismiss，调用方明确启用时返回独立 `Dismissed`，不得映射为 `No`。
 - `Enter` 激活调用方配置的默认按钮；返回值使用组件枚举，不直接向调用方泄漏 Win32 `IDOK`、`IDCANCEL` 等常量。
 - 未来内容类型与按钮组合扩展不属于首版实现，但首版接口不得把布局硬编码为只能支持单一文案。
@@ -57,7 +57,12 @@
 - 灰阶、分隔线、边框、文本层级、按钮状态与间距遵循 Fluent 2 深色语义。
 - 主操作高亮色允许使用青色；次要按钮使用 Fluent 2 深色中性色。
 - 交互状态至少应包含默认、悬停、按下、禁用与键盘焦点中实际适用的状态。
-- MVP 必须支持 `Tab/Shift+Tab` 循环 command-area 按钮焦点、`Enter/Space` 激活、已确认的 `Esc` 行为、正确初始焦点和清晰可见的焦点框，并满足既定 Fluent 2 前景/背景对比度；标题 close 按标准 caption command 处理，不进入 Tab 顺序，但可由 `Esc/Alt+F4` 触发同一结果。
+- command-area 始终保存一个逻辑焦点按钮，初值为 `defaultResult` 对应按钮；默认按钮的 Accent 外观保持不变，但窗口刚出现、仅由鼠标/触摸操作或仅获得 HWND 焦点时不得绘制白色键盘焦点框。
+- 第一次使用 `Tab`、`Shift+Tab`、`Left` 或 `Right` 进行按钮导航时切换为键盘焦点视觉；`Tab/Shift+Tab` 在可用按钮间首尾循环，`Left/Right` 按从左到右的空间顺序移动且到边界停止。标题 close 不进入 Tab 或方向键顺序。
+- `Enter` 与 `Space` 都激活当前逻辑焦点按钮；若用户从未移动焦点，该按钮自然就是配置的默认按钮。数字小键盘 Enter 与普通 Enter 使用同一 `VK_RETURN` 语义。
+- 鼠标按下按钮可更新逻辑焦点但使用 pointer focus，不显示白色焦点框；单纯 hover 不清除已经由键盘建立的焦点视觉。窗口实际失去键盘焦点时不绘制焦点框。
+- `Esc`、`Alt+F4`、system-menu Close、`WM_CLOSE` 与自绘标题 close 必须进入同一个 close-command resolver 并保持结果单次提交；无 X 时优先采用安全、非破坏性动作，具体 OK-only / Yes-No 路由见本轮已批准表。
+- `Space`、`Esc`、`Alt+F4` 与 `Alt+Space` 系统菜单属于保留的附加键盘行为；MVP 不新增 `Up/Down`、`Home/End`、`F6`、`Ctrl+W` 或本地化 access key。`Alt+Tab` 等系统级切换仍由 Windows 处理。
 - MVP 不实现完整 UI Automation provider，不承诺讲述人可获得正文、按钮与 Dialog 的完整语义；该限制必须在验收结果中明确披露。
 - 视觉数值以 Microsoft WinUI XAML 官方 `ContentDialog`、Button、CornerRadius 与 Common theme resources 为基线，不以截图目测替代 token。
 
@@ -115,3 +120,23 @@
 - 入场、退场、按钮过渡等时间动画；MVP 状态切换即时重绘。
 - 独立 `Timeout` 工程及其 `TimeoutMain.cpp` 中的四个系统提示框。
 - `IdtMain.cpp:1685-1705` 的调试辅助 MessageBox。
+
+## 2026-09-02 Keyboard Interaction Follow-up
+
+用户已批准以下 close-command 路由并授权实现；`dismissEnabled == false` 始终优先并使所有 close command 无操作：
+
+| 可见 X / 按钮组合 | 已批准 close-command 结果 | 理由 |
+| --- | --- | --- |
+| X 可见 | 现有 `dismissResult` | 与点击 X 完全同义 |
+| X 隐藏 + OK/Cancel | `Cancel` | 选择明确的安全退出按钮，即使调用方把 dismissResult 改成其他值 |
+| X 隐藏 + OK-only | `OK` | 唯一按钮只是确认已读，不存在取消结果 |
+| X 隐藏 + Yes/No，默认 dismiss 禁用 | 无操作 | 不得把关闭伪装为 `No` |
+| X 隐藏 + Yes/No，调用方显式启用 dismiss | `Dismissed` | 保留此前已确认的独立关闭结果 |
+
+新增验收项：
+
+- [x] 首帧和纯 pointer 操作不出现白色焦点框；键盘导航后出现，窗口失焦时不绘制。
+- [x] `Tab/Shift+Tab` 循环，`Left/Right` 不越过水平边界；单按钮场景稳定且不会除零或形成焦点陷阱。
+- [x] `Enter/Space` 激活逻辑焦点按钮；未导航时为默认按钮，导航后不得回跳到默认按钮。
+- [x] X、Esc、Alt+F4、system-menu Close 与 `WM_CLOSE` 遵循获批路由，Yes/No 关闭永不误报为 No。
+- [x] 初始无焦点框和键盘导航焦点框均有定向像素/截图回归；既有 owner、DPI、首帧、结果单次提交与资源清理合同无回退。

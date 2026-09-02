@@ -9,7 +9,7 @@
 - [x] 5. 实现私有 GDI+ runtime 与资源 RAII：Win8+ 按次 token、Win7/探测失败的私有长生命周期 token、top-down 32-bit DIB、memory DC、字体/画刷/画笔，以及像素图标复制和 PNG -> premultiplied BGRA 解码。
 - [x] 6. 实现 Fluent 深色 renderer：上下内容分区、标题/正文/图标、闭合 `1 DIP` 内边框、separator、等宽按钮及 normal/hover/pressed/disabled/focused 状态；所有输出先绘到不透明 DIB，再在 `WM_PAINT` 中一次提交。
 - [x] 7. 实现固定尺寸 Win32 顶层窗口：标准 frame style、自绘 non-client/title、close hitbox、拖动、DWM dark/corner attributes、禁止 resize/minimize/maximize、DPI change、monitor 居中/clamp 和 Windows 7/10 API fallback。
-- [x] 8. 实现输入与结果状态机：mouse capture、capture-loss 清理、Tab/Shift+Tab、Enter/Space、统一 `TryDismiss()`、单次结果提交及 hide-before-destroy。
+- [x] 8. 实现输入与结果状态机：mouse capture、capture-loss 清理、Tab/Shift+Tab、Enter/Space、统一 close command、单次结果提交及 hide-before-destroy。
 - [x] 9. 实现同步协调器：进程级单框门、thread-local reentry guard、Normal 串行、CriticalNoWait 旁路、临时 UI 线程、owner 健康探测与双阶段禁用/恢复握手，以及唯一非递归 `MessageBoxW` fallback。
 - [x] 10. 扩展 `InkeysHeadlessTests`：纯逻辑/资源测试始终可在 `--no-window` 运行；隐藏 HWND 测试覆盖 style、owner、hit-test、DPI、销毁顺序、并发与 owner 恢复；测试 build 通过宏开放窄测试钩子，生产模块不导出。
 - [x] 11. 在自绘模块与测试稳定后，逐个迁移已确认调用点：`IdtMain.cpp`、`IdtPlug-in.cpp`、`Bar.Interaction.cpp`、`Setting.cpp`、`Window.Legacy.cpp`、`Helper.CrashHandler.cpp`、`SuperTop/IdtSuperTop.cpp`；每处按设计矩阵显式传 custom/fallback policy，保留原文案和调用分支。
@@ -18,6 +18,12 @@
 - [x] 14. 运行已授权的专用可见测试入口，自动生成限定窗口区域截图、关闭全部测试 HWND，并核对 Windows 11 ARM64 的圆角、DWM 阴影、四边边框、文本布局、图标、焦点和按钮状态；全程不使用 Computer Use。
 - [x] 15. 汇总实际验证结果和限制：明确 UI Automation provider 未实现，Windows 7/10 若未上机则仅为静态兼容覆盖；不提交 commit，等待用户验收。
 - [x] 16. 修复首次可见时序：移除组件内全部 `ShowWindow`，在 DWM/window 状态完成后用固定矩形 `SetWindowPos(SWP_SHOWWINDOW)` 建立 surface，再同步提交首帧；现代 DWM 使用 cloak 覆盖该间隔，旧系统保留无 cloak 退化。增加以 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED` 启动隔离测试进程的回归用例。
+- [x] 17. 用户批准本轮键盘交互规划和无 X 的 close-command 路由表；批准前不修改产品或测试源码。
+- [x] 18. 在 `DialogSession` 中分离逻辑焦点、键盘焦点视觉和 HWND 实际 focus；首帧/pointer focus 不绘制白框，Tab/Shift+Tab/Left/Right 导航后才绘制，失焦时隐藏。
+- [x] 19. 抽取 enabled-button 导航与 `ResolveCloseCommand()`；Tab 系列循环、Left/Right 到边界停止，Enter/Space 激活逻辑焦点，所有关闭入口只经同一 resolver 和现有单次提交门。
+- [x] 20. 扩展隐藏 HWND 与可见像素回归：初始无框、pointer 无框、键盘有框、Tab/Shift+Tab/Left/Right、Enter 导航前后、Space、所有 close 入口及 OK/OK-Cancel/Yes-No 路由。
+- [x] 21. 使用 ARM64 host MSBuild 构建完整 `Debug|ARM64` solution，运行 `--no-window`、MessageBox 隐藏集成与获准的专用可见截图入口；再次核对首帧、owner/topmost、DPI、资源清理和既有已知 WindowTests 基线。
+- [x] 22. 按 PRD/design 逐条复核本轮约束，记录 UI Automation 与 Windows 7/10 仍未实机验证的既有限制；完成后等待用户人工验收，不自动提交 commit。
 
 ## Implementation Details By Step
 
@@ -69,7 +75,7 @@
 | Layout | 96/120/144/192 DPI；320/548 DIP 边界；标题一/两行；中英正文；zh-CN/zh-TW/en 按钮文字；0/1 icon；1/2 buttons；work-area clamp |
 | Overflow | title 第三行、正文超 756 DIP、小于最小 work area；断言 HWND 创建计数仍为 0、owner 未被禁用且完整原文进入 fallback payload |
 | Icon | 正 BGRA/透明像素；非法 stride；尺寸/字节溢出；有效/损坏 PNG；内置资源；失败后正文仍存在 |
-| Input | hover/press/release/capture lost；Tab 正反循环；Enter/Space；Esc/Alt+F4/close 共用结果；结果只提交一次；提交后清理失败不再 fallback |
+| Input | hover/press/release/capture lost；首帧/pointer 无焦点框；Tab 正反循环；Left/Right 边界导航；Enter/Space 激活逻辑焦点；Esc/Alt+F4/SC_CLOSE/WM_CLOSE/X 共用获批 close resolver；结果只提交一次；提交后清理失败不再 fallback |
 | HWND | owned/ownerless styles；无 resize hit-test；SC_SIZE/MAX/MIN 被拒绝；DPI rebuild；hide-before-destroy；owner enabled 恢复；owner thread sent-message 等待不分派 posted command |
 | Concurrency | 两个 Normal（含初始化失败后的系统 fallback）串行；CriticalNoWait 在 busy 时无锁直接 fallback；同线程 reentry 不取门；fallback 函数本身不操作门 |
 | Lifetime | 重复创建/关闭；内部 live-object 为 0；GDI/USER handle 回到允许波动内；无残留 UI thread/HWND |
@@ -178,3 +184,15 @@ rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
 - 可见测试为 secondary focus 增加定向像素断言，分别检查按钮边界外的白色层与深色层；`PrintWindow` 回退按其实际 `(0,0)` 输出原点采样，不通过降低阈值掩盖坐标错误。
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` 转换 warning）；`InkeysHeadlessTests.exe --no-window` 与 `--message-box-visual-test .\TestResults\message-box-visual` 均通过。
 - 人工复核 `01-ok.png` 与 `02-yes-no-focus.png`：primary/secondary 焦点框颜色、粗细与外扩一致，未侵入填充区或造成相邻按钮重叠。完整套件仍仅失败于此前记录的两条 `Inkeys.Window` owner-tree Z 序断言，MessageBox 用例无新增失败，本次不扩大范围修改 Window Service。
+
+## 2026-09-02 Keyboard Interaction Follow-up
+
+- 实现前代码审计：`focusedButton` 在布局阶段即指向默认按钮，`DrawButton()` 无输入模态判断而在首帧直接画白框；`VK_RETURN` 固定提交 `request->defaultResult`，`VK_SPACE` 才提交 `focusedButton`；没有 `VK_LEFT/VK_RIGHT`；Esc、Alt+F4、SC_CLOSE、WM_CLOSE 和 glyph 当时集中到 `TryDismiss()`。
+- 最小实现边界仅涉及 `MessageBox.Window.cpp` 的会话/输入/绘制状态与 `InkeysHeadlessTests/message_box_tests.cpp` 的回归用例；公开 Request/Result ABI、布局尺寸、颜色 token、产品调用点、owner/topmost、首帧 reveal 和 GDI+ 生命周期不变。
+- 用户已完成 checklist 17 的明确批准：X 隐藏时 OK-only 返回 Ok、OK/Cancel 返回 Cancel、Yes/No 默认无操作/显式返回 Dismissed；X 可见时继续采用配置的 dismissResult。
+- `DialogSession` 已分离逻辑按钮、键盘焦点视觉和 HWND 实际 focus；pointer down 在 `SetFocus` 前切换输入模态，hover 不清除键盘模态，失焦隐藏但保留索引，DPI 重建保留有效逻辑焦点。
+- Tab/Shift+Tab 通过 enabled-button helper 循环，Left/Right 复用跳过禁用项规则并在边界停止；Enter/Space 均激活逻辑焦点。Esc、Alt+F4、SC_CLOSE、WM_CLOSE 与自绘 X 全部进入 `TryCloseCommand()` 和既有单次提交门。
+- 隐藏 HWND 回归覆盖默认 Enter、Tab/Shift+Tab、左右边界、Space、pointer 更新逻辑焦点，以及五类 close 入口和三种按钮路由；完整 `InkeysHeadlessTests.exe` 本轮通过，无此前记录的 Window Z 序基线失败。
+- ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` C4267 warning）；`InkeysHeadlessTests.exe --no-window` 与完整套件均通过。
+- `--message-box-visual-test .\TestResults\message-box-keyboard` 通过并生成 7 张限定窗口截图；新增像素断言确认初始/纯 pointer 状态无白框、键盘态存在外置双层框、pointer down 清除既有键盘框、primary hover 不清除 secondary 键盘框。人工复核 `01`、`02`、`05`、`07` 无重叠、位移或异常边框。
+- 公开 Request/Result、布局/颜色 token、owner/topmost、首帧 reveal、GDI+ 生命周期和产品调用点均未改变。完整 UI Automation provider 仍不属于 MVP；Windows 7/10 本轮未上机，仍仅记录静态兼容和构建覆盖。未提交 commit，等待用户人工验收。

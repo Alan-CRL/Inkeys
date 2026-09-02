@@ -231,3 +231,37 @@
 - `GdiplusShutdown` 的 Windows 7 字体缓存警告：<https://learn.microsoft.com/en-us/windows/win32/api/gdiplusinit/nf-gdiplusinit-gdiplusshutdown>
 - `MessageBoxW` owner、按钮与 modality 语义：<https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messageboxw>
 - Fluent 2 色彩与状态原则：<https://fluent2.microsoft.design/color>
+
+## 13. 2026-09-02 键盘操控跟进调查
+
+### 13.1 实现前代码证据
+
+- `MessageBox.Window.cpp` 的 `DialogSession::focusedButton` 在 `BuildLayout()` 中初始化为 `defaultResult` 对应索引；`DrawButton()` 只判断该索引是否相等，因此未发生任何键盘输入时就会绘制白色双层焦点框。
+- `WM_KEYDOWN` 当前只实现 Tab、Enter、Space、Escape：Tab/Shift+Tab 循环索引；Enter 固定提交 `request->defaultResult`；Space 提交 `focusedButton`；没有 Left/Right。
+- pointer down 会把 `focusedButton` 改为被按按钮，但当前没有 pointer/keyboard focus-state 区分，所以 pointer 操作也会产生白框。
+- Esc、自绘 X、Alt+F4、`SC_CLOSE` 与 `WM_CLOSE` 当时均进入 `TryDismiss()`，而 `showCloseButton=false` 只隐藏 glyph；只要 `dismissEnabled=true`，无 X 时仍返回 `dismissResult`。
+- factory/校验合同仍是 OK -> Ok、OK/Cancel -> Cancel、Yes/No 默认禁止 dismiss；Yes/No 显式 dismiss 只能返回独立 `Dismissed`，测试已禁止把它映射为 No。
+
+### 13.2 官方行为依据
+
+- Microsoft 的 WinUI 键盘指南规定：焦点视觉在元素通过键盘或手柄获得焦点时显示；Button 获得焦点后，Space 和 Enter 都用于调用命令。相同指南明确把 ContentDialog 按钮列为方向键导航组，并指出每个按钮仍是独立 Tab stop。
+- Microsoft WinUI 焦点设计说明区分 `FocusState::Pointer` 和 `FocusState::Keyboard`：pointer focus 不画 focus rectangle，keyboard focus 才画。这支持把逻辑焦点与焦点框可见性分离，而不是清空默认按钮。
+- ContentDialog 官方指南把 CloseButton 定义为安全、非破坏性退出，并把 Esc 绑定到该动作；DefaultButton 负责在没有其他控件处理 Enter 时响应 Enter。当前自绘框仅有 command buttons 可聚焦，因此 Enter 应先服从实际逻辑焦点，初始索引自然提供 default fallback。
+- Microsoft 的 ContentDialog 集成测试表明水平方向导航到最左/最右按钮后继续同方向不会 wrap；Tab 顺序则应保持对话框内循环，避免焦点离开模态窗口。
+- Win32 文档确认 Alt+F4 和标题 Close 都会形成关闭请求/`WM_CLOSE`，Alt+Space 打开标准 Window menu；`WM_GETDLGCODE` 提供 `DLGC_WANTARROWS` 与 `DLGC_WANTTAB` 来声明自定义键盘处理。
+
+### 13.3 收敛结论与批准结果
+
+- 用户批准状态模型为：默认按钮始终拥有初始逻辑焦点，但首帧为 pointer/programmatic 模态且不画白框；Tab、Shift+Tab、Left、Right 首次导航后显示；pointer down 隐藏，单纯 hover 不隐藏，HWND 失焦时不画。
+- 用户批准 Tab/Shift+Tab 首尾循环，Left/Right 按 LTR 空间顺序到边界停止；Up/Down、Home/End、F6、Ctrl+W 和 access key 不纳入本轮。
+- 用户批准 Enter/Space 始终激活逻辑焦点索引；因此未导航时是 default，导航后是当前按钮，不需要维护第二套“是否选择过”结果状态。
+- 用户批准所有关闭入口进入一个 resolver：有 X -> dismissResult；无 X 的 OK/Cancel -> Cancel；无 X 的 OK-only -> Ok；Yes/No 默认 -> 无操作；Yes/No 显式 dismiss -> Dismissed；`dismissEnabled=false` 始终最高优先级并禁止关闭。
+
+新增官方依据：
+
+- WinUI keyboard interactions：<https://learn.microsoft.com/en-us/windows/apps/develop/input/keyboard-interactions>
+- WinUI dialog controls：<https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs>
+- WinUI focus design notes：<https://github.com/microsoft/microsoft-ui-xaml/blob/main/docs/design-notes/focus.md>
+- Win32 `WM_GETDLGCODE`：<https://learn.microsoft.com/en-us/windows/win32/dlgbox/wm-getdlgcode>
+- Win32 close sequence：<https://learn.microsoft.com/en-us/windows/win32/learnwin32/closing-the-window>
+- Win32 system accelerators：<https://learn.microsoft.com/en-us/windows/win32/menurc/about-keyboard-accelerators>
