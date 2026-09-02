@@ -170,3 +170,11 @@ rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
 - `InkeysHeadlessTests.exe` 连续 3 轮完整通过：隔离子进程实际注入 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED`，验证 cloak 内首帧完成、揭示矩形未最大化且无 pending paint；同时覆盖 owner 恢复的双向 sent-message 等待、ownerless 前台归还和后续 topmost owner-tree 回归。
 - `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过；默认 OK 与 close-hover 截图人工复核确认客户区完整、圆角/四边框/阴影正常，关闭 glyph 样式与位置未回退。Windows 7/10 仍仅为静态兼容覆盖，未实际上机。
 - 最终额外完整复核中，本任务的 STARTUPINFO 首帧、owner/ownerless、资源清理和残留 HWND 用例继续全部通过；完整套件后续两个既有隐藏 Window Z 序断言失败。临时隔离的 `WindowTests` 单独运行及 `MessageBoxTests -> WindowTests` 链式运行均通过，证明失败依赖完整套件中更早的其他模块状态，不是 MessageBox 状态泄漏；Trellis 历史也确认这两条断言在仅调整关闭字形且未修改 `Inkeys.Window` 时曾原样失败。临时入口已移除，不扩大本任务去修改 Window 服务。
+
+## 2026-09-02 Button Focus Visual Follow-up
+
+- 按 WinUI 高可见焦点规范，把 accent 与 neutral 按钮原先位于内部且按按钮类型分色的焦点框，统一改为完全位于按钮外侧的 `2 DIP` 白色外框与 `1 DIP`、`#B3000000` 深色内框；总外扩为 `3 DIP`，按钮布局、命中矩形、`4 DIP` 本体圆角和 `8 DIP` 间距不变。
+- `MessageBox.Window.cpp` 使用浮点 DPI 比例计算两层 GDI+ stroke，外边界半径随 `4 DIP` 按钮圆角扩展到 `7 DIP`；未修改 normal、hover、pressed、disabled、文字、owner、topmost 或窗口生命周期路径。
+- 可见测试为 secondary focus 增加定向像素断言，分别检查按钮边界外的白色层与深色层；`PrintWindow` 回退按其实际 `(0,0)` 输出原点采样，不通过降低阈值掩盖坐标错误。
+- ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` 转换 warning）；`InkeysHeadlessTests.exe --no-window` 与 `--message-box-visual-test .\TestResults\message-box-visual` 均通过。
+- 人工复核 `01-ok.png` 与 `02-yes-no-focus.png`：primary/secondary 焦点框颜色、粗细与外扩一致，未侵入填充区或造成相邻按钮重叠。完整套件仍仅失败于此前记录的两条 `Inkeys.Window` owner-tree Z 序断言，MessageBox 用例无新增失败，本次不扩大范围修改 Window Service。

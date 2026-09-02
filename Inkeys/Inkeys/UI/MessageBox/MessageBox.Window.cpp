@@ -828,26 +828,25 @@ namespace Inkeys::UI::MessageBox::Detail
 
 				if (button.enabled && focusedButton == index)
 				{
-					const REAL oneDip = static_cast<REAL>(
-						std::max(1, ScaleDipValue(1, layout.dpi)));
-					const REAL twoDip = static_cast<REAL>(
-						std::max(2, ScaleDipValue(2, layout.dpi)));
+					const REAL oneDip = static_cast<REAL>(layout.dpi) / 96.0f;
+					const REAL twoDip = oneDip * 2.0f;
+					const REAL buttonRadius = oneDip * 4.0f;
+
+					// WinUI 高可见焦点视觉完全位于按钮外侧：2 DIP 白色外框 + 1 DIP 深色内框。
 					RectF outerFocus = bounds;
-					outerFocus.Inflate(-twoDip, -twoDip);
+					outerFocus.Inflate(twoDip, twoDip);
 					GraphicsPath outerFocusPath;
 					AddRoundedRectangle(outerFocusPath, outerFocus,
-						static_cast<REAL>(ScaleDipValue(3, layout.dpi)));
-					Pen outerFocusPen(primary ? Color(255, 0, 29, 38)
-						: Color(255, 96, 205, 255), twoDip);
+						buttonRadius + twoDip);
+					Pen outerFocusPen(Color(255, 255, 255, 255), twoDip);
 					graphics.DrawPath(&outerFocusPen, &outerFocusPath);
 
-					RectF innerFocus = outerFocus;
-					innerFocus.Inflate(-twoDip, -twoDip);
+					RectF innerFocus = bounds;
+					innerFocus.Inflate(oneDip / 2.0f, oneDip / 2.0f);
 					GraphicsPath innerFocusPath;
 					AddRoundedRectangle(innerFocusPath, innerFocus,
-						static_cast<REAL>(ScaleDipValue(2, layout.dpi)));
-					Pen innerFocusPen(primary ? Color(255, 255, 255, 255)
-						: Color(255, 0, 0, 0), oneDip);
+						buttonRadius + oneDip / 2.0f);
+					Pen innerFocusPen(Color(179, 0, 0, 0), oneDip);
 					graphics.DrawPath(&innerFocusPen, &innerFocusPath);
 				}
 

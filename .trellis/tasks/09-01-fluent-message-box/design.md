@@ -231,7 +231,7 @@ monitor 选择：
 
 Accent hover/pressed 使用同一青色的 Fluent secondary/tertiary alpha 层级，不引入第二套主题色。Accent 文字为黑色，neutral 文字为白色。禁用、hover、pressed、focused 状态由单一按钮状态机决定，不通过重叠绘图对象累积颜色。
 
-文字使用 opaque surface 上的 ClearType/GridFit；边框和分隔线先做 DIP 到像素的确定性对齐。焦点框使用在 accent 与 neutral 表面都可见的双层闭合 stroke，并保持在按钮内部，不改变按钮外接尺寸。
+文字使用 opaque surface 上的 ClearType/GridFit；边框和分隔线先做 DIP 到像素的确定性对齐。键盘焦点视觉在 accent 与 neutral 按钮上统一使用 WinUI 高可见双层闭合 stroke：`2 DIP` 白色外框与 `1 DIP` 的 `#B3000000` 深色内框，整体完全位于按钮边界外并外扩 `3 DIP`；焦点视觉不改变按钮布局、命中矩形或相邻 `8 DIP` 间距。
 
 MVP 不运行动画 timer；hover/pressed/focus 状态在事件后即时重绘，关闭时立即隐藏，以减少崩溃提示路径的状态和线程依赖。
 

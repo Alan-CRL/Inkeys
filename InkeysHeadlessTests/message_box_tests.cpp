@@ -985,6 +985,8 @@ namespace
 		PressSecondary,
 	};
 	constexpr std::size_t MinimumCloseHoverPixels = 300;
+	constexpr std::size_t MinimumFocusOuterPixels = 180;
+	constexpr std::size_t MinimumFocusInnerPixels = 80;
 
 	struct VisualCaptureContext
 	{
@@ -1003,6 +1005,8 @@ namespace
 		std::size_t hoverAccentPixels = 0;
 		std::size_t closeHoverPixels = 0;
 		std::size_t pressedNeutralPixels = 0;
+		std::size_t focusOuterPixels = 0;
+		std::size_t focusInnerPixels = 0;
 		bool usedPrintWindow = false;
 	};
 
@@ -1082,6 +1086,31 @@ namespace
 
 		if (copied)
 		{
+			RECT client{};
+			RECT focusedButton{};
+			int focusOuterExtent = 0;
+			int focusInnerExtent = 0;
+			const int dialogOffsetX = context.usedPrintWindow
+				? 0 : dialogBounds.left - bounds.left;
+			const int dialogOffsetY = context.usedPrintWindow
+				? 0 : dialogBounds.top - bounds.top;
+			if (context.interaction == VisualInteraction::FocusSecondary
+				&& GetClientRect(hwnd, &client))
+			{
+				const UINT dpi = ResolveTestDpi(hwnd);
+				const int padding = MessageBoxTest::ScaleDip(24, dpi);
+				const int gap = MessageBoxTest::ScaleDip(8, dpi);
+				const int buttonHeight = MessageBoxTest::ScaleDip(32, dpi);
+				const int slotWidth = (client.right - padding * 2 - gap) / 2;
+				focusedButton = {
+					padding + slotWidth + gap,
+					client.bottom - padding - buttonHeight,
+					client.right - padding,
+					client.bottom - padding };
+				focusOuterExtent = std::max(1, MessageBoxTest::ScaleDip(3, dpi));
+				focusInnerExtent = std::max(1, MessageBoxTest::ScaleDip(1, dpi));
+			}
+
 			const auto pixels = static_cast<const std::uint8_t*>(bits);
 			for (std::size_t index = 0;
 				index < static_cast<std::size_t>(width) * height; ++index)
@@ -1103,6 +1132,28 @@ namespace
 				context.pressedNeutralPixels += red >= 35 && red <= 41
 					&& green >= 35 && green <= 41
 					&& blue >= 35 && blue <= 41;
+
+				if (focusOuterExtent > 0)
+				{
+					const int x = static_cast<int>(index % width) - dialogOffsetX;
+					const int y = static_cast<int>(index / width) - dialogOffsetY;
+					const auto insideInflated = [&](int extent)
+						{
+							return x >= focusedButton.left - extent
+								&& x < focusedButton.right + extent
+								&& y >= focusedButton.top - extent
+								&& y < focusedButton.bottom + extent;
+						};
+					const bool outsideButton = !insideInflated(0);
+					const bool inOuterBand = insideInflated(focusOuterExtent)
+						&& !insideInflated(focusInnerExtent);
+					const bool inInnerBand = insideInflated(focusInnerExtent)
+						&& outsideButton;
+					context.focusOuterPixels += inOuterBand
+						&& red >= 245 && green >= 245 && blue >= 245;
+					context.focusInnerPixels += inInnerBand
+						&& red <= 16 && green <= 16 && blue <= 16;
+				}
 			}
 			context.pixelsValid = context.accentPixels > 150
 				&& context.darkPixels > 5000
@@ -1112,7 +1163,10 @@ namespace
 				&& (context.interaction != VisualInteraction::HoverClose
 					|| context.closeHoverPixels > MinimumCloseHoverPixels)
 				&& (context.interaction != VisualInteraction::PressSecondary
-					|| context.pressedNeutralPixels > 500);
+					|| context.pressedNeutralPixels > 500)
+				&& (context.interaction != VisualInteraction::FocusSecondary
+					|| context.focusOuterPixels > MinimumFocusOuterPixels
+					&& context.focusInnerPixels > MinimumFocusInnerPixels);
 
 			Gdiplus::GdiplusStartupInput startupInput;
 			ULONG_PTR token = 0;
@@ -1151,6 +1205,8 @@ namespace
 			<< " hoverAccent=" << context.hoverAccentPixels
 			<< " closeHover=" << context.closeHoverPixels
 			<< " pressedNeutral=" << context.pressedNeutralPixels
+			<< " focusOuter=" << context.focusOuterPixels
+			<< " focusInner=" << context.focusInnerPixels
 			<< " source=" << (context.usedPrintWindow ? "PrintWindow" : "screen")
 			<< " path=" << context.path.string() << '\n';
 	}
@@ -1279,6 +1335,9 @@ int RunMessageBoxVisualTests(const char* outputDirectory)
 	PrintCaptureFailure("Yes/No", noCapture);
 	Check(noCapture.saved, "visual Yes/No screenshot saved");
 	Check(noCapture.pixelsValid, "visual Yes/No pixels validated");
+	Check(noCapture.focusOuterPixels > MinimumFocusOuterPixels
+		&& noCapture.focusInnerPixels > MinimumFocusInnerPixels,
+		"visual focus uses the external neutral double stroke");
 
 	VisualCaptureContext errorCapture{ output / "03-error-icon.png", backdrop.Get() };
 	errorCapture.requireErrorColor = true;
