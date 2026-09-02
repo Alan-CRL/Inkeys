@@ -132,6 +132,8 @@ export namespace Inkeys::UI::MessageBox::Test
 		UINT delayMilliseconds = 160;
 		SystemFallbackCallback systemFallbackCallback = nullptr;
 		void* fallbackContext = nullptr;
+		VisibleCallback firstFrameReadyCallback = nullptr;
+		void* firstFrameReadyContext = nullptr;
 	};
 
 	struct ButtonResults

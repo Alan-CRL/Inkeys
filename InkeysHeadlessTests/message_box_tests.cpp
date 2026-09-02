@@ -415,6 +415,89 @@ namespace
 		return found;
 	}
 
+	struct FirstFrameContext
+	{
+		bool preparedBeforeReveal = false;
+		bool preparedPaintCompleted = false;
+		bool fixedReveal = false;
+		bool visiblePaintCompleted = false;
+	};
+
+	void InspectPreparedFirstFrame(HWND hwnd, void* opaque) noexcept
+	{
+		auto& context = *static_cast<FirstFrameContext*>(opaque);
+		RECT client{};
+		DWORD cloakState = 0;
+		const bool userHidden = !IsWindowVisible(hwnd)
+			|| (SUCCEEDED(DwmGetWindowAttribute(hwnd, 14,
+				&cloakState, sizeof(cloakState))) && (cloakState & 1) != 0);
+		context.preparedBeforeReveal = userHidden
+			&& !IsZoomed(hwnd) && GetClientRect(hwnd, &client)
+			&& client.right > 0 && client.bottom > 0;
+		context.preparedPaintCompleted =
+			GetUpdateRect(hwnd, nullptr, FALSE) == FALSE;
+	}
+
+	void InspectFirstReveal(HWND hwnd, void* opaque) noexcept
+	{
+		auto& context = *static_cast<FirstFrameContext*>(opaque);
+		RECT bounds{};
+		RECT client{};
+		WINDOWPLACEMENT placement{ sizeof(placement) };
+		const UINT dpi = ResolveTestDpi(hwnd);
+		const bool hasGeometry = GetWindowRect(hwnd, &bounds)
+			&& GetClientRect(hwnd, &client) && GetWindowPlacement(hwnd, &placement);
+		const int width = bounds.right - bounds.left;
+		const int height = bounds.bottom - bounds.top;
+		context.fixedReveal = hasGeometry && IsWindowVisible(hwnd)
+			&& !IsZoomed(hwnd) && !IsIconic(hwnd)
+			&& placement.showCmd != SW_SHOWMAXIMIZED
+			&& width == client.right && height == client.bottom
+			&& width >= MessageBoxTest::ScaleDip(320, dpi)
+			&& width <= MessageBoxTest::ScaleDip(548, dpi)
+			&& height >= MessageBoxTest::ScaleDip(184, dpi)
+			&& height <= MessageBoxTest::ScaleDip(756, dpi);
+		context.visiblePaintCompleted = GetUpdateRect(hwnd, nullptr, FALSE) == FALSE;
+		PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0);
+	}
+
+	void TestStartupShowStateCannotMaximizeDialog()
+	{
+		std::vector<wchar_t> executable(32768);
+		const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
+			static_cast<DWORD>(executable.size()));
+		Check(length > 0 && length < executable.size(),
+			"first-frame child executable path resolved");
+		if (length == 0 || length >= executable.size()) return;
+
+		std::wstring commandLine = L"\"" + std::wstring(executable.data(), length)
+			+ L"\" --message-box-first-frame-child";
+		STARTUPINFOW startup{};
+		startup.cb = sizeof(startup);
+		startup.dwFlags = STARTF_USESHOWWINDOW;
+		startup.wShowWindow = SW_SHOWMAXIMIZED;
+		PROCESS_INFORMATION process{};
+		const bool created = CreateProcessW(nullptr, commandLine.data(), nullptr,
+			nullptr, FALSE, 0, nullptr, nullptr, &startup, &process) != FALSE;
+		Check(created, "first-frame child process created");
+		if (!created) return;
+
+		const DWORD wait = WaitForSingleObject(process.hProcess, 15000);
+		if (wait != WAIT_OBJECT_0)
+		{
+			// 测试子进程只能拥有本用例的 HWND，超时后立即收口避免残留窗口。
+			(void)TerminateProcess(process.hProcess, 2);
+			(void)WaitForSingleObject(process.hProcess, 5000);
+		}
+		DWORD exitCode = STILL_ACTIVE;
+		(void)GetExitCodeProcess(process.hProcess, &exitCode);
+		CloseHandle(process.hThread);
+		CloseHandle(process.hProcess);
+		Check(wait == WAIT_OBJECT_0, "first-frame child process completed");
+		Check(wait == WAIT_OBJECT_0 && exitCode == 0,
+			"STARTUPINFO maximize state cannot affect MessageBox reveal");
+	}
+
 	struct HiddenWindowContext
 	{
 		HWND owner = nullptr;
@@ -717,6 +800,7 @@ namespace
 			{ InspectAndClose, &errorIconContext, 40 }) == Result::Ok,
 			"decoded PNG is destroyed before the private GDI+ token");
 
+		const HWND foregroundBeforeOwnerless = GetForegroundWindow();
 		auto ownerless = MakeOkRequest(L"Startup warning", L"Ownerless fixed-topmost dialog.");
 		ownerless.ownerlessTopmostAtCreation = true;
 		ownerless.fallback.modality = SystemModality::System;
@@ -726,6 +810,9 @@ namespace
 			{ InspectAndClose, &ownerlessContext, 40 }) == Result::Ok,
 			"ownerless topmost dialog returns OK");
 		Check(ownerlessContext.styleValid, "ownerless topmost applied at creation");
+		Check(!foregroundBeforeOwnerless
+			|| GetForegroundWindow() == foregroundBeforeOwnerless,
+			"ownerless topmost restores the foreground it acquired");
 
 		std::wstring overflowBody;
 		for (int index = 0; index < 500; ++index)
@@ -1125,12 +1212,33 @@ int RunMessageBoxTests(bool runWindowTests)
 	TestPreflightWithoutWindow();
 	if (runWindowTests)
 	{
+		TestStartupShowStateCannotMaximizeDialog();
 		TestHiddenWindowIntegration();
 		TestAdmissionAndCriticalFallback();
 		Check(!HasLiveMessageBoxWindow(),
 			"all MessageBox HWND instances are destroyed after use");
 	}
 	return failures - before;
+}
+
+int RunMessageBoxFirstFrameChildTest()
+{
+	FirstFrameContext context;
+	FallbackCapture fallback;
+	MessageBoxTest::Automation automation;
+	automation.visibleCallback = InspectFirstReveal;
+	automation.context = &context;
+	automation.delayMilliseconds = 1;
+	automation.systemFallbackCallback = CaptureSystemFallback;
+	automation.fallbackContext = &fallback;
+	automation.firstFrameReadyCallback = InspectPreparedFirstFrame;
+	automation.firstFrameReadyContext = &context;
+	auto request = MakeOkRequest(L"First frame",
+		L"The prepared Fluent surface must be the first visible frame.");
+	const Result result = MessageBoxTest::ShowAutomated(request, automation);
+	return result == Result::Ok && fallback.calls == 0
+		&& context.preparedBeforeReveal && context.preparedPaintCompleted
+		&& context.fixedReveal && context.visiblePaintCompleted ? 0 : 1;
 }
 
 int RunMessageBoxVisualTests(const char* outputDirectory)

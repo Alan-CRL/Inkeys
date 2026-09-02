@@ -44,6 +44,7 @@ namespace Inkeys::UI::MessageBox::Detail
 		constexpr UINT TestAutomationTimerId = 0x494B4D42;
 		constexpr UINT AbortDialogMessage = WM_APP + 0x4D;
 		constexpr DWORD OwnerHealthTimeoutMilliseconds = 250;
+		constexpr DWORD DwmWindowAttributeCloak = 13;
 
 		INIT_ONCE legacyGdiplusOnce = INIT_ONCE_STATIC_INIT;
 		ULONG_PTR legacyGdiplusToken = 0;
@@ -456,6 +457,34 @@ namespace Inkeys::UI::MessageBox::Detail
 			return false;
 		}
 
+		[[nodiscard]] bool HideDialogWindow(HWND hwnd) noexcept
+		{
+			if (!hwnd) return false;
+			const bool topmost = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+				& WS_EX_TOPMOST) != 0;
+			// ownerless 故障框先独立退出 topmost band，再隐藏并销毁。
+			if (topmost)
+				(void)SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			return SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+				SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
+				| SWP_NOACTIVATE | SWP_HIDEWINDOW) != FALSE;
+		}
+
+		[[nodiscard]] bool WaitForOwnerRestored(HANDLE restoredEvent) noexcept
+		{
+			for (;;)
+			{
+				const DWORD wait = MsgWaitForMultipleObjectsEx(1, &restoredEvent,
+					INFINITE, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
+				if (wait == WAIT_OBJECT_0) return true;
+				if (wait != WAIT_OBJECT_0 + 1) return false;
+				// owner 激活恢复可能同步回调本线程；只服务 sent message，避免互等。
+				MSG pending{};
+				(void)PeekMessageW(&pending, nullptr, 0, 0, PM_NOREMOVE);
+			}
+		}
+
 		struct DialogSession
 		{
 			OwnedRequest* request = nullptr;
@@ -487,6 +516,24 @@ namespace Inkeys::UI::MessageBox::Detail
 			bool closeHovered = false;
 			bool closePressed = false;
 			bool trackingMouse = false;
+			bool framePainted = false;
+			HWND previousForeground = nullptr;
+			bool ownerlessForegroundAcquired = false;
+
+			void HideWindow() noexcept
+			{
+				const bool restoreForeground = !request->owner
+					&& ownerlessForegroundAcquired
+					&& GetForegroundWindow() == hwnd;
+				if (!HideDialogWindow(hwnd)) return;
+				if (restoreForeground && previousForeground
+					&& previousForeground != hwnd && IsWindow(previousForeground))
+				{
+					// 仅归还本框实际取得的前台，不覆盖用户在显示期间的切换。
+					(void)SetForegroundWindow(previousForeground);
+				}
+				ownerlessForegroundAcquired = false;
+			}
 
 			[[nodiscard]] bool HasCloseButton() const noexcept
 			{
@@ -512,7 +559,7 @@ namespace Inkeys::UI::MessageBox::Detail
 				bool expected = false;
 				if (!committed.compare_exchange_strong(expected, true)) return;
 				result.store(next, std::memory_order_release);
-				if (hwnd) ShowWindow(hwnd, SW_HIDE);
+				HideWindow();
 				hiddenSignaled.store(true, std::memory_order_release);
 				SetEvent(hiddenEvent);
 				PostQuitMessage(0);
@@ -943,12 +990,59 @@ namespace Inkeys::UI::MessageBox::Detail
 			HDC target = BeginPaint(session.hwnd, &paint);
 			if (target && session.surface.Dc())
 			{
-				BitBlt(target, paint.rcPaint.left, paint.rcPaint.top,
+				session.framePainted = BitBlt(target,
+					paint.rcPaint.left, paint.rcPaint.top,
 					paint.rcPaint.right - paint.rcPaint.left,
 					paint.rcPaint.bottom - paint.rcPaint.top,
-					session.surface.Dc(), paint.rcPaint.left, paint.rcPaint.top, SRCCOPY);
+					session.surface.Dc(), paint.rcPaint.left,
+					paint.rcPaint.top, SRCCOPY) != FALSE;
 			}
 			EndPaint(session.hwnd, &paint);
+		}
+
+		[[nodiscard]] bool RevealPreparedWindow(DialogSession& session,
+			HWND hwnd, int x, int y) noexcept
+		{
+			BOOL cloakEnabled = TRUE;
+			const bool cloaked = SUCCEEDED(DwmSetWindowAttribute(hwnd,
+				DwmWindowAttributeCloak, &cloakEnabled, sizeof(cloakEnabled)));
+			auto removeCloak = [&]() noexcept
+				{
+					if (!cloaked) return true;
+					const BOOL cloakDisabled = FALSE;
+					return SUCCEEDED(DwmSetWindowAttribute(hwnd,
+						DwmWindowAttributeCloak, &cloakDisabled,
+						sizeof(cloakDisabled)));
+				};
+			// SetWindowPos 不消费 STARTUPINFO；支持 cloak 时窗口仍未对用户可见。
+			if (!SetWindowPos(hwnd, nullptr, x, y,
+				session.layout.width, session.layout.height,
+				SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW))
+			{
+				(void)removeCloak();
+				return false;
+			}
+			// 固定矩形生效后同步提交完整 DIB，再解除 cloak 揭示首帧。
+			session.framePainted = false;
+			if (!RedrawWindow(hwnd, nullptr, nullptr,
+				RDW_INVALIDATE | RDW_UPDATENOW | RDW_FRAME)
+				|| !session.framePainted)
+			{
+				session.HideWindow();
+				(void)removeCloak();
+				return false;
+			}
+#ifdef INKEYS_MESSAGE_BOX_TESTING
+			if (session.request->automation.firstFrameReadyCallback)
+				session.request->automation.firstFrameReadyCallback(hwnd,
+					session.request->automation.firstFrameReadyContext);
+#endif
+			if (!removeCloak())
+			{
+				session.HideWindow();
+				return false;
+			}
+			return true;
 		}
 
 		LRESULT CALLBACK DialogWindowProc(HWND hwnd, UINT message,
@@ -1010,7 +1104,7 @@ namespace Inkeys::UI::MessageBox::Detail
 				return 0;
 			case AbortDialogMessage:
 				session->abortRequested.store(true, std::memory_order_release);
-				ShowWindow(hwnd, SW_HIDE);
+				session->HideWindow();
 				session->hiddenSignaled.store(true, std::memory_order_release);
 				SetEvent(session->hiddenEvent);
 				PostQuitMessage(0);
@@ -1266,7 +1360,7 @@ namespace Inkeys::UI::MessageBox::Detail
 				{
 					SetEvent(session->hiddenEvent);
 					if (session->request->owner)
-						WaitForSingleObject(session->ownerRestoredEvent, INFINITE);
+						(void)WaitForOwnerRestored(session->ownerRestoredEvent);
 					return;
 				}
 
@@ -1288,7 +1382,7 @@ namespace Inkeys::UI::MessageBox::Detail
 				{
 					SetEvent(session->hiddenEvent);
 					if (session->request->owner)
-						WaitForSingleObject(session->ownerRestoredEvent, INFINITE);
+						(void)WaitForOwnerRestored(session->ownerRestoredEvent);
 					UnregisterClassW(session->className.c_str(), session->instance);
 					return;
 				}
@@ -1300,10 +1394,29 @@ namespace Inkeys::UI::MessageBox::Detail
 					if (menu) EnableMenuItem(menu, SC_CLOSE,
 						MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
 				}
-				ShowWindow(hwnd, SW_SHOWNORMAL);
-				UpdateWindow(hwnd);
+				if (!RevealPreparedWindow(*session, hwnd, x, y))
+				{
+					if (IsWindowVisible(hwnd)) session->HideWindow();
+					if (!session->hiddenSignaled.exchange(true))
+						SetEvent(session->hiddenEvent);
+					if (session->request->owner)
+						(void)WaitForOwnerRestored(session->ownerRestoredEvent);
+					session->icon.reset();
+					session->titleFontFamily.reset();
+					session->bodyFontFamily.reset();
+					session->surface.Reset();
+					DestroyWindow(hwnd);
+					session->hwnd = nullptr;
+					UnregisterClassW(session->className.c_str(), session->instance);
+					classRegistered = false;
+					return;
+				}
+				if (!session->request->owner)
+					session->previousForeground = GetForegroundWindow();
 				SetForegroundWindow(hwnd);
 				SetFocus(hwnd);
+				if (!session->request->owner)
+					session->ownerlessForegroundAcquired = GetForegroundWindow() == hwnd;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 				if (session->request->automation.visibleCallback)
 					SetTimer(hwnd, TestAutomationTimerId,
@@ -1319,10 +1432,10 @@ namespace Inkeys::UI::MessageBox::Detail
 					DispatchMessageW(&message);
 				}
 
-				if (IsWindow(hwnd) && IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_HIDE);
+				if (IsWindow(hwnd) && IsWindowVisible(hwnd)) session->HideWindow();
 				if (!session->hiddenSignaled.exchange(true)) SetEvent(session->hiddenEvent);
 				if (session->request->owner)
-					WaitForSingleObject(session->ownerRestoredEvent, INFINITE);
+					(void)WaitForOwnerRestored(session->ownerRestoredEvent);
 				session->icon.reset();
 				session->titleFontFamily.reset();
 				session->bodyFontFamily.reset();
@@ -1336,11 +1449,12 @@ namespace Inkeys::UI::MessageBox::Detail
 			{
 				if (!session->preflightSucceeded.load(std::memory_order_acquire))
 					SetEvent(session->preflightEvent);
-				if (session->hwnd && IsWindow(session->hwnd)) ShowWindow(session->hwnd, SW_HIDE);
+				if (session->hwnd && IsWindow(session->hwnd))
+					session->HideWindow();
 				if (!session->hiddenSignaled.exchange(true)) SetEvent(session->hiddenEvent);
 				if (session->request->owner
 					&& session->createAllowed.load(std::memory_order_acquire))
-					WaitForSingleObject(session->ownerRestoredEvent, INFINITE);
+					(void)WaitForOwnerRestored(session->ownerRestoredEvent);
 				session->icon.reset();
 				session->titleFontFamily.reset();
 				session->bodyFontFamily.reset();

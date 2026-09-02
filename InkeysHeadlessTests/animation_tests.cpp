@@ -29,6 +29,7 @@ int RunMessageTests();
 int RunWindowTests();
 int RunMessageBoxTests(bool runWindowTests);
 int RunMessageBoxVisualTests(const char* outputDirectory);
+int RunMessageBoxFirstFrameChildTest();
 int RunDirtyRegionTests();
 int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
@@ -1415,16 +1416,20 @@ int main(int argc, char** argv)
 {
 	bool benchmark = false;
 	bool runWindowTests = true;
+	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
+		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
 		runWindowTests &= argument != "--no-window";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
 	}
+	if (messageBoxFirstFrameChild)
+		return RunMessageBoxFirstFrameChildTest();
 	if (messageBoxVisualOutput)
 		return RunMessageBoxVisualTests(messageBoxVisualOutput);
 

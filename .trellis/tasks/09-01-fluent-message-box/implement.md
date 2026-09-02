@@ -17,6 +17,7 @@
 - [x] 13. 检查所有修改文件的原编码/CRLF、资源脚本与项目文件配对、module import 顺序和 Windows 7 可用 API 的动态解析；运行 `git diff --check`、完整 ARM64 solution 构建及无窗口/隐藏窗口测试。
 - [x] 14. 运行已授权的专用可见测试入口，自动生成限定窗口区域截图、关闭全部测试 HWND，并核对 Windows 11 ARM64 的圆角、DWM 阴影、四边边框、文本布局、图标、焦点和按钮状态；全程不使用 Computer Use。
 - [x] 15. 汇总实际验证结果和限制：明确 UI Automation provider 未实现，Windows 7/10 若未上机则仅为静态兼容覆盖；不提交 commit，等待用户验收。
+- [x] 16. 修复首次可见时序：移除组件内全部 `ShowWindow`，在 DWM/window 状态完成后用固定矩形 `SetWindowPos(SWP_SHOWWINDOW)` 建立 surface，再同步提交首帧；现代 DWM 使用 cloak 覆盖该间隔，旧系统保留无 cloak 退化。增加以 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED` 启动隔离测试进程的回归用例。
 
 ## Implementation Details By Step
 
@@ -47,7 +48,8 @@
 - fallback 前先恢复 owner 并释放全部自绘窗口/线程状态；已取得 admission gate 的外层协调器保持持有直到 `MessageBoxW` 返回，以维持普通调用串行。`FallbackToSystem()` 自身不得再次取锁，busy/reentry 旁路则在无锁状态直接调用。
 - 临时 UI 线程先完成 GDI+/PNG/字体/布局 preflight 并报告结果，调用线程仅在 `PreflightReady` 后禁用 owner；不得为了测量文本在调用线程创建 GDI+ 对象。
 - owner 恢复使用 scope guard，覆盖 UI thread 创建失败、HWND 创建失败、用户选择、`WM_CLOSE`、异常和测试强制退出；结果提交后的清理失败不得覆盖结果或再弹 fallback。
-- UI 线程确定结果后只 signal “hidden”，必须等调用线程 signal “owner restored” 才销毁；owner thread 同步调用时使用只服务 sent-message 的受限等待，不分派普通 posted/input 队列。协调器另设超时/线程退出兜底，测试 harness 也有自动关闭 watchdog，避免失败时留下可见窗口。
+- UI 线程确定结果后只 signal “hidden”，必须等调用线程 signal “owner restored” 才销毁；调用线程与 UI 线程两侧的等待都只服务 sent-message，不分派普通 posted/input 队列，避免 owner 激活恢复形成反向互锁。协调器另设超时/线程退出兜底，测试 harness 也有自动关闭 watchdog，避免失败时留下可见窗口。
+- ownerless 窗口不进入 owner 握手；若它确实取得并一直持有前台，隐藏成功后 best effort 归还显示前记录的有效前台 HWND。create-time topmost 在隐藏前先独立降为 `HWND_NOTOPMOST`，再以不改变 Z 序的调用隐藏，避免污染后续统一 topmost 管理。
 - `CriticalNoWait` 不等待 admission gate 或 owner 线程，不执行跨线程 modal disable；CrashHandler 仍可能因进程破坏直接退化为系统框，此限制写入验收。
 
 ### E. Call-site Migration
@@ -157,4 +159,14 @@ rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
 - `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过并生成 6 张限定窗口截图：OK、Yes/No focus、透明错误图标、primary hover、secondary pressed、close hover；像素断言和人工检查均通过。close hover 截图确认 `32 DIP` 命中区顶部/右侧外间距一致，`10 DIP` glyph 在命中区内居中并与标题首行中心对齐。
 - Windows 11 ARM64 上运行时读取到 DWM dark/corner 属性；标准 frame、闭合内边框和圆角结构通过。受测试桌面限制，screen-DC 不包含测试窗口，截图入口回退到 `PrintWindow`，因此外部 DWM shadow 由标准 frame/DWM 属性验证，不宣称有逐像素阴影截图证据。
 - 未实现完整 UI Automation provider；Windows 7/10 未上机，只完成动态 API、无 layered/region/helper-shadow 路径和 GDI+ 生命周期的静态兼容覆盖。
-- 基础实现已于 `da9b888e` 提交；本轮关闭字形样式调整尚未提交。
+- 基础实现已于 `da9b888e` 提交；关闭字形样式调整已于 `7c8e1dfd` 提交。
+
+## 2026-09-02 First-frame Follow-up
+
+- 根因：`ShowWindow(hwnd, SW_SHOWNORMAL)` 可能是进程第一次 `ShowWindow`；启动器提供 `STARTUPINFO.wShowWindow` 时参数会被忽略，固定尺寸 MessageBox 可被瞬时最大化。预渲染 DIB 仍只有对话框尺寸，放大后的首次客户区无法被完整覆盖，表现为原始窗体闪现或整屏异常底色。
+- 生产修复边界仅为 `MessageBox.Window.cpp` 的 reveal/hide 顺序；公开 Request/Result API、产品调用点、Fluent token、owner/topmost 与 fallback 合同不变。
+- 定向回归在独立测试子进程中把启动 show state 设为 `SW_SHOWMAXIMIZED`，并验证首帧在用户不可见的 cloak 状态完成、可见窗口保持预检尺寸且没有 pending paint；测试子进程自行提交结果并退出。
+- ARM64-host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` 转换 warning）；`InkeysHeadlessTests.exe --no-window` 通过。
+- `InkeysHeadlessTests.exe` 连续 3 轮完整通过：隔离子进程实际注入 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED`，验证 cloak 内首帧完成、揭示矩形未最大化且无 pending paint；同时覆盖 owner 恢复的双向 sent-message 等待、ownerless 前台归还和后续 topmost owner-tree 回归。
+- `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过；默认 OK 与 close-hover 截图人工复核确认客户区完整、圆角/四边框/阴影正常，关闭 glyph 样式与位置未回退。Windows 7/10 仍仅为静态兼容覆盖，未实际上机。
+- 最终额外完整复核中，本任务的 STARTUPINFO 首帧、owner/ownerless、资源清理和残留 HWND 用例继续全部通过；完整套件后续两个既有隐藏 Window Z 序断言失败。临时隔离的 `WindowTests` 单独运行及 `MessageBoxTests -> WindowTests` 链式运行均通过，证明失败依赖完整套件中更早的其他模块状态，不是 MessageBox 状态泄漏；Trellis 历史也确认这两条断言在仅调整关闭字形且未修改 `Inkeys.Window` 时曾原样失败。临时入口已移除，不扩大本任务去修改 Window 服务。

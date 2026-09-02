@@ -129,13 +129,13 @@ struct Request {
 2. owner 与调用线程不同时，先用短时有界 `SendMessageTimeoutW(WM_NULL, SMTO_ABORTIFHUNG | SMTO_BLOCK)` 健康探测。超时则不跨线程禁用 owner，通知 UI 线程取消并在其退出后 fallback。
 3. 在公开调用线程禁用 owner；owner 本来已禁用时不负责重新启用。成功后发出 `OwnerPrepared`，UI 线程才创建 owned 顶层窗口。
 4. UI 线程创建窗口并运行消息循环；调用线程等待“窗口已隐藏/结果已确定”事件。若调用线程正是 owner thread，不使用裸 `WaitForSingleObject`，而以 `MsgWaitForMultipleObjectsEx(..., QS_SENDMESSAGE, ...)` 配合 `PeekMessage(PM_NOREMOVE)` 只服务跨线程 sent-message，避免激活/owner 通知互锁；不得取出和分派普通 posted/input 命令。
-5. 用户完成操作后，UI 线程写入结果并 `ShowWindow(SW_HIDE)`，随后发出隐藏事件，等待 owner 恢复确认。
-6. 调用线程按记录恢复 owner enabled 状态并发出确认；UI 线程 best effort 恢复 foreground/focus，然后销毁 HWND 和图形资源。
+5. 用户完成操作后，UI 线程写入结果并以 `SetWindowPos(..., SWP_HIDEWINDOW)` 隐藏；create-time topmost 的 ownerless 窗口先用独立 `HWND_NOTOPMOST` 调用退出 topmost band。随后发出隐藏事件，等待 owner 恢复确认。
+6. 调用线程按记录恢复 owner enabled/foreground/focus 状态并发出确认；UI 线程等待该确认时也只服务 `QS_SENDMESSAGE`，避免调用线程的激活恢复同步回调 UI 线程而形成反向互锁，然后销毁 HWND 和图形资源。
 7. UI 线程退出，调用线程 join 后返回结果。
 
 此双阶段握手和 sent-message-aware wait 共同避免 Bar 的 HWND 所在线程阻塞在同步 `Show()` 时，由对话框线程的激活/owner 通知或同步 `EnableWindow` 形成反向死锁；受限等待不构成完整嵌套消息泵。Setting business worker 属于跨线程 owner 场景，健康探测与所有退出分支的恢复守卫必须同时存在。
 
-ownerless 路径不执行禁用/恢复。崩溃路径一律使用 ownerless + `CriticalNoWait`，不探测或等待可能已失效的 UI 线程。
+ownerless 路径不执行 owner 禁用、健康探测或恢复握手。它在揭示前记录原前台 HWND；仅当本框确实取得前台、提交时仍是前台且原 HWND 仍有效时，隐藏成功后 best effort 归还前台，用户已切换到其他窗口时不得抢回。崩溃路径一律使用 ownerless + `CriticalNoWait`，不探测或等待可能已失效的 UI 线程。
 
 线程创建、窗口创建或结果提交前的消息循环异常：若 HWND 已出现，先隐藏并 best effort 清理；若 owner 已禁用，先恢复；随后进入 fallback。若用户结果已经原子提交，后续隐藏/清理错误只能记录并返回该首个结果，不得再弹系统框或覆盖选择。公开边界捕获 C++ 异常并返回/回退，但不宣称可从堆破坏、栈破坏、loader lock 或任意访问冲突中恢复。
 
@@ -174,6 +174,19 @@ GDI+ 生命周期完全属于 MessageBox 模块：
 - 所有模式使用 `WS_EX_TOOLWINDOW`，不创建任务栏入口，也不使用 `WS_EX_NOACTIVATE`。
 - owned 模式不设置 `WS_EX_TOPMOST`，依赖 owner 根的统一 topmost band。
 - 指定 ownerless 故障模式仅在 `CreateWindowExW` 时附加 `WS_EX_TOPMOST`，后续不启动定时刷新或调用产品 TopWindow。
+
+### 首帧可见时序
+
+`CreateWindowExW` 后的 HWND 必须继续保持隐藏，直到 DWM 属性、system menu、最终窗口矩形和首帧 DIB 都准备完成。不能使用 `ShowWindow(hwnd, SW_SHOWNORMAL)` 揭示窗口：当它是进程首次 `ShowWindow` 时，Windows 允许启动器通过 `STARTUPINFO.wShowWindow` 覆盖该参数，可能把固定尺寸对话框瞬时最大化，而 DIB 仍只有预检尺寸，未覆盖客户区会暴露原始 frame 或异常底色。
+
+揭示顺序固定为：
+
+1. 应用 dark mode、圆角、DWM frame 与 Close system-menu 状态；支持 `DWMWA_CLOAK` 时先 cloak，旧系统不支持时静默退化。
+2. 使用带最终 `x/y/width/height` 的 `SetWindowPos(..., SWP_SHOWWINDOW)` 建立固定可见矩形，绕过首次 `ShowWindow` 的 `STARTUPINFO` 语义；支持 cloak 时该 HWND 虽有 `WS_VISIBLE`，DWM 仍不向用户显示。
+3. 使用 `RedrawWindow(..., RDW_INVALIDATE | RDW_UPDATENOW | RDW_FRAME)` 同步触发首次 `WM_PAINT`，且只有完整 DIB `BitBlt` 成功后才能继续；现代 DWM 路径随后解除 cloak，旧系统无 cloak 时在同一调用栈内立即完成绘制。
+4. 任一步失败时保持或立即恢复隐藏，完成 owner 恢复、HWND/绘图资源清理后进入既有非递归系统 fallback。所有关闭路径同样使用 `SetWindowPos(..., SWP_HIDEWINDOW)`，避免首次 `ShowWindow(SW_HIDE)` 再次消费启动状态；ownerless topmost 在隐藏前先用独立 `HWND_NOTOPMOST` 调用退出 topmost band。
+
+该时序只使用标准 HWND、DWM 与 GDI backing surface；不引入 layered window、window region、辅助阴影窗口或手工阴影。生产 reveal 路径不得在 cloak 状态调用 `DwmFlush`，因为此时没有可保证到达的 Present，故障提示不能为合成等待而无限阻塞。Windows 7 不支持 cloak 时仍保留“固定矩形 SetWindowPos + 同步首帧”的兼容路径。
 
 ## 7. DPI, Placement And Layout
 
