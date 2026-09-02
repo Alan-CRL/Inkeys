@@ -70,6 +70,7 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
@@ -97,6 +98,10 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\PageControl\PageControl.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Whiteboard\Whiteboard.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.Layout.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
@@ -128,8 +133,12 @@
 	<ClCompile Include="surface_tests.cpp" />
 	<ClCompile Include="message_tests.cpp" />
 	<ClCompile Include="window_tests.cpp" />
+	<ClCompile Include="message_box_tests.cpp" />
     <ClCompile Include="wake_signal_tests.cpp" />
   </ItemGroup>
+	<ItemGroup>
+	  <ResourceCompile Include="message_box_test.rc" />
+	</ItemGroup>
   <ItemGroup>
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />

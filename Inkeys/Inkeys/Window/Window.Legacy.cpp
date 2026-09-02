@@ -1,5 +1,6 @@
 import Inkeys.Helper.CrashHandler;
 import Inkeys.Window;
+import Inkeys.UI.MessageBox;
 
 #include "Window.Legacy.hpp"
 
@@ -7,6 +8,10 @@ import Inkeys.Window;
 #include "../../IdtMain.h"
 #include "../../IdtOther.h"
 #include "../../Launch/IdtLaunchState.h"
+
+#ifdef MessageBox
+#undef MessageBox
+#endif
 
 HWND floating_window = nullptr;
 HWND drawpad_window = nullptr;
@@ -102,9 +107,15 @@ void TopWindow()
 	{
 		if (IDTLogger) IDTLogger->warn("[窗口线程][TopWindow] 等待覆盖层首帧超时");
 		if (LaunchState::warnTry)
-			MessageBoxW(nullptr,
-				L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)",
-				L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+		{
+			auto request = Inkeys::UI::MessageBox::MakeOkRequest(
+				L"Inkeys Tips | 智绘教提示",
+				L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)");
+			request.ownerlessTopmostAtCreation = true;
+			request.fallback.modality =
+				Inkeys::UI::MessageBox::SystemModality::System;
+			(void)Inkeys::UI::MessageBox::Show(request);
+		}
 		else
 			ShellExecuteW(nullptr, nullptr, GetCurrentExePath().c_str(), L"-WarnTry", nullptr, SW_SHOWNORMAL);
 		SetOffSignal(1);

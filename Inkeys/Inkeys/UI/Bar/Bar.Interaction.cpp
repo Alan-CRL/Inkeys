@@ -11,6 +11,10 @@
 #include "Bar.BottomDock.h"
 #include "Bar.WindowGeometry.h"
 
+#ifdef MessageBox
+#undef MessageBox
+#endif
+
 module Inkeys.UI.Bar;
 import :Main;
 import :Layout;
@@ -23,6 +27,7 @@ import Inkeys.Other.Inputs;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Display;
+import Inkeys.UI.MessageBox;
 using Inkeys::UI::Bar::BarToggleChannel;
 using Inkeys::UI::Bar::SetBarButtonPressedVisual;
 using Inkeys::UI::Bar::StartBarButtonHoverVisual;
@@ -3291,7 +3296,16 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 				{
-					if (MessageBox(floating_window, L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？", L"Inkeys Tips | 智绘教提示", MB_OKCANCEL | MB_SYSTEMMODAL) == 1) CloseProgram();
+					auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
+						L"Inkeys Tips | 智绘教提示",
+						L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？");
+					request.owner = floating_window;
+					request.requireOwner = true;
+					request.fallback.owner = floating_window;
+					request.fallback.modality =
+						Inkeys::UI::MessageBox::SystemModality::System;
+					if (Inkeys::UI::MessageBox::Show(request)
+						== Inkeys::UI::MessageBox::Result::Ok) CloseProgram();
 
 					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}

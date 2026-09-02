@@ -1,5 +1,6 @@
 ﻿import Inkeys.Conv.Text;
 import Inkeys.Text.Split;
+import Inkeys.UI.MessageBox;
 
 #include "IdtSuperTop.h"
 
@@ -10,6 +11,10 @@ import Inkeys.Text.Split;
 
 #include <tlhelp32.h>
 #include <stdexcept>
+
+#ifdef MessageBox
+#undef MessageBox
+#endif
 
 #define try_win32(x) if(!(x)) [[unlikely]] throw_win32_error();
 void throw_win32_error()
@@ -202,7 +207,13 @@ void SurperTopMain(wstring lpCmdLine)
 	{
 		cout << "RunTokenProgram Fail" << endl;
 
-		MessageBox(NULL, L"智绘教Inkeys SuperTop failed. Please reopen the app (the SuperTop feature will be automatically disabled).\n智绘教Inkeys 超级置顶失败，请重新打开程序（程序将自动关闭超级置顶功能）。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
+			L"Inkeys Tips | 智绘教提示",
+			L"智绘教Inkeys SuperTop failed. Please reopen the app (the SuperTop feature will be automatically disabled).\n智绘教Inkeys 超级置顶失败，请重新打开程序（程序将自动关闭超级置顶功能）。");
+		request.ownerlessTopmostAtCreation = true;
+		request.fallback.modality =
+			Inkeys::UI::MessageBox::SystemModality::System;
+		(void)Inkeys::UI::MessageBox::Show(request);
 	}
 }
 

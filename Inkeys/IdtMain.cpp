@@ -28,6 +28,7 @@ import Inkeys.Other.Config;
 import Inkeys.Message;
 import Inkeys.Window;
 import Inkeys.Display;
+import Inkeys.UI.MessageBox;
 import Inkeys.Drawing.Draw3.diagnostics;
 
 #include "IdtMain.h"
@@ -58,6 +59,10 @@ import Inkeys.Drawing.Draw3.diagnostics;
 #include <shlobj.h>
 #pragma comment(lib, "netapi32.lib")
 
+#ifdef MessageBox
+#undef MessageBox
+#endif
+
 wstring buildTime = __DATE__ L" " __TIME__;		// 构建时间
 wstring editionVersion = L"3.0.0-dev.3981";		// 程序发布版本
 wstring editionDate = L"3.0.0-20260811a";		// 程序发布日期
@@ -76,6 +81,16 @@ namespace
 	// PptCOM 会长期持有该地址；不要把原子包装对象强转成 LONG 指针。
 	LONG offSignalInterop = 0;
 	Inkeys::Display::Subscription displaySubscription;
+
+	void ShowStartupMessage(const wchar_t* body) noexcept
+	{
+		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
+			L"Inkeys Tips | 智绘教提示", body);
+		request.ownerlessTopmostAtCreation = true;
+		request.fallback.modality =
+			Inkeys::UI::MessageBox::SystemModality::System;
+		(void)Inkeys::UI::MessageBox::Show(request);
+	}
 
 #ifndef IDT_RELEASE
 	void InitializeDebugConsole()
@@ -166,12 +181,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			if (typeRoot == 1)
 			{
-				MessageBox(NULL, L"The current directory permissions are restricted and cannot run normally. Please transfer the program to another directory before running it again.(#1)\n当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行。(#1)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				ShowStartupMessage(L"The current directory permissions are restricted and cannot run normally. Please transfer the program to another directory before running it again.(#1)\n当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行。(#1)");
 				return 0;
 			}
 			else if (typeRoot == 2)
 			{
-				MessageBox(NULL, L"The current directory permissions are restricted (file operations are redirected to the virtual storage directory) and cannot run properly. Please transfer the program to another directory before running it again.(#2)\n当前目录权限受限（文件操作被重定向到虚拟存储目录）无法正常运行，请将程序转移至其他目录后再运行。(#2)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual storage directory) and cannot run properly. Please transfer the program to another directory before running it again.(#2)\n当前目录权限受限（文件操作被重定向到虚拟存储目录）无法正常运行，请将程序转移至其他目录后再运行。(#2)");
 				return 0;
 			}
 		}
@@ -179,7 +194,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		wstring appName = GetCurrentExeName();
 		if (!isAsciiPrintable(appName))
 		{
-			MessageBox(NULL, L"The file name of this software can only contain English characters. Please rename and restart the software.(#3)\n此软件文件名称只能包含英文字符，请重命名后重启软件。(#3)", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+			ShowStartupMessage(L"The file name of this software can only contain English characters. Please rename and restart the software.(#3)\n此软件文件名称只能包含英文字符，请重命名后重启软件。(#3)");
 			return 0;
 		}
 
@@ -260,7 +275,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			DWORD lastError = GetLastError();
 			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
 			{
-				MessageBox(NULL, L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK);
+				ShowStartupMessage(L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。");
 
 				return 0;
 			}

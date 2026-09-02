@@ -28,6 +28,7 @@ import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.Other.Config;
 import Inkeys.Window;
+import Inkeys.UI.MessageBox;
 
 #include "IdtPlug-in.h"
 
@@ -52,6 +53,10 @@ import Inkeys.Window;
 #include <deque>
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
+
+#ifdef MessageBox
+#undef MessageBox
+#endif
 
 namespace
 {
@@ -800,7 +805,15 @@ bool CheckEndShowClass::Check()
 		isChecking = true;
 		});
 
-	bool ret = (MessageBox(floating_window, L"Currently in drawing mode, continuing to end will clear the canvas.\nAre you sure you want to end the presentation?\n当前处于绘制模式，继续结束放映将会清空画布内容。\n确定结束放映？", L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OKCANCEL) == 1);
+	auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
+		L"Inkeys Tips | 智绘教提示",
+		L"Currently in drawing mode, continuing to end will clear the canvas.\nAre you sure you want to end the presentation?\n当前处于绘制模式，继续结束放映将会清空画布内容。\n确定结束放映？");
+	request.owner = floating_window;
+	request.requireOwner = true;
+	request.fallback.owner = floating_window;
+	request.fallback.modality = Inkeys::UI::MessageBox::SystemModality::System;
+	bool ret = Inkeys::UI::MessageBox::Show(request)
+		== Inkeys::UI::MessageBox::Result::Ok;
 
 	isChecking = false;
 	return ret;

@@ -844,6 +844,10 @@
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
 	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm" />
 	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Window.cpp" />
 	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />
@@ -1050,6 +1054,7 @@
     <ResourceCompile Include="Inkeys.rc" />
   </ItemGroup>
   <ItemGroup>
+	<Image Include="src\message_box\error.png" />
     <Image Include="src\bug.png" />
     <Image Include="src\choice.png" />
     <Image Include="src\choose.png" />

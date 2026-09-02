@@ -70,6 +70,9 @@
     <Filter Include="Modules\Inkeys\UI\RenderPipeline">
       <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
     </Filter>
+	<Filter Include="Modules\Inkeys\UI\MessageBox">
+	  <UniqueIdentifier>{94b0fa6a-4d16-47d4-bda0-2b3688939a44}</UniqueIdentifier>
+	</Filter>
     <Filter Include="Modules\Inkeys\Conv">
       <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
     </Filter>
@@ -1889,6 +1892,18 @@
     <ClCompile Include="Inkeys\Window\Window.Legacy.cpp">
       <Filter>Modules\Inkeys\Window</Filter>
     </ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Window.cpp">
+	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+	</ClCompile>
     <ClCompile Include="Inkeys\Display\Display.cppm">
       <Filter>Modules\Inkeys\Display</Filter>
     </ClCompile>
@@ -2045,6 +2060,9 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+	<Image Include="src\message_box\error.png">
+	  <Filter>资源文件</Filter>
+	</Image>
     <Image Include="src\endshow.png">
       <Filter>资源文件</Filter>
     </Image>

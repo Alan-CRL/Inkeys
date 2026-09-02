@@ -27,6 +27,8 @@ int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
 int RunWindowTests();
+int RunMessageBoxTests(bool runWindowTests);
+int RunMessageBoxVisualTests(const char* outputDirectory);
 int RunDirtyRegionTests();
 int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
@@ -1413,13 +1415,18 @@ int main(int argc, char** argv)
 {
 	bool benchmark = false;
 	bool runWindowTests = true;
+	const char* messageBoxVisualOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
 		runWindowTests &= argument != "--no-window";
+		if (argument == "--message-box-visual-test" && index + 1 < argc)
+			messageBoxVisualOutput = argv[++index];
 	}
+	if (messageBoxVisualOutput)
+		return RunMessageBoxVisualTests(messageBoxVisualOutput);
 
 	TestCurvesAndTimelines();
 	TestSharedBarButtonRuntime();
@@ -1431,6 +1438,7 @@ int main(int argc, char** argv)
 	failureCount += RunPresentDecisionTests();
 	failureCount += RunSurfaceTests();
 	failureCount += RunMessageTests();
+	failureCount += RunMessageBoxTests(runWindowTests);
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
 	failureCount += RunWindowGeometryTests();

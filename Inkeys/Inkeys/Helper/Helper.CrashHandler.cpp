@@ -10,7 +10,13 @@ module;
 
 namespace fs = std::filesystem;
 
+#ifdef MessageBox
+#undef MessageBox
+#endif
+
 module Inkeys.Helper.CrashHandler;
+
+import Inkeys.UI.MessageBox;
 
 // 静态成员初始化
 LPTOP_LEVEL_EXCEPTION_FILTER CrashHandler::PreviousFilter = nullptr;
@@ -432,8 +438,17 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 
 	if (currentUserStateFlag == 0)
 	{
-		auto id = MessageBoxW(NULL, L"There is a problem with 智绘教Inkeys, click OK to restart 智绘教Inkeys to try to resolve the problem.\n智绘教Inkeys 出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。", L"Inkeys Error | 智绘教错误", MB_OK | MB_ICONERROR);
-		if (id == IDOK) ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
+		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
+			L"Inkeys Error | 智绘教错误",
+			L"There is a problem with 智绘教Inkeys, click OK to restart 智绘教Inkeys to try to resolve the problem.\n智绘教Inkeys 出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。");
+		request.icon = Inkeys::UI::MessageBox::IconSource::BuiltInError();
+		request.ownerlessTopmostAtCreation = true;
+		request.reliability =
+			Inkeys::UI::MessageBox::Reliability::CriticalNoWait;
+		request.fallback.icon = Inkeys::UI::MessageBox::SystemIcon::Error;
+		if (Inkeys::UI::MessageBox::Show(request)
+			== Inkeys::UI::MessageBox::Result::Ok)
+			ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
 	}
 	else if (currentUserStateFlag == 1) ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
 

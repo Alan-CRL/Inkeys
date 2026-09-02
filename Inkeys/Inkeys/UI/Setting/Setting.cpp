@@ -25,6 +25,10 @@ module;
 #include <mutex>
 #pragma comment(lib, "shlwapi.lib")
 
+#ifdef MessageBox
+#undef MessageBox
+#endif
+
 module Inkeys.UI.Setting;
 
 import Inkeys.Display;
@@ -39,6 +43,7 @@ import Inkeys.Conv.Text;
 import Inkeys.Helper.CrashHandler;
 import Inkeys.Other.Config;
 import Inkeys.Window;
+import Inkeys.UI.MessageBox;
 
 // 从 imgui_impl_win32.cpp 中前向声明消息处理器
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -202,14 +207,31 @@ namespace
 					command.directory.empty() ? nullptr : command.directory.c_str(),
 					command.showCommand)) > 32;
 			case SettingBusinessKind::Information:
-				return MessageBoxW(nullptr, command.text.c_str(),
-					L"Inkeys Tips | 智绘教提示", MB_SYSTEMMODAL | MB_OK) != 0;
+			{
+				auto request = Inkeys::UI::MessageBox::MakeOkRequest(
+					L"Inkeys Tips | 智绘教提示", command.text.c_str());
+				request.owner = Inkeys::Window::GetService().Handle(
+					Inkeys::Window::WindowRole::Setting);
+				request.requireOwner = true;
+				request.fallback.modality =
+					Inkeys::UI::MessageBox::SystemModality::System;
+				return Inkeys::UI::MessageBox::Show(request)
+					!= Inkeys::UI::MessageBox::Result::Failed;
+			}
 			case SettingBusinessKind::ConfirmRestart:
-				if (MessageBoxW(nullptr, command.text.c_str(),
-					L"Inkeys Tips | 智绘教提示",
-					MB_OKCANCEL | MB_SYSTEMMODAL) == IDOK)
+			{
+				auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
+					L"Inkeys Tips | 智绘教提示", command.text.c_str());
+				request.owner = Inkeys::Window::GetService().Handle(
+					Inkeys::Window::WindowRole::Setting);
+				request.requireOwner = true;
+				request.fallback.modality =
+					Inkeys::UI::MessageBox::SystemModality::System;
+				if (Inkeys::UI::MessageBox::Show(request)
+					== Inkeys::UI::MessageBox::Result::Ok)
 					RestartProgram();
 				return true;
+			}
 			case SettingBusinessKind::Restart:
 				RestartProgram();
 				return true;

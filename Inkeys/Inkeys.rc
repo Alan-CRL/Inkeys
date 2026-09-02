@@ -51,6 +51,8 @@ END
 // PNG
 //
 
+IDR_MESSAGE_BOX_ERROR   PNG                     "src\\message_box\\error.png"
+
 ICON1                   PNG                     "src\\write.png"
 
 SIGN1                   PNG                     "src\\sign.png"
