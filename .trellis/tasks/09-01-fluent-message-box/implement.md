@@ -153,8 +153,8 @@ rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
 
 - `InkeysRepo.sln` 使用 VS 18 ARM64 host MSBuild、`Debug|ARM64` 完整构建通过；仅保留仓库既有的转换类 warning，MessageBox 新模块无编译错误。
 - `InkeysHeadlessTests.exe --no-window` 通过：覆盖 Request/result/fallback、三组按钮文字、96/120/144/192 DPI、自适应宽度、文本超限和透明 PNG/BGRA 输入。
-- `InkeysHeadlessTests.exe` 通过：覆盖固定 frame、owner 禁用/恢复、标题拖动、八方向 resize 拒绝、DPI 重建、键鼠结果、并发门、CriticalNoWait、GDI/USER 基线和残留 HWND。
-- `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过并生成 5 张限定窗口截图：OK、Yes/No focus、透明错误图标、primary hover、secondary pressed；像素断言和人工检查均通过。
+- `InkeysHeadlessTests.exe` 完整通过，覆盖固定 frame、owner 禁用/恢复、标题拖动、八方向 resize 拒绝、DPI 重建、键鼠结果、并发门、CriticalNoWait、GDI/USER 基线和残留 HWND。
+- `InkeysHeadlessTests.exe --message-box-visual-test .\\TestResults\\message-box-visual` 通过并生成 6 张限定窗口截图：OK、Yes/No focus、透明错误图标、primary hover、secondary pressed、close hover；像素断言和人工检查均通过。close hover 截图确认 `32 DIP` 命中区顶部/右侧外间距一致，`10 DIP` glyph 在命中区内居中并与标题首行中心对齐。
 - Windows 11 ARM64 上运行时读取到 DWM dark/corner 属性；标准 frame、闭合内边框和圆角结构通过。受测试桌面限制，screen-DC 不包含测试窗口，截图入口回退到 `PrintWindow`，因此外部 DWM shadow 由标准 frame/DWM 属性验证，不宣称有逐像素阴影截图证据。
 - 未实现完整 UI Automation provider；Windows 7/10 未上机，只完成动态 API、无 layered/region/helper-shadow 路径和 GDI+ 生命周期的静态兼容覆盖。
-- 未提交 commit。
+- 基础实现已于 `da9b888e` 提交；本轮关闭字形样式调整尚未提交。

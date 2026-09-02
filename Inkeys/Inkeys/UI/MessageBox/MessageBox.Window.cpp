@@ -701,8 +701,26 @@ namespace Inkeys::UI::MessageBox::Detail
 					next.iconBounds = { padding, next.bodyTop,
 						padding + iconSize, next.bodyTop + iconSize };
 				if (HasCloseButton())
-					next.closeBounds = { next.width - padding - closeSize, padding,
-						next.width - padding, padding + closeSize };
+				{
+					const REAL titleLineHeight = titleFont.GetHeight(&graphics);
+					const double titleFirstLineCenter = static_cast<double>(next.titleTop)
+						+ static_cast<double>(titleLineHeight) / 2.0;
+					const double closeTop = titleFirstLineCenter
+						- static_cast<double>(closeSize) / 2.0;
+					if (!std::isfinite(titleLineHeight) || titleLineHeight <= 0.0f
+						|| !std::isfinite(titleFirstLineCenter) || !std::isfinite(closeTop)
+						|| closeTop < 0.0
+						|| closeTop > static_cast<double>(std::numeric_limits<int>::max()))
+						return false;
+					const int closeOuterGap = static_cast<int>(std::lround(closeTop));
+					if (closeOuterGap > next.width - closeSize
+						|| closeOuterGap > std::numeric_limits<int>::max() - closeSize)
+						return false;
+					// 统一外边距在对齐标题首行中心的同时保持顶部与右侧对称。
+					next.closeBounds = { next.width - closeOuterGap - closeSize,
+						closeOuterGap, next.width - closeOuterGap,
+						closeOuterGap + closeSize };
+				}
 
 				const auto labels = ResolveButtonLabels(GetThreadUILanguage());
 				next.buttonCount = BuildButtonSpecs(request->buttons, labels,
@@ -878,13 +896,15 @@ namespace Inkeys::UI::MessageBox::Detail
 							: Color(255, 67, 67, 67));
 						graphics.FillPath(&closeFill, &closePath);
 					}
-					const REAL centerX = (closeBounds.GetLeft() + closeBounds.GetRight()) / 2.0f;
-					const REAL centerY = (closeBounds.GetTop() + closeBounds.GetBottom()) / 2.0f;
-					const REAL half = static_cast<REAL>(ScaleDipValue(6, layout.dpi));
+					const REAL centerX =
+						(closeBounds.GetLeft() + closeBounds.GetRight()) / 2.0f;
+					const REAL centerY =
+						(closeBounds.GetTop() + closeBounds.GetBottom()) / 2.0f;
+					const REAL half = static_cast<REAL>(ScaleDipValue(5, layout.dpi));
 					Pen closePen(Color(255, 255, 255, 255),
-						static_cast<REAL>(std::max(1, ScaleDipValue(2, layout.dpi))));
-					closePen.SetStartCap(LineCapRound);
-					closePen.SetEndCap(LineCapRound);
+						static_cast<REAL>(std::max(1, ScaleDipValue(1, layout.dpi))));
+					closePen.SetStartCap(LineCapFlat);
+					closePen.SetEndCap(LineCapFlat);
 					graphics.DrawLine(&closePen, centerX - half, centerY - half,
 						centerX + half, centerY + half);
 					graphics.DrawLine(&closePen, centerX + half, centerY - half,

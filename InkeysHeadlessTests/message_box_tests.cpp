@@ -894,8 +894,10 @@ namespace
 		Default,
 		FocusSecondary,
 		HoverPrimary,
+		HoverClose,
 		PressSecondary,
 	};
+	constexpr std::size_t MinimumCloseHoverPixels = 300;
 
 	struct VisualCaptureContext
 	{
@@ -912,6 +914,7 @@ namespace
 		std::size_t darkPixels = 0;
 		std::size_t errorPixels = 0;
 		std::size_t hoverAccentPixels = 0;
+		std::size_t closeHoverPixels = 0;
 		std::size_t pressedNeutralPixels = 0;
 		bool usedPrintWindow = false;
 	};
@@ -1009,6 +1012,7 @@ namespace
 				context.hoverAccentPixels += red >= 108 && red <= 126
 					&& green >= 207 && green <= 222
 					&& blue >= 248;
+				context.closeHoverPixels += red == 67 && green == 67 && blue == 67;
 				context.pressedNeutralPixels += red >= 35 && red <= 41
 					&& green >= 35 && green <= 41
 					&& blue >= 35 && blue <= 41;
@@ -1018,6 +1022,8 @@ namespace
 				&& (!context.requireErrorColor || context.errorPixels > 150)
 				&& (context.interaction != VisualInteraction::HoverPrimary
 					|| context.hoverAccentPixels > 500)
+				&& (context.interaction != VisualInteraction::HoverClose
+					|| context.closeHoverPixels > MinimumCloseHoverPixels)
 				&& (context.interaction != VisualInteraction::PressSecondary
 					|| context.pressedNeutralPixels > 500);
 
@@ -1056,6 +1062,7 @@ namespace
 			<< " dark=" << context.darkPixels
 			<< " error=" << context.errorPixels
 			<< " hoverAccent=" << context.hoverAccentPixels
+			<< " closeHover=" << context.closeHoverPixels
 			<< " pressedNeutral=" << context.pressedNeutralPixels
 			<< " source=" << (context.usedPrintWindow ? "PrintWindow" : "screen")
 			<< " path=" << context.path.string() << '\n';
@@ -1077,6 +1084,14 @@ namespace
 		else if (context.interaction == VisualInteraction::HoverPrimary)
 		{
 			interactionPoint = { client.right / 2, y };
+			SendMessageW(hwnd, WM_MOUSEMOVE, 0,
+				MAKELPARAM(interactionPoint.x, interactionPoint.y));
+		}
+		else if (context.interaction == VisualInteraction::HoverClose)
+		{
+			const int closeCenterDistance = MessageBoxTest::ScaleDip(36, dpi);
+			interactionPoint = {
+				client.right - closeCenterDistance, closeCenterDistance };
 			SendMessageW(hwnd, WM_MOUSEMOVE, 0,
 				MAKELPARAM(interactionPoint.x, interactionPoint.y));
 		}
@@ -1194,6 +1209,21 @@ int RunMessageBoxVisualTests(const char* outputDirectory)
 	PrintCaptureFailure("Pressed", pressedCapture);
 	Check(pressedCapture.saved && pressedCapture.pixelsValid,
 		"visual secondary pressed screenshot validated");
+
+	VisualCaptureContext closeHoverCapture{
+		output / "06-close-hover.png", backdrop.Get() };
+	closeHoverCapture.interaction = VisualInteraction::HoverClose;
+	auto closeHoverRequest = MakeOkRequest(L"Close hover",
+		L"The title close command keeps its full interaction target.");
+	closeHoverRequest.owner = backdrop.Get();
+	Check(MessageBoxTest::ShowAutomated(closeHoverRequest,
+		{ CaptureAndClose, &closeHoverCapture, 220 }) == Result::Ok,
+		"visual close hover result");
+	PrintCaptureFailure("Close hover", closeHoverCapture);
+	Check(closeHoverCapture.saved && closeHoverCapture.pixelsValid,
+		"visual close hover screenshot validated");
+	Check(closeHoverCapture.closeHoverPixels > MinimumCloseHoverPixels,
+		"visual close hover fill token validated");
 
 	Check(IsWindowEnabled(backdrop.Get()) != FALSE,
 		"visual backdrop restored after all dialogs");

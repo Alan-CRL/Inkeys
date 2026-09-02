@@ -195,7 +195,7 @@ monitor 选择：
 - 标题 `20 DIP Semibold`，最多两行；标题字体依次尝试 `Segoe UI Variable Display Semibold`、`Segoe UI Semibold`、`Segoe UI Bold`。正文和按钮 `14 DIP`，依次尝试 `Segoe UI Variable Text`、`Segoe UI`，CJK 依赖系统 font fallback。关闭 glyph 可见时，标题测量宽度预留完整 `32 DIP` hitbox 和相邻间距，不允许两者重叠。
 - 标题与正文间距 `12 DIP`；可选图标只位于正文左侧，槽位 `40 DIP`，与正文间距 `16 DIP`。
 - command button 高 `32 DIP`、圆角 `4 DIP`，按钮间距 `8 DIP`；当前组合内按钮等宽填满可用行。
-- 外圆角 `8 DIP`、内边框 `1 DIP`。标题关闭按钮命中区固定 `32 DIP x 32 DIP`，glyph 不参与标题文本测量。
+- 外圆角 `8 DIP`、内边框 `1 DIP`。标题关闭按钮使用同一个整数顶部/右侧外间距：`round(titleTop + titleFontHeight / 2 - closeSize / 2)`，在 96 DPI 默认字体下取整前约为 `19.6 DIP`；命中区固定 `32 DIP x 32 DIP`，glyph 固定为 `10 DIP x 10 DIP`、`1 DIP` 平头线并在命中区内水平、垂直居中。glyph 不参与标题文本测量。
 - 先在最小宽度测量，再按换行收益扩展到最大宽度；任何文本不得 ellipsis 或裁切。最终绘制边界还需检查不可断开的长 token/单词，无法在 `548 DIP` 内完整容纳时同样 fallback。标题超过两行或整体超过 `min(756 DIP, work-area available height)` 时，在创建 HWND 前 fallback。
 
 ## 8. Fluent Dark Rendering
