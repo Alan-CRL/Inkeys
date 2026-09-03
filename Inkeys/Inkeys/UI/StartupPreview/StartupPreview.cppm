@@ -46,7 +46,6 @@ export namespace Inkeys::UI::StartupPreview
 		PreviewCompatibility compatibility{};
 		std::array<std::uint8_t, 32> embeddedVisualSignature{};
 		Inkeys::Startup::ProgressTracker* progress = nullptr;
-		std::chrono::steady_clock::time_point startTime{};
 		std::function<void(std::uint8_t)> requestBarAlpha;
 		std::function<std::uint8_t()> committedBarAlpha;
 	};

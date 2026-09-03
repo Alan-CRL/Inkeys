@@ -121,9 +121,9 @@ export namespace Inkeys::UI::StartupPreview
 	class ProgressVisualReducer final
 	{
 	public:
-		explicit ProgressVisualReducer(
-			std::chrono::steady_clock::time_point startTime) noexcept
-			: startTime_(startTime) {}
+		ProgressVisualReducer() noexcept = default;
+		void MarkPreviewShown(
+			std::chrono::steady_clock::time_point now) noexcept;
 
 		[[nodiscard]] ProgressVisualSnapshot Update(
 			std::chrono::steady_clock::time_point now,
@@ -132,7 +132,7 @@ export namespace Inkeys::UI::StartupPreview
 			bool failed) noexcept;
 
 	private:
-		std::chrono::steady_clock::time_point startTime_{};
+		std::chrono::steady_clock::time_point previewShownTime_{};
 		std::chrono::steady_clock::time_point transitionStart_{};
 		double displayedRatio_ = 0.0;
 		double fadeStartOpacity_ = 0.0;

@@ -63,6 +63,17 @@ committedAlpha=255
 - 验证截图：`C:\Users\AlanCRL\AppData\Local\Temp\inkeys-preview-fixed-refresh-{1000ms,2200ms,8000ms}.png`。
 - 正常 SuperTop 父进程 -> helper -> 最终 UIAccess 进程链路重复通过；Preview HWND 为 visible/topmost、DWM 未 cloak，1.0s 与 8.0s 主体区域有 33,856 个变化像素，progress rect 新增 655 个变化像素。截图为 `C:\Users\AlanCRL\AppData\Local\Temp\inkeys-preview-fixed-supertop-{1000ms,2200ms,8000ms}.png`。
 
+## 2026-09-03 进度条可见性与 Fluent 样式修复
+
+- 根因一：`ProgressVisualReducer` 仍从 T0 使用旧 5 秒门，未传播“Preview 出现后 3 秒”的新合同。现改为首帧 ULW committed 并请求 owner 显示后调用一次 `MarkPreviewShown`；重复调用不重置，失败在未标记/未满 3 秒时也立即进入红色状态。
+- 根因二：旧 progress metadata 的纵坐标位于内容底边，而 Preview 与任务栏相交，实际截图中进度条落在任务栏顶边后方。最终按开发者确认，以包含主按钮的完整主栏内容矩形为坐标基准 X/Y 居中，并在 blur/shimmer 后最后合成。
+- 样式对齐 WinUI 3 默认 ProgressBar 模板：192 DIP 宽，3 DIP / 1.5 DIP 圆角指示条覆盖 1 DIP / 0.5 DIP 圆角轨道；canonical dark 使用 `#60CDFF`、`#8BFFFFFF`、`#FF99A4`。
+- 根因三：fatal 流程在红帧提交后立即结束 wait 并销毁 Preview，通常只显示约一帧。现保留 350ms 总预算；若红帧较早 committed，则等待到该预算截止再停止 Preview，未提交仍不超过原有 350ms。
+- 最终完整 `Debug|x64` Solution 构建 PASS；`InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`。新增断言覆盖 Preview 显示前不计时、显示后 2999ms 隐藏、3 秒淡入、重复标记不重置、3 秒门前 fatal 立即红色，以及成功隐藏顺序。
+- 最终无注入进程的 Preview 在启动后 336ms 被检测为 visible；相对 visible 的 2812ms 截图无 progress，3110ms 已淡入，3410ms 与 8009ms 完整显示。窗口为 visible/topmost、DWM 未 cloak，bounds=`677,903,1243,1080`；内容中心和进度条中心均为 `(960,991.5)` 屏幕像素。截图为 `C:\Users\AlanCRL\.codex\visualizations\2026\09\02\01a062af-51b9-77b2-b46f-b907a79add4b\startup-preview-final-center-shown-{0500ms,2800ms,3100ms,3400ms,8000ms}.png`。
+- 临时 Debug 环境变量故障注入在 Preview visible 后约 1.5 秒触发；1613ms、1720ms、1813ms 三帧均显示居中的粉红错误指示条，1906ms 时 Preview 已按预算停止并进入现有错误弹窗。截图为同一可视化目录下 `startup-preview-failure-early-center-shown-{1200ms,1400ms,1500ms,1600ms,1700ms,1800ms,1900ms,2000ms,2200ms}.png`。临时注入已从源码删除，最终 `rg` 无残留。
+- 开发者加入的 `this_thread::sleep_for(chrono::seconds(50))` 保留，用于后续人工测试。
+
 ## 静态兼容审查
 
 - Startup Preview 未使用 GDI+、WinUI Runtime、DirectComposition 或 Win10-only AlphaMask effect。

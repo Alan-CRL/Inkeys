@@ -139,9 +139,15 @@ namespace
 		std::uint32_t code, const wchar_t* message) noexcept
 	{
 		(void)Inkeys::Startup::ReportFailure(code);
+		constexpr auto failureFrameBudget = std::chrono::milliseconds(350);
+		const auto failureFrameDeadline = std::chrono::steady_clock::now()
+			+ failureFrameBudget;
 		Inkeys::UI::StartupPreview::RequestFailureFrame();
-		(void)Inkeys::UI::StartupPreview::WaitForFailureFrame(
-			std::chrono::milliseconds(350));
+		if (Inkeys::UI::StartupPreview::WaitForFailureFrame(failureFrameBudget))
+		{
+			// 红帧较早提交时用完剩余预算，避免只显示一个渲染帧便被销毁。
+			std::this_thread::sleep_until(failureFrameDeadline);
+		}
 		Inkeys::UI::StartupPreview::Stop();
 		ShowStartupMessage(message);
 	}
@@ -965,7 +971,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		previewOptions.compatibility = compatibility;
 		previewOptions.embeddedVisualSignature = embeddedVisualSignature;
 		previewOptions.progress = &startupProgress;
-		previewOptions.startTime = startupT0;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
 		previewOptions.committedBarAlpha = []

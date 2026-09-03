@@ -102,40 +102,49 @@ int RunStartupPreviewStateTests()
 		"fatal path requires an explicit red committed frame")) ++failures;
 
 	const auto start = std::chrono::steady_clock::time_point(10s);
-	ProgressVisualReducer progress(start);
-	auto visual = progress.Update(start + 4999ms, 0.4, false, false);
+	const auto previewShown = start + 20s;
+	ProgressVisualReducer progress;
+	auto visual = progress.Update(previewShown - 1ms, 0.4, false, false);
 	if (!Expect(visual.state == ProgressVisualState::Hidden && visual.opacity == 0.0,
-		"progress stays hidden before T0 plus five seconds")) ++failures;
-	visual = progress.Update(start + 5s, 0.4, false, false);
+		"progress gate does not start before the Preview is shown")) ++failures;
+	progress.MarkPreviewShown(previewShown);
+	progress.MarkPreviewShown(previewShown + 2s);
+	visual = progress.Update(previewShown + 2999ms, 0.4, false, false);
+	if (!Expect(visual.state == ProgressVisualState::Hidden && visual.opacity == 0.0,
+		"progress stays hidden for three seconds after Preview show")) ++failures;
+	visual = progress.Update(previewShown + 3s, 0.4, false, false);
 	if (!Expect(visual.state == ProgressVisualState::FadingIn
 		&& visual.displayedRatio <= 0.4,
-		"five second gate starts real progress fade")) ++failures;
-	visual = progress.Update(start + 5180ms, 0.4, false, false);
+		"three second gate starts real progress fade")) ++failures;
+	visual = progress.Update(previewShown + 3180ms, 0.4, false, false);
 	if (!Expect(visual.state == ProgressVisualState::Visible
 		&& visual.displayedRatio <= 0.4,
 		"fade reaches visible without exceeding actual")) ++failures;
-	visual = progress.Update(start + 5200ms, 0.25, false, true);
+	ProgressVisualReducer earlyFailure;
+	visual = earlyFailure.Update(start, 0.25, false, true);
 	if (!Expect(visual.state == ProgressVisualState::Failure
-		&& visual.red && visual.displayedRatio == 0.25,
-		"fatal progress immediately uses red actual ratio")) ++failures;
+		&& visual.red && visual.opacity == 1.0 && visual.displayedRatio == 0.25,
+		"fatal progress immediately uses red actual ratio before the show gate")) ++failures;
 
-	ProgressVisualReducer quick(start);
-	visual = quick.Update(start + 4900ms, 1.0, true, false);
+	ProgressVisualReducer quick;
+	quick.MarkPreviewShown(start);
+	visual = quick.Update(start + 2900ms, 1.0, true, false);
 	if (!Expect(visual.state == ProgressVisualState::Hidden,
-		"startup completed before five seconds never shows progress")) ++failures;
+		"startup completed before three seconds never shows progress")) ++failures;
 	if (!Expect(CanBeginSuccessfulHandoff(true, true, false, visual.state,
 		true, true), "hidden progress permits a complete handoff")) ++failures;
 	if (!Expect(!CanBeginSuccessfulHandoff(true, false, false, visual.state,
 		true, true), "early Bar commit waits for parallel milestones")) ++failures;
 
-	ProgressVisualReducer ordered(start);
-	(void)ordered.Update(start + 5s, 0.8, false, false);
-	(void)ordered.Update(start + 5180ms, 0.8, false, false);
-	auto fading = ordered.Update(start + 5200ms, 1.0, true, false);
+	ProgressVisualReducer ordered;
+	ordered.MarkPreviewShown(start);
+	(void)ordered.Update(start + 3s, 0.8, false, false);
+	(void)ordered.Update(start + 3180ms, 0.8, false, false);
+	auto fading = ordered.Update(start + 3200ms, 1.0, true, false);
 	if (!Expect(fading.state == ProgressVisualState::FadingOut
 		&& !CanBeginSuccessfulHandoff(true, true, false, fading.state, true, true),
 		"visible progress fades before handoff starts")) ++failures;
-	const auto hidden = ordered.Update(start + 5340ms, 1.0, true, false);
+	const auto hidden = ordered.Update(start + 3340ms, 1.0, true, false);
 	if (!Expect(hidden.state == ProgressVisualState::Hidden
 		&& CanBeginSuccessfulHandoff(true, true, false, hidden.state, true, true),
 		"handoff starts only after progress is hidden")) ++failures;

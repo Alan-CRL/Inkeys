@@ -6,7 +6,7 @@
 | --- | --- |
 | Tracker 顺序/乱序/重复/并发 | work units 只增加一次、snapshot 单调、无 data race |
 | Conditional plan | Preview off 不含专属 milestone；不存在 skipped-as-complete |
-| 时间流逝 | 不报告 milestone 时 actual ratio 不变；5 秒只改变 visibility |
+| 时间流逝 | 不报告 milestone 时 actual ratio 不变；Preview 显示后的 3 秒只改变 visibility |
 | Failure freeze | 首个 fatal code/ratio 固定；后续报告不增长；不出现 100% |
 | 100% gate | 即使先行 milestone 全部完成，Bar committed 前仍 <100%；该 commit 后恰为 100% |
 | CRC | 标准 `123456789` IEEE CRC-32 向量和 header-crc-zero 规则 |
@@ -63,9 +63,10 @@
 
 ## 7. 进度与动画
 
-- 人为延迟各启动阶段：进度只在真实 report 后增长，停顿阶段保持真实值；5 秒从 SuperTop 后 T0 计算。
-- 4.9 秒成功不显示 progress；5.0 秒后约 180ms 淡入；成功先隐藏再 handoff。
-- fatal 分别发生于 progress 显示前/后：立即红色，保留实际 fill，Preview ULW commit 或 350ms 后 popup。
+- 人为延迟各启动阶段：进度只在真实 report 后增长，停顿阶段保持真实值；3 秒从 Preview 首帧 committed/show request 计算，重复通知不能重置。
+- Preview 显示后 2.9 秒成功不显示 progress；3.0 秒后约 180ms 淡入；成功先隐藏再 handoff。
+- fatal 分别发生于 progress 显示前/后：立即红色，保留实际 fill；较早提交时在 350ms 总预算内保留红帧，未提交则到预算后 popup。
+- 96/120/144/192 DPI 检查以完整主栏（含主按钮）为基准的 X/Y 居中、192 DIP 宽度、目标允许时 48 DIP 双侧边距、3 DIP 指示条覆盖 1 DIP 轨道以及 normal/error 颜色。
 - 两个 layered HWND 不做中间 alpha cross-fade；抓帧检查 Valid 路径无 0.5+0.5 合成加深。
 - Missing/Incompatible 高模糊换 proxy 后 320-420ms deblur；Corrupt 必须先 Preview 全透明、40ms hold、再 Bar fade，且不 deblur proxy。
 

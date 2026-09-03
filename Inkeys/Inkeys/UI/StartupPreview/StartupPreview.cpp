@@ -813,13 +813,16 @@ namespace Inkeys::UI::StartupPreview
 						D2D1::Point2F(0.f, 0.f), D2D1::Point2F(120.f, 40.f)),
 					stopCollection.Get(), &next.shimmer);
 			if (FAILED(next.context->CreateSolidColorBrush(
-				D2D1::ColorF(0.f, 0.f, 0.f, 0.38f), &next.progressBackground)))
+				D2D1::ColorF(1.f, 1.f, 1.f, 139.f / 255.f),
+				&next.progressBackground)))
 				return E_FAIL;
 			if (FAILED(next.context->CreateSolidColorBrush(
-				D2D1::ColorF(0.18f, 0.64f, 1.f, 0.92f), &next.progressFill)))
+				D2D1::ColorF(96.f / 255.f, 205.f / 255.f, 1.f, 1.f),
+				&next.progressFill)))
 				return E_FAIL;
 			if (FAILED(next.context->CreateSolidColorBrush(
-				D2D1::ColorF(0.95f, 0.18f, 0.20f, 0.96f), &next.progressError)))
+				D2D1::ColorF(1.f, 153.f / 255.f, 164.f / 255.f, 1.f),
+				&next.progressError)))
 				return E_FAIL;
 			next.context->SetTarget(next.target.Get());
 			next.context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -947,27 +950,42 @@ namespace Inkeys::UI::StartupPreview
 		{
 			if (progress.opacity <= 0.001) return;
 			auto& resources = runtime.resources;
-			const auto& metadata = runtime.sourceMetadata;
-			const float scaleX = static_cast<float>(resources.width - runtime.padding * 2)
-				/ static_cast<float>(metadata.width);
-			const float scaleY = static_cast<float>(resources.height - runtime.padding * 2)
-				/ static_cast<float>(metadata.height);
-			const auto rect = D2D1::RectF(
-				runtime.padding + metadata.progressLeft * scaleX,
-				runtime.padding + metadata.progressTop * scaleY,
-				runtime.padding + metadata.progressRight * scaleX,
-				runtime.padding + metadata.progressBottom * scaleY);
+			const float contentWidth = static_cast<float>(
+				resources.width - runtime.padding * 2);
+			const float contentHeight = static_cast<float>(
+				resources.height - runtime.padding * 2);
+			const float dpiScale = static_cast<float>((std::max)(
+				96u, runtime.options.compatibility.captureDpiX)) / 96.f;
+			constexpr float ProgressWidthDip = 192.f;
+			constexpr float HorizontalMarginDip = 48.f;
+			const float barWidth = (std::min)(ProgressWidthDip * dpiScale,
+				(std::max)(0.f, contentWidth - HorizontalMarginDip * 2.f * dpiScale));
+			if (barWidth <= 0.f) return;
+
+			const float centerX = runtime.padding + contentWidth * 0.5f;
+			const float centerY = runtime.padding + contentHeight * 0.5f;
+			const float trackHeight = 1.f * dpiScale;
+			const float indicatorHeight = 3.f * dpiScale;
+			const auto track = D2D1::RectF(centerX - barWidth * 0.5f,
+				centerY - trackHeight * 0.5f, centerX + barWidth * 0.5f,
+				centerY + trackHeight * 0.5f);
+			// 以完整主栏（含主按钮）居中，并对齐 WinUI 3 的 3/1 DIP 双层样式。
 			resources.progressBackground->SetOpacity(static_cast<float>(progress.opacity));
 			resources.context->FillRoundedRectangle(
-				D2D1::RoundedRect(rect, 3.f, 3.f), resources.progressBackground.Get());
-			auto fill = rect;
-			fill.right = fill.left + static_cast<float>(
-				(fill.right - fill.left) * std::clamp(progress.displayedRatio, 0.0, 1.0));
+				D2D1::RoundedRect(track, trackHeight * 0.5f, trackHeight * 0.5f),
+				resources.progressBackground.Get());
+			const float fillWidth = barWidth * static_cast<float>(
+				std::clamp(progress.displayedRatio, 0.0, 1.0));
+			if (fillWidth <= 0.f) return;
+			const auto fill = D2D1::RectF(track.left,
+				centerY - indicatorHeight * 0.5f, track.left + fillWidth,
+				centerY + indicatorHeight * 0.5f);
 			auto* brush = progress.red
 				? resources.progressError.Get() : resources.progressFill.Get();
 			brush->SetOpacity(static_cast<float>(progress.opacity));
 			resources.context->FillRoundedRectangle(
-				D2D1::RoundedRect(fill, 3.f, 3.f), brush);
+				D2D1::RoundedRect(fill, indicatorHeight * 0.5f,
+					indicatorHeight * 0.5f), brush);
 		}
 
 		void RequestAutomaticStop(const std::shared_ptr<Runtime>& runtime)
@@ -1164,6 +1182,7 @@ namespace Inkeys::UI::StartupPreview
 			resources.context->Clear(D2D1::ColorF(0.f, 0.f, 0.f, 0.f));
 			DrawPreparedInput(*runtime, sigma);
 			DrawShimmer(*runtime, frame.frameTime);
+			// 最后合成进度条，保证轨道和指示条位于 blur/shimmer 上层。
 			DrawProgress(*runtime, progressVisual);
 
 			const auto presentationOwner = runtime->owner.Snapshot();
@@ -1214,6 +1233,7 @@ namespace Inkeys::UI::StartupPreview
 					(void)runtime->options.progress->Complete(
 						Inkeys::Startup::Milestone::PreviewFirstFrameCommitted);
 				runtime->owner.Show();
+				runtime->progressVisual->MarkPreviewShown(frame.frameTime);
 				runtime->presentationCondition.notify_all();
 			}
 			if (runtime->lifecycle.State() == LifecycleState::FailureRedRequested)
@@ -1241,10 +1261,7 @@ namespace Inkeys::UI::StartupPreview
 		runtime->barState.store(globalBarStartupState.load(
 			std::memory_order_acquire), std::memory_order_release);
 		if (!runtime->options.instance) runtime->options.instance = GetModuleHandleW(nullptr);
-		if (runtime->options.startTime == std::chrono::steady_clock::time_point{})
-			runtime->options.startTime = std::chrono::steady_clock::now();
-		runtime->progressVisual = std::make_unique<ProgressVisualReducer>(
-			runtime->options.startTime);
+		runtime->progressVisual = std::make_unique<ProgressVisualReducer>();
 		runtime->committedBarAlpha.store(-1, std::memory_order_release);
 
 		const auto embedded = ReadEmbeddedPreview(runtime->options.instance,

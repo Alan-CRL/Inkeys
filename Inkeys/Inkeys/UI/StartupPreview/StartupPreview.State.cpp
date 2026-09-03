@@ -114,6 +114,13 @@ namespace Inkeys::UI::StartupPreview
 		return Result(true);
 	}
 
+	void ProgressVisualReducer::MarkPreviewShown(
+		std::chrono::steady_clock::time_point now) noexcept
+	{
+		if (previewShownTime_ == std::chrono::steady_clock::time_point{})
+			previewShownTime_ = now;
+	}
+
 	ProgressVisualSnapshot ProgressVisualReducer::Update(
 		std::chrono::steady_clock::time_point now, double actualRatio,
 		bool completed, bool failed) noexcept
@@ -132,7 +139,7 @@ namespace Inkeys::UI::StartupPreview
 			return { state_, displayedRatio_, opacity_, true };
 		}
 
-		constexpr auto ShowDelay = std::chrono::seconds(5);
+		constexpr auto ShowDelay = std::chrono::seconds(3);
 		constexpr auto FadeIn = std::chrono::milliseconds(180);
 		constexpr auto FadeOut = std::chrono::milliseconds(140);
 		if (completed)
@@ -157,7 +164,8 @@ namespace Inkeys::UI::StartupPreview
 			return { state_, displayedRatio_, opacity_, false };
 		}
 
-		if (now - startTime_ < ShowDelay)
+		if (previewShownTime_ == std::chrono::steady_clock::time_point{}
+			|| now - previewShownTime_ < ShowDelay)
 		{
 			opacity_ = 0.0;
 			return { ProgressVisualState::Hidden, displayedRatio_, opacity_, false };

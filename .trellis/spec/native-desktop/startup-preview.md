@@ -70,7 +70,7 @@ BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。�
 
 - Preview/Tracker 的 T0 **必须**位于最终进程越过 SuperTop 所有重启/提权/辅助分支之后，当前基准是 `IdtMain.cpp:743` 后。
 - SuperTop 父进程和 helper **不得**创建 Tracker、Preview、cache worker 或 early RenderPipeline。
-- T0 使用 `steady_clock`；5 秒只从 T0 计算。
+- T0 使用 `steady_clock` 并作为真实 milestone tracker 的统一边界；进度条可见门从 Preview 首帧成功 ULW committed 并请求 owner 显示时另行起算。
 - `Experimental.Inkeys3.UI3.StartupPreview.Enable` 缺失时默认 true；Setting 变更只对下次启动生效。
 - 开关关闭时不得创建 Preview；RenderPipeline 保留原初始化位置。开启时允许 early initialize，原位置必须接受 already initialized。
 
@@ -139,7 +139,8 @@ BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。�
 
 - Embedded 使用 cubic + D2D1.1 GaussianBlur，约 6 DIP、Balanced、Soft；必须按 effect bounds 扩展，禁止裁 blur。
 - Shimmer 用源 alpha + `FillOpacityMask`；调用时切 ALIASED 并恢复原 antialias。不得使用 Win10-only AlphaMask effect。
-- 5 秒后进度条展示真实值；成功先隐藏。失败立即红色并保留实际 fill，最多等 350ms 的 Preview ULW commit，再进入现有 popup。
+- Preview 显示满 3 秒后进度条展示真实值；重复显示通知不得重置计时；成功先隐藏。失败无视可见门，立即红色并保留实际 fill；较早提交时在 350ms 总预算的剩余时间保留红帧，未提交则到预算后进入现有 popup。
+- 进度条必须在 blur/shimmer 后最后合成，保证处于 Z 轴最上层；坐标以包含主按钮的完整主栏内容矩形为基准 X/Y 居中。canonical dark Preview 对齐 WinUI 3 默认模板：192 DIP 宽且目标允许时至少保留 48 DIP 双侧边距，3 DIP / 1.5 DIP 圆角的 accent 或 error 指示条覆盖 1 DIP / 0.5 DIP 圆角的中性轨道；颜色为 normal `#60CDFF`、track `#8BFFFFFF`、error `#FF99A4`。
 - Valid cache 在单 Preview HWND 内切到 live proxy，再以 committed alpha 边界切到 Bar；不得用两个 layered HWND 做持续中间-alpha cross-fade。
 - Missing/Incompatible 用 embedded blur、高 blur 替换 live proxy、再 deblur；Corrupt 必须 Preview 淡到 0、短暂全透明、Bar 再淡入，且不做 proxy deblur。
 - Preview/cache/blur/shimmer 失败可 bypass；共享 RenderPipeline 和现有核心启动失败维持致命语义。
@@ -158,11 +159,11 @@ BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。�
 | --- | --- |
 | Tracker/stage | concurrent duplicate/out-of-order、conditional plan、failure freeze、elapsed no-growth、Bar-only 100% |
 | Parser/serializer | little-endian roundtrip、CRC vector、逐字节截断、overflow、64MiB、非法 rect、四分类 |
-| Preview window | no activate/focus/taskbar、click eat、owner-thread destroy、late post、topmost refresh；在 Bar 启动前人工停顿，确认显式 geometry ULW 的首帧、shimmer 后续帧与 5 秒 progress 均可见 |
+| Preview window | no activate/focus/taskbar、click eat、owner-thread destroy、late post、topmost refresh；在 Bar 启动前人工停顿，确认显式 geometry ULW 的首帧、shimmer 后续帧与 Preview 显示后 3 秒 progress 均可见 |
 | RenderPipeline | Preview-only registration、Bar-before-Preview、unregister drain、device epoch loss/recovery |
 | Bar bridge/alpha | 四步 present 任一失败、full retry、business dirty independence、no-Preview 255 |
 | Cache | stable-frame filter、latest revision、read-only/full disk、flush/replace fail、bounded shutdown |
-| Animation | 5s from T0、real fill、red frame bounded wait、三分支、无双窗口半-alpha |
+| Animation | 3s from Preview show、real fill、3/1 DIP top-layer composition、red frame bounded hold、三分支、无双窗口半-alpha |
 | Platform | full Solution Debug/Release Win32/x64/ARM64；Win7 KB2670838 WARP FL11.0；ARM64EC source audit |
 
 ## 5. Good / Base / Bad Cases
