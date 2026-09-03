@@ -14,8 +14,19 @@ namespace
 int RunSettingSessionStateTests()
 {
 	using Inkeys::UI::Setting::SessionState;
+	using Inkeys::UI::Setting::StartupPreviewPreference;
 	int failures = 0;
 	SessionState state;
+	StartupPreviewPreference startupPreview;
+	if (!Expect(startupPreview.StartupEnabled()
+		&& startupPreview.ConfiguredEnabled(),
+		"startup preview defaults enabled")) ++failures;
+	if (!Expect(startupPreview.SetConfigured(false)
+		&& startupPreview.StartupEnabled()
+		&& !startupPreview.ConfiguredEnabled()
+		&& startupPreview.ConsumeWritePending()
+		&& !startupPreview.ConsumeWritePending(),
+		"setting changes persistence but not current startup snapshot")) ++failures;
 
 	auto decision = state.Resolve(1, false);
 	if (!Expect(!decision.release && !decision.rebuild && !decision.render,

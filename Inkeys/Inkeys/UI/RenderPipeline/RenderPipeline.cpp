@@ -32,6 +32,7 @@ namespace Inkeys::UI::RenderPipeline
 		constexpr auto FrameInterval = std::chrono::nanoseconds(16'666'667);
 		constexpr std::array<Client, ClientCount> DispatchOrder{
 			Client::Bar,
+			Client::StartupPreview,
 			Client::PptBottomLeft,
 			Client::PptBottomRight,
 			Client::PptMiddleLeft,

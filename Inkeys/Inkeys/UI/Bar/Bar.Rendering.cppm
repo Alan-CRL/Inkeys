@@ -116,6 +116,10 @@ public:
 	{
 		return gdiInteropRenderTarget.Get();
 	}
+	[[nodiscard]] ID2D1Bitmap1* GetTargetBitmap() const noexcept
+	{
+		return targetBitmap.Get();
+	}
 	[[nodiscard]] unsigned long long GetDeviceGeneration() const noexcept
 	{
 		return deviceGeneration;

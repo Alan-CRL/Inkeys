@@ -21,6 +21,8 @@ import Inkeys.Business.ComponentActions;
 import Inkeys.Input.MouseHook;
 import Inkeys.Window;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.StartupPreview;
+import Inkeys.Startup.Progress;
 import Inkeys.Display;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
 extern const double BarDrawAttributeCompactWidth;
@@ -115,13 +117,28 @@ namespace Inkeys::UI::Bar
 	void Initialization()
 	{
 		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");
-		if (offSignal) return;
+		Inkeys::UI::StartupPreview::SetBarStartupState(
+			Inkeys::UI::StartupPreview::BarStartupState::Initializing);
+		if (offSignal)
+		{
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
+			return;
+		}
 		// 初始化
-		if (!InitializeWindow(barUISet)) return;
+		if (!InitializeWindow(barUISet))
+		{
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::WindowMissing);
+			return;
+		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarWindowReady);
 		InitializeUI(barUISet);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarUiGraphReady);
 		barUISet.StartDisplayTracking();
 
 		barUISet.barMedia.LoadFormat();
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarMediaReady);
 
 		// 首次布局直接读取 Draw3 内容快照，避免依赖监控线程稍后的修订通知。
 		SetCurrentPageHasContent(
@@ -133,24 +150,49 @@ namespace Inkeys::UI::Bar
 			barUISet.barButtonSet.Load();
 			barUISet.barButtonSet.StateUpdate();
 		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarComponentsReady);
 		SetContentStateUpdatesReady(true);
 
 		barUISet.barState.PositionUpdate(barUISet.barStyle.zoom);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarStateReady);
 		if (offSignal)
 		{
 			SetContentStateUpdatesReady(false);
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
 			return;
 		}
 
-		// Hook 自有 jthread，并在创建它的线程卸载。
-		(void)Inkeys::Input::MouseHook::Start([&]()
-			{
-				barUISet.barState.fold = true;
-				barUISet.UpdateRendering(false);
-			});
+		const bool captureStartupPreview =
+			Inkeys::UI::StartupPreview::DeveloperCaptureRequested();
+		// 规范资产捕获不接收真实输入，避免鼠标位置改变稳定帧。
+		if (!captureStartupPreview)
+		{
+			(void)Inkeys::Input::MouseHook::Start([&]()
+				{
+					barUISet.barState.fold = true;
+					barUISet.UpdateRendering(false);
+				});
+		}
 		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
-		barUISet.Rendering();
-		thread interactionThread([&]() { barUISet.Interact(); });
+		if (!barUISet.Rendering())
+		{
+			SetContentStateUpdatesReady(false);
+			Inkeys::Input::MouseHook::Stop();
+			barUISet.StopDisplayTracking();
+			return;
+		}
+		thread interactionThread;
+		if (captureStartupPreview)
+		{
+			// capture-only 会话有意跳过交互线程，将该初始化阶段视为已收敛。
+			(void)Inkeys::Startup::Report(
+				Inkeys::Startup::Milestone::BarInteractionReady);
+		}
+		else
+		{
+			interactionThread = thread([&]() { barUISet.Interact(); });
+		}
 
 		// 等待
 
@@ -165,6 +207,10 @@ namespace Inkeys::UI::Bar
 		if (interactionThread.joinable()) interactionThread.join();
 		barUISet.StopDisplayTracking();
 		barUISet.StopRendering();
+		if (Inkeys::UI::StartupPreview::GetBarStartupState()
+			!= Inkeys::UI::StartupPreview::BarStartupState::FirstFrameCommitted)
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
 		Inkeys::Business::ShutdownComponentActions();
 
 		return;

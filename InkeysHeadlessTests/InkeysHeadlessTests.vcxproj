@@ -95,6 +95,14 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.Format.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.Format.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\PageControl\PageControl.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Whiteboard\Whiteboard.cppm" />
@@ -120,6 +128,10 @@
     <ClCompile Include="frame_pacing_tests.cpp" />
 	<ClCompile Include="toggle_click_coalescer_tests.cpp" />
 	<ClCompile Include="render_scheduler_tests.cpp" />
+	<ClCompile Include="startup_progress_tests.cpp" />
+	<ClCompile Include="startup_preview_state_tests.cpp" />
+	<ClCompile Include="startup_preview_format_tests.cpp" />
+	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
 	<ClCompile Include="page_control_tests.cpp" />
@@ -137,6 +149,8 @@
     <ClCompile Include="wake_signal_tests.cpp" />
   </ItemGroup>
 	<ItemGroup>
+	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	  <ClInclude Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.CacheWrite.h" />
 	  <ResourceCompile Include="message_box_test.rc" />
 	</ItemGroup>
   <ItemGroup>

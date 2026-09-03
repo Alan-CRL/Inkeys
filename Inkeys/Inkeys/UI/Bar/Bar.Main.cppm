@@ -345,7 +345,7 @@ public:
 	BarUISetClass() : spec(this) {};
 
 	// 渲染
-	void Rendering();
+	[[nodiscard]] bool Rendering();
 	void StopRendering();
 	// 鼠标交互
 	void Interact();
@@ -901,10 +901,22 @@ export extern BarUISetClass barUISet;
 
 namespace Inkeys::UI::Bar
 {
+	export struct PresentationAlphaDiagnostics final
+	{
+		std::uint8_t requested = 255;
+		std::uint8_t committed = 255;
+		bool transparentCommitted = false;
+		bool opaqueCommitted = false;
+	};
+
 	export WNDPROC WindowProc() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();
+	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
+	export std::uint8_t CommittedPresentationAlpha() noexcept;
+	export std::uint8_t RequestedPresentationAlpha() noexcept;
+	export PresentationAlphaDiagnostics SnapshotPresentationAlphaDiagnostics() noexcept;
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetDebugOptions(bool enable, bool showFrameRate);

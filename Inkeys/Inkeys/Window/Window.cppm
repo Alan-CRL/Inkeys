@@ -151,6 +151,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
 		[[nodiscard]] bool CancelPointerCapture();
 			[[nodiscard]] bool RequestTopmostRefresh();
+			// 成功 refresh 后在内部锁外调用；传空函数可注销并 drain 正在执行的回调。
+			void SetTopmostRefreshObserver(std::function<void()> callback);
 			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
 			[[nodiscard]] bool OverlayTopmost() const noexcept;
 			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。

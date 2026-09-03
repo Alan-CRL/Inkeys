@@ -1,6 +1,7 @@
 ﻿import Inkeys.Helper.Thread;
 import Inkeys.Text.Font;
 import Inkeys.Window;
+import Inkeys.Startup.Progress;
 
 #include "IdtFreezeFrame.h"
 
@@ -50,7 +51,11 @@ void FreezeFrameWindow()
 	Inkeys::Graphics::DibSurface freeze_background, PptSign;
 	const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 	const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-	if (!monitor) return;
+	if (!monitor)
+	{
+		(void)Inkeys::Startup::ReportFailure(0xF002u);
+		return;
+	}
 	const int monitorHeight = monitor->pixelHeight;
 	const int freezeHeight = setlist.regularSetting.avoidFullScreen
 		? monitorHeight - 1
@@ -58,6 +63,7 @@ void FreezeFrameWindow()
 	if (!freeze_background.resize(monitor->pixelWidth, freezeHeight))
 	{
 		if (IDTLogger) IDTLogger->error("[定格线程][FreezeFrameWindow] 创建 DIB Surface 失败");
+		(void)Inkeys::Startup::ReportFailure(0xF003u);
 		return;
 	}
 	RECT freezeBounds{ monitor->bounds.left, monitor->bounds.top,
@@ -90,9 +96,15 @@ void FreezeFrameWindow()
 	ulwi.dwFlags = ULW_ALPHA;
 
 	ulwi.hdcSrc = freeze_background.dc();
-	(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+	if (SubmitFreezeSurface(freeze_window, &ulwi, false))
+	{
+		(void)Inkeys::Startup::Report(
+			Inkeys::Startup::Milestone::FreezeFirstFrameCommitted);
+		IdtWindowsIsVisible.freezeWindow = true;
+	}
+	else
+		(void)Inkeys::Startup::ReportFailure(0xF001u);
 
-	IdtWindowsIsVisible.freezeWindow = true;
 	//ShowWindow(freeze_window, SW_SHOW);
 
 	FreezeFrame.update = true;

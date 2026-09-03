@@ -401,6 +401,8 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	<ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.CacheWrite.h" />
 	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
@@ -838,6 +840,15 @@
 	<ClCompile Include="Inkeys\Window\Window.cppm" />
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
 	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cppm" />
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cpp" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cppm" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.Format.cppm" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.Format.cpp" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.VisualConfig.cppm" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp" />
 	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm" />
 	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp" />
 	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
@@ -1141,6 +1152,8 @@
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
+	<None Include="Inkeys\UI\StartupPreview\StartupBarPreview-v1.bin" />
+	<None Include="Inkeys\UI\StartupPreview\StartupBarPreview-v1.md" />
     <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli" />
     <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl" />
     <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso" />

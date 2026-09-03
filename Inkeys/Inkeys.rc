@@ -361,6 +361,13 @@ IDR_DRAW3_LASER_UPDATE_CS SHADER                 "Inkeys\\Drawing\\Draw3\\Assets
 
 IDR_DRAW3_LASER_EMIT_CS SHADER                   "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleEmitCS.cso"
 
+/////////////////////////////////////////////////////////////////////////////
+//
+// STARTUP_PREVIEW_BIN
+//
+
+IDR_STARTUP_PREVIEW     STARTUP_PREVIEW_BIN      "Inkeys\\UI\\StartupPreview\\StartupBarPreview-v1.bin"
+
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
 

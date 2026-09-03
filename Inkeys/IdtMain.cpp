@@ -29,6 +29,9 @@ import Inkeys.Message;
 import Inkeys.Window;
 import Inkeys.Display;
 import Inkeys.UI.MessageBox;
+import Inkeys.UI.StartupPreview;
+import Inkeys.UI.StartupPreview.VisualConfig;
+import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 
 #include "IdtMain.h"
@@ -82,6 +85,46 @@ namespace
 	LONG offSignalInterop = 0;
 	Inkeys::Display::Subscription displaySubscription;
 
+	[[nodiscard]] HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
+	{
+		if (!fileName || !*fileName) return nullptr;
+		wchar_t systemPath[MAX_PATH]{};
+		const UINT length = GetSystemDirectoryW(systemPath, ARRAYSIZE(systemPath));
+		if (length == 0 || length >= ARRAYSIZE(systemPath)) return nullptr;
+		const bool needsSeparator = systemPath[length - 1] != L'\\';
+		const size_t nameLength = wcslen(fileName);
+		const size_t required = static_cast<size_t>(length)
+			+ (needsSeparator ? 1u : 0u) + nameLength + 1u;
+		if (required > ARRAYSIZE(systemPath)) return nullptr;
+		std::size_t offset = length;
+		if (needsSeparator) systemPath[offset++] = L'\\';
+		if (wcscpy_s(systemPath + offset, ARRAYSIZE(systemPath) - offset,
+			fileName) != 0) return nullptr;
+		// Win7 上可选 DLL 必须从 System32 绝对路径加载，避免应用目录同名 DLL 劫持。
+		return LoadLibraryW(systemPath);
+	}
+
+	[[nodiscard]] bool EnsureProcessDpiAwareness() noexcept
+	{
+		using SetAwareness = HRESULT(WINAPI*)(PROCESS_DPI_AWARENESS);
+		HMODULE shcore = LoadSystemLibrary(L"Shcore.dll");
+		if (shcore)
+		{
+			const auto setAwareness = reinterpret_cast<SetAwareness>(
+				GetProcAddress(shcore, "SetProcessDpiAwareness"));
+			if (setAwareness)
+			{
+				const HRESULT result = setAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+				FreeLibrary(shcore);
+				// E_ACCESSDENIED 表示 manifest 或更早调用已完成配置。
+				if (SUCCEEDED(result) || result == E_ACCESSDENIED) return true;
+			}
+			else FreeLibrary(shcore);
+		}
+		return SetProcessDPIAware() != FALSE
+			|| GetLastError() == ERROR_ACCESS_DENIED;
+	}
+
 	void ShowStartupMessage(const wchar_t* body) noexcept
 	{
 		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
@@ -90,6 +133,50 @@ namespace
 		request.fallback.modality =
 			Inkeys::UI::MessageBox::SystemModality::System;
 		(void)Inkeys::UI::MessageBox::Show(request);
+	}
+
+	void PublishFatalStartupFailure(
+		std::uint32_t code, const wchar_t* message) noexcept
+	{
+		(void)Inkeys::Startup::ReportFailure(code);
+		Inkeys::UI::StartupPreview::RequestFailureFrame();
+		(void)Inkeys::UI::StartupPreview::WaitForFailureFrame(
+			std::chrono::milliseconds(350));
+		Inkeys::UI::StartupPreview::Stop();
+		ShowStartupMessage(message);
+	}
+
+	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
+		const Inkeys::UI::StartupPreview::Diagnostics& preview,
+		const Inkeys::UI::Bar::PresentationAlphaDiagnostics& alpha) noexcept
+	{
+		try
+		{
+		if (path.empty()) return false;
+		const std::string report = std::string(passed ? "PASS\r\n" : "FAIL\r\n")
+			+ "cacheState=" + std::to_string(static_cast<unsigned>(preview.cacheState)) + "\r\n"
+			+ "previewFirstFrameCommitted=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
+			+ "barAlpha0Committed=" + (alpha.transparentCommitted ? "1\r\n" : "0\r\n")
+			+ "barAlpha255Committed=" + (alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
+			+ "automaticStopPosted=" + (preview.automaticStopPosted ? "1\r\n" : "0\r\n")
+			+ "ownerThreadExited=" + (preview.ownerThreadExited ? "1\r\n" : "0\r\n")
+			+ "previewActive=" + (preview.active ? "1\r\n" : "0\r\n")
+			+ "requestedAlpha=" + std::to_string(alpha.requested) + "\r\n"
+			+ "committedAlpha=" + std::to_string(alpha.committed) + "\r\n";
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+			CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE) return false;
+		DWORD written = 0;
+		const bool succeeded = WriteFile(file, report.data(),
+			static_cast<DWORD>(report.size()), &written, nullptr) != FALSE
+			&& written == report.size() && FlushFileBuffers(file) != FALSE;
+		CloseHandle(file);
+		return succeeded;
+		}
+		catch (...)
+		{
+			return false;
+		}
 	}
 
 #ifndef IDT_RELEASE
@@ -136,7 +223,7 @@ IdtAtomic<bool> useMouseInput;
 using namespace Inkeys;
 
 // 程序入口点
-int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 {
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
@@ -742,6 +829,175 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		hasSuperTop = hasUiAccess(tok_self);
 	}
 
+	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
+	const auto startupT0 = chrono::steady_clock::now();
+	std::wstring startupPreviewCapturePath;
+	std::wstring startupPreviewSmokePath;
+	{
+		int argumentCount = 0;
+		LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
+		if (arguments)
+		{
+			for (int index = 1; index + 1 < argumentCount; ++index)
+			{
+				if (CompareStringOrdinal(arguments[index], -1,
+					L"--capture-startup-preview", -1, TRUE) == CSTR_EQUAL)
+				{
+					startupPreviewCapturePath = arguments[index + 1];
+					break;
+				}
+				if (CompareStringOrdinal(arguments[index], -1,
+					L"--startup-preview-smoke", -1, TRUE) == CSTR_EQUAL)
+				{
+					startupPreviewSmokePath = arguments[index + 1];
+					break;
+				}
+			}
+			LocalFree(arguments);
+		}
+	}
+	const bool startupPreviewCaptureRequested =
+		!startupPreviewCapturePath.empty();
+	const bool startupPreviewSmokeRequested =
+		!startupPreviewSmokePath.empty();
+	Inkeys::Config startupMiniConfig;
+	(void)startupMiniConfig.ReadMini({
+		"Experimental.Inkeys3.UI3.StartupPreview",
+		"Experimental.Inkeys3.UI3.EdgeLighting",
+		"Experimental.Inkeys3.UI3.Debug",
+		"UI.Bar.Zoom", "UI.Bar.FixedButtonsA1",
+		"UI.Bar.ExtensionButtons", "UI.Bar.FixedButtonsA2" });
+	const bool startupPreviewConfigured = !startupPreviewCaptureRequested
+		&& (startupPreviewSmokeRequested
+			|| startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Enable);
+	bool startupPreviewStarted = false;
+	Inkeys::Startup::ProgressTracker startupProgress(
+		Inkeys::Startup::Plan::ForStartup(startupPreviewConfigured), startupT0);
+	Inkeys::Startup::SetActiveTracker(&startupProgress);
+	struct StartupProgressScope final
+	{
+		Inkeys::Startup::ProgressTracker* tracker = nullptr;
+		~StartupProgressScope()
+		{
+			Inkeys::UI::StartupPreview::Stop();
+			Inkeys::Startup::ClearActiveTracker(tracker);
+		}
+	} startupProgressScope{ &startupProgress };
+	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::SuperTopCrossed);
+	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::MiniConfigRead);
+
+	if (!EnsureProcessDpiAwareness())
+	{
+		(void)Inkeys::Startup::ReportFailure(0xD001u);
+		ShowStartupMessage(L"Unable to configure process DPI awareness.\n无法配置进程 DPI 感知，程序无法安全启动。");
+		return 1;
+	}
+	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::DpiAwarenessReady);
+
+	if (startupPreviewConfigured || startupPreviewCaptureRequested)
+	{
+		const HRESULT earlyRenderResult = Inkeys::UI::RenderPipeline::Initialize();
+		if (FAILED(earlyRenderResult))
+		{
+			(void)Inkeys::Startup::ReportFailure(0xD002u);
+			ShowStartupMessage(L"Unable to initialize the shared rendering pipeline.\n共享渲染管线初始化失败。");
+			return 1;
+		}
+		// 现有 Initialize 是一个原子握手；三个真实子资源在成功返回后合并报告。
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderFactoriesReady);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderDeviceReady);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderSchedulerReady);
+
+		MONITORINFO monitorInfo{};
+		monitorInfo.cbSize = sizeof(monitorInfo);
+		const HMONITOR primaryMonitor = MonitorFromPoint(POINT{}, MONITOR_DEFAULTTOPRIMARY);
+		(void)GetMonitorInfoW(primaryMonitor, &monitorInfo);
+		UINT startupDpi = USER_DEFAULT_SCREEN_DPI;
+		if (HDC screen = GetDC(nullptr))
+		{
+			const int queriedDpi = GetDeviceCaps(screen, LOGPIXELSX);
+			if (queriedDpi > 0) startupDpi = static_cast<UINT>(queriedDpi);
+			ReleaseDC(nullptr, screen);
+		}
+		Inkeys::Config defaultVisualConfig;
+		defaultVisualConfig.ResetToDefaults();
+		Inkeys::UI::StartupPreview::PreviewCompatibility compatibility;
+		compatibility.layoutEpoch = 1;
+		compatibility.visualSignature =
+			Inkeys::UI::StartupPreview::BuildVisualSignature(
+				Inkeys::UI::StartupPreview::BuildConfiguredVisualInputs(
+					startupPreviewCaptureRequested
+					? defaultVisualConfig : startupMiniConfig));
+		compatibility.captureDpiX = startupDpi;
+		compatibility.captureDpiY = startupDpi;
+		compatibility.monitorPixelWidth = static_cast<std::uint32_t>((std::max)(
+			1L, monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left));
+		compatibility.monitorPixelHeight = static_cast<std::uint32_t>((std::max)(
+			1L, monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top));
+		compatibility.monitorWorkWidth = static_cast<std::uint32_t>((std::max)(
+			1L, monitorInfo.rcWork.right - monitorInfo.rcWork.left));
+		compatibility.monitorWorkHeight = static_cast<std::uint32_t>((std::max)(
+			1L, monitorInfo.rcWork.bottom - monitorInfo.rcWork.top));
+		const auto embeddedVisualSignature =
+			Inkeys::UI::StartupPreview::BuildVisualSignature(
+				Inkeys::UI::StartupPreview::BuildConfiguredVisualInputs(
+					defaultVisualConfig));
+
+		if (startupPreviewCaptureRequested)
+		{
+			if (startupDpi != 96)
+			{
+				ShowStartupMessage(
+					L"Startup preview capture requires 96 DPI.\n生成启动预览要求 96 DPI。"
+				);
+				Inkeys::UI::RenderPipeline::Shutdown();
+				return 2;
+			}
+			Inkeys::UI::StartupPreview::ConfigureDeveloperCapture(
+				startupPreviewCapturePath, compatibility);
+		}
+
+		Inkeys::UI::StartupPreview::StartOptions previewOptions;
+		previewOptions.instance = hInstance;
+		previewOptions.cachePath = globalPath
+			+ L"Inkeys\\Cache\\StartupBarPreview-v1.bin";
+		previewOptions.monitorBounds = monitorInfo.rcMonitor;
+		previewOptions.compatibility = compatibility;
+		previewOptions.embeddedVisualSignature = embeddedVisualSignature;
+		previewOptions.progress = &startupProgress;
+		previewOptions.startTime = startupT0;
+		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
+			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
+		previewOptions.committedBarAlpha = []
+			{ return Inkeys::UI::Bar::CommittedPresentationAlpha(); };
+		if (startupPreviewConfigured)
+		{
+			startupPreviewStarted = Inkeys::UI::StartupPreview::Start(previewOptions);
+			if (!startupPreviewStarted)
+			{
+				// Preview 是可降级阶段；attempt 已有界结束后收敛可选权重，正式 Bar 保持 255。
+				(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::PreviewOwnerReady);
+				(void)Inkeys::Startup::Report(
+					Inkeys::Startup::Milestone::PreviewRenderClientReady);
+				(void)Inkeys::Startup::Report(
+					Inkeys::Startup::Milestone::PreviewFirstFrameCommitted);
+			}
+		}
+		if (startupPreviewSmokeRequested)
+		{
+			if (!startupPreviewStarted)
+			{
+				(void)WriteStartupPreviewSmokeReport(startupPreviewSmokePath, false,
+					Inkeys::UI::StartupPreview::SnapshotDiagnostics(),
+					Inkeys::UI::Bar::SnapshotPresentationAlphaDiagnostics());
+				Inkeys::UI::RenderPipeline::Shutdown();
+				return 3;
+			}
+			// 显式 smoke 模式短暂保留 embedded 首帧，供无输入截图验证。
+			this_thread::sleep_for(chrono::milliseconds(1500));
+		}
+	}
+
 	// 用户ID获取
 	{
 		userId = utf8ToUtf16(getDeviceGUID());
@@ -847,6 +1103,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
 		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::LoggingReady);
 
 		//logger->info("");
 		//logger->warn("");
@@ -855,35 +1112,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 	}
 	// DPI初始化
 	{
-		HMODULE hShcore = LoadLibrary(L"Shcore.dll");
-		if (hShcore != NULL)
-		{
-			typedef HRESULT(WINAPI* LPFNSPDPIA)(PROCESS_DPI_AWARENESS);
-			LPFNSPDPIA lSetProcessDpiAwareness = (LPFNSPDPIA)GetProcAddress(hShcore, "SetProcessDpiAwareness");
-			if (lSetProcessDpiAwareness != NULL)
-			{
-				HRESULT hr = lSetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
-				if (!SUCCEEDED(hr))
-				{
-					IDTLogger->warn("[主线程][IdtMain] 执行SetProcessDpiAwareness失败");
-					if (!SetProcessDPIAware()) IDTLogger->error("[主线程][IdtMain] 调用SetProcessDPIAware失败");
-				}
-			}
-			else
-			{
-				IDTLogger->warn("[主线程][IdtMain] 查询接口SetProcessDpiAwareness失败");
-				if (!SetProcessDPIAware()) IDTLogger->error("[主线程][IdtMain] 调用SetProcessDPIAware失败");
-			}
-
-			FreeLibrary(hShcore);
-		}
-		else
-		{
-			IDTLogger->warn("[主线程][IdtMain] 加载Shcore.dll失败");
-			if (!SetProcessDPIAware()) IDTLogger->error("[主线程][IdtMain] 调用SetProcessDPIAware失败");
-		}
-
-		//图像DPI转化
+		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处只保留旧 surface resize。
 		{
 			(void)alpha_drawpad.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 			(void)tester.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
@@ -891,11 +1120,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::LegacySurfaceReady);
 	}
 	// COM初始化
-	HANDLE hActCtx;
-	ULONG_PTR ulCookie;
-	CoInitializeEx(NULL, COINIT_MULTITHREADED);
+	HANDLE hActCtx = INVALID_HANDLE_VALUE;
+	ULONG_PTR ulCookie = 0;
+	bool actCtxActivated = false;
+	HMODULE pptComModule = nullptr;
+	const HRESULT comInitializeResult = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+	if (SUCCEEDED(comInitializeResult) || comInitializeResult == RPC_E_CHANGED_MODE)
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::ComReady);
+	else
+	{
+		PublishFatalStartupFailure(0xD004u,
+			L"COM 运行环境初始化失败，程序无法继续启动。");
+		Inkeys::UI::RenderPipeline::Shutdown();
+		return 1;
+	}
 
 	// 显示器信息初始化
 	{
@@ -905,6 +1146,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (displaySnapshot && displaySnapshot->monitors.size() > 1)
 			IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
 		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::DisplayReady);
 	}
 
 	// 配置信息初始化
@@ -1090,6 +1332,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			if (startupPreviewCaptureRequested)
+			{
+				// 资产捕获必须与用户配置隔离，仅在当前进程使用规范默认值。
+				Inkeys::Config captureDefaults;
+				captureDefaults.ResetToDefaults();
+				config = captureDefaults;
+			}
 		#ifndef IDT_RELEASE
 			pptComConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
@@ -1108,9 +1357,11 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			animationSpeedRate = isfinite(animationSpeedRate)
 				? clamp(animationSpeedRate, 0.1, 5.0) : 1.0;
 			config.Experimental.Inkeys3.UI3.Animation.SpeedRate = animationSpeedRate;
-			config.Write();
+			if (!startupPreviewCaptureRequested) config.Write();
 			Inkeys::UI::Bar::SetAnimationOptions(
-				config.Experimental.Inkeys3.UI3.Animation.Enable, animationSpeedRate);
+				startupPreviewCaptureRequested ? false
+					: static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
+				animationSpeedRate);
 			Inkeys::UI::Bar::SetEdgeLightingOptions(
 				config.Experimental.Inkeys3.UI3.EdgeLighting.Enable,
 				config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic);
@@ -1164,6 +1415,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		setlist.selectLanguage = 1;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::FullConfigReady);
 	}
 	// 显示快照发布后只桥接旧绘图尺度，UI 自身通过各自客户端处理布局。
 	displaySubscription = Inkeys::Display::Subscribe([](Inkeys::Display::SnapshotPtr snapshot)
@@ -1194,6 +1446,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		else I18n::load(1, L"JSON", L"en-US");
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::I18nReady);
 	}
 	// 插件初始化
 	{
@@ -1201,6 +1454,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		shortcutAssistant.SetShortcut();
 		// 启动 DesktopDrawpadBlocker
 		StartDesktopDrawpadBlocker();
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::PluginsReady);
 	}
 
 	// COM 清单加载
@@ -1217,12 +1471,27 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			actCtx.hModule = GetModuleHandle(NULL);
 
 			hActCtx = CreateActCtx(&actCtx);
-			ActivateActCtx(hActCtx, &ulCookie);
-
-			HMODULE hModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
+			if (hActCtx != INVALID_HANDLE_VALUE)
+				actCtxActivated = ActivateActCtx(hActCtx, &ulCookie) != FALSE;
+			if (actCtxActivated)
+				pptComModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
+		}
+		if (!actCtxActivated || !pptComModule)
+		{
+			IDTLogger->critical("[主线程][IdtMain] PptCOM activation 初始化失败, error={}",
+				static_cast<unsigned long>(GetLastError()));
+			PublishFatalStartupFailure(0xD005u,
+				L"PptCOM 组件初始化失败，程序无法继续启动。");
+			if (pptComModule) FreeLibrary(pptComModule);
+			if (actCtxActivated) DeactivateActCtx(0, ulCookie);
+			if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
+			if (SUCCEEDED(comInitializeResult)) CoUninitialize();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
 		}
 
 		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::PptComReady);
 	}
 	// 自动更新初始化
 	{
@@ -1237,7 +1506,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (FAILED(hr))
 		{
 			if (IDTLogger) IDTLogger->error("[主线程][IdtMain] 界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			PublishFatalStartupFailure(0xD002u,
+				L"共享渲染管线初始化失败，程序无法继续启动。");
 			return 0;
+		}
+		if (hr == S_OK)
+		{
+			(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderFactoriesReady);
+			(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderDeviceReady);
+			(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderSchedulerReady);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
@@ -1260,6 +1537,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 				if (IDTLogger) IDTLogger->error(
 					"[主线程][IdtMain] UI 字体集合初始化失败, hr=0x{:08X}",
 					static_cast<unsigned int>(fontHr));
+				PublishFatalStartupFailure(0xD003u,
+					L"UI 字体资源初始化失败，程序无法继续启动。");
 				Inkeys::UI::RenderPipeline::Shutdown();
 				return 0;
 			}
@@ -1320,6 +1599,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::FontsReady);
 	}
 
 	// 窗口
@@ -1506,11 +1786,16 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (!StartWindowService())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Win32 窗口服务启动失败");
+			PublishFatalStartupFailure(0xD101u,
+				L"窗口服务初始化失败，程序无法继续启动。");
 			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WindowOverlayReady);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WindowSettingReady);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WindowServiceReady);
 		// Draw3 只附着 Window Service 已创建的 HWND；样式变更仍回到 owner thread。
 		Inkeys::Drawing::Draw3::HostStyleCallbacks draw3StyleCallbacks{
 			&windowService,
@@ -1525,6 +1810,28 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
+		draw3StartOptions.startupMilestone = [](void*,
+			Inkeys::Drawing::Draw3::HostStartupStage stage) noexcept
+			{
+				using Stage = Inkeys::Drawing::Draw3::HostStartupStage;
+				using Milestone = Inkeys::Startup::Milestone;
+				switch (stage)
+				{
+				case Stage::WindowAttached: (void)Inkeys::Startup::Report(
+					Milestone::Draw3WindowAttached); break;
+				case Stage::GraphicsReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3GraphicsReady); break;
+				case Stage::PresenterReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3PresenterReady); break;
+				case Stage::RtsReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3RtsReady); break;
+				case Stage::ControllerReady: (void)Inkeys::Startup::Report(
+					Milestone::Draw3ControllerReady); break;
+				case Stage::FirstFrameCommitted: (void)Inkeys::Startup::Report(
+					Milestone::Draw3FirstFrameCommitted); break;
+				default: break;
+				}
+			};
 		Inkeys::Drawing::Draw3::HostRuntimeCallbacks draw3RuntimeCallbacks{
 			nullptr,
 			[](void*, bool active) noexcept
@@ -1561,6 +1868,8 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (!draw3Started)
 		{
 			IDTLogger->critical("[主线程][IdtMain] Draw3 Host 初始化失败");
+			PublishFatalStartupFailure(0xD201u,
+				L"Draw3 绘图服务初始化失败，程序无法继续启动。");
 			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
@@ -1569,18 +1878,23 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		if (!setting_window || !Inkeys::UI::Setting::Initialize())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Setting 渲染客户端初始化失败");
+			PublishFatalStartupFailure(0xD301u,
+				L"设置界面初始化失败，程序无法继续启动。");
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::SettingReady);
 		if (!Inkeys::UI::Whiteboard::Initialize({
 			[] { RequestWhiteboardPreviousPage(); },
 			[] { RequestWhiteboardNextPage(); },
 			}))
 		{
 			IDTLogger->critical("[主线程][IdtMain] Whiteboard 渲染客户端初始化失败");
+			PublishFatalStartupFailure(0xD401u,
+				L"白板界面初始化失败，程序无法继续启动。");
 			Inkeys::UI::Setting::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
@@ -1588,12 +1902,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WhiteboardReady);
 		// Host 启动会清空桥接队列；首帧前重新发布当前 UI 状态。
 		SyncDraw3State();
 		// 首帧完成后按“模式 + 当前页内容”决定显隐；初始空选择页保持隐藏。
 		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧准备失败");
+			PublishFatalStartupFailure(0xD202u,
+				L"Draw3 首帧提交失败，程序无法继续启动。");
 			Inkeys::UI::Whiteboard::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
@@ -1605,7 +1922,27 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		magnificationCreateReady = magnifierWindow && magnifierChild;
 
 		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
-		(void)windowService.RequestTopmostRefresh();
+		windowService.SetTopmostRefreshObserver([]
+			{
+				// observer 不同步反调 Window Service，只向 Preview owner 异步 post。
+				Inkeys::UI::StartupPreview::RevalidateTopmost();
+			});
+		if (windowService.RequestTopmostRefresh())
+			(void)Inkeys::Startup::Report(
+				Inkeys::Startup::Milestone::InitialTopmostRefresh);
+		else
+		{
+			windowService.SetTopmostRefreshObserver({});
+			PublishFatalStartupFailure(0xD102u,
+				L"窗口层级初始化失败，程序无法继续启动。");
+			Inkeys::UI::Whiteboard::Shutdown();
+			Inkeys::UI::Setting::Shutdown();
+			Inkeys::Drawing::Draw3::StopProduct();
+			SetOffSignal(1);
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
 
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}
@@ -1638,7 +1975,60 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
 
-	while (!offSignal) this_thread::sleep_for(chrono::milliseconds(500));
+	int developerModeExitCode = 0;
+	while (!offSignal)
+	{
+		this_thread::sleep_for(chrono::milliseconds(100));
+		if (startupPreviewCaptureRequested
+			&& Inkeys::UI::StartupPreview::DeveloperCaptureCompleted())
+		{
+			SetOffSignal(1);
+			break;
+		}
+		if (startupPreviewCaptureRequested
+			&& chrono::steady_clock::now() - startupT0 >= chrono::seconds(30))
+		{
+			developerModeExitCode = 4;
+			if (IDTLogger)
+				IDTLogger->error("[主线程][IdtMain] StartupPreview developer capture 超时");
+			SetOffSignal(1);
+			break;
+		}
+		if (startupPreviewSmokeRequested)
+		{
+			const auto preview = Inkeys::UI::StartupPreview::SnapshotDiagnostics();
+			const auto alpha = Inkeys::UI::Bar::SnapshotPresentationAlphaDiagnostics();
+			const bool completed = preview.firstFrameCommitted
+				&& alpha.transparentCommitted && alpha.opaqueCommitted
+				&& preview.automaticStopPosted && preview.ownerThreadExited
+				&& !preview.active && alpha.committed == 255;
+			const bool timedOut = chrono::steady_clock::now() - startupT0
+				>= chrono::seconds(20);
+			if (completed || timedOut)
+			{
+				if (timedOut && !completed) developerModeExitCode = 5;
+				(void)WriteStartupPreviewSmokeReport(
+					startupPreviewSmokePath, completed, preview, alpha);
+				SetOffSignal(1);
+				break;
+			}
+		}
+		const auto startupSnapshot = Inkeys::Startup::ActiveSnapshot();
+		if (!startupSnapshot.failed) continue;
+		Inkeys::UI::StartupPreview::RequestFailureFrame();
+		(void)Inkeys::UI::StartupPreview::WaitForFailureFrame(
+			chrono::milliseconds(350));
+		const std::wstring message = L"启动阶段发生致命错误（代码 "
+			+ std::to_wstring(startupSnapshot.failureCode)
+			+ L"），程序将安全退出。";
+		Inkeys::UI::StartupPreview::Stop();
+		ShowStartupMessage(message.c_str());
+		SetOffSignal(1);
+		break;
+	}
+	// Preview 先停止接收 frame/cache，再注销并销毁 owner HWND。
+	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
+	Inkeys::UI::StartupPreview::Stop();
 	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
 	Inkeys::UI::Whiteboard::Shutdown();
 	Inkeys::UI::Setting::Shutdown();
@@ -1671,10 +2061,10 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	// 反初始化 COM 环境
 	{
-		CoUninitialize();
-
-		DeactivateActCtx(0, ulCookie);
-		ReleaseActCtx(hActCtx);
+		if (pptComModule) FreeLibrary(pptComModule);
+		if (actCtxActivated) DeactivateActCtx(0, ulCookie);
+		if (hActCtx != INVALID_HANDLE_VALUE) ReleaseActCtx(hActCtx);
+		if (SUCCEEDED(comInitializeResult)) CoUninitialize();
 
 		IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成");
 	}
@@ -1690,7 +2080,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 
-	return 0;
+	return developerModeExitCode;
 }
 
 // 调测专用

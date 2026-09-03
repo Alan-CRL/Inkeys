@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "逐条核对启动预览的可执行合同与 Required Tests"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution、Win32/x64/ARM64 与 Windows 7 兼容验证"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "检查 fatal/degrade、red frame、callback drain、资源和 shutdown"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 IdtMain、Config、Window、RenderPipeline、Bar、Draw3、Setting 跨层数据流"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "确认复用现有 pipeline、原子写、错误弹窗和 D2D effect 范式"}
+{"file": ".trellis/tasks/09-02-startup-preview-fast-display/research/code-investigation.md", "reason": "用已确认源码位置复核实现是否偏离真实启动链"}
+{"file": ".trellis/tasks/09-02-startup-preview-fast-display/research/microsoft-platform-contracts.md", "reason": "复核 Win7/API 返回值与加载期依赖"}

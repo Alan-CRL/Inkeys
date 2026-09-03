@@ -144,6 +144,16 @@ namespace Inkeys::Drawing::Draw3
 		SelectionUlw,
 	};
 
+	enum class HostStartupStage : std::uint8_t
+	{
+		WindowAttached,
+		GraphicsReady,
+		PresenterReady,
+		RtsReady,
+		ControllerReady,
+		FirstFrameCommitted,
+	};
+
 	struct HostStartOptions
 	{
 		HostPresentationMode requiredPresentationMode = HostPresentationMode::Automatic;
@@ -153,6 +163,8 @@ namespace Inkeys::Drawing::Draw3
 		bool allowDirectComposition = true;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
 		std::wstring autoSaveRoot;
+		void* startupContext = nullptr;
+		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
 	};
 
 	// 原子快照仅用于无窗口验收和故障诊断，不暴露 Renderer/Document 所有权。

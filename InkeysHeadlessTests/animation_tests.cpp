@@ -35,6 +35,13 @@ int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
 int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
+int RunStartupProgressTests();
+int RunStartupPreviewStateTests();
+int RunStartupPreviewFormatTests();
+int ValidateStartupPreviewFile(const char* path);
+int ValidateStartupPreviewResource(const char* executablePath,
+	const char* sourcePath);
+int RunBarPresentationAlphaTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
 int RunPageControlTests();
@@ -1418,6 +1425,9 @@ int main(int argc, char** argv)
 	bool runWindowTests = true;
 	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
+	const char* startupPreviewAsset = nullptr;
+	const char* startupPreviewResource = nullptr;
+	const char* startupPreviewResourceSource = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
@@ -1427,11 +1437,23 @@ int main(int argc, char** argv)
 		runWindowTests &= argument != "--no-window";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
+		if (argument == "--validate-startup-preview" && index + 1 < argc)
+			startupPreviewAsset = argv[++index];
+		if (argument == "--validate-startup-preview-resource" && index + 2 < argc)
+		{
+			startupPreviewResource = argv[++index];
+			startupPreviewResourceSource = argv[++index];
+		}
 	}
 	if (messageBoxFirstFrameChild)
 		return RunMessageBoxFirstFrameChildTest();
 	if (messageBoxVisualOutput)
 		return RunMessageBoxVisualTests(messageBoxVisualOutput);
+	if (startupPreviewAsset)
+		return ValidateStartupPreviewFile(startupPreviewAsset);
+	if (startupPreviewResource)
+		return ValidateStartupPreviewResource(
+			startupPreviewResource, startupPreviewResourceSource);
 
 	TestCurvesAndTimelines();
 	TestSharedBarButtonRuntime();
@@ -1450,6 +1472,10 @@ int main(int argc, char** argv)
 	failureCount += RunFramePacingTests(benchmark);
 	failureCount += RunToggleClickCoalescerTests();
 	failureCount += RunRenderSchedulerTests();
+	failureCount += RunStartupProgressTests();
+	failureCount += RunStartupPreviewStateTests();
+	failureCount += RunStartupPreviewFormatTests();
+	failureCount += RunBarPresentationAlphaTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
 	failureCount += RunPageControlTests();

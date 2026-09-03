@@ -1,6 +1,8 @@
 import Inkeys.Helper.CrashHandler;
 import Inkeys.Window;
 import Inkeys.UI.MessageBox;
+import Inkeys.UI.StartupPreview;
+import Inkeys.Startup.Progress;
 
 #include "Window.Legacy.hpp"
 
@@ -93,7 +95,16 @@ void TopWindow()
 	if (IDTLogger) IDTLogger->info("[窗口线程][TopWindow] 等待覆盖层首帧");
 	for (int index = 0; index < 40 && !offSignal; ++index)
 	{
-		if (IdtWindowsIsVisible.floatingWindow
+		const auto startup = Inkeys::Startup::ActiveSnapshot();
+		const auto barState = Inkeys::UI::StartupPreview::GetBarStartupState();
+		if (startup.failed
+			|| Inkeys::UI::StartupPreview::IsBarStartupFailure(barState))
+		{
+			if (IDTLogger)
+				IDTLogger->warn("[窗口线程][TopWindow] 启动生产者已报告失败，停止等待覆盖层");
+			return;
+		}
+		if (Inkeys::UI::StartupPreview::IsBarStartupReady(barState)
 			&& IdtWindowsIsVisible.pptWindow
 			&& IdtWindowsIsVisible.freezeWindow)
 		{
@@ -106,6 +117,9 @@ void TopWindow()
 	if (!IdtWindowsIsVisible.allCompleted)
 	{
 		if (IDTLogger) IDTLogger->warn("[窗口线程][TopWindow] 等待覆盖层首帧超时");
+		// 统一交给主线程的 red-frame + popup 流程；只有无 tracker 时保留旧兜底。
+		if (Inkeys::Startup::ReportFailure(0xF201u)
+			|| Inkeys::Startup::ActiveSnapshot().failed) return;
 		if (LaunchState::warnTry)
 		{
 			auto request = Inkeys::UI::MessageBox::MakeOkRequest(

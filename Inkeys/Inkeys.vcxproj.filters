@@ -70,6 +70,12 @@
     <Filter Include="Modules\Inkeys\UI\RenderPipeline">
       <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
     </Filter>
+	<Filter Include="Modules\Inkeys\UI\StartupPreview">
+	  <UniqueIdentifier>{9f4a2cc1-a03b-4a87-9b84-23ba06bc3cc0}</UniqueIdentifier>
+	</Filter>
+	<Filter Include="Modules\Inkeys\Startup">
+	  <UniqueIdentifier>{a34ee98c-79a7-4129-a37f-abca38605aa2}</UniqueIdentifier>
+	</Filter>
 	<Filter Include="Modules\Inkeys\UI\MessageBox">
 	  <UniqueIdentifier>{94b0fa6a-4d16-47d4-bda0-2b3688939a44}</UniqueIdentifier>
 	</Filter>
@@ -282,6 +288,12 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
+	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
+	  <Filter>Modules\Inkeys\UI\Bar</Filter>
+	</ClInclude>
+	<ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.CacheWrite.h">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
@@ -1802,6 +1814,33 @@
     <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClCompile>
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cppm">
+	  <Filter>Modules\Inkeys\Startup</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cpp">
+	  <Filter>Modules\Inkeys\Startup</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cppm">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.Format.cppm">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.Format.cpp">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.VisualConfig.cppm">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</ClCompile>
     <ClCompile Include="Inkeys\Load\Load.cppm">
       <Filter>Modules\Inkeys\Load</Filter>
     </ClCompile>
@@ -2299,6 +2338,12 @@
     <None Include="src\ui1.bin">
       <Filter>资源文件</Filter>
     </None>
+	<None Include="Inkeys\UI\StartupPreview\StartupBarPreview-v1.bin">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</None>
+	<None Include="Inkeys\UI\StartupPreview\StartupBarPreview-v1.md">
+	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+	</None>
     <None Include="PptCOM.dll">
       <Filter>资源文件</Filter>
     </None>

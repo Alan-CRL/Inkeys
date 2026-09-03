@@ -64,6 +64,7 @@ export namespace Inkeys::UI::RenderPipeline
 	enum class Client : std::uint8_t
 	{
 		Bar,
+		StartupPreview,
 		PptBottomLeft,
 		PptBottomRight,
 		PptMiddleLeft,

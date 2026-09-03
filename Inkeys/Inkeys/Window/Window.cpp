@@ -7,6 +7,7 @@ module;
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <deque>
 #include <future>
@@ -394,7 +395,39 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool RequestTopmostRefresh()
 		{
-			return Submit(WindowRole::MagnifierHost, CommandType::RefreshTopmost);
+			const bool refreshed = Submit(
+				WindowRole::MagnifierHost, CommandType::RefreshTopmost);
+			if (!refreshed) return false;
+			std::function<void()> callback;
+			{
+				std::scoped_lock lock(topmostObserverMutex_);
+				callback = topmostRefreshObserver_;
+				if (callback) ++topmostObserverActiveCalls_;
+			}
+			if (callback)
+			{
+				topmostObserverExecuting_ = true;
+				try { callback(); }
+				catch (...) {}
+				topmostObserverExecuting_ = false;
+				{
+					std::scoped_lock lock(topmostObserverMutex_);
+					--topmostObserverActiveCalls_;
+				}
+				topmostObserverCondition_.notify_all();
+			}
+			return true;
+		}
+
+		void SetTopmostRefreshObserver(std::function<void()> callback)
+		{
+			std::unique_lock lock(topmostObserverMutex_);
+			topmostRefreshObserver_ = {};
+			if (!topmostObserverExecuting_)
+				(void)topmostObserverCondition_.wait_for(lock,
+					std::chrono::milliseconds(1500), [this]
+					{ return topmostObserverActiveCalls_ == 0; });
+			topmostRefreshObserver_ = std::move(callback);
 		}
 
 			[[nodiscard]] bool SetOverlayTopmost(bool topmost)
@@ -474,6 +507,7 @@ namespace Inkeys::Window
 			UnbindMessages,
 			Count,
 		};
+
 		static constexpr std::size_t CommandCount =
 			static_cast<std::size_t>(CommandType::Count);
 
@@ -1710,11 +1744,18 @@ namespace Inkeys::Window
 		std::array<std::array<bool, RoleCount>, CommandCount>
 			commandFailureActive_{};
 			std::atomic_bool overlayTopmost_ = true;
+			std::mutex topmostObserverMutex_;
+			std::condition_variable topmostObserverCondition_;
+			std::function<void()> topmostRefreshObserver_;
+			std::size_t topmostObserverActiveCalls_ = 0;
+			static thread_local bool topmostObserverExecuting_;
 			std::atomic_bool overlayFullscreen_ = false;
 			std::atomic_bool whiteboardWindowMode_ = false;
 			std::atomic_bool whiteboardGroupMinimized_ = false;
 			std::array<bool, RoleCount> whiteboardVisibleBeforeMinimize_{};
 		};
+
+	thread_local bool Service::Impl::topmostObserverExecuting_ = false;
 
 	Service::Service(std::size_t messageCapacity)
 		: impl_(std::make_unique<Impl>(messageCapacity))
@@ -1787,6 +1828,10 @@ namespace Inkeys::Window
 			return impl_->CancelPointerCapture();
 		}
 		bool Service::RequestTopmostRefresh() { return impl_->RequestTopmostRefresh(); }
+		void Service::SetTopmostRefreshObserver(std::function<void()> callback)
+		{
+			impl_->SetTopmostRefreshObserver(std::move(callback));
+		}
 		bool Service::SetOverlayTopmost(bool topmost) { return impl_->SetOverlayTopmost(topmost); }
 		bool Service::OverlayTopmost() const noexcept { return impl_->OverlayTopmost(); }
 		bool Service::SetOverlayFullscreen(bool fullscreen)

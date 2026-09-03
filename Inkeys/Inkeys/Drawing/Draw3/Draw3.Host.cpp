@@ -492,6 +492,9 @@ namespace Inkeys::Drawing::Draw3
 				hiddenTestContactInjectionEnabled = false;
 				return false;
 			}
+			if (startOptions.startupMilestone)
+				startOptions.startupMilestone(startOptions.startupContext,
+					HostStartupStage::WindowAttached);
 			autoSave.CloseAndDrain();
 			if (!options.autoSaveRoot.empty() && !autoSave.Start(options.autoSaveRoot))
 				std::fputs("[Draw3.AutoSave] action=start result=failed\n", stderr);
@@ -517,6 +520,9 @@ namespace Inkeys::Drawing::Draw3
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
 					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
+					if (graphicsInitialized && startOptions.startupMilestone)
+						startOptions.startupMilestone(startOptions.startupContext,
+							HostStartupStage::GraphicsReady);
 					if (graphicsInitialized)
 					{
 						const WindowSize size = window.Size();
@@ -539,6 +545,9 @@ namespace Inkeys::Drawing::Draw3
 							presentationOptions);
 						if (graphicsInitialized)
 						{
+							if (startOptions.startupMilestone)
+								startOptions.startupMilestone(startOptions.startupContext,
+									HostStartupStage::PresenterReady);
 							presentationMode.store(ToHostMode(presentation.ActiveMode()),
 								std::memory_order_release);
 							window.SetGpuTransparentComposition(
@@ -574,6 +583,9 @@ namespace Inkeys::Drawing::Draw3
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
+							if (startOptions.startupMilestone)
+								startOptions.startupMilestone(startOptions.startupContext,
+									HostStartupStage::ControllerReady);
 							// 首帧清屏和所有 Renderer 访问均发生在 Draw3 绘制线程。
 							PumpBridgeState();
 							presentation.SetOutputTarget(window.SelectionMode()
@@ -582,6 +594,9 @@ namespace Inkeys::Drawing::Draw3
 							drawing->ClearCanvas();
 							initialized = lastPresentSucceeded.load(std::memory_order_acquire);
 							firstFrameReady.store(initialized, std::memory_order_release);
+							if (initialized && startOptions.startupMilestone)
+								startOptions.startupMilestone(startOptions.startupContext,
+									HostStartupStage::FirstFrameCommitted);
 						}
 					}
 				}
@@ -657,6 +672,9 @@ namespace Inkeys::Drawing::Draw3
 		try
 		{
 			stylusInitialized = stylus.Initialize(hwnd, input, &window);
+			if (stylusInitialized && startOptions.startupMilestone)
+				startOptions.startupMilestone(startOptions.startupContext,
+					HostStartupStage::RtsReady);
 		}
 		catch (...)
 		{

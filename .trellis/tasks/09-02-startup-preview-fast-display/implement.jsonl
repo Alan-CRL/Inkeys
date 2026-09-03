@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "本功能的启动边界、真实进度、线程、BIN/cache、Bar frame/alpha 和 Win7 强制合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "新增 C++20 module、原子状态、回调与线程退出需遵循本层约定"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "错误传播、日志降级、COM/Win32/D2D 资源与 RC 生命周期"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "实验配置、默认中文/深色资产和资源再生成规则"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 启动子阶段只能观察既有 Host 生命周期，不改变设备所有权"}
+{"file": ".trellis/tasks/09-02-startup-preview-fast-display/research/code-investigation.md", "reason": "源码调用链、真实提交点、失败出口和可复用实现证据"}
+{"file": ".trellis/tasks/09-02-startup-preview-fast-display/research/microsoft-platform-contracts.md", "reason": "Win7、DPI、D2D1.1、ULW、HWND 线程和原子文件 API 官方合同"}

@@ -29,6 +29,7 @@ import Inkeys.UI.Ppt;
 import Inkeys.Other.Config;
 import Inkeys.Window;
 import Inkeys.UI.MessageBox;
+import Inkeys.Startup.Progress;
 
 #include "IdtPlug-in.h"
 
@@ -635,9 +636,15 @@ void PPTLinkageMain()
 	{
 		// 未放映时四个 PPT 分页窗口不会提交首帧；客户端注册完成即代表启动门禁已就绪。
 		IdtWindowsIsVisible.pptWindow = true;
+		(void)Inkeys::Startup::Report(
+			Inkeys::Startup::Milestone::PptUiClientsReady);
 	}
-	else if (IDTLogger)
-		IDTLogger->error("[PPT 线程][PPTLinkageMain] UI3 四窗口客户端注册失败");
+	else
+	{
+		(void)Inkeys::Startup::ReportFailure(0xF101u);
+		if (IDTLogger)
+			IDTLogger->error("[PPT 线程][PPTLinkageMain] UI3 四窗口客户端注册失败");
+	}
 
 	thread(GetPptState).detach();
 	thread(PptInfo).detach();

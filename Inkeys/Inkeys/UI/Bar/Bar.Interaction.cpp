@@ -28,6 +28,7 @@ import Inkeys.UI.RenderPipeline;
 import Inkeys.Window;
 import Inkeys.Display;
 import Inkeys.UI.MessageBox;
+import Inkeys.Startup.Progress;
 using Inkeys::UI::Bar::BarToggleChannel;
 using Inkeys::UI::Bar::SetBarButtonPressedVisual;
 using Inkeys::UI::Bar::StartBarButtonHoverVisual;
@@ -5371,6 +5372,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 public:
 	void Run()
 	{
+		// Session 构造、mailbox 与交互状态全部可用后再报告 ready。
+		(void)Inkeys::Startup::Report(
+			Inkeys::Startup::Milestone::BarInteractionReady);
 		while (!offSignal)
 		{
 			const auto pollResult = PollInteractionMessage();

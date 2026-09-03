@@ -1320,6 +1320,8 @@ SettingSessionCoroutine RunSettingSession()
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
+				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
+					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 			#ifndef IDT_RELEASE
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
@@ -8035,7 +8037,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 340.0f : 265.0f)
+						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
 						inkeys3PanelHeight += 150.0f;
@@ -8243,6 +8245,41 @@ SettingSessionCoroutine RunSettingSession()
 							}
 							ImGui::EndChild();
 						#endif
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("启动时快速显示主栏", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted("启动时快速显示主栏");
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+								ImGui::TextUnformatted("下次启动时显示主栏预览；更改将在下次启动生效。");
+								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, 25.0f * settingGlobalScale });
+								bool configuredStartupPreview = Experimental.Inkeys3.
+									StartupPreviewPreferenceState.ConfiguredEnabled();
+								Widgets::toggle.ToggleBool(
+									"##启动时快速显示主栏", &configuredStartupPreview);
+								if (Experimental.Inkeys3.StartupPreviewPreferenceState.
+									SetConfigured(configuredStartupPreview))
+								{
+									Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable =
+										Experimental.Inkeys3.StartupPreviewPreferenceState.
+										ConfiguredEnabled();
+									if (Experimental.Inkeys3.StartupPreviewPreferenceState.
+										ConsumeWritePending()) QueueConfigWrite();
+								}
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);

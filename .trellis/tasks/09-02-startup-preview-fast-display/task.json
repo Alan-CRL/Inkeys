@@ -1,0 +1,29 @@
+{
+  "id": "startup-preview-fast-display",
+  "name": "startup-preview-fast-display",
+  "title": "启动预览与快速显示主栏",
+  "description": "在最终进程越过 SuperTop 后尽快显示真实主栏预览，并以真实初始化进度和 committed Bar 帧完成可靠交接。",
+  "status": "in_progress",
+  "dev_type": "feature",
+  "scope": "native-desktop",
+  "package": "Inkeys",
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-09-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户已批准实现并确认 D-P01；任务已绑定当前 Codex 会话并进入第二阶段。",
+  "meta": {
+    "phase": "implementation",
+    "implementationApproved": true
+  }
+}

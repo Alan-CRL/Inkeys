@@ -128,6 +128,60 @@ int RunRenderSchedulerTests()
 		Scheduler scheduler;
 		std::mutex mutex;
 		std::condition_variable condition;
+		std::vector<Client> order;
+		auto record = [&](Client client)
+			{
+				{
+					std::scoped_lock lock(mutex);
+					order.push_back(client);
+				}
+				condition.notify_all();
+				return FrameResult::Idle;
+			};
+		(void)scheduler.Register(Client::StartupPreview,
+			[&](const auto&) { return record(Client::StartupPreview); });
+		(void)scheduler.Start();
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 2s, [&] { return order.size() == 1; });
+		}
+		if (!Expect(order == std::vector<Client>{ Client::StartupPreview },
+			"preview can render as the only registered client")) ++failures;
+		scheduler.Stop();
+	}
+
+	{
+		Scheduler scheduler;
+		std::mutex mutex;
+		std::condition_variable condition;
+		std::vector<Client> order;
+		auto record = [&](Client client)
+			{
+				{
+					std::scoped_lock lock(mutex);
+					order.push_back(client);
+				}
+				condition.notify_all();
+				return FrameResult::Idle;
+			};
+		(void)scheduler.Register(Client::StartupPreview,
+			[&](const auto&) { return record(Client::StartupPreview); });
+		(void)scheduler.Register(Client::Bar,
+			[&](const auto&) { return record(Client::Bar); });
+		(void)scheduler.Start();
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 2s, [&] { return order.size() == 2; });
+		}
+		if (!Expect(order == std::vector<Client>{ Client::Bar, Client::StartupPreview },
+			"Bar dispatches before startup preview")) ++failures;
+		scheduler.Stop();
+	}
+
+	{
+		Scheduler scheduler;
+		std::mutex mutex;
+		std::condition_variable condition;
 		bool entered = false;
 		bool release = false;
 		std::atomic_bool stop = false;

@@ -276,6 +276,9 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
 			) \
 			GROUP(UI3, \
+				GROUP(StartupPreview, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+				) \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \
