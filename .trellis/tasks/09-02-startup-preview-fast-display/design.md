@@ -204,7 +204,7 @@ DPI 是真实兼容输入：缓存像素、Bar zoom 与 window/anchor geometry �
 - 可见门严格为 Preview 首帧 ULW committed 并请求 owner 显示后满 3s 且尚未完成；T0 不再驱动该视觉门；180ms 淡入。
 - fill 来自 tracker snapshot，displayed 只追赶、不越过 actual；实际值不变时 bar 停住，shimmer 可继续。
 - 进度条在 blur/shimmer 后最后合成，保证处于 Z 轴最上层；坐标以包含主按钮的完整主栏内容矩形为基准水平、垂直居中，宽度为 192 DIP（窄目标允许时保留至少 48 DIP 双侧边距）。按 WinUI 3 默认模板使用 3 DIP、1.5 DIP 圆角的彩色指示条覆盖 1 DIP、0.5 DIP 圆角的中性轨道。当前 canonical dark Preview 使用 `#60CDFF` 指示色、`#8BFFFFFF` 轨道色和 `#FF99A4` 错误色。
-- 成功先用 140ms 隐藏进度条，再进入 handoff；Preview 显示后 3 秒内完成则从未显示。
+- 已显示进度条的成功路径在 tracker 达到真实 100% 后直接补齐 displayed ratio，满格保持 300ms，再用 140ms 隐藏并进入 handoff；Preview 显示后 3 秒内完成则从未显示，也不增加完成停留。
 - 致命失败无视 3 秒门，立即以当前实际 fill 和错误红请求一帧；等待 Preview ULW committed event，并在 350ms 总预算的剩余时间保留已提交红帧，然后 popup。
 
 ## 10. Bar Frame Bridge 与 Alpha Transaction

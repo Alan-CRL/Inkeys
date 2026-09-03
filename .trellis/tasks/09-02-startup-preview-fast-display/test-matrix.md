@@ -64,7 +64,7 @@
 ## 7. 进度与动画
 
 - 人为延迟各启动阶段：进度只在真实 report 后增长，停顿阶段保持真实值；3 秒从 Preview 首帧 committed/show request 计算，重复通知不能重置。
-- Preview 显示后 2.9 秒成功不显示 progress；3.0 秒后约 180ms 淡入；成功先隐藏再 handoff。
+- Preview 显示后 2.9 秒成功不显示 progress；3.0 秒后约 180ms 淡入；已显示时成功先达到 100%、满格保持 300ms、再隐藏并 handoff。
 - fatal 分别发生于 progress 显示前/后：立即红色，保留实际 fill；较早提交时在 350ms 总预算内保留红帧，未提交则到预算后 popup。
 - 96/120/144/192 DPI 检查以完整主栏（含主按钮）为基准的 X/Y 居中、192 DIP 宽度、目标允许时 48 DIP 双侧边距、3 DIP 指示条覆盖 1 DIP 轨道以及 normal/error 颜色。
 - 两个 layered HWND 不做中间 alpha cross-fade；抓帧检查 Valid 路径无 0.5+0.5 合成加深。

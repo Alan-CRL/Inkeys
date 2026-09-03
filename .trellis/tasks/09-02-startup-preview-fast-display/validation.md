@@ -74,6 +74,14 @@ committedAlpha=255
 - 临时 Debug 环境变量故障注入在 Preview visible 后约 1.5 秒触发；1613ms、1720ms、1813ms 三帧均显示居中的粉红错误指示条，1906ms 时 Preview 已按预算停止并进入现有错误弹窗。截图为同一可视化目录下 `startup-preview-failure-early-center-shown-{1200ms,1400ms,1500ms,1600ms,1700ms,1800ms,1900ms,2000ms,2200ms}.png`。临时注入已从源码删除，最终 `rg` 无残留。
 - 开发者加入的 `this_thread::sleep_for(chrono::seconds(50))` 保留，用于后续人工测试。
 
+## 2026-09-03 分步推进、满格停留与重试失败测试
+
+- 删除单点 50 秒停顿；人工测试 helper 只在 Preview active 且主线程 milestone 首次成功上报后生效。首个可见阶段保持 3200ms，确保越过 3 秒门和 180ms 淡入；后续主线程阶段每次保持 600ms。RenderPipeline 与 Draw3 回调线程不 sleep，blur/shimmer/进度动画保持连续。
+- 正常 smoke 路径从 Preview visible 后 3.2s 开始显示，随后按真实 milestone 分段推进；14.014s 与 14.218s 的截图均为完整 192 DIP 满格，14.402s 淡出，14.607s 后进入 deblur/handoff，最终 smoke PASS。
+- 已显示进度条的完成路径新增 `Completing`：只有 tracker 真实达到 100% 时才把 displayed ratio 置为 1，满格保持 300ms 后再执行原 140ms 淡出。3 秒内完成且从未显示的路径不进入该停留。headless 覆盖满格值、299ms 保持、300ms 淡出起点和 140ms 后允许 handoff。
+- 可选环境变量 `INKEYS_STARTUP_PREVIEW_RETRY_FAILURE=1` 在 `PptComReady` 后启用人工故障：第一次失败记录 warning 并等待 800ms 重试，第二次失败记录 critical 并进入正式 fatal helper。最终日志中两条记录相隔约 812ms；截图在 10.811s、10.901s、11.026s 检测到 `#FF99A4` 错误进度条，随后进入现有错误弹窗。
+- 正常终段截图位于 `C:\Users\AlanCRL\.codex\visualizations\2026\09\02\01a062af-51b9-77b2-b46f-b907a79add4b\startup-preview-completion-hold-shown-*.png`；最终错误截图位于同目录 `startup-preview-retry-failure-final-shown-*.png`。
+
 ## 静态兼容审查
 
 - Startup Preview 未使用 GDI+、WinUI Runtime、DirectComposition 或 Win10-only AlphaMask effect。

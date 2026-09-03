@@ -139,7 +139,7 @@ BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。�
 
 - Embedded 使用 cubic + D2D1.1 GaussianBlur，约 6 DIP、Balanced、Soft；必须按 effect bounds 扩展，禁止裁 blur。
 - Shimmer 用源 alpha + `FillOpacityMask`；调用时切 ALIASED 并恢复原 antialias。不得使用 Win10-only AlphaMask effect。
-- Preview 显示满 3 秒后进度条展示真实值；重复显示通知不得重置计时；成功先隐藏。失败无视可见门，立即红色并保留实际 fill；较早提交时在 350ms 总预算的剩余时间保留红帧，未提交则到预算后进入现有 popup。
+- Preview 显示满 3 秒后进度条展示真实值；重复显示通知不得重置计时。已显示时，成功达到真实 100% 后必须满格保持 300ms，再用 140ms 隐藏；3 秒内完成且从未显示时不增加等待。失败无视可见门，立即红色并保留实际 fill；较早提交时在 350ms 总预算的剩余时间保留红帧，未提交则到预算后进入现有 popup。
 - 进度条必须在 blur/shimmer 后最后合成，保证处于 Z 轴最上层；坐标以包含主按钮的完整主栏内容矩形为基准 X/Y 居中。canonical dark Preview 对齐 WinUI 3 默认模板：192 DIP 宽且目标允许时至少保留 48 DIP 双侧边距，3 DIP / 1.5 DIP 圆角的 accent 或 error 指示条覆盖 1 DIP / 0.5 DIP 圆角的中性轨道；颜色为 normal `#60CDFF`、track `#8BFFFFFF`、error `#FF99A4`。
 - Valid cache 在单 Preview HWND 内切到 live proxy，再以 committed alpha 边界切到 Bar；不得用两个 layered HWND 做持续中间-alpha cross-fade。
 - Missing/Incompatible 用 embedded blur、高 blur 替换 live proxy、再 deblur；Corrupt 必须 Preview 淡到 0、短暂全透明、Bar 再淡入，且不做 proxy deblur。

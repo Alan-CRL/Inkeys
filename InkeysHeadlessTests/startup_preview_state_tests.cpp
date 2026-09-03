@@ -140,11 +140,20 @@ int RunStartupPreviewStateTests()
 	ordered.MarkPreviewShown(start);
 	(void)ordered.Update(start + 3s, 0.8, false, false);
 	(void)ordered.Update(start + 3180ms, 0.8, false, false);
-	auto fading = ordered.Update(start + 3200ms, 1.0, true, false);
+	auto completing = ordered.Update(start + 3200ms, 1.0, true, false);
+	if (!Expect(completing.state == ProgressVisualState::Completing
+		&& completing.displayedRatio == 1.0 && completing.opacity == 1.0
+		&& !CanBeginSuccessfulHandoff(true, true, false, completing.state, true, true),
+		"visible progress reaches full before handoff starts")) ++failures;
+	completing = ordered.Update(start + 3499ms, 1.0, true, false);
+	if (!Expect(completing.state == ProgressVisualState::Completing
+		&& completing.displayedRatio == 1.0 && completing.opacity == 1.0,
+		"full progress remains visible for the completion hold")) ++failures;
+	auto fading = ordered.Update(start + 3500ms, 1.0, true, false);
 	if (!Expect(fading.state == ProgressVisualState::FadingOut
 		&& !CanBeginSuccessfulHandoff(true, true, false, fading.state, true, true),
-		"visible progress fades before handoff starts")) ++failures;
-	const auto hidden = ordered.Update(start + 3340ms, 1.0, true, false);
+		"full progress fades before handoff starts")) ++failures;
+	const auto hidden = ordered.Update(start + 3640ms, 1.0, true, false);
 	if (!Expect(hidden.state == ProgressVisualState::Hidden
 		&& CanBeginSuccessfulHandoff(true, true, false, hidden.state, true, true),
 		"handoff starts only after progress is hidden")) ++failures;

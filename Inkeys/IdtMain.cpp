@@ -135,6 +135,20 @@ namespace
 		(void)Inkeys::UI::MessageBox::Show(request);
 	}
 
+	void ReportStartupMilestoneForManualTest(
+		Inkeys::Startup::Milestone milestone) noexcept
+	{
+		if (!Inkeys::Startup::Report(milestone)
+			|| !Inkeys::UI::StartupPreview::IsActive()) return;
+		static bool firstVisibleMilestone = true;
+		const auto delay = firstVisibleMilestone
+			? std::chrono::milliseconds(3200)
+			: std::chrono::milliseconds(600);
+		firstVisibleMilestone = false;
+		// 首步越过 3 秒可见门，后续逐段放行；测试结束后整体移除本 helper。
+		std::this_thread::sleep_for(delay);
+	}
+
 	void PublishFatalStartupFailure(
 		std::uint32_t code, const wchar_t* message) noexcept
 	{
@@ -150,6 +164,32 @@ namespace
 		}
 		Inkeys::UI::StartupPreview::Stop();
 		ShowStartupMessage(message);
+	}
+
+	bool RunStartupPreviewRetryFailureForManualTest() noexcept
+	{
+		wchar_t enabled[2]{};
+		if (!Inkeys::UI::StartupPreview::IsActive()
+			|| GetEnvironmentVariableW(
+			L"INKEYS_STARTUP_PREVIEW_RETRY_FAILURE", enabled, 2) == 0)
+			return true;
+
+		for (int attempt = 1; attempt <= 2; ++attempt)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(800));
+			if (attempt == 1)
+			{
+				if (IDTLogger) IDTLogger->warn(
+					"[主线程][IdtMain] 人工测试阶段首次失败，准备重试");
+				continue;
+			}
+			if (IDTLogger) IDTLogger->critical(
+				"[主线程][IdtMain] 人工测试阶段重试后仍失败");
+			PublishFatalStartupFailure(0xD0FEu,
+				L"人工测试：模拟初始化阶段重试后仍失败。");
+			return false;
+		}
+		return true;
 	}
 
 	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
@@ -1108,7 +1148,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
 		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::LoggingReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::LoggingReady);
 
 		//logger->info("");
 		//logger->warn("");
@@ -1125,7 +1166,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::LegacySurfaceReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::LegacySurfaceReady);
 	}
 	// COM初始化
 	HANDLE hActCtx = INVALID_HANDLE_VALUE;
@@ -1134,7 +1176,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	HMODULE pptComModule = nullptr;
 	const HRESULT comInitializeResult = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 	if (SUCCEEDED(comInitializeResult) || comInitializeResult == RPC_E_CHANGED_MODE)
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::ComReady);
+		ReportStartupMilestoneForManualTest(Inkeys::Startup::Milestone::ComReady);
 	else
 	{
 		PublishFatalStartupFailure(0xD004u,
@@ -1151,7 +1193,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (displaySnapshot && displaySnapshot->monitors.size() > 1)
 			IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
 		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::DisplayReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::DisplayReady);
 	}
 
 	// 配置信息初始化
@@ -1420,7 +1463,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		setlist.selectLanguage = 1;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::FullConfigReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::FullConfigReady);
 	}
 	// 显示快照发布后只桥接旧绘图尺度，UI 自身通过各自客户端处理布局。
 	displaySubscription = Inkeys::Display::Subscribe([](Inkeys::Display::SnapshotPtr snapshot)
@@ -1451,7 +1495,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		else I18n::load(1, L"JSON", L"en-US");
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::I18nReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::I18nReady);
 	}
 	// 插件初始化
 	{
@@ -1459,7 +1504,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		shortcutAssistant.SetShortcut();
 		// 启动 DesktopDrawpadBlocker
 		StartDesktopDrawpadBlocker();
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::PluginsReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::PluginsReady);
 	}
 
 	// COM 清单加载
@@ -1496,7 +1542,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::PptComReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::PptComReady);
+	}
+	if (!RunStartupPreviewRetryFailureForManualTest())
+	{
+		Inkeys::UI::RenderPipeline::Shutdown();
+		return 1;
 	}
 	// 自动更新初始化
 	{
@@ -1517,9 +1569,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		if (hr == S_OK)
 		{
-			(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderFactoriesReady);
-			(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderDeviceReady);
-			(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::RenderSchedulerReady);
+			ReportStartupMilestoneForManualTest(
+				Inkeys::Startup::Milestone::RenderFactoriesReady);
+			ReportStartupMilestoneForManualTest(
+				Inkeys::Startup::Milestone::RenderDeviceReady);
+			ReportStartupMilestoneForManualTest(
+				Inkeys::Startup::Milestone::RenderSchedulerReady);
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
@@ -1604,7 +1659,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::FontsReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::FontsReady);
 	}
 
 	// 窗口
@@ -1798,9 +1854,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WindowOverlayReady);
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WindowSettingReady);
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WindowServiceReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::WindowOverlayReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::WindowSettingReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::WindowServiceReady);
 		// Draw3 只附着 Window Service 已创建的 HWND；样式变更仍回到 owner thread。
 		Inkeys::Drawing::Draw3::HostStyleCallbacks draw3StyleCallbacks{
 			&windowService,
@@ -1891,7 +1950,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::SettingReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::SettingReady);
 		if (!Inkeys::UI::Whiteboard::Initialize({
 			[] { RequestWhiteboardPreviousPage(); },
 			[] { RequestWhiteboardNextPage(); },
@@ -1907,7 +1967,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
-		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::WhiteboardReady);
+		ReportStartupMilestoneForManualTest(
+			Inkeys::Startup::Milestone::WhiteboardReady);
 		// Host 启动会清空桥接队列；首帧前重新发布当前 UI 状态。
 		SyncDraw3State();
 		// 首帧完成后按“模式 + 当前页内容”决定显隐；初始空选择页保持隐藏。
@@ -1933,7 +1994,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				Inkeys::UI::StartupPreview::RevalidateTopmost();
 			});
 		if (windowService.RequestTopmostRefresh())
-			(void)Inkeys::Startup::Report(
+			ReportStartupMilestoneForManualTest(
 				Inkeys::Startup::Milestone::InitialTopmostRefresh);
 		else
 		{

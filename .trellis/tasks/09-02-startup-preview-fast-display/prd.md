@@ -19,7 +19,7 @@ Inkeys 最终进程越过 SuperTop 后仍需依次完成日志、配置、PptCOM
 - **PR-11 防御解析**：BIN/cache 显式 little-endian 序列化，不直接写 C++ struct；校验版本、尺寸、stride、payload、矩形、溢出、上限和 IEEE CRC-32 后才分配/使用像素。
 - **PR-12 缓存写入**：只从成功 committed 且无 hover、点击、菜单、弹层或暂态动画的稳定帧抓取；渲染线程完成 crop 和 CPU staging，普通内存由单个后台 writer 用临时文件、FlushFileBuffers 和原子替换落盘，只保留最新 revision。
 - **PR-13 Preview 渲染**：内嵌帧用 cubic 缩放、D2D GaussianBlur（Balanced/Soft）并扩展 effect bounds；shimmer 只覆盖源 alpha，使用 `FillOpacityMask` 和恢复后的抗锯齿状态。
-- **PR-14 3 秒进度条**：Preview 首帧成功提交并请求显示满 3 秒仍未完成时，约 180ms 渐显确定进度条；成功先在 120-160ms 内隐藏，失败不等 3 秒，立即绘制当前真实比例的红色帧。进度条在 Z 轴最后合成，坐标以包含主按钮的完整主栏为基准水平、垂直居中，采用 WinUI 3 的 3 DIP 指示条覆盖 1 DIP 轨道样式。
+- **PR-14 3 秒进度条**：Preview 首帧成功提交并请求显示满 3 秒仍未完成时，约 180ms 渐显确定进度条；成功达到真实 100% 后先满格停留约 300ms，再在 120-160ms 内隐藏；失败不等 3 秒，立即绘制当前真实比例的红色帧。进度条在 Z 轴最后合成，坐标以包含主按钮的完整主栏为基准水平、垂直居中，采用 WinUI 3 的 3 DIP 指示条覆盖 1 DIP 轨道样式。
 - **PR-15 Bar 事务**：Preview 存在时 Bar 首帧以全局 alpha 0 提交；alpha 具有 requested/attempted/committed 三态。alpha 改变强制全窗口 ULW，失败不推进 committed alpha 或业务 dirty transaction，并请求全脏重试。
 - **PR-16 帧桥接**：每个成功 Bar frame 发布精确 crop、viewport、screen destination、monitor geometry、visual signature、device generation 和安全非 target bitmap；失败帧不得推进进度、交接、缓存或代理。
 - **PR-17 显式失败**：Bar 启动发布 WindowMissing、ClientRegistrationFailed、FirstFrameCommitted、StartupFailed、StoppedBeforeReady 或等价状态，不再静默 return。Window Service、Draw3、Freeze 和 PPT UI 的可验证子阶段也应轻量报告。

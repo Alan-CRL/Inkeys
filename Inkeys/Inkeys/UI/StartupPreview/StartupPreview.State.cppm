@@ -106,6 +106,7 @@ export namespace Inkeys::UI::StartupPreview
 		Hidden,
 		FadingIn,
 		Visible,
+		Completing,
 		FadingOut,
 		Failure,
 	};

@@ -141,6 +141,7 @@ namespace Inkeys::UI::StartupPreview
 
 		constexpr auto ShowDelay = std::chrono::seconds(3);
 		constexpr auto FadeIn = std::chrono::milliseconds(180);
+		constexpr auto CompletionHold = std::chrono::milliseconds(300);
 		constexpr auto FadeOut = std::chrono::milliseconds(140);
 		if (completed)
 		{
@@ -149,8 +150,18 @@ namespace Inkeys::UI::StartupPreview
 				opacity_ = 0.0;
 				return { state_, displayedRatio_, opacity_, false };
 			}
-			if (state_ != ProgressVisualState::FadingOut)
+			displayedRatio_ = 1.0;
+			if (state_ != ProgressVisualState::Completing
+				&& state_ != ProgressVisualState::FadingOut)
 			{
+				state_ = ProgressVisualState::Completing;
+				transitionStart_ = now;
+				opacity_ = 1.0;
+			}
+			if (state_ == ProgressVisualState::Completing)
+			{
+				if (now - transitionStart_ < CompletionHold)
+					return { state_, displayedRatio_, opacity_, false };
 				state_ = ProgressVisualState::FadingOut;
 				transitionStart_ = now;
 				fadeStartOpacity_ = opacity_;
