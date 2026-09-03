@@ -88,6 +88,7 @@ BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。�
 
 - Preview HWND 由独立 owner/message thread 创建和销毁；create/position/show/hide/z-order/destroy 都回到该线程。
 - 窗口样式固定为 `WS_POPUP`、`WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不得加入 `WS_EX_TRANSPARENT`。`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATEANDEAT`。
+- Preview 每个 ULW transaction 都必须从 owner 已提交的 snapshot 显式提供 `pptDst` 和 `psize`。在部分 Windows/DWM 路径，省略几何会返回成功但首帧不可见、后续 surface 也不刷新。owner 的 `SetWindowPos` 与 render thread 的 ULW 必须通过专用 presentation mutex 串行；render thread 只能回显 owner geometry，不得产生或提交另一个位置。
 - RenderPipeline 新 client 名为 `StartupPreview`；dispatch order 中 Bar 必须先于 StartupPreview。
 - Preview 的 target/bitmap/effect/brush/proxy 只在唯一 RenderPipeline thread 创建、复制和释放。不得暴露 mutable Bar target，也不得创建第二套 D2D/D3D device/render thread。
 - Window topmost observer 在成功 refresh 后只能异步 post Preview owner；双方不得形成同步反向等待。Preview 停止前先注销 observer。
@@ -157,7 +158,7 @@ BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。�
 | --- | --- |
 | Tracker/stage | concurrent duplicate/out-of-order、conditional plan、failure freeze、elapsed no-growth、Bar-only 100% |
 | Parser/serializer | little-endian roundtrip、CRC vector、逐字节截断、overflow、64MiB、非法 rect、四分类 |
-| Preview window | no activate/focus/taskbar、click eat、owner-thread destroy、late post、topmost refresh |
+| Preview window | no activate/focus/taskbar、click eat、owner-thread destroy、late post、topmost refresh；在 Bar 启动前人工停顿，确认显式 geometry ULW 的首帧、shimmer 后续帧与 5 秒 progress 均可见 |
 | RenderPipeline | Preview-only registration、Bar-before-Preview、unregister drain、device epoch loss/recovery |
 | Bar bridge/alpha | 四步 present 任一失败、full retry、business dirty independence、no-Preview 255 |
 | Cache | stable-frame filter、latest revision、read-only/full disk、flush/replace fail、bounded shutdown |
@@ -213,6 +214,19 @@ DestroyWindow(previewHwnd);
 
 // Correct: 只向 owner queue 投递。
 previewOwner.Post(PreviewCommand::Destroy);
+```
+
+### Layered Surface Geometry
+
+```cpp
+// Wrong: SetWindowPos 后假设 ULW 可以省略 layered surface 几何。
+update.pptDst = nullptr;
+update.psize = nullptr;
+
+// Correct: 与 owner move 串行，并在每帧回显 owner 已提交几何。
+std::scoped_lock lock(ownerPresentationMutex);
+update.pptDst = &ownerDestination;
+update.psize = &ownerSize;
 ```
 
 ### Alpha Commit

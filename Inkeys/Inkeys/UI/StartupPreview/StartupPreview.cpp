@@ -70,6 +70,7 @@ namespace Inkeys::UI::StartupPreview
 		struct OwnerState final
 		{
 			std::mutex mutex;
+			std::mutex presentationMutex;
 			std::condition_variable condition;
 			HWND window = nullptr;
 			DWORD threadId = 0;
@@ -129,6 +130,7 @@ namespace Inkeys::UI::StartupPreview
 				auto* state = reinterpret_cast<OwnerState*>(
 					GetWindowLongPtrW(window, GWLP_USERDATA));
 				if (!state) return 0;
+				std::scoped_lock presentationLock(state->presentationMutex);
 				RECT bounds{};
 				std::uint64_t revision = 0;
 				{
@@ -265,6 +267,38 @@ namespace Inkeys::UI::StartupPreview
 			}
 
 			[[nodiscard]] HWND Window() const noexcept { return Snapshot().window; }
+
+			[[nodiscard]] BOOL PresentPixels(HDC sourceDc, BYTE alpha,
+				UINT width, UINT height) noexcept
+			{
+				if (!state_ || !sourceDc || width == 0 || height == 0) return FALSE;
+				auto state = state_;
+				std::scoped_lock presentationLock(state->presentationMutex);
+				HWND window = nullptr;
+				RECT bounds{};
+				{
+					std::scoped_lock lock(state->mutex);
+					window = state->window;
+					bounds = state->appliedBounds;
+				}
+				if (!window || Width(bounds) != static_cast<int>(width)
+					|| Height(bounds) != static_cast<int>(height)) return FALSE;
+
+				POINT destination{ bounds.left, bounds.top };
+				POINT sourcePoint{};
+				SIZE size{ static_cast<LONG>(width), static_cast<LONG>(height) };
+				BLENDFUNCTION blend{ AC_SRC_OVER, 0, alpha, AC_SRC_ALPHA };
+				UPDATELAYEREDWINDOWINFO update{};
+				update.cbSize = sizeof(update);
+				// 每帧回显 owner 已提交几何，避免 DWM 接受空几何却不刷新 surface。
+				update.pptDst = &destination;
+				update.psize = &size;
+				update.pptSrc = &sourcePoint;
+				update.hdcSrc = sourceDc;
+				update.pblend = &blend;
+				update.dwFlags = ULW_ALPHA;
+				return UpdateLayeredWindowIndirect(window, &update);
+			}
 
 			[[nodiscard]] bool HasExited() const noexcept
 			{
@@ -1151,20 +1185,9 @@ namespace Inkeys::UI::StartupPreview
 			HRESULT releaseResult = E_FAIL;
 			if (SUCCEEDED(getDcResult) && sourceDc)
 			{
-				POINT sourcePoint{};
-				BLENDFUNCTION blend{ AC_SRC_OVER, 0,
-					static_cast<BYTE>(std::lround(255.f * previewAlpha)), AC_SRC_ALPHA };
-				UPDATELAYEREDWINDOWINFO update{};
-				update.cbSize = sizeof(update);
-				// 位置与尺寸已由 owner thread 提交；render thread 只更新像素与 alpha。
-				update.pptDst = nullptr;
-				update.psize = nullptr;
-				update.pptSrc = &sourcePoint;
-				update.hdcSrc = sourceDc;
-				update.pblend = &blend;
-				update.dwFlags = ULW_ALPHA;
-				updateResult = UpdateLayeredWindowIndirect(
-					presentationOwner.window, &update);
+				updateResult = runtime->owner.PresentPixels(sourceDc,
+					static_cast<BYTE>(std::lround(255.f * previewAlpha)),
+					resources.width, resources.height);
 				releaseResult = resources.gdi->ReleaseDC(nullptr);
 			}
 			else if (SUCCEEDED(getDcResult)) getDcResult = E_POINTER;

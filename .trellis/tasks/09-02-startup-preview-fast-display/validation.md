@@ -54,6 +54,15 @@ committedAlpha=255
 
 已视觉检查的有效截图为 `C:\Users\AlanCRL\AppData\Local\Temp\codex-shot-2026-09-03_02-07-05.png`：底部 embedded blur Preview 可见，无错误对话框；其像素 payload 与最终 canonical BIN 相同。最终构建又执行多次烟测并全部 PASS；后续 screenshot helper 冷启动导致抓图发生在短暂窗口退出后，因此这些空白截图不作为视觉证据。
 
+## 2026-09-03 layered surface 回归修复
+
+- 人工在 COM 后加入 50 秒停顿后，发现 Preview HWND 虽为 visible/topmost、DWM 未 cloak，D2D target 与 ULW 源 DC 也有非零 alpha，ULW 仍返回成功，但桌面没有可见内容。
+- 单变量验证确认：`pptDst` / `psize` 为 null 时首帧不可见且后续 surface 不刷新；显式提交 owner 已应用的 geometry 后立即恢复。
+- 正式修复让 owner `SetWindowPos` 与 render thread ULW 共用 presentation mutex，并让每帧 ULW 回显 owner snapshot 的明确位置与尺寸；render thread 不产生独立 geometry。
+- 完整 `Debug|x64` Solution 构建 PASS。保留 50 秒停顿，在同一进程约 1.0s、2.2s、8.0s 抓帧：三帧均显示 embedded Gaussian blur；1.0s 与 8.0s 主体区域有 31,483 个像素变化、最大通道差 56，确认 shimmer 持续更新；8.0s 预期 progress rect 相比 2.2s 新增 642 个变化像素，确认 5 秒门与真实进度条呈现。
+- 验证截图：`C:\Users\AlanCRL\AppData\Local\Temp\inkeys-preview-fixed-refresh-{1000ms,2200ms,8000ms}.png`。
+- 正常 SuperTop 父进程 -> helper -> 最终 UIAccess 进程链路重复通过；Preview HWND 为 visible/topmost、DWM 未 cloak，1.0s 与 8.0s 主体区域有 33,856 个变化像素，progress rect 新增 655 个变化像素。截图为 `C:\Users\AlanCRL\AppData\Local\Temp\inkeys-preview-fixed-supertop-{1000ms,2200ms,8000ms}.png`。
+
 ## 静态兼容审查
 
 - Startup Preview 未使用 GDI+、WinUI Runtime、DirectComposition 或 Win10-only AlphaMask effect。
