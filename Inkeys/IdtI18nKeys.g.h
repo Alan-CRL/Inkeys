@@ -51,6 +51,38 @@ inline constexpr struct I18nKeyRoot
             } BottomDock{};
         } Bar{};
     } UI{};
+    struct Node__Dialogs
+    {
+        struct Node__Dialogs__Common
+        {
+            const char* TipsTitle = "Dialogs/Common/TipsTitle";
+            const char* ErrorTitle = "Dialogs/Common/ErrorTitle";
+            const char* OK = "Dialogs/Common/OK";
+            const char* Cancel = "Dialogs/Common/Cancel";
+            const char* Yes = "Dialogs/Common/Yes";
+            const char* No = "Dialogs/Common/No";
+        } Common{};
+        struct Node__Dialogs__EndPresentation
+        {
+            const char* Body = "Dialogs/EndPresentation/Body";
+        } EndPresentation{};
+        struct Node__Dialogs__WindowCreationFailed
+        {
+            const char* Body = "Dialogs/WindowCreationFailed/Body";
+        } WindowCreationFailed{};
+        struct Node__Dialogs__UpdateModuleUnavailable
+        {
+            const char* Body = "Dialogs/UpdateModuleUnavailable/Body";
+        } UpdateModuleUnavailable{};
+        struct Node__Dialogs__CloseInkeys
+        {
+            const char* Body = "Dialogs/CloseInkeys/Body";
+        } CloseInkeys{};
+        struct Node__Dialogs__Crash
+        {
+            const char* Body = "Dialogs/Crash/Body";
+        } Crash{};
+    } Dialogs{};
     struct Node__SettingsUI
     {
         const char* N = "SettingsUI/N";

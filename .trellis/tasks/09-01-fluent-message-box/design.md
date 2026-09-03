@@ -333,4 +333,23 @@ Bar/Setting owner 在调用点取得并传入；组件自身不新增对 Window 
 - owner 模态握手比直接跨线程 `EnableWindow` 复杂，但能覆盖 Bar 调用线程阻塞与 Setting 跨线程 owner 两种真实路径。
 - crash handler 只能 best effort；系统 fallback 是最后路径，不构成对任意进程破坏的可靠性承诺。
 
+## 14. Localization Follow-up
+
+本轮在既有 `Request` 上增加纯值语言 ID 和可选按钮文字视图。默认语言固定为 `en-US`；标题、正文和按钮指针仍只要求在同步 `Show()` 返回前有效，并在 admission gate 内复制到 `OwnedRequest`。未提供或为空的按钮文字按请求语言回退到组件内置的英文、简中或繁中标准标签。
+
+数据流保持单向：
+
+```text
+IdtI18n + generated keys
+  -> product caller resolves title/body/button strings and LANGID
+  -> MessageBox Request copies the snapshot
+  -> private GDI+ layout/render or MessageBoxExW fallback
+```
+
+MessageBox module 不 include/import `IdtI18n`、Setting 或 RenderPipeline。启动早期与 SuperTop 调用继续使用字面量英文和 Request 的默认 `en-US`；正常调用使用 `I18n::getWOr` 与当前语言 ID。生成键根节点使用 `Dialogs`，避免被 `<Windows.h>` 的 `MessageBox` 宏改写。CrashHandler 使用 non-blocking i18n lookup，锁忙、未加载、缺 key 或转换失败均采用英文常量。
+
+系统 fallback 改用 `MessageBoxExW` 并传入 Request 语言 ID，使启动早期 fallback 仍请求英文系统按钮，运行期 fallback 请求产品语言。fallback 仍不接受自定义按钮文字，可靠性语义和结果映射不变。
+
+字体不接入共享 DWrite collection，也不新增 GDI+ process font 安装。布局按 Request 语言设置候选：`zh-CN` 优先 `Microsoft YaHei UI` / `Microsoft YaHei`，`zh-TW` 优先 `Microsoft JhengHei UI` / `Microsoft JhengHei`，然后回到既有 Segoe UI 候选；英文直接使用既有 Segoe UI。这样可覆盖繁中 glyph，同时保留启动早期和崩溃路径的设备独立性。
+
 回滚按边界进行：先恢复各调用点原 `MessageBoxW`，即可停止使用新模块；模块、资源和测试随后可整体移除，不涉及持久化数据、配置迁移或现有 Window Service ABI。若仅 DWM frame 出现兼容问题，可回滚该窗口样式调整而不改变公开请求/结果合同。

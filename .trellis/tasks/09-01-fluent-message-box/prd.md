@@ -140,3 +140,23 @@
 - [x] `Enter/Space` 激活逻辑焦点按钮；未导航时为默认按钮，导航后不得回跳到默认按钮。
 - [x] X、Esc、Alt+F4、system-menu Close 与 `WM_CLOSE` 遵循获批路由，Yes/No 关闭永不误报为 No。
 - [x] 初始无焦点框和键盘导航焦点框均有定向像素/截图回归；既有 owner、DPI、首帧、结果单次提交与资源清理合同无回退。
+
+## 2026-09-02 Localization Follow-up
+
+用户已批准把现有双语 MessageBox 文案收敛为按当前 Inkeys 语言显示的单语文案，并统一产品名称为 `Inkeys`：
+
+- i18n 尚未加载时可能出现的启动目录、文件名、重复启动和 SuperTop 提示，固定使用英文标题、英文正文和英文按钮，不读取产品 i18n 状态。
+- i18n 加载完成后的结束放映、窗口创建失败、更新模块未启动、语言切换重启、退出确认和崩溃提示使用正式 i18n key，提供 `en-US`、`zh-CN`、`zh-TW` 三份完整翻译。
+- MessageBox 核心继续不依赖 `IdtI18n`；调用方在同步 `Show()` 前提供已解析并保持有效的标题、正文和可选按钮文字，核心立即复制。
+- Request 默认语言为英文。正常运行期由调用方传入当前产品语言；系统 fallback 使用同一语言 ID，不能在启动早期重新采用系统中文按钮。
+- 自绘字体按请求语言选择系统 UI 字体：英文沿用 Segoe UI，简中优先 Microsoft YaHei UI，繁中优先 Microsoft JhengHei UI；候选不可用时退回既有 Segoe UI 路径。MessageBox 不依赖主 UI 的共享字体集合。
+- 崩溃处理允许在 i18n 尚未就绪或无法无阻塞读取时退回完整英文快照，不因翻译运行时状态阻塞故障提示。
+- 本轮只做本地化与字体覆盖，不改变按钮组合、default/dismiss 结果、X 行为、owner/topmost、布局尺寸或窗口生命周期。
+
+新增验收项：
+
+- [x] 启动早期五类提示（四条启动提示和 SuperTop）只包含英文且应用名统一为 `Inkeys`。
+- [x] 六类运行期提示按 `en-US`、`zh-CN`、`zh-TW` 显示单一语言，标题、正文和按钮语言一致，不保留中英拼接。
+- [x] 自绘和系统 fallback 均携带请求语言；默认请求不读取 OS/thread UI language 而稳定使用英文。
+- [x] 繁中标题、正文与按钮可由系统繁中 UI 字体完整测量和绘制；字体缺失时安全回退而不丢失文字。
+- [x] i18n `sync` / `check`、MessageBox 无窗口测试、完整 ARM64 Solution 构建均通过。

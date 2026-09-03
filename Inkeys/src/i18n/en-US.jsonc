@@ -48,6 +48,38 @@
       }
     }
   },
+  "Dialogs":
+  {
+    "Common":
+    {
+      "TipsTitle": "Inkeys Tips",
+      "ErrorTitle": "Inkeys Error",
+      "OK": "OK",
+      "Cancel": "Cancel",
+      "Yes": "Yes",
+      "No": "No"
+    },
+    "EndPresentation":
+    {
+      "Body": "You are currently in drawing mode. Ending the presentation will clear the canvas.\nEnd the presentation?"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys exited unexpectedly because a program window could not be created or was blocked. Restart Inkeys and try again. (#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "The automatic update module is not active, which indicates that this is not an official release.\nGo to Software Version and select Repair Software."
+    },
+    "CloseInkeys":
+    {
+      "Body": "Close Inkeys?"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys encountered a problem. Select OK to restart Inkeys and try to recover."
+    }
+  },
   "SettingsUI":
   {
     "N": "智绘教Inkeys Options",
@@ -75,7 +107,7 @@
           "zh-CN": "简体中文",
           "zh-TW": "繁體中文(Beta)"
         },
-        "Warn": "Need to be restart to fully take effect. Restart now?"
+        "Warn": "The language change requires a restart to take full effect. Restart Inkeys now?"
       }
     },
     "Configuration":

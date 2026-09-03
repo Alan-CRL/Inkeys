@@ -48,6 +48,38 @@
       }
     }
   },
+  "Dialogs":
+  {
+    "Common":
+    {
+      "TipsTitle": "Inkeys 提示",
+      "ErrorTitle": "Inkeys 錯誤",
+      "OK": "確定",
+      "Cancel": "取消",
+      "Yes": "是",
+      "No": "否"
+    },
+    "EndPresentation":
+    {
+      "Body": "目前處於繪圖模式。結束放映將清除畫布內容。\n確定要結束放映嗎？"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys 意外結束：程式視窗建立失敗或遭到攔截。請重新啟動 Inkeys 後再試一次。(#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "自動更新模組尚未啟動，這表示目前版本不是官方發行版本。\n請前往「軟體版本」並選擇「修復軟體」。"
+    },
+    "CloseInkeys":
+    {
+      "Body": "確定要關閉 Inkeys 嗎？"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys 發生問題。選擇「確定」以重新啟動 Inkeys 並嘗試復原。"
+    }
+  },
   "SettingsUI":
   {
     "N": "智绘教Inkeys 選項",
@@ -75,7 +107,7 @@
           "zh-CN": "简体中文",
           "zh-TW": "繁體中文(Beta)"
         },
-        "Warn": "需要重新啟動軟體才能完全生效，是否重啟？"
+        "Warn": "語言變更需要重新啟動 Inkeys 才能完全生效。是否立即重新啟動？"
       }
     },
     "Configuration":

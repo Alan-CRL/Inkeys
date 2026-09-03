@@ -208,8 +208,8 @@ void SurperTopMain(wstring lpCmdLine)
 		cout << "RunTokenProgram Fail" << endl;
 
 		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-			L"Inkeys Tips | 智绘教提示",
-			L"智绘教Inkeys SuperTop failed. Please reopen the app (the SuperTop feature will be automatically disabled).\n智绘教Inkeys 超级置顶失败，请重新打开程序（程序将自动关闭超级置顶功能）。");
+			L"Inkeys Tips",
+			L"Inkeys SuperTop failed. Reopen Inkeys; SuperTop will be disabled automatically.");
 		request.ownerlessTopmostAtCreation = true;
 		request.fallback.modality =
 			Inkeys::UI::MessageBox::SystemModality::System;

@@ -1,6 +1,8 @@
 module;
 
 #include "../../IdtMain.h"
+#include "../../IdtI18n.h"
+#include "../../IdtI18nKeys.g.h"
 
 #include <dbghelp.h>
 
@@ -438,9 +440,30 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 
 	if (currentUserStateFlag == 0)
 	{
+		wstring title = L"Inkeys Error";
+		wstring body = L"Inkeys encountered a problem. Select OK to restart Inkeys and try to recover.";
+		wstring okLabel = L"OK";
+		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+		wstring localizedTitle;
+		wstring localizedBody;
+		wstring localizedOk;
+		LANGID localizedLanguage = language;
+		// 崩溃路径仅在 i18n 读锁可立即获取时整组切换，否则保持完整英文回退。
+		if (I18n::tryLanguageId(localizedLanguage)
+			&& I18n::tryGetW(I18nKey.Dialogs.Common.ErrorTitle,
+				localizedTitle)
+			&& I18n::tryGetW(I18nKey.Dialogs.Crash.Body, localizedBody)
+			&& I18n::tryGetW(I18nKey.Dialogs.Common.OK, localizedOk))
+		{
+			title = move(localizedTitle);
+			body = move(localizedBody);
+			okLabel = move(localizedOk);
+			language = localizedLanguage;
+		}
 		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-			L"Inkeys Error | 智绘教错误",
-			L"There is a problem with 智绘教Inkeys, click OK to restart 智绘教Inkeys to try to resolve the problem.\n智绘教Inkeys 出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。");
+			title.c_str(), body.c_str());
+		request.language = language;
+		request.labels.ok = okLabel.c_str();
 		request.icon = Inkeys::UI::MessageBox::IconSource::BuiltInError();
 		request.ownerlessTopmostAtCreation = true;
 		request.reliability =

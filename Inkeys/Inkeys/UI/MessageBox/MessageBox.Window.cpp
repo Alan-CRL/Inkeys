@@ -695,23 +695,81 @@ namespace Inkeys::UI::MessageBox::Detail
 				graphics.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 				if (!titleFontFamily)
 				{
-					const FontCandidate candidates[]{
+					const bool traditionalChinese = PRIMARYLANGID(request->language)
+						== LANG_CHINESE
+						&& (SUBLANGID(request->language) == SUBLANG_CHINESE_TRADITIONAL
+							|| SUBLANGID(request->language) == SUBLANG_CHINESE_HONGKONG
+							|| SUBLANGID(request->language) == SUBLANG_CHINESE_MACAU);
+					const bool simplifiedChinese = PRIMARYLANGID(request->language)
+						== LANG_CHINESE && !traditionalChinese;
+					const FontCandidate traditionalCandidates[]{
+						{ L"Microsoft JhengHei UI", FontStyleBold },
+						{ L"Microsoft JhengHei", FontStyleBold },
+						{ L"Segoe UI", FontStyleBold },
+					};
+					const FontCandidate simplifiedCandidates[]{
+						{ L"Microsoft YaHei UI", FontStyleBold },
+						{ L"Microsoft YaHei", FontStyleBold },
+						{ L"Segoe UI", FontStyleBold },
+					};
+					const FontCandidate latinCandidates[]{
 						{ L"Segoe UI Variable Display Semibold", FontStyleRegular },
 						{ L"Segoe UI Semibold", FontStyleRegular },
 						{ L"Segoe UI Bold", FontStyleRegular },
 						{ L"Segoe UI Variable Display", FontStyleBold },
 						{ L"Segoe UI", FontStyleBold },
 					};
-					if (!ResolveFontFamily(candidates, _countof(candidates),
+					const FontCandidate* candidates = latinCandidates;
+					std::size_t candidateCount = _countof(latinCandidates);
+					if (traditionalChinese)
+					{
+						candidates = traditionalCandidates;
+						candidateCount = _countof(traditionalCandidates);
+					}
+					else if (simplifiedChinese)
+					{
+						candidates = simplifiedCandidates;
+						candidateCount = _countof(simplifiedCandidates);
+					}
+					if (!ResolveFontFamily(candidates, candidateCount,
 						titleFontFamily, titleFontStyle)) return false;
 				}
 				if (!bodyFontFamily)
 				{
-					const FontCandidate candidates[]{
+					const bool traditionalChinese = PRIMARYLANGID(request->language)
+						== LANG_CHINESE
+						&& (SUBLANGID(request->language) == SUBLANG_CHINESE_TRADITIONAL
+							|| SUBLANGID(request->language) == SUBLANG_CHINESE_HONGKONG
+							|| SUBLANGID(request->language) == SUBLANG_CHINESE_MACAU);
+					const bool simplifiedChinese = PRIMARYLANGID(request->language)
+						== LANG_CHINESE && !traditionalChinese;
+					const FontCandidate traditionalCandidates[]{
+						{ L"Microsoft JhengHei UI", FontStyleRegular },
+						{ L"Microsoft JhengHei", FontStyleRegular },
+						{ L"Segoe UI", FontStyleRegular },
+					};
+					const FontCandidate simplifiedCandidates[]{
+						{ L"Microsoft YaHei UI", FontStyleRegular },
+						{ L"Microsoft YaHei", FontStyleRegular },
+						{ L"Segoe UI", FontStyleRegular },
+					};
+					const FontCandidate latinCandidates[]{
 						{ L"Segoe UI Variable Text", FontStyleRegular },
 						{ L"Segoe UI", FontStyleRegular },
 					};
-					if (!ResolveFontFamily(candidates, _countof(candidates),
+					const FontCandidate* candidates = latinCandidates;
+					std::size_t candidateCount = _countof(latinCandidates);
+					if (traditionalChinese)
+					{
+						candidates = traditionalCandidates;
+						candidateCount = _countof(traditionalCandidates);
+					}
+					else if (simplifiedChinese)
+					{
+						candidates = simplifiedCandidates;
+						candidateCount = _countof(simplifiedCandidates);
+					}
+					if (!ResolveFontFamily(candidates, candidateCount,
 						bodyFontFamily, bodyFontStyle)) return false;
 				}
 				Font titleFont(titleFontFamily.get(),
@@ -829,8 +887,7 @@ namespace Inkeys::UI::MessageBox::Detail
 						closeOuterGap + closeSize };
 				}
 
-				const auto labels = ResolveButtonLabels(GetThreadUILanguage());
-				next.buttonCount = BuildButtonSpecs(request->buttons, labels,
+				next.buttonCount = BuildButtonSpecs(request->buttons, request->labels,
 					next.buttonSpecs);
 				const int buttonsWidth = next.width - padding * 2
 					- buttonGap * (next.buttonCount - 1);

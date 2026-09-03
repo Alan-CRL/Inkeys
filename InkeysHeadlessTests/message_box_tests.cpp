@@ -51,6 +51,7 @@ namespace
 		int calls = 0;
 		HWND owner = nullptr;
 		UINT flags = 0;
+		LANGID language = 0;
 		std::size_t bodyLength = 0;
 		bool ownerEnabled = false;
 		bool reenter = false;
@@ -65,6 +66,7 @@ namespace
 		++capture.calls;
 		capture.owner = owner;
 		capture.flags = flags;
+		capture.language = request.language;
 		capture.bodyLength = request.body
 			? std::char_traits<wchar_t>::length(request.body) : 0;
 		capture.ownerEnabled = !owner || IsWindowEnabled(owner) != FALSE;
@@ -82,6 +84,8 @@ namespace
 		Check(MessageBoxTest::Validate(ok), "OK factory validates");
 		Check(ok.defaultResult == Result::Ok && ok.dismissResult == Result::Ok,
 			"OK factory defaults");
+		Check(ok.language == MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+			"factory defaults to English before i18n is available");
 
 		auto okCancel = MakeOkCancelRequest(L"Title", L"Body");
 		Check(MessageBoxTest::Validate(okCancel), "OK/Cancel factory validates");
@@ -150,6 +154,8 @@ namespace
 
 		auto invalidForFallback = ok;
 		invalidForFallback.defaultResult = Result::No;
+		invalidForFallback.language = MAKELANGID(
+			LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
 		invalidForFallback.fallback.owner = reinterpret_cast<HWND>(1);
 		FallbackCapture invalidOwnerCapture;
 		MessageBoxTest::Automation invalidOwnerAutomation;
@@ -160,6 +166,8 @@ namespace
 			"invalid request uses mock system fallback");
 		Check(invalidOwnerCapture.calls == 1 && !invalidOwnerCapture.owner,
 			"invalid fallback owner normalizes to null");
+		Check(invalidOwnerCapture.language == invalidForFallback.language,
+			"system fallback preserves the request language");
 
 		auto requiredOwner = MakeOkRequest(L"Owner", L"Owner is required here.");
 		requiredOwner.requireOwner = true;
@@ -198,6 +206,20 @@ namespace
 		Check(traditional.ok == L"確定" && traditional.cancel == L"取消",
 			"traditional labels");
 		Check(english.ok == L"OK" && english.no == L"No", "English labels");
+		const auto defaultLabels = MessageBoxTest::ResolveRequestLabels(
+			MakeOkRequest(L"Title", L"Body"));
+		Check(defaultLabels.ok == L"OK" && defaultLabels.cancel == L"Cancel",
+			"default request labels stay English");
+		std::wstring customOk = L"Continue";
+		auto customized = MakeOkCancelRequest(L"Title", L"Body");
+		customized.language = MAKELANGID(
+			LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
+		customized.labels.ok = customOk.c_str();
+		auto customizedLabels = MessageBoxTest::ResolveRequestLabels(customized);
+		customOk.assign(L"Changed after copy");
+		Check(customizedLabels.ok == L"Continue"
+			&& customizedLabels.cancel == L"取消",
+			"custom labels are copied while missing labels use language defaults");
 		Check(MessageBoxTest::ScaleDip(24, 96) == 24, "96 DPI scale");
 		Check(MessageBoxTest::ScaleDip(24, 120) == 30, "120 DPI scale");
 		Check(MessageBoxTest::ScaleDip(24, 144) == 36, "144 DPI scale");
@@ -221,6 +243,24 @@ namespace
 				"layout remains in DIP bounds");
 			Check(probe.buttonCount == 2, "layout keeps two buttons");
 		}
+
+		auto simplifiedRequest = MakeOkCancelRequest(L"Inkeys 提示",
+			L"当前处于绘制模式。结束放映将清空画布内容。");
+		simplifiedRequest.language = MAKELANGID(
+			LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
+		const auto simplifiedProbe = MessageBoxTest::ProbeLayout(
+			simplifiedRequest, 96, 900, 900);
+		Check(simplifiedProbe.succeeded && simplifiedProbe.buttonCount == 2,
+			"simplified Chinese request resolves fonts and layout");
+
+		auto traditionalRequest = MakeOkCancelRequest(L"Inkeys 提示",
+			L"目前處於繪圖模式。結束放映將清除畫布內容。");
+		traditionalRequest.language = MAKELANGID(
+			LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
+		const auto traditionalProbe = MessageBoxTest::ProbeLayout(
+			traditionalRequest, 96, 900, 900);
+		Check(traditionalProbe.succeeded && traditionalProbe.buttonCount == 2,
+			"traditional Chinese request resolves fonts and layout");
 
 		const auto tooSmall = MessageBoxTest::ProbeLayout(request, 96, 319, 800);
 		Check(!tooSmall.succeeded, "work area below minimum rejects preflight");
@@ -784,6 +824,21 @@ namespace
 			"owner enabled state restored");
 		Check(okContext.dialog && !IsWindow(okContext.dialog),
 			"dialog HWND destroyed after hide");
+
+		auto traditional = MakeOkCancelRequest(L"Inkeys 提示",
+			L"目前處於繪圖模式。結束放映將清除畫布內容。");
+		traditional.owner = backdrop.Get();
+		traditional.language = MAKELANGID(
+			LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
+		traditional.labels.ok = L"確定";
+		traditional.labels.cancel = L"取消";
+		HiddenWindowContext traditionalContext{ backdrop.Get() };
+		Check(MessageBoxTest::ShowAutomated(traditional,
+			{ InspectAndClose, &traditionalContext, 40 }) == Result::Ok,
+			"traditional Chinese request measures, paints, and returns OK");
+		Check(traditionalContext.dialog && !IsWindow(traditionalContext.dialog),
+			"traditional Chinese dialog is destroyed after hide");
+
 		// 首次 HWND/GDI+ 使用会触发系统进程级缓存；其后检查逐次显示是否增长。
 		const DWORD initialGdiObjects = GetGuiResources(
 			GetCurrentProcess(), GR_GDIOBJECTS);

@@ -208,8 +208,14 @@ namespace
 					command.showCommand)) > 32;
 			case SettingBusinessKind::Information:
 			{
+				const auto title = I18n::getWOr(
+					I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
+				const auto okLabel = I18n::getWOr(
+					I18nKey.Dialogs.Common.OK, L"OK");
 				auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-					L"Inkeys Tips | 智绘教提示", command.text.c_str());
+					title.c_str(), command.text.c_str());
+				request.language = I18n::languageId();
+				request.labels.ok = okLabel.c_str();
 				request.owner = Inkeys::Window::GetService().Handle(
 					Inkeys::Window::WindowRole::Setting);
 				request.requireOwner = true;
@@ -220,8 +226,17 @@ namespace
 			}
 			case SettingBusinessKind::ConfirmRestart:
 			{
+				const auto title = I18n::getWOr(
+					I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
+				const auto okLabel = I18n::getWOr(
+					I18nKey.Dialogs.Common.OK, L"OK");
+				const auto cancelLabel = I18n::getWOr(
+					I18nKey.Dialogs.Common.Cancel, L"Cancel");
 				auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
-					L"Inkeys Tips | 智绘教提示", command.text.c_str());
+					title.c_str(), command.text.c_str());
+				request.language = I18n::languageId();
+				request.labels.ok = okLabel.c_str();
+				request.labels.cancel = cancelLabel.c_str();
 				request.owner = Inkeys::Window::GetService().Handle(
 					Inkeys::Window::WindowRole::Setting);
 				request.requireOwner = true;
@@ -8736,7 +8751,9 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::SetCursorPosX(ImGui::GetCursorPos().x + 10.0f * settingGlobalScale);
 							if (ImGui::TextLink(IA(I18nKey.SettingsUI.Update.Repair).c_str()))
 							{
-								QueueInformation(L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。");
+								QueueInformation(I18n::getWOr(
+									I18nKey.Dialogs.UpdateModuleUnavailable.Body,
+									L"The automatic update module is not active, which indicates that this is not an official release.\nGo to Software Version and select Repair Software."));
 							}
 
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_TextLink, Widgets::FluentColor::AccentText);
@@ -9173,7 +9190,9 @@ SettingSessionCoroutine RunSettingSession()
 						{
 							if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNotStarted)
 							{
-								QueueInformation(L"The automatic update module has not been activated, which means that you are not using an official release. \nPlease go to the \"version\" page and click \"Fix Software\".\n自动更新模块尚未启动，这意味着您使用的不是官方发布版本。\n请前往“软件版本”页并点击“修复软件”。");
+								QueueInformation(I18n::getWOr(
+									I18nKey.Dialogs.UpdateModuleUnavailable.Body,
+									L"The automatic update module is not active, which indicates that this is not an official release.\nGo to Software Version and select Repair Software."));
 							}
 							else AutomaticUpdateState = UpdateObtainInformation;
 						}
