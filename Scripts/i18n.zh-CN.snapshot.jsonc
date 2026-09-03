@@ -48,6 +48,38 @@
       }
     }
   },
+  "Dialogs":
+  {
+    "Common":
+    {
+      "TipsTitle": "Inkeys 提示",
+      "ErrorTitle": "Inkeys 错误",
+      "OK": "确定",
+      "Cancel": "取消",
+      "Yes": "是",
+      "No": "否"
+    },
+    "EndPresentation":
+    {
+      "Body": "当前处于绘制模式。结束放映将清空画布内容。\n确定结束放映吗？"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys 意外退出：程序窗口创建失败或被拦截。请重启 Inkeys 后重试。(#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "自动更新模块尚未启动，这意味着当前版本不是官方发布版本。\n请前往“软件版本”并选择“修复软件”。"
+    },
+    "CloseInkeys":
+    {
+      "Body": "确定要关闭 Inkeys 吗？"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys 出现问题。选择“确定”以重启 Inkeys 并尝试恢复。"
+    }
+  },
   "SettingsUI":
   {
     "N": "智绘教Inkeys 选项",
@@ -75,7 +107,7 @@
           "zh-CN": "简体中文",
           "zh-TW": "繁體中文(Beta)"
         },
-        "Warn": "需要重启软件才能完全生效，是否重启？"
+        "Warn": "语言更改需要重启 Inkeys 才能完全生效。是否立即重启？"
       }
     },
     "Configuration":

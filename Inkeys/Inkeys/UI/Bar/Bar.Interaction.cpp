@@ -4,6 +4,8 @@
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDraw.h"
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include <d2d1helper.h>
@@ -3296,9 +3298,19 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
 				{
+					const auto title = I18n::getWOr(
+						I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
+					const auto body = I18n::getWOr(
+						I18nKey.Dialogs.CloseInkeys.Body, L"Close Inkeys?");
+					const auto okLabel = I18n::getWOr(
+						I18nKey.Dialogs.Common.OK, L"OK");
+					const auto cancelLabel = I18n::getWOr(
+						I18nKey.Dialogs.Common.Cancel, L"Cancel");
 					auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
-						L"Inkeys Tips | 智绘教提示",
-						L"Whether to turn off 智绘教Inkeys?\n是否关闭 智绘教Inkeys？");
+						title.c_str(), body.c_str());
+					request.language = I18n::languageId();
+					request.labels.ok = okLabel.c_str();
+					request.labels.cancel = cancelLabel.c_str();
 					request.owner = floating_window;
 					request.requireOwner = true;
 					request.fallback.owner = floating_window;

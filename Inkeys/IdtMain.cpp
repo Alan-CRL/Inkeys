@@ -85,7 +85,7 @@ namespace
 	void ShowStartupMessage(const wchar_t* body) noexcept
 	{
 		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-			L"Inkeys Tips | 智绘教提示", body);
+			L"Inkeys Tips", body);
 		request.ownerlessTopmostAtCreation = true;
 		request.fallback.modality =
 			Inkeys::UI::MessageBox::SystemModality::System;
@@ -181,12 +181,12 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 
 			if (typeRoot == 1)
 			{
-				ShowStartupMessage(L"The current directory permissions are restricted and cannot run normally. Please transfer the program to another directory before running it again.(#1)\n当前目录权限受限无法正常运行，请将程序转移至其他目录后再运行。(#1)");
+				ShowStartupMessage(L"The current directory permissions are restricted, so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#1)");
 				return 0;
 			}
 			else if (typeRoot == 2)
 			{
-				ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual storage directory) and cannot run properly. Please transfer the program to another directory before running it again.(#2)\n当前目录权限受限（文件操作被重定向到虚拟存储目录）无法正常运行，请将程序转移至其他目录后再运行。(#2)");
+				ShowStartupMessage(L"The current directory permissions are restricted (file operations are redirected to the virtual store), so Inkeys cannot run normally. Move Inkeys to another directory and try again. (#2)");
 				return 0;
 			}
 		}
@@ -194,7 +194,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 		wstring appName = GetCurrentExeName();
 		if (!isAsciiPrintable(appName))
 		{
-			ShowStartupMessage(L"The file name of this software can only contain English characters. Please rename and restart the software.(#3)\n此软件文件名称只能包含英文字符，请重命名后重启软件。(#3)");
+			ShowStartupMessage(L"The Inkeys file name can contain only English characters. Rename the file and restart Inkeys. (#3)");
 			return 0;
 		}
 
@@ -275,7 +275,7 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPWSTR
 			DWORD lastError = GetLastError();
 			if (launchMutex != NULL && lastError == ERROR_ALREADY_EXISTS)
 			{
-				ShowStartupMessage(L"智绘教Inkeys is already running. If not, you need to end the relevant process and reopen the program.\n智绘教Inkeys 已经运行。如果没有则需要结束相关进程后重新打开程序。");
+				ShowStartupMessage(L"Inkeys is already running. If no Inkeys window is visible, end the existing Inkeys process and open it again.");
 
 				return 0;
 			}

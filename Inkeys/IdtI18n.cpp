@@ -61,6 +61,15 @@ namespace
 		if (type == 2) return loadJsonContentFromFile(path, lang, jsonContent);
 		return false;
 	}
+
+	LANGID toLanguageId(const wstring& language) noexcept
+	{
+		if (language == L"zh-CN")
+			return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
+		if (language == L"zh-TW")
+			return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
+		return MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+	}
 }
 
 bool I18n::load(int type, wstring path, wstring lang)
@@ -117,6 +126,65 @@ wstring I18n::getW(string x)
 		value = it->second;
 	}
 	return utf8ToUtf16(value);
+}
+
+wstring I18n::getWOr(const char* key, const wchar_t* fallback)
+{
+	wstring value = key ? getW(key) : wstring{};
+	return value.empty() ? wstring(fallback ? fallback : L"") : value;
+}
+
+bool I18n::tryGetW(const char* key, wstring& output) noexcept
+{
+	if (!key) return false;
+	try
+	{
+		string value;
+		{
+			shared_lock<shared_mutex> lock(i18nMutex, try_to_lock);
+			if (!lock.owns_lock()) return false;
+			auto it = i18n.find(key);
+			if (it == i18n.end() || isPendingTranslationValue(it->second))
+				return false;
+			value = it->second;
+		}
+		wstring converted = utf8ToUtf16(value);
+		if (converted.empty()) return false;
+		output = move(converted);
+		return true;
+	}
+	catch (...)
+	{
+		return false;
+	}
+}
+
+LANGID I18n::languageId() noexcept
+{
+	try
+	{
+		shared_lock<shared_mutex> lock(i18nMutex);
+		return toLanguageId(identifying);
+	}
+	catch (...)
+	{
+		return MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+	}
+}
+
+bool I18n::tryLanguageId(LANGID& output) noexcept
+{
+	try
+	{
+		shared_lock<shared_mutex> lock(i18nMutex, try_to_lock);
+		if (!lock.owns_lock()) return false;
+		output = toLanguageId(identifying);
+		return true;
+	}
+	catch (...)
+	{
+		return false;
+	}
 }
 
 bool I18n::isIdentifying(const wchar_t* lang)

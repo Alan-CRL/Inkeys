@@ -56,7 +56,8 @@ namespace Inkeys::UI::MessageBox
 				return testAutomation.systemFallbackCallback(request, owner, flags,
 					testAutomation.fallbackContext);
 #endif
-			const int value = ::MessageBoxW(owner, body, title, flags);
+			const int value = ::MessageBoxExW(owner, body, title, flags,
+				request.language);
 			return Detail::MapSystemMessageResult(request.buttons, value);
 		}
 
@@ -210,6 +211,17 @@ namespace Inkeys::UI::MessageBox
 				output.dismissEnabled = request.dismissEnabled;
 				output.dismissResult = request.dismissResult;
 				output.showCloseButton = request.showCloseButton;
+				output.language = request.language;
+				output.labels = ResolveButtonLabels(request.language);
+				// 调用点可覆盖内置按钮文案；空值继续使用对应语言的安全默认值。
+				if (request.labels.ok && request.labels.ok[0])
+					output.labels.ok = request.labels.ok;
+				if (request.labels.cancel && request.labels.cancel[0])
+					output.labels.cancel = request.labels.cancel;
+				if (request.labels.yes && request.labels.yes[0])
+					output.labels.yes = request.labels.yes;
+				if (request.labels.no && request.labels.no[0])
+					output.labels.no = request.labels.no;
 				output.ownerlessTopmostAtCreation = request.ownerlessTopmostAtCreation;
 				output.fallback = request.fallback;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
@@ -306,6 +318,14 @@ namespace Inkeys::UI::MessageBox::Test
 		auto labels = Detail::ResolveButtonLabels(language);
 		return { std::move(labels.ok), std::move(labels.cancel),
 			std::move(labels.yes), std::move(labels.no) };
+	}
+
+	Labels ResolveRequestLabels(const Request& request)
+	{
+		Detail::OwnedRequest owned;
+		if (!Detail::CopyRequest(request, owned)) return {};
+		return { std::move(owned.labels.ok), std::move(owned.labels.cancel),
+			std::move(owned.labels.yes), std::move(owned.labels.no) };
 	}
 
 	Result ShowAutomated(const Request& request,

@@ -24,6 +24,11 @@
 - [x] 20. 扩展隐藏 HWND 与可见像素回归：初始无框、pointer 无框、键盘有框、Tab/Shift+Tab/Left/Right、Enter 导航前后、Space、所有 close 入口及 OK/OK-Cancel/Yes-No 路由。
 - [x] 21. 使用 ARM64 host MSBuild 构建完整 `Debug|ARM64` solution，运行 `--no-window`、MessageBox 隐藏集成与获准的专用可见截图入口；再次核对首帧、owner/topmost、DPI、资源清理和既有已知 WindowTests 基线。
 - [x] 22. 按 PRD/design 逐条复核本轮约束，记录 UI Automation 与 Windows 7/10 仍未实机验证的既有限制；完成后等待用户人工验收，不自动提交 commit。
+- [x] 23. 在三份 JSONC 中增加 MessageBox 公共标题、按钮和运行期正文 key，修正现有语言重启文案，完成 en-US/zh-CN/zh-TW 翻译后运行 i18n sync/check。
+- [x] 24. 扩展 MessageBox Request/OwnedRequest：默认 en-US、复制可选按钮文字、按请求语言构造内置标签，并让 MessageBoxExW fallback 接收同一 LANGID。
+- [x] 25. 按请求语言选择 Segoe UI、Microsoft YaHei UI 或 Microsoft JhengHei UI 字体候选；字体缺失时保留 Segoe 回退，不引入共享 UI 字体设备。
+- [x] 26. 迁移七个正式调用文件：启动四条和 SuperTop 固定英文，其余使用生成 i18n key、语言 ID 和按钮文字；CrashHandler 使用无阻塞英文兜底。
+- [x] 27. 增加默认英文、调用方标签覆盖、fallback 语言、简中/繁中布局回归；运行 i18n check、git diff check、完整 Debug|ARM64 Solution 构建及无窗口/完整 MessageBox 测试。
 
 ## Implementation Details By Step
 
@@ -196,3 +201,12 @@ rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` C4267 warning）；`InkeysHeadlessTests.exe --no-window` 与完整套件均通过。
 - `--message-box-visual-test .\TestResults\message-box-keyboard` 通过并生成 7 张限定窗口截图；新增像素断言确认初始/纯 pointer 状态无白框、键盘态存在外置双层框、pointer down 清除既有键盘框、primary hover 不清除 secondary 键盘框。人工复核 `01`、`02`、`05`、`07` 无重叠、位移或异常边框。
 - 公开 Request/Result、布局/颜色 token、owner/topmost、首帧 reveal、GDI+ 生命周期和产品调用点均未改变。完整 UI Automation provider 仍不属于 MVP；Windows 7/10 本轮未上机，仍仅记录静态兼容和构建覆盖。未提交 commit，等待用户人工验收。
+
+## 2026-09-02 Localization Follow-up Results
+
+- 早期四条启动提示和 SuperTop 已改为完整英文，标题、正文、默认按钮和应用名均不依赖 i18n；运行期六类提示改用 `Dialogs` 生成键和 en-US/zh-CN/zh-TW 单语言文案。
+- `Request` 默认 `en-US`，并持有调用方语言与可选按钮文字视图；`CopyRequest()` 在工作线程前复制完整快照。内置标签不再读取 thread UI language，系统回退使用 `MessageBoxExW` 和同一 `LANGID`。
+- 简中优先 `Microsoft YaHei UI`，繁中优先 `Microsoft JhengHei UI`，均保留 Segoe UI 回退；测试覆盖简中/繁中测量，并通过真实 HWND 执行繁中标题、正文与按钮绘制和销毁。
+- `pwsh ./Scripts/i18n.ps1 check` 通过：en-US 和 zh-TW 均为 `285/285` (100%)；`git diff --check` 通过，所有修改文本恢复 CRLF。
+- VS 18 ARM64 host MSBuild 的完整 `InkeysRepo.sln Debug|ARM64` 构建通过；`InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`。完整套件的 MessageBox 用例无失败，但仍复现任务中已记录的两条 `Inkeys.Window` owner-tree Z 序基线失败；本轮未修改 Window Service。
+- OK/Cancel 产品调用仍只在 `Result::Ok` 时执行结束放映、重启或关闭动作；系统 `IDCANCEL -> Result::Cancel`、Esc/X 取消和结果首次提交不可覆写的既有回归继续通过。

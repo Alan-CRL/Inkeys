@@ -42,6 +42,7 @@ import Inkeys.UI.MessageBox;
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtI18n.h"
+#include "IdtI18nKeys.g.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 
 #include <objbase.h>
@@ -805,9 +806,18 @@ bool CheckEndShowClass::Check()
 		isChecking = true;
 		});
 
+	const auto title = I18n::getWOr(I18nKey.Dialogs.Common.TipsTitle,
+		L"Inkeys Tips");
+	const auto body = I18n::getWOr(I18nKey.Dialogs.EndPresentation.Body,
+		L"You are currently in drawing mode. Ending the presentation will clear the canvas.\nEnd the presentation?");
+	const auto okLabel = I18n::getWOr(I18nKey.Dialogs.Common.OK, L"OK");
+	const auto cancelLabel = I18n::getWOr(
+		I18nKey.Dialogs.Common.Cancel, L"Cancel");
 	auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
-		L"Inkeys Tips | 智绘教提示",
-		L"Currently in drawing mode, continuing to end will clear the canvas.\nAre you sure you want to end the presentation?\n当前处于绘制模式，继续结束放映将会清空画布内容。\n确定结束放映？");
+		title.c_str(), body.c_str());
+	request.language = I18n::languageId();
+	request.labels.ok = okLabel.c_str();
+	request.labels.cancel = cancelLabel.c_str();
 	request.owner = floating_window;
 	request.requireOwner = true;
 	request.fallback.owner = floating_window;

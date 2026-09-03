@@ -226,6 +226,53 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 因此，文案变更应：先改基准 JSONC，再按任务授权运行 `sync`、处理翻译标记、运行 `check`，并审查所有生成差异。只审计时使用 `check`；`sync` 会写文件，不能在未授权的只读/文档任务中执行。不要手工编辑 `IdtI18nKeys.g.h`。
 
+### 生成键标识符与 Win32 宏合同
+
+#### 1. Scope / Trigger
+
+新增或重命名 i18n JSONC 节点时适用。`i18n.ps1 sync` 会把每个路径段直接生成为 C++ 成员标识符，因此这不只是 JSON schema 变更，也是生成 C++ API 变更。
+
+#### 2. Signatures
+
+~~~text
+"Dialogs/Common/OK" -> I18nKey.Dialogs.Common.OK
+~~~
+
+#### 3. Contracts
+
+- 每个路径段必须能生成合法 C++ 标识符，并且不得与目标翻译单元可见的 Windows/项目宏同名。
+- 特别禁止使用被 `<Windows.h>` 定义的 `MessageBox` 作为节点名；对话框文案使用 `Dialogs`。
+- 不通过调整 `#undef` 顺序掩盖 schema 命名冲突，因为生成头可被多个全局模块片段以不同顺序包含。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 节点名与 Win32/项目宏冲突 | 在基准 JSONC 重命名节点，重新 `sync`，再更新调用点 |
+| 非默认语言出现新 key | 填完翻译标记后 `check` 必须 100% 通过 |
+| 生成头与 JSONC 不一致 | 重跑 `sync`，不手改生成头 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：`Dialogs/Common/OK` 生成 `I18nKey.Dialogs.Common.OK`，在包含 `<Windows.h>` 的单元中可直接编译。
+- Base：普通非冲突节点按现有生成规则使用。
+- Bad：`MessageBox/Common/OK` 会让成员 token 在预处理期被改写为 `MessageBoxW`。
+
+#### 6. Tests Required
+
+- 运行 `pwsh ./Scripts/i18n.ps1 sync` 和 `check`。
+- 搜索生成头中的新成员名，并完整构建至少一个包含 `<Windows.h>` 且消费该 key 的翻译单元。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：MessageBox 可被 Windows.h 宏展开。
+I18nKey.MessageBox.Common.OK;
+
+// Correct：使用无宏冲突的 schema 节点。
+I18nKey.Dialogs.Common.OK;
+~~~
+
 ## 产品资源位置与加载路径
 
 `【直接确认】` 可见资源目录/登记点：

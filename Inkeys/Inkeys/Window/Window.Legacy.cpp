@@ -5,6 +5,8 @@ import Inkeys.UI.MessageBox;
 #include "Window.Legacy.hpp"
 
 #include "../../IdtConfiguration.h"
+#include "../../IdtI18n.h"
+#include "../../IdtI18nKeys.g.h"
 #include "../../IdtMain.h"
 #include "../../IdtOther.h"
 #include "../../Launch/IdtLaunchState.h"
@@ -108,9 +110,17 @@ void TopWindow()
 		if (IDTLogger) IDTLogger->warn("[窗口线程][TopWindow] 等待覆盖层首帧超时");
 		if (LaunchState::warnTry)
 		{
+			const auto title = I18n::getWOr(
+				I18nKey.Dialogs.Common.TipsTitle, L"Inkeys Tips");
+			const auto body = I18n::getWOr(
+				I18nKey.Dialogs.WindowCreationFailed.Body,
+				L"Inkeys exited unexpectedly because a program window could not be created or was blocked. Restart Inkeys and try again. (#5)");
+			const auto okLabel = I18n::getWOr(
+				I18nKey.Dialogs.Common.OK, L"OK");
 			auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-				L"Inkeys Tips | 智绘教提示",
-				L"Program unexpected exit: The program window creation failed or was intercepted. Please restart the software and try again.(#5)\n程序意外退出：程序窗口创建失败或被拦截，请重启软件重试。(#5)");
+				title.c_str(), body.c_str());
+			request.language = I18n::languageId();
+			request.labels.ok = okLabel.c_str();
 			request.ownerlessTopmostAtCreation = true;
 			request.fallback.modality =
 				Inkeys::UI::MessageBox::SystemModality::System;

@@ -92,6 +92,14 @@ export namespace Inkeys::UI::MessageBox
 		SystemIcon icon = SystemIcon::None;
 	};
 
+	struct ButtonLabels
+	{
+		const wchar_t* ok = nullptr;
+		const wchar_t* cancel = nullptr;
+		const wchar_t* yes = nullptr;
+		const wchar_t* no = nullptr;
+	};
+
 	struct Request
 	{
 		const wchar_t* title = nullptr;
@@ -103,6 +111,8 @@ export namespace Inkeys::UI::MessageBox
 		bool dismissEnabled = true;
 		Result dismissResult = Result::Ok;
 		bool showCloseButton = true;
+		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+		ButtonLabels labels{};
 		IconSource icon{};
 		bool ownerlessTopmostAtCreation = false;
 		Reliability reliability = Reliability::Normal;
@@ -166,6 +176,7 @@ export namespace Inkeys::UI::MessageBox::Test
 	[[nodiscard]] int ScaleDip(int dip, UINT dpi) noexcept;
 	[[nodiscard]] ButtonResults ResolveButtonResults(Buttons buttons) noexcept;
 	[[nodiscard]] Labels ResolveLabels(LANGID language);
+	[[nodiscard]] Labels ResolveRequestLabels(const Request& request);
 	[[nodiscard]] LayoutProbe ProbeLayout(const Request& request,
 		UINT dpi, int workAreaWidth, int workAreaHeight) noexcept;
 	[[nodiscard]] Result ShowAutomated(
@@ -195,6 +206,14 @@ namespace Inkeys::UI::MessageBox::Detail
 		std::vector<std::uint8_t> bytes;
 	};
 
+	struct ButtonLabelSet
+	{
+		std::wstring ok;
+		std::wstring cancel;
+		std::wstring yes;
+		std::wstring no;
+	};
+
 	struct OwnedRequest
 	{
 		std::wstring title;
@@ -205,20 +224,14 @@ namespace Inkeys::UI::MessageBox::Detail
 		bool dismissEnabled = true;
 		Result dismissResult = Result::Ok;
 		bool showCloseButton = true;
+		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+		ButtonLabelSet labels{};
 		bool ownerlessTopmostAtCreation = false;
 		FallbackPolicy fallback{};
 		OwnedIcon icon{};
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 		Test::Automation automation{};
 #endif
-	};
-
-	struct ButtonLabelSet
-	{
-		std::wstring ok;
-		std::wstring cancel;
-		std::wstring yes;
-		std::wstring no;
 	};
 
 	struct ButtonSpec

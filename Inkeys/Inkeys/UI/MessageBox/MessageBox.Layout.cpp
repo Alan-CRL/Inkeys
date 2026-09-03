@@ -118,17 +118,15 @@ namespace Inkeys::UI::MessageBox::Detail
 
 	ButtonLabelSet ResolveButtonLabels(LANGID language)
 	{
-		const LANGID simplified = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
-		const LANGID traditional = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL);
-		if (language == simplified)
-			return { L"确定", L"取消", L"是", L"否" };
-		if (language == traditional
-			|| PRIMARYLANGID(language) == LANG_CHINESE
-			&& (SUBLANGID(language) == SUBLANG_CHINESE_HONGKONG
+		if (PRIMARYLANGID(language) == LANG_CHINESE
+			&& (SUBLANGID(language) == SUBLANG_CHINESE_TRADITIONAL
+				|| SUBLANGID(language) == SUBLANG_CHINESE_HONGKONG
 				|| SUBLANGID(language) == SUBLANG_CHINESE_MACAU))
 		{
 			return { L"確定", L"取消", L"是", L"否" };
 		}
+		if (PRIMARYLANGID(language) == LANG_CHINESE)
+			return { L"确定", L"取消", L"是", L"否" };
 		return { L"OK", L"Cancel", L"Yes", L"No" };
 	}
 
