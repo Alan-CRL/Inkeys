@@ -515,6 +515,7 @@ namespace Inkeys::UI::MessageBox::Detail
 			int focusedButton = 0;
 			bool keyboardFocusVisible = false;
 			bool windowFocused = false;
+			bool windowActive = false;
 			bool closeHovered = false;
 			bool closePressed = false;
 			bool trackingMouse = false;
@@ -1084,7 +1085,11 @@ namespace Inkeys::UI::MessageBox::Detail
 				GraphicsPath outerPath;
 				AddRoundedRectangle(outerPath, outer,
 					static_cast<REAL>(ScaleDipValue(8, layout.dpi)));
-				Pen border(Color(102, 117, 117, 117), borderWidth);
+				// 激活强调由客户区自行绘制，避免重新启用 Win32 原生标题栏。
+				const Color borderColor = windowActive
+					? Color(153, 96, 205, 255)
+					: Color(102, 117, 117, 117);
+				Pen border(borderColor, borderWidth);
 				graphics.DrawPath(&border, &outerPath);
 			}
 		};
@@ -1181,6 +1186,17 @@ namespace Inkeys::UI::MessageBox::Detail
 			{
 			case WM_NCCALCSIZE:
 				return 0;
+			case WM_NCACTIVATE:
+			{
+				// 保留 caption style 给 DWM 阴影使用，但不允许 DefWindowProc 绘制原生标题栏。
+				const bool active = wParam != FALSE;
+				if (session->windowActive != active)
+				{
+					session->windowActive = active;
+					session->RequestRepaint();
+				}
+				return TRUE;
+			}
 			case WM_NCPAINT:
 				return 0;
 			case WM_NCHITTEST:

@@ -351,12 +351,10 @@ namespace Inkeys::UI::StartupPreview
 			ComPtr<ID2D1LinearGradientBrush> shimmer;
 			ComPtr<ID2D1SolidColorBrush> progressTrack;
 			ComPtr<ID2D1SolidColorBrush> progressFill;
-			ComPtr<ID2D1SolidColorBrush> progressError;
 
 			void Reset() noexcept
 			{
 				if (context) context->SetTarget(nullptr);
-				progressError.Reset();
 				progressFill.Reset();
 				progressTrack.Reset();
 				shimmer.Reset();
@@ -500,9 +498,6 @@ namespace Inkeys::UI::StartupPreview
 			result = next.context->CreateSolidColorBrush(
 				D2D1::ColorF(0.38f, 0.80f, 1.f, 1.f), &next.progressFill);
 			if (FAILED(result)) return result;
-			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(1.f, 0.38f, 0.44f, 1.f), &next.progressError);
-			if (FAILED(result)) return result;
 
 			std::array<D2D1_GRADIENT_STOP, 7> stops{
 				D2D1::GradientStop(0.00f, D2D1::ColorF(1.f, 1.f, 1.f, 0.00f)),
@@ -639,8 +634,18 @@ namespace Inkeys::UI::StartupPreview
 				D2D1::RectF(track.rect.left, centerY - indicatorHeight / 2.f,
 					track.rect.left + fillWidth, centerY + indicatorHeight / 2.f),
 				indicatorHeight / 2.f, indicatorHeight / 2.f);
-			auto* brush = visual.red ? runtime.resources.progressError.Get()
-				: runtime.resources.progressFill.Get();
+			const float errorProgress = Clamp01(visual.failureColorProgress);
+			constexpr float normalRed = 0.38f;
+			constexpr float normalGreen = 0.80f;
+			constexpr float normalBlue = 1.f;
+			constexpr float errorRed = 1.f;
+			constexpr float errorGreen = 0.38f;
+			constexpr float errorBlue = 0.44f;
+			auto* brush = runtime.resources.progressFill.Get();
+			brush->SetColor(D2D1::ColorF(
+				normalRed + (errorRed - normalRed) * errorProgress,
+				normalGreen + (errorGreen - normalGreen) * errorProgress,
+				normalBlue + (errorBlue - normalBlue) * errorProgress, 1.f));
 			brush->SetOpacity(opacity);
 			runtime.resources.context->FillRoundedRectangle(&fill, brush);
 			return true;
@@ -785,6 +790,7 @@ namespace Inkeys::UI::StartupPreview
 			resources.context->FillRoundedRectangle(&rounded, resources.baseFill.Get());
 			resources.context->DrawRoundedRectangle(&rounded,
 				resources.frameStroke.Get(), stroke);
+			// 固定合成层级：反光先绘制，进度条始终最后绘制在其上方。
 			DrawShimmer(*runtime, frame, 1.f);
 			const bool progressVisible = DrawProgress(
 				*runtime, snapshot, frame.frameTime, success, 1.f);

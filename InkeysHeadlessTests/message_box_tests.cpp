@@ -569,6 +569,8 @@ namespace
 		bool systemCommandsBlocked = false;
 		bool captionDoubleClickBlocked = false;
 		bool captionDragHit = false;
+		bool ncActivationSuppressed = false;
+		bool customActivationEmphasis = false;
 		bool dwmFrameConfigured = false;
 		bool dpiRebuilt = false;
 		bool closeCaptured = false;
@@ -614,6 +616,38 @@ namespace
 			context.styleValid &= GetWindow(hwnd, GW_OWNER) == context.owner
 				&& (exStyle & WS_EX_TOPMOST) == 0;
 		context.ownerDisabled = !context.owner || !IsWindowEnabled(context.owner);
+
+		const auto sampleTopBorderContrast = [hwnd]() noexcept
+			{
+				RECT client{};
+				if (!GetClientRect(hwnd, &client) || client.right <= 0) return -1;
+				HDC dc = GetDC(hwnd);
+				if (!dc) return -1;
+				int maximum = -1;
+				const int center = client.right / 2;
+				for (int y = 0; y < 3; ++y)
+				{
+					for (int x = center - 12; x <= center + 12; ++x)
+					{
+						const COLORREF color = GetPixel(dc, x, y);
+						if (color != CLR_INVALID)
+							maximum = std::max(maximum,
+								static_cast<int>(GetBValue(color))
+								- static_cast<int>(GetRValue(color)));
+					}
+				}
+				ReleaseDC(hwnd, dc);
+				return maximum;
+			};
+		const LRESULT inactiveResult = SendMessageW(hwnd, WM_NCACTIVATE, FALSE, 0);
+		RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+		const int inactiveContrast = sampleTopBorderContrast();
+		const LRESULT activeResult = SendMessageW(hwnd, WM_NCACTIVATE, TRUE, 0);
+		RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+		const int activeContrast = sampleTopBorderContrast();
+		context.ncActivationSuppressed = inactiveResult == TRUE && activeResult == TRUE;
+		context.customActivationEmphasis = inactiveContrast >= 0
+			&& activeContrast >= inactiveContrast + 20;
 
 		RECT bounds{};
 		GetWindowRect(hwnd, &bounds);
@@ -814,6 +848,10 @@ namespace
 		Check(okContext.noResizeHit && okContext.fixedTrackSize,
 			"resize paths are blocked");
 		Check(okContext.captionDragHit, "custom title returns the draggable caption hit");
+		Check(okContext.ncActivationSuppressed,
+			"native non-client activation painting is suppressed");
+		Check(okContext.customActivationEmphasis,
+			"activation emphasis is rendered by the custom client border");
 		Check(okContext.dwmFrameConfigured,
 			"Windows 11 DWM dark frame and round-corner attributes are applied");
 		Check(okContext.systemCommandsBlocked

@@ -342,6 +342,18 @@ namespace Inkeys::UI::StartupPreview
 		return displayedRatio_;
 	}
 
+	double ProgressVisualReducer::SampleFailureColorProgress(
+		std::chrono::steady_clock::time_point now) const noexcept
+	{
+		if (!failureTargetFrozen_ || now <= failureColorStartTime_) return 0.0;
+		const double phase = std::clamp(std::chrono::duration<double>(
+			now - failureColorStartTime_).count()
+			/ std::chrono::duration<double>(
+				StartupPreviewProgressAnimationDuration).count(), 0.0, 1.0);
+		// 失败颜色由 reducer 独立维护，渐隐期间仍按非线性时间轴推进。
+		return phase * phase * (3.0 - 2.0 * phase);
+	}
+
 	void ProgressVisualReducer::RetargetRatio(
 		std::chrono::steady_clock::time_point now, double targetRatio) noexcept
 	{
@@ -374,18 +386,20 @@ namespace Inkeys::UI::StartupPreview
 			if (!failureTargetFrozen_)
 			{
 				failureTarget_ = actualRatio;
+				failureColorStartTime_ = now;
 				failureTargetFrozen_ = true;
 			}
 			RetargetRatio(now, failureTarget_);
 			state_ = ProgressVisualState::Failure;
-			return { state_, displayedRatio_, 1.0, true };
+			return { state_, displayedRatio_, 1.0,
+				SampleFailureColorProgress(now) };
 		}
 		// completed 只改变可见状态；长度仍不得超过调用方提供的真实比例。
 		RetargetRatio(now, actualRatio);
 		if (completed)
 		{
 			if (state_ == ProgressVisualState::Hidden)
-				return { state_, displayedRatio_, 0.0, false };
+				return { state_, displayedRatio_, 0.0, 0.0 };
 			if (state_ == ProgressVisualState::FadingIn)
 			{
 				constexpr auto FadeIn = std::chrono::milliseconds(180);
@@ -393,16 +407,16 @@ namespace Inkeys::UI::StartupPreview
 					now - transitionStart_).count()
 					/ std::chrono::duration<double>(FadeIn).count(), 0.0, 1.0);
 				if (phase >= 1.0) state_ = ProgressVisualState::Visible;
-				return { state_, displayedRatio_, phase, false };
+				return { state_, displayedRatio_, phase, 0.0 };
 			}
-			return { state_, displayedRatio_, 1.0, false };
+			return { state_, displayedRatio_, 1.0, 0.0 };
 		}
 
 		constexpr auto ShowDelay = std::chrono::seconds(3);
 		constexpr auto FadeIn = std::chrono::milliseconds(180);
 		if (previewShownTime_ == std::chrono::steady_clock::time_point{}
 			|| now - previewShownTime_ < ShowDelay)
-			return { ProgressVisualState::Hidden, displayedRatio_, 0.0, false };
+			return { ProgressVisualState::Hidden, displayedRatio_, 0.0, 0.0 };
 		if (state_ == ProgressVisualState::Hidden)
 		{
 			state_ = ProgressVisualState::FadingIn;
@@ -414,8 +428,8 @@ namespace Inkeys::UI::StartupPreview
 				now - transitionStart_).count()
 				/ std::chrono::duration<double>(FadeIn).count(), 0.0, 1.0);
 			if (phase >= 1.0) state_ = ProgressVisualState::Visible;
-			return { state_, displayedRatio_, phase, false };
+			return { state_, displayedRatio_, phase, 0.0 };
 		}
-		return { state_, displayedRatio_, 1.0, false };
+		return { state_, displayedRatio_, 1.0, 0.0 };
 	}
 }

@@ -215,7 +215,7 @@ export namespace Inkeys::UI::StartupPreview
 		ProgressVisualState state = ProgressVisualState::Hidden;
 		double displayedRatio = 0.0;
 		double opacity = 0.0;
-		bool red = false;
+		double failureColorProgress = 0.0;
 	};
 
 	class ProgressVisualReducer final
@@ -229,12 +229,15 @@ export namespace Inkeys::UI::StartupPreview
 	private:
 		[[nodiscard]] double SampleDisplayedRatio(
 			std::chrono::steady_clock::time_point now) noexcept;
+		[[nodiscard]] double SampleFailureColorProgress(
+			std::chrono::steady_clock::time_point now) const noexcept;
 		void RetargetRatio(std::chrono::steady_clock::time_point now,
 			double targetRatio) noexcept;
 
 		std::chrono::steady_clock::time_point previewShownTime_{};
 		std::chrono::steady_clock::time_point transitionStart_{};
 		std::chrono::steady_clock::time_point ratioStartTime_{};
+		std::chrono::steady_clock::time_point failureColorStartTime_{};
 		double displayedRatio_ = 0.0;
 		double ratioStart_ = 0.0;
 		double ratioTarget_ = 0.0;

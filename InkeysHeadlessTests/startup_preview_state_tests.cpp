@@ -393,22 +393,34 @@ int RunStartupPreviewStateTests()
 	(void)retry.Update(start, 0.2, false, false);
 	visual = retry.Update(start + 300ms, 0.2, false, false);
 	visual = retry.Update(start + 4s, 0.2, false, false);
-	if (!Expect(!visual.red, "automatic retry remains normal-colored")) ++failures;
+	if (!Expect(visual.failureColorProgress == 0.0,
+		"automatic retry remains normal-colored")) ++failures;
 	visual = retry.Update(start + 4001ms, 0.5, false, true);
-	if (!Expect(visual.state == ProgressVisualState::Failure && visual.red
+	if (!Expect(visual.state == ProgressVisualState::Failure
+		&& visual.failureColorProgress == 0.0
 		&& visual.opacity == 1.0
 		&& std::abs(visual.displayedRatio - 0.2) < 0.000001,
-		"fatal failure turns red immediately without jumping its length")) ++failures;
-	visual = retry.Update(start + 4151ms, 0.9, false, true);
-	if (!Expect(std::abs(visual.displayedRatio - 0.35) < 0.000001,
-		"failed progress keeps animating toward the frozen actual ratio")) ++failures;
-	visual = retry.Update(start + 4301ms, 0.9, false, true);
-	if (!Expect(visual.displayedRatio == 0.5,
-		"failed progress ignores later actual changes after freezing")) ++failures;
+		"fatal failure starts its color transition without jumping its length"))
+		++failures;
+	const auto failureQuarterVisual = retry.Update(
+		start + 4076ms, 0.9, false, false);
+	if (!Expect(failureQuarterVisual.failureColorProgress < 0.25,
+		"failure color transition starts slower than linear interpolation"))
+		++failures;
+	visual = retry.Update(start + 4151ms, 0.9, false, false);
+	if (!Expect(std::abs(visual.displayedRatio - 0.35) < 0.000001
+			&& std::abs(visual.failureColorProgress - 0.5) < 0.000001,
+		"failed progress length and color keep animating on independent timelines"))
+		++failures;
+	visual = retry.Update(start + 4301ms, 0.9, false, false);
+	if (!Expect(visual.displayedRatio == 0.5
+			&& visual.failureColorProgress == 1.0,
+		"failed progress reaches red and ignores later actual changes")) ++failures;
 	visual = retry.Update(start + 4302ms, 0.3, false, false);
-	if (!Expect(visual.state == ProgressVisualState::Failure && visual.red
+	if (!Expect(visual.state == ProgressVisualState::Failure
+			&& visual.failureColorProgress == 1.0
 			&& visual.displayedRatio == 0.5,
-		"first failure remains sticky and keeps its frozen actual target"))
+		"first failure keeps its red color and frozen actual target sticky"))
 		++failures;
 
 	NotifyBarFirstCommittedFrame(80.0, 380.0, true);
