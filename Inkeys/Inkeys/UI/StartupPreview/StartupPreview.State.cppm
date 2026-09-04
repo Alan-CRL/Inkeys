@@ -1,21 +1,101 @@
 module;
 
-#include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 
 export module Inkeys.UI.StartupPreview.State;
 
+import Inkeys.UI.Bar.Metrics;
+
 export namespace Inkeys::UI::StartupPreview
 {
-	enum class CacheState : std::uint8_t
+	inline constexpr double DefaultMainBarBodyWidthDip =
+		BarDefaultMainBarLayoutWidthDip;
+	inline constexpr double DefaultStartupBarWidthDip =
+		BarDefaultStartupPreviewTotalWidthDip;
+	inline constexpr double DefaultCachedStartupBarWidthDip =
+		DefaultStartupBarWidthDip;
+	inline constexpr bool StartupPreviewEnabledByDefault =
+		StartupPreviewEnabledDefault;
+	inline constexpr double CachedStartupBarWidthMinimumDip =
+		StartupPreviewCachedWidthMinimumDip;
+	inline constexpr double CachedStartupBarWidthMaximumDip =
+		StartupPreviewCachedWidthMaximumDip;
+	inline constexpr double CachedStartupBarWidthWriteEpsilonDip = 0.01;
+	inline constexpr double StartupMainButtonToMainBarGapDip =
+		BarMainButtonToMainBarGapDip;
+	inline constexpr double DefaultStartupBarHeightDip = BarMainBarHeightDip;
+	inline constexpr double DefaultStartupBarCornerRadiusDip =
+		BarMainBarCornerRadiusDip;
+
+	struct StartupPreviewPixelSize final
 	{
-		Missing,
-		Valid,
-		Incompatible,
-		Corrupt,
+		std::int32_t width = 0;
+		std::int32_t height = 0;
 	};
+
+	[[nodiscard]] bool IsValidCachedStartupBarWidthDip(double widthDip) noexcept;
+	[[nodiscard]] double ResolveCachedStartupBarWidthDip(double widthDip) noexcept;
+	[[nodiscard]] bool ShouldWriteCachedStartupBarWidthDip(
+		double currentWidthDip, double candidateWidthDip) noexcept;
+	[[nodiscard]] double CalculateStartupBarTotalWidthDip(
+		double mainButtonTargetWidthDip, double layoutTotalWidthDip,
+		bool expanded = true) noexcept;
+	[[nodiscard]] double ResolveStartupPreviewScale(double dpi,
+		double barZoom) noexcept;
+	[[nodiscard]] std::int32_t RoundStartupPreviewDipToPixels(double dip,
+		double dpi, double barZoom) noexcept;
+	[[nodiscard]] StartupPreviewPixelSize ResolveStartupPreviewPixelSize(
+		double widthDip, double dpi, double barZoom) noexcept;
+
+	struct GeometryRect final
+	{
+		double left = 0.0;
+		double top = 0.0;
+		double right = 0.0;
+		double bottom = 0.0;
+	};
+
+	struct ShimmerGradient final
+	{
+		double startX = 0.0;
+		double startY = 0.0;
+		double endX = 0.0;
+		double endY = 0.0;
+		double supportStart = 0.0;
+		double supportEnd = 1.0;
+	};
+
+	struct ShimmerHorizontalTravel final
+	{
+		double startTranslationX = 0.0;
+		double endTranslationX = 0.0;
+		bool valid = false;
+	};
+
+	// 按完整非零尾光投影求左右离屏边界，不能用固定像素行程。
+	[[nodiscard]] ShimmerHorizontalTravel ResolveShimmerHorizontalTravel(
+		const GeometryRect& maskBounds, const ShimmerGradient& gradient,
+		double outsideMargin = 1.0) noexcept;
+	[[nodiscard]] bool IsShimmerSupportOutsideMask(
+		const GeometryRect& maskBounds, const ShimmerGradient& gradient,
+		double translationX) noexcept;
+	[[nodiscard]] double ResolveShimmerCycleRatio(
+		std::chrono::steady_clock::time_point now,
+		std::chrono::steady_clock::time_point localEpoch,
+		std::chrono::duration<double> period) noexcept;
+	[[nodiscard]] double EaseShimmerPhase(double cycleRatio) noexcept;
+	[[nodiscard]] double ResolveShimmerTranslationX(
+		const ShimmerHorizontalTravel& travel, double easedPhase) noexcept;
+	[[nodiscard]] std::uint8_t ResolveFadeInAlpha(
+		std::chrono::milliseconds elapsed,
+		std::chrono::milliseconds duration) noexcept;
+	[[nodiscard]] std::uint8_t ResolveFadeOutAlpha(
+		std::chrono::milliseconds elapsed,
+		std::chrono::milliseconds duration) noexcept;
+	[[nodiscard]] std::uint8_t ResolveFadeOutAlphaFrom(
+		std::uint8_t startAlpha, std::chrono::milliseconds elapsed,
+		std::chrono::milliseconds duration) noexcept;
 
 	enum class BarStartupState : std::uint8_t
 	{
@@ -39,66 +119,43 @@ export namespace Inkeys::UI::StartupPreview
 		return state >= BarStartupState::WindowMissing;
 	}
 
-	enum class LifecycleState : std::uint8_t
+	enum class HandoffState : std::uint8_t
 	{
-		Disabled,
 		Preparing,
-		ShowingEmbedded,
-		ShowingValidCache,
-		ShowingCorruptFallback,
-		ShowingIncompatibleFallback,
+		PreviewVisible,
 		WaitingForBar,
-		Handoff,
-		FailurePending,
-		FailureRedRequested,
-		FailureRedCommitted,
-		Bypassed,
-		Stopping,
+		PreviewFadeOut,
+		WaitingForBarOpaque,
 		Stopped,
+		Bypassed,
 	};
 
-	enum class HandoffPath : std::uint8_t
+	struct HandoffSnapshot final
 	{
-		None,
-		ValidCacheProxySwap,
-		EmbeddedProxyDeblur,
-		CorruptFadeThroughTransparent,
+		HandoffState state = HandoffState::Preparing;
+		bool requestPreviewFadeOut = false;
+		bool requestBarFadeIn = false;
+		bool destroyPreview = false;
 	};
 
-	struct StateTransition final
-	{
-		LifecycleState state = LifecycleState::Disabled;
-		HandoffPath handoff = HandoffPath::None;
-		bool accepted = false;
-	};
-
-	class StateMachine final
+	class OrderedHandoffReducer final
 	{
 	public:
-		[[nodiscard]] StateTransition Start(
-			bool enabled, CacheState cacheState, bool presentationAvailable) noexcept;
-		[[nodiscard]] StateTransition PreviewFrameCommitted() noexcept;
-		[[nodiscard]] StateTransition BarFrameCommitted() noexcept;
-		[[nodiscard]] StateTransition FatalFailure() noexcept;
-		[[nodiscard]] StateTransition RequestFailureFrame() noexcept;
-		[[nodiscard]] StateTransition FailureFrameCommitted() noexcept;
-		[[nodiscard]] StateTransition Bypass() noexcept;
-		[[nodiscard]] StateTransition BeginStop() noexcept;
-		[[nodiscard]] StateTransition FinishStop() noexcept;
-
-		[[nodiscard]] LifecycleState State() const noexcept { return state_; }
-		[[nodiscard]] CacheState Cache() const noexcept { return cacheState_; }
-		[[nodiscard]] HandoffPath Handoff() const noexcept { return handoff_; }
+		[[nodiscard]] HandoffSnapshot PreviewFirstAlpha0Committed() noexcept;
+		[[nodiscard]] HandoffSnapshot BarAlpha0Committed(bool startupComplete) noexcept;
+		[[nodiscard]] HandoffSnapshot PreviewFadeOutCommitted() noexcept;
+		[[nodiscard]] HandoffSnapshot BarAlpha255Committed() noexcept;
+		[[nodiscard]] HandoffSnapshot Bypass() noexcept;
+		[[nodiscard]] HandoffState State() const noexcept { return state_; }
 
 	private:
-		[[nodiscard]] StateTransition Result(bool accepted) const noexcept
+		[[nodiscard]] HandoffSnapshot Result(bool fadePreview = false,
+			bool fadeBar = false, bool destroy = false) const noexcept
 		{
-			return { state_, handoff_, accepted };
+			return { state_, fadePreview, fadeBar, destroy };
 		}
 
-		LifecycleState state_ = LifecycleState::Disabled;
-		CacheState cacheState_ = CacheState::Missing;
-		HandoffPath handoff_ = HandoffPath::None;
+		HandoffState state_ = HandoffState::Preparing;
 	};
 
 	enum class ProgressVisualState : std::uint8_t
@@ -106,8 +163,6 @@ export namespace Inkeys::UI::StartupPreview
 		Hidden,
 		FadingIn,
 		Visible,
-		Completing,
-		FadingOut,
 		Failure,
 	};
 
@@ -122,62 +177,15 @@ export namespace Inkeys::UI::StartupPreview
 	class ProgressVisualReducer final
 	{
 	public:
-		ProgressVisualReducer() noexcept = default;
-		void MarkPreviewShown(
-			std::chrono::steady_clock::time_point now) noexcept;
-
+		void MarkPreviewShown(std::chrono::steady_clock::time_point now) noexcept;
 		[[nodiscard]] ProgressVisualSnapshot Update(
-			std::chrono::steady_clock::time_point now,
-			double actualRatio,
-			bool completed,
-			bool failed) noexcept;
+			std::chrono::steady_clock::time_point now, double actualRatio,
+			bool completed, bool failed) noexcept;
 
 	private:
 		std::chrono::steady_clock::time_point previewShownTime_{};
 		std::chrono::steady_clock::time_point transitionStart_{};
 		double displayedRatio_ = 0.0;
-		double fadeStartOpacity_ = 0.0;
-		double opacity_ = 0.0;
 		ProgressVisualState state_ = ProgressVisualState::Hidden;
-	};
-
-	struct HandoffFrameDecision final
-	{
-		bool useLiveProxy = false;
-		double blurRatio = 1.0;
-		double previewAlpha = 1.0;
-		bool requestBarAlpha = false;
-		std::uint8_t requestedBarAlpha = 0;
-		bool stopPreview = false;
-	};
-
-	[[nodiscard]] bool CanBeginSuccessfulHandoff(
-		bool barCommitted, bool trackerComplete, bool trackerFailed,
-		ProgressVisualState progressState, bool proxyCurrentGeneration,
-		bool ownerBoundsApplied) noexcept;
-	[[nodiscard]] HandoffFrameDecision ResolveHandoffFrame(
-		HandoffPath path, std::chrono::milliseconds elapsed,
-		std::uint8_t committedBarAlpha) noexcept;
-
-	struct HandoffRecoveryDecision final
-	{
-		bool requestOpaqueBar = false;
-		bool stopPreview = false;
-	};
-
-	class HandoffFailureReducer final
-	{
-	public:
-		void ObserveFailure(std::chrono::steady_clock::time_point now,
-			bool revealEligible) noexcept;
-		void ObserveSuccess() noexcept;
-		[[nodiscard]] HandoffRecoveryDecision Poll(
-			std::chrono::steady_clock::time_point now, bool revealEligible,
-			bool ownerAvailable, std::uint8_t committedBarAlpha) noexcept;
-		void Reset() noexcept;
-
-	private:
-		std::chrono::steady_clock::time_point firstFailure_{};
-		bool revealRequested_ = false;
 	};
 }

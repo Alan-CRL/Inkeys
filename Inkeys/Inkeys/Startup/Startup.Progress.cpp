@@ -29,7 +29,7 @@ namespace Inkeys::Startup
 
 		[[nodiscard]] constexpr bool IsPreviewOnly(Milestone milestone) noexcept
 		{
-			return milestone == Milestone::CacheClassified
+			return milestone == Milestone::PreviewGeometryReady
 				|| milestone == Milestone::PreviewOwnerReady
 				|| milestone == Milestone::PreviewRenderClientReady
 				|| milestone == Milestone::PreviewFirstFrameCommitted;
@@ -73,7 +73,7 @@ namespace Inkeys::Startup
 
 	bool Plan::PreviewEnabled() const noexcept
 	{
-		return Contains(Milestone::CacheClassified);
+		return Contains(Milestone::PreviewGeometryReady);
 	}
 
 	ProgressTracker::ProgressTracker(Plan plan,

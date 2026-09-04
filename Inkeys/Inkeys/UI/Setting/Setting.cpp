@@ -8264,22 +8264,22 @@ SettingSessionCoroutine RunSettingSession()
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("启动时快速显示主栏", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+							ImGui::BeginChild("启动时显示主栏占位动画", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
 								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, 20.0f * settingGlobalScale });
 								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted("启动时快速显示主栏");
+								ImGui::TextUnformatted("启动时显示主栏占位动画");
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
 								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted("下次启动时显示主栏预览；更改将在下次启动生效。");
+								ImGui::TextUnformatted("下次启动时显示主栏占位动画；更改将在下次启动生效。");
 								ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale, 25.0f * settingGlobalScale });
 								bool configuredStartupPreview = Experimental.Inkeys3.
 									StartupPreviewPreferenceState.ConfiguredEnabled();
 								Widgets::toggle.ToggleBool(
-									"##启动时快速显示主栏", &configuredStartupPreview);
+									"##启动时显示主栏占位动画", &configuredStartupPreview);
 								if (Experimental.Inkeys3.StartupPreviewPreferenceState.
 									SetConfigured(configuredStartupPreview))
 								{

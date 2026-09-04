@@ -1,4 +1,6 @@
-# Microsoft 平台合同
+# Microsoft 平台合同（历史研究，按当前方案筛选）
+
+> **历史记录，不是当前产品需求。** 下文部分链接和结论来自旧图片/blur/cache 设计。当前 Startup Preview 不再创建或校验 BIN、图片 cache、CRC、签名、layout epoch、Gaussian blur、CPU staging 或 cache writer；相关段落只保留为平台背景，不能作为当前实现要求。当前仍适用的是动态 DPI、D2D1.1、`FillOpacityMask`、premultiplied alpha、ULW 和 owner-thread 生命周期合同。
 
 以下结论只采用 Microsoft 官方文档/API 文档。
 

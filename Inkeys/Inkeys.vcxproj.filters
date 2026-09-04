@@ -291,9 +291,6 @@
 	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
 	  <Filter>Modules\Inkeys\UI\Bar</Filter>
 	</ClInclude>
-	<ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.CacheWrite.h">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
@@ -1826,15 +1823,6 @@
 	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp">
 	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
 	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.Format.cppm">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.Format.cpp">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.VisualConfig.cppm">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
 	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm">
 	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
 	</ClCompile>
@@ -2338,12 +2326,6 @@
     <None Include="src\ui1.bin">
       <Filter>资源文件</Filter>
     </None>
-	<None Include="Inkeys\UI\StartupPreview\StartupBarPreview-v1.bin">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</None>
-	<None Include="Inkeys\UI\StartupPreview\StartupBarPreview-v1.md">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</None>
     <None Include="PptCOM.dll">
       <Filter>资源文件</Filter>
     </None>

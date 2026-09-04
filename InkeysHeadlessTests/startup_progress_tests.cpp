@@ -23,8 +23,11 @@ int RunStartupProgressTests()
 	const auto disabledPlan = Plan::ForStartup(false);
 	if (!Expect(enabledPlan.totalUnits == 1000,
 		"enabled plan has nominal 1000 units")) ++failures;
+	if (!Expect(enabledPlan.Contains(Milestone::PreviewGeometryReady)
+		&& enabledPlan.Weight(Milestone::PreviewGeometryReady) == 20,
+		"preview geometry contributes the former 20-unit slot")) ++failures;
 	if (!Expect(disabledPlan.totalUnits == 940
-		&& !disabledPlan.Contains(Milestone::CacheClassified)
+		&& !disabledPlan.Contains(Milestone::PreviewGeometryReady)
 		&& !disabledPlan.Contains(Milestone::PreviewOwnerReady)
 		&& disabledPlan.Contains(Milestone::RenderDeviceReady),
 		"disabled plan removes only preview work")) ++failures;

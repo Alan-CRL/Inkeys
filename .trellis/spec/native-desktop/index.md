@@ -15,7 +15,7 @@
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
-- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、真实进度、BIN/cache、Bar committed frame、alpha 交接与 Win7 合同。
+- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、程序化灰色占位、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
 
 PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../ppt-interop/index.md)。
 

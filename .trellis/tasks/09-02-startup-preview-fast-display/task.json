@@ -2,7 +2,7 @@
   "id": "startup-preview-fast-display",
   "name": "startup-preview-fast-display",
   "title": "启动预览与快速显示主栏",
-  "description": "在最终进程越过 SuperTop 后尽快显示真实主栏预览，并以真实初始化进度和 committed Bar 帧完成可靠交接。",
+	"description": "在最终进程越过 SuperTop 后尽快显示程序化主栏占位，并以真实初始化进度和 committed Bar 帧完成可靠交接。",
   "status": "in_progress",
   "dev_type": "feature",
   "scope": "native-desktop",
@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "用户已批准实现并确认 D-P01；任务已绑定当前 Codex 会话并进入第二阶段。",
+	"notes": "用户已批准将旧图片预览简化为程序化灰色占位；实现阶段按 470 DIP 默认几何、标量宽度缓存和顺序 committed-alpha 交接执行。",
   "meta": {
     "phase": "implementation",
     "implementationApproved": true

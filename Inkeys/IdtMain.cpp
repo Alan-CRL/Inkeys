@@ -30,7 +30,6 @@ import Inkeys.Window;
 import Inkeys.Display;
 import Inkeys.UI.MessageBox;
 import Inkeys.UI.StartupPreview;
-import Inkeys.UI.StartupPreview.VisualConfig;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
 
@@ -138,14 +137,18 @@ namespace
 	void ReportStartupMilestoneForManualTest(
 		Inkeys::Startup::Milestone milestone) noexcept
 	{
-		if (!Inkeys::Startup::Report(milestone)
-			|| !Inkeys::UI::StartupPreview::IsActive()) return;
+		if (!Inkeys::Startup::Report(milestone)) return;
+		wchar_t enabled[2]{};
+		if (!Inkeys::UI::StartupPreview::IsActive()
+			|| GetEnvironmentVariableW(
+				L"INKEYS_STARTUP_PREVIEW_MANUAL_DELAY", enabled, 2) == 0
+			|| enabled[0] != L'1') return;
 		static bool firstVisibleMilestone = true;
 		const auto delay = firstVisibleMilestone
 			? std::chrono::milliseconds(3200)
 			: std::chrono::milliseconds(600);
 		firstVisibleMilestone = false;
-		// 首步越过 3 秒可见门，后续逐段放行；测试结束后整体移除本 helper。
+		// 仅显式人工测试时放慢阶段，普通启动和渲染回调都不得等待。
 		std::this_thread::sleep_for(delay);
 	}
 
@@ -162,8 +165,12 @@ namespace
 			// 红帧较早提交时用完剩余预算，避免只显示一个渲染帧便被销毁。
 			std::this_thread::sleep_until(failureFrameDeadline);
 		}
-		Inkeys::UI::StartupPreview::Stop();
 		ShowStartupMessage(message);
+		// 对话框确认后才淡出 Preview；无 Preview 时两个调用都会立即降级返回。
+		Inkeys::UI::StartupPreview::RequestFadeOutForExit();
+		(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
+			std::chrono::milliseconds(500));
+		Inkeys::UI::StartupPreview::Stop();
 	}
 
 	bool RunStartupPreviewRetryFailureForManualTest() noexcept
@@ -174,22 +181,26 @@ namespace
 			L"INKEYS_STARTUP_PREVIEW_RETRY_FAILURE", enabled, 2) == 0)
 			return true;
 
-		for (int attempt = 1; attempt <= 2; ++attempt)
+		std::this_thread::sleep_for(std::chrono::milliseconds(800));
+		if (!LaunchState::warnTry)
 		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(800));
-			if (attempt == 1)
-			{
-				if (IDTLogger) IDTLogger->warn(
-					"[主线程][IdtMain] 人工测试阶段首次失败，准备重试");
-				continue;
-			}
-			if (IDTLogger) IDTLogger->critical(
-				"[主线程][IdtMain] 人工测试阶段重试后仍失败");
-			PublishFatalStartupFailure(0xD0FEu,
-				L"人工测试：模拟初始化阶段重试后仍失败。");
+			if (IDTLogger) IDTLogger->warn(
+				"[主线程][IdtMain] 人工测试阶段首次失败，淡出后以 -WarnTry 重试");
+			// 首次自动重试保持普通颜色，不允许闪出 fatal 红色。
+			Inkeys::UI::StartupPreview::RequestFadeOutForExit();
+			(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
+				std::chrono::milliseconds(500));
+			Inkeys::UI::StartupPreview::Stop();
+			(void)ShellExecuteW(nullptr, nullptr, GetCurrentExePath().c_str(),
+				L"-WarnTry", nullptr, SW_SHOWNORMAL);
 			return false;
 		}
-		return true;
+
+		if (IDTLogger) IDTLogger->critical(
+			"[主线程][IdtMain] 人工测试阶段重试后仍失败");
+		PublishFatalStartupFailure(0xD0FEu,
+			L"人工测试：模拟初始化阶段重试后仍失败。");
+		return false;
 	}
 
 	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
@@ -198,15 +209,20 @@ namespace
 	{
 		try
 		{
-		if (path.empty()) return false;
-		const std::string report = std::string(passed ? "PASS\r\n" : "FAIL\r\n")
-			+ "cacheState=" + std::to_string(static_cast<unsigned>(preview.cacheState)) + "\r\n"
-			+ "previewFirstFrameCommitted=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
-			+ "barAlpha0Committed=" + (alpha.transparentCommitted ? "1\r\n" : "0\r\n")
-			+ "barAlpha255Committed=" + (alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
+			if (path.empty()) return false;
+			const std::string report = std::string(passed ? "PASS\r\n" : "FAIL\r\n")
+			+ "totalWidthDip=" + std::to_string(preview.totalWidthDip) + "\r\n"
+			+ "previewFirstAlpha0Committed=" + (preview.firstFrameCommitted ? "1\r\n" : "0\r\n")
+			+ "previewFadeOutCommitted=" + (preview.previewFadeOutCommitted ? "1\r\n" : "0\r\n")
+			+ "barAlpha0Committed=" + (preview.barAlpha0Committed
+				&& alpha.transparentCommitted ? "1\r\n" : "0\r\n")
+			+ "barAlpha255Committed=" + (preview.barAlpha255Committed
+				&& alpha.opaqueCommitted ? "1\r\n" : "0\r\n")
 			+ "automaticStopPosted=" + (preview.automaticStopPosted ? "1\r\n" : "0\r\n")
 			+ "ownerThreadExited=" + (preview.ownerThreadExited ? "1\r\n" : "0\r\n")
-			+ "previewActive=" + (preview.active ? "1\r\n" : "0\r\n")
+			+ "previewInactive=" + (preview.previewInactive ? "1\r\n" : "0\r\n")
+			+ "recovery=" + (passed ? "visible\r\n"
+				: (!preview.firstFrameCommitted ? "bypassed\r\n" : "fatal\r\n"))
 			+ "requestedAlpha=" + std::to_string(alpha.requested) + "\r\n"
 			+ "committedAlpha=" + std::to_string(alpha.committed) + "\r\n";
 		HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
@@ -877,7 +893,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 只有最终进程越过 SuperTop 分支后，才建立唯一 T0 与启动状态。
 	const auto startupT0 = chrono::steady_clock::now();
-	std::wstring startupPreviewCapturePath;
 	std::wstring startupPreviewSmokePath;
 	{
 		int argumentCount = 0;
@@ -886,12 +901,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			for (int index = 1; index + 1 < argumentCount; ++index)
 			{
-				if (CompareStringOrdinal(arguments[index], -1,
-					L"--capture-startup-preview", -1, TRUE) == CSTR_EQUAL)
-				{
-					startupPreviewCapturePath = arguments[index + 1];
-					break;
-				}
 				if (CompareStringOrdinal(arguments[index], -1,
 					L"--startup-preview-smoke", -1, TRUE) == CSTR_EQUAL)
 				{
@@ -902,20 +911,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 		}
 	}
-	const bool startupPreviewCaptureRequested =
-		!startupPreviewCapturePath.empty();
 	const bool startupPreviewSmokeRequested =
 		!startupPreviewSmokePath.empty();
 	Inkeys::Config startupMiniConfig;
 	(void)startupMiniConfig.ReadMini({
-		"Experimental.Inkeys3.UI3.StartupPreview",
-		"Experimental.Inkeys3.UI3.EdgeLighting",
-		"Experimental.Inkeys3.UI3.Debug",
-		"UI.Bar.Zoom", "UI.Bar.FixedButtonsA1",
-		"UI.Bar.ExtensionButtons", "UI.Bar.FixedButtonsA2" });
-	const bool startupPreviewConfigured = !startupPreviewCaptureRequested
-		&& (startupPreviewSmokeRequested
-			|| startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Enable);
+		"Experimental.Inkeys3.UI3.StartupPreview.Enable",
+		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
+		"UI.Bar.Zoom" });
+	const bool startupPreviewConfigured = startupPreviewSmokeRequested
+		|| startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.Enable;
 	bool startupPreviewStarted = false;
 	Inkeys::Startup::ProgressTracker startupProgress(
 		Inkeys::Startup::Plan::ForStartup(startupPreviewConfigured), startupT0);
@@ -940,7 +944,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::DpiAwarenessReady);
 
-	if (startupPreviewConfigured || startupPreviewCaptureRequested)
+	if (startupPreviewConfigured)
 	{
 		const HRESULT earlyRenderResult = Inkeys::UI::RenderPipeline::Initialize();
 		if (FAILED(earlyRenderResult))
@@ -965,56 +969,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (queriedDpi > 0) startupDpi = static_cast<UINT>(queriedDpi);
 			ReleaseDC(nullptr, screen);
 		}
-		Inkeys::Config defaultVisualConfig;
-		defaultVisualConfig.ResetToDefaults();
-		Inkeys::UI::StartupPreview::PreviewCompatibility compatibility;
-		compatibility.layoutEpoch = 1;
-		compatibility.visualSignature =
-			Inkeys::UI::StartupPreview::BuildVisualSignature(
-				Inkeys::UI::StartupPreview::BuildConfiguredVisualInputs(
-					startupPreviewCaptureRequested
-					? defaultVisualConfig : startupMiniConfig));
-		compatibility.captureDpiX = startupDpi;
-		compatibility.captureDpiY = startupDpi;
-		compatibility.monitorPixelWidth = static_cast<std::uint32_t>((std::max)(
-			1L, monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left));
-		compatibility.monitorPixelHeight = static_cast<std::uint32_t>((std::max)(
-			1L, monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top));
-		compatibility.monitorWorkWidth = static_cast<std::uint32_t>((std::max)(
-			1L, monitorInfo.rcWork.right - monitorInfo.rcWork.left));
-		compatibility.monitorWorkHeight = static_cast<std::uint32_t>((std::max)(
-			1L, monitorInfo.rcWork.bottom - monitorInfo.rcWork.top));
-		const auto embeddedVisualSignature =
-			Inkeys::UI::StartupPreview::BuildVisualSignature(
-				Inkeys::UI::StartupPreview::BuildConfiguredVisualInputs(
-					defaultVisualConfig));
-
-		if (startupPreviewCaptureRequested)
-		{
-			if (startupDpi != 96)
-			{
-				ShowStartupMessage(
-					L"Startup preview capture requires 96 DPI.\n生成启动预览要求 96 DPI。"
-				);
-				Inkeys::UI::RenderPipeline::Shutdown();
-				return 2;
-			}
-			Inkeys::UI::StartupPreview::ConfigureDeveloperCapture(
-				startupPreviewCapturePath, compatibility);
-		}
-
 		Inkeys::UI::StartupPreview::StartOptions previewOptions;
 		previewOptions.instance = hInstance;
-		previewOptions.cachePath = globalPath
-			+ L"Inkeys\\Cache\\StartupBarPreview-v1.bin";
+		previewOptions.cachedWidthDip =
+			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
+				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
+					CachedStartupBarWidthDip);
+		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom;
+		previewOptions.dpi = startupDpi;
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
-		previewOptions.compatibility = compatibility;
-		previewOptions.embeddedVisualSignature = embeddedVisualSignature;
+		previewOptions.workArea = monitorInfo.rcWork;
+		previewOptions.contentBounds =
+			Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
+				previewOptions.monitorBounds, previewOptions.workArea,
+				previewOptions.cachedWidthDip,
+				Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
+				previewOptions.dpi, previewOptions.barZoom);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
-		previewOptions.committedBarAlpha = []
-			{ return Inkeys::UI::Bar::CommittedPresentationAlpha(); };
+		(void)Inkeys::Startup::Report(
+			Inkeys::Startup::Milestone::PreviewGeometryReady);
 		if (startupPreviewConfigured)
 		{
 			startupPreviewStarted = Inkeys::UI::StartupPreview::Start(previewOptions);
@@ -1038,7 +1013,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				Inkeys::UI::RenderPipeline::Shutdown();
 				return 3;
 			}
-			// 显式 smoke 模式短暂保留 embedded 首帧，供无输入截图验证。
+			// 显式 smoke 模式短暂保留程序化首帧，供无输入截图验证。
 			this_thread::sleep_for(chrono::milliseconds(1500));
 		}
 	}
@@ -1380,13 +1355,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
-			if (startupPreviewCaptureRequested)
-			{
-				// 资产捕获必须与用户配置隔离，仅在当前进程使用规范默认值。
-				Inkeys::Config captureDefaults;
-				captureDefaults.ResetToDefaults();
-				config = captureDefaults;
-			}
 		#ifndef IDT_RELEASE
 			pptComConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
@@ -1405,10 +1373,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			animationSpeedRate = isfinite(animationSpeedRate)
 				? clamp(animationSpeedRate, 0.1, 5.0) : 1.0;
 			config.Experimental.Inkeys3.UI3.Animation.SpeedRate = animationSpeedRate;
-			if (!startupPreviewCaptureRequested) config.Write();
+			config.Write();
 			Inkeys::UI::Bar::SetAnimationOptions(
-				startupPreviewCaptureRequested ? false
-					: static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
+				static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
 				animationSpeedRate);
 			Inkeys::UI::Bar::SetEdgeLightingOptions(
 				config.Experimental.Inkeys3.UI3.EdgeLighting.Enable,
@@ -2045,34 +2012,40 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	while (!offSignal)
 	{
 		this_thread::sleep_for(chrono::milliseconds(100));
-		if (startupPreviewCaptureRequested
-			&& Inkeys::UI::StartupPreview::DeveloperCaptureCompleted())
+		// Bar 渲染线程只发布有限 DIP；主线程沿既有配置路径去重落盘。
+		double committedStartupWidthDip = 0.0;
+		if (Inkeys::UI::StartupPreview::TakeCommittedStartupBarWidthDip(
+			committedStartupWidthDip)
+			&& Inkeys::UI::StartupPreview::ShouldWriteCachedStartupBarWidthDip(
+				config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip,
+				committedStartupWidthDip))
 		{
-			SetOffSignal(1);
-			break;
-		}
-		if (startupPreviewCaptureRequested
-			&& chrono::steady_clock::now() - startupT0 >= chrono::seconds(30))
-		{
-			developerModeExitCode = 4;
-			if (IDTLogger)
-				IDTLogger->error("[主线程][IdtMain] StartupPreview developer capture 超时");
-			SetOffSignal(1);
-			break;
+			config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip =
+				committedStartupWidthDip;
+			if (!config.Write() && IDTLogger)
+				IDTLogger->warn(
+					"[主线程][IdtMain] 启动占位总宽度写回失败，本次启动继续运行");
 		}
 		if (startupPreviewSmokeRequested)
 		{
 			const auto preview = Inkeys::UI::StartupPreview::SnapshotDiagnostics();
 			const auto alpha = Inkeys::UI::Bar::SnapshotPresentationAlphaDiagnostics();
 			const bool completed = preview.firstFrameCommitted
+				&& preview.previewFadeOutCommitted
+				&& preview.barAlpha0Committed && preview.barAlpha255Committed
 				&& alpha.transparentCommitted && alpha.opaqueCommitted
 				&& preview.automaticStopPosted && preview.ownerThreadExited
-				&& !preview.active && alpha.committed == 255;
+				&& preview.previewInactive && alpha.committed == 255;
 			const bool timedOut = chrono::steady_clock::now() - startupT0
 				>= chrono::seconds(20);
 			if (completed || timedOut)
 			{
-				if (timedOut && !completed) developerModeExitCode = 5;
+				if (timedOut && !completed)
+				{
+					developerModeExitCode = 5;
+					if (IDTLogger) IDTLogger->error(
+						"[主线程][IdtMain] StartupPreview smoke 超时");
+				}
 				(void)WriteStartupPreviewSmokeReport(
 					startupPreviewSmokePath, completed, preview, alpha);
 				SetOffSignal(1);
@@ -2087,12 +2060,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		const std::wstring message = L"启动阶段发生致命错误（代码 "
 			+ std::to_wstring(startupSnapshot.failureCode)
 			+ L"），程序将安全退出。";
-		Inkeys::UI::StartupPreview::Stop();
 		ShowStartupMessage(message.c_str());
+		Inkeys::UI::StartupPreview::RequestFadeOutForExit();
+		(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
+			chrono::milliseconds(500));
+		Inkeys::UI::StartupPreview::Stop();
 		SetOffSignal(1);
 		break;
 	}
-	// Preview 先停止接收 frame/cache，再注销并销毁 owner HWND。
+	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
 	Inkeys::UI::StartupPreview::Stop();
 	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。

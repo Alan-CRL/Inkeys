@@ -12,7 +12,7 @@ export namespace Inkeys::Startup
 	{
 		SuperTopCrossed,
 		MiniConfigRead,
-		CacheClassified,
+		PreviewGeometryReady,
 		PreviewOwnerReady,
 		PreviewRenderClientReady,
 		PreviewFirstFrameCommitted,

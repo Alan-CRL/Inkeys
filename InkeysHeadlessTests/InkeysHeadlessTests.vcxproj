@@ -77,11 +77,14 @@
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
-      <AdditionalIncludeDirectories>$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Inkeys\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Debug'">$(VcpkgInstalledDir)$(VcpkgTriplet)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Release'">$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>jsoncpp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -95,12 +98,19 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Conv\Conv.Text.cppm">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Other\Other.Config.cppm">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Other\Other.Config.cpp">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cpp" />
-	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.Format.cppm" />
-	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.Format.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
@@ -130,7 +140,6 @@
 	<ClCompile Include="render_scheduler_tests.cpp" />
 	<ClCompile Include="startup_progress_tests.cpp" />
 	<ClCompile Include="startup_preview_state_tests.cpp" />
-	<ClCompile Include="startup_preview_format_tests.cpp" />
 	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
@@ -150,7 +159,6 @@
   </ItemGroup>
 	<ItemGroup>
 	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
-	  <ClInclude Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.CacheWrite.h" />
 	  <ResourceCompile Include="message_box_test.rc" />
 	</ItemGroup>
   <ItemGroup>

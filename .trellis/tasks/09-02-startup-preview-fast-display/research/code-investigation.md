@@ -1,4 +1,6 @@
-# 源码调查结论
+# 源码调查结论（历史基线，仅供溯源）
+
+> **历史记录，不是当前产品需求。** 本调查在上一版 embedded BIN、磁盘图片 cache、Gaussian blur、Bar proxy/staging 和 developer capture 方案下完成。最终方案已改为程序化中性灰圆角占位；其中关于图片格式、签名/CRC/epoch、proxy/staging、cache writer、图片资源和 capture 的结论均已废弃，不能指导当前实现或验收。仍有效的内容仅限启动边界、DPI、共享 RenderPipeline、ULW/owner 线程和 Bar committed alpha 等基础设施事实。
 
 ## 入口、SuperTop 与 DPI
 

@@ -77,7 +77,6 @@
 #define IDR_DRAW3_LASER_UPDATE_CS       303
 #define IDR_DRAW3_LASER_EMIT_CS         304
 #define IDR_MESSAGE_BOX_ERROR           305
-#define IDR_STARTUP_PREVIEW             306
 
 // Next default values for new objects
 // 

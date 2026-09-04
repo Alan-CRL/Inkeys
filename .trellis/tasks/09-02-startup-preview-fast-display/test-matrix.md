@@ -1,90 +1,65 @@
-# 测试矩阵
+# 测试矩阵：简化 Startup Preview
 
-## 1. 纯逻辑与格式
+本矩阵只描述最终程序化占位合同。旧 BIN、CRC、图片 cache、blur/proxy、capture 和三类 cache 交接测试已删除，不得以历史结果代替本轮证据。
 
-| 场景 | 自动化断言 |
+## 1. 纯逻辑/headless
+
+| 场景 | 必须断言 |
 | --- | --- |
-| Tracker 顺序/乱序/重复/并发 | work units 只增加一次、snapshot 单调、无 data race |
-| Conditional plan | Preview off 不含专属 milestone；不存在 skipped-as-complete |
-| 时间流逝 | 不报告 milestone 时 actual ratio 不变；Preview 显示后的 3 秒只改变 visibility |
-| Failure freeze | 首个 fatal code/ratio 固定；后续报告不增长；不出现 100% |
-| 100% gate | 即使先行 milestone 全部完成，Bar committed 前仍 <100%；该 commit 后恰为 100% |
-| CRC | 标准 `123456789` IEEE CRC-32 向量和 header-crc-zero 规则 |
-| Parser 截断 | 从 0 到 header/payload 各边界短读均 Corrupt、无越界 |
-| Integer attack | width/height/stride/payload 的乘加溢出、>8192、>64MiB 拒绝 |
-| Geometry | 零/反向/越界 progress rect、monitor/work/offset 溢出拒绝 |
-| Version/classification | Missing、Valid、epoch/signature/DPI geometry Incompatible、CRC/结构 Corrupt |
-| Serializer roundtrip | 每字段 little-endian、160-byte header、exact file length、无 padding |
-| State machine | Valid、Missing/Incompatible、Corrupt、bypass、fatal、stop 的合法/非法 transition |
-| Alpha reducer | requested/attempted/committed，四步 present 任一失败不推进，alpha change 强制 full dirty |
+| 默认几何 | 当前按钮规则得到 MainBar `380 DIP`、完整外包络 `470 DIP`；Divider 不增加宽度 |
+| 缓存值校验 | 缺失、NaN、Inf、零、负值、过小和超过合理上限均回退 `470.0`；合法 double 原样保留为 DIP |
+| DPI/zoom | DIP×DPI×zoom 使用既有一致舍入；不把像素值写回配置 |
+| 首帧宽度发布 | 使用 `mainButton->GetW()` target + `10.0` + target `layoutTotalWidth`；不读动画 `w.val`、crop 或 padding |
+| 去重写回 | 相同/无效发布不重复写；只有有限且实质变化的值交给主线程配置路径 |
+| Progress plan | Preview 开启含 `PreviewGeometryReady` 的 20 units；禁用时删除 Preview 专属单位；无 skipped-as-complete |
+| Progress gate | milestone 乱序/重复/并发只计一次；Bar 首个 committed frame 前不达 100%；失败冻结 |
+| Preview alpha | 首次 ULW committed alpha 为 0；之后 fade-in 单调、不越界 |
+| Handoff reducer | Preview committed 到 0 前 Bar 不上升；之后 Bar committed 单调到 255；255 committed 后才 stop/destroy |
+| Shimmer endpoint | 任意测试宽度、DPI、zoom 下 phase 0/1 的全部非零 soft-tail 支撑在窗口外；wrap 两侧输出等于 base-only |
+| Shimmer time | epoch 取 Preview 首次显示本地 `steady_clock`；两端慢、中间快；不由 frame timestamp 取模 |
+| Progress visibility | Preview shown 后 2999ms 不可见，满 3s 才开始约 180ms 渐显；3s 内完成不出现 |
+| Completion | 已显示时真实 100% 直接进入整窗 fade；无旧 300ms progress-only fade/停顿；进度不超过 actual |
+| Failure/retry | 首次自动重试保持普通颜色并先整窗渐隐；最终 fatal 才红，红帧 committed/有界等待后才弹窗 |
+| Recovery | Preview disabled/bypass/device loss/ULW failure 最终均恢复 Bar committed alpha 255 可见 |
+| Settings compatibility | 默认 Enable=true；旧 main.json 缺少新宽度字段仍可读取，旧图片字段忽略 |
 
-## 2. 构建与静态兼容
+## 2. Window/ULW 静态与人工
 
-| Matrix | 要求 |
+- 检查样式为 `WS_POPUP` + `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，没有 `WS_EX_TRANSPARENT`。
+- `WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATEANDEAT`；左右/中键按下、抬起、双击被吞掉；可见像素阻挡点击，透明圆角外遵循 ULW 原生 hit-test。
+- owner thread 执行 create/SetWindowPos/show/hide/destroy；late post 不造成 use-after-free。
+- 每次 ULW 显式提供 `pptDst`、`psize`、`pptSrc`；owner geometry 与 render thread 通过 presentation mutex 串行。
+- 视觉检查深色/浅色背景：连续灰色 `80×cachedWidth DIP` 外包络、8 DIP 圆角、无文字/图标/分隔/假内容；内描边仅低调向内。
+
+## 3. RenderPipeline/device
+
+- 只有一个 RenderPipeline/device/render thread；dispatch order 为 Bar -> StartupPreview。
+- Preview D2D target、mask、brush 在 render thread 创建；device generation 变化后全部重建，不使用旧资源。
+- `FillOpacityMask` 前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复；progress 在 shimmer 后最后绘制。
+- D2D/DIB 为 premultiplied BGRA8；ULW blend 为 `AC_SRC_OVER`, `BlendFlags=0`, `AC_SRC_ALPHA`。
+- 不新增 GDI+、WinUI Runtime、DirectComposition、Win10-only effect 或静态 Shcore 依赖。
+
+## 4. Smoke/static/build
+
+- `--startup-preview-smoke` 报告至少：total width DIP、first preview alpha-0 committed、preview fade-out committed、Bar alpha-0/255 committed、owner exit、preview inactive 和最终 recovery 状态。
+- `rg` 确认 Startup Preview 路径不再引用 BIN、image cache、CRC/signature/layout epoch、Gaussian blur、live proxy、CPU staging、`--capture-startup-preview` 或 capture validator。
+- RC、resource.h、vcxproj、filters 无悬挂 Startup Preview 图片资源/文件引用；PptCOM resource 221 保持不变。
+- `git diff --check`；检查修改文件的原编码/换行。
+- 按仓库要求运行完整 Solution Debug/Release x64；可行时补 Win32/ARM64 和 `InkeysHeadlessTests.exe --no-window`。不能执行的架构/平台明确记录为未执行。
+
+## 5. 平台与人工待执行项
+
+以下需硬件、VM 或交互环境，不得提前标 PASS：Win7 SP1 + KB2670838/WARP/FL11.0、96/120/144/192 DPI、混合 DPI/多显示器/负坐标、SuperTop helper/UIAccess、真实 device loss/ULW failure、topmost 竞争、焦点/Alt-Tab/点击吞噬和首次重试/最终确认对话框人工观察。
+
+## 6. 2026-09-04 执行结果
+
+| 项目 | 结果 |
 | --- | --- |
-| Debug/Release x Win32 | 完整 `InkeysRepo.sln` 构建；headless `--no-window` |
-| Debug/Release x x64 | 完整 Solution 构建；作为开发主验证配置 |
-| Debug/Release x ARM64 | toolchain 可用时完整 Solution 构建；不能仅编译 Inkeys.vcxproj |
-| ARM64EC | 仓库无配置；审计 `_M_ARM64EC`、pointer width、序列化固定宽度和静态 API，不新增承诺 |
-| Imports | dumpbin/静态检查不得新增 Win8.1+/Win10 API 的加载期依赖 |
-| Source hygiene | `git diff --check`、CRLF/原编码、无 GDI+/WinUI/DComp、资源 ID 无冲突 |
-
-## 3. Win7 SP1 + KB2670838 / WARP
-
-- 干净 Win7 SP1 + KB2670838 VM，禁用硬件 adapter 或强制 WARP，确认 FL11.0 fallback、D2D1.1 GaussianBlur、FillOpacityMask 和 layered ULW 正常。
-- 无 Shcore 路径走动态 load failure + `SetProcessDPIAware()`；进程不因缺失导入而加载失败。
-- FL11_1 首次请求返回 `E_INVALIDARG` 时只用 FL11_0 重试并成功。
-- blur/shimmer effect 注入失败时仍显示普通 preview/正式 Bar；共享 WARP/pipeline 失败保持 fatal popup。
-
-## 4. DPI 与多显示器
-
-| 场景 | 验证 |
-| --- | --- |
-| 96/120/144/192 DPI | embedded cubic/blur 不裁边；progress geometry 合法；最终真实 Bar 清晰 |
-| 两屏混合 DPI | cache geometry 只在兼容 monitor/DPI 使用；否则 Incompatible |
-| 负坐标/上下排列 | signed offset/anchor 无 overflow，Preview 与 Bar screen destination 一致 |
-| 启动时主屏变化/拔插 | 旧 revision move 丢弃，按最新 Display snapshot 重定位或安全 bypass |
-| awareness 已预设 | `E_ACCESSDENIED` 不被当作失败，不重复调用错误 fallback |
-
-## 5. SuperTop、焦点与 Z-order
-
-- SuperTop 关闭、父进程提权、helper、`-SuperTopComplete` 最终进程：只允许最终进程出现一个 Preview、一个 T0。
-- Preview 点击/双击/右键不激活、不穿透到 Bar、不改变前台窗口；Alt-Tab/任务栏无普通入口。
-- 初始 refresh、周期 TopWindow、PPT visibility refresh 后 Preview 仍在 Bar 上方；observer 注销后不再访问 Preview。
-- owner thread 停止时所有 hide/destroy 均在创建线程；模拟 late post 不产生 use-after-free。
-
-## 6. Cache 与资源
-
-- 无 cache、Valid、epoch/signature/DPI/geometry Incompatible、CRC Corrupt 分别走指定动画。
-- 文件 0 byte、header-only、payload-short/long、尾随数据、非法 reserved/pixel format 和 64MiB+ 均安全拒绝。
-- cache 目录不存在、只读、磁盘满、temp 冲突、short write、FlushFileBuffers/MoveFileEx 失败均不阻止主程序并保留旧 cache。
-- 连续 visual revision 只让最新 revision 替换目标；退出时无 temp 悬挂和后台线程访问已销毁状态。
-- capture mode 在 96 DPI 干净配置重复两次得到相同 header/signature/像素 CRC；生产 parser 反读通过，RC resource byte-for-byte 相同。
-
-## 7. 进度与动画
-
-- 人为延迟各启动阶段：进度只在真实 report 后增长，停顿阶段保持真实值；3 秒从 Preview 首帧 committed/show request 计算，重复通知不能重置。
-- Preview 显示后 2.9 秒成功不显示 progress；3.0 秒后约 180ms 淡入；已显示时成功先达到 100%、满格保持 300ms、再隐藏并 handoff。
-- fatal 分别发生于 progress 显示前/后：立即红色，保留实际 fill；较早提交时在 350ms 总预算内保留红帧，未提交则到预算后 popup。
-- 96/120/144/192 DPI 检查以完整主栏（含主按钮）为基准的 X/Y 居中、192 DIP 宽度、目标允许时 48 DIP 双侧边距、3 DIP 指示条覆盖 1 DIP 轨道以及 normal/error 颜色。
-- 两个 layered HWND 不做中间 alpha cross-fade；抓帧检查 Valid 路径无 0.5+0.5 合成加深。
-- Missing/Incompatible 高模糊换 proxy 后 320-420ms deblur；Corrupt 必须先 Preview 全透明、40ms hold、再 Bar fade，且不 deblur proxy。
-
-## 8. Bar/Window/Draw3 失败注入
-
-| 注入点 | 预期 |
-| --- | --- |
-| Bar window missing / Register client fail / stop-before-ready | 显式终止状态、Tracker fatal、无 100%、无 cache |
-| GetDC/ULW/ReleaseDC/EndDraw 任一步失败 | present not committed、old committed alpha、full retry、业务 dirty 不误推进 |
-| Proxy/staging copy fail | Bar 可 committed；本帧不发布 proxy/cache，等待下一帧 |
-| Window overlay/setting owner fail | 对应真实阶段停止，red progress + popup，有界清理 |
-| Draw3 各子阶段 fail/fallback | 只报告已完成子单位；最终失败冻结，不补齐 Draw3 权重 |
-| Freeze ULW fail | 不报告 Freeze ready；TopWindow 消费 failure/timeout 而非假 ready |
-| PPT UI client fail | 显式失败；不把后续 Office 连接误当启动进度 |
-| Device loss during preview/handoff | 旧 epoch 全清，恢复后重建；超限时安全 reveal Bar 并销毁 Preview |
-
-## 9. Acceptance Mapping
-
-- PR/AC-01..05：tracker、config、SuperTop、RenderPipeline tests。
-- PR/AC-06..11：format/cache/capture、alpha reducer、三动画与 failure injection。
-- PR/AC-12：完整架构构建、Win7 VM、静态 import 和人工窗口矩阵。
+| Solution Debug/Release x64 | PASS，退出码 0 |
+| Solution Debug/Release Win32 | PASS，退出码 0 |
+| Solution Debug/Release ARM64 | PASS，退出码 0 |
+| x64 Debug/Release `--no-window` | PASS，`PASS animation correctness` |
+| Win32 Debug/Release `--no-window` | PASS，`PASS animation correctness` |
+| ARM64 `--no-window` runtime | NOT RUN，x64 宿主不能执行 ARM64 PE |
+| x64 Debug `--startup-preview-smoke` | PASS，470 DIP 与全部 committed/exit 字段为预期值 |
+| Win7/DPI/多屏/输入/视觉/真实故障注入 | NOT RUN，需专用环境或人工交互 |

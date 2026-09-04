@@ -2,63 +2,70 @@
 
 ## Problem Statement
 
-Inkeys 最终进程越过 SuperTop 后仍需依次完成日志、配置、PptCOM、共享渲染管线、字体、Window Service、Draw3、Setting、Whiteboard 和 Bar 初始化。现状直到正式 Bar 首次成功提交后用户才看到主栏；若某个初始化阶段较慢，启动过程没有即时界面或真实进度反馈。本任务不承诺缩短全部初始化耗时，而是在不复制图形设备、不破坏 Win7 基线的前提下尽快显示可信的主栏预览，并在正式 Bar 的首个完整 committed frame 后可靠交接。
+最终 Inkeys 进程越过 SuperTop 后仍需完成日志、配置、PptCOM、共享渲染管线、Window Service、Draw3、Setting、Whiteboard 和 Bar 初始化。初始化期间应尽快给用户一个可信的主栏外包络，同时显示真实 milestone 进度；预览不能复制图形设备、改变进程边界或把未完成工作伪报为完成。
+
+本轮产品形态是一个完全程序化绘制的占位：没有文字、图标、按钮分隔或其他内容装饰，仅有一个半透明中性灰色圆角矩形。它代表完整主栏外包络，包括主按钮、主按钮到 MainBar 主体的 10 DIP 间隔和主体本身。
 
 ## Product Requirements
 
-- **PR-01 启动边界**：只有最终 Inkeys 进程越过 SuperTop 重启/提权分支后才能记录 T0、创建 Tracker 或 Preview；SuperTop 父进程和辅助进程不得创建 Preview。
-- **PR-02 配置**：新增 `Experimental.Inkeys3.UI3.StartupPreview.Enable`，默认 `true`，首次启动也开启；Setting 的 UI3 实验选项必须说明“下次启动生效”。关闭后不得创建 Preview，并尽量保留现有初始化顺序。
-- **PR-03 T0**：T0 必须在 SuperTop 分支结束后立即由 `steady_clock` 记录，并只作为真实启动进度的统一时间边界。进度条可见门从 Preview 首帧成功提交并请求显示时另行起算，不得从日志、RenderPipeline 或 Bar 初始化开始计算。
-- **PR-04 真实进度**：Tracker 从 T0 工作，按真实、一次性完成的 milestone 累加；多线程乱序和重复报告不得回退或重复计数。显示值可平滑追赶但不得超过真实值，不得按时间伪造进度。
-- **PR-05 完成条件**：只有正式 Bar 首个 `presentCompletion.IsCommitted()` 才能报告 100%。失败必须冻结真实值并显示红色，不能补齐未完成权重。
-- **PR-06 Preview 窗口**：独立 owner/message thread 创建无激活 layered tool window；窗口吞掉范围内点击，不抢焦点，创建、定位、隐藏和销毁均在 owner thread 执行。
-- **PR-07 共享图形体系**：Preview 必须作为 `RenderPipeline::Client::StartupPreview` 使用现有共享 D2D1.1/WARP/单渲染线程。禁止第二套 D2D/D3D device、渲染线程或 Win10-only effect。
-- **PR-08 早期管线**：开关开启时可条件化提前初始化 RenderPipeline；关闭时保留原位置。原位置必须接受“已初始化”，字体集合继续留在原有较晚阶段。共享 RenderPipeline 初始化失败保持致命语义。
-- **PR-09 默认资源**：嵌入一份由真实默认 Bar committed frame 可复现导出的中文、深色、当前默认按钮和 96 DPI canonical 预乘 BGRA BIN；不得模型绘制、AI 生成或另做 mock 场景。
-- **PR-10 磁盘缓存**：缓存最近一次满足稳定条件的真实 Bar 帧到 `<exe>\Inkeys\Cache\StartupBarPreview-v1.bin`。读取须区分 Missing、Valid、Incompatible、Corrupt；失败只能降级，绝不能阻止主程序。
-- **PR-11 防御解析**：BIN/cache 显式 little-endian 序列化，不直接写 C++ struct；校验版本、尺寸、stride、payload、矩形、溢出、上限和 IEEE CRC-32 后才分配/使用像素。
-- **PR-12 缓存写入**：只从成功 committed 且无 hover、点击、菜单、弹层或暂态动画的稳定帧抓取；渲染线程完成 crop 和 CPU staging，普通内存由单个后台 writer 用临时文件、FlushFileBuffers 和原子替换落盘，只保留最新 revision。
-- **PR-13 Preview 渲染**：内嵌帧用 cubic 缩放、D2D GaussianBlur（Balanced/Soft）并扩展 effect bounds；shimmer 只覆盖源 alpha，使用 `FillOpacityMask` 和恢复后的抗锯齿状态。
-- **PR-14 3 秒进度条**：Preview 首帧成功提交并请求显示满 3 秒仍未完成时，约 180ms 渐显确定进度条；成功达到真实 100% 后先满格停留约 300ms，再在 120-160ms 内隐藏；失败不等 3 秒，立即绘制当前真实比例的红色帧。进度条在 Z 轴最后合成，坐标以包含主按钮的完整主栏为基准水平、垂直居中，采用 WinUI 3 的 3 DIP 指示条覆盖 1 DIP 轨道样式。
-- **PR-15 Bar 事务**：Preview 存在时 Bar 首帧以全局 alpha 0 提交；alpha 具有 requested/attempted/committed 三态。alpha 改变强制全窗口 ULW，失败不推进 committed alpha 或业务 dirty transaction，并请求全脏重试。
-- **PR-16 帧桥接**：每个成功 Bar frame 发布精确 crop、viewport、screen destination、monitor geometry、visual signature、device generation 和安全非 target bitmap；失败帧不得推进进度、交接、缓存或代理。
-- **PR-17 显式失败**：Bar 启动发布 WindowMissing、ClientRegistrationFailed、FirstFrameCommitted、StartupFailed、StoppedBeforeReady 或等价状态，不再静默 return。Window Service、Draw3、Freeze 和 PPT UI 的可验证子阶段也应轻量报告。
-- **PR-18 三类交接**：Valid 使用清晰缓存并在单 Preview 窗口内切换到实时代理后按提交边界切到 Bar；Missing/Incompatible 使用嵌入模糊帧、高模糊替换代理并解除模糊；Corrupt 使用 Preview 淡出、30-50ms 全透明、Bar 淡入，禁止代理解除模糊。
-- **PR-19 失败流程**：已显示 Preview 后发生致命启动失败时，先尝试提交红色真实进度帧，最多等待 350ms，再进入现有错误弹窗；Preview 本身失效时直接弹窗。
-- **PR-20 生命周期**：device generation 变化时清理 Preview 的全部 device-dependent 资源；退出时先注销/停止 StartupPreview 和 topmost observer，再停止 Bar、Window Service 与 RenderPipeline；所有等待必须有上限。
+- **PR-01 启动边界**：只有最终进程越过 SuperTop 的重启、提权和辅助进程分支后，才能记录唯一 T0、建立 tracker 或创建 Preview。父进程和 helper 不得显示 Preview。
+- **PR-02 配置**：`Experimental.Inkeys3.UI3.StartupPreview.Enable` 默认 `true`，设置页说明“下次启动生效”。关闭时不创建 Preview，并保留现有初始化顺序。
+- **PR-03 真实进度**：T0 使用 `steady_clock`；milestone 只在真实工作完成时一次性计数，重复、乱序、并发报告不重复计数。显示比例只能追赶实际比例。
+- **PR-04 完成门**：只有正式 Bar 首个完整 `presentCompletion.IsCommitted()` 才能把启动进度置为真实 100%。失败冻结进度，不补齐未执行单位。
+- **PR-05 新阶段**：旧 `CacheClassified` 不再使用，Preview 的 20 nominal units（启用时）用于 `PreviewGeometryReady`，表示 mini 宽度读取/校验、DPI/zoom 换算和目标 bounds 已完成；禁用 Preview 时从 immutable plan 删除该单位。
+- **PR-06 几何**：缓存值的语义始终是完整主栏总宽度 DIP。缺失或非法值回退 `470.0`；本次像素尺寸只由当前 DPI 和 `UI.Bar.Zoom` 换算，不能把像素或 zoom 后结果写回。
+- **PR-07 Preview 窗口**：使用独立 owner/message thread 的 top-level `WS_POPUP` layered tool window，带 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不带 `WS_EX_TRANSPARENT`。创建、定位、显示、隐藏和销毁均由 owner thread 完成；点击被吞掉且不激活。
+- **PR-08 共享图形**：Preview 作为唯一 `Inkeys.UI.RenderPipeline` 的 `StartupPreview` client，复用 D2D1.1 device/context/scheduler；不得创建第二个 device、render thread、WinUI Runtime、DirectComposition 或 Win10-only effect。
+- **PR-09 程序化绘制**：每帧绘制固定中性灰圆角矩形，使用 `#808080`、形状 alpha `0.74` 和 1 DIP 内描边 alpha `0.16`，圆角/高度为当前 Bar 的 `8/80 DIP`。颜色与 alpha 集中为具名常量，深浅桌面均可辨认。
+- **PR-10 Alpha/ULW**：D2D/DIB 为 32-bpp BGRA8 premultiplied alpha；ULW 使用 `AC_SRC_OVER`、`AC_SRC_ALPHA` 和 Preview 的 `SourceConstantAlpha`。每次 `UpdateLayeredWindowIndirect` 都显式提供 `pptDst`、`psize`、`pptSrc`，并与 owner geometry snapshot 通过 mutex 串行。
+- **PR-11 Shimmer**：先缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态形状 mask，再以 `FillOpacityMask` 调制多段低强度渐变。调用时切换到 `D2D1_ANTIALIAS_MODE_ALIASED`，结束时无条件恢复；进度条在其后绘制。
+- **PR-12 无跳闪动画**：相位以 Preview 首次显示的本地 `steady_clock` epoch 计算，速度两端慢、中间快。纯函数根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算离屏起止点；phase 0/1 的支撑完全在窗口外，wrap 两侧均为 base-only。
+- **PR-13 进度条**：从 Preview 首帧 ULW 成功 committed 并请求 owner 显示开始计时。满 3 秒仍未完成才以约 180ms 显示现有居中 Fluent 风格进度条；3 秒内完成不显示。进度条在 shimmer 后最后合成，使用真实 ratio。
+- **PR-14 顺序交接**：Bar 先以 presentation alpha 0 committed；正常完成时 Preview 整窗以 committed alpha 渐隐到 0，紧接着 Bar 从 committed alpha 0 渐显到 255。只有 Bar alpha 255 committed 后才隐藏/销毁 Preview；不做双 layered HWND 的中间 alpha cross-fade 或人为透明停顿。
+- **PR-15 失败/重试**：最终 fatal 时冻结进度，错误进度条立即变红；先等错误帧 committed 或达到有界上限，再显示现有错误对话框，确认后才让 Preview 渐隐。首次自动重试保持普通颜色并先渐隐。Preview 失效时使用既有 MessageBox fallback，Bar 尽最大安全努力恢复到 255 可见。
+- **PR-16 首帧宽度回写**：首个完整 Bar frame committed 后发布有限的 `expandedTotalWidthDip = mainButton->GetW() + 10.0 + layoutTotalWidth`。render thread 只发布去重后的普通 `double`；主线程或现有配置安全路径在值有效且有实质变化时写入 `main.json`，失败只记录并忽略。
+- **PR-17 测试钩子**：保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟和 `--startup-preview-smoke`。钩子未启用时不得拖慢正常启动，也不得让 RenderPipeline/Draw3 callback thread sleep。
+
+## 默认几何合同
+
+首次启动和无效缓存值使用整个外包络宽度 `470.0 DIP`。推导必须在代码注释和 headless 测试中可审计：
+
+| 项目 | 值/推导 |
+| --- | --- |
+| `BarButtonGapDip` | `5.0` |
+| `BarButtonOneSideDip` | `32.5` |
+| `BarButtonTwoSideDip` | `32.5 * 2 + 5 = 70.0` |
+| 完整按钮列步长 | `70 + 5 = 75 DIP` |
+| 默认 A1 列 | Select、Draw、Clean，共 3 列 |
+| 默认 A2 列 | Whiteboard、Freeze 共用 1 列；EndShow 隐藏 |
+| MainBar 主体 | `5 + 5 * 75 = 380 DIP` |
+| 主按钮/间隔 | `80 + 10 DIP` |
+| 完整外包络 | `80 + 10 + 380 = 470 DIP` |
+
+`BarMainBarWidthDip = 80` 是初始化/折叠目标，不能作为展开主体宽度。未来若支持折叠启动，宽度发布接口应可接受主按钮目标宽度（当前为 80 DIP），但本轮不改变折叠持久化行为。
+
+## 唯一缓存标量
+
+只读取 `Experimental.Inkeys3.UI3.StartupPreview.Enable`、`CachedStartupBarWidthDip` 和 `UI.Bar.Zoom`。`CachedStartupBarWidthDip` 为 `double` DIP，schema 默认 `470.0`，应检查 `std::isfinite`、正值和合理上限；缺失、NaN、无穷、过小或明显异常均回退默认值。旧图片 cache 和旧 JSON 字段安全忽略，不创建、读取、校验或删除图片文件，也不删除 Cache 目录。
 
 ## Non-goals
 
-- 不要求缩短所有真实初始化耗时，不重写整个 `wWinMain` 或 Bar 渲染循环。
-- 不建立多 DPI、多主题、多语言资源矩阵；本阶段资源基准只有中文、深色和当前默认按钮。
-- 不增加 EXE 资源 ID 1 manifest，不改变 PptCOM 221 号 activation manifest，不扩大或缩小现有平台承诺。
-- 不引入 GDI+、WinUI Runtime、DirectComposition 依赖或 Windows 10 专属 API/effect。
-- 不把 Office 实例连接当作启动完成门；只跟踪当前主启动路径上的 PptCOM activation 与 PPT UI client 注册。
-- 不借此任务整理无关旧代码、改变业务 dirty 语义或重新设计 Window Service。
-
-## Win7 Compatibility Contract
-
-- 最低环境保持 Windows 7 SP1 + KB2670838、D3D11、D2D1.1、Feature Level 11.0 和 WARP。
-- Win8.1+ 的 Shcore DPI API 必须动态解析；Win7 回退 `SetProcessDPIAware()`，不得形成加载期静态依赖。
-- D2D effect 限于 Platform Update for Windows 7 提供的 D2D1.1 GaussianBlur；alpha mask 使用 Win7 可用的 `FillOpacityMask`。
-- 构建不得破坏 Win32、x64、ARM64；仓库没有 ARM64EC 工程配置，第二阶段只做 `_M_ARM64EC` 源码兼容审计，不擅自新增配置。
+- 不缩短所有初始化耗时，不改写整个 `wWinMain` 或 Bar 渲染循环。
+- 不保留或新增 embedded/disk image、BIN、CRC、visual signature、layout epoch、主题/语言分支、图片 parser/writer、Gaussian blur、live proxy、CPU staging 或 developer capture。
+- 不改变 PptCOM 资源 221、EXE manifest、Win7 基线或 Draw3 自有 device。
+- 不新增折叠状态恢复、第二个图形设备、第二个渲染线程或长期双窗口叠加。
 
 ## Acceptance Criteria
 
-- [ ] AC-01：开关默认 true、首次启动开启、Setting 文案明确“下次启动生效”；关闭后未创建 Preview 且现有顺序无非必要变化。
-- [ ] AC-02：SuperTop 父/辅助进程无 Preview，最终进程在合法边界记录唯一 T0。
-- [ ] AC-03：进度单调、真实、可并行合并；时间流逝不会增加值；仅 Bar 首个 committed frame 产生 100%。
-- [ ] AC-04：Preview 不激活、不抢焦点、吞掉点击；所有 HWND 操作与销毁均在 owner thread。
-- [ ] AC-05：Preview 与 Bar 共用唯一 RenderPipeline；Bar 在 dispatch order 中先于 Preview；device loss 后无旧 generation 资源。
-- [ ] AC-06：有效 BIN/cache 通过格式、边界和 CRC 测试；截断、溢出、超大、非法矩形、未知版本和 CRC 错误均安全分类。
-- [ ] AC-07：默认 BIN 可由真实 Bar committed frame 重现；资源内容与 visual signature/layout epoch 一致。
-- [ ] AC-08：Bar alpha 的 requested/attempted/committed 与 ULW 事务一致，失败后不推进 committed 状态且全脏重试。
-- [ ] AC-09：Valid、Missing/Incompatible、Corrupt 三条交接路径均以提交成功为前提，且不存在两个 layered window 长时间半透明造成的颜色加深。
-- [ ] AC-10：启动失败时红色进度帧最多等待 350ms；Preview/blur/shimmer/cache 失败均按契约降级，RenderPipeline 失败仍为致命。
-- [ ] AC-11：缓存只从稳定 committed frame 产生，写入使用 durable temp + atomic replace；只读目录不影响启动，writer 在退出前可界定地停止。
-- [ ] AC-12：`InkeysRepo.sln` 的 Debug x64 完整构建和 `InkeysHeadlessTests.exe --no-window` 通过；第二阶段补齐可构建架构并执行 Win7 VM 手工矩阵。
+- [ ] 设置默认开启且下次启动生效；关闭后无 Preview。
+- [ ] 只有最终进程有一个 T0 和一个 Preview owner。
+- [ ] 默认几何可推导到 MainBar `380 DIP`、完整外包络 `470 DIP`；坏缓存值都回退 470。
+- [ ] 首帧以 ULW `SourceConstantAlpha=0` committed 后才无激活显示，之后 alpha 单调渐显。
+- [ ] 圆角灰色占位、静态 mask、offscreen shimmer 和最后合成的进度条均满足 alpha/几何合同。
+- [ ] 正常 handoff 为 Preview committed 0 后 Bar committed 255；失败恢复到正式 Bar 可见。
+- [ ] 首帧宽度回写使用 target `GetW()`，且不在 render thread 做 I/O。
+- [ ] smoke/headless/static/build 结果只在本轮真实执行后记录；未执行的架构、Win7、DPI、多屏和人工输入测试单独列出。
 
-## Key Product Decision
+## 明确删除范围
 
-- **已批准 D-P01**：Valid Cache 分支采用“单 Preview HWND 内从 cache bitmap 切到实时 Bar proxy，随后在 Bar alpha 255 的 committed frame 边界立即隐藏 Preview”的交接；禁止两个 layered HWND 同时以中间 alpha 长时间 cross-fade，避免改变透明边缘的有效覆盖率和颜色。
-- 其余实现项采用 `decision-log.md` 中已批准的安全默认值。
+删除 Startup Preview 专属的图片资源登记、图片文件及其生成说明；旧格式/分类/parser、图片 cache reader/writer、签名/CRC/epoch 分支、模糊和 proxy/staging/capture 逻辑、相关 CLI/诊断/project/filter 引用。保留 ULW、D2D1.1、owner thread、RenderPipeline client、presentation alpha 事务、真实进度和人工测试钩子。

@@ -28,10 +28,52 @@ export
 	inline constexpr double BarMainBarCornerRadiusDip = 8.0;
 	inline constexpr double BarMainBarFillOpacity = 0.8;
 	inline constexpr double BarMainBarFrameOpacity = 0.18;
+
+	// Startup Preview 只依赖这些无副作用的几何常量，不提前初始化完整 Bar。
+	inline constexpr double BarMainButtonWidthDip = 80.0;
+	inline constexpr double BarMainButtonHeightDip = 80.0;
+	inline constexpr double BarMainButtonToMainBarGapDip = 10.0;
+	inline constexpr double BarDefaultButtonColumnStepDip =
+		BarButtonTwoSideDip + BarButtonGapDip;
+	// 默认展开布局：A1 的 Select/Draw/Clean 三列，More 一列，A2 的
+	// Whiteboard/Freeze 上下共用一列；Divider 只收束列，不增加宽度。
+	inline constexpr unsigned BarDefaultA1ColumnCount = 3;
+	inline constexpr unsigned BarDefaultMoreColumnCount = 1;
+	inline constexpr unsigned BarDefaultA2ColumnCount = 1;
+	inline constexpr unsigned BarDefaultMainBarColumnCount =
+		BarDefaultA1ColumnCount + BarDefaultMoreColumnCount
+		+ BarDefaultA2ColumnCount;
+	// CalculateButtonLayoutWidth 从左侧 5 DIP 起步：5 + 5 * 75 = 380。
+	inline constexpr double BarDefaultMainBarLayoutWidthDip =
+		BarButtonGapDip
+		+ static_cast<double>(BarDefaultMainBarColumnCount)
+			* BarDefaultButtonColumnStepDip;
+	inline constexpr double BarDefaultStartupPreviewTotalWidthDip =
+		BarMainButtonWidthDip + BarMainButtonToMainBarGapDip
+		+ BarDefaultMainBarLayoutWidthDip;
+	inline constexpr double StartupPreviewCachedWidthDefaultDip =
+		BarDefaultStartupPreviewTotalWidthDip;
+	inline constexpr bool StartupPreviewEnabledDefault = true;
+	inline constexpr double StartupPreviewCachedWidthMinimumDip =
+		BarMainButtonWidthDip;
+	inline constexpr double StartupPreviewCachedWidthMaximumDip = 4096.0;
+
+	static_assert(BarButtonTwoSideDip == 70.0);
+	static_assert(BarDefaultButtonColumnStepDip == 75.0);
+	static_assert(BarDefaultMainBarColumnCount == 5);
+	static_assert(BarDefaultMainBarLayoutWidthDip == 380.0);
+	static_assert(BarDefaultStartupPreviewTotalWidthDip == 470.0);
 }
 
 export namespace Inkeys::UI::Bar
 {
+	[[nodiscard]] constexpr double CalculateExpandedTotalWidthDip(
+		double mainButtonTargetWidthDip, double layoutTotalWidthDip) noexcept
+	{
+		return mainButtonTargetWidthDip
+			+ BarMainButtonToMainBarGapDip + layoutTotalWidthDip;
+	}
+
 	// 标准按钮内部几何只在这里解析，主栏与分页不得各写一份偏移。
 	enum class BarButtonVisualLayoutKind : unsigned char
 	{

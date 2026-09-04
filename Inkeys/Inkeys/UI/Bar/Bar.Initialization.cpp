@@ -163,17 +163,11 @@ namespace Inkeys::UI::Bar
 			return;
 		}
 
-		const bool captureStartupPreview =
-			Inkeys::UI::StartupPreview::DeveloperCaptureRequested();
-		// 规范资产捕获不接收真实输入，避免鼠标位置改变稳定帧。
-		if (!captureStartupPreview)
-		{
-			(void)Inkeys::Input::MouseHook::Start([&]()
-				{
-					barUISet.barState.fold = true;
-					barUISet.UpdateRendering(false);
-				});
-		}
+		(void)Inkeys::Input::MouseHook::Start([&]()
+			{
+				barUISet.barState.fold = true;
+				barUISet.UpdateRendering(false);
+			});
 		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
 		if (!barUISet.Rendering())
 		{
@@ -182,17 +176,7 @@ namespace Inkeys::UI::Bar
 			barUISet.StopDisplayTracking();
 			return;
 		}
-		thread interactionThread;
-		if (captureStartupPreview)
-		{
-			// capture-only 会话有意跳过交互线程，将该初始化阶段视为已收敛。
-			(void)Inkeys::Startup::Report(
-				Inkeys::Startup::Milestone::BarInteractionReady);
-		}
-		else
-		{
-			interactionThread = thread([&]() { barUISet.Interact(); });
-		}
+		thread interactionThread([&]() { barUISet.Interact(); });
 
 		// 等待
 

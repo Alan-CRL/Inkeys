@@ -1,265 +1,166 @@
 # Startup Preview and Fast Bar Display
 
-## 1. Scope And Triggers
+本规范记录 Inkeys UI3 启动预览的可执行长期合同。它只适用于最终进程越过 SuperTop 后的启动编排、`Inkeys.UI.StartupPreview`、共享 RenderPipeline client、Bar presentation alpha、真实启动进度和相关配置/测试。旧图片资源、BIN/cache、模糊和 proxy 方案均已废弃。
 
-本规范适用于以下改动：
+## 1. Scope and non-goals
 
-- `wWinMain` 在 SuperTop 后的启动编排、启动进度、启动失败展示；
-- `Inkeys.UI.StartupPreview`、默认 embedded BIN、磁盘 cache；
-- RenderPipeline 新启动 client、Bar committed-frame bridge、layered-window presentation alpha；
-- 为 Window Service、Draw3、Freeze、PPT UI、Setting/config 添加启动 milestone；
-- 任何会改变默认 Bar 可见像素、embedded layout epoch 或 cache compatibility 的改动。
+- Preview 是完全程序化的、无文字无图标无按钮分隔的半透明中性灰圆角矩形，代表完整主栏外包络。
+- 正式 Bar 仍是唯一业务 UI；Preview 不复制 Bar target，不建立第二个 D3D/D2D device、render thread、WinUI Runtime、DirectComposition 或 Win10-only effect。
+- 不改变 SuperTop/单实例边界、PptCOM activation manifest 资源 221、Draw3 独立 device、普通 Cache 目录或与 Preview 无关的 CRC/SHA/Gaussian 代码。
 
-不适用于 T0 之前的路径/单实例错误、Draw3 自有绘图 device、Office 后台连接状态，或旧 `IdtFloating/IdtWindow` 路径。
-
-## 2. Signatures And Shared Types
-
-实现可按仓库 module 规则调整文件拆分，但若改变以下语义签名，必须同步本规范和任务设计：
+## 2. Configuration and geometry signatures
 
 ```cpp
-namespace Inkeys::Startup {
-enum class Milestone : std::uint8_t;
-
-struct Plan final {
-    std::uint32_t totalUnits;
-    bool Contains(Milestone) const noexcept;
-};
-
-struct Snapshot final {
-    std::uint32_t completedUnits;
-    std::uint32_t totalUnits;
-    double actualRatio;
-    bool failed;
-    std::uint32_t failureCode;
-    std::uint64_t revision;
-};
-
-class ProgressTracker final {
-public:
-    bool Complete(Milestone milestone) noexcept;
-    bool Fail(std::uint32_t failureCode) noexcept;
-    Snapshot GetSnapshot() const noexcept;
-};
-}
-
 namespace Inkeys::UI::StartupPreview {
-enum class CacheState : std::uint8_t {
-    Missing, Valid, Incompatible, Corrupt
-};
+inline constexpr double DefaultCachedStartupBarWidthDip = 470.0;
+inline constexpr double DefaultStartupBarHeightDip = 80.0;
+inline constexpr double DefaultStartupBarCornerRadiusDip = 8.0;
 
-enum class BarStartupState : std::uint8_t {
-    NotStarted, Initializing, RenderClientRegistered,
-    FirstFrameCommitted, WindowMissing,
-    ClientRegistrationFailed, StartupFailed, StoppedBeforeReady
-};
-
-struct CommittedBarFrame final {
-    // Plain metadata plus a render-thread-owned non-target bitmap.
-    std::uint64_t deviceGeneration;
-    std::uint64_t visualRevision;
-    bool stableForCache;
-};
+double ResolveCachedStartupBarWidthDip(double value) noexcept;
+std::int32_t RoundStartupPreviewDipToPixels(
+    double dip, double dpi, double zoom) noexcept;
+double CalculateStartupBarTotalWidthDip(
+    double mainButtonTargetDip, double layoutTotalWidthDip,
+    bool expanded = true) noexcept;
 }
 ```
 
-BIN/cache header 是 wire format，不暴露为可直接写盘的 C++ layout。只允许 `ReadLe16/32/64`、`WriteLe16/32/64` 等逐字段 API。
+`ResolveCachedStartupBarWidthDip` 对缺失、非 finite、非正、过小或超过合理上限的值返回 `470.0`。值的语义始终是完整主栏外包络逻辑 DIP，不是 MainBar body、物理像素或乘过 zoom 的结果。
 
-## 3. Executable Contracts
+mini config 只读取：
 
-### 3.1 Startup Boundary
-
-- Preview/Tracker 的 T0 **必须**位于最终进程越过 SuperTop 所有重启/提权/辅助分支之后，当前基准是 `IdtMain.cpp:743` 后。
-- SuperTop 父进程和 helper **不得**创建 Tracker、Preview、cache worker 或 early RenderPipeline。
-- T0 使用 `steady_clock` 并作为真实 milestone tracker 的统一边界；进度条可见门从 Preview 首帧成功 ULW committed 并请求 owner 显示时另行起算。
-- `Experimental.Inkeys3.UI3.StartupPreview.Enable` 缺失时默认 true；Setting 变更只对下次启动生效。
-- 开关关闭时不得创建 Preview；RenderPipeline 保留原初始化位置。开启时允许 early initialize，原位置必须接受 already initialized。
-
-### 3.2 Real Progress
-
-- 每次增长必须对应代码中已完成的真实 milestone；禁止按 elapsed time、帧数、shimmer phase 或“预计耗时”增加。
-- Plan 在 mini config 后冻结；未执行的 optional branch 从 plan 移除，不得标为完成。
-- Milestone 首次完成才增加 work units；重复、乱序、并发上报不得回退或重复计数。
-- UI displayed ratio 可 ease，但永远不超过 tracker actual ratio。
-- 致命失败冻结首个 failure snapshot；后续 milestone 不改变 actual ratio。
-- 只有正式 Bar 首个 `presentCompletion.IsCommitted()` 可产生 100%。调用 ULW、排队 alpha 或注册 client 都不是完成。
-- milestone callback 必须 noexcept、低开销；只做原子状态更新/无阻塞通知。
-
-### 3.3 Window And Render Ownership
-
-- Preview HWND 由独立 owner/message thread 创建和销毁；create/position/show/hide/z-order/destroy 都回到该线程。
-- 窗口样式固定为 `WS_POPUP`、`WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不得加入 `WS_EX_TRANSPARENT`。`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATEANDEAT`。
-- Preview 每个 ULW transaction 都必须从 owner 已提交的 snapshot 显式提供 `pptDst` 和 `psize`。在部分 Windows/DWM 路径，省略几何会返回成功但首帧不可见、后续 surface 也不刷新。owner 的 `SetWindowPos` 与 render thread 的 ULW 必须通过专用 presentation mutex 串行；render thread 只能回显 owner geometry，不得产生或提交另一个位置。
-- RenderPipeline 新 client 名为 `StartupPreview`；dispatch order 中 Bar 必须先于 StartupPreview。
-- Preview 的 target/bitmap/effect/brush/proxy 只在唯一 RenderPipeline thread 创建、复制和释放。不得暴露 mutable Bar target，也不得创建第二套 D2D/D3D device/render thread。
-- Window topmost observer 在成功 refresh 后只能异步 post Preview owner；双方不得形成同步反向等待。Preview 停止前先注销 observer。
-- device generation 改变后不得使用任何旧 generation 资源。
-
-### 3.4 Bar Commit And Presentation Alpha
-
-- Bar commit 必须代表 GetDC、UpdateLayeredWindowIndirect、ReleaseDC、EndDraw 全部成功；失败 attempt 不得发布 frame、报 100%、更新 cache 或开始 handoff。
-- Preview 存在时 Bar 初始 presentation alpha 为 0；无 Preview 时为 255。
-- Alpha 必须有 requested、attempted、committed 三态；只有完整 present commit 才更新 committed。
-- Alpha 变化强制 full-window ULW，不得使用局部 dirty rect；失败保留旧 committed alpha，并请求 full-dirty retry。
-- Presentation alpha demand 与业务 scene dirty 分离；alpha 成功/失败不得错误推进业务 dirty transaction。
-- 成功帧发布 exact source crop、viewport、screen destination、monitor geometry、visual signature、device generation 和 render-thread copy 得到的非 target bitmap。
-
-### 3.5 BIN And Cache Wire Format
-
-- v1 是 160-byte little-endian header + exact premultiplied BGRA payload；magic 为 `IKSPRVW\0`，version=1，headerSize=160，pixelFormat=1。
-- 固定 offsets：epoch 12、pixel format 16、flags 20、revision 24、SHA-256 signature 32、width 64、height 68、stride 72、payload size 80、DPI X/Y 88/92、monitor/work geometry 96..108、window offset 112/116、anchor 120/124、progress rect 128..140、CRC32 144、reserved 148..159。
-- v1 要求 `stride == width*4`、`payloadSize == stride*height`、file size exact、width/height 1..8192、payload <=64MiB、reserved bits 为 0。
-- CRC 是 IEEE CRC-32，计算覆盖 header+payload，计算时 crc field 视为 0。
-- 分配 payload 前先做 file-size、checked arithmetic、stride/payload、矩形和上限验证；短读、overflow、非法字段、CRC 错误为 Corrupt。
-- 完整/可安全识别但 epoch/signature/DPI/geometry 不匹配为 Incompatible；不存在为 Missing；全部匹配为 Valid。不得尝试“修复”Corrupt 文件。
-- DPI 保存在 header，因为像素/geometry 兼容真实依赖它；主题/语言进入 signature，不重复设字段。
-
-### 3.6 Embedded Asset Regeneration
-
-默认 BIN 只能来自真实正常 Bar scene 的稳定 committed frame capture，基准为 96 DPI、中文、深色、当前默认按钮/尺寸/显隐/expanded 启动状态。禁止手绘、AI 生成或独立 mock renderer。
-
-出现任一情况，必须递增 embedded layout epoch 并重新执行可复现 capture：
-
-- 增加浅色模式或默认主题变化；
-- 正式完成 i18n，默认语言或默认文字变化；
-- 默认按钮序列、尺寸、显隐或 extension 改变；
-- Bar 默认布局、图标、颜色、圆角、阴影或启动状态发生可见变化；
-- BIN pixel format、alpha 或 serialization format 改变。
-
-生成结果必须由生产 parser 反读并核对 CRC、signature、epoch 和尺寸后才能嵌入；当前只允许一份 canonical asset，不建立 DPI/theme/language matrix。
-
-### 3.7 Stable Cache And Atomic Write
-
-- 只从成功 committed、当前 generation、无 hover/press/capture/menu/panel/transient animation/debug overlay 的帧抓取。
-- 持久视觉 revision 安静至少 750ms 后才成为候选；防抖不影响 startup progress。
-- render thread 做 exact crop -> normal bitmap -> `CPU_READ | CANNOT_DRAW` staging -> Map -> ordinary memory。writer 不得持有 D2D COM object。
-- 单后台 writer 只保留最新 revision；同目录 temp 用 CREATE_NEW，完整写入后 FlushFileBuffers、close，再 `MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH)`。
-- 目录只读、磁盘满、写/flush/replace 失败只限频日志，不阻止主程序，不破坏旧 cache。
-
-### 3.8 Rendering, Handoff And Failure
-
-- Embedded 使用 cubic + D2D1.1 GaussianBlur，约 6 DIP、Balanced、Soft；必须按 effect bounds 扩展，禁止裁 blur。
-- Shimmer 用源 alpha + `FillOpacityMask`；调用时切 ALIASED 并恢复原 antialias。不得使用 Win10-only AlphaMask effect。
-- Preview 显示满 3 秒后进度条展示真实值；重复显示通知不得重置计时。已显示时，成功达到真实 100% 后必须满格保持 300ms，再用 140ms 隐藏；3 秒内完成且从未显示时不增加等待。失败无视可见门，立即红色并保留实际 fill；较早提交时在 350ms 总预算的剩余时间保留红帧，未提交则到预算后进入现有 popup。
-- 进度条必须在 blur/shimmer 后最后合成，保证处于 Z 轴最上层；坐标以包含主按钮的完整主栏内容矩形为基准 X/Y 居中。canonical dark Preview 对齐 WinUI 3 默认模板：192 DIP 宽且目标允许时至少保留 48 DIP 双侧边距，3 DIP / 1.5 DIP 圆角的 accent 或 error 指示条覆盖 1 DIP / 0.5 DIP 圆角的中性轨道；颜色为 normal `#60CDFF`、track `#8BFFFFFF`、error `#FF99A4`。
-- Valid cache 在单 Preview HWND 内切到 live proxy，再以 committed alpha 边界切到 Bar；不得用两个 layered HWND 做持续中间-alpha cross-fade。
-- Missing/Incompatible 用 embedded blur、高 blur 替换 live proxy、再 deblur；Corrupt 必须 Preview 淡到 0、短暂全透明、Bar 再淡入，且不做 proxy deblur。
-- Preview/cache/blur/shimmer 失败可 bypass；共享 RenderPipeline 和现有核心启动失败维持致命语义。
-- 正常/失败退出都按 observer unregister -> StartupPreview client unregister/drain -> owner destroy/join -> cache writer stop/join -> Bar/Window/RenderPipeline shutdown 排序。所有等待有上限。
-
-### 3.9 DPI And Compatibility
-
-- Process DPI awareness 必须早于任何 Preview/Window Service HWND 和 Display enumeration。
-- Win8.1+ Shcore 仅动态解析，并且必须用 `GetSystemDirectoryW` 构造 System32 绝对路径后再 `LoadLibraryW`；不得用裸 `Shcore.dll` 名称搜索应用目录。Win7 缺失时回退 `SetProcessDPIAware`。`E_ACCESSDENIED` 表示 awareness 已设置，不作为错误。
-- 保持 Windows 7 SP1 + KB2670838、D2D1.1、WARP FL11.0；不得静态依赖 Win8.1+/Win10 API、GDI+、WinUI Runtime 或 DirectComposition。
-- 保持 PptCOM 资源 221；不因本功能自动添加 EXE ID 1 manifest。
-
-## 4. Validation Matrix
-
-| 变更 | 必须验证 |
+| 字段 | 默认/语义 |
 | --- | --- |
-| Tracker/stage | concurrent duplicate/out-of-order、conditional plan、failure freeze、elapsed no-growth、Bar-only 100% |
-| Parser/serializer | little-endian roundtrip、CRC vector、逐字节截断、overflow、64MiB、非法 rect、四分类 |
-| Preview window | no activate/focus/taskbar、click eat、owner-thread destroy、late post、topmost refresh；在 Bar 启动前人工停顿，确认显式 geometry ULW 的首帧、shimmer 后续帧与 Preview 显示后 3 秒 progress 均可见 |
-| RenderPipeline | Preview-only registration、Bar-before-Preview、unregister drain、device epoch loss/recovery |
-| Bar bridge/alpha | 四步 present 任一失败、full retry、business dirty independence、no-Preview 255 |
-| Cache | stable-frame filter、latest revision、read-only/full disk、flush/replace fail、bounded shutdown |
-| Animation | 3s from Preview show、real fill、3/1 DIP top-layer composition、red frame bounded hold、三分支、无双窗口半-alpha |
-| Platform | full Solution Debug/Release Win32/x64/ARM64；Win7 KB2670838 WARP FL11.0；ARM64EC source audit |
+| `Experimental.Inkeys3.UI3.StartupPreview.Enable` | `true`；设置页改动下次启动生效 |
+| `Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip` | `470.0`；总宽度 DIP |
+| `UI.Bar.Zoom` | 既有 zoom；仅用于本次 DIP→pixel 换算 |
 
-## 5. Good / Base / Bad Cases
+旧 main.json 缺少新字段时使用默认值；曾写入的旧图片/CRC 字段安全忽略。设置页不暴露 cached width。
 
-- **Good**：Valid cache + matching DPI/signature；Preview 很快显示，真实 progress 单调，Bar alpha 0 committed，单窗口 proxy 交接，Bar alpha 255 committed 后 Preview 销毁。
-- **Base**：首次启动 Missing；embedded 96 DPI 高质量放大并模糊，Bar proxy 在高 blur 替换并 deblur，随后切 Bar。
-- **Recoverable bad**：Corrupt cache、只读目录、blur/shimmer failure、Preview HWND failure；分别走 corrupt 动画或降级/bypass，主程序继续。
-- **Fatal bad**：RenderPipeline/Window/Draw3/Setting/Whiteboard/Bar startup failure；真实进度冻结，red frame 最多等 350ms，popup 后按依赖顺序清理。
+默认展开宽度必须可审计：
 
-## 6. Required Tests
-
-- `startup_progress_tests.cpp`：plan、milestone、failure、100% gate。
-- `startup_preview_format_tests.cpp`：wire format、CRC、防御解析和 classification。
-- `startup_preview_state_tests.cpp`：Preview/cache/handoff reducer 和 bounded stop。
-- `bar_presentation_alpha_tests.cpp` + `present_decision_tests.cpp`：alpha transaction 与四步 commit。
-- `render_scheduler_tests.cpp`：client order、unregister drain、epoch。
-- `setting_session_state_tests.cpp`：默认 true、snapshot/write 和下次启动语义。
-- `dumpbin /imports` + 源码审查：不得新增 Shcore/高版本 DPI 静态入口；可选系统 DLL 必须使用 System32 绝对路径，缺失时走既定 fallback。
-- 受限环境运行 `InkeysHeadlessTests.exe --no-window`；Win7、HWND、SuperTop、mixed-DPI、ULW/device-loss 使用任务 test matrix 的手工步骤。
-
-## 7. Wrong / Correct
-
-### 进度
-
-```cpp
-// Wrong: 时间过去就伪造进度。
-actual = std::min(0.95, elapsedSeconds / 10.0);
-
-// Correct: 只有真实 milestone 首次完成才增长。
-tracker.Complete(Milestone::WindowOverlayOwnerReady);
+```text
+gap = 5.0 DIP
+oneSide = 32.5 DIP
+twoSide = 32.5 * 2 + 5 = 70.0 DIP
+columnStep = 70.0 + 5.0 = 75.0 DIP
+MainBar body = 5.0 + 5 * 75.0 = 380.0 DIP
+full envelope = 80.0 + 10.0 + 380.0 = 470.0 DIP
 ```
 
-### Wire Format
+当前默认序列是 A1 Select/Draw/Clean 三列、More 一列、A2 Whiteboard/Freeze 共一列；Divider 只结束未填满列。`BarMainBarWidthDip=80` 只代表初始化/折叠目标。
+
+## 3. Startup and progress contract
+
+- T0、tracker 和 Preview 只能在最终进程越过 SuperTop 的重启/提权/helper 分支后建立；使用 `steady_clock`。
+- Preview 启用时，`PreviewGeometryReady` 是真实阶段：mini width 校验、DPI/zoom 换算和目标 bounds 完成后报告；启用计划可保留 20 nominal units，禁用时从 immutable plan 删除 Preview 专属单位。不得再使用 `CacheClassified`。
+- milestone 首次真实完成才增加 work units；乱序、重复、并发报告只计一次。displayed ratio 只能追赶 actual ratio；时间只控制动画/3 秒门。
+- 只有 Bar 首个完整 `presentCompletion.IsCommitted()` 才报告 100%。失败冻结首个错误快照。
+
+## 4. Window and ownership contract
+
+Preview HWND 必须由独立 owner/message thread 创建和销毁，样式固定为 `WS_POPUP` 与 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不得加入 `WS_EX_TRANSPARENT`。`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATEANDEAT`；可见 client 区返回 `HTCLIENT` 并吞掉鼠标按下/抬起/双击。透明圆角外像素遵循 ULW 原生 hit-test。
+
+create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；其他线程只 post 命令。topmost observer 只能异步 post，停止前先注销。
+
+## 5. D2D/ULW and alpha contract
+
+- Target/DIB 为 32-bpp BGRA8 premultiplied alpha。
+- `BLENDFUNCTION` 为 `AC_SRC_OVER`、`BlendFlags=0`、`AlphaFormat=AC_SRC_ALPHA`；`SourceConstantAlpha` 是 Preview 整窗 committed fade 值。
+- 每次 `UpdateLayeredWindowIndirect` 必须显式传入 `pptDst`、`psize`、`pptSrc`。省略 geometry 在本项目路径可能返回成功但不可见/不刷新。
+- owner `SetWindowPos` 与 render-thread ULW 通过专用 presentation mutex 串行；render thread 只回显 owner 已提交 geometry snapshot。
+- Preview D2D target、mask、brush 只在唯一 `Inkeys.UI.RenderPipeline` render thread 创建/释放；dispatch order 为 Bar -> StartupPreview。device generation 变化时清空并重建全部 Preview 资源。
+
+## 6. Programmatic shape and shimmer
+
+每帧先绘制一个连续圆角矩形：中性灰 `#808080`、形状 alpha `0.74`、1 DIP 内描边 alpha `0.16`，高度/圆角 `80/8 DIP`。描边必须向内绘制；禁止文字、图标、按钮槽、分隔线或假主栏内容。
+
+尺寸变化时缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态 opacity mask。反光用多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。进度条在 shimmer 后最后合成，不进入 mask。
+
+相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准，可用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左侧外，phase 1 完全在右侧外，wrap 两侧都是 base-only。不得用固定 magic 行程或停顿掩盖跳闪。
+
+## 7. Progress visual and handoff
+
+首个 Preview ULW alpha 0 frame committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复通知不重置。显示后满 3 秒仍未完成才约 180ms 渐显居中 192 DIP 双层进度条；3 秒内完成不显示。进度条使用真实 ratio，在 shimmer 后绘制。
+
+Bar 的 presentation alpha 始终区分 requested/attempted/committed；完整 GetDC -> ULW -> ReleaseDC -> EndDraw -> `presentCompletion.IsCommitted()` 前不得推进 committed。alpha 改变强制 full-window ULW，失败保留旧 committed 并请求重试；业务 dirty transaction 不受污染。无 Preview 时 Bar 以 255；有 Preview 时先以 0 committed。
+
+正常完成严格按以下顺序：
+
+1. Bar alpha 0 committed；Preview 继续 shimmer。
+2. Preview 整窗 ULW committed fade 到 0，期间 Bar 不上升。
+3. Preview alpha 0 committed 后，Bar 从 committed 0 单调渐显到 255。
+4. Bar alpha 255 committed 后 owner 才 hide/destroy Preview。
+
+禁止两个 layered HWND 长时间中间 alpha 同时可见、cross-fade 或人为透明停顿。首次自动重试保持正常颜色并先渐隐；最终 fatal 才红色，错误帧 committed 或有界等待后显示对话框，确认后再渐隐。Preview/ULW/device/handoff 失败均有界 bypass/recovery，尽最大安全努力恢复 Bar 255 可见。
+
+## 8. Width publication and I/O boundary
+
+Bar 首个完整 committed frame 发布：
 
 ```cpp
-// Wrong: padding、endianness、ABI 都不稳定。
-file.write(reinterpret_cast<const char*>(&header), sizeof(header));
-
-// Correct: 固定 offset、little-endian、checked length。
-WriteLe32(bytes, 64, width);
-WriteLe64(bytes, 80, payloadSize);
+expandedTotalWidthDip = mainButton->GetW() /* target, not w.val */
+    + 10.0 + layoutTotalWidth;
 ```
 
-### HWND Ownership
+`layoutTotalWidth` 是目标布局宽度。不得从动画值、ULW crop、透明 padding 或 bitmap 反推。render thread 只发布有限、去重的普通 `double`；主线程或既有配置安全路径在有实质变化时写 `main.json`。render thread 禁止 `config.Write()`、文件 I/O 或等待磁盘；写失败只记录/忽略，不影响启动。接口应可接受未来折叠宽度 80 DIP，但本轮不改折叠恢复产品行为。
+
+## 9. Failure, lifecycle and validation
+
+Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failure 不得阻止正式启动；核心 RenderPipeline、Window Service、Draw3、Setting、Whiteboard 和 Bar failure 仍按既有 fatal 语义处理。退出顺序至少为：停止新 frame/width -> 注销 observer -> unregister/drain StartupPreview -> owner hide/destroy/join -> Bar/Window/RenderPipeline 既有 shutdown；所有 wait 有界。
+
+保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟和 `--startup-preview-smoke`。测试钩子未启用时不得拖慢正常启动，也不得让 render/callback thread sleep。Smoke 应报告 total width DIP、Preview alpha-0/fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段。
+
+## 10. Validation matrix
+
+必须覆盖：默认 380/470 几何与非法缓存回退；DPI×zoom 舍入；target width 发布和去重 I/O；alpha transaction 与 ULW explicit geometry；shimmer endpoint/wrap；3 秒进度门；顺序 handoff、重试/fatal/recovery；Preview disabled/device loss；headless/smoke、完整 Solution 构建、`git diff --check`、旧符号/资源残留和高版本静态导入审查。Win7 SP1 + KB2670838、WARP、mixed DPI、多显示器、SuperTop/UIAccess、真实 input/topmost/device-loss 需专用环境，未执行时不得声称 PASS。
+
+## 11. Validation and error matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| Cached width 缺失、NaN、Inf、非正、过小或异常大 | 回退 `470.0 DIP`，仍尝试快速显示；不读取/删除任何图片 cache |
+| Preview disabled | 从 immutable plan 删除 Preview 专属单位；Bar 保持既有 alpha 255 启动语义 |
+| Preview owner/首帧/D2D/mask/shimmer 失败 | 有界 bypass；正式启动继续，Bar 最终尽力 committed 255 可见 |
+| ULW 任一步失败 | Preview/Bar 不推进对应 committed alpha；请求完整重试或有界 recovery，不能遗留 alpha 0 Bar |
+| Device generation 改变 | render thread 丢弃旧 Preview resources，重建或 bypass；不使用旧 generation COM 对象 |
+| 首次自动重试 | 保持普通 progress 颜色，Preview 先整窗渐隐，再按既有重启/重试流程继续 |
+| 最终 fatal | 冻结真实 progress，提交红帧或达到有界等待后显示现有对话框；用户确认后才渐隐/销毁 Preview |
+| Bar 首帧/交接超时 | 请求并尽力确认 Bar alpha 255，再清理 Preview；不能静默退出或永久空白 |
+| 宽度写入失败 | 限频记录/忽略；不影响启动，render thread 不重试磁盘 I/O |
+
+## 12. Good / Base / Bad cases
+
+- **Good**：合法有限宽度（或缺失而回退 470），Preview alpha 0 首帧 committed；灰色占位与 shimmer 可见，真实进度单调；Bar alpha 0 committed 后 Preview committed 到 0，Bar committed 到 255 才销毁 owner。
+- **Base**：首次启动没有宽度字段，使用 470 DIP；3 秒内完成则进度条不出现；更慢时进度条只显示真实 ratio，随后按同一顺序交接。
+- **Recoverable bad**：坏宽度、Preview/D2D/shimmer/ULW/device loss、首次重试或 owner 超时；回退/绕过并尽力让正式 Bar committed 255 可见，不阻塞主程序。
+- **Fatal bad**：RenderPipeline、Window Service、Draw3、Setting、Whiteboard 或正式 Bar 失败；冻结真实进度，最终 fatal 才显示红帧，在有界等待后进入现有错误对话框和清理流程。
+
+## 13. Tests required
+
+- **纯逻辑**：`ResolveCachedStartupBarWidthDip`、默认 380/470 推导、DPI×zoom 舍入、`CalculateStartupBarTotalWidthDip` target-vs-animation、去重发布、milestone/failure/100% gate。
+- **动画/alpha**：phase 0/1 soft-tail 离屏与 wrap base-only；Preview alpha 0 首帧、单调 fade；Preview→Bar committed 顺序、首次重试颜色、最终 fatal 红帧和 recovery。
+- **窗口/渲染**：ULW 三个 geometry 指针始终非空；owner-thread lifecycle、click swallow、presentation mutex、mask antialias restore、Bar-before-Preview scheduler、device generation 重建。
+- **集成/静态**：旧 JSON 兼容、smoke 字段、`rg` 残留审查、`git diff --check`、完整 Solution/headless；Win7、DPI、多屏、SuperTop/UIAccess 和真实系统失败在可用环境执行并记录。
+
+### Wrong vs Correct
 
 ```cpp
-// Wrong: render callback 跨线程销毁。
-DestroyWindow(previewHwnd);
-
-// Correct: 只向 owner queue 投递。
-previewOwner.Post(PreviewCommand::Destroy);
-```
-
-### Layered Surface Geometry
-
-```cpp
-// Wrong: SetWindowPos 后假设 ULW 可以省略 layered surface 几何。
+// Wrong: 依赖系统保留上次 layered geometry。
 update.pptDst = nullptr;
 update.psize = nullptr;
 
-// Correct: 与 owner move 串行，并在每帧回显 owner 已提交几何。
+// Correct: 每帧回显 owner 已提交 geometry，并与 SetWindowPos 串行。
 std::scoped_lock lock(ownerPresentationMutex);
 update.pptDst = &ownerDestination;
 update.psize = &ownerSize;
+update.pptSrc = &sourceOrigin;
 ```
 
-### Alpha Commit
-
 ```cpp
-// Wrong: setter 完成就宣称可见。
-committedAlpha = requestedAlpha;
+// Wrong: render thread 直接写配置。
+config.Write();
 
-// Correct: 仅完整 presentation transaction 成功后提交。
-if (presentCompletion.IsCommitted()) {
-    committedAlpha = attemptedAlpha;
-}
-```
-
-### Frame Sharing
-
-```cpp
-// Wrong: 把正在绘制的 Bar target 给 Preview/cache。
-Publish(barTarget.Get());
-
-// Correct: render thread 复制 exact crop 到非 target/staging。
-CopyCommittedCropToProxyAndStaging(frame);
-```
-
-### 可选系统 DLL
-
-```cpp
-// Wrong: Win7 缺失 Shcore 时会继续搜索应用目录，存在同名 DLL 劫持风险。
-LoadLibraryW(L"Shcore.dll");
-
-// Correct: 先用 GetSystemDirectoryW 构造绝对路径，再动态解析可选入口。
-HMODULE shcore = LoadSystemLibrary(L"Shcore.dll");
-auto setAwareness = reinterpret_cast<SetAwareness>(
-    GetProcAddress(shcore, "SetProcessDpiAwareness"));
+// Correct: 发布有限 DIP 值，由主线程/配置安全路径去重后写回。
+PublishStartupBarWidthDip(expandedTotalWidthDip);
 ```

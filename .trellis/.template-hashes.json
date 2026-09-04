@@ -162,6 +162,19 @@
     ".trellis/scripts/common/__pycache__/types.cpython-313.pyc": "78204031cbd5538605d718f54ae11628c17d1cd0e33fa921cc30302cabd7d896",
     ".trellis/scripts/common/__pycache__/workflow_phase.cpython-313.pyc": "1a8ed68587aac09b75e3cdc6022dd7d3ba7cb5e18a50b49a9c498e4a82e3d9dd",
     ".trellis/scripts/common/__pycache__/__init__.cpython-313.pyc": "8bf7256f45ff72cb43f973f6b116501636a8f2351a7521f1d34671c81b14d831",
-    ".zcode/hooks/inject-shell-session-context.py": "45a8b060c68b04d2d92bf0b8d5626651f490bd05a314a6af52179515a07d8d06"
+    ".zcode/hooks/inject-shell-session-context.py": "45a8b060c68b04d2d92bf0b8d5626651f490bd05a314a6af52179515a07d8d06",
+    ".trellis/scripts/common/__pycache__/active_task.cpython-39.pyc": "e5231d49a9c075216d143394b75d1ba09765780ce7d2682442814c797a4c337b",
+    ".trellis/scripts/common/__pycache__/config.cpython-39.pyc": "0a7669fa54c52680bb07f98b3553e821c3f3a3040c389755bf789d591d566412",
+    ".trellis/scripts/common/__pycache__/git.cpython-39.pyc": "dad6243551e7422840fc58f5f154274e80ffe0ab6fe1bb55f0338dd3598e4a8a",
+    ".trellis/scripts/common/__pycache__/git_context.cpython-39.pyc": "b5e5c7b6f767418e764c99c785f456ddf8da5064c43064c073997997f0118073",
+    ".trellis/scripts/common/__pycache__/io.cpython-39.pyc": "a54c1eb311b5bde08560523bdcfa569df46da168dae76b4464fd3c2cc63abbda",
+    ".trellis/scripts/common/__pycache__/packages_context.cpython-39.pyc": "340d9e05055c2228209eb60981d84dab4cf1e04016bcde68b39831f407ad5317",
+    ".trellis/scripts/common/__pycache__/paths.cpython-39.pyc": "f4f3471de4fd27e6b0d901d8545155b91fcf6da374f560f26d5a58fa0c4a5a9c",
+    ".trellis/scripts/common/__pycache__/session_context.cpython-39.pyc": "245870ba5e218c527bfc28a641f69dac2580e12bbf8b8e6535737737e4f4d98c",
+    ".trellis/scripts/common/__pycache__/tasks.cpython-39.pyc": "aa320d9874d6fe146baaf6be3014a1ffe1c2ac5dbcf4e8cda77d2481b04aa192",
+    ".trellis/scripts/common/__pycache__/trellis_config.cpython-39.pyc": "5eb37d49ab8a3687b152a89ac26abbe1a831b9e99b961de4d570f3e29bfeb88b",
+    ".trellis/scripts/common/__pycache__/types.cpython-39.pyc": "10a969e8972c15f155f30664d15766bf2c3a494fa064bebb255d324b6c43a698",
+    ".trellis/scripts/common/__pycache__/workflow_phase.cpython-39.pyc": "8555115a1b5f952a517731470f36e8901296cb006175811dfc5667864256994b",
+    ".trellis/scripts/common/__pycache__/__init__.cpython-39.pyc": "b21d1212ed42af1529b25ad1c6869fdf001b738611bc47eb640b2b54ce36361b"
   }
 }

@@ -20,7 +20,6 @@ module;
 #include "Bar.WindowGeometry.h"
 #include <atomic>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -38,7 +37,6 @@ import :Theme;
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.StartupPreview;
-import Inkeys.UI.StartupPreview.VisualConfig;
 import Inkeys.Startup.Progress;
 
 import <ranges>;
@@ -540,15 +538,6 @@ struct BarRenderLoopState
 		unsigned long long observedDisplaySerial = 0;
 	bool displayTransitionInitialized = false;
 	bool firstStartupFrameReported = false;
-	std::uint64_t startupVisualRevision = 1;
-	std::uint64_t startupPublishedStableRevision = 0;
-	Inkeys::UI::StartupPreview::PreviewCompatibility startupVisualCompatibility{};
-	std::uint32_t startupVisualWidth = 0;
-	std::uint32_t startupVisualHeight = 0;
-	bool startupVisualCompatibilityReady = false;
-	chrono::steady_clock::time_point startupLastVisualChange =
-		chrono::steady_clock::now();
-	bool startupCacheTransient = true;
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
 	bool whiteboardDockPlacementPending = false;
@@ -12522,314 +12511,15 @@ bool presetButton = button.presetIndex >= 0;
 			if (!state.firstStartupFrameReported)
 			{
 				state.firstStartupFrameReported = true;
+				// 仅发布 target 几何；配置写入由主线程接管，渲染线程不做 I/O。
+				Inkeys::UI::StartupPreview::NotifyBarFirstCommittedFrame(
+					mainButton->GetW(),
+					state.mainBarLayoutWidth.value_or(mainBar->w.tar),
+					!state.barState.fold);
 				Inkeys::UI::StartupPreview::SetBarStartupState(
 					Inkeys::UI::StartupPreview::BarStartupState::FirstFrameCommitted);
 			}
 
-			POINT cacheCursor{};
-			const bool pointerOverBar = GetCursorPos(&cacheCursor) != FALSE
-				&& PtInRect(&committedWindowScreenBounds, cacheCursor) != FALSE;
-			const bool previewFrameReady = presentedSize.cx > 1 && presentedSize.cy > 1;
-			Inkeys::UI::StartupPreview::PreviewMetadata previewMetadata;
-			if (previewFrameReady)
-			{
-				const auto previewWidth = static_cast<std::uint32_t>(presentedSize.cx);
-				const auto previewHeight = static_cast<std::uint32_t>(presentedSize.cy);
-				previewMetadata.flags = Inkeys::UI::StartupPreview::PreviewFlagDiskCache;
-				previewMetadata.width = previewWidth;
-				previewMetadata.height = previewHeight;
-				previewMetadata.stride = previewWidth * 4;
-				previewMetadata.payloadSize = static_cast<std::uint64_t>(
-					previewMetadata.stride) * previewHeight;
-				previewMetadata.captureDpiX = state.activeDisplayDpi;
-				previewMetadata.captureDpiY = state.activeDisplayDpi;
-				previewMetadata.monitorPixelWidth = static_cast<std::uint32_t>(
-					(std::max)(0L, state.activeMonitorBounds.right
-						- state.activeMonitorBounds.left));
-				previewMetadata.monitorPixelHeight = static_cast<std::uint32_t>(
-					(std::max)(0L, state.activeMonitorBounds.bottom
-						- state.activeMonitorBounds.top));
-				previewMetadata.monitorWorkWidth = static_cast<std::uint32_t>(
-					(std::max)(0L, state.activeWorkArea.right
-						- state.activeWorkArea.left));
-				previewMetadata.monitorWorkHeight = static_cast<std::uint32_t>(
-					(std::max)(0L, state.activeWorkArea.bottom
-						- state.activeWorkArea.top));
-				previewMetadata.windowOffsetX = committedWindowScreenBounds.left
-					- state.activeMonitorBounds.left;
-				previewMetadata.windowOffsetY = committedWindowScreenBounds.top
-					- state.activeMonitorBounds.top;
-				previewMetadata.anchorX = (std::clamp)(
-					frameAnchor.x - candidateViewport.left,
-					0L, static_cast<LONG>(previewWidth - 1));
-				previewMetadata.anchorY = (std::clamp)(
-					frameAnchor.y - candidateViewport.top,
-					0L, static_cast<LONG>(previewHeight - 1));
-				const auto progressHeight = (std::max)(2u,
-					static_cast<unsigned int>(lround(4.0
-						* state.activeDisplayDpi / 96.0)));
-				previewMetadata.progressLeft = static_cast<std::int32_t>(previewWidth / 6);
-				previewMetadata.progressRight = static_cast<std::int32_t>(
-					(std::max)(previewWidth / 6 + 1, previewWidth * 5 / 6));
-				previewMetadata.progressBottom = static_cast<std::int32_t>(
-					(std::max)(1u, previewHeight - 2));
-				previewMetadata.progressTop = static_cast<std::int32_t>(
-					previewMetadata.progressBottom
-						> static_cast<std::int32_t>(progressHeight)
-						? previewMetadata.progressBottom - progressHeight : 0);
-
-				auto signatureInputs =
-					Inkeys::UI::StartupPreview::BuildConfiguredVisualInputs(Inkeys::config);
-				auto& visual = signatureInputs.runtimeState;
-				visual.selectedMode = static_cast<std::int32_t>(stateMode.StateModeSelect);
-				if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-				{
-					visual.selectedPenMode = static_cast<std::int32_t>(
-						stateMode.Pen.ModeSelect);
-					visual.toolColorRgba = static_cast<std::uint32_t>(GetPenColor());
-					visual.toolWidthMilli = static_cast<std::int32_t>(std::llround(
-						static_cast<double>(GetPenWidth()) * 1000.0));
-				}
-				else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-				{
-					visual.selectedShapeMode = static_cast<std::int32_t>(
-						stateMode.Shape.ModeSelect);
-					visual.toolColorRgba = static_cast<std::uint32_t>(GetPenColor());
-					visual.toolWidthMilli = static_cast<std::int32_t>(std::llround(
-						static_cast<double>(GetPenWidth()) * 1000.0));
-				}
-				visual.folded = state.barState.fold;
-				visual.drawAttributeVisible = state.barState.drawAttribute;
-				visual.geometryAttributeVisible = state.barState.geometryAttribute;
-				visual.morePanelVisible = state.barState.moreExpanded;
-				visual.mainBarRight = state.barState.widgetPosition.mainBar;
-				visual.primaryBarBelow = state.barState.widgetPosition.primaryBar;
-				visual.bottomDockMode = static_cast<std::int32_t>(frame.bottomDockMode);
-				visual.bottomDockCenterMode = static_cast<std::int32_t>(
-					frame.bottomDockCenterMode);
-				visual.whiteboardActive = Inkeys::UI::Bar::WhiteboardActive();
-				visual.pptPresentationActive = Inkeys::UI::Bar::PptPresentationActive();
-				visual.currentPageHasContent = Inkeys::UI::Bar::CurrentPageHasContent();
-				previewMetadata.visualSignature =
-					Inkeys::UI::StartupPreview::BuildVisualSignature(signatureInputs);
-				const bool visualKeyChanged = !state.startupVisualCompatibilityReady
-					|| state.startupVisualWidth != previewWidth
-					|| state.startupVisualHeight != previewHeight
-					|| !Inkeys::UI::StartupPreview::IsCompatible(
-						previewMetadata, state.startupVisualCompatibility);
-				if (visualKeyChanged)
-				{
-					// 仅真实像素语义变化推进 revision；补拍 render-once 不得重置稳定计时。
-					if (state.startupVisualCompatibilityReady)
-						++state.startupVisualRevision;
-					state.startupVisualCompatibility =
-						Inkeys::UI::StartupPreview::MakeCompatibility(previewMetadata);
-					state.startupVisualWidth = previewWidth;
-					state.startupVisualHeight = previewHeight;
-					state.startupVisualCompatibilityReady = true;
-					state.startupLastVisualChange = context.frameTime;
-				}
-				previewMetadata.captureRevision = state.startupVisualRevision;
-			}
-			const auto ProgressVisible = [](BarUiValueClass& value) noexcept
-				{
-					return static_cast<double>(value.val) > 0.000001
-						|| static_cast<double>(value.tar) > 0.000001;
-				};
-			const auto PressScaleTransient = [](BarUiValueClass& value) noexcept
-				{
-					return !value.IsSame()
-						|| abs(static_cast<double>(value.val) - 1.0) > 0.000001
-						|| abs(static_cast<double>(value.tar) - 1.0) > 0.000001;
-				};
-			bool buttonInteractionVisual = false;
-			const int buttonCount = static_cast<int>(state.barButtonSet.tot);
-			for (int index = 0; index < buttonCount && !buttonInteractionVisual; ++index)
-			{
-				auto* button = state.barButtonSet.buttonList.Get(index);
-				buttonInteractionVisual = button
-					&& (button->hoverStage != BarButtonHoverStageEnum::None
-						|| button->state->emph == BarWidgetEmphasize::Pressed
-						|| PressScaleTransient(button->pressScale));
-			}
-			const bool accessoryHoverVisual =
-				state.drawAttributeBrushHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeSoftPenHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeLaserHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeHighlightHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributePenTypeExtensionHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributePenTypeFreeLineHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeThicknessFineHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeThicknessMediumHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeThicknessCoarseHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeThicknessAdjustHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeAnnotationCloseHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeOverflowCloseHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeColorPickerToneHoverStage != BarButtonHoverStageEnum::None
-				|| state.drawAttributeColorPickerCloseHoverStage != BarButtonHoverStageEnum::None
-				|| state.moreCloseHoverStage != BarButtonHoverStageEnum::None
-				|| state.geometryStraightLineHoverStage != BarButtonHoverStageEnum::None
-				|| state.geometryRectangleHoverStage != BarButtonHoverStageEnum::None
-				|| state.geometryThicknessFineHoverStage != BarButtonHoverStageEnum::None
-				|| state.geometryThicknessMediumHoverStage != BarButtonHoverStageEnum::None
-				|| state.geometryThicknessCoarseHoverStage != BarButtonHoverStageEnum::None
-				|| state.geometryCloseHoverStage != BarButtonHoverStageEnum::None;
-			const bool accessoryPressVisual =
-				PressScaleTransient(state.drawAttributeColorPickerEntryPressScale)
-				|| PressScaleTransient(state.drawAttributeBrushPressScale)
-				|| PressScaleTransient(state.drawAttributeSoftPenPressScale)
-				|| PressScaleTransient(state.drawAttributeLaserPressScale)
-				|| PressScaleTransient(state.drawAttributeHighlightPressScale)
-				|| PressScaleTransient(state.drawAttributePenTypeExtensionPressScale)
-				|| PressScaleTransient(state.drawAttributePenTypeFreeLinePressScale)
-				|| PressScaleTransient(state.drawAttributeThicknessFinePressScale)
-				|| PressScaleTransient(state.drawAttributeThicknessMediumPressScale)
-				|| PressScaleTransient(state.drawAttributeThicknessCoarsePressScale)
-				|| PressScaleTransient(state.drawAttributeThicknessAdjustPressScale)
-				|| PressScaleTransient(state.drawAttributeAnnotationClosePressScale)
-				|| PressScaleTransient(state.drawAttributeOverflowClosePressScale)
-				|| PressScaleTransient(state.drawAttributeColorPickerTonePressScale)
-				|| PressScaleTransient(state.drawAttributeColorPickerClosePressScale)
-				|| PressScaleTransient(state.moreClosePressScale)
-				|| PressScaleTransient(state.geometryStraightLinePressScale)
-				|| PressScaleTransient(state.geometryRectanglePressScale)
-				|| PressScaleTransient(state.geometryThicknessFinePressScale)
-				|| PressScaleTransient(state.geometryThicknessMediumPressScale)
-				|| PressScaleTransient(state.geometryThicknessCoarsePressScale)
-				|| PressScaleTransient(state.geometryClosePressScale)
-				|| state.barState.drawAttributeBar.colorPickerPointerPressed
-				|| state.barState.drawAttributeBar.thicknessSliderPressed
-				|| ReadColorPickerEntryPressed();
-			const bool panelOrPopupVisible = state.barState.drawAttribute
-				|| state.barState.geometryAttribute
-				|| state.barState.moreExpanded
-				|| ProgressVisible(state.morePanelProgress)
-				|| ProgressVisible(state.drawAttributeThicknessPreviewPopupProgress)
-				|| ProgressVisible(state.drawAttributeAnnotationPopupProgress)
-				|| ProgressVisible(state.drawAttributeOverflowPopupProgress)
-				|| ProgressVisible(state.drawAttributePenTypeMenuProgress)
-				|| ProgressVisible(state.drawAttributeColorPickerProgress)
-				|| ProgressVisible(state.drawAttributeColorPickerHoldOpacity)
-				|| ProgressVisible(state.drawAttributeColorPickerHoldRingOpacity)
-				|| ProgressVisible(state.bottomDockTargetIndicatorProgress)
-				|| state.bottomDockTargetIndicatorBoundsVisible;
-			const bool cacheTransient = (pointerOverBar
-				&& !Inkeys::UI::StartupPreview::DeveloperCaptureRequested())
-				|| debugModeEnabled
-				|| GetCapture() != nullptr
-				|| true == BarAtomic::sustainFlag
-				|| frame.bottomDockDragActive
-				|| owner_.directWindowDragPhase.load(memory_order_acquire)
-					!= BarDirectWindowDragPhase::Idle
-				|| reserveAnimationEnvelope
-				|| buttonInteractionVisual
-				|| accessoryHoverVisual
-				|| accessoryPressVisual
-				|| panelOrPopupVisible;
-			if (state.startupCacheTransient && !cacheTransient)
-				state.startupLastVisualChange = context.frameTime;
-			state.startupCacheTransient = cacheTransient;
-			const bool stableForCache = previewFrameReady && !cacheTransient
-				&& context.frameTime - state.startupLastVisualChange
-					>= chrono::milliseconds(750);
-			const bool publishStableCache = stableForCache
-				&& state.startupPublishedStableRevision != state.startupVisualRevision;
-			if (Inkeys::UI::StartupPreview::AcceptsCommittedBarFrames()
-				&& (Inkeys::UI::StartupPreview::IsActive() || publishStableCache)
-				&& previewFrameReady
-				&& state.spec.GetTargetBitmap())
-			{
-				const auto proxySize = D2D1::SizeU(
-					static_cast<UINT32>(presentedSize.cx),
-					static_cast<UINT32>(presentedSize.cy));
-				const auto proxyProperties = D2D1::BitmapProperties1(
-					D2D1_BITMAP_OPTIONS_NONE,
-					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-						D2D1_ALPHA_MODE_PREMULTIPLIED),
-					static_cast<FLOAT>(state.activeDisplayDpi),
-					static_cast<FLOAT>(state.activeDisplayDpi));
-				Microsoft::WRL::ComPtr<ID2D1Bitmap1> proxy;
-				HRESULT proxyResult = barDeviceContext->CreateBitmap(proxySize,
-					nullptr, 0, &proxyProperties, &proxy);
-				const auto targetSize = state.spec.GetTargetBitmapSize();
-				const D2D1_RECT_U targetCrop{
-					static_cast<UINT32>((std::clamp)(candidateSource.x, 0L,
-						static_cast<LONG>(targetSize.width))),
-					static_cast<UINT32>((std::clamp)(candidateSource.y, 0L,
-						static_cast<LONG>(targetSize.height))),
-					static_cast<UINT32>((std::clamp)(candidateSource.x + presentedSize.cx,
-						0L, static_cast<LONG>(targetSize.width))),
-					static_cast<UINT32>((std::clamp)(candidateSource.y + presentedSize.cy,
-						0L, static_cast<LONG>(targetSize.height))) };
-				if (SUCCEEDED(proxyResult)
-					&& targetCrop.right - targetCrop.left == proxySize.width
-					&& targetCrop.bottom - targetCrop.top == proxySize.height)
-					proxyResult = proxy->CopyFromBitmap(nullptr,
-						state.spec.GetTargetBitmap(), &targetCrop);
-				else if (SUCCEEDED(proxyResult)) proxyResult = E_BOUNDS;
-
-				if (SUCCEEDED(proxyResult))
-				{
-					Inkeys::UI::StartupPreview::CommittedBarFrame committedFrame;
-					committedFrame.deviceGeneration = epoch.generation;
-					committedFrame.visualRevision = state.startupVisualRevision;
-					committedFrame.stableForCache = stableForCache;
-					committedFrame.sourceCrop = { 0, 0,
-						proxySize.width, proxySize.height };
-					committedFrame.viewport = candidateViewport;
-					committedFrame.screenDestination = committedWindowScreenBounds;
-					committedFrame.monitorBounds = state.activeMonitorBounds;
-					committedFrame.monitorWorkArea = state.activeWorkArea;
-					committedFrame.bitmap = proxy;
-					committedFrame.metadata = previewMetadata;
-					auto& metadata = committedFrame.metadata;
-
-					if (stableForCache)
-					{
-						const auto stagingProperties = D2D1::BitmapProperties1(
-							D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-							D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-								D2D1_ALPHA_MODE_PREMULTIPLIED),
-							static_cast<FLOAT>(state.activeDisplayDpi),
-							static_cast<FLOAT>(state.activeDisplayDpi));
-						Microsoft::WRL::ComPtr<ID2D1Bitmap1> staging;
-						HRESULT stagingResult = barDeviceContext->CreateBitmap(proxySize,
-							nullptr, 0, &stagingProperties, &staging);
-						if (SUCCEEDED(stagingResult))
-							stagingResult = staging->CopyFromBitmap(nullptr, proxy.Get(), nullptr);
-						D2D1_MAPPED_RECT mapped{};
-						if (SUCCEEDED(stagingResult))
-							stagingResult = staging->Map(D2D1_MAP_OPTIONS_READ, &mapped);
-						if (SUCCEEDED(stagingResult))
-						{
-							try
-							{
-								committedFrame.cpuPixels.resize(
-									static_cast<std::size_t>(metadata.payloadSize));
-								for (UINT32 row = 0; row < proxySize.height; ++row)
-									std::memcpy(committedFrame.cpuPixels.data()
-										+ static_cast<std::size_t>(row) * metadata.stride,
-										mapped.bits + static_cast<std::size_t>(row) * mapped.pitch,
-										metadata.stride);
-							}
-							catch (...)
-							{
-								committedFrame.cpuPixels.clear();
-								committedFrame.stableForCache = false;
-							}
-							staging->Unmap();
-						}
-						else committedFrame.stableForCache = false;
-					}
-					const bool cachePixelsReady = committedFrame.stableForCache
-						&& !committedFrame.cpuPixels.empty();
-					const bool frameAccepted =
-						Inkeys::UI::StartupPreview::PublishCommittedBarFrame(
-							std::move(committedFrame));
-					if (publishStableCache && cachePixelsReady && frameAccepted)
-						state.startupPublishedStableRevision = state.startupVisualRevision;
-				}
-			}
 			owner_.directWindowPresentedTranslationX.store(
 				directTranslation.x, memory_order_release);
 			owner_.directWindowPresentedTranslationY.store(
@@ -13235,19 +12925,7 @@ BarRenderLoopCoordinator::RenderFrame(
 	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_, context);
 	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Idle;
 	if (result == BarRenderLoopStageResult::DeviceLost) return FrameResult::DeviceLost;
-	if (result == BarRenderLoopStageResult::Idle)
-	{
-		const bool stableSnapshotPending =
-			Inkeys::UI::StartupPreview::AcceptsCommittedBarFrames()
-			&& !state.startupCacheTransient
-			&& state.startupPublishedStableRevision != state.startupVisualRevision;
-		if (!stableSnapshotPending) return FrameResult::Idle;
-		if (context.frameTime - state.startupLastVisualChange < chrono::milliseconds(750))
-			return FrameResult::Continue;
-		// debounce 到期后补一次完整提交，CPU staging 只读取已成功呈现的 crop。
-		BarAtomic::renderOnceFlag = true;
-		return FrameResult::Continue;
-	}
+	if (result == BarRenderLoopStageResult::Idle) return FrameResult::Idle;
 	if (result == BarRenderLoopStageResult::Continue) return FrameResult::Retry;
 	PaceFrame(state, frameOrdinal_);
 	frameOrdinal_ = 2;

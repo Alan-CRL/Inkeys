@@ -12,6 +12,8 @@ module;
 
 export module Inkeys.Other.Config;
 
+import Inkeys.UI.Bar.Metrics;
+
 export namespace Inkeys
 {
 	enum class ConfigUploadMode
@@ -277,7 +279,8 @@ GROUP(UI, \
 			) \
 			GROUP(UI3, \
 				GROUP(StartupPreview, \
-					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
 				) \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
