@@ -25,7 +25,12 @@
 /InkeysHeadlessTests/Cache/
 /PptCOM/Cache/
 
-# Agents
+# Trellis machine-local state
+# Platform adapters are generated per machine; keep the shared .trellis core in Git.
+# The template hash manifest also contains per-machine platform ownership state,
+/.trellis/.template-hashes.json
+
+# Local AI agent integrations
 /.agents/
 /.codex/
 /.claude/
