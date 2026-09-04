@@ -892,3 +892,46 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Status
 
 [IN PROGRESS] **Automated validation passed; GUI acceptance pending**
+
+
+## Session 28: 完成启动预览与快速显示主栏
+<!-- trellis-session: v=2 fp=a3cc98038916f544 -->
+
+**Date**: 2026-09-04
+**Task**: 完成启动预览与快速显示主栏
+**Branch**: `draw`
+
+### Summary
+
+完成程序化启动预览、真实进度、可靠交接、动画与失败状态，并经人工观察确认基本稳定后归档任务。
+
+### Main Changes
+
+- 实现 Topmost、无激活的分层启动预览及与正式 Bar 的 committed-frame 交接。
+- 完善斜向反光、进度动画、失败颜色过渡和自绘 MessageBox 激活强调。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b7edaa81` | feat: add startup preview fast display |
+| `70081123` | fix: refresh startup preview layered surface |
+| `1e563c30` | fix: show startup preview progress reliably |
+| `a0835ba3` | test: pace startup preview progress for manual testing |
+| `4fcd398b` | feat: simplify startup preview fast display |
+| `9e27bd26` | fix: refine startup preview handoff and shimmer |
+| `b9397105` | fix: align startup preview surface and shimmer |
+| `d9346c3f` | fix: animate startup preview handoff and progress |
+| `96bf8c8c` | fix: refine startup failure and dialog emphasis |
+
+### Testing
+
+- [OK] 当前 x64 设备完整 Debug|x64 Solution 构建通过，InkeysHeadlessTests.exe --no-window 通过；用户人工测试未发现明显问题。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 功能稳定运行一段时间后，移除 INKEYS_STARTUP_PREVIEW_MANUAL_DELAY 和 INKEYS_STARTUP_PREVIEW_RETRY_FAILURE 对应的临时调试解析、分支与测试。

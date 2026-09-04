@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
-- **Last Active**: 2026-08-13
+- **Total Sessions**: 28
+- **Last Active**: 2026-09-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~672 | Active |
+| `journal-1.md` | ~937 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-09-04 | 完成启动预览与快速显示主栏 | `b7edaa81`, `70081123`, `1e563c30`, `a0835ba3`, `4fcd398b`, `9e27bd26`, `b9397105`, `d9346c3f`, `96bf8c8c` | `draw` |
 | 26 | 2026-08-13 | UI3 Bar dynamic viewport and drag completion | `6ded57c` | `draw` |
 | 25 | 2026-08-12 | UI3 展开按钮点击合并 | `b43dc640` | `draw` |
 | 24 | 2026-08-12 | 修复触摸重复转译与 Setting 窗口合同 | `664ab92`, `e7f42dc` | `draw` |
