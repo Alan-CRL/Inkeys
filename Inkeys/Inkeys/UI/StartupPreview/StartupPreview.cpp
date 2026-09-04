@@ -45,8 +45,6 @@ namespace Inkeys::UI::StartupPreview
 		constexpr UINT OwnerTopmostMessage = WM_APP + 0x353;
 		constexpr UINT OwnerMoveMessage = WM_APP + 0x354;
 		constexpr UINT OwnerStopMessage = WM_APP + 0x355;
-		constexpr auto PreviewFadeDuration = 160ms;
-		constexpr auto PreviewFadeInDuration = 180ms;
 		constexpr auto HandoffFailureLimit = 750ms;
 
 		[[nodiscard]] int Width(const RECT& bounds) noexcept
@@ -397,9 +395,12 @@ namespace Inkeys::UI::StartupPreview
 			std::chrono::steady_clock::time_point barFadeStart{};
 			std::chrono::steady_clock::time_point firstHandoffFailure{};
 			ProgressVisualReducer progressVisual;
+			HandoffTimingReducer handoffTiming;
 			Phase phase = Phase::Preparing;
 			std::uint8_t committedPreviewAlpha = 0;
 			std::uint8_t fadeStartAlpha = 255;
+			std::chrono::milliseconds handoffFadeDuration =
+				StartupPreviewQuickHandoffDuration;
 			OrderedHandoffReducer handoff;
 			std::atomic_bool active = false;
 			std::atomic_bool registered = false;
@@ -601,7 +602,7 @@ namespace Inkeys::UI::StartupPreview
 			resources.context->SetAntialiasMode(previous);
 		}
 
-		void DrawProgress(Runtime& runtime,
+		[[nodiscard]] bool DrawProgress(Runtime& runtime,
 			const Inkeys::Startup::Snapshot& snapshot,
 			std::chrono::steady_clock::time_point now, bool success,
 			float contentOpacity)
@@ -609,14 +610,14 @@ namespace Inkeys::UI::StartupPreview
 			const bool failed = snapshot.failed || runtime.phase == Phase::Failure;
 			const auto visual = runtime.progressVisual.Update(
 				now, snapshot.actualRatio, success, failed);
-			if (contentOpacity <= 0.f || visual.opacity <= 0.001) return;
+			if (contentOpacity <= 0.f || visual.opacity <= 0.001) return false;
 			const float scale = DpiScale(runtime);
 			const float width = static_cast<float>(runtime.resources.width);
 			const float height = static_cast<float>(runtime.resources.height);
 			// 窄窗口保留两侧各 12 DIP，未来仅显示主按钮时进度条仍可辨认。
 			const float progressWidth = (std::min)(192.f * scale,
 				(std::max)(0.f, width - 24.f * scale));
-			if (progressWidth <= 0.f) return;
+			if (progressWidth <= 0.f) return false;
 			const float centerX = width * 0.5f;
 			const float centerY = height * 0.5f;
 			const float trackHeight = (std::max)(1.f, scale);
@@ -633,7 +634,7 @@ namespace Inkeys::UI::StartupPreview
 				runtime.resources.progressTrack.Get());
 			const float fillWidth = progressWidth
 				* static_cast<float>(visual.displayedRatio);
-			if (fillWidth <= 0.f) return;
+			if (fillWidth <= 0.f) return true;
 			const auto fill = D2D1::RoundedRect(
 				D2D1::RectF(track.rect.left, centerY - indicatorHeight / 2.f,
 					track.rect.left + fillWidth, centerY + indicatorHeight / 2.f),
@@ -642,6 +643,7 @@ namespace Inkeys::UI::StartupPreview
 				: runtime.resources.progressFill.Get();
 			brush->SetOpacity(opacity);
 			runtime.resources.context->FillRoundedRectangle(&fill, brush);
+			return true;
 		}
 
 		void RequestAutomaticStop(const std::shared_ptr<Runtime>& runtime)
@@ -717,6 +719,9 @@ namespace Inkeys::UI::StartupPreview
 				const auto handoff = runtime->handoff.BarAlpha0Committed(success);
 				if (handoff.requestPreviewFadeOut)
 				{
+					// handoff 启动时冻结档位，后续提交不再改变双方时长。
+					runtime->handoffFadeDuration =
+						runtime->handoffTiming.FreezeDuration();
 					runtime->phase = Phase::FadingOut;
 					runtime->fadeStart = frame.frameTime;
 					runtime->fadeStartAlpha = runtime->committedPreviewAlpha;
@@ -745,15 +750,21 @@ namespace Inkeys::UI::StartupPreview
 			else if (runtime->shownTime != std::chrono::steady_clock::time_point{})
 				windowAlpha = ResolveFadeInAlpha(
 					std::chrono::duration_cast<std::chrono::milliseconds>(
-						frame.frameTime - runtime->shownTime), PreviewFadeInDuration);
+						frame.frameTime - runtime->shownTime),
+					StartupPreviewFadeInDuration);
 			if (runtime->phase == Phase::FadingOut
-				|| runtime->phase == Phase::ExitFadingOut
 				|| runtime->phase == Phase::WaitingForOpaqueBar)
 			{
 				windowAlpha = ResolveFadeOutAlphaFrom(runtime->fadeStartAlpha,
 					std::chrono::duration_cast<std::chrono::milliseconds>(
-						frame.frameTime - runtime->fadeStart), PreviewFadeDuration);
+						frame.frameTime - runtime->fadeStart),
+					runtime->handoffFadeDuration);
 			}
+			else if (runtime->phase == Phase::ExitFadingOut)
+				windowAlpha = ResolveFadeOutAlphaFrom(runtime->fadeStartAlpha,
+					std::chrono::duration_cast<std::chrono::milliseconds>(
+						frame.frameTime - runtime->fadeStart),
+					StartupPreviewExitFadeOutDuration);
 			if (runtime->phase == Phase::Failure) windowAlpha = 255;
 
 			auto& resources = runtime->resources;
@@ -775,7 +786,8 @@ namespace Inkeys::UI::StartupPreview
 			resources.context->DrawRoundedRectangle(&rounded,
 				resources.frameStroke.Get(), stroke);
 			DrawShimmer(*runtime, frame, 1.f);
-			DrawProgress(*runtime, snapshot, frame.frameTime, success, 1.f);
+			const bool progressVisible = DrawProgress(
+				*runtime, snapshot, frame.frameTime, success, 1.f);
 
 			const auto presentOwner = runtime->owner.Snapshot();
 			if (!presentOwner.window || !SameBounds(presentOwner.bounds, owner.bounds))
@@ -819,6 +831,9 @@ namespace Inkeys::UI::StartupPreview
 			}
 			runtime->firstHandoffFailure = {};
 			runtime->committedPreviewAlpha = windowAlpha;
+			// 只有真实 ULW 成功的可见帧才有资格切换慢速 handoff 档位。
+			runtime->handoffTiming.PreviewFrameCommitted(
+				progressVisible, windowAlpha);
 
 			if (!runtime->firstFrameCommitted.exchange(true,
 				std::memory_order_acq_rel))
@@ -858,7 +873,8 @@ namespace Inkeys::UI::StartupPreview
 					runtime->barFadeStart = frame.frameTime;
 				const auto requestedAlpha = ResolveFadeInAlpha(
 					std::chrono::duration_cast<std::chrono::milliseconds>(
-						frame.frameTime - runtime->barFadeStart), PreviewFadeDuration);
+						frame.frameTime - runtime->barFadeStart),
+					runtime->handoffFadeDuration);
 				if (runtime->options.requestBarAlpha)
 					runtime->options.requestBarAlpha(requestedAlpha);
 			}

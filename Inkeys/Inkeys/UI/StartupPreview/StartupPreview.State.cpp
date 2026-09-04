@@ -295,6 +295,25 @@ namespace Inkeys::UI::StartupPreview
 		return Result(false, true, false);
 	}
 
+	void HandoffTimingReducer::PreviewFrameCommitted(bool progressVisible,
+		std::uint8_t previewAlpha) noexcept
+	{
+		if (!frozen_ && progressVisible && previewAlpha > 0)
+			progressEverCommittedVisible_ = true;
+	}
+
+	std::chrono::milliseconds HandoffTimingReducer::FreezeDuration() noexcept
+	{
+		if (!frozen_)
+		{
+			frozen_ = true;
+			frozenDuration_ = progressEverCommittedVisible_
+				? StartupPreviewProgressHandoffDuration
+				: StartupPreviewQuickHandoffDuration;
+		}
+		return frozenDuration_;
+	}
+
 	void ProgressVisualReducer::MarkPreviewShown(
 		std::chrono::steady_clock::time_point now) noexcept
 	{
@@ -302,27 +321,81 @@ namespace Inkeys::UI::StartupPreview
 			previewShownTime_ = now;
 	}
 
+	double ProgressVisualReducer::SampleDisplayedRatio(
+		std::chrono::steady_clock::time_point now) noexcept
+	{
+		if (!ratioAnimating_ || now <= ratioStartTime_)
+			return displayedRatio_;
+		const double phase = std::clamp(std::chrono::duration<double>(
+			now - ratioStartTime_).count()
+			/ std::chrono::duration<double>(
+				StartupPreviewProgressAnimationDuration).count(), 0.0, 1.0);
+		const double eased = phase * phase * (3.0 - 2.0 * phase);
+		displayedRatio_ = ratioStart_
+			+ (ratioTarget_ - ratioStart_) * eased;
+		if (phase >= 1.0)
+		{
+			displayedRatio_ = ratioTarget_;
+			ratioStart_ = ratioTarget_;
+			ratioAnimating_ = false;
+		}
+		return displayedRatio_;
+	}
+
+	void ProgressVisualReducer::RetargetRatio(
+		std::chrono::steady_clock::time_point now, double targetRatio) noexcept
+	{
+		targetRatio = std::clamp(targetRatio, 0.0, 1.0);
+		(void)SampleDisplayedRatio(now);
+		if (targetRatio < displayedRatio_)
+		{
+			// 真实进度下降时立即收紧，不能让动画短暂伪报更高进度。
+			displayedRatio_ = targetRatio;
+			ratioStart_ = targetRatio;
+			ratioTarget_ = targetRatio;
+			ratioAnimating_ = false;
+			return;
+		}
+		if (targetRatio == ratioTarget_) return;
+		ratioStart_ = displayedRatio_;
+		ratioTarget_ = targetRatio;
+		ratioStartTime_ = now;
+		ratioAnimating_ = targetRatio != displayedRatio_;
+	}
+
 	ProgressVisualSnapshot ProgressVisualReducer::Update(
 		std::chrono::steady_clock::time_point now, double actualRatio,
 		bool completed, bool failed) noexcept
 	{
+		if (!std::isfinite(actualRatio)) actualRatio = 0.0;
 		actualRatio = std::clamp(actualRatio, 0.0, 1.0);
-		displayedRatio_ = (std::min)(actualRatio,
-			displayedRatio_ + (actualRatio - displayedRatio_) * 0.24);
-		if (actualRatio < displayedRatio_) displayedRatio_ = actualRatio;
-		if (failed)
+		if (failed || failureTargetFrozen_)
 		{
+			if (!failureTargetFrozen_)
+			{
+				failureTarget_ = actualRatio;
+				failureTargetFrozen_ = true;
+			}
+			RetargetRatio(now, failureTarget_);
 			state_ = ProgressVisualState::Failure;
-			displayedRatio_ = actualRatio;
 			return { state_, displayedRatio_, 1.0, true };
 		}
+		// completed 只改变可见状态；长度仍不得超过调用方提供的真实比例。
+		RetargetRatio(now, actualRatio);
 		if (completed)
 		{
-			displayedRatio_ = 1.0;
-			const bool wasVisible = state_ != ProgressVisualState::Hidden;
-			return { wasVisible ? ProgressVisualState::Visible
-				: ProgressVisualState::Hidden, displayedRatio_,
-				wasVisible ? 1.0 : 0.0, false };
+			if (state_ == ProgressVisualState::Hidden)
+				return { state_, displayedRatio_, 0.0, false };
+			if (state_ == ProgressVisualState::FadingIn)
+			{
+				constexpr auto FadeIn = std::chrono::milliseconds(180);
+				const double phase = std::clamp(std::chrono::duration<double>(
+					now - transitionStart_).count()
+					/ std::chrono::duration<double>(FadeIn).count(), 0.0, 1.0);
+				if (phase >= 1.0) state_ = ProgressVisualState::Visible;
+				return { state_, displayedRatio_, phase, false };
+			}
+			return { state_, displayedRatio_, 1.0, false };
 		}
 
 		constexpr auto ShowDelay = std::chrono::seconds(3);

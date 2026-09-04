@@ -28,17 +28,17 @@
 - 移除图片上传、cubic、Gaussian blur、padding/effect bounds、live Bar proxy、CPU_READ staging 和 cache writer。
 - 用默认左上到右下的斜向 `FillOpacityMask` 调制多段 soft-tail shimmer；4.0 秒周期内以 2.8 秒余弦缓动扫过，再完整离屏停驻 1.2 秒；调用期间切换 `D2D1_ANTIALIAS_MODE_ALIASED` 并无条件恢复。
 - 以 Preview 首次显示本地 `steady_clock` epoch 驱动 phase；提取纯函数计算完整非零支撑的离屏起止点，并覆盖不同 width/DPI/zoom 的 phase 0/1、中点穿过 mask 与 wrap 测试；默认方向不得退化为纯水平/纯竖直。
-- 在 shimmer 后绘制 192 DIP 居中进度条，沿用 3 秒门、约 180ms 渐显和窄窗口适配。
+- 在 shimmer 后绘制 192 DIP 居中进度条，沿用 3 秒门、约 180ms opacity 渐显和窄窗口适配；长度改为 Preview 自己维护的 300ms smoothstep 时间轴，连续 retarget 且不超过 actual ratio。
 
 ### 4. ULW 与 owner 合同
 
-- 首次 Preview frame 必须以 `SourceConstantAlpha=0` 完整 ULW committed，然后 owner `SW_SHOWNOACTIVATE` 显示并渐显。
+- 首次 Preview frame 必须以 `SourceConstantAlpha=0` 完整 ULW committed，然后 owner `SW_SHOWNOACTIVATE` 显示并以 300ms 渐显。
 - 每次 ULW 显式提供 `pptDst`、`psize`、`pptSrc`；owner `SetWindowPos` 与 render thread 提交通过 presentation mutex 串行。
 - 保留 `WS_POPUP`、`WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`、`WM_MOUSEACTIVATE -> MA_NOACTIVATEANDEAT`、client click swallow；不要加入 `WS_EX_TRANSPARENT`。
 
 ### 5. 统一交接与失败恢复
 
-- 正常完成只实现 Preview committed fade-to-zero -> Bar committed alpha 0 到 255；删除 cache-valid/deblur/corrupt 分支和 progress-only fade/透明停顿。
+- 正常完成只实现 Preview committed fade-to-zero -> Bar committed alpha 0 到 255；handoff 开始时根据进度条是否曾在非零 Preview alpha 的成功 ULW 帧中 committed，冻结 300ms 或 1000ms 档位，Preview 和 Bar 使用同一档位。渐隐期间继续推进 shimmer/progress，Preview alpha 0 committed 后才启动 Bar 整窗渐显。删除 cache-valid/deblur/corrupt 分支和 progress-only fade/透明停顿。
 - 首次自动重试先整窗渐隐，保持正常颜色；最终 fatal 在红帧 committed 或有界等待后弹窗，确认后再渐隐 Preview。
 - Preview/device/ULW/handoff 失败都走有界 bypass/recovery，尽最大安全努力让 Bar committed 255 后再销毁 owner；RenderPipeline/核心启动失败维持致命。
 

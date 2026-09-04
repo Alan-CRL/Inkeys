@@ -50,7 +50,7 @@ mini config 只读取：
 7. Bar 首帧以 requested alpha 0 进入完整 ULW transaction。GetDC、ULW、ReleaseDC、EndDraw 和 `presentCompletion.IsCommitted()` 全部成功后才更新 committed alpha、报告 100% 并发布目标总宽度。
 8. Preview 已显示且进度未完成满 3 秒时再淡入进度条；完成后执行顺序交接。所有等待有界。
 
-进度 tracker 仍使用一次性 milestone bit/CAS 或等价短锁，重复、乱序、并发报告只生效一次。显示 ratio 只能 `min(eased, actual)`，时间只控制进度条门和动画相位。失败固定首个错误快照，后续完成报告不再增加 ratio。
+进度 tracker 仍使用一次性 milestone bit/CAS 或等价短锁，重复、乱序、并发报告只生效一次。显示 ratio 只能追赶且不得超过 actual ratio。`ProgressVisualReducer` 以 current/start/target/start-time 维护 300ms smoothstep 时间轴；新 milestone 先采样当前值再连续重定向，不能使用每帧固定比例追赶。完成只更新到调用方提供的真实目标，不直接跳 1；失败立即变红并冻结首次失败 ratio，后续帧继续向该值动画。
 
 ## 4. Preview 窗口与呈现
 
@@ -68,7 +68,7 @@ Preview target/DIB 使用 32-bpp BGRA8 premultiplied alpha。每帧先画静态�
 
 ## 6. 进度条与 alpha 状态机
 
-首帧 Preview ULW committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复调用不得重置计时。满 3 秒仍未完成时约 180ms 渐显 192 DIP 双层 Fluent 风格进度条；位置以完整外包络内容矩形居中，窄窗口按可用宽度收缩。失败立即显示当前真实 ratio 的红色进度（即使未越过 3 秒门），但先以 ULW committed 或有界等待保证错误帧机会。
+首帧 Preview ULW committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复调用不得重置计时。Preview 整窗固定渐显 300ms。满 3 秒仍未完成时进度条约 180ms 渐显，长度以 300ms smoothstep 动画追赶真实 ratio；位置以完整外包络内容矩形居中，窄窗口按可用宽度收缩。失败立即显示红色（即使未越过 3 秒门），但长度继续向首次失败时冻结的真实 ratio 动画，并先以 ULW committed 或有界等待保证错误帧机会。
 
 Preview 与 Bar 的 presentation alpha 分开保存 requested/attempted/committed：setter/queue 成功不算屏幕提交；任一 GetDC/ULW/ReleaseDC/EndDraw 失败都保留旧 committed，并请求 full-window retry。alpha demand 与业务 dirty transaction 分离。无 Preview 时 Bar 仍以 255；有 Preview 时 Bar 先以 0 committed。
 
@@ -77,9 +77,12 @@ Preview 与 Bar 的 presentation alpha 分开保存 requested/attempted/committe
 正常完成：
 
 1. Bar alpha 0 已 committed，Preview 继续 shimmer。
-2. Preview 整窗按自己的 committed ULW fade 到 0；fade 期间 Bar 不上升。
-3. Preview alpha 0 committed 后，Bar 逐步请求 0 到 255，每一步只在对应 committed frame 后推进。
-4. Bar alpha 255 committed 后，owner 才 hide/destroy Preview；不得两个 layered HWND 长时间以中间 alpha 同时可见，也不插入透明停顿。
+2. `HandoffTimingReducer` 只在某帧实际绘制进度条、Preview window alpha 大于 0 且完整 ULW transaction committed 后记录 sticky `progressEverCommittedVisible`。handoff 开始时冻结档位：未记录时 300ms，已记录时 1000ms。
+3. Preview 整窗按冻结时长 fade 到 0；fade 期间 Bar 不上升，shimmer 相位和 progress ratio 每帧继续推进并重绘。
+4. Preview alpha 0 committed 后，Bar 按同一冻结时长逐步请求 0 到 255；整窗 `SourceConstantAlpha` 同时覆盖 MainBar 和主按钮，每一步只在对应 committed frame 后推进。
+5. Bar alpha 255 committed 后，owner 才 hide/destroy Preview；不得两个 layered HWND 长时间以中间 alpha 同时可见，也不插入透明停顿。
+
+Preview 未启用或未成功启动时，Bar 保持既有 alpha 255 直接显示，不建立渐显时间轴。正常 handoff 的 300/1000ms 档位不扩展到 failure bypass/recovery；退出淡出继续使用独立 160ms 安全收尾时长。
 
 首次自动重试先按同一 Preview 整窗 fade-out，再重启/重试，颜色保持普通。最终 fatal 冻结进度、提交红帧或达到既有上限后显示错误对话框；Preview 留在对话框后面，用户确认后再 fade/destroy。Preview、D2D、ULW、device loss 或 handoff 超时均进入有界 recovery，尽最大安全努力请求/确认 Bar 255，再清理 Preview；无法建立 Preview 时直接使用现有 MessageBox fallback。
 

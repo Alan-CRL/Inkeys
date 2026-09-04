@@ -20,8 +20,8 @@
 - **PR-10 Alpha/ULW**：D2D/DIB 为 32-bpp BGRA8 premultiplied alpha；ULW 使用 `AC_SRC_OVER`、`AC_SRC_ALPHA` 和 Preview 的 `SourceConstantAlpha`。每次 `UpdateLayeredWindowIndirect` 都显式提供 `pptDst`、`psize`、`pptSrc`，并与 owner geometry snapshot 通过 mutex 串行。
 - **PR-11 Shimmer**：先缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态形状 mask，再以 `FillOpacityMask` 调制默认左上到右下的斜向多段低强度渐变。调用时切换到 `D2D1_ANTIALIAS_MODE_ALIASED`，结束时无条件恢复；进度条在其后绘制。
 - **PR-12 无跳闪动画**：相位以 Preview 首次显示的本地 `steady_clock` epoch 计算。默认 4.0 秒周期中前 2.8 秒以余弦曲线两端慢、中间快地扫过，后 1.2 秒在完整离屏端停驻，以同时降低移动速度并拉长两次经过的间隔。纯函数根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算离屏起止点；默认 shimmer 不得退化为纯水平或纯竖直。phase 0/1 的支撑完全在窗口外，wrap 两侧均为 base-only。
-- **PR-13 进度条**：从 Preview 首帧 ULW 成功 committed 并请求 owner 显示开始计时。满 3 秒仍未完成才以约 180ms 显示现有居中 Fluent 风格进度条；3 秒内完成不显示。进度条在 shimmer 后最后合成，使用真实 ratio。
-- **PR-14 顺序交接**：Bar 先以 presentation alpha 0 committed；正常完成时 Preview 整窗以 committed alpha 渐隐到 0，紧接着 Bar 从 committed alpha 0 渐显到 255。只有 Bar alpha 255 committed 后才隐藏/销毁 Preview；不做双 layered HWND 的中间 alpha cross-fade 或人为透明停顿。
+- **PR-13 进度条**：从 Preview 首帧 ULW 成功 committed 并请求 owner 显示开始计时。满 3 秒仍未完成才以约 180ms 显示现有居中 Fluent 风格进度条；3 秒内完成不显示。长度由 Preview 自己维护的 300ms smoothstep 时间轴追赶真实 ratio，新目标从当前插值值连续重定向，完成和失败均不得瞬跳或超过 actual ratio；失败颜色立即变红并冻结首次失败目标。进度条在 shimmer 后最后合成。
+- **PR-14 顺序交接**：Preview 首次显示固定渐显 300ms。Bar 先以 presentation alpha 0 committed；正常完成时，若从未有进度条实际可见帧通过 Preview ULW committed，则 Preview 渐隐和正式 Bar 整窗渐显均为 300ms；若曾 committed 可见进度条，则两者均为 1000ms。档位在 handoff 开始时冻结；Preview 渐隐期间 shimmer 与进度长度动画继续推进，直到 Preview alpha 0 committed，之后才让包含主按钮的 Bar 从 committed alpha 0 渐显到 255。只有 Bar alpha 255 committed 后才隐藏/销毁 Preview；不做 cross-fade 或透明停顿。Preview 未启用或启动失败时 Bar 直接以 alpha 255 显示，不渐显。
 - **PR-15 失败/重试**：最终 fatal 时冻结进度，错误进度条立即变红；先等错误帧 committed 或达到有界上限，再显示现有错误对话框，确认后才让 Preview 渐隐。首次自动重试保持普通颜色并先渐隐。Preview 失效时使用既有 MessageBox fallback，Bar 尽最大安全努力恢复到 255 可见。
 - **PR-16 首帧宽度回写**：首个完整 Bar frame committed 后发布有限的 `expandedTotalWidthDip = mainButton->GetW() + 10.0 + layoutTotalWidth`。render thread 只发布去重后的普通 `double`；主线程或现有配置安全路径在值有效且有实质变化时写入 `main.json`，失败只记录并忽略。
 - **PR-17 测试钩子**：保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和 `--startup-preview-smoke`。钩子未启用时不得拖慢正常启动，也不得让 RenderPipeline/Draw3 callback thread sleep。
@@ -60,9 +60,9 @@
 - [ ] 设置默认开启且下次启动生效；关闭后无 Preview。
 - [ ] 只有最终进程有一个 T0 和一个 Preview owner。
 - [ ] 默认几何可推导到 MainBar `380 DIP`、完整外包络 `470 DIP`；坏缓存值都回退 470。
-- [ ] 首帧以 ULW `SourceConstantAlpha=0` committed 后才无激活显示，之后 alpha 单调渐显。
+- [ ] 首帧以 ULW `SourceConstantAlpha=0` committed 后才无激活显示，之后以 300ms 单调渐显。
 - [ ] 深色圆角占位、静态 mask、offscreen shimmer 和最后合成的进度条均满足颜色、alpha、周期与几何合同。
-- [ ] 正常 handoff 为 Preview committed 0 后 Bar committed 255；失败恢复到正式 Bar 可见。
+- [ ] 正常 handoff 按 committed-visible 历史选择并冻结 300/1000ms 档位，Preview committed 0 后 Bar 才按同档位渐显到 committed 255；渐隐期间 shimmer/progress 不停，失败恢复到正式 Bar 可见。
 - [ ] 首帧宽度回写使用 target `GetW()`，且不在 render thread 做 I/O。
 - [ ] smoke/headless/static/build 结果只在本轮真实执行后记录；未执行的架构、Win7、DPI、多屏和人工输入测试单独列出。
 

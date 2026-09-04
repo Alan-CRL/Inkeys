@@ -240,19 +240,25 @@ int RunStartupPreviewStateTests()
 		++failures;
 
 	std::uint8_t previous = 0;
-	for (int elapsed = 0; elapsed <= 180; ++elapsed)
+	for (int elapsed = 0; elapsed <= 300; ++elapsed)
 	{
 		const auto alpha = ResolveFadeInAlpha(
-			std::chrono::milliseconds(elapsed), 180ms);
+			std::chrono::milliseconds(elapsed), StartupPreviewFadeInDuration);
 		if (!Expect(alpha >= previous, "preview fade-in alpha is monotonic")) ++failures;
 		previous = alpha;
 	}
-	if (!Expect(ResolveFadeInAlpha(0ms, 180ms) == 0
-		&& ResolveFadeInAlpha(180ms, 180ms) == 255
-		&& ResolveFadeOutAlpha(0ms, 160ms) == 255
-		&& ResolveFadeOutAlpha(160ms, 160ms) == 0
-		&& ResolveFadeOutAlphaFrom(96, 0ms, 160ms) == 96
-		&& ResolveFadeOutAlphaFrom(96, 160ms, 160ms) == 0,
+	if (!Expect(ResolveFadeInAlpha(0ms, StartupPreviewFadeInDuration) == 0
+		&& ResolveFadeInAlpha(300ms, StartupPreviewFadeInDuration) == 255
+		&& ResolveFadeOutAlpha(0ms, StartupPreviewQuickHandoffDuration) == 255
+		&& ResolveFadeOutAlpha(300ms, StartupPreviewQuickHandoffDuration) == 0
+		&& ResolveFadeOutAlphaFrom(96, 0ms,
+			StartupPreviewProgressHandoffDuration) == 96
+		&& ResolveFadeOutAlphaFrom(96, 1000ms,
+			StartupPreviewProgressHandoffDuration) == 0
+		&& ResolveFadeOutAlpha(159ms,
+			StartupPreviewExitFadeOutDuration) > 0
+		&& ResolveFadeOutAlpha(160ms,
+			StartupPreviewExitFadeOutDuration) == 0,
 		"fade helpers have exact endpoints")) ++failures;
 
 	OrderedHandoffReducer handoff;
@@ -285,6 +291,26 @@ int RunStartupPreviewStateTests()
 		&& recovery.State() == HandoffState::Stopped,
 		"failure cleanup waits for Bar alpha 255")) ++failures;
 
+	HandoffTimingReducer quickTiming;
+	quickTiming.PreviewFrameCommitted(true, 0);
+	quickTiming.PreviewFrameCommitted(false, 255);
+	if (!Expect(quickTiming.FreezeDuration()
+			== StartupPreviewQuickHandoffDuration
+		&& !quickTiming.ProgressEverCommittedVisible(),
+		"uncommitted or invisible progress keeps the 300 ms handoff")) ++failures;
+	quickTiming.PreviewFrameCommitted(true, 255);
+	if (!Expect(quickTiming.FreezeDuration()
+			== StartupPreviewQuickHandoffDuration
+		&& !quickTiming.ProgressEverCommittedVisible(),
+		"handoff timing stays frozen after handoff starts")) ++failures;
+	HandoffTimingReducer progressTiming;
+	progressTiming.PreviewFrameCommitted(true, 1);
+	if (!Expect(progressTiming.ProgressEverCommittedVisible()
+			&& progressTiming.FreezeDuration()
+				== StartupPreviewProgressHandoffDuration,
+		"a committed visible progress frame selects the 1000 ms handoff"))
+		++failures;
+
 	if (!Expect(IsBarStartupReady(BarStartupState::FirstFrameCommitted)
 		&& !IsBarStartupReady(BarStartupState::RenderClientRegistered)
 		&& IsBarStartupFailure(BarStartupState::WindowMissing)
@@ -292,37 +318,98 @@ int RunStartupPreviewStateTests()
 		"Bar readiness distinguishes committed and terminal states")) ++failures;
 
 	const auto start = std::chrono::steady_clock::time_point(10s);
+	ProgressVisualReducer zeroEpochProgress;
+	(void)zeroEpochProgress.Update({}, 0.4, false, false);
+	auto zeroEpochVisual = zeroEpochProgress.Update(
+		std::chrono::steady_clock::time_point(150ms), 0.4, false, false);
+	if (!Expect(std::abs(zeroEpochVisual.displayedRatio - 0.2) < 0.000001,
+		"progress animation supports a zero steady-clock epoch")) ++failures;
 	ProgressVisualReducer progress;
 	progress.MarkPreviewShown(start);
-	auto visual = progress.Update(start + 2999ms, 0.4, false, false);
+	auto visual = progress.Update(start, 0.4, false, false);
+	if (!Expect(visual.displayedRatio == 0.0,
+		"progress starts its own time-based animation without jumping")) ++failures;
+	visual = progress.Update(start + 150ms, 0.4, false, false);
+	if (!Expect(std::abs(visual.displayedRatio - 0.2) < 0.000001,
+		"progress ratio uses smoothstep at the animation midpoint")) ++failures;
+	ProgressVisualReducer frameIndependent;
+	frameIndependent.MarkPreviewShown(start);
+	(void)frameIndependent.Update(start, 0.4, false, false);
+	const auto quarterVisual = frameIndependent.Update(
+		start + 75ms, 0.4, false, false);
+	if (!Expect(quarterVisual.displayedRatio < 0.1,
+		"progress smoothstep starts slower than linear interpolation")) ++failures;
+	const auto independentVisual = frameIndependent.Update(
+		start + 150ms, 0.4, false, false);
+	if (!Expect(std::abs(independentVisual.displayedRatio
+			- visual.displayedRatio) < 0.000001,
+		"progress interpolation is frame-rate independent")) ++failures;
+	visual = progress.Update(start + 150ms, 0.8, false, false);
+	if (!Expect(std::abs(visual.displayedRatio - 0.2) < 0.000001,
+		"progress retarget keeps the current displayed ratio continuous")) ++failures;
+	visual = progress.Update(start + 300ms, 0.8, false, false);
+	if (!Expect(std::abs(visual.displayedRatio - 0.5) < 0.000001,
+		"retargeted progress continues on a fresh smooth timeline")) ++failures;
+	visual = progress.Update(start + 2999ms, 0.8, false, false);
 	if (!Expect(visual.state == ProgressVisualState::Hidden
-		&& visual.opacity == 0.0 && visual.displayedRatio <= 0.4,
+		&& visual.opacity == 0.0 && visual.displayedRatio <= 0.8,
 		"progress stays hidden for 2999 ms")) ++failures;
-	visual = progress.Update(start + 3s, 0.4, false, false);
+	visual = progress.Update(start + 3s, 0.8, false, false);
 	if (!Expect(visual.state == ProgressVisualState::FadingIn
-		&& visual.displayedRatio <= 0.4,
+		&& visual.displayedRatio <= 0.8,
 		"three-second gate starts progress fade")) ++failures;
-	visual = progress.Update(start + 3180ms, 0.4, false, false);
+	visual = progress.Update(start + 3180ms, 0.8, false, false);
 	if (!Expect(visual.state == ProgressVisualState::Visible
-		&& visual.opacity == 1.0 && visual.displayedRatio <= 0.4,
-		"progress becomes visible without time-based progress")) ++failures;
+		&& visual.opacity == 1.0 && visual.displayedRatio <= 0.8,
+		"progress becomes visible after its opacity gate")) ++failures;
 	visual = progress.Update(start + 3181ms, 1.0, true, false);
 	if (!Expect(visual.state == ProgressVisualState::Visible
-		&& visual.displayedRatio == 1.0 && visual.opacity == 1.0,
-		"success reaches real 100 percent without hold")) ++failures;
+		&& visual.displayedRatio == 0.8 && visual.opacity == 1.0,
+		"completion retargets to 100 percent without jumping")) ++failures;
+	const double fadeStartRatio = visual.displayedRatio;
+	visual = progress.Update(start + 3331ms, 1.0, true, false);
+	if (!Expect(visual.displayedRatio > fadeStartRatio
+			&& visual.displayedRatio < 1.0
+			&& progressTiming.FreezeDuration()
+				== StartupPreviewProgressHandoffDuration,
+		"progress keeps advancing during the frozen 1000 ms handoff fade"))
+		++failures;
+	visual = progress.Update(start + 3481ms, 1.0, true, false);
+	if (!Expect(visual.displayedRatio == 1.0,
+		"completed progress reaches 100 percent on its own timeline")) ++failures;
+	ProgressVisualReducer boundedCompletion;
+	(void)boundedCompletion.Update(start, 0.6, false, false);
+	visual = boundedCompletion.Update(start + 300ms, 0.6, true, false);
+	if (!Expect(visual.displayedRatio == 0.6,
+		"completed progress never exceeds the supplied actual ratio")) ++failures;
 	ProgressVisualReducer quick;
 	quick.MarkPreviewShown(start);
 	visual = quick.Update(start + 2900ms, 1.0, true, false);
-	if (!Expect(visual.state == ProgressVisualState::Hidden && visual.opacity == 0.0,
+	if (!Expect(visual.state == ProgressVisualState::Hidden
+		&& visual.opacity == 0.0 && visual.displayedRatio == 0.0,
 		"quick startup never shows progress")) ++failures;
 	ProgressVisualReducer retry;
 	retry.MarkPreviewShown(start);
-	visual = retry.Update(start + 4s, 0.5, false, false);
+	(void)retry.Update(start, 0.2, false, false);
+	visual = retry.Update(start + 300ms, 0.2, false, false);
+	visual = retry.Update(start + 4s, 0.2, false, false);
 	if (!Expect(!visual.red, "automatic retry remains normal-colored")) ++failures;
 	visual = retry.Update(start + 4001ms, 0.5, false, true);
 	if (!Expect(visual.state == ProgressVisualState::Failure && visual.red
-		&& visual.opacity == 1.0 && visual.displayedRatio == 0.5,
-		"only final fatal failure turns progress red")) ++failures;
+		&& visual.opacity == 1.0
+		&& std::abs(visual.displayedRatio - 0.2) < 0.000001,
+		"fatal failure turns red immediately without jumping its length")) ++failures;
+	visual = retry.Update(start + 4151ms, 0.9, false, true);
+	if (!Expect(std::abs(visual.displayedRatio - 0.35) < 0.000001,
+		"failed progress keeps animating toward the frozen actual ratio")) ++failures;
+	visual = retry.Update(start + 4301ms, 0.9, false, true);
+	if (!Expect(visual.displayedRatio == 0.5,
+		"failed progress ignores later actual changes after freezing")) ++failures;
+	visual = retry.Update(start + 4302ms, 0.3, false, false);
+	if (!Expect(visual.state == ProgressVisualState::Failure && visual.red
+			&& visual.displayedRatio == 0.5,
+		"first failure remains sticky and keeps its frozen actual target"))
+		++failures;
 
 	NotifyBarFirstCommittedFrame(80.0, 380.0, true);
 	double publishedWidth = 0.0;

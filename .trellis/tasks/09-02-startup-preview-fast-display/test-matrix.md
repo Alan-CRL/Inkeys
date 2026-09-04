@@ -18,6 +18,9 @@
 | Shimmer endpoint | 默认方向含 X/Y 两个分量；任意测试宽度、DPI、zoom 下 phase 0/1 的全部非零 soft-tail 支撑在窗口外，中点穿过 mask，wrap 两侧输出等于 base-only |
 | Shimmer time | epoch 取 Preview 首次显示本地 `steady_clock`；两端慢、中间快；不由 frame timestamp 取模 |
 | Progress visibility | Preview shown 后 2999ms 不可见，满 3s 才开始约 180ms 渐显；3s 内完成不出现 |
+| Progress ratio animation | 300ms smoothstep 帧率无关；中途 retarget 连续、不超过 actual；完成不跳满，首次失败立即红且目标 sticky |
+| Handoff timing profile | Preview 渐显 300ms；无 committed-visible progress 时 Preview/Bar 为 300/300ms，有时为 1000/1000ms；档位启动后冻结 |
+| Fade continuity | Preview 渐隐每帧仍推进 shimmer 与 progress ratio，直到 alpha 0 ULW committed 后才开始 Bar 整窗渐显 |
 | Completion | 已显示时真实 100% 直接进入整窗 fade；无旧 300ms progress-only fade/停顿；进度不超过 actual |
 | Failure/retry | 首次自动重试保持普通颜色并先整窗渐隐；最终 fatal 才红，红帧 committed/有界等待后才弹窗 |
 | Recovery | Preview disabled/bypass/device loss/ULW failure 最终均恢复 Bar committed alpha 255 可见 |

@@ -30,6 +30,16 @@ export namespace Inkeys::UI::StartupPreview
 	// 2.8s 平滑扫过，随后在完整离屏端保持 1.2s。
 	inline constexpr double StartupPreviewShimmerCycleSeconds = 4.0;
 	inline constexpr double StartupPreviewShimmerSweepFraction = 0.70;
+	inline constexpr auto StartupPreviewFadeInDuration =
+		std::chrono::milliseconds(300);
+	inline constexpr auto StartupPreviewQuickHandoffDuration =
+		std::chrono::milliseconds(300);
+	inline constexpr auto StartupPreviewProgressHandoffDuration =
+		std::chrono::milliseconds(1000);
+	inline constexpr auto StartupPreviewExitFadeOutDuration =
+		std::chrono::milliseconds(160);
+	inline constexpr auto StartupPreviewProgressAnimationDuration =
+		std::chrono::milliseconds(300);
 	static_assert(StartupPreviewShimmerSweepFraction > 0.0
 		&& StartupPreviewShimmerSweepFraction <= 1.0);
 
@@ -173,6 +183,25 @@ export namespace Inkeys::UI::StartupPreview
 		HandoffState state_ = HandoffState::Preparing;
 	};
 
+	class HandoffTimingReducer final
+	{
+	public:
+		void PreviewFrameCommitted(bool progressVisible,
+			std::uint8_t previewAlpha) noexcept;
+		[[nodiscard]] std::chrono::milliseconds FreezeDuration() noexcept;
+		[[nodiscard]] bool ProgressEverCommittedVisible() const noexcept
+		{
+			return progressEverCommittedVisible_;
+		}
+		[[nodiscard]] bool Frozen() const noexcept { return frozen_; }
+
+	private:
+		bool progressEverCommittedVisible_ = false;
+		bool frozen_ = false;
+		std::chrono::milliseconds frozenDuration_ =
+			StartupPreviewQuickHandoffDuration;
+	};
+
 	enum class ProgressVisualState : std::uint8_t
 	{
 		Hidden,
@@ -198,9 +227,20 @@ export namespace Inkeys::UI::StartupPreview
 			bool completed, bool failed) noexcept;
 
 	private:
+		[[nodiscard]] double SampleDisplayedRatio(
+			std::chrono::steady_clock::time_point now) noexcept;
+		void RetargetRatio(std::chrono::steady_clock::time_point now,
+			double targetRatio) noexcept;
+
 		std::chrono::steady_clock::time_point previewShownTime_{};
 		std::chrono::steady_clock::time_point transitionStart_{};
+		std::chrono::steady_clock::time_point ratioStartTime_{};
 		double displayedRatio_ = 0.0;
+		double ratioStart_ = 0.0;
+		double ratioTarget_ = 0.0;
+		double failureTarget_ = 0.0;
+		bool ratioAnimating_ = false;
+		bool failureTargetFrozen_ = false;
 		ProgressVisualState state_ = ProgressVisualState::Hidden;
 	};
 }

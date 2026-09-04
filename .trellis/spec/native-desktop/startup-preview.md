@@ -110,18 +110,19 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 
 ## 7. Progress visual and handoff
 
-首个 Preview ULW alpha 0 frame committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复通知不重置。显示后满 3 秒仍未完成才约 180ms 渐显居中 192 DIP 双层进度条；3 秒内完成不显示。进度条使用真实 ratio，在 shimmer 后绘制。
+首个 Preview ULW alpha 0 frame committed 且 owner 请求显示后调用一次 `MarkPreviewShown`；重复通知不重置。Preview 整窗以 300ms 渐显。显示后满 3 秒仍未完成才约 180ms 渐显居中 192 DIP 双层进度条；3 秒内完成不显示。进度长度由 Preview 自己维护的 300ms smoothstep 时间轴追赶真实 ratio：新目标先采样当前插值值再连续 retarget，帧率无关且不得超过 actual；完成不直接跳 1，失败颜色立即红并冻结首次失败目标。进度条在 shimmer 后绘制。
 
 Bar 的 presentation alpha 始终区分 requested/attempted/committed；完整 GetDC -> ULW -> ReleaseDC -> EndDraw -> `presentCompletion.IsCommitted()` 前不得推进 committed。alpha 改变强制 full-window ULW，失败保留旧 committed 并请求重试；业务 dirty transaction 不受污染。无 Preview 时 Bar 以 255；有 Preview 时先以 0 committed。
 
 正常完成由 `OrderedHandoffReducer` 或等价单一 reducer 严格推进，不能只靠分散的 phase 判断。顺序为：
 
 1. Bar alpha 0 committed；Preview 继续 shimmer。
-2. Preview 整窗 ULW committed fade 到 0，期间 Bar 不上升。
-3. Preview alpha 0 committed 后，Bar 从 committed 0 单调渐显到 255。
-4. Bar alpha 255 committed 后 owner 才 hide/destroy Preview。
+2. 只有实际绘制进度条、Preview alpha 大于 0 且完整 ULW transaction 成功的帧，才 sticky 记录 `progressEverCommittedVisible`；handoff 开始时据此冻结 300ms（未记录）或 1000ms（已记录）档位。
+3. Preview 整窗按冻结档位 committed fade 到 0，期间 Bar 不上升，shimmer 与 progress ratio 每帧继续推进和重绘。
+4. Preview alpha 0 committed 后，Bar 按同一冻结档位从 committed 0 单调渐显到 255；整窗 alpha 同时覆盖 MainBar 与主按钮。
+5. Bar alpha 255 committed 后 owner 才 hide/destroy Preview。
 
-禁止两个 layered HWND 长时间中间 alpha 同时可见、cross-fade 或人为透明停顿。首次自动重试保持正常颜色并先渐隐；最终 fatal 才红色，错误帧 committed 或有界等待后显示对话框，确认后再渐隐。Preview/ULW/device/handoff 失败均有界 bypass/recovery，尽最大安全努力恢复 Bar 255 可见。
+Preview 未启用或未成功启动时，Bar 直接以 alpha 255 显示，不运行渐显。禁止两个 layered HWND 长时间中间 alpha 同时可见、cross-fade 或人为透明停顿。300/1000ms 只属于正常成功 handoff；首次自动重试保持正常颜色并先渐隐，退出淡出保留独立 160ms，最终 fatal 才红色。Preview/ULW/device/handoff 失败均有界 bypass/recovery，尽最大安全努力恢复 Bar 255 可见。
 
 ## 8. Width publication and I/O boundary
 
@@ -149,7 +150,7 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 | 条件 | 必须行为 |
 | --- | --- |
 | Cached width 缺失、NaN、Inf、非正、过小或异常大 | 回退 `470.0 DIP`，仍尝试快速显示；不读取/删除任何图片 cache |
-| Preview disabled | 从 immutable plan 删除 Preview 专属单位；Bar 保持既有 alpha 255 启动语义 |
+| Preview disabled / 未成功启动 | 从 immutable plan 删除或收敛 Preview 专属单位；Bar 保持 alpha 255 直接显示，不渐显 |
 | Preview owner/首帧/D2D/mask/shimmer 失败 | 有界 bypass；正式启动继续，Bar 最终尽力 committed 255 可见 |
 | ULW 任一步失败 | Preview/Bar 不推进对应 committed alpha；请求完整重试或有界 recovery，不能遗留 alpha 0 Bar |
 | Device generation 改变 | render thread 丢弃旧 Preview resources，重建或 bypass；不使用旧 generation COM 对象 |
@@ -165,7 +166,7 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 ## 12. Good / Base / Bad cases
 
 - **Good**：合法有限宽度（或缺失而回退 470），Preview alpha 0 首帧 committed；与主栏一致的深色占位和低频斜向 shimmer 可见，真实进度单调；Bar alpha 0 committed 后 Preview committed 到 0，Bar committed 到 255 才销毁 owner。
-- **Base**：首次启动没有宽度字段，使用 470 DIP；3 秒内完成则进度条不出现；更慢时进度条只显示真实 ratio，随后按同一顺序交接。
+- **Base**：首次启动没有宽度字段，使用 470 DIP；3 秒内完成则进度条不出现，Preview 与 Bar 以 300/300ms 顺序交接；更慢时进度条平滑追赶真实 ratio，并在曾 committed 可见后选择 1000/1000ms 顺序交接。
 - **Manual**：开发者显式传入 `--startup-preview-manual-delay` 后 milestone 间出现可观察停顿；去掉该参数后同一启动路径不等待。
 - **Recoverable bad**：坏宽度、Preview/D2D/shimmer/ULW/device loss、首次重试或 owner 超时；回退/绕过并尽力让正式 Bar committed 255 可见，不阻塞主程序。
 - **Fatal bad**：RenderPipeline、Window Service、Draw3、Setting、Whiteboard 或正式 Bar 失败；冻结真实进度，最终 fatal 才显示红帧，在有界等待后进入现有错误对话框和清理流程。
@@ -173,7 +174,7 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 ## 13. Tests required
 
 - **纯逻辑**：`ResolveCachedStartupBarWidthDip`、默认 380/470 推导、DPI×zoom 舍入、`CalculateStartupBarTotalWidthDip` target-vs-animation、去重发布、milestone/failure/100% gate。
-- **动画/alpha**：Preview 使用 MainBar Dark Surface `#181818` / `0.8` 和白色边框 alpha `0.18`；shimmer 默认 gradient 同时包含 X/Y 分量，4.0 秒周期内 2.8 秒非线性扫过、1.2 秒离屏停驻，phase 0/1 soft-tail 离屏、中点穿过 mask、停驻及 wrap base-only；Preview alpha 0 首帧、单调 fade；Preview→Bar committed reducer 顺序、首次重试颜色、最终 fatal 红帧和 recovery。
+- **动画/alpha**：Preview 使用 MainBar Dark Surface `#181818` / `0.8` 和白色边框 alpha `0.18`；shimmer 默认 gradient 同时包含 X/Y 分量，4.0 秒周期内 2.8 秒非线性扫过、1.2 秒离屏停驻；Preview 300ms 渐显；progress 300ms smoothstep retarget；normal handoff 根据 committed-visible progress 冻结 300/1000ms，渐隐期间 shimmer/progress 继续推进，Preview alpha 0 committed 后 Bar 才按同档位整窗渐显；首次重试颜色、最终 fatal 红帧和 recovery 不退化。
 - **窗口/渲染**：ULW 三个 geometry 指针始终非空；owner-thread lifecycle、click swallow、presentation mutex、mask antialias restore、Bar-before-Preview scheduler、device generation 重建。
 - **集成/静态**：旧 JSON 兼容、smoke 字段、manual delay hook 正/负向、`rg` 残留审查、`git diff --check`、完整 Solution/headless；Win7、DPI、多屏、SuperTop/UIAccess 和真实系统失败在可用环境执行并记录。
 

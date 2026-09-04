@@ -1,6 +1,17 @@
 # Startup Preview 验证记录
 
-## 2026-09-04 深色背景与低频反光验证（最新）
+## 2026-09-04 自适应交接与进度动画验证（最新）
+
+本轮将 Preview 整窗渐显统一为 300ms，并以真实 committed-visible progress 历史选择正常 handoff 档位：未曾 committed 可见进度条时 Preview 渐隐与 Bar 整窗渐显均为 300ms；曾显示时两者均为 1000ms。档位在 handoff 开始时冻结，Preview alpha 0 committed 后才启动 Bar 渐显。进度长度改为 Preview 自己维护的 300ms smoothstep 时间轴，渐隐期间与 shimmer 一起持续推进。
+
+- 当前设备架构：x64；完整 `InkeysRepo.sln` 的 `Debug|x64` 构建 PASS，16 个既有警告、0 错误。
+- `Build/x64/Debug/InkeysHeadlessTests.exe --no-window`：PASS，输出 `PASS animation correctness`。
+- Headless 覆盖 300/1000ms 档位、冻结后的幂等性、仅 committed 非零 alpha 可见帧触发慢档、Preview/Bar 严格顺序、Exit 160ms 独立路径。
+- Progress 覆盖零 epoch、300ms smoothstep、帧率无关、连续 retarget、完成不跳且不超过 actual、首次失败立即红并冻结目标，以及 1000ms 渐隐期间继续推进。
+- `git diff --check`、Trellis `task.py validate` 和全部修改文件 CRLF 检查均 PASS。
+- 未启动可见应用窗口；300/1000ms 视觉节奏与渐隐期间 shimmer/progress 连续性仍待人工确认。
+
+## 2026-09-04 深色背景与低频反光验证（历史）
 
 本轮将 Preview 背景改为与正式 MainBar Dark Surface 共用的 `#181818`、填充 alpha `0.8` 和白色边框 alpha `0.18`。斜向 shimmer 改为 4.0 秒周期：前 2.8 秒使用余弦非线性曲线扫过，后 1.2 秒在 soft-tail 完整离屏的终点停驻。
 
