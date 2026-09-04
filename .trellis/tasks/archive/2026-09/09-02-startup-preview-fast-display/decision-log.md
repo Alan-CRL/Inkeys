@@ -17,7 +17,7 @@
 | D-11 | Bar 首个完整 committed frame 是 100% 与宽度回写门 | setter、queue 或部分 ULW 成功都不代表屏幕可见 |
 | D-12 | 宽度写回不在 render thread | 配置/文件 I/O 不得阻塞共享渲染线程；只发布有限、去重 double |
 | D-13 | 首次自动重试先正常颜色渐隐；最终 fatal 才红色 | 重试不是最终失败，用户不应看到短暂错误状态 |
-| D-14 | 保留人工延迟、重试注入和 smoke 钩子 | 这些是观察启动顺序和失败恢复的必要测试入口 |
+| D-14 | 稳定观察期内保留人工延迟、重试注入和 smoke 钩子 | 这些是观察启动顺序和失败恢复的临时测试入口；功能稳定运行一段时间后可移除人工延迟与重试失败注入代码 |
 
 ## 明确废弃的旧决策
 
@@ -38,6 +38,7 @@
 - 纯几何合同落在双方均可安全依赖的 `Inkeys.UI.Bar.Metrics` 与 `Inkeys.UI.StartupPreview.State` 中；`static_assert` 和 headless 同时锁定 70/75/380/470 DIP 推导。
 - shimmer 行程使用 `ResolveStartupPreviewShimmerGradient` + `ResolveShimmerTravel` 按斜向 gradient、mask 投影和完整 support 求端点，实际多段 stops 的首尾为零；不同 DPI/zoom 尺寸的两端离屏、中点穿过 mask 与 wrap base-only 断言已覆盖。
 - 人工观察分阶段延迟保留为显式 hook：命令行 `--startup-preview-manual-delay` 或环境变量 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`，默认启动不等待。
+- 首次重试、再次失败场景可通过环境变量 `INKEYS_STARTUP_PREVIEW_RETRY_FAILURE=1` 注入；它与 manual delay 均为稳定观察期内的临时调试入口，移除时应同时删除对应解析、分支和测试覆盖。
 - 六套 Solution 配置构建、x64/Win32 headless 与隐藏 startup smoke 已通过；完整命令和输出记录在 `validation.md`。
 
 ## 仍需人工验证
