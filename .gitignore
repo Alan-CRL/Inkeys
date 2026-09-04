@@ -28,6 +28,7 @@
 # Agents
 /.agents/
 /.codex/
+/.claude/
 /.zcode/
 
 # Imported Draw3 experiment outputs
