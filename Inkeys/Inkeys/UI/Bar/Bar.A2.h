@@ -15,8 +15,11 @@ namespace Inkeys::UI::Bar
 	};
 
 	[[nodiscard]] constexpr BarA2Projection ResolveBarA2Projection(
-		bool presentationActive, bool whiteboardActive) noexcept
+		bool presentationActive, bool whiteboardActive,
+		bool whiteboardFeatureEnabled = true) noexcept
 	{
+		if (!whiteboardFeatureEnabled)
+			return { false, !presentationActive, presentationActive };
 		if (whiteboardActive) return { true, false, false };
 		if (presentationActive) return { true, false, true };
 		return { false, true, false };

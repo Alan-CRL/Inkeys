@@ -299,6 +299,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 #endif
+	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
+	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
 	// 路径预处理
 	{
@@ -1932,7 +1934,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::SettingReady);
-		if (!Inkeys::UI::Whiteboard::Initialize({
+		if (whiteboardFeatureEnabled && !Inkeys::UI::Whiteboard::Initialize({
 			[] { RequestWhiteboardPreviousPage(); },
 			[] { RequestWhiteboardNextPage(); },
 			}))
@@ -1947,6 +1949,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
+		// 发布前临时跳过白板 UI 初始化，但仍完成既有启动进度契约。
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::WhiteboardReady);
 		// Host 启动会清空桥接队列；首帧前重新发布当前 UI 状态。
@@ -1957,7 +1960,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧准备失败");
 			PublishFatalStartupFailure(0xD202u,
 				L"Draw3 首帧提交失败，程序无法继续启动。");
-			Inkeys::UI::Whiteboard::Shutdown();
+			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
 			windowService.StopAndJoin();
@@ -1981,7 +1984,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			windowService.SetTopmostRefreshObserver({});
 			PublishFatalStartupFailure(0xD102u,
 				L"窗口层级初始化失败，程序无法继续启动。");
-			Inkeys::UI::Whiteboard::Shutdown();
+			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
 			Inkeys::UI::Setting::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
 			SetOffSignal(1);
@@ -2085,7 +2088,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Window::GetService().SetTopmostRefreshObserver({});
 	Inkeys::UI::StartupPreview::Stop();
 	// 先同步注销 Setting，避免窗口和共享设备释放后仍有绘制回调。
-	Inkeys::UI::Whiteboard::Shutdown();
+	if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
 	Inkeys::UI::Setting::Shutdown();
 	if (ui3InitializationThread.joinable()) ui3InitializationThread.join();
 	if (freezeFrameThread.joinable()) freezeFrameThread.join();

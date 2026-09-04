@@ -125,6 +125,8 @@ void SyncDraw3State();
 void ReconcileDraw3Presentation();
 
 // 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
+// 发布前临时关闭白板：保留所有实现和配置兼容，发版结束后改为 true 即可恢复入口。
+inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return false; }
 void RequestWhiteboardActive(bool active) noexcept;
 bool WhiteboardRequested() noexcept;
 bool WhiteboardActive() noexcept;

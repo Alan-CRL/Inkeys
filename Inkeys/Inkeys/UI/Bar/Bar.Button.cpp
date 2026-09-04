@@ -480,7 +480,7 @@ void BarButtonSetClass::PresetInitialization()
 	{
 		BarButtonClass* obj = new BarButtonClass;
 		{
-			obj->size = BarButtonSizeEnum::twoOne;
+			obj->size = BarButtonSizeEnum::twoTwo;
 			obj->preset = BarButtonPresetEnum::Freeze;
 			obj->hide = false;
 		}
@@ -818,9 +818,11 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 	static mutex mtx;
 	const bool active = Inkeys::UI::Bar::WhiteboardActive();
 	const bool presentation = Inkeys::UI::Bar::PptPresentationActive();
+	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 	const auto projection = Inkeys::UI::Bar::ResolveBarA2Projection(
-		presentation, active);
-	const int styleKey = active ? 2 : (presentation ? 1 : 0);
+		presentation, active, whiteboardFeatureEnabled);
+	const int styleKey = (active ? 2 : (presentation ? 1 : 0)) +
+		(whiteboardFeatureEnabled ? 0 : 4);
 	if (whiteboardButtonStyleKey == styleKey) return;
 
 	lock_guard<mutex> lock(mtx);
@@ -829,10 +831,12 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 	auto freeze = preset[(int)BarButtonPresetEnum::Freeze];
 	auto endShow = preset[(int)BarButtonPresetEnum::EndShow];
 	if (!whiteboard || !freeze || !endShow) return;
-	whiteboard->hide = false;
+	// 发布前临时隐藏入口；仍保留稳定按钮 ID 和用户原有 A2 配置。
+	whiteboard->hide = !whiteboardFeatureEnabled;
 	whiteboard->size = projection.whiteboardTwoTwo
 		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	freeze->size = BarButtonSizeEnum::twoOne;
+	// 发布期间白板入口撤下，暂时由 2*2 定格按钮填补 A2 固定区域。
+	freeze->size = BarButtonSizeEnum::twoTwo;
 	freeze->hide = !projection.freezeVisible;
 	endShow->size = BarButtonSizeEnum::twoTwo;
 	endShow->hide = !projection.endShowVisible;

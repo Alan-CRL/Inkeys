@@ -800,6 +800,8 @@ namespace
 		const auto desktop = ResolveBarA2Projection(false, false);
 		const auto presentation = ResolveBarA2Projection(true, false);
 		const auto whiteboard = ResolveBarA2Projection(true, true);
+		const auto disabledDesktop = ResolveBarA2Projection(false, false, false);
+		const auto disabledPresentation = ResolveBarA2Projection(true, false, false);
 		Check(!desktop.whiteboardTwoTwo && desktop.freezeVisible
 			&& !desktop.endShowVisible,
 			"desktop A2 shows two compact buttons");
@@ -809,6 +811,10 @@ namespace
 		Check(whiteboard.whiteboardTwoTwo && !whiteboard.freezeVisible
 			&& !whiteboard.endShowVisible,
 			"whiteboard A2 shows only Close Whiteboard");
+		Check(!disabledDesktop.whiteboardTwoTwo && disabledDesktop.freezeVisible
+			&& !disabledDesktop.endShowVisible && !disabledPresentation.whiteboardTwoTwo
+			&& !disabledPresentation.freezeVisible && disabledPresentation.endShowVisible,
+			"temporarily disabled whiteboard leaves only desktop Freeze or PPT EndShow");
 		Check(IsLegacyBarA2Pair("Inkeys.Bar.Whiteboard", "Inkeys.Bar.Freeze")
 			&& IsLegacyBarA2Pair("Inkeys.Bar.Freeze", "Inkeys.Bar.Whiteboard"),
 			"both legal legacy A2 orders are accepted");

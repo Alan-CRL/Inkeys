@@ -300,6 +300,14 @@ bool IsLaserToolActive() noexcept
 
 void RequestWhiteboardActive(bool active) noexcept
 {
+	if (!IsWhiteboardFeatureEnabled())
+	{
+		// 发布前临时拒绝所有入口，避免隐藏主栏后仍有调用方进入白板事务。
+		whiteboardDesired.store(false, std::memory_order_release);
+		whiteboardPreviousRequested.store(false, std::memory_order_release);
+		whiteboardNextRequested.store(false, std::memory_order_release);
+		return;
+	}
 	whiteboardDesired.store(active, std::memory_order_release);
 	if (!active)
 	{
@@ -310,20 +318,23 @@ void RequestWhiteboardActive(bool active) noexcept
 
 bool WhiteboardRequested() noexcept
 {
-	return whiteboardDesired.load(std::memory_order_acquire);
+	return IsWhiteboardFeatureEnabled() &&
+		whiteboardDesired.load(std::memory_order_acquire);
 }
 
 bool WhiteboardActive() noexcept
 {
-	return whiteboardPhase.load(std::memory_order_acquire) ==
+	return IsWhiteboardFeatureEnabled() &&
+		whiteboardPhase.load(std::memory_order_acquire) ==
 		WhiteboardPhase::Active;
 }
 
 bool WhiteboardTransactionActive() noexcept
 {
-	return whiteboardDesired.load(std::memory_order_acquire) ||
+	return IsWhiteboardFeatureEnabled() &&
+		(whiteboardDesired.load(std::memory_order_acquire) ||
 		whiteboardPhase.load(std::memory_order_acquire) !=
-		WhiteboardPhase::Inactive;
+		WhiteboardPhase::Inactive);
 }
 
 void RequestWhiteboardPreviousPage() noexcept
