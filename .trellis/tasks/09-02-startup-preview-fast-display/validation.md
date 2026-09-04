@@ -29,6 +29,13 @@ PASS animation correctness
 - Shimmer headless 断言已改为默认方向同时包含 X/Y 分量，phase 0/1 的非零 soft-tail 支撑在窗口外，中点穿过 mask，wrap 两侧等于 base-only。
 - 人工观察延迟现在由 `--startup-preview-manual-delay` 或 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` 显式打开；默认启动和 `--startup-preview-smoke` 不会被该 hook 拖慢。
 
+## Trellis context 恢复
+
+- 当前任务已通过 `task.py start 09-02-startup-preview-fast-display` 重新挂回本 Codex 会话，后续 hook 可从该任务注入上下文。
+- `task.json` 已记录分支 `draw`、实现提交 `9e27bd26707dfeb3204ce78bf53e3b884cf4b811` 和最新验证摘要。
+- Startup Preview 任务规范、context 与 jsonl 已补上 `Client::StartupPreview` 调度/资源约束；`build-and-compatibility.md` 仅保留 AGENTS 派生的“Debug + 当前设备原生架构”验证规则。
+- 旧 research 的 `Bar proxy`、image cache、CRC/signature 等历史调查已增加当前覆盖说明，不再作为实现建议。
+
 ## 最新未执行项（NOT RUN）
 
 - 本轮没有启动 `Build/x64/Debug/Inkeys.exe --startup-preview-smoke <report>`，因为项目指令要求完成后仅做静态提交或无窗口测试，除非用户明确允许启动窗口。

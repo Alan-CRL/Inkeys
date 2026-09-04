@@ -22,6 +22,24 @@ std::int32_t RoundStartupPreviewDipToPixels(
 double CalculateStartupBarTotalWidthDip(
     double mainButtonTargetDip, double layoutTotalWidthDip,
     bool expanded = true) noexcept;
+
+ShimmerGradient ResolveStartupPreviewShimmerGradient(
+    double width, double height) noexcept;
+ShimmerTravel ResolveShimmerTravel(
+    const GeometryRect& maskBounds,
+    const ShimmerGradient& gradient,
+    double outsideMargin = 1.0) noexcept;
+ShimmerTranslation ResolveShimmerTranslation(
+    const ShimmerTravel& travel, double easedPhase) noexcept;
+
+class OrderedHandoffReducer {
+public:
+    HandoffSnapshot PreviewFirstAlpha0Committed() noexcept;
+    HandoffSnapshot BarAlpha0Committed(bool startupComplete) noexcept;
+    HandoffSnapshot PreviewFadeOutCommitted() noexcept;
+    HandoffSnapshot BarAlpha255Committed() noexcept;
+    HandoffSnapshot Bypass() noexcept;
+};
 }
 ```
 
@@ -36,6 +54,17 @@ mini config 只读取：
 | `UI.Bar.Zoom` | 既有 zoom；仅用于本次 DIP→pixel 换算 |
 
 旧 main.json 缺少新字段时使用默认值；曾写入的旧图片/CRC 字段安全忽略。设置页不暴露 cached width。
+
+测试与人工观察入口固定为：
+
+| 入口 | 语义 |
+| --- | --- |
+| `--startup-preview-smoke <report>` | 自动 smoke，报告 total width DIP、alpha committed、owner exit、preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段 |
+| `--startup-preview-manual-delay` | 仅人工观察时启用 `ReportStartupMilestoneForManualTest` 分阶段延迟 |
+| `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` | 与命令行等价的人工观察延迟入口，便于脚本/临时环境使用 |
+| `INKEYS_STARTUP_PREVIEW_RETRY_FAILURE=1` | 保留的首次重试/最终失败人工测试入口 |
+
+`--startup-preview-smoke` 不隐式启用 manual delay；所有测试 hook 未显式开启时不得拖慢正常启动。
 
 默认展开宽度必须可审计：
 
@@ -69,7 +98,7 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 - `BLENDFUNCTION` 为 `AC_SRC_OVER`、`BlendFlags=0`、`AlphaFormat=AC_SRC_ALPHA`；`SourceConstantAlpha` 是 Preview 整窗 committed fade 值。
 - 每次 `UpdateLayeredWindowIndirect` 必须显式传入 `pptDst`、`psize`、`pptSrc`。省略 geometry 在本项目路径可能返回成功但不可见/不刷新。
 - owner `SetWindowPos` 与 render-thread ULW 通过专用 presentation mutex 串行；render thread 只回显 owner 已提交 geometry snapshot。
-- Preview D2D target、mask、brush 只在唯一 `Inkeys.UI.RenderPipeline` render thread 创建/释放；dispatch order 为 Bar -> StartupPreview。device generation 变化时清空并重建全部 Preview 资源。
+- Preview D2D target、mask、brush 只在唯一 `Inkeys.UI.RenderPipeline` render thread 创建/优先释放；dispatch order 为 Bar -> StartupPreview。device generation 变化时清空并重建全部 Preview 资源。公开 `Stop()` 必须先 `Unregister(Client::StartupPreview)` drain，再用 `RenderPipeline::PostControl` 释放资源；若调度器已经停止，只允许直接 reset 作为进程收尾兜底。
 
 ## 6. Programmatic shape and shimmer
 
@@ -77,7 +106,7 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 
 尺寸变化时缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态 opacity mask。反光用默认左上到右下的斜向多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。进度条在 shimmer 后最后合成，不进入 mask。
 
-相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准，可用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左侧外，phase 1 完全在右侧外，wrap 两侧都是 base-only。不得用固定 magic 行程或停顿掩盖跳闪。
+相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准，可用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快。默认 shimmer gradient 必须同时包含 X/Y 分量，形成左上到右下的斜向质感，不得退化成纯水平或纯竖直。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左上侧外，phase 1 支撑完全在右下侧外，中点穿过 mask，wrap 两侧都是 base-only。不得用固定 magic 行程或停顿掩盖跳闪。
 
 ## 7. Progress visual and handoff
 
@@ -85,7 +114,7 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 
 Bar 的 presentation alpha 始终区分 requested/attempted/committed；完整 GetDC -> ULW -> ReleaseDC -> EndDraw -> `presentCompletion.IsCommitted()` 前不得推进 committed。alpha 改变强制 full-window ULW，失败保留旧 committed 并请求重试；业务 dirty transaction 不受污染。无 Preview 时 Bar 以 255；有 Preview 时先以 0 committed。
 
-正常完成严格按以下顺序：
+正常完成由 `OrderedHandoffReducer` 或等价单一 reducer 严格推进，不能只靠分散的 phase 判断。顺序为：
 
 1. Bar alpha 0 committed；Preview 继续 shimmer。
 2. Preview 整窗 ULW committed fade 到 0，期间 Bar 不上升。
@@ -107,13 +136,13 @@ expandedTotalWidthDip = mainButton->GetW() /* target, not w.val */
 
 ## 9. Failure, lifecycle and validation
 
-Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failure 不得阻止正式启动；核心 RenderPipeline、Window Service、Draw3、Setting、Whiteboard 和 Bar failure 仍按既有 fatal 语义处理。退出顺序至少为：停止新 frame/width -> 注销 observer -> unregister/drain StartupPreview -> owner hide/destroy/join -> Bar/Window/RenderPipeline 既有 shutdown；所有 wait 有界。
+Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failure 不得阻止正式启动；核心 RenderPipeline、Window Service、Draw3、Setting、Whiteboard 和 Bar failure 仍按既有 fatal 语义处理。退出顺序至少为：停止新 frame/width -> 注销 observer -> unregister/drain StartupPreview -> render-thread resource release -> owner hide/destroy/join -> Bar/Window/RenderPipeline 既有 shutdown；所有 wait 有界。
 
 保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和 `--startup-preview-smoke`。测试钩子未启用时不得拖慢正常启动，也不得让 render/callback thread sleep。Smoke 应报告 total width DIP、Preview alpha-0/fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段。
 
 ## 10. Validation matrix
 
-必须覆盖：默认 380/470 几何与非法缓存回退；DPI×zoom 舍入；target width 发布和去重 I/O；alpha transaction 与 ULW explicit geometry；shimmer endpoint/wrap；3 秒进度门；顺序 handoff、重试/fatal/recovery；Preview disabled/device loss；headless/smoke、完整 Solution 构建、`git diff --check`、旧符号/资源残留和高版本静态导入审查。Win7 SP1 + KB2670838、WARP、mixed DPI、多显示器、SuperTop/UIAccess、真实 input/topmost/device-loss 需专用环境，未执行时不得声称 PASS。
+必须覆盖：默认 380/470 几何与非法缓存回退；DPI×zoom 舍入；target width 发布和去重 I/O；alpha transaction 与 ULW explicit geometry；shimmer X/Y 方向、endpoint/midpoint/wrap；3 秒进度门；manual delay hook 不影响默认启动和 smoke；顺序 handoff、重试/fatal/recovery；Preview disabled/device loss；headless/smoke、完整 Solution 构建、`git diff --check`、旧符号/资源残留和高版本静态导入审查。Win7 SP1 + KB2670838、WARP、mixed DPI、多显示器、SuperTop/UIAccess、真实 input/topmost/device-loss 需专用环境，未执行时不得声称 PASS。
 
 ## 11. Validation and error matrix
 
@@ -124,6 +153,10 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 | Preview owner/首帧/D2D/mask/shimmer 失败 | 有界 bypass；正式启动继续，Bar 最终尽力 committed 255 可见 |
 | ULW 任一步失败 | Preview/Bar 不推进对应 committed alpha；请求完整重试或有界 recovery，不能遗留 alpha 0 Bar |
 | Device generation 改变 | render thread 丢弃旧 Preview resources，重建或 bypass；不使用旧 generation COM 对象 |
+| 公开 `Stop()` 且 RenderPipeline 正在运行 | `Unregister` drain 后用 `PostControl` 在 render thread reset target/mask/brush；等待有界 |
+| 公开 `Stop()` 且 RenderPipeline 已停止 | 不等待无法入队的 control task，只做进程收尾兜底 reset |
+| `--startup-preview-manual-delay` 或 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` | 仅人工观察路径启用分阶段延迟；render/callback thread 不 sleep |
+| 未启用 manual delay 或仅启用 `--startup-preview-smoke` | 正常启动和自动 smoke 不被人为延迟拖慢 |
 | 首次自动重试 | 保持普通 progress 颜色，Preview 先整窗渐隐，再按既有重启/重试流程继续 |
 | 最终 fatal | 冻结真实 progress，提交红帧或达到有界等待后显示现有对话框；用户确认后才渐隐/销毁 Preview |
 | Bar 首帧/交接超时 | 请求并尽力确认 Bar alpha 255，再清理 Preview；不能静默退出或永久空白 |
@@ -133,15 +166,16 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 
 - **Good**：合法有限宽度（或缺失而回退 470），Preview alpha 0 首帧 committed；灰色占位与 shimmer 可见，真实进度单调；Bar alpha 0 committed 后 Preview committed 到 0，Bar committed 到 255 才销毁 owner。
 - **Base**：首次启动没有宽度字段，使用 470 DIP；3 秒内完成则进度条不出现；更慢时进度条只显示真实 ratio，随后按同一顺序交接。
+- **Manual**：开发者显式传入 `--startup-preview-manual-delay` 后 milestone 间出现可观察停顿；去掉该参数后同一启动路径不等待。
 - **Recoverable bad**：坏宽度、Preview/D2D/shimmer/ULW/device loss、首次重试或 owner 超时；回退/绕过并尽力让正式 Bar committed 255 可见，不阻塞主程序。
 - **Fatal bad**：RenderPipeline、Window Service、Draw3、Setting、Whiteboard 或正式 Bar 失败；冻结真实进度，最终 fatal 才显示红帧，在有界等待后进入现有错误对话框和清理流程。
 
 ## 13. Tests required
 
 - **纯逻辑**：`ResolveCachedStartupBarWidthDip`、默认 380/470 推导、DPI×zoom 舍入、`CalculateStartupBarTotalWidthDip` target-vs-animation、去重发布、milestone/failure/100% gate。
-- **动画/alpha**：phase 0/1 soft-tail 离屏与 wrap base-only；Preview alpha 0 首帧、单调 fade；Preview→Bar committed 顺序、首次重试颜色、最终 fatal 红帧和 recovery。
+- **动画/alpha**：shimmer 默认 gradient 同时包含 X/Y 分量，phase 0/1 soft-tail 离屏、中点穿过 mask、wrap base-only；Preview alpha 0 首帧、单调 fade；Preview→Bar committed reducer 顺序、首次重试颜色、最终 fatal 红帧和 recovery。
 - **窗口/渲染**：ULW 三个 geometry 指针始终非空；owner-thread lifecycle、click swallow、presentation mutex、mask antialias restore、Bar-before-Preview scheduler、device generation 重建。
-- **集成/静态**：旧 JSON 兼容、smoke 字段、`rg` 残留审查、`git diff --check`、完整 Solution/headless；Win7、DPI、多屏、SuperTop/UIAccess 和真实系统失败在可用环境执行并记录。
+- **集成/静态**：旧 JSON 兼容、smoke 字段、manual delay hook 正/负向、`rg` 残留审查、`git diff --check`、完整 Solution/headless；Win7、DPI、多屏、SuperTop/UIAccess 和真实系统失败在可用环境执行并记录。
 
 ### Wrong vs Correct
 
@@ -163,4 +197,24 @@ config.Write();
 
 // Correct: 发布有限 DIP 值，由主线程/配置安全路径去重后写回。
 PublishStartupBarWidthDip(expandedTotalWidthDip);
+```
+
+```cpp
+// Wrong: 默认反光退化成纯水平或纯竖直，人工观察会丢失旧版斜向质感。
+ShimmerGradient gradient{ 0.0, 0.0, support, 0.0, 0.0, 1.0 };
+
+// Correct: 默认 gradient 含 X/Y 分量，行程按投影动态求离屏端点。
+const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
+const auto travel = ResolveShimmerTravel(maskBounds, gradient, outsideMargin);
+```
+
+```cpp
+// Wrong: 把调试延迟绑定到 smoke 或默认启动。
+ReportStartupMilestoneForManualTest(milestone);
+std::this_thread::sleep_for(3200ms);
+
+// Correct: milestone 正常报告；只有显式 manual hook 才追加观察延迟。
+Inkeys::Startup::Report(milestone);
+if (manualDelayRequested && Inkeys::UI::StartupPreview::IsActive())
+    std::this_thread::sleep_for(delay);
 ```

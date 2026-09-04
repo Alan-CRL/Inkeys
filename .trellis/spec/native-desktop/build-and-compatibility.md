@@ -7,18 +7,18 @@
 `【直接确认】` 仓库根 `AGENTS.md` 对自动化代理明确要求：
 
 - 构建 `InkeysRepo.sln`，不要单独构建 `Inkeys/Inkeys.vcxproj`；
-- 使用 `Debug | ARM64`；
-- 使用 ARM64 host 的 `MSBuild.exe`；
+- 使用 `Debug | 当前设备原生架构`；
+- 使用当前设备原生架构对应的 host `MSBuild.exe`（例如 x64 设备用 x64 host，ARM64 设备用 ARM64 host）；
 - 构建超时至少 5 分钟；
 - 原因是 `Inkeys` 依赖 `PptCOM`，完整 Solution 构建用于生成并带入 DLL/TLB。
 
 等价参数形式为：
 
 ~~~text
-MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
+MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=<NativePlatform>
 ~~~
 
-`MSBuild.exe` 的绝对路径取决于本机 Visual Studio 安装，不在 Spec 中硬编码。本次 Bootstrap 及本轮证据审计均未执行构建，因此不把上述配置写成“已经构建通过”。
+`MSBuild.exe` 的绝对路径取决于本机 Visual Studio 安装，不在 Spec 中硬编码。Release 或非当前原生架构（Win32/x64/ARM64 中未覆盖者）可以作为任务或风险要求下的额外平台证据，但不能替代当前 AGENTS 要求的 `Debug | 当前设备原生架构` 完整 Solution 验证。构建是否通过必须引用具体任务验证记录，不能由本规范的入口说明推出。
 
 `【历史/兼容】` `GithubRes/CompilationProcess_zh-CN.md` 另有面向一般贡献者的路径：使用仓库内预编译 `PptCOM.dll`/`PptCOM.tlb` 时，可取消项目依赖并单独构建 `Inkeys`。它与当前 `AGENTS.md` 的代理规则适用对象不同；Codex 应遵守 `AGENTS.md`，普通开发者的正式首选流程仍为 `【待确认】`。
 
@@ -91,7 +91,7 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
 
 以下除第一项外是根据当前构建结构形成的 `【合理推断】` 审查清单，不是声称仓库已有完整发布政策：
 
-1. `【直接确认；AGENTS.md】` Codex 使用完整 Solution、`Debug | ARM64`、ARM64 MSBuild host，超时至少 5 分钟。
+1. `【直接确认；AGENTS.md】` Codex 使用完整 Solution、`Debug | 当前设备原生架构`、对应架构 MSBuild host，超时至少 5 分钟。
 2. 新增源码、module、资源或 manifest 时，核对 `Inkeys/Inkeys.vcxproj` 的 Item 类型和条件配置。
 3. 涉及平台宏、SIMD、指针宽度或 Win32 API 时，分别检查 Win32、x64、ARM64，而不是从单一配置外推。
 4. 兼容性结论必须记录实际运行过的 Windows、架构和 Office/WPS 组合；未运行的只写“配置存在”或“项目声明”。

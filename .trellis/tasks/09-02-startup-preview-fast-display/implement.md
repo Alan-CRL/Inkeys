@@ -60,4 +60,4 @@
 
 ## 本轮完成状态
 
-步骤 1-7 已落地。2026-09-04 纠偏补丁追加了斜向 shimmer 合同、render-thread 资源释放和显式 manual-delay 入口；步骤 8 的最新自动验证以 `validation.md` 本轮记录为准。Win7、ARM64 runtime、混合 DPI、多屏和交互视觉项目保留为 NOT RUN。
+步骤 1-7 已落地，并已提交 `9e27bd26707dfeb3204ce78bf53e3b884cf4b811`。2026-09-04 纠偏补丁追加了斜向 shimmer 合同、render-thread 优先资源释放、显式 manual-delay 入口和 Trellis context 恢复；步骤 8 的最新自动验证以 `validation.md` 本轮记录为准。任务保持 `in_progress`，因为 Win7、ARM64 runtime、混合 DPI、多屏和交互视觉项目仍为 NOT RUN。

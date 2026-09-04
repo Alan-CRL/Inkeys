@@ -2,7 +2,7 @@
   "id": "startup-preview-fast-display",
   "name": "startup-preview-fast-display",
   "title": "启动预览与快速显示主栏",
-	"description": "在最终进程越过 SuperTop 后尽快显示程序化主栏占位，并以真实初始化进度和 committed Bar 帧完成可靠交接。",
+  "description": "在最终进程越过 SuperTop 后尽快显示程序化主栏占位，并以真实初始化进度和 committed Bar 帧完成可靠交接。",
   "status": "in_progress",
   "dev_type": "feature",
   "scope": "native-desktop",
@@ -12,18 +12,22 @@
   "assignee": "AlanCRL",
   "createdAt": "2026-09-02",
   "completedAt": null,
-  "branch": null,
+  "branch": "draw",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "9e27bd26707dfeb3204ce78bf53e3b884cf4b811",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-	"notes": "用户已批准将旧图片预览简化为程序化灰色占位；实现阶段按 470 DIP 默认几何、标量宽度缓存和顺序 committed-alpha 交接执行。",
+  "notes": "已提交 Startup Preview 纠偏实现：恢复默认斜向 shimmer、显式 manual-delay hook、OrderedHandoffReducer 交接和 render-thread 优先资源释放。后续 Trellis 平台更新提交不改变本任务产品合同。",
   "meta": {
     "phase": "implementation",
-    "implementationApproved": true
+    "implementationApproved": true,
+    "implementation": "committed",
+    "lastImplementationCommit": "9e27bd26707dfeb3204ce78bf53e3b884cf4b811",
+    "trellisContext": "restored",
+    "latestValidation": "This x64 device passed Debug|x64 full Solution build and x64 Debug --no-window headless; future default validation follows the current device's native Debug platform; visible/manual/platform checks pending"
   }
 }

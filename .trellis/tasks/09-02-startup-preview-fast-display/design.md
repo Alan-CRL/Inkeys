@@ -96,7 +96,7 @@ expandedTotalWidthDip = mainButton->GetW() /* target, not w.val */
 
 ## 9. 生命周期与 device generation
 
-共享 RenderPipeline dispatch order 保持 `Bar -> StartupPreview`。device generation 变化时 render thread 释放并重建 Preview target、mask、brush 等全部 device-dependent 资源；不得跨代使用旧对象。退出顺序为：停止接收新 frame/width -> 注销 topmost observer -> unregister/drain StartupPreview client -> owner hide/destroy/join -> 再按既有顺序停止 Bar、Window Service 和 RenderPipeline。任何 promise/event wait 都有上限；owner queue 关闭后拒绝新命令。
+共享 RenderPipeline dispatch order 保持 `Bar -> StartupPreview`。device generation 变化时 render thread 释放并重建 Preview target、mask、brush 等全部 device-dependent 资源；不得跨代使用旧对象。退出顺序为：停止接收新 frame/width -> 注销 topmost observer -> unregister/drain StartupPreview client -> render-thread control task 优先释放 Preview 资源 -> owner hide/destroy/join -> 再按既有顺序停止 Bar、Window Service 和 RenderPipeline。管线已停时只做进程收尾兜底释放；任何 promise/event wait 都有上限，owner queue 关闭后拒绝新命令。
 
 ## 10. 明确删除与兼容
 

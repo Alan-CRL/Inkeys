@@ -2,6 +2,15 @@
 
 > **历史记录，不是当前产品需求。** 本调查在上一版 embedded BIN、磁盘图片 cache、Gaussian blur、Bar proxy/staging 和 developer capture 方案下完成。最终方案已改为程序化中性灰圆角占位；其中关于图片格式、签名/CRC/epoch、proxy/staging、cache writer、图片资源和 capture 的结论均已废弃，不能指导当前实现或验收。仍有效的内容仅限启动边界、DPI、共享 RenderPipeline、ULW/owner 线程和 Bar committed alpha 等基础设施事实。
 
+## 2026-09-04 当前覆盖说明
+
+- 当前实现提交为 `9e27bd26707dfeb3204ce78bf53e3b884cf4b811`；后续 Trellis 平台更新提交不改变 Startup Preview 产品合同。
+- `RenderPipeline` 已包含 `Client::StartupPreview`，固定调度顺序为 `Bar -> StartupPreview -> PageControl/Settings/WhiteboardFreeze`；下文“新增 StartupPreview”与“Bar proxy”仅是历史调查口径，不再作为实现建议。
+- Preview 当前只绘制程序化中性灰圆角矩形、静态 A8 opacity mask、默认左上到右下斜向 shimmer 和真实进度条；不得恢复 embedded BIN、图片 cache、CRC/signature/layout epoch、Gaussian blur、live proxy、CPU staging 或 capture CLI。
+- Mini config 只读取 `StartupPreview.Enable`、`CachedStartupBarWidthDip` 和 `UI.Bar.Zoom`；不再读取按钮序列、主题或语言来构造视觉签名。
+- 人工观察分阶段延迟必须显式启用：`--startup-preview-manual-delay` 或 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`；`--startup-preview-smoke` 和默认启动不得隐式等待。
+- Preview D2D target、mask、brush 随 device generation 在 RenderPipeline render thread 重建；公开 `Stop()` 先 drain StartupPreview client，再优先投递 `PostControl` 释放资源，管线已停时才做收尾兜底。
+
 ## 入口、SuperTop 与 DPI
 
 - `wWinMain` 位于 `Inkeys/IdtMain.cpp:139`。SuperTop 主块为 `:591-743`，所以合法 T0 是紧随其后的 `:744`，不是日志或图形初始化之后。

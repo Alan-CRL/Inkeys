@@ -5,3 +5,5 @@
 {"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 启动子阶段只能观察既有 Host 生命周期，不改变设备所有权"}
 {"file": ".trellis/tasks/09-02-startup-preview-fast-display/research/code-investigation.md", "reason": "源码调用链、真实提交点、失败出口和可复用实现证据"}
 {"file": ".trellis/tasks/09-02-startup-preview-fast-display/research/microsoft-platform-contracts.md", "reason": "Win7、DPI、D2D1.1、ULW、HWND 线程和原子文件 API 官方合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Use current AGENTS build entry: full InkeysRepo.sln Debug with the current device's native platform/MSBuild host; record extra platforms separately"}
+{"file": ".trellis/tasks/09-02-startup-preview-fast-display/context.md", "reason": "当前任务的 RenderPipeline client order、资源 ownership、manual-delay 和历史删除边界摘要"}

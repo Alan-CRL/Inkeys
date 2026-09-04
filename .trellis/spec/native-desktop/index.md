@@ -25,7 +25,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 2. 确认项目文件是否需要登记新源码、module、资源、shader 或 manifest。
 3. 对渲染和输入修改，先画清窗口线程、渲染线程与共享状态的所有权。
 4. 对配置修改，先确认字段实际位于 `opt/deploy.json` 的 `SetListStruct` 路径，还是 `Inkeys/Config/main.json` 的 `Inkeys::Config` class / `Inkeys::config` instance；二者当前并存且用途不同。
-5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 ARM64 MSBuild 要求。
+5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 `Debug | 当前设备原生架构` 要求；跨平台风险按任务额外补充。
 
 ## 实施前决策门（阻塞）
 

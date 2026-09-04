@@ -46,7 +46,7 @@
 - `rg` 确认 Startup Preview 路径不再引用 BIN、image cache、CRC/signature/layout epoch、Gaussian blur、live proxy、CPU staging、`--capture-startup-preview` 或 capture validator。
 - RC、resource.h、vcxproj、filters 无悬挂 Startup Preview 图片资源/文件引用；PptCOM resource 221 保持不变。
 - `git diff --check`；检查修改文件的原编码/换行。
-- 按仓库要求运行完整 Solution Debug/Release x64；可行时补 Win32/ARM64 和 `InkeysHeadlessTests.exe --no-window`。不能执行的架构/平台明确记录为未执行。
+- 按仓库要求运行完整 Solution `Debug | 当前设备原生架构`；可行时按任务风险补 Release、非当前原生架构和 `InkeysHeadlessTests.exe --no-window`。不能执行的架构/平台明确记录为未执行。
 
 ## 5. 平台与人工待执行项
 
@@ -62,6 +62,7 @@
 | x64 Debug `--no-window` | PASS，`PASS animation correctness` |
 | `git diff --check` | PASS，无空白错误 |
 | 修改文件换行 | PASS，工作区均为 `w/crlf` |
+| Trellis context | PASS，任务重新设为当前会话；Startup Preview 任务规范、context 与 jsonl 已补充当前约束，避免大文件截断 |
 | x64 Debug `--startup-preview-smoke` | NOT RUN，本轮按项目约束未启动可见应用窗口 |
 | Win7/DPI/多屏/输入/视觉/真实故障注入 | NOT RUN，需专用环境或人工交互 |
 
