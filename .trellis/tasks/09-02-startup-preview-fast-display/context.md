@@ -37,7 +37,7 @@ Startup Preview 的产品输入只有三个 mini-config 值：`StartupPreview.En
 - RenderPipeline、Window Service、Draw3、Setting、Whiteboard 或正式 Bar 的既有致命失败仍须冻结真实进度并进入现有错误流程，不得静默 return。
 - 第一次自动重试不是最终 fatal：保持正常颜色，先让 Preview 完整渐隐，再按既有重启参数重试。第二次失败才绘制红色错误帧并在有界等待后显示对话框。
 - Preview 尚未建立或已经失效时直接使用系统/应用 MessageBox fallback；不得为等待错误帧无限阻塞。
-- `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE` 和分阶段延迟仅在测试条件启用；RenderPipeline/Draw3 callback thread 不 sleep。
+- `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和分阶段延迟仅在测试条件启用；RenderPipeline/Draw3 callback thread 不 sleep。
 
 ## 线程与资源所有权
 
@@ -45,11 +45,11 @@ Startup Preview 的产品输入只有三个 mini-config 值：`StartupPreview.En
 | --- | --- | --- |
 | Progress tracker | 原子状态/短锁 | 生产者只做低开销报告；UI 只读 snapshot |
 | Preview HWND/message loop | Preview owner thread | 其他线程只 post 命令；hide/destroy 回 owner |
-| Preview D2D target、mask、brush | 唯一 RenderPipeline render thread | device generation 变化时在该线程重建 |
+| Preview D2D target、mask、brush | 唯一 RenderPipeline render thread | device generation 变化时在该线程重建；停止时优先通过 render-thread control task 释放，管线已停则仅作收尾兜底 |
 | Bar presentation transaction | 唯一 RenderPipeline render thread | requested/attempted/committed 只在完整 present 后推进 |
 | Width write | 主线程或现有配置安全路径 | render thread 只发布有限、去重的 `double`，不做 I/O |
 | Owner geometry snapshot | presentation mutex | owner `SetWindowPos` 与每次 ULW 读取/提交串行 |
 
 ## 保留与删除边界
 
-保留 ULW、per-pixel alpha、`SourceConstantAlpha`、静态形状 mask、`FillOpacityMask` shimmer、真实 milestone、owner 线程、shared RenderPipeline、Bar alpha 事务和人工测试入口。删除 Startup Preview 专属的图片资源/文件、图片解析或持久化、签名/CRC/epoch 分类、模糊/proxy/staging/capture 及其 CLI、诊断、工程和文档登记；普通 Cache 目录及其他功能的 Cache/CRC/SHA 代码不在删除范围。
+保留 ULW、per-pixel alpha、`SourceConstantAlpha`、静态形状 mask、默认斜向 `FillOpacityMask` shimmer、真实 milestone、owner 线程、shared RenderPipeline、Bar alpha 事务和人工测试入口。删除 Startup Preview 专属的图片资源/文件、图片解析或持久化、签名/CRC/epoch 分类、模糊/proxy/staging/capture 及其 CLI、诊断、工程和文档登记；普通 Cache 目录及其他功能的 Cache/CRC/SHA 代码不在删除范围。

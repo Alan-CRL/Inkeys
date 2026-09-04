@@ -163,18 +163,27 @@ int RunStartupPreviewStateTests()
 	{
 		const GeometryRect bounds{ 0.0, 0.0,
 			static_cast<double>(pixels.width), static_cast<double>(pixels.height) };
-		const double support = (std::max)(160.0,
-			static_cast<double>(pixels.width) / 2.0);
-		const ShimmerGradient gradient{ 0.0, 0.0, support, 0.0, 0.0, 1.0 };
-		const auto travel = ResolveShimmerHorizontalTravel(bounds, gradient, 8.0);
-		if (!Expect(travel.valid && travel.startTranslationX < travel.endTranslationX
-			&& travel.startTranslationX + gradient.endX <= bounds.left
-			&& travel.endTranslationX >= bounds.right
+		const auto gradient = ResolveStartupPreviewShimmerGradient(
+			static_cast<double>(pixels.width), static_cast<double>(pixels.height));
+		const double supportLength = std::hypot(gradient.endX - gradient.startX,
+			gradient.endY - gradient.startY);
+		const auto travel = ResolveShimmerTravel(bounds, gradient,
+			(std::max)(8.0, supportLength * 0.10));
+		const auto startTranslation = ResolveShimmerTranslation(travel, 0.0);
+		const auto middleTranslation = ResolveShimmerTranslation(travel, 0.5);
+		const auto endTranslation = ResolveShimmerTranslation(travel, 1.0);
+		if (!Expect(travel.valid
+			&& gradient.endX > gradient.startX
+			&& gradient.endY > gradient.startY
+			&& startTranslation.x < endTranslation.x
+			&& startTranslation.y < endTranslation.y
 			&& IsShimmerSupportOutsideMask(bounds, gradient,
-				travel.startTranslationX)
+				startTranslation.x, startTranslation.y)
+			&& !IsShimmerSupportOutsideMask(bounds, gradient,
+				middleTranslation.x, middleTranslation.y)
 			&& IsShimmerSupportOutsideMask(bounds, gradient,
-				travel.endTranslationX),
-			"shimmer soft-tail support is fully offscreen at both endpoints")) ++failures;
+				endTranslation.x, endTranslation.y),
+			"diagonal shimmer soft-tail support is offscreen at endpoints and crosses the mask")) ++failures;
 	}
 	const auto shimmerEpoch = std::chrono::steady_clock::time_point(100h);
 	const auto halfCycle = ResolveShimmerCycleRatio(

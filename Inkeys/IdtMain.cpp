@@ -56,6 +56,7 @@ import Inkeys.Drawing.Draw3.diagnostics;
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
+#include <atomic>
 #include <lm.h>
 #include <shellscalingapi.h>
 #include <shlobj.h>
@@ -83,6 +84,7 @@ namespace
 	// PptCOM 会长期持有该地址；不要把原子包装对象强转成 LONG 指针。
 	LONG offSignalInterop = 0;
 	Inkeys::Display::Subscription displaySubscription;
+	std::atomic_bool startupPreviewManualDelayRequested = false;
 
 	[[nodiscard]] HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
 	{
@@ -140,9 +142,10 @@ namespace
 		if (!Inkeys::Startup::Report(milestone)) return;
 		wchar_t enabled[2]{};
 		if (!Inkeys::UI::StartupPreview::IsActive()
-			|| GetEnvironmentVariableW(
-				L"INKEYS_STARTUP_PREVIEW_MANUAL_DELAY", enabled, 2) == 0
-			|| enabled[0] != L'1') return;
+			|| (!startupPreviewManualDelayRequested.load(std::memory_order_acquire)
+				&& (GetEnvironmentVariableW(
+					L"INKEYS_STARTUP_PREVIEW_MANUAL_DELAY", enabled, 2) == 0
+					|| enabled[0] != L'1'))) return;
 		static bool firstVisibleMilestone = true;
 		const auto delay = firstVisibleMilestone
 			? std::chrono::milliseconds(3200)
@@ -899,13 +902,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
 		if (arguments)
 		{
-			for (int index = 1; index + 1 < argumentCount; ++index)
+			for (int index = 1; index < argumentCount; ++index)
 			{
 				if (CompareStringOrdinal(arguments[index], -1,
-					L"--startup-preview-smoke", -1, TRUE) == CSTR_EQUAL)
+					L"--startup-preview-smoke", -1, TRUE) == CSTR_EQUAL
+					&& index + 1 < argumentCount)
 				{
 					startupPreviewSmokePath = arguments[index + 1];
-					break;
+					++index;
+					continue;
+				}
+				if (CompareStringOrdinal(arguments[index], -1,
+					L"--startup-preview-manual-delay", -1, TRUE) == CSTR_EQUAL)
+				{
+					// 命令行入口方便人工观察；环境变量入口继续兼容脚本。
+					startupPreviewManualDelayRequested.store(true,
+						std::memory_order_release);
+					continue;
 				}
 			}
 			LocalFree(arguments);

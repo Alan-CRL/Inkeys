@@ -17,6 +17,7 @@ module;
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -399,6 +400,7 @@ namespace Inkeys::UI::StartupPreview
 			Phase phase = Phase::Preparing;
 			std::uint8_t committedPreviewAlpha = 0;
 			std::uint8_t fadeStartAlpha = 255;
+			OrderedHandoffReducer handoff;
 			std::atomic_bool active = false;
 			std::atomic_bool registered = false;
 			std::atomic_bool firstFrameCommitted = false;
@@ -506,10 +508,14 @@ namespace Inkeys::UI::StartupPreview
 			result = next.context->CreateGradientStopCollection(stops.data(),
 				static_cast<UINT32>(stops.size()), &collection);
 			if (FAILED(result)) return result;
-			const float support = static_cast<float>((std::max)(160u, width / 2));
+			const auto gradient = ResolveStartupPreviewShimmerGradient(
+				static_cast<double>(width), static_cast<double>(height));
 			result = next.context->CreateLinearGradientBrush(
 				D2D1::LinearGradientBrushProperties(
-					D2D1::Point2F(0.f, 0.f), D2D1::Point2F(support, 0.f)),
+					D2D1::Point2F(static_cast<float>(gradient.startX),
+						static_cast<float>(gradient.startY)),
+					D2D1::Point2F(static_cast<float>(gradient.endX),
+						static_cast<float>(gradient.endY))),
 				collection.Get(), &next.shimmer);
 			if (FAILED(result)) return result;
 
@@ -555,22 +561,24 @@ namespace Inkeys::UI::StartupPreview
 			if (!resources.mask || !resources.shimmer || contentOpacity <= 0.f) return;
 			const double width = static_cast<double>(resources.width);
 			const double height = static_cast<double>(resources.height);
-			const double support = static_cast<double>((std::max)(160u,
-				resources.width / 2));
 			const GeometryRect maskBounds{ 0.0, 0.0, width, height };
-			const ShimmerGradient gradient{ 0.0, 0.0, support, 0.0, 0.0, 1.0 };
-			const auto travel = ResolveShimmerHorizontalTravel(
-				maskBounds, gradient, (std::max)(8.0, support * 0.10));
+			const auto gradient = ResolveStartupPreviewShimmerGradient(width, height);
+			const double supportLength = std::hypot(gradient.endX - gradient.startX,
+				gradient.endY - gradient.startY);
+			const auto travel = ResolveShimmerTravel(
+				maskBounds, gradient, (std::max)(8.0, supportLength * 0.10));
 			const double cycle = runtime.shimmerEpoch
 				== std::chrono::steady_clock::time_point{} ? 0.0
 				: ResolveShimmerCycleRatio(frame.frameTime,
 					runtime.shimmerEpoch, std::chrono::duration<double>(1.75));
-			const double translation = ResolveShimmerTranslationX(
+			const auto translation = ResolveShimmerTranslation(
 				travel, EaseShimmerPhase(cycle));
 			resources.shimmer->SetStartPoint(D2D1::Point2F(
-				static_cast<float>(gradient.startX + translation), 0.f));
+				static_cast<float>(gradient.startX + translation.x),
+				static_cast<float>(gradient.startY + translation.y)));
 			resources.shimmer->SetEndPoint(D2D1::Point2F(
-				static_cast<float>(gradient.endX + translation), 0.f));
+				static_cast<float>(gradient.endX + translation.x),
+				static_cast<float>(gradient.endY + translation.y)));
 			resources.shimmer->SetOpacity(contentOpacity);
 			const auto previous = resources.context->GetAntialiasMode();
 			resources.context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
@@ -638,11 +646,36 @@ namespace Inkeys::UI::StartupPreview
 			runtime->owner.RequestStop();
 		}
 
+		void ReleaseResourcesOnRenderThread(
+			const std::shared_ptr<Runtime>& runtime) noexcept
+		{
+			try
+			{
+				auto completed = std::make_shared<std::promise<void>>();
+				auto future = completed->get_future();
+				if (Inkeys::UI::RenderPipeline::PostControl([runtime, completed]
+					{
+						runtime->resources.Reset();
+						try { completed->set_value(); }
+						catch (...) {}
+					}))
+					(void)future.wait_for(500ms);
+				else
+				{
+					// 管线已停止时没有 render thread 可投递，只做进程收尾兜底。
+					runtime->resources.Reset();
+				}
+			}
+			catch (...) {}
+		}
+
 		void RecoverOpaqueBar(const std::shared_ptr<Runtime>& runtime) noexcept
 		{
-			if (runtime->options.requestBarAlpha)
+			const auto recovery = runtime->handoff.Bypass();
+			if (recovery.requestBarFadeIn && runtime->options.requestBarAlpha)
 				runtime->options.requestBarAlpha(255);
-			if (runtime->committedBarAlpha.load(std::memory_order_acquire) == 255)
+			if (runtime->committedBarAlpha.load(std::memory_order_acquire) == 255
+				&& runtime->handoff.BarAlpha255Committed().destroyPreview)
 				RequestAutomaticStop(runtime);
 		}
 
@@ -669,11 +702,15 @@ namespace Inkeys::UI::StartupPreview
 				std::memory_order_acquire) == BarStartupState::FirstFrameCommitted;
 			const bool success = trackerComplete && barReady && !snapshot.failed;
 			const int barAlpha = runtime->committedBarAlpha.load(std::memory_order_acquire);
-			if (success && barAlpha == 0 && runtime->phase == Phase::WaitingForBar)
+			if (barAlpha == 0 && runtime->phase == Phase::WaitingForBar)
 			{
-				runtime->phase = Phase::FadingOut;
-				runtime->fadeStart = frame.frameTime;
-				runtime->fadeStartAlpha = runtime->committedPreviewAlpha;
+				const auto handoff = runtime->handoff.BarAlpha0Committed(success);
+				if (handoff.requestPreviewFadeOut)
+				{
+					runtime->phase = Phase::FadingOut;
+					runtime->fadeStart = frame.frameTime;
+					runtime->fadeStartAlpha = runtime->committedPreviewAlpha;
+				}
 			}
 
 			const auto owner = runtime->owner.Snapshot();
@@ -781,6 +818,7 @@ namespace Inkeys::UI::StartupPreview
 				runtime->shownTime = frame.frameTime;
 				runtime->shimmerEpoch = frame.frameTime;
 				runtime->progressVisual.MarkPreviewShown(frame.frameTime);
+				(void)runtime->handoff.PreviewFirstAlpha0Committed();
 				runtime->phase = Phase::WaitingForBar;
 				runtime->owner.Show();
 				if (runtime->options.progress)
@@ -793,7 +831,9 @@ namespace Inkeys::UI::StartupPreview
 			{
 				runtime->previewFadeOutCommitted.store(true,
 					std::memory_order_release);
-				runtime->phase = Phase::WaitingForOpaqueBar;
+				const auto handoff = runtime->handoff.PreviewFadeOutCommitted();
+				if (handoff.requestBarFadeIn)
+					runtime->phase = Phase::WaitingForOpaqueBar;
 			}
 			if (runtime->phase == Phase::ExitFadingOut && windowAlpha == 0)
 			{
@@ -816,7 +856,8 @@ namespace Inkeys::UI::StartupPreview
 			{
 				runtime->barAlpha255Committed.store(true,
 					std::memory_order_release);
-				RequestAutomaticStop(runtime);
+				if (runtime->handoff.BarAlpha255Committed().destroyPreview)
+					RequestAutomaticStop(runtime);
 			}
 			if (runtime->phase == Phase::Failure
 				&& !runtime->failureFrameCommitted.exchange(true,
@@ -925,7 +966,7 @@ namespace Inkeys::UI::StartupPreview
 		runtime->active.store(false, std::memory_order_release);
 		if (runtime->registered.exchange(false, std::memory_order_acq_rel))
 			Inkeys::UI::RenderPipeline::Unregister(Client::StartupPreview);
-		runtime->resources.Reset();
+		ReleaseResourcesOnRenderThread(runtime);
 		runtime->owner.Hide();
 		runtime->owner.Stop();
 		runtime->phase = Phase::Stopped;

@@ -27,7 +27,8 @@ namespace Inkeys::UI::StartupPreview
 		[[nodiscard]] bool TryResolveProjectionBounds(
 			const GeometryRect& maskBounds, const ShimmerGradient& gradient,
 			double& minimum, double& maximum,
-			double& vectorX, double& lengthSquared) noexcept
+			double& vectorX, double& vectorY,
+			double& lengthSquared) noexcept
 		{
 			if (!IsFiniteRect(maskBounds)
 				|| !std::isfinite(gradient.startX)
@@ -42,24 +43,26 @@ namespace Inkeys::UI::StartupPreview
 				return false;
 
 			vectorX = gradient.endX - gradient.startX;
-			const double vectorY = gradient.endY - gradient.startY;
+			vectorY = gradient.endY - gradient.startY;
 			lengthSquared = vectorX * vectorX + vectorY * vectorY;
 			if (!std::isfinite(lengthSquared) || lengthSquared <= ProjectionEpsilon
-				|| std::abs(vectorX) <= ProjectionEpsilon)
+				|| !std::isfinite(vectorX) || !std::isfinite(vectorY))
 				return false;
 
-			const double minimumX = vectorX >= 0.0
-				? maskBounds.left : maskBounds.right;
-			const double maximumX = vectorX >= 0.0
-				? maskBounds.right : maskBounds.left;
-			const double minimumY = vectorY >= 0.0
-				? maskBounds.top : maskBounds.bottom;
-			const double maximumY = vectorY >= 0.0
-				? maskBounds.bottom : maskBounds.top;
-			minimum = (minimumX - gradient.startX) * vectorX
-				+ (minimumY - gradient.startY) * vectorY;
-			maximum = (maximumX - gradient.startX) * vectorX
-				+ (maximumY - gradient.startY) * vectorY;
+			const double cornersX[]{ maskBounds.left, maskBounds.right,
+				maskBounds.right, maskBounds.left };
+			const double cornersY[]{ maskBounds.top, maskBounds.top,
+				maskBounds.bottom, maskBounds.bottom };
+			minimum = (std::numeric_limits<double>::max)();
+			maximum = -(std::numeric_limits<double>::max)();
+			for (int index = 0; index < 4; ++index)
+			{
+				const double projection = ((cornersX[index] - gradient.startX)
+					* vectorX + (cornersY[index] - gradient.startY) * vectorY)
+					/ lengthSquared;
+				minimum = (std::min)(minimum, projection);
+				maximum = (std::max)(maximum, projection);
+			}
 			return std::isfinite(minimum) && std::isfinite(maximum);
 		}
 	}
@@ -133,7 +136,17 @@ namespace Inkeys::UI::StartupPreview
 		};
 	}
 
-	ShimmerHorizontalTravel ResolveShimmerHorizontalTravel(
+	ShimmerGradient ResolveStartupPreviewShimmerGradient(
+		double width, double height) noexcept
+	{
+		if (!std::isfinite(width) || !std::isfinite(height)
+			|| width <= 0.0 || height <= 0.0) return {};
+		const double supportX = (std::max)(160.0, width * 0.5);
+		// Y 方向跨度来自占位高度，让高光核心保持旧版左上到右下的斜向质感。
+		return { 0.0, height * -0.5, supportX, height * 1.5, 0.0, 1.0 };
+	}
+
+	ShimmerTravel ResolveShimmerTravel(
 		const GeometryRect& maskBounds, const ShimmerGradient& gradient,
 		double outsideMargin) noexcept
 	{
@@ -141,35 +154,45 @@ namespace Inkeys::UI::StartupPreview
 		double minimum = 0.0;
 		double maximum = 0.0;
 		double vectorX = 0.0;
+		double vectorY = 0.0;
 		double lengthSquared = 0.0;
 		if (!TryResolveProjectionBounds(maskBounds, gradient, minimum, maximum,
-			vectorX, lengthSquared)) return {};
-		const double leftOutside = (minimum
-			- lengthSquared * gradient.supportEnd) / vectorX;
-		const double rightOutside = (maximum
-			- lengthSquared * gradient.supportStart) / vectorX;
-		if (!std::isfinite(leftOutside) || !std::isfinite(rightOutside)) return {};
+			vectorX, vectorY, lengthSquared)) return {};
+		const double length = std::sqrt(lengthSquared);
+		if (!std::isfinite(length) || length <= ProjectionEpsilon) return {};
+		const double projectedMargin = outsideMargin / length;
+		const double startOffset = minimum - gradient.supportEnd - projectedMargin;
+		const double endOffset = maximum - gradient.supportStart + projectedMargin;
+		if (!std::isfinite(startOffset) || !std::isfinite(endOffset)
+			|| startOffset >= endOffset) return {};
 		return {
-			(std::min)(leftOutside, rightOutside) - outsideMargin,
-			(std::max)(leftOutside, rightOutside) + outsideMargin,
+			vectorX * startOffset,
+			vectorY * startOffset,
+			vectorX * endOffset,
+			vectorY * endOffset,
 			true,
 		};
 	}
 
 	bool IsShimmerSupportOutsideMask(const GeometryRect& maskBounds,
-		const ShimmerGradient& gradient, double translationX) noexcept
+		const ShimmerGradient& gradient,
+		double translationX, double translationY) noexcept
 	{
-		if (!std::isfinite(translationX)) return false;
+		if (!std::isfinite(translationX) || !std::isfinite(translationY))
+			return false;
 		double minimum = 0.0;
 		double maximum = 0.0;
 		double vectorX = 0.0;
+		double vectorY = 0.0;
 		double lengthSquared = 0.0;
 		if (!TryResolveProjectionBounds(maskBounds, gradient, minimum, maximum,
-			vectorX, lengthSquared)) return false;
-		minimum -= translationX * vectorX;
-		maximum -= translationX * vectorX;
-		const double supportMinimum = lengthSquared * gradient.supportStart;
-		const double supportMaximum = lengthSquared * gradient.supportEnd;
+			vectorX, vectorY, lengthSquared)) return false;
+		const double translationProjection = (translationX * vectorX
+			+ translationY * vectorY) / lengthSquared;
+		minimum -= translationProjection;
+		maximum -= translationProjection;
+		const double supportMinimum = gradient.supportStart;
+		const double supportMaximum = gradient.supportEnd;
 		return maximum <= supportMinimum || minimum >= supportMaximum;
 	}
 
@@ -189,13 +212,17 @@ namespace Inkeys::UI::StartupPreview
 		return (1.0 - std::cos(Pi * cycleRatio)) * 0.5;
 	}
 
-	double ResolveShimmerTranslationX(
-		const ShimmerHorizontalTravel& travel, double easedPhase) noexcept
+	ShimmerTranslation ResolveShimmerTranslation(
+		const ShimmerTravel& travel, double easedPhase) noexcept
 	{
-		if (!travel.valid) return 0.0;
+		if (!travel.valid) return {};
 		easedPhase = std::clamp(easedPhase, 0.0, 1.0);
-		return travel.startTranslationX
-			+ (travel.endTranslationX - travel.startTranslationX) * easedPhase;
+		return {
+			travel.startTranslationX
+				+ (travel.endTranslationX - travel.startTranslationX) * easedPhase,
+			travel.startTranslationY
+				+ (travel.endTranslationY - travel.startTranslationY) * easedPhase,
+		};
 	}
 
 	std::uint8_t ResolveFadeInAlpha(std::chrono::milliseconds elapsed,

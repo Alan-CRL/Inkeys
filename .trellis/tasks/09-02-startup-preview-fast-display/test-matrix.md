@@ -15,7 +15,7 @@
 | Progress gate | milestone 乱序/重复/并发只计一次；Bar 首个 committed frame 前不达 100%；失败冻结 |
 | Preview alpha | 首次 ULW committed alpha 为 0；之后 fade-in 单调、不越界 |
 | Handoff reducer | Preview committed 到 0 前 Bar 不上升；之后 Bar committed 单调到 255；255 committed 后才 stop/destroy |
-| Shimmer endpoint | 任意测试宽度、DPI、zoom 下 phase 0/1 的全部非零 soft-tail 支撑在窗口外；wrap 两侧输出等于 base-only |
+| Shimmer endpoint | 默认方向含 X/Y 两个分量；任意测试宽度、DPI、zoom 下 phase 0/1 的全部非零 soft-tail 支撑在窗口外，中点穿过 mask，wrap 两侧输出等于 base-only |
 | Shimmer time | epoch 取 Preview 首次显示本地 `steady_clock`；两端慢、中间快；不由 frame timestamp 取模 |
 | Progress visibility | Preview shown 后 2999ms 不可见，满 3s 才开始约 180ms 渐显；3s 内完成不出现 |
 | Completion | 已显示时真实 100% 直接进入整窗 fade；无旧 300ms progress-only fade/停顿；进度不超过 actual |
@@ -42,6 +42,7 @@
 ## 4. Smoke/static/build
 
 - `--startup-preview-smoke` 报告至少：total width DIP、first preview alpha-0 committed、preview fade-out committed、Bar alpha-0/255 committed、owner exit、preview inactive 和最终 recovery 状态。
+- 人工观察可显式加 `--startup-preview-manual-delay` 或设置 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` 打开分阶段延迟；默认启动和 smoke 不得被这个 hook 拖慢。
 - `rg` 确认 Startup Preview 路径不再引用 BIN、image cache、CRC/signature/layout epoch、Gaussian blur、live proxy、CPU staging、`--capture-startup-preview` 或 capture validator。
 - RC、resource.h、vcxproj、filters 无悬挂 Startup Preview 图片资源/文件引用；PptCOM resource 221 保持不变。
 - `git diff --check`；检查修改文件的原编码/换行。
@@ -52,6 +53,19 @@
 以下需硬件、VM 或交互环境，不得提前标 PASS：Win7 SP1 + KB2670838/WARP/FL11.0、96/120/144/192 DPI、混合 DPI/多显示器/负坐标、SuperTop helper/UIAccess、真实 device loss/ULW failure、topmost 竞争、焦点/Alt-Tab/点击吞噬和首次重试/最终确认对话框人工观察。
 
 ## 6. 2026-09-04 执行结果
+
+### 纠偏补丁（最新）
+
+| 项目 | 结果 |
+| --- | --- |
+| Solution Debug x64 | PASS，完整 `InkeysRepo.sln` 退出码 0 |
+| x64 Debug `--no-window` | PASS，`PASS animation correctness` |
+| `git diff --check` | PASS，无空白错误 |
+| 修改文件换行 | PASS，工作区均为 `w/crlf` |
+| x64 Debug `--startup-preview-smoke` | NOT RUN，本轮按项目约束未启动可见应用窗口 |
+| Win7/DPI/多屏/输入/视觉/真实故障注入 | NOT RUN，需专用环境或人工交互 |
+
+### 初版简化提交（历史基线）
 
 | 项目 | 结果 |
 | --- | --- |

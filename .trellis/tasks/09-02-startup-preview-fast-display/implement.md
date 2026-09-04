@@ -26,8 +26,8 @@
 
 - 在共享 RenderPipeline render thread 创建 32-bpp premultiplied BGRA D2D target、静态圆角矩形 mask、低 alpha 内描边和具名中性灰 brush。
 - 移除图片上传、cubic、Gaussian blur、padding/effect bounds、live Bar proxy、CPU_READ staging 和 cache writer。
-- 用 `FillOpacityMask` 调制多段 soft-tail shimmer；调用期间切换 `D2D1_ANTIALIAS_MODE_ALIASED` 并无条件恢复。
-- 以 Preview 首次显示本地 `steady_clock` epoch 驱动 phase；提取纯函数计算完整非零支撑的离屏起止点，并覆盖不同 width/DPI/zoom 的 phase 0/1 与 wrap 测试。
+- 用默认左上到右下的斜向 `FillOpacityMask` 调制多段 soft-tail shimmer；调用期间切换 `D2D1_ANTIALIAS_MODE_ALIASED` 并无条件恢复。
+- 以 Preview 首次显示本地 `steady_clock` epoch 驱动 phase；提取纯函数计算完整非零支撑的离屏起止点，并覆盖不同 width/DPI/zoom 的 phase 0/1、中点穿过 mask 与 wrap 测试；默认方向不得退化为纯水平/纯竖直。
 - 在 shimmer 后绘制 192 DIP 居中进度条，沿用 3 秒门、约 180ms 渐显和窄窗口适配。
 
 ### 4. ULW 与 owner 合同
@@ -60,4 +60,4 @@
 
 ## 本轮完成状态
 
-步骤 1-7 已落地，步骤 8 的自动部分已完成：六套 Solution 配置构建、x64/Win32 headless、隐藏 startup smoke、旧引用审查和 CRLF 检查均有实际证据。Win7、ARM64 runtime、混合 DPI、多屏和交互视觉项目保留为 NOT RUN，详见 `validation.md`。
+步骤 1-7 已落地。2026-09-04 纠偏补丁追加了斜向 shimmer 合同、render-thread 资源释放和显式 manual-delay 入口；步骤 8 的最新自动验证以 `validation.md` 本轮记录为准。Win7、ARM64 runtime、混合 DPI、多屏和交互视觉项目保留为 NOT RUN。

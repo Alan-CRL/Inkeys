@@ -66,27 +66,37 @@ export namespace Inkeys::UI::StartupPreview
 		double supportEnd = 1.0;
 	};
 
-	struct ShimmerHorizontalTravel final
+	struct ShimmerTravel final
 	{
 		double startTranslationX = 0.0;
+		double startTranslationY = 0.0;
 		double endTranslationX = 0.0;
+		double endTranslationY = 0.0;
 		bool valid = false;
 	};
 
-	// 按完整非零尾光投影求左右离屏边界，不能用固定像素行程。
-	[[nodiscard]] ShimmerHorizontalTravel ResolveShimmerHorizontalTravel(
+	struct ShimmerTranslation final
+	{
+		double x = 0.0;
+		double y = 0.0;
+	};
+
+	// 默认反光为斜向扫过；行程仍按 mask 投影动态求离屏端点。
+	[[nodiscard]] ShimmerGradient ResolveStartupPreviewShimmerGradient(
+		double width, double height) noexcept;
+	[[nodiscard]] ShimmerTravel ResolveShimmerTravel(
 		const GeometryRect& maskBounds, const ShimmerGradient& gradient,
 		double outsideMargin = 1.0) noexcept;
 	[[nodiscard]] bool IsShimmerSupportOutsideMask(
 		const GeometryRect& maskBounds, const ShimmerGradient& gradient,
-		double translationX) noexcept;
+		double translationX, double translationY) noexcept;
 	[[nodiscard]] double ResolveShimmerCycleRatio(
 		std::chrono::steady_clock::time_point now,
 		std::chrono::steady_clock::time_point localEpoch,
 		std::chrono::duration<double> period) noexcept;
 	[[nodiscard]] double EaseShimmerPhase(double cycleRatio) noexcept;
-	[[nodiscard]] double ResolveShimmerTranslationX(
-		const ShimmerHorizontalTravel& travel, double easedPhase) noexcept;
+	[[nodiscard]] ShimmerTranslation ResolveShimmerTranslation(
+		const ShimmerTravel& travel, double easedPhase) noexcept;
 	[[nodiscard]] std::uint8_t ResolveFadeInAlpha(
 		std::chrono::milliseconds elapsed,
 		std::chrono::milliseconds duration) noexcept;

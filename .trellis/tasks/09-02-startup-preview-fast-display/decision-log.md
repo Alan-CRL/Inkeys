@@ -36,7 +36,8 @@
 ## 实施结果
 
 - 纯几何合同落在双方均可安全依赖的 `Inkeys.UI.Bar.Metrics` 与 `Inkeys.UI.StartupPreview.State` 中；`static_assert` 和 headless 同时锁定 70/75/380/470 DIP 推导。
-- shimmer 行程使用 `ResolveShimmerHorizontalTravel` 按 mask 投影和完整 support 求端点，实际多段 stops 的首尾为零；不同 DPI/zoom 尺寸的两端离屏与 wrap base-only 断言已通过。
+- shimmer 行程使用 `ResolveStartupPreviewShimmerGradient` + `ResolveShimmerTravel` 按斜向 gradient、mask 投影和完整 support 求端点，实际多段 stops 的首尾为零；不同 DPI/zoom 尺寸的两端离屏、中点穿过 mask 与 wrap base-only 断言已覆盖。
+- 人工观察分阶段延迟保留为显式 hook：命令行 `--startup-preview-manual-delay` 或环境变量 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`，默认启动不等待。
 - 六套 Solution 配置构建、x64/Win32 headless 与隐藏 startup smoke 已通过；完整命令和输出记录在 `validation.md`。
 
 ## 仍需人工验证

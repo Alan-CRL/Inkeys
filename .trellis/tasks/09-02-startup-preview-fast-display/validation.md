@@ -1,6 +1,40 @@
 # Startup Preview 验证记录
 
-## 2026-09-04 本轮结论
+## 2026-09-04 纠偏补丁验证（最新）
+
+本次补丁针对初版简化提交中的偏差做最小修正：恢复默认斜向 shimmer、补回人工观察延迟入口、把正常 handoff 接回 `OrderedHandoffReducer`，并让公开 `Stop()` 优先通过 render thread 释放 Startup Preview D2D 资源；管线已停时只做进程收尾兜底。未重新启动可见应用窗口做人工 smoke。
+
+## 最新构建与测试证据
+
+使用 x64 `MSBuild.exe` 构建完整 `InkeysRepo.sln`，并将 `TEMP/TMP` 指向仓库内临时目录；为规避当前沙箱环境中同时存在 `PATH/Path` 导致 CL 环境表重复的问题，最终构建使用干净 `cmd.exe` 环境补回单一 `Path`。下列命令等价目标退出码 0：
+
+```text
+MSBuild.exe InkeysRepo.sln /t:Build /p:Configuration=Debug /p:Platform=x64 /m:1 /nr:false /nologo
+Build/x64/Debug/InkeysHeadlessTests.exe --no-window
+```
+
+`InkeysHeadlessTests.exe --no-window` 输出：
+
+```text
+PASS animation correctness
+```
+
+最终增量构建仍输出仓库既有的第三方 `hashlib++` C4267 警告；本补丁过程中重编 `IdtMain.cpp` 时也出现过既有 `IdtMain.cpp(1465,26)` C4244 窄化转换警告。本补丁未新增编译错误。
+
+## 最新静态检查
+
+- `git diff --check`：PASS，无空白错误。
+- 修改文件 `git ls-files --eol`：工作区均为 `w/crlf`。
+- Startup Preview 专属源码/工程登记中不再出现 BIN、Format/VisualConfig/CacheWrite、image cache、signature/layout epoch、Gaussian blur、live proxy、CPU staging 或 `--capture-startup-preview`。
+- Shimmer headless 断言已改为默认方向同时包含 X/Y 分量，phase 0/1 的非零 soft-tail 支撑在窗口外，中点穿过 mask，wrap 两侧等于 base-only。
+- 人工观察延迟现在由 `--startup-preview-manual-delay` 或 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` 显式打开；默认启动和 `--startup-preview-smoke` 不会被该 hook 拖慢。
+
+## 最新未执行项（NOT RUN）
+
+- 本轮没有启动 `Build/x64/Debug/Inkeys.exe --startup-preview-smoke <report>`，因为项目指令要求完成后仅做静态提交或无窗口测试，除非用户明确允许启动窗口。
+- Win7 SP1 + KB2670838、DPI/多屏/负坐标、输入吞噬、焦点/Alt-Tab、topmost 竞争、真实 device loss/ULW failure、首次重试和最终 fatal 对话框视觉观察仍需专用环境或人工交互。
+
+## 2026-09-04 初版简化提交验证（历史）
 
 程序化灰色占位实现已完成自动验证。此前 BIN、494x105 抓帧、CRC/signature、Gaussian blur、proxy/staging、capture 和三类 cache 交接的历史 PASS 均已废弃，不作为本轮证据。
 

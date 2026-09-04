@@ -62,9 +62,9 @@ Preview target/DIB 使用 32-bpp BGRA8 premultiplied alpha。每帧先画静态�
 
 ## 5. Mask 与 shimmer
 
-创建/尺寸变化时在 RenderPipeline render thread 缓存静态 opacity mask，mask alpha 必须包括填充、内描边和抗锯齿边缘的最终形状 alpha。每帧用多段线性渐变 brush（宽而低强度漫反射、窄核心、柔和尾光）调用 `ID2D1DeviceContext::FillOpacityMask` 调制亮度。调用前保存 antialias mode，切到 `D2D1_ANTIALIAS_MODE_ALIASED`，无论成功失败都恢复原值；进度条在 shimmer 后绘制，不进入 mask。
+创建/尺寸变化时在 RenderPipeline render thread 缓存静态 opacity mask，mask alpha 必须包括填充、内描边和抗锯齿边缘的最终形状 alpha。每帧用默认左上到右下的斜向多段线性渐变 brush（宽而低强度漫反射、窄核心、柔和尾光）调用 `ID2D1DeviceContext::FillOpacityMask` 调制亮度。调用前保存 antialias mode，切到 `D2D1_ANTIALIAS_MODE_ALIASED`，无论成功失败都恢复原值；进度条在 shimmer 后绘制，不进入 mask。
 
-相位从 Preview 首次显示的本地 `steady_clock` epoch 计算，不使用 `frameTime.time_since_epoch() % period`。速度函数可用 `phase=(1-cos(pi*t))/2`，周期两端慢、中间快。行程纯函数必须以 mask bounds、渐变方向和全部非零 soft-tail 支撑计算：`t=0` 时支撑整体在左侧外，`t=1` 时整体在右侧外；因此周期 wrap 前后输出严格都是 base-only，不依靠停顿或 magic `-160/+160` 掩盖跳闪。该函数用不同宽度、DPI、zoom headless 验证。
+相位从 Preview 首次显示的本地 `steady_clock` epoch 计算，不使用 `frameTime.time_since_epoch() % period`。速度函数可用 `phase=(1-cos(pi*t))/2`，周期两端慢、中间快。行程纯函数必须以 mask bounds、渐变方向和全部非零 soft-tail 支撑计算：`t=0` 时支撑整体在左上侧外，`t=1` 时整体在右下侧外；默认方向必须含 X/Y 两个分量，不能退化为纯水平或纯竖直。因此周期 wrap 前后输出严格都是 base-only，不依靠停顿或 magic `-160/+160` 掩盖跳闪。该函数用不同宽度、DPI、zoom headless 验证。
 
 ## 6. 进度条与 alpha 状态机
 
@@ -102,4 +102,4 @@ expandedTotalWidthDip = mainButton->GetW() /* target, not w.val */
 
 删除 Startup Preview 专属 embedded BIN、生成说明、RC/resource ID、Format/VisualConfig/CacheWrite（无通用职责时）、图片 parser/writer/temp/CRC/signature/layout epoch/CacheState 分支、Gaussian blur、embedded scaling/padding、live proxy/crop/CPU_READ staging/stable debounce、developer capture API、`--capture-startup-preview` 以及关联诊断/project/filter 文档。不得删除普通 Cache 目录或其他功能的 CRC/SHA/Gaussian 代码。
 
-保留 `--startup-preview-smoke`，改为报告 total width DIP、Preview alpha-0 committed、Preview fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery 结果。
+保留 `--startup-preview-smoke`，改为报告 total width DIP、Preview alpha-0 committed、Preview fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery 结果。人工观察分阶段延迟可通过 `--startup-preview-manual-delay` 或 `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` 显式启用，默认启动不等待。

@@ -18,13 +18,13 @@
 - **PR-08 共享图形**：Preview 作为唯一 `Inkeys.UI.RenderPipeline` 的 `StartupPreview` client，复用 D2D1.1 device/context/scheduler；不得创建第二个 device、render thread、WinUI Runtime、DirectComposition 或 Win10-only effect。
 - **PR-09 程序化绘制**：每帧绘制固定中性灰圆角矩形，使用 `#808080`、形状 alpha `0.74` 和 1 DIP 内描边 alpha `0.16`，圆角/高度为当前 Bar 的 `8/80 DIP`。颜色与 alpha 集中为具名常量，深浅桌面均可辨认。
 - **PR-10 Alpha/ULW**：D2D/DIB 为 32-bpp BGRA8 premultiplied alpha；ULW 使用 `AC_SRC_OVER`、`AC_SRC_ALPHA` 和 Preview 的 `SourceConstantAlpha`。每次 `UpdateLayeredWindowIndirect` 都显式提供 `pptDst`、`psize`、`pptSrc`，并与 owner geometry snapshot 通过 mutex 串行。
-- **PR-11 Shimmer**：先缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态形状 mask，再以 `FillOpacityMask` 调制多段低强度渐变。调用时切换到 `D2D1_ANTIALIAS_MODE_ALIASED`，结束时无条件恢复；进度条在其后绘制。
-- **PR-12 无跳闪动画**：相位以 Preview 首次显示的本地 `steady_clock` epoch 计算，速度两端慢、中间快。纯函数根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算离屏起止点；phase 0/1 的支撑完全在窗口外，wrap 两侧均为 base-only。
+- **PR-11 Shimmer**：先缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态形状 mask，再以 `FillOpacityMask` 调制默认左上到右下的斜向多段低强度渐变。调用时切换到 `D2D1_ANTIALIAS_MODE_ALIASED`，结束时无条件恢复；进度条在其后绘制。
+- **PR-12 无跳闪动画**：相位以 Preview 首次显示的本地 `steady_clock` epoch 计算，速度两端慢、中间快。纯函数根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算离屏起止点；默认 shimmer 不得退化为纯水平或纯竖直。phase 0/1 的支撑完全在窗口外，wrap 两侧均为 base-only。
 - **PR-13 进度条**：从 Preview 首帧 ULW 成功 committed 并请求 owner 显示开始计时。满 3 秒仍未完成才以约 180ms 显示现有居中 Fluent 风格进度条；3 秒内完成不显示。进度条在 shimmer 后最后合成，使用真实 ratio。
 - **PR-14 顺序交接**：Bar 先以 presentation alpha 0 committed；正常完成时 Preview 整窗以 committed alpha 渐隐到 0，紧接着 Bar 从 committed alpha 0 渐显到 255。只有 Bar alpha 255 committed 后才隐藏/销毁 Preview；不做双 layered HWND 的中间 alpha cross-fade 或人为透明停顿。
 - **PR-15 失败/重试**：最终 fatal 时冻结进度，错误进度条立即变红；先等错误帧 committed 或达到有界上限，再显示现有错误对话框，确认后才让 Preview 渐隐。首次自动重试保持普通颜色并先渐隐。Preview 失效时使用既有 MessageBox fallback，Bar 尽最大安全努力恢复到 255 可见。
 - **PR-16 首帧宽度回写**：首个完整 Bar frame committed 后发布有限的 `expandedTotalWidthDip = mainButton->GetW() + 10.0 + layoutTotalWidth`。render thread 只发布去重后的普通 `double`；主线程或现有配置安全路径在值有效且有实质变化时写入 `main.json`，失败只记录并忽略。
-- **PR-17 测试钩子**：保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟和 `--startup-preview-smoke`。钩子未启用时不得拖慢正常启动，也不得让 RenderPipeline/Draw3 callback thread sleep。
+- **PR-17 测试钩子**：保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和 `--startup-preview-smoke`。钩子未启用时不得拖慢正常启动，也不得让 RenderPipeline/Draw3 callback thread sleep。
 
 ## 默认几何合同
 

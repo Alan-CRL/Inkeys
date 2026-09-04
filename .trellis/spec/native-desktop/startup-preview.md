@@ -75,7 +75,7 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 
 每帧先绘制一个连续圆角矩形：中性灰 `#808080`、形状 alpha `0.74`、1 DIP 内描边 alpha `0.16`，高度/圆角 `80/8 DIP`。描边必须向内绘制；禁止文字、图标、按钮槽、分隔线或假主栏内容。
 
-尺寸变化时缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态 opacity mask。反光用多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。进度条在 shimmer 后最后合成，不进入 mask。
+尺寸变化时缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态 opacity mask。反光用默认左上到右下的斜向多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。进度条在 shimmer 后最后合成，不进入 mask。
 
 相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准，可用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左侧外，phase 1 完全在右侧外，wrap 两侧都是 base-only。不得用固定 magic 行程或停顿掩盖跳闪。
 
@@ -109,7 +109,7 @@ expandedTotalWidthDip = mainButton->GetW() /* target, not w.val */
 
 Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failure 不得阻止正式启动；核心 RenderPipeline、Window Service、Draw3、Setting、Whiteboard 和 Bar failure 仍按既有 fatal 语义处理。退出顺序至少为：停止新 frame/width -> 注销 observer -> unregister/drain StartupPreview -> owner hide/destroy/join -> Bar/Window/RenderPipeline 既有 shutdown；所有 wait 有界。
 
-保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟和 `--startup-preview-smoke`。测试钩子未启用时不得拖慢正常启动，也不得让 render/callback thread sleep。Smoke 应报告 total width DIP、Preview alpha-0/fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段。
+保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和 `--startup-preview-smoke`。测试钩子未启用时不得拖慢正常启动，也不得让 render/callback thread sleep。Smoke 应报告 total width DIP、Preview alpha-0/fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段。
 
 ## 10. Validation matrix
 
