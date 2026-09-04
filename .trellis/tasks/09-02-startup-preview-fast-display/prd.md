@@ -4,7 +4,7 @@
 
 最终 Inkeys 进程越过 SuperTop 后仍需完成日志、配置、PptCOM、共享渲染管线、Window Service、Draw3、Setting、Whiteboard 和 Bar 初始化。初始化期间应尽快给用户一个可信的主栏外包络，同时显示真实 milestone 进度；预览不能复制图形设备、改变进程边界或把未完成工作伪报为完成。
 
-本轮产品形态是一个完全程序化绘制的占位：没有文字、图标、按钮分隔或其他内容装饰，仅有一个半透明中性灰色圆角矩形。它代表完整主栏外包络，包括主按钮、主按钮到 MainBar 主体的 10 DIP 间隔和主体本身。
+本轮产品形态是一个完全程序化绘制的占位：没有文字、图标、按钮分隔或其他内容装饰，仅有一个与正式主栏深色 Surface 一致的半透明圆角矩形。它代表完整主栏外包络，包括主按钮、主按钮到 MainBar 主体的 10 DIP 间隔和主体本身。
 
 ## Product Requirements
 
@@ -16,10 +16,10 @@
 - **PR-06 几何**：缓存值的语义始终是完整主栏总宽度 DIP。缺失或非法值回退 `470.0`；本次像素尺寸只由当前 DPI 和 `UI.Bar.Zoom` 换算，不能把像素或 zoom 后结果写回。
 - **PR-07 Preview 窗口**：使用独立 owner/message thread 的 top-level `WS_POPUP` layered tool window，带 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不带 `WS_EX_TRANSPARENT`。创建、定位、显示、隐藏和销毁均由 owner thread 完成；点击被吞掉且不激活。
 - **PR-08 共享图形**：Preview 作为唯一 `Inkeys.UI.RenderPipeline` 的 `StartupPreview` client，复用 D2D1.1 device/context/scheduler；不得创建第二个 device、render thread、WinUI Runtime、DirectComposition 或 Win10-only effect。
-- **PR-09 程序化绘制**：每帧绘制固定中性灰圆角矩形，使用 `#808080`、形状 alpha `0.74` 和 1 DIP 内描边 alpha `0.16`，圆角/高度为当前 Bar 的 `8/80 DIP`。颜色与 alpha 集中为具名常量，深浅桌面均可辨认。
+- **PR-09 程序化绘制**：每帧绘制固定深色圆角矩形，使用正式主栏 Dark Surface 的 `#181818`、形状 alpha `0.8`，以及白色 1 DIP 内描边 alpha `0.18`；圆角/高度为当前 Bar 的 `8/80 DIP`。颜色与 alpha 和 MainBar 共用具名常量，避免两边漂移。
 - **PR-10 Alpha/ULW**：D2D/DIB 为 32-bpp BGRA8 premultiplied alpha；ULW 使用 `AC_SRC_OVER`、`AC_SRC_ALPHA` 和 Preview 的 `SourceConstantAlpha`。每次 `UpdateLayeredWindowIndirect` 都显式提供 `pptDst`、`psize`、`pptSrc`，并与 owner geometry snapshot 通过 mutex 串行。
 - **PR-11 Shimmer**：先缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态形状 mask，再以 `FillOpacityMask` 调制默认左上到右下的斜向多段低强度渐变。调用时切换到 `D2D1_ANTIALIAS_MODE_ALIASED`，结束时无条件恢复；进度条在其后绘制。
-- **PR-12 无跳闪动画**：相位以 Preview 首次显示的本地 `steady_clock` epoch 计算，速度两端慢、中间快。纯函数根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算离屏起止点；默认 shimmer 不得退化为纯水平或纯竖直。phase 0/1 的支撑完全在窗口外，wrap 两侧均为 base-only。
+- **PR-12 无跳闪动画**：相位以 Preview 首次显示的本地 `steady_clock` epoch 计算。默认 4.0 秒周期中前 2.8 秒以余弦曲线两端慢、中间快地扫过，后 1.2 秒在完整离屏端停驻，以同时降低移动速度并拉长两次经过的间隔。纯函数根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算离屏起止点；默认 shimmer 不得退化为纯水平或纯竖直。phase 0/1 的支撑完全在窗口外，wrap 两侧均为 base-only。
 - **PR-13 进度条**：从 Preview 首帧 ULW 成功 committed 并请求 owner 显示开始计时。满 3 秒仍未完成才以约 180ms 显示现有居中 Fluent 风格进度条；3 秒内完成不显示。进度条在 shimmer 后最后合成，使用真实 ratio。
 - **PR-14 顺序交接**：Bar 先以 presentation alpha 0 committed；正常完成时 Preview 整窗以 committed alpha 渐隐到 0，紧接着 Bar 从 committed alpha 0 渐显到 255。只有 Bar alpha 255 committed 后才隐藏/销毁 Preview；不做双 layered HWND 的中间 alpha cross-fade 或人为透明停顿。
 - **PR-15 失败/重试**：最终 fatal 时冻结进度，错误进度条立即变红；先等错误帧 committed 或达到有界上限，再显示现有错误对话框，确认后才让 Preview 渐隐。首次自动重试保持普通颜色并先渐隐。Preview 失效时使用既有 MessageBox fallback，Bar 尽最大安全努力恢复到 255 可见。
@@ -61,7 +61,7 @@
 - [ ] 只有最终进程有一个 T0 和一个 Preview owner。
 - [ ] 默认几何可推导到 MainBar `380 DIP`、完整外包络 `470 DIP`；坏缓存值都回退 470。
 - [ ] 首帧以 ULW `SourceConstantAlpha=0` committed 后才无激活显示，之后 alpha 单调渐显。
-- [ ] 圆角灰色占位、静态 mask、offscreen shimmer 和最后合成的进度条均满足 alpha/几何合同。
+- [ ] 深色圆角占位、静态 mask、offscreen shimmer 和最后合成的进度条均满足颜色、alpha、周期与几何合同。
 - [ ] 正常 handoff 为 Preview committed 0 后 Bar committed 255；失败恢复到正式 Bar 可见。
 - [ ] 首帧宽度回写使用 target `GetW()`，且不在 render thread 做 I/O。
 - [ ] smoke/headless/static/build 结果只在本轮真实执行后记录；未执行的架构、Win7、DPI、多屏和人工输入测试单独列出。

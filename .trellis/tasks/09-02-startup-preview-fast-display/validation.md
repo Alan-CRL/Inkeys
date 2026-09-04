@@ -1,6 +1,16 @@
 # Startup Preview 验证记录
 
-## 2026-09-04 纠偏补丁验证（最新）
+## 2026-09-04 深色背景与低频反光验证（最新）
+
+本轮将 Preview 背景改为与正式 MainBar Dark Surface 共用的 `#181818`、填充 alpha `0.8` 和白色边框 alpha `0.18`。斜向 shimmer 改为 4.0 秒周期：前 2.8 秒使用余弦非线性曲线扫过，后 1.2 秒在 soft-tail 完整离屏的终点停驻。
+
+- 当前设备架构：x64；完整 `InkeysRepo.sln` 的 `Debug|x64` 构建 PASS，0 错误。构建保留 157 个仓库既有警告。
+- `Build/x64/Debug/InkeysHeadlessTests.exe --no-window`：PASS，输出 `PASS animation correctness`。
+- Headless 新增断言覆盖主栏/Preview 颜色和 alpha 一致、扫过四分点的非线性速度、2.8 秒终点、1.2 秒离屏停驻及 4.0 秒 wrap 两侧 base-only。
+- `git diff --check`、Trellis `task.py validate` 和所有修改文件 CRLF 检查均 PASS。
+- 未启动可见应用窗口；本轮视觉效果仍待用户通过 `--startup-preview-manual-delay` 人工确认。
+
+## 2026-09-04 纠偏补丁验证（历史）
 
 本次补丁针对初版简化提交中的偏差做最小修正：恢复默认斜向 shimmer、补回人工观察延迟入口、把正常 handoff 接回 `OrderedHandoffReducer`，并让公开 `Stop()` 优先通过 render thread 释放 Startup Preview D2D 资源；管线已停时只做进程收尾兜底。未重新启动可见应用窗口做人工 smoke。
 

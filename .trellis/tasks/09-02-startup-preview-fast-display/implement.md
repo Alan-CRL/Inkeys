@@ -24,9 +24,9 @@
 
 ### 3. 程序化 Preview 绘制
 
-- 在共享 RenderPipeline render thread 创建 32-bpp premultiplied BGRA D2D target、静态圆角矩形 mask、低 alpha 内描边和具名中性灰 brush。
+- 在共享 RenderPipeline render thread 创建 32-bpp premultiplied BGRA D2D target、静态圆角矩形 mask，以及复用 MainBar Dark Surface `#181818` / `0.8` 和白色边框 alpha `0.18` 的具名 brush。
 - 移除图片上传、cubic、Gaussian blur、padding/effect bounds、live Bar proxy、CPU_READ staging 和 cache writer。
-- 用默认左上到右下的斜向 `FillOpacityMask` 调制多段 soft-tail shimmer；调用期间切换 `D2D1_ANTIALIAS_MODE_ALIASED` 并无条件恢复。
+- 用默认左上到右下的斜向 `FillOpacityMask` 调制多段 soft-tail shimmer；4.0 秒周期内以 2.8 秒余弦缓动扫过，再完整离屏停驻 1.2 秒；调用期间切换 `D2D1_ANTIALIAS_MODE_ALIASED` 并无条件恢复。
 - 以 Preview 首次显示本地 `steady_clock` epoch 驱动 phase；提取纯函数计算完整非零支撑的离屏起止点，并覆盖不同 width/DPI/zoom 的 phase 0/1、中点穿过 mask 与 wrap 测试；默认方向不得退化为纯水平/纯竖直。
 - 在 shimmer 后绘制 192 DIP 居中进度条，沿用 3 秒门、约 180ms 渐显和窄窗口适配。
 

@@ -26,10 +26,12 @@ export
 	inline constexpr double BarMainBarWidthDip = 80.0;
 	inline constexpr double BarMainBarHeightDip = 80.0;
 	inline constexpr double BarMainBarCornerRadiusDip = 8.0;
+	inline constexpr unsigned char BarDarkSurfaceColorChannel = 24;
+	inline constexpr unsigned char BarDarkSurfaceFrameColorChannel = 255;
 	inline constexpr double BarMainBarFillOpacity = 0.8;
 	inline constexpr double BarMainBarFrameOpacity = 0.18;
 
-	// Startup Preview 只依赖这些无副作用的几何常量，不提前初始化完整 Bar。
+	// Startup Preview 只依赖这些无副作用的视觉常量，不提前初始化完整 Bar。
 	inline constexpr double BarMainButtonWidthDip = 80.0;
 	inline constexpr double BarMainButtonHeightDip = 80.0;
 	inline constexpr double BarMainButtonToMainBarGapDip = 10.0;

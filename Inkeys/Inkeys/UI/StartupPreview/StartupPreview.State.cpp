@@ -208,8 +208,11 @@ namespace Inkeys::UI::StartupPreview
 
 	double EaseShimmerPhase(double cycleRatio) noexcept
 	{
-		cycleRatio = std::clamp(cycleRatio, 0.0, 1.0);
-		return (1.0 - std::cos(Pi * cycleRatio)) * 0.5;
+		cycleRatio = std::clamp(cycleRatio, 0.0,
+			StartupPreviewShimmerSweepFraction);
+		const double sweepRatio = cycleRatio
+			/ StartupPreviewShimmerSweepFraction;
+		return (1.0 - std::cos(Pi * sweepRatio)) * 0.5;
 	}
 
 	ShimmerTranslation ResolveShimmerTranslation(

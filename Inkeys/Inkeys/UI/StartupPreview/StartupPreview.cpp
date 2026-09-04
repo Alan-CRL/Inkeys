@@ -480,10 +480,18 @@ namespace Inkeys::UI::StartupPreview
 			if (FAILED(result)) return result;
 
 			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(0.5f, 0.5f, 0.5f, 1.f), &next.baseFill);
+				D2D1::ColorF(
+					static_cast<float>(StartupPreviewSurfaceColorChannel),
+					static_cast<float>(StartupPreviewSurfaceColorChannel),
+					static_cast<float>(StartupPreviewSurfaceColorChannel), 1.f),
+				&next.baseFill);
 			if (FAILED(result)) return result;
 			result = next.context->CreateSolidColorBrush(
-				D2D1::ColorF(1.f, 1.f, 1.f, 1.f), &next.frameStroke);
+				D2D1::ColorF(
+					static_cast<float>(StartupPreviewSurfaceFrameColorChannel),
+					static_cast<float>(StartupPreviewSurfaceFrameColorChannel),
+					static_cast<float>(StartupPreviewSurfaceFrameColorChannel), 1.f),
+				&next.frameStroke);
 			if (FAILED(result)) return result;
 			result = next.context->CreateSolidColorBrush(
 				D2D1::ColorF(1.f, 1.f, 1.f, 0.24f), &next.progressTrack);
@@ -570,7 +578,9 @@ namespace Inkeys::UI::StartupPreview
 			const double cycle = runtime.shimmerEpoch
 				== std::chrono::steady_clock::time_point{} ? 0.0
 				: ResolveShimmerCycleRatio(frame.frameTime,
-					runtime.shimmerEpoch, std::chrono::duration<double>(1.75));
+					runtime.shimmerEpoch,
+					std::chrono::duration<double>(
+						StartupPreviewShimmerCycleSeconds));
 			const auto translation = ResolveShimmerTranslation(
 				travel, EaseShimmerPhase(cycle));
 			resources.shimmer->SetStartPoint(D2D1::Point2F(

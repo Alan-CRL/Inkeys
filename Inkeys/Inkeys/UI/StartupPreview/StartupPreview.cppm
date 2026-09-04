@@ -9,13 +9,18 @@ module;
 export module Inkeys.UI.StartupPreview;
 export import Inkeys.Startup.Progress;
 export import Inkeys.UI.StartupPreview.State;
+import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys::UI::StartupPreview
 {
 	inline constexpr double StartupBarCornerRadiusDip =
 		DefaultStartupBarCornerRadiusDip;
-	inline constexpr double StartupPreviewFillAlpha = 0.74;
-	inline constexpr double StartupPreviewFrameAlpha = 0.16;
+	inline constexpr double StartupPreviewSurfaceColorChannel =
+		static_cast<double>(BarDarkSurfaceColorChannel) / 255.0;
+	inline constexpr double StartupPreviewSurfaceFrameColorChannel =
+		static_cast<double>(BarDarkSurfaceFrameColorChannel) / 255.0;
+	inline constexpr double StartupPreviewFillAlpha = BarMainBarFillOpacity;
+	inline constexpr double StartupPreviewFrameAlpha = BarMainBarFrameOpacity;
 
 	struct StartOptions final
 	{

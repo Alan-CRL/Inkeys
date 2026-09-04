@@ -106,9 +106,14 @@ int RunStartupPreviewStateTests()
 		&& DefaultCachedStartupBarWidthDip == 470.0
 		&& DefaultStartupBarHeightDip == 80.0
 		&& DefaultStartupBarCornerRadiusDip == 8.0
+		&& StartupPreviewSurfaceColorChannel == 24.0 / 255.0
+		&& StartupPreviewSurfaceFrameColorChannel == 1.0
+		&& StartupPreviewFillAlpha == 0.8
+		&& StartupPreviewFrameAlpha == 0.18
 		&& StartupPreviewEnabledByDefault
 		&& CalculateStartupBarTotalWidthDip(80.0, 380.0) == 470.0,
-		"config defaults preview on and derives 380/470 DIP geometry")) ++failures;
+		"preview uses MainBar dark surface visuals and derives 380/470 DIP geometry"))
+		++failures;
 	if (!Expect(CalculateStartupBarTotalWidthDip(80.0, 380.0, false) == 80.0,
 		"collapsed geometry publishes only the main button width")) ++failures;
 	for (const double invalid : { 0.0, -1.0, 79.99, 4096.01,
@@ -186,15 +191,53 @@ int RunStartupPreviewStateTests()
 			"diagonal shimmer soft-tail support is offscreen at endpoints and crosses the mask")) ++failures;
 	}
 	const auto shimmerEpoch = std::chrono::steady_clock::time_point(100h);
-	const auto halfCycle = ResolveShimmerCycleRatio(
-		shimmerEpoch + 875ms, shimmerEpoch, 1.75s);
+	const auto shimmerPeriod =
+		std::chrono::duration<double>(StartupPreviewShimmerCycleSeconds);
+	const auto quarterSweepCycle = ResolveShimmerCycleRatio(
+		shimmerEpoch + 700ms, shimmerEpoch, shimmerPeriod);
+	const auto middleSweepCycle = ResolveShimmerCycleRatio(
+		shimmerEpoch + 1400ms, shimmerEpoch, shimmerPeriod);
+	const auto threeQuarterSweepCycle = ResolveShimmerCycleRatio(
+		shimmerEpoch + 2100ms, shimmerEpoch, shimmerPeriod);
+	const auto sweepEndCycle = ResolveShimmerCycleRatio(
+		shimmerEpoch + 2800ms, shimmerEpoch, shimmerPeriod);
+	const auto holdCycle = ResolveShimmerCycleRatio(
+		shimmerEpoch + 3400ms, shimmerEpoch, shimmerPeriod);
+	const auto beforeWrapCycle = ResolveShimmerCycleRatio(
+		shimmerEpoch + 3999ms, shimmerEpoch, shimmerPeriod);
 	const auto wrappedCycle = ResolveShimmerCycleRatio(
-		shimmerEpoch + 1750ms, shimmerEpoch, 1.75s);
-	if (!Expect(std::abs(halfCycle - 0.5) < 0.000001
-		&& wrappedCycle == 0.0 && EaseShimmerPhase(0.25) < 0.25
-		&& std::abs(EaseShimmerPhase(0.5) - 0.5) < 0.000001
-		&& EaseShimmerPhase(0.75) > 0.75,
-		"shimmer uses local epoch and eased endpoints")) ++failures;
+		shimmerEpoch + 4000ms, shimmerEpoch, shimmerPeriod);
+	const GeometryRect cycleBounds{ 0.0, 0.0, 470.0, 80.0 };
+	const auto cycleGradient = ResolveStartupPreviewShimmerGradient(470.0, 80.0);
+	const double cycleSupportLength = std::hypot(
+		cycleGradient.endX - cycleGradient.startX,
+		cycleGradient.endY - cycleGradient.startY);
+	const auto cycleTravel = ResolveShimmerTravel(cycleBounds, cycleGradient,
+		(std::max)(8.0, cycleSupportLength * 0.10));
+	const auto sweepEndTranslation = ResolveShimmerTranslation(
+		cycleTravel, EaseShimmerPhase(sweepEndCycle));
+	const auto holdTranslation = ResolveShimmerTranslation(
+		cycleTravel, EaseShimmerPhase(holdCycle));
+	const auto beforeWrapTranslation = ResolveShimmerTranslation(
+		cycleTravel, EaseShimmerPhase(beforeWrapCycle));
+	const auto wrappedTranslation = ResolveShimmerTranslation(
+		cycleTravel, EaseShimmerPhase(wrappedCycle));
+	if (!Expect(std::abs(sweepEndCycle - 0.70) < 0.000001
+		&& std::abs(holdCycle - 0.85) < 0.000001
+		&& beforeWrapCycle > 0.99 && wrappedCycle == 0.0
+		&& EaseShimmerPhase(quarterSweepCycle) < 0.25
+		&& std::abs(EaseShimmerPhase(middleSweepCycle) - 0.5) < 0.000001
+		&& EaseShimmerPhase(threeQuarterSweepCycle) > 0.75
+		&& sweepEndTranslation.x == holdTranslation.x
+		&& sweepEndTranslation.y == holdTranslation.y
+		&& IsShimmerSupportOutsideMask(cycleBounds, cycleGradient,
+			sweepEndTranslation.x, sweepEndTranslation.y)
+		&& IsShimmerSupportOutsideMask(cycleBounds, cycleGradient,
+			beforeWrapTranslation.x, beforeWrapTranslation.y)
+		&& IsShimmerSupportOutsideMask(cycleBounds, cycleGradient,
+			wrappedTranslation.x, wrappedTranslation.y),
+		"shimmer eases its sweep and holds fully offscreen between passes"))
+		++failures;
 
 	std::uint8_t previous = 0;
 	for (int elapsed = 0; elapsed <= 180; ++elapsed)

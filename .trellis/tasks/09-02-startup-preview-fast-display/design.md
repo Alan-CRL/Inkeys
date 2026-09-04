@@ -2,7 +2,7 @@
 
 ## 1. 设计目标与边界
 
-Startup Preview 是启动期间的轻量视觉反馈，不是 Bar 的第二份内容模型。Preview 只绘制一个连续的中性灰色圆角矩形和可选进度条；它不解析或持久化图像，也不复制 Bar 的 target bitmap。正式 Bar 仍是唯一业务 UI 和最终呈现源。
+Startup Preview 是启动期间的轻量视觉反馈，不是 Bar 的第二份内容模型。Preview 只绘制一个与正式主栏 Dark Surface 一致的连续深色圆角矩形和可选进度条；它不解析或持久化图像，也不复制 Bar 的 target bitmap。正式 Bar 仍是唯一业务 UI 和最终呈现源。
 
 本设计只覆盖最终进程越过 SuperTop 后的启动编排、Preview owner、共享 RenderPipeline client、D2D/ULW alpha 合同、真实进度、顺序交接和总宽度回写。路径检查、单实例、PptCOM 资源 221、Draw3 独立 device、普通 Cache 目录以及与 Preview 无关的 CRC/SHA 代码不在范围内。
 
@@ -56,7 +56,7 @@ mini config 只读取：
 
 Preview owner/message thread 创建 top-level `WS_POPUP`，扩展样式为 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不得加入 `WS_EX_TRANSPARENT`。`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATEANDEAT`；client 区返回 `HTCLIENT`，吞掉左/中/右键按下、抬起和双击消息。创建、定位、显示、隐藏和销毁均回 owner thread；透明圆角外像素按 ULW 原生 hit-test 规则处理。
 
-Preview target/DIB 使用 32-bpp BGRA8 premultiplied alpha。每帧先画静态形状：填充为具名中性灰 `#808080`，形状 alpha `0.74`，1 DIP 内描边 alpha `0.16`，高度/圆角为 `80/8 DIP`；描边必须向内绘制。形状是一个完整连续外包络，禁止文字、图标、按钮槽、分隔线或假内容。
+Preview target/DIB 使用 32-bpp BGRA8 premultiplied alpha。每帧先画静态形状：填充复用正式主栏 Dark Surface `#181818` 与 alpha `0.8`，白色 1 DIP 内描边复用 MainBar alpha `0.18`，高度/圆角为 `80/8 DIP`；描边必须向内绘制。颜色通道与 alpha 由 MainBar 和 Preview 共用的具名常量提供。形状是一个完整连续外包络，禁止文字、图标、按钮槽、分隔线或假内容。
 
 每次 ULW 都显式填写 `pptDst`、`psize` 和 `pptSrc`。`BLENDFUNCTION` 固定 `AC_SRC_OVER`、`BlendFlags=0`、`AlphaFormat=AC_SRC_ALPHA`，`SourceConstantAlpha` 是 Preview 自己的 committed fade 值。owner 的 SetWindowPos 与 render thread ULW 通过 presentation mutex 串行，render thread 回显 owner 已提交的 geometry snapshot；不能把 geometry 置空来“复用上次值”。
 
@@ -64,7 +64,7 @@ Preview target/DIB 使用 32-bpp BGRA8 premultiplied alpha。每帧先画静态�
 
 创建/尺寸变化时在 RenderPipeline render thread 缓存静态 opacity mask，mask alpha 必须包括填充、内描边和抗锯齿边缘的最终形状 alpha。每帧用默认左上到右下的斜向多段线性渐变 brush（宽而低强度漫反射、窄核心、柔和尾光）调用 `ID2D1DeviceContext::FillOpacityMask` 调制亮度。调用前保存 antialias mode，切到 `D2D1_ANTIALIAS_MODE_ALIASED`，无论成功失败都恢复原值；进度条在 shimmer 后绘制，不进入 mask。
 
-相位从 Preview 首次显示的本地 `steady_clock` epoch 计算，不使用 `frameTime.time_since_epoch() % period`。速度函数可用 `phase=(1-cos(pi*t))/2`，周期两端慢、中间快。行程纯函数必须以 mask bounds、渐变方向和全部非零 soft-tail 支撑计算：`t=0` 时支撑整体在左上侧外，`t=1` 时整体在右下侧外；默认方向必须含 X/Y 两个分量，不能退化为纯水平或纯竖直。因此周期 wrap 前后输出严格都是 base-only，不依靠停顿或 magic `-160/+160` 掩盖跳闪。该函数用不同宽度、DPI、zoom headless 验证。
+相位从 Preview 首次显示的本地 `steady_clock` epoch 计算，不使用 `frameTime.time_since_epoch() % period`。默认周期为 4.0 秒：前 70%（2.8 秒）使用 `phase=(1-cos(pi*t))/2` 两端慢、中间快地扫过，后 30%（1.2 秒）保持在完整离屏终点。行程纯函数必须以 mask bounds、渐变方向和全部非零 soft-tail 支撑计算：`t=0` 时支撑整体在左上侧外，`t=1` 时整体在右下侧外；默认方向必须含 X/Y 两个分量，不能退化为纯水平或纯竖直。因此停驻期间与周期 wrap 两侧输出严格都是 base-only，不使用 magic `-160/+160` 掩盖跳闪。该函数用不同宽度、DPI、zoom headless 验证。
 
 ## 6. 进度条与 alpha 状态机
 

@@ -4,7 +4,7 @@
 
 ## 1. Scope and non-goals
 
-- Preview 是完全程序化的、无文字无图标无按钮分隔的半透明中性灰圆角矩形，代表完整主栏外包络。
+- Preview 是完全程序化的、无文字无图标无按钮分隔的半透明深色圆角矩形，颜色与透明度复用正式主栏 Dark Surface，代表完整主栏外包络。
 - 正式 Bar 仍是唯一业务 UI；Preview 不复制 Bar target，不建立第二个 D3D/D2D device、render thread、WinUI Runtime、DirectComposition 或 Win10-only effect。
 - 不改变 SuperTop/单实例边界、PptCOM activation manifest 资源 221、Draw3 独立 device、普通 Cache 目录或与 Preview 无关的 CRC/SHA/Gaussian 代码。
 
@@ -102,11 +102,11 @@ create、SetWindowPos、show、hide、z-order、destroy 都回 owner thread；�
 
 ## 6. Programmatic shape and shimmer
 
-每帧先绘制一个连续圆角矩形：中性灰 `#808080`、形状 alpha `0.74`、1 DIP 内描边 alpha `0.16`，高度/圆角 `80/8 DIP`。描边必须向内绘制；禁止文字、图标、按钮槽、分隔线或假主栏内容。
+每帧先绘制一个连续圆角矩形：复用 MainBar Dark Surface `#181818`、形状 alpha `0.8`，白色 1 DIP 内描边 alpha `0.18`，高度/圆角 `80/8 DIP`。颜色通道与 alpha 必须由 MainBar 和 Preview 共用的具名常量提供，避免两边漂移。描边必须向内绘制；禁止文字、图标、按钮槽、分隔线或假主栏内容。
 
 尺寸变化时缓存包含填充、内描边和抗锯齿边缘最终 alpha 的静态 opacity mask。反光用默认左上到右下的斜向多段线性渐变 brush（宽低强度漫反射、窄核心、柔和尾光）配合 `ID2D1DeviceContext::FillOpacityMask`；调用前切 `D2D1_ANTIALIAS_MODE_ALIASED`，成功/失败均恢复原 mode。进度条在 shimmer 后最后合成，不进入 mask。
 
-相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准，可用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快。默认 shimmer gradient 必须同时包含 X/Y 分量，形成左上到右下的斜向质感，不得退化成纯水平或纯竖直。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左上侧外，phase 1 支撑完全在右下侧外，中点穿过 mask，wrap 两侧都是 base-only。不得用固定 magic 行程或停顿掩盖跳闪。
+相位以 Preview 首次显示的本地 `steady_clock` epoch 为基准。默认周期为 4.0 秒：前 70%（2.8 秒）用 `phase=(1-cos(pi*t))/2` 实现两端慢、中间快的非线性扫过，后 30%（1.2 秒）保持在完整离屏终点，以拉长两次反光经过的间隔。默认 shimmer gradient 必须同时包含 X/Y 分量，形成左上到右下的斜向质感，不得退化成纯水平或纯竖直。纯行程函数必须根据 mask bounds、渐变方向和全部非零 soft-tail 支撑计算端点：phase 0 支撑完全在左上侧外，phase 1 支撑完全在右下侧外，中点穿过 mask，停驻期间和 wrap 两侧都是 base-only。不得用固定 magic 行程掩盖跳闪。
 
 ## 7. Progress visual and handoff
 
@@ -164,7 +164,7 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 
 ## 12. Good / Base / Bad cases
 
-- **Good**：合法有限宽度（或缺失而回退 470），Preview alpha 0 首帧 committed；灰色占位与 shimmer 可见，真实进度单调；Bar alpha 0 committed 后 Preview committed 到 0，Bar committed 到 255 才销毁 owner。
+- **Good**：合法有限宽度（或缺失而回退 470），Preview alpha 0 首帧 committed；与主栏一致的深色占位和低频斜向 shimmer 可见，真实进度单调；Bar alpha 0 committed 后 Preview committed 到 0，Bar committed 到 255 才销毁 owner。
 - **Base**：首次启动没有宽度字段，使用 470 DIP；3 秒内完成则进度条不出现；更慢时进度条只显示真实 ratio，随后按同一顺序交接。
 - **Manual**：开发者显式传入 `--startup-preview-manual-delay` 后 milestone 间出现可观察停顿；去掉该参数后同一启动路径不等待。
 - **Recoverable bad**：坏宽度、Preview/D2D/shimmer/ULW/device loss、首次重试或 owner 超时；回退/绕过并尽力让正式 Bar committed 255 可见，不阻塞主程序。
@@ -173,7 +173,7 @@ Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failur
 ## 13. Tests required
 
 - **纯逻辑**：`ResolveCachedStartupBarWidthDip`、默认 380/470 推导、DPI×zoom 舍入、`CalculateStartupBarTotalWidthDip` target-vs-animation、去重发布、milestone/failure/100% gate。
-- **动画/alpha**：shimmer 默认 gradient 同时包含 X/Y 分量，phase 0/1 soft-tail 离屏、中点穿过 mask、wrap base-only；Preview alpha 0 首帧、单调 fade；Preview→Bar committed reducer 顺序、首次重试颜色、最终 fatal 红帧和 recovery。
+- **动画/alpha**：Preview 使用 MainBar Dark Surface `#181818` / `0.8` 和白色边框 alpha `0.18`；shimmer 默认 gradient 同时包含 X/Y 分量，4.0 秒周期内 2.8 秒非线性扫过、1.2 秒离屏停驻，phase 0/1 soft-tail 离屏、中点穿过 mask、停驻及 wrap base-only；Preview alpha 0 首帧、单调 fade；Preview→Bar committed reducer 顺序、首次重试颜色、最终 fatal 红帧和 recovery。
 - **窗口/渲染**：ULW 三个 geometry 指针始终非空；owner-thread lifecycle、click swallow、presentation mutex、mask antialias restore、Bar-before-Preview scheduler、device generation 重建。
 - **集成/静态**：旧 JSON 兼容、smoke 字段、manual delay hook 正/负向、`rg` 残留审查、`git diff --check`、完整 Solution/headless；Win7、DPI、多屏、SuperTop/UIAccess 和真实系统失败在可用环境执行并记录。
 

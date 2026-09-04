@@ -27,6 +27,11 @@ export namespace Inkeys::UI::StartupPreview
 	inline constexpr double DefaultStartupBarHeightDip = BarMainBarHeightDip;
 	inline constexpr double DefaultStartupBarCornerRadiusDip =
 		BarMainBarCornerRadiusDip;
+	// 2.8s 平滑扫过，随后在完整离屏端保持 1.2s。
+	inline constexpr double StartupPreviewShimmerCycleSeconds = 4.0;
+	inline constexpr double StartupPreviewShimmerSweepFraction = 0.70;
+	static_assert(StartupPreviewShimmerSweepFraction > 0.0
+		&& StartupPreviewShimmerSweepFraction <= 1.0);
 
 	struct StartupPreviewPixelSize final
 	{
