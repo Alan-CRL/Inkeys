@@ -1,6 +1,6 @@
 # PPT 三态画布与 UInk 自动保存恢复设计
 
-> 状态：用户已于 2026-09-04 批准实施，任务已进入 `in_progress`；实现后需按本设计复核。
+> 状态：2026-09-05 用户已批准稳定 COM 下的 SlideID 重排/插入/删除恢复规则，已进入实现。
 
 ## 1. 设计目标
 
@@ -9,13 +9,13 @@
 - 去除退出 PPT 的模态警示，但保留 EndShow 单请求 dispatcher、切 Selection 和 PptCOM 末页翻页确认。
 - 同一 PPT 的所有页完整覆盖保存到同一个 UInk 文档；页内容未变化时不产生无意义写入。
 - 文件和索引统一位于 `AutoSave/presentation/`，不按 Inkeys 进程分目录；本期只自动恢复当前进程创建或成功更新过的记录。
-- 优先以真实 SlideID 绑定；COM 损坏或兼容分支拿不到 ID 时，允许显式页序号退化，并把风险限制在当前进程。
+- 优先以真实 SlideID 绑定；稳定 COM 下以 SlideID 集合为页面身份，顺序变化只触发映射更新。COM 损坏或兼容分支拿不到 ID 时，允许显式页序号退化，并把风险限制在当前进程。
 - PptCOM 新读取不泄漏 `Application/Presentation/Slides/Slide/View` RCW，不因异常让 PowerPoint/WPS 进程残留后台。
 
 ## 2. 非目标
 
 - 本期不开放跨 Inkeys 进程自动恢复。
-- 本期不合并来自两个进程的页面内容，不处理插入、删除、重排后的交互式冲突，也不显示冲突决策弹框。
+- 本期不合并来自两个进程的页面内容，不处理跨进程内容冲突，也不显示冲突决策弹框。稳定 COM 的单进程页面重排、插入和删除属于本期范围。
 - 不实现 UInk append；Presentation 每次保存使用完整临时文件、自校验和原子替换。
 - 不实现任意外部 UInk 的通用 Draw3 预览或有损编辑，只导入本程序当前进程索引命中的受支持子集。
 - 不恢复发布版 Whiteboard 入口，不修改 Whiteboard UI。
@@ -84,7 +84,8 @@ native 将规范化 source identity 确定性映射为固定 16 字节 `Presenta
 ```text
 StableSlideId
   Canvas.slideId = Office/WPS 真实 SlideID
-  可按 SlideID 检测拓扑与重新绑定
+  以唯一 SlideID 集合检测增删，以 SlideID 映射处理任意重排
+  已保存但当前不存在的 SlideID 保留在 UInk/index，不参与本次放映投影
 
 PageIndexFallback
   使用 UInk private Workspace 类型（128+）而不是 Presentation 类型 2
@@ -95,7 +96,7 @@ PageIndexFallback
 
 UInk v10 只要求 workspaceType=2 的 Presentation Canvas 带真实 slideId；128+ private Workspace 可以诚实表达 Inkeys 的退化页集合，并让未知 reader 按通用页面保留内容。未来跨进程恢复器必须先识别 binding marker，不能把 private fallback 升级为 StableSlideId。
 
-同一进程内，若最初处于 fallback、之后拿到完整且页数一致的 SlideID 列表，可在绘制线程安全点按现有 ordinal 一次性升级同一 DocumentSlot；若无法证明一一对应，则本次 binding 继续保持 fallback，不能局部混用两种模式。
+同一进程内，若最初处于 fallback、之后拿到完整且页数一致的 SlideID 列表，可在绘制线程安全点按现有 ordinal 一次性升级同一 DocumentSlot；若无法证明一一对应，则本次 binding 继续保持 fallback，不能局部混用两种模式。Fallback 不尝试推断重排、插入或删除。
 
 ## 5. PptCOM 页面身份读取
 
@@ -173,6 +174,8 @@ PPT 使用单一 `PublishPresentationTarget(descriptor)` 原子发布 key、页�
 
 latest-state 可以合并重复目标，但每次 PresentationKey、bindingMode、SlideID、页或 topology 改变都推进 targetRevision。`presentationVisitEpoch/PptTouched` 在文档独立化完成后删除；Desktop 自动保存直接依赖自己的 singleton slot，不再需要污染门控。
 
+稳定拓扑的兼容判断分两层：SlideID 集合相同表示同一批页面，仅顺序变化时复用文档并按 ID 重排 page/runtime；集合新增或缺失表示页面插入/删除，保留旧 Canvas，同时为新增 SlideID 创建空 Canvas。`target.pageIndex` 始终是当前 COM 顺序，不能直接当作旧文档的 page index。
+
 ### 6.2 HostRuntimeSnapshot
 
 Bridge 的 desired state 以 `shared_ptr<const PresentationTarget>` 共享完整拓扑，发布后不可修改；命令同时固定发布时的 workspace/target。Host 先按 FIFO 重放命令场景并执行命令，再收敛到 latest state，避免 `A Clear -> Desktop/B` 时 Clear 落入后来的画布。
@@ -224,6 +227,8 @@ pendingSceneTarget
 - ordered real SlideID 或 fallback page-index bindings；
 - 文档级 `mutationRevision/queuedRevision/committedRevision`；
 - `persistenceInitialized/loadPending`，其余 warm/pending/failed 状态由 slot 内容与三 revision 表达。
+- 当前放映页按 descriptor 顺序组成 active projection；已从 PPT 删除但仍有 Canvas 的 SlideID 进入 `retainedSlides`，不参与当前页码和 ready，重新出现时按相同 SlideID 取回。
+- retained Canvas 与 active Canvas 共用同一 UInk 全量快照；导出时使用连续存储 pageIndex，并以明确的 retained marker 区分历史页，index 的 SlideID 集合保留 active 与 retained 的并集。
 
 ### 7.2 切换安全点
 
@@ -243,7 +248,7 @@ Whiteboard 当前入口关闭不改变其 singleton 定义；重新启用时继�
 每个 load/save 请求携带完整 PresentationTarget；保存另带文档 mutation revision。worker completion 到达后：
 
 - 保存完成可以更新对应 inactive slot 的 committed revision，即使它已不是当前目标。
-- 加载完成只可进入 key/source/topology 仍兼容的 active 或 parked slot；同文稿页码/targetRevision 已前进时可用 latest target materialize 全文档，不兼容结果直接丢弃，绝不覆盖当前画面。
+- 加载完成只可进入 key/source/SlideID 集合仍兼容的 active 或 parked slot；同文稿页码/targetRevision 已前进时按最新 SlideID 顺序 materialize 全文档，不兼容结果直接丢弃，绝不覆盖当前画面。被丢弃的旧 completion 仍必须结束其对应的 load-pending 状态。
 - A→B→A 时，B 的迟到结果绝不能激活到最终 A 上。
 - 保存未完成或失败的 inactive slot 保留 warm 文档；成功且 clean 的 inactive slot 才可淘汰，以保证真正存在 index→read→import 的冷恢复路径。
 
@@ -259,7 +264,9 @@ Whiteboard 当前入口关闭不改变其 singleton 定义；重新启用时继�
 - workspace extra；
 - 每个 Canvas 的 slideId 与 canvas extra。
 
-Desktop 现有字节/行为除 Header 时间等既有动态字段外保持不变。Presentation snapshot 遍历该 PPT 的全部页面，而不是只导出当前页；每张页 Canvas 使用稳定 pageGuid，空页也保留，以便 SlideID/ordinal 拓扑完整。
+Presentation 的 import/export snapshot 必须能区分 `activeCanvases` 与 `retainedCanvases`；两者最终仍编码为同一 UInk Document，历史页通过 Canvas extra 的 `inkeysPageState=retained` 标记识别。
+
+Desktop 现有字节/行为除 Header 时间等既有动态字段外保持不变。Presentation snapshot 遍历当前 active projection 及 `retainedSlides`，而不是只导出当前页；每张页 Canvas 使用稳定 pageGuid，空页也保留。active Canvas 按当前 SlideID 顺序写入，retained Canvas 追加写入并带 `inkeysPageState=retained` marker；同一文件中所有 Canvas 的存储 pageIndex 连续，workspace.currentPageIndex 只指向 active Canvas。
 
 ### 8.2 严格反向投影
 
@@ -271,11 +278,13 @@ UInkDocument + ExpectedPresentationBinding
   -> Draw3UInkImportSnapshot | structured diagnostics
 ```
 
+`ExpectedPresentationBinding` 同时携带当前 descriptor 的 `activeSlideIds`、index 中已知的 `knownSlideIds` 和当前页；不能再用一个 `pageCount` 把当前页数与 UInk 中保留的历史页数混为一谈。import snapshot 分开返回 `activeCanvases` 与 `retainedCanvases`，materialize 后只把 active 集合放入可绘制 page/runtime，retained 集合放入 slot 的历史页表。
+
 只接受：
 
 - Header/fileGuid、唯一 Presentation Workspace、hostId 与 index entry 全匹配；
 - layer 0、受支持 viewport、当前 Draw3 可表达的 Pen/Highlighter/Eraser/Line/Rectangle；
-- Stable 模式真实 SlideID，或带明确 marker 的 private PageIndexFallback Workspace；
+- Stable 模式真实 SlideID，或带明确 marker 的 private PageIndexFallback Workspace；retained stable Canvas 必须仍带真实 SlideID 和 retained marker；
 - 无 Media、AdvancedHighlighter、未知/private 顶层语义和无法安全投影的 Shape/HDR。
 
 reader 仍完整保留合法 UInk；“strict current-process importer 拒绝”不得被记录为文件损坏。导入失败不修改现有 slot，随后创建隔离空 Presentation slot。
@@ -284,7 +293,7 @@ materialize 在绘制线程完成：按 snapshot 构造 InkCanvasCollection，�
 
 ### 8.3 拓扑校验
 
-- Stable 模式要求 index/UInk/当前 descriptor 的有序 SlideID topology 完全一致；页序重排、插入或删除均属于后续冲突解决范围，本期隔离且不自动猜测。
+- Stable 模式要求当前 descriptor 的 SlideID 集合是 UInk/index 已知集合的子集；导入时按当前 descriptor 顺序重排 active Canvas，并把其余带 retained marker 的 Canvas 放入 `retainedSlides`。当前 descriptor 新增的 SlideID 若无历史记录则创建空 Canvas；UInk/index 中缺失于当前 descriptor 的旧 Canvas 保留但不投影；同一 SlideID 重新出现时恢复原 Canvas。重复、非法、未标 retained 的额外 ID 或无法建立唯一映射时整份导入失败并隔离。
 - PageIndexFallback 仅接受当前 session 的 entry。稳定路径文稿以相同 PresentationKey/source identity 和相同页数跨放映 binding 按 ordinal 恢复；process-local 身份仍要求 exact binding revision/token。缺页、越界或页数不同均拒绝整份导入。
 - fallback Canvas 不含 slideId，永不参与 Stable 模式匹配。
 
@@ -357,7 +366,7 @@ Presentation 与 Desktop 的历史保存语义不同：Desktop 每次请求不�
 }
 ```
 
-index validator 严格检查 schema/字段数、唯一 presentationKey/source identity/fileGuid/path、`relativePath == files/<fileGuid>.uink`、binding 拓扑和 UInk Header/source revision。所有 entry 必须带 writer session；`process-local` 和 `page-index` 记录未来跨进程 reader 默认拒绝。
+index validator 严格检查 schema/字段数、唯一 presentationKey/source identity/fileGuid/path、`relativePath == files/<fileGuid>.uink`、binding 拓扑和 UInk Header/source revision。稳定模式的 `slideIds` 保存该文稿已知 SlideID 并集（当前 active 顺序在前，retained 历史页随后），保存时只增不删；所有 entry 必须带 writer session；`process-local` 和 `page-index` 记录未来跨进程 reader 默认拒绝。
 
 ### 10.3 当前阶段的 claim 规则
 
@@ -376,7 +385,7 @@ index validator 严格检查 schema/字段数、唯一 presentationKey/source id
 - worker 在互斥区内重读并严格验证 index，解析/认领 entry，再执行对应 UInk create-new 或 SaveExistingLogicalFile。
 - 首次创建：UInk durable+self-validate 后原子发布 index；index 失败保留孤儿和可重试状态。
 - 覆盖：携带 expected UInkSourceRevision；`SourceChanged` 不更新 index、不标 clean。
-- 文件仍保持同一路径和 fileGuid；成功覆盖后原子更新 mutation/source revision 与显式 binding/slideIds。
+- 文件仍保持同一路径和 fileGuid；成功覆盖后原子更新 mutation/source revision 与显式 binding/slideIds。稳定页面重排或增删后的保存仍是单一全量 UInk，不能删除当前 descriptor 不存在的历史 Canvas。
 - 主/备 index 都损坏时停止写入并记录；不扫描后猜测重建、不删除未知文件。
 - 文件已提交但 index 失败的 pending entry 只在同一规范化 autosave root 内保留；同根 Host generation 可经 source revision/strict import 恢复并收敛，切换 root 必须清除。实际 I/O 使用保留大小写的绝对路径，大小写折叠 key 只用于 root 比较与 named mutex。
 - 当前任务不弹保存错误或冲突窗口。
@@ -404,6 +413,7 @@ index validator 严格检查 schema/字段数、唯一 presentationKey/source id
 | A→B→A | targetRevision 单调；B completion 过期不得激活；A warm 优先 |
 | A 保存中立即重入 | 不读旧文件，使用 A warm slot；completion 只更新 matching revision |
 | A clean 淘汰后重入 | current-process index → read/import A → present |
+| A 稳定 SlideID 重排/插入/删除后重入 | 以 SlideID 集合匹配；按当前顺序重排 Canvas，新增页为空，已删除页保留但不投影 |
 | stable ID 暂时 busy | 保留同 binding 最后 stable descriptor，不降级、不换 key |
 | 初始即拿不到 ID | 创建 PageIndexFallback slot；稳定路径同 session/key/source 且页数相同时按页码恢复，process-local 必须 exact binding |
 | ID 后续恢复 | 能证明 ordinal 一一对应时原地升级，否则本次继续 fallback |
@@ -425,7 +435,9 @@ index validator 严格检查 schema/字段数、唯一 presentationKey/source id
 | 文档 binding 首次 unavailable | 保持目标未 ready，并使用隔离空 slot；不复用上一 PPT key |
 | 文档身份可用但 SlideID 不可得 | 使用 PageIndexFallback；稳定路径只允许当前 session 的同 key/source、相同页数按 ordinal 恢复；process-local 仍限 exact binding |
 | SlideID 部分读取失败/重复/数量不符 | 丢弃整个 ID 列表，PageIndexFallback；所有 temporary 已释放 |
-| PresentationKey 相同但 stable topology 不同 | 进入隔离空 slot 并记录 topology conflict，不自动附着或覆盖 |
+| PresentationKey 相同且 stable SlideID 集合相同但顺序不同 | 按 SlideID 重排现有 page/runtime，保留 Canvas、历史和 fileGuid |
+| stable descriptor 新增/删除 SlideID | 新页创建空 Canvas；删除页 Canvas 保留在文档/index 中但不投影；相同 ID 再出现时恢复 |
+| stable topology 含重复/非法 ID 或无法唯一映射 | 隔离空 slot，保留原 UInk/index，不静默覆盖 |
 | 无变化切页 | 不捕获、不写盘 |
 | 保存 pending 时又修改 | 保留最新 follow-up snapshot |
 | Save SourceChanged/foreign entry | 不覆盖、不推进 index、不标 clean；保留 warm dirty |
@@ -450,7 +462,7 @@ index validator 严格检查 schema/字段数、唯一 presentationKey/source id
 - SceneTarget 原子性、identity-aware ready、same-page A/B 隔离和 stale completion。
 - Desktop/Whiteboard/多个 Presentation DocumentSlot 往返及 GPU-independent runtime 重建。
 - 每类持久化 mutation 的 dirty revision、无变化不写、清空覆盖和 latest-wins。
-- stable SlideID 精确拓扑映射、topology conflict 隔离、PageIndexFallback 和 fallback→stable 安全升级；插入/删除/重排后的自动冲突解决按用户范围延期。
+- stable SlideID 集合校验、任意重排映射、插入/删除的保留与重新出现恢复、PageIndexFallback 和 fallback→stable 安全升级。
 - UInk Presentation exporter/importer round-trip、hostId/slideId/extra、unsupported rejection 和 redo 清空。
 - global index schema、same-key overwrite、current-process claim、foreign writer conflict、source revision、主备恢复、孤儿和故障注入。
 - A→B→A、save/load 乱序、立即重入、失败后 warm slot 保留和退出 drain。

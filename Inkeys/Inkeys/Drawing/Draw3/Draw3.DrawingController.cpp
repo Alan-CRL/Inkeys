@@ -344,6 +344,8 @@ namespace Inkeys::Drawing::Draw3
 		{
 			std::optional<InkCanvasCollection> document;
 			std::vector<CanvasPageRuntimeState> pageRuntimeStates;
+			// 稳定 SlideID 已从当前 PPT 消失时，保留其纯值快照，等待以后重新出现。
+			std::map<std::int32_t, draw3::uink::Draw3UInkCanvasSnapshot> retainedSlides;
 			std::size_t currentPageIndex = 0;
 			std::optional<Bridge::PresentationTarget> presentationTarget;
 			std::optional<draw3::uink::UInkGuid> fileGuid;
@@ -1512,6 +1514,7 @@ namespace Inkeys::Drawing::Draw3
 		std::map<Bridge::PresentationKey, DrawingDocumentSlot> presentationSlots;
 		std::optional<Bridge::PresentationKey> activePresentationKey;
 		std::optional<Bridge::PresentationTarget> activePresentationTarget;
+		std::map<std::int32_t, draw3::uink::Draw3UInkCanvasSnapshot> activeRetainedSlides;
 		std::optional<draw3::uink::UInkGuid> activePresentationFileGuid;
 		std::uint64_t activePresentationMutationRevision = 0;
 		std::uint64_t activePresentationQueuedRevision = 0;
@@ -3931,6 +3934,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			std::swap(document_, slot.document);
 			std::swap(pageRuntimeStates, slot.pageRuntimeStates);
+			std::swap(activeRetainedSlides, slot.retainedSlides);
 			std::swap(currentPageIndex_, slot.currentPageIndex);
 			std::swap(activePresentationTarget, slot.presentationTarget);
 			std::swap(activePresentationFileGuid, slot.fileGuid);
@@ -4052,24 +4056,26 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.workspaceExtra = draw3::uink::MakeInkeysBindingExtra(importMode);
 				snapshot.dpiScale = configuration_.dpiScale;
 				snapshot.assignedIndependentUndoGroups = true;
-				for (std::size_t pageIndex = 0;
-					pageIndex < document.Pages().size(); ++pageIndex)
+				auto captureCanvas = [&](const InkPage* page,
+					const CanvasPageRuntimeState& runtime, std::size_t pageIndex,
+					std::optional<std::int32_t> slideId, bool retained)
+					-> std::optional<draw3::uink::Draw3UInkCanvasSnapshot>
 				{
-					const InkPage* page = document.PageAt(pageIndex);
-					const InkCanvas* canvas = page
-						? page->FindCanvas(kDefaultDeviceKey) : nullptr;
-					if (!page || !canvas) return std::nullopt;
+					if (!page || !slideId && target.bindingMode ==
+						Bridge::SlideBindingMode::StableSlideId) return std::nullopt;
+					const InkCanvas* canvas = page->FindCanvas(kDefaultDeviceKey);
+					if (!canvas) return std::nullopt;
 					draw3::uink::Draw3UInkCanvasSnapshot output;
 					output.pageGuid = draw3::uink::UInkGuid(page->PageGuid().Bytes());
 					output.pageIndex = static_cast<std::uint32_t>(pageIndex);
 					output.pageNumber = static_cast<std::uint32_t>(pageIndex + 1);
-					if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
-						output.slideId = target.slideIds[pageIndex];
+					output.slideId = slideId;
+					output.retained = retained;
 					output.viewport = { canvas->Viewport().x, canvas->Viewport().y,
 						canvas->Viewport().scale };
 					output.extra = draw3::uink::MakeInkeysBindingExtra(importMode);
 					const std::span<const InkStroke> strokes = canvas->Strokes();
-					for (const RenderItemState& item : runtimes[pageIndex].history.Items())
+					for (const RenderItemState& item : runtime.history.Items())
 					{
 						if (!item.visible) continue;
 						if (item.strokeIndex >= strokes.size()) return std::nullopt;
@@ -4084,8 +4090,30 @@ namespace Inkeys::Drawing::Draw3
 							outputStroke.points.push_back({ point.x, point.y, point.width });
 						output.strokes.push_back(std::move(outputStroke));
 					}
-					snapshot.canvases.push_back(std::move(output));
+					return output;
+				};
+				for (std::size_t pageIndex = 0;
+					pageIndex < document.Pages().size(); ++pageIndex)
+				{
+					const InkPage* page = document.PageAt(pageIndex);
+					const std::optional<std::int32_t> slideId = target.bindingMode ==
+						Bridge::SlideBindingMode::StableSlideId
+						? std::optional<std::int32_t>(target.slideIds[pageIndex]) : std::nullopt;
+					const auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
+						slideId, false);
+					if (!output) return std::nullopt;
+					snapshot.activeCanvases.push_back(*output);
 				}
+				// 保留 legacy canvases 投影，兼容旧的 UInk 测试与读取器。
+				snapshot.canvases = snapshot.activeCanvases;
+				if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
+					for (const auto& [slideId, retained] : activeRetainedSlides)
+					{
+						auto output = retained;
+						output.slideId = slideId;
+						output.retained = true;
+						snapshot.retainedCanvases.push_back(std::move(output));
+					}
 				PresentationSaveRequest request;
 				request.target = target;
 				request.mutationRevision = mutationRevision;
@@ -4132,15 +4160,49 @@ namespace Inkeys::Drawing::Draw3
 		{
 			try
 			{
-				if (snapshot.canvases.size() != target.totalPages ||
+				const auto& importedActive = snapshot.activeCanvases.empty()
+					? snapshot.canvases : snapshot.activeCanvases;
+				std::map<std::int32_t, const draw3::uink::Draw3UInkCanvasSnapshot*> bySlideId;
+				for (const auto& source : importedActive)
+					if (source.slideId) bySlideId.emplace(*source.slideId, &source);
+				std::vector<draw3::uink::Draw3UInkCanvasSnapshot> activeCanvases;
+				activeCanvases.reserve(target.totalPages);
+				for (std::size_t index = 0; index < target.totalPages; ++index)
+				{
+					if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
+					{
+						auto found = bySlideId.find(target.slideIds[index]);
+						if (found != bySlideId.end()) activeCanvases.push_back(*found->second);
+						else
+						{
+							const auto pageGuid = draw3::uink::CreateUInkGuid();
+							if (!pageGuid) return std::nullopt;
+							draw3::uink::Draw3UInkCanvasSnapshot blank;
+							blank.pageGuid = *pageGuid;
+							blank.slideId = target.slideIds[index];
+							blank.viewport = { 0.0f, 0.0f, 1.0f };
+							activeCanvases.push_back(std::move(blank));
+						}
+					}
+					else
+					{
+						if (index >= importedActive.size()) return std::nullopt;
+						activeCanvases.push_back(importedActive[index]);
+					}
+				}
+				if (activeCanvases.size() != target.totalPages ||
 					snapshot.workspaceGuid.IsZero() || snapshot.fileGuid.IsZero())
 					return std::nullopt;
 				DrawingDocumentSlot slot;
 				InkCanvasCollection collection(InkGuid(snapshot.workspaceGuid.Bytes()));
 				for (std::size_t pageIndex = 0;
-					pageIndex < snapshot.canvases.size(); ++pageIndex)
+					pageIndex < activeCanvases.size(); ++pageIndex)
 				{
-					const auto& source = snapshot.canvases[pageIndex];
+					// 按当前放映顺序归一化页码，新插入页也必须带有正确的序号。
+					activeCanvases[pageIndex].pageIndex = static_cast<std::uint32_t>(pageIndex);
+					activeCanvases[pageIndex].pageNumber = static_cast<std::uint32_t>(pageIndex + 1);
+					activeCanvases[pageIndex].retained = false;
+					const auto& source = activeCanvases[pageIndex];
 					if (source.pageIndex != pageIndex || source.deviceGuid)
 						return std::nullopt;
 					InkPage page(InkGuid(source.pageGuid.Bytes()));
@@ -4193,8 +4255,14 @@ namespace Inkeys::Drawing::Draw3
 						runtime.rasterState = after;
 					}
 					if (!collection.AppendPage(std::move(page))) return std::nullopt;
-					slot.pageRuntimeStates.push_back(std::move(runtime));
+					 slot.pageRuntimeStates.push_back(std::move(runtime));
 				}
+				if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
+					for (const auto& source : snapshot.retainedCanvases)
+					{
+						if (!source.retained || !source.slideId || source.deviceGuid) return std::nullopt;
+						slot.retainedSlides.emplace(*source.slideId, source);
+					}
 				slot.document.emplace(std::move(collection));
 				slot.currentPageIndex = target.pageIndex;
 				slot.presentationTarget = target;
@@ -4203,13 +4271,82 @@ namespace Inkeys::Drawing::Draw3
 				slot.queuedRevision = committedRevision;
 				slot.committedRevision = committedRevision;
 				slot.persistenceInitialized = true;
-				slot.loadPending = false;
+			slot.loadPending = false;
 				return slot;
 			}
 			catch (...)
 			{
 				return std::nullopt;
 			}
+		};
+
+		auto RebindStablePresentationTopology = [&](const Bridge::PresentationTarget& next)
+			-> bool
+		{
+			if (activeWorkspace != Bridge::Workspace::Presentation ||
+				!activePresentationTarget ||
+				activePresentationTarget->bindingMode != Bridge::SlideBindingMode::StableSlideId ||
+				next.bindingMode != Bridge::SlideBindingMode::StableSlideId || !document_)
+				return false;
+			auto captured = buildPresentationSaveRequest(*document_, pageRuntimeStates,
+				currentPageIndex_, *activePresentationTarget, activePresentationFileGuid,
+				activePresentationMutationRevision);
+			if (!captured) return false;
+			std::map<std::int32_t, draw3::uink::Draw3UInkCanvasSnapshot> known;
+			for (const auto& canvas : captured->snapshot.activeCanvases)
+				if (canvas.slideId) known.emplace(*canvas.slideId, canvas);
+			for (const auto& canvas : captured->snapshot.retainedCanvases)
+				if (canvas.slideId) known.emplace(*canvas.slideId, canvas);
+
+			draw3::uink::Draw3UInkExportSnapshot remapped = captured->snapshot;
+			remapped.activeCanvases.clear();
+			remapped.retainedCanvases.clear();
+			remapped.currentPageIndex = next.pageIndex;
+			for (const std::int32_t slideId : next.slideIds)
+			{
+				auto found = known.find(slideId);
+				if (found != known.end())
+				{
+					auto canvas = found->second;
+					canvas.retained = false;
+					remapped.activeCanvases.push_back(std::move(canvas));
+					known.erase(found);
+					continue;
+				}
+				const auto pageGuid = draw3::uink::CreateUInkGuid();
+				if (!pageGuid) return false;
+				draw3::uink::Draw3UInkCanvasSnapshot blank;
+				blank.pageGuid = *pageGuid;
+				blank.slideId = slideId;
+				blank.viewport = { 0.0f, 0.0f, 1.0f };
+				blank.extra = draw3::uink::MakeInkeysBindingExtra(
+					draw3::uink::Draw3UInkImportBindingMode::StableSlideId);
+				remapped.activeCanvases.push_back(std::move(blank));
+			}
+			for (auto& [slideId, canvas] : known)
+			{
+				canvas.slideId = slideId;
+				canvas.retained = true;
+				remapped.retainedCanvases.push_back(std::move(canvas));
+			}
+			auto rebuilt = materializePresentationSlot(remapped, next,
+				activePresentationCommittedRevision);
+			if (!rebuilt || !rebuilt->document) return false;
+			const auto oldMutation = activePresentationMutationRevision;
+			const auto oldQueued = activePresentationQueuedRevision;
+			const auto oldCommitted = activePresentationCommittedRevision;
+			const auto oldPersistence = activePresentationPersistenceInitialized;
+			const auto oldLoadPending = activePresentationLoadPending;
+			document_ = std::move(rebuilt->document);
+			pageRuntimeStates = std::move(rebuilt->pageRuntimeStates);
+			activeRetainedSlides = std::move(rebuilt->retainedSlides);
+			activePresentationFileGuid = rebuilt->fileGuid;
+			activePresentationMutationRevision = oldMutation;
+			activePresentationQueuedRevision = oldQueued;
+			activePresentationCommittedRevision = oldCommitted;
+			activePresentationPersistenceInitialized = oldPersistence;
+			activePresentationLoadPending = oldLoadPending;
+			return true;
 		};
 
 			auto undoCurrentPage = [&](RECT& frameDirty) -> bool
@@ -4737,6 +4874,11 @@ namespace Inkeys::Drawing::Draw3
 						activePresentationKey && *activePresentationKey == target.key;
 					const std::optional<Bridge::PresentationKey> previousPresentationKey =
 						activePresentationKey;
+					const bool stableTopologyChange = activePresentationTarget &&
+						activePresentationTarget->bindingMode ==
+						Bridge::SlideBindingMode::StableSlideId &&
+						target.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
+						(*activePresentationTarget != target);
 					bool bindingUpgrade = sameKey && activePresentationTarget &&
 						CanUpgradePresentationBindingByOrdinal(*activePresentationTarget,
 							target, document_ ? document_->Pages().size() : 0);
@@ -4799,6 +4941,11 @@ namespace Inkeys::Drawing::Draw3
 					if (topologyConflict) activePresentationTarget.reset();
 					else
 					{
+						if (stableTopologyChange && !RebindStablePresentationTopology(target))
+						{
+							std::fputs("[Draw3.Presentation] action=rebind result=failed\n", stderr);
+							continue;
+						}
 						activePresentationTarget = target;
 						if (bindingUpgrade && (activePresentationMutationRevision != 0 ||
 							activePresentationFileGuid)) markPresentationMutation();

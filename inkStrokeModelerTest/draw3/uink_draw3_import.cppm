@@ -26,6 +26,7 @@ export namespace draw3::uink
 		Draw3UInkImportBindingMode bindingMode =
 			Draw3UInkImportBindingMode::PageIndexFallback;
 		std::vector<int32_t> slideIds;
+		std::vector<int32_t> knownSlideIds;
 		uint32_t pageCount = 0;
 	};
 
@@ -48,6 +49,8 @@ export namespace draw3::uink
 	UInkExtra MakeInkeysBindingExtra(Draw3UInkImportBindingMode mode);
 	bool HasInkeysBindingExtra(const std::optional<UInkExtra>& extra,
 		Draw3UInkImportBindingMode mode) noexcept;
+	bool HasInkeysPageStateExtra(const std::optional<UInkExtra>& extra,
+		bool retained) noexcept;
 	Draw3UInkImportResult ImportApplicationOwnedPresentation(
 		const UInkDocument& document,
 		const Draw3UInkImportExpectation& expectation) noexcept;

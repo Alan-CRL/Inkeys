@@ -273,4 +273,8 @@ native GetPresentationDescriptor
 - `SlideShowView.Slide` 官方说明存在嵌入式 presentation 情况；若当前 Slide 的 parent 不属于绑定 Presentation，完整 topology 校验必须拒绝误绑定。本文没有为嵌入式放映制定恢复产品策略。
 - 现有 `FullCleanup(true)` 与其他 native 调用线程之间未找到明确的 managed in-flight gate；本文只要求新 getter 不再直接访问 Office COM，从而不扩大竞态，未宣称既有清理已无风险。
 - UInk writer 当前要求 Presentation Canvas 有真实 `slideId`（`inkStrokeModelerTest/draw3/uink_codec_encode.cpp:1162-1175`）。`PageIndexFallback` 必须保持显式 mode，不能把页码伪装成 SlideID；fallback 如何在统一 Presentation `.uink` 中编码/仅供本进程恢复，需要后续 design 明确，不能在 PptCOM 层自行绕过规范。
+
+## 2026-09-05 需求增量
+
+PptCOM 只负责发布当前 COM 顺序和稳定 SlideID；顺序变化不是新的文稿身份。稳定页面的插入/删除保留和当前页投影由 native/UInk 层完成，不能通过改变 COM reader 的 SlideID 语义或释放合同来解决。COM 无法取得 SlideID 时仍使用显式 ordinal fallback，并限制为相同页数恢复。
 - PowerPoint 的 SlideID 只在所属 Presentation 内有意义；不同文稿可能出现相同数值，不能脱离 `PresentationKey` 做全局索引。

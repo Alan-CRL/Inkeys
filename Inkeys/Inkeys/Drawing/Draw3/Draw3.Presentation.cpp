@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <set>
+#include <vector>
 #include <utility>
 
 namespace Inkeys::Drawing::Draw3
@@ -352,16 +353,28 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (previous.key != next.key ||
 			previous.sourceIdentity != next.sourceIdentity ||
-			previous.processLocalIdentity != next.processLocalIdentity ||
-			previous.totalPages != next.totalPages ||
+			previous.processLocalIdentity != next.processLocalIdentity) return false;
+		if (previous.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
+			next.bindingMode == Bridge::SlideBindingMode::StableSlideId)
+		{
+			if (previous.slideIds.empty() || next.slideIds.empty() ||
+			previous.slideIds.size() != previous.totalPages ||
+			 next.slideIds.size() != next.totalPages) return false;
+			std::set<std::int32_t> previousIds;
+			std::set<std::int32_t> nextIds;
+			for (const auto id : previous.slideIds)
+				if (id <= 0 || !previousIds.insert(id).second) return false;
+			for (const auto id : next.slideIds)
+				if (id <= 0 || !nextIds.insert(id).second) return false;
+			(void)documentPageCount;
+			return true;
+		}
+		if (previous.totalPages != next.totalPages ||
 			documentPageCount != next.totalPages) return false;
 		if (previous.processLocalIdentity &&
 			(previous.bindingToken.empty() ||
 				previous.bindingToken != next.bindingToken ||
 				previous.bindingRevision != next.bindingRevision)) return false;
-		if (previous.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
-			next.bindingMode == Bridge::SlideBindingMode::StableSlideId)
-			return previous.slideIds == next.slideIds;
 		if (previous.bindingMode == Bridge::SlideBindingMode::PageIndexFallback &&
 			next.bindingMode == Bridge::SlideBindingMode::PageIndexFallback)
 			return true;

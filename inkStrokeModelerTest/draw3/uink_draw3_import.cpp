@@ -127,12 +127,30 @@ namespace draw3::uink
 	bool HasInkeysBindingExtra(const std::optional<UInkExtra>& extra,
 		Draw3UInkImportBindingMode mode) noexcept
 	{
-		if (!extra || extra->size() != 1) return false;
-		const auto* key = std::get_if<std::string>(&(*extra)[0].first.value);
-		const auto* value = std::get_if<std::string>(&(*extra)[0].second.value);
-		return key && value && *key == "inkeysBindingMode" &&
-			*value == (mode == Draw3UInkImportBindingMode::StableSlideId
-				? "slide-id" : "page-index");
+		if (!extra) return false;
+		for (const auto& pair : *extra)
+		{
+			const auto* key = std::get_if<std::string>(&pair.first.value);
+			const auto* value = std::get_if<std::string>(&pair.second.value);
+			if (key && value && *key == "inkeysBindingMode" &&
+				*value == (mode == Draw3UInkImportBindingMode::StableSlideId
+					? "slide-id" : "page-index")) return true;
+		}
+		return false;
+	}
+
+	bool HasInkeysPageStateExtra(const std::optional<UInkExtra>& extra,
+		bool retained) noexcept
+	{
+		if (!extra) return false;
+		for (const auto& pair : *extra)
+		{
+			const auto* key = std::get_if<std::string>(&pair.first.value);
+			const auto* value = std::get_if<std::string>(&pair.second.value);
+			if (key && value && *key == "inkeysPageState")
+				return *value == (retained ? "retained" : "active");
+		}
+		return false;
 	}
 
 	Draw3UInkImportResult ImportApplicationOwnedPresentation(
@@ -145,7 +163,7 @@ namespace draw3::uink
 			if (expectation.fileGuid.IsZero() ||
 				document.header.guid.Bytes() != expectation.fileGuid.Bytes() ||
 				document.header.deviceNum != 1 || document.header.workspaceNum != 1 ||
-				document.header.pageNum != expectation.pageCount ||
+				document.header.pageNum != document.canvases.size() ||
 				!document.headerExtension || document.usesImplicitWorkspace ||
 				!document.usesImplicitDevice ||
 				document.headerExtension->workspaces.size() != 1 ||
@@ -166,7 +184,7 @@ namespace draw3::uink
 				workspace.workspaceType != (stable ? 2 : kInkeysPageIndexWorkspaceType) ||
 				!HasInkeysBindingExtra(workspace.extra, expectation.bindingMode) ||
 				workspace.currentPageIndex >= expectation.pageCount ||
-				expectation.pageCount == 0 || document.canvases.size() != expectation.pageCount ||
+				expectation.pageCount == 0 || document.canvases.empty() ||
 				(stable && expectation.slideIds.size() != expectation.pageCount) ||
 				(!stable && !expectation.slideIds.empty()))
 			{
@@ -185,6 +203,7 @@ namespace draw3::uink
 			snapshot.workspaceExtra = workspace.extra;
 			snapshot.assignedIndependentUndoGroups = true;
 			std::map<uint32_t, Draw3UInkCanvasSnapshot> ordered;
+			std::map<int32_t, Draw3UInkCanvasSnapshot> bySlideId;
 			for (const UInkCanvas& canvas : document.canvases)
 			{
 				if (!canvas.workspaceGuid ||
@@ -197,8 +216,7 @@ namespace draw3::uink
 					!canvas.viewport || canvas.viewport->scale != 1.0f ||
 					!std::isfinite(canvas.viewport->x) || !std::isfinite(canvas.viewport->y) ||
 					!HasInkeysBindingExtra(canvas.extra, expectation.bindingMode) ||
-					(stable && (!canvas.slideId || canvas.pageIndex >= expectation.slideIds.size() ||
-						*canvas.slideId != expectation.slideIds[canvas.pageIndex])) ||
+					(stable && !canvas.slideId) ||
 					(!stable && canvas.slideId))
 				{
 					result.status = Draw3UInkImportStatus::TopologyMismatch;
@@ -212,6 +230,7 @@ namespace draw3::uink
 				imported.slideId = canvas.slideId;
 				imported.viewport = *canvas.viewport;
 				imported.extra = canvas.extra;
+				imported.retained = stable && HasInkeysPageStateExtra(canvas.extra, true);
 				for (std::size_t contentIndex = 0;
 					contentIndex < canvas.content.size(); ++contentIndex)
 				{
@@ -246,16 +265,53 @@ namespace draw3::uink
 					result.error = "duplicate_page";
 					return result;
 				}
+				if (stable)
+				{
+					const auto& stored = ordered.at(canvas.pageIndex);
+					if (!canvas.slideId || (!expectation.knownSlideIds.empty() &&
+						std::find(expectation.knownSlideIds.begin(), expectation.knownSlideIds.end(),
+							*canvas.slideId) == expectation.knownSlideIds.end()) ||
+						!bySlideId.emplace(*canvas.slideId, stored).second)
+					{
+						result.status = Draw3UInkImportStatus::TopologyMismatch;
+						result.error = "duplicate_slide_id";
+						return result;
+					}
+				}
 			}
-			for (uint32_t pageIndex = 0; pageIndex < expectation.pageCount; ++pageIndex)
+			if (stable)
+			{
+				for (std::size_t pageIndex = 0; pageIndex < expectation.slideIds.size(); ++pageIndex)
+				{
+					auto found = bySlideId.find(expectation.slideIds[pageIndex]);
+					// 当前 PPT 新增的 SlideID 没有历史 Canvas，由绘制线程创建空页。
+					if (found == bySlideId.end()) continue;
+					found->second.pageIndex = static_cast<uint32_t>(pageIndex);
+					found->second.pageNumber = static_cast<uint32_t>(pageIndex + 1);
+					found->second.retained = false;
+					snapshot.activeCanvases.push_back(found->second);
+				}
+				for (auto& [id, canvas] : bySlideId)
+					if (std::find(expectation.slideIds.begin(), expectation.slideIds.end(), id) == expectation.slideIds.end())
+					{
+						// 只有明确标记为 retained 的历史页才允许脱离当前放映拓扑。
+						if (!canvas.retained)
+						{
+							result.status = Draw3UInkImportStatus::TopologyMismatch;
+							result.error = "unmarked_retained_slide";
+							return result;
+						}
+						canvas.pageIndex = static_cast<uint32_t>(snapshot.activeCanvases.size() + snapshot.retainedCanvases.size());
+						canvas.pageNumber = canvas.pageIndex + 1;
+						canvas.retained = true;
+						snapshot.retainedCanvases.push_back(std::move(canvas));
+					}
+				snapshot.canvases = snapshot.activeCanvases;
+			}
+			else for (uint32_t pageIndex = 0; pageIndex < expectation.pageCount; ++pageIndex)
 			{
 				auto found = ordered.find(pageIndex);
-				if (found == ordered.end())
-				{
-					result.status = Draw3UInkImportStatus::TopologyMismatch;
-					result.error = "page_gap";
-					return result;
-				}
+				if (found == ordered.end()) { result.status = Draw3UInkImportStatus::TopologyMismatch; result.error = "page_gap"; return result; }
 				snapshot.canvases.push_back(std::move(found->second));
 			}
 			result.status = Draw3UInkImportStatus::Success;

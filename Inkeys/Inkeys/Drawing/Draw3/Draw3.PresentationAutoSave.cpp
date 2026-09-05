@@ -435,6 +435,23 @@ namespace Inkeys::Drawing::Draw3
 				? "slide-id" : "page-index";
 		}
 
+		std::vector<std::int32_t> MergeSlideIds(
+			const std::vector<std::int32_t>& existing,
+			const std::vector<std::int32_t>& active)
+		{
+			std::vector<std::int32_t> result = existing;
+			for (const auto id : active)
+				if (std::find(result.begin(), result.end(), id) == result.end()) result.push_back(id);
+			return result;
+		}
+
+		bool ContainsSlideIdSet(const std::vector<std::int32_t>& known,
+			const std::vector<std::int32_t>& active) noexcept
+		{
+			return std::all_of(active.begin(), active.end(), [&](auto id)
+				{ return std::find(known.begin(), known.end(), id) != known.end(); });
+		}
+
 		bool RequiresExactFallbackBinding(const IndexEntry& entry,
 			const Bridge::PresentationTarget& target) noexcept
 		{
@@ -464,7 +481,9 @@ namespace Inkeys::Drawing::Draw3
 					request.snapshot.workspaceGuid.IsZero() ||
 					request.snapshot.hostId != FormatPresentationKey(request.target.key) ||
 					request.snapshot.currentPageIndex != request.target.pageIndex ||
-					request.snapshot.canvases.size() != request.target.totalPages)
+					(request.snapshot.activeCanvases.empty() && request.snapshot.retainedCanvases.empty()
+						? request.snapshot.canvases.size() < request.target.totalPages
+						: request.snapshot.activeCanvases.size() != request.target.totalPages))
 					return false;
 				const bool stable = request.target.bindingMode ==
 					Bridge::SlideBindingMode::StableSlideId;
@@ -475,15 +494,21 @@ namespace Inkeys::Drawing::Draw3
 					draw3::uink::kInkeysPageIndexWorkspaceType) ||
 					!draw3::uink::HasInkeysBindingExtra(
 						request.snapshot.workspaceExtra, importMode)) return false;
-				for (std::size_t index = 0; index < request.snapshot.canvases.size(); ++index)
+				const auto& active = request.snapshot.activeCanvases.empty()
+					? request.snapshot.canvases : request.snapshot.activeCanvases;
+				for (std::size_t index = 0; index < active.size(); ++index)
 				{
-					const auto& canvas = request.snapshot.canvases[index];
+					const auto& canvas = active[index];
 					if (canvas.pageIndex != index || canvas.pageNumber != index + 1 ||
 						!draw3::uink::HasInkeysBindingExtra(canvas.extra, importMode) ||
 						(stable && (!canvas.slideId ||
 							*canvas.slideId != request.target.slideIds[index])) ||
 						(!stable && canvas.slideId)) return false;
 				}
+				if (!request.snapshot.retainedCanvases.empty())
+					for (const auto& canvas : request.snapshot.retainedCanvases)
+						if (!canvas.retained || !canvas.slideId ||
+							!draw3::uink::HasInkeysPageStateExtra(canvas.extra, true)) return false;
 				return true;
 			}
 			catch (...)
@@ -517,7 +542,10 @@ namespace Inkeys::Drawing::Draw3
 			expectation.bindingMode = entry.bindingMode == "slide-id"
 				? Draw3UInkImportBindingMode::StableSlideId
 				: Draw3UInkImportBindingMode::PageIndexFallback;
-			expectation.slideIds = entry.slideIds;
+			// 绑定模式以已保存索引为准；fallback 文件升级到 stable 时仍按旧页序读取。
+			expectation.slideIds = expectation.bindingMode ==
+				Draw3UInkImportBindingMode::StableSlideId ? target.slideIds : std::vector<std::int32_t>{};
+			expectation.knownSlideIds = entry.slideIds;
 			expectation.pageCount = target.totalPages;
 			return expectation;
 		}
@@ -636,7 +664,7 @@ namespace Inkeys::Drawing::Draw3
 					found->workspaceGuid != FormatUInkGuid(request.snapshot.workspaceGuid) ||
 					(!bindingUpgrade && (found->bindingMode !=
 						BindingModeName(request.target.bindingMode) ||
-						found->slideIds != request.target.slideIds)))
+						!ContainsSlideIdSet(found->slideIds, request.target.slideIds))))
 					return PresentationPersistenceStatus::SourceChanged;
 				const std::wstring path = JoinPath(root, WidenAscii(found->relativePath));
 				const auto read = ReadUInkFile(path);
@@ -661,7 +689,7 @@ namespace Inkeys::Drawing::Draw3
 						: PresentationPersistenceStatus::IoError;
 				found->sourceRevision = *saved.revision;
 				found->bindingMode = BindingModeName(request.target.bindingMode);
-				found->slideIds = request.target.slideIds;
+				found->slideIds = MergeSlideIds(found->slideIds, request.target.slideIds);
 				found->bindingRevision = request.target.bindingRevision;
 				found->processLocal = request.target.processLocalIdentity;
 				found->mutationRevision = request.mutationRevision;
@@ -734,7 +762,7 @@ namespace Inkeys::Drawing::Draw3
 					found->bindingRevision != request.target.bindingRevision) ||
 				(!bindingUpgrade && (found->bindingMode !=
 					BindingModeName(request.target.bindingMode) ||
-					found->slideIds != request.target.slideIds)))
+					!ContainsSlideIdSet(found->slideIds, request.target.slideIds))))
 			{
 				completion.status = PresentationPersistenceStatus::CrossProcessConflictDeferred;
 				return completion;

@@ -1,6 +1,6 @@
 # PPT 三态画布与 UInk 自动保存恢复实施计划
 
-> 用户已于 2026-09-04 明确批准实施；当前任务为 `in_progress`，按以下顺序执行并在结束前复核全部门禁。
+> 2026-09-05 用户已批准稳定 COM 下的 SlideID 重排/插入/删除恢复规则，进入实现阶段。
 
 ## 2026-09-05 实施记录
 
@@ -8,9 +8,16 @@
 - Phase 10 的 x64 完整解决方案构建、两个 native headless 及 managed COM ownership harness、DLL/TLB 方法顺序、CRLF/BOM、`git diff --check` 和独立 `trellis-check` 已完成。
 - Phase 11 仍按用户约束延期：本轮未启动 PowerPoint/WPS/可见窗口，不声称真实 RCW 进程退出或页面插删/重排冲突已验收。
 
+## 2026-09-05 规划增量
+
+- 稳定 SlideID 的兼容判定改为已知 ID 集合与当前 descriptor 的映射，不再要求顺序数组完全相等。
+- Presentation slot 分为当前 active projection 与 `retainedSlides`；当前 descriptor 新增页创建空 Canvas，删除页 Canvas 保留在同一 UInk/index，重新出现时按 SlideID 归位。
+- Fallback 仍按 ordinal 工作：文稿身份稳定且页数不变才恢复，页数变化创建隔离空画布；无稳定身份时继续 exact binding。
+- 异步 load completion 必须在重排/增删期间按目标身份收敛 pending，不能因旧顺序 completion 被丢弃而永久抑制输入。
+
 ## Phase 0 - Approval And Baseline
 
-- [x] 用户审核最终 Goal、范围、共享 presentation claim 限制、PageIndexFallback 和 COM 释放合同，并在规划摘要后的后续消息中明确批准实现。
+- [x] 用户审核本次稳定 SlideID 重排/插入/删除、retained Canvas、当前页投影和 Fallback 页数限制，并批准进入实现。
 - [x] 加载 `trellis-before-dev`，完整阅读 native-desktop、ppt-interop、UInk、并发/资源和测试规范。
 - [x] 执行 `task.py start 09-04-ppt-canvas-uink-lifecycle`；开始前再次检查工作树并保留用户已有改动。
 - [ ] 记录 `InkeysRepo.sln Debug|x64`、`inkStrokeModelerTest.sln Debug|x64` 与相关无窗口测试基线。
@@ -94,9 +101,9 @@
 - [x] Presentation capture 遍历全部页及可见 runtime history，保留稳定 fileGuid/workspaceGuid/pageGuid，包含空页和 ordered binding。
 - [x] Stable 模式写 workspaceType=2 与真实 SlideID；Fallback 写 private workspaceType、pageIndex 和明确 extra marker，不伪造 slideId。
 - [x] 新增共享纯值 `uink_draw3_import`，只投影本程序支持的 canonical Presentation 子集，不改变完整 reader。
-- [x] importer 校验 Header/fileGuid/hostId/binding/完整有序 topology/layer/viewport/content；拒绝 Media、高级内容、未知语义、unbound canvas 和 marker 混用。
+- [ ] importer 校验 Header/fileGuid/hostId/binding/SlideID 集合、active/retained marker、连续存储 pageIndex、layer/viewport/content；拒绝 Media、高级内容、未知语义和 marker 混用。
 - [x] 绘制线程 materialize InkCanvasCollection 与 CanvasRuntimeHistory，重算 footprints/raster tokens，redo 清空后完整重放。
-- [x] 添加 exporter/import baseline、stable 精确 topology、fallback ordinal/升级、topology/extension/unbound/Media rejection 与存储 round-trip 测试；插删/重排自动解释延期。
+- [ ] 添加 exporter/import baseline、stable 任意重排、插入/删除保留与重新出现、fallback ordinal/升级、topology/extension/unbound/Media rejection 与存储 round-trip 测试。
 - [x] 把新共享 module 登记到 Inkeys 与 inkStrokeModelerTest 测试工程，保持唯一实现源。
 
 完成条件：同进程自产 PPT UInk 可完整恢复为可显示、可 Undo 的 Draw3 文档，外部高级文件不会被有损误导入。
@@ -138,7 +145,7 @@
 - [x] warm slot 优先；pending/failed slot 永不被旧磁盘内容覆盖。
 - [x] clean inactive slot 成功提交后允许淘汰，建立 index→read→strict import 冷路径。
 - [x] load 请求进入 owned worker，completion 带完整 target；加载期间不发布 identity-ready并抑制输入/破坏性命令。
-- [x] 只读取当前 session 或同根 self-written pending entry；stable 要求有序 SlideID topology，稳定路径 fallback 按同 key/source、页数和 pageIndex，process-local 按 exact binding。
+- [ ] 只读取当前 session 或同根 self-written pending entry；stable 按 SlideID 集合和 retained Canvas 恢复，稳定路径 fallback 按同 key/source、页数和 pageIndex，process-local 按 exact binding。
 - [x] compatible stale load 可 materialize 到对应 active/parked slot并使用 latest target；不兼容 completion 丢弃，失败保留文件并使用隔离空 slot。
 - [ ] Bridge/storage/policy 自动化已覆盖 A→B→A、latest-wins、同页不同 key、直接 scene 切换、fallback 重入和 Host restart；GPU Controller harness 已编译但未获准执行，慢 load/save 与真实呈现保留 Phase 11。
 
@@ -162,11 +169,25 @@
 
 ## Phase 11 - Deferred Manual Acceptance
 
-- [ ] 在用户另行明确授权可见测试后，分别用 PowerPoint 与 WPS 重复进入/退出、A/B 多实例切换、COM busy/损坏退化和快速翻页。
+- [ ] 在用户另行明确授权可见测试后，分别用 PowerPoint 与 WPS 重复进入/退出、A/B 多实例切换、稳定 SlideID 重排/插入/删除、COM busy/损坏退化和快速翻页。
 - [ ] 每轮结束核对 Office/WPS 进程是否按用户操作退出，不因 Inkeys 新增 RCW 引用残留后台。
-- [ ] 验证真实 SlideID 插入/重排行为和 fallback 提示需求，为跨进程冲突任务补充证据。
+- [ ] 验证真实 SlideID 插入/删除/重排行为和 fallback 页数变化，为跨进程冲突任务补充证据。
 
 本期代码交付不得把 Phase 11 未执行描述为已验证；是否因此保持任务 active 由最终验收时决定。
+
+## Phase 12 - Stable SlideID Topology Evolution
+
+- [ ] 在 `Presentation` identity helper 中增加 SlideID 集合匹配和旧序到新序的 permutation；相同集合的任意重排复用 slot，集合新增/删除进入 active projection + retainedSlides 迁移。
+- [ ] 扩展 `InkCanvasCollection`/slot 所有权，使 active page/runtime 与 retained page/runtime 一起被绘制线程安全地迁移，且当前 page index 始终对应当前 COM 顺序。
+- [ ] 扩展 UInk snapshot/import/export：增加 active/retained Canvas 分组；retained Canvas 使用明确 marker、仍保留真实 SlideID 和稳定 pageGuid；同一 UInk 内存储 pageIndex 连续，index.slideIds 保存 active/retained 并集且只增不删；同步调整严格编码/导入校验，禁止把 retained 页误判为损坏。
+- [ ] 放宽稳定保存/加载的顺序校验为集合/唯一映射校验；删除页不得从 UInk 或 index 静默清除，新增页无历史时创建空 Canvas，旧 SlideID 再出现时恢复。
+- [ ] 修正 stale load completion 对 pending/input 的收敛：重排或增删期间旧 completion 不得永久留下 input suppression，且 ready 只发布当前 target 的 key、SlideID、页和 revision。
+- [ ] 增加无窗口策略测试：4 页写入后交换 2/3、删除页、插入页、恢复原顺序；验证各 SlideID 内容、pageGuid、撤回历史、fileGuid、index 和 retained Canvas。
+- [ ] 增加 fallback 对照测试：无 SlideID 时相同页数按 ordinal 恢复，页数变化创建隔离空画布；无稳定文稿身份仍不得跨 binding 猜测。
+
+完成条件：稳定 COM 下所有 SlideID 未被删除的 Canvas 按当前顺序显示，新增/删除页不丢历史 Canvas，重排和重新出现可恢复；Fallback 仅遵守页数/序号退化规则。
+
+回滚点：若 UInk retained marker 或 active/retained materialize 不能保持严格身份映射，回退到隔离空 slot，保留原文件和 dirty 状态，不恢复旧的按序猜测。
 
 ## Planned File Ownership
 

@@ -215,3 +215,8 @@ Bridge 应提供原子的 `PublishPresentationTarget(descriptor, page)`，而不
 - 未来支持同一 PPT 跨进程恢复，但先完成页面内容、插入/删除/重排、身份缺失与用户提示的冲突设计；本任务不提前开放读取。
 - SlideID 不可得时按页序号退化保存，只允许当前进程、相同 binding 和相同页码恢复。
 - 新 SlideID 读取必须以 pure dynamic 可用和 COM temporary 精确释放为硬门禁，不能以 Office/WPS 后台残留换取功能。
+
+## 12. 2026-09-05 需求增量
+
+- 稳定 COM 的 SlideID 不只用于当前顺序校验：页面重排、插入和删除都必须按 SlideID 恢复；删除页的 Canvas 保留在同一 UInk/index，当前放映只建立 active projection，重新出现的 SlideID 再取回历史 Canvas。
+- `PageIndexFallback` 仍只按 ordinal 工作，并以相同页数作为恢复条件；不能从无 SlideID 的数据推断重排、插入或删除关系。

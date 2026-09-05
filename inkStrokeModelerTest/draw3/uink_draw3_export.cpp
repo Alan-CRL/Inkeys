@@ -31,6 +31,45 @@ namespace draw3::uink
 				UInkDiagnosticSeverity::Error, 0, 0, std::move(path), 0 });
 		}
 
+		std::vector<Draw3UInkCanvasSnapshot> CanonicalCanvases(
+			const Draw3UInkExportSnapshot& snapshot)
+		{
+			if (snapshot.activeCanvases.empty() && snapshot.retainedCanvases.empty())
+				return snapshot.canvases;
+			std::vector<Draw3UInkCanvasSnapshot> result;
+			result.reserve(snapshot.activeCanvases.size() + snapshot.retainedCanvases.size());
+		for (auto canvas : snapshot.activeCanvases)
+		{
+			canvas.pageIndex = static_cast<uint32_t>(result.size());
+			canvas.pageNumber = canvas.pageIndex + 1;
+			canvas.retained = false;
+			result.push_back(std::move(canvas));
+		}
+		for (auto canvas : snapshot.retainedCanvases)
+		{
+			canvas.pageIndex = static_cast<uint32_t>(result.size());
+			canvas.pageNumber = canvas.pageIndex + 1;
+			canvas.retained = true;
+			result.push_back(std::move(canvas));
+		}
+			return result;
+		}
+
+		std::optional<UInkExtra> WithPageStateMarker(
+			const std::optional<UInkExtra>& source, bool retained)
+		{
+			UInkExtra value = source.value_or(UInkExtra{});
+			value.erase(std::remove_if(value.begin(), value.end(), [](const auto& pair)
+				{
+					const auto* key = std::get_if<std::string>(&pair.first.value);
+					return key && *key == "inkeysPageState";
+				}), value.end());
+			UInkMessagePackValue key; key.value = std::string("inkeysPageState");
+			UInkMessagePackValue state; state.value = std::string(retained ? "retained" : "active");
+			value.emplace_back(std::move(key), std::move(state));
+			return value;
+		}
+
 		bool IsFinitePositive(float value) noexcept
 		{
 			return std::isfinite(value) && value > 0.0f;
@@ -214,8 +253,10 @@ namespace draw3::uink
 			std::map<uint32_t, std::array<uint8_t, 16>> pageGuidsByIndex;
 			std::set<std::tuple<std::optional<std::array<uint8_t, 16>>,
 				std::array<uint8_t, 16>>> canvasKeys;
-			for (const Draw3UInkCanvasSnapshot& sourceCanvas : snapshot.canvases)
+			const auto canvases = CanonicalCanvases(snapshot);
+			for (std::size_t canonicalIndex = 0; canonicalIndex < canvases.size(); ++canonicalIndex)
 			{
+				Draw3UInkCanvasSnapshot sourceCanvas = canvases[canonicalIndex];
 				if (sourceCanvas.pageGuid.IsZero() || !std::isfinite(sourceCanvas.viewport.x) ||
 					!std::isfinite(sourceCanvas.viewport.y) ||
 					!IsFinitePositive(sourceCanvas.viewport.scale) ||
@@ -268,7 +309,7 @@ namespace draw3::uink
 				canvas.layerNumber = 0;
 				canvas.slideId = sourceCanvas.slideId;
 				canvas.viewport = sourceCanvas.viewport;
-				canvas.extra = sourceCanvas.extra;
+				canvas.extra = WithPageStateMarker(sourceCanvas.extra, sourceCanvas.retained);
 				uint32_t previousUndo = 0;
 				for (size_t index = 0; index < sourceCanvas.strokes.size(); ++index)
 				{

@@ -54,6 +54,8 @@ export namespace draw3::uink
 		std::optional<int32_t> slideId;
 		UInkViewport viewport;
 		std::optional<UInkExtra> extra;
+		// true 表示该页当前不在 PPT 投影中，但仍保留在 UInk 历史集合内。
+		bool retained = false;
 		std::vector<Draw3UInkStrokeSnapshot> strokes;
 	};
 
@@ -69,6 +71,9 @@ export namespace draw3::uink
 		std::optional<UInkExtra> workspaceExtra;
 		std::vector<UInkDevice> devices;
 		std::vector<Draw3UInkCanvasSnapshot> canvases;
+		// Presentation 使用两组页；canvases 仍保留给 Desktop/旧调用方。
+		std::vector<Draw3UInkCanvasSnapshot> activeCanvases;
+		std::vector<Draw3UInkCanvasSnapshot> retainedCanvases;
 		float dpiScale = 1.0f;
 		bool assignedIndependentUndoGroups = false;
 	};

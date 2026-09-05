@@ -151,6 +151,23 @@ int RunPresentationDescriptorTests()
 		rebound.bindingToken += ":rebound";
 		if (!Expect(CanReusePresentationDocumentSlot(*first, rebound, 3),
 			"stable SlideID slots survive an Office binding refresh")) ++failures;
+		Bridge::PresentationTarget reordered = *first;
+		reordered.slideIds = { 303, 101, 202 };
+		reordered.slideId = 303;
+		reordered.pageIndex = 0;
+		reordered.totalPages = 3;
+		if (!Expect(CanReusePresentationDocumentSlot(*first, reordered, 3),
+			"stable SlideID slots survive slide reorder")) ++failures;
+		Bridge::PresentationTarget inserted = reordered;
+		inserted.slideIds = { 303, 404, 101, 202 };
+		inserted.totalPages = 4;
+		if (!Expect(CanReusePresentationDocumentSlot(*first, inserted, 4),
+			"stable SlideID slots accept inserted slides")) ++failures;
+		Bridge::PresentationTarget deleted = inserted;
+		deleted.slideIds = { 303, 101, 202 };
+		deleted.totalPages = 3;
+		if (!Expect(CanReusePresentationDocumentSlot(inserted, deleted, 3),
+			"stable SlideID slots accept deleted slides")) ++failures;
 	}
 
 	std::wstring duplicate = StableJson(L"PowerPoint", L"C:\\\\dup.pptx");

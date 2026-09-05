@@ -153,6 +153,8 @@ export namespace Inkeys::Drawing::Draw3
 		InkPage* PageAt(size_t index) noexcept;
 		const InkPage* PageAt(size_t index) const noexcept;
 		std::span<const InkPage> Pages() const noexcept;
+		// 仅由绘制线程在 Presentation 拓扑迁移时取走整组页面，保持 GUID 和 Canvas 内容。
+		std::vector<InkPage> TakePages() noexcept;
 
 	private:
 		InkGuid workspaceGuid_;

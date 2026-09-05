@@ -2,7 +2,7 @@
   "id": "ppt-canvas-uink-lifecycle",
   "name": "ppt-canvas-uink-lifecycle",
   "title": "PPT 三态画布与 UInk 自动保存恢复",
-  "description": "移除 PPT 退出拦截，建立三态独立画布，并实现当前进程内 PPT UInk 的自动保存、索引与再次放映恢复。",
+  "description": "移除 PPT 退出拦截，建立三态独立画布，并实现当前进程内 PPT UInk 的自动保存、索引、稳定 SlideID 拓扑演进与再次放映恢复。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-05 用户已批准并开始实现：稳定 COM 下按 SlideID 支持任意重排、插入、删除；删除页 Canvas 保留在同一 UInk/index，当前放映按当前页顺序投影；COM 缺 ID 时仍按页数/ordinal fallback。",
   "meta": {}
 }
