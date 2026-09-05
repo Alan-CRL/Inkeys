@@ -151,22 +151,38 @@ int RunPresentationDescriptorTests()
 		rebound.bindingToken += ":rebound";
 		if (!Expect(CanReusePresentationDocumentSlot(*first, rebound, 3),
 			"stable SlideID slots survive an Office binding refresh")) ++failures;
-		Bridge::PresentationTarget reordered = *first;
-		reordered.slideIds = { 303, 101, 202 };
+		Bridge::PresentationTarget originalOrder = *first;
+		originalOrder.slideIds = { 101, 202, 303, 404 };
+		originalOrder.slideId = 202;
+		originalOrder.pageIndex = 1;
+		originalOrder.totalPages = 4;
+		Bridge::PresentationTarget reordered = originalOrder;
+		reordered.slideIds = { 101, 303, 202, 404 };
 		reordered.slideId = 303;
-		reordered.pageIndex = 0;
-		reordered.totalPages = 3;
-		if (!Expect(CanReusePresentationDocumentSlot(*first, reordered, 3),
+		reordered.pageIndex = 1;
+		if (!Expect(CanReusePresentationDocumentSlot(originalOrder, reordered, 4),
 			"stable SlideID slots survive slide reorder")) ++failures;
+		if (!Expect(StablePresentationTopologyChanged(originalOrder, reordered),
+			"parked stable slots remap when the ordered SlideID topology changes"))
+			++failures;
+		Bridge::PresentationTarget pageTurn = originalOrder;
+		pageTurn.pageIndex = 2;
+		pageTurn.slideId = 303;
+		pageTurn.bindingRevision += 1;
+		pageTurn.bindingToken += ":page-turn";
+		pageTurn.targetRevision += 1;
+		if (!Expect(!StablePresentationTopologyChanged(originalOrder, pageTurn),
+			"page, SlideID and target revisions do not rebuild stable page runtime"))
+			++failures;
 		Bridge::PresentationTarget inserted = reordered;
-		inserted.slideIds = { 303, 404, 101, 202 };
-		inserted.totalPages = 4;
-		if (!Expect(CanReusePresentationDocumentSlot(*first, inserted, 4),
+		inserted.slideIds = { 101, 303, 505, 202, 404 };
+		inserted.totalPages = 5;
+		if (!Expect(CanReusePresentationDocumentSlot(originalOrder, inserted, 5),
 			"stable SlideID slots accept inserted slides")) ++failures;
 		Bridge::PresentationTarget deleted = inserted;
-		deleted.slideIds = { 303, 101, 202 };
-		deleted.totalPages = 3;
-		if (!Expect(CanReusePresentationDocumentSlot(inserted, deleted, 3),
+		deleted.slideIds = { 101, 303, 202, 404 };
+		deleted.totalPages = 4;
+		if (!Expect(CanReusePresentationDocumentSlot(inserted, deleted, 4),
 			"stable SlideID slots accept deleted slides")) ++failures;
 	}
 

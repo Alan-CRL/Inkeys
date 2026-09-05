@@ -382,6 +382,18 @@ namespace Inkeys::Drawing::Draw3
 			documentPageCount);
 	}
 
+	bool StablePresentationTopologyChanged(
+		const Bridge::PresentationTarget& previous,
+		const Bridge::PresentationTarget& next) noexcept
+	{
+		return previous.key == next.key &&
+			previous.sourceIdentity == next.sourceIdentity &&
+			previous.processLocalIdentity == next.processLocalIdentity &&
+			previous.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
+			next.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
+			previous.slideIds != next.slideIds;
+	}
+
 	std::string FormatPresentationKey(const Bridge::PresentationKey& key)
 	{
 		char buffer[37] = {};

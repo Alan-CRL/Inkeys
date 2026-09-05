@@ -157,6 +157,7 @@ ClearCurrentInterval();
 - `PublishProductPresentationTarget(Bridge::PresentationTarget) -> optional<uint64_t>` / `ClearProductPresentationTarget()`。
 - `PresentationAutoSaveService::{Start, SubmitSave, SubmitLoad, TryTakeCompletion, CloseAndDrain}`。
 - `ShouldQueuePresentationSave(mutationRevision, queuedRevision)` 与 `ShouldEvictPresentationSlot(hasCommittedFile, mutationRevision, queuedRevision, committedRevision, loadPending)`。
+- `StablePresentationTopologyChanged(previous, next) -> bool`；只比较同一 StableSlideId 文稿的有序 `slideIds`。
 - `ImportApplicationOwnedPresentation(document, expectation) -> Draw3UInkImportResult`。
 - 产品布局：`<AutoSave>/presentation/index.json(.bak)` 与 `<AutoSave>/presentation/files/<fileGuid>.uink`。
 
@@ -166,6 +167,7 @@ ClearCurrentInterval();
 - managed/native 必须把 key、binding、topology、page 和 `targetRevision` 作为一个共享不可变 target 事务发布。产品命令固定发布时的 workspace/target；Host 按 FIFO 执行 `captured scene -> command`，排空后再应用 latest state。ready 使用固定大小 identity，并同时匹配 workspace、key、binding revision、page/SlideID 和 target revision；仅页码相同不算 ready。
 - `StableSlideId` 以规范化绝对路径作 source identity，provider 仅作诊断；无稳定路径时的 process-local identity 必须含 Inkeys PID、Office provider/PID/HWND、binding revision 和名称，防止同一 Office 进程重用未保存名称。
 - 稳定模式写 `workspaceType=2 + hostId=PresentationKey + Canvas.slideId`；同一 SlideID 集合允许任意重排，新增页创建空 Canvas，已删除页以 retained marker 保留在同一 UInk/index，重新出现时按 SlideID 恢复。页码退化写 Inkeys 私有 `workspaceType=128 + inkeysBindingMode=page-index`，不伪造 SlideID；只有 strict importer 验证通过的应用自产文件才可解除 fallback/save-as 保护并原地覆盖。
+- `SetPresentationTarget` 复用 active 或 parked/warm slot 时，必须先恢复并读取该 slot 的旧 target，再比较新旧有序 `slideIds`、按旧 SlideID 映射 Canvas，成功后才写入新 target；不得在 swap 前用新 target 覆盖 destination。普通翻页中的 `pageIndex`、当前 `slideId`、binding/target revision 变化不是拓扑变化，不能因此重建 document/runtime。
 - dirty 是“自上次成功提交后发生修改”，每个 Presentation 文档只比较一组 `mutationRevision/queuedRevision/committedRevision`；Stored stroke、成功 Undo/Redo、有历史的 Clear、viewport 修改推进 mutation，Laser/预测/纯 Present 不推进。每次保存都是全部页快照，所以文档级 revision 足以让任一脏页在离页时触发，同时保证无变化零写。不得用 `currentPageHasContent` 作 PPT 保存门控；因此恢复旧文件后 Clear 再立即退出也必须覆盖为全量空 Canvas 集合。
 - 保存触发在同 PPT 换页、A/B/workspace 离开和正常退出屏障。快照包含全部页（包括空页）；同一 key 待处理保存用 latest-wins 替换，in-flight completion 只能提交对应 revision。最终 scene-stamped 屏障位于前序 Clear/Undo/Redo 之后并扫描 active 与全部 parked slot；worker 无超时排空所有已接受请求。显式失败保留旧文件并在 completion 被绘制线程处理后恢复 dirty，但退出不承诺在同一屏障内无限重试失败 I/O。
 - 同一 PPT 在当前进程内固定同一 `fileGuid/path`，以 `SaveExistingLogicalFile + expected SourceRevision` 原地覆盖。UInk 先 durable commit，再在命名 mutex 内原子发布严格 index；index 失败保留文件并记录 self-written revision，后续请求先验证并收敛，不得永久卡在 `SourceChanged`。
@@ -184,6 +186,7 @@ ClearCurrentInterval();
 | 恢复后 Clear/Undo/Redo 到空状态 | mutation 推进，下一安全点覆盖同一 `.uink` |
 | 稳定路径 fallback 在重开放映后取得完整 SlideID | 同 session/key/source 且页数匹配时按 ordinal 原位升级；process-local binding 不同则拒绝 |
 | 稳定 SlideID 重排/插入/删除 | 按 SlideID 映射 active projection；新增页为空，删除页 retained 且不参与当前 ready，重新出现恢复原 Canvas |
+| Desktop→同一 PPT 或 A→B 命中 parked/warm slot，且有序 SlideID 已变化 | 使用 destination slot 的旧 target 重映射后再更新 target；不得沿用旧 ordinal，也不得拿离开侧 active target 判断 |
 | UInk 成功、index 失败 | 返回 `IoError`、保持 dirty；保留 self-written revision 供后续收敛 |
 | index 指向 foreign session | 返回 `CrossProcessConflictDeferred`，本期不自动恢复/覆盖 |
 | 文件 revision 与 index 不一致 | 返回 `SourceChanged`，保留原文件和 dirty slot |
@@ -201,7 +204,7 @@ ClearCurrentInterval();
 
 - descriptor/bridge 纯逻辑：Unicode 路径、provider-independent key、process-local binding token、重复 SlideID、A/B 同页、stale descriptor/busy 保持和 identity-aware ready。
 - UInk/storage：stable/fallback round-trip、稳定 SlideID 重排/插入/删除与 retained Canvas、恢复后清空覆盖、单文件、index 首次/覆盖失败重试、self-written revision、foreign session、Host restart、latest-wins 与 A/B 独立。
-- controller 状态：纯策略测试覆盖 load-pending 门控、clean eviction/冷恢复、dirty/pending warm、clear mutation、fallback 迁移与命令场景顺序；生产 Controller 的 slot park/swap、completion 和全部 parked 最终屏障由完整产品构建与静态调用链核对，真实呈现留给设备验收。
+- controller 状态：纯策略测试覆盖 load-pending 门控、clean eviction/冷恢复、dirty/pending warm、clear mutation、fallback 迁移与命令场景顺序；另以 `1,2,3,4 -> 1,3,2,4` 断言 parked/warm 需要重映射，并断言仅页码、当前 SlideID 或 revision 变化不重建 runtime。生产 Controller 的 slot park/swap、completion 和全部 parked 最终屏障由完整产品构建与静态调用链核对，真实呈现留给设备验收。
 - 运行 `inkStrokeModelerTestTests.exe`、`InkeysHeadlessTests.exe --no-window`、managed PptCOM ownership harness，以及完整 `InkeysRepo.sln Debug|x64` 构建；真实 PowerPoint/WPS 放映、COM busy/损坏与 Office 进程退出仍须设备验收。
 
 ### 7. Wrong vs Correct

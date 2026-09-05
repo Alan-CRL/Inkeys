@@ -621,6 +621,66 @@ namespace
 		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(
 			*exported.document, expectation).status == Draw3UInkImportStatus::Success);
 
+		Bridge::PresentationTarget fourPageTarget = target;
+		fourPageTarget.slideIds = { 101, 202, 303, 404 };
+		fourPageTarget.slideId = 202;
+		fourPageTarget.pageIndex = 1;
+		fourPageTarget.totalPages = 4;
+		auto fourPageSnapshot = MakeSnapshot(fourPageTarget, false);
+		fourPageSnapshot.currentPageIndex = 1;
+		fourPageSnapshot.canvases.clear();
+		const UInkGuid pageGuids[] = {
+			*ParseUInkGuid("33333333-3333-4333-8333-333333333331"),
+			*ParseUInkGuid("33333333-3333-4333-8333-333333333332"),
+			*ParseUInkGuid("33333333-3333-4333-8333-333333333333"),
+			*ParseUInkGuid("33333333-3333-4333-8333-333333333334")
+		};
+		for (std::size_t pageIndex = 0; pageIndex < fourPageTarget.slideIds.size();
+			++pageIndex)
+		{
+			Draw3UInkCanvasSnapshot canvas;
+			canvas.pageGuid = pageGuids[pageIndex];
+			canvas.pageIndex = static_cast<std::uint32_t>(pageIndex);
+			canvas.pageNumber = static_cast<std::uint32_t>(pageIndex + 1);
+			canvas.slideId = fourPageTarget.slideIds[pageIndex];
+			canvas.extra = MakeInkeysBindingExtra(
+				Draw3UInkImportBindingMode::StableSlideId);
+			Draw3UInkStrokeSnapshot stroke;
+			stroke.style.kind = Draw3UInkStrokeKind::Pen;
+			stroke.style.fallbackRgb = static_cast<std::uint32_t>(*canvas.slideId);
+			stroke.points = { { 10.0f, 20.0f, 4.0f }, { 30.0f, 40.0f, 4.0f } };
+			canvas.strokes.push_back(std::move(stroke));
+			fourPageSnapshot.canvases.push_back(std::move(canvas));
+		}
+		const auto fourPageExport = ExportDraw3SnapshotToUInk(fourPageSnapshot);
+		PRESENTATION_CHECK(state, fourPageExport.document.has_value());
+		if (fourPageExport.document)
+		{
+			Draw3UInkImportExpectation reorderedExpectation;
+			reorderedExpectation.fileGuid = fourPageSnapshot.fileGuid;
+			reorderedExpectation.hostId = FormatPresentationKey(fourPageTarget.key);
+			reorderedExpectation.bindingMode =
+				Draw3UInkImportBindingMode::StableSlideId;
+			reorderedExpectation.slideIds = { 101, 303, 202, 404 };
+			reorderedExpectation.knownSlideIds = fourPageTarget.slideIds;
+			reorderedExpectation.pageCount = 4;
+			const auto reordered = ImportApplicationOwnedPresentation(
+				*fourPageExport.document, reorderedExpectation);
+			bool followsSlideIds = reordered.snapshot &&
+				reordered.snapshot->activeCanvases.size() == 4;
+			if (followsSlideIds)
+				for (std::size_t pageIndex = 0; pageIndex < 4; ++pageIndex)
+				{
+					const auto& canvas = reordered.snapshot->activeCanvases[pageIndex];
+					followsSlideIds = canvas.slideId ==
+						reorderedExpectation.slideIds[pageIndex] &&
+						canvas.strokes.size() == 1 && canvas.strokes.front().style.fallbackRgb ==
+						static_cast<std::uint32_t>(reorderedExpectation.slideIds[pageIndex]);
+					if (!followsSlideIds) break;
+				}
+			PRESENTATION_CHECK(state, followsSlideIds);
+		}
+
 		UInkDocument unexpectedExtension = *exported.document;
 		unexpectedExtension.headerExtension->name = "unexpected";
 		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(

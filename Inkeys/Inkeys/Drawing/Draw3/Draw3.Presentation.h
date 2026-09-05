@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Draw3.Bridge.h"
 
@@ -75,5 +75,8 @@ namespace Inkeys::Drawing::Draw3
 		const Bridge::PresentationTarget& previous,
 		const Bridge::PresentationTarget& next,
 		std::size_t documentPageCount) noexcept;
+	bool StablePresentationTopologyChanged(
+		const Bridge::PresentationTarget& previous,
+		const Bridge::PresentationTarget& next) noexcept;
 	std::string FormatPresentationKey(const Bridge::PresentationKey& key);
 }

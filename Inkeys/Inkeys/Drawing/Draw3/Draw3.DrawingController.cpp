@@ -4874,14 +4874,6 @@ namespace Inkeys::Drawing::Draw3
 						activePresentationKey && *activePresentationKey == target.key;
 					const std::optional<Bridge::PresentationKey> previousPresentationKey =
 						activePresentationKey;
-					const bool stableTopologyChange = activePresentationTarget &&
-						activePresentationTarget->bindingMode ==
-						Bridge::SlideBindingMode::StableSlideId &&
-						target.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
-						(*activePresentationTarget != target);
-					bool bindingUpgrade = sameKey && activePresentationTarget &&
-						CanUpgradePresentationBindingByOrdinal(*activePresentationTarget,
-							target, document_ ? document_->Pages().size() : 0);
 					bool topologyConflict = false;
 					if (sameKey && activePresentationTarget)
 						topologyConflict = !CanReusePresentationDocumentSlot(
@@ -4910,12 +4902,6 @@ namespace Inkeys::Drawing::Draw3
 								topologyConflict = true;
 								destination = nullptr;
 							}
-							else if (destination->presentationTarget)
-								bindingUpgrade = CanUpgradePresentationBindingByOrdinal(
-									*destination->presentationTarget, target,
-									destination->document
-										? destination->document->Pages().size()
-										: target.totalPages);
 						}
 						if (topologyConflict)
 						{
@@ -4930,7 +4916,6 @@ namespace Inkeys::Drawing::Draw3
 							swapActiveDocument(*source);
 							continue;
 						}
-						destination->presentationTarget = target;
 						swapActiveDocument(*destination);
 						if (previousPresentationKey && canEvictPresentationSlot(*source))
 							presentationSlots.erase(*previousPresentationKey);
@@ -4941,6 +4926,12 @@ namespace Inkeys::Drawing::Draw3
 					if (topologyConflict) activePresentationTarget.reset();
 					else
 					{
+						const bool bindingUpgrade = activePresentationTarget &&
+							CanUpgradePresentationBindingByOrdinal(*activePresentationTarget,
+								target, document_ ? document_->Pages().size() : 0);
+						// parked/warm slot 先恢复其旧 target，再按有序 SlideID 重映射。
+						const bool stableTopologyChange = activePresentationTarget &&
+							StablePresentationTopologyChanged(*activePresentationTarget, target);
 						if (stableTopologyChange && !RebindStablePresentationTopology(target))
 						{
 							std::fputs("[Draw3.Presentation] action=rebind result=failed\n", stderr);
