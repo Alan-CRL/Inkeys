@@ -345,13 +345,9 @@ namespace Inkeys::UI::StartupPreview
 	double ProgressVisualReducer::SampleFailureColorProgress(
 		std::chrono::steady_clock::time_point now) const noexcept
 	{
-		if (!failureTargetFrozen_ || now <= failureColorStartTime_) return 0.0;
-		const double phase = std::clamp(std::chrono::duration<double>(
-			now - failureColorStartTime_).count()
-			/ std::chrono::duration<double>(
-				StartupPreviewProgressAnimationDuration).count(), 0.0, 1.0);
-		// 失败颜色由 reducer 独立维护，渐隐期间仍按非线性时间轴推进。
-		return phase * phase * (3.0 - 2.0 * phase);
+		(void)now;
+		// 首次 fatal 帧直接使用红色，避免快速失败时先短暂显示蓝色。
+		return failureTargetFrozen_ ? 1.0 : 0.0;
 	}
 
 	void ProgressVisualReducer::RetargetRatio(

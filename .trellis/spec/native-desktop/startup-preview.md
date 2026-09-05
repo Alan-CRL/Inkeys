@@ -86,6 +86,8 @@ full envelope = 80.0 + 10.0 + 380.0 = 470.0 DIP
 - milestone 首次真实完成才增加 work units；乱序、重复、并发报告只计一次。displayed ratio 只能追赶 actual ratio；时间只控制动画/3 秒门。
 - 只有 Bar 首个完整 `presentCompletion.IsCommitted()` 才报告 100%。失败冻结首个错误快照。
 
+最终失败的首个可见进度帧必须直接使用红色；失败颜色不得从正常蓝色渐变到红色，避免快速启动失败时出现蓝色闪帧。
+
 ## 4. Window and ownership contract
 
 Preview HWND 必须由独立 owner/message thread 创建和销毁，样式固定为 `WS_POPUP` 与 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，不得加入 `WS_EX_TRANSPARENT`。`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATEANDEAT`；可见 client 区返回 `HTCLIENT` 并吞掉鼠标按下/抬起/双击。透明圆角外像素遵循 ULW 原生 hit-test。
