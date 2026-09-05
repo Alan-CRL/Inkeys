@@ -822,9 +822,8 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 	whiteboard->hide = !whiteboardFeatureEnabled;
 	whiteboard->size = projection.whiteboardTwoTwo
 		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	// 与结束放映并列时，定格使用 2*1 以保持 A2 网格连续。
-	freeze->size = projection.endShowVisible
-		? BarButtonSizeEnum::twoOne : BarButtonSizeEnum::twoTwo;
+	// 定格在桌面与 PPT 放映场景中始终保持 2*2，避免切换场景时尺寸跳变。
+	freeze->size = BarButtonSizeEnum::twoTwo;
 	freeze->hide = !projection.freezeVisible;
 	endShow->size = BarButtonSizeEnum::twoTwo;
 	endShow->hide = !projection.endShowVisible;
