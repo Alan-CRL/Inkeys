@@ -19,9 +19,10 @@ namespace Inkeys::UI::Bar
 		bool whiteboardFeatureEnabled = true) noexcept
 	{
 		if (!whiteboardFeatureEnabled)
-			return { false, !presentationActive, presentationActive };
+			return { false, true, presentationActive };
 		if (whiteboardActive) return { true, false, false };
-		if (presentationActive) return { true, false, true };
+		// PPT 中保留定格入口，由按钮状态显示为禁用而不是隐藏。
+		if (presentationActive) return { false, true, true };
 		return { false, true, false };
 	}
 

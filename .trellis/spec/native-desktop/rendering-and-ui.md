@@ -42,6 +42,10 @@
 
 `Bar.RenderLoop.cpp::BarUISetClass::Rendering` 把 Bar 注册为共享 UI3 调度器客户端。Bar 从共享 D2D device 创建自己的 device context 和 GDI-compatible、BGRA premultiplied target bitmap；单帧入口经 `ID2D1GdiInteropRenderTarget::GetDC` 和 `UpdateLayeredWindowIndirect` 提交计算出的脏区，idle 等待与最多 60 FPS 节拍由共享调度器统一负责。
 
+### 定格状态机合同
+
+`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。绘制、选择和工具按钮切换不得清除或恢复定格；用户只能通过定格按钮切换状态。PPT 或 Whiteboard 工作区进入时必须关闭定格并禁用主栏定格按钮，退出工作区只解除禁用，不恢复进入前的定格状态。禁用按钮保留可见布局和内容，以现有 `BarButtonDisabledContentOpacity` 呈现，不参与悬停、按压或点击命中。
+
 以下仅是对现有 Bar 的 `【合理推断】` 修改约束，不适用于所有窗口：
 
 - 保持 target/current 动画状态与最终绘制值的现有分工；

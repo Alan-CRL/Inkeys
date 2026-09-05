@@ -20,6 +20,7 @@
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.Whiteboard;
+import Inkeys.UI.Freeze;
 import Inkeys.Window;
 
 StateModeClass stateMode;
@@ -461,12 +462,6 @@ float GetEffectivePenOpacity()
 bool ChangeStateModeToSelection()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-	// selection 保留由定格按钮显式进入的定格状态。
-	if (!FreezeFrame.select)
-	{
-		FreezeFrame.mode = 0;
-		FreezeFrame.select = false;
-	}
 	if (state == 1.1) state = 1;
 	stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
@@ -562,8 +557,7 @@ void StateMonitoring()
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 			(void)service.SetClickThrough(
 				Inkeys::Window::WindowRole::Drawpad, true);
-			FreezeFrame.mode = 0;
-			FreezeFrame.select = false;
+			Inkeys::UI::Freeze::SetWhiteboardActive(true);
 			FreezePPT = false;
 			Inkeys::Drawing::Draw3::PublishProductWorkspace(
 				Workspace::Whiteboard);
@@ -608,6 +602,7 @@ void StateMonitoring()
 					Inkeys::Window::WindowRole::Drawpad, true);
 				Inkeys::UI::Whiteboard::PublishActive(false);
 				SetWhiteboardFreezeSurfaceOwned(false);
+				Inkeys::UI::Freeze::SetWhiteboardActive(false);
 				Inkeys::UI::Bar::SetWhiteboardActive(false);
 				(void)service.SetOverlayFullscreen(false);
 				(void)service.LeaveWhiteboardWindowMode();
@@ -705,6 +700,7 @@ void StateMonitoring()
 				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 				(void)service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Freeze::SetWhiteboardActive(true);
 				Inkeys::Drawing::Draw3::PublishProductWorkspace(
 					Workspace::Whiteboard);
 				whiteboardPhase.store(WhiteboardPhase::Entering,
@@ -723,7 +719,6 @@ void StateMonitoring()
 				static_cast<int>(snapshot.currentPageIndex + 1),
 				static_cast<int>(snapshot.pageCount), false);
 			SetWhiteboardFreezeSurfaceOwned(false);
-			Inkeys::UI::Bar::SetWhiteboardActive(false);
 			(void)service.Hide(Inkeys::Window::WindowRole::Freeze);
 			// Presentation 辅助输出始终不参与输入；显式恢复其 click-through，
 			// 防止 Whiteboard 期间的窗口样式切换把旧命中状态带回桌面。
@@ -736,6 +731,8 @@ void StateMonitoring()
 				service.SetClickThrough(
 					Inkeys::Window::WindowRole::Drawpad, snapshot.selectionMode);
 			if (!presentationWindowStateReady) continue;
+			Inkeys::UI::Freeze::SetWhiteboardActive(false);
+			Inkeys::UI::Bar::SetWhiteboardActive(false);
 			// window mode 恢复后重发 COM 事实；PageControl 始终是共享宿主唯一所有者。
 			Inkeys::UI::Ppt::PublishPresentationVisible(
 				PptInfoState.TotalPage > 0);

@@ -951,6 +951,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
+    <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />

@@ -2370,6 +2370,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							// 主栏仅让选中按钮响应第三光源，未选中按钮保持无光影。
 							bool buttonLightVisible = !state.barState.fold && !temp->hide
 								&& temp->button.enable.tar
+								&& temp->state->state != BarWidgetState::Disable
 								&& temp->state->state == BarWidgetState::Selected;
 							double buttonLightOpacity = buttonLightVisible
 								? (temp->state->emph == BarWidgetEmphasize::Pressed
@@ -2382,7 +2383,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 						if (!colorSelector)
 							Inkeys::UI::Bar::RetargetBarButtonInteractionVisual(
 								*temp, !state.barState.fold && temp->IsVisible(),
-								temp->button.enable.tar,
+								temp->button.enable.tar
+									&& temp->state->state != BarWidgetState::Disable,
 								temp->state->state == BarWidgetState::Selected,
 								operationDur);
 
@@ -2443,7 +2445,10 @@ SetButtonPositionTar(temp->button.x, xO + barBtnOneHalf, 40.0, true);
 								}
 								else
 								{
-									temp->icon.pct.SetTar(1.0, operationDur);
+									temp->icon.pct.SetTar(
+									 temp->state->state == BarWidgetState::Disable
+										 ? BarButtonDisabledContentOpacity : 1.0,
+									 operationDur);
 									if (temp->state->state == BarWidgetState::Selected)
 										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
 									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
@@ -2547,7 +2552,10 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 								if (state.barState.fold || !temp->IsVisible()) temp->icon.pct.SetTar(0.0, operationDur);
 								else
 								{
-									temp->icon.pct.SetTar(1.0, operationDur);
+									temp->icon.pct.SetTar(
+									 temp->state->state == BarWidgetState::Disable
+										 ? BarButtonDisabledContentOpacity : 1.0,
+									 operationDur);
 									if (temp->state->state == BarWidgetState::Selected)
 										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
 									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
@@ -2560,7 +2568,10 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip); // 右侧文字槽与共享 2x1 
 									temp->name.w.SetTar(metrics.primarySlotWidthDip);
 									temp->name.h.SetTar(metrics.primarySlotHeightDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
-								else temp->name.pct.SetTar(1.0, operationDur);
+								else temp->name.pct.SetTar(
+									 temp->state->state == BarWidgetState::Disable
+										 ? BarButtonDisabledContentOpacity : 1.0,
+									 operationDur);
 
 								if (temp->state->state == BarWidgetState::Selected)
 									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
@@ -2653,7 +2664,10 @@ SetButtonPositionTar(temp->button.x, xO + barBtnTwoHalf, 40.0, true);
 								}
 								else
 								{
-									temp->icon.pct.SetTar(1.0, operationDur);
+									temp->icon.pct.SetTar(
+									 temp->state->state == BarWidgetState::Disable
+										 ? BarButtonDisabledContentOpacity : 1.0,
+									 operationDur);
 									if (temp->state->state == BarWidgetState::Selected)
 										temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::Accent));
 									else temp->icon.color1.value().SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
@@ -2666,7 +2680,10 @@ temp->name.x.SetTar(metrics.primaryOffsetXDip);
 									temp->name.w.SetTar(metrics.primarySlotWidthDip);
 									temp->name.h.SetTar(metrics.primarySlotHeightDip);
 								if (state.barState.fold || !temp->IsVisible()) temp->name.pct.SetTar(0.0, operationDur);
-								else temp->name.pct.SetTar(1.0, operationDur);
+								else temp->name.pct.SetTar(
+									 temp->state->state == BarWidgetState::Disable
+										 ? BarButtonDisabledContentOpacity : 1.0,
+									 operationDur);
 
 								if (temp->state->state == BarWidgetState::Selected)
 									temp->name.color.SetTar(GetThemeColor(BarThemeColorEnum::Accent));
@@ -5824,7 +5841,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			(void)UpdateBarButtonHoverVisual(*temp,
 				!state.barState.fold && temp->IsVisible()
 					&& (!moreItem || state.barState.moreExpanded),
-				temp->state->state != BarWidgetState::Selected,
+				temp->state->state != BarWidgetState::Disable
+					&& temp->state->state != BarWidgetState::Selected,
 				BarButtonHoverFadeDurationSeconds);
 			if (moreItem)
 			{

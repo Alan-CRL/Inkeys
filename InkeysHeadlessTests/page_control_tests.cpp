@@ -805,16 +805,16 @@ namespace
 		Check(!desktop.whiteboardTwoTwo && desktop.freezeVisible
 			&& !desktop.endShowVisible,
 			"desktop A2 shows two compact buttons");
-		Check(presentation.whiteboardTwoTwo && !presentation.freezeVisible
+		Check(!presentation.whiteboardTwoTwo && presentation.freezeVisible
 			&& presentation.endShowVisible,
-			"PPT A2 shows Whiteboard and EndShow");
+			"PPT A2 keeps disabled Freeze visible with EndShow");
 		Check(whiteboard.whiteboardTwoTwo && !whiteboard.freezeVisible
 			&& !whiteboard.endShowVisible,
 			"whiteboard A2 shows only Close Whiteboard");
 		Check(!disabledDesktop.whiteboardTwoTwo && disabledDesktop.freezeVisible
 			&& !disabledDesktop.endShowVisible && !disabledPresentation.whiteboardTwoTwo
-			&& !disabledPresentation.freezeVisible && disabledPresentation.endShowVisible,
-			"temporarily disabled whiteboard leaves only desktop Freeze or PPT EndShow");
+			&& disabledPresentation.freezeVisible && disabledPresentation.endShowVisible,
+			"temporarily disabled whiteboard keeps PPT Freeze visible with EndShow");
 		Check(IsLegacyBarA2Pair("Inkeys.Bar.Whiteboard", "Inkeys.Bar.Freeze")
 			&& IsLegacyBarA2Pair("Inkeys.Bar.Freeze", "Inkeys.Bar.Whiteboard"),
 			"both legal legacy A2 orders are accepted");

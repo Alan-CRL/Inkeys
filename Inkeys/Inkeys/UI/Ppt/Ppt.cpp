@@ -13,6 +13,7 @@ module Inkeys.UI.Ppt;
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar;
+import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Window;
 
@@ -125,6 +126,7 @@ namespace Inkeys::UI::Ppt
 				state.layout = ToPageLayout(configuration);
 			}
 			Inkeys::UI::PageControl::PublishPptState(state);
+			Inkeys::UI::Freeze::SetPresentationActive(state.presentationVisible);
 			Inkeys::UI::Bar::SetPptPresentationActive(state.presentationVisible);
 		}
 

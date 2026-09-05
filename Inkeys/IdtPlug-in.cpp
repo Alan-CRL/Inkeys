@@ -26,6 +26,7 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Window;
 import Inkeys.Startup.Progress;
@@ -500,6 +501,8 @@ void PptInfo()
 		// Ppt 信息监测 | 控件信息加载
 		if (!Initialization && observedTotalPage != -1)
 		{
+			// 进入放映后定格不恢复，退出放映只重新开放按钮。
+			Inkeys::UI::Freeze::SetPresentationActive(true);
 			pptTakeoverConsumedInCurrentShow = false;
 
 			ppt_show = GetPptShow();
@@ -520,6 +523,7 @@ void PptInfo()
 		}
 		else if (Initialization && observedTotalPage == -1)
 		{
+			Inkeys::UI::Freeze::SetPresentationActive(false);
 			pptTakeoverConsumedInCurrentShow = false;
 
 			PptImg.IsSave = false;

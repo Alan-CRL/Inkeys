@@ -67,6 +67,9 @@
     <Filter Include="Modules\Inkeys\UI\Whiteboard">
       <UniqueIdentifier>{5de71bc8-ced2-45ae-bffd-b081b69eb30a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\UI\Freeze">
+      <UniqueIdentifier>{f1b4b267-6b02-4b38-a951-7f9dfb4f30d4}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\UI\RenderPipeline">
       <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
     </Filter>
@@ -1807,6 +1810,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp">
       <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm">
+      <Filter>Modules\Inkeys\UI\Freeze</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>

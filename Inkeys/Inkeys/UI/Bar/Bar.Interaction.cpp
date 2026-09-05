@@ -2502,6 +2502,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						BarButtonClass* temp = barButtonSet.buttonList.Get(id);
 						if (!temp || !temp->IsVisible()
 							|| temp->preset == BarButtonPresetEnum::Divider
+							|| temp->state->state == BarWidgetState::Disable
 							|| temp->state->state == BarWidgetState::Selected) continue;
 						bool isColorSelector = temp->name.enable.tar
 							&& temp->name.content.GetTar().substr(0, 7) == L"__color";
@@ -2523,6 +2524,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								for (const shared_ptr<BarButtonClass>& button : buttons)
 								{
 									if (!button || !button->IsVisible()
+										|| button->state->state == BarWidgetState::Disable
 										|| button->state->state == BarWidgetState::Selected)
 										continue;
 									if (button->button.IsClick(
@@ -3179,6 +3181,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					for (const shared_ptr<BarButtonClass>& button : moreButtons)
 					{
 						if (!button || !button->IsVisible()
+							|| button->state->state == BarWidgetState::Disable
 							|| !button->button.IsClick(msg.x, msg.y, barStyle.zoom)) continue;
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN)
@@ -3332,7 +3335,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				{
 					BarButtonClass* temp = barButtonSet.buttonList.Get(id);
 					if (temp == nullptr || !temp->IsVisible()
-						|| temp->preset == BarButtonPresetEnum::Divider) continue;
+						|| temp->preset == BarButtonPresetEnum::Divider
+						|| temp->state->state == BarWidgetState::Disable) continue;
 
 					// 双击第二击仍归属于第一击按钮，避免动画中按钮位移导致命中丢失。
 					bool doubleClickContinuation = msg.message == WM_LBUTTONDBLCLK

@@ -2,6 +2,7 @@
 import Inkeys.Text.Font;
 import Inkeys.Window;
 import Inkeys.Startup.Progress;
+import Inkeys.UI.Freeze;
 
 #include "IdtFreezeFrame.h"
 
@@ -107,7 +108,6 @@ void FreezeFrameWindow()
 
 	//ShowWindow(freeze_window, SW_SHOW);
 
-	FreezeFrame.update = true;
 	int wait = 0;
 	bool show_freeze_window = false;
 	bool overlayFullscreen = false;
@@ -121,7 +121,7 @@ void FreezeFrameWindow()
 
 		if (magnificationReady)
 		{
-			if (FreezeFrame.mode == 1)
+			if (Inkeys::UI::Freeze::IsActive())
 			{
 				if (!show_freeze_window)
 				{
@@ -147,7 +147,7 @@ void FreezeFrameWindow()
 
 				while (!offSignal)
 				{
-					if (FreezeFrame.mode != 1 || PptInfoState.TotalPage != -1) break;
+					if (!Inkeys::UI::Freeze::IsActive()) break;
 
 					if (FreezeRecall > 0)
 					{
@@ -190,8 +190,6 @@ void FreezeFrameWindow()
 					this_thread::sleep_for(chrono::milliseconds(20));
 				}
 
-				if (PptInfoState.TotalPage != -1) FreezeFrame.mode = 0;
-				FreezeFrame.update = true;
 			}
 			else if (show_freeze_window)
 			{
@@ -212,13 +210,7 @@ void FreezeFrameWindow()
 					Inkeys::Window::WindowRole::MagnifierChild);
 			}
 		}
-		else if (FreezeFrame.mode == 1)
-		{
-			FreezeFrame.mode = 0;
-			FreezeFrame.select = false;
-		}
-
-		if (FreezeFrame.mode != 1 && FreezePPT)
+		if (!Inkeys::UI::Freeze::IsActive() && FreezePPT)
 		{
 			if (!show_freeze_window)
 			{
@@ -275,7 +267,7 @@ void FreezeFrameWindow()
 			}
 			FreezePPT = false;
 		}
-		if (FreezeFrame.mode != 1 && FreezeRecall)
+		if (!Inkeys::UI::Freeze::IsActive() && FreezeRecall)
 		{
 			while (!offSignal)
 			{

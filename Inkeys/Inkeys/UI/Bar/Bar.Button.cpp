@@ -3,7 +3,6 @@ module;
 #include "../../../IdtMain.h"
 
 // 历史遗留问题
-#include "../../../IdtDraw.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 
@@ -25,6 +24,7 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
 import Inkeys.Business.ComponentActions;
+import Inkeys.UI.Freeze;
 import Inkeys.UI.Setting;
 
 using Inkeys::Business::BuiltInComponentAction;
@@ -502,20 +502,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					// TODO 注意 PptInfoState.TotalPage == -1 时需要禁用按钮
-					if (FreezeFrame.mode != 1)
-					{
-						FreezeFrame.mode = 1;
-						SyncDraw3State();
-
-						if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) FreezeFrame.select = true;
-					}
-					else
-					{
-						FreezeFrame.mode = 0;
-						FreezeFrame.select = false;
-						SyncDraw3State();
-					}
+					Inkeys::UI::Freeze::Toggle();
 				};
 		}
 
@@ -831,12 +818,13 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 	auto freeze = preset[(int)BarButtonPresetEnum::Freeze];
 	auto endShow = preset[(int)BarButtonPresetEnum::EndShow];
 	if (!whiteboard || !freeze || !endShow) return;
-	// 发布前临时隐藏入口；仍保留稳定按钮 ID 和用户原有 A2 配置。
+	// 白板功能关闭时只隐藏入口，稳定按钮 ID 和用户原有 A2 配置仍保留。
 	whiteboard->hide = !whiteboardFeatureEnabled;
 	whiteboard->size = projection.whiteboardTwoTwo
 		? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
-	// 发布期间白板入口撤下，暂时由 2*2 定格按钮填补 A2 固定区域。
-	freeze->size = BarButtonSizeEnum::twoTwo;
+	// 与结束放映并列时，定格使用 2*1 以保持 A2 网格连续。
+	freeze->size = projection.endShowVisible
+		? BarButtonSizeEnum::twoOne : BarButtonSizeEnum::twoTwo;
 	freeze->hide = !projection.freezeVisible;
 	endShow->size = BarButtonSizeEnum::twoTwo;
 	endShow->hide = !projection.endShowVisible;
@@ -1311,7 +1299,10 @@ void BarButtonSetClass::CalcState()
 	}
 
 	{
-		if (FreezeFrame.mode == 1) barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
+		if (!Inkeys::UI::Freeze::IsAvailable())
+			barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Disable;
+		else if (Inkeys::UI::Freeze::IsActive())
+			barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Freeze].state = BarWidgetState::None;
 	}
 	{

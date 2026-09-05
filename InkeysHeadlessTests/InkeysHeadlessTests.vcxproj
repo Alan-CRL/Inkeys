@@ -114,6 +114,7 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Freeze\Freeze.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\PageControl\PageControl.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Whiteboard\Whiteboard.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.cppm" />
@@ -146,6 +147,7 @@
 	<ClCompile Include="ppt_ui_tests.cpp" />
 	<ClCompile Include="page_control_tests.cpp" />
 	<ClCompile Include="whiteboard_ui_tests.cpp" />
+	<ClCompile Include="freeze_state_tests.cpp" />
 	<ClCompile Include="display_tests.cpp" />
 	<ClCompile Include="bar_display_transition_tests.cpp" />
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
