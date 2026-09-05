@@ -838,6 +838,11 @@ namespace draw3::uink
 		UInkLoadProvenance provenance = readResult.provenance;
 		// 外部文件必须由调用方明确选择另存为或允许有损覆盖。
 		provenance.sourceWasExternal = source == UInkEditingSource::ExternalImport;
+		if (source == UInkEditingSource::ApplicationOwnedPrivateWorkspace)
+		{
+			provenance.usedFieldFallback = false;
+			provenance.requiresSaveAs = false;
+		}
 		if (provenance.sourceWasExternal) provenance.requiresSaveAs = true;
 		return UInkEditingSession{ *readResult.document, provenance,
 			readResult.diagnostics, readResult.sourceRevision, readResult.sourcePath };

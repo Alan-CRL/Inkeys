@@ -61,7 +61,7 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 
 - Draw3 独立创建 D3D11.1 hardware-first/WARP-fallback 设备、context、DXGI factory、交换链和呈现资源，禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
 - UI 线程只向 bridge 发布不可变快照和命令；renderer、document、history、RTS 消费只在 Draw3 绘制线程进行。
-- 进程只允许一套 Draw3 Host、绘制线程、document/history 和 `RealTimeStylusInput` producer。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出顺序固定为停止命令生产、停止 RTS、唤醒绘制线程、释放双 presenter/设备，最后由 Window Service 销毁两窗。
+- 进程只允许一套 Draw3 Host、绘制线程和 `RealTimeStylusInput` producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出顺序固定为停止命令生产、停止 RTS、唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
 - `DrawingControllerRuntimeObserver::drawingActivityChanged` 只按全部 physical contact 的聚合值发布 `0→1/1→0`；每个命令消费边界与帧末复核，避免 Down 后提前 `continue` 漏报。Host 通过独立 `HostRuntimeCallbacks` 注入产品通知、再次去重，并在 Run 正常返回、异常或 stop/join 后补发一次 false；Draw3 核心不得直接依赖 Bar。
 
 ## 样式与透明度
@@ -75,13 +75,13 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ## 功能边界
 
-桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换和 Desktop UInk 自动保存已接入；手动保存、Whiteboard/PPT 自动保存、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、Whiteboard 自动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
 
 ## Scenario: Desktop UInk 自动保存事务与退出屏障
 
 ### 1. Scope / Trigger
 
-修改 Draw3 workspace、Clear/Undo/Redo、正常退出、`saveSetting.enable`、UInk 完整保存、每日索引或 Host/controller/worker 生命周期时必须应用本合同。Whiteboard、PPT 自动保存和跨 Clear 恢复不在本合同范围内。
+修改 Draw3 workspace、Desktop Clear/正常退出、`saveSetting.enable`、Desktop UInk 完整保存、每日索引或 Host/controller/worker 生命周期时必须应用本合同。Whiteboard、PPT 自动保存和跨 Clear 恢复不在本合同范围内；PPT 使用下一节的独立事务。
 
 ### 2. Signatures
 
@@ -93,7 +93,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ### 3. Contracts
 
-- 自动保存只接受 `Desktop + Eligible + saveSetting.enable + 当前页非空`。主画布进入 `Presentation` 后资格变为 `PptTouched`；返回 Desktop 不恢复，只有 Desktop Clear 完成后的新空区间恢复 `Eligible`。Whiteboard 不改变主画布资格。
+- 自动保存只接受 `Desktop + saveSetting.enable + 当前页非空`。Desktop slot 与 Whiteboard/PPT slot 独立；访问 PPT 不会污染 Desktop 保存资格，也不得将 PPT 内容导出到 Desktop 目录。
 - 触发点只有 Desktop Clear 的破坏操作之前和正常退出安全点。Undo/Redo（包括未来跨 Clear 撤销）不得调用自动保存；空画布或开关关闭时不得捕获快照、入队或创建目录。
 - DrawingController 线程只按 runtime history 捕获当前可见、完全自有的 CPU 快照；UInk 编码、文件和索引 I/O 由 Host 拥有的单一可 join 串行 worker 执行。worker 不得持有 controller/GPU 引用，也不得 detach。
 - 布局固定为 `desktop/YYYY-MM-DD/HHmmssfff_<saveRequestId-short>[_suffix].uink` 和同目录 version 1 `index.json`。请求创建时固定 `saveRequestId`、`fileGuid`、`sessionId`、`sequenceInSession`、本地日期和带时区 `createdAt`；同一请求幂等，不同请求使用 create-new 且永不覆盖。
@@ -105,7 +105,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 | 条件 | 必需结果 |
 |---|---|
-| Whiteboard、Presentation 或 `PptTouched` 返回 Desktop | 不捕获、不入队、不创建索引项 |
+| 当前 workspace 为 Whiteboard 或 Presentation | 不捕获 Desktop slot、不入 Desktop 队列、不创建 Desktop 索引项 |
 | Desktop Clear 且符合条件 | 先捕获不可变快照并接受请求，再立即 Clear，不等待磁盘 |
 | Undo/Redo、空画布、开关关闭 | 自动保存零调用；已有请求继续收敛 |
 | 同毫秒不同请求或目标名已存在 | 使用唯一身份/安全后缀 create-new，绝不覆盖 |
@@ -123,7 +123,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 ### 6. Tests Required
 
-- 纯 CPU 测试覆盖三态、`Eligible/PptTouched`、Clear/Exit 门控、Undo/Redo/空画布、可见快照与快照后继续绘制不变。
+- 纯 CPU 测试覆盖三态隔离、Desktop Clear/Exit 门控、Undo/Redo/空画布、可见快照与快照后继续绘制不变。
 - 存储测试覆盖同毫秒/候选名碰撞、幂等重试、两个 writer、跨午夜、UInk/索引故障、孤儿保留、主备恢复、损坏 schema/时间/GUID/序号/重复路径以及未知文件保留。
 - 生命周期测试覆盖慢写 drain、提交端关闭、FIFO 最终屏障、controller 存活期捕获和失败退出。
 - 使用 ARM64 原生 MSBuild 全量 Rebuild `InkeysRepo.sln Debug|ARM64`，运行 `inkStrokeModelerTestTests.exe`、`InkeysHeadlessTests.exe --no-window` 与 `git diff --check`。人工产品验证未完成前任务保持 active。
@@ -142,6 +142,90 @@ if (policy.ShouldCapture(workspace, enabled, hasVisibleContent))
     autoSave.Submit(DesktopAutoSaveTrigger::Clear, CaptureVisibleSnapshot());
 ClearCurrentInterval();
 // Host stop: PrepareExitAutoSave -> CloseAndDrain -> destroy controller/worker.
+~~~
+
+## Scenario: PPT 三态 slot、UInk 自动保存与当前进程恢复
+
+### 1. Scope / Trigger
+
+修改 Presentation target、Desktop/Whiteboard/PPT 切换、PPT 页切换、dirty revision、Presentation UInk 元数据/导入、索引、Host 退出屏障或多放映切换时必须应用本合同。本期只自动恢复当前 Inkeys 进程成功保存的 entry；跨进程冲突和页面插入/删除后的交互决策必须显式留待后续。
+
+### 2. Signatures
+
+- `Bridge::PresentationTarget { key, bindingMode, sourceIdentity, bindingToken, pageIndex, totalPages, slideId, slideIds, targetRevision, processLocalIdentity }`。
+- `Bridge::ProductState::presentationTarget` 与 scene-stamped `Bridge::Command` 共享不可变 target；`PresentationReadyIdentity` 是不含字符串/拓扑的固定大小 runtime ready 值。
+- `PublishProductPresentationTarget(Bridge::PresentationTarget) -> optional<uint64_t>` / `ClearProductPresentationTarget()`。
+- `PresentationAutoSaveService::{Start, SubmitSave, SubmitLoad, TryTakeCompletion, CloseAndDrain}`。
+- `ShouldQueuePresentationSave(mutationRevision, queuedRevision)` 与 `ShouldEvictPresentationSlot(hasCommittedFile, mutationRevision, queuedRevision, committedRevision, loadPending)`。
+- `ImportApplicationOwnedPresentation(document, expectation) -> Draw3UInkImportResult`。
+- 产品布局：`<AutoSave>/presentation/index.json(.bak)` 与 `<AutoSave>/presentation/files/<fileGuid>.uink`。
+
+### 3. Contracts
+
+- 绘制线程持有 Desktop singleton、Whiteboard singleton和 `map<PresentationKey, DocumentSlot>`；每个 slot 自带 document、history、当前页、页 runtime 与持久化 revision。切换必须 park/swap 整个 slot，然后执行完整 GPU reset/replay，不得共用或并行搬运容器。
+- managed/native 必须把 key、binding、topology、page 和 `targetRevision` 作为一个共享不可变 target 事务发布。产品命令固定发布时的 workspace/target；Host 按 FIFO 执行 `captured scene -> command`，排空后再应用 latest state。ready 使用固定大小 identity，并同时匹配 workspace、key、binding revision、page/SlideID 和 target revision；仅页码相同不算 ready。
+- `StableSlideId` 以规范化绝对路径作 source identity，provider 仅作诊断；无稳定路径时的 process-local identity 必须含 Inkeys PID、Office provider/PID/HWND、binding revision 和名称，防止同一 Office 进程重用未保存名称。
+- 稳定模式写 `workspaceType=2 + hostId=PresentationKey + Canvas.slideId`；页码退化写 Inkeys 私有 `workspaceType=128 + inkeysBindingMode=page-index`，不伪造 SlideID。只有 strict importer 验证通过的应用自产文件才可解除 fallback/save-as 保护并原地覆盖。
+- dirty 是“自上次成功提交后发生修改”，每个 Presentation 文档只比较一组 `mutationRevision/queuedRevision/committedRevision`；Stored stroke、成功 Undo/Redo、有历史的 Clear、viewport 修改推进 mutation，Laser/预测/纯 Present 不推进。每次保存都是全部页快照，所以文档级 revision 足以让任一脏页在离页时触发，同时保证无变化零写。不得用 `currentPageHasContent` 作 PPT 保存门控；因此恢复旧文件后 Clear 再立即退出也必须覆盖为全量空 Canvas 集合。
+- 保存触发在同 PPT 换页、A/B/workspace 离开和正常退出屏障。快照包含全部页（包括空页）；同一 key 待处理保存用 latest-wins 替换，in-flight completion 只能提交对应 revision。最终 scene-stamped 屏障位于前序 Clear/Undo/Redo 之后并扫描 active 与全部 parked slot；worker 无超时排空所有已接受请求。显式失败保留旧文件并在 completion 被绘制线程处理后恢复 dirty，但退出不承诺在同一屏障内无限重试失败 I/O。
+- 同一 PPT 在当前进程内固定同一 `fileGuid/path`，以 `SaveExistingLogicalFile + expected SourceRevision` 原地覆盖。UInk 先 durable commit，再在命名 mutex 内原子发布严格 index；index 失败保留文件并记录 self-written revision，后续请求先验证并收敛，不得永久卡在 `SourceChanged`。
+- clean inactive slot 只在有已提交文件、三 revision 相等且非 load-pending 时可淘汰。重入已淘汰 slot 必须走 `index -> ReadUInk -> strict import -> drawing-thread materialize`；dirty/pending/failed slot 保持 warm，不得被旧磁盘快照覆盖。加载期间清空 surface、不发布 identity-ready，并丢弃 physical contact/破坏性命令，直到 Loaded/NotFound/失败 completion 收敛。
+- 稳定路径同 key/source 的 `PageIndexFallback -> StableSlideId` 在当前 session、页数及完整 SlideID 拓扑匹配时，可按 ordinal 一次性升级 slot；新放映 HWND/binding revision 不阻止同进程恢复。process-local 身份仍要求 exact binding token/revision。升级是持久化 mutation，原位覆盖同一文件为标准 Presentation 元数据；不满足证明条件不得局部混用两种模式。
+- `presentation/index.json` 是严格 schema：source/key/fileGuid/path 均唯一，entry 恰含 source identity、key、sessionId、file/workspace GUID、relative path、binding mode、processLocal、binding revision、mutation revision、slideIds 和 UInk source revision。仅 `sessionId == ProcessSessionId()` 的 entry 可自动恢复；稳定路径 page-index 可在同 session/key/source、相同页数下跨放映 binding 按 ordinal 读写，process-local 必须 exact binding。foreign 或不一致内容返回结构化终态，不弹窗、不删未知文件、不静默覆盖。
+- index commit 失败后的 self-written pending entry 只跨同一规范化 autosave root 的 Host generation 保留；切换 root 清除。I/O 使用保留大小写的绝对路径，folded root key 仅用于等价比较和 named mutex。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需行为 |
+|---|---|
+| descriptor busy，或 shared 页码已更新而 descriptor 仍是上一页 | 仅 descriptor bindingRevision 与当前 target 相同才保留且不发 ready；新 binding 首次 busy/stale 必须隔离 |
+| descriptor 明确 unavailable/无放映 | 切到隔离 Presentation slot 或 Desktop，不复用旧 key |
+| 未修改或首次空 PPT | 不写文件；没有内容不等于没有修改 |
+| 恢复后 Clear/Undo/Redo 到空状态 | mutation 推进，下一安全点覆盖同一 `.uink` |
+| 稳定路径 fallback 在重开放映后取得完整 SlideID | 同 session/key/source 且页数匹配时按 ordinal 原位升级；process-local binding 不同则拒绝 |
+| UInk 成功、index 失败 | 返回 `IoError`、保持 dirty；保留 self-written revision 供后续收敛 |
+| index 指向 foreign session | 返回 `CrossProcessConflictDeferred`，本期不自动恢复/覆盖 |
+| 文件 revision 与 index 不一致 | 返回 `SourceChanged`，保留原文件和 dirty slot |
+| importer 身份/拓扑不匹配或含 Media/未支持语义 | 返回 Invalid/对应 import 错误，不部分 materialize |
+| A save 慢时直接 A -> B -> A | 两 key 仍独立；A dirty/pending 保持 warm，旧 completion 不能更改 B |
+| Host 重启 | 保留进程级 sessionId 和同根 pending index 修复状态，但清空上一代 queue/completion/Window command mailbox，不消费 stale callback |
+
+### 5. Good / Base / Bad Cases
+
+- Good：A 上绘制 -> 换页保存 -> 切 B -> 再进 A；clean A 走冷读取恢复全文稿，B 的画布/历史不变。A 恢复后 Clear 并退出，同一文件被覆盖为空。
+- Base：PPT 从未修改，切页/退出零写盘；Desktop 与 Whiteboard 的 slot 不变。
+- Bad：用当前页非空作 dirty，按页生成多个 `.uink`，用页码代替 `PresentationKey`，或 EndShow 后永久保留 clean warm slot 而让索引/导入路径不可达。
+
+### 6. Tests Required
+
+- descriptor/bridge 纯逻辑：Unicode 路径、provider-independent key、process-local binding token、重复 SlideID、A/B 同页、stale descriptor/busy 保持和 identity-aware ready。
+- UInk/storage：stable/fallback round-trip、恢复后清空覆盖、单文件、index 首次/覆盖失败重试、self-written revision、foreign session、Host restart、latest-wins 与 A/B 独立。
+- controller 状态：纯策略测试覆盖 load-pending 门控、clean eviction/冷恢复、dirty/pending warm、clear mutation、fallback 迁移与命令场景顺序；生产 Controller 的 slot park/swap、completion 和全部 parked 最终屏障由完整产品构建与静态调用链核对，真实呈现留给设备验收。
+- 运行 `inkStrokeModelerTestTests.exe`、`InkeysHeadlessTests.exe --no-window`、managed PptCOM ownership harness，以及完整 `InkeysRepo.sln Debug|x64` 构建；真实 PowerPoint/WPS 放映、COM busy/损坏与 Office 进程退出仍须设备验收。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：空画布就认定无需保存，会把已清空的恢复文件复活。
+if (currentPageHasContent) SubmitPresentationSave(snapshot);
+
+// Correct：存储门控只看持久化 revision，快照可以是全空 Canvas 集合。
+if (ShouldQueuePresentationSave(mutationRevision, queuedRevision))
+    SubmitPresentationSave(CaptureWholePresentation());
+
+// Wrong：页号匹配即发布 ready，A/B 同页会串画布。
+ready = runtime.pageIndex == observedPage;
+
+// Correct：同一不可变 target 的身份、拓扑和 revision 全部匹配后才 ready。
+ready = runtime.presentationTarget == expectedTarget;
+
+// Wrong：先应用 latest B/Desktop，再让没有场景身份的旧 Clear 落到新画布。
+PumpBridgeState();
+PumpBridgeCommands();
+
+// Correct：命令携带发布时 target；逐条 captured scene -> command，最后收敛 latest。
+PumpSceneStampedCommands();
+PumpBridgeState();
 ~~~
 
 ## Scenario: 工具光标样式与有效透明度

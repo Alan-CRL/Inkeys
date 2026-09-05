@@ -7,13 +7,16 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <windows.h>
+#include "Draw3.Bridge.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
 
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.pen_cursor;
+export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
 export namespace Inkeys::Drawing::Draw3
 {
@@ -87,7 +90,8 @@ export namespace Inkeys::Drawing::Draw3
 		Redo,
 		SetPage,
 		SetWorkspace,
-		ObservePresentationVisit,
+		SetPresentationTarget,
+		PresentationPersistenceCompleted,
 		PrepareExitAutoSave,
 	};
 
@@ -98,6 +102,9 @@ export namespace Inkeys::Drawing::Draw3
 		float deltaY = 0.0f;
 		std::size_t pageIndex = 0;
 		std::uint8_t workspace = 0;
+		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
+		std::shared_ptr<const PresentationPersistenceCompletion>
+			presentationPersistenceCompletion;
 	};
 
 	using SetExtendedStyleFlagsCallback = bool(*)(

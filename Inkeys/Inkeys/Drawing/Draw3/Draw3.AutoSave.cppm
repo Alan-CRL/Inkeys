@@ -23,20 +23,15 @@ export namespace Inkeys::Drawing::Draw3
 	enum class DesktopAutoSaveEligibility : std::uint8_t
 	{
 		Eligible,
-		PptTouched,
 	};
 
 	class DesktopAutoSavePolicy
 	{
 	public:
-		void ObserveWorkspace(Bridge::Workspace workspace) noexcept;
 		void CompleteDesktopClear() noexcept;
 		[[nodiscard]] bool ShouldCapture(Bridge::Workspace workspace,
 			bool enabled, bool hasVisibleContent) const noexcept;
 		[[nodiscard]] DesktopAutoSaveEligibility Eligibility() const noexcept;
-
-	private:
-		DesktopAutoSaveEligibility eligibility_ = DesktopAutoSaveEligibility::Eligible;
 	};
 
 	struct DesktopAutoSaveTimestamp

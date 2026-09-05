@@ -28,7 +28,6 @@ import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.Other.Config;
 import Inkeys.Window;
-import Inkeys.UI.MessageBox;
 import Inkeys.Startup.Progress;
 
 #include "IdtPlug-in.h"
@@ -44,6 +43,7 @@ import Inkeys.Startup.Progress;
 #include "IdtState.h"
 #include "IdtI18n.h"
 #include "IdtI18nKeys.g.h"
+#include "Inkeys/Drawing/Draw3/Draw3.Presentation.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 
 #include <objbase.h>
@@ -55,10 +55,6 @@ import Inkeys.Startup.Progress;
 #include <deque>
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
-
-#ifdef MessageBox
-#undef MessageBox
-#endif
 
 namespace
 {
@@ -464,6 +460,15 @@ void PptInfo()
 	int publishedCurrentPage = -2;
 	int publishedTotalPage = -2;
 	int publishedPresentationVisible = -1;
+	std::string lastPresentationDescriptorIssue;
+	auto ReportPresentationDescriptorIssue = [&](std::string issue)
+		{
+			if (issue == lastPresentationDescriptorIssue) return;
+			lastPresentationDescriptorIssue = std::move(issue);
+			if (IDTLogger && !lastPresentationDescriptorIssue.empty())
+				IDTLogger->warn("[PPT] Presentation descriptor unavailable: {}",
+					lastPresentationDescriptorIssue);
+		};
 	auto nextVisibilityPublication = chrono::steady_clock::time_point::min();
 	auto PublishPresentationVisibility = [&](bool visible)
 		{
@@ -566,19 +571,87 @@ void PptInfo()
 			continue;
 		}
 
-		// PPT COM 真值只在非白板事务中发布；结束放映后明确恢复普通桌面身份。
-		Inkeys::Drawing::Draw3::PublishProductWorkspace(
-			observedTotalPage > 0
-				? Inkeys::Drawing::Draw3::Bridge::Workspace::Presentation
-				: Inkeys::Drawing::Draw3::Bridge::Workspace::Desktop);
+		std::optional<Inkeys::Drawing::Draw3::Bridge::PresentationTarget>
+			observedPresentationTarget;
+		auto targetDisposition = Inkeys::Drawing::Draw3::
+			PresentationTargetDisposition::Isolate;
+		if (observedCurrentPage > 0 && observedTotalPage > 0)
+		{
+			const auto currentBridgeState = Inkeys::Drawing::Draw3::
+				ProductHost().ProductBridge().Snapshot();
+			const std::optional<std::uint64_t> currentBindingRevision =
+				currentBridgeState.presentationTarget
+				? std::optional<std::uint64_t>(
+					currentBridgeState.presentationTarget->bindingRevision)
+				: std::nullopt;
+			try
+			{
+				const IPptCOMServerPtr pptCom = GetPptComSnapshot();
+				if (pptCom)
+				{
+					const auto parsed = Inkeys::Drawing::Draw3::
+						ParsePresentationDescriptorJson(
+							bstrToWstring(pptCom->GetPresentationDescriptor()));
+					if (parsed.descriptor)
+					{
+						ReportPresentationDescriptorIssue({});
+						const bool matches = parsed.descriptor->currentPage ==
+							static_cast<std::uint32_t>(observedCurrentPage) &&
+							parsed.descriptor->totalPage ==
+							static_cast<std::uint32_t>(observedTotalPage);
+						targetDisposition = Inkeys::Drawing::Draw3::
+							ResolvePresentationTargetDisposition(
+								parsed.descriptor->status, matches,
+								parsed.descriptor->bindingRevision,
+								currentBindingRevision);
+						if (targetDisposition == Inkeys::Drawing::Draw3::
+							PresentationTargetDisposition::Publish)
+						{
+							observedPresentationTarget = Inkeys::Drawing::Draw3::
+								ResolvePresentationTarget(*parsed.descriptor);
+							if (!observedPresentationTarget)
+								targetDisposition = Inkeys::Drawing::Draw3::
+									PresentationTargetDisposition::Isolate;
+						}
+					}
+					else ReportPresentationDescriptorIssue(parsed.error);
+				}
+				else ReportPresentationDescriptorIssue("service_unavailable");
+			}
+			catch (const _com_error& error)
+			{
+				ReportPresentationDescriptorIssue("com:" +
+					std::to_string(static_cast<long>(error.Error())));
+			}
+		}
+
+		std::optional<std::uint64_t> requestedTargetRevision;
+		if (observedTotalPage <= 0)
+			Inkeys::Drawing::Draw3::PublishProductWorkspace(
+				Inkeys::Drawing::Draw3::Bridge::Workspace::Desktop);
+		else if (observedPresentationTarget)
+			requestedTargetRevision = Inkeys::Drawing::Draw3::
+				PublishProductPresentationTarget(*observedPresentationTarget);
+		else if (targetDisposition == Inkeys::Drawing::Draw3::
+			PresentationTargetDisposition::Isolate)
+			Inkeys::Drawing::Draw3::ClearProductPresentationTarget();
 
 		if (observedCurrentPage > 0 && observedTotalPage > 0)
 		{
-			// Host 重启会清空 bridge；每轮幂等复核，且仅运行中的 Host 接受请求。
-			const bool pageRequested = Inkeys::Drawing::Draw3::PublishProductPage(
-				static_cast<std::uint32_t>(observedCurrentPage - 1));
 			const auto draw3Snapshot = Inkeys::Drawing::Draw3::ProductHost().RuntimeSnapshot();
-			if (pageRequested && draw3Snapshot.running &&
+			const auto& readyTarget = draw3Snapshot.presentationReady;
+			const bool identityReady = requestedTargetRevision &&
+				observedPresentationTarget && readyTarget &&
+				readyTarget->targetRevision == *requestedTargetRevision &&
+				readyTarget->key == observedPresentationTarget->key &&
+				readyTarget->bindingMode == observedPresentationTarget->bindingMode &&
+				readyTarget->bindingRevision ==
+					observedPresentationTarget->bindingRevision &&
+				readyTarget->pageIndex == observedPresentationTarget->pageIndex &&
+				readyTarget->slideId == observedPresentationTarget->slideId;
+			if (identityReady && draw3Snapshot.running &&
+				draw3Snapshot.workspace ==
+					Inkeys::Drawing::Draw3::Bridge::Workspace::Presentation &&
 				draw3Snapshot.currentPageIndex ==
 					static_cast<std::size_t>(observedCurrentPage - 1))
 			{
@@ -705,11 +778,7 @@ void PPTLinkageMain()
 		}
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
 		{
-			if (!CheckEndShow.Check())
-			{
-				Inkeys::UI::Bar::CompleteEndShowRequest();
-				continue;
-			}
+			// 结束放映不再二次弹窗；仍先收敛到选择模式再调用 COM。
 			ChangeStateModeToSelection();
 		}
 		EndPptShow();
@@ -801,41 +870,6 @@ bool IsPowerPointRunAsAdminSet()
 	}
 	return false;
 }
-
-bool CheckEndShowClass::Check()
-{
-	if (isChecking == true) return false;
-	// isChecking = true;
-
-	// 延迟0.5秒后放开键盘
-	auto delayed = async(launch::async, [&]() {
-		this_thread::sleep_for(std::chrono::milliseconds(500));
-		isChecking = true;
-		});
-
-	const auto title = I18n::getWOr(I18nKey.Dialogs.Common.TipsTitle,
-		L"Inkeys Tips");
-	const auto body = I18n::getWOr(I18nKey.Dialogs.EndPresentation.Body,
-		L"You are currently in drawing mode. Ending the presentation will clear the canvas.\nEnd the presentation?");
-	const auto okLabel = I18n::getWOr(I18nKey.Dialogs.Common.OK, L"OK");
-	const auto cancelLabel = I18n::getWOr(
-		I18nKey.Dialogs.Common.Cancel, L"Cancel");
-	auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
-		title.c_str(), body.c_str());
-	request.language = I18n::languageId();
-	request.labels.ok = okLabel.c_str();
-	request.labels.cancel = cancelLabel.c_str();
-	request.owner = floating_window;
-	request.requireOwner = true;
-	request.fallback.owner = floating_window;
-	request.fallback.modality = Inkeys::UI::MessageBox::SystemModality::System;
-	bool ret = Inkeys::UI::MessageBox::Show(request)
-		== Inkeys::UI::MessageBox::Result::Ok;
-
-	isChecking = false;
-	return ret;
-}
-CheckEndShowClass CheckEndShow;
 
 // --------------------------------------------------
 // 其他插件

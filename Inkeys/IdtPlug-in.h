@@ -50,18 +50,6 @@ void FocusPptShow();
 void PPTLinkageMain();
 
 bool IsPowerPointRunAsAdminSet();
-class CheckEndShowClass
-{
-public:
-	CheckEndShowClass()
-	{
-		isChecking = false;
-	}
-public:
-	IdtAtomic<bool> isChecking;
-	bool Check();
-};
-extern CheckEndShowClass CheckEndShow;
 
 // --------------------------------------------------
 // 其他插件

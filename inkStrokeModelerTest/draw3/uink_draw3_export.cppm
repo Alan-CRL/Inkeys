@@ -51,7 +51,9 @@ export namespace draw3::uink
 		UInkGuid pageGuid;
 		uint32_t pageIndex = 0;
 		uint32_t pageNumber = 0;
+		std::optional<int32_t> slideId;
 		UInkViewport viewport;
+		std::optional<UInkExtra> extra;
 		std::vector<Draw3UInkStrokeSnapshot> strokes;
 	};
 
@@ -61,6 +63,10 @@ export namespace draw3::uink
 		UInkGuid fileGuid;
 		UInkGuid workspaceGuid;
 		std::optional<std::string> workspaceName;
+		int32_t workspaceType = 0;
+		std::optional<std::string> hostId;
+		uint32_t currentPageIndex = 0;
+		std::optional<UInkExtra> workspaceExtra;
 		std::vector<UInkDevice> devices;
 		std::vector<Draw3UInkCanvasSnapshot> canvases;
 		float dpiScale = 1.0f;

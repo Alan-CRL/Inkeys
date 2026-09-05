@@ -26,7 +26,9 @@ export namespace draw3::uink
 	enum class UInkEditingSource : uint8_t
 	{
 		ExternalImport,
-		ApplicationOwned
+		ApplicationOwned,
+		// 仅在调用方已严格识别 private workspace/extra 后使用。
+		ApplicationOwnedPrivateWorkspace
 	};
 
 	std::optional<UInkEditingSession> CreateUInkEditingSession(

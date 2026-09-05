@@ -4,6 +4,22 @@
 
 namespace Inkeys::Drawing::Draw3::Bridge
 {
+	namespace
+	{
+		bool SamePresentationTargetIgnoringRevision(
+			const PresentationTarget& left, const PresentationTarget& right) noexcept
+		{
+			return left.key == right.key && left.bindingMode == right.bindingMode &&
+				left.sourceIdentity == right.sourceIdentity &&
+				left.presentationName == right.presentationName &&
+				left.provider == right.provider && left.bindingToken == right.bindingToken &&
+				left.slideIds == right.slideIds && left.slideId == right.slideId &&
+				left.pageIndex == right.pageIndex && left.totalPages == right.totalPages &&
+				left.bindingRevision == right.bindingRevision &&
+				left.processLocalIdentity == right.processLocalIdentity;
+		}
+	}
+
 	StateBridge::StateBridge(std::size_t capacity) noexcept
 		: capacity_((std::max)(std::size_t{1}, capacity))
 	{
@@ -19,7 +35,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			state.page = state_.page;
 			state.hasPage = true;
 		}
-		state.presentationVisitEpoch = state_.presentationVisitEpoch;
+		if (state.workspace == Workspace::Presentation && !state.presentationTarget)
+			state.presentationTarget = state_.presentationTarget;
+		else if (state.workspace != Workspace::Presentation)
+			state.presentationTarget.reset();
 		state.revision = state_.revision + 1;
 		state_ = state;
 	}
@@ -32,13 +51,69 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (state_.workspace == workspace && (!clearPage || !state_.hasPage))
 			return false;
 		state_.workspace = workspace;
-		if (workspace == Workspace::Presentation)
-			++state_.presentationVisitEpoch;
 		if (clearPage)
 		{
 			state_.page = 0;
 			state_.hasPage = false;
+			state_.presentationTarget.reset();
 		}
+		++state_.revision;
+		return true;
+	}
+
+	std::optional<std::uint64_t> StateBridge::PublishPresentationTarget(
+		const PresentationTarget& target, bool* changed) noexcept
+	{
+		if (changed) *changed = false;
+		if (target.key.IsZero() || target.sourceIdentity.empty() ||
+			target.totalPages == 0 ||
+			target.totalPages > kMaximumPresentationPages ||
+			target.pageIndex >= target.totalPages)
+			return std::nullopt;
+		if (target.bindingMode == SlideBindingMode::StableSlideId)
+		{
+			if (!target.slideId || target.slideIds.size() != target.totalPages ||
+				target.slideIds[target.pageIndex] != *target.slideId)
+				return std::nullopt;
+		}
+		else if (target.slideId || !target.slideIds.empty()) return std::nullopt;
+
+		std::scoped_lock lock(mutex_);
+		if (!running_) return std::nullopt;
+		if (state_.workspace == Workspace::Presentation && state_.presentationTarget)
+		{
+			if (SamePresentationTargetIgnoringRevision(*state_.presentationTarget, target))
+				return state_.presentationTarget->targetRevision;
+		}
+		if (nextTargetRevision_ == 0) nextTargetRevision_ = 1;
+		try
+		{
+			auto published = std::make_shared<PresentationTarget>(target);
+			published->targetRevision = nextTargetRevision_++;
+			state_.workspace = Workspace::Presentation;
+			state_.page = published->pageIndex;
+			state_.hasPage = true;
+			state_.presentationTarget = std::move(published);
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+		++state_.revision;
+		if (changed) *changed = true;
+		return state_.presentationTarget->targetRevision;
+	}
+
+	bool StateBridge::ClearPresentationTarget() noexcept
+	{
+		std::scoped_lock lock(mutex_);
+		if (!running_) return false;
+		if (state_.workspace == Workspace::Presentation &&
+			!state_.presentationTarget && !state_.hasPage) return false;
+		state_.workspace = Workspace::Presentation;
+		state_.presentationTarget.reset();
+		state_.page = 0;
+		state_.hasPage = false;
 		++state_.revision;
 		return true;
 	}
@@ -61,7 +136,11 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
 		try
 		{
-			commands_.push_back({ type, nextSequence_ });
+			Command command{ type, nextSequence_, state_.workspace };
+			// 命令固定发布时的文稿身份，避免稍后的 latest state 改变其作用画布。
+			if (state_.workspace == Workspace::Presentation)
+				command.presentationTarget = state_.presentationTarget;
+			commands_.push_back(std::move(command));
 			++nextSequence_;
 		}
 		catch (...)
@@ -76,12 +155,12 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::scoped_lock lock(mutex_);
 		if (!commands_.empty())
 		{
-			command = commands_.front();
+			command = std::move(commands_.front());
 			commands_.pop_front();
 			return true;
 		}
 		if (!finalCommand_) return false;
-		command = *finalCommand_;
+		command = std::move(*finalCommand_);
 		finalCommand_.reset();
 		return true;
 	}
@@ -92,6 +171,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		commands_.clear();
 		finalCommand_.reset();
 		nextSequence_ = 1;
+		nextTargetRevision_ = 1;
 		state_ = {};
 		running_ = true;
 	}
@@ -106,10 +186,22 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		std::scoped_lock lock(mutex_);
 		if (!running_) return false;
-		running_ = false;
-		// 固定槽不受业务队列容量影响，并且只在队列排空后消费。
-		finalCommand_ = Command{ finalCommand, nextSequence_++ };
-		return true;
+		try
+		{
+			Command command{ finalCommand, nextSequence_, state_.workspace };
+			if (state_.workspace == Workspace::Presentation)
+				command.presentationTarget = state_.presentationTarget;
+			// 固定槽不受业务队列容量影响，并且只在队列排空后消费。
+			finalCommand_ = std::move(command);
+			++nextSequence_;
+			running_ = false;
+			return true;
+		}
+		catch (...)
+		{
+			running_ = false;
+			return false;
+		}
 	}
 
 	bool StateBridge::Running() const noexcept

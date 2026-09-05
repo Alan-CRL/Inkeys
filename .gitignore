@@ -5,6 +5,8 @@
 /PptCOM/bin/
 /PptCOM/obj/
 /PptCOM/.vs/
+/PptCOM.Tests/bin/
+/PptCOM.Tests/obj/
 
 # Vcpkg
 /VcpkgInstalled/

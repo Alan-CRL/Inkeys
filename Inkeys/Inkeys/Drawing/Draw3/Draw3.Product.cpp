@@ -105,15 +105,51 @@ namespace Inkeys::Drawing::Draw3
 			productHost.PublishState(productHost.ProductBridge().Snapshot());
 	}
 
+	std::optional<std::uint64_t> PublishProductPresentationTarget(
+		const Bridge::PresentationTarget& target) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return std::nullopt;
+		std::scoped_lock callLock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire) ||
+			!productHost.Running()) return std::nullopt;
+		bool changed = false;
+		const auto revision = productHost.ProductBridge().PublishPresentationTarget(
+			target, &changed);
+		if (changed) productHost.PublishState(productHost.ProductBridge().Snapshot());
+		return revision;
+	}
+
+	void ClearProductPresentationTarget() noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return;
+		std::scoped_lock callLock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire)) return;
+		if (productHost.ProductBridge().ClearPresentationTarget())
+			productHost.PublishState(productHost.ProductBridge().Snapshot());
+	}
+
 	bool PublishProductPage(std::uint32_t page) noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return false;
 		std::scoped_lock callLock(productCallMutex);
 		if (productStopping.load(std::memory_order_acquire)
 			|| !productHost.Running()) return false;
-		// 页码只覆盖快照中的页面字段，避免 PPT 线程回写陈旧工具状态。
+		// 兼容入口也必须同步文稿目标，不能制造只有页码变化的半状态。
 		Bridge::ProductState state = productHost.ProductBridge().Snapshot();
 		if (state.hasPage && state.page == page) return true;
+		if (state.presentationTarget)
+		{
+			Bridge::PresentationTarget target = *state.presentationTarget;
+			if (page >= target.totalPages) return false;
+			target.pageIndex = page;
+			target.slideId = target.bindingMode == Bridge::SlideBindingMode::StableSlideId
+				? std::optional<std::int32_t>(target.slideIds[page]) : std::nullopt;
+			const bool published = productHost.ProductBridge().PublishPresentationTarget(
+				target).has_value();
+			if (published)
+				productHost.PublishState(productHost.ProductBridge().Snapshot());
+			return published;
+		}
 		state.page = page;
 		state.hasPage = true;
 		productHost.PublishState(state);

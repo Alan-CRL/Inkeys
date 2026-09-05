@@ -677,27 +677,19 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	void DesktopAutoSavePolicy::ObserveWorkspace(Bridge::Workspace workspace) noexcept
-	{
-		if (workspace == Bridge::Workspace::Presentation)
-			eligibility_ = DesktopAutoSaveEligibility::PptTouched;
-	}
-
 	void DesktopAutoSavePolicy::CompleteDesktopClear() noexcept
 	{
-		eligibility_ = DesktopAutoSaveEligibility::Eligible;
 	}
 
 	bool DesktopAutoSavePolicy::ShouldCapture(Bridge::Workspace workspace,
 		bool enabled, bool hasVisibleContent) const noexcept
 	{
-		return enabled && hasVisibleContent && workspace == Bridge::Workspace::Desktop &&
-			eligibility_ == DesktopAutoSaveEligibility::Eligible;
+		return enabled && hasVisibleContent && workspace == Bridge::Workspace::Desktop;
 	}
 
 	DesktopAutoSaveEligibility DesktopAutoSavePolicy::Eligibility() const noexcept
 	{
-		return eligibility_;
+		return DesktopAutoSaveEligibility::Eligible;
 	}
 
 	DesktopAutoSaveTimestamp CaptureDesktopAutoSaveTimestamp() noexcept

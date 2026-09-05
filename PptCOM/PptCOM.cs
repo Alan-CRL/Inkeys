@@ -71,6 +71,7 @@ namespace PptCOM
 
         // 追加在接口末尾，保持既有 COM 方法顺序不变。
         void SetConsoleOutputEnabled(bool enabled);
+        string GetPresentationDescriptor();
     }
 
     [ComVisible(true)]
@@ -81,6 +82,14 @@ namespace PptCOM
         private dynamic pptApplication;
         private dynamic pptActivePresentation;
         private dynamic pptSlideShowWindow;
+
+        private readonly object presentationDescriptorLock = new object();
+        private readonly PresentationDescriptorReader presentationDescriptorReader;
+        private PresentationDescriptorValue presentationDescriptorCache =
+            PresentationDescriptorValue.CreateStatus("Unavailable", 0);
+        private long presentationBindingRevision;
+        private int presentationDescriptorRefreshPending = 1;
+        private DateTime nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
 
         private unsafe int* pptTotalPage;
         private unsafe int* pptCurrentPage;
@@ -106,6 +115,12 @@ namespace PptCOM
         private const int SlideShowPointerPen = 2;
         private const int SlideShowPointerAlwaysHidden = 3;
         private const int SlideShowPointerAutoArrow = 4;
+
+        public PptCOMServer()
+        {
+            presentationDescriptorReader = new PresentationDescriptorReader(
+                new MarshalLateBoundComAccessor(), ResolveWindowProcessId);
+        }
 
         // 初始化函数
         public unsafe bool Initialization(int* TotalPage, int* CurrentPage, int* OffSignal)
@@ -150,6 +165,80 @@ namespace PptCOM
                 Console.SetOut(TextWriter.Null);
                 Console.SetError(TextWriter.Null);
             }
+        }
+
+        public string GetPresentationDescriptor()
+        {
+            try
+            {
+                PresentationDescriptorValue snapshot;
+                lock (presentationDescriptorLock)
+                {
+                    snapshot = presentationDescriptorCache.Clone();
+                }
+                // COM getter 只复制纯托管缓存；序列化期间不持锁，也不访问 Office。
+                return PresentationDescriptorJson.Serialize(snapshot);
+            }
+            catch
+            {
+                return PresentationDescriptorJson.SerializeUnavailable(
+                    Interlocked.Read(ref presentationBindingRevision));
+            }
+        }
+
+        private static int ResolveWindowProcessId(IntPtr window)
+        {
+            try
+            {
+                uint processId;
+                GetWindowThreadProcessId(window, out processId);
+                return processId > int.MaxValue ? 0 : (int)processId;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private void RequestPresentationDescriptorRefresh()
+        {
+            Interlocked.Exchange(ref presentationDescriptorRefreshPending, 1);
+        }
+
+        private void InvalidatePresentationDescriptor()
+        {
+            long revision = Interlocked.Increment(ref presentationBindingRevision);
+            lock (presentationDescriptorLock)
+            {
+                presentationDescriptorCache =
+                    PresentationDescriptorValue.CreateStatus("Unavailable", revision);
+            }
+            RequestPresentationDescriptorRefresh();
+            nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
+        }
+
+        private void RefreshPresentationDescriptorIfNeeded(bool force)
+        {
+            DateTime now = DateTime.UtcNow;
+            int pending = Interlocked.Exchange(
+                ref presentationDescriptorRefreshPending, 0);
+            if (!force && pending == 0 && now < nextPresentationDescriptorRefreshUtc) return;
+
+            long revision = Interlocked.Read(ref presentationBindingRevision);
+            PresentationDescriptorValue candidate = presentationDescriptorReader.Read(
+                (object)pptApplication, (object)pptActivePresentation,
+                (object)pptSlideShowWindow, revision);
+
+            lock (presentationDescriptorLock)
+            {
+                if (revision != Interlocked.Read(ref presentationBindingRevision)) return;
+                bool keepStable = candidate.status == "TransientBusy" &&
+                    presentationDescriptorCache.bindingRevision == revision &&
+                    (presentationDescriptorCache.status == "StableSlideIds" ||
+                        presentationDescriptorCache.status == "PageIndexFallback");
+                if (!keepStable) presentationDescriptorCache = candidate.Clone();
+            }
+            nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
         }
 
         // 过程函数
@@ -219,6 +308,8 @@ namespace PptCOM
         }
         private unsafe void FullCleanup(bool final = false)
         {
+            // 先让 native 无法消费旧 binding，再解绑事件和释放长期 RCW。
+            InvalidatePresentationDescriptor();
             UnbindEvents();
 
             Console.WriteLine("try CLEAN");
@@ -662,6 +753,7 @@ namespace PptCOM
             Console.WriteLine("Change1");
 
             updateTime = DateTime.Now;
+            RequestPresentationDescriptorRefresh();
 
             try
             {
@@ -684,6 +776,7 @@ namespace PptCOM
             Console.WriteLine("Begin1");
 
             updateTime = DateTime.Now;
+            RequestPresentationDescriptorRefresh();
 
             // 【修改】直接赋值给 dynamic 类型的全局变量
             pptSlideShowWindow = WnObj;
@@ -717,6 +810,7 @@ namespace PptCOM
             Console.WriteLine("END1");
 
             updateTime = DateTime.Now;
+            RequestPresentationDescriptorRefresh();
 
             *pptCurrentPage = -1;
             *pptTotalPage = -1;
@@ -726,6 +820,7 @@ namespace PptCOM
         private void PresentationBeforeClose(object WnObj, ref bool cancel)
         {
             Console.WriteLine("PBCalled1");
+            RequestPresentationDescriptorRefresh();
 
             dynamic Wn = WnObj;
 
@@ -1382,6 +1477,9 @@ namespace PptCOM
 
                         break;
                     }
+
+                    // 只有 service owner 枚举 COM 图；公开 getter 始终读取纯值缓存。
+                    RefreshPresentationDescriptorIfNeeded(forcePolling);
 
                     // 关闭信号检测
                     if (Thread.VolatileRead(ref *offSignal) != 0)

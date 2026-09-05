@@ -106,14 +106,8 @@ namespace
 		if (!Expect(!bridge.PublishWorkspace(Workspace::Desktop),
 			"repeated desktop publication is idempotent")) ++failures;
 		if (!Expect(bridge.PublishWorkspace(Workspace::Presentation)
-			&& bridge.Snapshot().workspace == Workspace::Presentation
-			&& bridge.Snapshot().presentationVisitEpoch == 1,
+			&& bridge.Snapshot().workspace == Workspace::Presentation,
 			"presentation is an explicit third workspace")) ++failures;
-		if (!Expect(bridge.PublishWorkspace(Workspace::Desktop)
-			&& bridge.Snapshot().presentationVisitEpoch == 1
-			&& bridge.PublishWorkspace(Workspace::Presentation)
-			&& bridge.Snapshot().presentationVisitEpoch == 2,
-			"presentation visits survive latest-state coalescing")) ++failures;
 	}
 
 	void TestCommandQueue(int& failures)
@@ -139,6 +133,52 @@ namespace
 		if (!Expect(minimumCapacity.Publish(CommandType::Redo) == CommandResult::Accepted
 			&& minimumCapacity.Publish(CommandType::Clear) == CommandResult::QueueFull,
 			"zero capacity is normalized to one")) ++failures;
+
+		PresentationTarget targetA{};
+		targetA.key.bytes[0] = 0xA;
+		targetA.sourceIdentity = "path:a.pptx";
+		targetA.bindingToken = "binding:a";
+		targetA.bindingMode = SlideBindingMode::StableSlideId;
+		targetA.slideIds = { 101 };
+		targetA.slideId = 101;
+		targetA.totalPages = 1;
+		PresentationTarget targetB = targetA;
+		targetB.key.bytes[0] = 0xB;
+		targetB.sourceIdentity = "path:b.pptx";
+		targetB.bindingToken = "binding:b";
+
+		StateBridge desktopAfterClear;
+		const auto targetARevision = desktopAfterClear.PublishPresentationTarget(targetA);
+		desktopAfterClear.Publish(CommandType::Clear);
+		desktopAfterClear.PublishWorkspace(Workspace::Desktop);
+		if (!Expect(desktopAfterClear.TryConsume(command) && targetARevision &&
+			command.type == CommandType::Clear &&
+			command.workspace == Workspace::Presentation &&
+			command.presentationTarget &&
+			command.presentationTarget->key == targetA.key &&
+			desktopAfterClear.Snapshot().workspace == Workspace::Desktop,
+			"A Clear keeps the A scene before the latest Desktop transition"))
+			++failures;
+
+		StateBridge bAfterUndo;
+		bAfterUndo.PublishPresentationTarget(targetA);
+		bAfterUndo.Publish(CommandType::Undo);
+		bAfterUndo.Publish(CommandType::Redo);
+		const auto targetBRevision = bAfterUndo.PublishPresentationTarget(targetB);
+		if (!Expect(bAfterUndo.TryConsume(command) && targetBRevision &&
+			command.type == CommandType::Undo &&
+			command.workspace == Workspace::Presentation &&
+			command.presentationTarget &&
+			command.presentationTarget->key == targetA.key &&
+			bAfterUndo.Snapshot().presentationTarget &&
+			bAfterUndo.Snapshot().presentationTarget->key == targetB.key,
+			"A Undo keeps the A scene before the latest B target")) ++failures;
+		if (!Expect(bAfterUndo.TryConsume(command) &&
+			command.type == CommandType::Redo &&
+			command.workspace == Workspace::Presentation &&
+			command.presentationTarget &&
+			command.presentationTarget->key == targetA.key,
+			"A Redo keeps the A scene before the latest B target")) ++failures;
 	}
 
 	void TestUnsupportedAndLifecycle(int& failures)
@@ -183,13 +223,22 @@ namespace
 			"reset restarts command sequence")) ++failures;
 
 		bridge.Reset();
+		PresentationTarget exitTarget{};
+		exitTarget.key.bytes[0] = 0xA;
+		exitTarget.sourceIdentity = "path:a.pptx";
+		exitTarget.bindingToken = "binding:a";
+		exitTarget.totalPages = 1;
+		bridge.PublishPresentationTarget(exitTarget);
 		bridge.Publish(CommandType::Clear);
 		if (!Expect(bridge.StopWithFinalCommand(CommandType::PrepareExitAutoSave)
 			&& bridge.TryConsume(command) && command.type == CommandType::Clear
+			&& command.presentationTarget && command.presentationTarget->key == exitTarget.key
 			&& bridge.TryConsume(command) &&
-				command.type == CommandType::PrepareExitAutoSave
+				command.type == CommandType::PrepareExitAutoSave &&
+				command.presentationTarget && command.presentationTarget->key == exitTarget.key
 			&& !bridge.TryConsume(command),
-			"shutdown barrier stays behind every accepted command")) ++failures;
+			"shutdown barrier stays behind every accepted command in its captured scene"))
+			++failures;
 
 		StateBridge fullBridge(1);
 		if (!Expect(fullBridge.Publish(CommandType::Undo) == CommandResult::Accepted

@@ -1,0 +1,15 @@
+{"file":".trellis/spec/index.md","reason":"Load project evidence levels, minimum-change rules, and mandatory decision boundaries."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"Load the native product ownership, full-solution build, and UI route boundaries."}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Preserve module/header boundaries, shared-state discipline, Chinese comments, encoding, and CRLF."}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Preserve Draw3 Host, workspace, document, autosave, ready publication, and shutdown contracts."}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"Keep ink/history/page mutation semantics correct while adding document slots and restore."}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Apply COM/resource ownership, logging, failure, and managed-thread shutdown contracts."}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"Load the complete PowerPoint/WPS native-managed boundary and page data flow."}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"Preserve COM ABI ordering, PptCOM lifecycle, busy handling, and Draw3-ready page publication."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace COM fact, bridge target, drawing-thread document, UInk worker, and UI-ready boundaries."}
+{"file":".trellis/tasks/09-04-ppt-canvas-uink-lifecycle/research/code-investigation.md","reason":"Use the task-specific current-state map, gaps, transition matrix, and affected boundaries."}
+{"file":".trellis/tasks/09-04-ppt-canvas-uink-lifecycle/research/pptcom-slide-id-ownership.md","reason":"Follow the audited late-bound RCW acquisition, release, busy, cleanup, and test matrix."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/uink-v10-spec.md","reason":"Implement Presentation workspace, slideId, private fallback workspace, full-save, and recovery per UInk v10."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/draw3-storage-gap-analysis.md","reason":"Respect the existing one-way adapter boundary and known Draw3/UInk model gaps."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/file-conflict-strategy.md","reason":"Reuse SourceRevision, atomic replacement, and non-destructive external-conflict behavior."}
+{"file":".trellis/tasks/09-01-desktop-uink-autosave/research/current-state-and-risks.md","reason":"Preserve Desktop autosave behavior while replacing the temporary PptTouched gate."}

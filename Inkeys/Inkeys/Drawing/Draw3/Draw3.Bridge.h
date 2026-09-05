@@ -1,15 +1,21 @@
 ﻿#pragma once
 
+#include <array>
+#include <compare>
 #include <cstdint>
 #include <cstddef>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace Inkeys::Drawing::Draw3::Bridge
 {
 	// 产品 UI 与 Draw3 光标/笔迹共同使用的最终荧光笔透明度。
 	inline constexpr float kHighlighterCompositeOpacity = 0.35f;
+	inline constexpr std::uint32_t kMaximumPresentationPages = 10000;
 
 	// 产品层固定工具编号；不要把旧 Draw2 的模式值直接暴露给 Draw3。
 	enum class Tool : std::uint8_t
@@ -33,10 +39,84 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Presentation,
 	};
 
+	struct PresentationKey
+	{
+		std::array<std::uint8_t, 16> bytes = {};
+
+		[[nodiscard]] constexpr bool IsZero() const noexcept
+		{
+			for (std::uint8_t value : bytes) if (value != 0) return false;
+			return true;
+		}
+		friend auto operator<=>(const PresentationKey&,
+			const PresentationKey&) noexcept = default;
+	};
+
+	enum class SlideBindingMode : std::uint8_t
+	{
+		StableSlideId,
+		PageIndexFallback,
+	};
+
+	// COM 事实在一个锁内发布；页码不能脱离文稿身份单独成为 ready。
+	struct PresentationTarget
+	{
+		PresentationKey key;
+		SlideBindingMode bindingMode = SlideBindingMode::PageIndexFallback;
+		std::string sourceIdentity;
+		std::string presentationName;
+		std::string provider;
+		std::string bindingToken;
+		std::vector<std::int32_t> slideIds;
+		std::optional<std::int32_t> slideId;
+		std::uint32_t pageIndex = 0;
+		std::uint32_t totalPages = 0;
+		std::uint64_t bindingRevision = 0;
+		std::uint64_t targetRevision = 0;
+		bool processLocalIdentity = false;
+
+		friend bool operator==(const PresentationTarget&,
+			const PresentationTarget&) noexcept = default;
+	};
+
+	// 高频 runtime 快照只发布 ready 身份，不复制路径、名称或完整 SlideID 拓扑。
+	struct PresentationReadyIdentity
+	{
+		PresentationKey key;
+		SlideBindingMode bindingMode = SlideBindingMode::PageIndexFallback;
+		std::optional<std::int32_t> slideId;
+		std::uint32_t pageIndex = 0;
+		std::uint64_t bindingRevision = 0;
+		std::uint64_t targetRevision = 0;
+
+		friend bool operator==(const PresentationReadyIdentity&,
+			const PresentationReadyIdentity&) noexcept = default;
+	};
+
+	constexpr PresentationReadyIdentity ReadyIdentityFor(
+		const PresentationTarget& target) noexcept
+	{
+		return { target.key, target.bindingMode, target.slideId, target.pageIndex,
+			target.bindingRevision, target.targetRevision };
+	}
+
 	constexpr bool SelectionUsesAuxiliaryOutput(
 		bool selectionMode, Workspace workspace) noexcept
 	{
 		return selectionMode && workspace != Workspace::Whiteboard;
+	}
+
+	constexpr bool PresentationInputSuppressed(
+		Workspace workspace, bool loadPending) noexcept
+	{
+		return workspace == Workspace::Presentation && loadPending;
+	}
+
+	constexpr bool PresentationCanvasCommandSuppressed(
+		Workspace workspace, bool loadPending, bool finalExitBarrier) noexcept
+	{
+		return PresentationInputSuppressed(workspace, loadPending) &&
+			!finalExitBarrier;
 	}
 
 	enum class CommandType : std::uint8_t
@@ -71,8 +151,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint32_t page = 0;
 		bool hasPage = false;
 		Workspace workspace = Workspace::Desktop;
-		// 即使最新状态已回到 Desktop，也不能丢失中间发生过的 PPT 访问。
-		std::uint64_t presentationVisitEpoch = 0;
+		std::shared_ptr<const PresentationTarget> presentationTarget;
 		std::uint64_t revision = 0;
 	};
 
@@ -80,6 +159,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		CommandType type = CommandType::Clear;
 		std::uint64_t sequence = 0;
+		Workspace workspace = Workspace::Desktop;
+		std::shared_ptr<const PresentationTarget> presentationTarget;
 	};
 
 	constexpr int NormalizeLegacyEraserMode(int value) noexcept
@@ -100,6 +181,9 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		void PublishState(ProductState state) noexcept;
 		// workspace 使用独立事务发布，使 Desktop/Whiteboard 能明确清除旧 PPT 页状态。
 		bool PublishWorkspace(Workspace workspace) noexcept;
+		std::optional<std::uint64_t> PublishPresentationTarget(
+			const PresentationTarget& target, bool* changed = nullptr) noexcept;
+		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
 		bool TryConsume(Command& command) noexcept;
@@ -117,6 +201,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::optional<Command> finalCommand_;
 		std::size_t capacity_ = 256;
 		std::uint64_t nextSequence_ = 1;
+		std::uint64_t nextTargetRevision_ = 1;
 		bool running_ = true;
 	};
 }

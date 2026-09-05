@@ -477,6 +477,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -1955,8 +1958,12 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2075,6 +2082,9 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp">

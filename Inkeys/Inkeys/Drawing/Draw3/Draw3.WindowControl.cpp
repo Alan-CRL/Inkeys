@@ -207,6 +207,11 @@ namespace Inkeys::Drawing::Draw3
 		(void)callbacks; // 产品样式由 HostStyleCallbacks/Window Service 负责。
 		if (!window || !IsWindow(window)) return false;
 		if (externalWindow_.load(std::memory_order_acquire)) return false;
+		{
+			// Host generation 之间不得继承上一代异步 completion 或画布命令。
+			const std::scoped_lock lock(canvasCommandMutex_);
+			canvasCommands_.clear();
+		}
 		RECT client = {};
 		if (!GetClientRect(window, &client)) return false;
 		exitRequested_.store(false, std::memory_order_release);
@@ -232,7 +237,12 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::DetachExternal() noexcept
 	{
 		// 先关闭新消息入口，再清理 HWND 属性和输入状态。
-		if (!externalWindow_.exchange(false, std::memory_order_acq_rel)) return;
+		const bool wasAttached = externalWindow_.exchange(false, std::memory_order_acq_rel);
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			canvasCommands_.clear();
+		}
+		if (!wasAttached) return;
 		if (const HWND window = window_.load(std::memory_order_acquire))
 		{
 			// 外部 HWND 由 Window Service 销毁；这里只撤销 Draw3 自己写入的属性。

@@ -21,6 +21,7 @@ import Inkeys.Drawing.Draw3.ink_document;
 import Inkeys.Drawing.Draw3.ink_history;
 import Inkeys.Drawing.Draw3.ink_history_gpu;
 import Inkeys.Drawing.Draw3.ink_prediction;
+import Inkeys.Drawing.Draw3.presentation_auto_save;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.runtime_metrics;
 import Inkeys.Drawing.Draw3.transparent_presentation;
@@ -38,10 +39,13 @@ export namespace Inkeys::Drawing::Draw3
 			std::size_t, std::size_t) = nullptr;
 		void (*documentReady)(void*, std::size_t, std::size_t) = nullptr;
 		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
-		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t) = nullptr;
+		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t,
+			const Bridge::PresentationReadyIdentity*) = nullptr;
 		void (*controlWake)(void*) = nullptr;
 		void (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
 			draw3::uink::Draw3UInkExportSnapshot&&) = nullptr;
+		bool (*presentationSaveRequested)(void*, PresentationSaveRequest&&) = nullptr;
+		bool (*presentationLoadRequested)(void*, PresentationLoadRequest&&) = nullptr;
 		void (*drawingActivityChanged)(void*, bool) = nullptr;
 	};
 

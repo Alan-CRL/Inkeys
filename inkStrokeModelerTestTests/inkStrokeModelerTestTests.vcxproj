@@ -106,6 +106,7 @@
 	<ClCompile Include="canvas_navigation_tests.cpp" />
 	<ClCompile Include="contact_input_tests.cpp" />
 	<ClCompile Include="desktop_autosave_tests.cpp" />
+	<ClCompile Include="presentation_autosave_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
 	<ClCompile Include="ink_document_tests.cpp" />
 	<ClCompile Include="ink_history_tests.cpp" />
@@ -115,6 +116,11 @@
 	<ClCompile Include="uink_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" Link="draw3\Draw3.AutoSave.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm" Link="draw3\Draw3.AutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" Link="draw3\Draw3.Presentation.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" Link="draw3\Draw3.PresentationAutoSave.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm" Link="draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp" Link="draw3\contact_input.cpp" />
@@ -152,6 +158,10 @@
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="draw3\uink_draw3_export.cpp" />
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="draw3\uink_draw3_export.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp" Link="draw3\uink_draw3_import.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm" Link="draw3\uink_draw3_import.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cpp" Link="draw3\uink_draw3_capture.cpp" />

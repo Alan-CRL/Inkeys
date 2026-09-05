@@ -467,6 +467,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
@@ -978,8 +979,16 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_export.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_import.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_import.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" />
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
@@ -1055,6 +1064,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
   </ItemGroup>
   <ItemGroup>

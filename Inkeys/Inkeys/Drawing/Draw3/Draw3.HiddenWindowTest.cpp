@@ -343,6 +343,125 @@ namespace Inkeys::Drawing::Draw3
 							state.contentRevision > restoredOtherPage.contentRevision;
 					}), "cleared page remains empty after page round-trip", failures);
 
+				// 真实 Controller 三态回归：命令必须作用于发布时的 PPT，而不是随后的 latest scene。
+				Bridge::ProductState penState{};
+				penState.tool = Bridge::Tool::Pen;
+				penState.selectionMode = false;
+				PublishProductState(penState);
+				const auto desktopBeforeInk = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 56, 72) &&
+					postContact(HiddenTestContactPhase::Move, 104, 96) &&
+					postContact(HiddenTestContactPhase::Up, 152, 120),
+					"draw persistent Desktop ink before Presentation switching", failures);
+				modeSucceeded &= Check(WaitUntil([desktopBeforeInk]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.workspace == Bridge::Workspace::Desktop &&
+							state.currentPageHasContent &&
+							state.contentRevision > desktopBeforeInk.contentRevision;
+					}), "Desktop owns its ink before entering A", failures);
+
+				Bridge::PresentationTarget targetA{};
+				targetA.key.bytes[0] = 0xA1;
+				targetA.bindingMode = Bridge::SlideBindingMode::StableSlideId;
+				targetA.sourceIdentity = "path:c:\\hidden\\a.pptx";
+				targetA.presentationName = "a.pptx";
+				targetA.provider = "PowerPoint";
+				targetA.bindingToken = "PowerPoint:1:101:1";
+				targetA.slideIds = { 101 };
+				targetA.slideId = 101;
+				targetA.totalPages = 1;
+				targetA.bindingRevision = 1;
+				Bridge::PresentationTarget targetB = targetA;
+				targetB.key.bytes[0] = 0xB2;
+				targetB.sourceIdentity = "path:c:\\hidden\\b.pptx";
+				targetB.presentationName = "b.pptx";
+				targetB.bindingToken = "PowerPoint:1:202:1";
+				targetB.slideIds = { 202 };
+				targetB.slideId = 202;
+
+				auto waitForPresentation = [&](const Bridge::PresentationTarget& target,
+					std::uint64_t targetRevision, bool hasContent, const char* name)
+					{
+						return Check(WaitUntil([target, targetRevision, hasContent]
+							{
+								const auto state = ProductHost().RuntimeSnapshot();
+								return state.workspace == Bridge::Workspace::Presentation &&
+									state.currentPageHasContent == hasContent &&
+									state.presentationReady &&
+									state.presentationReady->key == target.key &&
+									state.presentationReady->targetRevision == targetRevision &&
+									state.presentationReady->slideId == target.slideId;
+							}), name, failures);
+					};
+
+				const auto firstARevision = PublishProductPresentationTarget(targetA);
+				modeSucceeded &= Check(firstARevision.has_value(),
+					"publish Presentation A", failures);
+				if (firstARevision)
+					modeSucceeded &= waitForPresentation(targetA, *firstARevision, false,
+						"A starts with its independent empty canvas");
+				const auto aBeforeInk = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 64, 80) &&
+					postContact(HiddenTestContactPhase::Move, 112, 104) &&
+					postContact(HiddenTestContactPhase::Up, 168, 136),
+					"draw ink into Presentation A", failures);
+				modeSucceeded &= Check(WaitUntil([aBeforeInk]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.workspace == Bridge::Workspace::Presentation &&
+							state.currentPageHasContent &&
+							state.contentRevision > aBeforeInk.contentRevision;
+					}), "A owns its stored ink", failures);
+
+				const auto beforeSceneStampedClear = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Clear) ==
+					Bridge::CommandResult::Accepted,
+					"queue Clear while A is the command scene", failures);
+				PublishProductWorkspace(Bridge::Workspace::Desktop);
+				modeSucceeded &= Check(WaitUntil([beforeSceneStampedClear]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.workspace == Bridge::Workspace::Desktop &&
+							state.clearCommandCount >
+								beforeSceneStampedClear.clearCommandCount &&
+							state.currentPageHasContent;
+					}), "A Clear executes before Desktop latest state and preserves Desktop ink",
+					failures);
+
+				const auto clearedARevision = PublishProductPresentationTarget(targetA);
+				modeSucceeded &= Check(clearedARevision.has_value(),
+					"re-enter cleared Presentation A", failures);
+				if (clearedARevision)
+					modeSucceeded &= waitForPresentation(targetA, *clearedARevision, false,
+						"A remains empty after scene-stamped Clear");
+
+				const auto clearedABeforeInk = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 72, 88) &&
+					postContact(HiddenTestContactPhase::Move, 120, 112) &&
+					postContact(HiddenTestContactPhase::Up, 176, 144),
+					"draw new isolated ink into A", failures);
+				modeSucceeded &= Check(WaitUntil([clearedABeforeInk]
+					{
+						const auto state = ProductHost().RuntimeSnapshot();
+						return state.workspace == Bridge::Workspace::Presentation &&
+							state.currentPageHasContent &&
+							state.contentRevision > clearedABeforeInk.contentRevision;
+					}), "A accepts new ink after Clear", failures);
+
+				const auto firstBRevision = PublishProductPresentationTarget(targetB);
+				modeSucceeded &= Check(firstBRevision.has_value(),
+					"switch directly from A to B", failures);
+				if (firstBRevision)
+					modeSucceeded &= waitForPresentation(targetB, *firstBRevision, false,
+						"B does not inherit A ink and publishes B ready identity");
+				const auto returnARevision = PublishProductPresentationTarget(targetA);
+				modeSucceeded &= Check(returnARevision.has_value(),
+					"switch directly from B back to A", failures);
+				if (returnARevision)
+					modeSucceeded &= waitForPresentation(targetA, *returnARevision, true,
+						"A restores its own ink and exact ready revision after B");
+
 				const auto beforeResize = ProductHost().RuntimeSnapshot();
 				const RECT resizedBounds{ 44, 56, 428, 312 };
 				modeSucceeded &= Check(service.SetBounds(Inkeys::Window::WindowRole::Drawpad,

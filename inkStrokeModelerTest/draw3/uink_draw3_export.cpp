@@ -198,8 +198,11 @@ namespace draw3::uink
 			extension.devices = snapshot.devices;
 			UInkWorkspace workspace;
 			workspace.guid = snapshot.workspaceGuid;
-			workspace.workspaceType = 0;
+			workspace.workspaceType = snapshot.workspaceType;
 			workspace.name = snapshot.workspaceName;
+			workspace.hostId = snapshot.hostId;
+			workspace.currentPageIndex = snapshot.currentPageIndex;
+			workspace.extra = snapshot.workspaceExtra;
 			extension.workspaces.push_back(std::move(workspace));
 			document.headerExtension = std::move(extension);
 			document.header.deviceNum = document.usesImplicitDevice ? 1u :
@@ -263,7 +266,9 @@ namespace draw3::uink
 				canvas.pageNumber = sourceCanvas.pageNumber;
 				canvas.layerIndex = 0;
 				canvas.layerNumber = 0;
+				canvas.slideId = sourceCanvas.slideId;
 				canvas.viewport = sourceCanvas.viewport;
+				canvas.extra = sourceCanvas.extra;
 				uint32_t previousUndo = 0;
 				for (size_t index = 0; index < sourceCanvas.strokes.size(); ++index)
 				{

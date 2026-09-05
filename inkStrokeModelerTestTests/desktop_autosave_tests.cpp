@@ -250,14 +250,11 @@ namespace
 			Bridge::Workspace::Desktop, true, false));
 		AUTOSAVE_CHECK(state, !policy.ShouldCapture(
 			Bridge::Workspace::Whiteboard, true, true));
-		policy.ObserveWorkspace(Bridge::Workspace::Whiteboard);
-		AUTOSAVE_CHECK(state, policy.Eligibility() == DesktopAutoSaveEligibility::Eligible);
-		policy.ObserveWorkspace(Bridge::Workspace::Presentation);
-		AUTOSAVE_CHECK(state, policy.Eligibility() == DesktopAutoSaveEligibility::PptTouched);
 		AUTOSAVE_CHECK(state, !policy.ShouldCapture(
+			Bridge::Workspace::Presentation, true, true));
+		// 场景画布已经独立，访问 PPT 不再污染 Desktop 的保存资格。
+		AUTOSAVE_CHECK(state, policy.ShouldCapture(
 			Bridge::Workspace::Desktop, true, true));
-		policy.ObserveWorkspace(Bridge::Workspace::Desktop);
-		AUTOSAVE_CHECK(state, policy.Eligibility() == DesktopAutoSaveEligibility::PptTouched);
 		policy.CompleteDesktopClear();
 		AUTOSAVE_CHECK(state, policy.ShouldCapture(
 			Bridge::Workspace::Desktop, true, true));
