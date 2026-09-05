@@ -110,6 +110,8 @@ void FreezeFrameWindow()
 	FreezeFrame.update = true;
 	int wait = 0;
 	bool show_freeze_window = false;
+	bool overlayFullscreen = false;
+	auto& windowService = Inkeys::Window::GetService();
 
 	RECT fwords_rect;
 	while (!offSignal)
@@ -123,6 +125,22 @@ void FreezeFrameWindow()
 			{
 				if (!show_freeze_window)
 				{
+					// 先在窗口所属线程显示 Host，再提交首帧，避免只改透明度但窗口仍隐藏。
+					const bool hostShown = windowService.Show(
+						Inkeys::Window::WindowRole::MagnifierHost);
+					// Child 带有 WS_VISIBLE 但创建后被 Window Service 按默认状态隐藏，需显式恢复。
+					const bool childShown = windowService.Show(
+						Inkeys::Window::WindowRole::MagnifierChild);
+					// 定格显示前通知 Shell 覆盖任务栏，保证任务栏提示不会继续刷新。
+					overlayFullscreen = windowService.SetOverlayFullscreen(true);
+					if (hostShown && childShown)
+					{
+						UpdateMagWindow();
+						RedrawWindow(magnifierChild, nullptr, nullptr,
+							RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+						SetLayeredWindowAttributes(magnifierWindow, 0, 255,
+							LWA_ALPHA);
+					}
 					RequestUpdateMagWindow = 1;
 					show_freeze_window = true;
 				}
@@ -183,6 +201,15 @@ void FreezeFrameWindow()
 
 				RequestUpdateMagWindow = 0;
 				show_freeze_window = false;
+				if (overlayFullscreen)
+				{
+					(void)windowService.SetOverlayFullscreen(false);
+					overlayFullscreen = false;
+				}
+				(void)windowService.Hide(
+					Inkeys::Window::WindowRole::MagnifierHost);
+				(void)windowService.Hide(
+					Inkeys::Window::WindowRole::MagnifierChild);
 			}
 		}
 		else if (FreezeFrame.mode == 1)

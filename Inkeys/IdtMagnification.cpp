@@ -150,6 +150,9 @@ void MagnifierThread()
 				if (const HWND hwnd = windowService.Handle(role)) hwndList.emplace_back(hwnd);
 			}
 			hwndList.emplace_back(drawpad_window);
+			if (const HWND hwnd = windowService.Handle(
+				Inkeys::Window::WindowRole::DrawpadPresentation))
+				hwndList.emplace_back(hwnd);
 			hwndList.emplace_back(freeze_window);
 			hwndList.emplace_back(setting_window);
 
@@ -188,7 +191,13 @@ void MagnifierThread()
 		{
 			if (MagTransparency == 0)
 			{
+				auto& windowService = Inkeys::Window::GetService();
+				// 窗口服务默认隐藏 MagnifierHost；定格前必须先显示宿主，再提交首帧。
+				(void)windowService.Show(Inkeys::Window::WindowRole::MagnifierHost);
 				UpdateMagWindow();
+				// 先同步完成 Magnifier 首帧，再揭开宿主窗口，避免首次定格闪白。
+				RedrawWindow(magnifierChild, nullptr, nullptr,
+					RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
 
 				SetLayeredWindowAttributes(magnifierWindow, 0, 255, LWA_ALPHA);
 				MagTransparency = 255;
@@ -209,6 +218,8 @@ void MagnifierThread()
 			{
 				SetLayeredWindowAttributes(magnifierWindow, 0, 0, LWA_ALPHA);
 				MagTransparency = 0;
+				(void)Inkeys::Window::GetService().Hide(
+					Inkeys::Window::WindowRole::MagnifierHost);
 			}
 
 			while (!offSignal && RequestUpdateMagWindow == 0)

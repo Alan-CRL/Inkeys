@@ -16,6 +16,7 @@ extern RECT hostWindowRect;
 
 extern int RequestUpdateMagWindow;
 
+void UpdateMagWindow();
 LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 bool PrepareMagnifierWindow();
 void MagnifierHostCreated(HWND hwnd);
