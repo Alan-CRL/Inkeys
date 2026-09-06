@@ -59,10 +59,10 @@ float2 halfSize
 |---|---|
 | `radii` | `laserRadii`（基准白芯半径、基准实体外半径、固定漫反射宽度、基准散射半宽） |
 | `coreColor` | `laserCoreColor` |
-| `scatterColor` | `laserScatterColor` |
-| `borderColor` | `laserBorderColor` |
-| `edgeColor` | `laserEdgeColor`（RGB 为红粉外缘高亮，alpha 为 RGB 混合强度） |
-| `glowColor` | `laserGlowColor`（alpha 为实体边界处的漫反射峰值） |
+| `scatterColor` | `laserScatterColor`（由所选 Laser RGB 向白色混合） |
+| `borderColor` | `laserBorderColor`（RGB 精确等于当前 pass 的 Laser 颜色） |
+| `edgeColor` | `laserEdgeColor`（RGB 为同色系外缘高亮，alpha 为 RGB 混合强度） |
+| `glowColor` | `laserGlowColor`（RGB 跟随所选 Laser 颜色，alpha 为实体边界处的漫反射峰值） |
 | `parameters.x/y/z/w` | `laserParameters.x/y/z/w`（组 opacity、DPI scale、外缘 glow 下/上阈值） |
 
 新增字段必须保持 16 字节对齐，并同步 `renderer.cppm/.cpp`、`ink.hlsli` 与 shape `7/8/9/10/11/12/13` 的绑定。
@@ -222,7 +222,7 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 - CPU dirty bounds 必须至少覆盖 VS 生成范围；当前普遍预留 2px 几何扩展和 3px bounds padding。
 - Shape `16/17` 的 VS 生成扩宽线段 OBB，PS 分别计算整段 capsule 或 analytic dashed capsules；零长度必须退化为半线宽圆点。Shape `18/19` 的 VS 先对任意方向端点取 `min/max`，PS 使用 rounded-box SDF；圆角把 `globalPadding.x` 钳制到短边一半，Outline 使用 `abs(boxDistance) - halfWidth`，Filled 直接使用 box distance。
 - Shape dirty/history bounds 必须与上述几何同步：Line/Outline 扩展半线宽和 AA，Filled 只扩展 AA；Outline history 遍历四边而非整个内部，Filled 覆盖完整规范化矩形。
-- Laser shape `7` 的 `InkPoint.r` 是红色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；红粉高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子红边锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
+- Laser shape `7` 的 `InkPoint.r` 是彩色实体外半径。96 DPI 基准实体半径为 2.5px，白芯半径是实体半径的 `1/3`，漫反射在实体轮廓外固定扩展 5px；压力只改变实体/白芯/散射比例，不改变 5px 漫反射。PS 必须复用实体 signed distance，以平方曲线令 coverage 在实体边界为 1、5px 外缘为 0；同色系高光只混合 diffuse RGB，禁止通过额外 source-over 层抬高渐变 alpha。VS、PS、Hover/Touch `LaserDot.radius`、粒子外壳锚点和 CPU bounds 必须复用 `renderer.cppm` 的尺寸契约。
 - 普通笔零长度或一端圆包含另一端时退化为较大端点圆；高亮零长度退化为固定竖直矩形。
 - `InkPoint` 中出现 NaN 时 PS discard；CPU 仍应避免生成非有限输入。
 
@@ -263,14 +263,14 @@ History operator array 的 RTV 和 SRV 都必须限制为单个 array slice。�
 
 ### 5. Good/Base/Bad Cases
 
-- Good：两支交叉笔分别 MAX 后按 Down 顺序 resolve，上层红色实体可覆盖下层白芯。
+- Good：两支不同颜色的交叉笔分别 MAX 后，以各自 Down 锁定的 `LaserStyleConstants` 按 Down 顺序 resolve，上层彩色实体可覆盖下层白芯。
 - Base：单支笔自交仍只解析一次 coverage，不在交叉处重复加深。
 - Bad：先把所有 contact MAX 到同一 coverage；这会丢失笔身份，无法实现有序覆盖。
 
 ### 6. Tests Required
 
 - 断言 96 DPI 的实体直径 5px、白芯直径约 1.67px、漫反射每侧 5px，且 DPI/压力换算符合固定漫反射契约。
-- 静态核对 `LaserDiffuseCoverage(0)=1`、`LaserDiffuseCoverage(diffuseExtent)=0` 且区间内单调；`ResolveLaserMaterial` 在红色实体外只能由单一 diffuse 层决定 alpha，红粉高光不得再次 source-over 抬高透明度。
+- 静态核对 `LaserDiffuseCoverage(0)=1`、`LaserDiffuseCoverage(diffuseExtent)=0` 且区间内单调；`ResolveLaserMaterial` 在彩色实体外只能由单一 diffuse 层决定 alpha，同色系高光不得再次 source-over 抬高透明度。
 - 断言 `LaserDot.radius`、固定宽度轨迹半径和 Touch/Hover 尺寸一致，`LaserStyleConstants == 112 bytes`。
 - 断言 CPU dirty bounds 覆盖实体半径、固定漫反射和 AA padding；人工验证反向 Down 顺序、较老笔继续书写、取消、resize、Hold/Fade 与静态 Hold 零 Present。
 - 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13` 和 t6-t9 解绑契约。
@@ -336,7 +336,7 @@ if (singleContact && liveCoverageAvailable) {
 - UpdateCS 用实际 wall time 累计年龄，用最多 `1/30s` 的 motion dt 推进；固定速度和 Alpha 都乘 `1-smoothstep(0,1,age/lifetime)`。粒子按实际累计行程计算尺寸，前 10% 保持出生半径，之后 smoothstep 到 20%；达到自身寿命立即死亡。
 - 粒子出生后 UpdateCS 不再读取路径、画笔、prediction 或 Up 状态；Up/Cancel 只停止 CPU 新请求。禁止 path slot/generation、弧长、segment cursor、端点阻塞淡出、路径追赶和 prediction correction。
 - 每粒写入 `0.42–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
-- shape `10` 的 VS 以 `currentRadius * glowRadiusScale + 2 * dpiScale` 得到逐粒辉光范围，默认 `glowRadiusScale=2.0`，并把出生基础亮度通过现有 `p2` 传给 PS；PS 核心直接使用 `borderColor=(1.0, 11/255, 30/255)`，只乘生命周期/呼吸亮度，不再向白混合。辉光使用 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 距离衰减，继续输出预乘 Alpha operator-resolve。
+- shape `10` 的 VS 以 `currentRadius * glowRadiusScale + 2 * dpiScale` 得到逐粒辉光范围，默认 `glowRadiusScale=2.0`，并把出生基础亮度通过现有 `p2` 传给 PS；PS 核心直接使用当前 `LaserStyleConstants.borderColor`，只乘生命周期/呼吸亮度，不再向白混合。粒子辉光仍使用 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 距离衰减，继续输出预乘 Alpha operator-resolve。
 
 ### 4. Validation & Error Matrix
 

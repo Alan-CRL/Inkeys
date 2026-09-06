@@ -229,7 +229,7 @@ OperatorOutput main(PS_INPUT input)
         float brightness = saturate(input.color.y);
         float3 glowColor = float3(
             globalPadding.x, input.color.z, input.color.w) * brightness;
-        // 粒子核心直接复用激光红色外套（borderColor），不再向白/粉白混合；
+        // 粒子核心直接复用激光所选外套色（borderColor），不再向白色混合；
         // 只保留生命周期与呼吸带来的亮度变化，避免白底上发灰发白。
         float3 coreColor = laserBorderColor.rgb * brightness;
         float4 particle = 0.0;

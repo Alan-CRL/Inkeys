@@ -90,6 +90,18 @@ namespace
 		Check(!IsLaserToolActive(true, false),
 			"base pen stays active when Laser is not remembered");
 	}
+
+	void TestLaserUsesIndependentColorState()
+	{
+		using Inkeys::Business::PenColorStateSlot;
+		using Inkeys::Business::ResolvePenColorStateSlot;
+		Check(ResolvePenColorStateSlot(true, true) == PenColorStateSlot::Laser,
+			"Laser color wins over the remembered pen subtype");
+		Check(ResolvePenColorStateSlot(false, true) == PenColorStateSlot::Highlighter,
+			"Highlighter keeps its own color when Laser is inactive");
+		Check(ResolvePenColorStateSlot(false, false) == PenColorStateSlot::Brush,
+			"soft and hard pens continue sharing the brush color");
+	}
 }
 
 int RunToggleClickCoalescerTests()
@@ -100,5 +112,6 @@ int RunToggleClickCoalescerTests()
 	TestNonMonotonicTimeStartsNewWindow();
 	TestDrawButtonToggleNeverChangesPenType();
 	TestRememberedLaserOnlyActivatesInPenMode();
+	TestLaserUsesIndependentColorState();
 	return failureCount;
 }

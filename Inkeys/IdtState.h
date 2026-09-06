@@ -46,6 +46,7 @@ public:
 			Pen.Laser.widthPreset[1] = 5.0f;
 			Pen.Laser.widthPreset[2] = 7.0f;
 			Pen.Laser.width = Pen.Laser.widthPreset[1];
+			Pen.Laser.color = RGBA(255, 16, 0, 255);
 		}
 		{
 			Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
@@ -84,6 +85,8 @@ public:
 		struct
 		{
 			float width;
+			// 激光颜色独立于普通笔和荧光笔，默认使用红色预设。
+			COLORREF color;
 			// 激光粗细独立于硬笔和荧光笔，固定为细/中/粗三档。
 			float widthPreset[3];
 		}Laser;

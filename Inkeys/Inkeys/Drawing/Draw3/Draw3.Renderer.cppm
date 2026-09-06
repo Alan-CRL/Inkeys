@@ -29,7 +29,7 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr float kShapeRoundedCornerRadiusAt96Dpi = 4.0f;
 	inline constexpr float kShapeDashLengthToWidthRatio = 4.0f;
 	inline constexpr float kShapeDashGapToWidthRatio = 6.0f;
-	// Laser 的 InkPoint.r 统一表示红色实体外半径；漫反射宽度不随压力变化。
+	// Laser 的 InkPoint.r 统一表示彩色实体外半径；漫反射宽度不随压力变化。
 	constexpr float LaserSolidRadius(float dpiScale = 1.0f) noexcept
 	{
 		return kLaserSolidDiameterAt96Dpi * 0.5f * dpiScale;
@@ -127,7 +127,7 @@ export namespace Inkeys::Drawing::Draw3
 	static_assert(sizeof(HighlighterPrimitive) == 24,
 		"HighlighterPrimitive 必须与结构化缓冲区布局保持一致");
 
-	// Laser 笔尖的 radius 是红色实体外半径；粒子改由独立 GPU 缓冲区保存。
+	// Laser 笔尖的 radius 是彩色实体外半径；粒子改由独立 GPU 缓冲区保存。
 	struct LaserDot
 	{
 		float x = 0.0f;
@@ -275,8 +275,9 @@ export namespace Inkeys::Drawing::Draw3
 		// 在主循环开始前提交零像素 draw call，迫使驱动提前 JIT 编译所有激光着色器路径。
 		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
 		void WarmUpLaserShaders() noexcept;
-		// 按 DPI 配置白芯、实体外套、散射和固定漫反射尺寸。
-		void ConfigureLaserStyle(float dpiScale) noexcept;
+		// 按 DPI 与所选颜色配置白芯、实体外套、散射和固定漫反射尺寸。
+		void ConfigureLaserStyle(float dpiScale,
+			DirectX::XMFLOAT4 shellColor) noexcept;
 		void ConfigureLaserParticles(
 			const LaserParticleConfig& configuration, float dpiScale) noexcept;
 		bool LaserParticlesAvailable() const noexcept;

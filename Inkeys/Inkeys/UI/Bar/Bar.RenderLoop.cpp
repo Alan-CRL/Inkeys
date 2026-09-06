@@ -2112,7 +2112,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 
 					const auto targetPolicy = ResolveBarLaserPreviewTargetPolicy(
 						state.drawAttributeLaserPhase);
-					// Hold 阶段不重新提交 target，确保红壳退场期间锁住 Laser 端点。
+					// Hold 阶段不重新提交 target，确保彩色外壳退场期间锁住 Laser 端点。
 					if (targetPolicy.core
 						== BarLaserPreviewSemanticTarget::Laser)
 					{
@@ -10151,7 +10151,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 							bool laserShellVisible =
 								state.drawAttributeLaserShellProgress.val > 0.001
 								|| state.drawAttributeLaserShellProgress.tar > 0.001;
-							// 红壳退场与 semantic morph 解耦，不再持有互斥的 Laser session 分支。
+							// 彩色外壳退场与 semantic morph 解耦，不再持有互斥的 Laser session 分支。
 							bool laserPreviewActive = stateMode.laserActive
 								|| laserShellVisible;
 							double laserShellProgress = clamp(static_cast<double>(
@@ -10290,7 +10290,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									previewClip,
 									D2D1_ANTIALIAS_MODE_ALIASED);
 
-							// 红壳先画，芯层后画；进度为 0 时红壳与芯等宽而被完全遮住。
+							// 彩色外壳先画，芯层后画；进度为 0 时外壳与芯等宽而被完全遮住。
 							auto DrawLaserOverlay = [&]()
 							{
 								if (!laserPreviewActive || laserShellProgress <= 0.000001)
@@ -10301,11 +10301,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 								FLOAT coreWidth = max(0.1F, static_cast<FLOAT>(
 									state.drawAttributeLaserCoreThickness.val
 									* panelAnimationScale));
-								FLOAT normalRedWidth = coreWidth
+								FLOAT normalShellWidth = coreWidth
 									+ (outerWidth - coreWidth)
 										* static_cast<FLOAT>(laserShellProgress);
-								FLOAT redWidth = static_cast<FLOAT>(normalRedWidth
-									+ (trackThickness - normalRedWidth)
+								FLOAT shellWidth = static_cast<FLOAT>(normalShellWidth
+									+ (trackThickness - normalShellWidth)
 										* sliderProgress);
 								auto DrawLayer = [&](COLORREF color, FLOAT width,
 									double opacity)
@@ -10372,10 +10372,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 									}
 									barDeviceContext->SetTransform(originalTransform);
 								};
-								DrawLayer(RGB(255, 11, 30), redWidth, 1.0);
+								DrawLayer(stateMode.Pen.Laser.color, shellWidth, 1.0);
 							};
 							DrawLaserOverlay();
-							// 帧内 solid brush 会复用并改色；红壳画完后必须重新设为芯层颜色。
+							// 帧内 solid brush 会复用并改色；外壳画完后必须重新设为芯层颜色。
 							ID2D1SolidColorBrush* solidBrush =
 								state.spec.GetFrameSolidColorBrush(
 									barDeviceContext, previewColor,

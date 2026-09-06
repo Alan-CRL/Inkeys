@@ -241,24 +241,26 @@ PumpBridgeState();
 ### 2. Signatures
 
 - `Bridge::ProductState { tool, colorRgba, widthDip, revision }`
+- `StateModeClass::Pen.Laser.color` / `ResolvePenColorStateSlot(laserActive, highlighterSelected)`
 - `GetEffectivePenOpacity() -> float`
 - `WindowController::SetProductVisualStyle(colorRgba, widthDip)` / `ProductVisualStyleSnapshot()`
 - `ConfigureDrawingCursor(tool, appearance)` / `ResolvePrimaryDrawingCursorVisual(...)`
 
 ### 3. Contracts
 
-- `stateMode` 只保存产品工具意图；`laserActive` 记录最后选择的 Pen 子类型是否为 Laser，不污染已记忆的 `Pen.ModeSelect`。它仅在顶层模式为 Pen 时映射为 Laser；选择、橡皮和图形必须覆盖当前工具但保留该记忆，返回 Pen 时恢复 Laser。
-- bridge 只跨线程传递稳定工具、RGB 和粗细快照；活动笔画在 Down 时锁存 `ProductVisualStyle`，Hover 光标在帧边界跟随最新快照。
+- `stateMode` 只保存产品工具意图；`Pen.Laser.color` 是独立于 Brush/Highlighter 的颜色槽，默认 `RGB(255,16,0)`。`laserActive` 记录最后选择的 Pen 子类型是否为 Laser，不污染已记忆的 `Pen.ModeSelect`；Laser 活动时颜色调节按钮、预设色和自定义颜色窗口只读写该槽。Laser 仅在顶层模式为 Pen 时映射为当前工具；选择、橡皮和图形必须覆盖当前工具但保留该记忆，返回 Pen 时恢复 Laser。
+- bridge 只跨线程传递当前工具的稳定 RGB 和粗细快照；活动笔画在 Down 时锁存 `ProductVisualStyle`，Hover 光标在帧边界跟随最新快照。Laser 的实际轨迹外壳、Hover/Touch 笔尖外壳与 Bar 粗细预览外壳必须使用 Laser RGB，不得回退到固定红色或其他笔的颜色槽。
 - 普通笔光标直径是 `max(widthDip, 5 DIP * dpiScale)`；只有最小光标值按 DPI 缩放，实际笔画粗细不重复缩放。
 - 荧光笔当前绘制几何固定为 `6.25 × 50 px`，光标必须复用该尺寸；最终 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。
 - Eraser Hover 整体 alpha 为 `0.5`，Contact 为 `1.0`；这一规则同时适用固定/速度橡皮、鼠标和倒转笔橡皮。
-- Laser 当前没有产品宽度 state；光标与笔迹必须共用 `kLaserSolidDiameterAt96Dpi * dpiScale`。
+- Laser 使用独立的 `Pen.Laser.width/color`；光标、笔迹与粗细预览必须共用当前 Laser 宽度和颜色语义，固定漫反射宽度仍只由 Draw3 的 DPI 尺寸契约决定。
 
 ### 4. Validation & Error Matrix
 
 | 条件 | 必需结果 |
 |---|---|
 | 颜色/粗细在 Hover 期间改变 | 下一光标帧使用新样式；已 Down 笔画不重染 |
+| Laser 模式点击预设色或提交自定义颜色 | 只更新 `Pen.Laser.color`，实际外壳、Hover 光标和粗细预览同步使用新 RGB；Brush/Highlighter 记忆不变 |
 | 荧光笔经过 Pen 默认 alpha 归一化 | 仍保持 `0.35`，不提升为 `1.0` |
 | 橡皮 Hover / Contact | 分别为 `0.5` / `1.0` |
 | Laser 尺寸调整 | 同时修改共享直径来源，不单改光标或笔迹 |
@@ -266,14 +268,14 @@ PumpBridgeState();
 
 ### 5. Good / Base / Bad Cases
 
-- Good：颜色/粗细快照由绘制线程在帧边界消费，光标立即更新，活动笔画保持 Down 样式。
+- Good：颜色/粗细快照由绘制线程在帧边界消费，Laser 光标立即更新为所选颜色，活动笔画保持 Down 样式。
 - Base：没有样式变化时不重复配置 appearance。
-- Bad：让 resolver 无条件覆盖工具 alpha，或用普通笔宽度暗中驱动 Laser。
+- Bad：让 resolver 无条件覆盖工具 alpha，或用普通笔的颜色/宽度暗中驱动 Laser，或在渲染/预览层重新硬编码红色。
 
 ### 6. Tests Required
 
-- 纯逻辑测试覆盖荧光笔 `0.35`、橡皮 Hover/Contact、鼠标、倒转笔和 Touch Contact。
-- 静态检查普通笔最小 DIP 直径、荧光笔实际 `6.25 × 50 px` 尺寸以及 Laser 光标/笔迹共享 helper。
+- 纯逻辑测试覆盖荧光笔 `0.35`、橡皮 Hover/Contact、鼠标、倒转笔和 Touch Contact，并断言 Laser 默认红色及其颜色槽与 Brush/Highlighter 隔离。
+- 静态检查普通笔最小 DIP 直径、荧光笔实际 `6.25 × 50 px` 尺寸，以及 Laser 光标/笔迹/粗细预览共享当前 Laser RGB、活动 layer 锁定 Down 样式。
 - 完整 ARM64 `Debug|ARM64` Solution 构建，再运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-hidden-test`。
 
 ### 7. Wrong vs Correct

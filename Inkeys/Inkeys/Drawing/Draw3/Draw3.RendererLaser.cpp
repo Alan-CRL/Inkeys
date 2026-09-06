@@ -21,26 +21,53 @@ namespace Inkeys::Drawing::Draw3
 	// 本实现单元集中维护激光 coverage、材质解析和粒子绘制路径。
 	using renderer_detail::GlobalShaderConstants;
 
-	void InkRenderer::ConfigureLaserStyle(float dpiScale) noexcept
+	namespace
+	{
+		float ResolveLaserColorChannel(float value, float fallback) noexcept
+		{
+			return std::isfinite(value) ? std::clamp(value, 0.0f, 1.0f) : fallback;
+		}
+
+		float MixLaserColorWithWhite(float value, float whiteMix) noexcept
+		{
+			return value + (1.0f - value) * whiteMix;
+		}
+	}
+
+	void InkRenderer::ConfigureLaserStyle(float dpiScale,
+		DirectX::XMFLOAT4 shellColor) noexcept
 	{
 		const float scale = std::isfinite(dpiScale) ? std::max(dpiScale, 0.01f) : 1.0f;
 		const float solidRadius = LaserSolidRadius(scale);
 		const float coreRadius = LaserCoreRadius(solidRadius);
-		laserStyleConstants_.radii = DirectX::XMFLOAT4(
+		const DirectX::XMFLOAT4 resolvedShellColor(
+			ResolveLaserColorChannel(shellColor.x, 1.0f),
+			ResolveLaserColorChannel(shellColor.y, 16.0f / 255.0f),
+			ResolveLaserColorChannel(shellColor.z, 0.0f), 1.0f);
+		LaserStyleConstants next = laserStyleConstants_;
+		next.radii = DirectX::XMFLOAT4(
 			coreRadius, solidRadius, LaserDiffuseExtent(scale),
 			coreRadius * kLaserScatterHalfWidthToCoreRatio);
-		laserStyleConstants_.coreColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-		laserStyleConstants_.scatterColor = DirectX::XMFLOAT4(
-			1.0f, 240.0f / 255.0f, 243.0f / 255.0f, 0.94f);
-		laserStyleConstants_.borderColor = DirectX::XMFLOAT4(
-			1.0f, 11.0f / 255.0f, 30.0f / 255.0f, 0.98f);
-		laserStyleConstants_.edgeColor = DirectX::XMFLOAT4(
-			1.0f, 112.0f / 255.0f, 128.0f / 255.0f, 0.72f);
-		// 漫反射在实体边界达到满 alpha；edgeColor.a 只控制粉色高光的 RGB 混合强度。
-		laserStyleConstants_.glowColor = DirectX::XMFLOAT4(1.0f, 0.04f, 0.10f, 1.0f);
-		// z/w 是红色实体外侧漫反射曲线的边缘高亮阈值。
-		laserStyleConstants_.parameters = DirectX::XMFLOAT4(
-			1.0f, scale, 0.20f, 0.29f);
+		next.coreColor = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		// 内侧散射和外缘高光只向白色提亮，实体外框保留用户所选 RGB。
+		next.scatterColor = DirectX::XMFLOAT4(
+			MixLaserColorWithWhite(resolvedShellColor.x, 0.94f),
+			MixLaserColorWithWhite(resolvedShellColor.y, 0.94f),
+			MixLaserColorWithWhite(resolvedShellColor.z, 0.94f), 0.94f);
+		next.borderColor = DirectX::XMFLOAT4(
+			resolvedShellColor.x, resolvedShellColor.y, resolvedShellColor.z, 0.98f);
+		next.edgeColor = DirectX::XMFLOAT4(
+			MixLaserColorWithWhite(resolvedShellColor.x, 0.43f),
+			MixLaserColorWithWhite(resolvedShellColor.y, 0.43f),
+			MixLaserColorWithWhite(resolvedShellColor.z, 0.43f), 0.72f);
+		// 漫反射在实体边界达到满 alpha；edgeColor.a 只控制提亮色的 RGB 混合强度。
+		next.glowColor = DirectX::XMFLOAT4(
+			resolvedShellColor.x, resolvedShellColor.y, resolvedShellColor.z, 1.0f);
+		// x 由每次 resolve 写入；z/w 是实体外侧漫反射曲线的边缘高亮阈值。
+		next.parameters = DirectX::XMFLOAT4(
+			laserStyleConstants_.parameters.x, scale, 0.20f, 0.29f);
+		if (std::memcmp(&next, &laserStyleConstants_, sizeof(next)) == 0) return;
+		laserStyleConstants_ = next;
 		++laserStyleGeneration_;
 		if (laserStyleGeneration_ == 0) laserStyleGeneration_ = 1;
 		laserStyleCacheValid_ = false;

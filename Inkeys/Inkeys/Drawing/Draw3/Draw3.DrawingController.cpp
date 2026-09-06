@@ -224,6 +224,13 @@ namespace Inkeys::Drawing::Draw3
 			return ColorForTool(tool, currentProductVisualStyle);
 		}
 
+		void ConfigureLaserRendererStyle(InkRenderer& renderer,
+			const ProductVisualStyle& visualStyle, float dpiScale) noexcept
+		{
+			renderer.ConfigureLaserStyle(
+				dpiScale, ColorForTool(DrawingTool::Laser, visualStyle));
+		}
+
 		bool ProductVisualStyleEqual(const ProductVisualStyle& left,
 			const ProductVisualStyle& right) noexcept
 		{
@@ -679,12 +686,19 @@ namespace Inkeys::Drawing::Draw3
 		{
 			uint64_t id = 0;
 			RuntimeStroke* runtime = nullptr;
+			ProductVisualStyle visualStyle = {};
 			std::vector<InkPoint> completedPoints;
 			LaserIncrementalStrokeState incrementalState;
 			RECT stableBounds = {};
 			RECT liveBounds = {};
 			RECT bounds = {};
 			bool cancelled = false;
+		};
+
+		struct LaserTipVisual
+		{
+			LaserDot dot = {};
+			ProductVisualStyle visualStyle = {};
 		};
 
 		LaserStrokeLayer* FindLaserStrokeLayer(
@@ -709,6 +723,7 @@ namespace Inkeys::Drawing::Draw3
 			float dpiScale, int width, int height,
 			RECT& dirty)
 		{
+			ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 			dirty = layer.liveBounds;
 			const LaserIncrementalRanges ranges = PlanLaserIncrementalRanges(
 				realPoints, layer.incrementalState, protectedDurationSeconds);
@@ -826,6 +841,7 @@ namespace Inkeys::Drawing::Draw3
 				if (IsEmptyRect(layer.bounds)) continue;
 				UnionRectInPlace(bakeDirty, layer.bounds);
 				// 每支笔先独立生成 coverage，再按 Down 顺序烘入稳定预乘颜色。
+				ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 				renderer.ClearLaserCoverageRect(layer.bounds);
 				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
 				renderer.DrawLaserCoverage(points);
@@ -839,7 +855,7 @@ namespace Inkeys::Drawing::Draw3
 
 		void DrawLaserStrokeLayers(std::vector<LaserStrokeLayer>& layers,
 			InkRenderer& renderer, ID3D11RenderTargetView* target,
-			RECT clipBounds,
+			RECT clipBounds, float dpiScale,
 			LaserCoverageMode& coverageMode)
 		{
 			if (coverageMode == LaserCoverageMode::Incremental && layers.size() == 1)
@@ -852,6 +868,7 @@ namespace Inkeys::Drawing::Draw3
 				else
 				{
 					LaserStrokeLayer& layer = layers.front();
+					ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 					RECT resolveBounds = {};
 					if (!IntersectRect(&resolveBounds, &layer.bounds, &clipBounds)) return;
 					if (renderer.ResolveLaserIncrementalCoverage(target, resolveBounds))
@@ -872,6 +889,7 @@ namespace Inkeys::Drawing::Draw3
 				RECT resolveBounds = {};
 				if (!IntersectRect(&resolveBounds, &layer.bounds, &clipBounds)) continue;
 				// 仅处理最终 frame dirty 的交集；完整几何和 Down 顺序保持不变。
+				ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 				renderer.ClearLaserCoverageRect(resolveBounds);
 				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
 				renderer.DrawLaserCoverage(points, resolveBounds);
@@ -1069,12 +1087,13 @@ namespace Inkeys::Drawing::Draw3
 			return result;
 		}
 
-		RECT RectFromLaserDots(const std::vector<LaserDot>& dots,
+		RECT RectFromLaserDots(const std::vector<LaserTipVisual>& visuals,
 			float dpiScale, int width, int height) noexcept
 		{
 			RECT bounds = {};
-			for (const LaserDot& dot : dots)
+			for (const LaserTipVisual& visual : visuals)
 			{
+				const LaserDot& dot = visual.dot;
 				if (!std::isfinite(dot.x) || !std::isfinite(dot.y)) continue;
 				const double radius = static_cast<double>(LaserVisualRadius(dot.radius, dpiScale));
 				if (!std::isfinite(radius)) continue;
@@ -1261,7 +1280,8 @@ namespace Inkeys::Drawing::Draw3
 		eraserAppearance.outlineGreen = 207.0f / 255.0f;
 		eraserAppearance.outlineBlue = 207.0f / 255.0f;
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
-		renderer_.ConfigureLaserStyle(configuration_.dpiScale);
+		ConfigureLaserRendererStyle(renderer_, currentProductVisualStyle,
+			configuration_.dpiScale);
 		renderer_.ConfigureShapePrimitives(configuration_.dpiScale);
 		renderer_.ConfigureLaserParticles(
 			configuration_.laserParticleConfig, configuration_.dpiScale);
@@ -1776,6 +1796,7 @@ namespace Inkeys::Drawing::Draw3
 		bool inertiaBrakeStateValid = false;
 		bool previousInertiaBrake = false;
 		LaserTrailLifecycle laserLifecycle;
+		ProductVisualStyle laserTrailVisualStyle = currentProductVisualStyle;
 		float laserOpacity = 0.0f;
 		RECT laserStableBounds = {};
 		RECT laserLiveBounds = {};
@@ -1784,10 +1805,10 @@ namespace Inkeys::Drawing::Draw3
 		LaserCoverageMode laserCoverageMode = LaserCoverageMode::Inactive;
 		bool laserIncrementalEnsureAttempted = false;
 		uint64_t nextLaserLayerId = 1;
-		std::vector<LaserDot> laserTipDots;
+		std::vector<LaserTipVisual> laserTipVisuals;
 		std::vector<ShapePrimitive> shapePrimitiveScratch;
 		laserStrokeLayers.reserve(kLaserReservedContactCount);
-		laserTipDots.reserve(kPreheatedStrokeCount + 1);
+		laserTipVisuals.reserve(kPreheatedStrokeCount + 1);
 		shapePrimitiveScratch.reserve(kLaserReservedContactCount * 2);
 		std::vector<LaserParticleEmissionRequest> laserParticleEmissionRequests;
 		laserParticleEmissionRequests.reserve(kLaserReservedContactCount);
@@ -2785,8 +2806,10 @@ namespace Inkeys::Drawing::Draw3
 						laserCoverageMode = LaserCoverageMode::Inactive;
 					}
 					runtime->laserLayerId = nextLaserLayerId++;
+					laserTrailVisualStyle = runtime->visualStyle;
 					LaserStrokeLayer layer{
-						.id = runtime->laserLayerId, .runtime = runtime };
+						.id = runtime->laserLayerId, .runtime = runtime,
+						.visualStyle = runtime->visualStyle };
 					laserStrokeLayers.push_back(std::move(layer));
 					const LaserCoverageMode previousCoverageMode = laserCoverageMode;
 					laserCoverageMode = SelectLaserCoverageMode(laserCoverageMode,
@@ -3616,7 +3639,7 @@ namespace Inkeys::Drawing::Draw3
 		auto buildDrawingCursorVisuals = [&]()
 		{
 			currentCursorVisuals.clear();
-			laserTipDots.clear();
+			laserTipVisuals.clear();
 			if (window_.SelectionMode()) return; // 选择态只呈现画布和瞬态层，不保留绘制光标。
 			DrawingCursorSample penSample;
 			DrawingCursorSample mouseSample;
@@ -3659,8 +3682,10 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					primaryCursorSourceVisible = true;
 #endif
-					laserTipDots.push_back({ primary.x, primary.y,
-						primary.appearance.width * 0.5f, primary.appearance.opacity });
+					laserTipVisuals.push_back({
+						.dot = { primary.x, primary.y,
+							primary.appearance.width * 0.5f, primary.appearance.opacity },
+						.visualStyle = currentProductVisualStyle });
 				}
 			}
 			else
@@ -3712,8 +3737,11 @@ namespace Inkeys::Drawing::Draw3
 					runtime->tool == DrawingTool::Laser)
 				{
 					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
-					laserTipDots.push_back({ snapshot.position.x, snapshot.position.y,
-						LaserSolidRadius(configuration_.dpiScale), 1.0f });
+					// Touch 笔尖沿用各自 Down 样式，避免多 contact 调色后互相串色。
+					laserTipVisuals.push_back({
+						.dot = { snapshot.position.x, snapshot.position.y,
+							LaserSolidRadius(configuration_.dpiScale), 1.0f },
+						.visualStyle = runtime->visualStyle });
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					++runtimeCursorSourceCount;
 #endif
@@ -4010,7 +4038,7 @@ namespace Inkeys::Drawing::Draw3
 			viewportRefreshClearsTransient = false;
 			viewportVisibleClear = true;
 			pendingLaserBakeDirty = {};
-			laserTipDots.clear();
+			laserTipVisuals.clear();
 			laserParticleEmissionRequests.clear();
 			previousCursorVisuals.clear();
 			currentCursorVisuals.clear();
@@ -4709,7 +4737,7 @@ namespace Inkeys::Drawing::Draw3
 			viewportRefreshClearsTransient = false;
 			viewportVisibleClear = true;
 			pendingLaserBakeDirty = {};
-			laserTipDots.clear();
+			laserTipVisuals.clear();
 			laserParticleEmissionRequests.clear();
 			previousCursorVisuals.clear();
 			currentCursorVisuals.clear();
@@ -5233,6 +5261,8 @@ namespace Inkeys::Drawing::Draw3
 				currentProductVisualStyle = nextProductVisualStyle;
 				// Hover 跟随最新产品样式；已开始的笔画仍读取 Down 时锁存的 visualStyle。
 				ConfigureProductInkCursorAppearances(window_, currentProductVisualStyle,
+					configuration_.dpiScale);
+				ConfigureLaserRendererStyle(renderer_, currentProductVisualStyle,
 					configuration_.dpiScale);
 			}
 			const double frameStartMs = GetQpcTimeMilliseconds();
@@ -6519,7 +6549,7 @@ namespace Inkeys::Drawing::Draw3
 
 			buildDrawingCursorVisuals();
 			const RECT currentLaserTipBounds = RectFromLaserDots(
-				laserTipDots, configuration_.dpiScale, size.width, size.height);
+				laserTipVisuals, configuration_.dpiScale, size.width, size.height);
 			const bool laserTipBoundsChanged =
 				previousLaserTipBounds.left != currentLaserTipBounds.left ||
 				previousLaserTipBounds.top != currentLaserTipBounds.top ||
@@ -6605,16 +6635,27 @@ namespace Inkeys::Drawing::Draw3
 				else CompositeLayersToBackBuffer(frameDirty, orderedPreview);
 				// 粒子先于激光主体绘制，使粒子辉光托衬在墨迹主体下方，避免遮挡演示内容。
 				if (shouldDrawLaserParticles)
+				{
+					ConfigureLaserRendererStyle(renderer_, laserTrailVisualStyle,
+						configuration_.dpiScale);
 					renderer_.DrawLaserParticles();
+				}
 				if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 				{
 					renderer_.ResolveLaserCompositedColor(
 						renderer_.backBufferRTV.Get(), frameDirty, laserOpacity);
 					DrawLaserStrokeLayers(laserStrokeLayers, renderer_,
 						renderer_.backBufferRTV.Get(), frameDirty,
+						configuration_.dpiScale,
 						laserCoverageMode);
 				}
-				renderer_.DrawLaserDots(laserTipDots);
+				for (const LaserTipVisual& visual : laserTipVisuals)
+				{
+					ConfigureLaserRendererStyle(renderer_, visual.visualStyle,
+						configuration_.dpiScale);
+					renderer_.DrawLaserDots(
+						std::span<const LaserDot>(&visual.dot, 1));
+				}
 				for (const DrawingCursorVisual& visual : currentCursorVisuals)
 					renderer_.DrawTransientDrawingCursor(visual);
 				presentSucceeded = PresentFrame(

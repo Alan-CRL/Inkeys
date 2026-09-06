@@ -388,10 +388,14 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen ||
-			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
+		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
+			IsLaserToolActive(),
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+		if (colorSlot == Inkeys::Business::PenColorStateSlot::Laser)
+			stateMode.Pen.Laser.color = targetColor;
+		else if (colorSlot == Inkeys::Business::PenColorStateSlot::Brush)
 			stateMode.Pen.Brush1.color = targetColor;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+		else if (colorSlot == Inkeys::Business::PenColorStateSlot::Highlighter)
 			stateMode.Pen.Highlighter1.color = targetColor;
 		else
 			return false;
@@ -437,9 +441,13 @@ COLORREF GetPenColor()
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
-			? stateMode.Pen.Highlighter1.color
-			: stateMode.Pen.Brush1.color;
+		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
+			IsLaserToolActive(),
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+		if (colorSlot == Inkeys::Business::PenColorStateSlot::Laser)
+			return stateMode.Pen.Laser.color;
+		return colorSlot == Inkeys::Business::PenColorStateSlot::Highlighter
+			? stateMode.Pen.Highlighter1.color : stateMode.Pen.Brush1.color;
 	}
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{

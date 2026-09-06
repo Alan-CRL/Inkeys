@@ -1197,11 +1197,11 @@ BarLaserPreviewLayerGeometry ResolveBarLaserPreviewLayerGeometry(
 
 #### 3. Contracts
 
-- Laser 预览固定使用 `NonLaserStable -> EnteringCore -> EnteringShell -> LaserStable -> LeavingShell -> LeavingCore`。进入时芯宽、颜色、曲率/圆角和荧光渐变先在 `0.4s` 内连续到达白色芯端点，随后红壳再用 `0.4s` 从芯宽展开；退出时先收红壳，再改变 semantic core。
-- `EnteringShell` 与 `LeavingShell` 对 core thickness、outer thickness、morph 和 white mix 使用 `Hold` 目标策略，不得用已经切换的逻辑笔宽重新提交 target。只有红壳完全隐藏并进入 `LeavingCore` 后，才允许芯层转向非 Laser 目标；反向切换继续使用锁存的 Laser target。
-- 红壳先绘制、semantic core 后绘制。预览包络使用 `max(coreThickness, currentShellThickness)` 约束曲线振幅和裁剪，但 semantic core 的实际绘制宽度仍只读取 core thickness，不能被红壳宽度替代。
-- 白芯与红壳的曲线/胶囊两端圆心必须共享阶段化 outer thickness。曲线路径以 `outer / 2` 计算端点，圆角矩形按 `(outer - layerThickness) / 2` 水平收进；因此壳进度为零时红层被白芯完全覆盖，壳展开时只改变 stroke width，不移动两端圆心。Slider 展开时 endpoint diameter、core thickness 和当前 shell thickness 必须一起连续趋向 track thickness。
-- `GetFrameSolidColorBrush` 返回帧内复用的可变 solid brush；后续调用会原地改色。不得跨另一处 `GetFrameSolidColorBrush` 调用保留画刷颜色假设；红壳绘制后必须紧邻 semantic core 绘制重新提交 `previewColor`，否则白芯会继承红壳颜色。
+- Laser 预览固定使用 `NonLaserStable -> EnteringCore -> EnteringShell -> LaserStable -> LeavingShell -> LeavingCore`。进入时芯宽、颜色、曲率/圆角和荧光渐变先在 `0.4s` 内连续到达白色芯端点，随后彩色外壳再用 `0.4s` 从芯宽展开；退出时先收外壳，再改变 semantic core。
+- `EnteringShell` 与 `LeavingShell` 对 core thickness、outer thickness、morph 和 white mix 使用 `Hold` 目标策略，不得用已经切换的逻辑笔宽重新提交 target。只有彩色外壳完全隐藏并进入 `LeavingCore` 后，才允许芯层转向非 Laser 目标；反向切换继续使用锁存的 Laser target。
+- 彩色外壳先绘制、semantic core 后绘制。外壳 RGB 必须直接读取 `stateMode.Pen.Laser.color`，默认红色；Laser 模式下预设色或自定义颜色提交后，下一帧预览使用新 RGB。切换到其他笔时，正在退场的外壳仍读取 Laser 独立颜色，不能改用新工具颜色。预览包络使用 `max(coreThickness, currentShellThickness)` 约束曲线振幅和裁剪，但 semantic core 的实际绘制宽度仍只读取 core thickness，不能被外壳宽度替代。
+- 白芯与彩色外壳的曲线/胶囊两端圆心必须共享阶段化 outer thickness。曲线路径以 `outer / 2` 计算端点，圆角矩形按 `(outer - layerThickness) / 2` 水平收进；因此壳进度为零时外壳层被白芯完全覆盖，壳展开时只改变 stroke width，不移动两端圆心。Slider 展开时 endpoint diameter、core thickness 和当前 shell thickness 必须一起连续趋向 track thickness。
+- `GetFrameSolidColorBrush` 返回帧内复用的可变 solid brush；后续调用会原地改色。不得跨另一处 `GetFrameSolidColorBrush` 调用保留画刷颜色假设；彩色外壳绘制后必须紧邻 semantic core 绘制重新提交 `previewColor`，否则白芯会继承外壳颜色。
 - 颜色、曲率、圆角矩形进度、外套宽度和内芯宽度均从当前值续接，中途反向不得回到任一端点；Laser 稳态的 `3/5/7 DIP` 切换同时 retarget 芯宽和外宽。
 - Circle/Number 切换时锁存 outgoing 内容：Circle -> Number 先保持旧圆直径并淡出，再显示已锁存的新数字；Number -> Circle 先保持旧数字并淡出，再显示圆。Circle -> Circle 才允许直径连续 retarget；切换中点旧新内容透明度均为零。
 - 工具失去扩展资格时，命中区和按压状态立即失效，arrow/divider 的视觉则按 current progress 退场；其几何锚点和颜色必须派生 selected button 的当前 `x/y/frame`，不能读取新目标位置或首帧直接改 Accent。
@@ -1211,22 +1211,22 @@ BarLaserPreviewLayerGeometry ResolveBarLaserPreviewLayerGeometry(
 
 | 条件 | 必须行为 |
 | --- | --- |
-| Highlighter -> Laser | 渐变、圆角、颜色和芯宽先连续到白芯端点，之后红壳才出现 |
-| Laser -> Highlighter | 红壳完全隐藏前 core/outer/morph/white target 保持 Laser 端点；之后才连续恢复渐变矩形 |
+| Highlighter -> Laser | 渐变、圆角、颜色和芯宽先连续到白芯端点，之后所选颜色的外壳才出现 |
+| Laser -> Highlighter | 彩色外壳完全隐藏前 core/outer/morph/white target 保持 Laser 端点；之后才连续恢复渐变矩形 |
 | Pen <-> Laser 中途反向 | `EnteringCore <-> LeavingCore` 从当前芯值反向；`EnteringShell <-> LeavingShell` 只反向 shell progress，并保留锁存 target |
 | Laser 稳态切换粗细 | core 与 outer 同时连续 retarget，shell 保持完全展开 |
-| 细笔/粗笔 -> Laser | outer 的当前动画值分别增大/减小，白芯水平 span 连续收窄/拓宽；红壳与白芯端点圆心始终一致 |
+| 细笔/粗笔 -> Laser | outer 的当前动画值分别增大/减小，白芯水平 span 连续收窄/拓宽；彩色外壳与白芯端点圆心始终一致 |
 | Laser 预览 -> Slider | endpoint diameter、core 和当前 shell 同步 morph 到 track thickness，不在交接帧改变端点 |
-| 红壳与白芯同帧绘制 | 红壳先画；其后重新以 `previewColor` 配置帧内 solid brush，再画白芯或渐变失败 fallback |
+| 彩色外壳与白芯同帧绘制 | 外壳以 `Pen.Laser.color` 先画；其后重新以 `previewColor` 配置帧内 solid brush，再画白芯或渐变失败 fallback |
 | Circle <-> Number 中途反向 | 从当前透明度继续；outgoing 内容和尺寸保持锁存 |
 | Laser 使扩展入口失效 | 命中立即归零；arrow/divider 平滑退场且不残留 |
 | 离开 Pen 后以 Highlighter 重进 | 首帧直接为稳定数字，不出现圆形过渡 |
 
 #### 5. Good / Base / Bad Cases
 
-- Good：阶段 helper 决定 `Hold/Laser/NonLaser`，`LeavingShell` 只提交 shell target；红壳隐藏的交接帧进入 `LeavingCore` 后才提交新笔型语义。
+- Good：阶段 helper 决定 `Hold/Laser/NonLaser`，`LeavingShell` 只提交 shell target；彩色外壳隐藏的交接帧进入 `LeavingCore` 后才提交新笔型语义。
 - Base：稳态 SoftPen/HardPen/Laser 为 Circle，Highlighter 为 Number；超出按钮内框的 Circle 仍按既有规则显示真实数字。
-- Bad：目标工具一改变就在 `LeavingShell` 使用新 `penThickness` 计算芯壳目标，或在红壳改色前缓存共享 solid brush 并用于后绘白芯；前者造成跳宽，后者使白芯变红。
+- Bad：目标工具一改变就在 `LeavingShell` 使用新 `penThickness` 计算芯壳目标，或在彩色外壳改色前缓存共享 solid brush 并用于后绘白芯；前者造成跳宽，后者使白芯继承外壳颜色。
 
 #### 6. Tests Required
 
@@ -1236,7 +1236,7 @@ BarLaserPreviewLayerGeometry ResolveBarLaserPreviewLayerGeometry(
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：LeavingShell 读取新工具宽度，红壳退场期间白芯提前改变。
+// Wrong：LeavingShell 读取新工具宽度，彩色外壳退场期间白芯提前改变。
 core.SetTar(penThickness / 3.0, duration);
 outer.SetTar(penThickness, duration);
 
@@ -1246,12 +1246,12 @@ if (policy.core != BarLaserPreviewSemanticTarget::Hold)
 	SubmitCoreTarget(policy.core);
 shell.SetTar(policy.shellExpanded ? 1.0 : 0.0, duration);
 
-// Wrong：保存芯层 brush 后，红壳调用把同一帧内 brush 原地改成红色。
+// Wrong：保存芯层 brush 后，外壳调用把同一帧内 brush 原地改成所选颜色。
 auto coreBrush = GetFrameSolidColorBrush(previewColor, opacity);
 DrawLaserShell();
 DrawCore(coreBrush);
 
-// Correct：红壳画完后紧邻芯层重新配置共享 brush。
+// Correct：彩色外壳画完后紧邻芯层重新配置共享 brush。
 DrawLaserShell();
 auto coreBrush = GetFrameSolidColorBrush(previewColor, opacity);
 DrawCore(coreBrush);

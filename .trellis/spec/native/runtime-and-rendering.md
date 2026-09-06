@@ -189,12 +189,12 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 
 ### 3. Contracts
 
-- Laser 在 Down 时锁定到当前批次，支持 Pen、Mouse 和 Touch；`laserMultiTouchDrawingEnabled` 默认关闭，此时只接受第一根活动 Touch，后续 Touch Down 直接回收且不打断第一根，运行中切换只影响之后开始的 contact。开启后恢复多 Touch；Laser 继续跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
+- Laser 在 Down 时把当前 `ProductVisualStyle`（包括独立的 Laser RGB）锁定到该 contact/layer，支持 Pen、Mouse 和 Touch；Hover 使用最新样式，已 Down 轨迹不得因之后调色而重染。`laserMultiTouchDrawingEnabled` 默认关闭，此时只接受第一根活动 Touch，后续 Touch Down 直接回收且不打断第一根，运行中切换只影响之后开始的 contact。开启后恢复多 Touch；Laser 继续跳过断触 reconnect、倒转笔尾橡皮覆盖和触觉反馈。
 - 已完成 Laser 使用独立 `R8G8B8A8_UNORM` 预乘颜色层，任何 Laser 几何都不得进入 L2。单 contact 快路中，`t7` `laserStrokeCoverage` 保存按时间保护边界推进的稳定真实前缀，`t9` `laserLiveCoverage` 保存当前真实尾部和 prediction；两者在 shape `13` 逐通道取 `max` 后只调用一次 `ResolveLaserMaterial`。L1/L0 交界保留一个重叠点，稳定前缀只接受已确认 `realPoints`，所以 prediction 回缩不会污染稳定 coverage。
 - `t9` 只由绘制线程在首次观察 `ActiveTool() == Laser` 时按需创建并预热，创建后直到 renderer 释放都保留；资源创建/Resize 失败只记录一次并把当前会话降级为完整重绘。没有选择 Laser 的会话不分配该缓冲。
 - 单个有效 Laser layer 且 coverage 可用时使用增量快路；出现第二个 layer、Cancel/状态异常或资源不可用后，当前批次锁定完整重绘直到最后一次 Bake。完整路径继续逐笔清理 `t7`、按 Down 顺序 source-over，不能把不同 contact 放入同一次 MAX。
 - 多 contact 完整路径只把稳定 delta 与旧/新 live bounds 加入最终 `frameDirty`；每层只清理 `layer.bounds ∩ frameDirty`，scissor 资源可用时在同一 scissor 内仍上传和绘制完整 layer 几何，再按原 Down 顺序 resolve。scissor 创建失败只失去像素裁剪优化，由矩形 quad 保持相同输出范围；draw 结束必须恢复普通 rasterizer state，不能影响粒子、其他工具或 presenter。
-- 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，红色实体轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，红粉外缘高光只混合 RGB 而不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
+- 96 DPI 默认实体总直径为 5px，白芯直径约 1.67px，实体外壳 RGB 必须等于该 layer 锁定的 Laser 颜色，轮廓外每侧固定扩散 5px，因此完整视觉直径为 15px；漫反射 coverage 在实体边界为 1，使用平方曲线向外单调衰减并在 5px 外缘为 0，外缘高光由同一颜色派生且只混合 RGB，不额外增加 alpha。`LaserDot`、Touch 笔尖和固定宽度轨迹复用同一尺寸/颜色契约。Pen 使用 `0.65 + 0.75 * clamp(p, 0, 1)` 缩放实体、白芯和内侧散射，外部 5px 漫反射只随 DPI 缩放；无效压力保持上一宽度，prediction 继承最后真实实体半径，Mouse/Touch 固定基准宽度。
 - 多支 Laser 按 Down 顺序分层，后 Down 的整支轨迹位于上层；较早结束的 contact 保留最终 CPU 几何直到同批最后一支抬起，同一笔自交仍以 coverage 并集避免重复加深。
 - 粒子默认关闭，外部可通过设置接口按需开启；启用后只使用 FL11_0+ 的 D3D11 Compute Shader 固定池：`2048` 个 `80 bytes` 的 `LaserGpuParticle` 槽（总计 `163840 bytes`），以及同一缓冲的 `u0` UAV/VS `t8` SRV。创建 buffer 时不分配 CPU 零数组，必须用 GPU `resetAll` 初始化；失败只降级为无粒子。没有路径点/路径头资源、Append/Consume、间接绘制或 GPU 回读；整笔逐帧重绘和 Resize 都不得重建 GPU 粒子。
 - 出生位置直接取当前 `l0DrawPoints.back()`；切线从 L0 尾部反向查找最后一个非退化段，重复点沿用上一有效切线。真实首次移动前没有方向时不发射，也不累计会在之后补出的 Down 余量。prediction 只影响新粒子的出生位置/切线，不影响密度。
@@ -203,7 +203,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 - 每粒只保存屏幕位置、固定速度、年龄/寿命、实际累计/最大行程、出生/当前半径、Alpha、亮度和呼吸状态。实际推进速度与 Alpha 均乘 `1-smoothstep(0,1,age/lifetime)`，运动 `dt <= 1/30s`，年龄使用实际 wall time。前 10% 最大行程保持出生半径，之后按实际累计行程 smoothstep 缩至 20%。
 - 粒子出生后不再读取 L0、真实点、prediction 或 contact 状态。Up/Cancel 只停止新发射；prediction 回缩、急弯和最后 Up 均不得修正存量位置/速度。禁止路径追赶、generation/弧长/segment cursor、端点受阻淡出和 prediction correction。
 - 出生点可在白芯内沿所选法线随机偏移。基础亮度以 72% 尺寸层级和 28% 独立随机样本混合后映射到 `0.42–1.0`，因此大粒子通常更亮、小粒子通常更暗但范围仍重叠。`0.8–1.4Hz` 随机相位呼吸以 `0.12` 振幅在 `0.2s` 渐入且只改变 RGB；核心 Alpha 只使用生命周期曲线。
-- Compute 顺序固定为 `VS t8 unbind -> 一次绑定 CS u0 -> 可选 update -> 按请求原顺序 emit -> 统一 CS unbind`；多 contact request 共享同一个 UAV 绑定周期，但 seed、spawn cursor 和 dispatch 顺序不变。绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。每个 dirty frame 的顺序固定为 `L2 + 普通 L1/L0` 合成、粒子、已烘干 Laser 颜色层、shape `13` 的稳定/live coverage、Laser tip、普通 cursor、Present；粒子因此仍在激光主体下方。VS 令辉光半径为当前核心半径的 `2.0` 倍加 `2 × dpiScale` 地板，并传递出生基础亮度；PS 粒子核心直接复用激光红色外套 `borderColor=(1.0, 11/255, 30/255)`，只乘生命周期/呼吸亮度，不再向白混合。辉光保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 衰减，所有输出继续使用预乘 Alpha。
+- Compute 顺序固定为 `VS t8 unbind -> 一次绑定 CS u0 -> 可选 update -> 按请求原顺序 emit -> 统一 CS unbind`；多 contact request 共享同一个 UAV 绑定周期，但 seed、spawn cursor 和 dispatch 顺序不变。绘制为 shape `10` 的 `DrawInstanced(6, 2048, 0, 0)`，死亡槽生成退化图元。每个 dirty frame 的顺序固定为 `L2 + 普通 L1/L0` 合成、粒子、已烘干 Laser 颜色层、shape `13` 的稳定/live coverage、Laser tip、普通 cursor、Present；粒子因此仍在激光主体下方。VS 令辉光半径为当前核心半径的 `2.0` 倍加 `2 × dpiScale` 地板，并传递出生基础亮度；PS 粒子核心直接复用当前配置的 Laser `borderColor`，只乘生命周期/呼吸亮度，不再向白混合。粒子辉光仍保持 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 衰减，所有输出继续使用预乘 Alpha。
 - CPU 把同一帧实际发射请求合成一个未裁剪保守包络，按最大减速弹道、白芯出生偏移、最大粒子半径、辉光和 AA 扩展；每个帧批次在最大寿命 1 秒后独立到期。Tracker 保存原始包络，每帧只执行一次 prune/snapshot，idle、timer、simulation、draw 和 dirty 决策共同复用；包络按当前画布逐帧裁剪，Resize 后不得复用旧画布裁剪结果。snapshot 无存活批次、无刚到期批次且无新请求时不得 Dispatch 或 DrawInstanced；批次刚到期仍提交最后一次 update 清理 GPU alive 槽，并用上一帧 bounds 清除一次旧像素，但不再 DrawInstanced。
 - 最后一根 Laser Up 才记录 `lastAllUpQpc`；默认满亮保持 `1.0s`，固定 `0.8s` smooth fade。当前批次实际安排过粒子时，有效 Hold 为 `max(公开设置值, maximumLifetimeSeconds)`，默认下限即 `1.0s`，但 setter/getter 值不变。新 Down 在 Hold/Fade 中把整组 opacity 恢复为 `1` 并重新计时。
 - `SetLaserHoldDurationSeconds` 只接受 finite non-negative 值；运行中调整须由 control wake 唤醒并相对最后一次全部 Up 立即重算。粒子 setter 同样发布 control wake；关闭后下一帧 reset GPU 状态并 union 旧保守 bounds。
@@ -216,6 +216,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 | Down/Up 多 contact | 只有最后一根 Up 启动 Hold；中间 Up 不改变 opacity |
 | 多指开关关闭 | 第一根 Touch 正常绘制；其仍活动时忽略后续 Touch Down，Pen/Mouse 和既有 contact 不受影响 |
 | Hold/Fade 新 Down | 旧稳定颜色层全组恢复满亮并重新计时 |
+| Laser 调色发生在 Hover / 已 Down 期间 | Hover 下一帧使用新 RGB；已 Down 的每个 layer、Touch tip 和留存轨迹保持各自 Down 时锁定的 RGB |
 | 非法 hold seconds | setter 返回 `false`，旧值保持不变且不发布设置 |
 | Laser Up | 清除 prediction；同批最后 Up 才有序烘入稳定颜色层，不 reconnect、不 resolve 到 L2 |
 | 粒子关闭 | 下一帧 reset GPU 粒子池、清空保守脏区并 union 旧 bounds |
@@ -235,7 +236,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 
 ### 5. Good / Base / Bad Cases
 
-- Good：白芯与厚红边在深色、混合背景可见，深红粉粒子辉光在白底可辨；新粒子从笔尖两侧法线喷射，急弯和 prediction 回缩不改变旧粒子。
+- Good：白芯与所选颜色的厚外壳在深色、混合背景可见，粒子辉光在白底可辨；新粒子从笔尖两侧法线喷射，急弯和 prediction 回缩不改变旧粒子。
 - Base：默认关闭多指绘图时仅第一根 Touch 生成轨迹和 tip；开启后各活动 Touch 显示独立 tip。GPU 不可用时只有粒子降级，抬笔后已有粒子按自身最长 1 秒寿命继续减速、缩小和淡出。
 - Bad：关闭多指后中断已经开始的 Touch、让被忽略的第二根 Touch 在第一根抬起时中途接管，或让粒子绑定/重采样整条路径、用 prediction 位移提高密度、预测回缩后瞬移已有粒子、同时绑定粒子 UAV 与 VS SRV、用 GPU readback 决定 dirty。
 
@@ -243,7 +244,7 @@ Correct：`Down 固定起点 -> Update/Predict 只消费末点 scratch -> 全 Sh
 
 - 断言按键 4/枚举、最后 Up 计时、1.0s Hold、0.8s fade、运行中设置变化和非法输入。
 - 断言多指配置默认关闭、setter/getter 往返，以及关闭时第二根 Touch Down 被忽略、开启时进入既有多 contact Laser 路径。
-- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；静态核对漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
+- 断言 Laser 不进入 reconnect/L2，压力 `0/0.5/1` 只缩放实体且 prediction 半径继承正确，coverage bounds 覆盖 15px 基准完整视觉直径、最大压力实体和固定 5px 漫反射；以非红色样式静态核对实体外壳 RGB 精确等于所选颜色、Hover 立即更新、已 Down layer 不重染，以及漫反射 alpha 从实体边界的 1 单调衰减到外缘的 0，resize/clear/Present failure 无残影。
 - 增量状态测试必须断言时间保护边界单调推进、L1/L0 共享一个连接点、prediction 回缩不后退稳定游标、自交 dirty union 不丢失、第二 contact 锁定 fallback、稳定 delta 与旧/新 live dirty、Resize/Clear/resource failure 重建，以及 `max(t7,t9)` 与完整 coverage union 的 CPU 等价性；静态核对 t9、shape `13`、矩形 shape 以 `globalColor` 生成 quad、t6-t9 解绑与 scissor 恢复契约。
 - 断言默认关闭；开启后覆盖 Down 零爆发、首次真实移动后静止 6/s、移动每 2.5 DIP 密度、72/s 与全局 96 上限且不积压、双侧法线与 `±25°` 偏转、连续偏小尺寸分布、尺寸/亮度正相关、尺寸/射程弱反向相关、`10–17 DIP/s` 速度、`0.7–1.0s` 寿命和不超过 8.5 DIP 的标称行程、速度/Alpha 曲线单调性、按行程缩至 20%、比例辉光和核心色相层级、亮度呼吸不改 Alpha、出生锚点取 L0 前端、Up/prediction 跳变不改变存量运动、1 秒有效 Hold 下限、帧批次 dirty 到期、单次 snapshot、空闲零命令、批量 request 顺序、80-byte CPU/HLSL layout、GPU reset 初始化和 resize 重裁剪。
 - Debug/Release ARM64 全解决方案构建、VS/PS/两个 CS 均以 SM5.0 编译并嵌入；人工覆盖慢/快画、急弯、长按、路径追加、多接触、Resize、ULW、开关和 Hold/Fade。

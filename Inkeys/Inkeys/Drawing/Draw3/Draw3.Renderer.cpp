@@ -434,7 +434,8 @@ namespace Inkeys::Drawing::Draw3
 		constantBufferDescription.ByteWidth = sizeof(LaserStyleConstants);
 		if (FAILED(device->CreateBuffer(&constantBufferDescription, nullptr,
 			laserStyleCB.ReleaseAndGetAddressOf()))) return false;
-		ConfigureLaserStyle(1.0f);
+		ConfigureLaserStyle(1.0f,
+			DirectX::XMFLOAT4(1.0f, 16.0f / 255.0f, 0.0f, 1.0f));
 
 		D3D11_BLEND_DESC blendDescription = {};
 		blendDescription.IndependentBlendEnable = TRUE;
