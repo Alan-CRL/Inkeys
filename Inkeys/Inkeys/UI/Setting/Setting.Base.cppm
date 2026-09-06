@@ -9,6 +9,10 @@ import Inkeys.UI.RenderPipeline;
 
 ImFont* ImFontMain = nullptr;
 ImFont* ImFontStrong = nullptr;
+// 新页面使用独立校准字体；旧页保留原字号/行步长直至逐页迁移。
+ImFont* ImFontDesignMain = nullptr;
+ImFont* ImFontDesignStrong = nullptr;
+ImFont* ImFontDesignIcons = nullptr;
 struct SettingSignStruct
 {
 	int width;

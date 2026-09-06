@@ -691,3 +691,36 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Status
 
 [OK] **Completed**
+
+
+## Session 28: Setting WinUI 3 首批：导航、主页与常规页
+
+**Date**: 2026-09-06
+**Task**: Setting WinUI 3 首批：导航、主页与常规页
+**Branch**: `fluent`
+
+### Summary
+
+用户审查后批准首批实现；完成新导航、主页、常规页及字体隔离校准，保留原业务FIFO与共享渲染。
+
+### Main Changes
+
+- 新增 Design/Typography/Controls/Pages/Shell，接回原有配置与真实入口；其余页面后续迁移。
+- 修复字体行框、导航右侧间距、Expander裁切和分数DPI末行断言，更新UI规范与UPSTREAM。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64：ARM64 host，0 errors；集成 --no-window exit0。
+- [OK] 真实ImGui字体/控件CPU回归、i18n304/304、编码CRLF和git diff --check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户审阅首批实际视觉并反馈小调整；后续再逐批迁移其他页面。未启动窗口、未commit。

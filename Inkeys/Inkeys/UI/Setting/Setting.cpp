@@ -22,6 +22,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
+#include "Setting.Pages.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -291,6 +292,7 @@ namespace
 	{
 		const ImFluentThemePreset preset = QuerySystemTheme();
 		ImFluent::SetThemePreset(preset);
+		Inkeys::UI::Setting::Design::ApplyPalette();
 		// 最小客户区仍需完整容纳全部路由；宽度由响应式模式另行控制。
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
 		Widgets::style.ApplyGlobal(12.0F);
@@ -1349,6 +1351,9 @@ void SettingWindowBegin()
 	io.Fonts->Clear();
 	ImFontMain = nullptr;
 	ImFontStrong = nullptr;
+	ImFontDesignMain = nullptr;
+	ImFontDesignStrong = nullptr;
+	ImFontDesignIcons = nullptr;
 	ImGui::GetStyle().FontScaleDpi = settingGlobalScale;
 
 	static constexpr ImWchar excludedGlyphs[] = { 0xe81e, 0xe81e, 0 };
@@ -1394,6 +1399,24 @@ void SettingWindowBegin()
 	if (!addTextFace(regularResource, 198U, &ImFontMain)
 		|| !addTextFace(strongResource, 297U, &ImFontStrong))
 		return false;
+
+	// 校准字体仅绑定新 Shell/Home/General，避免改变旧页 TextWrapped 的行距。
+	auto addDesignFace = [&](UINT resource, UINT fallback, ImFont** result)
+		{
+			auto config = Inkeys::UI::Setting::Design::HarmonyFontConfig(settingGlobalScale);
+			if (!AddSettingFontResource(resource,
+				Inkeys::UI::Setting::Design::FontReferenceSize, &config, result)) return false;
+			if (!traditionalChinese) return true;
+			config.MergeMode = true;
+			return AddSettingFontResource(fallback,
+				Inkeys::UI::Setting::Design::FontReferenceSize, &config);
+		};
+	if (!addDesignFace(regularResource, 198U, &ImFontDesignMain)
+		|| !addDesignFace(strongResource, 297U, &ImFontDesignStrong)) return false;
+	auto designIconConfig = Inkeys::UI::Setting::Design::IconFontConfig(settingGlobalScale);
+	if (!AddSettingFontResource(257U, Inkeys::UI::Setting::Design::FontReferenceSize,
+		&designIconConfig, &ImFontDesignIcons)) return false;
+	ImFluent::SetIconFont(ImFontDesignIcons);
 
 	io.FontDefault = ImFontMain;
 	// Strong 层级绑定真实内嵌粗体，不通过描边或重复绘制伪造字重。
@@ -1993,6 +2016,7 @@ SettingSessionCoroutine RunSettingSession()
 
 		int settingTab = 0;
 		int settingPlugInTab = 0;
+		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		int transitionTab = settingTab;
 		auto transitionStarted = chrono::steady_clock::now();
 
@@ -2049,21 +2073,12 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
 
-				const auto navigationLayout = Inkeys::UI::Setting::ResolveNavigationLayout(
-					static_cast<float>(SettingWindowWidth), settingGlobalScale);
-				static bool narrowPaneOpen = false;
-				static auto previousNavigationLayout = Inkeys::UI::Setting::NavigationLayout::Open;
-				static ImFluentNavViewMode desktopNavigationMode = ImFluentNavViewMode_LeftOpen;
-				if (navigationLayout != Inkeys::UI::Setting::NavigationLayout::Overlay
-					&& previousNavigationLayout != navigationLayout)
-				{
-					desktopNavigationMode = navigationLayout
-						== Inkeys::UI::Setting::NavigationLayout::Open
-						? ImFluentNavViewMode_LeftOpen : ImFluentNavViewMode_LeftCompact;
-				}
-				previousNavigationLayout = navigationLayout;
-				const bool overlayNavigation = navigationLayout
-					== Inkeys::UI::Setting::NavigationLayout::Overlay;
+				const float widthDip = static_cast<float>(SettingWindowWidth) / settingGlobalScale;
+				navigationState.Resize(widthDip);
+				if (navigationState.overlayOpen && ImGui::IsKeyPressed(ImGuiKey_Escape))
+					navigationState.DismissOverlay();
+				const auto shellGeometry = Inkeys::UI::Setting::Design::ResolveShellGeometry(
+					widthDip, static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
 
 				// TitleBar 与三个 caption buttons 始终由 Inkeys 自绘；DWM 只做
 				// 可选的外框/阴影/圆角增强，因此 Win7 关闭 Aero 时也不会退回
@@ -2155,89 +2170,26 @@ SettingSessionCoroutine RunSettingSession()
 					}
 				}
 
-				// 三档导航复用同一条目源，并由 ImFluent 统一承载 pane 与 content。
-				bool navigationActivated = false;
-				auto renderNavigationItems = [&]()
-					{
-						auto page = [&](int target, const char* label, const char* glyph)
-					{
-						if (ImFluent::NavItem(label, settingTab == target, glyph))
-						{
-							settingTab = target;
-							navigationActivated = true;
-							if (target == settingTabEnum::tab4)
-								settingPlugInTab = settingPlugInTabEnum::tabPlug1;
-						}
-					};
-					auto action = [&](const char* label, const char* glyph, auto&& callback)
-					{
-						if (!ImFluent::NavItem(label, false, glyph)) return;
-						navigationActivated = true;
-						callback();
-					};
-
-						// 第三个间距覆盖子区收尾和分隔线占位，避免底部操作被裁切。
-						const float footerHeight = Widgets::Dip(
-							ImFluent::GetStyle().NavItemHeight * 3.0F
-							+ ImFluent::GetStyle().SpacingMedium * 3.0F);
-						const float pageListHeight = max(0.0F,
-							ImGui::GetContentRegionAvail().y - footerHeight);
-						// 子滚动区沿用导航 pane 的内边距，保证主条目与底部操作对齐。
-						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
-						ImGui::BeginChild("##setting-navigation-pages", { 0.0F, pageListHeight });
-						ImGui::PopStyleVar();
-						page(settingTabEnum::tab1, IA(I18nKey.SettingsUI.Home.N).c_str(), "\ue80f");
-						ImFluent::NavSubHeader(IA(I18nKey.SettingsUI.N).c_str());
-						page(settingTabEnum::Language, IA(I18nKey.SettingsUI.Language.N).c_str(), "\ue774");
-						page(settingTabEnum::tabConfiguration, IA(I18nKey.SettingsUI.Configuration.N).c_str(), "\ue81e");
-						page(settingTabEnum::tab6, IA(I18nKey.SettingsUI.Version.N).c_str(), "\ue946");
-						page(settingTabEnum::tab2, IA(I18nKey.SettingsUI.Regular.N).c_str(), "\ue7b8");
-						page(settingTabEnum::tab3, IA(I18nKey.SettingsUI.Draw.N).c_str(), "\uee56");
-						page(settingTabEnum::tabPreset, IA(I18nKey.SettingsUI.Preset.N).c_str(), "\uf259");
-						page(settingTabEnum::tab4, IA(I18nKey.SettingsUI.PlugIn.N).c_str(), "\ue74c");
-						page(settingTabEnum::tabComponent, IA(I18nKey.SettingsUI.Component.N).c_str(), "\ue70b");
-						page(settingTabEnum::tab5, IA(I18nKey.SettingsUI.HotKey.N).c_str(), "\ue765");
-						page(settingTabEnum::tabExperimental, "实验选项", "\uec4a");
-						page(settingTabEnum::tab8, IA(I18nKey.SettingsUI.Sponsor.N).c_str(), "\ue789");
-						page(settingTabEnum::tab9, IA(I18nKey.SettingsUI.DebugSoftware.N).c_str(), "\ue90f");
-						ImGui::EndChild();
-						ImFluent::Separator();
-						action(IA(I18nKey.SettingsUI.Community.N).c_str(), "\ue716", [&]
-						{
-							if (I18n::isIdentifying(L"zh-CN"))
-								ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
-							else
-								ShellExecuteW(0, 0, L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
-						});
-					action(IA(I18nKey.SettingsUI.RestartSoftware.N).c_str(), "\ue72c", [&]
-						{
-							Inkeys::UI::Setting::Hide();
-							RestartProgram();
-						});
-					action(IA(I18nKey.SettingsUI.ExitSoftware.N).c_str(), "\ue711", [&]
-						{
-							Inkeys::UI::Setting::Hide();
-							CloseProgram();
-						});
-					};
-
-				ImGui::SetCursorPos({ 0.0F, customTitleBar
-					? Inkeys::UI::Setting::TitleBarHeightDip * settingGlobalScale : 0.0F });
-				if (navigationLayout != Inkeys::UI::Setting::NavigationLayout::Overlay)
+				// 内容与导航单独排布；窄窗覆盖展开不改变正文宽度及其滚动位置。
+				const auto& contentGeometry = shellGeometry.content;
+				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
+				ImGui::PushStyleColor(ImGuiCol_ChildBg, Inkeys::UI::Setting::Design::PageSurface);
+				ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0F);
+				ImGui::BeginDisabled(navigationState.overlayOpen);
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+					{ Widgets::Dip(shellGeometry.gutter), Widgets::Dip(28.0F) });
+				ImGui::PushID(settingTab);
+				ImGui::BeginChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
+					ImGuiChildFlags_AlwaysUseWindowPadding,
+					navigationState.overlayOpen ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None);
+				ImGui::PopStyleVar();
+				ImGui::PopStyleColor();
+				const bool designPage = settingTab == settingTabEnum::tab1 || settingTab == settingTabEnum::tab2;
+				if (designPage)
 				{
-					ImFluent::BeginNavigationView("##setting-navigation", &desktopNavigationMode);
-					renderNavigationItems();
-					ImFluent::EndNavigationView();
+					Inkeys::UI::Setting::Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
+					ImFluent::PushFont(ImFluentTextStyle_Body);
 				}
-				if (overlayNavigation)
-				{
-					// 窄屏内容与导航共享 CompactOverlay，pane 在内容之后绘制以保持覆盖层级。
-					ImFluent::BeginSplitView("##setting-responsive-nav", &narrowPaneOpen,
-						ImFluentSplitViewDisplayMode_CompactOverlay,
-						ImFluentSplitViewPanePlacement_Left);
-					ImFluent::BeginSplitViewContent();
-				}
-				ImFluent::NavigationViewBeginContent();
 
 				// 页面切换只推进两个标量，避免动画期间加载或分配图形资源。
 				if (transitionTab != settingTab)
@@ -2245,14 +2197,14 @@ SettingSessionCoroutine RunSettingSession()
 					transitionTab = settingTab;
 					transitionStarted = chrono::steady_clock::now();
 				}
-				const float transitionProgress =
-					Inkeys::UI::Setting::ResolvePageTransitionProgress(chrono::duration<float>(
+				const float transitionProgress = designPage ? 1.0F
+					: Inkeys::UI::Setting::ResolvePageTransitionProgress(chrono::duration<float>(
 						chrono::steady_clock::now() - transitionStarted).count());
 				ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
 					ImGui::GetStyle().Alpha * (0.55F + transitionProgress * 0.45F));
 				const float availablePageWidth = ImGui::GetContentRegionAvail().x;
-				const float pageWidth = Inkeys::UI::Setting::ResolvePageWidth(
-					availablePageWidth, settingGlobalScale);
+				const float pageWidth = (std::min)(availablePageWidth,
+					Widgets::Dip(Inkeys::UI::Setting::Design::PageMaximumWidth));
 				const float pageOffset = max(0.0F, (availablePageWidth - pageWidth) * 0.5F)
 					+ Widgets::Dip((1.0F - transitionProgress) * 8.0F);
 				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pageOffset);
@@ -2265,62 +2217,34 @@ SettingSessionCoroutine RunSettingSession()
 					// 主页
 				case settingTabEnum::tab1:
 				{
-					Widgets::PageHeader("Inkeys",
-						IA(I18nKey.SettingsUI.Home.Prompt).c_str(), true);
-					ImFluent::Separator();
-					Widgets::SectionHeader("快速访问");
-					const float linkButtonWidth = Widgets::Dip(148.0F);
-					const ImVec2 linkButtonSize(linkButtonWidth, Widgets::Dip(40.0F));
-					ImFluent::BeginWrapPanel(Widgets::Dip(8.0F), Widgets::Dip(8.0F));
-					ImFluent::WrapPanelNextItem(linkButtonWidth);
-					if (ImFluent::Button("\uf900  Website", linkButtonSize))
+					using Inkeys::UI::Setting::Design::HomeAction;
+					const string version = utf16ToUtf8(editionVersion);
+					const auto action = Inkeys::UI::Setting::Design::RenderHome({
+						(ImTextureID)(intptr_t)TextureSettingSign[1],
+						static_cast<float>(max(1, settingSign[1].height)) / max(1, settingSign[1].width), version.c_str() });
+					switch (action)
 					{
-						if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top", 0, 0, SW_SHOW);
-						else ShellExecuteW(0, 0, L"https://en.inkeys.top", 0, 0, SW_SHOW);
+					case HomeAction::Draw: settingTab = settingTabEnum::tab3; break;
+					case HomeAction::Preset: settingTab = settingTabEnum::tabPreset; break;
+					case HomeAction::Plugins: settingTab = settingTabEnum::tab4; settingPlugInTab = settingPlugInTabEnum::tabPlug1; break;
+					case HomeAction::General: settingTab = settingTabEnum::tab2; break;
+					case HomeAction::Language: settingTab = settingTabEnum::Language; break;
+					case HomeAction::Support: settingTab = settingTabEnum::tab8; break;
+					case HomeAction::Version: settingTab = settingTabEnum::tab6; break;
+					case HomeAction::Website:
+						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top" : L"https://en.inkeys.top", 0, 0, SW_SHOW); break;
+					case HomeAction::GitHub:
+						ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW); break;
+					case HomeAction::Community:
+						ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top/community.html" : L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW); break;
+					case HomeAction::Bilibili:
+						ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW); break;
+					case HomeAction::Feedback:
+						ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW); break;
+					case HomeAction::Contact:
+						ShellExecuteW(0, 0, L"mailto:alan-crl@foxmail.com", 0, 0, SW_SHOW); break;
+					default: break;
 					}
-					ImFluent::WrapPanelNextItem(linkButtonWidth);
-					if (ImFluent::Button("\uf901  GitHub", linkButtonSize))
-						ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys", 0, 0, SW_SHOW);
-					ImFluent::WrapPanelNextItem(linkButtonWidth);
-					if (ImFluent::Button("\uf904  Community", linkButtonSize))
-					{
-						if (I18n::isIdentifying(L"zh-CN")) ShellExecuteW(0, 0, L"https://www.inkeys.top/community.html", 0, 0, SW_SHOW);
-						else ShellExecuteW(0, 0, L"https://github.com/Alan-CRL/Inkeys/discussions", 0, 0, SW_SHOW);
-					}
-					ImFluent::WrapPanelNextItem(linkButtonWidth);
-					if (ImFluent::Button("\uf905  Bilibili", linkButtonSize))
-						ShellExecuteW(0, 0, L"https://space.bilibili.com/1330313497", 0, 0, SW_SHOW);
-					ImFluent::WrapPanelNextItem(linkButtonWidth);
-					if (ImFluent::Button("\uf906  Feedback", linkButtonSize))
-						ShellExecuteW(0, 0, L"https://www.wjx.cn/vm/mqNTTRL.aspx#", 0, 0, SW_SHOW);
-					ImFluent::EndWrapPanel();
-
-					Widgets::SectionHeader("关于作者");
-					if (Widgets::BeginSettingsCard("##home-author", "AlanCRL",
-						IA(I18nKey.SettingsUI.Home.Developer).c_str(), "\uf902"))
-					{
-						if (ImFluent::HyperlinkButton("联系作者"))
-							ShellExecuteW(0, 0, L"mailto:alan-crl@foxmail.com", 0, 0, SW_SHOW);
-						Widgets::EndSettingsCard();
-					}
-
-					Widgets::SectionHeader("使用教程");
-					const float tutorialWidth = min(ImGui::GetContentRegionAvail().x,
-						Widgets::Dip(760.0F));
-					const bool tutorialCardVisible = ImFluent::BeginCard("##home-tutorial",
-						{ tutorialWidth, 0.0F }, ImFluentCardStyle_Filled);
-					if (tutorialCardVisible)
-					{
-						const float imageWidth = ImGui::GetContentRegionAvail().x;
-						const float sourceWidth = static_cast<float>(max(1, settingSign[1].width));
-						const float sourceHeight = static_cast<float>(max(1, settingSign[1].height));
-						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[1],
-							{ imageWidth, imageWidth * sourceHeight / sourceWidth });
-						ImFluent::TextBlockColored("后续教程内容将在此区域持续补充。",
-							Widgets::Color(ImFluentCol_TextSecondary), ImFluentTextStyle_Caption);
-					}
-					ImFluent::EndCard();
-
 					break;
 				}
 
@@ -2713,192 +2637,95 @@ SettingSessionCoroutine RunSettingSession()
 				// 常规
 				case settingTabEnum::tab2:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Regular.N).c_str());
-
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
-					if (Widgets::BeginSettingsCard("##regular-startup",
-						IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
-						IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8"))
+					Inkeys::UI::Setting::Design::GeneralDraft draft{
+						StartUp, BarZoom, SettingGlobalScale, Experimental.Inkeys3.EdgeLightingEnable,
+						TopSleepTime, RightClickClose, RegularSetting.AvoidFullScreen, RegularSetting.TeachingSafetyMode };
+					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft);
+					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
+					StartUp = draft.startup;
+					if (events.startupChanged && setlist.startUp != StartUp)
 					{
-						ImFluent::ToggleSwitch("##regular-startup-toggle", &StartUp, "", "");
-						if (setlist.startUp != StartUp)
-						{
-							SetStartupState(StartUp, GetCurrentExePath(), L"$Inkeys");
-							setlist.startUp = StartUp;
-							WriteSetting();
-						}
-						Widgets::EndSettingsCard();
+						SetStartupState(StartUp, GetCurrentExePath(), L"$Inkeys");
+						setlist.startUp = StartUp;
+						WriteSetting();
 					}
-					if (Widgets::BeginSettingsCard("##regular-shortcut",
-						IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
-						IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b"))
+					if (events.createShortcut)
 					{
-						ImFluent::BeginStackPanelHorizontal(Widgets::Dip(8.0F));
-						if (ImFluent::AccentButton(IA(I18nKey.Operate.Create).c_str()))
+						wchar_t desktopPath[MAX_PATH];
+						if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
 						{
-							wchar_t desktopPath[MAX_PATH];
-							if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
-							{
-								SettingBusinessCommand command;
-								command.kind = SettingBusinessKind::CreateShortcut;
-								command.text = wstring(desktopPath) + L"\\"
-									+ IW(I18nKey.Widget.LnkName) + L".lnk";
-								command.directory = GetCurrentExePath();
-								QueueBusiness(std::move(command));
-							}
+							SettingBusinessCommand command;
+							command.kind = SettingBusinessKind::CreateShortcut;
+							command.text = wstring(desktopPath) + L"\\" + IW(I18nKey.Widget.LnkName) + L".lnk";
+							command.directory = GetCurrentExePath();
+							QueueBusiness(std::move(command));
 						}
-						if (ImFluent::Button(IA(I18nKey.SettingsUI.Regular.StartUp.Link.More).c_str()))
-						{
-							settingPlugInTab = settingPlugInTabEnum::tabPlug3;
-							settingTab = settingTabEnum::tab4;
-						}
-						ImFluent::EndStackPanel();
-						Widgets::EndSettingsCard();
 					}
-
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Regular.Appearance.N).c_str());
-					if (Widgets::BeginSettingsCard("##regular-bar-scale",
-						IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
-						IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6"))
+					if (events.shortcutOptions)
 					{
-						ImFluent::Slider("##regular-bar-scale-slider", &BarZoom,
-							0.50F, 2.00F, "%.2f");
-						BarZoom = round(BarZoom * 100.0F) / 100.0F;
-						const bool isItemActive = ImGui::IsItemActive();
-						if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001F)
-						{
-							Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
-							Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
-							BarZoomSavePending = true;
-						}
-						if (!isItemActive && BarZoomSavePending)
-						{
-							QueueConfigWrite();
-							BarZoomSavePending = false;
-						}
-						Widgets::EndSettingsCard();
+						settingPlugInTab = settingPlugInTabEnum::tabPlug3;
+						settingTab = settingTabEnum::tab4;
 					}
-					if (Widgets::BeginSettingsCard("##regular-edge-light",
-						"启用边缘光影", "关闭后仅保留基础边框，停用点光与柔光效果。", "\ue706"))
+					BarZoom = draft.barZoom;
+					if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001F)
 					{
-						ImFluent::ToggleSwitch("##regular-edge-light-toggle",
-							&Experimental.Inkeys3.EdgeLightingEnable, "", "");
-						if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable
-							!= Experimental.Inkeys3.EdgeLightingEnable)
-						{
-							Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable =
-								Experimental.Inkeys3.EdgeLightingEnable;
-							Inkeys::UI::Bar::SetEdgeLightingOptions(
-								Experimental.Inkeys3.EdgeLightingEnable,
-								Experimental.Inkeys3.DynamicEdgeLighting);
-							QueueConfigWrite();
-						}
-						Widgets::EndSettingsCard();
+						Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
+						Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
+						BarZoomSavePending = true;
 					}
-					if (Widgets::BeginSettingsCard("##regular-setting-scale",
-						IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.N).c_str(),
-						IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.E).c_str(), "\ue8a9"))
+					if (!events.barZoomActive && BarZoomSavePending)
 					{
-						ImFluent::Slider("##regular-setting-scale-slider", &SettingGlobalScale,
-							1.0F, 2.0F, "%.2f");
-						SettingGlobalScale = round(SettingGlobalScale * 100.0F) / 100.0F;
-						if (!ImGui::IsItemActive()
-							&& SettingGlobalScale != setlist.settingGlobalScale)
-						{
-							setlist.settingGlobalScale =
-								Inkeys::UI::Setting::NormalizeUserScale(SettingGlobalScale);
-							UpdateSettingScale(QuerySettingDpi(setting_window));
-							{
-								lock_guard stateLock(settingStateMutex);
-								settingSessionState.QueueFontRebuild();
-							}
-							Inkeys::UI::RenderPipeline::Request(
-								Inkeys::UI::RenderPipeline::Client::Settings);
-							WriteSetting();
-						}
-						Widgets::EndSettingsCard();
+						QueueConfigWrite();
+						BarZoomSavePending = false;
 					}
-
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
-					if (Widgets::BeginSettingsCard("##regular-top-window",
-						IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
-						IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue922"))
+					Experimental.Inkeys3.EdgeLightingEnable = draft.edgeLighting;
+					if (events.edgeLightingChanged && Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable != draft.edgeLighting)
 					{
-						vector<string> intervals{
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms),
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s),
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s),
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
-							IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s)
-						};
-						const int previousTopSleepTime = TopSleepTime;
-						if (Widgets::combo.Select("##regular-top-window-select",
-							&TopSleepTime, intervals)
-							&& previousTopSleepTime != TopSleepTime
-							&& setlist.topSleepTime != TopSleepTime)
-						{
-							setlist.topSleepTime = TopSleepTime;
-							WriteSetting();
-							topWindowNow = true;
-						}
-						Widgets::EndSettingsCard();
+						Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = draft.edgeLighting;
+						Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, Experimental.Inkeys3.DynamicEdgeLighting);
+						QueueConfigWrite();
 					}
-					if (Widgets::BeginSettingsCard("##regular-right-click",
-						IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
-						IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2"))
+					SettingGlobalScale = draft.settingZoom;
+					if (!events.settingZoomActive && SettingGlobalScale != setlist.settingGlobalScale)
 					{
-						ImFluent::ToggleSwitch("##regular-right-click-toggle",
-							&RightClickClose, "", "");
-						if (setlist.RightClickClose != RightClickClose)
+						setlist.settingGlobalScale = Inkeys::UI::Setting::NormalizeUserScale(SettingGlobalScale);
+						UpdateSettingScale(QuerySettingDpi(setting_window));
 						{
-							setlist.RightClickClose = RightClickClose;
-							WriteSetting();
+							lock_guard stateLock(settingStateMutex);
+							settingSessionState.QueueFontRebuild();
 						}
-						Widgets::EndSettingsCard();
+						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+						WriteSetting();
 					}
-
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Regular.Tentative.N).c_str());
-					if (Widgets::BeginSettingsCard("##regular-avoid-fullscreen",
-						IA(I18nKey.SettingsUI.Regular.Tentative.AvoidFulScreen).c_str(),
-						IA(I18nKey.SettingsUI.Regular.Tentative.AvoidFulScreenE).c_str(), "\ue7f4"))
+					TopSleepTime = draft.topInterval;
+					if (events.topIntervalChanged && setlist.topSleepTime != TopSleepTime)
 					{
-						ImFluent::ToggleSwitch("##regular-avoid-fullscreen-toggle",
-							&RegularSetting.AvoidFullScreen, "", "");
-						if (setlist.regularSetting.avoidFullScreen != RegularSetting.AvoidFullScreen)
-						{
-							setlist.regularSetting.avoidFullScreen = RegularSetting.AvoidFullScreen;
-							WriteSetting();
-						}
-						Widgets::EndSettingsCard();
+						setlist.topSleepTime = TopSleepTime;
+						WriteSetting();
+						topWindowNow = true;
 					}
-					if (Widgets::BeginSettingsCard("##regular-safety",
-						IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
-						IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e"))
+					RightClickClose = draft.rightClickClose;
+					if (events.rightClickCloseChanged && setlist.RightClickClose != RightClickClose)
 					{
-						vector<string> safetyModes{
-							IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1),
-							IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-							IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3),
-							IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4)
-						};
-						const int previousSafetyMode = RegularSetting.TeachingSafetyMode;
-						if (Widgets::combo.Select("##regular-safety-select",
-							&RegularSetting.TeachingSafetyMode, safetyModes)
-							&& previousSafetyMode != RegularSetting.TeachingSafetyMode
-							&& setlist.regularSetting.teachingSafetyMode
-								!= RegularSetting.TeachingSafetyMode)
-						{
-							setlist.regularSetting.teachingSafetyMode =
-								RegularSetting.TeachingSafetyMode;
-							WriteSetting();
-							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
-						}
-						Widgets::EndSettingsCard();
+						setlist.RightClickClose = RightClickClose;
+						WriteSetting();
+					}
+					RegularSetting.AvoidFullScreen = draft.avoidFullscreen;
+					if (events.avoidFullscreenChanged && setlist.regularSetting.avoidFullScreen != draft.avoidFullscreen)
+					{
+						setlist.regularSetting.avoidFullScreen = draft.avoidFullscreen;
+						WriteSetting();
+					}
+					RegularSetting.TeachingSafetyMode = draft.safetyMode;
+					if (events.safetyModeChanged && setlist.regularSetting.teachingSafetyMode != draft.safetyMode)
+					{
+						setlist.regularSetting.teachingSafetyMode = draft.safetyMode;
+						WriteSetting();
+						CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 					}
 					break;
 				}
+
 				// 绘制
 				case settingTabEnum::tab3:
 				{
@@ -4041,24 +3868,43 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::EndChild();
 				// 页面 transition 的 alpha 只在页面内容 scope 内生效。
 				ImGui::PopStyleVar();
-				ImFluent::NavigationViewEndContent();
-
-				if (overlayNavigation)
+				if (designPage)
 				{
-					ImFluent::EndSplitViewContent();
-					if (ImFluent::BeginSplitViewPane())
-					{
-						ImFluentNavViewMode mode = narrowPaneOpen
-							? ImFluentNavViewMode_LeftOpen : ImFluentNavViewMode_LeftCompact;
-						ImFluent::BeginNavigationView("##setting-overlay-nav", &mode);
-						renderNavigationItems();
-						ImFluent::EndNavigationView();
-						narrowPaneOpen = mode == ImFluentNavViewMode_LeftOpen
-							&& !navigationActivated;
-						ImFluent::EndSplitViewPane();
-					}
-					ImFluent::EndSplitView();
+					ImFluent::PopFont();
+					Inkeys::UI::Setting::Design::BindTextFonts(ImFontMain, ImFontStrong);
 				}
+				ImGui::EndChild();
+				ImGui::PopID();
+				ImGui::EndDisabled();
+				ImGui::PopStyleVar();
+
+				if (navigationState.overlayOpen)
+				{
+					ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
+					ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 8));
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
+					ImGui::BeginChild("##settings-nav-scrim", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
+						ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+					if (ImGui::InvisibleButton("##dismiss-overlay", ImGui::GetContentRegionAvail()))
+						navigationState.DismissOverlay();
+					ImGui::EndChild();
+					ImGui::PopStyleVar();
+					ImGui::PopStyleColor();
+				}
+				Inkeys::UI::Setting::Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
+				ImFluent::PushFont(ImFluentTextStyle_Body);
+				const int navigationAction = Inkeys::UI::Setting::Design::RenderNavigationPane(shellGeometry, navigationState, settingTab);
+				ImFluent::PopFont();
+				Inkeys::UI::Setting::Design::BindTextFonts(ImFontMain, ImFontStrong);
+				if (navigationAction >= 0)
+				{
+					settingTab = navigationAction;
+					if (settingTab == settingTabEnum::tab4) settingPlugInTab = settingPlugInTabEnum::tabPlug1;
+				}
+				else if (navigationAction == -2)
+					ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top/community.html" : L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
+				else if (navigationAction == -3) { Inkeys::UI::Setting::Hide(); RestartProgram(); }
+				else if (navigationAction == -4) { Inkeys::UI::Setting::Hide(); CloseProgram(); }
 
 				ImGui::End();
 			}

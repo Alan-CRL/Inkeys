@@ -46,6 +46,41 @@ inline constexpr struct I18nKeyRoot
     struct Node__SettingsUI
     {
         const char* N = "SettingsUI/N";
+        struct Node__SettingsUI__Design
+        {
+            const char* NavigationTitle = "SettingsUI/Design/NavigationTitle";
+            const char* Preferences = "SettingsUI/Design/Preferences";
+            const char* SupportGroup = "SettingsUI/Design/SupportGroup";
+            const char* Experimental = "SettingsUI/Design/Experimental";
+            const char* HomeWelcome = "SettingsUI/Design/HomeWelcome";
+            const char* HeroTitle = "SettingsUI/Design/HeroTitle";
+            const char* HeroDescription = "SettingsUI/Design/HeroDescription";
+            const char* DrawAction = "SettingsUI/Design/DrawAction";
+            const char* Tutorial = "SettingsUI/Design/Tutorial";
+            const char* Explore = "SettingsUI/Design/Explore";
+            const char* DrawDescription = "SettingsUI/Design/DrawDescription";
+            const char* PresetDescription = "SettingsUI/Design/PresetDescription";
+            const char* PluginDescription = "SettingsUI/Design/PluginDescription";
+            const char* CommonSettings = "SettingsUI/Design/CommonSettings";
+            const char* GeneralDescription = "SettingsUI/Design/GeneralDescription";
+            const char* DisplayLanguage = "SettingsUI/Design/DisplayLanguage";
+            const char* Improve = "SettingsUI/Design/Improve";
+            const char* Contact = "SettingsUI/Design/Contact";
+            const char* Website = "SettingsUI/Design/Website";
+            const char* StartupSection = "SettingsUI/Design/StartupSection";
+            const char* AppearanceSection = "SettingsUI/Design/AppearanceSection";
+            const char* BehaviorSection = "SettingsUI/Design/BehaviorSection";
+            const char* CompatibilitySection = "SettingsUI/Design/CompatibilitySection";
+            const char* GeneralSubtitle = "SettingsUI/Design/GeneralSubtitle";
+            const char* EdgeLighting = "SettingsUI/Design/EdgeLighting";
+            const char* EdgeLightingDescription = "SettingsUI/Design/EdgeLightingDescription";
+            const char* TopWindowSummary = "SettingsUI/Design/TopWindowSummary";
+            const char* TopWindowDetails = "SettingsUI/Design/TopWindowDetails";
+            const char* AvoidFullscreenSummary = "SettingsUI/Design/AvoidFullscreenSummary";
+            const char* AvoidFullscreenDetails = "SettingsUI/Design/AvoidFullscreenDetails";
+            const char* Enabled = "SettingsUI/Design/Enabled";
+            const char* Disabled = "SettingsUI/Design/Disabled";
+        } Design{};
         struct Node__SettingsUI__Home
         {
             const char* N = "SettingsUI/Home/N";

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
-- **Last Active**: 2026-08-16
+- **Total Sessions**: 28
+- **Last Active**: 2026-09-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~693 | Active |
+| `journal-1.md` | ~726 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-09-06 | Setting WinUI 3 首批：导航、主页与常规页 | - | `fluent` |
 | 27 | 2026-08-16 | 完善设置窗口样式并固定浅色主题 | `5a237ddf` | `fluent` |
 | 26 | 2026-08-13 | UI3 Bar dynamic viewport and drag completion | `6ded57c` | `draw` |
 | 25 | 2026-08-12 | UI3 展开按钮点击合并 | `b43dc640` | `draw` |

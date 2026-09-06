@@ -138,6 +138,7 @@ struct ImFluentContext
     ImFluentThemePreset Preset;
     ImFluentStyle Style;
     ImFluentTextStyleFont Fonts[ ImFluentTextStyle_COUNT ];
+    ImFont * IconFont = NULL; // INKEYS PATCH: 图标与正文的度量分离。
 
     ImFluentNextItemData NextItem;
     ImFluentNextAutoSuggestData NextAutoSuggest;
@@ -1568,6 +1569,29 @@ void ImFluent::SetFluentTextStyleFont( ImFluentTextStyle style, ImFont * font, f
         g_Ctx.Fonts[ style ] = { font, size };
 }
 
+// INKEYS PATCH: 只调整图标位置，字形仍由 ImGui 字体 atlas 绘制。
+void ImFluent::SetIconFont( ImFont * font )
+{
+    g_Ctx.IconFont = font;
+}
+
+void ImFluent::DrawIcon( const char * glyph, const ImVec2 & min,
+    const ImVec2 & max, float size_dip, ImU32 color )
+{
+    if ( !glyph || !*glyph ) return;
+    ImGui::PushFont( g_Ctx.IconFont ? g_Ctx.IconFont : ImGui::GetFont(), size_dip );
+    unsigned int codepoint = 0;
+    ImTextCharFromUtf8( &codepoint, glyph, NULL );
+    const ImFontGlyph * shape = ImGui::GetFontBaked()->FindGlyph( ( ImWchar )codepoint );
+    if ( shape )
+    {
+        const ImVec2 origin( ( min.x + max.x - shape->X0 - shape->X1 ) * 0.5f,
+            ( min.y + max.y - shape->Y0 - shape->Y1 ) * 0.5f );
+        ImGui::GetWindowDrawList()->AddText( ImGui::GetFont(), ImGui::GetFontSize(), origin, color, glyph );
+    }
+    ImGui::PopFont();
+}
+
 // [SECTION] Buttons
 
 bool ImFluent::Button( const char * label, const ImVec2 & size )
@@ -1614,7 +1638,8 @@ bool ImFluent::HyperlinkButton( const char * label )
     const ImU32 anim   = AnimateColorU32( id, col );
 
     ImDrawList * dl = w->DrawList;
-    dl->AddText( ImVec2( bb.Min.x, bb.Min.y + pad_y ), anim, label );
+    // INKEYS PATCH: 显示文本与稳定 ##/### 控件 ID 分离。
+    dl->AddText( ImVec2( bb.Min.x, bb.Min.y + pad_y ), anim, label, ImGui::FindRenderedTextEnd( label ) );
     if ( hovered )
         dl->AddLine( ImVec2( bb.Min.x, bb.Max.y - 1.f ), ImVec2( bb.Min.x + ts.x, bb.Max.y - 1.f ), anim, 1.f );
     RenderNavFocusRing( id, bb, FluentDpx( style.ControlCornerRadius ) );
@@ -3390,7 +3415,15 @@ static bool ExpanderHeader( const char * label, bool * open, ImFluentExpandDirec
     const float L            = ImFluent::FluentDpx( style.ChevronGlyphSize + 1.f );
     ImFluent::RenderChevronLerp( dl, cx, cy, L, t_anim, ImFluent::GetColorU32( ImFluentCol_TextPrimary ), ImFluent::FluentDpx( style.StrokeMedium ), true );
 
-    dl->AddText( ImVec2( bb.Min.x + ImFluent::FluentDpx( style.SpacingXLarge ), cy - ImGui::GetFontSize() * 0.5f ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label );
+    // INKEYS PATCH: 极窄正文仍为展开箭头保留独立槽位，完整标题可悬停查看。
+    const float text_left = bb.Min.x + ImFluent::FluentDpx( style.SpacingXLarge );
+    const float text_right = ImMax( text_left, cx - L - ImFluent::FluentDpx( 12.f ) );
+    const ImVec4 label_clip( text_left, bb.Min.y, text_right, bb.Max.y );
+    dl->AddText( ImGui::GetFont(), ImGui::GetFontSize(),
+        ImVec2( text_left, cy - ImGui::GetFontSize() * 0.5f ),
+        ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label, ImGui::FindRenderedTextEnd( label ), 0.f, &label_clip );
+    if ( hovered && ImGui::CalcTextSize( label, NULL, true ).x > text_right - text_left )
+        ImFluent::SetItemTooltip( "%.*s", ( int )( ImGui::FindRenderedTextEnd( label ) - label ), label );
     if ( ImFluent::IsItemFocused( id ) )
         ImFluent::RenderNavFocusRing( bb, r );
     return isOpen;
@@ -3452,7 +3485,8 @@ bool ImFluent::BeginExpander( const char * label, bool * open, ImFluentExpandDir
         s.Open       = open;
         s.Direction  = direction;
         s.BodyActive = ExpanderPushBody( label );
-        g_Ctx.ExpanderStack.push_back( s );
+        // INKEYS PATCH: 被裁掉的 body 已自行结束，不能留下未配对的 scope。
+        if ( s.BodyActive ) g_Ctx.ExpanderStack.push_back( s );
         return s.BodyActive;
     }
     else
@@ -3470,7 +3504,8 @@ bool ImFluent::BeginExpander( const char * label, bool * open, ImFluentExpandDir
         s.Open       = open;
         s.Direction  = direction;
         s.BodyActive = ExpanderPushBody( label );
-        g_Ctx.ExpanderStack.push_back( s );
+        // INKEYS PATCH: 被裁掉的 body 已自行结束，不能留下未配对的 scope。
+        if ( s.BodyActive ) g_Ctx.ExpanderStack.push_back( s );
         return s.BodyActive;
     }
 }
@@ -3755,36 +3790,50 @@ bool ImFluent::NavItem( const char * label, bool selected, const char * glyph )
         return pressed;
     }
 
-    const float row_h    = FluentDpx( style.NavItemHeight );
-    const ImVec2 pos     = w->DC.CursorPos;
-    const float indent_x = w->DC.Indent.x;
-    const ImRect bb( ImVec2( w->Pos.x, pos.y ), ImVec2( w->Pos.x + w->Size.x, pos.y + row_h ) );
-    ImGui::ItemSize( ImVec2( w->Size.x, row_h ) );
-    if ( !ImGui::ItemAdd( bb, id ) )
-        return false;
+    return NavItemEx( label, label, selected, glyph,
+        g_Ctx.NavView.Mode != ImFluentNavViewMode_LeftOpen );
+}
+
+// INKEYS PATCH: 独立容器与内置 NavigationView 共用条目，保持 24-DIP 图标轴。
+bool ImFluent::NavItemEx( const char * id_label, const char * label,
+    bool selected, const char * glyph, bool compact )
+{
+    ImGuiWindow * w = ImGui::GetCurrentWindow();
+    if ( w->SkipItems ) return false;
+    const ImFluentStyle & style = ImFluent::GetStyle();
+    const ImGuiID id = w->GetID( id_label );
+    const float row_h = FluentDpx( style.NavItemHeight );
+    const ImVec2 pos = w->DC.CursorPos;
+    const ImRect bb( pos, ImVec2( pos.x + ImGui::GetContentRegionAvail().x, pos.y + row_h ) );
+    ImGui::ItemSize( bb );
+    if ( !ImGui::ItemAdd( bb, id ) ) return false;
     bool hovered = false, held = false;
     const bool pressed = ImGui::ButtonBehavior( bb, id, &hovered, &held );
-    const float r      = FluentDpx( style.ControlCornerRadius );
-
-    ImU32 fillTarget;
-    fillTarget           = ResolveSubtleFillState( selected, held, hovered );
-    const ImU32 fillAnim = AnimateColorU32( id, fillTarget );
-    ImDrawList * dl      = w->DrawList;
-    dl->AddRectFilled( bb.Min, bb.Max, fillAnim, r );
+    const float radius = FluentDpx( style.ControlCornerRadius );
+    ImDrawList * dl = w->DrawList;
+    dl->AddRectFilled( bb.Min, bb.Max,
+        AnimateColorU32( id, ResolveSubtleFillState( selected, held, hovered ) ), radius );
     if ( selected )
     {
-        const float bx = bb.Min.x + indent_x + FluentDpx( style.SpacingSmall );
-        const float bh = row_h * 0.5f;
-        dl->AddRectFilled( ImVec2( bx, ( bb.Min.y + bb.Max.y - bh ) * 0.5f ), ImVec2( bx + FluentDpx( style.SelectionIndicatorThickness ), ( bb.Min.y + bb.Max.y + bh ) * 0.5f ), ImFluent::GetColorU32( ImFluentCol_AccentFillDefault ), FluentDpx( style.SpacingXSmall ) );
+        const float middle = ( bb.Min.y + bb.Max.y ) * 0.5f;
+        dl->AddRectFilled( ImVec2( bb.Min.x, middle - FluentDpx( 8.f ) ),
+            ImVec2( bb.Min.x + FluentDpx( 3.f ), middle + FluentDpx( 8.f ) ),
+            ImFluent::GetColorU32( ImFluentCol_AccentFillDefault ), FluentDpx( 1.5f ) );
     }
-    const float icon_x = bb.Min.x + indent_x + FluentDpx( ( style.NavPaneCompactWidth - style.StandardIconSize ) * 0.5f );
-    const float text_x = bb.Min.x + indent_x + FluentDpx( style.NavPaneCompactWidth );
-    const float cy     = ( bb.Min.y + bb.Max.y - ImGui::GetFontSize() ) * 0.5f;
-    if ( glyph )
-        dl->AddText( ImVec2( icon_x, cy ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), glyph );
-    if ( g_Ctx.NavView.CurrentWidth > FluentDpx( style.AppBarButtonWidth ) )
-        dl->AddText( ImVec2( text_x, cy ), ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label );
-    RenderNavFocusRing( id, bb, r );
+    const float icon_left = bb.Min.x + FluentDpx( 8.f );
+    DrawIcon( glyph, ImVec2( icon_left, bb.Min.y ),
+        ImVec2( icon_left + FluentDpx( 24.f ), bb.Max.y ), 20.f,
+        ImFluent::GetColorU32( ImFluentCol_TextPrimary ) );
+    if ( !compact )
+    {
+        const ImVec4 clip( bb.Min.x + FluentDpx( 44.f ), bb.Min.y, bb.Max.x - FluentDpx( 8.f ), bb.Max.y );
+        dl->AddText( ImGui::GetFont(), ImGui::GetFontSize(),
+            ImVec2( clip.x, ( bb.Min.y + bb.Max.y - ImGui::GetFontSize() ) * 0.5f ),
+            ImFluent::GetColorU32( ImFluentCol_TextPrimary ), label, ImGui::FindRenderedTextEnd( label ), 0.f, &clip );
+    }
+    else if ( hovered )
+        ImFluent::SetItemTooltip( "%s", label );
+    RenderNavFocusRing( id, bb, radius );
     return pressed;
 }
 

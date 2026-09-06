@@ -448,6 +448,10 @@
     <ClInclude Include="IdtSysNotifications.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
@@ -562,6 +566,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp" />

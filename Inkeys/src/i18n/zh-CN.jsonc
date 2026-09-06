@@ -43,6 +43,41 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys 选项",
+    "Design":
+    {
+      "NavigationTitle": "设置",
+      "Preferences": "偏好设置",
+      "SupportGroup": "支持与维护",
+      "Experimental": "实验选项",
+      "HomeWelcome": "欢迎使用智绘教 Inkeys。",
+      "HeroTitle": "让每一次讲解，更清晰。",
+      "HeroDescription": "书写、标注与演示，都在手边。",
+      "DrawAction": "调整书写体验",
+      "Tutorial": "使用教程",
+      "Explore": "探索你的工具",
+      "DrawDescription": "笔迹、橡皮与智能绘图",
+      "PresetDescription": "常用画笔，随时取用",
+      "PluginDescription": "连接演示与课堂工具",
+      "CommonSettings": "常用设置",
+      "GeneralDescription": "启动行为与界面缩放",
+      "DisplayLanguage": "显示语言",
+      "Improve": "一起完善 Inkeys",
+      "Contact": "联系作者",
+      "Website": "官方网站",
+      "StartupSection": "启动",
+      "AppearanceSection": "外观",
+      "BehaviorSection": "使用行为",
+      "CompatibilitySection": "兼容性",
+      "GeneralSubtitle": "启动方式、界面大小与日常使用偏好。",
+      "EdgeLighting": "启用边缘光影",
+      "EdgeLightingDescription": "关闭后仅保留基础边框，停用点光与柔光效果。",
+      "TopWindowSummary": "控制非绘制状态下的窗口置顶频率。",
+      "TopWindowDetails": "详细说明",
+      "AvoidFullscreenSummary": "需要重启软件。非绘制与穿透模式下避免占满屏幕。",
+      "AvoidFullscreenDetails": "适用说明",
+      "Enabled": "开",
+      "Disabled": "关"
+    },
     "Home":
     {
       "N": "主页",
@@ -212,7 +247,7 @@
         "SettingUIScale":
         {
           "N": "选项界面 UI 缩放",
-          "E": "[需要重启软件]缩放比例高将会占用大量内存空间。",
+          "E": "松开滑块后应用文字与控件缩放。较高倍率会占用更多内存。",
           "Ind": "{:.2f} 倍缩放"
         }
       },

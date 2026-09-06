@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <crtdbg.h>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -30,6 +32,7 @@ int RunFramePacingTests(bool benchmark);
 int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
 int RunSettingSessionStateTests();
+int RunSettingDesignTests();
 int RunPptUiTests();
 
 namespace
@@ -880,6 +883,21 @@ int main(int argc, char** argv)
 		runWindowTests &= argument != "--no-window";
 	}
 
+	if (!runWindowTests)
+	{
+		// 无窗口模式下第三方断言也只写 stderr，不弹出 CRT 或系统错误对话框。
+		SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+		_set_error_mode(_OUT_TO_STDERR);
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#ifdef _DEBUG
+		for (const int report : { _CRT_WARN, _CRT_ERROR, _CRT_ASSERT })
+		{
+			_CrtSetReportMode(report, _CRTDBG_MODE_FILE);
+			_CrtSetReportFile(report, _CRTDBG_FILE_STDERR);
+		}
+#endif
+	}
+
 	TestCurvesAndTimelines();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
@@ -895,6 +913,7 @@ int main(int argc, char** argv)
 	failureCount += RunToggleClickCoalescerTests();
 	failureCount += RunRenderSchedulerTests();
 	failureCount += RunSettingSessionStateTests();
+	failureCount += RunSettingDesignTests();
 	failureCount += RunPptUiTests();
 	if (benchmark) RunBenchmarks();
 

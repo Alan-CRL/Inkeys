@@ -70,13 +70,14 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Platform)'=='ARM64'">IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
-      <AdditionalIncludeDirectories>$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Inkeys\additional;$(ProjectDir)..\Inkeys\additional\imgui;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -97,6 +98,12 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\Inkeys\additional\imfluent\imfluent.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.Controls.cpp" />
     <ClCompile Include="animation_tests.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
 	<ClCompile Include="window_geometry_tests.cpp" />
@@ -104,6 +111,7 @@
 	<ClCompile Include="toggle_click_coalescer_tests.cpp" />
 	<ClCompile Include="render_scheduler_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
+	<ClCompile Include="setting_design_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />
@@ -113,6 +121,9 @@
   </ItemGroup>
   <ItemGroup>
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Design.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Typography.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.Controls.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "桌面项目边界与构建约束"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ module 与编码风格"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "共享 renderer、ImFluent、线程和字体生命周期"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "保持配置副作用及国际化资源链"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 全 Solution、无窗口测试"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/findings.md", "reason": "已有布局和字体根因证据"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-first-batch.md", "reason": "最新用户批准范围与首批验收"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/first-batch-binding-audit.md", "reason": "HEAD绑定逐项覆盖及FIFO宏提取风险"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/headless-opportunities.md", "reason": "既有无窗口测试入口和字体DrawData验证边界"}

@@ -1,4 +1,4 @@
-// 你可以在此文件中使用 // 作為行註釋，但塊註釋和尾隨逗號等其他 JSONC 功能不受支持。
+// 你可以在此文件中使用 // 作为行注释，但块注释和尾随逗号等其他 JSONC 功能不受支持。
 // You can use // as line comments in this file, but other JSONC features such as block comments and trailing commas are not supported.
 {
   "Language": "zh-TW",
@@ -43,6 +43,41 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys 選項",
+    "Design":
+    {
+      "NavigationTitle": "設定",
+      "Preferences": "偏好設定",
+      "SupportGroup": "支援與維護",
+      "Experimental": "實驗選項",
+      "HomeWelcome": "歡迎使用智繪教 Inkeys。",
+      "HeroTitle": "讓每一次講解，更清晰。",
+      "HeroDescription": "書寫、標註與簡報，都在手邊。",
+      "DrawAction": "調整書寫體驗",
+      "Tutorial": "使用教學",
+      "Explore": "探索你的工具",
+      "DrawDescription": "筆跡、橡皮與智慧繪圖",
+      "PresetDescription": "常用畫筆，隨時取用",
+      "PluginDescription": "連接簡報與課堂工具",
+      "CommonSettings": "常用設定",
+      "GeneralDescription": "啟動行為與介面縮放",
+      "DisplayLanguage": "顯示語言",
+      "Improve": "一起完善 Inkeys",
+      "Contact": "聯絡作者",
+      "Website": "官方網站",
+      "StartupSection": "啟動",
+      "AppearanceSection": "外觀",
+      "BehaviorSection": "使用行為",
+      "CompatibilitySection": "相容性",
+      "GeneralSubtitle": "啟動方式、介面大小與日常使用偏好。",
+      "EdgeLighting": "啟用邊緣光影",
+      "EdgeLightingDescription": "關閉後僅保留基本邊框，停用點光與柔光效果。",
+      "TopWindowSummary": "控制非繪製狀態下的視窗置頂頻率。",
+      "TopWindowDetails": "詳細說明",
+      "AvoidFullscreenSummary": "需要重新啟動軟體。非繪製與穿透模式下避免佔滿螢幕。",
+      "AvoidFullscreenDetails": "適用說明",
+      "Enabled": "開",
+      "Disabled": "關"
+    },
     "Home":
     {
       "N": "主頁",
@@ -212,7 +247,7 @@
         "SettingUIScale":
         {
           "N": "選項介面 UI 縮放",
-          "E": "[需要重啟軟體]縮放比例過高將會佔用大量記憶體空間。",
+          "E": "放開滑桿後套用文字與控制項縮放。較高倍率會使用更多記憶體。",
           "Ind": "{:.2f} 倍縮放"
         }
       },

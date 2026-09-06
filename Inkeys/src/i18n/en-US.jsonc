@@ -43,6 +43,41 @@
   "SettingsUI":
   {
     "N": "智绘教Inkeys Options",
+    "Design":
+    {
+      "NavigationTitle": "Settings",
+      "Preferences": "Preferences",
+      "SupportGroup": "Support and maintenance",
+      "Experimental": "Experimental options",
+      "HomeWelcome": "Welcome to Inkeys.",
+      "HeroTitle": "Make every explanation clearer.",
+      "HeroDescription": "Writing, annotation and presentation, within reach.",
+      "DrawAction": "Customize writing",
+      "Tutorial": "Getting started",
+      "Explore": "Explore your tools",
+      "DrawDescription": "Ink, erasing and smart drawing",
+      "PresetDescription": "Your favorite pens, ready to use",
+      "PluginDescription": "Connect presentation and classroom tools",
+      "CommonSettings": "Common settings",
+      "GeneralDescription": "Startup behavior and interface scale",
+      "DisplayLanguage": "Display language",
+      "Improve": "Help improve Inkeys",
+      "Contact": "Contact the developer",
+      "Website": "Website",
+      "StartupSection": "Startup",
+      "AppearanceSection": "Appearance",
+      "BehaviorSection": "Behavior",
+      "CompatibilitySection": "Compatibility",
+      "GeneralSubtitle": "Startup, interface size and everyday preferences.",
+      "EdgeLighting": "Enable edge lighting",
+      "EdgeLightingDescription": "When off, keep the basic border without point or soft lighting.",
+      "TopWindowSummary": "How often the window stays on top while not drawing.",
+      "TopWindowDetails": "Details",
+      "AvoidFullscreenSummary": "Restart required. Avoid full screen when not drawing or in click-through mode.",
+      "AvoidFullscreenDetails": "Usage notes",
+      "Enabled": "On",
+      "Disabled": "Off"
+    },
     "Home":
     {
       "N": "Home",
@@ -212,7 +247,7 @@
         "SettingUIScale":
         {
           "N": "Options UI Scale",
-          "E": "[Restart Required] Higher scale uses more memory.",
+          "E": "Apply text and control scale when the slider is released. Higher scales use more memory.",
           "Ind": "{:.2f}x scale"
         }
       },

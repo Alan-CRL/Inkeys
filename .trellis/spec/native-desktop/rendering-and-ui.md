@@ -825,12 +825,12 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 - `Initialize()` 注册 Settings 客户端后，必须同步等待渲染线程建立 ImGui context、Win32/DX11 backend、内嵌字体图集、解码图片缓存和全部图片 SRV；任一步失败都按相反顺序回滚并返回 `false`，不得留下已初始化 backend、device lease 或半套 SRV。
 - Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
 - device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品并返回 `Retry`，后续重试不能对未初始化 backend 重复 `Shutdown`。
-- `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。导航断点按客户区逻辑 DIP 判定：`>=900` 为 LeftOpen、`760..899` 为 LeftCompact、`<760` 为 CompactOverlay。
+- `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。首批 WinUI 3 设置壳层按客户区逻辑 DIP 判定：`>=900` 使用宽窗偏好（默认展开），`<900` 显示紧凑轨道并以覆盖方式展开。`Setting.Layout.h` 的旧三档 helper 暂留历史调用/测试；产品新壳层以 `Setting.Design.h::NavigationState` 为准。
 - 当前浅色视觉调整阶段，Setting 的主题解析必须对 Windows 浅色、暗色和高对比输入统一返回 ImFluent Light preset。主题消息可继续唤醒 resident style 刷新，但不得改变浅色结果；不新增持久化主题配置，恢复动态主题需另立任务并同步更新本合同。
 - Setting 背景能力顺序固定为 Win11 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`、旧 Win11 Mica attribute 1029、动态解析的 Win10 `SetWindowCompositionAttribute` Acrylic、Solid。每次应用先撤销旧状态；DWM composition 关闭、属性/API 缺失或调用失败都必须继续级联并最终无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。
 - 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须沿用当前浅色不透明背景。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
-- Setting 页面壳层使用 ImFluent 标准组合：桌面模式的 `BeginNavigationView/EndNavigationView` 必须与紧随其后的 `NavigationViewBeginContent/NavigationViewEndContent` 成对；窄屏以 CompactOverlay SplitView 承载同一导航条目函数，禁止复制另一套页面路由或恢复绝对坐标侧栏。
-- 业务页面优先直接使用 ImFluent 的 SettingsCard、ToggleSwitch、ComboBox、Slider、Button、InfoBar、Card 和布局容器。`Setting.Widgets` 只可保留兼容签名并委托 ImFluent；窗口标题栏按钮属于 Win32 chrome 例外。更新状态和检查操作只在版本页呈现，不得恢复跨页面常驻底栏。
+- Setting 首批新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
+- 业务输入控件继续使用 ImFluent。首批 Home/General 使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent Button/ToggleSwitch/ComboBox/Slider；`Setting.Pages` 只返回交互事件，`Setting.cpp` 接回原配置与 FIFO。未迁移页面继续使用 `Setting.Widgets`。窗口标题栏属于本批范围外；更新状态和检查操作仍只在版本页呈现。
 - 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
@@ -1030,3 +1030,68 @@ Bar、PPT 与 Setting 共享 RenderPipeline device epoch 和调度线程；Bar/P
 - 设置窗口的 DX11 resize/遮挡、hide/show/stop 资源清理，以及 SRV 图片颜色/透明度；
 - 画板的基础层、活动笔画、撤销/恢复和 PPT 换页合成；
 - UI3 Bar 是唯一悬浮栏路径；不得把 UI2 源码重新加入产品回归矩阵。
+
+
+### Setting WinUI 3 首批页面与字体合同
+
+#### 1. Scope / Trigger
+
+修改导航、主页、常规页、SettingsRow、文本校准或 ImFluent 本地图标扩展时适用。首批不迁移其他内部页、不修 HWND/DWM、不增加动画/触摸/动态脏区。
+
+#### 2. Signatures
+
+```cpp
+namespace Inkeys::UI::Setting::Design {
+struct NavigationState; // desktopCompact / narrow / overlayOpen
+ShellGeometry ResolveShellGeometry(float widthDip, float heightDip, const NavigationState&);
+RowMeasure MeasureRow(float width, float actionWidth, float actionHeight, bool hasIcon = true);
+RowGeometry ResolveRowLayout(const RowMeasure&, float textHeight);
+ImFontConfig HarmonyFontConfig(float rasterizerDensity);
+float TextHeight(const char*, float widthPixels, ImFluentTextStyle);
+void TextAt(const char*, ImVec2, float widthPixels, ImFluentTextStyle, ImU32);
+HomeAction RenderHome(const HomeContent&);
+GeneralEvents RenderGeneral(GeneralDraft&);
+}
+```
+
+#### 3. Contracts
+
+- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact；窄窗展开不改 content rectangle。248/48 DIP pane，900 DIP 阈值，图标中心 x=24、文本 x=48，menu/footer 左右 inset 4。导航列表滚动不缩窄行宽；紧凑状态保留分组占位。
+- RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。action 按实际宽度靠右，正文预算不足时纵排，长文行高由实际字体测量而来。测量不运行 action；一帧只在实际控件绘制时产生事件。
+- 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
+- 旧 ImFontMain/Strong 保持原尺寸/合并字体；新校准 regular/strong 和独立 icon face 常驻同一 atlas/session，仅新 Shell/Home/General 绑定新文字角色，结束后恢复旧角色。其他旧页及标题栏不因本批而改变名义行距。
+- SetIconFont/DrawIcon 与 NavItemEx 是有 UPSTREAM 记录的 ImFluent 小扩展；图标用其真实 glyph bounds 在固定槽内居中，不混入正文基线。
+- SettingRow 必须用真正 item（Dummy/ItemSize）登记完整卡片和尾部 gap；仅 SetCursorScreenPos 到下一行会在 ImGui 1.92 的末项 End/EndChild 时触发边界断言。最终 cursor 必须与 ImGui ItemSize 使用一致的物理像素取整，避免 1.875 等分数倍率下半像素越过 CursorMaxPos。
+- GeneralDraft 是 UI 副本，事件由 Setting.cpp 原 coroutine/FIFO 宏域处理。主栏倍率实时通知并松手保存；设置倍率松手才重建字体；置顶/安全模式仍保存原索引并发原运行时通知。页文件不得直接照抄被宏重定向的 ShellExecuteW/WriteSetting/RestartProgram 名称。
+- Home 所有入口连接真实路由/原外链；非简中 Community 的主页 GitHub discussions 与 footer en.inkeys.top/community.html 差异保留。教程展开使用既有图像纹理；不虚构教程 URL。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 宽窗手动收起 → 窄窗 → 宽窗 | 恢复手动收起，不被自动模式覆盖 |
+| 窄窗打开/关闭 overlay | 正文位置和宽度不变，点击遮罩/Esc/选项可关闭 |
+| 长说明 / 英文按钮组 / 小内容预算 | 文案和 action 不重叠，必要时 action 下移并保持右对齐 |
+| 校准字形超过原名义 FontSize | 使用明确行框；旧页继续原 face，不把新校准全局套进旧 TextWrapped |
+| 最后一张 SettingRow 后直接 EndChild | 无 SetCursor 扩边断言，滚动范围包含整卡与尾 gap |
+| expander 标题过长或 body 被裁剪 | 标题不占用 chevron，完整标题可获知，Begin/End 栈匹配 |
+| 页面重排但无交互 | 不写盘、不发送业务事件 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：320 DIP 内容预算中长文自动增高，按钮组在下一行靠右；鼠标拖动倍率只实时更新对应 UI，松手保存。
+- Base：960×700 默认窗中新导航/主页/常规可访问；其他页面内部逻辑不变。
+- Bad：只放大字体再为每张卡移动 cursor，或在独立页面编译单元直接调用原宏同名的写盘/Shell 函数。
+
+#### 6. Tests Required
+
+`RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
+
+#### 7. Wrong vs Correct
+
+```cpp
+// Wrong：只移动 cursor，末项后结束 child 会触发 ImGui 1.92 扩边检查。
+ImGui::SetCursorScreenPos({origin.x, bottom + gap});
+// Correct：先登记真实占位，测量和滚动边界都包含整行，再排放内容。
+ImGui::Dummy({width, rowHeight + gap});
+```

@@ -366,6 +366,10 @@ namespace ImFluent
     // INKEYS PATCH: 项目使用内嵌字体，并在 ImGui context 销毁前重置库状态。
     IMGUI_API void SetFluentTextStyleFont( ImFluentTextStyle style, ImFont * font, float size );
     IMGUI_API void ResetContext();
+    // INKEYS PATCH: 独立图标字体及显式 pane 中的导航条目复用同一控件实现。
+    IMGUI_API void SetIconFont( ImFont * font );
+    IMGUI_API void DrawIcon( const char * glyph, const ImVec2 & min, const ImVec2 & max, float size_dip, ImU32 color );
+    IMGUI_API bool NavItemEx( const char * id, const char * label, bool selected, const char * glyph, bool compact );
 
     IMGUI_API void PushFluentStyle();
     IMGUI_API void PopFluentStyle();

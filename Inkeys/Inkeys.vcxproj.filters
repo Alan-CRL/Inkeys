@@ -282,6 +282,18 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Layout.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -502,6 +514,15 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
