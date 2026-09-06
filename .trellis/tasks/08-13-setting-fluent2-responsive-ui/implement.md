@@ -15,6 +15,7 @@
 13. 复查系统 move/maximize 消息链，消除拖动期间渲染唤醒和最大化瞬间的原生蓝色标题栏暴露；只用静态审计、完整 ARM64 Solution 构建和 `--no-window` 测试验证自动化范围。
 14. 将 Setting frame 收敛为 `WS_THICKFRAME` + client caption：普通态只保留 1px 可见 non-client frame，resize hit 由系统 DPI frame metrics 推导，最大化 geometry 交回默认过程；将 modal loop 状态拆为 Move/Size，保持 Move 暂停优化并恢复 live resize。
 15. 在浅色视觉调整阶段将 Setting 运行时主题固定为 ImFluent Light；保留主题消息刷新入口，用纯函数 headless 测试锁定系统暗色/高对比输入也不改变结果。
+16. 增加 Setting DWM 背景材质能力级联：Win11 system backdrop、旧 Win11 Mica、Win10 动态 Acrylic，失败或 Win7 回退 Solid；仅成功路径开启透明根背景/clear，并覆盖 composition 变化后的重新探测。
 
 ## Risk And Rollback Points
 
@@ -49,3 +50,4 @@ rg -n "LoadFluentSystemFonts|D3DCompile|D3DCompileFromFile" Inkeys
 - 步骤 14 取代了旧 full-client 方案：Setting style 为无 `WS_CAPTION` 的 popup + thickframe；普通态 `WM_NCCALCSIZE` 留出 1px non-client frame，八方向 resize hit 使用 `AdjustWindowRectExForDpi` 对应的系统 frame metrics，最大化态 `WM_NCCALCSIZE` 与 geometry 交回默认过程。
 - Move/Size 已拆分：Move 继续暂停 Settings Present；Size 中 `WM_SIZE -> QueueResize -> Request -> ResizeSwapChain -> Render/Present` 持续运行。ARM64 Host `InkeysRepo.sln Debug|ARM64` 构建通过，`0 errors`；`Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`。本轮未启动 GUI，真实八方向 live resize、Snap Layout、active/accent border、最大化与多显示器 DPI 仍待人工验收。
 - 2026-08-16 浅色样式阶段：`ResolveThemeMode` 对 Windows 浅色、暗色和高对比输入均返回 Light；不新增主题配置，动态暗色/高对比适配留待后续任务。ARM64 Host 完整 Solution 构建通过（`0 errors`），`InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`，`git diff --check` 无输出。
+- 2026-08-16 背景材质阶段：新增 Mica -> legacy Mica -> Acrylic -> Solid 运行时级联；Windows 10 专有入口只通过 `GetProcAddress` 使用，Win7/API 缺失/调用失败不作为初始化错误。ARM64 Host 完整 Solution 构建通过（`0 errors`），`InkeysHeadlessTests.exe --no-window` 输出 `PASS animation correctness`，`git diff --check` 无输出；真实材质、composition 切换和透明 clear 仍待允许 GUI 的环境验收。

@@ -63,6 +63,8 @@ namespace
 	atomic<bool> settingInitialized = false;
 	atomic<bool> settingSessionShouldStop = false;
 	atomic<bool> settingWindowActive = true;
+	atomic<Inkeys::UI::Setting::BackdropMode> settingBackdropMode =
+		Inkeys::UI::Setting::BackdropMode::Solid;
 	atomic<Inkeys::UI::Setting::InteractiveWindowOperation>
 		settingInteractiveOperation =
 		Inkeys::UI::Setting::InteractiveWindowOperation::None;
@@ -89,6 +91,134 @@ namespace
 	Inkeys::UI::Setting::TitleBarGeometry settingTitleBarGeometry;
 	float settingTitleTextWidth = 0.0F;
 	float settingVersionTextWidth = 0.0F;
+
+	constexpr auto DwmwaLegacyMicaEffect =
+		static_cast<DWMWINDOWATTRIBUTE>(1029);
+
+	enum class SettingAccentState : int
+	{
+		Disabled = 0,
+		AcrylicBlurBehind = 4,
+	};
+
+	struct SettingAccentPolicy
+	{
+		SettingAccentState state = SettingAccentState::Disabled;
+		DWORD flags = 0;
+		DWORD gradientColor = 0;
+		DWORD animationId = 0;
+	};
+
+	struct SettingWindowCompositionAttributeData
+	{
+		int attribute = 19; // WCA_ACCENT_POLICY
+		PVOID data = nullptr;
+		SIZE_T size = 0;
+	};
+
+	using SetWindowCompositionAttributeProc = BOOL(WINAPI*)(
+		HWND, SettingWindowCompositionAttributeData*);
+
+	[[nodiscard]] SetWindowCompositionAttributeProc
+		QuerySetWindowCompositionAttribute() noexcept
+	{
+		static const auto function =
+			reinterpret_cast<SetWindowCompositionAttributeProc>(GetProcAddress(
+				GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
+		return function;
+	}
+
+	void SetSettingAcrylic(HWND hwnd, bool enabled) noexcept
+	{
+		const auto setCompositionAttribute =
+			QuerySetWindowCompositionAttribute();
+		if (!hwnd || !setCompositionAttribute) return;
+
+		SettingAccentPolicy policy{};
+		policy.state = enabled
+			? SettingAccentState::AcrylicBlurBehind
+			: SettingAccentState::Disabled;
+		// GradientColor 使用 AABBGGRR；浅色主题采用对称 RGB tint。
+		policy.gradientColor = enabled ? 0xCCF7F7F7U : 0U;
+		SettingWindowCompositionAttributeData data{};
+		data.data = &policy;
+		data.size = sizeof(policy);
+		(void)setCompositionAttribute(hwnd, &data);
+	}
+
+	void DisableSettingBackdrop(HWND hwnd) noexcept
+	{
+		if (!hwnd) return;
+		const DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_NONE;
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+			&backdrop, sizeof(backdrop));
+		const BOOL legacyMica = FALSE;
+		(void)DwmSetWindowAttribute(hwnd, DwmwaLegacyMicaEffect,
+			&legacyMica, sizeof(legacyMica));
+		const BOOL redirectionAlpha = FALSE;
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_REDIRECTIONBITMAP_ALPHA,
+			&redirectionAlpha, sizeof(redirectionAlpha));
+		SetSettingAcrylic(hwnd, false);
+		const MARGINS margins{};
+		(void)DwmExtendFrameIntoClientArea(hwnd, &margins);
+	}
+
+	[[nodiscard]] Inkeys::UI::Setting::BackdropMode
+		ApplySettingBackdrop(HWND hwnd) noexcept
+	{
+		DisableSettingBackdrop(hwnd);
+		BOOL compositionEnabled = FALSE;
+		if (!hwnd || FAILED(DwmIsCompositionEnabled(&compositionEnabled))
+			|| !compositionEnabled)
+			return Inkeys::UI::Setting::BackdropMode::Solid;
+
+		const MARGINS fullClientFrame{ -1, -1, -1, -1 };
+		const BOOL redirectionAlpha = TRUE;
+		const DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW;
+		if (SUCCEEDED(DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+			&backdrop, sizeof(backdrop)))
+			&& SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &fullClientFrame)))
+		{
+			(void)DwmSetWindowAttribute(hwnd, DWMWA_REDIRECTIONBITMAP_ALPHA,
+				&redirectionAlpha, sizeof(redirectionAlpha));
+			return Inkeys::UI::Setting::BackdropMode::Mica;
+		}
+
+		const DWM_SYSTEMBACKDROP_TYPE noBackdrop = DWMSBT_NONE;
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+			&noBackdrop, sizeof(noBackdrop));
+		const BOOL legacyMica = TRUE;
+		if (SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmwaLegacyMicaEffect,
+			&legacyMica, sizeof(legacyMica)))
+			&& SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &fullClientFrame)))
+		{
+			(void)DwmSetWindowAttribute(hwnd, DWMWA_REDIRECTIONBITMAP_ALPHA,
+				&redirectionAlpha, sizeof(redirectionAlpha));
+			return Inkeys::UI::Setting::BackdropMode::Mica;
+		}
+
+		const BOOL disableLegacyMica = FALSE;
+		(void)DwmSetWindowAttribute(hwnd, DwmwaLegacyMicaEffect,
+			&disableLegacyMica, sizeof(disableLegacyMica));
+		const MARGINS noMargins{};
+		(void)DwmExtendFrameIntoClientArea(hwnd, &noMargins);
+		const auto setCompositionAttribute =
+			QuerySetWindowCompositionAttribute();
+		if (setCompositionAttribute)
+		{
+			SettingAccentPolicy policy{};
+			policy.state = SettingAccentState::AcrylicBlurBehind;
+			policy.gradientColor = 0xCCF7F7F7U;
+			SettingWindowCompositionAttributeData data{};
+			data.data = &policy;
+			data.size = sizeof(policy);
+			if (setCompositionAttribute(hwnd, &data))
+				return Inkeys::UI::Setting::BackdropMode::Acrylic;
+		}
+
+		DisableSettingBackdrop(hwnd);
+		return Inkeys::UI::Setting::BackdropMode::Solid;
+	}
 
 	[[nodiscard]] UINT QuerySettingDpi(HWND hwnd) noexcept
 	{
@@ -164,6 +294,14 @@ namespace
 		// 最小客户区仍需完整容纳全部路由；宽度由响应式模式另行控制。
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
 		Widgets::style.ApplyGlobal(12.0F);
+		const auto backdropMode = ApplySettingBackdrop(hwnd);
+		settingBackdropMode.store(backdropMode, memory_order_release);
+		if (backdropMode != Inkeys::UI::Setting::BackdropMode::Solid)
+		{
+			// 只在 DWM 材质实际启用后放开根背景，失败回退仍保持不透明。
+			ImFluent::GetStyle().Colors[ImFluentCol_SolidBgBase].w = 0.0F;
+			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 0.0F;
+		}
 		const BOOL darkFrame = preset == ImFluentThemePreset_Dark;
 		if (hwnd)
 			DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -1113,6 +1251,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		return 0;
 	}
+	case WM_DWMCOMPOSITIONCHANGED:
 	case WM_THEMECHANGED:
 	case WM_SETTINGCHANGE:
 		settingThemeSerial.fetch_add(1, memory_order_release);
@@ -3928,12 +4067,14 @@ SettingSessionCoroutine RunSettingSession()
 			ImFluent::PopFluentStyle();
 			ImGui::EndFrame();
 			ImGui::Render();
+			const bool transparentBackdrop = settingBackdropMode.load(
+				memory_order_acquire) != Inkeys::UI::Setting::BackdropMode::Solid;
 			const ImVec4 clearColorValue = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
 			const float clearColor[4] = {
-				clearColorValue.x * clearColorValue.w,
-				clearColorValue.y * clearColorValue.w,
-				clearColorValue.z * clearColorValue.w,
-				clearColorValue.w
+				transparentBackdrop ? 0.0F : clearColorValue.x * clearColorValue.w,
+				transparentBackdrop ? 0.0F : clearColorValue.y * clearColorValue.w,
+				transparentBackdrop ? 0.0F : clearColorValue.z * clearColorValue.w,
+				transparentBackdrop ? 0.0F : clearColorValue.w
 			};
 			g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
 			g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
@@ -3951,6 +4092,10 @@ SettingSessionCoroutine RunSettingSession()
 
 		//::ShowWindow(setting_window, SW_HIDE);
 
+		// HWND 会晚于 Setting session 销毁，先撤销可选材质避免残留透明状态。
+		DisableSettingBackdrop(setting_window);
+		settingBackdropMode.store(
+			Inkeys::UI::Setting::BackdropMode::Solid, memory_order_release);
 		// Shutdown 在渲染线程按 backend -> SRV -> presentation 逆序释放。
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();

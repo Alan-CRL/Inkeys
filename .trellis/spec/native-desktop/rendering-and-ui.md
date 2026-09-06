@@ -816,6 +816,7 @@ void Setting::Toggle();
 bool Setting::IsVisible() noexcept;
 WNDPROC Setting::WindowProc() noexcept;
 FrameResult RenderSettingFrame(const FrameContext&);
+BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acrylic) noexcept;
 ~~~
 
 #### 3. Contracts
@@ -826,6 +827,8 @@ FrameResult RenderSettingFrame(const FrameContext&);
 - device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品并返回 `Retry`，后续重试不能对未初始化 backend 重复 `Shutdown`。
 - `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。导航断点按客户区逻辑 DIP 判定：`>=900` 为 LeftOpen、`760..899` 为 LeftCompact、`<760` 为 CompactOverlay。
 - 当前浅色视觉调整阶段，Setting 的主题解析必须对 Windows 浅色、暗色和高对比输入统一返回 ImFluent Light preset。主题消息可继续唤醒 resident style 刷新，但不得改变浅色结果；不新增持久化主题配置，恢复动态主题需另立任务并同步更新本合同。
+- Setting 背景能力顺序固定为 Win11 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`、旧 Win11 Mica attribute 1029、动态解析的 Win10 `SetWindowCompositionAttribute` Acrylic、Solid。每次应用先撤销旧状态；DWM composition 关闭、属性/API 缺失或调用失败都必须继续级联并最终无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。
+- 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须沿用当前浅色不透明背景。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
 - Setting 页面壳层使用 ImFluent 标准组合：桌面模式的 `BeginNavigationView/EndNavigationView` 必须与紧随其后的 `NavigationViewBeginContent/NavigationViewEndContent` 成对；窄屏以 CompactOverlay SplitView 承载同一导航条目函数，禁止复制另一套页面路由或恢复绝对坐标侧栏。
 - 业务页面优先直接使用 ImFluent 的 SettingsCard、ToggleSwitch、ComboBox、Slider、Button、InfoBar、Card 和布局容器。`Setting.Widgets` 只可保留兼容签名并委托 ImFluent；窗口标题栏按钮属于 Win32 chrome 例外。更新状态和检查操作只在版本页呈现，不得恢复跨页面常驻底栏。
 - 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
@@ -844,6 +847,11 @@ FrameResult RenderSettingFrame(const FrameContext&);
 | 可见时 generation 变化 | 重建 backend device objects、图片 SRV、swap chain 和 RTV；失败路径不遗留半成品 |
 | DPI 或用户倍率变化 | 消费 font rebuild serial 并重建图集；用户倍率先限制到 `[1.0, 2.0]` |
 | Windows 明暗或高对比状态变化 | 可重应用 resident style，但结果仍为 ImFluent Light preset |
+| system backdrop 成功 | 发布 Mica，启用全客户区 frame/透明根背景与 clear |
+| system backdrop 失败、legacy Mica 成功 | 发布 Mica，其他行为与现代属性一致 |
+| 两种 Mica 均失败、动态 Acrylic 成功 | 发布 Acrylic，不把它记录为原生 Mica |
+| DWM 关闭、API 缺失或全部失败 | 撤销可选属性和透明状态，继续使用 Solid；不得返回初始化/呈现错误 |
+| `WM_DWMCOMPOSITIONCHANGED` | 重新执行能力级联；若能力消失，从透明背景恢复不透明 Solid |
 | 业务命令完成 | 发布不可变 completion snapshot 并只请求 Settings |
 | 退出时 FIFO 尚有配置写盘 | 排空后 join，不得 request_stop 后清空未执行命令 |
 | Bar 在 Setting drain 前观察到 `offSignal` | Bar 返回 `Idle`，不得以 `Stop` 提前结束共享线程 |
@@ -857,6 +865,7 @@ FrameResult RenderSettingFrame(const FrameContext&);
 #### 6. Tests Required
 
 - Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点，以及所有 Windows 主题输入均解析为 Light；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
+- Headless 覆盖 backdrop 优先级与 Solid fallback；静态审计 Windows 10 Acrylic 入口只能动态解析，透明 clear 必须由已发布的非 Solid 状态门控。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
 - Setting 页面样式迁移需静态审计导航/content、SplitView、Card/SettingsCard、ScrollView/WrapPanel/StackPanel 的 Begin/End 配对；产品路径不得重新引入 `imgui_toggle`、页面级原生 ImGui Button/Combo/Slider/Toggle 或 `ImFluent::ShowDemoWindow()`。
 - GUI 受限任务只运行 `InkeysHeadlessTests.exe --no-window`。Win7 SP1 + KB2670838 只可声明传统 CreateSwapChain/discard/FL11.0 fallback 的静态兼容，未经实机不得声称已验证。
@@ -878,6 +887,17 @@ DestroyImguiContextAndDeviceResources();
 // Correct：Hide 只撤销呈现状态；常驻资源留到 Shutdown。
 sessionState.SetVisible(false);
 ReleasePresentation();
+~~~
+
+~~~cpp
+// Wrong：属性失败后仍透明清屏，旧系统会显示黑色或不可读背景。
+SetTransparentClear(true);
+DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &type, sizeof(type));
+
+// Correct：先按能力级联，只有成功发布非 Solid 后才透明清屏。
+const BackdropMode mode = ApplySettingBackdrop(hwnd);
+settingBackdropMode.store(mode);
+SetTransparentClear(mode != BackdropMode::Solid);
 ~~~
 
 ## Win32 Window、DibSurface 与 HiMsg 合同

@@ -35,6 +35,7 @@
 - R21：自绘标题栏不以 DWM composition 为启用条件；DWM 仅提供可选边框、阴影和圆角，关闭 Aero 或属性不受支持时仍保持同一套 Inkeys caption 视觉和命中。
 - R22：caption buttons 使用固定 46 DIP 单元格和独立 10 DIP Fluent glyph；按下/释放由 Win32 non-client 消息跟踪并投递标准 `WM_SYSCOMMAND`，关闭继续映射到 Hide。
 - R23：拖动窗口时不得在每次 `WM_NCMOUSEMOVE(HTCAPTION)` 唤醒 Settings 渲染；最大化/还原和 frame refresh 期间不得短暂露出系统蓝色标题栏或第二套 caption。
+- R24：Setting 背景按运行时能力优先启用 Win11 DWM Mica，旧 Win11 使用 legacy Mica 属性，Win10 使用动态探测的 Acrylic 等价透明材质；DWM 关闭、API 缺失或调用失败时无错误回退到现有浅色实色背景，Win7 不新增硬依赖。
 
 ## Acceptance Criteria
 
@@ -48,6 +49,7 @@
 - [ ] 可见空闲帧时间相对同等旧页面无超过约 10% 的持续回退，打开/缩放/切页无明显卡顿或资源增长。
 - [ ] 导航、页面标题、设置卡片、ToggleSwitch、ComboBox、Button 和 Slider 的视觉及动画与固定 ImFluent Demo 的 Fluent2 语言一致，不再混用旧伪 Fluent 控件。
 - [ ] 标题栏拖动无明显卡顿；最大化/还原过程中顶边不闪现原生蓝色标题栏，且 resize、Snap、系统菜单和 caption commands 保持正常。
+- [ ] 支持的 Win11/Win10 环境显示 DWM 背景材质；禁用 composition、属性不受支持或 Win7 环境保持可读的浅色实色背景，启动、显隐和主题消息不报错。
 
 ## Out Of Scope
 

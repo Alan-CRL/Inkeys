@@ -19,6 +19,7 @@ int RunSettingSessionStateTests()
 	using Inkeys::UI::Setting::SessionState;
 	using Inkeys::UI::Setting::NavigationLayout;
 	using Inkeys::UI::Setting::InteractiveWindowOperation;
+	using Inkeys::UI::Setting::BackdropMode;
 	int failures = 0;
 
 	if (!Expect(Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTCAPTION)
@@ -110,6 +111,16 @@ int RunSettingSessionStateTests()
 		&& Inkeys::UI::Setting::ResolveThemeMode(true, false)
 		== Inkeys::UI::Setting::ThemeMode::Light,
 		"settings temporarily remains light for every system theme")) ++failures;
+	if (!Expect(Inkeys::UI::Setting::ResolveBackdropMode(true, false, true)
+		== BackdropMode::Mica
+		&& Inkeys::UI::Setting::ResolveBackdropMode(false, true, true)
+		== BackdropMode::Mica
+		&& Inkeys::UI::Setting::ResolveBackdropMode(false, false, true)
+		== BackdropMode::Acrylic
+		&& Inkeys::UI::Setting::ResolveBackdropMode(false, false, false)
+		== BackdropMode::Solid,
+		"setting backdrop prefers Mica, then Acrylic, then solid fallback"))
+		++failures;
 
 	SessionState state;
 

@@ -18,6 +18,8 @@ HWND 延续 Window Service 单次创建。窗口使用无 `WS_CAPTION` 的 `WS_P
 
 唯一逻辑尺寸单位为 DIP。系统 DPI 与 Setting 全局倍率计算 effective scale，并写入 ImGui `FontScaleDpi`/对应字体构建；控件代码不再次乘自定义倍率。为先集中调整浅色样式，当前主题解析无条件选择 ImFluent Light preset；Windows AppsUseLightTheme、高对比状态和相关消息仍可经过既有刷新入口，但不得改变 Setting 的浅色结果。后续恢复动态主题时复用该边界，不在本轮新增持久化主题配置。
 
+背景材质使用运行时能力级联：先尝试 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`，再尝试旧 Win11 Mica attribute 1029，最后通过 `GetProcAddress(user32, "SetWindowCompositionAttribute")` 尝试 Win10 Acrylic。每次重应用前先撤销旧 backdrop、legacy Mica、Acrylic、redirection alpha 和 extended margins；任一层只有属性与所需 frame 调用均成功才发布透明渲染状态，否则继续下一层并最终回到 Solid。只有非 Solid 状态把 ImFluent `SolidBgBase`、ImGui `WindowBg` 和 D3D clear alpha 设为透明；Win7/API 缺失路径不改变现有不透明渲染。Setting session 退出时在 HWND 销毁前显式撤销材质并发布 Solid。
+
 宽/中模式使用 ImFluent NavigationView 的 LeftOpen/LeftCompact；窄模式以 ImFluent CompactOverlay SplitView 承载同一导航模型。内容页使用滚动 child、最大可读宽度与 wrap layout。项目适配层仅负责响应式 settings row、自动换行文案、图片卡片和标题栏按钮。
 
 ## Migration And Compatibility
