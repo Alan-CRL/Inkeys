@@ -2874,6 +2874,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 			AnchorHiddenButton(BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Draw);
 			AnchorHiddenButton(BarButtonPresetEnum::Recall, BarButtonPresetEnum::Draw);
+			AnchorHiddenButton(BarButtonPresetEnum::EndShow, BarButtonPresetEnum::Freeze);
 		}
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
