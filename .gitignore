@@ -24,7 +24,11 @@
 /InkeysHeadlessTests/Cache/
 /PptCOM/Cache/
 
+# Trellis machine-local state
+/.trellis/.template-hashes.json
+
 # Agents
 /.agents/
 /.codex/
+/.claude/
 /.zcode/
