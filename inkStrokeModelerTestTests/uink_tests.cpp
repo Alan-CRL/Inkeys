@@ -108,6 +108,14 @@ namespace
 		return ink;
 	}
 
+	UInkClear MakeClear(uint32_t contentId, uint32_t undoId)
+	{
+		UInkClear clear;
+		clear.contentId = contentId;
+		clear.undoId = undoId;
+		return clear;
+	}
+
 	UInkShapeStroke MakeStroke(float width = 3.0f)
 	{
 		UInkShapeStroke stroke;
@@ -2475,6 +2483,83 @@ namespace
 		UINK_CHECK(state, originalRestored.size() == 1 && originalRestored[0]);
 	}
 
+	void TestClearContent(TestState& state)
+	{
+		UInkDocument document = MakeBasicDocument(false);
+		UInkCanvas& canvas = document.canvases[0];
+		canvas.content.push_back(MakeInk(0, 0));
+		canvas.content.push_back(MakeClear(1, 1));
+		canvas.content.push_back(MakeInk(2, 2));
+		canvas.content.push_back(MakeClear(3, 3));
+		canvas.content.push_back(MakeInk(4, 4));
+
+		const UInkEncodeResult encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		const UInkReadResult decoded = DecodeUInk(encoded.bytes);
+		UINK_CHECK(state, decoded.status == UInkReadStatus::Complete);
+		UINK_CHECK(state, decoded.document && decoded.document->canvases.size() == 1);
+		if (decoded.document && decoded.document->canvases.size() == 1)
+		{
+			const UInkCanvas& output = decoded.document->canvases[0];
+			UINK_CHECK(state, output.content.size() == 5);
+			UINK_CHECK(state, std::holds_alternative<UInkClear>(output.content[1]));
+			UINK_CHECK(state, std::holds_alternative<UInkClear>(output.content[3]));
+			if (const UInkClear* clear = std::get_if<UInkClear>(&output.content[3]))
+				UINK_CHECK(state, clear->contentId == 3 && clear->undoId == 3);
+
+			// 最后一个 Clear 之前的内容不参与当前画布合成。
+			const std::vector<bool> visible = ComputeUInkLatestVisibility(output);
+			UINK_CHECK(state, visible.size() == 5);
+			UINK_CHECK(state, !visible[0] && !visible[1] && !visible[2] &&
+				visible[3] && visible[4]);
+		}
+
+		UInkDocument sharedWithPrevious = MakeBasicDocument(false);
+		sharedWithPrevious.canvases[0].content.push_back(MakeInk(0, 0));
+		sharedWithPrevious.canvases[0].content.push_back(MakeClear(1, 0));
+		UINK_CHECK(state, EncodeUInkDocument(sharedWithPrevious).status ==
+			UInkEncodeStatus::InvalidModel);
+
+		UInkDocument sharedWithFollowing = MakeBasicDocument(false);
+		sharedWithFollowing.canvases[0].content.push_back(MakeClear(0, 0));
+		sharedWithFollowing.canvases[0].content.push_back(MakeInk(1, 0));
+		UINK_CHECK(state, EncodeUInkDocument(sharedWithFollowing).status ==
+			UInkEncodeStatus::InvalidModel);
+
+		UInkAppendBatch appendBatch;
+		appendBatch.objects.emplace_back(MakeClear(1, 1));
+		UINK_CHECK(state, EncodeUInkAppendObjects(appendBatch.objects).status ==
+			UInkEncodeStatus::Success);
+
+		Draw3UInkCanvasSnapshot tail;
+		tail.pageGuid = Guid("50000000-0000-4000-8000-00000000c106");
+		tail.pageNumber = 1;
+		tail.viewport = { 0.0f, 0.0f, 1.0f };
+		Draw3UInkStrokeSnapshot stroke;
+		stroke.style = { Draw3UInkStrokeKind::Pen, 1.0f, 0x102030, 0 };
+		stroke.points = { { 1.0f, 2.0f, 3.0f }, { 4.0f, 5.0f, 3.0f } };
+		tail.strokes.push_back(stroke);
+		const auto afterFirstClear = MergeDraw3UInkCanvasTail(nullptr, tail, true);
+		UINK_CHECK(state, afterFirstClear && afterFirstClear->operations.size() == 2 &&
+			afterFirstClear->intervalOrdinal == 1 && afterFirstClear->strokes.empty());
+		tail.intervalOrdinal = 1;
+		tail.strokes[0].style.fallbackRgb = 0x405060;
+		const auto afterSecondClear = afterFirstClear
+			? MergeDraw3UInkCanvasTail(&*afterFirstClear, tail, true) : std::nullopt;
+		UINK_CHECK(state, afterSecondClear && afterSecondClear->operations.size() == 4 &&
+			afterSecondClear->intervalOrdinal == 2);
+		tail.intervalOrdinal = 2;
+		tail.strokes[0].style.fallbackRgb = 0x708090;
+		const auto canonical = afterSecondClear
+			? MergeDraw3UInkCanvasTail(&*afterSecondClear, tail, false) : std::nullopt;
+		UINK_CHECK(state, canonical && canonical->operations.size() == 5);
+		const auto middle = canonical
+			? ProjectDraw3UInkCanvasInterval(*canonical, 1) : std::nullopt;
+		UINK_CHECK(state, middle && middle->strokes.size() == 1 &&
+			middle->strokes[0].style.fallbackRgb == 0x405060 &&
+			middle->operations.empty() && middle->intervalOrdinal == 1);
+	}
+
 	void TestDraw3Export(TestState& state)
 	{
 		InkCanvasCollection collection(Draw3Guid(
@@ -2642,6 +2727,7 @@ int RunUInkTests()
 	TestMediaFilePolicy(state);
 	TestAppendAnalysisRejections(state);
 	TestLatestVisibility(state);
+	TestClearContent(state);
 	TestDraw3Export(state);
 	ResetUInkFileTestFaultInjection();
 	if (state.failures == 0)

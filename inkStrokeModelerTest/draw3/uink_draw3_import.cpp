@@ -113,6 +113,49 @@ namespace draw3::uink
 			};
 			return result;
 		}
+
+		bool ImportCanvasContent(const UInkCanvas& canvas,
+			Draw3UInkCanvasSnapshot& imported)
+		{
+			for (std::size_t contentIndex = 0;
+				contentIndex < canvas.content.size(); ++contentIndex)
+			{
+				std::optional<Draw3UInkStrokeSnapshot> stroke;
+				const UInkClear* clear = nullptr;
+				if (const auto* ink = std::get_if<UInkInk>(&canvas.content[contentIndex]))
+				{
+					if (ink->contentId == contentIndex) stroke = ImportInk(*ink);
+				}
+				else if (const auto* shape =
+					std::get_if<UInkShape>(&canvas.content[contentIndex]))
+				{
+					if (shape->contentId == contentIndex) stroke = ImportShape(*shape);
+				}
+				else if (const auto* sourceClear =
+					std::get_if<UInkClear>(&canvas.content[contentIndex]))
+				{
+					if (sourceClear->contentId == contentIndex) clear = sourceClear;
+				}
+				if (!stroke && !clear) return false;
+				const uint32_t undoId = stroke ? stroke->undoId : clear->undoId;
+				if (undoId != contentIndex) return false;
+				if (stroke)
+				{
+					imported.operations.emplace_back(*stroke);
+					imported.strokes.push_back(std::move(*stroke));
+				}
+				else
+				{
+					Draw3UInkClearSnapshot importedClear;
+					importedClear.undoId = clear->undoId;
+					importedClear.extra = clear->extra;
+					imported.operations.emplace_back(std::move(importedClear));
+					imported.strokes.clear();
+					++imported.intervalOrdinal;
+				}
+			}
+			return true;
+		}
 	}
 
 	UInkExtra MakeInkeysBindingExtra(Draw3UInkImportBindingMode mode)
@@ -151,6 +194,85 @@ namespace draw3::uink
 				return *value == (retained ? "retained" : "active");
 		}
 		return false;
+	}
+
+	Draw3UInkImportResult ImportDraw3UInkDocument(
+		const UInkDocument& document) noexcept
+	{
+		Draw3UInkImportResult result;
+		try
+		{
+			if (!document.headerExtension || document.header.guid.IsZero() ||
+				document.headerExtension->workspaces.size() != 1 ||
+				document.header.pageNum == 0 || document.canvases.empty())
+			{
+				result.status = Draw3UInkImportStatus::InvalidDocument;
+				result.error = "document_identity";
+				return result;
+			}
+			const UInkWorkspace& workspace =
+				document.headerExtension->workspaces.front();
+			Draw3UInkExportSnapshot snapshot;
+			snapshot.fileGuid = document.header.guid;
+			snapshot.workspaceGuid = workspace.guid;
+			snapshot.workspaceName = workspace.name;
+			snapshot.workspaceType = workspace.workspaceType;
+			snapshot.hostId = workspace.hostId;
+			snapshot.currentPageIndex = workspace.currentPageIndex;
+			snapshot.workspaceExtra = workspace.extra;
+			snapshot.devices = document.headerExtension->devices;
+			snapshot.assignedIndependentUndoGroups = true;
+			snapshot.dpiScale = 1.0f;
+			std::map<uint32_t, Draw3UInkCanvasSnapshot> ordered;
+			for (const UInkCanvas& canvas : document.canvases)
+			{
+				if (!canvas.workspaceGuid || *canvas.workspaceGuid != workspace.guid ||
+					canvas.pageGuid.IsZero() || canvas.layerIndex != 0 ||
+					canvas.layerNumber != 0 || !canvas.viewport ||
+					canvas.viewport->scale != 1.0f || canvas.temporaryWorkspace ||
+					canvas.temporaryDevice || canvas.temporaryPage || canvas.temporaryLayer)
+				{
+					result.status = Draw3UInkImportStatus::InvalidDocument;
+					result.error = "canvas_topology";
+					return result;
+				}
+				Draw3UInkCanvasSnapshot imported;
+				imported.deviceGuid = canvas.deviceGuid;
+				imported.pageGuid = canvas.pageGuid;
+				imported.pageIndex = canvas.pageIndex;
+				imported.pageNumber = canvas.pageNumber;
+				imported.slideId = canvas.slideId;
+				imported.viewport = *canvas.viewport;
+				imported.extra = canvas.extra;
+				if (!ImportCanvasContent(canvas, imported) ||
+					!ordered.emplace(canvas.pageIndex, std::move(imported)).second)
+				{
+					result.status = Draw3UInkImportStatus::UnsupportedContent;
+					result.error = "content";
+					return result;
+				}
+			}
+			for (uint32_t pageIndex = 0; pageIndex < ordered.size(); ++pageIndex)
+			{
+				auto found = ordered.find(pageIndex);
+				if (found == ordered.end())
+				{
+					result.status = Draw3UInkImportStatus::TopologyMismatch;
+					result.error = "page_gap";
+					return result;
+				}
+				snapshot.canvases.push_back(std::move(found->second));
+			}
+			result.status = Draw3UInkImportStatus::Success;
+			result.snapshot = std::move(snapshot);
+			return result;
+		}
+		catch (...)
+		{
+			result.status = Draw3UInkImportStatus::InvalidDocument;
+			result.error = "exception";
+			return result;
+		}
 	}
 
 	Draw3UInkImportResult ImportApplicationOwnedPresentation(
@@ -231,33 +353,11 @@ namespace draw3::uink
 				imported.viewport = *canvas.viewport;
 				imported.extra = canvas.extra;
 				imported.retained = stable && HasInkeysPageStateExtra(canvas.extra, true);
-				for (std::size_t contentIndex = 0;
-					contentIndex < canvas.content.size(); ++contentIndex)
+				if (!ImportCanvasContent(canvas, imported))
 				{
-					std::optional<Draw3UInkStrokeSnapshot> stroke;
-					if (const auto* ink = std::get_if<UInkInk>(&canvas.content[contentIndex]))
-					{
-						if (ink->contentId != contentIndex) stroke = std::nullopt;
-						else stroke = ImportInk(*ink);
-					}
-					else if (const auto* shape = std::get_if<UInkShape>(&canvas.content[contentIndex]))
-					{
-						if (shape->contentId != contentIndex) stroke = std::nullopt;
-						else stroke = ImportShape(*shape);
-					}
-					if (!stroke)
-					{
-						result.status = Draw3UInkImportStatus::UnsupportedContent;
-						result.error = "content";
-						return result;
-					}
-					if (stroke->undoId != contentIndex)
-					{
-						result.status = Draw3UInkImportStatus::InvalidDocument;
-						result.error = "undo_order";
-						return result;
-					}
-					imported.strokes.push_back(std::move(*stroke));
+					result.status = Draw3UInkImportStatus::UnsupportedContent;
+					result.error = "content";
+					return result;
 				}
 				if (!ordered.emplace(canvas.pageIndex, std::move(imported)).second)
 				{

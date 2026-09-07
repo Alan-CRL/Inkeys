@@ -366,21 +366,30 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
-		static void ObserveDesktopAutoSave(void* context,
+		static bool ObserveDesktopAutoSave(void* context,
 			DesktopAutoSaveTrigger trigger,
 			draw3::uink::Draw3UInkExportSnapshot&& snapshot)
 		{
 			auto* self = static_cast<Impl*>(context);
-			if (!self) return;
+			if (!self) return false;
 			const DesktopAutoSaveSubmitStatus status = self->autoSave.Submit(
 				trigger, std::move(snapshot));
 			if (status == DesktopAutoSaveSubmitStatus::Accepted ||
-				status == DesktopAutoSaveSubmitStatus::Existing) return;
+				status == DesktopAutoSaveSubmitStatus::Existing) return true;
 			const char* reason = status == DesktopAutoSaveSubmitStatus::Closed
 				? "closed" : "invalid";
 			std::fprintf(stderr,
 				"[Draw3.AutoSave] action=submit trigger=%s result=failed reason=%s\n",
 				trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", reason);
+			return false;
+		}
+
+		static bool ObserveDesktopLoad(void* context,
+			draw3::uink::UInkGuid fileGuid)
+		{
+			auto* self = static_cast<Impl*>(context);
+			return self && self->autoSave.SubmitLoad(std::move(fileGuid)) ==
+				DesktopAutoSaveSubmitStatus::Accepted;
 		}
 
 		static bool ObservePresentationSave(void* context,
@@ -555,11 +564,25 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		void PumpDesktopCompletions()
+		{
+			DesktopPersistenceCompletion completion;
+			while (autoSave.TryTakeCompletion(completion))
+			{
+				CanvasCommand command;
+				command.type = CanvasCommandType::DesktopPersistenceCompleted;
+				command.desktopPersistenceCompletion = std::make_shared<
+					DesktopPersistenceCompletion>(std::move(completion));
+				window.EnqueueCanvasCommand(std::move(command));
+			}
+		}
+
 		static void ConsumeBridge(void* context)
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
 			// ControlWake 只在绘制线程消费产品快照、I/O 完成和命令队列。
+			self->PumpDesktopCompletions();
 			self->PumpPresentationCompletions();
 			self->PumpBridgeCommands();
 			self->PumpBridgeState();
@@ -596,7 +619,8 @@ namespace Inkeys::Drawing::Draw3
 					HostStartupStage::WindowAttached);
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();
-			if (!options.autoSaveRoot.empty() && !autoSave.Start(options.autoSaveRoot))
+			if (!options.autoSaveRoot.empty() && !autoSave.Start(
+				options.autoSaveRoot, this, &WakeForPresentationPersistence))
 				std::fputs("[Draw3.AutoSave] action=start result=failed\n", stderr);
 			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
@@ -682,6 +706,7 @@ namespace Inkeys::Drawing::Draw3
 								&ObserveCommand, &ObserveDocument,
 								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge,
 								&ObserveDesktopAutoSave,
+								&ObserveDesktopLoad,
 								&ObservePresentationSave,
 								&ObservePresentationLoad,
 								&ObserveDrawingActivity

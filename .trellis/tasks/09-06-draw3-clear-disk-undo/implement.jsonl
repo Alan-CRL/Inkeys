@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Native Desktop package boundaries, project registration and ARM64 solution build rules."}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Draw3 document slots, Desktop/PPT persistence, three-state content/ready and Clear contracts."}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"Stroke history, raster tokens, GPU cache, composition replay and Clear/full-present invariants."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Window/Host/drawing-thread/model/GPU/presenter ownership and stale-publication checks."}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"PPT/WPS state and SlideID interoperability boundaries without expanding COM scope."}
+{"file":".trellis/tasks/09-06-draw3-clear-disk-undo/research/chore-draw3-merge-analysis.md","reason":"Exact source-branch changes and keep/rewrite/drop decisions for semantic conflict resolution."}
+{"file":".trellis/tasks/09-06-draw3-clear-disk-undo/research/uink-v10-clear-contract.md","reason":"Authoritative Type 6 Clear wire, rendering, undo, incremental and compatibility decisions applied to the website docs."}
+{"file":".trellis/tasks/09-01-desktop-uink-autosave/research/current-state-and-risks.md","reason":"Existing Desktop immutable save/index/threading contracts and prior cross-Clear exclusions."}
+{"file":".trellis/tasks/09-04-ppt-canvas-uink-lifecycle/research/code-investigation.md","reason":"PresentationKey, SlideID, parked slot, completion and canonical persistence evidence."}

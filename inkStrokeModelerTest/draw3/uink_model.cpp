@@ -159,24 +159,35 @@ namespace draw3::uink
 	std::vector<bool> ComputeUInkLatestVisibility(const UInkCanvas& canvas)
 	{
 		std::vector<bool> visible(canvas.content.size(), true);
+		std::optional<size_t> lastClear;
 		for (size_t index = 0; index < canvas.content.size(); ++index)
 		{
+			if (std::holds_alternative<UInkClear>(canvas.content[index]))
+			{
+				lastClear = index;
+				continue;
+			}
 			std::visit([&](const auto& content)
 			{
 				using T = std::decay_t<decltype(content)>;
-				if constexpr (!std::is_same_v<T, UInkMedia>)
+				if constexpr (std::is_same_v<T, UInkInk> ||
+					std::is_same_v<T, UInkShape>)
 					if (content.renderOnlyWhenLatest) visible[index] = false;
 			}, canvas.content[index]);
 		}
+		if (lastClear)
+			for (size_t index = 0; index < *lastClear; ++index) visible[index] = false;
 
 		for (size_t index = canvas.content.size(); index != 0; --index)
 		{
 			const size_t current = index - 1;
+			if (std::holds_alternative<UInkClear>(canvas.content[current])) break;
 			bool stop = false;
 			std::visit([&](const auto& content)
 			{
 				using T = std::decay_t<decltype(content)>;
-				if constexpr (!std::is_same_v<T, UInkMedia>)
+				if constexpr (std::is_same_v<T, UInkInk> ||
+					std::is_same_v<T, UInkShape>)
 				{
 					if (content.renderOnlyWhenLatest) visible[current] = true;
 					else stop = true;

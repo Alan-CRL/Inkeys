@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 export module draw3.uink_draw3_export;
@@ -45,6 +46,15 @@ export namespace draw3::uink
 		bool renderOnlyWhenLatest = false;
 	};
 
+	struct Draw3UInkClearSnapshot
+	{
+		uint32_t undoId = 0;
+		std::optional<UInkExtra> extra;
+	};
+
+	using Draw3UInkOperationSnapshot = std::variant<
+		Draw3UInkStrokeSnapshot, Draw3UInkClearSnapshot>;
+
 	struct Draw3UInkCanvasSnapshot
 	{
 		std::optional<UInkGuid> deviceGuid;
@@ -57,6 +67,10 @@ export namespace draw3::uink
 		// true 表示该页当前不在 PPT 投影中，但仍保留在 UInk 历史集合内。
 		bool retained = false;
 		std::vector<Draw3UInkStrokeSnapshot> strokes;
+		// operations 为空时沿用 strokes；非空时表示包含 Clear 的完整有序日志。
+		std::vector<Draw3UInkOperationSnapshot> operations;
+		// 当前投影位于第几个 Clear 之后，0 表示最初区间。
+		uint32_t intervalOrdinal = 0;
 	};
 
 	// 调用方在 draw3 绘制线程安全点创建此值；后续转换不再访问运行时画布。
@@ -105,4 +119,12 @@ export namespace draw3::uink
 
 	Draw3UInkExportResult ExportDraw3SnapshotToUInk(
 		const Draw3UInkExportSnapshot& snapshot);
+
+	// 用请求中的当前区间替换 canonical 尾部；Clear 边界按独立操作封存。
+	std::optional<Draw3UInkCanvasSnapshot> MergeDraw3UInkCanvasTail(
+		const Draw3UInkCanvasSnapshot* canonical,
+		const Draw3UInkCanvasSnapshot& requested, bool sealClearBoundary);
+	// 只返回指定 Clear 区间的可见笔迹，避免控制器持有完整历史日志。
+	std::optional<Draw3UInkCanvasSnapshot> ProjectDraw3UInkCanvasInterval(
+		const Draw3UInkCanvasSnapshot& canonical, uint32_t intervalOrdinal);
 }

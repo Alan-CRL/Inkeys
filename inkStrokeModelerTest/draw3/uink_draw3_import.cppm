@@ -51,6 +51,8 @@ export namespace draw3::uink
 		Draw3UInkImportBindingMode mode) noexcept;
 	bool HasInkeysPageStateExtra(const std::optional<UInkExtra>& extra,
 		bool retained) noexcept;
+	Draw3UInkImportResult ImportDraw3UInkDocument(
+		const UInkDocument& document) noexcept;
 	Draw3UInkImportResult ImportApplicationOwnedPresentation(
 		const UInkDocument& document,
 		const Draw3UInkImportExpectation& expectation) noexcept;

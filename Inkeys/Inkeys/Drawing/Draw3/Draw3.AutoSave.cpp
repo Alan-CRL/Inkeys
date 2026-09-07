@@ -41,6 +41,7 @@ namespace Inkeys::Drawing::Draw3
 		using draw3::uink::Draw3UInkExportSnapshot;
 		using draw3::uink::ExportDraw3SnapshotToUInk;
 		using draw3::uink::FormatUInkGuid;
+		using draw3::uink::ImportDraw3UInkDocument;
 		using draw3::uink::ParseUInkGuid;
 		using draw3::uink::ReadUInkFile;
 		using draw3::uink::SaveUInkFile;
@@ -608,7 +609,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		bool ProcessRequest(const std::wstring& rootPath,
-			const DesktopAutoSaveRequest& request) noexcept
+			const DesktopAutoSaveRequest& request,
+			std::wstring& committedPath) noexcept
 		{
 			const auto logFailure = [&request](const char* stage,
 				const std::wstring& relativeFileName = {}) noexcept
@@ -667,6 +669,7 @@ namespace Inkeys::Drawing::Draw3
 					logFailure("index-commit", relativeFileName);
 					return false;
 				}
+				committedPath = JoinPath(dateDirectory, relativeFileName);
 				return true;
 			}
 			catch (...)
@@ -821,34 +824,71 @@ namespace Inkeys::Drawing::Draw3
 		struct Record
 		{
 			DesktopAutoSaveRequest request;
+			draw3::uink::UInkGuid fileGuid;
+			std::wstring committedPath;
 			RequestState state = RequestState::Pending;
+		};
+
+		struct LoadWork
+		{
+			draw3::uink::UInkGuid fileGuid;
+			std::wstring path;
 		};
 
 		mutable std::mutex mutex;
 		std::condition_variable condition;
 		std::deque<std::shared_ptr<Record>> queue;
+		std::deque<LoadWork> loadQueue;
+		std::deque<DesktopPersistenceCompletion> completions;
 		std::map<std::string, std::shared_ptr<Record>> records;
 		std::thread worker;
 		std::wstring rootPath;
 		std::string sessionId;
 		std::uint64_t nextSequence = 1;
 		DesktopAutoSaveDiagnostics diagnostics;
+		void* wakeContext = nullptr;
+		void (*wake)(void*) noexcept = nullptr;
 		bool accepting = false;
+
+		void PushCompletion(DesktopPersistenceCompletion completion) noexcept
+		{
+			void* context = nullptr;
+			void (*callback)(void*) noexcept = nullptr;
+			try
+			{
+				std::scoped_lock lock(mutex);
+				completions.push_back(std::move(completion));
+				context = wakeContext;
+				callback = wake;
+			}
+			catch (...) { return; }
+			if (callback) callback(context);
+		}
 
 		void WorkerMain() noexcept
 		{
 			for (;;)
 			{
 				std::shared_ptr<Record> record;
+				std::optional<LoadWork> load;
 				std::wstring root;
 				bool rootReady = true;
 				{
 					std::unique_lock lock(mutex);
-					condition.wait(lock, [this] { return !queue.empty() || !accepting; });
-					if (queue.empty()) break;
-					record = queue.front();
-					queue.pop_front();
-					record->state = RequestState::Writing;
+					condition.wait(lock, [this]
+						{ return !queue.empty() || !loadQueue.empty() || !accepting; });
+					if (queue.empty() && loadQueue.empty()) break;
+					if (!queue.empty())
+					{
+						record = queue.front();
+						queue.pop_front();
+						record->state = RequestState::Writing;
+					}
+					else
+					{
+						load = std::move(loadQueue.front());
+						loadQueue.pop_front();
+					}
 					try
 					{
 						root = rootPath;
@@ -858,15 +898,69 @@ namespace Inkeys::Drawing::Draw3
 						rootReady = false;
 					}
 				}
+				if (load)
+				{
+					DesktopPersistenceCompletion completion;
+					completion.operation = DesktopPersistenceOperation::Load;
+					completion.fileGuid = load->fileGuid;
+					if (!rootReady)
+						completion.status = DesktopPersistenceStatus::IoError;
+					else
+					{
+						const auto read = ReadUInkFile(load->path);
+						const auto imported = read.document
+							? ImportDraw3UInkDocument(*read.document)
+							: draw3::uink::Draw3UInkImportResult{};
+						if (read.status != UInkReadStatus::Complete ||
+							(read.provenance.containsInvalidCompleteBlocks ||
+								read.provenance.contentSequenceRecovered) ||
+							!imported.snapshot ||
+							imported.snapshot->fileGuid != load->fileGuid)
+							completion.status = DesktopPersistenceStatus::IoError;
+						else
+						{
+							auto snapshot = std::move(*imported.snapshot);
+							completion.status = DesktopPersistenceStatus::Loaded;
+							for (auto& canvas : snapshot.canvases)
+							{
+								auto projected = draw3::uink::ProjectDraw3UInkCanvasInterval(
+									canvas, canvas.intervalOrdinal);
+								if (!projected)
+								{
+									completion.status = DesktopPersistenceStatus::Invalid;
+									break;
+								}
+								canvas = std::move(*projected);
+							}
+							if (completion.status == DesktopPersistenceStatus::Loaded)
+							{
+								completion.loadedSnapshot = std::make_shared<
+									const Draw3UInkExportSnapshot>(std::move(snapshot));
+								completion.status = DesktopPersistenceStatus::Loaded;
+							}
+						}
+					}
+					PushCompletion(std::move(completion));
+					continue;
+				}
 				if (!rootReady)
 					std::fprintf(stderr,
 						"[Draw3.AutoSave] action=commit request=%s result=failed "
 						"stage=root-copy\n", record->request.saveRequestId.c_str());
-				const bool committed = rootReady && ProcessRequest(root, record->request);
+				std::wstring committedPath;
+				const bool committed = rootReady && ProcessRequest(
+					root, record->request, committedPath);
 				draw3::uink::Draw3UInkExportSnapshot completedSnapshot;
+				DesktopPersistenceCompletion completion;
+				completion.operation = DesktopPersistenceOperation::Save;
+				completion.status = committed ? DesktopPersistenceStatus::Committed :
+					DesktopPersistenceStatus::IoError;
+				completion.trigger = record->request.trigger;
+				completion.fileGuid = record->fileGuid;
 				{
 					std::scoped_lock lock(mutex);
 					record->state = committed ? RequestState::Committed : RequestState::Failed;
+					if (committed) record->committedPath = std::move(committedPath);
 					if (committed) ++diagnostics.committed;
 					else ++diagnostics.failed;
 					if (diagnostics.pending != 0) --diagnostics.pending;
@@ -881,6 +975,7 @@ namespace Inkeys::Drawing::Draw3
 					"[Draw3.AutoSave] action=commit request=%s trigger=%s result=%s\n",
 					record->request.saveRequestId.c_str(), TriggerName(record->request.trigger),
 					committed ? "committed" : "failed");
+				PushCompletion(std::move(completion));
 			}
 		}
 
@@ -899,6 +994,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				auto record = std::make_shared<Record>();
 				record->request = std::move(request);
+				record->fileGuid = record->request.snapshot.fileGuid;
 				const auto [iterator, inserted] = records.emplace(
 					record->request.saveRequestId, record);
 				if (!inserted) return DesktopAutoSaveSubmitStatus::Existing;
@@ -937,7 +1033,8 @@ namespace Inkeys::Drawing::Draw3
 		CloseAndDrain();
 	}
 
-	bool DesktopAutoSaveService::Start(std::wstring autoSaveRoot)
+	bool DesktopAutoSaveService::Start(std::wstring autoSaveRoot,
+		void* wakeContext, void (*wake)(void*) noexcept)
 	{
 		CloseAndDrain();
 		if (autoSaveRoot.empty()) return false;
@@ -953,7 +1050,11 @@ namespace Inkeys::Drawing::Draw3
 				impl_->nextSequence = 1;
 				impl_->diagnostics = {};
 				impl_->queue.clear();
+				impl_->loadQueue.clear();
+				impl_->completions.clear();
 				impl_->records.clear();
+				impl_->wakeContext = wakeContext;
+				impl_->wake = wake;
 				impl_->accepting = true;
 			}
 			impl_->worker = std::thread([implementation = impl_.get()]
@@ -1001,6 +1102,37 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(impl_->mutex);
 		return impl_->SubmitLocked(std::move(request));
+	}
+
+	DesktopAutoSaveSubmitStatus DesktopAutoSaveService::SubmitLoad(
+		draw3::uink::UInkGuid fileGuid) noexcept
+	{
+		std::scoped_lock lock(impl_->mutex);
+		if (!impl_->accepting) return DesktopAutoSaveSubmitStatus::Closed;
+		for (const auto& [requestId, record] : impl_->records)
+		{
+			(void)requestId;
+			if (!record || record->state != Impl::RequestState::Committed ||
+				record->fileGuid != fileGuid || record->committedPath.empty()) continue;
+			try
+			{
+				impl_->loadQueue.push_back({ fileGuid, record->committedPath });
+			}
+			catch (...) { return DesktopAutoSaveSubmitStatus::Invalid; }
+			impl_->condition.notify_one();
+			return DesktopAutoSaveSubmitStatus::Accepted;
+		}
+		return DesktopAutoSaveSubmitStatus::Invalid;
+	}
+
+	bool DesktopAutoSaveService::TryTakeCompletion(
+		DesktopPersistenceCompletion& completion) noexcept
+	{
+		std::scoped_lock lock(impl_->mutex);
+		if (impl_->completions.empty()) return false;
+		completion = std::move(impl_->completions.front());
+		impl_->completions.pop_front();
+		return true;
 	}
 
 	void DesktopAutoSaveService::CloseAndDrain() noexcept

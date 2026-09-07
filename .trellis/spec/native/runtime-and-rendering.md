@@ -913,6 +913,8 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 ### 2. Signatures
 
 - `CanvasRuntimeHistory::AppendStroke / LastVisibleItem / UndoLastVisible / LastRedoItem / RedoLastUndone / DiscardRedoBranch / RedoDepth`
+- `CanvasPageRuntimeState { history, rasterState, beforeStates, afterStates, undoFloor, intervalOrdinal, intervalLoadPending, boundaryFallback }`
+- `UInkClear { type=6, contentId, undoId, extra? }`
 - `UndoCachePolicy { byteBudget=64 MiB, maxEntries=20 }`
 - `CompositionCachePolicy { byteBudget=192 MiB }`
 - `InkHistoryGpuCache::CapturePreimage / RestorePreimage / RestoreComposition`
@@ -921,12 +923,14 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 ### 3. Contracts
 
-- Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。成功撤回把隐藏项压入该 Canvas 的 LIFO redo 栈；成功重做恢复 visibility、previous-visible 链、可见 Tile 引用和 composition generation。两者都不删除 append-only Stroke/RenderItem。
+- Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。runtime history 只表示当前 Clear 区间内的 Stroke，成功撤回把隐藏项压入该 Canvas 的 LIFO redo 栈；成功重做恢复 visibility、previous-visible 链、可见 Tile 引用和 composition generation。
+- Clear 不是 RenderItem/GPU operator。有效 Clear 先把当前可见 tail 封存为 UInk Type 6 边界，再执行 `InkCanvas::ClearStrokes + fresh CanvasRuntimeHistory + 全量透明 GPU/瞬态重置`；空内容不创建边界。这样 durable 后 controller 不再保留 Clear 前 Stroke/history。
+- `LastVisibleItem()` 表示当前区间最后一条可见 Stroke。`undoFloor` 以下是从旧 UInk 区间物化的恢复根：新 Stroke 可正常 Undo，到 floor 时转入 Desktop 单恢复点或 PPT 前一区间加载，不再调用 history Undo。Eraser Stroke 即使视觉为空仍算内容。
 - 新 Stored Stroke 一旦成功追加到 `InkCanvas`，必须在 footprint、RenderItem 和 GPU 提交前调用 `DiscardRedoBranch()`；之后任一步失败也不能复活旧分支。Laser、Cancelled、翻页、Resize 和 viewport 移动不清空 redo。
 - 热前像使用 `128x128 BGRA8` screen-local block。Canvas `128x128` undo tile 只确定受影响屏幕范围；小数 viewport 下一个 Canvas tile 可覆盖 129 个屏幕像素，必须拆成相邻 screen block，不能直接写入单个 slice。默认 `64 MiB / 20 entries` 对应 1024 槽；顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Capture/restore 要求 page、item、raster state、viewport float 值和窗口尺寸完全一致；viewport 只需有限，不要求整数。Copy 只在绘制线程提交，不 Map/readback/wait。
 - 冷路径使用 32 RenderItem 的叶 Block 和 `256x256` operator tile；每槽为 `BGRA8 Add + R16F Retain = 384 KiB`，默认 `192 MiB = 512 slots`。组合固定为 `Later(Earlier(Below))`；CPU topology/generation 永久保留，GPU 节点只作 LRU 可淘汰缓存。
 - 撤回路径依次为 `hot_preimage -> composition_cache/composition_rebuild -> ordered_tile_replay`。冷撤回只处理被撤项的 composition tiles，候选画面成功后才提交 visibility；失败时恢复原可见范围。缓存预算为 0 或资源失败只能降低性能，不能删除 CPU history。
-- 重做只接受 `rasterState == beforeStates[item.index]`。可信 L2 的正常顺序固定为 `DrawStoredStroke -> CapturePreimage(current L2) -> ApplyOperatorLayers -> RedoLastUndone(expected) -> rasterState=afterStates[index] -> CommitPreimage`；不增加 postimage、GPU 资源、readback 或 wait。热前像不可用只降低下一次 Undo 性能，不改变已成功的 redo。
+- 重做只接受 `rasterState == beforeStates[item.index]`。Stroke 的可信 L2 顺序固定为 `DrawStoredStroke -> CapturePreimage(current L2) -> ApplyOperatorLayers -> RedoLastUndone(expected) -> rasterState=afterStates[index] -> CommitPreimage`。本期不提供跨 Clear Redo；不得把 UInk Clear 重新塞入 runtime history 来伪造该能力。
 - `viewportVisibleClear == false` 时，重做前只针对候选 composition tiles 按当前隐藏 history 执行 `composition_cache/composition_rebuild/ordered_tile_replay`，得到权威背景后再直接绘制 Stored Stroke。候选完全屏外时只提交 visibility/state，等待后续视口恢复显示。
 - Redo 的 raster/resolve/visibility 任一步失败都取消未提交热前像并保留隐藏项和 redo 候选；若 L2 可能已部分写入，必须按当前隐藏 history 恢复受影响 Tile。回滚失败时把 viewport 标记为不清晰并请求权威刷新。
 - GPU history pass 的 array SRV/RTV 必须各自限制为单 slice；所有公开 composition 操作的全部出口解绑 `t0..t13`、`b2` 和 RTV，并恢复全画布 viewport/raster state。没有 `ID3D11DeviceContext1` 时仍可用 transparent scratch copy 清理 L2 tile。
@@ -944,6 +948,9 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 | Redo expected 或 raster state 不匹配 | 不改变 visibility/redo 栈；请求权威刷新处理不可信 L2 |
 | Redo raster/resolve/visibility 失败 | 取消未提交热前像，恢复当前隐藏 history；候选仍可重试 |
 | Undo 后成功追加新 Stored Stroke | 立即清空该页 redo；后续 RenderItem/GPU 失败也不恢复旧分支 |
+| 当前区间 Undo 到 `undoFloor` | 不隐藏恢复根；Desktop 消费最近恢复点，PPT 请求 `intervalOrdinal-1` |
+| `A -> Clear -> B -> Clear -> C` | 当前只合成 C；PPT 依次撤回 C、加载 B、加载 A；Desktop 只恢复最近一次 Clear 前内容 |
+| 空内容 Clear | no-op，不写 UInk Clear、不替换 runtime、不改变 raster state 或 revision |
 | 翻页、Resize、viewport 移动 | 保留各 Canvas redo 栈；只失效不兼容的显示缓存或热前像 |
 | Cache policy 降低 | 先淘汰最旧热项/LRU 节点；提高预算不恢复已淘汰内容 |
 | Resize | 丢弃不兼容热前像、更新 raster generation；保留 Canvas-local footprint 和 tile 索引，并从 CPU history 恢复当前页 |
@@ -952,15 +959,15 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 ### 5. Good / Base / Bad Cases
 
-- Good：`A/B/C -> Undo C/B -> Redo B/C` 按稳定 ID 恢复顺序；redo 直接局部绘制并重新捕获当前 L2，下一次 Undo 可再次命中热前像。
+- Good：当前区间 Stroke redo 直接局部绘制并重备热前像；到 `undoFloor` 后只物化目标旧区间并全量 replay，其他 Page/Slide 不变。
 - Base：composition budget 为 0 时仍可按当前隐藏顺序逐 tile 重放；屏外 redo 只恢复运行时 visibility，空白页切换只清空并呈现透明 L2。
-- Bad：为 redo 保存全尺寸后像、先弹 redo/恢复 visibility 再尝试 GPU 绘制，或 Undo 后新笔成功 Append 仍保留旧 redo 分支。
+- Bad：为 redo 保存全尺寸后像、先弹 redo/恢复 visibility 再尝试 GPU 绘制、把 Clear 当成 runtime RenderItem，或 durable 后仍让全部旧区间常驻 controller 内存。
 
 ### 6. Tests Required
 
 - CPU 测试断言 4K 为 510 个 128 tile、默认 1024/20 热预算、512 composition 槽、FIFO/LRU/pin 和 0 禁用。
 - 覆盖 Pen/Highlighter/Eraser、单点、负坐标、屏外/极端有限坐标、AA padding 和跨 4K 稀疏对角线 footprint；小数正负 viewport 的 screen block 每边不得超过 128，且边缘 partial block 必须落在窗口内。
-- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、`A/B/C -> Undo C/B -> Redo B/C`、错误 expected 不变、隐藏分支后 append 清空 redo、每页隔离、Tile 引用、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
+- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、`A/B/C -> Undo C/B -> Redo B/C`、`undoFloor` 截止、空 Clear、错误 expected 不变、隐藏分支后 append 清空 redo、每页隔离、Tile 引用、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
 - 静态核对首次提交顺序、Redo 的 draw/capture/resolve/visibility/state/commit 顺序、`6`/`VK_NUMPAD6` 自动重复过滤、无 readback/postimage/wait、单 slice SRV、所有 pass 解绑、事务式 cold undo/redo、FIFO Canvas command 和控制台字段。
 - Debug/Release ARM64 完整解决方案 Rebuild并运行两套控制台测试；可见窗口和 D3D Debug Layer 未执行时必须明确标记未验证，不能用静态检查替代。
 
@@ -973,6 +980,10 @@ Correct：`选择最后可见项 -> 热前像命中则复制；否则只在受�
 Wrong：`Redo -> 先恢复 visible/弹栈 -> 尝试绘制或复用后像；失败后历史和 L2 分叉。`
 
 Correct：`校验 beforeState -> 必要时恢复隐藏态背景 -> 直接绘制并捕获前像 -> resolve 成功后提交 visibility/state -> commit 热前像；失败保持候选隐藏并恢复受影响 Tile。`
+
+Wrong：`AppendClear RenderItem -> 透明 operator 覆盖旧像素 -> 全部 Clear 前 Stroke/history 永久驻留 controller。`
+
+Correct：`封存 UInk Type 6 -> fresh runtime + 全量透明 Present -> durable 后释放 fallback -> 到 floor 时按 page/interval 严格加载。`
 
 ## Highlighter Geometry
 

@@ -152,6 +152,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::optional<size_t> AppendPage(InkPage newPage);
 		InkPage* PageAt(size_t index) noexcept;
 		const InkPage* PageAt(size_t index) const noexcept;
+		// 仅在恢复事务提交阶段替换同一索引页；Page GUID 必须保持不变。
+		bool ReplacePage(size_t index, InkPage replacement) noexcept;
 		std::span<const InkPage> Pages() const noexcept;
 		// 仅由绘制线程在 Presentation 拓扑迁移时取走整组页面，保持 GUID 和 Canvas 内容。
 		std::vector<InkPage> TakePages() noexcept;

@@ -295,7 +295,7 @@ namespace Inkeys::Drawing::Draw3
 						return state.clearCommandCount > beforeClear.clearCommandCount &&
 							!state.currentPageHasContent &&
 							state.contentRevision > beforeClear.contentRevision;
-					}), "clear permanently publishes an empty current page", failures);
+					}), "clear publishes an empty current page", failures);
 				const auto afterClear = ProductHost().RuntimeSnapshot();
 
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
@@ -303,33 +303,22 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([afterClear]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();
-						return state.undoCommandCount > afterClear.undoCommandCount;
-					}), "undo after clear was consumed", failures);
+						return state.undoCommandCount > afterClear.undoCommandCount &&
+							state.currentPageHasContent &&
+							state.contentRevision > afterClear.contentRevision;
+					}), "undo restores content removed by clear", failures);
 				const auto afterUndo = ProductHost().RuntimeSnapshot();
-				modeSucceeded &= Check(!afterUndo.currentPageHasContent &&
-					afterUndo.contentRevision == afterClear.contentRevision,
-					"undo cannot recover content removed by clear", failures);
-
-				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
-					Bridge::CommandResult::Accepted, "redo after clear accepted", failures);
-				modeSucceeded &= Check(WaitUntil([afterUndo]
-					{
-						const auto state = ProductHost().RuntimeSnapshot();
-						return state.redoCommandCount > afterUndo.redoCommandCount;
-					}), "redo after clear was consumed", failures);
-				const auto afterRedo = ProductHost().RuntimeSnapshot();
-				modeSucceeded &= Check(!afterRedo.currentPageHasContent &&
-					afterRedo.contentRevision == afterClear.contentRevision,
-					"redo cannot recover content removed by clear", failures);
+				modeSucceeded &= Check(afterUndo.currentPageHasContent,
+					"undo clear republishes current page content", failures);
 
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::NextPage) ==
 					Bridge::CommandResult::Accepted, "next page after clear accepted", failures);
-				modeSucceeded &= Check(WaitUntil([afterRedo]
+				modeSucceeded &= Check(WaitUntil([afterUndo]
 					{
 						const auto state = ProductHost().RuntimeSnapshot();
-						return state.nextPageCommandCount > afterRedo.nextPageCommandCount &&
+						return state.nextPageCommandCount > afterUndo.nextPageCommandCount &&
 							state.currentPageIndex == 1 && state.currentPageHasContent &&
-							state.contentRevision > afterRedo.contentRevision;
+							state.contentRevision > afterUndo.contentRevision;
 					}), "clear preserves content on other pages", failures);
 				const auto restoredOtherPage = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) ==
@@ -339,9 +328,9 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.previousPageCommandCount >
 							 restoredOtherPage.previousPageCommandCount &&
-							state.currentPageIndex == 0 && !state.currentPageHasContent &&
+							state.currentPageIndex == 0 && state.currentPageHasContent &&
 							state.contentRevision > restoredOtherPage.contentRevision;
-					}), "cleared page remains empty after page round-trip", failures);
+					}), "undo-restored page keeps its content after page round-trip", failures);
 
 				// 真实 Controller 三态回归：命令必须作用于发布时的 PPT，而不是随后的 latest scene。
 				Bridge::ProductState penState{};

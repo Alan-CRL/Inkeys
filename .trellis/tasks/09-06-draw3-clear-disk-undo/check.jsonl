@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"Verify package boundaries, project registration and full ARM64 solution validation."}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Verify supported build entry, PptCOM dependency and configuration symmetry."}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Check final Clear interval, Desktop/PPT storage, three-state and hidden-window behavior."}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"Check undoFloor, Stroke Redo non-regression, GPU invalidation and replay correctness."}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"Apply native static, build and no-window validation requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit stale completions and ownership across Host, worker, drawing thread and presenter."}
+{"file":".trellis/tasks/09-06-draw3-clear-disk-undo/research/chore-draw3-merge-analysis.md","reason":"Verify every incoming change was intentionally retained, rewritten or dropped."}
+{"file":".trellis/tasks/09-06-draw3-clear-disk-undo/research/uink-v10-clear-contract.md","reason":"Verify codec, persistence and Draw3 behavior match the updated version 10 Clear specification."}

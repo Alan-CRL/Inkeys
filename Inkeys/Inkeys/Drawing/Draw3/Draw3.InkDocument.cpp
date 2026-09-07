@@ -191,6 +191,14 @@ namespace Inkeys::Drawing::Draw3
 		return index < pages_.size() ? &pages_[index] : nullptr;
 	}
 
+	bool InkCanvasCollection::ReplacePage(size_t index, InkPage replacement) noexcept
+	{
+		if (index >= pages_.size() || replacement.PageGuid().IsZero() ||
+			replacement.PageGuid() != pages_[index].PageGuid()) return false;
+		pages_[index] = std::move(replacement);
+		return true;
+	}
+
 	std::span<const InkPage> InkCanvasCollection::Pages() const noexcept
 	{
 		return { pages_.data(), pages_.size() };

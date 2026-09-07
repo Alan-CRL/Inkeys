@@ -216,6 +216,101 @@ namespace draw3::uink
 		}
 	}
 
+	std::optional<Draw3UInkCanvasSnapshot> ProjectDraw3UInkCanvasInterval(
+		const Draw3UInkCanvasSnapshot& canonical, uint32_t intervalOrdinal)
+	{
+		try
+		{
+			Draw3UInkCanvasSnapshot projected = canonical;
+			projected.strokes.clear();
+			projected.operations.clear();
+			projected.intervalOrdinal = intervalOrdinal;
+			uint32_t currentInterval = 0;
+			if (canonical.operations.empty())
+			{
+				if (intervalOrdinal != 0) return std::nullopt;
+				projected.strokes = canonical.strokes;
+				return projected;
+			}
+			for (const Draw3UInkOperationSnapshot& operation : canonical.operations)
+			{
+				if (std::holds_alternative<Draw3UInkClearSnapshot>(operation))
+				{
+					if (currentInterval == intervalOrdinal) break;
+					++currentInterval;
+					continue;
+				}
+				if (currentInterval == intervalOrdinal)
+					projected.strokes.push_back(
+						std::get<Draw3UInkStrokeSnapshot>(operation));
+			}
+			if (currentInterval < intervalOrdinal) return std::nullopt;
+			for (size_t index = 0; index < projected.strokes.size(); ++index)
+				projected.strokes[index].undoId = static_cast<uint32_t>(index);
+			return projected;
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+	}
+
+	std::optional<Draw3UInkCanvasSnapshot> MergeDraw3UInkCanvasTail(
+		const Draw3UInkCanvasSnapshot* canonical,
+		const Draw3UInkCanvasSnapshot& requested, bool sealClearBoundary)
+	{
+		try
+		{
+			Draw3UInkCanvasSnapshot merged = requested;
+			merged.operations.clear();
+			if (canonical)
+			{
+				if (canonical->pageGuid != requested.pageGuid)
+					return std::nullopt;
+				if (canonical->operations.empty())
+				{
+					if (requested.intervalOrdinal != 0) return std::nullopt;
+				}
+				else
+				{
+					uint32_t observedInterval = 0;
+					for (const Draw3UInkOperationSnapshot& operation : canonical->operations)
+					{
+						if (observedInterval > requested.intervalOrdinal) break;
+						if (observedInterval == requested.intervalOrdinal &&
+							std::holds_alternative<Draw3UInkStrokeSnapshot>(operation))
+							break;
+						merged.operations.push_back(operation);
+						if (std::holds_alternative<Draw3UInkClearSnapshot>(operation))
+							++observedInterval;
+					}
+					if (observedInterval != requested.intervalOrdinal) return std::nullopt;
+				}
+			}
+			else if (requested.intervalOrdinal != 0) return std::nullopt;
+
+			for (auto stroke : requested.strokes)
+			{
+				stroke.undoId = static_cast<uint32_t>(merged.operations.size());
+				merged.operations.emplace_back(std::move(stroke));
+			}
+			if (sealClearBoundary)
+			{
+				Draw3UInkClearSnapshot clear;
+				clear.undoId = static_cast<uint32_t>(merged.operations.size());
+				merged.operations.emplace_back(std::move(clear));
+				merged.strokes.clear();
+				merged.intervalOrdinal = requested.intervalOrdinal + 1;
+			}
+			else merged.intervalOrdinal = requested.intervalOrdinal;
+			return merged;
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+	}
+
 	Draw3UInkExportResult ExportDraw3SnapshotToUInk(
 		const Draw3UInkExportSnapshot& snapshot)
 	{
@@ -311,20 +406,47 @@ namespace draw3::uink
 				canvas.viewport = sourceCanvas.viewport;
 				canvas.extra = WithPageStateMarker(sourceCanvas.extra, sourceCanvas.retained);
 				uint32_t previousUndo = 0;
-				for (size_t index = 0; index < sourceCanvas.strokes.size(); ++index)
+				bool previousWasClear = false;
+				const size_t operationCount = sourceCanvas.operations.empty()
+					? sourceCanvas.strokes.size() : sourceCanvas.operations.size();
+				for (size_t index = 0; index < operationCount; ++index)
 				{
-					const Draw3UInkStrokeSnapshot& stroke = sourceCanvas.strokes[index];
-					if (!ValidateSnapshotStroke(stroke) ||
-						(index == 0 && stroke.undoId != 0) ||
-						(index != 0 && stroke.undoId < previousUndo))
+					const Draw3UInkStrokeSnapshot* stroke = nullptr;
+					const Draw3UInkClearSnapshot* clear = nullptr;
+					if (sourceCanvas.operations.empty()) stroke = &sourceCanvas.strokes[index];
+					else
+					{
+						stroke = std::get_if<Draw3UInkStrokeSnapshot>(
+							&sourceCanvas.operations[index]);
+						clear = std::get_if<Draw3UInkClearSnapshot>(
+							&sourceCanvas.operations[index]);
+					}
+					const uint32_t undoId = stroke ? stroke->undoId : clear ? clear->undoId : 0;
+					const bool currentIsClear = clear != nullptr;
+					if ((!stroke && !clear) || (stroke && !ValidateSnapshotStroke(*stroke)) ||
+						(index == 0 && undoId != 0) ||
+						(index != 0 && (undoId < previousUndo ||
+							((currentIsClear || previousWasClear) && undoId == previousUndo))))
 					{
 						result.status = Draw3UInkExportStatus::InvalidSourceStroke;
-						AddExportDiagnostic(result.diagnostics, "snapshot.stroke");
+						AddExportDiagnostic(result.diagnostics,
+							currentIsClear ? "snapshot.clear" : "snapshot.stroke");
 						return result;
 					}
-					canvas.content.push_back(ConvertStroke(stroke,
-						static_cast<uint32_t>(index), snapshot.dpiScale, result.capabilities));
-					previousUndo = stroke.undoId;
+					if (stroke)
+						canvas.content.push_back(ConvertStroke(*stroke,
+							static_cast<uint32_t>(index), snapshot.dpiScale,
+							result.capabilities));
+					else
+					{
+						UInkClear outputClear;
+						outputClear.contentId = static_cast<uint32_t>(index);
+						outputClear.undoId = clear->undoId;
+						outputClear.extra = clear->extra;
+						canvas.content.push_back(std::move(outputClear));
+					}
+					previousUndo = undoId;
+					previousWasClear = currentIsClear;
 				}
 				document.canvases.push_back(std::move(canvas));
 				pages.insert(sourceCanvas.pageGuid.Bytes());

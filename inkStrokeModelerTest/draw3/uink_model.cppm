@@ -20,6 +20,7 @@ export namespace draw3::uink
 	inline constexpr uint16_t kInkType = 3;
 	inline constexpr uint16_t kMediaType = 4;
 	inline constexpr uint16_t kShapeType = 5;
+	inline constexpr uint16_t kClearType = 6;
 
 	class UInkGuid
 	{
@@ -305,7 +306,14 @@ export namespace draw3::uink
 		bool pathIsSafe = false;
 	};
 
-	using UInkContent = std::variant<UInkInk, UInkShape, UInkMedia>;
+	struct UInkClear
+	{
+		uint32_t contentId = 0;
+		uint32_t undoId = 0;
+		std::optional<UInkExtra> extra;
+	};
+
+	using UInkContent = std::variant<UInkInk, UInkShape, UInkMedia, UInkClear>;
 
 	struct UInkCanvas
 	{
@@ -461,11 +469,12 @@ export namespace draw3::uink
 		std::wstring sourcePath;
 	};
 
-	using UInkAppendObject = std::variant<UInkCanvas, UInkInk, UInkShape, UInkMedia>;
+	using UInkAppendObject = std::variant<UInkCanvas, UInkInk, UInkShape, UInkMedia,
+		UInkClear>;
 
 	bool IsSafeMediaPath(const std::string& path,
 		uint64_t maxBytes = 32768) noexcept;
 	bool HasMedia(const UInkDocument& document) noexcept;
-	// 按规范计算 latest 标记内容的显示状态；Media 始终保留为可见且不终止反向扫描。
+	// 计算当前 Canvas 的有效显示状态；Clear 隐藏旧区间并终止 latest 反向扫描。
 	std::vector<bool> ComputeUInkLatestVisibility(const UInkCanvas& canvas);
 }

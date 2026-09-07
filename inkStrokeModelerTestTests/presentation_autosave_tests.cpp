@@ -725,6 +725,66 @@ namespace
 		std::error_code error;
 		fs::remove_all(root, error);
 	}
+
+	void TestClearIntervalsPersistAndLoad(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const auto target = MakeTarget();
+		PresentationAutoSaveService service;
+		SetPresentationAutoSaveTestFaultInjection({ false, 0,
+			"89898989-8989-4989-8989-898989898989" });
+		auto first = MakeSnapshot(target, true);
+		const UInkGuid pageGuid = first.canvases.front().pageGuid;
+		auto second = MakeSnapshot(target, true);
+		second.canvases.front().intervalOrdinal = 1;
+		second.canvases.front().strokes.front().style.fallbackRgb = 0x223344;
+		auto current = MakeSnapshot(target, true);
+		current.canvases.front().intervalOrdinal = 2;
+		current.canvases.front().strokes.front().style.fallbackRgb = 0x334455;
+
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 1,
+			std::move(first), pageGuid, 0 }) == PresentationPersistenceSubmitStatus::Accepted);
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 2,
+			std::move(second), pageGuid, 1 }) == PresentationPersistenceSubmitStatus::Accepted);
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 3,
+			std::move(current) }) == PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		PRESENTATION_CHECK(state, service.Diagnostics().committed == 3);
+		PRESENTATION_CHECK(state, CountUInkFiles(root) == 1);
+
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitLoad({ target }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		auto loaded = TakeCompletion(service);
+		PRESENTATION_CHECK(state, loaded.status == PresentationPersistenceStatus::Loaded &&
+			loaded.loadedSnapshot && loaded.loadedSnapshot->canvases.front().intervalOrdinal == 2 &&
+			loaded.loadedSnapshot->canvases.front().strokes.front().style.fallbackRgb == 0x334455);
+
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitLoad({ target,
+			PresentationLoadKind::PreviousInterval, pageGuid, 1 }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		loaded = TakeCompletion(service);
+		PRESENTATION_CHECK(state, loaded.status == PresentationPersistenceStatus::Loaded &&
+			loaded.loadKind == PresentationLoadKind::PreviousInterval &&
+			loaded.intervalOrdinal == 1 && loaded.loadedSnapshot &&
+			loaded.loadedSnapshot->canvases.front().strokes.front().style.fallbackRgb == 0x223344);
+
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitLoad({ target,
+			PresentationLoadKind::PreviousInterval, pageGuid, 0 }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		loaded = TakeCompletion(service);
+		PRESENTATION_CHECK(state, loaded.status == PresentationPersistenceStatus::Loaded &&
+			loaded.intervalOrdinal == 0 && loaded.loadedSnapshot &&
+			loaded.loadedSnapshot->canvases.front().strokes.front().style.fallbackRgb == 0x123456);
+		std::error_code error;
+		fs::remove_all(root, error);
+	}
 }
 
 int RunPresentationAutoSaveTests()
@@ -759,6 +819,10 @@ int RunPresentationAutoSaveTests()
 		Bridge::SlideBindingMode::StableSlideId, 2));
 	PRESENTATION_CHECK(state, !ShouldPersistLoadedPresentationBindingMigration(
 		Bridge::SlideBindingMode::PageIndexFallback, kInkeysPageIndexWorkspaceType));
+	PRESENTATION_CHECK(state, ShouldReleasePresentationClearFallback(2, 1));
+	PRESENTATION_CHECK(state, !ShouldReleasePresentationClearFallback(2, 0));
+	PRESENTATION_CHECK(state, !ShouldReleasePresentationClearFallback(
+		UINT32_MAX, UINT32_MAX));
 	TestSaveLoadAndClearOverwrite(state);
 	TestStrictPresentationImporter(state);
 	TestIndexFailureRecoveryAndForeignConflict(state);
@@ -770,6 +834,7 @@ int RunPresentationAutoSaveTests()
 	TestLatestWinsPendingSave(state);
 	TestConcurrentWritersShareCaseFoldedMutex(state);
 	TestWorkerExceptionBecomesCompletion(state);
+	TestClearIntervalsPersistAndLoad(state);
 	ResetPresentationAutoSaveTestFaultInjection();
 	return state.failures;
 }

@@ -31,6 +31,29 @@ export namespace Inkeys::UI::Bar
 		return { !drawAttributeOpen };
 	}
 
+	enum class BarClearClickAction : unsigned char
+	{
+		None,
+		PublishClear,
+		EnterSelection
+	};
+
+	inline BarClearClickAction ResolveBarClearClickAction(
+		bool selectionMode, bool currentPageHasContent,
+		bool doubleClickContinuation,
+		bool clearAttemptedForDoubleClick,
+		bool acceptedClearForDoubleClick) noexcept
+	{
+		if (doubleClickContinuation && clearAttemptedForDoubleClick)
+			return acceptedClearForDoubleClick
+				? BarClearClickAction::EnterSelection
+				: BarClearClickAction::PublishClear;
+		if (currentPageHasContent) return BarClearClickAction::PublishClear;
+		return selectionMode
+			? BarClearClickAction::None
+			: BarClearClickAction::EnterSelection;
+	}
+
 	class BarToggleClickCoalescer
 	{
 	public:

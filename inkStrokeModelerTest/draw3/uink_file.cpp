@@ -1183,20 +1183,27 @@ namespace draw3::uink
 				static_cast<uint32_t>(document.canvases.back().content.size()) : 0;
 			uint32_t previousUndo = 0;
 			bool hasPreviousContent = hasCurrentCanvas && !document.canvases.back().content.empty();
+			bool previousWasClear = hasPreviousContent &&
+				std::holds_alternative<UInkClear>(document.canvases.back().content.back());
 			if (hasPreviousContent)
 				std::visit([&](const auto& content) { previousUndo = content.undoId; },
 					document.canvases.back().content.back());
 
 			auto acceptContent = [&](const auto& content) -> bool
 			{
+				using Content = std::decay_t<decltype(content)>;
+				const bool currentIsClear = std::is_same_v<Content, UInkClear>;
 				if (!hasCurrentCanvas || content.contentId != nextContentId ||
 					(!hasPreviousContent && content.undoId != 0) ||
-					(hasPreviousContent && content.undoId < previousUndo)) return false;
+					(hasPreviousContent && content.undoId < previousUndo) ||
+					(hasPreviousContent && (currentIsClear || previousWasClear) &&
+						content.undoId == previousUndo)) return false;
 				if (!plan.firstContentId) plan.firstContentId = content.contentId;
 				plan.lastContentId = content.contentId;
 				plan.lastUndoId = content.undoId;
 				++nextContentId;
 				previousUndo = content.undoId;
+				previousWasClear = currentIsClear;
 				hasPreviousContent = true;
 				return true;
 			};
@@ -1256,6 +1263,7 @@ namespace draw3::uink
 						nextContentId = 0;
 						previousUndo = 0;
 						hasPreviousContent = false;
+						previousWasClear = false;
 						for (const UInkContent& content : value.content)
 						{
 							const bool accepted = std::visit([&](const auto& item)

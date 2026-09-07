@@ -49,16 +49,36 @@ export namespace Inkeys::Drawing::Draw3
 			loadedWorkspaceType == draw3::uink::kInkeysPageIndexWorkspaceType;
 	}
 
+	constexpr bool ShouldReleasePresentationClearFallback(
+		std::uint32_t currentIntervalOrdinal,
+		std::uint32_t sealedIntervalOrdinal) noexcept
+	{
+		return sealedIntervalOrdinal != UINT32_MAX &&
+			currentIntervalOrdinal == sealedIntervalOrdinal + 1;
+	}
+
 	struct PresentationSaveRequest
 	{
 		Bridge::PresentationTarget target;
 		std::uint64_t mutationRevision = 0;
 		draw3::uink::Draw3UInkExportSnapshot snapshot;
+		// Clear 边界不可与普通 tail 保存合并；只封存指定 Canvas。
+		std::optional<draw3::uink::UInkGuid> clearPageGuid;
+		std::optional<std::uint32_t> clearIntervalOrdinal;
+	};
+
+	enum class PresentationLoadKind : std::uint8_t
+	{
+		Current,
+		PreviousInterval,
 	};
 
 	struct PresentationLoadRequest
 	{
 		Bridge::PresentationTarget target;
+		PresentationLoadKind kind = PresentationLoadKind::Current;
+		std::optional<draw3::uink::UInkGuid> pageGuid;
+		std::uint32_t intervalOrdinal = 0;
 	};
 
 	enum class PresentationPersistenceOperation : std::uint8_t
@@ -86,7 +106,12 @@ export namespace Inkeys::Drawing::Draw3
 			PresentationPersistenceStatus::Invalid;
 		Bridge::PresentationTarget target;
 		std::uint64_t mutationRevision = 0;
+		std::optional<draw3::uink::UInkGuid> clearPageGuid;
+		std::optional<std::uint32_t> clearIntervalOrdinal;
 		std::shared_ptr<const draw3::uink::Draw3UInkExportSnapshot> loadedSnapshot;
+		PresentationLoadKind loadKind = PresentationLoadKind::Current;
+		std::optional<draw3::uink::UInkGuid> pageGuid;
+		std::uint32_t intervalOrdinal = 0;
 	};
 
 	enum class PresentationPersistenceSubmitStatus : std::uint8_t

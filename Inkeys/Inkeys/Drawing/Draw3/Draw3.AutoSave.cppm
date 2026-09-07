@@ -10,7 +10,7 @@
 
 export module Inkeys.Drawing.Draw3.auto_save;
 
-export import draw3.uink_draw3_export;
+export import draw3.uink_draw3_import;
 
 export namespace Inkeys::Drawing::Draw3
 {
@@ -61,6 +61,30 @@ export namespace Inkeys::Drawing::Draw3
 		Invalid,
 	};
 
+	enum class DesktopPersistenceOperation : std::uint8_t
+	{
+		Save,
+		Load,
+	};
+
+	enum class DesktopPersistenceStatus : std::uint8_t
+	{
+		Committed,
+		Loaded,
+		NotFound,
+		Invalid,
+		IoError,
+	};
+
+	struct DesktopPersistenceCompletion
+	{
+		DesktopPersistenceOperation operation = DesktopPersistenceOperation::Save;
+		DesktopPersistenceStatus status = DesktopPersistenceStatus::Invalid;
+		DesktopAutoSaveTrigger trigger = DesktopAutoSaveTrigger::Clear;
+		draw3::uink::UInkGuid fileGuid;
+		std::shared_ptr<const draw3::uink::Draw3UInkExportSnapshot> loadedSnapshot;
+	};
+
 	struct DesktopAutoSaveDiagnostics
 	{
 		std::uint64_t accepted = 0;
@@ -100,11 +124,15 @@ export namespace Inkeys::Drawing::Draw3
 		DesktopAutoSaveService& operator=(const DesktopAutoSaveService&) = delete;
 
 		// Start 只建立会话和 worker，不创建任何目录或索引。
-		bool Start(std::wstring autoSaveRoot);
+		bool Start(std::wstring autoSaveRoot, void* wakeContext = nullptr,
+			void (*wake)(void*) noexcept = nullptr);
 		DesktopAutoSaveSubmitStatus Submit(DesktopAutoSaveTrigger trigger,
 			draw3::uink::Draw3UInkExportSnapshot snapshot) noexcept;
 		DesktopAutoSaveSubmitStatus SubmitPrepared(
 			DesktopAutoSaveRequest request) noexcept;
+		DesktopAutoSaveSubmitStatus SubmitLoad(
+			draw3::uink::UInkGuid fileGuid) noexcept;
+		bool TryTakeCompletion(DesktopPersistenceCompletion& completion) noexcept;
 		// 关闭生产端并无超时排空所有已接受请求。
 		void CloseAndDrain() noexcept;
 		[[nodiscard]] DesktopAutoSaveDiagnostics Diagnostics() const noexcept;

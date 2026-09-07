@@ -15,6 +15,7 @@
 export module Inkeys.Drawing.Draw3.window_control;
 
 import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.pen_cursor;
 export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
@@ -91,6 +92,7 @@ export namespace Inkeys::Drawing::Draw3
 		SetPage,
 		SetWorkspace,
 		SetPresentationTarget,
+		DesktopPersistenceCompleted,
 		PresentationPersistenceCompleted,
 		PrepareExitAutoSave,
 	};
@@ -103,6 +105,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::size_t pageIndex = 0;
 		std::uint8_t workspace = 0;
 		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
+		std::shared_ptr<const DesktopPersistenceCompletion>
+			desktopPersistenceCompletion;
 		std::shared_ptr<const PresentationPersistenceCompletion>
 			presentationPersistenceCompletion;
 	};

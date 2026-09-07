@@ -29,7 +29,9 @@ import Inkeys.UI.Setting;
 
 using Inkeys::Business::BuiltInComponentAction;
 using Inkeys::Business::ExecuteBuiltInComponentAction;
+using Inkeys::UI::Bar::BarClearClickAction;
 using Inkeys::UI::Bar::BarToggleChannel;
+using Inkeys::UI::Bar::ResolveBarClearClickAction;
 using Inkeys::UI::Bar::ResolveBarDrawButtonToggleDecision;
 
 bool BarButtonClass::TransitionContent(
@@ -40,6 +42,41 @@ bool BarButtonClass::TransitionContent(
 		changed |= icon.TransitionToResource(L"UI", iconResourceName);
 	changed |= name.TransitionToString(label);
 	return changed;
+}
+
+void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
+{
+	if (!doubleClickContinuation)
+	{
+		clearAttemptedForDoubleClick = false;
+		clearAcceptedForDoubleClick = false;
+	}
+	const bool selectionMode =
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+	const BarClearClickAction action = ResolveBarClearClickAction(
+		selectionMode, Inkeys::UI::Bar::CurrentPageHasContent(),
+		doubleClickContinuation, clearAttemptedForDoubleClick,
+		clearAcceptedForDoubleClick);
+	if (action == BarClearClickAction::EnterSelection)
+	{
+		clearAttemptedForDoubleClick = false;
+		clearAcceptedForDoubleClick = false;
+		if (!selectionMode) ChangeStateModeToSelection();
+		return;
+	}
+	if (action != BarClearClickAction::PublishClear)
+	{
+		clearAttemptedForDoubleClick = false;
+		clearAcceptedForDoubleClick = false;
+		return;
+	}
+
+	const auto result = Inkeys::Drawing::Draw3::PublishProductCommand(
+		Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
+	// 只有已进入 Draw3 FIFO 的首次 Clear，才允许双击第二击直接进入选择。
+	clearAttemptedForDoubleClick = true;
+	clearAcceptedForDoubleClick =
+		result == Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
 }
 
 bool BarButtonSetClass::RegisterButton(
@@ -432,8 +469,7 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					(void)Inkeys::Drawing::Draw3::PublishProductCommand(
-						Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
+					ExecuteClearClick(false);
 				};
 		}
 

@@ -239,6 +239,7 @@ bool RegisterButton(
 		void StateUpdate();
 		void UpdateDrawButtonStyle();
 		void UpdateWhiteboardButtonStyle();
+		void ExecuteClearClick(bool doubleClickContinuation);
 
 		void Load();
 		void SyncLegacyExtensionButtons();
@@ -283,4 +284,6 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		mutex legacyOrderMutex;
 		vector<std::string> legacyActiveOrder;
 		bool legacyOrderInitialized = false;
+		bool clearAttemptedForDoubleClick = false;
+		bool clearAcceptedForDoubleClick = false;
 	};

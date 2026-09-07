@@ -701,6 +701,38 @@ namespace
 		AUTOSAVE_CHECK(state, fs::is_regular_file(
 			dateDirectory / request.proposedFileName));
 	}
+
+	void TestCommittedClearCanReload(TestState& state)
+	{
+		TempDirectory temporary;
+		AUTOSAVE_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const auto request = MakeRequest(
+			"8a000000-0000-4000-8000-000000000001",
+			"8b000000-0000-4000-8000-000000000001", 1,
+			"8c000000-0000-4000-8000-000000000001",
+			"2026-09-01", "170000001", 42.0f);
+		DesktopAutoSaveService service;
+		AUTOSAVE_CHECK(state, service.Start(temporary.Child(L"reload").wstring()));
+		AUTOSAVE_CHECK(state, service.SubmitPrepared(request) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		AUTOSAVE_CHECK(state, WaitForIdle(service));
+		DesktopPersistenceCompletion saved;
+		AUTOSAVE_CHECK(state, service.TryTakeCompletion(saved) &&
+			saved.operation == DesktopPersistenceOperation::Save &&
+			saved.status == DesktopPersistenceStatus::Committed &&
+			saved.fileGuid == request.snapshot.fileGuid);
+		AUTOSAVE_CHECK(state, service.SubmitLoad(request.snapshot.fileGuid) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		DesktopPersistenceCompletion loaded;
+		const bool tookLoaded = service.TryTakeCompletion(loaded);
+		AUTOSAVE_CHECK(state, tookLoaded &&
+			loaded.operation == DesktopPersistenceOperation::Load &&
+			loaded.status == DesktopPersistenceStatus::Loaded &&
+			loaded.loadedSnapshot && loaded.loadedSnapshot->canvases.size() == 1 &&
+			loaded.loadedSnapshot->canvases.front().strokes.size() == 1);
+	}
 }
 
 int RunDesktopAutoSaveTests()
@@ -716,6 +748,7 @@ int RunDesktopAutoSaveTests()
 	TestIndexBackupRecoveryAndIsolation(state);
 	TestInvalidIndexReferenceIsIsolated(state);
 	TestInvalidIndexTimestampIsIsolated(state);
+	TestCommittedClearCanReload(state);
 	ResetDesktopAutoSaveTestFaultInjection();
 	if (state.failures == 0)
 		std::cout << "All Desktop UInk auto-save tests passed." << std::endl;

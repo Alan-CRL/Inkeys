@@ -19,6 +19,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -38,9 +39,12 @@ namespace Inkeys::Drawing::Draw3
 		using draw3::uink::CreateUInkGuid;
 		using draw3::uink::Draw3UInkImportBindingMode;
 		using draw3::uink::Draw3UInkImportExpectation;
+		using draw3::uink::Draw3UInkCanvasSnapshot;
+		using draw3::uink::Draw3UInkExportSnapshot;
 		using draw3::uink::ExportDraw3SnapshotToUInk;
 		using draw3::uink::FormatUInkGuid;
 		using draw3::uink::ImportApplicationOwnedPresentation;
+		using draw3::uink::MergeDraw3UInkCanvasTail;
 		using draw3::uink::ParseUInkGuid;
 		using draw3::uink::ReadUInkFile;
 		using draw3::uink::SaveUInkFile;
@@ -496,6 +500,10 @@ namespace Inkeys::Drawing::Draw3
 						request.snapshot.workspaceExtra, importMode)) return false;
 				const auto& active = request.snapshot.activeCanvases.empty()
 					? request.snapshot.canvases : request.snapshot.activeCanvases;
+				if (request.clearPageGuid.has_value() !=
+					request.clearIntervalOrdinal.has_value()) return false;
+				bool clearPageFound = !request.clearPageGuid;
+				bool clearOrdinalMatched = !request.clearIntervalOrdinal;
 				for (std::size_t index = 0; index < active.size(); ++index)
 				{
 					const auto& canvas = active[index];
@@ -504,12 +512,24 @@ namespace Inkeys::Drawing::Draw3
 						(stable && (!canvas.slideId ||
 							*canvas.slideId != request.target.slideIds[index])) ||
 						(!stable && canvas.slideId)) return false;
+					clearPageFound = clearPageFound ||
+						canvas.pageGuid == *request.clearPageGuid;
+					if (request.clearPageGuid && canvas.pageGuid == *request.clearPageGuid)
+						clearOrdinalMatched = canvas.intervalOrdinal ==
+							*request.clearIntervalOrdinal;
 				}
 				if (!request.snapshot.retainedCanvases.empty())
 					for (const auto& canvas : request.snapshot.retainedCanvases)
+					{
 						if (!canvas.retained || !canvas.slideId ||
 							!draw3::uink::HasInkeysPageStateExtra(canvas.extra, true)) return false;
-				return true;
+						clearPageFound = clearPageFound ||
+							canvas.pageGuid == *request.clearPageGuid;
+						if (request.clearPageGuid && canvas.pageGuid == *request.clearPageGuid)
+							clearOrdinalMatched = canvas.intervalOrdinal ==
+								*request.clearIntervalOrdinal;
+					}
+				return clearPageFound && clearOrdinalMatched;
 			}
 			catch (...)
 			{
@@ -548,6 +568,56 @@ namespace Inkeys::Drawing::Draw3
 			expectation.knownSlideIds = entry.slideIds;
 			expectation.pageCount = target.totalPages;
 			return expectation;
+		}
+
+		std::optional<Draw3UInkExportSnapshot> MergePresentationSnapshot(
+			const PresentationSaveRequest& request,
+			const Draw3UInkExportSnapshot* canonical)
+		{
+			Draw3UInkExportSnapshot merged = request.snapshot;
+			const auto canonicalActive = canonical
+				? (canonical->activeCanvases.empty()
+					? std::span<const Draw3UInkCanvasSnapshot>(canonical->canvases)
+					: std::span<const Draw3UInkCanvasSnapshot>(canonical->activeCanvases))
+				: std::span<const Draw3UInkCanvasSnapshot>{};
+			auto findCanonical = [&](const Draw3UInkCanvasSnapshot& requested)
+				-> const Draw3UInkCanvasSnapshot*
+			{
+				for (const auto& canvas : canonicalActive)
+					if (canvas.pageGuid == requested.pageGuid) return &canvas;
+				if (canonical)
+					for (const auto& canvas : canonical->retainedCanvases)
+						if (canvas.pageGuid == requested.pageGuid) return &canvas;
+				return nullptr;
+			};
+			bool sealed = !request.clearPageGuid;
+			auto mergeCanvases = [&](std::vector<Draw3UInkCanvasSnapshot>& canvases)
+				-> bool
+			{
+				for (auto& canvas : canvases)
+				{
+					const bool seal = request.clearPageGuid &&
+						canvas.pageGuid == *request.clearPageGuid;
+					auto value = MergeDraw3UInkCanvasTail(
+						findCanonical(canvas), canvas, seal);
+					if (!value) return false;
+					canvas = std::move(*value);
+					sealed = sealed || seal;
+				}
+				return true;
+			};
+			if (merged.activeCanvases.empty() && merged.retainedCanvases.empty())
+			{
+				if (!mergeCanvases(merged.canvases)) return std::nullopt;
+			}
+			else
+			{
+				if (!mergeCanvases(merged.activeCanvases) ||
+					!mergeCanvases(merged.retainedCanvases)) return std::nullopt;
+				merged.canvases = merged.activeCanvases;
+			}
+			if (!sealed) return std::nullopt;
+			return merged;
 		}
 
 		PresentationPersistenceStatus SavePresentation(const std::wstring& autoSaveRoot,
@@ -594,8 +664,14 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
-			const auto exported = ExportDraw3SnapshotToUInk(request.snapshot);
-			if (!exported.document) return PresentationPersistenceStatus::Invalid;
+			auto buildDocument = [&](const Draw3UInkExportSnapshot* canonical)
+				-> std::optional<draw3::uink::UInkDocument>
+			{
+				auto merged = MergePresentationSnapshot(request, canonical);
+				if (!merged) return std::nullopt;
+				auto exported = ExportDraw3SnapshotToUInk(*merged);
+				return std::move(exported.document);
+			};
 			UInkSourceRevision committedRevision;
 			if (found == entries.end())
 			{
@@ -615,18 +691,24 @@ namespace Inkeys::Drawing::Draw3
 				if (PathExists(path))
 				{
 					const auto existing = ReadUInkFile(path);
+					const auto imported = existing.document
+						? ImportApplicationOwnedPresentation(*existing.document,
+							MakeExpectation(entry, request.target))
+						: draw3::uink::Draw3UInkImportResult{};
 					if (!existing.document || !existing.sourceRevision ||
+						(existing.provenance.containsInvalidCompleteBlocks ||
+							existing.provenance.contentSequenceRecovered) ||
 						existing.document->header.guid.Bytes() != request.snapshot.fileGuid.Bytes() ||
-						ImportApplicationOwnedPresentation(*existing.document,
-							MakeExpectation(entry, request.target)).status !=
-								draw3::uink::Draw3UInkImportStatus::Success)
+						!imported.snapshot)
 						return PresentationPersistenceStatus::SourceChanged;
+					auto outputDocument = buildDocument(&*imported.snapshot);
+					if (!outputDocument) return PresentationPersistenceStatus::Invalid;
 					auto existingSession = CreateUInkEditingSession(existing,
 						request.target.bindingMode == Bridge::SlideBindingMode::StableSlideId
 							? draw3::uink::UInkEditingSource::ApplicationOwned
 							: draw3::uink::UInkEditingSource::ApplicationOwnedPrivateWorkspace);
 					if (!existingSession) return PresentationPersistenceStatus::Invalid;
-					existingSession->document = *exported.document;
+					existingSession->document = std::move(*outputDocument);
 					UInkSaveOptions options;
 					options.mode = UInkSaveMode::SaveExistingLogicalFile;
 					const auto saved = SaveUInkFile(path, *existingSession, options);
@@ -638,8 +720,10 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
+					auto outputDocument = buildDocument(nullptr);
+					if (!outputDocument) return PresentationPersistenceStatus::Invalid;
 					UInkEditingSession session;
-					session.document = *exported.document;
+					session.document = std::move(*outputDocument);
 					UInkSaveOptions options;
 					options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
 					const auto saved = SaveUInkFile(path, session, options);
@@ -668,18 +752,24 @@ namespace Inkeys::Drawing::Draw3
 					return PresentationPersistenceStatus::SourceChanged;
 				const std::wstring path = JoinPath(root, WidenAscii(found->relativePath));
 				const auto read = ReadUInkFile(path);
+				const auto imported = read.document
+					? ImportApplicationOwnedPresentation(*read.document,
+						MakeExpectation(*found, request.target))
+					: draw3::uink::Draw3UInkImportResult{};
 				if (read.status != UInkReadStatus::Complete || !read.document ||
+					(read.provenance.containsInvalidCompleteBlocks ||
+						read.provenance.contentSequenceRecovered) ||
 					!read.sourceRevision || *read.sourceRevision != found->sourceRevision ||
-					ImportApplicationOwnedPresentation(*read.document,
-						MakeExpectation(*found, request.target)).status !=
-							draw3::uink::Draw3UInkImportStatus::Success)
+					!imported.snapshot)
 					return PresentationPersistenceStatus::SourceChanged;
+				auto outputDocument = buildDocument(&*imported.snapshot);
+				if (!outputDocument) return PresentationPersistenceStatus::Invalid;
 				auto session = CreateUInkEditingSession(read,
 					found->bindingMode == "slide-id"
 						? draw3::uink::UInkEditingSource::ApplicationOwned
 						: draw3::uink::UInkEditingSource::ApplicationOwnedPrivateWorkspace);
 				if (!session) return PresentationPersistenceStatus::Invalid;
-				session->document = *exported.document;
+				session->document = std::move(*outputDocument);
 				UInkSaveOptions options;
 				options.mode = UInkSaveMode::SaveExistingLogicalFile;
 				const auto saved = SaveUInkFile(path, *session, options);
@@ -714,6 +804,9 @@ namespace Inkeys::Drawing::Draw3
 			PresentationPersistenceCompletion completion;
 			completion.operation = PresentationPersistenceOperation::Load;
 			completion.target = request.target;
+			completion.loadKind = request.kind;
+			completion.pageGuid = request.pageGuid;
+			completion.intervalOrdinal = request.intervalOrdinal;
 			const std::wstring root = JoinPath(autoSaveRoot, L"presentation");
 			NamedMutexGuard mutex;
 			if (!mutex.Acquire(root))
@@ -770,6 +863,8 @@ namespace Inkeys::Drawing::Draw3
 			const std::wstring path = JoinPath(root, WidenAscii(found->relativePath));
 			const auto read = ReadUInkFile(path);
 			if (read.status != UInkReadStatus::Complete || !read.document ||
+				(read.provenance.containsInvalidCompleteBlocks ||
+					read.provenance.contentSequenceRecovered) ||
 				!read.sourceRevision || *read.sourceRevision != found->sourceRevision)
 			{
 				completion.status = PresentationPersistenceStatus::SourceChanged;
@@ -783,9 +878,71 @@ namespace Inkeys::Drawing::Draw3
 				completion.status = PresentationPersistenceStatus::Invalid;
 				return completion;
 			}
+			Draw3UInkExportSnapshot projected = *imported.snapshot;
+			if (request.kind == PresentationLoadKind::PreviousInterval)
+			{
+				if (!request.pageGuid)
+				{
+					completion.status = PresentationPersistenceStatus::Invalid;
+					return completion;
+				}
+				const auto& active = projected.activeCanvases.empty()
+					? projected.canvases : projected.activeCanvases;
+				const Draw3UInkCanvasSnapshot* source = nullptr;
+				for (const auto& canvas : active)
+					if (canvas.pageGuid == *request.pageGuid) source = &canvas;
+				if (!source)
+					for (const auto& canvas : projected.retainedCanvases)
+						if (canvas.pageGuid == *request.pageGuid) source = &canvas;
+				const auto interval = source
+					? draw3::uink::ProjectDraw3UInkCanvasInterval(
+						*source, request.intervalOrdinal) : std::nullopt;
+				if (!interval)
+				{
+					completion.status = PresentationPersistenceStatus::Invalid;
+					return completion;
+				}
+				projected.canvases = { *interval };
+				projected.activeCanvases = { *interval };
+				projected.retainedCanvases.clear();
+			}
+			else
+			{
+				auto projectAll = [](std::vector<Draw3UInkCanvasSnapshot>& canvases)
+					-> bool
+				{
+					for (auto& canvas : canvases)
+					{
+						auto current = draw3::uink::ProjectDraw3UInkCanvasInterval(
+							canvas, canvas.intervalOrdinal);
+						if (!current) return false;
+						canvas = std::move(*current);
+					}
+					return true;
+				};
+				if (projected.activeCanvases.empty() &&
+					projected.retainedCanvases.empty())
+				{
+					if (!projectAll(projected.canvases))
+					{
+						completion.status = PresentationPersistenceStatus::Invalid;
+						return completion;
+					}
+				}
+				else
+				{
+					if (!projectAll(projected.activeCanvases) ||
+						!projectAll(projected.retainedCanvases))
+					{
+						completion.status = PresentationPersistenceStatus::Invalid;
+						return completion;
+					}
+					projected.canvases = projected.activeCanvases;
+				}
+			}
 			completion.mutationRevision = found->mutationRevision;
 			completion.loadedSnapshot = std::make_shared<
-				const draw3::uink::Draw3UInkExportSnapshot>(*imported.snapshot);
+				const draw3::uink::Draw3UInkExportSnapshot>(std::move(projected));
 			completion.status = PresentationPersistenceStatus::Loaded;
 			return completion;
 		}
@@ -870,6 +1027,9 @@ namespace Inkeys::Drawing::Draw3
 					{
 						completion.target = item.save.target;
 						completion.mutationRevision = item.save.mutationRevision;
+						completion.clearPageGuid = item.save.clearPageGuid;
+						completion.clearIntervalOrdinal =
+							item.save.clearIntervalOrdinal;
 					}
 					else completion.target = item.load.target;
 					try
@@ -960,11 +1120,14 @@ namespace Inkeys::Drawing::Draw3
 			return PresentationPersistenceSubmitStatus::Invalid;
 		std::scoped_lock lock(impl_->mutex);
 		if (!impl_->accepting) return PresentationPersistenceSubmitStatus::Closed;
-		for (auto iterator = impl_->queue.rbegin(); iterator != impl_->queue.rend(); ++iterator)
+		for (auto iterator = impl_->queue.rbegin();
+			!request.clearPageGuid && iterator != impl_->queue.rend(); ++iterator)
 		{
 			if (iterator->operation == PresentationPersistenceOperation::Save &&
 				iterator->save.target.key == request.target.key)
 			{
+				// Clear 边界必须保持 FIFO；普通 tail 只能在最近边界之后合并。
+				if (iterator->save.clearPageGuid) break;
 				iterator->save = std::move(request);
 				++impl_->diagnostics.replacedPending;
 				return PresentationPersistenceSubmitStatus::ReplacedPending;
@@ -986,7 +1149,11 @@ namespace Inkeys::Drawing::Draw3
 	PresentationPersistenceSubmitStatus PresentationAutoSaveService::SubmitLoad(
 		PresentationLoadRequest request) noexcept
 	{
-		if (!ValidatePresentationTarget(request.target))
+		if (!ValidatePresentationTarget(request.target) ||
+			(request.kind == PresentationLoadKind::Current &&
+				(request.pageGuid || request.intervalOrdinal != 0)) ||
+			(request.kind == PresentationLoadKind::PreviousInterval &&
+				(!request.pageGuid || request.intervalOrdinal >= UINT32_MAX)))
 			return PresentationPersistenceSubmitStatus::Invalid;
 		std::scoped_lock lock(impl_->mutex);
 		if (!impl_->accepting) return PresentationPersistenceSubmitStatus::Closed;

@@ -80,6 +80,31 @@ namespace
 			"non-Laser draw attribute toggles do not change the tool");
 	}
 
+	void TestClearButtonStateMachine()
+	{
+		Check(ResolveBarClearClickAction(false, true, false, false, false) ==
+			BarClearClickAction::PublishClear,
+			"drawing content first click publishes Clear");
+		Check(ResolveBarClearClickAction(false, true, true, true, true) ==
+			BarClearClickAction::EnterSelection,
+			"accepted Clear double click enters Selection without observer delay");
+		Check(ResolveBarClearClickAction(false, true, true, true, false) ==
+			BarClearClickAction::PublishClear,
+			"failed first Clear makes double click retry Clear");
+		Check(ResolveBarClearClickAction(false, false, true, true, false) ==
+			BarClearClickAction::PublishClear,
+			"failed first Clear retries even after an asynchronous empty snapshot");
+		Check(ResolveBarClearClickAction(false, false, false, false, false) ==
+			BarClearClickAction::EnterSelection,
+			"empty drawing click enters Selection");
+		Check(ResolveBarClearClickAction(true, true, false, false, false) ==
+			BarClearClickAction::PublishClear,
+			"Selection with content still publishes Clear");
+		Check(ResolveBarClearClickAction(true, false, false, false, false) ==
+			BarClearClickAction::None,
+			"empty Selection click is a no-op");
+	}
+
 	void TestRememberedLaserOnlyActivatesInPenMode()
 	{
 		using Inkeys::Business::IsLaserToolActive;
@@ -111,6 +136,7 @@ int RunToggleClickCoalescerTests()
 	TestChannelsAreIndependent();
 	TestNonMonotonicTimeStartsNewWindow();
 	TestDrawButtonToggleNeverChangesPenType();
+	TestClearButtonStateMachine();
 	TestRememberedLaserOnlyActivatesInPenMode();
 	TestLaserUsesIndependentColorState();
 	return failureCount;

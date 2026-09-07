@@ -685,14 +685,20 @@ namespace draw3::uink
 				if (!ValidateExtra(canvas.extra)) return false;
 				if (canvas.content.size() > limits_.maxTopLevelObjects) return FailLimit("canvas.content");
 				uint32_t previousUndo = 0;
+				bool previousWasClear = false;
 				for (size_t index = 0; index < canvas.content.size(); ++index)
 				{
+					const bool currentIsClear =
+						std::holds_alternative<UInkClear>(canvas.content[index]);
 					const bool sequenceValid = std::visit([&](const auto& content)
 					{
 						if (content.contentId != index ||
 							(index == 0 && content.undoId != 0) ||
-							(index != 0 && content.undoId < previousUndo)) return false;
+							(index != 0 && content.undoId < previousUndo) ||
+							(index != 0 && (currentIsClear || previousWasClear) &&
+								content.undoId == previousUndo)) return false;
 						previousUndo = content.undoId;
+						previousWasClear = currentIsClear;
 						return true;
 					}, canvas.content[index]);
 					if (!sequenceValid || !ValidateContent(canvas.content[index]))
@@ -1055,6 +1061,20 @@ namespace draw3::uink
 				if (media.extra) { PackKey("extra"); PackExtra(*media.extra); }
 			}
 
+			bool ValidateClear(const UInkClear& clear)
+			{
+				return ValidateExtra(clear.extra) || Fail("clear.extra");
+			}
+
+			void PackClear(const UInkClear& clear)
+			{
+				packer_.pack_map(3 + static_cast<uint32_t>(clear.extra.has_value()));
+				PackKey("type"); packer_.pack_fix_uint16(kClearType);
+				PackKey("contentId"); packer_.pack_fix_uint32(clear.contentId);
+				PackKey("undoId"); packer_.pack_fix_uint32(clear.undoId);
+				if (clear.extra) { PackKey("extra"); PackExtra(*clear.extra); }
+			}
+
 			bool ValidateContent(const UInkContent& content)
 			{
 				return std::visit([&](const auto& value) { return ValidateContentValue(value); }, content);
@@ -1065,7 +1085,8 @@ namespace draw3::uink
 			{
 				if constexpr (std::is_same_v<T, UInkInk>) return ValidateInk(value);
 				else if constexpr (std::is_same_v<T, UInkShape>) return ValidateShape(value);
-				else return ValidateMedia(value);
+				else if constexpr (std::is_same_v<T, UInkMedia>) return ValidateMedia(value);
+				else return ValidateClear(value);
 			}
 
 			void PackContent(const UInkContent& content)
@@ -1078,7 +1099,8 @@ namespace draw3::uink
 			{
 				if constexpr (std::is_same_v<T, UInkInk>) PackInk(value);
 				else if constexpr (std::is_same_v<T, UInkShape>) PackShape(value);
-				else PackMedia(value);
+				else if constexpr (std::is_same_v<T, UInkMedia>) PackMedia(value);
+				else PackClear(value);
 			}
 
 			size_t WorkspaceRank(const UInkDocument& document,

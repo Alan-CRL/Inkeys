@@ -1948,6 +1948,35 @@ namespace draw3::uink
 			return true;
 		}
 
+		bool DecodeClear(const msgpack::object& object, UInkClear& clear,
+			DecodeContext& context)
+		{
+			const std::string path = "clear";
+			if (!ValidateMap(object, { "type", "contentId", "undoId", "extra" },
+				context, path)) return false;
+			uint16_t type = 0;
+			const msgpack::object* typeField = FindField(object, "type");
+			const msgpack::object* contentId = FindField(object, "contentId");
+			const msgpack::object* undoId = FindField(object, "undoId");
+			if (!typeField || !contentId || !undoId)
+			{
+				AddMissing(context, path);
+				return false;
+			}
+			if (!ReadUInt16(*typeField, type, context, "clear.type") ||
+				type != kClearType ||
+				!ReadUInt32(*contentId, clear.contentId, context, "clear.contentId") ||
+				!ReadUInt32(*undoId, clear.undoId, context, "clear.undoId") ||
+				!context.Charge(96, path)) return false;
+			if (const msgpack::object* field = FindField(object, "extra"))
+			{
+				UInkExtra extra;
+				if (!ReadExtra(*field, extra, context, "clear.extra")) return false;
+				clear.extra = std::move(extra);
+			}
+			return true;
+		}
+
 		using GuidKey = std::array<uint8_t, 16>;
 		using OptionalGuidKey = std::optional<GuidKey>;
 
@@ -2489,6 +2518,26 @@ namespace draw3::uink
 				if (!result.provenance.containsInvalidCompleteBlocks)
 					result.validPrefixLength = end;
 			};
+			auto appendContent = [&](UInkContent content) -> bool
+			{
+				if (!currentCanvas || *currentCanvas >= document.canvases.size()) return false;
+				auto& contents = document.canvases[*currentCanvas].content;
+				const bool currentIsClear = std::holds_alternative<UInkClear>(content);
+				const uint32_t currentUndo = std::visit(
+					[](const auto& value) { return value.undoId; }, content);
+				if (!contents.empty())
+				{
+					const UInkContent& previous = contents.back();
+					const bool previousIsClear = std::holds_alternative<UInkClear>(previous);
+					const uint32_t previousUndo = std::visit(
+						[](const auto& value) { return value.undoId; }, previous);
+					// Clear 必须独占撤回组，避免清空和绘制被一次操作同时移除。
+					if ((currentIsClear || previousIsClear) && currentUndo == previousUndo)
+						return false;
+				}
+				contents.push_back(std::move(content));
+				return true;
+			};
 
 			while (position < bytes.size())
 			{
@@ -2627,7 +2676,7 @@ namespace draw3::uink
 					{
 						UInkInk ink;
 						valid = DecodeInk(handle.get(), ink, context);
-						if (valid) document.canvases[*currentCanvas].content.emplace_back(std::move(ink));
+						if (valid) valid = appendContent(UInkContent(std::move(ink)));
 					}
 				}
 				else if (valid && type == kShapeType)
@@ -2637,7 +2686,7 @@ namespace draw3::uink
 					{
 						UInkShape shape;
 						valid = DecodeShape(handle.get(), shape, context);
-						if (valid) document.canvases[*currentCanvas].content.emplace_back(std::move(shape));
+						if (valid) valid = appendContent(UInkContent(std::move(shape)));
 					}
 				}
 				else if (valid && type == kMediaType)
@@ -2647,7 +2696,17 @@ namespace draw3::uink
 					{
 						UInkMedia media;
 						valid = DecodeMedia(handle.get(), media, context);
-						if (valid) document.canvases[*currentCanvas].content.emplace_back(std::move(media));
+						if (valid) valid = appendContent(UInkContent(std::move(media)));
+					}
+				}
+				else if (valid && type == kClearType)
+				{
+					if (state != StreamState::InCanvas || !currentCanvas) valid = false;
+					else
+					{
+						UInkClear clear;
+						valid = DecodeClear(handle.get(), clear, context);
+						if (valid) valid = appendContent(UInkContent(std::move(clear)));
 					}
 				}
 				else if (valid && type == kHeaderType)

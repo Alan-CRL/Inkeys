@@ -42,8 +42,9 @@ export namespace Inkeys::Drawing::Draw3
 		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t,
 			const Bridge::PresentationReadyIdentity*) = nullptr;
 		void (*controlWake)(void*) = nullptr;
-		void (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
+		bool (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
 			draw3::uink::Draw3UInkExportSnapshot&&) = nullptr;
+		bool (*desktopLoadRequested)(void*, draw3::uink::UInkGuid) = nullptr;
 		bool (*presentationSaveRequested)(void*, PresentationSaveRequest&&) = nullptr;
 		bool (*presentationLoadRequested)(void*, PresentationLoadRequest&&) = nullptr;
 		void (*drawingActivityChanged)(void*, bool) = nullptr;
