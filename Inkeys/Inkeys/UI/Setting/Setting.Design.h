@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Setting.Layout.h"
+#include <vector>
+#include <utility>
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -10,6 +12,63 @@ namespace Inkeys::UI::Setting::Design
 	inline constexpr float PageMaximumWidth = 1040.0F;
 	inline constexpr float RowGap = 4.0F;
 	inline constexpr float SectionGap = 28.0F;
+	inline constexpr float NavigationGlyphSize = 16.0F;
+	inline constexpr float RowGlyphSize = 20.0F;
+	inline constexpr float ControlHeight = 32.0F;
+	inline constexpr float ControlSpacing = 8.0F;
+	inline constexpr float ButtonGroupMaximumWidth = 320.0F;
+	inline constexpr float ScrollbarTrackSize = 8.0F;
+	inline constexpr float ScrollbarPadding = 2.0F;
+
+	struct ButtonGroupGeometry
+	{
+		float width = 0.0F;
+		float height = 0.0F;
+		std::vector<LayoutRect> items;
+	};
+
+	// 先按自然宽度换行，再把每行尾部对齐；测量不提交 ImGui item。
+	[[nodiscard]] inline ButtonGroupGeometry ResolveButtonGroup(
+		const std::vector<float>& widths, float maximumWidth)
+	{
+		ButtonGroupGeometry result;
+		maximumWidth = std::isfinite(maximumWidth) ? (std::max)(1.0F, maximumWidth) : 1.0F;
+		std::vector<std::pair<size_t, float>> lines;
+		size_t first = 0;
+		float x = 0.0F;
+		float y = 0.0F;
+		for (const float requestedWidth : widths)
+		{
+			const float width = std::isfinite(requestedWidth)
+				? std::clamp(requestedWidth, 1.0F, maximumWidth) : 1.0F;
+			if (x > 0.0F && x + ControlSpacing + width > maximumWidth)
+			{
+				lines.emplace_back(first, x);
+				result.width = (std::max)(result.width, x);
+				first = result.items.size();
+				x = 0.0F;
+				y += ControlHeight + ControlSpacing;
+			}
+			if (x > 0.0F) x += ControlSpacing;
+			result.items.push_back({ x, y, x + width, y + ControlHeight });
+			x += width;
+		}
+		if (result.items.empty()) return result;
+		lines.emplace_back(first, x);
+		result.width = (std::max)(result.width, x);
+		result.height = y + ControlHeight;
+		for (size_t line = 0; line < lines.size(); ++line)
+		{
+			const size_t end = line + 1 < lines.size() ? lines[line + 1].first : result.items.size();
+			const float offset = result.width - lines[line].second;
+			for (size_t index = lines[line].first; index < end; ++index)
+			{
+				result.items[index].left += offset;
+				result.items[index].right += offset;
+			}
+		}
+		return result;
+	}
 
 	struct NavigationState
 	{

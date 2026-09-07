@@ -3822,7 +3822,7 @@ bool ImFluent::NavItemEx( const char * id_label, const char * label,
     }
     const float icon_left = bb.Min.x + FluentDpx( 8.f );
     DrawIcon( glyph, ImVec2( icon_left, bb.Min.y ),
-        ImVec2( icon_left + FluentDpx( 24.f ), bb.Max.y ), 20.f,
+        ImVec2( icon_left + FluentDpx( 24.f ), bb.Max.y ), style.StandardIconSize,
         ImFluent::GetColorU32( ImFluentCol_TextPrimary ) );
     if ( !compact )
     {

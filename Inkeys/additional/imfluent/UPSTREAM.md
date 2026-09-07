@@ -26,7 +26,8 @@ Search for `INKEYS PATCH`. Local changes are deliberately limited to:
    bundled Fluent icon face independently from text, centered by its actual glyph bounds.
 4. Extracting the vertical `NavItem()` core as `NavItemEx()` for the settings shell's
    explicit pane geometry. It retains ImFluent interaction/focus behavior, stable IDs,
-   a fixed icon axis, item-local bounds, and a compact tooltip.
+   a fixed icon axis, item-local bounds, and a compact tooltip. The glyph size uses
+   `StandardIconSize` so desktop navigation density can be adjusted centrally.
 5. Keeping expander header text out of the chevron slot (full text remains available
    in a tooltip), and avoiding an unmatched expander scope when the body is clipped.
 6. Respecting hidden `##` / `###` suffixes in hyperlink and expander labels, so translated

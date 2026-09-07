@@ -268,9 +268,10 @@ namespace
 				<< " scale=" << scale << " bounds=[" << top << ',' << bottom
 				<< "] padding=" << linePadding << " line=" << metrics.lineHeight * scale << '\n';
 		const auto* fullWidth = baked->FindGlyphNoFallback(L'中');
-		// 此字库的中文全角 advance 为 1 em；验证校准落到真实字面而非只改字号常量。
-		checks.Expect(fullWidth && Near(fullWidth->AdvanceX, size, size * 0.025F),
-			"full-width Chinese advance matches the requested em without double scaling");
+		// 全角 advance 原为 1 em；小幅光学校准只作用于字面，行框仍保持语义字号。
+		checks.Expect(fullWidth && Near(fullWidth->AdvanceX,
+			size * Design::TextOpticalScale, size * 0.025F),
+			"full-width Chinese advance follows the optical em without double scaling");
 		const auto* capital = baked->FindGlyphNoFallback(L'A');
 		const auto* descender = baked->FindGlyphNoFallback(L'g');
 		checks.Expect(capital && descender && descender->Y1 > capital->Y1,
@@ -350,11 +351,11 @@ namespace
 						switch (kind)
 						{
 						case 0:
-							changed = ImFluent::Button("重置", ImVec2(bounds.Width(), bounds.Height()));
+							changed = Design::Button("重置", ImVec2(bounds.Width(), bounds.Height()));
 							break;
 						case 1: changed = Design::ToggleAction(bounds, enabled); break;
 						case 2: changed = Design::SliderAction(bounds, zoom, 1.0F, 2.0F, active); break;
-						case 3: changed = ImFluent::ComboBox("##choice", &selected, options, 2); break;
+						case 3: changed = Design::ComboBox("##choice", &selected, options, 2); break;
 						}
 						const auto minimum = ImGui::GetItemRectMin();
 						const auto maximum = ImGui::GetItemRectMax();
@@ -408,6 +409,243 @@ namespace
 		return bounds;
 	}
 
+	LayoutRect VertexBounds(ImDrawList* list, int first, ImU32 color = 0, bool filterColor = false)
+	{
+		LayoutRect bounds{ FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+		for (int index = first; index < list->VtxBuffer.Size; ++index)
+		{
+			const auto& vertex = list->VtxBuffer[index];
+			if (filterColor && vertex.col != color) continue;
+			bounds.left = (std::min)(bounds.left, vertex.pos.x);
+			bounds.top = (std::min)(bounds.top, vertex.pos.y);
+			bounds.right = (std::max)(bounds.right, vertex.pos.x);
+			bounds.bottom = (std::max)(bounds.bottom, vertex.pos.y);
+		}
+		return bounds;
+	}
+
+	void CheckControlTypography(Checks& checks, ImFont* regular, float scale)
+	{
+		Design::ApplyPalette();
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
+		ImFluent::PushFont(ImFluentTextStyle_Body);
+		const auto* surroundingFont = ImGui::GetFont();
+		const float surroundingSize = ImGui::GetFontSize();
+		constexpr const char* label = "Agpqy 创建桌面快捷方式";
+		const float bodyWidth = Design::TextWidth(label);
+		const float controlWidth = Design::ControlTextWidth(label);
+		const float naturalWidth = Design::ButtonWidth(label) * scale;
+		ImGui::PushFont(regular, Design::ControlText.size);
+		const auto* glyph = ImGui::GetFontBaked()->FindGlyphNoFallback(L'A');
+		const ImFontGlyph shape = glyph ? *glyph : ImFontGlyph{};
+		ImGui::PopFont();
+		for (int variant = 0; variant < 3; ++variant)
+		{
+			ImGui::PushID(variant);
+			ImGui::SetCursorScreenPos(ImVec2(32.0F * scale, (350.0F + variant * 48.0F) * scale));
+			const ImVec2 requested = variant == 2 ? ImVec2(240.0F * scale, 40.0F * scale) : ImVec2(0, 0);
+			auto* list = ImGui::GetWindowDrawList();
+			const int first = list->VtxBuffer.Size;
+			const bool clicked = variant == 1
+				? Design::AccentButton(label, requested) : Design::Button(label, requested);
+			const auto size = ImGui::GetItemRectSize();
+			const auto ink = GlyphDrawBounds(list, first, shape);
+			checks.Expect(!clicked && glyph && ink.Width() > 0.0F
+				&& controlWidth < bodyWidth && size.x >= controlWidth,
+				"production buttons render the independent control face below body text size");
+			const float expectedWidth = variant == 2 ? requested.x : naturalWidth;
+			const float expectedHeight = variant == 2 ? requested.y : 32.0F * scale;
+			checks.Expect(Near(size.x, expectedWidth, 1.0F) && Near(size.y, expectedHeight, 1.0F),
+				"button natural measurement matches drawing while explicit size remains intact");
+			if (!Near(size.x, expectedWidth, 1.0F))
+				std::cerr << "  scale=" << scale << " variant=" << variant << " expected=" << expectedWidth
+					<< " actual=" << size.x << " text=" << controlWidth << '\n';
+			checks.Expect(ImGui::GetFont() == surroundingFont
+				&& Near(ImGui::GetFontSize(), surroundingSize),
+				"control typography restores the surrounding semantic font");
+			ImGui::PopID();
+		}
+		ImFluent::PopFont();
+	}
+
+	void CheckButtonGroupGeometry(Checks& checks)
+	{
+		const std::vector<float> widths{
+			Design::ButtonWidth("Reset"), Design::ButtonWidth("取消"), Design::ButtonWidth("Options")
+		};
+		const auto wide = Design::ResolveButtonGroup(widths, 320.0F);
+		const auto narrow = Design::ResolveButtonGroup(widths, 180.0F);
+		checks.Expect(narrow.height > wide.height && narrow.items.size() == widths.size(),
+			"natural button widths wrap into additional rows when the budget narrows");
+		for (const auto* geometry : { &wide, &narrow })
+		{
+			const LayoutRect bounds{ 0.0F, 0.0F, geometry->width, geometry->height };
+			bool contained = true;
+			bool separate = true;
+			bool aligned = true;
+			for (std::size_t index = 0; index < geometry->items.size(); ++index)
+			{
+				const auto& item = geometry->items[index];
+				contained &= Contains(bounds, item);
+				for (std::size_t next = index + 1; next < geometry->items.size(); ++next)
+					separate &= Disjoint(item, geometry->items[next]);
+				if (index + 1 == geometry->items.size()
+					|| !Near(item.top, geometry->items[index + 1].top))
+					aligned &= Near(item.right, geometry->width);
+			}
+			checks.Expect(contained && separate && aligned,
+				"wrapped button geometry stays disjoint and aligns each line by its last button");
+		}
+		const auto longButton = Design::ResolveButtonGroup(
+			{ Design::ButtonWidth("Restore every user preference to the original configuration") }, 180.0F);
+		checks.Expect(longButton.items.size() == 1 && longButton.width <= 180.0F
+			&& longButton.items.front().Width() > 0.0F,
+			"a single overlong localized button remains inside the available action width");
+	}
+
+	void CheckCompositeContainers(Checks& checks, float scale, bool verify)
+	{
+		constexpr const char* description =
+			"Agpqy（）【】 详细说明保留完整内容。\n"
+			"Long descriptions and warnings remain readable when the window is narrow. "
+			"Changing the interval can increase resource consumption; review this explanation before changing it.";
+		std::array<float, 2> groupHeights{};
+		ImFluent::PushFont(ImFluentTextStyle_Body);
+		for (int widthIndex = 0; widthIndex < 2; ++widthIndex)
+		{
+			const float widthDip = widthIndex == 0 ? 252.0F : 624.0F;
+			for (int kind = 0; kind < 8; ++kind)
+			{
+				ImGui::PushID(10000 + widthIndex * 100 + kind);
+				ImGui::SetCursorScreenPos(ImVec2(32.0F * scale, 20.0F * scale));
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0F, 0.0F));
+				ImGui::BeginChild("##composite", ImVec2(widthDip * scale, 850.0F * scale),
+					ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+				auto* host = ImGui::GetCurrentWindow();
+				const auto origin = ImGui::GetCursorScreenPos();
+				const float available = ImGui::GetContentRegionAvail().x;
+				const float fontSize = ImGui::GetFontSize();
+				int contentCalls = 0;
+				bool activated = false;
+				if (kind == 0)
+				{
+					activated = Design::ButtonGroupRow("actions", "Actions", nullptr, "\xee\xa0\x8f",
+						{ { "reset", "Reset" }, { "cancel", "取消" }, { "options", "Options" } }) != -1;
+					groupHeights[widthIndex] = (ImGui::GetCursorScreenPos().y - origin.y) / scale;
+					if (verify)
+						checks.Expect(Near(ImGui::GetItemRectMax().x,
+							origin.x + available - Design::MeasureRow(available / scale, 0.0F, 0.0F).padding * scale, 1.0F),
+							"production ButtonGroupRow anchors its final drawn button to the row inset");
+				}
+				else if (kind == 1 || kind == 2)
+				{
+					ImGui::PushID("details");
+					ImGui::GetStateStorage()->SetBool(ImGui::GetID("##open"), kind == 2);
+					ImGui::PopID();
+					Design::Details("details", "Detailed explanation with a deliberately long localized heading",
+						[&]
+						{
+							++contentCalls;
+							const auto textOrigin = ImGui::GetCursorScreenPos();
+							const float textWidth = ImGui::GetContentRegionAvail().x;
+							const float measured = Design::TextHeight(description, textWidth, ImFluentTextStyle_Caption);
+							auto* draw = ImGui::GetWindowDrawList();
+							const int first = draw->VtxBuffer.Size;
+							Design::Text(description, ImFluentTextStyle_Caption, Design::TextSecondary);
+							const auto ink = VertexBounds(draw, first);
+							if (verify)
+								checks.Expect(ink.Width() > 0.0F
+									&& ink.top >= textOrigin.y - 1.0F
+									&& ink.bottom <= textOrigin.y + measured + 1.0F
+									&& ink.right <= textOrigin.x + textWidth + 1.0F,
+									"expanded Details contains the production multi-line description vertices");
+						});
+				}
+				else if (kind == 3)
+				{
+					activated = Design::Notice("warning", "请阅读完整说明 Agpqy", description,
+						ImFluentInfoSeverity_Warning, "Learn more");
+					if (verify)
+						checks.Expect(ImGui::GetCursorScreenPos().y - origin.y > 72.0F * scale
+							&& ImGui::GetItemRectMax().x <= origin.x + available,
+							"long Notice grows around its warning and right-side action");
+				}
+				else if (kind == 4) Design::PageContentStart();
+				else if (kind == 5) Design::SectionHeader("A section can be the final item");
+				else if (kind == 6)
+					activated = Design::NavigationRow("navigation", "Navigate to details", description, "\xee\xa0\x8f");
+				else
+				{
+					if (Design::BeginCard("card"))
+					{
+						++contentCalls;
+						Design::Text(description);
+					}
+					Design::EndCard();
+				}
+				if (verify)
+				{
+					checks.Expect(ImGui::GetCurrentWindow() == host && !activated
+						&& Near(ImGui::GetFontSize(), fontSize),
+						"typed containers restore parent and font scopes without idle actions");
+					if (kind == 1 || kind == 2 || kind == 7)
+						checks.Expect(contentCalls == (kind == 1 ? 0 : 1),
+							"closed Details skips content and open containers render it once");
+				}
+				// 直接结束容器，保留空分组、展开详情和末行的真实光标合同。
+				ImGui::EndChild();
+				ImGui::PopStyleVar();
+				ImGui::PopID();
+			}
+		}
+		if (verify)
+			checks.Expect(groupHeights[0] > groupHeights[1],
+				"drawn ButtonGroupRow grows after wrapping at narrow content width");
+		ImFluent::PopFont();
+	}
+
+	void CheckScrollbars(Checks& checks, float scale)
+	{
+		Design::ApplyPalette();
+		const float firstSize = ImGui::GetStyle().ScrollbarSize;
+		const float firstPadding = ImGui::GetStyle().ScrollbarPadding;
+		Design::ApplyScrollbars();
+		Design::ApplyScrollbars();
+		const auto& style = ImGui::GetStyle();
+		checks.Expect(Near(firstSize, style.ScrollbarSize) && Near(firstPadding, style.ScrollbarPadding)
+			&& style.Colors[ImGuiCol_ScrollbarBg].w == 0.0F,
+			"repeated scrollbar setup preserves scale and keeps the track transparent");
+		const auto rest = style.Colors[ImGuiCol_ScrollbarGrab];
+		const auto hover = style.Colors[ImGuiCol_ScrollbarGrabHovered];
+		const auto active = style.Colors[ImGuiCol_ScrollbarGrabActive];
+		checks.Expect(Near(rest.x, rest.y) && Near(rest.y, rest.z)
+			&& hover.w > rest.w && active.w > hover.w,
+			"neutral scrollbar thumb has distinguishable hover and drag states");
+		ImGui::SetCursorScreenPos(ImVec2(1000.0F * scale, 20.0F * scale));
+		auto* parentDraw = ImGui::GetWindowDrawList();
+		const int parentFirst = parentDraw->VtxBuffer.Size;
+		ImGui::SetNextWindowContentSize(ImVec2(0.0F, 2000.0F * scale));
+		ImGui::BeginChild("##scrollbar", ImVec2(200.0F * scale, 240.0F * scale),
+			ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+		auto* window = ImGui::GetCurrentWindow();
+		const auto track = ImGui::GetWindowScrollbarRect(window, ImGuiAxis_Y);
+		auto thumb = VertexBounds(window->DrawList, 0,
+			ImGui::GetColorU32(ImGuiCol_ScrollbarGrab), true);
+		// ImGui 可把子窗口装饰合并到父 draw list，仍读取本次 BeginChild 的真实顶点。
+		if (thumb.Width() <= 0.0F)
+			thumb = VertexBounds(parentDraw, parentFirst, ImGui::GetColorU32(ImGuiCol_ScrollbarGrab), true);
+		const bool rendered = window->ScrollbarY && Near(track.GetWidth(), 8.0F * scale, 1.0F)
+			&& thumb.Width() > 0.0F && thumb.Width() < track.GetWidth()
+			&& thumb.left >= track.Min.x && thumb.right <= track.Max.x;
+		checks.Expect(rendered,
+			"actual scrollbar uses one scaled hit track with a narrower visible thumb");
+		if (!rendered)
+			std::cerr << "  scale=" << scale << " scrollbar=" << window->ScrollbarY
+				<< " track=[" << track.Min.x << ',' << track.Max.x << "] thumb=["
+				<< thumb.left << ',' << thumb.right << "] vertices=" << window->DrawList->VtxBuffer.Size << '\n';
+		ImGui::EndChild();
+	}
+
 	void CheckDrawData(Checks& checks)
 	{
 		const auto* data = ImGui::GetDrawData();
@@ -443,25 +681,26 @@ namespace
 
 	void CheckNativeControls(Checks& checks, ImFont* regular, ImFont* icons, float scale)
 	{
+		Design::ApplyPalette();
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
 		ImFluent::SetIconFont(icons);
 		ImFluent::PushFont(ImFluentTextStyle_Body);
 		ImGui::SetCursorScreenPos(ImVec2(32.0F * scale, 32.0F * scale));
-		const bool button = ImFluent::Button("创建快捷方式 Agpqy", ImVec2(240.0F * scale, 32.0F * scale));
+		const bool button = Design::Button("创建快捷方式 Agpqy", ImVec2(240.0F * scale, 32.0F * scale));
 		const auto buttonSize = ImGui::GetItemRectSize();
 		bool enabled = true;
 		ImGui::SetCursorScreenPos(ImVec2(32.0F * scale, 80.0F * scale));
-		const bool toggle = ImFluent::ToggleSwitch("##state", &enabled, "开启", "关闭");
+		const bool toggle = Design::ToggleSwitch("##state", &enabled, "开启", "关闭");
 		const auto toggleSize = ImGui::GetItemRectSize();
 		float zoom = 1.25F;
 		ImGui::SetCursorScreenPos(ImVec2(32.0F * scale, 120.0F * scale));
 		ImGui::SetNextItemWidth(240.0F * scale);
-		const bool slider = ImFluent::Slider("##zoom", &zoom, 1.0F, 2.0F, "%.2f");
+		const bool slider = Design::Slider("##zoom", &zoom, 1.0F, 2.0F, "%.2f");
 		int selected = 0;
 		const char* items[]{ "默认设置 Agpqy", "繁體中文選項" };
 		ImGui::SetCursorScreenPos(ImVec2(32.0F * scale, 168.0F * scale));
 		ImGui::SetNextItemWidth(240.0F * scale);
-		const bool combo = ImFluent::ComboBox("##choice", &selected, items, 2);
+		const bool combo = Design::ComboBox("##choice", &selected, items, 2);
 		checks.Expect(!button && !toggle && !slider && !combo && enabled
 			&& Near(zoom, 1.25F) && selected == 0,
 			"measuring and drawing idle controls causes no edits");
@@ -470,7 +709,7 @@ namespace
 			"native button and toggle use scaled control geometry");
 
 		ImGui::CalcTextSize("主页");
-		ImGui::PushFont(icons, 20.0F);
+		ImGui::PushFont(icons, Design::NavigationGlyphSize);
 		const auto* glyph = ImGui::GetFontBaked()->FindGlyphNoFallback(0xE80F);
 		const ImFontGlyph iconShape = glyph ? *glyph : ImFontGlyph{};
 		ImGui::PopFont();
@@ -554,6 +793,7 @@ int RunSettingDesignTests()
 		checks.Expect(loaded, "actual bundled font sources load into ImGui");
 		if (!loaded) continue;
 		ImGui::GetIO().FontDefault = fonts[0];
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, fonts[1], Design::BodyText.size);
 		ImGui::NewFrame();
 		ImGui::SetNextWindowPos(ImVec2(0.0F, 0.0F));
 		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -562,13 +802,30 @@ int RunSettingDesignTests()
 			| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse);
 		for (std::size_t index = 0; index < fonts.size() - 1; ++index)
 		{
-			for (const auto metrics : { Design::CaptionText, Design::BodyText, Design::TitleText })
+			for (const auto metrics : { Design::CaptionText, Design::BodyText,
+				Design::TitleText, Design::ControlText })
 				CheckGlyphs(checks, fonts[index], sources[index].name, metrics, scale);
 			CheckTextRendering(checks, fonts[index], scale);
 		}
 		CheckMeasuredRows(checks, fonts[0], scale);
 		CheckNativeControls(checks, fonts[0], fonts.back(), scale);
 		CheckSettingRows(checks, fonts[0], fonts.back(), scale);
+		CheckControlTypography(checks, fonts[0], scale);
+		CheckButtonGroupGeometry(checks);
+		CheckCompositeContainers(checks, scale, false);
+		ImGui::End();
+		ImGui::Render();
+		CheckDrawData(checks);
+
+		// AutoResizeY 的详情和卡片先完成一帧测量，再检查真实可见内容。
+		ImGui::NewFrame();
+		ImGui::SetNextWindowPos(ImVec2(0.0F, 0.0F));
+		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+		ImGui::Begin("##setting-cpu-tests", nullptr,
+			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings
+			| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse);
+		CheckCompositeContainers(checks, scale, true);
+		CheckScrollbars(checks, scale);
 		ImGui::End();
 		ImGui::Render();
 		CheckDrawData(checks);

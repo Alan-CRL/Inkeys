@@ -96,3 +96,21 @@ git diff --check
 - [x] Trellis renderer/UI 合同已同步；不 commit、不启动窗口。
 
 后续：用户审阅首批实际效果，再处理小调整与其他页面；阶段4全量迁移和删除旧wrapper尚未执行。
+
+
+## 当前用户批准的下一轮
+
+1. 集中修Typography/按钮文字/导航glyph/滚动条并稳定共享API。
+2. 将所有剩余页面及插件详情迁移至统一Page/Section/Row/Action/Details；逐项核对基线绑定。
+3. 完整ARM64 Solution与无窗口回归；脚本启动应用，逐页导航、滚动和截图，按实际效果迭代。
+4. 同步规范和验证记录；不自动commit。详见research/approved-full-migration.md。
+
+
+## 全页代码阶段完成（2026-09-06）
+
+- [x] 阶段1：文字/按钮文字/导航图标/滚动条统一修正，公共控件API稳定。
+- [x] 阶段2：全部实际页面迁入统一布局；旧34%列和Widgets旧页包装删除。
+- [x] 完整ARM64 Solution、集成无窗口与CPU控件回归、i18n、编码和diff检查通过；独立逐页审查无未解决代码问题。
+- [ ] 实际窗口截图及按图精修：Windows锁屏当前阻挡，已请求用户解锁；解锁后按research/full-migration-validation.md继续。
+
+未自动commit。任务保持in_progress，尚未完成全页真实视觉验收。

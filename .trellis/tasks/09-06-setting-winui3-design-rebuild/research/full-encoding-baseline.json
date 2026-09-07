@@ -1,0 +1,272 @@
+{
+  ".trellis/spec/native-desktop/build-and-compatibility.md": {
+    "bom": false,
+    "crlf": 98,
+    "lf": 98
+  },
+  ".trellis/spec/native-desktop/configuration-i18n-and-assets.md": {
+    "bom": false,
+    "crlf": 248,
+    "lf": 248
+  },
+  ".trellis/spec/native-desktop/cpp-conventions.md": {
+    "bom": false,
+    "crlf": 72,
+    "lf": 72
+  },
+  ".trellis/spec/native-desktop/directory-structure.md": {
+    "bom": false,
+    "crlf": 73,
+    "lf": 77
+  },
+  ".trellis/spec/native-desktop/errors-logging-and-resources.md": {
+    "bom": false,
+    "crlf": 162,
+    "lf": 162
+  },
+  ".trellis/spec/native-desktop/index.md": {
+    "bom": false,
+    "crlf": 47,
+    "lf": 47
+  },
+  ".trellis/spec/native-desktop/input-and-ink.md": {
+    "bom": false,
+    "crlf": 83,
+    "lf": 83
+  },
+  ".trellis/spec/native-desktop/rendering-and-ui.md": {
+    "bom": false,
+    "crlf": 1097,
+    "lf": 1097
+  },
+  ".trellis/workspace/AlanCRL/index.md": {
+    "bom": false,
+    "crlf": 67,
+    "lf": 67
+  },
+  ".trellis/workspace/AlanCRL/journal-1.md": {
+    "bom": false,
+    "crlf": 726,
+    "lf": 726
+  },
+  "Inkeys/IdtI18nKeys.g.h": {
+    "bom": false,
+    "crlf": 539,
+    "lf": 539
+  },
+  "Inkeys/Inkeys.vcxproj": {
+    "bom": false,
+    "crlf": 801,
+    "lf": 801
+  },
+  "Inkeys/Inkeys.vcxproj.filters": {
+    "bom": false,
+    "crlf": 1047,
+    "lf": 1047
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Base.cppm": {
+    "bom": false,
+    "crlf": 211,
+    "lf": 211
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp": {
+    "bom": false,
+    "crlf": 188,
+    "lf": 188
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Controls.h": {
+    "bom": false,
+    "crlf": 36,
+    "lf": 36
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Design.h": {
+    "bom": false,
+    "crlf": 133,
+    "lf": 133
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Layout.h": {
+    "bom": false,
+    "crlf": 181,
+    "lf": 181
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+    "bom": false,
+    "crlf": 322,
+    "lf": 322
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.h": {
+    "bom": false,
+    "crlf": 61,
+    "lf": 61
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.SessionState.h": {
+    "bom": false,
+    "crlf": 188,
+    "lf": 188
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp": {
+    "bom": false,
+    "crlf": 105,
+    "lf": 105
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Theme.h": {
+    "bom": false,
+    "crlf": 35,
+    "lf": 35
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Typography.h": {
+    "bom": false,
+    "crlf": 41,
+    "lf": 41
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Widgets.cpp": {
+    "bom": false,
+    "crlf": 170,
+    "lf": 170
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Widgets.cppm": {
+    "bom": false,
+    "crlf": 41,
+    "lf": 41
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Wrap.h": {
+    "bom": false,
+    "crlf": 24,
+    "lf": 24
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "bom": false,
+    "crlf": 4290,
+    "lf": 4290
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cppm": {
+    "bom": false,
+    "crlf": 31,
+    "lf": 31
+  },
+  "Inkeys/additional/imfluent/LICENSE": {
+    "bom": false,
+    "crlf": 20,
+    "lf": 20
+  },
+  "Inkeys/additional/imfluent/UPSTREAM.md": {
+    "bom": false,
+    "crlf": 51,
+    "lf": 51
+  },
+  "Inkeys/additional/imfluent/imfluent.cpp": {
+    "bom": false,
+    "crlf": 7198,
+    "lf": 7198
+  },
+  "Inkeys/additional/imfluent/imfluent.h": {
+    "bom": false,
+    "crlf": 583,
+    "lf": 583
+  },
+  "Inkeys/additional/imfluent/imfluent_icons.h": {
+    "bom": false,
+    "crlf": 1535,
+    "lf": 1535
+  },
+  "Inkeys/additional/imfluent/imfluent_internal.h": {
+    "bom": false,
+    "crlf": 140,
+    "lf": 140
+  },
+  "Inkeys/src/i18n/en-US.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  },
+  "Inkeys/src/i18n/zh-CN.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  },
+  "Inkeys/src/i18n/zh-TW.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  },
+  "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj": {
+    "bom": false,
+    "crlf": 130,
+    "lf": 130
+  },
+  "InkeysHeadlessTests/animation_tests.cpp": {
+    "bom": false,
+    "crlf": 927,
+    "lf": 927
+  },
+  "InkeysHeadlessTests/dirty_region_tests.cpp": {
+    "bom": false,
+    "crlf": 308,
+    "lf": 308
+  },
+  "InkeysHeadlessTests/frame_pacing_tests.cpp": {
+    "bom": true,
+    "crlf": 528,
+    "lf": 528
+  },
+  "InkeysHeadlessTests/message_tests.cpp": {
+    "bom": false,
+    "crlf": 137,
+    "lf": 137
+  },
+  "InkeysHeadlessTests/ppt_ui_tests.cpp": {
+    "bom": false,
+    "crlf": 180,
+    "lf": 180
+  },
+  "InkeysHeadlessTests/present_decision_tests.cpp": {
+    "bom": false,
+    "crlf": 299,
+    "lf": 299
+  },
+  "InkeysHeadlessTests/render_scheduler_tests.cpp": {
+    "bom": false,
+    "crlf": 558,
+    "lf": 558
+  },
+  "InkeysHeadlessTests/setting_design_tests.cpp": {
+    "bom": false,
+    "crlf": 577,
+    "lf": 577
+  },
+  "InkeysHeadlessTests/setting_session_state_tests.cpp": {
+    "bom": false,
+    "crlf": 219,
+    "lf": 219
+  },
+  "InkeysHeadlessTests/surface_tests.cpp": {
+    "bom": false,
+    "crlf": 0,
+    "lf": 67
+  },
+  "InkeysHeadlessTests/toggle_click_coalescer_tests.cpp": {
+    "bom": false,
+    "crlf": 73,
+    "lf": 73
+  },
+  "InkeysHeadlessTests/wake_signal_tests.cpp": {
+    "bom": false,
+    "crlf": 255,
+    "lf": 255
+  },
+  "InkeysHeadlessTests/window_geometry_tests.cpp": {
+    "bom": false,
+    "crlf": 295,
+    "lf": 295
+  },
+  "InkeysHeadlessTests/window_tests.cpp": {
+    "bom": false,
+    "crlf": 249,
+    "lf": 249
+  },
+  "Scripts/i18n.zh-CN.snapshot.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  }
+}

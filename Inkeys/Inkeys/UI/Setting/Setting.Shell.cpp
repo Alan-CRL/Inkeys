@@ -7,6 +7,7 @@ namespace Inkeys::UI::Setting::Design
 {
 	void BindTextFonts(ImFont* regular, ImFont* strong)
 	{
+		SetStateLabels(IA(I18nKey.SettingsUI.Design.Enabled).c_str(), IA(I18nKey.SettingsUI.Design.Disabled).c_str());
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Caption, regular, 12.0F);
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, 14.0F);
 		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_BodyStrong, strong, 14.0F);
@@ -32,10 +33,10 @@ namespace Inkeys::UI::Setting::Design
 		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
 		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
 		ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
-		const bool toggled = ImFluent::Button("##pane-toggle", { Pixels(40.0F), Pixels(36.0F) });
+		const bool toggled = Button("##pane-toggle", { Pixels(40.0F), Pixels(36.0F) });
 		ImFluent::PopStyleColor(4);
 		ImFluent::DrawIcon("\ue700", menuOrigin,
-			{ menuOrigin.x + Pixels(40.0F), menuOrigin.y + Pixels(36.0F) }, 20.0F, TextPrimary);
+			{ menuOrigin.x + Pixels(40.0F), menuOrigin.y + Pixels(36.0F) }, NavigationGlyphSize, TextPrimary);
 		if (state.Expanded())
 			TextAt(IA(I18nKey.SettingsUI.Design.NavigationTitle).c_str(),
 				{ menuOrigin.x + Pixels(44.0F), menuOrigin.y + Pixels(8.0F) },

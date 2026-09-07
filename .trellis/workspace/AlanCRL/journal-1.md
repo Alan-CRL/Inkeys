@@ -724,3 +724,35 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Next Steps
 
 - 用户审阅首批实际视觉并反馈小调整；后续再逐批迁移其他页面。未启动窗口、未commit。
+
+
+## Session 29: Setting 全页设计迁移与公共视觉校准
+
+**Date**: 2026-09-06
+**Task**: Setting 全页设计迁移与公共视觉校准
+**Branch**: `fluent`
+
+### Summary
+
+完成两阶段代码：统一文字/按钮/导航图标/滚动条，全部实际页迁入公共设计；构建和无窗口验证通过，锁屏阻挡真实截图待解锁。
+
+### Main Changes
+
+- 补齐typed Row、ButtonGroup、Details、Notice、Card、NavigationRow和统一控件字体；旧34%列退出。
+- 保留全部配置及FIFO行为；完成全差异审查和全页规范同步。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64 host完整Debug|ARM64 Solution 0 errors；集成--no-window、CPU控件回归、i18n304/304、编码和diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户解锁桌面后，启动Build/SettingVisualReview/app/Inkeys.exe，用research/window-review.py进行全页真实截图并迭代。禁止Computer Use，不自动commit。

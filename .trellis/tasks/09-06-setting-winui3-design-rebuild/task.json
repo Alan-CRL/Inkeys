@@ -2,7 +2,7 @@
   "id": "setting-winui3-design-rebuild",
   "name": "setting-winui3-design-rebuild",
   "title": "Setting WinUI 3 桌面视觉重建与设计审查",
-  "description": "WinUI 3 桌面设置视觉重建：先交付效果稿与规划审查，保留 ImFluent、业务配置和共享渲染边界。",
+  "description": "WinUI 3 设置全页视觉迁移：首批0ffd0341后集中修文字/图标/滚动条，覆盖全部页面并脚本截图验收。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "关联 08-13-setting-fluent2-responsive-ui；已获用户批准并完成首批导航、主页、常规页迁移及静态/无窗口验证；其余页后续迁移，整页原生视觉待用户审阅。参考 preview/index.html 和 research/findings.md。",
+  "notes": "关联 08-13-setting-fluent2-responsive-ui；首批提交0ffd0341后，全页迁移和字体/按钮/图标/滚动条修正已实现，构建与静态/无窗口检查通过；已完成11张默认页真实截图及可见区域审查；再次锁屏后暂停，插件详情/支持/调试/页底/窄窗验收待继续，按research/full-migration-validation.md执行。参考 preview/index.html 和 research/findings.md。",
   "meta": {}
 }

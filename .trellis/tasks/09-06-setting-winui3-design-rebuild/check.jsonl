@@ -7,3 +7,4 @@
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-first-batch.md", "reason": "最新用户批准范围与首批验收"}
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/first-batch-binding-audit.md", "reason": "HEAD绑定逐项覆盖及FIFO宏提取风险"}
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/headless-opportunities.md", "reason": "既有无窗口测试入口和字体DrawData验证边界"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-full-migration.md", "reason": "本轮最新用户实施范围、两阶段顺序、脚本窗口验证授权"}

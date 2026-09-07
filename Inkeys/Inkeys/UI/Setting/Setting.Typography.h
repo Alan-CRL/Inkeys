@@ -12,7 +12,9 @@ namespace Inkeys::UI::Setting::Design
 	inline constexpr TypographyMetrics CaptionText{ 12.0F, 16.0F };
 	inline constexpr TypographyMetrics BodyText{ 14.0F, 20.0F };
 	inline constexpr TypographyMetrics TitleText{ 28.0F, 36.0F };
+	inline constexpr TypographyMetrics ControlText{ 13.0F, 20.0F };
 	inline constexpr float FontReferenceSize = 30.0F;
+	inline constexpr float TextOpticalScale = 0.97F;
 
 	[[nodiscard]] inline ImFontConfig HarmonyFontConfig(float rasterizerDensity)
 	{
@@ -21,8 +23,8 @@ namespace Inkeys::UI::Setting::Design
 		config.OversampleV = 1;
 		config.RasterizerDensity = rasterizerDensity;
 		config.FontDataOwnedByAtlas = false;
-		// hhea 高 1213 / em 1000；字面校准与固定基线补偿同时设置。
-		config.ExtraSizeScale = 1.213F;
+		// 保留语义字号与行框；按实际窗口观感小幅收敛字面，控件另用 ControlText。
+		config.ExtraSizeScale = 1.213F * TextOpticalScale;
 		config.GlyphOffset.y = FontReferenceSize * 0.025F;
 		return config;
 	}

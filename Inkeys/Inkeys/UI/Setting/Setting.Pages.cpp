@@ -7,55 +7,6 @@ namespace Inkeys::UI::Setting::Design
 {
 	namespace
 	{
-		bool ToggleRow(const char* id, const char* title, const char* description,
-			const char* glyph, bool& value)
-		{
-			const std::string on = IA(I18nKey.SettingsUI.Design.Enabled);
-			const std::string off = IA(I18nKey.SettingsUI.Design.Disabled);
-			const float labelWidth = (std::max)(TextWidth(on.c_str()), TextWidth(off.c_str()));
-			bool changed = false;
-			SettingRow(id, title, description, glyph, labelWidth / Pixels(1.0F) + 52.0F, 20.0F,
-				[&](const LayoutRect& bounds)
-				{
-					changed = ToggleAction(bounds, value);
-					TextAt(value ? on.c_str() : off.c_str(), { bounds.left, bounds.top }, labelWidth);
-				});
-			return changed;
-		}
-
-		bool ComboRow(const char* id, const char* title, const char* description,
-			const char* glyph, int& value, const std::vector<std::string>& items)
-		{
-			std::vector<const char*> views;
-			float width = 160.0F;
-			for (const auto& item : items)
-			{
-				views.push_back(item.c_str());
-				width = (std::max)(width, TextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
-			}
-			bool changed = false;
-			SettingRow(id, title, description, glyph, (std::min)(320.0F, width), 32.0F,
-				[&](const LayoutRect&)
-				{
-					changed = ImFluent::ComboBox("##select", &value, views.data(), static_cast<int>(views.size()));
-				});
-			return changed;
-		}
-
-		void Details(const char* id, const char* title, const char* description)
-		{
-			ImGui::PushID(id);
-			bool expanded = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##open"));
-			const std::string label = std::string(title) + "###details";
-			if (ImFluent::BeginExpander(label.c_str(), &expanded))
-			{
-				Text(description, ImFluentTextStyle_Caption, TextSecondary);
-				ImFluent::EndExpander();
-			}
-			ImGui::GetStateStorage()->SetBool(ImGui::GetID("##open"), expanded);
-			ImGui::PopID();
-		}
-
 		void WritingIllustration(ImVec2 origin, float width, float height)
 		{
 			// 首页静态矢量示意直接进入现有 ImDrawData，不引入额外图片或渲染器。
@@ -91,7 +42,7 @@ namespace Inkeys::UI::Setting::Design
 		{
 			ImGui::PushID(static_cast<int>(kind));
 			const std::string stableLabel = std::string(label) + "###link";
-			if (ImFluent::HyperlinkButton(stableLabel.c_str())) action = kind;
+			if (HyperlinkButton(stableLabel.c_str())) action = kind;
 			ImGui::PopID();
 		}
 	}
@@ -105,21 +56,11 @@ namespace Inkeys::UI::Setting::Design
 			IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
 		const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
 		const std::string create = IA(I18nKey.Operate.Create);
-		const float moreWidth = ButtonWidth(more.c_str());
-		const float createWidth = ButtonWidth(create.c_str());
-		const auto shortcutMeasure = MeasureRow(ImGui::GetContentRegionAvail().x / Pixels(1.0F), moreWidth + 8.0F + createWidth, 32.0F);
-		const bool stackedButtons = moreWidth + 8.0F + createWidth > shortcutMeasure.actionWidth;
-		SettingRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
-			IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b", moreWidth + 8.0F + createWidth,
-			stackedButtons ? 72.0F : 32.0F, [&](const LayoutRect& bounds)
-			{
-				const float actualMore = (std::min)(Pixels(moreWidth), bounds.Width());
-				const float actualCreate = (std::min)(Pixels(createWidth), bounds.Width());
-				ImGui::SetCursorScreenPos({ stackedButtons ? bounds.right - actualMore : bounds.left, bounds.top });
-				events.shortcutOptions = ImFluent::Button((more + "###more").c_str(), { actualMore, Pixels(32.0F) });
-				ImGui::SetCursorScreenPos({ bounds.right - actualCreate, bounds.top + (stackedButtons ? Pixels(40.0F) : 0.0F) });
-				events.createShortcut = ImFluent::Button((create + "###create").c_str(), { actualCreate, Pixels(32.0F) });
-			});
+		const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b",
+			{ { "more", more }, { "create", create } });
+		events.shortcutOptions = shortcutAction == 0;
+		events.createShortcut = shortcutAction == 1;
 
 		SectionHeader(IA(I18nKey.SettingsUI.Design.AppearanceSection).c_str());
 		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
@@ -173,7 +114,7 @@ namespace Inkeys::UI::Setting::Design
 		const float titleHeight = TextHeight(heroTitle.c_str(), copyWidth, ImFluentTextStyle_Title);
 		const float descriptionHeight = TextHeight(heroDescription.c_str(), copyWidth);
 		const float primaryWidth = (std::min)(copyWidth, Pixels(ButtonWidth(drawAction.c_str())));
-		const float tutorialWidth = TextWidth(tutorial.c_str());
+		const float tutorialWidth = ControlTextWidth(tutorial.c_str());
 		const bool wrapHeroButtons = primaryWidth + Pixels(16.0F) + tutorialWidth > copyWidth;
 		const float heroHeight = (std::max)(Pixels(212.0F), inset * 2.0F + Pixels(24.0F) + titleHeight
 			+ Pixels(10.0F) + descriptionHeight + Pixels(20.0F) + Pixels(wrapHeroButtons ? 72.0F : 32.0F));
@@ -191,10 +132,10 @@ namespace Inkeys::UI::Setting::Design
 		TextAt(heroDescription.c_str(), { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Body, IM_COL32(78, 96, 112, 255));
 		y += descriptionHeight + Pixels(20.0F);
 		ImGui::SetCursorScreenPos({ heroOrigin.x + inset, y });
-		if (ImFluent::AccentButton((drawAction + "###home-customize").c_str(), { primaryWidth, Pixels(32.0F) })) action = HomeAction::Draw;
+		if (AccentButton((drawAction + "###home-customize").c_str(), { primaryWidth, Pixels(32.0F) })) action = HomeAction::Draw;
 		ImGui::SetCursorScreenPos({ heroOrigin.x + inset + (wrapHeroButtons ? 0.0F : primaryWidth + Pixels(16.0F)), y + (wrapHeroButtons ? Pixels(40.0F) : Pixels(4.0F)) });
 		bool showTutorial = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##home-tutorial-visible"));
-		if (ImFluent::HyperlinkButton((tutorial + "###home-tutorial").c_str())) showTutorial = !showTutorial;
+		if (HyperlinkButton((tutorial + "###home-tutorial").c_str())) showTutorial = !showTutorial;
 		ImGui::GetStateStorage()->SetBool(ImGui::GetID("##home-tutorial-visible"), showTutorial);
 		ImGui::SetCursorScreenPos({ heroOrigin.x, heroOrigin.y + heroHeight + Pixels(4.0F) });
 
@@ -218,7 +159,7 @@ namespace Inkeys::UI::Setting::Design
 				featureOrigin.y + (featureColumns ? 0.0F : static_cast<float>(index) * (featureHeight + Pixels(8.0F))));
 			ImGui::PushID(static_cast<int>(index));
 			ImGui::SetCursorScreenPos(origin);
-			if (ImFluent::Button("##feature", { featureWidth, featureHeight })) action = feature.action;
+			if (Button("##feature", { featureWidth, featureHeight })) action = feature.action;
 			draw->AddRectFilled({ origin.x + 1.0F, origin.y + 1.0F }, { origin.x + featureWidth - 1.0F, origin.y + Pixels(84.0F) }, feature.tint, Pixels(4.0F));
 			ImFluent::DrawIcon(feature.icon, origin, { origin.x + featureWidth, origin.y + Pixels(84.0F) }, 36.0F, feature.ink);
 			TextAt(IA(feature.title).c_str(), { origin.x + Pixels(16.0F), origin.y + Pixels(100.0F) }, featureWidth - Pixels(48.0F), ImFluentTextStyle_BodyStrong);
@@ -245,7 +186,7 @@ namespace Inkeys::UI::Setting::Design
 			const float descriptionHeight = TextHeight(description, copyWidth, ImFluentTextStyle_Caption);
 			const float height = (std::max)(Pixels(60.0F), titleHeight + descriptionHeight + Pixels(24.0F));
 			ImGui::PushID(id);
-			if (ImFluent::Button("##entry", { entryWidth, height })) action = target;
+			if (Button("##entry", { entryWidth, height })) action = target;
 			ImFluent::DrawIcon(icon, { origin.x + Pixels(12.0F), origin.y }, { origin.x + Pixels(40.0F), origin.y + height }, 20.0F, TextPrimary);
 			const float textY = origin.y + (height - titleHeight - descriptionHeight) * 0.5F;
 			TextAt(title, { origin.x + Pixels(52.0F), textY }, copyWidth);
@@ -265,7 +206,7 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::BeginChild("##home-author-section", { authorWidth, 0.0F }, ImGuiChildFlags_AutoResizeY);
 		Text(IA(I18nKey.SettingsUI.Design.Improve).c_str(), ImFluentTextStyle_BodyStrong);
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(4.0F));
-		const bool authorVisible = ImFluent::BeginCard("##author");
+		const bool authorVisible = BeginCard("##author");
 		if (authorVisible)
 		{
 			const ImVec2 authorOrigin = ImGui::GetCursorScreenPos();
@@ -287,12 +228,12 @@ namespace Inkeys::UI::Setting::Design
 			for (const auto& link : links)
 			{
 				const std::string label = IA(link.first);
-				ImFluent::WrapPanelNextItem(TextWidth(label.c_str()) + Pixels(16.0F));
+				ImFluent::WrapPanelNextItem(ControlTextWidth(label.c_str()) + Pixels(16.0F));
 				Link(link.first, label.c_str(), link.second, action);
 			}
 			ImFluent::EndWrapPanel();
 		}
-		ImFluent::EndCard();
+		EndCard();
 		ImGui::EndChild();
 		const float authorBottom = ImGui::GetItemRectMax().y;
 		ImGui::SetCursorScreenPos({ bottomOrigin.x, (std::max)(commonBottom, authorBottom) + Pixels(20.0F) });
@@ -307,7 +248,7 @@ namespace Inkeys::UI::Setting::Design
 		};
 		for (const auto& link : footer)
 		{
-			ImFluent::WrapPanelNextItem(TextWidth(link.first.c_str()) + Pixels(16.0F));
+			ImFluent::WrapPanelNextItem(ControlTextWidth(link.first.c_str()) + Pixels(16.0F));
 			Link(link.first.c_str(), link.first.c_str(), link.second, action);
 		}
 		ImFluent::EndWrapPanel();

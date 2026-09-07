@@ -1,6 +1,6 @@
 # WinUI 3 桌面设置设计方案 · v1
 
-状态：v1 视觉方向已获认可，用户明确批准导航、主页、常规页首批实现；范围补充见 research/approved-first-batch.md。目标是 WinUI 3 桌面应用的结构和视觉质量；继续使用 ImGui + ImFluent，不迁移到 XAML，也不改共享渲染架构。
+状态：首批已提交0ffd0341；当前按research/approved-full-migration.md进行集中视觉修正与全部页面迁移，允许脚本检查实际窗口。目标是 WinUI 3 桌面应用的结构和视觉质量；继续使用 ImGui + ImFluent，不迁移到 XAML，也不改共享渲染架构。
 
 ## 视觉方向
 
@@ -92,3 +92,8 @@
 最大风险是字体字面放大后上/下延伸超出原控件 clip，以及迁移遗失配置副作用；其次是 ImFluent 带静态上下文、即时布局的公开 API 与精确图标/基线要求不匹配。用原生离屏样张和一个完整“常规”纵向切片先消除风险，再扩展页面。
 
 以页面为回退粒度，通过内部映射暂时回到旧页面；不回退 resident 生命周期或共享渲染管线。全部页面映射核对完成后再删旧 wrapper/switch 分支。若必须大改 ImFluent 或更换文字渲染引擎，先补充技术方案，不能以本轮视觉规划当作整体后端替换授权。
+
+
+## 第二轮结构收口
+
+统一Typography/ControlText/Icon/Scrollbar token，公共Page/Section/Row/Action/Details组合承担尺寸与对齐，页面只提供文案、控件数据及真实业务回调。阶段1落定共享接口后，阶段2迁移所有实际路由；不保留旧34%操作列。独特内容使用专用容器但共享文本行距、边框和控件规则。字体role全页统一后移除仅Home/General条件绑定，标题栏保持原边界。

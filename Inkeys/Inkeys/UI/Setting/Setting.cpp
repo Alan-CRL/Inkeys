@@ -55,6 +55,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(
 	HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, ImGuiIO& io);
 
 using namespace std;
+namespace Design = Inkeys::UI::Setting::Design;
 
 namespace
 {
@@ -295,7 +296,8 @@ namespace
 		Inkeys::UI::Setting::Design::ApplyPalette();
 		// 最小客户区仍需完整容纳全部路由；宽度由响应式模式另行控制。
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
-		Widgets::style.ApplyGlobal(12.0F);
+		Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
+		Inkeys::UI::Setting::Design::ApplyScrollbars();
 		const auto backdropMode = ApplySettingBackdrop(hwnd);
 		settingBackdropMode.store(backdropMode, memory_order_release);
 		if (backdropMode != Inkeys::UI::Setting::BackdropMode::Solid)
@@ -2017,8 +2019,6 @@ SettingSessionCoroutine RunSettingSession()
 		int settingTab = 0;
 		int settingPlugInTab = 0;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
-		int transitionTab = settingTab;
-		auto transitionStarted = chrono::steady_clock::now();
 
 		// 首次恢复只完成常驻资源预热；Show 后才创建交换链并进入绘制循环。
 		settingFrameResult = FrameResult::Idle;
@@ -2179,39 +2179,25 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
 					{ Widgets::Dip(shellGeometry.gutter), Widgets::Dip(28.0F) });
 				ImGui::PushID(settingTab);
+				// 插件详情各自保存滚动/展开状态，返回总览不会沿用长详情页的位置。
+				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab : 0);
 				ImGui::BeginChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
 					navigationState.overlayOpen ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None);
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
-				const bool designPage = settingTab == settingTabEnum::tab1 || settingTab == settingTabEnum::tab2;
-				if (designPage)
-				{
-					Inkeys::UI::Setting::Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
-					ImFluent::PushFont(ImFluentTextStyle_Body);
-				}
-
-				// 页面切换只推进两个标量，避免动画期间加载或分配图形资源。
-				if (transitionTab != settingTab)
-				{
-					transitionTab = settingTab;
-					transitionStarted = chrono::steady_clock::now();
-				}
-				const float transitionProgress = designPage ? 1.0F
-					: Inkeys::UI::Setting::ResolvePageTransitionProgress(chrono::duration<float>(
-						chrono::steady_clock::now() - transitionStarted).count());
-				ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-					ImGui::GetStyle().Alpha * (0.55F + transitionProgress * 0.45F));
+				// 所有设置页面共享校准字体；离开内容区后再恢复标题栏字体。
+				Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
+				ImFluent::PushFont(ImFluentTextStyle_Body);
 				const float availablePageWidth = ImGui::GetContentRegionAvail().x;
 				const float pageWidth = (std::min)(availablePageWidth,
 					Widgets::Dip(Inkeys::UI::Setting::Design::PageMaximumWidth));
-				const float pageOffset = max(0.0F, (availablePageWidth - pageWidth) * 0.5F)
-					+ Widgets::Dip((1.0F - transitionProgress) * 8.0F);
+				const float pageOffset = max(0.0F, (availablePageWidth - pageWidth) * 0.5F);
 				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pageOffset);
 				(void)ImGui::BeginChild("##setting-page-content", { pageWidth, 0.0F },
 					ImGuiChildFlags_AutoResizeY);
 
-				// 主版块 765<-750(770 主页) * 608
+				// 页面只提交内容与业务事件，尺寸及文本对齐由 Design 层负责。
 				switch (settingTab)
 				{
 					// 主页
@@ -2251,12 +2237,9 @@ SettingSessionCoroutine RunSettingSession()
 				// 语言
 				case settingTabEnum::Language:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
+					Design::PageHeader(IA(I18nKey.SettingsUI.Language.N).c_str());
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Language.UI.N).c_str());
 
-					if (Widgets::BeginSettingsCard("##language-ui",
-						IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
-						IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774"))
 					{
 						vector<string> languages{
 							IA(I18nKey.SettingsUI.Language.UI.Language.en_US),
@@ -2264,7 +2247,10 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.Language.UI.Language.zh_TW)
 						};
 						const int previousLanguage = SelectLanguage;
-						if (Widgets::combo.Select("##language-select", &SelectLanguage, languages)
+						if (Design::ComboRow("##language-ui",
+							IA(I18nKey.SettingsUI.Language.UI.Select).c_str(),
+							IA(I18nKey.SettingsUI.Language.UI.SelectE).c_str(), "\ue774",
+							SelectLanguage, languages)
 							&& previousLanguage != SelectLanguage
 							&& setlist.selectLanguage != SelectLanguage)
 						{
@@ -2275,50 +2261,42 @@ SettingSessionCoroutine RunSettingSession()
 							else I18n::load(1, L"JSON", L"en-US");
 							QueueConfirmRestart(IW(I18nKey.SettingsUI.Language.UI.Warn));
 						}
-						Widgets::EndSettingsCard();
 					}
 					break;
 				}
 				// 配置保存
 				case settingTabEnum::tabConfiguration:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Configuration.N).c_str());
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Configuration.Clean.N).c_str());
+					Design::PageHeader(IA(I18nKey.SettingsUI.Configuration.N).c_str());
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Configuration.Clean.N).c_str());
 
-					if (Widgets::BeginSettingsCard("##configuration-clean",
-						IA(I18nKey.SettingsUI.Configuration.Clean.Enable).c_str(),
-						IA(I18nKey.SettingsUI.Configuration.Clean.EnableE).c_str(), "\ue74d"))
 					{
-						ImFluent::ToggleSwitch("##configuration-clean-toggle",
-							&ConfigurationSetting.Enable, "", "");
+						Design::ToggleRow("##configuration-clean",
+							IA(I18nKey.SettingsUI.Configuration.Clean.Enable).c_str(),
+							IA(I18nKey.SettingsUI.Configuration.Clean.EnableE).c_str(), "\ue74d",
+							ConfigurationSetting.Enable);
 						if (Inkeys::config.Config.AutoClean != ConfigurationSetting.Enable)
 						{
 							Inkeys::config.Config.AutoClean = ConfigurationSetting.Enable;
 							QueueConfigWrite();
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(
+					Design::SectionHeader(
 						IA(I18nKey.SettingsUI.Configuration.CanvasSave.N).c_str());
-					if (Widgets::BeginSettingsCard("##configuration-history",
-						IA(I18nKey.SettingsUI.Configuration.CanvasSave.Enable).c_str(),
-						IA(I18nKey.SettingsUI.Configuration.CanvasSave.EnableE).c_str(), "\ue81c"))
 					{
-						ImFluent::ToggleSwitch("##configuration-history-toggle",
-							&SaveSetting.Enable, "", "");
+						Design::ToggleRow("##configuration-history",
+							IA(I18nKey.SettingsUI.Configuration.CanvasSave.Enable).c_str(),
+							IA(I18nKey.SettingsUI.Configuration.CanvasSave.EnableE).c_str(), "\ue81c",
+							SaveSetting.Enable);
 						if (setlist.saveSetting.enable != SaveSetting.Enable)
 						{
 							setlist.saveSetting.enable = SaveSetting.Enable;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					if (Widgets::BeginSettingsCard("##configuration-retention",
-						IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.N).c_str(),
-						IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.E).c_str(), "\ue823"))
 					{
 						vector<string> retentionOptions{
 							IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.K_1d),
@@ -2329,28 +2307,29 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.Never)
 						};
 						const int previousSaveDays = SaveSetting.SaveDays;
-						if (Widgets::combo.Select("##configuration-retention-select",
-							&SaveSetting.SaveDays, retentionOptions)
+						if (Design::ComboRow("##configuration-retention",
+							IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.N).c_str(),
+							IA(I18nKey.SettingsUI.Configuration.CanvasSave.SaveTime.E).c_str(), "\ue823",
+							SaveSetting.SaveDays, retentionOptions)
 							&& previousSaveDays != SaveSetting.SaveDays
 							&& setlist.saveSetting.saveDays != SaveSetting.SaveDays)
 						{
 							setlist.saveSetting.saveDays = SaveSetting.SaveDays;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 					break;
 				}
 				// 软件版本
 				case settingTabEnum::tab6:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Version.N).c_str());
+					Design::PageHeader(IA(I18nKey.SettingsUI.Version.N).c_str());
 
 					if (AutomaticUpdateState == AutomaticUpdateStateEnum::UpdateNew
-						&& ImFluent::InfoBar(ImFluentInfoSeverity_Warning,
+						&& Design::Notice("##version-manual-update",
 							IA(I18nKey.SettingsUI.Version.ManualUpdate.N).c_str(),
 							"Inkeys 已发现可用更新。",
-							nullptr, nullptr, true,
+							ImFluentInfoSeverity_Warning,
 							IA(I18nKey.SettingsUI.Version.ManualUpdate.ManualUpdate).c_str()))
 					{
 						mandatoryUpdate = true;
@@ -2358,17 +2337,20 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					if (inconsistentArchitecture)
 					{
-						ImFluent::InfoBar(ImFluentInfoSeverity_Warning,
+						Design::Notice("##version-architecture-warning",
 							IA(I18nKey.SettingsUI.Version.N).c_str(),
-							IA(I18nKey.SettingsUI.Version.VersionTip).c_str());
+							IA(I18nKey.SettingsUI.Version.VersionTip).c_str(),
+							ImFluentInfoSeverity_Warning);
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Version.Info.N).c_str());
-					const bool versionCardVisible = ImFluent::BeginCard("##version-info",
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Info.N).c_str());
+					const bool versionCardVisible = Design::BeginCard("##version-info",
 						{ 0.0F, 0.0F }, ImFluentCardStyle_Filled);
 					if (versionCardVisible)
 					{
-						const float logoWidth = min(96.0F * settingGlobalScale,
+						const bool sideBySide = TextureSettingSign[1]
+							&& ImGui::GetContentRegionAvail().x >= Design::Pixels(480.0F);
+						const float logoWidth = min(Design::Pixels(96.0F),
 							ImGui::GetContentRegionAvail().x);
 						if (TextureSettingSign[1])
 						{
@@ -2379,7 +2361,9 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[1],
 								{ logoWidth, logoWidth * sourceHeight / sourceWidth });
 						}
-
+						// 宽卡将原图片与版本文字并排，窄卡按阅读顺序排列并保留原比例。
+						if (sideBySide) ImGui::SameLine(0.0F, Design::Pixels(24.0F));
+						ImGui::BeginGroup();
 						wstring versionText;
 						versionText += IW(I18nKey.SettingsUI.Version.Info.ReleaseVersion) + L" "
 							+ editionVersion + L"(" + editionDate + L")\n";
@@ -2393,36 +2377,31 @@ SettingSessionCoroutine RunSettingSession()
 						versionText += IW(I18nKey.SettingsUI.Version.Info.DebugTag);
 					#endif
 						const string versionTextUtf8 = utf16ToUtf8(versionText);
-						ImGui::TextWrapped("%s", versionTextUtf8.c_str());
+						Design::Text(versionTextUtf8.c_str());
 						if (settingCICD.url.empty())
 						{
-							ImFluent::TextBlockColored(
-								IA(I18nKey.SettingsUI.Version.Info.ManualBuild).c_str(),
-								Widgets::Color(ImFluentCol_TextSecondary),
-								ImFluentTextStyle_Caption);
+							Design::Text(IA(I18nKey.SettingsUI.Version.Info.ManualBuild).c_str(), ImFluentTextStyle_Caption, Design::TextSecondary);
 						}
 						else
 						{
-							ImFluent::TextBlockColored(
-								IA(I18nKey.SettingsUI.Version.Info.AutoBuild).c_str(),
-								Widgets::Color(ImFluentCol_TextSecondary),
-								ImFluentTextStyle_Caption);
-							if (ImFluent::HyperlinkButton(
+							Design::Text(IA(I18nKey.SettingsUI.Version.Info.AutoBuild).c_str(), ImFluentTextStyle_Caption, Design::TextSecondary);
+							if (Design::HyperlinkButton(
 								IA(I18nKey.SettingsUI.Version.Info.CICDInfo).c_str()))
 								settingTab = settingTabEnum::tabCICD;
 						}
+						ImGui::EndGroup();
 					}
-					ImFluent::EndCard();
+					Design::EndCard();
 
-					Widgets::SectionHeader(
+					Design::SectionHeader(
 						IA(I18nKey.SettingsUI.Version.UserInfo.N).c_str());
 					const string userIdDescription = IA(I18nKey.SettingsUI.Version.UserInfo.UserId)
 						+ " " + utf16ToUtf8(userId);
-					if (Widgets::BeginSettingsCard("##version-user-id",
-						IA(I18nKey.SettingsUI.Version.UserInfo.CopyUserId).c_str(),
-						userIdDescription.c_str(), "\ue8c8"))
 					{
-						if (ImFluent::Button(IA(I18nKey.Operate.Copy).c_str()))
+						if (Design::ButtonRow("##version-user-id",
+							IA(I18nKey.SettingsUI.Version.UserInfo.CopyUserId).c_str(),
+							userIdDescription.c_str(), "\ue8c8",
+							IA(I18nKey.Operate.Copy).c_str()))
 						{
 							OpenClipboard(nullptr);
 							EmptyClipboard();
@@ -2444,15 +2423,14 @@ SettingSessionCoroutine RunSettingSession()
 							}
 							CloseClipboard();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Version.Repair.N).c_str());
-					if (Widgets::BeginSettingsCard("##version-repair",
-						IA(I18nKey.SettingsUI.Version.Repair.RepairSoftware).c_str(),
-						IA(I18nKey.SettingsUI.Version.Repair.RepairSoftwareE).c_str(), "\ue90f"))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Repair.N).c_str());
 					{
-						if (ImFluent::Button(IA(I18nKey.Operate.Repair).c_str()))
+						if (Design::ButtonRow("##version-repair",
+							IA(I18nKey.SettingsUI.Version.Repair.RepairSoftware).c_str(),
+							IA(I18nKey.SettingsUI.Version.Repair.RepairSoftwareE).c_str(), "\ue90f",
+							IA(I18nKey.Operate.Repair).c_str()))
 						{
 							if (EnableFixWithChangeArchitecture)
 							{
@@ -2467,23 +2445,21 @@ SettingSessionCoroutine RunSettingSession()
 							else
 								AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 						}
-						Widgets::EndSettingsCard();
 					}
-					if (Widgets::BeginSettingsCard("##version-repair-architecture",
-						IA(I18nKey.SettingsUI.Version.Repair.RepairArch).c_str(), nullptr, "\ue8a9"))
 					{
-						ImFluent::ToggleSwitch("##version-repair-architecture-toggle",
-							&EnableFixWithChangeArchitecture, "", "");
-						Widgets::EndSettingsCard();
+						Design::ToggleRow("##version-repair-architecture",
+							IA(I18nKey.SettingsUI.Version.Repair.RepairArch).c_str(),
+							nullptr, "\ue8a9",
+							EnableFixWithChangeArchitecture);
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Version.Update.N).c_str());
-					if (Widgets::BeginSettingsCard("##version-auto-update",
-						IA(I18nKey.SettingsUI.Version.Update.AutoUpate).c_str(), nullptr, "\ue895"))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Version.Update.N).c_str());
 					{
 						const bool previousAutoUpdate = EnableAutoUpdate;
-						ImFluent::ToggleSwitch("##version-auto-update-toggle",
-							&EnableAutoUpdate, "", "");
+						Design::ToggleRow("##version-auto-update",
+							IA(I18nKey.SettingsUI.Version.Update.AutoUpate).c_str(),
+							nullptr, "\ue895",
+							EnableAutoUpdate);
 						if (previousAutoUpdate != EnableAutoUpdate)
 						{
 							if (!EnableAutoUpdate
@@ -2504,13 +2480,11 @@ SettingSessionCoroutine RunSettingSession()
 									AutomaticUpdateState = AutomaticUpdateStateEnum::UpdateObtainInformation;
 							}
 						}
-						Widgets::EndSettingsCard();
 					}
-					ImFluent::InfoBar(ImFluentInfoSeverity_Informational,
+					Design::Notice("##version-channel-notice",
 						IA(I18nKey.SettingsUI.Version.Update.Channel.N).c_str(),
-						IA(I18nKey.SettingsUI.Version.Update.ChannelTip).c_str());
-					if (Widgets::BeginSettingsCard("##version-update-channel",
-						IA(I18nKey.SettingsUI.Version.Update.Channel.N).c_str(), nullptr, "\ue713"))
+						IA(I18nKey.SettingsUI.Version.Update.ChannelTip).c_str(),
+						ImFluentInfoSeverity_Informational);
 					{
 						vector<string> channels{
 							IA(I18nKey.SettingsUI.Version.Update.Channel.LTS),
@@ -2521,8 +2495,10 @@ SettingSessionCoroutine RunSettingSession()
 						int channelIndex = currentChannel == "Insider" ? 1
 							: (currentChannel == "Canary" ? 2 : 0);
 						const int previousChannelIndex = channelIndex;
-						if (Widgets::combo.Select("##version-update-channel-select",
-							&channelIndex, channels) && previousChannelIndex != channelIndex)
+						if (Design::ComboRow("##version-update-channel",
+							IA(I18nKey.SettingsUI.Version.Update.Channel.N).c_str(),
+							nullptr, "\ue713",
+							channelIndex, channels) && previousChannelIndex != channelIndex)
 						{
 							const string selectedChannel = channelIndex == 1 ? "Insider"
 								: (channelIndex == 2 ? "Canary" : "LTS");
@@ -2545,11 +2521,7 @@ SettingSessionCoroutine RunSettingSession()
 								}
 							}
 						}
-						Widgets::EndSettingsCard();
 					}
-					if (Widgets::BeginSettingsCard("##version-update-architecture",
-						IA(I18nKey.SettingsUI.Version.Update.Arch.N).c_str(),
-						IA(I18nKey.SettingsUI.Version.Update.Arch.E).c_str(), "\ue8a9"))
 					{
 						vector<string> architectures{
 							IA(I18nKey.SettingsUI.Version.Update.Arch.K_64),
@@ -2560,8 +2532,10 @@ SettingSessionCoroutine RunSettingSession()
 						int architectureIndex = currentArchitecture == "win64" ? 0
 							: (currentArchitecture == "arm64" ? 2 : 1);
 						const int previousArchitectureIndex = architectureIndex;
-						if (Widgets::combo.Select("##version-update-architecture-select",
-							&architectureIndex, architectures)
+						if (Design::ComboRow("##version-update-architecture",
+							IA(I18nKey.SettingsUI.Version.Update.Arch.N).c_str(),
+							IA(I18nKey.SettingsUI.Version.Update.Arch.E).c_str(), "\ue8a9",
+							architectureIndex, architectures)
 							&& previousArchitectureIndex != architectureIndex)
 						{
 							const string selectedArchitecture = architectureIndex == 0 ? "win64"
@@ -2585,7 +2559,6 @@ SettingSessionCoroutine RunSettingSession()
 								}
 							}
 						}
-						Widgets::EndSettingsCard();
 					}
 					break;
 				}
@@ -2593,24 +2566,26 @@ SettingSessionCoroutine RunSettingSession()
 				// CI/CD 构建详情
 				case settingTabEnum::tabCICD:
 				{
-					if (ImFluent::Button("\ue72b##cicd-back",
-						{ 36.0F * settingGlobalScale, 36.0F * settingGlobalScale }))
+					if (Design::IconButton("##cicd-back", "\ue72b"))
 						settingTab = settingTabEnum::tab6;
-					ImGui::SameLine(0.0F, 12.0F * settingGlobalScale);
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.CICD.N).c_str(), "CI/CD");
-					Widgets::PageContentStart();
+					ImGui::SameLine(0.0F, Design::Pixels(8.0F));
+					if (Design::HyperlinkButton(IA(I18nKey.SettingsUI.Version.N).c_str()))
+						settingTab = settingTabEnum::tab6;
+					Design::PageHeader(IA(I18nKey.SettingsUI.CICD.N).c_str(), "CI/CD");
+					Design::PageContentStart();
 
-					const bool cicdCardVisible = ImFluent::BeginCard("##cicd-details",
-						{ 0.0F, 0.0F }, ImFluentCardStyle_Outlined);
+					// 链接作为可导航设置行，长URL沿说明区换行，不挤出按钮边界。
+					if (Design::NavigationRow("##cicd-run-link", "CI/CD",
+						utf16ToUtf8(settingCICD.url).c_str(), "\ue71b"))
+						ShellExecuteW(nullptr, nullptr, settingCICD.url.c_str(), nullptr, nullptr, SW_SHOW);
+					if (Design::NavigationRow("##cicd-repository-link",
+						IA(I18nKey.SettingsUI.CICD.Repository).c_str(),
+						utf16ToUtf8(settingCICD.repoUrl).c_str(), "\ue8a5"))
+						ShellExecuteW(nullptr, nullptr, settingCICD.repoUrl.c_str(), nullptr, nullptr, SW_SHOW);
+					Design::PageContentStart();
+					const bool cicdCardVisible = Design::BeginCard("##cicd-details");
 					if (cicdCardVisible)
 					{
-						ImFluent::TextBlock("CI/CD", ImFluentTextStyle_BodyStrong);
-						if (ImFluent::HyperlinkButton(utf16ToUtf8(settingCICD.url).c_str()))
-							ShellExecuteW(nullptr, nullptr, settingCICD.url.c_str(), nullptr, nullptr, SW_SHOW);
-						ImFluent::TextBlock(IA(I18nKey.SettingsUI.CICD.Repository).c_str(),
-							ImFluentTextStyle_BodyStrong);
-						if (ImFluent::HyperlinkButton(utf16ToUtf8(settingCICD.repoUrl).c_str()))
-							ShellExecuteW(nullptr, nullptr, settingCICD.repoUrl.c_str(), nullptr, nullptr, SW_SHOW);
 
 						wstring details;
 						details += IW(I18nKey.SettingsUI.CICD.Branch) + L": " + settingCICD.branch + L"\n";
@@ -2626,9 +2601,9 @@ SettingSessionCoroutine RunSettingSession()
 						details += IW(I18nKey.SettingsUI.CICD.MSBuildVersion) + L"\n"
 							+ settingCICD.msBuildVersion;
 						const string detailsUtf8 = utf16ToUtf8(details);
-						ImGui::TextWrapped("%s", detailsUtf8.c_str());
+						Design::Text(detailsUtf8.c_str());
 					}
-					ImFluent::EndCard();
+					Design::EndCard();
 					break;
 				}
 
@@ -2729,19 +2704,19 @@ SettingSessionCoroutine RunSettingSession()
 				// 绘制
 				case settingTabEnum::tab3:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
+					Design::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
-					if (Widgets::BeginSettingsCard("##draw-device",
-						IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Effect.Device.E).c_str(), "\ue7f8"))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
 					{
 						vector<string> devices{
 							IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch),
 							IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen)
 						};
 						const int previousPaintDevice = PaintDevice;
-						if (Widgets::combo.Select("##draw-device-select", &PaintDevice, devices)
+						if (Design::ComboRow("##draw-device",
+							IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.Effect.Device.E).c_str(), "\ue7f8",
+							PaintDevice, devices)
 							&& previousPaintDevice != PaintDevice
 							&& setlist.paintDevice != PaintDevice)
 						{
@@ -2750,69 +2725,58 @@ SettingSessionCoroutine RunSettingSession()
 							drawingScale = GetDrawingScale();
 							stopTimingError = GetStopTimingError();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Draw.AIDraw.N).c_str());
-					if (Widgets::BeginSettingsCard("##draw-lift-straighten",
-						IA(I18nKey.SettingsUI.Draw.AIDraw.PenUp).c_str(),
-						IA(I18nKey.SettingsUI.Draw.AIDraw.PenUpE).c_str(), "\ue8d3"))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.AIDraw.N).c_str());
 					{
-						ImFluent::ToggleSwitch("##draw-lift-straighten-toggle",
-							&LiftStraighten, "", "");
+						Design::ToggleRow("##draw-lift-straighten",
+							IA(I18nKey.SettingsUI.Draw.AIDraw.PenUp).c_str(),
+							IA(I18nKey.SettingsUI.Draw.AIDraw.PenUpE).c_str(), "\ue8d3",
+							LiftStraighten);
 						if (setlist.liftStraighten != LiftStraighten)
 						{
 							setlist.liftStraighten = LiftStraighten;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
-					if (Widgets::BeginSettingsCard("##draw-wait-straighten",
-						IA(I18nKey.SettingsUI.Draw.AIDraw.PenStay).c_str(),
-						IA(I18nKey.SettingsUI.Draw.AIDraw.PenStayE).c_str(), "\ue8d3"))
 					{
-						ImFluent::ToggleSwitch("##draw-wait-straighten-toggle",
-							&WaitStraighten, "", "");
+						Design::ToggleRow("##draw-wait-straighten",
+							IA(I18nKey.SettingsUI.Draw.AIDraw.PenStay).c_str(),
+							IA(I18nKey.SettingsUI.Draw.AIDraw.PenStayE).c_str(), "\ue8d3",
+							WaitStraighten);
 						if (setlist.waitStraighten != WaitStraighten)
 						{
 							setlist.waitStraighten = WaitStraighten;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
-					if (Widgets::BeginSettingsCard("##draw-endpoint",
-						IA(I18nKey.SettingsUI.Draw.AIDraw.EndpointAdsorption).c_str(),
-						IA(I18nKey.SettingsUI.Draw.AIDraw.EndpointAdsorptionE).c_str(), "\ue809"))
 					{
-						ImFluent::ToggleSwitch("##draw-endpoint-toggle",
-							&PointAdsorption, "", "");
+						Design::ToggleRow("##draw-endpoint",
+							IA(I18nKey.SettingsUI.Draw.AIDraw.EndpointAdsorption).c_str(),
+							IA(I18nKey.SettingsUI.Draw.AIDraw.EndpointAdsorptionE).c_str(), "\ue809",
+							PointAdsorption);
 						if (setlist.pointAdsorption != PointAdsorption)
 						{
 							setlist.pointAdsorption = PointAdsorption;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Draw.DrawBehavior.N).c_str());
-					if (Widgets::BeginSettingsCard("##draw-smooth",
-						IA(I18nKey.SettingsUI.Draw.DrawBehavior.SoomthWriting).c_str(),
-						nullptr, "\ue790"))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.DrawBehavior.N).c_str());
 					{
-						ImFluent::ToggleSwitch("##draw-smooth-toggle", &SmoothWriting, "", "");
+						Design::ToggleRow("##draw-smooth",
+							IA(I18nKey.SettingsUI.Draw.DrawBehavior.SoomthWriting).c_str(),
+							nullptr, "\ue790",
+							SmoothWriting);
 						if (setlist.smoothWriting != SmoothWriting)
 						{
 							setlist.smoothWriting = SmoothWriting;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(
+					Design::SectionHeader(
 						IA(I18nKey.SettingsUI.Draw.RubberThickness.N).c_str());
-					if (Widgets::BeginSettingsCard("##draw-eraser-mode",
-						IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.E).c_str(), "\ued62"))
 					{
 						vector<string> eraserModes{
 							IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode3),
@@ -2820,126 +2784,117 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode1)
 						};
 						const int previousEraserMode = EraserMode;
-						if (Widgets::combo.Select("##draw-eraser-mode-select",
-							&EraserMode, eraserModes)
+						if (Design::ComboRow("##draw-eraser-mode",
+							IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.E).c_str(), "\ued62",
+							EraserMode, eraserModes)
 							&& previousEraserMode != EraserMode
 							&& setlist.eraserSetting.eraserMode != EraserMode)
 						{
 							setlist.eraserSetting.eraserMode = EraserMode;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(
+					Design::SectionHeader(
 						IA(I18nKey.SettingsUI.Performance.DrawMode.N).c_str());
-					if (Widgets::BeginSettingsCard("##draw-prepare",
-						IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.N).c_str(),
-						IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.E).c_str(), "\ue8fd"))
 					{
-						ImFluent::SliderInt("##draw-prepare-slider", &PreparationQuantity,
-							0, 20, "%d");
-						if (!ImGui::IsItemActive()
+						bool sliderActive = false;
+						Design::SliderIntRow("##draw-prepare",
+							IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.N).c_str(),
+							IA(I18nKey.SettingsUI.Performance.DrawMode.Prepare.E).c_str(), "\ue8fd",
+							PreparationQuantity, 0, 20, sliderActive, "%d");
+						if (!sliderActive
 							&& PreparationQuantity != setlist.performanceSetting.preparationQuantity)
 						{
 							setlist.performanceSetting.preparationQuantity = PreparationQuantity;
 							WriteSetting();
 							ResetPrepareCanvas();
 						}
-						Widgets::EndSettingsCard();
 					}
-					if (Widgets::BeginSettingsCard("##draw-super",
-						IA(I18nKey.SettingsUI.Performance.DrawMode.SuperDraw).c_str(),
-						IA(I18nKey.SettingsUI.Performance.DrawMode.SuperDrawE).c_str(), "\ue945"))
 					{
-						ImFluent::ToggleSwitch("##draw-super-toggle", &SuperDraw, "", "");
+						Design::ToggleRow("##draw-super",
+							IA(I18nKey.SettingsUI.Performance.DrawMode.SuperDraw).c_str(),
+							IA(I18nKey.SettingsUI.Performance.DrawMode.SuperDrawE).c_str(), "\ue945",
+							SuperDraw);
 						if (setlist.performanceSetting.superDraw != SuperDraw)
 						{
 							setlist.performanceSetting.superDraw = SuperDraw;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Draw.Tentative.N).c_str());
-					if (Widgets::BeginSettingsCard("##draw-hide-pointer",
-						IA(I18nKey.SettingsUI.Draw.Tentative.HideCursor).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Tentative.HideCursorE).c_str(), "\ue7c9"))
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Tentative.N).c_str());
 					{
-						ImFluent::ToggleSwitch("##draw-hide-pointer-toggle",
-							&HideTouchPointer, "", "");
+						Design::ToggleRow("##draw-hide-pointer",
+							IA(I18nKey.SettingsUI.Draw.Tentative.HideCursor).c_str(),
+							IA(I18nKey.SettingsUI.Draw.Tentative.HideCursorE).c_str(), "\ue7c9",
+							HideTouchPointer);
 						if (setlist.hideTouchPointer != HideTouchPointer)
 						{
 							setlist.hideTouchPointer = HideTouchPointer;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 					break;
 				}
 				// 预设
 				case settingTabEnum::tabPreset:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Preset.N).c_str());
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Preset.Memory.N).c_str());
-					if (Widgets::BeginSettingsCard("##preset-memory-width",
-						IA(I18nKey.SettingsUI.Preset.Memory.Thickness).c_str(),
-						IA(I18nKey.SettingsUI.Preset.Memory.ThicknessE).c_str(), "\ue9a6"))
+					Design::PageHeader(IA(I18nKey.SettingsUI.Preset.N).c_str());
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Preset.Memory.N).c_str());
 					{
-						ImFluent::ToggleSwitch("##preset-memory-width-toggle",
-							&PresetSetting.MemoryWidth, "", "");
+						Design::ToggleRow("##preset-memory-width",
+							IA(I18nKey.SettingsUI.Preset.Memory.Thickness).c_str(),
+							IA(I18nKey.SettingsUI.Preset.Memory.ThicknessE).c_str(), "\ue9a6",
+							PresetSetting.MemoryWidth);
 						if (setlist.presetSetting.memoryWidth != PresetSetting.MemoryWidth)
 						{
 							setlist.presetSetting.memoryWidth = PresetSetting.MemoryWidth;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
-					if (Widgets::BeginSettingsCard("##preset-memory-color",
-						IA(I18nKey.SettingsUI.Preset.Memory.Color).c_str(),
-						IA(I18nKey.SettingsUI.Preset.Memory.ColorE).c_str(), "\ue790"))
 					{
-						ImFluent::ToggleSwitch("##preset-memory-color-toggle",
-							&PresetSetting.MemoryColor, "", "");
+						Design::ToggleRow("##preset-memory-color",
+							IA(I18nKey.SettingsUI.Preset.Memory.Color).c_str(),
+							IA(I18nKey.SettingsUI.Preset.Memory.ColorE).c_str(), "\ue790",
+							PresetSetting.MemoryColor);
 						if (setlist.presetSetting.memoryColor != PresetSetting.MemoryColor)
 						{
 							setlist.presetSetting.memoryColor = PresetSetting.MemoryColor;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader(IA(I18nKey.SettingsUI.Preset.Preset.N).c_str());
+					Design::SectionHeader(IA(I18nKey.SettingsUI.Preset.Preset.N).c_str());
 					const int brushPreset = static_cast<int>(stateMode.Pen.Brush1.widthPreset);
 					const int highlighterPreset =
 						static_cast<int>(stateMode.Pen.Highlighter1.widthPreset);
 					const string adaptiveDescription = vformat(
 						IA(I18nKey.SettingsUI.Preset.Preset.AutoThicknessE),
 						make_format_args(brushPreset, highlighterPreset));
-					if (Widgets::BeginSettingsCard("##preset-adaptive",
-						IA(I18nKey.SettingsUI.Preset.Preset.AutoThickness).c_str(),
-						adaptiveDescription.c_str(), "\ue8d7"))
 					{
-						ImFluent::ToggleSwitch("##preset-adaptive-toggle",
-							&PresetSetting.AutoDefaultWidth, "", "");
+						Design::ToggleRow("##preset-adaptive",
+							IA(I18nKey.SettingsUI.Preset.Preset.AutoThickness).c_str(),
+							adaptiveDescription.c_str(), "\ue8d7",
+							PresetSetting.AutoDefaultWidth);
 						if (setlist.presetSetting.autoDefaultWidth != PresetSetting.AutoDefaultWidth)
 						{
 							setlist.presetSetting.autoDefaultWidth = PresetSetting.AutoDefaultWidth;
 							WriteSetting();
 						}
-						Widgets::EndSettingsCard();
 					}
 					if (!PresetSetting.AutoDefaultWidth)
 					{
-						if (Widgets::BeginSettingsCard("##preset-pen-width",
-							IA(I18nKey.SettingsUI.Preset.Preset.Pen).c_str(),
-							nullptr, "\uee56"))
 						{
-							ImFluent::Slider("##preset-pen-width-slider",
-								&PresetSetting.DefaultBrush1Width, 1.0F, 30.0F, "%.0f");
+							bool sliderActive = false;
+							Design::SliderRow("##preset-pen-width",
+								IA(I18nKey.SettingsUI.Preset.Preset.Pen).c_str(),
+								nullptr, "\uee56",
+								PresetSetting.DefaultBrush1Width, 1.0F, 30.0F, sliderActive, "%.0f");
 							PresetSetting.DefaultBrush1Width =
 								round(PresetSetting.DefaultBrush1Width);
-							if (!ImGui::IsItemActive()
+							if (!sliderActive
 								&& setlist.presetSetting.defaultBrush1Width
 									!= PresetSetting.DefaultBrush1Width)
 							{
@@ -2947,18 +2902,16 @@ SettingSessionCoroutine RunSettingSession()
 									PresetSetting.DefaultBrush1Width;
 								WriteSetting();
 							}
-							Widgets::EndSettingsCard();
 						}
-						if (Widgets::BeginSettingsCard("##preset-highlighter-width",
-							IA(I18nKey.SettingsUI.Preset.Preset.Highlighter).c_str(),
-							nullptr, "\ue7e6"))
 						{
-							ImFluent::Slider("##preset-highlighter-width-slider",
-								&PresetSetting.DefaultHighlighter1Width,
-								10.0F, 100.0F, "%.0f");
+							bool sliderActive = false;
+							Design::SliderRow("##preset-highlighter-width",
+								IA(I18nKey.SettingsUI.Preset.Preset.Highlighter).c_str(),
+								nullptr, "\ue7e6",
+								PresetSetting.DefaultHighlighter1Width, 10.0F, 100.0F, sliderActive, "%.0f");
 							PresetSetting.DefaultHighlighter1Width =
 								round(PresetSetting.DefaultHighlighter1Width);
-							if (!ImGui::IsItemActive()
+							if (!sliderActive
 								&& setlist.presetSetting.defaultHighlighter1Width
 									!= PresetSetting.DefaultHighlighter1Width)
 							{
@@ -2966,7 +2919,6 @@ SettingSessionCoroutine RunSettingSession()
 									PresetSetting.DefaultHighlighter1Width;
 								WriteSetting();
 							}
-							Widgets::EndSettingsCard();
 						}
 					}
 					break;
@@ -2976,17 +2928,18 @@ SettingSessionCoroutine RunSettingSession()
 					const auto renderPluginHeader = [&](const char* title,
 						const char* subtitle, const wchar_t* sourceUrl = nullptr)
 						{
-							if (ImFluent::Button("\ue72b##plugin-back",
-								{ 36.0F * settingGlobalScale, 36.0F * settingGlobalScale }))
+							if (Design::IconButton("##plugin-back", "\ue72b"))
 								settingPlugInTab = settingPlugInTabEnum::tabPlug1;
-							ImGui::SameLine(0.0F, 12.0F * settingGlobalScale);
-							Widgets::PageHeader(title, subtitle);
+							ImGui::SameLine(0.0F, Design::Pixels(8.0F));
+							if (Design::HyperlinkButton(IA(I18nKey.SettingsUI.PlugIn.N).c_str()))
+								settingPlugInTab = settingPlugInTabEnum::tabPlug1;
+							Design::PageHeader(title, subtitle);
 							if (sourceUrl)
 							{
-								if (ImFluent::HyperlinkButton("GitHub"))
+								if (Design::HyperlinkButton("GitHub"))
 									ShellExecuteW(nullptr, nullptr, sourceUrl, nullptr, nullptr, SW_SHOW);
 							}
-							Widgets::PageContentStart();
+							Design::PageContentStart();
 						};
 					const auto renderPluginOverviewCard = [&](const char* id,
 						const char* title, const string& status, const char* description,
@@ -2996,29 +2949,22 @@ SettingSessionCoroutine RunSettingSession()
 							if (!overviewDescription.empty() && description && *description)
 								overviewDescription += "\n";
 							if (description) overviewDescription += description;
-							if (Widgets::BeginSettingsCard(id, title,
-								overviewDescription.c_str(), glyph))
-							{
-								if (ImFluent::Button("插件选项")) settingPlugInTab = target;
-								Widgets::EndSettingsCard();
-							}
+							if (Design::NavigationRow(id, title, overviewDescription.c_str(), glyph))
+								settingPlugInTab = target;
 						};
 					const auto renderToggleCard = [&](const char* id, const char* title,
 						const char* description, const char* glyph, bool& value, auto&& changed)
 						{
-							if (!Widgets::BeginSettingsCard(id, title, description, glyph)) return;
-							const bool previous = value;
-							ImFluent::ToggleSwitch("##toggle", &value, "", "");
-							if (previous != value) changed(value);
-							Widgets::EndSettingsCard();
+							if (Design::ToggleRow(id, title, description, glyph, value))
+								changed(value);
 						};
 
 					switch (settingPlugInTab)
 					{
 					case settingPlugInTabEnum::tabPlug1:
 					{
-						Widgets::PageHeader(IA(I18nKey.SettingsUI.PlugIn.N).c_str());
-						Widgets::PageContentStart();
+						Design::PageHeader(IA(I18nKey.SettingsUI.PlugIn.N).c_str());
+						Design::PageContentStart();
 						const string pptStatus = pptComVersion.substr(0, 7) == L"Error: "
 							? IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError)
 							: utf16ToUtf8(pptComVersion);
@@ -3053,29 +2999,30 @@ SettingSessionCoroutine RunSettingSession()
 						{
 							const string error = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Error)
 								+ utf16ToUtf8(pptComVersion);
-							ImFluent::InfoBar(ImFluentInfoSeverity_Warning,
+							Design::Notice("##ppt-version-error",
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.VersionError).c_str(),
-								error.c_str());
+								error.c_str(),
+								ImFluentInfoSeverity_Warning);
 						}
-						if (ImFluent::InfoBar(ImFluentInfoSeverity_Informational,
+						if (Design::Notice("##ppt-setup-notice",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tip).c_str(),
-							nullptr, nullptr, true,
+							ImFluentInfoSeverity_Informational,
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
 							ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-com",
 								nullptr, nullptr, SW_SHOW);
 						if (pptComSetlist.setAdmin)
 						{
-							if (ImFluent::InfoBar(ImFluentInfoSeverity_Warning,
+							if (Design::Notice("##ppt-admin-notice",
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.N).c_str(),
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Warn).c_str(),
-								nullptr, nullptr, true,
+								ImFluentInfoSeverity_Warning,
 								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Solve).c_str()))
 								ShellExecuteW(nullptr, nullptr, L"https://www.inkeys.top/tutorial/ppt-admin",
 									nullptr, nullptr, SW_SHOW);
 						}
 
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.N).c_str());
 						renderToggleCard("##ppt-fixed-ink",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.BasicLogic.InkFixation).c_str(),
@@ -3094,7 +3041,7 @@ SettingSessionCoroutine RunSettingSession()
 								PptComWriteSetting();
 							});
 
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.N).c_str());
 						renderToggleCard("##ppt-bottom-pair",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetDisplay.BottomBoth).c_str(),
@@ -3124,13 +3071,13 @@ SettingSessionCoroutine RunSettingSession()
 									Inkeys::UI::Ppt::ConfigGroup::ExitShow);
 							});
 
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.N).c_str());
-						if (Widgets::BeginSettingsCard("##ppt-reset-position",
-							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset).c_str(),
-							nullptr, "\ue777"))
 						{
-							if (ImFluent::Button(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str()))
+							if (Design::ButtonRow("##ppt-reset-position",
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Reset).c_str(),
+								nullptr, "\ue777",
+								IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str()))
 							{
 								pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
 								pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
@@ -3142,7 +3089,6 @@ SettingSessionCoroutine RunSettingSession()
 								Inkeys::UI::Ppt::NotifyConfigurationChanged(
 									Inkeys::UI::Ppt::ConfigGroup::All);
 							}
-							Widgets::EndSettingsCard();
 						}
 						renderToggleCard("##ppt-remember-position",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetPosition.Remember).c_str(),
@@ -3152,7 +3098,7 @@ SettingSessionCoroutine RunSettingSession()
 								PptComWriteSetting();
 							});
 
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.N).c_str());
 						bool anyScaleActive = false;
 						bool bottomSyncEnabled = false;
@@ -3161,34 +3107,39 @@ SettingSessionCoroutine RunSettingSession()
 						const auto renderScaleCard = [&](const char* id, const char* title,
 							float& value, bool& unified, bool& syncEnabled)
 							{
-								if (!ImFluent::BeginCard(id, { 0.0F, 0.0F }, ImFluentCardStyle_Filled))
-								{
-									ImFluent::EndCard();
-									return;
-								}
-								ImFluent::TextBlock(title, ImFluentTextStyle_BodyStrong);
-								ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-								ImFluent::Slider("##scale", &value, 0.5F, 3.0F, "%.2f");
-								value = round(value * 100.0F) / 100.0F;
-								anyScaleActive = anyScaleActive || ImGui::IsItemActive();
+								const string resetLabel = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset);
+								const string syncLabel = IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync);
 								const string indicator = vformat(
 									IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind),
 									make_format_args(value));
-								ImFluent::TextBlockColored(indicator.c_str(),
-									Widgets::Color(ImFluentCol_TextSecondary),
-									ImFluentTextStyle_Caption);
-								ImFluent::BeginWrapPanel();
-								ImFluent::WrapPanelNextItem(110.0F * settingGlobalScale);
-								if (ImFluent::Button(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str(),
-									{ 110.0F * settingGlobalScale, 0.0F }))
-									value = 1.0F;
-								ImFluent::WrapPanelNextItem(110.0F * settingGlobalScale);
-								const bool previousUnified = unified;
-								ImFluent::ToggleButton(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Sync).c_str(),
-									&unified, { 110.0F * settingGlobalScale, 0.0F });
-								syncEnabled = !previousUnified && unified;
-								ImFluent::EndWrapPanel();
-								ImFluent::EndCard();
+								const float resetWidth = Design::ButtonWidth(resetLabel.c_str());
+								const float syncWidth = Design::ButtonWidth(syncLabel.c_str());
+								const float requestedWidth = max(240.0F, resetWidth + syncWidth + 8.0F);
+								const auto measure = Design::MeasureRow(ImGui::GetContentRegionAvail().x / Design::Pixels(1.0F),
+									requestedWidth, 72.0F);
+								const bool wrapButtons = resetWidth + syncWidth + 8.0F > measure.actionWidth;
+								Design::SettingRow(id, title, indicator.c_str(), "\ue9a6", requestedWidth,
+									wrapButtons ? 112.0F : 72.0F, [&](const Inkeys::UI::Setting::LayoutRect& bounds)
+									{
+										// 活动状态在slider提交后立刻捕获，后续按钮不能覆盖松手保存判定。
+										ImGui::SetNextItemWidth(bounds.Width());
+										Design::Slider("##scale", &value, 0.5F, 3.0F, "%.2f");
+										value = round(value * 100.0F) / 100.0F;
+										anyScaleActive = anyScaleActive || ImGui::IsItemActive();
+										const float actualResetWidth = min(bounds.Width(), Design::Pixels(resetWidth));
+										const float actualSyncWidth = min(bounds.Width(), Design::Pixels(syncWidth));
+										const float resetX = wrapButtons ? bounds.right - actualResetWidth
+											: bounds.right - actualResetWidth - Design::Pixels(8.0F) - actualSyncWidth;
+										ImGui::SetCursorScreenPos({ resetX, bounds.top + Design::Pixels(40.0F) });
+										if (Design::Button((resetLabel + "###reset").c_str(), { actualResetWidth, Design::Pixels(32.0F) }))
+											value = 1.0F;
+										ImGui::SetCursorScreenPos({ bounds.right - actualSyncWidth,
+											bounds.top + Design::Pixels(wrapButtons ? 80.0F : 40.0F) });
+										const bool previousUnified = unified;
+										Design::ToggleButton((syncLabel + "###sync").c_str(), &unified,
+											{ actualSyncWidth, Design::Pixels(32.0F) });
+										syncEnabled = !previousUnified && unified;
+									});
 							};
 						renderScaleCard("##ppt-bottom-scale",
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Page.BottomSideBoth).c_str(),
@@ -3276,7 +3227,7 @@ SettingSessionCoroutine RunSettingSession()
 							PptComWriteSetting();
 						}
 
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Tentative.N).c_str());
 						bool autoTakeOver = Inkeys::config.PlugIn.PPTHelper.AutoTakeOver;
 						renderToggleCard("##ppt-auto-takeover",
@@ -3320,10 +3271,11 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(),
 							"20260202a");
-						ImFluent::InfoBar(ImFluentInfoSeverity_Warning,
+						Design::Notice("##super-top-notice",
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.N).c_str(),
-							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Warn).c_str());
-						Widgets::SectionHeader(
+							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Warn).c_str(),
+							ImFluentInfoSeverity_Warning);
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.N).c_str());
 						const string superTopDescription = hasSuperTop
 							? IA(I18nKey.SettingsUI.PlugIn.SuperTop.Capability.SuperTopE1)
@@ -3351,7 +3303,7 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						renderPluginHeader(IA(I18nKey.SettingsUI.PlugIn.LnkHelper.N).c_str(),
 							"20250223a");
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.N).c_str());
 						renderToggleCard("##shortcut-correct",
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str(),
@@ -3362,7 +3314,7 @@ SettingSessionCoroutine RunSettingSession()
 								WriteSetting();
 								if (value) shortcutAssistant.SetShortcut();
 							});
-						Widgets::SectionHeader(
+						Design::SectionHeader(
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.N).c_str());
 						renderToggleCard("##shortcut-create",
 							IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str(),
@@ -3383,11 +3335,12 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.PlugIn.DesktopDrawpadBlocker.N).c_str(),
 							utf16ToUtf8(ddbInteractionSetList.DdbEdition).c_str(),
 							L"https://github.com/Alan-CRL/DesktopDrawpadBlocker");
-						ImFluent::InfoBar(ImFluentInfoSeverity_Warning,
+						Design::Notice("##ddb-license-notice",
 							"GPLv3 开源插件",
-							"插件仅供学习、交流和研究使用。使用 DesktopDrawpadBlocker 即视为同意其许可与风险说明。");
+							"插件仅供学习、交流和研究使用。使用 DesktopDrawpadBlocker 即视为同意其许可与风险说明。",
+							ImFluentInfoSeverity_Warning);
 
-						Widgets::SectionHeader("使用插件");
+						Design::SectionHeader("使用插件");
 						renderToggleCard("##ddb-enable", "启用插件",
 							"默认模式下插件随软件开启和关闭。", "\ue7ba",
 							Ddb.Enable, [&](bool value)
@@ -3405,7 +3358,7 @@ SettingSessionCoroutine RunSettingSession()
 								QueueBusiness(std::move(command));
 							});
 
-						Widgets::SectionHeader("常规选项");
+						Design::SectionHeader("常规选项");
 						renderToggleCard("##ddb-admin", "以管理员身份启动插件",
 							"切换后软件将等待插件响应，最长等待时间由拦截间隔决定。", "\ue72e",
 							Ddb.RunAsAdmin, [&](bool value)
@@ -3419,8 +3372,6 @@ SettingSessionCoroutine RunSettingSession()
 									+ L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe";
 								QueueBusiness(std::move(command));
 							});
-						if (Widgets::BeginSettingsCard("##ddb-interval", "拦截间隔",
-							"更短的间隔可以更快拦截窗口，但会占用更多 CPU。", "\ue916"))
 						{
 							int intervalIndex = ddbInteractionSetList.sleepTime == 500 ? 0
 								: (ddbInteractionSetList.sleepTime == 1000 ? 1
@@ -3430,7 +3381,10 @@ SettingSessionCoroutine RunSettingSession()
 							vector<string> intervals{
 								"短（500ms）", "较短（1s）", "中等（3s）", "较长（5s）", "长（10s）"
 							};
-							if (Widgets::combo.Select("##ddb-interval-select", &intervalIndex, intervals)
+							if (Design::ComboRow("##ddb-interval",
+								"拦截间隔",
+								"更短的间隔可以更快拦截窗口，但会占用更多 CPU。", "\ue916",
+								intervalIndex, intervals)
 								&& previousIntervalIndex != intervalIndex)
 							{
 								if (intervalIndex == 0) ddbInteractionSetList.sleepTime = 500;
@@ -3441,10 +3395,9 @@ SettingSessionCoroutine RunSettingSession()
 								WriteSetting();
 								QueueDdbWriteInteraction(true, false);
 							}
-							Widgets::EndSettingsCard();
 						}
 
-						Widgets::SectionHeader("精确控制");
+						Design::SectionHeader("精确控制");
 						struct DdbInterceptRow
 						{
 							const char* id;
@@ -3496,14 +3449,8 @@ SettingSessionCoroutine RunSettingSession()
 						bool interceptChanged = false;
 						for (const auto& row : interceptRows)
 						{
-							if (!Widgets::BeginSettingsCard(row.id, row.title,
-								row.description, "\ue7ba"))
-								continue;
-							const bool previous = *row.value;
-							ImFluent::ToggleSwitch("##toggle", row.value, "", "");
-							if (previous != *row.value)
+							if (Design::ToggleRow(row.id, row.title, row.description, "\ue7ba", *row.value))
 								interceptChanged = true;
-							Widgets::EndSettingsCard();
 						}
 						if (interceptChanged)
 						{
@@ -3536,24 +3483,21 @@ SettingSessionCoroutine RunSettingSession()
 
 				case settingTabEnum::tabComponent:
 				{
-					Widgets::PageHeader("组件");
+					Design::PageHeader("组件");
 					auto renderComponentToggle = [&](const char* id, const char* title,
 						const char* description, const char* glyph, bool& value, auto& stored)
 					{
-						if (!Widgets::BeginSettingsCard(id, title, description, glyph)) return;
-						const string toggleId = string("##toggle-") + id;
-						ImFluent::ToggleSwitch(toggleId.c_str(), &value, "", "");
+						Design::ToggleRow(id, title, description, glyph, value);
 						if (stored != value)
 						{
 							stored = value;
 							WriteSetting();
 							SyncUi3BuiltInComponents();
 						}
-						Widgets::EndSettingsCard();
 					};
 					auto componentSection = [&](const char* title)
 					{
-						Widgets::SectionHeader(title);
+						Design::SectionHeader(title);
 					};
 
 					componentSection("软件");
@@ -3612,8 +3556,10 @@ SettingSessionCoroutine RunSettingSession()
 						setlist.component.shortcutButton.rollCall.NamePicker);
 
 					componentSection("ClassIsland 联动");
-					ImFluent::InfoBar(ImFluentInfoSeverity_Informational, "ClassIsland",
-						"需要在 ClassIsland 应用设置中注册 Url 导航协议。");
+					Design::Notice("##classisland-protocol-notice",
+						"ClassIsland",
+						"需要在 ClassIsland 应用设置中注册 Url 导航协议。",
+						ImFluentInfoSeverity_Informational);
 					renderComponentToggle("component-classisland-settings",
 						"ClassIsland 应用设置", nullptr, "\ue713",
 						ComponentShortcutButtonLinkageClassislandSettings,
@@ -3631,27 +3577,27 @@ SettingSessionCoroutine RunSettingSession()
 				}
 				case settingTabEnum::tab5:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
-					Widgets::PageContentStart();
+					Design::PageHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
+					Design::PageContentStart();
 					const string hotKeyDescription =
 						utf16ToUtf8(IW(I18nKey.SettingsUI.HotKey.E));
-					ImFluent::InfoBar(ImFluentInfoSeverity_Informational,
+					Design::Notice("##hotkey-notice",
 						IA(I18nKey.SettingsUI.HotKey.N).c_str(),
-						hotKeyDescription.c_str(), nullptr, nullptr, true);
+						hotKeyDescription.c_str(),
+						ImFluentInfoSeverity_Informational);
 					break;
 				}
 				case settingTabEnum::tabExperimental:
 				{
-					Widgets::PageHeader("实验室");
-					Widgets::SectionHeader("Inkeys3");
+					Design::PageHeader("实验室");
+					Design::SectionHeader("Inkeys3");
 
-					if (Experimental.Inkeys3.EdgeLightingEnable
-						&& Widgets::BeginSettingsCard("##experimental-dynamic-light",
-							"动态边缘光影",
-							"控制跟随鼠标的第三光源，关闭后停止全局鼠标跟踪。", "\ue706"))
+					if (Experimental.Inkeys3.EdgeLightingEnable)
 					{
-						ImFluent::ToggleSwitch("##experimental-dynamic-light-toggle",
-							&Experimental.Inkeys3.DynamicEdgeLighting, "", "");
+						Design::ToggleRow("##experimental-dynamic-light",
+							"动态边缘光影",
+							"控制跟随鼠标的第三光源，关闭后停止全局鼠标跟踪。", "\ue706",
+							Experimental.Inkeys3.DynamicEdgeLighting);
 						if (Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic
 							!= Experimental.Inkeys3.DynamicEdgeLighting)
 						{
@@ -3662,14 +3608,13 @@ SettingSessionCoroutine RunSettingSession()
 								Experimental.Inkeys3.DynamicEdgeLighting);
 							QueueConfigWrite();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					if (Widgets::BeginSettingsCard("##experimental-dirty-debug",
-						"脏区调试", "显示 UI3 每帧实际提交的脏区边界。", "\ue90f"))
 					{
-						ImFluent::ToggleSwitch("##experimental-dirty-debug-toggle",
-							&Experimental.Inkeys3.DebugMode, "", "");
+						Design::ToggleRow("##experimental-dirty-debug",
+							"脏区调试",
+							"显示 UI3 每帧实际提交的脏区边界。", "\ue90f",
+							Experimental.Inkeys3.DebugMode);
 						if (Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable
 							!= Experimental.Inkeys3.DebugMode)
 						{
@@ -3680,15 +3625,14 @@ SettingSessionCoroutine RunSettingSession()
 								Experimental.Inkeys3.ShowFrameRate);
 							QueueConfigWrite();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					if (Experimental.Inkeys3.DebugMode
-						&& Widgets::BeginSettingsCard("##experimental-frame-rate",
-							"显示帧率", "每秒更新上一秒平均帧率和无等待帧率。", "\ue9d9"))
+					if (Experimental.Inkeys3.DebugMode)
 					{
-						ImFluent::ToggleSwitch("##experimental-frame-rate-toggle",
-							&Experimental.Inkeys3.ShowFrameRate, "", "");
+						Design::ToggleRow("##experimental-frame-rate",
+							"显示帧率",
+							"每秒更新上一秒平均帧率和无等待帧率。", "\ue9d9",
+							Experimental.Inkeys3.ShowFrameRate);
 						if (Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate
 							!= Experimental.Inkeys3.ShowFrameRate)
 						{
@@ -3699,14 +3643,13 @@ SettingSessionCoroutine RunSettingSession()
 								Experimental.Inkeys3.ShowFrameRate);
 							QueueConfigWrite();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					if (Widgets::BeginSettingsCard("##experimental-animation",
-						"启用动画", "关闭后，UI3 主栏动画将立即完成。", "\ue945"))
 					{
-						ImFluent::ToggleSwitch("##experimental-animation-toggle",
-							&Experimental.Inkeys3.AnimationEnable, "", "");
+						Design::ToggleRow("##experimental-animation",
+							"启用动画",
+							"关闭后，UI3 主栏动画将立即完成。", "\ue945",
+							Experimental.Inkeys3.AnimationEnable);
 						if (Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable
 							!= Experimental.Inkeys3.AnimationEnable)
 						{
@@ -3717,17 +3660,17 @@ SettingSessionCoroutine RunSettingSession()
 								Experimental.Inkeys3.AnimationSpeedRate);
 							QueueConfigWrite();
 						}
-						Widgets::EndSettingsCard();
 					}
 
-					if (Widgets::BeginSettingsCard("##experimental-animation-speed",
-						"动画速度", "调整 UI3 主栏动画速度，范围为 0.1x-5.0x。", "\ue9a6"))
 					{
-						ImFluent::Slider("##experimental-animation-speed-slider",
-							&Experimental.Inkeys3.AnimationSpeedRate, 0.1F, 5.0F, "%.1fx");
+						bool sliderActive = false;
+						Design::SliderRow("##experimental-animation-speed",
+							"动画速度",
+							"调整 UI3 主栏动画速度，范围为 0.1x-5.0x。", "\ue9a6",
+							Experimental.Inkeys3.AnimationSpeedRate, 0.1F, 5.0F, sliderActive, "%.1fx");
 						Experimental.Inkeys3.AnimationSpeedRate =
 							round(Experimental.Inkeys3.AnimationSpeedRate * 10.0F) / 10.0F;
-						const bool isItemActive = ImGui::IsItemActive();
+						const bool isItemActive = sliderActive;
 						if (fabs(Experimental.Inkeys3.AnimationSpeedRate - static_cast<float>(
 							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
 						{
@@ -3743,49 +3686,45 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 							Experimental.Inkeys3.AnimationSpeedSavePending = false;
 						}
-						Widgets::EndSettingsCard();
 					}
 					break;
 				}
 				case settingTabEnum::tab8:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.Sponsor.N).c_str());
-					Widgets::PageContentStart();
+					Design::PageHeader(IA(I18nKey.SettingsUI.Sponsor.N).c_str());
+					Design::PageContentStart();
 					const float sponsorWidth = min(ImGui::GetContentRegionAvail().x,
 						700.0F * settingGlobalScale);
 					const float sponsorAspect = settingSign[9].width > 0
 						? static_cast<float>(settingSign[9].height)
 							/ static_cast<float>(settingSign[9].width)
 						: 0.56F;
-					const bool sponsorCardVisible = ImFluent::BeginCard("##sponsor-card",
+					const bool sponsorCardVisible = Design::BeginCard("##sponsor-card",
 						{ sponsorWidth, 0.0F }, ImFluentCardStyle_Filled);
 					if (sponsorCardVisible)
 					{
 						const float imageWidth = ImGui::GetContentRegionAvail().x;
 						ImGui::Image((ImTextureID)(intptr_t)TextureSettingSign[9],
 							{ imageWidth, imageWidth * sponsorAspect });
-						ImFluent::TextBlockColored(
-							"成功赞助后，可以联系作者将您的昵称和赞助金额添加到社区名片中。",
-							Widgets::Color(ImFluentCol_TextSecondary), ImFluentTextStyle_Body);
+						Design::Text("成功赞助后，可以联系作者将您的昵称和赞助金额添加到社区名片中。", ImFluentTextStyle_Body, Design::TextSecondary);
 					}
-					ImFluent::EndCard();
+					Design::EndCard();
 					break;
 				}
 				case settingTabEnum::tab9:
 				{
-					Widgets::PageHeader(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str());
-					Widgets::PageContentStart();
-					if (Widgets::BeginSettingsCard("##debug-touch-test",
-						"启用触摸测试模式",
-						"开启后，使用输入设备在主画布上产生输入，即刻开始测试。", "\ue7c9"))
+					Design::PageHeader(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str());
+					Design::PageContentStart();
 					{
-						if (ImFluent::AccentButton("开启"))
+						if (Design::ButtonRow("##debug-touch-test",
+							"启用触摸测试模式",
+							"开启后，使用输入设备在主画布上产生输入，即刻开始测试。", "\ue7c9",
+							"开启", true))
 							ChangeStateModeToTouchTest();
-						Widgets::EndSettingsCard();
 					}
 
-					Widgets::SectionHeader("实时状态");
-					const bool debugCardVisible = ImFluent::BeginCard("##debug-output",
+					Design::SectionHeader("实时状态");
+					const bool debugCardVisible = Design::BeginCard("##debug-output",
 						{ ImGui::GetContentRegionAvail().x, 520.0F * settingGlobalScale },
 						ImFluentCardStyle_Outlined);
 					if (debugCardVisible)
@@ -3857,23 +3796,19 @@ SettingSessionCoroutine RunSettingSession()
 							{ 0.0F, 480.0F * settingGlobalScale }))
 						{
 							const string utf8Text = utf16ToUtf8(text);
-							ImGui::TextWrapped("%s", utf8Text.c_str());
+							Design::Text(utf8Text.c_str());
 							ImFluent::EndScrollView();
 						}
 					}
-					ImFluent::EndCard();
+					Design::EndCard();
 					break;
 				}
 				}
 				ImGui::EndChild();
-				// 页面 transition 的 alpha 只在页面内容 scope 内生效。
-				ImGui::PopStyleVar();
-				if (designPage)
-				{
-					ImFluent::PopFont();
-					Inkeys::UI::Setting::Design::BindTextFonts(ImFontMain, ImFontStrong);
-				}
+				ImFluent::PopFont();
+				Design::BindTextFonts(ImFontMain, ImFontStrong);
 				ImGui::EndChild();
+				ImGui::PopID();
 				ImGui::PopID();
 				ImGui::EndDisabled();
 				ImGui::PopStyleVar();
@@ -4078,7 +4013,8 @@ namespace
 			if (!RebuildSettingFonts()
 				|| !ImGui_ImplDX11_CreateDeviceObjects())
 				return FrameResult::Retry;
-			Widgets::style.ApplyGlobal(12.0F);
+			Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
+			Inkeys::UI::Setting::Design::ApplyScrollbars();
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.ConsumeFontRebuild(fontRebuildSerial);
 		}
