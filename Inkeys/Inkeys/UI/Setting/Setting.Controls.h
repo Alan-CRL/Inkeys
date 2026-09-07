@@ -10,13 +10,32 @@
 
 namespace Inkeys::UI::Setting::Design
 {
-	inline constexpr ImU32 AppBase = IM_COL32(243, 243, 243, 255);
-	inline constexpr ImU32 PageSurface = IM_COL32(250, 250, 250, 255);
-	inline constexpr ImU32 Card = IM_COL32(255, 255, 255, 255);
-	inline constexpr ImU32 Stroke = IM_COL32(229, 229, 229, 255);
-	inline constexpr ImU32 TextPrimary = IM_COL32(32, 32, 32, 255);
-	inline constexpr ImU32 TextSecondary = IM_COL32(97, 97, 97, 255);
-	inline constexpr ImU32 Accent = IM_COL32(0, 103, 192, 255);
+	// 主题语义色集中在同一张表；页面只选择角色，不自行判断明暗。
+	struct Palette
+	{
+		ImU32 appBase, pageSurface, card, cardSecondary, stroke;
+		ImU32 textPrimary, textSecondary, textDisabled, accent;
+		ImU32 subtleHover, subtlePressed, rowHover, rowPressed, selection;
+		ImU32 scrollbar, scrollbarHovered, scrollbarActive;
+		ImU32 notice[ImFluentInfoSeverity_Critical + 1];
+		ImU32 heroFill, heroStroke, heroEyebrow, heroDescription;
+		ImU32 artCool, artWarm, artStroke, artRule, artAxis, artWarmInk;
+		ImU32 artPenSelection, artOrange, artGreen;
+		ImU32 featureTint[3], featureInk[3], avatarFill;
+	};
+
+	[[nodiscard]] const Palette& PaletteForTheme(bool darkMode) noexcept;
+	[[nodiscard]] const Palette& GetPalette() noexcept;
+	[[nodiscard]] bool IsDarkMode() noexcept;
+
+	// 别名绑定同一份稳定存储，既有行 API 的默认参数也会读取当前主题。
+	extern const ImU32& AppBase;
+	extern const ImU32& PageSurface;
+	extern const ImU32& Card;
+	extern const ImU32& Stroke;
+	extern const ImU32& TextPrimary;
+	extern const ImU32& TextSecondary;
+	extern const ImU32& Accent;
 
 	float Pixels(float dip);
 	float TextHeight(const char* text, float widthPixels,
@@ -94,5 +113,6 @@ namespace Inkeys::UI::Setting::Design
 		ImFluentInfoSeverity severity = ImFluentInfoSeverity_Informational,
 		const char* actionLabel = nullptr);
 	void ApplyScrollbars();
-	void ApplyPalette();
+	// 在渲染线程帧边界调用，不触碰字体、纹理、设备或持久化。
+	void ApplyPalette(bool darkMode = false);
 }

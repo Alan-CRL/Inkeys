@@ -1,4 +1,5 @@
 #include "Setting.Controls.h"
+#include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
 #include <cstring>
 #include <string_view>
@@ -8,6 +9,83 @@ namespace Inkeys::UI::Setting::Design
 {
 	namespace
 	{
+		constexpr Palette lightPalette{
+			.appBase = IM_COL32(243, 243, 243, 255),
+			.pageSurface = IM_COL32(250, 250, 250, 255),
+			.card = IM_COL32(255, 255, 255, 255),
+			.cardSecondary = IM_COL32(250, 250, 250, 255),
+			.stroke = IM_COL32(229, 229, 229, 255),
+			.textPrimary = IM_COL32(32, 32, 32, 255),
+			.textSecondary = IM_COL32(97, 97, 97, 255),
+			.textDisabled = IM_COL32(154, 154, 154, 255),
+			.accent = IM_COL32(0, 103, 192, 255),
+			.subtleHover = IM_COL32(231, 231, 231, 255),
+			.subtlePressed = IM_COL32(224, 224, 224, 255),
+			.rowHover = IM_COL32(0, 0, 0, 5),
+			.rowPressed = IM_COL32(0, 0, 0, 10),
+			.selection = IM_COL32(0, 103, 192, 56),
+			.scrollbar = IM_COL32(96, 96, 96, 104),
+			.scrollbarHovered = IM_COL32(96, 96, 96, 150),
+			.scrollbarActive = IM_COL32(80, 80, 80, 184),
+			.notice = { IM_COL32(241, 246, 251, 255), IM_COL32(235, 246, 238, 255),
+				IM_COL32(255, 248, 223, 255), IM_COL32(253, 239, 237, 255) },
+			.heroFill = IM_COL32(234, 242, 249, 255),
+			.heroStroke = IM_COL32(220, 232, 241, 255),
+			.heroEyebrow = IM_COL32(73, 101, 120, 255),
+			.heroDescription = IM_COL32(78, 96, 112, 255),
+			.artCool = IM_COL32(220, 234, 247, 255),
+			.artWarm = IM_COL32(244, 232, 220, 255),
+			.artStroke = IM_COL32(197, 216, 231, 255),
+			.artRule = IM_COL32(189, 204, 214, 255),
+			.artAxis = IM_COL32(141, 168, 189, 255),
+			.artWarmInk = IM_COL32(191, 148, 107, 255),
+			.artPenSelection = IM_COL32(226, 240, 252, 255),
+			.artOrange = IM_COL32(210, 154, 101, 255),
+			.artGreen = IM_COL32(119, 163, 142, 255),
+			.featureTint = { IM_COL32(242, 246, 250, 255), IM_COL32(247, 242, 237, 255), IM_COL32(240, 244, 243, 255) },
+			.featureInk = { IM_COL32(69, 104, 131, 255), IM_COL32(156, 113, 83, 255), IM_COL32(84, 116, 107, 255) },
+			.avatarFill = IM_COL32(240, 240, 240, 255),
+		};
+		constexpr Palette darkPalette{
+			.appBase = IM_COL32(32, 32, 32, 255),
+			.pageSurface = IM_COL32(39, 39, 39, 255),
+			.card = IM_COL32(45, 45, 45, 255),
+			.cardSecondary = IM_COL32(50, 50, 50, 255),
+			.stroke = IM_COL32(61, 61, 61, 255),
+			.textPrimary = IM_COL32(242, 242, 242, 255),
+			.textSecondary = IM_COL32(190, 190, 190, 255),
+			.textDisabled = IM_COL32(120, 120, 120, 255),
+			.accent = IM_COL32(96, 205, 255, 255),
+			.subtleHover = IM_COL32(53, 53, 53, 255),
+			.subtlePressed = IM_COL32(47, 47, 47, 255),
+			.rowHover = IM_COL32(255, 255, 255, 8),
+			.rowPressed = IM_COL32(255, 255, 255, 4),
+			.selection = IM_COL32(0, 75, 112, 255),
+			.scrollbar = IM_COL32(180, 180, 180, 140),
+			.scrollbarHovered = IM_COL32(200, 200, 200, 180),
+			.scrollbarActive = IM_COL32(222, 222, 222, 210),
+			.notice = { IM_COL32(38, 51, 62, 255), IM_COL32(37, 55, 43, 255),
+				IM_COL32(64, 56, 31, 255), IM_COL32(68, 42, 43, 255) },
+			.heroFill = IM_COL32(29, 44, 58, 255),
+			.heroStroke = IM_COL32(48, 66, 82, 255),
+			.heroEyebrow = IM_COL32(159, 196, 222, 255),
+			.heroDescription = IM_COL32(188, 206, 220, 255),
+			.artCool = IM_COL32(38, 62, 81, 255),
+			.artWarm = IM_COL32(70, 57, 45, 255),
+			.artStroke = IM_COL32(74, 98, 117, 255),
+			.artRule = IM_COL32(86, 110, 130, 255),
+			.artAxis = IM_COL32(119, 150, 172, 255),
+			.artWarmInk = IM_COL32(210, 171, 133, 255),
+			.artPenSelection = IM_COL32(42, 72, 94, 255),
+			.artOrange = IM_COL32(222, 170, 121, 255),
+			.artGreen = IM_COL32(146, 188, 168, 255),
+			.featureTint = { IM_COL32(40, 53, 66, 255), IM_COL32(59, 49, 42, 255), IM_COL32(40, 55, 50, 255) },
+			.featureInk = { IM_COL32(157, 195, 222, 255), IM_COL32(219, 181, 147, 255), IM_COL32(158, 199, 180, 255) },
+			.avatarFill = IM_COL32(58, 58, 58, 255),
+		};
+		Palette activePalette = lightPalette;
+		bool activeDarkMode = false;
+
 		std::string stateOn = "On";
 		std::string stateOff = "Off";
 
@@ -69,6 +147,18 @@ namespace Inkeys::UI::Setting::Design
 			return lines;
 		}
 	}
+
+	const ImU32& AppBase = activePalette.appBase;
+	const ImU32& PageSurface = activePalette.pageSurface;
+	const ImU32& Card = activePalette.card;
+	const ImU32& Stroke = activePalette.stroke;
+	const ImU32& TextPrimary = activePalette.textPrimary;
+	const ImU32& TextSecondary = activePalette.textSecondary;
+	const ImU32& Accent = activePalette.accent;
+
+	const Palette& PaletteForTheme(bool darkMode) noexcept { return darkMode ? darkPalette : lightPalette; }
+	const Palette& GetPalette() noexcept { return activePalette; }
+	bool IsDarkMode() noexcept { return activeDarkMode; }
 
 	float Pixels(float dip) { return dip * ImGui::GetStyle().FontScaleDpi; }
 
@@ -463,8 +553,8 @@ namespace Inkeys::UI::Setting::Design
 		const ImVec2 next = ImGui::GetCursorScreenPos();
 		ImGui::SetCursorScreenPos(origin);
 		ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
-		ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, IM_COL32(0, 0, 0, 5));
-		ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, IM_COL32(0, 0, 0, 10));
+		ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().rowHover);
+		ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().rowPressed);
 		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
 		ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 		ImGui::PushID(id);
@@ -478,9 +568,8 @@ namespace Inkeys::UI::Setting::Design
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity, const char* actionLabel)
 	{
-		const ImU32 fill = severity == ImFluentInfoSeverity_Critical ? IM_COL32(253, 239, 237, 255)
-			: severity == ImFluentInfoSeverity_Warning ? IM_COL32(255, 248, 223, 255)
-			: severity == ImFluentInfoSeverity_Success ? IM_COL32(235, 246, 238, 255) : IM_COL32(241, 246, 251, 255);
+		const ImU32 fill = GetPalette().notice[std::clamp(severity,
+			static_cast<int>(ImFluentInfoSeverity_Informational), static_cast<int>(ImFluentInfoSeverity_Critical))];
 		bool clicked = false;
 		SettingRow(id, title, description, "\ue946", actionLabel ? ButtonWidth(actionLabel) : 0.0F,
 			actionLabel ? ControlHeight : 0.0F, [&](const LayoutRect& bounds)
@@ -499,14 +588,17 @@ namespace Inkeys::UI::Setting::Design
 		style.ScrollbarPadding = Pixels(ScrollbarPadding);
 		style.ScrollbarRounding = Pixels(3.0F);
 		style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
-		style.Colors[ImGuiCol_ScrollbarGrab] = ImGui::ColorConvertU32ToFloat4(IM_COL32(96, 96, 96, 104));
-		style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImGui::ColorConvertU32ToFloat4(IM_COL32(96, 96, 96, 150));
-		style.Colors[ImGuiCol_ScrollbarGrabActive] = ImGui::ColorConvertU32ToFloat4(IM_COL32(80, 80, 80, 184));
+		style.Colors[ImGuiCol_ScrollbarGrab] = ImGui::ColorConvertU32ToFloat4(GetPalette().scrollbar);
+		style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImGui::ColorConvertU32ToFloat4(GetPalette().scrollbarHovered);
+		style.Colors[ImGuiCol_ScrollbarGrabActive] = ImGui::ColorConvertU32ToFloat4(GetPalette().scrollbarActive);
 	}
 
-	void ApplyPalette()
+	void ApplyPalette(bool darkMode)
 	{
-		// SetAccentColor 会重建整个 preset，必须先调用再覆写项目 token。
+		// 只在帧边界换色；SetAccentColor 会重建 preset，项目 token 最后覆盖。
+		activeDarkMode = ResolveThemeMode(darkMode) == ThemeMode::Dark;
+		activePalette = PaletteForTheme(activeDarkMode);
+		ImFluent::SetThemePreset(activeDarkMode ? ImFluentThemePreset_Dark : ImFluentThemePreset_Light);
 		ImFluent::SetAccentColor(ImColor(Accent));
 		auto& style = ImFluent::GetStyle();
 		style.NavItemHeight = 36.0F;
@@ -517,12 +609,40 @@ namespace Inkeys::UI::Setting::Design
 		style.StandardIconSize = NavigationGlyphSize;
 		style.ToggleSwitchWidth = 40.0F;
 		style.ToggleSwitchHeight = 20.0F;
-		style.Colors[ImFluentCol_TextPrimary] = ImGui::ColorConvertU32ToFloat4(TextPrimary);
-		style.Colors[ImFluentCol_TextSecondary] = ImGui::ColorConvertU32ToFloat4(TextSecondary);
-		style.Colors[ImFluentCol_CardBgDefault] = ImGui::ColorConvertU32ToFloat4(Card);
-		style.Colors[ImFluentCol_CardStrokeDefault] = ImGui::ColorConvertU32ToFloat4(Stroke);
-		style.Colors[ImFluentCol_SubtleFillSecondary] = ImGui::ColorConvertU32ToFloat4(IM_COL32(231, 231, 231, 255));
-		ImGui::GetStyle().Colors[ImGuiCol_Text] = ImGui::ColorConvertU32ToFloat4(TextPrimary);
+		const auto& colors = GetPalette();
+		auto color = [](ImU32 value) { return ImGui::ColorConvertU32ToFloat4(value); };
+		style.Colors[ImFluentCol_TextPrimary] = color(TextPrimary);
+		style.Colors[ImFluentCol_TextSecondary] = color(TextSecondary);
+		style.Colors[ImFluentCol_TextDisabled] = color(colors.textDisabled);
+		style.Colors[ImFluentCol_CardBgDefault] = color(Card);
+		style.Colors[ImFluentCol_CardBgSecondary] = color(colors.cardSecondary);
+		style.Colors[ImFluentCol_CardStrokeDefault] = color(Stroke);
+		style.Colors[ImFluentCol_CardStrokeSolid] = color(Stroke);
+		style.Colors[ImFluentCol_LayerFillDefault] = color(colors.cardSecondary);
+		style.Colors[ImFluentCol_LayerFillAlt] = color(colors.cardSecondary);
+		style.Colors[ImFluentCol_SolidBgBase] = color(AppBase);
+		style.Colors[ImFluentCol_SolidBgQuarternary] = color(PageSurface);
+		style.Colors[ImFluentCol_SubtleFillSecondary] = color(colors.subtleHover);
+		style.Colors[ImFluentCol_SubtleFillTertiary] = color(colors.subtlePressed);
+		style.Colors[ImFluentCol_AccentFillSelectedTextBg] = color(colors.selection);
+
+		// ImGui 弹出层与表格同样同步；普通嵌套 child 透明，避免多层叠出亮色底。
+		auto* imguiColors = ImGui::GetStyle().Colors;
+		imguiColors[ImGuiCol_Text] = color(TextPrimary);
+		imguiColors[ImGuiCol_TextDisabled] = color(colors.textDisabled);
+		imguiColors[ImGuiCol_WindowBg] = color(AppBase);
+		imguiColors[ImGuiCol_ChildBg] = { 0.0F, 0.0F, 0.0F, 0.0F };
+		imguiColors[ImGuiCol_PopupBg] = color(colors.cardSecondary);
+		imguiColors[ImGuiCol_TitleBg] = imguiColors[ImGuiCol_TitleBgActive]
+			= imguiColors[ImGuiCol_TitleBgCollapsed] = color(AppBase);
+		imguiColors[ImGuiCol_MenuBarBg] = color(colors.cardSecondary);
+		imguiColors[ImGuiCol_Header] = imguiColors[ImGuiCol_HeaderActive] = color(colors.subtleHover);
+		imguiColors[ImGuiCol_HeaderHovered] = color(colors.subtlePressed);
+		imguiColors[ImGuiCol_TabSelected] = imguiColors[ImGuiCol_TabDimmedSelected] = color(colors.cardSecondary);
+		imguiColors[ImGuiCol_TabHovered] = color(colors.subtleHover);
+		imguiColors[ImGuiCol_TableHeaderBg] = color(colors.cardSecondary);
+		imguiColors[ImGuiCol_TableRowBgAlt] = color(colors.rowHover);
+		imguiColors[ImGuiCol_TextSelectedBg] = color(colors.selection);
 		ApplyScrollbars();
 	}
 }

@@ -121,6 +121,9 @@ bool ReadSetting()
 			setlist.startUp = setlistVal["StartUp"].asBool();
 		if (setlistVal.isMember("SettingGlobalScale") && setlistVal["SettingGlobalScale"].isDouble())
 			setlist.settingGlobalScale = setlistVal["SettingGlobalScale"].asDouble();
+		// 缺项或非布尔值均回退浅色，不接受数字、字符串等隐式转换。
+		setlist.settingDarkMode = setlistVal.isMember("SettingDarkMode")
+			&& setlistVal["SettingDarkMode"].isBool() && setlistVal["SettingDarkMode"].asBool();
 
 		if (setlistVal.isMember("SetSkinMode") && setlistVal["SetSkinMode"].isInt())
 			setlist.SetSkinMode = setlistVal["SetSkinMode"].asInt();
@@ -420,6 +423,7 @@ string CaptureSettingJson()
 		setlistVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
 		setlistVal["StartUp"] = Json::Value(setlist.startUp);
 		setlistVal["SettingGlobalScale"] = Json::Value(setlist.settingGlobalScale);
+		setlistVal["SettingDarkMode"] = Json::Value(setlist.settingDarkMode);
 
 		setlistVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
 		setlistVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);

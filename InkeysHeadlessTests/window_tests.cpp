@@ -55,6 +55,7 @@ int RunWindowTests()
 	specs.push_back(makeSpec(WindowRole::PptExitShow, L"PptExitShow"));
 	specs.push_back(makeSpec(WindowRole::Bar, L"Bar"));
 	auto settingSpec = makeSpec(WindowRole::Setting, L"Setting");
+	// 故意传旧 popup 样式，确认 Setting 角色会恢复独立应用窗口合同。
 	settingSpec.style = WS_POPUP;
 	settingSpec.exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	specs.push_back(std::move(settingSpec));
@@ -135,8 +136,8 @@ int RunWindowTests()
 	const auto settingStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_STYLE));
 	const auto settingExStyle = static_cast<DWORD>(GetWindowLongPtrW(setting, GWL_EXSTYLE));
 	check((settingStyle & SettingWindowStyle) == SettingWindowStyle
-		&& (settingStyle & WS_CAPTION) == 0,
-		"setting native sizing frame without native caption");
+		&& (settingStyle & WS_CAPTION) == WS_CAPTION && (settingStyle & WS_POPUP) == 0,
+		"setting uses native overlapped caption and sizing semantics");
 	check((settingExStyle & WS_EX_APPWINDOW) != 0
 		&& (settingExStyle & (WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == 0,
 		"setting app ex-style");

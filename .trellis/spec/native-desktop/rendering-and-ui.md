@@ -826,11 +826,11 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 - Setting 可见且可呈现时返回 `Continue`，因此独自按统一 16,666,667 ns 上限连续绘制；`Hide()` 只停止连续绘制并释放 swap chain/RTV，context、backend、字体、解码图片和 SRV 保持常驻。`Show()` 恢复窗口和呈现资源；只有 `Shutdown()` 才逆序释放全部常驻资源并调用 `ImFluent::ResetContext()`。
 - device epoch 改变时立即撤销旧 DX11 device objects/lease，针对新 epoch 重建 DX11 backend device objects 和图片 SRV；隐藏时不得顺带创建 swap chain/RTV。重建失败必须释放本次半成品并返回 `Retry`，后续重试不能对未初始化 backend 重复 `Shutdown`。
 - `effectiveScale = systemDpiScale * settingUserScale`，其中用户倍率限制为 `[1.0, 2.0]`。系统 DPI 或用户倍率改变才请求字体图集重建；普通 resize 只调整 presentation buffers 和响应式布局。WinUI 3 设置壳层按客户区逻辑 DIP 判定：`>=900` 使用宽窗偏好（默认展开），`<900` 显示紧凑轨道并以覆盖方式展开。`Setting.Layout.h` 的旧三档 helper 暂留历史调用/测试；产品新壳层以 `Setting.Design.h::NavigationState` 为准。
-- 当前浅色视觉调整阶段，Setting 的主题解析必须对 Windows 浅色、暗色和高对比输入统一返回 ImFluent Light preset。主题消息可继续唤醒 resident style 刷新，但不得改变浅色结果；不新增持久化主题配置，恢复动态主题需另立任务并同步更新本合同。
+- Setting 主题由 `ResolveThemeMode(bool settingDarkMode)` 解析独立偏好；默认 Light，显式 true 使用 Dark。系统主题消息可唤醒样式刷新，但不覆盖用户选择；配置和帧边界换色合同见下文“Setting 实时浅深主题合同”。
 - Setting 背景能力顺序固定为 Win11 `DWMWA_SYSTEMBACKDROP_TYPE/DWMSBT_MAINWINDOW`、旧 Win11 Mica attribute 1029、动态解析的 Win10 `SetWindowCompositionAttribute` Acrylic、Solid。每次应用先撤销旧状态；DWM composition 关闭、属性/API 缺失或调用失败都必须继续级联并最终无错误回到 Solid，不能让可选视觉效果阻断 Initialize/Show。
-- 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须沿用当前浅色不透明背景。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
+- 只有实际启用 Mica/Acrylic 后，才把 ImFluent `SolidBgBase`、ImGui `WindowBg` 与 D3D clear alpha 设为透明；Solid 必须使用当前主题的不透明背景；自绘标题栏始终单独填充不透明 `Design::AppBase`，避免透明根背景露出系统强调色。`WM_DWMCOMPOSITIONCHANGED` 与主题消息触发重新探测，允许 enabled -> Solid 回退。Setting session 退出时必须在 HWND 最终销毁前撤销 backdrop/margins/Acrylic 并发布 Solid。不得静态链接 Win10 专有 `SetWindowCompositionAttribute`，也不得为此引入 DirectComposition 或修改 ImFluent vendor。
 - Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
-- 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。窗口标题栏属于本批范围外；更新状态和检查操作仍只在版本页呈现。
+- 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
 - 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
@@ -846,7 +846,7 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 | 隐藏时 generation 变化 | 立即重建 backend device objects 和图片 SRV；保持无 swap chain/RTV |
 | 可见时 generation 变化 | 重建 backend device objects、图片 SRV、swap chain 和 RTV；失败路径不遗留半成品 |
 | DPI 或用户倍率变化 | 消费 font rebuild serial 并重建图集；用户倍率先限制到 `[1.0, 2.0]` |
-| Windows 明暗或高对比状态变化 | 可重应用 resident style，但结果仍为 ImFluent Light preset |
+| Windows 明暗或高对比状态变化 | 可重应用 resident style，保持 SettingDarkMode 的显式偏好 |
 | system backdrop 成功 | 发布 Mica，启用全客户区 frame/透明根背景与 clear |
 | system backdrop 失败、legacy Mica 成功 | 发布 Mica，其他行为与现代属性一致 |
 | 两种 Mica 均失败、动态 Acrylic 成功 | 发布 Acrylic，不把它记录为原生 Mica |
@@ -864,7 +864,7 @@ BackdropMode ResolveBackdropMode(bool systemBackdrop, bool legacyMica, bool acry
 
 #### 6. Tests Required
 
-- Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点，以及所有 Windows 主题输入均解析为 Light；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
+- Headless 覆盖初始化隐藏常驻、Show 创建 presentation、Hide 仅释放 presentation、隐藏/显示 epoch 重建、失败回滚、Shutdown 全释放、resize/font serial、倍率边界、DPI 乘积、导航断点，以及显式 false/true 分别解析为 Light/Dark；WARP 初始化断言 FL11.0+、context、DXGI/D2D/DWrite 资产有效。
 - Headless 覆盖 backdrop 优先级与 Solid fallback；静态审计 Windows 10 Acrylic 入口只能动态解析，透明 clear 必须由已发布的非 Solid 状态门控。
 - 完整 Solution `Debug|ARM64` 构建，静态审计旧 hardware device、24 FPS、`SettingMain`、`test.select`、运行时 `D3DCompile` 和 flip/DirectComposition 均不存在于活动路径。
 - Setting 页面样式迁移需静态审计导航/content、SplitView、Card/SettingsCard、ScrollView/WrapPanel/StackPanel 的 Begin/End 配对；产品路径不得重新引入 `imgui_toggle`、页面级原生 ImGui Button/Combo/Slider/Toggle 或 `ImFluent::ShowDemoWindow()`。
@@ -916,6 +916,12 @@ Window::Service::RequestTopmostRefresh() -> bool;
 Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
+SIZE Window::QuerySettingFrameThickness(UINT dpi = 0) noexcept;
+WindowFrameRect InsetWindowFrameRect(const WindowFrameRect&, const WindowFrameInsets&) noexcept;
+WindowFrameHit HitTestWindowFrame(const WindowFrameRect& outer, const WindowFrameRect& client,
+    int x, int y, bool maximized) noexcept;
+template<class MinMaxInfo> void ApplyWindowFrameMinimumTrack(
+    MinMaxInfo&, const WindowFrameSize& minimum) noexcept;
 
 Graphics::DibSurface(int width, int height);
 Graphics::DibSurface::dc() -> HDC;
@@ -927,12 +933,12 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Window Service 的受管线程拥有 Mag host/child、Freeze、Drawpad、五个 PPT HWND、Bar、Setting 和 DisplayObserver；创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
-- Setting owner 必须为 null，style 固定为 `WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU`，严禁 `WS_CAPTION` 和 `WS_OVERLAPPEDWINDOW`；ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口必须有箭头光标、大小图标和任务栏按钮，普通关闭映射为 Hide，Window Service 只在进程退出时销毁 HWND。Setting `WindowSpec` 的宽高表示客户区，创建前用 Win32 window-rect 换算并将最终 outer rect 夹紧到工作区。
-- Setting 使用“系统 frame metrics + Inkeys client caption”的混合合同：普通态 `WM_NCCALCSIZE` 只在四边保留 1px 可见 non-client frame，resize hit zone 必须由 `AdjustWindowRectExForDpi`（Win7 回退 `AdjustWindowRectEx`）得到的系统 frame metrics 推导，不得硬编码交互宽度；最大化态的 non-client geometry 完整交给 `DefWindowProcW`。ImGui/ImFluent 始终绘制 32 DIP 标题栏、16 DIP 应用图标、46 DIP caption cells 和 10 DIP glyph；禁止硬编码 border color 或调用 `DwmExtendFrameIntoClientArea`。
-- `WM_NCPAINT` 和 `WM_NCACTIVATE` 使用原始参数交给 `DefWindowProcW`，由系统绘制并更新保留的 non-client frame。`WM_NCHITTEST` 先按系统 frame metrics 解析八方向 resize hit，再取默认过程结果；只有默认结果为 `HTCLIENT` 时，才依次解析 `HTCLOSE`、`HTMAXBUTTON`、`HTMINBUTTON`、版本 `HTCLIENT`、图标 `HTSYSMENU` 和空白区 `HTCAPTION`。caption button 由 WndProc 跟踪按下/释放并投递标准 `WM_SYSCOMMAND`，关闭命令映射到 Hide。
+- Setting owner 必须为 null，style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；保留 caption/sizing/system menu 的标准桌面窗口语义，自绘内容替换原生标题区域。ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口保留箭头光标、大小图标和任务栏按钮，普通关闭映射 Hide，只有进程退出时销毁 HWND。WindowSpec 宽高表示客户区，创建时只外扩真实 sizing frame，不重复加入原生 caption 高度，outer rect 夹紧到工作区。
+- Setting 创建与 NCCALCSIZE 共用 `QuerySettingFrameThickness`：去掉 caption 后用 AdjustWindowRectExForDpi（缺失时 AdjustWindowRectEx）查询四周 sizing frame，按系统 DPI，不乘用户 UI 倍率。普通/最大化均从 proposed outer 内缩同一 frame，保留真实 non-client resize 空间；禁止再次压成 1px 后向 client 扩展热区。自绘标题栏 32 DIP、图标 16 DIP、caption cell 46 DIP、glyph 10 DIP；DWM 的中性明暗边框/标题颜色由 HWND 线程同步，材质 margins 只走现有可选 backdrop 路径。
+- `WM_NCPAINT` 和 `WM_NCACTIVATE` 使用原始参数交给 DefWindowProcW，由系统绘制保留的 non-client frame。NCHITTEST 使用实际 screen-space outer/client 矩形，先保护全部 client（含滚动条轨道），只在 client 外且 outer 内返回八方向 resize；最大化不返回 resize，outer 外返回 HTNOWHERE。client 内再解析 close/max/min、主题/版本 HTCLIENT、图标 HTSYSMENU 和空白标题区 HTCAPTION。caption button 由 WndProc 跟踪并投递标准 WM_SYSCOMMAND，关闭映射 Hide。
 - 系统 modal loop 使用原子 `None/Move/Size` 状态：`WM_NCLBUTTONDOWN` 根据 `HTCAPTION`/八方向 hit 分类，`WM_SYSCOMMAND` 补充 `SC_MOVE/SC_SIZE` 键盘路径，未知 `WM_ENTERSIZEMOVE` 默认为 Size。只有 Move 允许 Settings 回调在 swap-chain 操作与 Present 前返回 `Idle`；Size 中的每个非最小化 `WM_SIZE` 都覆盖 latest resize 并 `Request(Settings)`，渲染线程按自身节拍执行 `ResizeBuffers -> Render -> Present`。`WM_EXITSIZEMOVE`、Hide/Shutdown 清除状态并保证最终请求。
-- RightHeader 位于 caption cells 之前，显示真实 `editionVersion` 并路由到 `settingTabEnum::tab6`；空间不足时先隐藏版本入口，但必须保留 caption、identity 和至少 96 DIP 拖拽区。活动/非活动窗口的标题、版本和 caption glyph 需要可见状态差异，关闭按钮 hover/pressed 使用 Windows critical red，其余按钮使用 Fluent subtle fill。
-- 默认客户区约 `960x700 DIP`；`WM_GETMINMAXINFO` 先保留 Windows 默认 maximize geometry，只把约 `720x520 DIP` 客户区换算为 native-frame 最小 track size，不覆盖 `ptMaxPosition/ptMaxSize`。`WM_DPICHANGED` 接受系统建议矩形，Hide/Show 在单次进程内保留最大化和窗口 bounds，不持久化到下一进程。
+- RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧是 32 DIP 主题按钮，再接 caption cells。空间不足先隐藏版本入口，保留主题按钮、caption、identity 和至少 96 DIP 拖拽区。活动/非活动标题、版本和 caption glyph 保持状态差异；关闭 hover/pressed 为 critical red，其余按钮使用 Fluent subtle fill。
+- 默认客户区约 960×700 DIP；WM_GETMINMAXINFO 只经 ApplyWindowFrameMinimumTrack 修改约 720×520 DIP client 加一次系统 frame 的最小 track size，工作区过小时限制到可用尺寸。USER32 预填的 ptMaxPosition/ptMaxSize/ptMaxTrackSize 保持不变：它们使用 primary-monitor 协议，系统会向实际显示器补偿，不能直接回填目标 workarea 尺寸导致二次放大。标准 overlapped style 的默认最大化保留任务栏；WM_DPICHANGED 接受建议矩形，Hide/Show 在进程内保留 bounds/最大化状态。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
 - HiMsg 默认接受 Win32 系统生成的触摸兼容 mouse；这是公共库行为。只有已经自行处理 `WM_TOUCH` 并合成单指输入的 Inkeys Bar/PPT binding 才设置 `WindowSpec::messageCallback`，在 HiMsg subclass 自动入队前对 `IsTouchGeneratedMouseMessage(message, GetMessageExtraInfo())` 返回 `Action::Discard`。该 callback 仍继续原 WndProc；真实鼠标和不带 touch flag 的笔兼容 mouse 必须保留。
@@ -946,12 +952,13 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
 | Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
-| Setting 传入 overlay/caption style | Service 强制为无 `WS_CAPTION` 的 popup + thickframe 普通 app window |
-| 指针位于 Setting 边角/边缘 | 按 `AdjustWindowRectExForDpi` 对应的系统 frame metrics 返回 `HTTOPLEFT`..`HTBOTTOMRIGHT`；1px 可见边框不得缩窄 resize 热区 |
+| Setting 传入旧 popup 或 overlay style | Service 强制归一化为 WS_OVERLAPPEDWINDOW 普通 app window |
+| 指针位于 Setting 真正 non-client 边角/边缘 | 普通态返回 HTTOPLEFT..HTBOTTOMRIGHT；最大化不返回 resize |
+| 指针位于右侧 scrollbar 整个轨道 | 始终 client，不被 resize 热区截走 |
 | 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
-| 指针位于版本 RightHeader | 返回 `HTCLIENT`，点击后进入 `settingTabEnum::tab6`，不得触发窗口拖动 |
-| DWM composition 可用 | 系统在保留的 1px non-client frame 上处理 active/inactive border，并提供阴影和圆角；不设置自定义 border |
-| DWM composition 不可用或 Win11 属性不受支持 | 默认 non-client paint 继续处理 1px frame，Inkeys client caption 不变 |
+| 指针位于版本 RightHeader / 主题按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色，不触发窗口拖动 |
+| DWM composition 可用 | 系统管理真实 sizing frame、阴影与圆角；应用设置与当前浅深主题一致的中性边框色 |
+| DWM composition 不可用或属性不受支持 | 默认 non-client paint 继续处理保留的 frame，自绘当前主题 caption 不变 |
 | `WM_NCMOUSEMOVE` 的 hit 为 `HTCAPTION` | 直接进入系统 move loop，不请求 Settings 渲染帧；只有 caption button hover/leave 需要刷新 |
 | Interactive Move | 在 swap-chain create/probe/resize 与 Resume/Present 前返回 `Idle`，退出 modal loop 后显式请求最终帧 |
 | Interactive Size | 高频 `WM_SIZE` 只保留 latest serial 但每次唤醒 Settings，渲染线程持续 `ResizeBuffers/Render/Present` |
@@ -967,13 +974,13 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - Good：Setting 移动时复用最后一帧，拖动 native border 时 ImGui 与 swap chain 按渲染管线节拍连续跟随；最大化/还原使用系统 geometry。
 - Base：Bar/PPT 合成触摸按 `WM_LBUTTONDOWN/MOVE/UP` 投递，消费者按 Mouse filter 取回完全相同字段；普通 HiMsg consumer 不配置 callback 时仍可接收系统转译。
-- Bad：用一个 move/size bool 导致 sizing loop 整段停帧；或把 1px 可见边框同时当成 resize 热区，使高 DPI 下边缘难以命中。
+- Bad：用一个 move/size bool 导致 sizing loop 整段停帧；把 client 内的滚动条当作 resize 区；或直接把目标副屏尺寸写入 primary-based ptMaxSize。
 
 ### 6. Tests Required
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
-- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption cells/RightHeader/拖拽区互斥、窄宽版本隐藏、最小尺寸、DPI 建议矩形和响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
+- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
 - 静态审查必须确认仅 Move guard 位于 swap-chain create/probe/resize 与 coroutine resume/Present 之前；Size 不经过该 guard，`WM_SIZE` 仍 `QueueResize + Request`。真实 resize 流畅度、Snap Layout、active/accent border 和多显示器 DPI 仍只能在允许 GUI 的阶段人工验收。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
 
@@ -989,6 +996,11 @@ Inkeys::Window::GetService().SetClickThrough(
 ~~~
 
 ~~~cpp
+// Wrong：目标副屏尺寸可能再次被 USER32 按 primary->target 差额补偿。
+limits.ptMaxSize = targetWorkAreaSize;
+// Correct：保留系统最大化协议，只写应用自己的最小尺寸。
+ApplyWindowFrameMinimumTrack(limits, minimum);
+
 // Wrong：Move 和 Size 共用停帧 bool。
 if (interactiveMoveSize.load()) return FrameResult::Idle;
 
@@ -1036,7 +1048,7 @@ Bar、PPT 与 Setting 共享 RenderPipeline device epoch 和调度线程；Bar/P
 
 #### 1. Scope / Trigger
 
-修改任何设置页面、导航、SettingsRow、控制文本、滚动条或 ImFluent 本地图标扩展时适用。全量实际页面统一设计，不修 HWND/DWM、不增加动画/触摸/动态脏区。
+修改任何设置页面、导航、SettingsRow、控制文本、滚动条或 ImFluent 本地图标扩展时适用。全量实际页面统一设计；HWND/DWM 边界另遵守窗口合同，不增加动画/触摸/动态脏区。
 
 #### 2. Signatures
 
@@ -1102,4 +1114,62 @@ ImGui::Dummy({width, rowHeight + gap});
 
 ### 全页视觉验收授权边界
 
-默认遵守任务的窗口操作授权。2026-09-06用户为当前全页设计任务明确允许用脚本启动Inkeys、操作窗口并截图，同时禁止Computer Use；该授权不扩大到登录/解锁、修改系统设置或点击真实更新/清理等危险操作。脚本只操作记录PID的独立测试副本，保留原用户配置，并在鼠标输入前校验坐标命中的窗口归属；锁屏遮挡时请求用户解锁，不绕过锁屏。构建和CPU测试通过不能代替整页D3D视觉验收。
+默认遵守当前任务的窗口操作授权。2026-09-07 用户已允许本设置任务使用 Computer Use，取代此前禁用要求；该授权不扩大到登录/解锁或无关系统操作。使用记录 PID 的独立测试副本保留原用户配置，遵守所用工具的目标窗口与观察后操作规则；锁屏时请求用户解锁，不绕过锁屏。构建和 CPU 测试通过不能代替整页 D3D 视觉验收。
+
+### Setting 实时浅深主题合同
+
+#### 1. Scope / Trigger
+
+修改 Setting 主题按钮、颜色、标题栏主题接线或主题偏好持久化时适用。用户于 2026-09-07 批准本范围；该偏好只影响设置窗口，不跟随或修改 Windows/Bar 的主题。
+
+#### 2. Signatures
+
+```cpp
+ThemeMode ResolveThemeMode(bool settingDarkMode) noexcept;
+const Design::Palette& Design::PaletteForTheme(bool darkMode) noexcept;
+const Design::Palette& Design::GetPalette() noexcept;
+bool Design::IsDarkMode() noexcept;
+void Design::ApplyPalette(bool darkMode);
+// SetListStruct / opt/deploy.json
+bool settingDarkMode = false; // JSON: SettingDarkMode
+```
+
+#### 3. Contracts
+
+- `SettingDarkMode` 与原 SettingGlobalScale 同属 `SetListStruct` / `opt/deploy.json`。ReadSetting 严格接收 JSON bool，缺项或非 bool 置 false；CaptureSettingJson 写 JSON bool，不另建配置文件或隐式迁移系统。
+- 标题栏主题按钮占独立 32 DIP client 区；实际点击时切换偏好、按原 WriteSetting 宏冻结配置并入 FIFO、递增 theme serial 请求 Settings 帧。空闲绘制不写盘；主题变更不递增字体重建 serial。
+- 渲染线程在帧边界、PushFluentStyle 前应用 palette：先 ImFluent preset、再 SetAccentColor、最后项目颜色和滚动条。字体绑定、DPI/main 倍率、atlas/纹理/设备保持不变；不调用 ScaleAllSizes 累乘。
+- AppBase/Card/Text 等旧具名 token 引用稳定的 activePalette 成员，控件默认参数在调用时读当前颜色。Notice 四种状态、弹层、选区、表格、滚动条和主页插画均用共享 palette；原教程/赞助图片不重着色。
+- 渲染线程以 PostMessage 发送不可变明暗/颜色值；HWND 线程设置 DWM caption/text/border/dark 属性和可选 backdrop。材质能力变化只发布 backdrop 状态并请求样式帧；不得在持有 ImGui IO mutex 时同步跨线程调用窗口样式消息。
+- 初始应用前读取 theme serial 快照，应用后只消费该快照，避免窗口线程期间发布的 backdrop 变更被吞掉。自绘标题栏填充永远不透明，根背景透明仅由实际 backdrop 成功状态门控。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧配置无字段 / null / 数字 / 字符串 | false，保持旧版浅色默认 |
+| 明确 bool true / false | 下次启动分别为深色 / 浅色 |
+| 用户点击主题按钮 | 下一帧全页换色，只入队一次配置快照 |
+| Windows 主题消息 / 普通 resize | 保持用户主题，不重建字体 |
+| DWM 属性或 backdrop 失败 | 继续自绘当前主题；材质失败使用不透明 Solid |
+| 配置写入失败 | 当前进程主题仍生效，下次启动按磁盘结果恢复 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：同一常驻 ImGui session 浅→深→浅，按钮、说明、弹层、标题栏和首页同步换色，文本度量不变。
+- Base：旧 deploy.json 初次打开仍浅色，窄窗口保留标题栏主题入口。
+- Bad：只换页面底色，或从 Windows 主题消息覆盖用户偏好；用重建 atlas/device 实现换色。
+
+#### 6. Tests Required
+
+RunSettingDesignTests 在六倍率中执行浅→深→浅，检查真实 Header/Button/TextBox/Combo/Notice 的顶点颜色、滚动条透明轨道、字体绑定/文本测量/atlas 地址与数量保持；RunSettingSessionStateTests 覆盖 bool 解析及主题按钮与拖拽/caption 的互斥。配置真实读写入口须静态审计，不能在测试中复制解析式冒充集成验证。实机另验按钮点击、弹出层、重启偏好和 DWM 状态，未执行必须明确记录。
+
+#### 7. Wrong vs Correct
+
+```cpp
+// Wrong：强调色调用重建 preset，覆盖刚设置的项目颜色。
+style.Colors[ImFluentCol_CardBgDefault] = card;
+ImFluent::SetAccentColor(accent);
+// Correct：统一入口按 preset -> accent -> 项目 token -> scrollbar 应用。
+Design::ApplyPalette(setlist.settingDarkMode);
+```

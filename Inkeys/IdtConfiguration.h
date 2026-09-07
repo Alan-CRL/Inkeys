@@ -23,6 +23,7 @@ struct SetListStruct
 
 	int SetSkinMode, SkinMode;
 	float settingGlobalScale;
+	bool settingDarkMode = false; // 旧配置默认保持浅色，只影响设置窗口。
 
 	int topSleepTime;
 	bool RightClickClose;

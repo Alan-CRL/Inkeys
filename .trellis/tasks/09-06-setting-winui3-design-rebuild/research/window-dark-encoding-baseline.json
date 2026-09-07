@@ -1,0 +1,112 @@
+{
+  ".trellis/spec/native-desktop/configuration-i18n-and-assets.md": {
+    "bom": false,
+    "crlf": 248,
+    "lf": 248
+  },
+  ".trellis/spec/native-desktop/rendering-and-ui.md": {
+    "bom": false,
+    "crlf": 1105,
+    "lf": 1105
+  },
+  ".trellis/workspace/AlanCRL/index.md": {
+    "bom": false,
+    "crlf": 68,
+    "lf": 68
+  },
+  ".trellis/workspace/AlanCRL/journal-1.md": {
+    "bom": false,
+    "crlf": 758,
+    "lf": 758
+  },
+  "Inkeys/IdtConfiguration.cpp": {
+    "bom": false,
+    "crlf": 1146,
+    "lf": 1146
+  },
+  "Inkeys/IdtConfiguration.h": {
+    "bom": false,
+    "crlf": 308,
+    "lf": 308
+  },
+  "Inkeys/IdtI18nKeys.g.h": {
+    "bom": false,
+    "crlf": 539,
+    "lf": 539
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp": {
+    "bom": false,
+    "crlf": 528,
+    "lf": 528
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Controls.h": {
+    "bom": false,
+    "crlf": 98,
+    "lf": 98
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Layout.h": {
+    "bom": false,
+    "crlf": 181,
+    "lf": 181
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp": {
+    "bom": false,
+    "crlf": 263,
+    "lf": 263
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.Theme.h": {
+    "bom": false,
+    "crlf": 35,
+    "lf": 35
+  },
+  "Inkeys/Inkeys/UI/Setting/Setting.cpp": {
+    "bom": false,
+    "crlf": 4226,
+    "lf": 4226
+  },
+  "Inkeys/Inkeys/Window/Window.cpp": {
+    "bom": false,
+    "crlf": 1263,
+    "lf": 1263
+  },
+  "Inkeys/Inkeys/Window/Window.cppm": {
+    "bom": false,
+    "crlf": 143,
+    "lf": 143
+  },
+  "Inkeys/src/i18n/en-US.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  },
+  "Inkeys/src/i18n/zh-CN.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  },
+  "Inkeys/src/i18n/zh-TW.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  },
+  "InkeysHeadlessTests/setting_design_tests.cpp": {
+    "bom": false,
+    "crlf": 834,
+    "lf": 834
+  },
+  "InkeysHeadlessTests/setting_session_state_tests.cpp": {
+    "bom": false,
+    "crlf": 219,
+    "lf": 219
+  },
+  "InkeysHeadlessTests/window_tests.cpp": {
+    "bom": false,
+    "crlf": 249,
+    "lf": 249
+  },
+  "Scripts/i18n.zh-CN.snapshot.jsonc": {
+    "bom": false,
+    "crlf": 536,
+    "lf": 536
+  }
+}

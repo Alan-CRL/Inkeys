@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
-- **Last Active**: 2026-09-06
+- **Total Sessions**: 30
+- **Last Active**: 2026-09-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~758 | Active |
+| `journal-1.md` | ~777 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-09-07 | Setting 窗口框架与实时浅深主题 | - | `fluent` |
 | 29 | 2026-09-06 | Setting 全页设计迁移与公共视觉校准 | - | `fluent` |
 | 28 | 2026-09-06 | Setting WinUI 3 首批：导航、主页与常规页 | - | `fluent` |
 | 27 | 2026-08-16 | 完善设置窗口样式并固定浅色主题 | `5a237ddf` | `fluent` |

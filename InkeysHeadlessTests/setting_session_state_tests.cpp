@@ -12,6 +12,133 @@ namespace
 		if (!condition) std::cerr << "[SettingSessionState] failed: " << name << '\n';
 		return condition;
 	}
+
+	bool SameFrameRect(const Inkeys::UI::Setting::WindowFrameRect& left,
+		const Inkeys::UI::Setting::WindowFrameRect& right)
+	{
+		return left.left == right.left && left.top == right.top
+			&& left.right == right.right && left.bottom == right.bottom;
+	}
+
+	int CheckSettingWindowFrame()
+	{
+		using namespace Inkeys::UI::Setting;
+		int failures = 0;
+		struct NativeMaximizeFixture
+		{
+			WindowFrameRect monitor;
+			WindowFrameRect work;
+			WindowFrameInsets frame;
+			WindowFrameRect nativeOuter;
+		};
+		// primary 为 1920×1080/work 1920×1040；包含更大/更小 secondary 与负原点。
+		// nativeOuter 是协议场景的预期外框 fixture，不是本测试调用 USER32 的结果。
+		const NativeMaximizeFixture cases[]{
+			{ { 0, 0, 1920, 1080 }, { 0, 0, 1920, 1040 }, { 8, 8, 8, 8 },
+				{ -8, -8, 1928, 1048 } },
+			{ { 1920, 0, 4480, 1440 }, { 1920, 0, 4480, 1400 }, { 8, 8, 8, 8 },
+				{ 1912, -8, 4488, 1408 } },
+			{ { -1280, 80, 0, 1104 }, { -1280, 80, 0, 1064 }, { 8, 8, 8, 8 },
+				{ -1288, 72, 8, 1072 } },
+			{ { -2560, -200, 0, 1240 }, { -2520, -200, 0, 1240 }, { 12, 12, 12, 12 },
+				{ -2532, -212, 12, 1252 } },
+			{ { 1920, -1200, 3840, 0 }, { 1920, -1160, 3840, 0 }, { 10, 11, 10, 11 },
+				{ 1910, -1171, 3850, 11 } },
+			{ { -1920, 0, 0, 1080 }, { -1920, 0, 0, 1080 }, { 16, 16, 16, 16 },
+				{ -1936, -16, 16, 1096 } },
+		};
+		for (const auto& test : cases)
+		{
+			// 真实 SDK 结构中的最大化值仍以 primary 为基准，只允许生产 adapter 修改 min。
+			MINMAXINFO limits{};
+			limits.ptReserved = { 314, -159 };
+			limits.ptMaxSize = { 1920 + test.frame.left + test.frame.right,
+				1040 + test.frame.top + test.frame.bottom };
+			limits.ptMaxPosition = { -test.frame.left, -test.frame.top };
+			limits.ptMinTrackSize = { 111, 222 };
+			limits.ptMaxTrackSize = { 6400, 3200 };
+			const MINMAXINFO original = limits;
+			const auto minimum = ResolveMinimumWindowFrame(720, 520, test.frame,
+				test.work.Width(), test.work.Height());
+			ApplyWindowFrameMinimumTrack(limits, minimum);
+			ApplyWindowFrameMinimumTrack(limits, minimum);
+			const auto samePoint = [](const POINT& left, const POINT& right)
+				{ return left.x == right.x && left.y == right.y; };
+			if (!Expect(limits.ptMinTrackSize.x == minimum.width
+				&& limits.ptMinTrackSize.y == minimum.height
+				&& samePoint(limits.ptReserved, original.ptReserved)
+				&& samePoint(limits.ptMaxSize, original.ptMaxSize)
+				&& samePoint(limits.ptMaxPosition, original.ptMaxPosition)
+				&& samePoint(limits.ptMaxTrackSize, original.ptMaxTrackSize),
+				"minimum adapter preserves native primary max, max-track and reserved MINMAXINFO fields"))
+				++failures;
+			// 这里只验证最终外框 fixture 的客户区内缩，不另写 USER32 的多显示器补偿算法。
+			if (!Expect(SameFrameRect(InsetWindowFrameRect(test.nativeOuter, test.frame), test.work)
+				&& test.work.left >= test.monitor.left && test.work.top >= test.monitor.top
+				&& test.work.right <= test.monitor.right && test.work.bottom <= test.monitor.bottom,
+				"native maximum fixtures inset to larger, smaller and negative-origin work areas"))
+				++failures;
+		}
+
+		for (const int framePixels : { 8, 10, 12, 16 })
+		{
+			const WindowFrameInsets frame{ framePixels, framePixels + 1, framePixels, framePixels + 1 };
+			const WindowFrameRect client{ -1200, 100, -240, 800 };
+			const auto outer = ExpandWindowFrameRect(client, frame);
+			struct HitCase { int x; int y; WindowFrameHit expected; };
+			const HitCase hits[]{
+				{ outer.left, 400, WindowFrameHit::Left },
+				{ outer.right - 1, 400, WindowFrameHit::Right },
+				{ -800, outer.top, WindowFrameHit::Top },
+				{ -800, outer.bottom - 1, WindowFrameHit::Bottom },
+				{ outer.left, outer.top, WindowFrameHit::TopLeft },
+				{ outer.right - 1, outer.top, WindowFrameHit::TopRight },
+				{ outer.left, outer.bottom - 1, WindowFrameHit::BottomLeft },
+				{ outer.right - 1, outer.bottom - 1, WindowFrameHit::BottomRight },
+			};
+			for (const auto& hit : hits)
+			{
+				if (!Expect(HitTestWindowFrame(outer, client, hit.x, hit.y, false) == hit.expected
+					&& HitTestWindowFrame(outer, client, hit.x, hit.y, true) == WindowFrameHit::Client,
+					"all eight native frame directions resize only while restored")) ++failures;
+			}
+			// 整条滚动条命中轨道都在 client 内，不能只保护 thumb 中心。
+			for (int x = client.right - 32; x < client.right; ++x)
+				for (const int y : { client.top, 400, client.bottom - 1 })
+					if (!Expect(HitTestWindowFrame(outer, client, x, y, false) == WindowFrameHit::Client
+						&& HitTestWindowFrame(outer, client, x, y, true) == WindowFrameHit::Client,
+						"right-side client scrollbar never becomes a resize hit")) ++failures;
+			if (!Expect(HitTestWindowFrame(outer, client, outer.right, 400, false) == WindowFrameHit::Outside
+				&& HitTestWindowFrame(outer, client, outer.left - 1, 400, true) == WindowFrameHit::Outside
+				&& SameFrameRect(InsetWindowFrameRect(outer, frame), client),
+				"frame round trip preserves negative origins and half-open outer bounds")) ++failures;
+		}
+
+		const WindowFrameInsets frame{ 12, 12, 12, 12 };
+		const auto normalMinimum = ResolveMinimumWindowFrame(720, 520, frame, 1920, 1040);
+		const auto enlargedMinimum = ResolveMinimumWindowFrame(1440, 1040, frame, 3840, 2080);
+		const auto constrainedMinimum = ResolveMinimumWindowFrame(2880, 2080, frame, 1920, 1040);
+		if (!Expect(normalMinimum.width == 744 && normalMinimum.height == 544
+			&& enlargedMinimum.width == 1464 && enlargedMinimum.height == 1064
+			&& constrainedMinimum.width == 1920 && constrainedMinimum.height == 1040,
+			"minimum client scale adds system frame once and yields to a smaller work area")) ++failures;
+
+		for (const float scale : { 1.0F, 1.25F, 1.875F, 2.0F, 4.0F })
+			for (const float width : { 360.0F, 720.0F, 960.0F })
+			{
+				const auto title = ResolveTitleBarGeometry(width * scale, scale,
+					46.0F * scale, 100.0F * scale, 140.0F * scale);
+				const float x = title.themeToggle.left + title.themeToggle.Width() * 0.5F;
+				const float y = title.height * 0.5F;
+				if (!Expect(title.themeToggle.Width() > 0.0F && title.themeToggle.Contains(x, y)
+					&& !title.drag.Contains(x, y) && !title.minimize.Contains(x, y)
+					&& !title.maximize.Contains(x, y) && !title.close.Contains(x, y)
+					&& title.themeToggle.right < title.minimize.left
+					&& (!title.versionVisible || title.version.right < title.themeToggle.left),
+					"theme caption button remains an independent non-drag client target")) ++failures;
+			}
+		return failures;
+	}
 }
 
 int RunSettingSessionStateTests()
@@ -21,6 +148,7 @@ int RunSettingSessionStateTests()
 	using Inkeys::UI::Setting::InteractiveWindowOperation;
 	using Inkeys::UI::Setting::BackdropMode;
 	int failures = 0;
+	failures += CheckSettingWindowFrame();
 
 	if (!Expect(Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTCAPTION)
 		== InteractiveWindowOperation::Move
@@ -102,15 +230,11 @@ int RunSettingSessionStateTests()
 			"titlebar geometry scales logical DIP coordinates exactly once"))
 			++failures;
 	}
-	if (!Expect(Inkeys::UI::Setting::ResolveThemeMode(false, true)
+	if (!Expect(Inkeys::UI::Setting::ResolveThemeMode(false)
 		== Inkeys::UI::Setting::ThemeMode::Light
-		&& Inkeys::UI::Setting::ResolveThemeMode(false, false)
-		== Inkeys::UI::Setting::ThemeMode::Light
-		&& Inkeys::UI::Setting::ResolveThemeMode(true, true)
-		== Inkeys::UI::Setting::ThemeMode::Light
-		&& Inkeys::UI::Setting::ResolveThemeMode(true, false)
-		== Inkeys::UI::Setting::ThemeMode::Light,
-		"settings temporarily remains light for every system theme")) ++failures;
+		&& Inkeys::UI::Setting::ResolveThemeMode(true)
+		== Inkeys::UI::Setting::ThemeMode::Dark,
+		"settings resolves the saved explicit light or dark preference")) ++failures;
 	if (!Expect(Inkeys::UI::Setting::ResolveBackdropMode(true, false, true)
 		== BackdropMode::Mica
 		&& Inkeys::UI::Setting::ResolveBackdropMode(false, true, true)

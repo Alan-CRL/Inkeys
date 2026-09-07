@@ -756,3 +756,22 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Next Steps
 
 - 用户解锁桌面后，启动Build/SettingVisualReview/app/Inkeys.exe，用research/window-review.py进行全页真实截图并迭代。禁止Computer Use，不自动commit。
+
+
+## Session 30: Setting 窗口框架与实时浅深主题
+
+**Date**: 2026-09-07
+**Task**: Setting 窗口框架与实时浅深主题
+**Branch**: `fluent`
+
+### Summary
+
+基于89770357修复真实sizing frame/client命中、标准最大化和标题栏颜色，新增实时浅深切换及SettingDarkMode FIFO保存。最终ARM64完整Solution、集成无窗口、六倍率CPU控件和i18n306/306通过；独立审查修复副屏最大化二次补偿问题。GUI因锁屏待验收，任务保留in_progress；按用户要求仅暂存不自动commit。详见任务research/window-dark-validation.md。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**

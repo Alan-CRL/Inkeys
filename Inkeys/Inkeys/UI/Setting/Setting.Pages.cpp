@@ -9,32 +9,33 @@ namespace Inkeys::UI::Setting::Design
 	{
 		void WritingIllustration(ImVec2 origin, float width, float height)
 		{
-			// 首页静态矢量示意直接进入现有 ImDrawData，不引入额外图片或渲染器。
+			// 首页静态矢量示意直接进入现有 ImDrawData，换色读取同一主题表。
+			const auto& palette = GetPalette();
 			const float scale = (std::min)(width / 310.0F, height / 212.0F);
 			auto point = [&](float x, float y) { return ImVec2(origin.x + x * scale, origin.y + y * scale); };
 			ImDrawList* draw = ImGui::GetWindowDrawList();
 			draw->PushClipRect(origin, { origin.x + width, origin.y + height }, true);
-			draw->AddCircleFilled(point(216, 71), 110 * scale, IM_COL32(220, 234, 247, 255));
-			draw->AddCircleFilled(point(279, 206), 62 * scale, IM_COL32(244, 232, 220, 255));
+			draw->AddCircleFilled(point(216, 71), 110 * scale, palette.artCool);
+			draw->AddCircleFilled(point(279, 206), 62 * scale, palette.artWarm);
 			draw->AddRectFilled(point(34, 40), point(273, 181), Card, 8 * scale);
-			draw->AddRect(point(34, 40), point(273, 181), IM_COL32(197, 216, 231, 255), 8 * scale);
+			draw->AddRect(point(34, 40), point(273, 181), palette.artStroke, 8 * scale);
 			for (int i = 0; i < 2; ++i)
-				draw->AddLine(point(58, 68 + i * 10.0F), point(i ? 89.0F : 110.0F, 68 + i * 10.0F), IM_COL32(189, 204, 214, 255), 3 * scale);
-			draw->AddLine(point(58, 151), point(179, 151), IM_COL32(141, 168, 189, 255), 1.5F * scale);
-			draw->AddLine(point(76, 154), point(76, 98), IM_COL32(141, 168, 189, 255), 1.5F * scale);
+				draw->AddLine(point(58, 68 + i * 10.0F), point(i ? 89.0F : 110.0F, 68 + i * 10.0F), palette.artRule, 3 * scale);
+			draw->AddLine(point(58, 151), point(179, 151), palette.artAxis, 1.5F * scale);
+			draw->AddLine(point(76, 154), point(76, 98), palette.artAxis, 1.5F * scale);
 			draw->AddBezierCubic(point(82, 136), point(103, 136), point(99, 99), point(120, 110), Accent, 3 * scale);
 			draw->AddBezierCubic(point(120, 110), point(142, 142), point(157, 137), point(178, 94), Accent, 3 * scale);
-			draw->AddTriangle(point(197, 80), point(235, 116), point(187, 116), IM_COL32(191, 148, 107, 255), 2 * scale);
+			draw->AddTriangle(point(197, 80), point(235, 116), point(187, 116), palette.artWarmInk, 2 * scale);
 			draw->AddRectFilled(point(113, 166), point(279, 197), Card, 15.5F * scale);
-			draw->AddRect(point(113, 166), point(279, 197), IM_COL32(198, 214, 227, 255), 15.5F * scale);
-			draw->AddCircleFilled(point(134, 181), 8 * scale, IM_COL32(226, 240, 252, 255));
+			draw->AddRect(point(113, 166), point(279, 197), palette.artStroke, 15.5F * scale);
+			draw->AddCircleFilled(point(134, 181), 8 * scale, palette.artPenSelection);
 			draw->AddLine(point(130, 184), point(138, 176), Accent, 3 * scale);
 			draw->AddLine(point(156, 178), point(163, 185), TextSecondary, 4 * scale);
 			draw->AddLine(point(182, 181), point(190, 181), TextSecondary, scale);
 			draw->AddLine(point(186, 177), point(186, 185), TextSecondary, scale);
 			draw->AddCircleFilled(point(214, 181), 4 * scale, Accent);
-			draw->AddCircleFilled(point(232, 181), 4 * scale, IM_COL32(210, 154, 101, 255));
-			draw->AddCircleFilled(point(250, 181), 4 * scale, IM_COL32(119, 163, 142, 255));
+			draw->AddCircleFilled(point(232, 181), 4 * scale, palette.artOrange);
+			draw->AddCircleFilled(point(250, 181), 4 * scale, palette.artGreen);
 			draw->PopClipRect();
 		}
 
@@ -100,6 +101,7 @@ namespace Inkeys::UI::Setting::Design
 	HomeAction RenderHome(const HomeContent& content)
 	{
 		HomeAction action = HomeAction::None;
+		const auto& palette = GetPalette();
 		PageHeader(IA(I18nKey.SettingsUI.Home.N).c_str(), IA(I18nKey.SettingsUI.Design.HomeWelcome).c_str());
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(20.0F));
 		const ImVec2 heroOrigin = ImGui::GetCursorScreenPos();
@@ -120,16 +122,16 @@ namespace Inkeys::UI::Setting::Design
 			+ Pixels(10.0F) + descriptionHeight + Pixels(20.0F) + Pixels(wrapHeroButtons ? 72.0F : 32.0F));
 		ImGui::Dummy({ width, heroHeight });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
-		draw->AddRectFilled(heroOrigin, { heroOrigin.x + width, heroOrigin.y + heroHeight }, IM_COL32(234, 242, 249, 255), Pixels(8.0F));
-		draw->AddRect(heroOrigin, { heroOrigin.x + width, heroOrigin.y + heroHeight }, IM_COL32(220, 232, 241, 255), Pixels(8.0F));
+		draw->AddRectFilled(heroOrigin, { heroOrigin.x + width, heroOrigin.y + heroHeight }, palette.heroFill, Pixels(8.0F));
+		draw->AddRect(heroOrigin, { heroOrigin.x + width, heroOrigin.y + heroHeight }, palette.heroStroke, Pixels(8.0F));
 		if (artWidth > 0.0F)
 			WritingIllustration({ heroOrigin.x + width - artWidth, heroOrigin.y + (heroHeight - Pixels(212.0F)) * 0.5F }, artWidth, Pixels(212.0F));
 		float y = heroOrigin.y + inset;
-		TextAt("INKEYS", { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Caption, IM_COL32(73, 101, 120, 255));
+		TextAt("INKEYS", { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Caption, palette.heroEyebrow);
 		y += Pixels(24.0F);
 		TextAt(heroTitle.c_str(), { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Title);
 		y += titleHeight + Pixels(10.0F);
-		TextAt(heroDescription.c_str(), { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Body, IM_COL32(78, 96, 112, 255));
+		TextAt(heroDescription.c_str(), { heroOrigin.x + inset, y }, copyWidth, ImFluentTextStyle_Body, palette.heroDescription);
 		y += descriptionHeight + Pixels(20.0F);
 		ImGui::SetCursorScreenPos({ heroOrigin.x + inset, y });
 		if (AccentButton((drawAction + "###home-customize").c_str(), { primaryWidth, Pixels(32.0F) })) action = HomeAction::Draw;
@@ -142,9 +144,9 @@ namespace Inkeys::UI::Setting::Design
 		SectionHeader(IA(I18nKey.SettingsUI.Design.Explore).c_str());
 		struct Feature { const char* title; const char* description; const char* icon; HomeAction action; ImU32 tint; ImU32 ink; };
 		const std::array features{
-			Feature{ I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Design.DrawDescription, "\uedc6", HomeAction::Draw, IM_COL32(242, 246, 250, 255), IM_COL32(69, 104, 131, 255) },
-			Feature{ I18nKey.SettingsUI.Preset.N, I18nKey.SettingsUI.Design.PresetDescription, "\uf259", HomeAction::Preset, IM_COL32(247, 242, 237, 255), IM_COL32(156, 113, 83, 255) },
-			Feature{ I18nKey.SettingsUI.PlugIn.N, I18nKey.SettingsUI.Design.PluginDescription, "\uea86", HomeAction::Plugins, IM_COL32(240, 244, 243, 255), IM_COL32(84, 116, 107, 255) }
+			Feature{ I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Design.DrawDescription, "\uedc6", HomeAction::Draw, palette.featureTint[0], palette.featureInk[0] },
+			Feature{ I18nKey.SettingsUI.Preset.N, I18nKey.SettingsUI.Design.PresetDescription, "\uf259", HomeAction::Preset, palette.featureTint[1], palette.featureInk[1] },
+			Feature{ I18nKey.SettingsUI.PlugIn.N, I18nKey.SettingsUI.Design.PluginDescription, "\uea86", HomeAction::Plugins, palette.featureTint[2], palette.featureInk[2] }
 		};
 		const bool featureColumns = width >= Pixels(560.0F);
 		const float featureWidth = featureColumns ? (width - Pixels(24.0F)) / 3.0F : width;
@@ -214,7 +216,7 @@ namespace Inkeys::UI::Setting::Design
 			const std::string developer = IA(I18nKey.SettingsUI.Home.Developer);
 			const float bioHeight = (std::max)(Pixels(36.0F), Pixels(20.0F) + TextHeight(developer.c_str(), authorCopyWidth, ImFluentTextStyle_Caption));
 			ImGui::Dummy({ ImGui::GetContentRegionAvail().x, bioHeight });
-			ImGui::GetWindowDrawList()->AddCircleFilled({ authorOrigin.x + Pixels(18.0F), authorOrigin.y + Pixels(18.0F) }, Pixels(18.0F), IM_COL32(240, 240, 240, 255));
+			ImGui::GetWindowDrawList()->AddCircleFilled({ authorOrigin.x + Pixels(18.0F), authorOrigin.y + Pixels(18.0F) }, Pixels(18.0F), palette.avatarFill);
 			ImFluent::DrawIcon("\ue77b", authorOrigin, { authorOrigin.x + Pixels(36.0F), authorOrigin.y + Pixels(36.0F) }, 20.0F, TextSecondary);
 			TextAt("AlanCRL", { authorOrigin.x + Pixels(48.0F), authorOrigin.y }, authorCopyWidth);
 			TextAt(developer.c_str(), { authorOrigin.x + Pixels(48.0F), authorOrigin.y + Pixels(20.0F) }, authorCopyWidth, ImFluentTextStyle_Caption, TextSecondary);

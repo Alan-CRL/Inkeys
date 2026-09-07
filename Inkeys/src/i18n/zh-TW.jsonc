@@ -46,6 +46,8 @@
     "Design":
     {
       "NavigationTitle": "設定",
+      "SwitchToDark": "切換為深色主題",
+      "SwitchToLight": "切換為淺色主題",
       "Preferences": "偏好設定",
       "SupportGroup": "支援與維護",
       "Experimental": "實驗選項",

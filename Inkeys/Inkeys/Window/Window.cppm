@@ -32,9 +32,10 @@ export namespace Inkeys::Window
 		Count,
 	};
 
-	inline constexpr DWORD SettingWindowStyle = WS_POPUP | WS_THICKFRAME
-		| WS_CLIPCHILDREN | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+	// 保留桌面窗口的最大化、Snap 和系统菜单语义，标题内容由 Setting 自绘。
+	inline constexpr DWORD SettingWindowStyle = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 	inline constexpr DWORD SettingWindowExStyle = WS_EX_APPWINDOW;
+	[[nodiscard]] SIZE QuerySettingFrameThickness(UINT dpi = 0) noexcept;
 
 	struct WindowSpec
 	{

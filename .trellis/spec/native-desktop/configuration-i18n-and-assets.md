@@ -208,6 +208,10 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - Wrong（UI2/UI3 并行期）：组件 toggle 改变时写入或重排持久化 `ExtensionButtons`。
 - Correct（UI2/UI3 并行期）：旧开关仍是唯一持久化来源，UI3 只重建当前进程的 B 序列；移除 UI2 后再恢复持久化 B 排序。
 
+## Setting 主题偏好
+
+`【直接确认】` `SetListStruct::settingDarkMode` 与 SettingGlobalScale 位于同一旧配置路径，映射 `opt/deploy.json` 的 `SettingDarkMode`。默认 false；ReadSetting 对缺项和非 bool 回退 false，CaptureSettingJson 写 bool。设置标题栏切换先更新运行时，再按原 FIFO 冻结快照保存，不改变 Windows/Bar 主题；配置失败沿用原错误处理。完整主题/窗口线程与测试合同见 [rendering-and-ui.md](rendering-and-ui.md) 的“Setting 实时浅深主题合同”。
+
 ## 国际化源与生成物
 
 | 路径 | `【直接确认】`的角色 |

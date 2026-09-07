@@ -12,6 +12,7 @@ namespace Inkeys::UI::Setting
 	inline constexpr float MinimumHeightDip = 520.0F;
 	inline constexpr float TitleBarHeightDip = 32.0F;
 	inline constexpr float TitleBarCaptionButtonWidthDip = 46.0F;
+	inline constexpr float TitleBarThemeButtonWidthDip = 32.0F;
 	inline constexpr float TitleBarCaptionGlyphSizeDip = 10.0F;
 	inline constexpr float TitleBarIconSizeDip = 16.0F;
 	inline constexpr float TitleBarHorizontalInsetDip = 16.0F;
@@ -42,12 +43,107 @@ namespace Inkeys::UI::Setting
 		LayoutRect identity;
 		LayoutRect drag;
 		LayoutRect version;
+		LayoutRect themeToggle;
 		LayoutRect minimize;
 		LayoutRect maximize;
 		LayoutRect close;
 		float height = 0.0F;
 		bool versionVisible = false;
 	};
+
+	// HWND 外框和客户区共用物理像素几何；系统边框不乘设置界面的用户倍率。
+	struct WindowFrameRect
+	{
+		int left = 0;
+		int top = 0;
+		int right = 0;
+		int bottom = 0;
+
+		[[nodiscard]] int Width() const noexcept { return right - left; }
+		[[nodiscard]] int Height() const noexcept { return bottom - top; }
+		[[nodiscard]] bool Contains(int x, int y) const noexcept
+		{
+			return x >= left && x < right && y >= top && y < bottom;
+		}
+	};
+
+	struct WindowFrameInsets
+	{
+		int left = 0;
+		int top = 0;
+		int right = 0;
+		int bottom = 0;
+	};
+
+	struct WindowFrameSize
+	{
+		int width = 0;
+		int height = 0;
+	};
+
+	enum class WindowFrameHit
+	{
+		Client, Outside, Left, Right, Top, Bottom,
+		TopLeft, TopRight, BottomLeft, BottomRight,
+	};
+
+	[[nodiscard]] inline WindowFrameRect InsetWindowFrameRect(
+		const WindowFrameRect& outer, const WindowFrameInsets& frame) noexcept
+	{
+		return { outer.left + frame.left, outer.top + frame.top,
+			outer.right - frame.right, outer.bottom - frame.bottom };
+	}
+
+	[[nodiscard]] inline WindowFrameRect ExpandWindowFrameRect(
+		const WindowFrameRect& client, const WindowFrameInsets& frame) noexcept
+	{
+		return { client.left - frame.left, client.top - frame.top,
+			client.right + frame.right, client.bottom + frame.bottom };
+	}
+
+	[[nodiscard]] inline WindowFrameSize ResolveMinimumWindowFrame(
+		int clientWidth, int clientHeight, const WindowFrameInsets& frame,
+		int workWidth, int workHeight) noexcept
+	{
+		const auto outer = ExpandWindowFrameRect(
+			{ 0, 0, (std::max)(1, clientWidth), (std::max)(1, clientHeight) }, frame);
+		return {
+			workWidth > 0 ? (std::min)(outer.Width(), workWidth) : outer.Width(),
+			workHeight > 0 ? (std::min)(outer.Height(), workHeight) : outer.Height() };
+	}
+
+	// MINMAXINFO 的最大化字段由 USER32 预填并按目标显示器补偿，只改最小跟踪尺寸。
+	// 模板保持本几何头不依赖 windows.h，生产与测试均传入真实 MINMAXINFO。
+	template<class MinMaxInfo>
+	inline void ApplyWindowFrameMinimumTrack(MinMaxInfo& limits,
+		const WindowFrameSize& minimum) noexcept
+	{
+		limits.ptMinTrackSize.x = minimum.width;
+		limits.ptMinTrackSize.y = minimum.height;
+	}
+
+	[[nodiscard]] inline WindowFrameHit HitTestWindowFrame(
+		const WindowFrameRect& outer, const WindowFrameRect& client,
+		int x, int y, bool maximized) noexcept
+	{
+		// 先保护整个客户区，滚动条不能被边缘缩放热区截走。
+		if (client.Contains(x, y)) return WindowFrameHit::Client;
+		if (!outer.Contains(x, y)) return WindowFrameHit::Outside;
+		if (maximized) return WindowFrameHit::Client;
+		const bool left = x < client.left;
+		const bool right = x >= client.right;
+		const bool top = y < client.top;
+		const bool bottom = y >= client.bottom;
+		if (top && left) return WindowFrameHit::TopLeft;
+		if (top && right) return WindowFrameHit::TopRight;
+		if (bottom && left) return WindowFrameHit::BottomLeft;
+		if (bottom && right) return WindowFrameHit::BottomRight;
+		if (top) return WindowFrameHit::Top;
+		if (bottom) return WindowFrameHit::Bottom;
+		if (left) return WindowFrameHit::Left;
+		if (right) return WindowFrameHit::Right;
+		return WindowFrameHit::Client;
+	}
 
 	enum class NavigationLayout
 	{
@@ -122,9 +218,13 @@ namespace Inkeys::UI::Setting
 		result.icon = { inset, (height - iconSize) * 0.5F,
 			inset + iconSize, (height + iconSize) * 0.5F };
 
+		// 主题入口始终保留，窗口变窄时先让版本信息和标题文字让位。
+		const float themeRight = (std::max)(0.0F, captionStart - rightHeaderSpacing);
+		result.themeToggle = { (std::max)(0.0F,
+			themeRight - TitleBarThemeButtonWidthDip * scale), 0.0F, themeRight, height };
 		const float identityLeft = result.icon.right + spacing;
 		const float rightHeaderEnd = (std::max)(identityLeft,
-			captionStart - rightHeaderSpacing);
+			result.themeToggle.left - rightHeaderSpacing);
 		const float identityDesiredRight = identityLeft + titleWidth;
 		const float identityMaximumRight = (std::max)(identityLeft,
 			rightHeaderEnd - minimumDragWidth);

@@ -46,6 +46,8 @@
     "Design":
     {
       "NavigationTitle": "Settings",
+      "SwitchToDark": "Switch to dark theme",
+      "SwitchToLight": "Switch to light theme",
       "Preferences": "Preferences",
       "SupportGroup": "Support and maintenance",
       "Experimental": "Experimental options",

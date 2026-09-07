@@ -2,7 +2,7 @@
   "id": "setting-winui3-design-rebuild",
   "name": "setting-winui3-design-rebuild",
   "title": "Setting WinUI 3 桌面视觉重建与设计审查",
-  "description": "WinUI 3 设置全页视觉迁移：首批0ffd0341后集中修文字/图标/滚动条，覆盖全部页面并脚本截图验收。",
+  "description": "WinUI 3 全页视觉已迁移；继续窗口验收并修复窗口框架、标题栏、滚动条边缘命中，增加实时浅深主题。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "关联 08-13-setting-fluent2-responsive-ui；首批提交0ffd0341后，全页迁移和字体/按钮/图标/滚动条修正已实现，构建与静态/无窗口检查通过；已完成11张默认页真实截图及可见区域审查；再次锁屏后暂停，插件详情/支持/调试/页底/窄窗验收待继续，按research/full-migration-validation.md执行。参考 preview/index.html 和 research/findings.md。",
+  "notes": "首批0ffd0341、全页迁移89770357。窗口/深色增量已实现，修复真实frame与client冲突、标准最大化、标题栏主题，增加实时浅深切换及原FIFO保存。最终完整ARM64Solution/集成无窗口/CPU控件/i18n检查通过。用户要求暂存而非自动commit；本阶段实机验收仍被锁屏阻挡，保留in_progress，解锁后按research/window-dark-validation.md继续。",
   "meta": {}
 }

@@ -16,11 +16,10 @@ namespace Inkeys::UI::Setting
 		Acrylic,
 	};
 
-	[[nodiscard]] inline constexpr ThemeMode ResolveThemeMode(
-		bool /*highContrast*/, bool /*appsUseLightTheme*/) noexcept
+	[[nodiscard]] inline constexpr ThemeMode ResolveThemeMode(bool settingDarkMode) noexcept
 	{
-		// 浅色样式调整完成前，Settings 暂不跟随系统主题切换。
-		return ThemeMode::Light;
+		// 只使用设置窗口自己的偏好；系统换色不覆盖用户选择，也不影响悬浮栏。
+		return settingDarkMode ? ThemeMode::Dark : ThemeMode::Light;
 	}
 
 	[[nodiscard]] inline constexpr BackdropMode ResolveBackdropMode(

@@ -49,6 +49,8 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Design
         {
             const char* NavigationTitle = "SettingsUI/Design/NavigationTitle";
+            const char* SwitchToDark = "SettingsUI/Design/SwitchToDark";
+            const char* SwitchToLight = "SettingsUI/Design/SwitchToLight";
             const char* Preferences = "SettingsUI/Design/Preferences";
             const char* SupportGroup = "SettingsUI/Design/SupportGroup";
             const char* Experimental = "SettingsUI/Design/Experimental";

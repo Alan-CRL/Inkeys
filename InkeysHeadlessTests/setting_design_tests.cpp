@@ -646,6 +646,123 @@ namespace
 		ImGui::EndChild();
 	}
 
+	float Brightness(ImU32 color)
+	{
+		const auto rgb = ImGui::ColorConvertU32ToFloat4(color);
+		return rgb.x + rgb.y + rgb.z;
+	}
+
+	void CheckThemeSwitching(Checks& checks, ImFont* regular, float scale)
+	{
+		const auto& light = Design::PaletteForTheme(false);
+		const auto& dark = Design::PaletteForTheme(true);
+		checks.Expect(Brightness(dark.appBase) < Brightness(light.appBase)
+			&& Brightness(dark.card) < Brightness(light.card)
+			&& Brightness(dark.textPrimary) > Brightness(dark.card)
+			&& Brightness(light.textPrimary) < Brightness(light.card),
+			"light and dark semantic surfaces retain opposite readable text contrast");
+		const auto* activePalette = &Design::GetPalette();
+		const auto* textAlias = &Design::TextPrimary;
+		for (int transition = 0; transition < 3; ++transition)
+		{
+			const bool darkMode = transition == 1;
+			const float bodyWidth = Design::TextWidth("Agpqy 中文");
+			const float titleWidth = Design::TextWidth("Agpqy 中文", ImFluentTextStyle_Title);
+			const float controlWidth = Design::ControlTextWidth("Agpqy 中文");
+			ImGui::PushFont(regular, Design::BodyText.size);
+			auto* baked = ImGui::GetFontBaked();
+			baked->FindGlyphNoFallback(L'A');
+			ImGui::PopFont();
+			auto& io = ImGui::GetIO();
+			auto* atlas = io.Fonts;
+			auto* texture = atlas->TexData;
+			const auto* pixels = texture->Pixels;
+			const auto* defaultFont = io.FontDefault;
+			const int fontCount = atlas->Fonts.Size;
+			const int textureCount = atlas->TexList.Size;
+			const int glyphCount = baked->Glyphs.Size;
+			const float size = ImGui::GetFontSize();
+			const float mainScale = ImGui::GetStyle().FontScaleMain;
+			Design::ApplyPalette(darkMode);
+			Design::ApplyPalette(darkMode);
+			const auto& palette = Design::GetPalette();
+			checks.Expect(Design::IsDarkMode() == darkMode && &palette == activePalette
+				&& &Design::TextPrimary == textAlias
+				&& Design::TextPrimary == palette.textPrimary && Design::Card == palette.card,
+				"theme switches update the stable tokens used by default control arguments");
+			checks.Expect(io.Fonts == atlas && io.FontDefault == defaultFont
+				&& atlas->Fonts.Size == fontCount && atlas->TexData == texture
+				&& texture->Pixels == pixels && atlas->TexList.Size == textureCount
+				&& baked->Glyphs.Size == glyphCount && Near(ImGui::GetFontSize(), size)
+				&& Near(ImGui::GetStyle().FontScaleDpi, scale)
+				&& Near(ImGui::GetStyle().FontScaleMain, mainScale),
+				"repeated theme changes keep font size, atlas pixels and existing glyph resources");
+			checks.Expect(Near(Design::TextWidth("Agpqy 中文"), bodyWidth)
+				&& Near(Design::TextWidth("Agpqy 中文", ImFluentTextStyle_Title), titleWidth)
+				&& Near(Design::ControlTextWidth("Agpqy 中文"), controlWidth),
+				"theme changes preserve the actual body, title and control font bindings");
+			checks.Expect(ImFluent::GetThemePreset() ==
+				(darkMode ? ImFluentThemePreset_Dark : ImFluentThemePreset_Light)
+				&& ImGui::GetColorU32(ImGuiCol_TitleBgActive) == palette.appBase
+				&& ImGui::GetColorU32(ImGuiCol_PopupBg) == palette.cardSecondary
+				&& ImGui::GetStyle().Colors[ImGuiCol_ScrollbarBg].w == 0.0F
+				&& ImGui::GetColorU32(ImGuiCol_ScrollbarGrab) == palette.scrollbar
+				&& Near(ImGui::GetStyle().ScrollbarSize, 8.0F * scale),
+				"caption, popup and scrollbar styles switch together without repeated scaling");
+
+			ImGui::PushID(20000 + transition);
+			ImGui::SetCursorScreenPos(ImVec2(760.0F * scale, 20.0F * scale));
+			ImGui::BeginChild("##theme-controls", ImVec2(600.0F * scale, 900.0F * scale),
+				ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+			auto* draw = ImGui::GetWindowDrawList();
+			int first = draw->VtxBuffer.Size;
+			Design::PageHeader("Appearance", "Agpqy 设置主题");
+			checks.Expect(VertexBounds(draw, first, palette.textPrimary, true).Width() > 0.0F
+				&& VertexBounds(draw, first, palette.textSecondary, true).Width() > 0.0F,
+				"actual page heading and description use the current theme colors");
+			first = draw->VtxBuffer.Size;
+			const bool button = Design::Button("Theme action");
+			checks.Expect(!button && VertexBounds(draw, first, palette.textPrimary, true).Width() > 0.0F
+				&& VertexBounds(draw, first,
+					ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[ImFluentCol_ControlFillDefault]),
+					true).Width() > 0.0F,
+				"actual button fill and text follow the selected ImFluent theme");
+			char text[]{ "Agpqy 中文" };
+			ImGui::SetNextItemWidth(240.0F * scale);
+			first = draw->VtxBuffer.Size;
+			const bool textChanged = Design::TextBox("##theme-input", text, sizeof(text));
+			checks.Expect(!textChanged
+				&& VertexBounds(draw, first, palette.textPrimary, true).Width() > 0.0F,
+				"input text remains visible with the theme's foreground");
+			const char* items[]{ "Agpqy 中文", "Second option" };
+			int selected = 0;
+			ImGui::SetNextItemWidth(240.0F * scale);
+			first = draw->VtxBuffer.Size;
+			const bool choiceChanged = Design::ComboBox("##theme-choice", &selected, items, 2);
+			checks.Expect(!choiceChanged && selected == 0
+				&& VertexBounds(draw, first, palette.textPrimary, true).Width() > 0.0F,
+				"actual combo preview changes color without changing its value");
+			for (int severity = ImFluentInfoSeverity_Informational; severity <= ImFluentInfoSeverity_Critical; ++severity)
+			{
+				ImGui::PushID(severity);
+				first = draw->VtxBuffer.Size;
+				const bool notice = Design::Notice("notice", "Agpqy 状态提示",
+					"Descriptions remain readable in both themes.", static_cast<ImFluentInfoSeverity>(severity));
+				const auto fill = palette.notice[severity];
+				checks.Expect(!notice && VertexBounds(draw, first, fill, true).Width() > 0.0F
+					&& VertexBounds(draw, first, palette.textPrimary, true).Width() > 0.0F
+					&& (darkMode ? Brightness(fill) < Brightness(palette.textPrimary)
+						: Brightness(fill) > Brightness(palette.textPrimary)),
+					"all Notice severities draw the current themed surface and readable text");
+				ImGui::PopID();
+			}
+			// 浅/深/浅都在同一 atlas 会话中提交，末项仍直接结束 child。
+			ImGui::EndChild();
+			ImGui::PopID();
+		}
+		Design::ApplyPalette(false);
+	}
+
 	void CheckDrawData(Checks& checks)
 	{
 		const auto* data = ImGui::GetDrawData();
@@ -826,6 +943,7 @@ int RunSettingDesignTests()
 			| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse);
 		CheckCompositeContainers(checks, scale, true);
 		CheckScrollbars(checks, scale);
+		CheckThemeSwitching(checks, fonts[0], scale);
 		ImGui::End();
 		ImGui::Render();
 		CheckDrawData(checks);

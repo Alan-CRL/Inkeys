@@ -4,7 +4,7 @@
 
 重建设置界面的布局与页面组织，使其具备用户参考图中的 WinUI 3 桌面应用质感：间距稳定、文字可读、图标与控件居中、操作靠右、主页美观而有实际入口。继续使用内嵌 HarmonyOS Sans 与 ImFluent，保持原有功能、配置和共享 D3D 渲染基础。
 
-设计稿 v1 已获用户大体认可；用户随后明确批准开始写代码。首批已实现并提交0ffd0341；用户现批准两阶段继续：先修字体/控件文字/导航图标/滚动条，再将统一设计覆盖全部设置页。最新范围和脚本窗口验收授权见research/approved-full-migration.md。
+设计稿 v1 已获用户大体认可；用户随后明确批准开始写代码。首批已提交 0ffd0341，全页视觉迁移已提交 89770357；当前用户批准继续窗口测试并实现窗口样式与实时深色主题，允许 Computer Use，完成后暂存。最新范围见 research/approved-window-dark.md。
 
 ## Background
 
@@ -40,18 +40,17 @@
 
 - [ ] A6 / R2–R3：侧栏图标在展开/收起时保持同轴；窄窗 overlay 不移动正文；用户偏好不被 resize 清除；底栏不覆盖菜单。
 - [ ] A7 / R3–R4：代表页面与控件在有效尺寸和多 DPI 下无裁切/重叠，文本基线稳定；按钮/开关尾部对齐，英文 descender 和中文不被裁掉。
-- [ ] A8 / R5–R7：原入口、字段和副作用映射全部覆盖，长说明关键信息仍可访问，所有原业务与配置行为通过对应静态/无窗口验证。
-- [ ] A9 / R8–R9：不新建 D3D device、渲染线程或媒体管线，不改变 resident/epoch/显隐合同；重排不重复调用业务动作。
-- [ ] A10：ARM64 host MSBuild 完整 Debug|ARM64 Solution、适当 headless --no-window、国际化检查和 git diff --check 通过；原生视觉通过本轮已授权的脚本操作与真实窗口截图检查，禁止Computer Use。
+- [x] A8 / R5–R7：原入口、字段和副作用映射全部覆盖，长说明关键信息仍可访问，所有原业务与配置行为通过对应静态/无窗口验证。
+- [x] A9 / R8–R9：不新建 D3D device、渲染线程或媒体管线，不改变 resident/epoch/显隐合同；重排不重复调用业务动作。
+- [ ] A10：ARM64 host MSBuild 完整 Debug|ARM64 Solution、适当 headless --no-window、国际化检查和 git diff --check 通过；原生视觉通过当前已授权的 Computer Use 与真实窗口截图检查；锁屏时保留待验收状态。
 
 ## Out Of Scope
 
-- 当前 HWND/标题栏/边框/窗口样式与 DWM Mica 失效问题。
-- 深色背景、主题跟随/高对比扩展。
+- 系统主题跟随、高对比扩展和独立材质引擎；窗口/标题栏/边框与设置窗口浅深主题现已纳入批准范围。
 - 新动画实现、触摸支持、动态脏区或帧调度优化。
 - 迁移到 WinUI XAML、更换 D3D 后端、另建 renderer/device、GIF/视频运行库。
 - 新增搜索、账户、推荐/统计服务、完整快捷键编辑器或更改产品配置默认值。
-- 自动 commit/push；使用 Computer Use；与本次 Inkeys 视觉验证无关的桌面操作。
+- 自动 commit/push；与本次 Inkeys 视觉验证无关的桌面操作。当前要求暂存修改。
 
 ## Review Decision
 
@@ -72,4 +71,9 @@ v1 的 248 DIP 导航、900 DIP 自动阈值、72 DIP 设置行最小高、浅�
 
 ## 当前执行阶段
 
-本轮按 research/approved-full-migration.md 完成视觉微调与全量迁移。过去首批的“无窗口”“不继续其他页”等记录描述历史阶段，已被本轮具体授权取代；原窗口/DWM等范围限制仍有效。
+全页迁移代码已按 research/approved-full-migration.md 完成并提交 89770357；实际页底/详情/窄窗验收继续保留。过去首批的“无窗口”“不继续其他页”以及原窗口/深色限制均描述历史阶段，当前按 research/approved-window-dark.md 执行。
+
+
+## 当前用户批准的窗口与深色阶段
+
+2026-09-07用户要求继续测试并直接实现窗口样式和深色主题，允许Computer Use，完成后暂存。此前Out Of Scope中窗口/深色/Computer Use的排除已由本轮明确授权替换；当前要求、默认行为、配置归属和验收见research/approved-window-dark.md。

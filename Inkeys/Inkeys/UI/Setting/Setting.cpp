@@ -94,6 +94,8 @@ namespace
 	float settingTitleTextWidth = 0.0F;
 	float settingVersionTextWidth = 0.0F;
 
+	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
+
 	constexpr auto DwmwaLegacyMicaEffect =
 		static_cast<DWMWINDOWATTRIBUTE>(1029);
 
@@ -130,7 +132,7 @@ namespace
 		return function;
 	}
 
-	void SetSettingAcrylic(HWND hwnd, bool enabled) noexcept
+	void SetSettingAcrylic(HWND hwnd, bool enabled, bool darkMode = false) noexcept
 	{
 		const auto setCompositionAttribute =
 			QuerySetWindowCompositionAttribute();
@@ -140,8 +142,8 @@ namespace
 		policy.state = enabled
 			? SettingAccentState::AcrylicBlurBehind
 			: SettingAccentState::Disabled;
-		// GradientColor 使用 AABBGGRR；浅色主题采用对称 RGB tint。
-		policy.gradientColor = enabled ? 0xCCF7F7F7U : 0U;
+		// GradientColor 使用 AABBGGRR；窗口线程消费已解析的主题快照。
+		policy.gradientColor = enabled ? (darkMode ? 0xCC202020U : 0xCCF7F7F7U) : 0U;
 		SettingWindowCompositionAttributeData data{};
 		data.data = &policy;
 		data.size = sizeof(policy);
@@ -166,7 +168,7 @@ namespace
 	}
 
 	[[nodiscard]] Inkeys::UI::Setting::BackdropMode
-		ApplySettingBackdrop(HWND hwnd) noexcept
+		ApplySettingBackdrop(HWND hwnd, bool darkMode) noexcept
 	{
 		DisableSettingBackdrop(hwnd);
 		BOOL compositionEnabled = FALSE;
@@ -210,7 +212,7 @@ namespace
 		{
 			SettingAccentPolicy policy{};
 			policy.state = SettingAccentState::AcrylicBlurBehind;
-			policy.gradientColor = 0xCCF7F7F7U;
+			policy.gradientColor = darkMode ? 0xCC202020U : 0xCCF7F7F7U;
 			SettingWindowCompositionAttributeData data{};
 			data.data = &policy;
 			data.size = sizeof(policy);
@@ -236,21 +238,17 @@ namespace
 		return fallback ? fallback : USER_DEFAULT_SCREEN_DPI;
 	}
 
-	[[nodiscard]] bool AdjustSettingWindowRectForDpi(
-		RECT& rect, UINT dpi) noexcept
+	[[nodiscard]] Inkeys::UI::Setting::WindowFrameRect FrameRect(const RECT& rect) noexcept
 	{
-		using AdjustWindowRectExForDpiProc = BOOL(WINAPI*)(
-			LPRECT, DWORD, BOOL, DWORD, UINT);
-		static const auto adjustWindowRectExForDpi =
-			reinterpret_cast<AdjustWindowRectExForDpiProc>(GetProcAddress(
-				GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
-		if (adjustWindowRectExForDpi)
-			return adjustWindowRectExForDpi(&rect,
-				Inkeys::Window::SettingWindowStyle, FALSE,
-				Inkeys::Window::SettingWindowExStyle, dpi) != FALSE;
-		// Win7 回退使用系统 DPI 下的标准 frame 换算。
-		return AdjustWindowRectEx(&rect, Inkeys::Window::SettingWindowStyle,
-			FALSE, Inkeys::Window::SettingWindowExStyle) != FALSE;
+		return { static_cast<int>(rect.left), static_cast<int>(rect.top),
+			static_cast<int>(rect.right), static_cast<int>(rect.bottom) };
+	}
+
+	[[nodiscard]] Inkeys::UI::Setting::WindowFrameInsets QuerySettingFrameInsets(HWND hwnd) noexcept
+	{
+		const SIZE frame = Inkeys::Window::QuerySettingFrameThickness(QuerySettingDpi(hwnd));
+		return { static_cast<int>(frame.cx), static_cast<int>(frame.cy),
+			static_cast<int>(frame.cx), static_cast<int>(frame.cy) };
 	}
 
 	void UpdateSettingScale(UINT dpi) noexcept
@@ -261,55 +259,48 @@ namespace
 		settingGlobalScale = settingSystemDpiScale * settingUserScale;
 	}
 
-	[[nodiscard]] bool QueryAppsUseLightTheme() noexcept
+	void ApplySettingTheme(HWND hwnd) noexcept
 	{
-		DWORD value = 1;
-		DWORD size = sizeof(value);
-		RegGetValueW(HKEY_CURRENT_USER,
-			L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-			L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
-		return value != 0;
-	}
-
-	[[nodiscard]] ImFluentThemePreset QuerySystemTheme() noexcept
-	{
-		HIGHCONTRASTW contrast{ sizeof(contrast) };
-		const bool highContrast = SystemParametersInfoW(SPI_GETHIGHCONTRAST,
-			sizeof(contrast), &contrast, 0)
-			&& (contrast.dwFlags & HCF_HIGHCONTRASTON);
-		switch (Inkeys::UI::Setting::ResolveThemeMode(
-			highContrast, QueryAppsUseLightTheme()))
-		{
-		case Inkeys::UI::Setting::ThemeMode::HighContrast:
-			return ImFluentThemePreset_HighContrast;
-		case Inkeys::UI::Setting::ThemeMode::Dark:
-			return ImFluentThemePreset_Dark;
-		default:
-			return ImFluentThemePreset_Light;
-		}
-	}
-
-	void ApplySystemTheme(HWND hwnd) noexcept
-	{
-		const ImFluentThemePreset preset = QuerySystemTheme();
-		ImFluent::SetThemePreset(preset);
-		Inkeys::UI::Setting::Design::ApplyPalette();
-		// 最小客户区仍需完整容纳全部路由；宽度由响应式模式另行控制。
+		// ImGui/ImFluent 只在渲染线程帧边界换色，系统主题消息不覆盖用户偏好。
+		Design::ApplyPalette(setlist.settingDarkMode);
 		ImFluent::GetStyle().NavItemHeight = 36.0F;
-		Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
-		Inkeys::UI::Setting::Design::ApplyScrollbars();
-		const auto backdropMode = ApplySettingBackdrop(hwnd);
-		settingBackdropMode.store(backdropMode, memory_order_release);
-		if (backdropMode != Inkeys::UI::Setting::BackdropMode::Solid)
+		Widgets::style.ApplyGlobal(Design::ScrollbarTrackSize);
+		Design::ApplyScrollbars();
+		if (settingBackdropMode.load(memory_order_acquire)
+			!= Inkeys::UI::Setting::BackdropMode::Solid)
 		{
-			// 只在 DWM 材质实际启用后放开根背景，失败回退仍保持不透明。
 			ImFluent::GetStyle().Colors[ImFluentCol_SolidBgBase].w = 0.0F;
 			ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 0.0F;
 		}
-		const BOOL darkFrame = preset == ImFluentThemePreset_Dark;
 		if (hwnd)
-			DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
-				&darkFrame, sizeof(darkFrame));
+		{
+			const ImU32 base = Design::AppBase;
+			const COLORREF captionColor = RGB((base >> IM_COL32_R_SHIFT) & 0xFF,
+				(base >> IM_COL32_G_SHIFT) & 0xFF, (base >> IM_COL32_B_SHIFT) & 0xFF);
+			// 不跨线程同步改 HWND 样式；独立消息只携带已冻结的明暗和颜色。
+			(void)PostMessageW(hwnd, SettingFrameThemeMessage,
+				setlist.settingDarkMode, static_cast<LPARAM>(captionColor));
+		}
+	}
+
+	void ApplySettingFrameTheme(HWND hwnd, bool darkMode, COLORREF captionColor) noexcept
+	{
+		const BOOL darkFrame = darkMode;
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+			&darkFrame, sizeof(darkFrame));
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR,
+			&captionColor, sizeof(captionColor));
+		const COLORREF textColor = darkMode ? RGB(243, 243, 243) : RGB(32, 32, 32);
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &textColor, sizeof(textColor));
+		const COLORREF borderColor = darkMode ? RGB(66, 66, 66) : RGB(213, 213, 213);
+		(void)DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
+		const auto backdrop = ApplySettingBackdrop(hwnd, darkMode);
+		if (settingBackdropMode.exchange(backdrop, memory_order_acq_rel) != backdrop)
+		{
+			// 可选材质成功/回退后，由渲染线程统一更新根背景的 alpha。
+			settingThemeSerial.fetch_add(1, memory_order_release);
+			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+		}
 	}
 
 	[[nodiscard]] float QuerySettingCaptionButtonWidth(
@@ -418,7 +409,8 @@ namespace
 		if (geometry.close.Contains(x, y)) return HTCLOSE;
 		if (geometry.maximize.Contains(x, y)) return HTMAXBUTTON;
 		if (geometry.minimize.Contains(x, y)) return HTMINBUTTON;
-		if (geometry.versionVisible && geometry.version.Contains(x, y))
+		if (geometry.themeToggle.Contains(x, y)
+			|| (geometry.versionVisible && geometry.version.Contains(x, y)))
 			return HTCLIENT;
 		if (geometry.icon.Contains(x, y)) return HTSYSMENU;
 
@@ -982,107 +974,50 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	// 保留 WS_THICKFRAME 的窗口语义，但不让原生 sizing frame 占用客户区。
+	// 创建、客户区、最大化及命中使用同一 frame 合同，保留系统 move/size loop。
 	switch (msg)
 	{
+	case SettingFrameThemeMessage:
+		if (!settingSessionShouldStop.load(memory_order_acquire))
+			ApplySettingFrameTheme(hWnd, wParam != FALSE, static_cast<COLORREF>(lParam));
+		return 0;
 	case WM_NCCALCSIZE:
 	{
-		// 最大化时把 non-client geometry 完全交还 Windows。
-		//
-		// Windows 自己负责：
-		// - maximized frame
-		// - work area
-		// - taskbar
-		// - multi-monitor
-		// - DPI
-		// - maximized 边缘裁切
-		if (::IsZoomed(hWnd))
-		{
-			return ::DefWindowProcW(
-				hWnd,
-				msg,
-				wParam,
-				lParam);
-		}
-
-		// 普通窗口状态：
-		// 自定义为四边统一 1px non-client frame。
-		if (wParam && lParam)
-		{
-			auto* params =
-				reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
-
-			constexpr LONG kVisibleFrame = 1;
-
-			params->rgrc[0].left += kVisibleFrame;
-			params->rgrc[0].top += kVisibleFrame;
-			params->rgrc[0].right -= kVisibleFrame;
-			params->rgrc[0].bottom -= kVisibleFrame;
-
-			return 0;
-		}
-
-		return ::DefWindowProcW(
-			hWnd,
-			msg,
-			wParam,
-			lParam);
+		if (!lParam) return 0;
+		RECT& proposed = wParam
+			? reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam)->rgrc[0]
+			: *reinterpret_cast<RECT*>(lParam);
+		// 原生 caption 已搬入客户区；真正的 sizing frame 留在四周客户区之外。
+		const auto client = Inkeys::UI::Setting::InsetWindowFrameRect(
+			FrameRect(proposed), QuerySettingFrameInsets(hWnd));
+		proposed = { client.left, client.top, client.right, client.bottom };
+		return 0;
 	}
-
 	case WM_NCPAINT:
 		return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-
 	case WM_NCHITTEST:
 	{
-		// 自己统一四边的 resize hit zone。
-		// 视觉上的顶部 frame 只有 1px，但 hit zone 使用系统真实 sizing frame 厚度。
-		RECT frame{};
-		if (AdjustSettingWindowRectForDpi(frame, QuerySettingDpi(hWnd)))
+		RECT outer{}, client{};
+		POINT clientOrigin{};
+		if (!GetWindowRect(hWnd, &outer) || !GetClientRect(hWnd, &client)
+			|| !ClientToScreen(hWnd, &clientOrigin))
+			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+		OffsetRect(&client, clientOrigin.x, clientOrigin.y);
+		using Inkeys::UI::Setting::WindowFrameHit;
+		switch (Inkeys::UI::Setting::HitTestWindowFrame(FrameRect(outer), FrameRect(client),
+			GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), IsZoomed(hWnd) != FALSE))
 		{
-			const LONG resizeX = max<LONG>(1, -frame.left);
-			const LONG resizeY = max<LONG>(1, -frame.top);
-
-			RECT windowRect{};
-			if (::GetWindowRect(hWnd, &windowRect))
-			{
-				const LONG x = GET_X_LPARAM(lParam);
-				const LONG y = GET_Y_LPARAM(lParam);
-
-				const bool onLeft =
-					x >= windowRect.left &&
-					x < windowRect.left + resizeX;
-
-				const bool onRight =
-					x < windowRect.right &&
-					x >= windowRect.right - resizeX;
-
-				const bool onTop =
-					y >= windowRect.top &&
-					y < windowRect.top + resizeY;
-
-				const bool onBottom =
-					y < windowRect.bottom &&
-					y >= windowRect.bottom - resizeY;
-
-				if (onTop && onLeft)       return HTTOPLEFT;
-				if (onTop && onRight)      return HTTOPRIGHT;
-				if (onBottom && onLeft)    return HTBOTTOMLEFT;
-				if (onBottom && onRight)   return HTBOTTOMRIGHT;
-
-				if (onTop)                 return HTTOP;
-				if (onBottom)              return HTBOTTOM;
-				if (onLeft)                return HTLEFT;
-				if (onRight)               return HTRIGHT;
-			}
+		case WindowFrameHit::TopLeft: return HTTOPLEFT;
+		case WindowFrameHit::TopRight: return HTTOPRIGHT;
+		case WindowFrameHit::BottomLeft: return HTBOTTOMLEFT;
+		case WindowFrameHit::BottomRight: return HTBOTTOMRIGHT;
+		case WindowFrameHit::Left: return HTLEFT;
+		case WindowFrameHit::Right: return HTRIGHT;
+		case WindowFrameHit::Top: return HTTOP;
+		case WindowFrameHit::Bottom: return HTBOTTOM;
+		case WindowFrameHit::Outside: return HTNOWHERE;
+		default: return HitTestSettingClientTitleBar(hWnd, lParam);
 		}
-
-		const LRESULT nativeHit =
-			::DefWindowProcW(hWnd, msg, wParam, lParam);
-
-		if (nativeHit != HTCLIENT)
-			return nativeHit;
-
-		return HitTestSettingClientTitleBar(hWnd, lParam);
 	}
 
 	case WM_NCLBUTTONDOWN:
@@ -1192,33 +1127,21 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_GETMINMAXINFO:
 	{
-		auto* minMaxInfo =
-			reinterpret_cast<MINMAXINFO*>(lParam);
-
-		if (!minMaxInfo)
-			return 0;
-
-		RECT minimumRect{
-			0,
-			0,
-			Inkeys::UI::Setting::ScaleDip(
-				Inkeys::UI::Setting::MinimumWidthDip,
-				settingGlobalScale),
-			Inkeys::UI::Setting::ScaleDip(
-				Inkeys::UI::Setting::MinimumHeightDip,
-				settingGlobalScale)
-		};
-
-		(void)AdjustSettingWindowRectForDpi(
-			minimumRect,
-			QuerySettingDpi(hWnd));
-
-		minMaxInfo->ptMinTrackSize.x =
-			minimumRect.right - minimumRect.left;
-
-		minMaxInfo->ptMinTrackSize.y =
-			minimumRect.bottom - minimumRect.top;
-
+		auto* minMax = reinterpret_cast<MINMAXINFO*>(lParam);
+		if (!minMax) return 0;
+		MONITORINFO monitor{ sizeof(monitor) };
+		const bool hasMonitor = GetMonitorInfoW(
+			MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &monitor) != FALSE;
+		const auto frame = QuerySettingFrameInsets(hWnd);
+		const float scale = Inkeys::UI::Setting::EffectiveScale(
+			QuerySettingDpi(hWnd), settingUserScale);
+		const auto minimum = Inkeys::UI::Setting::ResolveMinimumWindowFrame(
+			Inkeys::UI::Setting::ScaleDip(Inkeys::UI::Setting::MinimumWidthDip, scale),
+			Inkeys::UI::Setting::ScaleDip(Inkeys::UI::Setting::MinimumHeightDip, scale), frame,
+			hasMonitor ? monitor.rcWork.right - monitor.rcWork.left : 0,
+			hasMonitor ? monitor.rcWork.bottom - monitor.rcWork.top : 0);
+		// 保留 USER32 的 primary-monitor 最大化协议，避免目标尺寸被再次补偿。
+		Inkeys::UI::Setting::ApplyWindowFrameMinimumTrack(*minMax, minimum);
 		return 0;
 	}
 
@@ -1853,8 +1776,9 @@ SettingSessionCoroutine RunSettingSession()
 			co_return;
 		}
 
-		ApplySystemTheme(setting_window);
-		settingConsumedThemeSerial = settingThemeSerial.load(memory_order_acquire);
+		const uint64_t initialThemeSerial = settingThemeSerial.load(memory_order_acquire);
+		ApplySettingTheme(setting_window);
+		settingConsumedThemeSerial = initialThemeSerial;
 
 		int QuestNumbers = 0;
 		int QueryWaitingTime = 5;
@@ -2100,6 +2024,10 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						const ImVec2 origin = ImGui::GetWindowPos();
 						ImDrawList* drawList = ImGui::GetWindowDrawList();
+						// 根背景可为 Mica 透明，但 caption 始终以当前主题底色覆盖系统强调色。
+						drawList->AddRectFilled(origin,
+							{ origin.x + ImGui::GetWindowSize().x, origin.y + titleBarGeometry.height },
+							Design::AppBase);
 						const bool active = settingWindowActive.load(memory_order_acquire);
 						const ImRect iconBounds = ToImRect(titleBarGeometry.icon, origin);
 						if (TextureSettingSign[0])
@@ -2155,6 +2083,32 @@ SettingSessionCoroutine RunSettingSession()
 									active ? 1.0F : 0.55F), versionLabel.c_str());
 							ImFluent::PopFont();
 						}
+
+						const ImRect themeBounds = ToImRect(titleBarGeometry.themeToggle, origin);
+						ImGui::SetCursorScreenPos(themeBounds.Min);
+						if (ImGui::InvisibleButton("##setting-theme-toggle", themeBounds.GetSize(),
+							ImGuiButtonFlags_EnableNav))
+						{
+							setlist.settingDarkMode = !Design::IsDarkMode();
+							WriteSetting();
+							// 下一帧先换色，再 PushFluentStyle；主题切换不重建 atlas/device。
+							settingThemeSerial.fetch_add(1, memory_order_release);
+							Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							const float inset = 4.0F * settingGlobalScale;
+							drawList->AddRectFilled({ themeBounds.Min.x, themeBounds.Min.y + inset },
+								{ themeBounds.Max.x, themeBounds.Max.y - inset },
+								SettingChromeColor(ImGui::IsItemActive()
+									? ImFluentCol_SubtleFillTertiary : ImFluentCol_SubtleFillSecondary), inset);
+							ImGui::SetTooltip("%s", IA(Design::IsDarkMode()
+								? I18nKey.SettingsUI.Design.SwitchToLight
+								: I18nKey.SettingsUI.Design.SwitchToDark).c_str());
+						}
+						ImFluent::DrawIcon(Design::IsDarkMode() ? "\xee\x9c\x86" : "\xee\x9c\x88",
+							themeBounds.Min, themeBounds.Max, Design::NavigationGlyphSize,
+							SettingChromeColor(ImFluentCol_TextPrimary, active ? 1.0F : 0.55F));
 
 						ImFluent::PushFont(ImFluentTextStyle_Body);
 						RenderSettingCaptionButton(drawList, setting_window, origin,
@@ -4024,7 +3978,7 @@ namespace
 		{
 			// 主题消息在隐藏态也立即更新 resident style，不等待下一次 Show。
 			lock_guard imguiLock(settingImguiMutex);
-			ApplySystemTheme(setting_window);
+			ApplySettingTheme(setting_window);
 			settingConsumedThemeSerial = themeSerial;
 		}
 

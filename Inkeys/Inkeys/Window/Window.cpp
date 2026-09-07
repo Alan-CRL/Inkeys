@@ -656,9 +656,10 @@ namespace Inkeys::Window
 					~(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
 				owner = nullptr;
 
-				// Setting spec 的宽高表示期望客户区；恢复原生边框后换算为 window rect。
-				RECT adjusted{ 0, 0, spec.width, spec.height };
-				if (AdjustWindowRectEx(&adjusted, style, FALSE, exStyle))
+				// 自绘标题栏已属于客户区，只外扩系统 sizing frame，不重复预留原生 caption。
+				const SIZE frame = QuerySettingFrameThickness();
+				const RECT adjusted{ -frame.cx, -frame.cy,
+					spec.width + frame.cx, spec.height + frame.cy };
 				{
 					windowWidth = adjusted.right - adjusted.left;
 					windowHeight = adjusted.bottom - adjusted.top;
@@ -751,6 +752,9 @@ namespace Inkeys::Window
 
 			if (IsSetting(spec.role))
 			{
+				// 创建后重新计算一次自定义非客户区，避免首帧保留系统 caption 的旧几何。
+				SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+					SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 				SendMessageW(hwnd, WM_SETICON, ICON_BIG,
 					reinterpret_cast<LPARAM>(windowClass.hIcon));
 				SendMessageW(hwnd, WM_SETICON, ICON_SMALL,
@@ -1133,6 +1137,29 @@ namespace Inkeys::Window
 		CommandQueue settingCommands_;
 		std::mutex lifecycleMutex_;
 	};
+
+	SIZE QuerySettingFrameThickness(UINT dpi) noexcept
+	{
+		if (!dpi)
+		{
+			HDC screen = GetDC(nullptr);
+			dpi = screen ? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : 96U;
+			if (screen) ReleaseDC(nullptr, screen);
+		}
+		using AdjustForDpiProc = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+		static const auto adjustForDpi = reinterpret_cast<AdjustForDpiProc>(
+			GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
+		RECT frame{};
+		// 去掉 caption 后只查询四周 resize frame；不使用用户 UI 缩放倍率。
+		const DWORD sizingStyle = SettingWindowStyle & ~WS_CAPTION;
+		const BOOL adjusted = adjustForDpi
+			? adjustForDpi(&frame, sizingStyle, FALSE, SettingWindowExStyle, dpi ? dpi : 96U)
+			: AdjustWindowRectEx(&frame, sizingStyle, FALSE, SettingWindowExStyle);
+		if (adjusted && frame.left < 0 && frame.top < 0)
+			return { -frame.left, -frame.top };
+		return { GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
+			GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER) };
+	}
 
 	Service::Service(std::size_t messageCapacity)
 		: impl_(std::make_unique<Impl>(messageCapacity))
