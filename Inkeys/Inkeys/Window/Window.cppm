@@ -36,6 +36,9 @@ export namespace Inkeys::Window
 	inline constexpr DWORD SettingWindowStyle = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 	inline constexpr DWORD SettingWindowExStyle = WS_EX_APPWINDOW;
 	[[nodiscard]] SIZE QuerySettingFrameThickness(UINT dpi = 0) noexcept;
+	// RECT 四字段表示正向 inset；客户区和 resize 热区分别使用各自的度量。
+	[[nodiscard]] RECT QuerySettingClientFrameInsets(HWND hwnd = nullptr,
+		bool maximized = false, UINT dpi = 0) noexcept;
 
 	struct WindowSpec
 	{

@@ -114,6 +114,81 @@ namespace
 				"frame round trip preserves negative origins and half-open outer bounds")) ++failures;
 		}
 
+		// 可见细边框与顶部命中高度分开：去掉粗条不缩小顶角、不截走按钮/滚动条。
+		for (const int framePixels : { 8, 10, 12, 16 })
+		{
+			const WindowFrameInsets sizing{ framePixels, framePixels, framePixels, framePixels };
+			const int visibleBorder = framePixels >= 12 ? 2 : 1;
+			const auto restored = ResolveVisibleWindowFrameInsets(sizing, false, true, visibleBorder);
+			const auto maximized = ResolveVisibleWindowFrameInsets(sizing, true, true, visibleBorder);
+			const auto classic = ResolveVisibleWindowFrameInsets(sizing, false, false, visibleBorder);
+			const WindowFrameRect outer{ -1600, -900, -600, -200 };
+			const auto client = InsetWindowFrameRect(outer, restored);
+			if (!Expect(client.top - outer.top == visibleBorder
+				&& restored.left == sizing.left && restored.right == sizing.right
+				&& restored.bottom == sizing.bottom && maximized.top == sizing.top
+				&& classic.top == sizing.top
+				&& SameFrameRect(ExpandWindowFrameRect(client, restored), outer),
+				"restored DWM top uses visible stroke while other borders, max and classic stay native")) ++failures;
+			const int gripBottom = outer.top + framePixels;
+			if (!Expect(HitTestWindowFrame(outer, client, -1100, gripBottom - 1, false, framePixels)
+				== WindowFrameHit::Top
+				&& HitTestWindowFrame(outer, client, -1100, gripBottom, false, framePixels)
+				== WindowFrameHit::Client
+				&& HitTestWindowFrame(outer, client, outer.left, gripBottom - 1, false, framePixels)
+				== WindowFrameHit::TopLeft
+				&& HitTestWindowFrame(outer, client, outer.right - 1, gripBottom - 1, false, framePixels)
+				== WindowFrameHit::TopRight
+				&& HitTestWindowFrame(outer, client, outer.left, gripBottom, false, framePixels)
+				== WindowFrameHit::Left,
+				"blank caption and outer corners retain full system-height top resize grips")) ++failures;
+			const auto title = ResolveTitleBarGeometry(static_cast<float>(client.Width()),
+				1.0F, 46.0F, 100.0F, 120.0F);
+			for (const auto& control : { title.themeToggle, title.version, title.minimize, title.maximize, title.close })
+			{
+				const int x = client.left + static_cast<int>((control.left + control.right) * 0.5F);
+				for (const int y : { client.top, client.top + 1, gripBottom - 1 })
+					if (!Expect(HitTestWindowFrame(outer, client, x, y, false, framePixels, true)
+						== WindowFrameHit::Client,
+						"caption and theme controls stay clickable through their complete top edge")) ++failures;
+			}
+			for (int x = client.right - 32; x < client.right; ++x)
+				for (const int y : { client.top + 32, client.bottom - 1 })
+					if (!Expect(HitTestWindowFrame(outer, client, x, y, false, framePixels)
+						== WindowFrameHit::Client,
+						"top-only grip cannot steal any of the content scrollbar track")) ++failures;
+			if (!Expect(HitTestWindowFrame(outer, client, -1100, client.top, true, framePixels)
+				== WindowFrameHit::Client
+				&& HitTestWindowFrame(outer, client, outer.right - 1, gripBottom - 1, true, framePixels)
+				== WindowFrameHit::Client,
+				"maximized frame never exposes the restored top or corner grips")) ++failures;
+		}
+
+		// 创建前细边框估算为 1px，实际 DWM 为 2px 时仍恢复请求的客户区高度。
+		const WindowFrameRect requestedClient{ 200, 200, 2120, 1600 };
+		const WindowFrameRect initialOuter{ 188, 194, 2132, 1607 };
+		const WindowFrameRect desktopWork{ 0, 0, 2880, 1800 };
+		const auto corrected = ResolveWindowFrameCreationCorrection(
+			requestedClient, initialOuter, { 1920, 1399 }, desktopWork);
+		if (!Expect(corrected.Width() - 24 == 1920 && corrected.Height() - 14 == 1400
+			&& corrected.left + corrected.Width() / 2 == 1160
+			&& corrected.top + corrected.Height() / 2 == 900,
+			"creation correction uses measured frame and preserves the requested center")) ++failures;
+		if (!Expect(SameFrameRect(ResolveWindowFrameCreationCorrection(
+			requestedClient, corrected, { 1920, 1400 }, desktopWork), corrected),
+			"matching measured client does not move or resize the created window")) ++failures;
+		const WindowFrameRect smallWork{ -1800, -1000, -300, 0 };
+		const WindowFrameRect largeRequest{ -2050, -1200, -130, 200 };
+		if (!Expect(SameFrameRect(ResolveWindowFrameCreationCorrection(
+			largeRequest, smallWork, { 1476, 986 }, smallWork), smallWork),
+			"already clamped creation stays inside a smaller negative-origin work area")) ++failures;
+		const WindowFrameRect bottomRequest{ -1600, -100, -1000, 0 };
+		const auto bottomCorrection = ResolveWindowFrameCreationCorrection(
+			bottomRequest, { -1612, -113, -988, 0 }, { 600, 99 }, smallWork);
+		if (!Expect(bottomCorrection.Height() - 14 == 100 && bottomCorrection.bottom == 0
+			&& bottomCorrection.top >= smallWork.top,
+			"one-pixel correction moves upward when the original outer touches the work area bottom")) ++failures;
+
 		const WindowFrameInsets frame{ 12, 12, 12, 12 };
 		const auto normalMinimum = ResolveMinimumWindowFrame(720, 520, frame, 1920, 1040);
 		const auto enlargedMinimum = ResolveMinimumWindowFrame(1440, 1040, frame, 3840, 2080);

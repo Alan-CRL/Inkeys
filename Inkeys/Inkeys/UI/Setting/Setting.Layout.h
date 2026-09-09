@@ -87,6 +87,16 @@ namespace Inkeys::UI::Setting
 		TopLeft, TopRight, BottomLeft, BottomRight,
 	};
 
+	[[nodiscard]] inline WindowFrameInsets ResolveVisibleWindowFrameInsets(
+		WindowFrameInsets sizingFrame, bool maximized, bool compositionEnabled,
+		int visibleBorderPixels) noexcept
+	{
+		// DWM 的顶部没有左右/下边那段不可见外扩；恢复态只保留实际可见描边。
+		if (!maximized && compositionEnabled)
+			sizingFrame.top = std::clamp(visibleBorderPixels, 0, sizingFrame.top);
+		return sizingFrame;
+	}
+
 	[[nodiscard]] inline WindowFrameRect InsetWindowFrameRect(
 		const WindowFrameRect& outer, const WindowFrameInsets& frame) noexcept
 	{
@@ -112,6 +122,31 @@ namespace Inkeys::UI::Setting
 			workHeight > 0 ? (std::min)(outer.Height(), workHeight) : outer.Height() };
 	}
 
+	[[nodiscard]] inline WindowFrameRect ResolveWindowFrameCreationCorrection(
+		const WindowFrameRect& requestedClient, const WindowFrameRect& measuredOuter,
+		const WindowFrameSize& measuredClient, const WindowFrameRect& workArea) noexcept
+	{
+		// 用已创建 HWND 的实际 frame 差值校正，避免创建前估算与 DWM 描边差一像素。
+		int width = (std::max)(1, measuredOuter.Width() + requestedClient.Width() - measuredClient.width);
+		int height = (std::max)(1, measuredOuter.Height() + requestedClient.Height() - measuredClient.height);
+		const bool hasWorkArea = workArea.Width() > 0 && workArea.Height() > 0;
+		if (hasWorkArea)
+		{
+			width = (std::min)(width, workArea.Width());
+			height = (std::min)(height, workArea.Height());
+		}
+		if (width == measuredOuter.Width() && height == measuredOuter.Height())
+			return measuredOuter;
+		int left = requestedClient.left + requestedClient.Width() / 2 - width / 2;
+		int top = requestedClient.top + requestedClient.Height() / 2 - height / 2;
+		if (hasWorkArea)
+		{
+			left = std::clamp(left, workArea.left, workArea.right - width);
+			top = std::clamp(top, workArea.top, workArea.bottom - height);
+		}
+		return { left, top, left + width, top + height };
+	}
+
 	// MINMAXINFO 的最大化字段由 USER32 预填并按目标显示器补偿，只改最小跟踪尺寸。
 	// 模板保持本几何头不依赖 windows.h，生产与测试均传入真实 MINMAXINFO。
 	template<class MinMaxInfo>
@@ -124,15 +159,18 @@ namespace Inkeys::UI::Setting
 
 	[[nodiscard]] inline WindowFrameHit HitTestWindowFrame(
 		const WindowFrameRect& outer, const WindowFrameRect& client,
-		int x, int y, bool maximized) noexcept
+		int x, int y, bool maximized, int topResizePixels = 0,
+		bool protectClientControl = false) noexcept
 	{
-		// 先保护整个客户区，滚动条不能被边缘缩放热区截走。
-		if (client.Contains(x, y)) return WindowFrameHit::Client;
 		if (!outer.Contains(x, y)) return WindowFrameHit::Outside;
 		if (maximized) return WindowFrameHit::Client;
+		// 仅空白 caption 顶部可补足缩放高度；按钮和其余客户区始终优先。
+		const int topLimit = (std::max)(client.top, outer.top + topResizePixels);
+		if (client.Contains(x, y) && (protectClientControl || y >= topLimit))
+			return WindowFrameHit::Client;
 		const bool left = x < client.left;
 		const bool right = x >= client.right;
-		const bool top = y < client.top;
+		const bool top = y < topLimit;
 		const bool bottom = y >= client.bottom;
 		if (top && left) return WindowFrameHit::TopLeft;
 		if (top && right) return WindowFrameHit::TopRight;

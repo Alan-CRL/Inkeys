@@ -917,9 +917,14 @@ Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
 SIZE Window::QuerySettingFrameThickness(UINT dpi = 0) noexcept;
+RECT Window::QuerySettingClientFrameInsets(HWND hwnd = nullptr, bool maximized = false, UINT dpi = 0) noexcept;
 WindowFrameRect InsetWindowFrameRect(const WindowFrameRect&, const WindowFrameInsets&) noexcept;
 WindowFrameHit HitTestWindowFrame(const WindowFrameRect& outer, const WindowFrameRect& client,
-    int x, int y, bool maximized) noexcept;
+    int x, int y, bool maximized, int topResizePixels = 0,
+    bool protectClientControl = false) noexcept;
+WindowFrameRect ResolveWindowFrameCreationCorrection(const WindowFrameRect& requestedClient,
+    const WindowFrameRect& actualOuter, const WindowFrameSize& actualClient,
+    const WindowFrameRect& workArea) noexcept;
 template<class MinMaxInfo> void ApplyWindowFrameMinimumTrack(
     MinMaxInfo&, const WindowFrameSize& minimum) noexcept;
 
@@ -934,8 +939,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
 - 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> Drawpad`；Mag 缺失时 Freeze 为根。五个 PPT HWND 与 Bar 都是 Drawpad 的直接 `WS_EX_NOACTIVATE` owned popup。Bar 必须高于所有 PPT；PPT show 或 `PromotePptWindow` 只把目标 PPT 放到 Bar 正下方，不得激活窗口或越过 Bar。置顶刷新只对链根调用一次 `HWND_TOPMOST`，禁止周期逐窗口重排。
 - Setting owner 必须为 null，style 固定为 `WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN`；保留 caption/sizing/system menu 的标准桌面窗口语义，自绘内容替换原生标题区域。ex-style 包含 `WS_EX_APPWINDOW` 且排除 topmost/layered/noactivate/toolwindow。窗口保留箭头光标、大小图标和任务栏按钮，普通关闭映射 Hide，只有进程退出时销毁 HWND。WindowSpec 宽高表示客户区，创建时只外扩真实 sizing frame，不重复加入原生 caption 高度，outer rect 夹紧到工作区。
-- Setting 创建与 NCCALCSIZE 共用 `QuerySettingFrameThickness`：去掉 caption 后用 AdjustWindowRectExForDpi（缺失时 AdjustWindowRectEx）查询四周 sizing frame，按系统 DPI，不乘用户 UI 倍率。普通/最大化均从 proposed outer 内缩同一 frame，保留真实 non-client resize 空间；禁止再次压成 1px 后向 client 扩展热区。自绘标题栏 32 DIP、图标 16 DIP、caption cell 46 DIP、glyph 10 DIP；DWM 的中性明暗边框/标题颜色由 HWND 线程同步，材质 margins 只走现有可选 backdrop 路径。
-- `WM_NCPAINT` 和 `WM_NCACTIVATE` 使用原始参数交给 DefWindowProcW，由系统绘制保留的 non-client frame。NCHITTEST 使用实际 screen-space outer/client 矩形，先保护全部 client（含滚动条轨道），只在 client 外且 outer 内返回八方向 resize；最大化不返回 resize，outer 外返回 HTNOWHERE。client 内再解析 close/max/min、主题/版本 HTCLIENT、图标 HTSYSMENU 和空白标题区 HTCAPTION。caption button 由 WndProc 跟踪并投递标准 WM_SYSCOMMAND，关闭映射 Hide。
+- Setting 的 sizing frame 仍由 QuerySettingFrameThickness 按系统 DPI 查询，不乘用户 UI 倍率；创建/NCCALCSIZE 用 QuerySettingClientFrameInsets 决定客户区内缩。DWM 开启且恢复态时，只有 top 使用 DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 的实际可见描边，左右/下仍保留完整系统 sizing frame；最大化或 composition 关闭时四边都保持完整 frame。属性不可用使用系统细边框回退，不改变其他窗口角色。DWM 顶部没有左右/下边那段不可见外扩，不能把完整 sizing 高度画成标题栏上方宽带。composition 改变后立即 FRAMECHANGED。自绘标题栏/图标/caption cell/glyph 仍为 32/16/46/10 DIP。
+- 创建前尚无 HWND，SM_CYBORDER 细边框回退可能与实际 DWM 描边不同（本机 192 DPI 为 1px/2px）。只在 Setting 的首次 FRAMECHANGED 后读取实际 outer/client 差，用 ResolveWindowFrameCreationCorrection 恢复请求的客户区尺寸，并按原请求中心和当前工作区夹紧；仅尺寸确有差异时校正一次。不用猜测分数 DPI 下 DWM 的取整，不修改其他窗口角色或最大化字段。
+- WM_NCPAINT/WM_NCACTIVATE 保持默认处理。NCHITTEST 使用实际 screen-space outer/client：只有空白 HTCAPTION 的最上方允许补足系统 sizing 高度，外侧顶角同样保持完整可操作高度；先保护 close/max/min、主题、版本和系统菜单的整个客户区矩形，其余 client（特别是右侧 scrollbar）不增加 resize 区。左右/下的 resize 仍完全位于 client 外；最大化不返回 resize，outer 外返回 HTNOWHERE。caption button 仍投递标准 WM_SYSCOMMAND，关闭映射 Hide。
 - 系统 modal loop 使用原子 `None/Move/Size` 状态：`WM_NCLBUTTONDOWN` 根据 `HTCAPTION`/八方向 hit 分类，`WM_SYSCOMMAND` 补充 `SC_MOVE/SC_SIZE` 键盘路径，未知 `WM_ENTERSIZEMOVE` 默认为 Size。只有 Move 允许 Settings 回调在 swap-chain 操作与 Present 前返回 `Idle`；Size 中的每个非最小化 `WM_SIZE` 都覆盖 latest resize 并 `Request(Settings)`，渲染线程按自身节拍执行 `ResizeBuffers -> Render -> Present`。`WM_EXITSIZEMOVE`、Hide/Shutdown 清除状态并保证最终请求。
 - RightHeader 显示真实 editionVersion 并路由到 tab6，其右侧是 32 DIP 主题按钮，再接 caption cells。空间不足先隐藏版本入口，保留主题按钮、caption、identity 和至少 96 DIP 拖拽区。活动/非活动标题、版本和 caption glyph 保持状态差异；关闭 hover/pressed 为 critical red，其余按钮使用 Fluent subtle fill。
 - 默认客户区约 960×700 DIP；WM_GETMINMAXINFO 只经 ApplyWindowFrameMinimumTrack 修改约 720×520 DIP client 加一次系统 frame 的最小 track size，工作区过小时限制到可用尺寸。USER32 预填的 ptMaxPosition/ptMaxSize/ptMaxTrackSize 保持不变：它们使用 primary-monitor 协议，系统会向实际显示器补偿，不能直接回填目标 workarea 尺寸导致二次放大。标准 overlapped style 的默认最大化保留任务栏；WM_DPICHANGED 接受建议矩形，Hide/Show 在进程内保留 bounds/最大化状态。
@@ -953,7 +959,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
 | Setting 传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且 owner=null |
 | Setting 传入旧 popup 或 overlay style | Service 强制归一化为 WS_OVERLAPPEDWINDOW 普通 app window |
-| 指针位于 Setting 真正 non-client 边角/边缘 | 普通态返回 HTTOPLEFT..HTBOTTOMRIGHT；最大化不返回 resize |
+| 指针位于 Setting 边角/边缘 | 恢复态返回对应 resize；仅顶部空白 caption 可补足 sizing 高度，标题控件优先保护；最大化不返回 resize |
 | 指针位于右侧 scrollbar 整个轨道 | 始终 client，不被 resize 热区截走 |
 | 指针位于 Setting 最大化格 | 返回 `HTMAXBUTTON`，由 `DefWindowProcW` 保留最大化/还原和 Windows 11 Snap Layout |
 | 指针位于版本 RightHeader / 主题按钮 | 返回 HTCLIENT，分别进入 tab6 / 请求换色，不触发窗口拖动 |
@@ -980,7 +986,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
-- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
+- Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style（包括 Setting resizable/system styles）、动态创建失败回滚与 stop 后无 HWND/jthread。Setting 纯 helper 测试覆盖 caption/RightHeader/主题/拖拽互斥、窄宽版本隐藏、八方向 frame 与整个 scrollbar client 区、不同 DPI 的最小尺寸、创建估计/实际边框差一像素时的客户区校正与工作区夹紧、真实 MINMAXINFO 的 max 字段保留，以及 DPI 建议矩形与响应式断点。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，真实拖动/Snap/系统菜单仍需 GUI 验收。
 - 静态审查必须确认仅 Move guard 位于 swap-chain create/probe/resize 与 coroutine resume/Present 之前；Size 不经过该 guard，`WM_SIZE` 仍 `QueueResize + Request`。真实 resize 流畅度、Snap Layout、active/accent border 和多显示器 DPI 仍只能在允许 GUI 的阶段人工验收。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。
 

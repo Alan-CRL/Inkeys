@@ -1,6 +1,9 @@
 module;
 
 #include <windows.h>
+#include <dwmapi.h>
+#include "../UI/Setting/Setting.Layout.h"
+#pragma comment(lib, "dwmapi.lib")
 
 #include <array>
 #include <atomic>
@@ -657,9 +660,9 @@ namespace Inkeys::Window
 				owner = nullptr;
 
 				// 自绘标题栏已属于客户区，只外扩系统 sizing frame，不重复预留原生 caption。
-				const SIZE frame = QuerySettingFrameThickness();
-				const RECT adjusted{ -frame.cx, -frame.cy,
-					spec.width + frame.cx, spec.height + frame.cy };
+				const RECT frame = QuerySettingClientFrameInsets();
+				const RECT adjusted{ -frame.left, -frame.top,
+					spec.width + frame.right, spec.height + frame.bottom };
 				{
 					windowWidth = adjusted.right - adjusted.left;
 					windowHeight = adjusted.bottom - adjusted.top;
@@ -755,6 +758,27 @@ namespace Inkeys::Window
 				// 创建后重新计算一次自定义非客户区，避免首帧保留系统 caption 的旧几何。
 				SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
 					SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+				RECT actualOuter{}, actualClient{};
+				if (GetWindowRect(hwnd, &actualOuter) && GetClientRect(hwnd, &actualClient))
+				{
+					// DWM 的真实描边在创建后才可查询；仍按原请求中心和当前工作区只校正一次。
+					MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+					const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+					if (!monitor || !GetMonitorInfoW(monitor, &monitorInfo))
+						monitorInfo.rcWork = {};
+					const auto corrected = Inkeys::UI::Setting::ResolveWindowFrameCreationCorrection(
+						{ spec.x, spec.y, spec.x + spec.width, spec.y + spec.height },
+						{ static_cast<int>(actualOuter.left), static_cast<int>(actualOuter.top),
+							static_cast<int>(actualOuter.right), static_cast<int>(actualOuter.bottom) },
+						{ static_cast<int>(actualClient.right - actualClient.left),
+							static_cast<int>(actualClient.bottom - actualClient.top) },
+						{ static_cast<int>(monitorInfo.rcWork.left), static_cast<int>(monitorInfo.rcWork.top),
+							static_cast<int>(monitorInfo.rcWork.right), static_cast<int>(monitorInfo.rcWork.bottom) });
+					if (corrected.Width() != actualOuter.right - actualOuter.left
+						|| corrected.Height() != actualOuter.bottom - actualOuter.top)
+						SetWindowPos(hwnd, nullptr, corrected.left, corrected.top,
+							corrected.Width(), corrected.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+				}
 				SendMessageW(hwnd, WM_SETICON, ICON_BIG,
 					reinterpret_cast<LPARAM>(windowClass.hIcon));
 				SendMessageW(hwnd, WM_SETICON, ICON_SMALL,
@@ -1159,6 +1183,44 @@ namespace Inkeys::Window
 			return { -frame.left, -frame.top };
 		return { GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
 			GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER) };
+	}
+
+	RECT QuerySettingClientFrameInsets(HWND hwnd, bool maximized, UINT dpi) noexcept
+	{
+		if (!dpi && hwnd)
+		{
+			using GetDpiForWindowProc = UINT(WINAPI*)(HWND);
+			static const auto getDpi = reinterpret_cast<GetDpiForWindowProc>(
+				GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+			if (getDpi) dpi = getDpi(hwnd);
+		}
+		if (!dpi)
+		{
+			HDC screen = GetDC(nullptr);
+			dpi = screen ? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX)) : 96U;
+			if (screen) ReleaseDC(nullptr, screen);
+		}
+		const SIZE sizing = QuerySettingFrameThickness(dpi);
+		BOOL compositionEnabled = FALSE;
+		(void)DwmIsCompositionEnabled(&compositionEnabled);
+		using GetMetricForDpiProc = int(WINAPI*)(int, UINT);
+		static const auto getMetric = reinterpret_cast<GetMetricForDpiProc>(
+			GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
+		UINT visibleBorder = static_cast<UINT>((std::max)(0, getMetric
+			? getMetric(SM_CYBORDER, dpi ? dpi : 96U) : GetSystemMetrics(SM_CYBORDER)));
+		if (hwnd && compositionEnabled && !IsZoomed(hwnd))
+		{
+			UINT dwmBorder = 0;
+			if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+				&dwmBorder, sizeof(dwmBorder))) && dwmBorder > 0)
+				visibleBorder = dwmBorder;
+		}
+		// 创建时无 HWND、旧 DWM 无该属性时使用系统细边框；关闭 composition 保持经典 frame。
+		const auto frame = Inkeys::UI::Setting::ResolveVisibleWindowFrameInsets(
+			{ static_cast<int>(sizing.cx), static_cast<int>(sizing.cy),
+				static_cast<int>(sizing.cx), static_cast<int>(sizing.cy) },
+			maximized, compositionEnabled != FALSE, static_cast<int>(visibleBorder));
+		return { frame.left, frame.top, frame.right, frame.bottom };
 	}
 
 	Service::Service(std::size_t messageCapacity)

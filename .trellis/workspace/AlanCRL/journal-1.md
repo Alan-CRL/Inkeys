@@ -775,3 +775,22 @@ Completed dynamic Bar viewport, thickness popup reservations, direct drag animat
 ### Status
 
 [OK] **Completed**
+
+
+## Session 31: 修正选项窗口顶部可见边框
+
+**Date**: 2026-09-08
+**Task**: 修正选项窗口顶部可见边框
+**Branch**: `fluent`
+
+### Summary
+
+仅修复选项窗口顶部粗条，主栏和主按钮未改。实际读取用户窗口确认顶部12→2px，保留顶边/顶角、标题按钮与scrollbar命中；首次创建按真实frame校正一像素差。独立OutDir完整ARM64Solution、--no-window及真实HWND集成回归通过。未使用Computer Use；拖动/截图因会话锁定待验。详情见任务research/top-border-validation.md；不自动commit。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**

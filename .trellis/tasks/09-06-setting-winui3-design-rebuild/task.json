@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "首批0ffd0341、全页迁移89770357。窗口/深色增量已实现，修复真实frame与client冲突、标准最大化、标题栏主题，增加实时浅深切换及原FIFO保存。最终完整ARM64Solution/集成无窗口/CPU控件/i18n检查通过。用户要求暂存而非自动commit；本阶段实机验收仍被锁屏阻挡，保留in_progress，解锁后按research/window-dark-validation.md继续。",
+  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。",
   "meta": {}
 }

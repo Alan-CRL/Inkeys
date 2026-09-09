@@ -244,11 +244,13 @@ namespace
 			static_cast<int>(rect.right), static_cast<int>(rect.bottom) };
 	}
 
-	[[nodiscard]] Inkeys::UI::Setting::WindowFrameInsets QuerySettingFrameInsets(HWND hwnd) noexcept
+	[[nodiscard]] Inkeys::UI::Setting::WindowFrameInsets QuerySettingFrameInsets(
+		HWND hwnd, bool maximized = false) noexcept
 	{
-		const SIZE frame = Inkeys::Window::QuerySettingFrameThickness(QuerySettingDpi(hwnd));
-		return { static_cast<int>(frame.cx), static_cast<int>(frame.cy),
-			static_cast<int>(frame.cx), static_cast<int>(frame.cy) };
+		const RECT frame = Inkeys::Window::QuerySettingClientFrameInsets(
+			hwnd, maximized, QuerySettingDpi(hwnd));
+		return { static_cast<int>(frame.left), static_cast<int>(frame.top),
+			static_cast<int>(frame.right), static_cast<int>(frame.bottom) };
 	}
 
 	void UpdateSettingScale(UINT dpi) noexcept
@@ -987,9 +989,9 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		RECT& proposed = wParam
 			? reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam)->rgrc[0]
 			: *reinterpret_cast<RECT*>(lParam);
-		// 原生 caption 已搬入客户区；真正的 sizing frame 留在四周客户区之外。
+		// 恢复态顶部仅保留 DWM 描边；最大化仍完整内缩系统 frame，与 USER32 工作区一致。
 		const auto client = Inkeys::UI::Setting::InsetWindowFrameRect(
-			FrameRect(proposed), QuerySettingFrameInsets(hWnd));
+			FrameRect(proposed), QuerySettingFrameInsets(hWnd, IsZoomed(hWnd) != FALSE));
 		proposed = { client.left, client.top, client.right, client.bottom };
 		return 0;
 	}
@@ -1003,9 +1005,12 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			|| !ClientToScreen(hWnd, &clientOrigin))
 			return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 		OffsetRect(&client, clientOrigin.x, clientOrigin.y);
+		const LRESULT clientHit = HitTestSettingClientTitleBar(hWnd, lParam);
+		const SIZE sizing = Inkeys::Window::QuerySettingFrameThickness(QuerySettingDpi(hWnd));
 		using Inkeys::UI::Setting::WindowFrameHit;
 		switch (Inkeys::UI::Setting::HitTestWindowFrame(FrameRect(outer), FrameRect(client),
-			GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), IsZoomed(hWnd) != FALSE))
+			GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), IsZoomed(hWnd) != FALSE,
+			static_cast<int>(sizing.cy), clientHit != HTCAPTION))
 		{
 		case WindowFrameHit::TopLeft: return HTTOPLEFT;
 		case WindowFrameHit::TopRight: return HTTOPRIGHT;
@@ -1016,7 +1021,7 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		case WindowFrameHit::Top: return HTTOP;
 		case WindowFrameHit::Bottom: return HTBOTTOM;
 		case WindowFrameHit::Outside: return HTNOWHERE;
-		default: return HitTestSettingClientTitleBar(hWnd, lParam);
+		default: return clientHit;
 		}
 	}
 
@@ -1179,6 +1184,10 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_DWMCOMPOSITIONCHANGED:
+		// composition 开关会改变恢复态顶部 inset，立即重算而不等待用户 resize。
+		SetWindowPos(hWnd, nullptr, 0, 0, 0, 0,
+			SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+		[[fallthrough]];
 	case WM_THEMECHANGED:
 	case WM_SETTINGCHANGE:
 		settingThemeSerial.fetch_add(1, memory_order_release);

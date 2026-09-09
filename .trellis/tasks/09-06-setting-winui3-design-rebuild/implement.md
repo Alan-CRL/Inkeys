@@ -132,3 +132,13 @@ git diff --check
 - [x] 多显示器协议复查修复、最终 ARM64 host 完整 Solution、集成 --no-window、六倍率 CPU 控件回归及国际化检查通过。
 - [x] 本次源码/规范/任务记录检查完成；按用户要求暂存，不自动 commit。
 - [ ] 实机验收：桌面锁定，实际窗口切换/拖动/最大化/滚动条及余下页面检查待解锁后继续。详见 research/window-dark-validation.md。
+
+
+## 选项窗口顶部边框小修（2026-09-08）
+
+- [x] 明确只修选项窗口最上沿；主栏和主按钮未改，本轮禁止Computer Use。
+- [x] 恢复态可见top按DWM从12px收至2px，保留顶部操作高度、侧边scrollbar和标题控件命中。
+- [x] 仅Setting创建后校正估计/真实frame的一像素差，保留工作区约束。
+- [x] 独立目录完整ARM64Solution、无窗口与真实HWND集成测试、独立审查通过。
+- [x] 读取用户已打开的选项窗口，确认2px顶部及命中结果。实际拖动/整页新截图受会话锁定影响，记录边界。
+- 验收详情：research/top-border-validation.md；不自动commit。
