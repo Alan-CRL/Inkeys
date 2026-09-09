@@ -1,7 +1,11 @@
+#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
 
 #include <iostream>
 #include <string_view>
+#include <vector>
 
 namespace
 {
@@ -24,6 +28,65 @@ namespace
 	{
 		return left.left == right.left && left.top == right.top
 			&& left.right == right.right && left.bottom == right.bottom;
+	}
+
+	void TestCenteredShrinkClearsReinterpretedSurfacePixels()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool opensRight : { true, false })
+			for (double zoom : { 1.0, 1.5 })
+			{
+				BarDirtyRegionTracker tracker;
+				BarWindowViewportController viewport;
+				BarPresentMappingTracker mapping;
+				const RECT layout{ 0, 0, 6000, 2000 };
+				const SIZE capacity{ 2400, 1200 };
+				std::vector<bool> surface(capacity.cx, false);
+				POINT previousAnchor{};
+				bool initialized = false;
+				for (double width : { 560.0, 400.0, 240.0 })
+				{
+					const double centerOffset = (opensRight ? 1.0 : -1.0) * (50.0 + width / 2.0);
+					const auto root = ResolveBarBottomDockCenteredRootPlacement(
+						2000.0, 81.0, centerOffset, width + 1.0);
+					const POINT anchor{ static_cast<LONG>(std::lround(root.mainCenterDip * zoom)), 1000 };
+					const POINT origin{ anchor.x - capacity.cx / 2, anchor.y - capacity.cy / 2 };
+					const RECT body{ static_cast<LONG>(std::floor(root.bodyLeftDip * zoom)) - 6, 950,
+						static_cast<LONG>(std::ceil(root.bodyRightDip * zoom)) + 6, 1050 };
+					const POINT delta = initialized ? POINT{ anchor.x - previousAnchor.x, 0 } : POINT{};
+					const auto candidate = viewport.Resolve(body, {}, layout, 2, false, delta).viewport;
+					const BarPresentMappingTuple tuple{
+						POINT{ candidate.left - origin.x, candidate.top - origin.y },
+						SIZE{ candidate.right - candidate.left, candidate.bottom - candidate.top }, capacity, 1 };
+					const auto mode = mapping.Resolve(tuple);
+					if (initialized) Check(mode == BarPresentMappingMode::LocalDirty,
+						"centered shrink can move the backing origin while source and size stay unchanged");
+					tracker.BeginFrame(layout);
+					tracker.MarkChanged(1);
+					tracker.Observe(1, body);
+					RECT damage = tracker.ResolveDamage(false);
+					const bool rootRelayout = initialized && delta.x != 0;
+					if (ShouldForceBarFullWindowReplacement(false, mode, rootRelayout))
+					{
+						tracker.ForceFullDamage();
+						damage = candidate;
+					}
+					// 模拟持久 D2D 位图：旧像素不随新的 capacityOrigin 自动搬家。
+					const RECT clear = BarLayoutToSurfaceRect(damage, origin);
+					const RECT drawn = BarLayoutToSurfaceRect(body, origin);
+					for (LONG x = clear.left; x < clear.right; ++x) surface[x] = false;
+					for (LONG x = drawn.left; x < drawn.right; ++x) surface[x] = true;
+					bool clean = true;
+					for (LONG x = tuple.source.x; x < tuple.source.x + tuple.windowSize.cx; ++x)
+						clean &= surface[x] == (x >= drawn.left && x < drawn.right);
+					Check(clean, "centered shrink removes both old content and old debug-edge pixels on both sides");
+					tracker.CommitPresented();
+					viewport.Commit(candidate);
+					mapping.CommitPresented(tuple);
+					previousAnchor = anchor;
+					initialized = true;
+				}
+			}
 	}
 
 	void TestInitialAndFallbackDamage()
@@ -293,6 +356,7 @@ namespace
 
 int RunDirtyRegionTests()
 {
+	TestCenteredShrinkClearsReinterpretedSurfacePixels();
 	TestInitialAndFallbackDamage();
 	TestChangedBoundsUnionAndClipping();
 	TestWholeBarTranslationRebasesCommittedDamage();

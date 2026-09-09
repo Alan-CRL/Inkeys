@@ -17,9 +17,10 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] constexpr bool ShouldForceBarFullWindowReplacement(
 		bool viewportMappingChanged,
-		BarPresentMappingMode presentMappingMode) noexcept
+		BarPresentMappingMode presentMappingMode,
+		bool rootLayoutChanged = false) noexcept
 	{
-		return viewportMappingChanged
+		return viewportMappingChanged || rootLayoutChanged
 			|| presentMappingMode == BarPresentMappingMode::FullReplacement;
 	}
 

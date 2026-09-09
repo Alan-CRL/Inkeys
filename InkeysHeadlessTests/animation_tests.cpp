@@ -702,8 +702,54 @@ namespace
 			"zero-duration content transition applies immediately");
 	}
 
+	void TestCenteredHiddenButtonRejoinsLayoutBatch()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool opensRight : { true, false })
+			for (double zoom : { 1.0, 1.5 })
+				for (double initialWidth : { 400.0, 560.0 })
+				{
+					BarUiValueClass hiddenX(190.0);
+					hiddenX.SetTar(115.0, 0.4);
+					BarUiAdvanceAnimation(hiddenX, { 0.1, 1.0, true, false });
+					const double childStart = hiddenX.val;
+					const double finalWidth = initialWidth - (childStart - 115.0) * 2.0;
+					const double side = opensRight ? 1.0 : -1.0;
+					BarUiValueClass barWidth(initialWidth);
+					BarUiValueClass barX(side * (50.0 + initialWidth / 2.0));
+					const auto startRoot = ResolveBarBottomDockCenteredRootPlacement(
+						960.0, 81.0, barX.val, barWidth.val + 1.0);
+					const double startScreen = (startRoot.mainCenterDip + barX.val
+						- barWidth.val / 2.0 + childStart) * zoom;
+					const BarUiCurveSpecClass curve{
+						BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
+					barWidth.SetTar(finalWidth, 0.4, std::nullopt, false, curve);
+					barX.SetTar(side * (50.0 + finalWidth / 2.0), 0.4, std::nullopt, false, curve);
+					// 来源锚点仍是 115；旧 SetTar 的同目标早退会留下另一条局部时间线。
+					Check(BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, true, curve),
+						"new layout batch rejoins a hidden child already travelling to the same anchor");
+					for (int frame = 0; frame < 30; ++frame)
+					{
+						Check(!BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, false, curve),
+							"ordinary centered frames do not restart hidden-child animation");
+						BarUiAdvanceAnimation(hiddenX, { 1.0 / 60.0, 1.0, true, false });
+						BarUiAdvanceAnimation(barX, { 1.0 / 60.0, 1.0, true, false });
+						BarUiAdvanceAnimation(barWidth, { 1.0 / 60.0, 1.0, true, false });
+						const auto root = ResolveBarBottomDockCenteredRootPlacement(
+							960.0, 81.0, barX.val, barWidth.val + 1.0);
+						const double screen = (root.mainCenterDip + barX.val
+							- barWidth.val / 2.0 + hiddenX.val) * zoom;
+						Check(Near(screen, startScreen),
+							"cancelling child and centered-root displacements never produce a horizontal bob");
+						Check(Near((root.bodyLeftDip + root.bodyRightDip) / 2.0, 960.0),
+							"hidden child retarget keeps the visible union exactly centered");
+					}
+				}
+	}
+
 	void TestTargetsAndAdvancement()
 	{
+		TestCenteredHiddenButtonRejoinsLayoutBatch();
 		BarUiValueClass value(0.0);
 		Check(value.SetTar(10.0, 1.0), "new value target starts animation");
 		Check(!value.SetTar(10.0, 1.0), "same value target is a no-op");

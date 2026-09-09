@@ -4,9 +4,25 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 
 namespace Inkeys::UI::Bar
 {
+	// ULW、EndDraw 与成功几何发布不可被直移穿插；失败候选不能作为直移起点。
+	class BarWindowPresentationTransaction
+	{
+	public:
+		BarWindowPresentationTransaction(std::mutex& mutex, bool& boundsReady)
+			: lock_(mutex), boundsReady_(boundsReady) {}
+
+		void WindowUpdated() noexcept { boundsReady_ = false; }
+		void Commit() noexcept { boundsReady_ = true; }
+
+	private:
+		std::unique_lock<std::mutex> lock_;
+		bool& boundsReady_;
+	};
+
 	struct BarWindowScalarRange
 	{
 		double minimum = 0.0;

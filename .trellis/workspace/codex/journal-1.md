@@ -154,3 +154,37 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Status
 
 [OK] **Completed**
+
+
+## Session 8: 主栏底栏显示续修与回归验证
+<!-- trellis-session: v=2 fp=294b1e3e0d8a24f4 -->
+
+**Date**: 2026-09-09
+**Task**: 主栏底栏显示续修与回归验证
+**Branch**: `draw`
+
+### Summary
+
+延续 08-23 主栏拖动闪动与缩窄残影任务，修复窗口呈现交接、居中缩窄旧像素、隐藏按钮动画批次、水平抓取及过期首次吸附帧，完整 ARM64 构建和无窗口测试通过。
+
+### Main Changes
+
+- UI3 Bar 位图、窗口位置、抓手与吸附屏障保持同一成功呈现事务；稳定居中重排完整擦除，隐藏子按钮加入实际布局批次。
+- 补充持久像素、跨线程 resize、同目标按钮轨迹、快速重捕获与过期首次吸附帧的组合回归；更新 Trellis 任务和渲染规范。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug | ARM64，ARM64 host MSBuild，退出码 0，23.78 秒。
+- [OK] 全部 InkeysHeadlessTests.exe --no-window 通过，2.13 秒；git diff --check 及 BOM/UTF-8/CRLF 检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 维护者复测果冻进出、PPT 按钮收起与居中吸附；任务保留 in_progress。本轮未启动 GUI，未提交 commit。

@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-08-23",
   "completedAt": null,
-  "branch": null,
+  "branch": "draw",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-09 用户复测确认问题 2（居中缩短残影/按钮抽动）与问题 3（居中捕获主按钮跳动）修复，授权先提交当前改动；问题 1（果冻进出时 Y 跳帧）待后续继续，保持 in_progress。",
   "meta": {}
 }

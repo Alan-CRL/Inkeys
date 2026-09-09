@@ -6089,14 +6089,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			initialPresentedTranslation.x, memory_order_relaxed);
 		directWindowDragTranslationY.store(
 			initialPresentedTranslation.y, memory_order_relaxed);
-		gestureRebaseSerial = bottomDockTransitionSerial.fetch_add(
-			1, memory_order_acq_rel) + 1;
-		bottomDockDeferredTransitionSerial.store(
-			gestureRebaseSerial, memory_order_release);
+		gestureRebaseSerial = FinishBottomDockTransition(true);
 	}
 	double baseMainCenterScreenX =
 		initialPresentedSnapshot.rawMainCenterScreenX
-		- initialPresentedTranslation.x;
+		- initialPresentedTranslation.x
+		- initialPresentedSnapshot.horizontalMapping.rigidGripTranslationXDip * presentedZoom;
 	double baseMainCenterScreenY =
 		initialPresentedSnapshot.mainCenterScreenY
 		- initialPresentedTranslation.y;
@@ -6166,8 +6164,6 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	double grabOffsetScreenY = startPointer.y
 		- (actualMainCenterScreenY
 			+ initialPresentedSnapshot.rigidTranslationDip * presentedZoom);
-	bottomDockDragRigidGripScreenY.store(
-		startPointer.y - grabOffsetScreenY, memory_order_release);
 	const double initialFloatingVisibleBottomScreenY =
 		startPointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
 		const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
@@ -6186,6 +6182,10 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		!barState.fold, environment);
 	bool dockIndicatorGestureActive = false;
 	bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+	bottomDockDragRigidGripScreenX.store(
+		startPointer.x - grabOffsetScreenX, memory_order_relaxed);
+	bottomDockDragRigidGripScreenY.store(
+		startPointer.y - grabOffsetScreenY, memory_order_relaxed);
 	bottomDockIndicatorGestureEligible.store(
 		false,
 		memory_order_relaxed);
@@ -6210,14 +6210,16 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	bool downwardDetachBlockedAtRelease = false;
 	bool gestureCancelled = false;
 	unsigned long long awaitedTransitionSerial = gestureRebaseSerial;
-	auto PublishPresentationBarrier = [&]()
+	auto PublishPresentationBarrier = [&](POINT pointer)
 		{
 			// 缩放或显示参数改变时，先让 ULW 提交新尺寸，再允许直移旧位图。
 			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
-			const auto barrierSerial = bottomDockTransitionSerial.fetch_add(
-				1, memory_order_acq_rel) + 1;
-			bottomDockDeferredTransitionSerial.store(
-				barrierSerial, memory_order_release);
+			// 显示屏障也成对发布抓手坐标，不能让首帧混用旧 X 和新 Y。
+			bottomDockDragRigidGripScreenX.store(
+				pointer.x - grabOffsetScreenX, memory_order_relaxed);
+			bottomDockDragRigidGripScreenY.store(
+				pointer.y - grabOffsetScreenY, memory_order_relaxed);
+			const auto barrierSerial = FinishBottomDockTransition(true);
 			awaitedTransitionSerial = barrierSerial;
 			UpdateRendering(false);
 		};
@@ -6276,8 +6278,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				result.allowClick = false;
 			}
 			// 偶数 serial 发布在两轴模式、阶段、形变量和位移之后。
-			publication.transitionSerial = bottomDockTransitionSerial.fetch_add(
-				1, memory_order_acq_rel) + 1;
+			publication.transitionSerial = FinishBottomDockTransition(
+				update.modeChanged || centerUpdate.modeChanged);
 			maximumElasticTravelScreen = max(maximumElasticTravelScreen,
 				abs(update.elasticOffsetDip - initialPresentedElasticDip)
 					* interactionZoom);
@@ -6301,7 +6303,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				{
 					// 显示环境变化只消费未形变坐标；视觉果冻不能回灌抓手和捕获阈值。
 					baseMainCenterScreenX = presented.rawMainCenterScreenX
-						- presented.directTranslation.x;
+						- presented.directTranslation.x
+						- presented.horizontalMapping.rigidGripTranslationXDip * presented.zoom;
 					baseMainCenterScreenY = presented.mainCenterScreenY
 						- presented.directTranslation.y;
 					bodyToMainCenterScreenX = presented.rawBodyCenterScreenX
@@ -6382,12 +6385,8 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				requestedDisplaySerial = latestDisplaySnapshot.serial;
 				requestedDisplayZoom = latestZoom;
 				displayEnvironmentAwaited = true;
-				bottomDockDragRigidGripScreenY.store(
-					pointer.y - grabOffsetScreenY, memory_order_release);
-				PublishPresentationBarrier();
+				PublishPresentationBarrier(pointer);
 			}
-			bottomDockDragRigidGripScreenY.store(
-				pointer.y - grabOffsetScreenY, memory_order_release);
 
 			const double floatingVisibleBottomScreenY =
 				pointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
@@ -6452,8 +6451,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				|| pixelDeltaY != appliedDeltaY;
 			const bool anyModeChanged = dockUpdate.modeChanged
 				|| centerUpdate.modeChanged;
-			// 每个采样都用同一个 seqlock tuple 发布两轴映射和窗口位移。
+			// 每个采样都用同一个 seqlock tuple 发布抓手、两轴映射和窗口位移。
 			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+			bottomDockDragRigidGripScreenX.store(
+				pointer.x - grabOffsetScreenX, memory_order_relaxed);
+			bottomDockDragRigidGripScreenY.store(
+				pointer.y - grabOffsetScreenY, memory_order_relaxed);
 			if (translationChanged)
 			{
 				directWindowDragTranslationX.store(
@@ -6467,8 +6470,6 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			{
 				// 捕获/脱离必须先由 ULW 同帧提交新位图和新位置，
 				// 在此之前禁止当前或后续采样用 SetWindowPos 移动上一帧位图。
-				bottomDockDeferredTransitionSerial.store(
-					publication.transitionSerial, memory_order_release);
 				awaitedTransitionSerial = publication.transitionSerial;
 			}
 			bool requestRendering = publication.visualChanged;
@@ -6478,16 +6479,10 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				if (!deferDirectMove)
 				{
 					unique_lock lock(directWindowDragMutex, try_to_lock);
-					if (lock.owns_lock())
+					if (lock.owns_lock() && committedWindowScreenBoundsReady)
 					{
-						RECT currentWindowRect{};
-						if (committedWindowScreenBoundsReady)
-							currentWindowRect = committedWindowScreenBounds;
-						else if (!GetWindowRect(floating_window, &currentWindowRect))
-						{
-							directMoveFailed = true;
-							return false;
-						}
+						// ULW 后续阶段失败时缓存不可直移，交给完整呈现重试接管。
+						const RECT currentWindowRect = committedWindowScreenBounds;
 						const POINT desiredTranslation{ pixelDeltaX, pixelDeltaY };
 						const POINT presentedTranslation{
 							directWindowPresentedTranslationX.load(memory_order_acquire),
@@ -6604,10 +6599,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			rollbackSnapshot.directTranslation.y, memory_order_relaxed);
 		bottomDockDragActive.store(false, memory_order_relaxed);
 		bottomDockIndicatorGestureEligible.store(false, memory_order_relaxed);
-		const auto rollbackSerial = bottomDockTransitionSerial.fetch_add(
-			1, memory_order_acq_rel) + 1;
-		bottomDockDeferredTransitionSerial.store(
-			rollbackSerial, memory_order_release);
+		(void)FinishBottomDockTransition(true);
 	}
 	else
 	{
@@ -6648,11 +6640,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			? centerTracker.ElasticOffsetDip() : 0.0, memory_order_release);
 		bottomDockDragActive.store(false, memory_order_relaxed);
 		bottomDockIndicatorGestureEligible.store(false, memory_order_relaxed);
-		const auto releaseSerial = bottomDockTransitionSerial.fetch_add(
-			1, memory_order_acq_rel) + 1;
-		if (releaseModeChanged)
-			bottomDockDeferredTransitionSerial.store(
-				releaseSerial, memory_order_release);
+		(void)FinishBottomDockTransition(releaseModeChanged);
 	}
 	FinishDirectWindowDrag();
 	// 松手只发布接管请求；布局值由渲染线程吸收，避免和动画线程并发写对象。

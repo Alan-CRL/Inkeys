@@ -255,6 +255,7 @@ struct BarRenderFrameSnapshot
 	double bottomDockElasticOffsetDip = 0.0;
 	double bottomDockCenterElasticOffsetDip = 0.0;
 	bool bottomDockIndicatorGestureEligible = false;
+	double bottomDockDragRigidGripScreenX = 0.0;
 	double bottomDockDragRigidGripScreenY = 0.0;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
@@ -305,7 +306,7 @@ using Inkeys::UI::Bar::ClampBarBottomDockMainCenterScreenX;
 using Inkeys::UI::Bar::ResolveBarBottomDockCenterScreenY;
 using Inkeys::UI::Bar::ResolveBarBottomDockCapacityEnvelope;
 using Inkeys::UI::Bar::ResolveBarBottomDockElasticOffsetForScreenGrip;
-using Inkeys::UI::Bar::ResolveBarBottomDockFrameTranslation;
+using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 	using Inkeys::UI::Bar::ShouldDeferBarBottomDockReleaseHandoff;
 	using Inkeys::UI::Bar::ShouldForceBarFullWindowReplacement;
 	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainCenterScreenX;
@@ -560,6 +561,7 @@ struct BarRenderLoopState
 	double bottomDockObservedCaptureBottomOffsetDip =
 		std::numeric_limits<double>::infinity();
 	bool bottomDockVisualActive = false;
+	bool bottomDockRootLayoutChanged = false;
 	bool bottomDockCaptureBottomActive = false;
 	bool bottomDockRecoverySeeded = false;
 	BarUiValueClass bottomDockTargetIndicatorProgress{ 0.0 };
@@ -2299,8 +2301,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					// 父栏和按钮必须继续共享换边中点，否则继承坐标会叠加出先后错位。
 					value.SetTar(target, operationDur, middle, true, continuedKeyframeValueCurve);
 				}
-				else value.SetTar(target, operationDur, nullopt,
-					forceRestartMainBarLayout, syncedValueCurve);
+				else BarUiSetLayoutPositionTarget(value, target, operationDur,
+					forceRestartMainBarLayout || mainBarLayoutChange, syncedValueCurve);
 			};
 
 		// 按钮位置计算（特别操作）
@@ -5325,7 +5327,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		BarDirtyFixedVisual::MoreGroup);
 	const BarDirtyVisualKey dockTargetIndicatorDirtyKey = GetBarDirtyVisualKey(
 		BarDirtyFixedVisual::DockTargetIndicator);
-	bool centeredRootChanged = false;
+	state.bottomDockRootLayoutChanged = false;
 
 	auto AdvanceAnimation = [&](auto& animation, bool forceReplace,
 		BarDirtyVisualKey dirtyKey = 0) -> void
@@ -5977,7 +5979,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 					mainButton->x.val - mainButton->w.val / 2.0,
 					mainButton->y.val - mainButton->h.val / 2.0));
 				mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
-				centeredRootChanged = abs(previousMainCenterDip
+				state.bottomDockRootLayoutChanged = abs(previousMainCenterDip
 					- placement.mainCenterDip) > 0.000001;
 			}
 		}
@@ -7277,9 +7279,9 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			frame.bottomDockElasticOffsetDip,
 			-Inkeys::UI::Bar::BarBottomDockVisualLimitDip,
 			Inkeys::UI::Bar::BarBottomDockVisualLimitDip);
-		const double centerInputOffsetDip = clamp(
-			frame.bottomDockCenterElasticOffsetDip,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		const double centerInputOffsetDip =
+			isfinite(frame.bottomDockCenterElasticOffsetDip)
+			? frame.bottomDockCenterElasticOffsetDip : 0.0;
 		const double dragRigidGripScreenY =
 			frame.bottomDockDragRigidGripScreenY;
 		const POINT frameTransitionTranslation =
@@ -7503,11 +7505,8 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				owner_.bottomDockCenterPhase.store(nextPhase, memory_order_relaxed);
 				owner_.bottomDockCenterElasticOffsetDip.store(
 					nextElasticDip, memory_order_relaxed);
-				const auto serial = owner_.bottomDockTransitionSerial.fetch_add(
-					1, memory_order_acq_rel) + 1;
-				state.bottomDockFrameTransitionSerial = serial;
-				owner_.bottomDockDeferredTransitionSerial.store(
-					serial, memory_order_release);
+				state.bottomDockFrameTransitionSerial =
+					owner_.FinishBottomDockTransition(true);
 			};
 		if (state.barState.fold || dockMode != BarBottomDockMode::BottomDocked)
 		{
@@ -7544,7 +7543,10 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		if (centerMode == BarBottomDockCenterMode::Centered && dockDragActive)
 		{
 			state.bottomDockCenterRecoverySeeded = false;
-			state.bottomDockCenterSpring.positionDip = centerInputOffsetDip;
+			// 从同帧屏幕抓手反推刚性位移，包含像素舍入而不截断 40 DIP 捕获带。
+			state.bottomDockCenterSpring.positionDip =
+				(frame.bottomDockDragRigidGripScreenX - state.monitorOrigin.x
+					- frameTransitionTranslation.x) / frameZoom - dockMainButton->x.val;
 		}
 		else
 		{
@@ -7557,7 +7559,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			}
 			centerSpringActive = AdvanceBarBottomDockSpring(
 				state.bottomDockCenterSpring, 0.0, animationDtSeconds,
-				true == BarUiAnimationEnabled).active;
+				true == BarUiAnimationEnabled, true).active;
 		}
 		const auto presentedCenterSnapshot = owner_.BottomDockPresentedSnapshot();
 		bool centerFarEdgeJustSeeded = false;
@@ -7588,7 +7590,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		{
 			const auto captureFarEdge = AdvanceBarBottomDockSpring(
 				state.bottomDockCenterCaptureFarEdgeSpring, 0.0,
-				animationDtSeconds, true == BarUiAnimationEnabled);
+				animationDtSeconds, true == BarUiAnimationEnabled, true);
 			centerCaptureFarEdgeActive = captureFarEdge.active;
 			state.bottomDockCenterCaptureFarEdgeActive =
 				captureFarEdge.active;
@@ -7647,7 +7649,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| centerSpringActive
 			|| centerCaptureFarEdgeActive
 			|| abs(state.bottomDockCenterSpring.positionDip) > 0.000001
-			|| centeredRootChanged;
+			|| state.bottomDockRootLayoutChanged;
 		const bool visualChanged = abs(previousVisualOffsetDip
 			- state.bottomDockSpring.positionDip) > 0.000001
 			|| abs(previousCaptureBottomOffsetDip
@@ -7657,7 +7659,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| abs(previousCenterCaptureFarEdgeDip
 				- state.bottomDockCenterCaptureFarEdgeSpring.positionDip)
 				> 0.000001
-			|| centeredRootChanged;
+			|| state.bottomDockRootLayoutChanged;
 		if (visualChanged || springActive || captureBottomSpringActive
 			|| centerSpringActive || centerCaptureFarEdgeActive)
 		{
@@ -9072,6 +9074,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const RECT layoutBounds{
 			0, 0, static_cast<LONG>(state.barWindow.w),
 			static_cast<LONG>(state.barWindow.h) };
+		const double horizontalDockOutsetDip = max({
+			BarBottomDockCenterThresholdDip,
+			abs(state.bottomDockHorizontalMapping.rigidGripTranslationXDip),
+			abs(state.bottomDockCenterCaptureFarEdgeSpring.positionDip) });
 		const bool reserveBottomDockCapacity =
 			frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
@@ -9083,7 +9089,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		if (reserveBottomDockCapacity)
 			UnionBarWindowRect(capacityContentBounds,
 				ResolveBarBottomDockCapacityEnvelope(
-					bottomDockElasticBaseBounds, frameZoom));
+					bottomDockElasticBaseBounds, frameZoom, horizontalDockOutsetDip));
 		const auto capacityDecision = ResolveBarWindowCapacity(
 			state.capacitySize, frameAnchor, capacityContentBounds,
 			layoutBounds, 2);
@@ -9562,11 +9568,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			}
 			if (reserveBottomDockVisualEnvelope)
 			{
-				// 以未形变布局一次性预留上下 24 DIP，拖动中 viewport 不随偏移反复改尺寸。
+				// 纵向预留 24 DIP；水平覆盖 40 DIP 抓手和本次成功像素的恢复起点。
 				if (IsBarWindowRectEmpty(predictedEnvelope))
 					predictedEnvelope = currentContentBounds;
 				predictedEnvelope = ResolveBarBottomDockVisualEnvelope(
-					predictedEnvelope, frameZoom);
+					predictedEnvelope, frameZoom, horizontalDockOutsetDip);
 			}
 			UnionBarWindowRect(predictedEnvelope, currentContentBounds);
 			predictedEnvelope = IntersectBarWindowRect(
@@ -9615,7 +9621,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				!= committedViewport.bottom - committedViewport.top;
 		const bool mappingFullWindowReplacement =
 			ShouldForceBarFullWindowReplacement(
-				viewportMappingChanged, presentMappingMode);
+				viewportMappingChanged, presentMappingMode,
+				state.bottomDockRootLayoutChanged);
 		const bool forceFullWindowReplacement = mappingFullWindowReplacement
 			|| alphaAttempt.fullWindow;
 		if (mappingFullWindowReplacement)
@@ -12425,8 +12432,10 @@ bool presetButton = button.presetIndex >= 0;
 		POINT presentedDestination{};
 		SIZE presentedSize{};
 		POINT directTranslation{};
+		bool deferWindowPresentation = false;
+		Inkeys::UI::Bar::BarWindowPresentationTransaction directDragTransaction(
+			owner_.directWindowDragMutex, owner_.committedWindowScreenBoundsReady);
 		{
-			unique_lock directDragLock(owner_.directWindowDragMutex);
 			// 脏区更新
 			RECT target = BarLayoutToClientRect(
 				presentDirty, candidateViewport);
@@ -12455,20 +12464,26 @@ bool presetButton = button.presetIndex >= 0;
 			const POINT presentedDirectTranslation{
 				owner_.directWindowPresentedTranslationX.load(memory_order_acquire),
 				owner_.directWindowPresentedTranslationY.load(memory_order_acquire) };
+			const auto deferredTransitionSerial =
+				owner_.bottomDockDeferredTransitionSerial.load(memory_order_relaxed);
+			const auto presentedTransitionSerial =
+				owner_.bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
 			const auto transitionSerialAfter =
 				owner_.bottomDockTransitionSerial.load(memory_order_acquire);
-			// 过期帧留在锁内读取到的实际 HWND 位置，不能把交互线程的直移拉回旧帧。
-			directTranslation = ResolveBarBottomDockFrameTranslation(
+			const auto framePresentation = ResolveBarBottomDockFramePresentation(
 				state.bottomDockFrameTransitionSerial,
+				state.bottomDockFrameTransitionTranslation,
 				transitionSerialBefore, transitionSerialAfter,
-				latestDirectTranslation,
-				presentedDirectTranslation);
+				deferredTransitionSerial, presentedTransitionSerial,
+				latestDirectTranslation, presentedDirectTranslation);
+			deferWindowPresentation = framePresentation.deferred;
+			directTranslation = framePresentation.translation;
 			presentedDestination = {
 				state.monitorOrigin.x + candidateViewport.left + directTranslation.x,
 				state.monitorOrigin.y + candidateViewport.top + directTranslation.y };
 			POINT ptSrc = candidateSource;
 			presentedSize = { candidateWidth, candidateHeight };
-			if (barGdiInterop)
+			if (!deferWindowPresentation && barGdiInterop)
 			{
 				// GetDC 自带必要的 D2D 提交，避免在此之前再做一次重复 Flush。
 				HDC hdc = nullptr;
@@ -12485,6 +12500,7 @@ bool presetButton = button.presetIndex >= 0;
 						UpdateLayeredWindowIndirect(floating_window, &ulwi);
 					if (!updateLayeredWindowSucceeded)
 						updateLayeredWindowError = GetLastError();
+					else directDragTransaction.WindowUpdated();
 					releaseDcHr = barGdiInterop->ReleaseDC(nullptr);
 				}
 				else if (SUCCEEDED(getDcHr)) getDcHr = E_POINTER;
@@ -12493,6 +12509,24 @@ bool presetButton = button.presetIndex >= 0;
 
 		HRESULT endDrawHr = barDeviceContext->EndDraw();
 		state.spec.HandleFrameEndDrawResult(endDrawHr);
+		if (deferWindowPresentation)
+		{
+			// 更新的形态已取代此位图；EndDraw 仍成对结束，但不消费任何成功快照。
+			state.presentationAlpha.CompleteAttempt(false);
+			state.dirtyRegionTracker.RetainForRetry(true);
+			state.presentDecision.RequireFullDirtyRetry();
+			if (FAILED(endDrawHr))
+				state.presentDecision.RecordFailure(
+					Inkeys::UI::Bar::BarPresentFailureClass::EndDraw,
+					epoch.generation, frameDemandGeneration,
+					state.presentAttemptFrameSerial);
+			const bool deviceLost = Inkeys::UI::Bar::IsBarSharedDeviceLost(endDrawHr);
+			if (endDrawHr == D2DERR_RECREATE_TARGET || deviceLost)
+				state.spec.DiscardDeviceResources();
+			state.barMedia.formatCache->Clean();
+			return deviceLost ? BarRenderLoopStageResult::DeviceLost
+				: BarRenderLoopStageResult::Continue;
+		}
 		const auto presentAttempt = Inkeys::UI::Bar::BarPresentAttemptResult::Acquired(
 				getDcHr,
 				updateLayeredWindowSucceeded,
@@ -12526,7 +12560,7 @@ bool presetButton = button.presetIndex >= 0;
 				presentedDestination.x + presentedSize.cx,
 				presentedDestination.y + presentedSize.cy };
 			owner_.committedWindowScreenBounds = committedWindowScreenBounds;
-			owner_.committedWindowScreenBoundsReady = true;
+			// 完整快照发布完成后才重新允许交互线程按此窗口基准直移。
 			if (!state.firstStartupFrameReported)
 			{
 				state.firstStartupFrameReported = true;
@@ -12695,6 +12729,7 @@ bool presetButton = button.presetIndex >= 0;
 				1, memory_order_release);
 			// 第三光源接受区也只消费完整成功事务对应的几何。
 			owner_.RefreshBorderCursorVisibleRegions();
+			directDragTransaction.Commit();
 			state.bottomDockIndicatorRevealDamagePending = false;
 			state.committedAnchor = POINT{
 				static_cast<LONG>(lround(mainButton->x.val * frameZoom)),
@@ -12876,10 +12911,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		owner_.bottomDockCenterElasticOffsetDip.store(0.0,
 			memory_order_relaxed);
 		owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
-		const auto transitionSerial = owner_.bottomDockTransitionSerial.fetch_add(
-			1, memory_order_acq_rel) + 1;
-		owner_.bottomDockDeferredTransitionSerial.store(
-			transitionSerial, memory_order_release);
+		(void)owner_.FinishBottomDockTransition(true);
 		state.whiteboardDockPlacementPending = true;
 	}
 	// 底栏形态、抓取点和直移必须整帧共用同一偶数 serial，
@@ -12905,6 +12937,8 @@ BarRenderLoopCoordinator::RenderFrame(
 			owner_.bottomDockCenterElasticOffsetDip.load(memory_order_relaxed);
 		frame.bottomDockIndicatorGestureEligible =
 			owner_.bottomDockIndicatorGestureEligible.load(memory_order_relaxed);
+		frame.bottomDockDragRigidGripScreenX =
+			owner_.bottomDockDragRigidGripScreenX.load(memory_order_relaxed);
 		frame.bottomDockDragRigidGripScreenY =
 			owner_.bottomDockDragRigidGripScreenY.load(memory_order_relaxed);
 		frame.bottomDockTransitionTranslation = POINT{

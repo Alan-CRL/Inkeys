@@ -11,6 +11,8 @@
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
 
 namespace
 {
@@ -28,6 +30,184 @@ namespace
 		return std::abs(lhs - rhs) <= epsilon;
 	}
 
+	void TestHorizontalCapturePresentedSequence()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool opensRight : { true, false })
+			for (double zoom : { 1.0, 1.5, 1.875 })
+				for (double width : { 200.0, 560.0 })
+				{
+					const BarBottomDockEnvironment environment{
+						RECT{ 100, 50, 2020, 1130 }, RECT{ 100, 50, 2020, 1082 }, zoom };
+					const double monitorCenter = ResolveBarBottomDockMonitorCenterScreenX(environment.monitorBounds);
+					const double bodyToMain = (opensRight ? 1.0 : -1.0) * (width / 2.0 + 10.0) * zoom;
+					const double baseMain = monitorCenter - 60.0 * zoom - bodyToMain - 37.0;
+					const double baseLeft = baseMain / zoom + (opensRight ? 50.0 : -50.0 - width);
+					const double baseRight = baseLeft + width;
+					const double baseFar = opensRight ? baseRight : baseLeft;
+					BarBottomDockCenterDragTracker tracker;
+					tracker.Begin(BarBottomDockCenterMode::Free, monitorCenter - 60.0 * zoom,
+						true, true, environment);
+					BarBottomDockCenterMode presentedMode = BarBottomDockCenterMode::Free;
+					LONG presentedTranslation = 37;
+					double presentedFar = baseFar;
+					BarBottomDockSpringState farSpring;
+					int sampleIndex = 0;
+					bool recapturedDuringRecovery = false;
+					constexpr int recoveryFrameCounts[]{ 180, 4, 1 };
+					for (double offset : { -45.0, -40.0, -39.0, -25.0, 0.0, 25.0, 39.0, 41.0, 39.0, -41.0, -39.0 })
+					{
+						const double rawBody = monitorCenter + offset * zoom;
+						const double rawMain = rawBody - bodyToMain;
+						const auto update = tracker.Update(rawBody, true, true, environment);
+						const LONG translation = static_cast<LONG>(std::lround(
+							update.constrainedCenterScreenX - bodyToMain - baseMain));
+						const bool centered = update.mode == BarBottomDockCenterMode::Centered;
+						const double grip = centered ? (rawMain - baseMain - translation) / zoom : 0.0;
+						const bool transition = update.mode != presentedMode;
+						const double previousFarScreen = presentedFar * zoom + presentedTranslation;
+						if (transition)
+						{
+							recapturedDuringRecovery |= centered
+								&& std::abs(farSpring.positionDip) > BarBottomDockSettleDistanceDip;
+							farSpring = { ResolveBarBottomDockRebasedFarEdgeOffsetDip(
+								presentedFar, presentedTranslation, translation, baseFar, zoom), 0.0 };
+						}
+						const auto mapping = ResolveBarBottomDockHorizontalMapping(
+							baseLeft, baseRight, opensRight, grip, farSpring.positionDip);
+						const double currentFar = opensRight ? mapping.visualRightDip : mapping.visualLeftDip;
+						Check(std::abs(baseMain + translation + mapping.rigidGripTranslationXDip * zoom - rawMain) <= 0.5,
+							"capturing between 24 and 40 DIP, crossing and detaching preserve the held main button");
+						if (transition)
+							Check(Near(currentFar * zoom + translation, previousFarScreen),
+								"capture, detach and recapture seed the far edge from exactly the last presented pixels");
+						const double nearBase = opensRight ? baseLeft : baseRight;
+						Check(Near(mapping.MapX(nearBase), nearBase + grip)
+							&& Near(mapping.UnmapX(mapping.MapX(baseLeft + width / 3.0)), baseLeft + width / 3.0),
+							"near edge shares rigid grip motion and body hit mapping round trips");
+						const RECT baseBounds{ static_cast<LONG>(std::floor(baseLeft * zoom)), 900,
+							static_cast<LONG>(std::ceil(baseRight * zoom)), 1000 };
+						const auto envelope = ResolveBarBottomDockCapacityEnvelope(baseBounds, zoom,
+							std::max({ BarBottomDockCenterThresholdDip, std::abs(grip), std::abs(farSpring.positionDip) }));
+						Check(envelope.left <= mapping.visualLeftDip * zoom
+							&& envelope.right >= mapping.visualRightDip * zoom,
+							"horizontal capacity includes exact grip and recovery seed at every scale");
+						// 很短的下一帧应连续衰减，不能把 39/41 DIP 的真实像素瞬间截到 24。
+						const double initialFarOffset = farSpring.positionDip;
+						(void)AdvanceBarBottomDockSpring(farSpring, 0.0, 0.0001, true, true);
+						Check(std::abs(farSpring.positionDip - initialFarOffset) < 0.1,
+							"far edge recovery has no first-frame clamp at the old visual limit");
+						// 交错完整恢复与仅 1～4 帧的快速反向，重捕获必须接住仍在运动的远端。
+						const int recoveryFrames = recoveryFrameCounts[sampleIndex++ % 3];
+						for (int frame = 0; frame < recoveryFrames; ++frame)
+							(void)AdvanceBarBottomDockSpring(farSpring, 0.0, 1.0 / 60.0, true, true);
+						if (recoveryFrames == 180)
+							Check(Near(farSpring.positionDip, 0.0), "far edge still settles with the original spring timing");
+						presentedMode = update.mode;
+						presentedTranslation = translation;
+						const auto presentedMapping = ResolveBarBottomDockHorizontalMapping(
+							baseLeft, baseRight, opensRight, grip, farSpring.positionDip);
+						presentedFar = opensRight ? presentedMapping.visualRightDip : presentedMapping.visualLeftDip;
+					}
+					Check(recapturedDuringRecovery, "sequence recaptures before the preceding far-edge recovery settles");
+					for (int frame = 0; frame < 180; ++frame)
+						(void)AdvanceBarBottomDockSpring(farSpring, 0.0, 1.0 / 60.0, true, true);
+					Check(Near(farSpring.positionDip, 0.0), "rapid recapture recovery still converges");
+				}
+	}
+
+	void TestFirstCapturePresentationAcrossNewSamples()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool opensRight : { true, false })
+			for (double zoom : { 1.0, 1.5, 1.875 })
+			{
+				const POINT origin{ 100, 50 };
+				const POINT previousTranslation{ 13, -7 };
+				const POINT captureTranslation{
+					previousTranslation.x - static_cast<LONG>(std::lround((opensRight ? 39.0 : -39.0) * zoom)),
+					previousTranslation.y - static_cast<LONG>(std::lround(16.0 * zoom)) };
+				const double gripX = (previousTranslation.x - captureTranslation.x) / zoom;
+				const double gripY = (previousTranslation.y - captureTranslation.y) / zoom;
+				const double mainX = 400.0;
+				const double mainY = 500.0;
+				const double left = mainX + (opensRight ? 50.0 : -250.0);
+				const double right = left + 200.0;
+				const double baseFarEdge = opensRight ? right : left;
+				const double captureFar = ResolveBarBottomDockRebasedFarEdgeOffsetDip(
+					baseFarEdge, previousTranslation.x, captureTranslation.x, baseFarEdge, zoom);
+				const auto horizontal = ResolveBarBottomDockHorizontalMapping(
+					left, right, opensRight, gripX, captureFar);
+				const auto vertical = ResolveBarBottomDockVerticalMapping(
+					mainY - 40.5, mainY + 40.5, gripY, gripY);
+				// 首次捕获等待 ULW 时，普通采样仍可连续推进 serial，但不改变此屏障。
+				for (unsigned long long serial : { 2ULL, 4ULL, 12ULL, 40ULL })
+				{
+					const auto decision = ResolveBarBottomDockFramePresentation(
+						2, captureTranslation, serial, serial, 2, 0,
+						captureTranslation, previousTranslation);
+					Check(!decision.deferred, "ordinary samples cannot starve the first capture presentation");
+					const double screenX = origin.x + (mainX + horizontal.rigidGripTranslationXDip) * zoom
+						+ decision.translation.x;
+					const double screenY = origin.y + vertical.MapY(mainY) * zoom + decision.translation.y;
+					Check(Near(screenX, origin.x + mainX * zoom + previousTranslation.x)
+						&& Near(screenY, origin.y + mainY * zoom + previousTranslation.y),
+						"first capture bitmap and destination preserve both held screen coordinates when serial advances");
+				}
+				const POINT staleFallback = ResolveBarBottomDockFrameTranslation(
+					2, 4, 4, captureTranslation, previousTranslation);
+				Check(std::abs(horizontal.rigidGripTranslationXDip * zoom + staleFallback.x
+					- previousTranslation.x) > 24.0 * zoom
+					&& std::abs(vertical.MapY(mainY) * zoom + staleFallback.y
+						- mainY * zoom - previousTranslation.y) > 10.0 * zoom,
+					"old stale-destination fallback reproduces the X/Y capture jump");
+
+				BarPresentDecision present;
+				present.AddDemand({ true, false, false });
+				const auto failed = present.CompleteAttempt(BarPresentAttemptResult::Acquired(
+					S_OK, TRUE, S_OK, E_FAIL, {}));
+				const auto retry = ResolveBarBottomDockFramePresentation(
+					4, captureTranslation, 6, 6, 2, 0, captureTranslation, previousTranslation);
+				Check(!failed.IsCommitted() && present.ShouldPresent() && present.NeedsFullDirty()
+					&& !retry.deferred && retry.translation.x == captureTranslation.x
+					&& retry.translation.y == captureTranslation.y,
+					"failed first capture retains its barrier and retries with matching bitmap translation");
+				Check(present.CompleteAttempt(BarPresentAttemptResult::Acquired(
+					S_OK, TRUE, S_OK, S_OK, {})).IsCommitted(), "retry establishes the first capture snapshot");
+
+				const auto next = ResolveBarBottomDockFramePresentation(
+					6, captureTranslation, 6, 6, 2, 4, captureTranslation, captureTranslation);
+				const auto nextHorizontal = ResolveBarBottomDockHorizontalMapping(
+					left, right, opensRight, gripX + 2.0 / zoom, captureFar);
+				const auto nextVertical = ResolveBarBottomDockVerticalMapping(
+					mainY - 40.5, mainY + 40.5, gripY + 2.0 / zoom, gripY);
+				Check(!next.deferred
+					&& Near((mainX + nextHorizontal.rigidGripTranslationXDip) * zoom + next.translation.x,
+						mainX * zoom + previousTranslation.x + 2.0)
+					&& Near(nextVertical.MapY(mainY - 40.5) * zoom + next.translation.y,
+						(mainY - 40.5) * zoom + previousTranslation.y + 2.0),
+					"next current sample follows the new pointer without an extra capture offset");
+				const POINT movedTranslation{ captureTranslation.x + 3, captureTranslation.y + 5 };
+				const auto staleMove = ResolveBarBottomDockFramePresentation(
+					6, captureTranslation, 8, 8, 2, 4, movedTranslation, movedTranslation);
+				Check(!staleMove.deferred && staleMove.translation.x == movedTranslation.x
+					&& staleMove.translation.y == movedTranslation.y,
+					"stale ordinary frame preserves a direct move after capture is presented");
+				present.AddDemand({ true, false, false });
+				const auto obsolete = ResolveBarBottomDockFramePresentation(
+					6, captureTranslation, 8, 8, 8, 4, movedTranslation, captureTranslation);
+				if (obsolete.deferred) present.RequireFullDirtyRetry();
+				Check(obsolete.deferred && present.ShouldPresent() && present.NeedsFullDirty()
+					&& !present.HasFailureBackoff(),
+					"new shape/display barrier skips obsolete ULW without consuming demand or reporting failure");
+				Check(ResolveBarBottomDockFramePresentation(
+					6, captureTranslation, 7, 7, 8, 4, movedTranslation, captureTranslation).deferred
+					&& ResolveBarBottomDockFramePresentation(
+						6, captureTranslation, 6, 8, 8, 4, movedTranslation, captureTranslation).deferred,
+					"publishing or changing transition tuple cannot submit mixed barrier state");
+			}
+	}
+
 	bool RectEquals(const RECT& value, const RECT& expected)
 	{
 		return value.left == expected.left && value.top == expected.top
@@ -38,6 +218,8 @@ namespace
 int RunBarBottomDockTests()
 {
 	using namespace Inkeys::UI::Bar;
+	TestHorizontalCapturePresentedSequence();
+	TestFirstCapturePresentationAcrossNewSamples();
 	const RECT monitor{ 100, 50, 2020, 1130 };
 	Check(ResolveBarBottomDockLine(monitor, RECT{ 100, 50, 2020, 1082 }) == 1082.0,
 		"bottom taskbar uses work-area bottom");

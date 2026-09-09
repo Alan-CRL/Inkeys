@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3 底栏两轴事务、稳定居中根节点与 dirty/present 成功合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "最小 C++ 修改、状态所有权、中文注释及编码换行"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 ARM64 Solution 构建和兼容边界"}
+{"file": ".trellis/tasks/08-14-ui3-bar-bottom-dock-elastic/design.md", "reason": "最初果冻设计：抓取连续、按住时窗口包络不收缩"}
+{"file": ".trellis/tasks/08-20-ui3-bar-bottom-dock-feedback/prd.md", "reason": "水平居中捕获的原始用户需求；历史实现由现行 spec 取代"}

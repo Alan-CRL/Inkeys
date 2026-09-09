@@ -539,7 +539,7 @@ namespace Inkeys::UI::Bar
 				stableCenterScreenX_ = monitorCenter;
 				const double offsetScreen = rawBodyCenterScreenX - monitorCenter;
 				elasticOffsetDip_ = std::clamp(offsetScreen / zoom,
-					-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+					-BarBottomDockCenterThresholdDip, BarBottomDockCenterThresholdDip);
 				if (std::abs(offsetScreen) > thresholdScreen)
 				{
 					mode_ = BarBottomDockCenterMode::Free;
@@ -925,12 +925,9 @@ namespace Inkeys::UI::Bar
 		if (!std::isfinite(baseLeftDip)) baseLeftDip = 0.0;
 		if (!std::isfinite(baseRightDip) || baseRightDip <= baseLeftDip)
 			baseRightDip = baseLeftDip + 1.0;
-		rigidGripOffsetDip = std::clamp(
-			std::isfinite(rigidGripOffsetDip) ? rigidGripOffsetDip : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
-		farEdgeOffsetDip = std::clamp(
-			std::isfinite(farEdgeOffsetDip) ? farEdgeOffsetDip : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		// 水平捕获带为 40 DIP；抓手和成功像素的坐标差不能被 24 DIP 弹簧保护截断。
+		rigidGripOffsetDip = std::isfinite(rigidGripOffsetDip) ? rigidGripOffsetDip : 0.0;
+		farEdgeOffsetDip = std::isfinite(farEdgeOffsetDip) ? farEdgeOffsetDip : 0.0;
 		// 主栏近端跟随抓手，远端独立弹向稳定居中边界；主按钮本身不参与缩放。
 		double visualLeft = baseLeftDip
 			+ (opensRight ? rigidGripOffsetDip : farEdgeOffsetDip);
@@ -962,8 +959,7 @@ namespace Inkeys::UI::Bar
 		const double rebased = presentedVisualFarEdgeDip
 			+ (presentedDirectTranslationPx - nextDirectTranslationPx) / zoom
 			- nextBaseFarEdgeDip;
-		return std::clamp(std::isfinite(rebased) ? rebased : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		return std::isfinite(rebased) ? rebased : 0.0;
 	}
 
 	[[nodiscard]] inline double MapBarBottomDockBodyPixelX(
@@ -1238,13 +1234,15 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline RECT ResolveBarBottomDockVisualEnvelope(
-		const RECT& bounds, double zoom) noexcept
+		const RECT& bounds, double zoom,
+		double horizontalOutsetDip = BarBottomDockVisualLimitDip) noexcept
 	{
 		if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
 			return {};
 		zoom = NormalizeBarBottomDockZoom(zoom);
 		const LONG horizontalPadding = static_cast<LONG>(
-			std::ceil(BarBottomDockVisualLimitDip * zoom));
+			std::ceil(std::max(BarBottomDockVisualLimitDip,
+				std::isfinite(horizontalOutsetDip) ? horizontalOutsetDip : 0.0) * zoom));
 		const LONG verticalPadding = static_cast<LONG>(
 			std::ceil(BarBottomDockVisualLimitDip * zoom));
 		return RECT{ bounds.left - horizontalPadding,
@@ -1253,13 +1251,15 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] inline RECT ResolveBarBottomDockCapacityEnvelope(
-		const RECT& elasticBaseBounds, double zoom) noexcept
+		const RECT& elasticBaseBounds, double zoom,
+		double horizontalOutsetDip = BarBottomDockVisualLimitDip) noexcept
 	{
 		if (elasticBaseBounds.right <= elasticBaseBounds.left
 			|| elasticBaseBounds.bottom <= elasticBaseBounds.top)
 			return {};
 		// 始终从未形变基线扩完整包络，不能从端点映射后的 bounds 反推。
-		return ResolveBarBottomDockVisualEnvelope(elasticBaseBounds, zoom);
+		return ResolveBarBottomDockVisualEnvelope(
+			elasticBaseBounds, zoom, horizontalOutsetDip);
 	}
 
 	[[nodiscard]] inline bool
@@ -1298,6 +1298,35 @@ namespace Inkeys::UI::Bar
 			&& observedSerialBefore == frameTransitionSerial
 			&& observedSerialAfter == frameTransitionSerial;
 		return frameStillCurrent ? latestTranslation : presentedTranslation;
+	}
+
+	struct BarBottomDockFramePresentationDecision
+	{
+		POINT translation{};
+		bool deferred = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockFramePresentationDecision
+		ResolveBarBottomDockFramePresentation(
+			unsigned long long frameTransitionSerial, POINT frameTranslation,
+			unsigned long long observedSerialBefore,
+			unsigned long long observedSerialAfter,
+			unsigned long long deferredTransitionSerial,
+			unsigned long long presentedTransitionSerial,
+			POINT latestTranslation, POINT presentedTranslation) noexcept
+	{
+		// 尚未完成的发布无法区分普通采样与新形态，不能提交混合 tuple。
+		if ((frameTransitionSerial & 1ULL) != 0
+			|| (observedSerialBefore & 1ULL) != 0
+			|| observedSerialBefore != observedSerialAfter
+			|| deferredTransitionSerial > frameTransitionSerial)
+			return { presentedTranslation, true };
+		// 首张转换位图已包含此屏障：使用配套位移，后续普通采样不能使其饥饿。
+		if (deferredTransitionSerial > presentedTransitionSerial)
+			return { frameTranslation, false };
+		return { ResolveBarBottomDockFrameTranslation(frameTransitionSerial,
+			observedSerialBefore, observedSerialAfter,
+			latestTranslation, presentedTranslation), false };
 	}
 
 	[[nodiscard]] inline BarBottomDockVerticalMapping
@@ -1375,7 +1404,7 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline BarBottomDockSpringResult AdvanceBarBottomDockSpring(
 		BarBottomDockSpringState& state, double targetDip, double dtSeconds,
-		bool animationsEnabled = true) noexcept
+		bool animationsEnabled = true, bool preservePresentedOffset = false) noexcept
 	{
 		if (!std::isfinite(targetDip)) targetDip = 0.0;
 		targetDip = std::clamp(targetDip,
@@ -1390,6 +1419,10 @@ namespace Inkeys::UI::Bar
 			return { state.positionDip, state.velocityDipPerSecond, false };
 		}
 
+		// 水平交接允许从真实旧像素连续衰减；保护只阻止进一步向外发散。
+		const double positionLimitDip = preservePresentedOffset
+			? std::max(BarBottomDockVisualLimitDip, std::abs(state.positionDip))
+			: BarBottomDockVisualLimitDip;
 		dtSeconds = std::clamp(std::isfinite(dtSeconds) ? dtSeconds : 0.0,
 			0.0, BarBottomDockSpringMaxDtSeconds);
 		double remaining = dtSeconds;
@@ -1402,15 +1435,15 @@ namespace Inkeys::UI::Bar
 				* BarBottomDockSpringOmega * state.velocityDipPerSecond;
 			state.velocityDipPerSecond += acceleration * step;
 			state.positionDip += state.velocityDipPerSecond * step;
-			if (state.positionDip > BarBottomDockVisualLimitDip)
+			if (state.positionDip > positionLimitDip)
 			{
-				state.positionDip = BarBottomDockVisualLimitDip;
+				state.positionDip = positionLimitDip;
 				if (state.velocityDipPerSecond > 0.0)
 					state.velocityDipPerSecond = 0.0;
 			}
-			else if (state.positionDip < -BarBottomDockVisualLimitDip)
+			else if (state.positionDip < -positionLimitDip)
 			{
-				state.positionDip = -BarBottomDockVisualLimitDip;
+				state.positionDip = -positionLimitDip;
 				if (state.velocityDipPerSecond < 0.0)
 					state.velocityDipPerSecond = 0.0;
 			}

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
-- **Last Active**: 2026-08-31
+- **Total Sessions**: 8
+- **Last Active**: 2026-09-09
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~156 | Active |
+| `journal-1.md` | ~190 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-09-09 | 主栏底栏显示续修与回归验证 | - | `draw` |
 | 7 | 2026-08-31 | Restore PPT end show action | `07b0c208` | `draw` |
 | 6 | 2026-08-24 | 合并白板与 PPT 底部翻页窗口 | `be95a7bf` | `draw` |
 | 5 | 2026-08-23 | Fix centered bar expand and collapse animation | `07849596` | `draw` |

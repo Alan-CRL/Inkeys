@@ -870,6 +870,14 @@ export
 			const BarUiAnimationAdvanceContextClass& context);
 	};
 
+	// 新布局批次也接管同目标的在途位置，避免局部轨迹与父栏使用不同相位。
+	inline bool BarUiSetLayoutPositionTarget(BarUiValueClass& value,
+		double target, double duration, bool newLayoutBatch,
+		const BarUiCurveSpecClass& curve)
+	{
+		return value.SetTar(target, duration, nullopt, newLayoutBatch, curve);
+	}
+
 	class BarUiColorClass
 	{
 	public:
