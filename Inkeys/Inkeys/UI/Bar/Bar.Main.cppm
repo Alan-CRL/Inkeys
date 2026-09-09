@@ -360,7 +360,7 @@ public:
 	}
 	void ClearBottomDockCenterForFold() noexcept
 	{
-		bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		BeginBottomDockTransition();
 		bottomDockCenterMode.store(
 			Inkeys::UI::Bar::BarBottomDockCenterMode::Free,
 			memory_order_relaxed);
@@ -718,14 +718,14 @@ public:
 	}
 
 protected:
+	void BeginBottomDockTransition() noexcept
+	{
+		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
+	}
 	unsigned long long FinishBottomDockTransition(bool deferWindowMove = false) noexcept
 	{
-		const auto serial = bottomDockTransitionSerial.load(memory_order_relaxed) + 1;
-		// 屏障随两轴状态一起发布，偶数 serial 可见时不能仍读到旧屏障。
-		if (deferWindowMove)
-			bottomDockDeferredTransitionSerial.store(serial, memory_order_relaxed);
-		bottomDockTransitionSerial.fetch_add(1, memory_order_release);
-		return serial;
+		return Inkeys::UI::Bar::FinishBarBottomDockTransition(
+			bottomDockTransitionSerial, bottomDockDeferredTransitionSerial, deferWindowMove);
 	}
 	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
 	void RebaseBottomDockPresentedWindow(POINT directTranslation,

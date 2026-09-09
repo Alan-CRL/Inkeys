@@ -44,3 +44,20 @@
 ## 当前提交与后续工作
 
 用户已确认问题 2、3 修复并明确授权提交当前改动。问题 1 尚未关闭，下一轮继续追踪反复进入/退出底栏时的 Y 跳帧，不因当前构建和 Headless 通过而认定其完成。
+
+## 问题 1 三帧终态闪回计划
+
+1. [x] 沿实际帧顺序查明捕获后下一帧形变为何归零或使用终态坐标。
+2. [x] 补充包含生产状态消费顺序的回归，并实施最小修复。
+3. [x] 独立 trellis-check 复核，确认不回归已验收的问题 2、3。
+4. [x] 完整 ARM64 Solution 构建、全部 --no-window、编码/换行及 diff 检查。
+5. [x] 记录根因及验证结果，保留视觉复测状态，不自动 commit。
+
+## 三帧终态闪回续修验证结果
+
+- 基线提交：f7c9b5d5；本轮产品修改仅 5 个 Bar 文件与现有 bar_bottom_dock_tests.cpp。
+- 独立 trellis-check 完成写事务配对、短写区、同帧状态所有权、失败捕获重试及旧帧作废需求检查；补充 RequireVisualRetry 防止静止后无请求而漏画。
+- 最终 ARM64 host 完整 InkeysRepo.sln Debug | ARM64 构建退出码 0，19.36 秒；沿用 900 秒超时及完整 PptCOM 依赖构建入口。
+- 全部 InkeysHeadlessTests.exe --no-window 退出码 0，1.89 秒，PASS animation correctness；包括旧浮动帧误确认新捕获后的微小 X/Y 直移、并发写者、迟到按下/释放、失败/跳帧种子、非恒等恢复与不同显示原点/缩放、无新输入时重试需求，以及先前问题 2、3 的回归。
+- 日志仍为 Build/ui3-bottom-dock-validation/msbuild.log 与 headless.log。git diff --check、BOM/UTF-8/CRLF 与修改范围检查通过；构建生成的无关 PptCOM.dll 差异已恢复。
+- 未启动可见 GUI，未创建 commit。问题 2、3 的用户验收保持有效；问题 1 等待同一慢速三帧场景的真实视觉复测，任务不归档。

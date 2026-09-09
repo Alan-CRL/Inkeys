@@ -188,3 +188,37 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Next Steps
 
 - 维护者复测果冻进出、PPT 按钮收起与居中吸附；任务保留 in_progress。本轮未启动 GUI，未提交 commit。
+
+
+## Session 9: 底栏捕获旧帧误确认与果冻起点修复
+<!-- trellis-session: v=2 fp=4f8f29af7824b1f5 -->
+
+**Date**: 2026-09-09
+**Task**: 底栏捕获旧帧误确认与果冻起点修复
+**Branch**: `draw`
+
+### Summary
+
+延续问题 1 三帧闪回复现，修复旧浮动帧冒用新状态序号误确认捕获，以及成功底边播入和作废候选重绘请求；问题 2、3 保持已验收状态。
+
+### Main Changes
+
+- CAS 独占发布写者；渲染仅能更新已消费且未抓取的状态，禁止持握 Free/Dragging 被写回 Stable 或旧帧确认新捕获。
+- 捕获底端从上一成功显示像素播入，保留精确初值；取消候选保留 visual demand 与完整脏区至成功。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug | ARM64：ARM64 host MSBuild，退出码 0，19.36 秒。
+- [OK] 全部 InkeysHeadlessTests.exe --no-window 通过，1.89 秒；独立审查、git diff --check、BOM/UTF-8/CRLF 检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户按同一慢速三帧场景复测问题 1；任务保持 in_progress。本轮未启动 GUI，未提交 commit。

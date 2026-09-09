@@ -6,6 +6,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace Inkeys::UI::Bar
@@ -1235,7 +1236,8 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline RECT ResolveBarBottomDockVisualEnvelope(
 		const RECT& bounds, double zoom,
-		double horizontalOutsetDip = BarBottomDockVisualLimitDip) noexcept
+		double horizontalOutsetDip = BarBottomDockVisualLimitDip,
+		double verticalOutsetDip = BarBottomDockVisualLimitDip) noexcept
 	{
 		if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
 			return {};
@@ -1244,7 +1246,8 @@ namespace Inkeys::UI::Bar
 			std::ceil(std::max(BarBottomDockVisualLimitDip,
 				std::isfinite(horizontalOutsetDip) ? horizontalOutsetDip : 0.0) * zoom));
 		const LONG verticalPadding = static_cast<LONG>(
-			std::ceil(BarBottomDockVisualLimitDip * zoom));
+			std::ceil(std::max(BarBottomDockVisualLimitDip,
+				std::isfinite(verticalOutsetDip) ? verticalOutsetDip : 0.0) * zoom));
 		return RECT{ bounds.left - horizontalPadding,
 			bounds.top - verticalPadding, bounds.right + horizontalPadding,
 			bounds.bottom + verticalPadding };
@@ -1252,14 +1255,15 @@ namespace Inkeys::UI::Bar
 
 	[[nodiscard]] inline RECT ResolveBarBottomDockCapacityEnvelope(
 		const RECT& elasticBaseBounds, double zoom,
-		double horizontalOutsetDip = BarBottomDockVisualLimitDip) noexcept
+		double horizontalOutsetDip = BarBottomDockVisualLimitDip,
+		double verticalOutsetDip = BarBottomDockVisualLimitDip) noexcept
 	{
 		if (elasticBaseBounds.right <= elasticBaseBounds.left
 			|| elasticBaseBounds.bottom <= elasticBaseBounds.top)
 			return {};
 		// 始终从未形变基线扩完整包络，不能从端点映射后的 bounds 反推。
 		return ResolveBarBottomDockVisualEnvelope(
-			elasticBaseBounds, zoom, horizontalOutsetDip);
+			elasticBaseBounds, zoom, horizontalOutsetDip, verticalOutsetDip);
 	}
 
 	[[nodiscard]] inline bool
@@ -1277,6 +1281,40 @@ namespace Inkeys::UI::Bar
 		return rawMainCenterScreenY > maximumVisibleCenterScreenY
 			&& maximumVisibleCenterScreenY
 				<= dockCenterScreenY + toleranceScreenPx;
+	}
+
+	// 所有写者先独占奇数 serial，避免两个 fetch_add 把写入中的 tuple 误标为稳定。
+	inline void BeginBarBottomDockTransition(
+		std::atomic<unsigned long long>& serial) noexcept
+	{
+		auto expected = serial.load(std::memory_order_acquire);
+		for (;;)
+		{
+			if ((expected & 1ULL) == 0 && serial.compare_exchange_weak(
+				expected, expected + 1, std::memory_order_acq_rel, std::memory_order_acquire))
+				return;
+			expected = serial.load(std::memory_order_acquire);
+		}
+	}
+
+	[[nodiscard]] inline bool TryBeginBarBottomDockFrameTransition(
+		std::atomic<unsigned long long>& serial,
+		unsigned long long consumedSerial, bool dragActive) noexcept
+	{
+		// 渲染帧只能归位自己消费过的非拖动状态；不能替更新的抓取或捕获确认屏障。
+		if (dragActive || (consumedSerial & 1ULL) != 0) return false;
+		return serial.compare_exchange_strong(consumedSerial, consumedSerial + 1,
+			std::memory_order_acq_rel, std::memory_order_acquire);
+	}
+
+	inline unsigned long long FinishBarBottomDockTransition(
+		std::atomic<unsigned long long>& serial,
+		std::atomic<unsigned long long>& deferredSerial, bool deferWindowMove) noexcept
+	{
+		const auto next = serial.load(std::memory_order_relaxed) + 1;
+		if (deferWindowMove) deferredSerial.store(next, std::memory_order_relaxed);
+		serial.store(next, std::memory_order_release);
+		return next;
 	}
 
 	[[nodiscard]] constexpr bool ShouldDeferBarBottomDockReleaseHandoff(
@@ -1332,7 +1370,8 @@ namespace Inkeys::UI::Bar
 	[[nodiscard]] inline BarBottomDockVerticalMapping
 		ResolveBarBottomDockVerticalMapping(double baseTopDip,
 			double baseBottomDip, double elasticOffsetDip,
-			double captureBottomOffsetDip = 0.0) noexcept
+			double captureBottomOffsetDip = 0.0,
+		bool preserveCaptureBottomOffset = false) noexcept
 	{
 		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
 		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
@@ -1340,10 +1379,11 @@ namespace Inkeys::UI::Bar
 		elasticOffsetDip = std::clamp(
 			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
 			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
-		captureBottomOffsetDip = std::clamp(
-			std::isfinite(captureBottomOffsetDip)
-				? captureBottomOffsetDip : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		captureBottomOffsetDip = std::isfinite(captureBottomOffsetDip) ? captureBottomOffsetDip : 0.0;
+		// 仅成功像素的捕获初值可超出常规保护，不能在映射阶段再次截断。
+		if (!preserveCaptureBottomOffset)
+			captureBottomOffsetDip = std::clamp(captureBottomOffsetDip,
+				-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
 		// 捕获首帧下端点保留原屏幕位置，再独立弹向 dock 线。
 		const double visualBottom = baseBottomDip + captureBottomOffsetDip;
 		const double visualTop = std::min(visualBottom - 0.000001,
@@ -1363,7 +1403,8 @@ namespace Inkeys::UI::Bar
 	[[nodiscard]] inline BarBottomDockVerticalMapping
 		ResolveBarBottomDockRecoveringVerticalMapping(double baseTopDip,
 			double baseBottomDip, double elasticOffsetDip,
-			double captureBottomOffsetDip = 0.0) noexcept
+			double captureBottomOffsetDip = 0.0,
+		bool preserveCaptureBottomOffset = false) noexcept
 	{
 		if (!std::isfinite(baseTopDip)) baseTopDip = 0.0;
 		if (!std::isfinite(baseBottomDip) || baseBottomDip <= baseTopDip)
@@ -1371,10 +1412,11 @@ namespace Inkeys::UI::Bar
 		elasticOffsetDip = std::clamp(
 			std::isfinite(elasticOffsetDip) ? elasticOffsetDip : 0.0,
 			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
-		captureBottomOffsetDip = std::clamp(
-			std::isfinite(captureBottomOffsetDip)
-				? captureBottomOffsetDip : 0.0,
-			-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
+		captureBottomOffsetDip = std::isfinite(captureBottomOffsetDip) ? captureBottomOffsetDip : 0.0;
+		// 仅成功像素的捕获初值可超出常规保护，不能在映射阶段再次截断。
+		if (!preserveCaptureBottomOffset)
+			captureBottomOffsetDip = std::clamp(captureBottomOffsetDip,
+				-BarBottomDockVisualLimitDip, BarBottomDockVisualLimitDip);
 		const double visualBottom = std::max(baseTopDip + 0.000001,
 			baseBottomDip - elasticOffsetDip + captureBottomOffsetDip);
 		const double baseHeight = baseBottomDip - baseTopDip;
@@ -1394,6 +1436,22 @@ namespace Inkeys::UI::Bar
 		double positionDip = 0.0;
 		double velocityDipPerSecond = 0.0;
 	};
+
+	[[nodiscard]] inline bool SeedBarBottomDockCaptureBottom(
+		BarBottomDockSpringState& spring,
+		BarBottomDockMode presentedMode, BarBottomDockMode nextMode,
+		double presentedBottomScreenY, double nextBaseBottomScreenY,
+		double zoom, bool animationsEnabled) noexcept
+	{
+		if (presentedMode != BarBottomDockMode::Floating
+			|| nextMode != BarBottomDockMode::BottomDocked) return false;
+		// 捕获从成功像素播入；被跳过的候选帧不能消费这次交接。
+		const double offset = (presentedBottomScreenY - nextBaseBottomScreenY)
+			/ NormalizeBarBottomDockZoom(zoom);
+		spring.positionDip = animationsEnabled && std::isfinite(offset) ? offset : 0.0;
+		spring.velocityDipPerSecond = 0.0;
+		return true;
+	}
 
 	struct BarBottomDockSpringResult
 	{

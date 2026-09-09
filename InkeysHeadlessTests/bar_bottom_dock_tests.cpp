@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <string_view>
+#include <thread>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
@@ -116,6 +117,205 @@ namespace
 				}
 	}
 
+	void TestOldFloatingFrameCannotAcknowledgeCapture()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool frameWasDragging : { true, false })
+		{
+			std::atomic<unsigned long long> serial{ 100 }, deferred{ 0 };
+			unsigned long long presentedSerial = 100, frameSerial = 100;
+			POINT actualTranslation{}, desiredTranslation{};
+			BarBottomDockMode presentedMode = BarBottomDockMode::Floating;
+			const auto floatingMapping = ResolveBarBottomDockRecoveringVerticalMapping(900.0, 980.0, 0.0);
+			// 旧帧已消费 Floating；捕获在它绘制/归位阶段之前夹入。
+			BeginBarBottomDockTransition(serial);
+			desiredTranslation = { 0, 20 };
+			const auto captureSerial = FinishBarBottomDockTransition(serial, deferred, true);
+			Check(captureSerial == 102, "capture publishes geometry and deferred barrier together");
+			if (TryBeginBarBottomDockFrameTransition(serial, frameSerial, frameWasDragging))
+				frameSerial = FinishBarBottomDockTransition(serial, deferred, true);
+			const auto staleFrame = ResolveBarBottomDockFramePresentation(frameSerial, {},
+				serial.load(), serial.load(), deferred.load(), presentedSerial,
+				desiredTranslation, actualTranslation);
+			Check(frameSerial == 100 && serial.load() == 102 && staleFrame.deferred,
+				"old floating or pre-press frame cannot promote itself past a newer capture");
+			if (!staleFrame.deferred) presentedSerial = frameSerial;
+
+			// 下一次只有 X 多一像素；错误确认会把旧的正常高度位图整张向下直移 20。
+			BeginBarBottomDockTransition(serial);
+			desiredTranslation.x = 1;
+			FinishBarBottomDockTransition(serial, deferred, false);
+			if (presentedSerial >= deferred.load())
+				actualTranslation = desiredTranslation;
+			Check(actualTranslation.y == 0,
+				"tiny X motion cannot carry an undeformed floating bitmap down to the dock target");
+			const double legacyTopScreen = floatingMapping.visualTopDip + desiredTranslation.y;
+			Check(legacyTopScreen == 920.0, "regression setup reproduces the former whole-bar drop");
+
+			// 生产种子入口只消费成功像素；第一个失败候选不算已经捕获。
+			BarBottomDockSpringState bottomSpring;
+			Check(SeedBarBottomDockCaptureBottom(bottomSpring, presentedMode,
+				BarBottomDockMode::BottomDocked, 980.0, 1000.0, 1.0, true),
+				"first capture candidate seeds from the successfully presented floating bottom");
+			(void)AdvanceBarBottomDockSpring(bottomSpring, 0.0, 0.032, true);
+			Check(SeedBarBottomDockCaptureBottom(bottomSpring, presentedMode,
+				BarBottomDockMode::BottomDocked, 980.0, 1000.0, 1.0, true)
+				&& Near(bottomSpring.positionDip, -20.0),
+				"skipped or failed capture cannot consume the successful-pixel seed");
+			const double gripOffset = ResolveBarBottomDockElasticOffsetForScreenGrip(
+				940.0, 940.0 + desiredTranslation.y, 1.0);
+			auto captureMapping = ResolveBarBottomDockVerticalMapping(
+				900.0, 980.0, gripOffset, bottomSpring.positionDip);
+			const auto captureFrame = ResolveBarBottomDockFramePresentation(serial.load(), desiredTranslation,
+				serial.load(), serial.load(), deferred.load(), presentedSerial,
+				desiredTranslation, actualTranslation);
+			Check(!captureFrame.deferred
+				&& Near(captureMapping.visualTopDip + captureFrame.translation.y, 900.0)
+				&& Near(captureMapping.visualBottomDip + captureFrame.translation.y, 980.0),
+				"first successful dock bitmap keeps the grip and bottom pixels while changing HWND placement");
+			presentedMode = BarBottomDockMode::BottomDocked;
+			presentedSerial = serial.load();
+			actualTranslation = captureFrame.translation;
+			Check(!SeedBarBottomDockCaptureBottom(bottomSpring, presentedMode,
+				BarBottomDockMode::BottomDocked, 980.0, 1000.0, 1.0, true),
+				"next held frame continues the committed capture instead of reseeding it");
+			(void)AdvanceBarBottomDockSpring(bottomSpring, 0.0, 1.0 / 60.0, true);
+			captureMapping = ResolveBarBottomDockVerticalMapping(900.0, 980.0, gripOffset, bottomSpring.positionDip);
+			Check(Near(captureMapping.visualTopDip + actualTranslation.y, 900.0)
+				&& captureMapping.visualBottomDip + actualTranslation.y > 980.0
+				&& captureMapping.visualBottomDip + actualTranslation.y < 1000.0,
+				"following frame keeps the pointer grip and springs only the bottom toward dock");
+		}
+	}
+
+	void TestCaptureBottomUsesSuccessfulRecoveryPixels()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (double previousZoom : { 1.0, 1.5 })
+			for (double nextZoom : { 1.0, 1.875 })
+			{
+				const auto previous = ResolveBarBottomDockRecoveringVerticalMapping(800.0, 880.0, -14.0, -4.0);
+				const double oldBottomScreen = 50.0 + previous.visualBottomDip * previousZoom - 7.0;
+				const double nextOrigin = -120.0, nextTranslation = 17.0;
+				const double nextBottomScreen = oldBottomScreen + 30.0 * nextZoom;
+				const double baseBottom = (nextBottomScreen - nextOrigin - nextTranslation) / nextZoom;
+				BarBottomDockSpringState spring{ 0.0, 100.0 };
+				Check(SeedBarBottomDockCaptureBottom(spring, BarBottomDockMode::Floating,
+					BarBottomDockMode::BottomDocked, oldBottomScreen, nextBottomScreen, nextZoom, true)
+					&& Near(spring.positionDip, -30.0),
+					"capture seed includes prior recovery, origins, zooms and translations without clipping successful pixels");
+				const auto captured = ResolveBarBottomDockVerticalMapping(
+					baseBottom - 80.0, baseBottom, -20.0, spring.positionDip, true);
+				Check(Near(captured.visualBottomDip * nextZoom + nextOrigin + nextTranslation, oldBottomScreen),
+					"first capture preserves actual old bottom rather than replacing it with current grip offset");
+				const auto recovering = ResolveBarBottomDockRecoveringVerticalMapping(
+					baseBottom - 80.0, baseBottom, 14.0, spring.positionDip, true);
+				Check(Near(recovering.visualBottomDip, baseBottom - 44.0),
+					"floating recovery preserves the exact capture-bottom term with ordinary bounded grip physics");
+				const RECT baseBounds{ 100, 400, 700, 600 };
+				const auto envelope = ResolveBarBottomDockCapacityEnvelope(baseBounds, nextZoom,
+					BarBottomDockCenterThresholdDip, BarBottomDockVisualLimitDip + std::abs(spring.positionDip));
+				Check(envelope.top <= baseBounds.top - 44.0 * nextZoom,
+					"vertical capacity covers capture seed plus floating recovery excursion");
+				(void)AdvanceBarBottomDockSpring(spring, 0.0, 0.0001, true, true);
+				Check(spring.positionDip < -29.9,
+					"capture-bottom spring decays continuously instead of clamping its first active frame to 24");
+				for (int i = 0; i < 180; ++i)
+					(void)AdvanceBarBottomDockSpring(spring, 0.0, 1.0 / 60.0, true, true);
+				Check(Near(spring.positionDip, 0.0), "capture-bottom exception still settles with unchanged force parameters");
+				(void)SeedBarBottomDockCaptureBottom(spring, BarBottomDockMode::Floating,
+					BarBottomDockMode::BottomDocked, oldBottomScreen, nextBottomScreen, nextZoom, false);
+				Check(Near(spring.positionDip, 0.0), "animation-disabled capture still applies the immediate dock geometry");
+			}
+	}
+
+	void TestBottomDockPublicationWriterOwnership()
+	{
+		using namespace Inkeys::UI::Bar;
+		std::atomic<unsigned long long> serial{ 0 }, deferred{ 0 };
+		Check(TryBeginBarBottomDockFrameTransition(serial, 0, false)
+			&& serial.load() == 1, "idle frame can claim exactly the state it consumed");
+		Check(!TryBeginBarBottomDockFrameTransition(serial, 0, false)
+			&& serial.load() == 1, "second publisher cannot turn an in-flight odd serial even");
+		FinishBarBottomDockTransition(serial, deferred, true);
+		Check(!TryBeginBarBottomDockFrameTransition(serial, 2, true)
+			&& serial.load() == 2, "held tracker owns phase even when render serial is current");
+		std::atomic<int> first{ 0 }, second{ 0 };
+		std::atomic<bool> doneA{ false }, doneB{ false };
+		auto Publish = [&](int sign, std::atomic<bool>& done)
+			{
+				for (int i = 1; i <= 200; ++i)
+				{
+					BeginBarBottomDockTransition(serial);
+					first.store(sign * i, std::memory_order_relaxed);
+					second.store(-sign * i, std::memory_order_relaxed);
+					FinishBarBottomDockTransition(serial, deferred, i % 2 == 0);
+				}
+				done.store(true);
+			};
+		std::thread a([&] { Publish(1, doneA); });
+		std::thread b([&] { Publish(-1, doneB); });
+		bool completeTuples = true;
+		while (!doneA.load() || !doneB.load())
+		{
+			const auto before = serial.load(std::memory_order_acquire);
+			if ((before & 1ULL) != 0) continue;
+			const int x = first.load(std::memory_order_relaxed), y = second.load(std::memory_order_relaxed);
+			const auto barrier = deferred.load(std::memory_order_relaxed);
+			if (serial.load(std::memory_order_acquire) == before)
+				completeTuples &= x + y == 0 && barrier <= before && (barrier & 1ULL) == 0;
+		}
+		a.join();
+		b.join();
+		Check(completeTuples && serial.load() == 802,
+			"competing input and external publishers expose only complete paired tuples and barriers");
+		Check(!TryBeginBarBottomDockFrameTransition(serial, 2, false),
+			"stale release or automatic-center frame cannot overwrite a newer fold or display tuple");
+	}
+
+	void TestInvalidatedFinalCandidateRetainsPresentationDemand()
+	{
+		using namespace Inkeys::UI::Bar;
+		const RECT window{ 0, 0, 800, 600 };
+		const RECT previous{ 100, 100, 400, 200 };
+		const RECT finalBounds{ 150, 100, 350, 200 };
+		BarDirtyRegionTracker dirty;
+		dirty.BeginFrame(window);
+		dirty.Observe(1, previous);
+		dirty.CommitPresented();
+		BarPresentDecision present(previous);
+		Check(!present.ShouldPresent(), "regression starts from idle with no pending presentation demand");
+
+		// 最后一帧几何已推进完毕，但新输入淘汰了候选；下一帧不再有动画变化。
+		dirty.BeginFrame(window);
+		dirty.MarkChanged(1);
+		dirty.Observe(1, finalBounds);
+		dirty.RetainForRetry(true);
+		present.RequireVisualRetry();
+		present.AddDemand({ false, false, false });
+		Check(present.ShouldPresent() && present.NeedsInteractivePass() && present.NeedsFullDirty()
+			&& SameBarWindowRect(dirty.ResolveDamage(false), window),
+			"invalidated last animation candidate still presents when the next frame has no new activity");
+		Check(!present.HasFailureBackoff() && SameBarWindowRect(present.LastPresentedBounds(), previous),
+			"candidate invalidation retains the successful snapshot without manufacturing a failure");
+		const auto skipped = present.CompleteAttempt(BarPresentAttemptResult::CosmeticLeaseSkipped());
+		const auto failed = present.CompleteAttempt(BarPresentAttemptResult::Acquired(
+			S_OK, TRUE, S_OK, E_FAIL, finalBounds));
+		Check(!skipped.IsCommitted() && !failed.IsCommitted() && present.ShouldPresent()
+			&& present.NeedsFullDirty() && SameBarWindowRect(present.LastPresentedBounds(), previous),
+			"deferred and failed retry retain the unpresented final candidate until success");
+		present.AddDemand({ false, true, true });
+		present.RequireVisualRetry();
+		Check(present.HasPendingLighting() && present.HasPendingRenderOnce(),
+			"visual invalidation retry preserves independent lighting and alpha-only demand");
+		const auto committed = present.CompleteAttempt(BarPresentAttemptResult::Acquired(
+			S_OK, TRUE, S_OK, S_OK, finalBounds));
+		if (committed.IsCommitted()) dirty.CommitPresented();
+		Check(committed.IsCommitted() && !present.ShouldPresent() && !present.NeedsFullDirty()
+			&& !dirty.HasPendingDamage() && SameBarWindowRect(present.LastPresentedBounds(), finalBounds),
+			"only a successful final frame clears retained demand and damage");
+	}
+
 	void TestFirstCapturePresentationAcrossNewSamples()
 	{
 		using namespace Inkeys::UI::Bar;
@@ -220,6 +420,10 @@ int RunBarBottomDockTests()
 	using namespace Inkeys::UI::Bar;
 	TestHorizontalCapturePresentedSequence();
 	TestFirstCapturePresentationAcrossNewSamples();
+	TestOldFloatingFrameCannotAcknowledgeCapture();
+	TestBottomDockPublicationWriterOwnership();
+	TestInvalidatedFinalCandidateRetainsPresentationDemand();
+	TestCaptureBottomUsesSuccessfulRecoveryPixels();
 	const RECT monitor{ 100, 50, 2020, 1130 };
 	Check(ResolveBarBottomDockLine(monitor, RECT{ 100, 50, 2020, 1082 }) == 1082.0,
 		"bottom taskbar uses work-area bottom");

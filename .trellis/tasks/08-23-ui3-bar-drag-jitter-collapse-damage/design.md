@@ -86,3 +86,29 @@ Seek sample
 独立审查发现同一手势的新采样可以发生在 D2D 几何计算之后、ULW 之前。首次居中捕获帧若使用窗口 translation=-39 与刚性抓手 +39，组合屏幕位置本应不变；下一次同模式采样令 serial 过期后，旧规则会改用 presentedTranslation=0，却保留位图中的 +39，使主按钮跳 39 DIP。竖向捕获同样受该组合影响。
 
 目的地策略必须区分已成功呈现后的纯直移与尚未上屏的形态屏障：已被当前帧覆盖、仍未提交的屏障应将位图与帧内 translation 成对提交，即使后续普通采样已推进 serial；比当前帧更新的形态/显示屏障应使旧帧放弃上屏并保留完整重试。不得简单让所有过期采样重试，否则连续输入可能饿死首次捕获呈现。
+
+## 三帧终态闪回排查边界
+
+沿 Seek 捕获发布、RenderFrame 帧快照、根节点/显示布局、纵向抓手/捕获底端弹簧、D2D 变换启用与成功快照推进检查整个序列。重点区分按帧计算的候选状态、最后成功呈现状态以及尚未被当前布局消费的共享状态；定位为何中间一帧恰好呈现稳定 dock 终态。
+
+预计只涉及 Bar.RenderLoop.cpp、Bar.BottomDock.h，若实际根因在交互/快照生产者则同步最小修复 Bar.Interaction.cpp 或 Bar.Main.cppm；复用现有 Headless 测试。保留已验收的水平抓手、居中收缩和首次转换目的地策略，不改变阈值/弹簧参数，不关闭果冻效果。
+
+### 已定位的错误序列与修复边界
+
+浮动拖动的输入会发布 Free/Dragging，而旧渲染路径强制改为 Free/Stable，并把当前旧位图的 frame serial 提升为该次写回的新 serial。例：旧浮动画面 S100/位移0；输入捕获 S102/barrier102/竖向位移20；旧渲染写回阶段并冒充 S104 后提交旧画面。Seek 错误确认 barrier102 已显示，下一次轻微 X 移动会同时把尚未呈现的 Y=20 直移到旧无形变位图上。下一张正确形变位图到来后又恢复抓手，与三帧截图吻合。
+
+修复限定在 Bar.BottomDock.h、Bar.Main.cppm、Bar.Interaction.cpp、Bar.RenderLoop.cpp 与现有 bar_bottom_dock_tests.cpp：发布者以 CAS 独占短暂写事务；渲染自动写回仅在无抓取且仍持有所消费 serial 时可发生；按住时 Free/Dragging 阶段由交互侧拥有，禁止无意义的 Stable 写回或程序化居中。写回资格失效的候选不得伪装为新 serial 上屏。显示位置所有权使用同帧拖动快照；纵向捕获初始化从上一成功显示模式/端点播入，不让未提交候选消耗捕获事件。
+
+新增回归须串联真实发布 helper、呈现资格、barrier 确认和下一次 X/Y 直移；另外覆盖写者交错、捕获候选被丢弃/失败、恢复中重捕获，保持此前问题 2、3 的回归通过。
+
+### 纵向捕获初值的最小连续性例外
+
+若上一成功底边尚在 dock 上方 30 DIP，下一输入到达 20 DIP 捕获带时，中间可以没有任何成功呈现。新捕获底端必须从 -30 DIP 播入；按 24 DIP 截断会凭空移动 6 DIP。恢复中的非恒等映射也存在同类组合。
+
+只对 capture-bottom 项保留精确旧像素初值并用既有 preservePresentedOffset 连续衰减，普通竖向抓手输入仍受 24 DIP 保护，20 DIP 捕获阈值及原频率/阻尼不变。Docked 与 Floating recovery 消费同一捕获底端语义；capacity/viewport 纳入实际捕获底端范围和原有竖向抓手范围。
+
+### 作废候选仍须保留呈现需求
+
+独立检查确认：早于 PrepareLightingAndDemand 的作废分支即使保留 dirty，也不一定留下 ShouldPresent 所需的请求；RequireFullDirtyRetry 只改变清除范围。末次动画值已在废弃候选中推进完毕时，下一帧可能直接 idle。
+
+增加 Bar.PresentDecision.h 中的窄入口 RequireVisualRetry，同时保留 visual demand 与 full dirty，作废分支和无窗口回归共用这一动作。不会修改普通 RequireFullDirtyRetry 的既有含义，也不清除已有光影/透明度请求。这是本轮唯一额外涉及的 Bar 文件。

@@ -342,6 +342,13 @@ namespace Inkeys::UI::Bar
 			fullDirtyRequired = true;
 		}
 
+		constexpr void RequireVisualRetry() noexcept
+		{
+			// 候选已推进到动画终点时，脏区本身不能唤起下一次呈现。
+			AddDemand({ true, false, false });
+			RequireFullDirtyRetry();
+		}
+
 		[[nodiscard]] constexpr BarPresentCompletion CompleteAttempt(
 			const BarPresentAttemptResult& result,
 			std::uint64_t deviceGeneration = 0,

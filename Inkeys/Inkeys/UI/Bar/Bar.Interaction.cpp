@@ -6074,7 +6074,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	if (presentedStateRebaseRequired)
 	{
 		// 上一手势可能尚未提交 ULW；新手势先撤回到同一份已呈现 tuple。
-		bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		BeginBottomDockTransition();
 		bottomDockMode.store(initialMode, memory_order_relaxed);
 		bottomDockPhase.store(initialPhase, memory_order_relaxed);
 		bottomDockRecoveryActive.store(
@@ -6181,7 +6181,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		initialMode == BarBottomDockMode::BottomDocked,
 		!barState.fold, environment);
 	bool dockIndicatorGestureActive = false;
-	bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+	BeginBottomDockTransition();
 	bottomDockDragRigidGripScreenX.store(
 		startPointer.x - grabOffsetScreenX, memory_order_relaxed);
 	bottomDockDragRigidGripScreenY.store(
@@ -6200,7 +6200,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		|| presentedStateRebaseRequired)
 		bottomDockElasticOffsetDip.store(
 			initialPresentedElasticDip, memory_order_relaxed);
-	(void)bottomDockTransitionSerial.fetch_add(1, memory_order_release);
+	(void)FinishBottomDockTransition();
 	UpdateRendering(false);
 
 	double maximumElasticTravelScreen = 0.0;
@@ -6213,7 +6213,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	auto PublishPresentationBarrier = [&](POINT pointer)
 		{
 			// 缩放或显示参数改变时，先让 ULW 提交新尺寸，再允许直移旧位图。
-			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+			BeginBottomDockTransition();
 			// 显示屏障也成对发布抓手坐标，不能让首帧混用旧 X 和新 Y。
 			bottomDockDragRigidGripScreenX.store(
 				pointer.x - grabOffsetScreenX, memory_order_relaxed);
@@ -6452,7 +6452,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			const bool anyModeChanged = dockUpdate.modeChanged
 				|| centerUpdate.modeChanged;
 			// 每个采样都用同一个 seqlock tuple 发布抓手、两轴映射和窗口位移。
-			bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+			BeginBottomDockTransition();
 			bottomDockDragRigidGripScreenX.store(
 				pointer.x - grabOffsetScreenX, memory_order_relaxed);
 			bottomDockDragRigidGripScreenY.store(
@@ -6580,7 +6580,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	{
 		// 直接移动失败时以最后一次真实上屏 tuple 为准，不能回到手势开始时的旧快照。
 		const auto rollbackSnapshot = BottomDockPresentedSnapshot();
-		bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		BeginBottomDockTransition();
 		bottomDockMode.store(rollbackSnapshot.mode, memory_order_relaxed);
 		bottomDockPhase.store(rollbackSnapshot.phase, memory_order_relaxed);
 		bottomDockElasticOffsetDip.store(
@@ -6622,7 +6622,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			memory_order_acquire) != finalMode
 			|| bottomDockCenterMode.load(memory_order_acquire)
 				!= finalCenterMode;
-		bottomDockTransitionSerial.fetch_add(1, memory_order_acq_rel);
+		BeginBottomDockTransition();
 		bottomDockMode.store(finalMode, memory_order_release);
 		bottomDockPhase.store(needsRecovery
 			? BarBottomDockPhase::Recovering
