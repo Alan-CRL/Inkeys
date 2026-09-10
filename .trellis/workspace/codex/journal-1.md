@@ -222,3 +222,37 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Next Steps
 
 - 用户按同一慢速三帧场景复测问题 1；任务保持 in_progress。本轮未启动 GUI，未提交 commit。
+
+
+## Session 10: 采用用户认可的底栏基线并结案
+<!-- trellis-session: v=2 fp=ef51aaee7565def3 -->
+
+**Date**: 2026-09-10
+**Task**: 采用用户认可的底栏基线并结案
+**Branch**: `draw`
+
+### Summary
+
+用户对比后选择342990fe为最终结果；draw撤回后续调试输出和额外修复，完成验证、提交及任务归档。
+
+### Main Changes
+
+- 产品源码、测试、工程和spec与codex/bottom-dock-before-trace一致，保留Git历史。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `24efcde4` | revert: restore accepted bottom dock baseline |
+
+### Testing
+
+- [OK] 独立只读复核通过；ARM64 host完整Solution Debug|ARM64 exit0/108.69秒，全部--no-window exit0/2.36秒。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本问题已按用户最终验收关闭；不继续调试或追加修复。
