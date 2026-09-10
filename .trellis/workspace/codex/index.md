@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
-- **Last Active**: 2026-09-09
+- **Total Sessions**: 11
+- **Last Active**: 2026-09-10
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~224 | Active |
+| `journal-1.md` | ~292 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-09-10 | 底栏实机轨迹驱动的抓点与恢复修复 | - | `draw` |
+| 10 | 2026-09-09 | 底栏问题1临时运行追踪版 | - | `draw` |
 | 9 | 2026-09-09 | 底栏捕获旧帧误确认与果冻起点修复 | - | `draw` |
 | 8 | 2026-09-09 | 主栏底栏显示续修与回归验证 | - | `draw` |
 | 7 | 2026-08-31 | Restore PPT end show action | `07b0c208` | `draw` |

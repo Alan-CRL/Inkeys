@@ -11,6 +11,7 @@
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.BottomDock.h"
+#include "Bar.BottomDockTrace.h"
 #include "Bar.WindowGeometry.h"
 
 #ifdef MessageBox
@@ -5980,6 +5981,9 @@ bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 // 拖动交互
 BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 {
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+	namespace Trace = Inkeys::UI::Bar::BottomDockTrace;
+#endif
 	using namespace Inkeys::UI::Bar;
 	BarSeekResult result;
 	if (IsBottomDockIndicatorPresentedAt(msg.x, msg.y))
@@ -6128,8 +6132,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	unsigned long long requestedDisplaySerial = initialDisplaySnapshot.serial;
 	double requestedDisplayZoom = initialTargetZoom;
 	const double bodyHeightDip = 80.0;
-	const double strokeWidthDip = mainButton->ft.has_value()
-		? max(0.0, static_cast<double>(mainButton->ft.value().tar)) : 0.0;
+	const double strokeWidthDip = max(0.0, initialPresentedSnapshot.mainStrokeDip);
 	const double visibleHalfWidthDip = mainButton->GetW() / 2.0
 		+ strokeWidthDip / 2.0;
 	auto VisibleHalfHeightScreen = [&]()
@@ -6161,9 +6164,20 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	const double actualMainCenterScreenY =
 		initialPresentedSnapshot.mainCenterScreenY;
 	double grabOffsetScreenX = startPointer.x - actualMainCenterScreenX;
-	double grabOffsetScreenY = startPointer.y
-		- (actualMainCenterScreenY
-			+ initialPresentedSnapshot.rigidTranslationDip * presentedZoom);
+	const double initialRootYDip = (actualMainCenterScreenY - initialMonitorOrigin.y
+		- initialPresentedTranslation.y) / presentedZoom;
+	const auto grabAnchor = ResolveBarBottomDockGrabAnchor(initialPresentedSnapshot.mapping,
+		initialRootYDip, initialPresentedSnapshot.mainHeightDip, startPointer.y,
+		initialMonitorOrigin.y, initialPresentedTranslation.y, presentedZoom);
+	if (!grabAnchor.valid)
+	{
+		result.allowClick = false;
+		FinishDirectWindowDrag();
+		if (!offSignal) UpdateRendering(false);
+		return result;
+	}
+	// 分类使用未形变的正常主体；实际抓点比例始终来自同一成功图像。
+	double grabOffsetScreenY = (grabAnchor.normalizedY - 0.5) * bodyHeightDip * interactionZoom;
 	const double initialFloatingVisibleBottomScreenY =
 		startPointer.y - grabOffsetScreenY + VisibleHalfHeightScreen();
 		const double initialDockCenterScreenY = ResolveBarBottomDockCenterScreenY(
@@ -6180,8 +6194,80 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		initialPresentedSnapshot.rawBodyCenterScreenX,
 		initialMode == BarBottomDockMode::BottomDocked,
 		!barState.fold, environment);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+	Trace::Record traceInput;
+	traceInput.groups = Trace::State | Trace::Environment | Trace::Input | Trace::Window | Trace::Geometry;
+	traceInput.flags = touchGesture ? Trace::Touch : 0;
+	traceInput.drag = true;
+	traceInput.opensRight = barState.widgetPosition.mainBar;
+	auto TracePresented = [&](const BarBottomDockPresentedSnapshot& snapshot)
+		{
+			traceInput.mode = static_cast<unsigned>(snapshot.mode);
+			traceInput.phase = static_cast<unsigned>(snapshot.phase);
+			traceInput.centerMode = static_cast<unsigned>(snapshot.centerMode);
+			traceInput.centerPhase = static_cast<unsigned>(snapshot.centerPhase);
+			traceInput.recovery = snapshot.recoveryActive;
+			traceInput.elasticInputDip = { snapshot.elasticOffsetDip, snapshot.centerElasticOffsetDip };
+			traceInput.presentedSerial = snapshot.transitionSerial;
+			traceInput.displaySerial = snapshot.displaySerial;
+			traceInput.monitor = snapshot.monitorBounds; traceInput.workArea = snapshot.workArea;
+			traceInput.monitorOrigin = snapshot.monitorOrigin; traceInput.dpi = snapshot.dpi;
+			traceInput.zoom = snapshot.zoom;
+			traceInput.actual = snapshot.directTranslation;
+			traceInput.baseY = { snapshot.mapping.baseTopDip, snapshot.mapping.baseBottomDip };
+			traceInput.visualY = { snapshot.mapping.visualTopDip, snapshot.mapping.visualBottomDip };
+			traceInput.scaleY = snapshot.mapping.scaleY;
+			traceInput.translationY = snapshot.mapping.visualTopDip - snapshot.mapping.baseTopDip * snapshot.mapping.scaleY;
+			traceInput.horizontal = { snapshot.horizontalMapping.baseLeftDip, snapshot.horizontalMapping.baseRightDip,
+				snapshot.horizontalMapping.visualLeftDip, snapshot.horizontalMapping.visualRightDip,
+				snapshot.horizontalMapping.scaleX, snapshot.horizontalMapping.rigidGripTranslationXDip };
+			traceInput.root = { (snapshot.rawMainCenterScreenX - snapshot.monitorOrigin.x - snapshot.directTranslation.x)
+				/ snapshot.zoom - snapshot.horizontalMapping.rigidGripTranslationXDip,
+				(snapshot.mainCenterScreenY - snapshot.monitorOrigin.y - snapshot.directTranslation.y) / snapshot.zoom };
+		};
+	TracePresented(initialPresentedSnapshot);
+	traceInput.pointer = { static_cast<double>(startPointer.x), static_cast<double>(startPointer.y) };
+	traceInput.grabOffset = { grabOffsetScreenX, grabOffsetScreenY };
+	traceInput.rawGrip = { startPointer.x - grabOffsetScreenX, startPointer.y - grabOffsetScreenY };
+	traceInput.configZoom = static_cast<double>(barStyle.configZoom);
+	traceInput.insetDip = environment.insetDip;
+	traceInput.dpiScale = environment.dpiScale;
+	traceInput.dockLine = ResolveBarBottomDockLine(environment.monitorBounds, environment.workArea,
+		environment.insetDip, environment.dpiScale);
+	traceInput.desired = { appliedDeltaX, appliedDeltaY };
+	traceInput.consumedSerial = initialPresentedSnapshot.transitionSerial;
+	traceInput.deferredSerial = gestureRebaseSerial ? gestureRebaseSerial : deferredTransitionBeforeGesture;
+	// 基准读取也只尝试几何锁；竞争或未完成 ULW 时明确记录基准不可用。
+	{
+		unique_lock traceLock(directWindowDragMutex, try_to_lock);
+		RECT actualWindow{};
+		if (traceLock.owns_lock() && committedWindowScreenBoundsReady
+			&& Trace::ReadWindow(floating_window, actualWindow))
+		{
+			traceInput.flags |= Trace::OsWindowValid;
+			traceInput.osWindow = actualWindow;
+			traceInput.cachedWindow = committedWindowScreenBounds;
+		}
+		traceInput.gesture = Trace::Get().BeginGesture(traceInput, actualWindow);
+	}
+#endif
+	const double initialNormalCenterY = clamp(startPointer.y - grabOffsetScreenY,
+		environment.monitorBounds.top + VisibleHalfHeightScreen(),
+		max(environment.monitorBounds.top + VisibleHalfHeightScreen(),
+			static_cast<double>(environment.monitorBounds.bottom) - VisibleHalfHeightScreen()));
+	double effectivePointerScreenY = initialMode == BarBottomDockMode::BottomDocked
+		? clamp(static_cast<double>(startPointer.y), static_cast<double>(environment.monitorBounds.top), static_cast<double>(environment.monitorBounds.bottom))
+		: initialNormalCenterY + grabOffsetScreenY;
+	appliedDeltaY = static_cast<LONG>(lround((initialMode == BarBottomDockMode::BottomDocked
+		? initialDockCenterScreenY : initialNormalCenterY) - baseMainCenterScreenY));
 	bool dockIndicatorGestureActive = false;
 	BeginBottomDockTransition();
+	directWindowDragTranslationY.store(appliedDeltaY, memory_order_relaxed);
+	bottomDockDragPointerScreenY.store(startPointer.y, memory_order_relaxed);
+	bottomDockDragEffectivePointerScreenY.store(effectivePointerScreenY, memory_order_relaxed);
+	bottomDockDragGrabNormalizedY.store(grabAnchor.normalizedY, memory_order_relaxed);
+	bottomDockDragGrabAnchorValid.store(true, memory_order_relaxed);
+	bottomDockDragSession.fetch_add(1, memory_order_relaxed);
 	bottomDockDragRigidGripScreenX.store(
 		startPointer.x - grabOffsetScreenX, memory_order_relaxed);
 	bottomDockDragRigidGripScreenY.store(
@@ -6200,7 +6286,15 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		|| presentedStateRebaseRequired)
 		bottomDockElasticOffsetDip.store(
 			initialPresentedElasticDip, memory_order_relaxed);
-	(void)FinishBottomDockTransition();
+	// 重新抓取恢复中的形状时，正常基准可能改变；首图与位移必须成对上屏。
+	const auto grabTransitionSerial = FinishBottomDockTransition(true);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+	traceInput.event = Trace::Event::Pointer;
+	traceInput.snapshotQpc = Trace::Now();
+	traceInput.consumedSerial = traceInput.currentSerial = traceInput.deferredSerial = grabTransitionSerial;
+	traceInput.desired = { appliedDeltaX, appliedDeltaY };
+	Trace::Get().Push(traceInput);
+#endif
 	UpdateRendering(false);
 
 	double maximumElasticTravelScreen = 0.0;
@@ -6209,7 +6303,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	bool downwardDetachSeen = false;
 	bool downwardDetachBlockedAtRelease = false;
 	bool gestureCancelled = false;
-	unsigned long long awaitedTransitionSerial = gestureRebaseSerial;
+	unsigned long long awaitedTransitionSerial = grabTransitionSerial;
 	auto PublishPresentationBarrier = [&](POINT pointer)
 		{
 			// 缩放或显示参数改变时，先让 ULW 提交新尺寸，再允许直移旧位图。
@@ -6219,8 +6313,14 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				pointer.x - grabOffsetScreenX, memory_order_relaxed);
 			bottomDockDragRigidGripScreenY.store(
 				pointer.y - grabOffsetScreenY, memory_order_relaxed);
+			bottomDockDragPointerScreenY.store(pointer.y, memory_order_relaxed);
+			bottomDockDragEffectivePointerScreenY.store(effectivePointerScreenY, memory_order_relaxed);
+			bottomDockDragGrabNormalizedY.store(grabAnchor.normalizedY, memory_order_relaxed);
 			const auto barrierSerial = FinishBottomDockTransition(true);
 			awaitedTransitionSerial = barrierSerial;
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+			traceInput.deferredSerial = barrierSerial;
+#endif
 			UpdateRendering(false);
 		};
 	struct DockPublication
@@ -6293,6 +6393,9 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 
 	auto ApplyAbsolutePointer = [&](POINT pointer)
 		{
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+			traceInput.snapshotQpc = Trace::Now();
+#endif
 			const double stepX = static_cast<double>(pointer.x - previousPointer.x);
 			const double stepY = static_cast<double>(pointer.y - previousPointer.y);
 			const double stepLength = hypot(stepX, stepY);
@@ -6310,9 +6413,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 					bodyToMainCenterScreenX = presented.rawBodyCenterScreenX
 						- presented.rawMainCenterScreenX;
 					grabOffsetScreenX = pointer.x - presented.rawMainCenterScreenX;
-					grabOffsetScreenY = pointer.y
-						- (presented.mainCenterScreenY
-							+ presented.rigidTranslationDip * presented.zoom);
+					grabOffsetScreenY = (grabAnchor.normalizedY - 0.5) * bodyHeightDip * interactionZoom;
 					const double floatingBottom = pointer.y - grabOffsetScreenY
 						+ VisibleHalfHeightScreen();
 						const double dockCenter = ResolveBarBottomDockCenterScreenY(
@@ -6355,6 +6456,13 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				// 真实上屏的环境立即接管阈值；形态 barrier 可继续等待自己的 serial。
 				AdoptPresentedEnvironment(presented);
 				RebasePointerForPresentedEnvironment(presented);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+				TracePresented(presented);
+				traceInput.event = Trace::Event::EnvironmentRebase;
+				traceInput.pointer = { static_cast<double>(pointer.x), static_cast<double>(pointer.y) };
+				traceInput.grabOffset = { grabOffsetScreenX, grabOffsetScreenY };
+				Trace::Get().Push(traceInput);
+#endif
 				displayEnvironmentAwaited = false;
 			}
 			if (awaitedTransitionSerial != 0
@@ -6443,6 +6551,9 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			if (dockUpdate.mode == BarBottomDockMode::BottomDocked)
 				downwardDetachBlockedAtRelease = false;
 
+			effectivePointerScreenY = dockUpdate.mode == BarBottomDockMode::BottomDocked
+				? clamp(static_cast<double>(pointer.y), static_cast<double>(environment.monitorBounds.top), static_cast<double>(environment.monitorBounds.bottom))
+				: desiredMainCenterScreenY + grabOffsetScreenY;
 			const LONG pixelDeltaX = static_cast<LONG>(lround(
 				desiredMainCenterScreenX - baseMainCenterScreenX));
 			const LONG pixelDeltaY = static_cast<LONG>(lround(
@@ -6457,6 +6568,9 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 				pointer.x - grabOffsetScreenX, memory_order_relaxed);
 			bottomDockDragRigidGripScreenY.store(
 				pointer.y - grabOffsetScreenY, memory_order_relaxed);
+			bottomDockDragPointerScreenY.store(pointer.y, memory_order_relaxed);
+			bottomDockDragEffectivePointerScreenY.store(effectivePointerScreenY, memory_order_relaxed);
+			bottomDockDragGrabNormalizedY.store(grabAnchor.normalizedY, memory_order_relaxed);
 			if (translationChanged)
 			{
 				directWindowDragTranslationX.store(
@@ -6466,6 +6580,30 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			}
 			const DockPublication publication = PublishDockUpdate(
 				dockUpdate, centerUpdate);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+			TracePresented(presented);
+			traceInput.event = Trace::Event::Pointer;
+			traceInput.pointer = { static_cast<double>(pointer.x), static_cast<double>(pointer.y) };
+			traceInput.grabOffset = { grabOffsetScreenX, grabOffsetScreenY };
+			traceInput.rawGrip = { pointer.x - grabOffsetScreenX, pointer.y - grabOffsetScreenY };
+			traceInput.zoom = interactionZoom;
+			traceInput.insetDip = environment.insetDip;
+			traceInput.dpiScale = environment.dpiScale;
+			traceInput.dockLine = dockUpdate.dockLineScreenY;
+			traceInput.mode = static_cast<unsigned>(dockUpdate.mode);
+			traceInput.phase = static_cast<unsigned>(dockUpdate.phase);
+			traceInput.centerMode = static_cast<unsigned>(centerUpdate.mode);
+			traceInput.centerPhase = static_cast<unsigned>(centerUpdate.phase);
+			traceInput.drag = true;
+			traceInput.elasticInputDip = { dockUpdate.elasticOffsetDip, centerUpdate.elasticOffsetDip };
+			traceInput.desired = { pixelDeltaX, pixelDeltaY };
+			traceInput.consumedSerial = traceInput.currentSerial = publication.transitionSerial;
+			if (anyModeChanged) traceInput.deferredSerial = publication.transitionSerial;
+			traceInput.flags &= ~(Trace::Captured | Trace::Detached | Trace::OsWindowValid);
+			if (dockUpdate.captured || centerUpdate.captured) traceInput.flags |= Trace::Captured;
+			if (dockUpdate.detached || centerUpdate.detached) traceInput.flags |= Trace::Detached;
+			Trace::Get().Push(traceInput);
+#endif
 			if (anyModeChanged)
 			{
 				// 捕获/脱离必须先由 ULW 同帧提交新位图和新位置，
@@ -6476,6 +6614,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			if (translationChanged)
 			{
 				const bool deferDirectMove = awaitedTransitionSerial != 0;
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+				Trace::Record directTrace = traceInput;
+				directTrace.event = Trace::Event::DirectMove;
+				directTrace.groups |= Trace::Result;
+				directTrace.reason = deferDirectMove ? Trace::BarrierPending : Trace::GeometryBusy;
+#endif
 				if (!deferDirectMove)
 				{
 					unique_lock lock(directWindowDragMutex, try_to_lock);
@@ -6489,12 +6633,27 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							directWindowPresentedTranslationY.load(memory_order_acquire) };
 						const POINT moveDelta = ResolveBarDirectWindowMoveDelta(
 							desiredTranslation, presentedTranslation);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+						directTrace.cachedWindow = currentWindowRect;
+						directTrace.actual = presentedTranslation;
+						directTrace.reason = Trace::None;
+						if (moveDelta.x != 0 || moveDelta.y != 0)
+						{
+							directTrace.flags |= Trace::WindowApiAttempted;
+							directTrace.submitQpc = Trace::Now();
+						}
+#endif
 						if ((moveDelta.x != 0 || moveDelta.y != 0)
 							&& !SetWindowPos(floating_window, nullptr,
 								currentWindowRect.left + moveDelta.x,
 								currentWindowRect.top + moveDelta.y, 0, 0,
 								SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE))
 						{
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+							directTrace.winError = GetLastError();
+							directTrace.reason = Trace::ApiFailure;
+							Trace::Get().Push(directTrace);
+#endif
 							directMoveFailed = true;
 							return false;
 						}
@@ -6503,6 +6662,11 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							committedWindowScreenBounds = TranslateBarWindowRect(
 								currentWindowRect, moveDelta);
 							committedWindowScreenBoundsReady = true;
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+							directTrace.cachedWindow = committedWindowScreenBounds;
+							directTrace.actual = desiredTranslation;
+							directTrace.committed = true;
+#endif
 							RebaseBottomDockPresentedWindow(
 								desiredTranslation, moveDelta);
 							// 第三光源接受区是屏幕缓存，HWND 直移后同步平移，不能等下一次 ULW。
@@ -6519,9 +6683,18 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 							}
 						}
 					}
-					else requestRendering = true;
+					else
+					{
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+						if (lock.owns_lock()) directTrace.reason = Trace::GeometryUnavailable;
+#endif
+						requestRendering = true;
+					}
 				}
 				else requestRendering = true;
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+				Trace::Get().Push(directTrace);
+#endif
 				appliedDeltaX = pixelDeltaX;
 				appliedDeltaY = pixelDeltaY;
 			}
@@ -6580,7 +6753,13 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 	{
 		// 直接移动失败时以最后一次真实上屏 tuple 为准，不能回到手势开始时的旧快照。
 		const auto rollbackSnapshot = BottomDockPresentedSnapshot();
+		const double rollbackRoot = (rollbackSnapshot.mainCenterScreenY - rollbackSnapshot.monitorOrigin.y
+			- rollbackSnapshot.directTranslation.y) / rollbackSnapshot.zoom;
+		const double rollbackGrab = rollbackSnapshot.monitorOrigin.y + rollbackSnapshot.directTranslation.y
+			+ rollbackSnapshot.mapping.MapY(rollbackRoot + (grabAnchor.normalizedY - 0.5)
+				* rollbackSnapshot.mainHeightDip) * rollbackSnapshot.zoom;
 		BeginBottomDockTransition();
+		bottomDockDragEffectivePointerScreenY.store(rollbackGrab, memory_order_relaxed);
 		bottomDockMode.store(rollbackSnapshot.mode, memory_order_relaxed);
 		bottomDockPhase.store(rollbackSnapshot.phase, memory_order_relaxed);
 		bottomDockElasticOffsetDip.store(
@@ -6599,7 +6778,12 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			rollbackSnapshot.directTranslation.y, memory_order_relaxed);
 		bottomDockDragActive.store(false, memory_order_relaxed);
 		bottomDockIndicatorGestureEligible.store(false, memory_order_relaxed);
-		(void)FinishBottomDockTransition(true);
+		[[maybe_unused]] const auto traceReleaseSerial = FinishBottomDockTransition(true);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+		TracePresented(rollbackSnapshot);
+		traceInput.consumedSerial = traceInput.currentSerial = traceReleaseSerial;
+		traceInput.deferredSerial = traceReleaseSerial;
+#endif
 	}
 	else
 	{
@@ -6607,12 +6791,10 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		centerTracker.End();
 		const BarBottomDockMode finalMode = downwardDetachBlockedAtRelease
 			? BarBottomDockMode::BottomDocked : dockTracker.Mode();
-		const double currentVisualOffset =
-			BottomDockPresentedSnapshot().elasticOffsetDip;
-		const bool needsRecovery = abs(currentVisualOffset)
-			> BarBottomDockSettleDistanceDip
-			|| abs(dockTracker.ElasticOffsetDip())
-				> BarBottomDockSettleDistanceDip;
+		const auto releaseSnapshot = BottomDockPresentedSnapshot();
+		// Free 的高度恢复可以没有抓点位移，不能仅凭输入 e=0 提前解除布局锁。
+		const bool needsRecovery = ShouldRecoverBarBottomDockOnRelease(releaseSnapshot.mapping,
+			releaseSnapshot.recoveryActive, releaseSnapshot.elasticOffsetDip, dockTracker.ElasticOffsetDip());
 		const BarBottomDockCenterMode finalCenterMode =
 			finalMode == BarBottomDockMode::BottomDocked && !barState.fold
 				? centerTracker.Mode() : BarBottomDockCenterMode::Free;
@@ -6640,8 +6822,26 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 			? centerTracker.ElasticOffsetDip() : 0.0, memory_order_release);
 		bottomDockDragActive.store(false, memory_order_relaxed);
 		bottomDockIndicatorGestureEligible.store(false, memory_order_relaxed);
-		(void)FinishBottomDockTransition(releaseModeChanged);
+		[[maybe_unused]] const auto traceReleaseSerial = FinishBottomDockTransition(releaseModeChanged);
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+		traceInput.consumedSerial = traceInput.currentSerial = traceReleaseSerial;
+		if (releaseModeChanged) traceInput.deferredSerial = traceReleaseSerial;
+		traceInput.mode = static_cast<unsigned>(finalMode);
+		traceInput.phase = static_cast<unsigned>(needsRecovery ? BarBottomDockPhase::Recovering : BarBottomDockPhase::Stable);
+		traceInput.centerMode = static_cast<unsigned>(finalCenterMode);
+		traceInput.centerPhase = static_cast<unsigned>(centerNeedsRecovery ? BarBottomDockPhase::Recovering : BarBottomDockPhase::Stable);
+		traceInput.recovery = finalMode == BarBottomDockMode::Floating && needsRecovery;
+		traceInput.elasticInputDip = { needsRecovery ? dockTracker.ElasticOffsetDip() : 0.0,
+			centerNeedsRecovery ? centerTracker.ElasticOffsetDip() : 0.0 };
+#endif
 	}
+#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
+	traceInput.drag = false;
+	traceInput.reason = gestureCancelled ? Trace::Cancelled : (directMoveFailed ? Trace::ApiFailure : Trace::None);
+	traceInput.pointer = { static_cast<double>(previousPointer.x), static_cast<double>(previousPointer.y) };
+	traceInput.event = Trace::Event::GestureEnd;
+	Trace::Get().EndGesture(traceInput);
+#endif
 	FinishDirectWindowDrag();
 	// 松手只发布接管请求；布局值由渲染线程吸收，避免和动画线程并发写对象。
 	if (!offSignal) UpdateRendering(false);

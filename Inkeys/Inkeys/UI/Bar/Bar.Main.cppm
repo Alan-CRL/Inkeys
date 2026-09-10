@@ -327,6 +327,9 @@ struct BarBottomDockPresentedSnapshot
 	POINT directTranslation{};
 	double mainCenterScreenX = 0.0;
 	double mainCenterScreenY = 0.0;
+	double mainHeightDip = 0.0, mainWidthDip = 0.0, mainStrokeDip = 0.0;
+	bool dragActive = false, grabAnchorValid = false;
+	unsigned long long dragSession = 0;
 	double rawMainCenterScreenX = 0.0;
 	double bodyCenterScreenX = 0.0;
 	double visualBodyCenterScreenX = 0.0;
@@ -537,6 +540,12 @@ public:
 				bottomDockPresentedMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.mainCenterScreenY =
 				bottomDockPresentedMainCenterScreenY.load(memory_order_relaxed);
+			snapshot.mainHeightDip = bottomDockPresentedMainHeightDip.load(memory_order_relaxed);
+			snapshot.mainWidthDip = bottomDockPresentedMainWidthDip.load(memory_order_relaxed);
+			snapshot.mainStrokeDip = bottomDockPresentedMainStrokeDip.load(memory_order_relaxed);
+			snapshot.dragActive = bottomDockPresentedDragActive.load(memory_order_relaxed);
+			snapshot.grabAnchorValid = bottomDockPresentedGrabAnchorValid.load(memory_order_relaxed);
+			snapshot.dragSession = bottomDockPresentedDragSession.load(memory_order_relaxed);
 			snapshot.rawMainCenterScreenX =
 				bottomDockPresentedRawMainCenterScreenX.load(memory_order_relaxed);
 			snapshot.bodyCenterScreenX =
@@ -729,13 +738,35 @@ protected:
 	}
 	// 调用方持有 directWindowDragMutex；直移只重基准屏幕位置，不改变已呈现位图。
 	void RebaseBottomDockPresentedWindow(POINT directTranslation,
-		POINT screenDelta = {}) noexcept
+		POINT screenDelta = {}, POINT layoutTranslation = {}) noexcept
 	{
+		const auto before = BottomDockPresentedSnapshot();
+		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_acq_rel);
 		directWindowPresentedTranslationX.store(
 			directTranslation.x, memory_order_relaxed);
 		directWindowPresentedTranslationY.store(
 			directTranslation.y, memory_order_relaxed);
-		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_acq_rel);
+		if (layoutTranslation.x != 0 || layoutTranslation.y != 0)
+		{
+			// 吸收只换布局坐标系：映射两端同步平移，T 抵消后屏幕像素保持原位。
+			auto vertical = before.mapping;
+			auto horizontal = before.horizontalMapping;
+			Inkeys::UI::Bar::RebaseBarBottomDockMapping(vertical, horizontal,
+				layoutTranslation.x / before.zoom, layoutTranslation.y / before.zoom);
+			bottomDockPresentedBaseTopDip.store(vertical.baseTopDip, memory_order_relaxed);
+			bottomDockPresentedBaseBottomDip.store(vertical.baseBottomDip, memory_order_relaxed);
+			bottomDockPresentedVisualTopDip.store(vertical.visualTopDip, memory_order_relaxed);
+			bottomDockPresentedVisualBottomDip.store(vertical.visualBottomDip, memory_order_relaxed);
+			bottomDockPresentedRigidGripYDip.store(vertical.rigidGripYDip, memory_order_relaxed);
+			bottomDockPresentedBaseLeftDip.store(horizontal.baseLeftDip, memory_order_relaxed);
+			bottomDockPresentedBaseRightDip.store(horizontal.baseRightDip, memory_order_relaxed);
+			bottomDockPresentedVisualLeftDip.store(horizontal.visualLeftDip, memory_order_relaxed);
+			bottomDockPresentedVisualRightDip.store(horizontal.visualRightDip, memory_order_relaxed);
+			bottomDockIndicatorPresentedLeft.store(before.indicatorBounds.left + layoutTranslation.x, memory_order_relaxed);
+			bottomDockIndicatorPresentedRight.store(before.indicatorBounds.right + layoutTranslation.x, memory_order_relaxed);
+			bottomDockIndicatorPresentedTop.store(before.indicatorBounds.top + layoutTranslation.y, memory_order_relaxed);
+			bottomDockIndicatorPresentedBottom.store(before.indicatorBounds.bottom + layoutTranslation.y, memory_order_relaxed);
+		}
 		bottomDockPresentedDirectTranslationX.store(
 			directTranslation.x, memory_order_relaxed);
 		bottomDockPresentedDirectTranslationY.store(
@@ -760,6 +791,8 @@ protected:
 			bottomDockPresentedRawBodyCenterScreenX.load(memory_order_relaxed)
 				+ screenDelta.x,
 			memory_order_relaxed);
+		bottomDockPresentedVisualBodyCenterScreenX.store(
+			before.visualBodyCenterScreenX + screenDelta.x, memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
 	// 拖动交互
@@ -880,6 +913,12 @@ protected:
 	atomic<LONG> bottomDockPresentedDirectTranslationY = 0;
 	atomic<double> bottomDockPresentedMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedMainCenterScreenY = 0.0;
+	atomic<double> bottomDockPresentedMainHeightDip = 0.0;
+	atomic<double> bottomDockPresentedMainWidthDip = 0.0;
+	atomic<double> bottomDockPresentedMainStrokeDip = 0.0;
+	atomic<bool> bottomDockPresentedDragActive = false;
+	atomic<bool> bottomDockPresentedGrabAnchorValid = false;
+	atomic<unsigned long long> bottomDockPresentedDragSession = 0;
 	atomic<double> bottomDockPresentedRawMainCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedBodyCenterScreenX = 0.0;
 	atomic<double> bottomDockPresentedVisualBodyCenterScreenX = 0.0;
@@ -893,6 +932,11 @@ protected:
 	atomic<bool> bottomDockDragActive = false;
 	atomic<double> bottomDockDragRigidGripScreenX = 0.0;
 	atomic<double> bottomDockDragRigidGripScreenY = 0.0;
+	atomic<double> bottomDockDragPointerScreenY = 0.0;
+	atomic<double> bottomDockDragEffectivePointerScreenY = 0.0;
+	atomic<double> bottomDockDragGrabNormalizedY = 0.5;
+	atomic<bool> bottomDockDragGrabAnchorValid = false;
+	atomic<unsigned long long> bottomDockDragSession = 0;
 	atomic<bool> bottomDockRecoveryActive = false;
 	atomic<unsigned long long> bottomDockTransitionSerial = 0;
 	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;

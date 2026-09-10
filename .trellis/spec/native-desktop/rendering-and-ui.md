@@ -802,17 +802,20 @@ bool TryBeginBarBottomDockFrameTransition(
 unsigned long long FinishBarBottomDockTransition(
 	std::atomic<unsigned long long>& serial,
 	std::atomic<unsigned long long>& deferredSerial, bool deferWindowMove) noexcept;
-bool SeedBarBottomDockCaptureBottom(
-	BarBottomDockSpringState& spring,
-	BarBottomDockMode presentedMode, BarBottomDockMode nextMode,
-	double presentedBottomScreenY, double nextBaseBottomScreenY,
-	double zoom, bool animationsEnabled) noexcept;
-BarBottomDockVerticalMapping ResolveBarBottomDockVerticalMapping(
-	double baseTopDip, double baseBottomDip, double elasticOffsetDip,
-	double captureBottomOffsetDip = 0.0, bool preserveCaptureBottomOffset = false) noexcept;
-BarBottomDockVerticalMapping ResolveBarBottomDockRecoveringVerticalMapping(
-	double baseTopDip, double baseBottomDip, double elasticOffsetDip,
-	double captureBottomOffsetDip = 0.0, bool preserveCaptureBottomOffset = false) noexcept;
+struct BarBottomDockGrabAnchor { double normalizedY; bool valid; };
+BarBottomDockGrabAnchor ResolveBarBottomDockGrabAnchor(
+	const BarBottomDockVerticalMapping& mapping, double rootYDip, double actualHeightDip,
+	double pointerScreenY, double screenOriginY, double translationY, double zoom) noexcept;
+struct BarBottomDockVerticalFrameInput;
+struct BarBottomDockVerticalFrameResult;
+BarBottomDockVerticalFrameResult AdvanceBarBottomDockVerticalFrame(
+	BarBottomDockSpringState& grip, BarBottomDockSpringState& shape,
+	const BarBottomDockVerticalFrameInput& input) noexcept;
+void RebaseBarBottomDockMapping(BarBottomDockVerticalMapping& vertical,
+	BarBottomDockHorizontalMapping& horizontal, double dx, double dy) noexcept;
+bool ShouldRecoverBarBottomDockOnRelease(
+	const BarBottomDockVerticalMapping& presented, bool recoveryActive,
+	double presentedGripOffset, double inputOffset) noexcept;
 RECT ResolveBarBottomDockCapacityEnvelope(
 	const RECT& elasticBaseBounds, double zoom,
 	double horizontalOutsetDip = BarBottomDockVisualLimitDip,
@@ -830,7 +833,10 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 - 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平 tracker 的输入必须是指针驱动、未形变的主体中心；形态呈现 barrier 只能确认窗口位移已提交，不得用视觉主体中心改写抓取偏移或 tracker 基准。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。
 - D2D 几何计算完成后到 ULW 之间，交互线程仍可发布采样。最终目的地必须在 `directWindowDragMutex` 内读取同一稳定偶数 serial 下的目标/实际 translation、最新 deferred barrier 和成功呈现 serial：当前帧已包含尚未上屏的 barrier 时，位图必须与帧内 translation 成对提交，后续普通采样不能迫使首次吸附饥饿；若更新的形态/显示 barrier 晚于当前帧，或提交前读到发布中/不一致 tuple，则放弃 ULW、配对 EndDraw 并保留完整重试，不推进成功快照或伪报 ULW 失败。barrier 已成功呈现后的普通过期帧继续使用实际已呈现 translation，避免拉回已直移 HWND。
 - 主按钮及 Logo 使用水平刚性抓手映射并保留既有竖向果冻；主栏背景、普通按钮、图标和文字使用独立二维主体映射。主栏近端随抓手移动，远端吸附稳定居中边界：右向展开从中心左侧进入时拉伸、越过中心后压缩，左向展开镜像；捕获、脱离和恢复中重新捕获的远端都必须从上一成功像素按新旧 HWND 位移反推。绘制、dirty、viewport/capacity、PointLight 逆映射、第三光源接受区和命中必须按刚性抓手/主体映射分类；竖向普通抓手输入保留 24 DIP 视觉保护；水平 40 DIP 捕获带内的刚性抓手偏移以及从成功像素反推的远端初值必须精确保留，不能按 24 DIP 截断而造成捕获或脱离跳帧。水平弹簧须允许连续从超出常规保护范围的有效初值恢复，保持原频率、阻尼与动画开关语义。水平捕获带、实际抓手/远端恢复范围、Gaussian 外扩和抗锯齿余量都进入保守包络。
-- 纵向捕获只由最后成功呈现的 Floating -> BottomDocked 识别，并以旧 `monitorOrigin + visualBottomDip * zoom + directTranslation` 和新基准底边反推 capture-bottom 初值；不得按上一候选 mode 消费捕获。首次成功捕获帧不推进该弹簧，跳帧或失败需从同一旧成功像素重新播入。20 DIP 输入阈值不能约束上一画面距 dock 的距离，故捕获底端初值可超出 24 DIP；生产 Docked/Recovering 映射须启用 `preserveCaptureBottomOffset`，弹簧用 `preservePresentedOffset` 连续恢复，并把实际捕获范围与原抓手范围纳入 capacity/viewport。
+- 竖向抓取基准来自最后成功呈现的真实主按钮高度、描边和逆映射 Down 点；保存主按钮内部归一化位置 `q0`，每帧按当前实际高度及主按钮/主栏联合可见外框换算比例 `r`。`VerticalFrameInput` 的 baseTop/baseBottom 是实际联合几何，targetBottom 独立来自真实 dockLine，不能因点击脉冲高度改变而偏移目标底线。在合法屏幕范围和正高度内，主体、主按钮及 Logo 共用仿射 Y 映射，必须满足 `MapY(baseTop + r * baseHeight) = effectivePointerDip`，不能用 `rigidGripYDip` 等代理量代替实际抓点断言。Docked 联立抓点与捕获底端求另一端点，Floating 恢复围绕抓点改变形状高度；Docked 的恢复零点要与去掉抓取约束后的贴底刚性平移一致，非标准高度下也不得在清除 anchor 时跳变。24 DIP 输入保护不得再截断求解后的端点，真实映射范围必须纳入 viewport/capacity。
+- 纵向模式或抓取所有权交接只依据最后成功图像。先将旧成功形状按“当前有效指针 - 旧图像映射的同一抓点”平移，再由当前模式求捕获/恢复种子；不得保留落后于新输入的绝对底边，也不得按上一候选 mode 消费交接。交接首个成功帧不积分，失败/跳过后仍从旧成功形状播入；不同基准的位置差不能用来估算速度或继承为新恢复的冲量。有效形变初值允许超出 24 DIP，以原频率/阻尼连续恢复，20/40 DIP 捕获阈值保持不变。
+- release 恢复判定必须消费同一成功快照的 recoveryActive、实际 scaleY 和抓点偏移；Floating 的纯高度恢复不能只因 tracker/grip 偏移为0而解除布局锁。动画真正收敛后再由渲染线程清除该标志，保持恢复中重新抓取再释放的连续性。
+- 直接位移吸收是坐标重基准：root 吸收 translation 后，成功快照的 base/visual 端点也必须同步平移，并重新求映射截距；屏幕中心按实际屏幕位移更新。归零 translation 不能凭空改变快照重建的屏幕点或下一次抓取逆映射。普通 SetWindowPos 只移动屏幕坐标，不能重复把位移吸入局部端点。
 - 启动时已有的展开中置底栏发布为稳定居中。折叠时退出居中但不移动主按钮；底栏重新展开时只在最终展开联合外框仍位于 40 DIP 阈值内时无提示捕获。桌面首次放置必须在首次方向分类前初始化为向右展开（主按钮居左），白板入口保持既有方向。稳定居中展开时保持渲染线程当前布局方向，不得因动态 HWND 包络重新换边；离开居中后普通换向仍按既有关键帧执行。
 - 底栏 `PositionUpdate()` 只能把最后成功呈现的水平模式作为方向分类门禁：`Centered` 时保持当前布局方向；非居中时只有有限且大于零的窗口宽度才允许按中轴重新分类。首帧零宽、无效宽度或动态 HWND 包络都不得自行产生新方向。
 - `BottomDocked + Centered + Stable + Expanded` 且无拖拽、水平弹簧或显示切换时，主按钮 X 是稳定居中的唯一根位置。渲染线程必须在主栏、主按钮和按钮动画值推进后，同时在 Popup、颜色面板、粗细面板等下游绝对几何派生前，以主按钮、主栏及两者当前可见描边的联合外框反推 `mainButton.x`，同步 `displayCenterX`，再重新执行 `MainBar.Inherit(Center, MainButton)`；整个既有继承树必须在同一帧消费新根节点。主栏动画不得因每帧居中派生而重启，属性面板、More、Popup 和提示框不得参与中心计算。实际新的主栏布局批次必须同步重定向在途子按钮的位置动画，即使该子按钮目标未变，也不能继续旧批次的进度或曲线而与新父布局叠加成往返；独立按压、悬停与内容动画仍保持各自所有权。捕获、拖拽、脱离、恢复、Free、浮动、折叠、白板放置和显示切换继续由原状态机持有根位置。
@@ -848,7 +854,10 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 | release tuple 已稳定，但直移 phase 仍为 `Dragging` 且 translation 非零 | 当前帧 Retry；下一帧吸收并 `PositionUpdate()` 后才执行释放布局 |
 | 浮动旧帧后夹入新捕获/按下/释放，再尝试渲染自动写回 | CAS 失败，旧帧不得确认新 barrier；后续微小 X 移动不能把未形变旧位图直移到 dock |
 | 持续抓取的 Free/Dragging 帧 | 保留 tracker 阶段，不能逐帧 Stable 写回或自动居中 |
-| 首次捕获候选未上屏或上一成功底边在 24 DIP 外 | 按成功像素重新播入精确底端；首帧不提前积分或裁短初值 |
+| 首次捕获候选未上屏或成功形状在 24 DIP 外 | 先使成功形状跟随当前有效指针再播入；首帧不积分或裁短初值 |
+| 快速脱离/重捕获遇到不同位置基准 | 重建成功形状种子并重置/转换速度，禁止将坐标基准差当成高速输入 |
+| 任意非中心 Down 点与当前实际高度 | 断言仿射后的实际抓点，不能只断言代理中心与窗口位置 |
+| 松手吸收 translation 后立即重新抓取 | 快照端点、屏幕中心及逆映射共同保持屏幕连续性 |
 | 当前帧已包含未上屏 barrier，后续普通采样推进 serial | 位图与 frame translation 成对提交，保持首次形变连续 |
 | 最新 barrier 晚于当前帧，或提交时 tuple 仍在发布 | 跳过 ULW，配对 EndDraw 并保留完整重试；不推进成功快照 |
 | barrier 已成功呈现后的普通过期帧 | 使用锁内实际 HWND translation，不回退帧内旧位移 |
@@ -867,13 +876,14 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 #### 5. Good / Base / Bad Cases
 
 - Good：在 40 DIP 捕获边缘主按钮仍跟随屏幕抓取点，远端从上次成功位置弹到居中边界；同目标隐藏按钮与新布局共享进度。 浮动旧帧被新捕获赶超时不能获得写回资格，成功捕获从原显示底边连续启动。
-- Base：竖向弹簧继续使用默认 24 DIP 保护；稳定居中只派生根节点，普通直移沿用成功快照吸收。
+- Base：竖向普通输入继续使用默认 24 DIP 保护，真实抓点求解与成功形状恢复保留有效范围；稳定居中只派生根节点，普通直移沿用成功快照吸收。
 - Bad：水平抓取偏移或远端初值按 24 DIP 截断；只验证主栏联合中心而不检查子按钮屏幕轨迹。 另一个错误是给旧浮动画面补写新 serial，使输入误以为捕获已经显示。
 
 #### 6. Tests Required
 
 - Headless 覆盖水平 `-40/0/+40 DIP` 边界、严格越界、高速跨带、横纵同帧捕获、折叠门禁、展开自动捕获、左右展开联合外框和 100%/150% DPI；竖向 20 DIP 边界另行保持。
 - Headless 覆盖稳定居中根节点所有权矩阵、左右展开、可见描边、无效几何、Draw → Selection 宽度单调与逐帧联合中心不变量、桌面/白板初始方向、零宽/非有限宽度方向保持、主体 X/Y 非恒等映射往返、扩展面板锚点、首次显现完整光影包络、失败快照、release handoff 门禁、当前/过期/发布中帧的实际 HWND translation 解析，以及浮动进入/底栏双向切换/未切换手势的提示资格。
+- Headless 必须包含实际 Down 比例、当前高度/描边、成功形状与当前输入的组合回放；实机反例见任务 `08-23-ui3-bar-drag-jitter-collapse-damage/research/issue1-real-trace-geometry.md`。覆盖慢速阈值内偏差、快速重捕获/脱离、失败候选重试、释放后重抓和位移吸收；同时区分候选形变误差与快照后成功 HWND 追赶输入的位移。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工检查横纵果冻叠加、脏区调试、动画关闭和多显示器切换。
 
 #### 7. Wrong vs Correct

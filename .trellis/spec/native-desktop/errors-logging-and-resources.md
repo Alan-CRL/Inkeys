@@ -222,3 +222,51 @@ const HRESULT endDrawResult = context->EndDraw();
 - detached workers：墨迹、Bar、PPT 等处可见 detached thread，且部分配有 `offSignal`/状态等待。需确认官方退出保证，影响涉及捕获对象、全局资源和快速退出的修改边界。
 - 主退出等待：`IdtMain.cpp` 对选定线程状态有等待与超时逻辑；本轮没有运行验证，不能称为死锁或遗漏。
 - 日志政策：代码已有 7 天/10 MiB 清理行为，但它是否是正式保留要求、是否需要隐私/导出/崩溃上传约束仍待维护者确认。
+
+## 临时 UI3 Bar 底栏运行追踪合同
+
+### 1. Scope / Trigger
+
+仅用于任务 08-23-ui3-bar-drag-jitter-collapse-damage 的实机取证。Debug 工程显式定义 INKEYS_BAR_BOTTOM_DOCK_TRACE，且 IDT_RELEASE 必须排除记录；不能依赖该工程的 _DEBUG/NDEBUG 推断。诊断不得改变映射、阈值、动画或呈现决策，用户验收后移除临时接线、实现和定义。
+
+### 2. Signatures
+
+Bar.BottomDockTrace.h/.cpp 的 Inkeys::UI::Bar::BottomDockTrace::Recorder 提供 Start(directory, Limits, enabled)、BeginGesture(Record&, actualWindow)、Push(Record)、Presented(Record)、InvalidatePresented()、EndGesture(Record)、Stop() 和 Stats()。Serialize(Record, runId) 是 schema=1 JSONL 的字段来源，Limits 默认 2048 项队列、8 MiB/段、4 个文件、1000 ms 恢复尾段。
+
+### 3. Contracts
+
+- 生产者只复制本线程已经持有的一致数值快照；缓冲与 probe 使用一次 try-lock，竞争/满载明确计数，不等待文件写者。格式化、文件和保留清理属于受管后台线程，不逐帧调用会 block/flush 的 IDTLogger。
+- Start 用 acquire/release 发布已初始化 Impl 指针；Stop 停止接受、排空并 join，拥有的内存在记录器析构前保持有效。渲染注销后才停止记录器，不能为尾段采样唤醒渲染线程。
+- 输入采样时间与发布后入队时间分别记录；frame 是真实递增尝试编号。serial.frame 是原始消费版本，tagged 是提交版本，before/current 是最终决策前后观察值。帧的手势身份在实际快照时固定，不能将原本无手势的旧帧贴给新手势。
+- q0 从独立成功图像 probe、实际高度和实际 HWND 逆变换计算；probe 保留原图像坐标，ABSORB 不改变它。部分 ULW 成功但完整事务失败、或 probe 更新竞争时，撤销信任而不是回退到80 DIP/零坐标。
+- 候选 geometry 与生产 presented_snapshot 明确分组；后者在已有几何锁内于 ABSORB 前后读取，未知实际高度写 null。device_generation、resource_hr、弹性输入和实际恢复播种事件分别记录，不把资源创建失败冒充 GetDC 错误。
+- 修复版的 geometry.grab_solver 单独记录生产 normalized_y、raw_screen_y（物理像素）、logical_dip、desired_dip、effective_dip 和 constrained；独立 probe 的 Down 基准不得改用这些生产值。无有效求解数据写 null；presented_snapshot.main_height 只从成功快照取实际高度，未知仍写 null。VerticalHandoffSeeded=8192记录通用形状交接，旧捕获/恢复标记保留各自含义；修复模型中spring.grip相对恢复零点，spring.capture在Docked是底线偏移、在Floating是形状高度差。解析器剔除最终 translation 与帧消费 translation 的差后提供 candidate 误差，并单独对照 effective 目标，避免把窗口追赶或合法屏幕约束当作抓点公式错误。
+- 每个事件保护 Win32 LastError；文件名必须精确匹配 trace 所属格式，不能删除 idt 日志、其他文件或符号链接。事件、元数据、尾段及停止记录都计入文件限额；无法容纳的项记 writer_dropped，写入/刷新失败记 writer_errors。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| Release/未启用 | 不启动写线程或产生追踪文件 |
+| 队列满/生产者竞争 | 丢弃本项并计数，不能阻塞交互/渲染 |
+| 原位吸收窗口 translation | 记录生产快照与候选，独立图像基准保持原坐标 |
+| 无可靠成功抓取基准 | 明确无效，分析保留缺失值 |
+| 缺少设备资源或提交失败 | 按实际阶段/HRESULT 记录，诊断不接管恢复 |
+| 手势结束且没有新渲染 | 后台定时完成尾段/刷新，不请求额外帧 |
+| 文件轮换/超大单项/flush 失败 | 严守追踪范围及容量，并报告对应丢失/错误计数 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：成功帧使用最终 destination/source 与实际图像高度重建抓点；缺少 dockLine 时仍可保留抓点诊断量。
+- Base：普通 idle 只维护必要成功图像 probe，不产生每帧日志；手势后提供完整分段文件给离线分析。
+- Bad：用可变 h.val 或重基准后的不一致快照推测按下点；只记录候选值却标成成功像素；忽略 dropped 后认定不存在闪动。
+
+### 6. Tests Required
+
+无窗口覆盖有界队列/并发/丢失、LastError、实际 h=84 与非恒等映射逆变换、无效 probe、尾段刷新、空闲 Stop、元数据容量及外国文件保留。完整 Debug|ARM64 Solution 构建；原生 JSONL 还需通过离线解析并重建已知抓点。上述结果不替代实机视觉验收。
+
+### 7. Wrong vs Correct
+
+Wrong：把日志中的 mainCenterScreenY 代理或候选 translation 直接当作实际上屏抓点。
+
+Correct：按成功图像初始 q0，在成功帧的实际高度/形变与最终 ULW 元组上重建抓点，并分别对照消费输入与 ULW 完成时的最近输入；生产快照的吸收前后变化单独分析。

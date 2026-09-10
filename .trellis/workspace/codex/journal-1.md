@@ -222,3 +222,71 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Next Steps
 
 - 用户按同一慢速三帧场景复测问题 1；任务保持 in_progress。本轮未启动 GUI，未提交 commit。
+
+
+## Session 10: 底栏问题1临时运行追踪版
+<!-- trellis-session: v=2 fp=8dd5194f5ac2eb30 -->
+
+**Date**: 2026-09-09
+**Task**: 底栏问题1临时运行追踪版
+**Branch**: `draw`
+
+### Summary
+
+按已批准的调查计划完成独立几何审计、临时Debug追踪和离线解析工具；保持底栏功能行为，等待用户实机日志定位剩余闪动。
+
+### Main Changes
+
+- 自动记录主栏手势、实际抓点基准、形变/弹性输入、窗口直移、候选作废、资源与ULW结果，以及松手吸收前后的独立生产快照。
+- 有界非阻塞缓冲和受管后台写入；Debug显式启用、Release排除；文件/尾部限额及数据丢失可见。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug | ARM64 通过，26.18秒；全部 --no-window 通过，2.58秒。
+- [OK] 真实原生JSONL经离线工具解析并验证已知抓点；补充未知目标、最终提交位移、吸收快照分组和丢失数据处理验证。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户运行本轮 Debug Inkeys.exe，做慢速进入静止横移与快速反复进出两组操作，松手后约2秒回传全部本次trace JSONL。问题1开放，不自动commit。
+
+
+## Session 11: 底栏实机轨迹驱动的抓点与恢复修复
+<!-- trellis-session: v=2 fp=98d32b3f0cbdc405 -->
+
+**Date**: 2026-09-10
+**Task**: 底栏实机轨迹驱动的抓点与恢复修复
+**Branch**: `draw`
+
+### Summary
+
+根据两组JSONL定位真实抓点、跨模式形状/速度和吸收快照问题，完成修复与自动验证；保留全部调试输出，等待人工复测。
+
+### Main Changes
+
+- 真实Down比例与联合可见外框求解；成功形状先跟随有效输入再交接，独立dockLine与非80高度释放终态一致。
+- 修复纯高度恢复重新抓取后释放的布局锁；吸收同步重基成功映射；保留并扩展独立raw/desired/effective诊断。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 独立trellis-check通过；ARM64 host完整InkeysRepo.sln Debug|ARM64 exit0/66.9s，全部--no-window exit0/3.09s。
+- [OK] 新增原生日志fixture解析抓点520px、candidate/effective误差0；旧两段1280成功帧可解析，原始与冻结副本SHA256未变。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户用Build/ARM64/Debug/Inkeys.exe复测慢速捕获、快速反复进出及恢复中重新抓取；问题1保持开放，继续保留诊断，不自动commit或归档。

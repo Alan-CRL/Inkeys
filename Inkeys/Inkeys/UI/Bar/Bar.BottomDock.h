@@ -1519,4 +1519,189 @@ namespace Inkeys::UI::Bar
 		}
 		return { state.positionDip, state.velocityDipPerSecond, !settled };
 	}
+	struct BarBottomDockGrabAnchor
+	{
+		double normalizedY = 0.5;
+		bool valid = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockGrabAnchor ResolveBarBottomDockGrabAnchor(
+		const BarBottomDockVerticalMapping& mapping, double rootYDip, double actualHeightDip,
+		double pointerScreenY, double screenOriginY, double translationY, double zoom) noexcept
+	{
+		if (!std::isfinite(actualHeightDip) || actualHeightDip <= 0.0
+			|| !std::isfinite(rootYDip) || !std::isfinite(pointerScreenY)) return {};
+		const double logical = mapping.UnmapY((pointerScreenY - screenOriginY - translationY)
+			/ NormalizeBarBottomDockZoom(zoom));
+		const double q = (logical - rootYDip) / actualHeightDip + 0.5;
+		return { q, std::isfinite(q) };
+	}
+
+	struct BarBottomDockShiftedShape
+	{
+		double topDip = 0.0;
+		double bottomDip = 0.0;
+	};
+
+	[[nodiscard]] inline BarBottomDockShiftedShape ResolveBarBottomDockShiftedShape(
+		const BarBottomDockVerticalMapping& presented, double rootYDip,
+		double heightDip, double normalizedGrabY,
+		double previousZoom, double currentGrabDip, double currentZoom) noexcept
+	{
+		// 先把成功形状移到本次抓点；屏幕原点和直移在相减时抵消，不冻结旧底边。
+		const double grab = presented.MapY(rootYDip + (normalizedGrabY - 0.5) * heightDip);
+		const double ratio = NormalizeBarBottomDockZoom(previousZoom) / NormalizeBarBottomDockZoom(currentZoom);
+		return { currentGrabDip + (presented.visualTopDip - grab) * ratio,
+			currentGrabDip + (presented.visualBottomDip - grab) * ratio };
+	}
+
+	struct BarBottomDockAnchoredMappingResult
+	{
+		BarBottomDockVerticalMapping mapping{};
+		double effectiveGrabDip = 0.0;
+		bool constrained = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockAnchoredMappingResult ResolveBarBottomDockAnchoredMapping(
+		double baseTop, double baseBottom, double logicalGrab, double desiredGrab,
+		double desiredBottom, double fallbackHeight, bool pinBottom,
+		double minimumY, double maximumY) noexcept
+	{
+		constexpr double minimumScale = 0.000001;
+		const double baseHeight = std::max(minimumScale, baseBottom - baseTop);
+		const double minimumHeight = baseHeight * minimumScale;
+		const double r = (logicalGrab - baseTop) / baseHeight;
+		const double safeMin = std::isfinite(minimumY) ? minimumY : baseTop;
+		const double safeMax = std::max(safeMin + minimumHeight,
+			std::isfinite(maximumY) ? maximumY : baseBottom);
+		const double point = std::clamp(std::isfinite(desiredGrab) ? desiredGrab : logicalGrab, safeMin, safeMax);
+		double height = std::max(minimumHeight, std::isfinite(fallbackHeight) ? fallbackHeight : baseHeight);
+		bool constrained = point != desiredGrab;
+		if (pinBottom)
+		{
+			const double solved = r != 1.0 ? (desiredBottom - point) / (1.0 - r) : -1.0;
+			if (std::isfinite(solved) && solved > 0.0) height = solved;
+			else if (r != 1.0) { height = minimumHeight; constrained = true; }
+			else constrained = constrained || desiredBottom != point;
+		}
+		// 抓点/底端约束不可兼得时保留抓点；只以真实屏幕空间和正高度限制形状。
+		double available = safeMax - safeMin;
+		if (r > 0.0) available = std::min(available, (point - safeMin) / r);
+		if (r < 1.0) available = std::min(available, (safeMax - point) / (1.0 - r));
+		const double bounded = std::clamp(height, minimumHeight, std::max(minimumHeight, available));
+		constrained = constrained || bounded != height;
+		const double top = point - r * bounded;
+		const double bottom = top + bounded;
+		return { { baseTop, baseBottom, top, bottom, bounded / baseHeight,
+			point, top - baseTop }, point, constrained };
+	}
+
+	[[nodiscard]] inline bool ShouldRecoverBarBottomDockOnRelease(
+		const BarBottomDockVerticalMapping& presented, bool recoveryActive,
+		double presentedGripOffset, double inputOffset) noexcept
+	{
+		return recoveryActive || std::abs(presented.scaleY - 1.0) > 0.000001
+			|| std::abs(presentedGripOffset) > BarBottomDockSettleDistanceDip
+			|| std::abs(inputOffset) > BarBottomDockSettleDistanceDip;
+	}
+
+	struct BarBottomDockVerticalFrameInput
+	{
+		BarBottomDockMode mode = BarBottomDockMode::Floating;
+		bool dragging = false, anchorValid = false, handoff = false, animationsEnabled = true;
+		double baseTop = 0.0, baseBottom = 1.0, targetBottom = 1.0, logicalGrab = 0.5, effectiveGrab = 0.5;
+		double minimumY = 0.0, maximumY = 1.0, dtSeconds = 0.0;
+		BarBottomDockShiftedShape previousShape{};
+	};
+	struct BarBottomDockVerticalFrameResult
+	{
+		BarBottomDockAnchoredMappingResult geometry{};
+		bool seeded = false, gripActive = false, shapeActive = false;
+	};
+
+	[[nodiscard]] inline BarBottomDockVerticalFrameResult AdvanceBarBottomDockVerticalFrame(
+		BarBottomDockSpringState& grip, BarBottomDockSpringState& shape,
+		const BarBottomDockVerticalFrameInput& input) noexcept
+	{
+		BarBottomDockVerticalFrameResult result;
+		const double baseHeight = input.baseBottom - input.baseTop;
+		if (!input.anchorValid)
+		{
+			grip = {}; shape = {};
+			const double shift = input.mode == BarBottomDockMode::BottomDocked ? input.targetBottom - input.baseBottom : 0.0;
+			result.geometry = { { input.baseTop, input.baseBottom, input.baseTop + shift, input.baseBottom + shift,
+				1.0, input.logicalGrab + shift, shift }, input.logicalGrab + shift, false };
+			return result;
+		}
+		const double restGripOffset = input.mode == BarBottomDockMode::BottomDocked ? input.targetBottom - input.baseBottom : 0.0;
+		if (input.handoff)
+		{
+			// 新坐标所有权只接住成功形状，不继承另一坐标含义下的有限差分速度。
+			grip = { input.effectiveGrab - input.logicalGrab, 0.0 };
+			shape = { input.mode == BarBottomDockMode::BottomDocked
+				? input.previousShape.bottomDip - input.targetBottom
+				: input.previousShape.bottomDip - input.previousShape.topDip - baseHeight, 0.0 };
+			result.seeded = true;
+		}
+		if (input.dragging) grip = { input.effectiveGrab - input.logicalGrab, 0.0 };
+		else if (!result.seeded)
+		{
+			// 恢复目标是贴底后的正常形状，实际高度与根节点基准不同时也不留残差。
+			grip.positionDip -= restGripOffset;
+			result.gripActive = AdvanceBarBottomDockSpring(grip, 0.0, input.dtSeconds,
+				input.animationsEnabled, true).active;
+			grip.positionDip += restGripOffset;
+		}
+		if (!result.seeded)
+			result.shapeActive = AdvanceBarBottomDockSpring(shape, 0.0, input.dtSeconds,
+				input.animationsEnabled, true).active;
+		if (!input.animationsEnabled)
+		{
+			shape = {};
+			if (!input.dragging) grip = { restGripOffset, 0.0 };
+		}
+		result.gripActive = result.gripActive || (!input.dragging && std::abs(grip.positionDip - restGripOffset) > BarBottomDockSettleDistanceDip);
+		result.shapeActive = result.shapeActive || std::abs(shape.positionDip) > BarBottomDockSettleDistanceDip;
+		const double point = input.dragging ? input.effectiveGrab : input.logicalGrab + grip.positionDip;
+		result.geometry = ResolveBarBottomDockAnchoredMapping(input.baseTop, input.baseBottom,
+			input.logicalGrab, point, input.targetBottom + shape.positionDip,
+			input.mode == BarBottomDockMode::Floating ? baseHeight + shape.positionDip : baseHeight,
+			input.mode == BarBottomDockMode::BottomDocked, input.minimumY, input.maximumY);
+		return result;
+	}
+
+	[[nodiscard]] inline double ResolveBarBottomDockVerticalOutset(
+		const BarBottomDockVerticalFrameInput& input, const BarBottomDockSpringState& grip,
+		const BarBottomDockSpringState& shape, const BarBottomDockVerticalMapping& current) noexcept
+	{
+		double outset = BarBottomDockVisualLimitDip;
+		auto Include = [&](const BarBottomDockVerticalMapping& mapping)
+			{
+				outset = std::max({ outset, std::abs(mapping.visualTopDip - input.baseTop),
+					std::abs(mapping.visualBottomDip - input.baseBottom) });
+			};
+		Include(current);
+		if (!input.anchorValid) return outset;
+		// 能量范围包住现有速度的恢复扫掠；抓住时还预留完整输入带的真实求解端点。
+		const double gripRange = std::max(input.dragging ? BarBottomDockVisualLimitDip : 0.0,
+			std::hypot(grip.positionDip, grip.velocityDipPerSecond / BarBottomDockSpringOmega) * 1.06);
+		const double shapeRange = std::hypot(shape.positionDip, shape.velocityDipPerSecond / BarBottomDockSpringOmega) * 1.06;
+		for (double e : { -gripRange, gripRange })
+			for (double c : { -shapeRange, shapeRange })
+				Include(ResolveBarBottomDockAnchoredMapping(input.baseTop, input.baseBottom, input.logicalGrab,
+					input.logicalGrab + e, input.targetBottom + c,
+					input.baseBottom - input.baseTop + (input.mode == BarBottomDockMode::Floating ? c : 0.0),
+					input.mode == BarBottomDockMode::BottomDocked, input.minimumY, input.maximumY).mapping);
+		return outset;
+	}
+
+	inline void RebaseBarBottomDockMapping(BarBottomDockVerticalMapping& vertical,
+		BarBottomDockHorizontalMapping& horizontal, double dx, double dy) noexcept
+	{
+		vertical.baseTopDip += dy; vertical.baseBottomDip += dy;
+		vertical.visualTopDip += dy; vertical.visualBottomDip += dy; vertical.rigidGripYDip += dy;
+		horizontal.baseLeftDip += dx; horizontal.baseRightDip += dx;
+		horizontal.visualLeftDip += dx; horizontal.visualRightDip += dx;
+	}
+
 }

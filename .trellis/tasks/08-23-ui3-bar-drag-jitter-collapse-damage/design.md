@@ -112,3 +112,27 @@ Seek sample
 独立检查确认：早于 PrepareLightingAndDemand 的作废分支即使保留 dirty，也不一定留下 ShouldPresent 所需的请求；RequireFullDirtyRetry 只改变清除范围。末次动画值已在废弃候选中推进完毕时，下一帧可能直接 idle。
 
 增加 Bar.PresentDecision.h 中的窄入口 RequireVisualRetry，同时保留 visual demand 与 full dirty，作废分支和无窗口回归共用这一动作。不会修改普通 RequireFullDirtyRetry 的既有含义，也不清除已有光影/透明度请求。这是本轮唯一额外涉及的 Bar 文件。
+
+## 临时追踪版设计边界
+
+调查基线为 342990fe。先由独立研究复核几何，主会话核对时序/日志路径。现有 IDTLogger 使用 block overflow 且 info 自动刷新，因此不得将每次采样直接推入该日志队列。
+
+临时记录器属于 UI3 Bar，输入与渲染线程在各自拥有的一致快照处生成数值记录，后台不得重新读取生产对象。采用有界内存缓冲并报告覆盖/丢失计数，格式化与文件写入在高频路径之外；支持手势结束后的短尾段，且不能为记录改变 RenderPipeline 调度。Debug 测试版自动启用，Release 无记录行为，不增加永久配置或新控制台窗口。日志位于当前可执行文件目录的 log 子目录（globalPath 来自 GetCurrentExeDirectory）。
+
+预计修改 Bar.Main.cppm、Bar.Interaction.cpp、Bar.RenderLoop.cpp，新增可集中移除的 Bar 临时追踪实现/头文件及必要工程登记，复用现有 Headless 目标测试缓冲/序列化/结束刷新。不得修改底栏映射、动画参数、发布决策或其他产品子系统。主会话另提供日志解析说明/脚本用于后续定位。
+
+## 实机证据驱动的竖向修复边界
+
+两个手势的有效数据中，普通底栏基准/描边/DPI高度误差均为0，可见底边差精确等于 capture 项乘 zoom。g1 的 f138/seq43 已在底边正确时出现1.2222px实际抓点误差，后续约16.92px；g2 的 f776/seq4436 首次捕获误差22.0494px，f1216/seq7794误差39.7397px。这些锚点没有提交位移追赶差，不能归因于正常输入延迟。
+
+不得把 g2 f789 的61.3709px全部当作窗口错误：其中55px正是绘制期间的新指针位移，纯形变差为6.3709px。新回归应分别计算候选映射与实际成功提交，并校正有效指针/屏幕边界约束。
+
+实施聚焦 Bar.BottomDock.h、Bar.Main.cppm、Bar.Interaction.cpp、Bar.RenderLoop.cpp、Bar.WindowGeometry.h（仅若重基准 helper 必要）、现有 Headless 测试和必要的追踪字段，保留当前全部诊断。需要保存成功实际高度/实际抓取比例，按真实抓点求解竖向端点；在捕获/脱离时将上一成功形状移到当前有效抓点，再重建恢复基准，避免假速度冲击和24DIP截断造成额外跳变。普通输入范围、屏幕限制和正高度保护保持明确，已验收的水平/居中缩短行为不重写。
+
+### 实机修复的最终实现
+
+BarBottomDockGrabAnchor 从成功快照的实际高度和逆映射建立q0；RenderLoop使用实际主按钮/主栏联合外框，targetBottom独立来自真实dockLine。AdvanceBarBottomDockVerticalFrame以真实抓点和底端求解，Floating只恢复成功形状的高度差；抓取所有权/模式变化用成功图像先跟随有效指针再播种，速度重置且首图不积分。Docked释放采用restShift，使非80高度下清除anchor前后的终态一致。成功形状的真实端点与能量范围进入保守窗口包络。
+
+Main成功快照发布实际h/w/stroke和抓取会话；位移吸收同时重基两轴端点、提示外框及屏幕缓存。Interaction首次Down发布配套位移屏障及配对Pointer追踪，移动失败恢复成功图像的实际抓点。ShouldRecoverBarBottomDockOnRelease同时识别纯高度恢复，防止重新抓取后松手提前放开PositionUpdate和扩展组布局。
+
+诊断继续保留，生产求解器与独立图像probe分别记录。最终完整Solution与无窗口回归通过；实机视觉复测仍由用户执行。
