@@ -297,9 +297,6 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDockTrace.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.A2.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
@@ -1761,9 +1758,6 @@
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.BottomDockTrace.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp">

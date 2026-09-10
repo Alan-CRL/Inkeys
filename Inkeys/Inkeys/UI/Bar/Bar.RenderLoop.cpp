@@ -14,7 +14,6 @@ module;
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.BottomDock.h"
-#include "Bar.BottomDockTrace.h"
 #include "Bar.DisplayTransition.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.PresentationAlpha.h"
@@ -258,11 +257,6 @@ struct BarRenderFrameSnapshot
 	bool bottomDockIndicatorGestureEligible = false;
 	double bottomDockDragRigidGripScreenX = 0.0;
 	double bottomDockDragRigidGripScreenY = 0.0;
-	double bottomDockDragPointerScreenY = 0.0;
-	double bottomDockDragEffectivePointerScreenY = 0.0;
-	double bottomDockDragGrabNormalizedY = 0.5;
-	bool bottomDockDragGrabAnchorValid = false;
-	unsigned long long bottomDockDragSession = 0;
 	POINT bottomDockTransitionTranslation{};
 	unsigned long long bottomDockTransitionSerial = 0;
 };
@@ -352,15 +346,6 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 		Stop,
 	};
 
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	struct DockTraceLineContext
-	{
-		RECT monitor{}, work{};
-		UINT dpi = 0;
-		double line = 0.0, inset = 0.0, scale = 0.0;
-	};
-	thread_local DockTraceLineContext dockTraceLine;
-#endif
 	[[nodiscard]] double CurrentBarBottomDockLine(
 		const RECT& monitorBounds, const RECT& workArea, UINT dpi) noexcept
 	{
@@ -369,12 +354,7 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
 		const double insetDip = Inkeys::UI::Bar::WhiteboardActive()
 			? BarWhiteboardBottomInsetDip : 0.0;
-		const double line = ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		// 保存本次真实目标计算的环境，不为追踪额外重读白板状态。
-		dockTraceLine = { monitorBounds, workArea, dpi, line, insetDip, dpiScale };
-#endif
-		return line;
+		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
 	}
 
 enum class BarDirtyFixedVisual : BarDirtyVisualKey
@@ -575,7 +555,7 @@ struct BarRenderLoopState
 	BarBottomDockSpringState bottomDockCenterCaptureFarEdgeSpring{};
 	bool bottomDockCenterCaptureFarEdgeActive = false;
 	bool bottomDockCenterRecoverySeeded = false;
-	double bottomDockVerticalOutsetDip = Inkeys::UI::Bar::BarBottomDockVisualLimitDip;
+	double bottomDockPreviousDirectOffsetDip = 0.0;
 	double bottomDockObservedBoundsOffsetDip =
 		std::numeric_limits<double>::infinity();
 	double bottomDockObservedCaptureBottomOffsetDip =
@@ -583,6 +563,7 @@ struct BarRenderLoopState
 	bool bottomDockVisualActive = false;
 	bool bottomDockRootLayoutChanged = false;
 	bool bottomDockCaptureBottomActive = false;
+	bool bottomDockRecoverySeeded = false;
 	BarUiValueClass bottomDockTargetIndicatorProgress{ 0.0 };
 	BarUiWordClass bottomDockIndicatorWord{
 		0.0, 0.0, 0.0, BarBottomDockIndicatorHeightDip, L"",
@@ -602,10 +583,6 @@ struct BarRenderLoopState
 		BarBottomDockCenterMode::Centered;
 	BarBottomDockPhase bottomDockFrameCenterPhase = BarBottomDockPhase::Stable;
 	bool bottomDockFrameRecoveryActive = false;
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	Inkeys::UI::Bar::BottomDockTrace::Record traceFrame;
-	std::int64_t tracePreviousWakeQpc = 0;
-#endif
 	bool bottomDockFrameTransitionInvalidated = false;
 	unsigned long long bottomDockFrameTransitionSerial = 0;
 	POINT bottomDockFrameTransitionTranslation{};
@@ -840,59 +817,6 @@ struct BarRenderLoopState
 }
 
 // 渲染线程的阶段协调器仅在当前 module 内可见，不扩大 BarUISetClass 的公开接口。
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-namespace DockTrace = Inkeys::UI::Bar::BottomDockTrace;
-static void FillDockTracePresentedState(DockTrace::Record& record,
-	const BarBottomDockPresentedSnapshot& snapshot)
-{
-	record.groups |= DockTrace::PresentedState;
-	record.presentedSerial = snapshot.transitionSerial;
-	auto& presented = record.presentedState;
-	presented.origin = snapshot.monitorOrigin;
-	presented.directTranslation = snapshot.directTranslation;
-	presented.zoom = snapshot.zoom;
-	presented.baseY = { snapshot.mapping.baseTopDip, snapshot.mapping.baseBottomDip };
-	presented.visualY = { snapshot.mapping.visualTopDip, snapshot.mapping.visualBottomDip };
-	presented.mainCenterScreen = { snapshot.mainCenterScreenX, snapshot.mainCenterScreenY };
-	presented.rawMainCenterScreenX = snapshot.rawMainCenterScreenX;
-	presented.mainHeightDip = snapshot.mainHeightDip;
-	presented.rawBodyCenterScreenX = snapshot.rawBodyCenterScreenX;
-	presented.transitionSerial = snapshot.transitionSerial;
-	presented.mappingSerial = snapshot.serial;
-	presented.displaySerial = snapshot.displaySerial;
-}
-static void FillDockTraceGeometry(BarRenderLoopState& state, DockTrace::Record& record)
-{
-	record.groups |= DockTrace::Environment | DockTrace::Geometry;
-	record.monitor = state.activeMonitorBounds; record.workArea = state.activeWorkArea;
-	record.monitorOrigin = state.monitorOrigin; record.dpi = state.activeDisplayDpi;
-	record.zoom = static_cast<double>(state.barStyle.zoom);
-	record.configZoom = static_cast<double>(state.barStyle.configZoom);
-	const bool lineKnown = Inkeys::UI::Bar::SameBarWindowRect(dockTraceLine.monitor, state.activeMonitorBounds)
-		&& Inkeys::UI::Bar::SameBarWindowRect(dockTraceLine.work, state.activeWorkArea)
-		&& dockTraceLine.dpi == state.activeDisplayDpi;
-	record.dockLine = lineKnown ? dockTraceLine.line : std::numeric_limits<double>::quiet_NaN();
-	record.insetDip = lineKnown ? dockTraceLine.inset : std::numeric_limits<double>::quiet_NaN();
-	record.dpiScale = lineKnown ? dockTraceLine.scale : std::numeric_limits<double>::quiet_NaN();
-	record.displaySerial = state.observedDisplaySerial;
-	const auto main = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-	const auto bar = state.shapeMap[BarUISetShapeEnum::MainBar];
-	record.root = { main->x.val, main->y.val };
-	record.mainSize = { main->w.val, main->h.val };
-	record.baseSize = state.mainButtonBaseSize;
-	record.stroke = main->ft.has_value() ? static_cast<double>(main->ft->val) : 0.0;
-	record.barBounds = { bar->inhX, bar->inhY, bar->w.val, bar->h.val };
-	record.barStroke = bar->ft.has_value() ? static_cast<double>(bar->ft->val) : 0.0;
-	record.baseY = { state.bottomDockMapping.baseTopDip, state.bottomDockMapping.baseBottomDip };
-	record.visualY = { state.bottomDockMapping.visualTopDip, state.bottomDockMapping.visualBottomDip };
-	record.scaleY = state.bottomDockMapping.scaleY;
-	record.translationY = state.bottomDockMapping.visualTopDip
-		- state.bottomDockMapping.baseTopDip * state.bottomDockMapping.scaleY;
-	const auto& x = state.bottomDockHorizontalMapping;
-	record.horizontal = { x.baseLeftDip, x.baseRightDip, x.visualLeftDip, x.visualRightDip, x.scaleX, x.rigidGripTranslationXDip };
-}
-#endif
-
 class BarRenderLoopCoordinator
 {
 public:
@@ -974,15 +898,9 @@ namespace
 bool BarUISetClass::Rendering()
 {
 	if (barRenderCoordinator) return true;
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	(void)DockTrace::Get().Start(std::filesystem::path(globalPath) / L"log");
-#endif
 	auto coordinator = make_unique<BarRenderLoopCoordinator>(*this);
 	if (!coordinator->Register())
 	{
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		DockTrace::Get().Stop();
-#endif
 		Inkeys::UI::StartupPreview::SetBarStartupState(
 			Inkeys::UI::StartupPreview::BarStartupState::ClientRegistrationFailed);
 		return false;
@@ -1000,10 +918,6 @@ void BarUISetClass::StopRendering()
 	if (!barRenderCoordinator) return;
 	barRenderCoordinator->Unregister();
 	barRenderCoordinator.reset();
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	// 渲染已注销；记录器只持有数值副本，停止并排空自己的受管写线程。
-	DockTrace::Get().Stop();
-#endif
 }
 
 BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
@@ -1045,23 +959,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	}
 	if (state.presentationAlpha.HasDemand())
 		state.presentDecision.AddDemand({ false, false, true });
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	state.traceFrame = {};
-	state.traceFrame.gesture = DockTrace::Get().ActiveGesture();
-	state.traceFrame.frame = state.presentAttemptFrameSerial;
-	state.traceFrame.groups = DockTrace::Timing;
-	const auto wakeQpc = DockTrace::Now();
-	state.traceFrame.rawDt = state.tracePreviousWakeQpc == 0 ? 0.0
-		: static_cast<double>(wakeQpc - state.tracePreviousWakeQpc) / DockTrace::Frequency();
-	state.tracePreviousWakeQpc = wakeQpc;
-#endif
 	state.frameWorkStart = chrono::steady_clock::now();
 	frame.animationDtSeconds = state.animationClock.Tick();
 	frame.animationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	state.traceFrame.frameDt = frame.animationDtSeconds;
-	state.traceFrame.animationSpeed = frame.animationSpeedRate;
-#endif
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	state.spec.SetFrameZoom(frame.zoom);
@@ -7376,15 +7276,20 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		BarBottomDockPhase centerPhase = frame.bottomDockCenterPhase;
 		const bool dockDragActive = frame.bottomDockDragActive;
 		const bool floatingRecoveryActive = frame.bottomDockRecoveryActive;
+		const double inputOffsetDip = clamp(
+			frame.bottomDockElasticOffsetDip,
+			-Inkeys::UI::Bar::BarBottomDockVisualLimitDip,
+			Inkeys::UI::Bar::BarBottomDockVisualLimitDip);
 		const double centerInputOffsetDip =
 			isfinite(frame.bottomDockCenterElasticOffsetDip)
 			? frame.bottomDockCenterElasticOffsetDip : 0.0;
+		const double dragRigidGripScreenY =
+			frame.bottomDockDragRigidGripScreenY;
 		const POINT frameTransitionTranslation =
 			frame.bottomDockTransitionTranslation;
 		const unsigned long long frameTransitionSerial =
 			frame.bottomDockTransitionSerial;
 		const auto presentedDockSnapshot = owner_.BottomDockPresentedSnapshot();
-		const bool candidateModeChanged = state.bottomDockFrameMode != dockMode;
 		const double previousTargetIndicatorProgress =
 			state.bottomDockTargetIndicatorProgress.val;
 		state.bottomDockFrameTransitionSerial = frameTransitionSerial;
@@ -7407,95 +7312,78 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			state.bottomDockSpring.positionDip;
 		const double previousCaptureBottomOffsetDip =
 			state.bottomDockCaptureBottomSpring.positionDip;
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.gripBefore = { previousVisualOffsetDip, state.bottomDockSpring.velocityDipPerSecond };
-		state.traceFrame.captureBefore = { previousCaptureBottomOffsetDip, state.bottomDockCaptureBottomSpring.velocityDipPerSecond };
-#endif
 		const double previousCenterOffsetDip =
 			state.bottomDockCenterSpring.positionDip;
 		const double previousCenterCaptureFarEdgeDip =
 			state.bottomDockCenterCaptureFarEdgeSpring.positionDip;
-		const auto captureMainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-		const double captureHeightDip = max(0.000001, static_cast<double>(captureMainButton->h.val));
+		bool springActive = false;
+		if (dockMode == BarBottomDockMode::BottomDocked && dockDragActive)
+		{
+			state.bottomDockRecoverySeeded = false;
+			const auto dockMainButton = state.superellipseMap[
+				BarUISetSuperellipseEnum::MainButton];
+			const double dockCenterScreenY = state.monitorOrigin.y
+				+ dockMainButton->y.val * frameZoom
+				+ frameTransitionTranslation.y;
+			const double directOffsetDip =
+				ResolveBarBottomDockElasticOffsetForScreenGrip(
+					dragRigidGripScreenY, dockCenterScreenY, frameZoom);
+			if (animationDtSeconds > 0.000001)
+				state.bottomDockSpring.velocityDipPerSecond = clamp(
+					(directOffsetDip - state.bottomDockPreviousDirectOffsetDip)
+						/ animationDtSeconds,
+					-2400.0, 2400.0);
+			state.bottomDockSpring.positionDip = directOffsetDip;
+			state.bottomDockPreviousDirectOffsetDip = directOffsetDip;
+		}
+		else
+		{
+			const bool recoveryNeedsSeed =
+				(dockMode == BarBottomDockMode::BottomDocked
+					&& dockPhase == BarBottomDockPhase::Recovering)
+				|| (dockMode == BarBottomDockMode::Floating
+					&& floatingRecoveryActive);
+			if (recoveryNeedsSeed && !state.bottomDockRecoverySeeded)
+			{
+				// 输入可能在两帧之间完成捕获与脱离，恢复首帧必须直接接住最后形变量。
+				state.bottomDockSpring.positionDip = inputOffsetDip;
+				state.bottomDockPreviousDirectOffsetDip = inputOffsetDip;
+				state.bottomDockRecoverySeeded = true;
+			}
+			const auto spring = AdvanceBarBottomDockSpring(
+				state.bottomDockSpring, 0.0, animationDtSeconds,
+				true == BarUiAnimationEnabled);
+			springActive = spring.active;
+			state.bottomDockPreviousDirectOffsetDip = spring.positionDip;
+		}
+		const auto captureMainButton = state.superellipseMap[
+			BarUISetSuperellipseEnum::MainButton];
 		const double captureStrokeDip = captureMainButton->ft.has_value()
 			? max(0.0, static_cast<double>(captureMainButton->ft->val)) : 0.0;
-		const double outerHeight = captureHeightDip + captureStrokeDip;
-		double verticalBaseTop = captureMainButton->y.val - outerHeight / 2.0;
-		double verticalBaseBottom = captureMainButton->y.val + outerHeight / 2.0;
-		const auto captureMainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
-		captureMainBar->Inherit(BarUiInheritEnum::Center, *captureMainButton);
-		if (captureMainBar->enable.val && captureMainBar->pct.val > 0.000001)
-		{
-			const double stroke = captureMainBar->ft.has_value() ? max(0.0, static_cast<double>(captureMainBar->ft->val)) : 0.0;
-			verticalBaseTop = min(verticalBaseTop, captureMainBar->inhY - stroke / 2.0);
-			verticalBaseBottom = max(verticalBaseBottom, captureMainBar->inhY + captureMainBar->h.val + stroke / 2.0);
-		}
-		// 目标底线独立于根节点/80 DIP 基准；白板既有整组就位动画继续持有位置。
-		const double targetBottom = state.whiteboardDockAnimationActive ? verticalBaseBottom
-			: (CurrentBarBottomDockLine(state.activeMonitorBounds, state.activeWorkArea, state.activeDisplayDpi)
-				- state.monitorOrigin.y - frameTransitionTranslation.y) / frameZoom;
-		const double logicalGrab = captureMainButton->y.val
-			+ (frame.bottomDockDragGrabNormalizedY - 0.5) * captureHeightDip;
-		const double effectiveGrab = (frame.bottomDockDragEffectivePointerScreenY
-			- state.monitorOrigin.y - frameTransitionTranslation.y) / frameZoom;
-		const double previousRootY = (presentedDockSnapshot.mainCenterScreenY
-			- presentedDockSnapshot.monitorOrigin.y - presentedDockSnapshot.directTranslation.y) / presentedDockSnapshot.zoom;
-		const auto previousShape = Inkeys::UI::Bar::ResolveBarBottomDockShiftedShape(
-			presentedDockSnapshot.mapping, previousRootY, presentedDockSnapshot.mainHeightDip,
-			frame.bottomDockDragGrabNormalizedY,
-			presentedDockSnapshot.zoom, effectiveGrab, frameZoom);
-		const bool verticalHandoff = frame.bottomDockDragGrabAnchorValid
-			&& (candidateModeChanged || presentedDockSnapshot.mode != dockMode
-				|| presentedDockSnapshot.dragActive != dockDragActive
-				|| presentedDockSnapshot.dragSession != frame.bottomDockDragSession
-				|| !presentedDockSnapshot.grabAnchorValid
-				|| abs(presentedDockSnapshot.zoom - frameZoom) > 0.000001
-				|| presentedDockSnapshot.displaySerial != state.observedDisplaySerial);
-		const Inkeys::UI::Bar::BarBottomDockVerticalFrameInput verticalInput{
-			dockMode, dockDragActive, frame.bottomDockDragGrabAnchorValid, verticalHandoff,
-			true == BarUiAnimationEnabled, verticalBaseTop, verticalBaseBottom, targetBottom, logicalGrab, effectiveGrab,
-			(state.activeMonitorBounds.top - state.monitorOrigin.y - frameTransitionTranslation.y) / frameZoom,
-			(state.activeMonitorBounds.bottom - state.monitorOrigin.y - frameTransitionTranslation.y) / frameZoom,
-			animationDtSeconds, previousShape };
-		const auto verticalFrame = Inkeys::UI::Bar::AdvanceBarBottomDockVerticalFrame(
-			state.bottomDockSpring, state.bottomDockCaptureBottomSpring, verticalInput);
-		const bool springActive = verticalFrame.gripActive;
-		const bool captureBottomSpringActive = verticalFrame.shapeActive;
-		state.bottomDockCaptureBottomActive = captureBottomSpringActive;
-		const bool captureBottomJustSeeded = verticalFrame.seeded;
 		const double presentedBottomScreenY = presentedDockSnapshot.monitorOrigin.y
-			+ presentedDockSnapshot.mapping.MapY(previousRootY
-				+ (presentedDockSnapshot.mainHeightDip + presentedDockSnapshot.mainStrokeDip) / 2.0)
-				* presentedDockSnapshot.zoom + presentedDockSnapshot.directTranslation.y;
-		const double nextBaseBottomScreenY = state.monitorOrigin.y + verticalBaseBottom * frameZoom + frameTransitionTranslation.y;
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.groups |= DockTrace::Spring;
-		state.traceFrame.gripSpring = { state.bottomDockSpring.positionDip, state.bottomDockSpring.velocityDipPerSecond,
-			dockDragActive ? effectiveGrab - logicalGrab : (dockMode == BarBottomDockMode::BottomDocked ? targetBottom - verticalBaseBottom : 0.0) };
-		state.traceFrame.captureSpring = { state.bottomDockCaptureBottomSpring.positionDip, state.bottomDockCaptureBottomSpring.velocityDipPerSecond, 0.0 };
-		state.traceFrame.seedScreen = { presentedBottomScreenY, nextBaseBottomScreenY };
-		state.traceFrame.presentedSerial = presentedDockSnapshot.transitionSerial;
-		state.traceFrame.integratedDt = clamp(animationDtSeconds, 0.0, Inkeys::UI::Bar::BarBottomDockSpringMaxDtSeconds);
-		state.traceFrame.gripDt = dockDragActive || captureBottomJustSeeded ? 0.0 : state.traceFrame.integratedDt;
-		state.traceFrame.captureDt = captureBottomJustSeeded ? 0.0 : state.traceFrame.integratedDt;
-		if (BarUiAnimationEnabled) state.traceFrame.flags |= DockTrace::AnimationsEnabled;
-		else state.traceFrame.gripDt = state.traceFrame.captureDt = 0.0;
+			+ presentedDockSnapshot.mapping.visualBottomDip * presentedDockSnapshot.zoom
+			+ presentedDockSnapshot.directTranslation.y;
+		const double nextBaseBottomScreenY = state.monitorOrigin.y
+			+ (captureMainButton->y.val + (state.mainButtonBaseSize + captureStrokeDip) / 2.0)
+				* frameZoom + frameTransitionTranslation.y;
+		const bool captureBottomJustSeeded = Inkeys::UI::Bar::SeedBarBottomDockCaptureBottom(
+			state.bottomDockCaptureBottomSpring, presentedDockSnapshot.mode, dockMode,
+			presentedBottomScreenY, nextBaseBottomScreenY, frameZoom,
+			true == BarUiAnimationEnabled);
 		if (captureBottomJustSeeded)
+			state.bottomDockCaptureBottomActive = abs(state.bottomDockCaptureBottomSpring.positionDip)
+				> BarBottomDockSettleDistanceDip;
+		bool captureBottomSpringActive = state.bottomDockCaptureBottomActive;
+		// 首个成功捕获帧保留旧下端点；跳帧和失败重试不提前消费弹簧时间。
+		if (state.bottomDockCaptureBottomActive && !captureBottomJustSeeded)
 		{
-			state.traceFrame.flags |= DockTrace::VerticalHandoffSeeded;
-			if (presentedDockSnapshot.mode == BarBottomDockMode::Floating && dockMode == BarBottomDockMode::BottomDocked)
-				state.traceFrame.flags |= DockTrace::CaptureSeeded;
-			if (!dockDragActive || dockMode == BarBottomDockMode::Floating)
-				state.traceFrame.flags |= DockTrace::GripRecoverySeeded;
+			const auto captureBottomSpring = AdvanceBarBottomDockSpring(
+				state.bottomDockCaptureBottomSpring, 0.0,
+				animationDtSeconds, true == BarUiAnimationEnabled, true);
+			captureBottomSpringActive = captureBottomSpring.active;
+			state.bottomDockCaptureBottomActive = captureBottomSpring.active;
 		}
-		if (captureBottomSpringActive) state.traceFrame.flags |= DockTrace::CaptureSpringActive;
-		if (springActive) state.traceFrame.flags |= DockTrace::GripSpringActive;
-		state.traceFrame.grabSolverValid = frame.bottomDockDragGrabAnchorValid;
-		state.traceFrame.grabNormalizedY = frame.bottomDockDragGrabNormalizedY;
-		state.traceFrame.grabRawPointerScreenY = frame.bottomDockDragPointerScreenY;
-		state.traceFrame.grabSolverDip = { logicalGrab, dockDragActive ? effectiveGrab : logicalGrab + state.bottomDockSpring.positionDip, verticalFrame.geometry.effectiveGrabDip };
-		state.traceFrame.grabConstrained = verticalFrame.geometry.constrained;
-#endif
+		else if (!captureBottomJustSeeded) state.bottomDockCaptureBottomSpring.positionDip = 0.0;
 		bool indicatorTarget = ResolveBarBottomDockIndicatorTarget(
 			dockMode, dockDragActive, !state.barState.fold,
 			frame.bottomDockIndicatorGestureEligible);
@@ -7598,6 +7486,9 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		const double strokeWidthDip = dockMainButton->ft.has_value()
 			? max(0.0, static_cast<double>(state.superellipseMap[
 				BarUISetSuperellipseEnum::MainButton]->ft.value().val)) : 0.0;
+		const double outerHeightDip = state.mainButtonBaseSize + strokeWidthDip;
+		const double baseTopDip = dockMainButton->y.val - outerHeightDip / 2.0;
+		const double baseBottomDip = baseTopDip + outerHeightDip;
 		auto dockMainBar = state.shapeMap[BarUISetShapeEnum::MainBar];
 		dockMainBar->Inherit(BarUiInheritEnum::Center,
 			*dockMainButton);
@@ -7766,23 +7657,16 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		}
 		state.bottomDockFrameCenterMode = centerMode;
 		state.bottomDockFrameCenterPhase = centerPhase;
-		const bool verticalMappingChanged = abs(state.bottomDockMapping.visualTopDip - verticalFrame.geometry.mapping.visualTopDip) > 0.000001
-			|| abs(state.bottomDockMapping.visualBottomDip - verticalFrame.geometry.mapping.visualBottomDip) > 0.000001
-			|| abs(state.bottomDockMapping.scaleY - verticalFrame.geometry.mapping.scaleY) > 0.000001;
-		state.bottomDockMapping = verticalFrame.geometry.mapping;
-		state.bottomDockVerticalOutsetDip = Inkeys::UI::Bar::ResolveBarBottomDockVerticalOutset(
-			verticalInput, state.bottomDockSpring, state.bottomDockCaptureBottomSpring, state.bottomDockMapping);
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.event = DockTrace::Event::VerticalMapping;
-		state.traceFrame.mode = static_cast<unsigned>(state.bottomDockFrameMode);
-		state.traceFrame.phase = static_cast<unsigned>(state.bottomDockFramePhase);
-		state.traceFrame.centerMode = static_cast<unsigned>(state.bottomDockFrameCenterMode);
-		state.traceFrame.centerPhase = static_cast<unsigned>(state.bottomDockFrameCenterPhase);
-		state.traceFrame.taggedSerial = state.bottomDockFrameTransitionSerial;
-		FillDockTraceGeometry(state, state.traceFrame);
-		DockTrace::Get().Push(state.traceFrame);
-#endif
-		state.bottomDockVisualActive = springActive || verticalMappingChanged
+		state.bottomDockMapping = dockMode == BarBottomDockMode::BottomDocked
+			? ResolveBarBottomDockVerticalMapping(
+				baseTopDip, baseBottomDip,
+				state.bottomDockSpring.positionDip,
+				state.bottomDockCaptureBottomSpring.positionDip, true)
+			: ResolveBarBottomDockRecoveringVerticalMapping(
+				baseTopDip, baseBottomDip,
+				state.bottomDockSpring.positionDip,
+				state.bottomDockCaptureBottomSpring.positionDip, true);
+		state.bottomDockVisualActive = springActive
 			|| captureBottomSpringActive
 			|| abs(state.bottomDockSpring.positionDip) > 0.000001
 			|| abs(state.bottomDockCaptureBottomSpring.positionDip) > 0.000001
@@ -7790,7 +7674,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| centerCaptureFarEdgeActive
 			|| abs(state.bottomDockCenterSpring.positionDip) > 0.000001
 			|| state.bottomDockRootLayoutChanged;
-		const bool visualChanged = verticalMappingChanged || abs(previousVisualOffsetDip
+		const bool visualChanged = abs(previousVisualOffsetDip
 			- state.bottomDockSpring.positionDip) > 0.000001
 			|| abs(previousCaptureBottomOffsetDip
 				- state.bottomDockCaptureBottomSpring.positionDip) > 0.000001
@@ -7826,11 +7710,10 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				&& !centerCaptureFarEdgeActive
 				&& owner_.bottomDockCenterPhase.load(memory_order_acquire)
 					!= BarBottomDockPhase::Stable;
-			const bool clearGrabAnchor = frame.bottomDockDragGrabAnchorValid;
 			const bool clearFloatingRecovery =
 				dockMode == BarBottomDockMode::Floating
 				&& owner_.bottomDockRecoveryActive.load(memory_order_acquire);
-			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery || clearGrabAnchor)
+			if (settleVerticalPhase || settleCenterPhase || clearFloatingRecovery)
 			{
 				// 阶段收敛也属于两轴 tuple，必须在同一偶数 serial 中发布。
 				if (!TryBeginFrameTransition()) return true;
@@ -7842,7 +7725,6 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 						BarBottomDockPhase::Stable, memory_order_relaxed);
 				if (clearFloatingRecovery)
 					owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
-				if (clearGrabAnchor) owner_.bottomDockDragGrabAnchorValid.store(false, memory_order_relaxed);
 				state.bottomDockFrameTransitionSerial = owner_.FinishBottomDockTransition();
 			}
 			state.bottomDockFramePhase = BarBottomDockPhase::Stable;
@@ -7856,6 +7738,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 				state.bottomDockFrameRecoveryActive = false;
 				state.barState.PositionUpdate(frameZoom);
 			}
+			state.bottomDockRecoverySeeded = false;
 		}
 	}
 
@@ -9216,7 +9099,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			BarBottomDockCenterThresholdDip,
 			abs(state.bottomDockHorizontalMapping.rigidGripTranslationXDip),
 			abs(state.bottomDockCenterCaptureFarEdgeSpring.positionDip) });
-		const double verticalDockOutsetDip = state.bottomDockVerticalOutsetDip;
+		const double verticalDockOutsetDip = BarBottomDockVisualLimitDip
+			+ abs(state.bottomDockCaptureBottomSpring.positionDip);
 		const bool reserveBottomDockCapacity =
 			frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
@@ -9237,20 +9121,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		HRESULT ensureDeviceResourcesHr = state.spec.EnsureDeviceResources(epoch,
 			static_cast<UINT32>(state.capacitySize.cx),
 			static_cast<UINT32>(state.capacitySize.cy));
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.resourceHr = ensureDeviceResourcesHr;
-#endif
 		if (FAILED(ensureDeviceResourcesHr))
 		{
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-			state.traceFrame.event = DockTrace::Event::Invalidated;
-			state.traceFrame.reason = DockTrace::ApiFailure;
-			state.traceFrame.groups |= DockTrace::Result | DockTrace::Window;
-			state.traceFrame.capacityOrigin = state.capacityOrigin;
-			state.traceFrame.capacitySize = state.capacitySize;
-			// 未尝试 GDI/ULW，资源失败单独记录，不能伪装成 GetDC 错误。
-			DockTrace::Get().Push(state.traceFrame);
-#endif
 			state.dirtyRegionTracker.RetainForRetry(true);
 			state.presentDecision.RequireFullDirtyRetry();
 			state.presentDecision.RecordFailure(
@@ -12634,42 +12506,14 @@ bool presetButton = button.presetIndex >= 0;
 				state.monitorOrigin.y + candidateViewport.top + directTranslation.y };
 			POINT ptSrc = candidateSource;
 			presentedSize = { candidateWidth, candidateHeight };
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-			state.traceFrame.event = DockTrace::Event::Submit;
-			state.traceFrame.groups |= DockTrace::Window | DockTrace::Result;
-			state.traceFrame.submitQpc = DockTrace::Now();
-			state.traceFrame.taggedSerial = state.bottomDockFrameTransitionSerial;
-			state.traceFrame.observedBeforeSerial = transitionSerialBefore;
-			state.traceFrame.currentSerial = transitionSerialAfter;
-			state.traceFrame.deferredSerial = deferredTransitionSerial;
-			state.traceFrame.presentedSerial = presentedTransitionSerial;
-			state.traceFrame.desired = latestDirectTranslation;
-			state.traceFrame.actual = presentedDirectTranslation;
-			state.traceFrame.viewport = candidateViewport;
-			state.traceFrame.capacityOrigin = state.capacityOrigin;
-			state.traceFrame.capacitySize = state.capacitySize;
-			state.traceFrame.source = candidateSource;
-			state.traceFrame.destination = presentedDestination;
-			state.traceFrame.windowSize = presentedSize;
-			state.traceFrame.cachedWindow = owner_.committedWindowScreenBounds;
-			state.traceFrame.reason = deferWindowPresentation ? DockTrace::BarrierPending : DockTrace::None;
-			if (forceFullWindowReplacement) state.traceFrame.flags |= DockTrace::FullReplacement;
-			DockTrace::Get().Push(state.traceFrame);
-#endif
 			if (!deferWindowPresentation && barGdiInterop)
 			{
 				// GetDC 自带必要的 D2D 提交，避免在此之前再做一次重复 Flush。
 				HDC hdc = nullptr;
 				getDcHr = barGdiInterop->GetDC(
 					D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-				state.traceFrame.stageQpc[0] = DockTrace::Now();
-#endif
 				if (SUCCEEDED(getDcHr) && hdc)
 				{
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-					state.traceFrame.flags |= DockTrace::WindowApiAttempted;
-#endif
 					ulwi.pptDst = &presentedDestination;
 					ulwi.psize = &presentedSize;
 					ulwi.pptSrc = &ptSrc;
@@ -12680,30 +12524,13 @@ bool presetButton = button.presetIndex >= 0;
 					if (!updateLayeredWindowSucceeded)
 						updateLayeredWindowError = GetLastError();
 					else directDragTransaction.WindowUpdated();
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-					state.traceFrame.stageQpc[1] = DockTrace::Now();
-					if (updateLayeredWindowSucceeded) DockTrace::Get().InvalidatePresented();
-#endif
 					releaseDcHr = barGdiInterop->ReleaseDC(nullptr);
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-					state.traceFrame.stageQpc[2] = DockTrace::Now();
-#endif
 				}
 				else if (SUCCEEDED(getDcHr)) getDcHr = E_POINTER;
 			}
 		}
 
 		HRESULT endDrawHr = barDeviceContext->EndDraw();
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.stageQpc[3] = DockTrace::Now();
-		state.traceFrame.event = DockTrace::Event::PresentResult;
-		state.traceFrame.getDc = getDcHr;
-		state.traceFrame.ulw = deferWindowPresentation || FAILED(getDcHr) ? -1 : (updateLayeredWindowSucceeded ? 1 : 0);
-		state.traceFrame.winError = updateLayeredWindowError;
-		state.traceFrame.releaseDc = releaseDcHr;
-		state.traceFrame.endDraw = endDrawHr;
-		if (deferWindowPresentation) DockTrace::Get().Push(state.traceFrame);
-#endif
 		state.spec.HandleFrameEndDrawResult(endDrawHr);
 		if (deferWindowPresentation)
 		{
@@ -12734,12 +12561,6 @@ bool presetButton = button.presetIndex >= 0;
 			epoch.generation, frameDemandGeneration,
 			state.presentAttemptFrameSerial);
 		state.presentationAlpha.CompleteAttempt(presentCompletion.IsCommitted());
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.committed = presentCompletion.IsCommitted();
-		if (state.traceFrame.committed) state.traceFrame.actual = directTranslation;
-		if (!state.traceFrame.committed) state.traceFrame.reason = DockTrace::ApiFailure;
-		DockTrace::Get().Push(state.traceFrame);
-#endif
 		if (presentCompletion.IsCommitted())
 		{
 			const auto alpha = state.presentationAlpha.CommittedAlpha();
@@ -12871,12 +12692,6 @@ bool presetButton = button.presetIndex >= 0;
 				state.monitorOrigin.y + mainButton->y.val * frame.zoom
 					+ directTranslation.y,
 				memory_order_relaxed);
-			owner_.bottomDockPresentedMainHeightDip.store(mainButton->h.val, memory_order_relaxed);
-			owner_.bottomDockPresentedMainWidthDip.store(mainButton->w.val, memory_order_relaxed);
-			owner_.bottomDockPresentedMainStrokeDip.store(mainButtonStroke, memory_order_relaxed);
-			owner_.bottomDockPresentedDragActive.store(frame.bottomDockDragActive, memory_order_relaxed);
-			owner_.bottomDockPresentedGrabAnchorValid.store(frame.bottomDockDragGrabAnchorValid, memory_order_relaxed);
-			owner_.bottomDockPresentedDragSession.store(frame.bottomDockDragSession, memory_order_relaxed);
 			owner_.bottomDockPresentedRawMainCenterScreenX.store(
 				state.monitorOrigin.x + (mainButton->x.val
 					+ state.bottomDockHorizontalMapping.rigidGripTranslationXDip)
@@ -12938,20 +12753,6 @@ bool presetButton = button.presetIndex >= 0;
 			// 第三光源接受区也只消费完整成功事务对应的几何。
 			owner_.RefreshBorderCursorVisibleRegions();
 			directDragTransaction.Commit();
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-			state.traceFrame.event = DockTrace::Event::Committed;
-			state.traceFrame.mode = static_cast<unsigned>(state.bottomDockFrameMode);
-			state.traceFrame.phase = static_cast<unsigned>(state.bottomDockFramePhase);
-			state.traceFrame.centerMode = static_cast<unsigned>(state.bottomDockFrameCenterMode);
-			state.traceFrame.centerPhase = static_cast<unsigned>(state.bottomDockFrameCenterPhase);
-			state.traceFrame.recovery = state.bottomDockFrameRecoveryActive;
-			state.traceFrame.actual = directTranslation;
-			state.traceFrame.cachedWindow = committedWindowScreenBounds;
-			state.traceFrame.presentedSerial = state.bottomDockFrameTransitionSerial;
-			state.traceFrame.displaySerial = state.observedDisplaySerial;
-			FillDockTraceGeometry(state, state.traceFrame);
-			DockTrace::Get().Presented(state.traceFrame);
-#endif
 			state.bottomDockIndicatorRevealDamagePending = false;
 			state.committedAnchor = POINT{
 				static_cast<LONG>(lround(mainButton->x.val * frameZoom)),
@@ -12996,11 +12797,6 @@ bool presetButton = button.presetIndex >= 0;
 	}
 	else
 	{
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.event = DockTrace::Event::Invalidated;
-		state.traceFrame.reason = DockTrace::NoPresentation;
-		DockTrace::Get().Push(state.traceFrame);
-#endif
 		// 共享调度器负责唯一休眠点，客户端只报告本窗口已经 idle。
 		state.animationClock.Rebase();
 		return BarRenderLoopStageResult::Idle;
@@ -13067,19 +12863,9 @@ BarRenderLoopCoordinator::RenderFrame(
 	frame.ordinal = frameOrdinal_;
 	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
 		return FrameResult::Idle;
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	state.traceFrame.deviceGeneration = context.epoch.generation;
-#endif
 	if (state.presentDecision.HasFailureBackoff()
 		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
-	{
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.event = DockTrace::Event::Invalidated;
-		state.traceFrame.reason = DockTrace::FailureBackoff;
-		DockTrace::Get().Push(state.traceFrame);
-#endif
 		return FrameResult::Retry;
-	}
 	BarDirectWindowDragPhase expectedPhase = BarDirectWindowDragPhase::Idle;
 	const bool directTranslationPending =
 		owner_.directWindowDragTranslationX.load(memory_order_acquire) != 0
@@ -13096,29 +12882,6 @@ BarRenderLoopCoordinator::RenderFrame(
 		const POINT translation{
 			owner_.directWindowDragTranslationX.exchange(0, memory_order_acq_rel),
 			owner_.directWindowDragTranslationY.exchange(0, memory_order_acq_rel) };
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		DockTrace::Record absorbTrace = state.traceFrame;
-		absorbTrace.event = DockTrace::Event::AbsorbBefore;
-		absorbTrace.groups |= DockTrace::Window | DockTrace::State;
-		absorbTrace.mode = static_cast<unsigned>(state.bottomDockFrameMode);
-		absorbTrace.phase = static_cast<unsigned>(state.bottomDockFramePhase);
-		absorbTrace.centerMode = static_cast<unsigned>(state.bottomDockFrameCenterMode);
-		absorbTrace.centerPhase = static_cast<unsigned>(state.bottomDockFrameCenterPhase);
-		absorbTrace.recovery = state.bottomDockFrameRecoveryActive;
-		absorbTrace.consumedSerial = absorbTrace.taggedSerial = state.bottomDockFrameTransitionSerial;
-		absorbTrace.viewport = state.viewportController.Committed();
-		absorbTrace.capacityOrigin = state.capacityOrigin;
-		absorbTrace.capacitySize = state.capacitySize;
-		absorbTrace.source = { absorbTrace.viewport.left - state.capacityOrigin.x, absorbTrace.viewport.top - state.capacityOrigin.y };
-		absorbTrace.desired = translation;
-		absorbTrace.actual = presentedBeforeAbsorb;
-		absorbTrace.cachedWindow = owner_.committedWindowScreenBounds;
-		absorbTrace.frameTranslation = translation;
-		FillDockTraceGeometry(state, absorbTrace);
-		// 原样读取生产成功快照；候选几何与独立图像 probe 均保持原有所有权。
-		FillDockTracePresentedState(absorbTrace, owner_.BottomDockPresentedSnapshot());
-		DockTrace::Get().Push(absorbTrace);
-#endif
 		if (translation.x != 0 || translation.y != 0)
 		{
 			auto mainButton = state.superellipseMap[
@@ -13151,18 +12914,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		const POINT presentedAfterAbsorb =
 			ResolveBarDirectWindowTranslationAfterAbsorb(
 				presentedBeforeAbsorb, translation);
-		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb, {}, translation);
-		Inkeys::UI::Bar::RebaseBarBottomDockMapping(state.bottomDockMapping,
-			state.bottomDockHorizontalMapping, translation.x / max(0.000001, frame.zoom),
-			translation.y / max(0.000001, frame.zoom));
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		absorbTrace.event = DockTrace::Event::AbsorbAfter;
-		absorbTrace.actual = presentedAfterAbsorb;
-		FillDockTraceGeometry(state, absorbTrace);
-		// 原样读取生产成功快照；候选几何与独立图像 probe 均保持原有所有权。
-		FillDockTracePresentedState(absorbTrace, owner_.BottomDockPresentedSnapshot());
-		DockTrace::Get().Push(absorbTrace);
-#endif
+		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
 		owner_.directWindowDragPhase.store(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
 	}
@@ -13182,7 +12934,6 @@ BarRenderLoopCoordinator::RenderFrame(
 		owner_.bottomDockCenterElasticOffsetDip.store(0.0,
 			memory_order_relaxed);
 		owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
-		owner_.bottomDockDragGrabAnchorValid.store(false, memory_order_relaxed);
 		(void)owner_.FinishBottomDockTransition(true);
 		state.whiteboardDockPlacementPending = true;
 	}
@@ -13213,53 +12964,18 @@ BarRenderLoopCoordinator::RenderFrame(
 			owner_.bottomDockDragRigidGripScreenX.load(memory_order_relaxed);
 		frame.bottomDockDragRigidGripScreenY =
 			owner_.bottomDockDragRigidGripScreenY.load(memory_order_relaxed);
-		frame.bottomDockDragPointerScreenY = owner_.bottomDockDragPointerScreenY.load(memory_order_relaxed);
-		frame.bottomDockDragEffectivePointerScreenY = owner_.bottomDockDragEffectivePointerScreenY.load(memory_order_relaxed);
-		frame.bottomDockDragGrabNormalizedY = owner_.bottomDockDragGrabNormalizedY.load(memory_order_relaxed);
-		frame.bottomDockDragGrabAnchorValid = owner_.bottomDockDragGrabAnchorValid.load(memory_order_relaxed);
-		frame.bottomDockDragSession = owner_.bottomDockDragSession.load(memory_order_relaxed);
 		frame.bottomDockTransitionTranslation = POINT{
 			owner_.directWindowDragTranslationX.load(memory_order_relaxed),
 			owner_.directWindowDragTranslationY.load(memory_order_relaxed) };
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.deferredSerial = owner_.bottomDockDeferredTransitionSerial.load(memory_order_relaxed);
-		state.traceFrame.presentedSerial = owner_.bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
-#endif
 		if (owner_.bottomDockTransitionSerial.load(memory_order_acquire)
 			== frame.bottomDockTransitionSerial) break;
 	}
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-	state.traceFrame.event = DockTrace::Event::FrameSnapshot;
-	state.traceFrame.gesture = DockTrace::Get().ActiveGesture();
-	state.traceFrame.groups |= DockTrace::State | DockTrace::Window;
-	state.traceFrame.snapshotQpc = DockTrace::Now();
-	state.traceFrame.consumedSerial = state.traceFrame.taggedSerial = frame.bottomDockTransitionSerial;
-	state.traceFrame.currentSerial = frame.bottomDockTransitionSerial;
-	state.traceFrame.mode = static_cast<unsigned>(frame.bottomDockMode);
-	state.traceFrame.phase = static_cast<unsigned>(frame.bottomDockPhase);
-	state.traceFrame.centerMode = static_cast<unsigned>(frame.bottomDockCenterMode);
-	state.traceFrame.centerPhase = static_cast<unsigned>(frame.bottomDockCenterPhase);
-	state.traceFrame.drag = frame.bottomDockDragActive;
-	state.traceFrame.recovery = frame.bottomDockRecoveryActive;
-	state.traceFrame.elasticInputDip = { frame.bottomDockElasticOffsetDip, frame.bottomDockCenterElasticOffsetDip };
-	state.traceFrame.tool = static_cast<unsigned>(frame.stateMode);
-	state.traceFrame.opensRight = state.barState.widgetPosition.mainBar;
-	state.traceFrame.rawGrip = { frame.bottomDockDragRigidGripScreenX, frame.bottomDockDragRigidGripScreenY };
-	state.traceFrame.frameTranslation = frame.bottomDockTransitionTranslation;
-	FillDockTraceGeometry(state, state.traceFrame);
-	DockTrace::Get().Push(state.traceFrame);
-#endif
 	if (ShouldDeferBarBottomDockReleaseHandoff(
 		frame.bottomDockDragActive,
 		expectedPhase == BarDirectWindowDragPhase::Dragging,
 		directTranslationPending))
 	{
 		// 松手 tuple 已发布但直移所有权尚未交接，下一帧必须先吸收再布局。
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.event = DockTrace::Event::Invalidated;
-		state.traceFrame.reason = DockTrace::ReleaseHandoff;
-		DockTrace::Get().Push(state.traceFrame);
-#endif
 		return FrameResult::Retry;
 	}
 	frame.bottomDockLayoutLocked =
@@ -13286,12 +13002,6 @@ BarRenderLoopCoordinator::RenderFrame(
 		// 旧候选不能确认新输入的屏障，下一帧重新消费完整状态。
 		state.dirtyRegionTracker.RetainForRetry(true);
 		state.presentDecision.RequireVisualRetry();
-#if INKEYS_BAR_BOTTOM_DOCK_TRACE_ACTIVE
-		state.traceFrame.event = DockTrace::Event::Invalidated;
-		state.traceFrame.reason = DockTrace::InvalidatedTuple;
-		state.traceFrame.taggedSerial = state.bottomDockFrameTransitionSerial;
-		DockTrace::Get().Push(state.traceFrame);
-#endif
 		return FrameResult::Retry;
 	}
 	PrepareLightingAndDemand(state, frame, needRendering);

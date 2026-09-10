@@ -87,14 +87,7 @@
       <AdditionalDependencies>jsoncpp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <!-- 临时诊断仅 Debug 自动启用；NDEBUG 在本项目的 Debug 中也存在。 -->
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
-    <ClCompile>
-      <PreprocessorDefinitions>INKEYS_BAR_BOTTOM_DOCK_TRACE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-  </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.BottomDockTrace.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Animation.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Animation.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Metrics.cppm" />

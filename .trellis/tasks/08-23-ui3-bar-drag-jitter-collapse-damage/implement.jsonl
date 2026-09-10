@@ -3,6 +3,3 @@
 {"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 ARM64 Solution 构建和兼容边界"}
 {"file": ".trellis/tasks/08-14-ui3-bar-bottom-dock-elastic/design.md", "reason": "最初果冻设计：抓取连续、按住时窗口包络不收缩"}
 {"file": ".trellis/tasks/08-20-ui3-bar-bottom-dock-feedback/prd.md", "reason": "水平居中捕获的原始用户需求；历史实现由现行 spec 取代"}
-{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "临时诊断日志、高频写入与退出资源合同"}
-{"file": ".trellis/tasks/08-23-ui3-bar-drag-jitter-collapse-damage/research/issue1-runtime-investigation-plan.md", "reason": "用户已批准的取证计划与复现步骤"}
-{"file": ".trellis/tasks/08-23-ui3-bar-drag-jitter-collapse-damage/research/issue1-real-trace-geometry.md", "reason": "用户两组实机日志的可复算抓点、跨模式恢复及吸收快照反例，约束此次证据驱动修复"}

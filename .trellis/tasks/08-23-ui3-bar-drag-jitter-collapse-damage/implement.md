@@ -62,40 +62,8 @@
 - 日志仍为 Build/ui3-bottom-dock-validation/msbuild.log 与 headless.log。git diff --check、BOM/UTF-8/CRLF 与修改范围检查通过；构建生成的无关 PptCOM.dll 差异已恢复。
 - 未启动可见 GUI，未创建 commit。问题 2、3 的用户验收保持有效；问题 1 等待同一慢速三帧场景的真实视觉复测，任务不归档。
 
-## 运行时取证执行步骤
+## 最终验收与关闭
 
-1. [x] 独立几何审计与主会话时序/日志调查，结果写入 research。
-2. [x] 实现临时有界追踪，接入输入、转换、帧推进/作废、直移、ULW 与成功发布点，保持产品行为。
-3. [x] 加入必要记录器测试与日志解析/使用说明，确认字段和单位可关联。
-4. [x] 独立 trellis-check 审查，ARM64 host 完整构建 InkeysRepo.sln Debug | ARM64 并运行全部 --no-window。
-5. [x] 提供测试程序和日志位置，等待用户两组实测数据；不启动 GUI，不 commit，不归档问题 1。
+用户主观对比后明确选择 `codex/bottom-dock-before-trace`（342990fe）为最终结果，要求 draw 恢复该版本并结束本问题。撤回 ed6012fc 引入的临时调试输出与额外几何/恢复修复，源码、测试、工程和规范保持与认可版本一致。问题1按用户最终验收关闭，问题2、3此前验收保持有效；以上历史待办与继续取证安排不再执行。通过新的回退提交保留历史，不重写 draw 分支历史。
 
-## 临时追踪版交付验证
-
-- 研究已保存 issue1-geometry-audit.md，区分普通底栏基准、实际抓取点、脱离限幅、浮动脉冲高度和松手吸收快照等证据与待实测关系；本轮没有据此做功能修复。
-- 新增临时 Bar.BottomDockTrace.h/.cpp；仅 Bar.Interaction.cpp、Bar.RenderLoop.cpp 增加诊断接线，工程/filters/Headless 登记和现有测试同步。Main.cppm、BottomDock.h、PresentDecision.h 与动画文件未改。
-- 最终完整 InkeysRepo.sln Debug|ARM64 构建通过，ARM64 host，900秒超时，26.18秒；全部 --no-window 通过，2.58秒并生成 TRACE_FIXTURE。已有问题2/3回归仍通过。
-- 已从实际 app CL.command.1.tlog 确认 Interaction、RenderLoop、Trace.cpp 编译启用诊断定义；未运行实际 GUI。
-- 原生 JSONL 经 analyze_bar_bottom_dock_trace.py 解析成功，已知成功抓点误差为0；另外验证20/10位移反例、最终ULW位移、未知目标不抹掉抓点数据、实际输入时间和生产快照吸收前后分离。
-- 日志自动位于所运行程序目录 log/bar-bottom-dock-trace-*.jsonl，使用步骤见 research/issue1-trace-guide.md。用户结束手势后等待约2秒，提供此次运行全部分段日志；问题1保持开放等待实测。
-- 独立检查已修正资源失败记录、数据来源标记、文件尾部限额和刷新错误计数。git diff --check、编码/CRLF及修改范围检查通过；恢复构建生成的无关PptCOM.dll，不提交commit。
-
-## 实机轨迹修复步骤
-
-1. [x] 从冻结日志定位并保存首个独立于输入追赶的几何偏差与跨模式恢复反例。
-2. [x] 明确实际抓点与成功形状交接合同，最小修改竖向计算/重基准，保持诊断。
-3. [x] 用实测序列做失败前/修复后回归，并独立核对已验收问题2/3。
-4. [x] ARM64完整Solution构建、全部无窗口测试、日志解析和编码检查。
-5. [x] 交付保留调试输出的修复版，等待用户人工复测，不commit或归档。
-
-## 2026-09-10 实机轨迹修复验证
-
-- 基于原始 run1057671125702 的1280个成功帧与独立抓点公式定位：真实 Down 点未被约束、跨模式速度/形状基准混用、吸收后成功快照坐标不一致。完整证据见 research/issue1-real-trace-geometry.md。
-- 功能修改为4个Bar文件与现有bar_bottom_dock_tests.cpp；保留前一轮全部追踪和工程定义，并增加独立的生产求解器/raw/effective/成功高度字段。阈值、频率/阻尼、已验收的水平抓手及居中收短行为保持。
-- 新回归复现f138/f354/f776/f1216旧抓点误差并验证新实际抓点；f776按当前输入把成功底端移至1820再收敛到1824；覆盖失败首帧重新播种、速度999.7的脱离/重新捕获、h84释放终态、纯高度恢复中重新抓取再释放、-158/+205位移吸收与source/destination恒等、55px正常窗口追赶及明确正高度保护。
-- 独立 trellis-check 完成全范围复核；修正纯高度恢复的release布局锁遗漏和已知/未知高度fixture断言冲突，没有剩余任务内确定缺陷。既有未改代码的类型转换警告未扩大清理。
-- ARM64 host完整InkeysRepo.sln Debug|ARM64构建exit0，66.9秒；构建超时900秒并包含PptCOM依赖。全部InkeysHeadlessTests.exe --no-window exit0，3.09秒，PASS animation correctness。
-- 新原生fixture run1668117835113经离线解析，独立实际抓点/raw=520px、candidate/effective误差均为0、q=.75、实际高度80正确序列化；旧日志两段仍解析出1280成功帧。解析器另验证55px追赶剔除、有效目标与独立probe分离、缺失值不补0。
-- msbuild.log/headless.log在Build/ui3-bottom-dock-validation；原始日志及冻结副本的SHA256均核对未改变。已恢复构建生成的无关Inkeys/PptCOM.dll差异。
-- 程序为Build/ARM64/Debug/Inkeys.exe，PE已确认ARM64。未启动GUI、未commit；问题1与诊断保留待用户人工复测，任务保持in_progress。
-- 本轮可执行文件SHA256：`44f31dc1a7dec0621805b739bb7fc12e1468044c64ea81751677517ea66664f8`。
+最终恢复验证：独立只读复核确认产品/测试/工程/spec与342990fe一致，调试定义和源码引用均已移除；ARM64 host完整InkeysRepo.sln Debug|ARM64构建exit0，108.69秒（超时900秒），全部--no-window exit0，2.36秒。已恢复构建生成的无关PptCOM.dll差异；未启动GUI，按用户最终验收结案。
