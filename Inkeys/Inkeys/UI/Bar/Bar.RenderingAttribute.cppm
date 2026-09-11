@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "Bar.ThemeMaterial.h"
 
 export module Inkeys.UI.Bar:RenderingAttribute;
 
@@ -31,18 +32,21 @@ public:
 	}
 
 	static int GetFrameDirtyOutset(const optional<BarUiValueClass>& ft,
-		BarUiFrameRenderingEnum frameRendering, double tarZoom)
+		BarUiFrameRenderingEnum frameRendering, double tarZoom, bool themeSurface = false)
 	{
 		// 边框外扩需要折算到设备像素，固定抗锯齿余量在矩形计算处统一追加。
 		double dirtyWidth = ft.has_value() ? static_cast<double>(ft.value().val) : 0.0;
 		if (frameRendering == BarUiFrameRenderingEnum::PointLight)
 			dirtyWidth += pointLightDiffuseExtraWidth; // 1px 清晰边外侧再覆盖约 3px 柔光。
+		// 静态阴影预留固定范围，深浅过渡和关闭动态光时都不能裁掉边缘。
+		if (themeSurface)
+			dirtyWidth = max(dirtyWidth, BarThemeMaterial::SurfaceShadowOutsetDip);
 		return static_cast<int>(ceil(dirtyWidth * tarZoom));
 	}
 
 	static RECT GetWeigetRect(const BarUiShapeClass& shape, double tarZoom)
 	{
-		int ft = GetFrameDirtyOutset(shape.ft, shape.frameRendering, tarZoom) + dirtyAntialiasPadding;
+		int ft = GetFrameDirtyOutset(shape.ft, shape.frameRendering, tarZoom, shape.themeSurface) + dirtyAntialiasPadding;
 
 		RECT ret;
 		ret.left = static_cast<LONG>(floor(shape.inhX * tarZoom) - ft);
@@ -54,7 +58,7 @@ public:
 	}
 	static RECT GetWeigetRect(const BarUiSuperellipseClass& superellipse, double tarZoom)
 	{
-		int ft = GetFrameDirtyOutset(superellipse.ft, superellipse.frameRendering, tarZoom) + dirtyAntialiasPadding;
+		int ft = GetFrameDirtyOutset(superellipse.ft, superellipse.frameRendering, tarZoom, superellipse.themeSurface) + dirtyAntialiasPadding;
 
 		RECT ret;
 		ret.left = static_cast<LONG>(floor(superellipse.inhX * tarZoom) - ft);

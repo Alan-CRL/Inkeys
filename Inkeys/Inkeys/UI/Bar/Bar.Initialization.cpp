@@ -8,6 +8,8 @@
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
 
+#include "Bar.ThemeMaterial.h"
+
 module Inkeys.UI.Bar;
 import :Main;
 import :Layout;
@@ -224,9 +226,31 @@ namespace Inkeys::UI::Bar
 
 		return true;
 	}
+	// AppsUseLightTheme 不存在（含旧系统）时保留原深色外观。
+	static bool ReadSystemDarkStyle() noexcept
+	{
+		DWORD value = 0;
+		DWORD bytes = sizeof(value);
+		const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER,
+			L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+			L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &bytes);
+		return status != ERROR_SUCCESS || value == 0;
+	}
+
+	void RefreshSystemTheme() noexcept
+	{
+		const bool darkStyle = ReadSystemDarkStyle();
+		if (barUISet.barStyle.requestedDarkStyle.exchange(
+			darkStyle, std::memory_order_acq_rel) != darkStyle)
+			barUISet.UpdateRendering(false);
+	}
+
 	void InitializeUI(BarUISetClass& barUISet)
 	{
 		Inkeys::UI::Bar::Zoom::Initialize(barUISet);
+		const bool darkStyle = ReadSystemDarkStyle();
+		barUISet.barStyle.requestedDarkStyle.store(darkStyle, std::memory_order_release);
+		barUISet.barStyle.darkStyle = darkStyle;
 		SetThemeStyleSource(&barUISet.barStyle);
 
 		// 定义主按钮的位置（Inkeys2 兼容模式）
@@ -258,7 +282,7 @@ namespace Inkeys::UI::Bar
 
 				{
 					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
-					svg->InitializationFromResource(L"UI", barUISet.barStyle.darkStyle ? L"logo1" : L"logo2");
+					svg->InitializationFromResource(L"UI", L"logo1");
 					svg->SetWH(nullopt, 80.0);
 					svg->enable.Initialization(true);
 					barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
@@ -272,7 +296,14 @@ namespace Inkeys::UI::Bar
 					barUISet.svgMap[BarUISetSvgEnum::logoInk] = svg;
 				}
 				{
-					// TODO “收起” 文字标识
+					// 浅色 Logo 保持独立资源，收展时和深色层连续交叉淡化。
+					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0,
+						GetPenColor(), RGB(35, 43, 47));
+					svg->InitializationFromResource(L"UI", L"logo2");
+					svg->SetWH(nullopt, 80.0);
+					svg->pct.Initialization(0.0);
+					svg->enable.Initialization(true);
+					barUISet.svgMap[BarUISetSvgEnum::logoLight] = svg;
 				}
 			}
 			// 主栏
@@ -325,7 +356,7 @@ namespace Inkeys::UI::Bar
 					barUISet.shapeMap[BarUISetShapeEnum::MorePanelCloseHit] = close;
 
 					auto closeSvg = make_shared<BarUiSVGClass>(
-						0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+						0.0, 0.0, GetThemeColor(BarThemeColorEnum::IconPrimary), nullopt);
 					closeSvg->InitializationFromResource(L"UI", L"barCloseSmall");
 					closeSvg->SetWH(18.0, 18.0);
 					closeSvg->pct.Initialization(0.0);
@@ -531,7 +562,7 @@ namespace Inkeys::UI::Bar
 							// 色系切换按钮改为太阳/月亮纯图标。
 							auto toneSun = make_shared<BarUiSVGClass>(
 								0.0, 0.0,
-								GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+								GetThemeColor(BarThemeColorEnum::IconPrimary), nullopt);
 							toneSun->InitializationFromResource(L"UI", L"colorSun");
 							toneSun->SetWH(20.0, 20.0);
 							toneSun->pct.Initialization(0.0);
@@ -541,7 +572,7 @@ namespace Inkeys::UI::Bar
 
 							auto toneMoon = make_shared<BarUiSVGClass>(
 								0.0, 0.0,
-								GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+								GetThemeColor(BarThemeColorEnum::IconPrimary), nullopt);
 							toneMoon->InitializationFromResource(L"UI", L"colorMoon");
 							toneMoon->SetWH(20.0, 20.0);
 							toneMoon->pct.Initialization(0.0);
@@ -656,7 +687,7 @@ namespace Inkeys::UI::Bar
 							shape->enable.Initialization(true);
 							barUISet.shapeMap[shapeType] = shape;
 
-							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+							auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetThemeColor(BarThemeColorEnum::IconPrimary), nullopt);
 							svg->InitializationFromResource(L"UI", resourceName);
 							svg->SetWH(18.0, 18.0);
 							svg->enable.Initialization(true);
@@ -810,7 +841,7 @@ namespace Inkeys::UI::Bar
 							thicknessPreviewCircle;
 						auto adjustSvg = make_shared<BarUiSVGClass>(
 							0.0, 0.0,
-							GetThemeColor(BarThemeColorEnum::TextPrimary), nullopt);
+							GetThemeColor(BarThemeColorEnum::IconPrimary), nullopt);
 						adjustSvg->InitializationFromResource(
 							L"UI", L"barThicknessAdjust");
 						adjustSvg->SetWH(18.0, 18.0);
@@ -1038,10 +1069,11 @@ namespace Inkeys::UI::Bar
 							};
 						InitializeTooltipSvg(
 							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo,
-							L"barQuestion", RGB(200, 200, 200), 14.0);
+							L"barQuestion", darkStyle ? RGB(200, 200, 200)
+								: GetThemeColor(BarThemeColorEnum::IconPrimary), 14.0);
 						InitializeTooltipSvg(
 							BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo,
-							L"barInfo", RGB(255, 255, 255), 14.0);
+							L"barInfo", GetThemeColor(BarThemeColorEnum::IconPrimary), 14.0);
 						InitializeTooltipSvg(
 							BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose,
 							L"barCloseSmall",
@@ -1111,8 +1143,8 @@ namespace Inkeys::UI::Bar
 							{
 								auto icon = make_shared<BarUiSVGClass>(
 									0.0, 0.0,
-									GetThemeColor(BarThemeColorEnum::TextPrimary),
-									GetThemeColor(BarThemeColorEnum::TextPrimary));
+									GetThemeColor(BarThemeColorEnum::IconPrimary),
+									GetThemeColor(BarThemeColorEnum::IconPrimary));
 								icon->InitializationFromResource(L"UI", resourceName);
 								icon->SetWH(28.0, 28.0);
 								icon->pct.Initialization(0.0);
@@ -1182,7 +1214,7 @@ namespace Inkeys::UI::Bar
 
 							auto closeSvg = make_shared<BarUiSVGClass>(
 								0.0, 0.0,
-								GetThemeColor(BarThemeColorEnum::TextPrimary),
+								GetThemeColor(BarThemeColorEnum::IconPrimary),
 								nullopt);
 							closeSvg->InitializationFromResource(L"UI", L"barCloseSmall");
 							closeSvg->SetWH(18.0, 18.0);
@@ -1195,5 +1227,29 @@ namespace Inkeys::UI::Bar
 				}
 			}
 		}
+		const double lightMaterial = darkStyle ? 0.0 : 1.0;
+		for (auto& [key, shape] : barUISet.shapeMap)
+			shape->lightMaterial = lightMaterial;
+		for (auto surface : {
+			BarUISetShapeEnum::MainBar, BarUISetShapeEnum::MorePanel,
+			BarUISetShapeEnum::DrawAttributeBar,
+			BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup,
+			BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup,
+			BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel,
+			BarUISetShapeEnum::GeometryAttributeBar })
+		{
+			auto shape = barUISet.shapeMap[surface];
+			shape->themeSurface = true;
+			shape->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
+			shape->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
+		}
+		auto mainButton = barUISet.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+		mainButton->themeSurface = true;
+		mainButton->lightMaterial = barUISet.barState.fold ? 0.0 : lightMaterial;
+		mainButton->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
+		mainButton->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
+
 	}
 }

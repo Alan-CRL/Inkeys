@@ -1,6 +1,7 @@
 module;
 
 #include <windows.h>
+#include "Bar.ThemeMaterial.h"
 
 #ifndef RGBA
 #define RGBA(r, g, b, a) (COLORREF)(((b) << 16) | ((g) << 8) | (r) | ((a) << 24))
@@ -29,6 +30,13 @@ export enum class BarThemeColorEnum : int
 	SubtleFill,
 	SwatchFrame,
 	DockTarget,
+	IconPrimary,
+	SelectedFill,
+	Divider,
+	EdgeLight,
+	ShadowKey,
+	ShadowAmbient,
+	TopHighlight,
 };
 
 // 画笔颜色预设，保持当前色块顺序和值不变。
@@ -59,17 +67,25 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 {
 	if (mode == BarThemeModeEnum::Light)
 	{
+		using Role = BarThemeMaterial::ColorRole;
 		switch (color)
 		{
-		case BarThemeColorEnum::Surface: return RGB(247, 248, 250);
-		case BarThemeColorEnum::SurfaceFrame: return RGB(0, 0, 0);
-		case BarThemeColorEnum::TextPrimary: return RGB(27, 27, 27);
-		case BarThemeColorEnum::Accent: return RGB(0, 140, 105);
-		case BarThemeColorEnum::PressedFill: return RGB(64, 72, 80);
-		case BarThemeColorEnum::SubtleFill: return RGB(0, 140, 105);
-		case BarThemeColorEnum::SwatchFrame: return RGB(176, 176, 176);
-		case BarThemeColorEnum::DockTarget: return RGB(0, 120, 212);
-		default: return RGB(27, 27, 27);
+		case BarThemeColorEnum::Surface: return BarThemeMaterial::LightColor(Role::Surface);
+		case BarThemeColorEnum::SurfaceFrame: return BarThemeMaterial::LightColor(Role::SurfaceFrame);
+		case BarThemeColorEnum::IconPrimary: return BarThemeMaterial::LightColor(Role::IconPrimary);
+		case BarThemeColorEnum::TextPrimary: return BarThemeMaterial::LightColor(Role::TextPrimary);
+		case BarThemeColorEnum::Accent: return BarThemeMaterial::LightColor(Role::Accent);
+		case BarThemeColorEnum::SelectedFill: return BarThemeMaterial::LightColor(Role::SelectedFill);
+		case BarThemeColorEnum::PressedFill: return BarThemeMaterial::LightColor(Role::PressedFill);
+		case BarThemeColorEnum::SubtleFill: return BarThemeMaterial::LightColor(Role::SubtleFill);
+		case BarThemeColorEnum::SwatchFrame: return BarThemeMaterial::LightColor(Role::SwatchFrame);
+		case BarThemeColorEnum::Divider: return BarThemeMaterial::LightColor(Role::Divider);
+		case BarThemeColorEnum::EdgeLight: return BarThemeMaterial::LightColor(Role::EdgeLight);
+		case BarThemeColorEnum::ShadowKey: return BarThemeMaterial::LightColor(Role::ShadowKey);
+		case BarThemeColorEnum::ShadowAmbient: return BarThemeMaterial::LightColor(Role::ShadowAmbient);
+		case BarThemeColorEnum::TopHighlight: return BarThemeMaterial::LightColor(Role::TopHighlight);
+		case BarThemeColorEnum::DockTarget: return BarThemeMaterial::LightColor(Role::DockTarget);
+		default: return BarThemeMaterial::LightColor(Role::TextPrimary);
 		}
 	}
 
@@ -77,15 +93,23 @@ COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
 	{
 	case BarThemeColorEnum::Surface: return RGB(BarDarkSurfaceColorChannel,
 		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
+	case BarThemeColorEnum::Divider:
+	case BarThemeColorEnum::EdgeLight:
 	case BarThemeColorEnum::SurfaceFrame: return RGB(
 		BarDarkSurfaceFrameColorChannel, BarDarkSurfaceFrameColorChannel,
 		BarDarkSurfaceFrameColorChannel);
+	case BarThemeColorEnum::IconPrimary:
+	case BarThemeColorEnum::TopHighlight:
 	case BarThemeColorEnum::TextPrimary: return RGB(255, 255, 255);
+	case BarThemeColorEnum::SelectedFill:
 	case BarThemeColorEnum::Accent: return RGB(88, 255, 236);
 	case BarThemeColorEnum::PressedFill: return RGB(127, 127, 127);
 	case BarThemeColorEnum::SubtleFill: return RGB(127, 127, 127);
 	case BarThemeColorEnum::SwatchFrame: return RGB(80, 80, 80);
 	case BarThemeColorEnum::DockTarget: return RGB(76, 158, 255);
+	case BarThemeColorEnum::ShadowKey:
+	case BarThemeColorEnum::ShadowAmbient: return RGB(BarDarkSurfaceColorChannel,
+		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
 	default: return RGB(255, 255, 255);
 	}
 }

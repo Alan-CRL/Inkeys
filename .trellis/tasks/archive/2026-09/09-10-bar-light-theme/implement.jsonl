@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "UI3 Bar package scope and mandatory native Solution build"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Preserve encoding and line endings, Chinese comments, state ownership"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Rendering, shared buttons, animation, dirty geometry and light contracts"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Full ARM64 Solution, PptCOM, headless validation"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Keep behavior at its owning layer and inspect consumers"}
+{"file": ".trellis/tasks/archive/2026-09/09-10-bar-light-theme/research/baseline.md", "reason": "Concrete theme, SVG, animation and rendering baseline"}

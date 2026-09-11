@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include "Bar.ThemeMaterial.h"
 
 export module Inkeys.UI.Bar:Rendering;
 
@@ -27,8 +28,8 @@ constexpr double BarBorderLightRadius = 480.0;
 constexpr double BarBorderCursorFadeInDur = 0.30;
 constexpr double BarBorderCursorLightRadius = 240.0;
 constexpr double BarBorderLightIntensity = 1.0;
-constexpr double BarBorderFrameDiffuseOpacity = 0.30;
-constexpr double BarBorderPenDiffuseOpacity = 0.20;
+constexpr double BarBorderFrameDiffuseOpacity = BarThemeMaterial::DarkFrameDiffuseOpacity;
+constexpr double BarBorderPenDiffuseOpacity = BarThemeMaterial::DarkPenDiffuseOpacity;
 // 标准差等于线宽时，1px 线源经过一维 Gaussian 后中心约保留 38.3%。
 constexpr double BarBorderGaussianCenterCoverage = 0.382924922548;
 
@@ -308,11 +309,18 @@ protected:
 		const D2D1_RECT_F& geometryBounds,
 		ID2D1RadialGradientBrush* brush, FLOAT opacity);
 	bool DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLORREF color,
+		const BarThemeMaterial::Material& material,
 		BarUiFrameLightColorEnum frameLightColor,
 		bool primaryLightEnabled, double cursorLightIntensityScale,
 		double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry, int geometryVariantQuarter = 0);
+	void DrawSurfaceMaterialShadows(ID2D1DeviceContext* deviceContext,
+		const BarThemeMaterial::Material& material, double opacity,
+		const D2D1_ROUNDED_RECT* roundedRect, ID2D1Geometry* geometry);
+	void DrawSurfaceMaterialHighlight(ID2D1DeviceContext* deviceContext,
+		const BarThemeMaterial::Material& material, double opacity,
+		const D2D1_ROUNDED_RECT* roundedRect, ID2D1Geometry* geometry);
 
 	ComPtr<ID2D1DeviceContext> deviceContext;
 	ComPtr<ID2D1Bitmap1> targetBitmap;
@@ -398,6 +406,8 @@ protected:
 	vector<FrameDiffuseMaskCacheClass> frameDiffuseMaskCache;
 	vector<FrameGeometryDiffuseMaskCacheClass> frameGeometryDiffuseMaskCache;
 	ComPtr<ID2D1SolidColorBrush> frameSolidColorBrush;
+	ComPtr<ID2D1LinearGradientBrush> surfaceHighlightBrush;
+	bool surfaceHighlightUnavailable = false;
 	array<ThicknessPreviewGradientBrushCacheClass, 64>
 		thicknessPreviewGradientBrushCache{};
 	std::uint64_t thicknessPreviewGradientUseSerial = 0;

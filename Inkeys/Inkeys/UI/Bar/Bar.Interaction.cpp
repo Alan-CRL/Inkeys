@@ -482,6 +482,9 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 	// 关闭后不允许迟到的计时器或 Raw Input 重新建立交互/追踪状态。
 	if (offSignal) return DefWindowProcW(hWnd, msg, wParam, lParam);
+	if (msg == WM_SETTINGCHANGE || msg == WM_THEMECHANGED)
+		Inkeys::UI::Bar::RefreshSystemTheme();
+	if (msg == WM_THEMECHANGED) return 0;
 	if (msg == WM_DPICHANGED || msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)
 	{
 		if (msg == WM_DPICHANGED)

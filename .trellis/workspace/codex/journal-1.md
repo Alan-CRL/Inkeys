@@ -256,3 +256,36 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Next Steps
 
 - 本问题已按用户最终验收关闭；不继续调试或追加修复。
+
+
+## Session 11: Bar 浅色主题与完整收展材质
+<!-- trellis-session: v=2 fp=e1c84ae15360a024 -->
+
+**Date**: 2026-09-11
+**Task**: Bar 浅色主题与完整收展材质
+**Branch**: `theme`
+
+### Summary
+
+从 draw 4478887c 建立独立 theme worktree；完成浅色角色、全笔色及整体轮廓、随收展连续切换的光影材质。完整 ARM64 Solution、全部无窗口测试、SVG 静态与离屏像素验证通过。按要求未启动产品窗口、未提交 commit。
+
+### Main Changes
+
+- 浅色 Bar 与深色悬浮入口使用逐对象连续材质，主笔保持真实色与独立屏幕，普通 SVG 造型不变。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] ARM64 host MSBuild 完整 InkeysRepo.sln Debug|ARM64 通过；InkeysHeadlessTests.exe --no-window 通过。
+- [OK] 30 个普通 SVG 与六种笔色离屏检查通过；20 个已跟踪文本修改的 BOM/EOL 检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 如需检查真实桌面视觉，在另行允许 GUI 的会话验证系统主题、白色文档覆盖和鼠标动态光；当前主题改动保留未提交。

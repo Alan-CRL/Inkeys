@@ -82,7 +82,7 @@ namespace Inkeys::UI::Bar
 	void SetBarButtonPressedVisual(BarButtonClass& button, bool pressed) noexcept;
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationSeconds) noexcept;
+		double durationSeconds, std::optional<bool> darkStyle = std::nullopt) noexcept;
 
 	struct BarButtonDrawOptions
 	{
@@ -193,6 +193,7 @@ enum class BarUISetSvgEnum : int
 {
 	logo1,
 	logoInk,
+	logoLight,
 	MorePanelClose,
 
 	DrawAttributeBar_ColorSelect1,
@@ -921,6 +922,7 @@ namespace Inkeys::UI::Bar
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();
+	void RefreshSystemTheme() noexcept;
 	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
 	export std::uint8_t CommittedPresentationAlpha() noexcept;
 	export std::uint8_t RequestedPresentationAlpha() noexcept;

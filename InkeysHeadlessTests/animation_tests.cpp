@@ -38,6 +38,8 @@ int RunRenderSchedulerTests();
 int RunStartupProgressTests();
 int RunStartupPreviewStateTests();
 int RunBarPresentationAlphaTests();
+int RunBarThemeTests();
+int RunBarThemePaletteExport(const char* outputPath);
 int RunSettingSessionStateTests();
 int RunPptUiTests();
 int RunPageControlTests();
@@ -1469,6 +1471,7 @@ int main(int argc, char** argv)
 	bool runWindowTests = true;
 	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
+	const char* barThemePaletteOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
@@ -1478,7 +1481,11 @@ int main(int argc, char** argv)
 		runWindowTests &= argument != "--no-window";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
+		if (argument == "--bar-theme-palette-output" && index + 1 < argc)
+			barThemePaletteOutput = argv[++index];
 	}
+	if (barThemePaletteOutput)
+		return RunBarThemePaletteExport(barThemePaletteOutput);
 	if (messageBoxFirstFrameChild)
 		return RunMessageBoxFirstFrameChildTest();
 	if (messageBoxVisualOutput)
@@ -1504,6 +1511,7 @@ int main(int argc, char** argv)
 	failureCount += RunStartupProgressTests();
 	failureCount += RunStartupPreviewStateTests();
 	failureCount += RunBarPresentationAlphaTests();
+	failureCount += RunBarThemeTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
 	failureCount += RunPageControlTests();

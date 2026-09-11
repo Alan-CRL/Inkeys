@@ -190,12 +190,12 @@ BarMoreButtonSnapshotClass BarButtonSetClass::GetMoreButtonSnapshot() const
 void BarButtonSetClass::PresetInitialization()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
-	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
 
 	// 分隔线
 	{
 		BarButtonClass* obj = new BarButtonClass;
-		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+		const COLORREF dividerColor = GetThemeColor(BarThemeColorEnum::Divider);
 		{
 			obj->size = BarButtonSizeEnum::oneTwo;
 			obj->preset = BarButtonPresetEnum::Divider;
@@ -653,7 +653,7 @@ void BarButtonSetClass::PresetInitialization()
 void BarButtonSetClass::RegisterBuiltInComponents()
 {
 	const COLORREF defaultButtonFill = GetThemeColor(BarThemeColorEnum::Surface);
-	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::TextPrimary);
+	const COLORREF defaultIconColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
 
 	auto registerComponent = [&](const char* id,
 		const char* legacyField,

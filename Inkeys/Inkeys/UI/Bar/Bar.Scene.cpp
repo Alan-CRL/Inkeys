@@ -15,6 +15,7 @@ module;
 #include <windows.h>
 
 #include "Bar.DirtyRegion.h"
+#include "Bar.ThemeMaterial.h"
 
 module Inkeys.UI.Bar;
 import :Scene;
@@ -352,22 +353,26 @@ namespace Inkeys::UI::Bar
 
 	void RetargetBarButtonInteractionVisual(BarButtonClass& button,
 		bool visible, bool enabled, bool selected,
-		double durationMilliseconds) noexcept
+		double durationMilliseconds, std::optional<bool> darkStyle) noexcept
 	{
+		const bool resolvedDarkStyle = darkStyle.value_or(barUISet.barStyle.darkStyle);
 		const bool pressed = button.state->emph
 			== BarWidgetEmphasize::Pressed;
 		if (!visible) button.button.pct.SetTar(0.0, durationMilliseconds);
 		else if (pressed)
-			button.button.pct.SetTar(BarButtonPressedOpacity,
+			button.button.pct.SetTar(selected
+				? BarThemeMaterial::SelectedFillOpacity(resolvedDarkStyle ? 0.0 : 1.0, BarButtonPressedOpacity)
+				: BarButtonPressedOpacity,
 				durationMilliseconds);
 		else if (selected)
-			button.button.pct.SetTar(0.20, durationMilliseconds);
+			button.button.pct.SetTar(BarThemeMaterial::SelectedFillOpacity(
+				resolvedDarkStyle ? 0.0 : 1.0), durationMilliseconds);
 		else if (button.hoverStage == BarButtonHoverStageEnum::None)
 			button.button.pct.SetTar(0.0, durationMilliseconds);
 
 		if (button.button.fill.has_value())
-			button.button.fill->SetTar(GetThemeColor(selected
-				? BarThemeColorEnum::Accent
+			button.button.fill->SetTar(GetThemeColor(resolvedDarkStyle, selected
+				? BarThemeColorEnum::SelectedFill
 				: BarThemeColorEnum::PressedFill));
 		if (button.button.frameLightPct.has_value())
 			button.button.frameLightPct->SetTar(
@@ -387,11 +392,13 @@ namespace Inkeys::UI::Bar
 			BarButtonHoverTransitionDuration);
 		button.name.pct.SetTar(contentOpacity,
 			BarButtonHoverTransitionDuration);
-		const COLORREF contentColor = GetThemeColor(selected
+		const COLORREF contentColor = GetThemeColor(resolvedDarkStyle, selected
 			? BarThemeColorEnum::Accent
 			: BarThemeColorEnum::TextPrimary);
-		if (button.icon.color1.has_value())
-			button.icon.color1->SetTar(contentColor);
+		const COLORREF iconColor = GetThemeColor(resolvedDarkStyle, selected
+			? BarThemeColorEnum::Accent : BarThemeColorEnum::IconPrimary);
+		if (button.icon.color1.has_value()) button.icon.color1->SetTar(iconColor);
+		if (button.icon.color2.has_value()) button.icon.color2->SetTar(iconColor);
 		button.name.color.SetTar(contentColor);
 	}
 
@@ -983,9 +990,12 @@ namespace Inkeys::UI::Bar
 				pressed == widget.spec.id);
 			widget.button->state->state = widget.spec.selected
 				? BarWidgetState::Selected : BarWidgetState::None;
+			// 显式配色的共享客户端沿用深色目标，不能逐帧先写浅色再覆盖深色。
 			RetargetBarButtonInteractionVisual(*widget.button,
 				widget.spec.visible, enabled, widget.spec.selected,
-				BarButtonHoverTransitionDuration);
+				BarButtonHoverTransitionDuration,
+				widget.spec.useThemeColors ? std::nullopt : std::optional<bool>(true));
+
 		}
 
 		void ApplyButtonTargetsLocked(Widget& widget)

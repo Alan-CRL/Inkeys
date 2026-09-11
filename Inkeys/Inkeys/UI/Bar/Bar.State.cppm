@@ -118,6 +118,8 @@ public:
 class BarStyleClass
 {
 public:
+	// 窗口线程只发布目标，实际主题由串行渲染线程在帧首应用。
+	std::atomic<bool> requestedDarkStyle = true;
 	IdtAtomic<bool> darkStyle = true;
 	IdtAtomic<double> dpiZoom = 1.0;
 	IdtAtomic<double> configZoom = 1.0;
