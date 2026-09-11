@@ -19,6 +19,7 @@ module;
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
@@ -1208,6 +1209,8 @@ SettingSessionCoroutine RunSettingSession()
 		float SettingGlobalScale = settingGlobalScale;
 		float BarZoom = static_cast<float>(Inkeys::config.UI.Bar.Zoom.load());
 		bool BarZoomSavePending = false;
+		int ThemeMode = Inkeys::NormalizeThemeMode(
+			Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode);
 
 		int TopSleepTime = setlist.topSleepTime;
 		bool RightClickClose = setlist.RightClickClose;
@@ -3139,7 +3142,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,245.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,320.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3150,6 +3153,66 @@ SettingSessionCoroutine RunSettingSession()
 
 						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("主栏主题", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+							float themeCardPosY = 0;
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, themeCardPosY + 20.0f * settingGlobalScale });
+								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str());
+							}
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Regular.Appearance.Theme.E).c_str());
+							}
+							{
+								ImGui::SetCursorPos({ settingRightComboX * settingGlobalScale, themeCardPosY + 20.0f * settingGlobalScale });
+								ImGui::SetNextItemWidth(200.0f * settingGlobalScale);
+								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+								const array<string, 2> themeNames{
+									IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Dark),
+									IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Light) };
+								const int selectedThemeIndex = ThemeMode - Inkeys::ThemeModeDark;
+								if (Widgets::combo.Begin("##主栏主题", themeNames[selectedThemeIndex].c_str(),
+									static_cast<int>(themeNames.size())))
+								{
+									for (int i = 0; i < static_cast<int>(themeNames.size()); ++i)
+									{
+										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
+										const bool isSelected = selectedThemeIndex == i;
+										if (Widgets::combo.Selectable(themeNames[i].c_str(), isSelected))
+										{
+											ThemeMode = i + Inkeys::ThemeModeDark;
+											if (Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode != ThemeMode)
+											{
+												// 先更新配置和运行时目标，再异步持久化本次选择。
+												Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode = ThemeMode;
+												Inkeys::UI::Bar::SetThemeMode(ThemeMode);
+												QueueConfigWrite();
+											}
+										}
+									}
+									ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
+									Widgets::combo.End();
+								}
+							}
+
+							{
+								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+								while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							}
+							ImGui::EndChild();
+
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);

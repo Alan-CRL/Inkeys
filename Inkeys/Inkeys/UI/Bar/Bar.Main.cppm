@@ -920,13 +920,13 @@ namespace Inkeys::UI::Bar
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();
-	void RefreshSystemTheme() noexcept;
 	export void RequestPresentationAlpha(std::uint8_t alpha) noexcept;
 	export std::uint8_t CommittedPresentationAlpha() noexcept;
 	export std::uint8_t RequestedPresentationAlpha() noexcept;
 	export PresentationAlphaDiagnostics SnapshotPresentationAlphaDiagnostics() noexcept;
 	export void SetAnimationOptions(bool enable, double speedRate);
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
+	export void SetThemeMode(int themeMode) noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
 	export void SetCurrentPageHasContent(bool hasContent) noexcept;

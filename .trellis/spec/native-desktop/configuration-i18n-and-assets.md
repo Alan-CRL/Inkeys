@@ -34,6 +34,18 @@
 4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
 5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
 
+## UI3 Bar 深浅主题配置合同
+
+持久化路径为 `Experimental.Inkeys3.UI3.ThemeMode`，类型为整数，默认值 `1`。`ThemeModeDark=1`、`ThemeModeLight=2`；`NormalizeThemeMode()` 仅保留 `2`，其余值一律归一到 `1`，`ThemeModeUsesDarkStyle()` 是配置值到 renderer `darkStyle` 的唯一映射。
+
+- `config.ReadAll()` 后先归一并写回内存，再调用 `Inkeys::UI::Bar::SetThemeMode()`；旧配置缺字段、类型不符或非法整数均得到深色。
+- “常规 > 外观”下拉框只显示深色与浅色。选择后依次更新 `Inkeys::config`、发布 Bar 主题目标、调用 `QueueConfigWrite()` 异步保存。
+- `SetThemeMode()` 只交换 `requestedDarkStyle` 并唤醒 Bar；D2D 资源和连续材质动画仍由串行渲染线程处理。
+- Windows `WM_THEMECHANGED` 不读取注册表或改写配置；`WM_SETTINGCHANGE` 继续承担显示器/系统设置刷新。
+- 该字段不复用传统 `SetSkinMode`，也不改变设置窗口自身主题。
+
+无窗口测试必须覆盖默认 `1`、有效 `1/2`、非法值回退、`darkStyle` 映射及 Config 快照编解码；完整验证仍使用 `Debug|ARM64` Solution 构建和 `InkeysHeadlessTests.exe --no-window`。
+
 ## UI3 脏区调试与帧率显示配置合同
 
 ### 1. Scope / Trigger

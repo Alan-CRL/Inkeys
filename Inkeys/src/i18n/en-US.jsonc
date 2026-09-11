@@ -236,12 +236,10 @@
         "N": "Appearance",
         "Theme":
         {
-          "N": "Theme",
-          "E": "Recommended skin will use the official setting automatically.",
-          "Skip1": "Recommended Skin",
-          "Skip2": "Default Skin",
-          "Skip3": "Minimal Clock",
-          "Skip4": "Year of Horse"
+          "N": "Bar Theme",
+          "E": "Switch the bar between dark and light appearance. Changes apply immediately.",
+          "Dark": "Dark Mode",
+          "Light": "Light Mode"
         },
         "BarZoom":
         {

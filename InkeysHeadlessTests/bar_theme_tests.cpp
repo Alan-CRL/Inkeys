@@ -17,6 +17,7 @@
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.Metrics;
+import Inkeys.Other.Config;
 
 namespace
 {
@@ -253,6 +254,33 @@ namespace
 		Check(Near(weight.val, 1.0) && weight.IsSame(), "first Light frame can initialize directly without stale Dark target");
 	}
 
+	void TestThemeModeConfigPolicy()
+	{
+		Inkeys::Config configSnapshot;
+		Check(configSnapshot.Experimental.Inkeys3.UI3.ThemeMode == Inkeys::ThemeModeDark,
+			"ThemeMode schema defaults to Dark mode 1");
+		Check(Inkeys::NormalizeThemeMode(Inkeys::ThemeModeDark) == Inkeys::ThemeModeDark
+			&& Inkeys::NormalizeThemeMode(Inkeys::ThemeModeLight) == Inkeys::ThemeModeLight,
+			"ThemeMode preserves valid Dark 1 and Light 2 values");
+		for (const int invalid : { -1, 0, 3, 99 })
+			Check(Inkeys::NormalizeThemeMode(invalid) == Inkeys::ThemeModeDark,
+				"invalid ThemeMode values fall back to Dark mode 1");
+		Check(Inkeys::ThemeModeUsesDarkStyle(Inkeys::ThemeModeDark)
+			&& !Inkeys::ThemeModeUsesDarkStyle(Inkeys::ThemeModeLight)
+			&& Inkeys::ThemeModeUsesDarkStyle(0),
+			"ThemeMode maps uniquely to the renderer darkStyle target");
+
+		Inkeys::Config source;
+		source.Experimental.Inkeys3.UI3.ThemeMode = Inkeys::ThemeModeLight;
+		configSnapshot = source;
+		Check(configSnapshot.Experimental.Inkeys3.UI3.ThemeMode == Inkeys::ThemeModeLight,
+			"ThemeMode Light survives the configuration snapshot codec");
+		source.Experimental.Inkeys3.UI3.ThemeMode = Inkeys::ThemeModeDark;
+		configSnapshot = source;
+		Check(configSnapshot.Experimental.Inkeys3.UI3.ThemeMode == Inkeys::ThemeModeDark,
+			"ThemeMode Dark survives the configuration snapshot codec");
+	}
+
 	std::string HexColor(Color color)
 	{
 		std::ostringstream value;
@@ -271,6 +299,7 @@ int RunBarThemeTests()
 	TestLightSourceIndependence();
 	TestTrueAndDisplayPenColors();
 	TestAnimationReversalAndDisabled();
+	TestThemeModeConfigPolicy();
 	return failures;
 }
 

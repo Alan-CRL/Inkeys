@@ -27,3 +27,10 @@
 - 20 个已跟踪文本改动对照 Git checkout 基线通过 UTF-8/BOM/EOL 检查，新原生源使用 CRLF；git diff --check 通过。
 - theme HEAD 仍为 4478887cbafe5aaad2a23d76ca5a5490f1c1e655；原 draw 未提交清单保持原样。
 - 当前任务已使用 --no-commit 归档；产品差异继续保持未提交。
+
+## 2026-09-11 设置页主题模式续作
+
+- `Experimental.Inkeys3.UI3.ThemeMode` 已注册为 `IdtAtomic<int>`：`1` 深色、`2` 浅色、缺失或非法值回退 `1`。启动和设置页复用同一归一化/`darkStyle` 映射。
+- “常规 > 外观”已加入三语深色/浅色下拉框；修改顺序为配置原子值、`SetThemeMode()` 实时目标、`QueueConfigWrite()` 异步落盘。系统主题消息不再覆盖显式选择。
+- 原生 ARM64 MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过，exit 0；全部 `InkeysHeadlessTests.exe --no-window` 通过，输出 `PASS animation correctness`。
+- `Scripts/i18n.ps1 check`、`git diff --check`、UTF-8/BOM/CRLF 检查通过。未启动产品 GUI，设置下拉布局、实际运行时主题过渡及重启持久化仍待人工验证。

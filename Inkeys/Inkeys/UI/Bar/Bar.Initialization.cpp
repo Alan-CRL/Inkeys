@@ -227,30 +227,12 @@ namespace Inkeys::UI::Bar
 
 		return true;
 	}
-	// AppsUseLightTheme 不存在（含旧系统）时保留原深色外观。
-	static bool ReadSystemDarkStyle() noexcept
-	{
-		DWORD value = 0;
-		DWORD bytes = sizeof(value);
-		const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER,
-			L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-			L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &bytes);
-		return status != ERROR_SUCCESS || value == 0;
-	}
-
-	void RefreshSystemTheme() noexcept
-	{
-		const bool darkStyle = ReadSystemDarkStyle();
-		if (barUISet.barStyle.requestedDarkStyle.exchange(
-			darkStyle, std::memory_order_acq_rel) != darkStyle)
-			barUISet.UpdateRendering(false);
-	}
-
 	void InitializeUI(BarUISetClass& barUISet)
 	{
 		Inkeys::UI::Bar::Zoom::Initialize(barUISet);
-		const bool darkStyle = ReadSystemDarkStyle();
-		barUISet.barStyle.requestedDarkStyle.store(darkStyle, std::memory_order_release);
+		// 启动配置已在初始化线程之前发布，首帧直接采用该目标。
+		const bool darkStyle = barUISet.barStyle.requestedDarkStyle.load(
+			std::memory_order_acquire);
 		barUISet.barStyle.darkStyle = darkStyle;
 		SetThemeStyleSource(&barUISet.barStyle);
 

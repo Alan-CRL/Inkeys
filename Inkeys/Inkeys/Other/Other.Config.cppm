@@ -16,6 +16,20 @@ import Inkeys.UI.Bar.Metrics;
 
 export namespace Inkeys
 {
+	inline constexpr int ThemeModeDark = 1;
+	inline constexpr int ThemeModeLight = 2;
+
+	// 主题配置只接受 1/2；旧配置缺失或异常值统一回退深色。
+	constexpr int NormalizeThemeMode(int themeMode) noexcept
+	{
+		return themeMode == ThemeModeLight ? ThemeModeLight : ThemeModeDark;
+	}
+
+	constexpr bool ThemeModeUsesDarkStyle(int themeMode) noexcept
+	{
+		return NormalizeThemeMode(themeMode) == ThemeModeDark;
+	}
+
 	enum class ConfigUploadMode
 	{
 		NoUpload,
@@ -278,6 +292,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
 			) \
 			GROUP(UI3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThemeMode, ThemeModeDark) \
 				GROUP(StartupPreview, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \

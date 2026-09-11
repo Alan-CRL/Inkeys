@@ -28,7 +28,7 @@ namespace BarThemeMaterial {
 - Light 角色为 Surface `#F4F6F7`、IconPrimary `#53616A`、TextPrimary `#3D474D`、Accent `#006F68`、SelectedFill `#D7EEEA`。SurfaceFrame、Divider、EdgeLight、ShadowKey、ShadowAmbient、TopHighlight 各自独立；相同 Dark 值不表示这些角色可以合并。
 - `DrawPointLightFrame` 的描边色与发光色分开；Light 以近白反射和少量笔色混合，Dark 恢复原主光/鼠标光行为。EdgeLighting 只控制动态边缘光，不能隐藏静态表面阴影。
 - 静态 key/ambient 阴影的最大外扩为 8 DIP，另外保留原有像素抗锯齿余量。绘制、`GetFrameDirtyOutset`、`GetWeigetRect`、预测 viewport 和自绘面板的外扩必须读取同一上界，且与当前权重/EdgeLighting 开关无关，防止过渡裁切。
-- 主题改变在初始化或 Windows 应用主题消息时读取一次并发布目标，渲染线程通过既有唤醒处理；不逐帧读注册表、不新增轮询线程。不可读回退 Dark。
+- 主题目标只来自 `Experimental.Inkeys3.UI3.ThemeMode`：`1` 为 Dark、`2` 为 Light，其余值归一到 Dark。启动与设置页均调用 `SetThemeMode()` 发布原子目标并唤醒渲染；`WM_THEMECHANGED` 不覆盖用户选择，不逐帧读配置或注册表。
 - 收展使用已有时间轴和 current/target 语义；中途反向从当前值重新定向，关闭动画直接到一致端点，材质单独变化同样产生 dirty 并续帧。其他控件和显式 Dark 的分页客户端不继承主按钮的折叠权重。
 - 原始笔 RGB 永远只作为输入。仅 `IdtPen || IdtShape` 启用颜色指示，Selection/Eraser 等状态收回到对应默认中性色，不显示记忆笔色。Geometry 明确使用 Brush1；活动 Pen 按既有槽解析激光/荧光/普通笔。主图标保留一个 Color 动画，普通换笔/换色从 current 继续；初始化和 Geometry 接管非 Brush 颜色历史时直接回到正确源，避免串色。PointLight 的激光替换仍限定为活动 Pen/Laser。
 - 主按钮只使用一个稳定 `logo1` SVG 实例。它包含原中性笔/屏幕、4478887c 的 Frame94 渐变/笔尖/高光路径及浅色整体轮廓，通过内部属性加工实现深浅转换。Dark 端点保留原白笔底和渐变指示，不使用整笔实色或 DisplayPenColor 提亮；Light 绘制端点使用真实整笔色，默认态为石墨灰。轮廓只描真正外缘，不给各个闭合笔段加 stroke；Light screen 保持中性色，Dark screen 允许原有渐变指示贡献。
