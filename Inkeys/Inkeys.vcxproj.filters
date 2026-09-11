@@ -288,6 +288,9 @@
     <ClInclude Include="IdtAtomic.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>

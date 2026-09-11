@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "Bar.LogoAppearance.h"
 
 #include "../../../IdtConfiguration.h"
 #include <d2d1_1.h>
@@ -2797,7 +2798,8 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 			&& (tarW > svg.cW * BarSvgRasterUpscaleThreshold
 				|| tarH > svg.cH * BarSvgRasterUpscaleThreshold);
 
-		bool needUpdate = !svg.cacheBitmap || colorChanged
+		const bool appearanceChanged = svg.mainLogoAppearance != svg.cMainLogoAppearance;
+		bool needUpdate = !svg.cacheBitmap || colorChanged || appearanceChanged
 			|| (!transformAnimating && sizeChanged)
 			|| (transformAnimating && materiallyUpscaled);
 		if (needUpdate)
@@ -2818,7 +2820,7 @@ bool BarUIRendering::Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, 
 			if (!svg.CacheBitmap(deviceContext, rasterW, rasterH))
 			{
 				// 质量刷新失败时保留已有内容；内容/颜色失效则不能显示旧语义。
-				if (!svg.cacheBitmap || colorChanged) return false;
+				if (!svg.cacheBitmap || colorChanged || appearanceChanged) return false;
 			}
 		}
 		d2dBitmap = svg.cacheBitmap.Get();

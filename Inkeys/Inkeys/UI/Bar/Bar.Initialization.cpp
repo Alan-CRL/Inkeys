@@ -1,6 +1,7 @@
 ﻿module;
 
 #include "../../../IdtMain.h"
+#include "Bar.LogoAppearance.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDraw.h"
@@ -283,27 +284,10 @@ namespace Inkeys::UI::Bar
 				{
 					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, nullopt, nullopt);
 					svg->InitializationFromResource(L"UI", L"logo1");
+					svg->mainLogoAppearance = BarLogoAppearance::Resolve(0.0, 0.0, 0);
 					svg->SetWH(nullopt, 80.0);
 					svg->enable.Initialization(true);
 					barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
-				}
-				{
-					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0, GetPenColor(), nullopt);
-					svg->InitializationFromResource(L"UI", L"Frame94");
-					svg->SetWH(nullopt, 80.0);
-					svg->pct.Initialization(0.0); // 首帧先隐藏，避免状态计算前闪烁错误颜色。
-					svg->enable.Initialization(true);
-					barUISet.svgMap[BarUISetSvgEnum::logoInk] = svg;
-				}
-				{
-					// 浅色 Logo 保持独立资源，收展时和深色层连续交叉淡化。
-					auto svg = make_shared<BarUiSVGClass>(0.0, 0.0,
-						GetPenColor(), RGB(35, 43, 47));
-					svg->InitializationFromResource(L"UI", L"logo2");
-					svg->SetWH(nullopt, 80.0);
-					svg->pct.Initialization(0.0);
-					svg->enable.Initialization(true);
-					barUISet.svgMap[BarUISetSvgEnum::logoLight] = svg;
 				}
 			}
 			// 主栏

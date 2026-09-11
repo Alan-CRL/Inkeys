@@ -144,6 +144,7 @@
 	<ClCompile Include="startup_preview_state_tests.cpp" />
 	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
 	<ClCompile Include="bar_theme_tests.cpp" />
+	<ClCompile Include="bar_logo_tests.cpp" />
 	<ClCompile Include="setting_session_state_tests.cpp" />
 	<ClCompile Include="ppt_ui_tests.cpp" />
 	<ClCompile Include="page_control_tests.cpp" />

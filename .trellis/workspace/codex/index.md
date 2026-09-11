@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-09-11
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~291 | Active |
+| `journal-1.md` | ~324 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-09-11 | 修正主按钮统一 SVG 与绘制态指示 | - | `theme` |
 | 11 | 2026-09-11 | Bar 浅色主题与完整收展材质 | - | `theme` |
 | 10 | 2026-09-10 | 采用用户认可的底栏基线并结案 | `24efcde4` | `draw` |
 | 9 | 2026-09-09 | 底栏捕获旧帧误确认与果冻起点修复 | - | `draw` |

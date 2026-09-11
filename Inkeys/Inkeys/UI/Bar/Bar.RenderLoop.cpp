@@ -1,6 +1,7 @@
 module;
 
 #include "../../../IdtMain.h"
+#include "Bar.LogoAppearance.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtI18n.h"
@@ -623,6 +624,10 @@ struct BarRenderLoopState
 	BarUiValueClass morePanelOpacity{ 0.0 };
 	// 主按钮独立于其他浮层；收展仅改变这一个材质权重。
 	BarUiValueClass mainButtonLightMaterial{ barStyle.darkStyle || barState.fold ? 0.0 : 1.0 };
+	BarUiColorClass mainLogoPenColor{ GetPenColor() };
+	BarUiPctClass mainLogoDrawingPct{ 0.0 };
+	bool mainLogoColorInitialized = false;
+	bool mainLogoCarriesNonBrushColor = false;
 	BarUiValueClass barLightMaterial{ barStyle.darkStyle ? 0.0 : 1.0 };
 	BarUiCurveEnum mainBarBatchCurve = BarUiCurveEnum::EaseInOutCubic;
 	const BarUiCurveSpecClass buttonPressCurve = BarButtonPressCurve();
@@ -1211,8 +1216,7 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			word->color.SetTar(GetThemeColor(BarThemeColorEnum::TextPrimary));
 		for (auto& [key, svg] : state.svgMap)
 		{
-			if (key == BarUISetSvgEnum::logo1 || key == BarUISetSvgEnum::logoInk
-				|| key == BarUISetSvgEnum::logoLight
+			if (key == BarUISetSvgEnum::logo1
 				|| (key >= BarUISetSvgEnum::DrawAttributeBar_ColorSelect1
 					&& key <= BarUISetSvgEnum::DrawAttributeBar_ColorSelect11)) continue;
 			if (svg->color1) svg->color1->SetTar(GetThemeColor(BarThemeColorEnum::IconPrimary));
@@ -1226,8 +1230,28 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 	{
 		double operationDur = BarUiDefaultOperationDur;
 		auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-		auto mainButtonInk = state.svgMap[BarUISetSvgEnum::logoInk];
-		auto mainButtonLight = state.svgMap[BarUISetSvgEnum::logoLight];
+		const bool pen = frameDrawingState.stateMode == StateModeSelectEnum::IdtPen;
+		const bool geometry = frameDrawingState.stateMode == StateModeSelectEnum::IdtShape;
+		const bool showLogoInk = BarLogoAppearance::IsDrawingMode(pen, geometry);
+		// 图形始终取 Brush1，活动笔才允许选激光/荧光颜色源。
+		const auto slot = geometry ? Inkeys::Business::PenColorStateSlot::Brush
+			: Inkeys::Business::ResolvePenColorStateSlot(pen && frameDrawingState.laserActive,
+				frameDrawingState.penMode == PenModeSelectEnum::IdtPenHighlighter1);
+		const COLORREF penColor = slot == Inkeys::Business::PenColorStateSlot::Laser
+			? frameDrawingState.laserColor
+			: (slot == Inkeys::Business::PenColorStateSlot::Highlighter
+				? frameDrawingState.highlighterColor : frameDrawingState.brush1Color);
+		const bool geometryTakingOver = geometry && state.mainLogoCarriesNonBrushColor;
+		// 保留普通换色的 current 接续；图形接管时清掉非 Brush 历史，避免串色。
+		if (!state.mainLogoColorInitialized || geometryTakingOver)
+			state.mainLogoPenColor.SetDirect(penColor);
+		else state.mainLogoPenColor.SetTar(penColor, operationDur);
+		state.mainLogoColorInitialized = true;
+		if (geometryTakingOver) state.mainLogoCarriesNonBrushColor = false;
+		else if (slot != Inkeys::Business::PenColorStateSlot::Brush)
+			state.mainLogoCarriesNonBrushColor = true;
+		else if (state.mainLogoPenColor.IsSame()) state.mainLogoCarriesNonBrushColor = false;
+		state.mainLogoDrawingPct.SetTar(showLogoInk ? 1.0 : 0.0, operationDur);
 		unsigned long long mainButtonPulseSerial = state.mainButtonClickPulseSerial.load(std::memory_order_relaxed);
 		bool mainButtonPulse = mainButtonPulseSerial != state.handledMainButtonPulseSerial;
 		if (mainButtonPulse) state.handledMainButtonPulseSerial = mainButtonPulseSerial;
@@ -1242,10 +1266,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->h.SetDirect(state.mainButtonBaseSize);
 			state.mainButtonLogo->w.SetDirect(state.mainButtonLogoBaseW);
 			state.mainButtonLogo->h.SetDirect(state.mainButtonLogoBaseH);
-			mainButtonInk->w.SetDirect(state.mainButtonLogoBaseW);
-			mainButtonLight->w.SetDirect(state.mainButtonLogoBaseW);
-			mainButtonInk->h.SetDirect(state.mainButtonLogoBaseH);
-			mainButtonLight->h.SetDirect(state.mainButtonLogoBaseH);
 		}
 		else if (mainButtonPulse)
 		{
@@ -1258,14 +1278,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 				state.mainButtonLogoBaseW * state.mainButtonScale, true, mainButtonPulseCurve);
 			state.mainButtonLogo->h.SetTar(state.mainButtonLogoBaseH, operationDur,
 				state.mainButtonLogoBaseH * state.mainButtonScale, true, mainButtonPulseCurve);
-			mainButtonInk->w.SetTar(state.mainButtonLogoBaseW, operationDur,
-				state.mainButtonLogoBaseW * state.mainButtonScale, true, mainButtonPulseCurve);
-			mainButtonLight->w.SetTar(state.mainButtonLogoBaseW, operationDur,
-				state.mainButtonLogoBaseW * state.mainButtonScale, true, mainButtonPulseCurve);
-			mainButtonInk->h.SetTar(state.mainButtonLogoBaseH, operationDur,
-				state.mainButtonLogoBaseH * state.mainButtonScale, true, mainButtonPulseCurve);
-			mainButtonLight->h.SetTar(state.mainButtonLogoBaseH, operationDur,
-				state.mainButtonLogoBaseH * state.mainButtonScale, true, mainButtonPulseCurve);
 		}
 		else
 		{
@@ -1273,10 +1285,6 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 			mainButton->h.SetTar(state.mainButtonBaseSize, operationDur);
 			state.mainButtonLogo->w.SetTar(state.mainButtonLogoBaseW, operationDur);
 			state.mainButtonLogo->h.SetTar(state.mainButtonLogoBaseH, operationDur);
-			mainButtonInk->w.SetTar(state.mainButtonLogoBaseW, operationDur);
-			mainButtonLight->w.SetTar(state.mainButtonLogoBaseW, operationDur);
-			mainButtonInk->h.SetTar(state.mainButtonLogoBaseH, operationDur);
-			mainButtonLight->h.SetTar(state.mainButtonLogoBaseH, operationDur);
 		}
 
 		BarUiCurveEnum mainButtonPctCurve = state.barState.fold
@@ -5324,7 +5332,6 @@ for (size_t i = 0; i < 3; ++i)
 bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	BarRenderLoopState& state, const BarRenderFrameSnapshot& frame)
 {
-	const auto& frameDrawingState = frame;
 	const double frameZoom = frame.zoom;
 	const double animationDtSeconds = frame.animationDtSeconds;
 	const double currentAnimationSpeedRate = frame.animationSpeedRate;
@@ -5398,37 +5405,19 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	}
 	const double mainLightMaterial = BarThemeMaterial::ClampWeight(state.mainButtonLightMaterial.val);
 	state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->lightMaterial = mainLightMaterial;
-	// 图形明确使用 Brush1；其他模式的入口继续指示记住的笔型及真实颜色。
-	const bool geometry = frameDrawingState.stateMode == StateModeSelectEnum::IdtShape;
-	const auto penColorSlot = geometry ? Inkeys::Business::PenColorStateSlot::Brush
-		: Inkeys::Business::ResolvePenColorStateSlot(frameDrawingState.laserActive,
-			frameDrawingState.penMode == PenModeSelectEnum::IdtPenHighlighter1);
-	const COLORREF actualPenColor = penColorSlot == Inkeys::Business::PenColorStateSlot::Laser
-		? frameDrawingState.laserColor
-		: (penColorSlot == Inkeys::Business::PenColorStateSlot::Highlighter
-			? frameDrawingState.highlighterColor : frameDrawingState.brush1Color);
-	const COLORREF darkPenColor = static_cast<COLORREF>(
-		BarThemeMaterial::DisplayPenColor(actualPenColor, 0.0));
-	auto SetLogoVisual = [&](BarUISetSvgEnum key, double opacity,
-		optional<COLORREF> color)
+	const auto logoDirtyKey = GetBarDirtyVisualKey(state.mainButtonLogo.get());
+	if (!state.mainLogoPenColor.IsSame())
+		ChangeColor(state.mainLogoPenColor, false, logoDirtyKey);
+	if (!state.mainLogoDrawingPct.IsSame())
+		ChangePct(state.mainLogoDrawingPct, false, logoDirtyKey);
+	const auto appearance = BarLogoAppearance::Resolve(mainLightMaterial,
+		state.mainLogoDrawingPct.val, state.mainLogoPenColor.val);
+	if (state.mainButtonLogo->mainLogoAppearance != appearance)
 	{
-		auto svg = state.svgMap[key];
-		bool changed = abs(static_cast<double>(svg->pct.val) - opacity) > 0.000001;
-		svg->pct.SetDirect(opacity);
-		if (color.has_value() && svg->color1.has_value())
-		{
-			changed = changed || svg->color1->val != color.value();
-			svg->color1->SetDirect(color.value());
-		}
-		if (changed)
-		{
-			needRendering = true;
-			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(svg.get()));
-		}
-	};
-	SetLogoVisual(BarUISetSvgEnum::logo1, 1.0 - mainLightMaterial, nullopt);
-	SetLogoVisual(BarUISetSvgEnum::logoInk, 1.0 - mainLightMaterial, darkPenColor);
-	SetLogoVisual(BarUISetSvgEnum::logoLight, mainLightMaterial, actualPenColor);
+		state.mainButtonLogo->mainLogoAppearance = appearance;
+		needRendering = true;
+		state.dirtyRegionTracker.MarkChanged(logoDirtyKey);
+	}
 
 // 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
 		if (state.barState.drawAttributeBar.thicknessSliderDragging
@@ -8053,8 +8042,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			mainButton->x.val - mainButton->w.val / 2.0,
 			mainButton->y.val - mainButton->h.val / 2.0));
 		mainBar->Inherit(BarUiInheritEnum::Center, *mainButton);
-		for (auto logo : { BarUISetSvgEnum::logo1, BarUISetSvgEnum::logoInk, BarUISetSvgEnum::logoLight })
-			state.svgMap[logo]->Inherit(BarUiInheritEnum::Center, *mainButton);
+		state.mainButtonLogo->Inherit(BarUiInheritEnum::Center, *mainButton);
 		const double mainButtonStroke = mainButton->ft.has_value()
 			? max(0.0, static_cast<double>(mainButton->ft->val)) : 0.0;
 		const double mainBarStroke = mainBar->ft.has_value()
@@ -8995,9 +8983,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			for (const auto& [visual, svg] : state.svgMap)
 			{
 				const int ordinal = static_cast<int>(visual);
-				const bool mainVisual = visual == BarUISetSvgEnum::logo1
-					|| visual == BarUISetSvgEnum::logoInk
-					|| visual == BarUISetSvgEnum::logoLight;
+				const bool mainVisual = visual == BarUISetSvgEnum::logo1;
 				const bool moreVisual = visual == BarUISetSvgEnum::MorePanelClose;
 				const bool drawVisual = ordinal >= static_cast<int>(
 					BarUISetSvgEnum::DrawAttributeBar_ColorSelect1)
@@ -11611,11 +11597,6 @@ bool presetButton = button.presetIndex >= 0;
 						UnionPngBounds(state.current, &temp->pngIcon);
 					else UnionSvgBounds(state.current, &temp->icon);
 					UnionWordBounds(state.current, &temp->name);
-				}
-				{
-					SetGripTransform();
-					for (auto obj : { BarUISetSvgEnum::logoInk, BarUISetSvgEnum::logoLight })
-						state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 				}
 			}
 		{ /**/ }

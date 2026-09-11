@@ -289,3 +289,36 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Next Steps
 
 - 如需检查真实桌面视觉，在另行允许 GUI 的会话验证系统主题、白色文档覆盖和鼠标动态光；当前主题改动保留未提交。
+
+
+## Session 12: 修正主按钮统一 SVG 与绘制态指示
+<!-- trellis-session: v=2 fp=b37c62517880500d -->
+
+**Date**: 2026-09-11
+**Task**: 修正主按钮统一 SVG 与绘制态指示
+**Branch**: `theme`
+
+### Summary
+
+按人工测试反馈恢复原深色渐变，主图标使用一个SVG内部属性动画；浅色保持真实整笔色，非绘制模式回到默认中性。完整ARM64构建、无窗口测试和150组离屏状态通过。未提交commit、未启动GUI。
+
+### Main Changes
+
+- 统一Logo实例/资源、独立外观缓存快照、恢复Pen/Shape门控与原换色动画；保留其余Bar材质与原draw stash。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug|ARM64通过，最终增量22.9秒；全部--no-window测试通过。
+- [OK] 150组生产属性离屏检查通过；36组原Dark SVG节点合成逐像素一致，旧双位图量化差异有界；30个普通SVG不变。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 使用Build/LogoIndicatorFix/ARM64/Debug/Inkeys.exe进行用户人工验收；当前修正未提交。

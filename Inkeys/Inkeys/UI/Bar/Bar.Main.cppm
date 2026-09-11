@@ -192,8 +192,6 @@ enum class BarUISetSuperellipseEnum : int
 enum class BarUISetSvgEnum : int
 {
 	logo1,
-	logoInk,
-	logoLight,
 	MorePanelClose,
 
 	DrawAttributeBar_ColorSelect1,

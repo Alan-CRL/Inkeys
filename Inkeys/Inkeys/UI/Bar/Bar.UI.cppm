@@ -6,6 +6,7 @@ module;
 #include <wrl/client.h>
 
 #include <functional>
+#include "Bar.LogoAppearance.h"
 
 export module Inkeys.UI.Bar:UI;
 
@@ -332,6 +333,8 @@ public:
 	// color2 -> rgba(9,0,2,0)
 
 public:
+	// 仅主 Logo 启用；设备缓存重建保留当前外观输入。
+	optional<BarLogoAppearance::Snapshot> mainLogoAppearance, cMainLogoAppearance;
 	// SVG 内容
 	BarUiStringClass svg;
 	Microsoft::WRL::ComPtr<ID2D1Bitmap> cacheBitmap;
