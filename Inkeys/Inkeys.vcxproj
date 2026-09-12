@@ -465,6 +465,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
@@ -1052,6 +1053,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cppm">

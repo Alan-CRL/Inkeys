@@ -106,6 +106,7 @@ namespace
 	{
 		ProductState state{};
 		state.tool = CurrentDraw3Tool();
+		state.paintDevice = setlist.paintDevice;
 		state.widthDip = (std::max)(0.1f, GetPenWidth());
 		state.colorRgba = ColorRefToRgba(GetPenColor());
 		state.selectionMode =

@@ -28,6 +28,7 @@
 #include "Draw3.Bridge.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.TimerPeriod.h"
+#include "Draw3.SpeedEraser.h"
 
 #pragma comment(lib, "winmm.lib")
 
@@ -563,9 +564,12 @@ namespace Inkeys::Drawing::Draw3
 			float lastPressure = -1.0f;
 			float lastTilt = -1.0f;
 			float lastOrientation = -1.0f;
+			// 每个 contact 保存批次快照，清屏和回收后不会遗留全局批次配置。
+			SpeedEraser::DisplayScale speedEraserDisplayScale = {};
+			SpeedEraser::DeviceMode speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 			SpeedEraserOcController speedEraserOc;
 			double speedEraserModelTime = 0.0;
-			float speedEraserModelDiameter = kSpeedEraserMinimumDiameterPx;
+			float speedEraserModelDiameter = SpeedEraser::Config{}.minimumDiameterPx;
 			RECT visibleDirty = {};
 			std::vector<InkPoint> rebuildPoints;
 			std::vector<ink::stroke_model::Result> reconnectPredictedResults;
@@ -603,11 +607,14 @@ namespace Inkeys::Drawing::Draw3
 				AppendNewModeledPoints(runtime.stroke, inputSpeed);
 				return;
 			}
+			const auto& config = runtime.speedEraserOc.Configuration();
 			const SpeedEraserWidthInterval widthInterval{
 				runtime.speedEraserModelTime,
 				currentInputTime,
 				runtime.speedEraserModelDiameter,
-				runtime.speedEraserOc.Diameter()
+				runtime.speedEraserOc.Diameter(),
+				config.minimumDiameterPx,
+				config.maximumDiameterPx
 			};
 			AppendNewModeledPoints(runtime.stroke, inputSpeed, &widthInterval);
 			// 纯帧 Advance 不更新这里；下一份 raw snapshot 仍从上次模型输入宽度插值。
@@ -615,10 +622,22 @@ namespace Inkeys::Drawing::Draw3
 			runtime.speedEraserModelDiameter = runtime.speedEraserOc.Diameter();
 		}
 
+		float RuntimeSpeedEraserContactDiameter(const RuntimeStroke& runtime) noexcept
+		{
+			const ActiveStroke& stroke = runtime.stroke;
+			const float acceptedRadius = !stroke.realPoints.empty()
+				? stroke.realPoints.back().r
+				: stroke.hasInputStartPoint ? stroke.inputStartPoint.r : 0.0f;
+			// 被过滤或被 modeler 拒绝的输入、纯帧动画都不能提前改变接触光标宽度。
+			return SpeedEraser::ContactDiameter(acceptedRadius,
+				runtime.speedEraserOc.Configuration().minimumDiameterPx);
+		}
+
 		struct SpeedEraserHoverLane
 		{
 			SpeedEraserOcController controller;
 			uint64_t lastSampleSequence = 0;
+			int64_t lastSampleQpc = 0;
 			bool initialized = false;
 			bool contactOwned = false;
 			bool sampleVisible = false;
@@ -630,6 +649,7 @@ namespace Inkeys::Drawing::Draw3
 			void Invalidate() noexcept
 			{
 				lastSampleSequence = 0;
+				lastSampleQpc = 0;
 				initialized = false;
 				contactOwned = false;
 				sampleVisible = false;
@@ -1827,6 +1847,10 @@ namespace Inkeys::Drawing::Draw3
 		SpeedEraserHoverLane invertedPenEraserHoverLane;
 		uint32_t observedEraserWidthModeRevision =
 			window_.ActiveEraserWidthModeRevision();
+		SpeedEraser::DisplayScale observedSpeedEraserDisplayScale =
+			window_.SpeedEraserDisplayScaleSnapshot();
+		SpeedEraser::DeviceMode observedSpeedEraserDeviceMode =
+			window_.SpeedEraserDeviceModeSnapshot();
 		CanvasTouchGestureState touchGesture;
 		CanvasPanMotionState panMotion;
 		std::vector<CanvasGestureContactRuntime> gestureContacts;
@@ -1990,12 +2014,27 @@ namespace Inkeys::Drawing::Draw3
 		auto synchronizeSpeedEraserHoverMode = [&]() noexcept
 		{
 			const uint32_t revision = window_.ActiveEraserWidthModeRevision();
-			if (revision != observedEraserWidthModeRevision)
+			const auto displayScale = window_.SpeedEraserDisplayScaleSnapshot();
+			const auto deviceMode = window_.SpeedEraserDeviceModeSnapshot();
+			if (revision != observedEraserWidthModeRevision ||
+				displayScale != observedSpeedEraserDisplayScale ||
+				deviceMode != observedSpeedEraserDeviceMode)
 			{
 				mouseEraserHoverLane.Invalidate();
 				penEraserHoverLane.Invalidate();
 				invertedPenEraserHoverLane.Invalidate();
 				observedEraserWidthModeRevision = revision;
+				observedSpeedEraserDisplayScale = displayScale;
+				observedSpeedEraserDeviceMode = deviceMode;
+				// 换屏只重建 Hover；活动 contact 继续使用落笔时的快照。
+				for (const RuntimeStroke* runtime : active)
+				{
+					if (!runtime || runtime->ended ||
+						runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) continue;
+					if (auto* lane = speedEraserHoverLaneFor(
+						runtime->metricDeviceType, runtime->invertedCursor))
+						lane->contactOwned = true;
+				}
 			}
 			return revision;
 		};
@@ -2004,31 +2043,38 @@ namespace Inkeys::Drawing::Draw3
 			const ContactSnapshot& down)
 		{
 			const double downSeconds = AbsoluteQpcSeconds(down.qpc, qpcFrequency);
-			if (runtime.metricDeviceType == InputDeviceType::Touch)
+			const bool touch = runtime.metricDeviceType == InputDeviceType::Touch;
+			const auto config = SpeedEraser::ResolveConfig(runtime.speedEraserDisplayScale,
+				runtime.speedEraserDeviceMode, touch);
+			if (touch)
 			{
 				runtime.speedEraserOc.Reset(down.position.x, down.position.y,
-					downSeconds, SpeedEraserStartKind::Touch);
+					downSeconds, SpeedEraserStartKind::Touch, config);
 				return;
 			}
 			SpeedEraserHoverLane* lane = speedEraserHoverLaneFor(
 				runtime.metricDeviceType, runtime.invertedCursor);
-			if (lane && lane->preserveNextHover &&
-				(lane->preserveNextHoverDeadlineQpc <= 0 ||
-					down.qpc > lane->preserveNextHoverDeadlineQpc))
+			if (lane && ((lane->initialized &&
+				(lane->controller.Configuration() != config || down.qpc < lane->lastSampleQpc)) ||
+				(lane->preserveNextHover &&
+					(lane->preserveNextHoverDeadlineQpc <= 0 ||
+						down.qpc > lane->preserveNextHoverDeadlineQpc))))
 			{
-				// Up 后长期未收到真实 Hover 时，下一次 Down 不继承陈旧 OC。
+				// 尺度、模式或样本时序不兼容时，Down 重新锚定，不能拼接旧 Hover。
+				const bool contactOwned = lane->contactOwned;
 				lane->Invalidate();
+				lane->contactOwned = contactOwned;
 			}
 			if (lane && lane->initialized && !lane->contactOwned)
 			{
 				runtime.speedEraserOc = lane->controller; // Down 继承 Hover 的完整方向与滞回状态。
 				runtime.speedEraserOc.UpdatePosition(
-					down.position.x, down.position.y, downSeconds, configuration_.dpiScale);
+					down.position.x, down.position.y, downSeconds);
 			}
 			else
 			{
 				runtime.speedEraserOc.Reset(down.position.x, down.position.y,
-					downSeconds, SpeedEraserStartKind::Hover);
+					downSeconds, SpeedEraserStartKind::Hover, config);
 			}
 			if (lane)
 			{
@@ -2046,16 +2092,30 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraserHoverLane* lane = speedEraserHoverLaneFor(
 				runtime.metricDeviceType, runtime.invertedCursor);
 			if (!lane) return; // Touch 每个 contact 独占 OC，不进入 Hover lane。
+			const bool anotherOwner = std::any_of(active.begin(), active.end(),
+				[&](const RuntimeStroke* candidate)
+				{
+					return candidate && candidate != &runtime && !candidate->ended &&
+						candidate->stroke.widthMode == StrokeWidthMode::SpeedEraser &&
+						speedEraserHoverLaneFor(candidate->metricDeviceType,
+							candidate->invertedCursor) == lane;
+				});
+			if (anotherOwner) return; // 同 lane 的并发接触全部结束后才交还 Hover。
+			const auto hoverConfig = SpeedEraser::ResolveConfig(
+				window_.SpeedEraserDisplayScaleSnapshot(),
+				window_.SpeedEraserDeviceModeSnapshot(), false);
 			if (!runtime.cancelled &&
 				window_.ActiveEraserWidthModeRevision() ==
 					runtime.eraserWidthModeRevision &&
-				runtime.eraserWidthMode == EraserWidthMode::Speed)
+				runtime.eraserWidthMode == EraserWidthMode::Speed &&
+				runtime.speedEraserOc.Configuration() == hoverConfig)
 			{
 				lane->controller = runtime.speedEraserOc;
 				lane->initialized = true;
 				lane->contactOwned = false;
 				lane->sampleVisible = false;
 				lane->lastSampleSequence = 0;
+				lane->lastSampleQpc = runtime.lastInputSnapshot.qpc;
 				lane->preserveNextHover = TryAddQpcDuration(
 					runtime.lastInputSnapshot.qpc, qpcFrequency,
 					kSpeedEraserHoverHandbackWindowSeconds,
@@ -2065,7 +2125,7 @@ namespace Inkeys::Drawing::Draw3
 					lane->Invalidate();
 				return;
 			}
-			lane->Invalidate(); // Cancel 或模式不一致时，下次 Speed Hover 从 20px 重新开始。
+			lane->Invalidate(); // Cancel 或配置不一致时，下次 Hover 按最新尺度从最小值开始。
 		};
 
 		auto cancelTouchDrawingForPan = [&]()
@@ -2359,10 +2419,30 @@ namespace Inkeys::Drawing::Draw3
 					synchronizeSpeedEraserHoverMode();
 				EraserWidthMode batchEraserWidthMode = EraserWidthModeForRevision(
 					batchEraserWidthModeRevision);
+				auto batchSpeedEraserDisplayScale = observedSpeedEraserDisplayScale;
+				auto batchSpeedEraserDeviceMode = observedSpeedEraserDeviceMode;
+				bool hasSpeedEraserBatchContact = false;
 				bool hasActiveBatchContact = false;
 				bool hasActiveLaserTouchContact = false;
 				for (RuntimeStroke* activeRuntime : active)
 				{
+					if (activeRuntime && !activeRuntime->cancelled && !hasSpeedEraserBatchContact)
+					{
+						ContactSnapshot batchLatest = activeRuntime->lastInputSnapshot;
+						input_.TryReadSnapshot(activeRuntime->handle, batchLatest);
+						const bool terminal = batchLatest.phase == ContactPhase::Up ||
+							batchLatest.phase == ContactPhase::Cancelled;
+						if ((!activeRuntime->ended || terminal) && SpeedEraser::ContactBatchContains(
+							activeRuntime->qpcOrigin, terminal ? batchLatest.qpc : 0,
+							activeRuntime->awaitingReconnect ? activeRuntime->reconnectDeadlineQpc : 0,
+							down.qpc))
+						{
+							// Up 先被消费不代表 B.Down 时已经结束；用真实 QPC 保留重叠批次。
+							batchSpeedEraserDisplayScale = activeRuntime->speedEraserDisplayScale;
+							batchSpeedEraserDeviceMode = activeRuntime->speedEraserDeviceMode;
+							hasSpeedEraserBatchContact = true;
+						}
+					}
 					if (activeRuntime && !activeRuntime->ended && !activeRuntime->awaitingReconnect &&
 						runtimeContactPhysicallyLive(*activeRuntime))
 					{
@@ -2573,10 +2653,10 @@ namespace Inkeys::Drawing::Draw3
 					inputTime = std::max(inputTime, reconnectRuntime->lastModelInputTime + 0.000001);
 					if (reconnectRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 					{
-						// 先恢复 OC 并加入桥接 DIP，再把同一份 raw Down 送入 modeler。
+						// 恢复历史并重新锚定 raw Down；连接位移和空缺时间不参与测速。
 						reconnectRuntime->speedEraserOc.ResumeFromReconnect(
 							down.position.x, down.position.y,
-							AbsoluteQpcSeconds(down.qpc, qpcFrequency), configuration_.dpiScale);
+							AbsoluteQpcSeconds(down.qpc, qpcFrequency));
 					}
 					const Input reconnectInput{
 						.event_type = Input::EventType::kMove,
@@ -2710,6 +2790,8 @@ namespace Inkeys::Drawing::Draw3
 					runtime->viewport = canvas ? canvas->Viewport() : InkViewport{};
 				}
 				else runtime->viewport = {};
+				runtime->speedEraserDisplayScale = batchSpeedEraserDisplayScale;
+				runtime->speedEraserDeviceMode = batchSpeedEraserDeviceMode;
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
 				// 产品样式与工具一样在 Down 时锁存，活动笔划和断触续接不读取后续修改。
@@ -2951,7 +3033,7 @@ namespace Inkeys::Drawing::Draw3
 						? controllerResumeQpc : snapshot.qpc;
 					runtime.speedEraserOc.ResumeFromReconnect(
 						snapshot.position.x, snapshot.position.y,
-						AbsoluteQpcSeconds(resumeQpc, qpcFrequency), configuration_.dpiScale);
+						AbsoluteQpcSeconds(resumeQpc, qpcFrequency));
 				}
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
@@ -3041,7 +3123,7 @@ namespace Inkeys::Drawing::Draw3
 					// 每份 raw snapshot 先推进 OC；即使本次不进入 modeler，也要累计停笔时间。
 					runtime.speedEraserOc.UpdatePosition(
 						snapshot.position.x, snapshot.position.y,
-						AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency), configuration_.dpiScale);
+						AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
 				}
 				if (!terminal && !positionMoved && !stylusStateChanged && !shapeRawChanged)
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
@@ -3150,7 +3232,7 @@ namespace Inkeys::Drawing::Draw3
 						runtime.awaitingReconnect = true;
 						if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser)
 						{
-							// 候选窗口冻结 OC；成功续接时再平移时间基准并加入桥接路程。
+							// 候选窗口冻结 OC；成功续接只平移历史时间并重设位置基准。
 							runtime.speedEraserOc.PauseForReconnect(
 								AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
 						}
@@ -3609,6 +3691,8 @@ namespace Inkeys::Drawing::Draw3
 				selectedTool == DrawingTool::Eraser;
 			const bool mouseEraser = selectedTool == DrawingTool::Eraser;
 			const double nowSeconds = AbsoluteQpcSeconds(nowQpc, qpcFrequency);
+			const auto hoverConfig = SpeedEraser::ResolveConfig(
+				observedSpeedEraserDisplayScale, observedSpeedEraserDeviceMode, false);
 
 			auto updateLane = [&](SpeedEraserHoverLane& lane,
 				const DrawingCursorSample& sample, bool tracksSample)
@@ -3653,20 +3737,22 @@ namespace Inkeys::Drawing::Draw3
 				lane.sampleVisible = eligibleHover && !lane.contactOwned;
 				if (!lane.sampleVisible) return false;
 				const float diameterBefore = lane.initialized
-					? lane.controller.Diameter() : kSpeedEraserMinimumDiameterPx;
+					? lane.controller.Diameter() : hoverConfig.minimumDiameterPx;
 				const double sampleSeconds = AbsoluteQpcSeconds(sample.qpc, qpcFrequency);
 				if (!lane.initialized)
 				{
 					lane.controller.Reset(sample.x, sample.y,
-						sampleSeconds, SpeedEraserStartKind::Hover);
+						sampleSeconds, SpeedEraserStartKind::Hover, hoverConfig);
 					lane.initialized = true;
 					lane.lastSampleSequence = sample.sequence;
+					lane.lastSampleQpc = std::max(lane.lastSampleQpc, sample.qpc);
 				}
 				else if (sample.sequence != lane.lastSampleSequence)
 				{
 					lane.controller.UpdatePosition(
-						sample.x, sample.y, sampleSeconds, configuration_.dpiScale);
+						sample.x, sample.y, sampleSeconds);
 					lane.lastSampleSequence = sample.sequence;
+					lane.lastSampleQpc = std::max(lane.lastSampleQpc, sample.qpc);
 				}
 				lane.preserveNextHover = false;
 				lane.preserveNextHoverDeadlineQpc = 0;
@@ -3754,7 +3840,7 @@ namespace Inkeys::Drawing::Draw3
 					float dynamicDiameter = -1.0f;
 					if (primaryRuntime && primaryRuntime->tool == DrawingTool::Eraser &&
 						primaryRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
-						dynamicDiameter = primaryRuntime->speedEraserOc.Diameter();
+						dynamicDiameter = RuntimeSpeedEraserContactDiameter(*primaryRuntime);
 					else if (!primaryRuntime &&
 						window_.ActiveEraserWidthMode() == EraserWidthMode::Speed)
 					{
@@ -3804,7 +3890,7 @@ namespace Inkeys::Drawing::Draw3
 				DrawingCursorAppearance touchAppearance = eraserAppearance;
 				if (runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 					ApplySpeedEraserCursorDiameter(
-						touchAppearance, runtime->speedEraserOc.Diameter());
+						touchAppearance, RuntimeSpeedEraserContactDiameter(*runtime));
 				const DrawingCursorVisual touchVisual = MakeTouchEraserDrawingCursorVisual(
 					snapshot.position.x, snapshot.position.y, touchAppearance);
 				if (touchVisual.visible)
@@ -6265,7 +6351,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
 					runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) continue;
 				runtime->speedEraserOc.Advance(frameAbsoluteSeconds);
-				// 按住静止时只推进光标 OC；模型宽度边界仍保留到下一份 raw snapshot。
+				// 静止时只推进动态状态；接触光标和几何保持最近真实点已接受的半径。
 			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
@@ -6865,8 +6951,10 @@ namespace Inkeys::Drawing::Draw3
 						runtime->reconnectDeadlineQpc = 0;
 						runtime->reconnectPredictedResults.clear();
 						runtime->reconnectManualTestRanges.clear();
+						runtime->speedEraserDisplayScale = {};
+						runtime->speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 						runtime->speedEraserModelTime = 0.0;
-						runtime->speedEraserModelDiameter = kSpeedEraserMinimumDiameterPx;
+						runtime->speedEraserModelDiameter = SpeedEraser::Config{}.minimumDiameterPx;
 						runtime->shape.Reset();
 						runtime->viewport = {};
 						runtime->laserParticleSeed = 0;

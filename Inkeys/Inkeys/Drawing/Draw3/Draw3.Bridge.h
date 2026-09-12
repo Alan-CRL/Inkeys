@@ -146,6 +146,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		float widthDip = 2.0f;
+		int paintDevice = 1; // 0 大屏，1 笔电；沿用已有绘图设备选项。
 		bool selectionMode = true;
 		bool autoSaveEnabled = false;
 		std::uint32_t page = 0;

@@ -11,6 +11,7 @@
 #include <mutex>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.SpeedEraser.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
 
@@ -170,6 +171,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
 		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		void SetEraserWidthMode(EraserWidthMode mode) noexcept;
+		void SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale);
+		SpeedEraser::DisplayScale SpeedEraserDisplayScaleSnapshot() const;
+		void SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode);
+		SpeedEraser::DeviceMode SpeedEraserDeviceModeSnapshot() const;
 		// 产品状态只发布原子样式快照，实际绘制仍由绘制线程消费。
 		void SetProductVisualStyle(uint32_t colorRgba, float widthDip) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
@@ -262,6 +267,10 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> autoSaveEnabled_ = false;
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
+		// 完整标尺在同一个锁内复制，不能拼接跨 generation 的独立原子字段。
+		mutable std::mutex speedEraserConfigMutex_;
+		SpeedEraser::DisplayScale speedEraserDisplayScale_;
+		SpeedEraser::DeviceMode speedEraserDeviceMode_ = SpeedEraser::DeviceMode::Laptop;
 		// 产品颜色按 0xRRGGBBAA 保存，默认使用不透明黑色。
 		std::atomic<uint32_t> productColorRgba_ = 0x000000FFu;
 		std::atomic<float> productWidthDip_ = 2.0f;

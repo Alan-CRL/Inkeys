@@ -3729,6 +3729,7 @@ SettingSessionCoroutine RunSettingSession()
 											if (setlist.paintDevice != PaintDevice)
 											{
 												setlist.paintDevice = PaintDevice;
+												SyncDraw3State();
 												WriteSetting();
 
 												drawingScale = GetDrawingScale();

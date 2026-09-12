@@ -1,4 +1,7 @@
 #include "Draw3.Host.h"
+#include "Draw3.SpeedEraser.h"
+
+import Inkeys.Display;
 
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.auto_save;
@@ -31,6 +34,11 @@ namespace Inkeys::Drawing::Draw3
 		PresentationAutoSaveService presentationAutoSave;
 		ContactInputCoordinator input;
 		WindowController window;
+		std::mutex displayMutex;
+		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
+		Inkeys::Display::Subscription displaySubscription;
+		std::atomic_bool displayScaleDirty = false;
+		RECT appliedDisplayClientBounds{};
 		GraphicsDeviceResources graphics;
 		InkRenderer renderer;
 		TransparentPresentationController presentation;
@@ -444,8 +452,69 @@ namespace Inkeys::Drawing::Draw3
 				callbacks->setExtendedStyleFlags(callbacks->context, setMask, clearMask);
 		}
 
+
+		void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot)
+		{
+			{
+				std::scoped_lock lock(displayMutex);
+				pendingDisplaySnapshot = std::move(snapshot);
+			}
+			displayScaleDirty.store(true, std::memory_order_release);
+			(void)input.PublishControlWake();
+		}
+
+		void PumpDisplayScale()
+		{
+			if (!displayScaleDirty.exchange(false, std::memory_order_acq_rel)) return;
+			Inkeys::Display::SnapshotPtr snapshot;
+			{
+				std::scoped_lock lock(displayMutex);
+				snapshot = pendingDisplaySnapshot;
+			}
+			const HWND hwnd = attachedWindow.load(std::memory_order_acquire);
+			SpeedEraser::DisplayScale scale;
+			scale.generation = snapshot ? snapshot->generation : 0;
+			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
+			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
+			const auto* monitor = snapshot ? snapshot->Find(monitorHandle) : nullptr;
+			RECT clientBounds{};
+			POINT origin{};
+			const bool clientKnown = hwnd && GetClientRect(hwnd, &clientBounds) && ClientToScreen(hwnd, &origin);
+			if (clientKnown) OffsetRect(&clientBounds, origin.x, origin.y);
+			if (monitor)
+			{
+				scale.dipPerPixelX = 96.0f / (monitor->effectiveDpiX ? monitor->effectiveDpiX : 96u);
+				scale.dipPerPixelY = 96.0f / (monitor->effectiveDpiY ? monitor->effectiveDpiY : 96u);
+				scale.physicalAvailable = monitor->physicalSize.available &&
+					monitor->pixelWidth > 0 && monitor->pixelHeight > 0;
+				if (scale.physicalAvailable)
+				{
+					scale.cmPerPixelX = static_cast<float>(monitor->physicalSize.widthCm) / monitor->pixelWidth;
+					scale.cmPerPixelY = static_cast<float>(monitor->physicalSize.heightCm) / monitor->pixelHeight;
+				}
+				// 现有 RTS 元数据不能证明多屏/数位板映射；只确认单屏整客户区的直接 Touch。
+				scale.directTouchMapped = scale.physicalAvailable && !snapshot->fallback && !monitor->fallback &&
+					snapshot->topology == Inkeys::Display::DisplayTopology::Single &&
+					snapshot->monitors.size() == 1 && snapshot->activeTargets.size() == 1 &&
+					monitor->targetIndex.has_value() && clientKnown &&
+					EqualRect(&clientBounds, &monitor->bounds);
+			}
+			else if (hwnd)
+			{
+				const UINT dpi = GetDpiForWindow(hwnd);
+				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
+			}
+			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
+			scale.revision = previous.revision;
+			if (scale == previous && EqualRect(&clientBounds, &appliedDisplayClientBounds)) return;
+			scale.revision = previous.revision + 1;
+			appliedDisplayClientBounds = clientBounds;
+			window.SetSpeedEraserDisplayScale(scale);
+		}
+
 		void PumpBridgeState()
 		{
+			PumpDisplayScale();
 			const Bridge::ProductState state = bridge.Snapshot();
 			if (state.revision == appliedBridgeRevision) return;
 			appliedBridgeRevision = state.revision;
@@ -468,6 +537,8 @@ namespace Inkeys::Drawing::Draw3
 			default: break;
 			}
 			window.SetActiveTool(tool);
+			window.SetSpeedEraserDeviceMode(state.paintDevice == 0
+				? SpeedEraser::DeviceMode::LargeScreen : SpeedEraser::DeviceMode::Laptop);
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
@@ -627,6 +698,9 @@ namespace Inkeys::Drawing::Draw3
 				std::fputs("[Draw3.Presentation] action=start result=failed\n", stderr);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection);
 			window.SetInputCoordinator(&input);
+			window.SetSpeedEraserDisplayScale({});
+			appliedDisplayClientBounds = {};
+			PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
 			// 启动握手保证绘制线程先拥有独立 GPU 资源，再启用唯一 RTS producer。
 			{
 				std::scoped_lock lock(startupMutex);
@@ -844,11 +918,18 @@ namespace Inkeys::Drawing::Draw3
 			runtimeCallbacks = {};
 			return false;
 		}
+		displaySubscription = Inkeys::Display::Subscribe(
+			[this](Inkeys::Display::SnapshotPtr snapshot)
+			{
+				// 通知线程只发布快照并唤醒，窗口信息由绘制线程低频解析。
+				PublishDisplaySnapshot(std::move(snapshot));
+			});
 		return true;
 		}
 
 		void Stop() noexcept
 		{
+			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
 				!running.load(std::memory_order_acquire))
@@ -1057,6 +1138,12 @@ namespace Inkeys::Drawing::Draw3
 		if (message == kDraw3HiddenTestContactMessage &&
 			impl_->hiddenTestContactInjectionEnabled)
 			return PublishHiddenTestContact(wParam, lParam) ? 0 : -1;
+		if (window == impl_->attachedWindow.load(std::memory_order_acquire) &&
+			(message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED || message == WM_DISPLAYCHANGE))
+		{
+			impl_->displayScaleDirty.store(true, std::memory_order_release);
+			(void)impl_->input.PublishControlWake();
+		}
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
 	}
 	void Host::SetActivationAllowed(bool enabled) noexcept
