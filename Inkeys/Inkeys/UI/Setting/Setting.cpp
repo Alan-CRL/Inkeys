@@ -8648,14 +8648,45 @@ SettingSessionCoroutine RunSettingSession()
 								const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 								const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
 								text += to_wstring(displaySnapshot ? displaySnapshot->monitors.size() : 0);
+								text += L"\n活动显示拓扑：";
+								text += displaySnapshot
+									? Inkeys::Display::DisplayTopologyText(displaySnapshot->topology)
+									: L"无快照";
 								text += L"\n主监视器像素宽度：";
 								text += to_wstring(monitor ? monitor->pixelWidth : 0) + L"px";
 								text += L"\n主监视器像素高度：";
 								text += to_wstring(monitor ? monitor->pixelHeight : 0) + L"px";
-								text += L"\n主监视器物理宽度：";
-								text += to_wstring(monitor ? monitor->edid.physicalWidthCm : 0) + L"cm";
-								text += L"\n主监视器物理高度：";
-								text += to_wstring(monitor ? monitor->edid.physicalHeightCm : 0) + L"cm";
+								text += L"\n主监视器原始 EDID 状态：";
+								text += monitor
+									? Inkeys::Display::EdidStatusText(monitor->edid.status) : L"不可用";
+								text += L"\n主监视器原始 EDID 宽度：";
+								text += to_wstring(monitor ? monitor->edid.rawPhysicalWidthCm : 0) + L"cm";
+								text += L"\n主监视器原始 EDID 高度：";
+								text += to_wstring(monitor ? monitor->edid.rawPhysicalHeightCm : 0) + L"cm";
+								text += L"\n主监视器业务物理宽度：";
+								text += to_wstring(monitor ? monitor->physicalSize.widthCm : 0) + L"cm";
+								text += L"\n主监视器业务物理高度：";
+								text += to_wstring(monitor ? monitor->physicalSize.heightCm : 0) + L"cm";
+								text += L"\n主监视器物理标尺状态：";
+								text += monitor
+									? Inkeys::Display::PhysicalSizeUnavailableReasonText(
+										monitor->physicalSize.unavailableReason) : L"无快照";
+								if (displaySnapshot)
+								{
+									for (size_t targetIndex = 0;
+										targetIndex < displaySnapshot->activeTargets.size(); ++targetIndex)
+									{
+										const auto& target = displaySnapshot->activeTargets[targetIndex];
+										text += L"\n活动输出 " + to_wstring(targetIndex + 1) + L"：";
+										text += target.monitorFriendlyName.empty()
+											? target.sourceDeviceName : target.monitorFriendlyName;
+										text += L"，EDID ";
+										text += Inkeys::Display::EdidStatusText(target.edid.status);
+										text += L"，原始尺寸 " +
+											to_wstring(target.edid.rawPhysicalWidthCm) + L"x" +
+											to_wstring(target.edid.rawPhysicalHeightCm) + L"cm";
+									}
+								}
 							}
 
 							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;

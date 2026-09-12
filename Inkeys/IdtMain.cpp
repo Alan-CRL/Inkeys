@@ -1341,8 +1341,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				{
 					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 					const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-					if (!monitor || monitor->edid.physicalWidthCm == 0 || monitor->edid.physicalHeightCm == 0) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else if (monitor->edid.physicalWidthCm * monitor->edid.physicalHeightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					if (!monitor || !monitor->physicalSize.available) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					else if (monitor->physicalSize.widthCm * monitor->physicalSize.heightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
 					else setlist.paintDevice = 1;
 				}
 				else setlist.paintDevice = 1;
@@ -1460,14 +1460,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			drawingScale = min(static_cast<float>(monitor->pixelWidth) / 1920.0F,
 				static_cast<float>(monitor->pixelHeight) / 1080.0F);
-			if (setlist.paintDevice == 1 || monitor->edid.physicalHeightCm == 0 ||
-				monitor->edid.physicalWidthCm == 0)
+			if (setlist.paintDevice == 1 || !monitor->physicalSize.available)
 				stopTimingError = 5;
 			else
 				stopTimingError = min(0.3F * static_cast<float>(monitor->pixelWidth) /
-					static_cast<float>(monitor->edid.physicalHeightCm),
+					static_cast<float>(monitor->physicalSize.heightCm),
 					0.5F * static_cast<float>(monitor->pixelHeight) /
-					static_cast<float>(monitor->edid.physicalHeightCm));
+					static_cast<float>(monitor->physicalSize.heightCm));
 		});
 	// I18N初始化
 	{

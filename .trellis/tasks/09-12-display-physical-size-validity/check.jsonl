@@ -1,0 +1,5 @@
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"检查公开显示快照与订阅合同未回归"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"检查 SetupAPI、注册表和回调资源生命周期"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查 ARM64 Debug 完整 Solution 验证方式"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查原始 EDID 与业务尺寸消费者的数据流一致性"}
+{"file":".trellis/tasks/archive/2026-08/08-14-unified-display-management-ui3-dpi/prd.md","reason":"检查既有显示功能和测试能力不发生回归"}
