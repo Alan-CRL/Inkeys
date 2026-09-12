@@ -3856,9 +3856,12 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							shape->fill.value().SetTar(selected
 								? GetThemeColor(BarThemeColorEnum::SelectedFill)
 								: GetThemeColor(BarThemeColorEnum::PressedFill));
+							// Dark 保留原边缘光端点，Light 才切换为石墨图标色。
 							shape->frame.value().SetTar(selected
 								? GetThemeColor(BarThemeColorEnum::Accent)
-								: GetThemeColor(BarThemeColorEnum::EdgeLight));
+								: GetThemeColor(state.barStyle.darkStyle
+									? BarThemeColorEnum::EdgeLight
+									: BarThemeColorEnum::IconPrimary));
 
 							if (!visible)
 							{
@@ -6459,7 +6462,16 @@ double baseThumbDiameter =
 			popupCircle->h.SetDirect(circleDiameter * popupScale);
 			popupCircle->rw->SetDirect(circleDiameter * popupScale / 2.0);
 			popupCircle->rh->SetDirect(circleDiameter * popupScale / 2.0);
-			popupCircle->fill->SetDirect(RGB(255, 255, 255));
+			// 粗细圆点跟随主栏图标角色，并沿主题材质权重连续换色。
+			const double lightWeight = BarThemeMaterial::ClampWeight(
+				state.barLightMaterial.val);
+			const COLORREF popupCircleColor = MixBarUiColor(
+				GetThemeColor(BarThemeModeEnum::Dark,
+					BarThemeColorEnum::IconPrimary),
+				GetThemeColor(BarThemeModeEnum::Light,
+					BarThemeColorEnum::IconPrimary),
+				lightWeight);
+			popupCircle->fill->SetDirect(popupCircleColor);
 			popupCircle->pct.SetDirect(popupOpacity);
 			popupCircle->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
@@ -6475,11 +6487,22 @@ double baseThumbDiameter =
 				BarThicknessPreviewNumberFontSize);
 			popupNumber->content.SetVal(previewText);
 			popupNumber->content.SetTar(previewText);
-			// 浅色浮窗沿用石墨文字；深色保持白色预览圆内的反色。
-			popupNumber->color.SetDirect(state.barStyle.darkStyle
-				? MixBarUiColor(GetThemeColor(BarThemeColorEnum::TextPrimary),
-					RGB(0, 0, 0), numberInsideProgress)
-				: GetThemeColor(BarThemeColorEnum::TextPrimary));
+			// 数字的内外颜色都用同一材质权重插值，避免过渡中突然翻转黑白。
+			const COLORREF popupNumberOutsideColor = MixBarUiColor(
+				GetThemeColor(BarThemeModeEnum::Dark,
+					BarThemeColorEnum::TextPrimary),
+				GetThemeColor(BarThemeModeEnum::Light,
+					BarThemeColorEnum::TextPrimary),
+				lightWeight);
+			const COLORREF popupNumberInsideColor = MixBarUiColor(
+				GetBarReadableTextColor(GetThemeColor(BarThemeModeEnum::Dark,
+					BarThemeColorEnum::IconPrimary)),
+				GetBarReadableTextColor(GetThemeColor(BarThemeModeEnum::Light,
+					BarThemeColorEnum::IconPrimary)),
+				lightWeight);
+			popupNumber->color.SetDirect(MixBarUiColor(
+				popupNumberOutsideColor, popupNumberInsideColor,
+				numberInsideProgress));
 			popupNumber->pct.SetDirect(popupOpacity);
 
 			state.drawAttributeThicknessPreviewNumberRect = D2D1::RectF(
@@ -11045,7 +11068,7 @@ bool presetButton = button.presetIndex >= 0;
 							double buttonOpacity = presetButton
 								? static_cast<double>(numberWord->pct.val)
 								: (adjustVisible ? contentOpacity : 0.0);
-							// 圆点读取 Shape 的当前边框色，跟随白色到青色的已有颜色动画。
+							// 圆点读取 Shape 的当前边框色，跟随图标色到青色的已有颜色动画。
 							COLORREF buttonColor = shape->frame.value().val;
 
 							double pressScale = button.pressScale->val;
@@ -12315,8 +12338,6 @@ bool presetButton = button.presetIndex >= 0;
 				COLORREF surfaceColor = panel->fill.has_value()
 					? static_cast<COLORREF>(panel->fill.value().val)
 					: GetThemeColor(BarThemeColorEnum::Surface);
-				COLORREF textColor = GetThemeColor(
-					BarThemeColorEnum::TextPrimary);
 				COLORREF accentColor = GetThemeColor(
 					BarThemeColorEnum::Accent);
 				double accentOpacity = clamp(static_cast<double>(
@@ -12324,12 +12345,25 @@ bool presetButton = button.presetIndex >= 0;
 					0.0, 1.0);
 				COLORREF centerColor = MixBarUiColor(
 					surfaceColor, accentColor, accentOpacity);
-				COLORREF outerFillColor = state.barStyle.darkStyle
-					? MixBarUiColor(surfaceColor, textColor, 0.20)
-					: surfaceColor;
+				const double lightWeight = BarThemeMaterial::ClampWeight(
+					state.barLightMaterial.val);
+				const COLORREF darkOuterFillColor = MixBarUiColor(
+					GetThemeColor(BarThemeModeEnum::Dark,
+						BarThemeColorEnum::Surface),
+					GetThemeColor(BarThemeModeEnum::Dark,
+						BarThemeColorEnum::TextPrimary), 0.20);
+				COLORREF outerFillColor = MixBarUiColor(
+					darkOuterFillColor,
+					GetThemeColor(BarThemeModeEnum::Light,
+						BarThemeColorEnum::Surface), lightWeight);
+				const COLORREF darkOuterFrameColor = MixBarUiColor(
+					darkOuterFillColor,
+					GetThemeColor(BarThemeModeEnum::Dark,
+						BarThemeColorEnum::TextPrimary), 0.12);
 				COLORREF outerFrameColor = MixBarUiColor(
-					outerFillColor, textColor,
-					state.barStyle.darkStyle ? 0.12 : 0.16);
+					darkOuterFrameColor,
+					GetThemeColor(BarThemeModeEnum::Light,
+						BarThemeColorEnum::SurfaceFrame), lightWeight);
 				FillThumbCircle(outerFrameColor, thumbRadius);
 				FillThumbCircle(outerFillColor,
 					max(0.0F, thumbRadius - static_cast<FLOAT>(
