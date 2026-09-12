@@ -1577,7 +1577,13 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 
-					// Draw3 输入测试和程序调测尚未准备好，暂时隐藏入口。
+					// 临时恢复程序调测入口，当前仅提供显示器与 EDID 诊断。
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,660.0f * settingGlobalScale });
+						ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+
+						if (Widgets::button.Navigation(IA(I18nKey.SettingsUI.DebugSoftware.N).c_str(), { 150.0f * settingGlobalScale,30.0f * settingGlobalScale }, settingTab == settingTabEnum::tab9, Widgets::FluentColor::TextPrimary, ImVec2(0.5f, 0.5f))) settingTab = settingTabEnum::tab9;
+					}
 
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
@@ -8485,8 +8491,7 @@ SettingSessionCoroutine RunSettingSession()
 
 				// ---------------------
 
-				// 程序调测（Draw3 输入测试未准备好，产品编译路径隐藏）
-#if 0
+				// 程序调测临时页：旧 Draw3 输入调试已移除，仅保留显示器诊断。
 				case settingTabEnum::tab9:
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
@@ -8494,262 +8499,82 @@ SettingSessionCoroutine RunSettingSession()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::WindowBackground);
 					ImGui::BeginChild("程序调测", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, false);
 
+					PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20.0f * settingGlobalScale, 18.0f * settingGlobalScale));
+					PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+					ImGui::BeginChild("显示器与 EDID", { settingContentPanelWidth * settingGlobalScale,608.0f * settingGlobalScale }, true);
+
+					ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+
+					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+					if (!displaySnapshot)
 					{
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-						ImGui::BeginChild("启用触摸测试模式", { settingContentPanelWidth * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-						float cursosPosY = 0;
-						{
-							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-							ImGui::TextUnformatted("启用触摸测试模式");
-						}
-						{
-							ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-
-							ImGui::TextUnformatted("开启后，使用输入设备在主画布上产生输入，即刻开始测试。");
-						}
-						{
-							ImGui::SetCursorPos({ 660.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							if (Widgets::button.Standard("开启", { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
-							{
-								ChangeStateModeToTouchTest();
-							}
-						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
-						ImGui::EndChild();
+						ImGui::TextUnformatted("显示快照不可用");
 					}
+					else
 					{
-						ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+						std::wstring summary = L"活动拓扑：";
+						summary += Inkeys::Display::DisplayTopologyText(displaySnapshot->topology);
+						summary += L" | 监视器数量：" + std::to_wstring(displaySnapshot->monitors.size());
+						ImGui::TextUnformatted(utf16ToUtf8(summary).c_str());
+						ImGui::Spacing();
 
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-						ImGui::BeginChild("程序调测-输出", { settingContentPanelWidth * settingGlobalScale,533.0f * settingGlobalScale }, true);
-
-						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-						ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+						for (std::size_t monitorIndex = 0; monitorIndex < displaySnapshot->monitors.size(); ++monitorIndex)
 						{
-							ImGui::SetCursorPosY(30.0f);
-							wstring text;
+							const auto& monitor = displaySnapshot->monitors[monitorIndex];
+							const Inkeys::Display::ActiveDisplayTargetInfo* target = nullptr;
+							if (monitor.targetIndex && *monitor.targetIndex < displaySnapshot->activeTargets.size())
+								target = &displaySnapshot->activeTargets[*monitor.targetIndex];
+
+							std::wstring monitorName = target && !target->monitorFriendlyName.empty()
+								? target->monitorFriendlyName : L"未知显示器";
+							std::wstring windowsMonitor = monitor.deviceName;
+							const auto displayNamePosition = windowsMonitor.find(L"DISPLAY");
+							if (displayNamePosition != std::wstring::npos)
+								windowsMonitor.erase(0, displayNamePosition);
+
+							std::wstring line = L"显示器 " + std::to_wstring(monitorIndex + 1);
+							if (monitor.primary) line += L"（主）";
+							line += L"：" + monitorName;
+							line += L" | Windows " + windowsMonitor;
+							line += L" | " + std::to_wstring(monitor.pixelWidth) + L"x" +
+								std::to_wstring(monitor.pixelHeight) + L" px";
+							line += L" | DPI " + std::to_wstring(monitor.effectiveDpiX) + L"x" +
+								std::to_wstring(monitor.effectiveDpiY);
+							if (monitor.physicalSize.available)
 							{
-								text += L"输入设备按下：";
-								text += rtsDown ? L"是" : L"否";
-								text += L"\n输入设备点：";
-								text += to_wstring(rtsNum) + L"\n";
-								text += L"触摸设备点：";
-								text += to_wstring(touchNum) + L"\n";
-
-								for (int i = 0; i < rtsNum; i++)
-								{
-									std::shared_lock<std::shared_mutex> lock1(touchPosSm);
-									TouchMode mode = TouchPos[TouchList[i]];
-									lock1.unlock();
-
-									std::shared_lock<std::shared_mutex> lock2(touchSpeedSm);
-									double speed = TouchSpeed[TouchList[i]];
-									lock2.unlock();
-
-									{
-										wstring pid = L"pid" + to_wstring(TouchList[i]);
-										if (pid.length() < 10) pid += wstring(10 - pid.length(), L' ');
-										text += pid + L"|";
-									}
-									{
-										wstring type;
-										if (mode.type == 0) type = L" 触摸点";
-										else if (mode.type == 1)
-										{
-											if (mode.isInvertedCursor) type = L" 触控笔(倒置)";
-											else type = L" 触控笔";
-										}
-										else if (mode.type == 2) type = L" 鼠标(左键)";
-										else if (mode.type == 3) type = L" 鼠标(右键)";
-										if (type.length() < 10) type += wstring(10 - type.length(), L' ');
-										text += type + L"|";
-									}
-									{
-										wstring loc = L" 坐标" + to_wstring(mode.pt.x) + L"," + to_wstring(mode.pt.y);
-										if (loc.length() < 15) loc += wstring(15 - loc.length(), L' ');
-										text += loc + L"|";
-									}
-									{
-										wstring spe = L" 速度" + to_wstring(speed);
-										if (spe.length() < 20) spe += wstring(20 - spe.length(), L' ');
-										text += spe + L"|";
-									}
-									{
-										wstring siz;
-										if (mode.type == 0) siz = L" 面积" + to_wstring(mode.touchWidth) + L"," + to_wstring(mode.touchHeight);
-										else siz = L" 面积(此设备不支持)";
-										if (siz.length() < 15) siz += wstring(15 - siz.length(), L' ');
-										text += siz + L"|";
-									}
-									{
-										wstring pre;
-										if (mode.type == 1 && mode.isInvertedCursor) pre = L" 压力(落笔时)" + to_wstring(mode.pressure);
-										else
-										{
-											if (mode.type == 1) pre = L" 压力" + to_wstring(mode.pressure);
-											else pre = L" 压力(此设备不支持)";
-										}
-										if (pre.length() < 20) pre += wstring(20 - pre.length(), L' ');
-										text += pre + L"\n";
-									}
-								}
-
-								text += L"\nTouchList ";
-								for (const auto& val : TouchList)
-								{
-									text += to_wstring(val) + L" ";
-								}
-								text += L"\nTouchTemp ";
-								for (size_t i = 0; i < TouchTemp.size(); ++i)
-								{
-									text += to_wstring(TouchTemp[i].pid) + L" ";
-								}
-
-								text += L"\n\n撤回库当前大小：" + to_wstring(RecallImage.size()) + L"(峰值" + to_wstring(RecallImagePeak) + L")";
-								/*text += L"\n撤回库 recall_image_recond：" + to_wstring(recall_image_recond);
-								text += L"\n撤回库 reference_record_pointer：" + to_wstring(reference_record_pointer);
-								text += L"\n撤回库 practical_total_record_pointer：" + to_wstring(practical_total_record_pointer);
-								text += L"\n撤回库 total_record_pointer：" + to_wstring(total_record_pointer);
-								text += L"\n撤回库 current_record_pointer：" + to_wstring(current_record_pointer);*/
-								text += L"\n首次绘制状态：", text += (FirstDraw == true) ? L"是" : L"否";
-
-								{
-									wstring ppt_LinkTest;
-									if (pptComVersion.substr(0, 7) == L"Error: ") ppt_LinkTest = L"发生错误 " + pptComVersion;
-									else ppt_LinkTest = L"连接成功，版本 " + pptComVersion;
-
-									text += L"\n\nPPT COM接口 联动组件 状态：";
-									text += ppt_LinkTest;
-								}
-
-								text += L"\nPPT 状态：";
-								text += PptInfoState.TotalPage != -1 ? L"正在播放" : L"未播放";
-								text += L"\nPPT 总页面数：";
-								text += to_wstring(PptInfoState.TotalPage);
-								text += L"\nPPT 当前页序号：";
-								text += to_wstring(PptInfoState.CurrentPage);
-
-								text += L"\n\n监视器数量：";
-								const auto displaySnapshot = Inkeys::Display::GetSnapshot();
-								const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-								text += to_wstring(displaySnapshot ? displaySnapshot->monitors.size() : 0);
-								text += L"\n活动显示拓扑：";
-								text += displaySnapshot
-									? Inkeys::Display::DisplayTopologyText(displaySnapshot->topology)
-									: L"无快照";
-								text += L"\n主监视器像素宽度：";
-								text += to_wstring(monitor ? monitor->pixelWidth : 0) + L"px";
-								text += L"\n主监视器像素高度：";
-								text += to_wstring(monitor ? monitor->pixelHeight : 0) + L"px";
-								text += L"\n主监视器原始 EDID 状态：";
-								text += monitor
-									? Inkeys::Display::EdidStatusText(monitor->edid.status) : L"不可用";
-								text += L"\n主监视器原始 EDID 宽度：";
-								text += to_wstring(monitor ? monitor->edid.rawPhysicalWidthCm : 0) + L"cm";
-								text += L"\n主监视器原始 EDID 高度：";
-								text += to_wstring(monitor ? monitor->edid.rawPhysicalHeightCm : 0) + L"cm";
-								text += L"\n主监视器业务物理宽度：";
-								text += to_wstring(monitor ? monitor->physicalSize.widthCm : 0) + L"cm";
-								text += L"\n主监视器业务物理高度：";
-								text += to_wstring(monitor ? monitor->physicalSize.heightCm : 0) + L"cm";
-								text += L"\n主监视器物理标尺状态：";
-								text += monitor
-									? Inkeys::Display::PhysicalSizeUnavailableReasonText(
-										monitor->physicalSize.unavailableReason) : L"无快照";
-								if (displaySnapshot)
-								{
-									for (size_t targetIndex = 0;
-										targetIndex < displaySnapshot->activeTargets.size(); ++targetIndex)
-									{
-										const auto& target = displaySnapshot->activeTargets[targetIndex];
-										text += L"\n活动输出 " + to_wstring(targetIndex + 1) + L"：";
-										text += target.monitorFriendlyName.empty()
-											? target.sourceDeviceName : target.monitorFriendlyName;
-										text += L"，EDID ";
-										text += Inkeys::Display::EdidStatusText(target.edid.status);
-										text += L"，原始尺寸 " +
-											to_wstring(target.edid.rawPhysicalWidthCm) + L"x" +
-											to_wstring(target.edid.rawPhysicalHeightCm) + L"cm";
-									}
-								}
+								line += L" | 物理 " + std::to_wstring(monitor.physicalSize.widthCm) + L"x" +
+									std::to_wstring(monitor.physicalSize.heightCm) + L" cm";
 							}
-
-							int left_x = 20 * settingGlobalScale, right_x = 750 * settingGlobalScale;
-
-							std::vector<std::string> lines;
-							std::wstring line, temp;
-							std::wstringstream ss(text);
-
-							while (getline(ss, temp, L'\n'))
+							else
 							{
-								bool flag = false;
-								line = L"";
-
-								for (wchar_t ch : temp)
-								{
-									flag = false;
-
-									float text_width = ImGui::CalcTextSize(utf16ToUtf8(line + ch).c_str()).x;
-									if (text_width > (right_x - left_x))
-									{
-										lines.emplace_back(utf16ToUtf8(line));
-										line = L"", flag = true;
-									}
-
-									line += ch;
-								}
-
-								if (!flag) lines.emplace_back(utf16ToUtf8(line));
+								line += L" | 物理不可用（" + std::wstring(Inkeys::Display::PhysicalSizeUnavailableReasonText(
+									monitor.physicalSize.unavailableReason)) + L"）";
 							}
-							for (const auto& temp : lines)
-							{
-								//float text_width = ImGui::CalcTextSize(temp.c_str()).x;
-								//float text_indentation = ((right_x - left_x) - text_width) * 0.5f;
-								//if (text_indentation < 0)  text_indentation = 0;
-								//ImGui::SetCursorPosX(left_x + text_indentation);
-								ImGui::SetCursorPosX(left_x);
-								ImGui::TextUnformatted(temp.c_str());
-							}
+							line += L" | EDID " + std::wstring(Inkeys::Display::EdidStatusText(monitor.edid.status));
+							line += L"，原始 " + std::to_wstring(monitor.edid.rawPhysicalWidthCm) + L"x" +
+								std::to_wstring(monitor.edid.rawPhysicalHeightCm) + L" cm";
 
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							ImGui::TextWrapped("%s", utf16ToUtf8(line).c_str());
+							if (monitorIndex + 1 < displaySnapshot->monitors.size()) ImGui::Spacing();
 						}
-
-						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
-						}
-						ImGui::EndChild();
 					}
 
-					{
-						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
-						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
-					}
 					{
 						if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
 						if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
 						while (PushFontNum) PushFontNum--, ImGui::PopFont();
 					}
 					ImGui::EndChild();
+
+					{
+						ImVec2 mouse_delta = ImGui::GetIO().MouseDelta;
+						ScrollWhenDraggingOnVoid(ImVec2(0.0f, -mouse_delta.y), ImGuiMouseButton_Left);
+					}
+					ImGui::EndChild();
 					break;
 				}
-#endif
 				}
 
 				// 底栏：更新信息提示栏
