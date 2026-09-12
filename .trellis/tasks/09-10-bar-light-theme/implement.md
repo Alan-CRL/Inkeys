@@ -20,6 +20,14 @@
 15. [x] 使用 ARM64 `MSBuild.exe` 构建完整 `InkeysRepo.sln` 的 `Debug|ARM64`，超时至少五分钟；运行 `Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window`、i18n 校验、`git diff --check` 和编码/CRLF 静态检查。
 16. [ ] 执行 Trellis 全范围检查，记录未进行 GUI 人工视觉验证的限制；更新稳定规范和开发日志，保留未提交差异等待用户后续指示。
 
+## 续作：扁平浅色材质与蓝灰光影
+
+17. [x] Light 端取消填充/边框透明度放大，停用顶部高光和 key/ambient 多圈阴影，恢复原始 1 DIP 扁平轮廓。
+18. [x] 拆分第一/第三光源解析：第一光源在绘制态跟随经浅色对比度修正的笔色，第三光源在 Light 端固定蓝灰；半径分别收敛到约 360/200 DIP。
+19. [x] Light 主栏与绘制属性分割线改为 Divider 蓝灰端点，选中按钮第三光倍率从 Dark 0.30 连续过渡到 Light 0.40。
+20. [x] 运行 ARM64 完整 Solution 构建、重建后的无窗口测试与 Trellis check；构建仅有既有警告，测试通过。
+21. [ ] 等待人工视觉验收新的表面透明度、扁平外框及第一/第三光源强度。
+
 ## 验证重点
 
 材质端点和 0.25/0.5/0.75 的全部参数；反向当前值接续；Dark 参数回归；Light 反射色不来自边框，笔色混合有限；真实绘图色与 UI 显示色隔离。普通 SVG 几何不变，主笔空隙无横线，新增层同时参与脉冲/父继承/底栏变换/dirty/设备回收。主题设置只发布目标，idle 无轮询；系统 `WM_THEMECHANGED` 不覆盖配置。下拉框值、JSON 值和 Bar `darkStyle` 映射唯一：`1 -> Dark/true`、`2 -> Light/false`，其余值回退 `1`。git diff --check、i18n 生成结果、BOM/CRLF 与项目登记有效。

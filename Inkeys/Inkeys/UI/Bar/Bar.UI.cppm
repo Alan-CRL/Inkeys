@@ -258,6 +258,7 @@ public:
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
 	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
+	double frameLightCursorLightIntensityScale = -1.0; // >=0 时作为浅色端点，保持 Dark 原倍率
 };
 //// 单个超椭圆控件
 class BarUiSuperellipseClass : public BarUiInnheritBaseClass
@@ -295,6 +296,7 @@ public:
 	BarUiFrameLightOpacitySourceEnum frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::FramePct;
 	bool framePrimaryLightEnabled = true; // PointLight 默认接受主光源，可按控件关闭
 	double frameCursorLightIntensityScale = 1.0; // 鼠标光默认与主光同强度
+	double frameLightCursorLightIntensityScale = -1.0; // >=0 时作为浅色端点，保持 Dark 原倍率
 };
 //// 单个 SVG 控件
 class BarUiSVGClass : public BarUiInnheritBaseClass

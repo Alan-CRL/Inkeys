@@ -913,16 +913,21 @@ bool BarUIRendering::PrepareFrameLighting(double animationDtSeconds,
 }
 
 ComPtr<ID2D1RadialGradientBrush> BarUIRendering::GetFrameGradientBrush(
-	ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource)
+	ID2D1DeviceContext* deviceContext, COLORREF color,
+	BarBorderLightSourceEnum lightSource, FLOAT radiusScale)
 {
 	COLORREF rgb = color & 0x00FFFFFF;
 	D2D1_POINT_2F center = framePrimaryLight;
-	D2D1_SIZE_F radius = D2D1::SizeF(frameLightRadius, frameLightRadius);
+	radiusScale = std::isfinite(radiusScale)
+		? clamp(radiusScale, 0.0F, 1.0F) : 1.0F;
+	D2D1_SIZE_F radius = D2D1::SizeF(
+		frameLightRadius * radiusScale, frameLightRadius * radiusScale);
 	if (lightSource == BarBorderLightSourceEnum::Cursor)
 	{
 		center = frameLocalCursorLight;
 		radius = D2D1::SizeF(
-			frameLocalCursorLightRadiusX, frameLocalCursorLightRadiusY);
+			frameLocalCursorLightRadiusX * radiusScale,
+			frameLocalCursorLightRadiusY * radiusScale);
 	}
 	if (radius.width <= 0.0F || radius.height <= 0.0F) return nullptr;
 
@@ -2194,6 +2199,7 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 	const BarThemeMaterial::Material& material,
 	BarUiFrameLightColorEnum frameLightColor,
 	bool primaryLightEnabled, double cursorLightIntensityScale,
+	double lightCursorLightIntensityScale,
 	double baseFramePct, double lightPct, FLOAT strokeWidth,
 	const D2D1_ROUNDED_RECT* roundedRect,
 	ID2D1Geometry* geometry, int geometryVariantQuarter)
@@ -2202,26 +2208,40 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		return false;
 
 	FLOAT baseOpacity = static_cast<FLOAT>(clamp(baseFramePct, 0.0, 1.0));
-	FLOAT lightOpacity = static_cast<FLOAT>(clamp(lightPct, 0.0, 1.0));
-	if (baseOpacity <= 0.0F && lightOpacity <= 0.0F) return true;
+	const FLOAT sourceLightOpacity = static_cast<FLOAT>(
+		clamp(lightPct, 0.0, 1.0));
+	if (baseOpacity <= 0.0F && sourceLightOpacity <= 0.0F) return true;
 
 	bool useDrawingLightTransition =
 		frameLightColor == BarUiFrameLightColorEnum::PenWhenDrawing;
 	double penColorBlend = useDrawingLightTransition
 		? clamp(frameDrawingPenColorBlend, 0.0, 1.0) : 0.0;
-	if (useDrawingLightTransition)
-		lightOpacity *= static_cast<FLOAT>(
-			clamp(frameDrawingLightOpacity, 0.0, 1.0));
-	// 反射色独立于基础边框；浅色只轻混笔色，主光和鼠标光同步过渡。
-	const auto lighting = BarThemeMaterial::ResolveLighting(
+	const auto primaryLighting = BarThemeMaterial::ResolveLighting(
 		material, frameDrawingPenColor, penColorBlend);
-	COLORREF lightColor = lighting.color;
-	lightOpacity *= static_cast<FLOAT>(lighting.intensity);
-	FLOAT diffuseOpacity = static_cast<FLOAT>(lighting.diffuseOpacity);
+	const auto cursorLighting = BarThemeMaterial::ResolveCursorLighting(
+		material, frameDrawingPenColor, penColorBlend);
+	FLOAT primaryLightOpacity = sourceLightOpacity;
+	FLOAT cursorLightOpacity = sourceLightOpacity;
+	if (useDrawingLightTransition)
+	{
+		const double drawingOpacity = clamp(frameDrawingLightOpacity, 0.0, 1.0);
+		primaryLightOpacity *= static_cast<FLOAT>(drawingOpacity);
+		// 鼠标光在 Light 端不再依赖笔色，因此退出绘制时保持稳定。
+		cursorLightOpacity *= static_cast<FLOAT>(BarThemeMaterial::Mix(
+			drawingOpacity, 1.0, material.lightWeight));
+	}
+	primaryLightOpacity *= static_cast<FLOAT>(primaryLighting.intensity);
+	cursorLightOpacity *= static_cast<FLOAT>(cursorLighting.intensity);
 	ComPtr<ID2D1RadialGradientBrush> primaryBrush;
 	ComPtr<ID2D1RadialGradientBrush> cursorBrush;
+	const double lightCursorScale = lightCursorLightIntensityScale >= 0.0
+		? clamp(lightCursorLightIntensityScale, 0.0, 1.0)
+		: clamp(cursorLightIntensityScale, 0.0, 1.0);
+	const double objectCursorScale = BarThemeMaterial::Mix(
+		clamp(cursorLightIntensityScale, 0.0, 1.0), lightCursorScale,
+		material.lightWeight);
 	FLOAT cursorLightIntensity = frameCursorLightIntensity
-		* static_cast<FLOAT>(clamp(cursorLightIntensityScale, 0.0, 1.0));
+		* static_cast<FLOAT>(objectCursorScale);
 	bool edgeLightingEnabled = BarUiEdgeLightingEnabled;
 	D2D1_RECT_F lightBounds{};
 	if (roundedRect) lightBounds = roundedRect->rect;
@@ -2246,20 +2266,29 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 			return deltaX * deltaX + deltaY * deltaY <= 1.0F;
 		};
 	bool drawPrimaryLight = edgeLightingEnabled
-		&& lightOpacity > 0.0F && primaryLightEnabled
+		&& primaryLightOpacity > 0.0F && primaryLightEnabled
 		&& LightIntersectsBounds(
-			framePrimaryLight, frameLightRadius, frameLightRadius);
+			framePrimaryLight,
+			frameLightRadius * static_cast<FLOAT>(material.primaryLightRadiusScale),
+			frameLightRadius * static_cast<FLOAT>(material.primaryLightRadiusScale));
 	bool drawCursorLight = edgeLightingEnabled
-		&& lightOpacity > 0.0F && frameCursorLightVisible
+		&& cursorLightOpacity > 0.0F && frameCursorLightVisible
 		&& cursorLightIntensity > 0.0F
 		&& LightIntersectsBounds(frameLocalCursorLight,
-			frameLocalCursorLightRadiusX, frameLocalCursorLightRadiusY);
+			frameLocalCursorLightRadiusX
+				* static_cast<FLOAT>(material.cursorLightRadiusScale),
+			frameLocalCursorLightRadiusY
+				* static_cast<FLOAT>(material.cursorLightRadiusScale));
 	if (drawPrimaryLight)
 		primaryBrush = GetFrameGradientBrush(
-			deviceContext, lightColor, BarBorderLightSourceEnum::Primary);
+			deviceContext, primaryLighting.color,
+			BarBorderLightSourceEnum::Primary,
+			static_cast<FLOAT>(material.primaryLightRadiusScale));
 	if (drawCursorLight)
 		cursorBrush = GetFrameGradientBrush(
-			deviceContext, lightColor, BarBorderLightSourceEnum::Cursor);
+			deviceContext, cursorLighting.color,
+			BarBorderLightSourceEnum::Cursor,
+			static_cast<FLOAT>(material.cursorLightRadiusScale));
 	if ((drawPrimaryLight && !primaryBrush) || (drawCursorLight && !cursorBrush)) return false;
 
 	ID2D1SolidColorBrush* baseFrameBrush = nullptr;
@@ -2269,10 +2298,11 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		if (!baseFrameBrush) return false;
 	}
 
-	auto DrawLightPass = [&](ID2D1RadialGradientBrush* brush, FLOAT intensity, FLOAT width)
+	auto DrawLightPass = [&](ID2D1RadialGradientBrush* brush,
+		FLOAT opacity, FLOAT intensity, FLOAT width)
 		{
 			if (!brush || intensity <= 0.0F) return;
-			brush->SetOpacity(clamp(lightOpacity * intensity, 0.0F, 1.0F));
+			brush->SetOpacity(clamp(opacity * intensity, 0.0F, 1.0F));
 			if (roundedRect) deviceContext->DrawRoundedRectangle(roundedRect, brush, width);
 			else deviceContext->DrawGeometry(geometry, brush, width);
 		};
@@ -2286,8 +2316,12 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 
 	if (drawPrimaryLight || drawCursorLight)
 	{
-		FLOAT diffuseSourceOpacity = static_cast<FLOAT>(clamp(
-			diffuseOpacity / BarBorderGaussianCenterCoverage, 0.0, 1.0));
+		const FLOAT primaryDiffuseSourceOpacity = static_cast<FLOAT>(clamp(
+			primaryLighting.diffuseOpacity / BarBorderGaussianCenterCoverage,
+			0.0, 1.0));
+		const FLOAT cursorDiffuseSourceOpacity = static_cast<FLOAT>(clamp(
+			cursorLighting.diffuseOpacity / BarBorderGaussianCenterCoverage,
+			0.0, 1.0));
 		auto CompositeOpacity = [](FLOAT opacity) -> FLOAT
 			{
 				opacity = clamp(opacity, 0.0F, 1.0F);
@@ -2322,14 +2356,15 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
 						exactMask, *roundedRect, primaryBrush.Get(),
-						CompositeOpacity(lightOpacity * diffuseSourceOpacity));
+						CompositeOpacity(primaryLightOpacity
+							* primaryDiffuseSourceOpacity));
 				}
 				if (drawCursorLight)
 				{
 					DrawRoundedRectDiffuseMask(deviceContext, *diffuseMask,
 						exactMask, *roundedRect, cursorBrush.Get(),
-						CompositeOpacity(lightOpacity * cursorLightIntensity
-							* diffuseSourceOpacity));
+						CompositeOpacity(cursorLightOpacity * cursorLightIntensity
+							* cursorDiffuseSourceOpacity));
 				}
 			}
 		}
@@ -2347,14 +2382,15 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
 							geometryBounds, primaryBrush.Get(),
-							CompositeOpacity(lightOpacity * diffuseSourceOpacity));
+							CompositeOpacity(primaryLightOpacity
+								* primaryDiffuseSourceOpacity));
 					}
 					if (drawCursorLight)
 					{
 						DrawGeometryDiffuseMask(deviceContext, *diffuseMask,
 							geometryBounds, cursorBrush.Get(),
-							CompositeOpacity(lightOpacity * cursorLightIntensity
-								* diffuseSourceOpacity));
+							CompositeOpacity(cursorLightOpacity * cursorLightIntensity
+								* cursorDiffuseSourceOpacity));
 					}
 				}
 
@@ -2362,8 +2398,10 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		}
 
 	}
-	DrawLightPass(primaryBrush.Get(), static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
-	DrawLightPass(cursorBrush.Get(), cursorLightIntensity, strokeWidth);
+	DrawLightPass(primaryBrush.Get(), primaryLightOpacity,
+		static_cast<FLOAT>(BarBorderLightIntensity), strokeWidth);
+	DrawLightPass(cursorBrush.Get(), cursorLightOpacity,
+		cursorLightIntensity, strokeWidth);
 	return true;
 }
 
@@ -2539,6 +2577,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 				bool pointLightDrawn = shape.frameRendering == BarUiFrameRenderingEnum::PointLight
 					&& DrawPointLightFrame(deviceContext, frame, material, shape.frameLightColor,
 						shape.framePrimaryLightEnabled, shape.frameCursorLightIntensityScale,
+						shape.frameLightCursorLightIntensityScale,
 						tarFramePct, tarFrameLightPct,
 						strokeWidth, &roundedRect, nullptr);
 				if (!pointLightDrawn)
@@ -2740,6 +2779,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 					&& DrawPointLightFrame(deviceContext, frame, material, superellipse.frameLightColor,
 						superellipse.framePrimaryLightEnabled,
 						superellipse.frameCursorLightIntensityScale,
+						superellipse.frameLightCursorLightIntensityScale,
 						tarFramePct, tarFrameLightPct,
 						strokeWidth, nullptr, geometry,
 						static_cast<int>(lround(tarN * 4.0)));

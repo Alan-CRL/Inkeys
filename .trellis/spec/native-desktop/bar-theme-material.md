@@ -13,21 +13,23 @@ namespace BarThemeMaterial {
     Color LightColor(ColorRole) noexcept;
     Material Resolve(double lightWeight, Color darkSurface, Color darkFrame) noexcept;
     Lighting ResolveLighting(const Material&, Color penColor, double drawingPenBlend) noexcept;
+    Lighting ResolveCursorLighting(const Material&, Color penColor, double drawingPenBlend) noexcept;
     inline constexpr double SurfaceShadowOutsetDip = 8.0;
 }
 ~~~
 
 主按钮外观使用 `Bar.LogoAppearance.h` 中的 `BarLogoAppearance::Snapshot`、`Resolve(lightWeight, drawingWeight, actualPenColor)` 和 `ApplyAttributes(snapshot, setter)`。`BarUiSVGClass::mainLogoAppearance` 保存当前输入，`cMainLogoAppearance` 仅在位图创建成功后记录缓存快照。
 
-`BarUiShapeClass` 与 `BarUiSuperellipseClass` 使用 `double lightMaterial` 和 `bool themeSurface`。前者为当前连续材质权重；后者表明这个对象是需要表面配色、阴影及顶部高光的背景。
+`BarUiShapeClass` 与 `BarUiSuperellipseClass` 使用 `double lightMaterial` 和 `bool themeSurface`。前者为当前连续材质权重；后者表明这个对象需要主题表面配色。PointLight 对象可用独立的 Dark/Light 鼠标光倍率端点。
 
 ## 3. Contracts
 
 - `lightMaterial=0` 为旧深色端点，`1` 为浅色端点；非法/非有限权重按策略归一。主按钮在浅色主栏展开时到达 1，折叠成独立入口时到达 0。所有颜色、透明度比例、静态阴影/高光和动态光参数消费同一个 current 权重，不能在 draw 中直接按 fold 目标跳变。
 - 主题背景存储显式 Dark 表面/边框作为端点，并保留原始动画 pct/framePct；renderer 解析完整材质并应用透明度比例。普通按钮不是 themeSurface，它们使用独立图标、文字、底板角色，lightMaterial 只改变其边缘光。
-- Light 角色为 Surface `#F4F6F7`、IconPrimary `#53616A`、TextPrimary `#3D474D`、Accent `#006F68`、SelectedFill `#D7EEEA`。SurfaceFrame、Divider、EdgeLight、ShadowKey、ShadowAmbient、TopHighlight 各自独立；相同 Dark 值不表示这些角色可以合并。
-- `DrawPointLightFrame` 的描边色与发光色分开；Light 以近白反射和少量笔色混合，Dark 恢复原主光/鼠标光行为。EdgeLighting 只控制动态边缘光，不能隐藏静态表面阴影。
-- 静态 key/ambient 阴影的最大外扩为 8 DIP，另外保留原有像素抗锯齿余量。绘制、`GetFrameDirtyOutset`、`GetWeigetRect`、预测 viewport 和自绘面板的外扩必须读取同一上界，且与当前权重/EdgeLighting 开关无关，防止过渡裁切。
+- Light 角色为 Surface `#F4F6F7`、IconPrimary `#53616A`、TextPrimary `#3D474D`、Accent `#006F68`、SelectedFill `#D7EEEA`。SurfaceFrame、Divider、EdgeLight 保持独立角色，但当前 Light 端点均为 `#53616A`；对象原有透明度负责把边框和分隔线降到适当强度。
+- Light themeSurface 不放大对象原有 fill/frame pct，基础外框保持单层 1 DIP；不绘制顶部高光或 key/ambient 多圈阴影，PointLight diffuse 不高于 `0.02`。Dark 端点保持旧数值。
+- `DrawPointLightFrame` 的基础描边、第一光源和第三光源分别解析。Light 第一光默认蓝灰，绘制时跟随当前笔色；低对比笔色只在光影显示阶段向 IconPrimary 校正到约 `2:1`，不得写回真实 RGB。Light 第三光固定 IconPrimary，不消费笔色换色淡出；Dark 两路光源恢复原颜色行为。Light 第一/第三光半径约为 `360/200 DIP`，主栏峰值约为 `18%/15.3%`，选中按钮第三光倍率从 Dark `0.30` 连续到 Light `0.40`。
+- dirty、viewport 和自绘面板外扩继续使用覆盖最大 Dark 半径/旧阴影的保守上界；缩小 Light 光源时不得同步缩小到无法覆盖主题过渡中间帧。EdgeLighting 总开关与 Dynamic 门禁语义保持不变。
 - 主题目标只来自 `Experimental.Inkeys3.UI3.ThemeMode`：`1` 为 Dark、`2` 为 Light，其余值归一到 Dark。启动与设置页均调用 `SetThemeMode()` 发布原子目标并唤醒渲染；`WM_THEMECHANGED` 不覆盖用户选择，不逐帧读配置或注册表。
 - 收展使用已有时间轴和 current/target 语义；中途反向从当前值重新定向，关闭动画直接到一致端点，材质单独变化同样产生 dirty 并续帧。其他控件和显式 Dark 的分页客户端不继承主按钮的折叠权重。
 - 原始笔 RGB 永远只作为输入。仅 `IdtPen || IdtShape` 启用颜色指示，Selection/Eraser 等状态收回到对应默认中性色，不显示记忆笔色。Geometry 明确使用 Brush1；活动 Pen 按既有槽解析激光/荧光/普通笔。主图标保留一个 Color 动画，普通换笔/换色从 current 继续；初始化和 Geometry 接管非 Brush 颜色历史时直接回到正确源，避免串色。PointLight 的激光替换仍限定为活动 Pen/Laser。
@@ -42,7 +44,8 @@ namespace BarThemeMaterial {
 | 中途反向 | 从当前权重接续，不重置到 0/1，不等最后一帧切换 |
 | 关闭动画 | 全部材质通道同帧到正确端点 |
 | Dark 普通表面 | 保留旧数值和鼠标光强；无新增浅色阴影 |
-| EdgeLighting 关闭 | 静态浅色阴影继续绘制且范围仍被保留 |
+| EdgeLighting 关闭 | 基础扁平边框继续绘制；第一和第三 PointLight 停止，dirty 范围仍安全 |
+| Light 非绘制/绘制状态 | 第一光从蓝灰连续切换到对比度合格的笔色；第三光始终为蓝灰 |
 | 白/浅黄笔 | 完整笔形有细外轮廓，内部断口透明、无横向黑边 |
 | 自定义色/工具切换 | Light screen 中性，Dark 保留原渐变；真实 RGB 不写回 UI 显示处理 |
 | 非绘制模式 | 深浅端点均为默认中性样式，与记住的笔色无关 |
@@ -50,13 +53,13 @@ namespace BarThemeMaterial {
 
 ## 5. Good / Base / Bad Cases
 
-- Good：同一材质权重同时降低笔色染光、改变反射色、淡出浅色阴影并转成深色入口。
+- Good：同一材质权重连续插值表面、扁平边框、两路独立光源半径/颜色/强度，并在折叠时转成深色入口。
 - Base：旧调用者未启用 themeSurface/lightMaterial 时仍为 Dark 绘制。
 - Bad：只把 Surface 改白，PointLight 仍使用深色边框；或最后一帧根据 fold 同时切换边框/光源。
 
 ## 6. Tests Required
 
-直接测试生产策略的 Light/Dark 端点与 0.25/0.5/0.75 中间值、全通道有限/单调变化、显示色与真实色隔离、弱笔色反射及阴影上界；用生产动画属性验证反向与关闭动画。对生产 ApplyAttributes 输出加工后的同一 SVG 做离屏检查：Dark 与 4478887c 原 logo1+Frame94 组合对照；Light 验证黑、白、浅黄、红、蓝、自定义色整笔 RGB、screen 中性及断口无描边；绘制态/非绘制态和过渡中点必须覆盖。
+直接测试生产策略的 Light/Dark 端点与 0.25/0.5/0.75 中间值、全通道有限/连续变化、原始表面透明度、单层边框、无静态立体阴影、第一/第三光独立颜色、`360/200 DIP` 半径、`18%/15.3%` 主栏峰值、按钮 `0.30→0.40` 倍率、浅色笔对比度和真实色隔离；用生产动画属性验证反向与关闭动画。对生产 ApplyAttributes 输出加工后的同一 SVG 做离屏检查：Dark 与 4478887c 原 logo1+Frame94 组合对照；Light 验证黑、白、浅黄、红、蓝、自定义色整笔 RGB、screen 中性及断口无描边；绘制态/非绘制态和过渡中点必须覆盖。
 
 完整 ARM64 host MSBuild 构建 `InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64`，并运行 `InkeysHeadlessTests.exe --no-window`。实际桌面光影、白色文档覆盖和真实鼠标过渡属于另外的 GUI 验收；未执行时如实说明。
 
@@ -67,8 +70,9 @@ namespace BarThemeMaterial {
 lightColor = GetThemeColor(BarThemeColorEnum::SurfaceFrame);
 mainButton.lightMaterial = fold ? 0.0 : 1.0;
 
-// Correct：消费同一动画当前值，发光色由独立反射角色解析。
+// Correct：消费同一动画当前值，第一/第三光源分别解析。
 mainButton.lightMaterial = currentMaterialWeight;
 const auto material = BarThemeMaterial::Resolve(currentMaterialWeight, darkSurface, darkFrame);
-const auto lighting = BarThemeMaterial::ResolveLighting(material, actualPenColor, drawingBlend);
+const auto primary = BarThemeMaterial::ResolveLighting(material, actualPenColor, drawingBlend);
+const auto cursor = BarThemeMaterial::ResolveCursorLighting(material, actualPenColor, drawingBlend);
 ~~~

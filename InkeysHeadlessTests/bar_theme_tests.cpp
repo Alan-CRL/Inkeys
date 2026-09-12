@@ -34,8 +34,11 @@ namespace
 	constexpr std::array colorMembers{ &Material::surface, &Material::surfaceFrame,
 		&Material::edgeLight, &Material::keyShadowColor, &Material::ambientShadowColor,
 		&Material::highlightColor };
-	constexpr std::array scalarMembers{ &Material::fillOpacityScale,
-		&Material::frameOpacityScale, &Material::lightIntensity, &Material::penTintScale,
+	constexpr std::array scalarMembers{ &Material::lightWeight,
+		&Material::fillOpacityScale, &Material::frameOpacityScale,
+		&Material::lightIntensity, &Material::cursorLightIntensityScale,
+		&Material::primaryLightRadiusScale, &Material::cursorLightRadiusScale,
+		&Material::penTintScale,
 		&Material::diffuseFrameOpacity, &Material::diffusePenOpacity,
 		&Material::keyShadowOpacity, &Material::keyShadowRadiusDip,
 		&Material::keyShadowOffsetYDip, &Material::ambientShadowOpacity,
@@ -87,31 +90,47 @@ namespace
 		Check(LightColor(ColorRole::TextPrimary) == Rgb(61, 71, 77), "soft primary text");
 		Check(LightColor(ColorRole::Accent) == Rgb(0, 111, 104), "deep teal selected content");
 		Check(LightColor(ColorRole::SelectedFill) == Rgb(215, 238, 234), "pale teal selected plate");
-		Check(LightColor(ColorRole::SurfaceFrame) != LightColor(ColorRole::IconPrimary)
-			&& LightColor(ColorRole::SurfaceFrame) != LightColor(ColorRole::EdgeLight)
-			&& LightColor(ColorRole::SurfaceFrame) != LightColor(ColorRole::Divider)
+		Check(LightColor(ColorRole::SurfaceFrame) == LightColor(ColorRole::IconPrimary)
+			&& LightColor(ColorRole::Divider) == LightColor(ColorRole::IconPrimary)
+			&& LightColor(ColorRole::EdgeLight) == LightColor(ColorRole::IconPrimary)
 			&& LightColor(ColorRole::Accent) != LightColor(ColorRole::SelectedFill),
-			"frame, divider, icon, edge light and selected roles remain separate");
+			"flat frame, dividers and edge reflection share the graphite endpoint by role");
 
 		const auto dark = Resolve(0.0, darkSurface, darkFrame);
 		Check(dark.surface == darkSurface && dark.surfaceFrame == darkFrame
 			&& dark.edgeLight == darkFrame && Near(dark.fillOpacityScale, 1.0)
 			&& Near(dark.frameOpacityScale, 1.0) && Near(dark.lightIntensity, 1.0)
+			&& Near(dark.cursorLightIntensityScale, 1.0)
+			&& Near(dark.primaryLightRadiusScale, 1.0)
+			&& Near(dark.cursorLightRadiusScale, 1.0)
 			&& Near(dark.penTintScale, 1.0) && Near(dark.diffuseFrameOpacity, 0.30)
 			&& Near(dark.diffusePenOpacity, 0.20) && Near(dark.keyShadowOpacity, 0.0)
 			&& Near(dark.ambientShadowOpacity, 0.0) && Near(dark.highlightOpacity, 0.0),
 			"folded Dark preserves the existing material and Point Light endpoint");
 		const auto light = Resolve(1.0, darkSurface, darkFrame);
 		Check(light.surface == LightColor(ColorRole::Surface)
-			&& light.surfaceFrame == LightColor(ColorRole::SurfaceFrame)
-			&& light.edgeLight == LightColor(ColorRole::EdgeLight)
-			&& Near(0.8 * light.fillOpacityScale, 0.96)
-			&& Near(light.frameOpacityScale, 3.0),
-			"expanded Light uses its own frame/reflection and higher surface opacity");
-		Check(light.keyShadowOpacity > 0.0 && light.keyShadowOpacity < 0.10
-			&& light.ambientShadowOpacity > 0.0 && light.ambientShadowOpacity < 0.10
-			&& light.keyShadowOffsetYDip > 0.0 && light.highlightOpacity > 0.0,
-			"Light uses weak directional and ambient shadows with a top highlight");
+			&& light.surfaceFrame == LightColor(ColorRole::IconPrimary)
+			&& light.edgeLight == LightColor(ColorRole::IconPrimary)
+			&& Near(0.8 * light.fillOpacityScale, 0.8)
+			&& Near(light.frameOpacityScale, 1.0),
+			"expanded Light preserves base opacity and uses a flat graphite frame");
+		Check(Near(light.cursorLightIntensityScale, 0.85)
+			&& Near(light.primaryLightRadiusScale, LightPrimaryRadiusScale)
+			&& Near(light.cursorLightRadiusScale, LightCursorRadiusScale)
+			&& Near(light.diffuseFrameOpacity, 0.02)
+			&& Near(light.diffusePenOpacity, 0.02)
+			&& Near(light.keyShadowOpacity, 0.0)
+			&& Near(light.ambientShadowOpacity, 0.0)
+			&& Near(light.highlightOpacity, 0.0),
+			"Light uses compact edge light without raised shadows or highlight");
+		Check(Near(BarMainBarFrameOpacity * light.lightIntensity, 0.18)
+			&& Near(BarMainBarFrameOpacity * light.cursorLightIntensityScale, 0.153),
+			"Light main bar uses visible 18% primary and 15.3% cursor edge peaks");
+		Check(Near(Mix(BarButtonCursorLightIntensity,
+			BarButtonLightCursorLightIntensity, 0.0), 0.30)
+			&& Near(Mix(BarButtonCursorLightIntensity,
+				BarButtonLightCursorLightIntensity, 1.0), 0.40),
+			"selected button cursor scale keeps Dark 0.30 and Light 0.40 endpoints");
 		Check(Near(SelectedFillOpacity(0.0), 0.20)
 			&& Near(SelectedFillOpacity(1.0), 1.0), "selected plate keeps distinct Dark/Light opacity");
 	}
@@ -156,22 +175,31 @@ namespace
 			{
 				for (const double drawingBlend : samples)
 				{
-					const auto lighting = ResolveLighting(material, pen, drawingBlend);
-					Check(Near(lighting.intensity, material.lightIntensity)
-						&& Near(lighting.penColorBlend, drawingBlend * material.penTintScale),
-						"mouse/Point Light intensity and pen tint follow current material");
-					Check(ColorInterpolates(lighting.color, material.edgeLight, pen,
-						lighting.penColorBlend), "light color interpolates independently from frame");
-					Check(Near(lighting.diffuseOpacity, material.diffuseFrameOpacity * (1.0 - drawingBlend)
-						+ material.diffusePenOpacity * drawingBlend), "diffuse glow uses current material strengths");
-					// 4% 插值端点有 double 末位误差，沿用 Near 而不是误判为过量染色。
+					const auto primary = ResolveLighting(material, pen, drawingBlend);
+					const auto cursor = ResolveCursorLighting(material, pen, drawingBlend);
+					Check(Near(primary.intensity, material.lightIntensity)
+						&& Near(primary.penColorBlend,
+							drawingBlend * material.penTintScale),
+						"primary light follows the current pen role");
+					Check(Near(cursor.intensity, material.lightIntensity
+						* material.cursorLightIntensityScale)
+						&& Near(cursor.penColorBlend,
+							drawingBlend * (1.0 - material.lightWeight)),
+						"cursor light continuously drops pen tint toward Light");
+					Check(Near(primary.diffuseOpacity,
+						material.diffuseFrameOpacity * (1.0 - drawingBlend)
+							+ material.diffusePenOpacity * drawingBlend),
+						"primary diffuse glow uses current material strengths");
 					if (weight == 1.0)
-						Check((lighting.penColorBlend <= 0.04 || Near(lighting.penColorBlend, 0.04))
-							&& (lighting.intensity <= 0.45 || Near(lighting.intensity, 0.45))
-							&& Channel(lighting.color, 0) >= 240
-							&& Channel(lighting.color, 8) >= 242
-							&& Channel(lighting.color, 16) >= 244,
-							"Light reflection remains nearly white even for black/red/blue pens");
+					{
+						Check(cursor.color == LightColor(ColorRole::IconPrimary)
+							&& Near(cursor.penColorBlend, 0.0),
+							"Light cursor reflection remains fixed graphite");
+						if (drawingBlend == 1.0)
+							Check(ContrastRatio(primary.color,
+								LightColor(ColorRole::Surface)) >= 1.99,
+								"Light primary pen color stays visible on the mist surface");
+					}
 				}
 			}
 		}
@@ -180,13 +208,19 @@ namespace
 		material.surfaceFrame = Rgb(0, 0, 0);
 		material.surface = Rgb(255, 0, 255);
 		const auto independent = ResolveLighting(material, Rgb(255, 0, 0), 1.0);
-		Check(reference.color == independent.color && Near(reference.intensity, independent.intensity)
+		Check(reference.color == independent.color
+			&& Near(reference.intensity, independent.intensity)
 			&& Near(reference.diffuseOpacity, independent.diffuseOpacity),
-			"changing border/background roles cannot create a dark or saturated reflection");
+			"changing stored border/background cannot affect resolved primary light");
+		Check(ResolveCursorLighting(material, Rgb(255, 0, 0), 1.0).color
+			== ResolveCursorLighting(material, Rgb(0, 80, 255), 1.0).color,
+			"Light cursor color is independent from the selected pen");
 		const auto dark = Resolve(0.0, darkSurface, darkFrame);
 		Check(ResolveLighting(dark, Rgb(232, 64, 0), 1.0).color == Rgb(232, 64, 0)
-			&& ResolveLighting(dark, Rgb(232, 64, 0), 0.0).color == darkFrame,
-			"Dark pen and ordinary Point Light preserve their existing color endpoints");
+			&& ResolveLighting(dark, Rgb(232, 64, 0), 0.0).color == darkFrame
+			&& ResolveCursorLighting(dark, Rgb(232, 64, 0), 1.0).color
+				== Rgb(232, 64, 0),
+			"Dark primary and cursor lights preserve their existing color endpoints");
 	}
 
 	void TestTrueAndDisplayPenColors()

@@ -38,7 +38,7 @@ namespace BarThemeMaterial
 		switch (role)
 		{
 		case ColorRole::Surface: return Rgb(244, 246, 247);
-		case ColorRole::SurfaceFrame: return Rgb(211, 220, 224);
+		case ColorRole::SurfaceFrame: return Rgb(83, 97, 106);
 		case ColorRole::IconPrimary: return Rgb(83, 97, 106);
 		case ColorRole::TextPrimary: return Rgb(61, 71, 77);
 		case ColorRole::Accent: return Rgb(0, 111, 104);
@@ -46,8 +46,8 @@ namespace BarThemeMaterial
 		case ColorRole::PressedFill: return Rgb(190, 205, 211);
 		case ColorRole::SubtleFill: return Rgb(218, 227, 230);
 		case ColorRole::SwatchFrame: return Rgb(173, 186, 193);
-		case ColorRole::Divider: return Rgb(214, 223, 227);
-		case ColorRole::EdgeLight: return Rgb(250, 253, 255);
+		case ColorRole::Divider: return Rgb(83, 97, 106);
+		case ColorRole::EdgeLight: return Rgb(83, 97, 106);
 		case ColorRole::ShadowKey: return Rgb(65, 75, 82);
 		case ColorRole::ShadowAmbient: return Rgb(91, 103, 110);
 		case ColorRole::TopHighlight: return Rgb(255, 255, 255);
@@ -87,15 +87,21 @@ namespace BarThemeMaterial
 	inline constexpr double SurfaceShadowOutsetDip = 8.0;
 	inline constexpr double DarkFrameDiffuseOpacity = 0.30;
 	inline constexpr double DarkPenDiffuseOpacity = 0.20;
+	inline constexpr double LightPrimaryRadiusScale = 360.0 / 480.0;
+	inline constexpr double LightCursorRadiusScale = 200.0 / 240.0;
 
 	struct Material
 	{
+		double lightWeight = 0.0;
 		Color surface = 0;
 		Color surfaceFrame = 0;
 		double fillOpacityScale = 1.0;
 		double frameOpacityScale = 1.0;
 		Color edgeLight = 0;
 		double lightIntensity = 1.0;
+		double cursorLightIntensityScale = 1.0;
+		double primaryLightRadiusScale = 1.0;
+		double cursorLightRadiusScale = 1.0;
 		double penTintScale = 1.0;
 		double diffuseFrameOpacity = DarkFrameDiffuseOpacity;
 		double diffusePenOpacity = DarkPenDiffuseOpacity;
@@ -115,26 +121,30 @@ namespace BarThemeMaterial
 	{
 		const double weight = ClampWeight(lightWeight);
 		Material result;
+		result.lightWeight = weight;
 		result.surface = MixColor(darkSurface, LightColor(ColorRole::Surface), weight);
 		result.surfaceFrame = MixColor(darkFrame, LightColor(ColorRole::SurfaceFrame), weight);
-		// 保留旧显隐动画，0.8 的展开表面在 Light 端变为 0.96。
-		result.fillOpacityScale = Mix(1.0, 1.2, weight);
-		result.frameOpacityScale = Mix(1.0, 3.0, weight);
+		// 浅色端沿用对象原有透明度和 1 DIP 描边，避免叠加出立体轮廓。
+		result.fillOpacityScale = 1.0;
+		result.frameOpacityScale = 1.0;
 		result.edgeLight = MixColor(darkFrame, LightColor(ColorRole::EdgeLight), weight);
-		result.lightIntensity = Mix(1.0, 0.45, weight);
-		result.penTintScale = Mix(1.0, 0.04, weight);
-		result.diffuseFrameOpacity = Mix(DarkFrameDiffuseOpacity, 0.08, weight);
-		result.diffusePenOpacity = Mix(DarkPenDiffuseOpacity, 0.06, weight);
+		result.lightIntensity = 1.0;
+		result.cursorLightIntensityScale = Mix(1.0, 0.85, weight);
+		result.primaryLightRadiusScale = Mix(1.0, LightPrimaryRadiusScale, weight);
+		result.cursorLightRadiusScale = Mix(1.0, LightCursorRadiusScale, weight);
+		result.penTintScale = 1.0;
+		result.diffuseFrameOpacity = Mix(DarkFrameDiffuseOpacity, 0.02, weight);
+		result.diffusePenOpacity = Mix(DarkPenDiffuseOpacity, 0.02, weight);
 		result.keyShadowColor = MixColor(darkSurface, LightColor(ColorRole::ShadowKey), weight);
-		result.keyShadowOpacity = 0.075 * weight;
-		result.keyShadowRadiusDip = 2.0 * weight;
-		result.keyShadowOffsetYDip = 2.0 * weight;
+		result.keyShadowOpacity = 0.0;
+		result.keyShadowRadiusDip = 0.0;
+		result.keyShadowOffsetYDip = 0.0;
 		result.ambientShadowColor = MixColor(darkSurface, LightColor(ColorRole::ShadowAmbient), weight);
-		result.ambientShadowOpacity = 0.085 * weight;
-		result.ambientShadowRadiusDip = (SurfaceShadowOutsetDip - 1.0) * weight;
-		result.ambientShadowOffsetYDip = weight;
+		result.ambientShadowOpacity = 0.0;
+		result.ambientShadowRadiusDip = 0.0;
+		result.ambientShadowOffsetYDip = 0.0;
 		result.highlightColor = LightColor(ColorRole::TopHighlight);
-		result.highlightOpacity = 0.32 * weight;
+		result.highlightOpacity = 0.0;
 		return result;
 	}
 
@@ -146,16 +156,80 @@ namespace BarThemeMaterial
 		double penColorBlend = 0.0;
 	};
 
+	inline double RelativeLuminance(Color color) noexcept
+	{
+		auto LinearChannel = [&](unsigned int shift)
+			{
+				double value = static_cast<double>((color >> shift) & 0xFFU) / 255.0;
+				return value <= 0.04045 ? value / 12.92
+					: std::pow((value + 0.055) / 1.055, 2.4);
+			};
+		return LinearChannel(0) * 0.2126 + LinearChannel(8) * 0.7152
+			+ LinearChannel(16) * 0.0722;
+	}
+
+	inline double ContrastRatio(Color first, Color second) noexcept
+	{
+		double firstLuminance = RelativeLuminance(first);
+		double secondLuminance = RelativeLuminance(second);
+		return ((std::max)(firstLuminance, secondLuminance) + 0.05)
+			/ ((std::min)(firstLuminance, secondLuminance) + 0.05);
+	}
+
+	inline Color CorrectLightPenColor(Color penColor) noexcept
+	{
+		constexpr double minimumContrast = 2.0;
+		const Color surface = LightColor(ColorRole::Surface);
+		const Color graphite = LightColor(ColorRole::IconPrimary);
+		if (ContrastRatio(penColor, surface) >= minimumContrast) return penColor;
+
+		// 只修正用于边缘光的显示色；二分找到最少的蓝灰混合量。
+		double low = 0.0, high = 1.0;
+		for (int index = 0; index < 12; ++index)
+		{
+			double middle = (low + high) / 2.0;
+			if (ContrastRatio(MixColor(penColor, graphite, middle), surface)
+				>= minimumContrast)
+				high = middle;
+			else low = middle;
+		}
+		return MixColor(penColor, graphite, high);
+	}
+
 	inline Lighting ResolveLighting(const Material& material,
 		Color penColor, double drawingPenBlend) noexcept
 	{
 		const double blend = ClampWeight(drawingPenBlend);
 		Lighting result;
 		result.penColorBlend = blend * material.penTintScale;
-		result.color = MixColor(material.edgeLight, penColor, result.penColorBlend);
+		Color visiblePenColor = penColor;
+		if (result.penColorBlend > 0.0 && material.lightWeight > 0.0)
+		{
+			// 非绘制对象和 Dark 端无需执行对比度修正，避免逐对象重复计算。
+			visiblePenColor = MixColor(penColor,
+				CorrectLightPenColor(penColor), material.lightWeight);
+		}
+		result.color = MixColor(material.edgeLight, visiblePenColor,
+			result.penColorBlend);
 		result.intensity = material.lightIntensity;
 		result.diffuseOpacity = Mix(material.diffuseFrameOpacity,
 			material.diffusePenOpacity, blend);
+		return result;
+	}
+
+	inline Lighting ResolveCursorLighting(const Material& material,
+		Color penColor, double drawingPenBlend) noexcept
+	{
+		Lighting result;
+		// Dark 保留随笔色变化；进入 Light 后连续收敛为固定蓝灰色。
+		result.penColorBlend = ClampWeight(drawingPenBlend)
+			* (1.0 - material.lightWeight);
+		result.color = MixColor(material.edgeLight, penColor,
+			result.penColorBlend);
+		result.intensity = material.lightIntensity
+			* material.cursorLightIntensityScale;
+		result.diffuseOpacity = Mix(material.diffuseFrameOpacity,
+			material.diffusePenOpacity, result.penColorBlend);
 		return result;
 	}
 

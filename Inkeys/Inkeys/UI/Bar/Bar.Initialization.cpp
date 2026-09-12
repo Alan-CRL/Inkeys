@@ -764,6 +764,8 @@ namespace Inkeys::UI::Bar
 								button->framePrimaryLightEnabled = false;
 								button->frameCursorLightIntensityScale =
 									BarButtonCursorLightIntensity;
+								button->frameLightCursorLightIntensityScale =
+									BarButtonLightCursorLightIntensity;
 								button->enable.Initialization(true);
 								barUISet.shapeMap[shapeType] = button;
 							};
@@ -1085,6 +1087,8 @@ namespace Inkeys::UI::Bar
 								button->framePrimaryLightEnabled = false;
 								button->frameCursorLightIntensityScale =
 									BarButtonCursorLightIntensity;
+								button->frameLightCursorLightIntensityScale =
+									BarButtonLightCursorLightIntensity;
 								button->enable.Initialization(true);
 								barUISet.shapeMap[shapeType] = button;
 
@@ -1174,6 +1178,8 @@ namespace Inkeys::UI::Bar
 							close->framePrimaryLightEnabled = false;
 							close->frameCursorLightIntensityScale =
 								BarButtonCursorLightIntensity;
+							close->frameLightCursorLightIntensityScale =
+								BarButtonLightCursorLightIntensity;
 							close->enable.Initialization(true);
 							barUISet.shapeMap[
 								BarUISetShapeEnum::GeometryAttributeBar_Close] = close;

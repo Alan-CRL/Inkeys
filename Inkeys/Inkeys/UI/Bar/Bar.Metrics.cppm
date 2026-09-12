@@ -20,6 +20,7 @@ export
 	inline constexpr double BarButtonDisabledContentOpacity = 0.30;
 	inline constexpr double BarButtonPressedLightOpacity = 0.5;
 	inline constexpr double BarButtonCursorLightIntensity = 0.30;
+	inline constexpr double BarButtonLightCursorLightIntensity = 0.40;
 	inline constexpr double BarButtonHoverTransitionDuration = 0.24;
 	inline constexpr double BarButtonHoverFadeDurationSeconds = 5.0;
 	inline constexpr double BarButtonDefaultOperationDurationSeconds = 0.4;

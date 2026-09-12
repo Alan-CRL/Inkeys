@@ -2375,6 +2375,8 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							temp->button.frameRendering = BarUiFrameRenderingEnum::PointLight;
 							temp->button.framePrimaryLightEnabled = false;
 							temp->button.frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
+							temp->button.frameLightCursorLightIntensityScale =
+								BarButtonLightCursorLightIntensity;
 							if (forNum == 1 || state.barState.fold || temp->hide)
 								temp->button.frame.value().SetDirect(buttonLightColor);
 							else temp->button.frame.value().SetTar(buttonLightColor);
@@ -3654,6 +3656,8 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 							shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 							shape->framePrimaryLightEnabled = false;
 							shape->frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
+							shape->frameLightCursorLightIntensityScale =
+								BarButtonLightCursorLightIntensity;
 						}
 
 						if (!state.barState.drawAttribute)
@@ -5227,6 +5231,8 @@ for (size_t i = 0; i < 3; ++i)
 			button->button.framePrimaryLightEnabled = false;
 			button->button.frameCursorLightIntensityScale =
 				BarButtonCursorLightIntensity;
+			button->button.frameLightCursorLightIntensityScale =
+				BarButtonLightCursorLightIntensity;
 			COLORREF buttonFill = button->state->state == BarWidgetState::Selected
 				? GetThemeColor(BarThemeColorEnum::SelectedFill)
 				: GetThemeColor(BarThemeColorEnum::PressedFill);
@@ -6247,9 +6253,13 @@ double baseThumbDiameter =
 			selectedPenTypeShape && selectedPenTypeShape->frame.has_value()
 				? static_cast<COLORREF>(selectedPenTypeShape->frame->val)
 				: GetThemeColor(BarThemeColorEnum::TextPrimary));
+		const COLORREF extensionDividerColor = static_cast<COLORREF>(
+			BarThemeMaterial::MixColor(extensionColor,
+				BarThemeMaterial::LightColor(
+					BarThemeMaterial::ColorRole::Divider), lightMaterial));
 		extensionArrow->color1.value().SetDirect(extensionColor);
-		extensionDivider->fill->SetDirect(extensionColor);
-		extensionDivider->frame->SetDirect(extensionColor);
+		extensionDivider->fill->SetDirect(extensionDividerColor);
+		extensionDivider->frame->SetDirect(extensionDividerColor);
 		extensionArrow->Inherit(BarUiInheritEnum::TopLeft, *panel);
 
 		// 浮窗始终从 Thumb 锚点等比展开；完整布局独立计算，保证圆和文字不被裁切。
@@ -10210,9 +10220,15 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						COLORREF color = anchorShape->frame.has_value()
 							? static_cast<COLORREF>(anchorShape->frame->val)
 							: GetThemeColor(BarThemeColorEnum::TextPrimary);
+						const COLORREF dividerColor = static_cast<COLORREF>(
+							BarThemeMaterial::MixColor(color,
+								BarThemeMaterial::LightColor(
+									BarThemeMaterial::ColorRole::Divider),
+								BarThemeMaterial::ClampWeight(
+									state.barLightMaterial.val)));
 						extensionArrow->color1->SetDirect(color);
-						extensionDivider->fill->SetDirect(color);
-						extensionDivider->frame->SetDirect(color);
+						extensionDivider->fill->SetDirect(dividerColor);
+						extensionDivider->frame->SetDirect(dividerColor);
 						bool currentVisual = visual.mode == stateMode.Pen.ModeSelect
 							&& !stateMode.laserActive;
 						if (currentVisual && abs(extensionScale - 1.0) > 0.000001)

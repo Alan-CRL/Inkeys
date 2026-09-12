@@ -11,6 +11,7 @@
 - 填充/边框 RGB 与 alpha、key/ambient 阴影、高光、反射色、笔色混合比例、动态光强统一从权重解析。
 - Shape/Superellipse 逐对象输入材质，默认 Dark，显式启用 Light；不让共享 renderer 的主按钮折叠权重污染 PageControl 等客户端。
 - PointLight 的基础边框和光色解耦。Light 使用近白反射、轻笔色混合和弱 diffuse，Dark 权重 0 返回旧参数。
+- 人工验收后的扁平化续作：Light 表面不再放大原始填充/边框透明度，基础外框改为 `IconPrimary` 蓝灰单线，并停用顶部高光与 key/ambient 多圈阴影。第一光源以蓝灰为默认、绘制时使用经对比度修正的真实笔色；第三光源固定蓝灰，两者独立解析颜色、强度和半径。主栏及绘制属性分割线在 Light 端使用独立 Divider 角色的同值蓝灰。
 - 静态阴影沿用 D2D 几何/缓存方式，有有限可计算的外扩；绘制/dirty/viewport 同步。静态阴影不受动态 EdgeLighting 开关意外控制。
 
 ## 配置与设置数据流

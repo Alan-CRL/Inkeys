@@ -254,7 +254,8 @@ protected:
 
 	// 返回强引用，避免缓存扩容或换 epoch 时使当前帧仍在使用的 brush 失效。
 	ComPtr<ID2D1RadialGradientBrush> GetFrameGradientBrush(
-		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
+		ID2D1DeviceContext* deviceContext, COLORREF color,
+		BarBorderLightSourceEnum lightSource, FLOAT radiusScale = 1.0F);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
 	ID2D1LinearGradientBrush* GetThicknessPreviewGradientBrush(
@@ -312,6 +313,7 @@ protected:
 		const BarThemeMaterial::Material& material,
 		BarUiFrameLightColorEnum frameLightColor,
 		bool primaryLightEnabled, double cursorLightIntensityScale,
+		double lightCursorLightIntensityScale,
 		double baseFramePct, double lightPct, FLOAT strokeWidth,
 		const D2D1_ROUNDED_RECT* roundedRect,
 		ID2D1Geometry* geometry, int geometryVariantQuarter = 0);
