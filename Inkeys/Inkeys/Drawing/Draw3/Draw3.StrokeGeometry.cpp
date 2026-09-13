@@ -827,9 +827,23 @@ namespace Inkeys::Drawing::Draw3
 		return SpeedEraser::InterpolateDiameter(interval, pointTimeSeconds);
 	}
 
+
+	bool AppendEraserSizeAnchor(ActiveStroke& stroke, const SpeedEraserWidthInterval& interval)
+	{
+		if(!interval.reanchor || stroke.realPoints.empty())return false;
+		InkPoint anchor=stroke.realPoints.back();
+		anchor.r=interval.startDiameter*0.5f;
+		if(std::abs(anchor.r-stroke.realPoints.back().r)<=0.001f)return false;
+		stroke.realPoints.push_back(anchor); // 保留旧大圆，新增同位小圆后再连接恢复段。
+		return true;
+	}
+
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed,
 		const SpeedEraserWidthInterval* speedEraserWidth)
 	{
+		if(stroke.widthMode==StrokeWidthMode::SpeedEraser && speedEraserWidth &&
+			stroke.convertedResultCount<stroke.modeledResults.size())
+			AppendEraserSizeAnchor(stroke,*speedEraserWidth);
 		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
 		{
 			const auto& result = stroke.modeledResults[index];

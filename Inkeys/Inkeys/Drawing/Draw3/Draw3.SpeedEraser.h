@@ -34,31 +34,43 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		friend bool operator==(const DisplayScale&, const DisplayScale&) = default;
 	};
 
+	// 全部为直径 DIP。固定模式直接消费此属性，不实例化速度控制器。
+	struct EraserSizes
+	{
+		float minimumDiameterDip = 16.0f;
+		float standardDiameterDip = 32.0f;
+		float maximumDiameterDip = 160.0f;
+		float touchStartDiameterDip = 16.0f;
+		float fixedDiameterDip = 50.0f;
+		friend bool operator==(const EraserSizes&, const EraserSizes&) = default;
+	};
+	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept;
+	float FixedDiameterPx(float selectedDiameterDip, const DisplayScale& display) noexcept;
+
 	struct Config
 	{
 		DisplayScale display;
+		EraserSizes sizes;
 		DeviceMode mode = DeviceMode::Laptop;
 		ScaleSource motionSource = ScaleSource::Dip;
-		ScaleSource coverageSource = ScaleSource::Dip;
 		float motionPerPixelX = 1.0f;
 		float motionPerPixelY = 1.0f;
 		float minimumDiameterPx = 16.0f;
 		float maximumDiameterPx = 160.0f;
-		float minimumSpeed = 30.0f;
-		float maximumSpeed = 700.0f;
+		float sweepEnterSpeed = 800.0f;
+		float sweepExitSpeed = 600.0f;
+		float largeTargetSpeed = 1900.0f;
+		float movementNoiseDistance = 0.75f; // 动作单位，不是尺寸单位。
 		float touchUnlockStart = 2.0f;
 		float touchUnlockEnd = 6.0f;
-		// 本轮标准值明确等于原最小值；不引入另一套固定像素或固定橡皮设置。
-		float StandardDiameterPx() const noexcept { return minimumDiameterPx; }
+		float StandardDiameterPx() const noexcept { return DiameterToCanvasPx(sizes.standardDiameterDip, display); }
 
 		// 固定中档参数集中在此；速度和触摸范围使用动作标尺单位。
 		double historyWindowSeconds = 0.080;
 		double referenceWindowSeconds = 0.160;
-		double evidenceStartSeconds = 0.160;
-		double evidenceFullSeconds = 0.380;
-		double evidenceDecaySeconds = 0.200;
-		double evidenceSpeedStart = 0.20;
-		double evidenceSpeedFull = 0.75;
+		double evidenceStartSeconds = 0.100;
+		double evidenceFullSeconds = 0.240;
+		double evidenceDecaySeconds = 0.350;
 		double maximumEvidenceIntervalSeconds = 0.080;
 		double holdSeconds = 0.100;
 		double sweepHoldSeconds = 0.650;
@@ -76,12 +88,16 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double sweepEntryFraction = 0.50;
 		double sweepExitFraction = 0.25;
 		double mouseReleaseSeconds = 0.140;
+		double idleStartSeconds = 0.280;
+		double idleTauSeconds = 0.200;
+		double idleLogShrinkPerSecond = 4.0;
 		double settleLogTolerance = 0.003;
 
 		friend bool operator==(const Config&, const Config&) = default;
 	};
 
-	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch) noexcept;
+	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch,
+		const EraserSizes& sizes = {}) noexcept;
 
 	class Controller
 	{
@@ -93,11 +109,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		void PauseForReconnect(double seconds) noexcept;
 		float ResumeFromReconnect(float x, float y, double seconds) noexcept;
 		float Diameter() const noexcept;
+		float DiameterDip() const noexcept;
+		double SecondsSinceMovement(double seconds) const noexcept;
+		double Speed() const noexcept { return frameState_.speed; }
+		bool Sweeping() const noexcept { return frameState_.sweeping; }
 		float TargetDiameter() const noexcept;
 		bool IsPaused() const noexcept { return paused_; }
 		bool NeedsAnimation(double seconds) const noexcept;
 		const Config& Configuration() const noexcept { return config_; }
-		double SweepEvidenceSeconds() const noexcept { return sampleState_.sweepEvidence; }
+		double SweepEvidenceSeconds() const noexcept { return frameState_.sweepEvidence; }
 
 	private:
 		struct MotionSegment
@@ -116,6 +136,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double decreaseSince = 0.0;
 			double maximumDisplacement = 0.0;
 			double sweepEvidence = 0.0;
+			double lastMovementTime = 0.0;
+			double speed = 0.0;
+			bool sweepQualified = false;
 			bool sweeping = false;
 			bool decreasePending = false;
 			bool shrinking = false;
@@ -132,6 +155,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double acceptedTime_ = 0.0;
 		double downX_ = 0.0;
 		double downY_ = 0.0;
+		double movementX_ = 0.0, movementY_ = 0.0;
 		double pauseTime_ = 0.0;
 		bool touchStartup_ = false;
 		bool initialized_ = false;
@@ -140,9 +164,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		void AddSegment(const MotionSegment& segment) noexcept;
 		double MotionSpeed(double seconds, double windowSeconds) const noexcept;
 		double TargetLogDiameter(double speed, double maximumDisplacement) const noexcept;
+		double IdleDiameterDip(const DynamicsState& state) const noexcept;
 		void AdvanceState(DynamicsState& state, double seconds,
 			const MotionSegment* incoming = nullptr, double incomingX = 0.0,
-			double incomingY = 0.0) const noexcept;
+			double incomingY = 0.0, bool effectiveMovement = false) const noexcept;
 		void FollowTarget(DynamicsState& state, double endTime,
 			double target, double realMotionSpeed) const noexcept;
 	};
@@ -194,6 +219,39 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float endDiameter = 16.0f;
 		float minimumDiameter = 16.0f;
 		float maximumDiameter = 160.0f;
+		bool reanchor = false;
+	};
+
+	// 当前工具与历史端点分开。只在下一次真实几何提交时消费尺寸断点。
+	struct ContactSizeState
+	{
+		float effectiveDiameterPx = 32.0f;
+		float resumeDiameterPx = 32.0f;
+		double effectiveTimeSeconds = 0.0;
+		double breakTimeSeconds = 0.0;
+		bool breakPending = false;
+		void Reset(float diameterPx, double seconds) noexcept;
+		void Update(float diameterPx, double seconds, bool stationary) noexcept;
+		WidthInterval MakeInterval(double fromModelTime, double toModelTime, float oldDiameter,
+			float newDiameter, double rawSeconds, const Config& config) const noexcept;
+		void Accepted(const WidthInterval& interval) noexcept;
+	};
+
+	struct Diagnostics
+	{
+		bool active = false;
+		uint32_t inputType = 0;
+		DeviceMode mode = DeviceMode::Laptop;
+		ScaleSource motionSource = ScaleSource::Dip;
+		EraserSizes sizes;
+		float dpiX = 96, dpiY = 96;
+		float effectiveDiameterDip = 32, cursorDiameterPx = 32, nextRadiusPx = 16;
+		float historyRadiusPx = 0, resumedMaxRadiusPx = 0;
+		float resumedLeft = 0, resumedTop = 0, resumedRight = 0, resumedBottom = 0;
+		std::array<float,9> boundaryPoints{}; // 有界的历史点/尺寸锚点/新末点 (x,y,直径px)。
+		bool resumedWithAnchor = false, sweeping = false;
+		double speed = 0, evidenceSeconds = 0, idleSeconds = 0;
+		uint64_t frameSequence = 0, realPointCount = 0;
 	};
 
 	float InterpolateDiameter(const WidthInterval& interval, double seconds) noexcept;

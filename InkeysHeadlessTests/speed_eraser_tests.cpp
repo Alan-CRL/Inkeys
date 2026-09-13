@@ -100,10 +100,10 @@ int RunSpeedEraserTests()
 	const auto physicalTouch = ResolveConfig(physical, DeviceMode::LargeScreen, true);
 	const auto physicalPen = ResolveConfig(physical, DeviceMode::Laptop, false);
 	expect(physicalTouch.motionSource == ScaleSource::Physical, "mapped touch uses cm motion");
-	expect(physicalPen.motionSource == ScaleSource::Dip && physicalPen.coverageSource == ScaleSource::Physical,
+	expect(physicalPen.motionSource == ScaleSource::Dip && physicalPen.sizes == EraserSizes{},
 		"indirect input uses DIP motion independently of physical coverage");
-	near(physicalTouch.minimumDiameterPx, 1.0 / std::sqrt(0.02 * 0.04), 0.0001, "geometric mean coverage density");
-	near(physicalPen.maximumDiameterPx, 4.0 / std::sqrt(0.02 * 0.04), 0.0001, "laptop physical maximum");
+	near(physicalTouch.minimumDiameterPx,16,0.001,"physical action retains 16 DIP minimum");
+	near(physicalPen.maximumDiameterPx,160,0.001,"physical metadata does not set coverage maximum");
 	DisplayScale ambiguous = physical;
 	ambiguous.directTouchMapped = false;
 	expect(ResolveConfig(ambiguous, DeviceMode::LargeScreen, true).motionSource == ScaleSource::Dip,
@@ -111,14 +111,14 @@ int RunSpeedEraserTests()
 	DisplayScale invalid = physical;
 	invalid.physicalAvailable = false;
 	const auto invalidConfig = ResolveConfig(invalid, DeviceMode::LargeScreen, true);
-	expect(invalidConfig.motionSource == ScaleSource::Dip && invalidConfig.coverageSource == ScaleSource::Dip,
+	expect(invalidConfig.motionSource == ScaleSource::Dip && invalidConfig.sizes == EraserSizes{},
 		"clone unknown topology or unavailable EDID use explicit DIP fallback");
 	invalid = physical;
 	invalid.cmPerPixelX = 0.0f;
-	expect(ResolveConfig(invalid, DeviceMode::Laptop, true).coverageSource == ScaleSource::Dip,
+	expect(ResolveConfig(invalid, DeviceMode::Laptop, true).motionSource == ScaleSource::Dip,
 		"zero physical metric cannot become valid coverage");
 	invalid.cmPerPixelX = std::numeric_limits<float>::quiet_NaN();
-	expect(ResolveConfig(invalid, DeviceMode::Laptop, true).coverageSource == ScaleSource::Dip,
+	expect(ResolveConfig(invalid, DeviceMode::Laptop, true).motionSource == ScaleSource::Dip,
 		"nonfinite physical metric cannot become valid coverage");
 	DisplayScale rotated = physical;
 	std::swap(rotated.cmPerPixelX, rotated.cmPerPixelY);
@@ -129,22 +129,33 @@ int RunSpeedEraserTests()
 
 	// 新交互的回归用例先在旧实现上运行：短促动作不膨胀，大尺寸不因短停塌缩。
 	const auto interactionConfig = ResolveConfig({}, DeviceMode::Laptop, false);
-	const double interactionSpeed = interactionConfig.maximumSpeed * 1.25;
+	const double interactionSpeed = interactionConfig.largeTargetSpeed * 1.25;
 	for (const double burstSeconds : { 0.05, 0.12 })
 	{
 		const auto burst = Replay(interactionConfig,
 			{{0,0},{burstSeconds,interactionSpeed * burstSeconds},{0.6,interactionSpeed * burstSeconds}},
 			125,60,{burstSeconds,burstSeconds + 0.08,0.5});
 		for (const float diameter : burst)
-			expect(diameter <= interactionConfig.minimumDiameterPx * 1.25f,
+			expect(diameter <= interactionConfig.StandardDiameterPx() * 1.25f,
 				"short fast swipe and residual frames must not create sweep size");
 	}
 	const auto strongHold = Replay(interactionConfig,
 		{{0,0},{1,interactionSpeed},{2.0,interactionSpeed}},125,60,{1.0,1.28,1.55});
 	expect(strongHold[1] >= strongHold[0] * 0.9f,
 		"established large sweep survives 280ms pause");
-	expect(strongHold[2] >= strongHold[0] * 0.9f,
-		"established large sweep waits for sustained fine intent");
+	expect(strongHold[2] < strongHold[0],
+		"real idle visibly contracts instead of retaining a frozen history radius");
+
+	// 本轮规格回归：尺寸只能来自DIP，普通速度不能靠持续时间进入清扫。
+	const auto dipBaseline = ResolveConfig({},DeviceMode::Laptop,false);
+	near(dipBaseline.StandardDiameterPx(),32.0,0.001,"standard is an independent 32 DIP at 96 DPI");
+	near(ResolveConfig(physical,DeviceMode::Laptop,false).maximumDiameterPx,
+		dipBaseline.maximumDiameterPx,0.001,"EDID cannot change dynamic size limits");
+	near(ResolveConfig({},DeviceMode::LargeScreen,false).maximumDiameterPx,
+		dipBaseline.maximumDiameterPx,0.001,"device mode cannot change DIP size limits");
+	const auto ordinaryLong = Replay(dipBaseline,{{0,0},{20,10000}},125,60,{10,20});
+	for (const float d : ordinaryLong)
+		expect(d <= 32.0f*1.05f,"ordinary 500 DIP per second stays standard after twenty seconds");
 	double worstRateError = 0.0;
 	double worstPauseDrop = 0.0;
 	for (const auto mode : { DeviceMode::LargeScreen, DeviceMode::Laptop })
@@ -156,7 +167,7 @@ int RunSpeedEraserTests()
 				DisplayScale display = usePhysical ? physical : DisplayScale{};
 				display.dipPerPixelX = display.dipPerPixelY = 96.0f / dpi;
 				const auto config = ResolveConfig(display, mode, usePhysical);
-				const double speed = config.maximumSpeed * 1.25;
+				const double speed = config.largeTargetSpeed * 1.25;
 				const std::vector<Knot> stop{ {0,0}, {1,speed}, {4,speed} };
 				const std::vector<double> checkpoints{ 0.25, 0.5, 1.0, 1.12, 1.5, 2.3, 4.0 };
 				const auto reference = Replay(config, stop, 1000, 240, checkpoints);
@@ -164,9 +175,9 @@ int RunSpeedEraserTests()
 				expect(reference[3] >= reference[2] * 0.9f, "120ms pause preserves sweep size");
 				worstPauseDrop = std::max(worstPauseDrop,
 					static_cast<double>(1.0f - reference[4] / reference[2]));
-				expect(reference[4] >= reference[2] * 0.9f, "large sweep survives 500ms pause");
-				expect(reference[5] <= reference[2] * 0.7f, "sustained idle eventually releases a large sweep");
-				near(reference[6], config.minimumDiameterPx, 0.001, "idle finally settles exactly");
+				expect(reference[4] < reference[2], "true stationary state shrinks visibly after its grace period");
+				expect(reference[5] <= config.StandardDiameterPx() * 1.10f, "sustained idle eventually releases a large sweep");
+				near(reference[6],config.StandardDiameterPx(),0.001,"idle returns to standard rather than touch minimum");
 				for (const int inputHz : { 60, 125, 240, 1000 })
 				{
 					for (const int frameHz : { 30, 60, 144, 240 })
@@ -182,7 +193,7 @@ int RunSpeedEraserTests()
 						}
 					}
 				}
-				const std::vector<Knot> fine{ {0,0}, {1,speed}, {4,speed + 1.5 * config.minimumSpeed} };
+				const std::vector<Knot> fine{ {0,0}, {1,speed}, {4,speed + 0.3 * config.sweepEnterSpeed} };
 				const auto fineResult = Replay(config, fine, 125, 60, {1.0, 1.12, 2.3});
 				expect(fineResult[1] >= fineResult[0] * 0.9f &&
 					fineResult[2] <= fineResult[0] * 0.7f, "sweep converts to sustained fine erasing");
@@ -202,18 +213,18 @@ int RunSpeedEraserTests()
 	}
 
 	const Config laptop = ResolveConfig({}, DeviceMode::Laptop, false);
-	const std::vector<Knot> acceleration{ {0,0}, {1,60}, {1.12,180}, {1.6,180} };
+	const std::vector<Knot> acceleration{ {0,0}, {1,60}, {1.12,345}, {1.6,345} };
 	for (const float d : Replay(laptop,acceleration,125,60,{1.05,1.12,1.3,1.6}))
 		expect(d <= laptop.StandardDiameterPx()*1.25f,"isolated acceleration cannot bypass conservative growth");
-	const auto onset = Replay(laptop,{{0,0},{1.2,1050}},125,60,{0.12,0.35,0.8,1.0});
+	const auto onset = Replay(laptop,{{0,0},{1.2,2850}},125,60,{0.12,0.35,0.8,1.0});
 	expect(onset[0] <= laptop.StandardDiameterPx()*1.25f,"120ms high speed has not established a sweep");
 	expect(onset[1] >= laptop.StandardDiameterPx()*1.25f && onset[1] < laptop.maximumDiameterPx*0.45f,
 		"sustained fast action starts controlled expansion by 350ms");
 	expect(onset[2] >= laptop.maximumDiameterPx*0.65f && onset[3] >= laptop.maximumDiameterPx*0.85f,
 		"sustained fast action reaches visibly large coverage within one second");
-	const auto slowRelease = Replay(laptop,{{0,0},{1,875},{3,895}},125,60,{1.0,1.55,1.9,3.0});
+	const auto slowRelease = Replay(laptop,{{0,0},{1,2375},{3,2395}},125,60,{1.0,1.55,1.9,3.0});
 	expect(slowRelease[1] >= slowRelease[0]*0.9f && slowRelease[2] <= slowRelease[0]*0.9f,
-		"large sweep confirms fine intent in the 600 to 1000ms range");
+		"continuous slow movement keeps its separate sweep confirmation instead of being treated as idle");
 	std::vector<Knot> noise{ {0,0} };
 	double x = 0.0;
 	for (int i = 1; i <= 100; ++i)
@@ -222,7 +233,7 @@ int RunSpeedEraserTests()
 		noise.push_back({ i * 0.02, x });
 	}
 	for (const auto value : Replay(laptop, noise, 125, 60, {0.2,0.7,1.2,2.0}))
-		near(value, laptop.minimumDiameterPx, 0.001, "low speed noise stays at small endpoint");
+		near(value,laptop.StandardDiameterPx(),0.001,"ordinary movement stays at standard");
 
 	for (const Config config : { laptop, physicalTouch })
 	{
@@ -242,7 +253,7 @@ int RunSpeedEraserTests()
 			near(touch.Advance(5.5 + tap), config.minimumDiameterPx, 0.001, "each genuine touch down resets for dotted erasing");
 		}
 		touch.Reset(0,0,0,StartKind::Touch,config);
-		FeedLine(touch, config.maximumSpeed * 1.5, 1.0, 125, config);
+		FeedLine(touch, config.largeTargetSpeed * 1.5, 1.0, 125, config);
 		expect(touch.Diameter() > config.maximumDiameterPx * 0.85f, "observed touch movement unlocks growth");
 	}
 
@@ -308,7 +319,7 @@ int RunSpeedEraserTests()
 		display.dipPerPixelX = display.dipPerPixelY = 96.0f / dpi;
 		const auto mouseConfig = ResolveConfig(display,mode,false);
 		const float standard = mouseConfig.StandardDiameterPx();
-		near(standard,mouseConfig.minimumDiameterPx,0.0001,"standard deliberately retains original starting size");
+		near(standard,DiameterToCanvasPx(32,display),0.001,"standard independently resolves from 32 DIP");
 		expect(standard <= mouseConfig.maximumDiameterPx,"standard remains inside existing coverage range");
 		MouseLifecycle mouse;
 		mouse.Configure(mouseConfig);
@@ -399,11 +410,11 @@ int RunSpeedEraserTests()
 	expect(!reorderedMouse.ContactOwned() && !reorderedMouse.NeedsAnimation(0.9),
 		"late old up after configuration change releases the final owner without reviving old visuals");
 	// 中速连续折返应停在对应中间值，而非按折返次数无条件靠近最大值。
-	const double mediumSpeed = std::sqrt(laptop.minimumSpeed * laptop.maximumSpeed);
+	const double mediumSpeed = (laptop.sweepEnterSpeed + laptop.largeTargetSpeed)*0.5;
 	std::vector<Knot> moderateSweep{{0,0}};
 	for (int i=1;i<=30;++i) moderateSweep.push_back({i*0.12,i%2 ? mediumSpeed*0.12 : 0.0});
 	const auto moderate = Replay(laptop,moderateSweep,125,60,{2.0,3.0,3.6});
-	const double middleDiameter = std::sqrt(laptop.minimumDiameterPx*laptop.maximumDiameterPx);
+	const double middleDiameter = std::sqrt(laptop.StandardDiameterPx()*laptop.maximumDiameterPx);
 	for (const float d : moderate)
 		expect(d >= middleDiameter*0.85 && d <= middleDiameter*1.02,
 			"repeated moderate reversals remain controllable at middle size");
@@ -414,12 +425,68 @@ int RunSpeedEraserTests()
 		loneObservation.Diameter() <= laptop.StandardDiameterPx()*1.001f,
 		"single observation after missing interval cannot prove sustained fast activity");
 
+
+	// 同一份DIP尺寸跨硬件、模式、DPI保持含义；固定旁路不读取速度或时间。
+	for(const int dpi:{96,144,192})
+	for(const auto mode:{DeviceMode::Laptop,DeviceMode::LargeScreen})
+	for(const bool edid:{false,true})
+	{
+		DisplayScale s=physical;s.physicalAvailable=edid;s.dipPerPixelX=s.dipPerPixelY=96.0f/dpi;
+		s.cmPerPixelX=edid?0.2f:0.0f;s.cmPerPixelY=edid?0.1f:0.0f;
+		const auto cfg=ResolveConfig(s,mode,true);
+		near(cfg.minimumDiameterPx*96/dpi,16,0.001,"minimum has invariant DIP meaning");
+		near(cfg.StandardDiameterPx()*96/dpi,32,0.001,"standard has invariant DIP meaning");
+		near(cfg.maximumDiameterPx*96/dpi,160,0.001,"maximum has invariant DIP meaning");
+		near(FixedDiameterPx(42,s)*96/dpi,42,0.001,"fixed DIP bypass is independent of EDID and motion");
+	}
+	for(const double v:{100,300,500,650,750,800,1000,1300,1700,2200})
+	{
+		const auto scan=Replay(laptop,{{0,0},{20,v*20}},125,60,{10,20});
+		if(v<=laptop.sweepEnterSpeed)
+			for(const auto d:scan)near(d,laptop.StandardDiameterPx(),0.02,"ordinary speed never accumulates into sweep");
+		else expect(scan.back()<=laptop.maximumDiameterPx+0.001f,"qualified velocity scan remains bounded");
+	}
+	Controller idleTool;idleTool.Reset(0,0,0,StartKind::Hover,laptop);
+	FeedLine(idleTool,2600,1.5);
+	ContactSizeState effective;effective.Reset(idleTool.Diameter(),1.5);
+	const float historicalDiameter=idleTool.Diameter();
+	const double idleEnd=2.7;
+	// 没有任何输入包，仅调用与产品相同的有效尺寸状态更新。
+	for(int frame=1;frame<=144;++frame)
+	{
+		const double t=1.5+frame/120.0;
+		idleTool.Advance(t);
+		effective.Update(idleTool.Diameter(),t,idleTool.SecondsSinceMovement(t)>=laptop.idleStartSeconds);
+	}
+	expect(effective.effectiveDiameterPx<=laptop.StandardDiameterPx()*1.1f &&
+		effective.effectiveDiameterPx<historicalDiameter*0.5f,"no-event contact state visibly shrinks");
+	idleTool.UpdatePosition(3904,4,idleEnd+0.01);
+	const auto resume=effective.MakeInterval(1.5,idleEnd+0.01,historicalDiameter,
+		idleTool.Diameter(),idleEnd+0.01,laptop);
+	expect(resume.reanchor && resume.startDiameter<=laptop.StandardDiameterPx()*1.1f,
+		"resumption interval starts at contracted tool size not historical radius");
+	near(historicalDiameter,160,2.0,"historical wide diameter stays immutable");
+	const auto late=effective.MakeInterval(1.4,1.6,historicalDiameter,historicalDiameter,1.6,laptop);
+	expect(!late.reanchor,"late pre-shrink geometry is not silently re-timed");
+	Controller samePosition=idleTool;
+	for(int i=1;i<=1000;++i)samePosition.UpdatePosition(3904,4,2.71+i*0.001);
+	expect(samePosition.DiameterDip()<=32.1f,"same position packets do not keep the tool large");
+	Controller noisy;noisy.Reset(0,0,0,StartKind::Hover,laptop);FeedLine(noisy,2600,1.5);
+	for(int i=1;i<=1400;++i)noisy.UpdatePosition(3900+(i%2?0.1f:-0.1f),0,1.5+i*0.001);
+	Controller quietNoiseReference;quietNoiseReference.Reset(0,0,0,StartKind::Hover,laptop);
+	FeedLine(quietNoiseReference,2600,1.5);quietNoiseReference.Advance(2.9);
+	near(noisy.DiameterDip(),quietNoiseReference.DiameterDip(),0.03,
+		"bounded sub-threshold noise has the same idle deadline as complete absence of packets");
+	Controller ordinaryTouch;ordinaryTouch.Reset(0,0,0,StartKind::Touch,laptop);
+	FeedLine(ordinaryTouch,100,1.0);
+	expect(ordinaryTouch.DiameterDip()>30 && ordinaryTouch.DiameterDip()<=32.01f,
+		"ordinary real touch motion reaches standard without sweep qualification");
 	const WidthInterval interval{ 0,1,50,600,8,800 };
 	near(InterpolateDiameter(interval,0.5),325,0.001,"scaled width interpolation exceeds old 200px maximum");
 	near(InterpolateDiameter({0,1,4,8,4,8},0),4,0.001,"scaled minimum may be below old 20px limit");
 	near(ContactDiameter(162.5f,16.0f),325,0.001,"contact cursor uses accepted geometric endpoint");
 	near(ContactDiameter(0,24),24,0.001,"initial cursor uses batch minimum");
 	std::cout << "[SpeedEraser] worst sample/frame deviation=" << worstRateError * 100.0
-		<< "% large-sweep drop at 500ms=" << worstPauseDrop * 100.0 << "% failures=" << failures << '\n';
+		<< "% idle drop at 500ms=" << worstPauseDrop * 100.0 << "% failures=" << failures << '\n';
 	return failures;
 }

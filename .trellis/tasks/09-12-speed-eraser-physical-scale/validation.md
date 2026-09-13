@@ -1,4 +1,4 @@
-> 历史记录：以下为c433b6f5基础版本验收；当前鼠标交互规则及结果见 [validation-mouse-interaction.md](validation-mouse-interaction.md)。
+> 历史记录：以下为c433b6f5基础版本验收；当前DIP尺寸/静止规则及结果见 [validation-dip-idle.md](validation-dip-idle.md)。
 
 # Validation: Draw3 speed eraser
 

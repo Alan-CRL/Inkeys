@@ -2,9 +2,12 @@
 #include "Draw3.Product.h"
 
 import Inkeys.Window;
+import draw3.uink_file;
+import draw3.uink_draw3_import;
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <crtdbg.h>
 #include <string>
@@ -123,17 +126,52 @@ namespace Inkeys::Drawing::Draw3
 				"selection ULW window has fixed click-through style", failures);
 		}
 
+
+		bool CheckSizeBoundaryFile(const SpeedEraser::Diagnostics& diagnostic)
+		{
+			using namespace draw3::uink;
+			const auto file=CreateUInkGuid(), workspace=CreateUInkGuid(), page=CreateUInkGuid();
+			if(!file || !workspace || !page || !diagnostic.resumedWithAnchor)return false;
+			Draw3UInkExportSnapshot snapshot;
+			snapshot.fileGuid=*file;snapshot.workspaceGuid=*workspace;
+			Draw3UInkCanvasSnapshot canvas;canvas.pageGuid=*page;canvas.pageNumber=1;
+			Draw3UInkStrokeSnapshot stroke;stroke.style.kind=Draw3UInkStrokeKind::Eraser;
+			for(size_t i=0;i<3;++i)stroke.points.push_back({diagnostic.boundaryPoints[i*3],
+				diagnostic.boundaryPoints[i*3+1],diagnostic.boundaryPoints[i*3+2]});
+			canvas.strokes.push_back(stroke);snapshot.canvases.push_back(canvas);
+			const auto exported=ExportDraw3SnapshotToUInk(snapshot);
+			if(!exported.document)return false;
+			UInkEditingSession session;session.document=*exported.document;session.provenance.sourceWasExternal=false;
+			const std::string id=FormatUInkGuid(*file);
+			const std::wstring path=L"Build\\eraser-size-boundary-"+std::wstring(id.begin(),id.end())+L".uink";
+			UInkSaveOptions options;options.mode=UInkSaveMode::SaveAsNewLogicalFile;
+			if(SaveUInkFile(path,session,options).status!=UInkSaveStatus::Committed)return false;
+			const auto read=ReadUInkFile(path);
+			if(!read.document)return false;
+			const auto imported=ImportDraw3UInkDocument(*read.document);
+			if(!imported.snapshot || imported.snapshot->canvases.size()!=1 ||
+				imported.snapshot->canvases[0].strokes.size()!=1)return false;
+			const auto& restored=imported.snapshot->canvases[0].strokes[0].points;
+			if(restored.size()!=3)return false;
+			for(size_t i=0;i<3;++i)
+				if(std::abs(restored[i].x-stroke.points[i].x)>0.001f ||
+					std::abs(restored[i].y-stroke.points[i].y)>0.001f ||
+					std::abs(restored[i].width-stroke.points[i].width)>0.001f)return false;
+			return restored[0].x==restored[1].x && restored[0].y==restored[1].y &&
+				restored[0].width>restored[1].width && restored[2].width<=diagnostic.dpiX/96*36;
+		}
+
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
 			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
 			HostPresentationMode requiredMode,
 			bool allowDirectComposition, bool exerciseCommands,
-			bool exerciseUlwDirtyRect, int& failures)
+			bool exerciseUlwDirtyRect, int& failures, bool exerciseEraser = false)
 		{
 			const std::uint64_t styleCallsBefore =
 				styleContext.callCount.load(std::memory_order_acquire);
 			const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
 			HostStartOptions options{ requiredMode };
-			options.enableHiddenTestContactInjection = exerciseCommands;
+			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
 			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
 				"start real Draw3 host", failures))
@@ -508,6 +546,83 @@ namespace Inkeys::Drawing::Draw3
 					"ULW dirty pixels remain premultiplied", failures);
 			}
 
+
+			if(exerciseEraser)
+			{
+				Bridge::ProductState speedState{};
+				speedState.tool=Bridge::Tool::SpeedEraser;
+				speedState.selectionMode=false;
+				PublishProductState(speedState);
+				const auto mouseContact=[&](HiddenTestContactPhase phase,int x,int y)
+				{
+					return PostMessageW(drawpad,kDraw3HiddenTestContactMessage,
+						static_cast<WPARAM>(phase)|kHiddenTestMouseFlag,MAKELPARAM(x,y))!=FALSE;
+				};
+				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Down,60,80),"DIP speed eraser down",failures);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().eraser.active;}),
+					"actual eraser diagnostic becomes active",failures);
+				int lastX=60;
+				for(int i=0;i<80;++i)
+				{
+					lastX=(i%2)?60:250;
+					mouseContact(HiddenTestContactPhase::Move,lastX,80);
+					std::this_thread::sleep_for(20ms);
+				}
+				const auto large=ProductHost().RuntimeSnapshot();
+				std::fprintf(stderr,"[EraserProbe] large active=%d device=%u dip=%.2f cursor=%.2f speed=%.2f evidence=%.3f points=%llu idle=%.3f\n",
+					large.eraser.active,large.eraser.inputType,large.eraser.effectiveDiameterDip,
+					large.eraser.cursorDiameterPx,large.eraser.speed,large.eraser.evidenceSeconds,
+					static_cast<unsigned long long>(large.eraser.realPointCount),large.eraser.idleSeconds);
+
+				modeSucceeded &= Check(large.eraser.cursorDiameterPx>large.eraser.dpiX/96*70 &&
+					large.eraser.effectiveDiameterDip>70,"actual contact cursor reaches sweep size",failures);
+				const auto moveCount=large.inputMovePublished;
+				const auto pointCount=large.eraser.realPointCount;
+				// 完全停止所有Move，包括光标消息；只让真实绘制线程的时钟运行。
+				modeSucceeded &= Check(WaitUntil([moveCount]
+				{
+					const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputMovePublished==moveCount && s.eraser.active &&
+						s.eraser.idleSeconds>=1.0 && s.eraser.cursorDiameterPx>0 &&
+						s.eraser.cursorDiameterPx<=s.eraser.dpiX/96*35 &&
+						s.eraser.nextRadiusPx<=s.eraser.dpiX/96*17.5f;
+				},4s),"no Move: final contact cursor and next geometry visibly shrink",failures);
+				const auto quiet=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(quiet.inputMovePublished==moveCount &&
+					quiet.eraser.realPointCount==pointCount &&
+					quiet.eraser.historyRadiusPx>quiet.eraser.nextRadiusPx*1.5f,
+					"idle does not rewrite historical width or submit fake points",failures);
+				modeSucceeded &= Check(WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=32.1f;
+				},3s),"effective size settles at standard",failures);
+				const auto stopped=ProductHost().RuntimeSnapshot().eraser.frameSequence;
+				std::this_thread::sleep_for(250ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=stopped+2,
+					"settled held eraser stops idle frames",failures);
+				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Move,lastX+4,84),
+					"resume with one short real Move",failures);
+				modeSucceeded &= Check(WaitUntil([moveCount]
+				{
+					const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputMovePublished>moveCount && s.eraser.resumedWithAnchor &&
+						s.eraser.resumedMaxRadiusPx<=s.eraser.dpiX/96*18 &&
+						s.eraser.resumedBottom-s.eraser.resumedTop<=s.eraser.dpiY/96*40+10;
+				}),"resumed actual geometry footprint has no old large-radius tail",failures);
+				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
+					"actual size-boundary points survive UInk save/read/import",failures);
+				mouseContact(HiddenTestContactPhase::Up,lastX+4,84);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"speed eraser up finishes normally",failures);
+				const auto beforeUndo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([beforeUndo]{return ProductHost().RuntimeSnapshot().undoCommandCount>beforeUndo.undoCommandCount;}),
+					"size-break stroke supports real Undo",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([beforeUndo]{return ProductHost().RuntimeSnapshot().redoCommandCount>beforeUndo.redoCommandCount;}),
+					"size-break stroke supports real Redo",failures);
+			}
+
 			const auto stopStarted = std::chrono::steady_clock::now();
 			StopProduct();
 			const auto stopElapsed = std::chrono::steady_clock::now() - stopStarted;
@@ -522,7 +637,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	int RunHiddenWindowIntegrationTest() noexcept
+	int RunHiddenWindowIntegrationTest(bool eraserOnly) noexcept
 	{
 		// 隐藏验收不能弹出 CRT 调试对话框，所有断言改写入测试 stderr。
 		_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
@@ -569,6 +684,23 @@ namespace Inkeys::Drawing::Draw3
 			Check(!IsWindowVisible(dcompMagnifierHost) && !IsWindowVisible(dcompFreeze) &&
 				!IsWindowVisible(dcompPresentation) && !IsWindowVisible(dcompDrawpad),
 				"DComp HWND creation never shows UI", failures);
+
+			if(eraserOnly)
+			{
+				RunMode(service,styleContext,dcompMagnifierHost,dcompFreeze,dcompDrawpad,dcompPresentation,
+					HostPresentationMode::Automatic,true,false,false,failures,true);
+				StopProduct();
+				service.StopAndJoin();
+				if(!Check(service.Start(makeSpecs(false)),"fresh ULW eraser service",failures))return 1;
+				RunMode(service,styleContext,service.Handle(Inkeys::Window::WindowRole::MagnifierHost),
+					service.Handle(Inkeys::Window::WindowRole::Freeze),
+					service.Handle(Inkeys::Window::WindowRole::Drawpad),
+					service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation),
+					HostPresentationMode::UlwDirtyRect,false,false,false,failures,true);
+				StopProduct();service.StopAndJoin();
+				if(failures==0)Report("PASS","DIP eraser actual cursor, idle scheduling, geometry footprint and Undo/Redo");
+				return failures==0?0:1;
+			}
 			Check(service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
 				!IsWindowVisible(dcompDrawpad) && IsWindowVisible(dcompPresentation),

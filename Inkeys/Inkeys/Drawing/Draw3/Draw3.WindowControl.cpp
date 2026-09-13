@@ -412,6 +412,13 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 
+
+	void WindowController::PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept
+	{
+		SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
+		PublishMouseCursorSample(sample);
+	}
+
 	void WindowController::SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale)
 	{
 		{

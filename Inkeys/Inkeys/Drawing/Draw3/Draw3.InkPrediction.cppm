@@ -535,6 +535,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 在视觉稳定后冻结停笔输入。
 	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds);
 	// 转换尚未处理的真实建模结果；SpeedEraser 必须显式提供本次原始输入宽度区间。
+	bool AppendEraserSizeAnchor(ActiveStroke& stroke, const SpeedEraserWidthInterval& interval);
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed = -1.0f,
 		const SpeedEraserWidthInterval* speedEraserWidth = nullptr);
 	// 使用笔宽估算器副本重建预测绘制点。

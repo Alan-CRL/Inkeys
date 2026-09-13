@@ -1,3 +1,5 @@
+> 历史7af954bb版本验收；当前DIP尺寸和静止回缩规则/结果见 [validation-dip-idle.md](validation-dip-idle.md)。
+
 # Mouse interaction validation (2026-09-13)
 
 ## Baseline and execution

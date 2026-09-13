@@ -4,6 +4,7 @@
 import Inkeys.Display;
 
 import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
@@ -34,6 +35,8 @@ namespace Inkeys::Drawing::Draw3
 		PresentationAutoSaveService presentationAutoSave;
 		ContactInputCoordinator input;
 		WindowController window;
+		mutable std::mutex eraserDiagnosticsMutex;
+		SpeedEraser::Diagnostics eraserDiagnostics;
 		std::mutex displayMutex;
 		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
 		Inkeys::Display::Subscription displaySubscription;
@@ -429,6 +432,16 @@ namespace Inkeys::Drawing::Draw3
 			if (self) (void)self->input.PublishControlWake();
 		}
 
+
+		static void ObserveEraserDiagnostics(void* context,const SpeedEraser::Diagnostics& value)
+		{
+			auto* self=static_cast<Impl*>(context);
+			std::scoped_lock lock(self->eraserDiagnosticsMutex);
+			const auto sequence=self->eraserDiagnostics.frameSequence+1;
+			self->eraserDiagnostics=value;
+			self->eraserDiagnostics.frameSequence=sequence;
+		}
+
 		static void ObserveDrawingActivity(void* context, bool active) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
@@ -671,6 +684,7 @@ namespace Inkeys::Drawing::Draw3
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
+			{std::scoped_lock lock(eraserDiagnosticsMutex);eraserDiagnostics={};}
 			this->styleCallbacks = styleCallbacks;
 			this->runtimeCallbacks = runtimeCallbacks;
 			startOptions = options;
@@ -783,7 +797,9 @@ namespace Inkeys::Drawing::Draw3
 								&ObserveDesktopLoad,
 								&ObservePresentationSave,
 								&ObservePresentationLoad,
-								&ObserveDrawingActivity
+								&ObserveDrawingActivity,
+								(startOptions.enableEraserDiagnostics || startOptions.enableHiddenTestContactInjection)
+									? &ObserveEraserDiagnostics : nullptr
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -1005,6 +1021,7 @@ namespace Inkeys::Drawing::Draw3
 	HostRuntimeSnapshot Host::RuntimeSnapshot() const noexcept
 	{
 		HostRuntimeSnapshot snapshot;
+		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;}
 		snapshot.running = impl_->running.load(std::memory_order_acquire);
 		snapshot.firstFrameReady = impl_->firstFrameReady.load(std::memory_order_acquire);
 		snapshot.lastPresentSucceeded =
@@ -1093,8 +1110,9 @@ namespace Inkeys::Drawing::Draw3
 	bool Host::PublishHiddenTestContact(WPARAM phaseValue, LPARAM position) noexcept
 	{
 		if (!impl_->hiddenTestContactInjectionEnabled) return false;
-		const auto phase = static_cast<HiddenTestContactPhase>(
-			static_cast<std::uint32_t>(phaseValue));
+		const auto phase = static_cast<HiddenTestContactPhase>(static_cast<std::uint32_t>(phaseValue)&0xffu);
+		const auto deviceType=(phaseValue & kHiddenTestMouseFlag) ? InputDeviceType::MouseLeft :
+			(phaseValue & kHiddenTestTouchFlag) ? InputDeviceType::Touch : InputDeviceType::Pen;
 		ContactSnapshot snapshot{};
 		snapshot.position.x = static_cast<float>(static_cast<short>(LOWORD(position)));
 		snapshot.position.y = static_cast<float>(static_cast<short>(HIWORD(position)));
@@ -1112,7 +1130,7 @@ namespace Inkeys::Drawing::Draw3
 		case HiddenTestContactPhase::Down:
 			snapshot.phase = ContactPhase::Down;
 			published = impl_->input.PublishDown(tabletContextId, contactId,
-				InputDeviceType::Pen, snapshot);
+				deviceType, snapshot);
 			break;
 		case HiddenTestContactPhase::Move:
 			snapshot.phase = ContactPhase::Move;
@@ -1128,6 +1146,15 @@ namespace Inkeys::Drawing::Draw3
 			break;
 		default:
 			return false;
+		}
+
+		if(published && deviceType==InputDeviceType::MouseLeft)
+		{
+			DrawingCursorSample cursor;
+			cursor.x=snapshot.position.x;cursor.y=snapshot.position.y;cursor.qpc=snapshot.qpc;
+			cursor.valid=phase!=HiddenTestContactPhase::Cancelled;
+			cursor.inContact=phase==HiddenTestContactPhase::Down || phase==HiddenTestContactPhase::Move;
+			impl_->window.PublishHiddenTestMouseCursor(cursor);
 		}
 		if (published) (void)impl_->input.PublishControlWake();
 		return published;

@@ -568,6 +568,9 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraser::DisplayScale speedEraserDisplayScale = {};
 			SpeedEraser::DeviceMode speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 			SpeedEraserOcController speedEraserOc;
+			SpeedEraser::ContactSizeState eraserSize;
+			double eraserTimeOrigin = 0.0;
+			SpeedEraser::Diagnostics eraserDiagnostics;
 			bool mouseSpeedEraserFinished = false;
 			double speedEraserModelTime = 0.0;
 			float speedEraserModelDiameter = SpeedEraser::Config{}.minimumDiameterPx;
@@ -600,40 +603,48 @@ namespace Inkeys::Drawing::Draw3
 			bool hasLaserParticleTangent = false;
 		};
 
-		void AppendRuntimeModeledPoints(RuntimeStroke& runtime,
-			float inputSpeed, double currentInputTime)
+
+		void AppendRuntimeModeledPoints(RuntimeStroke& runtime,float inputSpeed,double currentInputTime)
 		{
-			if (runtime.stroke.widthMode != StrokeWidthMode::SpeedEraser)
+			if(runtime.stroke.widthMode!=StrokeWidthMode::SpeedEraser)
+			{AppendNewModeledPoints(runtime.stroke,inputSpeed);return;}
+			const auto& config=runtime.speedEraserOc.Configuration();
+			const auto interval=runtime.eraserSize.MakeInterval(runtime.speedEraserModelTime,currentInputTime,
+				runtime.speedEraserModelDiameter,runtime.speedEraserOc.Diameter(),
+				runtime.eraserTimeOrigin+currentInputTime,config);
+			const size_t previousCount=runtime.stroke.realPoints.size();
+			AppendNewModeledPoints(runtime.stroke,inputSpeed,&interval);
+			if(runtime.stroke.realPoints.size()>previousCount)
 			{
-				AppendNewModeledPoints(runtime.stroke, inputSpeed);
-				return;
+				runtime.eraserSize.Accepted(interval);
+				if(interval.reanchor && previousCount>0 && runtime.eraserDiagnostics.active)
+				{
+					// 测量真实新增移动段的足迹，排除旧同位大圆已经覆盖的历史。
+					const auto& anchor=runtime.stroke.realPoints[previousCount];
+					const auto& old=runtime.stroke.realPoints[previousCount-1];
+					const bool inserted=anchor.x==old.x && anchor.y==old.y &&
+						std::abs(anchor.r-interval.startDiameter*0.5f)<0.001f;
+					const auto points=std::span<const InkPoint>(runtime.stroke.realPoints).subspan(
+						inserted?previousCount:previousCount-1);
+					const RECT bounds=RectFromStrokePoints(points,(std::numeric_limits<int>::max)(),(std::numeric_limits<int>::max)());
+					auto& d=runtime.eraserDiagnostics;
+					d.resumedWithAnchor=inserted;
+					d.boundaryPoints={old.x,old.y,old.r*2,anchor.x,anchor.y,anchor.r*2,
+						points.back().x,points.back().y,points.back().r*2};
+					d.resumedLeft=static_cast<float>(bounds.left);d.resumedTop=static_cast<float>(bounds.top);
+					d.resumedRight=static_cast<float>(bounds.right);d.resumedBottom=static_cast<float>(bounds.bottom);
+					d.resumedMaxRadiusPx=0;
+					for(const auto& point:points)d.resumedMaxRadiusPx=std::max(d.resumedMaxRadiusPx,point.r);
+				}
 			}
-			const auto& config = runtime.speedEraserOc.Configuration();
-			const SpeedEraserWidthInterval widthInterval{
-				runtime.speedEraserModelTime,
-				currentInputTime,
-				runtime.speedEraserModelDiameter,
-				runtime.speedEraserOc.Diameter(),
-				config.minimumDiameterPx,
-				config.maximumDiameterPx
-			};
-			AppendNewModeledPoints(runtime.stroke, inputSpeed, &widthInterval);
-			// 纯帧 Advance 不更新这里；下一份 raw snapshot 仍从上次模型输入宽度插值。
-			runtime.speedEraserModelTime = currentInputTime;
-			runtime.speedEraserModelDiameter = runtime.speedEraserOc.Diameter();
+			runtime.speedEraserModelTime=currentInputTime;
+			runtime.speedEraserModelDiameter=runtime.speedEraserOc.Diameter();
 		}
 
 		float RuntimeSpeedEraserContactDiameter(const RuntimeStroke& runtime) noexcept
 		{
-			const ActiveStroke& stroke = runtime.stroke;
-			const float acceptedRadius = !stroke.realPoints.empty()
-				? stroke.realPoints.back().r
-				: stroke.hasInputStartPoint ? stroke.inputStartPoint.r : 0.0f;
-			// 被过滤或被 modeler 拒绝的输入、纯帧动画都不能提前改变接触光标宽度。
-			return SpeedEraser::ContactDiameter(acceptedRadius,
-				runtime.speedEraserOc.Configuration().minimumDiameterPx);
+			return runtime.eraserSize.effectiveDiameterPx;
 		}
-
 
 		bool IsMouseSpeedEraser(const RuntimeStroke& runtime) noexcept
 		{
@@ -2050,6 +2061,7 @@ namespace Inkeys::Drawing::Draw3
 			const ContactSnapshot& down)
 		{
 			const double downSeconds = AbsoluteQpcSeconds(down.qpc, qpcFrequency);
+			runtime.eraserTimeOrigin = downSeconds;
 			const bool touch = runtime.metricDeviceType == InputDeviceType::Touch;
 			const auto config = SpeedEraser::ResolveConfig(runtime.speedEraserDisplayScale,
 				runtime.speedEraserDeviceMode, touch);
@@ -2873,6 +2885,11 @@ namespace Inkeys::Drawing::Draw3
 					initializeSpeedEraserController(*runtime, down);
 					baseDiameter = runtime->speedEraserOc.Diameter();
 				}
+				if (runtime->tool == DrawingTool::Eraser && widthMode != StrokeWidthMode::SpeedEraser)
+					baseDiameter = SpeedEraser::FixedDiameterPx(SpeedEraser::EraserSizes{}.fixedDiameterDip, runtime->speedEraserDisplayScale);
+				runtime->eraserSize.Reset(baseDiameter, AbsoluteQpcSeconds(down.qpc, qpcFrequency));
+				runtime->eraserDiagnostics = {};
+				runtime->eraserDiagnostics.active = observer_.eraserDiagnostics != nullptr;
 				runtime->speedEraserModelTime = 0.0;
 				runtime->speedEraserModelDiameter = baseDiameter;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
@@ -3047,6 +3064,14 @@ namespace Inkeys::Drawing::Draw3
 		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
 			const ContactSnapshot& snapshot, double inputTime)
 			{
+
+				if(runtime.stroke.widthMode==StrokeWidthMode::SpeedEraser)
+				{
+					const auto interval=runtime.eraserSize.MakeInterval(runtime.speedEraserModelTime,inputTime,
+						runtime.speedEraserModelDiameter,runtime.eraserSize.effectiveDiameterPx,
+						runtime.eraserTimeOrigin+inputTime,runtime.speedEraserOc.Configuration());
+					if(AppendEraserSizeAnchor(runtime.stroke,interval))runtime.eraserSize.Accepted(interval);
+				}
 				const float radius = runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser
 					? runtime.speedEraserOc.Diameter() * 0.5f
 					: runtime.stroke.realPoints.empty()
@@ -3059,7 +3084,9 @@ namespace Inkeys::Drawing::Draw3
 				{
 					const float deltaX = finalPoint.x - runtime.stroke.realPoints.back().x;
 					const float deltaY = finalPoint.y - runtime.stroke.realPoints.back().y;
-					if (deltaX * deltaX + deltaY * deltaY > 0.0001f)
+					if (deltaX * deltaX + deltaY * deltaY > 0.0001f ||
+						(runtime.stroke.widthMode==StrokeWidthMode::SpeedEraser &&
+						std::abs(finalPoint.r-runtime.stroke.realPoints.back().r)>0.001f))
 						runtime.stroke.realPoints.push_back(finalPoint);
 					else
 						runtime.stroke.realPoints.back() = finalPoint;
@@ -3169,6 +3196,9 @@ namespace Inkeys::Drawing::Draw3
 					runtime.speedEraserOc.UpdatePosition(
 						snapshot.position.x, snapshot.position.y,
 						AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
+					const double rawSeconds=AbsoluteQpcSeconds(snapshot.qpc,qpcFrequency);
+					runtime.eraserSize.Update(runtime.speedEraserOc.Diameter(),rawSeconds,
+						runtime.speedEraserOc.SecondsSinceMovement(rawSeconds)>=runtime.speedEraserOc.Configuration().idleStartSeconds);
 				}
 				if (!terminal && !positionMoved && !stylusStateChanged && !shapeRawChanged)
 					return false; // Move 抖动已消费但不进入模型，也不改变下一次真实速度基准。
@@ -3934,6 +3964,13 @@ namespace Inkeys::Drawing::Draw3
 							!lane->contactOwned)
 							dynamicDiameter = lane->controller.Diameter();
 					}
+
+					if(primaryRuntime && primaryRuntime->tool==DrawingTool::Eraser &&
+						primaryRuntime->stroke.widthMode==StrokeWidthMode::Fixed)
+						dynamicDiameter=primaryRuntime->stroke.widthEstimator.baseDiameter;
+					else if(!primaryRuntime && window_.ActiveEraserWidthMode()==EraserWidthMode::Fixed)
+						dynamicDiameter=SpeedEraser::FixedDiameterPx(SpeedEraser::EraserSizes{}.fixedDiameterDip,
+							window_.SpeedEraserDisplayScaleSnapshot());
 					ApplySpeedEraserCursorDiameter(primary.appearance, dynamicDiameter);
 				}
 				if (primary.visible)
@@ -3972,6 +4009,7 @@ namespace Inkeys::Drawing::Draw3
 				if (runtime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 					ApplySpeedEraserCursorDiameter(
 						touchAppearance, RuntimeSpeedEraserContactDiameter(*runtime));
+				else ApplySpeedEraserCursorDiameter(touchAppearance,runtime->stroke.widthEstimator.baseDiameter);
 				const DrawingCursorVisual touchVisual = MakeTouchEraserDrawingCursorVisual(
 					snapshot.position.x, snapshot.position.y, touchAppearance);
 				if (touchVisual.visible)
@@ -3983,6 +4021,32 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
+
+			if(observer_.eraserDiagnostics)
+			{
+				SpeedEraser::Diagnostics d;
+				const RuntimeStroke* r=primaryRuntime;
+				if(!r)for(const auto* candidate:active)
+					if(candidate && !candidate->ended && candidate->stroke.widthMode==StrokeWidthMode::SpeedEraser)
+					{r=candidate;break;}
+				if(r && r->stroke.widthMode==StrokeWidthMode::SpeedEraser)
+				{
+					d=r->eraserDiagnostics;
+					const auto& cfg=r->speedEraserOc.Configuration();
+					d.active=!r->ended;d.inputType=static_cast<uint32_t>(r->metricDeviceType);
+					d.mode=cfg.mode;d.motionSource=cfg.motionSource;d.sizes=cfg.sizes;
+					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
+					d.effectiveDiameterDip=r->speedEraserOc.DiameterDip();
+					d.nextRadiusPx=r->eraserSize.effectiveDiameterPx*0.5f;
+					d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
+					d.historyRadiusPx=r->stroke.realPoints.empty()?0:r->stroke.realPoints.back().r;
+					d.realPointCount=r->stroke.realPoints.size();
+					d.speed=r->speedEraserOc.Speed();d.evidenceSeconds=r->speedEraserOc.SweepEvidenceSeconds();
+					d.sweeping=r->speedEraserOc.Sweeping();
+					d.idleSeconds=r->speedEraserOc.SecondsSinceMovement(mouseVisualSeconds);
+				}
+				observer_.eraserDiagnostics(observer_.context,d);
+			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			DrawingCursorDiagnosticVisualState diagnosticState;
 			const bool traceEnabled = ReadDrawingCursorDiagnosticVisualState(diagnosticState);
@@ -6435,7 +6499,9 @@ namespace Inkeys::Drawing::Draw3
 				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
 					runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) continue;
 				runtime->speedEraserOc.Advance(frameAbsoluteSeconds);
-				// 静止时只推进动态状态；接触光标和几何保持最近真实点已接受的半径。
+				runtime->eraserSize.Update(runtime->speedEraserOc.Diameter(),frameAbsoluteSeconds,
+					runtime->speedEraserOc.SecondsSinceMovement(frameAbsoluteSeconds)>=runtime->speedEraserOc.Configuration().idleStartSeconds);
+				// 当前工具独立回缩；历史点不变，下一次几何才添加尺寸断点。
 			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
@@ -7270,7 +7336,15 @@ namespace Inkeys::Drawing::Draw3
 			const bool hasPhysicalContactAfterFrame = HasPhysicalContact(active);
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();
-			if (hasPhysicalContactAfterFrame)
+			const bool eraserIdle = hasPhysicalContactAfterFrame && !navigationActive &&
+				std::all_of(active.begin(),active.end(),[&](const RuntimeStroke* r)
+				{
+					return r && (r->ended || r->awaitingReconnect ||
+						(r->stroke.widthMode==StrokeWidthMode::SpeedEraser &&
+						 !r->speedEraserOc.NeedsAnimation(mouseVisualSeconds) &&
+						 r->speedEraserOc.SecondsSinceMovement(mouseVisualSeconds)>=r->speedEraserOc.Configuration().idleStartSeconds));
+				});
+			if (hasPhysicalContactAfterFrame && !eraserIdle)
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				if (metrics_ && frameHadActiveContact)
@@ -7325,7 +7399,12 @@ namespace Inkeys::Drawing::Draw3
 					: QpcDeltaSeconds(nearestDeadlineQpc,
 						waitStartQpc.QuadPart, qpcFrequency) * 1000.0;
 				if (metrics_) metrics_->BeginIdle(GetQpcTimeMilliseconds());
-				input_.WaitForWake(frameWakeGeneration, timeoutMilliseconds);
+				if(eraserIdle && nearestDeadlineQpc==(std::numeric_limits<int64_t>::max)())
+				{
+					// 现有API的0是轮询；收敛后只等唤醒，不因按住而重新请求帧。
+					while(!window_.ExitRequested() && !input_.WaitForWake(frameWakeGeneration,1000.0)) {}
+				}
+				else input_.WaitForWake(frameWakeGeneration, timeoutMilliseconds);
 				if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 			}
 		}

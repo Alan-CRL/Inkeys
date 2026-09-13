@@ -88,61 +88,60 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 
 `【直接确认】` `InkeysHeadlessTests` 覆盖 Draw3 bridge/timer/纯逻辑；`--draw3-hidden-test` 通过隐藏主/辅助 HWND 覆盖唯一 Host mailbox、真实绘制线程、history/Clear、双 target 和退出路径。真实笔、触摸屏与驱动设备矩阵仍需维护者提供。
 
-## Scenario: Draw3 笔速橡皮的尺度、清扫证据与鼠标生命周期
+## Scenario: 橡皮统一DIP尺寸、动作资格与当前工具状态
 
 ### 1. Scope / Trigger
-修改速度橡皮、显示尺度消费、设备模式、鼠标 Hover/Down/Up、笔交接或宽度插值时适用。2026-09-13 的交互规则替代旧版“提速加快放大、鼠标完整继承 Hover、1.3s 必须回最小”的规则。固定橡皮、其他工具中心轨迹和输入采集不在此控制器范围内。
+2026-09-13 本轮产品修正规则替代旧版厘米覆盖、standard=minimum、接触光标绑定历史末点、静止500ms不缩小的要求。仅涉及橡皮尺寸/动作控制、必要生命周期和几何尺寸断点、诊断与测试；不重写输入采集、模型、中心轨迹或渲染器。
 
 ### 2. Signatures
-- 共享实现：`Draw3.SpeedEraser.h/.cpp`，命名空间 `Inkeys::Drawing::Draw3::SpeedEraser`；产品和 headless 编译同一源码。
-- `Config::StandardDiameterPx()` 明确令本轮 Dstandard=Dmin；Dmax、厘米/DIP覆盖范围保持不变。
-- `Controller` 保留 Reset/UpdatePosition/Advance/PauseForReconnect/ResumeFromReconnect/Diameter/NeedsAnimation/Configuration，增加可诊断的 `SweepEvidenceSeconds()`。
-- `MouseLifecycle` 提供 Configure/ObserveHover/BeginContact/EndContact/CancelVisual/Advance/LogicalDiameter/VisualDiameter/NeedsAnimation。它不拥有轨迹容器；EndContact 接收已接受直径值并重置动态控制器。
-- `WidthInterval` 与 ContactDiameter 继续使用已解析的像素范围/真实端点半径。Host/WindowController 的逐屏配置发布接口不变。
+- `SpeedEraser::EraserSizes`：minimumDiameterDip=16、standardDiameterDip=32、maximumDiameterDip=160、touchStartDiameterDip=16、fixedDiameterDip=50；全部是直径DIP。
+- `DiameterToCanvasPx(diameterDip, display)` 只读取DIP/px；`FixedDiameterPx(selectedDip,display)` 是无控制器的固定旁路。
+- `ResolveConfig(display,mode,touch,sizes)` 保留动作尺度、产生DPI转换缓存；`Controller::DiameterDip()` 为业务输出，`Diameter()` 为现有像素几何的适配出口。
+- `ContactSizeState` 分离effectiveDiameterPx、尺寸断点和旧几何；Update/MakeInterval/Accepted与产品共用。
+- `AppendEraserSizeAnchor` 在下一次实际几何提交前追加同位置、不同半径的点，不覆盖旧点。
+- `HostStartOptions::enableEraserDiagnostics` 默认false，`HostRuntimeSnapshot::eraser` 提供有界快照；隐藏注入门开启时自动启用。测试入口 `--draw3-eraser-hidden-test` 与旧全量 `--draw3-hidden-test` 分离。
 
 ### 3. Contracts
-- 只消费 `physicalSize.available`；不以原始EDID解析成功代替物理有效性，不从DPI反推厘米。大屏覆盖1..12cm/24..288DIP，笔电0.4..4cm/16..160DIP；圆形覆盖使用横纵密度几何平均。
-- 可靠直接Touch用cm/s，Mouse/未知直接性的Pen用DIP/s；多屏Touch映射不可靠时同样回退。动作与覆盖尺度独立。速度区间仍为直接2..60cm/s、大屏DIP40..900/s、笔电DIP30..700/s。
-- Host低频发布完整显示标尺；批次按原始Down/Up QPC判定重叠并锁存。逐点不重新查硬件，显示变化只影响后续批次。
-- 保留80ms真实路程窗、有界历史压缩和过期裁剪；不计算净位移，不以固定样本数量定义快慢。原始状态与帧预览分离，重复/倒退时间不构造速度，迟到的新真实输入仍可重放。
-- 持续证据按真实dt和归一化速率累积：160ms开始解锁、380ms满额、200ms衰减常数，速率强度区间0.20..0.75。超过80ms的孤立观测跨度不证明整个空档都在快擦。帧、静止包、预测和连接不能提供新证据或凭残留速度继续扩大。
-- 尺寸目标保留对数速度+smoothstep映射，实际尺寸对数跟随且无超调。小尺寸增长tau280ms/比例限速4每秒，较大时渐变到160ms/6每秒；不再有突然加速绕过阻力的通道。
-- 只有实际达到覆盖跨度50%且证据达到满额80%才进入清扫；尺寸降到跨度25%退出。保持与确认并行，从普通100/100ms按实际尺寸渐变到清扫650/680ms；缩小tau从160到300ms、比例限速从4到2.2每秒。较小目标持续存在时停止刷新保持，不能永久锁大。
-- 鼠标Hover只更新定位，不驱动Controller。每个独立左/右键Down通过BeginContact重新锚定，清空旧速度/证据/收尾画面。StartKind::Hover仍是初始化类别，不能据此禁掉已经Down的控制器。
-- 鼠标真实Up在接受终止点后立即Finish，重置逻辑与Controller，不参与启发式断触候选。收尾140ms只画非擦除轮廓，从已接受的实际直径缩到不高于标准值；没有鼠标移动也请求帧，终点停止唤醒。新Down立即截断收尾并小尺寸起步。
-- finish标记避免烘干时重复交还，anotherOwner来自实际活动runtime集合；并发最后一个所有者才收尾。失败Down也先保存当前快照以正确清理；取消、切换配置/模式或清屏取消旧收尾。动画按实际呈现QPC推进，不能因耗时帧重启其时钟。
-- Pen/倒转Pen保留既有Hover复制和250ms交还语义；Touch真实新Down仍最小起步，以实际位移范围0.1..0.3cm或2..6DIP解锁，累计抖动不解锁。真正重连冻结/恢复状态并重锚，缺失连接不计速度。
-- 倒转笔重连资格从真实 `DrawingTool::Eraser` 枚举取值，不再保留过期数值2。Mouse明确Up与此恢复路径分离。
-- Contact光标继续用已接受realPoint.r*2；收尾只改光标状态，不回写真实点、烘干或历史。FinalizeStoredStroke仍直接保存r*2，无固定20..200px夹取。
+- EDID、物理尺寸、设备种类或大屏/笔电模式不能改写EraserSizes。DPI只把DIP换成像素，普通等比为dip*dpi/96、半径再除2；非等比保留现有圆形像素几何，使用DIP密度几何平均。历史仍保存已生成像素宽度，不追溯换算。
+- 第一阶段physicalSize.available、原始EDID/业务有效性分离与活动拓扑判断保持。可靠直接Touch可用cm/s；鼠标/未知直接性的笔和不可靠映射用DIP/s。cm/px绝不能用于计算尺寸上下限。
+- 固定模式明确使用50DIP作为原50px在96DPI下的基准标定；不是把旧保存的像素字段解释成DIP。旧eraserSize未被Draw3消费，本轮不迁移或重解释它。固定旁路不走速度、证据、保持或EDID；其他画笔单位行为不变。
+- 清扫资格与尺寸曲线分开：笔电DIP进入800/退出600/大目标1900每秒；大屏DIP650/450/1700每秒；可靠Touch25/18/70cm/s。这些是集中可调原型参数，不是硬件定律。低于进入速度不能靠时间积满证据。
+- 保留80ms有效路程窗、160ms历史保留、有界相邻区间合并与过期裁剪、原始/帧状态分离。证据始终泄漏，100ms开始/240ms满额/350ms泄漏时间常数；滞回退出不使阈值以下的普通动作产生新证据。
+- 初始Mouse/Pen32DIP，Touch16DIP；普通真实Touch移动可按原位移证据过渡到32DIP，不要求清扫资格。长按/有界抖动不解锁。两种设备模式共用动态实现，只调动作参数。
+- 最后有效移动独立于最后包时间，噪声阈值为DIP动作0.75、cm动作0.02。约280ms静止后从当前尺寸按200ms时间常数/4每秒对数限速回落；Mouse/Pen目标为32DIP，未解锁Touch回16DIP。不能叠加旧清扫确认再开始静止回落。
+- `RuntimeSpeedEraserContactDiameter` 读取ContactSizeState，不读历史realPoints.back().r。完全无Move也按单调帧时钟推进并清理旧轮廓；稳定后复用输入唤醒等待，不继续请求渲染帧。既有WaitForWake的0是轮询，不能当作无限等待。
+- 静止尺寸变化只记待用断点；恢复实际模型点时追加同位尺寸锚点，新移动段从回落后的半径开始。旧大圆/历史点保留；零长度半径过渡在现有胶囊着色器中退化为已存在的大圆。持久化逐点保存r*2，支持原文件格式。
+- 迟到的断点之前输入不被伪装成之后的运动；真正awaitingReconnect继续冻结并重锚，合成连接不计速度。鼠标Hover无速度继承、新Down标准起步、Up立即结束逻辑及140ms视觉收尾、笔250ms交接、并发所有权和批次显示版本保持。
+- 诊断只在启用时每帧发布，包含输入/模式/动作单位/DPI、DIP属性、速度/证据/状态、控制器DIP、最终光标px、下一段半径px、最后有效移动年龄、实际新段足迹及最多三个断点坐标/宽度。不逐点同步记录日志。
 
 ### 4. Validation & Error Matrix
 | 场景 | 必需结果 |
 |---|---|
-| 高速Mouse Hover数秒后Down/静止 | Hover不超过标准，Down历史/证据为零，静止不长大 |
-| 50..120ms短快划及随后帧 | 不膨胀成清扫尺寸；测试上限为标准的1.25倍 |
-| 持续快擦 | 350ms开始可见扩张；800ms达到至少65%Dmax，1s达到至少85%Dmax |
-| 已建立的大清扫短停/折返 | 280ms及500ms测试下降不超过10% |
-| 持续慢擦 | 550ms仍保持，900ms有明显缩小；之后最终收敛并休眠 |
-| Mouse Up无任何新移动 | 逻辑立即重置，140ms视觉收尾不擦除且能自行结束 |
-| Up后20ms再次Down | 新光标/几何小尺寸，无旧速度/视觉残留 |
-| 新Down后旧Hover/Up、重复Up、Cancel | 不恢复旧意图，不抢占仍活动的其他所有者 |
-| 显示版本变化/并发接触 | 活动配置不混代，旧收尾不沿用新配置 |
-| 断触恢复 | 保持真正接触状态，不把桥接位移伪装为真实高速 |
+| EDID有效/失效/不同物理尺寸及设备模式 | 同一DIP属性完全相同，只影响动作解释 |
+| DPI96/144/192 | 像素变化后换回DIP仍为16/32/160/Touch16 |
+| 普通速度长擦20秒 | 标准范围，不因时间充满证据 |
+| 临界、中速、高速扫描 | 清扫资格显式，目标连续，无无条件贴最大 |
+| 真实无Move、小噪声、同位置包 | 相同有效移动时钟，当前工具可见回缩，历史点不改写 |
+| 恢复短Move | 新段实际足迹用小半径，无旧大半径插值拖尾 |
+| 标准后继续按住 | 无多余帧；Move/Up/控制请求立即唤醒 |
+| Up、快速再Down、Touch点擦、真重连 | 保持既有生命周期正确性 |
+| 固定直径42DIP旁路 | 不受速度、时间、EDID、模式影响 |
+| 尺寸锚点保存/读取/导入 | 同位旧/新宽度都保留，Undo/Redo可用 |
 
 ### 5. Good / Base / Bad Cases
-- Good：鼠标快速找位置仍小，按下持续局部往返后逐渐扩大；大范围短停保持，主动Up立即退出。
-- Base：物理覆盖无效时按DIP回退，标准/最大范围与上一阶段一致；Pen继承路径、Touch点擦和已存几何不变。
-- Bad：只夹小Hover画面却累计隐藏速度；把目标一度最大当作已建立清扫；用待用预览直径启动Up收尾；依靠重新移动才能结束动画。
+- Good：标准32DIP普通擦除，明确快擦后扩大；原地停住可见回32DIP，恢复小移动从小半径开始，历史大圆仍在。
+- Base：无EDID仍有完整DIP尺寸，只有动作解释回退；固定50DIP独立工作。
+- Bad：厘米生成像素再反称DIP；只缩光标却沿旧半径插值；修改历史末点半径；以不断投递静止包替代无事件测试；把全量隐藏套件失败写成通过。
 
 ### 6. Tests Required
-先在基线运行新增回归并确认失败，再实现新行为。测试使用产品MouseLifecycle和Controller，覆盖两设备模式、物理/DIP、96/144/192 DPI、60/125/240/1000Hz输入及30/60/144/240Hz帧；保留5%一致性和范围边界。测试共享所有权、原地抖动/长按、真实移动、重复/迟到时间、重连、标准语义、收尾无输入/被新Down打断/取消/配置变更、初始化失败和延迟呈现。完整InkeysRepo.sln Debug|ARM64与InkeysHeadlessTests.exe --no-window结果见当前任务validation-mouse-interaction.md。真实硬件体感与Win7运行不得由ARM64编译结果替代。
+Headless覆盖尺寸不依赖硬件、固定旁路、普通20秒/中间速度扫描、真正无包状态推进、噪声/同位置、Touch过渡、生命周期、60/125/240/1000Hz与不同帧率，保留5%一致性。完整InkeysRepo.sln Debug|ARM64后执行--no-window；专项隐藏测试在干净DComp/ULW Host验证最终光标、历史点不变、收敛停帧、实际新增足迹、Undo/Redo与生产UInk断点文件往返。全量旧隐藏套件结果单列，详见当前任务validation-dip-idle.md。
 
 ### 7. Wrong vs Correct
 ~~~cpp
-// Wrong：新鼠标Down继承定位速度，Up烘干后才把旧清扫交回Hover。
-runtime.speedEraserOc = mouseHoverController;
+// Wrong：历史不能为了表示当前工具而被改小。
+stroke.realPoints.back().r = currentRadius;
 
-// Correct：独立鼠标Down清空意图；Up只把实际端点直径交给非擦除收尾。
-mouse.BeginContact(runtime.speedEraserOc, x, y, rawSeconds, config);
-mouse.EndContact(runtime.speedEraserOc, acceptedDiameter, x, y, upSeconds, anotherOwner);
+// Correct：当前工具独立推进，真正恢复几何时才追加尺寸锚点。
+runtime.eraserSize.Update(controller.Diameter(), nowSeconds, stationary);
+AppendEraserSizeAnchor(stroke, interval);
 ~~~

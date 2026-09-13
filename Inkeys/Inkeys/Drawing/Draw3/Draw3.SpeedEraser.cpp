@@ -33,32 +33,47 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		}
 	}
 
-	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch) noexcept
+
+	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept
+	{
+		const double unitsPerPixel = std::sqrt(Positive(display.dipPerPixelX,1.0) *
+			Positive(display.dipPerPixelY,1.0));
+		return static_cast<float>(Positive(diameterDip,32.0) / unitsPerPixel);
+	}
+
+	float FixedDiameterPx(float selectedDiameterDip, const DisplayScale& display) noexcept
+	{
+		return DiameterToCanvasPx(selectedDiameterDip,display);
+	}
+
+	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch, const EraserSizes& sizes) noexcept
 	{
 		Config config;
 		config.display = display;
 		config.mode = mode;
-		const bool large = mode == DeviceMode::LargeScreen;
-		const double dipX = Positive(display.dipPerPixelX, 1.0);
-		const double dipY = Positive(display.dipPerPixelY, 1.0);
-		const bool physical = display.physicalAvailable &&
-			std::isfinite(display.cmPerPixelX) && display.cmPerPixelX > 0.0f &&
-			std::isfinite(display.cmPerPixelY) && display.cmPerPixelY > 0.0f;
-		const bool physicalMotion = physical && touch && display.directTouchMapped;
+		config.sizes = sizes;
+		config.sizes.minimumDiameterDip = static_cast<float>(Positive(sizes.minimumDiameterDip,16.0));
+		config.sizes.maximumDiameterDip = std::max(config.sizes.minimumDiameterDip,
+			static_cast<float>(Positive(sizes.maximumDiameterDip,160.0)));
+		config.sizes.standardDiameterDip = std::clamp(static_cast<float>(Positive(sizes.standardDiameterDip,32.0)),
+			config.sizes.minimumDiameterDip,config.sizes.maximumDiameterDip);
+		config.sizes.touchStartDiameterDip = std::clamp(static_cast<float>(Positive(sizes.touchStartDiameterDip,16.0)),
+			config.sizes.minimumDiameterDip,config.sizes.standardDiameterDip);
+		config.sizes.fixedDiameterDip = static_cast<float>(Positive(sizes.fixedDiameterDip,50.0));
+		// 尺寸只从DIP转换。EDID只决定动作单位，不接触任何尺寸配置。
+		config.minimumDiameterPx = DiameterToCanvasPx(config.sizes.minimumDiameterDip,display);
+		config.maximumDiameterPx = DiameterToCanvasPx(config.sizes.maximumDiameterDip,display);
+		const bool physicalMotion = touch && display.directTouchMapped && display.physicalAvailable &&
+			std::isfinite(display.cmPerPixelX) && display.cmPerPixelX > 0 &&
+			std::isfinite(display.cmPerPixelY) && display.cmPerPixelY > 0;
 		config.motionSource = physicalMotion ? ScaleSource::Physical : ScaleSource::Dip;
-		config.coverageSource = physical ? ScaleSource::Physical : ScaleSource::Dip;
-		config.motionPerPixelX = static_cast<float>(physicalMotion ? display.cmPerPixelX : dipX);
-		config.motionPerPixelY = static_cast<float>(physicalMotion ? display.cmPerPixelY : dipY);
-		// 圆形几何使用面积等价密度；运动距离仍分别换算 X/Y。
-		const double coverageUnitPerPixel = physical
-			? std::sqrt(static_cast<double>(display.cmPerPixelX) * display.cmPerPixelY)
-			: std::sqrt(dipX * dipY);
-		config.minimumDiameterPx = static_cast<float>(
-			(physical ? (large ? 1.0 : 0.4) : (large ? 24.0 : 16.0)) / coverageUnitPerPixel);
-		config.maximumDiameterPx = static_cast<float>(
-			(physical ? (large ? 12.0 : 4.0) : (large ? 288.0 : 160.0)) / coverageUnitPerPixel);
-		config.minimumSpeed = physicalMotion ? 2.0f : large ? 40.0f : 30.0f;
-		config.maximumSpeed = physicalMotion ? 60.0f : large ? 900.0f : 700.0f;
+		config.motionPerPixelX = static_cast<float>(physicalMotion ? display.cmPerPixelX : Positive(display.dipPerPixelX,1));
+		config.motionPerPixelY = static_cast<float>(physicalMotion ? display.cmPerPixelY : Positive(display.dipPerPixelY,1));
+		const bool large = mode == DeviceMode::LargeScreen;
+		config.sweepEnterSpeed = physicalMotion ? 25.0f : large ? 650.0f : 800.0f;
+		config.sweepExitSpeed = physicalMotion ? 18.0f : large ? 450.0f : 600.0f;
+		config.largeTargetSpeed = physicalMotion ? 70.0f : large ? 1700.0f : 1900.0f;
+		config.movementNoiseDistance = physicalMotion ? 0.02f : 0.75f;
 		config.touchUnlockStart = physicalMotion ? 0.1f : 2.0f;
 		config.touchUnlockEnd = physicalMotion ? 0.3f : 6.0f;
 		return config;
@@ -70,12 +85,14 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config_ = config;
 		config_.motionPerPixelX = static_cast<float>(Positive(config_.motionPerPixelX, 1.0));
 		config_.motionPerPixelY = static_cast<float>(Positive(config_.motionPerPixelY, 1.0));
-		config_.minimumDiameterPx = static_cast<float>(Positive(config_.minimumDiameterPx, 16.0));
-		config_.maximumDiameterPx = std::max(config_.minimumDiameterPx,
-			static_cast<float>(Positive(config_.maximumDiameterPx, 160.0)));
-		config_.minimumSpeed = static_cast<float>(Positive(config_.minimumSpeed, 30.0));
-		config_.maximumSpeed = std::max(config_.minimumSpeed * 1.01f,
-			static_cast<float>(Positive(config_.maximumSpeed, 700.0)));
+		const auto resolved=ResolveConfig(config.display,config.mode,kind==StartKind::Touch,config.sizes);
+		config_.sizes=resolved.sizes;
+		config_.minimumDiameterPx=resolved.minimumDiameterPx;
+		config_.maximumDiameterPx=resolved.maximumDiameterPx;
+		config_.sweepEnterSpeed=static_cast<float>(Positive(config.sweepEnterSpeed,resolved.sweepEnterSpeed));
+		config_.sweepExitSpeed=std::min(config_.sweepEnterSpeed*0.99f,static_cast<float>(Positive(config.sweepExitSpeed,resolved.sweepExitSpeed)));
+		config_.largeTargetSpeed=std::max(config_.sweepEnterSpeed+1.0f,static_cast<float>(Positive(config.largeTargetSpeed,resolved.largeTargetSpeed)));
+		config_.movementNoiseDistance=static_cast<float>(Positive(config.movementNoiseDistance,resolved.movementNoiseDistance));
 		config_.touchUnlockStart = static_cast<float>(Positive(config_.touchUnlockStart, 2.0));
 		config_.touchUnlockEnd = std::max(config_.touchUnlockStart * 1.01f,
 			static_cast<float>(Positive(config_.touchUnlockEnd, 6.0)));
@@ -101,20 +118,21 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config_.mouseReleaseSeconds = Positive(config_.mouseReleaseSeconds, defaults.mouseReleaseSeconds);
 		config_.settleLogTolerance = Positive(config_.settleLogTolerance, defaults.settleLogTolerance);
 		config_.evidenceFullSeconds = std::max(config_.evidenceStartSeconds + 0.001, config_.evidenceFullSeconds);
-		config_.evidenceSpeedStart = std::clamp(Positive(config_.evidenceSpeedStart, defaults.evidenceSpeedStart), 0.001, 0.98);
-		config_.evidenceSpeedFull = std::clamp(Positive(config_.evidenceSpeedFull, defaults.evidenceSpeedFull),
-			config_.evidenceSpeedStart + 0.001, 1.0);
+		config_.idleStartSeconds=Positive(config.idleStartSeconds,defaults.idleStartSeconds);
+		config_.idleTauSeconds=Positive(config.idleTauSeconds,defaults.idleTauSeconds);
+		config_.idleLogShrinkPerSecond=Positive(config.idleLogShrinkPerSecond,defaults.idleLogShrinkPerSecond);
 		config_.sweepEntryFraction = std::clamp(Positive(config_.sweepEntryFraction, defaults.sweepEntryFraction), 0.01, 1.0);
 		config_.sweepExitFraction = std::clamp(Positive(config_.sweepExitFraction, defaults.sweepExitFraction), 0.0, config_.sweepEntryFraction - 0.001);
 		config_.decreaseRatio = std::clamp(Positive(config_.decreaseRatio, 0.08), 0.001, 0.5);
 		segments_.fill({});
 		segmentCount_ = 0;
-		acceptedX_ = downX_ = std::isfinite(x) ? x : 0.0;
-		acceptedY_ = downY_ = std::isfinite(y) ? y : 0.0;
+		acceptedX_ = downX_ = movementX_ = std::isfinite(x) ? x : 0.0;
+		acceptedY_ = downY_ = movementY_ = std::isfinite(y) ? y : 0.0;
 		acceptedTime_ = std::isfinite(seconds) ? seconds : 0.0;
 		sampleState_ = {};
 		sampleState_.time = acceptedTime_;
-		sampleState_.logDiameter = sampleState_.logTarget = std::log(config_.minimumDiameterPx);
+		sampleState_.lastMovementTime=acceptedTime_;
+		sampleState_.logDiameter = sampleState_.logTarget = std::log(kind==StartKind::Touch ? config_.sizes.touchStartDiameterDip : config_.sizes.standardDiameterDip);
 		frameState_ = sampleState_;
 		pauseTime_ = 0.0;
 		touchStartup_ = kind == StartKind::Touch;
@@ -170,107 +188,112 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return distance / windowSeconds;
 	}
 
+
+	double Controller::IdleDiameterDip(const DynamicsState& state) const noexcept
+	{
+		return touchStartup_ && state.maximumDisplacement < config_.touchUnlockEnd
+			? config_.sizes.touchStartDiameterDip : config_.sizes.standardDiameterDip;
+	}
+
 	double Controller::TargetLogDiameter(double speed, double maximumDisplacement) const noexcept
 	{
-		double amount = SmoothStep(std::log(std::max(speed, static_cast<double>(config_.minimumSpeed)) /
-			config_.minimumSpeed) / std::log(config_.maximumSpeed / config_.minimumSpeed));
-		if (touchStartup_)
-			amount = std::min(amount, SmoothStep((maximumDisplacement - config_.touchUnlockStart) /
-				(config_.touchUnlockEnd - config_.touchUnlockStart)));
-		const double minimum = std::log(config_.minimumDiameterPx);
-		return minimum + amount * std::log(config_.maximumDiameterPx / config_.minimumDiameterPx);
+		const double ordinary = std::log(config_.sizes.standardDiameterDip);
+		if (touchStartup_ && maximumDisplacement < config_.touchUnlockEnd)
+		{
+			const double amount = SmoothStep((maximumDisplacement - config_.touchUnlockStart) /
+				(config_.touchUnlockEnd - config_.touchUnlockStart));
+			const double start = std::log(config_.sizes.touchStartDiameterDip);
+			return start + amount * (ordinary-start);
+		}
+		const double amount = SmoothStep((speed-config_.sweepEnterSpeed) /
+			(config_.largeTargetSpeed-config_.sweepEnterSpeed));
+		return ordinary + amount * std::log(config_.sizes.maximumDiameterDip / config_.sizes.standardDiameterDip);
 	}
+
 
 	void Controller::FollowTarget(DynamicsState& state, double endTime,
 		double target, double realMotionSpeed) const noexcept
 	{
-		const double startTime = state.time;
-		const double dt = endTime - startTime;
-		state.time = endTime;
-		state.logTarget = target;
-		const double minimum = std::log(config_.minimumDiameterPx);
-		const double logRange = std::log(config_.maximumDiameterPx / config_.minimumDiameterPx);
-		const double normalizedSpeed = logRange > 0.0
-			? (TargetLogDiameter(realMotionSpeed, config_.touchUnlockEnd) - minimum) / logRange : 0.0;
-		const double evidenceRate = SmoothStep((normalizedSpeed - config_.evidenceSpeedStart) /
-			(config_.evidenceSpeedFull - config_.evidenceSpeedStart));
-		if (realMotionSpeed > 0.0 && evidenceRate > 0.0)
-			state.sweepEvidence = std::min(config_.evidenceFullSeconds,
-				state.sweepEvidence + dt * evidenceRate);
-		else
-			state.sweepEvidence *= std::exp(-dt / config_.evidenceDecaySeconds);
-
-		const double diameterRange = config_.maximumDiameterPx - config_.minimumDiameterPx;
-		const double size = diameterRange > 0.0
-			? std::clamp((std::exp(state.logDiameter) - config_.minimumDiameterPx) / diameterRange, 0.0, 1.0)
-			: 0.0;
-		// 清扫状态必须同时有持续证据和真正达到的大尺寸，瞬时最大目标不算。
-		if (!state.sweeping && size >= config_.sweepEntryFraction &&
-			state.sweepEvidence >= config_.evidenceFullSeconds * 0.8)
-			state.sweeping = true;
-		if (state.sweeping && size <= config_.sweepExitFraction)
-			state.sweeping = false;
-		const double sweepResistance = state.sweeping ? SmoothStep((size - 0.2) / 0.6) : 0.0;
-		const auto blend = [](double from, double to, double amount)
-			{ return from + (to - from) * amount; };
-		const double difference = target - state.logDiameter;
-		const bool smaller = difference <= std::log(1.0 - config_.decreaseRatio) ||
-			target <= minimum + 1e-9;
-		if (!smaller && evidenceRate > 0.0)
-			state.holdUntil = endTime + blend(config_.holdSeconds,
-				config_.sweepHoldSeconds, sweepResistance);
-
-		if (difference >= 0.0)
+		const double startTime=state.time, dt=endTime-startTime;
+		state.time=endTime;
+		state.logTarget=target;
+		const double standard=std::log(config_.sizes.standardDiameterDip);
+		const double logRange=std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip);
+		if (realMotionSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
+		else if (realMotionSpeed > 0 && realMotionSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
+		const bool qualifies=state.sweepQualified && realMotionSpeed >= config_.sweepEnterSpeed;
+		const double strength=qualifies ? 0.4 + 0.6*SmoothStep((realMotionSpeed-config_.sweepEnterSpeed)/
+			(config_.largeTargetSpeed-config_.sweepEnterSpeed)) : 0.0;
+		const double leak=std::exp(-dt/config_.evidenceDecaySeconds);
+		// 始终泄漏；低于进入速度的普通动作，无论持续多久都不能充满证据。
+		state.sweepEvidence=std::min(config_.evidenceFullSeconds,
+			state.sweepEvidence*leak + strength*config_.evidenceDecaySeconds*(1-leak));
+		const double idleStart=state.lastMovementTime+config_.idleStartSeconds;
+		if (endTime >= idleStart)
 		{
-			state.decreasePending = state.shrinking = false;
-			const double permission = SmoothStep((state.sweepEvidence - config_.evidenceStartSeconds) /
-				(config_.evidenceFullSeconds - config_.evidenceStartSeconds));
-			const double permittedTarget = std::min(target, minimum + permission * logRange);
-			// 帧预览、静止包和残留速度都没有放大权限；证据门只限增长，不强制缩小。
-			if (realMotionSpeed <= 0.0 || evidenceRate <= 0.0 || permittedTarget <= state.logDiameter) return;
-			const double growthResistance = SmoothStep(size);
-			state.logDiameter = Follow(state.logDiameter, permittedTarget, dt,
-				blend(config_.growthTauSeconds, config_.largeGrowthTauSeconds, growthResistance),
-				blend(config_.maximumLogGrowthPerSecond, config_.largeLogGrowthPerSecond, growthResistance));
-			target = permittedTarget;
+			const double elapsed=endTime-std::max(startTime,idleStart);
+			target=std::log(IdleDiameterDip(state));
+			state.logTarget=target;
+			state.sweepQualified=false;
+			state.decreasePending=state.shrinking=false;
+			state.logDiameter=Follow(state.logDiameter,target,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
+			if (std::abs(state.logDiameter-target)<=config_.settleLogTolerance) state.logDiameter=target;
+			if (state.logDiameter<=standard+config_.settleLogTolerance) state.sweeping=false;
+			return;
 		}
-		else
+		const double range=config_.sizes.maximumDiameterDip-config_.sizes.standardDiameterDip;
+		const double size=range>0 ? std::clamp((std::exp(state.logDiameter)-config_.sizes.standardDiameterDip)/range,0.0,1.0) : 0;
+		if (!state.sweeping && size>=config_.sweepEntryFraction && state.sweepEvidence>=config_.evidenceFullSeconds*0.8)
+			state.sweeping=true;
+		if (state.sweeping && size<=config_.sweepExitFraction) state.sweeping=false;
+		const double resistance=state.sweeping ? SmoothStep((size-0.2)/0.6) : 0.0;
+		const auto blend=[](double a,double b,double t){return a+(b-a)*t;};
+		const double difference=target-state.logDiameter;
+		const bool smaller=difference<=std::log(1-config_.decreaseRatio) || target<=standard+1e-9;
+		if (!smaller && qualifies)
+			state.holdUntil=endTime+blend(config_.holdSeconds,config_.sweepHoldSeconds,resistance);
+		if (difference>=0)
 		{
-			if (!smaller && !state.shrinking)
+			state.decreasePending=state.shrinking=false;
+			double permitted=target;
+			if (target>standard)
 			{
-				state.decreasePending = false;
-				return;
+				const double permission=SmoothStep((state.sweepEvidence-config_.evidenceStartSeconds)/
+					(config_.evidenceFullSeconds-config_.evidenceStartSeconds));
+				permitted=std::min(target,standard+permission*logRange);
+				if (!qualifies) return;
 			}
-			if (!state.decreasePending)
-			{
-				state.decreasePending = true;
-				state.decreaseSince = startTime;
-			}
-			// 保持和慢擦确认同时计时；实际尺寸越大，释放阻力越强。
-			const double confirmation = blend(config_.decreaseConfirmationSeconds,
-				config_.sweepDecreaseConfirmationSeconds, sweepResistance);
-			const double releaseStart = std::max(state.holdUntil, state.decreaseSince + confirmation);
-			const double elapsed = endTime - std::max(startTime, releaseStart);
-			if (elapsed <= 0.0) return;
-			state.shrinking = true;
-			state.logDiameter = Follow(state.logDiameter, target, elapsed,
-				blend(config_.shrinkTauSeconds, config_.sweepShrinkTauSeconds, sweepResistance),
-				blend(config_.maximumLogShrinkPerSecond, config_.sweepLogShrinkPerSecond, sweepResistance));
+			else if (realMotionSpeed<=0 && state.maximumDisplacement<config_.touchUnlockEnd) return;
+			if (permitted<=state.logDiameter) return;
+			const double growth=SmoothStep(size);
+			state.logDiameter=Follow(state.logDiameter,permitted,dt,
+				blend(config_.growthTauSeconds,config_.largeGrowthTauSeconds,growth),
+				blend(config_.maximumLogGrowthPerSecond,config_.largeLogGrowthPerSecond,growth));
+			target=permitted;
 		}
-		if (std::abs(state.logDiameter - target) <= config_.settleLogTolerance)
+		else
 		{
-			state.logDiameter = target;
-			state.decreasePending = state.shrinking = false;
+			if (!smaller && !state.shrinking){state.decreasePending=false;return;}
+			if (!state.decreasePending){state.decreasePending=true;state.decreaseSince=startTime;}
+			const double confirmation=blend(config_.decreaseConfirmationSeconds,config_.sweepDecreaseConfirmationSeconds,resistance);
+			const double releaseStart=std::max(state.holdUntil,state.decreaseSince+confirmation);
+			const double elapsed=endTime-std::max(startTime,releaseStart);
+			if (elapsed<=0)return;
+			state.shrinking=true;
+			state.logDiameter=Follow(state.logDiameter,target,elapsed,
+				blend(config_.shrinkTauSeconds,config_.sweepShrinkTauSeconds,resistance),
+				blend(config_.maximumLogShrinkPerSecond,config_.sweepLogShrinkPerSecond,resistance));
 		}
+		if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance)
+		{state.logDiameter=target;state.decreasePending=state.shrinking=false;}
 	}
 
-
 	void Controller::AdvanceState(DynamicsState& state, double seconds,
-		const MotionSegment* incoming, double incomingX, double incomingY) const noexcept
+		const MotionSegment* incoming, double incomingX, double incomingY, bool effectiveMovement) const noexcept
 	{
 		const double retention = std::max(config_.historyWindowSeconds, config_.referenceWindowSeconds);
 		const double historyEnd = segmentCount_ ? segments_[segmentCount_ - 1].endTime + retention : state.time;
-		const double minimum = std::log(config_.minimumDiameterPx);
+		const double minimum = std::log(IdleDiameterDip(state));
 		while (state.time < seconds)
 		{
 			if (!incoming && state.time >= historyEnd &&
@@ -285,6 +308,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const double end = std::min(seconds, state.time + 0.004);
 			if (end <= state.time) { state.time = seconds; break; }
 			const double midpoint = (state.time + end) * 0.5;
+			if(effectiveMovement && incoming && incoming->endTime-incoming->startTime<=config_.maximumEvidenceIntervalSeconds)
+				state.lastMovementTime=end;
 			if (incoming)
 			{
 				const double fraction = std::clamp((end - incoming->startTime) /
@@ -297,7 +322,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			}
 			const double speed = midpoint < historyEnd ? MotionSpeed(midpoint, config_.historyWindowSeconds) : 0.0;
 			// 稀疏的一个跳点不能证明整个空档都在快擦；正常输入仍按真实 dt 累积。
-			const double observedSpeed = incoming && incoming->distance > 0.0 &&
+			state.speed=speed;
+			const double observedSpeed = effectiveMovement && incoming && incoming->distance > 0.0 &&
 				incoming->endTime - incoming->startTime <= config_.maximumEvidenceIntervalSeconds
 				? std::min(speed, incoming->distance / (incoming->endTime - incoming->startTime)) : 0.0;
 			FollowTarget(state, end, TargetLogDiameter(speed, state.maximumDisplacement), observedSpeed);
@@ -312,6 +338,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		const double duration = seconds - acceptedTime_;
 		const double distance = std::hypot((static_cast<double>(x) - acceptedX_) * config_.motionPerPixelX,
 			(static_cast<double>(y) - acceptedY_) * config_.motionPerPixelY);
+		const bool effectiveMovement=std::hypot((x-movementX_)*config_.motionPerPixelX,
+			(y-movementY_)*config_.motionPerPixelY)>=config_.movementNoiseDistance;
 		if (duration > 1.0)
 		{
 			// 缺失很久的输入不能证明连续运动；释放时间照常推进，但不猜测缺失轨迹。
@@ -321,8 +349,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		{
 			const MotionSegment segment{ acceptedTime_, seconds, distance };
 			AddSegment(segment);
-			AdvanceState(sampleState_, seconds, &segment, x, y);
+			AdvanceState(sampleState_, seconds, &segment, x, y, effectiveMovement);
 		}
+		if(effectiveMovement){movementX_=x;movementY_=y;sampleState_.lastMovementTime=seconds;}
 		acceptedX_ = x;
 		acceptedY_ = y;
 		acceptedTime_ = seconds;
@@ -358,9 +387,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			segments_[i].endTime += gap;
 		}
 		sampleState_.time += gap;
+		sampleState_.lastMovementTime += gap;
 		sampleState_.holdUntil += gap;
 		if (sampleState_.decreasePending) sampleState_.decreaseSince += gap;
 		// 平移落点基准以排除断点距离，避免缺失段解锁 Touch 起步限制。
+		movementX_ += static_cast<double>(x)-acceptedX_;
+		movementY_ += static_cast<double>(y)-acceptedY_;
 		downX_ += static_cast<double>(x) - acceptedX_;
 		downY_ += static_cast<double>(y) - acceptedY_;
 		acceptedX_ = x;
@@ -373,18 +405,28 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 	float Controller::Diameter() const noexcept
 	{
-		return initialized_ ? static_cast<float>(std::exp(frameState_.logDiameter)) : config_.minimumDiameterPx;
+		return DiameterToCanvasPx(DiameterDip(),config_.display);
+	}
+
+
+	float Controller::DiameterDip() const noexcept
+	{
+		return initialized_ ? static_cast<float>(std::exp(frameState_.logDiameter)) : config_.sizes.standardDiameterDip;
+	}
+	double Controller::SecondsSinceMovement(double seconds) const noexcept
+	{
+		return initialized_ ? std::max(0.0,(paused_?pauseTime_:seconds)-frameState_.lastMovementTime) : 0.0;
 	}
 
 	float Controller::TargetDiameter() const noexcept
 	{
-		return initialized_ ? static_cast<float>(std::exp(frameState_.logTarget)) : config_.minimumDiameterPx;
+		return DiameterToCanvasPx(initialized_ ? static_cast<float>(std::exp(frameState_.logTarget)) : config_.sizes.standardDiameterDip,config_.display);
 	}
 
 	bool Controller::NeedsAnimation(double seconds) const noexcept
 	{
 		if (!initialized_ || paused_ || !std::isfinite(seconds)) return false;
-		return std::abs(frameState_.logDiameter - std::log(config_.minimumDiameterPx)) > 1e-9 ||
+		return std::abs(frameState_.logDiameter - std::log(IdleDiameterDip(frameState_))) > 1e-9 ||
 			(segmentCount_ && seconds < segments_[segmentCount_ - 1].endTime + config_.referenceWindowSeconds);
 	}
 
@@ -482,6 +524,38 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		return releasing_ && !contactOwned_ && std::isfinite(seconds) &&
 			seconds < releaseSeconds_ + Positive(config_.mouseReleaseSeconds, 0.140);
+	}
+
+
+	void ContactSizeState::Reset(float diameterPx,double seconds) noexcept
+	{
+		effectiveDiameterPx=resumeDiameterPx=diameterPx;
+		effectiveTimeSeconds=seconds;
+		breakTimeSeconds=seconds;
+		breakPending=false;
+	}
+	void ContactSizeState::Update(float diameterPx,double seconds,bool stationary) noexcept
+	{
+		if(!std::isfinite(diameterPx)||diameterPx<=0||!std::isfinite(seconds)||seconds<effectiveTimeSeconds)return;
+		if(stationary && std::abs(diameterPx-effectiveDiameterPx)>0.001f)
+		{
+			if(!breakPending)breakTimeSeconds=seconds;
+			breakPending=true;
+			resumeDiameterPx=diameterPx;
+		}
+		effectiveDiameterPx=diameterPx;
+		effectiveTimeSeconds=seconds;
+	}
+	WidthInterval ContactSizeState::MakeInterval(double fromModelTime,double toModelTime,
+		float oldDiameter,float newDiameter,double rawSeconds,const Config& config) const noexcept
+	{
+		const bool reanchor=breakPending && rawSeconds>=breakTimeSeconds;
+		return {fromModelTime,toModelTime,reanchor?resumeDiameterPx:oldDiameter,newDiameter,
+			config.minimumDiameterPx,config.maximumDiameterPx,reanchor};
+	}
+	void ContactSizeState::Accepted(const WidthInterval& interval) noexcept
+	{
+		if(interval.reanchor)breakPending=false;
 	}
 
 	float InterpolateDiameter(const WidthInterval& interval, double seconds) noexcept
