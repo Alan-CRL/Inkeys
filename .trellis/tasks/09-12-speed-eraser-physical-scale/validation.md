@@ -1,3 +1,5 @@
+> 历史记录：以下为c433b6f5基础版本验收；当前鼠标交互规则及结果见 [validation-mouse-interaction.md](validation-mouse-interaction.md)。
+
 # Validation: Draw3 speed eraser
 
 ## Recovery and ownership

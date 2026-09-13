@@ -126,8 +126,27 @@ int RunSpeedEraserTests()
 	near(rotatedConfig.maximumDiameterPx, physicalTouch.maximumDiameterPx, 0.0001, "rotation retains coverage area");
 	near(rotatedConfig.motionPerPixelX, physicalTouch.motionPerPixelY, 0.000001, "rotation swaps motion axes");
 
+
+	// 新交互的回归用例先在旧实现上运行：短促动作不膨胀，大尺寸不因短停塌缩。
+	const auto interactionConfig = ResolveConfig({}, DeviceMode::Laptop, false);
+	const double interactionSpeed = interactionConfig.maximumSpeed * 1.25;
+	for (const double burstSeconds : { 0.05, 0.12 })
+	{
+		const auto burst = Replay(interactionConfig,
+			{{0,0},{burstSeconds,interactionSpeed * burstSeconds},{0.6,interactionSpeed * burstSeconds}},
+			125,60,{burstSeconds,burstSeconds + 0.08,0.5});
+		for (const float diameter : burst)
+			expect(diameter <= interactionConfig.minimumDiameterPx * 1.25f,
+				"short fast swipe and residual frames must not create sweep size");
+	}
+	const auto strongHold = Replay(interactionConfig,
+		{{0,0},{1,interactionSpeed},{2.0,interactionSpeed}},125,60,{1.0,1.28,1.55});
+	expect(strongHold[1] >= strongHold[0] * 0.9f,
+		"established large sweep survives 280ms pause");
+	expect(strongHold[2] >= strongHold[0] * 0.9f,
+		"established large sweep waits for sustained fine intent");
 	double worstRateError = 0.0;
-	double worstIdleResidual = 0.0;
+	double worstPauseDrop = 0.0;
 	for (const auto mode : { DeviceMode::LargeScreen, DeviceMode::Laptop })
 	{
 		for (const bool usePhysical : { false, true })
@@ -141,11 +160,12 @@ int RunSpeedEraserTests()
 				const std::vector<Knot> stop{ {0,0}, {1,speed}, {4,speed} };
 				const std::vector<double> checkpoints{ 0.25, 0.5, 1.0, 1.12, 1.5, 2.3, 4.0 };
 				const auto reference = Replay(config, stop, 1000, 240, checkpoints);
-				expect(reference[2] >= config.maximumDiameterPx * 0.97f, "fast local motion reaches sweep size");
+				expect(reference[2] >= config.maximumDiameterPx * 0.85f, "fast local motion reaches sweep size");
 				expect(reference[3] >= reference[2] * 0.9f, "120ms pause preserves sweep size");
-				worstIdleResidual = std::max(worstIdleResidual,
-					static_cast<double>(reference[5] / config.minimumDiameterPx - 1.0f));
-				expect(reference[5] <= config.minimumDiameterPx * 1.13f, "1.3s idle returns near minimum");
+				worstPauseDrop = std::max(worstPauseDrop,
+					static_cast<double>(1.0f - reference[4] / reference[2]));
+				expect(reference[4] >= reference[2] * 0.9f, "large sweep survives 500ms pause");
+				expect(reference[5] <= reference[2] * 0.7f, "sustained idle eventually releases a large sweep");
 				near(reference[6], config.minimumDiameterPx, 0.001, "idle finally settles exactly");
 				for (const int inputHz : { 60, 125, 240, 1000 })
 				{
@@ -165,7 +185,7 @@ int RunSpeedEraserTests()
 				const std::vector<Knot> fine{ {0,0}, {1,speed}, {4,speed + 1.5 * config.minimumSpeed} };
 				const auto fineResult = Replay(config, fine, 125, 60, {1.0, 1.12, 2.3});
 				expect(fineResult[1] >= fineResult[0] * 0.9f &&
-					fineResult[2] <= config.minimumDiameterPx * 1.13f, "sweep converts to sustained fine erasing");
+					fineResult[2] <= fineResult[0] * 0.7f, "sweep converts to sustained fine erasing");
 				const std::vector<Knot> turn{ {0,0}, {1,speed}, {1.12,speed}, {1.62,speed * 0.5} };
 				const auto turnResult = Replay(config, turn, 125, 60, {1,1.12,1.2,1.6});
 				expect(turnResult[1] >= turnResult[0] * 0.9f && turnResult[2] >= turnResult[0] * 0.9f,
@@ -174,20 +194,26 @@ int RunSpeedEraserTests()
 				for (int i = 1; i <= 20; ++i)
 					sweep.push_back({ i * 0.12, i % 2 ? speed * 0.12 : 0.0 });
 				const auto sweepResult = Replay(config, sweep, 125, 60, {0.8,1.0,1.5,2.0,2.4});
-				for (const float diameter : sweepResult)
-					expect(diameter >= config.maximumDiameterPx * 0.9f && diameter <= config.maximumDiameterPx + 0.001f,
+				for (size_t i = 0; i < sweepResult.size(); ++i)
+					expect(sweepResult[i] >= config.maximumDiameterPx * (i == 0 ? 0.65f : i == 1 ? 0.85f : 0.9f) && sweepResult[i] <= config.maximumDiameterPx + 0.001f,
 						"continuous local back and forth stays large without accumulating beyond maximum");
 			}
 		}
 	}
 
 	const Config laptop = ResolveConfig({}, DeviceMode::Laptop, false);
-	const std::vector<Knot> acceleration{ {0,0}, {1,60}, {2,1060} };
-	Config noBoost = laptop;
-	noBoost.acceleratedGrowthTauSeconds = noBoost.growthTauSeconds;
-	const auto accelerated = Replay(laptop, acceleration, 125, 60, {1.0,1.45,2.0});
-	const auto normal = Replay(noBoost, acceleration, 125, 60, {1.0,1.45,2.0});
-	expect(accelerated[1] > normal[1], "scalar speed increase permits quicker growth");
+	const std::vector<Knot> acceleration{ {0,0}, {1,60}, {1.12,180}, {1.6,180} };
+	for (const float d : Replay(laptop,acceleration,125,60,{1.05,1.12,1.3,1.6}))
+		expect(d <= laptop.StandardDiameterPx()*1.25f,"isolated acceleration cannot bypass conservative growth");
+	const auto onset = Replay(laptop,{{0,0},{1.2,1050}},125,60,{0.12,0.35,0.8,1.0});
+	expect(onset[0] <= laptop.StandardDiameterPx()*1.25f,"120ms high speed has not established a sweep");
+	expect(onset[1] >= laptop.StandardDiameterPx()*1.25f && onset[1] < laptop.maximumDiameterPx*0.45f,
+		"sustained fast action starts controlled expansion by 350ms");
+	expect(onset[2] >= laptop.maximumDiameterPx*0.65f && onset[3] >= laptop.maximumDiameterPx*0.85f,
+		"sustained fast action reaches visibly large coverage within one second");
+	const auto slowRelease = Replay(laptop,{{0,0},{1,875},{3,895}},125,60,{1.0,1.55,1.9,3.0});
+	expect(slowRelease[1] >= slowRelease[0]*0.9f && slowRelease[2] <= slowRelease[0]*0.9f,
+		"large sweep confirms fine intent in the 600 to 1000ms range");
 	std::vector<Knot> noise{ {0,0} };
 	double x = 0.0;
 	for (int i = 1; i <= 100; ++i)
@@ -217,14 +243,14 @@ int RunSpeedEraserTests()
 		}
 		touch.Reset(0,0,0,StartKind::Touch,config);
 		FeedLine(touch, config.maximumSpeed * 1.5, 1.0, 125, config);
-		expect(touch.Diameter() > config.maximumDiameterPx * 0.97f, "observed touch movement unlocks growth");
+		expect(touch.Diameter() > config.maximumDiameterPx * 0.85f, "observed touch movement unlocks growth");
 	}
 
 	Controller hover;
 	hover.Reset(0,0,0,StartKind::Hover,laptop);
 	FeedLine(hover, 200, 1.0);
 	Controller contact = hover;
-	near(contact.Diameter(), hover.Diameter(), 0.0001, "hover down copies the whole dynamic state");
+	near(contact.Diameter(), hover.Diameter(), 0.0001, "non-mouse pen hover still hands off its established state");
 	contact.PauseForReconnect(1.0);
 	const float pausedDiameter = contact.Diameter();
 	near(contact.Advance(100.0), pausedDiameter, 0.0001, "reconnect wait freezes dynamics");
@@ -272,12 +298,128 @@ int RunSpeedEraserTests()
 	expect(!ContactBatchContains(100,500,550,551), "expired reconnect releases batch");
 	expect(!ContactBatchContains(100,500,0,99), "older down cannot join newer contact batch");
 
+
+	// 鼠标生命周期直接调用产品的同一接口；Hover 不拥有可积累速度的控制器。
+	for (const auto mode : { DeviceMode::LargeScreen, DeviceMode::Laptop })
+	for (const bool validPhysical : { false, true })
+	for (const int dpi : {96,144,192})
+	{
+		auto display = validPhysical ? physical : DisplayScale{};
+		display.dipPerPixelX = display.dipPerPixelY = 96.0f / dpi;
+		const auto mouseConfig = ResolveConfig(display,mode,false);
+		const float standard = mouseConfig.StandardDiameterPx();
+		near(standard,mouseConfig.minimumDiameterPx,0.0001,"standard deliberately retains original starting size");
+		expect(standard <= mouseConfig.maximumDiameterPx,"standard remains inside existing coverage range");
+		MouseLifecycle mouse;
+		mouse.Configure(mouseConfig);
+		for (int i=0;i<=400;++i)
+		{
+			mouse.ObserveHover(static_cast<float>(i*50),static_cast<float>(i%2*500),i*0.008);
+			near(mouse.Advance(i*0.008),standard,0.001,"fast locating hover never expands");
+		}
+		Controller mouseContact;
+		mouse.BeginContact(mouseContact,20000,0,4.0,mouseConfig);
+		near(mouseContact.Diameter(),standard,0.001,"mouse down ignores hover speed and starts small");
+		near(mouseContact.SweepEvidenceSeconds(),0,0.000001,"mouse down has no inherited sweep evidence");
+		mouseContact.UpdatePosition(20000,0,4.5);
+		near(mouseContact.Advance(4.6),standard,0.001,"stationary mouse down cannot grow from hover history");
+		const float actualEndDiameter = mouseConfig.maximumDiameterPx * 0.8f;
+		mouse.EndContact(mouseContact,actualEndDiameter,20000,0,5.0,false);
+		near(mouse.LogicalDiameter(),standard,0.001,"accepted mouse up resets logic immediately");
+		near(mouseContact.Diameter(),standard,0.001,"accepted mouse up resets actual controller intent immediately");
+		near(mouse.VisualDiameter(),actualEndDiameter,0.001,"release starts from accepted geometry not pending target");
+		float lastVisual = actualEndDiameter;
+		for (int frame=0;frame<=30;++frame)
+		{
+			const float shown = mouse.Advance(5.0 + frame*0.008);
+			expect(shown <= lastVisual + 0.001f && shown >= standard - 0.001f,
+				"up-only visual contracts monotonically without extra input or overshoot");
+			lastVisual = shown;
+		}
+		near(mouse.VisualDiameter(),standard,0.001,"release finishes without a new mouse move");
+		expect(!mouse.NeedsAnimation(5.24),"completed release stops requesting animation");
+		mouse.BeginContact(mouseContact,20000,0,6.0,mouseConfig);
+		mouse.EndContact(mouseContact,actualEndDiameter,20000,0,6.5,false);
+		mouse.Advance(6.51);
+		mouse.BeginContact(mouseContact,20100,0,6.52,mouseConfig);
+		near(mouse.VisualDiameter(),standard,0.001,"new down interrupts release visual at safe size");
+		near(mouseContact.Diameter(),standard,0.001,"new down during release uses same safe erasing size");
+		mouse.ObserveHover(90000,0,6.51);
+		near(mouseContact.SweepEvidenceSeconds(),0,0.000001,"late hover cannot seed new contact history");
+		mouseContact.UpdatePosition(20100,0,6.7);
+		near(mouseContact.Diameter(),standard,0.001,"rapid independent second down does not resurrect sweep");
+		mouse.EndContact(mouseContact,standard*0.75f,20100,0,7.0,false);
+		near(mouse.Advance(7.1),standard*0.75f,0.001,"release below standard does not enlarge upward");
+		mouse.BeginContact(mouseContact,20100,0,8.0,mouseConfig);
+		mouse.EndContact(mouseContact,actualEndDiameter,20100,0,8.5,false,true);
+		expect(!mouse.ContactOwned() && !mouse.NeedsAnimation(8.5),"cancel releases ownership without a closing eraser");
+		mouse.BeginContact(mouseContact,0,0,9.0,mouseConfig);
+		mouse.EndContact(mouseContact,actualEndDiameter,0,0,9.5,false);
+		auto changedMouseConfig = mouseConfig;
+		++changedMouseConfig.display.revision;
+		mouse.Configure(changedMouseConfig);
+		expect(!mouse.NeedsAnimation(9.51),"configuration change invalidates old-scale closing visual");
+		mouse.BeginContact(mouseContact,0,0,10.0,mouseConfig);
+		mouse.EndContact(mouseContact,standard,0,0,10.0,false,true);
+		expect(!mouse.ContactOwned(),"failed down initialization releases its current contact owner");
+		mouse.BeginContact(mouseContact,0,0,11.0,mouseConfig);
+		mouse.EndContact(mouseContact,actualEndDiameter,0,0,11.5,false);
+		near(mouse.Advance(12.0),standard,0.001,"late presentation does not restart or prolong the release animation");
+	}
+
+	MouseLifecycle sharedMouse;
+	sharedMouse.Configure(laptop);
+	Controller leftMouse, rightMouse;
+	sharedMouse.BeginContact(leftMouse,0,0,0.0,laptop);
+	sharedMouse.BeginContact(rightMouse,1,0,0.01,laptop);
+	sharedMouse.EndContact(leftMouse,80,0,0,1.0,true);
+	expect(sharedMouse.ContactOwned() && !sharedMouse.NeedsAnimation(1.0),
+		"one mouse button up does not steal another contact owner");
+	sharedMouse.EndContact(rightMouse,60,1,0,1.01,false);
+	near(sharedMouse.VisualDiameter(),60,0.001,"final shared mouse owner supplies accepted closing size");
+	const float sharedMid = sharedMouse.Advance(1.05);
+	sharedMouse.EndContact(rightMouse,160,1,0,1.01,false);
+	near(sharedMouse.VisualDiameter(),sharedMid,0.001,"duplicate up does not restart closing animation");
+	sharedMouse.BeginContact(rightMouse,5,0,1.06,laptop);
+	sharedMouse.EndContact(leftMouse,160,0,0,1.0,true);
+	expect(sharedMouse.ContactOwned(),"late old up cannot retire new independent down");
+	near(rightMouse.Diameter(),laptop.StandardDiameterPx(),0.001,"late old up cannot feed new mouse diameter");
+
+
+	MouseLifecycle reorderedMouse;
+	Controller oldContact, newContact;
+	reorderedMouse.Configure(laptop);
+	reorderedMouse.BeginContact(oldContact,0,0,0.0,laptop);
+	reorderedMouse.BeginContact(newContact,1,0,0.1,laptop);
+	reorderedMouse.EndContact(newContact,80,1,0,0.8,true);
+	auto reorderedConfig = laptop;
+	++reorderedConfig.display.revision;
+	reorderedMouse.Configure(reorderedConfig);
+	reorderedMouse.EndContact(oldContact,80,0,0,0.05,false);
+	expect(!reorderedMouse.ContactOwned() && !reorderedMouse.NeedsAnimation(0.9),
+		"late old up after configuration change releases the final owner without reviving old visuals");
+	// 中速连续折返应停在对应中间值，而非按折返次数无条件靠近最大值。
+	const double mediumSpeed = std::sqrt(laptop.minimumSpeed * laptop.maximumSpeed);
+	std::vector<Knot> moderateSweep{{0,0}};
+	for (int i=1;i<=30;++i) moderateSweep.push_back({i*0.12,i%2 ? mediumSpeed*0.12 : 0.0});
+	const auto moderate = Replay(laptop,moderateSweep,125,60,{2.0,3.0,3.6});
+	const double middleDiameter = std::sqrt(laptop.minimumDiameterPx*laptop.maximumDiameterPx);
+	for (const float d : moderate)
+		expect(d >= middleDiameter*0.85 && d <= middleDiameter*1.02,
+			"repeated moderate reversals remain controllable at middle size");
+	Controller loneObservation;
+	loneObservation.Reset(0,0,0,StartKind::Hover,laptop);
+	loneObservation.UpdatePosition(1000,0,0.5);
+	expect(loneObservation.SweepEvidenceSeconds() == 0.0 &&
+		loneObservation.Diameter() <= laptop.StandardDiameterPx()*1.001f,
+		"single observation after missing interval cannot prove sustained fast activity");
+
 	const WidthInterval interval{ 0,1,50,600,8,800 };
 	near(InterpolateDiameter(interval,0.5),325,0.001,"scaled width interpolation exceeds old 200px maximum");
 	near(InterpolateDiameter({0,1,4,8,4,8},0),4,0.001,"scaled minimum may be below old 20px limit");
 	near(ContactDiameter(162.5f,16.0f),325,0.001,"contact cursor uses accepted geometric endpoint");
 	near(ContactDiameter(0,24),24,0.001,"initial cursor uses batch minimum");
 	std::cout << "[SpeedEraser] worst sample/frame deviation=" << worstRateError * 100.0
-		<< "% idle residual at 1.3s=" << worstIdleResidual * 100.0 << "% failures=" << failures << '\n';
+		<< "% large-sweep drop at 500ms=" << worstPauseDrop * 100.0 << "% failures=" << failures << '\n';
 	return failures;
 }

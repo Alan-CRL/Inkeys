@@ -568,6 +568,7 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraser::DisplayScale speedEraserDisplayScale = {};
 			SpeedEraser::DeviceMode speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 			SpeedEraserOcController speedEraserOc;
+			bool mouseSpeedEraserFinished = false;
 			double speedEraserModelTime = 0.0;
 			float speedEraserModelDiameter = SpeedEraser::Config{}.minimumDiameterPx;
 			RECT visibleDirty = {};
@@ -631,6 +632,14 @@ namespace Inkeys::Drawing::Draw3
 			// 被过滤或被 modeler 拒绝的输入、纯帧动画都不能提前改变接触光标宽度。
 			return SpeedEraser::ContactDiameter(acceptedRadius,
 				runtime.speedEraserOc.Configuration().minimumDiameterPx);
+		}
+
+
+		bool IsMouseSpeedEraser(const RuntimeStroke& runtime) noexcept
+		{
+			return runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser &&
+				(runtime.metricDeviceType == InputDeviceType::MouseLeft ||
+					runtime.metricDeviceType == InputDeviceType::MouseRight);
 		}
 
 		struct SpeedEraserHoverLane
@@ -1842,7 +1851,8 @@ namespace Inkeys::Drawing::Draw3
 			if (observer_.drawingActivityChanged)
 				observer_.drawingActivityChanged(observer_.context, activeNow);
 		};
-		SpeedEraserHoverLane mouseEraserHoverLane;
+		SpeedEraser::MouseLifecycle mouseSpeedEraser;
+		double mouseVisualSeconds = 0.0;
 		SpeedEraserHoverLane penEraserHoverLane;
 		SpeedEraserHoverLane invertedPenEraserHoverLane;
 		uint32_t observedEraserWidthModeRevision =
@@ -2003,9 +2013,6 @@ namespace Inkeys::Drawing::Draw3
 		auto speedEraserHoverLaneFor = [&](InputDeviceType deviceType,
 			bool inverted) -> SpeedEraserHoverLane*
 		{
-			if (deviceType == InputDeviceType::MouseLeft ||
-				deviceType == InputDeviceType::MouseRight)
-				return &mouseEraserHoverLane;
 			if (deviceType == InputDeviceType::Pen)
 				return inverted ? &invertedPenEraserHoverLane : &penEraserHoverLane;
 			return nullptr;
@@ -2020,7 +2027,7 @@ namespace Inkeys::Drawing::Draw3
 				displayScale != observedSpeedEraserDisplayScale ||
 				deviceMode != observedSpeedEraserDeviceMode)
 			{
-				mouseEraserHoverLane.Invalidate();
+				mouseSpeedEraser.CancelVisual();
 				penEraserHoverLane.Invalidate();
 				invertedPenEraserHoverLane.Invalidate();
 				observedEraserWidthModeRevision = revision;
@@ -2046,6 +2053,15 @@ namespace Inkeys::Drawing::Draw3
 			const bool touch = runtime.metricDeviceType == InputDeviceType::Touch;
 			const auto config = SpeedEraser::ResolveConfig(runtime.speedEraserDisplayScale,
 				runtime.speedEraserDeviceMode, touch);
+			if (runtime.metricDeviceType == InputDeviceType::MouseLeft ||
+				runtime.metricDeviceType == InputDeviceType::MouseRight)
+			{
+				runtime.mouseSpeedEraserFinished = false;
+				runtime.lastInputSnapshot = down; // 初始化失败时也必须按本次 Down 清理所有权。
+				mouseSpeedEraser.BeginContact(runtime.speedEraserOc, down.position.x,
+					down.position.y, downSeconds, config);
+				return;
+			}
 			if (touch)
 			{
 				runtime.speedEraserOc.Reset(down.position.x, down.position.y,
@@ -2086,9 +2102,38 @@ namespace Inkeys::Drawing::Draw3
 			}
 		};
 
+
+		auto finishMouseSpeedEraser = [&](RuntimeStroke& runtime)
+		{
+			if (!IsMouseSpeedEraser(runtime) || runtime.mouseSpeedEraserFinished) return;
+			runtime.mouseSpeedEraserFinished = true;
+			const bool anotherOwner = std::any_of(active.begin(), active.end(),
+				[&](const RuntimeStroke* other)
+				{
+					return other && other != &runtime && !other->ended &&
+						IsMouseSpeedEraser(*other) && !other->mouseSpeedEraserFinished;
+				});
+			const auto hoverConfig = SpeedEraser::ResolveConfig(
+				window_.SpeedEraserDisplayScaleSnapshot(),
+				window_.SpeedEraserDeviceModeSnapshot(), false);
+			mouseSpeedEraser.Configure(hoverConfig);
+			const bool cancelled = runtime.cancelled || window_.ActiveTool() != DrawingTool::Eraser ||
+				window_.ActiveEraserWidthMode() != EraserWidthMode::Speed ||
+				runtime.speedEraserOc.Configuration() != hoverConfig;
+			const auto& last = runtime.lastInputSnapshot;
+			mouseSpeedEraser.EndContact(runtime.speedEraserOc,
+				RuntimeSpeedEraserContactDiameter(runtime), last.position.x, last.position.y,
+				AbsoluteQpcSeconds(last.qpc, qpcFrequency), anotherOwner, cancelled);
+		};
+
 		auto handBackSpeedEraserController = [&](RuntimeStroke& runtime)
 		{
 			if (runtime.stroke.widthMode != StrokeWidthMode::SpeedEraser) return;
+			if (IsMouseSpeedEraser(runtime))
+			{
+				finishMouseSpeedEraser(runtime); // Up 已处理则为 no-op，不能在烘干后回流旧状态。
+				return;
+			}
 			SpeedEraserHoverLane* lane = speedEraserHoverLaneFor(
 				runtime.metricDeviceType, runtime.invertedCursor);
 			if (!lane) return; // Touch 每个 contact 独占 OC，不进入 Hover lane。
@@ -3111,7 +3156,7 @@ namespace Inkeys::Drawing::Draw3
 				if (terminal && runtime.metricDeviceType == InputDeviceType::Touch &&
 					runtime.touchGestureKey != 0)
 					touchGesture.OnTouchUp(runtime.touchGestureKey);
-				const bool deferUp = snapshot.phase == ContactPhase::Up &&
+				const bool deferUp = snapshot.phase == ContactPhase::Up && !IsMouseSpeedEraser(runtime) &&
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
 					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
@@ -3261,6 +3306,7 @@ namespace Inkeys::Drawing::Draw3
 					runtime.ended = true;
 					runtime.cancelled = snapshot.phase == ContactPhase::Cancelled;
 				}
+				if (terminal) finishMouseSpeedEraser(runtime); // 接受 Up/Cancel 即退出，不等烘干或 Hover。
 				return positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
 			};
 
@@ -3763,8 +3809,19 @@ namespace Inkeys::Drawing::Draw3
 				return diameterChanged || lane.controller.NeedsAnimation(nowSeconds);
 			};
 
-			const bool mouseAnimating = updateLane(
-				mouseEraserHoverLane, mouseSample, mouseEraser);
+
+			mouseSpeedEraser.Configure(hoverConfig);
+			const float mouseBefore = mouseSpeedEraser.VisualDiameter();
+			if (!mouseEraser || window_.SelectionMode())
+				mouseSpeedEraser.CancelVisual();
+			else if (mouseSample.valid && !mouseSample.inContact)
+				mouseSpeedEraser.ObserveHover(mouseSample.x, mouseSample.y,
+					AbsoluteQpcSeconds(mouseSample.qpc, qpcFrequency));
+			mouseSpeedEraser.Advance(nowSeconds);
+			const bool mouseAnimating = mouseEraser &&
+				(std::abs(mouseBefore - mouseSpeedEraser.VisualDiameter()) > 0.001f ||
+					mouseSpeedEraser.NeedsAnimation(nowSeconds));
+
 			const bool penAnimating = updateLane(
 				penEraserHoverLane, penSample, normalPenEraser);
 			const bool invertedPenAnimating = updateLane(
@@ -3784,6 +3841,29 @@ namespace Inkeys::Drawing::Draw3
 			if (window_.TouchPanActive() || suppressPenUntilRelease ||
 				window_.PenContactSuppressedForTouchPan())
 				penSample.valid = false;
+
+			if (mouseSpeedEraser.NeedsAnimation(mouseVisualSeconds))
+			{
+				LARGE_INTEGER visualQpc{};
+				QueryPerformanceCounter(&visualQpc);
+				mouseVisualSeconds = AbsoluteQpcSeconds(visualQpc.QuadPart, qpcFrequency);
+				mouseSpeedEraser.Advance(mouseVisualSeconds); // 耗时帧也按实际呈现时刻收敛。
+			}
+			// Up 后即使鼠标 mailbox 还停在 Contact，也只绘制无擦除的收尾轮廓。
+			if (window_.ActiveEraserWidthMode() == EraserWidthMode::Speed &&
+				window_.ActiveTool() == DrawingTool::Eraser && !mouseSpeedEraser.ContactOwned())
+			{
+				if (!mouseSample.valid && mouseSpeedEraser.HasPosition() &&
+					mouseSpeedEraser.NeedsAnimation(mouseVisualSeconds))
+				{
+					mouseSample.x = mouseSpeedEraser.X();
+					mouseSample.y = mouseSpeedEraser.Y();
+					mouseSample.valid = true;
+					mouseSample.inContact = false;
+				}
+				if (AbsoluteQpcSeconds(mouseSample.qpc, qpcFrequency) <= mouseSpeedEraser.LastEventSeconds())
+					mouseSample.inContact = false;
+			}
 			const DrawingTool cursorTool = window_.EffectiveDrawingCursorTool();
 			const bool mouseUsesSystemCursor = window_.GetMouseUsesSystemCursor();
 			const DrawingCursorPointerAuthority cursorAuthority = window_.CursorOwner();
@@ -3844,11 +3924,12 @@ namespace Inkeys::Drawing::Draw3
 					else if (!primaryRuntime &&
 						window_.ActiveEraserWidthMode() == EraserWidthMode::Speed)
 					{
-						SpeedEraserHoverLane* lane = primaryUsesMouse
-							? &mouseEraserHoverLane
-							: primaryUsesPen
-								? (penSample.inverted ? &invertedPenEraserHoverLane :
-									&penEraserHoverLane) : nullptr;
+						if (primaryUsesMouse)
+							dynamicDiameter = mouseSample.inContact ? mouseSpeedEraser.LogicalDiameter()
+								: mouseSpeedEraser.VisualDiameter();
+						SpeedEraserHoverLane* lane = primaryUsesPen
+							? (penSample.inverted ? &invertedPenEraserHoverLane :
+								&penEraserHoverLane) : nullptr;
 						if (lane && lane->initialized && lane->sampleVisible &&
 							!lane->contactOwned)
 							dynamicDiameter = lane->controller.Diameter();
@@ -5970,6 +6051,7 @@ namespace Inkeys::Drawing::Draw3
 					renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 					if (viewportRefreshClearsTransient)
 					{
+						mouseSpeedEraser.CancelVisual();
 						renderer_.ClearOperatorLayer(renderer_.layerL1);
 						renderer_.ClearOperatorLayer(renderer_.layerL0);
 						renderer_.ClearAllLaserCoverage();
@@ -6346,6 +6428,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const double frameAbsoluteSeconds = AbsoluteQpcSeconds(
 				frameQpc.QuadPart, qpcFrequency);
+			mouseVisualSeconds = frameAbsoluteSeconds;
+			mouseSpeedEraser.Advance(mouseVisualSeconds);
 			for (RuntimeStroke* runtime : active)
 			{
 				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
@@ -7213,6 +7297,7 @@ namespace Inkeys::Drawing::Draw3
 				lastActiveFrameStartMs = frameStartMs;
 			}
 			else if (navigationActive || speedEraserHoverAnimating ||
+				mouseSpeedEraser.NeedsAnimation(mouseVisualSeconds) ||
 				laserLifecycle.phase == LaserTrailPhase::Fade ||
 				laserParticleSnapshot.hasActive)
 			{

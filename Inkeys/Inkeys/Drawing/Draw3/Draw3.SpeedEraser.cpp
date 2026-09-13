@@ -80,17 +80,33 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config_.touchUnlockEnd = std::max(config_.touchUnlockStart * 1.01f,
 			static_cast<float>(Positive(config_.touchUnlockEnd, 6.0)));
 		config_.historyWindowSeconds = Positive(config_.historyWindowSeconds, 0.080);
-		config_.accelerationWindowSeconds = Positive(config_.accelerationWindowSeconds, 0.040);
-		config_.referenceWindowSeconds = Positive(config_.referenceWindowSeconds, 0.160);
-		config_.holdSeconds = Positive(config_.holdSeconds, 0.180);
-		config_.decreaseConfirmationSeconds = Positive(config_.decreaseConfirmationSeconds, 0.180);
+		const Config defaults;
+		config_.referenceWindowSeconds = Positive(config_.referenceWindowSeconds, defaults.referenceWindowSeconds);
+		config_.evidenceStartSeconds = Positive(config_.evidenceStartSeconds, defaults.evidenceStartSeconds);
+		config_.evidenceFullSeconds = Positive(config_.evidenceFullSeconds, defaults.evidenceFullSeconds);
+		config_.evidenceDecaySeconds = Positive(config_.evidenceDecaySeconds, defaults.evidenceDecaySeconds);
+		config_.maximumEvidenceIntervalSeconds = Positive(config_.maximumEvidenceIntervalSeconds, defaults.maximumEvidenceIntervalSeconds);
+		config_.holdSeconds = Positive(config_.holdSeconds, defaults.holdSeconds);
+		config_.sweepHoldSeconds = Positive(config_.sweepHoldSeconds, defaults.sweepHoldSeconds);
+		config_.decreaseConfirmationSeconds = Positive(config_.decreaseConfirmationSeconds, defaults.decreaseConfirmationSeconds);
+		config_.sweepDecreaseConfirmationSeconds = Positive(config_.sweepDecreaseConfirmationSeconds, defaults.sweepDecreaseConfirmationSeconds);
+		config_.growthTauSeconds = Positive(config_.growthTauSeconds, defaults.growthTauSeconds);
+		config_.largeGrowthTauSeconds = Positive(config_.largeGrowthTauSeconds, defaults.largeGrowthTauSeconds);
+		config_.shrinkTauSeconds = Positive(config_.shrinkTauSeconds, defaults.shrinkTauSeconds);
+		config_.sweepShrinkTauSeconds = Positive(config_.sweepShrinkTauSeconds, defaults.sweepShrinkTauSeconds);
+		config_.maximumLogGrowthPerSecond = Positive(config_.maximumLogGrowthPerSecond, defaults.maximumLogGrowthPerSecond);
+		config_.largeLogGrowthPerSecond = Positive(config_.largeLogGrowthPerSecond, defaults.largeLogGrowthPerSecond);
+		config_.maximumLogShrinkPerSecond = Positive(config_.maximumLogShrinkPerSecond, defaults.maximumLogShrinkPerSecond);
+		config_.sweepLogShrinkPerSecond = Positive(config_.sweepLogShrinkPerSecond, defaults.sweepLogShrinkPerSecond);
+		config_.mouseReleaseSeconds = Positive(config_.mouseReleaseSeconds, defaults.mouseReleaseSeconds);
+		config_.settleLogTolerance = Positive(config_.settleLogTolerance, defaults.settleLogTolerance);
+		config_.evidenceFullSeconds = std::max(config_.evidenceStartSeconds + 0.001, config_.evidenceFullSeconds);
+		config_.evidenceSpeedStart = std::clamp(Positive(config_.evidenceSpeedStart, defaults.evidenceSpeedStart), 0.001, 0.98);
+		config_.evidenceSpeedFull = std::clamp(Positive(config_.evidenceSpeedFull, defaults.evidenceSpeedFull),
+			config_.evidenceSpeedStart + 0.001, 1.0);
+		config_.sweepEntryFraction = std::clamp(Positive(config_.sweepEntryFraction, defaults.sweepEntryFraction), 0.01, 1.0);
+		config_.sweepExitFraction = std::clamp(Positive(config_.sweepExitFraction, defaults.sweepExitFraction), 0.0, config_.sweepEntryFraction - 0.001);
 		config_.decreaseRatio = std::clamp(Positive(config_.decreaseRatio, 0.08), 0.001, 0.5);
-		config_.growthTauSeconds = Positive(config_.growthTauSeconds, 0.140);
-		config_.acceleratedGrowthTauSeconds = Positive(config_.acceleratedGrowthTauSeconds, 0.080);
-		config_.shrinkTauSeconds = Positive(config_.shrinkTauSeconds, 0.240);
-		config_.maximumLogGrowthPerSecond = Positive(config_.maximumLogGrowthPerSecond, 6.0);
-		config_.maximumLogShrinkPerSecond = Positive(config_.maximumLogShrinkPerSecond, 3.0);
-		config_.settleLogTolerance = Positive(config_.settleLogTolerance, 0.003);
 		segments_.fill({});
 		segmentCount_ = 0;
 		acceptedX_ = downX_ = std::isfinite(x) ? x : 0.0;
@@ -108,8 +124,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 	void Controller::AddSegment(const MotionSegment& segment) noexcept
 	{
-		const double retention = std::max({ config_.historyWindowSeconds,
-			config_.accelerationWindowSeconds, config_.referenceWindowSeconds });
+		const double retention = std::max(config_.historyWindowSeconds, config_.referenceWindowSeconds);
 		// 保留本次积分起点需要的历史，而非提前按新样本终点删掉旧区间。
 		const double cutoff = sampleState_.time - retention;
 		size_t expired = 0;
@@ -167,24 +182,57 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 
 	void Controller::FollowTarget(DynamicsState& state, double endTime,
-		double target, double realMotionSpeed, double growthTau) const noexcept
+		double target, double realMotionSpeed) const noexcept
 	{
 		const double startTime = state.time;
+		const double dt = endTime - startTime;
 		state.time = endTime;
 		state.logTarget = target;
 		const double minimum = std::log(config_.minimumDiameterPx);
+		const double logRange = std::log(config_.maximumDiameterPx / config_.minimumDiameterPx);
+		const double normalizedSpeed = logRange > 0.0
+			? (TargetLogDiameter(realMotionSpeed, config_.touchUnlockEnd) - minimum) / logRange : 0.0;
+		const double evidenceRate = SmoothStep((normalizedSpeed - config_.evidenceSpeedStart) /
+			(config_.evidenceSpeedFull - config_.evidenceSpeedStart));
+		if (realMotionSpeed > 0.0 && evidenceRate > 0.0)
+			state.sweepEvidence = std::min(config_.evidenceFullSeconds,
+				state.sweepEvidence + dt * evidenceRate);
+		else
+			state.sweepEvidence *= std::exp(-dt / config_.evidenceDecaySeconds);
+
+		const double diameterRange = config_.maximumDiameterPx - config_.minimumDiameterPx;
+		const double size = diameterRange > 0.0
+			? std::clamp((std::exp(state.logDiameter) - config_.minimumDiameterPx) / diameterRange, 0.0, 1.0)
+			: 0.0;
+		// 清扫状态必须同时有持续证据和真正达到的大尺寸，瞬时最大目标不算。
+		if (!state.sweeping && size >= config_.sweepEntryFraction &&
+			state.sweepEvidence >= config_.evidenceFullSeconds * 0.8)
+			state.sweeping = true;
+		if (state.sweeping && size <= config_.sweepExitFraction)
+			state.sweeping = false;
+		const double sweepResistance = state.sweeping ? SmoothStep((size - 0.2) / 0.6) : 0.0;
+		const auto blend = [](double from, double to, double amount)
+			{ return from + (to - from) * amount; };
 		const double difference = target - state.logDiameter;
-		const bool minimumTarget = target <= minimum + 1e-9;
-		const bool smaller = difference <= std::log(1.0 - config_.decreaseRatio) || minimumTarget;
-		if (!smaller && realMotionSpeed > config_.minimumSpeed &&
-			target > minimum + 0.5 * std::log(config_.maximumDiameterPx / config_.minimumDiameterPx))
-			state.holdUntil = endTime + config_.holdSeconds;
+		const bool smaller = difference <= std::log(1.0 - config_.decreaseRatio) ||
+			target <= minimum + 1e-9;
+		if (!smaller && evidenceRate > 0.0)
+			state.holdUntil = endTime + blend(config_.holdSeconds,
+				config_.sweepHoldSeconds, sweepResistance);
 
 		if (difference >= 0.0)
 		{
 			state.decreasePending = state.shrinking = false;
-			state.logDiameter = Follow(state.logDiameter, target, endTime - startTime,
-				growthTau, config_.maximumLogGrowthPerSecond);
+			const double permission = SmoothStep((state.sweepEvidence - config_.evidenceStartSeconds) /
+				(config_.evidenceFullSeconds - config_.evidenceStartSeconds));
+			const double permittedTarget = std::min(target, minimum + permission * logRange);
+			// 帧预览、静止包和残留速度都没有放大权限；证据门只限增长，不强制缩小。
+			if (realMotionSpeed <= 0.0 || evidenceRate <= 0.0 || permittedTarget <= state.logDiameter) return;
+			const double growthResistance = SmoothStep(size);
+			state.logDiameter = Follow(state.logDiameter, permittedTarget, dt,
+				blend(config_.growthTauSeconds, config_.largeGrowthTauSeconds, growthResistance),
+				blend(config_.maximumLogGrowthPerSecond, config_.largeLogGrowthPerSecond, growthResistance));
+			target = permittedTarget;
 		}
 		else
 		{
@@ -198,14 +246,16 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				state.decreasePending = true;
 				state.decreaseSince = startTime;
 			}
-			// 两个期限同时推进，不在保持结束后重新计一次精擦确认。
-			const double releaseStart = std::max(state.holdUntil,
-				state.decreaseSince + config_.decreaseConfirmationSeconds);
+			// 保持和慢擦确认同时计时；实际尺寸越大，释放阻力越强。
+			const double confirmation = blend(config_.decreaseConfirmationSeconds,
+				config_.sweepDecreaseConfirmationSeconds, sweepResistance);
+			const double releaseStart = std::max(state.holdUntil, state.decreaseSince + confirmation);
 			const double elapsed = endTime - std::max(startTime, releaseStart);
 			if (elapsed <= 0.0) return;
 			state.shrinking = true;
 			state.logDiameter = Follow(state.logDiameter, target, elapsed,
-				config_.shrinkTauSeconds, config_.maximumLogShrinkPerSecond);
+				blend(config_.shrinkTauSeconds, config_.sweepShrinkTauSeconds, sweepResistance),
+				blend(config_.maximumLogShrinkPerSecond, config_.sweepLogShrinkPerSecond, sweepResistance));
 		}
 		if (std::abs(state.logDiameter - target) <= config_.settleLogTolerance)
 		{
@@ -214,18 +264,22 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		}
 	}
 
+
 	void Controller::AdvanceState(DynamicsState& state, double seconds,
 		const MotionSegment* incoming, double incomingX, double incomingY) const noexcept
 	{
-		const double retention = std::max({ config_.historyWindowSeconds,
-			config_.referenceWindowSeconds, config_.accelerationWindowSeconds });
+		const double retention = std::max(config_.historyWindowSeconds, config_.referenceWindowSeconds);
 		const double historyEnd = segmentCount_ ? segments_[segmentCount_ - 1].endTime + retention : state.time;
+		const double minimum = std::log(config_.minimumDiameterPx);
 		while (state.time < seconds)
 		{
-			if (!incoming && state.time >= historyEnd)
+			if (!incoming && state.time >= historyEnd &&
+				std::abs(state.logDiameter - minimum) < 1e-9 && state.sweepEvidence < 1e-6)
 			{
-				// 历史耗尽后目标恒为最小值，长停顿用闭式解推进而非逐帧补算。
-				FollowTarget(state, seconds, std::log(config_.minimumDiameterPx), 0.0, config_.growthTauSeconds);
+				state.time = seconds;
+				state.logTarget = minimum;
+				state.sweepEvidence = 0.0;
+				state.sweeping = state.shrinking = state.decreasePending = false;
 				break;
 			}
 			const double end = std::min(seconds, state.time + 0.004);
@@ -241,13 +295,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 					std::hypot((x - downX_) * config_.motionPerPixelX,
 						(y - downY_) * config_.motionPerPixelY));
 			}
-			const double speed = MotionSpeed(midpoint, config_.historyWindowSeconds);
-			const double fast = MotionSpeed(midpoint, config_.accelerationWindowSeconds);
-			const double reference = MotionSpeed(midpoint, config_.referenceWindowSeconds);
-			const bool accelerating = fast > std::max(config_.minimumSpeed * 2.0, reference * 1.5);
-			FollowTarget(state, end, TargetLogDiameter(speed, state.maximumDisplacement),
-				incoming && incoming->distance > 0.0 ? speed : 0.0,
-				accelerating ? config_.acceleratedGrowthTauSeconds : config_.growthTauSeconds);
+			const double speed = midpoint < historyEnd ? MotionSpeed(midpoint, config_.historyWindowSeconds) : 0.0;
+			// 稀疏的一个跳点不能证明整个空档都在快擦；正常输入仍按真实 dt 累积。
+			const double observedSpeed = incoming && incoming->distance > 0.0 &&
+				incoming->endTime - incoming->startTime <= config_.maximumEvidenceIntervalSeconds
+				? std::min(speed, incoming->distance / (incoming->endTime - incoming->startTime)) : 0.0;
+			FollowTarget(state, end, TargetLogDiameter(speed, state.maximumDisplacement), observedSpeed);
 		}
 	}
 
@@ -333,6 +386,102 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if (!initialized_ || paused_ || !std::isfinite(seconds)) return false;
 		return std::abs(frameState_.logDiameter - std::log(config_.minimumDiameterPx)) > 1e-9 ||
 			(segmentCount_ && seconds < segments_[segmentCount_ - 1].endTime + config_.referenceWindowSeconds);
+	}
+
+
+	void MouseLifecycle::Configure(const Config& config) noexcept
+	{
+		if (configured_ && config_ == config) return;
+		config_ = config;
+		configured_ = true;
+		CancelVisual();
+	}
+
+	void MouseLifecycle::CancelVisual() noexcept
+	{
+		logicalDiameter_ = static_cast<float>(Positive(config_.StandardDiameterPx(), 16.0));
+		visualDiameter_ = logicalDiameter_;
+		releaseCandidate_ = releasing_ = hasPosition_ = false;
+	}
+
+	void MouseLifecycle::ObserveHover(float x, float y, double seconds) noexcept
+	{
+		if (contactOwned_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(seconds) ||
+			seconds < lastEventSeconds_ || seconds < lastHoverSeconds_) return;
+		x_ = x;
+		y_ = y;
+		hasPosition_ = true;
+		lastHoverSeconds_ = seconds;
+		// 定位仅更新位置，不创建速度/加速度/清扫证据。
+	}
+
+	void MouseLifecycle::BeginContact(Controller& controller, float x, float y,
+		double seconds, const Config& config) noexcept
+	{
+		Configure(config);
+		CancelVisual();
+		contactOwned_ = true;
+		x_ = x;
+		y_ = y;
+		hasPosition_ = true;
+		lastDownSeconds_ = seconds;
+		lastEventSeconds_ = std::max(lastEventSeconds_, seconds);
+		// StartKind::Hover 仍只是初始化类别；真正鼠标 Down 明确重置完整动态状态。
+		controller.Reset(x, y, seconds, StartKind::Hover, config);
+	}
+
+	void MouseLifecycle::EndContact(Controller& controller, float acceptedDiameter, float x, float y,
+		double seconds, bool anotherOwner, bool cancelled) noexcept
+	{
+		if (!std::isfinite(seconds)) return;
+		if (!contactOwned_ && !anotherOwner) return;
+		// Up 的逻辑重置立即发生，真实点的半径已由调用方接受，不随此重置变化。
+		controller.Reset(x, y, seconds, StartKind::Hover, controller.Configuration());
+		contactOwned_ = anotherOwner;
+		lastEventSeconds_ = std::max(lastEventSeconds_, seconds);
+		// 旧 Up 不恢复旧画面，但仍须按当前所有者集合释放占用；配置切换可能已丢弃候选。
+		if (cancelled || (seconds < lastDownSeconds_ && !releaseCandidate_))
+		{
+			if (!anotherOwner) CancelVisual();
+			return;
+		}
+		if (seconds >= lastDownSeconds_ && (!releaseCandidate_ || seconds >= releaseSeconds_))
+		{
+			// 复制真正接受的端点直径，不读取 Controller 的待用帧预览。
+			releaseFrom_ = static_cast<float>(Positive(acceptedDiameter, config_.StandardDiameterPx()));
+			releaseSeconds_ = seconds;
+			x_ = x;
+			y_ = y;
+			hasPosition_ = true;
+			releaseCandidate_ = true;
+		}
+		if (anotherOwner || !releaseCandidate_) return;
+		logicalDiameter_ = std::min(releaseFrom_, config_.StandardDiameterPx());
+		visualDiameter_ = releaseFrom_;
+		releasing_ = releaseFrom_ > logicalDiameter_;
+	}
+
+	float MouseLifecycle::Advance(double seconds) noexcept
+	{
+		if (!std::isfinite(seconds)) return visualDiameter_;
+		visualTime_ = std::max(visualTime_, seconds);
+		if (!releasing_ || contactOwned_) return visualDiameter_;
+		const double amount = std::clamp((visualTime_ - releaseSeconds_) /
+			Positive(config_.mouseReleaseSeconds, 0.140), 0.0, 1.0);
+		visualDiameter_ = static_cast<float>(releaseFrom_ +
+			(logicalDiameter_ - releaseFrom_) * SmoothStep(amount));
+		if (amount >= 1.0)
+		{
+			visualDiameter_ = logicalDiameter_;
+			releasing_ = releaseCandidate_ = false;
+		}
+		return visualDiameter_;
+	}
+
+	bool MouseLifecycle::NeedsAnimation(double seconds) const noexcept
+	{
+		return releasing_ && !contactOwned_ && std::isfinite(seconds) &&
+			seconds < releaseSeconds_ + Positive(config_.mouseReleaseSeconds, 0.140);
 	}
 
 	float InterpolateDiameter(const WidthInterval& interval, double seconds) noexcept

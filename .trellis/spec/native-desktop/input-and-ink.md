@@ -88,57 +88,61 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 
 `【直接确认】` `InkeysHeadlessTests` 覆盖 Draw3 bridge/timer/纯逻辑；`--draw3-hidden-test` 通过隐藏主/辅助 HWND 覆盖唯一 Host mailbox、真实绘制线程、history/Clear、双 target 和退出路径。真实笔、触摸屏与驱动设备矩阵仍需维护者提供。
 
-## Scenario: Draw3 笔速橡皮的尺度与历史动态
+## Scenario: Draw3 笔速橡皮的尺度、清扫证据与鼠标生命周期
 
 ### 1. Scope / Trigger
-修改速度橡皮、显示尺度消费、设备模式、Hover/Down 交接或宽度插值时适用。固定橡皮、其他工具的轨迹平滑和输入采集不属于此控制器。
+修改速度橡皮、显示尺度消费、设备模式、鼠标 Hover/Down/Up、笔交接或宽度插值时适用。2026-09-13 的交互规则替代旧版“提速加快放大、鼠标完整继承 Hover、1.3s 必须回最小”的规则。固定橡皮、其他工具中心轨迹和输入采集不在此控制器范围内。
 
 ### 2. Signatures
-- 独立共享实现：`Draw3.SpeedEraser.h/.cpp`，命名空间 `Inkeys::Drawing::Draw3::SpeedEraser`。
-- `DisplayScale` 保存显示 generation、发布 revision、monitor 身份、X/Y DIP/px、X/Y cm/px、physicalAvailable 和 directTouchMapped。
-- `ResolveConfig(display, DeviceMode, touch)` 独立解析动作尺度与覆盖尺度；`Controller` 提供 Reset/UpdatePosition/Advance/PauseForReconnect/ResumeFromReconnect/Diameter/IsPaused/NeedsAnimation/Configuration。
-- `WidthInterval` 携带实际像素宽度端点及本配置上下限；`InterpolateDiameter` 与 `ContactDiameter` 由产品和 headless 共用。
-- `ProductState::paintDevice` 保留旧配置含义：0 为大屏、1 为笔电；设置变更调用 `SyncDraw3State()`。
-- WindowController 用 `SetSpeedEraserDisplayScale/SpeedEraserDisplayScaleSnapshot` 和 `SetSpeedEraserDeviceMode/SpeedEraserDeviceModeSnapshot` 发布小型线程安全配置。
+- 共享实现：`Draw3.SpeedEraser.h/.cpp`，命名空间 `Inkeys::Drawing::Draw3::SpeedEraser`；产品和 headless 编译同一源码。
+- `Config::StandardDiameterPx()` 明确令本轮 Dstandard=Dmin；Dmax、厘米/DIP覆盖范围保持不变。
+- `Controller` 保留 Reset/UpdatePosition/Advance/PauseForReconnect/ResumeFromReconnect/Diameter/NeedsAnimation/Configuration，增加可诊断的 `SweepEvidenceSeconds()`。
+- `MouseLifecycle` 提供 Configure/ObserveHover/BeginContact/EndContact/CancelVisual/Advance/LogicalDiameter/VisualDiameter/NeedsAnimation。它不拥有轨迹容器；EndContact 接收已接受直径值并重置动态控制器。
+- `WidthInterval` 与 ContactDiameter 继续使用已解析的像素范围/真实端点半径。Host/WindowController 的逐屏配置发布接口不变。
 
 ### 3. Contracts
-- 只消费第一阶段 `physicalSize.available`，不从 raw EDID 或 DPI 反推物理有效性。大屏覆盖 1..12cm/24..288DIP，笔电覆盖 0.4..4cm/16..160DIP；圆形像素直径使用横纵密度几何平均。
-- 直接 Touch 只有目标映射可靠时使用 cm/s。现有 Pen/Mouse 不具备可证明的直接触屏关系，速度使用 DIP/s。当前映射无法证明的多屏 Touch 同样回退；EDID 覆盖有效性与动作映射独立。
-- 直接动作阈值 2..60cm/s，DIP 大屏40..900/s、笔电30..700/s。两种模式只换参数，不分裂动态算法。
-- Host 启动、显示通知、窗口换屏/DPI变化低频更新；回调只发布/wake。绘制批次锁存尺度和模式；按原始 Down/Up QPC 判断重叠，不能因同帧先消费 Up 就丢弃旧标尺。断触继续用旧批次，下一批次用新 revision。热点不取显示快照或查询硬件。
-- 控制器统计真实原始位置和QPC的80ms路程窗；40/160ms标量速度只允许更快放大，方向改变不算提速。时间窗满时裁剪过期部分并合并最短相邻区间，保留路程/时长；不得反复延长同一旧段，把过期高速拖进新窗口。
-- 速度经对数归一化与smoothstep给目标，对数直径按时间跟随；清扫保持180ms与8%较小目标确认180ms并行。默认放大140ms、提速80ms、缩小240ms，比例变化率+6/-3每秒。不得串联中间尺寸等待或把加速度累积进尺寸。
-- 真正Touch Down始终从最小起步；落点实际位移范围0.1..0.3cm或2..6DIP解锁。累计抖动路程、静止时间、预测、补点均不是启动证据。
-- 动画时间与原始输入时间各司其职。重复/倒退原始时间不制造速度；迟到但更新的raw样本不能仅因帧时钟更晚而被当重复。
-- Hover保留现有mouse/pen/inverted lanes及250ms交还边界；取消或配置不兼容不继承旧运动基准。断触暂停冻结，恢复重新锚定位置/时间，缺失段不伪装为极短真实运动。
-- Contact光标使用已接受realPoint.r的两倍；Advance的待用尺寸不单独放大Contact光标。Hover可使用动态尺寸。真实宽度插值使用区间自带界限，不能再夹到20..200px。
-- FinalizeStoredStroke保存realPoint.r*2；已有几何与烘干/历史复用同一数据。显示配置变动不重算历史宽度。
+- 只消费 `physicalSize.available`；不以原始EDID解析成功代替物理有效性，不从DPI反推厘米。大屏覆盖1..12cm/24..288DIP，笔电0.4..4cm/16..160DIP；圆形覆盖使用横纵密度几何平均。
+- 可靠直接Touch用cm/s，Mouse/未知直接性的Pen用DIP/s；多屏Touch映射不可靠时同样回退。动作与覆盖尺度独立。速度区间仍为直接2..60cm/s、大屏DIP40..900/s、笔电DIP30..700/s。
+- Host低频发布完整显示标尺；批次按原始Down/Up QPC判定重叠并锁存。逐点不重新查硬件，显示变化只影响后续批次。
+- 保留80ms真实路程窗、有界历史压缩和过期裁剪；不计算净位移，不以固定样本数量定义快慢。原始状态与帧预览分离，重复/倒退时间不构造速度，迟到的新真实输入仍可重放。
+- 持续证据按真实dt和归一化速率累积：160ms开始解锁、380ms满额、200ms衰减常数，速率强度区间0.20..0.75。超过80ms的孤立观测跨度不证明整个空档都在快擦。帧、静止包、预测和连接不能提供新证据或凭残留速度继续扩大。
+- 尺寸目标保留对数速度+smoothstep映射，实际尺寸对数跟随且无超调。小尺寸增长tau280ms/比例限速4每秒，较大时渐变到160ms/6每秒；不再有突然加速绕过阻力的通道。
+- 只有实际达到覆盖跨度50%且证据达到满额80%才进入清扫；尺寸降到跨度25%退出。保持与确认并行，从普通100/100ms按实际尺寸渐变到清扫650/680ms；缩小tau从160到300ms、比例限速从4到2.2每秒。较小目标持续存在时停止刷新保持，不能永久锁大。
+- 鼠标Hover只更新定位，不驱动Controller。每个独立左/右键Down通过BeginContact重新锚定，清空旧速度/证据/收尾画面。StartKind::Hover仍是初始化类别，不能据此禁掉已经Down的控制器。
+- 鼠标真实Up在接受终止点后立即Finish，重置逻辑与Controller，不参与启发式断触候选。收尾140ms只画非擦除轮廓，从已接受的实际直径缩到不高于标准值；没有鼠标移动也请求帧，终点停止唤醒。新Down立即截断收尾并小尺寸起步。
+- finish标记避免烘干时重复交还，anotherOwner来自实际活动runtime集合；并发最后一个所有者才收尾。失败Down也先保存当前快照以正确清理；取消、切换配置/模式或清屏取消旧收尾。动画按实际呈现QPC推进，不能因耗时帧重启其时钟。
+- Pen/倒转Pen保留既有Hover复制和250ms交还语义；Touch真实新Down仍最小起步，以实际位移范围0.1..0.3cm或2..6DIP解锁，累计抖动不解锁。真正重连冻结/恢复状态并重锚，缺失连接不计速度。
+- 倒转笔重连资格从真实 `DrawingTool::Eraser` 枚举取值，不再保留过期数值2。Mouse明确Up与此恢复路径分离。
+- Contact光标继续用已接受realPoint.r*2；收尾只改光标状态，不回写真实点、烘干或历史。FinalizeStoredStroke仍直接保存r*2，无固定20..200px夹取。
 
 ### 4. Validation & Error Matrix
-| 条件 | 必需结果 |
+| 场景 | 必需结果 |
 |---|---|
-| EDID失败/复制/未知拓扑 | 覆盖DIP回退，物理有效标志不伪造 |
-| EDID有效但输入映射未知 | 可用物理覆盖，动作仍为DIP |
-| 120ms以内快速折返/短停 | 直径跌落不超过10% |
-| 持续静止或精擦 | 约1.3s回到小尺寸附近，静止最终结束动画 |
-| 新Touch Down/原地抖动/长按 | 最小尺寸起步，不靠时间或抖动路程放大 |
-| 断触重连且模型失败 | 不增加连接速度；完整控制器状态仍可回滚 |
-| 显示revision/设备模式在批次中变化 | 活动批次不混代，下一批次应用新配置 |
-| 存储宽度大于旧200px | 保留实际宽度，不因读写/烘干改小 |
+| 高速Mouse Hover数秒后Down/静止 | Hover不超过标准，Down历史/证据为零，静止不长大 |
+| 50..120ms短快划及随后帧 | 不膨胀成清扫尺寸；测试上限为标准的1.25倍 |
+| 持续快擦 | 350ms开始可见扩张；800ms达到至少65%Dmax，1s达到至少85%Dmax |
+| 已建立的大清扫短停/折返 | 280ms及500ms测试下降不超过10% |
+| 持续慢擦 | 550ms仍保持，900ms有明显缩小；之后最终收敛并休眠 |
+| Mouse Up无任何新移动 | 逻辑立即重置，140ms视觉收尾不擦除且能自行结束 |
+| Up后20ms再次Down | 新光标/几何小尺寸，无旧速度/视觉残留 |
+| 新Down后旧Hover/Up、重复Up、Cancel | 不恢复旧意图，不抢占仍活动的其他所有者 |
+| 显示版本变化/并发接触 | 活动配置不混代，旧收尾不沿用新配置 |
+| 断触恢复 | 保持真正接触状态，不把桥接位移伪装为真实高速 |
 
 ### 5. Good / Base / Bad Cases
-- Good：单屏Touch局部往返使用cm速度，大范围保持；慢擦确认与保持同时进行，之后平滑缩小。
-- Base：未知Pen使用DIP速度，屏幕EDID仍可定义覆盖直径；无EDID时两项均明确回退。
-- Bad：把重连位移除以1微秒、把target monitor的物理位移当数位板手部位移，或让Contact光标显示尚未产生的擦除宽度。
+- Good：鼠标快速找位置仍小，按下持续局部往返后逐渐扩大；大范围短停保持，主动Up立即退出。
+- Base：物理覆盖无效时按DIP回退，标准/最大范围与上一阶段一致；Pen继承路径、Touch点擦和已存几何不变。
+- Bad：只夹小Hover画面却累计隐藏速度；把目标一度最大当作已建立清扫；用待用预览直径启动Up收尾；依靠重新移动才能结束动画。
 
 ### 6. Tests Required
-共享实现的确定性轨迹测试覆盖两模式、96/144/192 DPI、旋转/异向尺度、物理与DIP独立回退、Touch点擦/抖动、往返/突增/慢擦、迟到/重复时间、暂停与重连、宽度插值及Contact宽度。采样60/125/240/1000Hz与不同帧调度的关键宽度偏差目标<=5%。运行完整InkeysRepo.sln Debug|ARM64和InkeysHeadlessTests.exe --no-window；执行结果记录在当前speed-eraser-physical-scale任务中。真实设备体感和Win7运行兼容性不得仅凭ARM64构建宣称已验证。
+先在基线运行新增回归并确认失败，再实现新行为。测试使用产品MouseLifecycle和Controller，覆盖两设备模式、物理/DIP、96/144/192 DPI、60/125/240/1000Hz输入及30/60/144/240Hz帧；保留5%一致性和范围边界。测试共享所有权、原地抖动/长按、真实移动、重复/迟到时间、重连、标准语义、收尾无输入/被新Down打断/取消/配置变更、初始化失败和延迟呈现。完整InkeysRepo.sln Debug|ARM64与InkeysHeadlessTests.exe --no-window结果见当前任务validation-mouse-interaction.md。真实硬件体感与Win7运行不得由ARM64编译结果替代。
 
 ### 7. Wrong vs Correct
 ~~~cpp
-// Wrong：连接端点不是已观测到的高速输入。
-controller.UpdatePosition(resumeX, resumeY, pauseTime + 0.000001);
+// Wrong：新鼠标Down继承定位速度，Up烘干后才把旧清扫交回Hover。
+runtime.speedEraserOc = mouseHoverController;
 
-// Correct：保留尺寸/状态，重新建立真实运动起点。
-controller.ResumeFromReconnect(resumeX, resumeY, rawQpcSeconds);
+// Correct：独立鼠标Down清空意图；Up只把实际端点直径交给非擦除收尾。
+mouse.BeginContact(runtime.speedEraserOc, x, y, rawSeconds, config);
+mouse.EndContact(runtime.speedEraserOc, acceptedDiameter, x, y, upSeconds, anotherOwner);
 ~~~

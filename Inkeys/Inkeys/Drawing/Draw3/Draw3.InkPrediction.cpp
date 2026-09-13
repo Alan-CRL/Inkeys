@@ -18,6 +18,8 @@
 
 module Inkeys.Drawing.Draw3.ink_prediction;
 
+import Inkeys.Drawing.Draw3.window_control;
+
 namespace Inkeys::Drawing::Draw3
 {
 	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept
@@ -862,7 +864,7 @@ namespace Inkeys::Drawing::Draw3
 	bool IsInterruptedStrokeReconnectIdentitySupported(
 		const InterruptedStrokeReconnectIdentity& identity) noexcept
 	{
-		constexpr uint32_t kEraserDrawingToolValue = 2; // DrawingTool::Eraser 的 append-only 数值。
+		constexpr uint32_t kEraserDrawingToolValue = static_cast<uint32_t>(DrawingTool::Eraser); // 跟随真实工具枚举。
 		if (identity.deviceType == InputDeviceType::Touch) return true;
 		return identity.deviceType == InputDeviceType::Pen && identity.invertedCursor &&
 			identity.tool == kEraserDrawingToolValue;

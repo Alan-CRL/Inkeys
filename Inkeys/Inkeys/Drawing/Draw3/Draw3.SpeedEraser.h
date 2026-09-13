@@ -48,19 +48,34 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float maximumSpeed = 700.0f;
 		float touchUnlockStart = 2.0f;
 		float touchUnlockEnd = 6.0f;
+		// 本轮标准值明确等于原最小值；不引入另一套固定像素或固定橡皮设置。
+		float StandardDiameterPx() const noexcept { return minimumDiameterPx; }
 
 		// 固定中档参数集中在此；速度和触摸范围使用动作标尺单位。
 		double historyWindowSeconds = 0.080;
-		double accelerationWindowSeconds = 0.040;
 		double referenceWindowSeconds = 0.160;
-		double holdSeconds = 0.180;
-		double decreaseConfirmationSeconds = 0.180;
+		double evidenceStartSeconds = 0.160;
+		double evidenceFullSeconds = 0.380;
+		double evidenceDecaySeconds = 0.200;
+		double evidenceSpeedStart = 0.20;
+		double evidenceSpeedFull = 0.75;
+		double maximumEvidenceIntervalSeconds = 0.080;
+		double holdSeconds = 0.100;
+		double sweepHoldSeconds = 0.650;
+		double decreaseConfirmationSeconds = 0.100;
+		double sweepDecreaseConfirmationSeconds = 0.680;
 		double decreaseRatio = 0.08;
-		double growthTauSeconds = 0.140;
-		double acceleratedGrowthTauSeconds = 0.080;
-		double shrinkTauSeconds = 0.240;
-		double maximumLogGrowthPerSecond = 6.0;
-		double maximumLogShrinkPerSecond = 3.0;
+		double growthTauSeconds = 0.280;
+		double largeGrowthTauSeconds = 0.160;
+		double shrinkTauSeconds = 0.160;
+		double sweepShrinkTauSeconds = 0.300;
+		double maximumLogGrowthPerSecond = 4.0;
+		double largeLogGrowthPerSecond = 6.0;
+		double maximumLogShrinkPerSecond = 4.0;
+		double sweepLogShrinkPerSecond = 2.2;
+		double sweepEntryFraction = 0.50;
+		double sweepExitFraction = 0.25;
+		double mouseReleaseSeconds = 0.140;
 		double settleLogTolerance = 0.003;
 
 		friend bool operator==(const Config&, const Config&) = default;
@@ -82,6 +97,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool IsPaused() const noexcept { return paused_; }
 		bool NeedsAnimation(double seconds) const noexcept;
 		const Config& Configuration() const noexcept { return config_; }
+		double SweepEvidenceSeconds() const noexcept { return sampleState_.sweepEvidence; }
 
 	private:
 		struct MotionSegment
@@ -99,6 +115,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double holdUntil = 0.0;
 			double decreaseSince = 0.0;
 			double maximumDisplacement = 0.0;
+			double sweepEvidence = 0.0;
+			bool sweeping = false;
 			bool decreasePending = false;
 			bool shrinking = false;
 		};
@@ -126,7 +144,46 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const MotionSegment* incoming = nullptr, double incomingX = 0.0,
 			double incomingY = 0.0) const noexcept;
 		void FollowTarget(DynamicsState& state, double endTime,
-			double target, double speed, double growthTau) const noexcept;
+			double target, double realMotionSpeed) const noexcept;
+	};
+
+	// 鼠标定位没有运动控制器。收尾只接收已接受的直径值，不能回写擦除几何。
+	class MouseLifecycle
+	{
+	public:
+		void Configure(const Config& config) noexcept;
+		void ObserveHover(float x, float y, double seconds) noexcept;
+		void BeginContact(Controller& controller, float x, float y, double seconds,
+			const Config& config) noexcept;
+		void EndContact(Controller& controller, float acceptedDiameter, float x, float y, double seconds,
+			bool anotherOwner, bool cancelled = false) noexcept;
+		void CancelVisual() noexcept;
+		float Advance(double seconds) noexcept;
+		float VisualDiameter() const noexcept { return visualDiameter_; }
+		float LogicalDiameter() const noexcept { return logicalDiameter_; }
+		bool NeedsAnimation(double seconds) const noexcept;
+		bool ContactOwned() const noexcept { return contactOwned_; }
+		bool HasPosition() const noexcept { return hasPosition_; }
+		float X() const noexcept { return x_; }
+		float Y() const noexcept { return y_; }
+		double LastEventSeconds() const noexcept { return lastEventSeconds_; }
+
+	private:
+		Config config_;
+		float logicalDiameter_ = Config{}.StandardDiameterPx();
+		float visualDiameter_ = Config{}.StandardDiameterPx();
+		float releaseFrom_ = Config{}.StandardDiameterPx();
+		float x_ = 0.0f, y_ = 0.0f;
+		double lastEventSeconds_ = 0.0;
+		double lastDownSeconds_ = 0.0;
+		double lastHoverSeconds_ = 0.0;
+		double releaseSeconds_ = 0.0;
+		double visualTime_ = 0.0;
+		bool configured_ = false;
+		bool contactOwned_ = false;
+		bool hasPosition_ = false;
+		bool releaseCandidate_ = false;
+		bool releasing_ = false;
 	};
 
 	struct WidthInterval
