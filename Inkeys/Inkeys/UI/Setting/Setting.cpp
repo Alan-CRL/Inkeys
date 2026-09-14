@@ -8111,24 +8111,28 @@ SettingSessionCoroutine RunSettingSession()
 							PushStyleVarNum++,ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding,4.0f);
 							PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_ChildBg,Widgets::FluentColor::CardBackground);
 #endif
-							ImGui::BeginChild("触摸面积辅助临时测试", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+							ImGui::BeginChild("触摸面积辅助", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
 								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 							{
 								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
 								ImFontMain->Scale=0.6f,PushFontNum++,ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted("触摸接触面积辅助（临时测试）");
+								ImGui::TextUnformatted("触摸接触面积辅助");
 								ImGui::SetCursorPos({20.0f*settingGlobalScale,ImGui::GetCursorPosY()});
 								ImFontMain->Scale=0.5f,PushFontNum++,ImGui::PushFont(ImFontMain);
 								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted("默认关闭；仅触摸拖擦，新接触生效；重启重置，报告不准时关闭。");
+								ImGui::TextUnformatted("默认关闭；仅触摸拖擦，新接触生效；自动保存，报告不准时关闭。");
 								ImGui::SetCursorPos({settingRightToggleX*settingGlobalScale,25.0f*settingGlobalScale});
 								auto options=Inkeys::Drawing::Draw3::ProductHost().EraserDevelopmentOptions();
 								const bool before=options.touchContactAreaAssistance;
 								Widgets::toggle.ToggleBool("##实验触摸面积辅助",&options.touchContactAreaAssistance);
 								if(before!=options.touchContactAreaAssistance)
+								{
 									Inkeys::Drawing::Draw3::ProductHost().SetEraserDevelopmentOptions(options);
-								// 与程序调测复用同一个临时选项，不写入正式配置文件。
+									Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance =
+										options.touchContactAreaAssistance;
+									QueueConfigWrite();
+								}
 								if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
 								if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
 								while(PushFontNum)PushFontNum--,ImGui::PopFont();
@@ -8610,7 +8614,14 @@ SettingSessionCoroutine RunSettingSession()
 						const char* betas[]={"0.25","0.50（默认）","0.75"};
 						if(ImGui::Combo("屏幕笔 beta",&beta,betas,3))
 						{options.penBeta=0.25f*(beta+1);changed=true;}
-						changed|=ImGui::Checkbox("触摸接触面积辅助（实验）",&options.touchContactAreaAssistance);
+						if(ImGui::Checkbox("触摸接触面积辅助（实验）",&options.touchContactAreaAssistance))
+						{
+							changed=true;
+							// 两个入口共用持久化状态，不保存其他临时调测参数。
+							Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance =
+								options.touchContactAreaAssistance;
+							QueueConfigWrite();
+						}
 						ImGui::TextWrapped("默认关闭。参考接触范围适度提高拖擦下限；驱动报告不准时请关闭。点按仍小尺寸起步，开启后精细拖擦下限可能增大。");
 						changed|=ImGui::Checkbox("显示低成本笔速诊断",&options.diagnostics);
 						if(changed)ProductHost().SetEraserDevelopmentOptions(options);
