@@ -173,6 +173,13 @@ namespace Inkeys::Drawing::Draw3
 			HostStartOptions options{ requiredMode };
 			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
+			if(exerciseEraser)
+			{
+				// 隐藏 HWND 位于屏幕外；注入明确的逻辑像素表面，不伪造 EDID 或实测物理尺寸。
+				SpeedEraser::DisplayScale scale;scale.monitor=1;scale.generation=7;
+				scale.pixelWidth=320;scale.pixelHeight=240;scale.logicalOutputKnown=true;
+				options.hiddenTestDisplayScale=scale;
+			}
 			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
 				"start real Draw3 host", failures))
 				return false;
@@ -678,6 +685,98 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 				ProductHost().SetEraserDevelopmentOptions({});
+				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
+				const auto setAreaOption=[&](bool enabled)
+				{
+					auto options=ProductHost().EraserDevelopmentOptions();
+					options.touchContactAreaAssistance=enabled;options.diagnostics=true;
+					ProductHost().SetEraserDevelopmentOptions(options);
+					return WaitUntil([enabled]{return ProductHost().RuntimeSnapshot().touchContactAreaAssistanceEnabled==enabled;});
+				};
+				modeSucceeded &= Check(setAreaOption(false),"apply independent area option",failures);
+				postSource(HiddenTestContactPhase::Hover,kHiddenTestMouseFlag,60,80);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.inputType==2 && d.effectiveDiameterDip<=16.01f;}),"prepare frozen mouse fine hover",failures);
+				const auto beforeToggle=ProductHost().RuntimeSnapshot().eraser;
+				modeSucceeded &= Check(setAreaOption(true),"enable touch-only area assistance",failures);
+				std::this_thread::sleep_for(60ms);
+				modeSucceeded &= Check(std::abs(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip-beforeToggle.effectiveDiameterDip)<0.001f,
+					"area toggle does not reset mouse fine hover",failures);
+				ProductHost().SetHiddenTestContactArea({300,200,30,20,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.inputType==0 && d.contactArea.enabled;}),"real Touch receives latched area option",failures);
+				std::this_thread::sleep_for(120ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.01f,
+					"Touch Down with a large reported finger still starts small",failures);
+				int areaX=60;
+				for(int i=1;i<=35;++i)
+				{
+					areaX=60+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.active && d.effectiveDiameterDip>38.5f && d.effectiveDiameterDip<40.0f &&
+					std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),"slow Touch drag has matching area-assisted cursor and geometry",failures);
+				const auto assisted=ProductHost().RuntimeSnapshot();
+				ProductHost().SetHiddenTestContactArea({400,280,40,28,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				for(int i=0;i<6;++i)
+				{
+					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
+					std::this_thread::sleep_for(30ms);
+				}
+				const auto pressed=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(std::abs(pressed.eraser.contactArea.referenceFloorDip-39)<0.01f &&
+					pressed.eraser.cursorDiameterPx<=assisted.eraser.cursorDiameterPx+0.05f,
+					"larger same-position area does not create larger erasure",failures);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.idleSeconds>0.4 && d.contactArea.active &&
+					std::abs(d.effectiveDiameterDip-d.contactArea.activeFloorDip)<0.001f;}),"held Touch settles at accepted assistance floor",failures);
+				const auto resting=ProductHost().RuntimeSnapshot();
+				std::this_thread::sleep_for(150ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=resting.eraser.frameSequence+2,
+					"stable assistance floor sleeps until data expiry",failures);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.effectiveDiameterDip<=16.01f &&
+					 d.contactArea.reason==SpeedEraser::ContactAreaReason::Expired;},5s),
+					"no Move: scheduled expiry releases stale assistance",failures);
+				const auto expired=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(expired.eraser.historyRadiusPx>expired.eraser.nextRadiusPx*1.5f &&
+					expired.eraser.realPointCount==resting.eraser.realPointCount,"area expiry preserves historical geometry",failures);
+				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX+4,144);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.resumedWithAnchor && d.resumedMaxRadiusPx<=10;}),"expired-area resume uses current radius without fat tail",failures);
+				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
+					"area-assisted size boundary survives actual UInk save/read/import",failures);
+				ProductHost().SetHiddenTestContactArea({0,0,0,0,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,areaX+4,144);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"Touch terminal zero area completes without reopening erasure",failures);
+				const auto areaHistory=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([areaHistory]{return ProductHost().RuntimeSnapshot().undoCommandCount>areaHistory.undoCommandCount;}),
+					"area geometry supports real Undo",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([areaHistory]{return ProductHost().RuntimeSnapshot().redoCommandCount>areaHistory.redoCommandCount;}),
+					"area geometry supports real Redo",failures);
+				ProductHost().SetHiddenTestContactArea({300,200,30,20,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				modeSucceeded &= Check(setAreaOption(false),"disable area independently of Touch speed",failures);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && !d.contactArea.enabled && d.effectiveDiameterDip<=16.01f;}),"next Touch contact uses disabled option and small start",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),"end area-disabled contact",failures);
+				modeSucceeded &= Check(setAreaOption(true),"restore experimental setting for fixed bypass test",failures);
+				auto fixedState=speedState;fixedState.tool=Bridge::Tool::FixedEraser;PublishProductState(fixedState);
+				const auto fixedBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([fixedBefore]{const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputDownPublished>fixedBefore && std::abs(s.eraser.cursorDiameterPx-50)<0.01f;}),
+					"fixed Touch eraser ignores area and remains 50 DIP",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
+				ProductHost().SetHiddenTestContactArea({});
+				ProductHost().SetEraserDevelopmentOptions({});
+
 
 			}
 

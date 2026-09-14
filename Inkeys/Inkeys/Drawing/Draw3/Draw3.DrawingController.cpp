@@ -569,6 +569,7 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraser::DeviceMode speedEraserDeviceMode = SpeedEraser::DeviceMode::Laptop;
 			SpeedEraserOcController speedEraserOc;
 			SpeedEraser::ContactSizeState eraserSize;
+			bool touchContactAreaAssistance = false;
 			double eraserTimeOrigin = 0.0;
 			SpeedEraser::Diagnostics eraserDiagnostics;
 			bool mouseSpeedEraserFinished = false;
@@ -639,6 +640,12 @@ namespace Inkeys::Drawing::Draw3
 			}
 			runtime.speedEraserModelTime=currentInputTime;
 			runtime.speedEraserModelDiameter=runtime.speedEraserOc.Diameter();
+		}
+
+		SpeedEraser::ContactAreaSample ContactAreaFromSnapshot(const ContactSnapshot& snapshot) noexcept
+		{
+			return {snapshot.rawContactSize.width,snapshot.rawContactSize.height,
+				snapshot.contactSize.width,snapshot.contactSize.height,snapshot.contactAreaUnits};
 		}
 
 		float RuntimeSpeedEraserContactDiameter(const RuntimeStroke& runtime) noexcept
@@ -2066,8 +2073,9 @@ namespace Inkeys::Drawing::Draw3
 			auto source=down.source;
 			if(runtime.metricDeviceType==InputDeviceType::MouseLeft || runtime.metricDeviceType==InputDeviceType::MouseRight)
 				source={SpeedEraser::SourceKind::Mouse}; // 鼠标 Hover 与 Contact 使用同一桌面 DIP 身份。
-			const auto config = SpeedEraser::ResolveConfig(runtime.speedEraserDisplayScale,
-				runtime.speedEraserDeviceMode, source);
+			auto display=runtime.speedEraserDisplayScale;
+			if(touch)display.development.touchContactAreaAssistance=runtime.touchContactAreaAssistance;
+			const auto config = SpeedEraser::ResolveConfig(display,runtime.speedEraserDeviceMode,source);
 			if (runtime.metricDeviceType == InputDeviceType::MouseLeft ||
 				runtime.metricDeviceType == InputDeviceType::MouseRight)
 			{
@@ -2079,8 +2087,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (touch)
 			{
+				const auto area=ContactAreaFromSnapshot(down);
 				runtime.speedEraserOc.Reset(down.position.x, down.position.y,
-					downSeconds, SpeedEraserStartKind::Touch, config);
+					downSeconds, SpeedEraserStartKind::Touch, config,0,&area);
 				return;
 			}
 			SpeedEraserHoverLane* lane = speedEraserHoverLaneFor(
@@ -2483,6 +2492,7 @@ namespace Inkeys::Drawing::Draw3
 					batchEraserWidthModeRevision);
 				auto batchSpeedEraserDisplayScale = observedSpeedEraserDisplayScale;
 				auto batchSpeedEraserDeviceMode = observedSpeedEraserDeviceMode;
+				bool batchTouchArea=window_.TouchContactAreaAssistance();
 				bool hasSpeedEraserBatchContact = false;
 				bool hasActiveBatchContact = false;
 				bool hasActiveLaserTouchContact = false;
@@ -2502,6 +2512,7 @@ namespace Inkeys::Drawing::Draw3
 							// Up 先被消费不代表 B.Down 时已经结束；用真实 QPC 保留重叠批次。
 							batchSpeedEraserDisplayScale = activeRuntime->speedEraserDisplayScale;
 							batchSpeedEraserDeviceMode = activeRuntime->speedEraserDeviceMode;
+							batchTouchArea=activeRuntime->touchContactAreaAssistance;
 							hasSpeedEraserBatchContact = true;
 						}
 					}
@@ -2854,6 +2865,7 @@ namespace Inkeys::Drawing::Draw3
 				else runtime->viewport = {};
 				runtime->speedEraserDisplayScale = batchSpeedEraserDisplayScale;
 				runtime->speedEraserDeviceMode = batchSpeedEraserDeviceMode;
+				runtime->touchContactAreaAssistance=batchTouchArea;
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
 				// 产品样式与工具一样在 Down 时锁存，活动笔划和断触续接不读取后续修改。
@@ -3198,9 +3210,10 @@ namespace Inkeys::Drawing::Draw3
 				if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser)
 				{
 					// 每份 raw snapshot 先推进 OC；即使本次不进入 modeler，也要累计停笔时间。
+					const auto area=ContactAreaFromSnapshot(snapshot);
 					runtime.speedEraserOc.UpdatePosition(
 						snapshot.position.x, snapshot.position.y,
-						AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency));
+						AbsoluteQpcSeconds(snapshot.qpc, qpcFrequency),&area,terminal);
 					const double rawSeconds=AbsoluteQpcSeconds(snapshot.qpc,qpcFrequency);
 					runtime.eraserSize.Update(runtime.speedEraserOc.Diameter(),rawSeconds,
 						runtime.speedEraserOc.SecondsSinceMovement(rawSeconds)>=runtime.speedEraserOc.Configuration().idleStartSeconds);
@@ -4066,6 +4079,13 @@ namespace Inkeys::Drawing::Draw3
 					d.rhoMmPerDip=cfg.rhoMmPerDip;d.penBeta=cfg.penBeta;d.heuristicGain=cfg.heuristicGain;
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
 					d.effectiveDiameterDip=controller->DiameterDip();
+					d.targetDiameterDip=controller->TargetDiameterDip();d.touchUnlocked=controller->TouchUnlocked();
+					d.contactArea=controller->AreaDiagnostics(mouseVisualSeconds);
+					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
+					d.motionPerPixelX=cfg.motionPerPixelX;d.motionPerPixelY=cfg.motionPerPixelY;
+					d.pixelWidth=cfg.display.pixelWidth;d.pixelHeight=cfg.display.pixelHeight;
+					d.manualWidthCm=cfg.display.development.calibration.widthCm;
+					d.manualHeightCm=cfg.display.development.calibration.heightCm;
 					d.speed=controller->Speed();d.evidenceSeconds=controller->SweepEvidenceSeconds();
 					d.sweeping=controller->Sweeping();d.qualified=controller->SweepQualified();d.limited=controller->TargetLimited();
 					d.idleSeconds=controller->SecondsSinceMovement(mouseVisualSeconds);
@@ -7416,6 +7436,12 @@ namespace Inkeys::Drawing::Draw3
 					if (runtime && runtime->awaitingReconnect)
 						nearestDeadlineQpc = std::min(
 							nearestDeadlineQpc, runtime->reconnectDeadlineQpc);
+					else if(runtime && !runtime->ended && runtime->stroke.widthMode==StrokeWidthMode::SpeedEraser)
+					{
+						const double wake=runtime->speedEraserOc.NextAreaWakeSeconds();
+						if(wake>0 && wake<(std::numeric_limits<int64_t>::max)()/static_cast<double>(qpcFrequency))
+							nearestDeadlineQpc=std::min(nearestDeadlineQpc,static_cast<int64_t>(wake*qpcFrequency)+1);
+					}
 				}
 				LARGE_INTEGER waitStartQpc = {};
 				QueryPerformanceCounter(&waitStartQpc);

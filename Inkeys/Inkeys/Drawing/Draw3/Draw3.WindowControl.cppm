@@ -171,6 +171,9 @@ export namespace Inkeys::Drawing::Draw3
 		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
 		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		void SetEraserWidthMode(EraserWidthMode mode) noexcept;
+		// 独立实验开关仅在批次 Down 锁存，不让它使 Mouse/Pen 的 Hover 标尺失效。
+		void SetTouchContactAreaAssistance(bool enabled) noexcept { touchContactAreaAssistance_.store(enabled); }
+		bool TouchContactAreaAssistance() const noexcept { return touchContactAreaAssistance_.load(); }
 		void SetEraserDiagnosticsEnabled(bool enabled) noexcept { eraserDiagnosticsEnabled_.store(enabled); }
 		bool EraserDiagnosticsEnabled() const noexcept { return eraserDiagnosticsEnabled_.load(); }
 		void SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale);
@@ -272,6 +275,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
 		// 完整标尺在同一个锁内复制，不能拼接跨 generation 的独立原子字段。
+		std::atomic<bool> touchContactAreaAssistance_ = false;
 		std::atomic<bool> eraserDiagnosticsEnabled_ = false;
 		mutable std::mutex speedEraserConfigMutex_;
 		SpeedEraser::DisplayScale speedEraserDisplayScale_;

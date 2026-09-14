@@ -468,6 +468,7 @@ namespace Inkeys::Drawing::Draw3
 			ULONG propertyCount = 0;
 			ULONG xIndex = 0;
 			ULONG yIndex = 1;
+			PacketPropertyMetadata xAxis, yAxis;
 			PacketPropertyMetadata pressure;
 			PacketPropertyMetadata xTilt;
 			PacketPropertyMetadata yTilt;
@@ -810,11 +811,13 @@ namespace Inkeys::Drawing::Draw3
 				if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_X))
 				{
 					decoder.xIndex = index;
+					captureProperty(decoder.xAxis,index);
 					hasX = true;
 				}
 				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_Y))
 				{
 					decoder.yIndex = index;
+					captureProperty(decoder.yAxis,index);
 					hasY = true;
 				}
 				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE))
@@ -956,6 +959,12 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.orientation = angles.orientation;
 			}
 			snapshot.contactSize = {};
+			snapshot.rawContactSize = {};
+			snapshot.contactAreaUnits=SpeedEraser::ContactAreaUnits::Missing;
+			if(decoder.width.present && decoder.width.index<propertyCount)
+				snapshot.rawContactSize.width=static_cast<float>(packet[decoder.width.index]);
+			if(decoder.height.present && decoder.height.index<propertyCount)
+				snapshot.rawContactSize.height=static_cast<float>(packet[decoder.height.index]);
 			if (decoder.width.present && decoder.height.present &&
 				decoder.width.index < propertyCount && decoder.height.index < propertyCount)
 			{
@@ -963,6 +972,17 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.contactSize = DecodeContactSize(decoder.deviceType,
 					packet[decoder.width.index], packet[decoder.height.index],
 					decoder.contactScaleX, decoder.contactScaleY);
+				const auto& x=decoder.xAxis.metrics;const auto& y=decoder.yAxis.metrics;
+				const auto& w=decoder.width.metrics;const auto& h=decoder.height.metrics;
+				const bool known=decoder.xAxis.present && decoder.yAxis.present &&
+					SpeedEraser::ContactMetricsMatch(x.Units,x.fResolution,w.Units,w.fResolution) &&
+					SpeedEraser::ContactMetricsMatch(y.Units,y.fResolution,h.Units,h.fResolution) &&
+					w.nLogicalMax>w.nLogicalMin && h.nLogicalMax>h.nLogicalMin;
+				// 只有宽高与对应坐标轴的单位/分辨率一致，才认可既有 per-context 结果为画布像素。
+				snapshot.contactAreaUnits=known?SpeedEraser::ContactAreaUnits::CanvasPixels:SpeedEraser::ContactAreaUnits::Unverified;
+				if(known && (packet[decoder.width.index]<w.nLogicalMin || packet[decoder.width.index]>w.nLogicalMax ||
+					packet[decoder.height.index]<h.nLogicalMin || packet[decoder.height.index]>h.nLogicalMax))
+					snapshot.contactAreaUnits=SpeedEraser::ContactAreaUnits::OutsideMetrics;
 			}
 			snapshot.qpc = qpc;
 			snapshot.phase = phase;

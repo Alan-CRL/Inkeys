@@ -45,6 +45,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		ManualSurfaceCalibration calibration;
 		float penBeta = 0.5f;
 		bool diagnostics = false;
+		bool touchContactAreaAssistance = false;
 		friend bool operator==(const DevelopmentOptions&, const DevelopmentOptions&) = default;
 	};
 	enum class StartKind { Hover, Touch };
@@ -90,10 +91,41 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept;
 	float FixedDiameterPx(float selectedDiameterDip, const DisplayScale& display) noexcept;
 
+	enum class ContactAreaUnits : uint32_t { Missing, Unverified, OutsideMetrics, CanvasPixels };
+	enum class ContactAreaReason { Disabled, NotScreenTouch, MappingUnknown, Missing, UnitsUnknown,
+		OutsideMetrics, NonFinite, NonPositive, TooSmall, TooLarge, AspectRatio, Outlier, WaitingForMove, Confirming, Ready, Expired };
+	struct ContactAreaSample
+	{
+		float rawWidth = -1, rawHeight = -1;
+		float widthPx = -1, heightPx = -1;
+		ContactAreaUnits units = ContactAreaUnits::Missing;
+	};
+	struct ContactAreaParameters
+	{
+		float multiplier = 1.10f, paddingDip = 6, maximumFloorDip = 64;
+		float minimumSpanDip = 2, maximumReportedSpanDip = 96, maximumAspectRatio = 3.5f;
+		float confirmationRatio = 1.25f, outlierRatio = 1.60f, movementNoiseRatio = 0.5f;
+		double confirmationSeconds = 0.050, filterSeconds = 0.050, maximumSampleGapSeconds = 0.080;
+		double missingTimeoutSeconds = 2.0, invalidGraceSeconds = 0.200, releaseSeconds = 0.180;
+		friend bool operator==(const ContactAreaParameters&, const ContactAreaParameters&) = default;
+	};
+	struct ContactAreaDiagnostics
+	{
+		ContactAreaSample sample;
+		float widthDip = -1, heightDip = -1, referenceFloorDip = 0, activeFloorDip = 0;
+		double stableMotionSeconds = 0;
+		ContactAreaReason reason = ContactAreaReason::Disabled;
+		bool enabled = false, sampleValid = false, referenceReady = false, active = false;
+	};
+	bool ContactMetricsMatch(uint32_t axisUnits,float axisResolution,uint32_t spanUnits,float spanResolution) noexcept;
+	const char* ContactAreaReasonName(ContactAreaReason reason) noexcept;
+
 	struct Config
 	{
 		DisplayScale display;
 		EraserSizes sizes;
+		bool touchContactAreaAssistance = false;
+		ContactAreaParameters contactArea;
 		DeviceMode mode = DeviceMode::Laptop;
 		ScaleSource motionSource = ScaleSource::DipOnly;
 		MotionUnit motionUnit = MotionUnit::DipPerSecond;
@@ -164,10 +196,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 	public:
 		void Reset(float x, float y, double seconds,
-			StartKind kind = StartKind::Hover, const Config& config = Config{}, float initialDiameterDip = 0) noexcept;
+			StartKind kind = StartKind::Hover, const Config& config = Config{}, float initialDiameterDip = 0,
+			const ContactAreaSample* contactArea = nullptr) noexcept;
 		void ResetPreview(float x, float y, double seconds, const Config& config, float diameterDip = 0) noexcept;
 		void BeginContact(const Controller* preview, float x, float y, double seconds, const Config& config) noexcept;
-		float UpdatePosition(float x, float y, double seconds) noexcept;
+		float UpdatePosition(float x, float y, double seconds,
+			const ContactAreaSample* contactArea = nullptr, bool terminal = false) noexcept;
 		float Advance(double seconds) noexcept;
 		void PauseForReconnect(double seconds) noexcept;
 		float ResumeFromReconnect(float x, float y, double seconds) noexcept;
@@ -180,6 +214,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool SweepQualified() const noexcept { return frameState_.sweepQualified; }
 		bool PreviewOnly() const noexcept { return previewOnly_; }
 		float TargetDiameter() const noexcept;
+		float TargetDiameterDip() const noexcept;
+		bool TouchUnlocked() const noexcept;
+		ContactAreaDiagnostics AreaDiagnostics(double seconds) const noexcept;
+		double NextAreaWakeSeconds() const noexcept;
 		bool IsPaused() const noexcept { return paused_; }
 		bool NeedsAnimation(double seconds) const noexcept;
 		const Config& Configuration() const noexcept { return config_; }
@@ -205,12 +243,26 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double sweepEvidence = 0.0;
 			double lastMovementTime = 0.0;
 			double speed = 0.0;
+			float areaFloorDip = 0.0f;
 			bool sweepQualified = false;
 			bool sweeping = false;
 			bool decreasePending = false;
 			bool shrinking = false;
 		};
 
+		struct AreaState
+		{
+			ContactAreaDiagnostics diagnostic;
+			float candidateWidth = 0, candidateHeight = 0, referenceWidth = 0, referenceHeight = 0;
+			double lastSampleSeconds = 0, lastValidSeconds = 0, readySeconds = 0, badSince = -1;
+			bool hasSample = false, hasCandidate = false;
+		};
+		AreaState area_;
+		bool AreaEligible() const noexcept;
+		void ObserveContactArea(const ContactAreaSample& sample,double seconds,bool moving) noexcept;
+		double AreaExpirySeconds() const noexcept;
+		float AreaReferenceFloor(double seconds) const noexcept;
+		void ShiftAreaTime(double seconds) noexcept;
 		static constexpr size_t kSegmentCapacity = 64;
 		std::array<MotionSegment, kSegmentCapacity> segments_ = {};
 		size_t segmentCount_ = 0;
@@ -231,14 +283,14 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 		void AddSegment(const MotionSegment& segment) noexcept;
 		double MotionSpeed(double seconds, double windowSeconds) const noexcept;
-		bool HasMotionSupport(double seconds) const noexcept;
+		bool HasMotionSupport(double seconds,double windowSeconds = 0,double noiseRatio = 1.0) const noexcept;
 		double TargetLogDiameter(double speed, double maximumDisplacement) const noexcept;
 		double IdleDiameterDip(const DynamicsState& state) const noexcept;
 		void AdvanceState(DynamicsState& state, double seconds,
 			const MotionSegment* incoming = nullptr, double incomingX = 0.0,
 			double incomingY = 0.0, bool effectiveMovement = false) const noexcept;
 		void FollowTarget(DynamicsState& state, double endTime,
-			double target, double realMotionSpeed) const noexcept;
+			double target, double realMotionSpeed, bool areaMotionEvidence = false) const noexcept;
 	};
 
 	// Hover 只预览精细区；收尾接收已接受直径，不回写擦除几何。
@@ -329,6 +381,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float heuristicGain = 1.0f;
 		EraserSizes sizes;
 		float dpiX = 96, dpiY = 96;
+		float dipPerPixelX = 1, dipPerPixelY = 1, motionPerPixelX = 1, motionPerPixelY = 1;
+		float targetDiameterDip = 32, manualWidthCm = 0, manualHeightCm = 0;
+		int pixelWidth = 0, pixelHeight = 0;
+		bool touchUnlocked = false;
+		ContactAreaDiagnostics contactArea;
 		float effectiveDiameterDip = 32, cursorDiameterPx = 32, nextRadiusPx = 16;
 		float historyRadiusPx = 0, resumedMaxRadiusPx = 0;
 		float resumedLeft = 0, resumedTop = 0, resumedRight = 0, resumedBottom = 0;

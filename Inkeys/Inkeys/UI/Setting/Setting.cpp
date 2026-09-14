@@ -8551,6 +8551,8 @@ SettingSessionCoroutine RunSettingSession()
 						const char* betas[]={"0.25","0.50（默认）","0.75"};
 						if(ImGui::Combo("屏幕笔 beta",&beta,betas,3))
 						{options.penBeta=0.25f*(beta+1);changed=true;}
+						changed|=ImGui::Checkbox("触摸接触面积辅助（实验）",&options.touchContactAreaAssistance);
+						ImGui::TextWrapped("默认关闭。参考接触范围适度提高拖擦下限；驱动报告不准时请关闭。点按仍小尺寸起步，开启后精细拖擦下限可能增大。");
 						changed|=ImGui::Checkbox("显示低成本笔速诊断",&options.diagnostics);
 						if(changed)ProductHost().SetEraserDevelopmentOptions(options);
 						ImGui::TextWrapped("模型和标尺在下一独立接触/批次应用；真实 Pen/Touch 身份不变。经验尺度不是实测毫米。");
@@ -8566,10 +8568,22 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::Text("表面 %p | DPI %.0fx%.0f | 映射 %s | generation %llu / %llu",
 								reinterpret_cast<void*>(d.monitor),d.dpiX,d.dpiY,d.inputMapped?"可靠":"未确认",
 								static_cast<unsigned long long>(d.displayGeneration),static_cast<unsigned long long>(d.displayRevision));
+							ImGui::Text("实际像素 %dx%d | DIP/px %.5fx%.5f | 动作单位/px %.5fx%.5f",
+								d.pixelWidth,d.pixelHeight,d.dipPerPixelX,d.dipPerPixelY,d.motionPerPixelX,d.motionPerPixelY);
+							if(d.motionSource==SpeedEraser::ScaleSource::ManualCalibration)
+								ImGui::Text("本批手动表面 %.1fx%.1f cm（录入方向）",d.manualWidthCm,d.manualHeightCm);
 							ImGui::Text("速度 %.1f %s | 资格 %s | 证据 %.0f ms",
 								d.speed,SpeedEraser::MotionUnitName(d.motionUnit),d.qualified?"有":"无",d.evidenceSeconds*1000);
 							ImGui::Text("有效直径 %.2f DIP | 最终光标 %.2f px | 下一段半径 %.2f px | 限幅 %s",
 								d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.limited?"是":"否");
+							const auto& area=d.contactArea;
+							ImGui::Text("目标 %.2f DIP | Touch起步解锁 %s | 面积辅助 %s",
+								d.targetDiameterDip,d.touchUnlocked?"是":"否",area.enabled?"开":"关");
+							ImGui::Text("接触 raw %.1fx%.1f | per-context px %.2fx%.2f | DIP %.2fx%.2f",
+								area.sample.rawWidth,area.sample.rawHeight,area.sample.widthPx,area.sample.heightPx,area.widthDip,area.heightDip);
+							ImGui::Text("面积 %s | 有效样本 %s | 稳定拖擦 %.0f ms | 参考/有效下限 %.2f/%.2f DIP | 激活 %s",
+								SpeedEraser::ContactAreaReasonName(area.reason),area.sampleValid?"是":"否",
+								area.stableMotionSeconds*1000,area.referenceFloorDip,area.activeFloorDip,area.active?"是":"否");
 							if(d.motionSource==SpeedEraser::ScaleSource::TrustedPhysical || d.motionSource==SpeedEraser::ScaleSource::ManualCalibration)
 								ImGui::Text("物理标尺 %.4f mm/DIP | beta %.2f",d.rhoMmPerDip,d.penBeta);
 							else if(d.motionSource==SpeedEraser::ScaleSource::ResolutionDpiHeuristic)

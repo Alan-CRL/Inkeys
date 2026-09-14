@@ -60,7 +60,9 @@ export namespace Inkeys::Drawing::Draw3
 		float tilt = -1.0f;
 		float orientation = -1.0f;
 		bool isInvertedCursor = false;
-		SizeF contactSize = {};
+		SizeF contactSize = {}; // 既有 per-context 换算结果。
+		SizeF rawContactSize = {};
+		SpeedEraser::ContactAreaUnits contactAreaUnits = SpeedEraser::ContactAreaUnits::Missing;
 		int64_t qpc = 0;
 		ContactPhase phase = ContactPhase::Down;
 		uint64_t sequence = 0;
@@ -129,6 +131,9 @@ export namespace Inkeys::Drawing::Draw3
 		IdtAtomic<float> tilt_;
 		IdtAtomic<float> orientation_;
 		IdtAtomic<uint32_t> isInvertedCursor_;
+		IdtAtomic<float> rawContactWidth_;
+		IdtAtomic<float> rawContactHeight_;
+		IdtAtomic<uint32_t> contactAreaUnits_;
 		IdtAtomic<float> width_;
 		IdtAtomic<float> height_;
 		IdtAtomic<int64_t> qpc_;

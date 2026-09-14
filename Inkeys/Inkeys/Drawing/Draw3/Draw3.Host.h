@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <string>
 
@@ -172,6 +173,7 @@ namespace Inkeys::Drawing::Draw3
 		void* startupContext = nullptr;
 		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
 		bool enableEraserDiagnostics = false; // 默认关闭；仅发布有界快照，不逐点写日志。
+		std::optional<SpeedEraser::DisplayScale> hiddenTestDisplayScale;
 	};
 
 	// 原子快照仅用于无窗口验收和故障诊断，不暴露 Renderer/Document 所有权。
@@ -215,6 +217,7 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t runtimeRevision = 0;
 		RECT lastDirtyRect{};
 		SpeedEraser::Diagnostics eraser;
+		bool touchContactAreaAssistanceEnabled = false;
 	};
 
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
@@ -238,6 +241,7 @@ namespace Inkeys::Drawing::Draw3
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
 		SpeedEraser::DisplayScale EraserDisplayScaleSnapshot() const;
+		void SetHiddenTestContactArea(const SpeedEraser::ContactAreaSample& sample);
 		// 内容 revision 变化或超时后返回；用于产品状态线程即时响应绘制线程更新。
 		bool WaitForContentRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;

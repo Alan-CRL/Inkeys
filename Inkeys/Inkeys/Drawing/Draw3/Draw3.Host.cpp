@@ -39,6 +39,7 @@ namespace Inkeys::Drawing::Draw3
 		SpeedEraser::Diagnostics eraserDiagnostics;
 		mutable std::mutex displayMutex;
 		SpeedEraser::DevelopmentOptions eraserDevelopment;
+		SpeedEraser::ContactAreaSample hiddenContactArea;
 		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
 		Inkeys::Display::Subscription displaySubscription;
 		std::atomic_bool displayScaleDirty = false;
@@ -490,6 +491,8 @@ namespace Inkeys::Drawing::Draw3
 			const HWND hwnd = attachedWindow.load(std::memory_order_acquire);
 			SpeedEraser::DisplayScale scale;
 			scale.development = development;
+			window.SetTouchContactAreaAssistance(development.touchContactAreaAssistance);
+			scale.development.touchContactAreaAssistance=false; // 面积开关不属于 Mouse/Pen 的显示标尺。
 			window.SetEraserDiagnosticsEnabled(development.diagnostics || hiddenTestContactInjectionEnabled || startOptions.enableEraserDiagnostics);
 			scale.generation = snapshot ? snapshot->generation : 0;
 			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
@@ -522,6 +525,11 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const UINT dpi = GetDpiForWindow(hwnd);
 				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
+			}
+			if(hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale)
+			{
+				const auto policy=scale.development;
+				scale=*startOptions.hiddenTestDisplayScale;scale.development=policy;
 			}
 			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
 			scale.revision = previous.revision;
@@ -1029,6 +1037,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		HostRuntimeSnapshot snapshot;
 		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;}
+		snapshot.touchContactAreaAssistanceEnabled=impl_->window.TouchContactAreaAssistance();
 		snapshot.running = impl_->running.load(std::memory_order_acquire);
 		snapshot.firstFrameReady = impl_->firstFrameReady.load(std::memory_order_acquire);
 		snapshot.lastPresentSucceeded =
@@ -1121,6 +1130,12 @@ namespace Inkeys::Drawing::Draw3
 		const auto deviceType=(phaseValue & kHiddenTestMouseFlag) ? InputDeviceType::MouseLeft :
 			(phaseValue & kHiddenTestTouchFlag) ? InputDeviceType::Touch : InputDeviceType::Pen;
 		ContactSnapshot snapshot{};
+		{
+			std::scoped_lock lock(impl_->displayMutex);
+			const auto& area=impl_->hiddenContactArea;
+			snapshot.rawContactSize={area.rawWidth,area.rawHeight};
+			snapshot.contactSize={area.widthPx,area.heightPx};snapshot.contactAreaUnits=area.units;
+		}
 		snapshot.position.x = static_cast<float>(static_cast<short>(LOWORD(position)));
 		snapshot.position.y = static_cast<float>(static_cast<short>(HIWORD(position)));
 		snapshot.pressure = phase == HiddenTestContactPhase::Down ? 0.8f : 0.7f;
@@ -1145,6 +1160,7 @@ namespace Inkeys::Drawing::Draw3
 		switch (phase)
 		{
 		case HiddenTestContactPhase::Down:
+			if(deviceType==InputDeviceType::Touch)impl_->window.NotifyTouchContactBegin();
 			snapshot.phase = ContactPhase::Down;
 			published = impl_->input.PublishDown(tabletContextId, contactId,
 				deviceType, snapshot);
@@ -1167,6 +1183,12 @@ namespace Inkeys::Drawing::Draw3
 		default:
 			return false;
 		}
+
+		// 隐藏注入复用真实 RTS 的 Touch 模态通知，不能让旧 Mouse Hover 掩盖 Touch 光标。
+		if(deviceType==InputDeviceType::Touch &&
+			((phase==HiddenTestContactPhase::Down && !published) ||
+			 (published && (phase==HiddenTestContactPhase::Up || phase==HiddenTestContactPhase::Cancelled))))
+			impl_->window.NotifyTouchContactEnd();
 
 		if(published && (deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::Pen))
 		{
@@ -1198,6 +1220,12 @@ namespace Inkeys::Drawing::Draw3
 		std::scoped_lock lock(impl_->displayMutex);
 		return impl_->eraserDevelopment;
 	}
+	void Host::SetHiddenTestContactArea(const SpeedEraser::ContactAreaSample& sample)
+	{
+		if(!impl_->hiddenTestContactInjectionEnabled)return;
+		std::scoped_lock lock(impl_->displayMutex);impl_->hiddenContactArea=sample;
+	}
+
 	SpeedEraser::DisplayScale Host::EraserDisplayScaleSnapshot() const
 	{
 		return impl_->window.SpeedEraserDisplayScaleSnapshot();
