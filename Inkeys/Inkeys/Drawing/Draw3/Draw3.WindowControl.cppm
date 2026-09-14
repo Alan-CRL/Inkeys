@@ -171,6 +171,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
 		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		void SetEraserWidthMode(EraserWidthMode mode) noexcept;
+		void SetEraserDiagnosticsEnabled(bool enabled) noexcept { eraserDiagnosticsEnabled_.store(enabled); }
+		bool EraserDiagnosticsEnabled() const noexcept { return eraserDiagnosticsEnabled_.load(); }
 		void SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale);
 		SpeedEraser::DisplayScale SpeedEraserDisplayScaleSnapshot() const;
 		void SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode);
@@ -270,6 +272,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
 		// 完整标尺在同一个锁内复制，不能拼接跨 generation 的独立原子字段。
+		std::atomic<bool> eraserDiagnosticsEnabled_ = false;
 		mutable std::mutex speedEraserConfigMutex_;
 		SpeedEraser::DisplayScale speedEraserDisplayScale_;
 		SpeedEraser::DeviceMode speedEraserDeviceMode_ = SpeedEraser::DeviceMode::Laptop;

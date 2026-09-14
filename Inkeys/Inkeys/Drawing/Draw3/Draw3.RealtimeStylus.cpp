@@ -13,6 +13,9 @@
 #include <limits>
 #include <mutex>
 #include <new>
+#include <memory>
+#include <vector>
+#include "Draw3.SpeedEraser.h"
 #include <windows.h>
 #include <RTSCOM.h>
 #include <RTSCOM_i.c>
@@ -411,6 +414,54 @@ namespace Inkeys::Drawing::Draw3
 			uint32_t syntheticContactSequence_ = 0;
 		};
 
+		using PointerSourceList = std::vector<SpeedEraser::InputSource>;
+
+		std::shared_ptr<const PointerSourceList> ReadPointerSources()
+		{
+			// 只在 context 构建/映射通知时枚举，Win7 不产生任何现代 API 硬导入。
+			const HMODULE user32=GetModuleHandleW(L"user32.dll");
+			const auto devices=reinterpret_cast<decltype(&GetPointerDevices)>(GetProcAddress(user32,"GetPointerDevices"));
+			const auto cursors=reinterpret_cast<decltype(&GetPointerDeviceCursors)>(GetProcAddress(user32,"GetPointerDeviceCursors"));
+			const auto rects=reinterpret_cast<decltype(&GetPointerDeviceRects)>(GetProcAddress(user32,"GetPointerDeviceRects"));
+			if(!devices || !cursors || !rects)return {};
+			try
+			{
+				UINT32 count=0;
+				if(!devices(&count,nullptr) || count==0 || count>64)return {};
+				std::vector<POINTER_DEVICE_INFO> list(count);
+				if(!devices(&count,list.data()) || count>list.size())return {};
+				auto result=std::make_shared<PointerSourceList>();
+				for(UINT32 i=0;i<count;++i)
+				{
+					SpeedEraser::InputSource source;
+					switch(list[i].pointerDeviceType)
+					{
+					case POINTER_DEVICE_TYPE_INTEGRATED_PEN: source.kind=SpeedEraser::SourceKind::IntegratedPen;break;
+					case POINTER_DEVICE_TYPE_EXTERNAL_PEN: source.kind=SpeedEraser::SourceKind::ExternalPen;break;
+					case POINTER_DEVICE_TYPE_TOUCH: source.kind=SpeedEraser::SourceKind::Touch;break;
+					case POINTER_DEVICE_TYPE_TOUCH_PAD: source.kind=SpeedEraser::SourceKind::TouchPad;break;
+					default: continue;
+					}
+					RECT device{},screen{};
+					if(rects(list[i].device,&device,&screen) && device.right>device.left && device.bottom>device.top &&
+						screen.right>screen.left && screen.bottom>screen.top)
+					{
+						source.mappedMonitor=reinterpret_cast<uintptr_t>(list[i].monitor);
+						source.mappedLeft=screen.left;source.mappedTop=screen.top;
+						source.mappedWidth=screen.right-screen.left;source.mappedHeight=screen.bottom-screen.top;
+					}
+					UINT32 n=0;
+					if(!cursors(list[i].device,&n,nullptr) || n>4096 || result->size()+n>4096)return {};
+					std::vector<POINTER_DEVICE_CURSOR_INFO> ids(n);
+					if(n && (!cursors(list[i].device,&n,ids.data()) || n>ids.size()))return {};
+					for(UINT32 j=0;j<n;++j){source.cursorId=ids[j].cursorId;result->push_back(source);}
+				}
+				std::sort(result->begin(),result->end(),[](const auto& a,const auto& b){return a.cursorId<b.cursorId;});
+				return result;
+			}
+			catch(...){return {};}
+		}
+
 		struct RtsContextDecoder
 		{
 			TABLET_CONTEXT_ID tabletContextId = 0;
@@ -430,6 +481,8 @@ namespace Inkeys::Drawing::Draw3
 			float contactScaleY = 1.0f;
 			InputDeviceType deviceType = InputDeviceType::Pen;
 			uint64_t generation = 0;
+			bool modernSourceApi = false, sourceDeviceKnown = false, capabilitiesKnown = false, integrated = false;
+			std::shared_ptr<const PointerSourceList> pointerSources;
 			bool valid = false;
 		};
 
@@ -783,6 +836,31 @@ namespace Inkeys::Drawing::Draw3
 			return hasX && hasY;
 		}
 
+		SpeedEraser::InputSource SourceForCursor(const RtsContextDecoder& decoder,uint32_t cursorId) noexcept
+		{
+			SpeedEraser::InputSource result;
+			bool matched=false,ambiguous=false;
+			if(decoder.pointerSources)
+			{
+				const auto& list=*decoder.pointerSources;
+				const auto it=std::lower_bound(list.begin(),list.end(),cursorId,
+					[](const auto& item,uint32_t id){return item.cursorId<id;});
+				matched=it!=list.end() && it->cursorId==cursorId;
+				ambiguous=matched && it+1!=list.end() && (it+1)->cursorId==cursorId;
+				if(matched && !ambiguous)result=*it;
+			}
+			result.kind=SpeedEraser::ClassifySource(decoder.sourceDeviceKnown?static_cast<uint32_t>(decoder.deviceType):4u,
+				decoder.modernSourceApi,decoder.capabilitiesKnown,decoder.integrated,result.kind,matched,ambiguous);
+			result.recognition=ambiguous || (matched && result.kind==SpeedEraser::SourceKind::Unknown)
+				? SpeedEraser::SourceRecognition::Conflict
+				: matched ? SpeedEraser::SourceRecognition::PointerCursor
+				: decoder.capabilitiesKnown && decoder.modernSourceApi ? SpeedEraser::SourceRecognition::RtsCapabilities
+				: SpeedEraser::SourceRecognition::Unknown;
+			if(result.kind==SpeedEraser::SourceKind::Unknown)result.mappedMonitor=0;
+			result.contextId=decoder.tabletContextId;result.cursorId=cursorId;result.generation=decoder.generation;
+			return result;
+		}
+
 		bool BuildContextDecoder(IRealTimeStylus* source, TABLET_CONTEXT_ID contextId,
 			IInkTablet* suppliedTablet, RtsContextDecoder& candidate)
 		{
@@ -820,12 +898,21 @@ namespace Inkeys::Drawing::Draw3
 					TabletDeviceKind kind = TDK_Pen;
 					if (SUCCEEDED(tablet2->get_DeviceKind(&kind)))
 					{
+						decoder.sourceDeviceKnown = true;
 						if (kind == TDK_Touch) deviceType = InputDeviceType::Touch;
 						else if (kind == TDK_Mouse) deviceType = InputDeviceType::MouseLeft;
 					}
 				}
 			}
 
+			decoder.modernSourceApi=GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetPointerType")!=nullptr;
+			if(decoder.modernSourceApi && tablet)
+			{
+				TabletHardwareCapabilities caps{};
+				decoder.capabilitiesKnown=SUCCEEDED(tablet->get_HardwareCapabilities(&caps));
+				decoder.integrated=decoder.capabilitiesKnown && (caps & THWC_Integrated)!=0;
+				decoder.pointerSources=ReadPointerSources();
+			}
 			decoder.tabletContextId = contextId;
 			decoder.contactScaleX = contactScaleX;
 			decoder.contactScaleY = contactScaleY;
@@ -1010,6 +1097,8 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					return S_OK;
 				}
+				// 触控板板面不进入擦屏接触链；它控制的桌面指针仍走原鼠标通道。
+				if(SourceForCursor(*decoder,stylusInfo->cid).kind==SpeedEraser::SourceKind::TouchPad)return S_OK;
 				// 设备模态切换不依赖坐标包解码；Win7 也能在 Touch Down 时清掉旧 Mouse Hover。
 				NotifyRtsStylusDownCursor(decoder->deviceType, drawingCursorSink_);
 
@@ -1048,6 +1137,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					return S_OK;
 				}
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
@@ -1115,6 +1205,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					return S_OK;
 				}
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishDefaultPenCursor(); // Up 只清除接触光标，后续 InAir/Pointer 样本再恢复真实 Hover。
@@ -1164,6 +1255,7 @@ namespace Inkeys::Drawing::Draw3
 					lastPacket, decoded ? &snapshot : nullptr, decoded, false);
 #endif
 				if (!decoded) return S_OK;
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				PublishPenCursor(decoder, stylusInfo, false, snapshot);
@@ -1199,6 +1291,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 					return S_OK;
 				}
+				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
 				bool published = false;
@@ -1353,6 +1446,7 @@ namespace Inkeys::Drawing::Draw3
 				sample.valid = true;
 				sample.inverted = stylusInfo->bIsInvertedCursor != FALSE;
 				sample.inContact = inContact;
+				sample.source = snapshot.source;
 				drawingCursorSink_->PublishPenCursorSample(sample);
 			}
 
@@ -1946,6 +2040,51 @@ namespace Inkeys::Drawing::Draw3
 		if (!PublishTestingDecoders(cache, &contextId, 1, 3.0f, 4.0f)) return false;
 		return disabled && cache.Resolve(oldBinding) == nullptr &&
 			bindings.Find(contextId, 6u) == nullptr;
+	}
+
+	bool RtsSourceRoutingForTesting() noexcept
+	{
+		using namespace SpeedEraser;
+		RtsContextDecoder integrated,external;
+		integrated.deviceType=external.deviceType=InputDeviceType::Pen;
+		integrated.sourceDeviceKnown=external.sourceDeviceKnown=true;
+		integrated.modernSourceApi=external.modernSourceApi=true;
+		integrated.capabilitiesKnown=external.capabilitiesKnown=true;
+		integrated.integrated=true;
+		integrated.tabletContextId=11;external.tabletContextId=22;
+		integrated.generation=5;external.generation=6;
+		auto list=std::make_shared<PointerSourceList>();
+		InputSource a;a.kind=SourceKind::IntegratedPen;a.cursorId=17;a.mappedMonitor=1;
+		a.mappedWidth=1920;a.mappedHeight=1080;
+		InputSource b=a;b.kind=SourceKind::ExternalPen;b.cursorId=18;b.mappedMonitor=2;
+		list->push_back(a);list->push_back(b);
+		integrated.pointerSources=external.pointerSources=list;
+		const auto pen=SourceForCursor(integrated,17),tablet=SourceForCursor(external,18);
+		if(pen.kind!=SourceKind::IntegratedPen || tablet.kind!=SourceKind::ExternalPen ||
+			pen.contextId!=11 || tablet.contextId!=22 || pen.generation!=5)return false;
+		if(SourceForCursor(integrated,18).kind!=SourceKind::Unknown)return false;
+		integrated.modernSourceApi=false;
+		if(SourceForCursor(integrated,17).kind!=SourceKind::Unknown)return false;
+		integrated.modernSourceApi=true;integrated.pointerSources.reset();
+		const auto missing=SourceForCursor(integrated,17);
+		if(missing.kind!=SourceKind::IntegratedPen || missing.mappedMonitor!=0)return false;
+		list->insert(list->begin(),a);integrated.pointerSources=list;
+		if(SourceForCursor(integrated,17).kind!=SourceKind::Unknown)return false;
+		// 实际 contact mailbox 保留 Down 的元数据、倒转和压力；Move 不混入另一来源。
+		ContactInputCoordinator coordinator;
+		ContactSnapshot snapshot;snapshot.position={10,20};snapshot.qpc=100;
+		snapshot.source=pen;snapshot.pressure=0.73f;snapshot.isInvertedCursor=true;
+		if(!coordinator.PublishDown(11,17,InputDeviceType::Pen,snapshot))return false;
+		ContactRecord* record=nullptr;
+		if(!coordinator.TryDequeue(record) || !record)return false;
+		const ContactHandle handle{record,record->Generation()};
+		snapshot.position.x=12;snapshot.qpc=110;snapshot.source=tablet;
+		if(!coordinator.PublishMove(11,17,snapshot))return false;
+		ContactSnapshot actual;
+		const bool passed=coordinator.TryReadSnapshot(handle,actual) && actual.source==pen &&
+			actual.pressure==0.73f && actual.isInvertedCursor && record->DeviceType()==InputDeviceType::Pen;
+		coordinator.PublishUp(11,17,snapshot);coordinator.Recycle(handle);
+		return passed;
 	}
 
 	bool RtsLifecycleUpdateMappingForTesting() noexcept

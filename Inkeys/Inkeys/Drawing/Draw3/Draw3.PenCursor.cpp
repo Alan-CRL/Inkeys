@@ -165,12 +165,41 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	SpeedEraser::InputSource DrawingCursorSampleMailbox::LoadInputSource() const noexcept
+	{
+		SpeedEraser::InputSource source;
+		source.kind = static_cast<SpeedEraser::SourceKind>(source_kind_.load(std::memory_order_relaxed));
+		source.recognition = static_cast<SpeedEraser::SourceRecognition>(source_recognition_.load(std::memory_order_relaxed));
+		source.contextId = source_contextId_.load(std::memory_order_relaxed);
+		source.cursorId = source_cursorId_.load(std::memory_order_relaxed);
+		source.generation = source_generation_.load(std::memory_order_relaxed);
+		source.mappedMonitor = source_mappedMonitor_.load(std::memory_order_relaxed);
+		source.mappedLeft = source_mappedLeft_.load(std::memory_order_relaxed);
+		source.mappedTop = source_mappedTop_.load(std::memory_order_relaxed);
+		source.mappedWidth = source_mappedWidth_.load(std::memory_order_relaxed);
+		source.mappedHeight = source_mappedHeight_.load(std::memory_order_relaxed);
+		return source;
+	}
+	void DrawingCursorSampleMailbox::StoreInputSource(const SpeedEraser::InputSource& source) noexcept
+	{
+		source_kind_.store(static_cast<uint32_t>(source.kind),std::memory_order_relaxed);
+		source_recognition_.store(static_cast<uint32_t>(source.recognition),std::memory_order_relaxed);
+		source_contextId_.store(source.contextId,std::memory_order_relaxed);
+		source_cursorId_.store(source.cursorId,std::memory_order_relaxed);
+		source_generation_.store(source.generation,std::memory_order_relaxed);
+		source_mappedMonitor_.store(source.mappedMonitor,std::memory_order_relaxed);
+		source_mappedLeft_.store(source.mappedLeft,std::memory_order_relaxed);
+		source_mappedTop_.store(source.mappedTop,std::memory_order_relaxed);
+		source_mappedWidth_.store(source.mappedWidth,std::memory_order_relaxed);
+		source_mappedHeight_.store(source.mappedHeight,std::memory_order_relaxed);
+	}
+
 	bool DrawingCursorSampleMailbox::Publish(DrawingCursorSample sample) noexcept
 	{
 		if (!std::isfinite(sample.x) || !std::isfinite(sample.y)) sample.valid = false;
 		while (writerLatch_.test_and_set(std::memory_order_acquire)) YieldProcessor();
 
-		const bool changed = valid_.load(std::memory_order_relaxed) != (sample.valid ? 1u : 0u) ||
+		const bool changed = LoadInputSource() != sample.source || valid_.load(std::memory_order_relaxed) != (sample.valid ? 1u : 0u) ||
 			inverted_.load(std::memory_order_relaxed) != (sample.inverted ? 1u : 0u) ||
 			inContact_.load(std::memory_order_relaxed) != (sample.inContact ? 1u : 0u) ||
 			!FloatEqual(x_.load(std::memory_order_relaxed), sample.x) ||
@@ -181,6 +210,7 @@ namespace Inkeys::Drawing::Draw3
 		x_.store(sample.x, std::memory_order_relaxed);
 		y_.store(sample.y, std::memory_order_relaxed);
 		qpc_.store(sample.qpc, std::memory_order_relaxed);
+		StoreInputSource(sample.source);
 		valid_.store(sample.valid ? 1u : 0u, std::memory_order_relaxed);
 		inverted_.store(sample.inverted ? 1u : 0u, std::memory_order_relaxed);
 		inContact_.store(sample.inContact ? 1u : 0u, std::memory_order_relaxed);
@@ -208,6 +238,7 @@ namespace Inkeys::Drawing::Draw3
 			candidate.x = x_.load(std::memory_order_relaxed);
 			candidate.y = y_.load(std::memory_order_relaxed);
 			candidate.qpc = qpc_.load(std::memory_order_relaxed);
+			candidate.source = LoadInputSource();
 			candidate.valid = valid_.load(std::memory_order_relaxed) != 0;
 			candidate.inverted = inverted_.load(std::memory_order_relaxed) != 0;
 			candidate.inContact = inContact_.load(std::memory_order_relaxed) != 0;

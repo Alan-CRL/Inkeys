@@ -264,6 +264,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 
 				ContactSnapshot candidate;
+				// 来源在 Down 锁存；RTS 映射换代会关闭旧 contact，不在 Move 中拼接另一设备。
+				candidate.source = record.downSnapshot_.source;
 				candidate.position.x = record.x_.Load();
 				candidate.position.y = record.y_.Load();
 				candidate.pressure = record.pressure_.Load();

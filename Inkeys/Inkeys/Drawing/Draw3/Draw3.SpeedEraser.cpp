@@ -46,11 +46,94 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return DiameterToCanvasPx(selectedDiameterDip,display);
 	}
 
-	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch, const EraserSizes& sizes) noexcept
+	SourceKind ClassifySource(uint32_t actualInputType, bool modernApiAvailable,
+		bool capabilitiesKnown, bool integrated, SourceKind pointerKind,
+		bool pointerMatched, bool pointerAmbiguous) noexcept
+	{
+		if (actualInputType == 2 || actualInputType == 3) return SourceKind::Mouse;
+		// Win7 不扩展自动物理识别；能力存在也不等于当前来源/表面已被确认。
+		if (!modernApiAvailable || pointerAmbiguous) return SourceKind::Unknown;
+		if (actualInputType == 1)
+		{
+			if (pointerMatched)
+			{
+				if (pointerKind != SourceKind::IntegratedPen && pointerKind != SourceKind::ExternalPen)
+					return SourceKind::Unknown;
+				if (capabilitiesKnown && integrated != (pointerKind == SourceKind::IntegratedPen))
+					return SourceKind::Unknown;
+				return pointerKind;
+			}
+			return capabilitiesKnown ? (integrated ? SourceKind::IntegratedPen : SourceKind::ExternalPen)
+				: SourceKind::Unknown;
+		}
+		if (actualInputType == 0)
+		{
+			if (pointerMatched && pointerKind == SourceKind::TouchPad) return SourceKind::TouchPad;
+			if (pointerMatched && pointerKind != SourceKind::Touch) return SourceKind::Unknown;
+			if (capabilitiesKnown && !integrated) return SourceKind::Unknown;
+			if (pointerMatched || (capabilitiesKnown && integrated)) return SourceKind::Touch;
+		}
+		return SourceKind::Unknown;
+	}
+
+	const char* SourceKindName(SourceKind kind) noexcept
+	{
+		switch (kind)
+		{
+		case SourceKind::Mouse: return "Mouse";
+		case SourceKind::ExternalPen: return "External Pen";
+		case SourceKind::IntegratedPen: return "Integrated Pen";
+		case SourceKind::Touch: return "Screen Touch";
+		case SourceKind::TouchPad: return "Touch Pad";
+		default: return "Unknown";
+		}
+	}
+	const char* ResponseModelName(ResponseModel model) noexcept
+	{
+		switch (model)
+		{
+		case ResponseModel::ScreenPenHybrid: return "ScreenPenHybrid";
+		case ResponseModel::DirectTouch: return "DirectTouch";
+		default: return "IndirectDip";
+		}
+	}
+	const char* ScaleSourceName(ScaleSource source) noexcept
+	{
+		switch (source)
+		{
+		case ScaleSource::TrustedPhysical: return "TrustedPhysical";
+		case ScaleSource::ManualCalibration: return "ManualCalibration";
+		case ScaleSource::ResolutionDpiHeuristic: return "ResolutionDpiHeuristic";
+		default: return "DipOnly";
+		}
+	}
+	const char* MotionUnitName(MotionUnit unit) noexcept
+	{
+		switch (unit)
+		{
+		case MotionUnit::MillimetersPerSecond: return "mm/s";
+		case MotionUnit::HeuristicPerSecond: return "reference DIP/s";
+		default: return "DIP/s";
+		}
+	}
+
+	float ResolutionDpiActionGain(const DisplayScale& display) noexcept
+	{
+		if (!display.logicalOutputKnown || display.pixelWidth <= 0 || display.pixelHeight <= 0) return 1;
+		const double x = display.pixelWidth * Positive(display.dipPerPixelX,1);
+		const double y = display.pixelHeight * Positive(display.dipPerPixelY,1);
+		// Draw2 的 1920x1080 分辨率参考迁入 DIP；旋转不改变增益，不假定屏幕英寸。
+		const double extent = std::min(std::max(x,y)/1920.0, std::min(x,y)/1080.0);
+		return static_cast<float>(1.0/std::clamp(extent,0.5,4.0));
+	}
+
+	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, const InputSource& source,
+		const EraserSizes& sizes) noexcept
 	{
 		Config config;
 		config.display = display;
 		config.mode = mode;
+		config.inputSource = source;
 		config.sizes = sizes;
 		config.sizes.minimumDiameterDip = static_cast<float>(Positive(sizes.minimumDiameterDip,16.0));
 		config.sizes.maximumDiameterDip = std::max(config.sizes.minimumDiameterDip,
@@ -60,27 +143,152 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config.sizes.touchStartDiameterDip = std::clamp(static_cast<float>(Positive(sizes.touchStartDiameterDip,16.0)),
 			config.sizes.minimumDiameterDip,config.sizes.standardDiameterDip);
 		config.sizes.fixedDiameterDip = static_cast<float>(Positive(sizes.fixedDiameterDip,50.0));
-		// 尺寸只从DIP转换。EDID只决定动作单位，不接触任何尺寸配置。
 		config.minimumDiameterPx = DiameterToCanvasPx(config.sizes.minimumDiameterDip,display);
 		config.maximumDiameterPx = DiameterToCanvasPx(config.sizes.maximumDiameterDip,display);
-		const bool physicalMotion = touch && display.directTouchMapped && display.physicalAvailable &&
-			std::isfinite(display.cmPerPixelX) && display.cmPerPixelX > 0 &&
-			std::isfinite(display.cmPerPixelY) && display.cmPerPixelY > 0;
-		config.motionSource = physicalMotion ? ScaleSource::Physical : ScaleSource::Dip;
-		config.motionPerPixelX = static_cast<float>(physicalMotion ? display.cmPerPixelX : Positive(display.dipPerPixelX,1));
-		config.motionPerPixelY = static_cast<float>(physicalMotion ? display.cmPerPixelY : Positive(display.dipPerPixelY,1));
-		const bool large = mode == DeviceMode::LargeScreen;
-		config.sweepEnterSpeed = physicalMotion ? 25.0f : large ? 650.0f : 800.0f;
-		config.sweepExitSpeed = physicalMotion ? 18.0f : large ? 450.0f : 600.0f;
-		config.largeTargetSpeed = physicalMotion ? 70.0f : large ? 1700.0f : 1900.0f;
-		config.movementNoiseDistance = physicalMotion ? 0.02f : 0.75f;
-		config.touchUnlockStart = physicalMotion ? 0.1f : 2.0f;
-		config.touchUnlockEnd = physicalMotion ? 0.3f : 6.0f;
+		config.response = source.kind == SourceKind::IntegratedPen ? ResponseModel::ScreenPenHybrid
+			: source.kind == SourceKind::Touch ? ResponseModel::DirectTouch : ResponseModel::IndirectDip;
+		switch (display.development.response)
+		{
+		case ResponseOverride::IndirectDip: config.response=ResponseModel::IndirectDip; break;
+		case ResponseOverride::ScreenPenHybrid: config.response=ResponseModel::ScreenPenHybrid; break;
+		case ResponseOverride::DirectTouch: config.response=ResponseModel::DirectTouch; break;
+		default: break;
+		}
+		const double dipX=Positive(display.dipPerPixelX,1), dipY=Positive(display.dipPerPixelY,1);
+		config.motionPerPixelX=static_cast<float>(dipX);
+		config.motionPerPixelY=static_cast<float>(dipY);
+		config.penBeta=std::isfinite(display.development.penBeta)
+			? std::clamp(display.development.penBeta,0.0f,1.0f) : 0.5f;
+		config.inputMapped=display.logicalOutputKnown && source.mappedMonitor!=0 &&
+			source.mappedMonitor==display.monitor && source.mappedWidth==display.pixelWidth &&
+			source.mappedHeight==display.pixelHeight && source.mappedLeft==display.desktopLeft &&
+			source.mappedTop==display.desktopTop;
+		const bool direct=config.response!=ResponseModel::IndirectDip;
+		const bool forced=display.development.response!=ResponseOverride::Automatic;
+		double mmX=0, mmY=0;
+		const auto& calibration=display.development.calibration;
+		const bool manual=display.development.scale==ScaleOverride::ManualSurface &&
+			calibration.monitor!=0 && calibration.monitor==display.monitor && display.logicalOutputKnown &&
+			display.pixelWidth>0 && display.pixelHeight>0 &&
+			std::isfinite(calibration.widthCm) && std::isfinite(calibration.heightCm) &&
+			calibration.widthCm>=5 && calibration.heightCm>=5 &&
+			calibration.widthCm<=1000 && calibration.heightCm<=1000;
+		if (direct && manual && (config.inputMapped || forced))
+		{
+			const bool rotated=((calibration.orientation ^ display.orientation)&1u)!=0;
+			mmX=10.0*(rotated?calibration.heightCm:calibration.widthCm)/display.pixelWidth;
+			mmY=10.0*(rotated?calibration.widthCm:calibration.heightCm)/display.pixelHeight;
+			config.motionSource=ScaleSource::ManualCalibration;
+		}
+		else if (direct && display.development.scale==ScaleOverride::Automatic &&
+			config.inputMapped && display.physicalAvailable)
+		{
+			mmX=10.0*display.cmPerPixelX; mmY=10.0*display.cmPerPixelY;
+			config.motionSource=ScaleSource::TrustedPhysical;
+		}
+		const double rho=std::sqrt(mmX/dipX)*std::sqrt(mmY/dipY);
+		const bool physical=std::isfinite(mmX) && std::isfinite(mmY) && mmX>0 && mmY>0 &&
+			std::isfinite(rho) && rho>=0.01 && rho<=10.0;
+		if (physical)
+		{
+			config.motionPerPixelX=static_cast<float>(mmX);
+			config.motionPerPixelY=static_cast<float>(mmY);
+			config.motionUnit=MotionUnit::MillimetersPerSecond;
+			config.rhoMmPerDip=static_cast<float>(rho);
+		}
+		else
+		{
+			config.motionSource=ScaleSource::DipOnly;
+			if (direct && (mode==DeviceMode::LargeScreen || display.development.scale==ScaleOverride::ForceUnavailable) && display.logicalOutputKnown)
+			{
+				config.motionSource=ScaleSource::ResolutionDpiHeuristic;
+				config.motionUnit=MotionUnit::HeuristicPerSecond;
+				config.heuristicGain=ResolutionDpiActionGain(display);
+				config.motionPerPixelX*=config.heuristicGain;
+				config.motionPerPixelY*=config.heuristicGain;
+			}
+		}
+		if (config.response==ResponseModel::ScreenPenHybrid)
+		{
+			config.fineToStandardSpeed=physical?20.0f:80.0f;
+			config.sweepEnterSpeed=physical?120.0f:480.0f;
+			config.sweepExitSpeed=physical?80.0f:320.0f;
+			config.largeTargetSpeed=physical?350.0f:1400.0f;
+			config.historyWindowSeconds=0.040;
+			config.evidenceStartSeconds=0.060;
+			config.evidenceFullSeconds=0.160;
+			config.evidenceDecaySeconds=0.280;
+			config.growthTauSeconds=0.140;
+			config.largeGrowthTauSeconds=0.120;
+			config.holdSeconds=config.decreaseConfirmationSeconds=0.080;
+			config.sweepHoldSeconds=0.200;
+			config.sweepDecreaseConfirmationSeconds=0.240;
+			config.shrinkTauSeconds=0.120;
+			config.sweepShrinkTauSeconds=0.220;
+			config.idleStartSeconds=0.220;
+			config.idleTauSeconds=0.160;
+		}
+		else if (config.response==ResponseModel::DirectTouch)
+		{
+			config.fineToStandardSpeed=physical?30.0f:100.0f;
+			config.sweepEnterSpeed=physical?250.0f:650.0f;
+			config.sweepExitSpeed=physical?180.0f:450.0f;
+			config.largeTargetSpeed=physical?700.0f:1700.0f;
+		}
+		// 间接设备始终按映射后的 DIP 动作，不因大屏选项或 EDID 改为物理测速。
+		config.movementNoiseDistance=physical?0.2f:0.75f;
+		config.touchUnlockStart=physical?1.0f:2.0f;
+		config.touchUnlockEnd=physical?3.0f:6.0f;
 		return config;
 	}
 
+	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch, const EraserSizes& sizes) noexcept
+	{
+		InputSource source;
+		source.kind=touch?SourceKind::Touch:SourceKind::Mouse;
+		if (touch && display.directTouchMapped)
+		{
+			source.mappedMonitor=display.monitor;
+			source.mappedLeft=display.desktopLeft;source.mappedTop=display.desktopTop;
+			source.mappedWidth=display.pixelWidth;source.mappedHeight=display.pixelHeight;
+		}
+		return ResolveConfig(display,mode,source,sizes);
+	}
+
+	float ReferenceTargetDiameterDip(const Config& config, double speed) noexcept
+	{
+		speed=std::isfinite(speed)?std::max(0.0,speed):0;
+		const double minimum=config.sizes.minimumDiameterDip, standard=config.sizes.standardDiameterDip;
+		if (speed<config.fineToStandardSpeed)
+			return static_cast<float>(minimum+(standard-minimum)*SmoothStep(speed/config.fineToStandardSpeed));
+		const double amount=SmoothStep((speed-config.sweepEnterSpeed)/(config.largeTargetSpeed-config.sweepEnterSpeed));
+		return static_cast<float>(standard*std::exp(amount*std::log(config.sizes.maximumDiameterDip/standard)));
+	}
+
+	float CompensateTargetDiameterDip(const Config& config, float referenceDip, bool* limited) noexcept
+	{
+		const double standard=config.sizes.standardDiameterDip;
+		double target=Positive(referenceDip,standard);
+		if (target>standard && config.rhoMmPerDip>0)
+		{
+			const double ratio=config.referenceMmPerDip/config.rhoMmPerDip;
+			if (config.response==ResponseModel::ScreenPenHybrid)
+				target=standard+std::clamp(std::pow(ratio,config.penBeta),0.25,4.0)*(target-standard);
+			else if (config.response==ResponseModel::DirectTouch)
+			{
+				// Touch 在过渡带外换算整个物理目标，而不是仅令笔的增量 beta=1。
+				const double blend=SmoothStep((target-standard)/(standard*0.75));
+				target=std::max(standard,target*(1.0+blend*(std::clamp(ratio,0.125,8.0)-1.0)));
+			}
+		}
+		const double bounded=std::clamp(target,static_cast<double>(config.sizes.minimumDiameterDip),
+			static_cast<double>(config.sizes.maximumDiameterDip));
+		if (limited) *limited=std::abs(bounded-target)>0.0001;
+		return static_cast<float>(bounded);
+	}
+
 	void Controller::Reset(float x, float y, double seconds, StartKind kind,
-		const Config& config) noexcept
+		const Config& config, float initialDiameterDip) noexcept
 	{
 		config_ = config;
 		config_.motionPerPixelX = static_cast<float>(Positive(config_.motionPerPixelX, 1.0));
@@ -93,6 +301,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config_.sweepExitSpeed=std::min(config_.sweepEnterSpeed*0.99f,static_cast<float>(Positive(config.sweepExitSpeed,resolved.sweepExitSpeed)));
 		config_.largeTargetSpeed=std::max(config_.sweepEnterSpeed+1.0f,static_cast<float>(Positive(config.largeTargetSpeed,resolved.largeTargetSpeed)));
 		config_.movementNoiseDistance=static_cast<float>(Positive(config.movementNoiseDistance,resolved.movementNoiseDistance));
+		config_.fineToStandardSpeed=std::min(config_.sweepEnterSpeed*0.9f,
+			static_cast<float>(Positive(config.fineToStandardSpeed,resolved.fineToStandardSpeed)));
 		config_.touchUnlockStart = static_cast<float>(Positive(config_.touchUnlockStart, 2.0));
 		config_.touchUnlockEnd = std::max(config_.touchUnlockStart * 1.01f,
 			static_cast<float>(Positive(config_.touchUnlockEnd, 6.0)));
@@ -132,12 +342,36 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		sampleState_ = {};
 		sampleState_.time = acceptedTime_;
 		sampleState_.lastMovementTime=acceptedTime_;
-		sampleState_.logDiameter = sampleState_.logTarget = std::log(kind==StartKind::Touch ? config_.sizes.touchStartDiameterDip : config_.sizes.standardDiameterDip);
+		const float safeStart=initialDiameterDip>0 && std::isfinite(initialDiameterDip)
+			? std::clamp(initialDiameterDip,config_.sizes.minimumDiameterDip,config_.sizes.standardDiameterDip)
+			: config_.sizes.standardDiameterDip;
+		sampleState_.logDiameter = sampleState_.logTarget = std::log(kind==StartKind::Touch ? config_.sizes.touchStartDiameterDip : safeStart);
 		frameState_ = sampleState_;
 		pauseTime_ = 0.0;
 		touchStartup_ = kind == StartKind::Touch;
+		previewOnly_ = false;
 		initialized_ = true;
 		paused_ = false;
+	}
+
+	void Controller::ResetPreview(float x,float y,double seconds,const Config& config,float diameterDip) noexcept
+	{
+		Reset(x,y,seconds,StartKind::Hover,config,diameterDip);
+		previewOnly_=true;
+	}
+	void Controller::BeginContact(const Controller* preview,float x,float y,double seconds,const Config& config) noexcept
+	{
+		float safe=0;
+		if (preview && preview->initialized_ && preview->previewOnly_ && preview->config_==config &&
+			seconds>=preview->acceptedTime_)
+		{
+			const double distance=std::hypot((x-preview->acceptedX_)*config.display.dipPerPixelX,
+				(y-preview->acceptedY_)*config.display.dipPerPixelY);
+			// 同位 Down 本身重新确认了定位；跨位置的旧 Hover 则必须足够新鲜。
+			if(seconds-preview->acceptedTime_<=0.250 || distance<=0.5)
+				safe=std::min(preview->DiameterDip(),config.sizes.standardDiameterDip);
+		}
+		Reset(x,y,seconds,StartKind::Hover,config,safe);
 	}
 
 	void Controller::AddSegment(const MotionSegment& segment) noexcept
@@ -155,6 +389,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if (segmentCount_ && segments_[0].startTime < cutoff)
 		{
 			auto& first = segments_[0];
+			const double trimmed=(cutoff-first.startTime)/(first.endTime-first.startTime);
+			first.x0+=(first.x1-first.x0)*trimmed;
+			first.y0+=(first.y1-first.y0)*trimmed;
 			first.distance *= (first.endTime - cutoff) / (first.endTime - first.startTime);
 			first.startTime = cutoff;
 		}
@@ -167,6 +404,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 					segments_[merge + 1].endTime - segments_[merge].startTime)
 					merge = i;
 			segments_[merge].endTime = segments_[merge + 1].endTime;
+			segments_[merge].x1=segments_[merge+1].x1;
+			segments_[merge].y1=segments_[merge+1].y1;
 			segments_[merge].distance += segments_[merge + 1].distance;
 			for (size_t i = merge + 2; i < segmentCount_; ++i) segments_[i - 1] = segments_[i];
 			--segmentCount_;
@@ -189,25 +428,46 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 
 
-	double Controller::IdleDiameterDip(const DynamicsState& state) const noexcept
+	bool Controller::HasMotionSupport(double seconds) const noexcept
 	{
-		return touchStartup_ && state.maximumDisplacement < config_.touchUnlockEnd
-			? config_.sizes.touchStartDiameterDip : config_.sizes.standardDiameterDip;
+		double minX=std::numeric_limits<double>::infinity(),minY=minX;
+		double maxX=-minX,maxY=-minX;
+		for(size_t i=0;i<segmentCount_;++i)
+		{
+			const auto& s=segments_[i];
+			const double begin=std::max(s.startTime,seconds-config_.historyWindowSeconds);
+			const double end=std::min(s.endTime,seconds);
+			if(end<=begin || s.endTime<=s.startTime)continue;
+			for(const double t:{begin,end})
+			{
+				const double f=(t-s.startTime)/(s.endTime-s.startTime);
+				const double x=(s.x0+(s.x1-s.x0)*f)*config_.motionPerPixelX;
+				const double y=(s.y0+(s.y1-s.y0)*f)*config_.motionPerPixelY;
+				minX=std::min(minX,x);maxX=std::max(maxX,x);
+				minY=std::min(minY,y);maxY=std::max(maxY,y);
+			}
+		}
+		return std::isfinite(minX) && std::hypot(maxX-minX,maxY-minY)>=config_.movementNoiseDistance;
 	}
 
-	double Controller::TargetLogDiameter(double speed, double maximumDisplacement) const noexcept
+	double Controller::IdleDiameterDip(const DynamicsState&) const noexcept
 	{
-		const double ordinary = std::log(config_.sizes.standardDiameterDip);
-		if (touchStartup_ && maximumDisplacement < config_.touchUnlockEnd)
+		return config_.sizes.minimumDiameterDip;
+	}
+
+	double Controller::TargetLogDiameter(double speed,double maximumDisplacement) const noexcept
+	{
+		float target=ReferenceTargetDiameterDip(config_,speed);
+		if(previewOnly_)target=std::min(target,config_.sizes.standardDiameterDip);
+		else target=CompensateTargetDiameterDip(config_,target);
+		if(touchStartup_ && maximumDisplacement<config_.touchUnlockEnd)
 		{
-			const double amount = SmoothStep((maximumDisplacement - config_.touchUnlockStart) /
-				(config_.touchUnlockEnd - config_.touchUnlockStart));
-			const double start = std::log(config_.sizes.touchStartDiameterDip);
-			return start + amount * (ordinary-start);
+			const double amount=SmoothStep((maximumDisplacement-config_.touchUnlockStart)/
+				(config_.touchUnlockEnd-config_.touchUnlockStart));
+			target=static_cast<float>(config_.sizes.touchStartDiameterDip+
+				amount*(std::min(target,config_.sizes.standardDiameterDip)-config_.sizes.touchStartDiameterDip));
 		}
-		const double amount = SmoothStep((speed-config_.sweepEnterSpeed) /
-			(config_.largeTargetSpeed-config_.sweepEnterSpeed));
-		return ordinary + amount * std::log(config_.sizes.maximumDiameterDip / config_.sizes.standardDiameterDip);
+		return std::log(target);
 	}
 
 
@@ -219,9 +479,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		state.logTarget=target;
 		const double standard=std::log(config_.sizes.standardDiameterDip);
 		const double logRange=std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip);
-		if (realMotionSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
+		if (!previewOnly_ && realMotionSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
 		else if (realMotionSpeed > 0 && realMotionSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
-		const bool qualifies=state.sweepQualified && realMotionSpeed >= config_.sweepEnterSpeed;
+		const bool qualifies=!previewOnly_ && (!touchStartup_ || state.maximumDisplacement>=config_.touchUnlockStart) && state.sweepQualified && realMotionSpeed >= config_.sweepEnterSpeed;
 		const double strength=qualifies ? 0.4 + 0.6*SmoothStep((realMotionSpeed-config_.sweepEnterSpeed)/
 			(config_.largeTargetSpeed-config_.sweepEnterSpeed)) : 0.0;
 		const double leak=std::exp(-dt/config_.evidenceDecaySeconds);
@@ -239,6 +499,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			state.logDiameter=Follow(state.logDiameter,target,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
 			if (std::abs(state.logDiameter-target)<=config_.settleLogTolerance) state.logDiameter=target;
 			if (state.logDiameter<=standard+config_.settleLogTolerance) state.sweeping=false;
+			return;
+		}
+		// 精细区不背负大尺寸清扫的保持阻力，Hover 永远不能存储清扫证据。
+		if (state.logDiameter<=standard+config_.settleLogTolerance && target<=standard)
+		{
+			state.sweeping=state.decreasePending=state.shrinking=false;
+			state.holdUntil=endTime;
+			state.logDiameter=Follow(state.logDiameter,target,dt,0.120,4.0);
+			if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance)state.logDiameter=target;
 			return;
 		}
 		const double range=config_.sizes.maximumDiameterDip-config_.sizes.standardDiameterDip;
@@ -323,7 +592,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const double speed = midpoint < historyEnd ? MotionSpeed(midpoint, config_.historyWindowSeconds) : 0.0;
 			// 稀疏的一个跳点不能证明整个空档都在快擦；正常输入仍按真实 dt 累积。
 			state.speed=speed;
-			const double observedSpeed = effectiveMovement && incoming && incoming->distance > 0.0 &&
+			// 空间门只确认时间窗内存在真实移动；每个已观测区间完整积分，不能仅给跨门槛的包记 dt。
+			const double observedSpeed = HasMotionSupport(midpoint) && incoming && incoming->distance > 0.0 &&
 				incoming->endTime - incoming->startTime <= config_.maximumEvidenceIntervalSeconds
 				? std::min(speed, incoming->distance / (incoming->endTime - incoming->startTime)) : 0.0;
 			FollowTarget(state, end, TargetLogDiameter(speed, state.maximumDisplacement), observedSpeed);
@@ -347,7 +617,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		}
 		else
 		{
-			const MotionSegment segment{ acceptedTime_, seconds, distance };
+			const MotionSegment segment{ acceptedTime_, seconds, distance, acceptedX_, acceptedY_, x, y };
 			AddSegment(segment);
 			AdvanceState(sampleState_, seconds, &segment, x, y, effectiveMovement);
 		}
@@ -423,6 +693,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return DiameterToCanvasPx(initialized_ ? static_cast<float>(std::exp(frameState_.logTarget)) : config_.sizes.standardDiameterDip,config_.display);
 	}
 
+	bool Controller::TargetLimited() const noexcept
+	{
+		bool limited=false;
+		if(!previewOnly_)CompensateTargetDiameterDip(config_,ReferenceTargetDiameterDip(config_,frameState_.speed),&limited);
+		return limited;
+	}
+
 	bool Controller::NeedsAnimation(double seconds) const noexcept
 	{
 		if (!initialized_ || paused_ || !std::isfinite(seconds)) return false;
@@ -443,7 +720,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		logicalDiameter_ = static_cast<float>(Positive(config_.StandardDiameterPx(), 16.0));
 		visualDiameter_ = logicalDiameter_;
-		releaseCandidate_ = releasing_ = hasPosition_ = false;
+		releaseCandidate_ = releasing_ = hasPosition_ = hoverInitialized_ = false;
 	}
 
 	void MouseLifecycle::ObserveHover(float x, float y, double seconds) noexcept
@@ -454,22 +731,31 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		y_ = y;
 		hasPosition_ = true;
 		lastHoverSeconds_ = seconds;
-		// 定位仅更新位置，不创建速度/加速度/清扫证据。
+		if (releasing_ && seconds<releaseSeconds_+config_.mouseReleaseSeconds) return;
+		if (!hoverInitialized_)
+		{
+			hover_.ResetPreview(x,y,seconds,config_,logicalDiameter_*
+				std::sqrt(config_.display.dipPerPixelX*config_.display.dipPerPixelY));
+			hoverInitialized_=true;
+		}
+		else hover_.UpdatePosition(x,y,seconds);
 	}
 
 	void MouseLifecycle::BeginContact(Controller& controller, float x, float y,
 		double seconds, const Config& config) noexcept
 	{
 		Configure(config);
+		controller.BeginContact(hoverInitialized_ && hasPosition_ && !releasing_ && !contactOwned_ ? &hover_ : nullptr,
+			x,y,seconds,config);
 		CancelVisual();
+		logicalDiameter_=visualDiameter_=controller.Diameter();
 		contactOwned_ = true;
 		x_ = x;
 		y_ = y;
 		hasPosition_ = true;
 		lastDownSeconds_ = seconds;
 		lastEventSeconds_ = std::max(lastEventSeconds_, seconds);
-		// StartKind::Hover 仍只是初始化类别；真正鼠标 Down 明确重置完整动态状态。
-		controller.Reset(x, y, seconds, StartKind::Hover, config);
+		// Down 只继承安全尺寸；Controller::BeginContact 已清空速度、证据并重锚。
 	}
 
 	void MouseLifecycle::EndContact(Controller& controller, float acceptedDiameter, float x, float y,
@@ -478,7 +764,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if (!std::isfinite(seconds)) return;
 		if (!contactOwned_ && !anotherOwner) return;
 		// Up 的逻辑重置立即发生，真实点的半径已由调用方接受，不随此重置变化。
-		controller.Reset(x, y, seconds, StartKind::Hover, controller.Configuration());
+		const float safeDip=std::clamp(acceptedDiameter*static_cast<float>(
+			std::sqrt(config_.display.dipPerPixelX*config_.display.dipPerPixelY)),
+			config_.sizes.minimumDiameterDip,config_.sizes.standardDiameterDip);
+		controller.Reset(x, y, seconds, StartKind::Hover, controller.Configuration(),safeDip);
 		contactOwned_ = anotherOwner;
 		lastEventSeconds_ = std::max(lastEventSeconds_, seconds);
 		// 旧 Up 不恢复旧画面，但仍须按当前所有者集合释放占用；配置切换可能已丢弃候选。
@@ -501,29 +790,34 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		logicalDiameter_ = std::min(releaseFrom_, config_.StandardDiameterPx());
 		visualDiameter_ = releaseFrom_;
 		releasing_ = releaseFrom_ > logicalDiameter_;
+		hover_.ResetPreview(x_,y_,releaseSeconds_+(releasing_?config_.mouseReleaseSeconds:0.0),
+			config_,safeDip);
+		hoverInitialized_=true;
 	}
 
 	float MouseLifecycle::Advance(double seconds) noexcept
 	{
 		if (!std::isfinite(seconds)) return visualDiameter_;
-		visualTime_ = std::max(visualTime_, seconds);
-		if (!releasing_ || contactOwned_) return visualDiameter_;
-		const double amount = std::clamp((visualTime_ - releaseSeconds_) /
-			Positive(config_.mouseReleaseSeconds, 0.140), 0.0, 1.0);
-		visualDiameter_ = static_cast<float>(releaseFrom_ +
-			(logicalDiameter_ - releaseFrom_) * SmoothStep(amount));
-		if (amount >= 1.0)
+		visualTime_=std::max(visualTime_,seconds);
+		if (contactOwned_) return visualDiameter_;
+		if (releasing_)
 		{
-			visualDiameter_ = logicalDiameter_;
-			releasing_ = releaseCandidate_ = false;
+			const double amount=std::clamp((visualTime_-releaseSeconds_)/
+				Positive(config_.mouseReleaseSeconds,0.140),0.0,1.0);
+			visualDiameter_=static_cast<float>(releaseFrom_+(logicalDiameter_-releaseFrom_)*SmoothStep(amount));
+			if(amount<1.0)return visualDiameter_;
+			releasing_=releaseCandidate_=false;
 		}
+		if(hoverInitialized_)
+			logicalDiameter_=visualDiameter_=hover_.Advance(visualTime_);
 		return visualDiameter_;
 	}
 
 	bool MouseLifecycle::NeedsAnimation(double seconds) const noexcept
 	{
-		return releasing_ && !contactOwned_ && std::isfinite(seconds) &&
-			seconds < releaseSeconds_ + Positive(config_.mouseReleaseSeconds, 0.140);
+		return !contactOwned_ && std::isfinite(seconds) &&
+			((releasing_ && seconds<releaseSeconds_+Positive(config_.mouseReleaseSeconds,0.140)) ||
+			 (hoverInitialized_ && hover_.NeedsAnimation(seconds)));
 	}
 
 

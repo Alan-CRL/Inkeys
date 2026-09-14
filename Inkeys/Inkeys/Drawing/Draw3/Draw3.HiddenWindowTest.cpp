@@ -558,9 +558,17 @@ namespace Inkeys::Drawing::Draw3
 					return PostMessageW(drawpad,kDraw3HiddenTestContactMessage,
 						static_cast<WPARAM>(phase)|kHiddenTestMouseFlag,MAKELPARAM(x,y))!=FALSE;
 				};
+				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Hover,60,80),"mouse fine hover input",failures);
+				modeSucceeded &= Check(WaitUntil([]
+				{
+					const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.effectiveDiameterDip<=16.1f && d.cursorDiameterPx>0;
+				},3s),"real no-Move mouse hover reaches minimum",failures);
 				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Down,60,80),"DIP speed eraser down",failures);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().eraser.active;}),
 					"actual eraser diagnostic becomes active",failures);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.2f,
+					"actual Down inherits fine hover without growing",failures);
 				int lastX=60;
 				for(int i=0;i<80;++i)
 				{
@@ -584,8 +592,8 @@ namespace Inkeys::Drawing::Draw3
 					const auto s=ProductHost().RuntimeSnapshot();
 					return s.inputMovePublished==moveCount && s.eraser.active &&
 						s.eraser.idleSeconds>=1.0 && s.eraser.cursorDiameterPx>0 &&
-						s.eraser.cursorDiameterPx<=s.eraser.dpiX/96*35 &&
-						s.eraser.nextRadiusPx<=s.eraser.dpiX/96*17.5f;
+						s.eraser.cursorDiameterPx<=s.eraser.dpiX/96*18 &&
+						s.eraser.nextRadiusPx<=s.eraser.dpiX/96*9.0f;
 				},4s),"no Move: final contact cursor and next geometry visibly shrink",failures);
 				const auto quiet=ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(quiet.inputMovePublished==moveCount &&
@@ -594,8 +602,8 @@ namespace Inkeys::Drawing::Draw3
 					"idle does not rewrite historical width or submit fake points",failures);
 				modeSucceeded &= Check(WaitUntil([]
 				{
-					return ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=32.1f;
-				},3s),"effective size settles at standard",failures);
+					return ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.001f;
+				},3s),"effective size settles at exact minimum",failures);
 				const auto stopped=ProductHost().RuntimeSnapshot().eraser.frameSequence;
 				std::this_thread::sleep_for(250ms);
 				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=stopped+2,
@@ -606,8 +614,8 @@ namespace Inkeys::Drawing::Draw3
 				{
 					const auto s=ProductHost().RuntimeSnapshot();
 					return s.inputMovePublished>moveCount && s.eraser.resumedWithAnchor &&
-						s.eraser.resumedMaxRadiusPx<=s.eraser.dpiX/96*18 &&
-						s.eraser.resumedBottom-s.eraser.resumedTop<=s.eraser.dpiY/96*40+10;
+						s.eraser.resumedMaxRadiusPx<=s.eraser.dpiX/96*10 &&
+						s.eraser.resumedBottom-s.eraser.resumedTop<=s.eraser.dpiY/96*22+10;
 				}),"resumed actual geometry footprint has no old large-radius tail",failures);
 				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
 					"actual size-boundary points survive UInk save/read/import",failures);
@@ -621,6 +629,56 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([beforeUndo]{return ProductHost().RuntimeSnapshot().redoCommandCount>beforeUndo.redoCommandCount;}),
 					"size-break stroke supports real Redo",failures);
+
+				const auto postSource=[&](HiddenTestContactPhase phase,WPARAM flags,int x=80,int y=100)
+				{return PostMessageW(drawpad,kDraw3HiddenTestContactMessage,static_cast<WPARAM>(phase)|flags,MAKELPARAM(x,y))!=FALSE;};
+				SpeedEraser::DevelopmentOptions development;development.diagnostics=true;
+				ProductHost().SetEraserDevelopmentOptions(development);
+				for(const auto flags:{kHiddenTestExternalPenFlag,kHiddenTestIntegratedPenFlag,kHiddenTestTouchFlag,WPARAM{0}})
+				{
+					postSource(HiddenTestContactPhase::Down,flags);
+					const auto expected=flags==kHiddenTestIntegratedPenFlag?SpeedEraser::ResponseModel::ScreenPenHybrid:
+						flags==kHiddenTestTouchFlag?SpeedEraser::ResponseModel::DirectTouch:SpeedEraser::ResponseModel::IndirectDip;
+					modeSucceeded &= Check(WaitUntil([expected,flags]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.active && d.response==expected && d.inputType==(flags==kHiddenTestTouchFlag?0u:1u);
+					}),"actual pen/touch identity routes through the selected response",failures);
+					modeSucceeded &= Check(WaitUntil([]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.active && d.effectiveDiameterDip<=16.1f;
+					},3s),"actual pen or touch can become fine with no Move",failures);
+					if(flags==kHiddenTestExternalPenFlag)
+					{
+						development.response=SpeedEraser::ResponseOverride::ScreenPenHybrid;
+						ProductHost().SetEraserDevelopmentOptions(development);
+						postSource(HiddenTestContactPhase::Move,flags,84,102);
+						std::this_thread::sleep_for(60ms);
+						modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.response==expected,
+							"development selection does not change units inside an active contact",failures);
+					}
+					postSource(HiddenTestContactPhase::Cancelled,flags,84,102);
+					modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+						"cancel closes true source without mouse lifecycle substitution",failures);
+					if(flags==kHiddenTestExternalPenFlag)
+					{
+						postSource(HiddenTestContactPhase::Down,flags);
+						modeSucceeded &= Check(WaitUntil([]
+						{
+							const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.active && d.inputType==1 && d.inputSource.kind==SpeedEraser::SourceKind::ExternalPen &&
+								d.response==SpeedEraser::ResponseModel::ScreenPenHybrid;
+						}),"next independent pen contact applies override without faking Touch",failures);
+						postSource(HiddenTestContactPhase::Cancelled,flags);
+						modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+							"forced-response contact completes",failures);
+						development.response=SpeedEraser::ResponseOverride::Automatic;
+						ProductHost().SetEraserDevelopmentOptions(development);
+					}
+				}
+				ProductHost().SetEraserDevelopmentOptions({});
+
 			}
 
 			const auto stopStarted = std::chrono::steady_clock::now();

@@ -2063,8 +2063,11 @@ namespace Inkeys::Drawing::Draw3
 			const double downSeconds = AbsoluteQpcSeconds(down.qpc, qpcFrequency);
 			runtime.eraserTimeOrigin = downSeconds;
 			const bool touch = runtime.metricDeviceType == InputDeviceType::Touch;
+			auto source=down.source;
+			if(runtime.metricDeviceType==InputDeviceType::MouseLeft || runtime.metricDeviceType==InputDeviceType::MouseRight)
+				source={SpeedEraser::SourceKind::Mouse}; // 鼠标 Hover 与 Contact 使用同一桌面 DIP 身份。
 			const auto config = SpeedEraser::ResolveConfig(runtime.speedEraserDisplayScale,
-				runtime.speedEraserDeviceMode, touch);
+				runtime.speedEraserDeviceMode, source);
 			if (runtime.metricDeviceType == InputDeviceType::MouseLeft ||
 				runtime.metricDeviceType == InputDeviceType::MouseRight)
 			{
@@ -2095,9 +2098,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (lane && lane->initialized && !lane->contactOwned)
 			{
-				runtime.speedEraserOc = lane->controller; // Down 继承 Hover 的完整方向与滞回状态。
-				runtime.speedEraserOc.UpdatePosition(
-					down.position.x, down.position.y, downSeconds);
+				// 屏幕笔/外接笔保留真实生命周期，但只继承安全尺寸，不继承 Hover 动量。
+				runtime.speedEraserOc.BeginContact(&lane->controller,
+					down.position.x,down.position.y,downSeconds,config);
 			}
 			else
 			{
@@ -2160,14 +2163,16 @@ namespace Inkeys::Drawing::Draw3
 			if (anotherOwner) return; // 同 lane 的并发接触全部结束后才交还 Hover。
 			const auto hoverConfig = SpeedEraser::ResolveConfig(
 				window_.SpeedEraserDisplayScaleSnapshot(),
-				window_.SpeedEraserDeviceModeSnapshot(), false);
+				window_.SpeedEraserDeviceModeSnapshot(), runtime.speedEraserOc.Configuration().inputSource);
 			if (!runtime.cancelled &&
 				window_.ActiveEraserWidthModeRevision() ==
 					runtime.eraserWidthModeRevision &&
 				runtime.eraserWidthMode == EraserWidthMode::Speed &&
 				runtime.speedEraserOc.Configuration() == hoverConfig)
 			{
-				lane->controller = runtime.speedEraserOc;
+				lane->controller.ResetPreview(runtime.lastInputSnapshot.position.x,runtime.lastInputSnapshot.position.y,
+					AbsoluteQpcSeconds(runtime.lastInputSnapshot.qpc,qpcFrequency),hoverConfig,
+					std::min(runtime.speedEraserOc.DiameterDip(),hoverConfig.sizes.standardDiameterDip));
 				lane->initialized = true;
 				lane->contactOwned = false;
 				lane->sampleVisible = false;
@@ -2889,7 +2894,7 @@ namespace Inkeys::Drawing::Draw3
 					baseDiameter = SpeedEraser::FixedDiameterPx(SpeedEraser::EraserSizes{}.fixedDiameterDip, runtime->speedEraserDisplayScale);
 				runtime->eraserSize.Reset(baseDiameter, AbsoluteQpcSeconds(down.qpc, qpcFrequency));
 				runtime->eraserDiagnostics = {};
-				runtime->eraserDiagnostics.active = observer_.eraserDiagnostics != nullptr;
+				runtime->eraserDiagnostics.active = observer_.eraserDiagnostics && window_.EraserDiagnosticsEnabled();
 				runtime->speedEraserModelTime = 0.0;
 				runtime->speedEraserModelDiameter = baseDiameter;
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
@@ -3773,6 +3778,10 @@ namespace Inkeys::Drawing::Draw3
 			auto updateLane = [&](SpeedEraserHoverLane& lane,
 				const DrawingCursorSample& sample, bool tracksSample)
 			{
+				const auto hoverConfig=SpeedEraser::ResolveConfig(
+					observedSpeedEraserDisplayScale,observedSpeedEraserDeviceMode,sample.source);
+				if(lane.initialized && !lane.contactOwned && lane.controller.Configuration()!=hoverConfig)
+					lane.Invalidate();
 				const bool rawEligibleHover =
 					tracksSample && sample.valid && !sample.inContact;
 				const bool wasEligibleHover = lane.hoverWasEligible;
@@ -3817,8 +3826,7 @@ namespace Inkeys::Drawing::Draw3
 				const double sampleSeconds = AbsoluteQpcSeconds(sample.qpc, qpcFrequency);
 				if (!lane.initialized)
 				{
-					lane.controller.Reset(sample.x, sample.y,
-						sampleSeconds, SpeedEraserStartKind::Hover, hoverConfig);
+					lane.controller.ResetPreview(sample.x, sample.y, sampleSeconds, hoverConfig);
 					lane.initialized = true;
 					lane.lastSampleSequence = sample.sequence;
 					lane.lastSampleQpc = std::max(lane.lastSampleQpc, sample.qpc);
@@ -3842,7 +3850,8 @@ namespace Inkeys::Drawing::Draw3
 
 			mouseSpeedEraser.Configure(hoverConfig);
 			const float mouseBefore = mouseSpeedEraser.VisualDiameter();
-			if (!mouseEraser || window_.SelectionMode())
+			if (!mouseEraser || window_.SelectionMode() ||
+				(!mouseSample.valid && !mouseSpeedEraser.ContactOwned() && !mouseSpeedEraser.Releasing()))
 				mouseSpeedEraser.CancelVisual();
 			else if (mouseSample.valid && !mouseSample.inContact)
 				mouseSpeedEraser.ObserveHover(mouseSample.x, mouseSample.y,
@@ -4022,29 +4031,46 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 
-			if(observer_.eraserDiagnostics)
+			if(observer_.eraserDiagnostics && window_.EraserDiagnosticsEnabled())
 			{
 				SpeedEraser::Diagnostics d;
 				const RuntimeStroke* r=primaryRuntime;
 				if(!r)for(const auto* candidate:active)
 					if(candidate && !candidate->ended && candidate->stroke.widthMode==StrokeWidthMode::SpeedEraser)
 					{r=candidate;break;}
+				const SpeedEraser::Controller* controller=nullptr;
 				if(r && r->stroke.widthMode==StrokeWidthMode::SpeedEraser)
 				{
-					d=r->eraserDiagnostics;
-					const auto& cfg=r->speedEraserOc.Configuration();
+					d=r->eraserDiagnostics;controller=&r->speedEraserOc;
 					d.active=!r->ended;d.inputType=static_cast<uint32_t>(r->metricDeviceType);
-					d.mode=cfg.mode;d.motionSource=cfg.motionSource;d.sizes=cfg.sizes;
-					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
-					d.effectiveDiameterDip=r->speedEraserOc.DiameterDip();
 					d.nextRadiusPx=r->eraserSize.effectiveDiameterPx*0.5f;
-					d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
 					d.historyRadiusPx=r->stroke.realPoints.empty()?0:r->stroke.realPoints.back().r;
 					d.realPointCount=r->stroke.realPoints.size();
-					d.speed=r->speedEraserOc.Speed();d.evidenceSeconds=r->speedEraserOc.SweepEvidenceSeconds();
-					d.sweeping=r->speedEraserOc.Sweeping();
-					d.idleSeconds=r->speedEraserOc.SecondsSinceMovement(mouseVisualSeconds);
 				}
+				else if(window_.ActiveEraserWidthMode()==EraserWidthMode::Speed)
+				{
+					const auto* lane=penSample.inverted?&invertedPenEraserHoverLane:&penEraserHoverLane;
+					if(primaryUsesPen && lane->initialized && lane->sampleVisible)
+					{controller=&lane->controller;d.inputType=static_cast<uint32_t>(InputDeviceType::Pen);}
+					else if(primaryUsesMouse && mouseSpeedEraser.HasPosition())
+					{controller=&mouseSpeedEraser.PreviewController();d.inputType=static_cast<uint32_t>(InputDeviceType::MouseLeft);}
+					d.preview=controller!=nullptr;
+					if(controller)d.nextRadiusPx=controller->Diameter()*0.5f;
+				}
+				if(controller)
+				{
+					const auto& cfg=controller->Configuration();
+					d.mode=cfg.mode;d.motionSource=cfg.motionSource;d.motionUnit=cfg.motionUnit;d.sizes=cfg.sizes;
+					d.inputSource=cfg.inputSource;d.response=cfg.response;d.inputMapped=cfg.inputMapped;
+					d.monitor=cfg.display.monitor;d.displayGeneration=cfg.display.generation;d.displayRevision=cfg.display.revision;
+					d.rhoMmPerDip=cfg.rhoMmPerDip;d.penBeta=cfg.penBeta;d.heuristicGain=cfg.heuristicGain;
+					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
+					d.effectiveDiameterDip=controller->DiameterDip();
+					d.speed=controller->Speed();d.evidenceSeconds=controller->SweepEvidenceSeconds();
+					d.sweeping=controller->Sweeping();d.qualified=controller->SweepQualified();d.limited=controller->TargetLimited();
+					d.idleSeconds=controller->SecondsSinceMovement(mouseVisualSeconds);
+				}
+				d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
 				observer_.eraserDiagnostics(observer_.context,d);
 			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)

@@ -46,6 +46,7 @@ export namespace Inkeys::Drawing::Draw3
 	};
 
 #if defined(DRAW3_TESTING)
+	bool RtsSourceRoutingForTesting() noexcept;
 	enum class RtsAngleUnitForTesting : uint32_t { Unsupported, Degrees, Radians };
 	struct RtsStylusAnglesForTesting
 	{

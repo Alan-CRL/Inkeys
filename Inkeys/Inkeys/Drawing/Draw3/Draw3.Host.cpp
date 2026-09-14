@@ -37,7 +37,8 @@ namespace Inkeys::Drawing::Draw3
 		WindowController window;
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
-		std::mutex displayMutex;
+		mutable std::mutex displayMutex;
+		SpeedEraser::DevelopmentOptions eraserDevelopment;
 		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
 		Inkeys::Display::Subscription displaySubscription;
 		std::atomic_bool displayScaleDirty = false;
@@ -480,12 +481,16 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (!displayScaleDirty.exchange(false, std::memory_order_acq_rel)) return;
 			Inkeys::Display::SnapshotPtr snapshot;
+			SpeedEraser::DevelopmentOptions development;
 			{
 				std::scoped_lock lock(displayMutex);
 				snapshot = pendingDisplaySnapshot;
+				development = eraserDevelopment;
 			}
 			const HWND hwnd = attachedWindow.load(std::memory_order_acquire);
 			SpeedEraser::DisplayScale scale;
+			scale.development = development;
+			window.SetEraserDiagnosticsEnabled(development.diagnostics || hiddenTestContactInjectionEnabled || startOptions.enableEraserDiagnostics);
 			scale.generation = snapshot ? snapshot->generation : 0;
 			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
 			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
@@ -498,6 +503,12 @@ namespace Inkeys::Drawing::Draw3
 			{
 				scale.dipPerPixelX = 96.0f / (monitor->effectiveDpiX ? monitor->effectiveDpiX : 96u);
 				scale.dipPerPixelY = 96.0f / (monitor->effectiveDpiY ? monitor->effectiveDpiY : 96u);
+				scale.pixelWidth=monitor->pixelWidth;scale.pixelHeight=monitor->pixelHeight;
+				scale.desktopLeft=monitor->bounds.left;scale.desktopTop=monitor->bounds.top;
+				scale.orientation=monitor->orientation;
+				scale.logicalOutputKnown=!snapshot->fallback && !monitor->fallback && clientKnown &&
+					clientBounds.left>=monitor->bounds.left && clientBounds.top>=monitor->bounds.top &&
+					clientBounds.right<=monitor->bounds.right && clientBounds.bottom<=monitor->bounds.bottom;
 				scale.physicalAvailable = monitor->physicalSize.available &&
 					monitor->pixelWidth > 0 && monitor->pixelHeight > 0;
 				if (scale.physicalAvailable)
@@ -505,12 +516,7 @@ namespace Inkeys::Drawing::Draw3
 					scale.cmPerPixelX = static_cast<float>(monitor->physicalSize.widthCm) / monitor->pixelWidth;
 					scale.cmPerPixelY = static_cast<float>(monitor->physicalSize.heightCm) / monitor->pixelHeight;
 				}
-				// 现有 RTS 元数据不能证明多屏/数位板映射；只确认单屏整客户区的直接 Touch。
-				scale.directTouchMapped = scale.physicalAvailable && !snapshot->fallback && !monitor->fallback &&
-					snapshot->topology == Inkeys::Display::DisplayTopology::Single &&
-					snapshot->monitors.size() == 1 && snapshot->activeTargets.size() == 1 &&
-					monitor->targetIndex.has_value() && clientKnown &&
-					EqualRect(&clientBounds, &monitor->bounds);
+				// 输入直接性及目标映射交由当前 RTS 来源确认，不能按整机单屏推断。
 			}
 			else if (hwnd)
 			{
@@ -789,6 +795,8 @@ namespace Inkeys::Drawing::Draw3
 						{
 							StrokeModelConfiguration configuration =
 								CreateStrokeModelConfiguration(GetDpiForWindow(windowHandle));
+							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
+								startOptions.enableHiddenTestContactInjection);
 							const DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
@@ -798,8 +806,7 @@ namespace Inkeys::Drawing::Draw3
 								&ObservePresentationSave,
 								&ObservePresentationLoad,
 								&ObserveDrawingActivity,
-								(startOptions.enableEraserDiagnostics || startOptions.enableHiddenTestContactInjection)
-									? &ObserveEraserDiagnostics : nullptr
+								&ObserveEraserDiagnostics
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -1120,6 +1127,16 @@ namespace Inkeys::Drawing::Draw3
 		LARGE_INTEGER qpc = {};
 		QueryPerformanceCounter(&qpc);
 		snapshot.qpc = qpc.QuadPart;
+		snapshot.source.kind=deviceType==InputDeviceType::MouseLeft ? SpeedEraser::SourceKind::Mouse :
+			deviceType==InputDeviceType::Touch ? SpeedEraser::SourceKind::Touch :
+			(phaseValue & kHiddenTestIntegratedPenFlag) ? SpeedEraser::SourceKind::IntegratedPen :
+			(phaseValue & kHiddenTestExternalPenFlag) ? SpeedEraser::SourceKind::ExternalPen : SpeedEraser::SourceKind::Unknown;
+		snapshot.source.recognition=SpeedEraser::SourceRecognition::RtsCapabilities;
+		snapshot.source.contextId=0xD303u;snapshot.source.cursorId=0xD304u;snapshot.source.generation=1;
+		const auto scale=impl_->window.SpeedEraserDisplayScaleSnapshot();
+		snapshot.source.mappedMonitor=scale.monitor;
+		snapshot.source.mappedLeft=scale.desktopLeft;snapshot.source.mappedTop=scale.desktopTop;
+		snapshot.source.mappedWidth=scale.pixelWidth;snapshot.source.mappedHeight=scale.pixelHeight;
 
 		// 隐藏测试走同一个无锁 contact mailbox，不触碰 Renderer 或 RTS 内部状态。
 		constexpr std::uint32_t tabletContextId = 0xD303u;
@@ -1140,6 +1157,9 @@ namespace Inkeys::Drawing::Draw3
 			snapshot.phase = ContactPhase::Up;
 			published = impl_->input.PublishUp(tabletContextId, contactId, snapshot);
 			break;
+		case HiddenTestContactPhase::Hover:
+			published = true;
+			break;
 		case HiddenTestContactPhase::Cancelled:
 			snapshot.phase = ContactPhase::Cancelled;
 			published = impl_->input.PublishCancelled(tabletContextId, contactId, snapshot);
@@ -1148,16 +1168,39 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 
-		if(published && deviceType==InputDeviceType::MouseLeft)
+		if(published && (deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::Pen))
 		{
 			DrawingCursorSample cursor;
 			cursor.x=snapshot.position.x;cursor.y=snapshot.position.y;cursor.qpc=snapshot.qpc;
 			cursor.valid=phase!=HiddenTestContactPhase::Cancelled;
 			cursor.inContact=phase==HiddenTestContactPhase::Down || phase==HiddenTestContactPhase::Move;
-			impl_->window.PublishHiddenTestMouseCursor(cursor);
+			cursor.source=snapshot.source;
+			if(deviceType==InputDeviceType::MouseLeft)impl_->window.PublishHiddenTestMouseCursor(cursor);
+			else impl_->window.PublishPenCursorSample(cursor);
 		}
 		if (published) (void)impl_->input.PublishControlWake();
 		return published;
+	}
+
+	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)
+	{
+		{
+			std::scoped_lock lock(impl_->displayMutex);
+			if(impl_->eraserDevelopment==options)return;
+			impl_->eraserDevelopment=options;
+		}
+		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || impl_->hiddenTestContactInjectionEnabled);
+		impl_->displayScaleDirty.store(true,std::memory_order_release);
+		(void)impl_->input.PublishControlWake();
+	}
+	SpeedEraser::DevelopmentOptions Host::EraserDevelopmentOptions() const
+	{
+		std::scoped_lock lock(impl_->displayMutex);
+		return impl_->eraserDevelopment;
+	}
+	SpeedEraser::DisplayScale Host::EraserDisplayScaleSnapshot() const
+	{
+		return impl_->window.SpeedEraserDisplayScaleSnapshot();
 	}
 
 	LRESULT Host::ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)

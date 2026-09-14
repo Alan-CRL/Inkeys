@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.SpeedEraser.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +64,7 @@ export namespace Inkeys::Drawing::Draw3
 		int64_t qpc = 0;
 		ContactPhase phase = ContactPhase::Down;
 		uint64_t sequence = 0;
+		SpeedEraser::InputSource source;
 	};
 
 	// 仅允许使用所有目标架构上始终无锁的平凡标量。

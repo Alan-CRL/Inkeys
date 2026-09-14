@@ -112,12 +112,15 @@ namespace Inkeys::Drawing::Draw3
 	inline constexpr UINT kDraw3HiddenTestContactMessage = WM_APP + 0x3D3u;
 	inline constexpr WPARAM kHiddenTestMouseFlag = 0x100u;
 	inline constexpr WPARAM kHiddenTestTouchFlag = 0x200u;
+	inline constexpr WPARAM kHiddenTestIntegratedPenFlag = 0x400u;
+	inline constexpr WPARAM kHiddenTestExternalPenFlag = 0x800u;
 	enum class HiddenTestContactPhase : std::uint32_t
 	{
 		Down = 0,
 		Move = 1,
 		Up = 2,
 		Cancelled = 3,
+		Hover = 4,
 	};
 
 	struct HostStyleCallbacks
@@ -231,6 +234,10 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
+		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
+		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
+		SpeedEraser::DisplayScale EraserDisplayScaleSnapshot() const;
 		// 内容 revision 变化或超时后返回；用于产品状态线程即时响应绘制线程更新。
 		bool WaitForContentRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;

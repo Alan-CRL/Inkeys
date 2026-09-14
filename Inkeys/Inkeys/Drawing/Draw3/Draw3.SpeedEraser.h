@@ -7,7 +7,46 @@
 namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
 	enum class DeviceMode { LargeScreen, Laptop };
-	enum class ScaleSource { Dip, Physical };
+	enum class ScaleSource { DipOnly, TrustedPhysical, ManualCalibration, ResolutionDpiHeuristic,
+		Dip = DipOnly, Physical = TrustedPhysical };
+	enum class MotionUnit { DipPerSecond, MillimetersPerSecond, HeuristicPerSecond };
+	enum class SourceKind : uint32_t { Unknown, Mouse, ExternalPen, IntegratedPen, Touch, TouchPad };
+	enum class SourceRecognition : uint32_t { Unknown, RtsCapabilities, PointerCursor, Conflict };
+	enum class ResponseModel { IndirectDip, ScreenPenHybrid, DirectTouch };
+	enum class ResponseOverride { Automatic, IndirectDip, ScreenPenHybrid, DirectTouch };
+	enum class ScaleOverride { Automatic, ManualSurface, ForceUnavailable };
+
+	// 真实设备关系与响应策略独立；身份和显示映射由 producer 缓存，绝不伪造 Touch。
+	struct InputSource
+	{
+		SourceKind kind = SourceKind::Unknown;
+		SourceRecognition recognition = SourceRecognition::Unknown;
+		uint32_t contextId = 0, cursorId = 0;
+		uint64_t generation = 0;
+		uintptr_t mappedMonitor = 0;
+		int32_t mappedLeft = 0, mappedTop = 0, mappedWidth = 0, mappedHeight = 0;
+		friend bool operator==(const InputSource&, const InputSource&) = default;
+	};
+	SourceKind ClassifySource(uint32_t actualInputType, bool modernApiAvailable,
+		bool capabilitiesKnown, bool integrated, SourceKind pointerKind = SourceKind::Unknown,
+		bool pointerMatched = false, bool pointerAmbiguous = false) noexcept;
+
+	struct ManualSurfaceCalibration
+	{
+		uintptr_t monitor = 0;
+		float widthCm = 0, heightCm = 0;
+		uint32_t orientation = 0;
+		friend bool operator==(const ManualSurfaceCalibration&, const ManualSurfaceCalibration&) = default;
+	};
+	struct DevelopmentOptions
+	{
+		ResponseOverride response = ResponseOverride::Automatic;
+		ScaleOverride scale = ScaleOverride::Automatic;
+		ManualSurfaceCalibration calibration;
+		float penBeta = 0.5f;
+		bool diagnostics = false;
+		friend bool operator==(const DevelopmentOptions&, const DevelopmentOptions&) = default;
+	};
 	enum class StartKind { Hover, Touch };
 
 	// 按真实 Down/Up 时刻判定重叠，避免同帧先消费 Up 后丢失旧批次标尺。
@@ -29,7 +68,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float cmPerPixelX = 0.0f;
 		float cmPerPixelY = 0.0f;
 		bool physicalAvailable = false;
-		bool directTouchMapped = false;
+		bool directTouchMapped = false; // 保留旧测试适配入口；产品使用逐来源映射。
+		int pixelWidth = 0, pixelHeight = 0, desktopLeft = 0, desktopTop = 0;
+		uint32_t orientation = 0;
+		bool logicalOutputKnown = false;
+		DevelopmentOptions development;
 
 		friend bool operator==(const DisplayScale&, const DisplayScale&) = default;
 	};
@@ -52,11 +95,20 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		DisplayScale display;
 		EraserSizes sizes;
 		DeviceMode mode = DeviceMode::Laptop;
-		ScaleSource motionSource = ScaleSource::Dip;
+		ScaleSource motionSource = ScaleSource::DipOnly;
+		MotionUnit motionUnit = MotionUnit::DipPerSecond;
+		InputSource inputSource;
+		ResponseModel response = ResponseModel::IndirectDip;
+		bool inputMapped = false;
+		float rhoMmPerDip = 0.0f;
+		float referenceMmPerDip = 0.25f;
+		float penBeta = 0.5f;
+		float heuristicGain = 1.0f;
 		float motionPerPixelX = 1.0f;
 		float motionPerPixelY = 1.0f;
 		float minimumDiameterPx = 16.0f;
 		float maximumDiameterPx = 160.0f;
+		float fineToStandardSpeed = 100.0f;
 		float sweepEnterSpeed = 800.0f;
 		float sweepExitSpeed = 600.0f;
 		float largeTargetSpeed = 1900.0f;
@@ -96,6 +148,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		friend bool operator==(const Config&, const Config&) = default;
 	};
 
+	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, const InputSource& source,
+		const EraserSizes& sizes = {}) noexcept;
+	float ReferenceTargetDiameterDip(const Config& config, double speed) noexcept;
+	float CompensateTargetDiameterDip(const Config& config, float referenceDip, bool* limited = nullptr) noexcept;
+	float ResolutionDpiActionGain(const DisplayScale& display) noexcept;
+	const char* SourceKindName(SourceKind kind) noexcept;
+	const char* ResponseModelName(ResponseModel model) noexcept;
+	const char* ScaleSourceName(ScaleSource source) noexcept;
+	const char* MotionUnitName(MotionUnit unit) noexcept;
 	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch,
 		const EraserSizes& sizes = {}) noexcept;
 
@@ -103,7 +164,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 	public:
 		void Reset(float x, float y, double seconds,
-			StartKind kind = StartKind::Hover, const Config& config = Config{}) noexcept;
+			StartKind kind = StartKind::Hover, const Config& config = Config{}, float initialDiameterDip = 0) noexcept;
+		void ResetPreview(float x, float y, double seconds, const Config& config, float diameterDip = 0) noexcept;
+		void BeginContact(const Controller* preview, float x, float y, double seconds, const Config& config) noexcept;
 		float UpdatePosition(float x, float y, double seconds) noexcept;
 		float Advance(double seconds) noexcept;
 		void PauseForReconnect(double seconds) noexcept;
@@ -113,6 +176,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double SecondsSinceMovement(double seconds) const noexcept;
 		double Speed() const noexcept { return frameState_.speed; }
 		bool Sweeping() const noexcept { return frameState_.sweeping; }
+		bool TargetLimited() const noexcept;
+		bool SweepQualified() const noexcept { return frameState_.sweepQualified; }
+		bool PreviewOnly() const noexcept { return previewOnly_; }
 		float TargetDiameter() const noexcept;
 		bool IsPaused() const noexcept { return paused_; }
 		bool NeedsAnimation(double seconds) const noexcept;
@@ -125,6 +191,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double startTime = 0.0;
 			double endTime = 0.0;
 			double distance = 0.0;
+			double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
 		};
 
 		struct DynamicsState
@@ -158,11 +225,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double movementX_ = 0.0, movementY_ = 0.0;
 		double pauseTime_ = 0.0;
 		bool touchStartup_ = false;
+		bool previewOnly_ = false;
 		bool initialized_ = false;
 		bool paused_ = false;
 
 		void AddSegment(const MotionSegment& segment) noexcept;
 		double MotionSpeed(double seconds, double windowSeconds) const noexcept;
+		bool HasMotionSupport(double seconds) const noexcept;
 		double TargetLogDiameter(double speed, double maximumDisplacement) const noexcept;
 		double IdleDiameterDip(const DynamicsState& state) const noexcept;
 		void AdvanceState(DynamicsState& state, double seconds,
@@ -172,7 +241,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double target, double realMotionSpeed) const noexcept;
 	};
 
-	// 鼠标定位没有运动控制器。收尾只接收已接受的直径值，不能回写擦除几何。
+	// Hover 只预览精细区；收尾接收已接受直径，不回写擦除几何。
 	class MouseLifecycle
 	{
 	public:
@@ -192,9 +261,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float X() const noexcept { return x_; }
 		float Y() const noexcept { return y_; }
 		double LastEventSeconds() const noexcept { return lastEventSeconds_; }
+		bool Releasing() const noexcept { return releasing_; }
+		const Controller& PreviewController() const noexcept { return hover_; }
 
 	private:
 		Config config_;
+		Controller hover_;
+		bool hoverInitialized_ = false;
 		float logicalDiameter_ = Config{}.StandardDiameterPx();
 		float visualDiameter_ = Config{}.StandardDiameterPx();
 		float releaseFrom_ = Config{}.StandardDiameterPx();
@@ -240,16 +313,27 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	struct Diagnostics
 	{
 		bool active = false;
+		bool preview = false;
 		uint32_t inputType = 0;
+		uintptr_t monitor = 0;
+		uint64_t displayGeneration = 0, displayRevision = 0;
 		DeviceMode mode = DeviceMode::Laptop;
-		ScaleSource motionSource = ScaleSource::Dip;
+		ScaleSource motionSource = ScaleSource::DipOnly;
+		MotionUnit motionUnit = MotionUnit::DipPerSecond;
+		InputSource inputSource;
+		ResponseModel response = ResponseModel::IndirectDip;
+		bool inputMapped = false;
+		float rhoMmPerDip = 0.0f;
+		float referenceMmPerDip = 0.25f;
+		float penBeta = 0.5f;
+		float heuristicGain = 1.0f;
 		EraserSizes sizes;
 		float dpiX = 96, dpiY = 96;
 		float effectiveDiameterDip = 32, cursorDiameterPx = 32, nextRadiusPx = 16;
 		float historyRadiusPx = 0, resumedMaxRadiusPx = 0;
 		float resumedLeft = 0, resumedTop = 0, resumedRight = 0, resumedBottom = 0;
 		std::array<float,9> boundaryPoints{}; // 有界的历史点/尺寸锚点/新末点 (x,y,直径px)。
-		bool resumedWithAnchor = false, sweeping = false;
+		bool resumedWithAnchor = false, sweeping = false, qualified = false, limited = false;
 		double speed = 0, evidenceSeconds = 0, idleSeconds = 0;
 		uint64_t frameSequence = 0, realPointCount = 0;
 	};

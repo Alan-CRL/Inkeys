@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.SpeedEraser.h"
+
 #include <atomic>
 #include <cstdint>
 #include <windows.h>
@@ -55,6 +57,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool inverted = false;
 		bool inContact = false;
 		uint64_t sequence = 0;
+		SpeedEraser::InputSource source;
 	};
 
 	// 为跨线程 Pen/Mouse 更新提供单写者门闩和一致快照。
@@ -71,6 +74,18 @@ export namespace Inkeys::Drawing::Draw3
 		bool Read(DrawingCursorSample& sample) const noexcept;
 
 	private:
+		SpeedEraser::InputSource LoadInputSource() const noexcept;
+		void StoreInputSource(const SpeedEraser::InputSource& source) noexcept;
+		std::atomic<uint32_t> source_kind_ = 0;
+		std::atomic<uint32_t> source_recognition_ = 0;
+		std::atomic<uint32_t> source_contextId_ = 0;
+		std::atomic<uint32_t> source_cursorId_ = 0;
+		std::atomic<uint64_t> source_generation_ = 0;
+		std::atomic<uintptr_t> source_mappedMonitor_ = 0;
+		std::atomic<int32_t> source_mappedLeft_ = 0;
+		std::atomic<int32_t> source_mappedTop_ = 0;
+		std::atomic<int32_t> source_mappedWidth_ = 0;
+		std::atomic<int32_t> source_mappedHeight_ = 0;
 		std::atomic_flag writerLatch_ = ATOMIC_FLAG_INIT;
 		std::atomic<uint64_t> sequence_ = 0;
 		std::atomic<float> x_ = 0.0f;

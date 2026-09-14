@@ -12,6 +12,7 @@ module;
 #include "../../../IdtPlug-in.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Setting.SessionState.h"
 #include "../../../SuperTop/IdtSuperTop.h"
@@ -8492,7 +8493,7 @@ SettingSessionCoroutine RunSettingSession()
 
 				// ---------------------
 
-				// 程序调测临时页：旧 Draw3 输入调试已移除，仅保留显示器诊断。
+				// 临时开发页：显示诊断及笔速策略比较，不进入正式 OOBE 或持久化设置。
 				case settingTabEnum::tab9:
 				{
 					ImGui::SetCursorPos({ 170.0f * settingGlobalScale,40.0f * settingGlobalScale });
@@ -8509,6 +8510,74 @@ SettingSessionCoroutine RunSettingSession()
 					PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
 
 					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+					{
+						using namespace Inkeys::Drawing::Draw3;
+						auto options=ProductHost().EraserDevelopmentOptions();
+						const auto scale=ProductHost().EraserDisplayScaleSnapshot();
+						bool changed=false;
+						ImGui::TextUnformatted("笔速橡皮策略比较（临时，不保存）");
+						int response=static_cast<int>(options.response);
+						const char* models[]={"自动","强制间接 DIP","强制屏幕笔混合","强制直接 Touch 响应"};
+						if(ImGui::Combo("响应模型",&response,models,4))
+						{options.response=static_cast<SpeedEraser::ResponseOverride>(response);changed=true;}
+						int source=static_cast<int>(options.scale);
+						const char* scales[]={"自动","手动 Surface 28x18 cm（可修改）","强制物理不可用，测试分辨率-DPI回退"};
+						if(ImGui::Combo("标尺来源",&source,scales,3))
+						{
+							options.scale=static_cast<SpeedEraser::ScaleOverride>(source);changed=true;
+							if(options.scale==SpeedEraser::ScaleOverride::ManualSurface)
+							{
+								options.calibration.monitor=scale.monitor;
+								options.calibration.orientation=scale.orientation;
+								options.calibration.widthCm=(scale.orientation&1u)?18.0f:28.0f;
+								options.calibration.heightCm=(scale.orientation&1u)?28.0f:18.0f;
+							}
+						}
+						if(options.scale==SpeedEraser::ScaleOverride::ManualSurface)
+						{
+							const bool rotated=((options.calibration.orientation^scale.orientation)&1u)!=0;
+							float size[]={rotated?options.calibration.heightCm:options.calibration.widthCm,
+								rotated?options.calibration.widthCm:options.calibration.heightCm};
+							if(ImGui::InputFloat2("当前方向表面宽高 (cm)",size,"%.1f"))
+							{
+								options.calibration.widthCm=size[0];options.calibration.heightCm=size[1];
+								options.calibration.monitor=scale.monitor;options.calibration.orientation=scale.orientation;
+								changed=true;
+							}
+							ImGui::Text("绑定绘制表面 %p；换屏不套用此尺寸",reinterpret_cast<void*>(options.calibration.monitor));
+						}
+						int beta=options.penBeta<0.375f?0:options.penBeta>0.625f?2:1;
+						const char* betas[]={"0.25","0.50（默认）","0.75"};
+						if(ImGui::Combo("屏幕笔 beta",&beta,betas,3))
+						{options.penBeta=0.25f*(beta+1);changed=true;}
+						changed|=ImGui::Checkbox("显示低成本笔速诊断",&options.diagnostics);
+						if(changed)ProductHost().SetEraserDevelopmentOptions(options);
+						ImGui::TextWrapped("模型和标尺在下一独立接触/批次应用；真实 Pen/Touch 身份不变。经验尺度不是实测毫米。");
+						if(options.diagnostics)
+						{
+							const auto d=ProductRuntimeSnapshot().eraser;
+							const char* recognition=d.inputSource.recognition==SpeedEraser::SourceRecognition::PointerCursor?"Pointer cursor":
+								d.inputSource.recognition==SpeedEraser::SourceRecognition::RtsCapabilities?"RTS 能力":
+								d.inputSource.recognition==SpeedEraser::SourceRecognition::Conflict?"识别冲突":"未知";
+							ImGui::TextWrapped("真实输入 %u | %s / %s | 模型 %s | 标尺 %s",
+								d.inputType,SpeedEraser::SourceKindName(d.inputSource.kind),recognition,
+								SpeedEraser::ResponseModelName(d.response),SpeedEraser::ScaleSourceName(d.motionSource));
+							ImGui::Text("表面 %p | DPI %.0fx%.0f | 映射 %s | generation %llu / %llu",
+								reinterpret_cast<void*>(d.monitor),d.dpiX,d.dpiY,d.inputMapped?"可靠":"未确认",
+								static_cast<unsigned long long>(d.displayGeneration),static_cast<unsigned long long>(d.displayRevision));
+							ImGui::Text("速度 %.1f %s | 资格 %s | 证据 %.0f ms",
+								d.speed,SpeedEraser::MotionUnitName(d.motionUnit),d.qualified?"有":"无",d.evidenceSeconds*1000);
+							ImGui::Text("有效直径 %.2f DIP | 最终光标 %.2f px | 下一段半径 %.2f px | 限幅 %s",
+								d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.limited?"是":"否");
+							if(d.motionSource==SpeedEraser::ScaleSource::TrustedPhysical || d.motionSource==SpeedEraser::ScaleSource::ManualCalibration)
+								ImGui::Text("物理标尺 %.4f mm/DIP | beta %.2f",d.rhoMmPerDip,d.penBeta);
+							else if(d.motionSource==SpeedEraser::ScaleSource::ResolutionDpiHeuristic)
+								ImGui::Text("经验尺度增益 %.3f（无量纲）",d.heuristicGain);
+						}
+						ImGui::Separator();ImGui::Spacing();
+					}
+#endif
 					if (!displaySnapshot)
 					{
 						ImGui::TextUnformatted("显示快照不可用");
