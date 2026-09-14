@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <cstdio>
 #include <limits>
 #include <mutex>
 #include <new>
@@ -920,6 +921,24 @@ namespace Inkeys::Drawing::Draw3
 			decoder.contactScaleX = contactScaleX;
 			decoder.contactScaleY = contactScaleY;
 			decoder.deviceType = deviceType;
+#if defined(DRAW3_RTS_DIAGNOSTICS)
+			// 仅 context 建立时记录驱动能力和实际返回的属性，不在 packet 回调中重复查询/输出。
+			char trace[2048]{};
+			const auto& x=decoder.xAxis;const auto& y=decoder.yAxis;
+			const auto& w=decoder.width;const auto& h=decoder.height;
+			std::snprintf(trace,sizeof(trace),
+				"[TouchAreaDevice] tcid=%u inputType=%u kindKnown=%d capsKnown=%d integrated=%d modernAPI=%d contextScale=%.8fx%.8f catalogAvailable=%d catalogCursors=%llu\n"
+				"[TouchAreaDevice] tcid=%u X=(present:%d unit:%u res:%g range:%ld..%ld) Y=(present:%d unit:%u res:%g range:%ld..%ld)\n"
+				"[TouchAreaDevice] tcid=%u WIDTH=(present:%d unit:%u res:%g range:%ld..%ld) HEIGHT=(present:%d unit:%u res:%g range:%ld..%ld)\n",
+				static_cast<unsigned>(contextId),static_cast<unsigned>(deviceType),decoder.sourceDeviceKnown,decoder.capabilitiesKnown,
+				decoder.integrated,decoder.modernSourceApi,contactScaleX,contactScaleY,decoder.pointerSources!=nullptr,
+				static_cast<unsigned long long>(decoder.pointerSources?decoder.pointerSources->size():0),
+				static_cast<unsigned>(contextId),x.present,static_cast<unsigned>(x.metrics.Units),x.metrics.fResolution,x.metrics.nLogicalMin,x.metrics.nLogicalMax,
+				y.present,static_cast<unsigned>(y.metrics.Units),y.metrics.fResolution,y.metrics.nLogicalMin,y.metrics.nLogicalMax,
+				static_cast<unsigned>(contextId),w.present,static_cast<unsigned>(w.metrics.Units),w.metrics.fResolution,w.metrics.nLogicalMin,w.metrics.nLogicalMax,
+				h.present,static_cast<unsigned>(h.metrics.Units),h.metrics.fResolution,h.metrics.nLogicalMin,h.metrics.nLogicalMax);
+			OutputDebugStringA(trace);std::fputs(trace,stderr);
+#endif
 			candidate = decoder;
 			return true;
 		}

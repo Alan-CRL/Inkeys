@@ -46,6 +46,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float penBeta = 0.5f;
 		bool diagnostics = false;
 		bool touchContactAreaAssistance = false;
+		bool touchAreaTrace = false;
 		friend bool operator==(const DevelopmentOptions&, const DevelopmentOptions&) = default;
 	};
 	enum class StartKind { Hover, Touch };
@@ -367,6 +368,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		bool active = false;
 		bool preview = false;
+		bool eraserContact = false;
 		uint32_t inputType = 0;
 		uintptr_t monitor = 0;
 		uint64_t displayGeneration = 0, displayRevision = 0;

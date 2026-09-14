@@ -301,6 +301,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 #ifndef IDT_RELEASE
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
+	bool touchAreaConsoleOutputEnabled = false;
 #endif
 	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
@@ -1380,10 +1381,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
 			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
 				draw3ConsoleOutputEnabled);
-			if (draw3ConsoleOutputEnabled)
+			touchAreaConsoleOutputEnabled =
+				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
+			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled)
 			{
-				// Draw3 启动前完成绑定，才能看到设备和驱动环境信息。
+				// 设备初始化前绑定共用控制台，避免遗漏 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
+			}
+			if (touchAreaConsoleOutputEnabled)
+			{
+				auto& host = Inkeys::Drawing::Draw3::ProductHost();
+				auto options = host.EraserDevelopmentOptions();
+				options.touchAreaTrace = true;
+				host.SetEraserDevelopmentOptions(options);
 			}
 		#endif
 			double animationSpeedRate = static_cast<double>(
@@ -2012,7 +2022,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 启动 PPT 联动插件
 	#ifndef IDT_RELEASE
-	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled)
+	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled && !touchAreaConsoleOutputEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();

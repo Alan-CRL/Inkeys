@@ -40,6 +40,9 @@ namespace Inkeys::Drawing::Draw3
 		mutable std::mutex displayMutex;
 		SpeedEraser::DevelopmentOptions eraserDevelopment;
 		SpeedEraser::ContactAreaSample hiddenContactArea;
+		std::atomic_bool touchAreaTraceEnabled = false;
+		std::chrono::steady_clock::time_point lastTouchAreaTrace{};
+		bool touchAreaTraceWasEnabled = false, lastTracedContact = false;
 		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
 		Inkeys::Display::Subscription displaySubscription;
 		std::atomic_bool displayScaleDirty = false;
@@ -438,10 +441,60 @@ namespace Inkeys::Drawing::Draw3
 		static void ObserveEraserDiagnostics(void* context,const SpeedEraser::Diagnostics& value)
 		{
 			auto* self=static_cast<Impl*>(context);
-			std::scoped_lock lock(self->eraserDiagnosticsMutex);
-			const auto sequence=self->eraserDiagnostics.frameSequence+1;
-			self->eraserDiagnostics=value;
-			self->eraserDiagnostics.frameSequence=sequence;
+			uint64_t sequence=0;
+			{
+				std::scoped_lock lock(self->eraserDiagnosticsMutex);
+				sequence=self->eraserDiagnostics.frameSequence+1;
+				self->eraserDiagnostics=value;
+				self->eraserDiagnostics.frameSequence=sequence;
+			}
+			if(!self->touchAreaTraceEnabled.load(std::memory_order_relaxed))
+			{self->touchAreaTraceWasEnabled=false;return;}
+			const auto now=std::chrono::steady_clock::now();
+			const bool contact=value.eraserContact;
+			const bool edge=!self->touchAreaTraceWasEnabled || contact!=self->lastTracedContact;
+			if(!edge && (!contact || now-self->lastTouchAreaTrace<std::chrono::milliseconds(250)))return;
+			const char* event=!self->touchAreaTraceWasEnabled?"enabled":contact!=self->lastTracedContact?
+				(contact?"begin":"end"):"sample";
+			self->touchAreaTraceWasEnabled=true;self->lastTracedContact=contact;self->lastTouchAreaTrace=now;
+			const auto& d=value;const auto& a=d.contactArea;const auto& source=d.inputSource;
+			const bool requested=self->window.TouchContactAreaAssistance();
+			const char* gate=!contact?"no-eraser-contact":!d.active?"not-speed-eraser":
+				!requested?"option-off":!a.enabled?"waiting-new-contact-batch":
+				d.inputType!=static_cast<uint32_t>(InputDeviceType::Touch)?"not-touch-input":
+				source.kind!=SpeedEraser::SourceKind::Touch?"touch-relationship-unknown":
+				!d.inputMapped?"display-mapping-unknown":
+				a.sample.units!=SpeedEraser::ContactAreaUnits::CanvasPixels?"area-units-unusable":
+				!a.sampleValid?"area-rejected":!a.referenceReady?"waiting-stable-drag":
+				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
+				!a.active?"waiting-accepted-movement":"area-floor-active";
+			char text[3072]{};
+			if(!d.active)
+			{
+				std::snprintf(text,sizeof(text),"[TouchArea] seq=%llu event=%s gate=%s contact=%d inputType=%u source=%s cursorPx=%.3f requested=%d\n",
+					static_cast<unsigned long long>(sequence),event,gate,contact,d.inputType,
+					SpeedEraser::SourceKindName(source.kind),d.cursorDiameterPx,requested);
+				OutputDebugStringA(text);std::fputs(text,stderr);return;
+			}
+			std::snprintf(text,sizeof(text),
+				"[TouchArea] seq=%llu event=%s gate=%s contact=%d speedMode=%d inputType=%u source=%s recognition=%u tcid=%u cid=%u sourceGen=%llu\n"
+				"[TouchArea] seq=%llu model=%s scale=%s unit=%s monitor=%p mappedMonitor=%p mapped=%d mappedRect=(%d,%d,%d,%d) pixels=%dx%d dpi=%.1fx%.1f DIP/px=%.6fx%.6f motion/px=%.6fx%.6f rho=%.6f manualCm=%.1fx%.1f displayGen=%llu/%llu\n"
+				"[TouchArea] seq=%llu requested=%d latched=%d raw=%.3fx%.3f converted=%.3fx%.3f units=%s DIP=%.3fx%.3f valid=%d reason=%s ready=%d fresh=%d unlocked=%d stableMs=%.1f refFloor=%.3f acceptedFloor=%.3f areaActive=%d speed=%.3f evidenceMs=%.1f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f nextRadiusPx=%.3f historyRadiusPx=%.3f points=%llu idleMs=%.1f animate=%d\n",
+				static_cast<unsigned long long>(sequence),event,gate,contact,d.active,d.inputType,
+				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),source.contextId,source.cursorId,static_cast<unsigned long long>(source.generation),
+				static_cast<unsigned long long>(sequence),SpeedEraser::ResponseModelName(d.response),SpeedEraser::ScaleSourceName(d.motionSource),SpeedEraser::MotionUnitName(d.motionUnit),
+				reinterpret_cast<void*>(d.monitor),reinterpret_cast<void*>(source.mappedMonitor),d.inputMapped,
+				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,d.pixelWidth,d.pixelHeight,d.dpiX,d.dpiY,
+				d.dipPerPixelX,d.dipPerPixelY,d.motionPerPixelX,d.motionPerPixelY,d.rhoMmPerDip,d.manualWidthCm,d.manualHeightCm,
+				static_cast<unsigned long long>(d.displayGeneration),static_cast<unsigned long long>(d.displayRevision),
+				static_cast<unsigned long long>(sequence),requested,a.enabled,a.sample.rawWidth,a.sample.rawHeight,a.sample.widthPx,a.sample.heightPx,
+				SpeedEraser::ContactAreaUnitsName(a.sample.units),a.widthDip,a.heightDip,a.sampleValid,SpeedEraser::ContactAreaReasonName(a.reason),
+				a.referenceReady,a.referenceFresh,d.touchUnlocked,a.stableMotionSeconds*1000,a.referenceFloorDip,a.activeFloorDip,a.active,
+				d.speed,d.evidenceSeconds*1000,d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.historyRadiusPx,
+				static_cast<unsigned long long>(d.realPointCount),d.idleSeconds*1000,d.needsAnimation);
+			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
+			OutputDebugStringA(text);
+			std::fputs(text,stderr);
 		}
 
 		static void ObserveDrawingActivity(void* context, bool active) noexcept
@@ -492,8 +545,10 @@ namespace Inkeys::Drawing::Draw3
 			SpeedEraser::DisplayScale scale;
 			scale.development = development;
 			window.SetTouchContactAreaAssistance(development.touchContactAreaAssistance);
+			scale.development.touchAreaTrace=false;
+			touchAreaTraceEnabled.store(development.touchAreaTrace,std::memory_order_relaxed);
 			scale.development.touchContactAreaAssistance=false; // 面积开关不属于 Mouse/Pen 的显示标尺。
-			window.SetEraserDiagnosticsEnabled(development.diagnostics || hiddenTestContactInjectionEnabled || startOptions.enableEraserDiagnostics);
+			window.SetEraserDiagnosticsEnabled(development.diagnostics || development.touchAreaTrace || hiddenTestContactInjectionEnabled || startOptions.enableEraserDiagnostics);
 			scale.generation = snapshot ? snapshot->generation : 0;
 			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
 			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
@@ -1211,7 +1266,8 @@ namespace Inkeys::Drawing::Draw3
 			if(impl_->eraserDevelopment==options)return;
 			impl_->eraserDevelopment=options;
 		}
-		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || impl_->hiddenTestContactInjectionEnabled);
+		impl_->touchAreaTraceEnabled.store(options.touchAreaTrace,std::memory_order_relaxed);
+		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || options.touchAreaTrace || impl_->hiddenTestContactInjectionEnabled);
 		impl_->displayScaleDirty.store(true,std::memory_order_release);
 		(void)impl_->input.PublishControlWake();
 	}

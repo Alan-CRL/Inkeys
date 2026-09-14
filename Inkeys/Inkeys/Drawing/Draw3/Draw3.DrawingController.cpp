@@ -4072,7 +4072,7 @@ namespace Inkeys::Drawing::Draw3
 				SpeedEraser::Diagnostics d;
 				const RuntimeStroke* r=primaryRuntime;
 				if(!r)for(const auto* candidate:active)
-					if(candidate && !candidate->ended && candidate->stroke.widthMode==StrokeWidthMode::SpeedEraser)
+					if(candidate && !candidate->ended && candidate->tool==DrawingTool::Eraser)
 					{r=candidate;break;}
 				const SpeedEraser::Controller* controller=nullptr;
 				if(r && r->stroke.widthMode==StrokeWidthMode::SpeedEraser)
@@ -4113,6 +4113,11 @@ namespace Inkeys::Drawing::Draw3
 					d.speed=controller->Speed();d.evidenceSeconds=controller->SweepEvidenceSeconds();
 					d.sweeping=controller->Sweeping();d.qualified=controller->SweepQualified();d.limited=controller->TargetLimited();
 					d.idleSeconds=controller->SecondsSinceMovement(mouseVisualSeconds);
+				}
+				d.eraserContact=r && !r->ended && r->tool==DrawingTool::Eraser;
+				if(d.eraserContact && r->stroke.widthMode!=StrokeWidthMode::SpeedEraser)
+				{
+					d.inputType=static_cast<uint32_t>(r->metricDeviceType);d.inputSource=r->lastInputSnapshot.source;
 				}
 				d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
 				observer_.eraserDiagnostics(observer_.context,d);

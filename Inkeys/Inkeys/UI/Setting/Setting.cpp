@@ -8063,7 +8063,7 @@ SettingSessionCoroutine RunSettingSession()
 						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
-						inkeys3PanelHeight += 150.0f;
+						inkeys3PanelHeight += 225.0f;
 					#endif
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
@@ -8080,6 +8080,37 @@ SettingSessionCoroutine RunSettingSession()
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+#ifndef IDT_RELEASE
+							ImGui::BeginChild("触摸面积控制台输出卡片", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								ImGui::SetCursorPos({20.0f*settingGlobalScale,20.0f*settingGlobalScale});
+								ImFontMain->Scale=0.6f,PushFontNum++,ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted("触摸面积控制台输出（临时）");
+								ImFontMain->Scale=0.5f,PushFontNum++,ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextSecondary);
+								ImGui::SetCursorPosX(20.0f*settingGlobalScale);
+								ImGui::TextUnformatted("下次启动时输出到控制台；筛选 [TouchArea]，最多每秒4组。");
+								ImGui::SetCursorPos({settingRightToggleX*settingGlobalScale,25.0f*settingGlobalScale});
+								bool enabled=Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
+								const bool before=enabled;
+								Widgets::toggle.ToggleBool("##触摸面积控制台输出",&enabled);
+								if(before!=enabled)
+								{
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea=enabled;
+									QueueConfigWrite();
+								}
+								if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
+								if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
+								while(PushFontNum)PushFontNum--,ImGui::PopFont();
+							}
+							ImGui::EndChild();
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5.0f*settingGlobalScale);
+							PushStyleVarNum++,ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(0,0));
+							PushStyleVarNum++,ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding,4.0f);
+							PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_ChildBg,Widgets::FluentColor::CardBackground);
+#endif
 							ImGui::BeginChild("触摸面积辅助临时测试", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
 								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 							{
