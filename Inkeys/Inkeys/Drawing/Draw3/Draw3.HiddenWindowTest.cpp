@@ -184,6 +184,13 @@ namespace Inkeys::Drawing::Draw3
 				"start real Draw3 host", failures))
 				return false;
 
+			if(exerciseEraser)
+			{
+				// 在 RTS context 已建立后才启用，验证缓存补打；真实 packet 仍需设备手工采集。
+				auto diagnostics=ProductHost().EraserDevelopmentOptions();
+				diagnostics.touchAreaTrace=true;
+				ProductHost().SetEraserDevelopmentOptions(diagnostics);
+			}
 			bool modeSucceeded = true;
 			auto snapshot = ProductHost().RuntimeSnapshot();
 			modeSucceeded &= Check(snapshot.running && snapshot.firstFrameReady &&
@@ -711,7 +718,14 @@ namespace Inkeys::Drawing::Draw3
 				std::this_thread::sleep_for(60ms);
 				modeSucceeded &= Check(std::abs(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip-beforeToggle.effectiveDiameterDip)<0.001f,
 					"area toggle does not reset mouse fine hover",failures);
-				ProductHost().SetHiddenTestContactArea({300,200,30,20,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				const SpeedEraser::ContactLengthMetrics syntheticAxis{2,1000,0,30000,true};
+				const SpeedEraser::ContactLengthMetrics syntheticSpan{2,10000,0,30000,true};
+				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1);
+				const auto convertedArea=SpeedEraser::ConvertContactArea(300,200,areaTransform,areaTransform);
+				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
+					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,
+					"synthetic metadata uses the product relative-length converter before eraser ingress",failures);
+				ProductHost().SetHiddenTestContactArea(convertedArea);
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && d.inputType==0 && d.contactArea.enabled;}),"real Touch receives latched area option",failures);

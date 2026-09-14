@@ -711,12 +711,110 @@ int RunSpeedEraserTests()
 	expect(clamped,"target clamping is available for diagnostics");
 
 	// 面积辅助必须走同一个产品控制器；坏数据和开关关闭均不改变速度模型。
-	expect(ContactMetricsMatch(2,1000,2,1000),"RTS width and coordinate metrics agree");
-	expect(!ContactMetricsMatch(0,1,0,1) && !ContactMetricsMatch(2,1000,2,500) &&
-		!ContactMetricsMatch(3,1000,3,1000) && !ContactMetricsMatch(2,NAN,2,1000),"unknown or mismatched packet units are not pixels");
+	{
+		// 合成明确 PROPERTY_METRICS，只验证产品换算，不冒充 Surface 实测。
+		const ContactLengthMetrics axis{2,1000,100,30100,true},span{2,100,0,10000,true};
+		const auto x=ResolveContactLengthTransform(axis,span,0.1f);
+		const auto y=ResolveContactLengthTransform(axis,span,0.2f);
+		expect(x.status==ContactAreaUnits::CanvasPixels && x.resolutionAdjusted && !x.unitConverted,
+			"same length unit with different resolutions is convertible");
+		near(x.spanToAxis,10,0.00001,"resolution ratio maps span to coordinate logical length");
+		auto sample=ConvertContactArea(30,10,x,y);
+		near(sample.widthPx,30,0.00001,"relative length does not subtract nonzero coordinate logical origin");
+		near(sample.heightPx,20,0.00001,"Y uses its own linear position transform");
+		near(sample.rawWidth,30,0,"conversion preserves original packet width");
+		auto same=span;same.resolution=1000;
+		const auto sameTransform=ResolveContactLengthTransform(axis,same,0.1f);
+		expect(!sameTransform.resolutionAdjusted && !sameTransform.unitConverted,"equal metadata needs no unit or resolution adaptation");
+		near(ConvertContactArea(300,200,sameTransform,sameTransform).widthPx,30,0.00001,"same-resolution length remains compatible");
+		auto inches=span;inches.units=1;inches.resolution=254;
+		const auto inchTransform=ResolveContactLengthTransform(axis,inches,0.1f);
+		expect(inchTransform.unitConverted && inchTransform.resolutionAdjusted &&
+			inchTransform.status==ContactAreaUnits::CanvasPixels,"inch contact and centimeter coordinate metadata convert");
+		near(ConvertContactArea(30,20,inchTransform,inchTransform).widthPx,30,0.00001,"inch/cm conversion includes exactly one unit ratio");
+		auto inchAxis=axis;inchAxis.units=1;inchAxis.resolution=2540;
+		const auto reverse=ResolveContactLengthTransform(inchAxis,span,0.1f);
+		near(ConvertContactArea(30,20,reverse,reverse).widthPx,30,0.00001,"centimeter contact and inch coordinate metadata convert");
+		const auto reflected=ResolveContactLengthTransform(axis,span,-0.1f);
+		near(ConvertContactArea(30,20,reflected,reflected).widthPx,30,0.00001,"a reflected position axis keeps contact length positive");
+		const auto checkInvalid=[&](ContactLengthMetrics a,ContactLengthMetrics w,float scale,ContactAreaUnits expected)
+		{
+			const auto transform=ResolveContactLengthTransform(a,w,scale);
+			const auto rejected=ConvertContactArea(30,20,transform,y);
+			expect(transform.status==expected && rejected.units==expected && rejected.widthPx<0 &&
+				rejected.heightPx<0 && rejected.rawWidth==30,"invalid metadata preserves raw values without inventing pixels");
+		};
+		auto bad=axis;bad.present=false;checkInvalid(bad,span,0.1f,ContactAreaUnits::MissingAxis);
+		bad=span;bad.present=false;checkInvalid(axis,bad,0.1f,ContactAreaUnits::Missing);
+		bad=axis;bad.units=0;checkInvalid(bad,span,0.1f,ContactAreaUnits::AxisUnitsMissing);
+		bad=span;bad.units=0;checkInvalid(axis,bad,0.1f,ContactAreaUnits::SpanUnitsMissing);
+		for(uint32_t unit:{3u,8u,10u,99u})
+		{
+			bad=span;bad.units=unit;checkInvalid(axis,bad,0.1f,ContactAreaUnits::UnsupportedLengthUnits);
+		}
+		for(float resolution:{0.0f,-1.0f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()})
+		{
+			bad=axis;bad.resolution=resolution;checkInvalid(bad,span,0.1f,ContactAreaUnits::InvalidAxisResolution);
+			bad=span;bad.resolution=resolution;checkInvalid(axis,bad,0.1f,ContactAreaUnits::InvalidSpanResolution);
+		}
+		bad=axis;bad.logicalMax=bad.logicalMin;checkInvalid(bad,span,0.1f,ContactAreaUnits::InvalidAxisRange);
+		bad=span;bad.logicalMax=bad.logicalMin;checkInvalid(axis,bad,0.1f,ContactAreaUnits::InvalidSpanRange);
+		bad=span;bad.logicalMax=-1;checkInvalid(axis,bad,0.1f,ContactAreaUnits::InvalidSpanRange);
+		bad=span;bad.logicalMin=-1;checkInvalid(axis,bad,0.1f,ContactAreaUnits::InvalidSpanRange);
+		checkInvalid(axis,span,0,ContactAreaUnits::InvalidPositionScale);
+		checkInvalid(axis,span,std::numeric_limits<float>::quiet_NaN(),ContactAreaUnits::InvalidPositionScale);
+		bad=span;bad.resolution=std::numeric_limits<float>::denorm_min();
+		checkInvalid(axis,bad,1,ContactAreaUnits::ConversionNonFinite);
+		expect(ConvertContactArea(10001,20,x,y).units==ContactAreaUnits::OutsideMetrics &&
+			ConvertContactArea(20,-1,x,y).units==ContactAreaUnits::OutsideMetrics,"packet spans outside declared metrics are rejected, not clamped");
+		expect(ConvertContactArea(10000,0,x,y).units==ContactAreaUnits::CanvasPixels,"declared endpoints are inclusive; zero is rejected by the existing area policy");
+		expect(ConvertContactArea(NAN,20,x,y).units==ContactAreaUnits::ConversionNonFinite,"nonfinite raw length never creates usable pixels");
+		expect(ContactAreaMetadataReason(ContactAreaUnits::InvalidSpanResolution)==ContactAreaReason::InvalidResolution &&
+			ContactAreaMetadataReason(ContactAreaUnits::InvalidSpanRange)==ContactAreaReason::InvalidRange &&
+			ContactAreaMetadataReason(ContactAreaUnits::SpanUnitsMissing)==ContactAreaReason::SpanUnitsMissing,
+			"diagnostic reasons separate unknown units, invalid resolution and invalid ranges");
+		std::cout << "[TouchAreaConversion] synthetic metadata cases completed\n";
+	}
 	auto areaDisplay=penDisplay;areaDisplay.development.touchContactAreaAssistance=true;
 	const auto areaConfig=ResolveConfig(areaDisplay,DeviceMode::Laptop,MappedSource(SourceKind::Touch,areaDisplay));
 	const auto normalArea=AreaSample(areaConfig,30,20);
+	for(const int dpi:{96,144,192})
+	{
+		auto display=areaDisplay;display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
+		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
+		const ContactLengthMetrics axis{2,1000,0,30000,true},span{2,100,0,10000,true};
+		const auto transform=ResolveContactLengthTransform(axis,span,0.1f*dpi/96);
+		const auto area=ConvertContactArea(30,20,transform,transform);
+		Controller controller;controller.Reset(0,0,0,StartKind::Touch,config,0,&area);
+		near(controller.DiameterDip(),16,0.001,"converted metadata retains Touch small Down");
+		for(int i=1;i<=250;++i)
+			controller.UpdatePosition(static_cast<float>(i*0.08/config.motionPerPixelX),0,i/125.0,&area);
+		const auto diagnostic=controller.AreaDiagnostics(2);
+		expect(diagnostic.sampleValid && diagnostic.referenceReady && diagnostic.active,
+			"synthetic converted metadata reaches the unchanged area reference and accepted floor");
+		near(diagnostic.widthDip,30,0.001,"metadata-to-canvas and canvas-to-DIP do not double scale");
+		near(diagnostic.heightDip,20,0.001,"height stays consistent at every DPI");
+		near(diagnostic.referenceFloorDip,39,0.001,"conversion does not alter area multiplier, padding or ceiling");
+		controller.Advance(6);
+		near(controller.DiameterDip(),16,0.01,"converted area retains true no-Move expiry and small idle size");
+	}
+	{
+		auto display=areaDisplay;display.dipPerPixelX=0.5f;display.dipPerPixelY=0.75f;
+		const ContactLengthMetrics axis{2,1000,0,30000,true},span{2,100,0,10000,true};
+		const auto x=ResolveContactLengthTransform(axis,span,0.2f);
+		const auto y=ResolveContactLengthTransform(axis,span,0.1f/0.75f);
+		const auto area=ConvertContactArea(30,20,x,y);
+		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
+		Controller c;c.Reset(0,0,0,StartKind::Touch,config,0,&area);
+		near(c.AreaDiagnostics(0).widthDip,30,0.001,"anisotropic X conversion uses X DIP scale");
+		near(c.AreaDiagnostics(0).heightDip,20,0.001,"anisotropic Y conversion uses Y DIP scale");
+		std::swap(display.dipPerPixelX,display.dipPerPixelY);
+		const auto rotated=ConvertContactArea(20,30,y,x);
+		const auto rotatedConfig=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
+		c.Reset(0,0,1,StartKind::Touch,rotatedConfig,0,&rotated);
+		near(c.AreaDiagnostics(1).widthDip,20,0.001,"rotation swaps span and linear-axis transforms together");
+		near(c.AreaDiagnostics(1).heightDip,30,0.001,"rotation preserves physical axis correspondence");
+	}
 	{
 		auto disabled=areaConfig;disabled.touchContactAreaAssistance=false;
 		Controller inspect;inspect.Reset(0,0,0,StartKind::Touch,disabled,0,&normalArea);

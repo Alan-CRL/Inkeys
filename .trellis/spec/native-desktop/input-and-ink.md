@@ -163,3 +163,50 @@ if (targetIsStable && abs(current - target) < tolerance) current = target;
 // 等待实际状态，再确认 frameSequence 没有继续增长。
 if (!snapshot.eraser.needsAnimation) CheckFrameSequenceStops();
 ~~~
+
+## Scenario: RTS Touch contact-area metadata and relative-length conversion
+
+### 1. Scope / Trigger
+Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. Speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics are frozen.
+
+### 2. Signatures
+- `ResolveContactLengthTransform(axis, span, positionScale)` returns per-axis status, span-to-axis and span-to-canvas factors.
+- `ConvertContactArea(rawWidth, rawHeight, widthTransform, heightTransform)` preserves raw values; unknown/invalid metadata leaves pixel values unknown.
+- `RealTimeStylusInput::TraceTouchAreaDiagnostics(source)` reads cached contexts only; an empty source lists Touch contexts, a supplied source requires matching context and generation.
+
+### 3. Contracts
+- Actual returned packet properties determine GUID, index, units, resolution and declared range. Requested properties are not proof of returned support.
+- For supported inch/centimeter units: `spanToAxis = axisResolution / spanResolution * spanUnitCm / axisUnitCm`; `spanToCanvas = spanToAxis * abs(positionScale)`. PositionScale is the existing packet-XY-to-canvas linear mapping.
+- Different resolutions and convertible length units are valid relationships, not failures. DEFAULT is unknown; angular or undocumented extended unit semantics are not guessed.
+- Width/height are lengths, never translated positions. Do not subtract logical minima or multiply the context ink-to-digitizer factor again. The existing position path is untouched.
+- CanvasPixels is set only for an explained conversion and in-range finite packet values. DIP conversion occurs once in the existing controller. Bounds/aspect/outlier/startup/idle/history policies remain unchanged.
+- Conversion status crosses the existing contact snapshot with raw/converted values. Unknown units, invalid resolutions, invalid declared ranges, unsupported units and bad transforms have separate diagnostic reasons.
+- Runtime tracing copies the existing bounded RTS cache under its reader gate and a short plugin-lifetime guard, then formats outside both locks. No per-packet hardware query or log. Enabling diagnostics replays cached Touch metadata; source/generation changes refresh it at most once a second.
+- A metadata dump without a known cursor explicitly says mapping is pending. It must not substitute Mouse/Pen metadata or the primary display for the active Touch source.
+
+### 4. Validation / Error Matrix
+| Case | Required result |
+| --- | --- |
+| Same units, different positive resolutions | Apply resolution ratio |
+| Inch/centimeter units | Apply one physical-unit ratio |
+| Missing property/unit | Retain raw values; explicit missing status |
+| Invalid resolution/range or unsupported units | No usable canvas dimensions; exact metadata reason |
+| Packet outside declared range or nonfinite | Reject, not clamp into an acceptable finger |
+| Nonzero logical origin / reflected position axis | Relative length ignores translation and uses absolute linear scale |
+| 96/144/192 DPI / anisotropic axes | One per-axis DIP conversion; unchanged auxiliary floor formula |
+| Diagnostic enabled after context creation | Dump cached Touch properties without rebuilding/querying hardware |
+| Source context/generation no longer cached | Report no matching Touch, not another device |
+
+### 5. Good / Base / Bad Cases
+- Good: an explicitly declared tenfold resolution difference produces a tenfold ratio, independently of observed sample magnitude.
+- Base: metadata remains unknown, so area assistance stays off while speed erasing and raw diagnostics still work.
+- Bad: divide by 10/100 because a value looks too large, assume all packet properties share the context scaling factor, or relabel unverified numbers as pixels.
+
+### 6. Tests Required
+Use the production converter in headless tests for unit/resolution/range/DPI cases and pass its synthetic output through the existing hidden eraser ingress tests. Preserve no-Move expiry, point erasing, old radii, new geometry, undo/redo and persistence checks. Synthetic success is not Surface packet acceptance.
+
+### 7. Wrong vs Correct
+- Wrong: `rawWidth * contextScaleX` followed by an equality-only metrics check.
+- Correct: resolve the width-to-X length relationship from returned metrics, then apply the cached position linear mapping exactly once.
+
+References: [PROPERTY_METRICS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ns-tpcshrd-property_metrics), [PROPERTY_UNITS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ne-tpcshrd-property_units), [GetPacketDescriptionData](https://learn.microsoft.com/en-us/windows/win32/api/rtscom/nf-rtscom-irealtimestylus-getpacketdescriptiondata).

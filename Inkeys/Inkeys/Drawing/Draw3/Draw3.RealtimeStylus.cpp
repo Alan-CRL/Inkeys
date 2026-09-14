@@ -75,6 +75,7 @@ namespace Inkeys::Drawing::Draw3
 			PROPERTY_METRICS metrics = {};
 			ULONG index = 0;
 			bool present = false;
+			GUID guid = {};
 		};
 
 		class RtsPacketStateGuard
@@ -481,12 +482,28 @@ namespace Inkeys::Drawing::Draw3
 			float positionScaleY = 1.0f;
 			float contactScaleX = 1.0f;
 			float contactScaleY = 1.0f;
+			SpeedEraser::ContactLengthTransform widthTransform, heightTransform;
 			InputDeviceType deviceType = InputDeviceType::Pen;
 			uint64_t generation = 0;
 			bool modernSourceApi = false, sourceDeviceKnown = false, capabilitiesKnown = false, integrated = false;
 			std::shared_ptr<const PointerSourceList> pointerSources;
 			bool valid = false;
 		};
+
+		SpeedEraser::ContactLengthMetrics LengthMetrics(const PacketPropertyMetadata& property) noexcept
+		{
+			return {static_cast<uint32_t>(property.metrics.Units),property.metrics.fResolution,
+				property.metrics.nLogicalMin,property.metrics.nLogicalMax,property.present};
+		}
+
+		void PrepareAreaTransforms(RtsContextDecoder& decoder) noexcept
+		{
+			// 与该代位置使用同一线性映射；只有面积属性经物理单位/分辨率比例换算。
+			decoder.widthTransform=SpeedEraser::ResolveContactLengthTransform(
+				LengthMetrics(decoder.xAxis),LengthMetrics(decoder.width),decoder.positionScaleX);
+			decoder.heightTransform=SpeedEraser::ResolveContactLengthTransform(
+				LengthMetrics(decoder.yAxis),LengthMetrics(decoder.height),decoder.positionScaleY);
+		}
 
 		struct RtsActiveContactBinding
 		{
@@ -697,6 +714,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder.positionScaleX = positionScaleX;
 					decoder.positionScaleY = positionScaleY;
 					decoder.generation = generation_;
+					PrepareAreaTransforms(decoder);
 					decoder.valid = true;
 					decoders_[index] = decoder;
 				}
@@ -714,6 +732,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder.positionScaleX = sharedPositionScaleX_;
 					decoder.positionScaleY = sharedPositionScaleY_;
 					decoder.generation = generation_;
+					PrepareAreaTransforms(decoder);
 					decoder.valid = true;
 					slot = decoder;
 					return true;
@@ -804,6 +823,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto captureProperty = [&](PacketPropertyMetadata& target, ULONG index)
 				{
 					target.metrics = properties[index].PropertyMetrics;
+					target.guid = properties[index].guid;
 					target.index = index;
 					target.present = true;
 				};
@@ -921,24 +941,7 @@ namespace Inkeys::Drawing::Draw3
 			decoder.contactScaleX = contactScaleX;
 			decoder.contactScaleY = contactScaleY;
 			decoder.deviceType = deviceType;
-#if defined(DRAW3_RTS_DIAGNOSTICS)
-			// 仅 context 建立时记录驱动能力和实际返回的属性，不在 packet 回调中重复查询/输出。
-			char trace[2048]{};
-			const auto& x=decoder.xAxis;const auto& y=decoder.yAxis;
-			const auto& w=decoder.width;const auto& h=decoder.height;
-			std::snprintf(trace,sizeof(trace),
-				"[TouchAreaDevice] tcid=%u inputType=%u kindKnown=%d capsKnown=%d integrated=%d modernAPI=%d contextScale=%.8fx%.8f catalogAvailable=%d catalogCursors=%llu\n"
-				"[TouchAreaDevice] tcid=%u X=(present:%d unit:%u res:%g range:%ld..%ld) Y=(present:%d unit:%u res:%g range:%ld..%ld)\n"
-				"[TouchAreaDevice] tcid=%u WIDTH=(present:%d unit:%u res:%g range:%ld..%ld) HEIGHT=(present:%d unit:%u res:%g range:%ld..%ld)\n",
-				static_cast<unsigned>(contextId),static_cast<unsigned>(deviceType),decoder.sourceDeviceKnown,decoder.capabilitiesKnown,
-				decoder.integrated,decoder.modernSourceApi,contactScaleX,contactScaleY,decoder.pointerSources!=nullptr,
-				static_cast<unsigned long long>(decoder.pointerSources?decoder.pointerSources->size():0),
-				static_cast<unsigned>(contextId),x.present,static_cast<unsigned>(x.metrics.Units),x.metrics.fResolution,x.metrics.nLogicalMin,x.metrics.nLogicalMax,
-				y.present,static_cast<unsigned>(y.metrics.Units),y.metrics.fResolution,y.metrics.nLogicalMin,y.metrics.nLogicalMax,
-				static_cast<unsigned>(contextId),w.present,static_cast<unsigned>(w.metrics.Units),w.metrics.fResolution,w.metrics.nLogicalMin,w.metrics.nLogicalMax,
-				h.present,static_cast<unsigned>(h.metrics.Units),h.metrics.fResolution,h.metrics.nLogicalMin,h.metrics.nLogicalMax);
-			OutputDebugStringA(trace);std::fputs(trace,stderr);
-#endif
+
 			candidate = decoder;
 			return true;
 		}
@@ -987,21 +990,13 @@ namespace Inkeys::Drawing::Draw3
 			if (decoder.width.present && decoder.height.present &&
 				decoder.width.index < propertyCount && decoder.height.index < propertyCount)
 			{
-				// 接触面积保留各 context 的比例；位置统一使用 lifecycle 的首 context 比例。
-				snapshot.contactSize = DecodeContactSize(decoder.deviceType,
-					packet[decoder.width.index], packet[decoder.height.index],
-					decoder.contactScaleX, decoder.contactScaleY);
-				const auto& x=decoder.xAxis.metrics;const auto& y=decoder.yAxis.metrics;
-				const auto& w=decoder.width.metrics;const auto& h=decoder.height.metrics;
-				const bool known=decoder.xAxis.present && decoder.yAxis.present &&
-					SpeedEraser::ContactMetricsMatch(x.Units,x.fResolution,w.Units,w.fResolution) &&
-					SpeedEraser::ContactMetricsMatch(y.Units,y.fResolution,h.Units,h.fResolution) &&
-					w.nLogicalMax>w.nLogicalMin && h.nLogicalMax>h.nLogicalMin;
-				// 只有宽高与对应坐标轴的单位/分辨率一致，才认可既有 per-context 结果为画布像素。
-				snapshot.contactAreaUnits=known?SpeedEraser::ContactAreaUnits::CanvasPixels:SpeedEraser::ContactAreaUnits::Unverified;
-				if(known && (packet[decoder.width.index]<w.nLogicalMin || packet[decoder.width.index]>w.nLogicalMax ||
-					packet[decoder.height.index]<h.nLogicalMin || packet[decoder.height.index]>h.nLogicalMax))
-					snapshot.contactAreaUnits=SpeedEraser::ContactAreaUnits::OutsideMetrics;
+				if(decoder.deviceType==InputDeviceType::Touch)
+				{
+					const auto area=SpeedEraser::ConvertContactArea(snapshot.rawContactSize.width,
+						snapshot.rawContactSize.height,decoder.widthTransform,decoder.heightTransform);
+					snapshot.contactSize={area.widthPx,area.heightPx};
+					snapshot.contactAreaUnits=area.units;
+				}
 			}
 			snapshot.qpc = qpc;
 			snapshot.phase = phase;
@@ -1049,6 +1044,25 @@ namespace Inkeys::Drawing::Draw3
 					return S_OK;
 				}
 				return E_NOINTERFACE;
+			}
+
+
+			bool CopyTouchAreaContexts(const SpeedEraser::InputSource& requested,
+				std::array<RtsContextDecoder,kContextDecoderCapacity>& result,size_t& count) noexcept
+			{
+				count=0;
+				// 只复制已有 context；遇 lifecycle 写入就交给下一次低频诊断，不等待、不查硬件。
+				RtsPacketStateGuard access(stateGate_);
+				if(!access)return false;
+				for(size_t i=0;i<kContextDecoderCapacity;++i)
+				{
+					const auto* decoder=decoderCache_.DecoderAt(i);
+					if(!decoder || decoder->deviceType!=InputDeviceType::Touch)continue;
+					if(requested.contextId && (decoder->tabletContextId!=requested.contextId ||
+						decoder->generation!=requested.generation))continue;
+					result[count++]=*decoder;
+				}
+				return true;
 			}
 
 			HRESULT MarshalerResult() const noexcept
@@ -1880,6 +1894,7 @@ namespace Inkeys::Drawing::Draw3
 		decoder.contactScaleY = contactScaleY;
 		decoder.deviceType = deviceType;
 		decoder.generation = 1;
+		PrepareAreaTransforms(decoder);
 		decoder.valid = true;
 		result.decoded = DecodeSnapshot(decoder, static_cast<ULONG>(decodedPropertyCount),
 			packetValues.data(), ContactPhase::Move, 1234, result.snapshot);
@@ -2212,6 +2227,9 @@ namespace Inkeys::Drawing::Draw3
 		staged[0].propertyCount = 4;
 		staged[0].width = { {}, 2, true };
 		staged[0].height = { {}, 3, true };
+		const PROPERTY_METRICS axis={0,10000,PROPERTY_UNITS_CENTIMETERS,1000.0f};
+		staged[0].xAxis={axis,0,true};staged[0].yAxis={axis,1,true};
+		staged[0].width.metrics=axis;staged[0].height.metrics=axis;
 		staged[0].contactScaleX = 2.0f;
 		staged[0].contactScaleY = 3.0f;
 		staged[1] = MakeTestingDecoder(101);
@@ -2221,7 +2239,8 @@ namespace Inkeys::Drawing::Draw3
 		ContactSnapshot snapshot;
 		return decoder && DecodeSnapshot(*decoder, 4, packet.data(), ContactPhase::Move, 1, snapshot) &&
 			snapshot.position.x == 10.0f && snapshot.position.y == 10.0f &&
-			snapshot.contactSize.width == 10.0f && snapshot.contactSize.height == 12.0f;
+			snapshot.contactAreaUnits == SpeedEraser::ContactAreaUnits::CanvasPixels &&
+			snapshot.contactSize.width == 1.25f && snapshot.contactSize.height == 2.0f;
 	}
 
 	bool RtsErrorPreservesDecoderLifecycleForTesting() noexcept
@@ -2350,6 +2369,9 @@ namespace Inkeys::Drawing::Draw3
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
+		// 只保护诊断借用与插件释放；不把诊断锁带入 RTS callback 或 COM 调用。
+		mutable std::mutex diagnosticsMutex;
+		StylusSyncPlugin* diagnosticsPlugin = nullptr;
 	};
 
 	RealTimeStylusInput::RealTimeStylusInput()
@@ -2550,6 +2572,10 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 		impl_->plugin.Attach(plugin);
+		{
+			std::scoped_lock lock(impl_->diagnosticsMutex);
+			impl_->diagnosticsPlugin=plugin;
+		}
 		result = impl_->stylus->AddStylusSyncPlugin(0, impl_->plugin.Get());
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.marshalerResult = plugin->MarshalerResult();
@@ -2589,6 +2615,10 @@ namespace Inkeys::Drawing::Draw3
 	void RealTimeStylusInput::Shutdown() noexcept
 	{
 		if (!impl_) return;
+		{
+			std::scoped_lock lock(impl_->diagnosticsMutex);
+			impl_->diagnosticsPlugin=nullptr;
+		}
 		if (impl_->stylus)
 		{
 			const HRESULT disableResult = impl_->stylus->put_Enabled(FALSE); // 先停止产生新的同步回调。
@@ -2618,6 +2648,68 @@ namespace Inkeys::Drawing::Draw3
 			CoUninitialize();
 			impl_->comInitialized = false;
 		}
+	}
+
+	bool RealTimeStylusInput::TraceTouchAreaDiagnostics(const SpeedEraser::InputSource& requested) const noexcept
+	{
+		std::array<RtsContextDecoder,kContextDecoderCapacity> contexts;
+		size_t count=0;bool copied=false;
+		{
+			std::scoped_lock lock(impl_->diagnosticsMutex);
+			if(impl_->diagnosticsPlugin)
+				copied=impl_->diagnosticsPlugin->CopyTouchAreaContexts(requested,contexts,count);
+		}
+		// 释放生命周期/缓存锁之后才格式化和输出；不依赖 DRAW3_RTS_DIAGNOSTICS。
+		if(!copied || count==0)
+		{
+			std::fprintf(stderr,"[TouchAreaDevice] cache=%s requestedTcid=%u requestedGen=%llu touchContexts=%zu (no substitute Mouse/Pen metadata)\n",
+				copied?"no-matching-touch":"not-ready-or-busy",requested.contextId,
+				static_cast<unsigned long long>(requested.generation),count);
+			return false;
+		}
+		for(size_t i=0;i<count;++i)
+		{
+			const auto& d=contexts[i];
+			const auto source=SourceForCursor(d,requested.contextId?requested.cursorId:0);
+			std::fprintf(stderr,
+				"[TouchAreaDevice] cache=snapshot tcid=%u gen=%llu cid=%u inputType=Touch source=%s recognition=%u kindKnown=%d capsKnown=%d integrated=%d modernAPI=%d mappedMonitor=%p mappedRect=(%d,%d,%d,%d) mapping=%s\n",
+				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),source.cursorId,
+				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),d.sourceDeviceKnown,d.capabilitiesKnown,
+				d.integrated,d.modernSourceApi,reinterpret_cast<void*>(source.mappedMonitor),
+				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,
+				requested.contextId?"same-cursor-source":"awaiting-touch-cursor");
+			std::fprintf(stderr,
+				"[TouchAreaDevice] tcid=%u gen=%llu contextScale=%.9gx%.9g contextMeaning=ink-to-digitizer positionScale=%.9gx%.9g positionMeaning=canvasPx=packetXY*sharedPositionScale lengthMeaning=span/resolution->axis-units->position-linear-part translationApplied=0 extraContextScaleApplied=0\n",
+				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),
+				d.contactScaleX,d.contactScaleY,d.positionScaleX,d.positionScaleY);
+			const std::array<const PacketPropertyMetadata*,4> properties={&d.xAxis,&d.yAxis,&d.width,&d.height};
+			constexpr const char* labels[]={"X","Y","WIDTH","HEIGHT"};
+			for(size_t j=0;j<properties.size();++j)
+			{
+				const auto& p=*properties[j];const auto& g=p.guid;
+				char guid[40]{};
+				std::snprintf(guid,sizeof(guid),"{%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+					static_cast<unsigned long>(g.Data1),static_cast<unsigned>(g.Data2),static_cast<unsigned>(g.Data3),
+					static_cast<unsigned>(g.Data4[0]),static_cast<unsigned>(g.Data4[1]),
+					static_cast<unsigned>(g.Data4[2]),static_cast<unsigned>(g.Data4[3]),
+					static_cast<unsigned>(g.Data4[4]),static_cast<unsigned>(g.Data4[5]),
+					static_cast<unsigned>(g.Data4[6]),static_cast<unsigned>(g.Data4[7]));
+				std::fprintf(stderr,"[TouchAreaDevice] tcid=%u gen=%llu %s present=%d guid=%s index=%ld Units=%u(%s) fResolution=%.9g nLogicalMin=%ld nLogicalMax=%ld\n",
+					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),labels[j],p.present,guid,
+					p.present?static_cast<long>(p.index):-1L,static_cast<unsigned>(p.metrics.Units),
+					SpeedEraser::ContactPropertyUnitName(p.metrics.Units),p.metrics.fResolution,p.metrics.nLogicalMin,p.metrics.nLogicalMax);
+			}
+			for(size_t j=0;j<2;++j)
+			{
+				const auto& transform=j==0?d.widthTransform:d.heightTransform;
+				std::fprintf(stderr,"[TouchAreaDevice] tcid=%u gen=%llu %s status=%s unitConverted=%d resolutionAdjusted=%d spanToAxis=%.12g spanToCanvasPx=%.12g\n",
+					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),j==0?"WIDTH/X":"HEIGHT/Y",
+					SpeedEraser::ContactAreaUnitsName(transform.status),transform.unitConverted,transform.resolutionAdjusted,
+					transform.spanToAxis,transform.spanToCanvas);
+			}
+		}
+		std::fflush(stderr);
+		return true;
 	}
 
 	bool RealTimeStylusInput::IsInitialized() const noexcept

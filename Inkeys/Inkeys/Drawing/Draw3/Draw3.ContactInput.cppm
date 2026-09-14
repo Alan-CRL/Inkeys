@@ -60,7 +60,7 @@ export namespace Inkeys::Drawing::Draw3
 		float tilt = -1.0f;
 		float orientation = -1.0f;
 		bool isInvertedCursor = false;
-		SizeF contactSize = {}; // 既有 per-context 换算结果。
+		SizeF contactSize = {}; // 仅元数据可解释时为画布像素；失败保留未知值。
 		SizeF rawContactSize = {};
 		SpeedEraser::ContactAreaUnits contactAreaUnits = SpeedEraser::ContactAreaUnits::Missing;
 		int64_t qpc = 0;

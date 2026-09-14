@@ -41,6 +41,11 @@ namespace Inkeys::Drawing::Draw3
 		SpeedEraser::DevelopmentOptions eraserDevelopment;
 		SpeedEraser::ContactAreaSample hiddenContactArea;
 		std::atomic_bool touchAreaTraceEnabled = false;
+		std::atomic_uint64_t touchAreaTraceRevision = 0;
+		uint64_t observedTouchAreaTraceRevision = 0;
+		std::chrono::steady_clock::time_point lastTouchAreaMetadataTrace{};
+		SpeedEraser::InputSource lastTouchAreaMetadataSource;
+		bool touchAreaMetadataPending = true;
 		std::chrono::steady_clock::time_point lastTouchAreaTrace{};
 		bool touchAreaTraceWasEnabled = false, lastTracedContact = false;
 		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
@@ -452,9 +457,24 @@ namespace Inkeys::Drawing::Draw3
 			{self->touchAreaTraceWasEnabled=false;return;}
 			const auto now=std::chrono::steady_clock::now();
 			const bool contact=value.eraserContact;
-			const bool edge=!self->touchAreaTraceWasEnabled || contact!=self->lastTracedContact;
+			const auto traceRevision=self->touchAreaTraceRevision.load(std::memory_order_relaxed);
+			const bool newlyEnabled=!self->touchAreaTraceWasEnabled || traceRevision!=self->observedTouchAreaTraceRevision;
+			self->observedTouchAreaTraceRevision=traceRevision;
+			const bool touch=value.inputType==static_cast<uint32_t>(InputDeviceType::Touch) &&
+				value.inputSource.contextId!=0;
+			if(newlyEnabled || (touch && value.inputSource!=self->lastTouchAreaMetadataSource))
+				self->touchAreaMetadataPending=true;
+			if(self->touchAreaMetadataPending && (newlyEnabled ||
+				now-self->lastTouchAreaMetadataTrace>=std::chrono::seconds(1)))
+			{
+				const auto source=touch?value.inputSource:SpeedEraser::InputSource{};
+				self->touchAreaMetadataPending=!self->stylus.TraceTouchAreaDiagnostics(source);
+				self->lastTouchAreaMetadataTrace=now;
+				if(!self->touchAreaMetadataPending)self->lastTouchAreaMetadataSource=source;
+			}
+			const bool edge=newlyEnabled || contact!=self->lastTracedContact;
 			if(!edge && (!contact || now-self->lastTouchAreaTrace<std::chrono::milliseconds(250)))return;
-			const char* event=!self->touchAreaTraceWasEnabled?"enabled":contact!=self->lastTracedContact?
+			const char* event=newlyEnabled?"enabled":contact!=self->lastTracedContact?
 				(contact?"begin":"end"):"sample";
 			self->touchAreaTraceWasEnabled=true;self->lastTracedContact=contact;self->lastTouchAreaTrace=now;
 			const auto& d=value;const auto& a=d.contactArea;const auto& source=d.inputSource;
@@ -479,7 +499,7 @@ namespace Inkeys::Drawing::Draw3
 			std::snprintf(text,sizeof(text),
 				"[TouchArea] seq=%llu event=%s gate=%s contact=%d speedMode=%d inputType=%u source=%s recognition=%u tcid=%u cid=%u sourceGen=%llu\n"
 				"[TouchArea] seq=%llu model=%s scale=%s unit=%s monitor=%p mappedMonitor=%p mapped=%d mappedRect=(%d,%d,%d,%d) pixels=%dx%d dpi=%.1fx%.1f DIP/px=%.6fx%.6f motion/px=%.6fx%.6f rho=%.6f manualCm=%.1fx%.1f displayGen=%llu/%llu\n"
-				"[TouchArea] seq=%llu requested=%d latched=%d raw=%.3fx%.3f converted=%.3fx%.3f units=%s DIP=%.3fx%.3f valid=%d reason=%s ready=%d fresh=%d unlocked=%d stableMs=%.1f refFloor=%.3f acceptedFloor=%.3f areaActive=%d speed=%.3f evidenceMs=%.1f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f nextRadiusPx=%.3f historyRadiusPx=%.3f points=%llu idleMs=%.1f animate=%d\n",
+				"[TouchArea] seq=%llu requested=%d latched=%d raw=%.3fx%.3f convertedPx=%.3fx%.3f units=%s DIP=%.3fx%.3f valid=%d reason=%s ready=%d fresh=%d unlocked=%d stableMs=%.1f refFloor=%.3f acceptedFloor=%.3f areaActive=%d speed=%.3f evidenceMs=%.1f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f nextRadiusPx=%.3f historyRadiusPx=%.3f points=%llu idleMs=%.1f animate=%d\n",
 				static_cast<unsigned long long>(sequence),event,gate,contact,d.active,d.inputType,
 				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),source.contextId,source.cursorId,static_cast<unsigned long long>(source.generation),
 				static_cast<unsigned long long>(sequence),SpeedEraser::ResponseModelName(d.response),SpeedEraser::ScaleSourceName(d.motionSource),SpeedEraser::MotionUnitName(d.motionUnit),
@@ -1266,7 +1286,8 @@ namespace Inkeys::Drawing::Draw3
 			if(impl_->eraserDevelopment==options)return;
 			impl_->eraserDevelopment=options;
 		}
-		impl_->touchAreaTraceEnabled.store(options.touchAreaTrace,std::memory_order_relaxed);
+		if(impl_->touchAreaTraceEnabled.exchange(options.touchAreaTrace,std::memory_order_relaxed)!=options.touchAreaTrace)
+			impl_->touchAreaTraceRevision.fetch_add(1,std::memory_order_relaxed);
 		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || options.touchAreaTrace || impl_->hiddenTestContactInjectionEnabled);
 		impl_->displayScaleDirty.store(true,std::memory_order_release);
 		(void)impl_->input.PublishControlWake();

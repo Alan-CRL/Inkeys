@@ -92,9 +92,16 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept;
 	float FixedDiameterPx(float selectedDiameterDip, const DisplayScale& display) noexcept;
 
-	enum class ContactAreaUnits : uint32_t { Missing, Unverified, OutsideMetrics, CanvasPixels };
+	enum class ContactAreaUnits : uint32_t
+	{
+		Missing, Unverified, OutsideMetrics, CanvasPixels,
+		MissingAxis, AxisUnitsMissing, SpanUnitsMissing, UnsupportedLengthUnits,
+		InvalidAxisResolution, InvalidSpanResolution, InvalidAxisRange, InvalidSpanRange,
+		InvalidPositionScale, ConversionNonFinite
+	};
 	enum class ContactAreaReason { Disabled, NotScreenTouch, MappingUnknown, Missing, UnitsUnknown,
-		OutsideMetrics, NonFinite, NonPositive, TooSmall, TooLarge, AspectRatio, Outlier, WaitingForMove, Confirming, Ready, Expired };
+		OutsideMetrics, NonFinite, NonPositive, TooSmall, TooLarge, AspectRatio, Outlier, WaitingForMove, Confirming, Ready, Expired,
+		MissingAxis, AxisUnitsMissing, SpanUnitsMissing, UnsupportedLengthUnits, InvalidResolution, InvalidRange, InvalidTransform };
 	struct ContactAreaSample
 	{
 		float rawWidth = -1, rawHeight = -1;
@@ -118,7 +125,28 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		ContactAreaReason reason = ContactAreaReason::Disabled;
 		bool enabled = false, sampleValid = false, referenceReady = false, referenceFresh = false, active = false;
 	};
-	bool ContactMetricsMatch(uint32_t axisUnits,float axisResolution,uint32_t spanUnits,float spanResolution) noexcept;
+
+	// PROPERTY_METRICS 描述实际 packet 的逻辑值；不根据数值大小猜单位。
+	struct ContactLengthMetrics
+	{
+		uint32_t units = 0;
+		float resolution = 0;
+		int32_t logicalMin = 0, logicalMax = 0;
+		bool present = false;
+	};
+	struct ContactLengthTransform
+	{
+		double spanToAxis = 0, spanToCanvas = 0;
+		int32_t logicalMin = 0, logicalMax = 0;
+		ContactAreaUnits status = ContactAreaUnits::Unverified;
+		bool unitConverted = false, resolutionAdjusted = false;
+	};
+	ContactLengthTransform ResolveContactLengthTransform(const ContactLengthMetrics& axis,
+		const ContactLengthMetrics& span, float positionScale) noexcept;
+	ContactAreaSample ConvertContactArea(float rawWidth, float rawHeight,
+		const ContactLengthTransform& width, const ContactLengthTransform& height) noexcept;
+	ContactAreaReason ContactAreaMetadataReason(ContactAreaUnits units) noexcept;
+	const char* ContactPropertyUnitName(uint32_t units) noexcept;
 	const char* ContactAreaReasonName(ContactAreaReason reason) noexcept;
 	const char* ContactAreaUnitsName(ContactAreaUnits units) noexcept;
 

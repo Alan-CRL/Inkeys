@@ -293,12 +293,79 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return static_cast<float>(bounded);
 	}
 
-	bool ContactMetricsMatch(uint32_t axisUnits,float axisResolution,uint32_t spanUnits,float spanResolution) noexcept
+	ContactLengthTransform ResolveContactLengthTransform(const ContactLengthMetrics& axis,
+		const ContactLengthMetrics& span, float positionScale) noexcept
 	{
-		// PROPERTY_UNITS 的 1/2 是英寸/厘米；DEFAULT=0 明确代表未知，不能据此认可面积单位。
-		return (axisUnits==1 || axisUnits==2) && axisUnits==spanUnits &&
-			std::isfinite(axisResolution) && std::isfinite(spanResolution) && axisResolution>0 && spanResolution>0 &&
-			std::abs(axisResolution-spanResolution)<=std::max(axisResolution,spanResolution)*0.00001f;
+		ContactLengthTransform result;
+		result.logicalMin=span.logicalMin;result.logicalMax=span.logicalMax;
+		const auto fail=[&](ContactAreaUnits status){result.status=status;return result;};
+		if(!span.present)return fail(ContactAreaUnits::Missing);
+		if(!axis.present)return fail(ContactAreaUnits::MissingAxis);
+		if(axis.units==0)return fail(ContactAreaUnits::AxisUnitsMissing);
+		if(span.units==0)return fail(ContactAreaUnits::SpanUnitsMissing);
+		// 只接受文档明确的长度单位；SI/English 扩展枚举的额外语义不在此猜测。
+		const auto centimeters=[](uint32_t units){return units==1?2.54:units==2?1.0:0.0;};
+		const double axisCm=centimeters(axis.units),spanCm=centimeters(span.units);
+		if(axisCm==0 || spanCm==0)return fail(ContactAreaUnits::UnsupportedLengthUnits);
+		if(!std::isfinite(axis.resolution) || axis.resolution<=0)return fail(ContactAreaUnits::InvalidAxisResolution);
+		if(!std::isfinite(span.resolution) || span.resolution<=0)return fail(ContactAreaUnits::InvalidSpanResolution);
+		if(axis.logicalMax<=axis.logicalMin)return fail(ContactAreaUnits::InvalidAxisRange);
+		if(span.logicalMin<0 || span.logicalMax<=span.logicalMin)return fail(ContactAreaUnits::InvalidSpanRange);
+		if(!std::isfinite(positionScale) || positionScale==0)return fail(ContactAreaUnits::InvalidPositionScale);
+		// 相对长度只经过现有位置变换的线性部分：不减逻辑原点、不用平移、不再乘 contextScale。
+		// rawSpan / spanResolution * (spanCm / axisCm) * axisResolution * abs(positionScale)
+		result.spanToAxis=static_cast<double>(axis.resolution)/span.resolution*(spanCm/axisCm);
+		result.spanToCanvas=result.spanToAxis*std::abs(static_cast<double>(positionScale));
+		if(!std::isfinite(result.spanToCanvas) || result.spanToCanvas<=0 ||
+			result.spanToCanvas>std::numeric_limits<float>::max())
+			return fail(ContactAreaUnits::ConversionNonFinite);
+		result.unitConverted=axis.units!=span.units;
+		result.resolutionAdjusted=axis.resolution!=span.resolution;
+		result.status=ContactAreaUnits::CanvasPixels;
+		return result;
+	}
+
+	ContactAreaSample ConvertContactArea(float rawWidth,float rawHeight,
+		const ContactLengthTransform& width,const ContactLengthTransform& height) noexcept
+	{
+		ContactAreaSample result;result.rawWidth=rawWidth;result.rawHeight=rawHeight;
+		result.units=width.status!=ContactAreaUnits::CanvasPixels?width.status:height.status;
+		if(result.units!=ContactAreaUnits::CanvasPixels)return result;
+		const double w=rawWidth*width.spanToCanvas,h=rawHeight*height.spanToCanvas;
+		if(!std::isfinite(rawWidth) || !std::isfinite(rawHeight) || !std::isfinite(w) || !std::isfinite(h) ||
+			w>std::numeric_limits<float>::max() || h>std::numeric_limits<float>::max())
+		{result.units=ContactAreaUnits::ConversionNonFinite;return result;}
+		if(static_cast<double>(rawWidth)<width.logicalMin || static_cast<double>(rawWidth)>width.logicalMax ||
+			static_cast<double>(rawHeight)<height.logicalMin || static_cast<double>(rawHeight)>height.logicalMax)
+		{result.units=ContactAreaUnits::OutsideMetrics;return result;}
+		result.widthPx=static_cast<float>(w);result.heightPx=static_cast<float>(h);
+		return result;
+	}
+
+	ContactAreaReason ContactAreaMetadataReason(ContactAreaUnits units) noexcept
+	{
+		switch(units)
+		{
+		case ContactAreaUnits::Missing:return ContactAreaReason::Missing;
+		case ContactAreaUnits::OutsideMetrics:return ContactAreaReason::OutsideMetrics;
+		case ContactAreaUnits::MissingAxis:return ContactAreaReason::MissingAxis;
+		case ContactAreaUnits::AxisUnitsMissing:return ContactAreaReason::AxisUnitsMissing;
+		case ContactAreaUnits::SpanUnitsMissing:return ContactAreaReason::SpanUnitsMissing;
+		case ContactAreaUnits::UnsupportedLengthUnits:return ContactAreaReason::UnsupportedLengthUnits;
+		case ContactAreaUnits::InvalidAxisResolution:case ContactAreaUnits::InvalidSpanResolution:return ContactAreaReason::InvalidResolution;
+		case ContactAreaUnits::InvalidAxisRange:case ContactAreaUnits::InvalidSpanRange:return ContactAreaReason::InvalidRange;
+		case ContactAreaUnits::InvalidPositionScale:return ContactAreaReason::InvalidTransform;
+		case ContactAreaUnits::ConversionNonFinite:return ContactAreaReason::NonFinite;
+		default:return ContactAreaReason::UnitsUnknown;
+		}
+	}
+
+	const char* ContactPropertyUnitName(uint32_t units) noexcept
+	{
+		constexpr const char* names[]={"DEFAULT/unknown","inches","centimeters","degrees","radians",
+			"seconds","pounds","grams","SI-linear/unsupported","SI-rotation","English-linear/unsupported",
+			"English-rotation","slugs","kelvin","fahrenheit","ampere","candela"};
+		return units<std::size(names)?names[units]:"unrecognized";
 	}
 	const char* ContactAreaUnitsName(ContactAreaUnits units) noexcept
 	{
@@ -307,6 +374,16 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaUnits::CanvasPixels:return "canvas-pixels";
 		case ContactAreaUnits::Unverified:return "unverified";
 		case ContactAreaUnits::OutsideMetrics:return "outside-metrics";
+		case ContactAreaUnits::MissingAxis:return "unverified-missing-axis";
+		case ContactAreaUnits::AxisUnitsMissing:return "unverified-axis-units-missing";
+		case ContactAreaUnits::SpanUnitsMissing:return "unverified-span-units-missing";
+		case ContactAreaUnits::UnsupportedLengthUnits:return "unverified-unsupported-length-unit";
+		case ContactAreaUnits::InvalidAxisResolution:return "unverified-invalid-axis-resolution";
+		case ContactAreaUnits::InvalidSpanResolution:return "unverified-invalid-span-resolution";
+		case ContactAreaUnits::InvalidAxisRange:return "unverified-invalid-axis-range";
+		case ContactAreaUnits::InvalidSpanRange:return "unverified-invalid-span-range";
+		case ContactAreaUnits::InvalidPositionScale:return "unverified-invalid-position-scale";
+		case ContactAreaUnits::ConversionNonFinite:return "unverified-nonfinite-conversion";
 		default:return "missing";
 		}
 	}
@@ -319,7 +396,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaReason::NotScreenTouch:return "not-screen-touch";
 		case ContactAreaReason::MappingUnknown:return "mapping-unknown";
 		case ContactAreaReason::Missing:return "missing";
-		case ContactAreaReason::UnitsUnknown:return "units-unknown";
+		case ContactAreaReason::UnitsUnknown:return "metadata-unverified";
 		case ContactAreaReason::OutsideMetrics:return "outside-packet-metrics";
 		case ContactAreaReason::NonFinite:return "non-finite";
 		case ContactAreaReason::NonPositive:return "non-positive";
@@ -331,6 +408,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		case ContactAreaReason::Confirming:return "confirming";
 		case ContactAreaReason::Ready:return "ready";
 		case ContactAreaReason::Expired:return "expired";
+		case ContactAreaReason::MissingAxis:return "coordinate-property-missing";
+		case ContactAreaReason::AxisUnitsMissing:return "coordinate-units-missing";
+		case ContactAreaReason::SpanUnitsMissing:return "contact-units-missing";
+		case ContactAreaReason::UnsupportedLengthUnits:return "unsupported-length-unit";
+		case ContactAreaReason::InvalidResolution:return "invalid-resolution";
+		case ContactAreaReason::InvalidRange:return "invalid-declared-range";
+		case ContactAreaReason::InvalidTransform:return "invalid-position-transform";
 		}
 		return "unknown";
 	}
@@ -356,10 +440,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			a.diagnostic.reason=reason;a.diagnostic.stableMotionSeconds=0;a.diagnostic.sampleValid=false;
 			if(a.diagnostic.referenceReady && a.badSince<0)a.badSince=seconds;
 		};
-		if(sample.units==ContactAreaUnits::Missing){reject(ContactAreaReason::Missing);return;}
-		if(sample.units==ContactAreaUnits::Unverified){reject(ContactAreaReason::UnitsUnknown);return;}
-		if(sample.units==ContactAreaUnits::OutsideMetrics){reject(ContactAreaReason::OutsideMetrics);return;}
-		if(sample.units!=ContactAreaUnits::CanvasPixels){reject(ContactAreaReason::UnitsUnknown);return;}
+		if(sample.units!=ContactAreaUnits::CanvasPixels){reject(ContactAreaMetadataReason(sample.units));return;}
 		const float w=sample.widthPx*config_.display.dipPerPixelX;
 		const float h=sample.heightPx*config_.display.dipPerPixelY;
 		if(!std::isfinite(w) || !std::isfinite(h) || !std::isfinite(sample.rawWidth) || !std::isfinite(sample.rawHeight))
