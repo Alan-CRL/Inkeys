@@ -88,60 +88,78 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 
 `【直接确认】` `InkeysHeadlessTests` 覆盖 Draw3 bridge/timer/纯逻辑；`--draw3-hidden-test` 通过隐藏主/辅助 HWND 覆盖唯一 Host mailbox、真实绘制线程、history/Clear、双 target 和退出路径。真实笔、触摸屏与驱动设备矩阵仍需维护者提供。
 
-## Scenario: 橡皮统一DIP尺寸、动作资格与当前工具状态
+## Scenario: 橡皮DIP尺寸、Touch响应与接触面积辅助
 
 ### 1. Scope / Trigger
-2026-09-13 本轮产品修正规则替代旧版厘米覆盖、standard=minimum、接触光标绑定历史末点、静止500ms不缩小的要求。仅涉及橡皮尺寸/动作控制、必要生命周期和几何尺寸断点、诊断与测试；不重写输入采集、模型、中心轨迹或渲染器。
+2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。替代旧厘米覆盖、Mouse/Pen 静止回标准、Touch 整目标物理一致的描述。鼠标和屏幕笔的参数、补偿、Hover/Down/Up 保持冻结；本轮只改善 Touch 与可关闭的面积辅助，不重写输入队列、模型、中心轨迹或渲染器。
 
 ### 2. Signatures
-- `SpeedEraser::EraserSizes`：minimumDiameterDip=16、standardDiameterDip=32、maximumDiameterDip=160、touchStartDiameterDip=16、fixedDiameterDip=50；全部是直径DIP。
-- `DiameterToCanvasPx(diameterDip, display)` 只读取DIP/px；`FixedDiameterPx(selectedDip,display)` 是无控制器的固定旁路。
-- `ResolveConfig(display,mode,touch,sizes)` 保留动作尺度、产生DPI转换缓存；`Controller::DiameterDip()` 为业务输出，`Diameter()` 为现有像素几何的适配出口。
-- `ContactSizeState` 分离effectiveDiameterPx、尺寸断点和旧几何；Update/MakeInterval/Accepted与产品共用。
-- `AppendEraserSizeAnchor` 在下一次实际几何提交前追加同位置、不同半径的点，不覆盖旧点。
-- `HostStartOptions::enableEraserDiagnostics` 默认false，`HostRuntimeSnapshot::eraser` 提供有界快照；隐藏注入门开启时自动启用。测试入口 `--draw3-eraser-hidden-test` 与旧全量 `--draw3-hidden-test` 分离。
+- `EraserSizes` 全部是直径 DIP：minimum=16、standard=32、maximum=160、touchStart=16、fixed=50；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
+- `ResolveConfig(display, mode, InputSource, sizes)` 分离真实来源、响应模型与标尺。来源通过当前 RTS context 的能力及精确 Pointer cursor 对应关系缓存，不改变真实 InputDeviceType。
+- `Controller::UpdatePosition(x,y,seconds,contactArea,terminal)` 只消费真实输入；`Advance` 不制造运动证据；`AreaDiagnostics`、`NextAreaWakeSeconds` 暴露有界状态与过期唤醒。
+- `ContactSnapshot` 保留 `rawContactSize`、既有 `contactSize` 和 `contactAreaUnits`。面积单位状态不影响正常位置、压力、倒转和接触身份。
+- `DevelopmentOptions::touchContactAreaAssistance` 默认关闭。实验选项和程序调测共用 Host 的同一个临时选项，不写正式配置；由独立接触批次锁存。
+- `ContactSizeState`、`AppendEraserSizeAnchor` 与保存的逐点半径保持单一尺寸时间线。
+- `HostRuntimeSnapshot::eraser.needsAnimation` 表示发布该快照时的动画需求；`idleSeconds` 同样是发布时值，不是读取时自动增长的时钟。
 
 ### 3. Contracts
-- EDID、物理尺寸、设备种类或大屏/笔电模式不能改写EraserSizes。DPI只把DIP换成像素，普通等比为dip*dpi/96、半径再除2；非等比保留现有圆形像素几何，使用DIP密度几何平均。历史仍保存已生成像素宽度，不追溯换算。
-- 第一阶段physicalSize.available、原始EDID/业务有效性分离与活动拓扑判断保持。可靠直接Touch可用cm/s；鼠标/未知直接性的笔和不可靠映射用DIP/s。cm/px绝不能用于计算尺寸上下限。
-- 固定模式明确使用50DIP作为原50px在96DPI下的基准标定；不是把旧保存的像素字段解释成DIP。旧eraserSize未被Draw3消费，本轮不迁移或重解释它。固定旁路不走速度、证据、保持或EDID；其他画笔单位行为不变。
-- 清扫资格与尺寸曲线分开：笔电DIP进入800/退出600/大目标1900每秒；大屏DIP650/450/1700每秒；可靠Touch25/18/70cm/s。这些是集中可调原型参数，不是硬件定律。低于进入速度不能靠时间积满证据。
-- 保留80ms有效路程窗、160ms历史保留、有界相邻区间合并与过期裁剪、原始/帧状态分离。证据始终泄漏，100ms开始/240ms满额/350ms泄漏时间常数；滞回退出不使阈值以下的普通动作产生新证据。
-- 初始Mouse/Pen32DIP，Touch16DIP；普通真实Touch移动可按原位移证据过渡到32DIP，不要求清扫资格。长按/有界抖动不解锁。两种设备模式共用动态实现，只调动作参数。
-- 最后有效移动独立于最后包时间，噪声阈值为DIP动作0.75、cm动作0.02。约280ms静止后从当前尺寸按200ms时间常数/4每秒对数限速回落；Mouse/Pen目标为32DIP，未解锁Touch回16DIP。不能叠加旧清扫确认再开始静止回落。
-- `RuntimeSpeedEraserContactDiameter` 读取ContactSizeState，不读历史realPoints.back().r。完全无Move也按单调帧时钟推进并清理旧轮廓；稳定后复用输入唤醒等待，不继续请求渲染帧。既有WaitForWake的0是轮询，不能当作无限等待。
-- 静止尺寸变化只记待用断点；恢复实际模型点时追加同位尺寸锚点，新移动段从回落后的半径开始。旧大圆/历史点保留；零长度半径过渡在现有胶囊着色器中退化为已存在的大圆。持久化逐点保存r*2，支持原文件格式。
-- 迟到的断点之前输入不被伪装成之后的运动；真正awaitingReconnect继续冻结并重锚，合成连接不计速度。鼠标Hover无速度继承、新Down标准起步、Up立即结束逻辑及140ms视觉收尾、笔250ms交接、并发所有权和批次显示版本保持。
-- 诊断只在启用时每帧发布，包含输入/模式/动作单位/DPI、DIP属性、速度/证据/状态、控制器DIP、最终光标px、下一段半径px、最后有效移动年龄、实际新段足迹及最多三个断点坐标/宽度。不逐点同步记录日志。
+- EDID、设备种类及模式不得改写 DIP 基础属性。圆形像素几何继续使用横纵 DIP 密度的几何平均；历史只保留已经生成的像素宽度，不能按后来配置重算。
+- 间接设备采用 DIP/s，不撤销系统鼠标加速、不猜鼠标硬件 DPI。Mouse/External Pen/TouchPad/Unknown 自动选择间接响应；Integrated Pen 和直接 Touch 分别选择自己的响应。
+- Win7 自动识别保持保守 DIP 回退；Pointer API 动态探测。不能将 TABLET_CONTEXT_ID 强转成设备 HANDLE，也不能按整台机器是否存在屏幕笔来分类。
+- 标尺依次考虑显式绑定的手动测量、可靠物理映射、适用的逻辑显示分辨率/DPI经验尺度、DIP。复制拓扑不能重新成为可信物理尺寸；经验尺度不写回 EDID 或 cm/px。
+- 经验增益保持 `1 / clamp(min(max(Wdip,Hdip)/1920, min(Wdip,Hdip)/1080), 0.5, 4)`；它不是屏幕英寸或毫米估计。
+- 间接响应精细/进入/退出/大目标速度为 100/800/600/1900 DIP/s。屏幕笔物理响应为 20/120/80/350 mm/s，DIP回退为 80/480/320/1400 DIP/s。
+- 屏幕笔仅对标准以上增量应用 `g=(0.25/rho)^beta`，默认 beta=0.5，rho 为可信表面的 mm/DIP；基础属性、精细区与固定尺寸不参与补偿。本轮不调整这些已有响应。
+- Touch 动态目标直接用 DIP，不做 rho 整目标补偿。Touch 精细/进入/退出/大目标：物理 30/90/60/250 mm/s；DIP 100/240/160/700 DIP/s；经验 100/120/80/400 reference DIP/s。
+- Touch 历史窗 50ms，证据 start/full/decay 为 25/60/180ms；增长 tau 120/100ms，对数增长限速 6/8 每秒。原有缩小/保持参数不全局改动。面积开关关闭时同样使用新 Touch 速度模型。
+- 真实路程按时间积分，折返不作净位移抵消；预测、补点、缺失连接和面积变化不提供速度资格。实际位移解锁仍为物理 1–3mm 或回退 2–6 动作单位。
+- Touch 的移动目标不能因为每包误差小于 settle tolerance 就立即吸附。仅目标稳定时允许小误差收敛，否则高回报率会绕过阻尼。此修正规则不改变冻结的间接/屏幕笔响应。
+- Mouse 和 Pen Hover 在 minimum..standard 内预览，不积累清扫；Down 只继承新鲜、兼容的安全尺寸并清空动量。Mouse Up 保持约140ms非擦除收尾；Pen保留250ms交接及真实断触语义。关闭面积时持续精细/静止可回 minimum。
+- 面积辅助仅适用于真实、映射可解释的屏幕 Touch 笔速橡皮，强制响应模型不能伪造真实 Touch；Mouse、Pen、TouchPad、固定橡皮均不使用面积下限。
+- WIDTH/HEIGHT 必须实际存在于返回的 packet description。保留原 per-context 换算；只有宽高与对应 X/Y 的长度单位、分辨率相符且在声明范围内，才认可为画布像素。PROPERTY_UNITS_DEFAULT 表示未知，不能默认当像素。
+- 已确认的面积按 `wDip=wPx*dipPerPixelX`、`hDip=hPx*dipPerPixelY` 换算一次，不使用 EDID、压力或 WM_TOUCH 的百分之一像素规则。
+- 面积默认拒绝范围外 2..96 DIP、长宽比超过3.5、非有限/非正值和离群跳变。拒绝阈值与辅助上限是两件事，巨值不能被夹成64DIP后使用。
+- 稳定真实拖动确认50ms后锁定本接触的参考；面积参考可与位移解锁并行准备，但实际下限须通过原位移保护。参考不随重压、摊开或噪声反复变大。
+- 下限为 `clamp(1.10*max(wDip,hDip)+6, standard, min(maximum,max(standard,64)))`。自定义 standard 大于64时不反转 clamp 上下界。它是有界拖擦下限，不是手掌分类或压感橡皮。
+- 合成 `max(speedTarget, contactFloor)` 后继续平滑；面积下限无需清扫资格，但只在真实移动中提高已接受尺寸。静止的新面积/新包不能反向放大当前工具。
+- 缺包最长保留2s，显式无效值宽限200ms，过期参考按180ms释放。真实重连平移这些时钟；Up的零面积不是新参考。
+- 达到辅助下限后停帧，由既有等待机制在面积过期时唤醒。不能让下限抬住尺寸却一直以16DIP作为未达成目标请求帧。
+- 原始输入与帧预览状态分离；静止只更新当前工具和待用尺寸断点，恢复实际几何时追加同位小半径锚点，不覆盖历史或恢复已擦内容。
+- Touch笔速输入恢复时，若距离上次成功建模的时间乘输出采样率将超过单次输出上限，复用模型Reset/Update在最后已接受位置建立短时间种子，再提交真实输入。不清空历史结果、转换游标、接触身份或尺寸/面积控制器，不增加模型输出上限；此路径不用于Mouse/Pen或其他橡皮模式，种子不提供运动证据。
+- 原始面积有效性独立于实验开关；关闭辅助仍可显示已确认的DIP宽高。未确认单位明确显示unverified，不标成可信像素；referenceFresh单独表示参考是否过期。
+- 诊断每帧可关闭发布，不逐点同步日志。包含真实来源、模型、单位、像素/DPI/手动尺寸、速度/目标/实际DIP、原始/换算面积、有效性、参考/实际下限及最终几何半径。
+- 面积开关独立发布并锁存，不进入 Mouse/Pen 的显示标尺变更判定，避免点击 Touch 开关使精细 Hover 重置。
 
 ### 4. Validation & Error Matrix
 | 场景 | 必需结果 |
 |---|---|
-| EDID有效/失效/不同物理尺寸及设备模式 | 同一DIP属性完全相同，只影响动作解释 |
-| DPI96/144/192 | 像素变化后换回DIP仍为16/32/160/Touch16 |
-| 普通速度长擦20秒 | 标准范围，不因时间充满证据 |
-| 临界、中速、高速扫描 | 清扫资格显式，目标连续，无无条件贴最大 |
-| 真实无Move、小噪声、同位置包 | 相同有效移动时钟，当前工具可见回缩，历史点不改写 |
-| 恢复短Move | 新段实际足迹用小半径，无旧大半径插值拖尾 |
-| 标准后继续按住 | 无多余帧；Move/Up/控制请求立即唤醒 |
-| Up、快速再Down、Touch点擦、真重连 | 保持既有生命周期正确性 |
-| 固定直径42DIP旁路 | 不受速度、时间、EDID、模式影响 |
-| 尺寸锚点保存/读取/导入 | 同位旧/新宽度都保留，Undo/Redo可用 |
+| Mouse/ScreenPen冻结轨迹 | 改动前后浮点位模式一致 |
+| 面积关闭、不同可信密度的同物理Touch运动 | DIP目标一致，不恢复整目标物理补偿 |
+| 未知单位/缺失/零/负值/巨值/离群 | 辅助拒绝或平滑释放，正常触摸仍接收 |
+| 新Down/原地长按/起点抖动 | 小尺寸，不因面积或时间开启大洞 |
+| 普通慢拖、无清扫资格 | 可确认并使用有界面积下限 |
+| 静止后面积增大 | 不扩大真实擦除；参考不呼吸 |
+| 无Move/同位置包/数据过期 | 正确休眠或释放；不能等待休眠快照的年龄继续增长 |
+| 恢复实际移动 | 当前半径起步，历史不改；UInk保留尺寸断点 |
+| 面积开关、并发、真重连 | 按批次锁存，各接触独占状态，连接不计新运动 |
+| 固定模式、强制Touch的Mouse/Pen | 面积不能越过真实输入和固定旁路 |
+| 60/125/240/1000Hz与不同帧率 | 相同观测轨迹的关键尺寸误差不超过5% |
 
 ### 5. Good / Base / Bad Cases
-- Good：标准32DIP普通擦除，明确快擦后扩大；原地停住可见回32DIP，恢复小移动从小半径开始，历史大圆仍在。
-- Base：无EDID仍有完整DIP尺寸，只有动作解释回退；固定50DIP独立工作。
-- Bad：厘米生成像素再反称DIP；只缩光标却沿旧半径插值；修改历史末点半径；以不断投递静止包替代无事件测试；把全量隐藏套件失败写成通过。
+- Good：面积关闭先验收更轻的Touch响应，再打开比较慢拖可见性；鼠标/笔不调参。
+- Base：不可用面积只关闭辅助，新Touch速度模型和固定DIP尺寸仍正常工作。
+- Bad：用面积填清扫证据、把未知单位伪装成实测值、覆盖历史半径、只改光标、放宽全部容差来掩盖错误。
 
 ### 6. Tests Required
-Headless覆盖尺寸不依赖硬件、固定旁路、普通20秒/中间速度扫描、真正无包状态推进、噪声/同位置、Touch过渡、生命周期、60/125/240/1000Hz与不同帧率，保留5%一致性。完整InkeysRepo.sln Debug|ARM64后执行--no-window；专项隐藏测试在干净DComp/ULW Host验证最终光标、历史点不变、收敛停帧、实际新增足迹、Undo/Redo与生产UInk断点文件往返。全量旧隐藏套件结果单列，详见当前任务validation-dip-idle.md。
+完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 和专项 `--draw3-eraser-hidden-test`。DComp/ULW隐藏测试覆盖低速辅助、休眠/过期、恢复足迹、固定旁路、Undo/Redo和实际UInk往返。诊断快照休眠后不会继续更新，等待条件使用 needsAnimation 等明确状态，不能等待 idleSeconds 自行越过任意阈值。模型原有单次2000补点上限未更改；Touch笔速恢复使用有界位置重锚，并单独覆盖超过上限的长停顿和长按Up，不把无输出的模型错误归为保存格式故障。真实Surface、大屏、外接数位板及Win7仍需单列人工验证。
 
 ### 7. Wrong vs Correct
 ~~~cpp
-// Wrong：历史不能为了表示当前工具而被改小。
-stroke.realPoints.back().r = currentRadius;
+// Wrong：每包小误差都吸附移动目标，会使高采样率绕过阻尼。
+if (abs(current - target) < tolerance) current = target;
 
-// Correct：当前工具独立推进，真正恢复几何时才追加尺寸锚点。
-runtime.eraserSize.Update(controller.Diameter(), nowSeconds, stationary);
-AppendEraserSizeAnchor(stroke, interval);
+// Correct：Touch只对稳定目标收敛吸附；等待静止状态不依赖快照年龄增长。
+if (targetIsStable && abs(current - target) < tolerance) current = target;
+// 等待实际状态，再确认 frameSequence 没有继续增长。
+if (!snapshot.eraser.needsAnimation) CheckFrameSequenceStops();
 ~~~

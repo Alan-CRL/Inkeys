@@ -1,16 +1,17 @@
-# DIP尺寸、动作资格、工具与历史的分层
+# Touch控制、面积下限与验证状态
 
-## 尺寸
-EraserSizes是唯一属性源，值16/32/160/Touch16DIP，固定50DIP。固定50是原50px在96DPI下的明确基准标定，不迁移或重解释未被Draw3使用的旧eraserSize字段。DiameterToCanvasPx/FixedDiameterPx只用DIP/px；物理信息不能改写属性。Controller内部对数尺寸为DIP，DiameterDip是业务结果，Diameter是兼容像素几何出口。
+## 分层
+EraserSizes仍是DIP属性单一来源。真实InputSource、ResponseModel、motionSource分离；只有屏幕笔保留标准以上增量的beta补偿，Touch不再要求整目标毫米一致。物理、DIP和经验动作单位不混算。
 
-## 动作
-现有可靠直接Touch用cm/s，鼠标/未知Pen用DIP/s，未知映射回退。进入/退出/大目标速度分开，笔电800/600/1900，大屏DIP650/450/1700，cm25/18/70。始终泄漏的证据不会被普通速度长时间充满；不自动学习、不用加速度尖峰绕过资格。
+## 面积
+保留RTS原始宽高与per-context换算，校验实际返回的单位、分辨率和范围后才按轴转DIP。首次稳定拖擦50ms建立本接触参考；原位移解锁不变。参考锁存，普通拖擦下限无需清扫资格，但不能由面积或帧时间制造新移动。
 
-## 静止与几何
-最后有效移动按动作噪声阈值确认，与包时间分开。280ms后独立静止释放，不再叠加650/680ms清扫门。当前工具尺寸由ContactSizeState推进，最终光标和下一段均消费它；历史点保持。
-ContactSizeState记录待用尺寸断点。恢复实际模型输出时AppendEraserSizeAnchor追加与旧末点同位的小半径点；之后的新移动段从此半径开始。既有圆胶囊包含关系处理零长度变径，UInk逐点宽度继续保存，无格式迁移。
-相同位置包/小噪声不续期，迟到原始输入不因帧时钟领先而丢弃。真正重连仍冻结、移时、重锚。收敛后只等待现有wake generation，不重新请求空帧；不改变MPMC与输入采集。
+面积下限是 `max(speedTarget, contactFloor)` 后的连续动态结果，实际几何、光标和历史宽度区间共用。缺包2s、显式无效200ms宽限、180ms参考释放；重连平移时钟，终态零面积不进入新参考。面积开关单独锁存，不改变Mouse/Pen Hover显示标尺。
 
-## 产品观测与验证
-HostStartOptions.enableEraserDiagnostics默认关闭；启用时HostRuntimeSnapshot.eraser提供有界实际状态与三个断点坐标/宽度。测试门可注入Mouse/Touch类型；隐藏Mouse样本复用正常光标发布，不安装真实离窗跟踪，避免屏幕外测试窗口自动清掉样本。
---draw3-eraser-hidden-test使用干净Host，并在DComp和ULW验证实际接触光标/停帧/足迹、Undo/Redo及生产UInk断点文件往返。旧--draw3-hidden-test保留原场景，失败不隐藏。所有工作主Agent执行，结果见validation-dip-idle.md。
+## 已定位的正确性问题
+- 每包目标变化小于settle tolerance时立即吸附，会让高回报率Touch跳过阻尼。Touch仅在目标稳定时吸附，其他模型保持不变。
+- 休眠后诊断快照的idleSeconds不再增长。隐藏测试等待needsAnimation=false和实际尺寸，不等待年龄跨越任意阈值。
+- 原错误等待额外耗时15s，暴露模型的单次2000输出上限。测试等待已修正；复查又补齐真实Touch笔速长停顿恢复：使用相同模型参数在最后已接受点短时间重锚，继续累计原结果/几何。保持原输出上限、其他设备行为及保存格式，合成种子不经过速度/面积统计。
+
+## 实验入口与验证
+实验选项采用现有卡片和toggle样式，增加75 DIP内容高度；读取/写入同一Host DevelopmentOptions，不增加持久化字段。程序调测仍显示详细状态。headless冻结鼠标/笔位模式并测量采样率；专项隐藏测试验证休眠/过期、恢复小半径、Undo/Redo及实际UInk往返。

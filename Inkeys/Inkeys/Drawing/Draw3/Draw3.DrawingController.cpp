@@ -2384,6 +2384,31 @@ namespace Inkeys::Drawing::Draw3
 				return strokePool.back().get();
 			};
 
+		auto updateContactModel = [&](RuntimeStroke& runtime,const Input& next,double inputTime)
+		{
+			const auto& sampling=eraserModelParams.sampling_params;
+			const bool touchSpeed=runtime.metricDeviceType==InputDeviceType::Touch &&
+				runtime.stroke.widthMode==StrokeWidthMode::SpeedEraser;
+			const double gap=inputTime-runtime.speedEraserModelTime;
+			if(touchSpeed && !runtime.stroke.realPoints.empty() && sampling.min_output_rate>0 &&
+				sampling.max_outputs_per_call>2 &&
+				gap*sampling.min_output_rate>sampling.max_outputs_per_call-2)
+			{
+				// 长时间没有建模输入时，只恢复位置模型；不重新开始接触、不重置尺寸或改写旧结果。
+				const auto& last=runtime.stroke.realPoints.back();
+				Input anchor=next;anchor.event_type=Input::EventType::kDown;
+				anchor.position=Vec2(last.x,last.y);
+				anchor.time=Time(inputTime-1.0/sampling.min_output_rate);
+				if(auto status=runtime.stroke.modeler.Reset(eraserModelParams);!status.ok())return status;
+				if(auto status=runtime.stroke.modeler.Update(anchor,runtime.stroke.modeledResults);!status.ok())return status;
+				runtime.stroke.predictedResults.clear();
+				runtime.stroke.predictedPoints.clear();
+				++runtime.eraserDiagnostics.idleModelReanchors;
+				// anchor 仅供既有模型续接，绝不交给速度/面积控制器当成真实运动。
+			}
+			return runtime.stroke.modeler.Update(next,runtime.stroke.modeledResults);
+		};
+
 		auto initializeStroke = [&](ContactHandle handle) -> bool
 			{
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
@@ -3143,8 +3168,7 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
-				if (absl::Status status = runtime.stroke.modeler.Update(
-					upInput, runtime.stroke.modeledResults); status.ok())
+				if (absl::Status status = updateContactModel(runtime,upInput,inputTime); status.ok())
 				{
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
@@ -3260,8 +3284,7 @@ namespace Inkeys::Drawing::Draw3
 					.orientation = orientation
 				};
 				bool modelUpdateSucceeded = false;
-				if (absl::Status status = runtime.stroke.modeler.Update(
-					input, runtime.stroke.modeledResults); status.ok())
+				if (absl::Status status = updateContactModel(runtime,input,inputTime); status.ok())
 				{
 					modelUpdateSucceeded = true;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
@@ -4080,6 +4103,7 @@ namespace Inkeys::Drawing::Draw3
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
 					d.effectiveDiameterDip=controller->DiameterDip();
 					d.targetDiameterDip=controller->TargetDiameterDip();d.touchUnlocked=controller->TouchUnlocked();
+					d.needsAnimation=controller->NeedsAnimation(mouseVisualSeconds);
 					d.contactArea=controller->AreaDiagnostics(mouseVisualSeconds);
 					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
 					d.motionPerPixelX=cfg.motionPerPixelX;d.motionPerPixelY=cfg.motionPerPixelY;

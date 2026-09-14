@@ -8060,7 +8060,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
+						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
 						inkeys3PanelHeight += 150.0f;
@@ -8075,6 +8075,34 @@ SettingSessionCoroutine RunSettingSession()
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
 							ImGui::TextUnformatted("Inkeys3");
 						}
+
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("触摸面积辅助临时测试", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							{
+								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+								ImFontMain->Scale=0.6f,PushFontNum++,ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
+								ImGui::TextUnformatted("触摸接触面积辅助（临时测试）");
+								ImGui::SetCursorPos({20.0f*settingGlobalScale,ImGui::GetCursorPosY()});
+								ImFontMain->Scale=0.5f,PushFontNum++,ImGui::PushFont(ImFontMain);
+								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextSecondary);
+								ImGui::TextUnformatted("默认关闭；仅触摸拖擦，新接触生效；重启重置，报告不准时关闭。");
+								ImGui::SetCursorPos({settingRightToggleX*settingGlobalScale,25.0f*settingGlobalScale});
+								auto options=Inkeys::Drawing::Draw3::ProductHost().EraserDevelopmentOptions();
+								const bool before=options.touchContactAreaAssistance;
+								Widgets::toggle.ToggleBool("##实验触摸面积辅助",&options.touchContactAreaAssistance);
+								if(before!=options.touchContactAreaAssistance)
+									Inkeys::Drawing::Draw3::ProductHost().SetEraserDevelopmentOptions(options);
+								// 与程序调测复用同一个临时选项，不写入正式配置文件。
+								if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
+								if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
+								while(PushFontNum)PushFontNum--,ImGui::PopFont();
+							}
+							ImGui::EndChild();
 
 							if (Experimental.Inkeys3.EdgeLightingEnable)
 							{
@@ -8579,8 +8607,12 @@ SettingSessionCoroutine RunSettingSession()
 							const auto& area=d.contactArea;
 							ImGui::Text("目标 %.2f DIP | Touch起步解锁 %s | 面积辅助 %s",
 								d.targetDiameterDip,d.touchUnlocked?"是":"否",area.enabled?"开":"关");
-							ImGui::Text("接触 raw %.1fx%.1f | per-context px %.2fx%.2f | DIP %.2fx%.2f",
-								area.sample.rawWidth,area.sample.rawHeight,area.sample.widthPx,area.sample.heightPx,area.widthDip,area.heightDip);
+							ImGui::Text("接触 raw %.1fx%.1f | per-context %.2fx%.2f [%s]",
+								area.sample.rawWidth,area.sample.rawHeight,area.sample.widthPx,area.sample.heightPx,
+								SpeedEraser::ContactAreaUnitsName(area.sample.units));
+							if(area.sample.units==SpeedEraser::ContactAreaUnits::CanvasPixels)
+								ImGui::Text("接触 DIP %.2fx%.2f | 参考新鲜 %s",area.widthDip,area.heightDip,area.referenceFresh?"是":"否");
+							else ImGui::TextUnformatted("接触 DIP 未确认，不用于面积辅助");
 							ImGui::Text("面积 %s | 有效样本 %s | 稳定拖擦 %.0f ms | 参考/有效下限 %.2f/%.2f DIP | 激活 %s",
 								SpeedEraser::ContactAreaReasonName(area.reason),area.sampleValid?"是":"否",
 								area.stableMotionSeconds*1000,area.referenceFloorDip,area.activeFloorDip,area.active?"是":"否");

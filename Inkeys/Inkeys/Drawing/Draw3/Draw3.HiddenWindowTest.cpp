@@ -686,6 +686,15 @@ namespace Inkeys::Drawing::Draw3
 				}
 				ProductHost().SetEraserDevelopmentOptions({});
 				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
+				const auto areaProbe=[&](const char* label)
+				{
+					const auto s=ProductHost().RuntimeSnapshot();const auto& d=s.eraser;
+					std::fprintf(stderr,"[AreaProbe] %s mode=%u dip=%g cursor=%g floor=%g ref=%g active=%d age=%g reason=%d points=%llu history=%g anchor=%d radius=%g frame=%llu\n",
+						label,static_cast<unsigned>(requiredMode),d.effectiveDiameterDip,d.cursorDiameterPx,d.contactArea.activeFloorDip,
+						d.contactArea.referenceFloorDip,d.contactArea.active,d.idleSeconds,static_cast<int>(d.contactArea.reason),
+						static_cast<unsigned long long>(d.realPointCount),d.historyRadiusPx,d.resumedWithAnchor,d.resumedMaxRadiusPx,
+						static_cast<unsigned long long>(d.frameSequence));
+				};
 				const auto setAreaOption=[&](bool enabled)
 				{
 					auto options=ProductHost().EraserDevelopmentOptions();
@@ -726,12 +735,14 @@ namespace Inkeys::Drawing::Draw3
 					std::this_thread::sleep_for(30ms);
 				}
 				const auto pressed=ProductHost().RuntimeSnapshot();
+				areaProbe("before-held-check");
 				modeSucceeded &= Check(std::abs(pressed.eraser.contactArea.referenceFloorDip-39)<0.01f &&
 					pressed.eraser.cursorDiameterPx<=assisted.eraser.cursorDiameterPx+0.05f,
 					"larger same-position area does not create larger erasure",failures);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.active && d.idleSeconds>0.4 && d.contactArea.active &&
+					return d.active && !d.needsAnimation && d.contactArea.active &&
 					std::abs(d.effectiveDiameterDip-d.contactArea.activeFloorDip)<0.001f;}),"held Touch settles at accepted assistance floor",failures);
+				areaProbe("after-held-check");
 				const auto resting=ProductHost().RuntimeSnapshot();
 				std::this_thread::sleep_for(150ms);
 				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=resting.eraser.frameSequence+2,
@@ -743,9 +754,13 @@ namespace Inkeys::Drawing::Draw3
 				const auto expired=ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(expired.eraser.historyRadiusPx>expired.eraser.nextRadiusPx*1.5f &&
 					expired.eraser.realPointCount==resting.eraser.realPointCount,"area expiry preserves historical geometry",failures);
+				// 明确覆盖真实长停顿，不只依赖约4秒的面积过期窗口。
+				std::this_thread::sleep_for(7s);
+				areaProbe("before-resume");
 				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX+4,144);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.resumedWithAnchor && d.resumedMaxRadiusPx<=10;}),"expired-area resume uses current radius without fat tail",failures);
+					return d.resumedWithAnchor && d.resumedMaxRadiusPx<=10 && d.idleModelReanchors>0 && d.evidenceSeconds<0.0001;}),"long-idle Touch resume preserves current radius without synthetic speed",failures);
+				areaProbe("after-resume");
 				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
 					"area-assisted size boundary survives actual UInk save/read/import",failures);
 				ProductHost().SetHiddenTestContactArea({0,0,0,0,SpeedEraser::ContactAreaUnits::CanvasPixels});
@@ -764,8 +779,9 @@ namespace Inkeys::Drawing::Draw3
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && !d.contactArea.enabled && d.effectiveDiameterDip<=16.01f;}),"next Touch contact uses disabled option and small start",failures);
-				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
-				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),"end area-disabled contact",failures);
+				std::this_thread::sleep_for(7s);
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),"long held Touch Up ends without a model gap failure",failures);
 				modeSucceeded &= Check(setAreaOption(true),"restore experimental setting for fixed bypass test",failures);
 				auto fixedState=speedState;fixedState.tool=Bridge::Tool::FixedEraser;PublishProductState(fixedState);
 				const auto fixedBefore=ProductHost().RuntimeSnapshot().inputDownPublished;

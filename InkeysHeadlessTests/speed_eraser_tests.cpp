@@ -717,6 +717,19 @@ int RunSpeedEraserTests()
 	auto areaDisplay=penDisplay;areaDisplay.development.touchContactAreaAssistance=true;
 	const auto areaConfig=ResolveConfig(areaDisplay,DeviceMode::Laptop,MappedSource(SourceKind::Touch,areaDisplay));
 	const auto normalArea=AreaSample(areaConfig,30,20);
+	{
+		auto disabled=areaConfig;disabled.touchContactAreaAssistance=false;
+		Controller inspect;inspect.Reset(0,0,0,StartKind::Touch,disabled,0,&normalArea);
+		const auto d=inspect.AreaDiagnostics(0);
+		expect(!d.enabled && !d.active && d.sampleValid && d.widthDip==30 && d.heightDip==20,
+			"area-off diagnostics still expose valid measured DIP dimensions");
+		auto unknown=normalArea;unknown.units=ContactAreaUnits::Unverified;
+		inspect.UpdatePosition(0,0,0.01,&unknown);
+		const auto u=inspect.AreaDiagnostics(0.01);
+		expect(!u.sampleValid && u.widthDip<0 && u.reason==ContactAreaReason::UnitsUnknown,
+			"unverified area units never appear as verified DIP");
+	}
+
 	const std::vector<Knot> slowDrag{{0,0},{2,20}};
 	const std::vector<double> areaTimes{0.3,0.5,1.0,2.0,3.0,4.5,6.0};
 	const auto areaReference=ReplayArea(areaConfig,slowDrag,1000,120,areaTimes,[&](double){return normalArea;},2.0);
@@ -726,7 +739,7 @@ int RunSpeedEraserTests()
 	expect(!areaReference[4].animating && areaReference[4].wake>3.0 &&
 		areaReference[4].diameter>38,"held touch rests at its area floor and schedules expiry without spinning");
 	near(areaReference.back().diameter,16,0.001,"missing area eventually releases to minimum");
-	expect(!areaReference.back().animating,"expired area cannot keep animation awake forever");
+	expect(!areaReference.back().animating && !areaReference.back().area.referenceFresh,"expired area cannot stay fresh or keep animation awake forever");
 	double worstAreaRate=0;
 	for(int hz:{60,125,240,1000})for(int fps:{30,60,120})
 	{
@@ -735,10 +748,24 @@ int RunSpeedEraserTests()
 		{
 			const double error=std::abs(values[i].diameter-areaReference[i].diameter)/areaReference[i].diameter;
 			worstAreaRate=std::max(worstAreaRate,error);
+			if(error>0.05)std::cerr << "[AreaRateDetail] hz=" << hz << " fps=" << fps << " t=" << areaTimes[i]
+				<< " value=" << values[i].diameter << " ref=" << areaReference[i].diameter << " floor=" << values[i].area.activeFloorDip
+				<< " refFloor=" << areaReference[i].area.activeFloorDip << " ready=" << values[i].area.referenceReady << '\n';
 			expect(error<=0.05,"area confirmation/filter/follow are time based within five percent");
 		}
 	}
 	std::cout << "[R7AreaRate] " << worstAreaRate*100 << "%\n";
+	// 无面积时也覆盖慢速 Touch 的移动目标，防止每包吸附重新引入高回报率直追。
+	auto noAreaConfig=areaConfig;noAreaConfig.touchContactAreaAssistance=false;
+	const auto noAreaReference=ReplayArea(noAreaConfig,slowDrag,1000,120,areaTimes,[&](double){return normalArea;},2.0);
+	for(int hz:{60,125,240,1000})for(int fps:{30,60,120})
+	{
+		const auto values=ReplayArea(noAreaConfig,slowDrag,hz,fps,areaTimes,[&](double){return normalArea;},2.0);
+		for(size_t i=0;i<values.size();++i)
+			expect(std::abs(values[i].diameter-noAreaReference[i].diameter)<=noAreaReference[i].diameter*0.05f,
+				"moving Touch target follows damping independently of packet rate with assistance off");
+	}
+
 	for(const auto bad:std::vector<ContactAreaSample>{
 		{}, {0,200,0,20,ContactAreaUnits::CanvasPixels}, {-10,200,-1,20,ContactAreaUnits::CanvasPixels},
 		{100000,100000,1000,1000,ContactAreaUnits::CanvasPixels}, {300,20,30,2,ContactAreaUnits::CanvasPixels},
@@ -853,6 +880,27 @@ int RunSpeedEraserTests()
 			expect(coordinator.TryReadSnapshot(handle,latest) && latest.rawContactSize.width==400 &&
 				latest.contactSize.height==25 && latest.contactAreaUnits==ContactAreaUnits::Unverified,"raw/pixel/unit state is one actual mailbox snapshot");
 			coordinator.PublishUp(7,1,raw);coordinator.Recycle(handle);
+		}
+	}
+	// 三种动作单位和手动标尺都执行实际 Touch 控制器，不仅检查参数解析。
+	for(int source=0;source<4;++source)
+	{
+		auto display=penDisplay;
+		auto mode=DeviceMode::Laptop;
+		if(source==1){display.development.scale=ScaleOverride::ManualSurface;display.development.calibration={display.monitor,30,20,0};}
+		if(source>=2)display.physicalAvailable=false;
+		if(source==2)mode=DeviceMode::LargeScreen;
+		const auto config=ResolveConfig(display,mode,MappedSource(SourceKind::Touch,display));
+		const double v=config.largeTargetSpeed*0.72;
+		std::vector<Knot> path{{0,0}};for(int i=1;i<=8;++i)path.push_back({i*0.2,i%2?v*0.2:0.0});
+		const std::vector<double> times{0.25,0.5,0.8,1.6};
+		const auto reference=Replay(config,path,1000,120,times,StartKind::Touch);
+		expect(reference.back()>64,"physical/manual/heuristic/DIP Touch all reach useful local-sweep coverage");
+		for(int hz:{60,125,240,1000})for(int fps:{30,60,120})
+		{
+			const auto values=Replay(config,path,hz,fps,times,StartKind::Touch);
+			for(size_t i=0;i<values.size();++i)
+				expect(std::abs(values[i]-reference[i])<=reference[i]*0.05f,"all Touch scale routes retain five-percent rate consistency");
 		}
 	}
 	// 记录真实到达时间，不把 tau 当作端到端响应时间；不可达尺寸输出 -1。

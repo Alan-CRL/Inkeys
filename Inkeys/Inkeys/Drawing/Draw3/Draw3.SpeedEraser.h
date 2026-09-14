@@ -115,10 +115,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float widthDip = -1, heightDip = -1, referenceFloorDip = 0, activeFloorDip = 0;
 		double stableMotionSeconds = 0;
 		ContactAreaReason reason = ContactAreaReason::Disabled;
-		bool enabled = false, sampleValid = false, referenceReady = false, active = false;
+		bool enabled = false, sampleValid = false, referenceReady = false, referenceFresh = false, active = false;
 	};
 	bool ContactMetricsMatch(uint32_t axisUnits,float axisResolution,uint32_t spanUnits,float spanResolution) noexcept;
 	const char* ContactAreaReasonName(ContactAreaReason reason) noexcept;
+	const char* ContactAreaUnitsName(ContactAreaUnits units) noexcept;
 
 	struct Config
 	{
@@ -385,6 +386,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float targetDiameterDip = 32, manualWidthCm = 0, manualHeightCm = 0;
 		int pixelWidth = 0, pixelHeight = 0;
 		bool touchUnlocked = false;
+		bool needsAnimation = false;
 		ContactAreaDiagnostics contactArea;
 		float effectiveDiameterDip = 32, cursorDiameterPx = 32, nextRadiusPx = 16;
 		float historyRadiusPx = 0, resumedMaxRadiusPx = 0;
@@ -392,7 +394,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		std::array<float,9> boundaryPoints{}; // 有界的历史点/尺寸锚点/新末点 (x,y,直径px)。
 		bool resumedWithAnchor = false, sweeping = false, qualified = false, limited = false;
 		double speed = 0, evidenceSeconds = 0, idleSeconds = 0;
-		uint64_t frameSequence = 0, realPointCount = 0;
+		uint64_t frameSequence = 0, realPointCount = 0, idleModelReanchors = 0;
 	};
 
 	float InterpolateDiameter(const WidthInterval& interval, double seconds) noexcept;

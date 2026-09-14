@@ -300,6 +300,17 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			std::isfinite(axisResolution) && std::isfinite(spanResolution) && axisResolution>0 && spanResolution>0 &&
 			std::abs(axisResolution-spanResolution)<=std::max(axisResolution,spanResolution)*0.00001f;
 	}
+	const char* ContactAreaUnitsName(ContactAreaUnits units) noexcept
+	{
+		switch(units)
+		{
+		case ContactAreaUnits::CanvasPixels:return "canvas-pixels";
+		case ContactAreaUnits::Unverified:return "unverified";
+		case ContactAreaUnits::OutsideMetrics:return "outside-metrics";
+		default:return "missing";
+		}
+	}
+
 	const char* ContactAreaReasonName(ContactAreaReason reason) noexcept
 	{
 		switch(reason)
@@ -342,12 +353,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		a.diagnostic.sampleValid=false;
 		auto reject=[&](ContactAreaReason reason)
 		{
-			a.diagnostic.reason=reason;a.diagnostic.stableMotionSeconds=0;
+			a.diagnostic.reason=reason;a.diagnostic.stableMotionSeconds=0;a.diagnostic.sampleValid=false;
 			if(a.diagnostic.referenceReady && a.badSince<0)a.badSince=seconds;
 		};
-		if(!config_.touchContactAreaAssistance){reject(ContactAreaReason::Disabled);return;}
-		if(!touchStartup_ || config_.inputSource.kind!=SourceKind::Touch){reject(ContactAreaReason::NotScreenTouch);return;}
-		if(!config_.inputMapped){reject(ContactAreaReason::MappingUnknown);return;}
 		if(sample.units==ContactAreaUnits::Missing){reject(ContactAreaReason::Missing);return;}
 		if(sample.units==ContactAreaUnits::Unverified){reject(ContactAreaReason::UnitsUnknown);return;}
 		if(sample.units==ContactAreaUnits::OutsideMetrics){reject(ContactAreaReason::OutsideMetrics);return;}
@@ -362,6 +370,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		// 拒绝阈值与辅助上限分开：巨值不能被“修正”为最大的合法辅助。
 		if(std::max(w,h)>p.maximumReportedSpanDip){reject(ContactAreaReason::TooLarge);return;}
 		if(std::max(w,h)>std::min(w,h)*p.maximumAspectRatio){reject(ContactAreaReason::AspectRatio);return;}
+		// 数据有效性与实验开关分开；关闭辅助仍可诊断真实宽高，但不能建立参考。
+		a.diagnostic.sampleValid=true;
+		if(!config_.touchContactAreaAssistance){a.diagnostic.reason=ContactAreaReason::Disabled;return;}
+		if(!touchStartup_ || config_.inputSource.kind!=SourceKind::Touch){a.diagnostic.reason=ContactAreaReason::NotScreenTouch;return;}
+		if(!config_.inputMapped){a.diagnostic.reason=ContactAreaReason::MappingUnknown;return;}
 		const auto similar=[](float x,float y,float ratio){return std::max(x,y)<=std::min(x,y)*ratio+1.0f;};
 		if(a.diagnostic.referenceReady)
 		{
@@ -423,6 +436,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		auto result=area_.diagnostic;
 		const double now=paused_?pauseTime_:seconds;
+		result.referenceFresh=result.referenceReady && now<=AreaExpirySeconds();
 		result.activeFloorDip=AreaEligible()?static_cast<float>(IdleDiameterDip(frameState_)):0;
 		result.active=AreaEligible() && result.referenceReady && result.activeFloorDip>config_.sizes.minimumDiameterDip+0.01f;
 		if(result.referenceReady && now>AreaExpirySeconds() && result.reason==ContactAreaReason::Ready)
@@ -633,6 +647,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	void Controller::FollowTarget(DynamicsState& state, double endTime,
 		double target, double realMotionSpeed, bool areaMotionEvidence) const noexcept
 	{
+		const double previousTarget=state.logTarget;
+		const auto canSettle=[&](double goal)
+		{
+			// Touch 的移动目标不能按每包微小差值连续吸附，否则高回报率会绕过阻尼。
+			return config_.response!=ResponseModel::DirectTouch || std::abs(goal-previousTarget)<=1e-9;
+		};
 		const double startTime=state.time, dt=endTime-startTime;
 		state.time=endTime;
 		const float areaGoal=AreaReferenceFloor(endTime);
@@ -668,7 +688,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			state.sweepQualified=false;
 			state.decreasePending=state.shrinking=false;
 			state.logDiameter=Follow(state.logDiameter,target,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
-			if (std::abs(state.logDiameter-target)<=config_.settleLogTolerance) state.logDiameter=target;
+			if (std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target)) state.logDiameter=target;
 			if (state.logDiameter<=standard+config_.settleLogTolerance) state.sweeping=false;
 			return;
 		}
@@ -678,7 +698,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			state.sweeping=state.decreasePending=state.shrinking=false;
 			state.holdUntil=endTime;
 			state.logDiameter=Follow(state.logDiameter,target,dt,0.120,4.0);
-			if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance)state.logDiameter=target;
+			if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target))state.logDiameter=target;
 			acceptAreaFloor();
 			return;
 		}
@@ -728,7 +748,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				blend(config_.maximumLogShrinkPerSecond,config_.sweepLogShrinkPerSecond,resistance));
 		}
 		acceptAreaFloor();
-		if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance)
+		if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target))
 		{state.logDiameter=target;state.decreasePending=state.shrinking=false;}
 	}
 
