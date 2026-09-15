@@ -4105,6 +4105,7 @@ namespace Inkeys::Drawing::Draw3
 					d.targetDiameterDip=controller->TargetDiameterDip();d.touchUnlocked=controller->TouchUnlocked();
 					d.needsAnimation=controller->NeedsAnimation(mouseVisualSeconds);
 					d.contactArea=controller->AreaDiagnostics(mouseVisualSeconds);
+					d.fine=controller->FineDiagnostics();
 					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
 					d.motionPerPixelX=cfg.motionPerPixelX;d.motionPerPixelY=cfg.motionPerPixelY;
 					d.pixelWidth=cfg.display.pixelWidth;d.pixelHeight=cfg.display.pixelHeight;

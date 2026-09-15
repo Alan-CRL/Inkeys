@@ -91,14 +91,14 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 ## Scenario: 橡皮DIP尺寸、Touch响应与接触面积辅助
 
 ### 1. Scope / Trigger
-2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。替代旧厘米覆盖、Mouse/Pen 静止回标准、Touch 整目标物理一致的描述。鼠标和屏幕笔的参数、补偿、Hover/Down/Up 保持冻结；本轮只改善 Touch 与可关闭的面积辅助，不重写输入队列、模型、中心轨迹或渲染器。
+2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。2026-09-15 的精细区合同见下文：仅替代最小到标准区间的正速度立即增粗、固定120ms无确认以及独立idle旁路。标准以上清扫、物理补偿、面积换算/倍率和Hover/Down/Up所有权不变，不重写输入队列、模型、中心轨迹或渲染器。
 
 ### 2. Signatures
 - `EraserSizes` 全部是直径 DIP：minimum=16、standard=32、maximum=160、touchStart=16、fixed=50；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
 - `ResolveConfig(display, mode, InputSource, sizes)` 分离真实来源、响应模型与标尺。来源通过当前 RTS context 的能力及精确 Pointer cursor 对应关系缓存，不改变真实 InputDeviceType。
 - `Controller::UpdatePosition(x,y,seconds,contactArea,terminal)` 只消费真实输入；`Advance` 不制造运动证据；`AreaDiagnostics`、`NextAreaWakeSeconds` 暴露有界状态与过期唤醒。
 - `ContactSnapshot` 保留 `rawContactSize`、既有 `contactSize` 和 `contactAreaUnits`。面积单位状态不影响正常位置、压力、倒转和接触身份。
-- `DevelopmentOptions::touchContactAreaAssistance` 默认关闭。实验选项和程序调测共用 Host 的同一个临时选项，不写正式配置；由独立接触批次锁存。
+- `DevelopmentOptions::touchContactAreaAssistance` 默认关闭；实验选项和程序调测共用 `Experimental.Inkeys3.Draw3.TouchContactAreaAssistance` 持久化配置，启动时读取保存值，由独立接触批次锁存。控制台诊断开关独立保留。
 - `ContactSizeState`、`AppendEraserSizeAnchor` 与保存的逐点半径保持单一尺寸时间线。
 - `HostRuntimeSnapshot::eraser.needsAnimation` 表示发布该快照时的动画需求；`idleSeconds` 同样是发布时值，不是读取时自动增长的时钟。
 
@@ -210,3 +210,52 @@ Use the production converter in headless tests for unit/resolution/range/DPI cas
 - Correct: resolve the width-to-X length relationship from returned metrics, then apply the cached position linear mapping exactly once.
 
 References: [PROPERTY_METRICS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ns-tpcshrd-property_metrics), [PROPERTY_UNITS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ne-tpcshrd-property_units), [GetPacketDescriptionData](https://learn.microsoft.com/en-us/windows/win32/api/rtscom/nf-rtscom-irealtimestylus-getpacketdescriptiondata).
+
+## Scenario: 精细区平台、迟滞与双向确认（2026-09-15）
+
+### 1. Scope / Trigger
+替代“非零速度立即增粗”和“最小到标准固定120ms、无确认”的旧规则。只改变尺寸意图与跟随；RTS位置、真实路程统计、清扫短窗及参数、面积解释/倍率/上限、DIP属性和固定橡皮旁路不变。
+
+### 2. Signatures
+- `Config::fineHoldSpeed/fineReleaseSpeed` 与该模型 `fineToStandardSpeed` 同单位，默认分别为其0.20/0.35倍。
+- `fineWindowSeconds=0.140`；进入/缩小确认100ms，解除/恢复确认160ms。
+- `fineShrinkTauSeconds=0.200`、`fineGrowthTauSeconds=0.260`；对数缩小/增长上限4/3每秒。
+- `Controller::FineDiagnostics()` 输出长窗速度、held、进入/解除/方向确认进度和已许可方向；`Diagnostics::fine` 沿现有快照输出，活动接触控制台增加 `[FineBand]`。
+
+### 3. Contracts
+- 参考低段：速度<=fineHoldSpeed时目标minimum；到fineToStandardSpeed之间按偏移归一化smoothstep连续上升至standard。标准以上参考公式不变。
+- 单位示例：间接20/35/100 DIP/s；物理屏幕笔4/7/20 mm/s；物理Touch6/10.5/30 mm/s；笔DIP回退16/28/80，Touch DIP/经验回退20/35/100（均为各自动作单位每秒）。
+- 长窗以完整140ms为分母，包含零位移及无Move时间；路程不作净位移抵消。沿用有界64段存储和相邻合并，保留时间取短窗/参考窗/精细窗最大值；不对中心位置另加平滑或取整。
+- 连续低速建立held，进入后只有达到更高release速度的证据才累计解除；迟滞带内不增加解除证据。反向短脉冲只消耗部分确认，不按每次目标微变重启整个计时。
+- 方向确认和held确认并行；解除held即携带恢复许可，不再串联第二个160ms。原清扫资格满足后直接旁路低区确认，不能强制先16->32再等待高区。
+- 已有lastMovementTime/idleStart继续识别有界亚像素抖动；idle历史直接记入低速确认，随后仍使用同一精细跟随，不走另一套快速回缩。
+- 最小目标统一按double求log，稳定目标持续40ms后在既有误差阈值内精确收敛，防止float/double残差留下永不休眠的动画。移动目标不能靠每包小误差不断吸附。
+- 从高区缩小时保留高区主要过程，精确拆分跨standard的时间，剩余时间交给低区跟随，边界连续。
+- 面积先形成自己的有效下限；不得被held压到minimum。面积主导时保留既有面积许可/响应，不把面积当作高速证据，不重新拦截稳定参考建立。
+- 新状态分别存在sampleState/frameState中；帧预览不反写真实输入。确认进度为时间长度，重连时保留，已有绝对时钟和历史按原规则平移；合成连接不参与运动。
+- 新鲜兼容Hover只继承安全尺寸及held，不继承清扫动量；新Touch保持小尺寸起步，Mouse Up逻辑重置和140ms非擦除收尾、其他lane/取消/固定模式不变。
+- ContactSizeState、尺寸断点、历史半径、撤销和保存格式不变。面积开关继续持久化，不恢复为重启重置。
+
+### 4. Validation / Error Matrix
+| 场景 | 必须结果 |
+| --- | --- |
+| 0..0.20倍细段上界的持续速度 | 从standard或minimum收敛/保持精确minimum |
+| 已held后迟滞带内长期弱移动 | 不因时间累满退出证据 |
+| 单个像素跳步、慢挪与停顿交替 | 不周期增粗，不抹掉已有精细意图 |
+| 持续普通移动 | 有限确认后连续恢复，不跳档 |
+| 清扫资格成立 | 不增加低区串联等待 |
+| 有效面积下限高于minimum | 保留下限及真实移动许可 |
+| 完全无Move、亚像素有界抖动、面积过期 | 正确回缩并最终停帧 |
+| 帧先行、迟到输入、重连 | 真实状态独立，桥接不提速 |
+
+### 5. Good / Base / Bad Cases
+- Good：15 DIP/s持续慢擦到最小，停住再慢挪不增粗；125 DIP/s持续移动后解除并平滑恢复。
+- Base：面积有效时精细意图仍可held，但实际尺寸尊重已接受的面积下限。
+- Bad：每次非零包解除held、把idle再串联完整确认、只平均非零位移速度、给预测点积证据，或用整数取整掩盖残差。
+
+### 6. Tests Required
+headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向耗时、1728组0.5/1/2px量化与稀疏输入（96/144/192/288 DPI，60/125/240/1000Hz，多帧率/相位/轴向）、休眠和原面积保护。隐藏DComp/ULW测试必须检查产品光标、当前半径、新段尺寸断点、历史不回写、Undo/Redo及真实UInk往返，不能以独立控制器通过替代。
+
+### 7. Wrong vs Correct
+- Wrong：`minimum + (standard-minimum)*SmoothStep(speed/fineToStandardSpeed)`，任意正速度立即离开最小。
+- Correct：先扣除fineHoldSpeed再归一化；held/解除证据独立，确认后按实际时间的对数阻尼跟随，稳定下限精确停帧。

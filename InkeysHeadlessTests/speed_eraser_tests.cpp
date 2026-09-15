@@ -128,9 +128,240 @@ namespace
 	}
 }
 
+namespace
+{
+
+	struct FineTraceStats
+	{
+		float minimum=10000,maximum=0,finalDiameter=0;
+		double enterTime=-1,recoverTime=-1,settleTime=-1,maximumStep=0;
+		int heldExits=0;
+		bool sleeping=false;
+	};
+	template<class C> int FineHeldState(const C& c)
+	{
+		if constexpr(requires { c.FineDiagnostics().held; })return c.FineDiagnostics().held?1:0;
+		return -1; // 红灯基线没有新诊断接口，不能伪称观察到了其内部状态。
+	}
+	template<class C> void CheckFineDiagnostic(const C& c, bool& valid, double& progress)
+	{
+		if constexpr(requires { c.FineDiagnostics().releaseProgress; })
+		{
+			const auto d=c.FineDiagnostics();
+			valid=std::isfinite(d.speed) && d.enterProgress>=0 && d.enterProgress<=1 &&
+				d.releaseProgress>=0 && d.releaseProgress<=1;
+			progress=d.releaseProgress;
+		}
+		else {valid=false;progress=-1;}
+	}
+	void PrimeFine(Controller& c,const Config& config,bool hover)
+	{
+		if(config.response==ResponseModel::DirectTouch)
+		{
+			c.Reset(-4*config.touchUnlockEnd/config.motionPerPixelX,0,0,StartKind::Touch,config);
+			c.UpdatePosition(0,0,0.2); // 真实位移解除起步，不能只用时间解锁。
+		}
+		else if(hover)c.ResetPreview(0,0,0,config);
+		else c.Reset(0,0,0,StartKind::Hover,config);
+		c.UpdatePosition(0,0,3);
+	}
+	template<class Path>
+	FineTraceStats ReplayFine(const Config& config,Path path,int hz,int fps,double phase,
+		double grid,bool sparse,bool hover,double duration=2.0)
+	{
+		Controller c;PrimeFine(c,config,hover);
+		FineTraceStats result;
+		double input=(1.0+phase)/hz,frame=1.0/fps;
+		float previousX=0,previousY=0,previousSize=c.DiameterDip();
+		int held=FineHeldState(c);
+		const auto record=[&](double seconds)
+		{
+			const float size=c.DiameterDip();
+			result.minimum=std::min(result.minimum,size);result.maximum=std::max(result.maximum,size);
+			result.maximumStep=std::max(result.maximumStep,static_cast<double>(std::abs(size-previousSize)));
+			if(result.recoverTime<0 && size>=config.sizes.standardDiameterDip-0.5f)result.recoverTime=seconds;
+			const int currentHeld=FineHeldState(c);
+			if(held==1 && currentHeld==0)++result.heldExits;
+			if(currentHeld>=0)held=currentHeld;
+			previousSize=size;
+		};
+		while(std::min(input,frame)<=duration+1e-9)
+		{
+			if(input<=frame)
+			{
+				const auto point=path(input);
+				float px=static_cast<float>(point.x/config.motionPerPixelX),py=static_cast<float>(point.y/config.motionPerPixelY);
+				if(grid>0)
+				{
+					px=static_cast<float>(grid*(std::floor(px/grid+phase)-std::floor(phase)));
+					py=static_cast<float>(grid*(std::floor(py/grid+1-phase)-std::floor(1-phase)));
+				}
+				if(!sparse || px!=previousX || py!=previousY)c.UpdatePosition(px,py,3+input);
+				previousX=px;previousY=py;
+				record(input);input+=1.0/hz;
+			}
+			else {c.Advance(3+frame);record(frame);frame+=1.0/fps;}
+		}
+		result.finalDiameter=c.Advance(3+duration);
+		c.Advance(3+duration+3);result.sleeping=!c.NeedsAnimation(3+duration+3);
+		return result;
+	}
+
+	int RunFineBandRegressions()
+	{
+		int failures=0;
+		const auto check=[&](bool condition,const char* name)
+		{
+			if(!condition){if(failures<35)std::cerr<<"[FineBand] failed: "<<name<<'\n';++failures;}
+		};
+		std::vector<Config> configs;
+		for(const auto kind:{SourceKind::Mouse,SourceKind::IntegratedPen,SourceKind::Touch})
+		for(bool physical:{false,true})
+		{
+			DisplayScale d;d.monitor=17;d.logicalOutputKnown=true;d.pixelWidth=2880;d.pixelHeight=1920;
+			d.physicalAvailable=physical;d.cmPerPixelX=d.cmPerPixelY=0.025f;
+			configs.push_back(ResolveConfig(d,DeviceMode::Laptop,MappedSource(kind,d)));
+		}
+		double worstBand=0,worstEnter=0,worstRecovery=0;int totalExits=0;size_t quantizedCases=0;
+		for(const auto& config:configs)
+		{
+			const float minimum=config.sizes.minimumDiameterDip,standard=config.sizes.standardDiameterDip;
+			for(double ratio:{0.0,0.05,0.10,0.15,0.20})
+			{
+				const double speed=config.fineToStandardSpeed*ratio;
+				check(std::abs(ReferenceTargetDiameterDip(config,speed)-minimum)<0.001,
+					"finite low-speed plateau includes zero through 20 percent");
+				for(bool startMinimum:{false,true})
+				{
+					Controller c;c.Reset(0,0,0,StartKind::Hover,config,startMinimum?minimum:standard);
+					double entered=-1;
+					for(int i=1;i<=250;++i)
+					{
+						const double time=i/125.0;c.UpdatePosition(static_cast<float>(speed*time/config.motionPerPixelX),0,time);
+						if(entered<0 && c.DiameterDip()<=minimum+0.5f)entered=time;
+					}
+					worstEnter=std::max(worstEnter,entered);
+					check(std::abs(c.DiameterDip()-minimum)<0.001,"steady plateau reaches the exact minimum from either initial size");
+					check(entered>=0 && entered<1.6,"fine entry converges in bounded real time");
+				}
+			}
+			Controller fine;PrimeFine(fine,config,false);
+			float pos=0;
+			for(int i=1;i<=625;++i)
+			{
+				const double time=i/125.0;
+				// 迟滞带内的微动不是退出证据，不能越擦越容易解除。
+				pos=static_cast<float>(config.fineToStandardSpeed*0.30*time/config.motionPerPixelX);
+				fine.UpdatePosition(pos,0,3+time);
+			}
+			check(fine.DiameterDip()<=minimum+0.5f,"five seconds of weak release intent does not accumulate into unlock");
+			check(FineHeldState(fine)!=0,"hysteresis interval keeps an established fine hold");
+			fine.UpdatePosition(pos+1,0,8.008);
+			for(int i=1;i<=30;++i)fine.Advance(8.008+i*0.008);
+			check(fine.DiameterDip()<=minimum+0.5f,"single one-pixel step does not release fine hold");
+			PrimeFine(fine,config,false);
+			double released=-1,recovered=-1,last=minimum,largestStep=0;
+			for(int i=1;i<=250;++i)
+			{
+				const double time=i/125.0;fine.UpdatePosition(static_cast<float>(config.fineToStandardSpeed*1.25*time/config.motionPerPixelX),0,3+time);
+				if(released<0 && FineHeldState(fine)==0)released=time;
+				if(recovered<0 && fine.DiameterDip()>=standard-0.5f)recovered=time;
+				largestStep=std::max(largestStep,std::abs(fine.DiameterDip()-last));last=fine.DiameterDip();
+			}
+			worstRecovery=std::max(worstRecovery,recovered);
+			check(recovered>0.2 && recovered<1.7,"sustained ordinary movement exits fine without a step or an excessive wait");
+			check(largestStep<1.5,"fine recovery remains continuous at 125 Hz");
+			bool diagnosticValid=false;double progress=0;CheckFineDiagnostic(fine,diagnosticValid,progress);
+			check(diagnosticValid,"fine diagnostic progress has finite bounded values");
+			std::cout<<"[FineLatency] model="<<ResponseModelName(config.response)<<" unit="<<MotionUnitName(config.motionUnit)
+				<<" release="<<released<<" standard-minus-0.5="<<recovered<<'\n';
+
+			// 清扫许可独立：取得原资格后不能再串联低区退出确认。
+			PrimeFine(fine,config,false);double permission=-1,growth=-1;
+			for(int i=1;i<=180;++i)
+			{
+				const double time=i/1000.0;
+				fine.UpdatePosition(static_cast<float>(config.largeTargetSpeed*1.5*time/config.motionPerPixelX),0,3+time);
+				if(permission<0 && fine.SweepEvidenceSeconds()>=config.evidenceStartSeconds)permission=time;
+				if(permission>=0 && growth<0 && fine.DiameterDip()>minimum+0.05f)growth=time;
+			}
+			check(permission>=0 && growth>=permission && growth-permission<0.020,
+				"qualified high sweep bypasses low-band confirmation");
+
+			// 复制、帧先行、重连都只继承同一真实历史，不让未来帧写回输入。
+			PrimeFine(fine,config,false);Controller late=fine,timely=fine;
+			late.Advance(3.1);
+			late.UpdatePosition(0.5f,0,3.02);timely.UpdatePosition(0.5f,0,3.02);
+			check(std::abs(late.DiameterDip()-timely.DiameterDip())<0.0001f,"fine frame preview does not contaminate delayed raw input");
+			fine.PauseForReconnect(3.1);const float heldSize=fine.DiameterDip();
+			fine.Advance(50);fine.ResumeFromReconnect(10000,20000,4.1);fine.UpdatePosition(10001,20000,4.12);
+			check(std::abs(fine.DiameterDip()-heldSize)<0.5f,"reconnect translates clocks without bridge movement or renewed fine growth");
+			Controller preview;PrimeFine(preview,config,true);
+			if(config.response!=ResponseModel::DirectTouch)
+			{
+				Controller down;down.BeginContact(&preview,0,0,3.05,config);
+				check(std::abs(down.DiameterDip()-minimum)<0.001f && down.SweepEvidenceSeconds()==0,
+					"fine Hover to Down inherits only compatible safe size, not sweep momentum");
+			}
+			Controller high;high.Reset(0,0,0,StartKind::Hover,config);
+			const double velocity=config.largeTargetSpeed*1.5;
+			for(int i=1;i<=2500;++i)high.UpdatePosition(static_cast<float>(velocity*i/1000/config.motionPerPixelX),0,i/1000.0);
+			check(high.DiameterDip()>standard*2,"high-zone comparison begins from an established large state");
+			std::cout<<"[FineHighBaseline] "<<ResponseModelName(config.response)<<" "<<MotionUnitName(config.motionUnit);
+			double highPos=velocity*2.5;
+			for(int i=1;i<=600;++i)
+			{
+				const double time=i/1000.0;
+				const double v=i<=100?velocity:i<=200?0:i<=400?-velocity:velocity;
+				highPos+=v/1000;
+				high.UpdatePosition(static_cast<float>(highPos/config.motionPerPixelX),0,2.5+time);
+				if(i%50==0)std::cout<<" "<<std::bit_cast<uint32_t>(high.DiameterDip());
+			}
+			std::cout<<'\n';
+		}
+
+		// 采用交错覆盖而非固定一个理想浮点输入：轴、量化、DPI、频率、相位和稀疏事件。
+		for(const auto& original:configs)for(int dpi:{96,144,192,288})for(int hz:{60,125,240,1000})
+		for(double grid:{0.5,1.0,2.0})for(int motion=0;motion<3;++motion)for(bool sparse:{false,true})
+		{
+			auto display=original.display;display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
+			display.cmPerPixelX=display.cmPerPixelY=0.025f*96.0f/dpi;
+			auto config=ResolveConfig(display,original.mode,MappedSource(original.inputSource.kind,display));
+			const double speed=config.fineToStandardSpeed*0.15;
+			const double phase=(motion+static_cast<int>(grid*2)+dpi/48)%2?0.25:0.75;
+			const int fps=motion==0?30:motion==1?60:144;
+			const auto path=[&](double time)
+			{
+				if(motion==0)return Knot{time,speed*time,0};
+				if(motion==1)return Knot{time,speed*time/std::sqrt(2.0),speed*time/std::sqrt(2.0)};
+				const double period=0.18,phaseTime=std::fmod(time,period*2);
+				return Knot{time,speed*(phaseTime<=period?phaseTime:2*period-phaseTime),0};
+			};
+			const auto trace=ReplayFine(config,path,hz,fps,phase,grid,sparse,motion==0);
+			worstBand=std::max(worstBand,static_cast<double>(trace.maximum-trace.minimum));
+			totalExits+=trace.heldExits;++quantizedCases;
+			check(trace.maximum-trace.minimum<=0.5f && trace.maximum<=config.sizes.minimumDiameterDip+0.5f,
+				"quantized or sparse plateau stays within 0.5 DIP without periodic thickening");
+			check(trace.heldExits==0 && trace.sleeping,"fine plateau does not unlock and true idle stops animation");
+		}
+		for(const auto& config:configs)for(int moveMs:{60,100})for(int stopMs:{40,120})
+		{
+			const double cycle=(moveMs+stopMs)/1000.0,moving=moveMs/1000.0,speed=config.fineToStandardSpeed*0.18;
+			const auto path=[&](double time){return Knot{time,speed*(std::floor(time/cycle)*moving+std::min(moving,std::fmod(time,cycle))),0};};
+			const auto trace=ReplayFine(config,path,125,60,0.3,1,true,false,3);
+			check(trace.maximum<=config.sizes.minimumDiameterDip+0.5f && trace.heldExits==0,
+				"alternating slow movement and no-Move pauses keep fine intent");
+		}
+		std::cout<<"[FineQuantized] cases="<<quantizedCases<<" worstPeakToPeakDIP="<<worstBand<<" heldExits="<<totalExits
+			<<" enterToMinimumPlus0.5="<<worstEnter<<" recoverToStandardMinus0.5="<<worstRecovery<<" failures="<<failures<<'\n';
+		return failures;
+	}
+
+}
+
 int RunSpeedEraserTests()
 {
-	int failures = 0;
+	int failures = RunFineBandRegressions();
 	auto expect = [&](bool condition, const char* name)
 	{
 		if (!condition) { ++failures; std::cerr << "[SpeedEraser] failed: " << name << '\n'; }
@@ -426,7 +657,7 @@ int RunSpeedEraserTests()
 		near(mouseContact.Diameter(),standard,0.001,"mouse down ignores hover speed and starts small");
 		near(mouseContact.SweepEvidenceSeconds(),0,0.000001,"mouse down has no inherited sweep evidence");
 		mouseContact.UpdatePosition(20000,0,4.5);
-		expect(mouseContact.Advance(4.6)<=mouseConfig.minimumDiameterPx*1.02f,"stationary mouse down returns fine");
+		expect(mouseContact.Advance(4.9)<=mouseConfig.minimumDiameterPx*1.02f,"stationary mouse down respects confirmed fine shrink and converges");
 		const float actualEndDiameter = mouseConfig.maximumDiameterPx * 0.8f;
 		mouse.EndContact(mouseContact,actualEndDiameter,20000,0,5.0,false);
 		near(mouse.LogicalDiameter(),standard,0.001,"accepted mouse up resets logic immediately");
@@ -612,7 +843,7 @@ int RunSpeedEraserTests()
 		const auto c=ResolveConfig(d,mode,MappedSource(kind,d));const double fast=c.largeTargetSpeed*1.25;
 		const auto values=Replay(c,{{0,0},{0.4,c.fineToStandardSpeed*0.1},{0.8,c.sweepEnterSpeed*0.4},
 			{1.5,fast},{1.62,fast},{2.3,0},{4,1}},125,60,{0.1,0.4,0.8,1,1.5,1.62,1.8,2.5,4});
-		std::cout << "[R7Frozen] " << static_cast<int>(kind) << " " << dpi << " " << static_cast<int>(mode);
+		std::cout << "[LowBandChangedReplay] " << static_cast<int>(kind) << " " << dpi << " " << static_cast<int>(mode);
 		for(float v:values)std::cout << " " << std::bit_cast<uint32_t>(v);
 		Controller preview;preview.ResetPreview(0,0,0,c);FeedLine(preview,fast,0.5,125,c);preview.Advance(2);
 		Controller contact;contact.BeginContact(&preview,static_cast<float>(fast*0.5/c.motionPerPixelX),0,2,c);

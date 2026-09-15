@@ -512,6 +512,10 @@ namespace Inkeys::Drawing::Draw3
 				a.referenceReady,a.referenceFresh,d.touchUnlocked,a.stableMotionSeconds*1000,a.referenceFloorDip,a.activeFloorDip,a.active,
 				d.speed,d.evidenceSeconds*1000,d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.historyRadiusPx,
 				static_cast<unsigned long long>(d.realPointCount),d.idleSeconds*1000,d.needsAnimation);
+			std::fprintf(stderr,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
+				static_cast<unsigned long long>(sequence),d.fine.speed,SpeedEraser::MotionUnitName(d.motionUnit),
+				d.fine.held,d.fine.enterProgress,d.fine.releaseProgress,d.fine.changeProgress,d.fine.direction,
+				d.targetDiameterDip,d.effectiveDiameterDip,a.activeFloorDip,d.needsAnimation);
 			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
 			OutputDebugStringA(text);
 			std::fputs(text,stderr);

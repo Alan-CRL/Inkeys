@@ -171,6 +171,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float minimumDiameterPx = 16.0f;
 		float maximumDiameterPx = 160.0f;
 		float fineToStandardSpeed = 100.0f;
+		float fineHoldSpeed = 20.0f, fineReleaseSpeed = 35.0f; // 与本模型的 fineToStandardSpeed 同单位。
+		double fineWindowSeconds = 0.140;
+		double fineEnterSeconds = 0.100, fineReleaseSeconds = 0.160;
+		double fineShrinkTauSeconds = 0.200, fineGrowthTauSeconds = 0.260;
+		double fineLogShrinkPerSecond = 4.0, fineLogGrowthPerSecond = 3.0;
+		double fineSettleSeconds = 0.040;
 		float sweepEnterSpeed = 800.0f;
 		float sweepExitSpeed = 600.0f;
 		float largeTargetSpeed = 1900.0f;
@@ -222,6 +228,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch,
 		const EraserSizes& sizes = {}) noexcept;
 
+	struct FineBandDiagnostics
+	{
+		double speed = 0, enterProgress = 0, releaseProgress = 0, changeProgress = 0;
+		bool held = false;
+		int direction = 0;
+	};
 	class Controller
 	{
 	public:
@@ -246,6 +258,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float TargetDiameter() const noexcept;
 		float TargetDiameterDip() const noexcept;
 		bool TouchUnlocked() const noexcept;
+		FineBandDiagnostics FineDiagnostics() const noexcept;
 		ContactAreaDiagnostics AreaDiagnostics(double seconds) const noexcept;
 		double NextAreaWakeSeconds() const noexcept;
 		bool IsPaused() const noexcept { return paused_; }
@@ -273,6 +286,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double sweepEvidence = 0.0;
 			double lastMovementTime = 0.0;
 			double speed = 0.0;
+			double fineSpeed = 0, fineEnterEvidence = 0, fineReleaseEvidence = 0;
+			double fineChangeEvidence = 0, fineStableSeconds = 0;
+			int fineDirection = 0, finePendingDirection = 0;
+			bool fineHeld = false;
 			float areaFloorDip = 0.0f;
 			bool sweepQualified = false;
 			bool sweeping = false;
@@ -316,6 +333,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool HasMotionSupport(double seconds,double windowSeconds = 0,double noiseRatio = 1.0) const noexcept;
 		double TargetLogDiameter(double speed, double maximumDisplacement) const noexcept;
 		double IdleDiameterDip(const DynamicsState& state) const noexcept;
+		void ObserveFineIntent(DynamicsState& state, double referenceTarget, double dt, bool sweepPermitted) const noexcept;
+		void FollowFineTarget(DynamicsState& state, double target, double dt) const noexcept;
 		void AdvanceState(DynamicsState& state, double seconds,
 			const MotionSegment* incoming = nullptr, double incomingX = 0.0,
 			double incomingY = 0.0, bool effectiveMovement = false) const noexcept;
@@ -418,6 +437,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool touchUnlocked = false;
 		bool needsAnimation = false;
 		ContactAreaDiagnostics contactArea;
+		FineBandDiagnostics fine;
 		float effectiveDiameterDip = 32, cursorDiameterPx = 32, nextRadiusPx = 16;
 		float historyRadiusPx = 0, resumedMaxRadiusPx = 0;
 		float resumedLeft = 0, resumedTop = 0, resumedRight = 0, resumedBottom = 0;

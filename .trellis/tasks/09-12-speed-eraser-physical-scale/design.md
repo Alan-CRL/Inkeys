@@ -1,4 +1,7 @@
-# Touch控制、面积下限与验证状态
+# 精细区控制、面积下限与验证状态
+
+## 当前精细区（2026-09-15）
+只替代最小到标准的立即响应。精细观察使用140ms真实路程窗，平台/解除阈值为各模型原细段上界的0.20/0.35倍；100ms进入、160ms解除和方向确认并行，双向tau为200/260ms。迟滞带不累积解除证据，原idle历史参与同一精细确认；目标稳定40ms后精确收敛，统一double最小log以保证休眠。清扫资格和面积主导路径不串联新确认，跨standard连续。详情及测量见validation-fine-band-20260915.md。
 
 ## 分层
 EraserSizes仍是DIP属性单一来源。真实InputSource、ResponseModel、motionSource分离；只有屏幕笔保留标准以上增量的beta补偿，Touch不再要求整目标毫米一致。物理、DIP和经验动作单位不混算。
@@ -14,4 +17,4 @@ EraserSizes仍是DIP属性单一来源。真实InputSource、ResponseModel、mot
 - 原错误等待额外耗时15s，暴露模型的单次2000输出上限。测试等待已修正；复查又补齐真实Touch笔速长停顿恢复：使用相同模型参数在最后已接受点短时间重锚，继续累计原结果/几何。保持原输出上限、其他设备行为及保存格式，合成种子不经过速度/面积统计。
 
 ## 实验入口与验证
-实验选项采用现有卡片和toggle样式，增加75 DIP内容高度；读取/写入同一Host DevelopmentOptions，不增加持久化字段。程序调测仍显示详细状态。headless冻结鼠标/笔位模式并测量采样率；专项隐藏测试验证休眠/过期、恢复小半径、Undo/Redo及实际UInk往返。
+实验选项保留面积辅助和独立控制台输出；面积开关与程序调测同步写入Experimental.Inkeys3.Draw3.TouchContactAreaAssistance，重启读取保存值。headless比较已建立高区、量化/稀疏低区和时间响应；专项隐藏测试验证产品光标/当前半径、休眠/过期、恢复小半径、Undo/Redo及实际UInk往返。

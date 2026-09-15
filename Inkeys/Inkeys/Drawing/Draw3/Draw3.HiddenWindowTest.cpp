@@ -583,6 +583,19 @@ namespace Inkeys::Drawing::Draw3
 					"actual eraser diagnostic becomes active",failures);
 				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.2f,
 					"actual Down inherits fine hover without growing",failures);
+				float fineMin=1000,fineMax=0;
+				for(int i=1;i<=18;++i)
+				{
+					mouseContact(HiddenTestContactPhase::Move,60+i,80);
+					std::this_thread::sleep_for(i%2?80ms:120ms);
+					const auto d=ProductHost().RuntimeSnapshot().eraser;
+					fineMin=(std::min)(fineMin,d.effectiveDiameterDip);fineMax=(std::max)(fineMax,d.effectiveDiameterDip);
+					modeSucceeded &= Check(d.fine.held && d.effectiveDiameterDip<=16.5f &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f,
+						"real sparse one-pixel mouse moves retain fine cursor and accepted radius",failures);
+				}
+				std::fprintf(stderr,"[FineIngress] mode=%u peakToPeakDIP=%g maxDIP=%g\n",
+					static_cast<unsigned>(requiredMode),fineMax-fineMin,fineMax);
 				int lastX=60;
 				for(int i=0;i<80;++i)
 				{

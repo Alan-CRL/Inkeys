@@ -250,6 +250,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config.movementNoiseDistance=physical?0.2f:0.75f;
 		config.touchUnlockStart=physical?1.0f:2.0f;
 		config.touchUnlockEnd=physical?3.0f:6.0f;
+		config.fineHoldSpeed=config.fineToStandardSpeed*0.20f;
+		config.fineReleaseSpeed=config.fineToStandardSpeed*0.35f;
 		return config;
 	}
 
@@ -270,8 +272,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		speed=std::isfinite(speed)?std::max(0.0,speed):0;
 		const double minimum=config.sizes.minimumDiameterDip, standard=config.sizes.standardDiameterDip;
+		if (speed<=config.fineHoldSpeed)return static_cast<float>(minimum);
 		if (speed<config.fineToStandardSpeed)
-			return static_cast<float>(minimum+(standard-minimum)*SmoothStep(speed/config.fineToStandardSpeed));
+			return static_cast<float>(minimum+(standard-minimum)*SmoothStep(
+				(speed-config.fineHoldSpeed)/(config.fineToStandardSpeed-config.fineHoldSpeed)));
 		const double amount=SmoothStep((speed-config.sweepEnterSpeed)/(config.largeTargetSpeed-config.sweepEnterSpeed));
 		return static_cast<float>(standard*std::exp(amount*std::log(config.sizes.maximumDiameterDip/standard)));
 	}
@@ -550,6 +554,18 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config_.movementNoiseDistance=static_cast<float>(Positive(config.movementNoiseDistance,resolved.movementNoiseDistance));
 		config_.fineToStandardSpeed=std::min(config_.sweepEnterSpeed*0.9f,
 			static_cast<float>(Positive(config.fineToStandardSpeed,resolved.fineToStandardSpeed)));
+		config_.fineHoldSpeed=std::min(config_.fineToStandardSpeed*0.8f,
+			static_cast<float>(Positive(config.fineHoldSpeed,config_.fineToStandardSpeed*0.20)));
+		config_.fineReleaseSpeed=std::clamp(static_cast<float>(Positive(config.fineReleaseSpeed,
+			config_.fineToStandardSpeed*0.35)),config_.fineHoldSpeed*1.01f,config_.fineToStandardSpeed*0.99f);
+		config_.fineWindowSeconds=std::clamp(Positive(config.fineWindowSeconds,0.140),0.100,0.160);
+		config_.fineEnterSeconds=Positive(config.fineEnterSeconds,0.100);
+		config_.fineReleaseSeconds=Positive(config.fineReleaseSeconds,0.160);
+		config_.fineShrinkTauSeconds=Positive(config.fineShrinkTauSeconds,0.200);
+		config_.fineGrowthTauSeconds=Positive(config.fineGrowthTauSeconds,0.260);
+		config_.fineLogShrinkPerSecond=Positive(config.fineLogShrinkPerSecond,4.0);
+		config_.fineLogGrowthPerSecond=Positive(config.fineLogGrowthPerSecond,3.0);
+		config_.fineSettleSeconds=Positive(config.fineSettleSeconds,0.040);
 		config_.touchUnlockStart = static_cast<float>(Positive(config_.touchUnlockStart, 2.0));
 		config_.touchUnlockEnd = std::max(config_.touchUnlockStart * 1.01f,
 			static_cast<float>(Positive(config_.touchUnlockEnd, 6.0)));
@@ -594,6 +610,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			? std::clamp(initialDiameterDip,config_.sizes.minimumDiameterDip,config_.sizes.standardDiameterDip)
 			: config_.sizes.standardDiameterDip;
 		sampleState_.logDiameter = sampleState_.logTarget = std::log(kind==StartKind::Touch ? config_.sizes.touchStartDiameterDip : safeStart);
+		sampleState_.fineHeld=std::exp(sampleState_.logDiameter)<=config_.sizes.minimumDiameterDip+0.001;
+		if(sampleState_.fineHeld)
+		{sampleState_.fineEnterEvidence=config_.fineEnterSeconds;sampleState_.fineDirection=-1;}
 		frameState_ = sampleState_;
 		pauseTime_ = 0.0;
 		touchStartup_ = kind == StartKind::Touch;
@@ -612,6 +631,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	void Controller::BeginContact(const Controller* preview,float x,float y,double seconds,const Config& config) noexcept
 	{
 		float safe=0;
+		bool fineHeld=false;
 		if (preview && preview->initialized_ && preview->previewOnly_ && preview->config_==config &&
 			seconds>=preview->acceptedTime_)
 		{
@@ -619,14 +639,24 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				(y-preview->acceptedY_)*config.display.dipPerPixelY);
 			// 同位 Down 本身重新确认了定位；跨位置的旧 Hover 则必须足够新鲜。
 			if(seconds-preview->acceptedTime_<=0.250 || distance<=0.5)
+			{
 				safe=std::min(preview->DiameterDip(),config.sizes.standardDiameterDip);
+				fineHeld=preview->frameState_.fineHeld;
+			}
 		}
 		Reset(x,y,seconds,StartKind::Hover,config,safe);
+		if(fineHeld)
+		{
+			// Down 只继承新鲜兼容的精细保持，不继承测速或清扫动量。
+			sampleState_.fineHeld=true;sampleState_.fineDirection=-1;
+			sampleState_.fineEnterEvidence=config_.fineEnterSeconds;
+			frameState_=sampleState_;
+		}
 	}
 
 	void Controller::AddSegment(const MotionSegment& segment) noexcept
 	{
-		const double retention = std::max(config_.historyWindowSeconds, config_.referenceWindowSeconds);
+		const double retention = std::max({config_.historyWindowSeconds, config_.referenceWindowSeconds, config_.fineWindowSeconds});
 		// 保留本次积分起点需要的历史，而非提前按新样本终点删掉旧区间。
 		const double cutoff = sampleState_.time - retention;
 		size_t expired = 0;
@@ -725,16 +755,80 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 
 
+	void Controller::ObserveFineIntent(DynamicsState& state,double referenceTarget,double dt,bool sweepPermitted) const noexcept
+	{
+		const double minimum=std::log(static_cast<double>(config_.sizes.minimumDiameterDip));
+		if(sweepPermitted)
+		{
+			// 清扫资格直接旁路精细确认，不能先恢复标准再重新等待清扫。
+			state.fineHeld=false;state.fineEnterEvidence=state.fineReleaseEvidence=0;
+			state.fineDirection=1;state.finePendingDirection=0;state.fineChangeEvidence=0;
+			return;
+		}
+		// 复用原有有效移动时钟识别有界抖动；idle 是同一段历史的低速证据，不串联第二轮等待。
+		const bool idle=state.time>=state.lastMovementTime+config_.idleStartSeconds;
+		const double speed=idle?0.0:state.fineSpeed;
+		if(idle)state.fineEnterEvidence=std::max(state.fineEnterEvidence,
+			std::min(config_.fineEnterSeconds,state.time-state.lastMovementTime));
+		if(speed<=config_.fineHoldSpeed*(1.0+1e-5))
+			state.fineEnterEvidence=std::min(config_.fineEnterSeconds,state.fineEnterEvidence+dt);
+		else
+			state.fineEnterEvidence=std::max(0.0,state.fineEnterEvidence-dt*
+				(speed<config_.fineReleaseSpeed?0.25:2.0));
+		// 迟滞带只保留状态，不提供微弱但可无限累计的退出证据。
+		if(state.fineHeld && speed>=config_.fineReleaseSpeed)
+			state.fineReleaseEvidence=std::min(config_.fineReleaseSeconds,state.fineReleaseEvidence+dt);
+		else state.fineReleaseEvidence=std::max(0.0,state.fineReleaseEvidence-2*dt);
+		if(!state.fineHeld && state.fineEnterEvidence>=config_.fineEnterSeconds)
+		{
+			state.fineHeld=true;state.fineDirection=-1;
+			state.fineReleaseEvidence=state.fineChangeEvidence=0;state.finePendingDirection=0;
+		}
+		if(state.fineHeld && state.fineReleaseEvidence>=config_.fineReleaseSeconds)
+		{
+			state.fineHeld=false;state.fineDirection=1;
+			state.fineEnterEvidence=state.fineChangeEvidence=0;state.finePendingDirection=0;
+		}
+		const double goal=state.fineHeld?minimum:referenceTarget;
+		const double current=std::min<double>(state.logDiameter,std::log(config_.sizes.standardDiameterDip));
+		const int direction=goal>current+1e-9?1:goal<current-1e-9?-1:0;
+		if(direction==0 || direction==state.fineDirection)
+		{
+			state.fineChangeEvidence=std::max(0.0,state.fineChangeEvidence-2*dt);
+			if(state.fineChangeEvidence==0)state.finePendingDirection=0;
+			return;
+		}
+		if(state.finePendingDirection!=0 && state.finePendingDirection!=direction)
+		{
+			// 一个反向尖峰只消耗部分已有意图，不能重置整段确认。
+			state.fineChangeEvidence=std::max(0.0,state.fineChangeEvidence-2*dt);
+			if(state.fineChangeEvidence>0)return;
+		}
+		state.finePendingDirection=direction;
+		const double confirmation=direction>0?config_.fineReleaseSeconds:config_.fineEnterSeconds;
+		state.fineChangeEvidence=std::min(confirmation,state.fineChangeEvidence+dt);
+		if(state.fineChangeEvidence>=confirmation)
+		{state.fineDirection=direction;state.finePendingDirection=0;state.fineChangeEvidence=0;}
+	}
+
+	void Controller::FollowFineTarget(DynamicsState& state,double target,double dt) const noexcept
+	{
+		const int direction=target>state.logDiameter+1e-9?1:target<state.logDiameter-1e-9?-1:0;
+		if(direction!=0 && direction!=state.fineDirection)return;
+		state.logDiameter=Follow(state.logDiameter,target,dt,
+			direction>0?config_.fineGrowthTauSeconds:config_.fineShrinkTauSeconds,
+			direction>0?config_.fineLogGrowthPerSecond:config_.fineLogShrinkPerSecond);
+		// 所有输入类型的移动低区目标都不能按每包小误差吸附；稳定平台才精确收敛。
+		if(state.fineStableSeconds>=config_.fineSettleSeconds &&
+			std::abs(state.logDiameter-target)<=config_.settleLogTolerance)state.logDiameter=target;
+	}
+
 	void Controller::FollowTarget(DynamicsState& state, double endTime,
 		double target, double realMotionSpeed, bool areaMotionEvidence) const noexcept
 	{
 		const double previousTarget=state.logTarget;
-		const auto canSettle=[&](double goal)
-		{
-			// Touch 的移动目标不能按每包微小差值连续吸附，否则高回报率会绕过阻尼。
-			return config_.response!=ResponseModel::DirectTouch || std::abs(goal-previousTarget)<=1e-9;
-		};
-		const double startTime=state.time, dt=endTime-startTime;
+		const double startTime=state.time,dt=endTime-startTime;
+		const double standard=std::log(config_.sizes.standardDiameterDip);
 		state.time=endTime;
 		const float areaGoal=AreaReferenceFloor(endTime);
 		const bool areaOpen=AreaEligible() && state.maximumDisplacement>=config_.touchUnlockEnd &&
@@ -745,11 +839,6 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			if(areaMotion)state.areaFloorDip=std::min(areaGoal,static_cast<float>(std::exp(state.logDiameter)));
 		};
 		acceptAreaFloor();
-		if(areaOpen)target=std::max(target,std::log(static_cast<double>(
-			areaMotion?areaGoal:std::min(areaGoal,std::max(config_.sizes.minimumDiameterDip,
-				std::min(state.areaFloorDip,static_cast<float>(std::exp(state.logDiameter))))))));
-		state.logTarget=target;
-		const double standard=std::log(config_.sizes.standardDiameterDip);
 		const double logRange=std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip);
 		if (!previewOnly_ && realMotionSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
 		else if (realMotionSpeed > 0 && realMotionSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
@@ -757,10 +846,71 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		const double strength=qualifies ? 0.4 + 0.6*SmoothStep((realMotionSpeed-config_.sweepEnterSpeed)/
 			(config_.largeTargetSpeed-config_.sweepEnterSpeed)) : 0.0;
 		const double leak=std::exp(-dt/config_.evidenceDecaySeconds);
-		// 始终泄漏；低于进入速度的普通动作，无论持续多久都不能充满证据。
 		state.sweepEvidence=std::min(config_.evidenceFullSeconds,
 			state.sweepEvidence*leak + strength*config_.evidenceDecaySeconds*(1-leak));
+		const bool sweepPermitted=qualifies && state.sweepEvidence>=config_.evidenceStartSeconds;
+		const double fineReference=TargetLogDiameter(std::min(state.fineSpeed,
+			static_cast<double>(config_.fineToStandardSpeed)),state.maximumDisplacement);
+		ObserveFineIntent(state,fineReference,dt,sweepPermitted);
+		const double fineTarget=state.fineHeld?std::log(static_cast<double>(config_.sizes.minimumDiameterDip)):fineReference;
+		const auto withArea=[&](double goal)
+		{
+			return areaOpen?std::max(goal,std::log(static_cast<double>(
+				areaMotion?areaGoal:std::min(areaGoal,std::max(config_.sizes.minimumDiameterDip,
+					std::min(state.areaFloorDip,static_cast<float>(std::exp(state.logDiameter)))))))):goal;
+		};
+		const double lowTarget=withArea(fineTarget);
+		const bool areaDominates=lowTarget>fineTarget+1e-9;
+		// 大尺寸仍使用短窗目标及原有保持/阻力；长窗只控制标准以内的尺寸意图。
+		if(state.logDiameter<=standard+1e-9 && (target<=standard || (state.fineHeld && !sweepPermitted)))
+			target=fineTarget;
+		target=withArea(target);
+		state.logTarget=target;
+		state.fineStableSeconds=std::abs(lowTarget-previousTarget)<=1e-9?state.fineStableSeconds+dt:0;
+		const auto canSettle=[&](double goal)
+		{
+			if(goal<=standard && state.logDiameter<=standard+config_.settleLogTolerance && !areaDominates)
+				return state.fineStableSeconds>=config_.fineSettleSeconds;
+			return config_.response!=ResponseModel::DirectTouch || std::abs(goal-previousTarget)<=1e-9;
+		};
 		const double idleStart=state.lastMovementTime+config_.idleStartSeconds;
+		const auto followLow=[&](double goal,double elapsed)
+		{
+			if(areaDominates)
+			{
+				// 已接受面积不是低速退出证据；它仍沿用原来的面积许可及响应。
+				state.logDiameter=Follow(state.logDiameter,goal,elapsed,
+					endTime>=idleStart?config_.idleTauSeconds:0.120,
+					endTime>=idleStart?config_.idleLogShrinkPerSecond:4.0);
+				if(std::abs(state.logDiameter-goal)<=config_.settleLogTolerance && canSettle(goal))state.logDiameter=goal;
+			}
+			else FollowFineTarget(state,goal,elapsed);
+		};
+		const auto followShrink=[&](double goal,double elapsed,double tau,double rate)
+		{
+			const double before=state.logDiameter;
+			const double after=Follow(before,goal,elapsed,tau,rate);
+			if(before>standard && goal<standard && after<standard)
+			{
+				// 精确拆分跨标准的时间，不把高区阻力带入低区，也不丢掉长帧的余量。
+				const double gap=before-goal,boundary=standard-goal,limit=tau*rate;
+				const double crossing=boundary>=limit?(before-standard)/rate:
+					std::max(0.0,(gap-limit)/rate)+tau*std::log(std::min(gap,limit)/boundary);
+				state.logDiameter=standard;state.logTarget=lowTarget;
+				followLow(lowTarget,std::max(0.0,elapsed-crossing));
+			}
+			else state.logDiameter=after;
+		};
+		if(state.logDiameter<=standard+1e-9 && target<=standard)
+		{
+			state.sweeping=state.decreasePending=state.shrinking=false;
+			state.holdUntil=endTime;
+			if(!qualifies)state.sweepQualified=false;
+			// 零速和移动共用精细确认，idle 不再绕开低区或串联另一轮等待。
+			followLow(target,dt);
+			acceptAreaFloor();
+			return;
+		}
 		if (endTime >= idleStart)
 		{
 			const double elapsed=endTime-std::max(startTime,idleStart);
@@ -768,19 +918,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			state.logTarget=target;
 			state.sweepQualified=false;
 			state.decreasePending=state.shrinking=false;
-			state.logDiameter=Follow(state.logDiameter,target,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
+			followShrink(target,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
 			if (std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target)) state.logDiameter=target;
 			if (state.logDiameter<=standard+config_.settleLogTolerance) state.sweeping=false;
-			return;
-		}
-		// 精细区不背负大尺寸清扫的保持阻力，Hover 永远不能存储清扫证据。
-		if (state.logDiameter<=standard+config_.settleLogTolerance && target<=standard)
-		{
-			state.sweeping=state.decreasePending=state.shrinking=false;
-			state.holdUntil=endTime;
-			state.logDiameter=Follow(state.logDiameter,target,dt,0.120,4.0);
-			if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target))state.logDiameter=target;
-			acceptAreaFloor();
 			return;
 		}
 		const double range=config_.sizes.maximumDiameterDip-config_.sizes.standardDiameterDip;
@@ -824,7 +964,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const double elapsed=endTime-std::max(startTime,releaseStart);
 			if (elapsed<=0)return;
 			state.shrinking=true;
-			state.logDiameter=Follow(state.logDiameter,target,elapsed,
+			followShrink(target,elapsed,
 				blend(config_.shrinkTauSeconds,config_.sweepShrinkTauSeconds,resistance),
 				blend(config_.maximumLogShrinkPerSecond,config_.sweepLogShrinkPerSecond,resistance));
 		}
@@ -836,7 +976,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	void Controller::AdvanceState(DynamicsState& state, double seconds,
 		const MotionSegment* incoming, double incomingX, double incomingY, bool effectiveMovement) const noexcept
 	{
-		const double retention = std::max(config_.historyWindowSeconds, config_.referenceWindowSeconds);
+		const double retention = std::max({config_.historyWindowSeconds, config_.referenceWindowSeconds, config_.fineWindowSeconds});
 		const double historyEnd = segmentCount_ ? segments_[segmentCount_ - 1].endTime + retention : state.time;
 		while (state.time < seconds)
 		{
@@ -850,6 +990,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				state.time = seconds;
 				state.logTarget = minimum;
 				state.sweepEvidence = 0.0;
+				state.fineSpeed=state.fineReleaseEvidence=state.fineChangeEvidence=0;
+				state.fineHeld=true;state.fineDirection=-1;state.finePendingDirection=0;
+				state.fineEnterEvidence=config_.fineEnterSeconds;
 				state.sweeping = state.shrinking = state.decreasePending = false;
 				break;
 			}
@@ -871,6 +1014,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const double speed = midpoint < historyEnd ? MotionSpeed(midpoint, config_.historyWindowSeconds) : 0.0;
 			// 稀疏的一个跳点不能证明整个空档都在快擦；正常输入仍按真实 dt 累积。
 			state.speed=speed;
+			// 长窗分母包括零位移和无 Move 时间；路程不被净位移抵消，也不丢小位移。
+			state.fineSpeed=midpoint<historyEnd?MotionSpeed(midpoint,config_.fineWindowSeconds):0;
 			// 空间门只确认时间窗内存在真实移动；每个已观测区间完整积分，不能仅给跨门槛的包记 dt。
 			const double observedSpeed = HasMotionSupport(midpoint) && incoming && incoming->distance > 0.0 &&
 				incoming->endTime - incoming->startTime <= config_.maximumEvidenceIntervalSeconds
@@ -988,6 +1133,16 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return touchStartup_ && frameState_.maximumDisplacement>=config_.touchUnlockEnd;
 	}
 
+	FineBandDiagnostics Controller::FineDiagnostics() const noexcept
+	{
+		const double confirmation=frameState_.finePendingDirection>0?config_.fineReleaseSeconds:config_.fineEnterSeconds;
+		return {frameState_.fineSpeed,
+			std::clamp(frameState_.fineEnterEvidence/config_.fineEnterSeconds,0.0,1.0),
+			std::clamp(frameState_.fineReleaseEvidence/config_.fineReleaseSeconds,0.0,1.0),
+			std::clamp(frameState_.fineChangeEvidence/confirmation,0.0,1.0),
+			frameState_.fineHeld,frameState_.fineDirection};
+	}
+
 	float Controller::TargetDiameter() const noexcept
 	{
 		return DiameterToCanvasPx(initialized_ ? static_cast<float>(std::exp(frameState_.logTarget)) : config_.sizes.standardDiameterDip,config_.display);
@@ -1007,7 +1162,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			frameState_.time>=AreaExpirySeconds() && AreaReferenceFloor(frameState_.time)>config_.sizes.minimumDiameterDip &&
 			frameState_.areaFloorDip>config_.sizes.minimumDiameterDip;
 		return areaFading || std::abs(frameState_.logDiameter - std::log(IdleDiameterDip(frameState_))) > 1e-9 ||
-			(segmentCount_ && seconds < segments_[segmentCount_ - 1].endTime + config_.referenceWindowSeconds);
+			(segmentCount_ && seconds < segments_[segmentCount_ - 1].endTime + std::max(config_.referenceWindowSeconds,config_.fineWindowSeconds));
 	}
 
 
