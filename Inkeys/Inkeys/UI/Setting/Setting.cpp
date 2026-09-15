@@ -1232,8 +1232,6 @@ SettingSessionCoroutine RunSettingSession()
 		bool LiftStraighten = setlist.liftStraighten, WaitStraighten = setlist.waitStraighten;
 		bool PointAdsorption = setlist.pointAdsorption;
 		bool SmoothWriting = setlist.smoothWriting;
-		int EraserMode = Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
-			setlist.eraserSetting.eraserMode);
 		bool HideTouchPointer = setlist.hideTouchPointer;
 
 		int PreparationQuantity = setlist.performanceSetting.preparationQuantity;
@@ -3950,84 +3948,91 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("绘制#4", { settingItemWidth * settingGlobalScale,100.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
+						const int modelRows=(EraserWidthPreference(3)==1?1:0)+(EraserWidthPreference(4)==1?1:0);
+						ImGui::BeginChild("橡皮擦设置", {settingItemWidth*settingGlobalScale,(45.0f+350.0f+45.0f*modelRows+110.0f)*settingGlobalScale},
+							false,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+						ImGui::SetCursorPos({0,0});
+						ImFontMain->Scale=0.6f;PushFontNum++;ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
+						ImGui::TextUnformatted("橡皮擦");
+						const char* entries[]={"鼠标左键","鼠标右键","触摸","笔（笔尖）","笔尾"};
+						const char* kinds[]={"固定粗细","笔速橡皮"};
+						const char* responses[]={"自动识别","屏幕笔","数位板"};
+						for(int entry=0;entry<5;++entry)
 						{
-							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
-							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-							ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.RubberThickness.N).c_str());
-						}
-
-						{
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f * settingGlobalScale);
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-							ImGui::BeginChild("橡皮粗细计算方式", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-							float cursosPosY = 0;
+							int kind=EraserWidthPreference(entry);
+							const bool pen=entry>=3;
+							ImGui::PushID(entry);
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5.0f*settingGlobalScale);
+							PushStyleVarNum++;ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(0,0));
+							PushStyleVarNum++;ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding,4.0f);
+							PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_ChildBg,Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("擦除入口",{settingItemWidth*settingGlobalScale,(pen && kind==1?105.0f:60.0f)*settingGlobalScale},
+								true,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+							ImFontMain->Scale=0.5f;PushFontNum++;ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
+							ImGui::SetCursorPos({20*settingGlobalScale,20*settingGlobalScale});ImGui::TextUnformatted(entries[entry]);
+							ImGui::SetCursorPos({settingRightComboX*settingGlobalScale,15*settingGlobalScale});
+							ImGui::SetNextItemWidth(200*settingGlobalScale);
+							if(Widgets::combo.Begin("##入口橡皮类型",kinds[kind],2))
 							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.N).c_str());
+								for(int value=0;value<2;++value)
+									if(Widgets::combo.Selectable(kinds[value],kind==value))
+									{kind=value;SetEraserInputPreference(entry,kind);QueueConfigWrite();}
+								Widgets::combo.End();
 							}
+							if(pen && kind==1)
 							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale, ImGui::GetCursorPosY() });
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted(IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.E).c_str());
-							}
-							{
-								ImGui::SetCursorPos({ settingRightComboX * settingGlobalScale, cursosPosY + 20.0f * settingGlobalScale });
-								ImGui::SetNextItemWidth(200 * settingGlobalScale);
-
-								ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
-
-				vector<char*> vec;
-				// Draw3 只保留速度橡皮和固定橡皮，压感模式不再显示。
-				vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode2)).c_str()));
-				vec.emplace_back(_strdup((IA(I18nKey.SettingsUI.Draw.RubberThickness.Calc.Mode1)).c_str()));
-
-				const int eraserIndex = (std::clamp)(EraserMode, 1, 2) - 1;
-				if (Widgets::combo.Begin("##橡皮粗细计算方式", vec[eraserIndex], static_cast<int>(vec.size())))
-				{
-					for (int i = 0; i < vec.size(); i++)
-									{
-										ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
-
-						bool is_selected = (eraserIndex == i);
-						if (Widgets::combo.Selectable(vec[i], is_selected))
-						{
-							EraserMode = i + 1;
-											if (setlist.eraserSetting.eraserMode != EraserMode)
-											{
-												setlist.eraserSetting.eraserMode = EraserMode;
-												SyncDraw3State();
-												WriteSetting();
-											}
-										}
-									}
-									ImGui::Dummy(ImVec2(0, 8.0f * settingGlobalScale));
+								const int response=EraserPenResponsePreference(entry);
+								const int first=AutomaticPenResponseAvailable()?0:1;
+								ImGui::SetCursorPos({20*settingGlobalScale,65*settingGlobalScale});
+								ImGui::TextUnformatted("笔速响应适用于");
+								ImGui::SetCursorPos({settingRightComboX*settingGlobalScale,60*settingGlobalScale});
+								ImGui::SetNextItemWidth(200*settingGlobalScale);
+								if(Widgets::combo.Begin("##笔速响应",responses[response],3-first))
+								{
+									// 保存稳定枚举值；Win7少一项时不能把UI下标当作配置值。
+									for(int value=first;value<3;++value)
+										if(Widgets::combo.Selectable(responses[value],response==value))
+										{SetEraserInputPreference(entry,kind,value);QueueConfigWrite();}
 									Widgets::combo.End();
 								}
-								for (char* ptr : vec) free(ptr), ptr = nullptr;
 							}
-
-							{
-								if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-								if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-								while (PushFontNum) PushFontNum--, ImGui::PopFont();
-							}
-							ImGui::EndChild();
+							if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
+							if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
+							while(PushFontNum)PushFontNum--,ImGui::PopFont();
+							ImGui::EndChild();ImGui::PopID();
 						}
-
+						ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5*settingGlobalScale);
+						PushStyleVarNum++;ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(0,0));
+						PushStyleVarNum++;ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding,4.0f);
+						PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_ChildBg,Widgets::FluentColor::CardBackground);
+						ImGui::BeginChild("触摸面积辅助设置",{settingItemWidth*settingGlobalScale,95*settingGlobalScale},
+							true,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+						ImFontMain->Scale=0.6f;PushFontNum++;ImGui::PushFont(ImFontMain);
+						PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
+						ImGui::SetCursorPos({20*settingGlobalScale,15*settingGlobalScale});ImGui::TextUnformatted("触摸接触面积辅助");
+						ImFontMain->Scale=0.5f;PushFontNum++;ImGui::PushFont(ImFontMain);
+						ImGui::SetCursorPos({20*settingGlobalScale,48*settingGlobalScale});
+						ImGui::PushTextWrapPos((settingItemWidth-30)*settingGlobalScale);
+						ImGui::TextWrapped("%s",EraserWidthPreference(2)==0?
+							"触摸当前为固定粗细，面积辅助不生效；已保存的辅助选项仍保留。":
+							"仅对触摸笔速橡皮生效；设置自动保存，下一接触批次生效。");
+						ImGui::PopTextWrapPos();
+						auto areaOptions=Inkeys::Drawing::Draw3::ProductHost().EraserDevelopmentOptions();
+						const bool areaBefore=areaOptions.touchContactAreaAssistance;
+						ImGui::SetCursorPos({settingRightToggleX*settingGlobalScale,20*settingGlobalScale});
+						Widgets::toggle.ToggleBool("##正式触摸面积辅助",&areaOptions.touchContactAreaAssistance);
+						if(areaBefore!=areaOptions.touchContactAreaAssistance)
 						{
-							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
-							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
-							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							Inkeys::Drawing::Draw3::ProductHost().SetEraserDevelopmentOptions(areaOptions);
+							Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance=areaOptions.touchContactAreaAssistance;
+							QueueConfigWrite();
 						}
+						if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
+						if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
+						while(PushFontNum)PushFontNum--,ImGui::PopFont();
+						ImGui::EndChild();
 						ImGui::EndChild();
 					}
 					{
@@ -8060,7 +8065,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 490.0f : 415.0f)
+						float inkeys3PanelHeight = (Experimental.Inkeys3.EdgeLightingEnable ? 415.0f : 340.0f)
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
 						inkeys3PanelHeight += 225.0f;
@@ -8076,11 +8081,12 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::TextUnformatted("Inkeys3");
 						}
 
+#ifndef IDT_RELEASE
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
 							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
-#ifndef IDT_RELEASE
+
 							ImGui::BeginChild("触摸面积控制台输出卡片", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
 								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 							{
@@ -8106,38 +8112,7 @@ SettingSessionCoroutine RunSettingSession()
 								while(PushFontNum)PushFontNum--,ImGui::PopFont();
 							}
 							ImGui::EndChild();
-							ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5.0f*settingGlobalScale);
-							PushStyleVarNum++,ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(0,0));
-							PushStyleVarNum++,ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding,4.0f);
-							PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_ChildBg,Widgets::FluentColor::CardBackground);
 #endif
-							ImGui::BeginChild("触摸面积辅助", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
-								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-							{
-								ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
-								ImFontMain->Scale=0.6f,PushFontNum++,ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
-								ImGui::TextUnformatted("触摸接触面积辅助");
-								ImGui::SetCursorPos({20.0f*settingGlobalScale,ImGui::GetCursorPosY()});
-								ImFontMain->Scale=0.5f,PushFontNum++,ImGui::PushFont(ImFontMain);
-								PushStyleColorNum++,ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextSecondary);
-								ImGui::TextUnformatted("默认关闭；仅触摸拖擦，新接触生效；自动保存，报告不准时关闭。");
-								ImGui::SetCursorPos({settingRightToggleX*settingGlobalScale,25.0f*settingGlobalScale});
-								auto options=Inkeys::Drawing::Draw3::ProductHost().EraserDevelopmentOptions();
-								const bool before=options.touchContactAreaAssistance;
-								Widgets::toggle.ToggleBool("##实验触摸面积辅助",&options.touchContactAreaAssistance);
-								if(before!=options.touchContactAreaAssistance)
-								{
-									Inkeys::Drawing::Draw3::ProductHost().SetEraserDevelopmentOptions(options);
-									Inkeys::config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance =
-										options.touchContactAreaAssistance;
-									QueueConfigWrite();
-								}
-								if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
-								if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
-								while(PushFontNum)PushFontNum--,ImGui::PopFont();
-							}
-							ImGui::EndChild();
 
 							if (Experimental.Inkeys3.EdgeLightingEnable)
 							{

@@ -1374,6 +1374,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			InitializeEraserInputPreferences();
 			{
 				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();

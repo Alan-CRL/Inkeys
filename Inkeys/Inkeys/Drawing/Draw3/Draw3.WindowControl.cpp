@@ -419,6 +419,16 @@ namespace Inkeys::Drawing::Draw3
 		PublishMouseCursorSample(sample);
 	}
 
+	void WindowController::SetEraserInputs(const SpeedEraser::InputSettings& settings)
+	{
+		{std::scoped_lock lock(speedEraserConfigMutex_);if(eraserInputs_==settings)return;eraserInputs_=settings;}
+		RequestDrawingCursorRender();RequestControlWake();
+	}
+	SpeedEraser::InputSettings WindowController::EraserInputsSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);return eraserInputs_;
+	}
+
 	void WindowController::SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale)
 	{
 		{
@@ -1452,6 +1462,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		case WM_MOUSELEAVE:
+			mouseCanvasExitRevision_.fetch_add(1);
 		{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());

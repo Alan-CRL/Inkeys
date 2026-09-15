@@ -17,6 +17,7 @@
 #include <mutex>
 #include <thread>
 
+import Inkeys.Other.Config;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.Whiteboard;
@@ -31,6 +32,20 @@ namespace
 	using Inkeys::Drawing::Draw3::Bridge::Tool;
 	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
+	std::mutex eraserPreferencesMutex;
+	Inkeys::Drawing::Draw3::SpeedEraser::InputSettings ReadEraserPreferences()
+	{
+		using namespace Inkeys::Drawing::Draw3::SpeedEraser;
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved=Inkeys::config.Drawing.Eraser;
+		const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+		InputSettings result;result.automaticPenSupported=AutomaticPenResponseAvailable();
+		for(size_t i=0;i<fields.size();++i)
+			result.entries[i].kind=RestoreEraserKind(fields[i]->load(),-1,static_cast<InputEntry>(i));
+		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
+		result.entries[4].penResponse=RestorePenResponse(saved.PenTailResponse.load(),result.automaticPenSupported);
+		return result;
+	}
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
 
@@ -72,10 +87,7 @@ namespace
 		if (IsLaserToolActive()) return Tool::Laser;
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser)
 		{
-			return Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
-				setlist.eraserSetting.eraserMode) == 1
-				? Tool::SpeedEraser
-				: Tool::FixedEraser;
+			return Tool::ConfiguredEraser;
 		}
 
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
@@ -107,6 +119,7 @@ namespace
 		ProductState state{};
 		state.tool = CurrentDraw3Tool();
 		state.paintDevice = setlist.paintDevice;
+		state.eraserInputs = ReadEraserPreferences();
 		state.widthDip = (std::max)(0.1f, GetPenWidth());
 		state.colorRgba = ColorRefToRgba(GetPenColor());
 		state.selectionMode =
@@ -275,6 +288,48 @@ namespace
 			runtime.firstFrameReady;
 		return Draw3PresentationReconcileResult::Applied;
 	}
+}
+
+bool AutomaticPenResponseAvailable() noexcept
+{
+	static const bool available=GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetPointerType")!=nullptr;
+	return available;
+}
+void InitializeEraserInputPreferences()
+{
+	using namespace Inkeys::Drawing::Draw3::SpeedEraser;
+	std::scoped_lock lock(eraserPreferencesMutex);
+	auto& saved=Inkeys::config.Drawing.Eraser;
+	const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+	for(size_t i=0;i<fields.size();++i)
+		*fields[i]=static_cast<int>(RestoreEraserKind(fields[i]->load(),
+			setlist.eraserSetting.savedFixedChoice?2:-1,static_cast<InputEntry>(i)));
+	if(saved.PenTipResponse.load()==-1)saved.PenTipResponse=AutomaticPenResponseAvailable()?0:2;
+	if(saved.PenTailResponse.load()==-1)saved.PenTailResponse=AutomaticPenResponseAvailable()?0:2;
+}
+int EraserWidthPreference(int entry)
+{
+	const auto prefs=ReadEraserPreferences();
+	return entry>=0 && entry<5?static_cast<int>(prefs.entries[entry].kind):1;
+}
+int EraserPenResponsePreference(int entry)
+{
+	const auto prefs=ReadEraserPreferences();
+	return static_cast<int>(prefs.entries[entry==4?4:3].penResponse);
+}
+void SetEraserInputPreference(int entry,int kind,int penResponse)
+{
+	if(entry<0 || entry>=5)return;
+	{
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved=Inkeys::config.Drawing.Eraser;
+		const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+		*fields[entry]=kind==0?0:1;
+		if(penResponse>=0 && (entry==3 || entry==4))
+			(entry==3?saved.PenTipResponse:saved.PenTailResponse)=static_cast<int>(
+				Inkeys::Drawing::Draw3::SpeedEraser::RestorePenResponse(penResponse,AutomaticPenResponseAvailable()));
+	}
+	SyncDraw3State(); // 写盘仍由设置页的既有合并队列负责。
 }
 
 void SyncDraw3State()

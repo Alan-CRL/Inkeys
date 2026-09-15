@@ -50,6 +50,27 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		friend bool operator==(const DevelopmentOptions&, const DevelopmentOptions&) = default;
 	};
 	enum class StartKind { Hover, Touch };
+	enum class InputEntry : uint32_t { MouseLeft, MouseRight, Touch, PenTip, PenTail };
+	enum class EraserKind : int { Fixed = 0, Speed = 1 };
+	enum class PenResponseChoice : int { Automatic = 0, ScreenPen = 1, Tablet = 2 };
+	enum class EraserToolPolicy : uint32_t { ByEntry, Fixed, Speed };
+	struct EntrySettings
+	{
+		EraserKind kind = EraserKind::Speed;
+		PenResponseChoice penResponse = PenResponseChoice::Automatic;
+		friend bool operator==(const EntrySettings&,const EntrySettings&) = default;
+	};
+	struct InputSettings
+	{
+		std::array<EntrySettings,5> entries{};
+		bool automaticPenSupported = true;
+		friend bool operator==(const InputSettings&,const InputSettings&) = default;
+	};
+	InputEntry EntryForInput(uint32_t inputType,bool inverted) noexcept;
+	EraserKind RestoreEraserKind(int saved,int legacyMode,InputEntry entry) noexcept;
+	PenResponseChoice RestorePenResponse(int saved,bool automaticSupported) noexcept;
+	const char* InputEntryName(InputEntry entry) noexcept;
+	const char* PenResponseName(PenResponseChoice choice) noexcept;
 
 	// 按真实 Down/Up 时刻判定重叠，避免同帧先消费 Up 后丢失旧批次标尺。
 	constexpr bool ContactBatchContains(int64_t beginQpc, int64_t terminalQpc,
@@ -156,6 +177,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		EraserSizes sizes;
 		bool touchContactAreaAssistance = false;
 		ContactAreaParameters contactArea;
+		InputEntry inputEntry = InputEntry::MouseLeft;
+		PenResponseChoice formalPenResponse = PenResponseChoice::Automatic;
+		bool developmentResponseOverride = false;
 		DeviceMode mode = DeviceMode::Laptop;
 		ScaleSource motionSource = ScaleSource::DipOnly;
 		MotionUnit motionUnit = MotionUnit::DipPerSecond;
@@ -217,7 +241,17 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	};
 
 	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, const InputSource& source,
-		const EraserSizes& sizes = {}) noexcept;
+		const EraserSizes& sizes = {}, PenResponseChoice penResponse = PenResponseChoice::Automatic,
+		bool automaticPenSupported = true) noexcept;
+	struct ResolvedInput
+	{
+		InputEntry entry = InputEntry::MouseLeft;
+		EraserKind kind = EraserKind::Speed;
+		Config config;
+	};
+	ResolvedInput ResolveInput(const DisplayScale& display,DeviceMode mode,const InputSource& source,
+		InputEntry entry,const InputSettings& settings,EraserToolPolicy policy = EraserToolPolicy::ByEntry) noexcept;
+	bool SessionConfigCompatible(const Config& left,const Config& right) noexcept;
 	float ReferenceTargetDiameterDip(const Config& config, double speed) noexcept;
 	float CompensateTargetDiameterDip(const Config& config, float referenceDip, bool* limited = nullptr) noexcept;
 	float ResolutionDpiActionGain(const DisplayScale& display) noexcept;
@@ -242,6 +276,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const ContactAreaSample* contactArea = nullptr) noexcept;
 		void ResetPreview(float x, float y, double seconds, const Config& config, float diameterDip = 0) noexcept;
 		void BeginContact(const Controller* preview, float x, float y, double seconds, const Config& config) noexcept;
+		void LeaveContact(float x,float y,double seconds,float acceptedDiameterPx) noexcept;
+		void RefreshCompatibleConfig(const Config& config) noexcept;
+		double AcceptedSeconds() const noexcept { return sampleState_.time; }
 		float UpdatePosition(float x, float y, double seconds,
 			const ContactAreaSample* contactArea = nullptr, bool terminal = false) noexcept;
 		float Advance(double seconds) noexcept;
@@ -325,10 +362,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double pauseTime_ = 0.0;
 		bool touchStartup_ = false;
 		bool previewOnly_ = false;
+		bool detached_ = false, detachedHoverObserved_ = false;
+		double detachedStandbyDip_ = 32.0;
 		bool initialized_ = false;
 		bool paused_ = false;
 
 		void AddSegment(const MotionSegment& segment) noexcept;
+		void AdvanceDetachedState(DynamicsState& state,double seconds) const noexcept;
 		double MotionSpeed(double seconds, double windowSeconds) const noexcept;
 		bool HasMotionSupport(double seconds,double windowSeconds = 0,double noiseRatio = 1.0) const noexcept;
 		double TargetLogDiameter(double speed, double maximumDisplacement) const noexcept;
@@ -342,16 +382,21 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double target, double realMotionSpeed, bool areaMotionEvidence = false) const noexcept;
 	};
 
-	// Hover 只预览精细区；收尾接收已接受直径，不回写擦除几何。
+	// 非Touch尺寸会话；产品按入口分别持有，离面延续逻辑状态但不产生几何。
 	class MouseLifecycle
 	{
 	public:
 		void Configure(const Config& config) noexcept;
 		void ObserveHover(float x, float y, double seconds) noexcept;
-		void BeginContact(Controller& controller, float x, float y, double seconds,
+		uint64_t BeginContact(Controller& controller, float x, float y, double seconds,
 			const Config& config) noexcept;
+		uint64_t ClaimContact(double seconds) noexcept;
+		const char* LastHandoffReason() const noexcept { return handoffReason_; }
+		bool LastHandoffInherited() const noexcept { return handoffInherited_; }
+		float LastHandoffPreviousDiameter() const noexcept { return handoffPreviousDiameter_; }
+		double LastHandoffHoverSeconds() const noexcept { return handoffHoverSeconds_; }
 		void EndContact(Controller& controller, float acceptedDiameter, float x, float y, double seconds,
-			bool anotherOwner, bool cancelled = false) noexcept;
+			bool anotherOwner, bool cancelled = false, uint64_t ownerToken = 0) noexcept;
 		void CancelVisual() noexcept;
 		float Advance(double seconds) noexcept;
 		float VisualDiameter() const noexcept { return visualDiameter_; }
@@ -379,6 +424,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double releaseSeconds_ = 0.0;
 		double visualTime_ = 0.0;
 		bool configured_ = false;
+		uint64_t ownerToken_ = 0;
+		const char* handoffReason_ = "new-session";
+		bool handoffInherited_ = false;
+		float handoffPreviousDiameter_ = 0;
+		double handoffHoverSeconds_ = 0;
 		bool contactOwned_ = false;
 		bool hasPosition_ = false;
 		bool releaseCandidate_ = false;
@@ -438,6 +488,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool needsAnimation = false;
 		ContactAreaDiagnostics contactArea;
 		FineBandDiagnostics fine;
+		uint32_t selectedTool = 0, effectiveTool = 0;
+		InputEntry entry = InputEntry::MouseLeft;
+		EraserKind eraserKind = EraserKind::Speed;
+		PenResponseChoice formalPenResponse = PenResponseChoice::Automatic;
+		bool developmentResponseOverride = false, sessionInherited = false;
+		const char* sessionReason = "none";
+		double downSeconds = 0, hoverSeconds = 0, frameSeconds = 0;
+		float previousShownDiameterPx = 0;
+		float downDiameterPx = 0, firstPointRadiusPx = 0;
 		float effectiveDiameterDip = 32, cursorDiameterPx = 32, nextRadiusPx = 16;
 		float historyRadiusPx = 0, resumedMaxRadiusPx = 0;
 		float resumedLeft = 0, resumedTop = 0, resumedRight = 0, resumedBottom = 0;

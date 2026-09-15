@@ -818,6 +818,114 @@ namespace Inkeys::Drawing::Draw3
 					"fixed Touch eraser ignores area and remains 50 DIP",failures);
 				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
 				ProductHost().SetHiddenTestContactArea({});
+
+				// 五入口读取同一配置快照，但逐contact解析，不沿用首指的Fixed/Speed结果。
+				auto entryState=speedState;entryState.tool=Bridge::Tool::ConfiguredEraser;
+				const std::array<WPARAM,5> entryFlags={kHiddenTestMouseFlag,kHiddenTestRightMouseFlag,kHiddenTestTouchFlag,
+					kHiddenTestIntegratedPenFlag,kHiddenTestIntegratedPenFlag|kHiddenTestPenTailFlag};
+				SpeedEraser::DevelopmentOptions entryDevelopment;entryDevelopment.diagnostics=true;entryDevelopment.touchAreaTrace=true;
+				ProductHost().SetEraserDevelopmentOptions(entryDevelopment);
+				for(size_t entry=0;entry<entryFlags.size();++entry)
+				for(const auto kind:{SpeedEraser::EraserKind::Fixed,SpeedEraser::EraserKind::Speed})
+				{
+					entryState.eraserInputs.entries[entry].kind=kind;
+					PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+					const double before=ProductHost().RuntimeSnapshot().eraser.downSeconds;
+					postSource(HiddenTestContactPhase::Down,entryFlags[entry],50+static_cast<int>(entry)*30,180);
+					modeSucceeded &= Check(WaitUntil([entry,kind,before]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.eraserContact && d.downSeconds>before && d.entry==static_cast<SpeedEraser::InputEntry>(entry) &&
+							d.eraserKind==kind && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f &&
+							(kind!=SpeedEraser::EraserKind::Fixed || std::abs(d.cursorDiameterPx-50)<0.01f);
+					}),"five configured eraser inputs agree with first-point geometry",failures);
+					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],50+static_cast<int>(entry)*30,180);
+					modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),
+						"configured eraser input retires independently",failures);
+				}
+				// 笔尖/左键绘画仍是绘画；右键和笔尾是临时覆盖，不污染selectedTool。
+				entryState.tool=Bridge::Tool::Pen;PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				for(size_t entry:{size_t{0},size_t{3},size_t{1},size_t{4}})
+				{
+					const double before=ProductHost().RuntimeSnapshot().eraser.downSeconds;
+					postSource(HiddenTestContactPhase::Down,entryFlags[entry],100,190);
+					modeSucceeded &= Check(WaitUntil([before,entry]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.downSeconds>before && (entry==1 || entry==4?
+							d.eraserContact && d.selectedTool!=d.effectiveTool:
+							!d.eraserContact && d.selectedTool==d.effectiveTool);
+					}),"right/tail override only erasing and leave ordinary drawing unchanged",failures);
+					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],100,190);
+					std::this_thread::sleep_for(50ms);
+				}
+				entryState.tool=Bridge::Tool::ConfiguredEraser;
+				entryState.eraserInputs.entries[0].kind=SpeedEraser::EraserKind::Fixed;
+				entryState.eraserInputs.entries[1].kind=SpeedEraser::EraserKind::Speed;
+				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[0],40,180);
+				std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[1],260,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && d.entry==SpeedEraser::InputEntry::MouseRight && d.eraserKind==SpeedEraser::EraserKind::Speed;}),
+					"same batch left Fixed and right Speed remain independent",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[1],260,180);
+				std::this_thread::sleep_for(40ms);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && d.entry==SpeedEraser::InputEntry::MouseLeft && d.eraserKind==SpeedEraser::EraserKind::Fixed;}),
+					"retiring right does not replace left entry configuration",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[0],40,180);
+				std::this_thread::sleep_for(50ms);
+				for(auto& setting:entryState.eraserInputs.entries)setting.kind=SpeedEraser::EraserKind::Speed;
+				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				// 真实绘制链路复现无害诊断revision后的屏幕笔落笔，首点不能从16跳32/50。
+				postSource(HiddenTestContactPhase::Hover,entryFlags[3],80,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.entry==SpeedEraser::InputEntry::PenTip && d.effectiveDiameterDip<=16.1f;},3s),
+					"integrated pen establishes fine Hover",failures);
+				entryDevelopment.diagnostics=false;ProductHost().SetEraserDevelopmentOptions(entryDevelopment);
+				std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[3],80,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.entry==SpeedEraser::InputEntry::PenTip && d.sessionInherited &&
+						d.downDiameterPx<=16.5f && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f;}),
+					"pen metadata-only revision preserves fine Down and actual first point",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[3],80,180);
+				std::this_thread::sleep_for(50ms);
+				for(size_t entry:{size_t{0},size_t{1},size_t{3},size_t{4}})
+				{
+					postSource(HiddenTestContactPhase::Down,entryFlags[entry],40,180);
+					std::this_thread::sleep_for(40ms);
+					for(int n=0;n<65;++n)
+					{
+						postSource(HiddenTestContactPhase::Move,entryFlags[entry],n%2?40:270,180);
+						std::this_thread::sleep_for(16ms);
+					}
+					int gapX=270,gapY=180;
+					for(int gapMs:{20,50,100,200,500,2000})
+					{
+						const auto before=ProductHost().RuntimeSnapshot().eraser;
+						postSource(HiddenTestContactPhase::Up,entryFlags[entry],gapX,gapY);
+						std::this_thread::sleep_for(std::chrono::milliseconds(gapMs));
+						// 远离旧落点，尺寸连续绝不作为断触连接证据。
+						gapX=gapX==40?270:40;gapY=gapY==40?180:40;
+						postSource(HiddenTestContactPhase::Down,entryFlags[entry],gapX,gapY);
+						modeSucceeded &= Check(WaitUntil([before,entry]
+						{
+							const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.active && d.entry==static_cast<SpeedEraser::InputEntry>(entry) && d.downSeconds>before.downSeconds &&
+								d.sessionInherited && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f;
+						}),"non-Touch independent Down inherits event-time size and matching first radius",failures);
+						const auto after=ProductHost().RuntimeSnapshot().eraser;
+						std::fprintf(stderr,"[EntryIngress] mode=%u entry=%zu gapMs=%d beforePx=%g downPx=%g firstRadius=%g cursorPx=%g points=%llu reason=%s\n",
+							static_cast<unsigned>(requiredMode),entry,gapMs,before.cursorDiameterPx,after.downDiameterPx,
+							after.firstPointRadiusPx,after.cursorDiameterPx,static_cast<unsigned long long>(after.realPointCount),after.sessionReason);
+						modeSucceeded &= Check(after.realPointCount<=2,"independent Down starts a new geometry list, without a gap capsule",failures);
+					}
+					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],gapX,gapY);
+					std::this_thread::sleep_for(50ms);
+				}
+
 				ProductHost().SetEraserDevelopmentOptions({});
 
 

@@ -127,13 +127,46 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return static_cast<float>(1.0/std::clamp(extent,0.5,4.0));
 	}
 
+	InputEntry EntryForInput(uint32_t inputType,bool inverted) noexcept
+	{
+		return inputType==0?InputEntry::Touch:inputType==1?(inverted?InputEntry::PenTail:InputEntry::PenTip):
+			inputType==3?InputEntry::MouseRight:InputEntry::MouseLeft;
+	}
+	EraserKind RestoreEraserKind(int saved,int legacyMode,InputEntry entry) noexcept
+	{
+		if(saved==0)return EraserKind::Fixed;
+		if(saved==1)return EraserKind::Speed;
+		// 仅缺失值迁移旧的显式固定选择；旧右键/笔尾的硬编码Fixed不是用户偏好。
+		const bool ordinary=entry==InputEntry::MouseLeft || entry==InputEntry::Touch || entry==InputEntry::PenTip;
+		return saved==-1 && legacyMode==2 && ordinary?EraserKind::Fixed:EraserKind::Speed;
+	}
+	PenResponseChoice RestorePenResponse(int saved,bool automaticSupported) noexcept
+	{
+		if(saved==1)return PenResponseChoice::ScreenPen;
+		if(saved==2)return PenResponseChoice::Tablet;
+		return automaticSupported?PenResponseChoice::Automatic:PenResponseChoice::Tablet;
+	}
+	const char* InputEntryName(InputEntry entry) noexcept
+	{
+		constexpr const char* names[]={"MouseLeft","MouseRight","Touch","PenTip","PenTail"};
+		const auto index=static_cast<size_t>(entry);return index<5?names[index]:"Unknown";
+	}
+	const char* PenResponseName(PenResponseChoice choice) noexcept
+	{
+		return choice==PenResponseChoice::ScreenPen?"ScreenPen":choice==PenResponseChoice::Tablet?"Tablet":"Automatic";
+	}
+
 	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, const InputSource& source,
-		const EraserSizes& sizes) noexcept
+		const EraserSizes& sizes,PenResponseChoice penResponse,bool automaticPenSupported) noexcept
 	{
 		Config config;
 		config.display = display;
 		config.mode = mode;
 		config.inputSource = source;
+		config.inputEntry=source.kind==SourceKind::Touch?InputEntry::Touch:
+			source.kind==SourceKind::Mouse?InputEntry::MouseLeft:InputEntry::PenTip;
+		config.formalPenResponse=RestorePenResponse(static_cast<int>(penResponse),automaticPenSupported);
+		config.developmentResponseOverride=display.development.response!=ResponseOverride::Automatic;
 		config.touchContactAreaAssistance = display.development.touchContactAreaAssistance;
 		config.sizes = sizes;
 		config.sizes.minimumDiameterDip = static_cast<float>(Positive(sizes.minimumDiameterDip,16.0));
@@ -148,6 +181,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config.maximumDiameterPx = DiameterToCanvasPx(config.sizes.maximumDiameterDip,display);
 		config.response = source.kind == SourceKind::IntegratedPen ? ResponseModel::ScreenPenHybrid
 			: source.kind == SourceKind::Touch ? ResponseModel::DirectTouch : ResponseModel::IndirectDip;
+		if(config.formalPenResponse==PenResponseChoice::ScreenPen)config.response=ResponseModel::ScreenPenHybrid;
+		else if(config.formalPenResponse==PenResponseChoice::Tablet)config.response=ResponseModel::IndirectDip;
+		// 调测强制覆盖优先于正式选择，但不修改真实来源或伪造映射。
 		switch (display.development.response)
 		{
 		case ResponseOverride::IndirectDip: config.response=ResponseModel::IndirectDip; break;
@@ -253,6 +289,46 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		config.fineHoldSpeed=config.fineToStandardSpeed*0.20f;
 		config.fineReleaseSpeed=config.fineToStandardSpeed*0.35f;
 		return config;
+	}
+
+	ResolvedInput ResolveInput(const DisplayScale& display,DeviceMode mode,const InputSource& source,
+		InputEntry entry,const InputSettings& settings,EraserToolPolicy policy) noexcept
+	{
+		const size_t index=static_cast<size_t>(entry);
+		const auto preference=settings.entries[index<5?index:0];
+		const bool pen=entry==InputEntry::PenTip || entry==InputEntry::PenTail;
+		ResolvedInput result;result.entry=entry;
+		result.kind=policy==EraserToolPolicy::Fixed?EraserKind::Fixed:
+			policy==EraserToolPolicy::Speed?EraserKind::Speed:preference.kind;
+		result.config=ResolveConfig(display,mode,source,{},pen?preference.penResponse:PenResponseChoice::Automatic,
+			pen?settings.automaticPenSupported:true);
+		result.config.inputEntry=entry;
+		return result;
+	}
+
+	bool SessionConfigCompatible(const Config& left,const Config& right) noexcept
+	{
+		if(left.inputEntry!=right.inputEntry || left.inputSource.contextId!=right.inputSource.contextId)return false;
+		if(left.inputSource.kind!=SourceKind::Unknown && right.inputSource.kind!=SourceKind::Unknown &&
+			left.inputSource.kind!=right.inputSource.kind)return false;
+		const auto& a=left.display;const auto& b=right.display;
+		if(a.monitor!=b.monitor || a.pixelWidth!=b.pixelWidth || a.pixelHeight!=b.pixelHeight ||
+			a.desktopLeft!=b.desktopLeft || a.desktopTop!=b.desktopTop || a.orientation!=b.orientation ||
+			a.dipPerPixelX!=b.dipPerPixelX || a.dipPerPixelY!=b.dipPerPixelY)return false;
+		const auto& x=left.inputSource;const auto& y=right.inputSource;
+		if(x.mappedMonitor && y.mappedMonitor && (x.mappedMonitor!=y.mappedMonitor ||
+			x.mappedLeft!=y.mappedLeft || x.mappedTop!=y.mappedTop ||
+			x.mappedWidth!=y.mappedWidth || x.mappedHeight!=y.mappedHeight))return false;
+		// 保留实际单位、像素密度、补偿及全部动态参数检查；剔除无害版本/识别补全。
+		Config l=left,r=right;
+		l.display=r.display={};l.inputSource=r.inputSource={};
+		l.mode=r.mode=DeviceMode::Laptop;l.motionSource=r.motionSource=ScaleSource::DipOnly;
+		l.inputMapped=r.inputMapped=false;
+		l.formalPenResponse=r.formalPenResponse=PenResponseChoice::Automatic;
+		l.developmentResponseOverride=r.developmentResponseOverride=false;
+		l.touchContactAreaAssistance=r.touchContactAreaAssistance=false;
+		l.contactArea=r.contactArea={};
+		return l==r;
 	}
 
 	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch, const EraserSizes& sizes) noexcept
@@ -617,6 +693,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		pauseTime_ = 0.0;
 		touchStartup_ = kind == StartKind::Touch;
 		previewOnly_ = false;
+		detached_=detachedHoverObserved_=false;detachedStandbyDip_=config_.sizes.standardDiameterDip;
 		initialized_ = true;
 		paused_ = false;
 		area_={};
@@ -628,30 +705,61 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		Reset(x,y,seconds,StartKind::Hover,config,diameterDip);
 		previewOnly_=true;
 	}
+	void Controller::RefreshCompatibleConfig(const Config& config) noexcept
+	{
+		if(initialized_ && SessionConfigCompatible(config_,config))config_=config;
+	}
 	void Controller::BeginContact(const Controller* preview,float x,float y,double seconds,const Config& config) noexcept
 	{
-		float safe=0;
-		bool fineHeld=false;
-		if (preview && preview->initialized_ && preview->previewOnly_ && preview->config_==config &&
-			seconds>=preview->acceptedTime_)
+		if(preview && preview->initialized_ && preview->previewOnly_ && SessionConfigCompatible(preview->config_,config))
 		{
-			const double distance=std::hypot((x-preview->acceptedX_)*config.display.dipPerPixelX,
-				(y-preview->acceptedY_)*config.display.dipPerPixelY);
-			// 同位 Down 本身重新确认了定位；跨位置的旧 Hover 则必须足够新鲜。
-			if(seconds-preview->acceptedTime_<=0.250 || distance<=0.5)
-			{
-				safe=std::min(preview->DiameterDip(),config.sizes.standardDiameterDip);
-				fineHeld=preview->frameState_.fineHeld;
-			}
-		}
-		Reset(x,y,seconds,StartKind::Hover,config,safe);
-		if(fineHeld)
-		{
-			// Down 只继承新鲜兼容的精细保持，不继承测速或清扫动量。
-			sampleState_.fineHeld=true;sampleState_.fineDirection=-1;
-			sampleState_.fineEnterEvidence=config_.fineEnterSeconds;
+			*this=*preview;
+			// 从原始状态评估事件时刻，不能采用已经先行的帧状态，更不能冻结普通离面时间。
+			if(std::isfinite(seconds) && seconds>sampleState_.time)AdvanceState(sampleState_,seconds);
+			config_=config;previewOnly_=detached_=detachedHoverObserved_=paused_=false;touchStartup_=false;
+			segments_.fill({});segmentCount_=0;
+			acceptedX_=downX_=movementX_=std::isfinite(x)?x:acceptedX_;
+			acceptedY_=downY_=movementY_=std::isfinite(y)?y:acceptedY_;
+			acceptedTime_=sampleState_.time;
+			sampleState_.speed=sampleState_.fineSpeed=0;sampleState_.maximumDisplacement=0;
 			frameState_=sampleState_;
+			return;
 		}
+		Reset(x,y,seconds,StartKind::Hover,config);
+	}
+	void Controller::LeaveContact(float x,float y,double seconds,float acceptedDiameterPx) noexcept
+	{
+		if(!initialized_ || touchStartup_ || !std::isfinite(seconds))return;
+		if(!paused_ && seconds>sampleState_.time)AdvanceState(sampleState_,seconds);
+		paused_=false;previewOnly_=detached_=true;detachedHoverObserved_=false;
+		const double dip=acceptedDiameterPx*std::sqrt(config_.display.dipPerPixelX*config_.display.dipPerPixelY);
+		if(std::isfinite(dip) && dip>0)
+			sampleState_.logDiameter=std::log(std::clamp(dip,static_cast<double>(config_.sizes.minimumDiameterDip),
+				static_cast<double>(config_.sizes.maximumDiameterDip)));
+		detachedStandbyDip_=std::min(std::exp(sampleState_.logDiameter),static_cast<double>(config_.sizes.standardDiameterDip));
+		sampleState_.logTarget=std::log(detachedStandbyDip_);
+		acceptedX_=movementX_=std::isfinite(x)?x:acceptedX_;
+		acceptedY_=movementY_=std::isfinite(y)?y:acceptedY_;
+		acceptedTime_=sampleState_.time;
+		segments_.fill({});segmentCount_=0;
+		frameState_=sampleState_;
+	}
+	void Controller::AdvanceDetachedState(DynamicsState& state,double seconds) const noexcept
+	{
+		const double dt=seconds-state.time;
+		if(dt<=0)return;
+		const double goal=std::log(detachedStandbyDip_);
+		const double elapsed=std::max(0.0,seconds-std::max(state.time,state.lastMovementTime+config_.idleStartSeconds));
+		state.logDiameter=Follow(state.logDiameter,goal,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
+		if(std::abs(state.logDiameter-goal)<=config_.settleLogTolerance)state.logDiameter=goal;
+		state.logTarget=goal;state.time=seconds;state.speed=state.fineSpeed=0;
+		state.sweepEvidence*=std::exp(-dt/config_.evidenceDecaySeconds);
+		if(state.sweepEvidence<1e-6)state.sweepEvidence=0;
+		state.fineReleaseEvidence=std::max(0.0,state.fineReleaseEvidence-2*dt);
+		state.fineChangeEvidence=std::max(0.0,state.fineChangeEvidence-2*dt);
+		if(state.fineChangeEvidence==0)state.finePendingDirection=0;
+		if(elapsed>0)state.sweepQualified=false;
+		if(std::exp(state.logDiameter)<=config_.sizes.standardDiameterDip+0.001)state.sweeping=false;
 	}
 
 	void Controller::AddSegment(const MotionSegment& segment) noexcept
@@ -976,6 +1084,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	void Controller::AdvanceState(DynamicsState& state, double seconds,
 		const MotionSegment* incoming, double incomingX, double incomingY, bool effectiveMovement) const noexcept
 	{
+		if(detached_ && !detachedHoverObserved_){AdvanceDetachedState(state,seconds);return;}
 		const double retention = std::max({config_.historyWindowSeconds, config_.referenceWindowSeconds, config_.fineWindowSeconds});
 		const double historyEnd = segmentCount_ ? segments_[segmentCount_ - 1].endTime + retention : state.time;
 		while (state.time < seconds)
@@ -1034,6 +1143,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if (!initialized_) { Reset(x, y, seconds); return Diameter(); }
 		if (paused_ || !std::isfinite(x) || !std::isfinite(y) ||
 			!std::isfinite(seconds) || seconds <= sampleState_.time) return Diameter();
+		if(detached_ && !detachedHoverObserved_)
+		{
+			// 首个Hover只重新建立位置基准；离面空档位移不进入测速。
+			AdvanceState(sampleState_,seconds);
+			acceptedX_=downX_=movementX_=x;acceptedY_=downY_=movementY_=y;
+			acceptedTime_=sampleState_.time;segments_.fill({});segmentCount_=0;
+			detachedHoverObserved_=true;frameState_=sampleState_;
+			return Diameter();
+		}
 		const double duration = seconds - acceptedTime_;
 		const double distance = std::hypot((static_cast<double>(x) - acceptedX_) * config_.motionPerPixelX,
 			(static_cast<double>(y) - acceptedY_) * config_.motionPerPixelY);
@@ -1158,6 +1276,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	bool Controller::NeedsAnimation(double seconds) const noexcept
 	{
 		if (!initialized_ || paused_ || !std::isfinite(seconds)) return false;
+		if(detached_ && !detachedHoverObserved_)
+			return std::abs(frameState_.logDiameter-std::log(detachedStandbyDip_))>1e-9;
 		const bool areaFading=AreaEligible() && area_.diagnostic.referenceReady &&
 			frameState_.time>=AreaExpirySeconds() && AreaReferenceFloor(frameState_.time)>config_.sizes.minimumDiameterDip &&
 			frameState_.areaFloorDip>config_.sizes.minimumDiameterDip;
@@ -1168,116 +1288,78 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 	void MouseLifecycle::Configure(const Config& config) noexcept
 	{
-		if (configured_ && config_ == config) return;
-		config_ = config;
-		configured_ = true;
-		CancelVisual();
+		if(configured_ && SessionConfigCompatible(config_,config))
+		{config_=config;hover_.RefreshCompatibleConfig(config);return;}
+		const char* reason=!configured_?"new-session":
+			config_.inputEntry!=config.inputEntry?"entry-changed":
+			config_.inputSource.contextId!=config.inputSource.contextId?"source-context-changed":
+			config_.inputSource.kind!=config.inputSource.kind?"source-kind-changed":
+			config_.display.monitor!=config.display.monitor?"monitor-changed":
+			config_.display.dipPerPixelX!=config.display.dipPerPixelX || config_.display.dipPerPixelY!=config.display.dipPerPixelY?"dpi-changed":
+			config_.response!=config.response || config_.motionUnit!=config.motionUnit ||
+				config_.motionPerPixelX!=config.motionPerPixelX || config_.motionPerPixelY!=config.motionPerPixelY?"response-or-motion-scale-changed":
+			config_.sizes!=config.sizes?"size-config-changed":"mapping-or-dynamics-changed";
+		config_=config;configured_=true;CancelVisual();handoffReason_=reason;
 	}
-
 	void MouseLifecycle::CancelVisual() noexcept
 	{
-		logicalDiameter_ = static_cast<float>(Positive(config_.StandardDiameterPx(), 16.0));
-		visualDiameter_ = logicalDiameter_;
-		releaseCandidate_ = releasing_ = hasPosition_ = hoverInitialized_ = false;
+		++ownerToken_;handoffReason_="cancelled-or-canvas-exit";
+		logicalDiameter_=visualDiameter_=config_.StandardDiameterPx();
+		contactOwned_=releaseCandidate_=releasing_=hasPosition_=hoverInitialized_=false;
+		handoffInherited_=false;
 	}
-
-	void MouseLifecycle::ObserveHover(float x, float y, double seconds) noexcept
+	void MouseLifecycle::ObserveHover(float x,float y,double seconds) noexcept
 	{
-		if (contactOwned_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(seconds) ||
-			seconds < lastEventSeconds_ || seconds < lastHoverSeconds_) return;
-		x_ = x;
-		y_ = y;
-		hasPosition_ = true;
-		lastHoverSeconds_ = seconds;
-		if (releasing_ && seconds<releaseSeconds_+config_.mouseReleaseSeconds) return;
-		if (!hoverInitialized_)
-		{
-			hover_.ResetPreview(x,y,seconds,config_,logicalDiameter_*
-				std::sqrt(config_.display.dipPerPixelX*config_.display.dipPerPixelY));
-			hoverInitialized_=true;
-		}
+		if(contactOwned_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(seconds) ||
+			seconds<lastEventSeconds_ || (hoverInitialized_ && seconds<lastHoverSeconds_))return;
+		x_=x;y_=y;hasPosition_=true;lastHoverSeconds_=seconds;
+		if(!hoverInitialized_){hover_.ResetPreview(x,y,seconds,config_);hoverInitialized_=true;}
 		else hover_.UpdatePosition(x,y,seconds);
 	}
-
-	void MouseLifecycle::BeginContact(Controller& controller, float x, float y,
-		double seconds, const Config& config) noexcept
+	uint64_t MouseLifecycle::ClaimContact(double seconds) noexcept
 	{
+		++ownerToken_;contactOwned_=true;lastDownSeconds_=seconds;
+		lastEventSeconds_=std::max(lastEventSeconds_,seconds);
+		return ownerToken_;
+	}
+	uint64_t MouseLifecycle::BeginContact(Controller& controller,float x,float y,double seconds,const Config& config) noexcept
+	{
+		handoffPreviousDiameter_=visualDiameter_;handoffHoverSeconds_=lastHoverSeconds_;
 		Configure(config);
-		controller.BeginContact(hoverInitialized_ && hasPosition_ && !releasing_ && !contactOwned_ ? &hover_ : nullptr,
-			x,y,seconds,config);
-		CancelVisual();
+		handoffInherited_=hoverInitialized_ && !contactOwned_;
+		if(contactOwned_)handoffReason_="overlapping-owner";
+		else if(handoffInherited_)handoffReason_="continuous";
+		controller.BeginContact(handoffInherited_?&hover_:nullptr,x,y,seconds,config_);
 		logicalDiameter_=visualDiameter_=controller.Diameter();
-		contactOwned_ = true;
-		x_ = x;
-		y_ = y;
-		hasPosition_ = true;
-		lastDownSeconds_ = seconds;
-		lastEventSeconds_ = std::max(lastEventSeconds_, seconds);
-		// Down 只继承安全尺寸；Controller::BeginContact 已清空速度、证据并重锚。
+		releasing_=releaseCandidate_=false;x_=x;y_=y;hasPosition_=true;visualTime_=seconds;
+		return ClaimContact(seconds);
 	}
-
-	void MouseLifecycle::EndContact(Controller& controller, float acceptedDiameter, float x, float y,
-		double seconds, bool anotherOwner, bool cancelled) noexcept
+	void MouseLifecycle::EndContact(Controller& controller,float acceptedDiameter,float x,float y,double seconds,
+		bool anotherOwner,bool cancelled,uint64_t ownerToken) noexcept
 	{
-		if (!std::isfinite(seconds)) return;
-		if (!contactOwned_ && !anotherOwner) return;
-		// Up 的逻辑重置立即发生，真实点的半径已由调用方接受，不随此重置变化。
-		const float safeDip=std::clamp(acceptedDiameter*static_cast<float>(
-			std::sqrt(config_.display.dipPerPixelX*config_.display.dipPerPixelY)),
-			config_.sizes.minimumDiameterDip,config_.sizes.standardDiameterDip);
-		controller.Reset(x, y, seconds, StartKind::Hover, controller.Configuration(),safeDip);
-		contactOwned_ = anotherOwner;
-		lastEventSeconds_ = std::max(lastEventSeconds_, seconds);
-		// 旧 Up 不恢复旧画面，但仍须按当前所有者集合释放占用；配置切换可能已丢弃候选。
-		if (cancelled || (seconds < lastDownSeconds_ && !releaseCandidate_))
-		{
-			if (!anotherOwner) CancelVisual();
-			return;
-		}
-		if (seconds >= lastDownSeconds_ && (!releaseCandidate_ || seconds >= releaseSeconds_))
-		{
-			// 复制真正接受的端点直径，不读取 Controller 的待用帧预览。
-			releaseFrom_ = static_cast<float>(Positive(acceptedDiameter, config_.StandardDiameterPx()));
-			releaseSeconds_ = seconds;
-			x_ = x;
-			y_ = y;
-			hasPosition_ = true;
-			releaseCandidate_ = true;
-		}
-		if (anotherOwner || !releaseCandidate_) return;
-		logicalDiameter_ = std::min(releaseFrom_, config_.StandardDiameterPx());
-		visualDiameter_ = releaseFrom_;
-		releasing_ = releaseFrom_ > logicalDiameter_;
-		hover_.ResetPreview(x_,y_,releaseSeconds_+(releasing_?config_.mouseReleaseSeconds:0.0),
-			config_,safeDip);
-		hoverInitialized_=true;
+		if(!std::isfinite(seconds) || (ownerToken && ownerToken!=ownerToken_) || seconds<lastDownSeconds_)return;
+		if(anotherOwner)return;
+		if(cancelled){handoffReason_="cancelled-or-fixed";CancelVisual();return;}
+		if(!contactOwned_)return;
+		// 只复制尺寸会话，不回写已结束runtime，也不生成任何连接几何。
+		hover_=controller;hover_.LeaveContact(x,y,seconds,acceptedDiameter);
+		hoverInitialized_=true;contactOwned_=false;hasPosition_=true;
+		lastEventSeconds_=lastHoverSeconds_=releaseSeconds_=visualTime_=seconds;
+		x_=x;y_=y;logicalDiameter_=visualDiameter_=hover_.Diameter();
+		releasing_=logicalDiameter_>config_.StandardDiameterPx()+0.001f;
 	}
-
 	float MouseLifecycle::Advance(double seconds) noexcept
 	{
-		if (!std::isfinite(seconds)) return visualDiameter_;
+		if(!std::isfinite(seconds) || contactOwned_)return visualDiameter_;
 		visualTime_=std::max(visualTime_,seconds);
-		if (contactOwned_) return visualDiameter_;
-		if (releasing_)
-		{
-			const double amount=std::clamp((visualTime_-releaseSeconds_)/
-				Positive(config_.mouseReleaseSeconds,0.140),0.0,1.0);
-			visualDiameter_=static_cast<float>(releaseFrom_+(logicalDiameter_-releaseFrom_)*SmoothStep(amount));
-			if(amount<1.0)return visualDiameter_;
-			releasing_=releaseCandidate_=false;
-		}
-		if(hoverInitialized_)
-			logicalDiameter_=visualDiameter_=hover_.Advance(visualTime_);
+		if(hoverInitialized_)logicalDiameter_=visualDiameter_=hover_.Advance(visualTime_);
+		releasing_=hoverInitialized_ && visualDiameter_>config_.StandardDiameterPx()+0.001f;
 		return visualDiameter_;
 	}
-
 	bool MouseLifecycle::NeedsAnimation(double seconds) const noexcept
 	{
-		return !contactOwned_ && std::isfinite(seconds) &&
-			((releasing_ && seconds<releaseSeconds_+Positive(config_.mouseReleaseSeconds,0.140)) ||
-			 (hoverInitialized_ && hover_.NeedsAnimation(seconds)));
+		return !contactOwned_ && hoverInitialized_ && hover_.NeedsAnimation(seconds);
 	}
-
 
 	void ContactSizeState::Reset(float diameterPx,double seconds) noexcept
 	{

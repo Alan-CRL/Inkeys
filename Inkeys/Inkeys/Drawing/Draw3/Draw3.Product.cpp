@@ -91,6 +91,8 @@ namespace Inkeys::Drawing::Draw3
 		merged.tool = state.tool;
 		merged.widthDip = state.widthDip;
 		merged.colorRgba = state.colorRgba;
+		merged.paintDevice = state.paintDevice;
+		merged.eraserInputs = state.eraserInputs;
 		merged.selectionMode = state.selectionMode;
 		merged.autoSaveEnabled = state.autoSaveEnabled;
 		productHost.PublishState(merged);

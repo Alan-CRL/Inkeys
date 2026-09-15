@@ -171,9 +171,14 @@ export namespace Inkeys::Drawing::Draw3
 		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
 		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		void SetEraserWidthMode(EraserWidthMode mode) noexcept;
+		void SetEraserInputs(const SpeedEraser::InputSettings& settings);
+		SpeedEraser::InputSettings EraserInputsSnapshot() const;
+		void SetEraserToolPolicy(SpeedEraser::EraserToolPolicy policy) noexcept { eraserToolPolicy_.store(policy); }
+		SpeedEraser::EraserToolPolicy EraserToolPolicySnapshot() const noexcept { return eraserToolPolicy_.load(); }
 		// 独立实验开关仅在批次 Down 锁存，不让它使 Mouse/Pen 的 Hover 标尺失效。
 		void SetTouchContactAreaAssistance(bool enabled) noexcept { touchContactAreaAssistance_.store(enabled); }
 		bool TouchContactAreaAssistance() const noexcept { return touchContactAreaAssistance_.load(); }
+		uint64_t MouseCanvasExitRevision() const noexcept { return mouseCanvasExitRevision_.load(); }
 		void SetEraserDiagnosticsEnabled(bool enabled) noexcept { eraserDiagnosticsEnabled_.store(enabled); }
 		bool EraserDiagnosticsEnabled() const noexcept { return eraserDiagnosticsEnabled_.load(); }
 		void SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale);
@@ -279,6 +284,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> eraserDiagnosticsEnabled_ = false;
 		mutable std::mutex speedEraserConfigMutex_;
 		SpeedEraser::DisplayScale speedEraserDisplayScale_;
+		SpeedEraser::InputSettings eraserInputs_;
+		std::atomic<SpeedEraser::EraserToolPolicy> eraserToolPolicy_ = SpeedEraser::EraserToolPolicy::ByEntry;
 		SpeedEraser::DeviceMode speedEraserDeviceMode_ = SpeedEraser::DeviceMode::Laptop;
 		// 产品颜色按 0xRRGGBBAA 保存，默认使用不透明黑色。
 		std::atomic<uint32_t> productColorRgba_ = 0x000000FFu;
@@ -312,5 +319,6 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
+		std::atomic<uint64_t> mouseCanvasExitRevision_ = 0;
 	};
 }

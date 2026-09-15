@@ -112,6 +112,8 @@ namespace Inkeys::Drawing::Draw3
 	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一 RTS 生产。
 	inline constexpr UINT kDraw3HiddenTestContactMessage = WM_APP + 0x3D3u;
 	inline constexpr WPARAM kHiddenTestMouseFlag = 0x100u;
+	inline constexpr WPARAM kHiddenTestRightMouseFlag = 0x1000u;
+	inline constexpr WPARAM kHiddenTestPenTailFlag = 0x2000u;
 	inline constexpr WPARAM kHiddenTestTouchFlag = 0x200u;
 	inline constexpr WPARAM kHiddenTestIntegratedPenFlag = 0x400u;
 	inline constexpr WPARAM kHiddenTestExternalPenFlag = 0x800u;

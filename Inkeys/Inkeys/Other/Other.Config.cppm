@@ -271,6 +271,17 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Drawing, \
+		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseLeft, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseRight, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Touch, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTip, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTail, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
+		) \
+	) \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
 			GROUP(Draw3, \

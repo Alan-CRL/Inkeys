@@ -50,6 +50,7 @@ struct SetListStruct
 	struct
 	{
 		int eraserMode; // 0压感粗细 1笔速粗细 2固定粗细
+		bool savedFixedChoice = false; // 迁移用：只认磁盘中明确的2，不认隐式/未知值回退。
 		int eraserSize;
 	}eraserSetting;
 

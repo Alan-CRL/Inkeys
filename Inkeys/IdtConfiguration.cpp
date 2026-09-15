@@ -166,8 +166,11 @@ bool ReadSetting()
 		if (setlistVal.isMember("EraserSetting") && setlistVal["EraserSetting"].isObject())
 		{
 			if (setlistVal["EraserSetting"].isMember("EraserMode") && setlistVal["EraserSetting"]["EraserMode"].isInt())
-				setlist.eraserSetting.eraserMode = Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(
-					setlistVal["EraserSetting"]["EraserMode"].asInt());
+			{
+				const int saved=setlistVal["EraserSetting"]["EraserMode"].asInt();
+				setlist.eraserSetting.savedFixedChoice=saved==2;
+				setlist.eraserSetting.eraserMode=Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(saved);
+			}
 			if (setlistVal["EraserSetting"].isMember("EraserSize") && setlistVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = setlistVal["EraserSetting"]["EraserSize"].asInt();
 		}

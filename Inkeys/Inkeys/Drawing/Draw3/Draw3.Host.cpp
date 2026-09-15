@@ -488,6 +488,11 @@ namespace Inkeys::Drawing::Draw3
 				!a.sampleValid?"area-rejected":!a.referenceReady?"waiting-stable-drag":
 				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
 				!a.active?"waiting-accepted-movement":"area-floor-active";
+			std::fprintf(stderr,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
+				static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
+				d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
+				d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
+				d.firstPointRadiusPx,d.cursorDiameterPx,d.nextRadiusPx);
 			char text[3072]{};
 			if(!d.active)
 			{
@@ -633,6 +638,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 			case Bridge::Tool::HardPen: tool = DrawingTool::HardPen; break;
 			case Bridge::Tool::Highlighter: tool = DrawingTool::Highlighter; break;
+			case Bridge::Tool::ConfiguredEraser:
 			case Bridge::Tool::FixedEraser:
 			case Bridge::Tool::SpeedEraser: tool = DrawingTool::Eraser; break;
 			case Bridge::Tool::Laser: tool = DrawingTool::Laser; break;
@@ -647,6 +653,9 @@ namespace Inkeys::Drawing::Draw3
 				? SpeedEraser::DeviceMode::LargeScreen : SpeedEraser::DeviceMode::Laptop);
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
+			window.SetEraserInputs(state.eraserInputs);
+			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
+				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
 			if (state.workspace != Bridge::Workspace::Presentation &&
 				workspace.load(std::memory_order_acquire) != state.workspace)
@@ -1206,7 +1215,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!impl_->hiddenTestContactInjectionEnabled) return false;
 		const auto phase = static_cast<HiddenTestContactPhase>(static_cast<std::uint32_t>(phaseValue)&0xffu);
-		const auto deviceType=(phaseValue & kHiddenTestMouseFlag) ? InputDeviceType::MouseLeft :
+		const auto deviceType=(phaseValue & kHiddenTestRightMouseFlag)?InputDeviceType::MouseRight:
+			(phaseValue & kHiddenTestMouseFlag) ? InputDeviceType::MouseLeft :
 			(phaseValue & kHiddenTestTouchFlag) ? InputDeviceType::Touch : InputDeviceType::Pen;
 		ContactSnapshot snapshot{};
 		{
@@ -1221,12 +1231,13 @@ namespace Inkeys::Drawing::Draw3
 		LARGE_INTEGER qpc = {};
 		QueryPerformanceCounter(&qpc);
 		snapshot.qpc = qpc.QuadPart;
-		snapshot.source.kind=deviceType==InputDeviceType::MouseLeft ? SpeedEraser::SourceKind::Mouse :
+		snapshot.isInvertedCursor=(phaseValue & kHiddenTestPenTailFlag)!=0;
+		snapshot.source.kind=(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight) ? SpeedEraser::SourceKind::Mouse :
 			deviceType==InputDeviceType::Touch ? SpeedEraser::SourceKind::Touch :
 			(phaseValue & kHiddenTestIntegratedPenFlag) ? SpeedEraser::SourceKind::IntegratedPen :
 			(phaseValue & kHiddenTestExternalPenFlag) ? SpeedEraser::SourceKind::ExternalPen : SpeedEraser::SourceKind::Unknown;
 		snapshot.source.recognition=SpeedEraser::SourceRecognition::RtsCapabilities;
-		snapshot.source.contextId=0xD303u;snapshot.source.cursorId=0xD304u;snapshot.source.generation=1;
+		snapshot.source.contextId=0xD303u;snapshot.source.cursorId=0xD304u+static_cast<uint32_t>(SpeedEraser::EntryForInput(static_cast<uint32_t>(deviceType),snapshot.isInvertedCursor));snapshot.source.generation=1;
 		const auto scale=impl_->window.SpeedEraserDisplayScaleSnapshot();
 		snapshot.source.mappedMonitor=scale.monitor;
 		snapshot.source.mappedLeft=scale.desktopLeft;snapshot.source.mappedTop=scale.desktopTop;
@@ -1234,7 +1245,7 @@ namespace Inkeys::Drawing::Draw3
 
 		// 隐藏测试走同一个无锁 contact mailbox，不触碰 Renderer 或 RTS 内部状态。
 		constexpr std::uint32_t tabletContextId = 0xD303u;
-		constexpr std::uint32_t contactId = 0xD304u;
+		const std::uint32_t contactId = snapshot.source.cursorId;
 		bool published = false;
 		switch (phase)
 		{
@@ -1269,14 +1280,14 @@ namespace Inkeys::Drawing::Draw3
 			 (published && (phase==HiddenTestContactPhase::Up || phase==HiddenTestContactPhase::Cancelled))))
 			impl_->window.NotifyTouchContactEnd();
 
-		if(published && (deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::Pen))
+		if(published && (deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight || deviceType==InputDeviceType::Pen))
 		{
 			DrawingCursorSample cursor;
 			cursor.x=snapshot.position.x;cursor.y=snapshot.position.y;cursor.qpc=snapshot.qpc;
 			cursor.valid=phase!=HiddenTestContactPhase::Cancelled;
 			cursor.inContact=phase==HiddenTestContactPhase::Down || phase==HiddenTestContactPhase::Move;
-			cursor.source=snapshot.source;
-			if(deviceType==InputDeviceType::MouseLeft)impl_->window.PublishHiddenTestMouseCursor(cursor);
+			cursor.source=snapshot.source;cursor.inverted=snapshot.isInvertedCursor;
+			if(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight)impl_->window.PublishHiddenTestMouseCursor(cursor);
 			else impl_->window.PublishPenCursorSample(cursor);
 		}
 		if (published) (void)impl_->input.PublishControlWake();

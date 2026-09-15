@@ -1,4 +1,12 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include <algorithm>
 #include <bit>
@@ -9,6 +17,8 @@
 #include <vector>
 
 import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Other.Config;
+extern std::wstring globalPath;
 
 #if defined(DRAW3_TESTING)
 import Inkeys.Drawing.Draw3.realtime_stylus;
@@ -366,7 +376,7 @@ int RunSpeedEraserTests()
 	{
 		if (!condition) { ++failures; std::cerr << "[SpeedEraser] failed: " << name << '\n'; }
 	};
-	auto near = [&](double actual, double expected, double tolerance, const char* name)
+	auto Near = [&](double actual, double expected, double tolerance, const char* name)
 	{
 		if (std::abs(actual - expected) > tolerance)
 		{
@@ -390,8 +400,8 @@ int RunSpeedEraserTests()
 	expect(physicalTouch.motionSource == ScaleSource::Physical, "mapped touch uses millimeter motion");
 	expect(physicalPen.motionSource == ScaleSource::Dip && physicalPen.sizes == EraserSizes{},
 		"indirect input uses DIP motion independently of physical coverage");
-	near(physicalTouch.minimumDiameterPx,16,0.001,"physical action retains 16 DIP minimum");
-	near(physicalPen.maximumDiameterPx,160,0.001,"physical metadata does not set coverage maximum");
+	Near(physicalTouch.minimumDiameterPx,16,0.001,"physical action retains 16 DIP minimum");
+	Near(physicalPen.maximumDiameterPx,160,0.001,"physical metadata does not set coverage maximum");
 	DisplayScale ambiguous = physical;
 	ambiguous.directTouchMapped = false;
 	expect(ResolveConfig(ambiguous, DeviceMode::LargeScreen, true).motionSource == ScaleSource::ResolutionDpiHeuristic,
@@ -411,8 +421,8 @@ int RunSpeedEraserTests()
 	DisplayScale rotated = physical;
 	std::swap(rotated.cmPerPixelX, rotated.cmPerPixelY);
 	const auto rotatedConfig = ResolveConfig(rotated, DeviceMode::LargeScreen, true);
-	near(rotatedConfig.maximumDiameterPx, physicalTouch.maximumDiameterPx, 0.0001, "rotation retains coverage area");
-	near(rotatedConfig.motionPerPixelX, physicalTouch.motionPerPixelY, 0.000001, "rotation swaps motion axes");
+	Near(rotatedConfig.maximumDiameterPx, physicalTouch.maximumDiameterPx, 0.0001, "rotation retains coverage area");
+	Near(rotatedConfig.motionPerPixelX, physicalTouch.motionPerPixelY, 0.000001, "rotation swaps motion axes");
 
 
 	// 先复现标准尺寸下限与空间门槛按包丢失证据的问题，产品实现必须通过同一入口。
@@ -463,10 +473,10 @@ int RunSpeedEraserTests()
 
 	// 本轮规格回归：尺寸只能来自DIP，普通速度不能靠持续时间进入清扫。
 	const auto dipBaseline = ResolveConfig({},DeviceMode::Laptop,false);
-	near(dipBaseline.StandardDiameterPx(),32.0,0.001,"standard is an independent 32 DIP at 96 DPI");
-	near(ResolveConfig(physical,DeviceMode::Laptop,false).maximumDiameterPx,
+	Near(dipBaseline.StandardDiameterPx(),32.0,0.001,"standard is an independent 32 DIP at 96 DPI");
+	Near(ResolveConfig(physical,DeviceMode::Laptop,false).maximumDiameterPx,
 		dipBaseline.maximumDiameterPx,0.001,"EDID cannot change dynamic size limits");
-	near(ResolveConfig({},DeviceMode::LargeScreen,false).maximumDiameterPx,
+	Near(ResolveConfig({},DeviceMode::LargeScreen,false).maximumDiameterPx,
 		dipBaseline.maximumDiameterPx,0.001,"device mode cannot change DIP size limits");
 	const auto ordinaryLong = Replay(dipBaseline,{{0,0},{20,10000}},125,60,{10,20});
 	for (const float d : ordinaryLong)
@@ -493,7 +503,7 @@ int RunSpeedEraserTests()
 					static_cast<double>(1.0f - reference[4] / reference[2]));
 				expect(reference[4] < reference[2], "true stationary state shrinks visibly after its grace period");
 				expect(reference[5] <= config.StandardDiameterPx() * 1.10f, "sustained idle eventually releases a large sweep");
-				near(reference[6],config.minimumDiameterPx,0.001,"every contact returns to DIP minimum after idle");
+				Near(reference[6],config.minimumDiameterPx,0.001,"every contact returns to DIP minimum after idle");
 				for (const int inputHz : { 60, 125, 240, 1000 })
 				{
 					for (const int frameHz : { 30, 60, 144, 240 })
@@ -563,18 +573,18 @@ int RunSpeedEraserTests()
 	{
 		Controller touch;
 		touch.Reset(0,0,0,StartKind::Touch,config);
-		near(touch.Advance(10.0), config.minimumDiameterPx, 0.001, "new touch held still never grows");
+		Near(touch.Advance(10.0), config.minimumDiameterPx, 0.001, "new touch held still never grows");
 		touch.Reset(0,0,0,StartKind::Touch,config);
 		for (int i = 1; i <= 1000; ++i)
 		{
 			const float position = (i % 2 ? 0.4f : -0.4f) * config.touchUnlockStart / config.motionPerPixelX;
 			touch.UpdatePosition(position, 0, i * 0.002);
 		}
-		near(touch.Diameter(), config.minimumDiameterPx, 0.001, "touch jitter travel does not unlock growth");
+		Near(touch.Diameter(), config.minimumDiameterPx, 0.001, "touch jitter travel does not unlock growth");
 		for (int tap = 0; tap < 8; ++tap)
 		{
 			touch.Reset(100.0f * tap, 0, 5.0 + tap, StartKind::Touch, config);
-			near(touch.Advance(5.5 + tap), config.minimumDiameterPx, 0.001, "each genuine touch down resets for dotted erasing");
+			Near(touch.Advance(5.5 + tap), config.minimumDiameterPx, 0.001, "each genuine touch down resets for dotted erasing");
 		}
 		touch.Reset(0,0,0,StartKind::Touch,config);
 		FeedLine(touch, config.largeTargetSpeed * 1.5, 1.0, 125, config);
@@ -585,41 +595,41 @@ int RunSpeedEraserTests()
 	hover.Reset(0,0,0,StartKind::Hover,laptop);
 	FeedLine(hover, 200, 1.0);
 	Controller contact = hover;
-	near(contact.Diameter(), hover.Diameter(), 0.0001, "contact copying preserves reconnect test history");
+	Near(contact.Diameter(), hover.Diameter(), 0.0001, "contact copying preserves reconnect test history");
 	contact.PauseForReconnect(1.0);
 	const float pausedDiameter = contact.Diameter();
-	near(contact.Advance(100.0), pausedDiameter, 0.0001, "reconnect wait freezes dynamics");
+	Near(contact.Advance(100.0), pausedDiameter, 0.0001, "reconnect wait freezes dynamics");
 	Controller nearby = contact;
-	near(contact.ResumeFromReconnect(100000,20000,2.0), pausedDiameter, 0.0001,
+	Near(contact.ResumeFromReconnect(100000,20000,2.0), pausedDiameter, 0.0001,
 		"far synthetic connection does not change diameter");
 	nearby.ResumeFromReconnect(200,0,2.0);
 	contact.UpdatePosition(100001,20000,2.008);
 	nearby.UpdatePosition(201,0,2.008);
-	near(contact.Diameter(), nearby.Diameter(), 0.0001, "resume excludes bridge distance from speed history");
+	Near(contact.Diameter(), nearby.Diameter(), 0.0001, "resume excludes bridge distance from speed history");
 	expect(!contact.IsPaused(), "resume clears pause status");
 	Controller touchGap;
 	touchGap.Reset(0,0,0,StartKind::Touch,laptop);
 	touchGap.PauseForReconnect(0.1);
 	touchGap.ResumeFromReconnect(100000,20000,0.2);
 	touchGap.UpdatePosition(100000,20000,0.21);
-	near(touchGap.Diameter(), laptop.minimumDiameterPx, 0.001, "synthetic connection cannot unlock touch startup");
+	Near(touchGap.Diameter(), laptop.minimumDiameterPx, 0.001, "synthetic connection cannot unlock touch startup");
 
 	Controller delayed = hover;
 	Controller timely = hover;
 	delayed.Advance(1.1);
 	delayed.UpdatePosition(204,0,1.02);
 	timely.UpdatePosition(204,0,1.02);
-	near(delayed.Diameter(), timely.Diameter(), 0.0001, "late new raw sample is independent of newer preview frame");
+	Near(delayed.Diameter(), timely.Diameter(), 0.0001, "late new raw sample is independent of newer preview frame");
 	const float beforeInvalid = delayed.Diameter();
 	delayed.UpdatePosition(100000,100000,1.02);
 	delayed.UpdatePosition(100000,100000,0.9);
 	delayed.UpdatePosition(std::numeric_limits<float>::quiet_NaN(),0,1.03);
-	near(delayed.Diameter(), beforeInvalid, 0.0001, "duplicate backwards and invalid packets do not invent speed");
+	Near(delayed.Diameter(), beforeInvalid, 0.0001, "duplicate backwards and invalid packets do not invent speed");
 	Controller oneIdle = hover;
 	Controller manyIdle = hover;
 	oneIdle.Advance(4.0);
 	for (int i = 1; i <= 300; ++i) manyIdle.Advance(1.0 + i * 0.01);
-	near(oneIdle.Diameter(), manyIdle.Diameter(), 0.001, "long idle advance retains elapsed time");
+	Near(oneIdle.Diameter(), manyIdle.Diameter(), 0.001, "long idle advance retains elapsed time");
 	expect(!oneIdle.NeedsAnimation(4.0), "settled hover stops animation wakes");
 	DisplayScale changed;
 	changed.generation = 88;
@@ -634,105 +644,130 @@ int RunSpeedEraserTests()
 	expect(!ContactBatchContains(100,500,0,99), "older down cannot join newer contact batch");
 
 
-	// 鼠标生命周期直接调用产品接口；Hover 只计算精细预览，不积累清扫。
-	for (const auto mode : { DeviceMode::LargeScreen, DeviceMode::Laptop })
-	for (const bool validPhysical : { false, true })
-	for (const int dpi : {96,144,192})
+	// 本轮替代Up Reset/140ms夹小；验证同入口尺寸会话，而非保留旧断言。
+	for(const auto entry:{InputEntry::MouseLeft,InputEntry::MouseRight,InputEntry::PenTip,InputEntry::PenTail})
+	for(int dpi:{96,144,192})for(double gap:{0.0,0.020,0.050,0.100,0.200,0.500,2.0})
 	{
-		auto display = validPhysical ? physical : DisplayScale{};
-		display.dipPerPixelX = display.dipPerPixelY = 96.0f / dpi;
-		const auto mouseConfig = ResolveConfig(display,mode,false);
-		const float standard = mouseConfig.StandardDiameterPx();
-		near(standard,DiameterToCanvasPx(32,display),0.001,"standard independently resolves from 32 DIP");
-		expect(standard <= mouseConfig.maximumDiameterPx,"standard remains inside existing coverage range");
-		MouseLifecycle mouse;
-		mouse.Configure(mouseConfig);
-		for (int i=0;i<=400;++i)
-		{
-			mouse.ObserveHover(static_cast<float>(i*50),static_cast<float>(i%2*500),i*0.008);
-			expect(mouse.Advance(i*0.008)<=standard+0.001f && mouse.VisualDiameter()>=mouseConfig.minimumDiameterPx-0.001f,"fast hover remains in fine band");
-		}
-		Controller mouseContact;
-		mouse.BeginContact(mouseContact,20000,0,4.0,mouseConfig);
-		near(mouseContact.Diameter(),standard,0.001,"mouse down ignores hover speed and starts small");
-		near(mouseContact.SweepEvidenceSeconds(),0,0.000001,"mouse down has no inherited sweep evidence");
-		mouseContact.UpdatePosition(20000,0,4.5);
-		expect(mouseContact.Advance(4.9)<=mouseConfig.minimumDiameterPx*1.02f,"stationary mouse down respects confirmed fine shrink and converges");
-		const float actualEndDiameter = mouseConfig.maximumDiameterPx * 0.8f;
-		mouse.EndContact(mouseContact,actualEndDiameter,20000,0,5.0,false);
-		near(mouse.LogicalDiameter(),standard,0.001,"accepted mouse up resets logic immediately");
-		near(mouseContact.Diameter(),standard,0.001,"accepted mouse up resets actual controller intent immediately");
-		near(mouse.VisualDiameter(),actualEndDiameter,0.001,"release starts from accepted geometry not pending target");
-		float lastVisual = actualEndDiameter;
-		for (int frame=0;frame<=30;++frame)
-		{
-			const float shown = mouse.Advance(5.0 + frame*0.008);
-			expect(shown <= lastVisual + 0.001f && shown >= mouseConfig.minimumDiameterPx - 0.001f,
-				"up-only visual contracts monotonically without extra input or overshoot");
-			lastVisual = shown;
-		}
-		expect(mouse.VisualDiameter()<=standard,"hover continues shrinking after release without a Move");
-		expect(!mouse.Releasing(),"140ms release finishes independently of fine preview");
-		mouse.BeginContact(mouseContact,20000,0,6.0,mouseConfig);
-		mouse.EndContact(mouseContact,actualEndDiameter,20000,0,6.5,false);
-		mouse.Advance(6.51);
-		mouse.BeginContact(mouseContact,20100,0,6.52,mouseConfig);
-		near(mouse.VisualDiameter(),standard,0.001,"new down interrupts release visual at safe size");
-		near(mouseContact.Diameter(),standard,0.001,"new down during release uses same safe erasing size");
-		mouse.ObserveHover(90000,0,6.51);
-		near(mouseContact.SweepEvidenceSeconds(),0,0.000001,"late hover cannot seed new contact history");
-		mouseContact.UpdatePosition(20100,0,6.7);
-		expect(mouseContact.Diameter()<=standard && mouseContact.SweepEvidenceSeconds()==0,"rapid second down cannot resurrect sweep");
-		mouse.EndContact(mouseContact,standard*0.75f,20100,0,7.0,false);
-		expect(mouse.Advance(7.1)<=standard*0.75f+0.001f,"release below standard never enlarges");
-		mouse.BeginContact(mouseContact,20100,0,8.0,mouseConfig);
-		mouse.EndContact(mouseContact,actualEndDiameter,20100,0,8.5,false,true);
-		expect(!mouse.ContactOwned() && !mouse.NeedsAnimation(8.5),"cancel releases ownership without a closing eraser");
-		mouse.BeginContact(mouseContact,0,0,9.0,mouseConfig);
-		mouse.EndContact(mouseContact,actualEndDiameter,0,0,9.5,false);
-		auto changedMouseConfig = mouseConfig;
-		++changedMouseConfig.display.revision;
-		mouse.Configure(changedMouseConfig);
-		expect(!mouse.NeedsAnimation(9.51),"configuration change invalidates old-scale closing visual");
-		mouse.BeginContact(mouseContact,0,0,10.0,mouseConfig);
-		mouse.EndContact(mouseContact,standard,0,0,10.0,false,true);
-		expect(!mouse.ContactOwned(),"failed down initialization releases its current contact owner");
-		mouse.BeginContact(mouseContact,0,0,11.0,mouseConfig);
-		mouse.EndContact(mouseContact,actualEndDiameter,0,0,11.5,false);
-		expect(mouse.Advance(12.0)<=standard && !mouse.Releasing(),"late presentation does not restart release");
+		auto display=physical;display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
+		auto source=MappedSource(entry==InputEntry::MouseLeft || entry==InputEntry::MouseRight?SourceKind::Mouse:SourceKind::IntegratedPen,display);
+		source.contextId=5;source.cursorId=11;
+		const auto resolved=ResolveInput(display,DeviceMode::Laptop,source,entry,{});
+		const auto cfg=resolved.config;
+		MouseLifecycle session;Controller current;
+		const auto ticket=session.BeginContact(current,0,0,0,cfg);
+		FeedLine(current,cfg.largeTargetSpeed*1.5,2,125,cfg);
+		const float accepted=current.Diameter();
+		const float lastX=static_cast<float>(cfg.largeTargetSpeed*3/cfg.motionPerPixelX);
+		session.EndContact(current,accepted,lastX,0,2,false,false,ticket);
+		Near(session.LogicalDiameter(),accepted,0.0001,"Up preserves the accepted logical diameter");
+		Near(current.Diameter(),accepted,0.0001,"Up does not rewrite the finished contact controller");
+		Controller atEvent=session.PreviewController();const float expected=atEvent.Advance(2+gap);
+		session.Advance(2+gap+0.2); // 帧先行不能污染稍晚到达的Down事件状态。
+		Controller next;const auto nextTicket=session.BeginContact(next,lastX+10000,9000,2+gap,cfg);
+		Near(next.Diameter(),expected,0.0001,"Down inherits the same event-time state, including values above standard");
+		expect(nextTicket!=ticket && session.LastHandoffInherited(),"independent segment owns a fresh session ticket");
+		const double evidence=next.SweepEvidenceSeconds();
+		next.UpdatePosition(lastX+10000,9000,2+gap+0.008);
+		expect(next.SweepEvidenceSeconds()<=evidence+1e-9,"unobserved gap displacement does not create speed or sweep evidence");
+		session.EndContact(current,160,lastX,0,3+gap,false,false,ticket);
+		expect(session.ContactOwned(),"delayed old Up cannot overwrite a newer segment");
+		session.EndContact(next,next.Diameter(),lastX+10000,9000,2+gap+0.008,false,false,nextTicket);
+		const float leave=session.LogicalDiameter();
+		session.Advance(20+gap);
+		expect(session.LogicalDiameter()<=leave+0.001f && session.LogicalDiameter()<=cfg.StandardDiameterPx()+0.001f &&
+			!session.NeedsAnimation(20+gap),"long unobserved separation settles without growing or spinning");
+		std::cout<<"[EntryGap] entry="<<InputEntryName(entry)<<" dpi="<<dpi<<" gap="<<gap
+			<<" upPx="<<accepted<<" downPx="<<expected<<'\n';
 	}
-
-	MouseLifecycle sharedMouse;
-	sharedMouse.Configure(laptop);
-	Controller leftMouse, rightMouse;
-	sharedMouse.BeginContact(leftMouse,0,0,0.0,laptop);
-	sharedMouse.BeginContact(rightMouse,1,0,0.01,laptop);
-	sharedMouse.EndContact(leftMouse,80,0,0,1.0,true);
-	expect(sharedMouse.ContactOwned() && !sharedMouse.NeedsAnimation(1.0),
-		"one mouse button up does not steal another contact owner");
-	sharedMouse.EndContact(rightMouse,60,1,0,1.01,false);
-	near(sharedMouse.VisualDiameter(),60,0.001,"final shared mouse owner supplies accepted closing size");
-	const float sharedMid = sharedMouse.Advance(1.05);
-	sharedMouse.EndContact(rightMouse,160,1,0,1.01,false);
-	near(sharedMouse.VisualDiameter(),sharedMid,0.001,"duplicate up does not restart closing animation");
-	sharedMouse.BeginContact(rightMouse,5,0,1.06,laptop);
-	sharedMouse.EndContact(leftMouse,160,0,0,1.0,true);
-	expect(sharedMouse.ContactOwned(),"late old up cannot retire new independent down");
-	near(rightMouse.Diameter(),laptop.StandardDiameterPx(),0.001,"late old up cannot feed new mouse diameter");
-
-
-	MouseLifecycle reorderedMouse;
-	Controller oldContact, newContact;
-	reorderedMouse.Configure(laptop);
-	reorderedMouse.BeginContact(oldContact,0,0,0.0,laptop);
-	reorderedMouse.BeginContact(newContact,1,0,0.1,laptop);
-	reorderedMouse.EndContact(newContact,80,1,0,0.8,true);
-	auto reorderedConfig = laptop;
-	++reorderedConfig.display.revision;
-	reorderedMouse.Configure(reorderedConfig);
-	reorderedMouse.EndContact(oldContact,80,0,0,0.05,false);
-	expect(!reorderedMouse.ContactOwned() && !reorderedMouse.NeedsAnimation(0.9),
-		"late old up after configuration change releases the final owner without reviving old visuals");
+	{
+		auto cfg=ResolveConfig(physical,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,physical));
+		cfg.inputSource.contextId=5;cfg.inputSource.cursorId=10;
+		Controller hover;hover.ResetPreview(0,0,0,cfg);hover.Advance(3);
+		auto metadata=cfg;++metadata.display.revision;++metadata.display.generation;
+		metadata.display.development.diagnostics=true;metadata.inputSource.cursorId=11;metadata.inputSource.generation=99;
+		Controller down;down.BeginContact(&hover,0,0,3,metadata);
+		Near(down.DiameterDip(),hover.DiameterDip(),0.0001,"harmless metadata no longer makes pen Hover 16 jump to 32");
+		expect(SessionConfigCompatible(cfg,metadata),"stable source/config ignores contact ID and diagnostic revisions");
+		metadata.inputSource.contextId=6;
+		expect(!SessionConfigCompatible(cfg,metadata),"different tablet context does not share a size session");
+		metadata=cfg;metadata.display.monitor=900;
+		expect(!SessionConfigCompatible(cfg,metadata),"monitor change preserves mapping safety");
+		metadata=cfg;metadata.display.dipPerPixelX*=2;
+		expect(!SessionConfigCompatible(cfg,metadata),"DPI change is an effective configuration change");
+	}
+	{
+		InputSettings settings;
+		for(int index=0;index<5;++index)
+		{
+			const auto entry=static_cast<InputEntry>(index);
+			expect(RestoreEraserKind(-1,-1,entry)==EraserKind::Speed,"missing settings default every entry to speed");
+			expect(RestoreEraserKind(0,1,entry)==EraserKind::Fixed,"explicit saved Fixed is respected");
+			const bool oldOrdinary=index==0 || index==2 || index==3;
+			expect(RestoreEraserKind(-1,2,entry)==(oldOrdinary?EraserKind::Fixed:EraserKind::Speed),
+				"legacy explicit Fixed migrates ordinary entries, not implicit right/tail behavior");
+			for(auto kind:{EraserKind::Fixed,EraserKind::Speed})
+			{
+				settings.entries[index].kind=kind;
+				const auto parsed=ResolveInput(physical,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,physical),entry,settings);
+				expect(parsed.entry==entry && parsed.kind==kind,"five entries resolve their own Fixed/Speed setting");
+				expect(ResolveInput(physical,DeviceMode::Laptop,{},entry,settings,EraserToolPolicy::Fixed).kind==EraserKind::Fixed,
+					"explicit Fixed tool remains fixed independently of defaults");
+			}
+		}
+		settings.entries[0].kind=EraserKind::Fixed;settings.entries[1].kind=EraserKind::Speed;
+		settings.entries[3].kind=EraserKind::Fixed;settings.entries[4].kind=EraserKind::Speed;
+		expect(ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::MouseLeft,settings).kind!=
+			ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::MouseRight,settings).kind,"same snapshot keeps left/right choices independent");
+		expect(ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::PenTip,settings).kind!=
+			ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::PenTail,settings).kind,"same snapshot keeps tip/tail choices independent");
+		for(bool automatic:{false,true})for(int saved:{-1,0,1,2,99})
+		{
+			const auto value=RestorePenResponse(saved,automatic);
+			expect(automatic || value!=PenResponseChoice::Automatic,"Win7 Auto/unknown safely resolves to tablet without index shifting");
+			if(saved==1)expect(value==PenResponseChoice::ScreenPen,"Win7 UI value 1 still means ScreenPen");
+			if(saved==2)expect(value==PenResponseChoice::Tablet,"Win7 UI value 2 still means Tablet");
+		}
+		settings.automaticPenSupported=false;settings.entries[4].penResponse=PenResponseChoice::ScreenPen;
+		InputSource external;external.kind=SourceKind::ExternalPen;external.contextId=8;
+		const auto manual=ResolveInput(physical,DeviceMode::Laptop,external,InputEntry::PenTail,settings);
+		expect(manual.config.response==ResponseModel::ScreenPenHybrid && manual.config.inputSource.kind==SourceKind::ExternalPen &&
+			!manual.config.inputMapped && manual.config.motionUnit==MotionUnit::DipPerSecond,
+			"manual screen pen changes response, not true identity or physical mapping");
+		auto debug=physical;debug.development.response=ResponseOverride::IndirectDip;
+		const auto forced=ResolveInput(debug,DeviceMode::Laptop,external,InputEntry::PenTail,settings);
+		expect(forced.config.response==ResponseModel::IndirectDip && forced.config.developmentResponseOverride,
+			"explicit development override has documented priority");
+		Inkeys::Drawing::Draw3::Bridge::StateBridge bridge;bridge.Reset();
+		Inkeys::Drawing::Draw3::Bridge::ProductState product;product.tool=Inkeys::Drawing::Draw3::Bridge::Tool::ConfiguredEraser;
+		product.eraserInputs=settings;bridge.PublishState(product);
+		expect(bridge.Snapshot().eraserInputs==settings,"whole entry preferences are published as one bridge snapshot");
+	}
+	{
+		namespace fs=std::filesystem;
+		const fs::path root=fs::temp_directory_path()/(L"inkeys-eraser-settings-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+		const auto oldPath=globalPath;std::error_code error;
+		const bool owned=fs::create_directory(root,error);
+		if(owned)
+		{
+			fs::create_directories(root/L"Inkeys"/L"Config",error);
+			std::ofstream(root/L"Inkeys"/L"Config"/L"main.json")<<"{}";
+			globalPath=root.wstring()+L"\\";
+			Inkeys::Config saved;
+			saved.Drawing.Eraser.MouseLeft=0;saved.Drawing.Eraser.MouseRight=1;saved.Drawing.Eraser.Touch=0;
+			saved.Drawing.Eraser.PenTip=0;saved.Drawing.Eraser.PenTail=1;
+			saved.Drawing.Eraser.PenTipResponse=1;saved.Drawing.Eraser.PenTailResponse=2;
+			saved.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance=true;
+			expect(saved.Write(),"actual Config module writes entry settings");
+			Inkeys::Config read;expect(read.ReadAll(),"actual Config module restores settings on restart");
+			expect(read.Drawing.Eraser.MouseLeft.load()==0 && read.Drawing.Eraser.MouseRight.load()==1 &&
+				read.Drawing.Eraser.Touch.load()==0 && read.Drawing.Eraser.PenTip.load()==0 && read.Drawing.Eraser.PenTail.load()==1 &&
+				read.Drawing.Eraser.PenTipResponse.load()==1 && read.Drawing.Eraser.PenTailResponse.load()==2 &&
+				read.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance.load(),"five kinds, two pen choices and old area key round-trip independently");
+			globalPath=oldPath;
+			if(root.parent_path()==fs::temp_directory_path())fs::remove_all(root,error);
+		}
+		else expect(false,"create owned config fixture");
+	}
 	// 中速连续折返应停在对应中间值，而非按折返次数无条件靠近最大值。
 	const double mediumSpeed = (laptop.sweepEnterSpeed + laptop.largeTargetSpeed)*0.5;
 	std::vector<Knot> moderateSweep{{0,0}};
@@ -758,16 +793,16 @@ int RunSpeedEraserTests()
 		DisplayScale s=physical;s.physicalAvailable=edid;s.dipPerPixelX=s.dipPerPixelY=96.0f/dpi;
 		s.cmPerPixelX=edid?0.2f:0.0f;s.cmPerPixelY=edid?0.1f:0.0f;
 		const auto cfg=ResolveConfig(s,mode,true);
-		near(cfg.minimumDiameterPx*96/dpi,16,0.001,"minimum has invariant DIP meaning");
-		near(cfg.StandardDiameterPx()*96/dpi,32,0.001,"standard has invariant DIP meaning");
-		near(cfg.maximumDiameterPx*96/dpi,160,0.001,"maximum has invariant DIP meaning");
-		near(FixedDiameterPx(42,s)*96/dpi,42,0.001,"fixed DIP bypass is independent of EDID and motion");
+		Near(cfg.minimumDiameterPx*96/dpi,16,0.001,"minimum has invariant DIP meaning");
+		Near(cfg.StandardDiameterPx()*96/dpi,32,0.001,"standard has invariant DIP meaning");
+		Near(cfg.maximumDiameterPx*96/dpi,160,0.001,"maximum has invariant DIP meaning");
+		Near(FixedDiameterPx(42,s)*96/dpi,42,0.001,"fixed DIP bypass is independent of EDID and motion");
 	}
 	for(const double v:{100,300,500,650,750,800,1000,1300,1700,2200})
 	{
 		const auto scan=Replay(laptop,{{0,0},{20,v*20}},125,60,{10,20});
 		if(v<=laptop.sweepEnterSpeed)
-			for(const auto d:scan)near(d,laptop.StandardDiameterPx(),0.02,"ordinary speed never accumulates into sweep");
+			for(const auto d:scan)Near(d,laptop.StandardDiameterPx(),0.02,"ordinary speed never accumulates into sweep");
 		else expect(scan.back()<=laptop.maximumDiameterPx+0.001f,"qualified velocity scan remains bounded");
 	}
 	Controller idleTool;idleTool.Reset(0,0,0,StartKind::Hover,laptop);
@@ -789,7 +824,7 @@ int RunSpeedEraserTests()
 		idleTool.Diameter(),idleEnd+0.01,laptop);
 	expect(resume.reanchor && resume.startDiameter<=laptop.StandardDiameterPx()*1.1f,
 		"resumption interval starts at contracted tool size not historical radius");
-	near(historicalDiameter,160,2.0,"historical wide diameter stays immutable");
+	Near(historicalDiameter,160,2.0,"historical wide diameter stays immutable");
 	const auto late=effective.MakeInterval(1.4,1.6,historicalDiameter,historicalDiameter,1.6,laptop);
 	expect(!late.reanchor,"late pre-shrink geometry is not silently re-timed");
 	Controller samePosition=idleTool;
@@ -799,17 +834,17 @@ int RunSpeedEraserTests()
 	for(int i=1;i<=1400;++i)noisy.UpdatePosition(3900+(i%2?0.1f:-0.1f),0,1.5+i*0.001);
 	Controller quietNoiseReference;quietNoiseReference.Reset(0,0,0,StartKind::Hover,laptop);
 	FeedLine(quietNoiseReference,2600,1.5);quietNoiseReference.Advance(2.9);
-	near(noisy.DiameterDip(),quietNoiseReference.DiameterDip(),0.03,
+	Near(noisy.DiameterDip(),quietNoiseReference.DiameterDip(),0.03,
 		"bounded sub-threshold noise has the same idle deadline as complete absence of packets");
 	Controller ordinaryTouch;ordinaryTouch.Reset(0,0,0,StartKind::Touch,laptop);
 	FeedLine(ordinaryTouch,100,1.0);
 	expect(ordinaryTouch.DiameterDip()>30 && ordinaryTouch.DiameterDip()<=32.01f,
 		"ordinary real touch motion reaches standard without sweep qualification");
 	const WidthInterval interval{ 0,1,50,600,8,800 };
-	near(InterpolateDiameter(interval,0.5),325,0.001,"scaled width interpolation exceeds old 200px maximum");
-	near(InterpolateDiameter({0,1,4,8,4,8},0),4,0.001,"scaled minimum may be below old 20px limit");
-	near(ContactDiameter(162.5f,16.0f),325,0.001,"contact cursor uses accepted geometric endpoint");
-	near(ContactDiameter(0,24),24,0.001,"initial cursor uses batch minimum");
+	Near(InterpolateDiameter(interval,0.5),325,0.001,"scaled width interpolation exceeds old 200px maximum");
+	Near(InterpolateDiameter({0,1,4,8,4,8},0),4,0.001,"scaled minimum may be below old 20px limit");
+	Near(ContactDiameter(162.5f,16.0f),325,0.001,"contact cursor uses accepted geometric endpoint");
+	Near(ContactDiameter(0,24),24,0.001,"initial cursor uses batch minimum");
 	// 新规格替代旧 standard 下限；分类、解析和几何仍调用实际产品逻辑。
 #if defined(DRAW3_TESTING)
 	expect(Inkeys::Drawing::Draw3::RtsSourceRoutingForTesting(),"RTS per-context source and real contact metadata");
@@ -857,19 +892,19 @@ int RunSpeedEraserTests()
 	{
 		auto d=penDisplay;d.cmPerPixelX=d.cmPerPixelY=rho/10;
 		const auto c=ResolveConfig(d,DeviceMode::Laptop,MappedSource(SourceKind::Touch,d));
-		near(CompensateTargetDiameterDip(c,100),100,0.0001,"R7 touch dynamic target is DIP, independent of physical density");
+		Near(CompensateTargetDiameterDip(c,100),100,0.0001,"R7 touch dynamic target is DIP, independent of physical density");
 		std::vector<Knot> local{{0,0}};for(int i=1;i<=8;++i)local.push_back({i*0.2,i%2?36.0:0.0});
 		const auto values=Replay(c,local,125,60,{0.8,1.6},StartKind::Touch);
 		expect(values[0]>64 && values[1]>64,"R7 36mm local touch strokes at 180mm/s enter usable sweep");
 	}
-	near(penConfig.rhoMmPerDip,0.25,0.00001,"physical axes resolve millimeters per DIP");
+	Near(penConfig.rhoMmPerDip,0.25,0.00001,"physical axes resolve millimeters per DIP");
 	expect(penConfig.motionUnit==MotionUnit::MillimetersPerSecond && penConfig.sweepEnterSpeed==120 &&
 		penConfig.largeTargetSpeed==350,"screen pen uses explicit physical thresholds");
 	for(float rho:{0.125f,0.25f,0.5f})for(float beta:{0.0f,0.25f,0.5f,0.75f,1.0f})
 	{
 		auto c=penConfig;c.rhoMmPerDip=rho;c.penBeta=beta;
-		near(CompensateTargetDiameterDip(c,24),24,0.0001,"physical compensation leaves fine band unchanged");
-		near(CompensateTargetDiameterDip(c,72),std::clamp(32.0+std::pow(0.25/rho,beta)*40,16.0,160.0),0.0001,
+		Near(CompensateTargetDiameterDip(c,24),24,0.0001,"physical compensation leaves fine band unchanged");
+		Near(CompensateTargetDiameterDip(c,72),std::clamp(32.0+std::pow(0.25/rho,beta)*40,16.0,160.0),0.0001,
 			"pen beta compensates only standard-above increment");
 		expect(c.sizes==EraserSizes{},"beta does not change base or fixed attributes");
 	}
@@ -877,7 +912,7 @@ int RunSpeedEraserTests()
 	expect(onsetPen[0]>32 && onsetPen[0]<64,"screen pen begins light growth near 120ms without jumping large");
 	expect(onsetPen[1]>onsetPen[0] && onsetPen[2]>100,"physical pen sweep is accessible");
 	for(float speed:{20.0f,60.0f,100.0f})for(float d:Replay(penConfig,{{0,0},{20,20*speed}},125,60,{10,20}))
-		near(d,32,0.01,"ordinary screen pen stays standard for twenty seconds");
+		Near(d,32,0.01,"ordinary screen pen stays standard for twenty seconds");
 	for(const auto c:{laptop,penConfig,physicalTouch})
 	{
 		const double v=c.largeTargetSpeed*1.25;
@@ -889,8 +924,8 @@ int RunSpeedEraserTests()
 		expect(preview.Diameter()<=c.StandardDiameterPx()+0.001f && preview.SweepEvidenceSeconds()==0,"preview cannot exceed standard or precharge sweep");
 		preview.Advance(3);Controller down;
 		down.BeginContact(&preview,static_cast<float>(c.largeTargetSpeed*2/c.motionPerPixelX),0,3,c);
-		near(down.Diameter(),c.minimumDiameterPx,0.001,"fine preview Down has no size jump");
-		near(down.SweepEvidenceSeconds(),0,0.000001,"preview Down discards movement history");
+		Near(down.Diameter(),c.minimumDiameterPx,0.001,"fine preview Down has no size jump");
+		Near(down.SweepEvidenceSeconds(),0,0.000001,"preview Down discards movement history");
 	}
 	for(int dpi:{96,144,192})
 	{
@@ -917,28 +952,28 @@ int RunSpeedEraserTests()
 	auto twice=h;twice.pixelWidth*=2;twice.pixelHeight*=2;
 	const auto h2=ResolveConfig(twice,DeviceMode::LargeScreen,MappedSource(SourceKind::IntegratedPen,twice));
 	expect(h1.motionSource==ScaleSource::ResolutionDpiHeuristic && h1.rhoMmPerDip==0 && !h1.display.physicalAvailable,"heuristic never becomes physical measurement");
-	near(h1.motionPerPixelX,h2.motionPerPixelX*2,0.00001,"resolution doubling preserves heuristic action");
+	Near(h1.motionPerPixelX,h2.motionPerPixelX*2,0.00001,"resolution doubling preserves heuristic action");
 	twice.dipPerPixelX=twice.dipPerPixelY=0.5f;
 	const auto h3=ResolveConfig(twice,DeviceMode::LargeScreen,MappedSource(SourceKind::IntegratedPen,twice));
-	near(h1.motionPerPixelX,h3.motionPerPixelX*2,0.00001,"DPI scaling applied once");
+	Near(h1.motionPerPixelX,h3.motionPerPixelX*2,0.00001,"DPI scaling applied once");
 	std::swap(twice.pixelWidth,twice.pixelHeight);twice.orientation=1;
-	near(ResolutionDpiActionGain(twice),1,0.00001,"rotation preserves heuristic extent");
+	Near(ResolutionDpiActionGain(twice),1,0.00001,"rotation preserves heuristic extent");
 	h.logicalOutputKnown=false;
 	expect(ResolveConfig(h,DeviceMode::LargeScreen,MappedSource(SourceKind::IntegratedPen,h)).motionSource==ScaleSource::DipOnly,"unknown logical output uses pen DIP fallback");
 	auto manual=penDisplay;manual.development.scale=ScaleOverride::ManualSurface;
 	manual.development.calibration={manual.monitor,28,18,0};
 	const auto calibrated=ResolveConfig(manual,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,manual));
 	expect(calibrated.motionSource==ScaleSource::ManualCalibration && calibrated.sizes==EraserSizes{},"manual surface overrides EDID without changing properties");
-	near(calibrated.motionPerPixelX,280.0/manual.pixelWidth,0.00001,"manual calibration uses measured width");
+	Near(calibrated.motionPerPixelX,280.0/manual.pixelWidth,0.00001,"manual calibration uses measured width");
 	manual.orientation=1;std::swap(manual.pixelWidth,manual.pixelHeight);
 	const auto turned=ResolveConfig(manual,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,manual));
-	near(turned.motionPerPixelX,calibrated.motionPerPixelY,0.00001,"manual calibration follows rotation once");
+	Near(turned.motionPerPixelX,calibrated.motionPerPixelY,0.00001,"manual calibration follows rotation once");
 	manual.monitor=1234;
 	expect(ResolveConfig(manual,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,manual)).motionSource==ScaleSource::DipOnly,"manual surface cannot leak to another monitor");
 	for(float rho:{0.25f,0.5f}){auto c=physicalTouch;c.rhoMmPerDip=rho;
-		near(CompensateTargetDiameterDip(c,100),100,0.0001,"touch target stays DIP across physical densities");}
+		Near(CompensateTargetDiameterDip(c,100),100,0.0001,"touch target stays DIP across physical densities");}
 	bool clamped=false;auto extreme=penConfig;extreme.rhoMmPerDip=0.01f;
-	near(CompensateTargetDiameterDip(extreme,160,&clamped),160,0.001,"extreme physical target is centrally bounded");
+	Near(CompensateTargetDiameterDip(extreme,160,&clamped),160,0.001,"extreme physical target is centrally bounded");
 	expect(clamped,"target clamping is available for diagnostics");
 
 	// 面积辅助必须走同一个产品控制器；坏数据和开关关闭均不改变速度模型。
@@ -949,25 +984,25 @@ int RunSpeedEraserTests()
 		const auto y=ResolveContactLengthTransform(axis,span,0.2f);
 		expect(x.status==ContactAreaUnits::CanvasPixels && x.resolutionAdjusted && !x.unitConverted,
 			"same length unit with different resolutions is convertible");
-		near(x.spanToAxis,10,0.00001,"resolution ratio maps span to coordinate logical length");
+		Near(x.spanToAxis,10,0.00001,"resolution ratio maps span to coordinate logical length");
 		auto sample=ConvertContactArea(30,10,x,y);
-		near(sample.widthPx,30,0.00001,"relative length does not subtract nonzero coordinate logical origin");
-		near(sample.heightPx,20,0.00001,"Y uses its own linear position transform");
-		near(sample.rawWidth,30,0,"conversion preserves original packet width");
+		Near(sample.widthPx,30,0.00001,"relative length does not subtract nonzero coordinate logical origin");
+		Near(sample.heightPx,20,0.00001,"Y uses its own linear position transform");
+		Near(sample.rawWidth,30,0,"conversion preserves original packet width");
 		auto same=span;same.resolution=1000;
 		const auto sameTransform=ResolveContactLengthTransform(axis,same,0.1f);
 		expect(!sameTransform.resolutionAdjusted && !sameTransform.unitConverted,"equal metadata needs no unit or resolution adaptation");
-		near(ConvertContactArea(300,200,sameTransform,sameTransform).widthPx,30,0.00001,"same-resolution length remains compatible");
+		Near(ConvertContactArea(300,200,sameTransform,sameTransform).widthPx,30,0.00001,"same-resolution length remains compatible");
 		auto inches=span;inches.units=1;inches.resolution=254;
 		const auto inchTransform=ResolveContactLengthTransform(axis,inches,0.1f);
 		expect(inchTransform.unitConverted && inchTransform.resolutionAdjusted &&
 			inchTransform.status==ContactAreaUnits::CanvasPixels,"inch contact and centimeter coordinate metadata convert");
-		near(ConvertContactArea(30,20,inchTransform,inchTransform).widthPx,30,0.00001,"inch/cm conversion includes exactly one unit ratio");
+		Near(ConvertContactArea(30,20,inchTransform,inchTransform).widthPx,30,0.00001,"inch/cm conversion includes exactly one unit ratio");
 		auto inchAxis=axis;inchAxis.units=1;inchAxis.resolution=2540;
 		const auto reverse=ResolveContactLengthTransform(inchAxis,span,0.1f);
-		near(ConvertContactArea(30,20,reverse,reverse).widthPx,30,0.00001,"centimeter contact and inch coordinate metadata convert");
+		Near(ConvertContactArea(30,20,reverse,reverse).widthPx,30,0.00001,"centimeter contact and inch coordinate metadata convert");
 		const auto reflected=ResolveContactLengthTransform(axis,span,-0.1f);
-		near(ConvertContactArea(30,20,reflected,reflected).widthPx,30,0.00001,"a reflected position axis keeps contact length positive");
+		Near(ConvertContactArea(30,20,reflected,reflected).widthPx,30,0.00001,"a reflected position axis keeps contact length positive");
 		const auto checkInvalid=[&](ContactLengthMetrics a,ContactLengthMetrics w,float scale,ContactAreaUnits expected)
 		{
 			const auto transform=ResolveContactLengthTransform(a,w,scale);
@@ -1017,17 +1052,17 @@ int RunSpeedEraserTests()
 		const auto transform=ResolveContactLengthTransform(axis,span,0.1f*dpi/96);
 		const auto area=ConvertContactArea(30,20,transform,transform);
 		Controller controller;controller.Reset(0,0,0,StartKind::Touch,config,0,&area);
-		near(controller.DiameterDip(),16,0.001,"converted metadata retains Touch small Down");
+		Near(controller.DiameterDip(),16,0.001,"converted metadata retains Touch small Down");
 		for(int i=1;i<=250;++i)
 			controller.UpdatePosition(static_cast<float>(i*0.08/config.motionPerPixelX),0,i/125.0,&area);
 		const auto diagnostic=controller.AreaDiagnostics(2);
 		expect(diagnostic.sampleValid && diagnostic.referenceReady && diagnostic.active,
 			"synthetic converted metadata reaches the unchanged area reference and accepted floor");
-		near(diagnostic.widthDip,30,0.001,"metadata-to-canvas and canvas-to-DIP do not double scale");
-		near(diagnostic.heightDip,20,0.001,"height stays consistent at every DPI");
-		near(diagnostic.referenceFloorDip,39,0.001,"conversion does not alter area multiplier, padding or ceiling");
+		Near(diagnostic.widthDip,30,0.001,"metadata-to-canvas and canvas-to-DIP do not double scale");
+		Near(diagnostic.heightDip,20,0.001,"height stays consistent at every DPI");
+		Near(diagnostic.referenceFloorDip,39,0.001,"conversion does not alter area multiplier, padding or ceiling");
 		controller.Advance(6);
-		near(controller.DiameterDip(),16,0.01,"converted area retains true no-Move expiry and small idle size");
+		Near(controller.DiameterDip(),16,0.01,"converted area retains true no-Move expiry and small idle size");
 	}
 	{
 		auto display=areaDisplay;display.dipPerPixelX=0.5f;display.dipPerPixelY=0.75f;
@@ -1037,14 +1072,14 @@ int RunSpeedEraserTests()
 		const auto area=ConvertContactArea(30,20,x,y);
 		const auto config=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
 		Controller c;c.Reset(0,0,0,StartKind::Touch,config,0,&area);
-		near(c.AreaDiagnostics(0).widthDip,30,0.001,"anisotropic X conversion uses X DIP scale");
-		near(c.AreaDiagnostics(0).heightDip,20,0.001,"anisotropic Y conversion uses Y DIP scale");
+		Near(c.AreaDiagnostics(0).widthDip,30,0.001,"anisotropic X conversion uses X DIP scale");
+		Near(c.AreaDiagnostics(0).heightDip,20,0.001,"anisotropic Y conversion uses Y DIP scale");
 		std::swap(display.dipPerPixelX,display.dipPerPixelY);
 		const auto rotated=ConvertContactArea(20,30,y,x);
 		const auto rotatedConfig=ResolveConfig(display,DeviceMode::Laptop,MappedSource(SourceKind::Touch,display));
 		c.Reset(0,0,1,StartKind::Touch,rotatedConfig,0,&rotated);
-		near(c.AreaDiagnostics(1).widthDip,20,0.001,"rotation swaps span and linear-axis transforms together");
-		near(c.AreaDiagnostics(1).heightDip,30,0.001,"rotation preserves physical axis correspondence");
+		Near(c.AreaDiagnostics(1).widthDip,20,0.001,"rotation swaps span and linear-axis transforms together");
+		Near(c.AreaDiagnostics(1).heightDip,30,0.001,"rotation preserves physical axis correspondence");
 	}
 	{
 		auto disabled=areaConfig;disabled.touchContactAreaAssistance=false;
@@ -1064,10 +1099,10 @@ int RunSpeedEraserTests()
 	const auto areaReference=ReplayArea(areaConfig,slowDrag,1000,120,areaTimes,[&](double){return normalArea;},2.0);
 	expect(areaReference[2].diameter>38 && areaReference[2].diameter<40 && areaReference[2].area.active,
 		"ordinary slow touch drag opens bounded area floor without sweep speed");
-	near(areaReference[3].area.referenceFloorDip,39,0.001,"max-axis span produces independent bounded floor");
+	Near(areaReference[3].area.referenceFloorDip,39,0.001,"max-axis span produces independent bounded floor");
 	expect(!areaReference[4].animating && areaReference[4].wake>3.0 &&
 		areaReference[4].diameter>38,"held touch rests at its area floor and schedules expiry without spinning");
-	near(areaReference.back().diameter,16,0.001,"missing area eventually releases to minimum");
+	Near(areaReference.back().diameter,16,0.001,"missing area eventually releases to minimum");
 	expect(!areaReference.back().animating && !areaReference.back().area.referenceFresh,"expired area cannot stay fresh or keep animation awake forever");
 	double worstAreaRate=0;
 	for(int hz:{60,125,240,1000})for(int fps:{30,60,120})
@@ -1106,7 +1141,7 @@ int RunSpeedEraserTests()
 		const auto disabled=ReplayArea(off,slowDrag,125,60,{0.5,1,2},[&](double){return bad;});
 		for(size_t i=0;i<enabled.size();++i)
 		{
-			near(enabled[i].diameter,disabled[i].diameter,0.001,"bad contact width never becomes maximum assistance");
+			Near(enabled[i].diameter,disabled[i].diameter,0.001,"bad contact width never becomes maximum assistance");
 			expect(!enabled[i].area.active && !enabled[i].area.referenceReady,"invalid area does not become a reference");
 		}
 	}
@@ -1116,7 +1151,7 @@ int RunSpeedEraserTests()
 		const auto c=ResolveConfig(d,DeviceMode::Laptop,MappedSource(kind,d));
 		const auto result=ReplayArea(c,slowDrag,125,60,{1,2},[&](double){return normalArea;},2,StartKind::Hover);
 		for(const auto& value:result)expect(!value.area.active,"forced Touch model cannot invent real Touch area");
-		near(FixedDiameterPx(50,d),50,0.001,"fixed eraser bypasses area and speed");
+		Near(FixedDiameterPx(50,d),50,0.001,"fixed eraser bypasses area and speed");
 	}
 	auto unmapped=areaConfig;unmapped.inputMapped=false;
 	const auto rejectedMapping=ReplayArea(unmapped,slowDrag,125,60,{1},[&](double){return normalArea;});
@@ -1124,7 +1159,7 @@ int RunSpeedEraserTests()
 		"unknown area mapping leaves otherwise valid touch input usable");
 	const auto press=ReplayArea(areaConfig,{{0,0},{3,0}},1000,120,{0.01,0.5,2,3},
 		[&](double t){return AreaSample(areaConfig,t<0.5?30:70,t<0.5?20:50);});
-	for(const auto& value:press)near(value.diameter,16,0.001,"stationary press and later larger area cannot open a hole");
+	for(const auto& value:press)Near(value.diameter,16,0.001,"stationary press and later larger area cannot open a hole");
 	std::vector<Knot> jitter{{0,0}};for(int i=1;i<=200;++i)jitter.push_back({i*0.01,i%2?0.4:-0.4});
 	for(const auto& value:ReplayArea(areaConfig,jitter,1000,120,{0.5,1,2},[&](double){return normalArea;}))
 		expect(value.diameter==16 && !value.area.active && !value.area.referenceReady,"landing jitter cannot establish dragging area");
@@ -1132,21 +1167,21 @@ int RunSpeedEraserTests()
 		[&](double t){return AreaSample(areaConfig,t<1?30:40,t<1?20:28);});
 	for(const auto& value:locked)
 	{
-		near(value.area.referenceFloorDip,39,0.001,"confirmed reference does not breathe with contact size");
+		Near(value.area.referenceFloorDip,39,0.001,"confirmed reference does not breathe with contact size");
 		expect(value.diameter<=39.01f,"same-position area increase does not enlarge accepted geometry");
 	}
 	const auto outlier=ReplayArea(areaConfig,{{0,0},{1,10},{3,10}},125,60,{1,1.1,2.8},
 		[&](double t){return AreaSample(areaConfig,t<=1?30:70,t<=1?20:50);});
 	expect(outlier[1].area.reason==ContactAreaReason::Outlier && !outlier[1].area.sampleValid,
 		"large change inside reported range is rejected, not clamped");
-	near(outlier.back().diameter,16,0.1,"persistent outlier releases old reference");
+	Near(outlier.back().diameter,16,0.1,"persistent outlier releases old reference");
 	for(const int dpi:{96,144,192})
 	{
 		auto d=areaDisplay;d.dipPerPixelX=d.dipPerPixelY=96.0f/dpi;
 		const auto c=ResolveConfig(d,DeviceMode::Laptop,MappedSource(SourceKind::Touch,d));
 		const auto sample=AreaSample(c,30,20);
 		const auto values=ReplayArea(c,slowDrag,125,60,{1.5},[&](double){return sample;});
-		near(values[0].area.referenceFloorDip,39,0.001,"per-axis pixel to DIP conversion occurs once");
+		Near(values[0].area.referenceFloorDip,39,0.001,"per-axis pixel to DIP conversion occurs once");
 	}
 	auto anisotropic=areaDisplay;anisotropic.dipPerPixelX=0.5f;anisotropic.dipPerPixelY=0.75f;
 	const auto anisConfig=ResolveConfig(anisotropic,DeviceMode::Laptop,MappedSource(SourceKind::Touch,anisotropic));
@@ -1156,7 +1191,7 @@ int RunSpeedEraserTests()
 	const auto swapConfig=ResolveConfig(anisotropic,DeviceMode::Laptop,MappedSource(SourceKind::Touch,anisotropic));
 	const auto swapSample=AreaSample(swapConfig,20,30);
 	const auto swapped=ReplayArea(swapConfig,slowDrag,125,60,{1.5},[&](double){return swapSample;});
-	near(an[0].area.referenceFloorDip,swapped[0].area.referenceFloorDip,0.001,"rotation swaps axes without changing max-axis assistance");
+	Near(an[0].area.referenceFloorDip,swapped[0].area.referenceFloorDip,0.001,"rotation swaps axes without changing max-axis assistance");
 	for(const auto sizes:{EraserSizes{16,80,100,16,50},EraserSizes{16,32,24,16,50}})
 	{
 		const auto c=ResolveConfig(areaDisplay,DeviceMode::Laptop,MappedSource(SourceKind::Touch,areaDisplay),sizes);
@@ -1171,7 +1206,7 @@ int RunSpeedEraserTests()
 	smallFloor.Advance(6.0);
 	smallFloor.UpdatePosition(static_cast<float>(20.5/areaConfig.motionPerPixelX),0,6.1,&smallArea);
 	const float resumedSmall=smallFloor.DiameterDip();smallFloor.Advance(6.2);
-	near(smallFloor.DiameterDip(),resumedSmall,0.001,"renewed standard-sized area cannot enlarge a cursor without another actual segment");
+	Near(smallFloor.DiameterDip(),resumedSmall,0.001,"renewed standard-sized area cannot enlarge a cursor without another actual segment");
 
 	Controller firstFinger,secondFinger;
 	const auto largerArea=AreaSample(areaConfig,40,30);
@@ -1182,18 +1217,18 @@ int RunSpeedEraserTests()
 		const double t=i/125.0;const float px=static_cast<float>(t*10/areaConfig.motionPerPixelX);
 		firstFinger.UpdatePosition(px,0,t,&normalArea);secondFinger.UpdatePosition(px,0,t,&largerArea);
 	}
-	near(firstFinger.AreaDiagnostics(2).referenceFloorDip,39,0.001,"first finger retains its reference");
-	near(secondFinger.AreaDiagnostics(2).referenceFloorDip,50,0.001,"second finger owns an independent reference");
+	Near(firstFinger.AreaDiagnostics(2).referenceFloorDip,39,0.001,"first finger retains its reference");
+	Near(secondFinger.AreaDiagnostics(2).referenceFloorDip,50,0.001,"second finger owns an independent reference");
 	const float beforeGap=firstFinger.Diameter();firstFinger.PauseForReconnect(2);
-	near(firstFinger.Advance(100),beforeGap,0.001,"reconnect wait freezes area and diameter clocks");
-	near(firstFinger.ResumeFromReconnect(100000,0,3),beforeGap,0.001,"synthetic bridge does not enable larger assistance");
+	Near(firstFinger.Advance(100),beforeGap,0.001,"reconnect wait freezes area and diameter clocks");
+	Near(firstFinger.ResumeFromReconnect(100000,0,3),beforeGap,0.001,"synthetic bridge does not enable larger assistance");
 	const auto zero=AreaSample(areaConfig,0,0);
 	firstFinger.UpdatePosition(100000,0,3.01,&zero,true);
-	near(firstFinger.AreaDiagnostics(3.01).referenceFloorDip,39,0.001,"terminal zero size cannot replace touch reference");
+	Near(firstFinger.AreaDiagnostics(3.01).referenceFloorDip,39,0.001,"terminal zero size cannot replace touch reference");
 	for(int tap=0;tap<5;++tap)
 	{
 		firstFinger.Reset(0,0,4+tap,StartKind::Touch,areaConfig,0,&normalArea);
-		near(firstFinger.Advance(4.5+tap),16,0.001,"each real touch tap starts small without previous reference");
+		Near(firstFinger.Advance(4.5+tap),16,0.001,"each real touch tap starts small without previous reference");
 	}
 	{
 		using namespace Inkeys::Drawing::Draw3;

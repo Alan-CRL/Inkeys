@@ -124,6 +124,11 @@ bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();
 // 将当前工具与显式选择模式发布到 Draw3 bridge。
 void SyncDraw3State();
+void InitializeEraserInputPreferences();
+bool AutomaticPenResponseAvailable() noexcept;
+int EraserWidthPreference(int entry);
+int EraserPenResponsePreference(int entry);
+void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
 // 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
 void ReconcileDraw3Presentation();
 
