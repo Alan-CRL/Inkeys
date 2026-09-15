@@ -3948,7 +3948,10 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						const int modelRows=(EraserWidthPreference(3)==1?1:0)+(EraserWidthPreference(4)==1?1:0);
+						// 五行与高度读取同一快照，全局开关不能在一帧内显示半张旧表。
+						const auto eraserPreferences=EraserPreferencesSnapshot();
+						const int modelRows=(eraserPreferences.entries[3].kind==Inkeys::Drawing::Draw3::SpeedEraser::EraserKind::Speed?1:0)
+							+(eraserPreferences.entries[4].kind==Inkeys::Drawing::Draw3::SpeedEraser::EraserKind::Speed?1:0);
 						ImGui::BeginChild("橡皮擦设置", {settingItemWidth*settingGlobalScale,(45.0f+350.0f+45.0f*modelRows+110.0f)*settingGlobalScale},
 							false,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
 						ImGui::SetCursorPos({0,0});
@@ -3960,7 +3963,7 @@ SettingSessionCoroutine RunSettingSession()
 						const char* responses[]={"自动识别","屏幕笔","数位板"};
 						for(int entry=0;entry<5;++entry)
 						{
-							int kind=EraserWidthPreference(entry);
+							int kind=static_cast<int>(eraserPreferences.entries[entry].kind);
 							const bool pen=entry>=3;
 							ImGui::PushID(entry);
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5.0f*settingGlobalScale);
@@ -3983,7 +3986,7 @@ SettingSessionCoroutine RunSettingSession()
 							}
 							if(pen && kind==1)
 							{
-								const int response=EraserPenResponsePreference(entry);
+								const int response=static_cast<int>(eraserPreferences.entries[entry].penResponse);
 								const int first=AutomaticPenResponseAvailable()?0:1;
 								ImGui::SetCursorPos({20*settingGlobalScale,65*settingGlobalScale});
 								ImGui::TextUnformatted("笔速响应适用于");
@@ -4015,7 +4018,7 @@ SettingSessionCoroutine RunSettingSession()
 						ImFontMain->Scale=0.5f;PushFontNum++;ImGui::PushFont(ImFontMain);
 						ImGui::SetCursorPos({20*settingGlobalScale,48*settingGlobalScale});
 						ImGui::PushTextWrapPos((settingItemWidth-30)*settingGlobalScale);
-						ImGui::TextWrapped("%s",EraserWidthPreference(2)==0?
+						ImGui::TextWrapped("%s",eraserPreferences.entries[2].kind==Inkeys::Drawing::Draw3::SpeedEraser::EraserKind::Fixed?
 							"触摸当前为固定粗细，面积辅助不生效；已保存的辅助选项仍保留。":
 							"仅对触摸笔速橡皮生效；设置自动保存，下一接触批次生效。");
 						ImGui::PopTextWrapPos();
@@ -9351,6 +9354,8 @@ namespace
 
 namespace Inkeys::UI::Setting
 {
+	void RequestConfigWrite() { QueueConfigWrite(); }
+
 	bool Initialize()
 	{
 		lock_guard lock(settingLifecycleMutex);

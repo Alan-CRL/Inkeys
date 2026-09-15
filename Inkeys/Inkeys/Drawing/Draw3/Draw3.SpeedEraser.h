@@ -60,12 +60,23 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		PenResponseChoice penResponse = PenResponseChoice::Automatic;
 		friend bool operator==(const EntrySettings&,const EntrySettings&) = default;
 	};
+	// 持久化直接保存直径与稳定枚举，不依赖属性栏临时顺序。
+	enum class BaseSize : int { Small = 16, Medium = 32, Large = 64 };
+	enum class Sensitivity : int { Low = 0, Medium = 1, High = 2 };
+	enum class AutomaticState { Off, On, Mixed };
+	BaseSize RestoreBaseSize(int saved) noexcept;
+	Sensitivity RestoreSensitivity(int saved) noexcept;
+	float SweepGain(Sensitivity sensitivity) noexcept;
 	struct InputSettings
 	{
 		std::array<EntrySettings,5> entries{};
 		bool automaticPenSupported = true;
+		BaseSize baseSize = BaseSize::Medium;
+		Sensitivity sensitivity = Sensitivity::Medium;
 		friend bool operator==(const InputSettings&,const InputSettings&) = default;
 	};
+	AutomaticState GetAutomaticState(const InputSettings& settings) noexcept;
+	bool SetGlobalAutomatic(InputSettings& settings, bool enabled) noexcept;
 	InputEntry EntryForInput(uint32_t inputType,bool inverted) noexcept;
 	EraserKind RestoreEraserKind(int saved,int legacyMode,InputEntry entry) noexcept;
 	PenResponseChoice RestorePenResponse(int saved,bool automaticSupported) noexcept;
@@ -107,9 +118,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float standardDiameterDip = 32.0f;
 		float maximumDiameterDip = 160.0f;
 		float touchStartDiameterDip = 16.0f;
-		float fixedDiameterDip = 50.0f;
+		float fixedDiameterDip = 32.0f;
 		friend bool operator==(const EraserSizes&, const EraserSizes&) = default;
 	};
+	EraserSizes ResolveSizes(BaseSize baseSize) noexcept;
 	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept;
 	float FixedDiameterPx(float selectedDiameterDip, const DisplayScale& display) noexcept;
 
@@ -201,6 +213,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		double fineShrinkTauSeconds = 0.200, fineGrowthTauSeconds = 0.260;
 		double fineLogShrinkPerSecond = 4.0, fineLogGrowthPerSecond = 3.0;
 		double fineSettleSeconds = 0.040;
+		float sweepGain = 1.0f; // 仅清扫动作增益；精细速度与时间门保持原值。
 		float sweepEnterSpeed = 800.0f;
 		float sweepExitSpeed = 600.0f;
 		float largeTargetSpeed = 1900.0f;
@@ -252,6 +265,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	ResolvedInput ResolveInput(const DisplayScale& display,DeviceMode mode,const InputSource& source,
 		InputEntry entry,const InputSettings& settings,EraserToolPolicy policy = EraserToolPolicy::ByEntry) noexcept;
 	bool SessionConfigCompatible(const Config& left,const Config& right) noexcept;
+	double SweepActionSpeed(const Config& config, double speed) noexcept;
 	float ReferenceTargetDiameterDip(const Config& config, double speed) noexcept;
 	float CompensateTargetDiameterDip(const Config& config, float referenceDip, bool* limited = nullptr) noexcept;
 	float ResolutionDpiActionGain(const DisplayScale& display) noexcept;

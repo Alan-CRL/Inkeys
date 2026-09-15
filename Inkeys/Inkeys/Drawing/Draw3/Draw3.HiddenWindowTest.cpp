@@ -370,9 +370,14 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.nextPageCommandCount > afterUndo.nextPageCommandCount &&
 							state.currentPageIndex == 1 && state.currentPageHasContent &&
-							state.contentRevision > afterUndo.contentRevision;
+							state.successfulPresentCount > afterUndo.successfulPresentCount;
 					}), "clear preserves content on other pages", failures);
 				const auto restoredOtherPage = ProductHost().RuntimeSnapshot();
+				// Host内容通知只在空/非空变化时发布；同为非空的翻页用页号、命令和呈现验证。
+				std::fprintf(stderr,"[ClearRoundtrip] page=%zu content=%d revision=%llu previous=%llu presents=%llu previousPresents=%llu\n",
+					restoredOtherPage.currentPageIndex,restoredOtherPage.currentPageHasContent,
+					static_cast<unsigned long long>(restoredOtherPage.contentRevision),static_cast<unsigned long long>(afterUndo.contentRevision),
+					static_cast<unsigned long long>(restoredOtherPage.successfulPresentCount),static_cast<unsigned long long>(afterUndo.successfulPresentCount));
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) ==
 					Bridge::CommandResult::Accepted, "return to cleared page accepted", failures);
 				modeSucceeded &= Check(WaitUntil([restoredOtherPage]
@@ -381,7 +386,7 @@ namespace Inkeys::Drawing::Draw3
 						return state.previousPageCommandCount >
 							 restoredOtherPage.previousPageCommandCount &&
 							state.currentPageIndex == 0 && state.currentPageHasContent &&
-							state.contentRevision > restoredOtherPage.contentRevision;
+							state.successfulPresentCount > restoredOtherPage.successfulPresentCount;
 					}), "undo-restored page keeps its content after page round-trip", failures);
 
 				// 真实 Controller 三态回归：命令必须作用于发布时的 PPT，而不是随后的 latest scene。
@@ -389,6 +394,25 @@ namespace Inkeys::Drawing::Draw3
 				penState.tool = Bridge::Tool::Pen;
 				penState.selectionMode = false;
 				PublishProductState(penState);
+				// Clear沿用active.empty的提交边界；队列接受后等待Up，事务完成后旧事件不能复活内容。
+				const auto beforeActiveClear=ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down,70,80);
+				postContact(HiddenTestContactPhase::Move,100,90);
+				modeSucceeded &= Check(WaitUntil([beforeActiveClear]{return ProductHost().RuntimeSnapshot().inputDownPublished>beforeActiveClear.inputDownPublished;}),"active contact starts before Clear",failures);
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Clear)==Bridge::CommandResult::Accepted,"active Clear accepted",failures);
+				std::this_thread::sleep_for(50ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().clearCommandCount==beforeActiveClear.clearCommandCount,"Clear respects active contact boundary",failures);
+				const auto afterActiveClear=ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Up,130,100);
+				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.inputTerminalPublished>afterActiveClear.inputTerminalPublished && s.clearCommandCount==afterActiveClear.clearCommandCount+1 && !s.currentPageHasContent;}),"late Up after Clear cannot resurrect content",failures);
+				postContact(HiddenTestContactPhase::Up,130,100);std::this_thread::sleep_for(50ms);
+				modeSucceeded &= Check(!ProductHost().RuntimeSnapshot().currentPageHasContent,"duplicate late Up leaves Clear result intact",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>afterActiveClear.undoCommandCount && s.currentPageHasContent;}),"one Undo restores active Clear",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterActiveClear.redoCommandCount && !s.currentPageHasContent;}),"one Redo reapplies active Clear",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"restore Clear before scene tests",failures);
 				const auto desktopBeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 56, 72) &&
 					postContact(HiddenTestContactPhase::Move, 104, 96) &&
@@ -399,8 +423,13 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.workspace == Bridge::Workspace::Desktop &&
 							state.currentPageHasContent &&
-							state.contentRevision > desktopBeforeInk.contentRevision;
+							state.inputRecycled > desktopBeforeInk.inputRecycled &&
+							state.successfulPresentCount > desktopBeforeInk.successfulPresentCount;
 					}), "Desktop owns its ink before entering A", failures);
+
+				const auto beforeInvalidRedo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([beforeInvalidRedo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>beforeInvalidRedo.redoCommandCount && s.currentPageHasContent;}),"new ink cancels old Clear redo",failures);
 
 				Bridge::PresentationTarget targetA{};
 				targetA.key.bytes[0] = 0xA1;
@@ -477,6 +506,10 @@ namespace Inkeys::Drawing::Draw3
 					modeSucceeded &= waitForPresentation(targetA, *clearedARevision, false,
 						"A remains empty after scene-stamped Clear");
 
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([]{const auto s=ProductHost().RuntimeSnapshot();return s.workspace==Bridge::Workspace::Presentation && s.currentPageHasContent;}),"Presentation Clear Undo restores its boundary",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([]{const auto s=ProductHost().RuntimeSnapshot();return s.workspace==Bridge::Workspace::Presentation && !s.currentPageHasContent;}),"Presentation Clear Redo reuses its transaction",failures);
 				const auto clearedABeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 72, 88) &&
 					postContact(HiddenTestContactPhase::Move, 120, 112) &&
@@ -503,6 +536,18 @@ namespace Inkeys::Drawing::Draw3
 					modeSucceeded &= waitForPresentation(targetA, *returnARevision, true,
 						"A restores its own ink and exact ready revision after B");
 
+				Bridge::ProductState whiteboardState;whiteboardState.workspace=Bridge::Workspace::Whiteboard;whiteboardState.tool=Bridge::Tool::Pen;whiteboardState.selectionMode=false;
+				PublishProductState(whiteboardState);
+				PublishProductWorkspace(Bridge::Workspace::Whiteboard);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().workspace==Bridge::Workspace::Whiteboard;}),"switch to hidden whiteboard",failures);
+				postContact(HiddenTestContactPhase::Down,70,80);postContact(HiddenTestContactPhase::Move,110,100);postContact(HiddenTestContactPhase::Up,150,120);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard has independent ink",failures);
+				PublishProductCommand(Bridge::CommandType::Clear);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear empties annotation",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear Undo restores annotation",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear Redo reapplies transaction",failures);
 				const auto beforeResize = ProductHost().RuntimeSnapshot();
 				const RECT resizedBounds{ 44, 56, 428, 312 };
 				modeSucceeded &= Check(service.SetBounds(Inkeys::Window::WindowRole::Drawpad,
@@ -814,8 +859,8 @@ namespace Inkeys::Drawing::Draw3
 				const auto fixedBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
 				modeSucceeded &= Check(WaitUntil([fixedBefore]{const auto s=ProductHost().RuntimeSnapshot();
-					return s.inputDownPublished>fixedBefore && std::abs(s.eraser.cursorDiameterPx-50)<0.01f;}),
-					"fixed Touch eraser ignores area and remains 50 DIP",failures);
+					return s.inputDownPublished>fixedBefore && std::abs(s.eraser.cursorDiameterPx-32)<0.01f;}),
+					"fixed Touch eraser ignores area and uses default32 DIP",failures);
 				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
 				ProductHost().SetHiddenTestContactArea({});
 
@@ -837,12 +882,42 @@ namespace Inkeys::Drawing::Draw3
 						const auto d=ProductHost().RuntimeSnapshot().eraser;
 						return d.eraserContact && d.downSeconds>before && d.entry==static_cast<SpeedEraser::InputEntry>(entry) &&
 							d.eraserKind==kind && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f &&
-							(kind!=SpeedEraser::EraserKind::Fixed || std::abs(d.cursorDiameterPx-50)<0.01f);
+							(kind!=SpeedEraser::EraserKind::Fixed || std::abs(d.cursorDiameterPx-32)<0.01f);
 					}),"five configured eraser inputs agree with first-point geometry",failures);
 					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],50+static_cast<int>(entry)*30,180);
 					modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),
 						"configured eraser input retires independently",failures);
 				}
+				// 全局尺寸变化经真实Host发布：固定光标、Down和首点共享B，活动接触保持旧B。
+				for (auto base : {SpeedEraser::BaseSize::Small, SpeedEraser::BaseSize::Medium, SpeedEraser::BaseSize::Large})
+				{
+					entryState.eraserInputs.baseSize=base;
+					SpeedEraser::SetGlobalAutomatic(entryState.eraserInputs,false);
+					PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+					for(size_t entry=0;entry<entryFlags.size();++entry)
+					{
+						const double before=ProductHost().RuntimeSnapshot().eraser.downSeconds;
+						postSource(HiddenTestContactPhase::Down,entryFlags[entry],130,160);
+						modeSucceeded &= Check(WaitUntil([before,base]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.eraserContact && d.downSeconds>before && std::abs(d.downDiameterPx-static_cast<int>(base))<0.01f &&
+								std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f;}),"globalB reaches five fixed entry first points",failures);
+						postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],130,160);
+						modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),"globalB contact retires",failures);
+					}
+				}
+				entryState.eraserInputs.baseSize=SpeedEraser::BaseSize::Small;
+				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[0],100,160);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && std::abs(d.downDiameterPx-16)<0.01f;}),"small active contact starts",failures);
+				entryState.eraserInputs.baseSize=SpeedEraser::BaseSize::Large;
+				PublishProductState(entryState);std::this_thread::sleep_for(60ms);
+				postSource(HiddenTestContactPhase::Move,entryFlags[0],110,160);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && std::abs(d.cursorDiameterPx-16)<0.01f;}),"active contact latches oldB across global change",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[0],110,160);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),"latched contact ends",failures);
+				entryState.eraserInputs=speedState.eraserInputs;
 				// 笔尖/左键绘画仍是绘画；右键和笔尾是临时覆盖，不污染selectedTool。
 				entryState.tool=Bridge::Tool::Pen;PublishProductState(entryState);std::this_thread::sleep_for(40ms);
 				for(size_t entry:{size_t{0},size_t{3},size_t{1},size_t{4}})

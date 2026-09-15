@@ -34,6 +34,43 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 
 
+	BaseSize RestoreBaseSize(int saved) noexcept
+	{
+		return saved == 16 ? BaseSize::Small : saved == 64 ? BaseSize::Large : BaseSize::Medium;
+	}
+	Sensitivity RestoreSensitivity(int saved) noexcept
+	{
+		return saved == 0 ? Sensitivity::Low : saved == 2 ? Sensitivity::High : Sensitivity::Medium;
+	}
+	float SweepGain(Sensitivity sensitivity) noexcept
+	{
+		return sensitivity == Sensitivity::Low ? 0.85f : sensitivity == Sensitivity::High ? 1.15f : 1.0f;
+	}
+	EraserSizes ResolveSizes(BaseSize baseSize) noexcept
+	{
+		const float diameter = static_cast<float>(RestoreBaseSize(static_cast<int>(baseSize)));
+		// 只派生尺寸标尺：Touch精细起步与下限一致，动作/面积测量不缩放。
+		return { diameter * 0.5f, diameter, diameter * 5.0f, diameter * 0.5f, diameter };
+	}
+	AutomaticState GetAutomaticState(const InputSettings& settings) noexcept
+	{
+		const auto first = settings.entries.front().kind;
+		for (const auto& entry : settings.entries)
+			if (entry.kind != first) return AutomaticState::Mixed;
+		return first == EraserKind::Speed ? AutomaticState::On : AutomaticState::Off;
+	}
+	bool SetGlobalAutomatic(InputSettings& settings, bool enabled) noexcept
+	{
+		bool changed = false;
+		for (auto& entry : settings.entries)
+		{
+			const auto kind = enabled ? EraserKind::Speed : EraserKind::Fixed;
+			changed |= entry.kind != kind;
+			entry.kind = kind;
+		}
+		return changed;
+	}
+
 	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept
 	{
 		const double unitsPerPixel = std::sqrt(Positive(display.dipPerPixelX,1.0) *
@@ -176,7 +213,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			config.sizes.minimumDiameterDip,config.sizes.maximumDiameterDip);
 		config.sizes.touchStartDiameterDip = std::clamp(static_cast<float>(Positive(sizes.touchStartDiameterDip,16.0)),
 			config.sizes.minimumDiameterDip,config.sizes.standardDiameterDip);
-		config.sizes.fixedDiameterDip = static_cast<float>(Positive(sizes.fixedDiameterDip,50.0));
+		config.sizes.fixedDiameterDip = static_cast<float>(Positive(sizes.fixedDiameterDip,32.0));
 		config.minimumDiameterPx = DiameterToCanvasPx(config.sizes.minimumDiameterDip,display);
 		config.maximumDiameterPx = DiameterToCanvasPx(config.sizes.maximumDiameterDip,display);
 		config.response = source.kind == SourceKind::IntegratedPen ? ResponseModel::ScreenPenHybrid
@@ -300,9 +337,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		ResolvedInput result;result.entry=entry;
 		result.kind=policy==EraserToolPolicy::Fixed?EraserKind::Fixed:
 			policy==EraserToolPolicy::Speed?EraserKind::Speed:preference.kind;
-		result.config=ResolveConfig(display,mode,source,{},pen?preference.penResponse:PenResponseChoice::Automatic,
+		result.config=ResolveConfig(display,mode,source,ResolveSizes(settings.baseSize),pen?preference.penResponse:PenResponseChoice::Automatic,
 			pen?settings.automaticPenSupported:true);
 		result.config.inputEntry=entry;
+		result.config.sweepGain=SweepGain(settings.sensitivity);
 		return result;
 	}
 
@@ -344,6 +382,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		return ResolveConfig(display,mode,source,sizes);
 	}
 
+	double SweepActionSpeed(const Config& config, double speed) noexcept
+	{
+		// 中档走原值，避免回归基准出现无意义浮点扰动；低速平台完全旁路。
+		if (config.sweepGain == 1.0f || speed <= config.fineToStandardSpeed) return speed;
+		return config.fineToStandardSpeed + (speed - config.fineToStandardSpeed) * config.sweepGain;
+	}
+
 	float ReferenceTargetDiameterDip(const Config& config, double speed) noexcept
 	{
 		speed=std::isfinite(speed)?std::max(0.0,speed):0;
@@ -352,6 +397,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if (speed<config.fineToStandardSpeed)
 			return static_cast<float>(minimum+(standard-minimum)*SmoothStep(
 				(speed-config.fineHoldSpeed)/(config.fineToStandardSpeed-config.fineHoldSpeed)));
+		speed=SweepActionSpeed(config,speed);
 		const double amount=SmoothStep((speed-config.sweepEnterSpeed)/(config.largeTargetSpeed-config.sweepEnterSpeed));
 		return static_cast<float>(standard*std::exp(amount*std::log(config.sizes.maximumDiameterDip/standard)));
 	}
@@ -948,10 +994,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		};
 		acceptAreaFloor();
 		const double logRange=std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip);
-		if (!previewOnly_ && realMotionSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
-		else if (realMotionSpeed > 0 && realMotionSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
-		const bool qualifies=!previewOnly_ && (!touchStartup_ || state.maximumDisplacement>=config_.touchUnlockStart) && state.sweepQualified && realMotionSpeed >= config_.sweepEnterSpeed;
-		const double strength=qualifies ? 0.4 + 0.6*SmoothStep((realMotionSpeed-config_.sweepEnterSpeed)/
+		const double sweepSpeed=SweepActionSpeed(config_,realMotionSpeed);
+		if (!previewOnly_ && sweepSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
+		else if (realMotionSpeed > 0 && sweepSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
+		const bool qualifies=!previewOnly_ && (!touchStartup_ || state.maximumDisplacement>=config_.touchUnlockStart) && state.sweepQualified && sweepSpeed >= config_.sweepEnterSpeed;
+		const double strength=qualifies ? 0.4 + 0.6*SmoothStep((sweepSpeed-config_.sweepEnterSpeed)/
 			(config_.largeTargetSpeed-config_.sweepEnterSpeed)) : 0.0;
 		const double leak=std::exp(-dt/config_.evidenceDecaySeconds);
 		state.sweepEvidence=std::min(config_.evidenceFullSeconds,

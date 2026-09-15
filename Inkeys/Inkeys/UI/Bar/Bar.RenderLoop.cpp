@@ -366,6 +366,7 @@ enum class BarDirtyFixedVisual : BarDirtyVisualKey
 	PrimaryLight = 0xFFFF000000000005ULL,
 	CursorLight = 0xFFFF000000000006ULL,
 	DockTargetIndicator = 0xFFFF000000000007ULL,
+	EraserAttributeGroup = 0xFFFF000000000008ULL,
 };
 
 [[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -7761,7 +7762,14 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		animationDtSeconds, currentAnimationSpeedRate);
 
 
-	return needRendering;
+	const bool eraserChanged = owner_.eraserAttribute.Advance(owner_, animationDtSeconds,
+		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
+		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
+		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip);
+	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
+	return needRendering || eraserChanged;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -8299,6 +8307,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.eraserAttribute.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributePenThickness.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
@@ -8458,6 +8467,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			IncludeShapeBounds(mainBar, BottomDockBoundsTransform::Body);
 			IncludeShapeBounds(drawAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(geometryAttribute, BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel],
 				BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanelDivider],
@@ -9045,6 +9055,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						cursorLightInfluence));
 		}
 
+		const RECT eraserBounds = TransformBottomDockBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		const auto eraserKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup);
+		state.dirtyRegionTracker.Observe(eraserKey, eraserBounds);
+		if (observePrimaryLight) BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
+			IntersectBarWindowRect(eraserBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
+		if (observeCursorLight) BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
+			IntersectBarWindowRect(eraserBounds, cursorLightInfluence));
 		if (observeMainGroup)
 			state.dirtyRegionTracker.Observe(mainGroupKey, mainGroupBounds);
 		if (observeDrawAttributeGroup)
@@ -9190,6 +9207,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.eraserAttribute.Changed()
 			|| !state.morePanelProgress.IsSame()
 			|| !state.drawAttributeLaserShellProgress.IsSame()
 			|| !state.drawAttributeLaserOuterThickness.IsSame()
@@ -12278,6 +12296,9 @@ bool presetButton = button.presetIndex >= 0;
 			}
 		}
 
+		SetRigidTransform();
+		owner_.eraserAttribute.Draw(state.spec, barDeviceContext);
+
 		// 绘制函数内部记录的是未套组变换的布局边界，提交时改用同源的实际视觉外框。
 		state.current = currentContentBounds;
 		SetBaseTransform();
@@ -12576,6 +12597,7 @@ bool presetButton = button.presetIndex >= 0;
 			state.barPresentFailureLogged = false;
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();
+			owner_.eraserAttribute.CommitPresented();
 			state.viewportController.Commit(candidateViewport);
 			state.presentMappingTracker.CommitPresented(candidatePresentMapping);
 			const RECT committedWindowScreenBounds{

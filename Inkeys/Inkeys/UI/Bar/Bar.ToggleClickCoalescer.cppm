@@ -16,6 +16,8 @@ export namespace Inkeys::UI::Bar
 		More,
 		ThicknessAdjust,
 		PenTypeMenu,
+		EraserAttribute,
+		EraserSensitivity,
 		Count,
 	};
 

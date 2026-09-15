@@ -466,6 +466,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
@@ -939,6 +940,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
@@ -1337,9 +1341,13 @@
   </Target>
   <!-- FXC 10.1 不接受 BOM；只在中间目录生成 Draw3 的无 BOM 副本。 -->
   <Target Name="PrepareDraw3FxcCompatibleHlsl" BeforeTargets="FxCompile"
-          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl"
-          Outputs="$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl"
+          Outputs="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h;$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
     <MakeDir Directories="$(IntDir)fxc_utf8\draw3" />
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcEraserVisualLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h" Lines="@(_Draw3FxcEraserVisualLines)" Overwrite="true" Encoding="ASCII" />
     <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli">
       <Output TaskParameter="Lines" ItemName="_Draw3FxcInkLines" />
     </ReadLinesFromFile>

@@ -1,4 +1,5 @@
 ﻿module;
+#include "Assets/EraserGripVisual.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -350,6 +351,7 @@ namespace Inkeys::Drawing::Draw3
 			std::size_t undoFloor = 0;
 			std::uint32_t intervalOrdinal = 0;
 			bool intervalLoadPending = false;
+			bool clearRedoAvailable = false; // 仅Clear撤销恢复后有效，新笔迹提交会取消。
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
 		};
 
@@ -679,7 +681,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!std::isfinite(diameter) || diameter <= 0.0f) return;
 			appearance.width = diameter;
 			appearance.height = diameter;
-			appearance.outlineWidth = diameter * 0.04f;
+			appearance.outlineWidth = diameter * ERASER_GRIP_OUTLINE_RATIO;
 		}
 
 		struct CanvasGestureContactRuntime
@@ -1313,19 +1315,21 @@ namespace Inkeys::Drawing::Draw3
 		ConfigureProductInkCursorAppearances(window_, currentProductVisualStyle,
 			configuration_.dpiScale);
 		// 橡皮实际模型使用画布像素宽度，光标不能再次乘 DPI。
-		const float eraserCursorDiameter = kWideToolDiameter;
+		const float eraserCursorDiameter = SpeedEraser::FixedDiameterPx(
+			SpeedEraser::ResolveSizes(window_.EraserInputsSnapshot().baseSize).fixedDiameterDip,
+			window_.SpeedEraserDisplayScaleSnapshot());
 		DrawingCursorAppearance eraserAppearance = {
 			DrawingCursorShape::EraserGripCircle,
 			eraserCursorDiameter,
 			eraserCursorDiameter,
 			1.0f, 1.0f, 1.0f
 		};
-		eraserAppearance.opacity = 0.5f;
+		eraserAppearance.opacity = ERASER_GRIP_OPACITY;
 		eraserAppearance.fillAlpha = 1.0f;
-		eraserAppearance.outlineWidth = eraserCursorDiameter * 0.04f;
-		eraserAppearance.outlineRed = 207.0f / 255.0f;
-		eraserAppearance.outlineGreen = 207.0f / 255.0f;
-		eraserAppearance.outlineBlue = 207.0f / 255.0f;
+		eraserAppearance.outlineWidth = eraserCursorDiameter * ERASER_GRIP_OUTLINE_RATIO;
+		eraserAppearance.outlineRed = ERASER_GRIP_OUTLINE_CHANNEL;
+		eraserAppearance.outlineGreen = ERASER_GRIP_OUTLINE_CHANNEL;
+		eraserAppearance.outlineBlue = ERASER_GRIP_OUTLINE_CHANNEL;
 		window_.ConfigureDrawingCursor(DrawingTool::Eraser, eraserAppearance);
 		ConfigureLaserRendererStyle(renderer_, currentProductVisualStyle,
 			configuration_.dpiScale);
@@ -2870,7 +2874,7 @@ namespace Inkeys::Drawing::Draw3
 					baseDiameter = runtime->speedEraserOc.Diameter();
 				}
 				if (runtime->tool == DrawingTool::Eraser && widthMode != StrokeWidthMode::SpeedEraser)
-					baseDiameter = SpeedEraser::FixedDiameterPx(SpeedEraser::EraserSizes{}.fixedDiameterDip, runtime->speedEraserDisplayScale);
+					baseDiameter = SpeedEraser::FixedDiameterPx(runtime->resolvedEraser.config.sizes.fixedDiameterDip, runtime->speedEraserDisplayScale);
 				runtime->eraserSize.Reset(baseDiameter, AbsoluteQpcSeconds(down.qpc, qpcFrequency));
 				runtime->eraserDiagnostics = {};
 				runtime->eraserDiagnostics.active = observer_.eraserDiagnostics && window_.EraserDiagnosticsEnabled();
@@ -4711,6 +4715,7 @@ namespace Inkeys::Drawing::Draw3
 					source.undoFloor, destination.history.Items().size());
 				destination.intervalOrdinal = source.intervalOrdinal;
 				destination.intervalLoadPending = source.intervalLoadPending;
+				destination.clearRedoAvailable = source.clearRedoAvailable;
 				destination.boundaryFallback = std::move(source.boundaryFallback);
 			}
 			const auto oldMutation = activePresentationMutationRevision;
@@ -5121,6 +5126,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!materialized || !document_->ReplacePage(
 				currentPageIndex_, std::move(materialized->first))) return false;
 			pageRuntimeStates[currentPageIndex_] = std::move(materialized->second);
+			pageRuntimeStates[currentPageIndex_].clearRedoAvailable = true;
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
 			return true;
@@ -5275,6 +5281,7 @@ namespace Inkeys::Drawing::Draw3
 								if (!materialized || !targetDocument->ReplacePage(
 									index, std::move(materialized->first))) return std::nullopt;
 								(*runtimes)[index] = std::move(materialized->second);
+								(*runtimes)[index].clearRedoAvailable = true;
 								return index;
 							}
 							return std::nullopt;
@@ -5552,7 +5559,11 @@ namespace Inkeys::Drawing::Draw3
 				}
 				// 页面、撤回/重做和键盘平移都以命令时刻的固定视口为起点。
 				interruptNavigationForPenOrMouse("canvas-command");
-				if (command.type == CanvasCommandType::Clear)
+				const bool redoClear = command.type == CanvasCommandType::Redo &&
+					currentPageIndex_ < pageRuntimeStates.size() &&
+					pageRuntimeStates[currentPageIndex_].clearRedoAvailable;
+				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
+				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
 					std::optional<draw3::uink::Draw3UInkCanvasSnapshot> preClear;
 					if (document_ && currentPageIndex_ < pageRuntimeStates.size())
@@ -5595,7 +5606,8 @@ namespace Inkeys::Drawing::Draw3
 							desktopDiskRequested, false, false };
 						desktopAutoSavePolicy.CompleteDesktopClear();
 					}
-					else if (cleared && activeWorkspace == Bridge::Workspace::Presentation &&
+					else if (cleared && (activeWorkspace == Bridge::Workspace::Presentation ||
+						activeWorkspace == Bridge::Workspace::Whiteboard) &&
 						preClear && currentPageIndex_ < pageRuntimeStates.size())
 						pageRuntimeStates[currentPageIndex_].boundaryFallback =
 							std::move(*preClear);
@@ -5654,8 +5666,9 @@ namespace Inkeys::Drawing::Draw3
 									observer_.desktopLoadRequested(observer_.context,
 										*desktopClearRecovery->fileGuid);
 						}
-						else if (activeWorkspace == Bridge::Workspace::Presentation &&
-							page && runtime.intervalOrdinal != 0 &&
+						else if ((activeWorkspace == Bridge::Workspace::Presentation ||
+							activeWorkspace == Bridge::Workspace::Whiteboard) &&
+							page && (runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
 							!runtime.intervalLoadPending)
 						{
 							if (runtime.boundaryFallback)
@@ -7021,6 +7034,7 @@ namespace Inkeys::Drawing::Draw3
 									}
 								}
 								pageRuntime.rasterState = afterState;
+								pageRuntime.clearRedoAvailable = false;
 								if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 								{
 									if (!submitted ||

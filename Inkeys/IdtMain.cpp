@@ -292,6 +292,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 {
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true);
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,

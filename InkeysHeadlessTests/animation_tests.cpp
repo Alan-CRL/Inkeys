@@ -49,6 +49,7 @@ int RunBarBottomDockTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
 int RunSpeedEraserTests();
+int RunEraserAttributeTests();
 int RunPresentationDescriptorTests();
 
 namespace
@@ -1516,6 +1517,7 @@ int main(int argc, char** argv)
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
 	failureCount += RunSpeedEraserTests();
+	failureCount += RunEraserAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
 	if (benchmark) RunBenchmarks();
 

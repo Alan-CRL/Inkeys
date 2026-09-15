@@ -753,6 +753,8 @@ int RunSpeedEraserTests()
 			std::ofstream(root/L"Inkeys"/L"Config"/L"main.json")<<"{}";
 			globalPath=root.wstring()+L"\\";
 			Inkeys::Config saved;
+			expect(saved.Drawing.Eraser.BaseDiameterDip.load()==32 && saved.Drawing.Eraser.Sensitivity.load()==1,"missing global settings default to32/medium without changing entry migration");
+			saved.Drawing.Eraser.BaseDiameterDip=64;saved.Drawing.Eraser.Sensitivity=2;
 			saved.Drawing.Eraser.MouseLeft=0;saved.Drawing.Eraser.MouseRight=1;saved.Drawing.Eraser.Touch=0;
 			saved.Drawing.Eraser.PenTip=0;saved.Drawing.Eraser.PenTail=1;
 			saved.Drawing.Eraser.PenTipResponse=1;saved.Drawing.Eraser.PenTailResponse=2;
@@ -762,6 +764,7 @@ int RunSpeedEraserTests()
 			expect(read.Drawing.Eraser.MouseLeft.load()==0 && read.Drawing.Eraser.MouseRight.load()==1 &&
 				read.Drawing.Eraser.Touch.load()==0 && read.Drawing.Eraser.PenTip.load()==0 && read.Drawing.Eraser.PenTail.load()==1 &&
 				read.Drawing.Eraser.PenTipResponse.load()==1 && read.Drawing.Eraser.PenTailResponse.load()==2 &&
+				read.Drawing.Eraser.BaseDiameterDip.load()==64 && read.Drawing.Eraser.Sensitivity.load()==2 &&
 				read.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance.load(),"five kinds, two pen choices and old area key round-trip independently");
 			globalPath=oldPath;
 			if(root.parent_path()==fs::temp_directory_path())fs::remove_all(root,error);

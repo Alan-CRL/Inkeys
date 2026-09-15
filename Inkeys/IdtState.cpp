@@ -19,6 +19,7 @@
 
 import Inkeys.Other.Config;
 import Inkeys.UI.Bar;
+import Inkeys.UI.Setting;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.Freeze;
@@ -40,6 +41,8 @@ namespace
 		auto& saved=Inkeys::config.Drawing.Eraser;
 		const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
 		InputSettings result;result.automaticPenSupported=AutomaticPenResponseAvailable();
+		result.baseSize=RestoreBaseSize(saved.BaseDiameterDip.load());
+		result.sensitivity=RestoreSensitivity(saved.Sensitivity.load());
 		for(size_t i=0;i<fields.size();++i)
 			result.entries[i].kind=RestoreEraserKind(fields[i]->load(),-1,static_cast<InputEntry>(i));
 		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
@@ -304,6 +307,8 @@ void InitializeEraserInputPreferences()
 	for(size_t i=0;i<fields.size();++i)
 		*fields[i]=static_cast<int>(RestoreEraserKind(fields[i]->load(),
 			setlist.eraserSetting.savedFixedChoice?2:-1,static_cast<InputEntry>(i)));
+	saved.BaseDiameterDip=static_cast<int>(RestoreBaseSize(saved.BaseDiameterDip.load()));
+	saved.Sensitivity=static_cast<int>(RestoreSensitivity(saved.Sensitivity.load()));
 	if(saved.PenTipResponse.load()==-1)saved.PenTipResponse=AutomaticPenResponseAvailable()?0:2;
 	if(saved.PenTailResponse.load()==-1)saved.PenTailResponse=AutomaticPenResponseAvailable()?0:2;
 }
@@ -330,6 +335,47 @@ void SetEraserInputPreference(int entry,int kind,int penResponse)
 				Inkeys::Drawing::Draw3::SpeedEraser::RestorePenResponse(penResponse,AutomaticPenResponseAvailable()));
 	}
 	SyncDraw3State(); // 写盘仍由设置页的既有合并队列负责。
+	barUISet.UpdateRendering(false);
+}
+
+Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot()
+{
+	return ReadEraserPreferences();
+}
+void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automatic)
+{
+	using namespace Inkeys::Drawing::Draw3::SpeedEraser;
+	bool changed = false;
+	{
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved = Inkeys::config.Drawing.Eraser;
+		if (baseDiameterDip != -1)
+		{
+			const int value = static_cast<int>(RestoreBaseSize(baseDiameterDip));
+			changed |= saved.BaseDiameterDip.load() != value;
+			saved.BaseDiameterDip = value;
+		}
+		if (sensitivity != -1)
+		{
+			const int value = static_cast<int>(RestoreSensitivity(sensitivity));
+			changed |= saved.Sensitivity.load() != value;
+			saved.Sensitivity = value;
+		}
+		if (automatic != -1)
+		{
+			// 一次持锁写全表，再发布一次；不动penResponse、笔尾/右键门及面积辅助。
+			const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+			for (auto* field : fields)
+			{
+				changed |= field->load() != (automatic ? 1 : 0);
+				*field = automatic ? 1 : 0;
+			}
+		}
+		if (changed) Inkeys::UI::Setting::RequestConfigWrite();
+	}
+	if (!changed) return;
+	SyncDraw3State();
+	barUISet.UpdateRendering(false);
 }
 
 void SyncDraw3State()
