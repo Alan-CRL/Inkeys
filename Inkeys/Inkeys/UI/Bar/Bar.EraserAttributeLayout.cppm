@@ -61,6 +61,12 @@ export namespace Inkeys::UI::Bar
 	}
 	inline double EraserRectCenterX(EraserAttributeRect r) noexcept { return (r.left+r.right)/2; }
 	inline double EraserRectCenterY(EraserAttributeRect r) noexcept { return (r.top+r.bottom)/2; }
+	inline bool EraserAttributeCircleContains(EraserAttributeRect circle,double expansion,double x,double y) noexcept
+	{
+		const double radius=(std::max)(0.0,circle.Width()/2+expansion);
+		const double dx=x-EraserRectCenterX(circle),dy=y-EraserRectCenterY(circle);
+		return dx*dx+dy*dy<=radius*radius;
+	}
 	inline constexpr double EraserAttributeCircleGapDip=16.0;
 	inline constexpr double EraserAttributeStandardGapDip=5.0;
 	inline constexpr double EraserAttributeAutomaticArrowWidthDip=20.0;
@@ -128,7 +134,7 @@ export namespace Inkeys::UI::Bar
 			const double lower=i==0?circleStart:(r.previews[i-1].right+circle.left)/2;
 			const double upper=i==2?circleEnd:(circle.right+r.previews[i+1].left)/2;
 			r.previewClips[i]=IntersectEraserRect({lower,y,upper,y+height},r.panel);
-			const double hitRadius=(std::max)(BarButtonOneSideDip/2,circle.Width()/2+BarButtonGapDip);
+			const double hitRadius=circle.Width()/2+BarButtonGapDip;
 			const double center=EraserRectCenterX(circle);
 			r.items[i+1]=IntersectEraserRect({center-hitRadius,cy-hitRadius,center+hitRadius,cy+hitRadius},r.previewClips[i]);
 		}
@@ -136,8 +142,9 @@ export namespace Inkeys::UI::Bar
 		r.automatic={ax,cy-bh/2,ax+autoWidth,cy+bh/2};
 		// 倒转只移动整个分组，A和右侧箭头不镜像，两个动作区保持原语义。
 		r.items[4]={ax,cy-bh/2,ax+button,cy+bh/2};r.items[5]={ax+button,cy-bh/2,ax+autoWidth,cy+bh/2};
-		r.automaticDivider={ax+button-stroke/2,r.automatic.top+EraserAttributeStandardGapDip,
-			ax+button+stroke/2,r.automatic.bottom-EraserAttributeStandardGapDip};
+		// 内部分割线与主栏分割线使用同一高度并保持垂直居中。
+		r.automaticDivider={ax+button-stroke/2,r.dividers[0].top,
+			ax+button+stroke/2,r.dividers[0].bottom};
 		const double menuWidth=(std::min)(available,button*2+BarButtonOneSideDip+BarButtonGapDip*2);
 		const double row=BarButtonOneSideDip,padding=BarButtonGapDip*2,mg=BarButtonGapDip;
 		const double menuHeight=row*2+padding*2+mg;

@@ -177,6 +177,15 @@ namespace Inkeys::UI::Bar
 				};
 				click(8);expect(EraserPreferencesSnapshot().sensitivity==Inkeys::Drawing::Draw3::SpeedEraser::Sensitivity::High && owner.barState.eraserSensitivityOpen,"sensitivity updates without closing menu");
 				click(9);expect(owner.barState.eraserSensitivityOpen,"disabled settings does nothing");
+				const auto beforeCorner=EraserPreferencesSnapshot().baseSize;const auto smallHit=layout.items[1];ExMessage corner{};
+				corner.x=static_cast<short>(smallHit.left+0.5);corner.y=static_cast<short>(smallHit.top+0.5);
+				corner.message=WM_LBUTTONDOWN;corner.lbutton=true;owner.eraserAttribute.Pointer(owner,corner);
+				corner.message=WM_LBUTTONUP;corner.lbutton=false;owner.eraserAttribute.Pointer(owner,corner);
+				expect(EraserPreferencesSnapshot().baseSize==beforeCorner,"circle bounding-box corner is not clickable");
+				ExMessage hover{};hover.message=WM_MOUSEMOVE;hover.x=static_cast<short>(EraserRectCenterX(layout.previews[0]));hover.y=static_cast<short>(EraserRectCenterY(layout.previews[0]));
+				owner.eraserAttribute.Pointer(owner,hover);for(int f=0;f<20;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,zoom,dpi,{0,0,static_cast<LONG>(width),static_cast<LONG>(height)},{0,0},0,0);
+				owner.eraserAttribute.CommitPresented();const auto hoverRegions=owner.eraserAttribute.PresentedRegions();
+				expect(hoverRegions[2].right==hoverRegions[2].left && hoverRegions[2].bottom==hoverRegions[2].top,"hover no longer publishes a rectangular content tooltip");
 				click(1);expect(EraserPreferencesSnapshot().baseSize==Inkeys::Drawing::Draw3::SpeedEraser::BaseSize::Small && owner.barState.eraserAttribute && !owner.barState.eraserSensitivityOpen,"outside menu click closes child then applies preset once");
 				click(3,true);expect(EraserPreferencesSnapshot().baseSize==Inkeys::Drawing::Draw3::SpeedEraser::BaseSize::Small,"cancelled pointer does not select");
 				click(4);expect(Inkeys::Drawing::Draw3::SpeedEraser::GetAutomaticState(EraserPreferencesSnapshot())==Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::Off && owner.barState.eraserAttribute,"body toggles only the master gate and stays open");
@@ -247,6 +256,15 @@ namespace Inkeys::UI::Bar
 				stable=s;
 			}
 			expect(openPeak>1.01 && stable.panelPose.scale==1 && mainOutsidePixel,"main opening overshoot exists in actual pixels outside final rectangle");
+			// 保存真实按压及选中环交接帧，避免只有稳定态截图而遗漏交互动画。
+			auto sizeMessage=[&](UINT kind,int item,bool held){ExMessage m{};m.message=static_cast<USHORT>(kind);m.x=static_cast<short>(EraserRectCenterX(stable.geometry.items[item]));m.y=static_cast<short>(EraserRectCenterY(stable.geometry.items[item]));m.lbutton=held;return m;};
+			owner.eraserAttribute.Pointer(owner,sizeMessage(WM_LBUTTONDOWN,3,true));
+			tick("size-press",0,1.0/60,true);expect(owner.eraserAttribute.Active(),"size press starts the shared button feedback animation");
+			for(int f=1;f<10;++f)tick("size-press",f,1.0/60,true);
+			owner.eraserAttribute.Pointer(owner,sizeMessage(WM_LBUTTONUP,3,false));
+			tick("size-selection-fade",0,1.0/60,true);expect(owner.eraserAttribute.Active(),"selection ring fade and press release request continuation frames");
+			for(int f=1;f<30;++f)tick("size-selection-fade",f,1.0/60,true);
+			expect(!owner.eraserAttribute.Active(),"size press and reversible selection-ring fade settle to idle");
 			// 没有Down票据的旧Up，即使当前中央Clear在命中点，也不能形成命令。
 			ExMessage oldUp{};oldUp.message=WM_LBUTTONUP;oldUp.x=static_cast<short>(EraserRectCenterX(stable.geometry.items[0]));oldUp.y=static_cast<short>(EraserRectCenterY(stable.geometry.items[0]));
 			owner.eraserAttribute.Pointer(owner,oldUp);expect(owner.barState.eraserAttribute && ResolveEraserAttributeRelease(-1,0,true,false)==-1,"opening release cannot trigger center Clear");

@@ -33,11 +33,13 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组从面板边缘到分割线的四段留白均为16逻辑单位。自动侧为5+90+5，清空与两侧分割线也各留5；清空中心锚定主栏橡皮入口，默认总宽342逻辑单位，倒转只交换完整侧组。窄区先等量压缩四段5，再等量压缩四段16，仍不足只裁溢出；命中由相邻中界和可见区域限制，圆和按钮外径不变。
 
-预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊；选中描边向内加粗并以同一Theme Accent绘制PointLight，Hover/Pressed只改光照/轮廓。键盘焦点为独立内虚线。自动按钮只绘制一个90×70 BarButtonClass，body/arrow命中宽为70/20并共享Hover、按压及整体缩放；内部1 DIP分割线上下各留5，复用当前外框色和PointLight，选中时与外框同步Accent。菜单打开不改自动选中态。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
+预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊或悬停内容提示框；选中态是在橡皮外缘外留3 DIP间隙的1 DIP Theme Accent圆环，以独立可逆进度渐显/渐隐并绘制PointLight。Pressed复用普通按钮的缩放值与Press/Release曲线，围绕圆心缩放整个圆形视觉；稳定态不缩放。命中必须先裁当前可见区域，再以点到圆心距离判断真实圆形（当前允许圆外扩5 DIP），外接矩形四角不得响应。键盘焦点为独立内虚线。
+
+自动按钮只绘制一个90×70 BarButtonClass，body/arrow命中宽为70/20并共享Hover、按压及整体缩放；内部1 DIP分割线与主栏Divider等高并垂直居中，复用当前外框色和PointLight，选中时与外框同步Accent。右侧箭头复用绘制属性笔类型入口的`barThicknessAdjust` SVG、菜单方向和0/180度目标角，展开、收起及中途反向均通过同一动画值收敛。菜单打开不改自动选中态。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
 
 菜单182.5×90逻辑单位，两行结构：标题/禁用齿轮、三段等宽选项。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
 
-正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板、菜单和提示均在Main Bar之前绘制，重叠像素由主栏覆盖。
+正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板和菜单均在Main Bar之前绘制，重叠像素由主栏覆盖。
 
 EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及DrawAttribute的EaseOutBack/EaseInBack、EaseOutSine/EaseInSine；紧凑宽度取BarDrawAttributeCompactWidth。状态变更才Retarget，前半程可加入父余时。geometry允许overshoot，alpha独立有界；零时间采样保留当前姿态（动画禁用或force replace除外）。子pose复合父pose，锚点跟随当前完整自动按钮。开合期间允许整组缩放，稳定精确为1；日常Hover/Selected不缩放圆。
 
@@ -55,6 +57,9 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 |总开关关闭且五入口混合|按钮显示Off；解析全Fixed，入口保存值不变|
 |只选B/灵敏度|kind、设备身份和面积开关不变|
 |预览高于面板|仅裁可见区域，不改圆直径或增加透明命中|
+|指针位于尺寸入口外接矩形角|圆距判断失败，不产生Hover、Pressed或选择|
+|选中尺寸切换|旧圆环渐隐、新圆环渐显；本体直径与灰色轮廓不变|
+|自动菜单展开/收起或反向|箭头沿笔类型同款0/180度动画连续收敛，70/20动作区不变|
 |无内容Clear|禁用，不产生空撤销记录|
 |Clear接受但接触仍活动|等原Up/提交边界执行|
 |Clear撤销后Redo|复用一次Clear事务|
@@ -68,7 +73,7 @@ Bad：把160做成第三个基础档、独立global bool遮盖五入口、用hov
 
 ## 6. Tests Required
 `InkeysHeadlessTests.exe --no-window`包含模型/面积/会话基准、三档/三灵敏度、DPI×UI缩放几何与真实配置读写。
-`Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证按钮/菜单/关闭/idle；不等同真实HWND窗口或硬件交互验收。
+`Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证圆形命中角、外侧选中环渐变/按压、无悬停提示框、箭头展开/收起中间帧、菜单/关闭/idle；不等同真实HWND窗口或硬件交互验收。
 `Inkeys.exe --draw3-eraser-hidden-test`检查实际Host五入口/首点/活动锁存/Up和间隔。
 `Inkeys.exe --draw3-hidden-test`检查Clear、Up边界、Undo/Redo、跨页、白板和场景事务。
 当前方案B结果以任务scheme-b-validation.md为准；旧validation.md仅代表上一轮设计，不能据此推断本轮通过。offscreen还保存真实帧PNG/CSV及A图标三态；组合GIF只重放这些帧。
@@ -78,3 +83,5 @@ Wrong：固定Down继续取`EraserSizes{}.fixedDiameterDip`，而Hover已使用�
 Correct：Down读取`runtime.resolvedEraser.config.sizes.fixedDiameterDip`，与该接触光标及首点共享锁存值。
 Wrong：对预览画普通SVG、在已乘UI缩放的坐标再乘一次DPI。
 Correct：共享EraserGripVisual结构，先从真实画布像素直径除frameZoom，再按Bar坐标绘制与裁剪。
+Wrong：用圆的外接矩形直接命中，或把选中Accent画进橡皮本体轮廓。
+Correct：矩形只作为dirty/裁剪包络；业务命中使用圆距，选中由圆外独立可逆Accent环表达。

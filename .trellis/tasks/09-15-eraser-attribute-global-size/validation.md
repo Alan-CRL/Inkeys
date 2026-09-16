@@ -142,3 +142,12 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - 设置页新增自动粗细总开关卡片；关闭期间五入口仍可编辑和持久化。
 
 验证结果：完整`InkeysRepo.sln`的`Debug | ARM64`构建退出0；Headless、橡皮离屏、Draw3隐藏、橡皮隐藏四项均通过。Headless报告216组布局、0失败。通用Draw3隐藏测试首次在异步resize/present等待处超时但进程退出0，立即复跑全部隐藏集通过；该资源缩放路径未被本轮改动。`git diff --check`通过，仅报告既有autocrlf提示。未启动交互式GUI，未提交、推送或归档。
+
+## 2026-09-16 精细视觉与交互追加验证
+
+- 已删除橡皮属性专用悬停内容提示矩形及其Bounds、命中和续帧状态。
+- 24/32/40 DIP选中态为橡皮外3 DIP间隙、1 DIP Accent圆环，PointLight及透明度可逆渐变；按压复用普通按钮的0.95缩放与Press/Release曲线。
+- 点击区域为当前可见裁剪内、圆外扩5 DIP的真实圆形；外接矩形角和两个尺寸圆之间的跨区释放均不执行。
+- 自动内分割线与主栏分割线等高居中；右侧箭头复用`barThicknessAdjust` SVG及笔类型0/180度动画，保留70/20动作区和整体按压。
+
+完整`InkeysRepo.sln` `Debug | ARM64`构建通过；Headless通过并报告216组布局、0失败；`--bar-eraser-offscreen-test`通过且`failures=0`。离屏测试保存并断言尺寸圆按下/释放、选中环交接和箭头开合中间帧，最终均能回到idle。`git diff --check`通过。未启动交互式GUI，未提交、推送、归档或结束任务。

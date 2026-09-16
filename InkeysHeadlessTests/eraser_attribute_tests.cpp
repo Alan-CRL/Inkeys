@@ -32,9 +32,9 @@ int RunEraserAttributeTests()
 			std::abs(l.items[4].Width()-70.0)<0.001 && std::abs(l.items[5].Width()-20.0)<0.001,
 			"automatic composite is90x70 with70/20 action regions");
 		expect(std::abs(l.automaticDivider.Width()-1.0)<0.001 &&
-			std::abs(l.automaticDivider.top-l.automatic.top-5.0)<0.001 &&
-			std::abs(l.automatic.bottom-l.automaticDivider.bottom-5.0)<0.001,
-			"internal divider overlays the70/20 boundary with5 DIP vertical insets");
+			std::abs(l.automaticDivider.top-l.dividers[0].top)<0.001 &&
+			std::abs(l.automaticDivider.bottom-l.dividers[0].bottom)<0.001,
+			"internal divider matches the centered main divider height");
 		expect(std::abs(cx(l.menu)-cx(automatic))<0.001,"menu centers on entire automatic control");
 		expect(l.menu.Width()>=180 && l.menu.Width()<=200 && l.menu.Height()<=100,"sensitivity menu has two compact rows");
 		expect(l.items[9].bottom<=l.items[6].top,"disabled gear lives in header row");
@@ -49,7 +49,12 @@ int RunEraserAttributeTests()
 			std::abs(l.automatic.left-l.dividers[1].right-5.0)<0.001 &&
 			std::abs(l.panel.right-l.automatic.right-5.0)<0.001,
 			"automatic and central divider spacing uses four5 DIP gaps");
-		expect(l.items[1].Width()<BarButtonTwoSideDip,"small circle has bounded touch expansion, not old70DIP slot");
+		expect(std::abs(l.items[1].Width()-(l.previews[0].Width()+BarButtonGapDip*2))<0.001,
+			"small circle hit bounds follow the visible circle instead of the old70DIP slot");
+		const auto small=l.previews[0];const double hitRadius=small.Width()/2+BarButtonGapDip;
+		expect(EraserAttributeCircleContains(small,BarButtonGapDip,EraserRectCenterX(small),EraserRectCenterY(small)+hitRadius-0.01) &&
+			!EraserAttributeCircleContains(small,BarButtonGapDip,EraserRectCenterX(small)+hitRadius-0.01,EraserRectCenterY(small)+hitRadius-0.01),
+			"size preset hit testing is a true circle rather than its bounding rectangle");
 	}
 	InputSettings settings;
 	expect(settings.automaticEnabled && settings.baseSize==BaseSize::Medium && settings.sensitivity==Sensitivity::Medium,"new global defaults are automatic on and32/medium");
@@ -139,6 +144,8 @@ int RunEraserAttributeTests()
 	}
 	expect(ResolveEraserAttributeRelease(-1,0,true,false)==-1,"opening Up without a new panel Down can never clear");
 	expect(ResolveEraserAttributeRelease(4,5,true,false)==4 && ResolveEraserAttributeRelease(5,4,true,false)==5,"split action remains owned by Down region");
+	expect(ResolveEraserAttributeRelease(1,2,true,false)==-1 && ResolveEraserAttributeRelease(2,2,true,false)==2,
+		"size preset release must stay inside the same circular action");
 	expect(ResolveEraserAttributeRelease(4,5,true,true)==-1 && ResolveEraserAttributeRelease(4,-1,false,false)==-1,"cancel and external release produce no action");
 	// 直接推进生产surface motion：Back过冲、关闭可见性、反向连续、父子锚点与禁用动画。
 	{

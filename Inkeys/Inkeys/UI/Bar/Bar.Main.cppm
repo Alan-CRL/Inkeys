@@ -99,7 +99,6 @@ private:
 	mutable std::mutex presentationMutex_;
 	Inkeys::UI::Bar::EraserAttributeLayout layout_;
 	Inkeys::UI::Bar::EraserAttributePresentation frame_, presented_;
-	Inkeys::UI::Bar::EraserAttributeRect tooltipRect_, presentedTooltip_;
 	double zoom_ = 1;
 	bool initialized_ = false, changed_ = false, active_ = false;
 	bool previousBelow_ = false, previousReversed_ = false;
@@ -107,14 +106,14 @@ private:
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
 	IdtAtomic<bool> visible_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
-	BarUiValueClass tooltipProgress_{0.0};
 	std::array<BarButtonClass,10> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;
 	BarUiShapeClass automaticDivider_;
-	std::array<BarUiShapeClass,3> circles_;
+	BarUiSVGClass automaticArrow_;
+	std::array<BarUiShapeClass,3> circles_, circleSelectionRings_;
 	std::array<BarUiValueClass,3> circleSelection_, circleHover_, circlePress_;
-	BarUiShapeClass surface_, menu_, tooltip_;
-	BarUiWordClass title_, tooltipText_;
+	BarUiShapeClass surface_, menu_;
+	BarUiWordClass title_;
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
