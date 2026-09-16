@@ -2408,6 +2408,9 @@
     <None Include="src\UI\barEraser.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barAutoEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barDivider.svg">
       <Filter>资源文件</Filter>
     </None>

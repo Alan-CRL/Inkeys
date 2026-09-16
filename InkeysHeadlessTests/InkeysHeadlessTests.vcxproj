@@ -156,6 +156,7 @@
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="eraser_attribute_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
 	<ClCompile Include="presentation_descriptor_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />

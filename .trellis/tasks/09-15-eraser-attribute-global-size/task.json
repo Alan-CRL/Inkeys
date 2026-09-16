@@ -46,8 +46,19 @@
     "Inkeys/Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp",
     "Inkeys/Inkeys/UI/Bar/Bar.EraserAttribute.cpp",
     "Inkeys/Inkeys/UI/Bar/Bar.EraserAttributeLayout.cppm",
-    "InkeysHeadlessTests/eraser_attribute_tests.cpp"
+    "InkeysHeadlessTests/eraser_attribute_tests.cpp",
+    "Inkeys/IdtI18nKeys.g.h",
+    "Inkeys/Inkeys.rc",
+    "Inkeys/Inkeys.vcxproj.filters",
+    "Inkeys/src/i18n/en-US.jsonc",
+    "Inkeys/src/i18n/zh-CN.jsonc",
+    "Inkeys/src/i18n/zh-TW.jsonc",
+    "Scripts/i18n.zh-CN.snapshot.jsonc",
+    "Inkeys/Inkeys/UI/Bar/Bar.EraserAttributeMotion.cppm",
+    "Inkeys/src/UI/barAutoEraser.svg"
   ],
-  "notes": "主Agent完成实现，完整ARM64 solution、headless、离屏及两类隐藏产品测试均退出0。保持in_progress等待实机验收，未提交/推送/归档。详见validation.md。",
-  "meta": {}
+  "notes": "方案B已由主Agent完成，完整ARM64 solution、216组headless、生产离屏/多帧与两类隐藏测试全部重新通过。保持in_progress等待真人GUI验收，本轮未commit/push/archive；见scheme-b-validation.md，旧validation.md保持原样。",
+  "meta": {
+    "schemeBReferenceCommit": "af22b4a6deafb14fd4fb90316c1c4ccd839e1b75"
+  }
 }

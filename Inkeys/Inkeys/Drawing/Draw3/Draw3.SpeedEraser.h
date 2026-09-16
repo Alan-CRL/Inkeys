@@ -61,7 +61,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		friend bool operator==(const EntrySettings&,const EntrySettings&) = default;
 	};
 	// 持久化直接保存直径与稳定枚举，不依赖属性栏临时顺序。
-	enum class BaseSize : int { Small = 16, Medium = 32, Large = 64 };
+	enum class BaseSize : int { Small = 24, Medium = 32, Large = 40 };
+	inline constexpr std::array<BaseSize,3> BaseSizePresets{BaseSize::Small,BaseSize::Medium,BaseSize::Large};
 	enum class Sensitivity : int { Low = 0, Medium = 1, High = 2 };
 	enum class AutomaticState { Off, On, Mixed };
 	BaseSize RestoreBaseSize(int saved) noexcept;

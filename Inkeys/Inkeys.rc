@@ -303,6 +303,8 @@ BARSETTING              UI                      "src\\UI\\barSetting.svg"
 
 BARERASER               UI                      "src\\UI\\barEraser.svg"
 
+BARAUTOERASER           UI                      "src\\UI\\barAutoEraser.svg"
+
 BARCLEAN                UI                      "src\\UI\\barClean.svg"
 
 BARPIERCE               UI                      "src\\UI\\barPierce.svg"

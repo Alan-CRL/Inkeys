@@ -941,6 +941,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
@@ -1189,6 +1190,7 @@
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
+    <None Include="src\UI\barAutoEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
     <None Include="src\UI\barWhiteboard.svg" />
     <None Include="src\UI\barDismiss.svg" />

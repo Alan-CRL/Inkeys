@@ -7767,7 +7767,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
 			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
-		state.bottomDockMapping.rigidOverlayTranslationYDip);
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline);
 	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
 	return needRendering || eraserChanged;
 }

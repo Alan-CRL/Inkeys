@@ -3,7 +3,8 @@
 #include <cmath>
 #include <iostream>
 
-import Inkeys.UI.Bar.EraserAttributeLayout;
+import Inkeys.UI.Bar.EraserAttributeMotion;
+import Inkeys.UI.Bar.Animation;
 
 int RunEraserAttributeTests()
 {
@@ -11,6 +12,28 @@ int RunEraserAttributeTests()
 	using namespace Inkeys::UI::Bar;
 	int failures=0;
 	auto expect=[&](bool value,const char* message){if(!value){++failures;std::cerr<<"[EraserAttribute] "<<message<<'\n';}};
+	// 方案B已确认：以下断言先在af22b4a6实现上运行，定位旧预设/锚点/菜单差异。
+	expect(static_cast<int>(BaseSize::Small)==24 && static_cast<int>(BaseSize::Large)==40,"B presets are24/32/40");
+	for(const auto pair:{std::pair{16,24},std::pair{24,24},std::pair{32,32},std::pair{64,40},std::pair{40,40}})
+	{
+		const auto migrated=RestoreBaseSize(pair.first);
+		expect(static_cast<int>(migrated)==pair.second && RestoreBaseSize(static_cast<int>(migrated))==migrated,"legacy preset migration is ordinal and idempotent");
+	}
+	{
+		EraserAttributeLayoutInput input;input.work={0,0,1400,900};input.main={500,420,880,500};input.anchor={650,425,720,495};
+		const auto l=ResolveEraserAttributeLayout(input);
+		auto cx=[](EraserAttributeRect r){return (r.left+r.right)/2;};
+		expect(std::abs(cx(l.panel)-cx(input.anchor))<0.001 && std::abs(cx(l.items[0])-cx(l.panel))<0.001,"panel/clear/eraser centers align exactly");
+		expect(l.items[3].right<l.items[0].left && l.items[0].right<l.items[4].left,"B order is circular presets / clear / automatic");
+		const EraserAttributeRect automatic{l.items[4].left,l.items[4].top,l.items[5].right,l.items[4].bottom};
+		expect(std::abs(cx(l.menu)-cx(automatic))<0.001,"menu centers on entire automatic control");
+		expect(l.menu.Width()>=180 && l.menu.Width()<=200 && l.menu.Height()<=100,"sensitivity menu has two compact rows");
+		expect(l.items[9].bottom<=l.items[6].top,"disabled gear lives in header row");
+		const double firstGap=cx(l.items[2])-cx(l.items[1])-(l.previewDiameters[0]+l.previewDiameters[1])/2;
+		const double secondGap=cx(l.items[3])-cx(l.items[2])-(l.previewDiameters[1]+l.previewDiameters[2])/2;
+		expect(std::abs(firstGap-secondGap)<0.001,"circle edge gaps are equal, not center spacing");
+		expect(l.items[1].Width()<BarButtonTwoSideDip,"small circle has bounded touch expansion, not old70DIP slot");
+	}
 	InputSettings settings;
 	expect(settings.baseSize==BaseSize::Medium && settings.sensitivity==Sensitivity::Medium,"new global defaults are 32/medium");
 	for(int invalid:{-1,0,15,33,160,999})expect(RestoreBaseSize(invalid)==BaseSize::Medium,"invalid size restores to32");
@@ -66,7 +89,7 @@ int RunEraserAttributeTests()
 		std::cout<<"[EraserSensitivity] source="<<static_cast<int>(kind)<<" low/medium/high="<<values[0]<<'/'<<values[1]<<'/'<<values[2]<<'\n';
 	}
 	int layouts=0;
-	for(double dpi:{1.0,1.5,2.0})for(double ui:{0.5,0.75,1.0,1.5,2.0})
+	for(double dpi:{1.0,1.5,2.0})for(double ui:{0.5,0.65,0.75,1.0,1.5,2.0})
 	for(bool below:{false,true})for(bool reversed:{false,true})for(double x:{0.0,600.0,1250.0})
 	{
 		EraserAttributeLayoutInput input;input.dpiScale=dpi;input.zoom=dpi*ui;
@@ -78,16 +101,51 @@ int RunEraserAttributeTests()
 		for(size_t i=0;i<3;++i)
 		{
 			expect(std::abs(l.previewDiameters[i]*input.zoom-input.diametersDip[i]*dpi)<0.001,"preview pixels are independent of custom UI scale");
-			expect(l.items[i+1].Width()>=l.previewDiameters[i] && l.items[i+1].Width()>=BarButtonTwoSideDip,"preview fits its own usable click slot");
+			expect(l.items[i+1].Width()>0 && l.items[i+1].Width()<=(std::max)(BarButtonOneSideDip,l.previewDiameters[i]+BarButtonGapDip*2)+0.001,"circle hit expansion is bounded without70DIP slots");
 			expect(std::abs((l.items[i+1].top+l.items[i+1].bottom)-(l.panel.top+l.panel.bottom))<0.001,"all circle centers vertically centered");
 		}
-		if(reversed)expect(l.items[0].left>l.items[4].right,"groups mirror without rotating content");
-		else expect(l.items[0].right<l.items[1].left && l.items[3].right<l.items[4].left,"standard clear/sizes/automatic order");
+		if(reversed)expect(l.items[4].right<l.items[0].left && l.items[0].right<l.previews[0].left,"B reversal exchanges complete side groups");
+		else expect(l.previews[2].right<l.items[0].left && l.items[0].right<l.items[4].left,"B standard circles/clear/automatic order");
+		expect(std::abs(EraserRectCenterX(l.items[0])-EraserRectCenterX(l.panel))<0.001,"clear stays centered after workspace correction");
+		const double gap1=l.previews[1].left-l.previews[0].right,gap2=l.previews[2].left-l.previews[1].right;
+		expect(std::abs(gap1-gap2)<0.001,"equal visible edge gaps at every DPI/UI scale");
 		input.diametersDip[2]=240;const auto huge=ResolveEraserAttributeLayout(input);
 		expect(huge.previewDiameters[2]*input.zoom==240*dpi && huge.panel.Height()==input.main.Height(),"oversized test circle remains round at real diameter and does not expand panel");
 		input.work.right=300;const auto narrow=ResolveEraserAttributeLayout(input);
 		expect(narrow.horizontalOverflow && narrow.panel.Width()<=300.001 && narrow.previewDiameters==huge.previewDiameters,"narrow workspace clips only center, never scales the panel or preview");
 		input.lockedMenuSide=1;const auto locked=ResolveEraserAttributeLayout(input);expect(locked.menuBelow,"popup direction lock is independent of pointer");
+	}
+	expect(ResolveEraserAttributeRelease(-1,0,true,false)==-1,"opening Up without a new panel Down can never clear");
+	expect(ResolveEraserAttributeRelease(4,5,true,false)==4 && ResolveEraserAttributeRelease(5,4,true,false)==5,"split action remains owned by Down region");
+	expect(ResolveEraserAttributeRelease(4,5,true,true)==-1 && ResolveEraserAttributeRelease(4,-1,false,false)==-1,"cancel and external release produce no action");
+	// 直接推进生产surface motion：Back过冲、关闭可见性、反向连续、父子锚点与禁用动画。
+	{
+		EraserSurfaceMotion motion;
+		BarUiAnimationAdvanceContextClass context{1.0/60,1,true,false};
+		motion.Retarget(true,0.4);double openingPeak=0,closingPeak=0;
+		for(int f=0;f<30;++f){motion.Advance(context);openingPeak=(std::max)(openingPeak,motion.Geometry());expect(motion.Opacity()>=0 && motion.Opacity()<=1,"alpha remains bounded during overshoot");}
+		expect(openingPeak>1.01 && motion.Geometry()==1 && !motion.Active(),"opening has real geometric overshoot and returns exactly to1");
+		motion.Retarget(false,0.4);
+		for(int f=0;f<30;++f){motion.Advance(context);closingPeak=(std::max)(closingPeak,motion.Geometry());if(f<20)expect(motion.Visible(),"EaseInBack close does not disappear during early negative curve phase");}
+		expect(closingPeak>1.01 && !motion.Visible() && !motion.Active(),"closing expands briefly then fully retires");
+		motion.Retarget(true,0.4);for(int f=0;f<7;++f)motion.Advance(context);
+		const double before=motion.Geometry();motion.Retarget(false,0.4);motion.Advance({0,1,true,false});
+		expect(motion.Geometry()==before,"mid-animation reversal starts from current value");
+		motion.Retarget(true,0.4);motion.Advance({0,1,false,false});
+		expect(motion.Geometry()==1 && motion.Opacity()==1 && !motion.Active(),"disabled animation settles immediately");
+		motion.Retarget(false,0.4);motion.Advance({0,1,false,false});expect(!motion.Visible(),"disabled close has no hidden hit surface");
+		BarUiTimelineClass parent;parent.Restart(0.4);parent.Advance(0.1,1);
+		motion.Retarget(true,0.4,&parent);expect(std::abs(motion.Timeline().GetRemainingDuration()-0.3)<0.001,"child joins parent's existing first-half timeline");
+		for(int f=0;f<10;++f)motion.Advance({1.0/60,2,true,false});expect(!motion.Active(),"global speed changes the same frame clock");
+		const EraserAttributeRect panel{200,300,558,380},anchor{344,390,414,460},automatic{430,305,532.5,375},menu{390,200,572.5,290};
+		for(double g:{0.0,0.2,0.8,1.04,1.0})
+		{
+			const auto p=ResolveEraserSurfacePose(panel,anchor,g,60);
+			const auto c=ComposeEraserPose(p,ResolveEraserSurfacePose(menu,automatic,0,60));
+			expect(std::abs(EraserRectCenterX(c.Apply(menu))-EraserRectCenterX(p.Apply(automatic)))<0.001 && std::abs(EraserRectCenterY(c.Apply(menu))-EraserRectCenterY(p.Apply(automatic)))<0.001,"closed child follows actual moving parent anchor");
+			if(g>1)expect(p.Apply(panel).Width()>panel.Width(),"bounds must include actual overshoot, not final shell");
+		}
+		std::cout<<"[EraserMotion] openingPeak="<<openingPeak<<" closingPeak="<<closingPeak<<'\n';
 	}
 	std::cout<<"[EraserAttribute] layouts="<<layouts<<" failures="<<failures<<'\n';
 	return failures;

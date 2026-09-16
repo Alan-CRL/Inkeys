@@ -25,9 +25,10 @@ export namespace Inkeys::UI::Bar
 	};
 	struct EraserAttributeLayout
 	{
-		EraserAttributeRect panel, menu, previewRegion;
+		EraserAttributeRect panel, menu, previewRegion, automatic, menuTitle, anchor, work;
+		std::array<EraserAttributeRect,3> previews{}, previewClips{};
 		std::array<EraserAttributeRect, 10> items{};
-		std::array<EraserAttributeRect, 4> dividers{};
+		std::array<EraserAttributeRect, 2> dividers{};
 		std::array<double, 3> previewDiameters{};
 		bool below = false, reversed = false, menuBelow = false, horizontalOverflow = false;
 		friend bool operator==(const EraserAttributeLayout&, const EraserAttributeLayout&) = default;
@@ -39,7 +40,10 @@ export namespace Inkeys::UI::Bar
 		bool below = false, reversed = false;
 		int lockedMenuSide = -1;
 		// 测试可以注入大于面板高度的直径，生产始终传三档基础尺寸。
-		std::array<float, 3> diametersDip{16, 32, 64};
+		std::array<float, 3> diametersDip{
+			static_cast<float>(Inkeys::Drawing::Draw3::SpeedEraser::BaseSizePresets[0]),
+			static_cast<float>(Inkeys::Drawing::Draw3::SpeedEraser::BaseSizePresets[1]),
+			static_cast<float>(Inkeys::Drawing::Draw3::SpeedEraser::BaseSizePresets[2])};
 	};
 	inline EraserAttributeRect OffsetEraserRect(EraserAttributeRect r, double x, double y) noexcept
 	{ return {r.left+x, r.top+y, r.right+x, r.bottom+y}; }
@@ -49,96 +53,100 @@ export namespace Inkeys::UI::Bar
 			(std::max)((std::max)(a.left,b.left),(std::min)(a.right,b.right)),
 			(std::max)((std::max)(a.top,b.top),(std::min)(a.bottom,b.bottom)) };
 	}
+	inline int ResolveEraserAttributeRelease(int pressed,int hit,bool inside,bool cancelled) noexcept
+	{
+		if(cancelled || !inside || pressed<0)return -1;
+		const bool automatic=(pressed==4 || pressed==5) && (hit==4 || hit==5);
+		return hit==pressed || automatic?pressed:-1;
+	}
+	inline double EraserRectCenterX(EraserAttributeRect r) noexcept { return (r.left+r.right)/2; }
+	inline double EraserRectCenterY(EraserAttributeRect r) noexcept { return (r.top+r.bottom)/2; }
 	inline EraserAttributeLayout ResolveEraserAttributeLayout(const EraserAttributeLayoutInput& input) noexcept
 	{
 		using namespace Inkeys::Drawing::Draw3::SpeedEraser;
-		EraserAttributeLayout result;
-		const double zoom = std::isfinite(input.zoom) && input.zoom > 0 ? input.zoom : 1;
-		const double dpi = std::isfinite(input.dpiScale) && input.dpiScale > 0 ? input.dpiScale : 1;
-		const double height = input.main.Height() > 0 ? input.main.Height() : BarMainBarHeightDip;
-		double gap = BarButtonGapDip;
-		const double button = BarButtonTwoSideDip, arrow = BarButtonOneSideDip;
-		std::array<double,3> slots{};
-		DisplayScale display; display.dipPerPixelX = display.dipPerPixelY = static_cast<float>(1 / dpi);
-		for (size_t i=0;i<slots.size();++i)
+		EraserAttributeLayout r;r.anchor=input.anchor;r.work=input.work;
+		const double zoom=std::isfinite(input.zoom) && input.zoom>0?input.zoom:1;
+		const double dpi=std::isfinite(input.dpiScale) && input.dpiScale>0?input.dpiScale:1;
+		const double height=input.main.Height()>0?input.main.Height():BarMainBarHeightDip;
+		const double button=BarButtonTwoSideDip,arrow=BarButtonOneSideDip;
+		const double autoWidth=button+arrow,available=(std::max)(1.0,input.work.Width());
+		DisplayScale display;display.dipPerPixelX=display.dipPerPixelY=static_cast<float>(1/dpi);
+		double diameters=0;
+		for(size_t i=0;i<3;++i)
 		{
-			// 先转换实际像素再除父级zoom：自定义UI缩放不能缩放真实DIP光标。
-			result.previewDiameters[i] = DiameterToCanvasPx(input.diametersDip[i],display) / zoom;
-			slots[i] = (std::max)(button,result.previewDiameters[i] + 2*gap);
+			// 工具DIP先到画布像素，再除UI父倍率；稳定展开恢复为同一个实际直径。
+			r.previewDiameters[i]=DiameterToCanvasPx(input.diametersDip[i],display)/zoom;
+			diameters+=r.previewDiameters[i];
 		}
-		const double naturalCenter = slots[0]+slots[1]+slots[2];
-		const double available = (std::max)(1.0,input.work.Width());
-		const double fixed = button*2+arrow+BarButtonFrameThicknessDip*2;
-		const double naturalWidth = fixed + naturalCenter + gap*9;
-		// 先收弹性留白，仍不足只裁预览槽位，端部控件和圆的直径均不缩放。
-		if (naturalWidth > available) gap = (std::max)(0.0,(available-fixed-naturalCenter)/9);
-		const double center = (std::max)(0.0,(std::min)(naturalCenter,available-fixed-gap*9));
-		result.horizontalOverflow = center < naturalCenter;
-		const double width = fixed + center + gap*9;
-		double x = input.reversed ? input.anchor.right-width : input.anchor.left;
-		x = (std::clamp)(x,input.work.left,(std::max)(input.work.left,input.work.right-width));
-		const double panelGap = BarMainButtonToMainBarGapDip;
-		const double lower = input.work.bottom-input.main.bottom-panelGap;
-		const double upper = input.main.top-input.work.top-panelGap;
-		result.below = input.below;
-		if ((result.below ? lower : upper) < height && (result.below ? upper : lower) > (result.below ? lower : upper))
-			result.below = !result.below;
-		double y = result.below ? input.main.bottom+panelGap : input.main.top-panelGap-height;
-		y = (std::clamp)(y,input.work.top,(std::max)(input.work.top,input.work.bottom-height));
-		result.panel = {x,y,x+width,y+height}; result.reversed=input.reversed;
+		constexpr double circleEdgeGap=16.0; // 两个圆边缘之间的UI留白，不是圆心间距。
+		double gap=BarButtonGapDip;
+		const double naturalSide=(std::max)(diameters+circleEdgeGap*2,autoWidth);
+		const double fixed=button+BarButtonFrameThicknessDip*2;
+		if(fixed+naturalSide*2+gap*6>available)
+			gap=(std::clamp)((available-fixed-autoWidth*2)/6,0.0,gap);
+		const double side=(std::max)(0.0,(std::min)(naturalSide,(available-fixed-gap*6)/2));
+		const double edgeGap=(std::clamp)((side-diameters)/2,0.0,circleEdgeGap);
+		r.horizontalOverflow=diameters>side;
+		const double width=(std::min)(available,fixed+side*2+gap*6);
+		const double x=(std::clamp)(EraserRectCenterX(input.anchor)-width/2,input.work.left,(std::max)(input.work.left,input.work.right-width));
+		const double panelGap=BarMainButtonToMainBarGapDip;
+		const double down=input.work.bottom-input.main.bottom-panelGap,up=input.main.top-input.work.top-panelGap;
+		r.below=input.below;r.reversed=input.reversed;
+		if((r.below?down:up)<height && (r.below?up:down)>(r.below?down:up))r.below=!r.below;
+		const double y=(std::clamp)(r.below?input.main.bottom+panelGap:input.main.top-panelGap-height,
+			input.work.top,(std::max)(input.work.top,input.work.bottom-height));
+		r.panel={x,y,x+width,y+height};const double cy=y+height/2,cx=x+width/2;
 		const double bh=(std::min)(button,(std::max)(1.0,height-2*BarButtonGapDip));
-		const double by=(height-bh)/2;
-		double cursor=gap;
-		result.items[0]={cursor,by,cursor+button,by+bh}; cursor+=button+gap;
-		const double dividerHeight = button-BarButtonGapDip*4;
-		auto divider=[&](size_t i)
+		r.items[0]={cx-button/2,cy-bh/2,cx+button/2,cy+bh/2};
+		const double dh=button-BarButtonGapDip*4,stroke=BarButtonFrameThicknessDip;
+		r.dividers[0]={r.items[0].left-gap-stroke,cy-dh/2,r.items[0].left-gap,cy+dh/2};
+		r.dividers[1]={r.items[0].right+gap,cy-dh/2,r.items[0].right+gap+stroke,cy+dh/2};
+		const double leftStart=x+gap,rightStart=r.dividers[1].right+gap;
+		const double circleStart=r.reversed?rightStart:leftStart,autoStart=r.reversed?leftStart:rightStart;
+		r.previewRegion={circleStart,y,circleStart+side,y+height};
+		const double naturalCircles=diameters+edgeGap*2;
+		double cursor=circleStart+(side-naturalCircles)/2;
+		for(size_t i=0;i<3;++i)
 		{
-			cursor+=gap;
-			result.dividers[i]={cursor,(height-dividerHeight)/2,cursor+BarButtonFrameThicknessDip,(height+dividerHeight)/2};
-			cursor+=BarButtonFrameThicknessDip+gap*2;
-		};
-		divider(0);
-		const double previewLeft=cursor;
-		for(size_t i=0;i<slots.size();++i)
-		{
-			const double w=slots[i]*center/naturalCenter;
-			result.items[i+1]={cursor,by,cursor+w,by+bh}; cursor+=w;
+			const double d=r.previewDiameters[i];double center=cursor+d/2;
+			if(r.horizontalOverflow)
+				center=circleStart+side*(i+0.5)/3; // 极窄区域只裁各圆的溢出，不改外直径。
+			r.previews[i]={center-d/2,cy-d/2,center+d/2,cy+d/2};cursor+=d+edgeGap;
 		}
-		result.previewRegion={previewLeft,0,cursor,height};
-		divider(1);
-		result.items[4]={cursor,by,cursor+button,by+bh};cursor+=button;
-		result.items[5]={cursor,by,cursor+arrow,by+bh};
-		result.dividers[2]={cursor,(height-dividerHeight)/2,cursor+BarButtonFrameThicknessDip,(height+dividerHeight)/2};
-		auto place=[&](EraserAttributeRect r)
+		for(size_t i=0;i<3;++i)
 		{
-			if(result.reversed) r={width-r.right,r.top,width-r.left,r.bottom};
-			return OffsetEraserRect(r,x,y);
-		};
-		for(size_t i=0;i<6;++i)result.items[i]=place(result.items[i]);
-		for(size_t i=0;i<3;++i)result.dividers[i]=place(result.dividers[i]);
-		result.previewRegion=place(result.previewRegion);
-		const double menuWidth=(std::min)(available,button*3+BarButtonGapDip*4);
-		const double row=BarButtonOneSideDip, mg=BarButtonGapDip;
-		const double menuHeight=row*3+mg*5+BarButtonFrameThicknessDip;
-		result.menuBelow=input.lockedMenuSide<0 ? result.below : input.lockedMenuSide!=0;
+			const auto circle=r.previews[i];
+			const double lower=i==0?circleStart-gap:(r.previews[i-1].right+circle.left)/2;
+			const double upper=i==2?circleStart+side+gap:(circle.right+r.previews[i+1].left)/2;
+			const double clipLeft=r.horizontalOverflow?circleStart+side*i/3:lower;
+			const double clipRight=r.horizontalOverflow?circleStart+side*(i+1)/3:upper;
+			r.previewClips[i]=IntersectEraserRect({clipLeft,y,clipRight,y+height},r.panel);
+			const double hitRadius=(std::max)(BarButtonOneSideDip/2,circle.Width()/2+BarButtonGapDip);
+			const double center=EraserRectCenterX(circle);
+			r.items[i+1]=IntersectEraserRect({center-hitRadius,cy-hitRadius,center+hitRadius,cy+hitRadius},r.previewClips[i]);
+		}
+		const double ax=autoStart+(side-autoWidth)/2;
+		r.automatic={ax,cy-bh/2,ax+autoWidth,cy+bh/2};
+		// 倒转只移动整个分组，A和右侧箭头不镜像，两个动作区保持原语义。
+		r.items[4]={ax,cy-bh/2,ax+button,cy+bh/2};r.items[5]={ax+button,cy-bh/2,ax+autoWidth,cy+bh/2};
+		const double menuWidth=(std::min)(available,button*2+arrow+BarButtonGapDip*2);
+		const double row=BarButtonOneSideDip,padding=BarButtonGapDip*2,mg=BarButtonGapDip;
+		const double menuHeight=row*2+padding*2+mg;
+		r.menuBelow=input.lockedMenuSide<0?r.below:input.lockedMenuSide!=0;
 		if(input.lockedMenuSide<0)
 		{
-			const double down=input.work.bottom-result.panel.bottom-mg;
-			const double up=result.panel.top-input.work.top-mg;
-			if((result.menuBelow?down:up)<menuHeight && (result.menuBelow?up:down)>(result.menuBelow?down:up))
-				result.menuBelow=!result.menuBelow;
+			const double lower=input.work.bottom-r.panel.bottom-mg,upper=r.panel.top-input.work.top-mg;
+			if((r.menuBelow?lower:upper)<menuHeight && (r.menuBelow?upper:lower)>(r.menuBelow?lower:upper))r.menuBelow=!r.menuBelow;
 		}
-		const double mx=(std::clamp)(result.items[5].right-menuWidth,input.work.left,
-			(std::max)(input.work.left,input.work.right-menuWidth));
-		const double my=(std::clamp)(result.menuBelow?result.panel.bottom+mg:result.panel.top-mg-menuHeight,
+		const double mx=(std::clamp)(EraserRectCenterX(r.automatic)-menuWidth/2,input.work.left,(std::max)(input.work.left,input.work.right-menuWidth));
+		const double my=(std::clamp)(r.menuBelow?r.panel.bottom+mg:r.panel.top-mg-menuHeight,
 			input.work.top,(std::max)(input.work.top,input.work.bottom-menuHeight));
-		result.menu={mx,my,mx+menuWidth,my+menuHeight};
-		const double segment=(menuWidth-4*mg)/3;
-		for(size_t i=0;i<3;++i)result.items[6+i]={mx+mg+i*(segment+mg),my+mg+row,
-			mx+mg+i*(segment+mg)+segment,my+mg+row*2};
-		const double dividerY=my+mg*2+row*2;
-		result.dividers[3]={mx+mg,dividerY,mx+menuWidth-mg,dividerY+BarButtonFrameThicknessDip};
-		result.items[9]={mx+mg,dividerY+BarButtonFrameThicknessDip+mg,mx+menuWidth-mg,my+menuHeight-mg};
-		return result;
+		r.menu={mx,my,mx+menuWidth,my+menuHeight};
+		r.items[9]={r.menu.right-padding-row,my+padding,r.menu.right-padding,my+padding+row};
+		r.menuTitle={mx+padding,my+padding,r.items[9].left-mg,my+padding+row};
+		const double segment=(menuWidth-padding*2-mg*2)/3;
+		for(size_t i=0;i<3;++i)r.items[6+i]={mx+padding+i*(segment+mg),my+padding+row+mg,
+			mx+padding+i*(segment+mg)+segment,my+padding+row*2+mg};
+		return r;
 	}
 }

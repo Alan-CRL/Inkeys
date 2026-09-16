@@ -36,7 +36,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 
 	BaseSize RestoreBaseSize(int saved) noexcept
 	{
-		return saved == 16 ? BaseSize::Small : saved == 64 ? BaseSize::Large : BaseSize::Medium;
+		// 旧值按档位迁移，已迁移的24/40再次读取保持不变。
+		return saved == 16 || saved == 24 ? BaseSize::Small : saved == 64 || saved == 40 ? BaseSize::Large : BaseSize::Medium;
 	}
 	Sensitivity RestoreSensitivity(int saved) noexcept
 	{

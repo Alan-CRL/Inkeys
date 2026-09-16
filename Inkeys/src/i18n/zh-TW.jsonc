@@ -45,6 +45,22 @@
       {
         "Mode": "底欄模式",
         "Centered": "置中"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "清空",
+        "ClearCanvasHint": "清空目前畫布註記",
+        "AutomaticLabel": "自動粗細",
+        "SensitivityLabel": "靈敏度",
+        "LowLabel": "低",
+        "MediumLabel": "中",
+        "HighLabel": "高",
+        "SmallSize": "小號",
+        "MediumSize": "中號",
+        "LargeSize": "大號",
+        "BaseSizeHint": "自動模式時作為基礎大小",
+        "MixedHint": "各裝置設定不同\n按一下統一開啟自動粗細",
+        "SettingsHint": "自動粗細設定，暫未開放"
       }
     }
   },

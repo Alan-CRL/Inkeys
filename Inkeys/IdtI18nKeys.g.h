@@ -49,6 +49,22 @@ inline constexpr struct I18nKeyRoot
                 const char* Mode = "UI/Bar/BottomDock/Mode";
                 const char* Centered = "UI/Bar/BottomDock/Centered";
             } BottomDock{};
+            struct Node__UI__Bar__EraserAttributes
+            {
+                const char* ClearCanvasLabel = "UI/Bar/EraserAttributes/ClearCanvasLabel";
+                const char* ClearCanvasHint = "UI/Bar/EraserAttributes/ClearCanvasHint";
+                const char* AutomaticLabel = "UI/Bar/EraserAttributes/AutomaticLabel";
+                const char* SensitivityLabel = "UI/Bar/EraserAttributes/SensitivityLabel";
+                const char* LowLabel = "UI/Bar/EraserAttributes/LowLabel";
+                const char* MediumLabel = "UI/Bar/EraserAttributes/MediumLabel";
+                const char* HighLabel = "UI/Bar/EraserAttributes/HighLabel";
+                const char* SmallSize = "UI/Bar/EraserAttributes/SmallSize";
+                const char* MediumSize = "UI/Bar/EraserAttributes/MediumSize";
+                const char* LargeSize = "UI/Bar/EraserAttributes/LargeSize";
+                const char* BaseSizeHint = "UI/Bar/EraserAttributes/BaseSizeHint";
+                const char* MixedHint = "UI/Bar/EraserAttributes/MixedHint";
+                const char* SettingsHint = "UI/Bar/EraserAttributes/SettingsHint";
+            } EraserAttributes{};
         } Bar{};
     } UI{};
     struct Node__Dialogs

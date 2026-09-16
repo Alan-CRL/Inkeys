@@ -5,7 +5,7 @@
 
 ## 2. Signatures
 - `SpeedEraser::InputSettings`: 五个entries、automaticPenSupported、BaseSize baseSize、Sensitivity sensitivity。
-- `BaseSize`: Small=16 / Medium=32 / Large=64；`Sensitivity`: Low=0 / Medium=1 / High=2。
+- `BaseSize`: Small=24 / Medium=32 / Large=40；`Sensitivity`: Low=0 / Medium=1 / High=2。
 - `RestoreBaseSize(int)`, `RestoreSensitivity(int)`, `ResolveSizes(BaseSize)`, `GetAutomaticState(InputSettings)`, `SetGlobalAutomatic(InputSettings&, bool)`。
 - `EraserPreferencesSnapshot()`返回整表；`SetGlobalEraserPreference(baseDiameterDip=-1, sensitivity=-1, automatic=-1)`中-1代表保留该属性。
 - 持久化键：`Drawing.Eraser.BaseDiameterDip`、`Drawing.Eraser.Sensitivity`；自动开关由五入口实际kind推导，没有独立bool。
@@ -13,7 +13,7 @@
 
 ## 3. Contracts
 ### 配置与输入
-缺失/非法新键分别回到32/中。初始化、开合、选择大小或灵敏度不得统一五入口kind；只有全局开关会在eraserPreferencesMutex保护下统一写五个kind并发布一次。详细设置每帧使用一份整表快照。写盘复用Setting的已启动业务FIFO，不打开设置窗口。对实际未变化的设置不发布、不写盘。
+BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别回到32/中。初始化、开合、选择大小或灵敏度不得统一五入口kind；只有全局开关会在eraserPreferencesMutex保护下统一写五个kind并发布一次。详细设置每帧使用一份整表快照。写盘复用Setting的已启动业务FIFO，不打开设置窗口。对实际未变化的设置不发布、不写盘。
 
 全Speed显示开，全Fixed显示关，混合显示横杠；混合点击全开。显式FixedEraser/SpeedEraser API旁路仍优先于entries；普通产品工具和属性操作通过IdtState发布ConfiguredEraser，不能被旧固定策略遮盖。
 
@@ -22,18 +22,26 @@
 ### 尺寸与灵敏度
 | B | minimum / standard / maximum | Touch新接触 | Fixed |
 |---|---|---|---|
-|16|8 / 16 / 80 DIP|8 DIP|16 DIP|
+|24|12 / 24 / 120 DIP|12 DIP|24 DIP|
 |32|16 / 32 / 160 DIP|16 DIP|32 DIP|
-|64|32 / 64 / 320 DIP|32 DIP|64 DIP|
+|40|20 / 40 / 200 DIP|20 DIP|40 DIP|
 
 清扫增益为0.85/1/1.15。`SweepActionSpeed`只放大fineToStandard以上的动作余量，供清扫资格和清扫目标共用；中档直接返回原速度。精细门槛、时间常数、Touch防点擦、面积报告宽高与单位转换均不缩放。面积floor仍受当前maximum夹取。
 
 ### UI与资源
 使用同一Bar HWND、D2D context、共享RenderPipeline线程。标准大按钮/主题/边缘光/分割线复用Bar现有实现。`Assets/EraserGripVisual.h`是C++预览/HLSL的无副作用比例来源，FXC临时ASCII副本必须同步。
 
-预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，同一父坐标再乘frameZoom绘制，因此自定义UI缩放不改变预览像素直径。宽度以真实预览宽度与标准按钮命中宽度的较大值计算；窄工作区先减留白，再仅裁中段。圆心垂直居中、等圆半径，选中胶囊留在面板内。
+方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组默认边缘间隙16逻辑单位；圆心间距=前半径+间隙+后半径。左右分配=max(圆组需求,自动整体需求)，两条分割线对称、清空在中轴，默认总宽358逻辑单位。窄区先减弹性留白，再裁必要溢出；命中由相邻中界和可见区域限制，圆外径不变。
 
-定位使用MainBar实际高度、当前擦除锚点、主栏左右/上下状态和工作区；直拖时工作区转换扣除同帧直接位移。倒转组在淡出中点换向，文字不旋转。菜单方向在本次打开中锁定，父方向切换才重选。脏区/容量/光源/命中都消费同源几何，只有呈现成功后才提交快照。
+预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊；选中描边向内加粗并以同一Theme Accent绘制PointLight，Hover/Pressed只改光照/轮廓。键盘焦点为独立内虚线。自动按钮只绘制一个BarButtonClass，body/arrow共享Hover和按压；菜单打开不改自动选中态，内部无竖分割线。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
+
+菜单182.5×90逻辑单位，两行结构：标题/禁用齿轮、三段等宽选项。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
+
+正常空间panel.centerX=clear.centerX=主栏擦除centerX，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。
+
+EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及DrawAttribute的EaseOutBack/EaseInBack、EaseOutSine/EaseInSine；紧凑宽度取BarDrawAttributeCompactWidth。状态变更才Retarget，前半程可加入父余时。geometry允许overshoot，alpha独立有界；零时间采样保留当前姿态（动画禁用或force replace除外）。子pose复合父pose，锚点跟随当前完整自动按钮。开合期间允许整组缩放，稳定精确为1；日常Hover/Selected不缩放圆。
+
+Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形。内容在当前shell内裁剪，窗口容量容纳shell与光影。PresentationSnapshot/CommitPresented只在成功呈现后发布，Pointer消费同一实际几何。ResolveEraserAttributeRelease以新Down票据为依据，body/arrow跨区Up仍返回Down所属动作；无Down的旧Up不得清空。沿用Message::IsPointerGeneratedMouseMessage过滤兼容事件；leave/cancel清理反馈，Pen/Touch Up不保留鼠标式Hover。
 
 ### 清空
 UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主栏强制显示标志代替。只发既有`PublishProductCommand(Clear)`，Accepted后关闭面板，保持工具和配置。
@@ -55,7 +63,7 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 
 ## 5. Good / Base / Bad
 Good：32/中逐字段等价现有解析器，默认控制器回归仍通过。
-Base：64 DIP在65% UI缩放下高于面板，保持实际像素直径并裁上下。
+Base：40 DIP在35% UI缩放下高于面板，保持实际像素直径并裁上下；216组几何覆盖常规DPI/UI缩放。
 Bad：把160做成第三个基础档、独立global bool遮盖五入口、用hover缩放真实圆、开合重置尺寸会话。
 
 ## 6. Tests Required
@@ -63,7 +71,7 @@ Bad：把160做成第三个基础档、独立global bool遮盖五入口、用hov
 `Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证按钮/菜单/关闭/idle；不等同真实HWND窗口或硬件交互验收。
 `Inkeys.exe --draw3-eraser-hidden-test`检查实际Host五入口/首点/活动锁存/Up和间隔。
 `Inkeys.exe --draw3-hidden-test`检查Clear、Up边界、Undo/Redo、跨页、白板和场景事务。
-实际执行结果以任务validation.md为准，不能从命令存在推断通过。
+当前方案B结果以任务scheme-b-validation.md为准；旧validation.md仅代表上一轮设计，不能据此推断本轮通过。offscreen还保存真实帧PNG/CSV及A图标三态；组合GIF只重放这些帧。
 
 ## 7. Wrong vs Correct
 Wrong：固定Down继续取`EraserSizes{}.fixedDiameterDip`，而Hover已使用所选B。

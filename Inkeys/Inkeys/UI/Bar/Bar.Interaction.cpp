@@ -747,6 +747,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_MOUSELEAVE:
 	{
+		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
 		{
 			lock_guard lock(barUISet.borderCursorLightMutex);
@@ -1076,6 +1077,7 @@ void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
+	eraserAttribute.ResetPointerFeedback();
 	if (!hWnd) return;
 
 	// 先撤销输入源，避免 ReleaseCapture 重入时继续向交互队列投递手势。
@@ -5412,7 +5414,7 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
-			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg)))
+			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
 			{
 				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)

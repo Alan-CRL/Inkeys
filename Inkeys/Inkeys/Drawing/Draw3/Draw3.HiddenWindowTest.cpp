@@ -909,12 +909,12 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
 				postSource(HiddenTestContactPhase::Down,entryFlags[0],100,160);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.eraserContact && std::abs(d.downDiameterPx-16)<0.01f;}),"small active contact starts",failures);
+					return d.eraserContact && std::abs(d.downDiameterPx-static_cast<int>(SpeedEraser::BaseSize::Small))<0.01f;}),"small active contact starts",failures);
 				entryState.eraserInputs.baseSize=SpeedEraser::BaseSize::Large;
 				PublishProductState(entryState);std::this_thread::sleep_for(60ms);
 				postSource(HiddenTestContactPhase::Move,entryFlags[0],110,160);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.eraserContact && std::abs(d.cursorDiameterPx-16)<0.01f;}),"active contact latches oldB across global change",failures);
+					return d.eraserContact && std::abs(d.cursorDiameterPx-static_cast<int>(SpeedEraser::BaseSize::Small))<0.01f;}),"active contact latches oldB across global change",failures);
 				postSource(HiddenTestContactPhase::Cancelled,entryFlags[0],110,160);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),"latched contact ends",failures);
 				entryState.eraserInputs=speedState.eraserInputs;
