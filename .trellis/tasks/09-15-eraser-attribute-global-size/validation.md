@@ -158,3 +158,9 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - 完整`InkeysRepo.sln` `Debug | ARM64`构建退出0；`InkeysHeadlessTests.exe --no-window`通过（EraserAttribute layouts=216，failures=0）；`Inkeys.exe --bar-eraser-offscreen-test`退出0。
 - 生产离屏测试新输出`Build/eraser-b/visuals/narrow-eraser-attribute.png`：300×620工作区、面板打开且菜单关闭，确认窄区只裁剪溢出、不缩小圆或自动粗细按钮。
 - 未启动交互式GUI；`Inkeys/PptCOM.dll`为既有未提交变更，未纳入本轮提交。任务继续保持in_progress。
+
+## 2026-09-16 窄区正常布局追加验证
+
+- 本节替代上文“窄区先减留白/压缩5 DIP与16 DIP”的历史记录：任何工作区均采用342 DIP自然布局、四段16 DIP圆组留白和四段5 DIP中央/自动留白；空间不足时只裁剪横向溢出。
+- 纯布局与生产离屏断言会同时验证圆、自动按钮不缩放，以及5/16 DIP留白不进入紧凑模式。
+- 完整`InkeysRepo.sln` `Debug | ARM64`构建通过；`InkeysHeadlessTests.exe --no-window`报告EraserAttribute layouts=216、failures=0，`Inkeys.exe --bar-eraser-offscreen-test`通过并更新300×620 PNG；`Inkeys/PptCOM.dll`继续排除在提交之外，任务保持in_progress。

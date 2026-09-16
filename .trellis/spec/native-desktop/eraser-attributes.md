@@ -32,7 +32,7 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 ### UI与资源
 使用同一Bar HWND、D2D context、共享RenderPipeline线程。标准大按钮/主题/边缘光/分割线复用Bar现有实现。`Assets/EraserGripVisual.h`是C++预览/HLSL的无副作用比例来源，FXC临时ASCII副本必须同步。
 
-方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组从面板边缘到分割线的四段留白均为16逻辑单位。自动侧为5+90+5，清空与两侧分割线也各留5；清空中心锚定主栏橡皮入口，默认总宽342逻辑单位，倒转只交换完整侧组。窄区先等量压缩四段5，再等量压缩四段16，仍不足只裁溢出；命中由相邻中界和可见区域限制，圆和按钮外径不变。
+方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组从面板边缘到分割线的四段留白均为16逻辑单位。自动侧为5+90+5，清空与两侧分割线也各留5；清空中心锚定主栏橡皮入口，默认总宽342逻辑单位，倒转只交换完整侧组。所有工作区均保持5/16 DIP正常留白和自然宽度；窄区仅裁剪溢出，不压缩留白、圆或按钮。命中由相邻中界和可见区域限制。
 
 预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊或悬停内容提示框；选中态是在橡皮外缘外留3 DIP间隙的1 DIP Theme Accent圆环，以独立可逆进度渐显/渐隐并绘制PointLight。Pressed复用普通按钮的缩放值与Press/Release曲线，围绕圆心缩放整个圆形视觉；稳定态不缩放。命中必须先裁当前可见区域，再以点到圆心距离判断真实圆形（当前允许圆外扩5 DIP），外接矩形四角不得响应。键盘焦点为独立内虚线。
 
@@ -58,6 +58,7 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 |总开关关闭且五入口混合|按钮显示Off；解析全Fixed，入口保存值不变|
 |只选B/灵敏度|kind、设备身份和面积开关不变|
 |预览高于面板|仅裁可见区域，不改圆直径或增加透明命中|
+|窄工作区|四段16 DIP圆组留白及四段5 DIP中央/自动留白不变；342 DIP自然布局溢出仅裁剪|
 |指针位于尺寸入口外接矩形角|圆距判断失败，不产生Hover、Pressed或选择|
 |选中尺寸切换|旧圆环渐隐、新圆环渐显；本体直径与灰色轮廓不变|
 |自动菜单展开/收起或反向|箭头沿笔类型同款0/180度动画连续收敛，70/20动作区不变|
@@ -70,12 +71,12 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 
 ## 5. Good / Base / Bad
 Good：32/中逐字段等价现有解析器，默认控制器回归仍通过。
-Base：40 DIP在35% UI缩放下高于面板，保持实际像素直径并裁上下；216组几何覆盖常规DPI/UI缩放。直拖跨界时只锁存已呈现布局，松手后继续原有倒转时间线。
+Base：40 DIP在35% UI缩放下高于面板，保持实际像素直径并裁上下；300 DIP工作区保持5/16 DIP正常留白，仅裁横向溢出；216组几何覆盖常规DPI/UI缩放。直拖跨界时只锁存已呈现布局，松手后继续原有倒转时间线。
 Bad：把160做成第三个基础档、独立global bool遮盖五入口、用hover缩放真实圆、开合重置尺寸会话。
 
 ## 6. Tests Required
 `InkeysHeadlessTests.exe --no-window`包含模型/面积/会话基准、三档/三灵敏度、DPI×UI缩放几何与真实配置读写。
-`Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证圆形命中角、外侧选中环渐变/按压、无悬停提示框、箭头展开/收起中间帧、菜单/关闭/idle、直拖锁存与松手倒转，并输出300×620的`visuals/narrow-eraser-attribute.png`；不等同真实HWND窗口或硬件交互验收。
+`Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证圆形命中角、外侧选中环渐变/按压、无悬停提示框、箭头展开/收起中间帧、菜单/关闭/idle、直拖锁存与松手倒转，并验证300×620窄区仍保持正常5/16 DIP留白后仅裁剪溢出，输出`visuals/narrow-eraser-attribute.png`；不等同真实HWND窗口或硬件交互验收。
 `Inkeys.exe --draw3-eraser-hidden-test`检查实际Host五入口/首点/活动锁存/Up和间隔。
 `Inkeys.exe --draw3-hidden-test`检查Clear、Up边界、Undo/Redo、跨页、白板和场景事务。
 当前方案B结果以任务scheme-b-validation.md为准；旧validation.md仅代表上一轮设计，不能据此推断本轮通过。offscreen还保存真实帧PNG/CSV及A图标三态；组合GIF只重放这些帧。
@@ -89,3 +90,5 @@ Wrong：用圆的外接矩形直接命中，或把选中Accent画进橡皮本体
 Correct：矩形只作为dirty/裁剪包络；业务命中使用圆距，选中由圆外独立可逆Accent环表达。
 Wrong：直拖每帧按临时工作区重新解析橡皮面板，越界时立即翻边或闪现。
 Correct：直拖沿用已呈现布局；仅在松手后用同一倒转动画吸收新方向。
+Wrong：窄工作区为塞入面板压缩5 DIP或16 DIP留白。
+Correct：保持342 DIP自然布局、正常5/16 DIP留白和真实控件尺寸，仅裁剪横向溢出。

@@ -206,7 +206,7 @@ namespace Inkeys::UI::Bar
 			owner.eraserAttribute.CommitPresented();
 			const auto regions=owner.eraserAttribute.PresentedRegions();expect(regions[0].right==regions[0].left,"closed panel has no hit region");
 		}
-		// 窄工作区仍按生产布局裁剪溢出，截图供人工确认按钮和圆形不会被缩放。
+		// 窄工作区保持生产正常布局并裁剪溢出，截图确认不会切入紧凑留白。
 		{
 			constexpr UINT narrowWidth=300,narrowHeight=620;
 			I18n::load(1,L"JSON",L"zh-CN");owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
@@ -219,8 +219,23 @@ namespace Inkeys::UI::Bar
 			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,1,96,{0,0,narrowWidth,narrowHeight},{0,0},0,0);
 			owner.eraserAttribute.CommitPresented();const auto narrow=owner.eraserAttribute.PresentationSnapshot();
-			expect(narrow.panelVisible && narrow.geometry.horizontalOverflow && narrow.geometry.panel.Width()<=narrowWidth,
-				"narrow work area clips the production eraser panel without scaling its content");
+			const double narrowCircleEndGap=narrow.geometry.reversed
+				?narrow.geometry.previews[0].left-narrow.geometry.dividers[1].right
+				:narrow.geometry.dividers[0].left-narrow.geometry.previews[2].right;
+			const double narrowAutomaticGap=narrow.geometry.reversed
+				?narrow.geometry.dividers[0].left-narrow.geometry.automatic.right
+				:narrow.geometry.automatic.left-narrow.geometry.dividers[1].right;
+			expect(narrow.panelVisible && narrow.geometry.horizontalOverflow && narrow.geometry.panel.Width()<=narrowWidth &&
+				std::abs((narrow.geometry.previews[1].left-narrow.geometry.previews[0].right)-EraserAttributeCircleGapDip)<0.001 &&
+				std::abs((narrow.geometry.previews[2].left-narrow.geometry.previews[1].right)-EraserAttributeCircleGapDip)<0.001 &&
+				std::abs(narrowCircleEndGap-EraserAttributeCircleGapDip)<0.001 &&
+				std::abs(narrow.geometry.items[0].left-narrow.geometry.dividers[0].right-EraserAttributeStandardGapDip)<0.001 &&
+				std::abs(narrow.geometry.dividers[1].left-narrow.geometry.items[0].right-EraserAttributeStandardGapDip)<0.001 &&
+				std::abs(narrowAutomaticGap-EraserAttributeStandardGapDip)<0.001 &&
+				std::abs(narrow.geometry.automatic.Width()-BarButtonTwoSideDip-EraserAttributeAutomaticArrowWidthDip)<0.001 &&
+				std::abs(narrow.geometry.items[4].Width()-BarButtonTwoSideDip)<0.001 &&
+				std::abs(narrow.geometry.items[5].Width()-EraserAttributeAutomaticArrowWidthDip)<0.001,
+				"narrow work area clips the normal eraser layout without compacting normal gaps or controls");
 			auto lighting=owner.spec.SnapshotFrameLighting();
 			lighting.cursorLight={static_cast<float>(EraserRectCenterX(narrow.geometry.automatic)),static_cast<float>(EraserRectCenterY(narrow.geometry.automatic))};
 			lighting.cursorRadius=240;lighting.cursorIntensity=1;lighting.cursorLightVisible=true;

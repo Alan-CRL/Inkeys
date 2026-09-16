@@ -136,13 +136,26 @@ int RunEraserAttributeTests()
 		const double expectedClear=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+BarButtonTwoSideDip/2,input.work.right-BarButtonTwoSideDip/2);
 		expect(std::abs(EraserRectCenterX(l.items[0])-expectedClear)<0.001,"clear stays anchored while asymmetric sides extend independently");
 		const double gap1=l.previews[1].left-l.previews[0].right,gap2=l.previews[2].left-l.previews[1].right;
-		expect(std::abs(gap1-gap2)<0.001 && gap1<=16.001,"equal circle edge gaps compress only when required");
+		expect(std::abs(gap1-16.0)<0.001 && std::abs(gap2-16.0)<0.001,"normal circle edge gaps remain 16 DIP");
 		input.diametersDip[2]=240;const auto huge=ResolveEraserAttributeLayout(input);
 		expect(huge.previewDiameters[2]*input.zoom==240*dpi && huge.panel.Height()==input.main.Height(),"oversized test circle remains round at real diameter and does not expand panel");
 		input.work.right=300;const auto narrow=ResolveEraserAttributeLayout(input);
+		const double narrowCircleEndGap=input.reversed
+			?narrow.previews[0].left-narrow.dividers[1].right
+			:narrow.dividers[0].left-narrow.previews[2].right;
+		const double narrowAutomaticGap=input.reversed
+			?narrow.dividers[0].left-narrow.automatic.right
+			:narrow.automatic.left-narrow.dividers[1].right;
 		expect(narrow.horizontalOverflow && narrow.panel.Width()<=300.001 && narrow.previewDiameters==huge.previewDiameters &&
-			narrow.items[0].Width()==BarButtonTwoSideDip && narrow.automatic.Width()==90.0,
-			"narrow workspace clips overflow without scaling circles or buttons");
+			narrow.items[0].Width()==BarButtonTwoSideDip && narrow.automatic.Width()==BarButtonTwoSideDip+EraserAttributeAutomaticArrowWidthDip &&
+			narrow.items[4].Width()==BarButtonTwoSideDip && narrow.items[5].Width()==EraserAttributeAutomaticArrowWidthDip &&
+			std::abs((narrow.previews[1].left-narrow.previews[0].right)-EraserAttributeCircleGapDip)<0.001 &&
+			std::abs((narrow.previews[2].left-narrow.previews[1].right)-EraserAttributeCircleGapDip)<0.001 &&
+			std::abs(narrowCircleEndGap-EraserAttributeCircleGapDip)<0.001 &&
+			std::abs(narrow.items[0].left-narrow.dividers[0].right-EraserAttributeStandardGapDip)<0.001 &&
+			std::abs(narrow.dividers[1].left-narrow.items[0].right-EraserAttributeStandardGapDip)<0.001 &&
+			std::abs(narrowAutomaticGap-EraserAttributeStandardGapDip)<0.001,
+			"narrow workspace clips normal-layout overflow without compacting normal gaps or controls");
 		input.lockedMenuSide=1;const auto locked=ResolveEraserAttributeLayout(input);expect(locked.menuBelow,"popup direction lock is independent of pointer");
 	}
 	{

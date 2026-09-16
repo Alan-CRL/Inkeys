@@ -90,14 +90,8 @@ export namespace Inkeys::UI::Bar
 			diameters+=r.previewDiameters[i];
 		}
 		const double stroke=BarButtonFrameThicknessDip;
-		const double fixedContent=diameters+button+autoWidth+stroke*2;
-		double gap=EraserAttributeStandardGapDip,circleGap=EraserAttributeCircleGapDip;
-		// 极窄时先等量压缩四段5 DIP，再压缩圆组四段16 DIP；按钮和圆始终保持真实尺寸。
-		if(fixedContent+circleGap*4+gap*4>available)
-		{
-			gap=(std::clamp)((available-fixedContent-circleGap*4)/4,0.0,EraserAttributeStandardGapDip);
-			if(gap<=0)circleGap=(std::clamp)((available-fixedContent)/4,0.0,EraserAttributeCircleGapDip);
-		}
+		// 所有工作区均使用正常留白；极窄时只裁剪面板，不进入紧凑布局。
+		const double gap=EraserAttributeStandardGapDip,circleGap=EraserAttributeCircleGapDip;
 		const double circleSide=diameters+circleGap*4;
 		const double automaticSide=gap+autoWidth+gap;
 		const double leftSide=input.reversed?automaticSide:circleSide;
