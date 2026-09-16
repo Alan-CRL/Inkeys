@@ -206,6 +206,41 @@ namespace Inkeys::UI::Bar
 			owner.eraserAttribute.CommitPresented();
 			const auto regions=owner.eraserAttribute.PresentedRegions();expect(regions[0].right==regions[0].left,"closed panel has no hit region");
 		}
+		// 窄工作区仍按生产布局裁剪溢出，截图供人工确认按钮和圆形不会被缩放。
+		{
+			constexpr UINT narrowWidth=300,narrowHeight=620;
+			I18n::load(1,L"JSON",L"zh-CN");owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
+			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;
+			owner.barState.eraserAttribute=true;owner.barState.eraserSensitivityOpen=false;
+			Inkeys::config.Drawing.Eraser.Automatic=true;
+			root->x.SetDirect(-70);root->y.SetDirect(430);
+			const auto epoch=RenderPipeline::GetDeviceEpoch();
+			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,narrowWidth,narrowHeight)),"narrow target setup");
+			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,1,96,{0,0,narrowWidth,narrowHeight},{0,0},0,0);
+			owner.eraserAttribute.CommitPresented();const auto narrow=owner.eraserAttribute.PresentationSnapshot();
+			expect(narrow.panelVisible && narrow.geometry.horizontalOverflow && narrow.geometry.panel.Width()<=narrowWidth,
+				"narrow work area clips the production eraser panel without scaling its content");
+			auto lighting=owner.spec.SnapshotFrameLighting();
+			lighting.cursorLight={static_cast<float>(EraserRectCenterX(narrow.geometry.automatic)),static_cast<float>(EraserRectCenterY(narrow.geometry.automatic))};
+			lighting.cursorRadius=240;lighting.cursorIntensity=1;lighting.cursorLightVisible=true;
+			owner.spec.SetFrameLightingSnapshot(lighting);owner.spec.SetFrameCursorLightLocalGeometry(lighting.cursorLight,D2D1::SizeF(240,240));
+			auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
+			owner.eraserAttribute.Draw(owner.spec,dc);
+			main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+			DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
+			for(const auto preset:presets)
+			{
+				auto* b=preset==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(preset)];
+				b->name.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
+				DrawBarButtonVisual(owner.spec,dc,*b,b->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main));
+			}
+			expect(SUCCEEDED(dc->EndDraw()),"narrow production panel renders successfully");owner.eraserAttribute.CommitPresented();
+			const std::filesystem::path narrowPath(L"Build/eraser-b/visuals/narrow-eraser-attribute.png");
+			expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),narrowPath)),"narrow PNG readback succeeds");
+			report<<"[EraserVisual] "<<narrowPath.string()<<" width="<<narrowWidth<<" height="<<narrowHeight<<'\n';
+			root->x.SetDirect(100);
+		}
 		// 实际组件逐帧渲染：所有PNG与CSV都来自同一Advance/Draw/CommitPresented路径。
 		{
 			I18n::load(1,L"JSON",L"zh-CN");owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
@@ -215,9 +250,10 @@ namespace Inkeys::UI::Bar
 			owner.spec.SetFrameZoom(1);auto* dc=owner.spec.GetDeviceContext();
 			std::filesystem::create_directories(L"Build/eraser-b/frames");
 			std::ofstream trace("Build/eraser-b/frames.csv");trace<<"case,frame,panel_scale,menu_scale,panel_alpha,menu_alpha,panel_x,panel_y,panel_w,panel_h,menu_x,menu_y,menu_w,menu_h,bounds_l,bounds_t,bounds_r,bounds_b\n";
-			auto tick=[&](const std::string& name,int f,double dt=1.0/60,bool save=false)
+			auto tick=[&](const std::string& name,int f,double dt=1.0/60,bool save=false,
+				RECT workArea={0,0,1000,620},POINT origin={0,0},bool dragPlacementLocked=false)
 			{
-				owner.eraserAttribute.Advance(owner,dt,BarUiAnimationSpeedRate,1,96,{0,0,1000,620},{0,0},0,0);
+				owner.eraserAttribute.Advance(owner,dt,BarUiAnimationSpeedRate,1,96,workArea,origin,0,0,nullptr,dragPlacementLocked);
 				auto light=owner.spec.SnapshotFrameLighting();light.primaryLight={330,470};light.primaryRadius=480;light.primaryLightVisible=true;
 				light.cursorLight={440,340};light.cursorRadius=240;light.cursorIntensity=1;light.cursorLightVisible=true;
 				owner.spec.SetFrameLightingSnapshot(light);owner.spec.SetFrameCursorLightLocalGeometry(light.cursorLight,D2D1::SizeF(240,240));
@@ -256,6 +292,28 @@ namespace Inkeys::UI::Bar
 				stable=s;
 			}
 			expect(openPeak>1.01 && stable.panelPose.scale==1 && mainOutsidePixel,"main opening overshoot exists in actual pixels outside final rectangle");
+			// 直拖期间工作区相对坐标会越过主栏；应维持已呈现方向，松手后才走既有收拢再展开路径。
+			const auto beforeDrag=stable;
+			for(int f=0;f<12;++f)
+			{
+				const auto held=tick("drag-hold",f,1.0/60,f==0,{0,0,1000,1000},{0,-550},true);
+				expect(held.geometry.below==beforeDrag.geometry.below &&
+					std::abs(held.geometry.panel.top-beforeDrag.geometry.panel.top)<0.000001,
+					"direct drag does not snap the presented eraser panel side or position");
+			}
+			owner.barState.widgetPosition.mainBar=false;owner.barState.widgetPosition.primaryBar=true;root->y.SetDirect(140);
+			const auto release=tick("drag-release",0,1.0/60,true);
+			expect(release.geometry.below==beforeDrag.geometry.below && owner.eraserAttribute.Active(),
+				"release retains the old side while the eraser panel starts its reverse animation");
+			for(int f=1;f<70;++f)tick("drag-release",f,1.0/60,f%3==0);
+			const auto released=owner.eraserAttribute.PresentationSnapshot();
+			expect(released.geometry.below && released.geometry.reversed && released.panelPose.scale==1,
+				"release consumes the deferred eraser side through the existing panel animation");
+			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;root->y.SetDirect(430);
+			for(int f=0;f<70;++f)tick("drag-reset",f,1.0/60,f%3==0);
+			stable=owner.eraserAttribute.PresentationSnapshot();
+			expect(!stable.geometry.below && !stable.geometry.reversed && stable.panelPose.scale==1,
+				"drag test restores the original presented side before interaction coverage");
 			// 保存真实按压及选中环交接帧，避免只有稳定态截图而遗漏交互动画。
 			auto sizeMessage=[&](UINT kind,int item,bool held){ExMessage m{};m.message=static_cast<USHORT>(kind);m.x=static_cast<short>(EraserRectCenterX(stable.geometry.items[item]));m.y=static_cast<short>(EraserRectCenterY(stable.geometry.items[item]));m.lbutton=held;return m;};
 			owner.eraserAttribute.Pointer(owner,sizeMessage(WM_LBUTTONDOWN,3,true));

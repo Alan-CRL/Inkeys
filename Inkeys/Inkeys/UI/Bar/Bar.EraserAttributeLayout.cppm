@@ -39,6 +39,8 @@ export namespace Inkeys::UI::Bar
 		double dpiScale = 1, zoom = 1;
 		bool below = false, reversed = false;
 		int lockedMenuSide = -1;
+		// 直拖或方向过渡沿用已呈现侧，不能因临时工作区坐标立即翻边。
+		bool lockPanelSide = false;
 		// 测试可以注入大于面板高度的直径，生产始终传三档基础尺寸。
 		std::array<float, 3> diametersDip{
 			static_cast<float>(Inkeys::Drawing::Draw3::SpeedEraser::BaseSizePresets[0]),
@@ -108,7 +110,7 @@ export namespace Inkeys::UI::Bar
 		const double panelGap=BarMainButtonToMainBarGapDip;
 		const double down=input.work.bottom-input.main.bottom-panelGap,up=input.main.top-input.work.top-panelGap;
 		r.below=input.below;r.reversed=input.reversed;
-		if((r.below?down:up)<height && (r.below?up:down)>(r.below?down:up))r.below=!r.below;
+		if(!input.lockPanelSide && (r.below?down:up)<height && (r.below?up:down)>(r.below?down:up))r.below=!r.below;
 		const double y=(std::clamp)(r.below?input.main.bottom+panelGap:input.main.top-panelGap-height,
 			input.work.top,(std::max)(input.work.top,input.work.bottom-height));
 		r.panel={(std::max)(idealX,input.work.left),y,(std::min)(idealX+naturalWidth,input.work.right),y+height};

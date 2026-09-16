@@ -145,6 +145,18 @@ int RunEraserAttributeTests()
 			"narrow workspace clips overflow without scaling circles or buttons");
 		input.lockedMenuSide=1;const auto locked=ResolveEraserAttributeLayout(input);expect(locked.menuBelow,"popup direction lock is independent of pointer");
 	}
+	{
+		EraserAttributeLayoutInput beforeDrag;
+		beforeDrag.work={0,0,1000,1000};beforeDrag.main={300,600,680,680};beforeDrag.anchor={450,605,520,675};
+		beforeDrag.below=false;
+		const auto presented=ResolveEraserAttributeLayout(beforeDrag);
+		auto moving=beforeDrag;moving.work={0,550,1000,1550};
+		const auto snapped=ResolveEraserAttributeLayout(moving);
+		moving.lockPanelSide=true;
+		const auto held=ResolveEraserAttributeLayout(moving);
+		expect(!presented.below && snapped.below && !held.below,
+			"drag placement lock preserves the presented panel direction until release");
+	}
 	expect(ResolveEraserAttributeRelease(-1,0,true,false)==-1,"opening Up without a new panel Down can never clear");
 	expect(ResolveEraserAttributeRelease(4,5,true,false)==4 && ResolveEraserAttributeRelease(5,4,true,false)==5,"split action remains owned by Down region");
 	expect(ResolveEraserAttributeRelease(1,2,true,false)==-1 && ResolveEraserAttributeRelease(2,2,true,false)==2,

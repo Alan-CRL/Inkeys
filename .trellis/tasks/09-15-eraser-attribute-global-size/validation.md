@@ -151,3 +151,10 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - 自动内分割线与主栏分割线等高居中；右侧箭头复用`barThicknessAdjust` SVG及笔类型0/180度动画，保留70/20动作区和整体按压。
 
 完整`InkeysRepo.sln` `Debug | ARM64`构建通过；Headless通过并报告216组布局、0失败；`--bar-eraser-offscreen-test`通过且`failures=0`。离屏测试保存并断言尺寸圆按下/释放、选中环交接和箭头开合中间帧，最终均能回到idle。`git diff --check`通过。未启动交互式GUI，未提交、推送、归档或结束任务。
+
+## 2026-09-16 主栏直拖换边追加验证
+
+- 直拖锁存测试确认：跨越临时工作区边界时，橡皮面板保持已呈现的位置、上下与左右方向；松手后开始既有收拢→换边→展开动画，并最终稳定在新侧。
+- 完整`InkeysRepo.sln` `Debug | ARM64`构建退出0；`InkeysHeadlessTests.exe --no-window`通过（EraserAttribute layouts=216，failures=0）；`Inkeys.exe --bar-eraser-offscreen-test`退出0。
+- 生产离屏测试新输出`Build/eraser-b/visuals/narrow-eraser-attribute.png`：300×620工作区、面板打开且菜单关闭，确认窄区只裁剪溢出、不缩小圆或自动粗细按钮。
+- 未启动交互式GUI；`Inkeys/PptCOM.dll`为既有未提交变更，未纳入本轮提交。任务继续保持in_progress。

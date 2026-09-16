@@ -78,7 +78,8 @@ class BarEraserAttributePanel
 public:
 	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
-		const BarUiTimelineClass* parentTimeline = nullptr);
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
@@ -99,8 +100,10 @@ private:
 	mutable std::mutex presentationMutex_;
 	Inkeys::UI::Bar::EraserAttributeLayout layout_;
 	Inkeys::UI::Bar::EraserAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::EraserAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
 	double zoom_ = 1;
 	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
 	bool previousBelow_ = false, previousReversed_ = false;
 	int menuSide_ = -1;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;

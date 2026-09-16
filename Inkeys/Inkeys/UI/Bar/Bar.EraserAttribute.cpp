@@ -148,7 +148,8 @@ void BarEraserAttributePanel::ConfigureSurface(BarUiShapeClass& surface,EraserAt
 }
 
 bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double speed,double zoom,UINT dpi,
-	RECT workArea,POINT origin,double rigidX,double rigidY,const BarUiTimelineClass* parentTimeline)
+	RECT workArea,POINT origin,double rigidX,double rigidY,const BarUiTimelineClass* parentTimeline,
+	bool dragPlacementLocked)
 {
 	Initialize();changed_=false;active_=false;
 	if(owner.barState.fold || stateMode.StateModeSelect!=StateModeSelectEnum::IdtEraser || owner.barState.drawAttribute ||
@@ -157,8 +158,28 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	const bool menuOpen=owner.barState.eraserSensitivityOpen;visible_=open;
 	const BarUiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
 	auto advance=[&](auto& value){const auto result=BarUiAdvanceAnimation(value,context);changed_|=result.changed;active_|=result.active;};
-	const bool targetBelow=owner.barState.widgetPosition.primaryBar,targetReversed=!owner.barState.widgetPosition.mainBar;
-	const bool switching=targetBelow!=previousBelow_ || targetReversed!=previousReversed_;
+	auto root=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+	root->UpInh(BarUiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
+	auto main=owner.shapeMap[BarUISetShapeEnum::MainBar];main->Inherit(BarUiInheritEnum::Center,*root);
+	auto anchor=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main);
+	EraserAttributeLayoutInput currentInput;
+	currentInput.main={main->inhX,main->inhY,main->inhX+main->w.val,main->inhY+main->h.val};
+	currentInput.anchor={anchor->button.inhX,anchor->button.inhY,anchor->button.inhX+anchor->button.w.val,anchor->button.inhY+anchor->button.h.val};
+	currentInput.zoom=zoom;currentInput.dpiScale=dpi/96.0;
+	currentInput.work={(workArea.left-origin.x)/zoom-rigidX,(workArea.top-origin.y)/zoom-rigidY,(workArea.right-origin.x)/zoom-rigidX,(workArea.bottom-origin.y)/zoom-rigidY};
+	const bool holdDragPlacement=dragPlacementLocked && open;
+	if(holdDragPlacement && !dragPlacementLocked_)
+	{
+		// HWND 直移期间沿用上一帧的局部几何；松手吸收后再由现有换边动画接管。
+		dragLayoutInput_=hasStableLayoutInput_?stableLayoutInput_:currentInput;
+		dragLayoutInput_.below=layout_.below;dragLayoutInput_.reversed=layout_.reversed;
+		dragLayoutInput_.lockedMenuSide=menuSide_;dragLayoutInput_.lockPanelSide=true;
+		dragPlacementLocked_=true;
+	}
+	else if(!holdDragPlacement)dragPlacementLocked_=false;
+	const bool targetBelow=holdDragPlacement?previousBelow_:static_cast<bool>(owner.barState.widgetPosition.primaryBar);
+	const bool targetReversed=holdDragPlacement?previousReversed_:!static_cast<bool>(owner.barState.widgetPosition.mainBar);
+	bool switching=targetBelow!=previousBelow_ || targetReversed!=previousReversed_;
 	changed_|=panelMotion_.Retarget(open && !switching,BarUiDefaultOperationDur,parentTimeline);
 	changed_|=menuMotion_.Retarget(menuOpen && !switching,BarUiDefaultOperationDur,&panelMotion_.Timeline());
 	changed_|=panelMotion_.Advance(context);changed_|=menuMotion_.Advance(context);
@@ -169,17 +190,17 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		changed_|=panelMotion_.Retarget(open,BarUiDefaultOperationDur,parentTimeline);
 		changed_|=menuMotion_.Retarget(menuOpen,BarUiDefaultOperationDur,&panelMotion_.Timeline());
 		if(!context.animationEnabled){changed_|=panelMotion_.Advance(context);changed_|=menuMotion_.Advance(context);}
+		switching=false;
 	}
 	active_|=panelMotion_.Active() || menuMotion_.Active();if(!menuOpen && !menuMotion_.Visible())menuSide_=-1;
-	auto root=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-	root->UpInh(BarUiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
-	auto main=owner.shapeMap[BarUISetShapeEnum::MainBar];main->Inherit(BarUiInheritEnum::Center,*root);
-	auto anchor=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main);
-	EraserAttributeLayoutInput input;
-	input.main={main->inhX,main->inhY,main->inhX+main->w.val,main->inhY+main->h.val};
-	input.anchor={anchor->button.inhX,anchor->button.inhY,anchor->button.inhX+anchor->button.w.val,anchor->button.inhY+anchor->button.h.val};
-	input.zoom=zoom;input.dpiScale=dpi/96.0;input.below=previousBelow_;input.reversed=previousReversed_;input.lockedMenuSide=menuSide_;
-	input.work={(workArea.left-origin.x)/zoom-rigidX,(workArea.top-origin.y)/zoom-rigidY,(workArea.right-origin.x)/zoom-rigidX,(workArea.bottom-origin.y)/zoom-rigidY};
+	EraserAttributeLayoutInput input=holdDragPlacement?dragLayoutInput_:currentInput;
+	if(!holdDragPlacement)
+	{
+		input.below=previousBelow_;input.reversed=previousReversed_;input.lockedMenuSide=menuSide_;
+		// 收拢到紧凑态之前继续显示原侧，避免 release 首帧被工作区避让直接闪到另一边。
+		input.lockPanelSide=switching;
+		stableLayoutInput_=input;hasStableLayoutInput_=true;
+	}
 	layout_=ResolveEraserAttributeLayout(input);if(menuOpen && menuSide_<0)menuSide_=layout_.menuBelow?1:0;
 	EraserAttributePresentation next;next.zoom=zoom;
 	next.panelPose=FitEraserSurfacePose(ResolveEraserSurfacePose(layout_.panel,input.anchor,panelMotion_.Geometry(),BarDrawAttributeCompactWidth),layout_.panel,input.work);
