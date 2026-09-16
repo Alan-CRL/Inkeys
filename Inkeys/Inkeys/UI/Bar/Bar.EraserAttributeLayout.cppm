@@ -159,9 +159,12 @@ export namespace Inkeys::UI::Bar
 			input.work.top,(std::max)(input.work.top,input.work.bottom-menuHeight));
 		r.menu={mx,my,mx+menuWidth,my+menuHeight};
 		r.items[9]={r.menu.right-padding-row,my+padding,r.menu.right-padding,my+padding+row};
-		r.menuTitle={mx+padding,my+padding,r.items[9].left-mg,my+padding+row};
+		// 标题行在浮窗顶端与灵敏度按钮上沿之间等距，水平范围保持原有左对齐。
+		const double sensitivityButtonTop=my+padding+row+mg;
+		const double titleTop=my+(sensitivityButtonTop-my-row)/2;
+		r.menuTitle={mx+padding,titleTop,r.items[9].left-mg,titleTop+row};
 		const double segment=(menuWidth-padding*2-mg*2)/3;
-		for(size_t i=0;i<3;++i)r.items[6+i]={mx+padding+i*(segment+mg),my+padding+row+mg,
+		for(size_t i=0;i<3;++i)r.items[6+i]={mx+padding+i*(segment+mg),sensitivityButtonTop,
 			mx+padding+i*(segment+mg)+segment,my+padding+row*2+mg};
 		return r;
 	}

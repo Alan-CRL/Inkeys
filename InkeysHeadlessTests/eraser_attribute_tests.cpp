@@ -24,6 +24,7 @@ int RunEraserAttributeTests()
 		EraserAttributeLayoutInput input;input.work={0,0,1400,900};input.main={500,420,880,500};input.anchor={650,425,720,495};
 		const auto l=ResolveEraserAttributeLayout(input);
 		auto cx=[](EraserAttributeRect r){return (r.left+r.right)/2;};
+		auto cy=[](EraserAttributeRect r){return (r.top+r.bottom)/2;};
 		expect(std::abs(cx(l.items[0])-cx(input.anchor))<0.001,"clear remains anchored to the main eraser entry");
 		expect(std::abs(l.panel.Width()-342.0)<0.001,"asymmetric stable panel is342 DIP wide");
 		expect(l.items[3].right<l.items[0].left && l.items[0].right<l.items[4].left,"B order is circular presets / clear / automatic");
@@ -38,6 +39,8 @@ int RunEraserAttributeTests()
 		expect(std::abs(cx(l.menu)-cx(automatic))<0.001,"menu centers on entire automatic control");
 		expect(l.menu.Width()>=180 && l.menu.Width()<=200 && l.menu.Height()<=100,"sensitivity menu has two compact rows");
 		expect(l.items[9].bottom<=l.items[6].top,"disabled gear lives in header row");
+		expect(std::abs(cy(l.menuTitle)-(l.menu.top+l.items[6].top)/2)<0.001,
+			"sensitivity title is vertically centered between popup top and button row");
 		const double firstGap=cx(l.items[2])-cx(l.items[1])-(l.previewDiameters[0]+l.previewDiameters[1])/2;
 		const double secondGap=cx(l.items[3])-cx(l.items[2])-(l.previewDiameters[1]+l.previewDiameters[2])/2;
 		expect(std::abs(firstGap-16.0)<0.001 && std::abs(secondGap-16.0)<0.001 &&
