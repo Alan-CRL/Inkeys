@@ -130,3 +130,15 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - `InkeysHeadlessTests/eraser_attribute_tests.cpp`
 
 另新增本任务PRD/设计/实施/验证记录及native-desktop/eraser-attributes.md合同，并在native-desktop索引登记。
+
+## 2026-09-16 自动总开关与布局追加验证
+
+本节覆盖本轮追加需求，并替代上文关于433.5 DIP面板、32.5 DIP扩展区、Mixed横杠和“无独立总开关”的历史描述。
+
+- 新增`Drawing.Eraser.Automatic`，缺失默认开启；关闭只门控最终解析，不改写五入口配置，显式Speed同样解析为Fixed，重新开启后恢复入口配置。
+- 面板默认宽342 DIP；圆组四段16 DIP，外部与中央四段标准留白5 DIP；窄区先压缩5 DIP、再压缩16 DIP，圆和按钮尺寸不缩小。
+- 自动按钮为90×70 DIP，命中区70/20 DIP；内部1 DIP分割线上下留5 DIP，与整体共享选中青色光影及按压缩放。
+- 橡皮面板、菜单和提示在主栏绘制前提交，主栏最终覆盖全部橡皮浮层。
+- 设置页新增自动粗细总开关卡片；关闭期间五入口仍可编辑和持久化。
+
+验证结果：完整`InkeysRepo.sln`的`Debug | ARM64`构建退出0；Headless、橡皮离屏、Draw3隐藏、橡皮隐藏四项均通过。Headless报告216组布局、0失败。通用Draw3隐藏测试首次在异步resize/present等待处超时但进程退出0，立即复跑全部隐藏集通过；该资源缩放路径未被本轮改动。`git diff --check`通过，仅报告既有autocrlf提示。未启动交互式GUI，未提交、推送或归档。

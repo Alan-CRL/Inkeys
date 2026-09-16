@@ -40,7 +40,8 @@ namespace
 		std::scoped_lock lock(eraserPreferencesMutex);
 		auto& saved=Inkeys::config.Drawing.Eraser;
 		const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
-		InputSettings result;result.automaticPenSupported=AutomaticPenResponseAvailable();
+		InputSettings result;result.automaticEnabled=saved.Automatic.load();
+		result.automaticPenSupported=AutomaticPenResponseAvailable();
 		result.baseSize=RestoreBaseSize(saved.BaseDiameterDip.load());
 		result.sensitivity=RestoreSensitivity(saved.Sensitivity.load());
 		for(size_t i=0;i<fields.size();++i)
@@ -363,13 +364,10 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 		}
 		if (automatic != -1)
 		{
-			// 一次持锁写全表，再发布一次；不动penResponse、笔尾/右键门及面积辅助。
-			const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
-			for (auto* field : fields)
-			{
-				changed |= field->load() != (automatic ? 1 : 0);
-				*field = automatic ? 1 : 0;
-			}
+			// 总开关只门控解析，不销毁五入口各自保存的 Fixed/Speed 偏好。
+			const bool value = automatic != 0;
+			changed |= saved.Automatic.load() != value;
+			saved.Automatic = value;
 		}
 		if (changed) Inkeys::UI::Setting::RequestConfigWrite();
 	}

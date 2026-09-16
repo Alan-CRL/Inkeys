@@ -64,13 +64,14 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	enum class BaseSize : int { Small = 24, Medium = 32, Large = 40 };
 	inline constexpr std::array<BaseSize,3> BaseSizePresets{BaseSize::Small,BaseSize::Medium,BaseSize::Large};
 	enum class Sensitivity : int { Low = 0, Medium = 1, High = 2 };
-	enum class AutomaticState { Off, On, Mixed };
+	enum class AutomaticState { Off, On };
 	BaseSize RestoreBaseSize(int saved) noexcept;
 	Sensitivity RestoreSensitivity(int saved) noexcept;
 	float SweepGain(Sensitivity sensitivity) noexcept;
 	struct InputSettings
 	{
 		std::array<EntrySettings,5> entries{};
+		bool automaticEnabled = true;
 		bool automaticPenSupported = true;
 		BaseSize baseSize = BaseSize::Medium;
 		Sensitivity sensitivity = Sensitivity::Medium;

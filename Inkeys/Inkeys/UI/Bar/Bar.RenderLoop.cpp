@@ -11343,6 +11343,10 @@ bool presetButton = button.presetIndex >= 0;
 					state.spec.SetFrameDiffuseMaskGeometryScale(1.0);
 				}
 
+				// 橡皮主面板、菜单和提示统一先画，主栏随后覆盖其重叠区域。
+				SetRigidTransform();
+				owner_.eraserAttribute.Draw(state.spec, barDeviceContext);
+
 				// More 必须先画、主栏后画，收拢部分才会从主栏下层自然出现。
 				auto DrawMainBar = [&]()
 				{
@@ -12295,9 +12299,6 @@ bool presetButton = button.presetIndex >= 0;
 					min(thumbRadius * 0.70F, centerDiameter / 2.0F));
 			}
 		}
-
-		SetRigidTransform();
-		owner_.eraserAttribute.Draw(state.spec, barDeviceContext);
 
 		// 绘制函数内部记录的是未套组变换的布局边界，提交时改用同源的实际视觉外框。
 		state.current = currentContentBounds;

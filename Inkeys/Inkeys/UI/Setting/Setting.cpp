@@ -3952,7 +3952,7 @@ SettingSessionCoroutine RunSettingSession()
 						const auto eraserPreferences=EraserPreferencesSnapshot();
 						const int modelRows=(eraserPreferences.entries[3].kind==Inkeys::Drawing::Draw3::SpeedEraser::EraserKind::Speed?1:0)
 							+(eraserPreferences.entries[4].kind==Inkeys::Drawing::Draw3::SpeedEraser::EraserKind::Speed?1:0);
-						ImGui::BeginChild("橡皮擦设置", {settingItemWidth*settingGlobalScale,(45.0f+350.0f+45.0f*modelRows+110.0f)*settingGlobalScale},
+						ImGui::BeginChild("橡皮擦设置", {settingItemWidth*settingGlobalScale,(45.0f+65.0f+350.0f+45.0f*modelRows+110.0f)*settingGlobalScale},
 							false,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
 						ImGui::SetCursorPos({0,0});
 						ImFontMain->Scale=0.6f;PushFontNum++;ImGui::PushFont(ImFontMain);
@@ -3961,6 +3961,26 @@ SettingSessionCoroutine RunSettingSession()
 						const char* entries[]={"鼠标左键","鼠标右键","触摸","笔（笔尖）","笔尾"};
 						const char* kinds[]={"固定粗细","笔速橡皮"};
 						const char* responses[]={"自动识别","屏幕笔","数位板"};
+						{
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY()+5.0f*settingGlobalScale);
+							PushStyleVarNum++;ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(0,0));
+							PushStyleVarNum++;ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding,4.0f);
+							PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_ChildBg,Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("自动粗细总开关",{settingItemWidth*settingGlobalScale,60.0f*settingGlobalScale},
+								true,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+							ImFontMain->Scale=0.5f;PushFontNum++;ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++;ImGui::PushStyleColor(ImGuiCol_Text,Widgets::FluentColor::TextStrong);
+							ImGui::SetCursorPos({20*settingGlobalScale,20*settingGlobalScale});ImGui::TextUnformatted("自动粗细总开关");
+							bool automatic=eraserPreferences.automaticEnabled;
+							ImGui::SetCursorPos({settingRightToggleX*settingGlobalScale,15*settingGlobalScale});
+							Widgets::toggle.ToggleBool("##自动粗细总开关",&automatic);
+							if(automatic!=eraserPreferences.automaticEnabled)
+								SetGlobalEraserPreference(-1,-1,automatic?1:0);
+							if(PushStyleColorNum>=0)ImGui::PopStyleColor(PushStyleColorNum),PushStyleColorNum=0;
+							if(PushStyleVarNum>=0)ImGui::PopStyleVar(PushStyleVarNum),PushStyleVarNum=0;
+							while(PushFontNum)PushFontNum--,ImGui::PopFont();
+							ImGui::EndChild();
+						}
 						for(int entry=0;entry<5;++entry)
 						{
 							int kind=static_cast<int>(eraserPreferences.entries[entry].kind);

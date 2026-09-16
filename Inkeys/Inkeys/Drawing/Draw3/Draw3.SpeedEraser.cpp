@@ -55,21 +55,13 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	}
 	AutomaticState GetAutomaticState(const InputSettings& settings) noexcept
 	{
-		const auto first = settings.entries.front().kind;
-		for (const auto& entry : settings.entries)
-			if (entry.kind != first) return AutomaticState::Mixed;
-		return first == EraserKind::Speed ? AutomaticState::On : AutomaticState::Off;
+		return settings.automaticEnabled ? AutomaticState::On : AutomaticState::Off;
 	}
 	bool SetGlobalAutomatic(InputSettings& settings, bool enabled) noexcept
 	{
-		bool changed = false;
-		for (auto& entry : settings.entries)
-		{
-			const auto kind = enabled ? EraserKind::Speed : EraserKind::Fixed;
-			changed |= entry.kind != kind;
-			entry.kind = kind;
-		}
-		return changed;
+		if (settings.automaticEnabled == enabled) return false;
+		settings.automaticEnabled = enabled;
+		return true;
 	}
 
 	float DiameterToCanvasPx(float diameterDip, const DisplayScale& display) noexcept
@@ -336,7 +328,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		const auto preference=settings.entries[index<5?index:0];
 		const bool pen=entry==InputEntry::PenTip || entry==InputEntry::PenTail;
 		ResolvedInput result;result.entry=entry;
-		result.kind=policy==EraserToolPolicy::Fixed?EraserKind::Fixed:
+		// 总开关是最高优先级门控；关闭时显式 Speed 也只在下一次接触按 Fixed 解析。
+		result.kind=!settings.automaticEnabled?EraserKind::Fixed:
+			policy==EraserToolPolicy::Fixed?EraserKind::Fixed:
 			policy==EraserToolPolicy::Speed?EraserKind::Speed:preference.kind;
 		result.config=ResolveConfig(display,mode,source,ResolveSizes(settings.baseSize),pen?preference.penResponse:PenResponseChoice::Automatic,
 			pen?settings.automaticPenSupported:true);

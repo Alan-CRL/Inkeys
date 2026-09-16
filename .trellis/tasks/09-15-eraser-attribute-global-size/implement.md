@@ -18,3 +18,10 @@ Build/ARM64/Debug/Inkeys.exe --draw3-eraser-hidden-test
 按trellis-check主Agent自查；回退仅限本轮编辑，不触及用户基线。最终不commit/push/archive。
 
 实际命令、迭代中暴露的问题与未实机验收项见validation.md；全程不提交/推送/归档。
+
+## 2026-09-16 追加执行
+- [x] 新增Automatic配置/快照门控并更新设置页事务。
+- [x] 重算非对称布局、90×70整体按钮及内部发光分割线。
+- [x] 调整整个橡皮组件Z序并保留现有dirty/命中快照。
+- [x] 更新纯模型、离屏和隐藏测试，完整构建并重跑四套既有命令。
+- [x] 更新功能spec、检查格式/编码与无关diff；不commit/push/archive。

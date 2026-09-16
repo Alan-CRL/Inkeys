@@ -78,6 +78,7 @@ export namespace Inkeys::UI::Bar
 	inline EraserAttributeLayout TransformEraserAttributeLayout(EraserAttributeLayout layout,EraserSurfacePose panel,EraserSurfacePose menu) noexcept
 	{
 		layout.panel=panel.Apply(layout.panel);layout.menu=menu.Apply(layout.menu);layout.automatic=panel.Apply(layout.automatic);
+		layout.automaticDivider=panel.Apply(layout.automaticDivider);
 		layout.previewRegion=panel.Apply(layout.previewRegion);layout.menuTitle=menu.Apply(layout.menuTitle);
 		for(size_t i=0;i<layout.items.size();++i)layout.items[i]=(i<6?panel:menu).Apply(layout.items[i]);
 		for(auto& r:layout.dividers)r=panel.Apply(r);

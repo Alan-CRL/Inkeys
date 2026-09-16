@@ -26,3 +26,10 @@ SpeedEraser.h/.cpp、IdtState.h/.cpp、Other.Config.cppm 与异步写盘暴露�
 
 ## 清空验收发现与必要补齐
 原Clear在active.empty()后执行，保留此合法提交边界。旧Desktop/PPT Clear的Undo通过边界快照恢复，原来没有对应Redo；Whiteboard缺少回撤fallback。本轮在每页runtime加clearRedoAvailable，仅Clear恢复后置位，新笔迹提交取消，Redo回到既有Clear事务；Whiteboard沿用同一个边界快照fallback。页/场景迁移保留标记，磁盘旧区间恢复同样建立Redo。新增隐藏验证等待Up后清空、重复Up不回流、一次Undo/Redo、新墨迹取消Redo和白板回撤。未改输入队列或活动接触终止策略。
+
+## 2026-09-16 总开关与布局调整
+- `InputSettings`新增`automaticEnabled`，由`Drawing.Eraser.Automatic`读取；`GetAutomaticState`只映射该布尔值，`SetGlobalAutomatic`只修改布尔值。`ResolveInput`先检查总开关，关闭时强制Fixed，再处理原policy/entry。
+- 布局以清空中心为锚：圆侧自然宽为三圆直径和加四份16 DIP，自动侧为5+70+20+5 DIP。中央两条1 DIP分割线与清空之间各留5 DIP；默认总宽342 DIP。倒转交换完整侧组，不镜像组内内容。
+- 极窄时先等量压缩四份5 DIP，再等量压缩四份16 DIP；仍不足只裁圆的可见/命中区域，不改圆和按钮尺寸。
+- 自动内部1 DIP分割线覆盖在70/20边界，不增加整体宽度；复用按钮当前frame颜色、PointLight与整组pressScale。整个橡皮组件在`DrawMainBar()`之前绘制。
+- 设置页通过`SetGlobalEraserPreference(-1,-1,value)`读写同一事务，关闭时不禁用五入口编辑。

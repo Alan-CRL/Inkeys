@@ -110,6 +110,7 @@ private:
 	BarUiValueClass tooltipProgress_{0.0};
 	std::array<BarButtonClass,10> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;
+	BarUiShapeClass automaticDivider_;
 	std::array<BarUiShapeClass,3> circles_;
 	std::array<BarUiValueClass,3> circleSelection_, circleHover_, circlePress_;
 	BarUiShapeClass surface_, menu_, tooltip_;

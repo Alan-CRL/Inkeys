@@ -4,18 +4,18 @@
 修改UI3橡皮属性、Drawing.Eraser配置、SpeedEraser尺寸或Clear边界时读取。普通擦除为ConfiguredEraser → ByEntry；设备入口的真实身份、penResponse与右键/笔尾触发门保持独立。
 
 ## 2. Signatures
-- `SpeedEraser::InputSettings`: 五个entries、automaticPenSupported、BaseSize baseSize、Sensitivity sensitivity。
+- `SpeedEraser::InputSettings`: 五个entries、`automaticEnabled`、automaticPenSupported、BaseSize baseSize、Sensitivity sensitivity。
 - `BaseSize`: Small=24 / Medium=32 / Large=40；`Sensitivity`: Low=0 / Medium=1 / High=2。
 - `RestoreBaseSize(int)`, `RestoreSensitivity(int)`, `ResolveSizes(BaseSize)`, `GetAutomaticState(InputSettings)`, `SetGlobalAutomatic(InputSettings&, bool)`。
 - `EraserPreferencesSnapshot()`返回整表；`SetGlobalEraserPreference(baseDiameterDip=-1, sensitivity=-1, automatic=-1)`中-1代表保留该属性。
-- 持久化键：`Drawing.Eraser.BaseDiameterDip`、`Drawing.Eraser.Sensitivity`；自动开关由五入口实际kind推导，没有独立bool。
+- 持久化键：`Drawing.Eraser.Automatic`（缺失默认true）、`Drawing.Eraser.BaseDiameterDip`、`Drawing.Eraser.Sensitivity`。
 - `ResolveEraserAttributeLayout(input)`返回面板、菜单、槽位、预览直径和分割线几何；`BarEraserAttributePanel::CommitPresented()`只在完整呈现成功后更新命中快照。
 
 ## 3. Contracts
 ### 配置与输入
-BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别回到32/中。初始化、开合、选择大小或灵敏度不得统一五入口kind；只有全局开关会在eraserPreferencesMutex保护下统一写五个kind并发布一次。详细设置每帧使用一份整表快照。写盘复用Setting的已启动业务FIFO，不打开设置窗口。对实际未变化的设置不发布、不写盘。
+BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别回到32/中。初始化、开合、总开关、选择大小或灵敏度都不得统一五入口kind；总开关只在eraserPreferencesMutex保护下修改独立bool并发布一次。详细设置每帧使用一份整表快照。写盘复用Setting的已启动业务FIFO，不打开设置窗口。对实际未变化的设置不发布、不写盘。
 
-全Speed显示开，全Fixed显示关，混合显示横杠；混合点击全开。显式FixedEraser/SpeedEraser API旁路仍优先于entries；普通产品工具和属性操作通过IdtState发布ConfiguredEraser，不能被旧固定策略遮盖。
+自动按钮只显示独立总开关的On/Off。关闭时普通入口和显式SpeedEraser策略都按Fixed解析，五入口保存值继续允许编辑；重新开启后恢复各入口配置。显式FixedEraser始终为Fixed；普通产品工具和属性操作通过IdtState发布ConfiguredEraser。
 
 活动接触用锁存InputSettings，非Touch会话由SessionConfigCompatible检查有效尺寸/灵敏度；面板开合不得Reset控制器。
 
@@ -31,13 +31,13 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 ### UI与资源
 使用同一Bar HWND、D2D context、共享RenderPipeline线程。标准大按钮/主题/边缘光/分割线复用Bar现有实现。`Assets/EraserGripVisual.h`是C++预览/HLSL的无副作用比例来源，FXC临时ASCII副本必须同步。
 
-方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组默认边缘间隙16逻辑单位；圆心间距=前半径+间隙+后半径。左右分配=max(圆组需求,自动整体需求)，两条分割线对称、清空在中轴，默认总宽358逻辑单位。窄区先减弹性留白，再裁必要溢出；命中由相邻中界和可见区域限制，圆外径不变。
+方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组从面板边缘到分割线的四段留白均为16逻辑单位。自动侧为5+90+5，清空与两侧分割线也各留5；清空中心锚定主栏橡皮入口，默认总宽342逻辑单位，倒转只交换完整侧组。窄区先等量压缩四段5，再等量压缩四段16，仍不足只裁溢出；命中由相邻中界和可见区域限制，圆和按钮外径不变。
 
-预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊；选中描边向内加粗并以同一Theme Accent绘制PointLight，Hover/Pressed只改光照/轮廓。键盘焦点为独立内虚线。自动按钮只绘制一个BarButtonClass，body/arrow共享Hover和按压；菜单打开不改自动选中态，内部无竖分割线。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
+预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊；选中描边向内加粗并以同一Theme Accent绘制PointLight，Hover/Pressed只改光照/轮廓。键盘焦点为独立内虚线。自动按钮只绘制一个90×70 BarButtonClass，body/arrow命中宽为70/20并共享Hover、按压及整体缩放；内部1 DIP分割线上下各留5，复用当前外框色和PointLight，选中时与外框同步Accent。菜单打开不改自动选中态。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
 
 菜单182.5×90逻辑单位，两行结构：标题/禁用齿轮、三段等宽选项。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
 
-正常空间panel.centerX=clear.centerX=主栏擦除centerX，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。
+正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板、菜单和提示均在Main Bar之前绘制，重叠像素由主栏覆盖。
 
 EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及DrawAttribute的EaseOutBack/EaseInBack、EaseOutSine/EaseInSine；紧凑宽度取BarDrawAttributeCompactWidth。状态变更才Retarget，前半程可加入父余时。geometry允许overshoot，alpha独立有界；零时间采样保留当前姿态（动画禁用或force replace除外）。子pose复合父pose，锚点跟随当前完整自动按钮。开合期间允许整组缩放，稳定精确为1；日常Hover/Selected不缩放圆。
 
@@ -52,7 +52,7 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 
 ## 4. Validation & Error Matrix
 |场景|结果|
-|全局类型混合|横杠，点击五项全Speed|
+|总开关关闭且五入口混合|按钮显示Off；解析全Fixed，入口保存值不变|
 |只选B/灵敏度|kind、设备身份和面积开关不变|
 |预览高于面板|仅裁可见区域，不改圆直径或增加透明命中|
 |无内容Clear|禁用，不产生空撤销记录|

@@ -273,6 +273,7 @@ GROUP(UI, \
 		) \
 	GROUP(Drawing, \
 		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Sensitivity, 1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseLeft, -1) \

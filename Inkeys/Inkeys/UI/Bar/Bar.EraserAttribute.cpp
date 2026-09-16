@@ -112,6 +112,14 @@ void BarEraserAttributePanel::Initialize()
 		d.enable.Initialization(true);d.pct.SetDirect(0.30);d.framePct.emplace(0);d.frameLightPct.emplace(1);
 		d.frameRendering=BarUiFrameRenderingEnum::PointLight;d.framePrimaryLightEnabled=false;d.frameCursorLightIntensityScale=BarUiDividerCursorLightIntensity;
 	}
+	automaticDivider_.Initialization(0,0,1,1,BarUiDividerRadius,BarUiDividerRadius,BarButtonFrameThicknessDip,
+		GetThemeColor(BarThemeColorEnum::SurfaceFrame),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	automaticDivider_.enable.Initialization(true);automaticDivider_.pct.SetDirect(0.30);
+	automaticDivider_.framePct.emplace(0);automaticDivider_.frameLightPct.emplace(0);
+	automaticDivider_.frameRendering=BarUiFrameRenderingEnum::PointLight;
+	automaticDivider_.frameLightColor=BarUiFrameLightColorEnum::Frame;
+	automaticDivider_.framePrimaryLightEnabled=false;
+	automaticDivider_.frameCursorLightIntensityScale=BarUiDividerCursorLightIntensity;
 	title_.Initialization(0,0,0,BarButtonOneSideDip,L"灵敏度",BarButtonTwoTwoLabelFontSizeDip,GetThemeColor(BarThemeColorEnum::TextPrimary));
 	title_.enable.Initialization(true);title_.pct.SetDirect(1);
 	tooltipText_.Initialization(0,0,0,0,L"",BarButtonTwoTwoLabelFontSizeDip,GetThemeColor(BarThemeColorEnum::TextPrimary));
@@ -195,7 +203,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		Place(b.button,i==4?g.automatic:g.items[i]);
 		b.button.rw->SetDirect(BarButtonCornerRadiusDip*scale);b.button.rh->SetDirect(BarButtonCornerRadiusDip*scale);b.button.ft->SetDirect(BarButtonFrameThicknessDip*scale);
 		const bool large=i==0 || i==4;
-		const double offset=i==4?-BarButtonOneSideDip/2:0;
+		const double offset=i==4?-EraserAttributeAutomaticArrowWidthDip/2:0;
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
 		b.name.w.SetDirect(large?metrics.primarySlotWidthDip*scale:static_cast<double>(b.button.w.val));b.name.h.SetDirect(metrics.primarySlotHeightDip*scale);b.name.size.SetDirect(metrics.primaryFontSizeDip*scale);
@@ -224,6 +232,13 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		d.rw->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);d.rh->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
 		d.fill->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));d.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
 	}
+	Place(automaticDivider_,g.automaticDivider);
+	automaticDivider_.ft->SetDirect(BarButtonFrameThicknessDip*frame_.panelPose.scale);
+	automaticDivider_.rw->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
+	automaticDivider_.rh->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
+	const auto automaticFrame=static_cast<COLORREF>(buttons_[4].button.frame->val);
+	automaticDivider_.fill->SetDirect(automaticFrame);automaticDivider_.frame->SetDirect(automaticFrame);
+	automaticDivider_.frameLightPct->SetDirect(buttons_[4].button.frameLightPct->val);
 	const auto& texts=I18nKey.UI.Bar.EraserAttributes;
 	changed_|=title_.SetStringImmediate(I18n::getWOr(texts.SensitivityLabel,L"灵敏度"));
 	title_.w.SetDirect(g.menuTitle.Width());title_.h.SetDirect(g.menuTitle.Height());title_.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip*frame_.menuPose.scale);
@@ -236,7 +251,6 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	}
 	else if(hint==9)text=I18n::getWOr(texts.SettingsHint,L"自动粗细设置，暂未开放");
 	else if(hint==0)text=I18n::getWOr(texts.ClearCanvasHint,L"清空当前画布批注");
-	else if(IsAutomatic(hint) && automatic_==AutomaticState::Mixed)text=I18n::getWOr(texts.MixedHint,L"各设备设置不同\n点击统一开启自动粗细");
 	const bool hintVisible=open && !text.empty() && (hint<6 || menuOpen) && !panelMotion_.Active() && !menuMotion_.Active();
 	tooltipProgress_.SetTar(hintVisible?1:0,BarButtonHoverTransitionDuration);advance(tooltipProgress_);
 	if(hintVisible)
@@ -301,22 +315,21 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	drawButton(0);drawButton(4);
 	for(size_t i=0;i<3;++i)DrawPreview(renderer,context,i);
 	for(auto& d:dividers_)renderer.Shape(context,d,BarUiInheritClass(d.inhX,d.inhY));
-	// 箭头跟随整体按压，只有动作区不同，视觉没有第二块底色或内部竖线。
+	// 内部分割线和箭头跟随整个90×70按钮围绕同一中心缩放。
 	const auto extra=PixelRect(g.items[5],zoom_),whole=PixelRect(g.automatic,zoom_);
 	const float press=static_cast<float>(buttons_[4].pressScale.val);
 	const float ax=(whole.left+whole.right)/2,ay=(whole.top+whole.bottom)/2;
-	const float cx=ax+((extra.left+extra.right)/2-ax)*press,cy=ay;
-	const float half=static_cast<float>(BarButtonGapDip*0.7*frame_.panelPose.scale*zoom_)*press;
+	D2D1_MATRIX_3X2_F originalTransform{};context->GetTransform(&originalTransform);
+	if(std::abs(press-1.0f)>0.000001f)
+		context->SetTransform(D2D1::Matrix3x2F::Scale(press,press,D2D1::Point2F(ax,ay))*originalTransform);
+	renderer.Shape(context,automaticDivider_,BarUiInheritClass(automaticDivider_.inhX,automaticDivider_.inhY));
+	const float cx=(extra.left+extra.right)/2,cy=(extra.top+extra.bottom)/2;
+	const float half=static_cast<float>(BarButtonGapDip*0.7*frame_.panelPose.scale*zoom_);
 	const float direction=frame_.menuVisible?-1.0f:1.0f;
 	brush_->SetColor(ThemeBrushColor(automatic_==AutomaticState::On?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary));
-	context->DrawLine({cx-half,cy-direction*half/2},{cx,cy+direction*half/2},brush_.Get(),static_cast<float>(frame_.panelPose.scale*zoom_)*press);
-	context->DrawLine({cx,cy+direction*half/2},{cx+half,cy-direction*half/2},brush_.Get(),static_cast<float>(frame_.panelPose.scale*zoom_)*press);
-	if(automatic_==AutomaticState::Mixed)
-	{
-		const auto body=PixelRect(g.items[4],zoom_);const float x=ax+((body.left+body.right)/2-ax)*press;
-		const float y=ay+(static_cast<float>((g.panel.bottom-BarButtonGapDip*2*frame_.panelPose.scale)*zoom_)-ay)*press;
-		brush_->SetColor(ThemeBrushColor(BarThemeColorEnum::Accent));context->DrawLine({x-half,y},{x+half,y},brush_.Get(),static_cast<float>(2*frame_.panelPose.scale*zoom_)*press);
-	}
+	context->DrawLine({cx-half,cy-direction*half/2},{cx,cy+direction*half/2},brush_.Get(),static_cast<float>(frame_.panelPose.scale*zoom_));
+	context->DrawLine({cx,cy+direction*half/2},{cx+half,cy-direction*half/2},brush_.Get(),static_cast<float>(frame_.panelPose.scale*zoom_));
+	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
 	const int focus=focused_;if(focus==0 || IsAutomatic(focus))focusButton(ButtonVisual(focus));
 	context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	if(frame_.menuVisible)

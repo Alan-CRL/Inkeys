@@ -697,6 +697,7 @@ int RunSpeedEraserTests()
 	}
 	{
 		InputSettings settings;
+		expect(settings.automaticEnabled,"automatic master gate defaults to enabled");
 		for(int index=0;index<5;++index)
 		{
 			const auto entry=static_cast<InputEntry>(index);
@@ -720,6 +721,15 @@ int RunSpeedEraserTests()
 			ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::MouseRight,settings).kind,"same snapshot keeps left/right choices independent");
 		expect(ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::PenTip,settings).kind!=
 			ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::PenTail,settings).kind,"same snapshot keeps tip/tail choices independent");
+		const auto savedEntries=settings.entries;
+		expect(SetGlobalAutomatic(settings,false) && settings.entries==savedEntries,
+			"master gate disables automatic sizing without rewriting five entry preferences");
+		expect(ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::MouseRight,settings).kind==EraserKind::Fixed &&
+			ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::MouseRight,settings,EraserToolPolicy::Speed).kind==EraserKind::Fixed,
+			"disabled master gate overrides configured and explicit Speed policies");
+		expect(SetGlobalAutomatic(settings,true) && settings.entries==savedEntries &&
+			ResolveInput(physical,DeviceMode::Laptop,{},InputEntry::MouseRight,settings).kind==EraserKind::Speed,
+			"reenabling master gate restores the saved entry configuration");
 		for(bool automatic:{false,true})for(int saved:{-1,0,1,2,99})
 		{
 			const auto value=RestorePenResponse(saved,automatic);
@@ -753,7 +763,9 @@ int RunSpeedEraserTests()
 			std::ofstream(root/L"Inkeys"/L"Config"/L"main.json")<<"{}";
 			globalPath=root.wstring()+L"\\";
 			Inkeys::Config saved;
-			expect(saved.Drawing.Eraser.BaseDiameterDip.load()==32 && saved.Drawing.Eraser.Sensitivity.load()==1,"missing global settings default to32/medium without changing entry migration");
+			expect(saved.Drawing.Eraser.Automatic.load() && saved.Drawing.Eraser.BaseDiameterDip.load()==32 && saved.Drawing.Eraser.Sensitivity.load()==1,
+				"missing global settings default to automatic enabled and32/medium without changing entry migration");
+			saved.Drawing.Eraser.Automatic=false;
 			saved.Drawing.Eraser.BaseDiameterDip=64;saved.Drawing.Eraser.Sensitivity=2;
 			saved.Drawing.Eraser.MouseLeft=0;saved.Drawing.Eraser.MouseRight=1;saved.Drawing.Eraser.Touch=0;
 			saved.Drawing.Eraser.PenTip=0;saved.Drawing.Eraser.PenTail=1;
@@ -761,11 +773,11 @@ int RunSpeedEraserTests()
 			saved.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance=true;
 			expect(saved.Write(),"actual Config module writes entry settings");
 			Inkeys::Config read;expect(read.ReadAll(),"actual Config module restores settings on restart");
-			expect(read.Drawing.Eraser.MouseLeft.load()==0 && read.Drawing.Eraser.MouseRight.load()==1 &&
+			expect(!read.Drawing.Eraser.Automatic.load() && read.Drawing.Eraser.MouseLeft.load()==0 && read.Drawing.Eraser.MouseRight.load()==1 &&
 				read.Drawing.Eraser.Touch.load()==0 && read.Drawing.Eraser.PenTip.load()==0 && read.Drawing.Eraser.PenTail.load()==1 &&
 				read.Drawing.Eraser.PenTipResponse.load()==1 && read.Drawing.Eraser.PenTailResponse.load()==2 &&
 				read.Drawing.Eraser.BaseDiameterDip.load()==64 && read.Drawing.Eraser.Sensitivity.load()==2 &&
-				read.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance.load(),"five kinds, two pen choices and old area key round-trip independently");
+				read.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance.load(),"master gate, five kinds, two pen choices and old area key round-trip independently");
 			globalPath=oldPath;
 			if(root.parent_path()==fs::temp_directory_path())fs::remove_all(root,error);
 		}

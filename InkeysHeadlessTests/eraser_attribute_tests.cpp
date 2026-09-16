@@ -1,5 +1,6 @@
 ﻿#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 
@@ -23,28 +24,45 @@ int RunEraserAttributeTests()
 		EraserAttributeLayoutInput input;input.work={0,0,1400,900};input.main={500,420,880,500};input.anchor={650,425,720,495};
 		const auto l=ResolveEraserAttributeLayout(input);
 		auto cx=[](EraserAttributeRect r){return (r.left+r.right)/2;};
-		expect(std::abs(cx(l.panel)-cx(input.anchor))<0.001 && std::abs(cx(l.items[0])-cx(l.panel))<0.001,"panel/clear/eraser centers align exactly");
+		expect(std::abs(cx(l.items[0])-cx(input.anchor))<0.001,"clear remains anchored to the main eraser entry");
+		expect(std::abs(l.panel.Width()-342.0)<0.001,"asymmetric stable panel is342 DIP wide");
 		expect(l.items[3].right<l.items[0].left && l.items[0].right<l.items[4].left,"B order is circular presets / clear / automatic");
 		const EraserAttributeRect automatic{l.items[4].left,l.items[4].top,l.items[5].right,l.items[4].bottom};
+		expect(std::abs(automatic.Width()-90.0)<0.001 && std::abs(automatic.Height()-70.0)<0.001 &&
+			std::abs(l.items[4].Width()-70.0)<0.001 && std::abs(l.items[5].Width()-20.0)<0.001,
+			"automatic composite is90x70 with70/20 action regions");
+		expect(std::abs(l.automaticDivider.Width()-1.0)<0.001 &&
+			std::abs(l.automaticDivider.top-l.automatic.top-5.0)<0.001 &&
+			std::abs(l.automatic.bottom-l.automaticDivider.bottom-5.0)<0.001,
+			"internal divider overlays the70/20 boundary with5 DIP vertical insets");
 		expect(std::abs(cx(l.menu)-cx(automatic))<0.001,"menu centers on entire automatic control");
 		expect(l.menu.Width()>=180 && l.menu.Width()<=200 && l.menu.Height()<=100,"sensitivity menu has two compact rows");
 		expect(l.items[9].bottom<=l.items[6].top,"disabled gear lives in header row");
 		const double firstGap=cx(l.items[2])-cx(l.items[1])-(l.previewDiameters[0]+l.previewDiameters[1])/2;
 		const double secondGap=cx(l.items[3])-cx(l.items[2])-(l.previewDiameters[1]+l.previewDiameters[2])/2;
-		expect(std::abs(firstGap-secondGap)<0.001,"circle edge gaps are equal, not center spacing");
+		expect(std::abs(firstGap-16.0)<0.001 && std::abs(secondGap-16.0)<0.001 &&
+			std::abs(l.previews[0].left-l.panel.left-16.0)<0.001 &&
+			std::abs(l.dividers[0].left-l.previews[2].right-16.0)<0.001,
+			"circle group has four16 DIP edge gaps");
+		expect(std::abs(l.items[0].left-l.dividers[0].right-5.0)<0.001 &&
+			std::abs(l.dividers[1].left-l.items[0].right-5.0)<0.001 &&
+			std::abs(l.automatic.left-l.dividers[1].right-5.0)<0.001 &&
+			std::abs(l.panel.right-l.automatic.right-5.0)<0.001,
+			"automatic and central divider spacing uses four5 DIP gaps");
 		expect(l.items[1].Width()<BarButtonTwoSideDip,"small circle has bounded touch expansion, not old70DIP slot");
 	}
 	InputSettings settings;
-	expect(settings.baseSize==BaseSize::Medium && settings.sensitivity==Sensitivity::Medium,"new global defaults are 32/medium");
+	expect(settings.automaticEnabled && settings.baseSize==BaseSize::Medium && settings.sensitivity==Sensitivity::Medium,"new global defaults are automatic on and32/medium");
 	for(int invalid:{-1,0,15,33,160,999})expect(RestoreBaseSize(invalid)==BaseSize::Medium,"invalid size restores to32");
 	for(int invalid:{-1,3,160,999})expect(RestoreSensitivity(invalid)==Sensitivity::Medium,"invalid sensitivity restores to medium");
 	settings.entries[0].kind=EraserKind::Fixed;settings.entries[3].penResponse=PenResponseChoice::ScreenPen;settings.entries[4].penResponse=PenResponseChoice::Tablet;
-	expect(GetAutomaticState(settings)==AutomaticState::Mixed,"mixed does not pretend to be mouse-left state");
-	expect(SetGlobalAutomatic(settings,GetAutomaticState(settings)!=AutomaticState::On),"mixed click changes table");
-	expect(GetAutomaticState(settings)==AutomaticState::On,"mixed click turns all on");
+	const auto entries=settings.entries;
+	expect(GetAutomaticState(settings)==AutomaticState::On,"master switch is independent of mixed entry preferences");
 	expect(!SetGlobalAutomatic(settings,true),"no-op operation is observable");
-	SetGlobalAutomatic(settings,false);
-	expect(GetAutomaticState(settings)==AutomaticState::Off && settings.entries[3].penResponse==PenResponseChoice::ScreenPen && settings.entries[4].penResponse==PenResponseChoice::Tablet,"global command preserves pen responses");
+	expect(SetGlobalAutomatic(settings,false),"master switch reports a real state change");
+	expect(GetAutomaticState(settings)==AutomaticState::Off && settings.entries==entries && settings.entries[3].penResponse==PenResponseChoice::ScreenPen && settings.entries[4].penResponse==PenResponseChoice::Tablet,
+		"global command preserves entry kinds and pen responses");
+	expect(SetGlobalAutomatic(settings,true) && settings.entries==entries,"reenabling restores saved mixed entry preferences");
 	for(auto size:{BaseSize::Small,BaseSize::Medium,BaseSize::Large})for(float dpi:{1.0f,1.5f,2.0f})
 	for(auto sourceKind:{SourceKind::Mouse,SourceKind::ExternalPen,SourceKind::IntegratedPen,SourceKind::Touch,SourceKind::TouchPad,SourceKind::Unknown})
 	for(int route=0;route<3;++route)
@@ -101,18 +119,22 @@ int RunEraserAttributeTests()
 		for(size_t i=0;i<3;++i)
 		{
 			expect(std::abs(l.previewDiameters[i]*input.zoom-input.diametersDip[i]*dpi)<0.001,"preview pixels are independent of custom UI scale");
-			expect(l.items[i+1].Width()>0 && l.items[i+1].Width()<=(std::max)(BarButtonOneSideDip,l.previewDiameters[i]+BarButtonGapDip*2)+0.001,"circle hit expansion is bounded without70DIP slots");
+			expect(l.items[i+1].Width()>=0 && l.items[i+1].Width()<=(std::max)(BarButtonOneSideDip,l.previewDiameters[i]+BarButtonGapDip*2)+0.001,"circle hit expansion is bounded without70DIP slots");
 			expect(std::abs((l.items[i+1].top+l.items[i+1].bottom)-(l.panel.top+l.panel.bottom))<0.001,"all circle centers vertically centered");
 		}
+		expect(l.items[1].right<=l.items[2].left+0.001 && l.items[2].right<=l.items[3].left+0.001,"circle hit regions remain disjoint after clipping");
 		if(reversed)expect(l.items[4].right<l.items[0].left && l.items[0].right<l.previews[0].left,"B reversal exchanges complete side groups");
 		else expect(l.previews[2].right<l.items[0].left && l.items[0].right<l.items[4].left,"B standard circles/clear/automatic order");
-		expect(std::abs(EraserRectCenterX(l.items[0])-EraserRectCenterX(l.panel))<0.001,"clear stays centered after workspace correction");
+		const double expectedClear=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+BarButtonTwoSideDip/2,input.work.right-BarButtonTwoSideDip/2);
+		expect(std::abs(EraserRectCenterX(l.items[0])-expectedClear)<0.001,"clear stays anchored while asymmetric sides extend independently");
 		const double gap1=l.previews[1].left-l.previews[0].right,gap2=l.previews[2].left-l.previews[1].right;
-		expect(std::abs(gap1-gap2)<0.001,"equal visible edge gaps at every DPI/UI scale");
+		expect(std::abs(gap1-gap2)<0.001 && gap1<=16.001,"equal circle edge gaps compress only when required");
 		input.diametersDip[2]=240;const auto huge=ResolveEraserAttributeLayout(input);
 		expect(huge.previewDiameters[2]*input.zoom==240*dpi && huge.panel.Height()==input.main.Height(),"oversized test circle remains round at real diameter and does not expand panel");
 		input.work.right=300;const auto narrow=ResolveEraserAttributeLayout(input);
-		expect(narrow.horizontalOverflow && narrow.panel.Width()<=300.001 && narrow.previewDiameters==huge.previewDiameters,"narrow workspace clips only center, never scales the panel or preview");
+		expect(narrow.horizontalOverflow && narrow.panel.Width()<=300.001 && narrow.previewDiameters==huge.previewDiameters &&
+			narrow.items[0].Width()==BarButtonTwoSideDip && narrow.automatic.Width()==90.0,
+			"narrow workspace clips overflow without scaling circles or buttons");
 		input.lockedMenuSide=1;const auto locked=ResolveEraserAttributeLayout(input);expect(locked.menuBelow,"popup direction lock is independent of pointer");
 	}
 	expect(ResolveEraserAttributeRelease(-1,0,true,false)==-1,"opening Up without a new panel Down can never clear");
