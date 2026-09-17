@@ -84,7 +84,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Debug'">$(VcpkgInstalledDir)$(VcpkgTriplet)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Release'">$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>jsoncpp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>jsoncpp.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -153,6 +153,11 @@
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
 	<ClCompile Include="draw3_contact_tests.cpp" />
+	<ClCompile Include="speed_eraser_tests.cpp" />
+	<ClCompile Include="eraser_attribute_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
 	<ClCompile Include="presentation_descriptor_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
 	<ClCompile Include="surface_tests.cpp" />

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
@@ -292,12 +292,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 {
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true);
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
 
 #ifndef IDT_RELEASE
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
+	bool touchAreaConsoleOutputEnabled = false;
 #endif
 	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
@@ -1341,8 +1348,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				{
 					const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 					const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
-					if (!monitor || monitor->edid.physicalWidthCm == 0 || monitor->edid.physicalHeightCm == 0) setlist.paintDevice = 0, setlist.liftStraighten = true;
-					else if (monitor->edid.physicalWidthCm * monitor->edid.physicalHeightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					if (!monitor || !monitor->physicalSize.available) setlist.paintDevice = 0, setlist.liftStraighten = true;
+					else if (monitor->physicalSize.widthCm * monitor->physicalSize.heightCm >= 1200) setlist.paintDevice = 0, setlist.liftStraighten = true;
 					else setlist.paintDevice = 1;
 				}
 				else setlist.paintDevice = 1;
@@ -1370,6 +1377,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
+			InitializeEraserInputPreferences();
+			{
+				// 面积辅助是持久化实验选项，正式构建也恢复；控制台诊断仍独立控制。
+				auto& host = Inkeys::Drawing::Draw3::ProductHost();
+				auto options = host.EraserDevelopmentOptions();
+				options.touchContactAreaAssistance =
+					config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance;
+				host.SetEraserDevelopmentOptions(options);
+			}
 		#ifndef IDT_RELEASE
 			pptComConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
@@ -1377,10 +1393,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
 			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
 				draw3ConsoleOutputEnabled);
-			if (draw3ConsoleOutputEnabled)
+			touchAreaConsoleOutputEnabled =
+				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
+			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled)
 			{
-				// Draw3 启动前完成绑定，才能看到设备和驱动环境信息。
+				// 设备初始化前绑定共用控制台，避免遗漏 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
+			}
+			if (touchAreaConsoleOutputEnabled)
+			{
+				auto& host = Inkeys::Drawing::Draw3::ProductHost();
+				auto options = host.EraserDevelopmentOptions();
+				options.touchAreaTrace = true;
+				host.SetEraserDevelopmentOptions(options);
 			}
 		#endif
 			double animationSpeedRate = static_cast<double>(
@@ -1460,14 +1485,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			drawingScale = min(static_cast<float>(monitor->pixelWidth) / 1920.0F,
 				static_cast<float>(monitor->pixelHeight) / 1080.0F);
-			if (setlist.paintDevice == 1 || monitor->edid.physicalHeightCm == 0 ||
-				monitor->edid.physicalWidthCm == 0)
+			if (setlist.paintDevice == 1 || !monitor->physicalSize.available)
 				stopTimingError = 5;
 			else
 				stopTimingError = min(0.3F * static_cast<float>(monitor->pixelWidth) /
-					static_cast<float>(monitor->edid.physicalHeightCm),
+					static_cast<float>(monitor->physicalSize.widthCm),
 					0.5F * static_cast<float>(monitor->pixelHeight) /
-					static_cast<float>(monitor->edid.physicalHeightCm));
+					static_cast<float>(monitor->physicalSize.heightCm));
 		});
 	// I18N初始化
 	{
@@ -2010,7 +2034,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 启动 PPT 联动插件
 	#ifndef IDT_RELEASE
-	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled)
+	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled && !touchAreaConsoleOutputEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();

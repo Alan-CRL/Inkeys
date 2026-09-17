@@ -271,11 +271,29 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Drawing, \
+		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Sensitivity, 1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseLeft, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseRight, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Touch, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTip, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTail, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
+		) \
+	) \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
+			GROUP(Draw3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
+			) \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
 			) \
 			GROUP(UI3, \
 				GROUP(StartupPreview, \

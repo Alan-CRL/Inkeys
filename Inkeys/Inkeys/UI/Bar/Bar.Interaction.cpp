@@ -747,6 +747,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_MOUSELEAVE:
 	{
+		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		// 需要等待离开的休眠路径在真实移出后解除重新激活限制。
 		{
 			lock_guard lock(barUISet.borderCursorLightMutex);
@@ -1064,6 +1065,7 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 
 void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 {
+	eraserAttribute.Close(*this);
 	barState.drawAttribute = false;
 	barState.geometryAttribute = false;
 	barState.moreExpanded = false;
@@ -1075,6 +1077,7 @@ void BarUISetClass::CollapseAuxiliaryPanels(bool cancelCapture)
 
 void BarUISetClass::ShutdownWindowInput(HWND hWnd)
 {
+	eraserAttribute.ResetPointerFeedback();
 	if (!hWnd) return;
 
 	// 先撤销输入源，避免 ReleaseCapture 重入时继续向交互队列投递手势。
@@ -2237,6 +2240,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP
 			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
 		{
+			if (barUISet.eraserAttribute.Keyboard(barUISet, msg.vkcode,
+				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
+				return BarInteractionStageResult::Consumed;
 			HandleColorPickerKeyboard(msg);
 			return BarInteractionStageResult::Consumed;
 		}
@@ -5408,6 +5414,13 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
+			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarTouchCancelMessage(msg), IsBarTouchPointerMessage(msg)))
+			{
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
+				continue;
+			}
 			const auto hoverResult = HandleCommonHoverAndOcclusion();
 			if (hoverResult == BarInteractionStageResult::Shutdown) break;
 			if (hoverResult == BarInteractionStageResult::Consumed) continue;
@@ -5865,7 +5878,7 @@ bool BarUISetClass::ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs)
 
 void BarUISetClass::RefreshBorderCursorVisibleRegions()
 {
-	array<RECT, 7> nextRegions{};
+	array<RECT, 10> nextRegions{};
 	size_t nextCount = 0;
 	const auto bottomDockSnapshot = BottomDockPresentedSnapshot();
 	const double frameZoom = bottomDockSnapshot.zoom;
@@ -5900,6 +5913,11 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 	AddShape(shapeMap[BarUISetShapeEnum::MainBar], true);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar], false);
 	AddShape(shapeMap[BarUISetShapeEnum::GeometryAttributeBar], false);
+	for (const RECT& bounds : eraserAttribute.PresentedRegions())
+		if (bounds.right > bounds.left && bounds.bottom > bounds.top && nextCount < nextRegions.size())
+			nextRegions[nextCount++] = Inkeys::UI::Bar::TranslateBarBottomDockRigidRect(bounds,
+				bottomDockSnapshot.horizontalMapping.rigidOverlayTranslationXDip,
+				bottomDockSnapshot.rigidTranslationDip, frameZoom);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel], false);
 	AddShape(shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorPickerPreviewBubble], false);
 	if (bottomDockSnapshot.indicatorVisible
@@ -5937,7 +5955,7 @@ void BarUISetClass::RefreshBorderCursorVisibleRegions()
 
 bool BarUISetClass::IsBorderCursorLightNearVisibleRegion(POINT screenPoint)
 {
-	array<RECT, 7> visibleRegions{};
+	array<RECT, 10> visibleRegions{};
 	size_t visibleRegionCount = 0;
 	{
 		lock_guard lock(borderCursorLightMutex);
@@ -6732,6 +6750,16 @@ namespace Inkeys::UI::Bar
 
 	bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown)
 	{
+		// 键盘只在指针仍位于本Bar窗口或Bar拥有焦点时路由，避免拦截其他应用。
+		POINT pointer{};
+		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
+			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
+		if (eraserKey && !offSignal && floating_window && barUISet.eraserAttribute.WantsKeyboard()
+			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
+		{
+			ExMessage message{}; message.message = keyDown ? WM_KEYDOWN : WM_KEYUP; message.vkcode = vkCode;
+			return Inkeys::Window::Enqueue(floating_window, message);
+		}
 		bool movementKey = vkCode == VK_LEFT || vkCode == VK_RIGHT
 			|| vkCode == VK_UP || vkCode == VK_DOWN
 			|| vkCode == 'A' || vkCode == 'D'

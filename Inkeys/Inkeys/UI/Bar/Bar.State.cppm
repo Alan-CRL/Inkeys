@@ -17,6 +17,8 @@ public:
 	IdtAtomic<bool> fold = false;
 	IdtAtomic<bool> drawAttribute = false;
 	IdtAtomic<bool> geometryAttribute = false;
+	IdtAtomic<bool> eraserAttribute = false;
+	IdtAtomic<bool> eraserSensitivityOpen = false;
 	// 更多浮层状态同步到主栏入口的 Selected 视觉；折叠主栏时强制关闭。
 	IdtAtomic<bool> moreExpanded = false;
 	IdtAtomic<bool> moreClosePress = false;

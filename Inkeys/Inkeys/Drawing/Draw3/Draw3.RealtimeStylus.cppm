@@ -4,6 +4,8 @@
 #define NOMINMAX
 #endif
 
+#include "Draw3.SpeedEraser.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -40,12 +42,15 @@ export namespace Inkeys::Drawing::Draw3
 		// 先停止回调、移除插件，再取消生产者持有的 contact 并释放 COM。
 		void Shutdown() noexcept;
 		bool IsInitialized() const noexcept;
+		// 空来源补打已缓存的 Touch context；指定来源严格匹配 context/generation/cursor。
+		bool TraceTouchAreaDiagnostics(const SpeedEraser::InputSource& source) const noexcept;
 
 	private:
 		std::unique_ptr<RealTimeStylusInputImpl> impl_;
 	};
 
 #if defined(DRAW3_TESTING)
+	bool RtsSourceRoutingForTesting() noexcept;
 	enum class RtsAngleUnitForTesting : uint32_t { Unsupported, Degrees, Radians };
 	struct RtsStylusAnglesForTesting
 	{

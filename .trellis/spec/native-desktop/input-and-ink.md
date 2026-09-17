@@ -87,3 +87,231 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 建议按改动范围手工覆盖：mouse down/move/up、压感笔与 inverted pen、单/多点触摸、各工具、快速/长笔画、窗口边缘/多显示器、清屏/撤销/恢复、PPT 翻页及活动笔画时退出。
 
 `【直接确认】` `InkeysHeadlessTests` 覆盖 Draw3 bridge/timer/纯逻辑；`--draw3-hidden-test` 通过隐藏主/辅助 HWND 覆盖唯一 Host mailbox、真实绘制线程、history/Clear、双 target 和退出路径。真实笔、触摸屏与驱动设备矩阵仍需维护者提供。
+
+## Scenario: 橡皮DIP尺寸、Touch响应与接触面积辅助
+
+### 1. Scope / Trigger
+2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。2026-09-15 的精细区合同见下文：仅替代最小到标准区间的正速度立即增粗、固定120ms无确认以及独立idle旁路。标准以上清扫、物理补偿、面积换算/倍率和Hover/Down/Up所有权不变，不重写输入队列、模型、中心轨迹或渲染器。
+
+### 2. Signatures
+- `EraserSizes` 全部是直径 DIP：minimum=16、standard=32、maximum=160、touchStart=16、fixed=50；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
+- `ResolveConfig(display, mode, InputSource, sizes)` 分离真实来源、响应模型与标尺。来源通过当前 RTS context 的能力及精确 Pointer cursor 对应关系缓存，不改变真实 InputDeviceType。
+- `Controller::UpdatePosition(x,y,seconds,contactArea,terminal)` 只消费真实输入；`Advance` 不制造运动证据；`AreaDiagnostics`、`NextAreaWakeSeconds` 暴露有界状态与过期唤醒。
+- `ContactSnapshot` 保留 `rawContactSize`、既有 `contactSize` 和 `contactAreaUnits`。面积单位状态不影响正常位置、压力、倒转和接触身份。
+- `DevelopmentOptions::touchContactAreaAssistance` 默认关闭；绘制设置“橡皮擦”块和程序调测共用 `Experimental.Inkeys3.Draw3.TouchContactAreaAssistance` 持久化配置，启动时读取保存值，由独立接触批次锁存。实验页重复功能入口已移除，独立控制台诊断开关仍保留。
+- `ContactSizeState`、`AppendEraserSizeAnchor` 与保存的逐点半径保持单一尺寸时间线。
+- `HostRuntimeSnapshot::eraser.needsAnimation` 表示发布该快照时的动画需求；`idleSeconds` 同样是发布时值，不是读取时自动增长的时钟。
+
+### 3. Contracts
+- EDID、设备种类及模式不得改写 DIP 基础属性。圆形像素几何继续使用横纵 DIP 密度的几何平均；历史只保留已经生成的像素宽度，不能按后来配置重算。
+- 间接设备采用 DIP/s，不撤销系统鼠标加速、不猜鼠标硬件 DPI。Mouse/External Pen/TouchPad/Unknown 自动选择间接响应；Integrated Pen 和直接 Touch 分别选择自己的响应。
+- Win7 自动识别保持保守 DIP 回退；Pointer API 动态探测。不能将 TABLET_CONTEXT_ID 强转成设备 HANDLE，也不能按整台机器是否存在屏幕笔来分类。
+- 标尺依次考虑显式绑定的手动测量、可靠物理映射、适用的逻辑显示分辨率/DPI经验尺度、DIP。复制拓扑不能重新成为可信物理尺寸；经验尺度不写回 EDID 或 cm/px。
+- 经验增益保持 `1 / clamp(min(max(Wdip,Hdip)/1920, min(Wdip,Hdip)/1080), 0.5, 4)`；它不是屏幕英寸或毫米估计。
+- 间接响应精细/进入/退出/大目标速度为 100/800/600/1900 DIP/s。屏幕笔物理响应为 20/120/80/350 mm/s，DIP回退为 80/480/320/1400 DIP/s。
+- 屏幕笔仅对标准以上增量应用 `g=(0.25/rho)^beta`，默认 beta=0.5，rho 为可信表面的 mm/DIP；基础属性、精细区与固定尺寸不参与补偿。本轮不调整这些已有响应。
+- Touch 动态目标直接用 DIP，不做 rho 整目标补偿。Touch 精细/进入/退出/大目标：物理 30/90/60/250 mm/s；DIP 100/240/160/700 DIP/s；经验 100/120/80/400 reference DIP/s。
+- Touch 历史窗 50ms，证据 start/full/decay 为 25/60/180ms；增长 tau 120/100ms，对数增长限速 6/8 每秒。原有缩小/保持参数不全局改动。面积开关关闭时同样使用新 Touch 速度模型。
+- 真实路程按时间积分，折返不作净位移抵消；预测、补点、缺失连接和面积变化不提供速度资格。实际位移解锁仍为物理 1–3mm 或回退 2–6 动作单位。
+- Touch 的移动目标不能因为每包误差小于 settle tolerance 就立即吸附。仅目标稳定时允许小误差收敛，否则高回报率会绕过阻尼。此修正规则不改变冻结的间接/屏幕笔响应。
+- 非Touch的Up/Down与Hover改用下文的按入口连续尺寸会话，替代Up Reset、140ms夹小和250ms交还期限。纯Hover仍不新增清扫证据；真正Touch每次新接触仍小起步，面积与真实断触协议不变。
+- 面积辅助仅适用于真实、映射可解释的屏幕 Touch 笔速橡皮，强制响应模型不能伪造真实 Touch；Mouse、Pen、TouchPad、固定橡皮均不使用面积下限。
+- WIDTH/HEIGHT 必须实际存在于返回的 packet description。保留原 per-context 换算；只有宽高与对应 X/Y 的长度单位、分辨率相符且在声明范围内，才认可为画布像素。PROPERTY_UNITS_DEFAULT 表示未知，不能默认当像素。
+- 已确认的面积按 `wDip=wPx*dipPerPixelX`、`hDip=hPx*dipPerPixelY` 换算一次，不使用 EDID、压力或 WM_TOUCH 的百分之一像素规则。
+- 面积默认拒绝范围外 2..96 DIP、长宽比超过3.5、非有限/非正值和离群跳变。拒绝阈值与辅助上限是两件事，巨值不能被夹成64DIP后使用。
+- 稳定真实拖动确认50ms后锁定本接触的参考；面积参考可与位移解锁并行准备，但实际下限须通过原位移保护。参考不随重压、摊开或噪声反复变大。
+- 下限为 `clamp(1.10*max(wDip,hDip)+6, standard, min(maximum,max(standard,64)))`。自定义 standard 大于64时不反转 clamp 上下界。它是有界拖擦下限，不是手掌分类或压感橡皮。
+- 合成 `max(speedTarget, contactFloor)` 后继续平滑；面积下限无需清扫资格，但只在真实移动中提高已接受尺寸。静止的新面积/新包不能反向放大当前工具。
+- 缺包最长保留2s，显式无效值宽限200ms，过期参考按180ms释放。真实重连平移这些时钟；Up的零面积不是新参考。
+- 达到辅助下限后停帧，由既有等待机制在面积过期时唤醒。不能让下限抬住尺寸却一直以16DIP作为未达成目标请求帧。
+- 原始输入与帧预览状态分离；静止只更新当前工具和待用尺寸断点，恢复实际几何时追加同位小半径锚点，不覆盖历史或恢复已擦内容。
+- Touch笔速输入恢复时，若距离上次成功建模的时间乘输出采样率将超过单次输出上限，复用模型Reset/Update在最后已接受位置建立短时间种子，再提交真实输入。不清空历史结果、转换游标、接触身份或尺寸/面积控制器，不增加模型输出上限；此路径不用于Mouse/Pen或其他橡皮模式，种子不提供运动证据。
+- 原始面积有效性独立于实验开关；关闭辅助仍可显示已确认的DIP宽高。未确认单位明确显示unverified，不标成可信像素；referenceFresh单独表示参考是否过期。
+- 诊断每帧可关闭发布，不逐点同步日志。包含真实来源、模型、单位、像素/DPI/手动尺寸、速度/目标/实际DIP、原始/换算面积、有效性、参考/实际下限及最终几何半径。
+- 面积开关独立发布并锁存，不进入 Mouse/Pen 的显示标尺变更判定，避免点击 Touch 开关使精细 Hover 重置。
+
+### 4. Validation & Error Matrix
+| 场景 | 必需结果 |
+|---|---|
+| Mouse/ScreenPen冻结轨迹 | 改动前后浮点位模式一致 |
+| 面积关闭、不同可信密度的同物理Touch运动 | DIP目标一致，不恢复整目标物理补偿 |
+| 未知单位/缺失/零/负值/巨值/离群 | 辅助拒绝或平滑释放，正常触摸仍接收 |
+| 新Down/原地长按/起点抖动 | 小尺寸，不因面积或时间开启大洞 |
+| 普通慢拖、无清扫资格 | 可确认并使用有界面积下限 |
+| 静止后面积增大 | 不扩大真实擦除；参考不呼吸 |
+| 无Move/同位置包/数据过期 | 正确休眠或释放；不能等待休眠快照的年龄继续增长 |
+| 恢复实际移动 | 当前半径起步，历史不改；UInk保留尺寸断点 |
+| 面积开关、并发、真重连 | 按批次锁存，各接触独占状态，连接不计新运动 |
+| 固定模式、强制Touch的Mouse/Pen | 面积不能越过真实输入和固定旁路 |
+| 60/125/240/1000Hz与不同帧率 | 相同观测轨迹的关键尺寸误差不超过5% |
+
+### 5. Good / Base / Bad Cases
+- Good：面积关闭先验收更轻的Touch响应，再打开比较慢拖可见性；鼠标/笔不调参。
+- Base：不可用面积只关闭辅助，新Touch速度模型和固定DIP尺寸仍正常工作。
+- Bad：用面积填清扫证据、把未知单位伪装成实测值、覆盖历史半径、只改光标、放宽全部容差来掩盖错误。
+
+### 6. Tests Required
+完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 和专项 `--draw3-eraser-hidden-test`。DComp/ULW隐藏测试覆盖低速辅助、休眠/过期、恢复足迹、固定旁路、Undo/Redo和实际UInk往返。诊断快照休眠后不会继续更新，等待条件使用 needsAnimation 等明确状态，不能等待 idleSeconds 自行越过任意阈值。模型原有单次2000补点上限未更改；Touch笔速恢复使用有界位置重锚，并单独覆盖超过上限的长停顿和长按Up，不把无输出的模型错误归为保存格式故障。真实Surface、大屏、外接数位板及Win7仍需单列人工验证。
+
+### 7. Wrong vs Correct
+~~~cpp
+// Wrong：每包小误差都吸附移动目标，会使高采样率绕过阻尼。
+if (abs(current - target) < tolerance) current = target;
+
+// Correct：Touch只对稳定目标收敛吸附；等待静止状态不依赖快照年龄增长。
+if (targetIsStable && abs(current - target) < tolerance) current = target;
+// 等待实际状态，再确认 frameSequence 没有继续增长。
+if (!snapshot.eraser.needsAnimation) CheckFrameSequenceStops();
+~~~
+
+## Scenario: RTS Touch contact-area metadata and relative-length conversion
+
+### 1. Scope / Trigger
+Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. Speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics are frozen.
+
+### 2. Signatures
+- `ResolveContactLengthTransform(axis, span, positionScale)` returns per-axis status, span-to-axis and span-to-canvas factors.
+- `ConvertContactArea(rawWidth, rawHeight, widthTransform, heightTransform)` preserves raw values; unknown/invalid metadata leaves pixel values unknown.
+- `RealTimeStylusInput::TraceTouchAreaDiagnostics(source)` reads cached contexts only; an empty source lists Touch contexts, a supplied source requires matching context and generation.
+
+### 3. Contracts
+- Actual returned packet properties determine GUID, index, units, resolution and declared range. Requested properties are not proof of returned support.
+- For supported inch/centimeter units: `spanToAxis = axisResolution / spanResolution * spanUnitCm / axisUnitCm`; `spanToCanvas = spanToAxis * abs(positionScale)`. PositionScale is the existing packet-XY-to-canvas linear mapping.
+- Different resolutions and convertible length units are valid relationships, not failures. DEFAULT is unknown; angular or undocumented extended unit semantics are not guessed.
+- Width/height are lengths, never translated positions. Do not subtract logical minima or multiply the context ink-to-digitizer factor again. The existing position path is untouched.
+- CanvasPixels is set only for an explained conversion and in-range finite packet values. DIP conversion occurs once in the existing controller. Bounds/aspect/outlier/startup/idle/history policies remain unchanged.
+- Conversion status crosses the existing contact snapshot with raw/converted values. Unknown units, invalid resolutions, invalid declared ranges, unsupported units and bad transforms have separate diagnostic reasons.
+- Runtime tracing copies the existing bounded RTS cache under its reader gate and a short plugin-lifetime guard, then formats outside both locks. No per-packet hardware query or log. Enabling diagnostics replays cached Touch metadata; source/generation changes refresh it at most once a second.
+- A metadata dump without a known cursor explicitly says mapping is pending. It must not substitute Mouse/Pen metadata or the primary display for the active Touch source.
+
+### 4. Validation / Error Matrix
+| Case | Required result |
+| --- | --- |
+| Same units, different positive resolutions | Apply resolution ratio |
+| Inch/centimeter units | Apply one physical-unit ratio |
+| Missing property/unit | Retain raw values; explicit missing status |
+| Invalid resolution/range or unsupported units | No usable canvas dimensions; exact metadata reason |
+| Packet outside declared range or nonfinite | Reject, not clamp into an acceptable finger |
+| Nonzero logical origin / reflected position axis | Relative length ignores translation and uses absolute linear scale |
+| 96/144/192 DPI / anisotropic axes | One per-axis DIP conversion; unchanged auxiliary floor formula |
+| Diagnostic enabled after context creation | Dump cached Touch properties without rebuilding/querying hardware |
+| Source context/generation no longer cached | Report no matching Touch, not another device |
+
+### 5. Good / Base / Bad Cases
+- Good: an explicitly declared tenfold resolution difference produces a tenfold ratio, independently of observed sample magnitude.
+- Base: metadata remains unknown, so area assistance stays off while speed erasing and raw diagnostics still work.
+- Bad: divide by 10/100 because a value looks too large, assume all packet properties share the context scaling factor, or relabel unverified numbers as pixels.
+
+### 6. Tests Required
+Use the production converter in headless tests for unit/resolution/range/DPI cases and pass its synthetic output through the existing hidden eraser ingress tests. Preserve no-Move expiry, point erasing, old radii, new geometry, undo/redo and persistence checks. Synthetic success is not Surface packet acceptance.
+
+### 7. Wrong vs Correct
+- Wrong: `rawWidth * contextScaleX` followed by an equality-only metrics check.
+- Correct: resolve the width-to-X length relationship from returned metrics, then apply the cached position linear mapping exactly once.
+
+References: [PROPERTY_METRICS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ns-tpcshrd-property_metrics), [PROPERTY_UNITS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ne-tpcshrd-property_units), [GetPacketDescriptionData](https://learn.microsoft.com/en-us/windows/win32/api/rtscom/nf-rtscom-irealtimestylus-getpacketdescriptiondata).
+
+## Scenario: 精细区平台、迟滞与双向确认（2026-09-15）
+
+### 1. Scope / Trigger
+替代“非零速度立即增粗”和“最小到标准固定120ms、无确认”的旧规则。只改变尺寸意图与跟随；RTS位置、真实路程统计、清扫短窗及参数、面积解释/倍率/上限、DIP属性和固定橡皮旁路不变。
+
+### 2. Signatures
+- `Config::fineHoldSpeed/fineReleaseSpeed` 与该模型 `fineToStandardSpeed` 同单位，默认分别为其0.20/0.35倍。
+- `fineWindowSeconds=0.140`；进入/缩小确认100ms，解除/恢复确认160ms。
+- `fineShrinkTauSeconds=0.200`、`fineGrowthTauSeconds=0.260`；对数缩小/增长上限4/3每秒。
+- `Controller::FineDiagnostics()` 输出长窗速度、held、进入/解除/方向确认进度和已许可方向；`Diagnostics::fine` 沿现有快照输出，活动接触控制台增加 `[FineBand]`。
+
+### 3. Contracts
+- 参考低段：速度<=fineHoldSpeed时目标minimum；到fineToStandardSpeed之间按偏移归一化smoothstep连续上升至standard。标准以上参考公式不变。
+- 单位示例：间接20/35/100 DIP/s；物理屏幕笔4/7/20 mm/s；物理Touch6/10.5/30 mm/s；笔DIP回退16/28/80，Touch DIP/经验回退20/35/100（均为各自动作单位每秒）。
+- 长窗以完整140ms为分母，包含零位移及无Move时间；路程不作净位移抵消。沿用有界64段存储和相邻合并，保留时间取短窗/参考窗/精细窗最大值；不对中心位置另加平滑或取整。
+- 连续低速建立held，进入后只有达到更高release速度的证据才累计解除；迟滞带内不增加解除证据。反向短脉冲只消耗部分确认，不按每次目标微变重启整个计时。
+- 方向确认和held确认并行；解除held即携带恢复许可，不再串联第二个160ms。原清扫资格满足后直接旁路低区确认，不能强制先16->32再等待高区。
+- 已有lastMovementTime/idleStart继续识别有界亚像素抖动；idle历史直接记入低速确认，随后仍使用同一精细跟随，不走另一套快速回缩。
+- 最小目标统一按double求log，稳定目标持续40ms后在既有误差阈值内精确收敛，防止float/double残差留下永不休眠的动画。移动目标不能靠每包小误差不断吸附。
+- 从高区缩小时保留高区主要过程，精确拆分跨standard的时间，剩余时间交给低区跟随，边界连续。
+- 面积先形成自己的有效下限；不得被held压到minimum。面积主导时保留既有面积许可/响应，不把面积当作高速证据，不重新拦截稳定参考建立。
+- 新状态分别存在sampleState/frameState中；帧预览不反写真实输入。确认进度为时间长度，重连时保留，已有绝对时钟和历史按原规则平移；合成连接不参与运动。
+- 第八轮精细算法继续适用；非Touch跨段交接由下文连续会话合同替代，不再以Up Reset或140ms夹小实现。纯Hover不预充大清扫，Touch新接触、取消和固定旁路继续隔离。
+- ContactSizeState、尺寸断点、历史半径、撤销和保存格式不变。面积开关继续持久化，不恢复为重启重置。
+
+### 4. Validation / Error Matrix
+| 场景 | 必须结果 |
+| --- | --- |
+| 0..0.20倍细段上界的持续速度 | 从standard或minimum收敛/保持精确minimum |
+| 已held后迟滞带内长期弱移动 | 不因时间累满退出证据 |
+| 单个像素跳步、慢挪与停顿交替 | 不周期增粗，不抹掉已有精细意图 |
+| 持续普通移动 | 有限确认后连续恢复，不跳档 |
+| 清扫资格成立 | 不增加低区串联等待 |
+| 有效面积下限高于minimum | 保留下限及真实移动许可 |
+| 完全无Move、亚像素有界抖动、面积过期 | 正确回缩并最终停帧 |
+| 帧先行、迟到输入、重连 | 真实状态独立，桥接不提速 |
+
+### 5. Good / Base / Bad Cases
+- Good：15 DIP/s持续慢擦到最小，停住再慢挪不增粗；125 DIP/s持续移动后解除并平滑恢复。
+- Base：面积有效时精细意图仍可held，但实际尺寸尊重已接受的面积下限。
+- Bad：每次非零包解除held、把idle再串联完整确认、只平均非零位移速度、给预测点积证据，或用整数取整掩盖残差。
+
+### 6. Tests Required
+headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向耗时、1728组0.5/1/2px量化与稀疏输入（96/144/192/288 DPI，60/125/240/1000Hz，多帧率/相位/轴向）、休眠和原面积保护。隐藏DComp/ULW测试必须检查产品光标、当前半径、新段尺寸断点、历史不回写、Undo/Redo及真实UInk往返，不能以独立控制器通过替代。
+
+### 7. Wrong vs Correct
+- Wrong：`minimum + (standard-minimum)*SmoothStep(speed/fineToStandardSpeed)`，任意正速度立即离开最小。
+- Correct：先扣除fineHoldSpeed再归一化；held/解除证据独立，确认后按实际时间的对数阻尼跟随，稳定下限精确停帧。
+
+## Scenario: 五入口橡皮配置与非Touch连续尺寸会话
+
+### 1. Scope / Trigger
+2026-09-15，基线e071ff3a。仅统一五入口配置、修复交接与首点/光标解析；接触中的速度/精细曲线、阈值、物理补偿、面积转换及倍率不变。本合同替代旧非Touch Up重置、标准尺寸夹取和250ms交还规则。
+
+### 2. Signatures
+- `InputEntry::{MouseLeft,MouseRight,Touch,PenTip,PenTail}` 分别对应0..4；真实设备身份仍是独立的InputSource。
+- `EraserKind::{Fixed=0,Speed=1}`；`PenResponseChoice::{Automatic=0,ScreenPen=1,Tablet=2}`。
+- `InputSettings` 保存完整五入口表及平台自动识别可用性；`ResolveInput(...entry,settings,policy)` 统一解析。
+- `Bridge::Tool::ConfiguredEraser` 是普通橡皮；显式FixedEraser/SpeedEraser继续强制相应类型。
+- `SessionConfigCompatible` 校验入口、来源context、有效映射、DPI、单位及计算参数，忽略不影响计算的revision/识别补全。
+- `MouseLifecycle` 复用为非Touch会话容器，产品分别持有左右键、笔尖和笔尾实例；BeginContact返回所有权票据，EndContact只可退休同票据。
+- `Controller::LeaveContact` 建立离面尺寸状态；普通离面不调用冻结时间的PauseForReconnect/ResumeFromReconnect。
+
+### 3. Contracts
+- 正式配置键：`Drawing.Eraser.MouseLeft/MouseRight/Touch/PenTip/PenTail`，以及`PenTipResponse/PenTailResponse`。-1只作缺失迁移哨兵，不是UI枚举。
+- 缺失宽度默认Speed。旧磁盘EraserSetting.EraserMode明确等于2时，仅在新键缺失时把左键/Touch/笔尖迁为Fixed；右键/笔尾的旧隐式Fixed不迁移。已有0/1选择不被重置。
+- Win8+默认Auto；Win7缺失笔响应默认Tablet，已有Auto或未知值运行时回退Tablet。UI隐藏Auto但保存1/2稳定值，不使用删除选项后的下标。能力探测复用GetProcAddress，不静态依赖GetPointerType。
+- 手选ScreenPen只改变响应，不伪造IntegratedPen、映射或EDID。调测显式强制优先，诊断报告debugOverride。
+- 面积辅助移到正式块下方，兼容键不改；Touch为Fixed时无效但保留保存值。两处可达开关共用状态，控制台开关独立。
+- 产品状态经StateBridge发布完整表；接触可锁存批次表，但每个contact按自己的entry解析，不复制首个contact的最终Fixed/Speed。
+- 右键/笔尾临时擦除保持selectedTool和effectiveTool分离，不改变普通笔尖/左键绘画或选择态。原笔尾触发开关继续有效。
+- Up立即停止该段几何。尺寸/精细状态与有时效的清扫记忆进入独立会话，不Reset、不夹到standard。无Hover离面目标为min(离面直径,standard)，按真实时间用已有idle响应演进。
+- 纯定位Hover不增加清扫证据；已有大余态可短暂保留并回落。后续真实Hover可继续按第八轮精细规则回细，不能无限保大。
+- Down先从原始事件状态计算事件时刻直径，允许大于standard；随后重锚位置并清除空档测速段，不冻结空档、不用其位移提速。帧预览不反写事件基线。
+- 并发/旧Up/延后烘干以入口与票据隔离；同入口重叠不能无条件继承另一所有者。不同tablet context/实际映射或计算配置变化重建；诊断开关不重建。
+- 当前可辨识来源粒度是tablet context与有效映射，不宣称识别同一digitizer上的每支物理笔；实际多设备仍需人工验证。
+- 普通独立Down创建新RuntimeStroke与几何列表，尺寸会话不持有连接几何。真实断触匹配仍用原判据，只有既有协议接受时才可连接并冻结/恢复其runtime；尺寸连续不是连接证据。
+- Touch完全绕过跨新接触会话，每指小起步、面积参考和真实重连不变。
+- 待接触光标与Down都调用同一解析器；Down-only首帧保留事件直径，首点半径为该像素直径/2。后续帧按实际时间演进，不能把晚采样光标误当作Down时刻。
+- 非Touch长期无输入采用有界离面推进并停止无意义唤醒；笔离开感应范围可隐藏并惰性推进，鼠标退出画布/取消/Host销毁清理相应状态。
+
+### 4. Validation / Error Matrix
+| 条件 | 必须行为 |
+| --- | --- |
+| 五入口不同Fixed/Speed | 各自解析，首点/光标使用同一配置 |
+| 左Fixed右Speed、笔尖Fixed笔尾Speed | 同批不串最终模式 |
+| Win7 Auto/未知值 | Tablet安全回退；UI下标不改枚举语义 |
+| 同来源无害revision/cursor元数据变化 | 不从精细16重置为32/50 |
+| 20/50/100/200/500ms及2s普通离面 | 自然回落，事件本身不Reset，不补线 |
+| 旧票据Up/烘干晚到 | 不覆盖已开始的新段 |
+| 不兼容来源/映射/DPI/Fixed变化 | 明确退休/重建，不套用另一来源 |
+| 真正Touch新Down | 不继承上一指尺寸或面积参考 |
+
+### 5. Good / Base / Bad Cases
+- Good：160DIP擦除后20ms再次Down仍用连续余态；下一落点的独立几何列表仅含新段点。
+- Base：无保存选择时五入口笔速，原面积辅助值继续有效。
+- Bad：仅保留大光标而逻辑已经夹成32、把所有Up当作断触、只因整个Config不等就Reset、或用笔尖配置处理笔尾。
+
+### 6. Tests Required
+完整Debug|ARM64、headless和DComp/ULW隐藏入口。覆盖真实Config写读、Win7纯策略、五入口类型、混合批次、普通绘画不被抢占、无害元数据交接、非Touch多种离面间隔、独立首点列表和原第八轮/面积/Undo/Redo/UInk回归。首帧事件数据与后续帧数据按各自QPC解释；不得把合成测试或静态UI检查称为真实设备/Win7验收。
+
+### 7. Wrong vs Correct
+- Wrong：`if(preview.config_ != config) Reset(...standard)`，或Up把逻辑尺寸夹小但播放大光标动画。
+- Correct：按有效计算配置和来源检查，复制独立尺寸会话并在事件时刻演进；新段重锚，只复用尺寸记忆，不生成空档几何。

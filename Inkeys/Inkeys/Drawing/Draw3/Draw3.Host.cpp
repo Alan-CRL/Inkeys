@@ -1,6 +1,10 @@
 #include "Draw3.Host.h"
+#include "Draw3.SpeedEraser.h"
+
+import Inkeys.Display;
 
 import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
@@ -31,6 +35,23 @@ namespace Inkeys::Drawing::Draw3
 		PresentationAutoSaveService presentationAutoSave;
 		ContactInputCoordinator input;
 		WindowController window;
+		mutable std::mutex eraserDiagnosticsMutex;
+		SpeedEraser::Diagnostics eraserDiagnostics;
+		mutable std::mutex displayMutex;
+		SpeedEraser::DevelopmentOptions eraserDevelopment;
+		SpeedEraser::ContactAreaSample hiddenContactArea;
+		std::atomic_bool touchAreaTraceEnabled = false;
+		std::atomic_uint64_t touchAreaTraceRevision = 0;
+		uint64_t observedTouchAreaTraceRevision = 0;
+		std::chrono::steady_clock::time_point lastTouchAreaMetadataTrace{};
+		SpeedEraser::InputSource lastTouchAreaMetadataSource;
+		bool touchAreaMetadataPending = true;
+		std::chrono::steady_clock::time_point lastTouchAreaTrace{};
+		bool touchAreaTraceWasEnabled = false, lastTracedContact = false;
+		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
+		Inkeys::Display::Subscription displaySubscription;
+		std::atomic_bool displayScaleDirty = false;
+		RECT appliedDisplayClientBounds{};
 		GraphicsDeviceResources graphics;
 		InkRenderer renderer;
 		TransparentPresentationController presentation;
@@ -421,6 +442,90 @@ namespace Inkeys::Drawing::Draw3
 			if (self) (void)self->input.PublishControlWake();
 		}
 
+
+		static void ObserveEraserDiagnostics(void* context,const SpeedEraser::Diagnostics& value)
+		{
+			auto* self=static_cast<Impl*>(context);
+			uint64_t sequence=0;
+			{
+				std::scoped_lock lock(self->eraserDiagnosticsMutex);
+				sequence=self->eraserDiagnostics.frameSequence+1;
+				self->eraserDiagnostics=value;
+				self->eraserDiagnostics.frameSequence=sequence;
+			}
+			if(!self->touchAreaTraceEnabled.load(std::memory_order_relaxed))
+			{self->touchAreaTraceWasEnabled=false;return;}
+			const auto now=std::chrono::steady_clock::now();
+			const bool contact=value.eraserContact;
+			const auto traceRevision=self->touchAreaTraceRevision.load(std::memory_order_relaxed);
+			const bool newlyEnabled=!self->touchAreaTraceWasEnabled || traceRevision!=self->observedTouchAreaTraceRevision;
+			self->observedTouchAreaTraceRevision=traceRevision;
+			const bool touch=value.inputType==static_cast<uint32_t>(InputDeviceType::Touch) &&
+				value.inputSource.contextId!=0;
+			if(newlyEnabled || (touch && value.inputSource!=self->lastTouchAreaMetadataSource))
+				self->touchAreaMetadataPending=true;
+			if(self->touchAreaMetadataPending && (newlyEnabled ||
+				now-self->lastTouchAreaMetadataTrace>=std::chrono::seconds(1)))
+			{
+				const auto source=touch?value.inputSource:SpeedEraser::InputSource{};
+				self->touchAreaMetadataPending=!self->stylus.TraceTouchAreaDiagnostics(source);
+				self->lastTouchAreaMetadataTrace=now;
+				if(!self->touchAreaMetadataPending)self->lastTouchAreaMetadataSource=source;
+			}
+			const bool edge=newlyEnabled || contact!=self->lastTracedContact;
+			if(!edge && (!contact || now-self->lastTouchAreaTrace<std::chrono::milliseconds(250)))return;
+			const char* event=newlyEnabled?"enabled":contact!=self->lastTracedContact?
+				(contact?"begin":"end"):"sample";
+			self->touchAreaTraceWasEnabled=true;self->lastTracedContact=contact;self->lastTouchAreaTrace=now;
+			const auto& d=value;const auto& a=d.contactArea;const auto& source=d.inputSource;
+			const bool requested=self->window.TouchContactAreaAssistance();
+			const char* gate=!contact?"no-eraser-contact":!d.active?"not-speed-eraser":
+				!requested?"option-off":!a.enabled?"waiting-new-contact-batch":
+				d.inputType!=static_cast<uint32_t>(InputDeviceType::Touch)?"not-touch-input":
+				source.kind!=SpeedEraser::SourceKind::Touch?"touch-relationship-unknown":
+				!d.inputMapped?"display-mapping-unknown":
+				a.sample.units!=SpeedEraser::ContactAreaUnits::CanvasPixels?"area-units-unusable":
+				!a.sampleValid?"area-rejected":!a.referenceReady?"waiting-stable-drag":
+				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
+				!a.active?"waiting-accepted-movement":"area-floor-active";
+			std::fprintf(stderr,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
+				static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
+				d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
+				d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
+				d.firstPointRadiusPx,d.cursorDiameterPx,d.nextRadiusPx);
+			char text[3072]{};
+			if(!d.active)
+			{
+				std::snprintf(text,sizeof(text),"[TouchArea] seq=%llu event=%s gate=%s contact=%d inputType=%u source=%s cursorPx=%.3f requested=%d\n",
+					static_cast<unsigned long long>(sequence),event,gate,contact,d.inputType,
+					SpeedEraser::SourceKindName(source.kind),d.cursorDiameterPx,requested);
+				OutputDebugStringA(text);std::fputs(text,stderr);return;
+			}
+			std::snprintf(text,sizeof(text),
+				"[TouchArea] seq=%llu event=%s gate=%s contact=%d speedMode=%d inputType=%u source=%s recognition=%u tcid=%u cid=%u sourceGen=%llu\n"
+				"[TouchArea] seq=%llu model=%s scale=%s unit=%s monitor=%p mappedMonitor=%p mapped=%d mappedRect=(%d,%d,%d,%d) pixels=%dx%d dpi=%.1fx%.1f DIP/px=%.6fx%.6f motion/px=%.6fx%.6f rho=%.6f manualCm=%.1fx%.1f displayGen=%llu/%llu\n"
+				"[TouchArea] seq=%llu requested=%d latched=%d raw=%.3fx%.3f convertedPx=%.3fx%.3f units=%s DIP=%.3fx%.3f valid=%d reason=%s ready=%d fresh=%d unlocked=%d stableMs=%.1f refFloor=%.3f acceptedFloor=%.3f areaActive=%d speed=%.3f evidenceMs=%.1f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f nextRadiusPx=%.3f historyRadiusPx=%.3f points=%llu idleMs=%.1f animate=%d\n",
+				static_cast<unsigned long long>(sequence),event,gate,contact,d.active,d.inputType,
+				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),source.contextId,source.cursorId,static_cast<unsigned long long>(source.generation),
+				static_cast<unsigned long long>(sequence),SpeedEraser::ResponseModelName(d.response),SpeedEraser::ScaleSourceName(d.motionSource),SpeedEraser::MotionUnitName(d.motionUnit),
+				reinterpret_cast<void*>(d.monitor),reinterpret_cast<void*>(source.mappedMonitor),d.inputMapped,
+				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,d.pixelWidth,d.pixelHeight,d.dpiX,d.dpiY,
+				d.dipPerPixelX,d.dipPerPixelY,d.motionPerPixelX,d.motionPerPixelY,d.rhoMmPerDip,d.manualWidthCm,d.manualHeightCm,
+				static_cast<unsigned long long>(d.displayGeneration),static_cast<unsigned long long>(d.displayRevision),
+				static_cast<unsigned long long>(sequence),requested,a.enabled,a.sample.rawWidth,a.sample.rawHeight,a.sample.widthPx,a.sample.heightPx,
+				SpeedEraser::ContactAreaUnitsName(a.sample.units),a.widthDip,a.heightDip,a.sampleValid,SpeedEraser::ContactAreaReasonName(a.reason),
+				a.referenceReady,a.referenceFresh,d.touchUnlocked,a.stableMotionSeconds*1000,a.referenceFloorDip,a.activeFloorDip,a.active,
+				d.speed,d.evidenceSeconds*1000,d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.historyRadiusPx,
+				static_cast<unsigned long long>(d.realPointCount),d.idleSeconds*1000,d.needsAnimation);
+			std::fprintf(stderr,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
+				static_cast<unsigned long long>(sequence),d.fine.speed,SpeedEraser::MotionUnitName(d.motionUnit),
+				d.fine.held,d.fine.enterProgress,d.fine.releaseProgress,d.fine.changeProgress,d.fine.direction,
+				d.targetDiameterDip,d.effectiveDiameterDip,a.activeFloorDip,d.needsAnimation);
+			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
+			OutputDebugStringA(text);
+			std::fputs(text,stderr);
+		}
+
 		static void ObserveDrawingActivity(void* context, bool active) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
@@ -444,8 +549,83 @@ namespace Inkeys::Drawing::Draw3
 				callbacks->setExtendedStyleFlags(callbacks->context, setMask, clearMask);
 		}
 
+
+		void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot)
+		{
+			{
+				std::scoped_lock lock(displayMutex);
+				pendingDisplaySnapshot = std::move(snapshot);
+			}
+			displayScaleDirty.store(true, std::memory_order_release);
+			(void)input.PublishControlWake();
+		}
+
+		void PumpDisplayScale()
+		{
+			if (!displayScaleDirty.exchange(false, std::memory_order_acq_rel)) return;
+			Inkeys::Display::SnapshotPtr snapshot;
+			SpeedEraser::DevelopmentOptions development;
+			{
+				std::scoped_lock lock(displayMutex);
+				snapshot = pendingDisplaySnapshot;
+				development = eraserDevelopment;
+			}
+			const HWND hwnd = attachedWindow.load(std::memory_order_acquire);
+			SpeedEraser::DisplayScale scale;
+			scale.development = development;
+			window.SetTouchContactAreaAssistance(development.touchContactAreaAssistance);
+			scale.development.touchAreaTrace=false;
+			touchAreaTraceEnabled.store(development.touchAreaTrace,std::memory_order_relaxed);
+			scale.development.touchContactAreaAssistance=false; // 面积开关不属于 Mouse/Pen 的显示标尺。
+			window.SetEraserDiagnosticsEnabled(development.diagnostics || development.touchAreaTrace || hiddenTestContactInjectionEnabled || startOptions.enableEraserDiagnostics);
+			scale.generation = snapshot ? snapshot->generation : 0;
+			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
+			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
+			const auto* monitor = snapshot ? snapshot->Find(monitorHandle) : nullptr;
+			RECT clientBounds{};
+			POINT origin{};
+			const bool clientKnown = hwnd && GetClientRect(hwnd, &clientBounds) && ClientToScreen(hwnd, &origin);
+			if (clientKnown) OffsetRect(&clientBounds, origin.x, origin.y);
+			if (monitor)
+			{
+				scale.dipPerPixelX = 96.0f / (monitor->effectiveDpiX ? monitor->effectiveDpiX : 96u);
+				scale.dipPerPixelY = 96.0f / (monitor->effectiveDpiY ? monitor->effectiveDpiY : 96u);
+				scale.pixelWidth=monitor->pixelWidth;scale.pixelHeight=monitor->pixelHeight;
+				scale.desktopLeft=monitor->bounds.left;scale.desktopTop=monitor->bounds.top;
+				scale.orientation=monitor->orientation;
+				scale.logicalOutputKnown=!snapshot->fallback && !monitor->fallback && clientKnown &&
+					clientBounds.left>=monitor->bounds.left && clientBounds.top>=monitor->bounds.top &&
+					clientBounds.right<=monitor->bounds.right && clientBounds.bottom<=monitor->bounds.bottom;
+				scale.physicalAvailable = monitor->physicalSize.available &&
+					monitor->pixelWidth > 0 && monitor->pixelHeight > 0;
+				if (scale.physicalAvailable)
+				{
+					scale.cmPerPixelX = static_cast<float>(monitor->physicalSize.widthCm) / monitor->pixelWidth;
+					scale.cmPerPixelY = static_cast<float>(monitor->physicalSize.heightCm) / monitor->pixelHeight;
+				}
+				// 输入直接性及目标映射交由当前 RTS 来源确认，不能按整机单屏推断。
+			}
+			else if (hwnd)
+			{
+				const UINT dpi = GetDpiForWindow(hwnd);
+				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
+			}
+			if(hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale)
+			{
+				const auto policy=scale.development;
+				scale=*startOptions.hiddenTestDisplayScale;scale.development=policy;
+			}
+			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
+			scale.revision = previous.revision;
+			if (scale == previous && EqualRect(&clientBounds, &appliedDisplayClientBounds)) return;
+			scale.revision = previous.revision + 1;
+			appliedDisplayClientBounds = clientBounds;
+			window.SetSpeedEraserDisplayScale(scale);
+		}
+
 		void PumpBridgeState()
 		{
+			PumpDisplayScale();
 			const Bridge::ProductState state = bridge.Snapshot();
 			if (state.revision == appliedBridgeRevision) return;
 			appliedBridgeRevision = state.revision;
@@ -458,6 +638,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 			case Bridge::Tool::HardPen: tool = DrawingTool::HardPen; break;
 			case Bridge::Tool::Highlighter: tool = DrawingTool::Highlighter; break;
+			case Bridge::Tool::ConfiguredEraser:
 			case Bridge::Tool::FixedEraser:
 			case Bridge::Tool::SpeedEraser: tool = DrawingTool::Eraser; break;
 			case Bridge::Tool::Laser: tool = DrawingTool::Laser; break;
@@ -468,8 +649,13 @@ namespace Inkeys::Drawing::Draw3
 			default: break;
 			}
 			window.SetActiveTool(tool);
+			window.SetSpeedEraserDeviceMode(state.paintDevice == 0
+				? SpeedEraser::DeviceMode::LargeScreen : SpeedEraser::DeviceMode::Laptop);
 			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
 				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
+			window.SetEraserInputs(state.eraserInputs);
+			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
+				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
 			if (state.workspace != Bridge::Workspace::Presentation &&
 				workspace.load(std::memory_order_acquire) != state.workspace)
@@ -600,6 +786,7 @@ namespace Inkeys::Drawing::Draw3
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
+			{std::scoped_lock lock(eraserDiagnosticsMutex);eraserDiagnostics={};}
 			this->styleCallbacks = styleCallbacks;
 			this->runtimeCallbacks = runtimeCallbacks;
 			startOptions = options;
@@ -627,6 +814,9 @@ namespace Inkeys::Drawing::Draw3
 				std::fputs("[Draw3.Presentation] action=start result=failed\n", stderr);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection);
 			window.SetInputCoordinator(&input);
+			window.SetSpeedEraserDisplayScale({});
+			appliedDisplayClientBounds = {};
+			PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
 			// 启动握手保证绘制线程先拥有独立 GPU 资源，再启用唯一 RTS producer。
 			{
 				std::scoped_lock lock(startupMutex);
@@ -701,6 +891,8 @@ namespace Inkeys::Drawing::Draw3
 						{
 							StrokeModelConfiguration configuration =
 								CreateStrokeModelConfiguration(GetDpiForWindow(windowHandle));
+							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
+								startOptions.enableHiddenTestContactInjection);
 							const DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
@@ -709,7 +901,8 @@ namespace Inkeys::Drawing::Draw3
 								&ObserveDesktopLoad,
 								&ObservePresentationSave,
 								&ObservePresentationLoad,
-								&ObserveDrawingActivity
+								&ObserveDrawingActivity,
+								&ObserveEraserDiagnostics
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -844,11 +1037,18 @@ namespace Inkeys::Drawing::Draw3
 			runtimeCallbacks = {};
 			return false;
 		}
+		displaySubscription = Inkeys::Display::Subscribe(
+			[this](Inkeys::Display::SnapshotPtr snapshot)
+			{
+				// 通知线程只发布快照并唤醒，窗口信息由绘制线程低频解析。
+				PublishDisplaySnapshot(std::move(snapshot));
+			});
 		return true;
 		}
 
 		void Stop() noexcept
 		{
+			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
 				!running.load(std::memory_order_acquire))
@@ -924,6 +1124,8 @@ namespace Inkeys::Drawing::Draw3
 	HostRuntimeSnapshot Host::RuntimeSnapshot() const noexcept
 	{
 		HostRuntimeSnapshot snapshot;
+		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;}
+		snapshot.touchContactAreaAssistanceEnabled=impl_->window.TouchContactAreaAssistance();
 		snapshot.running = impl_->running.load(std::memory_order_acquire);
 		snapshot.firstFrameReady = impl_->firstFrameReady.load(std::memory_order_acquire);
 		snapshot.lastPresentSucceeded =
@@ -1012,26 +1214,46 @@ namespace Inkeys::Drawing::Draw3
 	bool Host::PublishHiddenTestContact(WPARAM phaseValue, LPARAM position) noexcept
 	{
 		if (!impl_->hiddenTestContactInjectionEnabled) return false;
-		const auto phase = static_cast<HiddenTestContactPhase>(
-			static_cast<std::uint32_t>(phaseValue));
+		const auto phase = static_cast<HiddenTestContactPhase>(static_cast<std::uint32_t>(phaseValue)&0xffu);
+		const auto deviceType=(phaseValue & kHiddenTestRightMouseFlag)?InputDeviceType::MouseRight:
+			(phaseValue & kHiddenTestMouseFlag) ? InputDeviceType::MouseLeft :
+			(phaseValue & kHiddenTestTouchFlag) ? InputDeviceType::Touch : InputDeviceType::Pen;
 		ContactSnapshot snapshot{};
+		{
+			std::scoped_lock lock(impl_->displayMutex);
+			const auto& area=impl_->hiddenContactArea;
+			snapshot.rawContactSize={area.rawWidth,area.rawHeight};
+			snapshot.contactSize={area.widthPx,area.heightPx};snapshot.contactAreaUnits=area.units;
+		}
 		snapshot.position.x = static_cast<float>(static_cast<short>(LOWORD(position)));
 		snapshot.position.y = static_cast<float>(static_cast<short>(HIWORD(position)));
 		snapshot.pressure = phase == HiddenTestContactPhase::Down ? 0.8f : 0.7f;
 		LARGE_INTEGER qpc = {};
 		QueryPerformanceCounter(&qpc);
 		snapshot.qpc = qpc.QuadPart;
+		snapshot.isInvertedCursor=(phaseValue & kHiddenTestPenTailFlag)!=0;
+		snapshot.source.kind=(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight) ? SpeedEraser::SourceKind::Mouse :
+			deviceType==InputDeviceType::Touch ? SpeedEraser::SourceKind::Touch :
+			(phaseValue & kHiddenTestIntegratedPenFlag) ? SpeedEraser::SourceKind::IntegratedPen :
+			(phaseValue & kHiddenTestExternalPenFlag) ? SpeedEraser::SourceKind::ExternalPen : SpeedEraser::SourceKind::Unknown;
+		snapshot.source.recognition=SpeedEraser::SourceRecognition::RtsCapabilities;
+		snapshot.source.contextId=0xD303u;snapshot.source.cursorId=0xD304u+static_cast<uint32_t>(SpeedEraser::EntryForInput(static_cast<uint32_t>(deviceType),snapshot.isInvertedCursor));snapshot.source.generation=1;
+		const auto scale=impl_->window.SpeedEraserDisplayScaleSnapshot();
+		snapshot.source.mappedMonitor=scale.monitor;
+		snapshot.source.mappedLeft=scale.desktopLeft;snapshot.source.mappedTop=scale.desktopTop;
+		snapshot.source.mappedWidth=scale.pixelWidth;snapshot.source.mappedHeight=scale.pixelHeight;
 
 		// 隐藏测试走同一个无锁 contact mailbox，不触碰 Renderer 或 RTS 内部状态。
 		constexpr std::uint32_t tabletContextId = 0xD303u;
-		constexpr std::uint32_t contactId = 0xD304u;
+		const std::uint32_t contactId = snapshot.source.cursorId;
 		bool published = false;
 		switch (phase)
 		{
 		case HiddenTestContactPhase::Down:
+			if(deviceType==InputDeviceType::Touch)impl_->window.NotifyTouchContactBegin();
 			snapshot.phase = ContactPhase::Down;
 			published = impl_->input.PublishDown(tabletContextId, contactId,
-				InputDeviceType::Pen, snapshot);
+				deviceType, snapshot);
 			break;
 		case HiddenTestContactPhase::Move:
 			snapshot.phase = ContactPhase::Move;
@@ -1041,6 +1263,9 @@ namespace Inkeys::Drawing::Draw3
 			snapshot.phase = ContactPhase::Up;
 			published = impl_->input.PublishUp(tabletContextId, contactId, snapshot);
 			break;
+		case HiddenTestContactPhase::Hover:
+			published = true;
+			break;
 		case HiddenTestContactPhase::Cancelled:
 			snapshot.phase = ContactPhase::Cancelled;
 			published = impl_->input.PublishCancelled(tabletContextId, contactId, snapshot);
@@ -1048,8 +1273,55 @@ namespace Inkeys::Drawing::Draw3
 		default:
 			return false;
 		}
+
+		// 隐藏注入复用真实 RTS 的 Touch 模态通知，不能让旧 Mouse Hover 掩盖 Touch 光标。
+		if(deviceType==InputDeviceType::Touch &&
+			((phase==HiddenTestContactPhase::Down && !published) ||
+			 (published && (phase==HiddenTestContactPhase::Up || phase==HiddenTestContactPhase::Cancelled))))
+			impl_->window.NotifyTouchContactEnd();
+
+		if(published && (deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight || deviceType==InputDeviceType::Pen))
+		{
+			DrawingCursorSample cursor;
+			cursor.x=snapshot.position.x;cursor.y=snapshot.position.y;cursor.qpc=snapshot.qpc;
+			cursor.valid=phase!=HiddenTestContactPhase::Cancelled;
+			cursor.inContact=phase==HiddenTestContactPhase::Down || phase==HiddenTestContactPhase::Move;
+			cursor.source=snapshot.source;cursor.inverted=snapshot.isInvertedCursor;
+			if(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight)impl_->window.PublishHiddenTestMouseCursor(cursor);
+			else impl_->window.PublishPenCursorSample(cursor);
+		}
 		if (published) (void)impl_->input.PublishControlWake();
 		return published;
+	}
+
+	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)
+	{
+		{
+			std::scoped_lock lock(impl_->displayMutex);
+			if(impl_->eraserDevelopment==options)return;
+			impl_->eraserDevelopment=options;
+		}
+		if(impl_->touchAreaTraceEnabled.exchange(options.touchAreaTrace,std::memory_order_relaxed)!=options.touchAreaTrace)
+			impl_->touchAreaTraceRevision.fetch_add(1,std::memory_order_relaxed);
+		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || options.touchAreaTrace ||
+			impl_->hiddenTestContactInjectionEnabled || impl_->startOptions.enableEraserDiagnostics);
+		impl_->displayScaleDirty.store(true,std::memory_order_release);
+		(void)impl_->input.PublishControlWake();
+	}
+	SpeedEraser::DevelopmentOptions Host::EraserDevelopmentOptions() const
+	{
+		std::scoped_lock lock(impl_->displayMutex);
+		return impl_->eraserDevelopment;
+	}
+	void Host::SetHiddenTestContactArea(const SpeedEraser::ContactAreaSample& sample)
+	{
+		if(!impl_->hiddenTestContactInjectionEnabled)return;
+		std::scoped_lock lock(impl_->displayMutex);impl_->hiddenContactArea=sample;
+	}
+
+	SpeedEraser::DisplayScale Host::EraserDisplayScaleSnapshot() const
+	{
+		return impl_->window.SpeedEraserDisplayScaleSnapshot();
 	}
 
 	LRESULT Host::ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -1057,6 +1329,12 @@ namespace Inkeys::Drawing::Draw3
 		if (message == kDraw3HiddenTestContactMessage &&
 			impl_->hiddenTestContactInjectionEnabled)
 			return PublishHiddenTestContact(wParam, lParam) ? 0 : -1;
+		if (window == impl_->attachedWindow.load(std::memory_order_acquire) &&
+			(message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED || message == WM_DISPLAYCHANGE))
+		{
+			impl_->displayScaleDirty.store(true, std::memory_order_release);
+			(void)impl_->input.PublishControlWake();
+		}
 		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
 	}
 	void Host::SetActivationAllowed(bool enabled) noexcept

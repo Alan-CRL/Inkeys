@@ -16,14 +16,14 @@
 - [x] 12. 静态核对 MessageBox 搜索结果：产品范围内只保留组件内部 `MessageBoxW` fallback；`Timeout`、历史未编译源码与 `IdtMain.cpp:1685-1705` 调试辅助调用保持不变。
 - [x] 13. 检查所有修改文件的原编码/CRLF、资源脚本与项目文件配对、module import 顺序和 Windows 7 可用 API 的动态解析；运行 `git diff --check`、完整 ARM64 solution 构建及无窗口/隐藏窗口测试。
 - [x] 14. 运行已授权的专用可见测试入口，自动生成限定窗口区域截图、关闭全部测试 HWND，并核对 Windows 11 ARM64 的圆角、DWM 阴影、四边边框、文本布局、图标、焦点和按钮状态；全程不使用 Computer Use。
-- [x] 15. 汇总实际验证结果和限制：明确 UI Automation provider 未实现，Windows 7/10 若未上机则仅为静态兼容覆盖；不提交 commit，等待用户验收。
+- [x] 15. 汇总实际验证结果和限制：明确 UI Automation provider 未实现，Windows 7/10 若未上机则仅为静态兼容覆盖；2026-09-17 用户确认人工验收通过。
 - [x] 16. 修复首次可见时序：移除组件内全部 `ShowWindow`，在 DWM/window 状态完成后用固定矩形 `SetWindowPos(SWP_SHOWWINDOW)` 建立 surface，再同步提交首帧；现代 DWM 使用 cloak 覆盖该间隔，旧系统保留无 cloak 退化。增加以 `STARTF_USESHOWWINDOW + SW_SHOWMAXIMIZED` 启动隔离测试进程的回归用例。
 - [x] 17. 用户批准本轮键盘交互规划和无 X 的 close-command 路由表；批准前不修改产品或测试源码。
 - [x] 18. 在 `DialogSession` 中分离逻辑焦点、键盘焦点视觉和 HWND 实际 focus；首帧/pointer focus 不绘制白框，Tab/Shift+Tab/Left/Right 导航后才绘制，失焦时隐藏。
 - [x] 19. 抽取 enabled-button 导航与 `ResolveCloseCommand()`；Tab 系列循环、Left/Right 到边界停止，Enter/Space 激活逻辑焦点，所有关闭入口只经同一 resolver 和现有单次提交门。
 - [x] 20. 扩展隐藏 HWND 与可见像素回归：初始无框、pointer 无框、键盘有框、Tab/Shift+Tab/Left/Right、Enter 导航前后、Space、所有 close 入口及 OK/OK-Cancel/Yes-No 路由。
 - [x] 21. 使用 ARM64 host MSBuild 构建完整 `Debug|ARM64` solution，运行 `--no-window`、MessageBox 隐藏集成与获准的专用可见截图入口；再次核对首帧、owner/topmost、DPI、资源清理和既有已知 WindowTests 基线。
-- [x] 22. 按 PRD/design 逐条复核本轮约束，记录 UI Automation 与 Windows 7/10 仍未实机验证的既有限制；完成后等待用户人工验收，不自动提交 commit。
+- [x] 22. 按 PRD/design 逐条复核本轮约束，记录 UI Automation 与 Windows 7/10 仍未实机验证的既有限制；2026-09-17 用户确认人工验收通过。
 - [x] 23. 在三份 JSONC 中增加 MessageBox 公共标题、按钮和运行期正文 key，修正现有语言重启文案，完成 en-US/zh-CN/zh-TW 翻译后运行 i18n sync/check。
 - [x] 24. 扩展 MessageBox Request/OwnedRequest：默认 en-US、复制可选按钮文字、按请求语言构造内置标签，并让 MessageBoxExW fallback 接收同一 LANGID。
 - [x] 25. 按请求语言选择 Segoe UI、Microsoft YaHei UI 或 Microsoft JhengHei UI 字体候选；字体缺失时保留 Segoe 回退，不引入共享 UI 字体设备。
@@ -200,7 +200,7 @@ rg -n "MessageBox(?:W|A)?\\(" Inkeys Timeout
 - 隐藏 HWND 回归覆盖默认 Enter、Tab/Shift+Tab、左右边界、Space、pointer 更新逻辑焦点，以及五类 close 入口和三种按钮路由；完整 `InkeysHeadlessTests.exe` 本轮通过，无此前记录的 Window Z 序基线失败。
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64` 通过（0 error，3 条既有 `hashlib++` C4267 warning）；`InkeysHeadlessTests.exe --no-window` 与完整套件均通过。
 - `--message-box-visual-test .\TestResults\message-box-keyboard` 通过并生成 7 张限定窗口截图；新增像素断言确认初始/纯 pointer 状态无白框、键盘态存在外置双层框、pointer down 清除既有键盘框、primary hover 不清除 secondary 键盘框。人工复核 `01`、`02`、`05`、`07` 无重叠、位移或异常边框。
-- 公开 Request/Result、布局/颜色 token、owner/topmost、首帧 reveal、GDI+ 生命周期和产品调用点均未改变。完整 UI Automation provider 仍不属于 MVP；Windows 7/10 本轮未上机，仍仅记录静态兼容和构建覆盖。未提交 commit，等待用户人工验收。
+- 公开 Request/Result、布局/颜色 token、owner/topmost、首帧 reveal、GDI+ 生命周期和产品调用点均未改变。完整 UI Automation provider 仍不属于 MVP；Windows 7/10 本轮未上机，仍仅记录静态兼容和构建覆盖。2026-09-17 用户确认人工验收通过并同意归档。
 
 ## 2026-09-02 Localization Follow-up Results
 

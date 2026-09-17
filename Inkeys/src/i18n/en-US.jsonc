@@ -45,6 +45,22 @@
       {
         "Mode": "Bottom bar mode",
         "Centered": "Centered"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "Clear",
+        "ClearCanvasHint": "Clear annotations on this canvas",
+        "AutomaticLabel": "Auto size",
+        "SensitivityLabel": "Sensitivity",
+        "LowLabel": "Low",
+        "MediumLabel": "Medium",
+        "HighLabel": "High",
+        "SmallSize": "Small",
+        "MediumSize": "Medium",
+        "LargeSize": "Large",
+        "BaseSizeHint": "Base size when automatic sizing is enabled",
+        "MixedHint": "Devices use different settings\nClick to enable automatic sizing for all",
+        "SettingsHint": "Automatic size settings are not available yet"
       }
     }
   },

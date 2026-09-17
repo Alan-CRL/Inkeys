@@ -1,5 +1,6 @@
 ﻿// inkPixelShader.hlsl
 #include "ink.hlsli"
+#include "EraserGripVisual.h"
 
 float sdUnevenCapsule_Vertical(float2 p, float r1, float r2, float h)
 {
@@ -265,9 +266,9 @@ OperatorOutput main(PS_INPUT input)
         if (type == 6)
         {
             float diameter = min(input.p2.x, input.p2.y) * 2.0;
-            float stripeRadius = diameter * 0.05;
-            float stripeHalfHeight = diameter * 0.24;
-            float stripeOffset = diameter * 0.12;
+            float stripeRadius = diameter * ERASER_GRIP_STRIPE_RADIUS_RATIO;
+            float stripeHalfHeight = diameter * ERASER_GRIP_STRIPE_HALF_HEIGHT_RATIO;
+            float stripeOffset = diameter * ERASER_GRIP_STRIPE_OFFSET_RATIO;
             float stripeCoverage = max(
                 CursorCoverage(GetVerticalCapsuleDist(
                     local - float2(-stripeOffset, 0.0), stripeRadius, stripeHalfHeight)),

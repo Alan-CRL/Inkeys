@@ -9,11 +9,13 @@
 #include <cstdint>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
 export module Inkeys.UI.Bar:Main;
 
 import :UI;
 import :State;
+import Inkeys.UI.Bar.EraserAttributeMotion;
 import :Button;
 import :Format;
 export import :Rendering;
@@ -70,6 +72,62 @@ protected:
 // 前向声明
 class BarUISetClass;
 class BarRenderLoopCoordinator;
+
+class BarEraserAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
+		RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr,
+		bool dragPlacementLocked = false);
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
+	bool ResetPointerFeedback();
+	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
+	void Close(BarUISetClass& owner);
+	RECT Bounds() const;
+	std::array<RECT,3> PresentedRegions() const;
+	Inkeys::UI::Bar::EraserAttributePresentation PresentationSnapshot() const;
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+	bool WantsKeyboard() const noexcept { return visible_.load(); }
+private:
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item);
+	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
+	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
+	mutable std::mutex presentationMutex_;
+	Inkeys::UI::Bar::EraserAttributeLayout layout_;
+	Inkeys::UI::Bar::EraserAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::EraserAttributeLayoutInput stableLayoutInput_, dragLayoutInput_;
+	double zoom_ = 1;
+	bool initialized_ = false, changed_ = false, active_ = false;
+	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
+	bool previousBelow_ = false, previousReversed_ = false;
+	int menuSide_ = -1;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
+	std::array<BarButtonClass,10> buttons_;
+	std::array<BarUiShapeClass,2> dividers_;
+	BarUiShapeClass automaticDivider_;
+	BarUiSVGClass automaticArrow_;
+	std::array<BarUiShapeClass,3> circles_, circleSelectionRings_;
+	std::array<BarUiValueClass,3> circleSelection_, circleHover_, circlePress_;
+	BarUiShapeClass surface_, menu_;
+	BarUiWordClass title_;
+	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
+	unsigned long long deviceGeneration_ = 0;
+	bool clearEnabled_ = false;
+	int selectedSize_ = 32, sensitivity_ = 1;
+	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
+		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
+};
+
 
 namespace Inkeys::UI::Bar
 {
@@ -379,6 +437,7 @@ public:
 
 	BarStateClass barState;
 	BarStyleClass barStyle;
+	BarEraserAttributePanel eraserAttribute;
 
 	ankerl::unordered_dense::map<BarUISetShapeEnum, shared_ptr<BarUiShapeClass>> shapeMap;
 	ankerl::unordered_dense::map<BarUISetSuperellipseEnum, shared_ptr<BarUiSuperellipseClass>> superellipseMap;
@@ -798,7 +857,7 @@ protected:
 	BarBorderCursorTrackingStateEnum borderCursorTrackingState =
 		BarBorderCursorTrackingStateEnum::Dormant;
 	ULONGLONG borderCursorGraceDeadlineTick = 0;
-	array<RECT, 7> borderCursorVisibleRegions{};
+	array<RECT, 10> borderCursorVisibleRegions{};
 	size_t borderCursorVisibleRegionCount = 0;
 
 	// ULW 与主按钮直移共用几何锁；位移使用原子目标，交互线程不等待慢提交。
@@ -918,6 +977,7 @@ namespace Inkeys::UI::Bar
 	};
 
 	export WNDPROC WindowProc() noexcept;
+	export int RunEraserAttributeOffscreenTest();
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();

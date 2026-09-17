@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "Draw3.SpeedEraser.h"
+
 #include <array>
 #include <compare>
 #include <cstdint>
@@ -29,7 +31,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		SolidLine,
 		DashedLine,
 		OutlineRectangle,
-		FilledRectangle
+		FilledRectangle,
+		ConfiguredEraser // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
 	};
 
 	enum class Workspace : std::uint8_t
@@ -146,6 +149,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		float widthDip = 2.0f;
+		int paintDevice = 1; // 0 大屏，1 笔电；沿用已有绘图设备选项。
+		SpeedEraser::InputSettings eraserInputs;
 		bool selectionMode = true;
 		bool autoSaveEnabled = false;
 		std::uint32_t page = 0;

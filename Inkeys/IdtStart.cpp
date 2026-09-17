@@ -55,8 +55,10 @@ void StartForInkeys()
 		{
 			hardwareInfo.screenWidth = monitor->pixelWidth;
 			hardwareInfo.screenHeight = monitor->pixelHeight;
-			hardwareInfo.screenPhyWidth = monitor->edid.physicalWidthCm;
-			hardwareInfo.screenPhyHeight = monitor->edid.physicalHeightCm;
+			hardwareInfo.screenPhyWidth = monitor->physicalSize.available
+				? monitor->physicalSize.widthCm : 0;
+			hardwareInfo.screenPhyHeight = monitor->physicalSize.available
+				? monitor->physicalSize.heightCm : 0;
 			// 屏幕是横向还是纵向
 			hardwareInfo.screenOrientation = monitor->orientation;
 		}

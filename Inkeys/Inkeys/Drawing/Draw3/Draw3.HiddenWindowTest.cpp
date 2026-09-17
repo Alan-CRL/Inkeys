@@ -2,9 +2,12 @@
 #include "Draw3.Product.h"
 
 import Inkeys.Window;
+import draw3.uink_file;
+import draw3.uink_draw3_import;
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <crtdbg.h>
 #include <string>
@@ -123,22 +126,71 @@ namespace Inkeys::Drawing::Draw3
 				"selection ULW window has fixed click-through style", failures);
 		}
 
+
+		bool CheckSizeBoundaryFile(const SpeedEraser::Diagnostics& diagnostic)
+		{
+			using namespace draw3::uink;
+			const auto file=CreateUInkGuid(), workspace=CreateUInkGuid(), page=CreateUInkGuid();
+			if(!file || !workspace || !page || !diagnostic.resumedWithAnchor)return false;
+			Draw3UInkExportSnapshot snapshot;
+			snapshot.fileGuid=*file;snapshot.workspaceGuid=*workspace;
+			Draw3UInkCanvasSnapshot canvas;canvas.pageGuid=*page;canvas.pageNumber=1;
+			Draw3UInkStrokeSnapshot stroke;stroke.style.kind=Draw3UInkStrokeKind::Eraser;
+			for(size_t i=0;i<3;++i)stroke.points.push_back({diagnostic.boundaryPoints[i*3],
+				diagnostic.boundaryPoints[i*3+1],diagnostic.boundaryPoints[i*3+2]});
+			canvas.strokes.push_back(stroke);snapshot.canvases.push_back(canvas);
+			const auto exported=ExportDraw3SnapshotToUInk(snapshot);
+			if(!exported.document)return false;
+			UInkEditingSession session;session.document=*exported.document;session.provenance.sourceWasExternal=false;
+			const std::string id=FormatUInkGuid(*file);
+			const std::wstring path=L"Build\\eraser-size-boundary-"+std::wstring(id.begin(),id.end())+L".uink";
+			UInkSaveOptions options;options.mode=UInkSaveMode::SaveAsNewLogicalFile;
+			if(SaveUInkFile(path,session,options).status!=UInkSaveStatus::Committed)return false;
+			const auto read=ReadUInkFile(path);
+			if(!read.document)return false;
+			const auto imported=ImportDraw3UInkDocument(*read.document);
+			if(!imported.snapshot || imported.snapshot->canvases.size()!=1 ||
+				imported.snapshot->canvases[0].strokes.size()!=1)return false;
+			const auto& restored=imported.snapshot->canvases[0].strokes[0].points;
+			if(restored.size()!=3)return false;
+			for(size_t i=0;i<3;++i)
+				if(std::abs(restored[i].x-stroke.points[i].x)>0.001f ||
+					std::abs(restored[i].y-stroke.points[i].y)>0.001f ||
+					std::abs(restored[i].width-stroke.points[i].width)>0.001f)return false;
+			return restored[0].x==restored[1].x && restored[0].y==restored[1].y &&
+				restored[0].width>restored[1].width && restored[2].width<=diagnostic.dpiX/96*36;
+		}
+
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
 			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
 			HostPresentationMode requiredMode,
 			bool allowDirectComposition, bool exerciseCommands,
-			bool exerciseUlwDirtyRect, int& failures)
+			bool exerciseUlwDirtyRect, int& failures, bool exerciseEraser = false)
 		{
 			const std::uint64_t styleCallsBefore =
 				styleContext.callCount.load(std::memory_order_acquire);
 			const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
 			HostStartOptions options{ requiredMode };
-			options.enableHiddenTestContactInjection = exerciseCommands;
+			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
+			if(exerciseEraser)
+			{
+				// 隐藏 HWND 位于屏幕外；注入明确的逻辑像素表面，不伪造 EDID 或实测物理尺寸。
+				SpeedEraser::DisplayScale scale;scale.monitor=1;scale.generation=7;
+				scale.pixelWidth=320;scale.pixelHeight=240;scale.logicalOutputKnown=true;
+				options.hiddenTestDisplayScale=scale;
+			}
 			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
 				"start real Draw3 host", failures))
 				return false;
 
+			if(exerciseEraser)
+			{
+				// 在 RTS context 已建立后才启用，验证缓存补打；真实 packet 仍需设备手工采集。
+				auto diagnostics=ProductHost().EraserDevelopmentOptions();
+				diagnostics.touchAreaTrace=true;
+				ProductHost().SetEraserDevelopmentOptions(diagnostics);
+			}
 			bool modeSucceeded = true;
 			auto snapshot = ProductHost().RuntimeSnapshot();
 			modeSucceeded &= Check(snapshot.running && snapshot.firstFrameReady &&
@@ -318,9 +370,14 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.nextPageCommandCount > afterUndo.nextPageCommandCount &&
 							state.currentPageIndex == 1 && state.currentPageHasContent &&
-							state.contentRevision > afterUndo.contentRevision;
+							state.successfulPresentCount > afterUndo.successfulPresentCount;
 					}), "clear preserves content on other pages", failures);
 				const auto restoredOtherPage = ProductHost().RuntimeSnapshot();
+				// Host内容通知只在空/非空变化时发布；同为非空的翻页用页号、命令和呈现验证。
+				std::fprintf(stderr,"[ClearRoundtrip] page=%zu content=%d revision=%llu previous=%llu presents=%llu previousPresents=%llu\n",
+					restoredOtherPage.currentPageIndex,restoredOtherPage.currentPageHasContent,
+					static_cast<unsigned long long>(restoredOtherPage.contentRevision),static_cast<unsigned long long>(afterUndo.contentRevision),
+					static_cast<unsigned long long>(restoredOtherPage.successfulPresentCount),static_cast<unsigned long long>(afterUndo.successfulPresentCount));
 				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::PreviousPage) ==
 					Bridge::CommandResult::Accepted, "return to cleared page accepted", failures);
 				modeSucceeded &= Check(WaitUntil([restoredOtherPage]
@@ -329,7 +386,7 @@ namespace Inkeys::Drawing::Draw3
 						return state.previousPageCommandCount >
 							 restoredOtherPage.previousPageCommandCount &&
 							state.currentPageIndex == 0 && state.currentPageHasContent &&
-							state.contentRevision > restoredOtherPage.contentRevision;
+							state.successfulPresentCount > restoredOtherPage.successfulPresentCount;
 					}), "undo-restored page keeps its content after page round-trip", failures);
 
 				// 真实 Controller 三态回归：命令必须作用于发布时的 PPT，而不是随后的 latest scene。
@@ -337,6 +394,25 @@ namespace Inkeys::Drawing::Draw3
 				penState.tool = Bridge::Tool::Pen;
 				penState.selectionMode = false;
 				PublishProductState(penState);
+				// Clear沿用active.empty的提交边界；队列接受后等待Up，事务完成后旧事件不能复活内容。
+				const auto beforeActiveClear=ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down,70,80);
+				postContact(HiddenTestContactPhase::Move,100,90);
+				modeSucceeded &= Check(WaitUntil([beforeActiveClear]{return ProductHost().RuntimeSnapshot().inputDownPublished>beforeActiveClear.inputDownPublished;}),"active contact starts before Clear",failures);
+				modeSucceeded &= Check(PublishProductCommand(Bridge::CommandType::Clear)==Bridge::CommandResult::Accepted,"active Clear accepted",failures);
+				std::this_thread::sleep_for(50ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().clearCommandCount==beforeActiveClear.clearCommandCount,"Clear respects active contact boundary",failures);
+				const auto afterActiveClear=ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Up,130,100);
+				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.inputTerminalPublished>afterActiveClear.inputTerminalPublished && s.clearCommandCount==afterActiveClear.clearCommandCount+1 && !s.currentPageHasContent;}),"late Up after Clear cannot resurrect content",failures);
+				postContact(HiddenTestContactPhase::Up,130,100);std::this_thread::sleep_for(50ms);
+				modeSucceeded &= Check(!ProductHost().RuntimeSnapshot().currentPageHasContent,"duplicate late Up leaves Clear result intact",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>afterActiveClear.undoCommandCount && s.currentPageHasContent;}),"one Undo restores active Clear",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterActiveClear.redoCommandCount && !s.currentPageHasContent;}),"one Redo reapplies active Clear",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"restore Clear before scene tests",failures);
 				const auto desktopBeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 56, 72) &&
 					postContact(HiddenTestContactPhase::Move, 104, 96) &&
@@ -347,8 +423,13 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.workspace == Bridge::Workspace::Desktop &&
 							state.currentPageHasContent &&
-							state.contentRevision > desktopBeforeInk.contentRevision;
+							state.inputRecycled > desktopBeforeInk.inputRecycled &&
+							state.successfulPresentCount > desktopBeforeInk.successfulPresentCount;
 					}), "Desktop owns its ink before entering A", failures);
+
+				const auto beforeInvalidRedo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([beforeInvalidRedo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>beforeInvalidRedo.redoCommandCount && s.currentPageHasContent;}),"new ink cancels old Clear redo",failures);
 
 				Bridge::PresentationTarget targetA{};
 				targetA.key.bytes[0] = 0xA1;
@@ -425,6 +506,10 @@ namespace Inkeys::Drawing::Draw3
 					modeSucceeded &= waitForPresentation(targetA, *clearedARevision, false,
 						"A remains empty after scene-stamped Clear");
 
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([]{const auto s=ProductHost().RuntimeSnapshot();return s.workspace==Bridge::Workspace::Presentation && s.currentPageHasContent;}),"Presentation Clear Undo restores its boundary",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([]{const auto s=ProductHost().RuntimeSnapshot();return s.workspace==Bridge::Workspace::Presentation && !s.currentPageHasContent;}),"Presentation Clear Redo reuses its transaction",failures);
 				const auto clearedABeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 72, 88) &&
 					postContact(HiddenTestContactPhase::Move, 120, 112) &&
@@ -451,6 +536,18 @@ namespace Inkeys::Drawing::Draw3
 					modeSucceeded &= waitForPresentation(targetA, *returnARevision, true,
 						"A restores its own ink and exact ready revision after B");
 
+				Bridge::ProductState whiteboardState;whiteboardState.workspace=Bridge::Workspace::Whiteboard;whiteboardState.tool=Bridge::Tool::Pen;whiteboardState.selectionMode=false;
+				PublishProductState(whiteboardState);
+				PublishProductWorkspace(Bridge::Workspace::Whiteboard);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().workspace==Bridge::Workspace::Whiteboard;}),"switch to hidden whiteboard",failures);
+				postContact(HiddenTestContactPhase::Down,70,80);postContact(HiddenTestContactPhase::Move,110,100);postContact(HiddenTestContactPhase::Up,150,120);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard has independent ink",failures);
+				PublishProductCommand(Bridge::CommandType::Clear);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear empties annotation",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear Undo restores annotation",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear Redo reapplies transaction",failures);
 				const auto beforeResize = ProductHost().RuntimeSnapshot();
 				const RECT resizedBounds{ 44, 56, 428, 312 };
 				modeSucceeded &= Check(service.SetBounds(Inkeys::Window::WindowRole::Drawpad,
@@ -508,6 +605,413 @@ namespace Inkeys::Drawing::Draw3
 					"ULW dirty pixels remain premultiplied", failures);
 			}
 
+
+			if(exerciseEraser)
+			{
+				Bridge::ProductState speedState{};
+				speedState.tool=Bridge::Tool::SpeedEraser;
+				speedState.selectionMode=false;
+				PublishProductState(speedState);
+				const auto mouseContact=[&](HiddenTestContactPhase phase,int x,int y)
+				{
+					return PostMessageW(drawpad,kDraw3HiddenTestContactMessage,
+						static_cast<WPARAM>(phase)|kHiddenTestMouseFlag,MAKELPARAM(x,y))!=FALSE;
+				};
+				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Hover,60,80),"mouse fine hover input",failures);
+				modeSucceeded &= Check(WaitUntil([]
+				{
+					const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.effectiveDiameterDip<=16.1f && d.cursorDiameterPx>0;
+				},3s),"real no-Move mouse hover reaches minimum",failures);
+				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Down,60,80),"DIP speed eraser down",failures);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().eraser.active;}),
+					"actual eraser diagnostic becomes active",failures);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.2f,
+					"actual Down inherits fine hover without growing",failures);
+				float fineMin=1000,fineMax=0;
+				for(int i=1;i<=18;++i)
+				{
+					mouseContact(HiddenTestContactPhase::Move,60+i,80);
+					std::this_thread::sleep_for(i%2?80ms:120ms);
+					const auto d=ProductHost().RuntimeSnapshot().eraser;
+					fineMin=(std::min)(fineMin,d.effectiveDiameterDip);fineMax=(std::max)(fineMax,d.effectiveDiameterDip);
+					modeSucceeded &= Check(d.fine.held && d.effectiveDiameterDip<=16.5f &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f,
+						"real sparse one-pixel mouse moves retain fine cursor and accepted radius",failures);
+				}
+				std::fprintf(stderr,"[FineIngress] mode=%u peakToPeakDIP=%g maxDIP=%g\n",
+					static_cast<unsigned>(requiredMode),fineMax-fineMin,fineMax);
+				int lastX=60;
+				for(int i=0;i<80;++i)
+				{
+					lastX=(i%2)?60:250;
+					mouseContact(HiddenTestContactPhase::Move,lastX,80);
+					std::this_thread::sleep_for(20ms);
+				}
+				const auto large=ProductHost().RuntimeSnapshot();
+				std::fprintf(stderr,"[EraserProbe] large active=%d device=%u dip=%.2f cursor=%.2f speed=%.2f evidence=%.3f points=%llu idle=%.3f\n",
+					large.eraser.active,large.eraser.inputType,large.eraser.effectiveDiameterDip,
+					large.eraser.cursorDiameterPx,large.eraser.speed,large.eraser.evidenceSeconds,
+					static_cast<unsigned long long>(large.eraser.realPointCount),large.eraser.idleSeconds);
+
+				modeSucceeded &= Check(large.eraser.cursorDiameterPx>large.eraser.dpiX/96*70 &&
+					large.eraser.effectiveDiameterDip>70,"actual contact cursor reaches sweep size",failures);
+				const auto moveCount=large.inputMovePublished;
+				const auto pointCount=large.eraser.realPointCount;
+				// 完全停止所有Move，包括光标消息；只让真实绘制线程的时钟运行。
+				modeSucceeded &= Check(WaitUntil([moveCount]
+				{
+					const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputMovePublished==moveCount && s.eraser.active &&
+						s.eraser.idleSeconds>=1.0 && s.eraser.cursorDiameterPx>0 &&
+						s.eraser.cursorDiameterPx<=s.eraser.dpiX/96*18 &&
+						s.eraser.nextRadiusPx<=s.eraser.dpiX/96*9.0f;
+				},4s),"no Move: final contact cursor and next geometry visibly shrink",failures);
+				const auto quiet=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(quiet.inputMovePublished==moveCount &&
+					quiet.eraser.realPointCount==pointCount &&
+					quiet.eraser.historyRadiusPx>quiet.eraser.nextRadiusPx*1.5f,
+					"idle does not rewrite historical width or submit fake points",failures);
+				modeSucceeded &= Check(WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.001f;
+				},3s),"effective size settles at exact minimum",failures);
+				const auto stopped=ProductHost().RuntimeSnapshot().eraser.frameSequence;
+				std::this_thread::sleep_for(250ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=stopped+2,
+					"settled held eraser stops idle frames",failures);
+				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Move,lastX+4,84),
+					"resume with one short real Move",failures);
+				modeSucceeded &= Check(WaitUntil([moveCount]
+				{
+					const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputMovePublished>moveCount && s.eraser.resumedWithAnchor &&
+						s.eraser.resumedMaxRadiusPx<=s.eraser.dpiX/96*10 &&
+						s.eraser.resumedBottom-s.eraser.resumedTop<=s.eraser.dpiY/96*22+10;
+				}),"resumed actual geometry footprint has no old large-radius tail",failures);
+				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
+					"actual size-boundary points survive UInk save/read/import",failures);
+				mouseContact(HiddenTestContactPhase::Up,lastX+4,84);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"speed eraser up finishes normally",failures);
+				const auto beforeUndo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([beforeUndo]{return ProductHost().RuntimeSnapshot().undoCommandCount>beforeUndo.undoCommandCount;}),
+					"size-break stroke supports real Undo",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([beforeUndo]{return ProductHost().RuntimeSnapshot().redoCommandCount>beforeUndo.redoCommandCount;}),
+					"size-break stroke supports real Redo",failures);
+
+				const auto postSource=[&](HiddenTestContactPhase phase,WPARAM flags,int x=80,int y=100)
+				{return PostMessageW(drawpad,kDraw3HiddenTestContactMessage,static_cast<WPARAM>(phase)|flags,MAKELPARAM(x,y))!=FALSE;};
+				SpeedEraser::DevelopmentOptions development;development.diagnostics=true;
+				ProductHost().SetEraserDevelopmentOptions(development);
+				for(const auto flags:{kHiddenTestExternalPenFlag,kHiddenTestIntegratedPenFlag,kHiddenTestTouchFlag,WPARAM{0}})
+				{
+					postSource(HiddenTestContactPhase::Down,flags);
+					const auto expected=flags==kHiddenTestIntegratedPenFlag?SpeedEraser::ResponseModel::ScreenPenHybrid:
+						flags==kHiddenTestTouchFlag?SpeedEraser::ResponseModel::DirectTouch:SpeedEraser::ResponseModel::IndirectDip;
+					modeSucceeded &= Check(WaitUntil([expected,flags]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.active && d.response==expected && d.inputType==(flags==kHiddenTestTouchFlag?0u:1u);
+					}),"actual pen/touch identity routes through the selected response",failures);
+					modeSucceeded &= Check(WaitUntil([]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.active && d.effectiveDiameterDip<=16.1f;
+					},3s),"actual pen or touch can become fine with no Move",failures);
+					if(flags==kHiddenTestExternalPenFlag)
+					{
+						development.response=SpeedEraser::ResponseOverride::ScreenPenHybrid;
+						ProductHost().SetEraserDevelopmentOptions(development);
+						postSource(HiddenTestContactPhase::Move,flags,84,102);
+						std::this_thread::sleep_for(60ms);
+						modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.response==expected,
+							"development selection does not change units inside an active contact",failures);
+					}
+					postSource(HiddenTestContactPhase::Cancelled,flags,84,102);
+					modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+						"cancel closes true source without mouse lifecycle substitution",failures);
+					if(flags==kHiddenTestExternalPenFlag)
+					{
+						postSource(HiddenTestContactPhase::Down,flags);
+						modeSucceeded &= Check(WaitUntil([]
+						{
+							const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.active && d.inputType==1 && d.inputSource.kind==SpeedEraser::SourceKind::ExternalPen &&
+								d.response==SpeedEraser::ResponseModel::ScreenPenHybrid;
+						}),"next independent pen contact applies override without faking Touch",failures);
+						postSource(HiddenTestContactPhase::Cancelled,flags);
+						modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+							"forced-response contact completes",failures);
+						development.response=SpeedEraser::ResponseOverride::Automatic;
+						ProductHost().SetEraserDevelopmentOptions(development);
+					}
+				}
+				ProductHost().SetEraserDevelopmentOptions({});
+				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
+				const auto areaProbe=[&](const char* label)
+				{
+					const auto s=ProductHost().RuntimeSnapshot();const auto& d=s.eraser;
+					std::fprintf(stderr,"[AreaProbe] %s mode=%u dip=%g cursor=%g floor=%g ref=%g active=%d age=%g reason=%d points=%llu history=%g anchor=%d radius=%g frame=%llu\n",
+						label,static_cast<unsigned>(requiredMode),d.effectiveDiameterDip,d.cursorDiameterPx,d.contactArea.activeFloorDip,
+						d.contactArea.referenceFloorDip,d.contactArea.active,d.idleSeconds,static_cast<int>(d.contactArea.reason),
+						static_cast<unsigned long long>(d.realPointCount),d.historyRadiusPx,d.resumedWithAnchor,d.resumedMaxRadiusPx,
+						static_cast<unsigned long long>(d.frameSequence));
+				};
+				const auto setAreaOption=[&](bool enabled)
+				{
+					auto options=ProductHost().EraserDevelopmentOptions();
+					options.touchContactAreaAssistance=enabled;options.diagnostics=true;
+					ProductHost().SetEraserDevelopmentOptions(options);
+					return WaitUntil([enabled]{return ProductHost().RuntimeSnapshot().touchContactAreaAssistanceEnabled==enabled;});
+				};
+				modeSucceeded &= Check(setAreaOption(false),"apply independent area option",failures);
+				postSource(HiddenTestContactPhase::Hover,kHiddenTestMouseFlag,60,80);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.inputType==2 && d.effectiveDiameterDip<=16.01f;}),"prepare frozen mouse fine hover",failures);
+				const auto beforeToggle=ProductHost().RuntimeSnapshot().eraser;
+				modeSucceeded &= Check(setAreaOption(true),"enable touch-only area assistance",failures);
+				std::this_thread::sleep_for(60ms);
+				modeSucceeded &= Check(std::abs(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip-beforeToggle.effectiveDiameterDip)<0.001f,
+					"area toggle does not reset mouse fine hover",failures);
+				const SpeedEraser::ContactLengthMetrics syntheticAxis{2,1000,0,30000,true};
+				const SpeedEraser::ContactLengthMetrics syntheticSpan{2,10000,0,30000,true};
+				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1);
+				const auto convertedArea=SpeedEraser::ConvertContactArea(300,200,areaTransform,areaTransform);
+				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
+					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,
+					"synthetic metadata uses the product relative-length converter before eraser ingress",failures);
+				ProductHost().SetHiddenTestContactArea(convertedArea);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.inputType==0 && d.contactArea.enabled;}),"real Touch receives latched area option",failures);
+				std::this_thread::sleep_for(120ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.01f,
+					"Touch Down with a large reported finger still starts small",failures);
+				int areaX=60;
+				for(int i=1;i<=35;++i)
+				{
+					areaX=60+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.active && d.effectiveDiameterDip>38.5f && d.effectiveDiameterDip<40.0f &&
+					std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),"slow Touch drag has matching area-assisted cursor and geometry",failures);
+				const auto assisted=ProductHost().RuntimeSnapshot();
+				ProductHost().SetHiddenTestContactArea({400,280,40,28,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				for(int i=0;i<6;++i)
+				{
+					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
+					std::this_thread::sleep_for(30ms);
+				}
+				const auto pressed=ProductHost().RuntimeSnapshot();
+				areaProbe("before-held-check");
+				modeSucceeded &= Check(std::abs(pressed.eraser.contactArea.referenceFloorDip-39)<0.01f &&
+					pressed.eraser.cursorDiameterPx<=assisted.eraser.cursorDiameterPx+0.05f,
+					"larger same-position area does not create larger erasure",failures);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && !d.needsAnimation && d.contactArea.active &&
+					std::abs(d.effectiveDiameterDip-d.contactArea.activeFloorDip)<0.001f;}),"held Touch settles at accepted assistance floor",failures);
+				areaProbe("after-held-check");
+				const auto resting=ProductHost().RuntimeSnapshot();
+				std::this_thread::sleep_for(150ms);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=resting.eraser.frameSequence+2,
+					"stable assistance floor sleeps until data expiry",failures);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.effectiveDiameterDip<=16.01f &&
+					 d.contactArea.reason==SpeedEraser::ContactAreaReason::Expired;},5s),
+					"no Move: scheduled expiry releases stale assistance",failures);
+				const auto expired=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(expired.eraser.historyRadiusPx>expired.eraser.nextRadiusPx*1.5f &&
+					expired.eraser.realPointCount==resting.eraser.realPointCount,"area expiry preserves historical geometry",failures);
+				// 明确覆盖真实长停顿，不只依赖约4秒的面积过期窗口。
+				std::this_thread::sleep_for(7s);
+				areaProbe("before-resume");
+				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX+4,144);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.resumedWithAnchor && d.resumedMaxRadiusPx<=10 && d.idleModelReanchors>0 && d.evidenceSeconds<0.0001;}),"long-idle Touch resume preserves current radius without synthetic speed",failures);
+				areaProbe("after-resume");
+				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
+					"area-assisted size boundary survives actual UInk save/read/import",failures);
+				ProductHost().SetHiddenTestContactArea({0,0,0,0,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,areaX+4,144);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"Touch terminal zero area completes without reopening erasure",failures);
+				const auto areaHistory=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([areaHistory]{return ProductHost().RuntimeSnapshot().undoCommandCount>areaHistory.undoCommandCount;}),
+					"area geometry supports real Undo",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([areaHistory]{return ProductHost().RuntimeSnapshot().redoCommandCount>areaHistory.redoCommandCount;}),
+					"area geometry supports real Redo",failures);
+				ProductHost().SetHiddenTestContactArea({300,200,30,20,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				modeSucceeded &= Check(setAreaOption(false),"disable area independently of Touch speed",failures);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && !d.contactArea.enabled && d.effectiveDiameterDip<=16.01f;}),"next Touch contact uses disabled option and small start",failures);
+				std::this_thread::sleep_for(7s);
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),"long held Touch Up ends without a model gap failure",failures);
+				modeSucceeded &= Check(setAreaOption(true),"restore experimental setting for fixed bypass test",failures);
+				auto fixedState=speedState;fixedState.tool=Bridge::Tool::FixedEraser;PublishProductState(fixedState);
+				const auto fixedBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([fixedBefore]{const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputDownPublished>fixedBefore && std::abs(s.eraser.cursorDiameterPx-32)<0.01f;}),
+					"fixed Touch eraser ignores area and uses default32 DIP",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
+				ProductHost().SetHiddenTestContactArea({});
+
+				// 五入口读取同一配置快照，但逐contact解析，不沿用首指的Fixed/Speed结果。
+				auto entryState=speedState;entryState.tool=Bridge::Tool::ConfiguredEraser;
+				const std::array<WPARAM,5> entryFlags={kHiddenTestMouseFlag,kHiddenTestRightMouseFlag,kHiddenTestTouchFlag,
+					kHiddenTestIntegratedPenFlag,kHiddenTestIntegratedPenFlag|kHiddenTestPenTailFlag};
+				SpeedEraser::DevelopmentOptions entryDevelopment;entryDevelopment.diagnostics=true;entryDevelopment.touchAreaTrace=true;
+				ProductHost().SetEraserDevelopmentOptions(entryDevelopment);
+				for(size_t entry=0;entry<entryFlags.size();++entry)
+				for(const auto kind:{SpeedEraser::EraserKind::Fixed,SpeedEraser::EraserKind::Speed})
+				{
+					entryState.eraserInputs.entries[entry].kind=kind;
+					PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+					const double before=ProductHost().RuntimeSnapshot().eraser.downSeconds;
+					postSource(HiddenTestContactPhase::Down,entryFlags[entry],50+static_cast<int>(entry)*30,180);
+					modeSucceeded &= Check(WaitUntil([entry,kind,before]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.eraserContact && d.downSeconds>before && d.entry==static_cast<SpeedEraser::InputEntry>(entry) &&
+							d.eraserKind==kind && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f &&
+							(kind!=SpeedEraser::EraserKind::Fixed || std::abs(d.cursorDiameterPx-32)<0.01f);
+					}),"five configured eraser inputs agree with first-point geometry",failures);
+					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],50+static_cast<int>(entry)*30,180);
+					modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),
+						"configured eraser input retires independently",failures);
+				}
+				// 全局尺寸变化经真实Host发布：固定光标、Down和首点共享B，活动接触保持旧B。
+				for (auto base : {SpeedEraser::BaseSize::Small, SpeedEraser::BaseSize::Medium, SpeedEraser::BaseSize::Large})
+				{
+					entryState.eraserInputs.baseSize=base;
+					SpeedEraser::SetGlobalAutomatic(entryState.eraserInputs,false);
+					PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+					for(size_t entry=0;entry<entryFlags.size();++entry)
+					{
+						const double before=ProductHost().RuntimeSnapshot().eraser.downSeconds;
+						postSource(HiddenTestContactPhase::Down,entryFlags[entry],130,160);
+						modeSucceeded &= Check(WaitUntil([before,base]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.eraserContact && d.downSeconds>before && std::abs(d.downDiameterPx-static_cast<int>(base))<0.01f &&
+								std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f;}),"globalB reaches five fixed entry first points",failures);
+						postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],130,160);
+						modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),"globalB contact retires",failures);
+					}
+				}
+				entryState.eraserInputs.baseSize=SpeedEraser::BaseSize::Small;
+				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[0],100,160);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && std::abs(d.downDiameterPx-static_cast<int>(SpeedEraser::BaseSize::Small))<0.01f;}),"small active contact starts",failures);
+				entryState.eraserInputs.baseSize=SpeedEraser::BaseSize::Large;
+				PublishProductState(entryState);std::this_thread::sleep_for(60ms);
+				postSource(HiddenTestContactPhase::Move,entryFlags[0],110,160);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && std::abs(d.cursorDiameterPx-static_cast<int>(SpeedEraser::BaseSize::Small))<0.01f;}),"active contact latches oldB across global change",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[0],110,160);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),"latched contact ends",failures);
+				entryState.eraserInputs=speedState.eraserInputs;
+				// 笔尖/左键绘画仍是绘画；右键和笔尾是临时覆盖，不污染selectedTool。
+				entryState.tool=Bridge::Tool::Pen;PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				for(size_t entry:{size_t{0},size_t{3},size_t{1},size_t{4}})
+				{
+					const double before=ProductHost().RuntimeSnapshot().eraser.downSeconds;
+					postSource(HiddenTestContactPhase::Down,entryFlags[entry],100,190);
+					modeSucceeded &= Check(WaitUntil([before,entry]
+					{
+						const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.downSeconds>before && (entry==1 || entry==4?
+							d.eraserContact && d.selectedTool!=d.effectiveTool:
+							!d.eraserContact && d.selectedTool==d.effectiveTool);
+					}),"right/tail override only erasing and leave ordinary drawing unchanged",failures);
+					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],100,190);
+					std::this_thread::sleep_for(50ms);
+				}
+				entryState.tool=Bridge::Tool::ConfiguredEraser;
+				entryState.eraserInputs.entries[0].kind=SpeedEraser::EraserKind::Fixed;
+				entryState.eraserInputs.entries[1].kind=SpeedEraser::EraserKind::Speed;
+				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[0],40,180);
+				std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[1],260,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && d.entry==SpeedEraser::InputEntry::MouseRight && d.eraserKind==SpeedEraser::EraserKind::Speed;}),
+					"same batch left Fixed and right Speed remain independent",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[1],260,180);
+				std::this_thread::sleep_for(40ms);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.eraserContact && d.entry==SpeedEraser::InputEntry::MouseLeft && d.eraserKind==SpeedEraser::EraserKind::Fixed;}),
+					"retiring right does not replace left entry configuration",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[0],40,180);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),
+					"same-batch mouse contacts retire",failures);
+				postSource(HiddenTestContactPhase::Hover,entryFlags[1],260,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.entry==SpeedEraser::InputEntry::MouseRight &&
+						d.inputType==3;}),
+					"right mouse preview reports the right input type",failures);
+				for(auto& setting:entryState.eraserInputs.entries)setting.kind=SpeedEraser::EraserKind::Speed;
+				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
+				// 真实绘制链路复现无害诊断revision后的屏幕笔落笔，首点不能从16跳32/50。
+				postSource(HiddenTestContactPhase::Hover,entryFlags[3],80,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.entry==SpeedEraser::InputEntry::PenTip && d.effectiveDiameterDip<=16.1f;},3s),
+					"integrated pen establishes fine Hover",failures);
+				entryDevelopment.diagnostics=false;ProductHost().SetEraserDevelopmentOptions(entryDevelopment);
+				std::this_thread::sleep_for(40ms);
+				postSource(HiddenTestContactPhase::Down,entryFlags[3],80,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.entry==SpeedEraser::InputEntry::PenTip && d.sessionInherited &&
+						d.downDiameterPx<=16.5f && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f;}),
+					"pen metadata-only revision preserves fine Down and actual first point",failures);
+				postSource(HiddenTestContactPhase::Cancelled,entryFlags[3],80,180);
+				std::this_thread::sleep_for(50ms);
+				for(size_t entry:{size_t{0},size_t{1},size_t{3},size_t{4}})
+				{
+					postSource(HiddenTestContactPhase::Down,entryFlags[entry],40,180);
+					std::this_thread::sleep_for(40ms);
+					for(int n=0;n<65;++n)
+					{
+						postSource(HiddenTestContactPhase::Move,entryFlags[entry],n%2?40:270,180);
+						std::this_thread::sleep_for(16ms);
+					}
+					int gapX=270,gapY=180;
+					for(int gapMs:{20,50,100,200,500,2000})
+					{
+						const auto before=ProductHost().RuntimeSnapshot().eraser;
+						postSource(HiddenTestContactPhase::Up,entryFlags[entry],gapX,gapY);
+						std::this_thread::sleep_for(std::chrono::milliseconds(gapMs));
+						// 远离旧落点，尺寸连续绝不作为断触连接证据。
+						gapX=gapX==40?270:40;gapY=gapY==40?180:40;
+						postSource(HiddenTestContactPhase::Down,entryFlags[entry],gapX,gapY);
+						modeSucceeded &= Check(WaitUntil([before,entry]
+						{
+							const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.active && d.entry==static_cast<SpeedEraser::InputEntry>(entry) && d.downSeconds>before.downSeconds &&
+								d.sessionInherited && std::abs(d.downDiameterPx-d.firstPointRadiusPx*2)<0.01f;
+						}),"non-Touch independent Down inherits event-time size and matching first radius",failures);
+						const auto after=ProductHost().RuntimeSnapshot().eraser;
+						std::fprintf(stderr,"[EntryIngress] mode=%u entry=%zu gapMs=%d beforePx=%g downPx=%g firstRadius=%g cursorPx=%g points=%llu reason=%s\n",
+							static_cast<unsigned>(requiredMode),entry,gapMs,before.cursorDiameterPx,after.downDiameterPx,
+							after.firstPointRadiusPx,after.cursorDiameterPx,static_cast<unsigned long long>(after.realPointCount),after.sessionReason);
+						modeSucceeded &= Check(after.realPointCount<=2,"independent Down starts a new geometry list, without a gap capsule",failures);
+					}
+					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],gapX,gapY);
+					std::this_thread::sleep_for(50ms);
+				}
+
+				ProductHost().SetEraserDevelopmentOptions({});
+
+
+			}
+
 			const auto stopStarted = std::chrono::steady_clock::now();
 			StopProduct();
 			const auto stopElapsed = std::chrono::steady_clock::now() - stopStarted;
@@ -522,7 +1026,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	int RunHiddenWindowIntegrationTest() noexcept
+	int RunHiddenWindowIntegrationTest(bool eraserOnly) noexcept
 	{
 		// 隐藏验收不能弹出 CRT 调试对话框，所有断言改写入测试 stderr。
 		_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
@@ -569,6 +1073,23 @@ namespace Inkeys::Drawing::Draw3
 			Check(!IsWindowVisible(dcompMagnifierHost) && !IsWindowVisible(dcompFreeze) &&
 				!IsWindowVisible(dcompPresentation) && !IsWindowVisible(dcompDrawpad),
 				"DComp HWND creation never shows UI", failures);
+
+			if(eraserOnly)
+			{
+				RunMode(service,styleContext,dcompMagnifierHost,dcompFreeze,dcompDrawpad,dcompPresentation,
+					HostPresentationMode::Automatic,true,false,false,failures,true);
+				StopProduct();
+				service.StopAndJoin();
+				if(!Check(service.Start(makeSpecs(false)),"fresh ULW eraser service",failures))return 1;
+				RunMode(service,styleContext,service.Handle(Inkeys::Window::WindowRole::MagnifierHost),
+					service.Handle(Inkeys::Window::WindowRole::Freeze),
+					service.Handle(Inkeys::Window::WindowRole::Drawpad),
+					service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation),
+					HostPresentationMode::UlwDirtyRect,false,false,false,failures,true);
+				StopProduct();service.StopAndJoin();
+				if(failures==0)Report("PASS","DIP eraser actual cursor, idle scheduling, geometry footprint and Undo/Redo");
+				return failures==0?0:1;
+			}
 			Check(service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
 				!IsWindowVisible(dcompDrawpad) && IsWindowVisible(dcompPresentation),

@@ -1,16 +1,18 @@
-module;
+﻿module;
 
 #include <windows.h>
+#include <setupapi.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <condition_variable>
-#include <cwchar>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
-#include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -22,6 +24,10 @@ module Inkeys.Display;
 namespace
 {
 	using namespace Inkeys::Display;
+
+	constexpr GUID MonitorInterfaceGuid{
+		0xe6f07b5f, 0xee97, 0x4a90,
+		{ 0xb0, 0x76, 0x33, 0xf5, 0x7b, 0xf4, 0xea, 0xa7 } };
 
 	struct Subscriber
 	{
@@ -38,6 +44,46 @@ namespace
 		std::shared_ptr<Subscriber> target;
 	};
 
+	class DeviceInfoSet final
+	{
+	public:
+		explicit DeviceInfoSet(HDEVINFO value) noexcept : value_(value) {}
+		~DeviceInfoSet()
+		{
+			if (value_ != INVALID_HANDLE_VALUE) SetupDiDestroyDeviceInfoList(value_);
+		}
+		DeviceInfoSet(const DeviceInfoSet&) = delete;
+		DeviceInfoSet& operator=(const DeviceInfoSet&) = delete;
+		[[nodiscard]] HDEVINFO Get() const noexcept { return value_; }
+		[[nodiscard]] explicit operator bool() const noexcept
+		{
+			return value_ != INVALID_HANDLE_VALUE;
+		}
+
+	private:
+		HDEVINFO value_ = INVALID_HANDLE_VALUE;
+	};
+
+	class RegistryKey final
+	{
+	public:
+		explicit RegistryKey(HKEY value) noexcept : value_(value) {}
+		~RegistryKey()
+		{
+			if (value_ && value_ != INVALID_HANDLE_VALUE) RegCloseKey(value_);
+		}
+		RegistryKey(const RegistryKey&) = delete;
+		RegistryKey& operator=(const RegistryKey&) = delete;
+		[[nodiscard]] HKEY Get() const noexcept { return value_; }
+		[[nodiscard]] explicit operator bool() const noexcept
+		{
+			return value_ && value_ != INVALID_HANDLE_VALUE;
+		}
+
+	private:
+		HKEY value_ = nullptr;
+	};
+
 	std::mutex refreshMutex;
 	std::mutex subscriberMutex;
 	std::mutex publicationMutex;
@@ -49,6 +95,11 @@ namespace
 	bool shuttingDown = false;
 	thread_local Subscriber* executingSubscriber = nullptr;
 
+	[[nodiscard]] bool EqualLuid(const LUID& left, const LUID& right) noexcept
+	{
+		return left.HighPart == right.HighPart && left.LowPart == right.LowPart;
+	}
+
 	[[nodiscard]] bool EqualRectValue(const RECT& left, const RECT& right) noexcept
 	{
 		return left.left == right.left && left.top == right.top &&
@@ -57,14 +108,34 @@ namespace
 
 	[[nodiscard]] bool EqualEdid(const EdidInfo& left, const EdidInfo& right)
 	{
-		return left.valid == right.valid &&
+		return left.valid == right.valid && left.status == right.status &&
 			left.majorVersion == right.majorVersion &&
 			left.minorVersion == right.minorVersion &&
-			left.deviceId == right.deviceId &&
+			left.devicePath == right.devicePath && left.deviceId == right.deviceId &&
+			left.rawBytes == right.rawBytes &&
 			left.rawPhysicalWidthCm == right.rawPhysicalWidthCm &&
-			left.rawPhysicalHeightCm == right.rawPhysicalHeightCm &&
-			left.physicalWidthCm == right.physicalWidthCm &&
-			left.physicalHeightCm == right.physicalHeightCm;
+			left.rawPhysicalHeightCm == right.rawPhysicalHeightCm;
+	}
+
+	[[nodiscard]] bool EqualPhysicalSize(
+		const PhysicalSizeInfo& left, const PhysicalSizeInfo& right) noexcept
+	{
+		return left.available == right.available && left.widthCm == right.widthCm &&
+			left.heightCm == right.heightCm &&
+			left.unavailableReason == right.unavailableReason;
+	}
+
+	[[nodiscard]] bool EqualTarget(
+		const ActiveDisplayTargetInfo& left, const ActiveDisplayTargetInfo& right)
+	{
+		return EqualLuid(left.sourceAdapterId, right.sourceAdapterId) &&
+			left.sourceId == right.sourceId &&
+			EqualLuid(left.targetAdapterId, right.targetAdapterId) &&
+			left.targetId == right.targetId &&
+			left.sourceDeviceName == right.sourceDeviceName &&
+			left.monitorDevicePath == right.monitorDevicePath &&
+			left.monitorFriendlyName == right.monitorFriendlyName &&
+			EqualEdid(left.edid, right.edid);
 	}
 
 	[[nodiscard]] bool EqualMonitor(const MonitorInfo& left, const MonitorInfo& right)
@@ -78,120 +149,167 @@ namespace
 			left.effectiveDpiY == right.effectiveDpiY &&
 			left.orientation == right.orientation &&
 			left.primary == right.primary && left.fallback == right.fallback &&
-			EqualEdid(left.edid, right.edid);
+			left.targetIndex == right.targetIndex && EqualEdid(left.edid, right.edid) &&
+			EqualPhysicalSize(left.physicalSize, right.physicalSize);
 	}
 
-	[[nodiscard]] bool SemanticallyEqual(const Snapshot& left, const Snapshot& right)
+	[[nodiscard]] bool EqualSnapshot(const Snapshot& left, const Snapshot& right)
 	{
 		if (left.primaryIndex != right.primaryIndex || left.fallback != right.fallback ||
+			left.topology != right.topology ||
 			!EqualRectValue(left.virtualBounds, right.virtualBounds) ||
-			left.monitors.size() != right.monitors.size()) return false;
+			left.monitors.size() != right.monitors.size() ||
+			left.activeTargets.size() != right.activeTargets.size()) return false;
 		for (std::size_t index = 0; index < left.monitors.size(); ++index)
 			if (!EqualMonitor(left.monitors[index], right.monitors[index])) return false;
+		for (std::size_t index = 0; index < left.activeTargets.size(); ++index)
+			if (!EqualTarget(left.activeTargets[index], right.activeTargets[index])) return false;
 		return true;
 	}
 
-	[[nodiscard]] bool ParseModelDriver(
-		std::wstring_view deviceId, std::wstring& model, std::wstring& driver)
+	[[nodiscard]] bool EqualDeviceName(
+		std::wstring_view left, std::wstring_view right)
 	{
-		const auto beginSlash = deviceId.find(L'\\');
-		if (beginSlash == std::wstring_view::npos) return false;
-		const auto driverSlash = deviceId.find(L'\\', beginSlash + 1);
-		if (driverSlash == std::wstring_view::npos) return false;
-		model.assign(deviceId.substr(beginSlash + 1,
-			(std::min<std::size_t>)(7, driverSlash - beginSlash - 1)));
-		driver.assign(deviceId.substr(driverSlash + 1));
-		return !model.empty() && !driver.empty();
+		if (left.size() != right.size()) return false;
+		return _wcsnicmp(left.data(), right.data(), left.size()) == 0;
 	}
 
-	[[nodiscard]] bool EdidMatchesModel(
-		std::span<const std::uint8_t> bytes, std::wstring_view model)
+	[[nodiscard]] EdidInfo ReadMonitorEdid(std::wstring_view monitorDevicePath)
 	{
-		if (bytes.size() < 12 || model.empty()) return false;
-		wchar_t value[9]{};
-		const auto byte1 = bytes[8];
-		const auto byte2 = bytes[9];
-		value[0] = static_cast<wchar_t>(((byte1 & 0x7C) >> 2) + 64);
-		value[1] = static_cast<wchar_t>(((byte1 & 0x03) << 3) + ((byte2 & 0xE0) >> 5) + 64);
-		value[2] = static_cast<wchar_t>((byte2 & 0x1F) + 64);
-		swprintf_s(value + 3, std::size(value) - 3, L"%X%X%X%X",
-			(bytes[11] & 0xF0) >> 4, bytes[11] & 0x0F,
-			(bytes[10] & 0xF0) >> 4, bytes[10] & 0x0F);
-		return _wcsicmp(value, std::wstring(model).c_str()) == 0;
-	}
+		EdidInfo result;
+		result.devicePath.assign(monitorDevicePath);
+		if (monitorDevicePath.empty()) return result;
 
-	[[nodiscard]] std::optional<std::vector<std::uint8_t>> ReadRegistryEdid(
-		std::wstring_view model, std::wstring_view driver)
-	{
-		std::wstring subKey = L"SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\";
-		subKey.append(model);
-		HKEY modelKey = nullptr;
-		if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, subKey.c_str(), 0, KEY_READ,
-			&modelKey) != ERROR_SUCCESS) return std::nullopt;
-
-		std::optional<std::vector<std::uint8_t>> result;
-		for (DWORD index = 0; !result; ++index)
+		const DeviceInfoSet devices(SetupDiGetClassDevsW(&MonitorInterfaceGuid,
+			nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE));
+		if (!devices)
 		{
-			std::array<wchar_t, MAX_PATH> instanceName{};
-			DWORD instanceLength = static_cast<DWORD>(instanceName.size());
-			FILETIME written{};
-			if (RegEnumKeyExW(modelKey, index, instanceName.data(), &instanceLength,
-				nullptr, nullptr, nullptr, &written) != ERROR_SUCCESS) break;
-
-			HKEY instanceKey = nullptr;
-			if (RegOpenKeyExW(modelKey, instanceName.data(), 0, KEY_READ,
-				&instanceKey) != ERROR_SUCCESS) continue;
-			std::array<wchar_t, MAX_PATH> registeredDriver{};
-			DWORD driverBytes = static_cast<DWORD>(registeredDriver.size() * sizeof(wchar_t));
-			const bool driverMatches = RegQueryValueExW(instanceKey, L"Driver", nullptr,
-				nullptr, reinterpret_cast<LPBYTE>(registeredDriver.data()), &driverBytes) == ERROR_SUCCESS &&
-				_wcsicmp(registeredDriver.data(), std::wstring(driver).c_str()) == 0;
-			if (driverMatches)
-			{
-				HKEY parametersKey = nullptr;
-				if (RegOpenKeyExW(instanceKey, L"Device Parameters", 0, KEY_READ,
-					&parametersKey) == ERROR_SUCCESS)
-				{
-					DWORD size = 0;
-					if (RegQueryValueExW(parametersKey, L"EDID", nullptr, nullptr,
-						nullptr, &size) == ERROR_SUCCESS && size > 0)
-					{
-						std::vector<std::uint8_t> bytes(size);
-						if (RegQueryValueExW(parametersKey, L"EDID", nullptr, nullptr,
-							bytes.data(), &size) == ERROR_SUCCESS)
-						{
-							bytes.resize(size);
-							if (EdidMatchesModel(bytes, model)) result = std::move(bytes);
-						}
-					}
-					RegCloseKey(parametersKey);
-				}
-			}
-			RegCloseKey(instanceKey);
+			result.status = EdidStatus::ReadFailed;
+			return result;
 		}
-		RegCloseKey(modelKey);
+
+		const std::wstring requestedPath(monitorDevicePath);
+		for (DWORD index = 0;; ++index)
+		{
+			SP_DEVICE_INTERFACE_DATA interfaceData{};
+			interfaceData.cbSize = sizeof(interfaceData);
+			if (!SetupDiEnumDeviceInterfaces(devices.Get(), nullptr,
+				&MonitorInterfaceGuid, index, &interfaceData)) break;
+
+			DWORD requiredBytes = 0;
+			(void)SetupDiGetDeviceInterfaceDetailW(devices.Get(), &interfaceData,
+				nullptr, 0, &requiredBytes, nullptr);
+			if (requiredBytes < sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W)) continue;
+			std::vector<std::byte> detailBytes(requiredBytes);
+			auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(
+				detailBytes.data());
+			detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
+			SP_DEVINFO_DATA deviceData{};
+			deviceData.cbSize = sizeof(deviceData);
+			if (!SetupDiGetDeviceInterfaceDetailW(devices.Get(), &interfaceData,
+				detail, requiredBytes, nullptr, &deviceData)) continue;
+			if (_wcsicmp(detail->DevicePath, requestedPath.c_str()) != 0) continue;
+
+			DWORD requiredCharacters = 0;
+			(void)SetupDiGetDeviceInstanceIdW(devices.Get(), &deviceData,
+				nullptr, 0, &requiredCharacters);
+			if (requiredCharacters > 0)
+			{
+				std::vector<wchar_t> instanceId(requiredCharacters);
+				if (SetupDiGetDeviceInstanceIdW(devices.Get(), &deviceData,
+					instanceId.data(), requiredCharacters, nullptr))
+					result.deviceId.assign(instanceId.data());
+			}
+
+			const RegistryKey key(SetupDiOpenDevRegKey(devices.Get(), &deviceData,
+				DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ));
+			if (!key)
+			{
+				result.status = EdidStatus::ReadFailed;
+				return result;
+			}
+
+			DWORD type = 0;
+			DWORD size = 0;
+			if (RegQueryValueExW(key.Get(), L"EDID", nullptr, &type, nullptr, &size) !=
+				ERROR_SUCCESS || type != REG_BINARY || size == 0)
+			{
+				result.status = EdidStatus::ReadFailed;
+				return result;
+			}
+			std::vector<std::uint8_t> bytes(size);
+			if (RegQueryValueExW(key.Get(), L"EDID", nullptr, &type,
+				bytes.data(), &size) != ERROR_SUCCESS)
+			{
+				result.status = EdidStatus::ReadFailed;
+				return result;
+			}
+			bytes.resize(size);
+			auto parsed = ParseEdid(bytes, result.deviceId);
+			parsed.devicePath = requestedPath;
+			return parsed;
+		}
 		return result;
 	}
 
-	[[nodiscard]] std::wstring FindMonitorDeviceId(std::wstring_view monitorDeviceName)
+	[[nodiscard]] std::optional<std::vector<ActiveDisplayTargetInfo>>
+		QueryActiveDisplayTargets()
 	{
-		for (DWORD adapterIndex = 0;; ++adapterIndex)
+		constexpr UINT32 flags = QDC_ONLY_ACTIVE_PATHS;
+		std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+		std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+		bool queried = false;
+		// 拓扑切换时容量可能变化；每次不足都重新获取容量，避免拼出跨代路径。
+		for (int attempt = 0; attempt < 4; ++attempt)
 		{
-			DISPLAY_DEVICEW adapter{};
-			adapter.cb = sizeof(adapter);
-			if (!EnumDisplayDevicesW(nullptr, adapterIndex, &adapter, 0)) break;
-			for (DWORD monitorIndex = 0;; ++monitorIndex)
-			{
-				DISPLAY_DEVICEW monitor{};
-				monitor.cb = sizeof(monitor);
-				if (!EnumDisplayDevicesW(adapter.DeviceName, monitorIndex, &monitor, 0)) break;
-				if ((monitor.StateFlags & DISPLAY_DEVICE_ACTIVE) == 0 ||
-					(monitor.StateFlags & DISPLAY_DEVICE_ATTACHED) == 0) continue;
-				if (_wcsnicmp(monitor.DeviceName, monitorDeviceName.data(),
-					monitorDeviceName.size()) == 0) return monitor.DeviceID;
-			}
+			UINT32 pathCount = 0;
+			UINT32 modeCount = 0;
+			if (GetDisplayConfigBufferSizes(flags, &pathCount, &modeCount) != ERROR_SUCCESS)
+				return std::nullopt;
+			paths.assign(pathCount, {});
+			modes.assign(modeCount, {});
+			const LONG queryResult = QueryDisplayConfig(flags, &pathCount, paths.data(),
+				&modeCount, modes.data(), nullptr);
+			if (queryResult == ERROR_INSUFFICIENT_BUFFER) continue;
+			if (queryResult != ERROR_SUCCESS) return std::nullopt;
+			paths.resize(pathCount);
+			queried = true;
+			break;
 		}
-		return {};
+		if (!queried) return std::nullopt;
+
+		std::vector<ActiveDisplayTargetInfo> targets;
+		targets.reserve(paths.size());
+		for (const auto& path : paths)
+		{
+			ActiveDisplayTargetInfo target;
+			target.sourceAdapterId = path.sourceInfo.adapterId;
+			target.sourceId = path.sourceInfo.id;
+			target.targetAdapterId = path.targetInfo.adapterId;
+			target.targetId = path.targetInfo.id;
+
+			DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName{};
+			sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+			sourceName.header.size = sizeof(sourceName);
+			sourceName.header.adapterId = path.sourceInfo.adapterId;
+			sourceName.header.id = path.sourceInfo.id;
+			if (DisplayConfigGetDeviceInfo(&sourceName.header) == ERROR_SUCCESS)
+				target.sourceDeviceName = sourceName.viewGdiDeviceName;
+
+			DISPLAYCONFIG_TARGET_DEVICE_NAME targetName{};
+			targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+			targetName.header.size = sizeof(targetName);
+			targetName.header.adapterId = path.targetInfo.adapterId;
+			targetName.header.id = path.targetInfo.id;
+			if (DisplayConfigGetDeviceInfo(&targetName.header) == ERROR_SUCCESS)
+			{
+				target.monitorDevicePath = targetName.monitorDevicePath;
+				target.monitorFriendlyName = targetName.monitorFriendlyDeviceName;
+				target.edid = ReadMonitorEdid(target.monitorDevicePath);
+			}
+			targets.push_back(std::move(target));
+		}
+		return targets;
 	}
 
 	[[nodiscard]] std::pair<UINT, UINT> QueryMonitorDpi(
@@ -262,18 +380,51 @@ namespace
 			mode.dmSize = sizeof(mode);
 			if (EnumDisplaySettingsW(native.szDevice, ENUM_CURRENT_SETTINGS, &mode))
 				monitor.orientation = mode.dmDisplayOrientation;
-
-			const auto deviceId = FindMonitorDeviceId(native.szDevice);
-			monitor.edid.deviceId = deviceId;
-			std::wstring model;
-			std::wstring driver;
-			if (ParseModelDriver(deviceId, model, driver))
-			{
-				if (const auto bytes = ReadRegistryEdid(model, driver))
-					monitor.edid = ParseEdid(*bytes, deviceId);
-			}
-			monitor.edid = OrientEdid(std::move(monitor.edid), monitor.orientation);
 			snapshot.monitors.push_back(std::move(monitor));
+		}
+
+		if (auto targets = QueryActiveDisplayTargets())
+		{
+			snapshot.activeTargets = std::move(*targets);
+			snapshot.topology = ClassifyTopology(snapshot.activeTargets);
+		}
+
+		std::vector<std::vector<std::size_t>> monitorTargets(snapshot.monitors.size());
+		std::vector<std::size_t> targetMonitorCounts(snapshot.activeTargets.size());
+		for (std::size_t targetIndex = 0;
+			targetIndex < snapshot.activeTargets.size(); ++targetIndex)
+		{
+			const auto& target = snapshot.activeTargets[targetIndex];
+			if (target.sourceDeviceName.empty()) continue;
+			for (std::size_t monitorIndex = 0;
+				monitorIndex < snapshot.monitors.size(); ++monitorIndex)
+			{
+				if (!EqualDeviceName(snapshot.monitors[monitorIndex].deviceName,
+					target.sourceDeviceName)) continue;
+				monitorTargets[monitorIndex].push_back(targetIndex);
+				++targetMonitorCounts[targetIndex];
+			}
+		}
+
+		bool mappingSetReliable =
+			(snapshot.topology == DisplayTopology::Single ||
+				snapshot.topology == DisplayTopology::Extended) &&
+			snapshot.monitors.size() == snapshot.activeTargets.size();
+		for (const auto count : targetMonitorCounts)
+			mappingSetReliable = mappingSetReliable && count == 1;
+		for (const auto& indices : monitorTargets)
+			mappingSetReliable = mappingSetReliable && indices.size() == 1;
+
+		for (std::size_t index = 0; index < snapshot.monitors.size(); ++index)
+		{
+			auto& monitor = snapshot.monitors[index];
+			if (monitorTargets[index].size() == 1)
+			{
+				monitor.targetIndex = monitorTargets[index].front();
+				monitor.edid = snapshot.activeTargets[*monitor.targetIndex].edid;
+			}
+			monitor.physicalSize = ResolvePhysicalSize(monitor.edid,
+				monitor.orientation, snapshot.topology, mappingSetReliable);
 		}
 
 		auto primary = std::find_if(snapshot.monitors.begin(), snapshot.monitors.end(),
@@ -284,10 +435,14 @@ namespace
 		snapshot.virtualBounds = snapshot.monitors.front().bounds;
 		for (const auto& monitor : snapshot.monitors)
 		{
-			snapshot.virtualBounds.left = (std::min)(snapshot.virtualBounds.left, monitor.bounds.left);
-			snapshot.virtualBounds.top = (std::min)(snapshot.virtualBounds.top, monitor.bounds.top);
-			snapshot.virtualBounds.right = (std::max)(snapshot.virtualBounds.right, monitor.bounds.right);
-			snapshot.virtualBounds.bottom = (std::max)(snapshot.virtualBounds.bottom, monitor.bounds.bottom);
+			snapshot.virtualBounds.left =
+				(std::min)(snapshot.virtualBounds.left, monitor.bounds.left);
+			snapshot.virtualBounds.top =
+				(std::min)(snapshot.virtualBounds.top, monitor.bounds.top);
+			snapshot.virtualBounds.right =
+				(std::max)(snapshot.virtualBounds.right, monitor.bounds.right);
+			snapshot.virtualBounds.bottom =
+				(std::max)(snapshot.virtualBounds.bottom, monitor.bounds.bottom);
 		}
 		return snapshot;
 	}
@@ -305,8 +460,22 @@ namespace
 		monitor.pixelHeight = monitor.bounds.bottom;
 		monitor.primary = true;
 		monitor.fallback = true;
+		monitor.physicalSize = ResolvePhysicalSize(monitor.edid,
+			monitor.orientation, DisplayTopology::Unknown, false, true);
 		snapshot.virtualBounds = monitor.bounds;
 		snapshot.monitors.push_back(std::move(monitor));
+		return snapshot;
+	}
+
+	[[nodiscard]] Snapshot InvalidatePhysicalSize(const Snapshot& previous)
+	{
+		Snapshot snapshot = previous;
+		if (snapshot.fallback) return snapshot;
+		snapshot.topology = DisplayTopology::Unknown;
+		for (auto& monitor : snapshot.monitors)
+			monitor.physicalSize = ResolvePhysicalSize(monitor.edid,
+				monitor.orientation, DisplayTopology::Unknown,
+				monitor.targetIndex.has_value());
 		return snapshot;
 	}
 
@@ -427,32 +596,127 @@ namespace Inkeys::Display
 		return iterator == monitors.end() ? nullptr : &*iterator;
 	}
 
+	bool Snapshot::SemanticallyEquals(const Snapshot& other) const
+	{
+		return EqualSnapshot(*this, other);
+	}
+
 	EdidInfo ParseEdid(std::span<const std::uint8_t> bytes,
 		std::wstring_view deviceId)
 	{
 		EdidInfo result;
+		result.status = EdidStatus::ParseFailed;
 		result.deviceId.assign(deviceId);
+		result.rawBytes.assign(bytes.begin(), bytes.end());
 		constexpr std::array<std::uint8_t, 8> header{
 			0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
-		if (bytes.size() < 23 || !std::equal(header.begin(), header.end(), bytes.begin()))
-			return result;
+		if (bytes.size() < 128 ||
+			!std::equal(header.begin(), header.end(), bytes.begin())) return result;
+		const auto checksum = std::accumulate(bytes.begin(), bytes.begin() + 128, 0u);
+		if ((checksum & 0xFFu) != 0) return result;
 		result.majorVersion = bytes[18];
 		result.minorVersion = bytes[19];
 		result.rawPhysicalWidthCm = bytes[21];
 		result.rawPhysicalHeightCm = bytes[22];
-		result.physicalWidthCm = result.rawPhysicalWidthCm;
-		result.physicalHeightCm = result.rawPhysicalHeightCm;
-		result.valid = result.rawPhysicalWidthCm > 0 && result.rawPhysicalHeightCm > 0;
+		result.status = EdidStatus::Parsed;
+		result.valid = true;
 		return result;
 	}
 
-	EdidInfo OrientEdid(EdidInfo edid, DWORD orientation) noexcept
+	DisplayTopology ClassifyTopology(
+		std::span<const ActiveDisplayTargetInfo> targets) noexcept
 	{
-		edid.physicalWidthCm = edid.rawPhysicalWidthCm;
-		edid.physicalHeightCm = edid.rawPhysicalHeightCm;
+		if (targets.empty()) return DisplayTopology::Unknown;
+		if (targets.size() == 1) return DisplayTopology::Single;
+		for (std::size_t left = 0; left < targets.size(); ++left)
+			for (std::size_t right = left + 1; right < targets.size(); ++right)
+				if (EqualLuid(targets[left].sourceAdapterId,
+					targets[right].sourceAdapterId) &&
+					targets[left].sourceId == targets[right].sourceId)
+					return DisplayTopology::CloneOrMixed;
+		return DisplayTopology::Extended;
+	}
+
+	PhysicalSizeInfo ResolvePhysicalSize(const EdidInfo& edid, DWORD orientation,
+		DisplayTopology topology, bool uniqueTarget, bool fallback) noexcept
+	{
+		PhysicalSizeInfo result;
+		auto reject = [&result](PhysicalSizeUnavailableReason reason)
+		{
+			result.unavailableReason = reason;
+			return result;
+		};
+		if (fallback) return reject(PhysicalSizeUnavailableReason::SnapshotFallback);
+		if (topology == DisplayTopology::Unknown)
+			return reject(PhysicalSizeUnavailableReason::TopologyUnknown);
+		if (topology == DisplayTopology::CloneOrMixed)
+			return reject(PhysicalSizeUnavailableReason::CloneOrMixed);
+		if (!uniqueTarget)
+			return reject(PhysicalSizeUnavailableReason::DisplayTargetAmbiguous);
+		switch (edid.status)
+		{
+		case EdidStatus::Unavailable:
+			return reject(PhysicalSizeUnavailableReason::EdidUnavailable);
+		case EdidStatus::ReadFailed:
+			return reject(PhysicalSizeUnavailableReason::EdidReadFailed);
+		case EdidStatus::ParseFailed:
+			return reject(PhysicalSizeUnavailableReason::EdidParseFailed);
+		case EdidStatus::Parsed:
+			break;
+		}
+		if (edid.rawPhysicalWidthCm == 0 || edid.rawPhysicalHeightCm == 0)
+			return reject(PhysicalSizeUnavailableReason::MissingDimensions);
+		if (edid.rawPhysicalWidthCm < 5 || edid.rawPhysicalHeightCm < 5)
+			return reject(PhysicalSizeUnavailableReason::DimensionsBelowMinimum);
+
+		result.available = true;
+		result.widthCm = edid.rawPhysicalWidthCm;
+		result.heightCm = edid.rawPhysicalHeightCm;
+		result.unavailableReason = PhysicalSizeUnavailableReason::None;
 		if (orientation == DMDO_90 || orientation == DMDO_270)
-			std::swap(edid.physicalWidthCm, edid.physicalHeightCm);
-		return edid;
+			std::swap(result.widthCm, result.heightCm);
+		return result;
+	}
+
+	std::wstring_view DisplayTopologyText(DisplayTopology topology) noexcept
+	{
+		switch (topology)
+		{
+		case DisplayTopology::Single: return L"单屏";
+		case DisplayTopology::Extended: return L"扩展";
+		case DisplayTopology::CloneOrMixed: return L"复制或混合";
+		default: return L"未知";
+		}
+	}
+
+	std::wstring_view EdidStatusText(EdidStatus status) noexcept
+	{
+		switch (status)
+		{
+		case EdidStatus::ReadFailed: return L"读取失败";
+		case EdidStatus::ParseFailed: return L"解析失败";
+		case EdidStatus::Parsed: return L"已解析";
+		default: return L"不可用";
+		}
+	}
+
+	std::wstring_view PhysicalSizeUnavailableReasonText(
+		PhysicalSizeUnavailableReason reason) noexcept
+	{
+		switch (reason)
+		{
+		case PhysicalSizeUnavailableReason::None: return L"可用";
+		case PhysicalSizeUnavailableReason::SnapshotFallback: return L"显示枚举回退";
+		case PhysicalSizeUnavailableReason::TopologyUnknown: return L"活动拓扑未知";
+		case PhysicalSizeUnavailableReason::CloneOrMixed: return L"存在复制屏幕";
+		case PhysicalSizeUnavailableReason::DisplayTargetAmbiguous: return L"显示器映射不唯一";
+		case PhysicalSizeUnavailableReason::EdidUnavailable: return L"EDID 不可用";
+		case PhysicalSizeUnavailableReason::EdidReadFailed: return L"EDID 读取失败";
+		case PhysicalSizeUnavailableReason::EdidParseFailed: return L"EDID 解析失败";
+		case PhysicalSizeUnavailableReason::MissingDimensions: return L"EDID 尺寸缺失";
+		case PhysicalSizeUnavailableReason::DimensionsBelowMinimum: return L"EDID 尺寸过小";
+		default: return L"未知原因";
+		}
 	}
 
 	Subscription::~Subscription() { Reset(); }
@@ -504,10 +768,10 @@ namespace Inkeys::Display
 			const auto previous = currentSnapshot.load(std::memory_order_acquire);
 			if (!next)
 			{
-				if (previous) return false;
-				next = MakeFallbackSnapshot();
+				// 几何枚举失败仍立即撤销旧物理标尺，像素/DPI保留给兼容消费者。
+				next = previous ? InvalidatePhysicalSize(*previous) : MakeFallbackSnapshot();
 			}
-			if (previous && SemanticallyEqual(*previous, *next))
+			if (previous && previous->SemanticallyEquals(*next))
 				return enumerationSucceeded;
 			next->generation = nextGeneration++;
 			published = std::make_shared<const Snapshot>(std::move(*next));

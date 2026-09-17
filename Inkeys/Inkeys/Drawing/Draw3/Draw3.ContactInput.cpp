@@ -199,6 +199,9 @@ namespace Inkeys::Drawing::Draw3
 			record.tilt_.Store(snapshot.tilt);
 			record.orientation_.Store(snapshot.orientation);
 			record.isInvertedCursor_.Store(snapshot.isInvertedCursor ? 1u : 0u);
+			record.rawContactWidth_.Store(snapshot.rawContactSize.width);
+			record.rawContactHeight_.Store(snapshot.rawContactSize.height);
+			record.contactAreaUnits_.Store(static_cast<uint32_t>(snapshot.contactAreaUnits));
 			record.width_.Store(snapshot.contactSize.width);
 			record.height_.Store(snapshot.contactSize.height);
 			record.qpc_.Store(snapshot.qpc);
@@ -245,6 +248,9 @@ namespace Inkeys::Drawing::Draw3
 			record.tilt_.Store(snapshot.tilt);
 			record.orientation_.Store(snapshot.orientation);
 			record.isInvertedCursor_.Store(snapshot.isInvertedCursor ? 1u : 0u);
+			record.rawContactWidth_.Store(snapshot.rawContactSize.width);
+			record.rawContactHeight_.Store(snapshot.rawContactSize.height);
+			record.contactAreaUnits_.Store(static_cast<uint32_t>(snapshot.contactAreaUnits));
 			record.width_.Store(snapshot.contactSize.width);
 			record.height_.Store(snapshot.contactSize.height);
 			record.qpc_.Store(snapshot.qpc);
@@ -264,12 +270,16 @@ namespace Inkeys::Drawing::Draw3
 				}
 
 				ContactSnapshot candidate;
+				// 来源在 Down 锁存；RTS 映射换代会关闭旧 contact，不在 Move 中拼接另一设备。
+				candidate.source = record.downSnapshot_.source;
 				candidate.position.x = record.x_.Load();
 				candidate.position.y = record.y_.Load();
 				candidate.pressure = record.pressure_.Load();
 				candidate.tilt = record.tilt_.Load();
 				candidate.orientation = record.orientation_.Load();
 				candidate.isInvertedCursor = record.isInvertedCursor_.Load() != 0;
+				candidate.rawContactSize={record.rawContactWidth_.Load(),record.rawContactHeight_.Load()};
+				candidate.contactAreaUnits=static_cast<SpeedEraser::ContactAreaUnits>(record.contactAreaUnits_.Load());
 				candidate.contactSize.width = record.width_.Load();
 				candidate.contactSize.height = record.height_.Load();
 				candidate.qpc = record.qpc_.Load();

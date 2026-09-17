@@ -11,6 +11,7 @@
 #include <mutex>
 #include <windows.h>
 #include "Draw3.Bridge.h"
+#include "Draw3.SpeedEraser.h"
 
 export module Inkeys.Drawing.Draw3.window_control;
 
@@ -170,6 +171,20 @@ export namespace Inkeys::Drawing::Draw3
 		// 返回每次 C 切换都变化的模式 revision，供绘制线程淘汰陈旧 Hover OC。
 		uint32_t ActiveEraserWidthModeRevision() const noexcept;
 		void SetEraserWidthMode(EraserWidthMode mode) noexcept;
+		void SetEraserInputs(const SpeedEraser::InputSettings& settings);
+		SpeedEraser::InputSettings EraserInputsSnapshot() const;
+		void SetEraserToolPolicy(SpeedEraser::EraserToolPolicy policy) noexcept { eraserToolPolicy_.store(policy); }
+		SpeedEraser::EraserToolPolicy EraserToolPolicySnapshot() const noexcept { return eraserToolPolicy_.load(); }
+		// 独立实验开关仅在批次 Down 锁存，不让它使 Mouse/Pen 的 Hover 标尺失效。
+		void SetTouchContactAreaAssistance(bool enabled) noexcept { touchContactAreaAssistance_.store(enabled); }
+		bool TouchContactAreaAssistance() const noexcept { return touchContactAreaAssistance_.load(); }
+		uint64_t MouseCanvasExitRevision() const noexcept { return mouseCanvasExitRevision_.load(); }
+		void SetEraserDiagnosticsEnabled(bool enabled) noexcept { eraserDiagnosticsEnabled_.store(enabled); }
+		bool EraserDiagnosticsEnabled() const noexcept { return eraserDiagnosticsEnabled_.load(); }
+		void SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale);
+		SpeedEraser::DisplayScale SpeedEraserDisplayScaleSnapshot() const;
+		void SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode);
+		SpeedEraser::DeviceMode SpeedEraserDeviceModeSnapshot() const;
 		// 产品状态只发布原子样式快照，实际绘制仍由绘制线程消费。
 		void SetProductVisualStyle(uint32_t colorRgba, float widthDip) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
@@ -189,6 +204,8 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingCursorPointerAuthority CursorOwner() const noexcept;
 		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
+		// 仅由Host隐藏注入门调用；复用正常光标发布，不安装真实鼠标离窗跟踪。
+		void PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept;
 		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
 		void SetTouchPanActive(bool active) noexcept;
 		bool TouchPanActive() const noexcept;
@@ -262,6 +279,14 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> autoSaveEnabled_ = false;
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;
+		// 完整标尺在同一个锁内复制，不能拼接跨 generation 的独立原子字段。
+		std::atomic<bool> touchContactAreaAssistance_ = false;
+		std::atomic<bool> eraserDiagnosticsEnabled_ = false;
+		mutable std::mutex speedEraserConfigMutex_;
+		SpeedEraser::DisplayScale speedEraserDisplayScale_;
+		SpeedEraser::InputSettings eraserInputs_;
+		std::atomic<SpeedEraser::EraserToolPolicy> eraserToolPolicy_ = SpeedEraser::EraserToolPolicy::ByEntry;
+		SpeedEraser::DeviceMode speedEraserDeviceMode_ = SpeedEraser::DeviceMode::Laptop;
 		// 产品颜色按 0xRRGGBBAA 保存，默认使用不透明黑色。
 		std::atomic<uint32_t> productColorRgba_ = 0x000000FFu;
 		std::atomic<float> productWidthDip_ = 2.0f;
@@ -294,5 +319,6 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastHapticPenInfoKnown_ = false;
 		bool lastHapticPenInfoEraser_ = false;
 		bool trackingMouseLeave_ = false;
+		std::atomic<uint64_t> mouseCanvasExitRevision_ = 0;
 	};
 }

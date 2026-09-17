@@ -18,6 +18,8 @@
 #include <mutex>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
+#include "Draw3.SpeedEraser.h"
+
 module Inkeys.Drawing.Draw3.window_control;
 
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -407,6 +409,58 @@ namespace Inkeys::Drawing::Draw3
 		if (EraserWidthModeForRevision(revision) != mode) ++revision;
 		eraserWidthModeRevision_.store(revision, std::memory_order_release);
 		RequestControlWake();
+	}
+
+
+
+	void WindowController::PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept
+	{
+		SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
+		PublishMouseCursorSample(sample);
+	}
+
+	void WindowController::SetEraserInputs(const SpeedEraser::InputSettings& settings)
+	{
+		{std::scoped_lock lock(speedEraserConfigMutex_);if(eraserInputs_==settings)return;eraserInputs_=settings;}
+		RequestDrawingCursorRender();RequestControlWake();
+	}
+	SpeedEraser::InputSettings WindowController::EraserInputsSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);return eraserInputs_;
+	}
+
+	void WindowController::SetSpeedEraserDisplayScale(const SpeedEraser::DisplayScale& scale)
+	{
+		{
+			std::scoped_lock lock(speedEraserConfigMutex_);
+			if (speedEraserDisplayScale_ == scale) return;
+			speedEraserDisplayScale_ = scale;
+		}
+		RequestDrawingCursorRender();
+		RequestControlWake();
+	}
+
+	SpeedEraser::DisplayScale WindowController::SpeedEraserDisplayScaleSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);
+		return speedEraserDisplayScale_;
+	}
+
+	void WindowController::SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode)
+	{
+		{
+			std::scoped_lock lock(speedEraserConfigMutex_);
+			if (speedEraserDeviceMode_ == mode) return;
+			speedEraserDeviceMode_ = mode;
+		}
+		RequestDrawingCursorRender();
+		RequestControlWake();
+	}
+
+	SpeedEraser::DeviceMode WindowController::SpeedEraserDeviceModeSnapshot() const
+	{
+		std::scoped_lock lock(speedEraserConfigMutex_);
+		return speedEraserDeviceMode_;
 	}
 
 	void WindowController::SetProductVisualStyle(
@@ -1408,6 +1462,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		case WM_MOUSELEAVE:
+			mouseCanvasExitRevision_.fetch_add(1);
 		{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());

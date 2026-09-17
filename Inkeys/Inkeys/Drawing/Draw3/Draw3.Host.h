@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw3.Bridge.h"
+#include "Draw3.SpeedEraser.h"
 
 #include <windows.h>
 #include <atomic>
@@ -10,6 +11,7 @@
 #include <condition_variable>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <string>
 
@@ -109,12 +111,19 @@ namespace Inkeys::Drawing::Draw3
 
 	// 隐藏窗口验收使用的 mailbox 消息；默认不会开启，产品输入仍由唯一 RTS 生产。
 	inline constexpr UINT kDraw3HiddenTestContactMessage = WM_APP + 0x3D3u;
+	inline constexpr WPARAM kHiddenTestMouseFlag = 0x100u;
+	inline constexpr WPARAM kHiddenTestRightMouseFlag = 0x1000u;
+	inline constexpr WPARAM kHiddenTestPenTailFlag = 0x2000u;
+	inline constexpr WPARAM kHiddenTestTouchFlag = 0x200u;
+	inline constexpr WPARAM kHiddenTestIntegratedPenFlag = 0x400u;
+	inline constexpr WPARAM kHiddenTestExternalPenFlag = 0x800u;
 	enum class HiddenTestContactPhase : std::uint32_t
 	{
 		Down = 0,
 		Move = 1,
 		Up = 2,
 		Cancelled = 3,
+		Hover = 4,
 	};
 
 	struct HostStyleCallbacks
@@ -165,6 +174,8 @@ namespace Inkeys::Drawing::Draw3
 		std::wstring autoSaveRoot;
 		void* startupContext = nullptr;
 		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
+		bool enableEraserDiagnostics = false; // 默认关闭；仅发布有界快照，不逐点写日志。
+		std::optional<SpeedEraser::DisplayScale> hiddenTestDisplayScale;
 	};
 
 	// 原子快照仅用于无窗口验收和故障诊断，不暴露 Renderer/Document 所有权。
@@ -207,6 +218,8 @@ namespace Inkeys::Drawing::Draw3
 		bool auxiliaryFullFrameClean = false;
 		std::uint64_t runtimeRevision = 0;
 		RECT lastDirtyRect{};
+		SpeedEraser::Diagnostics eraser;
+		bool touchContactAreaAssistanceEnabled = false;
 	};
 
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
@@ -226,6 +239,11 @@ namespace Inkeys::Drawing::Draw3
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
+		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
+		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;
+		SpeedEraser::DisplayScale EraserDisplayScaleSnapshot() const;
+		void SetHiddenTestContactArea(const SpeedEraser::ContactAreaSample& sample);
 		// 内容 revision 变化或超时后返回；用于产品状态线程即时响应绘制线程更新。
 		bool WaitForContentRevision(std::uint64_t revision,
 			std::uint32_t timeoutMilliseconds) const noexcept;

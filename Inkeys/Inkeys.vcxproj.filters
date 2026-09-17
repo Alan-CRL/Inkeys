@@ -471,6 +471,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -2063,6 +2066,9 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2400,6 +2406,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barAutoEraser.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barDivider.svg">
