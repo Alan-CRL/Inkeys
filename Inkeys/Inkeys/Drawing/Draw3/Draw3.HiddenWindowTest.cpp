@@ -950,7 +950,13 @@ namespace Inkeys::Drawing::Draw3
 					return d.eraserContact && d.entry==SpeedEraser::InputEntry::MouseLeft && d.eraserKind==SpeedEraser::EraserKind::Fixed;}),
 					"retiring right does not replace left entry configuration",failures);
 				postSource(HiddenTestContactPhase::Cancelled,entryFlags[0],40,180);
-				std::this_thread::sleep_for(50ms);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.eraserContact;}),
+					"same-batch mouse contacts retire",failures);
+				postSource(HiddenTestContactPhase::Hover,entryFlags[1],260,180);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.preview && d.entry==SpeedEraser::InputEntry::MouseRight &&
+						d.inputType==3;}),
+					"right mouse preview reports the right input type",failures);
 				for(auto& setting:entryState.eraserInputs.entries)setting.kind=SpeedEraser::EraserKind::Speed;
 				PublishProductState(entryState);std::this_thread::sleep_for(40ms);
 				// 真实绘制链路复现无害诊断revision后的屏幕笔落笔，首点不能从16跳32/50。

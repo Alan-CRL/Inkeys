@@ -3,7 +3,7 @@
 ## 结果与基线
 2026-09-15，主Agent顺序完成，无委派或background Agent。
 HEAD仍为`2f87fe69d2f7680eac1e477723937b6ee5bd251c`，分支`feature/eraser`。
-任务保持in_progress供实机验收，未提交、推送或归档。旧任务未修改。
+本轮记录形成时尚未完成实机验收；2026-09-17 用户确认真人GUI与设备人工验收通过，任务随后完成提交与归档。旧任务未修改。
 原有`Inkeys/PptCOM.dll`逐字节保留；校验见[format-check.md](format-check.md)。
 
 ## 已实现的交互与布局
@@ -91,7 +91,7 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - `Build/eraser-attribute-visuals/4-dark.png`、`5-light.png`：192 DPI、65% UI，真实64 DIP圆高于面板仍不缩小。
 已查看离屏图片，确认图标、圆形预览、分组、胶囊、拼接按钮、深浅主题和上下裁剪。初次离屏发现SVG目标尺寸没有进入val，已修复并重绘。
 
-**未完成实机GUI视觉/交互验收**：真实鼠标/笔/Touch手感、实际多显示器/DPI切换、停靠直拖中的每一帧、真实底图图片、详细设置窗口与重启、Office/WPS与Windows7未手动验证。已有自动测试不代表所有设备/系统验收。DPI/device-generation失效路径做静态审查，未注入真实设备丢失。
+**代理执行范围说明**：本轮代理未执行真实鼠标/笔/Touch、多显示器/DPI切换、停靠直拖、真实底图、详细设置窗口与重启、Office/WPS和Windows7实机验证；DPI/device-generation失效路径只做静态审查，未注入真实设备丢失。2026-09-17 用户另行确认真人GUI与设备人工验收通过。
 
 ## 日志与文件
 - 最终构建：`Build/eraser-attribute-build-delivery.log`。
@@ -141,7 +141,7 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - 橡皮面板、菜单和提示在主栏绘制前提交，主栏最终覆盖全部橡皮浮层。
 - 设置页新增自动粗细总开关卡片；关闭期间五入口仍可编辑和持久化。
 
-验证结果：完整`InkeysRepo.sln`的`Debug | ARM64`构建退出0；Headless、橡皮离屏、Draw3隐藏、橡皮隐藏四项均通过。Headless报告216组布局、0失败。通用Draw3隐藏测试首次在异步resize/present等待处超时但进程退出0，立即复跑全部隐藏集通过；该资源缩放路径未被本轮改动。`git diff --check`通过，仅报告既有autocrlf提示。未启动交互式GUI，未提交、推送或归档。
+验证结果：完整`InkeysRepo.sln`的`Debug | ARM64`构建退出0；Headless、橡皮离屏、Draw3隐藏、橡皮隐藏四项均通过。Headless报告216组布局、0失败。通用Draw3隐藏测试首次在异步resize/present等待处超时但进程退出0，立即复跑全部隐藏集通过；该资源缩放路径未被本轮改动。`git diff --check`通过，仅报告既有autocrlf提示。该记录形成时未启动交互式GUI，亦未提交、推送或归档；后续验收与归档状态见文首。
 
 ## 2026-09-16 精细视觉与交互追加验证
 
@@ -150,20 +150,20 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - 点击区域为当前可见裁剪内、圆外扩5 DIP的真实圆形；外接矩形角和两个尺寸圆之间的跨区释放均不执行。
 - 自动内分割线与主栏分割线等高居中；右侧箭头复用`barThicknessAdjust` SVG及笔类型0/180度动画，保留70/20动作区和整体按压。
 
-完整`InkeysRepo.sln` `Debug | ARM64`构建通过；Headless通过并报告216组布局、0失败；`--bar-eraser-offscreen-test`通过且`failures=0`。离屏测试保存并断言尺寸圆按下/释放、选中环交接和箭头开合中间帧，最终均能回到idle。`git diff --check`通过。未启动交互式GUI，未提交、推送、归档或结束任务。
+完整`InkeysRepo.sln` `Debug | ARM64`构建通过；Headless通过并报告216组布局、0失败；`--bar-eraser-offscreen-test`通过且`failures=0`。离屏测试保存并断言尺寸圆按下/释放、选中环交接和箭头开合中间帧，最终均能回到idle。`git diff --check`通过。该记录形成时未启动交互式GUI，也未提交、推送、归档或结束任务；后续验收与归档状态见文首。
 
 ## 2026-09-16 主栏直拖换边追加验证
 
 - 直拖锁存测试确认：跨越临时工作区边界时，橡皮面板保持已呈现的位置、上下与左右方向；松手后开始既有收拢→换边→展开动画，并最终稳定在新侧。
 - 完整`InkeysRepo.sln` `Debug | ARM64`构建退出0；`InkeysHeadlessTests.exe --no-window`通过（EraserAttribute layouts=216，failures=0）；`Inkeys.exe --bar-eraser-offscreen-test`退出0。
 - 生产离屏测试新输出`Build/eraser-b/visuals/narrow-eraser-attribute.png`：300×620工作区、面板打开且菜单关闭，确认窄区只裁剪溢出、不缩小圆或自动粗细按钮。
-- 未启动交互式GUI；`Inkeys/PptCOM.dll`为既有未提交变更，未纳入本轮提交。任务继续保持in_progress。
+- 该记录形成时未启动交互式GUI；`Inkeys/PptCOM.dll`为既有未提交变更，未纳入本轮提交；当时任务仍为`in_progress`，后续状态见文首。
 
 ## 2026-09-16 窄区正常布局追加验证
 
 - 本节替代上文“窄区先减留白/压缩5 DIP与16 DIP”的历史记录：任何工作区均采用342 DIP自然布局、四段16 DIP圆组留白和四段5 DIP中央/自动留白；空间不足时只裁剪横向溢出。
 - 纯布局与生产离屏断言会同时验证圆、自动按钮不缩放，以及5/16 DIP留白不进入紧凑模式。
-- 完整`InkeysRepo.sln` `Debug | ARM64`构建通过；`InkeysHeadlessTests.exe --no-window`报告EraserAttribute layouts=216、failures=0，`Inkeys.exe --bar-eraser-offscreen-test`通过并更新300×620 PNG；`Inkeys/PptCOM.dll`继续排除在提交之外，任务保持in_progress。
+- 完整`InkeysRepo.sln` `Debug | ARM64`构建通过；`InkeysHeadlessTests.exe --no-window`报告EraserAttribute layouts=216、failures=0，`Inkeys.exe --bar-eraser-offscreen-test`通过并更新300×620 PNG；`Inkeys/PptCOM.dll`继续排除在提交之外；该记录形成时任务仍为`in_progress`，后续状态见文首。
 
 ## 2026-09-16 释放换边精修追加验证
 

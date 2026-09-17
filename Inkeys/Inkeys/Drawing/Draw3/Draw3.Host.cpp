@@ -1303,7 +1303,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if(impl_->touchAreaTraceEnabled.exchange(options.touchAreaTrace,std::memory_order_relaxed)!=options.touchAreaTrace)
 			impl_->touchAreaTraceRevision.fetch_add(1,std::memory_order_relaxed);
-		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || options.touchAreaTrace || impl_->hiddenTestContactInjectionEnabled);
+		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || options.touchAreaTrace ||
+			impl_->hiddenTestContactInjectionEnabled || impl_->startOptions.enableEraserDiagnostics);
 		impl_->displayScaleDirty.store(true,std::memory_order_release);
 		(void)impl_->input.PublishControlWake();
 	}

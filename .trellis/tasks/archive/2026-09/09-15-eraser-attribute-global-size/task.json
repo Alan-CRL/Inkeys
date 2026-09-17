@@ -57,7 +57,7 @@
     "Inkeys/Inkeys/UI/Bar/Bar.EraserAttributeMotion.cppm",
     "Inkeys/src/UI/barAutoEraser.svg"
   ],
-  "notes": "方案B已由主Agent完成，完整ARM64 solution、216组headless、生产离屏/多帧与两类隐藏测试全部重新通过。保持in_progress等待真人GUI验收，本轮未commit/push/archive；见scheme-b-validation.md，旧validation.md保持原样。",
+  "notes": "方案B已由主Agent完成，完整ARM64 solution、216组headless、生产离屏/多帧与两类隐藏测试全部重新通过。2026-09-17 用户确认真人GUI与设备人工验收通过并同意归档；历史自动化范围见scheme-b-validation.md与validation.md。",
   "meta": {
     "schemeBReferenceCommit": "af22b4a6deafb14fd4fb90316c1c4ccd839e1b75"
   }

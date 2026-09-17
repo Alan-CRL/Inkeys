@@ -142,10 +142,10 @@
 
 ## Phase 10 - Deferred Integration And Manual Acceptance
 
-- [ ] 待后端上层接入本模块后，验证真实调用链中的读取、完整保存和追加写入行为。
-- [ ] 在具备人工验收条件后完成文件互操作检查，再由用户确认是否结束并归档本任务。
+- [x] 后端上层接入已由后续 Desktop/PPT 持久化任务覆盖，真实调用链的读取、完整保存和追加写入行为已有集成证据。
+- [x] 2026-09-17 用户确认人工文件互操作验收通过，并同意结束和归档本任务。
 
-当前实现提交不代表任务结束；`task.json.status` 继续保持 `in_progress`。
+上述延期项已由后续集成证据与用户人工验收关闭；`task.json.status` 保持 `completed`。
 
 ## Planned File Ownership
 

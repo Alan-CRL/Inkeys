@@ -17,7 +17,7 @@ Build/ARM64/Debug/Inkeys.exe --draw3-eraser-hidden-test
 ## 检查
 按trellis-check主Agent自查；回退仅限本轮编辑，不触及用户基线。最终不commit/push/archive。
 
-实际命令、迭代中暴露的问题与未实机验收项见validation.md；全程不提交/推送/归档。
+实际命令、迭代中暴露的问题与当时未实机验收项见validation.md；后续用户人工验收及归档状态见task.json与validation.md文首。
 
 ## 2026-09-16 追加执行
 - [x] 新增Automatic配置/快照门控并更新设置页事务。

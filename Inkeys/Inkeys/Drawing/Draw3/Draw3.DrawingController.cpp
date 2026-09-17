@@ -3977,7 +3977,9 @@ namespace Inkeys::Drawing::Draw3
 					if(primaryUsesPen && lane->lifecycle.HasPosition() && lane->sampleVisible)
 					{controller=&lane->lifecycle.PreviewController();d.inputType=static_cast<uint32_t>(InputDeviceType::Pen);}
 					else if(primaryUsesMouse && mouseSpeedEraser().HasPosition())
-					{controller=&mouseSpeedEraser().PreviewController();d.inputType=static_cast<uint32_t>(InputDeviceType::MouseLeft);}
+					{controller=&mouseSpeedEraser().PreviewController();d.inputType=static_cast<uint32_t>(
+						mouseEraserEntry==SpeedEraser::InputEntry::MouseRight?
+						InputDeviceType::MouseRight:InputDeviceType::MouseLeft);}
 					d.preview=controller!=nullptr;
 					if(controller)d.nextRadiusPx=controller->Diameter()*0.5f;
 				}

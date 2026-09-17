@@ -132,5 +132,5 @@
 
 - Phase 1-7 已完成：共享 UInk 接入、三态与 `PptTouched`、设置门控、可见 CPU 快照、每日事务索引、owned worker、Clear/Exit 和关闭排空均已落地。
 - Phase 8 已完成：两个 ARM64 Debug solution 全量重建、UInk/Draw3 tests、`--no-window` tests、静态约束、编码换行与 Trellis 审查均通过。
-- 遵循本轮不创建 commit 的要求，`trellis-finish-work` 未归档任务或写入会自动提交的 session journal；任务保留 active 状态。
+- 该记录形成时遵循不创建 commit 的要求，`trellis-finish-work` 未归档任务或写入会自动提交的 session journal；2026-09-17 用户确认人工产品验收通过，任务随后归档。
 - 下一任务保持为 Desktop/PPT 切换时的画布转换、归属和独立化；本任务没有提前实现该内容。

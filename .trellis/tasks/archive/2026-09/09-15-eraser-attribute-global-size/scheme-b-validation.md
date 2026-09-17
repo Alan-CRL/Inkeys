@@ -88,7 +88,7 @@ Inkeys.exe --draw3-eraser-hidden-test
 - Build/eraser-b/open-close.gif、reverse.gif：真实采样帧组合预览。
 - Build/eraser-b/*-contact-sheet.png：开关关键帧，frames/存原图。
 
-**未做真人GUI验收**：实体Mouse/Pen/Touch触感、实际主栏停靠拖动和多屏切换、Windows7运行、真实Office/WPS及图像底图场景均不据离屏/隐藏测试宣称全设备验收。测试里的主栏参照来自标准Bar组件，动画记录来自生产橡皮组件，不是完整桌面录像。未新增不兼容框架或静态高版本API。
+**代理执行范围说明**：本轮代理未执行实体Mouse/Pen/Touch、实际主栏停靠拖动、多屏切换、Windows7、真实Office/WPS及图像底图场景；测试里的主栏参照来自标准Bar组件，动画记录来自生产橡皮组件，不是完整桌面录像。2026-09-17 用户另行确认真人GUI与设备人工验收通过。未新增不兼容框架或静态高版本API。
 
 ## 修改文件
 - `Inkeys/IdtI18nKeys.g.h`

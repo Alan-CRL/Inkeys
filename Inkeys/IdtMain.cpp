@@ -1489,7 +1489,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				stopTimingError = 5;
 			else
 				stopTimingError = min(0.3F * static_cast<float>(monitor->pixelWidth) /
-					static_cast<float>(monitor->physicalSize.heightCm),
+					static_cast<float>(monitor->physicalSize.widthCm),
 					0.5F * static_cast<float>(monitor->pixelHeight) /
 					static_cast<float>(monitor->physicalSize.heightCm));
 		});

@@ -18,11 +18,11 @@
 - `Build\ARM64\Debug\InkeysHeadlessTests.exe --no-window`：通过；包含 Draw3 Bridge 三态、PPT visit epoch、保存开关发布、FIFO 退出屏障和满队列屏障测试。
 - `git diff --check`：无空白错误；精确核对的 31 个本次 C++/project 文件均为纯 CRLF，并保持原有 BOM 状态（新增 `Draw3.AutoSave.cpp` 使用 UTF-8 BOM）。
 - `trellis-check`：规范、跨层数据流、触发点、设置门控、owned worker、关闭顺序、重复实现和测试覆盖均已复核；补强每日索引的真实日期/时间、规范 GUID、无符号序号及重复身份/路径校验后，完整重复上述门禁并通过。
-- Trellis Phase 3.3：已把三态门控、快照/worker 所有权、文件与索引事务、错误矩阵、测试点和退出屏障沉淀到 `native-desktop/draw3-integration.md`；人工产品验证仍待执行，任务继续保持 active。
+- Trellis Phase 3.3：已把三态门控、快照/worker 所有权、文件与索引事务、错误矩阵、测试点和退出屏障沉淀到 `native-desktop/draw3-integration.md`。
 
 ## 受限验证
 
-- 未启动产品 GUI，也未操控桌面，符合项目约束。
+- 本轮代理未启动产品 GUI，也未操控桌面，符合项目约束；2026-09-17 用户另行确认人工产品验收通过。
 - 创建 HWND 的完整 headless 模式曾在当前受控桌面环境稳定出现两条与本任务无关的既存 Z-order 断言失败；本任务未修改 Window Service，最终门禁使用明确允许的 `--no-window` 集合。
 - 不创建 commit；构建生成的 PptCOM DLL 变化已恢复，4 个 shader `.cso` 已删除且可由重建恢复，均不纳入任务修改。
-- `trellis-finish-work` 要求先提交当前任务并会为归档/日志创建提交；与本轮不提交约束冲突，因此任务保持 active、未归档，也未写入 session journal。
+- 实现提交完成后，任务已于 2026-09-17 按用户确认归档。

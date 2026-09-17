@@ -382,7 +382,7 @@ int GetStopTimingError()
 	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
 	if (!monitor || setlist.paintDevice == 1 || !monitor->physicalSize.available) return 5;
 	return min(0.3f * static_cast<float>(monitor->pixelWidth) /
-		static_cast<float>(monitor->physicalSize.heightCm),
+		static_cast<float>(monitor->physicalSize.widthCm),
 		0.5f * static_cast<float>(monitor->pixelHeight) /
 		static_cast<float>(monitor->physicalSize.heightCm));
 }
