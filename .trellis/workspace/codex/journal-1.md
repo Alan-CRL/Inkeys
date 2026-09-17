@@ -256,3 +256,29 @@ Restored PageControl end-page Next routing through the shared A2 EndShow dispatc
 ### Next Steps
 
 - 本问题已按用户最终验收关闭；不继续调试或追加修复。
+
+
+## Session 13: Archive completed August and September tasks
+<!-- trellis-session: v=2 fp=1b86ed45d2f2f566 -->
+
+**Date**: 2026-09-17
+**Task**: Archive completed August and September tasks
+**Branch**: `feature/eraser`
+
+### Summary
+
+Archived the completed 08-24 overlay recovery task, all three 09-01 persistence and dialog tasks, and the 09-15 eraser attribute task; retained all other active tasks for later testing or revision.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `43d59ec3` | fix: recover overlay presentation z-order |
+| `fafa7009` | feat: add desktop UInk autosave |
+| `9266a4ab` | localize fluent message box dialogs |
+| `d272f888` | feat: add UInk file persistence |
+| `3308faec` | fix: align eraser panel release flip |
+
+### Status
+
+[OK] **Completed**

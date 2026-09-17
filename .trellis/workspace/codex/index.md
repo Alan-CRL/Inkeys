@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
-- **Last Active**: 2026-09-10
+- **Total Sessions**: 13
+- **Last Active**: 2026-09-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~258 | Active |
+| `journal-1.md` | ~284 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-09-17 | Archive completed August and September tasks | `43d59ec3`, `fafa7009`, `9266a4ab`, `d272f888`, `3308faec` | `feature/eraser` |
 | 10 | 2026-09-10 | 采用用户认可的底栏基线并结案 | `24efcde4` | `draw` |
 | 9 | 2026-09-09 | 底栏捕获旧帧误确认与果冻起点修复 | - | `draw` |
 | 8 | 2026-09-09 | 主栏底栏显示续修与回归验证 | - | `draw` |
