@@ -63,6 +63,16 @@ export namespace Inkeys::UI::Bar
 	}
 	inline double EraserRectCenterX(EraserAttributeRect r) noexcept { return (r.left+r.right)/2; }
 	inline double EraserRectCenterY(EraserAttributeRect r) noexcept { return (r.top+r.bottom)/2; }
+	inline EraserAttributeLayoutInput RebaseEraserAttributeLayoutInput(
+		EraserAttributeLayoutInput input,EraserAttributeRect anchor) noexcept
+	{
+		const double x=EraserRectCenterX(anchor)-EraserRectCenterX(input.anchor);
+		const double y=EraserRectCenterY(anchor)-EraserRectCenterY(input.anchor);
+		input.main=OffsetEraserRect(input.main,x,y);
+		input.anchor=OffsetEraserRect(input.anchor,x,y);
+		input.work=OffsetEraserRect(input.work,x,y);
+		return input;
+	}
 	inline bool EraserAttributeCircleContains(EraserAttributeRect circle,double expansion,double x,double y) noexcept
 	{
 		const double radius=(std::max)(0.0,circle.Width()/2+expansion);

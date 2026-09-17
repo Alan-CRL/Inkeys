@@ -169,6 +169,12 @@ int RunEraserAttributeTests()
 		const auto held=ResolveEraserAttributeLayout(moving);
 		expect(!presented.below && snapped.below && !held.below,
 			"drag placement lock preserves the presented panel direction until release");
+		const EraserAttributeRect absorbedAnchor=OffsetEraserRect(beforeDrag.anchor,0,-570);
+		const auto rebasedInput=RebaseEraserAttributeLayoutInput(beforeDrag,absorbedAnchor);
+		const auto rebased=ResolveEraserAttributeLayout(rebasedInput);
+		expect(std::abs(rebased.panel.top-(presented.panel.top-570))<0.001 &&
+			std::abs(rebased.work.top-(beforeDrag.work.top-570))<0.001,
+			"release rebases the locked panel and work area together without a clamp flash");
 	}
 	expect(ResolveEraserAttributeRelease(-1,0,true,false)==-1,"opening Up without a new panel Down can never clear");
 	expect(ResolveEraserAttributeRelease(4,5,true,false)==4 && ResolveEraserAttributeRelease(5,4,true,false)==5,"split action remains owned by Down region");

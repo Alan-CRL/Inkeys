@@ -55,6 +55,12 @@ export namespace Inkeys::UI::Bar
 			if(context.animationEnabled && !context.forceReplace && timeline_.IsActive() && (!std::isfinite(context.dtSeconds) || context.dtSeconds<=0))return true;
 			const auto g=BarUiAdvanceAnimation(geometry_,context),a=BarUiAdvanceAnimation(opacity_,context);
 			if(!context.animationEnabled)timeline_.Restart(0);else timeline_.Advance(context.dtSeconds,context.speedRate);
+			// 默认时长恰好落在整帧边界时消除浮点尾差，确保换边中点和绘制属性落在同一帧。
+			if(timeline_.IsActive() && timeline_.GetRemainingDuration()<=0.000000001)
+			{
+				timeline_.Restart(0);geometry_.SetDirect(requested_?1:0);opacity_.SetDirect(requested_?1:0);
+				return true;
+			}
 			return g.changed || g.active || a.changed || a.active || timeline_.IsActive();
 		}
 		bool Active() const noexcept { return timeline_.IsActive(); }

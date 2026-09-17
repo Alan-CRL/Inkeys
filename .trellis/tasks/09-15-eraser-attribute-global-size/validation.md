@@ -164,3 +164,9 @@ MSBuild.exe InkeysRepo.sln /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM
 - 本节替代上文“窄区先减留白/压缩5 DIP与16 DIP”的历史记录：任何工作区均采用342 DIP自然布局、四段16 DIP圆组留白和四段5 DIP中央/自动留白；空间不足时只裁剪横向溢出。
 - 纯布局与生产离屏断言会同时验证圆、自动按钮不缩放，以及5/16 DIP留白不进入紧凑模式。
 - 完整`InkeysRepo.sln` `Debug | ARM64`构建通过；`InkeysHeadlessTests.exe --no-window`报告EraserAttribute layouts=216、failures=0，`Inkeys.exe --bar-eraser-offscreen-test`通过并更新300×620 PNG；`Inkeys/PptCOM.dll`继续排除在提交之外，任务保持in_progress。
+
+## 2026-09-16 释放换边精修追加验证
+
+- 根因一是松手后旧方向立即改用新工作区Resolve/Fit，面板先被夹回屏内再收拢；现统一平移锁存的`main / anchor / work`，透明中点前保持旧侧连续位置。
+- 根因二是旧实现用两个完整默认时长完成收拢和展开，总时长为绘制属性的两倍；现按父时间线进度计算剩余收拢段与完整展开半段，父批次超过50%时创建完整独立批次，并统一消费`speedRate`。
+- 生产离屏测试覆盖松手零时间首帧连续、父批次25%加入后的中点方向提交/共同截止、单帧从49%跨过中点时的余量交接，以及75%后的完整独立批次。完整`InkeysRepo.sln` `Debug | ARM64`构建、`InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --bar-eraser-offscreen-test`与`Inkeys.exe --draw3-hidden-test`均通过；`Inkeys.exe --draw3-eraser-hidden-test`首次受触摸面积异步时序波动出现失败，独立复跑退出0。未启动交互式GUI，`Inkeys/PptCOM.dll`未纳入本轮修改。

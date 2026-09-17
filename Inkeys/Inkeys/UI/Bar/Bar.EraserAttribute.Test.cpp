@@ -266,9 +266,10 @@ namespace Inkeys::UI::Bar
 			std::filesystem::create_directories(L"Build/eraser-b/frames");
 			std::ofstream trace("Build/eraser-b/frames.csv");trace<<"case,frame,panel_scale,menu_scale,panel_alpha,menu_alpha,panel_x,panel_y,panel_w,panel_h,menu_x,menu_y,menu_w,menu_h,bounds_l,bounds_t,bounds_r,bounds_b\n";
 			auto tick=[&](const std::string& name,int f,double dt=1.0/60,bool save=false,
-				RECT workArea={0,0,1000,620},POINT origin={0,0},bool dragPlacementLocked=false)
+				RECT workArea={0,0,1000,620},POINT origin={0,0},bool dragPlacementLocked=false,
+				const BarUiTimelineClass* parentTimeline=nullptr)
 			{
-				owner.eraserAttribute.Advance(owner,dt,BarUiAnimationSpeedRate,1,96,workArea,origin,0,0,nullptr,dragPlacementLocked);
+				owner.eraserAttribute.Advance(owner,dt,BarUiAnimationSpeedRate,1,96,workArea,origin,0,0,parentTimeline,dragPlacementLocked);
 				auto light=owner.spec.SnapshotFrameLighting();light.primaryLight={330,470};light.primaryRadius=480;light.primaryLightVisible=true;
 				light.cursorLight={440,340};light.cursorRadius=240;light.cursorIntensity=1;light.cursorLightVisible=true;
 				owner.spec.SetFrameLightingSnapshot(light);owner.spec.SetFrameCursorLightLocalGeometry(light.cursorLight,D2D1::SizeF(240,240));
@@ -317,18 +318,53 @@ namespace Inkeys::UI::Bar
 					"direct drag does not snap the presented eraser panel side or position");
 			}
 			owner.barState.widgetPosition.mainBar=false;owner.barState.widgetPosition.primaryBar=true;root->y.SetDirect(140);
-			const auto release=tick("drag-release",0,1.0/60,true);
-			expect(release.geometry.below==beforeDrag.geometry.below && owner.eraserAttribute.Active(),
-				"release retains the old side while the eraser panel starts its reverse animation");
-			for(int f=1;f<70;++f)tick("drag-release",f,1.0/60,f%3==0);
+			BarUiTimelineClass parentTimeline;parentTimeline.Restart(BarUiDefaultOperationDur);
+			parentTimeline.Advance(BarUiDefaultOperationDur/4,1);
+			const auto release=tick("drag-release",0,0,true,{0,0,1000,620},{0,0},false,&parentTimeline);
+			const double absorbedY=EraserRectCenterY(release.geometry.anchor)-EraserRectCenterY(beforeDrag.geometry.anchor);
+			expect(release.geometry.below==beforeDrag.geometry.below && owner.eraserAttribute.Active() &&
+				std::abs(release.geometry.panel.top-beforeDrag.geometry.panel.top-absorbedY)<0.000001,
+				"release first frame rebases the old panel without a work-area clamp flash");
+			const int joinedSwitchFrames=static_cast<int>(std::ceil(parentTimeline.GetRemainingDuration()/(1.0/60)));
+			const int joinedCollapseFrames=static_cast<int>(std::ceil((BarUiDefaultOperationDur/4)/(1.0/60)));
+			for(int f=0;f<joinedCollapseFrames;++f)tick("drag-release",f+1,1.0/60,f%3==0);
+			const auto switched=owner.eraserAttribute.PresentationSnapshot();
+			expect(switched.geometry.below && switched.geometry.reversed && owner.eraserAttribute.Active(),
+				"release commits the new direction on the parent midpoint frame without a late old-side frame");
+			for(int f=joinedCollapseFrames;f<joinedSwitchFrames;++f)tick("drag-release",f+1,1.0/60,f%3==0);
 			const auto released=owner.eraserAttribute.PresentationSnapshot();
 			expect(released.geometry.below && released.geometry.reversed && released.panelPose.scale==1,
-				"release consumes the deferred eraser side through the existing panel animation");
+				"release side switch joins the draw-attribute parent batch and settles at the same deadline");
 			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;root->y.SetDirect(430);
-			for(int f=0;f<70;++f)tick("drag-reset",f,1.0/60,f%3==0);
+			BarUiTimelineClass lateParentTimeline;lateParentTimeline.Restart(BarUiDefaultOperationDur);
+			lateParentTimeline.Advance(BarUiDefaultOperationDur*0.75,1);
+			tick("drag-reset",0,0,true,{0,0,1000,620},{0,0},false,&lateParentTimeline);
+			const int lateParentFrames=static_cast<int>(std::ceil(lateParentTimeline.GetRemainingDuration()/(1.0/60)));
+			for(int f=0;f<lateParentFrames;++f)tick("drag-reset",f+1,1.0/60,f%3==0);
+			expect(owner.eraserAttribute.Active() && owner.eraserAttribute.PresentationSnapshot().geometry.below,
+				"side switch after the parent midpoint starts a full independent draw-attribute batch");
+			const int independentFrames=static_cast<int>(std::ceil(BarUiDefaultOperationDur/(1.0/60)));
+			for(int f=lateParentFrames;f<independentFrames;++f)tick("drag-reset",f+1,1.0/60,f%3==0);
 			stable=owner.eraserAttribute.PresentationSnapshot();
 			expect(!stable.geometry.below && !stable.geometry.reversed && stable.panelPose.scale==1,
 				"drag test restores the original presented side before interaction coverage");
+			// RenderLoop先推进父时间线；即使该帧从中点前跨到中点后，仍应加入同一绘制属性批次。
+			owner.barState.widgetPosition.mainBar=false;owner.barState.widgetPosition.primaryBar=true;root->y.SetDirect(140);
+			BarUiTimelineClass crossingParentTimeline;crossingParentTimeline.Restart(BarUiDefaultOperationDur);
+			crossingParentTimeline.Advance(BarUiDefaultOperationDur*0.49,1);
+			crossingParentTimeline.Advance(1.0/60,BarUiAnimationSpeedRate);
+			const auto crossed=tick("crossing-join",0,1.0/60,true,{0,0,1000,620},{0,0},false,&crossingParentTimeline);
+			expect(crossed.geometry.below && crossed.geometry.reversed,
+				"parent frame crossing 50 percent keeps the eraser in the joined draw-attribute batch");
+			const int crossingFrames=static_cast<int>(std::ceil(crossingParentTimeline.GetRemainingDuration()/(1.0/60)));
+			for(int f=0;f<crossingFrames;++f)tick("crossing-join",f+1,1.0/60,f%3==0);
+			expect(owner.eraserAttribute.PresentationSnapshot().panelPose.scale==1,
+				"joined crossing frame carries its midpoint remainder into the expansion segment");
+			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;root->y.SetDirect(430);
+			for(int f=0;f<independentFrames;++f)tick("crossing-restore",f,1.0/60,f%3==0);
+			stable=owner.eraserAttribute.PresentationSnapshot();
+			expect(!stable.geometry.below && !stable.geometry.reversed && stable.panelPose.scale==1,
+				"crossing-frame timing test restores the original side");
 			// 保存真实按压及选中环交接帧，避免只有稳定态截图而遗漏交互动画。
 			auto sizeMessage=[&](UINT kind,int item,bool held){ExMessage m{};m.message=static_cast<USHORT>(kind);m.x=static_cast<short>(EraserRectCenterX(stable.geometry.items[item]));m.y=static_cast<short>(EraserRectCenterY(stable.geometry.items[item]));m.lbutton=held;return m;};
 			owner.eraserAttribute.Pointer(owner,sizeMessage(WM_LBUTTONDOWN,3,true));

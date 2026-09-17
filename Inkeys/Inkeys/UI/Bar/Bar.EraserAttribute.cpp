@@ -26,6 +26,31 @@ namespace
 	constexpr double EraserSizeSelectionGapDip=3.0;
 	constexpr double EraserSizeSelectionThicknessDip=1.0;
 	constexpr double EraserAutomaticArrowSizeDip=18.0;
+	struct EraserSideSwitchDurations
+	{
+		double collapse=0,expand=0;
+	};
+	EraserSideSwitchDurations ResolveEraserSideSwitchDurations(
+		double duration,const BarUiTimelineClass* parent,double dt,double speed) noexcept
+	{
+		duration=std::isfinite(duration) && duration>0?duration:0;
+		if(parent)
+		{
+			const double observedProgress=parent->GetProgress();
+			const double remaining=parent->GetRemainingDuration();
+			const double full=observedProgress<1?remaining/(1-observedProgress):duration;
+			double progress=observedProgress;
+			// RenderLoop在调用子面板前已推进父时间线一帧；回退该帧后再加入，避免子面板抢跑。
+			if(full>0 && std::isfinite(dt) && dt>0 && std::isfinite(speed) && speed>0)
+				progress=(std::max)(0.0,progress-dt*speed/full);
+			if(full>0 && progress<=0.5)
+			{
+				// 与绘制属性的0.5关键帧一致：只补父批次尚未走完的前半程，后半程保持完整。
+				return {(std::max)(0.0,(0.5-progress)*full),full/2};
+			}
+		}
+		return {duration/2,duration/2};
+	}
 	D2D1_RECT_F PixelRect(EraserAttributeRect r,double zoom)
 	{ return D2D1::RectF(static_cast<float>(r.left*zoom),static_cast<float>(r.top*zoom),static_cast<float>(r.right*zoom),static_cast<float>(r.bottom*zoom)); }
 	RECT IntegerRect(EraserAttributeRect r,double zoom,int outset=0)
@@ -168,33 +193,68 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	currentInput.zoom=zoom;currentInput.dpiScale=dpi/96.0;
 	currentInput.work={(workArea.left-origin.x)/zoom-rigidX,(workArea.top-origin.y)/zoom-rigidY,(workArea.right-origin.x)/zoom-rigidX,(workArea.bottom-origin.y)/zoom-rigidY};
 	const bool holdDragPlacement=dragPlacementLocked && open;
+	const bool releasedDragPlacement=!holdDragPlacement && dragPlacementLocked_;
 	if(holdDragPlacement && !dragPlacementLocked_)
 	{
 		// HWND 直移期间沿用上一帧的局部几何；松手吸收后再由现有换边动画接管。
 		dragLayoutInput_=hasStableLayoutInput_?stableLayoutInput_:currentInput;
 		dragLayoutInput_.below=layout_.below;dragLayoutInput_.reversed=layout_.reversed;
 		dragLayoutInput_.lockedMenuSide=menuSide_;dragLayoutInput_.lockPanelSide=true;
-		dragPlacementLocked_=true;
+		dragPlacementLocked_=true;releaseSwitchLayoutLocked_=false;
 	}
-	else if(!holdDragPlacement)dragPlacementLocked_=false;
+	else if(releasedDragPlacement)
+	{
+		// 松手吸收HWND位移时同步平移旧工作区，避免真实工作区夹取先把面板闪回屏内。
+		dragLayoutInput_=RebaseEraserAttributeLayoutInput(dragLayoutInput_,currentInput.anchor);
+		dragLayoutInput_.lockedMenuSide=menuSide_;dragLayoutInput_.lockPanelSide=true;
+		dragPlacementLocked_=false;
+	}
 	const bool targetBelow=holdDragPlacement?previousBelow_:static_cast<bool>(owner.barState.widgetPosition.primaryBar);
 	const bool targetReversed=holdDragPlacement?previousReversed_:!static_cast<bool>(owner.barState.widgetPosition.mainBar);
 	bool switching=targetBelow!=previousBelow_ || targetReversed!=previousReversed_;
-	changed_|=panelMotion_.Retarget(open && !switching,BarUiDefaultOperationDur,parentTimeline);
-	changed_|=menuMotion_.Retarget(menuOpen && !switching,BarUiDefaultOperationDur,&panelMotion_.Timeline());
+	if(releasedDragPlacement)releaseSwitchLayoutLocked_=switching;
+	else if(!switching)releaseSwitchLayoutLocked_=false;
+	const bool beginSideSwitch=switching && !sideSwitchActive_;
+	double panelDuration=static_cast<double>(BarUiDefaultOperationDur);
+	if(beginSideSwitch)
+	{
+		const auto durations=ResolveEraserSideSwitchDurations(BarUiDefaultOperationDur,parentTimeline,dt,speed);
+		panelDuration=durations.collapse;sideSwitchExpandDuration_=durations.expand;
+		sideSwitchActive_=true;
+	}
+	else if(!switching)sideSwitchActive_=false;
+	const BarUiTimelineClass* panelParent=switching?nullptr:parentTimeline;
+	changed_|=panelMotion_.Retarget(open && !switching,panelDuration,panelParent);
+	changed_|=menuMotion_.Retarget(menuOpen && !switching,panelDuration,&panelMotion_.Timeline());
+	double sideSwitchCarryDt=0;
+	if(switching && context.animationEnabled && std::isfinite(dt) && dt>0 && std::isfinite(speed) && speed>0)
+	{
+		const double collapseSeconds=panelMotion_.Active()?panelMotion_.Timeline().GetRemainingDuration()/speed:0;
+		sideSwitchCarryDt=(std::max)(0.0,dt-collapseSeconds);
+	}
 	changed_|=panelMotion_.Advance(context);changed_|=menuMotion_.Advance(context);
-	// 换边在退回紧凑态的透明中点交接，逆向目标仍从当前几何/透明度继续。
+	// 与绘制属性一致，在一个默认时长的前后半段完成收拢与展开。
 	if(switching && !panelMotion_.Visible())
 	{
 		previousBelow_=targetBelow;previousReversed_=targetReversed;menuSide_=-1;
-		changed_|=panelMotion_.Retarget(open,BarUiDefaultOperationDur,parentTimeline);
-		changed_|=menuMotion_.Retarget(menuOpen,BarUiDefaultOperationDur,&panelMotion_.Timeline());
+		releaseSwitchLayoutLocked_=false;sideSwitchActive_=false;
+		changed_|=panelMotion_.Retarget(open,sideSwitchExpandDuration_);
+		changed_|=menuMotion_.Retarget(menuOpen,sideSwitchExpandDuration_,&panelMotion_.Timeline());
 		if(!context.animationEnabled){changed_|=panelMotion_.Advance(context);changed_|=menuMotion_.Advance(context);}
+		else if(sideSwitchCarryDt>0)
+		{
+			// 帧步跨过透明中点时把余量交给展开段，避免相较绘制属性慢一帧。
+			auto carryContext=context;carryContext.dtSeconds=sideSwitchCarryDt;
+			changed_|=panelMotion_.Advance(carryContext);changed_|=menuMotion_.Advance(carryContext);
+		}
 		switching=false;
 	}
 	active_|=panelMotion_.Active() || menuMotion_.Active();if(!menuOpen && !menuMotion_.Visible())menuSide_=-1;
-	EraserAttributeLayoutInput input=holdDragPlacement?dragLayoutInput_:currentInput;
-	if(!holdDragPlacement)
+	const bool holdReleaseSwitchPlacement=switching && releaseSwitchLayoutLocked_;
+	if(holdReleaseSwitchPlacement)
+		dragLayoutInput_=RebaseEraserAttributeLayoutInput(dragLayoutInput_,currentInput.anchor);
+	EraserAttributeLayoutInput input=(holdDragPlacement || holdReleaseSwitchPlacement)?dragLayoutInput_:currentInput;
+	if(!holdDragPlacement && !holdReleaseSwitchPlacement)
 	{
 		input.below=previousBelow_;input.reversed=previousReversed_;input.lockedMenuSide=menuSide_;
 		// 收拢到紧凑态之前继续显示原侧，避免 release 首帧被工作区避让直接闪到另一边。

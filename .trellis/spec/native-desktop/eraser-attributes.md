@@ -10,6 +10,7 @@
 - `EraserPreferencesSnapshot()`返回整表；`SetGlobalEraserPreference(baseDiameterDip=-1, sensitivity=-1, automatic=-1)`中-1代表保留该属性。
 - 持久化键：`Drawing.Eraser.Automatic`（缺失默认true）、`Drawing.Eraser.BaseDiameterDip`、`Drawing.Eraser.Sensitivity`。
 - `ResolveEraserAttributeLayout(input)`返回面板、菜单、槽位、预览直径和分割线几何；`BarEraserAttributePanel::CommitPresented()`只在完整呈现成功后更新命中快照。
+- `RebaseEraserAttributeLayoutInput(input, anchor)`按新旧锚点中心差统一平移锁存的`main / anchor / work`，不改变尺寸或方向字段。
 - `BarEraserAttributePanel::Advance(..., parentTimeline, dragPlacementLocked)`: RenderLoop 以 `bottomDockDragActive` 传入直拖布局锁；锁存只影响面板位置/方向解析，不改变输入命中或配置状态。
 
 ## 3. Contracts
@@ -40,9 +41,9 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 菜单182.5×90逻辑单位，两行结构：标题/禁用齿轮、三段等宽选项。标题保持既有左对齐X，其30 DIP标题行在浮窗顶部至三个灵敏度按钮上沿之间垂直居中。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
 
-正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。直拖锁存期间使用上一份已稳定局部布局输入、panel/menu方向和工作区，不能因临时越界重新避让或翻边；松手后才消费当前目标方向，并沿既有收拢→紧凑态→换边→展开动画交接。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板和菜单均在Main Bar之前绘制，重叠像素由主栏覆盖。
+正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。直拖锁存期间使用上一份已稳定局部布局输入、panel/menu方向和工作区，不能因临时越界重新避让或翻边；松手吸收HWND位移时，必须按当前锚点把锁存的`main / anchor / work`整体重基准，旧侧收拢到透明中点前继续使用该工作区，不能先被新工作区的Resolve/Fit夹取。之后才消费当前目标方向，并沿收拢→紧凑态→换边→展开动画交接。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板和菜单均在Main Bar之前绘制，重叠像素由主栏覆盖。
 
-EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及DrawAttribute的EaseOutBack/EaseInBack、EaseOutSine/EaseInSine；紧凑宽度取BarDrawAttributeCompactWidth。状态变更才Retarget，前半程可加入父余时。geometry允许overshoot，alpha独立有界；零时间采样保留当前姿态（动画禁用或force replace除外）。子pose复合父pose，锚点跟随当前完整自动按钮。开合期间允许整组缩放，稳定精确为1；日常Hover/Selected不缩放圆。
+EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及DrawAttribute的EaseOutBack/EaseInBack、EaseOutSine/EaseInSine；紧凑宽度取BarDrawAttributeCompactWidth。状态变更才Retarget。上下倒转与绘制属性共用一个默认操作时长和同一`speedRate`：父时间线进度不超过50%时，收拢只补到父批次中点，展开占父完整后半段并与其同时截止；父时间线超过50%时创建一个完整独立批次。RenderLoop先推进父时间线的一帧，加入计算必须补偿这一帧；单帧跨过透明中点时还必须把剩余`dt`交给展开段，不能令橡皮抢跑或落后一帧。geometry允许overshoot，alpha独立有界；零时间采样保留当前姿态（动画禁用或force replace除外）。子pose复合父pose，锚点跟随当前完整自动按钮。开合期间允许整组缩放，稳定精确为1；日常Hover/Selected不缩放圆。
 
 Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形。内容在当前shell内裁剪，窗口容量容纳shell与光影。PresentationSnapshot/CommitPresented只在成功呈现后发布，Pointer消费同一实际几何。ResolveEraserAttributeRelease以新Down票据为依据，body/arrow跨区Up仍返回Down所属动作；无Down的旧Up不得清空。沿用Message::IsPointerGeneratedMouseMessage过滤兼容事件；leave/cancel清理反馈，Pen/Touch Up不保留鼠标式Hover。
 
@@ -62,7 +63,7 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 |指针位于尺寸入口外接矩形角|圆距判断失败，不产生Hover、Pressed或选择|
 |选中尺寸切换|旧圆环渐隐、新圆环渐显；本体直径与灰色轮廓不变|
 |自动菜单展开/收起或反向|箭头沿笔类型同款0/180度动画连续收敛，70/20动作区不变|
-|主栏直拖跨越工作区边界|已呈现橡皮面板位置/上下与左右方向保持不变；松手后通过既有倒转动画落到新侧|
+|主栏直拖跨越工作区边界|拖动中保持已呈现位置/方向；松手首帧仅随锚点平移、无工作区夹取闪烁，并在绘制属性同一批次截止时间落到新侧|
 |无内容Clear|禁用，不产生空撤销记录|
 |Clear接受但接触仍活动|等原Up/提交边界执行|
 |Clear撤销后Redo|复用一次Clear事务|
@@ -71,12 +72,12 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 
 ## 5. Good / Base / Bad
 Good：32/中逐字段等价现有解析器，默认控制器回归仍通过。
-Base：40 DIP在35% UI缩放下高于面板，保持实际像素直径并裁上下；300 DIP工作区保持5/16 DIP正常留白，仅裁横向溢出；216组几何覆盖常规DPI/UI缩放。直拖跨界时只锁存已呈现布局，松手后继续原有倒转时间线。
+Base：40 DIP在35% UI缩放下高于面板，保持实际像素直径并裁上下；300 DIP工作区保持5/16 DIP正常留白，仅裁横向溢出；216组几何覆盖常规DPI/UI缩放。直拖跨界时锁存已呈现布局，松手首帧重基准且不夹取；父批次25%时加入共同截止，75%时使用完整独立批次。
 Bad：把160做成第三个基础档、独立global bool遮盖五入口、用hover缩放真实圆、开合重置尺寸会话。
 
 ## 6. Tests Required
 `InkeysHeadlessTests.exe --no-window`包含模型/面积/会话基准、三档/三灵敏度、DPI×UI缩放几何与真实配置读写。
-`Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证圆形命中角、外侧选中环渐变/按压、无悬停提示框、箭头展开/收起中间帧、菜单/关闭/idle、直拖锁存与松手倒转，并验证300×620窄区仍保持正常5/16 DIP留白后仅裁剪溢出，输出`visuals/narrow-eraser-attribute.png`；不等同真实HWND窗口或硬件交互验收。
+`Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证圆形命中角、外侧选中环渐变/按压、无悬停提示框、箭头展开/收起中间帧、菜单/关闭/idle；直拖覆盖松手零时间首帧坐标连续、父批次25%加入后在中点提交方向并共同截止、父批次75%后创建完整独立批次；另验证300×620窄区保持正常5/16 DIP留白后仅裁剪溢出并输出`visuals/narrow-eraser-attribute.png`。这些不等同真实HWND窗口或硬件交互验收。
 `Inkeys.exe --draw3-eraser-hidden-test`检查实际Host五入口/首点/活动锁存/Up和间隔。
 `Inkeys.exe --draw3-hidden-test`检查Clear、Up边界、Undo/Redo、跨页、白板和场景事务。
 当前方案B结果以任务scheme-b-validation.md为准；旧validation.md仅代表上一轮设计，不能据此推断本轮通过。offscreen还保存真实帧PNG/CSV及A图标三态；组合GIF只重放这些帧。
@@ -89,6 +90,6 @@ Correct：共享EraserGripVisual结构，先从真实画布像素直径除frameZ
 Wrong：用圆的外接矩形直接命中，或把选中Accent画进橡皮本体轮廓。
 Correct：矩形只作为dirty/裁剪包络；业务命中使用圆距，选中由圆外独立可逆Accent环表达。
 Wrong：直拖每帧按临时工作区重新解析橡皮面板，越界时立即翻边或闪现。
-Correct：直拖沿用已呈现布局；仅在松手后用同一倒转动画吸收新方向。
+Correct：直拖沿用已呈现布局；松手将锁存的`main / anchor / work`整体重基准，透明中点前不使用新工作区夹取，再按绘制属性同一批次时长吸收新方向。
 Wrong：窄工作区为塞入面板压缩5 DIP或16 DIP留白。
 Correct：保持342 DIP自然布局、正常5/16 DIP留白和真实控件尺寸，仅裁剪横向溢出。

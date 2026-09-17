@@ -104,6 +104,8 @@ private:
 	double zoom_ = 1;
 	bool initialized_ = false, changed_ = false, active_ = false;
 	bool hasStableLayoutInput_ = false, dragPlacementLocked_ = false;
+	bool releaseSwitchLayoutLocked_ = false, sideSwitchActive_ = false;
+	double sideSwitchExpandDuration_ = 0;
 	bool previousBelow_ = false, previousReversed_ = false;
 	int menuSide_ = -1;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
