@@ -1252,7 +1252,29 @@ namespace draw3
 		return true;
 	}
 
-	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds)
+	bool IsModeledTipSettled(
+		std::span<const ink::stroke_model::Result> modeledResults,
+		DirectX::XMFLOAT2 rawEndpoint, double frameIntervalSeconds) noexcept
+	{
+		if (modeledResults.empty() || !std::isfinite(rawEndpoint.x) ||
+			!std::isfinite(rawEndpoint.y) || !std::isfinite(frameIntervalSeconds) ||
+			frameIntervalSeconds <= 0.0) return false;
+		const ink::stroke_model::Result& tip = modeledResults.back();
+		if (!std::isfinite(tip.position.x) || !std::isfinite(tip.position.y) ||
+			!std::isfinite(tip.velocity.x) || !std::isfinite(tip.velocity.y)) return false;
+		const double endpointError = std::hypot(
+			static_cast<double>(tip.position.x) - rawEndpoint.x,
+			static_cast<double>(tip.position.y) - rawEndpoint.y);
+		const double nextFrameTravel = std::hypot(
+			static_cast<double>(tip.velocity.x),
+			static_cast<double>(tip.velocity.y)) * frameIntervalSeconds;
+		return std::isfinite(endpointError) && std::isfinite(nextFrameTravel) &&
+			endpointError <= kVisualStablePositionEpsilonPx &&
+			nextFrameTravel <= kVisualStablePositionEpsilonPx;
+	}
+
+	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
+		bool modelSettled, double liveTipDurationSeconds)
 	{
 		if (rawMoved)
 		{
@@ -1261,7 +1283,8 @@ namespace draw3
 			return;
 		}
 		const bool stoppedLongEnough = stroke.logicalInputTime - stroke.lastMovementInputTime >= liveTipDurationSeconds;
-		if (stoppedLongEnough && AreL0VisualsClose(stroke.l0DrawPoints, stroke.previousL0DrawPoints))
+		if (stoppedLongEnough && modelSettled &&
+			AreL0VisualsClose(stroke.l0DrawPoints, stroke.previousL0DrawPoints))
 			++stroke.visualStableFrameCount; // 连续多帧几乎不变才认为视觉已经稳定。
 		else
 			stroke.visualStableFrameCount = 0;

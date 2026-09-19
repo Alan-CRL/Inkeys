@@ -14,6 +14,7 @@
 #include <limits>
 #include <new>
 #include <set>
+#include <span>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -1802,6 +1803,226 @@ namespace
 		}
 	}
 
+	void TestLowSpeedStopConvergence(TestState& state)
+	{
+		using ink::stroke_model::DisabledPredictorParams;
+		using ink::stroke_model::Input;
+		using ink::stroke_model::Result;
+		using ink::stroke_model::Time;
+		using ink::stroke_model::Vec2;
+
+		std::vector<Result> convergenceProbe(1);
+		convergenceProbe.back().position = { 10.01f, 20.0f };
+		for (const double framesPerSecond : { 30.0, 60.0, 120.0, 240.0 })
+		{
+			const double frameIntervalSeconds = 1.0 / framesPerSecond;
+			convergenceProbe.back().velocity = {
+				static_cast<float>(0.04 / frameIntervalSeconds), 0.0f };
+			TEST_CHECK(state, draw3::IsModeledTipSettled(
+				convergenceProbe, { 10.0f, 20.0f }, frameIntervalSeconds));
+			convergenceProbe.back().velocity = {
+				static_cast<float>(0.06 / frameIntervalSeconds), 0.0f };
+			TEST_CHECK(state, !draw3::IsModeledTipSettled(
+				convergenceProbe, { 10.0f, 20.0f }, frameIntervalSeconds));
+		}
+		convergenceProbe.back().velocity = {};
+		convergenceProbe.back().position.x =
+			(std::numeric_limits<float>::quiet_NaN)();
+		TEST_CHECK(state, !draw3::IsModeledTipSettled(
+			convergenceProbe, { 10.0f, 20.0f }, 1.0 / 60.0));
+		TEST_CHECK(state, !draw3::IsModeledTipSettled(
+			std::span<const Result>{}, { 10.0f, 20.0f }, 1.0 / 60.0));
+		convergenceProbe.back().position = { 10.01f, 20.0f };
+		convergenceProbe.back().velocity.x =
+			(std::numeric_limits<float>::quiet_NaN)();
+		TEST_CHECK(state, !draw3::IsModeledTipSettled(
+			convergenceProbe, { 10.0f, 20.0f }, 1.0 / 60.0));
+		convergenceProbe.back().velocity = {};
+		TEST_CHECK(state, !draw3::IsModeledTipSettled(
+			convergenceProbe, { 10.0f, 20.0f }, 0.0));
+
+		draw3::ActiveStroke unsettledVisual(5.0f, 500.0f);
+		unsettledVisual.l0DrawPoints.push_back({ 10.0f, 20.0f, 2.5f, 0.0f });
+		unsettledVisual.previousL0DrawPoints = unsettledVisual.l0DrawPoints;
+		unsettledVisual.logicalInputTime = 1.0;
+		for (int frame = 0; frame < 8; ++frame)
+			draw3::UpdateIdleFreezeState(unsettledVisual, false, false, 0.0);
+		TEST_CHECK(state, !unsettledVisual.idleFrozen);
+		TEST_CHECK(state, unsettledVisual.visualStableFrameCount == 0);
+		draw3::ActiveStroke independentlySettledVisual(5.0f, 500.0f);
+		independentlySettledVisual.l0DrawPoints = unsettledVisual.l0DrawPoints;
+		independentlySettledVisual.previousL0DrawPoints =
+			independentlySettledVisual.l0DrawPoints;
+		independentlySettledVisual.logicalInputTime = 1.0;
+		for (int frame = 0; frame < 4; ++frame)
+			draw3::UpdateIdleFreezeState(
+				independentlySettledVisual, false, true, 0.0);
+		TEST_CHECK(state, independentlySettledVisual.idleFrozen);
+		TEST_CHECK(state, !unsettledVisual.idleFrozen);
+
+		const draw3::StrokeModelConfiguration configuration =
+			draw3::CreateStrokeModelConfiguration(96);
+		const double frameIntervalSeconds =
+			1.0 / configuration.timingProfile.target_fps;
+		for (const bool predictionEnabled : { true, false })
+		{
+			auto params = configuration.modelParams;
+			if (predictionEnabled)
+				draw3::ApplyPredictionMode(params, configuration.kalmanPredictorParams);
+			else
+				params.prediction_params = DisabledPredictorParams{};
+			draw3::ActiveStroke stroke(5.0f, configuration.expectedSpeed);
+			TEST_CHECK(state, stroke.modeler.Reset(params).ok());
+
+			double inputTime = 0.0;
+			TEST_CHECK(state, stroke.modeler.Update({
+				.event_type = Input::EventType::kDown,
+				.position = Vec2(0.0f, 0.0f),
+				.time = Time(inputTime) }, stroke.modeledResults).ok());
+			draw3::AppendNewModeledPoints(stroke);
+			for (int sample = 1; sample <= 8; ++sample)
+			{
+				inputTime += frameIntervalSeconds;
+				TEST_CHECK(state, stroke.modeler.Update({
+					.event_type = Input::EventType::kMove,
+					.position = Vec2(static_cast<float>(sample) * 0.5f, 0.0f),
+					.time = Time(inputTime) }, stroke.modeledResults).ok());
+				draw3::AppendNewModeledPoints(stroke, 30.0f);
+			}
+			const DirectX::XMFLOAT2 rawEndpoint = { 4.0f, 0.0f };
+			const Result modeledBeforePredict = stroke.modeledResults.back();
+			const size_t modeledCountBeforePredict = stroke.modeledResults.size();
+			std::vector<Result> predictedResults;
+			const absl::Status firstPredictionStatus =
+				stroke.modeler.Predict(predictedResults);
+			const absl::Status secondPredictionStatus =
+				stroke.modeler.Predict(predictedResults);
+			TEST_CHECK(state, stroke.modeledResults.size() == modeledCountBeforePredict);
+			TEST_CHECK(state, stroke.modeledResults.back() == modeledBeforePredict);
+			if (predictionEnabled)
+			{
+				TEST_CHECK(state, firstPredictionStatus.ok());
+				TEST_CHECK(state, secondPredictionStatus.ok());
+			}
+			else
+			{
+				TEST_CHECK(state, !firstPredictionStatus.ok());
+				TEST_CHECK(state, !secondPredictionStatus.ok());
+				TEST_CHECK(state, predictedResults.empty());
+			}
+			TEST_CHECK(state, !draw3::IsModeledTipSettled(
+				stroke.modeledResults, rawEndpoint, frameIntervalSeconds));
+
+			const size_t modeledCountBeforeSettle = stroke.modeledResults.size();
+			const size_t realPointCountBeforeSettle = stroke.realPoints.size();
+			int stationaryAdvanceCount = 0;
+			while (!draw3::IsModeledTipSettled(
+				stroke.modeledResults, rawEndpoint, frameIntervalSeconds) &&
+				stationaryAdvanceCount < 120)
+			{
+				inputTime += frameIntervalSeconds;
+				TEST_CHECK(state, stroke.modeler.Update({
+					.event_type = Input::EventType::kMove,
+					.position = Vec2(rawEndpoint.x, rawEndpoint.y),
+					.time = Time(inputTime) }, stroke.modeledResults).ok());
+				draw3::AppendNewModeledPoints(stroke);
+				++stationaryAdvanceCount;
+			}
+			TEST_CHECK(state, draw3::IsModeledTipSettled(
+				stroke.modeledResults, rawEndpoint, frameIntervalSeconds));
+			TEST_CHECK(state, stationaryAdvanceCount > 0 && stationaryAdvanceCount < 60);
+			TEST_CHECK(state, stroke.modeledResults.size() > modeledCountBeforeSettle);
+			TEST_CHECK(state, stroke.modeledResults.size() - modeledCountBeforeSettle < 256);
+			TEST_CHECK(state, stroke.realPoints.size() > realPointCountBeforeSettle);
+
+			const size_t settledModeledCount = stroke.modeledResults.size();
+			const size_t settledRealPointCount = stroke.realPoints.size();
+			for (int idleFrame = 0; idleFrame < 600; ++idleFrame)
+			{
+				if (!draw3::IsModeledTipSettled(
+					stroke.modeledResults, rawEndpoint, frameIntervalSeconds))
+				{
+					inputTime += frameIntervalSeconds;
+					TEST_CHECK(state, stroke.modeler.Update({
+						.event_type = Input::EventType::kMove,
+						.position = Vec2(rawEndpoint.x, rawEndpoint.y),
+						.time = Time(inputTime) }, stroke.modeledResults).ok());
+					draw3::AppendNewModeledPoints(stroke);
+				}
+			}
+			TEST_CHECK(state, stroke.modeledResults.size() == settledModeledCount);
+			TEST_CHECK(state, stroke.realPoints.size() == settledRealPointCount);
+
+			stroke.idleFrozen = false;
+			stroke.visualStableFrameCount = 0;
+			stroke.previousL0DrawPoints.clear();
+			stroke.lastMovementInputTime = 8.0 * frameIntervalSeconds;
+			for (int stableFrame = 0; stableFrame < 4; ++stableFrame)
+			{
+				stroke.logicalInputTime = inputTime +
+					configuration.liveTipDurationSeconds +
+					stableFrame * frameIntervalSeconds;
+				stroke.predictedResults.clear();
+				if (predictionEnabled)
+					TEST_CHECK(state, stroke.modeler.Predict(
+						stroke.predictedResults).ok());
+				draw3::RebuildPredictedPoints(stroke);
+				draw3::RebuildL0DrawPoints(stroke,
+					configuration.liveTipDurationSeconds,
+					draw3::StrokeShape::RoundCapsule, 512, 512);
+				draw3::UpdateIdleFreezeState(stroke, false, true,
+					configuration.liveTipDurationSeconds);
+				if (stableFrame < 3) TEST_CHECK(state, !stroke.idleFrozen);
+			}
+			TEST_CHECK(state, stroke.idleFrozen);
+			TEST_CHECK(state, stroke.modeledResults.size() == settledModeledCount);
+			TEST_CHECK(state, stroke.realPoints.size() == settledRealPointCount);
+
+			stroke.idleFrozen = false;
+			stroke.visualStableFrameCount = 0;
+			inputTime += frameIntervalSeconds;
+			const DirectX::XMFLOAT2 resumedRawEndpoint = { 4.5f, 0.0f };
+			const double previousModeledTime =
+				stroke.modeledResults.back().time.Value();
+			TEST_CHECK(state, stroke.modeler.Update({
+				.event_type = Input::EventType::kMove,
+				.position = Vec2(resumedRawEndpoint.x, resumedRawEndpoint.y),
+				.time = Time(inputTime) }, stroke.modeledResults).ok());
+			draw3::AppendNewModeledPoints(stroke, 30.0f);
+			TEST_CHECK(state, stroke.modeledResults.back().time.Value() >
+				previousModeledTime);
+			TEST_CHECK(state, std::isfinite(stroke.modeledResults.back().position.x));
+			TEST_CHECK(state, std::isfinite(stroke.modeledResults.back().velocity.x));
+
+			int resumedStationaryAdvanceCount = 0;
+			while (!draw3::IsModeledTipSettled(
+				stroke.modeledResults, resumedRawEndpoint, frameIntervalSeconds) &&
+				resumedStationaryAdvanceCount < 120)
+			{
+				inputTime += frameIntervalSeconds;
+				TEST_CHECK(state, stroke.modeler.Update({
+					.event_type = Input::EventType::kMove,
+					.position = Vec2(resumedRawEndpoint.x, resumedRawEndpoint.y),
+					.time = Time(inputTime) }, stroke.modeledResults).ok());
+				draw3::AppendNewModeledPoints(stroke);
+				++resumedStationaryAdvanceCount;
+			}
+			TEST_CHECK(state, draw3::IsModeledTipSettled(
+				stroke.modeledResults, resumedRawEndpoint, frameIntervalSeconds));
+			const draw3::InkPoint settledTip = stroke.realPoints.back();
+			inputTime += frameIntervalSeconds;
+			TEST_CHECK(state, stroke.modeler.Update({
+				.event_type = Input::EventType::kUp,
+				.position = Vec2(resumedRawEndpoint.x, resumedRawEndpoint.y),
+				.time = Time(inputTime) }, stroke.modeledResults).ok());
+			draw3::AppendNewModeledPoints(stroke);
+			const draw3::InkPoint finalTip = stroke.realPoints.back();
+			TEST_CHECK(state, std::hypot(finalTip.x - resumedRawEndpoint.x,
+				finalTip.y - resumedRawEndpoint.y) <= 0.05f);
+			TEST_CHECK(state, std::abs(finalTip.r - settledTip.r) <= 0.02f);
+		}
+	}
+
 	void TestInvertedPenPolicy(TestState& state)
 	{
 		draw3::StrokeModelConfiguration configuration;
@@ -2142,6 +2363,7 @@ int wmain(int argc, wchar_t* argv[])
 	TestSpeedEraserOcController(state);
 	TestInterruptedStrokeReconnectPolicy(state);
 	TestInterruptedStrokeReconnectModelLifecycle(state);
+	TestLowSpeedStopConvergence(state);
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
 	TestPerformanceHudMetrics(state);

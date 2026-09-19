@@ -387,9 +387,70 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - 普通笔 `HardwarePressure` 使用模型插值后的 `[0,1]` pressure 映射基准直径的 `0.2–1.4` 倍；Down 压力缺失时整笔回退 `SimulatedPressure`，后续偶发缺失保持上一真实宽度。
 - 普通笔 L0 实时笔锋：`HardwarePressure` 禁用 tip taper；`SimulatedPressure`/`Fixed` 启用。taper 后仅做空间公切线安全投影（斜率 `0.95`、双向），不再套用稳定笔宽时间限速。
 - L1 保护窗口仍使用配置 `liveTipDuration + predictionDuration`，与 tip 是否绘制解耦。
-- 视觉连续三帧稳定后可冻结停笔更新，移动时解除冻结。
+- 普通 Pen/HardPen 的停笔冻结必须先满足下文的模型收敛合同，再确认视觉连续三帧稳定；其他工具保持既有三帧视觉门槛。`idleFrozen` 只停止继续生成同点模型/几何，不代表停止活动 contact 的 mailbox 轮询或 Present 调度。
 
 依据：`StrokeWidthEstimator::Append`、`UpdateRawPositionAndDetectMovement`、`UpdateIdleFreezeState`、`RebuildPredictedPoints`。
+
+## Scenario: 普通笔停笔模型收敛与冻结
+
+### 1. Scope / Trigger
+
+修改 Pen/HardPen 的 `StrokeModeler` 输入、prediction、L0 笔锋、idle freeze 或活动 contact 帧循环时，必须应用本合同。目标是防止没有新 raw snapshot 时把重复且不改变模型状态的 prediction 误判为“笔锋已经追上”。
+
+### 2. Signatures
+
+- `IsModeledTipSettled(span<Result>, rawEndpoint, frameIntervalSeconds) -> bool`。
+- `UpdateIdleFreezeState(ActiveStroke&, rawMoved, modelSettled, liveTipDurationSeconds)`。
+- 每个 `RuntimeStroke` 独立保存 `modelInputThisFrame` 与 `stationaryModelAdvanceBlocked`；产品 Pen 与 HardPen 应用本合同，测试宿主的 Pen 保持同构。
+
+### 3. Contracts
+
+- `StrokeModeler::Predict` 不改变模型内部状态，不能单独证明 modeled tip 已追到 raw endpoint。活动普通笔在本帧没有 model input、未结束、未 reconnect、未 frozen 且尚未收敛时，必须以最近接受进入模型路径的 `lastModelSnapshot` 位置和最后有效 stylus 状态补送一次同点 `kMove`。
+- 合成输入时间来自本帧 QPC，并且至少为 `lastModelInputTime + 1us`；转换 modeled point 时传 `inputSpeed=-1`。不得写入 `lastSpeedSnapshot`、滤波速度、真实 snapshot QPC 或压力/角度采样基线。
+- modeled tip 只有在末端位置误差不超过 `0.05px`，并且 `|velocity| * targetFrameInterval` 不超过 `0.05px` 时才算收敛；endpoint、frame interval、position、velocity 任一缺失、非有限或非正时间均不得报告收敛。
+- 一旦模型收敛，立即停止 stationary `Update`；随后沿用 L0 position/radius 连续三帧稳定门槛确认 prediction、taper 与宽度不再变化。禁止用固定额外延迟代替位置/速度证据。
+- stationary `Update` 明确失败时按 contact 锁存 `stationaryModelAdvanceBlocked`，只记录一次且不追加点、不伪造 settled/frozen；新 Down 必须重置该锁存，下一份成功真实 model input 或成功 reconnect 才解除。空 prediction 不等于模型失败。
+- Highlighter、Eraser、Laser、Shape 不接入 stationary advance，保持原有冻结和工具生命周期。活动 contact 为读取只更新 mailbox 的 Move 仍可按帧轮询；本合同约束的是模型/几何点增长，不承诺停止 Present。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需行为 |
+|---|---|
+| 无新 snapshot，末端仍有位置误差 | 用最后接受进入模型路径的 snapshot 同点推进；不制造速度样本 |
+| 位置暂时接近但单帧 velocity 位移超限 | 不报告 settled，不冻结 |
+| 位置与 velocity 均收敛 | 立即停止补送；再等三帧 L0 视觉稳定后 frozen |
+| prediction disabled 或为空 | 仍以 modeled Result 判定，不能因 prediction 空而提前冻结 |
+| stationary `Update` 失败 | 单 contact 锁存并只记录一次；等待成功真实输入恢复 |
+| RuntimeStroke 从对象池复用 | 新 Down 清除旧笔的失败锁存和每帧输入状态 |
+| 新真实 Move / stylus 状态变化 | 走真实 Update、解除 idle freeze；成功时解除失败锁存 |
+| 多 contact 一动一停 | 每个 runtime 独立推进、收敛、冻结和恢复 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：低速移动后停住，modeler 用少量同点输入追到 raw endpoint；点数停止增长，三帧视觉稳定后 frozen，再移动时没有旧欠账甩出。
+- Base：Highlighter/Eraser/Laser/Shape 继续走原路径；prediction 关闭时普通笔仍可凭 modeled position/velocity 收敛。
+- Bad：只重复 `Predict`、只延长 timeout、只比较两帧 L0，或收敛后仍持续向 shader 输入重复点。
+
+### 6. Tests Required
+
+- 用真实 `StrokeModeler` 证明重复 `Predict` 不推进内部结果，而同点 `kMove` 会在有界帧数和输出点预算内收敛。
+- 覆盖 30/60/120/240 FPS 的 velocity 门槛、position/velocity 非有限、非法帧间隔、prediction 开/关和两个独立笔画的冻结隔离。
+- 收敛后长时间 idle 的 modeled/real 点数必须恒定；恢复真实 Move 的模型时间单调，随后同坐标 Up 的 endpoint/radius 变化不超过视觉容差。
+- 执行 `inkStrokeModelerTest.sln Debug|ARM64`、模型回归测试、完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 与 Draw3 hidden 集成测试。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：Predict 不推进模型，重复结果稳定不能证明笔尖已追上。
+modeler.Predict(predicted);
+if (AreL0VisualsClose(current, previous)) stroke.idleFrozen = true;
+
+// Correct：无真实输入时推进模型；位置和剩余运动都收敛后才进入视觉稳定门槛。
+if (!modelInputThisFrame && !IsModeledTipSettled(modeled, rawEndpoint, frameInterval))
+    modeler.Update(stationaryMove, modeled); // inputSpeed=-1，不更新真实速度基线
+UpdateIdleFreezeState(stroke, rawMoved,
+    IsModeledTipSettled(modeled, rawEndpoint, frameInterval), liveTipDuration);
+~~~
 
 ## Scenario: RTS Interrupted Stroke Reconnect
 

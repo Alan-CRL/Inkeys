@@ -594,6 +594,8 @@ namespace Inkeys::Drawing::Draw3
 			bool cancelled = false;
 			bool metricVisible = false;
 			bool movedThisFrame = false;
+			bool modelInputThisFrame = false;
+			bool stationaryModelAdvanceBlocked = false;
 			bool laserParticleMovedThisFrame = false;
 			bool hasFilteredInputSpeed = false;
 			bool invertedCursor = false;
@@ -2705,9 +2707,11 @@ namespace Inkeys::Drawing::Draw3
 					const size_t reconnectManualTestFirstPointIndex =
 						reconnectRuntime->stroke.realPoints.empty()
 						? 0 : reconnectRuntime->stroke.realPoints.size() - 1;
+					reconnectRuntime->modelInputThisFrame = true;
 					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
 						reconnectInput, reconnectRuntime->stroke.modeledResults); status.ok())
 					{
+						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
 						const float alpha = std::clamp(static_cast<float>(
 							1.0 - std::exp(-gapSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);
@@ -2955,6 +2959,8 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = down.tilt,
 					.orientation = down.orientation
 				};
+				runtime->modelInputThisFrame = true;
+				runtime->stationaryModelAdvanceBlocked = false;
 				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
@@ -3128,6 +3134,7 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
+				runtime.modelInputThisFrame = true;
 				if (absl::Status status = updateContactModel(runtime,upInput,inputTime); status.ok())
 				{
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
@@ -3244,9 +3251,11 @@ namespace Inkeys::Drawing::Draw3
 					.orientation = orientation
 				};
 				bool modelUpdateSucceeded = false;
+				runtime.modelInputThisFrame = true;
 				if (absl::Status status = updateContactModel(runtime,input,inputTime); status.ok())
 				{
 					modelUpdateSucceeded = true;
+					runtime.stationaryModelAdvanceBlocked = false;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
 				}
@@ -6447,6 +6456,8 @@ namespace Inkeys::Drawing::Draw3
 			const float preInputLaserOpacity = laserOpacity;
 			const bool interruptedStrokeReconnectEnabled =
 				GetInterruptedStrokeReconnectEnabled();
+			for (RuntimeStroke* runtime : active)
+				if (runtime) runtime->modelInputThisFrame = false;
 			if (!interruptedStrokeReconnectEnabled)
 			{
 				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
@@ -6506,6 +6517,47 @@ namespace Inkeys::Drawing::Draw3
 				runtime->eraserSize.Update(runtime->speedEraserOc.Diameter(),frameAbsoluteSeconds,
 					runtime->speedEraserOc.SecondsSinceMovement(frameAbsoluteSeconds)>=runtime->speedEraserOc.Configuration().idleStartSeconds);
 				// 当前工具独立回缩；历史点不变，下一次几何才添加尺寸断点。
+			}
+			const double modeledTipFrameIntervalSeconds =
+				1.0 / configuration_.timingProfile.target_fps;
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+					(runtime->tool != DrawingTool::Pen && runtime->tool != DrawingTool::HardPen) ||
+					runtime->stroke.idleFrozen || runtime->modelInputThisFrame ||
+					runtime->stationaryModelAdvanceBlocked) continue;
+				const DirectX::XMFLOAT2 rawEndpoint = {
+					runtime->lastModelSnapshot.position.x,
+					runtime->lastModelSnapshot.position.y };
+				if (IsModeledTipSettled(runtime->stroke.modeledResults,
+					rawEndpoint, modeledTipFrameIntervalSeconds)) continue;
+				const double frameInputTime = QpcDeltaSeconds(
+					frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency);
+				const double minimumInputTime = runtime->lastModelInputTime + 0.000001;
+				if (!std::isfinite(frameInputTime) || frameInputTime < minimumInputTime)
+					continue;
+				const Input stationaryInput{
+					.event_type = Input::EventType::kMove,
+					.position = Vec2(rawEndpoint.x, rawEndpoint.y),
+					.time = Time(frameInputTime),
+					.pressure = runtime->lastPressure,
+					.tilt = runtime->lastTilt,
+					.orientation = runtime->lastOrientation
+				};
+				// Predict 不会推进模型；仅用最后接受的模型锚点完成停笔收敛。
+				runtime->modelInputThisFrame = true;
+				if (absl::Status status = runtime->stroke.modeler.Update(
+					stationaryInput, runtime->stroke.modeledResults); status.ok())
+				{
+					runtime->lastModelInputTime = frameInputTime;
+					AppendRuntimeModeledPoints(*runtime, -1.0f, frameInputTime);
+				}
+				else
+				{
+					runtime->stationaryModelAdvanceBlocked = true;
+					// 同一次停笔不再逐帧重试失败输入；下一份成功真实输入会解除锁存。
+					std::cout << "Error: " << status.message() << std::endl;
+				}
 			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
@@ -6836,8 +6888,17 @@ namespace Inkeys::Drawing::Draw3
 					stroke.currentL0Rect = {};
 				}
 				if (!runtime->ended && !runtime->awaitingReconnect)
+				{
+					const bool modelSettled =
+						(runtime->tool != DrawingTool::Pen &&
+							runtime->tool != DrawingTool::HardPen) ||
+						IsModeledTipSettled(stroke.modeledResults,
+							{ runtime->lastModelSnapshot.position.x,
+								runtime->lastModelSnapshot.position.y },
+							modeledTipFrameIntervalSeconds);
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
-						liveTipProtectionSeconds);
+						modelSettled, liveTipProtectionSeconds);
+				}
 				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 				{
 					if (!runtime->ended)

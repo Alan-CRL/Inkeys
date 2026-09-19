@@ -401,6 +401,8 @@ namespace draw3
 			bool cancelled = false;
 			bool metricVisible = false;
 			bool movedThisFrame = false;
+			bool modelInputThisFrame = false;
+			bool stationaryModelAdvanceBlocked = false;
 			bool laserParticleMovedThisFrame = false;
 			bool hasFilteredInputSpeed = false;
 			bool invertedCursor = false;
@@ -2347,6 +2349,8 @@ namespace draw3
 						reconnectRuntime->lastModelSnapshot = modelDown;
 						reconnectRuntime->lastConsumedSequence = down.sequence;
 						reconnectRuntime->lastModelInputTime = inputTime;
+						reconnectRuntime->modelInputThisFrame = true;
+						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						reconnectRuntime->lastPressure = lastPressure;
 						reconnectRuntime->lastTilt = lastTilt;
 						reconnectRuntime->lastOrientation = lastOrientation;
@@ -2552,6 +2556,8 @@ namespace draw3
 					runtime->inUse = false;
 					return false;
 				}
+				runtime->modelInputThisFrame = true;
+				runtime->stationaryModelAdvanceBlocked = false;
 				if (runtime->shape.active)
 					ExtractShapeModeledEndpoint(*runtime);
 				else
@@ -2797,10 +2803,12 @@ namespace draw3
 					.orientation = orientation
 				};
 				bool modelUpdateSucceeded = false;
+				runtime.modelInputThisFrame = true;
 				if (absl::Status status = runtime.stroke.modeler.Update(
 					input, runtime.stroke.modeledResults); status.ok())
 				{
 					modelUpdateSucceeded = true;
+					runtime.stationaryModelAdvanceBlocked = false;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
 				}
@@ -4636,6 +4644,8 @@ namespace draw3
 			const float preInputLaserOpacity = laserOpacity;
 			const bool interruptedStrokeReconnectEnabled =
 				GetInterruptedStrokeReconnectEnabled();
+			for (RuntimeStroke* runtime : active)
+				if (runtime) runtime->modelInputThisFrame = false;
 			if (!interruptedStrokeReconnectEnabled)
 			{
 				while (input_.TryDequeue(record)) processCommand(record);
@@ -4689,6 +4699,46 @@ namespace draw3
 					runtime->stroke.widthMode != StrokeWidthMode::SpeedEraser) continue;
 				runtime->speedEraserOc.Advance(frameAbsoluteSeconds);
 				// 按住静止时只推进光标 OC；模型宽度边界仍保留到下一份 raw snapshot。
+			}
+			const double modeledTipFrameIntervalSeconds =
+				1.0 / configuration_.timingProfile.target_fps;
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+					runtime->tool != DrawingTool::Pen || runtime->stroke.idleFrozen ||
+					runtime->modelInputThisFrame || runtime->stationaryModelAdvanceBlocked) continue;
+				const DirectX::XMFLOAT2 rawEndpoint = {
+					runtime->lastModelSnapshot.position.x,
+					runtime->lastModelSnapshot.position.y };
+				if (IsModeledTipSettled(runtime->stroke.modeledResults,
+					rawEndpoint, modeledTipFrameIntervalSeconds)) continue;
+				const double frameInputTime = QpcDeltaSeconds(
+					frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency);
+				const double minimumInputTime = runtime->lastModelInputTime + 0.000001;
+				if (!std::isfinite(frameInputTime) || frameInputTime < minimumInputTime)
+					continue;
+				const Input stationaryInput{
+					.event_type = Input::EventType::kMove,
+					.position = Vec2(rawEndpoint.x, rawEndpoint.y),
+					.time = Time(frameInputTime),
+					.pressure = runtime->lastPressure,
+					.tilt = runtime->lastTilt,
+					.orientation = runtime->lastOrientation
+				};
+				// Predict 不会推进模型；只在未追上时用最后一份有效 raw 状态继续收敛。
+				runtime->modelInputThisFrame = true;
+				if (absl::Status status = runtime->stroke.modeler.Update(
+					stationaryInput, runtime->stroke.modeledResults); status.ok())
+				{
+					runtime->lastModelInputTime = frameInputTime;
+					AppendRuntimeModeledPoints(*runtime, -1.0f, frameInputTime);
+				}
+				else
+				{
+					runtime->stationaryModelAdvanceBlocked = true;
+					// 同一次停笔不再逐帧重试失败输入；下一份成功真实输入会解除锁存。
+					std::cout << "Error: " << status.message() << std::endl;
+				}
 			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
@@ -5025,8 +5075,15 @@ namespace draw3
 					stroke.currentL0Rect = {};
 				}
 				if (!runtime->ended && !runtime->awaitingReconnect)
+				{
+					const bool modelSettled = runtime->tool != DrawingTool::Pen ||
+						IsModeledTipSettled(stroke.modeledResults,
+							{ runtime->lastModelSnapshot.position.x,
+								runtime->lastModelSnapshot.position.y },
+							modeledTipFrameIntervalSeconds);
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
-						liveTipProtectionSeconds);
+						modelSettled, liveTipProtectionSeconds);
+				}
 				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 				{
 					if (!runtime->ended)

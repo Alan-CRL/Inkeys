@@ -613,8 +613,13 @@ export namespace draw3
 		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);
-	// 在视觉稳定后冻结停笔输入。
-	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds);
+	// 建模笔尖到达原始终点且单帧剩余位移足够小时才视为收敛。
+	bool IsModeledTipSettled(
+		std::span<const ink::stroke_model::Result> modeledResults,
+		DirectX::XMFLOAT2 rawEndpoint, double frameIntervalSeconds) noexcept;
+	// 模型与视觉均稳定后冻结停笔输入。
+	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
+		bool modelSettled, double liveTipDurationSeconds);
 	// 转换尚未处理的真实建模结果；SpeedEraser 必须显式提供本次原始输入宽度区间。
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed = -1.0f,
 		const SpeedEraserWidthInterval* speedEraserWidth = nullptr);
