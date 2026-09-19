@@ -347,10 +347,11 @@ namespace Inkeys::Drawing::Draw3
 			InkRasterStateToken rasterState = 0;
 			std::vector<InkRasterStateToken> beforeStates;
 			std::vector<InkRasterStateToken> afterStates;
-			// 从旧 Clear 区间物化的内容是本区间根，不能再次逐笔撤回。
+			// 普通导入内容可作为不可撤根；Clear 恢复则从零开始，允许逐笔撤空。
 			std::size_t undoFloor = 0;
 			std::uint32_t intervalOrdinal = 0;
 			bool intervalLoadPending = false;
+			bool previousClearUndoAvailable = true; // 跨 Clear 恢复成功后消费，阻止进入更早画布。
 			bool clearRedoAvailable = false; // 仅Clear撤销恢复后有效，新笔迹提交会取消。
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
 		};
@@ -4717,6 +4718,8 @@ namespace Inkeys::Drawing::Draw3
 					source.undoFloor, destination.history.Items().size());
 				destination.intervalOrdinal = source.intervalOrdinal;
 				destination.intervalLoadPending = source.intervalLoadPending;
+				destination.previousClearUndoAvailable =
+					source.previousClearUndoAvailable;
 				destination.clearRedoAvailable = source.clearRedoAvailable;
 				destination.boundaryFallback = std::move(source.boundaryFallback);
 			}
@@ -5124,10 +5127,13 @@ namespace Inkeys::Drawing::Draw3
 			const InkPage* current = document_->PageAt(currentPageIndex_);
 			if (!current || current->PageGuid().Bytes() != snapshot.pageGuid.Bytes())
 				return false;
-			auto materialized = materializeCanvasPage(snapshot, true);
+			auto materialized = materializeCanvasPage(snapshot, false);
 			if (!materialized || !document_->ReplacePage(
 				currentPageIndex_, std::move(materialized->first))) return false;
 			pageRuntimeStates[currentPageIndex_] = std::move(materialized->second);
+			// 恢复画布成为新的历史根；后续保存同步截断更早 Clear 区间。
+			pageRuntimeStates[currentPageIndex_].intervalOrdinal = 0;
+			pageRuntimeStates[currentPageIndex_].previousClearUndoAvailable = false;
 			pageRuntimeStates[currentPageIndex_].clearRedoAvailable = true;
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
@@ -5279,10 +5285,12 @@ namespace Inkeys::Drawing::Draw3
 								if (!pending.intervalLoadPending || pending.intervalOrdinal == 0 ||
 									completion.intervalOrdinal + 1 != pending.intervalOrdinal)
 									return std::nullopt;
-								auto materialized = materializeCanvasPage(*source, true);
+								auto materialized = materializeCanvasPage(*source, false);
 								if (!materialized || !targetDocument->ReplacePage(
 									index, std::move(materialized->first))) return std::nullopt;
 								(*runtimes)[index] = std::move(materialized->second);
+								(*runtimes)[index].intervalOrdinal = 0;
+								(*runtimes)[index].previousClearUndoAvailable = false;
 								(*runtimes)[index].clearRedoAvailable = true;
 								return index;
 							}
@@ -5668,7 +5676,8 @@ namespace Inkeys::Drawing::Draw3
 									observer_.desktopLoadRequested(observer_.context,
 										*desktopClearRecovery->fileGuid);
 						}
-						else if ((activeWorkspace == Bridge::Workspace::Presentation ||
+						else if (runtime.previousClearUndoAvailable &&
+							(activeWorkspace == Bridge::Workspace::Presentation ||
 							activeWorkspace == Bridge::Workspace::Whiteboard) &&
 							page && (runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
 							!runtime.intervalLoadPending)
@@ -5697,6 +5706,8 @@ namespace Inkeys::Drawing::Draw3
 					}
 					if (changed)
 					{
+						// 继续撤回恢复画布后，Redo 应沿笔迹历史前进，不能再重放 Clear。
+						pageRuntimeStates[currentPageIndex_].clearRedoAvailable = false;
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}

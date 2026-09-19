@@ -913,7 +913,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 ### 2. Signatures
 
 - `CanvasRuntimeHistory::AppendStroke / LastVisibleItem / UndoLastVisible / LastRedoItem / RedoLastUndone / DiscardRedoBranch / RedoDepth`
-- `CanvasPageRuntimeState { history, rasterState, beforeStates, afterStates, undoFloor, intervalOrdinal, intervalLoadPending, boundaryFallback }`
+- `CanvasPageRuntimeState { history, rasterState, beforeStates, afterStates, undoFloor, intervalOrdinal, intervalLoadPending, previousClearUndoAvailable, boundaryFallback }`
 - `UInkClear { type=6, contentId, undoId, extra? }`
 - `UndoCachePolicy { byteBudget=64 MiB, maxEntries=20 }`
 - `CompositionCachePolicy { byteBudget=192 MiB }`
@@ -925,7 +925,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 - Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。runtime history 只表示当前 Clear 区间内的 Stroke，成功撤回把隐藏项压入该 Canvas 的 LIFO redo 栈；成功重做恢复 visibility、previous-visible 链、可见 Tile 引用和 composition generation。
 - Clear 不是 RenderItem/GPU operator。有效 Clear 先把当前可见 tail 封存为 UInk Type 6 边界，再执行 `InkCanvas::ClearStrokes + fresh CanvasRuntimeHistory + 全量透明 GPU/瞬态重置`；空内容不创建边界。这样 durable 后 controller 不再保留 Clear 前 Stroke/history。
-- `LastVisibleItem()` 表示当前区间最后一条可见 Stroke。`undoFloor` 以下是从旧 UInk 区间物化的恢复根：新 Stroke 可正常 Undo，到 floor 时转入 Desktop 单恢复点或 PPT 前一区间加载，不再调用 history Undo。Eraser Stroke 即使视觉为空仍算内容。
+- `LastVisibleItem()` 表示当前区间最后一条可见 Stroke。`undoFloor` 只密封普通持久化导入根；Clear Undo 恢复的最近画布以 `undoFloor=0、intervalOrdinal=0` 物化，全部 Stroke 可逐笔 Undo，后续持久化将它写成 canonical 新根并截断更早 Clear。`previousClearUndoAvailable` 独立限制跨 Clear：当前区间到 floor 时最多恢复一次最近画布，成功后消费，恢复画布撤空后不得继续进入更早区间。Eraser Stroke 即使视觉为空仍算内容。
 - 新 Stored Stroke 一旦成功追加到 `InkCanvas`，必须在 footprint、RenderItem 和 GPU 提交前调用 `DiscardRedoBranch()`；之后任一步失败也不能复活旧分支。Laser、Cancelled、翻页、Resize 和 viewport 移动不清空 redo。
 - 热前像使用 `128x128 BGRA8` screen-local block。Canvas `128x128` undo tile 只确定受影响屏幕范围；小数 viewport 下一个 Canvas tile 可覆盖 129 个屏幕像素，必须拆成相邻 screen block，不能直接写入单个 slice。默认 `64 MiB / 20 entries` 对应 1024 槽；顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Capture/restore 要求 page、item、raster state、viewport float 值和窗口尺寸完全一致；viewport 只需有限，不要求整数。Copy 只在绘制线程提交，不 Map/readback/wait。
 - 冷路径使用 32 RenderItem 的叶 Block 和 `256x256` operator tile；每槽为 `BGRA8 Add + R16F Retain = 384 KiB`，默认 `192 MiB = 512 slots`。组合固定为 `Later(Earlier(Below))`；CPU topology/generation 永久保留，GPU 节点只作 LRU 可淘汰缓存。
@@ -948,8 +948,8 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 | Redo expected 或 raster state 不匹配 | 不改变 visibility/redo 栈；请求权威刷新处理不可信 L2 |
 | Redo raster/resolve/visibility 失败 | 取消未提交热前像，恢复当前隐藏 history；候选仍可重试 |
 | Undo 后成功追加新 Stored Stroke | 立即清空该页 redo；后续 RenderItem/GPU 失败也不恢复旧分支 |
-| 当前区间 Undo 到 `undoFloor` | 不隐藏恢复根；Desktop 消费最近恢复点，PPT 请求 `intervalOrdinal-1` |
-| `A -> Clear -> B -> Clear -> C` | 当前只合成 C；PPT 依次撤回 C、加载 B、加载 A；Desktop 只恢复最近一次 Clear 前内容 |
+| 当前区间 Undo 到 `undoFloor` | 有跨 Clear 资格时，Desktop 消费最近恢复点，PPT 最多请求一次 `intervalOrdinal-1`；恢复画布以 floor 0 逐笔撤空 |
+| `A -> Clear -> B -> Clear -> C` | 当前只合成 C；撤空 C 后最多加载 B，B 可继续逐笔撤空，但不得加载 A |
 | 空内容 Clear | no-op，不写 UInk Clear、不替换 runtime、不改变 raster state 或 revision |
 | 翻页、Resize、viewport 移动 | 保留各 Canvas redo 栈；只失效不兼容的显示缓存或热前像 |
 | Cache policy 降低 | 先淘汰最旧热项/LRU 节点；提高预算不恢复已淘汰内容 |
@@ -959,7 +959,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 ### 5. Good / Base / Bad Cases
 
-- Good：当前区间 Stroke redo 直接局部绘制并重备热前像；到 `undoFloor` 后只物化目标旧区间并全量 replay，其他 Page/Slide 不变。
+- Good：当前区间 Stroke redo 直接局部绘制并重备热前像；到 `undoFloor` 后最多物化最近旧区间并全量 replay，恢复出的 Stroke 可撤空且不再跨 Clear，其他 Page/Slide 不变。
 - Base：composition budget 为 0 时仍可按当前隐藏顺序逐 tile 重放；屏外 redo 只恢复运行时 visibility，空白页切换只清空并呈现透明 L2。
 - Bad：为 redo 保存全尺寸后像、先弹 redo/恢复 visibility 再尝试 GPU 绘制、把 Clear 当成 runtime RenderItem，或 durable 后仍让全部旧区间常驻 controller 内存。
 
@@ -967,7 +967,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 - CPU 测试断言 4K 为 510 个 128 tile、默认 1024/20 热预算、512 composition 槽、FIFO/LRU/pin 和 0 禁用。
 - 覆盖 Pen/Highlighter/Eraser、单点、负坐标、屏外/极端有限坐标、AA padding 和跨 4K 稀疏对角线 footprint；小数正负 viewport 的 screen block 每边不得超过 128，且边缘 partial block 必须落在窗口内。
-- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、`A/B/C -> Undo C/B -> Redo B/C`、`undoFloor` 截止、空 Clear、错误 expected 不变、隐藏分支后 append 清空 redo、每页隔离、Tile 引用、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
+- 覆盖稳定 RenderItem 顺序、连续 O(1) 尾撤回、`A/B/C -> Undo C/B -> Redo B/C`、`undoFloor` 截止、Clear 恢复画布逐笔撤空且第二次跨边界被拒绝、空 Clear、错误 expected 不变、隐藏分支后 append 清空 redo、每页隔离、Tile 引用、32 项 Block、范围分解、visibility identity、旧 tile membership 清理和局部 generation 失效。
 - 静态核对首次提交顺序、Redo 的 draw/capture/resolve/visibility/state/commit 顺序、`6`/`VK_NUMPAD6` 自动重复过滤、无 readback/postimage/wait、单 slice SRV、所有 pass 解绑、事务式 cold undo/redo、FIFO Canvas command 和控制台字段。
 - Debug/Release ARM64 完整解决方案 Rebuild并运行两套控制台测试；可见窗口和 D3D Debug Layer 未执行时必须明确标记未验证，不能用静态检查替代。
 

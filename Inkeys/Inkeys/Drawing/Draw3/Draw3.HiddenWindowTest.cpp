@@ -413,6 +413,19 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterActiveClear.redoCommandCount && !s.currentPageHasContent;}),"one Redo reapplies active Clear",failures);
 				PublishProductCommand(Bridge::CommandType::Undo);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"restore Clear before scene tests",failures);
+				const auto beforeFirstRecoveredStrokeUndo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([beforeFirstRecoveredStrokeUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>beforeFirstRecoveredStrokeUndo.undoCommandCount && s.currentPageHasContent && s.successfulPresentCount>beforeFirstRecoveredStrokeUndo.successfulPresentCount;}),"Clear-restored canvas keeps older strokes undoable",failures);
+				const auto beforeSecondRecoveredStrokeUndo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([beforeSecondRecoveredStrokeUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>beforeSecondRecoveredStrokeUndo.undoCommandCount && !s.currentPageHasContent;}),"Clear-restored canvas can undo to empty",failures);
+				const auto recoveredCanvasEmpty=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([recoveredCanvasEmpty]{return ProductHost().RuntimeSnapshot().undoCommandCount>recoveredCanvasEmpty.undoCommandCount;}),"Undo at recovered canvas root is consumed",failures);
+				const auto afterBlockedOlderCanvasUndo=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(!afterBlockedOlderCanvasUndo.currentPageHasContent && afterBlockedOlderCanvasUndo.contentRevision==recoveredCanvasEmpty.contentRevision,"recovered canvas root cannot cross an older Clear",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([afterBlockedOlderCanvasUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedOlderCanvasUndo.redoCommandCount && s.currentPageHasContent;}),"Redo after recovered canvas Undo restores a stroke",failures);
 				const auto desktopBeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 56, 72) &&
 					postContact(HiddenTestContactPhase::Move, 104, 96) &&
@@ -522,6 +535,23 @@ namespace Inkeys::Drawing::Draw3
 							state.currentPageHasContent &&
 							state.contentRevision > clearedABeforeInk.contentRevision;
 					}), "A accepts new ink after Clear", failures);
+
+				const auto beforeSecondPresentationClear=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Clear);
+				modeSucceeded &= Check(WaitUntil([beforeSecondPresentationClear]{const auto s=ProductHost().RuntimeSnapshot();return s.clearCommandCount>beforeSecondPresentationClear.clearCommandCount && !s.currentPageHasContent;}),"second Presentation Clear creates a newer canvas",failures);
+				const auto afterSecondPresentationClear=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([afterSecondPresentationClear]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>afterSecondPresentationClear.undoCommandCount && s.currentPageHasContent;}),"second Presentation Clear restores the previous canvas",failures);
+				const auto restoredPreviousPresentationCanvas=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([restoredPreviousPresentationCanvas]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>restoredPreviousPresentationCanvas.undoCommandCount && !s.currentPageHasContent;}),"restored Presentation canvas can undo to empty",failures);
+				const auto emptyPreviousPresentationCanvas=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([emptyPreviousPresentationCanvas]{return ProductHost().RuntimeSnapshot().undoCommandCount>emptyPreviousPresentationCanvas.undoCommandCount;}),"Presentation Undo at restored root is consumed",failures);
+				const auto afterBlockedPresentationUndo=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(!afterBlockedPresentationUndo.currentPageHasContent && afterBlockedPresentationUndo.contentRevision==emptyPreviousPresentationCanvas.contentRevision,"Presentation Undo cannot cross to the canvas before the restored one",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([afterBlockedPresentationUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedPresentationUndo.redoCommandCount && s.currentPageHasContent;}),"Presentation stroke Redo remains available after boundary restore",failures);
 
 				const auto firstBRevision = PublishProductPresentationTarget(targetB);
 				modeSucceeded &= Check(firstBRevision.has_value(),
