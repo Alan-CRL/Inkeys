@@ -9464,8 +9464,30 @@ namespace Inkeys::UI::Setting
 
 	void Toggle()
 	{
-		if (IsVisible()) Hide();
-		else Show();
+		const bool visible = IsVisible();
+		bool focused = false;
+		if (visible)
+		{
+			auto& windowService = Inkeys::Window::GetService();
+			const HWND setting = windowService.Handle(
+				Inkeys::Window::WindowRole::Setting);
+			// Bar 不激活自身，因此以前台线程的真实焦点 HWND 判断 Setting 是否仍有焦点。
+			focused = setting && IsWindow(setting)
+				&& GetForegroundWindow() == setting
+				&& Inkeys::Window::Service::LastFocusWindow() == setting;
+		}
+
+		switch (ResolveBarButtonClickAction(visible, focused))
+		{
+		case BarButtonClickAction::Hide:
+			Hide();
+			break;
+		case BarButtonClickAction::ShowAndActivate:
+		case BarButtonClickAction::Activate:
+			// Show 命令会在 Setting owner thread 中恢复窗口并交还前台与输入焦点。
+			Show();
+			break;
+		}
 	}
 
 	bool IsVisible() noexcept

@@ -7,6 +7,21 @@
 
 namespace Inkeys::UI::Setting
 {
+	enum class BarButtonClickAction : std::uint8_t
+	{
+		ShowAndActivate,
+		Activate,
+		Hide,
+	};
+
+	[[nodiscard]] constexpr BarButtonClickAction ResolveBarButtonClickAction(
+		bool visible, bool focused) noexcept
+	{
+		if (!visible) return BarButtonClickAction::ShowAndActivate;
+		return focused ? BarButtonClickAction::Hide
+			: BarButtonClickAction::Activate;
+	}
+
 	class StartupPreviewPreference final
 	{
 	public:

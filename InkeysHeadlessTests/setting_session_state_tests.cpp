@@ -13,9 +13,22 @@ namespace
 
 int RunSettingSessionStateTests()
 {
+	using Inkeys::UI::Setting::BarButtonClickAction;
+	using Inkeys::UI::Setting::ResolveBarButtonClickAction;
 	using Inkeys::UI::Setting::SessionState;
 	using Inkeys::UI::Setting::StartupPreviewPreference;
 	int failures = 0;
+	if (!Expect(ResolveBarButtonClickAction(false, false)
+		== BarButtonClickAction::ShowAndActivate
+		&& ResolveBarButtonClickAction(false, true)
+		== BarButtonClickAction::ShowAndActivate,
+		"hidden setting is shown and activated")) ++failures;
+	if (!Expect(ResolveBarButtonClickAction(true, false)
+		== BarButtonClickAction::Activate,
+		"visible unfocused setting is activated")) ++failures;
+	if (!Expect(ResolveBarButtonClickAction(true, true)
+		== BarButtonClickAction::Hide,
+		"visible focused setting is hidden")) ++failures;
 	SessionState state;
 	StartupPreviewPreference startupPreview;
 	if (!Expect(startupPreview.StartupEnabled()

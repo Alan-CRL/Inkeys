@@ -1547,6 +1547,7 @@ Window::Service::SetSettingOwnedByDrawpad(bool enabled) -> bool;
 Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
+UI::Setting::Toggle() -> void;
 
 Graphics::DibSurface(int width, int height);
 Graphics::DibSurface::dc() -> HDC;
@@ -1562,6 +1563,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Setting 创建时及 `IdtSelection` 选择态的 owner 必须为 null；所有非选择态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到选择态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
 - Setting 始终是可激活的顶层 owned/unowned popup，而不是真正的子窗口：style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除独立 topmost/layered/noactivate/toolwindow。owner 切换不得改变 style、ex-style、图标、窗口线程或任务栏按钮；显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - Setting 自绘标题栏的可拖动空白区必须在 ImGui 消息转发前处理 `WM_NCHITTEST` 并返回 `HTCAPTION`，由 Win32 非客户区移动循环负责拖窗；当前几何为缩放后的 `0 <= y < 32 DIP` 且 `0 <= x < 914 DIP`。右侧 `914..960 DIP` 关闭按钮和正文返回 `HTCLIENT`，继续由 ImGui 处理隐藏与内容交互。该命中合同不得因 Setting 是否拥有 Drawpad owner 而分支，`WM_MOVE` 继续记录最终位置。
+- 主栏设置按钮调用统一 `UI::Setting::Toggle()`：隐藏时显示并激活；已显示但真实 Setting HWND 不是前台线程的焦点窗口时，只重新提交 Setting `Show` 命令以 restore/foreground/active/focus；仅在已显示且前台窗口与真实焦点 HWND 都是 Setting 时隐藏。Bar 保持 `WS_EX_NOACTIVATE`，只读取焦点状态，不得从 Bar 输入线程直接调用 `ShowWindow`、`SetForegroundWindow`、`SetActiveWindow` 或 `SetFocus`。
 - `DibSurface` 是 top-down 32-bit BGRA DIB Section。HDC、HBITMAP、旧选入对象和像素地址由 RAII 管理；复制为深拷贝，移动为 `noexcept`，resize 先成功创建新资源再交换。
 - HiMsg 成功 `Get/TryGet` 即消费；合成输入通过 `Enqueue` 原样进入同一队列。触摸转单指的 mouse message、坐标、按键状态和 marker 字段不得丢失或重新解释。
 - HiMsg 默认接受 Win32 系统生成的触摸兼容 mouse；这是公共库行为。只有已经自行处理 `WM_TOUCH` 并合成单指输入的 Inkeys Bar/PPT binding 才设置 `WindowSpec::messageCallback`，在 HiMsg subclass 自动入队前对 `IsTouchGeneratedMouseMessage(message, GetMessageExtraInfo())` 返回 `Action::Discard`。该 callback 仍继续原 WndProc；真实鼠标和不带 touch flag 的笔兼容 mouse 必须保留。
@@ -1582,6 +1584,9 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | `SetSettingOwnedByDrawpad(false)` 成功 | owner=null，执行 `HWND_NOTOPMOST`；窗口仍保留 `WS_EX_APPWINDOW`、激活能力与图标 |
 | Setting `WM_NCHITTEST` 位于缩放后的标题栏空白区 | 在 ImGui 前返回 `HTCAPTION`，进入系统 move loop |
 | Setting `WM_NCHITTEST` 位于关闭按钮或正文 | 返回 `HTCLIENT`，不得截断既有 ImGui 点击/隐藏路径 |
+| 主栏设置按钮：Setting 隐藏 | 提交 `Show(Setting)`，显示并激活 |
+| 主栏设置按钮：Setting 可见但未拥有前台焦点 | 再次提交 `Show(Setting)` 恢复并聚焦，不隐藏 |
+| 主栏设置按钮：Setting 可见且拥有前台焦点 | 提交 Hide，关闭设置窗口 |
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |
 | PPT 进入放映时根刷新失败 | 保留一次 refresh pending；后续状态发布继续请求根刷新，成功或离开放映后清除 |
@@ -1594,8 +1599,8 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 ### 5. Good / Base / Bad Cases
 
 - Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；根刷新整体抬升 owner 树，Bar 与目标 PageControl 只在树内用 `HWND_TOP` 保持顺序。
-- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；非选择态 Setting 作为 Drawpad owned popup 随链位于画布之上，选择态清除 owner 后回到普通窗口层级；两种状态下同一标题栏空白区都返回 `HTCAPTION`。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
-- Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，把 Setting 改成 `WS_CHILD`/`WS_EX_NOACTIVATE`/`WS_EX_TOOLWINDOW`，或在 ImGui 转发后才尝试标题栏命中，都会破坏 owner 树、焦点、任务栏或拖窗合同。
+- Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；非选择态 Setting 作为 Drawpad owned popup 随链位于画布之上，选择态清除 owner 后回到普通窗口层级；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
+- Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，把 Setting 改成 `WS_CHILD`/`WS_EX_NOACTIVATE`/`WS_EX_TOOLWINDOW`，在 ImGui 转发后才尝试标题栏命中，或只按可见性切换设置窗口，都会破坏 owner 树、焦点、任务栏、拖窗或失焦恢复合同。
 
 ### 6. Tests Required
 
@@ -1605,6 +1610,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 - Window 测试还需覆盖持久 `SetOverlayTopmost`、`SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。
 - Window 测试还需覆盖 Setting 初始 owner=null、attach/detach 与重复请求幂等、缺失 HWND 安全失败、独立窗口线程不变、style/ex-style/icon 不变；detach 后断言 owner=null、退出 topmost 链并落到独立 topmost 竞争窗之下。
 - Setting WndProc 可被测试目标链接时，需覆盖缩放后的标题中央为 `HTCAPTION`、`x=914 DIP` 起的关闭按钮及 `y=32 DIP` 起的正文为 `HTCLIENT`，并验证 owned/unowned 返回一致；未建立稳定链接边界时不得只为该断言扩大公共 API，改由完整构建、静态审查和 GUI 拖窗验收覆盖。
+- Setting session-state 测试需覆盖主栏按钮三态决策：隐藏状态不受残留 focus 标记影响且总是 ShowAndActivate；可见未聚焦为 Activate；可见已聚焦为 Hide。窗口集成审查需确认两种显示动作都复用 owner-thread `Show(Setting)`。
 - 允许创建隐藏 HWND 时，Window 测试需创建一个 ownerless 外部 topmost 竞争窗：先确认它位于完整 owner 树之上，再刷新根并确认每个 overlay popup 都越过竞争窗；同时断言根保持隐藏、Bar 位于目标 PPT 之上且前台/焦点不变化。禁止用“刷新后非根没有 `WS_EX_TOPMOST`”判断独立置顶，因为该位可由 Win32 owner 传播。
 - RenderPipeline 测试需保留 `Retry` 会再次调度的合同；若没有稳定的 Win32 失败注入边界，PageControl/Draw3 的失败映射通过生产分支静态审查和完整集成构建验证，不得为单测扩大 module 公共 API。
 - 手工 Z 序、Setting 任务栏/激活、Draw2/PPT/Freeze/Mag/DPI 回归必须在允许 GUI 的独立阶段执行，不能用静态构建冒充。白板全屏必须确认任务栏按普通全屏窗让出，且主栏/翻页栏底边都距屏幕底边 `5 DIP`。
@@ -1649,6 +1655,19 @@ if (msg == WM_NCHITTEST) return HTCAPTION;
 // Correct：系统拖窗命中先于 ImGui；关闭按钮和正文仍返回 HTCLIENT。
 if (msg == WM_NCHITTEST)
     return InSettingTitleBarDragRegion(point) ? HTCAPTION : HTCLIENT;
+~~~
+
+~~~cpp
+// Wrong：窗口可见就关闭，用户无法从其他窗口把 Setting 召回前台。
+if (Setting::IsVisible()) Setting::Hide();
+else Setting::Show();
+
+// Correct：只有真实 Setting HWND 已拥有前台焦点时才关闭。
+switch (ResolveBarButtonClickAction(visible, focused)) {
+case Hide: Setting::Hide(); break;
+case Activate:
+case ShowAndActivate: Setting::Show(); break;
+}
 ~~~
 
 ~~~cpp
