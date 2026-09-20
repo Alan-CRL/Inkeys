@@ -208,6 +208,11 @@
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj">
+      <Project>{a49d68f7-0a7e-4160-9c96-6b59b0c9aa85}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

@@ -2575,10 +2575,30 @@ namespace
 						TEST_CHECK(state, stroke.realPoints[index].x <= rawX + 0.05f);
 						lastDistance = distance;
 					}
+					const size_t longHoldModeledCount = stroke.modeledResults.size();
 					const size_t longHoldPointCount = stroke.realPoints.size();
+					stroke.idleFrozen = false;
+					stroke.visualStableFrameCount = 0;
+					stroke.previousL0DrawPoints.clear();
+					stroke.lastMovementInputTime = stopStartTime;
+					stroke.useDisplayTime = true;
 					for (int frame = 0;
 						frame < static_cast<int>(framesPerSecond * 10.0); ++frame)
+					{
+						inputTime += frameIntervalSeconds;
+						stroke.logicalInputTime = inputTime;
+						stroke.predictedResults.clear();
+						draw3::RebuildPredictedPoints(stroke);
+						draw3::RebuildL0DrawPoints(stroke,
+							configuration.liveTipDurationSeconds,
+							draw3::StrokeShape::RoundCapsule, 512, 512);
+						// 模型已收敛后只推进显示与冻结路径，不能再用静止 kMove 制造点。
+						draw3::UpdateIdleFreezeState(stroke, false, true,
+							configuration.liveTipDurationSeconds);
+						TEST_CHECK(state, stroke.modeledResults.size() == longHoldModeledCount);
 						TEST_CHECK(state, stroke.realPoints.size() == longHoldPointCount);
+					}
+					TEST_CHECK(state, stroke.idleFrozen);
 				}
 			}
 		}
