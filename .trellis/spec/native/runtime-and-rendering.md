@@ -395,23 +395,29 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 
 ### 1. Scope / Trigger
 
-修改 Pen/HardPen 的 `StrokeModeler` 输入、prediction、L0 笔锋、idle freeze 或活动 contact 帧循环时，必须应用本合同。目标是防止没有新 raw snapshot 时把重复且不改变模型状态的 prediction 误判为“笔锋已经追上”。
+修改 Pen/HardPen 的 `StrokeModeler` 输入、prediction、L0 笔锋、idle freeze 或活动 contact 帧循环时，必须应用本合同。中心线收敛与模拟笔锋老化是两个独立条件：停笔后位置追上 raw，笔锋随显示时间消退为基础半径；不能把模型末点到位或重复 prediction 当成完整视觉收敛。
 
 ### 2. Signatures
 
 - `IsModeledTipSettled(span<Result>, rawEndpoint, frameIntervalSeconds) -> bool`。
 - `ShouldStartEndpointSettling(sampleAgeSeconds, frameIntervalSeconds) -> bool`、`BeginEndpointAdmission`、`AppendEndpointBoundedModeledPoints`。
+- `AppendRecoveryModeledPoints(ActiveStroke&, span<Result>, rawEndpoint, inputSpeed)`：固定 `EndpointAdmissionState::recoveryOrigin`，安全模型后缀解除恢复。
+- `ResolvePenModelInputTime(ActiveStroke&, realTime, lastModelTime, frameIntervalSeconds) -> double`；`ActiveStroke::{logicalInputTime,lastMovementInputTime}` 使用真实显示时间，`modelTimeOffset/modelClockStopped` 仅服务模型时间压缩，`useDisplayTime` 仅对普通笔开启。
 - `UpdateIdleFreezeState(ActiveStroke&, rawMoved, modelSettled, liveTipDurationSeconds)`。
+- 产品隐藏测试通过 `DrawingControllerRuntimeObserver::penDiagnostics` 发布 `PenRuntimeDiagnostics` 到 `HostRuntimeSnapshot::pen`；回调只在 `enableHiddenTestContactInjection` 下安装。
 - 每个 `RuntimeStroke` 独立保存 `modelInputThisFrame` 与 `stationaryModelAdvanceBlocked`；产品 Pen 与 HardPen 应用本合同，测试宿主的 Pen 保持同构。
 
 ### 3. Contracts
 
 - `StrokeModeler::Predict` 不改变模型内部状态，不能单独证明 modeled tip 已追到 raw endpoint。活动普通笔在本帧没有 model input、未结束、未 reconnect、未 frozen 且尚未收敛时，必须以最近接受进入模型路径的 `lastModelSnapshot` 位置和最后有效 stylus 状态补送一次同点 `kMove`。
-- 合成输入时间来自本帧 QPC，并且至少为 `lastModelInputTime + 1us`；转换 modeled point 时传 `inputSpeed=-1`。不得写入 `lastSpeedSnapshot`、滤波速度、真实 snapshot QPC 或压力/角度采样基线。
+- 合成输入时间由本帧 QPC 扣除已收敛静止偏移映射到模型时间，并且至少为 `lastModelInputTime + 1us`；转换 modeled point 时传 `inputSpeed=-1`。不得写入 `lastSpeedSnapshot`、滤波速度、真实 snapshot QPC 或压力/角度采样基线。宽度估算器内部时间仍使用模型轴，不能被显示时间覆盖。
 - 单个空帧的 sample age 不超过一个目标帧间隔时仍是 Tracking，保留 Kalman prediction；超过该门槛才进入 settling。stationary/terminal `Update` 复用有界 scratch，并只保留最新内部 `Result` 作为收敛证据，不得累计进正常 `modeledResults`。
-- settling、physical Up、visual-pinned 后恢复 Move 与 reconnect 恢复首批都必须对 scratch 使用相同 endpoint admission：可见中心线到 raw endpoint 的距离单调接近、沿最后有效真实方向不越过 endpoint plane `0.05px`。首次触边、越界或不再接近时至多钉住一个精确 raw endpoint；其后的内部回摆继续用于收敛，但不得增长 `realPoints`、L0/L1、shader 输入或 Stored 候选。physical Up 的整批输出也不得只检查最后一点。
+- settling 与 physical Up 对 scratch 使用停止边界：可见中心线到 raw endpoint 的距离单调接近，不越过 endpoint plane `0.05px`。首次触边、越界或不再接近时至多钉住一个精确 raw endpoint；其后的内部回摆继续用于收敛，但不得增长 `realPoints`、L0/L1、shader 输入或 Stored 候选。physical Up 的整批输出也不得只检查最后一点。
+- visual-pinned 后恢复 Move/reconnect 必须固定旧停点作为衔接起点，按新的真实方向过滤残余回摆前缀，再接纳安全模型后缀并解除恢复。不得对每份新 raw 重新钉住 endpoint，不能要求原始整批全通过才恢复 prediction/L1；空帧沿用相同恢复状态，真正反向运动不沿用旧方向。
+- 模拟笔锋只改变显示半径，基础 `realPoints.r` 与压感/真实速度独立。显示时间持续推进，不依赖最后一个几何点的时间；同点模型推进与 kUp 的未来样本不得重置笔锋年龄。停笔恢复基础半径不追加重复点；活动、完成和 Stored 使用相同规则，同位 Up 不重新收尖。
+- 已完全收敛的长静止区间不进入后续模型积分时间差；真实 QPC 和显示时间不压缩。恢复输入必须有界、单调且遵守 `max_outputs_per_call`，不能靠 Reset、巨量重复样本或改库预算掩盖。
 - modeled tip 只有在末端位置误差不超过 `0.05px`，并且 `|velocity| * targetFrameInterval` 不超过 `0.05px` 时才算收敛；endpoint、frame interval、position、velocity 任一缺失、非有限或非正时间均不得报告收敛。
-- 一旦模型收敛，立即停止 stationary `Update`；随后沿用 L0 position/radius 连续三帧稳定门槛确认 prediction、taper 与宽度不再变化。禁止用固定额外延迟代替位置/速度证据。
+- 一旦模型收敛，立即停止 stationary `Update`，但继续重算尚未消退的模拟笔锋。只有可见端点到位、笔锋老化完成，且 L0 position/radius 连续三帧稳定后才冻结。L1 保护可变尾部，不能提前提交仍会改变半径的点。禁止用固定额外延迟代替位置/速度证据。
 - stationary `Update` 明确失败时按 contact 锁存 `stationaryModelAdvanceBlocked`，只记录一次且不追加点、不伪造 settled/frozen；新 Down 必须重置该锁存，下一份成功真实 model input 或成功 reconnect 才解除。空 prediction 不等于模型失败。
 - Highlighter、Eraser、Laser、Shape 不接入 stationary advance，保持原有冻结和工具生命周期。活动 contact 为读取只更新 mailbox 的 Move 仍可按帧轮询；本合同约束的是模型/几何点增长，不承诺停止 Present。
 
@@ -421,25 +427,29 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 |---|---|
 | 无新 snapshot，末端仍有位置误差 | 用最后接受进入模型路径的 snapshot 同点推进；不制造速度样本 |
 | 位置暂时接近但单帧 velocity 位移超限 | 不报告 settled，不冻结 |
-| 位置与 velocity 均收敛 | 立即停止补送；再等三帧 L0 视觉稳定后 frozen |
+| 位置与 velocity 均收敛、笔锋仍缩细 | 停止模型补送，继续显示老化，不增加几何点 |
+| 模型、可见端点、笔锋老化全部收敛 | 三帧 L0 视觉稳定后 frozen |
 | prediction disabled 或为空 | 仍以 modeled Result 判定，不能因 prediction 空而提前冻结 |
 | stationary `Update` 失败 | 单 contact 锁存并只记录一次；等待成功真实输入恢复 |
 | RuntimeStroke 从对象池复用 | 新 Down 清除旧笔的失败锁存和每帧输入状态 |
 | 新真实 Move / stylus 状态变化 | 走真实 Update、解除 idle freeze；成功时解除失败锁存 |
 | 多 contact 一动一停 | 每个 runtime 独立推进、收敛、冻结和恢复 |
-| visual-pinned 后恢复 Move / reconnect | 首批仍通过 endpoint admission；拒绝旧方向回摆后才能恢复正常 Tracking |
+| visual-pinned 后恢复 Move / reconnect | 固定旧停点过滤不安全前缀；安全后缀即可恢复 Tracking，不硬连新的 raw |
+| 长停后同位 Up | 形状/半径与停稳时一致，不重新强制收尖 |
+| 长停后 Move / Up | 压缩已收敛的模型时间，保留真实显示/速度时间，输出仍有界 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：低速移动后停住，modeler 用少量同点输入在 scratch 中追到 raw endpoint；可见尾端单调钉住后点数停止增长，三帧视觉稳定后 frozen，再移动时没有旧欠账甩出。
+- Good：低速移动后停住，modeler 在 scratch 中追到 raw endpoint；现有尾点逐帧恢复基础粗细后 frozen；同位 Up 无变化，再移动接回平滑曲线而不是逐 raw 硬钉。
 - Base：Highlighter/Eraser/Laser/Shape 继续走原路径；prediction 关闭时普通笔仍可凭 modeled position/velocity 收敛。
-- Bad：只重复 `Predict`、只延长 timeout、只比较两帧 L0，或收敛后仍持续向 shader 输入重复点。
+- Bad：只重复 `Predict`、只延长 timeout、只比较两帧 L0、用末点时间冻结细尾，或收敛后仍持续向 shader 输入重复点。
 
 ### 6. Tests Required
 
 - 用真实 `StrokeModeler` 证明重复 `Predict` 不推进内部结果，而同点 `kMove` 会在有界帧数和输出点预算内收敛。
 - 覆盖 30/60/120/240 FPS、低/中/高速及 Kalman/StrokeEnd/Disabled 的 endpoint distance/plane 单调性；内部 settled 必须直接在 `<=200ms` 诊断预算内断言，不能以 visual-pinned 时间替代。
-- 收敛后长时间 idle 的 scratch/real/L0/L1/shader/Stored 候选点数必须恒定；覆盖交替 raw/empty 帧的 Kalman Tracking、恢复真实 Move/reconnect 的首批与整批 physical Up。
+- 必须真正逐帧推进模型/L0/控制器验证十秒及超长 idle 的输出预算；空循环重复断言点数不构成覆盖。断言尾点半径随显示时间恢复基础值，同位 Up/Stored 不重新缩细。
+- 覆盖 1px/8、16、33、80、120ms 的稀疏真实输入与不同渲染率；检查恢复前缀全拒、后续批安全跨越及 prediction/L1 解锁，覆盖同向、直角、反向与整段 terminal 几何。
 - 执行 `inkStrokeModelerTest.sln Debug|ARM64`、模型回归测试、完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 与 Draw3 hidden 集成测试。
 
 ### 7. Wrong vs Correct
@@ -449,17 +459,16 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 modeler.Predict(predicted);
 if (AreL0VisualsClose(current, previous)) stroke.idleFrozen = true;
 
-// Correct：短暂空帧保留 prediction；确认停笔后只在 scratch 推进内部状态。
-if (!modelInputThisFrame &&
-    ShouldStartEndpointSettling(sampleAge, frameInterval)) {
-    BeginEndpointAdmission(stroke, rawEndpoint);
-    scratch.clear();
-    modeler.Update(stationaryMove, scratch);
-    AppendEndpointBoundedModeledPoints(stroke, scratch, -1.0f, logicalTime);
-}
-UpdateIdleFreezeState(stroke, rawMoved,
-    IsModeledTipSettled(LatestModeledTip(stroke), rawEndpoint, frameInterval),
-    liveTipDuration);
+// Wrong：新 raw 反复重建停止门禁，模型落后时就硬连 raw，导致多边形与不解锁。
+BeginEndpointAdmission(stroke, newRaw);
+AppendEndpointBoundedModeledPoints(stroke, scratch, inputSpeed, rawTime);
+
+// Correct（恢复输入分支）：保留旧停点，只丢弃不安全前缀。
+AppendRecoveryModeledPoints(stroke, scratch, newRaw, inputSpeed);
+// 即使没有新增点也推进显示时间；是否继续模型积分由独立收敛条件决定。
+stroke.logicalInputTime = frameRealTime;
+RebuildL0DrawPoints(stroke, liveTipDuration, shape, width, height);
+UpdateIdleFreezeState(stroke, rawMoved, modelSettled, liveTipDuration);
 ~~~
 
 ## Scenario: RTS Interrupted Stroke Reconnect

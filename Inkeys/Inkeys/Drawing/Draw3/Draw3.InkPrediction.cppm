@@ -418,6 +418,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool active = false;
 		bool hasApproachDirection = false;
 		bool visualPinned = false;
+		bool recovering = false;
+		DirectX::XMFLOAT2 recoveryOrigin = {};
 	};
 
 	struct EndpointAdmissionResult
@@ -460,6 +462,10 @@ export namespace Inkeys::Drawing::Draw3
 		double lastMovementInputTime = 0.0;
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
+		// 模型可以跳过已经收敛的静止时间；显示/真实测速仍使用原始时间轴。
+		double modelTimeOffset = 0.0;
+		bool modelClockStopped = false;
+		bool useDisplayTime = false;
 		ink::stroke_model::Result latestModeledResult = {};
 		EndpointAdmissionState endpointAdmission = {};
 		bool hasLatestModeledResult = false;
@@ -578,6 +584,13 @@ export namespace Inkeys::Drawing::Draw3
 		float inputSpeed, double endpointTime, bool pinEndpointAtEnd = false);
 	// 恢复正常 Tracking 后解除终点门禁，但保留 scratch 容量和最新内部状态。
 	void ClearEndpointAdmission(ActiveStroke& stroke) noexcept;
+	// 固定旧可见停点，过滤恢复运动中的残余回摆前缀，不补新的 raw 直线。
+	void AppendRecoveryModeledPoints(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> results,
+		DirectX::XMFLOAT2 rawEndpoint, float inputSpeed);
+	// 只压缩已收敛的静止段，保持送入模型的时间严格单调。
+	double ResolvePenModelInputTime(ActiveStroke& stroke, double realTime,
+		double lastModelTime, double frameIntervalSeconds) noexcept;
 	// 模型与视觉均稳定后冻结停笔输入。
 	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
 		bool modelSettled, double liveTipDurationSeconds);

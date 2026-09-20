@@ -26,10 +26,21 @@
 8. 停笔收敛期必须把最后 raw endpoint 作为硬几何边界：允许可见尾端单调逼近，但不得越过 endpoint plane 后再折返，也不得在到达最近点后重新远离 endpoint；一旦到位，只保留一个可替换/最终落定的 endpoint 点。
 9. 物理 Up 必须把 raw Up 坐标作为完成态 centerline 的权威终点。`kUp` 新增的整段 Result 都必须经过同一单调/越界门禁，不能只校验 `back()`；prediction 仍不得进入 Stored Stroke。
 10. 正常运动期继续保留现有 Kalman prediction 和现有 spring/drag 手感；不得用全局关闭 prediction、切换 StrokeEnd predictor、调成临界阻尼或重编三架构模型静态库来替代 Draw3 终点策略。
-11. SoftPen/普通笔的快速移动 Up 必须形成明确的完成笔锋：有有效运动时，最终 endpoint radius 至少收敛到既有 fully-developed taper 下限，而不是因 `kUp` 批次时间过短留下粗圆头；纯点击/极短划和 HardPen 保留各自现有语义。
-12. 若在内部尚未完全衰减时恢复真实 Move，第一批可见输出仍需从已钉住的 endpoint 朝新 raw endpoint 单调前进；不得重置整支 modeler 导致预测、压感或笔宽历史断裂，也不得重新显露旧回摆动量。
+11. 模拟笔锋必须随显示时间继续老化：停笔后中心线到位，缩细逐渐消退为当前基础笔身半径；不改变速度模拟压感或硬件压感。活动态、Up 和 Stored 共用同一显示时间规则，禁止完成时无条件重新收尖。快速移动 Up 保留自然笔锋，纯点击/极短划和 HardPen 保留各自语义。
+12. 恢复真实 Move 时固定旧可见停点，只过滤尚未安全离开该点的模型前缀，并允许接纳安全后缀后恢复正常 Tracking；不得反复硬连新的 raw endpoint，不得要求整批输出全部通过才解除恢复门禁，不重置 modeler 或丢失宽度历史。
+13. 模型更新已停止时仍需推进现有 L0 尾段的笔锋老化；模型位置/速度、可见终点、笔锋老化全部完成后才允许三帧稳定冻结。半径变化不得靠重复追加静止点实现。
+14. 已完全收敛的长静止区间不得一次性传入 modeler 造成巨量输出；模型时间与真实事件/笔锋显示时间分离，真实 QPC 继续用于速度与显示老化。
 
 ## Acceptance Criteria
+
+> 2026-09-20 续修：下方既有勾选项仅代表前轮测试结果，不代表本轮验收通过。本轮须实际执行逐帧 L0/控制器流程。
+
+- [x] 无新输入且不新增几何点时，停笔尾部半径平滑恢复基础值；同位 Up 与 Stored 不重新变细。
+- [x] 1px/8、16、33、80、120ms 的稀疏输入在多渲染帧率下不反复硬连 raw 点；同向、直角、反向续画均能解除恢复门禁。
+- [x] 真正执行十秒及超长静止后的帧推进与恢复，模型调用和 real/L0/L1 点数有界，不因冻结后的时间差超过模型输出预算。
+- [x] 隐藏集成覆盖实际 mailbox、绘制线程、停笔老化、冻结、续画及同位 Up；不以仅检查模型最终坐标替代可见几何验收。
+
+上述本轮勾选表示自动化通过：控制台 61 组输入/宽度组合、20 步半径老化、十秒帧循环、一小时后 Up，以及产品隐藏集成。可见 GUI、实体鼠标/笔手感与 D3D Debug Layer 仍未验证，不等同于人工体验验收完成。
 
 - [ ] 鼠标以低像素速度绘制后快速停住，笔锋继续刷新并在有界时间内到达最后 raw 坐标；停住一段时间后再原地 Up，可见端点和粗细不发生可观察变化。
 - [x] 停笔期间只有 modeler 尚未收敛时才追加 modeled output；收敛后点数停止增长，L0 连续三帧稳定后进入 `idleFrozen`，不再继续追加 modeled/L0/shader 输入重复点；为消费只更新 mailbox 的 Move，活动 contact 帧轮询可继续。
@@ -59,7 +70,7 @@
 ## Technical Notes
 
 - 建议复用当前 `0.05px` L0 位置视觉容差，并按当前目标帧间隔把 `Result::velocity` 换算为“下一帧剩余位移”；端点误差与该位移均低于容差后才视为模型追上。现有三帧 `AreL0VisualsClose` 继续负责 prediction、taper 与 radius 的最终视觉稳定确认。
-- 停笔推进时间以本帧 QPC 转换后的 logical time 为上限，并保持 `lastModelInputTime` 单调；不触碰真实 raw snapshot 的 QPC 和速度基准。
+- 停笔推进时间由本帧真实 QPC 映射到模型时间，并保持 `lastModelInputTime` 单调；模型已收敛的静止时段可从模型时间扣除，显示时间、raw snapshot QPC 和速度基准不压缩。
 - `StrokeModeler` 没有公开 settled/confidence 标志；继续用 modeled position/velocity 作为内部收敛证据。`predictedResults.empty()` 只能作为 prediction confidence 的间接现象，不能替代终点门禁。
 - endpoint 门禁建议复用 `0.05px`：候选到 endpoint 的距离不得增加超过该值，沿最后非退化真实方向不得越过 endpoint plane 超过该值；缺少有效方向时退化为距离单调约束。
 - 详细证据见 `research/root-cause.md`、`research/git-regression-analysis.md`、`research/modeler-stop-up-semantics.md`，修复状态机见 `design.md`。

@@ -32,6 +32,35 @@
 5. 按根 `AGENTS.md` 用 ARM64 原生 MSBuild 构建完整 `InkeysRepo.sln Debug|ARM64`，再运行 `InkeysHeadlessTests.exe --no-window`。
 6. GUI/Computer Use 未获当前授权，不自动启动主窗口。交付时给出人工复现清单：低速停笔、停稳后原地 Up、停稳后再移动、多 contact 一动一停、prediction disabled 对照。
 
+## Approved Follow-up Execution (2026-09-20)
+
+1. 先补停笔老化/同位 Up、恢复前缀拒收后解锁、真实逐帧稀疏输入回归；记录当前失败证据，再实现。
+2. 同步产品/宿主的显式显示时间、合成输出年龄、完成态一致与冻结条件；基础宽度状态不因视觉笔锋改变。
+3. 恢复状态固定旧停点，接纳安全后缀解除门禁；覆盖空帧、90/180 度方向改变与同位新输入。
+4. 压缩模型已收敛静止时段，保留真实速度/显示时间；测试 10 秒及超长停留后 Move/Up 输出预算。
+5. 扩展隐藏产品链路诊断及测试；测试必须推进帧并检查真实 L0/提交状态，而不是空断言循环。
+6. ARM64 原生 MSBuild，先在同一 PowerShell invocation 规范化 PATH，构建两个已有 solution Debug|ARM64；执行控制台、headless --no-window、--draw3-hidden-test。不开可见 GUI。
+7. trellis-check 独立审查后更新规范及结果。本轮用户明确要求不 commit、不归档，任务继续 in_progress。
+
+### Baseline Red Evidence
+
+- 在 c88d8989 实现上新增 `TestStationaryTipAging`，实际调用 `RebuildL0DrawPoints` 与 `BuildCompletedPenTail`。
+- 完整 `inkStrokeModelerTest.sln Debug|ARM64` 构建成功；测试出现两条预期失败：停笔一秒的 L0 端点半径未恢复 2.5px，同位完成态半径也未恢复 2.5px。
+- 本证据验证显示时间问题，不把它当成中心线或完整控制器链路的验收结论。
+
+### Follow-up Implementation And Final Verification
+
+- 已同步两侧显示时间笔锋老化、完成态一致、固定旧停点恢复、长静止模型时间压缩；基础笔宽估算器继续使用模型时钟。终态失败回退也保持显示时间单调。
+- `PenRuntimeDiagnostics` 仅在隐藏测试开启；真实控制器发布接纳末点误差、基础/显示半径、模型调用/real/L0/L1 计数及 frozen/recovering，Host 通过既有诊断锁传输。
+- 回归：61 组逐帧稀疏曲线/输入间隔/帧率/方向与宽度组合、20 步半径恢复、实际十秒静止帧、一小时后 Up、模拟压感长停恢复、跨批全部拒收/空帧/安全前缀后回摆/安全后缀解锁。
+- 独立 `trellis-check` 发现的终态回退时钟问题已修复；新增恢复分支测试后最后检查通过。核心 helper 两侧一致，无第三方、HLSL 或工程配置改动，原文件 BOM 状态和 CRLF 保持。
+- 完整 `inkStrokeModelerTest.sln Debug|ARM64` 最终构建退出 0；`ARM64/Debug/inkStrokeModelerTestTests.exe` 最终退出 0。
+- 完整 `InkeysRepo.sln Debug|ARM64` 最终构建退出 0；`Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` 退出 0。
+- `Build/ARM64/Debug/Inkeys.exe --draw3-hidden-test` 最终退出 0，`[Draw3Hidden] PASS`；最终 PenDwell 记录 endpointError=0、tipRadius=baseRadius=4.54855。隐藏用例验证停稳点数/模型调用不变、同向/180/90 度恢复及同位 Up。
+- 构建使用当前 VS 安装的 ARM64 原生 MSBuild；同一 PowerShell invocation 先清理重复 PATH 环境并禁用 node reuse。未通过改源码或升级依赖绕过环境问题。
+- 主会话清除四个本轮生成的未跟踪 shader `.cso`，并将开始时干净、被构建改写的 `Inkeys/PptCOM.dll` 恢复为 HEAD 内容；保留实际构建输出供后续使用。
+- 可见 GUI、真实设备手感与 D3D Debug Layer 未验证。按用户要求本轮不 commit/push、不结束或归档任务。
+
 ## Review Gates
 
 - 收敛条件不能退化为固定延迟或只比较 prediction 数组。

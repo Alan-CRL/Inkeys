@@ -161,6 +161,124 @@ namespace Inkeys::Drawing::Draw3
 				restored[0].width>restored[1].width && restored[2].width<=diagnostic.dpiX/96*36;
 		}
 
+		bool CheckPenDwellAndResume(HWND drawpad, int& failures)
+		{
+			Bridge::ProductState penState;
+			penState.workspace = Bridge::Workspace::Whiteboard;
+			penState.tool = Bridge::Tool::Pen;
+			penState.selectionMode = false;
+			penState.widthDip = 8.0f;
+			PublishProductState(penState);
+			bool succeeded = Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return !state.selectionMode && state.workspace == Bridge::Workspace::Whiteboard;
+			}), "pen dwell test uses the drawing workspace", failures);
+			const auto post = [&](HiddenTestContactPhase phase, int x, int y)
+			{
+				return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestMouseFlag, MAKELPARAM(x, y)) != FALSE;
+			};
+			const auto beforeDown = ProductHost().RuntimeSnapshot().pen;
+			succeeded &= Check(post(HiddenTestContactPhase::Down, 60, 150),
+				"post pen dwell Down", failures);
+			if (!Check(WaitUntil([beforeDown]
+			{
+				const auto pen = ProductHost().RuntimeSnapshot().pen;
+				return pen.active && pen.strokeId != beforeDown.strokeId && pen.realPointCount > 0;
+			}), "drawing thread consumes pen dwell Down", failures)) return false;
+			const auto strokeId = ProductHost().RuntimeSnapshot().pen.strokeId;
+			bool sawTaper = false;
+			int x = 60;
+			int y = 150;
+			const auto moveAndWait = [&](int nextX, int nextY)
+			{
+				const auto before = ProductHost().RuntimeSnapshot().pen.inputSequence;
+				if (!post(HiddenTestContactPhase::Move, nextX, nextY)) return false;
+				// 等待消费序号，而非生产计数，确保每个稀疏点经过真实帧循环。
+				return WaitUntil([before, strokeId]
+				{
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					return pen.active && pen.strokeId == strokeId && pen.inputSequence > before;
+				}, 2s);
+			};
+			for (int n = 0; n < 20; ++n)
+			{
+				std::this_thread::sleep_for(16ms);
+				++x;
+				if (n % 4 == 0) ++y;
+				succeeded &= Check(moveAndWait(x, y), "consume each 1px pen Move", failures);
+				const auto pen = ProductHost().RuntimeSnapshot().pen;
+				sawTaper |= pen.baseRadius > 0.0f && pen.tipRadius < pen.baseRadius - 0.02f;
+			}
+			succeeded &= Check(sawTaper, "moving pen has a visible simulated tip", failures);
+			const auto waitForDwell = [&]
+			{
+				return WaitUntil([strokeId]
+				{
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					return pen.active && pen.strokeId == strokeId && pen.frozen &&
+						pen.endpointError <= 0.05f && pen.baseRadius > 0.0f &&
+						std::abs(pen.tipRadius - pen.baseRadius) <= 0.02f;
+				}, 2s);
+			};
+			succeeded &= Check(waitForDwell(),
+				"stopped pen reaches endpoint and loses its tip before freezing", failures);
+			const auto frozen = ProductHost().RuntimeSnapshot().pen;
+			bool bounded = true;
+			for (int n = 0; n < 30; ++n)
+			{
+				std::this_thread::sleep_for(10ms);
+				const auto held = ProductHost().RuntimeSnapshot().pen;
+				bounded &= held.active && held.frozen && held.modelUpdateCount == frozen.modelUpdateCount &&
+					held.realPointCount == frozen.realPointCount && held.l0PointCount == frozen.l0PointCount &&
+					held.committedRealIndex == frozen.committedRealIndex &&
+					std::abs(held.tipRadius - frozen.tipRadius) <= 0.02f;
+			}
+			succeeded &= Check(bounded, "frozen pen model and real/L0/L1 counts remain fixed", failures);
+			// 依次向右、向左、向下：明确覆盖同向、180 度反向和 90 度转向。
+			for (int direction = 0; direction < 3; ++direction)
+			{
+				bool unlocked = false;
+				bool sawModeledLag = false;
+				for (int n = 0; n < 12; ++n)
+				{
+					std::this_thread::sleep_for(16ms);
+					if (direction == 2) ++y;
+					else x += direction == 1 ? -1 : 1;
+					succeeded &= Check(moveAndWait(x, y), "consume resumed pen Move", failures);
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					unlocked |= !pen.recovering && !pen.frozen;
+					sawModeledLag |= pen.endpointError > 0.05f;
+					succeeded &= Check(std::isfinite(pen.tipRadius) && pen.tipRadius > 0.0f &&
+						pen.tipRadius <= pen.baseRadius + 0.02f,
+						"resumed visible tip remains bounded by its base radius", failures);
+				}
+				succeeded &= Check(unlocked && sawModeledLag,
+					"resumed pen unlocks and follows model output instead of pinning every raw point", failures);
+				succeeded &= Check(waitForDwell(), "resumed pen settles and fades again", failures);
+			}
+			const auto beforeUp = ProductHost().RuntimeSnapshot().pen;
+			succeeded &= Check(post(HiddenTestContactPhase::Up, x, y), "post same-position pen Up", failures);
+			succeeded &= Check(WaitUntil([strokeId]
+			{
+				const auto pen = ProductHost().RuntimeSnapshot().pen;
+				return pen.strokeId == strokeId && !pen.active;
+			}, 2s), "drawing thread publishes completed pen geometry", failures);
+			const auto completed = ProductHost().RuntimeSnapshot().pen;
+			succeeded &= Check(completed.endpointError <= 0.05f &&
+				std::abs(completed.tipRadius - beforeUp.tipRadius) <= 0.02f &&
+				std::abs(completed.baseRadius - beforeUp.baseRadius) <= 0.02f &&
+				completed.realPointCount == beforeUp.realPointCount,
+				"same-position Up preserves settled endpoint, radius and point count", failures);
+			std::fprintf(stderr, "[PenDwell] stroke=%llu updates=%llu real=%zu L0=%zu L1=%zu endpoint=%g tip=%g base=%g\n",
+				static_cast<unsigned long long>(completed.strokeId),
+				static_cast<unsigned long long>(completed.modelUpdateCount), completed.realPointCount,
+				completed.l0PointCount, completed.committedRealIndex, completed.endpointError,
+				completed.tipRadius, completed.baseRadius);
+			return succeeded;
+		}
+
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
 			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
 			HostPresentationMode requiredMode,
@@ -596,6 +714,7 @@ namespace Inkeys::Drawing::Draw3
 					presentationBounds.right - presentationBounds.left == 384 &&
 					presentationBounds.bottom - presentationBounds.top == 256,
 					"resize keeps selection ULW bounds synchronized", failures);
+				modeSucceeded &= CheckPenDwellAndResume(drawpad, failures);
 			}
 
 			if (exerciseUlwDirtyRect)

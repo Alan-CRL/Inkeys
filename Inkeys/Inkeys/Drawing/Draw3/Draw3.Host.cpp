@@ -37,6 +37,7 @@ namespace Inkeys::Drawing::Draw3
 		WindowController window;
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
+		PenRuntimeDiagnostics penDiagnostics;
 		mutable std::mutex displayMutex;
 		SpeedEraser::DevelopmentOptions eraserDevelopment;
 		SpeedEraser::ContactAreaSample hiddenContactArea;
@@ -443,6 +444,14 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 
+		static void ObservePenDiagnostics(void* context, const PenRuntimeDiagnostics& value)
+		{
+			auto* self = static_cast<Impl*>(context);
+			// 复用诊断快照锁；只有隐藏测试安装此回调，产品绘制帧不增加锁开销。
+			std::scoped_lock lock(self->eraserDiagnosticsMutex);
+			self->penDiagnostics = value;
+		}
+
 		static void ObserveEraserDiagnostics(void* context,const SpeedEraser::Diagnostics& value)
 		{
 			auto* self=static_cast<Impl*>(context);
@@ -786,7 +795,7 @@ namespace Inkeys::Drawing::Draw3
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
-			{std::scoped_lock lock(eraserDiagnosticsMutex);eraserDiagnostics={};}
+			{std::scoped_lock lock(eraserDiagnosticsMutex);eraserDiagnostics={};penDiagnostics={};}
 			this->styleCallbacks = styleCallbacks;
 			this->runtimeCallbacks = runtimeCallbacks;
 			startOptions = options;
@@ -902,7 +911,8 @@ namespace Inkeys::Drawing::Draw3
 								&ObservePresentationSave,
 								&ObservePresentationLoad,
 								&ObserveDrawingActivity,
-								&ObserveEraserDiagnostics
+								&ObserveEraserDiagnostics,
+								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer);
@@ -1124,7 +1134,7 @@ namespace Inkeys::Drawing::Draw3
 	HostRuntimeSnapshot Host::RuntimeSnapshot() const noexcept
 	{
 		HostRuntimeSnapshot snapshot;
-		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;}
+		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;snapshot.pen=impl_->penDiagnostics;}
 		snapshot.touchContactAreaAssistanceEnabled=impl_->window.TouchContactAreaAssistance();
 		snapshot.running = impl_->running.load(std::memory_order_acquire);
 		snapshot.firstFrameReady = impl_->firstFrameReady.load(std::memory_order_acquire);

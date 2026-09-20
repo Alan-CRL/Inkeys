@@ -1959,8 +1959,7 @@ namespace
 			stroke.lastMovementInputTime = 8.0 * frameIntervalSeconds;
 			for (int stableFrame = 0; stableFrame < 4; ++stableFrame)
 			{
-				stroke.logicalInputTime = inputTime +
-					configuration.liveTipDurationSeconds +
+				stroke.logicalInputTime = inputTime + 1.0 +
 					stableFrame * frameIntervalSeconds;
 				stroke.predictedResults.clear();
 				if (predictionEnabled)
@@ -2021,6 +2020,183 @@ namespace
 				finalTip.y - resumedRawEndpoint.y) <= 0.05f);
 			TEST_CHECK(state, std::abs(finalTip.r - settledTip.r) <= 0.02f);
 		}
+	}
+
+	void TestSparsePenFrames(TestState& state)
+	{
+		using namespace ink::stroke_model;
+		const auto configuration = draw3::CreateStrokeModelConfiguration(96);
+		for (double fps : { 30.0, 60.0, 120.0, 240.0 })
+		for (double sampleMs : { 8.0, 16.0, 33.0, 80.0, 120.0 })
+		for (int turn : { 0, 1, 2 })
+		for (bool simulated : { false, true })
+		{
+			if (simulated && (fps != 120 || sampleMs != 33 || turn != 0)) continue;
+			draw3::ActiveStroke stroke(5.0f, configuration.expectedSpeed,
+				simulated ? draw3::StrokeWidthMode::SimulatedPressure : draw3::StrokeWidthMode::Fixed);
+			stroke.useDisplayTime = true;
+			TEST_CHECK(state, stroke.modeler.Reset(configuration.modelParams).ok());
+			TEST_CHECK(state, stroke.modeler.Update({
+				.event_type = Input::EventType::kDown, .position = Vec2(0, 0), .time = Time(0)
+			}, stroke.modeledResults).ok());
+			draw3::AppendNewModeledPoints(stroke);
+			double lastModelTime = 0.0, now = 0.0;
+			const double dt = 1.0 / fps;
+			DirectX::XMFLOAT2 raw{};
+			size_t modelCalls = 1, peakScratch = 0, unpinnedMoves = 0;
+			auto frame = [&](double time, bool moved, DirectX::XMFLOAT2 target)
+			{
+				stroke.logicalInputTime = time;
+				if (moved)
+				{
+					raw = target;
+					stroke.lastMovementInputTime = time;
+					stroke.idleFrozen = false;
+					stroke.visualStableFrameCount = 0;
+					lastModelTime = draw3::ResolvePenModelInputTime(stroke, time, lastModelTime, dt);
+					stroke.modelScratch.clear();
+					TEST_CHECK(state, stroke.modeler.Update({
+						.event_type = Input::EventType::kMove, .position = Vec2(raw.x, raw.y),
+						.time = Time(lastModelTime) }, stroke.modelScratch).ok());
+					++modelCalls;
+					peakScratch = std::max(peakScratch, stroke.modelScratch.size());
+					const float speed = simulated && time > 10.0 ? 1200.0f : 30.0f;
+					if (stroke.endpointAdmission.active)
+						draw3::AppendRecoveryModeledPoints(stroke, stroke.modelScratch, raw, speed);
+					else
+					{
+						stroke.modeledResults = stroke.modelScratch;
+						stroke.convertedResultCount = 0;
+						draw3::AppendNewModeledPoints(stroke, speed);
+					}
+					if (!stroke.endpointAdmission.active &&
+						std::hypot(stroke.realPoints.back().x - raw.x,
+							stroke.realPoints.back().y - raw.y) > 0.05f) ++unpinnedMoves;
+				}
+				else if (!stroke.idleFrozen && (stroke.endpointAdmission.active ||
+					draw3::ShouldStartEndpointSettling(time - stroke.lastMovementInputTime, dt)))
+				{
+					if (!stroke.endpointAdmission.active) draw3::BeginEndpointAdmission(stroke, raw);
+					if (draw3::IsModeledTipSettled(draw3::LatestModeledTip(stroke), raw, dt))
+					{
+						stroke.modelClockStopped = true;
+						if (stroke.endpointAdmission.recovering)
+						{
+							draw3::ClearEndpointAdmission(stroke);
+							draw3::BeginEndpointAdmission(stroke, raw);
+						}
+						draw3::AppendEndpointBoundedModeledPoints(stroke, {}, -1,
+							stroke.lastMovementInputTime, true);
+					}
+					else
+					{
+						lastModelTime = time - stroke.modelTimeOffset;
+						stroke.modelScratch.clear();
+						TEST_CHECK(state, stroke.modeler.Update({
+							.event_type = Input::EventType::kMove, .position = Vec2(raw.x, raw.y),
+							.time = Time(lastModelTime) }, stroke.modelScratch).ok());
+						++modelCalls;
+						peakScratch = std::max(peakScratch, stroke.modelScratch.size());
+						if (stroke.endpointAdmission.recovering)
+							draw3::AppendRecoveryModeledPoints(stroke, stroke.modelScratch, raw, -1);
+						else draw3::AppendEndpointBoundedModeledPoints(stroke, stroke.modelScratch,
+							-1, stroke.lastMovementInputTime);
+					}
+				}
+				stroke.predictedResults.clear();
+				if (!stroke.endpointAdmission.active)
+					TEST_CHECK(state, stroke.modeler.Predict(stroke.predictedResults).ok());
+				draw3::RebuildPredictedPoints(stroke);
+				draw3::RebuildL0DrawPoints(stroke, 0.055,
+					draw3::StrokeShape::RoundCapsule, 800, 600);
+				draw3::UpdateIdleFreezeState(stroke, moved,
+					draw3::IsModeledTipSettled(draw3::LatestModeledTip(stroke), raw, dt), 0.055);
+			};
+			// 分离事件和渲染节奏：量化 1px 曲线，包含相位抖动及没有新包的帧。
+			int sample = 0;
+			for (int index = 1; sample < 24; ++index)
+			{
+				now += dt * (index % 2 ? 0.94 : 1.06);
+				const int next = std::min(24, static_cast<int>(now / (sampleMs * 0.001)));
+				const bool moved = next > sample;
+				sample = next;
+				frame(now, moved, { static_cast<float>(sample),
+					static_cast<float>(std::floor(3.0 * std::sin(sample * 0.15))) });
+			}
+			TEST_CHECK(state, unpinnedMoves > 2);
+			for (int i = 0; i < static_cast<int>(fps * 0.5); ++i)
+				frame(now += dt, false, raw);
+			TEST_CHECK(state, stroke.idleFrozen);
+			TEST_CHECK(state, NearlyEqual(stroke.realPoints.back().x, raw.x, 0.05f));
+			TEST_CHECK(state, NearlyEqual(stroke.l0DrawPoints.back().r, stroke.realPoints.back().r, 0.02f));
+			const float heldRadius = stroke.realPoints.back().r;
+			const auto count = stroke.realPoints.size(), calls = modelCalls;
+			for (int i = 0; i < static_cast<int>(fps * 10); ++i) frame(now += dt, false, raw);
+			TEST_CHECK(state, stroke.realPoints.size() == count);
+			TEST_CHECK(state, modelCalls == calls);
+			const auto start = raw;
+			for (int i = 1; i <= 12; ++i)
+				frame(now += dt, true, {
+					start.x + (turn == 0 ? i : turn == 2 ? -i : 0),
+					start.y + (turn == 1 ? i : 0) });
+			TEST_CHECK(state, !stroke.endpointAdmission.active);
+			if (simulated)
+			{
+				TEST_CHECK(state, stroke.realPoints.back().r < heldRadius - 0.02f);
+				TEST_CHECK(state, stroke.widthEstimator.lastTime <= lastModelTime + 0.01);
+			}
+			for (int i = 0; i < static_cast<int>(fps * 0.5); ++i) frame(now += dt, false, raw);
+			TEST_CHECK(state, stroke.idleFrozen);
+			TEST_CHECK(state, peakScratch < 256);
+			// 超长静止不交给模型一次积分；同位 Up 保持老化完毕的实际半径。
+			frame(now += 3600.0, false, raw);
+			const auto finalCount = stroke.realPoints.size();
+			const double upTime = draw3::ResolvePenModelInputTime(stroke, now, lastModelTime, dt);
+			TEST_CHECK(state, upTime - lastModelTime <= dt + 0.00001);
+			stroke.modelScratch.clear();
+			TEST_CHECK(state, stroke.modeler.Update({
+				.event_type = Input::EventType::kUp, .position = Vec2(raw.x, raw.y),
+				.time = Time(upTime) }, stroke.modelScratch).ok());
+			draw3::BeginEndpointAdmission(stroke, raw);
+			draw3::AppendEndpointBoundedModeledPoints(stroke, stroke.modelScratch,
+				-1, stroke.lastMovementInputTime, true);
+			std::vector<draw3::InkPoint> completed;
+			draw3::BuildCompletedPenTail(stroke, 0.055, completed);
+			TEST_CHECK(state, NearlyEqual(completed.back().r, stroke.realPoints.back().r, 0.02f));
+			TEST_CHECK(state, stroke.realPoints.size() == finalCount);
+			TEST_CHECK(state, stroke.modelScratch.size() < 256);
+		}
+	}
+
+	void TestStationaryTipAging(TestState& state)
+	{
+		draw3::ActiveStroke stroke(5.0f, 100.0f, draw3::StrokeWidthMode::Fixed);
+		for (int index = 0; index < 7; ++index)
+			stroke.realPoints.push_back({ index * 0.3f, 0.0f, 2.5f, index * 0.01f });
+		stroke.logicalInputTime = 0.06;
+		draw3::RebuildL0DrawPoints(stroke, 0.055, draw3::StrokeShape::RoundCapsule, 800, 600);
+		const float movingRadius = stroke.l0DrawPoints.back().r;
+		TEST_CHECK(state, movingRadius < 2.0f);
+		const size_t pointCount = stroke.realPoints.size();
+		float previousRadius = movingRadius;
+		for (int frame = 1; frame <= 20; ++frame)
+		{
+			stroke.logicalInputTime = 0.06 + frame * 0.005;
+			draw3::RebuildL0DrawPoints(stroke, 0.055,
+				draw3::StrokeShape::RoundCapsule, 800, 600);
+			const float radius = stroke.l0DrawPoints.back().r;
+			TEST_CHECK(state, radius >= previousRadius - 0.0001f && radius <= 2.5f);
+			TEST_CHECK(state, radius - previousRadius < 0.4f);
+			TEST_CHECK(state, stroke.realPoints.size() == pointCount);
+			previousRadius = radius;
+		}
+		TEST_CHECK(state, NearlyEqual(previousRadius, 2.5f));
+		stroke.logicalInputTime = 1.0;
+		draw3::RebuildL0DrawPoints(stroke, 0.055, draw3::StrokeShape::RoundCapsule, 800, 600);
+		TEST_CHECK(state, NearlyEqual(stroke.l0DrawPoints.back().r, 2.5f));
+		std::vector<draw3::InkPoint> completed;
+		draw3::BuildCompletedPenTail(stroke, 0.055, completed);
+		TEST_CHECK(state, NearlyEqual(completed.back().r, 2.5f));
 	}
 
 	void TestEndpointAdmissionContracts(TestState& state)
@@ -2115,20 +2291,17 @@ namespace
 			sanitizedStored->Points().begin(), sanitizedStored->Points().end(),
 			[](const draw3::StoredInkPoint& point) { return point.x > 10.05f; }));
 
-		// 恢复首批若仍甩出旧方向，整批拒绝并保持门禁，不把 returning suffix 接回来。
-		draw3::BeginEndpointAdmission(stopGate, { 12.0f, 0.0f });
+		// 恢复只丢弃旧停点后的回摆前缀，安全后缀可以直接解除门禁。
 		const std::array<Result, 3> unsafeResumeScratch{
 			modeledResult(9.5f, 0.0f, 0.07),
 			modeledResult(10.5f, 0.0f, 0.08),
 			modeledResult(11.5f, 0.0f, 0.09)
 		};
-		const draw3::EndpointAdmissionResult unsafeResume =
-			draw3::AppendEndpointBoundedModeledPoints(
-				stopGate, unsafeResumeScratch, 100.0f, 0.09);
-		TEST_CHECK(state, unsafeResume.acceptedResultCount == 0);
-		TEST_CHECK(state, unsafeResume.endpointPinned);
-		TEST_CHECK(state, stopGate.endpointAdmission.active);
-		TEST_CHECK(state, NearlyEqual(stopGate.realPoints.back().x, 12.0f));
+		draw3::AppendRecoveryModeledPoints(stopGate, unsafeResumeScratch,
+			{ 12.0f, 0.0f }, 100.0f);
+		TEST_CHECK(state, !stopGate.endpointAdmission.active);
+		TEST_CHECK(state, stopGate.realPoints.size() == pinnedPointCount + 2);
+		TEST_CHECK(state, NearlyEqual(stopGate.realPoints.back().x, 11.5f));
 		TEST_CHECK(state, !draw3::IsModeledTipSettled(
 			draw3::LatestModeledTip(stopGate), { 12.0f, 0.0f }, 1.0 / 120.0));
 		draw3::BeginEndpointAdmission(stopGate, { 14.0f, 0.0f });
@@ -2142,10 +2315,54 @@ namespace
 		TEST_CHECK(state,
 			safeResume.acceptedResultCount == safeResumeScratch.size());
 		TEST_CHECK(state, !safeResume.endpointPinned);
-		draw3::ClearEndpointAdmission(stopGate); // controller 只在整批安全后恢复 Tracking。
+		draw3::ClearEndpointAdmission(stopGate); // 本例随后回到普通 Tracking。
 		TEST_CHECK(state, !stopGate.endpointAdmission.active);
 		TEST_CHECK(state, NearlyEqual(stopGate.realPoints[stopGate.realPoints.size() - 2].x, 12.5f));
 		TEST_CHECK(state, NearlyEqual(stopGate.realPoints.back().x, 13.5f));
+
+		// 恢复可以跨批等待；中途转向仍使用最初停点，不能把新 raw 点硬补入几何。
+		for (int turn : { 0, 1, 2 })
+		{
+			draw3::ActiveStroke recovery(10.0f, 500.0f, draw3::StrokeWidthMode::Fixed);
+			recovery.realPoints.push_back({ 10.0f, 0.0f, 5.0f, 0.0f });
+			draw3::BeginEndpointAdmission(recovery, { 10.0f, 0.0f });
+			draw3::AppendEndpointBoundedModeledPoints(recovery, {}, -1.0f, 0.0, true);
+			const std::array<Result, 2> rejectedPrefix{
+				modeledResult(9.5f, 0.0f, 0.01),
+				modeledResult(12.5f, 0.0f, 0.02)
+			};
+			draw3::AppendRecoveryModeledPoints(recovery, rejectedPrefix, { 12.0f, 0.0f }, 100.0f);
+			TEST_CHECK(state, recovery.endpointAdmission.active && recovery.endpointAdmission.recovering);
+			TEST_CHECK(state, recovery.realPoints.size() == 1);
+			TEST_CHECK(state, NearlyEqual(recovery.endpointAdmission.recoveryOrigin.x, 10.0f));
+			draw3::AppendRecoveryModeledPoints(recovery, {}, { 12.0f, 0.0f }, -1.0f);
+			TEST_CHECK(state, recovery.realPoints.size() == 1 && recovery.endpointAdmission.active);
+
+			// 接纳过安全点也不能跳过后面的回摆，坏尾尚在时保持恢复门禁。
+			std::array<Result, 2> unsafeTail{
+				modeledResult(10.5f, 0.0f, 0.03),
+				modeledResult(10.25f, 0.0f, 0.04)
+			};
+			unsafeTail.back().velocity = { -1.0f, 0.0f };
+			draw3::AppendRecoveryModeledPoints(recovery, unsafeTail, { 12.0f, 0.0f }, 100.0f);
+			TEST_CHECK(state, recovery.endpointAdmission.active && recovery.realPoints.size() == 2);
+			TEST_CHECK(state, NearlyEqual(recovery.realPoints.back().x, 10.5f));
+			TEST_CHECK(state, NearlyEqual(recovery.endpointAdmission.recoveryOrigin.x, 10.0f));
+
+			const DirectX::XMFLOAT2 target = turn == 0 ? DirectX::XMFLOAT2{ 14.0f, 0.0f }
+				: turn == 1 ? DirectX::XMFLOAT2{ 10.0f, 4.0f } : DirectX::XMFLOAT2{ 6.0f, 0.0f };
+			const DirectX::XMFLOAT2 safePoint = turn == 0 ? DirectX::XMFLOAT2{ 12.0f, 0.0f }
+				: turn == 1 ? DirectX::XMFLOAT2{ 10.0f, 1.0f } : DirectX::XMFLOAT2{ 9.0f, 0.0f };
+			std::array<Result, 2> safeSuffix{
+				modeledResult(turn == 2 ? 10.6f : 10.2f, 0.0f, 0.05),
+				modeledResult(safePoint.x, safePoint.y, 0.06)
+			};
+			safeSuffix.back().velocity = { target.x - 10.0f, target.y };
+			draw3::AppendRecoveryModeledPoints(recovery, safeSuffix, target, 100.0f);
+			TEST_CHECK(state, !recovery.endpointAdmission.active && recovery.realPoints.size() == 3);
+			TEST_CHECK(state, NearlyEqual(recovery.realPoints.back().x, safePoint.x));
+			TEST_CHECK(state, NearlyEqual(recovery.realPoints.back().y, safePoint.y));
+		}
 
 		draw3::ActiveStroke exactCommitted(
 			10.0f, 500.0f, draw3::StrokeWidthMode::Fixed);
@@ -2342,7 +2559,7 @@ namespace
 		TEST_CHECK(state, physicalUp.realPoints.size() >= realCountBeforeUp);
 		TEST_CHECK(state, NearlyEqual(physicalUp.realPoints.back().x, upRawX, 0.05f));
 
-		// SoftPen 的有效移动完成态达到既有 taper floor；点击、极短划和 HardPen 不被强制尖化。
+		// 活动与完成使用同一笔锋规则，短划不在 Up 时被强制重新收尖。
 		draw3::ActiveStroke softPen(
 			10.0f, 500.0f, draw3::StrokeWidthMode::Fixed);
 		softPen.realPoints = {
@@ -2353,7 +2570,9 @@ namespace
 		std::vector<draw3::InkPoint> completedTail;
 		draw3::BuildCompletedPenTail(softPen, 0.055, completedTail);
 		TEST_CHECK(state, completedTail.size() == 3);
-		TEST_CHECK(state, NearlyEqual(completedTail.back().r, 5.0f * 0.28f, 0.001f));
+		draw3::RebuildL0DrawPoints(softPen, 0.055,
+			draw3::StrokeShape::RoundCapsule, 800, 600);
+		TEST_CHECK(state, NearlyEqual(completedTail.back().r, softPen.l0DrawPoints.back().r));
 
 		draw3::ActiveStroke click(
 			10.0f, 500.0f, draw3::StrokeWidthMode::Fixed);
@@ -2716,6 +2935,8 @@ int wmain(int argc, wchar_t* argv[])
 	TestInterruptedStrokeReconnectModelLifecycle(state);
 	TestLowSpeedStopConvergence(state);
 	TestEndpointAdmissionContracts(state);
+	TestStationaryTipAging(state);
+	TestSparsePenFrames(state);
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
 	TestPerformanceHudMetrics(state);

@@ -2,6 +2,8 @@
 
 ## Boundary
 
+> **当前批准设计（2026-09-20 续修）优先于下文历史方案：**停笔笔锋消退为基础半径；恢复采用固定旧停点的前缀过滤；取消无条件 completed taper floor。下文 Endpoint Monotonicity 保留为前轮追溯，冲突处不再作为实现要求。
+
 修复保持在 Draw3 CPU 侧普通笔 runtime，并同步测试宿主与产品的同构实现：
 
 - `inkStrokeModelerTest/draw3/*` 作为确定性模型回归基线。
@@ -10,6 +12,15 @@
 - 不改 `additional/ink_stroke_modeler`、renderer、HLSL、CPU/GPU 数据结构及文档格式。
 
 Eraser、Highlighter、Laser、Shape 不接入新的 stationary advance；它们的既有专用生命周期和视觉策略保持不变。
+
+## Approved Follow-up: Dwell Appearance And Smooth Recovery
+
+- 显示时钟持续推进，模型时钟仅在有必要时推进。基础半径保持在 realPoints；L0 通过显式显示时间计算点龄，使模拟笔锋系数平滑恢复到 1。stationary/kUp 的合成时间不能重置真实运动建立的笔锋年龄。保留短划发展、公切线约束与正常运动预测。
+- 活动尾段、完成尾段、Stored 共用相同笔锋规则；已停稳同位 Up 保持坐标和半径，不强制重新收尖。模型位置/速度、端点到位、笔锋老化完成及三帧稳定共同决定冻结。
+- 恢复状态固定旧停点 P。每批真实 Move 用 R-P 确定当前离开方向；过滤落在 P 后、仍回摆或残余惯性越过 R 的前缀。接纳安全模型后缀后解除恢复，不能要求 acceptedCount 等于原整批数量，不能追加 R 代替被拒绝点。允许直角/反向真实转向；R 仍与 P 同位时不制造方向或重复点。
+- 恢复中的空帧继续沿用 P 推进内部模型，不重新 BeginEndpointAdmission(newRaw)。安全接回后恢复预测/L1；stationary 和 terminal 输出仍受停止边界约束，恢复首批的完整后缀也需检查残余反向风险。
+- 模型完全收敛后的静止区间从后续模型时间增量中扣除，显示时间和真实 QPC 不压缩。恢复 Move/Up 的每次模型调用服从既有输出预算；不 Reset、不 Save/Restore、不重编第三方库。
+- 必要变更范围：两侧 InkPrediction 接口、StrokeGeometry、DrawingController，控制台回归及产品隐藏集成和仅供其使用的诊断字段。CPU/GPU 点布局、HLSL、其他工具不变。
 
 ## State And Contracts
 

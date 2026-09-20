@@ -168,7 +168,7 @@ namespace draw3
 		}
 
 		void ApplyLiveTipTaper(std::vector<InkPoint>& points,
-			double liveTipDurationSeconds, bool forceFullyDeveloped = false)
+			double liveTipDurationSeconds, double displayTime)
 		{
 			if (points.empty() || liveTipDurationSeconds <= 0.0) return;
 			const double endTime = points.back().time;
@@ -177,35 +177,18 @@ namespace draw3
 			while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime) --firstTipIndex; // 找到需要渐细的实时尾部起点。
 
 			const double actualTipSpan = std::max(0.0, endTime - static_cast<double>(points[firstTipIndex].time));
-			const float spanRatio = forceFullyDeveloped ? 1.0f :
-				SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
+			const float spanRatio = SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
+			const double now = std::max(displayTime, endTime);
 			const float newestScale = LerpFloat(1.0f, 0.28f, spanRatio); // 尾部越完整，最新端点越细。
 			for (size_t index = firstTipIndex; index < points.size(); ++index)
 			{
 				const float ageRatio = actualTipSpan > 0.000001
-					? static_cast<float>((endTime - static_cast<double>(points[index].time)) / actualTipSpan)
+					? static_cast<float>((now - static_cast<double>(points[index].time)) / actualTipSpan)
 					: 0.0f;
 				points[index].r *= LerpFloat(newestScale, 1.0f, SmoothStep01(ageRatio)); // 从最新端点向旧点逐步恢复正常半径。
 			}
 		}
 
-		bool HasMeaningfulCompletedMotion(const ActiveStroke& stroke) noexcept
-		{
-			if (stroke.realPoints.size() < 2) return false;
-			const float minimumTravel = std::max(1.0f,
-				stroke.widthEstimator.baseDiameter * 0.5f);
-			float accumulatedTravel = 0.0f;
-			for (size_t index = 1; index < stroke.realPoints.size(); ++index)
-			{
-				const float segmentLength = std::hypot(
-					stroke.realPoints[index].x - stroke.realPoints[index - 1].x,
-					stroke.realPoints[index].y - stroke.realPoints[index - 1].y);
-				if (!std::isfinite(segmentLength)) return false;
-				accumulatedTravel += segmentLength;
-				if (accumulatedTravel >= minimumTravel) return true;
-			}
-			return false;
-		}
 	}
 
 	namespace ink_prediction_detail
@@ -851,8 +834,7 @@ namespace draw3
 			const size_t tailStart = stroke.hasCommittedGeometry
 				? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
 			output.assign(stroke.realPoints.begin() + tailStart, stroke.realPoints.end());
-			ApplyLiveTipTaper(output, liveTipTaperSeconds,
-				HasMeaningfulCompletedMotion(stroke));
+			ApplyLiveTipTaper(output, liveTipTaperSeconds, stroke.logicalInputTime);
 			EnforceCapsuleTangency(output); // 与 L0 实时笔锋同一套公切线安全，不再套稳定笔宽时间限速。
 		}
 		if (output.empty() && stroke.hasInputStartPoint)
@@ -1120,6 +1102,9 @@ namespace draw3
 		lastMovementInputTime = 0.0;
 		lastFrameWallTime = 0.0;
 		logicalInputTime = 0.0;
+		modelTimeOffset = 0.0;
+		modelClockStopped = false;
+		useDisplayTime = false;
 		latestModeledResult = {};
 		endpointAdmission = {};
 		hasLatestModeledResult = false;
@@ -1334,7 +1319,9 @@ namespace draw3
 			return;
 		}
 		const bool stoppedLongEnough = stroke.logicalInputTime - stroke.lastMovementInputTime >= liveTipDurationSeconds;
-		if (stoppedLongEnough && modelSettled &&
+		const bool endpointReady = !stroke.endpointAdmission.active ||
+			(stroke.endpointAdmission.visualPinned && !stroke.endpointAdmission.recovering);
+		if (stoppedLongEnough && modelSettled && endpointReady &&
 			AreL0VisualsClose(stroke.l0DrawPoints, stroke.previousL0DrawPoints))
 			++stroke.visualStableFrameCount; // 连续多帧几乎不变才认为视觉已经稳定。
 		else
@@ -1427,7 +1414,8 @@ namespace draw3
 				stroke.realPoints.push_back(endpointPoint);
 			// 已提交尾点若已精确命中 raw endpoint，不再追加第二个同位中心点。
 			stroke.widthEstimator.currentDiameter = radius * 2.0f;
-			stroke.widthEstimator.lastTime = pointTime;
+			stroke.widthEstimator.lastTime = stroke.hasLatestModeledResult
+				? stroke.latestModeledResult.time.Value() : pointTime - stroke.modelTimeOffset;
 			stroke.widthEstimator.lastPositionX = admission.endpoint.x;
 			stroke.widthEstimator.lastPositionY = admission.endpoint.y;
 			stroke.widthEstimator.hasSample = true;
@@ -1451,7 +1439,7 @@ namespace draw3
 			stroke.endpointAdmission = {};
 			return;
 		}
-		if (stroke.endpointAdmission.active &&
+		if (stroke.endpointAdmission.active && !stroke.endpointAdmission.recovering &&
 			std::hypot(stroke.endpointAdmission.endpoint.x - endpoint.x,
 				stroke.endpointAdmission.endpoint.y - endpoint.y) <=
 				kEndpointDirectionEpsilonPx)
@@ -1538,8 +1526,14 @@ namespace draw3
 		}
 
 		for (size_t index = 0; index < admissionResult.acceptedResultCount; ++index)
-			stroke.realPoints.push_back(ConvertModeledResultToInkPoint(
-				stroke, modeledResults[index], inputSpeed, nullptr));
+		{
+			InkPoint point = ConvertModeledResultToInkPoint(
+				stroke, modeledResults[index], inputSpeed, nullptr);
+			if (stroke.useDisplayTime)
+				point.time = static_cast<float>(std::min(
+					modeledResults[index].time.Value() + stroke.modelTimeOffset, endpointTime));
+			stroke.realPoints.push_back(point);
+		}
 		admissionResult.geometryChanged = admissionResult.acceptedResultCount > 0;
 		if (shouldPinEndpoint || pinEndpointAtEnd)
 			PinEndpointGeometry(stroke, endpointTime, admissionResult);
@@ -1551,6 +1545,63 @@ namespace draw3
 		stroke.endpointAdmission = {};
 	}
 
+	double ResolvePenModelInputTime(ActiveStroke& stroke, double realTime,
+		double lastModelTime, double frameIntervalSeconds) noexcept
+	{
+		if (stroke.modelClockStopped)
+		{
+			stroke.modelTimeOffset = std::max(stroke.modelTimeOffset,
+				realTime - lastModelTime - frameIntervalSeconds);
+			stroke.modelClockStopped = false;
+		}
+		return std::max(realTime - stroke.modelTimeOffset, lastModelTime + 0.000001);
+	}
+
+	void AppendRecoveryModeledPoints(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> results,
+		DirectX::XMFLOAT2 rawEndpoint, float inputSpeed)
+	{
+		CaptureLatestModeledResult(stroke, results);
+		if (stroke.realPoints.empty()) return;
+		auto& gate = stroke.endpointAdmission;
+		if (!gate.recovering)
+		{
+			gate.recovering = true;
+			gate.recoveryOrigin = stroke.realPoints.empty() ? gate.endpoint :
+				DirectX::XMFLOAT2{ stroke.realPoints.back().x, stroke.realPoints.back().y };
+		}
+		const float dx = rawEndpoint.x - gate.recoveryOrigin.x;
+		const float dy = rawEndpoint.y - gate.recoveryOrigin.y;
+		const float length = std::hypot(dx, dy);
+		if (length <= kEndpointDirectionEpsilonPx) return;
+		const float ux = dx / length, uy = dy / length;
+		bool accepted = false;
+		bool safeTail = false;
+		for (const auto& result : results)
+		{
+			const float x = result.position.x - gate.recoveryOrigin.x;
+			const float y = result.position.y - gate.recoveryOrigin.y;
+			const float along = x * ux + y * uy;
+			const float distance = std::hypot(x, y);
+			const auto& previous = stroke.realPoints.back();
+			const float step = (result.position.x - previous.x) * ux +
+				(result.position.y - previous.y) * uy;
+			safeTail = std::isfinite(along) && std::isfinite(distance) &&
+				along > 0.0f && along <= length + kVisualStablePositionEpsilonPx &&
+				distance <= length + kVisualStablePositionEpsilonPx &&
+				step > kEndpointDirectionEpsilonPx &&
+				result.velocity.x * ux + result.velocity.y * uy >= 0.0f;
+			if (!safeTail) continue; // 旧惯性前缀可以丢弃；安全后缀仍能解除门禁。
+			InkPoint point = ConvertModeledResultToInkPoint(stroke, result, inputSpeed, nullptr);
+			if (stroke.useDisplayTime)
+				point.time = static_cast<float>(std::min(result.time.Value() +
+					stroke.modelTimeOffset, stroke.lastMovementInputTime));
+			stroke.realPoints.push_back(point);
+			accepted = true;
+		}
+		if (accepted && safeTail) ClearEndpointAdmission(stroke);
+	}
+
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed,
 		const SpeedEraserWidthInterval* speedEraserWidth)
 	{
@@ -1560,6 +1611,9 @@ namespace draw3
 			const auto& result = stroke.modeledResults[index];
 			InkPoint point = ConvertModeledResultToInkPoint(
 				stroke, result, inputSpeed, speedEraserWidth);
+			if (stroke.useDisplayTime)
+				point.time = static_cast<float>(std::min(result.time.Value() +
+					stroke.modelTimeOffset, stroke.lastMovementInputTime));
 			if (stroke.highlighter && stroke.realPoints.empty() && stroke.hasInputStartPoint)
 			{
 				point.x = stroke.inputStartPoint.x;
@@ -1586,7 +1640,7 @@ namespace draw3
 		for (const auto& result : stroke.predictedResults)
 		{
 			InkPoint point{ result.position.x, result.position.y, predictedRadius,
-				static_cast<float>(result.time.Value()) };
+				static_cast<float>(result.time.Value() + stroke.modelTimeOffset) };
 			if (stroke.highlighter)
 			{
 				const InkPoint* previous = !stroke.predictedPoints.empty() ? &stroke.predictedPoints.back()
@@ -1626,7 +1680,7 @@ namespace draw3
 			return;
 		}
 		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
-		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds);
+		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds, stroke.logicalInputTime);
 		EnforceCapsuleTangency(stroke.l0DrawPoints); // 笔锋只做公切线安全投影，不再套用稳定笔宽时间限速。
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height, shape);
 	}

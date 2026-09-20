@@ -1,4 +1,5 @@
 {"file":".trellis/spec/native/index.md","reason":"复核修改边界、编码格式、构建与运行检查项。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/dwell-appearance-and-resume.md","reason":"复核显示老化、恢复解锁、长停模型时间预算及真实逐帧验收，避免重复前轮假阳性。"}
 {"file":".trellis/spec/native/quality-and-validation.md","reason":"复核 down/move/idle/up、重复点、完整 ARM64 构建和人工验证要求。"}
 {"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/root-cause.md","reason":"复核 model convergence、synthetic time ordering、失败降级和重复点风险。"}
 {"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/git-regression-analysis.md","reason":"复核停笔折返、Up 延伸相对历史行为的回归边界。"}
