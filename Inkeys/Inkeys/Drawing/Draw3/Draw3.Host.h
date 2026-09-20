@@ -2,6 +2,7 @@
 
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PenDiagnostics.h"
 
 #include <windows.h>
 #include <atomic>
@@ -117,6 +118,8 @@ namespace Inkeys::Drawing::Draw3
 	inline constexpr WPARAM kHiddenTestTouchFlag = 0x200u;
 	inline constexpr WPARAM kHiddenTestIntegratedPenFlag = 0x400u;
 	inline constexpr WPARAM kHiddenTestExternalPenFlag = 0x800u;
+	inline constexpr WPARAM kHiddenTestNoPressureFlag = 0x4000u;
+	inline constexpr WPARAM kHiddenTestDelayedUpFlag = 0x8000u;
 	enum class HiddenTestContactPhase : std::uint32_t
 	{
 		Down = 0,
@@ -219,6 +222,7 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t runtimeRevision = 0;
 		RECT lastDirtyRect{};
 		SpeedEraser::Diagnostics eraser;
+		PenRuntimeDiagnostics pen;
 		bool touchContactAreaAssistanceEnabled = false;
 	};
 

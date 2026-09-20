@@ -161,6 +161,253 @@ namespace Inkeys::Drawing::Draw3
 				restored[0].width>restored[1].width && restored[2].width<=diagnostic.dpiX/96*36;
 		}
 
+		bool CheckPenDwellAndResume(HWND drawpad, int& failures)
+		{
+			Bridge::ProductState penState;
+			penState.workspace = Bridge::Workspace::Whiteboard;
+			penState.tool = Bridge::Tool::Pen;
+			penState.selectionMode = false;
+			penState.widthDip = 8.0f;
+			PublishProductState(penState);
+			bool succeeded = Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return !state.selectionMode && state.workspace == Bridge::Workspace::Whiteboard;
+			}), "pen dwell test uses the drawing workspace", failures);
+			const auto post = [&](HiddenTestContactPhase phase, int x, int y)
+			{
+				return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestMouseFlag, MAKELPARAM(x, y)) != FALSE;
+			};
+			const auto beforeDown = ProductHost().RuntimeSnapshot().pen;
+			succeeded &= Check(post(HiddenTestContactPhase::Down, 60, 150),
+				"post pen dwell Down", failures);
+			if (!Check(WaitUntil([beforeDown]
+			{
+				const auto pen = ProductHost().RuntimeSnapshot().pen;
+				return pen.active && pen.strokeId != beforeDown.strokeId && pen.realPointCount > 0;
+			}), "drawing thread consumes pen dwell Down", failures)) return false;
+			const auto strokeId = ProductHost().RuntimeSnapshot().pen.strokeId;
+			bool sawTaper = false;
+			int x = 60;
+			int y = 150;
+			const auto moveAndWait = [&](int nextX, int nextY)
+			{
+				const auto before = ProductHost().RuntimeSnapshot().pen.inputSequence;
+				if (!post(HiddenTestContactPhase::Move, nextX, nextY)) return false;
+				// 等待消费序号，而非生产计数，确保每个稀疏点经过真实帧循环。
+				return WaitUntil([before, strokeId]
+				{
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					return pen.active && pen.strokeId == strokeId && pen.inputSequence > before;
+				}, 2s);
+			};
+			for (int n = 0; n < 20; ++n)
+			{
+				std::this_thread::sleep_for(16ms);
+				++x;
+				if (n % 4 == 0) ++y;
+				succeeded &= Check(moveAndWait(x, y), "consume each 1px pen Move", failures);
+				const auto pen = ProductHost().RuntimeSnapshot().pen;
+				sawTaper |= pen.baseRadius > 0.0f && pen.tipRadius < pen.baseRadius - 0.02f;
+			}
+			succeeded &= Check(sawTaper, "moving pen has a visible simulated tip", failures);
+			const auto waitForDwell = [&]
+			{
+				return WaitUntil([strokeId]
+				{
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					return pen.active && pen.strokeId == strokeId && pen.frozen &&
+						pen.endpointError <= 0.05f && pen.baseRadius > 0.0f &&
+						std::abs(pen.tipRadius - pen.baseRadius) <= 0.02f;
+				}, 2s);
+			};
+			succeeded &= Check(waitForDwell(),
+				"stopped pen reaches endpoint and loses its tip before freezing", failures);
+			const auto frozen = ProductHost().RuntimeSnapshot().pen;
+			bool bounded = true;
+			for (int n = 0; n < 30; ++n)
+			{
+				std::this_thread::sleep_for(10ms);
+				const auto held = ProductHost().RuntimeSnapshot().pen;
+				bounded &= held.active && held.frozen && held.modelUpdateCount == frozen.modelUpdateCount &&
+					held.realPointCount == frozen.realPointCount && held.l0PointCount == frozen.l0PointCount &&
+					held.committedRealIndex == frozen.committedRealIndex &&
+					std::abs(held.tipRadius - frozen.tipRadius) <= 0.02f;
+			}
+			succeeded &= Check(bounded, "frozen pen model and real/L0/L1 counts remain fixed", failures);
+			// 依次向右、向左、向下：明确覆盖同向、180 度反向和 90 度转向。
+			for (int direction = 0; direction < 3; ++direction)
+			{
+				bool unlocked = false;
+				bool sawModeledLag = false;
+				for (int n = 0; n < 12; ++n)
+				{
+					std::this_thread::sleep_for(16ms);
+					if (direction == 2) ++y;
+					else x += direction == 1 ? -1 : 1;
+					succeeded &= Check(moveAndWait(x, y), "consume resumed pen Move", failures);
+					const auto pen = ProductHost().RuntimeSnapshot().pen;
+					unlocked |= !pen.recovering && !pen.frozen;
+					sawModeledLag |= pen.endpointError > 0.05f;
+					succeeded &= Check(std::isfinite(pen.tipRadius) && pen.tipRadius > 0.0f &&
+						pen.tipRadius <= pen.baseRadius + 0.02f,
+						"resumed visible tip remains bounded by its base radius", failures);
+				}
+				succeeded &= Check(unlocked && sawModeledLag,
+					"resumed pen unlocks and follows model output instead of pinning every raw point", failures);
+				succeeded &= Check(waitForDwell(), "resumed pen settles and fades again", failures);
+			}
+			const auto beforeUp = ProductHost().RuntimeSnapshot().pen;
+			succeeded &= Check(post(HiddenTestContactPhase::Up, x, y), "post same-position pen Up", failures);
+			succeeded &= Check(WaitUntil([strokeId]
+			{
+				const auto pen = ProductHost().RuntimeSnapshot().pen;
+				return pen.strokeId == strokeId && !pen.active;
+			}, 2s), "drawing thread publishes completed pen geometry", failures);
+			const auto completed = ProductHost().RuntimeSnapshot().pen;
+			succeeded &= Check(completed.endpointError <= 0.05f &&
+				std::abs(completed.tipRadius - beforeUp.tipRadius) <= 0.02f &&
+				std::abs(completed.baseRadius - beforeUp.baseRadius) <= 0.02f &&
+				completed.realPointCount == beforeUp.realPointCount,
+				"same-position Up preserves settled endpoint, radius and point count", failures);
+			std::fprintf(stderr, "[PenDwell] stroke=%llu updates=%llu real=%zu L0=%zu L1=%zu endpoint=%g tip=%g base=%g\n",
+				static_cast<unsigned long long>(completed.strokeId),
+				static_cast<unsigned long long>(completed.modelUpdateCount), completed.realPointCount,
+				completed.l0PointCount, completed.committedRealIndex, completed.endpointError,
+				completed.tipRadius, completed.baseRadius);
+			return succeeded;
+		}
+
+		bool CheckPenPhysicalRelease(HWND drawpad, int& failures)
+		{
+			bool succeeded = true;
+			for (const WPARAM device : { kHiddenTestMouseFlag, kHiddenTestTouchFlag,
+				kHiddenTestIntegratedPenFlag, kHiddenTestIntegratedPenFlag | kHiddenTestNoPressureFlag })
+			for (int scenario = 0; scenario < 3; ++scenario)
+			{
+				const auto post = [&](HiddenTestContactPhase phase, int x, WPARAM extra = 0)
+				{
+					return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+						static_cast<WPARAM>(phase) | device | extra, MAKELPARAM(x, 180)) != FALSE;
+				};
+				const auto oldId = ProductHost().RuntimeSnapshot().pen.strokeId;
+				succeeded &= Check(post(HiddenTestContactPhase::Down, 40), "release test Down", failures);
+				if (!Check(WaitUntil([oldId]
+				{
+					const auto p = ProductHost().RuntimeSnapshot().pen;
+					return p.active && p.strokeId != oldId;
+				}, 2s), "release Down consumed", failures)) return false;
+				const auto id = ProductHost().RuntimeSnapshot().pen.strokeId;
+				int x = 40;
+				for (int n = 0; n < 10; ++n)
+				{
+					const auto sequence = ProductHost().RuntimeSnapshot().pen.inputSequence;
+					x += 12;
+					succeeded &= Check(post(HiddenTestContactPhase::Move, x), "release Move", failures);
+					succeeded &= Check(WaitUntil([id, sequence]
+					{
+						const auto p = ProductHost().RuntimeSnapshot().pen;
+						return p.strokeId == id && p.inputSequence > sequence;
+					}, 2s), "release Move consumed", failures);
+				}
+				if (scenario == 1)
+					succeeded &= Check(WaitUntil([id]
+					{
+						const auto p = ProductHost().RuntimeSnapshot().pen;
+						return p.strokeId == id && p.frozen;
+					}, 2s), "held release settles before Up", failures);
+				if (scenario == 2) std::this_thread::sleep_for(40ms);
+				if (scenario == 0) x += 12; // 明确仍在运动的 Up，不能把调度等待误当成快速抬笔。
+				succeeded &= Check(post(HiddenTestContactPhase::Up, x,
+					scenario == 2 ? kHiddenTestDelayedUpFlag : 0), "release Up", failures);
+				succeeded &= Check(WaitUntil([id]
+				{
+					const auto p = ProductHost().RuntimeSnapshot().pen;
+					return p.strokeId == id && p.terminalLocked;
+				}, 2s), "physical Up locks display time", failures);
+				const auto released = ProductHost().RuntimeSnapshot().pen;
+				if (device == kHiddenTestTouchFlag && scenario == 0)
+					succeeded &= Check(released.active && released.awaitingReconnect,
+						"fast Touch release observes actual pending candidate before completion", failures);
+				succeeded &= Check(released.displayTime == released.physicalUpTime &&
+					released.endpointError <= 0.05f, "release time and raw endpoint are authoritative", failures);
+				succeeded &= Check(WaitUntil([id]
+				{
+					const auto p = ProductHost().RuntimeSnapshot().pen;
+					return p.strokeId == id && !p.active;
+				}, 2s), "release candidate eventually completes", failures);
+				const auto complete = ProductHost().RuntimeSnapshot().pen;
+				succeeded &= Check(complete.displayTime == released.displayTime &&
+					std::abs(complete.tipRadius - released.tipRadius) <= 0.02f,
+					"reconnect timeout does not age released tip", failures);
+				if (scenario == 1)
+					succeeded &= Check(std::abs(complete.tipRadius - complete.baseRadius) <= 0.02f,
+						"held release cannot create a new fine tip", failures);
+				if (scenario == 0 && device != kHiddenTestIntegratedPenFlag)
+					succeeded &= Check(complete.tipRadius < complete.baseRadius - 0.02f,
+						"fast simulated release retains a fine tip", failures);
+				succeeded &= Check(complete.acceptedTailCount > 0 &&
+					complete.rawUp[0] == static_cast<float>(x),
+					"release trace records accepted tail and physical endpoint", failures);
+				std::fprintf(stderr, "[PenRelease] device=%u scenario=%d time=%g tip=%g base=%g model=%zu accepted=%zu\n",
+					complete.deviceType, scenario, complete.displayTime, complete.tipRadius,
+					complete.baseRadius, complete.modelTailCount, complete.acceptedTailCount);
+			}
+
+			// 同一真实 Touch mailbox 成功续接后必须解除上一物理 Up 的显示锁。
+			const auto postTouch = [&](HiddenTestContactPhase phase, int x)
+			{
+				return SendMessageW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestTouchFlag, MAKELPARAM(x, 210)) == 0;
+			};
+			const auto oldId = ProductHost().RuntimeSnapshot().pen.strokeId;
+			postTouch(HiddenTestContactPhase::Down, 40);
+			if (!Check(WaitUntil([oldId]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.active && p.strokeId != oldId;
+			}, 2s), "reconnect test Down consumed", failures)) return false;
+			const auto id = ProductHost().RuntimeSnapshot().pen.strokeId;
+			int x = 40;
+			for (int n = 0; n < 10; ++n)
+			{
+				const auto sequence = ProductHost().RuntimeSnapshot().pen.inputSequence;
+				x += 12;
+				postTouch(HiddenTestContactPhase::Move, x);
+				succeeded &= Check(WaitUntil([sequence]
+				{ return ProductHost().RuntimeSnapshot().pen.inputSequence > sequence; }, 2s),
+					"reconnect test Move consumed", failures);
+			}
+			postTouch(HiddenTestContactPhase::Up, x);
+			succeeded &= Check(WaitUntil([id]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.strokeId == id && p.awaitingReconnect && p.terminalLocked;
+			}, 50ms), "Touch Up enters locked reconnect candidate", failures);
+			// 真实同位重触走原预测落点门禁，不把 raw 速度外推当成冻结预测轨迹。
+			succeeded &= Check(postTouch(HiddenTestContactPhase::Down, x),
+				"same-position recontact enters the real mailbox", failures);
+			succeeded &= Check(WaitUntil([id]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.strokeId == id && p.active && !p.awaitingReconnect && !p.terminalLocked;
+			}, 1s), "successful Touch reconnect clears physical Up lock", failures);
+			const auto resumedSequence = ProductHost().RuntimeSnapshot().pen.inputSequence;
+			succeeded &= Check(postTouch(HiddenTestContactPhase::Move, x + 12),
+				"reconnected Touch publishes real movement", failures);
+			succeeded &= Check(WaitUntil([id, resumedSequence]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.strokeId == id && p.active && !p.terminalLocked &&
+					p.inputSequence > resumedSequence;
+			}, 2s), "reconnected Touch continues on the same unlocked stroke", failures);
+			postTouch(HiddenTestContactPhase::Up, x + 12);
+			succeeded &= Check(WaitUntil([]
+			{ return !ProductHost().RuntimeSnapshot().pen.active; }, 2s), "reconnected Touch completes", failures);
+			return succeeded;
+		}
+
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
 			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
 			HostPresentationMode requiredMode,
@@ -413,6 +660,19 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([afterActiveClear]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterActiveClear.redoCommandCount && !s.currentPageHasContent;}),"one Redo reapplies active Clear",failures);
 				PublishProductCommand(Bridge::CommandType::Undo);
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"restore Clear before scene tests",failures);
+				const auto beforeFirstRecoveredStrokeUndo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([beforeFirstRecoveredStrokeUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>beforeFirstRecoveredStrokeUndo.undoCommandCount && s.currentPageHasContent && s.successfulPresentCount>beforeFirstRecoveredStrokeUndo.successfulPresentCount;}),"Clear-restored canvas keeps older strokes undoable",failures);
+				const auto beforeSecondRecoveredStrokeUndo=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([beforeSecondRecoveredStrokeUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>beforeSecondRecoveredStrokeUndo.undoCommandCount && !s.currentPageHasContent;}),"Clear-restored canvas can undo to empty",failures);
+				const auto recoveredCanvasEmpty=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([recoveredCanvasEmpty]{return ProductHost().RuntimeSnapshot().undoCommandCount>recoveredCanvasEmpty.undoCommandCount;}),"Undo at recovered canvas root is consumed",failures);
+				const auto afterBlockedOlderCanvasUndo=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(!afterBlockedOlderCanvasUndo.currentPageHasContent && afterBlockedOlderCanvasUndo.contentRevision==recoveredCanvasEmpty.contentRevision,"recovered canvas root cannot cross an older Clear",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([afterBlockedOlderCanvasUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedOlderCanvasUndo.redoCommandCount && s.currentPageHasContent;}),"Redo after recovered canvas Undo restores a stroke",failures);
 				const auto desktopBeforeInk = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 56, 72) &&
 					postContact(HiddenTestContactPhase::Move, 104, 96) &&
@@ -523,6 +783,23 @@ namespace Inkeys::Drawing::Draw3
 							state.contentRevision > clearedABeforeInk.contentRevision;
 					}), "A accepts new ink after Clear", failures);
 
+				const auto beforeSecondPresentationClear=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Clear);
+				modeSucceeded &= Check(WaitUntil([beforeSecondPresentationClear]{const auto s=ProductHost().RuntimeSnapshot();return s.clearCommandCount>beforeSecondPresentationClear.clearCommandCount && !s.currentPageHasContent;}),"second Presentation Clear creates a newer canvas",failures);
+				const auto afterSecondPresentationClear=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([afterSecondPresentationClear]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>afterSecondPresentationClear.undoCommandCount && s.currentPageHasContent;}),"second Presentation Clear restores the previous canvas",failures);
+				const auto restoredPreviousPresentationCanvas=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([restoredPreviousPresentationCanvas]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>restoredPreviousPresentationCanvas.undoCommandCount && !s.currentPageHasContent;}),"restored Presentation canvas can undo to empty",failures);
+				const auto emptyPreviousPresentationCanvas=ProductHost().RuntimeSnapshot();
+				PublishProductCommand(Bridge::CommandType::Undo);
+				modeSucceeded &= Check(WaitUntil([emptyPreviousPresentationCanvas]{return ProductHost().RuntimeSnapshot().undoCommandCount>emptyPreviousPresentationCanvas.undoCommandCount;}),"Presentation Undo at restored root is consumed",failures);
+				const auto afterBlockedPresentationUndo=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(!afterBlockedPresentationUndo.currentPageHasContent && afterBlockedPresentationUndo.contentRevision==emptyPreviousPresentationCanvas.contentRevision,"Presentation Undo cannot cross to the canvas before the restored one",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);
+				modeSucceeded &= Check(WaitUntil([afterBlockedPresentationUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedPresentationUndo.redoCommandCount && s.currentPageHasContent;}),"Presentation stroke Redo remains available after boundary restore",failures);
+
 				const auto firstBRevision = PublishProductPresentationTarget(targetB);
 				modeSucceeded &= Check(firstBRevision.has_value(),
 					"switch directly from A to B", failures);
@@ -566,6 +843,8 @@ namespace Inkeys::Drawing::Draw3
 					presentationBounds.right - presentationBounds.left == 384 &&
 					presentationBounds.bottom - presentationBounds.top == 256,
 					"resize keeps selection ULW bounds synchronized", failures);
+				modeSucceeded &= CheckPenDwellAndResume(drawpad, failures);
+				modeSucceeded &= CheckPenPhysicalRelease(drawpad, failures);
 			}
 
 			if (exerciseUlwDirtyRect)

@@ -96,7 +96,7 @@ Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp tar
 
 - 自动保存只接受 `Desktop + saveSetting.enable + 当前页非空`。Desktop slot 与 Whiteboard/PPT slot 独立；访问 PPT 不会污染 Desktop 保存资格，也不得将 PPT 内容导出到 Desktop 目录。
 - 每次有效 Desktop Clear 都替换全局最近恢复点。开关关闭、提交拒绝或保存失败时保留一份 `Draw3UInkCanvasSnapshot`；保存和索引 durable 后 completion 以 `fileGuid` 匹配恢复点并立即释放该快照，只保留 committed path locator。
-- Undo 总是先撤回当前区间 Stroke；到 `undoFloor` 后，内存恢复点直接物化，磁盘恢复点经 `SubmitLoad(fileGuid)` 严格读取并在绘制线程全量 replay。成功后消费恢复点并把导入 item count 设为新 `undoFloor`，再次 Undo no-op。
+- Undo 总是先撤回当前区间 Stroke；到 `undoFloor` 后，内存恢复点直接物化，磁盘恢复点经 `SubmitLoad(fileGuid)` 严格读取并在绘制线程全量 replay。成功后消费恢复点，以 `undoFloor=0` 物化恢复画布并关闭再次跨 Clear 的资格；恢复出的 Stroke 可继续逐笔 Undo 到空，之后再次 Undo no-op。
 - 触发点只有 Desktop Clear 的破坏操作之前和正常退出安全点。Undo/Redo（包括未来跨 Clear 撤销）不得调用自动保存；空画布或开关关闭时不得捕获快照、入队或创建目录。
 - DrawingController 线程只按 runtime history 捕获当前可见、完全自有的 CPU 快照；UInk 编码、文件和索引 I/O 由 Host 拥有的单一可 join 串行 worker 执行。worker 不得持有 controller/GPU 引用，也不得 detach。
 - 布局固定为 `desktop/YYYY-MM-DD/HHmmssfff_<saveRequestId-short>[_suffix].uink` 和同目录 version 1 `index.json`。请求创建时固定 `saveRequestId`、`fileGuid`、`sessionId`、`sequenceInSession`、本地日期和带时区 `createdAt`；同一请求幂等，不同请求使用 create-new 且永不覆盖。
@@ -186,7 +186,7 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 - 保存触发在 Clear boundary、同 PPT 换页、A/B/workspace 离开和正常退出屏障。快照包含全部页（包括空页）；同一 key 的普通 Tail 使用 latest-wins，Boundary 始终逐项 durable。最终 scene-stamped 屏障位于前序 Clear/Undo/Redo 之后并扫描 active 与全部 parked slot；worker 无超时排空所有已接受请求。显式失败保留旧文件和页级 fallback，并在 completion 被绘制线程处理后恢复 dirty。
 - 同一 PPT 在当前进程内固定同一 `fileGuid/path`，以 `SaveExistingLogicalFile + expected SourceRevision` 原地覆盖。UInk 先 durable commit，再在命名 mutex 内原子发布严格 index；index 失败保留文件并记录 self-written revision，后续请求先验证并收敛，不得永久卡在 `SourceChanged`。
 - clean inactive slot 只在有已提交文件、三 revision 相等且非 load-pending 时可淘汰。重入已淘汰 slot 必须走 `index -> ReadUInk -> strict import -> drawing-thread materialize`；dirty/pending/failed slot 保持 warm，不得被旧磁盘快照覆盖。加载期间清空 surface、不发布 identity-ready，并丢弃 physical contact/破坏性命令，直到 Loaded/NotFound/失败 completion 收敛。
-- 当前区间 Undo 到 floor 时，若 boundary fallback 尚在则直接恢复；否则提交 `PreviousInterval(pageGuid, intervalOrdinal-1)`。worker 只返回目标区间的可见 tail，controller 只替换匹配 Page/Slide 的 runtime 并设 `undoFloor=itemCount`；其他 active/retained Canvas 不动。成功后普通 Tail 保存把 forward 分支从 canonical 截断；跨 Clear Redo 不在本期。
+- 当前区间 Undo 到 floor 且 `previousClearUndoAvailable` 时，若 boundary fallback 尚在则直接恢复；否则提交一次 `PreviousInterval(pageGuid, intervalOrdinal-1)`。worker 只返回目标区间的可见 tail，controller 只替换匹配 Page/Slide 的 runtime，以 `undoFloor=0、intervalOrdinal=0` 物化并消费跨 Clear 资格；恢复出的 Stroke 可逐笔 Undo/Redo，到空后不得继续进入更早区间。其他 active/retained Canvas 不动。成功后的普通 Tail 保存把恢复画布写成 canonical 新根并截断前后 Clear 分支；跨 Clear Redo 不在本期。
 - 稳定路径同 key/source 的 `PageIndexFallback -> StableSlideId` 在当前 session、页数及完整 SlideID 列表可证明 ordinal 对应时，可按 ordinal 一次性升级 slot；新放映 HWND/binding revision 不阻止同进程恢复。process-local 身份仍要求 exact binding token/revision。升级是持久化 mutation，原位覆盖同一文件为标准 Presentation 元数据；不满足证明条件不得局部混用两种模式。
 - `presentation/index.json` 是严格 schema：source/key/fileGuid/path 均唯一，entry 恰含 source identity、key、sessionId、file/workspace GUID、relative path、binding mode、processLocal、binding revision、mutation revision、slideIds 和 UInk source revision。稳定模式的 `slideIds` 是已知 active/retained SlideID 并集，保存时只增不删；仅 `sessionId == ProcessSessionId()` 的 entry 可自动恢复。稳定路径 page-index 可在同 session/key/source、相同页数下跨放映 binding 按 ordinal 读写，process-local 必须 exact binding。foreign 或不一致内容返回结构化终态，不弹窗、不删未知文件、不静默覆盖。
 - index commit 失败后的 self-written pending entry 只跨同一规范化 autosave root 的 Host generation 保留；切换 root 清除。I/O 使用保留大小写的绝对路径，folded root key 仅用于等价比较和 named mutex。
@@ -314,7 +314,7 @@ PumpBridgeState();
 - `Bridge::ProductState::selectionMode : bool`，默认 `true`；不得从 `WS_EX_TRANSPARENT` 反推模式。
 - `DrawingControllerRuntimeObserver::currentPageContentChanged(void*, bool, uint64_t)`。
 - `HostRuntimeSnapshot` 包含内容、已应用选择模式、请求/就绪输出目标及 revision、`presentedContentRevision`、`auxiliaryFullFrameClean`、`runtimeRevision`；状态线程使用 `WaitForRuntimeRevision()`。
-- `CanvasPageRuntimeState::{undoFloor, intervalOrdinal, intervalLoadPending, boundaryFallback}` 与 UInk Type 6 Clear。
+- `CanvasPageRuntimeState::{undoFloor, intervalOrdinal, intervalLoadPending, previousClearUndoAvailable, boundaryFallback}` 与 UInk Type 6 Clear。
 - `ResolveBarClearClickAction(selectionMode, currentPageHasContent, doubleClickContinuation, clearAttemptedForDoubleClick, acceptedClearForDoubleClick)`。
 - `ResolveDrawpadPresentationSurface(selectionMode, currentPageHasContent, auxiliaryFullFrameClean)`。
 - `TimerPeriodController::SetSelectionMode(bool)`。
@@ -326,7 +326,7 @@ PumpBridgeState();
 - presentation 状态固定为：非选择只显示主 Drawpad；选择先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。
 - Window Service 用批量窗口位置命令确保两窗互斥可见；失败时先隐藏两窗再收敛到唯一目标。主 Drawpad 不得动态切换 `WS_EX_TRANSPARENT`。
 - Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与非选择均保持完整布局，选择按钮文字恒为“选择”。产品路径不再注册或读取 Pierce/`penetrate.select`。
-- Clear 只在 UInk canonical `Canvas.content` 中是 append-only Type 6 操作；活动 runtime 必须清空 `InkCanvas` Stroke、替换为 fresh history/raster token 并全量清理 GPU/瞬态资源。保存成功后释放 fallback，Undo 到 floor 时再按 Desktop locator 或 PPT page/ordinal 物化目标区间。
+- Clear 只在 UInk canonical `Canvas.content` 中是 append-only Type 6 操作；活动 runtime 必须清空 `InkCanvas` Stroke、替换为 fresh history/raster token 并全量清理 GPU/瞬态资源。保存成功后释放 fallback，Undo 到 floor 时再按 Desktop locator 或 PPT page/ordinal 物化最近目标区间；该画布可逐笔撤空，但不能再跨越更早 Clear。
 - Clear 成功后仍分配新的 raster token，丢弃不兼容的热前像、composition GPU cache/维护、恢复计划和 trusted L2，并重置 Laser/粒子/光标/瞬态层后全量透明呈现；CPU history、当前 viewport 和其他页面保留。Undo 隐藏 Clear 并恢复旧 Stroke，Redo 重新显示 Clear 并清空。
 - 清空按钮采用两步语义：有内容时单击只发布 Clear 并保持模式；无内容且非选择时单击进入选择。绘制有内容时双击由第一击已接受的 Clear 资格使第二击直接进入选择，不等待异步内容回报；发布失败时第二击重试 Clear。Clear 不进入 300ms toggle 点击合并。
 - `timeBeginPeriod(1)` 只在进入非选择模式时幂等尝试；回到选择或绘制线程退出时，仅对成功 begin 配对 `timeEndPeriod(1)`。begin 失败后同一次绘制停留不重试，必须离开并重新进入绘制模式。
@@ -357,7 +357,7 @@ PumpBridgeState();
 ### 6. Tests Required
 
 - Headless 覆盖 `Primary/Presentation/Hidden` 解析、Clear 点击/双击决策，以及 timer begin/end 幂等、失败、模式往返和析构清理。
-- CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与逐区间恢复。
+- CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、Clear 恢复画布逐笔撤空且不跨第二个边界、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与最近区间恢复。
 - 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨 Clear Redo 不在本期。
 - 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
 

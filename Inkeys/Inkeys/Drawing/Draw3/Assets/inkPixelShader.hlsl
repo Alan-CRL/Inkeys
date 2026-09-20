@@ -48,6 +48,27 @@ float GetInkDist_Convex(float2 p, float2 p1, float2 p2, float r1, float r2)
     return distanceToInk;
 }
 
+float GetInkLocalRadius(float2 p, float2 p1, float2 p2, float r1, float r2)
+{
+    float2 segment = p2 - p1;
+    float h = length(segment);
+    // 先处理包含圆和零长，避免侧边公切线退化时除以零。
+    if (h < 1e-5 || abs(r1 - r2) >= h)
+        return max(r1, r2);
+    float2 axis = segment / h;
+    float2 delta = p - p1;
+    float x = abs(dot(delta, float2(-axis.y, axis.x)));
+    float y = dot(delta, axis);
+    float b = (r1 - r2) / h;
+    float a = sqrt(max(0.0, 1.0 - b * b));
+    float k = -b * x + a * y;
+    if (k < 0.0) return r1;
+    if (k > a * h) return r2;
+    if (a <= 1e-5) return max(r1, r2);
+    // 最近生成圆不同于中心线的正交投影；变半径侧边需扣除切线斜率。
+    return lerp(r1, r2, saturate((y - b * x / a) / h));
+}
+
 float GetFixedNibSweepDist(float2 p, float2 p1, float2 p2, float2 halfSize)
 {
     float2 segment = p2 - p1;
@@ -479,6 +500,20 @@ OperatorOutput main(PS_INPUT input)
     // 当 d >  aaWidth/2 (形状外部) -> smoothstep 输出 1 -> alpha 为 0
     // 中间区域平滑插值
     float alpha = 1.0 - smoothstep(-aaWidth * 0.5, aaWidth * 0.5, d);
+
+    if (type == 0 && globalOperatorKind == 0 && min(input.r1, input.r2) < 1.0)
+    {
+        // 使用真实像素中心，避免 OBB 栅格顶点舍入使插值坐标随分段发生漂移。
+        float thinDistance = GetInkDist_Convex(
+            input.pos.xy, input.p1, input.p2, input.r1, input.r2);
+        float radius = max(GetInkLocalRadius(
+            input.pos.xy, input.p1, input.p2, input.r1, input.r2), 0.0);
+        // 有限宽度双边覆盖保留亚像素线的能量，不以最低实体线宽掩盖断裂。
+        float nearCoverage = 1.0 - smoothstep(-0.75, 0.75, thinDistance);
+        float farCoverage = 1.0 - smoothstep(-0.75, 0.75, thinDistance + 2.0 * radius);
+        float thinCoverage = saturate(nearCoverage - farCoverage);
+        alpha = lerp(thinCoverage, alpha, smoothstep(0.5, 1.0, radius));
+    }
 
     if (alpha <= 0.0)
         discard;

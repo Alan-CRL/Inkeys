@@ -12,6 +12,7 @@
 #include <windows.h>
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.PenDiagnostics.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
@@ -50,6 +51,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool (*presentationLoadRequested)(void*, PresentationLoadRequest&&) = nullptr;
 		void (*drawingActivityChanged)(void*, bool) = nullptr;
 		void (*eraserDiagnostics)(void*, const SpeedEraser::Diagnostics&) = nullptr;
+		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

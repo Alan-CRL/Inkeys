@@ -105,6 +105,7 @@
   <ItemGroup>
 	<ClCompile Include="canvas_navigation_tests.cpp" />
 	<ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="thin_stroke_gpu_tests.cpp" />
 	<ClCompile Include="desktop_autosave_tests.cpp" />
 	<ClCompile Include="presentation_autosave_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />
@@ -206,6 +207,11 @@
     <ClCompile Include="..\inkStrokeModelerTest\draw3\ink_prediction.cppm" Link="draw3\ink_prediction.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj">
+      <Project>{a49d68f7-0a7e-4160-9c96-6b59b0c9aa85}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

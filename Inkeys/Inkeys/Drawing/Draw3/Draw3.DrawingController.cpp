@@ -347,10 +347,11 @@ namespace Inkeys::Drawing::Draw3
 			InkRasterStateToken rasterState = 0;
 			std::vector<InkRasterStateToken> beforeStates;
 			std::vector<InkRasterStateToken> afterStates;
-			// 从旧 Clear 区间物化的内容是本区间根，不能再次逐笔撤回。
+			// 普通导入内容可作为不可撤根；Clear 恢复则从零开始，允许逐笔撤空。
 			std::size_t undoFloor = 0;
 			std::uint32_t intervalOrdinal = 0;
 			bool intervalLoadPending = false;
+			bool previousClearUndoAvailable = true; // 跨 Clear 恢复成功后消费，阻止进入更早画布。
 			bool clearRedoAvailable = false; // 仅Clear撤销恢复后有效，新笔迹提交会取消。
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
 		};
@@ -562,6 +563,8 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t lastConsumedSequence = 0;
 			int64_t qpcOrigin = 0;
 			double lastModelInputTime = 0.0;
+			uint64_t diagnosticStrokeId = 0;
+			uint64_t diagnosticModelUpdates = 0;
 			float filteredInputSpeed = 0.0f;
 			float lastPressure = -1.0f;
 			float lastTilt = -1.0f;
@@ -593,6 +596,8 @@ namespace Inkeys::Drawing::Draw3
 			bool cancelled = false;
 			bool metricVisible = false;
 			bool movedThisFrame = false;
+			bool modelInputThisFrame = false;
+			bool stationaryModelAdvanceBlocked = false;
 			bool laserParticleMovedThisFrame = false;
 			bool hasFilteredInputSpeed = false;
 			bool invertedCursor = false;
@@ -1849,6 +1854,45 @@ namespace Inkeys::Drawing::Draw3
 			strokePool.push_back(std::move(runtime)); // 首批模型和 predictor 在接收 Down 前完成分配。
 		}
 		std::vector<RuntimeStroke*> active;
+		uint64_t nextDiagnosticStrokeId = 0;
+		auto publishPenDiagnostics = [&](const RuntimeStroke& runtime,
+			std::span<const InkPoint> visible)
+		{
+			if (!observer_.penDiagnostics || !runtime.stroke.useDisplayTime) return;
+			const auto& stroke = runtime.stroke;
+			const InkPoint tip = visible.empty() ? stroke.inputStartPoint : visible.back();
+			const InkPoint realTip = stroke.realPoints.empty() ? stroke.inputStartPoint : stroke.realPoints.back();
+			PenRuntimeDiagnostics diagnostic;
+			diagnostic.strokeId = runtime.diagnosticStrokeId;
+			diagnostic.inputSequence = runtime.lastConsumedSequence;
+			diagnostic.modelUpdateCount = runtime.diagnosticModelUpdates;
+			diagnostic.realPointCount = stroke.realPoints.size();
+			diagnostic.l0PointCount = visible.size();
+			diagnostic.committedRealIndex = stroke.committedIndex;
+			diagnostic.endpointError = std::hypot(realTip.x - runtime.lastModelSnapshot.position.x,
+				realTip.y - runtime.lastModelSnapshot.position.y);
+			diagnostic.tipRadius = tip.r;
+			diagnostic.baseRadius = realTip.r;
+			diagnostic.displayTime = ResolvePenDisplayTime(stroke);
+			diagnostic.physicalUpTime = stroke.terminalDisplayTime.value_or(0.0);
+			diagnostic.deviceType = static_cast<uint32_t>(runtime.metricDeviceType);
+			diagnostic.terminalLocked = stroke.terminalDisplayTime.has_value();
+			diagnostic.awaitingReconnect = runtime.awaitingReconnect;
+			diagnostic.rawMove = { stroke.terminalRawMove.x, stroke.terminalRawMove.y };
+			diagnostic.rawUp = { stroke.terminalRawUp.x, stroke.terminalRawUp.y };
+			diagnostic.modelTailCount = stroke.terminalModelCount;
+			diagnostic.acceptedTailCount = stroke.terminalAcceptedCount;
+			diagnostic.tailTraceTruncated = stroke.terminalModelCount > 8 || stroke.terminalAcceptedCount > 8;
+			for (size_t i = 0; i < 8; ++i)
+			{
+				diagnostic.modelTail[i] = { stroke.terminalModelTrace[i].x, stroke.terminalModelTrace[i].y };
+				diagnostic.acceptedTail[i] = { stroke.terminalAcceptedTrace[i].x, stroke.terminalAcceptedTrace[i].y };
+			}
+			diagnostic.active = !runtime.ended;
+			diagnostic.recovering = stroke.endpointAdmission.recovering;
+			diagnostic.frozen = stroke.idleFrozen;
+			observer_.penDiagnostics(observer_.context, diagnostic);
+		};
 		active.reserve(kPreheatedStrokeCount);
 		bool publishedDrawingActivity = false;
 		auto reconcileDrawingActivity = [&]() noexcept
@@ -2307,7 +2351,8 @@ namespace Inkeys::Drawing::Draw3
 				return strokePool.back().get();
 			};
 
-		auto updateContactModel = [&](RuntimeStroke& runtime,const Input& next,double inputTime)
+		auto updateContactModel = [&](RuntimeStroke& runtime, const Input& next,
+			double inputTime, std::vector<ink::stroke_model::Result>& modelOutput)
 		{
 			const auto& sampling=eraserModelParams.sampling_params;
 			const bool touchSpeed=runtime.metricDeviceType==InputDeviceType::Touch &&
@@ -2329,7 +2374,9 @@ namespace Inkeys::Drawing::Draw3
 				++runtime.eraserDiagnostics.idleModelReanchors;
 				// anchor 仅供既有模型续接，绝不交给速度/面积控制器当成真实运动。
 			}
-			return runtime.stroke.modeler.Update(next,runtime.stroke.modeledResults);
+			if (observer_.penDiagnostics && runtime.stroke.useDisplayTime)
+				++runtime.diagnosticModelUpdates;
+			return runtime.stroke.modeler.Update(next, modelOutput);
 		};
 
 		auto initializeStroke = [&](ContactHandle handle) -> bool
@@ -2554,7 +2601,7 @@ namespace Inkeys::Drawing::Draw3
 						if (!AreInterruptedStrokeReconnectIdentitiesCompatible(
 							ReconnectIdentity(*candidate), candidateDownIdentity))
 						{
-							if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+							if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 							{
 								if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
 									diagnosticRuntime->deferredUpSnapshot.qpc)
@@ -2593,7 +2640,7 @@ namespace Inkeys::Drawing::Draw3
 								.dpiScale = reconnectDpiScale,
 								.motion = motion
 							});
-						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+						if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 						{
 							if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
 								diagnosticRuntime->deferredUpSnapshot.qpc)
@@ -2611,7 +2658,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 					}
 				}
-				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+				if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 				{
 					if (!reconnectRuntime && diagnosticRuntime)
 					{
@@ -2685,7 +2732,15 @@ namespace Inkeys::Drawing::Draw3
 						modelDown.orientation, lastOrientation);
 					double inputTime = QpcDeltaSeconds(
 						down.qpc, reconnectRuntime->qpcOrigin, qpcFrequency);
-					inputTime = std::max(inputTime, reconnectRuntime->lastModelInputTime + 0.000001);
+					if (reconnectRuntime->stroke.useDisplayTime)
+					{
+						reconnectRuntime->stroke.lastMovementInputTime = inputTime;
+						reconnectRuntime->stroke.logicalInputTime = std::max(
+							reconnectRuntime->stroke.logicalInputTime, inputTime);
+						inputTime = ResolvePenModelInputTime(reconnectRuntime->stroke, inputTime,
+							reconnectRuntime->lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
+					}
+					else inputTime = std::max(inputTime, reconnectRuntime->lastModelInputTime + 0.000001);
 					if (reconnectRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 					{
 						// 恢复历史并重新锚定 raw Down；连接位移和空缺时间不参与测速。
@@ -2704,16 +2759,37 @@ namespace Inkeys::Drawing::Draw3
 					const size_t reconnectManualTestFirstPointIndex =
 						reconnectRuntime->stroke.realPoints.empty()
 						? 0 : reconnectRuntime->stroke.realPoints.size() - 1;
+					reconnectRuntime->modelInputThisFrame = true;
+					const bool endpointRecovery =
+						(reconnectRuntime->tool == DrawingTool::Pen ||
+							reconnectRuntime->tool == DrawingTool::HardPen) &&
+						reconnectRuntime->stroke.endpointAdmission.active;
+					if (endpointRecovery) reconnectRuntime->stroke.modelScratch.clear();
+					auto& reconnectModelOutput = endpointRecovery
+						? reconnectRuntime->stroke.modelScratch
+						: reconnectRuntime->stroke.modeledResults;
+					if (observer_.penDiagnostics && reconnectRuntime->stroke.useDisplayTime)
+						++reconnectRuntime->diagnosticModelUpdates;
 					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
-						reconnectInput, reconnectRuntime->stroke.modeledResults); status.ok())
+						reconnectInput, reconnectModelOutput); status.ok())
 					{
+						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
 						const float alpha = std::clamp(static_cast<float>(
 							1.0 - std::exp(-gapSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);
 						reconnectRuntime->filteredInputSpeed +=
 							(reconnectResult.bridgeSpeed - reconnectRuntime->filteredInputSpeed) * alpha;
-						AppendRuntimeModeledPoints(*reconnectRuntime,
-							reconnectRuntime->filteredInputSpeed, inputTime);
+						if (endpointRecovery)
+						{
+							AppendRecoveryModeledPoints(reconnectRuntime->stroke,
+								reconnectRuntime->stroke.modelScratch,
+								{ down.position.x, down.position.y }, reconnectRuntime->filteredInputSpeed);
+						}
+						else
+						{
+							AppendRuntimeModeledPoints(*reconnectRuntime,
+								reconnectRuntime->filteredInputSpeed, inputTime);
+						}
 						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 						{
 							const size_t lastPointIndex = reconnectRuntime->stroke.realPoints.size();
@@ -2735,6 +2811,7 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->lastTilt = lastTilt;
 						reconnectRuntime->lastOrientation = lastOrientation;
 						reconnectRuntime->awaitingReconnect = false;
+						ClearPenTerminalState(reconnectRuntime->stroke);
 						if(reconnectRuntime->metricDeviceType!=InputDeviceType::Touch &&
 							reconnectRuntime->stroke.widthMode==StrokeWidthMode::SpeedEraser)
 						{
@@ -2751,7 +2828,8 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->movedThisFrame = true;
 						reconnectRuntime->stroke.idleFrozen = false;
 						reconnectRuntime->stroke.visualStableFrameCount = 0;
-						reconnectRuntime->stroke.lastMovementInputTime = inputTime;
+						if (!reconnectRuntime->stroke.useDisplayTime)
+							reconnectRuntime->stroke.lastMovementInputTime = inputTime;
 						if (haptics_ && reconnectRuntime->hapticEligible)
 						{
 							if (reconnectRuntime->invertedCursor)
@@ -2896,6 +2974,8 @@ namespace Inkeys::Drawing::Draw3
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
 					widthMode, highlighter);
+				runtime->stroke.useDisplayTime = (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen);
+				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
 				const auto& modelParams = runtime->tool == DrawingTool::Eraser
 					? eraserModelParams : strokeModelParams;
 				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
@@ -2921,6 +3001,8 @@ namespace Inkeys::Drawing::Draw3
 				runtime->lastConsumedSequence = down.sequence;
 				runtime->qpcOrigin = down.qpc;
 				runtime->lastModelInputTime = 0.0;
+				runtime->diagnosticStrokeId = observer_.penDiagnostics ? ++nextDiagnosticStrokeId : 0;
+				runtime->diagnosticModelUpdates = observer_.penDiagnostics ? 1 : 0;
 				runtime->filteredInputSpeed = 0.0f;
 				runtime->hasFilteredInputSpeed = false;
 				runtime->lastPressure = downPressure;
@@ -2954,6 +3036,8 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = down.tilt,
 					.orientation = down.orientation
 				};
+				runtime->modelInputThisFrame = true;
+				runtime->stationaryModelAdvanceBlocked = false;
 				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
@@ -3077,9 +3161,17 @@ namespace Inkeys::Drawing::Draw3
 					? runtime.speedEraserOc.Diameter() * 0.5f
 					: runtime.stroke.realPoints.empty()
 						? runtime.stroke.inputStartPoint.r : runtime.stroke.realPoints.back().r;
+				// 失败回退也沿用显示时间，不能把压缩后的模型时间写回可见尾段。
+				const double pointTime = runtime.stroke.useDisplayTime
+					? std::max(runtime.stroke.lastMovementInputTime,
+						runtime.stroke.realPoints.empty() ? 0.0 :
+							static_cast<double>(runtime.stroke.realPoints.back().time))
+					: inputTime;
 				const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
-					radius, static_cast<float>(inputTime) };
-				if (runtime.stroke.realPoints.empty())
+					radius, static_cast<float>(pointTime) };
+				if (runtime.stroke.useDisplayTime)
+					AppendTerminalFallbackPoint(runtime.stroke, finalPoint);
+				else if (runtime.stroke.realPoints.empty())
 					runtime.stroke.realPoints.push_back(finalPoint);
 				else
 				{
@@ -3111,7 +3203,16 @@ namespace Inkeys::Drawing::Draw3
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
-				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
+				if (runtime.stroke.useDisplayTime)
+				{
+					LockPenTerminalState(runtime.stroke, inputTime,
+						{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
+						{ snapshot.position.x, snapshot.position.y });
+					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
+					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
+						runtime.lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
+				}
+				else inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
 				runtime.lastModelInputTime = inputTime;
 				const float pressure = KeepLastValidStylusValue(
 					modelSnapshot.pressure, 1.0f, runtime.lastPressure);
@@ -3127,9 +3228,25 @@ namespace Inkeys::Drawing::Draw3
 					.tilt = tilt,
 					.orientation = orientation
 				};
-				if (absl::Status status = updateContactModel(runtime,upInput,inputTime); status.ok())
+				runtime.modelInputThisFrame = true;
+				const bool sanitizeEndpoint =
+					(runtime.tool == DrawingTool::Pen ||
+						runtime.tool == DrawingTool::HardPen) && !runtime.shape.active;
+				if (sanitizeEndpoint) runtime.stroke.modelScratch.clear();
+				auto& modelOutput = sanitizeEndpoint
+					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				if (absl::Status status = updateContactModel(
+					runtime, upInput, inputTime, modelOutput); status.ok())
 				{
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
+					else if (sanitizeEndpoint)
+					{
+						BeginEndpointAdmission(runtime.stroke,
+							{ snapshot.position.x, snapshot.position.y });
+						AppendEndpointBoundedModeledPoints(runtime.stroke,
+							runtime.stroke.modelScratch, -1.0f,
+							runtime.stroke.lastMovementInputTime, true);
+					}
 					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
 				}
 				else
@@ -3145,6 +3262,8 @@ namespace Inkeys::Drawing::Draw3
 					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
 					runtime.stroke.predictedResults.clear();
 				}
+				if (sanitizeEndpoint)
+					CapturePenTerminalTrace(runtime.stroke);
 				runtime.lastModelSnapshot = modelSnapshot;
 				runtime.ended = true;
 				runtime.cancelled = cancelled;
@@ -3187,6 +3306,9 @@ namespace Inkeys::Drawing::Draw3
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
 					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
+				const bool endpointTool =
+					(runtime.tool == DrawingTool::Pen ||
+						runtime.tool == DrawingTool::HardPen) && !runtime.shape.active;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 				runtime.laserParticleMovedThisFrame = positionMoved;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
@@ -3226,7 +3348,18 @@ namespace Inkeys::Drawing::Draw3
 				}
 
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
-				inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
+				if (endpointTool)
+				{
+					if (terminal)
+						LockPenTerminalState(runtime.stroke, inputTime,
+							{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
+							{ snapshot.position.x, snapshot.position.y });
+					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
+					if (positionMoved) runtime.stroke.lastMovementInputTime = inputTime;
+					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
+						runtime.lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
+				}
+				else inputTime = std::max(inputTime, runtime.lastModelInputTime + 0.000001);
 				runtime.lastModelInputTime = inputTime;
 				const float pressure = KeepLastValidStylusValue(modelSnapshot.pressure, 1.0f,
 					runtime.lastPressure);
@@ -3243,10 +3376,32 @@ namespace Inkeys::Drawing::Draw3
 					.orientation = orientation
 				};
 				bool modelUpdateSucceeded = false;
-				if (absl::Status status = updateContactModel(runtime,input,inputTime); status.ok())
+				runtime.modelInputThisFrame = true;
+				const bool boundedEndpointUpdate = endpointTool &&
+					(terminal || runtime.stroke.endpointAdmission.active);
+				if (boundedEndpointUpdate) runtime.stroke.modelScratch.clear();
+				auto& modelOutput = boundedEndpointUpdate
+					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				if (absl::Status status = updateContactModel(
+					runtime, input, inputTime, modelOutput); status.ok())
 				{
 					modelUpdateSucceeded = true;
+					runtime.stationaryModelAdvanceBlocked = false;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
+					else if (boundedEndpointUpdate)
+					{
+						if (!terminal && (positionMoved || runtime.stroke.endpointAdmission.recovering))
+							AppendRecoveryModeledPoints(runtime.stroke, runtime.stroke.modelScratch,
+								{ snapshot.position.x, snapshot.position.y }, inputSpeed);
+						else
+						{
+							BeginEndpointAdmission(runtime.stroke,
+								{ snapshot.position.x, snapshot.position.y });
+							AppendEndpointBoundedModeledPoints(runtime.stroke,
+								runtime.stroke.modelScratch, inputSpeed,
+								runtime.stroke.lastMovementInputTime, terminal);
+						}
+					}
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
 				}
 				else
@@ -3257,13 +3412,15 @@ namespace Inkeys::Drawing::Draw3
 					if (terminal && !deferUp && !runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
 				}
+				if (terminal && endpointTool && (modelUpdateSucceeded || !deferUp))
+					CapturePenTerminalTrace(runtime.stroke);
 				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
 				if (positionMoved || stylusStateChanged)
 				{
 					runtime.stroke.idleFrozen = false;
 					runtime.stroke.visualStableFrameCount = 0;
-					runtime.stroke.lastMovementInputTime = inputTime;
+					if (!endpointTool) runtime.stroke.lastMovementInputTime = inputTime;
 				}
 				if (terminal && runtime.tool == DrawingTool::Laser)
 				{
@@ -4717,6 +4874,8 @@ namespace Inkeys::Drawing::Draw3
 					source.undoFloor, destination.history.Items().size());
 				destination.intervalOrdinal = source.intervalOrdinal;
 				destination.intervalLoadPending = source.intervalLoadPending;
+				destination.previousClearUndoAvailable =
+					source.previousClearUndoAvailable;
 				destination.clearRedoAvailable = source.clearRedoAvailable;
 				destination.boundaryFallback = std::move(source.boundaryFallback);
 			}
@@ -5124,10 +5283,13 @@ namespace Inkeys::Drawing::Draw3
 			const InkPage* current = document_->PageAt(currentPageIndex_);
 			if (!current || current->PageGuid().Bytes() != snapshot.pageGuid.Bytes())
 				return false;
-			auto materialized = materializeCanvasPage(snapshot, true);
+			auto materialized = materializeCanvasPage(snapshot, false);
 			if (!materialized || !document_->ReplacePage(
 				currentPageIndex_, std::move(materialized->first))) return false;
 			pageRuntimeStates[currentPageIndex_] = std::move(materialized->second);
+			// 恢复画布成为新的历史根；后续保存同步截断更早 Clear 区间。
+			pageRuntimeStates[currentPageIndex_].intervalOrdinal = 0;
+			pageRuntimeStates[currentPageIndex_].previousClearUndoAvailable = false;
 			pageRuntimeStates[currentPageIndex_].clearRedoAvailable = true;
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
@@ -5279,10 +5441,12 @@ namespace Inkeys::Drawing::Draw3
 								if (!pending.intervalLoadPending || pending.intervalOrdinal == 0 ||
 									completion.intervalOrdinal + 1 != pending.intervalOrdinal)
 									return std::nullopt;
-								auto materialized = materializeCanvasPage(*source, true);
+								auto materialized = materializeCanvasPage(*source, false);
 								if (!materialized || !targetDocument->ReplacePage(
 									index, std::move(materialized->first))) return std::nullopt;
 								(*runtimes)[index] = std::move(materialized->second);
+								(*runtimes)[index].intervalOrdinal = 0;
+								(*runtimes)[index].previousClearUndoAvailable = false;
 								(*runtimes)[index].clearRedoAvailable = true;
 								return index;
 							}
@@ -5668,7 +5832,8 @@ namespace Inkeys::Drawing::Draw3
 									observer_.desktopLoadRequested(observer_.context,
 										*desktopClearRecovery->fileGuid);
 						}
-						else if ((activeWorkspace == Bridge::Workspace::Presentation ||
+						else if (runtime.previousClearUndoAvailable &&
+							(activeWorkspace == Bridge::Workspace::Presentation ||
 							activeWorkspace == Bridge::Workspace::Whiteboard) &&
 							page && (runtime.intervalOrdinal != 0 || runtime.boundaryFallback) &&
 							!runtime.intervalLoadPending)
@@ -5697,6 +5862,8 @@ namespace Inkeys::Drawing::Draw3
 					}
 					if (changed)
 					{
+						// 继续撤回恢复画布后，Redo 应沿笔迹历史前进，不能再重放 Clear。
+						pageRuntimeStates[currentPageIndex_].clearRedoAvailable = false;
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}
@@ -6436,6 +6603,8 @@ namespace Inkeys::Drawing::Draw3
 			const float preInputLaserOpacity = laserOpacity;
 			const bool interruptedStrokeReconnectEnabled =
 				GetInterruptedStrokeReconnectEnabled();
+			for (RuntimeStroke* runtime : active)
+				if (runtime) runtime->modelInputThisFrame = false;
 			if (!interruptedStrokeReconnectEnabled)
 			{
 				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
@@ -6495,6 +6664,74 @@ namespace Inkeys::Drawing::Draw3
 				runtime->eraserSize.Update(runtime->speedEraserOc.Diameter(),frameAbsoluteSeconds,
 					runtime->speedEraserOc.SecondsSinceMovement(frameAbsoluteSeconds)>=runtime->speedEraserOc.Configuration().idleStartSeconds);
 				// 当前工具独立回缩；历史点不变，下一次几何才添加尺寸断点。
+			}
+			const double modeledTipFrameIntervalSeconds =
+				1.0 / configuration_.timingProfile.target_fps;
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended || runtime->awaitingReconnect ||
+					(runtime->tool != DrawingTool::Pen && runtime->tool != DrawingTool::HardPen) ||
+					runtime->stroke.idleFrozen || runtime->modelInputThisFrame ||
+					runtime->stationaryModelAdvanceBlocked) continue;
+				const DirectX::XMFLOAT2 rawEndpoint = {
+					runtime->lastModelSnapshot.position.x,
+					runtime->lastModelSnapshot.position.y };
+				const double frameRealTime = QpcDeltaSeconds(
+					frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency);
+				const double frameInputTime = frameRealTime - runtime->stroke.modelTimeOffset;
+				if (!runtime->stroke.endpointAdmission.active &&
+					!ShouldStartEndpointSettling(
+						frameRealTime - runtime->stroke.lastMovementInputTime,
+						modeledTipFrameIntervalSeconds))
+					continue; // 单个短暂空帧仍属于 Tracking，不能让 Kalman prediction 常态闪断。
+				if (!runtime->stroke.endpointAdmission.active)
+					BeginEndpointAdmission(runtime->stroke, rawEndpoint);
+				if (IsModeledTipSettled(LatestModeledTip(runtime->stroke),
+					rawEndpoint, modeledTipFrameIntervalSeconds))
+				{
+					runtime->stroke.modelClockStopped = true;
+					if (runtime->stroke.endpointAdmission.recovering)
+					{
+						ClearEndpointAdmission(runtime->stroke);
+						BeginEndpointAdmission(runtime->stroke, rawEndpoint);
+					}
+					runtime->stroke.modelScratch.clear();
+					AppendEndpointBoundedModeledPoints(runtime->stroke,
+						runtime->stroke.modelScratch, -1.0f,
+						runtime->stroke.lastMovementInputTime, true);
+					continue;
+				}
+				const double minimumInputTime = runtime->lastModelInputTime + 0.000001;
+				if (!std::isfinite(frameInputTime) || frameInputTime < minimumInputTime)
+					continue;
+				const Input stationaryInput{
+					.event_type = Input::EventType::kMove,
+					.position = Vec2(rawEndpoint.x, rawEndpoint.y),
+					.time = Time(frameInputTime),
+					.pressure = runtime->lastPressure,
+					.tilt = runtime->lastTilt,
+					.orientation = runtime->lastOrientation
+				};
+				// Predict 不会推进模型；仅用最后接受的模型锚点完成停笔收敛。
+				runtime->modelInputThisFrame = true;
+				runtime->stroke.modelScratch.clear();
+				if (observer_.penDiagnostics) ++runtime->diagnosticModelUpdates;
+				if (absl::Status status = runtime->stroke.modeler.Update(
+					stationaryInput, runtime->stroke.modelScratch); status.ok())
+				{
+					runtime->lastModelInputTime = frameInputTime;
+					if (runtime->stroke.endpointAdmission.recovering)
+						AppendRecoveryModeledPoints(runtime->stroke, runtime->stroke.modelScratch,
+							rawEndpoint, -1.0f);
+					else AppendEndpointBoundedModeledPoints(runtime->stroke,
+						runtime->stroke.modelScratch, -1.0f, runtime->stroke.lastMovementInputTime);
+				}
+				else
+				{
+					runtime->stationaryModelAdvanceBlocked = true;
+					// 同一次停笔不再逐帧重试失败输入；下一份成功真实输入会解除锁存。
+					std::cout << "Error: " << status.message() << std::endl;
+				}
 			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
 				frameQpc.QuadPart, qpcFrequency,
@@ -6785,19 +7022,21 @@ namespace Inkeys::Drawing::Draw3
 					stroke.predictedResults.clear();
 					if (runtime->awaitingReconnect)
 					{
-						if (!eraser)
+						if (!eraser && !stroke.endpointAdmission.active)
 							stroke.predictedResults.assign(
 								runtime->reconnectPredictedResults.begin(),
 								runtime->reconnectPredictedResults.end());
 					}
-					else if (!eraser &&
+					else if (!eraser && !stroke.endpointAdmission.active &&
 						kActivePredictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 							stroke.predictedResults.clear();
 					}
 					RebuildPredictedPoints(stroke);
-					stableDirty = eraser
+					stableDirty = stroke.endpointAdmission.active
+						? RECT{}
+						: eraser
 						? CommitEraserRealPointsToL1(stroke, StrokeShape::RoundCapsule,
 							renderer_, size.width, size.height)
 						: CommitStablePrefixToL1(stroke, liveTipProtectionSeconds,
@@ -6825,8 +7064,23 @@ namespace Inkeys::Drawing::Draw3
 					stroke.currentL0Rect = {};
 				}
 				if (!runtime->ended && !runtime->awaitingReconnect)
+				{
+					const bool modelSettled =
+						(runtime->tool != DrawingTool::Pen &&
+							runtime->tool != DrawingTool::HardPen) ||
+						IsModeledTipSettled(LatestModeledTip(stroke),
+							{ runtime->lastModelSnapshot.position.x,
+								runtime->lastModelSnapshot.position.y },
+							modeledTipFrameIntervalSeconds);
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
-						liveTipProtectionSeconds);
+						modelSettled, liveTipProtectionSeconds);
+					publishPenDiagnostics(*runtime, stroke.l0DrawPoints);
+				}
+				else if (!runtime->ended && runtime->awaitingReconnect && runtime->reconnectVisualRefresh)
+				{
+					// 发布候选实际 L0；验收须比较等待态与完成态，而非重复读取完成快照。
+					publishPenDiagnostics(*runtime, stroke.l0DrawPoints);
+				}
 				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 				{
 					if (!runtime->ended)
@@ -6924,6 +7178,7 @@ namespace Inkeys::Drawing::Draw3
 								: FinalizeStoredStroke(runtime->stroke, *style,
 									completedTipTaperSeconds, runtime->rebuildPoints,
 									runtime->viewport.x, runtime->viewport.y);
+							publishPenDiagnostics(*runtime, runtime->rebuildPoints);
 						}
 						InkPage* page = document_ ? document_->PageAt(currentPageIndex_) : nullptr;
 						InkCanvas* canvas = page

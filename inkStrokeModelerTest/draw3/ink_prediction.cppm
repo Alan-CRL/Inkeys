@@ -490,12 +490,34 @@ export namespace draw3
 		InkPoint AppendLaserPressure(const ink::stroke_model::Result& result);
 	};
 
+	// 记录停笔/抬笔阶段的 raw 终点边界，只允许可见尾端单调接近该点。
+	struct EndpointAdmissionState
+	{
+		DirectX::XMFLOAT2 endpoint = {};
+		DirectX::XMFLOAT2 approachDirection = {};
+		float previousDistance = 0.0f;
+		bool active = false;
+		bool hasApproachDirection = false;
+		bool visualPinned = false;
+		bool recovering = false;
+		DirectX::XMFLOAT2 recoveryOrigin = {};
+	};
+
+	struct EndpointAdmissionResult
+	{
+		size_t acceptedResultCount = 0;
+		bool endpointPinned = false;
+		bool geometryChanged = false;
+	};
+
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
 	// 保存一个 contact 的模型结果、预测结果和三层提交状态。
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
 		std::vector<ink::stroke_model::Result> modeledResults;
+		// stationary/terminal Update 复用该 scratch，避免累计 modeledResults 无界增长。
+		std::vector<ink::stroke_model::Result> modelScratch;
 		std::vector<ink::stroke_model::Result> predictedResults;
 		std::vector<InkPoint> realPoints;
 		std::vector<InkPoint> predictedPoints;
@@ -521,6 +543,23 @@ export namespace draw3
 		double lastMovementInputTime = 0.0;
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
+		// 物理 Up 锁住显示年龄与修改边界，断触等待不能继续养粗或重写 Move。
+		std::optional<double> terminalDisplayTime;
+		size_t terminalFirstPoint = 0;
+		DirectX::XMFLOAT2 terminalRawMove = {};
+		DirectX::XMFLOAT2 terminalRawUp = {};
+		bool captureTerminalTrace = false;
+		size_t terminalModelCount = 0;
+		size_t terminalAcceptedCount = 0;
+		std::array<DirectX::XMFLOAT2, 8> terminalModelTrace = {};
+		std::array<DirectX::XMFLOAT2, 8> terminalAcceptedTrace = {};
+		// 模型可以跳过已经收敛的静止时间；显示/真实测速仍使用原始时间轴。
+		double modelTimeOffset = 0.0;
+		bool modelClockStopped = false;
+		bool useDisplayTime = false;
+		ink::stroke_model::Result latestModeledResult = {};
+		EndpointAdmissionState endpointAdmission = {};
+		bool hasLatestModeledResult = false;
 
 		ActiveStroke(float baseDiameter, float expectedSpeed,
 			StrokeWidthMode widthModeValue = StrokeWidthMode::SimulatedPressure,
@@ -536,6 +575,16 @@ export namespace draw3
 	// 原地重建荧光笔几何并复用 primitive 容量，供每帧 L0 热路径使用。
 	void RebuildHighlighterGeometry(
 		std::span<const InkPoint> points, HighlighterGeometry& output);
+	// 首次物理 Up 锁定显示时间和可修改尾段边界。
+	void LockPenTerminalState(ActiveStroke& stroke, double physicalUpTime,
+		DirectX::XMFLOAT2 lastRawMove, DirectX::XMFLOAT2 rawUp) noexcept;
+	// 成功续接后恢复实时显示年龄，下一次 Up 重新捕获边界。
+	void ClearPenTerminalState(ActiveStroke& stroke) noexcept;
+	double ResolvePenDisplayTime(const ActiveStroke& stroke) noexcept;
+	// 模型失败时保留真实 Up，且不能回写物理 Up 前的确认点。
+	void AppendTerminalFallbackPoint(ActiveStroke& stroke, const InkPoint& finalPoint);
+	// 有界记录模型与接纳尾段供诊断，不修改笔迹几何。
+	void CapturePenTerminalTrace(ActiveStroke& stroke) noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);
@@ -613,8 +662,39 @@ export namespace draw3
 		float dpiScale, int width, int height);
 	// 更新原始坐标并判断是否发生有效移动。
 	bool UpdateRawPositionAndDetectMovement(ActiveStroke& stroke, const POINT& rawPosition);
-	// 在视觉稳定后冻结停笔输入。
-	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved, double liveTipDurationSeconds);
+	// 建模笔尖到达原始终点且单帧剩余位移足够小时才视为收敛。
+	bool IsModeledTipSettled(
+		std::span<const ink::stroke_model::Result> modeledResults,
+		DirectX::XMFLOAT2 rawEndpoint, double frameIntervalSeconds) noexcept;
+	// 首个短暂空帧继续保留运动期 prediction，超过一个目标帧才进入停笔收敛。
+	bool ShouldStartEndpointSettling(
+		double sampleAgeSeconds, double frameIntervalSeconds) noexcept;
+	// 保存最近一次成功 Update 的末端状态，scratch 清空后仍可判断内部收敛。
+	void CaptureLatestModeledResult(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults) noexcept;
+	// 返回固定大小的最新建模末端视图。
+	std::span<const ink::stroke_model::Result> LatestModeledTip(
+		const ActiveStroke& stroke) noexcept;
+	// 以当前可见尾点为起点，建立 raw endpoint 的单调接纳边界。
+	void BeginEndpointAdmission(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 endpoint) noexcept;
+	// 只转换 scratch 中的安全前缀；触边/折返时钉住一个精确 raw endpoint。
+	EndpointAdmissionResult AppendEndpointBoundedModeledPoints(
+		ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults,
+		float inputSpeed, double endpointTime, bool pinEndpointAtEnd = false);
+	// 恢复正常 Tracking 后解除终点门禁，但保留 scratch 容量和最新内部状态。
+	void ClearEndpointAdmission(ActiveStroke& stroke) noexcept;
+	// 固定旧可见停点，过滤恢复运动中的残余回摆前缀，不补新的 raw 直线。
+	void AppendRecoveryModeledPoints(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> results,
+		DirectX::XMFLOAT2 rawEndpoint, float inputSpeed);
+	// 只压缩已收敛的静止段，保持送入模型的时间严格单调。
+	double ResolvePenModelInputTime(ActiveStroke& stroke, double realTime,
+		double lastModelTime, double frameIntervalSeconds) noexcept;
+	// 模型与视觉均稳定后冻结停笔输入。
+	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
+		bool modelSettled, double liveTipDurationSeconds);
 	// 转换尚未处理的真实建模结果；SpeedEraser 必须显式提供本次原始输入宽度区间。
 	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed = -1.0f,
 		const SpeedEraserWidthInterval* speedEraserWidth = nullptr);
