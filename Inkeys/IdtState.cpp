@@ -52,6 +52,43 @@ namespace
 	}
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
+	// 低位保存期望 owner 状态，高位版本保证旧请求成功也不能覆盖更新后的期望。
+	std::atomic_uint64_t settingOwnerDesiredState = 0;
+	std::atomic_uint64_t settingOwnerAppliedState = 0;
+	std::mutex settingOwnerApplyMutex;
+
+	std::uint64_t PublishSettingOwnerDesiredState(bool enabled) noexcept
+	{
+		auto current = settingOwnerDesiredState.load(std::memory_order_relaxed);
+		std::uint64_t next = 0;
+		do
+		{
+			next = ((current + 2) & ~std::uint64_t{ 1 }) |
+				(enabled ? std::uint64_t{ 1 } : std::uint64_t{ 0 });
+		} while (!settingOwnerDesiredState.compare_exchange_weak(
+			current, next, std::memory_order_release, std::memory_order_relaxed));
+		return next;
+	}
+
+	void ApplySettingOwnerDesiredState(std::uint64_t desiredState)
+	{
+		std::scoped_lock lock(settingOwnerApplyMutex);
+		// 等锁期间可能已经发布更新版本；过期请求不得再覆盖当前 owner。
+		if (settingOwnerDesiredState.load(std::memory_order_acquire) != desiredState)
+			return;
+		const bool enabled = (desiredState & std::uint64_t{ 1 }) != 0;
+		if (Inkeys::Window::GetService().SetSettingOwnedByDrawpad(enabled))
+			// 写回实际完成的版本；若调用期间期望已更新，版本不等会继续触发重试。
+			settingOwnerAppliedState.store(desiredState, std::memory_order_release);
+	}
+
+	void ReconcileSettingOwnerDesiredState()
+	{
+		const auto desiredState = settingOwnerDesiredState.load(
+			std::memory_order_acquire);
+		if (settingOwnerAppliedState.load(std::memory_order_acquire) != desiredState)
+			ApplySettingOwnerDesiredState(desiredState);
+	}
 
 	Workspace CurrentPrimaryWorkspace() noexcept
 	{
@@ -379,8 +416,9 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 void SyncDraw3State()
 {
 	// 所有工具入口都汇聚于此，确保 Setting 只在非选择态加入画布 owner 链。
-	(void)Inkeys::Window::GetService().SetSettingOwnedByDrawpad(
+	const auto settingOwnerState = PublishSettingOwnerDesiredState(
 		stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+	ApplySettingOwnerDesiredState(settingOwnerState);
 	PublishDraw3State();
 	ReconcileDraw3Presentation();
 }
@@ -632,6 +670,8 @@ void StateMonitoring()
 		// 内容、目标就绪和全帧 clean 共享一个 revision，避免快速切换漏掉握手。
 		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
 		if (offSignal) break;
+		// 同步提交失败时沿用本循环的 250ms cadence，直到最新 owner 期望真正生效。
+		ReconcileSettingOwnerDesiredState();
 		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 		const bool runtimeChanged = snapshot.runtimeRevision != revision;
 		if (runtimeChanged)
