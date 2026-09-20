@@ -378,6 +378,9 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 
 void SyncDraw3State()
 {
+	// 所有工具入口都汇聚于此，确保 Setting 只在非选择态加入画布 owner 链。
+	(void)Inkeys::Window::GetService().SetSettingOwnedByDrawpad(
+		stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
 	PublishDraw3State();
 	ReconcileDraw3Presentation();
 }
