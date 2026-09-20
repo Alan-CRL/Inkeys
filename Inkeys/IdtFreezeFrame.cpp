@@ -58,9 +58,8 @@ void FreezeFrameWindow()
 		return;
 	}
 	const int monitorHeight = monitor->pixelHeight;
-	const int freezeHeight = setlist.regularSetting.avoidFullScreen
-		? monitorHeight - 1
-		: monitorHeight;
+	// 固定保留 1 像素，避免被系统判定为全屏；旧 AvoidFullScreen 配置已废弃。
+	const int freezeHeight = monitorHeight - 1;
 	if (!freeze_background.resize(monitor->pixelWidth, freezeHeight))
 	{
 		if (IDTLogger) IDTLogger->error("[定格线程][FreezeFrameWindow] 创建 DIB Surface 失败");
