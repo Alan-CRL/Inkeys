@@ -409,12 +409,32 @@ export namespace Inkeys::Drawing::Draw3
 		InkPoint AppendLaserPressure(const ink::stroke_model::Result& result);
 	};
 
+	// 记录停笔/抬笔阶段的 raw 终点边界，只允许可见尾端单调接近该点。
+	struct EndpointAdmissionState
+	{
+		DirectX::XMFLOAT2 endpoint = {};
+		DirectX::XMFLOAT2 approachDirection = {};
+		float previousDistance = 0.0f;
+		bool active = false;
+		bool hasApproachDirection = false;
+		bool visualPinned = false;
+	};
+
+	struct EndpointAdmissionResult
+	{
+		size_t acceptedResultCount = 0;
+		bool endpointPinned = false;
+		bool geometryChanged = false;
+	};
+
 	// 标记当前几何切片是否包含整笔的真实起点或可见终点。
 	// 保存一个 contact 的模型结果、预测结果和三层提交状态。
 	struct ActiveStroke
 	{
 		ink::stroke_model::StrokeModeler modeler;
 		std::vector<ink::stroke_model::Result> modeledResults;
+		// stationary/terminal Update 复用该 scratch，避免累计 modeledResults 无界增长。
+		std::vector<ink::stroke_model::Result> modelScratch;
 		std::vector<ink::stroke_model::Result> predictedResults;
 		std::vector<InkPoint> realPoints;
 		std::vector<InkPoint> predictedPoints;
@@ -440,6 +460,9 @@ export namespace Inkeys::Drawing::Draw3
 		double lastMovementInputTime = 0.0;
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
+		ink::stroke_model::Result latestModeledResult = {};
+		EndpointAdmissionState endpointAdmission = {};
+		bool hasLatestModeledResult = false;
 
 		ActiveStroke(float baseDiameter, float expectedSpeed,
 			StrokeWidthMode widthModeValue = StrokeWidthMode::SimulatedPressure,
@@ -536,6 +559,25 @@ export namespace Inkeys::Drawing::Draw3
 	bool IsModeledTipSettled(
 		std::span<const ink::stroke_model::Result> modeledResults,
 		DirectX::XMFLOAT2 rawEndpoint, double frameIntervalSeconds) noexcept;
+	// 首个短暂空帧继续保留运动期 prediction，超过一个目标帧才进入停笔收敛。
+	bool ShouldStartEndpointSettling(
+		double sampleAgeSeconds, double frameIntervalSeconds) noexcept;
+	// 保存最近一次成功 Update 的末端状态，scratch 清空后仍可判断内部收敛。
+	void CaptureLatestModeledResult(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults) noexcept;
+	// 返回固定大小的最新建模末端视图。
+	std::span<const ink::stroke_model::Result> LatestModeledTip(
+		const ActiveStroke& stroke) noexcept;
+	// 以当前可见尾点为起点，建立 raw endpoint 的单调接纳边界。
+	void BeginEndpointAdmission(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 endpoint) noexcept;
+	// 只转换 scratch 中的安全前缀；触边/折返时钉住一个精确 raw endpoint。
+	EndpointAdmissionResult AppendEndpointBoundedModeledPoints(
+		ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults,
+		float inputSpeed, double endpointTime, bool pinEndpointAtEnd = false);
+	// 恢复正常 Tracking 后解除终点门禁，但保留 scratch 容量和最新内部状态。
+	void ClearEndpointAdmission(ActiveStroke& stroke) noexcept;
 	// 模型与视觉均稳定后冻结停笔输入。
 	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
 		bool modelSettled, double liveTipDurationSeconds);

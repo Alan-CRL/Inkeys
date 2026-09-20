@@ -27,6 +27,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		constexpr float kIdleMoveThresholdPx = 0.25f;
 		constexpr float kVisualStablePositionEpsilonPx = 0.05f;
+		constexpr float kEndpointDirectionEpsilonPx = 0.000001f;
 		constexpr float kVisualStableRadiusEpsilonPx = 0.02f;
 		constexpr int kVisualStableRequiredFrames = 3;
 		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 3.0f;
@@ -167,7 +168,8 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
-		void ApplyLiveTipTaper(std::vector<InkPoint>& points, double liveTipDurationSeconds)
+		void ApplyLiveTipTaper(std::vector<InkPoint>& points,
+			double liveTipDurationSeconds, bool forceFullyDeveloped = false)
 		{
 			if (points.empty() || liveTipDurationSeconds <= 0.0) return;
 			const double endTime = points.back().time;
@@ -176,7 +178,8 @@ namespace Inkeys::Drawing::Draw3
 			while (firstTipIndex > 0 && static_cast<double>(points[firstTipIndex - 1].time) >= tipStartTime) --firstTipIndex; // 找到需要渐细的实时尾部起点。
 
 			const double actualTipSpan = std::max(0.0, endTime - static_cast<double>(points[firstTipIndex].time));
-			const float spanRatio = SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
+			const float spanRatio = forceFullyDeveloped ? 1.0f :
+				SmoothStep01(static_cast<float>(actualTipSpan / liveTipDurationSeconds));
 			const float newestScale = LerpFloat(1.0f, 0.28f, spanRatio); // 尾部越完整，最新端点越细。
 			for (size_t index = firstTipIndex; index < points.size(); ++index)
 			{
@@ -185,6 +188,24 @@ namespace Inkeys::Drawing::Draw3
 					: 0.0f;
 				points[index].r *= LerpFloat(newestScale, 1.0f, SmoothStep01(ageRatio)); // 从最新端点向旧点逐步恢复正常半径。
 			}
+		}
+
+		bool HasMeaningfulCompletedMotion(const ActiveStroke& stroke) noexcept
+		{
+			if (stroke.realPoints.size() < 2) return false;
+			const float minimumTravel = std::max(1.0f,
+				stroke.widthEstimator.baseDiameter * 0.5f);
+			float accumulatedTravel = 0.0f;
+			for (size_t index = 1; index < stroke.realPoints.size(); ++index)
+			{
+				const float segmentLength = std::hypot(
+					stroke.realPoints[index].x - stroke.realPoints[index - 1].x,
+					stroke.realPoints[index].y - stroke.realPoints[index - 1].y);
+				if (!std::isfinite(segmentLength)) return false;
+				accumulatedTravel += segmentLength;
+				if (accumulatedTravel >= minimumTravel) return true;
+			}
+			return false;
 		}
 	}
 
@@ -381,7 +402,8 @@ namespace Inkeys::Drawing::Draw3
 			const size_t tailStart = stroke.hasCommittedGeometry
 				? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
 			output.assign(stroke.realPoints.begin() + tailStart, stroke.realPoints.end());
-			ApplyLiveTipTaper(output, liveTipTaperSeconds);
+			ApplyLiveTipTaper(output, liveTipTaperSeconds,
+				HasMeaningfulCompletedMotion(stroke));
 			EnforceCapsuleTangency(output); // 与 L0 实时笔锋同一套公切线安全，不再套稳定笔宽时间限速。
 		}
 		if (output.empty() && stroke.hasInputStartPoint)
@@ -623,6 +645,7 @@ namespace Inkeys::Drawing::Draw3
 		StrokeWidthMode widthModeValue, bool highlighterValue)
 	{
 		modeledResults.clear();
+		modelScratch.clear();
 		predictedResults.clear();
 		realPoints.clear();
 		predictedPoints.clear();
@@ -649,6 +672,9 @@ namespace Inkeys::Drawing::Draw3
 		lastMovementInputTime = 0.0;
 		lastFrameWallTime = 0.0;
 		logicalInputTime = 0.0;
+		latestModeledResult = {};
+		endpointAdmission = {};
+		hasLatestModeledResult = false;
 	}
 
 	void UnionRectInPlace(RECT& target, const RECT& addition)
@@ -825,6 +851,31 @@ namespace Inkeys::Drawing::Draw3
 			nextFrameTravel <= kVisualStablePositionEpsilonPx;
 	}
 
+	bool ShouldStartEndpointSettling(
+		double sampleAgeSeconds, double frameIntervalSeconds) noexcept
+	{
+		return std::isfinite(sampleAgeSeconds) &&
+			std::isfinite(frameIntervalSeconds) && frameIntervalSeconds > 0.0 &&
+			sampleAgeSeconds > frameIntervalSeconds;
+	}
+
+	void CaptureLatestModeledResult(ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults) noexcept
+	{
+		if (modeledResults.empty()) return;
+		stroke.latestModeledResult = modeledResults.back();
+		stroke.hasLatestModeledResult = true;
+	}
+
+	std::span<const ink::stroke_model::Result> LatestModeledTip(
+		const ActiveStroke& stroke) noexcept
+	{
+		return stroke.hasLatestModeledResult
+			? std::span<const ink::stroke_model::Result>(
+				&stroke.latestModeledResult, 1)
+			: std::span<const ink::stroke_model::Result>{};
+	}
+
 	void UpdateIdleFreezeState(ActiveStroke& stroke, bool rawMoved,
 		bool modelSettled, double liveTipDurationSeconds)
 	{
@@ -861,43 +912,204 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
-	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed,
-		const SpeedEraserWidthInterval* speedEraserWidth)
+	namespace
 	{
-		if(stroke.widthMode==StrokeWidthMode::SpeedEraser && speedEraserWidth &&
-			stroke.convertedResultCount<stroke.modeledResults.size())
-			AppendEraserSizeAnchor(stroke,*speedEraserWidth);
-		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
+		InkPoint ConvertModeledResultToInkPoint(ActiveStroke& stroke,
+			const ink::stroke_model::Result& result, float inputSpeed,
+			const SpeedEraserWidthInterval* speedEraserWidth)
 		{
-			const auto& result = stroke.modeledResults[index];
-			InkPoint point;
 			switch (stroke.widthMode)
 			{
 			case StrokeWidthMode::Fixed:
-				point = { result.position.x, result.position.y, stroke.widthEstimator.baseDiameter * 0.5f,
+				return { result.position.x, result.position.y,
+					stroke.widthEstimator.baseDiameter * 0.5f,
 					static_cast<float>(result.time.Value()) };
-				break;
 			case StrokeWidthMode::HardwarePressure:
-				point = stroke.widthEstimator.AppendHardwarePressure(result);
-				break;
+				return stroke.widthEstimator.AppendHardwarePressure(result);
 			case StrokeWidthMode::LaserPressure:
-				point = stroke.widthEstimator.AppendLaserPressure(result);
-				break;
+				return stroke.widthEstimator.AppendLaserPressure(result);
 			case StrokeWidthMode::SpeedEraser:
 			{
 				const float diameter = speedEraserWidth
 					? InterpolateSpeedEraserDiameter(
 						*speedEraserWidth, result.time.Value())
 					: stroke.widthEstimator.baseDiameter;
-				point = { result.position.x, result.position.y, diameter * 0.5f,
+				return { result.position.x, result.position.y, diameter * 0.5f,
 					static_cast<float>(result.time.Value()) };
-				break;
 			}
 			case StrokeWidthMode::SimulatedPressure:
 			default:
-				point = stroke.widthEstimator.Append(result, inputSpeed);
+				return stroke.widthEstimator.Append(result, inputSpeed);
+			}
+		}
+
+		void PinEndpointGeometry(ActiveStroke& stroke, double endpointTime,
+			EndpointAdmissionResult& result)
+		{
+			EndpointAdmissionState& admission = stroke.endpointAdmission;
+			if (admission.visualPinned) return;
+			const float radius = !stroke.realPoints.empty()
+				? stroke.realPoints.back().r
+				: stroke.hasInputStartPoint
+					? stroke.inputStartPoint.r
+					: stroke.widthEstimator.baseDiameter * 0.5f;
+			const float previousPointTime = !stroke.realPoints.empty()
+				? stroke.realPoints.back().time : 0.0f;
+			const float pointTime = std::isfinite(endpointTime)
+				? std::max(static_cast<float>(endpointTime), previousPointTime)
+				: previousPointTime;
+			const InkPoint endpointPoint{
+				admission.endpoint.x, admission.endpoint.y, radius, pointTime };
+			const float tailDistance = stroke.realPoints.empty()
+				? (std::numeric_limits<float>::infinity)()
+				: std::hypot(stroke.realPoints.back().x - admission.endpoint.x,
+					stroke.realPoints.back().y - admission.endpoint.y);
+			const bool tailMayChange = !stroke.hasCommittedGeometry ||
+				stroke.committedIndex + 1 < stroke.realPoints.size();
+			const bool canReplaceTail = !stroke.realPoints.empty() &&
+				tailDistance <= kVisualStablePositionEpsilonPx && tailMayChange;
+			if (canReplaceTail)
+				stroke.realPoints.back() = endpointPoint;
+			else if (tailDistance > kEndpointDirectionEpsilonPx)
+				stroke.realPoints.push_back(endpointPoint);
+			// 已提交尾点若已精确命中 raw endpoint，不再追加第二个同位中心点。
+			stroke.widthEstimator.currentDiameter = radius * 2.0f;
+			stroke.widthEstimator.lastTime = pointTime;
+			stroke.widthEstimator.lastPositionX = admission.endpoint.x;
+			stroke.widthEstimator.lastPositionY = admission.endpoint.y;
+			stroke.widthEstimator.hasSample = true;
+			admission.previousDistance = 0.0f;
+			admission.visualPinned = true;
+			stroke.predictedResults.clear();
+			stroke.predictedPoints.clear();
+			result.endpointPinned = true;
+			result.geometryChanged = canReplaceTail ||
+				tailDistance > kEndpointDirectionEpsilonPx;
+		}
+	}
+
+	void BeginEndpointAdmission(ActiveStroke& stroke,
+		DirectX::XMFLOAT2 endpoint) noexcept
+	{
+		stroke.predictedResults.clear();
+		stroke.predictedPoints.clear();
+		if (!std::isfinite(endpoint.x) || !std::isfinite(endpoint.y))
+		{
+			stroke.endpointAdmission = {};
+			return;
+		}
+		if (stroke.endpointAdmission.active &&
+			std::hypot(stroke.endpointAdmission.endpoint.x - endpoint.x,
+				stroke.endpointAdmission.endpoint.y - endpoint.y) <=
+				kEndpointDirectionEpsilonPx)
+			return; // 同一停笔/Up 终点重复进入时保留 pinned，避免补出重复中心点。
+		stroke.endpointAdmission = {};
+		EndpointAdmissionState& admission = stroke.endpointAdmission;
+		admission.endpoint = endpoint;
+		admission.active = true;
+		DirectX::XMFLOAT2 visibleStart = endpoint;
+		if (!stroke.realPoints.empty())
+			visibleStart = { stroke.realPoints.back().x, stroke.realPoints.back().y };
+		else if (stroke.hasInputStartPoint)
+			visibleStart = { stroke.inputStartPoint.x, stroke.inputStartPoint.y };
+		const float axisX = endpoint.x - visibleStart.x;
+		const float axisY = endpoint.y - visibleStart.y;
+		admission.previousDistance = std::hypot(axisX, axisY);
+		if (admission.previousDistance > kEndpointDirectionEpsilonPx)
+		{
+			admission.approachDirection = {
+				axisX / admission.previousDistance, axisY / admission.previousDistance };
+			admission.hasApproachDirection = true;
+			return;
+		}
+		for (size_t index = stroke.realPoints.size(); index > 1; --index)
+		{
+			const InkPoint& current = stroke.realPoints[index - 1];
+			const InkPoint& previous = stroke.realPoints[index - 2];
+			const float directionX = current.x - previous.x;
+			const float directionY = current.y - previous.y;
+			const float directionLength = std::hypot(directionX, directionY);
+			if (directionLength <= kEndpointDirectionEpsilonPx) continue;
+			admission.approachDirection = {
+				directionX / directionLength, directionY / directionLength };
+			admission.hasApproachDirection = true;
+			break;
+		}
+	}
+
+	EndpointAdmissionResult AppendEndpointBoundedModeledPoints(
+		ActiveStroke& stroke,
+		std::span<const ink::stroke_model::Result> modeledResults,
+		float inputSpeed, double endpointTime, bool pinEndpointAtEnd)
+	{
+		EndpointAdmissionResult admissionResult;
+		CaptureLatestModeledResult(stroke, modeledResults);
+		EndpointAdmissionState& admission = stroke.endpointAdmission;
+		if (!admission.active) return admissionResult;
+		if (admission.visualPinned)
+		{
+			admissionResult.endpointPinned = true;
+			return admissionResult;
+		}
+
+		bool shouldPinEndpoint =
+			admission.previousDistance <= kVisualStablePositionEpsilonPx;
+		for (const ink::stroke_model::Result& modeledResult : modeledResults)
+		{
+			if (shouldPinEndpoint) break;
+			if (!std::isfinite(modeledResult.position.x) ||
+				!std::isfinite(modeledResult.position.y))
+			{
+				shouldPinEndpoint = true;
 				break;
 			}
+			const float endpointDeltaX = modeledResult.position.x - admission.endpoint.x;
+			const float endpointDeltaY = modeledResult.position.y - admission.endpoint.y;
+			const float endpointDistance = std::hypot(endpointDeltaX, endpointDeltaY);
+			const float forwardProjection = admission.hasApproachDirection
+				? endpointDeltaX * admission.approachDirection.x +
+					endpointDeltaY * admission.approachDirection.y
+				: 0.0f;
+			if (!std::isfinite(endpointDistance) ||
+				endpointDistance <= kVisualStablePositionEpsilonPx ||
+				(admission.hasApproachDirection &&
+					forwardProjection > kVisualStablePositionEpsilonPx) ||
+				endpointDistance + kEndpointDirectionEpsilonPx >=
+					admission.previousDistance)
+			{
+				shouldPinEndpoint = true;
+				break;
+			}
+			admission.previousDistance = endpointDistance;
+			++admissionResult.acceptedResultCount;
+		}
+
+		for (size_t index = 0; index < admissionResult.acceptedResultCount; ++index)
+			stroke.realPoints.push_back(ConvertModeledResultToInkPoint(
+				stroke, modeledResults[index], inputSpeed, nullptr));
+		admissionResult.geometryChanged = admissionResult.acceptedResultCount > 0;
+		if (shouldPinEndpoint || pinEndpointAtEnd)
+			PinEndpointGeometry(stroke, endpointTime, admissionResult);
+		return admissionResult;
+	}
+
+	void ClearEndpointAdmission(ActiveStroke& stroke) noexcept
+	{
+		stroke.endpointAdmission = {};
+	}
+
+	void AppendNewModeledPoints(ActiveStroke& stroke, float inputSpeed,
+		const SpeedEraserWidthInterval* speedEraserWidth)
+	{
+		CaptureLatestModeledResult(stroke, stroke.modeledResults);
+		if(stroke.widthMode==StrokeWidthMode::SpeedEraser && speedEraserWidth &&
+			stroke.convertedResultCount<stroke.modeledResults.size())
+			AppendEraserSizeAnchor(stroke,*speedEraserWidth);
+		for (size_t index = stroke.convertedResultCount; index < stroke.modeledResults.size(); ++index)
+		{
+			const auto& result = stroke.modeledResults[index];
+			InkPoint point = ConvertModeledResultToInkPoint(
+				stroke, result, inputSpeed, speedEraserWidth);
 			if (stroke.highlighter && stroke.realPoints.empty() && stroke.hasInputStartPoint)
 			{
 				point.x = stroke.inputStartPoint.x;

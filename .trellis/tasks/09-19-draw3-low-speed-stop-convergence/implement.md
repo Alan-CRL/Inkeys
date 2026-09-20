@@ -43,6 +43,20 @@
 
 源码改动可按三处独立回滚：controller stationary advance、收敛 helper、freeze predicate；没有持久格式或资源迁移。
 
+## Follow-up Plan: Endpoint Monotonicity（已于 2026-09-20 完成）
+
+1. 先在 `contact_input_tests.cpp` 增加只记录轨迹、不改产品逻辑的模型级用例，量化低/中/高速瞬停与高速即时 Up 的每个 Result：endpoint distance、approach-axis projection、首次最近点后的反向距离、terminal radius 和总点数。
+2. 为 `RuntimeStroke`/`ActiveStroke` 增加最小 endpoint-settling 状态和复用 scratch；真实 Move 仍走现有 `modeledResults -> realPoints`，stationary/terminal Update 改走 scratch。
+3. 实现纯 helper 对 scratch 做 endpoint admission：距离单调、stop-plane 上限、精确 raw endpoint 去重；产品和测试宿主保持同构。
+4. settling 时禁止 Kalman future extension 进入 L0；visible pinned 后只更新内部 convergence snapshot，不增长任何几何点列。恢复 Move 的首批输出继续通过恢复走廊，确认向新 endpoint 单调前进后回到 Tracking。
+5. `kUp` 前记录 pre-Up accepted tip，整批 terminal scratch 门禁后才构造完成 centerline；Stored Stroke、即时 raster 和重放共用 sanitized 数据。
+6. 调整 SoftPen completed taper：有效移动笔画的 raw Up endpoint 使用 fully-developed taper floor，并向前取得足够真实上下文；保留 click/short stroke 与 HardPen 语义。
+7. 扩展测试到 30/60/120/240 FPS、Kalman/StrokeEnd/Disabled、MouseLeft/MouseRight、Pen/HardPen、同位 Up/前移 Up/曲线急停、pinned 后恢复 Move 和 10 秒点数恒定。
+8. 实现后再执行既有 ARM64 两套 solution build、控制台测试、headless/hidden 集成；真实 GUI 由用户授权后按速度矩阵验收。
+
+该 follow-up 的产品与测试源码已按上述计划完成；具体落地范围和验证结果见下方
+“Endpoint Monotonicity Implementation Results”。本节保留为实施追溯，而非待办项。
+
 ## Validation Results (2026-09-19)
 
 - `inkStrokeModelerTest.sln /t:Build /m:1 Debug|ARM64`：通过。
@@ -52,3 +66,14 @@
 - `Build/ARM64/Debug/Inkeys.exe --draw3-hidden-test`：通过，覆盖产品 Host、RTS、绘制线程和 presenter 隐藏集成。
 - `git diff --check`、Trellis context validate、源码 UTF-8 BOM + CRLF 检查：通过。
 - 可见 GUI 与真实设备人工复现未执行（仓库规则禁止默认启动交互式窗口）；保留为维护者验收项。
+
+## Endpoint Monotonicity Implementation Results (2026-09-20)
+
+- `ActiveStroke` 已增加复用 `modelScratch`、最新内部 Result 快照和 endpoint admission 状态；正常 Tracking 的累计 `modeledResults` 路径保持不变。
+- 单个目标帧内的 raw sample 空洞继续保留 Kalman Tracking；sample age 超过一个目标帧后才进入 endpoint settling，避免高渲染率下 prediction 常态闪断。
+- 测试宿主 Pen 与产品 Pen/HardPen 的 stationary、physical Up、停笔后恢复首批和 reconnect 恢复首批已接入同构门禁。settling/pinned 期间不再把 Kalman future extension 或新的稳定前缀提交送入可见层；模型仍可用有界 scratch 后台收敛。
+- endpoint helper 会拒绝首个越界、距离不再改善或回摆候选及其后缀，只保留安全前缀并至多钉住一个精确 raw endpoint；已钉住时后续 scratch 仅更新内部收敛快照，不增长中心线。
+- physical Up 的整批模型输出进入 terminal scratch，完成态 raster 与 Stored Stroke 继续共用净化后的 `realPoints`。SoftPen 有效移动完成态使用 fully-developed taper floor；click/极短划与 HardPen 保持原语义。
+- 新增纯轨迹门禁、整批 Up、未收敛恢复、精确 endpoint 去重、交替 raw/empty 帧、30/60/120/240 FPS × 低/中/高速 × Kalman/StrokeEnd/Disabled、internal settled `<=200ms`、10 秒点数恒定及 SoftPen/HardPen/click 边界测试。
+- `inkStrokeModelerTest.sln Debug|ARM64`、`ARM64/Debug/inkStrokeModelerTestTests.exe`、`InkeysRepo.sln Debug|ARM64`、`Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window`、`Build/ARM64/Debug/Inkeys.exe --draw3-hidden-test` 均通过；编译 warning 仍为既有第三方编码/数值转换 warning。
+- 可见 GUI 与真实鼠标/触控笔速度矩阵未执行；按仓库规则保留为维护者人工验收项。本轮未创建 commit，也未结束或归档任务。

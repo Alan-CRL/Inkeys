@@ -2310,7 +2310,8 @@ namespace Inkeys::Drawing::Draw3
 				return strokePool.back().get();
 			};
 
-		auto updateContactModel = [&](RuntimeStroke& runtime,const Input& next,double inputTime)
+		auto updateContactModel = [&](RuntimeStroke& runtime, const Input& next,
+			double inputTime, std::vector<ink::stroke_model::Result>& modelOutput)
 		{
 			const auto& sampling=eraserModelParams.sampling_params;
 			const bool touchSpeed=runtime.metricDeviceType==InputDeviceType::Touch &&
@@ -2332,7 +2333,7 @@ namespace Inkeys::Drawing::Draw3
 				++runtime.eraserDiagnostics.idleModelReanchors;
 				// anchor 仅供既有模型续接，绝不交给速度/面积控制器当成真实运动。
 			}
-			return runtime.stroke.modeler.Update(next,runtime.stroke.modeledResults);
+			return runtime.stroke.modeler.Update(next, modelOutput);
 		};
 
 		auto initializeStroke = [&](ContactHandle handle) -> bool
@@ -2708,8 +2709,16 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->stroke.realPoints.empty()
 						? 0 : reconnectRuntime->stroke.realPoints.size() - 1;
 					reconnectRuntime->modelInputThisFrame = true;
+					const bool endpointRecovery =
+						(reconnectRuntime->tool == DrawingTool::Pen ||
+							reconnectRuntime->tool == DrawingTool::HardPen) &&
+						reconnectRuntime->stroke.endpointAdmission.active;
+					if (endpointRecovery) reconnectRuntime->stroke.modelScratch.clear();
+					auto& reconnectModelOutput = endpointRecovery
+						? reconnectRuntime->stroke.modelScratch
+						: reconnectRuntime->stroke.modeledResults;
 					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
-						reconnectInput, reconnectRuntime->stroke.modeledResults); status.ok())
+						reconnectInput, reconnectModelOutput); status.ok())
 					{
 						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
@@ -2717,8 +2726,24 @@ namespace Inkeys::Drawing::Draw3
 							1.0 - std::exp(-gapSeconds / kInputSpeedSmoothingSeconds)), 0.02f, 0.35f);
 						reconnectRuntime->filteredInputSpeed +=
 							(reconnectResult.bridgeSpeed - reconnectRuntime->filteredInputSpeed) * alpha;
-						AppendRuntimeModeledPoints(*reconnectRuntime,
-							reconnectRuntime->filteredInputSpeed, inputTime);
+						if (endpointRecovery)
+						{
+							BeginEndpointAdmission(reconnectRuntime->stroke,
+								{ down.position.x, down.position.y });
+							const EndpointAdmissionResult recoveryResult =
+								AppendEndpointBoundedModeledPoints(reconnectRuntime->stroke,
+								reconnectRuntime->stroke.modelScratch,
+								reconnectRuntime->filteredInputSpeed, inputTime);
+							if (!reconnectRuntime->stroke.modelScratch.empty() &&
+								recoveryResult.acceptedResultCount ==
+									reconnectRuntime->stroke.modelScratch.size())
+								ClearEndpointAdmission(reconnectRuntime->stroke);
+						}
+						else
+						{
+							AppendRuntimeModeledPoints(*reconnectRuntime,
+								reconnectRuntime->filteredInputSpeed, inputTime);
+						}
 						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 						{
 							const size_t lastPointIndex = reconnectRuntime->stroke.realPoints.size();
@@ -3135,9 +3160,23 @@ namespace Inkeys::Drawing::Draw3
 					.orientation = orientation
 				};
 				runtime.modelInputThisFrame = true;
-				if (absl::Status status = updateContactModel(runtime,upInput,inputTime); status.ok())
+				const bool sanitizeEndpoint =
+					(runtime.tool == DrawingTool::Pen ||
+						runtime.tool == DrawingTool::HardPen) && !runtime.shape.active;
+				if (sanitizeEndpoint) runtime.stroke.modelScratch.clear();
+				auto& modelOutput = sanitizeEndpoint
+					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				if (absl::Status status = updateContactModel(
+					runtime, upInput, inputTime, modelOutput); status.ok())
 				{
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
+					else if (sanitizeEndpoint)
+					{
+						BeginEndpointAdmission(runtime.stroke,
+							{ snapshot.position.x, snapshot.position.y });
+						AppendEndpointBoundedModeledPoints(runtime.stroke,
+							runtime.stroke.modelScratch, -1.0f, inputTime, true);
+					}
 					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
 				}
 				else
@@ -3195,6 +3234,9 @@ namespace Inkeys::Drawing::Draw3
 					GetInterruptedStrokeReconnectEnabled() &&
 					IsInterruptedStrokeReconnectIdentitySupported(ReconnectIdentity(runtime)) &&
 					runtime.tool != DrawingTool::Laser && !runtime.shape.active;
+				const bool endpointTool =
+					(runtime.tool == DrawingTool::Pen ||
+						runtime.tool == DrawingTool::HardPen) && !runtime.shape.active;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
 				runtime.laserParticleMovedThisFrame = positionMoved;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
@@ -3252,11 +3294,32 @@ namespace Inkeys::Drawing::Draw3
 				};
 				bool modelUpdateSucceeded = false;
 				runtime.modelInputThisFrame = true;
-				if (absl::Status status = updateContactModel(runtime,input,inputTime); status.ok())
+				const bool boundedEndpointUpdate = endpointTool &&
+					(terminal || runtime.stroke.endpointAdmission.active);
+				if (boundedEndpointUpdate) runtime.stroke.modelScratch.clear();
+				auto& modelOutput = boundedEndpointUpdate
+					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				if (absl::Status status = updateContactModel(
+					runtime, input, inputTime, modelOutput); status.ok())
 				{
 					modelUpdateSucceeded = true;
 					runtime.stationaryModelAdvanceBlocked = false;
 					if (runtime.shape.active) ExtractShapeModeledEndpoint(runtime);
+					else if (boundedEndpointUpdate)
+					{
+						BeginEndpointAdmission(runtime.stroke,
+							{ snapshot.position.x, snapshot.position.y });
+						const EndpointAdmissionResult admissionResult =
+							AppendEndpointBoundedModeledPoints(runtime.stroke,
+							runtime.stroke.modelScratch, inputSpeed, inputTime,
+							terminal);
+						// 真正恢复移动的首批已经安全接到新 raw endpoint，随后回到正常累计路径。
+						if (!terminal && positionMoved &&
+							!runtime.stroke.modelScratch.empty() &&
+							admissionResult.acceptedResultCount ==
+								runtime.stroke.modelScratch.size())
+							ClearEndpointAdmission(runtime.stroke);
+					}
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
 				}
 				else
@@ -6529,10 +6592,24 @@ namespace Inkeys::Drawing::Draw3
 				const DirectX::XMFLOAT2 rawEndpoint = {
 					runtime->lastModelSnapshot.position.x,
 					runtime->lastModelSnapshot.position.y };
-				if (IsModeledTipSettled(runtime->stroke.modeledResults,
-					rawEndpoint, modeledTipFrameIntervalSeconds)) continue;
 				const double frameInputTime = QpcDeltaSeconds(
 					frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency);
+				if (!runtime->stroke.endpointAdmission.active &&
+					!ShouldStartEndpointSettling(
+						frameInputTime - runtime->lastModelInputTime,
+						modeledTipFrameIntervalSeconds))
+					continue; // 单个短暂空帧仍属于 Tracking，不能让 Kalman prediction 常态闪断。
+				if (!runtime->stroke.endpointAdmission.active)
+					BeginEndpointAdmission(runtime->stroke, rawEndpoint);
+				if (IsModeledTipSettled(LatestModeledTip(runtime->stroke),
+					rawEndpoint, modeledTipFrameIntervalSeconds))
+				{
+					runtime->stroke.modelScratch.clear();
+					AppendEndpointBoundedModeledPoints(runtime->stroke,
+						runtime->stroke.modelScratch, -1.0f,
+						runtime->lastModelInputTime, true);
+					continue;
+				}
 				const double minimumInputTime = runtime->lastModelInputTime + 0.000001;
 				if (!std::isfinite(frameInputTime) || frameInputTime < minimumInputTime)
 					continue;
@@ -6546,11 +6623,13 @@ namespace Inkeys::Drawing::Draw3
 				};
 				// Predict 不会推进模型；仅用最后接受的模型锚点完成停笔收敛。
 				runtime->modelInputThisFrame = true;
+				runtime->stroke.modelScratch.clear();
 				if (absl::Status status = runtime->stroke.modeler.Update(
-					stationaryInput, runtime->stroke.modeledResults); status.ok())
+					stationaryInput, runtime->stroke.modelScratch); status.ok())
 				{
 					runtime->lastModelInputTime = frameInputTime;
-					AppendRuntimeModeledPoints(*runtime, -1.0f, frameInputTime);
+					AppendEndpointBoundedModeledPoints(runtime->stroke,
+						runtime->stroke.modelScratch, -1.0f, frameInputTime);
 				}
 				else
 				{
@@ -6848,19 +6927,21 @@ namespace Inkeys::Drawing::Draw3
 					stroke.predictedResults.clear();
 					if (runtime->awaitingReconnect)
 					{
-						if (!eraser)
+						if (!eraser && !stroke.endpointAdmission.active)
 							stroke.predictedResults.assign(
 								runtime->reconnectPredictedResults.begin(),
 								runtime->reconnectPredictedResults.end());
 					}
-					else if (!eraser &&
+					else if (!eraser && !stroke.endpointAdmission.active &&
 						kActivePredictionMode != InkPredictionMode::Disabled)
 					{
 						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
 							stroke.predictedResults.clear();
 					}
 					RebuildPredictedPoints(stroke);
-					stableDirty = eraser
+					stableDirty = stroke.endpointAdmission.active
+						? RECT{}
+						: eraser
 						? CommitEraserRealPointsToL1(stroke, StrokeShape::RoundCapsule,
 							renderer_, size.width, size.height)
 						: CommitStablePrefixToL1(stroke, liveTipProtectionSeconds,
@@ -6892,7 +6973,7 @@ namespace Inkeys::Drawing::Draw3
 					const bool modelSettled =
 						(runtime->tool != DrawingTool::Pen &&
 							runtime->tool != DrawingTool::HardPen) ||
-						IsModeledTipSettled(stroke.modeledResults,
+						IsModeledTipSettled(LatestModeledTip(stroke),
 							{ runtime->lastModelSnapshot.position.x,
 								runtime->lastModelSnapshot.position.y },
 							modeledTipFrameIntervalSeconds);

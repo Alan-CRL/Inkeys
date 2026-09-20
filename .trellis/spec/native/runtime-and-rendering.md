@@ -400,6 +400,7 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 ### 2. Signatures
 
 - `IsModeledTipSettled(span<Result>, rawEndpoint, frameIntervalSeconds) -> bool`。
+- `ShouldStartEndpointSettling(sampleAgeSeconds, frameIntervalSeconds) -> bool`、`BeginEndpointAdmission`、`AppendEndpointBoundedModeledPoints`。
 - `UpdateIdleFreezeState(ActiveStroke&, rawMoved, modelSettled, liveTipDurationSeconds)`。
 - 每个 `RuntimeStroke` 独立保存 `modelInputThisFrame` 与 `stationaryModelAdvanceBlocked`；产品 Pen 与 HardPen 应用本合同，测试宿主的 Pen 保持同构。
 
@@ -407,6 +408,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 
 - `StrokeModeler::Predict` 不改变模型内部状态，不能单独证明 modeled tip 已追到 raw endpoint。活动普通笔在本帧没有 model input、未结束、未 reconnect、未 frozen 且尚未收敛时，必须以最近接受进入模型路径的 `lastModelSnapshot` 位置和最后有效 stylus 状态补送一次同点 `kMove`。
 - 合成输入时间来自本帧 QPC，并且至少为 `lastModelInputTime + 1us`；转换 modeled point 时传 `inputSpeed=-1`。不得写入 `lastSpeedSnapshot`、滤波速度、真实 snapshot QPC 或压力/角度采样基线。
+- 单个空帧的 sample age 不超过一个目标帧间隔时仍是 Tracking，保留 Kalman prediction；超过该门槛才进入 settling。stationary/terminal `Update` 复用有界 scratch，并只保留最新内部 `Result` 作为收敛证据，不得累计进正常 `modeledResults`。
+- settling、physical Up、visual-pinned 后恢复 Move 与 reconnect 恢复首批都必须对 scratch 使用相同 endpoint admission：可见中心线到 raw endpoint 的距离单调接近、沿最后有效真实方向不越过 endpoint plane `0.05px`。首次触边、越界或不再接近时至多钉住一个精确 raw endpoint；其后的内部回摆继续用于收敛，但不得增长 `realPoints`、L0/L1、shader 输入或 Stored 候选。physical Up 的整批输出也不得只检查最后一点。
 - modeled tip 只有在末端位置误差不超过 `0.05px`，并且 `|velocity| * targetFrameInterval` 不超过 `0.05px` 时才算收敛；endpoint、frame interval、position、velocity 任一缺失、非有限或非正时间均不得报告收敛。
 - 一旦模型收敛，立即停止 stationary `Update`；随后沿用 L0 position/radius 连续三帧稳定门槛确认 prediction、taper 与宽度不再变化。禁止用固定额外延迟代替位置/速度证据。
 - stationary `Update` 明确失败时按 contact 锁存 `stationaryModelAdvanceBlocked`，只记录一次且不追加点、不伪造 settled/frozen；新 Down 必须重置该锁存，下一份成功真实 model input 或成功 reconnect 才解除。空 prediction 不等于模型失败。
@@ -424,18 +427,19 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 | RuntimeStroke 从对象池复用 | 新 Down 清除旧笔的失败锁存和每帧输入状态 |
 | 新真实 Move / stylus 状态变化 | 走真实 Update、解除 idle freeze；成功时解除失败锁存 |
 | 多 contact 一动一停 | 每个 runtime 独立推进、收敛、冻结和恢复 |
+| visual-pinned 后恢复 Move / reconnect | 首批仍通过 endpoint admission；拒绝旧方向回摆后才能恢复正常 Tracking |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：低速移动后停住，modeler 用少量同点输入追到 raw endpoint；点数停止增长，三帧视觉稳定后 frozen，再移动时没有旧欠账甩出。
+- Good：低速移动后停住，modeler 用少量同点输入在 scratch 中追到 raw endpoint；可见尾端单调钉住后点数停止增长，三帧视觉稳定后 frozen，再移动时没有旧欠账甩出。
 - Base：Highlighter/Eraser/Laser/Shape 继续走原路径；prediction 关闭时普通笔仍可凭 modeled position/velocity 收敛。
 - Bad：只重复 `Predict`、只延长 timeout、只比较两帧 L0，或收敛后仍持续向 shader 输入重复点。
 
 ### 6. Tests Required
 
 - 用真实 `StrokeModeler` 证明重复 `Predict` 不推进内部结果，而同点 `kMove` 会在有界帧数和输出点预算内收敛。
-- 覆盖 30/60/120/240 FPS 的 velocity 门槛、position/velocity 非有限、非法帧间隔、prediction 开/关和两个独立笔画的冻结隔离。
-- 收敛后长时间 idle 的 modeled/real 点数必须恒定；恢复真实 Move 的模型时间单调，随后同坐标 Up 的 endpoint/radius 变化不超过视觉容差。
+- 覆盖 30/60/120/240 FPS、低/中/高速及 Kalman/StrokeEnd/Disabled 的 endpoint distance/plane 单调性；内部 settled 必须直接在 `<=200ms` 诊断预算内断言，不能以 visual-pinned 时间替代。
+- 收敛后长时间 idle 的 scratch/real/L0/L1/shader/Stored 候选点数必须恒定；覆盖交替 raw/empty 帧的 Kalman Tracking、恢复真实 Move/reconnect 的首批与整批 physical Up。
 - 执行 `inkStrokeModelerTest.sln Debug|ARM64`、模型回归测试、完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 与 Draw3 hidden 集成测试。
 
 ### 7. Wrong vs Correct
@@ -445,11 +449,17 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 modeler.Predict(predicted);
 if (AreL0VisualsClose(current, previous)) stroke.idleFrozen = true;
 
-// Correct：无真实输入时推进模型；位置和剩余运动都收敛后才进入视觉稳定门槛。
-if (!modelInputThisFrame && !IsModeledTipSettled(modeled, rawEndpoint, frameInterval))
-    modeler.Update(stationaryMove, modeled); // inputSpeed=-1，不更新真实速度基线
+// Correct：短暂空帧保留 prediction；确认停笔后只在 scratch 推进内部状态。
+if (!modelInputThisFrame &&
+    ShouldStartEndpointSettling(sampleAge, frameInterval)) {
+    BeginEndpointAdmission(stroke, rawEndpoint);
+    scratch.clear();
+    modeler.Update(stationaryMove, scratch);
+    AppendEndpointBoundedModeledPoints(stroke, scratch, -1.0f, logicalTime);
+}
 UpdateIdleFreezeState(stroke, rawMoved,
-    IsModeledTipSettled(modeled, rawEndpoint, frameInterval), liveTipDuration);
+    IsModeledTipSettled(LatestModeledTip(stroke), rawEndpoint, frameInterval),
+    liveTipDuration);
 ~~~
 
 ## Scenario: RTS Interrupted Stroke Reconnect
