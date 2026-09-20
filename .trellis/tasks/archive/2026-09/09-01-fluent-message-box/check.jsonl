@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"检查实现是否遵守 Inkeys 原生桌面包的总入口和质量门。"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"检查新增模块、工程项和 filters 是否按仓库结构落位。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"检查 module、RAII、noexcept、注释、编码与 CRLF 一致性。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"检查独立绘图/窗口生命周期、DWM 边界和无窗口/可见验证合同。"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"检查非递归 fallback、失败诊断、资源注册和句柄销毁。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"检查 PNG asset 与 RC/resource.h/vcxproj 接线，避免新增隐式运行时依赖。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查 Windows 7 API fallback、完整 ARM64 构建和测试证据。"}
+{"file":".trellis/tasks/09-01-fluent-message-box/research/investigation.md","reason":"按已确认的调用范围、owner/topmost、视觉 token、并发与回退矩阵核对实现。"}

@@ -3,13 +3,12 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtD2DPreparation.h"
-#include "../../../IdtDisplayManagement.h"
+#include <dwrite_1.h>
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtFloating.h"
+#include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Window/Window.Legacy.hpp"
+#include "Bar.A2.h"
 #include "Bar.PresentDecision.h"
 #include <limits>
 
@@ -24,6 +23,7 @@ import :Zoom;
 import :Theme;
 
 import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.RenderPipeline;
 
 import <ranges>;
 
@@ -34,11 +34,19 @@ import Inkeys.Conv.Text;
 // Interaction 实现单元独占窗口消息状态；协调器仅通过窄接口读取或投递。
 bool ReadColorPickerEntryPressed();
 void RequestBarBorderCursorSuspend();
-extern constexpr double BarButtonPressScale = 0.95;
-extern constexpr double BarButtonHoverFadeDur = 5.0;
+
+namespace
+{
+	IdtAtomic<bool> currentPageHasContent = false;
+	std::atomic_bool contentStateUpdatesReady = false;
+	std::atomic_bool pptPresentationActive = false;
+	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
+	std::atomic_bool whiteboardActive = false;
+	std::atomic_bool whiteboardBottomDockRequested = false;
+	std::atomic_bool whiteboardDockLockActive = false;
+}
+extern constexpr double BarButtonHoverFadeDur = BarButtonHoverFadeDurationSeconds;
 // Rendering 与 topology 共享同一组 module-linkage 常量，拆分后不复制数值。
-extern constexpr double BarButtonCursorLightIntensity = 0.30;
-extern constexpr double BarButtonPressedLightOpacity = 0.5;
 extern constexpr double BarDrawAttributeExpandedHeight = 185.0;
 extern constexpr double BarDrawAttributeCompactWidth = 60.0;
 extern constexpr double BarDrawAttributeCompactScale =
@@ -181,7 +189,8 @@ extern constexpr double BarMorePanelCompactHeight = 30.0;
 // 媒体操控类
 void BarMediaClass::LoadFormat()
 {
-	formatCache = make_unique<BarFormatCache>(dWriteFactory1.Get());
+	formatCache = make_unique<BarFormatCache>(
+		Inkeys::UI::RenderPipeline::DWriteFactory().Get());
 }
 
 // ====================
@@ -203,6 +212,8 @@ void BarUISetClass::UpdateRendering(bool updateState)
 
 	// 通知计算并渲染
 	BarAtomic::wait.Notify();
+	Inkeys::UI::RenderPipeline::Request(
+		Inkeys::UI::RenderPipeline::Client::Bar);
 }
 
 // 全局 Bar UI 集合
@@ -240,6 +251,124 @@ namespace Inkeys::UI::Bar
 		BarUiDebugFrameRateEnabled = showFrameRate;
 		// 渲染线程会比较新旧选项，只在需要时清除 FPS 文字或红框。
 		barUISet.UpdateRendering(false);
+		Inkeys::UI::RenderPipeline::Request(
+			Inkeys::UI::RenderPipeline::WhiteboardMask());
+	}
+
+	bool DebugModeEnabled() noexcept
+	{
+		return BarUiDebugModeEnabled;
+	}
+
+	void SetCurrentPageHasContent(bool hasContent) noexcept
+	{
+		if (static_cast<bool>(currentPageHasContent) == hasContent) return;
+		currentPageHasContent = hasContent;
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	bool CurrentPageHasContent() noexcept
+	{
+		return currentPageHasContent;
+	}
+
+	void SetPptPresentationActive(bool active) noexcept
+	{
+		if (pptPresentationActive.exchange(active, std::memory_order_acq_rel)
+			== active) return;
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	bool PptPresentationActive() noexcept
+	{
+		return pptPresentationActive.load(std::memory_order_acquire);
+	}
+
+	void SetEndShowCallback(std::function<void()> callback)
+	{
+		endShowDispatcher.Set(std::move(callback));
+	}
+
+	void RequestEndShow()
+	{
+		// 回调只投递原 PPT 业务队列，不能在 Bar 输入线程持锁执行。
+		(void)endShowDispatcher.Dispatch();
+	}
+
+	void CompleteEndShowRequest() noexcept
+	{
+		endShowDispatcher.Complete();
+	}
+
+	void SetWhiteboardActive(bool active) noexcept
+	{
+		const bool changed = whiteboardActive.exchange(active,
+			std::memory_order_acq_rel) != active;
+		if (changed)
+		{
+			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
+			barUISet.CollapseAuxiliaryPanels(true);
+		}
+		if (active) RequestWhiteboardBottomDock();
+		else
+		{
+			// 退出白板后主栏回到 Presentation 的收起态，避免下一次桌面点击
+			// 被残留的 bottom dock 或辅助面板重新唤醒。
+			barUISet.barState.fold = true;
+			whiteboardBottomDockRequested.store(false, std::memory_order_release);
+			whiteboardDockLockActive.store(false, std::memory_order_release);
+		}
+		if (changed || contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering();
+	}
+
+	void CollapseAuxiliaryPanels(bool cancelCapture) noexcept
+	{
+		barUISet.CollapseAuxiliaryPanels(cancelCapture);
+	}
+
+	bool WhiteboardActive() noexcept
+	{
+		return whiteboardActive.load(std::memory_order_acquire);
+	}
+
+	void RequestWhiteboardBottomDock() noexcept
+	{
+		whiteboardDockLockActive.store(true, std::memory_order_release);
+		whiteboardBottomDockRequested.store(true, std::memory_order_release);
+		if (contentStateUpdatesReady.load(std::memory_order_acquire))
+			barUISet.UpdateRendering(false);
+	}
+
+	bool ConsumeWhiteboardBottomDockRequest() noexcept
+	{
+		return whiteboardBottomDockRequested.exchange(false,
+			std::memory_order_acq_rel);
+	}
+
+	bool WhiteboardDockLockActive() noexcept
+	{
+		return whiteboardDockLockActive.load(std::memory_order_acquire);
+	}
+
+	void ClearWhiteboardDockLock() noexcept
+	{
+		whiteboardBottomDockRequested.store(false, std::memory_order_release);
+		whiteboardDockLockActive.store(false, std::memory_order_release);
+	}
+
+	bool HideWhiteboardSnapIndicator() noexcept
+	{
+		return WhiteboardActive();
+	}
+
+	void SetContentStateUpdatesReady(bool ready) noexcept
+	{
+		contentStateUpdatesReady.store(ready, std::memory_order_release);
+		// 初始化窗口内可能已收到内容变化，再做一次完整状态同步。
+		if (ready) barUISet.UpdateRendering();
 	}
 
 

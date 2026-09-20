@@ -33,8 +33,9 @@ enum class BarButtonPresetEnum : int
 	Redo,
 	Clean,
 
-	Pierce,
+	Whiteboard,
 	Freeze,
+	EndShow,
 
 	More,
 	Setting
@@ -237,6 +238,8 @@ bool RegisterButton(
 		void RegisterBuiltInComponents();
 		void StateUpdate();
 		void UpdateDrawButtonStyle();
+		void UpdateWhiteboardButtonStyle();
+		void ExecuteClearClick(bool doubleClickContinuation);
 
 		void Load();
 		void SyncLegacyExtensionButtons();
@@ -269,6 +272,7 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 
 		mutable shared_mutex registrationMutex;
 		IdtAtomic<int> drawButtonStyleKey = -1;
+		IdtAtomic<int> whiteboardButtonStyleKey = -1;
 		IdtAtomic<int> eraserButtonStyleKey = -1;
 		IdtAtomic<int> geometryButtonStyleKey = -1;
 		unordered_map<std::string, BarButtonRegistrationClass> registrations;
@@ -280,4 +284,6 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		mutex legacyOrderMutex;
 		vector<std::string> legacyActiveOrder;
 		bool legacyOrderInitialized = false;
+		bool clearAttemptedForDoubleClick = false;
+		bool clearAcceptedForDoubleClick = false;
 	};

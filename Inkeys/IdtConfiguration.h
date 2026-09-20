@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "IdtMain.h"
 
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
@@ -50,6 +50,7 @@ struct SetListStruct
 	struct
 	{
 		int eraserMode; // 0压感粗细 1笔速粗细 2固定粗细
+		bool savedFixedChoice = false; // 迁移用：只认磁盘中明确的2，不认隐式/未知值回退。
 		int eraserSize;
 	}eraserSetting;
 
@@ -146,18 +147,13 @@ struct SetListStruct
 	}plugInSetting;
 #pragma endregion
 
-	struct
-	{
-		struct
-		{
-			IdtAtomic<bool> UI3 = false;
-		} Inkeys3;
-	} Experimental;
 };
 extern SetListStruct setlist;
 extern shared_mutex setlistUpdateMutex;
 bool ReadSetting();
 bool ReadSettingMini();
+string CaptureSettingJson();
+bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
 struct PptComSetListStruct
@@ -223,6 +219,8 @@ struct PptComSetListStruct
 extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
 bool PptComReadSettingPositionOnly();
+string CapturePptComSettingJson();
+bool WritePptComSettingJson(const string& jsonContent);
 bool PptComWriteSetting();
 
 struct DdbInteractionSetListStruct
@@ -303,6 +301,8 @@ struct DdbInteractionSetListStruct
 };
 extern DdbInteractionSetListStruct ddbInteractionSetList;
 //bool DdbReadInteraction();
+string CaptureDdbInteractionJson(bool change, bool close);
+bool WriteDdbInteractionJson(const string& jsonContent);
 bool DdbWriteInteraction(bool change, bool close);
 
 bool GetMemory();

@@ -1,0 +1,10 @@
+{"file":".trellis/spec/native/index.md","reason":"Audit native task checklist, source encoding, minimal scope and required solution build."}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"Drive static review, build, test, failure-path and manual-validation reporting gates."}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"Verify UInk work preserves draw3 document, runtime history, prediction and GPU ownership invariants."}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"Verify Windows 7 claims, Win32 resource handling and explicit unverified-target wording."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/uink-v10-spec.md","reason":"Check every registered UInk v10 field, exact wire type, recovery rule and fixture expectation."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/draw3-storage-gap-analysis.md","reason":"Check one-way export fidelity and absence of controller/sidecar coupling or reverse import."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/msgpack-library-selection.md","reason":"Check dependency isolation, exact packing, duplicate-key visibility and bounded decoding."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/win7-compatibility.md","reason":"Check API availability, imports, baseline effects and Win7 validation evidence."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/file-conflict-strategy.md","reason":"Check conflict races, rollback/partial-commit states, default flush and no-blind-retry semantics."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/unsupported-content-read-policy.md","reason":"Check typed advanced-content preservation without claiming draw3 rendering support."}

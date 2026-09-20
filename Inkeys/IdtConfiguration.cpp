@@ -1,8 +1,9 @@
-﻿import Inkeys.Conv.Text;
+import Inkeys.Conv.Text;
 
 import Inkeys.Other.Config;
 
 #include "IdtConfiguration.h"
+#include "Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include "IdtState.h"
 
@@ -144,8 +145,6 @@ bool ReadSetting()
 					setlist.regularSetting.clickRecover = setlistVal["Regular"]["ClickRecover"].asBool();
 			}
 
-			if (setlistVal["Regular"].isMember("AvoidFullScreen") && setlistVal["Regular"]["AvoidFullScreen"].isBool())
-				setlist.regularSetting.avoidFullScreen = setlistVal["Regular"]["AvoidFullScreen"].asBool();
 			if (setlistVal["Regular"].isMember("TeachingSafetyMode") && setlistVal["Regular"]["TeachingSafetyMode"].isInt())
 				setlist.regularSetting.teachingSafetyMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
 		}
@@ -158,20 +157,17 @@ bool ReadSetting()
 			setlist.liftStraighten = setlistVal["LiftStraighten"].asBool();
 		if (setlistVal.isMember("WaitStraighten") && setlistVal["WaitStraighten"].isBool())
 			setlist.waitStraighten = setlistVal["WaitStraighten"].asBool();
-		if (setlistVal.isMember("PointAdsorption") && setlistVal["PointAdsorption"].isBool())
-			setlist.pointAdsorption = setlistVal["PointAdsorption"].asBool();
-		if (setlistVal.isMember("SmoothWriting") && setlistVal["SmoothWriting"].isBool())
-			setlist.smoothWriting = setlistVal["SmoothWriting"].asBool();
 		if (setlistVal.isMember("EraserSetting") && setlistVal["EraserSetting"].isObject())
 		{
 			if (setlistVal["EraserSetting"].isMember("EraserMode") && setlistVal["EraserSetting"]["EraserMode"].isInt())
-				setlist.eraserSetting.eraserMode = setlistVal["EraserSetting"]["EraserMode"].asInt();
+			{
+				const int saved=setlistVal["EraserSetting"]["EraserMode"].asInt();
+				setlist.eraserSetting.savedFixedChoice=saved==2;
+				setlist.eraserSetting.eraserMode=Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(saved);
+			}
 			if (setlistVal["EraserSetting"].isMember("EraserSize") && setlistVal["EraserSetting"]["EraserSize"].isInt())
 				setlist.eraserSetting.eraserSize = setlistVal["EraserSetting"]["EraserSize"].asInt();
 		}
-		if (setlistVal.isMember("HideTouchPointerBeta") && setlistVal["HideTouchPointerBeta"].isBool())
-			setlist.hideTouchPointer = setlistVal["HideTouchPointerBeta"].asBool();
-
 		if (setlistVal.isMember("Save") && setlistVal["Save"].isObject())
 		{
 			if (setlistVal["Save"].isMember("Enable") && setlistVal["Save"]["Enable"].isBool())
@@ -179,29 +175,6 @@ bool ReadSetting()
 			if (setlistVal["Save"].isMember("SaveDays") && setlistVal["Save"]["SaveDays"].isInt())
 				setlist.saveSetting.saveDays = setlistVal["Save"]["SaveDays"].asInt();
 		}
-		if (setlistVal.isMember("Performance") && setlistVal["Performance"].isObject())
-		{
-			if (setlistVal["Performance"].isMember("PreparationQuantity") && setlistVal["Performance"]["PreparationQuantity"].isInt())
-				setlist.performanceSetting.preparationQuantity = setlistVal["Performance"]["PreparationQuantity"].asInt();
-
-			if (setlistVal["Performance"].isMember("SuperDrawBeta2") && setlistVal["Performance"]["SuperDrawBeta2"].isBool())
-				setlist.performanceSetting.superDraw = setlistVal["Performance"]["SuperDrawBeta2"].asBool();
-		}
-		if (setlistVal.isMember("Preset") && setlistVal["Preset"].isObject())
-		{
-			if (setlistVal["Preset"].isMember("MemoryWidth") && setlistVal["Preset"]["MemoryWidth"].isBool())
-				setlist.presetSetting.memoryWidth = setlistVal["Preset"]["MemoryWidth"].asBool();
-			if (setlistVal["Preset"].isMember("MemoryColor") && setlistVal["Preset"]["MemoryColor"].isBool())
-				setlist.presetSetting.memoryColor = setlistVal["Preset"]["MemoryColor"].asBool();
-
-			if (setlistVal["Preset"].isMember("AutoDefaultWidth") && setlistVal["Preset"]["AutoDefaultWidth"].isBool())
-				setlist.presetSetting.autoDefaultWidth = setlistVal["Preset"]["AutoDefaultWidth"].asBool();
-			if (setlistVal["Preset"].isMember("DefaultBrush1Width") && setlistVal["Preset"]["DefaultBrush1Width"].isDouble())
-				setlist.presetSetting.defaultBrush1Width = static_cast<float>(setlistVal["Preset"]["DefaultBrush1Width"].asDouble());
-			if (setlistVal["Preset"].isMember("DefaultHighlighter1Width") && setlistVal["Preset"]["DefaultHighlighter1Width"].isDouble())
-				setlist.presetSetting.defaultHighlighter1Width = static_cast<float>(setlistVal["Preset"]["DefaultHighlighter1Width"].asDouble());
-		}
-
 		if (setlistVal.isMember("UpdateSetting") && setlistVal["UpdateSetting"].isObject())
 		{
 			{
@@ -344,14 +317,6 @@ bool ReadSetting()
 			}
 		}
 
-		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject())
-		{
-			if (setlistVal["Experimental"].isMember("Inkeys3") && setlistVal["Experimental"]["Inkeys3"].isObject())
-			{
-				if (setlistVal["Experimental"]["Inkeys3"].isMember("UI3") && setlistVal["Experimental"]["Inkeys3"]["UI3"].isBool())
-					setlist.Experimental.Inkeys3.UI3 = setlistVal["Experimental"]["Inkeys3"]["UI3"].asBool();
-			}
-		}
 	}
 	else return false;
 
@@ -411,7 +376,7 @@ bool ReadSettingMini()
 
 	return true;
 }
-bool WriteSetting()
+string CaptureSettingJson()
 {
 	if (Inkeys::config.Config.AutoClean) setlistVal.clear();
 
@@ -440,38 +405,28 @@ bool WriteSetting()
 			setlistVal["Regular"]["MoveRecover1"] = Json::Value(setlist.regularSetting.moveRecover);
 			setlistVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
 		}
-		setlistVal["Regular"]["AvoidFullScreen"] = Json::Value(setlist.regularSetting.avoidFullScreen);
 		setlistVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
 
 		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice);
 		setlistVal["DisableRTS"] = Json::Value(setlist.disableRTS);
 		setlistVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
 		setlistVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
-		setlistVal["PointAdsorption"] = Json::Value(setlist.pointAdsorption);
-		setlistVal["SmoothWriting"] = Json::Value(setlist.smoothWriting);
 		{
+			setlist.eraserSetting.eraserMode = setlist.eraserSetting.eraserMode == 1 ? 1 : 2;
 			setlistVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
 			setlistVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
 		}
-		setlistVal["HideTouchPointerBeta"] = Json::Value(setlist.hideTouchPointer);
-
 		{
 			setlistVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
 			setlistVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
 		}
-		{
-			setlistVal["Performance"]["PreparationQuantity"] = Json::Value(setlist.performanceSetting.preparationQuantity);
-
-			setlistVal["Performance"]["SuperDrawBeta2"] = Json::Value(setlist.performanceSetting.superDraw);
-		}
-		{
-			setlistVal["Preset"]["MemoryWidth"] = Json::Value(setlist.presetSetting.memoryWidth);
-			setlistVal["Preset"]["MemoryColor"] = Json::Value(setlist.presetSetting.memoryColor);
-
-			setlistVal["Preset"]["AutoDefaultWidth"] = Json::Value(setlist.presetSetting.autoDefaultWidth);
-			setlistVal["Preset"]["DefaultBrush1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultBrush1Width));
-			setlistVal["Preset"]["DefaultHighlighter1Width"] = Json::Value(static_cast<double>(setlist.presetSetting.defaultHighlighter1Width));
-		}
+		// 已删除的旧设置不依赖 AutoClean；每次保存都清除历史 JSON 键。
+		setlistVal["Regular"].removeMember("AvoidFullScreen");
+		setlistVal.removeMember("PointAdsorption");
+		setlistVal.removeMember("SmoothWriting");
+		setlistVal.removeMember("HideTouchPointerBeta");
+		setlistVal.removeMember("Performance");
+		setlistVal.removeMember("Preset");
 
 		{
 			setlistVal["UpdateSetting"]["EnableAutoUpdate"] = Json::Value(enableAutoUpdate);
@@ -556,13 +511,25 @@ bool WriteSetting()
 			}
 		}
 
+		// UI3 已成为唯一入口，升级写回时移除旧实验开关。
+		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject()
+			&& setlistVal["Experimental"].isMember("Inkeys3")
+			&& setlistVal["Experimental"]["Inkeys3"].isObject())
 		{
-			{
-				setlistVal["Experimental"]["Inkeys3"]["UI3"] = Json::Value(setlist.Experimental.Inkeys3.UI3);
-			}
+			setlistVal["Experimental"]["Inkeys3"].removeMember("UI3");
+			if (setlistVal["Experimental"]["Inkeys3"].empty())
+				setlistVal["Experimental"].removeMember("Inkeys3");
+			if (setlistVal["Experimental"].empty())
+				setlistVal.removeMember("Experimental");
 		}
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
+}
+
+bool WriteSettingJson(const string& jsonContent)
+{
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\deploy.json"))
 	{
@@ -580,9 +547,6 @@ bool WriteSetting()
 		return false;
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
-
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -592,6 +556,11 @@ bool WriteSetting()
 
 	UnOccupyFile(&fileHandle);
 	return true;
+}
+
+bool WriteSetting()
+{
+	return WriteSettingJson(CaptureSettingJson());
 }
 
 PptComSetListStruct pptComSetlist;
@@ -636,8 +605,6 @@ bool PptComReadSetting()
 
 	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
 	{
-		if (updateVal.isMember("FixedHandWriting") && updateVal["FixedHandWriting"].isBool())
-			pptComSetlist.fixedHandWriting = updateVal["FixedHandWriting"].asBool();
 		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
 			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
 		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
@@ -737,11 +704,10 @@ bool PptComReadSettingPositionOnly()
 
 	return true;
 }
-bool PptComWriteSetting()
+string CapturePptComSettingJson()
 {
 	Json::Value updateVal;
 	{
-		updateVal["FixedHandWriting"] = Json::Value(pptComSetlist.fixedHandWriting);
 		updateVal["ShowLoadingScreen"] = Json::Value(pptComSetlist.showLoadingScreen);
 		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
 
@@ -763,6 +729,12 @@ bool PptComWriteSetting()
 		// updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+}
+
+bool WritePptComSettingJson(const string& jsonContent)
+{
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
 	{
@@ -780,9 +752,6 @@ bool PptComWriteSetting()
 		return false;
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -792,6 +761,11 @@ bool PptComWriteSetting()
 
 	UnOccupyFile(&fileHandle);
 	return true;
+}
+
+bool PptComWriteSetting()
+{
+	return WritePptComSettingJson(CapturePptComSettingJson());
 }
 
 DdbInteractionSetListStruct ddbInteractionSetList;
@@ -909,7 +883,7 @@ DdbInteractionSetListStruct ddbInteractionSetList;
 //
 //	return true;
 //}
-bool DdbWriteInteraction(bool change, bool close)
+string CaptureDdbInteractionJson(bool change, bool close)
 {
 	Json::Value updateVal;
 	{
@@ -943,6 +917,13 @@ bool DdbWriteInteraction(bool change, bool close)
 		updateVal["~KeepOpen"] = Json::Value(!close);
 	}
 
+	Json::StreamWriterBuilder writerBuilder;
+	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+}
+
+bool WriteDdbInteractionJson(const string& jsonContent)
+{
+
 	HANDLE fileHandle = NULL;
 	if (!OccupyFileForWrite(&fileHandle, pluginPath + L"DesktopDrawpadBlocker\\interaction_configuration.json"))
 	{
@@ -960,9 +941,6 @@ bool DdbWriteInteraction(bool change, bool close)
 		return false;
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-
 	DWORD bytesWritten = 0;
 	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
 	{
@@ -972,6 +950,11 @@ bool DdbWriteInteraction(bool change, bool close)
 
 	UnOccupyFile(&fileHandle);
 	return true;
+}
+
+bool DdbWriteInteraction(bool change, bool close)
+{
+	return WriteDdbInteractionJson(CaptureDdbInteractionJson(change, close));
 }
 
 bool GetMemory()

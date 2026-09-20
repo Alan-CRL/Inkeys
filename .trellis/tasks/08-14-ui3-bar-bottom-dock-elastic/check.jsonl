@@ -1,0 +1,5 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"执行 native-desktop Quality Check"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"检查 ULW、dirty、资源和 idle 行为"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"检查线程、编码、注释和修改范围"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查 ARM64 完整 Solution 构建与工程登记"}
+{"file":".trellis/tasks/08-14-ui3-bar-bottom-dock-elastic/research/current-bar-drag-display-contract.md","reason":"按已确认基线核对坐标连续性"}

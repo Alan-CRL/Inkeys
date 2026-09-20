@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认 Inkeys 原生桌面包的规范入口、适用层和实现前检查顺序。"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"约束新 UI 模块目录、命名以及 vcxproj/filters 的显式登记。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"约束 C++20 module、RAII、错误边界、注释、编码与 CRLF。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"约束独立 HWND、DIB/GDI+ 生命周期、Window Service 边界和 UI 验证方式。"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"约束故障回退、诊断、资源 ID/RC 接线与资源清理。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"约束嵌入 PNG、resource.h/Inkeys.rc 与启动早期不可依赖的产品服务。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"约束 Windows 7 兼容、ARM64-host MSBuild、完整 solution 构建和测试。"}
+{"file":".trellis/tasks/09-01-fluent-message-box/research/investigation.md","reason":"提供调用点盘点、Fluent token、GDI+ Win7 风险、owner/topmost 和 fallback 决策证据。"}

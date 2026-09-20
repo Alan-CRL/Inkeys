@@ -205,13 +205,6 @@ export namespace Inkeys::UI::Bar
 	{
 		configZoom = RoundConfigZoom(configZoom);
 
-		if (!useInkeys3UI)
-		{
-			barUISet.barStyle.configZoom = configZoom;
-			RefreshZoom(barUISet);
-			return;
-		}
-
 		ApplyConfigZoom(barUISet, configZoom, true);
 	}
 }

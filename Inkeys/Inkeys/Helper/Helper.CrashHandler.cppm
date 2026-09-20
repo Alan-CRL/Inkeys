@@ -7,6 +7,8 @@ module;
 
 export module Inkeys.Helper.CrashHandler;
 
+import Inkeys.Window;
+
 export class CrashHandler {
 public:
 	// 禁用构造函数和赋值操作
@@ -54,11 +56,15 @@ private:
 // Helper
 export void CloseProgram()
 {
+	// 先同步移除可见界面，再继续后台清理，让关闭操作立即获得视觉反馈。
+	(void)Inkeys::Window::GetService().HideAllUserWindows();
 	CrashHandler::Shutdown();
 	SetOffSignal(1);
 }
 export void RestartProgram()
 {
+	// 隐藏失败不能阻止重启信号继续发布。
+	(void)Inkeys::Window::GetService().HideAllUserWindows();
 	CrashHandler::Shutdown();
 	SetOffSignal(2);
 }

@@ -5,7 +5,7 @@ module;
 #include "../../IdtConfiguration.h"
 #include "../../IdtOther.h"
 #include "../../IdtTime.h"
-#include "../../IdtWindow.h"
+#include "../Window/Window.Legacy.hpp"
 
 module Inkeys.Net.Update;
 import :Download;
@@ -118,7 +118,9 @@ EditionInfoClass GetEditionInfo(string channel, string arch)
 				if (editionInfoValue[channel].isMember(path) && editionInfoValue[channel][path].isArray())
 				{
 					retEditionInfo.path_size = 0;
-					for (int i = 0; i < min(editionInfoValue[channel][path].size(), 10); i++)
+					const auto pathCount = std::min<Json::Value::ArrayIndex>(
+						editionInfoValue[channel][path].size(), 10);
+					for (Json::Value::ArrayIndex i = 0; i < pathCount; i++)
 					{
 						if (editionInfoValue[channel][path][i].isString())
 						{

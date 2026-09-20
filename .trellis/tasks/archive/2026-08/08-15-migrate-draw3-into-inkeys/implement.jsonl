@@ -1,0 +1,8 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"原生桌面总体边界与实施门"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"Draw3 目录与工程登记规则"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"ARM64 解决方案构建与兼容要求"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"窗口服务、设备和透明呈现所有权"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"RTS、线程和墨迹输入约束"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"设置隐藏与资源登记规则"}
+{"event":"verification","date":"2026-08-15","result":"pass","details":"ARM64 Debug solution build (/m:1), InkeysHeadlessTests --no-window, and Inkeys --draw3-hidden-test all passed; no visible GUI started."}
+{"event":"verification-final","date":"2026-08-15","result":"pass","details":"ARM64 Debug and Release solution builds (/m:1), headless logic, and hidden real DComp/DWM2/DWM/ULW lifecycles passed; immutable style truth and sequential legacy HWND rebuild were verified without visible UI or SendInput."}

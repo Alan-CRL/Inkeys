@@ -1,0 +1,9 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认 native desktop 修改前检查、模块边界和无窗口验证约束"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵循现有 D3D11/D2D/ImGui 设备、线程和呈现分工"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"遵循 ARM64 Solution 构建与 Win7 静态兼容边界"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"遵循 C++20 module、共享状态、并发和中文注释约定"}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"正确迁移 module、工程项、shader 和资源目录"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"确保 COM/DirectX/Win32 资源和恢复路径逆序释放"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"保持配置格式并正确归属 ImGui 内嵌 shader 资产"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对窗口线程、渲染线程、业务 worker 和客户端的数据流"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"合并重复图形资产并避免新增平行 helper"}

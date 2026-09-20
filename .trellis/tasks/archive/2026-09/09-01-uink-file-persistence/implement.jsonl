@@ -1,0 +1,10 @@
+{"file":".trellis/spec/native/index.md","reason":"Native pre-development checklist, file format, minimal-change and full-solution build rules."}
+{"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++20 module/interface split, naming, encoding, line-ending and Chinese-comment conventions."}
+{"file":".trellis/spec/native/runtime-and-rendering.md","reason":"InkCanvasCollection, immutable Stored Stroke, runtime history sidecar, shape and viewport contracts for the one-way draw3 export boundary."}
+{"file":".trellis/spec/native/platform-and-resources.md","reason":"Windows 7 target, Win32 resource ownership, diagnostic and compatibility-claim rules."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/uink-v10-spec.md","reason":"Complete UInk v10 wire types, ordering, fallback, recovery, append and conformance-fixture matrix."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/draw3-storage-gap-analysis.md","reason":"Evidence-backed draw3-to-UInk mapping and immutable export snapshot boundary."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/msgpack-library-selection.md","reason":"msgpack-cxx choice, exact encoding, duplicate-key, stream framing and private-boundary constraints."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/win7-compatibility.md","reason":"Win7-compatible file APIs, dependency/import audit and target-system validation plan."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/file-conflict-strategy.md","reason":"Short file transactions, SourceRevision conflict detection, atomic save and durable append outcomes."}
+{"file":".trellis/tasks/09-01-uink-file-persistence/research/unsupported-content-read-policy.md","reason":"Strongly typed preservation policy for registered content that draw3 cannot render."}

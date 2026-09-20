@@ -33,6 +33,10 @@ public:
 	static bool load(int type, wstring path, wstring lang = L"en-US");
 	static string getA(string x);
 	static wstring getW(string x);
+	static wstring getWOr(const char* key, const wchar_t* fallback);
+	static bool tryGetW(const char* key, wstring& output) noexcept;
+	static LANGID languageId() noexcept;
+	static bool tryLanguageId(LANGID& output) noexcept;
 	static bool isIdentifying(const wchar_t* lang);
 
 private:

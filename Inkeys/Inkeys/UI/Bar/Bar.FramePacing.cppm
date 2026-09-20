@@ -203,7 +203,7 @@ export namespace Inkeys::UI::Bar
 		double publishedUnlimited_ = 0.0;
 	};
 
-	// FPS 文字只在真实渲染结束后补一帧休眠标记，不能反向维持渲染循环。
+	// 真实渲染结束后只补一个最终提交，用于收窗和调试末帧，不能反向维持循环。
 	class DebugFrameSleepLatch
 	{
 	public:

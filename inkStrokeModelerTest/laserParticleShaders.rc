@@ -1,0 +1,4 @@
+#include "laserParticleResource.h"
+
+IDR_LASER_PARTICLE_UPDATE_CS SHADER "laserParticleUpdateCS.cso"
+IDR_LASER_PARTICLE_EMIT_CS SHADER "laserParticleEmitCS.cso"

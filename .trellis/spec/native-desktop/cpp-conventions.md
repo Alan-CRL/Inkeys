@@ -64,6 +64,74 @@
 4. 改变持锁范围、在锁内新增 COM/I/O/窗口调用或更换线程类型，都属于并发行为变更，需要专门验证，不能从通用建议自动实施。
 5. detached thread 是当前实现事实，不等于已确认缺陷，也不等于推荐的新线程模型；快速退出安全性需按具体调用点验证。
 
+## 显示快照与订阅合同
+
+`【直接确认】` `Inkeys.Display` 是主程序显示器枚举、主屏/虚拟桌面、工作区、有效 DPI、方向与 EDID 物理尺寸的统一来源。消费者不得恢复 `MainMonitor`、`DisplaysInfo` 等拆分全局状态。
+
+- 每次业务操作或渲染帧只保留一个 `SnapshotPtr`，从同一快照读取 bounds、workArea、DPI、方向和 EDID；不得分别调用或缓存字段后拼出跨 generation 状态。
+- 刷新先在局部完整构造候选快照；只有语义变化才递增 generation。新快照原子发布后，首次订阅通知和后续刷新通知都进入同一串行 publication 队列；单个订阅者不得重复或倒序收到 generation。
+- publication 回调在 Display 内部锁外执行。回调只发布目标或请求 UI 客户端，不直接操作 HWND/D2D 资源，也不能要求调用方持有 Display 内部锁。
+- `Subscription::Reset()` 与 `Shutdown()` 返回前必须等待该订阅者正在执行的回调退出；回调自行注销时不得等待自身。Shutdown 先禁止新刷新并清空发布状态，再在刷新锁外 drain 回调，避免回调重入 `Refresh()` 时死锁。
+- 后续枚举失败保留最后一个快照的几何、DPI和原始诊断数据，但必须发布 `TopologyUnknown` 物理失效状态；首次失败发布显式 `fallback`，其 EDID 仍为 unknown。不得用系统指标伪造物理尺寸。
+
+## 场景：显示物理尺寸业务标尺
+
+### 1. Scope / Trigger
+
+当业务需要把屏幕像素距离换算为厘米，或读取 `MonitorInfo::edid`、`MonitorInfo::physicalSize`、`Snapshot::topology` 时，必须应用本合同。目标是避免复制屏、错配 EDID 或伪造尺寸进入笔速橡皮等输入热路径。
+
+### 2. Signatures
+
+- 原始设备信息：`EdidInfo { valid, status, devicePath, deviceId, rawBytes, rawPhysicalWidthCm, rawPhysicalHeightCm }`。
+- 业务信息：`PhysicalSizeInfo { available, widthCm, heightCm, unavailableReason }`。
+- 快照拓扑：`DisplayTopology::{Unknown, Single, Extended, CloneOrMixed}`。
+- 纯策略：`ClassifyTopology(targets)` 与 `ResolvePhysicalSize(edid, orientation, topology, uniqueTarget, fallback)`。
+
+### 3. Contracts
+
+- `EdidInfo::valid` 仅表示原始 EDID 解析成功；业务不得用它代替 `physicalSize.available`。
+- 原始尺寸永远保持 EDID 原始方向；业务宽高按当前 90/270 度方向交换，不可用时均为零。
+- 单屏和纯扩展允许物理标尺；纯扩展逐屏判定。任何 source 对应多个 target 时均为复制或混合，所有屏禁用。
+- DisplayConfig、SetupAPI 和注册表只允许在 `Refresh` 枚举阶段调用；逐点输入和渲染热路径只读取同一 `SnapshotPtr` 或由其发布的低频配置。
+
+### 4. Validation & Error Matrix
+
+| 条件 | `PhysicalSizeUnavailableReason` |
+| --- | --- |
+| 首次 fallback | `SnapshotFallback` |
+| 活动拓扑查询不可靠 | `TopologyUnknown` |
+| 复制或部分复制 | `CloneOrMixed` |
+| source/target 与逻辑屏不是一一对应 | `DisplayTargetAmbiguous` |
+| EDID 未找到、读取失败、解析失败 | 对应 `Edid*` 原因 |
+| 任一原始边为 0 | `MissingDimensions` |
+| 任一原始边小于 5 cm | `DimensionsBelowMinimum` |
+| 其余单屏或纯扩展屏 | `None` 且 `available=true` |
+
+### 5. Good/Base/Bad Cases
+
+- Good：两台同分辨率显示器拥有不同 source，分别匹配各自 target 和 EDID，按屏提供物理尺寸。
+- Base：纯扩展中一台 EDID 读取失败，只禁用该屏，另一台可靠屏继续可用。
+- Bad：主屏 source 同时驱动两个 target，即使两个 EDID 都正常也必须全局禁用物理标尺。
+
+### 6. Tests Required
+
+- 纯策略测试断言单屏、等分辨率扩展、复制和部分复制分类只取决于活动 source/target 关系。
+- EDID 测试断言 128 字节基础块头、校验和、零尺寸、4 cm、5 cm 和旋转行为。
+- 快照测试断言拓扑、target、EDID 或业务失效原因变化属于语义变化，等价刷新不增加 generation。
+- 现场枚举测试不得假设测试机拓扑，但必须断言 DPI/像素始终保留，复制拓扑没有可用物理标尺。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：原始 EDID 已解析不代表当前拓扑允许业务换算。
+if (monitor.edid.valid)
+    UsePhysicalScale(monitor.edid.rawPhysicalWidthCm);
+
+// Correct：只消费快照已经判定并按方向处理的业务尺寸。
+if (monitor.physicalSize.available)
+    UsePhysicalScale(monitor.physicalSize.widthCm);
+~~~
+
 ## 最小变更边界
 
 - `【直接确认；AGENTS.md】` 只修改完成任务所需的部分，不做未要求的优化。

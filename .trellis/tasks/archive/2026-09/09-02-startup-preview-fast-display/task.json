@@ -1,0 +1,33 @@
+{
+  "id": "startup-preview-fast-display",
+  "name": "startup-preview-fast-display",
+  "title": "启动预览与快速显示主栏",
+  "description": "在最终进程越过 SuperTop 后尽快显示程序化主栏占位，并以真实初始化进度和 committed Bar 帧完成可靠交接。",
+  "status": "completed",
+  "dev_type": "feature",
+  "scope": "native-desktop",
+  "package": "Inkeys",
+  "priority": "P1",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-09-02",
+  "completedAt": "2026-09-04",
+  "branch": "draw",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "9e27bd26707dfeb3204ce78bf53e3b884cf4b811",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "已提交 Startup Preview 纠偏实现：恢复默认斜向 shimmer、显式 manual-delay hook、OrderedHandoffReducer 交接和 render-thread 优先资源释放。后续 Trellis 平台更新提交不改变本任务产品合同。",
+  "meta": {
+    "phase": "implementation",
+    "implementationApproved": true,
+    "implementation": "committed",
+    "lastImplementationCommit": "9e27bd26707dfeb3204ce78bf53e3b884cf4b811",
+    "trellisContext": "restored",
+    "latestValidation": "This x64 device passed Debug|x64 full Solution build and x64 Debug --no-window headless; future default validation follows the current device's native Debug platform; visible/manual/platform checks pending"
+  }
+}

@@ -1,0 +1,206 @@
+module;
+
+#include <windows.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+export module Inkeys.Window;
+
+export import Inkeys.Message;
+
+export namespace Inkeys::Window
+{
+	enum class WindowRole : std::uint8_t
+	{
+		MagnifierHost,
+		MagnifierChild,
+		Freeze,
+		DrawpadPresentation,
+		Drawpad,
+		PptBottomLeft,
+		PptBottomRight,
+		PptMiddleLeft,
+		PptMiddleRight,
+		Bar,
+		Setting,
+		DisplayObserver,
+		Count,
+	};
+
+	enum class DrawpadSurfaceVisibility : std::uint8_t
+	{
+		Primary,
+		Presentation,
+		Hidden,
+	};
+
+	enum class OverlayActivationMode : std::uint8_t
+	{
+		Presentation,
+		Whiteboard,
+	};
+
+	struct OverlayActivationStyle
+	{
+		DWORD setExStyle = 0;
+		DWORD clearExStyle = 0;
+		bool taskbarAnchor = false;
+		bool acceptsActivation = false;
+	};
+
+	[[nodiscard]] constexpr OverlayActivationStyle ResolveOverlayActivationStyle(
+		WindowRole role, OverlayActivationMode mode) noexcept
+	{
+		if (mode == OverlayActivationMode::Whiteboard)
+		{
+			if (role == WindowRole::Freeze)
+				return { WS_EX_APPWINDOW, WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+					true, true };
+			if (role == WindowRole::Drawpad)
+				return { WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, false, true };
+		}
+		return { WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, WS_EX_APPWINDOW,
+			false, false };
+	}
+
+	[[nodiscard]] constexpr bool RequiresOverlayActivationStyleTransition(
+		WindowRole role, OverlayActivationMode from,
+		OverlayActivationMode to) noexcept
+	{
+		const auto before = ResolveOverlayActivationStyle(role, from);
+		const auto after = ResolveOverlayActivationStyle(role, to);
+		return before.setExStyle != after.setExStyle
+			|| before.clearExStyle != after.clearExStyle;
+	}
+
+	struct WindowSpec
+	{
+		WindowRole role = WindowRole::Bar;
+		std::wstring className;
+		std::wstring title;
+		int x = 0;
+		int y = 0;
+		int width = 1;
+		int height = 1;
+		DWORD style = 0;
+		DWORD exStyle = 0;
+		UINT classStyle = CS_HREDRAW | CS_VREDRAW;
+		WNDPROC windowProc = nullptr;
+		HICON largeIcon = nullptr;
+		HICON smallIcon = nullptr;
+		HCURSOR cursor = nullptr;
+		HBRUSH background = nullptr;
+		bool visible = false;
+		bool bindMessages = true;
+		bool optional = false;
+		Message::BindOptions messageOptions{};
+		Message::Channel::Callback messageCallback;
+		std::function<bool()> beforeCreate;
+		std::function<void(HWND)> created;
+		std::function<void()> destroyed;
+	};
+
+	class Service
+	{
+	public:
+		explicit Service(std::size_t messageCapacity = 63);
+		~Service();
+		Service(const Service&) = delete;
+		Service& operator=(const Service&) = delete;
+		Service(Service&&) = delete;
+		Service& operator=(Service&&) = delete;
+
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs);
+		void StopAndJoin() noexcept;
+		void Stop() noexcept;
+		[[nodiscard]] bool Running() const noexcept;
+
+		[[nodiscard]] HWND Handle(WindowRole role) const noexcept;
+		[[nodiscard]] bool Ready(WindowRole role) const noexcept;
+		// Overlay ready 不包含独立生命周期的 Setting 窗口。
+		[[nodiscard]] bool AllReady() const noexcept;
+		[[nodiscard]] bool OverlayReady() const noexcept;
+		[[nodiscard]] bool SettingReady() const noexcept;
+		[[nodiscard]] DWORD OwnerThreadId(WindowRole role) const noexcept;
+		[[nodiscard]] HWND OverlayRoot() const noexcept;
+		[[nodiscard]] std::wstring Title(WindowRole role) const;
+		[[nodiscard]] static HWND LastFocusWindow() noexcept;
+
+		[[nodiscard]] bool Create(WindowSpec spec);
+		[[nodiscard]] bool Destroy(WindowRole role);
+		[[nodiscard]] bool Show(WindowRole role);
+		[[nodiscard]] bool Hide(WindowRole role);
+		[[nodiscard]] bool HideAllUserWindows();
+		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
+			DrawpadSurfaceVisibility visibility);
+		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
+		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
+		// Setting 保持顶层应用窗口，只在自身 owner thread 动态加入或离开 Drawpad owner 链。
+		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled);
+		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
+		[[nodiscard]] bool SetExtendedStyleFlags(
+			WindowRole role, DWORD setMask, DWORD clearMask);
+		// Whiteboard 统一切换 taskbar/activation 样式，所有 HWND 操作仍在 owner thread。
+		[[nodiscard]] bool EnterWhiteboardWindowMode();
+		[[nodiscard]] bool LeaveWhiteboardWindowMode();
+		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
+		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
+		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
+		[[nodiscard]] bool CancelPointerCapture();
+			[[nodiscard]] bool RequestTopmostRefresh();
+			// 成功 refresh 后在内部锁外调用；传空函数可注销并 drain 正在执行的回调。
+			void SetTopmostRefreshObserver(std::function<void()> callback);
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
+			[[nodiscard]] bool OverlayTopmost() const noexcept;
+			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen);
+			[[nodiscard]] bool OverlayFullscreen() const noexcept;
+			[[nodiscard]] bool PromotePptWindow(WindowRole role);
+
+		[[nodiscard]] bool BindMessages(
+			WindowRole role,
+			const Message::BindOptions& options = {});
+		[[nodiscard]] bool UnbindMessages(WindowRole role);
+		[[nodiscard]] bool Enqueue(WindowRole role, Message::Message message);
+		[[nodiscard]] bool Get(
+			WindowRole role,
+			Message::Message& message,
+			Message::Filter filter = Message::Filter::All,
+			DWORD timeoutMilliseconds = INFINITE);
+		[[nodiscard]] bool TryGet(
+			WindowRole role,
+			Message::Message& message,
+			Message::Filter filter = Message::Filter::All);
+		std::size_t Clear(
+			WindowRole role,
+			Message::Filter filter = Message::Filter::All);
+		[[nodiscard]] std::size_t MessageCount(WindowRole role) const noexcept;
+		[[nodiscard]] std::uint64_t DroppedMessageCount(WindowRole role) const noexcept;
+
+	private:
+		class Impl;
+		std::unique_ptr<Impl> impl_;
+	};
+
+	// 生产代码共享一个进程级窗口服务；旧交互代码按 HWND 映射到角色队列。
+	[[nodiscard]] Service& GetService() noexcept;
+	[[nodiscard]] WindowRole RoleFromHandle(HWND hwnd) noexcept;
+	[[nodiscard]] bool Enqueue(HWND hwnd, Message::Message message);
+	[[nodiscard]] bool Get(
+		HWND hwnd,
+		Message::Message& message,
+		Message::Filter filter = Message::Filter::All,
+		DWORD timeoutMilliseconds = INFINITE);
+	[[nodiscard]] bool TryGet(
+		HWND hwnd,
+		Message::Message& message,
+		Message::Filter filter = Message::Filter::All);
+	std::size_t Clear(
+		HWND hwnd,
+		Message::Filter filter = Message::Filter::All);
+}

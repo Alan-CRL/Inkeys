@@ -38,6 +38,62 @@
       "Recall": "超級回復",
       "Freeze": "定格",
       "Pierce": "穿透"
+    },
+    "Bar":
+    {
+      "BottomDock":
+      {
+        "Mode": "底欄模式",
+        "Centered": "置中"
+      },
+      "EraserAttributes":
+      {
+        "ClearCanvasLabel": "清空",
+        "ClearCanvasHint": "清空目前畫布註記",
+        "AutomaticLabel": "自動粗細",
+        "SensitivityLabel": "靈敏度",
+        "LowLabel": "低",
+        "MediumLabel": "中",
+        "HighLabel": "高",
+        "SmallSize": "小號",
+        "MediumSize": "中號",
+        "LargeSize": "大號",
+        "BaseSizeHint": "自動模式時作為基礎大小",
+        "MixedHint": "各裝置設定不同\n按一下統一開啟自動粗細",
+        "SettingsHint": "自動粗細設定，暫未開放"
+      }
+    }
+  },
+  "Dialogs":
+  {
+    "Common":
+    {
+      "TipsTitle": "Inkeys 提示",
+      "ErrorTitle": "Inkeys 錯誤",
+      "OK": "確定",
+      "Cancel": "取消",
+      "Yes": "是",
+      "No": "否"
+    },
+    "EndPresentation":
+    {
+      "Body": "目前處於繪圖模式。結束放映將清除畫布內容。\n確定要結束放映嗎？"
+    },
+    "WindowCreationFailed":
+    {
+      "Body": "Inkeys 意外結束：程式視窗建立失敗或遭到攔截。請重新啟動 Inkeys 後再試一次。(#5)"
+    },
+    "UpdateModuleUnavailable":
+    {
+      "Body": "自動更新模組尚未啟動，這表示目前版本不是官方發行版本。\n請前往「軟體版本」並選擇「修復軟體」。"
+    },
+    "CloseInkeys":
+    {
+      "Body": "確定要關閉 Inkeys 嗎？"
+    },
+    "Crash":
+    {
+      "Body": "Inkeys 發生問題。選擇「確定」以重新啟動 Inkeys 並嘗試復原。"
     }
   },
   "SettingsUI":
@@ -67,7 +123,7 @@
           "zh-CN": "简体中文",
           "zh-TW": "繁體中文(Beta)"
         },
-        "Warn": "需要重新啟動軟體才能完全生效，是否重啟？"
+        "Warn": "語言變更需要重新啟動 Inkeys 才能完全生效。是否立即重新啟動？"
       }
     },
     "Configuration":
@@ -82,8 +138,8 @@
       "CanvasSave":
       {
         "N": "畫布保存",
-        "Enable": "啟用歷史畫布保存",
-        "EnableE": "儲存在程式目錄下 ScreenShot 資料夾內，並供「超級回復」使用歷史畫布。",
+        "Enable": "啟用桌面畫布自動儲存",
+        "EnableE": "清空桌面畫布或結束軟體時，自動儲存非空畫布，供後續從歷史畫布還原。",
         "SaveTime":
         {
           "N": "保存時長",
@@ -184,6 +240,7 @@
         "N": "開機自動執行與啟動行為",
         "AutoStart": "開機自動啟動",
         "AutoStartE": "設為目前用戶帳戶開機時啟動 智绘教Inkeys。",
+        "LoadingAnimation": "啟動載入動畫",
         "Link":
         {
           "N": "建立桌面捷徑",
@@ -194,6 +251,14 @@
       "Appearance":
       {
         "N": "外觀樣式",
+        "AnimationEnable": "啟用動畫",
+        "AnimationEnableE": "關閉後，UI3 主列動畫將立即完成。",
+        "AnimationRate": "動畫速率",
+        "AnimationRateE": "調整 UI3 主列動畫速率，範圍為 0.1x–5.0x。",
+        "EdgeLighting": "邊緣光影",
+        "EdgeLightingE": "關閉後僅保留基礎邊框，停用點光與柔光效果。",
+        "DynamicEdgeLighting": "動態邊緣光影",
+        "DynamicEdgeLightingE": "光影將動態跟隨游標位置",
         "Theme":
         {
           "N": "主題",
@@ -242,8 +307,6 @@
       "Tentative":
       {
         "N": "實驗選項",
-        "AvoidFulScreen": "避免全螢幕顯示",
-        "AvoidFulScreenE": "[需要重啟軟體]軟體在非繪圖模式或穿透模式下不會保持全螢幕顯示。這可確保自動隱藏式任務列可正常升起，可能可降低置頂失敗問題，還可能改善任務列無法被觸控的問題。",
         "SafeMode":
         {
           "N": "教學安全選項",
@@ -269,76 +332,56 @@
           "MousePen": "滑鼠、手寫筆或數位板"
         }
       },
-      "AIDraw":
+      "Eraser":
       {
-        "N": "智慧繪圖",
-        "PenUp": "擡筆拉直直線",
-        "PenUpE": "目前僅推薦於教學一體機使用。",
-        "PenStay": "停留拉直直線",
-        "PenStayE": "繪製直線完成後按住一秒，直線將被拉直。",
-        "EndpointAdsorption": "端點吸附",
-        "EndpointAdsorptionE": "直線和矩形端點將在擡筆時吸附。"
-      },
-      "DrawBehavior":
-      {
-        "N": "繪圖行為",
-        "SoomthWriting": "擡筆平滑筆跡"
-      },
-      "RubberThickness":
-      {
-        "N": "橡皮粗細",
-        "Calc":
+        "N": "橡皮擦",
+        "Automatic": "自動粗細總開關",
+        "Input":
         {
-          "N": "橡皮粗細計算方式",
-          "E": "若裝置不支援當前選項，軟體會嘗試下個粗細計算方式。",
-          "Mode1": "固定粗細",
-          "Mode2": "筆速粗細",
-          "Mode3": "壓感粗細"
-        }
-      },
-      "Tentative":
-      {
-        "N": "實驗選項",
-        "HideCursor": "繪圖時隱藏觸控遊標(BETA)",
-        "HideCursorE": "阻止觸控遊標（白色圓點）在畫布上顯示。但是當滑鼠與手寫筆訊號出現時，會恢復顯示滑鼠／筆遊標。"
-      }
-    },
-    "Performance":
-    {
-      "N": "效能",
-      "DrawMode":
-      {
-        "N": "繪圖效能",
-        "Prepare":
-        {
-          "N": "落筆預備",
-          "E": "越大時越多手指落下會更快開始繪圖，但會佔用更多記憶體。",
-          "Ind": "{:d} 指"
+          "MouseLeft": "滑鼠左鍵",
+          "MouseRight": "滑鼠右鍵",
+          "Touch": "觸控",
+          "PenTip": "筆（筆尖）",
+          "PenTail": "筆尾"
         },
-        "SuperDraw": "極限效能繪圖(BETA)",
-        "SuperDrawE": "僅適用於配備強力 CPU 的裝置（重要！否則將造成延遲卡頓）。繪圖模式下取消畫布渲染間隔，額外效能耗損僅於繪圖產生（卽非選擇狀態中）。若發現描繪延遲高、不跟手，請關閉此選項。"
+        "Kind":
+        {
+          "Fixed": "固定粗細",
+          "Speed": "筆速橡皮"
+        },
+        "ResponseFor": "筆速回應適用於",
+        "Response":
+        {
+          "Auto": "自動識別",
+          "ScreenPen": "螢幕筆",
+          "Digitizer": "數位板"
+        },
+        "TouchArea":
+        {
+          "N": "適用於觸控筆速橡皮的接觸面積輔助",
+          "E": "使橡皮粗細始終略大於手指（避免手指遮住橡皮游標），不建議大螢幕裝置啟用。"
+        }
       }
     },
-    "Preset":
+    "Experimental":
     {
-      "N": "預設",
-      "Memory":
+      "ConsoleOutput":
       {
-        "N": "記憶",
-        "Thickness": "記憶繪圖粗細",
-        "ThicknessE": "啟動軟體時讓畫筆與螢光筆粗細與離開時一致。",
-        "Color": "記憶繪圖顏色",
-        "ColorE": "啟動軟體時讓畫筆與螢光筆顏色與離開時一致。"
-      },
-      "Preset":
-      {
-        "N": "預設（未啟動對應繪圖記憶時生效）",
-        "AutoThickness": "自適應繪圖粗細",
-        "AutoThicknessE": "啟動時，根據螢幕解析度和實體尺寸自動設定推薦粗細。（畫筆當前為{}px；螢光筆當前為{}px）",
-        "Pen": "預設畫筆粗細",
-        "PenInd": "{} px",
-        "Highlighter": "預設螢光筆粗細",
-        "HighlighterInd": "{} px"
+        "TouchArea":
+        {
+          "N": "觸控面積 主控台輸出",
+          "E": "下次啟動時向主控台輸出觸控面積相關資訊。"
+        },
+        "PptCOM":
+        {
+          "N": "PptCOM 主控台輸出",
+          "E": "下次啟動時向主控台輸出 PptCOM 診斷資訊。"
+        },
+        "Draw3":
+        {
+          "N": "Draw3 主控台輸出",
+          "E": "下次啟動時向主控台輸出 Draw3 裝置與驅動程式環境。"
+        }
       }
     },
     "PlugIn":
@@ -358,8 +401,6 @@
         "BasicLogic":
         {
           "N": "基礎邏輯",
-          "InkFixation": "筆跡固定在對應頁面上",
-          "InkFixationE": "每個PPT頁面都將擁有各自獨立的畫布，並可以實現類似PPT內建畫筆的效果。翻頁不會清空之前頁面所繪製的筆跡，可以返回之前的頁面繼續繪製。",
           "LoadPage": "顯示載入頁面",
           "LoadPageE": "包含插件標識和小提示等，每個 PPT 僅顯示一次。"
         },

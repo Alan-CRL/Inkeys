@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+
 #include "IdtMain.h"
 
 enum class StateModeSelectEnum
@@ -13,7 +15,11 @@ enum class StateModeSelectEnum
 };
 enum class PenModeSelectEnum
 {
-	IdtPenBrush1,
+	// Brush1 是历史名称，当前默认工具语义为软笔；保留别名避免旧调用失效。
+	IdtPenSoftPen = 0,
+	IdtPenBrush1 = IdtPenSoftPen,
+	IdtPenHardPen,
+	IdtPenBrush2 = IdtPenHardPen,
 	IdtPenHighlighter1
 };
 enum class ShapeModeSelectEnum
@@ -33,11 +39,16 @@ public:
 	StateModeClass()
 	{
 		{
-			Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+			Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
 			Pen.Brush1.width = Pen.Brush1.widthPreset = 3;
 			Pen.Brush1.color = RGBA(255, 16, 0, 255);
 			Pen.Highlighter1.width = Pen.Highlighter1.widthPreset = 35;
 			Pen.Highlighter1.color = RGBA(255, 30, 207, 255); // TODO 后续添加透明度选项
+			Pen.Laser.widthPreset[0] = 3.0f;
+			Pen.Laser.widthPreset[1] = 5.0f;
+			Pen.Laser.widthPreset[2] = 7.0f;
+			Pen.Laser.width = Pen.Laser.widthPreset[1];
+			Pen.Laser.color = RGBA(255, 16, 0, 255);
 		}
 		{
 			Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
@@ -52,8 +63,8 @@ public:
 	StateModeSelectEnum StateModeSelect = StateModeSelectEnum::IdtSelection;
 	StateModeSelectEnum StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
 	StateModeSelectEnum StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-
-	IdtAtomic<bool> cleanPageSign = false;
+	// 记录最后选择的笔型是否为 Laser；离开 Pen 时保留，返回 Pen 时恢复。
+	bool laserActive = false;
 
 	struct
 	{
@@ -73,6 +84,14 @@ public:
 
 			float widthPreset;
 		}Highlighter1;
+		struct
+		{
+			float width;
+			// 激光颜色独立于普通笔和荧光笔，默认使用红色预设。
+			COLORREF color;
+			// 激光粗细独立于硬笔和荧光笔，固定为细/中/粗三档。
+			float widthPreset[3];
+		}Laser;
 	}Pen;
 	struct
 	{
@@ -92,16 +111,40 @@ public:
 };
 extern StateModeClass stateMode;
 
+bool IsLaserPenSelected() noexcept;
+bool IsLaserToolActive() noexcept;
 bool SetPenWidth(float targetWidth, bool setMemory = true);
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
 float GetPenWidth();
 COLORREF GetPenColor();
+float GetEffectivePenOpacity();
 
 bool ChangeStateModeToSelection();
 bool ChangeStateModeToPen();
 bool ChangeStateModeToShape();
 bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();
+// 将当前工具与显式选择模式发布到 Draw3 bridge。
+void SyncDraw3State();
+void InitializeEraserInputPreferences();
+Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot();
+void SetGlobalEraserPreference(int baseDiameterDip = -1, int sensitivity = -1, int automatic = -1);
+bool AutomaticPenResponseAvailable() noexcept;
+int EraserWidthPreference(int entry);
+int EraserPenResponsePreference(int entry);
+void SetEraserInputPreference(int entry,int kind,int penResponse = -1);
+// 按当前模式和 Draw3 当前页内容统一同步 Drawpad 显隐、穿透和 Bar。
+void ReconcileDraw3Presentation();
+
+// 白板按钮和翻页控件只提交请求，具体工作区事务由 StateMonitoring 串行执行。
+// 发布前临时关闭白板：保留所有实现和配置兼容，发版结束后改为 true 即可恢复入口。
+inline constexpr bool IsWhiteboardFeatureEnabled() noexcept { return false; }
+void RequestWhiteboardActive(bool active) noexcept;
+bool WhiteboardRequested() noexcept;
+bool WhiteboardActive() noexcept;
+bool WhiteboardTransactionActive() noexcept;
+void RequestWhiteboardPreviousPage() noexcept;
+void RequestWhiteboardNextPage() noexcept;
 
 void StateMonitoring();
 

@@ -1,0 +1,1376 @@
+#include "Draw3.Host.h"
+#include "Draw3.SpeedEraser.h"
+
+import Inkeys.Display;
+
+import Inkeys.Drawing.Draw3.contact_input;
+import Inkeys.Drawing.Draw3.pen_cursor;
+import Inkeys.Drawing.Draw3.auto_save;
+import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.ink_prediction;
+import Inkeys.Drawing.Draw3.presentation_auto_save;
+import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.realtime_stylus;
+import Inkeys.Drawing.Draw3.transparent_presentation;
+import Inkeys.Drawing.Draw3.window_control;
+
+#include <atomic>
+#include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <cstdio>
+#include <exception>
+#include <limits>
+#include <mutex>
+#include <thread>
+#include <utility>
+
+namespace Inkeys::Drawing::Draw3
+{
+	struct Host::Impl
+	{
+		Bridge::StateBridge bridge;
+		DesktopAutoSaveService autoSave;
+		PresentationAutoSaveService presentationAutoSave;
+		ContactInputCoordinator input;
+		WindowController window;
+		mutable std::mutex eraserDiagnosticsMutex;
+		SpeedEraser::Diagnostics eraserDiagnostics;
+		PenRuntimeDiagnostics penDiagnostics;
+		mutable std::mutex displayMutex;
+		SpeedEraser::DevelopmentOptions eraserDevelopment;
+		SpeedEraser::ContactAreaSample hiddenContactArea;
+		std::atomic_bool touchAreaTraceEnabled = false;
+		std::atomic_uint64_t touchAreaTraceRevision = 0;
+		uint64_t observedTouchAreaTraceRevision = 0;
+		std::chrono::steady_clock::time_point lastTouchAreaMetadataTrace{};
+		SpeedEraser::InputSource lastTouchAreaMetadataSource;
+		bool touchAreaMetadataPending = true;
+		std::chrono::steady_clock::time_point lastTouchAreaTrace{};
+		bool touchAreaTraceWasEnabled = false, lastTracedContact = false;
+		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
+		Inkeys::Display::Subscription displaySubscription;
+		std::atomic_bool displayScaleDirty = false;
+		RECT appliedDisplayClientBounds{};
+		GraphicsDeviceResources graphics;
+		InkRenderer renderer;
+		TransparentPresentationController presentation;
+		RealTimeStylusInput stylus;
+		std::unique_ptr<DrawingController> drawing;
+		std::jthread drawingThread;
+		std::atomic_bool running = false;
+		std::atomic_bool firstFrameReady = false;
+		std::atomic<HWND> attachedWindow = nullptr;
+		std::atomic<HWND> attachedPresentationWindow = nullptr;
+		std::atomic<HostPresentationMode> presentationMode = HostPresentationMode::Automatic;
+		std::atomic<std::uint64_t> presentCount = 0;
+		std::atomic<std::uint64_t> successfulPresentCount = 0;
+		std::atomic<std::uint64_t> partialPresentCount = 0;
+		std::atomic<std::uint64_t> resizeCount = 0;
+		std::atomic<std::uint64_t> clearCommandCount = 0;
+		std::atomic<std::uint64_t> undoCommandCount = 0;
+		std::atomic<std::uint64_t> redoCommandCount = 0;
+		std::atomic<std::uint64_t> nextPageCommandCount = 0;
+		std::atomic<std::uint64_t> previousPageCommandCount = 0;
+		std::atomic<std::uint64_t> ulwDirtyRectPresentCount = 0;
+		std::atomic<std::uint64_t> ulwPremultipliedAlphaFailureCount = 0;
+		std::atomic_bool ulwTransparentFullFrameVerified = false;
+		std::atomic_bool lastPresentSucceeded = false;
+		std::atomic<int> committedWidth = 0;
+		std::atomic<int> committedHeight = 0;
+		std::atomic<std::size_t> currentPageIndex = 0;
+		std::atomic<std::size_t> pageCount = 0;
+		std::atomic_bool currentPageHasContent = false;
+		std::atomic<std::uint64_t> contentRevision = 0;
+		std::atomic_bool selectionMode = true;
+		std::atomic<Bridge::Workspace> workspace = Bridge::Workspace::Desktop;
+		mutable std::mutex presentationTargetMutex;
+		std::optional<Bridge::PresentationReadyIdentity> readyPresentationTarget;
+		std::atomic<HostOutputTarget> requestedOutputTarget =
+			HostOutputTarget::PrimaryDrawpad;
+		std::atomic<std::uint64_t> requestedOutputRevision = 0;
+		std::atomic<HostOutputTarget> readyOutputTarget =
+			HostOutputTarget::PrimaryDrawpad;
+		std::atomic<std::uint64_t> readyOutputRevision = 0;
+		std::atomic<std::uint64_t> presentedContentRevision = 0;
+		std::atomic_bool auxiliaryFullFrameClean = false;
+		Detail::HostRuntimeRevisionSignal runtimeRevision;
+		Detail::HostDrawingActivityState drawingActivity;
+		std::atomic<LONG> lastDirtyLeft = 0;
+		std::atomic<LONG> lastDirtyTop = 0;
+		std::atomic<LONG> lastDirtyRight = 0;
+		std::atomic<LONG> lastDirtyBottom = 0;
+		bool hiddenTestContactInjectionEnabled = false;
+		std::uint64_t appliedBridgeRevision = (std::numeric_limits<std::uint64_t>::max)();
+		bool requestedProductPage = false;
+		std::uint32_t requestedProductPageIndex = 0;
+		std::uint64_t requestedPresentationTargetRevision = 0;
+		HostStyleCallbacks styleCallbacks = {};
+		HostRuntimeCallbacks runtimeCallbacks = {};
+		HostStartOptions startOptions = {};
+		std::mutex startupMutex;
+		std::condition_variable startupCondition;
+		mutable std::mutex contentMutex;
+		mutable std::condition_variable contentCondition;
+		std::mutex exitAutoSaveMutex;
+		std::condition_variable exitAutoSaveCondition;
+		bool exitAutoSavePrepared = false;
+		bool graphicsReady = false;
+		bool stylusDecision = false;
+		bool stylusSucceeded = false;
+		bool startupCompleted = false;
+		bool startupSucceeded = false;
+
+		static HostPresentationMode ToHostMode(TransparentPresentMode mode) noexcept
+		{
+			switch (mode)
+			{
+			case TransparentPresentMode::UlwDirtyRect: return HostPresentationMode::UlwDirtyRect;
+			case TransparentPresentMode::DirectCompositionVisualTree:
+				return HostPresentationMode::DirectCompositionVisualTree;
+			case TransparentPresentMode::DwmBlurBehind: return HostPresentationMode::DwmBlurBehind;
+			case TransparentPresentMode::DwmBlurBehind2: return HostPresentationMode::DwmBlurBehind2;
+			default: return HostPresentationMode::Automatic;
+			}
+		}
+
+		static bool IsRequiredMode(HostPresentationMode mode) noexcept
+		{
+			return mode != HostPresentationMode::Automatic;
+		}
+
+		static HostOutputTarget ToHostOutputTarget(
+			TransparentOutputTarget target) noexcept
+		{
+			return target == TransparentOutputTarget::SelectionUlw
+				? HostOutputTarget::SelectionUlw
+				: HostOutputTarget::PrimaryDrawpad;
+		}
+
+		void PublishRuntimeRevision() noexcept
+		{
+			runtimeRevision.Publish();
+		}
+
+		static TransparentPresentMode ToTransparentMode(HostPresentationMode mode) noexcept
+		{
+			switch (mode)
+			{
+			case HostPresentationMode::UlwDirtyRect: return TransparentPresentMode::UlwDirtyRect;
+			case HostPresentationMode::DwmBlurBehind: return TransparentPresentMode::DwmBlurBehind;
+			case HostPresentationMode::DwmBlurBehind2: return TransparentPresentMode::DwmBlurBehind2;
+			case HostPresentationMode::DirectCompositionVisualTree:
+			default: return TransparentPresentMode::DirectCompositionVisualTree;
+			}
+		}
+
+		void ResetRuntimeDiagnostics()
+		{
+			presentationMode.store(HostPresentationMode::Automatic, std::memory_order_release);
+			presentCount.store(0, std::memory_order_release);
+			successfulPresentCount.store(0, std::memory_order_release);
+			partialPresentCount.store(0, std::memory_order_release);
+			resizeCount.store(0, std::memory_order_release);
+			clearCommandCount.store(0, std::memory_order_release);
+			undoCommandCount.store(0, std::memory_order_release);
+			redoCommandCount.store(0, std::memory_order_release);
+			nextPageCommandCount.store(0, std::memory_order_release);
+			previousPageCommandCount.store(0, std::memory_order_release);
+			ulwDirtyRectPresentCount.store(0, std::memory_order_release);
+			ulwPremultipliedAlphaFailureCount.store(0, std::memory_order_release);
+			ulwTransparentFullFrameVerified.store(false, std::memory_order_release);
+			lastPresentSucceeded.store(false, std::memory_order_release);
+			currentPageIndex.store(0, std::memory_order_release);
+			pageCount.store(0, std::memory_order_release);
+			currentPageHasContent.store(false, std::memory_order_release);
+			contentRevision.store(0, std::memory_order_release);
+			selectionMode.store(true, std::memory_order_release);
+			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				readyPresentationTarget.reset();
+			}
+			requestedOutputTarget.store(
+				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
+			requestedOutputRevision.store(0, std::memory_order_release);
+			readyOutputTarget.store(
+				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
+			readyOutputRevision.store(0, std::memory_order_release);
+			presentedContentRevision.store(0, std::memory_order_release);
+			auxiliaryFullFrameClean.store(false, std::memory_order_release);
+			runtimeRevision.Reset();
+			drawingActivity.Reset();
+			lastDirtyLeft.store(0, std::memory_order_release);
+			lastDirtyTop.store(0, std::memory_order_release);
+			lastDirtyRight.store(0, std::memory_order_release);
+			lastDirtyBottom.store(0, std::memory_order_release);
+			appliedBridgeRevision = (std::numeric_limits<std::uint64_t>::max)();
+			requestedProductPage = false;
+			requestedProductPageIndex = 0;
+			requestedPresentationTargetRevision = 0;
+			{
+				std::scoped_lock lock(exitAutoSaveMutex);
+				exitAutoSavePrepared = false;
+			}
+		}
+
+		static void ObservePresented(void* context, bool succeeded, RECT dirty,
+			bool presentFull, TransparentPresentObservation observation)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			// 运行期设备恢复可能切换透明后端，快照和窗口语义随真实 presenter 更新。
+			self->presentationMode.store(ToHostMode(self->presentation.ActiveMode()),
+				std::memory_order_release);
+			self->window.SetGpuTransparentComposition(
+				self->presentation.IsGpuTransparentComposition());
+			self->presentCount.fetch_add(1, std::memory_order_acq_rel);
+			if (succeeded) self->successfulPresentCount.fetch_add(1, std::memory_order_acq_rel);
+			if (!presentFull) self->partialPresentCount.fetch_add(1, std::memory_order_acq_rel);
+			self->lastPresentSucceeded.store(succeeded, std::memory_order_release);
+			self->lastDirtyLeft.store(dirty.left, std::memory_order_relaxed);
+			self->lastDirtyTop.store(dirty.top, std::memory_order_relaxed);
+			self->lastDirtyRight.store(dirty.right, std::memory_order_relaxed);
+			self->lastDirtyBottom.store(dirty.bottom, std::memory_order_relaxed);
+			bool runtimeChanged = false;
+			const HostOutputTarget outputTarget =
+				ToHostOutputTarget(observation.outputTarget);
+			runtimeChanged = self->requestedOutputTarget.exchange(
+				outputTarget, std::memory_order_acq_rel) != outputTarget || runtimeChanged;
+			runtimeChanged = self->requestedOutputRevision.exchange(
+				observation.outputRevision, std::memory_order_acq_rel) !=
+				observation.outputRevision || runtimeChanged;
+			if (succeeded)
+			{
+				runtimeChanged = self->presentedContentRevision.exchange(
+					observation.presentedContentRevision, std::memory_order_acq_rel) !=
+					observation.presentedContentRevision || runtimeChanged;
+				if (presentFull)
+				{
+					runtimeChanged = self->readyOutputTarget.exchange(
+						outputTarget, std::memory_order_acq_rel) != outputTarget || runtimeChanged;
+					runtimeChanged = self->readyOutputRevision.exchange(
+						observation.outputRevision, std::memory_order_acq_rel) !=
+						observation.outputRevision || runtimeChanged;
+				}
+				if (outputTarget == HostOutputTarget::SelectionUlw)
+				{
+					bool clean = self->auxiliaryFullFrameClean.load(
+						std::memory_order_acquire);
+					if (observation.fullFrameAllZeroAlpha) clean = true;
+					else if (presentFull || !observation.updatedRegionAllZeroAlpha) clean = false;
+					runtimeChanged = self->auxiliaryFullFrameClean.exchange(
+						clean, std::memory_order_acq_rel) != clean || runtimeChanged;
+				}
+			}
+			if (observation.ulw)
+			{
+				if (observation.usedDirtyRect)
+					self->ulwDirtyRectPresentCount.fetch_add(1, std::memory_order_acq_rel);
+				if (!observation.premultipliedAlphaValid)
+					self->ulwPremultipliedAlphaFailureCount.fetch_add(1, std::memory_order_acq_rel);
+				if (observation.fullFrameAllZeroAlpha)
+					self->ulwTransparentFullFrameVerified.store(true, std::memory_order_release);
+			}
+			if (runtimeChanged) self->PublishRuntimeRevision();
+		}
+
+		static void ObserveResized(void* context, int width, int height)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			self->committedWidth.store(width, std::memory_order_release);
+			self->committedHeight.store(height, std::memory_order_release);
+			self->resizeCount.fetch_add(1, std::memory_order_acq_rel);
+		}
+
+		static void ObserveCommand(void* context, CanvasCommandType type,
+			std::size_t currentPage, std::size_t pages)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			const std::size_t previousPage = self->currentPageIndex.exchange(
+				currentPage, std::memory_order_acq_rel);
+			const std::size_t previousCount = self->pageCount.exchange(
+				pages, std::memory_order_acq_rel);
+			switch (type)
+			{
+			case CanvasCommandType::Clear:
+				self->clearCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
+			case CanvasCommandType::Undo:
+				self->undoCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
+			case CanvasCommandType::Redo:
+				self->redoCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
+			case CanvasCommandType::NextPage:
+				self->nextPageCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
+			case CanvasCommandType::PreviousPage:
+				self->previousPageCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
+			case CanvasCommandType::PrepareExitAutoSave:
+				{
+					std::scoped_lock lock(self->exitAutoSaveMutex);
+					self->exitAutoSavePrepared = true;
+				}
+				self->exitAutoSaveCondition.notify_all();
+				break;
+			default: break;
+			}
+			(void)self->runtimeRevision.PublishPageChange(
+				previousPage, previousCount, currentPage, pages);
+		}
+
+		static void ObserveDocument(void* context, std::size_t currentPage, std::size_t pages)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			const std::size_t previousPage = self->currentPageIndex.exchange(
+				currentPage, std::memory_order_acq_rel);
+			const std::size_t previousCount = self->pageCount.exchange(
+				pages, std::memory_order_acq_rel);
+			(void)self->runtimeRevision.PublishPageChange(
+				previousPage, previousCount, currentPage, pages);
+		}
+
+		static void ObserveCurrentPageContent(
+			void* context, bool hasContent, std::uint64_t revision)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			{
+				std::scoped_lock lock(self->contentMutex);
+				if (self->currentPageHasContent.load(
+					std::memory_order_relaxed) == hasContent) return;
+				self->currentPageHasContent.store(hasContent, std::memory_order_release);
+				self->contentRevision.store(revision, std::memory_order_release);
+			}
+			self->contentCondition.notify_all();
+			self->PublishRuntimeRevision();
+		}
+
+		static void ObserveWorkspace(void* context, Bridge::Workspace value,
+			std::size_t currentPage, std::size_t pages,
+			const Bridge::PresentationReadyIdentity* presentationTarget)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			self->workspace.store(value, std::memory_order_release);
+			self->currentPageIndex.store(currentPage, std::memory_order_release);
+			self->pageCount.store(pages, std::memory_order_release);
+			{
+				std::scoped_lock lock(self->presentationTargetMutex);
+				self->readyPresentationTarget = presentationTarget
+					? std::optional<Bridge::PresentationReadyIdentity>(*presentationTarget)
+					: std::nullopt;
+			}
+			self->requestedProductPage = false;
+			self->requestedPresentationTargetRevision = presentationTarget
+				? presentationTarget->targetRevision : 0;
+			self->PublishRuntimeRevision();
+			const Bridge::ProductState desiredState = self->bridge.Snapshot();
+			const Bridge::Workspace desired = desiredState.workspace;
+			if (desired != value)
+			{
+				// 活动 contact 延迟期间目标可能再次变化；确认旧请求后立即补发最新目标。
+				CanvasCommand workspaceCommand;
+				workspaceCommand.type = CanvasCommandType::SetWorkspace;
+				workspaceCommand.workspace = static_cast<std::uint8_t>(desired);
+				self->window.EnqueueCanvasCommand(workspaceCommand);
+			}
+			else if (desired == Bridge::Workspace::Presentation &&
+				desiredState.presentationTarget && (!presentationTarget ||
+					desiredState.presentationTarget->targetRevision !=
+						presentationTarget->targetRevision))
+			{
+				CanvasCommand targetCommand;
+				targetCommand.type = CanvasCommandType::SetPresentationTarget;
+				targetCommand.presentationTarget = desiredState.presentationTarget;
+				self->window.EnqueueCanvasCommand(std::move(targetCommand));
+			}
+		}
+
+		static bool ObserveDesktopAutoSave(void* context,
+			DesktopAutoSaveTrigger trigger,
+			draw3::uink::Draw3UInkExportSnapshot&& snapshot)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return false;
+			const DesktopAutoSaveSubmitStatus status = self->autoSave.Submit(
+				trigger, std::move(snapshot));
+			if (status == DesktopAutoSaveSubmitStatus::Accepted ||
+				status == DesktopAutoSaveSubmitStatus::Existing) return true;
+			const char* reason = status == DesktopAutoSaveSubmitStatus::Closed
+				? "closed" : "invalid";
+			std::fprintf(stderr,
+				"[Draw3.AutoSave] action=submit trigger=%s result=failed reason=%s\n",
+				trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", reason);
+			return false;
+		}
+
+		static bool ObserveDesktopLoad(void* context,
+			draw3::uink::UInkGuid fileGuid)
+		{
+			auto* self = static_cast<Impl*>(context);
+			return self && self->autoSave.SubmitLoad(std::move(fileGuid)) ==
+				DesktopAutoSaveSubmitStatus::Accepted;
+		}
+
+		static bool ObservePresentationSave(void* context,
+			PresentationSaveRequest&& request)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return false;
+			const auto status = self->presentationAutoSave.SubmitSave(std::move(request));
+			if (status == PresentationPersistenceSubmitStatus::Accepted ||
+				status == PresentationPersistenceSubmitStatus::ReplacedPending) return true;
+			std::fputs("[Draw3.Presentation] action=save_submit result=failed\n", stderr);
+			return false;
+		}
+
+		static bool ObservePresentationLoad(void* context,
+			PresentationLoadRequest&& request)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return false;
+			if (self->presentationAutoSave.SubmitLoad(std::move(request)) ==
+				PresentationPersistenceSubmitStatus::Accepted) return true;
+			std::fputs("[Draw3.Presentation] action=load_submit result=failed\n", stderr);
+			return false;
+		}
+
+		static void WakeForPresentationPersistence(void* context) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self) (void)self->input.PublishControlWake();
+		}
+
+
+		static void ObservePenDiagnostics(void* context, const PenRuntimeDiagnostics& value)
+		{
+			auto* self = static_cast<Impl*>(context);
+			// 复用诊断快照锁；只有隐藏测试安装此回调，产品绘制帧不增加锁开销。
+			std::scoped_lock lock(self->eraserDiagnosticsMutex);
+			self->penDiagnostics = value;
+		}
+
+		static void ObserveEraserDiagnostics(void* context,const SpeedEraser::Diagnostics& value)
+		{
+			auto* self=static_cast<Impl*>(context);
+			uint64_t sequence=0;
+			{
+				std::scoped_lock lock(self->eraserDiagnosticsMutex);
+				sequence=self->eraserDiagnostics.frameSequence+1;
+				self->eraserDiagnostics=value;
+				self->eraserDiagnostics.frameSequence=sequence;
+			}
+			if(!self->touchAreaTraceEnabled.load(std::memory_order_relaxed))
+			{self->touchAreaTraceWasEnabled=false;return;}
+			const auto now=std::chrono::steady_clock::now();
+			const bool contact=value.eraserContact;
+			const auto traceRevision=self->touchAreaTraceRevision.load(std::memory_order_relaxed);
+			const bool newlyEnabled=!self->touchAreaTraceWasEnabled || traceRevision!=self->observedTouchAreaTraceRevision;
+			self->observedTouchAreaTraceRevision=traceRevision;
+			const bool touch=value.inputType==static_cast<uint32_t>(InputDeviceType::Touch) &&
+				value.inputSource.contextId!=0;
+			if(newlyEnabled || (touch && value.inputSource!=self->lastTouchAreaMetadataSource))
+				self->touchAreaMetadataPending=true;
+			if(self->touchAreaMetadataPending && (newlyEnabled ||
+				now-self->lastTouchAreaMetadataTrace>=std::chrono::seconds(1)))
+			{
+				const auto source=touch?value.inputSource:SpeedEraser::InputSource{};
+				self->touchAreaMetadataPending=!self->stylus.TraceTouchAreaDiagnostics(source);
+				self->lastTouchAreaMetadataTrace=now;
+				if(!self->touchAreaMetadataPending)self->lastTouchAreaMetadataSource=source;
+			}
+			const bool edge=newlyEnabled || contact!=self->lastTracedContact;
+			if(!edge && (!contact || now-self->lastTouchAreaTrace<std::chrono::milliseconds(250)))return;
+			const char* event=newlyEnabled?"enabled":contact!=self->lastTracedContact?
+				(contact?"begin":"end"):"sample";
+			self->touchAreaTraceWasEnabled=true;self->lastTracedContact=contact;self->lastTouchAreaTrace=now;
+			const auto& d=value;const auto& a=d.contactArea;const auto& source=d.inputSource;
+			const bool requested=self->window.TouchContactAreaAssistance();
+			const char* gate=!contact?"no-eraser-contact":!d.active?"not-speed-eraser":
+				!requested?"option-off":!a.enabled?"waiting-new-contact-batch":
+				d.inputType!=static_cast<uint32_t>(InputDeviceType::Touch)?"not-touch-input":
+				source.kind!=SpeedEraser::SourceKind::Touch?"touch-relationship-unknown":
+				!d.inputMapped?"display-mapping-unknown":
+				a.sample.units!=SpeedEraser::ContactAreaUnits::CanvasPixels?"area-units-unusable":
+				!a.sampleValid?"area-rejected":!a.referenceReady?"waiting-stable-drag":
+				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
+				!a.active?"waiting-accepted-movement":"area-floor-active";
+			std::fprintf(stderr,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
+				static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
+				d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
+				d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
+				d.firstPointRadiusPx,d.cursorDiameterPx,d.nextRadiusPx);
+			char text[3072]{};
+			if(!d.active)
+			{
+				std::snprintf(text,sizeof(text),"[TouchArea] seq=%llu event=%s gate=%s contact=%d inputType=%u source=%s cursorPx=%.3f requested=%d\n",
+					static_cast<unsigned long long>(sequence),event,gate,contact,d.inputType,
+					SpeedEraser::SourceKindName(source.kind),d.cursorDiameterPx,requested);
+				OutputDebugStringA(text);std::fputs(text,stderr);return;
+			}
+			std::snprintf(text,sizeof(text),
+				"[TouchArea] seq=%llu event=%s gate=%s contact=%d speedMode=%d inputType=%u source=%s recognition=%u tcid=%u cid=%u sourceGen=%llu\n"
+				"[TouchArea] seq=%llu model=%s scale=%s unit=%s monitor=%p mappedMonitor=%p mapped=%d mappedRect=(%d,%d,%d,%d) pixels=%dx%d dpi=%.1fx%.1f DIP/px=%.6fx%.6f motion/px=%.6fx%.6f rho=%.6f manualCm=%.1fx%.1f displayGen=%llu/%llu\n"
+				"[TouchArea] seq=%llu requested=%d latched=%d raw=%.3fx%.3f convertedPx=%.3fx%.3f units=%s DIP=%.3fx%.3f valid=%d reason=%s ready=%d fresh=%d unlocked=%d stableMs=%.1f refFloor=%.3f acceptedFloor=%.3f areaActive=%d speed=%.3f evidenceMs=%.1f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f nextRadiusPx=%.3f historyRadiusPx=%.3f points=%llu idleMs=%.1f animate=%d\n",
+				static_cast<unsigned long long>(sequence),event,gate,contact,d.active,d.inputType,
+				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),source.contextId,source.cursorId,static_cast<unsigned long long>(source.generation),
+				static_cast<unsigned long long>(sequence),SpeedEraser::ResponseModelName(d.response),SpeedEraser::ScaleSourceName(d.motionSource),SpeedEraser::MotionUnitName(d.motionUnit),
+				reinterpret_cast<void*>(d.monitor),reinterpret_cast<void*>(source.mappedMonitor),d.inputMapped,
+				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,d.pixelWidth,d.pixelHeight,d.dpiX,d.dpiY,
+				d.dipPerPixelX,d.dipPerPixelY,d.motionPerPixelX,d.motionPerPixelY,d.rhoMmPerDip,d.manualWidthCm,d.manualHeightCm,
+				static_cast<unsigned long long>(d.displayGeneration),static_cast<unsigned long long>(d.displayRevision),
+				static_cast<unsigned long long>(sequence),requested,a.enabled,a.sample.rawWidth,a.sample.rawHeight,a.sample.widthPx,a.sample.heightPx,
+				SpeedEraser::ContactAreaUnitsName(a.sample.units),a.widthDip,a.heightDip,a.sampleValid,SpeedEraser::ContactAreaReasonName(a.reason),
+				a.referenceReady,a.referenceFresh,d.touchUnlocked,a.stableMotionSeconds*1000,a.referenceFloorDip,a.activeFloorDip,a.active,
+				d.speed,d.evidenceSeconds*1000,d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.historyRadiusPx,
+				static_cast<unsigned long long>(d.realPointCount),d.idleSeconds*1000,d.needsAnimation);
+			std::fprintf(stderr,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
+				static_cast<unsigned long long>(sequence),d.fine.speed,SpeedEraser::MotionUnitName(d.motionUnit),
+				d.fine.held,d.fine.enterProgress,d.fine.releaseProgress,d.fine.changeProgress,d.fine.direction,
+				d.targetDiameterDip,d.effectiveDiameterDip,a.activeFloorDip,d.needsAnimation);
+			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
+			OutputDebugStringA(text);
+			std::fputs(text,stderr);
+		}
+
+		static void ObserveDrawingActivity(void* context, bool active) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			(void)self->drawingActivity.Publish(active,
+				self->runtimeCallbacks.context,
+				self->runtimeCallbacks.drawingActivityChanged);
+		}
+
+		void EndDrawingActivity() noexcept
+		{
+			(void)drawingActivity.EndIfActive(runtimeCallbacks.context,
+				runtimeCallbacks.drawingActivityChanged);
+		}
+
+		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
+		{
+			const auto* callbacks = static_cast<const HostStyleCallbacks*>(context);
+			// 无产品宿主时允许隐藏测试使用既有样式；产品宿主必须提供 Window Service 回调。
+			return !callbacks || !callbacks->setExtendedStyleFlags ||
+				callbacks->setExtendedStyleFlags(callbacks->context, setMask, clearMask);
+		}
+
+
+		void PublishDisplaySnapshot(Inkeys::Display::SnapshotPtr snapshot)
+		{
+			{
+				std::scoped_lock lock(displayMutex);
+				pendingDisplaySnapshot = std::move(snapshot);
+			}
+			displayScaleDirty.store(true, std::memory_order_release);
+			(void)input.PublishControlWake();
+		}
+
+		void PumpDisplayScale()
+		{
+			if (!displayScaleDirty.exchange(false, std::memory_order_acq_rel)) return;
+			Inkeys::Display::SnapshotPtr snapshot;
+			SpeedEraser::DevelopmentOptions development;
+			{
+				std::scoped_lock lock(displayMutex);
+				snapshot = pendingDisplaySnapshot;
+				development = eraserDevelopment;
+			}
+			const HWND hwnd = attachedWindow.load(std::memory_order_acquire);
+			SpeedEraser::DisplayScale scale;
+			scale.development = development;
+			window.SetTouchContactAreaAssistance(development.touchContactAreaAssistance);
+			scale.development.touchAreaTrace=false;
+			touchAreaTraceEnabled.store(development.touchAreaTrace,std::memory_order_relaxed);
+			scale.development.touchContactAreaAssistance=false; // 面积开关不属于 Mouse/Pen 的显示标尺。
+			window.SetEraserDiagnosticsEnabled(development.diagnostics || development.touchAreaTrace || hiddenTestContactInjectionEnabled || startOptions.enableEraserDiagnostics);
+			scale.generation = snapshot ? snapshot->generation : 0;
+			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
+			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
+			const auto* monitor = snapshot ? snapshot->Find(monitorHandle) : nullptr;
+			RECT clientBounds{};
+			POINT origin{};
+			const bool clientKnown = hwnd && GetClientRect(hwnd, &clientBounds) && ClientToScreen(hwnd, &origin);
+			if (clientKnown) OffsetRect(&clientBounds, origin.x, origin.y);
+			if (monitor)
+			{
+				scale.dipPerPixelX = 96.0f / (monitor->effectiveDpiX ? monitor->effectiveDpiX : 96u);
+				scale.dipPerPixelY = 96.0f / (monitor->effectiveDpiY ? monitor->effectiveDpiY : 96u);
+				scale.pixelWidth=monitor->pixelWidth;scale.pixelHeight=monitor->pixelHeight;
+				scale.desktopLeft=monitor->bounds.left;scale.desktopTop=monitor->bounds.top;
+				scale.orientation=monitor->orientation;
+				scale.logicalOutputKnown=!snapshot->fallback && !monitor->fallback && clientKnown &&
+					clientBounds.left>=monitor->bounds.left && clientBounds.top>=monitor->bounds.top &&
+					clientBounds.right<=monitor->bounds.right && clientBounds.bottom<=monitor->bounds.bottom;
+				scale.physicalAvailable = monitor->physicalSize.available &&
+					monitor->pixelWidth > 0 && monitor->pixelHeight > 0;
+				if (scale.physicalAvailable)
+				{
+					scale.cmPerPixelX = static_cast<float>(monitor->physicalSize.widthCm) / monitor->pixelWidth;
+					scale.cmPerPixelY = static_cast<float>(monitor->physicalSize.heightCm) / monitor->pixelHeight;
+				}
+				// 输入直接性及目标映射交由当前 RTS 来源确认，不能按整机单屏推断。
+			}
+			else if (hwnd)
+			{
+				const UINT dpi = GetDpiForWindow(hwnd);
+				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
+			}
+			if(hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale)
+			{
+				const auto policy=scale.development;
+				scale=*startOptions.hiddenTestDisplayScale;scale.development=policy;
+			}
+			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
+			scale.revision = previous.revision;
+			if (scale == previous && EqualRect(&clientBounds, &appliedDisplayClientBounds)) return;
+			scale.revision = previous.revision + 1;
+			appliedDisplayClientBounds = clientBounds;
+			window.SetSpeedEraserDisplayScale(scale);
+		}
+
+		void PumpBridgeState()
+		{
+			PumpDisplayScale();
+			const Bridge::ProductState state = bridge.Snapshot();
+			if (state.revision == appliedBridgeRevision) return;
+			appliedBridgeRevision = state.revision;
+			window.SetSelectionMode(state.selectionMode);
+			window.SetAutoSaveEnabled(state.autoSaveEnabled);
+			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
+				std::memory_order_acq_rel) != state.selectionMode;
+			DrawingTool tool = DrawingTool::Pen;
+			switch (state.tool)
+			{
+			case Bridge::Tool::HardPen: tool = DrawingTool::HardPen; break;
+			case Bridge::Tool::Highlighter: tool = DrawingTool::Highlighter; break;
+			case Bridge::Tool::ConfiguredEraser:
+			case Bridge::Tool::FixedEraser:
+			case Bridge::Tool::SpeedEraser: tool = DrawingTool::Eraser; break;
+			case Bridge::Tool::Laser: tool = DrawingTool::Laser; break;
+			case Bridge::Tool::SolidLine: tool = DrawingTool::SolidLine; break;
+			case Bridge::Tool::DashedLine: tool = DrawingTool::DashedLine; break;
+			case Bridge::Tool::OutlineRectangle: tool = DrawingTool::OutlineRectangle; break;
+			case Bridge::Tool::FilledRectangle: tool = DrawingTool::FilledRectangle; break;
+			default: break;
+			}
+			window.SetActiveTool(tool);
+			window.SetSpeedEraserDeviceMode(state.paintDevice == 0
+				? SpeedEraser::DeviceMode::LargeScreen : SpeedEraser::DeviceMode::Laptop);
+			window.SetEraserWidthMode(state.tool == Bridge::Tool::SpeedEraser
+				? EraserWidthMode::Speed : EraserWidthMode::Fixed);
+			window.SetEraserInputs(state.eraserInputs);
+			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
+				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
+			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
+			if (state.workspace != Bridge::Workspace::Presentation &&
+				workspace.load(std::memory_order_acquire) != state.workspace)
+			{
+				CanvasCommand workspaceCommand;
+				workspaceCommand.type = CanvasCommandType::SetWorkspace;
+				workspaceCommand.workspace = static_cast<std::uint8_t>(state.workspace);
+				window.EnqueueCanvasCommand(workspaceCommand);
+				requestedPresentationTargetRevision = 0;
+			}
+			if (state.workspace == Bridge::Workspace::Presentation &&
+				state.presentationTarget &&
+				state.presentationTarget->targetRevision !=
+					requestedPresentationTargetRevision)
+			{
+				CanvasCommand targetCommand;
+				targetCommand.type = CanvasCommandType::SetPresentationTarget;
+				targetCommand.presentationTarget = state.presentationTarget;
+				window.EnqueueCanvasCommand(std::move(targetCommand));
+				requestedPresentationTargetRevision =
+					state.presentationTarget->targetRevision;
+			}
+			else if (state.workspace == Bridge::Workspace::Presentation &&
+				!state.presentationTarget && (workspace.load(
+					std::memory_order_acquire) != Bridge::Workspace::Presentation ||
+					requestedPresentationTargetRevision != 0))
+			{
+				CanvasCommand workspaceCommand;
+				workspaceCommand.type = CanvasCommandType::SetWorkspace;
+				workspaceCommand.workspace = static_cast<std::uint8_t>(
+					Bridge::Workspace::Presentation);
+				window.EnqueueCanvasCommand(workspaceCommand);
+				requestedPresentationTargetRevision = 0;
+			}
+			// 显隐线程观察到新模式前，工具、橡皮模式和样式必须已完整应用。
+			if (selectionChanged) PublishRuntimeRevision();
+		}
+
+		void EnqueueCommandScene(const Bridge::Command& command)
+		{
+			CanvasCommand scene;
+			if (command.workspace == Bridge::Workspace::Presentation &&
+				command.presentationTarget)
+			{
+				scene.type = CanvasCommandType::SetPresentationTarget;
+				scene.presentationTarget = command.presentationTarget;
+				requestedPresentationTargetRevision =
+					command.presentationTarget->targetRevision;
+			}
+			else
+			{
+				scene.type = CanvasCommandType::SetWorkspace;
+				scene.workspace = static_cast<std::uint8_t>(command.workspace);
+				requestedPresentationTargetRevision = 0;
+			}
+			window.EnqueueCanvasCommand(std::move(scene));
+		}
+
+		void PumpBridgeCommands()
+		{
+			Bridge::Command command;
+			while (bridge.TryConsume(command))
+			{
+				// 先恢复命令发布时的场景，再执行命令；队列排空后才应用 latest state。
+				EnqueueCommandScene(command);
+				CanvasCommand canvas;
+				switch (command.type)
+				{
+				case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
+				case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
+				case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
+				case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
+				case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
+				case Bridge::CommandType::PrepareExitAutoSave:
+					canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
+				default: continue;
+				}
+				window.EnqueueCanvasCommand(canvas);
+			}
+		}
+
+		void PumpPresentationCompletions()
+		{
+			PresentationPersistenceCompletion completion;
+			while (presentationAutoSave.TryTakeCompletion(completion))
+			{
+				CanvasCommand command;
+				command.type = CanvasCommandType::PresentationPersistenceCompleted;
+				command.presentationPersistenceCompletion = std::make_shared<
+					PresentationPersistenceCompletion>(std::move(completion));
+				window.EnqueueCanvasCommand(std::move(command));
+			}
+		}
+
+		void PumpDesktopCompletions()
+		{
+			DesktopPersistenceCompletion completion;
+			while (autoSave.TryTakeCompletion(completion))
+			{
+				CanvasCommand command;
+				command.type = CanvasCommandType::DesktopPersistenceCompleted;
+				command.desktopPersistenceCompletion = std::make_shared<
+					DesktopPersistenceCompletion>(std::move(completion));
+				window.EnqueueCanvasCommand(std::move(command));
+			}
+		}
+
+		static void ConsumeBridge(void* context)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self) return;
+			// ControlWake 只在绘制线程消费产品快照、I/O 完成和命令队列。
+			self->PumpDesktopCompletions();
+			self->PumpPresentationCompletions();
+			self->PumpBridgeCommands();
+			self->PumpBridgeState();
+		}
+
+		bool Start(HWND hwnd, HWND presentationHwnd,
+			HostStyleCallbacks styleCallbacks, HostStartOptions options,
+			HostRuntimeCallbacks runtimeCallbacks)
+		{
+			if (running.load(std::memory_order_acquire) ||
+				attachedWindow.load(std::memory_order_acquire) ||
+				attachedPresentationWindow.load(std::memory_order_acquire) ||
+				!hwnd || !presentationHwnd || !IsWindow(hwnd) ||
+				!IsWindow(presentationHwnd)) return false;
+			bridge.Reset();
+			firstFrameReady.store(false, std::memory_order_release);
+			ResetRuntimeDiagnostics();
+			{std::scoped_lock lock(eraserDiagnosticsMutex);eraserDiagnostics={};penDiagnostics={};}
+			this->styleCallbacks = styleCallbacks;
+			this->runtimeCallbacks = runtimeCallbacks;
+			startOptions = options;
+			hiddenTestContactInjectionEnabled = options.enableHiddenTestContactInjection;
+			attachedWindow.store(hwnd, std::memory_order_release);
+			attachedPresentationWindow.store(presentationHwnd, std::memory_order_release);
+			ExternalWindowCallbacks windowCallbacks{};
+			if (!window.AttachExternal(hwnd, windowCallbacks))
+			{
+				attachedWindow.store(nullptr, std::memory_order_release);
+				attachedPresentationWindow.store(nullptr, std::memory_order_release);
+				hiddenTestContactInjectionEnabled = false;
+				return false;
+			}
+			if (startOptions.startupMilestone)
+				startOptions.startupMilestone(startOptions.startupContext,
+					HostStartupStage::WindowAttached);
+			autoSave.CloseAndDrain();
+			presentationAutoSave.CloseAndDrain();
+			if (!options.autoSaveRoot.empty() && !autoSave.Start(
+				options.autoSaveRoot, this, &WakeForPresentationPersistence))
+				std::fputs("[Draw3.AutoSave] action=start result=failed\n", stderr);
+			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
+				options.autoSaveRoot, this, &WakeForPresentationPersistence))
+				std::fputs("[Draw3.Presentation] action=start result=failed\n", stderr);
+			input.EnableDiagnostics(options.enableHiddenTestContactInjection);
+			window.SetInputCoordinator(&input);
+			window.SetSpeedEraserDisplayScale({});
+			appliedDisplayClientBounds = {};
+			PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
+			// 启动握手保证绘制线程先拥有独立 GPU 资源，再启用唯一 RTS producer。
+			{
+				std::scoped_lock lock(startupMutex);
+				graphicsReady = false;
+				stylusDecision = false;
+				stylusSucceeded = false;
+				startupCompleted = false;
+				startupSucceeded = false;
+			}
+			running.store(true, std::memory_order_release);
+			drawingThread = std::jthread([this](std::stop_token token)
+			{
+				bool initialized = false;
+				bool graphicsInitialized = false;
+				try
+				{
+					const HWND windowHandle = attachedWindow.load(std::memory_order_acquire);
+					const HWND presentationWindowHandle =
+						attachedPresentationWindow.load(std::memory_order_acquire);
+					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
+					if (graphicsInitialized && startOptions.startupMilestone)
+						startOptions.startupMilestone(startOptions.startupContext,
+							HostStartupStage::GraphicsReady);
+					if (graphicsInitialized)
+					{
+						const WindowSize size = window.Size();
+						committedWidth.store(size.width, std::memory_order_release);
+						committedHeight.store(size.height, std::memory_order_release);
+						const TransparentPresentationCallbacks presentationCallbacks{
+							&this->styleCallbacks, &ApplyStyle
+						};
+						TransparentPresentationOptions presentationOptions{};
+						presentationOptions.requireMode =
+							IsRequiredMode(startOptions.requiredPresentationMode);
+						presentationOptions.requiredMode =
+							ToTransparentMode(startOptions.requiredPresentationMode);
+						presentationOptions.allowDirectComposition =
+							startOptions.allowDirectComposition;
+						graphicsInitialized = presentation.Initialize(windowHandle,
+							presentationWindowHandle, graphics, renderer,
+							static_cast<UINT>((std::max)(1, size.width)),
+							static_cast<UINT>((std::max)(1, size.height)), presentationCallbacks,
+							presentationOptions);
+						if (graphicsInitialized)
+						{
+							if (startOptions.startupMilestone)
+								startOptions.startupMilestone(startOptions.startupContext,
+									HostStartupStage::PresenterReady);
+							presentationMode.store(ToHostMode(presentation.ActiveMode()),
+								std::memory_order_release);
+							window.SetGpuTransparentComposition(
+								presentation.IsGpuTransparentComposition());
+						}
+					}
+
+					{
+						std::scoped_lock lock(startupMutex);
+						graphicsReady = graphicsInitialized;
+					}
+					startupCondition.notify_all();
+					if (graphicsInitialized)
+					{
+						// RTS 必须在图形资源准备好后才启用，避免输入 producer 先于 renderer 存活。
+						bool stylusApproved = false;
+						{
+							std::unique_lock lock(startupMutex);
+							startupCondition.wait(lock, [this, &token]
+								{ return stylusDecision || token.stop_requested(); });
+							stylusApproved = stylusDecision && stylusSucceeded && !token.stop_requested();
+						}
+						if (stylusApproved)
+						{
+							StrokeModelConfiguration configuration =
+								CreateStrokeModelConfiguration(GetDpiForWindow(windowHandle));
+							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
+								startOptions.enableHiddenTestContactInjection);
+							const DrawingControllerRuntimeObserver observer{
+								this, &ObservePresented, &ObserveResized,
+								&ObserveCommand, &ObserveDocument,
+								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge,
+								&ObserveDesktopAutoSave,
+								&ObserveDesktopLoad,
+								&ObservePresentationSave,
+								&ObservePresentationLoad,
+								&ObserveDrawingActivity,
+								&ObserveEraserDiagnostics,
+								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
+							};
+							drawing = std::make_unique<DrawingController>(input, window, renderer,
+								presentation, configuration, observer);
+							if (startOptions.startupMilestone)
+								startOptions.startupMilestone(startOptions.startupContext,
+									HostStartupStage::ControllerReady);
+							// 首帧清屏和所有 Renderer 访问均发生在 Draw3 绘制线程。
+							PumpBridgeState();
+							presentation.SetOutputTarget(window.SelectionMode()
+								? TransparentOutputTarget::SelectionUlw
+								: TransparentOutputTarget::PrimaryDrawpad);
+							drawing->ClearCanvas();
+							initialized = lastPresentSucceeded.load(std::memory_order_acquire);
+							firstFrameReady.store(initialized, std::memory_order_release);
+							if (initialized && startOptions.startupMilestone)
+								startOptions.startupMilestone(startOptions.startupContext,
+									HostStartupStage::FirstFrameCommitted);
+						}
+					}
+				}
+				catch (const std::exception& exception)
+				{
+					// 初始化失败也必须完成握手；保留异常原因供隐藏测试和现场诊断。
+					std::fprintf(stderr, "[Draw3] startup failed: %s\n", exception.what());
+					initialized = false;
+				}
+				catch (...)
+				{
+					std::fputs("[Draw3] startup failed: unknown exception\n", stderr);
+					initialized = false;
+				}
+				{
+					std::scoped_lock lock(startupMutex);
+					startupSucceeded = initialized;
+					startupCompleted = true;
+				}
+				startupCondition.notify_all();
+				if (initialized && drawing && !token.stop_requested())
+				{
+					try
+					{
+						drawing->Run();
+					}
+					catch (const std::exception& exception)
+					{
+						// 绘制循环异常必须收敛到宿主停止，不能穿出 jthread 触发 terminate。
+						std::fprintf(stderr, "[Draw3] drawing loop stopped: %s\n",
+							exception.what());
+						window.RequestExit();
+					}
+					catch (...)
+					{
+						std::fputs("[Draw3] drawing loop stopped: unknown exception\n", stderr);
+						window.RequestExit();
+					}
+				}
+				// Run 正常、异常或 stop 返回时都补齐活动结束，再释放 controller。
+				EndDrawingActivity();
+				// GPU 资源在拥有它们的绘制线程释放，避免跨线程访问 Renderer。
+				if (drawing) drawing.reset();
+				presentation.Shutdown();
+				renderer.ReleaseResources();
+				graphics = {};
+				running.store(false, std::memory_order_release);
+				contentCondition.notify_all();
+				exitAutoSaveCondition.notify_all();
+				runtimeRevision.NotifyAll();
+			});
+
+		std::unique_lock lock(startupMutex);
+		startupCondition.wait(lock, [this] { return graphicsReady || startupCompleted; });
+		if (!graphicsReady)
+		{
+			lock.unlock();
+			if (drawingThread.joinable()) drawingThread.join();
+			autoSave.CloseAndDrain();
+			presentationAutoSave.CloseAndDrain();
+			EndDrawingActivity();
+			window.SetInputCoordinator(nullptr);
+			window.DetachExternal();
+			attachedWindow.store(nullptr, std::memory_order_release);
+			attachedPresentationWindow.store(nullptr, std::memory_order_release);
+			hiddenTestContactInjectionEnabled = false;
+			firstFrameReady.store(false, std::memory_order_release);
+			runtimeCallbacks = {};
+			return false;
+		}
+
+		lock.unlock();
+		bool stylusInitialized = false;
+		try
+		{
+			stylusInitialized = stylus.Initialize(hwnd, input, &window);
+			if (stylusInitialized && startOptions.startupMilestone)
+				startOptions.startupMilestone(startOptions.startupContext,
+					HostStartupStage::RtsReady);
+		}
+		catch (...)
+		{
+			// 即使 RTS 构造意外抛出，也必须完成握手，不能让绘制线程永久等待。
+			stylusInitialized = false;
+		}
+		{
+			std::scoped_lock startupLock(startupMutex);
+			stylusSucceeded = stylusInitialized;
+			stylusDecision = true;
+		}
+		startupCondition.notify_all();
+
+		lock.lock();
+		startupCondition.wait(lock, [this] { return startupCompleted; });
+		const bool startupSucceededValue = startupSucceeded;
+		lock.unlock();
+		if (!startupSucceededValue)
+		{
+			// 失败时先停止 RTS producer，再让绘制线程退出并释放 GPU 资源。
+			stylus.Shutdown();
+			window.RequestExit();
+			input.PublishControlWake();
+			if (drawingThread.joinable()) drawingThread.request_stop();
+			startupCondition.notify_all();
+			if (drawingThread.joinable()) drawingThread.join();
+			autoSave.CloseAndDrain();
+			presentationAutoSave.CloseAndDrain();
+			EndDrawingActivity();
+			window.SetInputCoordinator(nullptr);
+			window.DetachExternal();
+			attachedWindow.store(nullptr, std::memory_order_release);
+			attachedPresentationWindow.store(nullptr, std::memory_order_release);
+			hiddenTestContactInjectionEnabled = false;
+			firstFrameReady.store(false, std::memory_order_release);
+			runtimeCallbacks = {};
+			return false;
+		}
+		displaySubscription = Inkeys::Display::Subscribe(
+			[this](Inkeys::Display::SnapshotPtr snapshot)
+			{
+				// 通知线程只发布快照并唤醒，窗口信息由绘制线程低频解析。
+				PublishDisplaySnapshot(std::move(snapshot));
+			});
+		return true;
+		}
+
+		void Stop() noexcept
+		{
+			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
+			if (!attachedWindow.load(std::memory_order_acquire) &&
+				!attachedPresentationWindow.load(std::memory_order_acquire) &&
+				!running.load(std::memory_order_acquire))
+			{
+				autoSave.CloseAndDrain();
+				presentationAutoSave.CloseAndDrain();
+				EndDrawingActivity();
+				runtimeCallbacks = {};
+				return;
+			}
+			{
+				std::scoped_lock lock(exitAutoSaveMutex);
+				exitAutoSavePrepared = false;
+			}
+			// 关闭产品命令生产端，并把退出保存屏障排在所有已接受命令之后。
+			const bool exitBarrierQueued = bridge.StopWithFinalCommand(
+				Bridge::CommandType::PrepareExitAutoSave);
+			// 再停止 RTS producer；Shutdown 会为仍活动的 contact 发布终止事件。
+			stylus.Shutdown();
+			input.PublishControlWake();
+			if (exitBarrierQueued)
+			{
+				std::unique_lock lock(exitAutoSaveMutex);
+				exitAutoSaveCondition.wait(lock, [this]
+					{
+						return exitAutoSavePrepared ||
+							!running.load(std::memory_order_acquire);
+					});
+				if (!exitAutoSavePrepared)
+					std::fputs("[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n",
+						stderr);
+			}
+			else
+				std::fputs("[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n",
+					stderr);
+			// worker 无超时排空后才允许绘制线程销毁 Document/Controller。
+			autoSave.CloseAndDrain();
+			presentationAutoSave.CloseAndDrain();
+			window.RequestExit();
+			input.PublishControlWake();
+			if (drawingThread.joinable()) drawingThread.request_stop();
+			startupCondition.notify_all();
+			if (drawingThread.joinable()) drawingThread.join();
+			EndDrawingActivity();
+			window.SetInputCoordinator(nullptr);
+			window.DetachExternal();
+			attachedWindow.store(nullptr, std::memory_order_release);
+			attachedPresentationWindow.store(nullptr, std::memory_order_release);
+			hiddenTestContactInjectionEnabled = false;
+			firstFrameReady.store(false, std::memory_order_release);
+			running.store(false, std::memory_order_release);
+			contentCondition.notify_all();
+			runtimeRevision.NotifyAll();
+			runtimeCallbacks = {};
+		}
+	};
+
+	Host::Host() : impl_(std::make_unique<Impl>()) {}
+	Host::~Host() { Stop(); }
+	bool Host::Start(HWND drawpad, HWND drawpadPresentation,
+		HostStyleCallbacks callbacks, HostStartOptions options,
+		HostRuntimeCallbacks runtimeCallbacks)
+	{
+		return impl_->Start(drawpad, drawpadPresentation, callbacks, options,
+			runtimeCallbacks);
+	}
+	void Host::Stop() noexcept { impl_->Stop(); }
+	bool Host::Running() const noexcept { return impl_->running.load(std::memory_order_acquire); }
+	bool Host::FirstFrameReady() const noexcept
+	{
+		return impl_->firstFrameReady.load(std::memory_order_acquire);
+	}
+	HostRuntimeSnapshot Host::RuntimeSnapshot() const noexcept
+	{
+		HostRuntimeSnapshot snapshot;
+		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;snapshot.pen=impl_->penDiagnostics;}
+		snapshot.touchContactAreaAssistanceEnabled=impl_->window.TouchContactAreaAssistance();
+		snapshot.running = impl_->running.load(std::memory_order_acquire);
+		snapshot.firstFrameReady = impl_->firstFrameReady.load(std::memory_order_acquire);
+		snapshot.lastPresentSucceeded =
+			impl_->lastPresentSucceeded.load(std::memory_order_acquire);
+		snapshot.presentationMode = impl_->presentationMode.load(std::memory_order_acquire);
+		snapshot.presentCount = impl_->presentCount.load(std::memory_order_acquire);
+		snapshot.successfulPresentCount =
+			impl_->successfulPresentCount.load(std::memory_order_acquire);
+		snapshot.partialPresentCount =
+			impl_->partialPresentCount.load(std::memory_order_acquire);
+		snapshot.resizeCount = impl_->resizeCount.load(std::memory_order_acquire);
+		snapshot.clearCommandCount =
+			impl_->clearCommandCount.load(std::memory_order_acquire);
+		snapshot.undoCommandCount = impl_->undoCommandCount.load(std::memory_order_acquire);
+		snapshot.redoCommandCount = impl_->redoCommandCount.load(std::memory_order_acquire);
+		snapshot.nextPageCommandCount =
+			impl_->nextPageCommandCount.load(std::memory_order_acquire);
+		snapshot.previousPageCommandCount =
+			impl_->previousPageCommandCount.load(std::memory_order_acquire);
+		const ContactInputDiagnosticsSnapshot inputDiagnostics =
+			impl_->input.DiagnosticsSnapshot();
+		snapshot.inputDownPublished = inputDiagnostics.downPublished;
+		snapshot.inputMovePublished = inputDiagnostics.movePublished;
+		snapshot.inputTerminalPublished = inputDiagnostics.terminalPublished;
+		snapshot.inputRecycled = inputDiagnostics.recycled;
+		snapshot.ulwDirtyRectPresentCount =
+			impl_->ulwDirtyRectPresentCount.load(std::memory_order_acquire);
+		snapshot.ulwPremultipliedAlphaFailureCount =
+			impl_->ulwPremultipliedAlphaFailureCount.load(std::memory_order_acquire);
+		snapshot.ulwTransparentFullFrameVerified =
+			impl_->ulwTransparentFullFrameVerified.load(std::memory_order_acquire);
+		snapshot.committedWidth = impl_->committedWidth.load(std::memory_order_acquire);
+		snapshot.committedHeight = impl_->committedHeight.load(std::memory_order_acquire);
+		snapshot.currentPageIndex = impl_->currentPageIndex.load(std::memory_order_acquire);
+		snapshot.pageCount = impl_->pageCount.load(std::memory_order_acquire);
+		snapshot.contentRevision = impl_->contentRevision.load(std::memory_order_acquire);
+		// revision 的 release 发布发生在内容布尔值之后；先 acquire revision，
+		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
+		snapshot.currentPageHasContent =
+			impl_->currentPageHasContent.load(std::memory_order_acquire);
+		snapshot.selectionMode = impl_->selectionMode.load(std::memory_order_acquire);
+		snapshot.workspace = impl_->workspace.load(std::memory_order_acquire);
+		{
+			std::scoped_lock lock(impl_->presentationTargetMutex);
+			snapshot.presentationReady = impl_->readyPresentationTarget;
+		}
+		snapshot.requestedOutputTarget =
+			impl_->requestedOutputTarget.load(std::memory_order_acquire);
+		snapshot.requestedOutputRevision =
+			impl_->requestedOutputRevision.load(std::memory_order_acquire);
+		snapshot.readyOutputTarget =
+			impl_->readyOutputTarget.load(std::memory_order_acquire);
+		snapshot.readyOutputRevision =
+			impl_->readyOutputRevision.load(std::memory_order_acquire);
+		snapshot.presentedContentRevision =
+			impl_->presentedContentRevision.load(std::memory_order_acquire);
+		snapshot.auxiliaryFullFrameClean =
+			impl_->auxiliaryFullFrameClean.load(std::memory_order_acquire);
+		snapshot.runtimeRevision = impl_->runtimeRevision.Revision();
+		snapshot.lastDirtyRect.left = impl_->lastDirtyLeft.load(std::memory_order_relaxed);
+		snapshot.lastDirtyRect.top = impl_->lastDirtyTop.load(std::memory_order_relaxed);
+		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
+		snapshot.lastDirtyRect.bottom = impl_->lastDirtyBottom.load(std::memory_order_relaxed);
+		return snapshot;
+	}
+
+	bool Host::WaitForRuntimeRevision(std::uint64_t revision,
+		std::uint32_t timeoutMilliseconds) const noexcept
+	{
+		return impl_->runtimeRevision.WaitForChange(
+			revision, timeoutMilliseconds, impl_->running);
+	}
+
+	bool Host::WaitForContentRevision(std::uint64_t revision,
+		std::uint32_t timeoutMilliseconds) const noexcept
+	{
+		std::unique_lock lock(impl_->contentMutex);
+		return impl_->contentCondition.wait_for(lock,
+			std::chrono::milliseconds(timeoutMilliseconds), [this, revision]
+			{
+				return impl_->contentRevision.load(std::memory_order_acquire) != revision ||
+					!impl_->running.load(std::memory_order_acquire);
+			});
+	}
+
+	bool Host::PublishHiddenTestContact(WPARAM phaseValue, LPARAM position) noexcept
+	{
+		if (!impl_->hiddenTestContactInjectionEnabled) return false;
+		const auto phase = static_cast<HiddenTestContactPhase>(static_cast<std::uint32_t>(phaseValue)&0xffu);
+		const auto deviceType=(phaseValue & kHiddenTestRightMouseFlag)?InputDeviceType::MouseRight:
+			(phaseValue & kHiddenTestMouseFlag) ? InputDeviceType::MouseLeft :
+			(phaseValue & kHiddenTestTouchFlag) ? InputDeviceType::Touch : InputDeviceType::Pen;
+		ContactSnapshot snapshot{};
+		{
+			std::scoped_lock lock(impl_->displayMutex);
+			const auto& area=impl_->hiddenContactArea;
+			snapshot.rawContactSize={area.rawWidth,area.rawHeight};
+			snapshot.contactSize={area.widthPx,area.heightPx};snapshot.contactAreaUnits=area.units;
+		}
+		snapshot.position.x = static_cast<float>(static_cast<short>(LOWORD(position)));
+		snapshot.position.y = static_cast<float>(static_cast<short>(HIWORD(position)));
+		snapshot.pressure = phase == HiddenTestContactPhase::Down ? 0.8f : 0.7f;
+		LARGE_INTEGER qpc = {};
+		QueryPerformanceCounter(&qpc);
+		snapshot.qpc = qpc.QuadPart;
+		if ((phaseValue & kHiddenTestNoPressureFlag) != 0) snapshot.pressure = -1.0f;
+		if (phase == HiddenTestContactPhase::Up && (phaseValue & kHiddenTestDelayedUpFlag) != 0)
+		{
+			// 隐藏验收在最后 Move 后等待 40ms，模拟 Up 包迟到 30ms 而非篡改模型时间。
+			LARGE_INTEGER frequency = {};
+			QueryPerformanceFrequency(&frequency);
+			snapshot.qpc -= frequency.QuadPart * 30 / 1000;
+		}
+		snapshot.isInvertedCursor=(phaseValue & kHiddenTestPenTailFlag)!=0;
+		snapshot.source.kind=(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight) ? SpeedEraser::SourceKind::Mouse :
+			deviceType==InputDeviceType::Touch ? SpeedEraser::SourceKind::Touch :
+			(phaseValue & kHiddenTestIntegratedPenFlag) ? SpeedEraser::SourceKind::IntegratedPen :
+			(phaseValue & kHiddenTestExternalPenFlag) ? SpeedEraser::SourceKind::ExternalPen : SpeedEraser::SourceKind::Unknown;
+		snapshot.source.recognition=SpeedEraser::SourceRecognition::RtsCapabilities;
+		snapshot.source.contextId=0xD303u;snapshot.source.cursorId=0xD304u+static_cast<uint32_t>(SpeedEraser::EntryForInput(static_cast<uint32_t>(deviceType),snapshot.isInvertedCursor));snapshot.source.generation=1;
+		const auto scale=impl_->window.SpeedEraserDisplayScaleSnapshot();
+		snapshot.source.mappedMonitor=scale.monitor;
+		snapshot.source.mappedLeft=scale.desktopLeft;snapshot.source.mappedTop=scale.desktopTop;
+		snapshot.source.mappedWidth=scale.pixelWidth;snapshot.source.mappedHeight=scale.pixelHeight;
+
+		// 隐藏测试走同一个无锁 contact mailbox，不触碰 Renderer 或 RTS 内部状态。
+		constexpr std::uint32_t tabletContextId = 0xD303u;
+		const std::uint32_t contactId = snapshot.source.cursorId;
+		bool published = false;
+		switch (phase)
+		{
+		case HiddenTestContactPhase::Down:
+			if(deviceType==InputDeviceType::Touch)impl_->window.NotifyTouchContactBegin();
+			snapshot.phase = ContactPhase::Down;
+			published = impl_->input.PublishDown(tabletContextId, contactId,
+				deviceType, snapshot);
+			break;
+		case HiddenTestContactPhase::Move:
+			snapshot.phase = ContactPhase::Move;
+			published = impl_->input.PublishMove(tabletContextId, contactId, snapshot);
+			break;
+		case HiddenTestContactPhase::Up:
+			snapshot.phase = ContactPhase::Up;
+			published = impl_->input.PublishUp(tabletContextId, contactId, snapshot);
+			break;
+		case HiddenTestContactPhase::Hover:
+			published = true;
+			break;
+		case HiddenTestContactPhase::Cancelled:
+			snapshot.phase = ContactPhase::Cancelled;
+			published = impl_->input.PublishCancelled(tabletContextId, contactId, snapshot);
+			break;
+		default:
+			return false;
+		}
+
+		// 隐藏注入复用真实 RTS 的 Touch 模态通知，不能让旧 Mouse Hover 掩盖 Touch 光标。
+		if(deviceType==InputDeviceType::Touch &&
+			((phase==HiddenTestContactPhase::Down && !published) ||
+			 (published && (phase==HiddenTestContactPhase::Up || phase==HiddenTestContactPhase::Cancelled))))
+			impl_->window.NotifyTouchContactEnd();
+
+		if(published && (deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight || deviceType==InputDeviceType::Pen))
+		{
+			DrawingCursorSample cursor;
+			cursor.x=snapshot.position.x;cursor.y=snapshot.position.y;cursor.qpc=snapshot.qpc;
+			cursor.valid=phase!=HiddenTestContactPhase::Cancelled;
+			cursor.inContact=phase==HiddenTestContactPhase::Down || phase==HiddenTestContactPhase::Move;
+			cursor.source=snapshot.source;cursor.inverted=snapshot.isInvertedCursor;
+			if(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight)impl_->window.PublishHiddenTestMouseCursor(cursor);
+			else impl_->window.PublishPenCursorSample(cursor);
+		}
+		if (published) (void)impl_->input.PublishControlWake();
+		return published;
+	}
+
+	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)
+	{
+		{
+			std::scoped_lock lock(impl_->displayMutex);
+			if(impl_->eraserDevelopment==options)return;
+			impl_->eraserDevelopment=options;
+		}
+		if(impl_->touchAreaTraceEnabled.exchange(options.touchAreaTrace,std::memory_order_relaxed)!=options.touchAreaTrace)
+			impl_->touchAreaTraceRevision.fetch_add(1,std::memory_order_relaxed);
+		impl_->window.SetEraserDiagnosticsEnabled(options.diagnostics || options.touchAreaTrace ||
+			impl_->hiddenTestContactInjectionEnabled || impl_->startOptions.enableEraserDiagnostics);
+		impl_->displayScaleDirty.store(true,std::memory_order_release);
+		(void)impl_->input.PublishControlWake();
+	}
+	SpeedEraser::DevelopmentOptions Host::EraserDevelopmentOptions() const
+	{
+		std::scoped_lock lock(impl_->displayMutex);
+		return impl_->eraserDevelopment;
+	}
+	void Host::SetHiddenTestContactArea(const SpeedEraser::ContactAreaSample& sample)
+	{
+		if(!impl_->hiddenTestContactInjectionEnabled)return;
+		std::scoped_lock lock(impl_->displayMutex);impl_->hiddenContactArea=sample;
+	}
+
+	SpeedEraser::DisplayScale Host::EraserDisplayScaleSnapshot() const
+	{
+		return impl_->window.SpeedEraserDisplayScaleSnapshot();
+	}
+
+	LRESULT Host::ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kDraw3HiddenTestContactMessage &&
+			impl_->hiddenTestContactInjectionEnabled)
+			return PublishHiddenTestContact(wParam, lParam) ? 0 : -1;
+		if (window == impl_->attachedWindow.load(std::memory_order_acquire) &&
+			(message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED || message == WM_DISPLAYCHANGE))
+		{
+			impl_->displayScaleDirty.store(true, std::memory_order_release);
+			(void)impl_->input.PublishControlWake();
+		}
+		return impl_->window.HandleExternalMessage(window, message, wParam, lParam);
+	}
+	void Host::SetActivationAllowed(bool enabled) noexcept
+	{
+		impl_->window.SetActivationAllowed(enabled);
+	}
+	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
+	void Host::PublishState(const Bridge::ProductState& state) noexcept
+	{
+		impl_->bridge.PublishState(state);
+		if (impl_->attachedWindow.load(std::memory_order_acquire))
+			(void)impl_->input.PublishControlWake();
+	}
+	Bridge::CommandResult Host::PublishCommand(Bridge::CommandType command) noexcept
+	{
+		const Bridge::CommandResult result = impl_->bridge.Publish(command);
+		if (result == Bridge::CommandResult::Accepted)
+			(void)impl_->input.PublishControlWake();
+		return result;
+	}
+}

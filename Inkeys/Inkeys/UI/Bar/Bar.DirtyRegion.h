@@ -9,6 +9,19 @@
 
 namespace Inkeys::UI::Bar
 {
+	// Debug 框颜色和线宽由 Bar/Whiteboard 共同使用，避免两套语义漂移。
+	inline constexpr FLOAT BarDebugFrameWidth = 1.0F;
+	inline constexpr FLOAT BarDebugDirtyFrameInset = 2.5F;
+	inline constexpr FLOAT BarDebugWindowFrameInset = BarDebugFrameWidth / 2.0F;
+	inline constexpr COLORREF BarDebugDirtyColor = RGB(255, 0, 0);
+	inline constexpr COLORREF BarDebugPresentedColor = RGB(0, 255, 0);
+
+	[[nodiscard]] inline constexpr COLORREF ResolveBarDebugFrameColor(
+		bool finalIdleFrame) noexcept
+	{
+		return finalIdleFrame ? BarDebugPresentedColor : BarDebugDirtyColor;
+	}
+
 	using BarDirtyVisualKey = std::uint64_t;
 
 	class BarDirtyRegionTracker
@@ -78,6 +91,25 @@ namespace Inkeys::UI::Bar
 		void ForceFullDamage()
 		{
 			fullDamagePending_ = true;
+		}
+
+		void TranslateCommitted(POINT translation) noexcept
+		{
+			if (translation.x == 0 && translation.y == 0) return;
+			auto Translate = [&](RECT& value)
+				{
+					if (IsEmpty(value)) return;
+					value.left += translation.x;
+					value.right += translation.x;
+					value.top += translation.y;
+					value.bottom += translation.y;
+				};
+			Translate(pendingDamage_);
+			for (auto& [key, record] : visualRecords_)
+			{
+				if (record.hasCommittedBounds) Translate(record.committedBounds);
+				Translate(record.currentBounds);
+			}
 		}
 
 		[[nodiscard]] RECT ResolveDamage(bool requireFallback)
@@ -302,13 +334,19 @@ namespace Inkeys::UI::Bar
 		const RECT& previousTextBounds,
 		const RECT& previousFrameBounds,
 		const RECT& currentTextBounds,
-		bool debugEnabled) noexcept
+		bool debugEnabled,
+		bool finalIdleFrame = false) noexcept
 	{
 		BarDebugDamageResolution result{};
 		result.frameTarget = businessDamage;
 		if (debugEnabled)
+		{
+			if (finalIdleFrame && BarDirtyRegionTracker::IsEmpty(
+				result.frameTarget))
+				result.frameTarget = previousFrameBounds;
 			BarDirtyRegionTracker::UnionInPlace(
 				result.frameTarget, currentTextBounds);
+		}
 
 		result.presentDamage = businessDamage;
 		// 旧覆盖层始终进入提交区，关闭调试时也能完整擦除文字与红框。

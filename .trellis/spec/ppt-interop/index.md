@@ -25,7 +25,9 @@ IdtMain: COM + activation context + PptCOM.dll
   → PptCOM::PptComService 绑定 PowerPoint 或 WPS并写 native 页码
   → IdtDrawpad 检测页码变化，保存/恢复 PptImg[页]
   → 更新 PptInfoStateBuffer
-  → IdtPlug-in 的 PPT UI/交互线程显示页码并发出翻页等命令
+  → Inkeys.UI.Ppt 把缓冲页码发布给 Inkeys.UI.PageControl 的四个共享窗口
+  → 主栏 A2 EndShow 把结束请求投递到同一 PPT 业务队列
+  → UI3 交互队列把翻页/结束等业务命令投递回 IdtPlug-in 的 PPT 业务线程
 ~~~
 
 `【直接确认】` `PptInfoStateBuffer` 不是 managed 直接写入的第二份状态；`IdtPlug-in.cpp` 注释说明它在 `DrawpadDrawing` 完成 PPT 画布加载后才同步。不能把 COM 页码、UI 缓冲页码和 `PptImg` 当成同一个变量。

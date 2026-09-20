@@ -1,0 +1,2 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认设置窗口、Window Service、Draw3 与桌面 UI 的既有边界。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守 Win32 窗口线程、owner 链和 UI 层级约束。"}

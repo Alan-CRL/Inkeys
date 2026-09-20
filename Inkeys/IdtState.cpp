@@ -1,421 +1,910 @@
 ﻿#include "IdtState.h"
 
-#include "IdtDraw.h"
-#include "IdtDrawpad.h"
-#include "IdtFloating.h"
-#include "IdtPlug-in.h"
-#include "IdtWindow.h"
-
 #include "IdtConfiguration.h"
+#include "IdtDraw.h"
+#include "IdtFreezeFrame.h"
+#include "IdtPlug-in.h"
+#include "Inkeys/Business/LegacyDrawState.hpp"
+#include "Inkeys/Business/PenToolState.hpp"
+#include "Inkeys/Drawing/Draw3/Draw3.Product.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
+#include "Inkeys/Window/Window.Legacy.hpp"
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <mutex>
+#include <thread>
+
+import Inkeys.Other.Config;
+import Inkeys.UI.Bar;
+import Inkeys.UI.Setting;
+import Inkeys.UI.Ppt;
+import Inkeys.UI.Whiteboard;
+import Inkeys.UI.Freeze;
+import Inkeys.Window;
 
 StateModeClass stateMode;
 
+namespace
+{
+	using Inkeys::Drawing::Draw3::Bridge::ProductState;
+	using Inkeys::Drawing::Draw3::Bridge::Tool;
+	using Inkeys::Drawing::Draw3::Bridge::Workspace;
+	std::mutex draw3PresentationMutex;
+	std::mutex eraserPreferencesMutex;
+	Inkeys::Drawing::Draw3::SpeedEraser::InputSettings ReadEraserPreferences()
+	{
+		using namespace Inkeys::Drawing::Draw3::SpeedEraser;
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved=Inkeys::config.Drawing.Eraser;
+		const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+		InputSettings result;result.automaticEnabled=saved.Automatic.load();
+		result.automaticPenSupported=AutomaticPenResponseAvailable();
+		result.baseSize=RestoreBaseSize(saved.BaseDiameterDip.load());
+		result.sensitivity=RestoreSensitivity(saved.Sensitivity.load());
+		for(size_t i=0;i<fields.size();++i)
+			result.entries[i].kind=RestoreEraserKind(fields[i]->load(),-1,static_cast<InputEntry>(i));
+		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
+		result.entries[4].penResponse=RestorePenResponse(saved.PenTailResponse.load(),result.automaticPenSupported);
+		return result;
+	}
+	std::atomic_bool draw3PresentationRetryPending = false;
+	bool draw3PresentationFailureActive = false;
+	// 低位保存期望 owner 状态，高位版本保证旧请求成功也不能覆盖更新后的期望。
+	std::atomic_uint64_t settingOwnerDesiredState = 0;
+	std::atomic_uint64_t settingOwnerAppliedState = 0;
+	std::mutex settingOwnerApplyMutex;
+
+	std::uint64_t PublishSettingOwnerDesiredState(bool enabled) noexcept
+	{
+		auto current = settingOwnerDesiredState.load(std::memory_order_relaxed);
+		std::uint64_t next = 0;
+		do
+		{
+			next = ((current + 2) & ~std::uint64_t{ 1 }) |
+				(enabled ? std::uint64_t{ 1 } : std::uint64_t{ 0 });
+		} while (!settingOwnerDesiredState.compare_exchange_weak(
+			current, next, std::memory_order_release, std::memory_order_relaxed));
+		return next;
+	}
+
+	void ApplySettingOwnerDesiredState(std::uint64_t desiredState)
+	{
+		std::scoped_lock lock(settingOwnerApplyMutex);
+		// 等锁期间可能已经发布更新版本；过期请求不得再覆盖当前 owner。
+		if (settingOwnerDesiredState.load(std::memory_order_acquire) != desiredState)
+			return;
+		const bool enabled = (desiredState & std::uint64_t{ 1 }) != 0;
+		if (Inkeys::Window::GetService().SetSettingOwnedByDrawpad(enabled))
+			// 写回实际完成的版本；若调用期间期望已更新，版本不等会继续触发重试。
+			settingOwnerAppliedState.store(desiredState, std::memory_order_release);
+	}
+
+	void ReconcileSettingOwnerDesiredState()
+	{
+		const auto desiredState = settingOwnerDesiredState.load(
+			std::memory_order_acquire);
+		if (settingOwnerAppliedState.load(std::memory_order_acquire) != desiredState)
+			ApplySettingOwnerDesiredState(desiredState);
+	}
+
+	Workspace CurrentPrimaryWorkspace() noexcept
+	{
+		return PptInfoState.TotalPage > 0
+			? Workspace::Presentation : Workspace::Desktop;
+	}
+
+	enum class Draw3PresentationReconcileResult : std::uint8_t
+	{
+		Waiting,
+		Applied,
+		Retry,
+	};
+
+	enum class WhiteboardPhase : std::uint8_t
+	{
+		Inactive,
+		Entering,
+		Active,
+		Exiting,
+	};
+
+	std::atomic_bool whiteboardDesired = false;
+	std::atomic_bool whiteboardPreviousRequested = false;
+	std::atomic_bool whiteboardNextRequested = false;
+	std::atomic<WhiteboardPhase> whiteboardPhase = WhiteboardPhase::Inactive;
+
+	std::uint32_t ColorRefToRgba(COLORREF color) noexcept
+	{
+		return (static_cast<std::uint32_t>(GetRValue(color)) << 24) |
+			(static_cast<std::uint32_t>(GetGValue(color)) << 16) |
+			(static_cast<std::uint32_t>(GetBValue(color)) << 8) | 0xffu;
+	}
+
+	Tool CurrentDraw3Tool() noexcept
+	{
+		if (IsLaserToolActive()) return Tool::Laser;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser)
+		{
+			return Tool::ConfiguredEraser;
+		}
+
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+		{
+			switch (stateMode.Shape.ModeSelect)
+			{
+			case ShapeModeSelectEnum::IdtShapeStraightLine1:
+				return Tool::SolidLine;
+			case ShapeModeSelectEnum::IdtShapeDashedLine1:
+				return Tool::DashedLine;
+			case ShapeModeSelectEnum::IdtShapeRectangle1:
+				return Tool::OutlineRectangle;
+			default:
+				return Tool::SolidLine;
+			}
+		}
+
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+			return Tool::Highlighter;
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
+			return Tool::HardPen;
+		return Tool::Pen;
+	}
+
+	void PublishDraw3State() noexcept
+	{
+		ProductState state{};
+		state.tool = CurrentDraw3Tool();
+		state.paintDevice = setlist.paintDevice;
+		state.eraserInputs = ReadEraserPreferences();
+		state.widthDip = (std::max)(0.1f, GetPenWidth());
+		state.colorRgba = ColorRefToRgba(GetPenColor());
+		state.selectionMode =
+			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+		state.autoSaveEnabled = setlist.saveSetting.enable;
+		Inkeys::Drawing::Draw3::PublishProductState(state);
+	}
+
+	[[nodiscard]] bool Draw3WorkspaceReady(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		Workspace workspace) noexcept
+	{
+		if (!runtime.firstFrameReady || runtime.workspace != workspace)
+			return false;
+		const auto expectedTarget =
+			Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
+				runtime.selectionMode, workspace)
+			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
+		if (workspace != Workspace::Whiteboard && runtime.selectionMode &&
+			!runtime.currentPageHasContent && !runtime.auxiliaryFullFrameClean)
+			return false;
+		return runtime.requestedOutputTarget == expectedTarget &&
+			runtime.readyOutputTarget == expectedTarget &&
+			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
+			runtime.presentedContentRevision == runtime.contentRevision;
+	}
+
+	[[nodiscard]] const char* OutputTargetName(
+		Inkeys::Drawing::Draw3::HostOutputTarget target) noexcept
+	{
+		return target == Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+			? "selection-ulw" : "primary-drawpad";
+	}
+
+	[[nodiscard]] const char* SurfaceVisibilityName(
+		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
+	{
+		switch (visibility)
+		{
+		case Inkeys::Window::DrawpadSurfaceVisibility::Primary:
+			return "primary";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Presentation:
+			return "presentation";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Hidden:
+		default:
+			return "hidden";
+		}
+	}
+
+	void LogDraw3PresentationFailure(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
+	{
+		if (!IDTLogger) return;
+		auto& service = Inkeys::Window::GetService();
+		const HWND primary = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+		const HWND presentation = service.Handle(
+			Inkeys::Window::WindowRole::DrawpadPresentation);
+		RECT primaryBounds{};
+		RECT presentationBounds{};
+		if (primary) (void)GetWindowRect(primary, &primaryBounds);
+		if (presentation) (void)GetWindowRect(presentation, &presentationBounds);
+		const HWND primaryOwner = primary ? GetWindow(primary, GW_OWNER) : nullptr;
+		const HWND presentationOwner = presentation
+			? GetWindow(presentation, GW_OWNER) : nullptr;
+		const LONG_PTR primaryExStyle = primary
+			? GetWindowLongPtrW(primary, GWL_EXSTYLE) : 0;
+		const LONG_PTR presentationExStyle = presentation
+			? GetWindowLongPtrW(presentation, GWL_EXSTYLE) : 0;
+		IDTLogger->warn(
+			"[状态线程][ReconcileDraw3Presentation] surface 切换失败, "
+			"surface={}, requested={}@{}, ready={}@{}, content={}/{}, "
+			"firstFrame={}, clean={}, primary={{hwnd=0x{:X},owner=0x{:X},visible={},topmost={},rect=({},{},{},{})}}, "
+			"presentation={{hwnd=0x{:X},owner=0x{:X},visible={},topmost={},rect=({},{},{},{})}}",
+			SurfaceVisibilityName(visibility),
+			OutputTargetName(runtime.requestedOutputTarget),
+			runtime.requestedOutputRevision,
+			OutputTargetName(runtime.readyOutputTarget),
+			runtime.readyOutputRevision,
+			runtime.presentedContentRevision, runtime.contentRevision,
+			runtime.firstFrameReady, runtime.auxiliaryFullFrameClean,
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(primary)),
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(primaryOwner)),
+			primary && IsWindowVisible(primary),
+			(primaryExStyle & WS_EX_TOPMOST) != 0,
+			primaryBounds.left, primaryBounds.top,
+			primaryBounds.right, primaryBounds.bottom,
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(presentation)),
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(presentationOwner)),
+			presentation && IsWindowVisible(presentation),
+			(presentationExStyle & WS_EX_TOPMOST) != 0,
+			presentationBounds.left, presentationBounds.top,
+			presentationBounds.right, presentationBounds.bottom);
+	}
+
+	[[nodiscard]] Draw3PresentationReconcileResult
+		ReconcileDraw3PresentationState()
+	{
+		std::scoped_lock lock(draw3PresentationMutex);
+		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const bool selectionMode = runtime.selectionMode;
+		const bool whiteboard = runtime.workspace ==
+			Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
+		auto& service = Inkeys::Window::GetService();
+		using Inkeys::Window::WindowRole;
+
+		// 白板空页仍保留完整绘制栏和主 Drawpad；选择只表示拖动态，不切辅助 ULW。
+		Inkeys::UI::Bar::SetCurrentPageHasContent(
+			whiteboard || runtime.currentPageHasContent);
+		const auto expectedTarget =
+			Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
+				selectionMode, runtime.workspace)
+			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
+			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
+		const bool targetReady = runtime.requestedOutputTarget == expectedTarget &&
+			runtime.readyOutputTarget == expectedTarget &&
+			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
+			runtime.presentedContentRevision == runtime.contentRevision;
+		if (!runtime.firstFrameReady ||
+			(selectionMode && !whiteboard && !targetReady))
+		{
+			draw3PresentationRetryPending.store(false, std::memory_order_release);
+			draw3PresentationFailureActive = false;
+			return Draw3PresentationReconcileResult::Waiting;
+		}
+
+		Inkeys::Window::DrawpadSurfaceVisibility visibility;
+		if (whiteboard)
+		{
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary;
+		}
+		else switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
+			selectionMode, runtime.currentPageHasContent,
+			runtime.auxiliaryFullFrameClean))
+		{
+		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Primary:
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary; break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Presentation:
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Presentation; break;
+		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Hidden:
+		default:
+			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Hidden; break;
+		}
+
+		if (!service.SetDrawpadSurfaceVisibility(visibility))
+		{
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			if (!draw3PresentationFailureActive)
+				LogDraw3PresentationFailure(runtime, visibility);
+			draw3PresentationFailureActive = true;
+			return Draw3PresentationReconcileResult::Retry;
+		}
+
+		draw3PresentationRetryPending.store(false, std::memory_order_release);
+		if (draw3PresentationFailureActive && IDTLogger)
+			IDTLogger->info(
+				"[状态线程][ReconcileDraw3Presentation] surface 切换已恢复, surface={}",
+				SurfaceVisibilityName(visibility));
+		draw3PresentationFailureActive = false;
+		const HWND drawpad = service.Handle(WindowRole::Drawpad);
+		const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+		IdtWindowsIsVisible.drawpadWindow = drawpad && presentation &&
+			service.Ready(WindowRole::Drawpad) &&
+			service.Ready(WindowRole::DrawpadPresentation) &&
+			runtime.firstFrameReady;
+		return Draw3PresentationReconcileResult::Applied;
+	}
+}
+
+bool AutomaticPenResponseAvailable() noexcept
+{
+	static const bool available=GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetPointerType")!=nullptr;
+	return available;
+}
+void InitializeEraserInputPreferences()
+{
+	using namespace Inkeys::Drawing::Draw3::SpeedEraser;
+	std::scoped_lock lock(eraserPreferencesMutex);
+	auto& saved=Inkeys::config.Drawing.Eraser;
+	const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+	for(size_t i=0;i<fields.size();++i)
+		*fields[i]=static_cast<int>(RestoreEraserKind(fields[i]->load(),
+			setlist.eraserSetting.savedFixedChoice?2:-1,static_cast<InputEntry>(i)));
+	saved.BaseDiameterDip=static_cast<int>(RestoreBaseSize(saved.BaseDiameterDip.load()));
+	saved.Sensitivity=static_cast<int>(RestoreSensitivity(saved.Sensitivity.load()));
+	if(saved.PenTipResponse.load()==-1)saved.PenTipResponse=AutomaticPenResponseAvailable()?0:2;
+	if(saved.PenTailResponse.load()==-1)saved.PenTailResponse=AutomaticPenResponseAvailable()?0:2;
+}
+int EraserWidthPreference(int entry)
+{
+	const auto prefs=ReadEraserPreferences();
+	return entry>=0 && entry<5?static_cast<int>(prefs.entries[entry].kind):1;
+}
+int EraserPenResponsePreference(int entry)
+{
+	const auto prefs=ReadEraserPreferences();
+	return static_cast<int>(prefs.entries[entry==4?4:3].penResponse);
+}
+void SetEraserInputPreference(int entry,int kind,int penResponse)
+{
+	if(entry<0 || entry>=5)return;
+	{
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved=Inkeys::config.Drawing.Eraser;
+		const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
+		*fields[entry]=kind==0?0:1;
+		if(penResponse>=0 && (entry==3 || entry==4))
+			(entry==3?saved.PenTipResponse:saved.PenTailResponse)=static_cast<int>(
+				Inkeys::Drawing::Draw3::SpeedEraser::RestorePenResponse(penResponse,AutomaticPenResponseAvailable()));
+	}
+	SyncDraw3State(); // 写盘仍由设置页的既有合并队列负责。
+	barUISet.UpdateRendering(false);
+}
+
+Inkeys::Drawing::Draw3::SpeedEraser::InputSettings EraserPreferencesSnapshot()
+{
+	return ReadEraserPreferences();
+}
+void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automatic)
+{
+	using namespace Inkeys::Drawing::Draw3::SpeedEraser;
+	bool changed = false;
+	{
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved = Inkeys::config.Drawing.Eraser;
+		if (baseDiameterDip != -1)
+		{
+			const int value = static_cast<int>(RestoreBaseSize(baseDiameterDip));
+			changed |= saved.BaseDiameterDip.load() != value;
+			saved.BaseDiameterDip = value;
+		}
+		if (sensitivity != -1)
+		{
+			const int value = static_cast<int>(RestoreSensitivity(sensitivity));
+			changed |= saved.Sensitivity.load() != value;
+			saved.Sensitivity = value;
+		}
+		if (automatic != -1)
+		{
+			// 总开关只门控解析，不销毁五入口各自保存的 Fixed/Speed 偏好。
+			const bool value = automatic != 0;
+			changed |= saved.Automatic.load() != value;
+			saved.Automatic = value;
+		}
+		if (changed) Inkeys::UI::Setting::RequestConfigWrite();
+	}
+	if (!changed) return;
+	SyncDraw3State();
+	barUISet.UpdateRendering(false);
+}
+
+void SyncDraw3State()
+{
+	// 所有工具入口都汇聚于此，确保 Setting 只在非选择态加入画布 owner 链。
+	const auto settingOwnerState = PublishSettingOwnerDesiredState(
+		stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+	ApplySettingOwnerDesiredState(settingOwnerState);
+	PublishDraw3State();
+	ReconcileDraw3Presentation();
+}
+
+void ReconcileDraw3Presentation()
+{
+	(void)ReconcileDraw3PresentationState();
+}
+
+bool IsLaserPenSelected() noexcept
+{
+	return stateMode.laserActive;
+}
+
+bool IsLaserToolActive() noexcept
+{
+	return Inkeys::Business::IsLaserToolActive(
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen,
+		IsLaserPenSelected());
+}
+
+void RequestWhiteboardActive(bool active) noexcept
+{
+	if (!IsWhiteboardFeatureEnabled())
+	{
+		// 发布前临时拒绝所有入口，避免隐藏主栏后仍有调用方进入白板事务。
+		whiteboardDesired.store(false, std::memory_order_release);
+		whiteboardPreviousRequested.store(false, std::memory_order_release);
+		whiteboardNextRequested.store(false, std::memory_order_release);
+		return;
+	}
+	whiteboardDesired.store(active, std::memory_order_release);
+	if (!active)
+	{
+		whiteboardPreviousRequested.store(false, std::memory_order_release);
+		whiteboardNextRequested.store(false, std::memory_order_release);
+	}
+}
+
+bool WhiteboardRequested() noexcept
+{
+	return IsWhiteboardFeatureEnabled() &&
+		whiteboardDesired.load(std::memory_order_acquire);
+}
+
+bool WhiteboardActive() noexcept
+{
+	return IsWhiteboardFeatureEnabled() &&
+		whiteboardPhase.load(std::memory_order_acquire) ==
+		WhiteboardPhase::Active;
+}
+
+bool WhiteboardTransactionActive() noexcept
+{
+	return IsWhiteboardFeatureEnabled() &&
+		(whiteboardDesired.load(std::memory_order_acquire) ||
+		whiteboardPhase.load(std::memory_order_acquire) !=
+		WhiteboardPhase::Inactive);
+}
+
+void RequestWhiteboardPreviousPage() noexcept
+{
+	if (WhiteboardActive())
+		whiteboardPreviousRequested.store(true, std::memory_order_release);
+}
+
+void RequestWhiteboardNextPage() noexcept
+{
+	if (WhiteboardActive())
+		whiteboardNextRequested.store(true, std::memory_order_release);
+}
+
 bool SetPenWidth(float targetWidth, bool setMemory)
 {
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+	if (targetWidth <= 0.0f) return false;
+	// 仅活动 Laser 使用独立粗细；其他顶层工具不能被笔型记忆覆盖。
+	if (IsLaserToolActive())
+		stateMode.Pen.Laser.width = targetWidth;
+	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) stateMode.Pen.Brush1.width = targetWidth;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) stateMode.Pen.Highlighter1.width = targetWidth;
-		else return false;
+		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen ||
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
+			stateMode.Pen.Brush1.width = targetWidth;
+		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+			stateMode.Pen.Highlighter1.width = targetWidth;
+		else
+			return false;
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.width = targetWidth;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.width = targetWidth;
-		else return false;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
+			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+			stateMode.Shape.StraightLine1.width = targetWidth;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
+			stateMode.Shape.Rectangle1.width = targetWidth;
+		else
+			return false;
 	}
-	else return false;
+	else
+		return false;
 
 	if (setMemory) SetMemory();
-
+	PublishDraw3State();
 	return true;
 }
+
 bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) stateMode.Pen.Brush1.color = targetColor;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) stateMode.Pen.Highlighter1.color = targetColor;
-		else return false;
+		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
+			IsLaserToolActive(),
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+		if (colorSlot == Inkeys::Business::PenColorStateSlot::Laser)
+			stateMode.Pen.Laser.color = targetColor;
+		else if (colorSlot == Inkeys::Business::PenColorStateSlot::Brush)
+			stateMode.Pen.Brush1.color = targetColor;
+		else if (colorSlot == Inkeys::Business::PenColorStateSlot::Highlighter)
+			stateMode.Pen.Highlighter1.color = targetColor;
+		else
+			return false;
 	}
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) stateMode.Pen.Brush1.color = targetColor;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) stateMode.Pen.Brush1.color = targetColor;
-		else return false;
+		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
+			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+			stateMode.Shape.StraightLine1.color = targetColor;
+		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
+			stateMode.Shape.Rectangle1.color = targetColor;
+		else
+			return false;
 	}
-	else return false;
+	else
+		return false;
 
 	if (setMemory) SetMemory();
-
-	// 临时方案：改变 UI 背景颜色
-	if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-	else BackgroundColorMode = 1;
-
+	BackgroundColorMode = computeContrast(targetColor, RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	PublishDraw3State();
 	return true;
 }
+
 float GetPenWidth()
 {
-	float ret = 0.0f;
-
+	if (IsLaserToolActive()) return stateMode.Pen.Laser.width;
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) ret = stateMode.Pen.Brush1.width;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) ret = stateMode.Pen.Highlighter1.width;
+		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+			? stateMode.Pen.Highlighter1.width
+			: stateMode.Pen.Brush1.width;
 	}
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) ret = stateMode.Pen.Brush1.width;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) ret = stateMode.Pen.Brush1.width;
+		return stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+			? stateMode.Shape.Rectangle1.width
+			: stateMode.Shape.StraightLine1.width;
 	}
-
-	return ret;
+	return stateMode.Pen.Brush1.width;
 }
+
 COLORREF GetPenColor()
 {
-	COLORREF ret = RGBA(0, 0, 0, 255);
-
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) ret = stateMode.Pen.Brush1.color;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) ret = stateMode.Pen.Highlighter1.color;
+		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
+			IsLaserToolActive(),
+			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+		if (colorSlot == Inkeys::Business::PenColorStateSlot::Laser)
+			return stateMode.Pen.Laser.color;
+		return colorSlot == Inkeys::Business::PenColorStateSlot::Highlighter
+			? stateMode.Pen.Highlighter1.color : stateMode.Pen.Brush1.color;
 	}
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) ret = stateMode.Pen.Brush1.color;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) ret = stateMode.Pen.Brush1.color;
+		return stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+			? stateMode.Shape.Rectangle1.color
+			: stateMode.Shape.StraightLine1.color;
 	}
-	return ret;
+	return stateMode.Pen.Brush1.color;
+}
+
+float GetEffectivePenOpacity()
+{
+	// Laser 不复用已记忆的 Pen.ModeSelect；当前只有荧光笔使用固定半透明合成。
+	return !IsLaserToolActive() &&
+		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
+		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+		? Inkeys::Drawing::Draw3::Bridge::kHighlighterCompositeOpacity : 1.0f;
 }
 
 bool ChangeStateModeToSelection()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		if (!FreezeFrame.select || penetrate.select) FreezeFrame.mode = 0, FreezeFrame.select = false;
-		if (penetrate.select) penetrate.select = false;
-
-		if (state == 1.1) state = 1;
-
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		BackgroundColorMode = 0;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	if (state == 1.1) state = 1;
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+	BackgroundColorMode = 0;
+	SyncDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToPen()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		COLORREF targetColor;
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-		{
-			if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
-		}
-		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-		{
-			if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
-		}
-
-		if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-		else BackgroundColorMode = 1;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	SyncDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToShape()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		COLORREF targetColor;
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-		{
-			if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1) targetColor = stateMode.Pen.Highlighter1.color;
-		}
-		else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-		{
-			if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1) targetColor = stateMode.Pen.Brush1.color;
-			else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1) targetColor = stateMode.Pen.Brush1.color;
-		}
-
-		if (computeContrast(targetColor, RGB(255, 255, 255)) >= 3) BackgroundColorMode = 0;
-		else BackgroundColorMode = 1;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
+	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	SyncDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToEraser()
 {
 	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
-	}
-	// TODO 临时方案：改变 UI 背景颜色
-	{
-		BackgroundColorMode = 0;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
+	stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
 	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
+	BackgroundColorMode = 0;
+	SyncDraw3State();
 	return true;
 }
+
 bool ChangeStateModeToTouchTest()
 {
-	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtTouchTest;
-
-	// 标识绘制等待
-	{
-		unique_lock<shared_mutex> lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = true;
-		lockdrawWaitingSm.unlock();
-	}
-	// 防止绘图时冲突
-	{
-		shared_lock lockStrokeImageListSm(StrokeImageListSm);
-		bool start = !StrokeImageList.empty();
-		lockStrokeImageListSm.unlock();
-
-		// 正在绘制则取消操作
-		if (start)
-		{
-			// 取消标识绘制等待
-			{
-				unique_lock lockdrawWaitingSm(drawWaitingSm);
-				drawWaiting = false;
-				lockdrawWaitingSm.unlock();
-			}
-			return false;
-		}
-	}
-
-	// 切换状态
-	{
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtTouchTest;
-	}
-
-	// 取消标识绘制等待
-	{
-		unique_lock lockdrawWaitingSm(drawWaitingSm);
-		drawWaiting = false;
-		lockdrawWaitingSm.unlock();
-	}
-	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtTouchTest;
-	return true;
+	// 输入测试尚未接入 Draw3，入口由设置页隐藏。
+	return false;
 }
 
-// 状态监测
 void StateMonitoring()
 {
-	// 监测代码暂时不加入安全退出
-
-	chrono::high_resolution_clock::time_point StateMonitoringManipulated = chrono::high_resolution_clock::now();
+	auto snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+	std::uint64_t revision = snapshot.runtimeRevision;
+	bool pageSwitching = false;
+	bool requestedPreviousPage = false;
+	std::size_t requestedPageIndex = 0;
+	std::uint64_t pageCommandCountBeforeRequest = 0;
+	auto& service = Inkeys::Window::GetService();
+	ReconcileDraw3Presentation();
 	while (!offSignal)
 	{
-		if (penetrate.select)
+		// 内容、目标就绪和全帧 clean 共享一个 revision，避免快速切换漏掉握手。
+		(void)Inkeys::Drawing::Draw3::WaitForProductRuntimeRevision(revision, 250);
+		if (offSignal) break;
+		// 同步提交失败时沿用本循环的 250ms cadence，直到最新 owner 期望真正生效。
+		ReconcileSettingOwnerDesiredState();
+		snapshot = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const bool runtimeChanged = snapshot.runtimeRevision != revision;
+		if (runtimeChanged)
 		{
-			while (penetrate.select) this_thread::sleep_for(chrono::milliseconds(100));
-			StateMonitoringManipulated = chrono::high_resolution_clock::now();
+			revision = snapshot.runtimeRevision;
+		}
+		if (runtimeChanged || draw3PresentationRetryPending.load(
+			std::memory_order_acquire))
+		{
+			ReconcileDraw3Presentation();
 		}
 
-		if (stateMode.StateModeSelect == stateMode.StateModeSelectTarget && stateMode.StateModeSelect == stateMode.StateModeSelectEcho) StateMonitoringManipulated = chrono::high_resolution_clock::now();
-		if (chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - StateMonitoringManipulated).count() >= 3000 && !offSignal)
+		WhiteboardPhase phase = whiteboardPhase.load(std::memory_order_acquire);
+		const bool desired = whiteboardDesired.load(std::memory_order_acquire);
+		if (phase == WhiteboardPhase::Inactive && desired)
 		{
-			MessageBox(floating_window, L"There is a problem with the state of the whiteboard, click OK to restart 智绘教Inkeys to try to solve the problem.(#6)\n画板状态出现问题，点击确定重启 智绘教Inkeys 以尝试解决问题。(#6)", L"Inkeys Error | 智绘教错误", MB_OK | MB_SYSTEMMODAL);
-			RestartProgram();
-
-			return;
+			// Enter 先锁住辅助面板和指针，再由 Window Service 统一切换 HWND 样式。
+			whiteboardPhase.store(WhiteboardPhase::Entering,
+				std::memory_order_release);
+			Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+			Inkeys::UI::Whiteboard::CancelPointerCapture();
+			// PageControl 是共享宿主的唯一所有者；保留 PPT 状态并连续形变。
+			if (!service.EnterWhiteboardWindowMode())
+			{
+				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
+				Inkeys::UI::Ppt::PublishPresentationVisible(
+					PptInfoState.TotalPage > 0);
+				whiteboardPhase.store(WhiteboardPhase::Inactive,
+					std::memory_order_release);
+				continue;
+			}
+			// 几何目标不等待 Draw3 首帧；背景 active 仍在 Entering 就绪后发布。
+			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
+			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+			(void)service.SetClickThrough(
+				Inkeys::Window::WindowRole::Drawpad, true);
+			Inkeys::UI::Freeze::SetWhiteboardActive(true);
+			FreezePPT = false;
+			Inkeys::Drawing::Draw3::PublishProductWorkspace(
+				Workspace::Whiteboard);
+			continue;
 		}
 
-		this_thread::sleep_for(chrono::milliseconds(500));
+		if (phase == WhiteboardPhase::Entering)
+		{
+			if (!desired)
+			{
+				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Whiteboard::PublishPageState(
+					static_cast<int>(snapshot.currentPageIndex + 1),
+					static_cast<int>(snapshot.pageCount), true);
+				whiteboardPhase.store(WhiteboardPhase::Exiting,
+					std::memory_order_release);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					CurrentPrimaryWorkspace());
+				continue;
+			}
+			if (!Draw3WorkspaceReady(snapshot, Workspace::Whiteboard)) continue;
+
+			SetWhiteboardFreezeSurfaceOwned(true);
+			Inkeys::UI::Whiteboard::PublishPageState(
+				static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), false);
+			Inkeys::UI::Whiteboard::PublishActive(true);
+			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true)) continue;
+			Inkeys::UI::Bar::SetWhiteboardActive(true);
+			const bool whiteboardWindowStateReady =
+				service.SetOverlayFullscreen(true) &&
+				service.SetOverlayTopmost(false) &&
+				service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, false);
+			if (!whiteboardWindowStateReady)
+			{
+				// Enter 的窗口状态未完整收敛时回滚 UI/Freeze，再等待下一次请求重试。
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Whiteboard::PublishActive(false);
+				SetWhiteboardFreezeSurfaceOwned(false);
+				Inkeys::UI::Freeze::SetWhiteboardActive(false);
+				Inkeys::UI::Bar::SetWhiteboardActive(false);
+				(void)service.SetOverlayFullscreen(false);
+				(void)service.LeaveWhiteboardWindowMode();
+				(void)service.SetOverlayTopmost(true);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					CurrentPrimaryWorkspace());
+				whiteboardPhase.store(WhiteboardPhase::Exiting,
+					std::memory_order_release);
+				continue;
+			}
+			Inkeys::Drawing::Draw3::SetProductActivationAllowed(true);
+			whiteboardPhase.store(WhiteboardPhase::Active,
+				std::memory_order_release);
+			continue;
+		}
+
+		if (phase == WhiteboardPhase::Active)
+		{
+			if (!desired)
+			{
+				pageSwitching = false;
+				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+				// 单一 PageControl 从当前白板帧反向重定向，不插入隐藏帧。
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
+				Inkeys::UI::Whiteboard::PublishActive(false);
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Whiteboard::PublishPageState(
+					static_cast<int>(snapshot.currentPageIndex + 1),
+					static_cast<int>(snapshot.pageCount), true);
+				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+				whiteboardPhase.store(WhiteboardPhase::Exiting,
+					std::memory_order_release);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					CurrentPrimaryWorkspace());
+				continue;
+			}
+
+			if (pageSwitching)
+			{
+				const std::uint64_t completed = requestedPreviousPage
+					? snapshot.previousPageCommandCount
+					: snapshot.nextPageCommandCount;
+				if (snapshot.currentPageIndex == requestedPageIndex ||
+					completed != pageCommandCountBeforeRequest)
+					pageSwitching = false;
+			}
+			if (!pageSwitching && snapshot.workspace == Workspace::Whiteboard)
+			{
+				const bool previous = whiteboardPreviousRequested.exchange(
+					false, std::memory_order_acq_rel);
+				const bool next = whiteboardNextRequested.exchange(
+					false, std::memory_order_acq_rel);
+				if (previous && snapshot.currentPageIndex > 0)
+				{
+					requestedPageIndex = snapshot.currentPageIndex - 1;
+					requestedPreviousPage = true;
+					pageCommandCountBeforeRequest = snapshot.previousPageCommandCount;
+					pageSwitching = Inkeys::Drawing::Draw3::PublishProductCommand(
+						Inkeys::Drawing::Draw3::Bridge::CommandType::PreviousPage) ==
+						Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
+				}
+				else if (next)
+				{
+					requestedPageIndex = snapshot.currentPageIndex + 1;
+					requestedPreviousPage = false;
+					pageCommandCountBeforeRequest = snapshot.nextPageCommandCount;
+					pageSwitching = Inkeys::Drawing::Draw3::PublishProductCommand(
+						Inkeys::Drawing::Draw3::Bridge::CommandType::NextPage) ==
+						Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted;
+				}
+			}
+			Inkeys::UI::Whiteboard::PublishPageState(
+				static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), pageSwitching);
+			continue;
+		}
+
+		if (phase == WhiteboardPhase::Exiting)
+		{
+			if (desired)
+			{
+				// 先从当前插值帧重定向；背景仍等待 Draw3 Whiteboard 首帧。
+				Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(true);
+				Inkeys::UI::Bar::CollapseAuxiliaryPanels(true);
+				Inkeys::UI::Whiteboard::CancelPointerCapture();
+				if (!service.EnterWhiteboardWindowMode())
+				{
+					// 重入也必须等待完整的窗口样式事务，不复用半套状态。
+					whiteboardPhase.store(WhiteboardPhase::Exiting,
+						std::memory_order_release);
+					continue;
+				}
+				Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+				(void)service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, true);
+				Inkeys::UI::Freeze::SetWhiteboardActive(true);
+				Inkeys::Drawing::Draw3::PublishProductWorkspace(
+					Workspace::Whiteboard);
+				whiteboardPhase.store(WhiteboardPhase::Entering,
+					std::memory_order_release);
+				continue;
+			}
+			Inkeys::UI::Whiteboard::PublishExpandedLayoutTarget(false);
+			const Workspace primaryWorkspace = CurrentPrimaryWorkspace();
+			if (!Draw3WorkspaceReady(snapshot, primaryWorkspace)) continue;
+
+			// Presentation 已有可接管帧后才关闭 Whiteboard，避免 raw COM present 重叠。
+			Inkeys::UI::Whiteboard::PublishActive(false);
+			if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false)) continue;
+
+			Inkeys::UI::Whiteboard::PublishPageState(
+				static_cast<int>(snapshot.currentPageIndex + 1),
+				static_cast<int>(snapshot.pageCount), false);
+			SetWhiteboardFreezeSurfaceOwned(false);
+			(void)service.Hide(Inkeys::Window::WindowRole::Freeze);
+			// Presentation 辅助输出始终不参与输入；显式恢复其 click-through，
+			// 防止 Whiteboard 期间的窗口样式切换把旧命中状态带回桌面。
+			(void)service.SetClickThrough(
+				Inkeys::Window::WindowRole::DrawpadPresentation, true);
+			const bool presentationWindowStateReady =
+				service.SetOverlayFullscreen(false) &&
+				service.LeaveWhiteboardWindowMode() &&
+				service.SetOverlayTopmost(true) &&
+				service.SetClickThrough(
+					Inkeys::Window::WindowRole::Drawpad, snapshot.selectionMode);
+			if (!presentationWindowStateReady) continue;
+			Inkeys::UI::Freeze::SetWhiteboardActive(false);
+			Inkeys::UI::Bar::SetWhiteboardActive(false);
+			// window mode 恢复后重发 COM 事实；PageControl 始终是共享宿主唯一所有者。
+			Inkeys::UI::Ppt::PublishPresentationVisible(
+				PptInfoState.TotalPage > 0);
+			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
+			whiteboardPhase.store(WhiteboardPhase::Inactive,
+				std::memory_order_release);
+			ReconcileDraw3Presentation();
+		}
 	}
 }
 
 bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
 {
+	if (!stateModeInfo) return false;
+	stateModeInfo->brushWidth = GetPenWidth();
+	stateModeInfo->brushColor = GetPenColor();
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenBrush1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
-
-			stateModeInfo->brushMode = 1;
-		}
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Highlighter1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Highlighter1.color;
-
-			stateModeInfo->brushMode = 2;
-		}
-		else return false;
-	}
+		stateModeInfo->brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 2.0f : 1.0f;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
-
-			stateModeInfo->brushMode = 3;
-		}
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-		{
-			stateModeInfo->brushWidth = stateMode.Pen.Brush1.width;
-			stateModeInfo->brushColor = stateMode.Pen.Brush1.color;
-
-			stateModeInfo->brushMode = 4;
-		}
-		else return false;
-	}
-	else return false;
-
+		stateModeInfo->brushMode = stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1 ? 4.0f : 3.0f;
+	else
+		return false;
 	return true;
 }

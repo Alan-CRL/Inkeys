@@ -13,7 +13,7 @@
 
 ### 容易混淆的真实边界
 
-- `【直接确认】` 是否启用 `Inkeys.UI.Bar` 的开关是传统 `setlist.Experimental.Inkeys3.UI3`，定义于 `IdtConfiguration.h`，由 `IdtMain.cpp` 读入 `useInkeys3UI`。
+- `【直接确认】` `Inkeys.UI.Bar` 是唯一产品悬浮栏入口；传统 `setlist.Experimental.Inkeys3.UI3` 路由字段和 `useInkeys3UI` 已删除，写旧配置时清理遗留 key。
 - `【直接确认】` 新配置中的 `Experimental.Inkeys3.UI3.Animation` 控制 UI3 动画；`Experimental.Inkeys3.UI3.EdgeLighting` 控制 UI3 边缘点光及第三鼠标光。它们都不是选择新旧悬浮栏的总开关。
 - `【直接确认】` Bar 的 zoom 配置走 `Inkeys.Other.Config`；Bar 的其他行为仍可读取传统 `setlist`，因此不能把 Bar 简化成“只用新配置”。
 - `【直接确认】` PPT helper 新字段由 `IdtPlug-in.cpp` 等读取，但 `IdtPlug-in.cpp` 同时仍使用传统 PPT/交互设置。
@@ -33,6 +33,60 @@
 3. 仍由 `SetListStruct` 管理的字段保持当前文件兼容；迁移需同时设计旧值读取、默认值、写回和回滚。
 4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
 5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
+
+## 设置页废弃配置清理合同
+
+### 1. Scope / Trigger
+
+删除传统 Setting 条目或停止兼容旧 `deploy.json` / PPT 配置字段时适用；被工程标记为 `None` 的 Draw2 源文件不因此重新进入活动实现范围。
+
+### 2. Signatures
+
+- `ReadSetting()`：不再读取已废弃键。
+- `CaptureSettingJson()`：不再输出已废弃键，并在返回 JSON 前显式 `removeMember`。
+- `PptComReadSetting()` / `CapturePptComSettingJson()`：PPT 配置只读写仍有活动消费者的字段。
+
+### 3. Contracts
+
+- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。
+- PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
+- `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
+- 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧 `deploy.json` 含任一废弃键且 `AutoClean=false` | 读取忽略；下一次保存从输出中删除该键，其他未知键仍按原策略保留 |
+| 旧 PPT 配置含 `FixedHandWriting` | 读取忽略；下一次 PPT 配置写回不再输出 |
+| 配置缺少 `Save.Enable` | 使用现有默认值；不得因清理旧键关闭 Draw3 自动保存 |
+| 未编译 Draw2 文件仍引用兼容成员 | 不为清理活动配置而重写或重新编译该历史路径 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：旧配置关闭 `AutoClean`，保存后只移除明确废弃键，`Save.Enable` 与其他设置保持原值。
+- Base：新安装没有废弃键，捕获结果稳定且不会创建空的 `Performance` / `Preset` 对象。
+- Bad：只删除 Setting 卡片但继续读取/写回旧键，或把 `Save.Enable` 与 Draw2 遗留项一起删除。
+
+### 6. Tests Required
+
+- 静态搜索确认活动 Setting、配置读取和 i18n 不再引用删除项，且没有用 `#if 0` 代替删除。
+- 以包含全部旧键、`AutoClean=false` 的配置检查捕获结果：废弃键缺失、未知键保留、`Save.Enable` 保留。
+- 运行 i18n `sync/check`、完整 `InkeysRepo.sln` `Debug|ARM64` 构建和 `InkeysHeadlessTests.exe --no-window`。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：AutoClean 关闭时旧键被原样带回磁盘。
+if (configAutoClean)
+	setlistVal.clear();
+
+// Correct：全量清理由用户开关控制，明确退役的键始终清除。
+if (configAutoClean)
+	setlistVal.clear();
+setlistVal.removeMember("Performance");
+setlistVal.removeMember("Preset");
+```
 
 ## UI3 脏区调试与帧率显示配置合同
 
@@ -134,7 +188,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
-- A2 默认 required：Pierce, Freeze；Setting 属于 Extension 的显式 More 项。
+- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。`Pierce` 已退出产品合同，新 A2 配置不接受该 ID。
+- A2 运行时投影固定为：桌面显示 Whiteboard `twoOne` + Freeze `twoOne`；PPT 放映显示 Whiteboard `twoTwo` + EndShow `twoTwo`；全屏 Whiteboard 只显示“关闭白板” `twoTwo`。Freeze 在 PPT/Whiteboard 隐藏，EndShow 在非 PPT 或 Whiteboard 隐藏；这些是运行时 `hide/size`，不改写 A2 持久化顺序。
 - **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。当前虚拟投影始终包含 More 与 Setting，因此主栏恒按 `A1 | Divider | 最多两个 B 实体 | More | Divider | A2` 构建；旧组件全关时仍保留两条 Divider。Divider 保留 `oneTwo` 的两行布局占用，但只绘制 `1x50` DIP、圆角 `0.5` 的 Shape 细线并垂直居中；SurfaceFrame 填充透明度为 `0.30`，不得加载或绘制 SVG；PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。它不增加主栏横向宽度，而是居中复用上一组尾端已有的 `5` DIP 间隙；前组小按钮留下未填满列时必须先封列，再从新列排下一组，统一横坐标镜像继续保证左右布局对称。
 - **交界分割线交互**：Divider 必须从主栏悬停动画推进、指针扫描及点击/按压命中入口显式排除。遗留 hover、pressed、pressScale 状态应恢复为 `None/None/1.0`；不得通过禁用 Shape 或把可见态 `frameLightPct` 清零来实现不可交互，否则会错误关闭第三鼠标光。
 - **固定 More 入口**：运行时在 B 末尾、`B|A2` Divider 前注入一个硬编码 More 按钮。它不登记到 `ExtensionButtons`，不进入配置；主栏折叠时隐藏，浮层打开时使用普通按钮的 `Selected` 视觉状态。
@@ -168,6 +223,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | B 含未注册的 `Inkeys.*` 或非点分/空段 Id | 剔除；已注册 Setting/MoreBoundary 保留 |
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
+| 旧 A2 恰好为 Whiteboard/Freeze（任一顺序） | 保留相对顺序，在末尾追加 EndShow 并规范化默认尺寸 |
+| 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不注册 Pierce 实体 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
 | 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
 | 相邻两条 Divider（运行时/配置） | 只保留一条 |
@@ -199,7 +256,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 - 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、PNG 透明图标、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
 - 手工验证 0/1/2/3+ 个旧组件的主栏容量、MoreBoundary 两组顺序、分割线条件、上下展开物理行方向、与绘制属性一致的时长及 Back/Sine 动画、隐藏态 Selected 青色同步、More 固定小三角、右上角 X 悬停/按压/拖出，以及 `closeMoreAfterAction=false` 保持打开。
 - 手工验证主栏两条 Divider 保持 `oneTwo` 两行布局占用但只绘制垂直居中的 `1x50` DIP 纯 Shape，以及 `0.30` 填充/第三光强度、5 DIP 间隙居中、半列封列、左右镜像；指针经过/按下不产生背景、缩放或点击。
-- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；无自动化 UI 测试时记录未做运行验证。
+- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；Headless/静态断言确认旧 Whiteboard/Freeze 顺序迁移、A2 三态可见性、EndShow 单次业务投递、旧 Pierce 被迁移且新配置不接受；无自动化 UI 测试时记录未做运行验证。
 
 ### 7. Wrong vs Correct
 
@@ -223,6 +280,53 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 因此，文案变更应：先改基准 JSONC，再按任务授权运行 `sync`、处理翻译标记、运行 `check`，并审查所有生成差异。只审计时使用 `check`；`sync` 会写文件，不能在未授权的只读/文档任务中执行。不要手工编辑 `IdtI18nKeys.g.h`。
 
+### 生成键标识符与 Win32 宏合同
+
+#### 1. Scope / Trigger
+
+新增或重命名 i18n JSONC 节点时适用。`i18n.ps1 sync` 会把每个路径段直接生成为 C++ 成员标识符，因此这不只是 JSON schema 变更，也是生成 C++ API 变更。
+
+#### 2. Signatures
+
+~~~text
+"Dialogs/Common/OK" -> I18nKey.Dialogs.Common.OK
+~~~
+
+#### 3. Contracts
+
+- 每个路径段必须能生成合法 C++ 标识符，并且不得与目标翻译单元可见的 Windows/项目宏同名。
+- 特别禁止使用被 `<Windows.h>` 定义的 `MessageBox` 作为节点名；对话框文案使用 `Dialogs`。
+- 不通过调整 `#undef` 顺序掩盖 schema 命名冲突，因为生成头可被多个全局模块片段以不同顺序包含。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 节点名与 Win32/项目宏冲突 | 在基准 JSONC 重命名节点，重新 `sync`，再更新调用点 |
+| 非默认语言出现新 key | 填完翻译标记后 `check` 必须 100% 通过 |
+| 生成头与 JSONC 不一致 | 重跑 `sync`，不手改生成头 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：`Dialogs/Common/OK` 生成 `I18nKey.Dialogs.Common.OK`，在包含 `<Windows.h>` 的单元中可直接编译。
+- Base：普通非冲突节点按现有生成规则使用。
+- Bad：`MessageBox/Common/OK` 会让成员 token 在预处理期被改写为 `MessageBoxW`。
+
+#### 6. Tests Required
+
+- 运行 `pwsh ./Scripts/i18n.ps1 sync` 和 `check`。
+- 搜索生成头中的新成员名，并完整构建至少一个包含 `<Windows.h>` 且消费该 key 的翻译单元。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：MessageBox 可被 Windows.h 宏展开。
+I18nKey.MessageBox.Common.OK;
+
+// Correct：使用无宏冲突的 schema 节点。
+I18nKey.Dialogs.Common.OK;
+~~~
+
 ## 产品资源位置与加载路径
 
 `【直接确认】` 可见资源目录/登记点：
@@ -241,7 +345,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 ## 二进制与生成资源的范围
 
 - `【直接确认】` `Inkeys/exe/` 当前可见 `DesktopDrawpadBlocker.exe`；其生成/更新来源为 `【待确认】`。
-- `【直接确认】` `Inkeys/binarypackage/` 含 EasyX/HiEasyX 相关库/产物；正式生成与更新流程为 `【待确认】`。
+- `【直接确认】` 原分架构 EasyX 静态库已从 `Inkeys/binarypackage/` 删除；不得由打包流程重新复制。
 - `【直接确认】` `PptCOM.dll`/`.tlb` 由 `PptCOM.csproj` 的构建后步骤生成/复制；仓库内预编译产物还被构建文档用作兼容路径。
 - shader、字体和图像是否全部可重建、哪些随发布包解包，需结合 `vcxproj`、`.rc`、打包脚本逐项确认，不能由目录名外推。
 

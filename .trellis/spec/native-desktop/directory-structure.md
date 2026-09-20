@@ -48,9 +48,9 @@
 | Inkeys/src/i18n/ | zh-CN、zh-TW、en-US JSONC 文案 |
 | Inkeys/src/ppt/ | PPT 控件相关图像资源 |
 | Inkeys/src/quick/、setting/、skin/、ttf/、UI/ | 快捷操作、设置、皮肤、字体和 UI 资源 |
-| Inkeys/exe/、binarypackage/ | 已存在 DesktopDrawpadBlocker.exe 和分架构 EasyX 库；生成来源、更新方式与打包链待确认 |
+| Inkeys/exe/、binarypackage/ | 已存在 DesktopDrawpadBlocker.exe 等随附二进制；EasyX 分架构静态库已删除 |
 | Inkeys/additional/ | Dear ImGui 后端、stb、WinToast、zip、hash 等随附第三方代码 |
-| Inkeys/HiEasyX/ | HiEasyX/EasyX 封装与相关库，视为外部/随附实现 |
+| Inkeys/additional/HiMsg/ | Win32 消息队列 Git submodule；主仓只固定上游 commit，不嵌套其 Vcpkg |
 
 ## C++20 module 的已观察模式
 
@@ -69,9 +69,9 @@
 
 - Vcpkg 及 VcpkgInstalled；
 - Inkeys/additional；
-- Inkeys/HiEasyX；
+- Inkeys/additional/HiMsg；
 - Timeout/InkeysTimeout/json；
 - Package 中的 Office/Interop 包；
-- Inkeys 中随附的旧 DirectX/EasyX 二进制或头文件。
+- Inkeys 中其他随附的旧 DirectX 二进制或头文件。
 
 **【合理推断】** 只有任务明确涉及依赖升级、补丁或许可时才修改这些区域，并把第三方改动与产品代码改动分开说明；Vcpkg 不递归修改还受到本 Bootstrap 用户约束。

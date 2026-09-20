@@ -2,8 +2,11 @@
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
+#include <dwrite_1.h>
+#include <wrl/client.h>
 #include <array>
+#include <chrono>
 #include <cstdint>
 
 export module Inkeys.UI.Bar:Rendering;
@@ -15,6 +18,8 @@ import :Format;
 import :RenderingAttribute;
 
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.RenderPipeline;
+using Ui3RenderDeviceEpoch = Inkeys::UI::RenderPipeline::DeviceEpoch;
 
 constexpr double BarSvgRasterUpscaleThreshold = 1.35;
 constexpr double BarSvgRasterSizeEpsilon = 0.01;
@@ -43,6 +48,24 @@ enum class BarBorderPrimaryAnchorEnum : int
 	Eraser,
 	Geometry,
 };
+
+// Surface 只消费 Main Bar 已经计算完成的两路光源，不复制第三光源状态机。
+export struct BarUiFrameLightingSnapshot
+{
+	D2D1_POINT_2F primaryLight = D2D1::Point2F();
+	FLOAT primaryRadius = 0.0F;
+	D2D1_POINT_2F cursorLight = D2D1::Point2F();
+	D2D1_POINT_2F cursorScreenLight = D2D1::Point2F();
+	FLOAT cursorRadius = 0.0F;
+	FLOAT cursorIntensity = 0.0F;
+	COLORREF drawingPenColor = RGB(0, 0, 0);
+	double drawingPenColorBlend = 0.0;
+	double drawingLightOpacity = 1.0;
+	bool primaryLightVisible = false;
+	bool cursorLightVisible = false;
+	bool edgeLightingEnabled = false;
+};
+
 // 具体渲染
 class BarUIRendering
 {
@@ -60,7 +83,7 @@ public:
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
 	bool PrepareFrameLighting(double animationDtSeconds,
 		int drawingMode, int penMode, COLORREF brush1Color,
-		COLORREF highlighterColor, bool penetrateSelected);
+		COLORREF highlighterColor);
 	[[nodiscard]] RECT GetFramePrimaryLightDamageBounds() const noexcept;
 	[[nodiscard]] RECT GetFrameCursorLightDamageBounds() const noexcept;
 	[[nodiscard]] bool DidFramePrimaryLightChange() const noexcept
@@ -71,9 +94,17 @@ public:
 	{
 		return frameCursorLightChanged;
 	}
+	[[nodiscard]] BarUiFrameLightingSnapshot
+		SnapshotFrameLighting() const noexcept;
+	void SetFrameLightingSnapshot(
+		const BarUiFrameLightingSnapshot& snapshot) noexcept;
 	void SetFrameZoom(double zoom)
 	{
 		frameZoom = std::isfinite(zoom) && zoom > 0.0 ? zoom : 1.0;
+	}
+	[[nodiscard]] double GetFrameZoom() const noexcept
+	{
+		return frameZoom;
 	}
 	HRESULT EnsureDeviceResources(const Ui3RenderDeviceEpoch& epoch,
 		UINT32 targetWidth, UINT32 targetHeight);
@@ -85,9 +116,17 @@ public:
 	{
 		return gdiInteropRenderTarget.Get();
 	}
+	[[nodiscard]] ID2D1Bitmap1* GetTargetBitmap() const noexcept
+	{
+		return targetBitmap.Get();
+	}
 	[[nodiscard]] unsigned long long GetDeviceGeneration() const noexcept
 	{
 		return deviceGeneration;
+	}
+	[[nodiscard]] D2D1_SIZE_U GetTargetBitmapSize() const noexcept
+	{
+		return D2D1::SizeU(targetBitmapWidth, targetBitmapHeight);
 	}
 	void DiscardDeviceResources();
 	void PushFrameDirtyClip(
@@ -97,6 +136,17 @@ public:
 	void SetFrameDiffuseMaskGeometryScale(double scale)
 	{
 		frameDiffuseMaskGeometryScale = scale > 0.0 ? scale : 1.0;
+	}
+	void SetFrameCursorLightLocalGeometry(
+		D2D1_POINT_2F center, D2D1_SIZE_F radius) noexcept
+	{
+		frameLocalCursorLight = center;
+		frameLocalCursorLightRadiusX =
+			std::isfinite(radius.width) && radius.width > 0.0F
+				? radius.width : 0.0F;
+		frameLocalCursorLightRadiusY =
+			std::isfinite(radius.height) && radius.height > 0.0F
+				? radius.height : 0.0F;
 	}
 
 public:
@@ -201,7 +251,8 @@ protected:
 		ComPtr<ID2D1LinearGradientBrush> brush;
 	};
 
-	ID2D1RadialGradientBrush* GetFrameGradientBrush(
+	// 返回强引用，避免缓存扩容或换 epoch 时使当前帧仍在使用的 brush 失效。
+	ComPtr<ID2D1RadialGradientBrush> GetFrameGradientBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, BarBorderLightSourceEnum lightSource);
 	ID2D1SolidColorBrush* GetFrameSolidColorBrush(
 		ID2D1DeviceContext* deviceContext, COLORREF color, double opacity);
@@ -267,16 +318,22 @@ protected:
 	ComPtr<ID2D1Bitmap1> targetBitmap;
 	ComPtr<ID2D1GdiInteropRenderTarget> gdiInteropRenderTarget;
 	unsigned long long deviceGeneration = 0;
+	UINT32 targetBitmapWidth = 0;
+	UINT32 targetBitmapHeight = 0;
 
 	D2D1_POINT_2F framePrimaryLight = D2D1::Point2F();
 	D2D1_POINT_2F framePrimaryLightStart = D2D1::Point2F();
 	D2D1_POINT_2F framePrimaryLightTarget = D2D1::Point2F();
 	D2D1_POINT_2F frameCursorLight = D2D1::Point2F();
+	D2D1_POINT_2F frameCursorScreenLight = D2D1::Point2F();
+	D2D1_POINT_2F frameLocalCursorLight = D2D1::Point2F();
 	FLOAT frameCursorLightIntensity = 0.0F;
 	FLOAT frameCursorLightIntensityStart = 0.0F;
 	FLOAT frameCursorLightIntensityTarget = 0.0F;
 	FLOAT frameLightRadius = 0.0F;
 	FLOAT frameCursorLightRadius = 0.0F;
+	FLOAT frameLocalCursorLightRadiusX = 0.0F;
+	FLOAT frameLocalCursorLightRadiusY = 0.0F;
 	BarBorderPrimaryAnchorEnum framePrimaryLightAnchor = BarBorderPrimaryAnchorEnum::MainButton;
 	bool framePrimaryLightAnchorInitialized = false;
 	bool framePrimaryLightAnimating = false;

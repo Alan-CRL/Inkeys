@@ -12,6 +12,8 @@ module;
 
 export module Inkeys.Other.Config;
 
+import Inkeys.UI.Bar.Metrics;
+
 export namespace Inkeys
 {
 	enum class ConfigUploadMode
@@ -30,8 +32,9 @@ export namespace Inkeys
 		inline constexpr char Geometry[] = "Inkeys.Bar.Geometry";
 		inline constexpr char Recall[] = "Inkeys.Bar.Recall";
 		inline constexpr char Clean[] = "Inkeys.Bar.Clean";
-		inline constexpr char Pierce[] = "Inkeys.Bar.Pierce";
+		inline constexpr char Whiteboard[] = "Inkeys.Bar.Whiteboard";
 		inline constexpr char Freeze[] = "Inkeys.Bar.Freeze";
+		inline constexpr char EndShow[] = "Inkeys.Bar.EndShow";
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
 
@@ -124,7 +127,8 @@ export namespace Inkeys
 		inline BarButtonSizeKind DefaultSizeForBarButtonId(std::string_view id)
 		{
 			if (id == BarButtonId::Divider) return BarButtonSizeKind::OneTwo;
-			if (id == BarButtonId::Pierce || id == BarButtonId::Freeze) return BarButtonSizeKind::TwoOne;
+			if (id == BarButtonId::Whiteboard || id == BarButtonId::Freeze)
+				return BarButtonSizeKind::TwoOne;
 			return BarButtonSizeKind::TwoTwo;
 		}
 
@@ -144,10 +148,10 @@ inline bool IsFixedButtonsA1Id(std::string_view id)
 				return id == BarButtonId::Divider;
 			}
 
-		inline bool IsFixedButtonsA2Id(std::string_view id)
+		inline constexpr bool IsFixedButtonsA2Id(std::string_view id)
 		{
-			return id == BarButtonId::Pierce
-				|| id == BarButtonId::Freeze;
+			return id == BarButtonId::Whiteboard || id == BarButtonId::Freeze
+				|| id == BarButtonId::EndShow;
 		}
 
 		inline bool IsOfficialFixedBarButtonId(std::string_view id)
@@ -213,8 +217,9 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 		inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA2()
 		{
 			return {
-				{ BarButtonId::Pierce, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::Whiteboard, BarButtonSizeKind::TwoOne },
 				{ BarButtonId::Freeze, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::EndShow, BarButtonSizeKind::TwoTwo },
 			};
 		}
 	}
@@ -266,9 +271,35 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
 			) \
 		) \
+	GROUP(Drawing, \
+		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Sensitivity, 1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseLeft, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MouseRight, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Touch, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTip, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTail, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTipResponse, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenTailResponse, -1) \
+		) \
+	) \
 	GROUP(Experimental, \
 		GROUP(Inkeys3, \
+			GROUP(Draw3, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
+			) \
+			GROUP(ConsoleOutput, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
+			) \
 			GROUP(UI3, \
+				GROUP(StartupPreview, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
+				) \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \

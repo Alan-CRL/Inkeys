@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "IdtMain.h"
+#include "Inkeys/Graphics/Surface.hpp"
 
 void removeEmptyFolders(std::wstring path);
 void removeUnknownFiles(std::wstring path, std::deque<std::wstring> knownFiles);
@@ -12,7 +13,7 @@ extern Json::Value record_value;
 //载入记录
 void LoadDrawpad();
 //保存图像到指定目录
-void SaveScreenShot(IMAGE img, bool record_pointer_add);
+void SaveScreenShot(Inkeys::Graphics::DibSurface surface, bool record_pointer_add);
 
 // 撤回操作
 void IdtRecall();

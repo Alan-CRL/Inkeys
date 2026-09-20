@@ -2,7 +2,7 @@ module;
 
 #include "../../../IdtMain.h"
 
-#include "../../../IdtD2DPreparation.h"
+#include <d2d1_1.h>
 #include <wrl/client.h>
 
 #include <functional>
@@ -217,6 +217,11 @@ enum class BarUiFrameLightOpacitySourceEnum : int
 };
 
 //// 单个形状控件
+// Shape 与独立 surface 共用同一圆角命中，避免只在绘制上看起来一致。
+bool BarUiRoundedRectContainsPoint(int mx, int my, double zoom,
+	double leftDip, double topDip, double widthDip, double heightDip,
+	double radiusXDip, double radiusYDip, double epsilon = 1e-6) noexcept;
+
 class BarUiShapeClass : public BarUiInnheritBaseClass
 {
 public:
@@ -391,6 +396,7 @@ public:
 	void Initialization(double xT, double yT, double wT, double hT, wstring contentT, double sizeT, COLORREF colorT = RGB(0, 0, 0), BarUiValueModeEnum type = BarUiValueModeEnum::Linear);
 	bool TransitionToString(const wstring& contentT, optional<double> durT = nullopt,
 		double keyframeProgressT = 0.5, double middleScaleT = 0.8);
+	bool SetStringImmediate(const wstring& contentT);
 	bool AdvanceContentTransition(double dt, double speedRate);
 	void CancelContentTransition();
 

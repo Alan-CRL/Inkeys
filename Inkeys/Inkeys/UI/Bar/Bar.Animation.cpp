@@ -12,10 +12,13 @@ module;
 
 module Inkeys.UI.Bar.Animation;
 
+import Inkeys.UI.Bar.Metrics;
+
 using namespace std;
 
 IdtAtomic<double> BarUiDefaultDes = 600.0; // 全局默认速度 px/s
-IdtAtomic<double> BarUiDefaultOperationDur = 0.4; // 默认操作过程时长 s
+IdtAtomic<double> BarUiDefaultOperationDur =
+	BarButtonDefaultOperationDurationSeconds; // 默认操作过程时长 s
 IdtAtomic<bool> BarUiAnimationEnabled = true;
 IdtAtomic<double> BarUiAnimationSpeedRate = 1.00;
 

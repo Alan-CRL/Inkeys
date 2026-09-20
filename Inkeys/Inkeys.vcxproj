@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM64">
@@ -100,6 +100,13 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <!-- 沿用 Draw3 固定版本库，并按目标架构选择对应二进制。 -->
+    <VcpkgConfiguration Condition="'$(Configuration)'=='Debug'">Release</VcpkgConfiguration>
+    <InkStrokeModelerLibraryDirectory Condition="'$(Platform)'=='Win32'">..\inkStrokeModelerTest\lib\lib32</InkStrokeModelerLibraryDirectory>
+    <InkStrokeModelerLibraryDirectory Condition="'$(Platform)'=='x64'">..\inkStrokeModelerTest\lib\lib64</InkStrokeModelerLibraryDirectory>
+    <InkStrokeModelerLibraryDirectory Condition="'$(Platform)'=='ARM64'">..\inkStrokeModelerTest\lib\libArm64</InkStrokeModelerLibraryDirectory>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
@@ -162,6 +169,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -181,10 +189,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
@@ -201,9 +209,10 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
@@ -221,10 +230,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
@@ -260,10 +269,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.01</MinimumRequiredVersion>
     </Link>
@@ -280,7 +289,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
@@ -299,10 +308,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\X64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -317,6 +326,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Full</Optimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -338,10 +348,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <MinimumRequiredVersion>6.02</MinimumRequiredVersion>
     </Link>
@@ -359,8 +369,8 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;IMGUI_DISABLE_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>.\additional;$(IntDir)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>.\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;$(IntDir)</AdditionalIncludeDirectories>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
@@ -379,10 +389,10 @@
       <OptimizeReferences>
       </OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VcpkgInstalledDir)$(VcpkgTriplet)\lib\*.lib;winmm.lib;d3d11.lib;dxgi.lib;dcomp.lib;dwmapi.lib;ole32.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalManifestDependencies>%(AdditionalManifestDependencies)</AdditionalManifestDependencies>
       <AdditionalOptions>/IGNORE:4042 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalLibraryDirectories>.\additional;.\binarypackage\lib\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(InkStrokeModelerLibraryDirectory);.\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <LargeAddressAware>true</LargeAddressAware>
       <DelayLoadDLLs>Magnification.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -391,8 +401,17 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	<ClInclude Include="Inkeys\Graphics\Surface.Core.hpp" />
+	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
+	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
+	<ClInclude Include="Inkeys\Business\PenToolState.hpp" />
+	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.A2.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
@@ -429,43 +448,8 @@
     <ClInclude Include="additional\wintoastlib\wintoastlib.h" />
     <ClInclude Include="additional\ziputils\unzip.h" />
     <ClInclude Include="additional\ziputils\zip.h" />
-    <ClInclude Include="HiEasyX.h" />
-    <ClInclude Include="HiEasyX\HiCanvas.h" />
-    <ClInclude Include="HiEasyX\HiContainer.h" />
-    <ClInclude Include="HiEasyX\HiDef.h" />
-    <ClInclude Include="HiEasyX\HiDrawingProperty.h" />
-    <ClInclude Include="HiEasyX\HiFPS.h" />
-    <ClInclude Include="HiEasyX\HiFunc.h" />
-    <ClInclude Include="HiEasyX\HiGdiplus.h" />
-    <ClInclude Include="HiEasyX\HiGif.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Button.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ControlBase.h" />
-    <ClInclude Include="HiEasyX\HiGUI\HiGUI.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Page.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ProgressCtrl.h" />
-    <ClInclude Include="HiEasyX\HiGUI\ScrollBar.h" />
-    <ClInclude Include="HiEasyX\HiGUI\Static.h" />
-    <ClInclude Include="HiEasyX\HiIcon.h" />
-    <ClInclude Include="HiEasyX\HiMacro.h" />
-    <ClInclude Include="HiEasyX\HiMouseDrag.h" />
-    <ClInclude Include="HiEasyX\HiMusicMCI.h" />
-    <ClInclude Include="HiEasyX\HiStart.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\HiSysGUI.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysButton.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysCheckBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysComboBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysControlBase.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysEdit.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroup.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysGroupBox.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysRadioButton.h" />
-    <ClInclude Include="HiEasyX\HiSysGUI\SysStatic.h" />
-    <ClInclude Include="HiEasyX\HiWindow.h" />
     <ClInclude Include="IdtConfiguration.h" />
-    <ClInclude Include="IdtD2DPreparation.h" />
-    <ClInclude Include="IdtDisplayManagement.h" />
     <ClInclude Include="IdtDrawpad.h" />
-    <ClInclude Include="IdtFloating.h" />
     <ClInclude Include="IdtFreezeFrame.h" />
     <ClInclude Include="IdtGuid.h" />
     <ClInclude Include="IdtHistoricalDrawpad.h" />
@@ -478,16 +462,403 @@
     <ClInclude Include="IdtStart.h" />
     <ClInclude Include="IdtState.h" />
     <ClInclude Include="IdtSysNotifications.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Wrap.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="IdtRts.h" />
     <ClInclude Include="IdtTime.h" />
-    <ClInclude Include="IdtWindow.h" />
     <ClInclude Include="SuperTop\IdtSuperTop.h" />
     <ClInclude Include="SuperTop\IdtToken.h" />
+    <ClInclude Include="additional\absl\algorithm\algorithm.h" />
+    <ClInclude Include="additional\absl\algorithm\container.h" />
+    <ClInclude Include="additional\absl\base\attributes.h" />
+    <ClInclude Include="additional\absl\base\call_once.h" />
+    <ClInclude Include="additional\absl\base\casts.h" />
+    <ClInclude Include="additional\absl\base\config.h" />
+    <ClInclude Include="additional\absl\base\const_init.h" />
+    <ClInclude Include="additional\absl\base\dynamic_annotations.h" />
+    <ClInclude Include="additional\absl\base\fast_type_id.h" />
+    <ClInclude Include="additional\absl\base\internal\atomic_hook.h" />
+    <ClInclude Include="additional\absl\base\internal\cycleclock.h" />
+    <ClInclude Include="additional\absl\base\internal\cycleclock_config.h" />
+    <ClInclude Include="additional\absl\base\internal\direct_mmap.h" />
+    <ClInclude Include="additional\absl\base\internal\dynamic_annotations.h" />
+    <ClInclude Include="additional\absl\base\internal\endian.h" />
+    <ClInclude Include="additional\absl\base\internal\errno_saver.h" />
+    <ClInclude Include="additional\absl\base\internal\hide_ptr.h" />
+    <ClInclude Include="additional\absl\base\internal\identity.h" />
+    <ClInclude Include="additional\absl\base\internal\iterator_traits.h" />
+    <ClInclude Include="additional\absl\base\internal\low_level_alloc.h" />
+    <ClInclude Include="additional\absl\base\internal\low_level_scheduling.h" />
+    <ClInclude Include="additional\absl\base\internal\nullability_deprecated.h" />
+    <ClInclude Include="additional\absl\base\internal\per_thread_tls.h" />
+    <ClInclude Include="additional\absl\base\internal\poison.h" />
+    <ClInclude Include="additional\absl\base\internal\pretty_function.h" />
+    <ClInclude Include="additional\absl\base\internal\raw_logging.h" />
+    <ClInclude Include="additional\absl\base\internal\scheduling_mode.h" />
+    <ClInclude Include="additional\absl\base\internal\scoped_set_env.h" />
+    <ClInclude Include="additional\absl\base\internal\spinlock.h" />
+    <ClInclude Include="additional\absl\base\internal\spinlock_wait.h" />
+    <ClInclude Include="additional\absl\base\internal\strerror.h" />
+    <ClInclude Include="additional\absl\base\internal\sysinfo.h" />
+    <ClInclude Include="additional\absl\base\internal\thread_identity.h" />
+    <ClInclude Include="additional\absl\base\internal\throw_delegate.h" />
+    <ClInclude Include="additional\absl\base\internal\tracing.h" />
+    <ClInclude Include="additional\absl\base\internal\tsan_mutex_interface.h" />
+    <ClInclude Include="additional\absl\base\internal\unaligned_access.h" />
+    <ClInclude Include="additional\absl\base\internal\unscaledcycleclock.h" />
+    <ClInclude Include="additional\absl\base\internal\unscaledcycleclock_config.h" />
+    <ClInclude Include="additional\absl\base\log_severity.h" />
+    <ClInclude Include="additional\absl\base\macros.h" />
+    <ClInclude Include="additional\absl\base\no_destructor.h" />
+    <ClInclude Include="additional\absl\base\nullability.h" />
+    <ClInclude Include="additional\absl\base\optimization.h" />
+    <ClInclude Include="additional\absl\base\options.h" />
+    <ClInclude Include="additional\absl\base\policy_checks.h" />
+    <ClInclude Include="additional\absl\base\port.h" />
+    <ClInclude Include="additional\absl\base\prefetch.h" />
+    <ClInclude Include="additional\absl\base\thread_annotations.h" />
+    <ClInclude Include="additional\absl\cleanup\cleanup.h" />
+    <ClInclude Include="additional\absl\cleanup\internal\cleanup.h" />
+    <ClInclude Include="additional\absl\container\btree_map.h" />
+    <ClInclude Include="additional\absl\container\btree_set.h" />
+    <ClInclude Include="additional\absl\container\fixed_array.h" />
+    <ClInclude Include="additional\absl\container\flat_hash_map.h" />
+    <ClInclude Include="additional\absl\container\flat_hash_set.h" />
+    <ClInclude Include="additional\absl\container\hash_container_defaults.h" />
+    <ClInclude Include="additional\absl\container\inlined_vector.h" />
+    <ClInclude Include="additional\absl\container\internal\btree.h" />
+    <ClInclude Include="additional\absl\container\internal\btree_container.h" />
+    <ClInclude Include="additional\absl\container\internal\common.h" />
+    <ClInclude Include="additional\absl\container\internal\common_policy_traits.h" />
+    <ClInclude Include="additional\absl\container\internal\compressed_tuple.h" />
+    <ClInclude Include="additional\absl\container\internal\container_memory.h" />
+    <ClInclude Include="additional\absl\container\internal\hash_function_defaults.h" />
+    <ClInclude Include="additional\absl\container\internal\hash_policy_traits.h" />
+    <ClInclude Include="additional\absl\container\internal\hashtable_control_bytes.h" />
+    <ClInclude Include="additional\absl\container\internal\hashtable_debug.h" />
+    <ClInclude Include="additional\absl\container\internal\hashtable_debug_hooks.h" />
+    <ClInclude Include="additional\absl\container\internal\hashtablez_sampler.h" />
+    <ClInclude Include="additional\absl\container\internal\inlined_vector.h" />
+    <ClInclude Include="additional\absl\container\internal\layout.h" />
+    <ClInclude Include="additional\absl\container\internal\node_slot_policy.h" />
+    <ClInclude Include="additional\absl\container\internal\raw_hash_map.h" />
+    <ClInclude Include="additional\absl\container\internal\raw_hash_set.h" />
+    <ClInclude Include="additional\absl\container\internal\raw_hash_set_resize_impl.h" />
+    <ClInclude Include="additional\absl\container\internal\tracked.h" />
+    <ClInclude Include="additional\absl\container\node_hash_map.h" />
+    <ClInclude Include="additional\absl\container\node_hash_set.h" />
+    <ClInclude Include="additional\absl\crc\crc32c.h" />
+    <ClInclude Include="additional\absl\crc\internal\cpu_detect.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc32_x86_arm_combined_simd.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc32c.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc32c_inline.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc_cord_state.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc_internal.h" />
+    <ClInclude Include="additional\absl\crc\internal\crc_memcpy.h" />
+    <ClInclude Include="additional\absl\crc\internal\non_temporal_arm_intrinsics.h" />
+    <ClInclude Include="additional\absl\crc\internal\non_temporal_memcpy.h" />
+    <ClInclude Include="additional\absl\debugging\failure_signal_handler.h" />
+    <ClInclude Include="additional\absl\debugging\internal\address_is_readable.h" />
+    <ClInclude Include="additional\absl\debugging\internal\addresses.h" />
+    <ClInclude Include="additional\absl\debugging\internal\bounded_utf8_length_sequence.h" />
+    <ClInclude Include="additional\absl\debugging\internal\decode_rust_punycode.h" />
+    <ClInclude Include="additional\absl\debugging\internal\demangle.h" />
+    <ClInclude Include="additional\absl\debugging\internal\demangle_rust.h" />
+    <ClInclude Include="additional\absl\debugging\internal\elf_mem_image.h" />
+    <ClInclude Include="additional\absl\debugging\internal\examine_stack.h" />
+    <ClInclude Include="additional\absl\debugging\internal\stack_consumption.h" />
+    <ClInclude Include="additional\absl\debugging\internal\stacktrace_config.h" />
+    <ClInclude Include="additional\absl\debugging\internal\symbolize.h" />
+    <ClInclude Include="additional\absl\debugging\internal\utf8_for_code_point.h" />
+    <ClInclude Include="additional\absl\debugging\internal\vdso_support.h" />
+    <ClInclude Include="additional\absl\debugging\leak_check.h" />
+    <ClInclude Include="additional\absl\debugging\stacktrace.h" />
+    <ClInclude Include="additional\absl\debugging\symbolize.h" />
+    <ClInclude Include="additional\absl\flags\commandlineflag.h" />
+    <ClInclude Include="additional\absl\flags\config.h" />
+    <ClInclude Include="additional\absl\flags\declare.h" />
+    <ClInclude Include="additional\absl\flags\flag.h" />
+    <ClInclude Include="additional\absl\flags\internal\commandlineflag.h" />
+    <ClInclude Include="additional\absl\flags\internal\flag.h" />
+    <ClInclude Include="additional\absl\flags\internal\parse.h" />
+    <ClInclude Include="additional\absl\flags\internal\path_util.h" />
+    <ClInclude Include="additional\absl\flags\internal\private_handle_accessor.h" />
+    <ClInclude Include="additional\absl\flags\internal\program_name.h" />
+    <ClInclude Include="additional\absl\flags\internal\registry.h" />
+    <ClInclude Include="additional\absl\flags\internal\sequence_lock.h" />
+    <ClInclude Include="additional\absl\flags\internal\usage.h" />
+    <ClInclude Include="additional\absl\flags\marshalling.h" />
+    <ClInclude Include="additional\absl\flags\parse.h" />
+    <ClInclude Include="additional\absl\flags\reflection.h" />
+    <ClInclude Include="additional\absl\flags\usage.h" />
+    <ClInclude Include="additional\absl\flags\usage_config.h" />
+    <ClInclude Include="additional\absl\functional\any_invocable.h" />
+    <ClInclude Include="additional\absl\functional\bind_front.h" />
+    <ClInclude Include="additional\absl\functional\function_ref.h" />
+    <ClInclude Include="additional\absl\functional\internal\any_invocable.h" />
+    <ClInclude Include="additional\absl\functional\internal\front_binder.h" />
+    <ClInclude Include="additional\absl\functional\internal\function_ref.h" />
+    <ClInclude Include="additional\absl\functional\overload.h" />
+    <ClInclude Include="additional\absl\hash\hash.h" />
+    <ClInclude Include="additional\absl\hash\internal\city.h" />
+    <ClInclude Include="additional\absl\hash\internal\hash.h" />
+    <ClInclude Include="additional\absl\hash\internal\low_level_hash.h" />
+    <ClInclude Include="additional\absl\hash\internal\spy_hash_state.h" />
+    <ClInclude Include="additional\absl\hash\internal\weakly_mixed_integer.h" />
+    <ClInclude Include="additional\absl\log\absl_check.h" />
+    <ClInclude Include="additional\absl\log\absl_log.h" />
+    <ClInclude Include="additional\absl\log\absl_vlog_is_on.h" />
+    <ClInclude Include="additional\absl\log\check.h" />
+    <ClInclude Include="additional\absl\log\die_if_null.h" />
+    <ClInclude Include="additional\absl\log\flags.h" />
+    <ClInclude Include="additional\absl\log\globals.h" />
+    <ClInclude Include="additional\absl\log\initialize.h" />
+    <ClInclude Include="additional\absl\log\internal\append_truncated.h" />
+    <ClInclude Include="additional\absl\log\internal\check_impl.h" />
+    <ClInclude Include="additional\absl\log\internal\check_op.h" />
+    <ClInclude Include="additional\absl\log\internal\conditions.h" />
+    <ClInclude Include="additional\absl\log\internal\config.h" />
+    <ClInclude Include="additional\absl\log\internal\flags.h" />
+    <ClInclude Include="additional\absl\log\internal\fnmatch.h" />
+    <ClInclude Include="additional\absl\log\internal\globals.h" />
+    <ClInclude Include="additional\absl\log\internal\log_format.h" />
+    <ClInclude Include="additional\absl\log\internal\log_impl.h" />
+    <ClInclude Include="additional\absl\log\internal\log_message.h" />
+    <ClInclude Include="additional\absl\log\internal\log_sink_set.h" />
+    <ClInclude Include="additional\absl\log\internal\nullguard.h" />
+    <ClInclude Include="additional\absl\log\internal\nullstream.h" />
+    <ClInclude Include="additional\absl\log\internal\proto.h" />
+    <ClInclude Include="additional\absl\log\internal\strip.h" />
+    <ClInclude Include="additional\absl\log\internal\structured.h" />
+    <ClInclude Include="additional\absl\log\internal\structured_proto.h" />
+    <ClInclude Include="additional\absl\log\internal\vlog_config.h" />
+    <ClInclude Include="additional\absl\log\internal\voidify.h" />
+    <ClInclude Include="additional\absl\log\log.h" />
+    <ClInclude Include="additional\absl\log\log_entry.h" />
+    <ClInclude Include="additional\absl\log\log_sink.h" />
+    <ClInclude Include="additional\absl\log\log_sink_registry.h" />
+    <ClInclude Include="additional\absl\log\log_streamer.h" />
+    <ClInclude Include="additional\absl\log\scoped_mock_log.h" />
+    <ClInclude Include="additional\absl\log\structured.h" />
+    <ClInclude Include="additional\absl\log\vlog_is_on.h" />
+    <ClInclude Include="additional\absl\memory\memory.h" />
+    <ClInclude Include="additional\absl\meta\type_traits.h" />
+    <ClInclude Include="additional\absl\numeric\bits.h" />
+    <ClInclude Include="additional\absl\numeric\int128.h" />
+    <ClInclude Include="additional\absl\numeric\internal\bits.h" />
+    <ClInclude Include="additional\absl\numeric\internal\representation.h" />
+    <ClInclude Include="additional\absl\profiling\internal\exponential_biased.h" />
+    <ClInclude Include="additional\absl\profiling\internal\periodic_sampler.h" />
+    <ClInclude Include="additional\absl\profiling\internal\sample_recorder.h" />
+    <ClInclude Include="additional\absl\random\bernoulli_distribution.h" />
+    <ClInclude Include="additional\absl\random\beta_distribution.h" />
+    <ClInclude Include="additional\absl\random\bit_gen_ref.h" />
+    <ClInclude Include="additional\absl\random\discrete_distribution.h" />
+    <ClInclude Include="additional\absl\random\distributions.h" />
+    <ClInclude Include="additional\absl\random\exponential_distribution.h" />
+    <ClInclude Include="additional\absl\random\gaussian_distribution.h" />
+    <ClInclude Include="additional\absl\random\internal\chi_square.h" />
+    <ClInclude Include="additional\absl\random\internal\distribution_caller.h" />
+    <ClInclude Include="additional\absl\random\internal\entropy_pool.h" />
+    <ClInclude Include="additional\absl\random\internal\explicit_seed_seq.h" />
+    <ClInclude Include="additional\absl\random\internal\fast_uniform_bits.h" />
+    <ClInclude Include="additional\absl\random\internal\fastmath.h" />
+    <ClInclude Include="additional\absl\random\internal\generate_real.h" />
+    <ClInclude Include="additional\absl\random\internal\iostream_state_saver.h" />
+    <ClInclude Include="additional\absl\random\internal\mock_helpers.h" />
+    <ClInclude Include="additional\absl\random\internal\mock_overload_set.h" />
+    <ClInclude Include="additional\absl\random\internal\mock_validators.h" />
+    <ClInclude Include="additional\absl\random\internal\nanobenchmark.h" />
+    <ClInclude Include="additional\absl\random\internal\nonsecure_base.h" />
+    <ClInclude Include="additional\absl\random\internal\pcg_engine.h" />
+    <ClInclude Include="additional\absl\random\internal\platform.h" />
+    <ClInclude Include="additional\absl\random\internal\randen.h" />
+    <ClInclude Include="additional\absl\random\internal\randen_detect.h" />
+    <ClInclude Include="additional\absl\random\internal\randen_engine.h" />
+    <ClInclude Include="additional\absl\random\internal\randen_hwaes.h" />
+    <ClInclude Include="additional\absl\random\internal\randen_slow.h" />
+    <ClInclude Include="additional\absl\random\internal\randen_traits.h" />
+    <ClInclude Include="additional\absl\random\internal\salted_seed_seq.h" />
+    <ClInclude Include="additional\absl\random\internal\seed_material.h" />
+    <ClInclude Include="additional\absl\random\internal\sequence_urbg.h" />
+    <ClInclude Include="additional\absl\random\internal\traits.h" />
+    <ClInclude Include="additional\absl\random\internal\uniform_helper.h" />
+    <ClInclude Include="additional\absl\random\internal\wide_multiply.h" />
+    <ClInclude Include="additional\absl\random\log_uniform_int_distribution.h" />
+    <ClInclude Include="additional\absl\random\mock_distributions.h" />
+    <ClInclude Include="additional\absl\random\mocking_bit_gen.h" />
+    <ClInclude Include="additional\absl\random\poisson_distribution.h" />
+    <ClInclude Include="additional\absl\random\random.h" />
+    <ClInclude Include="additional\absl\random\seed_gen_exception.h" />
+    <ClInclude Include="additional\absl\random\seed_sequences.h" />
+    <ClInclude Include="additional\absl\random\uniform_int_distribution.h" />
+    <ClInclude Include="additional\absl\random\uniform_real_distribution.h" />
+    <ClInclude Include="additional\absl\random\zipf_distribution.h" />
+    <ClInclude Include="additional\absl\status\internal\status_internal.h" />
+    <ClInclude Include="additional\absl\status\internal\status_matchers.h" />
+    <ClInclude Include="additional\absl\status\internal\statusor_internal.h" />
+    <ClInclude Include="additional\absl\status\status.h" />
+    <ClInclude Include="additional\absl\status\status_matchers.h" />
+    <ClInclude Include="additional\absl\status\status_payload_printer.h" />
+    <ClInclude Include="additional\absl\status\statusor.h" />
+    <ClInclude Include="additional\absl\strings\ascii.h" />
+    <ClInclude Include="additional\absl\strings\charconv.h" />
+    <ClInclude Include="additional\absl\strings\charset.h" />
+    <ClInclude Include="additional\absl\strings\cord.h" />
+    <ClInclude Include="additional\absl\strings\cord_analysis.h" />
+    <ClInclude Include="additional\absl\strings\cord_buffer.h" />
+    <ClInclude Include="additional\absl\strings\escaping.h" />
+    <ClInclude Include="additional\absl\strings\has_absl_stringify.h" />
+    <ClInclude Include="additional\absl\strings\has_ostream_operator.h" />
+    <ClInclude Include="additional\absl\strings\internal\charconv_bigint.h" />
+    <ClInclude Include="additional\absl\strings\internal\charconv_parse.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_data_edge.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_internal.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_btree.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_btree_navigator.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_btree_reader.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_consume.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_crc.h" />
+    <ClInclude Include="additional\absl\strings\internal\cord_rep_flat.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_functions.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_handle.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_info.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_sample_token.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_statistics.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_update_scope.h" />
+    <ClInclude Include="additional\absl\strings\internal\cordz_update_tracker.h" />
+    <ClInclude Include="additional\absl\strings\internal\damerau_levenshtein_distance.h" />
+    <ClInclude Include="additional\absl\strings\internal\escaping.h" />
+    <ClInclude Include="additional\absl\strings\internal\memutil.h" />
+    <ClInclude Include="additional\absl\strings\internal\ostringstream.h" />
+    <ClInclude Include="additional\absl\strings\internal\pow10_helper.h" />
+    <ClInclude Include="additional\absl\strings\internal\resize_uninitialized.h" />
+    <ClInclude Include="additional\absl\strings\internal\stl_type_traits.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\arg.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\bind.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\checker.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\constexpr_parser.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\extension.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\float_conversion.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\output.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_format\parser.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_join_internal.h" />
+    <ClInclude Include="additional\absl\strings\internal\str_split_internal.h" />
+    <ClInclude Include="additional\absl\strings\internal\string_constant.h" />
+    <ClInclude Include="additional\absl\strings\internal\stringify_sink.h" />
+    <ClInclude Include="additional\absl\strings\internal\utf8.h" />
+    <ClInclude Include="additional\absl\strings\match.h" />
+    <ClInclude Include="additional\absl\strings\numbers.h" />
+    <ClInclude Include="additional\absl\strings\str_cat.h" />
+    <ClInclude Include="additional\absl\strings\str_format.h" />
+    <ClInclude Include="additional\absl\strings\str_join.h" />
+    <ClInclude Include="additional\absl\strings\str_replace.h" />
+    <ClInclude Include="additional\absl\strings\str_split.h" />
+    <ClInclude Include="additional\absl\strings\string_view.h" />
+    <ClInclude Include="additional\absl\strings\strip.h" />
+    <ClInclude Include="additional\absl\strings\substitute.h" />
+    <ClInclude Include="additional\absl\synchronization\barrier.h" />
+    <ClInclude Include="additional\absl\synchronization\blocking_counter.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\create_thread_identity.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\futex.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\futex_waiter.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\graphcycles.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\kernel_timeout.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\per_thread_sem.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\pthread_waiter.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\sem_waiter.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\stdcpp_waiter.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\thread_pool.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\waiter.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\waiter_base.h" />
+    <ClInclude Include="additional\absl\synchronization\internal\win32_waiter.h" />
+    <ClInclude Include="additional\absl\synchronization\mutex.h" />
+    <ClInclude Include="additional\absl\synchronization\notification.h" />
+    <ClInclude Include="additional\absl\time\civil_time.h" />
+    <ClInclude Include="additional\absl\time\clock.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\civil_time.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\civil_time_detail.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\time_zone.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\include\cctz\zone_info_source.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_fixed.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_if.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_impl.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_info.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_libc.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\time_zone_posix.h" />
+    <ClInclude Include="additional\absl\time\internal\cctz\src\tzfile.h" />
+    <ClInclude Include="additional\absl\time\time.h" />
+    <ClInclude Include="additional\absl\types\any.h" />
+    <ClInclude Include="additional\absl\types\compare.h" />
+    <ClInclude Include="additional\absl\types\internal\span.h" />
+    <ClInclude Include="additional\absl\types\optional.h" />
+    <ClInclude Include="additional\absl\types\span.h" />
+    <ClInclude Include="additional\absl\types\variant.h" />
+    <ClInclude Include="additional\absl\utility\utility.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\internal_types.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\position_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\input_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\type_matchers.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\utils.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\validation.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\internal\wobble_smoother.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\numbers.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\params.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\stroke_modeler.h" />
+    <ClInclude Include="additional\ink_stroke_modeler\types.h" />
   </ItemGroup>
   <ItemGroup>
+	<ClCompile Include="Inkeys\Graphics\Surface.cpp" />
+	<ClCompile Include="Inkeys\Graphics\Surface.cppm" />
+	<ClCompile Include="Inkeys\Business\ComponentActions.cpp" />
+	<ClCompile Include="Inkeys\Business\ComponentActions.cppm" />
+	<ClCompile Include="Inkeys\Business\LegacyDrawState.cpp" />
+	<ClCompile Include="Inkeys\Input\MouseHook.cpp" />
+	<ClCompile Include="Inkeys\Input\MouseHook.cppm" />
+	<ClCompile Include="Inkeys\Message\Message.cpp" />
+	<ClCompile Include="Inkeys\Message\Message.cppm" />
+	<ClCompile Include="Inkeys\Display\Display.cppm" />
+	<ClCompile Include="Inkeys\Display\Display.cpp" />
+	<ClCompile Include="Inkeys\Window\Window.cpp" />
+	<ClCompile Include="Inkeys\Window\Window.cppm" />
+	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
+	<ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cppm" />
+	<ClCompile Include="Inkeys\Startup\Startup.Progress.cpp" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cppm" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm" />
+	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp" />
+	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm" />
+	<ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp" />
+	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm" />
+	<ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm" />
+	<ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp" />
+	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Window.cpp" />
+	<ClCompile Include="Inkeys\Window\Window.Legacy.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5.cpp" />
     <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp" />
     <ClCompile Include="additional\hashlib++\hl_sha1.cpp" />
@@ -513,55 +884,25 @@
     <ClCompile Include="additional\ziputils\zip.cpp" />
     <ClCompile Include="ExtraInclude.cpp" />
     <ClCompile Include="IdtConfiguration.cpp" />
-    <ClCompile Include="IdtD2DPreparation.cpp" />
-    <ClCompile Include="IdtDisplayManagement.cpp" />
     <ClCompile Include="IdtDraw.cpp" />
     <ClCompile Include="IdtDraw.h" />
-    <ClCompile Include="HiEasyX\HiCanvas.cpp" />
-    <ClCompile Include="HiEasyX\HiContainer.cpp" />
-    <ClCompile Include="HiEasyX\HiDrawingProperty.cpp" />
-    <ClCompile Include="HiEasyX\HiFPS.cpp" />
-    <ClCompile Include="HiEasyX\HiFunc.cpp" />
-    <ClCompile Include="HiEasyX\HiGdiplus.cpp" />
-    <ClCompile Include="HiEasyX\HiGif.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Button.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ControlBase.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Page.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ProgressCtrl.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\ScrollBar.cpp" />
-    <ClCompile Include="HiEasyX\HiGUI\Static.cpp" />
-    <ClCompile Include="HiEasyX\HiIcon.cpp" />
-    <ClCompile Include="HiEasyX\HiMouseDrag.cpp" />
-    <ClCompile Include="HiEasyX\HiMusicMCI.cpp" />
-    <ClCompile Include="HiEasyX\HiStart.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysButton.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysCheckBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysComboBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysControlBase.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysEdit.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroup.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysGroupBox.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysRadioButton.cpp" />
-    <ClCompile Include="HiEasyX\HiSysGUI\SysStatic.cpp" />
-    <ClCompile Include="HiEasyX\HiWindow.cpp" />
-    <ClCompile Include="IdtDrawpad.cpp" />
-    <ClCompile Include="IdtDrawpadList.cpp" />
-    <ClCompile Include="IdtFloating.cpp" />
+    <None Include="IdtDrawpad.cpp" />
+    <None Include="IdtDrawpadList.cpp" />
     <ClCompile Include="IdtFreezeFrame.cpp" />
     <ClCompile Include="IdtGuid.cpp" />
-    <ClCompile Include="IdtHistoricalDrawpad.cpp" />
+    <None Include="IdtHistoricalDrawpad.cpp" />
     <ClCompile Include="IdtI18n.cpp" />
     <ClCompile Include="IdtImage.cpp" />
-    <ClCompile Include="IdtRts.cpp" />
+    <None Include="IdtRts.cpp" />
     <ClCompile Include="IdtStart.cpp" />
     <ClCompile Include="IdtState.cpp" />
+    <ClCompile Include="IdtDrawpadFacade.cpp" />
     <ClCompile Include="IdtSysNotifications.cpp" />
     <ClCompile Include="IdtMagnification.cpp" />
     <ClCompile Include="IdtMain.cpp" />
     <ClCompile Include="IdtOther.cpp" />
     <ClCompile Include="IdtPlug-in.cpp" />
     <ClCompile Include="IdtTime.cpp" />
-    <ClCompile Include="IdtWindow.cpp" />
     <ClCompile Include="Inkeys\Conv\Conv.Color.cppm" />
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
@@ -586,15 +927,24 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm" />
+	<ClCompile Include="Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp" />
@@ -607,6 +957,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm" />
+    <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cppm" />
@@ -614,11 +965,121 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm" />
     <ClCompile Include="Launch\IdtLaunchState.cpp" />
     <ClCompile Include="SuperTop\IdtSuperTop.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_model.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_model.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_codec.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_codec_encode.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_codec.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_file.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_export.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_export.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_import.cpp" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm" Link="Inkeys\Drawing\Draw3\Shared\uink_draw3_import.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
+	  <CompileAs>CompileAsCppModule</CompileAs>
+	</ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Diagnostics.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DrawingController.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.GraphicsInitialization.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.GraphicsInitialization.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HapticFeedback.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkDocument.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkDocument.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistory.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistory.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistoryGpu.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkHistoryGpu.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkPrediction.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.InkPrediction.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.LaserParticles.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.LaserParticles.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.LaserParticleSystem.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RealtimeStylus.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Renderer.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Renderer.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererSnapshot.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RuntimeMetrics.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.StrokeGeometry.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.TransparentPresentation.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Win7Compat.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WindowControl.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WindowControl.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Inkeys.rc" />
   </ItemGroup>
   <ItemGroup>
+	<Image Include="src\message_box\error.png" />
     <Image Include="src\bug.png" />
     <Image Include="src\choice.png" />
     <Image Include="src\choose.png" />
@@ -698,9 +1159,24 @@
     <Image Include="src\write.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="additional\imgui\CustomShaders\imgui_common.hlsli" />
-    <None Include="additional\imgui\CustomShaders\imgui_ps.cso" />
-    <None Include="additional\imgui\CustomShaders\imgui_vs.cso" />
+	<None Include="IdtFloating.cpp" />
+	<None Include="IdtFloating.h" />
+	<None Include="IdtWindow.cpp" />
+	<None Include="IdtWindow.h" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso" />
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso" />
+    <None Include="additional\ink_stroke_modeler\README.md" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
     <None Include="src\i18n\en-US.jsonc" />
@@ -714,7 +1190,10 @@
     <None Include="src\UI\barClean.svg" />
     <None Include="src\UI\barDivider.svg" />
     <None Include="src\UI\barEraser.svg" />
+    <None Include="src\UI\barAutoEraser.svg" />
     <None Include="src\UI\barFreeze.svg" />
+    <None Include="src\UI\barWhiteboard.svg" />
+    <None Include="src\UI\barDismiss.svg" />
     <None Include="src\UI\barGeometry.svg" />
     <None Include="src\UI\barHighlighter1.svg" />
     <None Include="src\UI\barInfo.svg" />
@@ -760,7 +1239,7 @@
     <Font Include="src\ttf\Segoe Fluent Icons.ttf" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="additional\imgui\CustomShaders\imgui_ps.hlsl">
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
@@ -780,7 +1259,7 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
-    <FxCompile Include="additional\imgui\CustomShaders\imgui_vs.hlsl">
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
@@ -799,6 +1278,36 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Pixel</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Vertex</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Visible>false</Visible>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+      <ShaderModel>5.0</ShaderModel>
+      <ShaderType>Compute</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Visible>false</Visible>
     </FxCompile>
   </ItemGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
@@ -831,5 +1340,39 @@
   </PropertyGroup>
   <Target Name="CleanPptCOM" AfterTargets="Clean">
     <Delete Files="$(TargetDir)PptCOM.dll" />
+  </Target>
+  <!-- FXC 10.1 不接受 BOM；只在中间目录生成 Draw3 的无 BOM 副本。 -->
+  <Target Name="PrepareDraw3FxcCompatibleHlsl" BeforeTargets="FxCompile"
+          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl"
+          Outputs="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h;$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+    <MakeDir Directories="$(IntDir)fxc_utf8\draw3" />
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcEraserVisualLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h" Lines="@(_Draw3FxcEraserVisualLines)" Overwrite="true" Encoding="ASCII" />
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcInkLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserCommonLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcPixelLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcVertexLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserUpdateLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserEmitLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\ink.hlsli" Lines="@(_Draw3FxcInkLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli" Lines="@(_Draw3FxcLaserCommonLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl" Lines="@(_Draw3FxcPixelLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl" Lines="@(_Draw3FxcVertexLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl" Lines="@(_Draw3FxcLaserUpdateLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl" Lines="@(_Draw3FxcLaserEmitLines)" Overwrite="true" Encoding="ASCII" />
   </Target>
 </Project>

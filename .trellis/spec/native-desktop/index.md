@@ -2,7 +2,7 @@
 
 本层主要覆盖 Inkeys/Inkeys.vcxproj 中的 Windows 桌面程序，并记录仓库内独立 Timeout Solution 的工程边界。证据等级沿用 [../index.md](../index.md)；现状、推断、待确认和历史/兼容路径不能互相替代。
 
-**【直接确认】** 主程序同时编译传统 Idt* 子系统和 Inkeys/Inkeys 下的 C++20 module。**【待确认】** 这是否代表正式迁移方向；不要把文件年代或 module 语法自动当成推荐优先级。
+**【直接确认】** 主程序同时编译传统 Draw2/PPT 等 Idt* 业务子系统和 Inkeys/Inkeys 下的 C++20 module。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
 
 ## 文档索引
 
@@ -13,6 +13,10 @@
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
+- [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
+- [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。
+- [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
+- [startup-preview.md](startup-preview.md)：SuperTop 后启动预览、程序化灰色占位、真实进度、逻辑宽度缓存、Bar committed frame、alpha 交接与 Win7 合同。
 
 PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../ppt-interop/index.md)。
 
@@ -22,7 +26,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 2. 确认项目文件是否需要登记新源码、module、资源、shader 或 manifest。
 3. 对渲染和输入修改，先画清窗口线程、渲染线程与共享状态的所有权。
 4. 对配置修改，先确认字段实际位于 `opt/deploy.json` 的 `SetListStruct` 路径，还是 `Inkeys/Config/main.json` 的 `Inkeys::Config` class / `Inkeys::config` instance；二者当前并存且用途不同。
-5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 ARM64 MSBuild 要求。
+5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 `Debug | 当前设备原生架构` 要求；跨平台风险按任务额外补充。
 
 ## 实施前决策门（阻塞）
 
@@ -33,15 +37,16 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 ## 已直接确认的边界
 
 - wWinMain 位于 Inkeys/IdtMain.cpp。新增其他入口会改变现有进程模型，属于架构变更，而不是本 Spec 已批准的路线。
-- D2DStarup 在 UI 分支选择前无条件创建 D3D11 WARP、D2D factory/device 和 DWrite 对象；d2dDevice_WARP 被 UI3 Bar 使用，d2dFactory1/dWriteFactory1 也被 PPT 控件使用。
-- 设置窗口的已编译产品实现是 Dear ImGui Win32 + Direct3D 11；它拥有独立 hardware device/context、discard swap chain、RTV 和图片 SRV，不复用进程级 D2D/WARP device。`Inkeys.vcxproj` 编译带 Inkeys 定制标记的 DX11 backend，仓库不再随附 ImGui DX9 backend。
+- Draw3 由唯一 Host/RTS 绑定 Window Service 已创建的主 `WindowRole::Drawpad` HWND；同一 Host 可把 `WindowRole::DrawpadPresentation` sibling 作为 selection-only ULW 呈现目标，但辅助窗不绑定输入、document 或第二套 runtime。Draw3 的 D3D11.1 device、swap chain 和 DComp/DWM/ULW presenter 均独立于 `Inkeys.UI.RenderPipeline`，资源 ID 301-304 由 `draw3-integration.md` 统一维护。
+- `Inkeys.UI.RenderPipeline` 在 UI 客户端启动前创建共享 D3D11 WARP、D2D 1.1 factory/device 和 DWrite 对象；UI3 Bar、`Inkeys.UI.PageControl` 的四个分页客户端、Whiteboard Freeze 与 Setting 共享同一 device epoch 和唯一串行渲染线程。
+- 设置窗口的已编译产品实现是普通 Win32 顶层窗口上的 Dear ImGui + Direct3D 11；它复用 RenderPipeline 的 WARP device/immediate context，并独占 discard swap chain、RTV、图片 SRV 和 ImGui session。
 - RTS 笔/触摸与鼠标回退都构造 TouchMode 记录，并写入 TouchPos、TouchList、TouchTemp 等共享状态。
 - 画布合成、撤销历史和按 PPT 页保存的墨迹彼此有关，不能只验证屏幕上的即时笔迹。
 - 主 Solution 中 Inkeys 依赖 PptCOM；Timeout 属于另一个 Solution，且本次未发现主产品引用。
-- 没有扫描到自动化测试项目。目标架构构建和专题手工检查是当前审计建议，不是已确认的正式发布门禁；正式清单待维护者确认。
+- `InkeysHeadlessTests` 覆盖 Surface、HiMsg、窗口合同和 UI3 算法；受限环境必须用 `--no-window` 跳过会创建 HWND 的窗口测试。
 
 ## 历史/兼容与待确认
 
-- IdtConfiguration.h 将 Experimental.Inkeys3.UI3 默认初始化为 false；IdtMain.cpp 据此在 floating_main 与 Inkeys::UI::Bar::Initialization 之间二选一。持久化 deploy.json 可改变该值，所以静态默认不等于发布默认。
-- IdtFloating 仍是可执行分支，不能仅因文件名/实现方式较旧就标记为废弃；UI3 Bar 也不能仅因名称较新就标记为正式主路径。
+- `Experimental.Inkeys3.UI3` 容器仅保留 Animation、EdgeLighting 和 Debug 配置，不再包含路由开关；旧 JSON `Experimental.Inkeys3.UI3` 路由字段在写配置时清理。
+- `IdtFloating` 保留一段迁移期供阅读，但不得重新加入编译或被生产代码 include；复用业务必须迁入 `Inkeys.Business` / `Inkeys.Input`。
 - Timeout 的发布、打包和 ARM64 计划均待确认。

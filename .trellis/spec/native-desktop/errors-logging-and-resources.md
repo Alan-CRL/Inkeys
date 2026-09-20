@@ -39,9 +39,9 @@
 | ImGui context/backends | 显式 DX11/Win32 shutdown 与 `DestroyContext` | `Setting.cpp` 的窗口线程退出路径 |
 | Office COM（C#） | 事件解绑、`ReleaseComObject`/`FinalReleaseComObject`、置 null | `PptCOM/PptCOM.cs::FullCleanup` 及 release helpers |
 | native PPT 服务 | `_com_ptr_t` 包装、`pptComSlotSm` 保护服务槽/快照 | `IdtPlug-in.cpp::Get/Set/ResetPptComSnapshot` |
-| HiEasyX `IMAGE`/临时画布 | 指针、容器、显式 delete 或回收队列 | `IdtDrawpad.cpp`、`IdtImage.cpp` |
-| Win32 handles/modules | 按路径调用 `DestroyWindow`、`ReleaseDC`、`CloseHandle`、`FreeLibrary`、activation-context API | `IdtMain.cpp` 与各窗口实现 |
-| 线程 | `thread/detach/offSignal`、线程状态，或局部 `jthread/stop_token/StatusGuard` | 传统 Idt 与部分 module 并存 |
+| `Graphics::DibSurface`/临时画布 | RAII 管理 HDC、DIB bitmap、旧选入对象和像素地址；容器按值拥有 | `Inkeys/Graphics/Surface.*`、`IdtDrawpad.cpp`、`IdtImage.cpp` |
+| Win32 HWND/消息 channel | `Inkeys.Window` 所属线程创建、解绑并逆序销毁；外部只持有非 owning HWND | `Inkeys/Window/Window.*`、`IdtMain.cpp` |
+| 线程 | 窗口、Setting 和低级 Hook 使用受管 `jthread/stop_token`；遗留业务线程也必须在 Window Service 前 join | `IdtMain.cpp`、`Inkeys/Window`、`Inkeys/Input` |
 
 `【合理推断】` 在局部功能中沿用目标资源的现有所有者和释放点。raw pointer → smart pointer、detached thread → jthread 等会改变生命周期和退出顺序，应作为可验证的独立改动，而不是顺带“清理”。
 
@@ -55,6 +55,166 @@
 - `【直接确认】` 多个传统线程观察 `offSignal` 或线程状态；具体等待范围和超时逻辑位于 `IdtMain.cpp` 及各线程入口。
 
 `【合理推断】` 修改某个子系统时，按其实际依赖逆序检查“停止生产者 → 等待仍使用资源的线程 → 释放目标/设备/COM/窗口”。这只是审计方法，不能替代对具体退出代码的追踪。
+
+## 受管线程退出合同
+
+### 1. Scope / Trigger
+
+当线程由主退出路径执行 `join()`，或线程可能无限等待事件、消息、状态值时，必须应用本合同。
+
+### 2. Signatures
+
+- 进程级退出入口：`SetOffSignal(int)`。
+- C++20 线程入口：接收并观察 `std::stop_token`，或观察全局 `offSignal`。
+- 共享 UI3 调度器：发布退出标志时同步调用 `RenderScheduler::Scheduler::WakeForStop()`。
+
+### 3. Contracts
+
+- 被 `join()` 的线程中，每一层可能持续等待的循环都必须观察同一个退出条件；只在最外层检查不成立。
+- `SetOffSignal()` 必须先发布 managed/native 共用退出槽和 C++ `offSignal`，再唤醒所有无限等待对象。
+- 窗口服务销毁前，所有仍可能访问 HWND 或 UI3 target 的线程必须已经返回。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 状态值在退出时长期保持不变 | 内层等待在一个轮询周期内观察退出并返回 |
+| UI3 调度器处于 `WaitForSingleObject(..., INFINITE)` | `SetOffSignal()` 同步设置 wake event，渲染线程重查退出条件 |
+| 退出入口被重复调用 | 标志发布和唤醒保持幂等，不创建第二个调度线程 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：`while (!offSignal && RequestUpdateMagWindow == 0)`，退出不依赖状态先变化。
+- Base：`stop_token` 的 stop callback 设置等待事件，线程醒来后重查 `stop_requested()`。
+- Bad：外层 `while (!offSignal)` 内嵌 `while (state)`，随后主线程对其执行无限 `join()`。
+
+### 6. Tests Required
+
+- Headless 覆盖退出通知能唤醒 idle 的 UI3 调度器，并在有请求/无请求两种状态下有界返回。
+- 手工验证默认放大镜状态、穿透状态和 UI3 完全 idle 状态下退出，进程不得停留超过一个轮询周期。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：状态不变化时，退出标志永远没有机会被重新检查。
+while (RequestUpdateMagWindow == 0)
+    std::this_thread::sleep_for(100ms);
+
+// Correct：所有可能长期等待的层级都观察退出条件。
+while (!offSignal && RequestUpdateMagWindow == 0)
+    std::this_thread::sleep_for(100ms);
+~~~
+
+## 关闭前隐藏用户窗口合同
+
+### 1. Scope / Trigger
+
+关闭或重启由 UI 命令触发时，必须在后台清理前同步移除全部用户可见窗口。
+
+### 2. Signatures
+
+- 窗口服务：`bool Inkeys::Window::Service::HideAllUserWindows()`。
+- 进程入口：`CloseProgram()`、`RestartProgram()`。
+
+### 3. Contracts
+
+- Window Service 分别在 Overlay 与 Setting owner thread 批量执行 `SW_HIDE`，不销毁 HWND；`DisplayObserver` 不属于用户界面。
+- 关闭/重启入口先调用批量隐藏，再执行 CrashHandler 清理和 `SetOffSignal()`。
+- 隐藏失败不得阻断退出信号发布。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 窗口不存在或已经隐藏 | 视为可继续，其他窗口仍被隐藏 |
+| 任一 owner thread 隐藏失败 | 关闭/重启仍继续清理并发布退出信号 |
+| 调用来自任一窗口 owner thread | 该组直接执行，另一组同步投递，不发生自锁 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：用户点击关闭后所有界面立即消失，后台线程随后有序退出。
+- Base：部分窗口尚未创建或本来不可见，调用仍可完成。
+- Bad：先执行耗时清理或等待线程，再隐藏窗口。
+
+### 6. Tests Required
+
+- Window Service 测试先显示全部用户窗口，调用批量隐藏后断言 HWND 仍有效且均不可见。
+- 完整构建验证关闭入口能够导入 Window 模块，不形成模块依赖环。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：清理耗时会让界面看起来卡住。
+CrashHandler::Shutdown();
+SetOffSignal(1);
+
+// Correct：视觉退出先完成，隐藏结果不改变退出控制流。
+(void)Inkeys::Window::GetService().HideAllUserWindows();
+CrashHandler::Shutdown();
+SetOffSignal(1);
+~~~
+
+## D2D/GDI present 借用资源事务合同
+
+### 1. Scope / Trigger
+
+当 Bar、Whiteboard 或其他 RenderPipeline 客户端从 renderer/scene 取得 raw `ID2D1DeviceContext*`、`ID2D1GdiInteropRenderTarget*` 并跨越 `BeginDraw`、GDI interop 或 `EndDraw` 使用时适用。ARM64 上资源重建更容易暴露借用指针在事务中失效的问题。
+
+### 2. Signatures
+
+~~~cpp
+BarSurfaceRenderResult BarSurfaceScene::Render(
+    ID2D1DeviceContext* deviceContext, ...);
+HRESULT ID2D1GdiInteropRenderTarget::GetDC(D2D1_DC_INITIALIZE_MODE, HDC*);
+HRESULT ID2D1GdiInteropRenderTarget::ReleaseDC(const RECT* update);
+HRESULT ID2D1DeviceContext::EndDraw();
+~~~
+
+### 3. Contracts
+
+- Scene/renderer 返回的 raw COM 指针是借用引用，不转移所有权。调用方必须立即用本地 `Microsoft::WRL::ComPtr` 建立本帧 lease，并持有到对应 `EndDraw` 返回。
+- `BeginDraw -> Render -> GetDC -> ULW -> ReleaseDC -> EndDraw` 是一个提交事务。不得在 `GetDC` 或 ULW 成功后提前释放 context/interop，也不得因中途失败跳过 `ReleaseDC`/`EndDraw` 结算。
+- 只有所有阶段成功后才推进业务 damage、viewport 与 debug 快照。红框记录业务 dirty；绿框记录实际 present union，上一帧绿框只参与下一帧擦除，不得写回业务 dirty。
+- 任一阶段失败时保留请求并强制下一帧全脏；target/device 分类继续沿用 RenderPipeline 的局部重建与 device epoch 恢复规则。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| renderer 在调用期间替换内部 COM owner | 本地 lease 保证旧对象存活到 `EndDraw` |
+| `GetDC` 失败 | 不调用 ULW；仍结算 `EndDraw`，快照不推进 |
+| ULW 或 `ReleaseDC` 失败 | 完成可执行的 release/end，标记整笔事务失败 |
+| `EndDraw` 返回 recreate target | 丢弃该窗口资源并全脏重试，不发布成功快照 |
+| debug 绿色 present 框扩大提交范围 | 只更新 presented-frame 快照，不污染业务 dirty |
+
+### 5. Good / Base / Bad Cases
+
+- Good：ARM64/x64 都以局部 `ComPtr` 持有 context 与 GDI interop，所有退出分支在 lease 析构前完成 `EndDraw`。
+- Base：无 debug overlay 时 present damage 等于本帧业务 damage，成功后推进两类快照。
+- Bad：只保存 Scene 返回的 raw pointer，或把 `previousDebugPresentedFrames` 写成业务 `drawResult.damage`；前者可能 use-after-release，后者无法可靠擦除上一帧绿框。
+
+### 6. Tests Required
+
+- Headless 对纯 damage transaction 断言失败不推进、成功才推进，以及红/绿框 union 的下一帧擦除范围。
+- 完整 `Debug|ARM64` 与 `Debug|x64` Solution 构建及两架构 `--no-window` 测试。
+- D2D Debug Layer 与重复进入/退出需要在允许 GUI 的独立阶段验证；静态 COM lease 审计不能替代运行时 layer 输出。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：raw pointer 的所有者可能在 EndDraw 前重建。
+auto* context = renderer.DeviceContext();
+context->BeginDraw();
+RenderAndPresent(context);
+context->EndDraw();
+
+// Correct：本帧持有借用对象，事务结算后再释放 lease。
+Microsoft::WRL::ComPtr<ID2D1DeviceContext> context = renderer.DeviceContext();
+Microsoft::WRL::ComPtr<ID2D1GdiInteropRenderTarget> interop = renderer.GdiInterop();
+context->BeginDraw();
+RenderAndPresent(context.Get(), interop.Get());
+const HRESULT endDrawResult = context->EndDraw();
+~~~
 
 ## 待确认风险（不是已确认缺陷）
 

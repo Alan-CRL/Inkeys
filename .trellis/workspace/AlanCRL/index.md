@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
-- **Last Active**: 2026-08-11
+- **Total Sessions**: 28
+- **Last Active**: 2026-09-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~566 | Active |
+| `journal-1.md` | ~937 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,13 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-09-04 | 完成启动预览与快速显示主栏 | `b7edaa81`, `70081123`, `1e563c30`, `a0835ba3`, `4fcd398b`, `9e27bd26`, `b9397105`, `d9346c3f`, `96bf8c8c` | `draw` |
+| 27 | 2026-08-24 | Draw3 可撤回清空与选择语义 | `b44dec66` | `chore/draw3` |
+| 26 | 2026-08-13 | UI3 Bar dynamic viewport and drag completion | `6ded57c` | `draw` |
+| 25 | 2026-08-12 | UI3 展开按钮点击合并 | `b43dc640` | `draw` |
+| 24 | 2026-08-12 | 修复触摸重复转译与 Setting 窗口合同 | `664ab92`, `e7f42dc` | `draw` |
+| 23 | 2026-08-12 | UI3 Draw3 Win32 host preparation | `41535ea` | `draw` |
+| 22 | 2026-08-11 | 修复 UI3 功能组脏区漏算 | `caf624e9` | `draw` |
 | 21 | 2026-08-11 | 完成 UI3 基于变化的脏区系统 | `963db5e5`, `506dd263`, `59cc6ee9`, `35c8e59a`, `38bd4f06` | `feature/animation` |
 | 20 | 2026-08-11 | 修复 UI3 调试脏区红框 | `70ad8c8b` | `feature/animation` |
 | 19 | 2026-08-11 | 调整 UI3 墨迹粗细预览浮窗交互 | `70c49c09`, `ad6718b` | `feature/animation` |

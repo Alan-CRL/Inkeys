@@ -3,12 +3,10 @@
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
-#include "../../../IdtDisplayManagement.h"
 #include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtFloating.h"
 #include "../../../IdtState.h"
-#include "../../../IdtWindow.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Window/Window.Legacy.hpp"
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -19,8 +17,14 @@ import :Theme;
 
 import Inkeys.Conv.Color;
 import Inkeys.Helper.Thread;
+import Inkeys.Business.ComponentActions;
+import Inkeys.Input.MouseHook;
+import Inkeys.Window;
+import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.StartupPreview;
+import Inkeys.Startup.Progress;
+import Inkeys.Display;
 // 初始化只读 Main 中的共享布局常量，保持 topology 与 Rendering 数值一致。
-extern const double BarButtonCursorLightIntensity;
 extern const double BarDrawAttributeCompactWidth;
 extern const double BarDrawAttributeCompactScale;
 extern const double BarDrawAttributeCompactHeight;
@@ -50,25 +54,95 @@ extern const double BarMorePanelCompactHeight;
 
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
 constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
+
+void BarUISetClass::PublishDisplaySnapshot(
+	Inkeys::Display::SnapshotPtr snapshot) noexcept
+{
+	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+	if (!monitor) return;
+	{
+		lock_guard lock(pendingDisplayPublishMutex);
+		// 奇数 serial 表示发布中；读方只接受同一偶数 serial 的完整快照。
+		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+		pendingDisplayLeft.store(monitor->bounds.left, memory_order_relaxed);
+		pendingDisplayTop.store(monitor->bounds.top, memory_order_relaxed);
+		pendingDisplayRight.store(monitor->bounds.right, memory_order_relaxed);
+		pendingDisplayBottom.store(monitor->bounds.bottom, memory_order_relaxed);
+		pendingWorkAreaLeft.store(monitor->workArea.left, memory_order_relaxed);
+		pendingWorkAreaTop.store(monitor->workArea.top, memory_order_relaxed);
+		pendingWorkAreaRight.store(monitor->workArea.right, memory_order_relaxed);
+		pendingWorkAreaBottom.store(monitor->workArea.bottom, memory_order_relaxed);
+		pendingDisplayDpi.store(monitor->effectiveDpiX ? monitor->effectiveDpiX :
+			USER_DEFAULT_SCREEN_DPI, memory_order_relaxed);
+		pendingDisplaySerial.fetch_add(1, memory_order_release);
+	}
+	UpdateRendering(false);
+}
+
+void BarUISetClass::PublishWindowDpi(UINT dpi) noexcept
+{
+	if (!dpi) return;
+	{
+		lock_guard lock(pendingDisplayPublishMutex);
+		pendingDisplaySerial.fetch_add(1, memory_order_acq_rel);
+		pendingDisplayDpi.store(dpi, memory_order_relaxed);
+		pendingDisplaySerial.fetch_add(1, memory_order_release);
+	}
+	UpdateRendering(false);
+}
+
+void BarUISetClass::StartDisplayTracking()
+{
+	displaySubscription.Reset();
+	displaySubscription = Inkeys::Display::Subscribe(
+		[this](Inkeys::Display::SnapshotPtr snapshot)
+		{
+			// 订阅线程只发布原子目标，布局与资源仍由共享渲染线程接管。
+			PublishDisplaySnapshot(std::move(snapshot));
+		});
+}
+
+void BarUISetClass::StopDisplayTracking() noexcept
+{
+	displaySubscription.Reset();
+}
+
 namespace Inkeys::UI::Bar
 {
+	WNDPROC WindowProc() noexcept
+	{
+		return barWindowMsgCallback;
+	}
+
 	void Initialization()
 	{
 		Inkeys::Thread::StatusGuard guard("BarInitializationClass::BarInitialization");
-		if (offSignal) return;
-		const auto CloseBarWindow = []()
-			{
-				HWND window = floating_window;
-				if (window && IsWindow(window))
-					hiex::closegraph_win32(window);
-			};
-
+		Inkeys::UI::StartupPreview::SetBarStartupState(
+			Inkeys::UI::StartupPreview::BarStartupState::Initializing);
+		if (offSignal)
+		{
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
+			return;
+		}
 		// 初始化
-		if (!InitializeWindow(barUISet)) return;
+		if (!InitializeWindow(barUISet))
+		{
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::WindowMissing);
+			return;
+		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarWindowReady);
 		InitializeUI(barUISet);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarUiGraphReady);
+		barUISet.StartDisplayTracking();
 
 		barUISet.barMedia.LoadFormat();
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarMediaReady);
 
+		// 首次布局直接读取 Draw3 内容快照，避免依赖监控线程稍后的修订通知。
+		SetCurrentPageHasContent(
+			Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
 		// 初始化 按钮 们
 		barUISet.barButtonSet.PresetInitialization();
 		barUISet.barButtonSet.RegisterBuiltInComponents();
@@ -76,33 +150,52 @@ namespace Inkeys::UI::Bar
 			barUISet.barButtonSet.Load();
 			barUISet.barButtonSet.StateUpdate();
 		}
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarComponentsReady);
+		SetContentStateUpdatesReady(true);
 
 		barUISet.barState.PositionUpdate(barUISet.barStyle.zoom);
+		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarStateReady);
 		if (offSignal)
 		{
-			CloseBarWindow();
+			SetContentStateUpdatesReady(false);
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
 			return;
 		}
 
-		// 所有 map 与按钮拓扑已冻结，再启动 Hook、Rendering、Interaction 三条工作线程。
-		FloatingPrepareHookStart();
-		thread hookThread(FloatingInstallHook);
-		FloatingWaitHookReady();
-		thread renderingThread([&]() { barUISet.Rendering(); });
+		(void)Inkeys::Input::MouseHook::Start([&]()
+			{
+				barUISet.barState.fold = true;
+				barUISet.UpdateRendering(false);
+			});
+		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
+		if (!barUISet.Rendering())
+		{
+			SetContentStateUpdatesReady(false);
+			Inkeys::Input::MouseHook::Stop();
+			barUISet.StopDisplayTracking();
+			return;
+		}
 		thread interactionThread([&]() { barUISet.Interact(); });
 
 		// 等待
 
 		while (!offSignal) this_thread::sleep_for(chrono::milliseconds(100));
+		SetContentStateUpdatesReady(false);
 		// 先停止输入生产者，再由窗口线程撤销计时器、Raw Input 与 capture。
-		FloatingRequestHookStop();
-		if (hookThread.joinable()) hookThread.join();
+		Inkeys::Input::MouseHook::Stop();
 		// 退出信号与普通渲染请求共用代次通知，唤醒真正休眠的渲染线程。
 		BarAtomic::wait.Notify();
+		Inkeys::UI::RenderPipeline::WakeForStop();
 
 		if (interactionThread.joinable()) interactionThread.join();
-		if (renderingThread.joinable()) renderingThread.join();
-		CloseBarWindow();
+		barUISet.StopDisplayTracking();
+		barUISet.StopRendering();
+		if (Inkeys::UI::StartupPreview::GetBarStartupState()
+			!= Inkeys::UI::StartupPreview::BarStartupState::FirstFrameCommitted)
+			Inkeys::UI::StartupPreview::SetBarStartupState(
+				Inkeys::UI::StartupPreview::BarStartupState::StoppedBeforeReady);
+		Inkeys::Business::ShutdownComponentActions();
 
 		return;
 	}
@@ -113,20 +206,22 @@ namespace Inkeys::UI::Bar
 		HWND window = floating_window;
 		if (!window || !IsWindow(window)) return false;
 
-		DisableResizing(window, true); // hiex 禁止窗口拉伸
-
-		SetWindowLong(window, GWL_STYLE, GetWindowLong(window, GWL_STYLE) & ~WS_CAPTION); // 隐藏窗口标题栏
-		SetWindowLong(window, GWL_EXSTYLE, WS_EX_TOOLWINDOW); // 隐藏窗口任务栏图标
-
 		barUISet.barWindow.x = 0;
 		barUISet.barWindow.y = 0;
-		barUISet.barWindow.w = MainMonitor.MonitorWidth;
-		barUISet.barWindow.h = MainMonitor.MonitorHeight - 1;
+		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
+		const auto* monitor = displaySnapshot ? displaySnapshot->Primary() : nullptr;
+		const RECT monitorBounds = monitor ? monitor->bounds :
+			RECT{ 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+		barUISet.barWindow.w = (std::max)(1L, monitorBounds.right - monitorBounds.left);
+		barUISet.barWindow.h = (std::max)(1L, monitorBounds.bottom - monitorBounds.top);
 		barUISet.barWindow.pct = 255;
-		SetWindowPos(window, NULL, barUISet.barWindow.x, barUISet.barWindow.y, barUISet.barWindow.w, barUISet.barWindow.h, SWP_NOACTIVATE | SWP_NOZORDER | SWP_DRAWFRAME); // 设置窗口位置尺寸
+		// 真实窗口范围由首帧 ULW 原子提交，初始化阶段不再短暂覆盖整张屏幕。
+		RECT bounds{ monitorBounds.left, monitorBounds.top,
+			monitorBounds.left + 1, monitorBounds.top + 1 };
+		// 预缩放仅用于首帧前防闪；失败时仍由首帧 ULW 提交真实窗口范围。
+		(void)Inkeys::Window::GetService().SetBounds(
+			Inkeys::Window::WindowRole::Bar, bounds);
 
-		// 设置自定义窗口消息回调
-		hiex::SetWndProcFunc(window, barWindowMsgCallback);
 		return true;
 	}
 	void InitializeUI(BarUISetClass& barUISet)
@@ -182,9 +277,14 @@ namespace Inkeys::UI::Bar
 			}
 			// 主栏
 			{
-				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 80.0, 80.0, 8.0, 8.0, 1.0, GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				shape->pct.Initialization(0.8);
-				shape->framePct = BarUiPctClass(0.18);
+				auto shape = make_shared<BarUiShapeClass>(0.0, 0.0,
+					BarMainBarWidthDip, BarMainBarHeightDip,
+					BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip,
+					BarButtonFrameThicknessDip,
+					GetThemeColor(BarThemeColorEnum::Surface),
+					GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				shape->pct.Initialization(BarMainBarFillOpacity);
+				shape->framePct = BarUiPctClass(BarMainBarFrameOpacity);
 				shape->frameRendering = BarUiFrameRenderingEnum::PointLight;
 				shape->frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
 				shape->w.mod = BarUiValueModeEnum::Variable;
@@ -863,8 +963,8 @@ namespace Inkeys::UI::Bar
 						barUISet.svgMap[
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck] = menuCheck;
 
-auto annotationLabel = make_shared<BarUiWordClass>(
-								0.0, 0.0, 48.0, 24.0, L"标注线", 13.0,
+						auto annotationLabel = make_shared<BarUiWordClass>(
+								0.0, 0.0, 80.0, 24.0, L"标注线", 13.0,
 								RGB(200, 200, 200));
 							annotationLabel->pct.Initialization(0.0);
 							annotationLabel->enable.Initialization(true);

@@ -70,28 +70,112 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>
       <ModuleDependenciesFile>$(IntDir)</ModuleDependenciesFile>
       <ModuleOutputFile>$(IntDir)</ModuleOutputFile>
       <AdditionalBMIDirectories>$(IntDir);%(AdditionalBMIDirectories)</AdditionalBMIDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Inkeys\additional;$(VcpkgInstalledDir)$(VcpkgTriplet)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Debug'">$(VcpkgInstalledDir)$(VcpkgTriplet)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Release'">$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>jsoncpp.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Animation.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Animation.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Metrics.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Scene.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.FramePacing.cppm" />
-    <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.WakeSignal.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Conv\Conv.Text.cppm">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Other\Other.Config.cppm">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Other\Other.Config.cpp">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Ppt\Ppt.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Freeze\Freeze.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\PageControl\PageControl.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Whiteboard\Whiteboard.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.Layout.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Display\Display.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cppm" />
+    <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="animation_tests.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
+	<ClCompile Include="window_geometry_tests.cpp" />
     <ClCompile Include="frame_pacing_tests.cpp" />
+	<ClCompile Include="toggle_click_coalescer_tests.cpp" />
+	<ClCompile Include="render_scheduler_tests.cpp" />
+	<ClCompile Include="startup_progress_tests.cpp" />
+	<ClCompile Include="startup_preview_state_tests.cpp" />
+	<ClCompile Include="bar_presentation_alpha_tests.cpp" />
+	<ClCompile Include="setting_session_state_tests.cpp" />
+	<ClCompile Include="ppt_ui_tests.cpp" />
+	<ClCompile Include="page_control_tests.cpp" />
+	<ClCompile Include="whiteboard_ui_tests.cpp" />
+	<ClCompile Include="freeze_state_tests.cpp" />
+	<ClCompile Include="display_tests.cpp" />
+	<ClCompile Include="bar_display_transition_tests.cpp" />
+	<ClCompile Include="bar_bottom_dock_tests.cpp" />
+	<ClCompile Include="draw3_bridge_tests.cpp" />
+	<ClCompile Include="draw3_contact_tests.cpp" />
+	<ClCompile Include="speed_eraser_tests.cpp" />
+	<ClCompile Include="eraser_attribute_tests.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.cpp" />
+	<ClCompile Include="presentation_descriptor_tests.cpp" />
     <ClCompile Include="present_decision_tests.cpp" />
+	<ClCompile Include="surface_tests.cpp" />
+	<ClCompile Include="message_tests.cpp" />
+	<ClCompile Include="window_tests.cpp" />
+	<ClCompile Include="message_box_tests.cpp" />
     <ClCompile Include="wake_signal_tests.cpp" />
+  </ItemGroup>
+	<ItemGroup>
+	  <ClInclude Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationAlpha.h" />
+	  <ResourceCompile Include="message_box_test.rc" />
+	</ItemGroup>
+  <ItemGroup>
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

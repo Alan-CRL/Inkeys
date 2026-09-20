@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -17,12 +17,40 @@
 #include <utility>
 #include <vector>
 
+#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+
 import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.Bar.Metrics;
 
 int RunWakeSignalTests();
 int RunPresentDecisionTests();
+int RunSurfaceTests();
+int RunMessageTests();
+int RunWindowTests();
+int RunMessageBoxTests(bool runWindowTests);
+int RunMessageBoxVisualTests(const char* outputDirectory);
+int RunMessageBoxFirstFrameChildTest();
 int RunDirtyRegionTests();
+int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
+int RunToggleClickCoalescerTests();
+int RunRenderSchedulerTests();
+int RunStartupProgressTests();
+int RunStartupPreviewStateTests();
+int RunBarPresentationAlphaTests();
+int RunSettingSessionStateTests();
+int RunPptUiTests();
+int RunPageControlTests();
+int RunWhiteboardUiTests();
+int RunFreezeStateTests();
+int RunDisplayTests();
+int RunBarDisplayTransitionTests();
+int RunBarBottomDockTests();
+int RunDraw3BridgeTests();
+int RunDraw3ContactInputTests();
+int RunSpeedEraserTests();
+int RunEraserAttributeTests();
+int RunPresentationDescriptorTests();
 
 namespace
 {
@@ -39,6 +67,457 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestSharedBarButtonRuntime()
+	{
+		using namespace Inkeys::UI::Bar;
+		const auto oneOne = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardOneOne);
+		const auto twoOne = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardTwoOne);
+		const auto twoTwo = ResolveBarButtonVisualMetrics(
+			BarButtonVisualLayoutKind::StandardTwoTwo);
+		Check(Near(oneOne.buttonWidthDip, BarButtonOneSideDip)
+			&& Near(oneOne.buttonHeightDip, BarButtonOneSideDip)
+			&& Near(oneOne.iconSizeDip, 20.0)
+			&& Near(oneOne.iconOffsetXDip, 0.0)
+			&& Near(oneOne.iconOffsetYDip, 0.0),
+			"shared oneOne metrics match Main Bar");
+		Check(Near(twoOne.buttonWidthDip, BarButtonTwoSideDip)
+			&& Near(twoOne.buttonHeightDip, BarButtonOneSideDip)
+			&& Near(twoOne.iconSizeDip, 18.0)
+			&& Near(twoOne.iconOffsetXDip, -21.0)
+			&& Near(twoOne.primaryOffsetXDip, 11.5),
+			"shared twoOne metrics match Main Bar");
+		Check(Near(twoTwo.buttonWidthDip, BarButtonTwoSideDip)
+			&& Near(twoTwo.buttonHeightDip, BarButtonTwoSideDip)
+			&& Near(twoTwo.iconSizeDip, BarButtonTwoTwoIconSizeDip)
+			&& Near(twoTwo.iconOffsetYDip, BarButtonTwoTwoIconOffsetYDip)
+			&& Near(twoTwo.primaryOffsetYDip, BarButtonTwoTwoLabelOffsetYDip),
+			"shared twoTwo metrics match Main Bar");
+	}
+
+	void TestBarThicknessVisualTransitions()
+	{
+		constexpr std::array<double, 5> progressSamples{
+			0.0, 0.25, 0.5, 0.75, 1.0 };
+		double previousCurve = 1.0;
+		double previousHighlighter = 0.0;
+		for (double progress : progressSamples)
+		{
+			auto sample = ResolveBarThicknessPreviewMorph(progress);
+			Check(sample.curveProgress <= previousCurve + 0.000001,
+				"thickness preview curve changes continuously");
+			Check(sample.highlighterProgress
+				>= previousHighlighter - 0.000001,
+				"thickness preview corners change continuously");
+			previousCurve = sample.curveProgress;
+			previousHighlighter = sample.highlighterProgress;
+		}
+		auto laserStart = ResolveBarThicknessPreviewMorph(0.0);
+		auto highlighterEnd = ResolveBarThicknessPreviewMorph(1.0);
+		Check(Near(laserStart.curveProgress, 1.0)
+			&& Near(laserStart.highlighterProgress, 0.0)
+			&& Near(highlighterEnd.curveProgress, 0.0)
+			&& Near(highlighterEnd.highlighterProgress, 1.0),
+			"laser and highlighter geometry use exact endpoints");
+
+		// 实际推进并中途反向，验证 SetTar 从当前帧值续接而不是跳回端点。
+		BarUiValueClass previewMorph(1.0);
+		previewMorph.SetTar(0.0, 1.0);
+		BarUiAdvanceAnimation(previewMorph,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		double reverseAnchor = previewMorph.val;
+		Check(reverseAnchor > 0.0 && reverseAnchor < 1.0,
+			"laser highlighter transition reaches an intermediate frame");
+		Check(previewMorph.SetTar(1.0, 1.0)
+			&& Near(previewMorph.startV, reverseAnchor)
+			&& Near(previewMorph.val, reverseAnchor),
+			"laser highlighter reversal captures the current geometry");
+		BarUiAdvanceAnimation(previewMorph,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		Check(previewMorph.val > reverseAnchor && previewMorph.val < 1.0,
+			"laser highlighter reversal advances toward the new endpoint");
+
+		BarUiValueClass laserCoreWhiteMix(0.0);
+		laserCoreWhiteMix.SetTar(1.0, 1.0);
+		BarUiAdvanceAnimation(laserCoreWhiteMix,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		double whiteReverseAnchor = laserCoreWhiteMix.val;
+		constexpr COLORREF highlighterColor = RGB(80, 180, 120);
+		constexpr COLORREF laserCoreColor = RGB(255, 255, 255);
+		COLORREF enteringColor = MixBarUiColor(
+			highlighterColor, laserCoreColor, whiteReverseAnchor);
+		Check(enteringColor != highlighterColor && enteringColor != laserCoreColor,
+			"laser core color has an intermediate white blend");
+		laserCoreWhiteMix.SetTar(0.0, 1.0);
+		Check(Near(laserCoreWhiteMix.startV, whiteReverseAnchor)
+			&& Near(laserCoreWhiteMix.val, whiteReverseAnchor),
+			"laser core color reversal preserves the current blend");
+		BarUiAdvanceAnimation(laserCoreWhiteMix,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		Check(laserCoreWhiteMix.val < whiteReverseAnchor
+			&& laserCoreWhiteMix.val > 0.0,
+			"laser core color reversal resumes toward highlighter");
+
+		auto circleStart = ResolveBarThicknessPresetOpacity(0.0);
+		auto contentGap = ResolveBarThicknessPresetOpacity(0.5);
+		auto numberEnd = ResolveBarThicknessPresetOpacity(1.0);
+		Check(Near(circleStart.circleOpacity, 1.0)
+			&& Near(circleStart.numberOpacity, 0.0)
+			&& Near(contentGap.circleOpacity, 0.0)
+			&& Near(contentGap.numberOpacity, 0.0)
+			&& Near(numberEnd.circleOpacity, 0.0)
+			&& Near(numberEnd.numberOpacity, 1.0),
+			"preset content retires outgoing before revealing incoming");
+		Check(!BarThicknessPresetRetargetsCircle(
+			BarThicknessPresetVisualKind::Number),
+			"circle to number freezes outgoing circle diameter");
+		Check(!BarThicknessPresetRetargetsNumber(
+			BarThicknessPresetVisualKind::Number,
+			BarThicknessPresetVisualKind::Circle),
+			"number to circle freezes outgoing number value");
+		Check(BarThicknessPresetRetargetsCircle(
+			BarThicknessPresetVisualKind::Circle),
+			"circle to circle permits diameter morph");
+		BarThicknessPresetVisualKind currentPresetKind =
+			BarThicknessPresetVisualKind::Circle;
+		double lockedCircleDiameter = 6.0;
+		int lockedNumberValue = 50;
+		auto RetargetPreset = [&](BarThicknessPresetVisualKind targetKind,
+			double targetCircleDiameter, int targetNumberValue)
+		{
+			if (targetKind != currentPresetKind)
+			{
+				if (BarThicknessPresetRetargetsNumber(
+					currentPresetKind, targetKind))
+					lockedNumberValue = targetNumberValue;
+				currentPresetKind = targetKind;
+			}
+			if (BarThicknessPresetRetargetsCircle(currentPresetKind))
+				lockedCircleDiameter = targetCircleDiameter;
+		};
+		RetargetPreset(BarThicknessPresetVisualKind::Number, 70.0, 70);
+		Check(Near(lockedCircleDiameter, 6.0) && lockedNumberValue == 70,
+			"circle to number freezes the circle and latches incoming text");
+		RetargetPreset(BarThicknessPresetVisualKind::Circle, 3.0, 3);
+		Check(Near(lockedCircleDiameter, 3.0) && lockedNumberValue == 70,
+			"number to circle freezes outgoing text and retargets the circle");
+
+		BarUiValueClass circleDiameter(3.0);
+		circleDiameter.SetTar(6.0, 1.0);
+		BarUiAdvanceAnimation(circleDiameter,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		Check(Near(circleDiameter.val, 4.5),
+			"pen to laser circle diameter has an intermediate value");
+
+		BarUiValueClass presetNumberProgress(0.0);
+		presetNumberProgress.SetTar(1.0, 1.0);
+		BarUiAdvanceAnimation(presetNumberProgress,
+			BarUiAnimationAdvanceContextClass{ 0.75, 1.0, true, false });
+		double presetReverseAnchor = presetNumberProgress.val;
+		presetNumberProgress.SetTar(0.0, 1.0);
+		Check(Near(presetNumberProgress.startV, presetReverseAnchor)
+			&& Near(presetNumberProgress.val, presetReverseAnchor),
+			"number circle reversal preserves current opacity progress");
+		BarUiAdvanceAnimation(presetNumberProgress,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		Check(presetNumberProgress.val < presetReverseAnchor,
+			"number circle reversal advances without endpoint flash");
+		Check(ResolveBarThicknessPresetVisualKind(
+			BarThicknessPreviewVisualKind::SoftPen)
+				== BarThicknessPresetVisualKind::Circle
+			&& ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::HardPen)
+				== BarThicknessPresetVisualKind::Circle
+			&& ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::Highlighter)
+				== BarThicknessPresetVisualKind::Number
+			&& ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::Laser)
+				== BarThicknessPresetVisualKind::Circle,
+			"draw attribute initializes the correct preset semantic for every tool");
+		BarUiValueClass initializedHighlighterProgress(
+			ResolveBarThicknessPresetVisualKind(
+				BarThicknessPreviewVisualKind::Highlighter)
+				== BarThicknessPresetVisualKind::Number ? 1.0 : 0.0);
+		Check(initializedHighlighterProgress.IsSame()
+			&& Near(initializedHighlighterProgress.val, 1.0),
+			"highlighter initializes directly in the stable number state");
+
+		Check(BarPenTypeSupportsExtension(
+			BarThicknessPreviewVisualKind::SoftPen)
+			&& BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::HardPen)
+			&& BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::Highlighter)
+			&& !BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::Laser)
+			&& !BarPenTypeSupportsExtension(
+				BarThicknessPreviewVisualKind::Unsupported),
+			"pen type extension eligibility matches all four tools");
+		auto anchor = ResolveBarPenTypeExtensionAnchor(42.5, 73.25, 18.0);
+		Check(Near(anchor.x, 60.5) && Near(anchor.y, 73.25),
+			"extension anchor follows selected button current geometry");
+		BarUiValueClass extensionProgress(1.0);
+		extensionProgress.SetTar(0.0, 1.0);
+		BarUiAdvanceAnimation(extensionProgress,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		auto fadingExtension = ResolveBarPenTypeExtensionPresentation(
+			false, extensionProgress.val, 0.8);
+		Check(!fadingExtension.interactive
+			&& fadingExtension.opacity > 0.0
+			&& fadingExtension.opacity < 0.8,
+			"extension disables hit immediately while its visual fades");
+		BarUiColorClass selectedButtonColor(RGB(40, 40, 40));
+		selectedButtonColor.SetTar(RGB(0, 180, 190), 1.0);
+		BarUiAdvanceAnimation(selectedButtonColor,
+			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		COLORREF extensionColor = ResolveBarPenTypeExtensionColor(
+			selectedButtonColor.val);
+		Check(extensionColor == static_cast<COLORREF>(selectedButtonColor.val)
+			&& extensionColor != RGB(0, 180, 190),
+			"extension color follows button animation instead of jumping to accent");
+
+		auto softSlot = ResolveBarPenTypeExtensionSlot(
+			BarThicknessPreviewVisualKind::SoftPen);
+		auto hardSlot = ResolveBarPenTypeExtensionSlot(
+			BarThicknessPreviewVisualKind::HardPen);
+		auto highlighterSlot = ResolveBarPenTypeExtensionSlot(
+			BarThicknessPreviewVisualKind::Highlighter);
+		Check(softSlot && hardSlot && highlighterSlot
+			&& *softSlot != *hardSlot && *softSlot != *highlighterSlot
+			&& *hardSlot != *highlighterSlot
+			&& !ResolveBarPenTypeExtensionSlot(
+				BarThicknessPreviewVisualKind::Laser),
+			"every supported pen owns an independent extension slot");
+		BarUiValueClass oldExtension(1.0);
+		BarUiValueClass newExtension(0.0);
+		oldExtension.SetTar(0.0, 0.4);
+		newExtension.SetTar(1.0, 0.4);
+		BarUiAdvanceAnimation(oldExtension,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		BarUiAdvanceAnimation(newExtension,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		Check(oldExtension.val > 0.0 && oldExtension.val < 1.0
+			&& newExtension.val > 0.0 && newExtension.val < 1.0,
+			"old and new pen extension visuals cross fade together");
+		Check(ResolveBarAnnotationPopupTitle(
+			BarThicknessPreviewVisualKind::SoftPen)
+				== L"标注线（粗细固定，暂未支持）"
+			&& ResolveBarAnnotationPopupTitle(
+				BarThicknessPreviewVisualKind::HardPen)
+				== L"启用标注线（暂不可用）"
+			&& ResolveBarAnnotationPopupTitle(
+				BarThicknessPreviewVisualKind::Highlighter)
+				== L"启用标注线（暂不可用）",
+			"annotation popup title follows its latched pen anchor");
+
+		auto phase = BarLaserPreviewPhase::NonLaserStable;
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, false, true, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringCore,
+			"laser entry starts with the core phase");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, false, false, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringCore,
+			"laser shell waits for the core endpoint");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, true, false, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringShell,
+			"laser shell starts after the core endpoint");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, true, false, false, true);
+		Check(phase == BarLaserPreviewPhase::LaserStable,
+			"laser entry reaches its stable phase");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, true, false, false, true);
+		Check(phase == BarLaserPreviewPhase::LeavingShell,
+			"laser exit retires the shell first");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, true, false, true, false);
+		Check(phase == BarLaserPreviewPhase::LeavingCore,
+			"laser core changes only after the shell is hidden");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, false, true, true, false);
+		Check(phase == BarLaserPreviewPhase::NonLaserStable,
+			"laser exit reaches the non-laser endpoint");
+
+		phase = BarLaserPreviewPhase::EnteringShell;
+		phase = ResolveBarLaserPreviewPhase(
+			phase, false, true, false, false, false);
+		Check(phase == BarLaserPreviewPhase::LeavingShell,
+			"shell reversal continues from its current value");
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, true, false, false, false);
+		Check(phase == BarLaserPreviewPhase::EnteringShell,
+			"shell can reverse back toward laser without resetting");
+		phase = BarLaserPreviewPhase::LeavingCore;
+		phase = ResolveBarLaserPreviewPhase(
+			phase, true, false, false, true, false);
+		Check(phase == BarLaserPreviewPhase::EnteringCore,
+			"core reversal continues from its current semantic values");
+
+		const auto enteringCorePolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::EnteringCore);
+		const auto enteringShellPolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::EnteringShell);
+		const auto leavingShellPolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::LeavingShell);
+		const auto leavingCorePolicy = ResolveBarLaserPreviewTargetPolicy(
+			BarLaserPreviewPhase::LeavingCore);
+		Check(enteringCorePolicy.core
+				== BarLaserPreviewSemanticTarget::Laser
+			&& enteringCorePolicy.outer
+				== BarLaserPreviewSemanticTarget::Laser
+			&& !enteringCorePolicy.shellExpanded,
+			"entering core targets laser semantics while shell stays hidden");
+		Check(enteringShellPolicy.core
+				== BarLaserPreviewSemanticTarget::Hold
+			&& enteringShellPolicy.outer
+				== BarLaserPreviewSemanticTarget::Hold
+			&& enteringShellPolicy.shellExpanded,
+			"entering shell keeps the latched laser endpoints");
+		Check(leavingShellPolicy.core
+				== BarLaserPreviewSemanticTarget::Hold
+			&& leavingShellPolicy.outer
+				== BarLaserPreviewSemanticTarget::Hold
+			&& !leavingShellPolicy.shellExpanded,
+			"leaving shell changes only the shell target");
+		Check(leavingCorePolicy.core
+				== BarLaserPreviewSemanticTarget::NonLaser
+			&& leavingCorePolicy.outer
+				== BarLaserPreviewSemanticTarget::NonLaser
+			&& !leavingCorePolicy.shellExpanded,
+			"leaving core finally targets non-laser semantics");
+
+		double lockedCoreTarget = 2.0;
+		double lockedOuterTarget = 6.0;
+		double lockedMorphTarget = 0.0;
+		double lockedWhiteTarget = 1.0;
+		const double newNonLaserThickness = 18.0;
+		auto ApplySemanticPolicy = [&](BarLaserPreviewTargetPolicy policy)
+		{
+			if (policy.core == BarLaserPreviewSemanticTarget::NonLaser)
+			{
+				lockedCoreTarget = newNonLaserThickness;
+				lockedMorphTarget = 1.0;
+				lockedWhiteTarget = 0.0;
+			}
+			if (policy.outer == BarLaserPreviewSemanticTarget::NonLaser)
+				lockedOuterTarget = newNonLaserThickness;
+		};
+		ApplySemanticPolicy(leavingShellPolicy);
+		Check(Near(lockedCoreTarget, 2.0)
+			&& Near(lockedOuterTarget, 6.0)
+			&& Near(lockedMorphTarget, 0.0)
+			&& Near(lockedWhiteTarget, 1.0),
+			"leaving shell preserves every latched laser target");
+		ApplySemanticPolicy(leavingCorePolicy);
+		Check(Near(lockedCoreTarget, newNonLaserThickness)
+			&& Near(lockedOuterTarget, newNonLaserThickness)
+			&& Near(lockedMorphTarget, 1.0)
+			&& Near(lockedWhiteTarget, 0.0),
+			"leaving core releases all semantics toward the new pen");
+
+		Check(Near(ResolveBarLaserPreviewEnvelopeThickness(2.0, 6.0, 0.5),
+			4.0)
+			&& Near(ResolveBarLaserPreviewEnvelopeThickness(6.0, 2.0, 0.5),
+				6.0),
+			"laser preview envelope contains both core and current shell widths");
+
+		constexpr double previewLeft = 10.0;
+		constexpr double previewRight = 110.0;
+		auto ResolveRoundedLayerCenters = [&](double layerThickness,
+			const BarLaserPreviewLayerGeometry& geometry)
+			{
+				return std::pair{
+					previewLeft + geometry.horizontalInset + layerThickness / 2.0,
+					previewRight - geometry.horizontalInset - layerThickness / 2.0,
+				};
+			};
+		const auto laserCoreLayer = ResolveBarLaserPreviewLayerGeometry(
+			2.0, 6.0, 0.0, 2.0);
+		const auto laserCoreCenters = ResolveRoundedLayerCenters(
+			2.0, laserCoreLayer);
+		bool shellCentersStayAligned = true;
+		for (double shellProgress : { 0.0, 0.5, 1.0 })
+		{
+			double shellThickness = 2.0 + (6.0 - 2.0) * shellProgress;
+			auto shellLayer = ResolveBarLaserPreviewLayerGeometry(
+				shellThickness, 6.0, 0.0, 2.0);
+			auto shellCenters = ResolveRoundedLayerCenters(
+				shellThickness, shellLayer);
+			shellCentersStayAligned = shellCentersStayAligned
+				&& Near(shellCenters.first, laserCoreCenters.first)
+				&& Near(shellCenters.second, laserCoreCenters.second);
+		}
+		Check(shellCentersStayAligned
+			&& Near(laserCoreCenters.first, previewLeft + 3.0)
+			&& Near(laserCoreCenters.second, previewRight - 3.0),
+			"laser core and shell share cap centers throughout shell reveal");
+
+		auto ResolveCenterSpan = [&](double animatedOuterDiameter)
+			{
+				auto geometry = ResolveBarLaserPreviewLayerGeometry(
+					2.0, animatedOuterDiameter, 0.0, 2.0);
+				return (previewRight - previewLeft) - geometry.endpointDiameter;
+			};
+		BarUiValueClass thinPenEndpoint(3.0);
+		thinPenEndpoint.SetTar(6.0, 0.4);
+		double thinStartSpan = ResolveCenterSpan(thinPenEndpoint.val);
+		BarUiAdvanceAnimation(thinPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thinMiddleSpan = ResolveCenterSpan(thinPenEndpoint.val);
+		BarUiAdvanceAnimation(thinPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thinEndSpan = ResolveCenterSpan(thinPenEndpoint.val);
+		Check(thinStartSpan > thinMiddleSpan && thinMiddleSpan > thinEndSpan
+			&& Near(thinEndSpan, previewRight - previewLeft - 6.0),
+			"thin pen entry continuously narrows the laser core center span");
+		BarUiValueClass thickPenEndpoint(12.0);
+		thickPenEndpoint.SetTar(6.0, 0.4);
+		double thickStartSpan = ResolveCenterSpan(thickPenEndpoint.val);
+		BarUiAdvanceAnimation(thickPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thickMiddleSpan = ResolveCenterSpan(thickPenEndpoint.val);
+		BarUiAdvanceAnimation(thickPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		double thickEndSpan = ResolveCenterSpan(thickPenEndpoint.val);
+		Check(thickStartSpan < thickMiddleSpan && thickMiddleSpan < thickEndSpan
+			&& Near(thickEndSpan, previewRight - previewLeft - 6.0),
+			"thick pen entry continuously widens the laser core center span");
+
+		double reverseStartDiameter = thinPenEndpoint.val;
+		thinPenEndpoint.SetTar(3.0, 0.4);
+		Check(Near(thinPenEndpoint.val, reverseStartDiameter),
+			"laser endpoint reverse preserves the handoff frame");
+		BarUiAdvanceAnimation(thinPenEndpoint,
+			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		Check(ResolveCenterSpan(thinPenEndpoint.val)
+			> ResolveCenterSpan(reverseStartDiameter),
+			"laser endpoint reverse continues from the current span");
+
+		auto sliderMiddleCoreLayer = ResolveBarLaserPreviewLayerGeometry(
+			2.0, 6.0, 0.5, 2.0);
+		auto sliderMiddleShellLayer = ResolveBarLaserPreviewLayerGeometry(
+			4.0, 6.0, 0.5, 2.0);
+		auto sliderTrackLayer = ResolveBarLaserPreviewLayerGeometry(
+			2.0, 6.0, 1.0, 2.0);
+		auto sliderMiddleCoreCenters = ResolveRoundedLayerCenters(
+			2.0, sliderMiddleCoreLayer);
+		auto sliderMiddleShellCenters = ResolveRoundedLayerCenters(
+			4.0, sliderMiddleShellLayer);
+		Check(Near(sliderMiddleCoreLayer.endpointDiameter, 4.0)
+			&& Near(sliderMiddleCoreLayer.horizontalInset, 1.0)
+			&& Near(sliderMiddleShellLayer.endpointDiameter, 4.0)
+			&& Near(sliderMiddleShellLayer.horizontalInset, 0.0)
+			&& Near(sliderMiddleCoreCenters.first, sliderMiddleShellCenters.first)
+			&& Near(sliderMiddleCoreCenters.second, sliderMiddleShellCenters.second)
+			&& Near(sliderTrackLayer.endpointDiameter, 2.0)
+			&& Near(sliderTrackLayer.horizontalInset, 0.0),
+			"slider morph keeps layer centers aligned while moving to the track");
 	}
 
 	double ApplyLegacyPowCurve(BarUiCurveEnum curve, double progress)
@@ -225,8 +704,54 @@ namespace
 			"zero-duration content transition applies immediately");
 	}
 
+	void TestCenteredHiddenButtonRejoinsLayoutBatch()
+	{
+		using namespace Inkeys::UI::Bar;
+		for (bool opensRight : { true, false })
+			for (double zoom : { 1.0, 1.5 })
+				for (double initialWidth : { 400.0, 560.0 })
+				{
+					BarUiValueClass hiddenX(190.0);
+					hiddenX.SetTar(115.0, 0.4);
+					BarUiAdvanceAnimation(hiddenX, { 0.1, 1.0, true, false });
+					const double childStart = hiddenX.val;
+					const double finalWidth = initialWidth - (childStart - 115.0) * 2.0;
+					const double side = opensRight ? 1.0 : -1.0;
+					BarUiValueClass barWidth(initialWidth);
+					BarUiValueClass barX(side * (50.0 + initialWidth / 2.0));
+					const auto startRoot = ResolveBarBottomDockCenteredRootPlacement(
+						960.0, 81.0, barX.val, barWidth.val + 1.0);
+					const double startScreen = (startRoot.mainCenterDip + barX.val
+						- barWidth.val / 2.0 + childStart) * zoom;
+					const BarUiCurveSpecClass curve{
+						BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
+					barWidth.SetTar(finalWidth, 0.4, std::nullopt, false, curve);
+					barX.SetTar(side * (50.0 + finalWidth / 2.0), 0.4, std::nullopt, false, curve);
+					// 来源锚点仍是 115；旧 SetTar 的同目标早退会留下另一条局部时间线。
+					Check(BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, true, curve),
+						"new layout batch rejoins a hidden child already travelling to the same anchor");
+					for (int frame = 0; frame < 30; ++frame)
+					{
+						Check(!BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, false, curve),
+							"ordinary centered frames do not restart hidden-child animation");
+						BarUiAdvanceAnimation(hiddenX, { 1.0 / 60.0, 1.0, true, false });
+						BarUiAdvanceAnimation(barX, { 1.0 / 60.0, 1.0, true, false });
+						BarUiAdvanceAnimation(barWidth, { 1.0 / 60.0, 1.0, true, false });
+						const auto root = ResolveBarBottomDockCenteredRootPlacement(
+							960.0, 81.0, barX.val, barWidth.val + 1.0);
+						const double screen = (root.mainCenterDip + barX.val
+							- barWidth.val / 2.0 + hiddenX.val) * zoom;
+						Check(Near(screen, startScreen),
+							"cancelling child and centered-root displacements never produce a horizontal bob");
+						Check(Near((root.bodyLeftDip + root.bodyRightDip) / 2.0, 960.0),
+							"hidden child retarget keeps the visible union exactly centered");
+					}
+				}
+	}
+
 	void TestTargetsAndAdvancement()
 	{
+		TestCenteredHiddenButtonRejoinsLayoutBatch();
 		BarUiValueClass value(0.0);
 		Check(value.SetTar(10.0, 1.0), "new value target starts animation");
 		Check(!value.SetTar(10.0, 1.0), "same value target is a no-op");
@@ -238,6 +763,55 @@ namespace
 		Check(Near(value.startV, interruptedAt), "interruption captures current visual value");
 		Check(value.SetTar(20.0, 1.0, std::nullopt, true),
 			"force restart accepts the same target");
+
+		// 模拟 Draw 到 Selection：主栏自身只推进 x/w，根节点每帧由联合边界反推。
+		BarUiValueClass centeredCollapseX(250.0);
+		BarUiValueClass centeredCollapseWidth(400.0);
+		const BarUiCurveSpecClass centeredCollapseCurve{
+			BarUiCurveEnum::EaseOutCubic,
+			BarUiCurveEnum::EaseOutCubic,
+			0.0,
+			false,
+		};
+		bool collapseWidthMonotonic = true;
+		bool centeredBodyInvariant = true;
+		double previousCollapseWidth = centeredCollapseWidth.val;
+		double previousRootCenter = 0.0;
+		bool rootMovedWithCollapse = false;
+		centeredCollapseX.SetTar(
+			150.0, 0.4, std::nullopt, false, centeredCollapseCurve);
+		centeredCollapseWidth.SetTar(
+			200.0, 0.4, std::nullopt, false, centeredCollapseCurve);
+		for (int frame = 0; frame < 30; ++frame)
+		{
+			BarUiAdvanceAnimation(centeredCollapseX,
+				BarUiAnimationAdvanceContextClass{
+					1.0 / 60.0, 1.0, true, false });
+			BarUiAdvanceAnimation(centeredCollapseWidth,
+				BarUiAnimationAdvanceContextClass{
+					1.0 / 60.0, 1.0, true, false });
+			const auto placement =
+				Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootPlacement(
+					960.0, 80.0, centeredCollapseX.val,
+					centeredCollapseWidth.val);
+			collapseWidthMonotonic &= centeredCollapseWidth.val
+				<= previousCollapseWidth + 0.000001;
+			centeredBodyInvariant &= placement.valid
+				&& Near((placement.bodyLeftDip + placement.bodyRightDip)
+					/ 2.0, 960.0);
+			if (frame > 0)
+				rootMovedWithCollapse |= placement.mainCenterDip
+					> previousRootCenter + 0.000001;
+			previousCollapseWidth = centeredCollapseWidth.val;
+			previousRootCenter = placement.mainCenterDip;
+		}
+		Check(collapseWidthMonotonic && centeredBodyInvariant
+			&& rootMovedWithCollapse && centeredCollapseX.IsSame()
+			&& centeredCollapseWidth.IsSame()
+			&& Near(centeredCollapseX.val, 150.0)
+			&& Near(centeredCollapseWidth.val, 200.0)
+			&& Near(previousRootCenter, 855.0),
+			"centered Draw to Selection collapse keeps every presented union centered");
 
 		BarUiValueClass middle(0.0);
 		middle.SetTar(1.0, 1.0, 0.8);
@@ -419,6 +993,37 @@ namespace
 				return timeline.IsCurrentGeneration(startGeneration);
 			});
 		Check(!oldGenerationCurrent, "cancel rejects the prior generation");
+
+		BarUiKeyframeTimelineClass immediateTimeline;
+		immediateTimeline.Start(1.0, 0.5);
+		std::wstring currentImmediate = L"old";
+		std::wstring targetImmediate = L"old";
+		std::wstring pendingImmediate = L"stale";
+		double immediateScale = 0.8;
+		double immediateOpacity = 0.4;
+		const bool immediateChanged = ApplyBarImmediateContentUpdate(
+			immediateTimeline,
+			[&]
+			{
+				return currentImmediate != L"fresh"
+					|| targetImmediate != L"fresh";
+			},
+			[&]
+			{
+				currentImmediate = targetImmediate = pendingImmediate = L"fresh";
+				immediateScale = 1.0;
+				immediateOpacity = 1.0;
+			});
+		const auto cancelledAdvance = immediateTimeline.Advance(1.0, 1.0);
+		Check(immediateChanged && !immediateTimeline.IsActive()
+			&& !cancelledAdvance.reachedKeyframe
+			&& currentImmediate == L"fresh" && targetImmediate == L"fresh"
+			&& pendingImmediate == L"fresh" && Near(immediateScale, 1.0)
+			&& Near(immediateOpacity, 1.0),
+			"immediate content cancels stale keyframe without a late rewrite");
+		Check(ShouldKeepBarContentVisibleForExit(true, true, true, true)
+			&& !ShouldKeepBarContentVisibleForExit(false, true, true, true),
+			"only animated empty content remains visible for its exit transition");
 
 		std::wstring requestedTarget = L"old";
 		uint64_t requestedGeneration = 0;
@@ -862,15 +1467,58 @@ namespace
 
 int main(int argc, char** argv)
 {
+	bool benchmark = false;
+	bool runWindowTests = true;
+	bool messageBoxFirstFrameChild = false;
+	const char* messageBoxVisualOutput = nullptr;
+	for (int index = 1; index < argc; ++index)
+	{
+		const std::string_view argument(argv[index]);
+		benchmark |= argument == "--benchmark";
+		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
+		// 受限 CI 可只执行完全不创建 HWND 的测试集。
+		runWindowTests &= argument != "--no-window";
+		if (argument == "--message-box-visual-test" && index + 1 < argc)
+			messageBoxVisualOutput = argv[++index];
+	}
+	if (messageBoxFirstFrameChild)
+		return RunMessageBoxFirstFrameChildTest();
+	if (messageBoxVisualOutput)
+		return RunMessageBoxVisualTests(messageBoxVisualOutput);
+
 	TestCurvesAndTimelines();
+	TestSharedBarButtonRuntime();
+	TestBarThicknessVisualTransitions();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
 	TestConcurrentAnimationPublication();
 	failureCount += RunWakeSignalTests();
 	failureCount += RunPresentDecisionTests();
+	failureCount += RunSurfaceTests();
+	failureCount += RunMessageTests();
+	failureCount += RunMessageBoxTests(runWindowTests);
+	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
-	bool benchmark = argc > 1 && std::string_view(argv[1]) == "--benchmark";
+	failureCount += RunWindowGeometryTests();
 	failureCount += RunFramePacingTests(benchmark);
+	failureCount += RunToggleClickCoalescerTests();
+	failureCount += RunRenderSchedulerTests();
+	failureCount += RunStartupProgressTests();
+	failureCount += RunStartupPreviewStateTests();
+	failureCount += RunBarPresentationAlphaTests();
+	failureCount += RunSettingSessionStateTests();
+	failureCount += RunPptUiTests();
+	failureCount += RunPageControlTests();
+	failureCount += RunWhiteboardUiTests();
+	failureCount += RunFreezeStateTests();
+	failureCount += RunDisplayTests();
+	failureCount += RunBarDisplayTransitionTests();
+	failureCount += RunBarBottomDockTests();
+	failureCount += RunDraw3BridgeTests();
+	failureCount += RunDraw3ContactInputTests();
+	failureCount += RunSpeedEraserTests();
+	failureCount += RunEraserAttributeTests();
+	failureCount += RunPresentationDescriptorTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

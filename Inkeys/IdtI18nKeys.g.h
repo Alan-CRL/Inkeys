@@ -42,7 +42,63 @@ inline constexpr struct I18nKeyRoot
             const char* Freeze = "UI/Operate/Freeze";
             const char* Pierce = "UI/Operate/Pierce";
         } Operate{};
+        struct Node__UI__Bar
+        {
+            struct Node__UI__Bar__BottomDock
+            {
+                const char* Mode = "UI/Bar/BottomDock/Mode";
+                const char* Centered = "UI/Bar/BottomDock/Centered";
+            } BottomDock{};
+            struct Node__UI__Bar__EraserAttributes
+            {
+                const char* ClearCanvasLabel = "UI/Bar/EraserAttributes/ClearCanvasLabel";
+                const char* ClearCanvasHint = "UI/Bar/EraserAttributes/ClearCanvasHint";
+                const char* AutomaticLabel = "UI/Bar/EraserAttributes/AutomaticLabel";
+                const char* SensitivityLabel = "UI/Bar/EraserAttributes/SensitivityLabel";
+                const char* LowLabel = "UI/Bar/EraserAttributes/LowLabel";
+                const char* MediumLabel = "UI/Bar/EraserAttributes/MediumLabel";
+                const char* HighLabel = "UI/Bar/EraserAttributes/HighLabel";
+                const char* SmallSize = "UI/Bar/EraserAttributes/SmallSize";
+                const char* MediumSize = "UI/Bar/EraserAttributes/MediumSize";
+                const char* LargeSize = "UI/Bar/EraserAttributes/LargeSize";
+                const char* BaseSizeHint = "UI/Bar/EraserAttributes/BaseSizeHint";
+                const char* MixedHint = "UI/Bar/EraserAttributes/MixedHint";
+                const char* SettingsHint = "UI/Bar/EraserAttributes/SettingsHint";
+            } EraserAttributes{};
+        } Bar{};
     } UI{};
+    struct Node__Dialogs
+    {
+        struct Node__Dialogs__Common
+        {
+            const char* TipsTitle = "Dialogs/Common/TipsTitle";
+            const char* ErrorTitle = "Dialogs/Common/ErrorTitle";
+            const char* OK = "Dialogs/Common/OK";
+            const char* Cancel = "Dialogs/Common/Cancel";
+            const char* Yes = "Dialogs/Common/Yes";
+            const char* No = "Dialogs/Common/No";
+        } Common{};
+        struct Node__Dialogs__EndPresentation
+        {
+            const char* Body = "Dialogs/EndPresentation/Body";
+        } EndPresentation{};
+        struct Node__Dialogs__WindowCreationFailed
+        {
+            const char* Body = "Dialogs/WindowCreationFailed/Body";
+        } WindowCreationFailed{};
+        struct Node__Dialogs__UpdateModuleUnavailable
+        {
+            const char* Body = "Dialogs/UpdateModuleUnavailable/Body";
+        } UpdateModuleUnavailable{};
+        struct Node__Dialogs__CloseInkeys
+        {
+            const char* Body = "Dialogs/CloseInkeys/Body";
+        } CloseInkeys{};
+        struct Node__Dialogs__Crash
+        {
+            const char* Body = "Dialogs/Crash/Body";
+        } Crash{};
+    } Dialogs{};
     struct Node__SettingsUI
     {
         const char* N = "SettingsUI/N";
@@ -187,6 +243,7 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/Regular/StartUp/N";
                 const char* AutoStart = "SettingsUI/Regular/StartUp/AutoStart";
                 const char* AutoStartE = "SettingsUI/Regular/StartUp/AutoStartE";
+                const char* LoadingAnimation = "SettingsUI/Regular/StartUp/LoadingAnimation";
                 struct Node__SettingsUI__Regular__StartUp__Link
                 {
                     const char* N = "SettingsUI/Regular/StartUp/Link/N";
@@ -197,6 +254,14 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Regular__Appearance
             {
                 const char* N = "SettingsUI/Regular/Appearance/N";
+                const char* AnimationEnable = "SettingsUI/Regular/Appearance/AnimationEnable";
+                const char* AnimationEnableE = "SettingsUI/Regular/Appearance/AnimationEnableE";
+                const char* AnimationRate = "SettingsUI/Regular/Appearance/AnimationRate";
+                const char* AnimationRateE = "SettingsUI/Regular/Appearance/AnimationRateE";
+                const char* EdgeLighting = "SettingsUI/Regular/Appearance/EdgeLighting";
+                const char* EdgeLightingE = "SettingsUI/Regular/Appearance/EdgeLightingE";
+                const char* DynamicEdgeLighting = "SettingsUI/Regular/Appearance/DynamicEdgeLighting";
+                const char* DynamicEdgeLightingE = "SettingsUI/Regular/Appearance/DynamicEdgeLightingE";
                 struct Node__SettingsUI__Regular__Appearance__Theme
                 {
                     const char* N = "SettingsUI/Regular/Appearance/Theme/N";
@@ -245,8 +310,6 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Regular__Tentative
             {
                 const char* N = "SettingsUI/Regular/Tentative/N";
-                const char* AvoidFulScreen = "SettingsUI/Regular/Tentative/AvoidFulScreen";
-                const char* AvoidFulScreenE = "SettingsUI/Regular/Tentative/AvoidFulScreenE";
                 struct Node__SettingsUI__Regular__Tentative__SafeMode
                 {
                     const char* N = "SettingsUI/Regular/Tentative/SafeMode/N";
@@ -272,78 +335,58 @@ inline constexpr struct I18nKeyRoot
                     const char* MousePen = "SettingsUI/Draw/Effect/Device/MousePen";
                 } Device{};
             } Effect{};
-            struct Node__SettingsUI__Draw__AIDraw
+            struct Node__SettingsUI__Draw__Eraser
             {
-                const char* N = "SettingsUI/Draw/AIDraw/N";
-                const char* PenUp = "SettingsUI/Draw/AIDraw/PenUp";
-                const char* PenUpE = "SettingsUI/Draw/AIDraw/PenUpE";
-                const char* PenStay = "SettingsUI/Draw/AIDraw/PenStay";
-                const char* PenStayE = "SettingsUI/Draw/AIDraw/PenStayE";
-                const char* EndpointAdsorption = "SettingsUI/Draw/AIDraw/EndpointAdsorption";
-                const char* EndpointAdsorptionE = "SettingsUI/Draw/AIDraw/EndpointAdsorptionE";
-            } AIDraw{};
-            struct Node__SettingsUI__Draw__DrawBehavior
-            {
-                const char* N = "SettingsUI/Draw/DrawBehavior/N";
-                const char* SoomthWriting = "SettingsUI/Draw/DrawBehavior/SoomthWriting";
-            } DrawBehavior{};
-            struct Node__SettingsUI__Draw__RubberThickness
-            {
-                const char* N = "SettingsUI/Draw/RubberThickness/N";
-                struct Node__SettingsUI__Draw__RubberThickness__Calc
+                const char* N = "SettingsUI/Draw/Eraser/N";
+                const char* Automatic = "SettingsUI/Draw/Eraser/Automatic";
+                struct Node__SettingsUI__Draw__Eraser__Input
                 {
-                    const char* N = "SettingsUI/Draw/RubberThickness/Calc/N";
-                    const char* E = "SettingsUI/Draw/RubberThickness/Calc/E";
-                    const char* Mode1 = "SettingsUI/Draw/RubberThickness/Calc/Mode1";
-                    const char* Mode2 = "SettingsUI/Draw/RubberThickness/Calc/Mode2";
-                    const char* Mode3 = "SettingsUI/Draw/RubberThickness/Calc/Mode3";
-                } Calc{};
-            } RubberThickness{};
-            struct Node__SettingsUI__Draw__Tentative
-            {
-                const char* N = "SettingsUI/Draw/Tentative/N";
-                const char* HideCursor = "SettingsUI/Draw/Tentative/HideCursor";
-                const char* HideCursorE = "SettingsUI/Draw/Tentative/HideCursorE";
-            } Tentative{};
+                    const char* MouseLeft = "SettingsUI/Draw/Eraser/Input/MouseLeft";
+                    const char* MouseRight = "SettingsUI/Draw/Eraser/Input/MouseRight";
+                    const char* Touch = "SettingsUI/Draw/Eraser/Input/Touch";
+                    const char* PenTip = "SettingsUI/Draw/Eraser/Input/PenTip";
+                    const char* PenTail = "SettingsUI/Draw/Eraser/Input/PenTail";
+                } Input{};
+                struct Node__SettingsUI__Draw__Eraser__Kind
+                {
+                    const char* Fixed = "SettingsUI/Draw/Eraser/Kind/Fixed";
+                    const char* Speed = "SettingsUI/Draw/Eraser/Kind/Speed";
+                } Kind{};
+                const char* ResponseFor = "SettingsUI/Draw/Eraser/ResponseFor";
+                struct Node__SettingsUI__Draw__Eraser__Response
+                {
+                    const char* Auto = "SettingsUI/Draw/Eraser/Response/Auto";
+                    const char* ScreenPen = "SettingsUI/Draw/Eraser/Response/ScreenPen";
+                    const char* Digitizer = "SettingsUI/Draw/Eraser/Response/Digitizer";
+                } Response{};
+                struct Node__SettingsUI__Draw__Eraser__TouchArea
+                {
+                    const char* N = "SettingsUI/Draw/Eraser/TouchArea/N";
+                    const char* E = "SettingsUI/Draw/Eraser/TouchArea/E";
+                } TouchArea{};
+            } Eraser{};
         } Draw{};
-        struct Node__SettingsUI__Performance
+        struct Node__SettingsUI__Experimental
         {
-            const char* N = "SettingsUI/Performance/N";
-            struct Node__SettingsUI__Performance__DrawMode
+            struct Node__SettingsUI__Experimental__ConsoleOutput
             {
-                const char* N = "SettingsUI/Performance/DrawMode/N";
-                struct Node__SettingsUI__Performance__DrawMode__Prepare
+                struct Node__SettingsUI__Experimental__ConsoleOutput__TouchArea
                 {
-                    const char* N = "SettingsUI/Performance/DrawMode/Prepare/N";
-                    const char* E = "SettingsUI/Performance/DrawMode/Prepare/E";
-                    const char* Ind = "SettingsUI/Performance/DrawMode/Prepare/Ind";
-                } Prepare{};
-                const char* SuperDraw = "SettingsUI/Performance/DrawMode/SuperDraw";
-                const char* SuperDrawE = "SettingsUI/Performance/DrawMode/SuperDrawE";
-            } DrawMode{};
-        } Performance{};
-        struct Node__SettingsUI__Preset
-        {
-            const char* N = "SettingsUI/Preset/N";
-            struct Node__SettingsUI__Preset__Memory
-            {
-                const char* N = "SettingsUI/Preset/Memory/N";
-                const char* Thickness = "SettingsUI/Preset/Memory/Thickness";
-                const char* ThicknessE = "SettingsUI/Preset/Memory/ThicknessE";
-                const char* Color = "SettingsUI/Preset/Memory/Color";
-                const char* ColorE = "SettingsUI/Preset/Memory/ColorE";
-            } Memory{};
-            struct Node__SettingsUI__Preset__Preset
-            {
-                const char* N = "SettingsUI/Preset/Preset/N";
-                const char* AutoThickness = "SettingsUI/Preset/Preset/AutoThickness";
-                const char* AutoThicknessE = "SettingsUI/Preset/Preset/AutoThicknessE";
-                const char* Pen = "SettingsUI/Preset/Preset/Pen";
-                const char* PenInd = "SettingsUI/Preset/Preset/PenInd";
-                const char* Highlighter = "SettingsUI/Preset/Preset/Highlighter";
-                const char* HighlighterInd = "SettingsUI/Preset/Preset/HighlighterInd";
-            } Preset{};
-        } Preset{};
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/TouchArea/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/TouchArea/E";
+                } TouchArea{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__PptCOM
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/PptCOM/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/PptCOM/E";
+                } PptCOM{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Draw3
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Draw3/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Draw3/E";
+                } Draw3{};
+            } ConsoleOutput{};
+        } Experimental{};
         struct Node__SettingsUI__PlugIn
         {
             const char* N = "SettingsUI/PlugIn/N";
@@ -361,8 +404,6 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__PlugIn__PPTHelper__BasicLogic
                 {
                     const char* N = "SettingsUI/PlugIn/PPTHelper/BasicLogic/N";
-                    const char* InkFixation = "SettingsUI/PlugIn/PPTHelper/BasicLogic/InkFixation";
-                    const char* InkFixationE = "SettingsUI/PlugIn/PPTHelper/BasicLogic/InkFixationE";
                     const char* LoadPage = "SettingsUI/PlugIn/PPTHelper/BasicLogic/LoadPage";
                     const char* LoadPageE = "SettingsUI/PlugIn/PPTHelper/BasicLogic/LoadPageE";
                 } BasicLogic{};
