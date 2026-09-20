@@ -9,6 +9,7 @@
 - 设置窗口当前由 Window Service 的独立线程创建，是无 owner 的顶层 `WS_POPUP`。
 - 设置窗口固定保留 `WS_EX_APPWINDOW`，并清除 `WS_EX_NOACTIVATE`、`WS_EX_TOOLWINDOW`、`WS_EX_TOPMOST` 等不符合普通可交互窗口的样式。
 - 画笔、橡皮、图形和选择等工具切换最终统一经过 `SyncDraw3State()`。
+- 设置窗口使用自绘无框标题栏；历史版本曾通过 `WM_NCHITTEST` 把非交互标题栏区域映射为 `HTCAPTION`，当前实现缺失该路径，导致窗口无法拖动。
 
 ## Requirements
 
@@ -19,6 +20,9 @@
 - owner 切换应幂等；失败时不得遗留半切换状态，并沿用 Window Service 的失败诊断。
 - 设置窗口始终保持可激活、可获取焦点和任务栏入口；不得引入 `WS_EX_NOACTIVATE`、`WS_EX_TOOLWINDOW` 或独立 `WS_EX_TOPMOST`。
 - 模式同步只接入统一状态路径，不在按钮、快捷键等入口重复实现。
+- 恢复自绘标题栏空白区域的系统拖窗命中；拖动必须继续走 Win32 `HTCAPTION` 非客户区移动循环，不自行实现鼠标位移循环。
+- 标题栏右侧关闭按钮区域不得返回 `HTCAPTION`，其既有点击隐藏行为保持不变。
+- 拖窗能力在 Setting 有无 Drawpad owner 的两种状态下均保持有效，不改变固定窗口尺寸、位置持久化或 ImGui 内容交互。
 
 ## Acceptance Criteria
 
@@ -27,6 +31,9 @@
 - [x] 返回选择模式后，设置窗口的 `GW_OWNER` 恢复为空并退出 topmost 链。
 - [x] 两个方向重复切换均幂等；必要 HWND 缺失时安全失败，窗口关系可保持或回滚到切换前状态。
 - [x] 切换前后设置窗口保留 `WS_EX_APPWINDOW`、应用图标和独立 owner thread，且不含 `WS_EX_NOACTIVATE`、`WS_EX_TOOLWINDOW`、`WS_EX_TOPMOST`。
+- [x] 设置窗口标题栏除关闭按钮外的非交互区域返回 `HTCAPTION`，可以通过系统移动循环拖动窗口。
+- [x] 关闭按钮仍可点击隐藏设置窗口，正文内容区域仍返回普通客户区命中。
+- [x] 选择态与所有非选择态下均可拖动设置窗口，`WM_MOVE` 继续更新持久化位置。
 - [ ] `InkeysRepo.sln` 的 `Debug | ARM64` 构建通过，包含窗口测试的 `InkeysHeadlessTests.exe` 通过。
 
 ## Out of Scope
@@ -40,3 +47,4 @@
 - 任务按轻量修复处理，仅维护本 PRD；实现采用 `Service::SetSettingOwnedByDrawpad(bool)` 和 `GWLP_HWNDPARENT`。
 - 解除 owner 后使用 `HWND_NOTOPMOST` 恢复普通 Z 序，同时不修改设置窗口既有扩展样式。
 - 2026-09-20 已完成人工验收；任务按要求继续保持活动状态，不执行归档。
+- 2026-09-20 已人工确认标题栏拖动、关闭按钮及 owned/unowned 状态下的窗口移动均生效。

@@ -560,6 +560,19 @@ struct
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (msg == WM_NCHITTEST)
+	{
+		POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		if (!ScreenToClient(hWnd, &point)) return HTCLIENT;
+		const int titleBarHeight = static_cast<int>(32.0f * settingGlobalScale);
+		const int closeButtonLeft = static_cast<int>(914.0f * settingGlobalScale);
+		// 无框标题栏空白区域交给系统移动循环；关闭按钮继续由 ImGui 处理。
+		if (point.x >= 0 && point.x < closeButtonLeft
+			&& point.y >= 0 && point.y < titleBarHeight)
+			return HTCAPTION;
+		return HTCLIENT;
+	}
+
 	if (Inkeys::UI::Setting::IsVisible())
 	{
 		// HWND 线程只更新 IO；context/backend/draw/present 仍由渲染线程拥有。
