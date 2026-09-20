@@ -1374,6 +1374,12 @@ DrawCore(coreBrush);
 
 `【合理推断】` 设置 UI 的局部改动应复用 `Setting.Widgets`、`Setting.Wrap` 及现有字体/纹理路径；普通设置功能不得顺带更换 device、swap-chain、shader 或 SRV 所有权。
 
+### Setting 外观条件卡片约定
+
+- “动画速率”只在 `Experimental.Inkeys3.UI3.Animation.Enable=true` 时显示；“动态边缘光影”只在 `Experimental.Inkeys3.UI3.EdgeLighting.Enable=true` 时显示。隐藏只影响布局，不得覆盖 `SpeedRate` 或 `EdgeLighting.Dynamic` 的持久化值。
+- 外观容器高度和两个条件卡片的渲染门禁必须读取同一份帧开始快照，按 `4 + showAnimationRate + showDynamicEdgeLighting` 张卡片计算；不得分别读取切换前后的 bool，否则同一帧会出现空白或裁剪。
+- 用户可见标题走 i18n；改标题时保持不可见 ImGui ID 稳定，避免无必要地重置控件身份。
+
 ### Setting 统一渲染与业务队列合同
 
 #### 1. Scope / Trigger

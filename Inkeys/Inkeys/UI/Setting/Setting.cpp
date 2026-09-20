@@ -3157,7 +3157,16 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,470.0f * settingGlobalScale }, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+						// 子卡片隐藏时同步收紧外观区域，不改写已保存的子项偏好。
+						const bool showAnimationRate = Experimental.Inkeys3.AnimationEnable;
+						const bool showDynamicEdgeLighting = Experimental.Inkeys3.EdgeLightingEnable;
+						const int appearanceCardCount = 4
+							+ (showAnimationRate ? 1 : 0)
+							+ (showDynamicEdgeLighting ? 1 : 0);
+						const float appearanceHeight = 20.0f + 75.0f * appearanceCardCount;
+						ImGui::BeginChild("常规#3", { settingItemWidth * settingGlobalScale,
+							appearanceHeight * settingGlobalScale }, false,
+							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 						{
 							ImGui::SetCursorPos({ 0.0f * settingGlobalScale, 0.0f * settingGlobalScale });
@@ -3209,6 +3218,7 @@ SettingSessionCoroutine RunSettingSession()
 								QueueConfigWrite();
 							});
 
+						if (showAnimationRate)
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -3270,17 +3280,20 @@ SettingSessionCoroutine RunSettingSession()
 									Experimental.Inkeys3.DynamicEdgeLighting);
 								QueueConfigWrite();
 							});
-						drawAppearanceToggle("动态边缘光影",
-							IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting),
-							IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE),
-							Experimental.Inkeys3.DynamicEdgeLighting, [&]
-							{
-								Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic =
-									Experimental.Inkeys3.DynamicEdgeLighting;
-								Inkeys::UI::Bar::SetEdgeLightingOptions(Experimental.Inkeys3.EdgeLightingEnable,
-									Experimental.Inkeys3.DynamicEdgeLighting);
-								QueueConfigWrite();
-							});
+						if (showDynamicEdgeLighting)
+						{
+							drawAppearanceToggle("动态边缘光影",
+								IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting),
+								IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE),
+								Experimental.Inkeys3.DynamicEdgeLighting, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic =
+										Experimental.Inkeys3.DynamicEdgeLighting;
+									Inkeys::UI::Bar::SetEdgeLightingOptions(Experimental.Inkeys3.EdgeLightingEnable,
+										Experimental.Inkeys3.DynamicEdgeLighting);
+									QueueConfigWrite();
+								});
+						}
 						{
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

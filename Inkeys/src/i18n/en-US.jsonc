@@ -255,7 +255,7 @@
         "AnimationEnableE": "When disabled, UI3 main bar animations complete immediately.",
         "AnimationRate": "Animation rate",
         "AnimationRateE": "Adjust the UI3 main bar animation rate from 0.1x to 5.0x.",
-        "EdgeLighting": "Enable edge lighting",
+        "EdgeLighting": "Edge lighting",
         "EdgeLightingE": "When disabled, only the basic border remains; point lights and soft glow effects are turned off.",
         "DynamicEdgeLighting": "Dynamic edge lighting",
         "DynamicEdgeLightingE": "The lighting dynamically follows the pointer position.",

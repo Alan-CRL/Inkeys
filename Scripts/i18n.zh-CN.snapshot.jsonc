@@ -255,7 +255,7 @@
         "AnimationEnableE": "关闭后，UI3 主栏动画将立即完成。",
         "AnimationRate": "动画速率",
         "AnimationRateE": "调整 UI3 主栏动画速率，范围为 0.1x–5.0x。",
-        "EdgeLighting": "启用边缘光源",
+        "EdgeLighting": "边缘光影",
         "EdgeLightingE": "关闭后仅保留基础边框，停用点光与柔光效果。",
         "DynamicEdgeLighting": "动态边缘光影",
         "DynamicEdgeLightingE": "光影将动态跟随光标位置",

@@ -255,7 +255,7 @@
         "AnimationEnableE": "關閉後，UI3 主列動畫將立即完成。",
         "AnimationRate": "動畫速率",
         "AnimationRateE": "調整 UI3 主列動畫速率，範圍為 0.1x–5.0x。",
-        "EdgeLighting": "啟用邊緣光源",
+        "EdgeLighting": "邊緣光影",
         "EdgeLightingE": "關閉後僅保留基礎邊框，停用點光與柔光效果。",
         "DynamicEdgeLighting": "動態邊緣光影",
         "DynamicEdgeLightingE": "光影將動態跟隨游標位置",
