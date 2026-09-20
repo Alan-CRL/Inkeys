@@ -303,6 +303,36 @@ int RunWindowTests()
 	check(service.SetOverlayTopmost(true) && service.OverlayTopmost()
 		&& (GetWindowLongPtrW(magnifierHost, GWL_EXSTYLE) & WS_EX_TOPMOST),
 		"persistent overlay topmost restore");
+	check(service.Show(WindowRole::Setting),
+		"show setting before owner attach");
+	const DWORD settingOwnerThread = service.OwnerThreadId(WindowRole::Setting);
+	const auto settingStyleBeforeOwner = GetWindowLongPtrW(setting, GWL_STYLE);
+	const auto settingExStyleBeforeOwner = GetWindowLongPtrW(setting, GWL_EXSTYLE);
+	const auto settingIconBeforeOwner =
+		reinterpret_cast<HICON>(SendMessageW(setting, WM_GETICON, ICON_BIG, 0));
+	check(service.SetSettingOwnedByDrawpad(true)
+		&& service.SetSettingOwnedByDrawpad(true),
+		"setting attach owner idempotent");
+	check(GetWindow(setting, GW_OWNER) == drawpad,
+		"setting joins drawpad owner chain");
+	check(service.OwnerThreadId(WindowRole::Setting) == settingOwnerThread,
+		"setting owner thread remains stable");
+	check(settingOwnerThread != service.OwnerThreadId(WindowRole::Drawpad),
+		"setting keeps dedicated owner thread");
+	check(GetWindowLongPtrW(setting, GWL_STYLE) == settingStyleBeforeOwner
+		&& GetWindowLongPtrW(setting, GWL_EXSTYLE) == settingExStyleBeforeOwner
+		&& reinterpret_cast<HICON>(SendMessageW(
+			setting, WM_GETICON, ICON_BIG, 0)) == settingIconBeforeOwner,
+		"setting owner attach preserves app window contract");
+	check(service.SetSettingOwnedByDrawpad(false)
+		&& service.SetSettingOwnedByDrawpad(false),
+		"setting detach owner idempotent");
+	check(GetWindow(setting, GW_OWNER) == nullptr
+		&& (GetWindowLongPtrW(setting, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0,
+		"setting detach leaves topmost owner chain");
+	if (competingTopmost)
+		check(ZOrderIndex(setting) > ZOrderIndex(competingTopmost),
+			"setting detach returns below competing topmost");
 	if (competingTopmost)
 		check(IsOwnerTreeAbove(overlayOwnerTree, competingTopmost),
 			"topmost restore raises the complete owner tree again");
@@ -402,6 +432,10 @@ int RunWindowTests()
 	auto replacementBar = makeSpec(WindowRole::Bar, L"ReplacementBar");
 	check(service.Create(std::move(replacementBar))
 		&& IsWindow(service.Handle(WindowRole::Bar)), "create leaf on owner thread");
+	check(service.Destroy(WindowRole::Setting) && !IsWindow(setting),
+		"destroy setting on owner thread");
+	check(!service.SetSettingOwnedByDrawpad(true),
+		"setting owner command rejects missing setting handle");
 
 	std::array<HWND, static_cast<std::size_t>(WindowRole::Count)> handles{};
 	for (const auto role : roles)
@@ -415,6 +449,15 @@ int RunWindowTests()
 			&& service.OwnerThreadId(role) == 0 && !IsWindow(handles[index]),
 			"reverse lifecycle cleanup");
 	}
+
+	std::vector<WindowSpec> incompleteSpecs;
+	incompleteSpecs.push_back(makeSpec(WindowRole::Setting, L"IncompleteSetting"));
+	check(service.Start(std::move(incompleteSpecs)), "start setting without drawpad");
+	check(!service.SetSettingOwnedByDrawpad(true),
+		"setting owner command rejects missing drawpad");
+	check(service.SetSettingOwnedByDrawpad(false),
+		"setting detach remains idempotent without drawpad");
+	service.StopAndJoin();
 
 	// stop 后可以重新创建新的 owner threads 和 channels。
 	std::vector<WindowSpec> restartSpecs;

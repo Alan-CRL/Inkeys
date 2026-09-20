@@ -350,6 +350,15 @@ namespace Inkeys::Window
 			return Submit(std::move(command));
 		}
 
+		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled)
+		{
+			Command command;
+			command.type = CommandType::SetSettingOwnedByDrawpad;
+			command.role = WindowRole::Setting;
+			command.enabled = enabled;
+			return Submit(std::move(command));
+		}
+
 		[[nodiscard]] bool SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
 		{
 			if ((setMask & clearMask) != 0) return false;
@@ -496,6 +505,7 @@ namespace Inkeys::Window
 			SetDrawpadSurfaceVisibility,
 			SetBounds,
 			SetClickThrough,
+			SetSettingOwnedByDrawpad,
 			SetExtendedStyleFlags,
 			SetWhiteboardWindowMode,
 			MinimizeWhiteboardGroup,
@@ -562,6 +572,7 @@ namespace Inkeys::Window
 			return type == CommandType::Show || type == CommandType::Hide ||
 				type == CommandType::SetDrawpadSurfaceVisibility ||
 				type == CommandType::SetBounds ||
+				type == CommandType::SetSettingOwnedByDrawpad ||
 				type == CommandType::RefreshTopmost ||
 				type == CommandType::PromotePpt;
 		}
@@ -576,6 +587,8 @@ namespace Inkeys::Window
 			case CommandType::SetDrawpadSurfaceVisibility:
 				return L"SetDrawpadSurfaceVisibility";
 			case CommandType::SetBounds: return L"SetBounds";
+			case CommandType::SetSettingOwnedByDrawpad:
+				return L"SetSettingOwnedByDrawpad";
 			case CommandType::RefreshTopmost: return L"RefreshTopmost";
 			case CommandType::PromotePpt: return L"PromotePpt";
 			default: return L"Other";
@@ -1433,6 +1446,62 @@ namespace Inkeys::Window
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
 					SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
 			}
+			case CommandType::SetSettingOwnedByDrawpad:
+			{
+				const HWND drawpad = Handle(WindowRole::Drawpad);
+				if (command.enabled && (!drawpad || !IsWindow(drawpad)))
+				{
+					ReportCommandResult(command, false,
+						ERROR_INVALID_WINDOW_HANDLE, hwnd);
+					return false;
+				}
+
+				const HWND desiredOwner = command.enabled ? drawpad : nullptr;
+				const HWND previousOwner = GetWindow(hwnd, GW_OWNER);
+				bool succeeded = true;
+				DWORD error = ERROR_SUCCESS;
+				if (previousOwner != desiredOwner)
+				{
+					// GWLP_HWNDPARENT 对顶层 WS_POPUP 修改的是 owner；命令固定在 Setting 线程执行。
+					SetLastError(ERROR_SUCCESS);
+					const LONG_PTR previous = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT,
+						reinterpret_cast<LONG_PTR>(desiredOwner));
+					error = GetLastError();
+					succeeded = previous != 0 || error == ERROR_SUCCESS;
+					if (succeeded && GetWindow(hwnd, GW_OWNER) != desiredOwner)
+					{
+						succeeded = false;
+						error = ERROR_GEN_FAILURE;
+					}
+				}
+
+				if (succeeded && !command.enabled)
+				{
+					SetLastError(ERROR_SUCCESS);
+					succeeded = SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
+					if (!succeeded)
+					{
+						error = GetLastError();
+						if (error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+					}
+				}
+
+				if (!succeeded && GetWindow(hwnd, GW_OWNER) != previousOwner)
+				{
+					// 后半段失败时恢复原 owner，禁止留下只完成一半的窗口关系。
+					SetLastError(ERROR_SUCCESS);
+					const LONG_PTR restored = SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT,
+						reinterpret_cast<LONG_PTR>(previousOwner));
+					const DWORD rollbackError = GetLastError();
+					if ((restored == 0 && rollbackError != ERROR_SUCCESS) ||
+						GetWindow(hwnd, GW_OWNER) != previousOwner)
+						error = rollbackError == ERROR_SUCCESS
+							? ERROR_GEN_FAILURE : rollbackError;
+				}
+				ReportCommandResult(command, succeeded, error, hwnd);
+				return succeeded;
+			}
 			case CommandType::SetExtendedStyleFlags:
 			{
 				LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -1799,6 +1868,10 @@ namespace Inkeys::Window
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }
+	bool Service::SetSettingOwnedByDrawpad(bool enabled)
+	{
+		return impl_->SetSettingOwnedByDrawpad(enabled);
+	}
 		bool Service::SetExtendedStyleFlags(WindowRole role, DWORD setMask, DWORD clearMask)
 		{
 			return impl_->SetExtendedStyleFlags(role, setMask, clearMask);

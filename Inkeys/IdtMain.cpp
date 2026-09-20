@@ -1223,7 +1223,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				setlist.regularSetting.moveRecover = false;
 				setlist.regularSetting.clickRecover = false;
 
-				setlist.regularSetting.avoidFullScreen = true;
 				setlist.regularSetting.teachingSafetyMode = 0;
 			}
 			// 绘制
@@ -1700,12 +1699,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		const bool preferDraw3DirectComposition =
 			Inkeys::Drawing::Draw3::ShouldPreconfigureNoRedirectionBitmap();
 
+		// 放大窗口固定保留 1 像素，不再读取已废弃的 AvoidFullScreen 配置。
 		Inkeys::Window::WindowSpec magnifierHost;
 		magnifierHost.role = Inkeys::Window::WindowRole::MagnifierHost;
 		magnifierHost.className = L"Inkeys6;" + ClassName;
 		magnifierHost.title = L"Inkeys6 MagnifierHostWindow";
 		magnifierHost.width = GetSystemMetrics(SM_CXSCREEN);
-		magnifierHost.height = GetSystemMetrics(SM_CYSCREEN) - (setlist.regularSetting.avoidFullScreen ? 1 : 0);
+		magnifierHost.height = GetSystemMetrics(SM_CYSCREEN) - 1;
 		magnifierHost.style = WS_POPUP | WS_CLIPCHILDREN;
 		magnifierHost.exStyle = overlayExStyle;
 		magnifierHost.windowProc = MagnifierHostWindowWndProc;
@@ -1721,7 +1721,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		magnifierChildSpec.className = WC_MAGNIFIER;
 		magnifierChildSpec.title = L"Inkeys Screen Magnifier";
 		magnifierChildSpec.width = GetSystemMetrics(SM_CXSCREEN);
-		magnifierChildSpec.height = GetSystemMetrics(SM_CYSCREEN) - (setlist.regularSetting.avoidFullScreen ? 1 : 0);
+		magnifierChildSpec.height = GetSystemMetrics(SM_CYSCREEN) - 1;
 		magnifierChildSpec.style = WS_CHILD | WS_VISIBLE | MS_CLIPAROUNDCURSOR;
 		magnifierChildSpec.exStyle = WS_EX_NOACTIVATE;
 		magnifierChildSpec.optional = true;

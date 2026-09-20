@@ -34,6 +34,60 @@
 4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
 5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
 
+## 设置页废弃配置清理合同
+
+### 1. Scope / Trigger
+
+删除传统 Setting 条目或停止兼容旧 `deploy.json` / PPT 配置字段时适用；被工程标记为 `None` 的 Draw2 源文件不因此重新进入活动实现范围。
+
+### 2. Signatures
+
+- `ReadSetting()`：不再读取已废弃键。
+- `CaptureSettingJson()`：不再输出已废弃键，并在返回 JSON 前显式 `removeMember`。
+- `PptComReadSetting()` / `CapturePptComSettingJson()`：PPT 配置只读写仍有活动消费者的字段。
+
+### 3. Contracts
+
+- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。
+- PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
+- `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
+- 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 旧 `deploy.json` 含任一废弃键且 `AutoClean=false` | 读取忽略；下一次保存从输出中删除该键，其他未知键仍按原策略保留 |
+| 旧 PPT 配置含 `FixedHandWriting` | 读取忽略；下一次 PPT 配置写回不再输出 |
+| 配置缺少 `Save.Enable` | 使用现有默认值；不得因清理旧键关闭 Draw3 自动保存 |
+| 未编译 Draw2 文件仍引用兼容成员 | 不为清理活动配置而重写或重新编译该历史路径 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：旧配置关闭 `AutoClean`，保存后只移除明确废弃键，`Save.Enable` 与其他设置保持原值。
+- Base：新安装没有废弃键，捕获结果稳定且不会创建空的 `Performance` / `Preset` 对象。
+- Bad：只删除 Setting 卡片但继续读取/写回旧键，或把 `Save.Enable` 与 Draw2 遗留项一起删除。
+
+### 6. Tests Required
+
+- 静态搜索确认活动 Setting、配置读取和 i18n 不再引用删除项，且没有用 `#if 0` 代替删除。
+- 以包含全部旧键、`AutoClean=false` 的配置检查捕获结果：废弃键缺失、未知键保留、`Save.Enable` 保留。
+- 运行 i18n `sync/check`、完整 `InkeysRepo.sln` `Debug|ARM64` 构建和 `InkeysHeadlessTests.exe --no-window`。
+
+### 7. Wrong vs Correct
+
+```cpp
+// Wrong：AutoClean 关闭时旧键被原样带回磁盘。
+if (configAutoClean)
+	setlistVal.clear();
+
+// Correct：全量清理由用户开关控制，明确退役的键始终清除。
+if (configAutoClean)
+	setlistVal.clear();
+setlistVal.removeMember("Performance");
+setlistVal.removeMember("Preset");
+```
+
 ## UI3 脏区调试与帧率显示配置合同
 
 ### 1. Scope / Trigger
