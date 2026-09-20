@@ -1241,6 +1241,14 @@ namespace Inkeys::Drawing::Draw3
 		LARGE_INTEGER qpc = {};
 		QueryPerformanceCounter(&qpc);
 		snapshot.qpc = qpc.QuadPart;
+		if ((phaseValue & kHiddenTestNoPressureFlag) != 0) snapshot.pressure = -1.0f;
+		if (phase == HiddenTestContactPhase::Up && (phaseValue & kHiddenTestDelayedUpFlag) != 0)
+		{
+			// 隐藏验收在最后 Move 后等待 40ms，模拟 Up 包迟到 30ms 而非篡改模型时间。
+			LARGE_INTEGER frequency = {};
+			QueryPerformanceFrequency(&frequency);
+			snapshot.qpc -= frequency.QuadPart * 30 / 1000;
+		}
 		snapshot.isInvertedCursor=(phaseValue & kHiddenTestPenTailFlag)!=0;
 		snapshot.source.kind=(deviceType==InputDeviceType::MouseLeft || deviceType==InputDeviceType::MouseRight) ? SpeedEraser::SourceKind::Mouse :
 			deviceType==InputDeviceType::Touch ? SpeedEraser::SourceKind::Touch :

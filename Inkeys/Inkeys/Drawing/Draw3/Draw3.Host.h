@@ -118,6 +118,8 @@ namespace Inkeys::Drawing::Draw3
 	inline constexpr WPARAM kHiddenTestTouchFlag = 0x200u;
 	inline constexpr WPARAM kHiddenTestIntegratedPenFlag = 0x400u;
 	inline constexpr WPARAM kHiddenTestExternalPenFlag = 0x800u;
+	inline constexpr WPARAM kHiddenTestNoPressureFlag = 0x4000u;
+	inline constexpr WPARAM kHiddenTestDelayedUpFlag = 0x8000u;
 	enum class HiddenTestContactPhase : std::uint32_t
 	{
 		Down = 0,

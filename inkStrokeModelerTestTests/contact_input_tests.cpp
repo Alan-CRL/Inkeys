@@ -39,6 +39,7 @@ int RunLaserIncrementalCoverageTests();
 int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
 int RunUInkTests();
+int RunThinStrokeGpuTests();
 
 namespace
 {
@@ -2168,6 +2169,67 @@ namespace
 		}
 	}
 
+	void TestPhysicalUpTipTime(TestState& state)
+	{
+		for (const auto mode : { draw3::StrokeWidthMode::Fixed,
+			draw3::StrokeWidthMode::SimulatedPressure, draw3::StrokeWidthMode::HardwarePressure })
+		{
+			draw3::ActiveStroke stroke(5.0f, 100.0f, mode);
+			stroke.useDisplayTime = true;
+			for (int i = 0; i < 7; ++i)
+				stroke.realPoints.push_back({ i * 4.0f, 0.0f, 2.5f, i * 0.01f });
+			const double taper = draw3::ResolveLiveTipTaperDurationSeconds(mode, 0.055);
+			stroke.logicalInputTime = 0.06;
+			draw3::RebuildL0DrawPoints(stroke, taper, draw3::StrokeShape::RoundCapsule, 800, 600);
+			const auto original = stroke.l0DrawPoints;
+			// 故意先推进帧时间，再消费较早 Up，验证锁定的是物理时间而非 max(frame, Up)。
+			stroke.logicalInputTime = 0.5;
+			draw3::LockPenTerminalState(stroke, 0.06, { 24, 0 }, { 24, 0 });
+			for (double delay : { 0.0, 0.02, 0.2, 1.0, 3600.0 })
+			{
+				stroke.logicalInputTime = 0.06 + delay;
+				draw3::LockPenTerminalState(stroke, 0.06 + delay, { 50, 50 }, { 50, 50 });
+				draw3::RebuildL0DrawPoints(stroke, taper, draw3::StrokeShape::RoundCapsule, 800, 600);
+				std::vector<draw3::InkPoint> completed;
+				draw3::BuildCompletedPenTail(stroke, taper, completed);
+				TEST_CHECK(state, completed.size() == original.size());
+				TEST_CHECK(state, stroke.terminalFirstPoint == original.size());
+				TEST_CHECK(state, draw3::ResolvePenDisplayTime(stroke) == 0.06);
+				for (size_t i = 0; i < original.size(); ++i)
+				{
+					TEST_CHECK(state, NearlyEqual(completed[i].r, original[i].r));
+					TEST_CHECK(state, NearlyEqual(stroke.l0DrawPoints[i].r, original[i].r));
+				}
+			}
+			draw3::ClearPenTerminalState(stroke);
+			TEST_CHECK(state, !stroke.terminalDisplayTime);
+			stroke.logicalInputTime = 1.0;
+			draw3::RebuildL0DrawPoints(stroke, taper, draw3::StrokeShape::RoundCapsule, 800, 600);
+			TEST_CHECK(state, NearlyEqual(stroke.l0DrawPoints.back().r, 2.5f));
+			draw3::LockPenTerminalState(stroke, 1.0, { 24, 0 }, { 24, 0 });
+			stroke.logicalInputTime = 2.0;
+			std::vector<draw3::InkPoint> completed;
+			draw3::BuildCompletedPenTail(stroke, taper, completed);
+			TEST_CHECK(state, NearlyEqual(completed.back().r, 2.5f));
+		}
+	}
+
+	void TestTerminalFallbackBoundary(TestState& state)
+	{
+		{
+			draw3::ActiveStroke stroke(5, 100, draw3::StrokeWidthMode::Fixed);
+			stroke.realPoints = { { 0, 0, 2.5f, 0 }, { 10, 0, 2.5f, 0.01f } };
+			stroke.hasCommittedGeometry = true;
+			stroke.committedIndex = 1;
+			draw3::LockPenTerminalState(stroke, 0.02, { 10, 0 }, { 10.005f, 0 });
+			draw3::AppendTerminalFallbackPoint(stroke, { 10, 0, 3.0f, 0.02f });
+			TEST_CHECK(state, stroke.realPoints.size() == 2 && stroke.realPoints.back().r == 2.5f);
+			draw3::AppendTerminalFallbackPoint(stroke, { 10.005f, 0, 2.5f, 0.02f });
+			TEST_CHECK(state, stroke.realPoints.size() == 3 && stroke.realPoints[1].x == 10);
+			TEST_CHECK(state, stroke.realPoints.back().x == 10.005f && stroke.committedIndex == 1);
+		}
+	}
+
 	void TestStationaryTipAging(TestState& state)
 	{
 		draw3::ActiveStroke stroke(5.0f, 100.0f, draw3::StrokeWidthMode::Fixed);
@@ -2917,6 +2979,15 @@ int wmain(int argc, wchar_t* argv[])
 		return RunRuntimeBenchmark(argv[2], argv[3]);
 	if (argc == 2 && wcscmp(argv[1], L"--laser-incremental-only") == 0)
 		return RunLaserIncrementalCoverageTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--thin-gpu-tests-only") == 0)
+		return RunThinStrokeGpuTests();
+	if (argc == 2 && wcscmp(argv[1], L"--release-tail-tests-only") == 0)
+	{
+		TestState releaseState;
+		TestPhysicalUpTipTime(releaseState);
+		TestTerminalFallbackBoundary(releaseState);
+		return releaseState.failures;
+	}
 	if (argc == 2 && wcscmp(argv[1], L"--drawing-perf") == 0)
 		return RunDrawingPerformanceTests();
 	TestState state;
@@ -2936,6 +3007,8 @@ int wmain(int argc, wchar_t* argv[])
 	TestLowSpeedStopConvergence(state);
 	TestEndpointAdmissionContracts(state);
 	TestStationaryTipAging(state);
+	TestPhysicalUpTipTime(state);
+	TestTerminalFallbackBoundary(state);
 	TestSparsePenFrames(state);
 	TestInvertedPenPolicy(state);
 	TestHapticFeedbackContracts(state);
@@ -2949,6 +3022,7 @@ int wmain(int argc, wchar_t* argv[])
 	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();
 	state.failures += RunUInkTests();
+	state.failures += RunThinStrokeGpuTests();
 	if (state.failures == 0)
 	{
 		std::cout << "All draw3 contact input tests passed." << std::endl;

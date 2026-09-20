@@ -462,6 +462,16 @@ export namespace Inkeys::Drawing::Draw3
 		double lastMovementInputTime = 0.0;
 		double lastFrameWallTime = 0.0;
 		double logicalInputTime = 0.0;
+		// 物理 Up 锁住显示年龄与修改边界，断触等待不能继续养粗或重写 Move。
+		std::optional<double> terminalDisplayTime;
+		size_t terminalFirstPoint = 0;
+		DirectX::XMFLOAT2 terminalRawMove = {};
+		DirectX::XMFLOAT2 terminalRawUp = {};
+		bool captureTerminalTrace = false;
+		size_t terminalModelCount = 0;
+		size_t terminalAcceptedCount = 0;
+		std::array<DirectX::XMFLOAT2, 8> terminalModelTrace = {};
+		std::array<DirectX::XMFLOAT2, 8> terminalAcceptedTrace = {};
 		// 模型可以跳过已经收敛的静止时间；显示/真实测速仍使用原始时间轴。
 		double modelTimeOffset = 0.0;
 		bool modelClockStopped = false;
@@ -484,6 +494,16 @@ export namespace Inkeys::Drawing::Draw3
 	// 原地重建荧光笔几何并复用 primitive 容量，供每帧 L0 热路径使用。
 	void RebuildHighlighterGeometry(
 		std::span<const InkPoint> points, HighlighterGeometry& output);
+	// 首次物理 Up 锁定显示时间和可修改尾段边界。
+	void LockPenTerminalState(ActiveStroke& stroke, double physicalUpTime,
+		DirectX::XMFLOAT2 lastRawMove, DirectX::XMFLOAT2 rawUp) noexcept;
+	// 成功续接后恢复实时显示年龄，下一次 Up 重新捕获边界。
+	void ClearPenTerminalState(ActiveStroke& stroke) noexcept;
+	double ResolvePenDisplayTime(const ActiveStroke& stroke) noexcept;
+	// 模型失败时保留真实 Up，且不能回写物理 Up 前的确认点。
+	void AppendTerminalFallbackPoint(ActiveStroke& stroke, const InkPoint& finalPoint);
+	// 有界记录模型与接纳尾段供诊断，不修改笔迹几何。
+	void CapturePenTerminalTrace(ActiveStroke& stroke) noexcept;
 	// 用已确认真实点生成普通笔完成态尾段，并烘入最终笔锋宽度。
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output);

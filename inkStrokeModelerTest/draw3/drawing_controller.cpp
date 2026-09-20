@@ -2379,6 +2379,7 @@ namespace draw3
 						reconnectRuntime->lastTilt = lastTilt;
 						reconnectRuntime->lastOrientation = lastOrientation;
 						reconnectRuntime->awaitingReconnect = false;
+						ClearPenTerminalState(reconnectRuntime->stroke);
 						reconnectRuntime->reconnectVisualRefresh = true;
 						reconnectRuntime->deferredUpSnapshot = {};
 						reconnectRuntime->reconnectDeadlineQpc = 0;
@@ -2676,17 +2677,7 @@ namespace draw3
 					: inputTime;
 				const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
 					radius, static_cast<float>(pointTime) };
-				if (runtime.stroke.realPoints.empty())
-					runtime.stroke.realPoints.push_back(finalPoint);
-				else
-				{
-					const float deltaX = finalPoint.x - runtime.stroke.realPoints.back().x;
-					const float deltaY = finalPoint.y - runtime.stroke.realPoints.back().y;
-					if (deltaX * deltaX + deltaY * deltaY > 0.0001f)
-						runtime.stroke.realPoints.push_back(finalPoint);
-					else
-						runtime.stroke.realPoints.back() = finalPoint;
-				}
+				AppendTerminalFallbackPoint(runtime.stroke, finalPoint);
 				// 模型异常也保留 RTS 的最终位置，不能因随后回收 contact 而吞掉 Up 点。
 			};
 
@@ -2708,6 +2699,9 @@ namespace draw3
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				if (runtime.stroke.useDisplayTime)
 				{
+					LockPenTerminalState(runtime.stroke, inputTime,
+						{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
+						{ snapshot.position.x, snapshot.position.y });
 					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
 					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
 						runtime.lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
@@ -2760,6 +2754,8 @@ namespace draw3
 					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
 					runtime.stroke.predictedResults.clear();
 				}
+				if (sanitizeEndpoint)
+					CapturePenTerminalTrace(runtime.stroke);
 				runtime.lastModelSnapshot = modelSnapshot;
 				runtime.ended = true;
 				runtime.cancelled = cancelled;
@@ -2841,6 +2837,10 @@ namespace draw3
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				if (endpointTool)
 				{
+					if (terminal)
+						LockPenTerminalState(runtime.stroke, inputTime,
+							{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
+							{ snapshot.position.x, snapshot.position.y });
 					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
 					if (positionMoved) runtime.stroke.lastMovementInputTime = inputTime;
 					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
@@ -2899,6 +2899,8 @@ namespace draw3
 					if (terminal && !deferUp && !runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
 				}
+				if (terminal && endpointTool && (modelUpdateSucceeded || !deferUp))
+					CapturePenTerminalTrace(runtime.stroke);
 				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
 				if (positionMoved || stylusStateChanged)

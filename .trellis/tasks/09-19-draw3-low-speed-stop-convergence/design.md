@@ -1,5 +1,16 @@
 # Draw3 低速停笔预测收敛修复设计
 
+## 当前批准追加设计：Release Tail And Thin Coverage
+
+基线 d4456c21 的停笔/续画行为已由用户确认。以下追加方案优先于历史段落中的 HLSL 禁止范围。
+
+1. 每笔记录可选终态显示时间，首次 Up 从真实 QPC 锁定；等待续接、完成尾段、Stored 使用该值，成功续接解除，其他显示/模型时钟合同保持。prediction 仍不持久化，Mouse/Touch/Pen 共用物理 Up 时间语义。
+2. **用户复测后撤销局部 cubic 方案。**高速大曲率转弯已在运动阶段形成建模轨迹外偏，末段重建不能纠正该偏差，且会再分配确认尾段的曲率/半径。只保留物理Up边界、已有安全收尾及有界观测；不增加替代补偿。具体解决方案未定，按用户要求暂缓。
+3. 仅 type=0 且 draw operator 的 PS 使用薄线覆盖：C(s)=1-smoothstep(-0.75,0.75,s)，thin=saturate(C(d)-C(d+2r))。r 来自最近生成圆；沿 uneven capsule cap/side 判定，侧边 t=clamp((y-b*abs(x)/a)/h,0,1)，r=lerp(r1,r2,t)，包含/零长度取较大圆，先处理退化避免 a≈0 除法。r<=0.5px 使用 thin，0.5–1px smoothstep 过渡，r>=1px 保持原 AA。不改变橡皮、Laser、解析形状、cursor 的覆盖。保留2px VS/3px CPU padding、MAX/MIN和预乘输出。
+4. GPU 验收必须用实际产品/镜像 PS 离屏绘制与 BGRA8 Add/R16 Retain 回读，不只比较 CPU 公式。直径0/.05/.1/.25/.5/1/2/4px、0/±1/±5/±15/45/90度、XY 1/8px相位；检查主轴截面无异常全零、长线积分宽度、等宽共线分段、重复draw幂等、L0/L1拆分一致、变半径、端帽、包含圆、零长及红/黑/白背景。计入1/255量化，圆帽不是严格面积积分。
+
+必要修改范围包括两侧 InkPrediction/StrokeGeometry/DrawingController、PS、控制台/隐藏集成及仅用于验证的 GPU 读回入口；若需登记新增测试文件只调整已有测试工程条目，不更换构建系统。
+
 ## Boundary
 
 > **当前批准设计（2026-09-20 续修）优先于下文历史方案：**停笔笔锋消退为基础半径；恢复采用固定旧停点的前缀过滤；取消无条件 completed taper floor。下文 Endpoint Monotonicity 保留为前轮追溯，冲突处不再作为实现要求。

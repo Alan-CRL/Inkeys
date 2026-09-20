@@ -824,6 +824,76 @@ namespace draw3
 		return geometry;
 	}
 
+	void LockPenTerminalState(ActiveStroke& stroke, double physicalUpTime,
+		DirectX::XMFLOAT2 lastRawMove, DirectX::XMFLOAT2 rawUp) noexcept
+	{
+		if (stroke.terminalDisplayTime || !std::isfinite(physicalUpTime)) return;
+		stroke.terminalDisplayTime = physicalUpTime;
+		stroke.terminalFirstPoint = stroke.realPoints.size();
+		stroke.terminalRawMove = lastRawMove;
+		stroke.terminalRawUp = rawUp;
+		stroke.predictedResults.clear();
+		stroke.predictedPoints.clear();
+	}
+
+	void ClearPenTerminalState(ActiveStroke& stroke) noexcept
+	{
+		stroke.terminalDisplayTime.reset();
+		stroke.terminalFirstPoint = 0;
+		stroke.terminalRawMove = {};
+		stroke.terminalRawUp = {};
+		stroke.terminalModelCount = 0;
+		stroke.terminalAcceptedCount = 0;
+		stroke.terminalModelTrace = {};
+		stroke.terminalAcceptedTrace = {};
+	}
+
+	double ResolvePenDisplayTime(const ActiveStroke& stroke) noexcept
+	{
+		return stroke.terminalDisplayTime.value_or(stroke.logicalInputTime);
+	}
+
+	void AppendTerminalFallbackPoint(ActiveStroke& stroke, const InkPoint& finalPoint)
+	{
+		if (stroke.realPoints.empty())
+		{
+			stroke.realPoints.push_back(finalPoint);
+			return;
+		}
+		const float dx = finalPoint.x - stroke.realPoints.back().x;
+		const float dy = finalPoint.y - stroke.realPoints.back().y;
+		const bool protectedTail = stroke.terminalDisplayTime &&
+			stroke.realPoints.size() <= stroke.terminalFirstPoint;
+		if (dx * dx + dy * dy > 0.0001f || (protectedTail && (dx != 0.0f || dy != 0.0f)))
+			stroke.realPoints.push_back(finalPoint);
+		else if (!protectedTail)
+			stroke.realPoints.back() = finalPoint;
+	}
+
+	void CapturePenTerminalTrace(ActiveStroke& stroke) noexcept
+	{
+		// 仅诊断开启有界采样；不修改终态几何，末端拐动留待模型轨迹研究。
+		if (!stroke.terminalDisplayTime || !stroke.captureTerminalTrace) return;
+		stroke.terminalModelCount = stroke.modelScratch.size();
+		const size_t start = std::min(stroke.terminalFirstPoint > 0
+			? stroke.terminalFirstPoint - 1 : 0, stroke.realPoints.size());
+		stroke.terminalAcceptedCount = stroke.realPoints.size() - start;
+		stroke.terminalModelTrace = {};
+		stroke.terminalAcceptedTrace = {};
+		for (size_t i = 0; i < std::min(size_t{8}, stroke.terminalModelCount); ++i)
+		{
+			const size_t at = stroke.terminalModelCount > 8 ? i * (stroke.terminalModelCount - 1) / 7 : i;
+			const auto& p = stroke.modelScratch[at].position;
+			stroke.terminalModelTrace[i] = { p.x, p.y };
+		}
+		for (size_t i = 0; i < std::min(size_t{8}, stroke.terminalAcceptedCount); ++i)
+		{
+			const size_t at = stroke.terminalAcceptedCount > 8 ? i * (stroke.terminalAcceptedCount - 1) / 7 : i;
+			const auto& p = stroke.realPoints[start + at];
+			stroke.terminalAcceptedTrace[i] = { p.x, p.y };
+		}
+	}
+
 	void BuildCompletedPenTail(const ActiveStroke& stroke,
 		double liveTipTaperSeconds, std::vector<InkPoint>& output)
 	{
@@ -834,7 +904,7 @@ namespace draw3
 			const size_t tailStart = stroke.hasCommittedGeometry
 				? std::min(stroke.committedIndex, stroke.realPoints.size() - 1) : 0;
 			output.assign(stroke.realPoints.begin() + tailStart, stroke.realPoints.end());
-			ApplyLiveTipTaper(output, liveTipTaperSeconds, stroke.logicalInputTime);
+			ApplyLiveTipTaper(output, liveTipTaperSeconds, ResolvePenDisplayTime(stroke));
 			EnforceCapsuleTangency(output); // 与 L0 实时笔锋同一套公切线安全，不再套稳定笔宽时间限速。
 		}
 		if (output.empty() && stroke.hasInputStartPoint)
@@ -1102,6 +1172,8 @@ namespace draw3
 		lastMovementInputTime = 0.0;
 		lastFrameWallTime = 0.0;
 		logicalInputTime = 0.0;
+		ClearPenTerminalState(*this);
+		captureTerminalTrace = false;
 		modelTimeOffset = 0.0;
 		modelClockStopped = false;
 		useDisplayTime = false;
@@ -1407,6 +1479,7 @@ namespace draw3
 			const bool tailMayChange = !stroke.hasCommittedGeometry ||
 				stroke.committedIndex + 1 < stroke.realPoints.size();
 			const bool canReplaceTail = !stroke.realPoints.empty() &&
+				(!stroke.terminalDisplayTime || stroke.realPoints.size() > stroke.terminalFirstPoint) &&
 				tailDistance <= kVisualStablePositionEpsilonPx && tailMayChange;
 			if (canReplaceTail)
 				stroke.realPoints.back() = endpointPoint;
@@ -1680,7 +1753,7 @@ namespace draw3
 			return;
 		}
 		stroke.l0DrawPoints.insert(stroke.l0DrawPoints.end(), stroke.predictedPoints.begin(), stroke.predictedPoints.end()); // 预测点只放在 L0，便于下一帧擦除重画。
-		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds, stroke.logicalInputTime);
+		ApplyLiveTipTaper(stroke.l0DrawPoints, liveTipDurationSeconds, ResolvePenDisplayTime(stroke));
 		EnforceCapsuleTangency(stroke.l0DrawPoints); // 笔锋只做公切线安全投影，不再套用稳定笔宽时间限速。
 		stroke.currentL0Rect = RectFromStrokePoints(stroke.l0DrawPoints, width, height, shape);
 	}

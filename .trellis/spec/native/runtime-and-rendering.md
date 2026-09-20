@@ -404,6 +404,9 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - `AppendRecoveryModeledPoints(ActiveStroke&, span<Result>, rawEndpoint, inputSpeed)`：固定 `EndpointAdmissionState::recoveryOrigin`，安全模型后缀解除恢复。
 - `ResolvePenModelInputTime(ActiveStroke&, realTime, lastModelTime, frameIntervalSeconds) -> double`；`ActiveStroke::{logicalInputTime,lastMovementInputTime}` 使用真实显示时间，`modelTimeOffset/modelClockStopped` 仅服务模型时间压缩，`useDisplayTime` 仅对普通笔开启。
 - `UpdateIdleFreezeState(ActiveStroke&, rawMoved, modelSettled, liveTipDurationSeconds)`。
+- `LockPenTerminalState(ActiveStroke&, physicalUpTime, lastRawMove, rawUp)` / `ClearPenTerminalState` / `ResolvePenDisplayTime`；首次物理 Up 保存可选显示时间和 `terminalFirstPoint`，成功续接才解除。
+- `AppendTerminalFallbackPoint(ActiveStroke&, finalPoint)`：模型失败回退同样不得替换物理 Up 边界之前的点，精确同位不追加重复点。
+- `CapturePenTerminalTrace(ActiveStroke&) noexcept`：仅在隐藏诊断开启时采样有界模型/接纳尾段，不修改几何、半径或输入状态；不代表末钩已被修正。
 - 产品隐藏测试通过 `DrawingControllerRuntimeObserver::penDiagnostics` 发布 `PenRuntimeDiagnostics` 到 `HostRuntimeSnapshot::pen`；回调只在 `enableHiddenTestContactInjection` 下安装。
 - 每个 `RuntimeStroke` 独立保存 `modelInputThisFrame` 与 `stationaryModelAdvanceBlocked`；产品 Pen 与 HardPen 应用本合同，测试宿主的 Pen 保持同构。
 
@@ -415,6 +418,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - settling 与 physical Up 对 scratch 使用停止边界：可见中心线到 raw endpoint 的距离单调接近，不越过 endpoint plane `0.05px`。首次触边、越界或不再接近时至多钉住一个精确 raw endpoint；其后的内部回摆继续用于收敛，但不得增长 `realPoints`、L0/L1、shader 输入或 Stored 候选。physical Up 的整批输出也不得只检查最后一点。
 - visual-pinned 后恢复 Move/reconnect 必须固定旧停点作为衔接起点，按新的真实方向过滤残余回摆前缀，再接纳安全模型后缀并解除恢复。不得对每份新 raw 重新钉住 endpoint，不能要求原始整批全通过才恢复 prediction/L1；空帧沿用相同恢复状态，真正反向运动不沿用旧方向。
 - 模拟笔锋只改变显示半径，基础 `realPoints.r` 与压感/真实速度独立。显示时间持续推进，不依赖最后一个几何点的时间；同点模型推进与 kUp 的未来样本不得重置笔锋年龄。停笔恢复基础半径不追加重复点；活动、完成和 Stored 使用相同规则，同位 Up 不重新收尖。
+- 上述持续老化仅适用于仍按住的笔。物理 Up 首次锁定真实事件 QPC 对应显示时间；Mouse/Touch/Pen 完成、候选等待和 Stored 均使用此时间，不用帧/超时/模型时间继续养粗。成功续接解除，重新进入实时显示；prediction 仍不持久化，硬件压感不叠加模拟笔锋。
+- 高速大曲率转弯时运动阶段的建模轨迹可能偏向物理轨迹外侧，Up连接真实终点仍会产生拐动；此问题尚待研究。不得将局部终态cubic重建或“末点到位”的测试视为已解决运动阶段偏差；未经验证不要重新引入尾段曲率/半径补偿。
 - 已完全收敛的长静止区间不进入后续模型积分时间差；真实 QPC 和显示时间不压缩。恢复输入必须有界、单调且遵守 `max_outputs_per_call`，不能靠 Reset、巨量重复样本或改库预算掩盖。
 - modeled tip 只有在末端位置误差不超过 `0.05px`，并且 `|velocity| * targetFrameInterval` 不超过 `0.05px` 时才算收敛；endpoint、frame interval、position、velocity 任一缺失、非有限或非正时间均不得报告收敛。
 - 一旦模型收敛，立即停止 stationary `Update`，但继续重算尚未消退的模拟笔锋。只有可见端点到位、笔锋老化完成，且 L0 position/radius 连续三帧稳定后才冻结。L1 保护可变尾部，不能提前提交仍会改变半径的点。禁止用固定额外延迟代替位置/速度证据。
@@ -437,6 +442,8 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 | visual-pinned 后恢复 Move / reconnect | 固定旧停点过滤不安全前缀；安全后缀即可恢复 Tracking，不硬连新的 raw |
 | 长停后同位 Up | 形状/半径与停稳时一致，不重新强制收尖 |
 | 长停后 Move / Up | 压缩已收敛的模型时间，保留真实显示/速度时间，输出仍有界 |
+| 快速 Up 后断触等待/延迟完成 | 锁定同一物理 Up 显示时间，不能继续消锋变粗 |
+| 高速大曲率末端拐动 | 保留有界观测与已有端点安全，当前暂缓修复，不套用局部曲线补偿 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -450,6 +457,7 @@ Correct：`mouseUsesSystemCursor -> WindowController 原子单一真值 -> 同�
 - 覆盖 30/60/120/240 FPS、低/中/高速及 Kalman/StrokeEnd/Disabled 的 endpoint distance/plane 单调性；内部 settled 必须直接在 `<=200ms` 诊断预算内断言，不能以 visual-pinned 时间替代。
 - 必须真正逐帧推进模型/L0/控制器验证十秒及超长 idle 的输出预算；空循环重复断言点数不构成覆盖。断言尾点半径随显示时间恢复基础值，同位 Up/Stored 不重新缩细。
 - 覆盖 1px/8、16、33、80、120ms 的稀疏真实输入与不同渲染率；检查恢复前缀全拒、后续批安全跨越及 prediction/L1 解锁，覆盖同向、直角、反向与整段 terminal 几何。
+- 覆盖真实 Up 时间锁定、晚处理/候选超时/成功续接、三个设备入口、停稳 Up 不重新收尖及原 Move/L1 边界保护；不得用这些测试宣称高速曲率外偏末钩已修复。
 - 执行 `inkStrokeModelerTest.sln Debug|ARM64`、模型回归测试、完整 `InkeysRepo.sln Debug|ARM64`、`InkeysHeadlessTests.exe --no-window` 与 Draw3 hidden 集成测试。
 
 ### 7. Wrong vs Correct

@@ -1,5 +1,41 @@
 # Draw3 低速停笔预测收敛修复实施计划
 
+## 当前提交收尾（用户复测后的范围修正）
+
+- 高速大曲率转弯末端拐动未解决；用户观察物理轨迹偏内、建模墨迹偏外，Up补到真实终点造成拐动。当前没有选定修复方案，暂不继续实现，保留开启任务。
+- 撤销新增cubic重建与其专属断言，避免保留无已验证收益的曲率/半径干预；保留显示时间锁、pre-Up边界/失败回退保护、原有收敛/续画、有限宽度AA及有界诊断。
+- 下文为前轮历史实施/验证记录，不能据此声称末钩已修复。移除补偿后重新构建与检查，再按用户本次明确授权提交一个commit；不push、不归档。
+
+### 本次范围调整验证
+
+- 两侧删除 `CorrectPenTerminalHook`、cubic重建及专属用例/修正标志；`CapturePenTerminalTrace` 只采样最多8个模型/接纳位置，不修改点、半径或输入。保留物理Up锁、terminalFirstPoint与失败回退保护，专项保留 `TestPhysicalUpTipTime` 和 `TestTerminalFallbackBoundary`。
+- 移除后完整 `inkStrokeModelerTest.sln Debug|ARM64` 与 `InkeysRepo.sln Debug|ARM64` 构建退出0，日志 `TestResults/defer-hook-native-build.log`、`defer-hook-product-build.log`。
+- `inkStrokeModelerTestTests.exe --release-tail-tests-only` 退出0；真实等待进程退出的 `Inkeys.exe --draw3-hidden-test` 退出0，`defer-hook-hidden.stderr.log` 为PASS且无FAIL，覆盖既有停笔/续画和抬笔生命周期。
+- AA及GPU测试源码本次未改，沿用前轮5184组硬件读回与完整控制台通过结果，不重复无变化矩阵。独立审查确认镜像、原编码/换行及保留的端点安全；末钩仍未解决，不将这些通过结果当成其验收。
+
+## 当前执行：Release Tail And Thin Coverage
+
+1. 以 d4456c21 干净工作区为基线；先补物理 Up 时间/侧向末钩和薄线像素退化证据。
+2. 并行实现 CPU 抬笔冻结/终态曲线与 PS 薄线有限宽度覆盖；两侧保持同构，源文件原编码换行保留。
+3. 添加实际 D3D 离屏回读测试和隐藏产品设备/延迟/续接测试。测试源码所有权分离，构建由主会话统一协调避免同时改同一测试文件。
+4. 完整两套 solution Debug|ARM64（ARM64 原生 MSBuild、PATH 规范化），验证四个 shader 资源链；运行控制台、headless --no-window、hidden 和离屏GPU验收。
+5. 独立 trellis-check 审查全部差异和既有停笔/续画回归，更新规范与验收。按用户要求不提交、不归档；可见 GUI 和实体手感未执行时明确列出。
+
+### 前轮 Release Tail / Thin Coverage 自动化记录（末钩尝试现已撤回）
+
+- 前轮实现：首次物理Up锁显示时间/可变尾段边界，候选/完成/Stored统一使用，成功续接解除；曾尝试受限cubic替换新增终态后缀（现已撤回）；回退也保护Up前锚点。隐藏诊断保存有界原始Move/Up和模型/接纳尾段。
+- 薄线：两侧PS用真实SV_Position像素中心和有限宽度双边覆盖；局部0.5–1px半径混合旧AA，两端均>=1px直接走旧路径；无GPU点布局、库或模型参数改动。
+- 审查修复：防止失败回退改写pre-Up点；deferred Up无输出不提前消耗曲线处理资格；隐藏测试必须观察真正awaitingReconnect候选，不能重复比较完成快照。
+- `inkStrokeModelerTest.sln Debug|ARM64` 最终构建退出0，日志 `TestResults/release-thin-native-build-4.log`；完整 `ARM64/Debug/inkStrokeModelerTestTests.exe` 退出0，日志 `release-thin-console-verified.log`。既有停笔/续画回归以及新物理Up、曲线/弧长插值/尖角/预算测试全部通过。
+- 实际GPU：Qualcomm Adreno X1-85，5184组width/angle/XY-phase，failures=0；包含真实MRT/双源合成、数值oracle、分段、MAX幂等、L0/L1、变半径与端帽。旧/新0.05px对称线零覆盖截面为112/0。
+- 近似边界明确：1.5px过渡区某相位旧/新/oracle有效宽度为1.94598/1.71765/1.71663；严格验证规定blend和不劣于旧路径，而不是任意放宽误差。纯薄线分段仍保持严格量化界；粗线旧AA图元分段差异保持原样。
+- `InkeysRepo.sln Debug|ARM64` 最终退出0，日志 `TestResults/release-thin-product-build-final.log`。初次两侧均有四个shader编译成功及后续资源链接证据；源码均用现有solution/MSBuild链路编译。
+- `InkeysHeadlessTests.exe --no-window` 退出0。`Inkeys.exe --draw3-hidden-test` 通过Start-Process -Wait取得实际退出0，日志 `release-thin-hidden-verified.stderr.log` 为PASS且无FAIL。覆盖Mouse/Touch/Pen硬件压感/Pen无压力、快速/停稳/延迟Up、真实候选等待、同一Touch笔画成功续接解锁后继续Move。
+- 隐藏续接fixture不再用原始速度推测预测落点：实测预测误差拒绝13px外推点，改用正常同位重新接触后Move12px，沿原预测判定匹配；未改变续接策略。
+- 沙箱内既有存储测试出现I/O失败，正常权限重跑通过；未为环境问题改源。裸GUI子系统命令的空输出/即时返回不计为成功，以等待真实进程退出并捕获stderr为准。
+- 构建输出日志保留在忽略的TestResults；生成的四个未跟踪宿主cso与被构建改写的PptCOM.dll由主会话定点清理/恢复，不提交二进制副产物。
+- 可见GUI、实体设备手感和D3D Debug Layer未验证。本轮不commit/push，不结束或归档任务。
+
 ## Implementation
 
 1. 在测试宿主与产品各自的 `InkPrediction` / `StrokeGeometry` 增加同构的 modeled-tip 收敛判定：finite 检查、raw endpoint 误差、`Result::velocity × frame interval` 门槛。

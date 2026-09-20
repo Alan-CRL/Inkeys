@@ -279,6 +279,135 @@ namespace Inkeys::Drawing::Draw3
 			return succeeded;
 		}
 
+		bool CheckPenPhysicalRelease(HWND drawpad, int& failures)
+		{
+			bool succeeded = true;
+			for (const WPARAM device : { kHiddenTestMouseFlag, kHiddenTestTouchFlag,
+				kHiddenTestIntegratedPenFlag, kHiddenTestIntegratedPenFlag | kHiddenTestNoPressureFlag })
+			for (int scenario = 0; scenario < 3; ++scenario)
+			{
+				const auto post = [&](HiddenTestContactPhase phase, int x, WPARAM extra = 0)
+				{
+					return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+						static_cast<WPARAM>(phase) | device | extra, MAKELPARAM(x, 180)) != FALSE;
+				};
+				const auto oldId = ProductHost().RuntimeSnapshot().pen.strokeId;
+				succeeded &= Check(post(HiddenTestContactPhase::Down, 40), "release test Down", failures);
+				if (!Check(WaitUntil([oldId]
+				{
+					const auto p = ProductHost().RuntimeSnapshot().pen;
+					return p.active && p.strokeId != oldId;
+				}, 2s), "release Down consumed", failures)) return false;
+				const auto id = ProductHost().RuntimeSnapshot().pen.strokeId;
+				int x = 40;
+				for (int n = 0; n < 10; ++n)
+				{
+					const auto sequence = ProductHost().RuntimeSnapshot().pen.inputSequence;
+					x += 12;
+					succeeded &= Check(post(HiddenTestContactPhase::Move, x), "release Move", failures);
+					succeeded &= Check(WaitUntil([id, sequence]
+					{
+						const auto p = ProductHost().RuntimeSnapshot().pen;
+						return p.strokeId == id && p.inputSequence > sequence;
+					}, 2s), "release Move consumed", failures);
+				}
+				if (scenario == 1)
+					succeeded &= Check(WaitUntil([id]
+					{
+						const auto p = ProductHost().RuntimeSnapshot().pen;
+						return p.strokeId == id && p.frozen;
+					}, 2s), "held release settles before Up", failures);
+				if (scenario == 2) std::this_thread::sleep_for(40ms);
+				if (scenario == 0) x += 12; // 明确仍在运动的 Up，不能把调度等待误当成快速抬笔。
+				succeeded &= Check(post(HiddenTestContactPhase::Up, x,
+					scenario == 2 ? kHiddenTestDelayedUpFlag : 0), "release Up", failures);
+				succeeded &= Check(WaitUntil([id]
+				{
+					const auto p = ProductHost().RuntimeSnapshot().pen;
+					return p.strokeId == id && p.terminalLocked;
+				}, 2s), "physical Up locks display time", failures);
+				const auto released = ProductHost().RuntimeSnapshot().pen;
+				if (device == kHiddenTestTouchFlag && scenario == 0)
+					succeeded &= Check(released.active && released.awaitingReconnect,
+						"fast Touch release observes actual pending candidate before completion", failures);
+				succeeded &= Check(released.displayTime == released.physicalUpTime &&
+					released.endpointError <= 0.05f, "release time and raw endpoint are authoritative", failures);
+				succeeded &= Check(WaitUntil([id]
+				{
+					const auto p = ProductHost().RuntimeSnapshot().pen;
+					return p.strokeId == id && !p.active;
+				}, 2s), "release candidate eventually completes", failures);
+				const auto complete = ProductHost().RuntimeSnapshot().pen;
+				succeeded &= Check(complete.displayTime == released.displayTime &&
+					std::abs(complete.tipRadius - released.tipRadius) <= 0.02f,
+					"reconnect timeout does not age released tip", failures);
+				if (scenario == 1)
+					succeeded &= Check(std::abs(complete.tipRadius - complete.baseRadius) <= 0.02f,
+						"held release cannot create a new fine tip", failures);
+				if (scenario == 0 && device != kHiddenTestIntegratedPenFlag)
+					succeeded &= Check(complete.tipRadius < complete.baseRadius - 0.02f,
+						"fast simulated release retains a fine tip", failures);
+				succeeded &= Check(complete.acceptedTailCount > 0 &&
+					complete.rawUp[0] == static_cast<float>(x),
+					"release trace records accepted tail and physical endpoint", failures);
+				std::fprintf(stderr, "[PenRelease] device=%u scenario=%d time=%g tip=%g base=%g model=%zu accepted=%zu\n",
+					complete.deviceType, scenario, complete.displayTime, complete.tipRadius,
+					complete.baseRadius, complete.modelTailCount, complete.acceptedTailCount);
+			}
+
+			// 同一真实 Touch mailbox 成功续接后必须解除上一物理 Up 的显示锁。
+			const auto postTouch = [&](HiddenTestContactPhase phase, int x)
+			{
+				return SendMessageW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase) | kHiddenTestTouchFlag, MAKELPARAM(x, 210)) == 0;
+			};
+			const auto oldId = ProductHost().RuntimeSnapshot().pen.strokeId;
+			postTouch(HiddenTestContactPhase::Down, 40);
+			if (!Check(WaitUntil([oldId]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.active && p.strokeId != oldId;
+			}, 2s), "reconnect test Down consumed", failures)) return false;
+			const auto id = ProductHost().RuntimeSnapshot().pen.strokeId;
+			int x = 40;
+			for (int n = 0; n < 10; ++n)
+			{
+				const auto sequence = ProductHost().RuntimeSnapshot().pen.inputSequence;
+				x += 12;
+				postTouch(HiddenTestContactPhase::Move, x);
+				succeeded &= Check(WaitUntil([sequence]
+				{ return ProductHost().RuntimeSnapshot().pen.inputSequence > sequence; }, 2s),
+					"reconnect test Move consumed", failures);
+			}
+			postTouch(HiddenTestContactPhase::Up, x);
+			succeeded &= Check(WaitUntil([id]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.strokeId == id && p.awaitingReconnect && p.terminalLocked;
+			}, 50ms), "Touch Up enters locked reconnect candidate", failures);
+			// 真实同位重触走原预测落点门禁，不把 raw 速度外推当成冻结预测轨迹。
+			succeeded &= Check(postTouch(HiddenTestContactPhase::Down, x),
+				"same-position recontact enters the real mailbox", failures);
+			succeeded &= Check(WaitUntil([id]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.strokeId == id && p.active && !p.awaitingReconnect && !p.terminalLocked;
+			}, 1s), "successful Touch reconnect clears physical Up lock", failures);
+			const auto resumedSequence = ProductHost().RuntimeSnapshot().pen.inputSequence;
+			succeeded &= Check(postTouch(HiddenTestContactPhase::Move, x + 12),
+				"reconnected Touch publishes real movement", failures);
+			succeeded &= Check(WaitUntil([id, resumedSequence]
+			{
+				const auto p = ProductHost().RuntimeSnapshot().pen;
+				return p.strokeId == id && p.active && !p.terminalLocked &&
+					p.inputSequence > resumedSequence;
+			}, 2s), "reconnected Touch continues on the same unlocked stroke", failures);
+			postTouch(HiddenTestContactPhase::Up, x + 12);
+			succeeded &= Check(WaitUntil([]
+			{ return !ProductHost().RuntimeSnapshot().pen.active; }, 2s), "reconnected Touch completes", failures);
+			return succeeded;
+		}
+
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
 			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
 			HostPresentationMode requiredMode,
@@ -715,6 +844,7 @@ namespace Inkeys::Drawing::Draw3
 					presentationBounds.bottom - presentationBounds.top == 256,
 					"resize keeps selection ULW bounds synchronized", failures);
 				modeSucceeded &= CheckPenDwellAndResume(drawpad, failures);
+				modeSucceeded &= CheckPenPhysicalRelease(drawpad, failures);
 			}
 
 			if (exerciseUlwDirtyRect)

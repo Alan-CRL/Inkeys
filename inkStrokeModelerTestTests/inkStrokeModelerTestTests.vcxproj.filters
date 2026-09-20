@@ -15,6 +15,9 @@
     <ClCompile Include="contact_input_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="thin_stroke_gpu_tests.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
 	<ClCompile Include="highlighter_geometry_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>

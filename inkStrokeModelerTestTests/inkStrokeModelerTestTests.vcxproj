@@ -105,6 +105,7 @@
   <ItemGroup>
 	<ClCompile Include="canvas_navigation_tests.cpp" />
 	<ClCompile Include="contact_input_tests.cpp" />
+	<ClCompile Include="thin_stroke_gpu_tests.cpp" />
 	<ClCompile Include="desktop_autosave_tests.cpp" />
 	<ClCompile Include="presentation_autosave_tests.cpp" />
 	<ClCompile Include="highlighter_geometry_tests.cpp" />

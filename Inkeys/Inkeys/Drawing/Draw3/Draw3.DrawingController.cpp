@@ -1873,6 +1873,21 @@ namespace Inkeys::Drawing::Draw3
 				realTip.y - runtime.lastModelSnapshot.position.y);
 			diagnostic.tipRadius = tip.r;
 			diagnostic.baseRadius = realTip.r;
+			diagnostic.displayTime = ResolvePenDisplayTime(stroke);
+			diagnostic.physicalUpTime = stroke.terminalDisplayTime.value_or(0.0);
+			diagnostic.deviceType = static_cast<uint32_t>(runtime.metricDeviceType);
+			diagnostic.terminalLocked = stroke.terminalDisplayTime.has_value();
+			diagnostic.awaitingReconnect = runtime.awaitingReconnect;
+			diagnostic.rawMove = { stroke.terminalRawMove.x, stroke.terminalRawMove.y };
+			diagnostic.rawUp = { stroke.terminalRawUp.x, stroke.terminalRawUp.y };
+			diagnostic.modelTailCount = stroke.terminalModelCount;
+			diagnostic.acceptedTailCount = stroke.terminalAcceptedCount;
+			diagnostic.tailTraceTruncated = stroke.terminalModelCount > 8 || stroke.terminalAcceptedCount > 8;
+			for (size_t i = 0; i < 8; ++i)
+			{
+				diagnostic.modelTail[i] = { stroke.terminalModelTrace[i].x, stroke.terminalModelTrace[i].y };
+				diagnostic.acceptedTail[i] = { stroke.terminalAcceptedTrace[i].x, stroke.terminalAcceptedTrace[i].y };
+			}
 			diagnostic.active = !runtime.ended;
 			diagnostic.recovering = stroke.endpointAdmission.recovering;
 			diagnostic.frozen = stroke.idleFrozen;
@@ -2586,7 +2601,7 @@ namespace Inkeys::Drawing::Draw3
 						if (!AreInterruptedStrokeReconnectIdentitiesCompatible(
 							ReconnectIdentity(*candidate), candidateDownIdentity))
 						{
-							if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+							if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 							{
 								if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
 									diagnosticRuntime->deferredUpSnapshot.qpc)
@@ -2625,7 +2640,7 @@ namespace Inkeys::Drawing::Draw3
 								.dpiScale = reconnectDpiScale,
 								.motion = motion
 							});
-						if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+						if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 						{
 							if (!diagnosticRuntime || candidate->deferredUpSnapshot.qpc >
 								diagnosticRuntime->deferredUpSnapshot.qpc)
@@ -2643,7 +2658,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 					}
 				}
-				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
+				if (kInterruptedStrokeReconnectManualTestModeEnabled || observer_.penDiagnostics)
 				{
 					if (!reconnectRuntime && diagnosticRuntime)
 					{
@@ -2796,6 +2811,7 @@ namespace Inkeys::Drawing::Draw3
 						reconnectRuntime->lastTilt = lastTilt;
 						reconnectRuntime->lastOrientation = lastOrientation;
 						reconnectRuntime->awaitingReconnect = false;
+						ClearPenTerminalState(reconnectRuntime->stroke);
 						if(reconnectRuntime->metricDeviceType!=InputDeviceType::Touch &&
 							reconnectRuntime->stroke.widthMode==StrokeWidthMode::SpeedEraser)
 						{
@@ -2959,6 +2975,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
 					widthMode, highlighter);
 				runtime->stroke.useDisplayTime = (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen);
+				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
 				const auto& modelParams = runtime->tool == DrawingTool::Eraser
 					? eraserModelParams : strokeModelParams;
 				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
@@ -3152,7 +3169,9 @@ namespace Inkeys::Drawing::Draw3
 					: inputTime;
 				const InkPoint finalPoint{ snapshot.position.x, snapshot.position.y,
 					radius, static_cast<float>(pointTime) };
-				if (runtime.stroke.realPoints.empty())
+				if (runtime.stroke.useDisplayTime)
+					AppendTerminalFallbackPoint(runtime.stroke, finalPoint);
+				else if (runtime.stroke.realPoints.empty())
 					runtime.stroke.realPoints.push_back(finalPoint);
 				else
 				{
@@ -3186,6 +3205,9 @@ namespace Inkeys::Drawing::Draw3
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				if (runtime.stroke.useDisplayTime)
 				{
+					LockPenTerminalState(runtime.stroke, inputTime,
+						{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
+						{ snapshot.position.x, snapshot.position.y });
 					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
 					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
 						runtime.lastModelInputTime, 1.0 / configuration_.timingProfile.target_fps);
@@ -3240,6 +3262,8 @@ namespace Inkeys::Drawing::Draw3
 					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
 					runtime.stroke.predictedResults.clear();
 				}
+				if (sanitizeEndpoint)
+					CapturePenTerminalTrace(runtime.stroke);
 				runtime.lastModelSnapshot = modelSnapshot;
 				runtime.ended = true;
 				runtime.cancelled = cancelled;
@@ -3326,6 +3350,10 @@ namespace Inkeys::Drawing::Draw3
 				double inputTime = QpcDeltaSeconds(snapshot.qpc, runtime.qpcOrigin, qpcFrequency);
 				if (endpointTool)
 				{
+					if (terminal)
+						LockPenTerminalState(runtime.stroke, inputTime,
+							{ runtime.lastSpeedSnapshot.position.x, runtime.lastSpeedSnapshot.position.y },
+							{ snapshot.position.x, snapshot.position.y });
 					runtime.stroke.logicalInputTime = std::max(runtime.stroke.logicalInputTime, inputTime);
 					if (positionMoved) runtime.stroke.lastMovementInputTime = inputTime;
 					inputTime = ResolvePenModelInputTime(runtime.stroke, inputTime,
@@ -3384,6 +3412,8 @@ namespace Inkeys::Drawing::Draw3
 					if (terminal && !deferUp && !runtime.shape.active)
 						appendTerminalFallback(runtime, snapshot, inputTime);
 				}
+				if (terminal && endpointTool && (modelUpdateSucceeded || !deferUp))
+					CapturePenTerminalTrace(runtime.stroke);
 				runtime.lastModelSnapshot = modelSnapshot;
 				if (positionMoved) runtime.lastSpeedSnapshot = snapshot;
 				if (positionMoved || stylusStateChanged)
@@ -7044,6 +7074,11 @@ namespace Inkeys::Drawing::Draw3
 							modeledTipFrameIntervalSeconds);
 					UpdateIdleFreezeState(stroke, runtime->movedThisFrame,
 						modelSettled, liveTipProtectionSeconds);
+					publishPenDiagnostics(*runtime, stroke.l0DrawPoints);
+				}
+				else if (!runtime->ended && runtime->awaitingReconnect && runtime->reconnectVisualRefresh)
+				{
+					// 发布候选实际 L0；验收须比较等待态与完成态，而非重复读取完成快照。
 					publishPenDiagnostics(*runtime, stroke.l0DrawPoints);
 				}
 				if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)

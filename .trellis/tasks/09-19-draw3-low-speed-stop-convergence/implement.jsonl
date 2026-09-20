@@ -1,4 +1,6 @@
 {"file":".trellis/spec/native/index.md","reason":"Draw3 native 层修改前检查表、编码格式和验证范围入口。"}
+{"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/release-tail-thin-coverage.md","reason":"当前追加修复的物理Up时间、末钩反例、导数退化及有限宽度AA数学边界。"}
+{"file":".trellis/spec/shaders/index.md","reason":"本轮用户明确授权薄线 AA 及真实 GPU 回读，读取 CPU/GPU 契约与 FXC 编码构建要求。"}
 {"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/dwell-appearance-and-resume.md","reason":"当前批准的停笔消锋、固定旧停点恢复与测试缺口，优先于历史研究中的冲突方案。"}
 {"file":".trellis/spec/native/modules-and-code-style.md","reason":"C++20 模块接口/实现边界、中文注释以及 BOM/CRLF 要求。"}
 {"file":".trellis/tasks/09-19-draw3-low-speed-stop-convergence/research/root-cause.md","reason":"回归提交、当前错误状态机、模型收敛信号、时间顺序与重复点风险证据。"}
