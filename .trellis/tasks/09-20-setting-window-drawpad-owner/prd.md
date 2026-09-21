@@ -21,6 +21,8 @@
 - owner 切换应幂等；失败时不得遗留半切换状态，并沿用 Window Service 的失败诊断。
 - 画布及主栏的基础 Owner 链应为 `Freeze -> DrawpadPresentation -> Drawpad -> Bar/PPT`；其中 Drawpad 仍是顶层 owned popup，不得改为 `WS_CHILD`。
 - 在 Presentation/Primary 两种画布表面切换、白板模式和 root topmost 传播中，Bar/PPT 以及绘制模式下的 Setting 都必须通过 Owner 链位于两套画布表面之上。
+- 用户把定格从关闭切换为启用后，主栏统一入口必须立即调用 `RequestTopmostRefresh()` 提交一次链根置顶刷新；关闭定格或定格不可用时不提交。
+- 定格业务不得直接调用 `SetWindowPos` 或对 Freeze/Drawpad/Bar 分别置顶；实际 `HWND_TOPMOST` 操作仍只由 Window Service 的统一链根刷新执行。
 - `SyncDraw3State()` 必须保存最新期望 owner 状态；若 Window Service 提交失败，现有状态监控应周期重试直至收敛，且较旧请求的完成不得清除较新状态的重试需求。
 - 设置窗口始终保持可激活、可获取焦点和任务栏入口；不得引入 `WS_EX_NOACTIVATE`、`WS_EX_TOOLWINDOW` 或独立 `WS_EX_TOPMOST`。
 - 模式同步只接入统一状态路径，不在按钮、快捷键等入口重复实现。
@@ -62,6 +64,8 @@
 - [x] `GW_OWNER(DrawpadPresentation) == Freeze` 且 `GW_OWNER(Drawpad) == DrawpadPresentation`，静态与动态创建路径一致。
 - [x] Presentation/Primary 表面切换后 Bar 保持可见，并且 Z 序始终高于 DrawpadPresentation 和 Drawpad。
 - [x] 新 Owner 链不改变 Drawpad 的顶层 popup 样式、输入激活和白板行为，root topmost 传播与销毁顺序继续通过隐藏 HWND 测试。
+- [ ] 定格从关闭切换为启用时立即请求一次统一链根置顶；关闭、不可用点击不新增请求。
+- [ ] 定格入口不新增直接 Win32 Z 序操作，现有 fullscreen 标记、定格画面提交和白板/PPT 状态机保持不变。
 
 ## Out of Scope
 
@@ -81,3 +85,5 @@
 - 2026-09-20 接受 PR #212 的 CodeRabbit 收敛性建议：补充 Setting owner 期望状态持久化和失败重试，不扩大 Window Service 公共接口。
 - 2026-09-21 继续收敛双画布层级：Drawpad 改为 DrawpadPresentation 的顶层 owned popup，使 Bar/PPT/owned Setting 在两种表面上方的关系由 Owner 链直接保证。
 - 2026-09-21 ARM64 `Debug` Solution 构建和 `InkeysHeadlessTests.exe --no-window` 通过；含隐藏 HWND 的 Window 测试通过，完整测试仅剩既有 MessageBox GDI baseline 波动（initial=45, final=49）。
+- 2026-09-21 定格启用改为在主栏状态切换入口立即提交链根置顶刷新，避免等待后台定格线程或周期性刷新时产生“定格加载很慢”的观感。
+- 2026-09-21 定格立即刷新的 ARM64 `Debug` Solution 构建和 `--no-window` 测试通过，静态审查确认关闭/不可用路径不发布且无直接 Win32 Z 序调用；生产点击无稳定 headless 注入边界，新验收项保留待人工交互确认。

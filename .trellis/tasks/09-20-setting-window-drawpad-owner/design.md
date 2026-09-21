@@ -30,3 +30,10 @@
 - Drawpad 只设置 `GW_OWNER`，仍保持顶层 `WS_POPUP`；不引入 `WS_CHILD` 的坐标、剪裁、激活或输入语义。
 - 静态分组创建和动态创建必须共用同一 Owner 拓扑；反向销毁顺序继续为 Bar/PPT、Drawpad、DrawpadPresentation、Freeze。
 - 不新增表面切换时的 `SetWindowPos` 重排命令；通过 Owner 传递关系统一保证 Bar/PPT/owned Setting 高于两套画布表面。
+
+## 定格启用的立即置顶请求
+
+- 定格按钮是用户切换 `Freeze::Toggle()` 的唯一入口；只在切换前为 inactive、切换后为 active 时提交刷新。
+- 入口只调用 `Window::Service::RequestTopmostRefresh()`，不知道 HWND，不直接使用 `SetWindowPos`、`HWND_TOPMOST` 或改 owner。
+- 定格后台线程仍负责显示 MagnifierHost/Child、提交画面和 `SetOverlayFullscreen(true)`；其既有层级协调不从本轮移除或改写。
+- 置顶请求失败不回滚已成功的定格状态；现有 TopWindow 周期刷新继续作为后续收敛。
