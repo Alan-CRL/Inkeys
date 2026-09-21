@@ -35,5 +35,6 @@
 
 - 定格按钮是用户切换 `Freeze::Toggle()` 的唯一入口；只在切换前为 inactive、切换后为 active 时提交刷新。
 - 入口只调用 `Window::Service::RequestTopmostRefresh()`，不知道 HWND，不直接使用 `SetWindowPos`、`HWND_TOPMOST` 或改 owner。
-- 定格后台线程仍负责显示 MagnifierHost/Child、提交画面和 `SetOverlayFullscreen(true)`；其既有层级协调不从本轮移除或改写。
+- 定格后台线程仍负责显示 MagnifierHost/Child 和提交画面，但桌面定格不再调用 `SetOverlayFullscreen`：减 1 像素表面不是 Shell 全屏，层级收敛只依赖统一链根置顶。
+- 白板工作区是真正的全屏窗口，继续由 `IdtState` 在进入/退出时设置和清除 `SetOverlayFullscreen`；不得把本次桌面定格修正扩大到白板。
 - 置顶请求失败不回滚已成功的定格状态；现有 TopWindow 周期刷新继续作为后续收敛。

@@ -552,7 +552,7 @@ void BarButtonSetClass::PresetInitialization()
 					Inkeys::UI::Freeze::Toggle();
 					if (!wasActive && Inkeys::UI::Freeze::IsActive())
 					{
-						// 定格激活后立即重申 owner 树层级；后续 fullscreen 流程仍按原路径结算。
+						// 定格激活后立即重申 owner 树层级；后台线程仍按原路径显示画面。
 						(void)Inkeys::Window::GetService().RequestTopmostRefresh();
 					}
 				};

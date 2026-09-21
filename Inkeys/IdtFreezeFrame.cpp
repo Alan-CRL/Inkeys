@@ -109,7 +109,6 @@ void FreezeFrameWindow()
 
 	int wait = 0;
 	bool show_freeze_window = false;
-	bool overlayFullscreen = false;
 	auto& windowService = Inkeys::Window::GetService();
 
 	RECT fwords_rect;
@@ -130,8 +129,6 @@ void FreezeFrameWindow()
 					// Child 带有 WS_VISIBLE 但创建后被 Window Service 按默认状态隐藏，需显式恢复。
 					const bool childShown = windowService.Show(
 						Inkeys::Window::WindowRole::MagnifierChild);
-					// 定格显示前通知 Shell 覆盖任务栏，保证任务栏提示不会继续刷新。
-					overlayFullscreen = windowService.SetOverlayFullscreen(true);
 					if (hostShown && childShown)
 					{
 						UpdateMagWindow();
@@ -198,11 +195,6 @@ void FreezeFrameWindow()
 
 				RequestUpdateMagWindow = 0;
 				show_freeze_window = false;
-				if (overlayFullscreen)
-				{
-					(void)windowService.SetOverlayFullscreen(false);
-					overlayFullscreen = false;
-				}
 				(void)windowService.Hide(
 					Inkeys::Window::WindowRole::MagnifierHost);
 				(void)windowService.Hide(
