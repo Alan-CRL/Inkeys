@@ -1,0 +1,4 @@
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"检查排除列表修复未改变窗口样式、owner 或显示时序。"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"检查过滤提交失败时不继续抓帧且日志不高频重复。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"检查完整 Solution 的 Debug ARM64 构建。"}
+{"file":".trellis/spec/native/quality-and-validation.md","reason":"区分自动静态/构建验证与用户负责的视觉验收。"}

@@ -5,7 +5,10 @@
 #include "IdtDraw.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
+#include <algorithm>
+#include <array>
 #include <d3d9.h>
+#include <vector>
 #pragma comment(lib, "d3d9")
 
 import Inkeys.Window;
@@ -20,8 +23,84 @@ shared_mutex MagnificationBackgroundSm;
 RECT hostWindowRect;
 int MagTransparency;
 
+namespace
+{
+	void LogMagnificationFilterFailure()
+	{
+		IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+		if (pD3D != nullptr)
+		{
+			D3DCAPS9 caps;
+			HRESULT hr = pD3D->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &caps);
+			if (SUCCEEDED(hr))
+			{
+				if (caps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT) IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备支持 WDDM 1.0 版本但原因未知）");
+				else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备不支持 WDDM 1.0 版本）");
+			}
+			else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法 GetDeviceCaps 并查询是否支持 WDDM）");
+
+			pD3D->Release();
+		}
+		else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法初始化 IDirect3D9 并查询是否支持 WDDM）");
+	}
+
+	[[nodiscard]] bool SubmitMagnificationFilterList()
+	{
+		if (!magnifierChild || !IsWindow(magnifierChild))
+		{
+			LogMagnificationFilterFailure();
+			return false;
+		}
+
+		using Inkeys::Window::WindowRole;
+		static constexpr std::array<WindowRole, 10> filterRoles = {
+			WindowRole::MagnifierHost,
+			WindowRole::Freeze,
+			WindowRole::DrawpadPresentation,
+			WindowRole::Drawpad,
+			WindowRole::PptBottomLeft,
+			WindowRole::PptBottomRight,
+			WindowRole::PptMiddleLeft,
+			WindowRole::PptMiddleRight,
+			WindowRole::Bar,
+			WindowRole::Setting,
+		};
+
+		const DWORD currentProcessId = GetCurrentProcessId();
+		const auto& windowService = Inkeys::Window::GetService();
+		std::vector<HWND> hwndList;
+		hwndList.reserve(filterRoles.size());
+
+		// 每次抓帧都使用 Window Service 的当前句柄，避免窗口重建或设置窗口生命周期变化后沿用旧列表。
+		for (const WindowRole role : filterRoles)
+		{
+			const HWND hwnd = windowService.Handle(role);
+			if (!hwnd || !IsWindow(hwnd)) continue;
+
+			DWORD processId = 0;
+			if (!GetWindowThreadProcessId(hwnd, &processId) || processId != currentProcessId) continue;
+			if ((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD) != 0) continue;
+			if (std::find(hwndList.begin(), hwndList.end(), hwnd) != hwndList.end()) continue;
+
+			hwndList.emplace_back(hwnd);
+		}
+
+		if (MagSetWindowFilterList(magnifierChild, MW_FILTERMODE_EXCLUDE,
+			static_cast<int>(hwndList.size()), hwndList.data()) == FALSE)
+		{
+			LogMagnificationFilterFailure();
+			return false;
+		}
+
+		return true;
+	}
+}
+
 void UpdateMagWindow()
 {
+	// 过滤提交失败时不更新 source，避免把已知未排除的 Inkeys 窗口固化进定格画面。
+	if (!SubmitMagnificationFilterList()) return;
+
 	RECT sourceRect = { 0, 0, GetSystemMetrics(SM_CXSCREEN) - 1, GetSystemMetrics(SM_CYSCREEN) - 1 };
 	MagSetWindowSource(magnifierChild, sourceRect);
 	InvalidateRect(magnifierChild, NULL, TRUE);
@@ -138,45 +217,8 @@ void MagnifierThread()
 	{
 		if (IdtWindowsIsVisible.allCompleted)
 		{
-			std::vector<HWND> hwndList;
-			hwndList.emplace_back(floating_window);
-			const auto& windowService = Inkeys::Window::GetService();
-			for (const auto role : {
-				Inkeys::Window::WindowRole::PptBottomLeft,
-				Inkeys::Window::WindowRole::PptBottomRight,
-				Inkeys::Window::WindowRole::PptMiddleLeft,
-				Inkeys::Window::WindowRole::PptMiddleRight })
-			{
-				if (const HWND hwnd = windowService.Handle(role)) hwndList.emplace_back(hwnd);
-			}
-			hwndList.emplace_back(drawpad_window);
-			if (const HWND hwnd = windowService.Handle(
-				Inkeys::Window::WindowRole::DrawpadPresentation))
-				hwndList.emplace_back(hwnd);
-			hwndList.emplace_back(freeze_window);
-			hwndList.emplace_back(setting_window);
-
 			IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表");
-
-			if (MagSetWindowFilterList(magnifierChild, MW_FILTERMODE_EXCLUDE, hwndList.size(), hwndList.data()) == FALSE)
-			{
-				IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
-				if (pD3D != nullptr)
-				{
-					D3DCAPS9 caps;
-					HRESULT hr = pD3D->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &caps);
-					if (SUCCEEDED(hr))
-					{
-						if (caps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT) IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备支持 WDDM 1.0 版本但原因未知）");
-						else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备不支持 WDDM 1.0 版本）");
-					}
-					else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法 GetDeviceCaps 并查询是否支持 WDDM）");
-
-					pD3D->Release();
-				}
-				else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法初始化 IDirect3D9 并查询是否支持 WDDM）");
-			}
-			else magnificationReady = true;
+			if (SubmitMagnificationFilterList()) magnificationReady = true;
 
 			break;
 		}

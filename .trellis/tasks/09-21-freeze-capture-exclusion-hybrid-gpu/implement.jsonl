@@ -1,0 +1,5 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认传统 IdtMagnification 与 Window Service 的边界。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"保持现有 Win32 窗口角色、owner 链和 Magnifier 呈现行为。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"遵守传统 Idt 文件风格、最小改动和共享 HWND 使用规则。"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"复用既有 Magnification 失败日志且避免高频刷屏。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"按完整 Solution和 ARM64 原生工具链验证。"}

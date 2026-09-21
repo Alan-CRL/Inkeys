@@ -1,0 +1,30 @@
+{
+  "id": "freeze-capture-exclusion-hybrid-gpu",
+  "name": "freeze-capture-exclusion-hybrid-gpu",
+  "title": "定格 Magnification 排除列表修复",
+  "description": "在保留现有 Magnification 捕获链的前提下，每次捕获前从 Window Service 重建、校验并提交 Inkeys 窗口排除列表；显卡黑屏、后端替换和捕获时序另行处理。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-09-21",
+  "completedAt": null,
+  "branch": "bugfix/settingui",
+  "base_branch": "bugfix/settingui",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/IdtMagnification.cpp",
+    "Inkeys/IdtMagnification.h",
+    "Inkeys/Inkeys/Window/Window.cppm"
+  ],
+  "notes": "原任务调查保留在 research/；2026-09-21 经用户批准，本阶段仅实现现有 Magnification 排除列表修复，人工确认实际画面。",
+  "meta": {}
+}
