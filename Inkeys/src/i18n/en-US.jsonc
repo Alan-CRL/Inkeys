@@ -61,6 +61,68 @@
         "BaseSizeHint": "Base size when automatic sizing is enabled",
         "MixedHint": "Devices use different settings\nClick to enable automatic sizing for all",
         "SettingsHint": "Automatic size settings are not available yet"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "Select",
+        "MoveLabel": "Move",
+        "DrawLabel": "Draw",
+        "LaserLabel": "Laser",
+        "HighlighterLabel": "Highlight",
+        "HardPenLabel": "Hard Pen",
+        "SoftPenLabel": "Soft Pen",
+        "EraserLabel": "Erase",
+        "AreaEraserLabel": "Area Erase",
+        "GeometryLabel": "Shapes",
+        "RectangleLabel": "Rectangle",
+        "StraightLineLabel": "Line",
+        "UndoLabel": "Undo",
+        "ClearLabel": "Clear",
+        "WhiteboardLabel": "Board",
+        "CloseWhiteboardLabel": "Close",
+        "FreezeLabel": "Lock",
+        "EndPresentationLabel": "End Show",
+        "SettingsLabel": "Settings",
+        "MoreLabel": "More"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "Brush",
+        "LaserLabel": "Laser Pen",
+        "HighlighterLabel": "Highlighter",
+        "HardPenLabel": "Hard Pen",
+        "SoftPenLabel": "Soft Pen",
+        "FreeLineLabel": "Freehand",
+        "AnnotationLineLabel": "Annotation",
+        "HoldThicknessLabel": "Hold to lock size",
+        "ThicknessFormat": "Size {}",
+        "AnnotationUnavailableTitle": "Annotation is not available yet",
+        "AnnotationFixedUnsupportedTitle": "Annotation with fixed size is not supported yet",
+        "AnnotationDescription": "Lock the drawing direction to horizontal, vertical, or 45° diagonal",
+        "ThicknessOverflowTitle": "Ink size exceeds the preview",
+        "ThicknessOverflowBody": "The preview size may differ from the drawn ink."
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "Line",
+        "RectangleLabel": "Rect."
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "Opacity",
+        "HoldColorLabel": "Hold to lock color"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "Frame rate: {:.2f} FPS | Unlimited: {:.2f} FPS",
+        "FrameRateUnavailable": "Frame rate: -- FPS | Unlimited: -- FPS"
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "Inkeys cannot display the transparent background correctly.\n\nExecutable properties -> disable simplified color mode\nWindows 7 users: enable the Aero theme\n\nContact the developer from the Options home page.\nRestart Inkeys and try again."
       }
     }
   },

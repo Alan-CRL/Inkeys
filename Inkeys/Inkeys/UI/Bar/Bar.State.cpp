@@ -2,6 +2,8 @@ module;
 
 #include "../../../IdtMain.h"
 
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "Bar.BottomDock.h"
 
@@ -52,7 +54,10 @@ void BarStateClass::PositionUpdate(double tarZoom)
 void BarStateClass::ThicknessDisplayUpdate()
 {
 	int penThickness = static_cast<int>(GetPenWidth());
-	wstring tar = L"粗细" + format(L" {:>3}", clamp(penThickness, 0, 999));
+	int displayedThickness = clamp(penThickness, 0, 999);
+	wstring tar = vformat(
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
+		make_wformat_args(displayedThickness));
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

@@ -305,13 +305,13 @@ namespace
 			"old and new pen extension visuals cross fade together");
 		Check(ResolveBarAnnotationPopupTitle(
 			BarThicknessPreviewVisualKind::SoftPen)
-				== L"标注线（粗细固定，暂未支持）"
+				== BarAnnotationPopupTitleKind::FixedThicknessUnsupported
 			&& ResolveBarAnnotationPopupTitle(
 				BarThicknessPreviewVisualKind::HardPen)
-				== L"启用标注线（暂不可用）"
+				== BarAnnotationPopupTitleKind::Unavailable
 			&& ResolveBarAnnotationPopupTitle(
 				BarThicknessPreviewVisualKind::Highlighter)
-				== L"启用标注线（暂不可用）",
+				== BarAnnotationPopupTitleKind::Unavailable,
 			"annotation popup title follows its latched pen anchor");
 
 		auto phase = BarLaserPreviewPhase::NonLaserStable;

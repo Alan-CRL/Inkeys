@@ -730,9 +730,11 @@ struct BarRenderLoopState
 	BarUiValueClass drawAttributeThicknessHoldRingLockOpacity{ 1.0 };
 	BarUiValueClass drawAttributeThicknessHoldTextMix{ 0.0 };
 	D2D1_SIZE_F holdLockLabelTextSize =
-		spec.MeasureText(L"保持并固定粗细", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
+		spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel),
+			13.0, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F colorPickerHoldTextSize =
-		spec.MeasureText(L"保持并固定颜色", 12.0, DWRITE_FONT_WEIGHT_NORMAL);
+		spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel),
+			12.0, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F colorPickerFooterTextSize =
 		spec.MeasureText(L"Ag", 13.0, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F colorPickerFooterRgbValueSize =
@@ -752,18 +754,19 @@ struct BarRenderLoopState
 		wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity]
 			->content.GetVal(),
 		13.0, DWRITE_FONT_WEIGHT_NORMAL);
+	wstring annotationPopupTitleText = IW(
+		I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle);
 	D2D1_SIZE_F annotationPopupTitleSize = spec.MeasureText(
-		L"启用标注线（暂不可用）",
-		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-	wstring annotationPopupTitleText = L"启用标注线（暂不可用）";
+		annotationPopupTitleText, BarThicknessTooltipTitleFontSize,
+		DWRITE_FONT_WEIGHT_SEMI_BOLD);
 	D2D1_SIZE_F annotationPopupBodySize = spec.MeasureText(
-		L"锁定绘制方向仅为水平、竖直或斜45°",
+		IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),
 		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
 	D2D1_SIZE_F overflowPopupTitleSize = spec.MeasureText(
-		L"墨迹粗细超出预览范围",
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),
 		BarThicknessTooltipTitleFontSize, DWRITE_FONT_WEIGHT_SEMI_BOLD);
 	D2D1_SIZE_F overflowPopupBodySize = spec.MeasureText(
-		L"预览中的粗细可能与绘制粗细不一致。",
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),
 		BarThicknessTooltipBodyFontSize, DWRITE_FONT_WEIGHT_NORMAL);
 	double annotationPopupWidth = ceil(max(
 		annotationPopupTitleSize.width, annotationPopupBodySize.width))
@@ -807,7 +810,7 @@ struct BarRenderLoopState
 	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
 	unsigned long long handledMainButtonPulseSerial = 0;
 	Inkeys::UI::Bar::OneSecondFrameRate frameRate;
-	wstring fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
+	wstring fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 };
 
 [[nodiscard]] bool HasBarMainBarSideSwitchGeometryKeyframe(
@@ -6462,8 +6465,13 @@ double baseThumbDiameter =
 			? static_cast<PenModeSelectEnum>(static_cast<int>(
 				state.barState.drawAttributeBar.penTypeMenuAnchorMode))
 			: stateMode.Pen.ModeSelect;
-		const wstring_view annotationPopupTitle = ResolveBarAnnotationPopupTitle(
+		const auto annotationPopupTitleKind = ResolveBarAnnotationPopupTitle(
 			ResolveBarThicknessPreviewVisualKind(menuAnchorMode, false));
+		const wstring annotationPopupTitle = IW(
+			annotationPopupTitleKind
+				== BarAnnotationPopupTitleKind::FixedThicknessUnsupported
+			? I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle
+			: I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle);
 		if (annotationPopupTitle != state.annotationPopupTitleText)
 		{
 			// 浮窗文案跟随打开时锁存的锚点，不跟随全局笔型跳变。
@@ -6726,8 +6734,10 @@ double baseThumbDiameter =
 				clamp(static_cast<double>(
 					state.drawAttributeThicknessHoldTextMix.val), 0.0, 1.0));
 			holdLockLabel->color.SetDirect(holdTextColor);
-			holdLockLabel->content.SetVal(L"保持并固定粗细");
-			holdLockLabel->content.SetTar(L"保持并固定粗细");
+			const wstring holdThicknessLabel = IW(
+				I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel);
+			holdLockLabel->content.SetVal(holdThicknessLabel);
+			holdLockLabel->content.SetTar(holdThicknessLabel);
 
 		bool overflowInteractive =
 			state.barState.drawAttributeBar.thicknessOverflowHintPresent;
@@ -7149,8 +7159,6 @@ double closeButtonSize =
 	double footerOuterPadding = clamp(
 		(footerHeight - state.colorPickerFooterTextSize.height * pickerScale) / 2.0,
 		0.0, footerHeight / 2.0);
-	double footerColumnGap = 6.0 * pickerScale;
-	double footerLabelValueGap = 3.0 * pickerScale;
 	double footerRgbValueW = state.colorPickerFooterRgbValueSize.width * pickerScale;
 	double footerOpacityValueW =
 		state.colorPickerFooterOpacityValueSize.width * pickerScale;
@@ -7160,6 +7168,16 @@ double closeButtonSize =
 			state.colorPickerFooterBLabelSize.width)) * pickerScale;
 	double footerOpacityLabelW =
 		state.colorPickerFooterOpacityLabelSize.width * pickerScale;
+	// 先保留四组标签和值，再把剩余宽度分配给内部与列间距，长译文不会挤入 RGB 列。
+	double footerSpacingBudget = max(0.0, pickerWidth
+		- footerOuterPadding * 2.0
+		- footerRgbLabelW * 3.0 - footerRgbValueW * 3.0
+		- footerOpacityLabelW - footerOpacityValueW);
+	double footerLabelValueGap = min(
+		3.0 * pickerScale, footerSpacingBudget / 4.0);
+	footerSpacingBudget -= footerLabelValueGap * 4.0;
+	double footerColumnGap = min(
+		6.0 * pickerScale, max(0.0, footerSpacingBudget / 2.0));
 	double footerRgbColW = footerRgbLabelW
 		+ footerLabelValueGap + footerRgbValueW;
 	double footerOpacityColW = footerOpacityLabelW
@@ -8006,10 +8024,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				? IW(I18nKey.UI.Bar.BottomDock.Mode)
 				: state.bottomDockIndicatorWord.content.GetVal();
 		IDWriteTextFormat* dockModeTextFormat = state.barMedia.formatCache->GetFormat(
-			L"HarmonyOS Sans SC", static_cast<FLOAT>(
+			state.spec.GetFontFamily(), static_cast<FLOAT>(
 				BarButtonTwoTwoLabelFontSizeDip * frameZoom),
 			context.assets.fontCollection.Get(), DWRITE_FONT_WEIGHT_BOLD,
-			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, L"zh-cn",
+			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+			state.spec.GetTextLocale(),
 			DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 		auto MeasureDockText = [&](const wstring& text)
 			{
@@ -9092,15 +9111,33 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		{
 			double debugTextX = mainButton->inhX;
 			double debugTextY = mainButton->inhY + mainButton->GetH();
+			const D2D1_SIZE_F debugTextSize = state.spec.MeasureText(
+				state.fps, 12.0, DWRITE_FONT_WEIGHT_NORMAL);
+			const double availableWidthDip = max(
+				1.0, static_cast<double>(state.barWindow.w) / frameZoom);
+			const double availableHeightDip = max(
+				1.0, static_cast<double>(state.barWindow.h) / frameZoom);
+			const double debugTextWidth = min(
+				availableWidthDip,
+				max(1.0, ceil(static_cast<double>(debugTextSize.width)) + 8.0));
+			const double debugTextHeight = min(
+				availableHeightDip,
+				max(20.0, ceil(static_cast<double>(debugTextSize.height))));
+			// 下方空间不足时翻到主按钮上方，最后仍钳制在当前显示器内。
+			if (debugTextY + debugTextHeight > availableHeightDip)
+				debugTextY = mainButton->inhY - debugTextHeight;
+			debugTextY = clamp(debugTextY, 0.0,
+				max(0.0, availableHeightDip - debugTextHeight));
 			double debugTextLeft = debugTextAlignToLeft
-				? debugTextX : debugTextX + mainButton->GetW() - 300.0;
-			double debugTextRight = debugTextAlignToLeft
-				? debugTextX + 300.0 : debugTextX + mainButton->GetW();
+				? debugTextX : debugTextX + mainButton->GetW() - debugTextWidth;
+			debugTextLeft = clamp(debugTextLeft, 0.0,
+				max(0.0, availableWidthDip - debugTextWidth));
+			double debugTextRight = debugTextLeft + debugTextWidth;
 			debugTextLayoutRect = D2D1::RectF(
 				static_cast<FLOAT>(debugTextLeft * frameZoom),
 				static_cast<FLOAT>(debugTextY * frameZoom),
 				static_cast<FLOAT>(debugTextRight * frameZoom),
-				static_cast<FLOAT>((debugTextY + 20.0) * frameZoom));
+				static_cast<FLOAT>((debugTextY + debugTextHeight) * frameZoom));
 			currentDebugTextBounds = RECT(
 				static_cast<LONG>(debugTextLayoutRect.left),
 				static_cast<LONG>(debugTextLayoutRect.top),
@@ -11106,8 +11143,9 @@ bool presetButton = button.presetIndex >= 0;
 								barDeviceContext->SetTransform(originalTransform);
 						}
 
-						wstring thicknessText =
-							L"粗细 " + to_wstring(displayedThickness);
+						wstring thicknessText = vformat(
+							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
+							make_wformat_args(displayedThickness));
 						thicknessDisplay->content.SetVal(thicknessText);
 						thicknessDisplay->content.SetTar(thicknessText);
 						state.spec.Word(barDeviceContext, *thicknessDisplay,
@@ -11564,25 +11602,25 @@ bool presetButton = button.presetIndex >= 0;
 			{
 				// 属性栏可见期间保留两档完整字号，浮窗首帧只做缓存查询。
 				state.barMedia.formatCache->GetFormat(
-					L"HarmonyOS Sans SC",
+					state.spec.GetFontFamily(),
 					static_cast<FLOAT>(
 						BarThicknessTooltipTitleFontSize * frameZoom),
 					context.assets.fontCollection.Get(),
 					DWRITE_FONT_WEIGHT_SEMI_BOLD,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
-					L"zh-cn",
+					state.spec.GetTextLocale(),
 					DWRITE_TEXT_ALIGNMENT_LEADING,
 					DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 				state.barMedia.formatCache->GetFormat(
-					L"HarmonyOS Sans SC",
+					state.spec.GetFontFamily(),
 					static_cast<FLOAT>(
 						BarThicknessTooltipBodyFontSize * frameZoom),
 					context.assets.fontCollection.Get(),
 					DWRITE_FONT_WEIGHT_NORMAL,
 					DWRITE_FONT_STYLE_NORMAL,
 					DWRITE_FONT_STRETCH_NORMAL,
-					L"zh-cn",
+					state.spec.GetTextLocale(),
 					DWRITE_TEXT_ALIGNMENT_LEADING,
 					DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 			}
@@ -12386,13 +12424,13 @@ bool presetButton = button.presetIndex >= 0;
 
 			ComPtr<IDWriteTextFormat> pTextFormat;
 			pTextFormat = state.barMedia.formatCache->GetFormat(
-				L"HarmonyOS Sans SC",
+				state.spec.GetFontFamily(),
 				12.0F * tarZoom,
 				context.assets.fontCollection.Get(),
 				DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
-				L"zh-cn",
+				state.spec.GetTextLocale(),
 				debugTextAlignToLeft
 					? DWRITE_TEXT_ALIGNMENT_LEADING
 					: DWRITE_TEXT_ALIGNMENT_TRAILING,
@@ -12846,16 +12884,17 @@ void BarRenderLoopCoordinator::PaceFrame(
 		const auto averages = state.frameRate.Tick(activeFrameTime, frameEnd);
 		if (averages.updated)
 		{
-			state.fps = format(
-				L"帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
+			state.fps = vformat(
+				IW(I18nKey.UI.Bar.Diagnostics.FrameRateFormat),
+				make_wformat_args(
 				averages.actualFramesPerSecond,
-				averages.unlimitedFramesPerSecond);
+				averages.unlimitedFramesPerSecond));
 		}
 	}
 	else if (!debugFrameRateEnabled)
 	{
 		state.frameRate.Reset(frameEnd);
-		state.fps = L"帧率: -- FPS | 无限制帧率: -- FPS";
+		state.fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 	}
 	state.frameRateSamplePending = false;
 }
