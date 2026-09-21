@@ -9,6 +9,7 @@
 ## Language and typography
 
 - 删除 `IdtMain.cpp` 的 UI3 强制简体中文赋值；I18n 初始化前将非法 `selectLanguage` 规范为 0，但不写回配置。
+- 在设置左侧导航的主页与软件配置之间恢复既有语言按钮，复用 `SettingsUI.Language.N`、原语言图标和 `settingTabEnum::Language`；不复制或改写语言页逻辑。
 - 主字体集合同时加载 HarmonyOS Sans SC/TC 的常规和粗体资源。
 - `BarUIRendering` 保存当前字体族和 DWrite locale，并在 I18n 已加载后按语言配置：`zh-TW` 使用 TC/`zh-tw`，`zh-CN` 使用 SC/`zh-cn`，`en-US` 使用 SC/`en-us`。
 - Bar 文本格式创建和测量统一读取该配置，避免构造期早于 I18n 初始化的问题。
@@ -28,6 +29,7 @@
 ## Verification
 
 - i18n 同步与完整性检查。
+- 静态确认语言导航入口可达既有语言页，并检查新增一行后仍位于上方导航区的固定分隔线之前。
 - Bar 可见字符串静态审计。
 - ARM64 solution 构建、无窗口单元测试、三语言离屏渲染测试与 PNG 视觉核对。
 - 最终检查 diff、编码/换行噪声以及既有二进制修改隔离。
