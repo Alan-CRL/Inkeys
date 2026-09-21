@@ -3,56 +3,91 @@
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
+#include "Inkeys/UI/Freeze/Freeze.MagnifierCoordinator.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
-#include <algorithm>
 #include <array>
-#include <d3d9.h>
+#include <cstdint>
+#include <optional>
 #include <vector>
-#pragma comment(lib, "d3d9")
 
+import Inkeys.UI.Freeze;
 import Inkeys.Window;
 
 HWND magnifierWindow, magnifierChild;
 Inkeys::Graphics::DibSurface MagnificationBackground;
 
 bool magnificationCreateReady;
-bool magnificationReady;
 
 shared_mutex MagnificationBackgroundSm;
 RECT hostWindowRect;
-int MagTransparency;
 
 namespace
 {
-	void LogMagnificationFilterFailure()
-	{
-		IDirect3D9* pD3D = Direct3DCreate9(D3D_SDK_VERSION);
-		if (pD3D != nullptr)
-		{
-			D3DCAPS9 caps;
-			HRESULT hr = pD3D->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &caps);
-			if (SUCCEEDED(hr))
-			{
-				if (caps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT) IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备支持 WDDM 1.0 版本但原因未知）");
-				else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（设备不支持 WDDM 1.0 版本）");
-			}
-			else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法 GetDeviceCaps 并查询是否支持 WDDM）");
+	using Inkeys::UI::Freeze::MagnifierInternal::Coordinator;
+	using Inkeys::UI::Freeze::MagnifierInternal::Request;
+	using Inkeys::UI::Freeze::MagnifierInternal::Stage;
+	using Inkeys::UI::Freeze::MagnifierInternal::TransactionResult;
+	using Inkeys::Window::WindowRole;
 
-			pD3D->Release();
+	Coordinator magnifierCoordinator;
+
+	[[nodiscard]] const char* StageName(Stage stage) noexcept
+	{
+		switch (stage)
+		{
+		case Stage::Applied: return "applied";
+		case Stage::Hidden: return "hidden";
+		case Stage::Superseded: return "superseded";
+		case Stage::Stopped: return "stopped";
+		case Stage::InvalidTarget: return "invalid-target";
+		case Stage::PrepareHidden: return "prepare-hidden";
+		case Stage::Filter: return "filter";
+		case Stage::Source: return "source";
+		case Stage::Invalidate: return "invalidate";
+		case Stage::Redraw: return "redraw";
+		case Stage::Reveal: return "reveal";
+		case Stage::Conceal: return "conceal";
 		}
-		else IDTLogger->error("[放大API线程][MagnifierThread] 设置穿透窗口列表失败（无法初始化 IDirect3D9 并查询是否支持 WDDM）");
+		return "unknown";
 	}
 
-	[[nodiscard]] bool SubmitMagnificationFilterList()
+	[[nodiscard]] bool IsCurrentProcessWindow(HWND hwnd) noexcept
 	{
-		if (!magnifierChild || !IsWindow(magnifierChild))
-		{
-			LogMagnificationFilterFailure();
-			return false;
-		}
+		if (!hwnd || !IsWindow(hwnd)) return false;
+		DWORD processId = 0;
+		return GetWindowThreadProcessId(hwnd, &processId) != 0 &&
+			processId == GetCurrentProcessId();
+	}
 
-		using Inkeys::Window::WindowRole;
+	struct MagnifierTargets
+	{
+		HWND host = nullptr;
+		HWND child = nullptr;
+	};
+
+	[[nodiscard]] MagnifierTargets CurrentTargets() noexcept
+	{
+		const auto& service = Inkeys::Window::GetService();
+		return {
+			service.Handle(WindowRole::MagnifierHost),
+			service.Handle(WindowRole::MagnifierChild),
+		};
+	}
+
+	[[nodiscard]] bool AreCurrentTargets(const MagnifierTargets& targets) noexcept
+	{
+		if (!magnificationCreateReady || !IsCurrentProcessWindow(targets.host) ||
+			!IsCurrentProcessWindow(targets.child))
+			return false;
+		const auto current = CurrentTargets();
+		return current.host == targets.host && current.child == targets.child &&
+			(GetWindowLongPtrW(targets.child, GWL_STYLE) & WS_CHILD) != 0 &&
+			GetParent(targets.child) == targets.host;
+	}
+
+	[[nodiscard]] std::vector<HWND> BuildCurrentFilterList()
+	{
 		static constexpr std::array<WindowRole, 10> filterRoles = {
 			WindowRole::MagnifierHost,
 			WindowRole::Freeze,
@@ -66,67 +101,159 @@ namespace
 			WindowRole::Setting,
 		};
 
-		const DWORD currentProcessId = GetCurrentProcessId();
-		const auto& windowService = Inkeys::Window::GetService();
-		std::vector<HWND> hwndList;
-		hwndList.reserve(filterRoles.size());
+		const auto& service = Inkeys::Window::GetService();
+		std::array<HWND, filterRoles.size()> candidates{};
+		for (std::size_t index = 0; index < filterRoles.size(); ++index)
+			candidates[index] = service.Handle(filterRoles[index]);
 
-		// 每次抓帧都使用 Window Service 的当前句柄，避免窗口重建或设置窗口生命周期变化后沿用旧列表。
-		for (const WindowRole role : filterRoles)
-		{
-			const HWND hwnd = windowService.Handle(role);
-			if (!hwnd || !IsWindow(hwnd)) continue;
-
-			DWORD processId = 0;
-			if (!GetWindowThreadProcessId(hwnd, &processId) || processId != currentProcessId) continue;
-			if ((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD) != 0) continue;
-			if (std::find(hwndList.begin(), hwndList.end(), hwnd) != hwndList.end()) continue;
-
-			hwndList.emplace_back(hwnd);
-		}
-
-		if (MagSetWindowFilterList(magnifierChild, MW_FILTERMODE_EXCLUDE,
-			static_cast<int>(hwndList.size()), hwndList.data()) == FALSE)
-		{
-			LogMagnificationFilterFailure();
-			return false;
-		}
-
-		return true;
+		return Inkeys::UI::Freeze::MagnifierInternal::BuildFilterList<HWND>(
+			candidates, GetCurrentProcessId(),
+			[](HWND hwnd) noexcept { return IsWindow(hwnd) != FALSE; },
+			[](HWND hwnd) noexcept -> std::uint32_t
+			{
+				DWORD processId = 0;
+				return GetWindowThreadProcessId(hwnd, &processId) ? processId : 0;
+			},
+			[](HWND hwnd) noexcept
+			{
+				return (GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD) != 0;
+			});
 	}
-}
 
-void UpdateMagWindow()
-{
-	// 过滤提交失败时不更新 source，避免把已知未排除的 Inkeys 窗口固化进定格画面。
-	if (!SubmitMagnificationFilterList()) return;
-
-	RECT sourceRect = { 0, 0, GetSystemMetrics(SM_CXSCREEN) - 1, GetSystemMetrics(SM_CYSCREEN) - 1 };
-	MagSetWindowSource(magnifierChild, sourceRect);
-	InvalidateRect(magnifierChild, NULL, TRUE);
-
-	/*
+	class Win32MagnifierOperations
 	{
-		std::unique_lock<std::shared_mutex> LockMagnificationBackgroundSm(MagnificationBackgroundSm);
+	public:
+		explicit Win32MagnifierOperations(MagnifierTargets targets) noexcept
+			: targets_(targets)
+		{
+		}
 
-		if (MagnificationBackground.width() != GetSystemMetrics(SM_CXSCREEN) || MagnificationBackground.height() != GetSystemMetrics(SM_CYSCREEN))
-			MagnificationBackground.resize(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		[[nodiscard]] bool TargetsCurrent() const noexcept
+		{
+			return AreCurrentTargets(targets_);
+		}
 
-		PrintWindow(magnifierChild, MagnificationBackground.dc(), PW_RENDERFULLCONTENT);
-		ForceOpaqueAlpha(&MagnificationBackground);
+		[[nodiscard]] bool PrepareHidden() noexcept
+		{
+			if (!SetLayeredWindowAttributes(targets_.host, 0, 0, LWA_ALPHA))
+				return false;
+			auto& service = Inkeys::Window::GetService();
+			const bool hostShown = service.Show(WindowRole::MagnifierHost);
+			const bool childShown = service.Show(WindowRole::MagnifierChild);
+			return hostShown && childShown && TargetsCurrent() &&
+				IsWindowVisible(targets_.host) && IsWindowVisible(targets_.child);
+		}
 
-		LockMagnificationBackgroundSm.unlock();
+		[[nodiscard]] bool SubmitFilter() noexcept
+		{
+			// 每次 source 前从 Window Service 重建完整列表，不缓存可能重建的 HWND。
+			std::vector<HWND> hwndList = BuildCurrentFilterList();
+			return MagSetWindowFilterList(targets_.child, MW_FILTERMODE_EXCLUDE,
+				static_cast<int>(hwndList.size()), hwndList.data()) != FALSE;
+		}
+
+		[[nodiscard]] bool SubmitSource() noexcept
+		{
+			const RECT sourceRect = {
+				0, 0,
+				GetSystemMetrics(SM_CXSCREEN) - 1,
+				GetSystemMetrics(SM_CYSCREEN) - 1,
+			};
+			return MagSetWindowSource(targets_.child, sourceRect) != FALSE;
+		}
+
+		[[nodiscard]] bool Invalidate() noexcept
+		{
+			return InvalidateRect(targets_.child, nullptr, TRUE) != FALSE;
+		}
+
+		[[nodiscard]] bool Redraw() noexcept
+		{
+			return RedrawWindow(targets_.child, nullptr, nullptr,
+				RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN) != FALSE;
+		}
+
+		[[nodiscard]] bool Reveal() noexcept
+		{
+			return SetLayeredWindowAttributes(
+				targets_.host, 0, 255, LWA_ALPHA) != FALSE;
+		}
+
+		[[nodiscard]] bool Conceal() noexcept
+		{
+			auto& service = Inkeys::Window::GetService();
+			const bool alphaHidden = !IsWindow(targets_.host) ||
+				SetLayeredWindowAttributes(targets_.host, 0, 0, LWA_ALPHA) != FALSE;
+			const bool childHidden = !targets_.child ||
+				service.Handle(WindowRole::MagnifierChild) != targets_.child ||
+				service.Hide(WindowRole::MagnifierChild);
+			const bool hostHidden = !targets_.host ||
+				service.Handle(WindowRole::MagnifierHost) != targets_.host ||
+				service.Hide(WindowRole::MagnifierHost);
+			cleanupComplete_ = alphaHidden && childHidden && hostHidden;
+			// alpha=0 或 Host 已隐藏任一成立，就不会把旧帧留在桌面上。
+			return alphaHidden || !IsWindow(targets_.host) ||
+				!IsWindowVisible(targets_.host);
+		}
+
+		[[nodiscard]] bool CleanupComplete() const noexcept
+		{
+			return cleanupComplete_;
+		}
+
+		[[nodiscard]] HWND Host() const noexcept { return targets_.host; }
+		[[nodiscard]] HWND Child() const noexcept { return targets_.child; }
+
+	private:
+		MagnifierTargets targets_{};
+		bool cleanupComplete_ = true;
+	};
+
+	[[nodiscard]] TransactionResult UpdateMagWindow(
+		Request request, Win32MagnifierOperations& operations) noexcept
+	{
+		return Inkeys::UI::Freeze::MagnifierInternal::ExecutePresent(
+			magnifierCoordinator, request, operations);
 	}
-	*/
+
+	void PublishFreezeState(Inkeys::UI::Freeze::StateSnapshot snapshot) noexcept
+	{
+		magnifierCoordinator.Publish({ snapshot.revision, snapshot.active });
+	}
+
+	void LogFailure(Stage stage, Request request,
+		const Win32MagnifierOperations& operations,
+		std::optional<Stage>& continuousFailure)
+	{
+		if (continuousFailure && *continuousFailure == stage) return;
+		continuousFailure = stage;
+		if (IDTLogger) IDTLogger->error(
+			"[放大API线程][MagnifierThread] 定格更新失败 stage={} request={} host=0x{:X} child=0x{:X}",
+			StageName(stage), request.revision,
+			reinterpret_cast<std::uintptr_t>(operations.Host()),
+			reinterpret_cast<std::uintptr_t>(operations.Child()));
+	}
+
+	void LogRecovery(Request request, std::optional<Stage>& continuousFailure)
+	{
+		if (!continuousFailure) return;
+		if (IDTLogger) IDTLogger->info(
+			"[放大API线程][MagnifierThread] 定格更新已恢复并提交 request={}",
+			request.revision);
+		continuousFailure.reset();
+	}
 }
 
 LRESULT CALLBACK MagnifierHostWindowWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
+
 bool PrepareMagnifierWindow()
 {
-	// 尝试加载
+	// Window Service 启动回退会销毁并重建整组窗口，新生命周期不能继承旧 stop。
+	magnifierCoordinator.Reset();
+	magnificationCreateReady = false;
 	HMODULE hMagDll = LoadLibrary(TEXT("Magnification.dll"));
 	if (hMagDll == NULL)
 	{
@@ -135,33 +262,26 @@ bool PrepareMagnifierWindow()
 	}
 	FreeLibrary(hMagDll);
 
-	// 检测是否是 Wine
+	HMODULE hNtdll = ::GetModuleHandleW(L"ntdll.dll");
+	if (hNtdll && GetProcAddress(hNtdll, "wine_get_version") != nullptr)
 	{
-		HMODULE hNtdll = ::GetModuleHandleW(L"ntdll.dll");
-		if (hNtdll)
-		{
-			if (GetProcAddress(hNtdll, "wine_get_version") != nullptr)
-			{
-				IDTLogger->warn("[放大API线程][MagnifierThread] 本机为 Wine 环境，不支持 Magnification.dll 相关功能，定格等相关功能将被禁用。");
-				return false;
-			}
-		}
-	}
-
-	// 初始化放大API
-	if (!MagInitialize())
-	{
-		IDTLogger->error("[放大API线程][MagnifierThread] 初始化MagInitialize失败");
+		IDTLogger->warn("[放大API线程][MagnifierThread] 本机为 Wine 环境，不支持 Magnification.dll 相关功能，定格等相关功能将被禁用。");
 		return false;
 	}
 
+	if (!MagInitialize())
+	{
+		IDTLogger->error("[放大API线程][MagnifierThread] 初始化 MagInitialize 失败");
+		return false;
+	}
 	return true;
 }
 
 void MagnifierHostCreated(HWND hwnd)
 {
 	magnifierWindow = hwnd;
-	SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+	if (!SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA) && IDTLogger)
+		IDTLogger->error("[放大API线程][SetupMagnifier] 初始化 Host 透明度失败");
 }
 
 void MagnifierChildCreated(HWND hwnd)
@@ -173,7 +293,7 @@ void MagnifierChildCreated(HWND hwnd)
 	matrix.v[2][2] = 1.0f;
 	if (!MagSetWindowTransform(hwnd, &matrix))
 	{
-		IDTLogger->error("[放大API线程][MagnifierThread] 启动放大API失败");
+		IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大倍数矩阵失败");
 		return;
 	}
 
@@ -185,87 +305,77 @@ void MagnifierChildCreated(HWND hwnd)
 		{ 0.0f, 0.0f, 0.0f, 0.0f, 1.0f }
 	} };
 	if (!MagSetColorEffect(hwnd, &effect))
-		IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大API转换矩阵失败");
-	else
 	{
-		magnificationCreateReady = true;
-		IDTLogger->info("[放大API线程][SetupMagnifier] 设置放大API转换矩阵完成");
+		IDTLogger->error("[放大API线程][SetupMagnifier] 设置颜色矩阵失败");
+		return;
 	}
+	magnificationCreateReady = true;
+	IDTLogger->info("[放大API线程][SetupMagnifier] Magnifier 资源准备完成");
+}
+
+void StopMagnifierCoordinator() noexcept
+{
+	magnifierCoordinator.Stop();
 }
 
 void ShutdownMagnifierWindow()
 {
+	StopMagnifierCoordinator();
 	magnificationCreateReady = false;
-	magnificationReady = false;
 	magnifierChild = nullptr;
 	magnifierWindow = nullptr;
 	MagUninitialize();
 }
 
-int RequestUpdateMagWindow;
-/*
-* RequestUpdateMagWindow 管理 IDT 放大行为
-* 0 隐藏窗口
-* 1 显示窗口并定格
-* 2 显示窗口并实时
-*/
-
 void MagnifierThread()
 {
-	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建");
-	while (!offSignal)
+	IDTLogger->info("[放大API线程][MagnifierThread] 定格请求协调器启动");
+	Inkeys::UI::Freeze::SetStateObserver(&PublishFreezeState);
+	std::optional<Stage> continuousFailure;
+
+	while (const std::optional<Request> next = magnifierCoordinator.WaitNext())
 	{
-		if (IdtWindowsIsVisible.allCompleted)
+		const Request request = *next;
+		Win32MagnifierOperations operations(CurrentTargets());
+		if (!request.active)
 		{
-			IDTLogger->info("[放大API线程][MagnifierThread] 设置穿透窗口列表");
-			if (SubmitMagnificationFilterList()) magnificationReady = true;
-
-			break;
+			const bool concealed = operations.Conceal();
+			magnifierCoordinator.CompleteWithoutApply(request, concealed);
+			if (!concealed || !operations.CleanupComplete())
+				LogFailure(Stage::Conceal, request, operations, continuousFailure);
+			continue;
 		}
 
-		this_thread::sleep_for(chrono::milliseconds(500));
-	}
-	IDTLogger->info("[放大API线程][MagnifierThread] 等待穿透窗口创建完成");
-
-	while (!offSignal)
-	{
-		if (RequestUpdateMagWindow == 1)
+		TransactionResult result = UpdateMagWindow(request, operations);
+		if (result.stage == Stage::Applied)
 		{
-			if (MagTransparency == 0)
+			if (magnifierCoordinator.CommitApplied(request))
 			{
-				auto& windowService = Inkeys::Window::GetService();
-				// 窗口服务默认隐藏 MagnifierHost；定格前必须先显示宿主，再提交首帧。
-				(void)windowService.Show(Inkeys::Window::WindowRole::MagnifierHost);
-				UpdateMagWindow();
-				// 先同步完成 Magnifier 首帧，再揭开宿主窗口，避免首次定格闪白。
-				RedrawWindow(magnifierChild, nullptr, nullptr,
-					RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-
-				SetLayeredWindowAttributes(magnifierWindow, 0, 255, LWA_ALPHA);
-				MagTransparency = 255;
+				LogRecovery(request, continuousFailure);
+				if (IDTLogger) IDTLogger->info(
+					"[放大API线程][MagnifierThread] 定格更新与显示已提交 request={}",
+					request.revision);
+				continue;
 			}
-
-			while (!offSignal && RequestUpdateMagWindow == 1)
-				this_thread::sleep_for(chrono::milliseconds(100));
-			/*for (int i = 0; RequestUpdateMagWindow == 1; i++, i %= 10)
-			{
-				if (!i) SetWindowPos(magnifierWindow, freeze_window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-				this_thread::sleep_for(chrono::milliseconds(100));
-			}*/
+			result = {
+				magnifierCoordinator.IsStopped() ? Stage::Stopped : Stage::Superseded,
+				operations.Conceal(),
+			};
 		}
-		else if (RequestUpdateMagWindow == 0)
-		{
-			if (MagTransparency == 255)
-			{
-				SetLayeredWindowAttributes(magnifierWindow, 0, 0, LWA_ALPHA);
-				MagTransparency = 0;
-				(void)Inkeys::Window::GetService().Hide(
-					Inkeys::Window::WindowRole::MagnifierHost);
-			}
 
-			while (!offSignal && RequestUpdateMagWindow == 0)
-				this_thread::sleep_for(chrono::milliseconds(100));
-		}
+		magnifierCoordinator.CompleteWithoutApply(request, result.concealed);
+		if (!operations.CleanupComplete())
+			LogFailure(Stage::Conceal, request, operations, continuousFailure);
+		if (result.stage == Stage::Superseded || result.stage == Stage::Stopped)
+			continue;
+
+		LogFailure(result.stage, request, operations, continuousFailure);
+		// 仅撤销仍对应本次失败的用户状态，不能用 Toggle 反向开启较新的请求。
+		(void)Inkeys::UI::Freeze::DeactivateIfRevision(request.revision);
 	}
+
+	Inkeys::UI::Freeze::SetStateObserver(nullptr);
+	Win32MagnifierOperations operations(CurrentTargets());
+	(void)operations.Conceal();
+	IDTLogger->info("[放大API线程][MagnifierThread] 定格请求协调器停止");
 }

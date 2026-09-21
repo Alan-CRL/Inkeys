@@ -294,6 +294,9 @@
 	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
 	  <Filter>Modules\Inkeys\UI\Bar</Filter>
 	</ClInclude>
+	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h">
+	  <Filter>Modules\Inkeys\UI\Freeze</Filter>
+	</ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>

@@ -1,5 +1,8 @@
-{"file":".trellis/spec/native-desktop/index.md","reason":"确认传统 IdtMagnification 与 Window Service 的边界。"}
-{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"保持现有 Win32 窗口角色、owner 链和 Magnifier 呈现行为。"}
-{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"遵守传统 Idt 文件风格、最小改动和共享 HWND 使用规则。"}
-{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"复用既有 Magnification 失败日志且避免高频刷屏。"}
-{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"按完整 Solution和 ARM64 原生工具链验证。"}
+{"file":".trellis/spec/native-desktop/index.md","reason":"确认传统 IdtMagnification、模块化 Freeze 与 Window Service 的边界。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"保持现有 Win32 窗口角色、owner 链、topmost、焦点和 Magnifier 呈现契约。"}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"遵守传统 Idt 文件风格、并发状态约束、最小改动和中文关键注释。"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"实现阶段化失败传播、低频失败/恢复日志和清楚的资源停止顺序。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"按完整 Solution 和 ARM64 原生工具链验证，不改变平台兼容边界。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 Freeze 状态、Magnification 协调器、Window Service 和测试之间的跨层数据流。"}
+{"file":".trellis/tasks/09-21-freeze-capture-exclusion-hybrid-gpu/prd.md","reason":"本轮需求、验收条件和明确非目标。"}
+{"file":".trellis/tasks/09-21-freeze-capture-exclusion-hybrid-gpu/design.md","reason":"唯一执行路径、版本化取消、失败传播和测试接缝设计。"}

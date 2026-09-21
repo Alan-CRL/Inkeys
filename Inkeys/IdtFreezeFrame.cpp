@@ -11,7 +11,6 @@ import Inkeys.Display;
 #include "IdtDraw.h"
 #include "IdtI18n.h"
 #include "IdtImage.h"
-#include "IdtMagnification.h"
 #include "IdtPlug-in.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 
@@ -109,7 +108,6 @@ void FreezeFrameWindow()
 
 	int wait = 0;
 	bool show_freeze_window = false;
-	auto& windowService = Inkeys::Window::GetService();
 
 	RECT fwords_rect;
 	while (!offSignal)
@@ -117,89 +115,57 @@ void FreezeFrameWindow()
 		this_thread::sleep_for(chrono::milliseconds(20));
 		if (WhiteboardFreezeSurfaceOwned()) continue;
 
-		if (magnificationReady)
+		if (Inkeys::UI::Freeze::IsActive())
 		{
-			if (Inkeys::UI::Freeze::IsActive())
+			show_freeze_window = true;
+			while (!offSignal)
 			{
-				if (!show_freeze_window)
+				if (!Inkeys::UI::Freeze::IsActive()) break;
+
+				if (FreezeRecall > 0)
 				{
-					// 先在窗口所属线程显示 Host，再提交首帧，避免只改透明度但窗口仍隐藏。
-					const bool hostShown = windowService.Show(
-						Inkeys::Window::WindowRole::MagnifierHost);
-					// Child 带有 WS_VISIBLE 但创建后被 Window Service 按默认状态隐藏，需显式恢复。
-					const bool childShown = windowService.Show(
-						Inkeys::Window::WindowRole::MagnifierChild);
-					if (hostShown && childShown)
+					freeze_background.clear();
+
+					DrawFilledSurfaceRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
+
+					wchar_t buffer[100];
+					if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
+					else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
+
+					Graphics graphics(freeze_background.dc());
+					Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
+					SolidBrush WordBrush(ToGdiplusColor(RGBA(255, 255, 255, min(255, FreezeRecall)), true));
+					graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
 					{
-						UpdateMagWindow();
-						RedrawWindow(magnifierChild, nullptr, nullptr,
-							RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-						SetLayeredWindowAttributes(magnifierWindow, 0, 255,
-							LWA_ALPHA);
+						fwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
+						fwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
+						fwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
+						fwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
 					}
-					RequestUpdateMagWindow = 1;
-					show_freeze_window = true;
-				}
+					graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
 
-				while (!offSignal)
-				{
-					if (!Inkeys::UI::Freeze::IsActive()) break;
+					ulwi.hdcSrc = freeze_background.dc();
+					(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
 
-					if (FreezeRecall > 0)
+					FreezeRecall -= 10;
+					if (FreezeRecall <= 0)
 					{
 						freeze_background.clear();
-
-						DrawFilledSurfaceRoundRect((float)GetSystemMetrics(SM_CXSCREEN) / 2 - 160, (float)GetSystemMetrics(SM_CYSCREEN) - 200, 320, 50, 20, 20, RGBA(255, 255, 225, min(255, FreezeRecall)), RGBA(0, 0, 0, min(150, FreezeRecall)), 2, true, SmoothingModeHighQuality, &freeze_background);
-
-						wchar_t buffer[100];
-						if (RecallImageTm.tm_mday == 0) swprintf_s(buffer, L"超级恢复");
-						else swprintf_s(buffer, L"超级恢复 %02d月%02d日 %02d:%02d:%02d", RecallImageTm.tm_mon + 1, RecallImageTm.tm_mday, RecallImageTm.tm_hour, RecallImageTm.tm_min, RecallImageTm.tm_sec);
-
-						Graphics graphics(freeze_background.dc());
-						Gdiplus::Font gp_font(&HarmonyOS_fontFamily, 22, FontStyleRegular, UnitPixel);
-						SolidBrush WordBrush(ToGdiplusColor(RGBA(255, 255, 255, min(255, FreezeRecall)), true));
-						graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-						{
-							fwords_rect.left = GetSystemMetrics(SM_CXSCREEN) / 2 - 160;
-							fwords_rect.top = GetSystemMetrics(SM_CYSCREEN) - 200;
-							fwords_rect.right = GetSystemMetrics(SM_CXSCREEN) / 2 + 160;
-							fwords_rect.bottom = GetSystemMetrics(SM_CYSCREEN) - 200 + 52;
-						}
-						graphics.DrawString(buffer, -1, &gp_font, ToGdiplusRect(fwords_rect), &stringFormat, &WordBrush);
-
 						ulwi.hdcSrc = freeze_background.dc();
 						(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
-
-						FreezeRecall -= 10;
-
-						if (FreezeRecall <= 0)
-						{
-							freeze_background.clear();
-							ulwi.hdcSrc = freeze_background.dc();
-							(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
-
-							if (FreezeRecall <= 0) FreezeRecall = 0;
-							break;
-						}
+						FreezeRecall = 0;
+						break;
 					}
-
-					this_thread::sleep_for(chrono::milliseconds(20));
 				}
-
+				this_thread::sleep_for(chrono::milliseconds(20));
 			}
-			else if (show_freeze_window)
-			{
+		}
+		else if (show_freeze_window)
+		{
 			freeze_background.clear();
 			ulwi.hdcSrc = freeze_background.dc();
-				(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
-
-				RequestUpdateMagWindow = 0;
-				show_freeze_window = false;
-				(void)windowService.Hide(
-					Inkeys::Window::WindowRole::MagnifierHost);
-				(void)windowService.Hide(
-					Inkeys::Window::WindowRole::MagnifierChild);
-			}
+			(void)SubmitFreezeSurface(freeze_window, &ulwi, false);
+			show_freeze_window = false;
 		}
 		if (!Inkeys::UI::Freeze::IsActive() && FreezePPT)
 		{
