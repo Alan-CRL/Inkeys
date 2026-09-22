@@ -85,7 +85,7 @@ public:
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
-	void Close(BarUISetClass& owner);
+	void Close(BarUISetClass& owner, bool preserveClearDoubleClick = false);
 	RECT Bounds() const;
 	std::array<RECT,3> PresentedRegions() const;
 	Inkeys::UI::Bar::EraserAttributePresentation PresentationSnapshot() const;
@@ -94,7 +94,9 @@ public:
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
-	void Execute(BarUISetClass& owner, int item);
+	void Execute(BarUISetClass& owner, int item,
+		bool doubleClickContinuation = false);
+	void ResetClearDoubleClickState() noexcept;
 	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
 	mutable std::mutex presentationMutex_;
@@ -110,6 +112,11 @@ private:
 	int menuSide_ = -1;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
 	IdtAtomic<bool> visible_ = false;
+	IdtAtomic<bool> clearAttemptedForDoubleClick_ = false;
+	IdtAtomic<bool> clearAcceptedForDoubleClick_ = false;
+	IdtAtomic<bool> pressedClearDoubleClickContinuation_ = false;
+	IdtAtomic<LONG> clearDoubleClickLeft_ = 0, clearDoubleClickTop_ = 0;
+	IdtAtomic<LONG> clearDoubleClickRight_ = 0, clearDoubleClickBottom_ = 0;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
 	std::array<BarButtonClass,10> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;

@@ -164,6 +164,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		Bridge::CompletedStrokeKind CompletedStrokeKindForTool(
+			DrawingTool tool) noexcept
+		{
+			if (tool == DrawingTool::Eraser)
+				return Bridge::CompletedStrokeKind::Eraser;
+			if (IsShapeDrawingTool(tool))
+				return Bridge::CompletedStrokeKind::Shape;
+			return Bridge::CompletedStrokeKind::Drawing;
+		}
+
 		bool HasLinearStylusChange(float current, float previous, float epsilon, float maximum) noexcept
 		{
 			if (!std::isfinite(current) || current < 0.0f || current > maximum) return false;
@@ -7332,6 +7342,9 @@ namespace Inkeys::Drawing::Draw3
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
 						if (!runtime->ended) return false;
+						if (!runtime->cancelled && observer_.strokeCompleted)
+							observer_.strokeCompleted(observer_.context,
+								CompletedStrokeKindForTool(runtime->tool));
 						if (metrics_ && runtime->metricVisible && !runtime->cancelled)
 							metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
 								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),

@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "../Inkeys/Inkeys/Business/PenToolState.hpp"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 import Inkeys.UI.Bar.ToggleClickCoalescer;
 
@@ -105,6 +106,35 @@ namespace
 			"empty Selection click is a no-op");
 	}
 
+	void TestEraserAttributeClearStateMachine()
+	{
+		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
+		Check(ResolveEraserClearReturnMode(Kind::None) ==
+			BarEraserClearReturnMode::Drawing,
+			"missing stroke history returns to Drawing");
+		Check(ResolveEraserClearReturnMode(Kind::Drawing) ==
+			BarEraserClearReturnMode::Drawing,
+			"drawing stroke returns to Drawing");
+		Check(ResolveEraserClearReturnMode(Kind::Shape) ==
+			BarEraserClearReturnMode::Shape,
+			"shape stroke returns to Shape");
+		Check(ResolveEraserClearReturnMode(Kind::Eraser) ==
+			BarEraserClearReturnMode::Eraser,
+			"eraser stroke keeps Eraser");
+		Check(ResolveEraserAttributeClearClickAction(true, false, false, false) ==
+			BarClearClickAction::PublishClear,
+			"first enabled attribute click publishes Clear");
+		Check(ResolveEraserAttributeClearClickAction(false, true, true, true) ==
+			BarClearClickAction::EnterSelection,
+			"accepted attribute double click enters Selection without another Clear");
+		Check(ResolveEraserAttributeClearClickAction(false, true, true, false) ==
+			BarClearClickAction::PublishClear,
+			"failed attribute first click retries Clear");
+		Check(ResolveEraserAttributeClearClickAction(false, false, false, false) ==
+			BarClearClickAction::None,
+			"empty attribute click stays disabled");
+	}
+
 	void TestRememberedLaserOnlyActivatesInPenMode()
 	{
 		using Inkeys::Business::IsLaserToolActive;
@@ -137,6 +167,7 @@ int RunToggleClickCoalescerTests()
 	TestNonMonotonicTimeStartsNewWindow();
 	TestDrawButtonToggleNeverChangesPenType();
 	TestClearButtonStateMachine();
+	TestEraserAttributeClearStateMachine();
 	TestRememberedLaserOnlyActivatesInPenMode();
 	TestLaserUsesIndependentColorState();
 	return failureCount;

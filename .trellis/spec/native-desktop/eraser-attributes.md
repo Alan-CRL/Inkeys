@@ -48,7 +48,7 @@ EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及Draw
 Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形。内容在当前shell内裁剪，窗口容量容纳shell与光影。PresentationSnapshot/CommitPresented只在成功呈现后发布，Pointer消费同一实际几何。ResolveEraserAttributeRelease以新Down票据为依据，body/arrow跨区Up仍返回Down所属动作；无Down的旧Up不得清空。沿用Message::IsPointerGeneratedMouseMessage过滤兼容事件；leave/cancel清理反馈，Pen/Touch Up不保留鼠标式Hover。
 
 ### 清空
-UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主栏强制显示标志代替。只发既有`PublishProductCommand(Clear)`，Accepted后关闭面板，保持工具和配置。
+UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主栏强制显示标志代替。只发既有`PublishProductCommand(Clear)`；Accepted后关闭面板，并按绘制线程原子发布的最近有效笔类恢复绘制/图形/橡皮模式，尚无记录时回绘制，配置与具体笔型记忆不变。Clear、撤回/重做、翻页和工作区切换不得覆盖最近笔类；同一属性Clear的双击续击只进入非绘制选择模式，不重复发布Clear，之后没有新笔迹时再次单击仍按原最近笔类恢复。
 
 绘制线程原有`active.empty()`边界不变：接受命令不等于活动接触尚未结束时已经执行。Clear等待Up/提交，然后清当前页批注，保留viewport和其他页。不得直接清GPU纹理代替业务事务。
 
@@ -66,6 +66,8 @@ UI先查真实ProductRuntimeSnapshot.currentPageHasContent；不得用白板主�
 |主栏直拖跨越工作区边界|拖动中保持已呈现位置/方向；松手首帧仅随锚点平移、无工作区夹取闪烁，并在绘制属性同一批次截止时间落到新侧|
 |无内容Clear|禁用，不产生空撤销记录|
 |Clear接受但接触仍活动|等原Up/提交边界执行|
+|橡皮属性单击Clear|Accepted后按最近有效笔类回绘制/图形/橡皮；拒绝时不切模式、不关闭|
+|橡皮属性双击Clear|成功首击的续击进入非绘制选择模式，且不发布第二次Clear|
 |Clear撤销后Redo|复用一次Clear事务|
 |撤销Clear后新笔迹再Redo|旧Clear重做失效，不能删新笔迹|
 |同为有内容的翻页|验证页号/命令/呈现；Host内容修订只在空/非空变化时更新|
@@ -76,7 +78,7 @@ Base：40 DIP在35% UI缩放下高于面板，保持实际像素直径并裁上�
 Bad：把160做成第三个基础档、独立global bool遮盖五入口、用hover缩放真实圆、开合重置尺寸会话。
 
 ## 6. Tests Required
-`InkeysHeadlessTests.exe --no-window`包含模型/面积/会话基准、三档/三灵敏度、DPI×UI缩放几何与真实配置读写。
+`InkeysHeadlessTests.exe --no-window`包含模型/面积/会话基准、三档/三灵敏度、DPI×UI缩放几何、真实配置读写，以及橡皮属性Clear的最近笔类恢复与双击选择状态机。
 `Inkeys.exe --bar-eraser-offscreen-test`生成生产组件的离屏PNG并验证圆形命中角、外侧选中环渐变/按压、无悬停提示框、箭头展开/收起中间帧、菜单/关闭/idle；直拖覆盖松手零时间首帧坐标连续、父批次25%加入后在中点提交方向并共同截止、父批次75%后创建完整独立批次；另验证300×620窄区保持正常5/16 DIP留白后仅裁剪溢出并输出`visuals/narrow-eraser-attribute.png`。这些不等同真实HWND窗口或硬件交互验收。
 `Inkeys.exe --draw3-eraser-hidden-test`检查实际Host五入口/首点/活动锁存/Up和间隔。
 `Inkeys.exe --draw3-hidden-test`检查Clear、Up边界、Undo/Redo、跨页、白板和场景事务。
