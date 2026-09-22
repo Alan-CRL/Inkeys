@@ -55,7 +55,7 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 
 - `WindowService` 是 `WindowRole::Drawpad` 与 `WindowRole::DrawpadPresentation` HWND 的唯一创建、显示、隐藏和销毁者。Draw3 只把主 Drawpad 交给 `AttachExternal(HWND, callbacks)`；辅助窗不得绑定 RTS、WndProc mailbox、document 或第二套 Host。
 - Draw3 不创建/销毁顶层窗口，不修改标题、owner 或 Z 序；样式和 `Primary/Presentation/Hidden` 可见性变化必须通过 Window Service 的 owner-thread 命令完成。
-- owner 层级保持 `MagnifierHost -> Freeze -> {DrawpadPresentation, Drawpad}`，辅助窗低于主 Drawpad/PPT/Bar 且高于 Freeze；PPT/Bar 继续 owned 到主 Drawpad。Draw3 presenter 不得调用 `SetWindowPos`、`SetParent` 或直接改 owner；`SetBounds(Drawpad)` 必须同步两窗。
+- owner 层级保持 `MagnifierHost -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`，使 PPT/Bar 通过传递 Owner 关系始终高于两套画布表面。Drawpad 仍是顶层 owned popup，不是 `WS_CHILD`。Draw3 presenter 不得调用 `SetWindowPos`、`SetParent` 或直接改 owner；`SetBounds(Drawpad)` 必须同步两窗。
 
 ## 设备与线程
 
@@ -71,7 +71,7 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 - DComp 清除 `WS_EX_LAYERED`；DWM 清除 `WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP`；ULW 设置 `WS_EX_LAYERED` 并清除 `WS_EX_NOREDIRECTIONBITMAP`。
 - ULW 必须提交 premultiplied-alpha、top-down 32-bit DIB 和 dirty rect；未绘制像素的 alpha 为零，禁止整窗不透明更新遮挡下层窗口。
 
-Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp target 的主 HWND 可能拒绝后续清除该位（`ERROR_INVALID_PARAMETER`）。Window Service 必须写后读取并核对真实样式。若产品 DComp 启动失败，必须在首帧显示和 Setting 初始化前停止 Draw3 与整条隐藏窗口链，再顺序重建 legacy-compatible 主 Drawpad 及其辅助 sibling；新 Host 禁用 DComp 并从 DWM2 -> DWM -> ULW 继续。两个主 Drawpad generation 不得同时存在，但同一 generation 必须包含长期待命的 presentation-only sibling。
+Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp target 的主 HWND 可能拒绝后续清除该位（`ERROR_INVALID_PARAMETER`）。Window Service 必须写后读取并核对真实样式。若产品 DComp 启动失败，必须在首帧显示和 Setting 初始化前停止 Draw3 与整条隐藏窗口链，再顺序重建 legacy-compatible 主 Drawpad 及其 presentation-only 前置表面；新 Host 禁用 DComp 并从 DWM2 -> DWM -> ULW 继续。两个主 Drawpad generation 不得同时存在，但同一 generation 必须包含长期待命的 presentation-only 前置表面。
 
 ## 功能边界
 

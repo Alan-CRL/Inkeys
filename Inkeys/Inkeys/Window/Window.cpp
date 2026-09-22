@@ -834,9 +834,27 @@ namespace Inkeys::Window
 					roleOwner = Handle(WindowRole::MagnifierHost);
 				else if (role == WindowRole::DisplayObserver)
 					roleOwner = HWND_MESSAGE;
-				else if (role == WindowRole::DrawpadPresentation ||
-					role == WindowRole::Drawpad)
+				else if (role == WindowRole::DrawpadPresentation)
+				{
 					roleOwner = Handle(WindowRole::Freeze);
+					if (!roleOwner)
+					{
+						if (!spec->optional) return false;
+						configured_[RoleIndex(role)].store(false, std::memory_order_release);
+						continue;
+					}
+				}
+				else if (role == WindowRole::Drawpad)
+				{
+					// 主 Drawpad 挂到 presentation surface 下，Bar/PPT 才会稳定高于两块画布。
+					roleOwner = Handle(WindowRole::DrawpadPresentation);
+					if (!roleOwner)
+					{
+						if (!spec->optional) return false;
+						configured_[RoleIndex(role)].store(false, std::memory_order_release);
+						continue;
+					}
+				}
 				else if (IsUiPopup(role))
 					roleOwner = Handle(WindowRole::Drawpad);
 				if (!CreateWindowFor(*spec, roleOwner, threadId))
@@ -1712,10 +1730,14 @@ namespace Inkeys::Window
 				owner = Handle(WindowRole::Drawpad);
 				if (!owner) return false;
 			}
-			else if (spec.role == WindowRole::DrawpadPresentation ||
-				spec.role == WindowRole::Drawpad)
+			else if (spec.role == WindowRole::DrawpadPresentation)
 			{
 				owner = Handle(WindowRole::Freeze);
+				if (!owner) return false;
+			}
+			else if (spec.role == WindowRole::Drawpad)
+			{
+				owner = Handle(WindowRole::DrawpadPresentation);
 				if (!owner) return false;
 			}
 			else if (!IsSetting(spec.role))

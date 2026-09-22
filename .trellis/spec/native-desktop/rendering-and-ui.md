@@ -9,7 +9,7 @@
 | `Inkeys.UI.Bar` | `【直接确认】` `IdtMain.cpp::wWinMain` 无条件启动 UI3；不存在 UI2/UI3 运行时分支 | `Inkeys.UI.RenderPipeline` 的共享 D3D11 WARP epoch 提供 DXGI/D2D device；Bar 是独立客户端，经自己的 device context、GDI interop 和 `UpdateLayeredWindowIndirect` 呈现 | `IdtMain.cpp`、`Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.*`、`Bar.RenderLoop.cpp` |
 | 传统 `IdtFloating` | `【历史/兼容】` 源码暂存但在 `Inkeys.vcxproj` 中为 `None`，生产代码不得 include | 不参与产品编译 | `Inkeys.vcxproj`、`Inkeys.vcxproj.filters` |
 | 设置窗口 | `【直接确认】` 当前主工程编译的唯一 ImGui renderer 是 DX11 | Dear ImGui Win32 + 共享 WARP D3D11 device/immediate context；Setting 独占传统 discard swap chain、RTV、SRV 和 ImGui session | `Setting.Base.cppm::CreateDeviceD3D`、`Setting.cpp` 中 `RenderSettingFrame`、`Inkeys.vcxproj` |
-| 主画板 | `【直接确认】` Draw3 已接管 Window Service 的主 Drawpad；选择态使用同一 Host 的 presentation-only sibling | Draw3 独立 D3D11.1 device、单一 swap chain/final backbuffer，以及主 DComp/DWM/ULW + 辅助 ULW target | `Draw3.Host.*`、`Draw3.TransparentPresentation.*`、`draw3-integration.md` |
+| 主画板 | `【直接确认】` Draw3 已接管 Window Service 的主 Drawpad；选择态使用同一 Host 的 presentation-only 辅助表面 | Draw3 独立 D3D11.1 device、单一 swap chain/final backbuffer，以及主 DComp/DWM/ULW + 辅助 ULW target | `Draw3.Host.*`、`Draw3.TransparentPresentation.*`、`draw3-integration.md` |
 | PPT / Whiteboard 分页控件 | `【直接确认】` `Inkeys.UI.PageControl` 独占四个 owned layered HWND；`PptBottomLeft/PptBottomRight` 在 PPT 与 Whiteboard 间连续切换布局 | 与 Bar/Setting 共享 D3D11 epoch；PageControl 独占四套 Scene/device context/target/GDI interop，PPT 与 Whiteboard 只发布状态和业务回调 | `Inkeys/Inkeys/UI/PageControl/PageControl.*`、`Inkeys/Inkeys/UI/Ppt/Ppt.*`、`Inkeys/Inkeys/UI/Whiteboard/Whiteboard.*` |
 | 冻结帧、放大镜等 | `【直接确认】` Window Service 统一创建，图像承载使用 `DibSurface` | GDI/GDI+、Magnification API | `IdtFreezeFrame.cpp`、`IdtMagnification.cpp` |
 
@@ -1554,6 +1554,12 @@ Window::Service::PromotePptWindow(WindowRole) -> bool;
 Window::Service::Enqueue(WindowRole, Message::Message) -> bool;
 Window::Service::StopAndJoin() noexcept;
 UI::Setting::Toggle() -> void;
+UI::Freeze::StateSnapshot { uint64_t revision; bool active; bool available; };
+UI::Freeze::Snapshot() noexcept -> StateSnapshot;
+UI::Freeze::SetStateObserver(StateObserver) noexcept -> void;
+UI::Freeze::DeactivateIfRevision(uint64_t revision) noexcept -> bool;
+UI::Freeze::Toggle() -> void;
+StopMagnifierCoordinator() noexcept -> void;
 
 Graphics::DibSurface(int width, int height);
 Graphics::DibSurface::dc() -> HDC;
@@ -1564,8 +1570,12 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 - Window Service 的受管线程拥有 Mag host/child、Freeze、DrawpadPresentation、Drawpad、四个 PageControl HWND、Bar、Setting 和 DisplayObserver；Whiteboard 复用两个 `PptBottom*` HWND，不再创建独立左右窗口。创建结果通过 promise/future 返回，stop callback 用事件唤醒 `MsgWaitForMultipleObjectsEx`。Setting 仍是普通 app window，但不再自带绘制线程。
 - style、owner、显隐、bounds、click-through、HiMsg bind/unbind 和销毁必须投递到 HWND 所属线程。`UpdateLayeredWindowIndirect`、D3D present 和明确要求 HWND 的外部 API 是受控跨线程例外。
-- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> {DrawpadPresentation, Drawpad -> PPT/Bar}`；Mag 缺失时 Freeze 为根。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。Win32 会把根的 topmost band 变化传播给 owned popup；刷新后非根出现 `WS_EX_TOPMOST` 不能证明代码对它执行了独立置顶，必须审查 `SetWindowPos` 调用点。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
+- 基础 overlay owner 链只在创建时建立：`Mag -> Freeze -> DrawpadPresentation -> Drawpad -> PPT/Bar`；Mag 缺失时 Freeze 为根。Drawpad 是 DrawpadPresentation 的顶层 owned popup，不是 `WS_CHILD`；该传递链必须保证 Bar/PPT 高于两套画布表面。Presentation mode 中 overlay 保持 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。Whiteboard mode 是显式例外：Freeze 切为唯一 `WS_EX_APPWINDOW`、可激活和任务栏锚点；Drawpad 清除 `WS_EX_NOACTIVATE` 但保留 `WS_EX_TOOLWINDOW`；其他成员仍为非任务栏辅助 UI。Bar 必须高于所有 PPT；共享底窗或其他 PPT show、`PromotePptWindow` 只把目标窗放到 Bar 正下方。置顶刷新只对链根调用一次 `HWND_TOPMOST` 或 `HWND_NOTOPMOST`，且 Whiteboard mode 强制 NOTOPMOST。Win32 会把根的 topmost band 变化传播给 owned popup；刷新后非根出现 `WS_EX_TOPMOST` 不能证明代码对它执行了独立置顶，必须审查 `SetWindowPos` 调用点。白板期间对 Freeze 调用 `ITaskbarList2::MarkFullscreenWindow`，退出和销毁前清除。
 - PPT 可见性 `false -> true` 发布完成后立即请求一次根置顶刷新；成功后连续可见状态去重，失败时保留 pending 并由既有 500ms 发布节拍重试，离开放映取消 pending。PageControl 的 present 成功不代表 HWND 提交完成：`SetBounds/Show/Hide` 任一步失败都返回 RenderPipeline `Retry`。Draw3 surface 切换失败同样保留 reconciliation pending，由既有 250ms 状态节拍重试；只有窗口提交成功后才更新 drawpad ready 事实。
+- 主栏定格按钮在 `Freeze::Toggle()` 前后比较 `IsActive()`；只有 `false -> true` 转换立即显式调用一次 `RequestTopmostRefresh()`。`true -> false` 和 PPT/白板导致的不可用点击不提交。Bar 入口不得持有 HWND 或直接调用 `SetWindowPos`；立即刷新失败不回滚定格状态，由既有周期性根刷新继续收敛。
+- `Inkeys.UI.Freeze` 把业务 flags 与单调 `revision` 放在同一原子状态字中，每次真实 Toggle 或 PPT/Whiteboard 工作区切换发布完整 `StateSnapshot`。observer 只能把 `{revision, active}` 投递到 latest-wins mailbox 并唤醒 `MagnifierThread`，不得直接操作 HWND；迟到通知按 revision 丢弃，失败回退只能调用 `DeactivateIfRevision(request.revision)`，禁止无条件 `Toggle()`。
+- `MagnifierThread` 是桌面定格唯一的 Magnifier 更新/显示协调入口。一次有效 active revision 依次校验 Window Service 当前 Host/Child、保持 Host 透明并显示 Host/Child、从当前角色 HWND 重建并提交排除列表、提交一次 source、invalidate/redraw，最后再校验 revision 与当前句柄后揭开 Host；Reveal 后仍需复查，过期结果必须立即 conceal 且不得提交 applied/visible。过滤、source 或必要显示步骤任一失败都停止成功链、条件撤销对应 Freeze revision，并允许后续新 revision 重试。inactive、工作区切换、停止和退出只透明并隐藏 Magnifier Host/Child，不隐藏 Bar/Drawpad，不改变 owner/topmost/focus/taskbar。`FreezeFrameWindow` 只保留 Freeze/PPT/Recall surface 绘制，不得调用 Magnifier 更新、显隐或 alpha API。
+- 桌面定格不得调用 `SetOverlayFullscreen`：Magnifier 和 Freeze surface 都继续使用显示器高度减 1 像素，Shell fullscreen 标记只属于白板工作区。Window Service 重建 Magnifier 生命周期时先停止旧 coordinator，再在新 `PrepareMagnifierWindow` 生命周期 reset；每次事务重新读取当前 Host/Child 和完整排除集合，不能缓存旧 HWND。
 - Setting 创建时及 `IdtSelection` 选择态的 owner 必须为 null；所有非选择态通过 `SetSettingOwnedByDrawpad(true)` 把 Drawpad 设为 owner，回到选择态通过 `SetSettingOwnedByDrawpad(false)` 清除 owner 并以 `HWND_NOTOPMOST` 退出画布置顶链。owner 修改必须投递到 Setting 所属线程，重复请求幂等；目标 HWND 缺失、Win32 调用失败或最终 `GW_OWNER` 不符合请求时返回 false，部分修改必须回滚原 owner。`SyncDraw3State()` 保存带版本的最新期望值，提交失败后由 `StateMonitoring()` 的 250ms 节拍重试；提交与 applied 写回必须串行，并在持锁后丢弃过期版本，避免旧命令覆盖新模式或产生假收敛。该动态 owner 是 Setting 唯一受控例外，不得直接从工具按钮、快捷键或渲染线程修改。
 - Setting 始终是可激活的顶层 owned/unowned popup，而不是真正的子窗口：style 固定为 `WS_POPUP | WS_CLIPCHILDREN`，不得包含 caption/thickframe/minimize/maximize/system-menu；ex-style 包含 `WS_EX_APPWINDOW` 且排除独立 topmost/layered/noactivate/toolwindow。owner 切换不得改变 style、ex-style、图标、窗口线程或任务栏按钮；显示时由所属窗口线程主动 restore/show 并请求 foreground/active/focus；`WM_GETMINMAXINFO` 把最小/最大 track size 固定为配置尺寸。
 - Setting 自绘标题栏的可拖动空白区必须在 ImGui 消息转发前处理 `WM_NCHITTEST` 并返回 `HTCAPTION`，由 Win32 非客户区移动循环负责拖窗；当前几何为缩放后的 `0 <= y < 32 DIP` 且 `0 <= x < 914 DIP`。右侧 `914..960 DIP` 关闭按钮和正文返回 `HTCLIENT`，继续由 ImGui 处理隐藏与内容交互。该命中合同不得因 Setting 是否拥有 Drawpad owner 而分支，`WM_MOVE` 继续记录最终位置。
@@ -1582,6 +1592,7 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | `beforeCreate`、注册类、CreateWindow、HiMsg bind 或 `created` 失败 | 回滚 HWND、channel、class、thread id 和已激活 lifecycle；optional role 不拖垮同组 |
 | 动态重建窗口 | 当前 `activeSpec` 决定 cleanup；不得调用旧 spec 的 `destroyed` |
 | Mag 创建失败 | 跳过 Mag child，Freeze 成为 overlay root |
+| 静态或动态创建双画布 | `GW_OWNER(DrawpadPresentation)=Freeze`，`GW_OWNER(Drawpad)=DrawpadPresentation`；两者仍为顶层 popup |
 | Whiteboard window mode 切换失败 | 回滚已修改成员的 style/visibility，不发布稳定 workspace 状态 |
 | Whiteboard group 收到最小化/恢复 | 保存成员可见性；恢复时只显示此前可见成员，不激活辅助窗 |
 | Setting 创建规格传入 overlay ex-style 或 owner | Service 强制归一化为普通 app window 且初始 owner=null；运行时 owner 只能由 `SetSettingOwnedByDrawpad` 修改 |
@@ -1598,6 +1609,14 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 | Bar/PPT 收到系统触摸兼容 mouse | HiMsg callback 不入队但继续 WndProc；业务 WndProc 同样返回 0，自定义 `WM_TOUCH -> Enqueue` 是唯一单指来源 |
 | PPT hide 后重新 show 或交互前置 | owner 仍为 Drawpad，目标位于 Bar 正下方，且前台/焦点窗口不变化 |
 | PPT 进入放映时根刷新失败 | 保留一次 refresh pending；后续状态发布继续请求根刷新，成功或离开放映后清除 |
+| 定格按钮从 inactive 切换为 active | 在按钮入口立即提交一次 `RequestTopmostRefresh()`；不等待定格线程轮询 |
+| 定格按钮从 active 切换为 inactive，或 Toggle 因工作区不可用而 no-op | 不提交立即置顶刷新 |
+| 定格立即置顶请求失败 | 保留已切换的定格状态，由后续周期性根刷新收敛；不得用 fullscreen 标记补偿层级 |
+| 同一 active revision 被接受执行 | 完整排除列表和 source 各提交一次；成功完成必要重绘、Reveal 与末次版本/句柄检查后才发布 applied/visible |
+| 排除列表提交失败 | 本 revision 不调用 source、不 Reveal、不提交 applied；仅在 revision 仍匹配时清除 Freeze active，下一次有效 revision 可重试 |
+| source、invalidate、redraw、show 或 alpha 失败 | 停止成功链并 conceal；内部 visible/applied 只在实际窗口操作成功后更新，不能把 API 提交称为像素或 GPU 首帧已验证 |
+| active 执行期间发布关闭、PPT/白板切换或更新版本 | 旧事务在下一阶段门禁或 Reveal 后复查时失效并 conceal；旧结果不得覆盖新请求 |
+| 进程停止或 Magnifier 生命周期重建 | stop 唤醒协调线程并使旧请求失效；窗口销毁前完成 conceal/join，新生命周期 reset 后只使用 Window Service 当前 HWND |
 | PageControl 的 bounds/show/hide 失败 | 当前 surface 返回 `FrameResult::Retry`，不回滚目标可见性或改用节点级 `HWND_TOPMOST` |
 | Drawpad surface 显隐提交失败 | 不发布假完成的 ready 事实；即使 Draw3 runtime revision 不变也按 250ms 节拍继续收敛 |
 | 未配置上述 callback 的其他 HiMsg binding | 保持库默认行为，系统触摸兼容 mouse 正常入队 |
@@ -1606,16 +1625,19 @@ Graphics::DibSurface::pixels() -> std::span<std::uint32_t>;
 
 ### 5. Good / Base / Bad Cases
 
-- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；根刷新整体抬升 owner 树，Bar 与目标 PageControl 只在树内用 `HWND_TOP` 保持顺序。
+- Good：Draw3 绘制线程只向已请求且就绪的 target present；双窗尺寸与互斥显隐通过 Window Service；Drawpad 以顶层 owned popup 挂到 DrawpadPresentation，根刷新整体抬升单条 owner 树；桌面定格激活发布一次立即的 service refresh，并由唯一 Magnifier coordinator 对该 revision 提交一次减 1 像素 source，不向 Shell 声明全屏。
 - Base：隐藏根也能通过 `RequestTopmostRefresh()` 越过同桌面的外部 topmost HWND；非选择态 Setting 作为 Drawpad owned popup 随链位于画布之上，选择态清除 owner 后回到普通窗口层级；owner 提交短暂失败时保持最新期望并周期重试；两种状态下标题栏拖动与主栏按钮的失焦恢复行为一致。Win32 传播后的非根 topmost style 是 owner 树状态，不是节点级调用证据。
-- Bad：渲染循环直接 `SetWindowPos(..., HWND_TOPMOST, ...)` 重排每个 overlay，把 Setting 改成 `WS_CHILD`/`WS_EX_NOACTIVATE`/`WS_EX_TOOLWINDOW`，忽略 owner 命令失败，在 ImGui 转发后才尝试标题栏命中，或只按可见性切换设置窗口，都会破坏 owner 树、焦点、任务栏、拖窗、失败收敛或失焦恢复合同。
+- Bad：把 DrawpadPresentation 和 Drawpad 都直接挂到 Freeze，会让 Bar 与 selection-only 表面缺少可传递的 Owner 层级保证；定格按钮直接 `SetWindowPos(Freeze, HWND_TOPMOST, ...)` 或把置顶延迟到定格画面准备完成，会分裂链根置顶所有权或让用户误以为定格加载很慢。
 
 ### 6. Tests Required
 
 - ARM64 host MSBuild 完整构建 `InkeysRepo.sln` 的 `Debug|ARM64 /m:1`。
 - Headless 覆盖 Surface 创建/复制/移动/resize/合成/加载保存/失败路径和 GDI handle 压力；HiMsg 覆盖过滤、clear、capacity、dropped、shutdown、并发及合成触摸字段往返。
 - Message 测试需覆盖 touch signature + touch flag、真实鼠标、笔兼容 mouse、wheel/hwheel 和 XButton；Window 测试需覆盖线程 ID、owner/style、动态创建失败回滚与 stop 后无 HWND/jthread。禁止创建 HWND 的环境使用 `InkeysHeadlessTests.exe --no-window`，Window 合同仅做编译和静态检查。
-- Window 测试还需覆盖持久 `SetOverlayTopmost`、`SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。
+- Window 测试还需覆盖持久 `SetOverlayTopmost`、白板专用 `SetOverlayFullscreen`、Whiteboard activation style 和 group minimize/restore；fullscreen 不得自行改变 topmost 位，退出白板或 `StopAndJoin` 前必须清掉 Freeze 全屏标记。静态审查需确认 `IdtFreezeFrame` 的桌面定格路径不调用 `SetOverlayFullscreen`。
+- Window 测试必须分别断言静态与动态创建的 `Freeze -> DrawpadPresentation -> Drawpad -> Bar/PPT` Owner 链，并在 Presentation/Primary 互斥显隐切换后断言 Bar 保持可见且 Z 序高于两个 Drawpad HWND。
+- 若主栏定格点击建立稳定测试接缝，必须通过 topmost refresh observer 断言 inactive->active 立即发布一次，active->inactive 和 unavailable no-op 发布零次；在当前 Bar 生产文件未进入 headless target 且无注入边界时，以生产分支静态审查和完整 Solution 构建验证，不得只为计数测试扩大公共 API。
+- Magnifier coordinator headless 测试必须复用生产事务边界，覆盖单次 source、filter/source/invalidate/redraw/reveal 失败阻断、失败后新 revision 恢复、开启→关闭→开启、准备中取消、Reveal 后迟到取消、PPT/Whiteboard 状态切换、停止/重建生命周期以及 conceal 失败不产生假 visible/applied。排除列表测试需覆盖 null、销毁、跨进程、`WS_CHILD`、重复 HWND、可选 Setting 缺失和下一请求读取新 HWND。
 - Window 测试还需覆盖 Setting 初始 owner=null、attach/detach 与重复请求幂等、缺失 HWND 安全失败、独立窗口线程不变、style/ex-style/icon 不变；detach 后断言 owner=null、退出 topmost 链并落到独立 topmost 竞争窗之下。
 - Setting owner 状态同步需覆盖失败后 desired/applied 不相等并由 250ms 状态节拍重试，以及“旧请求等待/执行期间发布新模式”最终仍以最新模式为准；若没有稳定失败注入边界，必须以并发路径静态审查、Window Service 失败测试和完整集成构建共同验证，不得扩大公共 API 只为测试内部 token。
 - Setting WndProc 可被测试目标链接时，需覆盖缩放后的标题中央为 `HTCAPTION`、`x=914 DIP` 起的关闭按钮及 `y=32 DIP` 起的正文为 `HTCLIENT`，并验证 owned/unowned 返回一致；未建立稳定链接边界时不得只为该断言扩大公共 API，改由完整构建、静态审查和 GUI 拖窗验收覆盖。
@@ -1635,6 +1657,54 @@ assert((GetWindowLongPtrW(drawpad, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0);
 service.RequestTopmostRefresh();
 SetWindowPos(bar, HWND_TOP, 0, 0, 0, 0, flags);
 SetWindowPos(ppt, bar, 0, 0, 0, 0, flags);
+~~~
+
+~~~cpp
+// Wrong：双画布互为 Freeze 的兄弟，Bar 只能保证高于主 Drawpad。
+CreateOwnedPopup(drawpadPresentation, freeze);
+CreateOwnedPopup(drawpad, freeze);
+
+// Correct：Drawpad 仍为顶层 popup，但通过 Owner 传递使 Bar 高于两个表面。
+CreateOwnedPopup(drawpadPresentation, freeze);
+CreateOwnedPopup(drawpad, drawpadPresentation);
+~~~
+
+~~~cpp
+// Wrong：业务入口直接操作 Freeze HWND，且定格关闭也重复置顶。
+Freeze::Toggle();
+SetWindowPos(freeze, HWND_TOPMOST, 0, 0, 0, 0, flags);
+
+// Correct：只在 inactive->active 后立即提交链根刷新。
+const bool wasActive = Freeze::IsActive();
+Freeze::Toggle();
+if (!wasActive && Freeze::IsActive())
+    (void)Window::GetService().RequestTopmostRefresh();
+~~~
+
+~~~cpp
+// Wrong：桌面定格表面刻意少 1 像素，却仍通知 Shell 它是全屏窗口。
+service.SetOverlayFullscreen(true);
+
+// Correct：桌面定格只提交画面和统一根置顶；仅白板工作区设置 fullscreen 标记。
+// Bar 的 inactive -> active 入口：
+service.RequestTopmostRefresh();
+// MagnifierThread 唯一入口：
+coordinator.Publish({ snapshot.revision, snapshot.active });
+~~~
+
+~~~cpp
+// Wrong：FreezeFrameWindow 与 MagnifierThread 各自抓取并无条件揭开 Host。
+UpdateMagWindow();
+SetLayeredWindowAttributes(host, 0, 255, LWA_ALPHA);
+RequestUpdateMagWindow = 1;
+
+// Correct：业务状态只发布版本；唯一 coordinator 执行并贯穿检查结果。
+Freeze::SetStateObserver(PublishFreezeState);
+const auto result = ExecutePresent(coordinator, request, operations);
+if (result.stage == Stage::Applied)
+    coordinator.CommitApplied(request);
+else
+    Freeze::DeactivateIfRevision(request.revision);
 ~~~
 
 ~~~cpp
