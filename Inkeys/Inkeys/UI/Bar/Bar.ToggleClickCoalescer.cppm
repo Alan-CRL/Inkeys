@@ -58,7 +58,7 @@ export namespace Inkeys::UI::Bar
 	}
 
 	inline BarClearClickAction ResolveEraserAttributeClearClickAction(
-		bool currentPageHasContent, bool doubleClickContinuation,
+		bool doubleClickContinuation,
 		bool clearAttemptedForDoubleClick,
 		bool acceptedClearForDoubleClick) noexcept
 	{
@@ -66,9 +66,14 @@ export namespace Inkeys::UI::Bar
 			return acceptedClearForDoubleClick
 				? BarClearClickAction::EnterSelection
 				: BarClearClickAction::PublishClear;
-		return currentPageHasContent
-			? BarClearClickAction::PublishClear
-			: BarClearClickAction::None;
+		return BarClearClickAction::PublishClear;
+	}
+
+	inline bool ShouldFinalizeEraserAttributeClear(
+		bool acceptedClearForDoubleClick, unsigned long long now,
+		unsigned long long deadline) noexcept
+	{
+		return acceptedClearForDoubleClick && deadline != 0 && now >= deadline;
 	}
 
 	enum class BarEraserClearReturnMode : unsigned char

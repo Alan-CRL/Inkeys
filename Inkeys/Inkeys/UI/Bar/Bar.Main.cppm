@@ -85,7 +85,7 @@ public:
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
 	bool ResetPointerFeedback();
 	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
-	void Close(BarUISetClass& owner, bool preserveClearDoubleClick = false);
+	void Close(BarUISetClass& owner);
 	RECT Bounds() const;
 	std::array<RECT,3> PresentedRegions() const;
 	Inkeys::UI::Bar::EraserAttributePresentation PresentationSnapshot() const;
@@ -96,6 +96,7 @@ private:
 	void Initialize();
 	void Execute(BarUISetClass& owner, int item,
 		bool doubleClickContinuation = false);
+	bool FinalizePendingClear(BarUISetClass& owner);
 	void ResetClearDoubleClickState() noexcept;
 	void DrawPreview(BarUIRendering& renderer, ID2D1DeviceContext* context, size_t index);
 	void ConfigureSurface(BarUiShapeClass& surface, Inkeys::UI::Bar::EraserAttributeRect rect, double scale = 1.0);
@@ -115,6 +116,8 @@ private:
 	IdtAtomic<bool> clearAttemptedForDoubleClick_ = false;
 	IdtAtomic<bool> clearAcceptedForDoubleClick_ = false;
 	IdtAtomic<bool> pressedClearDoubleClickContinuation_ = false;
+	IdtAtomic<unsigned long long> clearSingleClickDeadline_ = 0;
+	IdtAtomic<int> clearSingleClickReturnMode_ = 0;
 	IdtAtomic<LONG> clearDoubleClickLeft_ = 0, clearDoubleClickTop_ = 0;
 	IdtAtomic<LONG> clearDoubleClickRight_ = 0, clearDoubleClickBottom_ = 0;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
@@ -129,7 +132,6 @@ private:
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
-	bool clearEnabled_ = false;
 	int selectedSize_ = 32, sensitivity_ = 1;
 	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;

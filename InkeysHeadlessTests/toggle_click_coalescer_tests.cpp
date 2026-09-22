@@ -121,18 +121,21 @@ namespace
 		Check(ResolveEraserClearReturnMode(Kind::Eraser) ==
 			BarEraserClearReturnMode::Eraser,
 			"eraser stroke keeps Eraser");
-		Check(ResolveEraserAttributeClearClickAction(true, false, false, false) ==
+		Check(ResolveEraserAttributeClearClickAction(false, false, false) ==
 			BarClearClickAction::PublishClear,
-			"first enabled attribute click publishes Clear");
-		Check(ResolveEraserAttributeClearClickAction(false, true, true, true) ==
+			"attribute click publishes Clear even on an empty canvas");
+		Check(ResolveEraserAttributeClearClickAction(true, true, true) ==
 			BarClearClickAction::EnterSelection,
 			"accepted attribute double click enters Selection without another Clear");
-		Check(ResolveEraserAttributeClearClickAction(false, true, true, false) ==
+		Check(ResolveEraserAttributeClearClickAction(true, true, false) ==
 			BarClearClickAction::PublishClear,
 			"failed attribute first click retries Clear");
-		Check(ResolveEraserAttributeClearClickAction(false, false, false, false) ==
-			BarClearClickAction::None,
-			"empty attribute click stays disabled");
+		Check(!ShouldFinalizeEraserAttributeClear(true, 1499, 1500),
+			"accepted attribute Clear stays open during the double-click window");
+		Check(ShouldFinalizeEraserAttributeClear(true, 1500, 1500),
+			"accepted attribute Clear closes when the double-click window expires");
+		Check(!ShouldFinalizeEraserAttributeClear(false, 1500, 1500),
+			"rejected attribute Clear never schedules a delayed close");
 	}
 
 	void TestRememberedLaserOnlyActivatesInPenMode()
