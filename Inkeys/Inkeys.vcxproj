@@ -412,6 +412,7 @@
 	<ClInclude Include="Inkeys\UI\Bar\Bar.A2.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
+	<ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />

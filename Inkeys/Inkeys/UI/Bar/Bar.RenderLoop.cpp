@@ -15,6 +15,7 @@ module;
 #include "Bar.DirtyRegion.h"
 #include "Bar.BottomDock.h"
 #include "Bar.DisplayTransition.h"
+#include "Bar.I18nFormat.h"
 #include "Bar.PresentDecision.h"
 #include "Bar.PresentationAlpha.h"
 #include "Bar.WindowGeometry.h"
@@ -11143,9 +11144,10 @@ bool presetButton = button.presetIndex >= 0;
 								barDeviceContext->SetTransform(originalTransform);
 						}
 
-						wstring thicknessText = vformat(
+						wstring thicknessText =
+							Inkeys::UI::Bar::Detail::FormatThicknessText(
 							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
-							make_wformat_args(displayedThickness));
+							displayedThickness);
 						thicknessDisplay->content.SetVal(thicknessText);
 						thicknessDisplay->content.SetTar(thicknessText);
 						state.spec.Word(barDeviceContext, *thicknessDisplay,
@@ -12884,11 +12886,11 @@ void BarRenderLoopCoordinator::PaceFrame(
 		const auto averages = state.frameRate.Tick(activeFrameTime, frameEnd);
 		if (averages.updated)
 		{
-			state.fps = vformat(
+			state.fps = Inkeys::UI::Bar::Detail::FormatFrameRateText(
 				IW(I18nKey.UI.Bar.Diagnostics.FrameRateFormat),
-				make_wformat_args(
 				averages.actualFramesPerSecond,
-				averages.unlimitedFramesPerSecond));
+				averages.unlimitedFramesPerSecond,
+				IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable));
 		}
 	}
 	else if (!debugFrameRateEnabled)

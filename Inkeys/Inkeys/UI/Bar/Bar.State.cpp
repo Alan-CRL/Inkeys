@@ -6,6 +6,7 @@ module;
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "Bar.BottomDock.h"
+#include "Bar.I18nFormat.h"
 
 module Inkeys.UI.Bar;
 import :State;
@@ -55,9 +56,9 @@ void BarStateClass::ThicknessDisplayUpdate()
 {
 	int penThickness = static_cast<int>(GetPenWidth());
 	int displayedThickness = clamp(penThickness, 0, 999);
-	wstring tar = vformat(
+	wstring tar = Inkeys::UI::Bar::Detail::FormatThicknessText(
 		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
-		make_wformat_args(displayedThickness));
+		displayedThickness);
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

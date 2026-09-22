@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+#include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
 
 import Inkeys.UI.Bar.Animation;
 import Inkeys.UI.Bar.Metrics;
@@ -67,6 +68,23 @@ namespace
 	bool Near(double lhs, double rhs, double epsilon = 0.000001)
 	{
 		return std::abs(lhs - rhs) <= epsilon;
+	}
+
+	void TestLocalizedFormatFallbacks()
+	{
+		using Inkeys::UI::Bar::Detail::FormatFrameRateText;
+		using Inkeys::UI::Bar::Detail::FormatThicknessText;
+
+		Check(FormatThicknessText(L"Size {}", 42) == L"Size 42",
+			"localized thickness format");
+		Check(FormatThicknessText(L"Size {", 42) == L"42",
+			"localized thickness malformed fallback");
+		Check(FormatFrameRateText(L"{:.1f}/{:.1f}", 60.0, 120.0,
+			L"Unavailable") == L"60.0/120.0",
+			"localized frame rate format");
+		Check(FormatFrameRateText(L"{:.1f}/{:.1f", 60.0, 120.0,
+			L"Unavailable") == L"Unavailable",
+			"localized frame rate malformed fallback");
 	}
 
 	void TestSharedBarButtonRuntime()
@@ -1487,6 +1505,7 @@ int main(int argc, char** argv)
 		return RunMessageBoxVisualTests(messageBoxVisualOutput);
 
 	TestCurvesAndTimelines();
+	TestLocalizedFormatFallbacks();
 	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
 	TestTargetsAndAdvancement();
