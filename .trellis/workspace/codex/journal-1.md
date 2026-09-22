@@ -284,6 +284,29 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 [OK] **Completed**
 
 
+## Session 14: 收敛桌面定格 Magnification 链路
+<!-- trellis-session: v=2 fp=46cb685120bfa803 -->
+
+**Date**: 2026-09-22
+**Task**: 收敛桌面定格 Magnification 链路
+**Branch**: `bugfix/settingui`
+
+### Summary
+
+保留每次抓帧前动态刷新 Inkeys HWND 排除集合，将桌面定格更新和显示收敛为版本化、可取消且失败贯穿的唯一 Magnifier 协调路径；补充生产共用测试与 native-desktop 合同，并完成 Debug ARM64、Headless 及用户实机验收。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ba14ddd6` | fix(magnification): refresh exclusion list before capture |
+| `7df93730` | fix(magnification): serialize freeze capture requests |
+
+### Status
+
+[OK] **Completed**
+
+
 ## Session 15: UI3 i18n 格式串异常防护
 <!-- trellis-session: v=2 fp=b796e07f82d852e2 -->
 

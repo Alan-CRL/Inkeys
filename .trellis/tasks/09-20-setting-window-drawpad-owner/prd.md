@@ -19,6 +19,11 @@
 - 选择模式下清除设置窗口 owner，并使其退出画布的 topmost owner 链。
 - owner 切换必须在设置窗口所属线程内执行，保持 Window Service 的线程所有权约束。
 - owner 切换应幂等；失败时不得遗留半切换状态，并沿用 Window Service 的失败诊断。
+- 画布及主栏的基础 Owner 链应为 `Freeze -> DrawpadPresentation -> Drawpad -> Bar/PPT`；其中 Drawpad 仍是顶层 owned popup，不得改为 `WS_CHILD`。
+- 在 Presentation/Primary 两种画布表面切换、白板模式和 root topmost 传播中，Bar/PPT 以及绘制模式下的 Setting 都必须通过 Owner 链位于两套画布表面之上。
+- 用户把定格从关闭切换为启用后，主栏统一入口必须立即调用 `RequestTopmostRefresh()` 提交一次链根置顶刷新；关闭定格或定格不可用时不提交。
+- 定格业务不得直接调用 `SetWindowPos` 或对 Freeze/Drawpad/Bar 分别置顶；实际 `HWND_TOPMOST` 操作仍只由 Window Service 的统一链根刷新执行。
+- 桌面定格仍保留显示器高度减 1 像素的非全屏表面，不得调用 `SetOverlayFullscreen` 向 Shell 声明全屏；白板工作区作为真正的全屏窗口继续保留该标记。
 - `SyncDraw3State()` 必须保存最新期望 owner 状态；若 Window Service 提交失败，现有状态监控应周期重试直至收敛，且较旧请求的完成不得清除较新状态的重试需求。
 - 设置窗口始终保持可激活、可获取焦点和任务栏入口；不得引入 `WS_EX_NOACTIVATE`、`WS_EX_TOOLWINDOW` 或独立 `WS_EX_TOPMOST`。
 - 模式同步只接入统一状态路径，不在按钮、快捷键等入口重复实现。
@@ -57,12 +62,17 @@
 - [x] “启用边缘光源”在三种语言中改为“边缘光影”的对应译文。
 - [x] 动画速率和动态边缘光影只在各自总开关开启时显示，外观容器高度随可见卡片数收敛且隐藏不改写配置。
 - [x] owner 切换发生短暂失败时会按现有 250ms 状态节拍重试；模式在提交期间再次变化时最终 owner 与最新模式一致。
+- [x] `GW_OWNER(DrawpadPresentation) == Freeze` 且 `GW_OWNER(Drawpad) == DrawpadPresentation`，静态与动态创建路径一致。
+- [x] Presentation/Primary 表面切换后 Bar 保持可见，并且 Z 序始终高于 DrawpadPresentation 和 Drawpad。
+- [x] 新 Owner 链不改变 Drawpad 的顶层 popup 样式、输入激活和白板行为，root topmost 传播与销毁顺序继续通过隐藏 HWND 测试。
+- [ ] 定格从关闭切换为启用时立即请求一次统一链根置顶；关闭、不可用点击不新增请求。
+- [x] 定格入口不新增直接 Win32 Z 序操作；桌面定格不再设置 Shell fullscreen 标记，定格画面提交和白板/PPT 状态机保持不变。
 
 ## Out of Scope
 
 - 不修改已排除编译的 Draw2 源文件，也不重新启用任何 Draw2 功能。
 - 不重构设置窗口渲染后端、配置体系或未涉及的组件/调试页面。
-- 不调整 Drawpad、Bar、PPT 和白板既有 owner 链结构。
+- 除将 Drawpad 改为 DrawpadPresentation 的 owned popup 外，不调整 Bar、PPT、Setting 和白板的角色与样式。
 - 不创建 commit、push 或执行会自动提交的 Trellis 归档。
 
 ## Technical Notes
@@ -74,3 +84,9 @@
 - 2026-09-20 已人工确认主栏设置按钮的显示、失焦恢复与聚焦关闭三态行为均生效。
 - 2026-09-20 任务继续承载设置页条目整理与旧配置清理；此前三个窗口行为保持不变。
 - 2026-09-20 接受 PR #212 的 CodeRabbit 收敛性建议：补充 Setting owner 期望状态持久化和失败重试，不扩大 Window Service 公共接口。
+- 2026-09-21 继续收敛双画布层级：Drawpad 改为 DrawpadPresentation 的顶层 owned popup，使 Bar/PPT/owned Setting 在两种表面上方的关系由 Owner 链直接保证。
+- 2026-09-21 ARM64 `Debug` Solution 构建和 `InkeysHeadlessTests.exe --no-window` 通过；含隐藏 HWND 的 Window 测试通过，完整测试仅剩既有 MessageBox GDI baseline 波动（initial=45, final=49）。
+- 2026-09-21 定格启用改为在主栏状态切换入口立即提交链根置顶刷新，避免等待后台定格线程或周期性刷新时产生“定格加载很慢”的观感。
+- 2026-09-21 定格立即刷新的 ARM64 `Debug` Solution 构建和 `--no-window` 测试通过，静态审查确认关闭/不可用路径不发布且无直接 Win32 Z 序调用；生产点击无稳定 headless 注入边界，新验收项保留待人工交互确认。
+- 2026-09-21 桌面定格的 MagnifierHost 与捕获表面本就使用显示器高度减 1 像素；为避免 Shell 误判全屏并触发任务栏“请勿打扰”等状态，桌面定格停止调用 `MarkFullscreenWindow`，白板全屏路径不变。
+- 2026-09-21 桌面定格 fullscreen 修正已通过 ARM64 `Debug` Solution 构建和 `InkeysHeadlessTests.exe --no-window`；静态审查确认白板进入、失败回滚和退出仍独占剩余 fullscreen 调用。

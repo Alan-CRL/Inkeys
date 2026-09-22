@@ -8,7 +8,6 @@
 #include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtFreezeFrame.h"
 #include "IdtImage.h"
-#include "IdtMagnification.h"
 #include "IdtState.h"
 #include "IdtTime.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
@@ -169,18 +168,6 @@ void SaveScreenShot(Inkeys::Graphics::DibSurface surface, bool record_pointer_ad
 	}
 	SaveSurfaceToPng(surface, globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png");
 
-	/*
-	if (magnificationReady)
-	{
-		RequestUpdateMagWindow = true;
-		while (RequestUpdateMagWindow) this_thread::sleep_for(chrono::milliseconds(100));
-
-		std::shared_lock<std::shared_mutex> lock1(MagnificationBackgroundSm);
-		Inkeys::Graphics::DibSurface blending = MagnificationBackground;
-		lock1.unlock();
-		SaveSurfaceToPng(blending, StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png");
-	}*/
-
 	// 背景合成截图暂未启用，当前仅持久化画板透明层。
 
 	//图像目录书写
@@ -191,7 +178,6 @@ void SaveScreenShot(Inkeys::Graphics::DibSurface surface, bool record_pointer_ad
 			set["date"] = Json::Value(utf16ToUtf8(date));
 			set["time"] = Json::Value(utf16ToUtf8(time));
 			set["drawpad"] = Json::Value(utf16ToUtf8(globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png"));
-			//if (magnificationReady) set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
 			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].insert(0, set);
@@ -213,7 +199,6 @@ void SaveScreenShot(Inkeys::Graphics::DibSurface surface, bool record_pointer_ad
 			set["date"] = Json::Value(utf16ToUtf8(date));
 			set["time"] = Json::Value(utf16ToUtf8(time));
 			set["drawpad"] = Json::Value(utf16ToUtf8(globalPath + L"ScreenShot\\" + date + L"\\" + stamp + L".png"));
-			//if (magnificationReady) set["background"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_background.png")));
 			//set["blending"] = Json::Value(ConvertToUtf8(WstringToString(StringToWstring(globalPath) + L"ScreenShot\\" + date + L"\\" + stamp + L"_blending.jpg")));
 
 			record_value["Image_Properties"].append(set);

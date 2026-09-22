@@ -273,6 +273,7 @@ void SetOffSignal(int signal)
 {
 	InterlockedExchange(&offSignalInterop, static_cast<LONG>(signal));
 	offSignal.store(signal, std::memory_order_release);
+	if (signal) StopMagnifierCoordinator();
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
 	Inkeys::UI::RenderPipeline::WakeForStop();
 }
@@ -1995,7 +1996,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 1;
 		}
 		ReconcileDraw3Presentation();
-		magnificationCreateReady = magnifierWindow && magnifierChild;
+		magnificationCreateReady = magnificationCreateReady &&
+			magnifierWindow && magnifierChild;
 
 		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
 		windowService.SetTopmostRefreshObserver([]
@@ -2032,8 +2034,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	jthread stateMonitoringThread(StateMonitoring);
 
 	// 放大API
-	jthread magnifierThread;
-	if (magnificationCreateReady) magnifierThread = jthread(MagnifierThread);
+	// 即使 Magnification 资源创建失败也启动协调器，使开启请求能明确失败并条件回退。
+	jthread magnifierThread(MagnifierThread);
 
 	// 启动 PPT 联动插件
 	#ifndef IDT_RELEASE

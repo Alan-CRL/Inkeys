@@ -44,6 +44,7 @@ int RunPptUiTests();
 int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunFreezeStateTests();
+int RunMagnifierCoordinatorTests();
 int RunDisplayTests();
 int RunBarDisplayTransitionTests();
 int RunBarBottomDockTests();
@@ -1530,6 +1531,7 @@ int main(int argc, char** argv)
 	failureCount += RunPageControlTests();
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunFreezeStateTests();
+	failureCount += RunMagnifierCoordinatorTests();
 	failureCount += RunDisplayTests();
 	failureCount += RunBarDisplayTransitionTests();
 	failureCount += RunBarBottomDockTests();

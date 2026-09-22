@@ -28,6 +28,7 @@ import Inkeys.Other.Config;
 import Inkeys.Business.ComponentActions;
 import Inkeys.UI.Freeze;
 import Inkeys.UI.Setting;
+import Inkeys.Window;
 
 using Inkeys::Business::BuiltInComponentAction;
 using Inkeys::Business::ExecuteBuiltInComponentAction;
@@ -557,7 +558,13 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					const bool wasActive = Inkeys::UI::Freeze::IsActive();
 					Inkeys::UI::Freeze::Toggle();
+					if (!wasActive && Inkeys::UI::Freeze::IsActive())
+					{
+						// 定格激活后立即重申 owner 树层级；后台线程仍按原路径显示画面。
+						(void)Inkeys::Window::GetService().RequestTopmostRefresh();
+					}
 				};
 		}
 

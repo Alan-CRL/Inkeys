@@ -214,13 +214,36 @@ int RunWindowTests()
 	check(GetWindow(freeze, GW_OWNER) == magnifierHost, "freeze owner");
 	check(GetWindow(drawpadPresentation, GW_OWNER) == freeze,
 		"drawpad presentation freeze owner");
-	check(GetWindow(drawpad, GW_OWNER) == freeze, "drawpad owner");
+	check(GetWindow(drawpad, GW_OWNER) == drawpadPresentation,
+		"drawpad presentation owner");
 	check(GetWindow(pptBottomLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptBottomRight, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleLeft, GW_OWNER) == drawpad
 		&& GetWindow(pptMiddleRight, GW_OWNER) == drawpad, "four ppt drawpad owner");
 	check(GetWindow(bar, GW_OWNER) == drawpad, "bar drawpad owner");
 	check(GetWindow(setting, GW_OWNER) == nullptr, "setting no owner");
+	check((GetWindowLongPtrW(drawpad, GWL_STYLE) & WS_CHILD) == 0,
+		"drawpad remains a top-level owned popup");
+	auto barAboveDrawpadSurfaces = [&]() noexcept
+		{
+			const int barIndex = ZOrderIndex(bar);
+			return barIndex >= 0 && barIndex < ZOrderIndex(drawpad)
+				&& barIndex < ZOrderIndex(drawpadPresentation);
+		};
+	check(service.Show(WindowRole::Bar), "show bar for drawpad surface ordering");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Presentation)
+		&& !IsWindowVisible(drawpad) && IsWindowVisible(drawpadPresentation)
+		&& IsWindowVisible(bar) && barAboveDrawpadSurfaces(),
+		"bar stays above both drawpad surfaces in presentation mode");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary)
+		&& IsWindowVisible(drawpad) && !IsWindowVisible(drawpadPresentation)
+		&& IsWindowVisible(bar) && barAboveDrawpadSurfaces(),
+		"bar stays above both drawpad surfaces in primary mode");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Hidden)
+		&& service.Hide(WindowRole::Bar)
+		&& !IsWindowVisible(drawpad) && !IsWindowVisible(drawpadPresentation)
+		&& !IsWindowVisible(bar),
+		"drawpad surface test restores hidden owner tree");
 	check(FindWindowExW(HWND_MESSAGE, nullptr,
 		L"Inkeys.Window.Tests.DisplayObserver", nullptr) == observer,
 		"observer message-only");
@@ -360,11 +383,12 @@ int RunWindowTests()
 	// 白板模式只把 Freeze 变成 taskbar anchor，其余窗口仍保持 owned popup。
 	for (const auto role : {
 		WindowRole::MagnifierHost, WindowRole::Freeze,
-		WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 		WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
 		WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
 		WindowRole::Bar })
 		check(service.Show(role), "show whiteboard group member");
+	check(service.SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility::Primary),
+		"show primary drawpad for whiteboard group");
 	check(service.EnterWhiteboardWindowMode(), "enter whiteboard window mode");
 	const auto whiteboardFreezeExStyle = static_cast<DWORD>(
 		GetWindowLongPtrW(freeze, GWL_EXSTYLE));
@@ -382,6 +406,7 @@ int RunWindowTests()
 		&& !IsWindowVisible(bar), "minimize hides the complete whiteboard group");
 	check(service.RestoreWhiteboardWindowGroup(), "restore whiteboard window group");
 	check(IsWindowVisible(freeze) && IsWindowVisible(drawpad)
+		&& !IsWindowVisible(drawpadPresentation)
 		&& IsWindowVisible(pptBottomLeft) && IsWindowVisible(pptBottomRight)
 		&& IsWindowVisible(bar), "restore returns the prior whiteboard visible state");
 	check(service.LeaveWhiteboardWindowMode(), "leave whiteboard window mode");
@@ -457,6 +482,32 @@ int RunWindowTests()
 		"setting owner command rejects missing drawpad");
 	check(service.SetSettingOwnedByDrawpad(false),
 		"setting detach remains idempotent without drawpad");
+	service.StopAndJoin();
+
+	std::vector<WindowSpec> incompleteChainSpecs;
+	incompleteChainSpecs.push_back(makeSpec(WindowRole::Freeze, L"IncompleteFreeze"));
+	incompleteChainSpecs.push_back(makeSpec(WindowRole::Drawpad, L"IncompleteDrawpad"));
+	check(!service.Start(std::move(incompleteChainSpecs)),
+		"static drawpad rejects missing presentation owner");
+
+	std::vector<WindowSpec> dynamicChainSpecs;
+	dynamicChainSpecs.push_back(makeSpec(WindowRole::MagnifierHost, L"DynamicMagnifier"));
+	dynamicChainSpecs.push_back(makeSpec(WindowRole::Freeze, L"DynamicFreeze"));
+	check(service.Start(std::move(dynamicChainSpecs)), "start dynamic drawpad chain");
+	auto orphanDynamicDrawpad = makeSpec(WindowRole::Drawpad, L"OrphanDynamicDrawpad");
+	check(!service.Create(std::move(orphanDynamicDrawpad)),
+		"dynamic drawpad rejects missing presentation owner");
+	auto dynamicPresentation = makeSpec(
+		WindowRole::DrawpadPresentation, L"DynamicPresentation");
+	auto dynamicDrawpad = makeSpec(WindowRole::Drawpad, L"DynamicDrawpad");
+	check(service.Create(std::move(dynamicPresentation))
+		&& service.Create(std::move(dynamicDrawpad)),
+		"create dynamic drawpad surfaces");
+	check(GetWindow(service.Handle(WindowRole::DrawpadPresentation), GW_OWNER) ==
+		service.Handle(WindowRole::Freeze)
+		&& GetWindow(service.Handle(WindowRole::Drawpad), GW_OWNER) ==
+		service.Handle(WindowRole::DrawpadPresentation),
+		"dynamic drawpad surface owner chain");
 	service.StopAndJoin();
 
 	// stop 后可以重新创建新的 owner threads 和 channels。

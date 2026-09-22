@@ -148,6 +148,7 @@
 	<ClCompile Include="page_control_tests.cpp" />
 	<ClCompile Include="whiteboard_ui_tests.cpp" />
 	<ClCompile Include="freeze_state_tests.cpp" />
+	<ClCompile Include="magnifier_coordinator_tests.cpp" />
 	<ClCompile Include="display_tests.cpp" />
 	<ClCompile Include="bar_display_transition_tests.cpp" />
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
@@ -176,6 +177,7 @@
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
