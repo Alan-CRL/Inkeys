@@ -2,6 +2,8 @@ module;
 
 #include "../../../IdtMain.h"
 
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 // 历史遗留问题
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
@@ -206,7 +208,7 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"分割线", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"", 0.0);
 			obj->name.enable.Initialization(false);
 		}
 		{
@@ -241,7 +243,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"选择", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.SelectLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -275,7 +278,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"绘制", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.DrawLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -329,7 +333,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"擦除", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.EraserLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -372,7 +377,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"几何", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.GeometryLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -426,7 +432,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"撤回", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.UndoLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -463,7 +470,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"清空", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.ClearLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -497,7 +505,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"白板", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -532,7 +541,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"定格", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.FreezeLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -572,7 +582,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"结束放映", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.EndPresentationLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -602,7 +613,8 @@ void BarButtonSetClass::PresetInitialization()
 		}
 
 		{
-			obj->name.Initialization(0.0, 0.0, 0.0, 0.0, L"设置", 0.0);
+			obj->name.Initialization(0.0, 0.0, 0.0, 0.0,
+				IW(I18nKey.UI.Bar.MainButtons.SettingsLabel), 0.0);
 			obj->name.enable.Initialization(true);
 		}
 		{
@@ -656,7 +668,8 @@ void BarButtonSetClass::PresetInitialization()
 	moreButton->size = BarButtonSizeEnum::twoTwo;
 	moreButton->hide = false;
 	moreButton->userVisible = true;
-	moreButton->name.Initialization(0.0, 0.0, 0.0, 0.0, L"更多", 0.0);
+	moreButton->name.Initialization(0.0, 0.0, 0.0, 0.0,
+		IW(I18nKey.UI.Bar.MainButtons.MoreLabel), 0.0);
 	moreButton->name.enable.Initialization(true);
 	moreButton->button.Initialization(0.0, 0.0, 0.0, 0.0, 4.0, 4.0, nullopt, defaultButtonFill, nullopt);
 	moreButton->button.enable.Initialization(true);
@@ -848,8 +861,11 @@ void BarButtonSetClass::UpdateDrawButtonStyle()
 	button->TransitionContent(
 		laser ? L"barLaser" : (highlighter ? L"barHighlighter1" :
 			(hardPen ? L"barBrush1" : L"barBrush2")),
-		selected ? (laser ? L"激光笔" : (highlighter ? L"荧光笔" :
-			(hardPen ? L"硬笔" : L"软笔"))) : L"绘制");
+		selected ? (laser ? IW(I18nKey.UI.Bar.MainButtons.LaserLabel)
+			: (highlighter ? IW(I18nKey.UI.Bar.MainButtons.HighlighterLabel)
+				: (hardPen ? IW(I18nKey.UI.Bar.MainButtons.HardPenLabel)
+					: IW(I18nKey.UI.Bar.MainButtons.SoftPenLabel))))
+			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel));
 	drawButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateWhiteboardButtonStyle()
@@ -880,7 +896,8 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 	endShow->size = BarButtonSizeEnum::twoTwo;
 	endShow->hide = !projection.endShowVisible;
 	whiteboard->TransitionContent(active ? L"barDismiss" : L"barWhiteboard",
-		active ? L"关闭白板" : L"白板");
+		active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
+			: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
 	whiteboardButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateEraserButtonStyle()
@@ -895,7 +912,9 @@ void BarButtonSetClass::UpdateEraserButtonStyle()
 	auto button = preset[(int)BarButtonPresetEnum::Eraser];
 	if (!button) return;
 	button->TransitionContent(
-		L"barEraser", selected ? L"面积擦" : L"擦除");
+		L"barEraser", selected
+			? IW(I18nKey.UI.Bar.MainButtons.AreaEraserLabel)
+			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel));
 	eraserButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateGeometryButtonStyle()
@@ -914,7 +933,10 @@ void BarButtonSetClass::UpdateGeometryButtonStyle()
 	const wchar_t* resourceName = !selected
 		? L"barGeometry" : (rectangle
 			? L"barShapeRectangle" : L"barShapeStraightLine");
-	const wchar_t* label = !selected ? L"几何" : (rectangle ? L"矩形" : L"直线");
+	const wstring label = !selected
+		? IW(I18nKey.UI.Bar.MainButtons.GeometryLabel)
+		: (rectangle ? IW(I18nKey.UI.Bar.MainButtons.RectangleLabel)
+			: IW(I18nKey.UI.Bar.MainButtons.StraightLineLabel));
 	button->TransitionContent(resourceName, label);
 	geometryButtonStyleKey = styleKey;
 }
@@ -1315,7 +1337,9 @@ void BarButtonSetClass::PresetHoming()
 
 		// 显示名称变化也走通用内容过渡，避免直接替换产生闪变。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", whiteboard ? L"拖动" : L"选择");
+			L"barSelect", whiteboard
+				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
+				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
 	}
 	else
 	{
@@ -1327,7 +1351,9 @@ void BarButtonSetClass::PresetHoming()
 		// preset[(int)BarButtonPresetEnum::Clean]->hide = false;
 		// 选择按钮不再承载清空语义。
 		preset[(int)BarButtonPresetEnum::Select]->TransitionContent(
-			L"barSelect", whiteboard ? L"拖动" : L"选择");
+			L"barSelect", whiteboard
+				? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
+				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
 	}
 }
 void BarButtonSetClass::CalcState()

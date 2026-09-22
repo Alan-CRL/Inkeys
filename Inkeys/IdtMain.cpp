@@ -1466,8 +1466,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 		}
 
-		// UI3 是唯一界面入口，当前界面资源固定使用简体中文基线。
-		setlist.selectLanguage = 1;
+		// 非法语言值仅在本次运行中回退英语，避免覆盖用户磁盘配置。
+		if (setlist.selectLanguage < 0 || setlist.selectLanguage > 2)
+			setlist.selectLanguage = 0;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -1591,6 +1592,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			vector<UINT> fontResourceIDs;
 			fontResourceIDs.emplace_back(IDR_TTF1); // HarmonyOS Sans SC
 			fontResourceIDs.emplace_back(IDR_TTF7); // HarmonyOS Sans SC Bold
+			fontResourceIDs.emplace_back(IDR_TTF3); // HarmonyOS Sans TC
+			fontResourceIDs.emplace_back(IDR_TTF8); // HarmonyOS Sans TC Bold
 
 			IdtFontFileLoader::IsLoaderInitialized();
 			IdtFontCollectionLoader::IsLoaderInitialized();

@@ -2,8 +2,11 @@ module;
 
 #include "../../../IdtMain.h"
 
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "Bar.BottomDock.h"
+#include "Bar.I18nFormat.h"
 
 module Inkeys.UI.Bar;
 import :State;
@@ -52,7 +55,10 @@ void BarStateClass::PositionUpdate(double tarZoom)
 void BarStateClass::ThicknessDisplayUpdate()
 {
 	int penThickness = static_cast<int>(GetPenWidth());
-	wstring tar = L"粗细" + format(L" {:>3}", clamp(penThickness, 0, 999));
+	int displayedThickness = clamp(penThickness, 0, 999);
+	wstring tar = Inkeys::UI::Bar::Detail::FormatThicknessText(
+		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
+		displayedThickness);
 
 	barUISet.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay]->content.SetTar(tar);
 }

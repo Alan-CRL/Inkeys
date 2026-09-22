@@ -61,6 +61,68 @@
         "BaseSizeHint": "自動模式時作為基礎大小",
         "MixedHint": "各裝置設定不同\n按一下統一開啟自動粗細",
         "SettingsHint": "自動粗細設定，暫未開放"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "選擇",
+        "MoveLabel": "拖動",
+        "DrawLabel": "繪製",
+        "LaserLabel": "雷射筆",
+        "HighlighterLabel": "螢光筆",
+        "HardPenLabel": "硬筆",
+        "SoftPenLabel": "軟筆",
+        "EraserLabel": "擦除",
+        "AreaEraserLabel": "區域擦除",
+        "GeometryLabel": "幾何",
+        "RectangleLabel": "矩形",
+        "StraightLineLabel": "直線",
+        "UndoLabel": "復原",
+        "ClearLabel": "清空",
+        "WhiteboardLabel": "白板",
+        "CloseWhiteboardLabel": "關閉白板",
+        "FreezeLabel": "定格",
+        "EndPresentationLabel": "結束放映",
+        "SettingsLabel": "設定",
+        "MoreLabel": "更多"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "筆刷",
+        "LaserLabel": "雷射筆",
+        "HighlighterLabel": "螢光筆",
+        "HardPenLabel": "硬筆",
+        "SoftPenLabel": "軟筆",
+        "FreeLineLabel": "自由線",
+        "AnnotationLineLabel": "標註線",
+        "HoldThicknessLabel": "按住以固定粗細",
+        "ThicknessFormat": "粗細 {}",
+        "AnnotationUnavailableTitle": "標註線暫時無法使用",
+        "AnnotationFixedUnsupportedTitle": "標註線尚未支援固定粗細",
+        "AnnotationDescription": "將繪製方向鎖定為水平、垂直或斜 45°",
+        "ThicknessOverflowTitle": "墨跡粗細超出預覽範圍",
+        "ThicknessOverflowBody": "預覽粗細可能與實際繪製粗細不同。"
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "直線",
+        "RectangleLabel": "矩形"
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "透明度",
+        "HoldColorLabel": "按住以固定顏色"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "幀率: {:.2f} FPS | 無限制幀率: {:.2f} FPS",
+        "FrameRateUnavailable": "幀率: -- FPS | 無限制幀率: -- FPS"
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "軟體遇到透明背景無法正常顯示的問題\n\nexe 內容->停用「使用簡化的色彩模式」\nWindows 7 使用者請啟用 Aero 主題\n\n聯絡開發者->軟體選項首頁\n重新啟動軟體後再試"
       }
     }
   },

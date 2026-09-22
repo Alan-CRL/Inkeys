@@ -1419,6 +1419,13 @@ SettingSessionCoroutine RunSettingSession()
 						if (Widgets::button.Navigation(("   \ue80f   " + IA(I18nKey.SettingsUI.Home.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::tab1, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::tab1;
 					}
 
+					// 语言
+					{
+						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });
+
+						if (Widgets::button.Navigation(("   \uf2b7   " + IA(I18nKey.SettingsUI.Language.N)).c_str(), { 150.0f * settingGlobalScale,36.0f * settingGlobalScale }, settingTab == settingTabEnum::Language, Widgets::FluentColor::TextPrimary, ImVec2(0.0f, 0.5f))) settingTab = settingTabEnum::Language;
+					}
+
 					// 软件配置
 					{
 						ImGui::SetCursorPos({ 10.0f * settingGlobalScale,ImGui::GetCursorPosY() + 4.0f * settingGlobalScale });

@@ -13,7 +13,6 @@ module;
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <string_view>
 #include <utility>
 
 export module Inkeys.UI.Bar.Animation;
@@ -238,12 +237,18 @@ export
 		}
 	}
 
-	inline wstring_view ResolveBarAnnotationPopupTitle(
+	enum class BarAnnotationPopupTitleKind : uint8_t
+	{
+		Unavailable,
+		FixedThicknessUnsupported,
+	};
+
+	inline BarAnnotationPopupTitleKind ResolveBarAnnotationPopupTitle(
 		BarThicknessPreviewVisualKind anchorKind) noexcept
 	{
 		return anchorKind == BarThicknessPreviewVisualKind::SoftPen
-			? L"标注线（粗细固定，暂未支持）"
-			: L"启用标注线（暂不可用）";
+			? BarAnnotationPopupTitleKind::FixedThicknessUnsupported
+			: BarAnnotationPopupTitleKind::Unavailable;
 	}
 
 	// Laser 预览的阶段只由当前视觉端点决定，反向时不重置任何动画值。

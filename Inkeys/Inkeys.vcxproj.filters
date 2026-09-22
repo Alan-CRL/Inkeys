@@ -309,6 +309,9 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="IdtRts.h">
       <Filter>头文件</Filter>
     </ClInclude>

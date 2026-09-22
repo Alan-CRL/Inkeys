@@ -65,6 +65,68 @@ inline constexpr struct I18nKeyRoot
                 const char* MixedHint = "UI/Bar/EraserAttributes/MixedHint";
                 const char* SettingsHint = "UI/Bar/EraserAttributes/SettingsHint";
             } EraserAttributes{};
+            struct Node__UI__Bar__MainButtons
+            {
+                const char* SelectLabel = "UI/Bar/MainButtons/SelectLabel";
+                const char* MoveLabel = "UI/Bar/MainButtons/MoveLabel";
+                const char* DrawLabel = "UI/Bar/MainButtons/DrawLabel";
+                const char* LaserLabel = "UI/Bar/MainButtons/LaserLabel";
+                const char* HighlighterLabel = "UI/Bar/MainButtons/HighlighterLabel";
+                const char* HardPenLabel = "UI/Bar/MainButtons/HardPenLabel";
+                const char* SoftPenLabel = "UI/Bar/MainButtons/SoftPenLabel";
+                const char* EraserLabel = "UI/Bar/MainButtons/EraserLabel";
+                const char* AreaEraserLabel = "UI/Bar/MainButtons/AreaEraserLabel";
+                const char* GeometryLabel = "UI/Bar/MainButtons/GeometryLabel";
+                const char* RectangleLabel = "UI/Bar/MainButtons/RectangleLabel";
+                const char* StraightLineLabel = "UI/Bar/MainButtons/StraightLineLabel";
+                const char* UndoLabel = "UI/Bar/MainButtons/UndoLabel";
+                const char* ClearLabel = "UI/Bar/MainButtons/ClearLabel";
+                const char* WhiteboardLabel = "UI/Bar/MainButtons/WhiteboardLabel";
+                const char* CloseWhiteboardLabel = "UI/Bar/MainButtons/CloseWhiteboardLabel";
+                const char* FreezeLabel = "UI/Bar/MainButtons/FreezeLabel";
+                const char* EndPresentationLabel = "UI/Bar/MainButtons/EndPresentationLabel";
+                const char* SettingsLabel = "UI/Bar/MainButtons/SettingsLabel";
+                const char* MoreLabel = "UI/Bar/MainButtons/MoreLabel";
+            } MainButtons{};
+            struct Node__UI__Bar__DrawAttributes
+            {
+                const char* BrushLabel = "UI/Bar/DrawAttributes/BrushLabel";
+                const char* LaserLabel = "UI/Bar/DrawAttributes/LaserLabel";
+                const char* HighlighterLabel = "UI/Bar/DrawAttributes/HighlighterLabel";
+                const char* HardPenLabel = "UI/Bar/DrawAttributes/HardPenLabel";
+                const char* SoftPenLabel = "UI/Bar/DrawAttributes/SoftPenLabel";
+                const char* FreeLineLabel = "UI/Bar/DrawAttributes/FreeLineLabel";
+                const char* AnnotationLineLabel = "UI/Bar/DrawAttributes/AnnotationLineLabel";
+                const char* HoldThicknessLabel = "UI/Bar/DrawAttributes/HoldThicknessLabel";
+                const char* ThicknessFormat = "UI/Bar/DrawAttributes/ThicknessFormat";
+                const char* AnnotationUnavailableTitle = "UI/Bar/DrawAttributes/AnnotationUnavailableTitle";
+                const char* AnnotationFixedUnsupportedTitle = "UI/Bar/DrawAttributes/AnnotationFixedUnsupportedTitle";
+                const char* AnnotationDescription = "UI/Bar/DrawAttributes/AnnotationDescription";
+                const char* ThicknessOverflowTitle = "UI/Bar/DrawAttributes/ThicknessOverflowTitle";
+                const char* ThicknessOverflowBody = "UI/Bar/DrawAttributes/ThicknessOverflowBody";
+            } DrawAttributes{};
+            struct Node__UI__Bar__GeometryAttributes
+            {
+                const char* StraightLineLabel = "UI/Bar/GeometryAttributes/StraightLineLabel";
+                const char* RectangleLabel = "UI/Bar/GeometryAttributes/RectangleLabel";
+            } GeometryAttributes{};
+            struct Node__UI__Bar__ColorPicker
+            {
+                const char* RedChannelLabel = "UI/Bar/ColorPicker/RedChannelLabel";
+                const char* GreenChannelLabel = "UI/Bar/ColorPicker/GreenChannelLabel";
+                const char* BlueChannelLabel = "UI/Bar/ColorPicker/BlueChannelLabel";
+                const char* OpacityLabel = "UI/Bar/ColorPicker/OpacityLabel";
+                const char* HoldColorLabel = "UI/Bar/ColorPicker/HoldColorLabel";
+            } ColorPicker{};
+            struct Node__UI__Bar__Diagnostics
+            {
+                const char* FrameRateFormat = "UI/Bar/Diagnostics/FrameRateFormat";
+                const char* FrameRateUnavailable = "UI/Bar/Diagnostics/FrameRateUnavailable";
+            } Diagnostics{};
+            struct Node__UI__Bar__Errors
+            {
+                const char* TransparentBackgroundWarning = "UI/Bar/Errors/TransparentBackgroundWarning";
+            } Errors{};
         } Bar{};
     } UI{};
     struct Node__Dialogs

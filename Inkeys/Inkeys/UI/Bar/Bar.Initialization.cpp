@@ -4,6 +4,8 @@
 
 #include "../../../IdtConfiguration.h"
 #include "../../../IdtDraw.h"
+#include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../Window/Window.Legacy.hpp"
@@ -53,7 +55,7 @@ extern const double BarMorePanelCompactWidth;
 extern const double BarMorePanelCompactHeight;
 
 constexpr double BarColorSwatchCursorLightIntensity = 0.50;
-constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
+extern constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
 
 void BarUISetClass::PublishDisplaySnapshot(
 	Inkeys::Display::SnapshotPtr snapshot) noexcept
@@ -133,6 +135,7 @@ namespace Inkeys::UI::Bar
 			return;
 		}
 		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarWindowReady);
+		barUISet.spec.ConfigureLocalizedTypography();
 		InitializeUI(barUISet);
 		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarUiGraphReady);
 		barUISet.StartDisplayTracking();
@@ -240,7 +243,7 @@ namespace Inkeys::UI::Bar
 			// 背景层
 			{
 				auto word = make_shared<BarUiWordClass>(700.0, 150.0, 1200.0, 300.0, L"", 30.0, GetThemeColor(BarThemeColorEnum::TextPrimary));
-				word->content.Initialization(L"软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试");
+				word->content.Initialization(IW(I18nKey.UI.Bar.Errors.TransparentBackgroundWarning));
 				word->pct.Initialization(0.0);
 				word->enable.Initialization(true);
 				barUISet.wordMap[BarUISetWordEnum::BackgroundWarning] = word;
@@ -607,7 +610,7 @@ namespace Inkeys::UI::Bar
 							4.0, GetThemeColor(BarThemeColorEnum::Surface));
 
 						auto InitializePickerWord = [&](BarUISetWordEnum type,
-							const wchar_t* text, double size)
+							const wstring& text, double size)
 							{
 								auto word = make_shared<BarUiWordClass>(
 									0.0, 0.0, 1.0, 1.0, text, size,
@@ -618,16 +621,16 @@ namespace Inkeys::UI::Bar
 							};
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgb,
-							L"R", 13.0);
+							IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel), 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerG,
-							L"G", 13.0);
+							IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel), 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerB,
-							L"B", 13.0);
+							IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel), 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerOpacity,
-							L"透明度", 13.0);
+							IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel), 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerRgbValue,
 							L"0", 13.0);
@@ -642,14 +645,14 @@ namespace Inkeys::UI::Bar
 							L"100%", 13.0);
 						InitializePickerWord(
 							BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel,
-							L"保持并固定颜色", 12.0);
+							IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel), 12.0);
 					}
 					{ /**/ }
 					// 画笔样式区域
 					{
 						auto InitializePenTypeButton = [&](BarUISetShapeEnum shapeType,
 							BarUISetSvgEnum svgType, BarUISetWordEnum wordType,
-							const wchar_t* resourceName, const wchar_t* text)
+							const wchar_t* resourceName, const wstring& text)
 						{
 							auto shape = make_shared<BarUiShapeClass>(0.0, 0.0, 115.0, 30.0,
 								4.0, 4.0, 1.0, GetThemeColor(BarThemeColorEnum::PressedFill), nullopt);
@@ -672,23 +675,23 @@ namespace Inkeys::UI::Bar
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush2,
 								BarUISetSvgEnum::DrawAttributeBar_Brush2,
 								BarUISetWordEnum::DrawAttributeBar_Brush2,
-								L"barPaintBrush", L"刷子");
+								L"barPaintBrush", IW(I18nKey.UI.Bar.DrawAttributes.BrushLabel));
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Laser,
 								BarUISetSvgEnum::DrawAttributeBar_Laser,
 								BarUISetWordEnum::DrawAttributeBar_Laser,
-								L"barLaser", L"激光笔");
+								L"barLaser", IW(I18nKey.UI.Bar.DrawAttributes.LaserLabel));
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Highlight1,
 								BarUISetSvgEnum::DrawAttributeBar_Highlight1,
 								BarUISetWordEnum::DrawAttributeBar_Highlight1,
-								L"barHighlighter1", L"荧光笔");
+								L"barHighlighter1", IW(I18nKey.UI.Bar.DrawAttributes.HighlighterLabel));
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_Brush1,
 								BarUISetSvgEnum::DrawAttributeBar_Brush1,
 								BarUISetWordEnum::DrawAttributeBar_Brush1,
-								L"barBrush1", L"硬笔");
+								L"barBrush1", IW(I18nKey.UI.Bar.DrawAttributes.HardPenLabel));
 							InitializePenTypeButton(BarUISetShapeEnum::DrawAttributeBar_SoftPen,
 								BarUISetSvgEnum::DrawAttributeBar_SoftPen,
 								BarUISetWordEnum::DrawAttributeBar_SoftPen,
-								L"barBrush2", L"软笔");
+								L"barBrush2", IW(I18nKey.UI.Bar.DrawAttributes.SoftPenLabel));
 						}
 					// 粗细调节区域
 					{
@@ -934,7 +937,7 @@ namespace Inkeys::UI::Bar
 
 						auto menuFreeWord = make_shared<BarUiWordClass>(
 							0.0, 0.0, 80.0, BarDrawAttributePenTypeMenuRowHeight,
-							L"自由线", 12.0,
+							IW(I18nKey.UI.Bar.DrawAttributes.FreeLineLabel), 12.0,
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						menuFreeWord->pct.Initialization(0.0);
 						menuFreeWord->enable.Initialization(true);
@@ -963,8 +966,9 @@ namespace Inkeys::UI::Bar
 						barUISet.svgMap[
 							BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck] = menuCheck;
 
-						auto annotationLabel = make_shared<BarUiWordClass>(
-								0.0, 0.0, 80.0, 24.0, L"标注线", 13.0,
+							auto annotationLabel = make_shared<BarUiWordClass>(
+								0.0, 0.0, 80.0, 24.0,
+								IW(I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel), 13.0,
 								RGB(200, 200, 200));
 							annotationLabel->pct.Initialization(0.0);
 							annotationLabel->enable.Initialization(true);
@@ -973,7 +977,8 @@ namespace Inkeys::UI::Bar
 								annotationLabel;
 
 							auto holdLockLabel = make_shared<BarUiWordClass>(
-								0.0, 0.0, 120.0, 24.0, L"保持并固定粗细", 13.0,
+								0.0, 0.0, 120.0, 24.0,
+								IW(I18nKey.UI.Bar.DrawAttributes.HoldThicknessLabel), 13.0,
 								RGB(200, 200, 200));
 							holdLockLabel->pct.Initialization(0.0);
 							holdLockLabel->enable.Initialization(true);
@@ -996,7 +1001,7 @@ namespace Inkeys::UI::Bar
 								GetThemeColor(BarThemeColorEnum::TextPrimary),
 								GetThemeColor(BarThemeColorEnum::Surface), 0.45);
 						auto InitializeTooltipWord =
-							[&](BarUISetWordEnum wordType, const wchar_t* text,
+							[&](BarUISetWordEnum wordType, const wstring& text,
 								double size, COLORREF color)
 							{
 								auto word = make_shared<BarUiWordClass>(
@@ -1007,21 +1012,21 @@ namespace Inkeys::UI::Bar
 							};
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
-							L"启用标注线（暂不可用）",
+							IW(I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle),
 							BarThicknessTooltipTitleFontSize,
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody,
-							L"锁定绘制方向仅为水平、竖直或斜45°",
+							IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),
 							BarThicknessTooltipBodyFontSize, popupBodyColor);
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
-							L"墨迹粗细超出预览范围",
+							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),
 							BarThicknessTooltipTitleFontSize,
 							GetThemeColor(BarThemeColorEnum::TextPrimary));
 						InitializeTooltipWord(
 							BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody,
-							L"预览中的粗细可能与绘制粗细不一致。",
+							IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),
 							BarThicknessTooltipBodyFontSize, popupBodyColor);
 
 						auto InitializeTooltipSvg =
@@ -1073,7 +1078,7 @@ namespace Inkeys::UI::Bar
 						barUISet.shapeMap[BarUISetShapeEnum::GeometryAttributeBar] = panel;
 
 						auto InitializeGeometryButton = [&](BarUISetShapeEnum shapeType,
-							BarUISetWordEnum wordType, const wchar_t* text,
+							BarUISetWordEnum wordType, const wstring& text,
 							double size, double fontSize)
 							{
 								auto button = make_shared<BarUiShapeClass>(
@@ -1100,11 +1105,13 @@ namespace Inkeys::UI::Bar
 						InitializeGeometryButton(
 							BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
 							BarUISetWordEnum::GeometryAttributeBar_StraightLine,
-							L"直线", BarGeometryAttributeShapeButtonSize, 11.0);
+							IW(I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel),
+							BarGeometryAttributeShapeButtonSize, 11.0);
 						InitializeGeometryButton(
 							BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
 							BarUISetWordEnum::GeometryAttributeBar_Rectangle,
-							L"矩形", BarGeometryAttributeShapeButtonSize, 11.0);
+							IW(I18nKey.UI.Bar.GeometryAttributes.RectangleLabel),
+							BarGeometryAttributeShapeButtonSize, 11.0);
 
 						auto InitializeGeometryShapeSvg = [&](BarUISetSvgEnum svgType,
 							const wchar_t* resourceName)

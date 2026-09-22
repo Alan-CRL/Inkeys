@@ -3,6 +3,7 @@
 #include <d2d1_1helper.h>
 #include "../../../IdtState.h"
 #include "../../../IdtI18n.h"
+#include "../../../IdtI18nKeys.g.h"
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
 #include "../../../resource.h"
 #include <filesystem>
@@ -20,6 +21,14 @@ import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
+
+extern const double BarGeometryAttributeShapeButtonSize;
+extern const double BarThicknessTooltipPadding;
+extern const double BarThicknessTooltipCloseReserve;
+extern const double BarThicknessTooltipTitleFontSize;
+extern const double BarThicknessTooltipBodyFontSize;
+extern const double BarThicknessTooltipLineGap;
+extern const double BarColorPickerPanelWidth;
 
 namespace Inkeys::UI::Bar
 {
@@ -69,12 +78,17 @@ namespace Inkeys::UI::Bar
 		if(FAILED(com))return 2;
 		if(FAILED(RenderPipeline::Initialize())){CoUninitialize();return 3;}
 		IdtFontFileLoader::IsLoaderInitialized();IdtFontCollectionLoader::IsLoaderInitialized();
-		const std::array<UINT,2> fonts{IDR_TTF1,IDR_TTF7};
-		(void)RenderPipeline::InitializeFontCollection(IdtFontFileLoader::GetLoader(),IdtFontCollectionLoader::GetLoader(),fonts);
+		const std::array<UINT,4> fonts{IDR_TTF1,IDR_TTF7,IDR_TTF3,IDR_TTF8};
+		const HRESULT fontCollectionHr=RenderPipeline::InitializeFontCollection(
+			IdtFontFileLoader::GetLoader(),IdtFontCollectionLoader::GetLoader(),fonts);
 		std::ofstream report("Build/eraser-b/offscreen-results.log");
 		int failures=0;
 		auto expect=[&](bool ok,const char* why){if(!ok){++failures;report<<"[EraserVisual] FAIL "<<why<<'\n';}};
-		auto& owner=barUISet;owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
+		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
+		auto& owner=barUISet;
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
+		owner.spec.ConfigureLocalizedTypography();
+		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
 		SetThemeStyleSource(&owner.barStyle);
 		auto root=std::make_shared<BarUiSuperellipseClass>(100,430,BarMainButtonWidthDip,BarMainButtonHeightDip,3.0,
 			BarButtonFrameThicknessDip,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
@@ -88,7 +102,22 @@ namespace Inkeys::UI::Bar
 		stateMode.StateModeSelect=StateModeSelectEnum::IdtEraser;owner.barState.fold=false;
 		owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;
 		const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+		const auto twoOneMetrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoOne);
 		const std::array presets{BarButtonPresetEnum::Select,BarButtonPresetEnum::Draw,BarButtonPresetEnum::Eraser,BarButtonPresetEnum::More,BarButtonPresetEnum::Setting};
+		const std::array<const char*,5> localizedPresetLabelKeys{
+			I18nKey.UI.Bar.MainButtons.SelectLabel,
+			I18nKey.UI.Bar.MainButtons.DrawLabel,
+			I18nKey.UI.Bar.MainButtons.EraserLabel,
+			I18nKey.UI.Bar.MainButtons.MoreLabel,
+			I18nKey.UI.Bar.MainButtons.SettingsLabel};
+		auto updateLocalizedPresetLabels=[&]()
+		{
+			for(size_t i=0;i<presets.size();++i)
+			{
+				auto* b=presets[i]==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(presets[i])];
+				const auto label=IW(localizedPresetLabelKeys[i]);b->name.content.SetVal(label);b->name.content.SetTar(label);
+			}
+		};
 		for(size_t i=0;i<presets.size();++i)
 		{
 			auto* b=presets[i]==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(presets[i])];
@@ -101,6 +130,137 @@ namespace Inkeys::UI::Bar
 			b->name.pct.SetDirect(1);b->icon.pct.SetDirect(1);
 		}
 		std::filesystem::create_directories(L"Build/eraser-b/visuals");
+		struct LocalizedBarCase{const wchar_t* language;const wchar_t* fileTag;const wchar_t* family;const wchar_t* locale;};
+		const std::array localizedBarCases{
+			LocalizedBarCase{L"zh-CN",L"zh-cn",L"HarmonyOS Sans SC",L"zh-cn"},
+			LocalizedBarCase{L"zh-TW",L"zh-tw",L"HarmonyOS Sans TC",L"zh-tw"},
+			LocalizedBarCase{L"en-US",L"en-us",L"HarmonyOS Sans SC",L"en-us"}};
+		const std::array<const char*,20> fixedLabelKeys{
+			I18nKey.UI.Bar.MainButtons.SelectLabel,I18nKey.UI.Bar.MainButtons.MoveLabel,
+			I18nKey.UI.Bar.MainButtons.DrawLabel,I18nKey.UI.Bar.MainButtons.LaserLabel,
+			I18nKey.UI.Bar.MainButtons.HighlighterLabel,I18nKey.UI.Bar.MainButtons.HardPenLabel,
+			I18nKey.UI.Bar.MainButtons.SoftPenLabel,I18nKey.UI.Bar.MainButtons.EraserLabel,
+			I18nKey.UI.Bar.MainButtons.AreaEraserLabel,I18nKey.UI.Bar.MainButtons.GeometryLabel,
+			I18nKey.UI.Bar.MainButtons.RectangleLabel,I18nKey.UI.Bar.MainButtons.StraightLineLabel,
+			I18nKey.UI.Bar.MainButtons.UndoLabel,I18nKey.UI.Bar.MainButtons.ClearLabel,
+			I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel,
+			I18nKey.UI.Bar.MainButtons.FreezeLabel,I18nKey.UI.Bar.MainButtons.EndPresentationLabel,
+			I18nKey.UI.Bar.MainButtons.SettingsLabel,I18nKey.UI.Bar.MainButtons.MoreLabel};
+		const std::array<const char*,7> penMenuLabelKeys{
+			I18nKey.UI.Bar.DrawAttributes.BrushLabel,I18nKey.UI.Bar.DrawAttributes.LaserLabel,
+			I18nKey.UI.Bar.DrawAttributes.HighlighterLabel,I18nKey.UI.Bar.DrawAttributes.HardPenLabel,
+			I18nKey.UI.Bar.DrawAttributes.SoftPenLabel,I18nKey.UI.Bar.DrawAttributes.FreeLineLabel,
+			I18nKey.UI.Bar.DrawAttributes.AnnotationLineLabel};
+		for(const auto& language:localizedBarCases)
+		{
+			expect(I18n::load(1,L"JSON",language.language),"bar language loads for layout audit");
+			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
+			expect(owner.spec.GetFontFamily()==language.family && owner.spec.GetTextLocale()==language.locale,
+				"localized font family and DWrite locale match language");
+			for(const auto* key:fixedLabelKeys)
+				expect(owner.spec.MeasureText(IW(key),metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=metrics.primarySlotWidthDip+0.5f,
+					"localized fixed label fits the existing 70 DIP slot");
+			for(const auto* key:{I18nKey.UI.Bar.MainButtons.WhiteboardLabel,I18nKey.UI.Bar.MainButtons.FreezeLabel})
+				expect(owner.spec.MeasureText(IW(key),twoOneMetrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width<=twoOneMetrics.primarySlotWidthDip+0.5f,
+					"localized Whiteboard and Freeze labels fit the existing 37 DIP slot");
+			for(const auto* key:penMenuLabelKeys)
+				expect(owner.spec.MeasureText(IW(key),12.0,DWRITE_FONT_WEIGHT_NORMAL).width<=80.5f,
+					"localized pen menu label fits its measured text slot");
+			for(const auto* key:{I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel,I18nKey.UI.Bar.GeometryAttributes.RectangleLabel})
+				expect(owner.spec.MeasureText(IW(key),11.0,DWRITE_FONT_WEIGHT_NORMAL).width<=BarGeometryAttributeShapeButtonSize,
+					"localized geometry label fits its button");
+			const auto annotationBody=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),BarThicknessTooltipBodyFontSize,DWRITE_FONT_WEIGHT_NORMAL);
+			const auto overflowBody=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),BarThicknessTooltipBodyFontSize,DWRITE_FONT_WEIGHT_NORMAL);
+			for(const auto* key:{I18nKey.UI.Bar.DrawAttributes.AnnotationUnavailableTitle,I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle})
+			{
+				const auto title=owner.spec.MeasureText(IW(key),BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
+				const double width=std::ceil((std::max)(title.width,annotationBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
+				expect(width>0 && width<=1000,"localized annotation popup expands within the offscreen work area");
+			}
+			const auto annotationTitleText=IW(I18nKey.UI.Bar.DrawAttributes.AnnotationFixedUnsupportedTitle);
+			const auto annotationBodyText=IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription);
+			const auto annotationTitle=owner.spec.MeasureText(annotationTitleText,BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
+			const double annotationWidth=std::ceil((std::max)(annotationTitle.width,annotationBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
+			const double annotationHeight=std::ceil(annotationTitle.height+BarThicknessTooltipLineGap+annotationBody.height)+BarThicknessTooltipPadding*2;
+			const auto overflowTitleText=IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle);
+			const auto overflowBodyText=IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody);
+			const auto overflowTitle=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowTitle),BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
+			const double overflowWidth=std::ceil((std::max)(overflowTitle.width,overflowBody.width))+BarThicknessTooltipPadding*2+BarThicknessTooltipCloseReserve;
+			const double overflowHeight=std::ceil(overflowTitle.height+BarThicknessTooltipLineGap+overflowBody.height)+BarThicknessTooltipPadding*2;
+			expect(overflowWidth>0 && overflowWidth<=1000,"localized overflow popup expands within the offscreen work area");
+			const double rgbLabelWidth=(std::max)({owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel),13.0).width,
+				owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel),13.0).width,
+				owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel),13.0).width});
+			const double rgbValueWidth=owner.spec.MeasureText(L"255",13.0).width;
+			const double opacityLabelWidth=owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0).width;
+			const double opacityValueWidth=owner.spec.MeasureText(L"100%",13.0).width;
+			const double footerRequiredWidth=(rgbLabelWidth+rgbValueWidth)*3+opacityLabelWidth+opacityValueWidth+4*3.0+2*6.0+10.0;
+			expect(footerRequiredWidth<=BarColorPickerPanelWidth,"localized color footer keeps RGB and opacity columns separate");
+
+			for(const double zoom:{0.65,1.0,1.5})
+			{
+				owner.barStyle.darkStyle=true;owner.barStyle.zoom=zoom;
+				const UINT width=static_cast<UINT>(700*zoom),height=static_cast<UINT>(245*zoom);
+				expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height)),"localized bar target setup");
+				owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+				auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
+				main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
+				for(const auto preset:presets)
+				{
+					auto* b=preset==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(preset)];
+					b->name.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
+					DrawBarButtonVisual(owner.spec,dc,*b,b->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main));
+				}
+				auto drawAuditSurface=[&](double x,double y,double w,double h)
+				{
+					BarUiShapeClass surface(0,0,w,h,8,8,1,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+					surface.enable.Initialization(true);surface.pct.SetDirect(0.96);surface.framePct.emplace(0.18);surface.frameLightPct.emplace(0);
+					owner.spec.Shape(dc,surface,BarUiInheritClass(x,y));
+				};
+				auto drawAuditText=[&](const std::wstring& text,double x,double y,double w,double h,double size,DWRITE_FONT_WEIGHT weight=DWRITE_FONT_WEIGHT_NORMAL)
+				{
+					BarUiWordClass word(0,0,w,h,text,size,GetThemeColor(BarThemeColorEnum::TextPrimary));
+					word.enable.Initialization(true);word.pct.SetDirect(1);
+					owner.spec.Word(dc,word,BarUiInheritClass(x,y),weight,DWRITE_TEXT_ALIGNMENT_LEADING);
+				};
+				const double annotationLeft=10,annotationTop=95;
+				drawAuditSurface(annotationLeft,annotationTop,annotationWidth,annotationHeight);
+				drawAuditText(annotationTitleText,annotationLeft+BarThicknessTooltipPadding,annotationTop+BarThicknessTooltipPadding,
+					annotationWidth-BarThicknessTooltipPadding*2-BarThicknessTooltipCloseReserve,annotationTitle.height,
+					BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
+				drawAuditText(annotationBodyText,annotationLeft+BarThicknessTooltipPadding,
+					annotationTop+BarThicknessTooltipPadding+annotationTitle.height+BarThicknessTooltipLineGap,
+					annotationWidth-BarThicknessTooltipPadding*2,annotationBody.height,BarThicknessTooltipBodyFontSize);
+				const double overflowLeft=10,overflowTop=170;
+				drawAuditSurface(overflowLeft,overflowTop,overflowWidth,overflowHeight);
+				drawAuditText(overflowTitleText,overflowLeft+BarThicknessTooltipPadding,overflowTop+BarThicknessTooltipPadding,
+					overflowWidth-BarThicknessTooltipPadding*2-BarThicknessTooltipCloseReserve,overflowTitle.height,
+					BarThicknessTooltipTitleFontSize,DWRITE_FONT_WEIGHT_SEMI_BOLD);
+				drawAuditText(overflowBodyText,overflowLeft+BarThicknessTooltipPadding,
+					overflowTop+BarThicknessTooltipPadding+overflowTitle.height+BarThicknessTooltipLineGap,
+					overflowWidth-BarThicknessTooltipPadding*2,overflowBody.height,BarThicknessTooltipBodyFontSize);
+				const double footerLeft=390,footerTop=170,footerHeight=55,footerPadding=5,footerLabelGap=3,footerColumnGap=6;
+				drawAuditSurface(footerLeft,footerTop,BarColorPickerPanelWidth,footerHeight);
+				const double rgbColumnWidth=rgbLabelWidth+footerLabelGap+rgbValueWidth;
+				const double rX=footerLeft+footerPadding,gX=rX+rgbColumnWidth+footerColumnGap,bX=gX+rgbColumnWidth+footerColumnGap;
+				const double opacityX=footerLeft+BarColorPickerPanelWidth-footerPadding-opacityLabelWidth-footerLabelGap-opacityValueWidth;
+				const std::array<const char*,4> footerLabelKeys{I18nKey.UI.Bar.ColorPicker.RedChannelLabel,I18nKey.UI.Bar.ColorPicker.GreenChannelLabel,I18nKey.UI.Bar.ColorPicker.BlueChannelLabel,I18nKey.UI.Bar.ColorPicker.OpacityLabel};
+				const std::array<double,4> footerLabelX{rX,gX,bX,opacityX};
+				const std::array<const wchar_t*,4> footerValues{L"255",L"255",L"255",L"100%"};
+				for(size_t i=0;i<footerLabelKeys.size();++i)
+				{
+					const double labelWidth=i<3?rgbLabelWidth:opacityLabelWidth;
+					const double valueWidth=i<3?rgbValueWidth:opacityValueWidth;
+					drawAuditText(IW(footerLabelKeys[i]),footerLabelX[i],footerTop,labelWidth,footerHeight,13);
+					drawAuditText(footerValues[i],footerLabelX[i]+labelWidth+footerLabelGap,footerTop,valueWidth,footerHeight,13);
+				}
+				expect(SUCCEEDED(dc->EndDraw()),"localized fixed bar renders");
+				const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"bar-i18n-"+std::wstring(language.fileTag)+L"-"+std::to_wstring(static_cast<int>(zoom*100))+L".png");
+				expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"localized fixed bar PNG readback");
+			}
+		}
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore default test language");owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
 		const auto preferencesBeforeOpen=EraserPreferencesSnapshot();
 		auto* eraserButton=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];
 		stateMode.StateModeSelect=StateModeSelectEnum::IdtPen;
@@ -118,6 +278,7 @@ namespace Inkeys::UI::Bar
 			const UINT dpi=scenario<18?dpis[scenario/6]:192;
 			const double ui=scenario<18?scales[((scenario/2)+1)%3]:scenario==18?0.35:1.0,zoom=dpi/96.0*ui;
 			expect(I18n::load(1,L"JSON",scenario==19?L"en-US":scenario==20?L"zh-TW":L"zh-CN"),"bundled translations load");
+			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
 			BarUiEdgeLightingEnabled=scenario!=16;BarUiDynamicEdgeLightingEnabled=scenario!=17;
 			owner.barStyle.darkStyle=dark;owner.barStyle.zoom=zoom;
 			owner.barState.eraserAttribute=true;owner.barState.eraserSensitivityOpen=true;
@@ -209,7 +370,7 @@ namespace Inkeys::UI::Bar
 		// 窄工作区保持生产正常布局并裁剪溢出，截图确认不会切入紧凑留白。
 		{
 			constexpr UINT narrowWidth=300,narrowHeight=620;
-			I18n::load(1,L"JSON",L"zh-CN");owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
+			I18n::load(1,L"JSON",L"zh-CN");owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
 			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;
 			owner.barState.eraserAttribute=true;owner.barState.eraserSensitivityOpen=false;
 			Inkeys::config.Drawing.Eraser.Automatic=true;
@@ -258,7 +419,7 @@ namespace Inkeys::UI::Bar
 		}
 		// 实际组件逐帧渲染：所有PNG与CSV都来自同一Advance/Draw/CommitPresented路径。
 		{
-			I18n::load(1,L"JSON",L"zh-CN");owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
+			I18n::load(1,L"JSON",L"zh-CN");owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
 			BarUiEdgeLightingEnabled=true;BarUiDynamicEdgeLightingEnabled=true;BarUiAnimationEnabled=true;
 			root->y.SetDirect(430);owner.barState.widgetPosition.primaryBar=false;owner.barState.widgetPosition.mainBar=true;
 			const auto epoch=RenderPipeline::GetDeviceEpoch();expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,1000,620)),"animation target setup");

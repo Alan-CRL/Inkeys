@@ -81,6 +81,15 @@ public:
 	bool Word(ID2D1DeviceContext* deviceContext, const BarUiWordClass& word, const BarUiInheritClass& inh, DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT textAlign = DWRITE_TEXT_ALIGNMENT_CENTER);
 	D2D1_SIZE_F MeasureText(const wstring& content, double fontSize,
 		DWRITE_FONT_WEIGHT fontWeight = DWRITE_FONT_WEIGHT_NORMAL);
+	void ConfigureLocalizedTypography();
+	[[nodiscard]] const wstring& GetFontFamily() const noexcept
+	{
+		return fontFamily;
+	}
+	[[nodiscard]] const wstring& GetTextLocale() const noexcept
+	{
+		return textLocale;
+	}
 	bool PrepareFrameLighting(double animationDtSeconds,
 		int drawingMode, int penMode, COLORREF brush1Color,
 		COLORREF highlighterColor);
@@ -411,6 +420,8 @@ protected:
 	array<ThicknessFineDialLabelCacheClass, 64>
 		thicknessFineDialLabelCache{};
 	unsigned long long thicknessFineDialLabelUseSerial = 0;
+	wstring fontFamily = L"HarmonyOS Sans SC";
+	wstring textLocale = L"zh-cn";
 	SuperellipseGeometryCacheClass superellipseGeometryCache;
 	ComPtr<ID2D1DeviceContext> frameMaskDeviceContext;
 	ComPtr<ID2D1Effect> frameGaussianBlurEffect;

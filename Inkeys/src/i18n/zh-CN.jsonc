@@ -61,6 +61,68 @@
         "BaseSizeHint": "自动模式时作为基础大小",
         "MixedHint": "各设备设置不同\n点击统一开启自动粗细",
         "SettingsHint": "自动粗细设置，暂未开放"
+      },
+      "MainButtons":
+      {
+        "SelectLabel": "选择",
+        "MoveLabel": "拖动",
+        "DrawLabel": "绘制",
+        "LaserLabel": "激光笔",
+        "HighlighterLabel": "荧光笔",
+        "HardPenLabel": "硬笔",
+        "SoftPenLabel": "软笔",
+        "EraserLabel": "擦除",
+        "AreaEraserLabel": "面积擦",
+        "GeometryLabel": "几何",
+        "RectangleLabel": "矩形",
+        "StraightLineLabel": "直线",
+        "UndoLabel": "撤回",
+        "ClearLabel": "清空",
+        "WhiteboardLabel": "白板",
+        "CloseWhiteboardLabel": "关闭白板",
+        "FreezeLabel": "定格",
+        "EndPresentationLabel": "结束放映",
+        "SettingsLabel": "设置",
+        "MoreLabel": "更多"
+      },
+      "DrawAttributes":
+      {
+        "BrushLabel": "刷子",
+        "LaserLabel": "激光笔",
+        "HighlighterLabel": "荧光笔",
+        "HardPenLabel": "硬笔",
+        "SoftPenLabel": "软笔",
+        "FreeLineLabel": "自由线",
+        "AnnotationLineLabel": "标注线",
+        "HoldThicknessLabel": "保持并固定粗细",
+        "ThicknessFormat": "粗细 {}",
+        "AnnotationUnavailableTitle": "启用标注线（暂不可用）",
+        "AnnotationFixedUnsupportedTitle": "标注线（粗细固定，暂未支持）",
+        "AnnotationDescription": "锁定绘制方向仅为水平、竖直或斜45°",
+        "ThicknessOverflowTitle": "墨迹粗细超出预览范围",
+        "ThicknessOverflowBody": "预览中的粗细可能与绘制粗细不一致。"
+      },
+      "GeometryAttributes":
+      {
+        "StraightLineLabel": "直线",
+        "RectangleLabel": "矩形"
+      },
+      "ColorPicker":
+      {
+        "RedChannelLabel": "R",
+        "GreenChannelLabel": "G",
+        "BlueChannelLabel": "B",
+        "OpacityLabel": "透明度",
+        "HoldColorLabel": "保持并固定颜色"
+      },
+      "Diagnostics":
+      {
+        "FrameRateFormat": "帧率: {:.2f} FPS | 无限制帧率: {:.2f} FPS",
+        "FrameRateUnavailable": "帧率: -- FPS | 无限制帧率: -- FPS"
+      },
+      "Errors":
+      {
+        "TransparentBackgroundWarning": "软件遇到透明背景无法正常显示的故障\n\nexe属性->关闭使用简化的颜色模式\nWindows7用户请开启Aero主题\n\n联系开发者->软件选项主页中\n重启软件试试"
       }
     }
   },

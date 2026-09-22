@@ -1,0 +1,3 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"UI3 主栏属于原生桌面 UI，需要遵循该层入口规范。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"任务涉及语言配置、i18n 资源同步、字体与嵌入资源。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"任务涉及 DWrite 文本测量、离屏渲染和固定布局适配。"}

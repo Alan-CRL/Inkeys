@@ -3,6 +3,7 @@ module;
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
+#include "../../../IdtI18n.h"
 #include <d2d1_1.h>
 #include <d2d1helper.h>
 #include <dwrite_1.h>
@@ -61,6 +62,24 @@ namespace
 
 // 具体渲染
 BarUIRendering::BarUIRendering(BarUISetClass* barUISetClassT) { barUISetClass = barUISetClassT; }
+
+void BarUIRendering::ConfigureLocalizedTypography()
+{
+	// 繁体字形使用 TC 资源；英语沿用 SC 字体但交给 DWrite 英语 locale 排版。
+	if (I18n::isIdentifying(L"zh-TW"))
+	{
+		fontFamily = L"HarmonyOS Sans TC";
+		textLocale = L"zh-tw";
+	}
+	else
+	{
+		fontFamily = L"HarmonyOS Sans SC";
+		textLocale = I18n::isIdentifying(L"en-US") ? L"en-us" : L"zh-cn";
+	}
+	// 离屏测试会在同一进程切换语言，数字布局缓存也必须跟随字体族失效。
+	for (auto& cached : thicknessFineDialLabelCache) cached = {};
+	thicknessFineDialLabelUseSerial = 0;
+}
 
 HRESULT BarUIRendering::EnsureDeviceResources(
 	const Ui3RenderDeviceEpoch& epoch, UINT32 targetWidth, UINT32 targetHeight)
@@ -1392,10 +1411,10 @@ BarUIRendering::GetThicknessFineDialLabelLayout(int value, FLOAT zoom)
 		BarThicknessFineDialLabelFontSizeDip) * zoom;
 	IDWriteTextFormat* format =
 		barUISetClass->barMedia.formatCache->GetFormat(
-			L"HarmonyOS Sans SC", fontSize,
+			fontFamily, fontSize,
 			fontCollection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
 			DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-			L"zh-cn", DWRITE_TEXT_ALIGNMENT_CENTER,
+			textLocale, DWRITE_TEXT_ALIGNMENT_CENTER,
 			DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 	if (!format) return nullptr;
 
@@ -2816,13 +2835,13 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 	{
 		/*IDWriteTextFormat* tmpTextFormat;
 		SharedDWriteFactory()->CreateTextFormat(
-			L"HarmonyOS Sans SC",
+			fontFamily,
 			SharedFontCollection().Get(),
 			DWRITE_FONT_WEIGHT_NORMAL,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
 			static_cast<FLOAT>(tarSize),
-			L"zh-cn",
+			textLocale,
 			&tmpTextFormat
 		);
 		tmpTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -2831,13 +2850,13 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 		textFormat.Attach(tmpTextFormat);*/
 
 		textFormat = barUISetClass->barMedia.formatCache->GetFormat(
-			L"HarmonyOS Sans SC",
+			fontFamily,
 			tarSize,
 			SharedFontCollection().Get(),
 			fontWeight,
 			DWRITE_FONT_STYLE_NORMAL,
 			DWRITE_FONT_STRETCH_NORMAL,
-			L"zh-cn",
+			textLocale,
 			textAlign,
 			DWRITE_PARAGRAPH_ALIGNMENT_CENTER   // 指定段落居中
 		);
@@ -2885,10 +2904,10 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 
 	IDWriteTextFormat* textFormat =
 		barUISetClass->barMedia.formatCache->GetFormat(
-			L"HarmonyOS Sans SC", static_cast<FLOAT>(fontSize),
+			fontFamily, static_cast<FLOAT>(fontSize),
 			SharedFontCollection().Get(),
 			fontWeight, DWRITE_FONT_STYLE_NORMAL,
-			DWRITE_FONT_STRETCH_NORMAL, L"zh-cn",
+			DWRITE_FONT_STRETCH_NORMAL, textLocale,
 			DWRITE_TEXT_ALIGNMENT_LEADING,
 			DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
 	if (!textFormat) return result;

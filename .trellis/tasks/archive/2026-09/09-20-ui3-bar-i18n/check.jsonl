@@ -1,0 +1,3 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"核对原生桌面层约束。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"核对语言配置、资源生成与字体加载。"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"核对文本布局与无窗口渲染验证。"}
