@@ -16,4 +16,4 @@
 - `Build\ARM64\Debug\InkeysHeadlessTests.exe --no-window`：退出码 0，输出 `PASS animation correctness`。
 - Trellis task validate、`git diff --check` 与编码/换行检查：通过。
 - `native-desktop/rendering-and-ui.md` 已同步唯一 Magnifier coordinator、版本化取消、失败矩阵与测试合同。
-- 基线动态排除列表已由用户初步人工确认改善主栏残影；本轮快速开关、工作区切换、焦点/任务栏/置顶/一像素行为仍等待实机视觉验收。
+- 基线动态排除列表及本轮快速开关、工作区切换、焦点/任务栏/置顶/一像素行为已于 2026-09-22 通过用户实机人工验收。

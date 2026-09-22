@@ -71,7 +71,7 @@
 - [x] 错误的 D3D9/WDDM 诊断已删除，失败/恢复日志准确且去重。
 - [x] 针对性测试覆盖生产使用的请求协调、失败传播和过滤逻辑，而不是复制算法自测。
 - [x] `InkeysRepo.sln` 的 `Debug | ARM64` 完整构建、`InkeysHeadlessTests.exe --no-window` 和 `git diff --check` 通过。
-- [ ] 真实 Magnification 画面、快速开关、设置窗/模式/PPT/白板切换及任务栏/置顶/焦点/一像素行为由用户人工验收。
+- [x] 真实 Magnification 画面、快速开关、设置窗/模式/PPT/白板切换及任务栏/置顶/焦点/一像素行为由用户人工验收。
 
 ## Deferred Investigation
 
