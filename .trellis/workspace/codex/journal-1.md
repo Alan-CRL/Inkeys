@@ -282,3 +282,25 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 15: UI3 i18n 格式串异常防护
+<!-- trellis-session: v=2 fp=b796e07f82d852e2 -->
+
+**Date**: 2026-09-22
+**Task**: UI3 i18n 格式串异常防护
+**Branch**: `feature/ui3-i18n`
+
+### Summary
+
+核实并修复 PR #214 的 CodeRabbit 建议：为 UI3 粗细与帧率本地化格式化增加 format_error 回退和无窗口回归测试；ARM64 构建、headless 测试与 i18n 检查通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0409256f` | fix(ui3): guard localized format strings |
+
+### Status
+
+[OK] **Completed**
