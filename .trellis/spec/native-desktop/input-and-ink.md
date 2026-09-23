@@ -91,10 +91,10 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 ## Scenario: 橡皮DIP尺寸、Touch响应与接触面积辅助
 
 ### 1. Scope / Trigger
-2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。2026-09-15 的精细区合同见下文：仅替代最小到标准区间的正速度立即增粗、固定120ms无确认以及独立idle旁路。标准以上清扫、物理补偿、面积换算/倍率和Hover/Down/Up所有权不变，不重写输入队列、模型、中心轨迹或渲染器。
+2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。2026-09-15 的精细区合同见下文：仅替代最小到标准区间的正速度立即增粗、固定120ms无确认以及独立idle旁路。2026-09-23 的 Touch 场景修正又替代了旧“统一物理清扫曲线”要求；精细算法、屏幕笔补偿、面积换算/倍率和Hover/Down/Up所有权仍不变，不重写输入队列、模型、中心轨迹或渲染器。
 
 ### 2. Signatures
-- `EraserSizes` 全部是直径 DIP：minimum=16、standard=32、maximum=160、touchStart=16、fixed=50；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
+- `EraserSizes` 全部是直径 DIP；`ResolveSizes(BaseSize)` 的当前预设 B=24/32/40，分别给出 minimum=0.5B、standard=B、maximum=5B、touchStart=0.5B、fixed=B。原始 `EraserSizes{}` 默认值只用于兼容直接调用；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
 - `ResolveConfig(display, mode, InputSource, sizes)` 分离真实来源、响应模型与标尺。来源通过当前 RTS context 的能力及精确 Pointer cursor 对应关系缓存，不改变真实 InputDeviceType。
 - `Controller::UpdatePosition(x,y,seconds,contactArea,terminal)` 只消费真实输入；`Advance` 不制造运动证据；`AreaDiagnostics`、`NextAreaWakeSeconds` 暴露有界状态与过期唤醒。
 - `ContactSnapshot` 保留 `rawContactSize`、既有 `contactSize` 和 `contactAreaUnits`。面积单位状态不影响正常位置、压力、倒转和接触身份。
@@ -110,7 +110,9 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 - 经验增益保持 `1 / clamp(min(max(Wdip,Hdip)/1920, min(Wdip,Hdip)/1080), 0.5, 4)`；它不是屏幕英寸或毫米估计。
 - 间接响应精细/进入/退出/大目标速度为 100/800/600/1900 DIP/s。屏幕笔物理响应为 20/120/80/350 mm/s，DIP回退为 80/480/320/1400 DIP/s。
 - 屏幕笔仅对标准以上增量应用 `g=(0.25/rho)^beta`，默认 beta=0.5，rho 为可信表面的 mm/DIP；基础属性、精细区与固定尺寸不参与补偿。本轮不调整这些已有响应。
-- Touch 动态目标直接用 DIP，不做 rho 整目标补偿。Touch 精细/进入/退出/大目标：物理 30/90/60/250 mm/s；DIP 100/240/160/700 DIP/s；经验 100/120/80/400 reference DIP/s。
+- Touch 动态目标直接用 DIP，不做 rho 整目标补偿。可信物理或有效手动标尺的小屏端点为 30/90/60/250 mm/s，教室大屏端点为 30/350/250/1300 mm/s；DIP 回退仍是 100/240/160/700 DIP/s，经验回退仍是 100/120/80/400 reference DIP/s，不将 mm/s 阈值套用到回退单位。
+- Touch 场景强度仅用于 DirectTouch 物理/手动路径的 enter/exit/large：长边 320–1200 mm 之间用 smoothstep 得到有界 `w`，三项为 `90+260w / 60+190w / 250+1050w` mm/s。Laptop 显式选择限制 `w≤0.25`，LargeScreen 显式选择保证 `w≥0.25`；内部 Automatic 仅在调用者请求时按可信尺寸取原权重，未知尺寸退 Laptop/DIP。此长边是经验先验，不是用户动作或字迹的测量，不按整屏比例计算速度。已保存的 0/1 场景选择不被 EDID 覆盖；标尺、场景、响应模型分别解析，接触期间锁存。Surface 约 28cm 的 Laptop 路径继续严格使用小屏端点。
+- 同一有效参数必须供 `SweepActionSpeed` 后的资格、证据、退出和 `ReferenceTargetDiameterDip` 目标共同使用。普通动作低于进入资格不能凭持续时长充成最大；大屏 B=32、中灵敏度时 100/200/300/400/432.376/600/800/1000/1300 mm/s 的公式参考目标约为 32/32/32/32.42/33.11/42.16/67.15/109.40/160 DIP，实际控制器还受起步、证据与时间响应影响。
 - Touch 历史窗 50ms，证据 start/full/decay 为 25/60/180ms；增长 tau 120/100ms，对数增长限速 6/8 每秒。原有缩小/保持参数不全局改动。面积开关关闭时同样使用新 Touch 速度模型。
 - 真实路程按时间积分，折返不作净位移抵消；预测、补点、缺失连接和面积变化不提供速度资格。实际位移解锁仍为物理 1–3mm 或回退 2–6 动作单位。
 - Touch 的移动目标不能因为每包误差小于 settle tolerance 就立即吸附。仅目标稳定时允许小误差收敛，否则高回报率会绕过阻尼。此修正规则不改变冻结的间接/屏幕笔响应。
@@ -127,14 +129,15 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 - 原始输入与帧预览状态分离；静止只更新当前工具和待用尺寸断点，恢复实际几何时追加同位小半径锚点，不覆盖历史或恢复已擦内容。
 - Touch笔速输入恢复时，若距离上次成功建模的时间乘输出采样率将超过单次输出上限，复用模型Reset/Update在最后已接受位置建立短时间种子，再提交真实输入。不清空历史结果、转换游标、接触身份或尺寸/面积控制器，不增加模型输出上限；此路径不用于Mouse/Pen或其他橡皮模式，种子不提供运动证据。
 - 原始面积有效性独立于实验开关；关闭辅助仍可显示已确认的DIP宽高。未确认单位明确显示unverified，不标成可信像素；referenceFresh单独表示参考是否过期。
-- 诊断每帧可关闭发布，不逐点同步日志。包含真实来源、模型、单位、像素/DPI/手动尺寸、速度/目标/实际DIP、原始/换算面积、有效性、参考/实际下限及最终几何半径。
+- 诊断每帧可关闭发布，磁盘/控制台输出沿用帧级限频，不逐点同步日志。包含真实来源、请求场景、解析 Touch 场景/权重/来源、模型、标尺/单位、像素/DPI/手动尺寸、有效四阈值、B/增益、短窗报告速度、经资格路径的清扫速度、140ms fineSpeed、资格/证据、目标/实际 DIP、面积及对应 contact 的最终光标与几何直径。`cursorPx` 不可从其他光标的列表首项取值。
 - 面积开关独立发布并锁存，不进入 Mouse/Pen 的显示标尺变更判定，避免点击 Touch 开关使精细 Hover 重置。
 
 ### 4. Validation & Error Matrix
 | 场景 | 必需结果 |
 |---|---|
 | Mouse/ScreenPen冻结轨迹 | 改动前后浮点位模式一致 |
-| 面积关闭、不同可信密度的同物理Touch运动 | DIP目标一致，不恢复整目标物理补偿 |
+| 同一 Touch 场景、不同分辨率/DPI/方向的正确物理轨迹 | 单位换算与 DIP 目标/采样率结果一致；不要求跨场景同 mm/s 同目标 |
+| 不同可信物理场景的普通动作和主动清扫 | 各自普通区不误触顶，中间尺寸可控，持续快速清扫可达；不恢复整目标物理补偿 |
 | 未知单位/缺失/零/负值/巨值/离群 | 辅助拒绝或平滑释放，正常触摸仍接收 |
 | 新Down/原地长按/起点抖动 | 小尺寸，不因面积或时间开启大洞 |
 | 普通慢拖、无清扫资格 | 可确认并使用有界面积下限 |
@@ -167,7 +170,7 @@ if (!snapshot.eraser.needsAnimation) CheckFrameSequenceStops();
 ## Scenario: RTS Touch contact-area metadata and relative-length conversion
 
 ### 1. Scope / Trigger
-Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. Speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics are frozen.
+Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. In this 2026-09-14 metadata scope, speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics were frozen. The 2026-09-23 Touch physical-scene curve above supersedes only that historical speed-response freeze.
 
 ### 2. Signatures
 - `ResolveContactLengthTransform(axis, span, positionScale)` returns per-axis status, span-to-axis and span-to-canvas factors.

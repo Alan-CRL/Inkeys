@@ -30,6 +30,8 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 清扫增益为0.85/1/1.15。`SweepActionSpeed`只放大fineToStandard以上的动作余量，供清扫资格和清扫目标共用；中档直接返回原速度。精细门槛、时间常数、Touch防点擦、面积报告宽高与单位转换均不缩放。面积floor仍受当前maximum夹取。
 
+2026-09-23 Touch 场景曲线只调整物理/手动动作路径的清扫阈值；B 仍只控制上述 DIP 尺寸，灵敏度仍是三档温和增益，不能替代 Laptop/LargeScreen 场景选择。面积开启时已接受下限可高于 B，关闭面积也必须独立通过普通擦除回归。
+
 ### UI与资源
 使用同一Bar HWND、D2D context、共享RenderPipeline线程。标准大按钮/主题/边缘光/分割线复用Bar现有实现。`Assets/EraserGripVisual.h`是C++预览/HLSL的无副作用比例来源，FXC临时ASCII副本必须同步。
 

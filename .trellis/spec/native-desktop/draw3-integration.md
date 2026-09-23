@@ -273,6 +273,7 @@ PumpBridgeState();
 - 普通笔光标直径是 `max(widthDip, 5 DIP * dpiScale)`；只有最小光标值按 DPI 缩放，实际笔画粗细不重复缩放。
 - 荧光笔当前绘制几何固定为 `6.25 × 50 px`，光标必须复用该尺寸；最终 alpha 为 `opacity * fillAlpha = 0.35`，Bar 显示同一有效透明度。
 - Eraser Hover 整体 alpha 为 `0.5`，Contact 为 `1.0`；这一规则同时适用固定/速度橡皮、鼠标和倒转笔橡皮。
+- Touch 速度橡皮的场景、标尺及有效阈值由 Down 时的 `SpeedEraser::Config` 锁存；Host/Controller 的帧级诊断应报告同一 contact 的目标、实际几何和最终光标，不得用光标列表首项代表另一指或鼠标。
 - Laser 使用独立的 `Pen.Laser.width/color`；光标、笔迹与粗细预览必须共用当前 Laser 宽度和颜色语义，固定漫反射宽度仍只由 Draw3 的 DPI 尺寸契约决定。
 
 ### 4. Validation & Error Matrix

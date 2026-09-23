@@ -21,3 +21,23 @@ EraserSizes仍是DIP属性单一来源。真实InputSource、ResponseModel、mot
 
 ## 实验入口与验证
 面积辅助迁入绘制设置的橡皮擦块，原Experimental.Inkeys3.Draw3.TouchContactAreaAssistance键不变，程序调测继续同步读写；实验页仅保留独立控制台输出。五入口与两个笔响应选择写入Drawing.Eraser。headless保留第八轮回归并验证会话/配置写读；隐藏测试验证入口、首点、普通跨段及原有面积/历史链。
+
+## 2026-09-23：Touch 场景曲线修正（本轮设计）
+
+### 解析边界与优先级
+
+`ResponseModel` 继续表示真实输入关系（IndirectDip / ScreenPenHybrid / DirectTouch）；`ScaleSource` 表示动作单位来源（TrustedPhysical / ManualCalibration / ResolutionDpiHeuristic / DipOnly）；新增 Touch 场景强度仅在 DirectTouch 且物理标尺有效时选择清扫参数。同一 `Config` 在接触 Down 时锁存，资格、证据、退出和目标都读取它的有效阈值；显示/场景变化只影响后续安全批次。
+
+现有 `paintDevice` 的 Laptop/LargeScreen 是用户可选择并持久化的场景先验，Host 原样传入，不由 EDID 覆盖。内部 `Automatic` 解析仅在调用者明确请求时使用，不增加正式设置页；无可靠尺寸时退到 Laptop 先验。来源和回退理由进入诊断。现有产品在首次无保存值时的启动推荐仍由原入口产生；已保存的 0/1 选择不能被自动识别改写。
+
+可靠尺寸只取已映射且有效的物理/手动标尺，从当前方向的两轴 `mm/px × pixel` 得到长边毫米。旋转交换两轴后权重相同。集中经验节点为长边 320 mm（Surface 端）和 1200 mm（教室端），中间用 `smoothstep` 的 0..1 有界权重；它是表面尺寸先验，绝不声称测得字迹或手速。Laptop 把权重上限约束为 0.25，LargeScreen 把下限约束为 0.25，Automatic 使用原权重。这样约 28cm Surface 的 Laptop 选择严格保留旧端点，约 139cm 教室 LargeScreen 到达大屏端点，20–32 英寸及中型演示屏连续落在两端之间。显式 Laptop 在大屏仍保留较轻的 Laptop 倾向；显式 LargeScreen 在小屏仍保留较强的清扫倾向。
+
+物理或手动标尺下，`fine=30 mm/s` 不变；enter/exit/large 三项共用权重 `w`：`90+260w / 60+190w / 250+1050w mm/s`。小屏 30/90/60/250，大屏 30/350/250/1300。阈值由一个解析结果集中发布并保持有限有序。`SweepActionSpeed` 继续仅作用于精细上界以上，0.85/1/1.15 的增益同时影响资格与目标；标准以上仍用 smoothstep 后的指数尺寸映射，不调全局 tau/保持/面积系数。B 只改变 0.5B/B/5B 尺寸，不改变场景速度。
+
+无可靠物理尺寸时不计算假长边、不把 mm/s 端点直接套到 DIP/s：LargeScreen 且逻辑输出可信时沿用 100/120/80/400 reference DIP/s 的经验路径，Laptop 沿用 100/240/160/700 DIP/s；已有 ForceUnavailable 规则保留。Automatic 无尺寸退到 Laptop DIP 路径。来源/单位和有效阈值明确记录，复制拓扑与无效映射单列测试。
+
+### 诊断与验证
+
+帧级诊断包含请求场景、解析场景/强度/来源、动作标尺与 mm/px 或 DIP/px、有效 fine/enter/exit/large、B/清扫增益、短窗报告速度及清扫速度、长窗 fineSpeed、资格/证据、目标/实际 DIP。`cursorPx` 归属当前诊断 contact，另保留对应实际几何半径；沿用既有限频输出，不加逐包同步 I/O。
+
+先以新增测试证明旧大屏可信物理路径错误，再实现集中解析；测试将公式值、控制器合成回放、隐藏窗口产品接入及真人实机四种证据分开。合成覆盖小平板、较大笔电、20–32 英寸触摸屏、中型演示屏、教室大屏及更大表面，分辨率/DPI/方向/采样率、普通与快速轨迹、回退和面积开关。大屏候选仅是首版标定；设备手感待实测，若中间段不足再作局部、可解释的下一轮调整。

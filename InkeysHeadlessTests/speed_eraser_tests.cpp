@@ -14,6 +14,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <utility>
 #include <vector>
 
 import Inkeys.Drawing.Draw3.contact_input;
@@ -385,6 +386,243 @@ int RunSpeedEraserTests()
 				<< " expected=" << expected << " tolerance=" << tolerance << '\n';
 		}
 	};
+	// 本轮红灯：可信物理大屏以前误用 Surface 清扫区间；日志值仅用于公式对照。
+	DisplayScale classroom;
+	classroom.monitor=91;classroom.logicalOutputKnown=true;classroom.physicalAvailable=true;
+	classroom.pixelWidth=1920;classroom.pixelHeight=1080;
+	classroom.dipPerPixelX=classroom.dipPerPixelY=96.0f/144.0f;
+	classroom.cmPerPixelX=139.0f/1920.0f;classroom.cmPerPixelY=78.0f/1080.0f;
+	const auto classroomTouch=ResolveConfig(classroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,classroom),ResolveSizes(BaseSize::Medium));
+	expect(classroomTouch.response==ResponseModel::DirectTouch && classroomTouch.motionSource==ScaleSource::TrustedPhysical &&
+		classroomTouch.motionUnit==MotionUnit::MillimetersPerSecond,"classroom fixture uses real Touch and physical mm/s");
+	Near(classroomTouch.motionPerPixelX,0.723958,0.00001,"classroom log X action scale");
+	Near(classroomTouch.fineToStandardSpeed,30,0.001,"classroom fine threshold stays unchanged");
+	Near(classroomTouch.sweepEnterSpeed,350,0.001,"classroom sweep entry resolves from scene");
+	Near(classroomTouch.sweepExitSpeed,250,0.001,"classroom sweep exit resolves from scene");
+	Near(classroomTouch.largeTargetSpeed,1300,0.001,"classroom maximum target needs sustained fast action");
+	expect(std::string(TouchProfileName(classroomTouch))=="Classroom","resolved classroom profile is observable");
+	for(const auto [speed,target]:std::array<std::pair<double,double>,9>{
+		{{100,32},{200,32},{300,32},{400,32.42},{432.376,33.11},{600,42.16},{800,67.15},{1000,109.40},{1300,160}}})
+		Near(ReferenceTargetDiameterDip(classroomTouch,speed),target,0.08,"classroom reference target table");
+	DisplayScale surface=classroom;surface.pixelWidth=2880;surface.pixelHeight=1920;
+	surface.dipPerPixelX=surface.dipPerPixelY=0.5f;
+	surface.cmPerPixelX=28.0f/2880.0f;surface.cmPerPixelY=19.0f/1920.0f;
+	const auto surfaceTouch=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::Touch,surface),ResolveSizes(BaseSize::Medium));
+	Near(surfaceTouch.sweepEnterSpeed,90,0.001,"Surface sweep entry retains previous endpoint");
+	Near(surfaceTouch.sweepExitSpeed,60,0.001,"Surface sweep exit retains previous endpoint");
+	Near(surfaceTouch.largeTargetSpeed,250,0.001,"Surface maximum target retains previous endpoint");
+	const auto classroomLaptop=ResolveConfig(classroom,DeviceMode::Laptop,MappedSource(SourceKind::Touch,classroom));
+	Near(classroomLaptop.touchProfileWeight,0.25,0.0001,"explicit Laptop limits classroom size prior");
+	Near(classroomLaptop.largeTargetSpeed,512.5,0.001,"explicit Laptop cannot silently become classroom curve");
+	const auto classroomAuto=ResolveConfig(classroom,DeviceMode::Automatic,MappedSource(SourceKind::Touch,classroom));
+	Near(classroomAuto.touchProfileWeight,1,0.0001,"automatic reliable classroom size reaches endpoint");
+	expect(classroomAuto.touchProfileSource==TouchProfileSource::AutomaticPhysical &&
+		classroomTouch.touchProfileSource==TouchProfileSource::SelectedLargeScreenPhysical,
+		"automatic and selected scene provenance remain distinct");
+	float previousWeight=0;
+	for(float widthCm:{28.0f,32.0f,40.0f,55.0f,70.0f,90.0f,120.0f,139.0f,200.0f})
+	{
+		auto display=classroom;display.cmPerPixelX=widthCm/display.pixelWidth;
+		display.cmPerPixelY=widthCm*0.6f/display.pixelHeight;
+		const auto resolved=ResolveConfig(display,DeviceMode::Automatic,MappedSource(SourceKind::Touch,display));
+		expect(resolved.touchProfileWeight>=previousWeight && resolved.touchProfileWeight>=0 &&
+			resolved.touchProfileWeight<=1 && resolved.sweepExitSpeed<resolved.sweepEnterSpeed &&
+			resolved.sweepEnterSpeed<resolved.largeTargetSpeed,"synthetic physical-size sweep parameters stay ordered and continuous");
+		if(widthCm==70)expect(resolved.touchProfileWeight>0.3f && resolved.touchProfileWeight<0.5f,
+			"synthetic 32-inch class surface gets an intermediate curve");
+		previousWeight=resolved.touchProfileWeight;
+	}
+	for(float boundaryCm:{32.0f,120.0f})
+	{
+		auto below=classroom;below.cmPerPixelX=(boundaryCm-0.01f)/below.pixelWidth;
+		below.cmPerPixelY=0.6f*(boundaryCm-0.01f)/below.pixelHeight;
+		auto above=classroom;above.cmPerPixelX=(boundaryCm+0.01f)/above.pixelWidth;
+		above.cmPerPixelY=0.6f*(boundaryCm+0.01f)/above.pixelHeight;
+		const auto a=ResolveConfig(below,DeviceMode::Automatic,MappedSource(SourceKind::Touch,below));
+		const auto b=ResolveConfig(above,DeviceMode::Automatic,MappedSource(SourceKind::Touch,above));
+		expect(std::abs(a.touchProfileWeight-b.touchProfileWeight)<0.001f,
+			"synthetic scene interpolation stays continuous on both sides of its calibration nodes");
+	}
+	auto classroomRotated=classroom;
+	std::swap(classroomRotated.pixelWidth,classroomRotated.pixelHeight);
+	std::swap(classroomRotated.cmPerPixelX,classroomRotated.cmPerPixelY);
+	const auto rotatedClassroom=ResolveConfig(classroomRotated,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,classroomRotated));
+	Near(rotatedClassroom.touchProfileWeight,classroomTouch.touchProfileWeight,0.0001,"rotation keeps Touch profile meaning");
+	auto manualClassroom=classroom;manualClassroom.physicalAvailable=false;
+	manualClassroom.development.scale=ScaleOverride::ManualSurface;
+	manualClassroom.development.calibration={manualClassroom.monitor,139,78,0};
+	const auto manualClassroomTouch=ResolveConfig(manualClassroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,manualClassroom));
+	expect(manualClassroomTouch.motionSource==ScaleSource::ManualCalibration &&
+		manualClassroomTouch.touchProfileSource==TouchProfileSource::SelectedLargeScreenPhysical,
+		"manual scale can select classroom scene without EDID");
+	Near(manualClassroomTouch.largeTargetSpeed,1300,0.001,"manual classroom uses physical scene curve");
+	auto manualRotated=manualClassroom;manualRotated.orientation=1;
+	std::swap(manualRotated.pixelWidth,manualRotated.pixelHeight);
+	const auto rotatedManualTouch=ResolveConfig(manualRotated,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,manualRotated));
+	Near(rotatedManualTouch.touchProfileWeight,manualClassroomTouch.touchProfileWeight,0.0001,
+		"manual surface rotation changes action axes but not scene intensity");
+	auto missingClassroom=classroom;missingClassroom.physicalAvailable=false;
+	const auto missingLarge=ResolveConfig(missingClassroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,missingClassroom));
+	const auto missingLaptop=ResolveConfig(missingClassroom,DeviceMode::Laptop,MappedSource(SourceKind::Touch,missingClassroom));
+	const auto missingAuto=ResolveConfig(missingClassroom,DeviceMode::Automatic,MappedSource(SourceKind::Touch,missingClassroom));
+	expect(missingLarge.motionSource==ScaleSource::ResolutionDpiHeuristic &&
+		missingLarge.motionUnit==MotionUnit::HeuristicPerSecond && missingLarge.largeTargetSpeed==400 &&
+		missingLarge.touchProfileSource==TouchProfileSource::SelectedLargeScreenFallback,
+		"unknown large-screen size retains the labelled heuristic unit and thresholds");
+	expect(missingLaptop.motionSource==ScaleSource::DipOnly && missingLaptop.largeTargetSpeed==700 &&
+		missingAuto.motionSource==ScaleSource::DipOnly && missingAuto.touchProfileSource==TouchProfileSource::AutomaticFallback,
+		"unknown Laptop and Auto size keep DIP fallback without invented millimeters");
+	auto unmappedClassroom=MappedSource(SourceKind::Touch,classroom);unmappedClassroom.mappedMonitor=0;
+	const auto copiedOrUnknown=ResolveConfig(classroom,DeviceMode::LargeScreen,unmappedClassroom);
+	expect(copiedOrUnknown.motionSource==ScaleSource::ResolutionDpiHeuristic &&
+		copiedOrUnknown.motionUnit==MotionUnit::HeuristicPerSecond && copiedOrUnknown.touchSurfaceLongEdgeMm==0,
+		"unreliable topology mapping cannot consume EDID centimeters as physical Touch speed");
+	auto forceUnavailable=classroom;forceUnavailable.development.scale=ScaleOverride::ForceUnavailable;
+	const auto forcedFallback=ResolveConfig(forceUnavailable,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,forceUnavailable));
+	expect(forcedFallback.motionSource==ScaleSource::ResolutionDpiHeuristic && forcedFallback.largeTargetSpeed==400,
+		"forced scale fallback preserves reference DIP/s thresholds");
+	auto invalidManual=manualClassroom;invalidManual.development.calibration.widthCm=0;
+	const auto rejectedManual=ResolveConfig(invalidManual,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,invalidManual));
+	expect(rejectedManual.motionSource==ScaleSource::ResolutionDpiHeuristic && rejectedManual.touchSurfaceLongEdgeMm==0,
+		"invalid manual dimensions never fabricate a physical scene");
+	struct SceneTrace { float actual=0,target=0;double evidence=0,reportedSpeed=0,sweepSpeed=0; };
+	const auto circleTrace=[&](const Config& config,double speed,int hz,int fps,double duration)
+	{
+		Controller controller;controller.Reset(0,0,0,StartKind::Touch,config);
+		constexpr double radius=55.0;int sample=1,frame=1;
+		while(std::min(static_cast<double>(sample)/hz,static_cast<double>(frame)/fps)<=duration+1e-10)
+		{
+			const double inputTime=static_cast<double>(sample)/hz,frameTime=static_cast<double>(frame)/fps;
+			if(inputTime<=frameTime)
+			{
+				const double angle=speed*inputTime/radius;
+				controller.UpdatePosition(static_cast<float>(radius*(std::cos(angle)-1)/config.motionPerPixelX),
+					static_cast<float>(radius*std::sin(angle)/config.motionPerPixelY),inputTime);++sample;
+			}
+			else {controller.Advance(frameTime);++frame;}
+		}
+		controller.Advance(duration);
+		return SceneTrace{controller.DiameterDip(),controller.TargetDiameterDip(),controller.SweepEvidenceSeconds(),
+			controller.Speed(),controller.SweepSpeed()};
+	};
+	for(double speed:{100.0,200.0,270.0,300.0,322.0,400.0,432.376,600.0,800.0,1000.0,1300.0})
+	{
+		const auto trace=circleTrace(classroomTouch,speed,1000,120,3.0);
+		std::cout<<"[TouchScene] classroom physical-mm/s speed="<<speed<<" reference="
+			<<ReferenceTargetDiameterDip(classroomTouch,speed)<<" controllerTarget="<<trace.target
+			<<" actual="<<trace.actual<<" evidence="<<trace.evidence<<'\n';
+		if(speed<=432.376)
+		{
+			expect(trace.actual<=classroomTouch.sizes.standardDiameterDip*1.10f,
+				"synthetic classroom ordinary local motion stays near B");
+			expect(trace.target<=classroomTouch.sizes.standardDiameterDip*1.10f,
+				"synthetic classroom ordinary target stays near B");
+		}
+		if(speed>=600)Near(trace.actual,ReferenceTargetDiameterDip(classroomTouch,speed),3.0,
+			"synthetic sustained classroom clearing reaches its intermediate or maximum target");
+	}
+	const auto ordinaryClassroomLong=circleTrace(classroomTouch,432.376,125,60,20.0);
+	expect(ordinaryClassroomLong.actual<=classroomTouch.sizes.standardDiameterDip*1.10f &&
+		ordinaryClassroomLong.target<=classroomTouch.sizes.standardDiameterDip*1.10f,
+		"twenty seconds of synthetic ordinary local Touch movement cannot accumulate maximum");
+	std::vector<Knot> classroomReversals{{0,0}};
+	for(int i=1;i<=50;++i)classroomReversals.push_back({i*0.12,i%2?432.376*0.12:0});
+	const auto reversalSizes=Replay(classroomTouch,classroomReversals,125,60,{3.0,6.0},StartKind::Touch);
+	for(float diameterPx:reversalSizes)
+		expect(diameterPx*classroom.dipPerPixelX<=classroomTouch.sizes.standardDiameterDip*1.10f,
+			"synthetic short classroom reversals remain ordinary rather than accumulating maximum");
+	Controller slowFastSlow;slowFastSlow.Reset(0,0,0,StartKind::Touch,classroomTouch);
+	constexpr double localRadius=55.0;double angle=0;float fastPeak=0;
+	for(int i=1;i<=875;++i)
+	{
+		const double time=i/125.0,velocity=time<=1?300.0:time<=3?1000.0:300.0;
+		angle+=velocity/(125.0*localRadius);
+		slowFastSlow.UpdatePosition(static_cast<float>(localRadius*(std::cos(angle)-1)/classroomTouch.motionPerPixelX),
+			static_cast<float>(localRadius*std::sin(angle)/classroomTouch.motionPerPixelY),time);
+		if(time==3.0)fastPeak=slowFastSlow.DiameterDip();
+	}
+	expect(fastPeak>80 && slowFastSlow.DiameterDip()<=classroomTouch.sizes.standardDiameterDip*1.10f,
+		"synthetic slow-fast-slow local arc grows in clearing and returns to ordinary size");
+	for(double speed:{432.376,800.0,1300.0})
+	{
+		const auto reference=circleTrace(classroomTouch,speed,1000,120,3.0);
+		for(int hz:{60,125,240})for(int fps:{30,60,144})
+		{
+			const auto result=circleTrace(classroomTouch,speed,hz,fps,3.0);
+			expect(std::abs(result.actual-reference.actual)<=reference.actual*0.05f,
+				"synthetic classroom local sweep is input and frame-rate consistent");
+		}
+	}
+	DisplayScale mediumSurface=classroom;
+	mediumSurface.cmPerPixelX=70.0f/mediumSurface.pixelWidth;
+	mediumSurface.cmPerPixelY=40.0f/mediumSurface.pixelHeight;
+	const auto mediumTouch=ResolveConfig(mediumSurface,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,mediumSurface));
+	expect(mediumTouch.sweepEnterSpeed>90 && mediumTouch.sweepEnterSpeed<350 &&
+		mediumTouch.largeTargetSpeed>250 && mediumTouch.largeTargetSpeed<1300,
+		"synthetic medium touch surface retains a distinct ordinary and clearing range");
+	const double mediumSweepSpeed=(mediumTouch.sweepEnterSpeed+mediumTouch.largeTargetSpeed)*0.5;
+	const auto mediumReference=circleTrace(mediumTouch,mediumSweepSpeed,125,60,3.0);
+	expect(circleTrace(mediumTouch,150,125,60,3).actual<=mediumTouch.sizes.standardDiameterDip*1.02f &&
+		mediumReference.actual>mediumTouch.sizes.standardDiameterDip*1.5f &&
+		circleTrace(mediumTouch,mediumTouch.largeTargetSpeed*1.05,125,60,3).actual>
+			mediumTouch.sizes.maximumDiameterDip*0.95f,
+		"synthetic medium scene has ordinary, intermediate and reachable maximum zones");
+	for(const auto pixels:std::array<std::pair<int,int>,3>{{{1920,1080},{2560,1440},{3840,2160}}})
+	for(int dpi:{96,120,144,192})for(bool portrait:{false,true})
+	{
+		auto display=mediumSurface;display.pixelWidth=pixels.first;display.pixelHeight=pixels.second;
+		display.cmPerPixelX=70.0f/display.pixelWidth;display.cmPerPixelY=40.0f/display.pixelHeight;
+		if(portrait){std::swap(display.pixelWidth,display.pixelHeight);std::swap(display.cmPerPixelX,display.cmPerPixelY);}
+		display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
+		const auto config=ResolveConfig(display,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,display));
+		Near(config.touchProfileWeight,mediumTouch.touchProfileWeight,0.0001,
+			"same synthetic medium surface resolves the same scene across resolution, DPI and rotation");
+		Near(config.largeTargetSpeed,mediumTouch.largeTargetSpeed,0.001,
+			"same medium scene uses the same mm/s thresholds across display modes");
+		const auto trace=circleTrace(config,mediumSweepSpeed,125,60,3.0);
+		expect(std::abs(trace.actual-mediumReference.actual)<=mediumReference.actual*0.05f,
+			"same physical medium-scene action retains DIP output across display modes");
+	}
+	for(float widthCm:{28.0f,40.0f,55.0f,70.0f,90.0f,120.0f,139.0f,200.0f})
+	{
+		auto display=classroom;display.cmPerPixelX=widthCm/display.pixelWidth;
+		display.cmPerPixelY=widthCm*0.6f/display.pixelHeight;
+		const auto config=ResolveConfig(display,DeviceMode::Automatic,MappedSource(SourceKind::Touch,display));
+		const auto ordinary=circleTrace(config,config.sweepEnterSpeed*0.75,125,60,3);
+		const auto clearing=circleTrace(config,config.largeTargetSpeed*1.05,125,60,3);
+		std::cout<<"[TouchProfile] synthetic widthCm="<<widthCm<<" weight="<<config.touchProfileWeight
+			<<" enter="<<config.sweepEnterSpeed<<" exit="<<config.sweepExitSpeed
+			<<" large="<<config.largeTargetSpeed<<" ordinaryDIP="<<ordinary.actual
+			<<" clearDIP="<<clearing.actual<<'\n';
+		expect(ordinary.actual<=config.sizes.standardDiameterDip*1.05f &&
+			clearing.actual>=config.sizes.maximumDiameterDip*0.85f,
+			"synthetic size family has both ordinary and reachable clearing zones");
+	}
+	for(auto base:{BaseSize::Small,BaseSize::Medium,BaseSize::Large})
+	{
+		float priorRatio=0;
+		for(auto sensitivity:{Sensitivity::Low,Sensitivity::Medium,Sensitivity::High})
+		{
+			InputSettings settings;settings.baseSize=base;settings.sensitivity=sensitivity;
+			const auto parsed=ResolveInput(classroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,classroom),
+				InputEntry::Touch,settings);
+			const auto& config=parsed.config;const float B=static_cast<float>(base);
+			Near(config.sizes.minimumDiameterDip,B*0.5,0.001,"base preset sets only minimum DIP");
+			Near(config.sizes.maximumDiameterDip,B*5,0.001,"base preset sets only maximum DIP");
+			Near(config.largeTargetSpeed,1300,0.001,"base preset and sensitivity do not redefine classroom speed range");
+			Near(config.sweepGain,SweepGain(sensitivity),0.0001,"sensitivity stays a mild sweep gain");
+			const float ratio=ReferenceTargetDiameterDip(config,800)/B;
+			if(priorRatio)expect(ratio>=priorRatio,"low/medium/high gains retain ordered clearing targets");
+			priorRatio=ratio;
+		}
+	}
+	auto assistedClassroom=classroomTouch;assistedClassroom.touchContactAreaAssistance=true;
+	const auto area=AreaSample(assistedClassroom,40,30);
+	const auto assistedOrdinary=ReplayArea(assistedClassroom,{{0,0},{2,400}},125,60,{2.0},
+		[&](double){return area;});
+	expect(assistedOrdinary[0].area.active && assistedOrdinary[0].diameter>classroomTouch.sizes.standardDiameterDip &&
+		assistedOrdinary[0].diameter<=assistedClassroom.contactArea.maximumFloorDip+0.01f,
+		"area-on classroom Touch respects a finite accepted floor rather than the area-off B target");
 
 	DisplayScale physical;
 	physical.generation = 7;
@@ -908,9 +1146,11 @@ int RunSpeedEraserTests()
 		auto d=penDisplay;d.cmPerPixelX=d.cmPerPixelY=rho/10;
 		const auto c=ResolveConfig(d,DeviceMode::Laptop,MappedSource(SourceKind::Touch,d));
 		Near(CompensateTargetDiameterDip(c,100),100,0.0001,"R7 touch dynamic target is DIP, independent of physical density");
-		std::vector<Knot> local{{0,0}};for(int i=1;i<=8;++i)local.push_back({i*0.2,i%2?36.0:0.0});
+		// 历史 180 mm/s 跨表面同目标断言已替代；各场景按自身有效清扫区检查可达性。
+		const double localSpeed=c.largeTargetSpeed*0.72;
+		std::vector<Knot> local{{0,0}};for(int i=1;i<=8;++i)local.push_back({i*0.2,i%2?localSpeed*0.2:0.0});
 		const auto values=Replay(c,local,125,60,{0.8,1.6},StartKind::Touch);
-		expect(values[0]>64 && values[1]>64,"R7 36mm local touch strokes at 180mm/s enter usable sweep");
+		expect(values[0]>64 && values[1]>64,"R7 local touch sweep remains reachable at each effective scene");
 	}
 	Near(penConfig.rhoMmPerDip,0.25,0.00001,"physical axes resolve millimeters per DIP");
 	expect(penConfig.motionUnit==MotionUnit::MillimetersPerSecond && penConfig.sweepEnterSpeed==120 &&

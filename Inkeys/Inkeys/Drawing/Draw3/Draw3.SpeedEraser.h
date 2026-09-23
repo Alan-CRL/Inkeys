@@ -6,7 +6,9 @@
 
 namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
-	enum class DeviceMode { LargeScreen, Laptop };
+	enum class DeviceMode { LargeScreen, Laptop, Automatic };
+	enum class TouchProfileSource { NotTouch, SelectedLaptopPhysical, SelectedLargeScreenPhysical,
+		AutomaticPhysical, SelectedLaptopFallback, SelectedLargeScreenFallback, AutomaticFallback };
 	enum class ScaleSource { DipOnly, TrustedPhysical, ManualCalibration, ResolutionDpiHeuristic,
 		Dip = DipOnly, Physical = TrustedPhysical };
 	enum class MotionUnit { DipPerSecond, MillimetersPerSecond, HeuristicPerSecond };
@@ -195,6 +197,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		PenResponseChoice formalPenResponse = PenResponseChoice::Automatic;
 		bool developmentResponseOverride = false;
 		DeviceMode mode = DeviceMode::Laptop;
+		TouchProfileSource touchProfileSource = TouchProfileSource::NotTouch;
+		float touchProfileWeight = 0.0f, touchSurfaceLongEdgeMm = 0.0f;
 		ScaleSource motionSource = ScaleSource::DipOnly;
 		MotionUnit motionUnit = MotionUnit::DipPerSecond;
 		InputSource inputSource;
@@ -275,6 +279,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	const char* ResponseModelName(ResponseModel model) noexcept;
 	const char* ScaleSourceName(ScaleSource source) noexcept;
 	const char* MotionUnitName(MotionUnit unit) noexcept;
+	const char* DeviceModeName(DeviceMode mode) noexcept;
+	const char* TouchProfileSourceName(TouchProfileSource source) noexcept;
+	const char* TouchProfileName(const Config& config) noexcept;
 	Config ResolveConfig(const DisplayScale& display, DeviceMode mode, bool touch,
 		const EraserSizes& sizes = {}) noexcept;
 
@@ -304,6 +311,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float DiameterDip() const noexcept;
 		double SecondsSinceMovement(double seconds) const noexcept;
 		double Speed() const noexcept { return frameState_.speed; }
+		double SweepSpeed() const noexcept { return frameState_.sweepSpeed; }
 		bool Sweeping() const noexcept { return frameState_.sweeping; }
 		bool TargetLimited() const noexcept;
 		bool SweepQualified() const noexcept { return frameState_.sweepQualified; }
@@ -339,6 +347,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double sweepEvidence = 0.0;
 			double lastMovementTime = 0.0;
 			double speed = 0.0;
+			double sweepSpeed = 0.0;
 			double fineSpeed = 0, fineEnterEvidence = 0, fineReleaseEvidence = 0;
 			double fineChangeEvidence = 0, fineStableSeconds = 0;
 			int fineDirection = 0, finePendingDirection = 0;
@@ -485,7 +494,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		uint32_t inputType = 0;
 		uintptr_t monitor = 0;
 		uint64_t displayGeneration = 0, displayRevision = 0;
-		DeviceMode mode = DeviceMode::Laptop;
+		DeviceMode requestedDeviceMode = DeviceMode::Laptop;
+		TouchProfileSource touchProfileSource = TouchProfileSource::NotTouch;
+		float touchProfileWeight = 0, touchSurfaceLongEdgeMm = 0;
 		ScaleSource motionSource = ScaleSource::DipOnly;
 		MotionUnit motionUnit = MotionUnit::DipPerSecond;
 		InputSource inputSource;
@@ -495,6 +506,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float referenceMmPerDip = 0.25f;
 		float penBeta = 0.5f;
 		float heuristicGain = 1.0f;
+		float fineToStandardSpeed = 0, sweepEnterSpeed = 0, sweepExitSpeed = 0, largeTargetSpeed = 0;
+		float sweepGain = 1.0f;
 		EraserSizes sizes;
 		float dpiX = 96, dpiY = 96;
 		float dipPerPixelX = 1, dipPerPixelY = 1, motionPerPixelX = 1, motionPerPixelY = 1;
@@ -518,7 +531,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float resumedLeft = 0, resumedTop = 0, resumedRight = 0, resumedBottom = 0;
 		std::array<float,9> boundaryPoints{}; // 有界的历史点/尺寸锚点/新末点 (x,y,直径px)。
 		bool resumedWithAnchor = false, sweeping = false, qualified = false, limited = false;
-		double speed = 0, evidenceSeconds = 0, idleSeconds = 0;
+		double speed = 0, sweepSpeed = 0, evidenceSeconds = 0, idleSeconds = 0;
 		uint64_t frameSequence = 0, realPointCount = 0, idleModelReanchors = 0;
 	};
 

@@ -8,6 +8,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
 	namespace
 	{
+		// 表面长边只提供有界场景先验，不参与动作 mm/s 的换算。
+		constexpr double kTouchSmallLongEdgeMm=320.0;
+		constexpr double kTouchClassroomLongEdgeMm=1200.0;
+		constexpr double kTouchSelectedProfileLimit=0.25;
+
 		double Positive(double value, double fallback) noexcept
 		{
 			return std::isfinite(value) && value > 0.0 ? value : fallback;
@@ -146,6 +151,35 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		default: return "DIP/s";
 		}
 	}
+	const char* DeviceModeName(DeviceMode mode) noexcept
+	{
+		switch(mode)
+		{
+		case DeviceMode::LargeScreen:return "LargeScreen";
+		case DeviceMode::Automatic:return "Automatic";
+		default:return "Laptop";
+		}
+	}
+	const char* TouchProfileSourceName(TouchProfileSource source) noexcept
+	{
+		switch(source)
+		{
+		case TouchProfileSource::SelectedLaptopPhysical:return "SelectedLaptopPhysical";
+		case TouchProfileSource::SelectedLargeScreenPhysical:return "SelectedLargeScreenPhysical";
+		case TouchProfileSource::AutomaticPhysical:return "AutomaticPhysical";
+		case TouchProfileSource::SelectedLaptopFallback:return "SelectedLaptopNoPhysical";
+		case TouchProfileSource::SelectedLargeScreenFallback:return "SelectedLargeScreenNoPhysical";
+		case TouchProfileSource::AutomaticFallback:return "AutomaticNoPhysical";
+		default:return "NotTouch";
+		}
+	}
+	const char* TouchProfileName(const Config& config) noexcept
+	{
+		if(config.touchProfileSource==TouchProfileSource::NotTouch)return "N/A";
+		if(config.motionUnit!=MotionUnit::MillimetersPerSecond)return "Fallback";
+		return config.touchProfileWeight<=0.0f?"Small":
+			config.touchProfileWeight>=1.0f?"Classroom":"Intermediate";
+	}
 
 	float ResolutionDpiActionGain(const DisplayScale& display) noexcept
 	{
@@ -254,7 +288,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			config.motionSource=ScaleSource::TrustedPhysical;
 		}
 		const double rho=std::sqrt(mmX/dipX)*std::sqrt(mmY/dipY);
-		const bool physical=std::isfinite(mmX) && std::isfinite(mmY) && mmX>0 && mmY>0 &&
+		const bool physical=display.pixelWidth>0 && display.pixelHeight>0 &&
+			std::isfinite(mmX) && std::isfinite(mmY) && mmX>0 && mmY>0 &&
 			std::isfinite(rho) && rho>=0.01 && rho<=10.0;
 		if (physical)
 		{
@@ -299,9 +334,33 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		{
 			const bool heuristic=config.motionSource==ScaleSource::ResolutionDpiHeuristic;
 			config.fineToStandardSpeed=physical?30.0f:100.0f;
-			config.sweepEnterSpeed=physical?90.0f:heuristic?120.0f:240.0f;
-			config.sweepExitSpeed=physical?60.0f:heuristic?80.0f:160.0f;
-			config.largeTargetSpeed=physical?250.0f:heuristic?400.0f:700.0f;
+			if(physical)
+			{
+				const double longEdgeMm=std::max(mmX*display.pixelWidth,mmY*display.pixelHeight);
+				const double measuredWeight=SmoothStep((longEdgeMm-kTouchSmallLongEdgeMm)/
+					(kTouchClassroomLongEdgeMm-kTouchSmallLongEdgeMm));
+				// 显式场景只约束尺寸先验的范围；EDID/手动标尺都走同一解析。
+				const double weight=mode==DeviceMode::Laptop?std::min(measuredWeight,kTouchSelectedProfileLimit):
+					mode==DeviceMode::LargeScreen?std::max(measuredWeight,kTouchSelectedProfileLimit):measuredWeight;
+				config.touchProfileWeight=static_cast<float>(weight);
+				config.touchSurfaceLongEdgeMm=static_cast<float>(longEdgeMm);
+				config.touchProfileSource=mode==DeviceMode::Laptop?TouchProfileSource::SelectedLaptopPhysical:
+					mode==DeviceMode::LargeScreen?TouchProfileSource::SelectedLargeScreenPhysical:
+					TouchProfileSource::AutomaticPhysical;
+				config.sweepEnterSpeed=static_cast<float>(90.0+260.0*weight);
+				config.sweepExitSpeed=static_cast<float>(60.0+190.0*weight);
+				config.largeTargetSpeed=static_cast<float>(250.0+1050.0*weight);
+			}
+			else
+			{
+				// 回退维持原 DIP/reference DIP 参数，不把物理端点误当作回退单位。
+				config.touchProfileSource=mode==DeviceMode::Laptop?TouchProfileSource::SelectedLaptopFallback:
+					mode==DeviceMode::LargeScreen?TouchProfileSource::SelectedLargeScreenFallback:
+					TouchProfileSource::AutomaticFallback;
+				config.sweepEnterSpeed=heuristic?120.0f:240.0f;
+				config.sweepExitSpeed=heuristic?80.0f:160.0f;
+				config.largeTargetSpeed=heuristic?400.0f:700.0f;
+			}
 			// Touch 单独减轻资格和扩大阻力；不修改鼠标/屏幕笔的任何参数。
 			config.historyWindowSeconds=0.050;
 			config.evidenceStartSeconds=0.025;
@@ -990,6 +1049,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		acceptAreaFloor();
 		const double logRange=std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip);
 		const double sweepSpeed=SweepActionSpeed(config_,realMotionSpeed);
+		state.sweepSpeed=sweepSpeed;
 		if (!previewOnly_ && sweepSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
 		else if (realMotionSpeed > 0 && sweepSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
 		const bool qualifies=!previewOnly_ && (!touchStartup_ || state.maximumDisplacement>=config_.touchUnlockStart) && state.sweepQualified && sweepSpeed >= config_.sweepEnterSpeed;
@@ -1141,6 +1201,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				state.time = seconds;
 				state.logTarget = minimum;
 				state.sweepEvidence = 0.0;
+				state.sweepSpeed = 0.0;
 				state.fineSpeed=state.fineReleaseEvidence=state.fineChangeEvidence=0;
 				state.fineHeld=true;state.fineDirection=-1;state.finePendingDirection=0;
 				state.fineEnterEvidence=config_.fineEnterSeconds;

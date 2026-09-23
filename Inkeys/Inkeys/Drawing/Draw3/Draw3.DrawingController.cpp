@@ -4143,7 +4143,11 @@ namespace Inkeys::Drawing::Draw3
 				if(controller)
 				{
 					const auto& cfg=controller->Configuration();
-					d.mode=cfg.mode;d.motionSource=cfg.motionSource;d.motionUnit=cfg.motionUnit;d.sizes=cfg.sizes;
+					d.requestedDeviceMode=cfg.mode;d.touchProfileSource=cfg.touchProfileSource;
+					d.touchProfileWeight=cfg.touchProfileWeight;d.touchSurfaceLongEdgeMm=cfg.touchSurfaceLongEdgeMm;
+					d.motionSource=cfg.motionSource;d.motionUnit=cfg.motionUnit;d.sizes=cfg.sizes;
+					d.fineToStandardSpeed=cfg.fineToStandardSpeed;d.sweepEnterSpeed=cfg.sweepEnterSpeed;
+					d.sweepExitSpeed=cfg.sweepExitSpeed;d.largeTargetSpeed=cfg.largeTargetSpeed;d.sweepGain=cfg.sweepGain;
 					d.entry=cfg.inputEntry;d.formalPenResponse=cfg.formalPenResponse;d.developmentResponseOverride=cfg.developmentResponseOverride;
 					d.inputSource=cfg.inputSource;d.response=cfg.response;d.inputMapped=cfg.inputMapped;
 					d.monitor=cfg.display.monitor;d.displayGeneration=cfg.display.generation;d.displayRevision=cfg.display.revision;
@@ -4159,7 +4163,8 @@ namespace Inkeys::Drawing::Draw3
 					d.pixelWidth=cfg.display.pixelWidth;d.pixelHeight=cfg.display.pixelHeight;
 					d.manualWidthCm=cfg.display.development.calibration.widthCm;
 					d.manualHeightCm=cfg.display.development.calibration.heightCm;
-					d.speed=controller->Speed();d.evidenceSeconds=controller->SweepEvidenceSeconds();
+					d.speed=controller->Speed();d.sweepSpeed=controller->SweepSpeed();
+					d.evidenceSeconds=controller->SweepEvidenceSeconds();
 					d.sweeping=controller->Sweeping();d.qualified=controller->SweepQualified();d.limited=controller->TargetLimited();
 					d.idleSeconds=controller->SecondsSinceMovement(mouseVisualSeconds);
 				}
@@ -4175,6 +4180,7 @@ namespace Inkeys::Drawing::Draw3
 					d.inputType=static_cast<uint32_t>(r->metricDeviceType);d.inputSource=r->lastInputSnapshot.source;
 					d.entry=r->resolvedEraser.entry;d.eraserKind=r->resolvedEraser.kind;
 					const auto& cfg=r->resolvedEraser.config;
+					d.requestedDeviceMode=cfg.mode;d.touchProfileSource=cfg.touchProfileSource;
 					d.nextRadiusPx=r->eraserSize.effectiveDiameterPx*0.5f;
 					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
@@ -4182,7 +4188,18 @@ namespace Inkeys::Drawing::Draw3
 					d.formalPenResponse=cfg.formalPenResponse;d.developmentResponseOverride=cfg.developmentResponseOverride;
 				}
 				d.frameSeconds=mouseVisualSeconds;
-				d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
+				if(r && !r->ended && !r->awaitingReconnect && r->metricDeviceType==InputDeviceType::Touch &&
+					r->tool==DrawingTool::Eraser)
+				{
+					// 诊断必须取当前 contact 的最终 Touch 光标，不能读取列表首项的鼠标/其他手指。
+					auto appearance=eraserAppearance;
+					ApplySpeedEraserCursorDiameter(appearance,r->stroke.widthMode==StrokeWidthMode::SpeedEraser?
+						RuntimeSpeedEraserContactDiameter(*r):r->stroke.widthEstimator.baseDiameter);
+					const auto& position=r->lastModelSnapshot.position;
+					const auto visual=MakeTouchEraserDrawingCursorVisual(position.x,position.y,appearance);
+					d.cursorDiameterPx=visual.visible?visual.appearance.width:0;
+				}
+				else d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
 				observer_.eraserDiagnostics(observer_.context,d);
 			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)

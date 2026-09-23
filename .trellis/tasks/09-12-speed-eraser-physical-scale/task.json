@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-09-12",
   "completedAt": null,
-  "branch": "feature/eraser",
+  "branch": "bugfix/eraser",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -22,5 +22,8 @@
   "parent": "09-12-display-physical-size-eraser",
   "relatedFiles": [],
   "notes": "",
-  "meta": {}
+  "meta": {
+    "historical_branch": "feature/eraser",
+    "current_round_baseline": "94e07b2599adab9de4286aa5fb7526e2c1c681f6"
+  }
 }

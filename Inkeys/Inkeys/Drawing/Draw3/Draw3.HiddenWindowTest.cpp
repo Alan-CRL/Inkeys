@@ -1029,6 +1029,60 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 				ProductHost().SetEraserDevelopmentOptions({});
+				// 合成手动大屏通过真实 Host/Down 路径解析；切场景只在下一次接触生效。
+				auto classroomState=speedState;classroomState.paintDevice=0;
+				PublishProductState(classroomState);
+				SpeedEraser::DevelopmentOptions classroomDevelopment;classroomDevelopment.diagnostics=true;
+				classroomDevelopment.touchAreaTrace=true; // 复用限频诊断观察运动期间速度，不逐包输出。
+				classroomDevelopment.scale=SpeedEraser::ScaleOverride::ManualSurface;
+				classroomDevelopment.calibration={1,139,78,0};
+				ProductHost().SetEraserDevelopmentOptions(classroomDevelopment);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().EraserDisplayScaleSnapshot().development.scale==
+					SpeedEraser::ScaleOverride::ManualSurface;}),"manual classroom scale reaches Host before new Down",failures);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.response==SpeedEraser::ResponseModel::DirectTouch &&
+						d.motionSource==SpeedEraser::ScaleSource::ManualCalibration &&
+						d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
+						std::abs(d.sweepEnterSpeed-350)<0.01f && std::abs(d.largeTargetSpeed-1300)<0.01f &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),
+					"manual classroom Touch ingress latches scene curve and matching cursor",failures);
+				const auto beforeClassroomMoves=ProductHost().RuntimeSnapshot().inputMovePublished;
+				for(int i=1;i<=25;++i)
+				{
+					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,60+i*2,120);
+					std::this_thread::sleep_for(40ms);
+				}
+				modeSucceeded &= Check(WaitUntil([beforeClassroomMoves]{const auto s=ProductHost().RuntimeSnapshot();
+					const auto& d=s.eraser;
+					return s.inputMovePublished>=beforeClassroomMoves+25 && d.active &&
+						d.effectiveDiameterDip>=31.5f && d.effectiveDiameterDip<=35.2f && d.targetDiameterDip<=35.2f &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),
+					"manual classroom ordinary local Touch remains near the selected B",failures);
+				const auto classroomObserved=ProductHost().RuntimeSnapshot().eraser;
+				std::fprintf(stderr,"[TouchSceneHidden] unit=%s speed=%.3f sweepSpeed=%.3f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f geometryPx=%.3f\n",
+					SpeedEraser::MotionUnitName(classroomObserved.motionUnit),classroomObserved.speed,classroomObserved.sweepSpeed,
+					classroomObserved.targetDiameterDip,classroomObserved.effectiveDiameterDip,
+					classroomObserved.cursorDiameterPx,classroomObserved.nextRadiusPx*2);
+				PublishProductState(speedState);
+				std::this_thread::sleep_for(60ms);
+				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,112,120);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
+						std::abs(d.largeTargetSpeed-1300)<0.01f;}),
+					"active Touch keeps its latched scene after product setting changes",failures);
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,112,120);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"manual classroom contact closes before scene change",failures);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::Laptop &&
+						std::abs(d.largeTargetSpeed-512.5f)<0.01f;}),
+					"next Touch contact receives explicit Laptop cap with the same manual scale",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,120);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"manual scene probe cancels without leaking contact",failures);
+				ProductHost().SetEraserDevelopmentOptions({});
 				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
 				const auto areaProbe=[&](const char* label)
 				{
