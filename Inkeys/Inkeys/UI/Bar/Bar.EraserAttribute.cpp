@@ -468,11 +468,13 @@ void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 	if(item==0)
 	{
 		const auto snapshot=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-		const auto returnMode=ResolveEraserClearReturnMode(snapshot.completedStrokeKind);
+		const auto returnMode=ResolveEraserClearReturnMode(snapshot.completedStrokeKind,returnToSelectionOnClear_);
 		const auto accepted=Inkeys::Drawing::Draw3::PublishProductCommand(Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
 		if(accepted==Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)
 		{
-			if(returnMode==BarEraserClearReturnMode::Drawing)ChangeStateModeToPen();
+			// 从有内容的选择进入橡皮时，清空后优先恢复选择，不受期间橡皮笔迹影响。
+			if(returnMode==BarEraserClearReturnMode::Selection)ChangeStateModeToSelection();
+			else if(returnMode==BarEraserClearReturnMode::Drawing)ChangeStateModeToPen();
 			else if(returnMode==BarEraserClearReturnMode::Shape)ChangeStateModeToShape();
 			// 最近一次是橡皮时保持当前橡皮模式；只在命令被接受后收起面板。
 			Close(owner);

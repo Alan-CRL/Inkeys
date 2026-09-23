@@ -62,12 +62,15 @@ export namespace Inkeys::UI::Bar
 		Drawing,
 		Shape,
 		Eraser,
+		Selection,
 	};
 
 	inline BarEraserClearReturnMode ResolveEraserClearReturnMode(
-		Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind kind) noexcept
+		Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind kind,
+		bool returnToSelection = false) noexcept
 	{
 		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
+		if (returnToSelection) return BarEraserClearReturnMode::Selection;
 		if (kind == Kind::Shape) return BarEraserClearReturnMode::Shape;
 		if (kind == Kind::Eraser) return BarEraserClearReturnMode::Eraser;
 		return BarEraserClearReturnMode::Drawing;

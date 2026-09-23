@@ -48,7 +48,7 @@ EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及Draw
 Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形。内容在当前shell内裁剪，窗口容量容纳shell与光影。PresentationSnapshot/CommitPresented只在成功呈现后发布，Pointer消费同一实际几何。ResolveEraserAttributeRelease以新Down票据为依据，body/arrow跨区Up仍返回Down所属动作；无Down的旧Up不得清空。沿用Message::IsPointerGeneratedMouseMessage过滤兼容事件；leave/cancel清理反馈，Pen/Touch Up不保留鼠标式Hover。
 
 ### 清空
-橡皮属性Clear不按`ProductRuntimeSnapshot.currentPageHasContent`禁用，空画布及键盘焦点中都允许发布既有`PublishProductCommand(Clear)`。Accepted后立即关闭面板，并按绘制线程原子发布的最近有效笔类恢复绘制/图形/橡皮模式，尚无记录时回绘制，配置与具体笔型记忆不变；同时调用主栏完整状态刷新，使按钮选中态与实际模式一致。Clear、撤回/重做、翻页和工作区切换不得覆盖最近笔类；没有新笔迹时再次单击仍按原最近笔类恢复。橡皮属性Clear不提供双击进入选择语义，也不等待系统双击时间。命令拒绝时面板和模式保持不变。
+橡皮属性Clear不按`ProductRuntimeSnapshot.currentPageHasContent`禁用，空画布及键盘焦点中都允许发布既有`PublishProductCommand(Clear)`。Accepted后立即关闭面板；若本次进入橡皮前是有内容的选择模式，则优先回到选择，即使期间又产生橡皮笔迹；否则按绘制线程原子发布的最近有效笔类恢复绘制/图形/橡皮模式，尚无记录时回绘制。配置与具体笔型记忆不变；同时调用主栏完整状态刷新，使按钮选中态与实际模式一致。Draw3回报当前页无内容后，既有主栏状态刷新将选择态切为精简布局。Clear、撤回/重做、翻页和工作区切换不得覆盖最近笔类；没有新笔迹时再次单击仍按原最近笔类恢复。橡皮属性Clear不提供双击进入选择语义，也不等待系统双击时间。命令拒绝时面板和模式保持不变。
 
 绘制线程原有`active.empty()`边界不变：接受命令不等于活动接触尚未结束时已经执行。Clear等待Up/提交，然后清当前页批注，保留viewport和其他页。不得直接清GPU纹理代替业务事务。
 
@@ -67,6 +67,7 @@ Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形
 |无内容Clear|按钮可用并发布Clear；Draw3不产生空撤销记录|
 |Clear接受但接触仍活动|等原Up/提交边界执行|
 |橡皮属性单击Clear|Accepted后立即按最近有效笔类回绘制/图形/橡皮并关闭；拒绝时不切模式、不关闭|
+|有内容的选择进入橡皮后Clear|Accepted后优先回选择；内容回报无笔迹时主栏精简，期间用橡皮擦过也不改变此优先级|
 |橡皮属性双击Clear|无特殊语义；首击正常清空、恢复模式并收起面板|
 |Clear撤销后Redo|复用一次Clear事务|
 |撤销Clear后新笔迹再Redo|旧Clear重做失效，不能删新笔迹|

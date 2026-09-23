@@ -121,6 +121,12 @@ namespace
 		Check(ResolveEraserClearReturnMode(Kind::Eraser) ==
 			BarEraserClearReturnMode::Eraser,
 			"eraser stroke keeps Eraser");
+		Check(ResolveEraserClearReturnMode(Kind::Eraser, true) ==
+			BarEraserClearReturnMode::Selection,
+			"selection entry takes priority even after an eraser stroke");
+		Check(ResolveEraserClearReturnMode(Kind::Shape, true) ==
+			BarEraserClearReturnMode::Selection,
+			"selection entry takes priority over the last shape stroke");
 	}
 
 	void TestRememberedLaserOnlyActivatesInPenMode()

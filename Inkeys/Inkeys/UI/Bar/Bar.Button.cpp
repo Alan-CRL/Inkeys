@@ -353,6 +353,9 @@ void BarButtonSetClass::PresetInitialization()
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtEraser)
 					{
 						// 切工具的首击不参与开合合并，下一击仍可立即展开属性栏。
+						barUISet.eraserAttribute.RememberEntryFromSelection(
+							stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection &&
+							Inkeys::UI::Bar::CurrentPageHasContent());
 						ChangeStateModeToEraser();
 					}
 					else if (barUISet.TryBeginToggle(BarToggleChannel::EraserAttribute))
