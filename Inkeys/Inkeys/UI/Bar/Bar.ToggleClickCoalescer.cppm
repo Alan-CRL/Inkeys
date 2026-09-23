@@ -57,25 +57,6 @@ export namespace Inkeys::UI::Bar
 			: BarClearClickAction::EnterSelection;
 	}
 
-	inline BarClearClickAction ResolveEraserAttributeClearClickAction(
-		bool doubleClickContinuation,
-		bool clearAttemptedForDoubleClick,
-		bool acceptedClearForDoubleClick) noexcept
-	{
-		if (doubleClickContinuation && clearAttemptedForDoubleClick)
-			return acceptedClearForDoubleClick
-				? BarClearClickAction::EnterSelection
-				: BarClearClickAction::PublishClear;
-		return BarClearClickAction::PublishClear;
-	}
-
-	inline bool ShouldFinalizeEraserAttributeClear(
-		bool acceptedClearForDoubleClick, unsigned long long now,
-		unsigned long long deadline) noexcept
-	{
-		return acceptedClearForDoubleClick && deadline != 0 && now >= deadline;
-	}
-
 	enum class BarEraserClearReturnMode : unsigned char
 	{
 		Drawing,

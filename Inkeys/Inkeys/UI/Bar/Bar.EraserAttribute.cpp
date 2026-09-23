@@ -177,9 +177,6 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	bool dragPlacementLocked)
 {
 	Initialize();changed_=false;active_=false;
-	if(!pressedClearDoubleClickContinuation_ &&
-		ShouldFinalizeEraserAttributeClear(clearAcceptedForDoubleClick_,GetTickCount64(),clearSingleClickDeadline_))
-		FinalizePendingClear(owner);
 	const bool shouldClose=owner.barState.fold || stateMode.StateModeSelect!=StateModeSelectEnum::IdtEraser ||
 		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded;
 	if(shouldClose)Close(owner);
@@ -253,9 +250,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		}
 		switching=false;
 	}
-	active_|=panelMotion_.Active() || menuMotion_.Active();
-	// 等待系统双击时间时保持渲染循环推进，确保无第二击也能按时结算并收起面板。
-	active_|=clearAcceptedForDoubleClick_;if(!menuOpen && !menuMotion_.Visible())menuSide_=-1;
+	active_|=panelMotion_.Active() || menuMotion_.Active();if(!menuOpen && !menuMotion_.Visible())menuSide_=-1;
 	const bool holdReleaseSwitchPlacement=switching && releaseSwitchLayoutLocked_;
 	if(holdReleaseSwitchPlacement)
 		dragLayoutInput_=RebaseEraserAttributeLayoutInput(dragLayoutInput_,currentInput.anchor);
@@ -464,58 +459,24 @@ std::array<RECT,3> BarEraserAttributePanel::PresentedRegions() const
 	std::scoped_lock lock(presentationMutex_);const auto& f=presented_;
 	return {f.panelVisible?IntegerRect(f.geometry.panel,f.zoom):RECT{},f.menuVisible?IntegerRect(f.geometry.menu,f.zoom):RECT{},RECT{}};
 }
-void BarEraserAttributePanel::ResetClearDoubleClickState() noexcept
-{
-	clearAttemptedForDoubleClick_=false;clearAcceptedForDoubleClick_=false;
-	pressedClearDoubleClickContinuation_=false;clearSingleClickDeadline_=0;
-	clearSingleClickReturnMode_=static_cast<int>(BarEraserClearReturnMode::Drawing);
-	clearDoubleClickLeft_=0;clearDoubleClickTop_=0;clearDoubleClickRight_=0;clearDoubleClickBottom_=0;
-}
 void BarEraserAttributePanel::Close(BarUISetClass& owner)
 {
 	owner.barState.eraserAttribute=false;owner.barState.eraserSensitivityOpen=false;pressed_=-1;hovered_=-1;focused_=-1;visible_=false;
-	ResetClearDoubleClickState();
 }
-bool BarEraserAttributePanel::FinalizePendingClear(BarUISetClass& owner)
-{
-	// 渲染线程与输入线程只允许一方结算首击，避免超时与第二击在边界处重复切换模式。
-	if(!clearAcceptedForDoubleClick_.exchange(false))return false;
-	const auto returnMode=static_cast<BarEraserClearReturnMode>(clearSingleClickReturnMode_.load());
-	clearAttemptedForDoubleClick_=false;clearSingleClickDeadline_=0;
-	if(returnMode==BarEraserClearReturnMode::Drawing)ChangeStateModeToPen();
-	else if(returnMode==BarEraserClearReturnMode::Shape)ChangeStateModeToShape();
-	// 最近一次是橡皮时保持当前橡皮模式，不重复发布工具状态。
-	Close(owner);return true;
-}
-void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item,bool doubleClickContinuation)
+void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 {
 	if(item==0)
 	{
-		if(!doubleClickContinuation)ResetClearDoubleClickState();
 		const auto snapshot=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
-		const auto action=ResolveEraserAttributeClearClickAction(
-			doubleClickContinuation,
-			clearAttemptedForDoubleClick_,clearAcceptedForDoubleClick_);
-		if(action==BarClearClickAction::EnterSelection)
-		{
-			if(!clearAcceptedForDoubleClick_.exchange(false))return;
-			ResetClearDoubleClickState();ChangeStateModeToSelection();Close(owner);
-			owner.UpdateRendering(false);return;
-		}
-		if(action!=BarClearClickAction::PublishClear)return;
 		const auto returnMode=ResolveEraserClearReturnMode(snapshot.completedStrokeKind);
 		const auto accepted=Inkeys::Drawing::Draw3::PublishProductCommand(Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
-		const auto presented=PresentationSnapshot();
-		const auto clearRegion=IntegerRect(presented.geometry.items[0],presented.zoom);
-		clearDoubleClickLeft_=clearRegion.left;clearDoubleClickTop_=clearRegion.top;
-		clearDoubleClickRight_=clearRegion.right;clearDoubleClickBottom_=clearRegion.bottom;
-		clearAttemptedForDoubleClick_=true;
 		if(accepted==Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)
 		{
-			clearSingleClickReturnMode_=static_cast<int>(returnMode);
-			clearSingleClickDeadline_=GetTickCount64()+static_cast<unsigned long long>(GetDoubleClickTime());
-			// 截止前保持橡皮面板展开，由第二击或渲染线程超时结算。
-			clearAcceptedForDoubleClick_=true;
+			if(returnMode==BarEraserClearReturnMode::Drawing)ChangeStateModeToPen();
+			else if(returnMode==BarEraserClearReturnMode::Shape)ChangeStateModeToShape();
+			// 最近一次是橡皮时保持当前橡皮模式；只在命令被接受后收起面板。
+			Close(owner);
+			owner.UpdateRendering();return;
 		}
 	}
 	else if(IsSize(item))SetGlobalEraserPreference(static_cast<int>(BaseSizePresets[item-1]));
@@ -527,26 +488,14 @@ void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item,bool doubleC
 bool BarEraserAttributePanel::ResetPointerFeedback()
 {
 	const int old=ButtonVisual(hovered_);const bool changed=hovered_>=0 || pressed_>=0;
-	hovered_=-1;pressed_=-1;pressedClearDoubleClickContinuation_=false;
+	hovered_=-1;pressed_=-1;
 	if(old>=0)StopBarButtonHoverVisual(buttons_[old],false);
 	return changed;
 }
 bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled,bool contactPointer)
 {
-	// 任意普通新点击都会结束旧双击票据；WM_LBUTTONDBLCLK 本身仍可续接成功首击。
-	if(message.message==WM_LBUTTONDOWN)
-	{
-		if(FinalizePendingClear(owner)){owner.UpdateRendering(false);return true;}
-		ResetClearDoubleClickState();
-	}
 	const auto f=PresentationSnapshot();
-	const bool clearDoubleClickContinuation=
-		(message.message==WM_LBUTTONDBLCLK && clearAttemptedForDoubleClick_) ||
-		pressedClearDoubleClickContinuation_;
-	const bool overClearDoubleClickRegion=clearDoubleClickContinuation &&
-		message.x>=clearDoubleClickLeft_ && message.x<clearDoubleClickRight_ &&
-		message.y>=clearDoubleClickTop_ && message.y<clearDoubleClickBottom_;
-	if(!f.panelVisible && pressed_<0 && !overClearDoubleClickRegion)return false;
+	if(!f.panelVisible && pressed_<0)return false;
 	const auto& geometry=f.geometry;const double x=message.x/f.zoom,y=message.y/f.zoom;
 	auto contains=[&](EraserAttributeRect rect,double scale)
 	{
@@ -554,10 +503,9 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 			rect.Width(),rect.Height(),BarMainBarCornerRadiusDip*scale,BarMainBarCornerRadiusDip*scale);
 	};
 	const bool overMenu=f.menuVisible && contains(geometry.menu,f.menuPose.scale);
-	const bool inside=overClearDoubleClickRegion || overMenu ||
-		(f.panelVisible && contains(geometry.panel,f.panelPose.scale));
-	int hit=overClearDoubleClickRegion?0:-1;
-	if(inside && !overClearDoubleClickRegion)
+	const bool inside=overMenu || (f.panelVisible && contains(geometry.panel,f.panelPose.scale));
+	int hit=-1;
+	if(inside)
 	{
 		const auto clip=overMenu?geometry.menu:geometry.panel;
 		for(int i=overMenu?6:0;i<(overMenu?10:6);++i)
@@ -583,28 +531,24 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 			}
 			owner.UpdateRendering(false);
 		}
-		if(pressed_>=0 && cancelled){pressed_=-1;pressedClearDoubleClickContinuation_=false;owner.UpdateRendering(false);}return inside;
+		if(pressed_>=0 && cancelled){pressed_=-1;owner.UpdateRendering(false);}return inside;
 	}
 	const bool down=message.message==WM_LBUTTONDOWN || message.message==WM_LBUTTONDBLCLK;
 	if(down)
 	{
 		if(owner.barState.eraserSensitivityOpen && !overMenu && hit!=5){owner.barState.eraserSensitivityOpen=false;owner.UpdateRendering(false);}
-		const bool clearContinuation=message.message==WM_LBUTTONDBLCLK &&
-			clearAttemptedForDoubleClick_ && hit==0;
 		const bool enabled=hit!=9;
 		// 必须是面板收到的新Down才能建立动作票据；主栏开栏的那次Up不能落到中央Clear。
-		pressed_=inside && enabled && (owner.barState.eraserAttribute || clearContinuation) && !cancelled?hit:-1;
-		pressedClearDoubleClickContinuation_=pressed_==0 && clearContinuation;
+		pressed_=inside && enabled && owner.barState.eraserAttribute && !cancelled?hit:-1;
 		focused_=-1;owner.UpdateRendering(false);return inside;
 	}
 	if(message.message==WM_LBUTTONUP)
 	{
-		const int pressed=pressed_;const bool clearContinuation=pressedClearDoubleClickContinuation_;
-		pressed_=-1;pressedClearDoubleClickContinuation_=false;
+		const int pressed=pressed_;
+		pressed_=-1;
 		// 同一整体按钮内跨区释放，仍执行Down时的动作，不改成另一命令。
 		const int action=ResolveEraserAttributeRelease(pressed,hit,inside,cancelled);
-		if(action>=0 && (owner.barState.eraserAttribute || clearContinuation))
-			Execute(owner,action,clearContinuation);
+		if(action>=0 && owner.barState.eraserAttribute)Execute(owner,action);
 		if(contactPointer)ResetPointerFeedback();
 		if(pressed>=0 || contactPointer)owner.UpdateRendering(false);return inside || pressed>=0;
 	}
@@ -623,6 +567,5 @@ bool BarEraserAttributePanel::Keyboard(BarUISetClass& owner,BYTE key,bool down)
 	const int first=owner.barState.eraserSensitivityOpen?6:0,last=owner.barState.eraserSensitivityOpen?8:5;
 	const int delta=key==VK_LEFT || (key==VK_TAB && (GetKeyState(VK_SHIFT)&0x8000))?-1:1;
 	int focus=focused_;if(focus<first || focus>last)focus=first;else focus=first+(focus-first+delta+last-first+1)%(last-first+1);
-	if(focus==0 && !Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent)focus=delta>0?1:5;
 	focused_=focus;hovered_=-1;owner.UpdateRendering(false);return true;
 }

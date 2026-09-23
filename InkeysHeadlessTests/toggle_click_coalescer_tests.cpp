@@ -106,7 +106,7 @@ namespace
 			"empty Selection click is a no-op");
 	}
 
-	void TestEraserAttributeClearStateMachine()
+	void TestEraserAttributeClearReturnMode()
 	{
 		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
 		Check(ResolveEraserClearReturnMode(Kind::None) ==
@@ -121,21 +121,6 @@ namespace
 		Check(ResolveEraserClearReturnMode(Kind::Eraser) ==
 			BarEraserClearReturnMode::Eraser,
 			"eraser stroke keeps Eraser");
-		Check(ResolveEraserAttributeClearClickAction(false, false, false) ==
-			BarClearClickAction::PublishClear,
-			"attribute click publishes Clear even on an empty canvas");
-		Check(ResolveEraserAttributeClearClickAction(true, true, true) ==
-			BarClearClickAction::EnterSelection,
-			"accepted attribute double click enters Selection without another Clear");
-		Check(ResolveEraserAttributeClearClickAction(true, true, false) ==
-			BarClearClickAction::PublishClear,
-			"failed attribute first click retries Clear");
-		Check(!ShouldFinalizeEraserAttributeClear(true, 1499, 1500),
-			"accepted attribute Clear stays open during the double-click window");
-		Check(ShouldFinalizeEraserAttributeClear(true, 1500, 1500),
-			"accepted attribute Clear closes when the double-click window expires");
-		Check(!ShouldFinalizeEraserAttributeClear(false, 1500, 1500),
-			"rejected attribute Clear never schedules a delayed close");
 	}
 
 	void TestRememberedLaserOnlyActivatesInPenMode()
@@ -170,7 +155,7 @@ int RunToggleClickCoalescerTests()
 	TestNonMonotonicTimeStartsNewWindow();
 	TestDrawButtonToggleNeverChangesPenType();
 	TestClearButtonStateMachine();
-	TestEraserAttributeClearStateMachine();
+	TestEraserAttributeClearReturnMode();
 	TestRememberedLaserOnlyActivatesInPenMode();
 	TestLaserUsesIndependentColorState();
 	return failureCount;
