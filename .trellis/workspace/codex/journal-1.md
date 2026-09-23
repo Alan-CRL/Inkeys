@@ -327,3 +327,39 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 17: Touch 场景曲线修正
+<!-- trellis-session: v=2 fp=c2a632b749a69579 -->
+
+**Date**: 2026-09-23
+**Task**: Touch 场景曲线修正
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+恢复 speed-eraser-physical-scale，在当前 bugfix/eraser 基线修正可信物理 Touch 大屏过早触顶，补中间场景和诊断；详见 validation-touch-profile-20260923.md。
+
+### Main Changes
+
+- Touch 物理/手动路径按可靠表面长边解析有界场景清扫参数，保留 DIP/经验回退和其他设备响应。
+- 更新原任务 PRD/design、input-and-ink 等 spec、上下文清单与本轮 CSV/验证记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5997d23b` | fix(draw3): adapt touch eraser sweep to display scene |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 完整构建退出 0；InkeysHeadlessTests.exe --no-window 退出 0。
+- [FAIL] Inkeys.exe --draw3-eraser-hidden-test 退出 1：DComp/ULW 各两条 Window Service owner 关系断言失败；新增 Touch 场景断言未报失败。
+
+### Status
+
+[IN PROGRESS] 原 Trellis 任务保持 in_progress；本轮自动验证已执行，实机手感与隐藏窗口 owner 断言仍待处理。
+
+### Next Steps
+
+- 在 Surface 和教室设备分别人工验收普通/清扫手感；独立排查隐藏测试的窗口 owner 关系。
