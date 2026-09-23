@@ -102,9 +102,16 @@ export namespace Inkeys::UI::Bar
 			double elapsedSeconds =
 				std::chrono::duration<double>(now - reckon_).count();
 			reckon_ = now;
+			lastRawElapsedSeconds_ = elapsedSeconds;
 			if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0)
 				return 0.0;
 			return std::clamp(elapsedSeconds, 0.0, 0.05);
+		}
+
+		// 只记录最近 Tick 的原始间隔，诊断不能改变限幅或休眠重置时机。
+		[[nodiscard]] double LastRawElapsedSeconds() const noexcept
+		{
+			return lastRawElapsedSeconds_;
 		}
 
 		void Rebase(Clock::time_point now = Clock::now()) noexcept
@@ -114,6 +121,7 @@ export namespace Inkeys::UI::Bar
 
 	private:
 		Clock::time_point reckon_;
+		double lastRawElapsedSeconds_ = 0.0;
 	};
 
 	struct FrameRateAverages

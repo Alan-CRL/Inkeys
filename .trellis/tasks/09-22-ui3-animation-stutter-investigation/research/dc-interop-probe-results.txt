@@ -1,0 +1,13 @@
+backend=WARP; warmup=20; samples=80; clip=256x128; no HWND/ULW/effects
+1600x1200 release=nullptr total_ms p50=0.169 p95=0.299 get_p50=0.149 release_p50=0.007 end_p50=0.010
+1600x1200 release=empty total_ms p50=0.104 p95=0.216 get_p50=0.092 release_p50=0.006 end_p50=0.006
+1600x1200 release=empty total_ms p50=0.118 p95=0.205 get_p50=0.105 release_p50=0.005 end_p50=0.007
+1600x1200 release=nullptr total_ms p50=0.113 p95=0.133 get_p50=0.097 release_p50=0.005 end_p50=0.009
+3200x2400 release=nullptr total_ms p50=0.117 p95=0.146 get_p50=0.100 release_p50=0.005 end_p50=0.007
+3200x2400 release=empty total_ms p50=0.114 p95=0.137 get_p50=0.098 release_p50=0.005 end_p50=0.007
+3200x2400 release=empty total_ms p50=0.118 p95=0.154 get_p50=0.102 release_p50=0.006 end_p50=0.009
+3200x2400 release=nullptr total_ms p50=0.115 p95=0.152 get_p50=0.100 release_p50=0.005 end_p50=0.006
+4800x3600 release=nullptr total_ms p50=0.135 p95=0.172 get_p50=0.121 release_p50=0.006 end_p50=0.007
+4800x3600 release=empty total_ms p50=0.144 p95=0.201 get_p50=0.130 release_p50=0.006 end_p50=0.007
+4800x3600 release=empty total_ms p50=0.090 p95=0.110 get_p50=0.077 release_p50=0.006 end_p50=0.006
+4800x3600 release=nullptr total_ms p50=0.090 p95=0.211 get_p50=0.078 release_p50=0.006 end_p50=0.006

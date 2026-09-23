@@ -761,6 +761,65 @@ if (averages.updated)
 		averages.unlimitedFramesPerSecond);
 ~~~
 
+### UI3 共享鼠标光照通知贡献合同
+
+#### 1. Scope / Trigger
+
+修改 `BarSurfaceScene::PublishSharedLighting`、共享鼠标光照到局部 damage 的映射，或 PageControl 的光照订阅时适用。目标是避免光源与窗口无交集时仍唤醒该窗口，继而触发原有空 damage 整窗回退。
+
+#### 2. Signatures
+
+`Bar.Scene.cpp` 中以下方法均为 `BarSurfaceScene::Impl` 私有实现，公共 Scene API 不变：
+
+~~~cpp
+bool IncludePresentationDamageLocked(const RECT& rect) noexcept;
+bool UpdateCursorLightDamageLocked(bool cursorLightChanged) noexcept;
+bool ApplySharedLightingLocked(const BarSurfaceSharedLighting& lighting,
+    std::uint64_t generation);
+~~~
+
+#### 3. Contracts
+
+- 返回值只表示本次光照处理是否向当前 surface 贡献了真实非空 damage；不能根据旧 `pendingDamage` 是否非空、累计矩形是否改变或 `invalidated` 是否翻转判断。
+- 每个订阅 scene 都保存最新光照、generation 和映射；仅 `ApplySharedLightingLocked()` 返回 true 时收集本次光照 hooks，仍在 registry/scene 锁释放后调用。
+- cursor damage 保持旧贡献与新贡献的并集；光移出、隐藏或强度归零仍要擦旧光。强度改变时即使累计矩形不变，也可返回 true。
+- primary/mapping 变化继续按已有判断保守全脏；不能因 primary 已需重绘就短路跳过 cursor 历史边界更新。
+- 首次订阅/退订的全脏与唤醒保持；布局、业务、动画 Continue、失败 Retry 和调试最终帧仍由原所有者请求。不能把这些旧需求重新混入本次无效光照通知。
+- 本合同只过滤光照源头，不取消 PageControl 的未分类需求全窗兜底，不移动 Render 内的动画推进，不提前消费失败 pending。
+
+#### 4. Validation & Error Matrix
+
+| 情况 | 必须行为 |
+| --- | --- |
+| cursor 旧、新范围都不影响本窗口 | 更新快照；本次不发光照 wake |
+| cursor 从窗口内移到外部 | 旧光贡献仍进入 damage，通知擦除 |
+| 相同矩形内强度变化、已有全窗 pending | 本次有效变化仍返回 true；不依赖矩形扩大 |
+| 已有业务/失败 pending，cursor 始终在外部 | 保留旧 pending；不将它当成本次光照贡献 |
+| primary 变化与 cursor 变化同时发生 | 全脏，同时推进 cursor 历史边界 |
+| 首次订阅、布局/epoch/显隐、动画结束或失败重试 | 保留独立请求与原成功呈现事务 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：只移动主栏附近的光源，远处已稳定的分页窗保存光照快照但不重绘。
+- Base：光源离开分页按钮后重绘一次擦除旧光，继续在远处移动不再唤醒该窗。
+- Bad：比较累计 RECT 发现没变就跳过，遗漏同一区域内的亮度变化；或旧 dirty 非空就为每次无关光源变化唤醒。
+
+#### 6. Tests Required
+
+验证真实边缘 damage 算法的旧/新范围、空交集、同区域变化及失败保留；审查三层 bool 到 hooks 的完整生产调用链。当前 headless 只编译 Scene 接口，没有完整 Scene 实现的可实例化 hooks 测试入口；不为此临时导出 Impl，也不能用复制 bool 表达式的测试冒充集成覆盖。完整 `InkeysRepo.sln Debug|ARM64` 验证产品链接；真实通知/呈现次数应在后续允许的运行验证中观察。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：旧业务 damage 与本次光照通知原因混在一起。
+scene.ApplySharedLightingLocked(lighting, generation);
+if (!IsEmpty(scene.pendingDamage)) hooksToNotify.push_back(scene.hooks);
+
+// Correct：使用本次实际贡献，累计 damage 与最新快照照常保留。
+if (scene.ApplySharedLightingLocked(lighting, generation))
+    hooksToNotify.push_back(scene.hooks);
+~~~
+
 ### UI3 Bar 底栏二维吸附事务合同
 
 #### 1. Scope / Trigger
@@ -946,6 +1005,7 @@ void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 - 只有 RenderPipeline 线程能发布新 epoch 并串行调用客户端。客户端从本次 `FrameContext` 读取 epoch，在 `generation` 变化时于 `BeginDraw` 前重建自己的 context、target、GDI interop、RTV/SRV、brush/effect/mask 等设备相关资源。
 - 共享 D3D11 device/immediate context、DXGI/D2D device 和 factories，不共享 Bar/PPT 的 D2D context/target 或 Setting 的 swap chain/RTV/SRV。每个回调覆盖该客户端完整绘制和呈现区间，禁止另起渲染线程或跨回调缓存 `FrameContext*`。
 - Bar 主帧只保留一组 `BeginDraw/EndDraw`，`GetDC` 已承担必要提交，前面不得再调用显式 `Flush`。Windows 7 Platform Update 路径在 `GetDC` 前必须弹出所有 clip/layer。
+- Bar/PageControl 在 DC 只作 ULW 的 `hdcSrc` 且没有 GDI 绘制时，`ReleaseDC` 传入空 `RECT`，准确描述源 DC 未被 GDI 修改。保留 `GetDC(COPY)`；不得以 D2D 或 ULW 的 dirty 代替 GDI 修改范围，也不得据此承诺特定驱动上的拷贝耗时。
 - 动态光只长期缓存颜色停靠点/画刷和几何的 A8 预模糊遮罩；画刷位置、半径和透明度每帧更新。禁止缓存快速变化的最终光影帧或冻结布局状态。
 - A8 遮罩按几何参数量化且有容量上限。生成时使用同一 D2D device 上的专用 device context，先用一组 `BeginDraw/EndDraw` 写 source target，再把 source 作为 Gaussian 输入，用第二组 `BeginDraw/EndDraw` 写 output；禁止在同一 draw span 中把仍绑定为 target 的 bitmap 当作输入。
 - PointLight 圆角矩形正在等比动画时，必须通过 `SetFrameDiffuseMaskGeometryScale()` 把缓存查询归一到完整尺寸；实际动画几何继续使用稳定遮罩的分段落点，Gaussian 外扩宽度不得随圆角段一起压缩。禁止通过动画期间关闭第三光源 diffuse 来规避缓存创建，这会造成亮度变化和动画结束时的单帧创建卡顿。
@@ -1349,6 +1409,8 @@ DrawCore(coreBrush);
 ### UI3 复合面板收起与换边关键帧
 
 计算 UI 的循环会每帧重复提交布局目标。一个动画属性必须先在局部变量中算出包含方向、行距和边距的最终值，再调用一次 `SetTar()`；禁止先提交基础坐标，随后通过 `value.tar + offset` 再次提交。同一帧的不同目标会反复执行 `startV = val` 和 `progress = 0`，导致宽高继续缩放而位置停在展开值。
+
+颜色块 ColorSelect1..11 的 `ft` 同样遵守此约束：选中状态分支只处理勾号，描边宽度由末尾几何循环按展开/紧凑比例提交。禁止先 `ft.SetTar(1)` 再 `ft.SetTar(compactScale)`；即使随后同步批次剩余时长，Back 也会重复采样初段，使归一描边变粗并污染柔光遮罩键。保留批次同步及可见性/换边的一次性重建，不用逐帧 `SetDirect` 取消正常缩放。
 
 收起终点和换边中点的根面板均以锚点为中心，并限制为固定紧凑尺寸。直属 Shape 的隐藏 `x/y`、宽高、圆角和边框必须由最终展开目标乘固定展开到紧凑倍率；嵌套 SVG/Word 的局部坐标和尺寸也使用同一倍率。根面板负责对齐锚点，内部控件保留完整布局的等比微缩关系。隐藏中点不得使用运行中的子对象 `val` 乘“紧凑宽度 / 当前面板宽度”，因为位置动画被打断或重启时，两者不再保持同一比例，会放大旧的展开坐标。
 

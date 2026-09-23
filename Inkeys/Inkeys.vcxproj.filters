@@ -288,6 +288,9 @@
     <ClInclude Include="IdtAtomic.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>

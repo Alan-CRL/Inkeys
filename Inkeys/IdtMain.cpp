@@ -1143,6 +1143,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
 
 		IDTLogger->flush_on(spdlog::level::info);
+
+		// 共用现有文件和线程池，诊断满队列时保留聚合，不能反过来阻塞渲染线程。
+		const auto diagnosticsPool = spdlog::thread_pool();
+		auto diagnosticsLogger = std::make_shared<spdlog::async_logger>(
+			"UI3Diagnostics", IDTLoggerFileSink, diagnosticsPool, spdlog::async_overflow_policy::discard_new);
+		diagnosticsLogger->set_level(spdlog::level::warn);
+		diagnosticsLogger->flush_on(spdlog::level::warn);
+		(void)Inkeys::UI::RenderPipeline::SetDiagnosticsSink(
+			[diagnosticsLogger, diagnosticsPool](std::string_view message)
+			{
+				const auto discarded = diagnosticsPool->discard_counter();
+				diagnosticsLogger->warn("{}", message);
+				return diagnosticsPool->discard_counter() == discarded;
+			});
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
 		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");

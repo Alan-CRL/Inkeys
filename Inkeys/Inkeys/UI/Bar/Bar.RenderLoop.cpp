@@ -53,6 +53,8 @@ using Inkeys::UI::Bar::ResolveBarButtonVisualMetrics;
 using Inkeys::UI::Bar::SetBarButtonPressedVisual;
 using Inkeys::UI::Bar::StopBarButtonHoverVisual;
 using Inkeys::UI::Bar::UpdateBarButtonHoverVisual;
+using Inkeys::UI::RenderPipeline::FrameStage;
+using Inkeys::UI::RenderPipeline::FrameStageTimer;
 
 namespace
 {
@@ -60,6 +62,15 @@ namespace
 	std::atomic<std::uint8_t> committedPresentationAlpha = 255;
 	std::atomic<std::uint64_t> presentationAlphaRevision = 1;
 	std::atomic<std::uint32_t> presentationAlphaCommitMask = 0;
+
+	[[nodiscard]] std::uint32_t BarFrameLightFlags(
+		const BarUiFrameLightingSnapshot& lighting) noexcept
+	{
+		return (lighting.edgeLightingEnabled ? 1u : 0u)
+			| (lighting.primaryLightVisible ? 2u : 0u)
+			| (lighting.cursorLightVisible ? 4u : 0u)
+			| (lighting.cursorIntensity > 0.0001F ? 8u : 0u);
+	}
 
 	[[nodiscard]] bool PrepareInitialPresentationAlpha() noexcept
 	{
@@ -946,6 +957,8 @@ BarRenderLoopCoordinator::BarRenderLoopCoordinator(BarUISetClass& owner)
 BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	BarRenderLoopState& state, BarRenderFrameSnapshot& frame)
 {
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+	const bool hadFailureBackoff = state.presentDecision.HasFailureBackoff();
 	if (++state.presentAttemptFrameSerial == 0)
 	{
 		state.presentAttemptFrameSerial = 1;
@@ -966,6 +979,13 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 		state.presentDecision.AddDemand({ false, false, true });
 	state.frameWorkStart = chrono::steady_clock::now();
 	frame.animationDtSeconds = state.animationClock.Tick();
+	if (diagnostics)
+	{
+		diagnostics->rawDtSeconds = state.animationClock.LastRawElapsedSeconds();
+		diagnostics->animationDtSeconds = frame.animationDtSeconds;
+		diagnostics->failureRecoveryReset = hadFailureBackoff
+			&& !state.presentDecision.HasFailureBackoff();
+	}
 	frame.animationSpeedRate = static_cast<double>(BarUiAnimationSpeedRate);
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
@@ -3123,12 +3143,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						{
 							// 说明当前选中的是当前的颜色
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect1]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect1]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 2
@@ -3152,12 +3170,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect2]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect2]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 3
@@ -3181,12 +3197,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect3]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect3]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 4
@@ -3210,12 +3224,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect4]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect4]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 5
@@ -3239,12 +3251,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect5]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect5]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 6
@@ -3268,12 +3278,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect6]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect6]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 7
@@ -3297,12 +3305,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect7]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect7]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 8
@@ -3326,12 +3332,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect8]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect8]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 9
@@ -3355,12 +3359,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect9]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect9]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 10
@@ -3384,12 +3386,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect10]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect10]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 11
@@ -3413,12 +3413,10 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 						if (state.barState.drawAttribute && Inkeys::Color::CompereColorRef(GetPenColor(), state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->fill.value().tar))
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(1.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(1.0);
 						}
 						else
 						{
 							state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect11]->pct.SetTar(0.0);
-							state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect11]->ft.value().SetTar(1.0);
 						}
 					}
 					// Color 12：圆盘始终存在，色芯和右下角绿勾只在自定义色模式中淡入。
@@ -4193,6 +4191,7 @@ for (size_t i = 0; i < 3; ++i)
 					shape->h.SetTar(size);
 					shape->rw.value().SetTar(4.0 * drawAttributeLayoutScale);
 					shape->rh.value().SetTar(4.0 * drawAttributeLayoutScale);
+					// 描边只在此提交最终缩放目标，避免选中态分支每帧重启动画。
 					shape->ft.value().SetTar(drawAttributeLayoutScale);
 					// 填充先显现，灰边只随同一批次淡入到 18%。
 					shape->framePct.value().SetTar(
@@ -7811,6 +7810,8 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	// 主栏独占两路光源状态机；跨 HWND Surface 只消费最终屏幕坐标快照。
 	{
 		const auto lighting = state.spec.SnapshotFrameLighting();
+		if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+			diagnostics->lightFlags = BarFrameLightFlags(lighting);
 		const POINT directTranslation{
 			owner_.directWindowDragTranslationX.load(memory_order_acquire),
 			owner_.directWindowDragTranslationY.load(memory_order_acquire) };
@@ -7909,6 +7910,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	UPDATELAYEREDWINDOWINFO& ulwi,
 	const Inkeys::UI::RenderPipeline::FrameContext& context)
 {
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
 	const unsigned long long frameDemandGeneration = frame.demandGeneration;
 	const double frameZoom = frame.zoom;
 	const auto& frameDrawingState = frame;
@@ -7926,7 +7928,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	{
 
 		const auto& epoch = context.epoch;
+		const bool hadFailureBackoff = state.presentDecision.HasFailureBackoff();
 		state.presentDecision.ObserveDeviceGeneration(epoch.generation);
+		if (diagnostics && hadFailureBackoff
+			&& !state.presentDecision.HasFailureBackoff())
+			diagnostics->failureRecoveryReset = true;
 		const bool deviceGenerationChanged =
 			epoch.generation != state.spec.GetDeviceGeneration();
 		const D2D1_SIZE_U previousTargetSize =
@@ -9177,6 +9183,16 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		HRESULT ensureDeviceResourcesHr = state.spec.EnsureDeviceResources(epoch,
 			static_cast<UINT32>(state.capacitySize.cx),
 			static_cast<UINT32>(state.capacitySize.cy));
+		if (diagnostics)
+		{
+			const auto targetSize = state.spec.GetTargetBitmapSize();
+			diagnostics->resourceResult = ensureDeviceResourcesHr;
+			diagnostics->presentFailed = FAILED(ensureDeviceResourcesHr);
+			diagnostics->capacitySize = state.capacitySize;
+			diagnostics->targetSize = { static_cast<LONG>(targetSize.width),
+				static_cast<LONG>(targetSize.height) };
+			diagnostics->displayCapacityZoom = state.displayCapacityZoom;
+		}
 		if (FAILED(ensureDeviceResourcesHr))
 		{
 			state.dirtyRegionTracker.RetainForRetry(true);
@@ -9206,6 +9222,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		if (deviceGenerationChanged || targetSizeChanged)
 		{
 			state.barDeviceResourceFailureGeneration = 0;
+			if (diagnostics && state.presentDecision.HasFailureBackoff())
+				diagnostics->failureRecoveryReset = true;
 			state.presentDecision.ResetFailureRecovery();
 			state.presentDecision.RequireFullDirtyRetry();
 			state.dirtyRegionTracker.ForceFullDamage();
@@ -9674,6 +9692,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const POINT candidateSource{
 			candidateViewport.left - state.capacityOrigin.x,
 			candidateViewport.top - state.capacityOrigin.y };
+		if (diagnostics)
+		{
+			diagnostics->viewport = candidateViewport;
+			diagnostics->source = candidateSource;
+		}
 		const BarPresentMappingTuple candidatePresentMapping{
 			candidateSource,
 			SIZE{ candidateViewport.right - candidateViewport.left,
@@ -9835,6 +9858,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				barDeviceContext->SetTransform(rigidTransform);
 			};
 		SetBaseTransform();
+		FrameStageTimer drawTimer(diagnostics, FrameStage::Draw);
 		barDeviceContext->BeginDraw();
 		state.spec.PushFrameDirtyClip(barDeviceContext, presentDirtyRect);
 
@@ -12511,6 +12535,7 @@ bool presetButton = button.presetIndex >= 0;
 
 		// Windows 7 Platform Update 要求 GetDC 时 Clip/Layer 栈为空。
 		state.spec.PopFrameDirtyClip(barDeviceContext);
+		drawTimer.Stop();
 		HRESULT getDcHr = E_POINTER;
 		BOOL updateLayeredWindowSucceeded = FALSE;
 		DWORD updateLayeredWindowError = ERROR_SUCCESS;
@@ -12519,8 +12544,10 @@ bool presetButton = button.presetIndex >= 0;
 		SIZE presentedSize{};
 		POINT directTranslation{};
 		bool deferWindowPresentation = false;
+		FrameStageTimer presentLockTimer(diagnostics, FrameStage::PresentLockWait);
 		Inkeys::UI::Bar::BarWindowPresentationTransaction directDragTransaction(
 			owner_.directWindowDragMutex, owner_.committedWindowScreenBoundsReady);
+		presentLockTimer.Stop();
 		{
 			// 脏区更新
 			RECT target = BarLayoutToClientRect(
@@ -12573,8 +12600,11 @@ bool presetButton = button.presetIndex >= 0;
 			{
 				// GetDC 自带必要的 D2D 提交，避免在此之前再做一次重复 Flush。
 				HDC hdc = nullptr;
+				if (diagnostics) diagnostics->presentAttempted = true;
+				FrameStageTimer getDcTimer(diagnostics, FrameStage::GetDC);
 				getDcHr = barGdiInterop->GetDC(
 					D2D1_DC_INITIALIZE_MODE_COPY, &hdc);
+				getDcTimer.Stop();
 				if (SUCCEEDED(getDcHr) && hdc)
 				{
 					ulwi.pptDst = &presentedDestination;
@@ -12582,18 +12612,40 @@ bool presetButton = button.presetIndex >= 0;
 					ulwi.pptSrc = &ptSrc;
 					ulwi.hdcSrc = hdc;
 					ulwi.prcDirty = forceFullWindowReplacement ? nullptr : &target;
+					if (diagnostics) diagnostics->ulwAttempted = true;
+					FrameStageTimer ulwTimer(diagnostics, FrameStage::ULW);
 					updateLayeredWindowSucceeded =
 						UpdateLayeredWindowIndirect(floating_window, &ulwi);
 					if (!updateLayeredWindowSucceeded)
 						updateLayeredWindowError = GetLastError();
 					else directDragTransaction.WindowUpdated();
-					releaseDcHr = barGdiInterop->ReleaseDC(nullptr);
+					ulwTimer.Stop();
+					// ULW 只读取源 DC；这里没有通过 GDI 修改像素。
+					const RECT gdiModifiedRect{};
+					FrameStageTimer releaseDcTimer(diagnostics, FrameStage::ReleaseDC);
+					releaseDcHr = barGdiInterop->ReleaseDC(&gdiModifiedRect);
+					releaseDcTimer.Stop();
 				}
 				else if (SUCCEEDED(getDcHr)) getDcHr = E_POINTER;
 			}
 		}
 
+		FrameStageTimer endDrawTimer(diagnostics, FrameStage::EndDraw);
 		HRESULT endDrawHr = barDeviceContext->EndDraw();
+		endDrawTimer.Stop();
+		if (diagnostics)
+		{
+			diagnostics->presentDeferred = deferWindowPresentation;
+			diagnostics->endDrawResult = endDrawHr;
+			if (!deferWindowPresentation)
+			{
+				diagnostics->getDcResult = getDcHr;
+				diagnostics->releaseDcResult = releaseDcHr;
+				diagnostics->ulwError = updateLayeredWindowError;
+				diagnostics->ulwSucceeded = updateLayeredWindowSucceeded != FALSE;
+			}
+			else diagnostics->presentFailed = FAILED(endDrawHr);
+		}
 		state.spec.HandleFrameEndDrawResult(endDrawHr);
 		if (deferWindowPresentation)
 		{
@@ -12619,10 +12671,18 @@ bool presetButton = button.presetIndex >= 0;
 				releaseDcHr,
 				endDrawHr,
 				state.current);
+		const bool recoveringFailure = state.presentDecision.HasFailureBackoff();
 		const auto presentCompletion = state.presentDecision.CompleteAttempt(
 			presentAttempt,
 			epoch.generation, frameDemandGeneration,
 			state.presentAttemptFrameSerial);
+		if (diagnostics)
+		{
+			diagnostics->presentCommitted = presentCompletion.IsCommitted();
+			diagnostics->presentFailed = !presentCompletion.IsCommitted();
+			diagnostics->failureRecoveryReset |= recoveringFailure
+				&& !state.presentDecision.HasFailureBackoff();
+		}
 		state.presentationAlpha.CompleteAttempt(presentCompletion.IsCommitted());
 		if (presentCompletion.IsCommitted())
 		{
@@ -12921,16 +12981,50 @@ BarRenderLoopCoordinator::RenderFrame(
 	const Inkeys::UI::RenderPipeline::FrameContext& context)
 {
 	using Inkeys::UI::RenderPipeline::FrameResult;
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+	if (diagnostics) diagnostics->barSampled = true;
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	// 所有早退都只采样既有恢复状态，不改变退避或动画时钟。
+	struct FailureDiagnosticsScope
+	{
+		Inkeys::UI::RenderPipeline::FrameDiagnostics* diagnostics;
+		const Inkeys::UI::Bar::BarPresentDecision& decision;
+		~FailureDiagnosticsScope()
+		{
+			if (!diagnostics) return;
+			diagnostics->failureCount = decision.ConsecutiveFailureCount();
+			diagnostics->retryDelayFrames = decision.RetryDelayFrames();
+			diagnostics->nextRetryFrame = decision.NextRetryFrame();
+		}
+	} failureDiagnostics{ diagnostics, state.presentDecision };
+	if (diagnostics)
+	{
+		const auto targetSize = state.spec.GetTargetBitmapSize();
+		diagnostics->targetSize = { static_cast<LONG>(targetSize.width),
+			static_cast<LONG>(targetSize.height) };
+		diagnostics->capacitySize = state.capacitySize;
+		diagnostics->displayCapacityZoom = state.displayCapacityZoom;
+		diagnostics->zoom = static_cast<double>(state.barStyle.zoom);
+		diagnostics->lightFlags = BarFrameLightFlags(state.spec.SnapshotFrameLighting());
+		if (state.viewportController.Initialized())
+		{
+			diagnostics->viewport = state.viewportController.Committed();
+			diagnostics->source = { diagnostics->viewport.left - state.capacityOrigin.x,
+				diagnostics->viewport.top - state.capacityOrigin.y };
+		}
+	}
 	BarRenderFrameSnapshot frame;
 	frame.ordinal = frameOrdinal_;
 	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
 		return FrameResult::Idle;
 	if (state.presentDecision.HasFailureBackoff()
 		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
+	{
+		if (diagnostics) diagnostics->backoffSkipped = true;
 		return FrameResult::Retry;
+	}
 	BarDirectWindowDragPhase expectedPhase = BarDirectWindowDragPhase::Idle;
 	const bool directTranslationPending =
 		owner_.directWindowDragTranslationX.load(memory_order_acquire) != 0
@@ -12940,7 +13034,9 @@ BarRenderLoopCoordinator::RenderFrame(
 		expectedPhase, BarDirectWindowDragPhase::Absorbing,
 		memory_order_acq_rel, memory_order_acquire))
 	{
+		FrameStageTimer directDragLockTimer(diagnostics, FrameStage::PresentLockWait);
 		lock_guard directDragLock(owner_.directWindowDragMutex);
+		directDragLockTimer.Stop();
 		const POINT presentedBeforeAbsorb{
 			owner_.directWindowPresentedTranslationX.load(memory_order_acquire),
 			owner_.directWindowPresentedTranslationY.load(memory_order_acquire) };
@@ -13041,6 +13137,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		directTranslationPending))
 	{
 		// 松手 tuple 已发布但直移所有权尚未交接，下一帧必须先吸收再布局。
+		if (diagnostics) diagnostics->presentDeferred = true;
 		return FrameResult::Retry;
 	}
 	frame.bottomDockLayoutLocked =
@@ -13055,10 +13152,16 @@ BarRenderLoopCoordinator::RenderFrame(
 		state.barState.widgetPosition.mainBar = initialSide;
 		state.mainBarLayoutSide = initialSide;
 	}
+	if (diagnostics) diagnostics->animationAdvanced = true;
 	ApplyDisplayTransition(state, frame);
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	state.spec.SetFrameZoom(frame.zoom);
+	if (diagnostics)
+	{
+		diagnostics->zoom = frame.zoom;
+		diagnostics->displayCapacityZoom = state.displayCapacityZoom;
+	}
 	SubmitTargetsAndLayout(state, frame);
 	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame)
 		|| state.displayTransitionActive;
@@ -13067,6 +13170,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		// 旧候选不能确认新输入的屏障，下一帧重新消费完整状态。
 		state.dirtyRegionTracker.RetainForRetry(true);
 		state.presentDecision.RequireVisualRetry();
+		if (diagnostics) diagnostics->presentDeferred = true;
 		return FrameResult::Retry;
 	}
 	PrepareLightingAndDemand(state, frame, needRendering);

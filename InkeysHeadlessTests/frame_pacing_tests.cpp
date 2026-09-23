@@ -45,10 +45,21 @@ namespace
 		Check(Near(clock.Tick(start + std::chrono::milliseconds(16)), 0.016),
 			"animation clock reports active frame delta");
 
+		Check(Near(clock.LastRawElapsedSeconds(), 0.016),
+			"animation diagnostics retain the active raw delta");
+		Check(Near(clock.Tick(start + std::chrono::milliseconds(216)), 0.05)
+			&& Near(clock.LastRawElapsedSeconds(), 0.2),
+			"animation diagnostics retain a long delta without changing the 50ms clamp");
+		Check(Near(clock.Tick(start + std::chrono::milliseconds(200)), 0.0)
+			&& Near(clock.LastRawElapsedSeconds(), -0.016),
+			"animation diagnostics retain a negative sample without changing the zero fallback");
+
 		const auto idleWake = start + std::chrono::hours(2);
 		clock.Rebase(idleWake);
 		Check(Near(clock.Tick(idleWake + std::chrono::milliseconds(2)), 0.002),
 			"idle rebase excludes sleep from first animation frame");
+		Check(Near(clock.LastRawElapsedSeconds(), 0.002),
+			"raw delta diagnostics use the same rebased clock as animation");
 	}
 
 	void TestOneSecondFrameRate()

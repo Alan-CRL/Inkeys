@@ -1,13 +1,18 @@
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
 import Inkeys.UI.RenderPipeline;
+
+#include "../Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.Diagnostics.h"
 
 using Inkeys::UI::RenderPipeline::Client;
 using Inkeys::UI::RenderPipeline::ClientMask;
@@ -606,6 +611,411 @@ int RunRenderSchedulerTests()
 			&& assets.d2dFactory && assets.dwriteFactory;
 		if (!Expect(valid, "headless WARP shared assets initialize")) ++failures;
 		Shutdown();
+	}
+
+	{
+		using namespace Inkeys::UI::RenderPipeline;
+		using namespace Inkeys::UI::RenderPipeline::DiagnosticsDetail;
+		DiagnosticsAccumulator diagnostics;
+		const auto origin = DiagnosticClock::time_point{};
+		FrameDiagnostics sample;
+		sample.barSampled = true;
+		sample.animationAdvanced = true;
+		sample.rawDtSeconds = sample.animationDtSeconds = 0.016;
+		sample.presentAttempted = sample.presentCommitted = true;
+		bool healthySilent = true;
+		for (int frame = 0; frame < 130; ++frame)
+		{
+			const auto time = origin + frame * 16ms;
+			diagnostics.BeginBatch(time);
+			diagnostics.AddClient(Client::Bar, FrameResult::Continue, sample, time, time + 1ms,
+				frame == 0 ? Mask(Client::Bar) : 0, frame == 0 ? 0 : Mask(Client::Bar), 0);
+			diagnostics.EndBatch(time + 1ms, Mask(Client::Bar), 0, 0);
+			healthySilent &= !diagnostics.Ready(time + 1ms);
+		}
+		if (!Expect(healthySilent, "healthy sustained frames never request default diagnostic output")) ++failures;
+		if (!Expect(diagnostics.WaitDelay(origin + 3s) == (std::chrono::milliseconds::max)(),
+			"healthy scheduler diagnostics keep infinite idle wait")) ++failures;
+
+		diagnostics.Reset();
+		diagnostics.BeginBatch(origin);
+		diagnostics.AddClient(Client::Bar, FrameResult::Continue, sample, origin, origin + 1ms,
+			Mask(Client::Bar), 0, 0);
+		diagnostics.AddClient(Client::Settings, FrameResult::Idle, {}, origin + 1ms, origin + 81ms,
+			Mask(Client::Settings), 0, 0);
+		diagnostics.EndBatch(origin + 81ms, Mask(Client::Bar) | Mask(Client::Settings), 0, 0);
+		const auto& slow = diagnostics.Summary();
+		if (!Expect(diagnostics.Ready(origin + 81ms) && slow.longBatches == 1
+			&& slow.clients[static_cast<std::size_t>(Client::Bar)].maxMs == 1.0
+			&& slow.clients[static_cast<std::size_t>(Client::Settings)].maxMs == 80.0,
+			"shared batch attributes a long Settings callback separately from fast Bar")) ++failures;
+		const auto firstAttempt = origin + 81ms;
+		diagnostics.BeginAttempt(firstAttempt);
+		diagnostics.CompleteAttempt(true, 0.2, 0.3);
+		diagnostics.BeginBatch(origin + 82ms);
+		diagnostics.AddClient(Client::Bar, FrameResult::Continue, sample, origin + 82ms, origin + 83ms,
+			0, Mask(Client::Bar), 0);
+		diagnostics.EndBatch(origin + 83ms, 0, Mask(Client::Bar), 0);
+		if (!Expect(diagnostics.Summary().clients[0].activeGapMaxMs == 82.0
+			&& diagnostics.Summary().longPeriods == 1 && !diagnostics.Ready(origin + 83ms),
+			"next Bar callback exposes previous other-client delay while output stays rate limited")) ++failures;
+
+		FrameDiagnostics failure = sample;
+		failure.animationAdvanced = false;
+		failure.presentCommitted = false;
+		failure.presentFailed = true;
+		failure.getDcResult = -7;
+		failure.callbackException = true;
+		failure.rawDtSeconds = 0.5;
+		failure.animationDtSeconds = 0.05;
+		diagnostics.BeginBatch(origin + 100ms);
+		diagnostics.AddClient(Client::Bar, FrameResult::Retry, failure, origin + 100ms, origin + 101ms,
+			Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 101ms, Mask(Client::Bar), 0, 0);
+		diagnostics.BeginBatch(origin + 116ms);
+		diagnostics.AddClient(Client::Bar, FrameResult::Idle, sample, origin + 116ms, origin + 117ms,
+			0, 0, Mask(Client::Bar));
+		diagnostics.EndBatch(origin + 117ms, 0, 0, Mask(Client::Bar));
+		diagnostics.MarkIdle();
+		const auto& retained = diagnostics.Summary().clients[0];
+		if (!Expect(retained.failures == 1 && retained.recoveries == 1 && retained.exceptions == 1
+			&& retained.latest.getDcResult == 0 && retained.lastFailure.getDcResult == -7
+			&& retained.advanced == 2 && retained.usedDtSeconds == 0.032,
+			"late failure exception and recovery survive healthy samples; skipped dt is not animation time")) ++failures;
+		if (!Expect(!diagnostics.Ready(firstAttempt + 999ms)
+			&& diagnostics.Ready(firstAttempt + 1s)
+			&& diagnostics.WaitDelay(firstAttempt + 999ms) == 1ms,
+			"diagnostic limit includes the exact one-second boundary")) ++failures;
+		diagnostics.BeginAttempt(firstAttempt + 1s);
+		diagnostics.CompleteAttempt(false, 0.1, 0.2);
+		if (!Expect(!diagnostics.Ready(firstAttempt + 1999ms)
+			&& diagnostics.Ready(firstAttempt + 2s) && diagnostics.SinkRejected() == 1
+			&& diagnostics.Summary().clients[0].lastFailure.getDcResult == -7,
+			"rejected sink retains events and consumes one-second attempt budget")) ++failures;
+		diagnostics.BeginAttempt(firstAttempt + 2s);
+		diagnostics.CompleteAttempt(true, 0.1, 0.2);
+		if (!Expect(!diagnostics.Ready(firstAttempt + 10s)
+			&& diagnostics.Summary().batches == 0,
+			"accepted anomaly does not keep producing healthy summaries")) ++failures;
+	}
+
+	{
+		using namespace Inkeys::UI::RenderPipeline;
+		using namespace Inkeys::UI::RenderPipeline::DiagnosticsDetail;
+		DiagnosticsAccumulator diagnostics;
+		const auto origin = DiagnosticClock::time_point{};
+		FrameDiagnostics committed;
+		committed.barSampled = true;
+		committed.presentCommitted = true;
+		diagnostics.BeginBatch(origin);
+		diagnostics.AddClient(Client::Bar, FrameResult::Continue, committed, origin, origin + 1ms, Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 1ms, Mask(Client::Bar), 0, 0);
+		diagnostics.MarkIdle();
+		diagnostics.BeginBatch(origin + 10s);
+		diagnostics.AddClient(Client::Bar, FrameResult::Continue, committed, origin + 10s, origin + 10s + 1ms,
+			Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 10s + 1ms, Mask(Client::Bar), 0, 0);
+		if (!Expect(!diagnostics.Ready(origin + 11s)
+			&& diagnostics.Summary().clients[0].commitRawGapMaxMs == 10000.0
+			&& diagnostics.Summary().clients[0].commitActiveGapMaxMs == 0.0
+			&& diagnostics.Summary().clients[0].activeGapMaxMs == 0.0,
+			"real scheduler idle is excluded while raw successful-present gap remains observable")) ++failures;
+
+		diagnostics.Reset();
+		diagnostics.BeginBatch(origin);
+		diagnostics.AddClient(Client::Bar, FrameResult::Idle, committed, origin, origin + 1ms, Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 1ms, Mask(Client::Bar), 0, 0);
+		for (int frame = 1; frame < 10; ++frame)
+		{
+			const auto time = origin + frame * 20ms;
+			diagnostics.BeginBatch(time);
+			diagnostics.AddClient(Client::Settings, FrameResult::Continue, {}, time, time + 1ms, 0, Mask(Client::Settings), 0);
+			diagnostics.EndBatch(time + 1ms, 0, Mask(Client::Settings), 0);
+		}
+		diagnostics.BeginBatch(origin + 200ms);
+		diagnostics.AddClient(Client::Bar, FrameResult::Continue, committed, origin + 200ms, origin + 201ms,
+			Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 201ms, Mask(Client::Bar), 0, 0);
+		if (!Expect(!diagnostics.Ready(origin + 201ms)
+			&& diagnostics.Summary().clients[0].commitRawGapMaxMs == 200.0
+			&& diagnostics.Summary().clients[0].commitActiveGapMaxMs == 0.0,
+			"an idle Bar is not diagnosed as stalled while another client continues")) ++failures;
+
+		diagnostics.ResetClientActivity(Client::Bar);
+		diagnostics.BeginBatch(origin + 220ms);
+		diagnostics.AddClient(Client::Bar, FrameResult::Idle, committed, origin + 220ms, origin + 221ms,
+			Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 221ms, Mask(Client::Bar), 0, 0);
+		if (!Expect(!diagnostics.Ready(origin + 221ms) && diagnostics.Summary().clients[0].activeGapMaxMs == 0.0,
+			"new registration in an existing slot does not inherit an old activity chain")) ++failures;
+
+		diagnostics.Reset();
+		FrameDiagnostics deferred;
+		deferred.barSampled = deferred.presentDeferred = true;
+		diagnostics.BeginBatch(origin);
+		diagnostics.AddClient(Client::Bar, FrameResult::Retry, deferred, origin, origin + 1ms, Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 1ms, Mask(Client::Bar), 0, 0);
+		if (!Expect(!diagnostics.Ready(origin + 1s) && diagnostics.Summary().clients[0].results[2] == 1
+			&& diagnostics.Summary().clients[0].deferred == 1,
+			"legal Retry is counted without inventing a presentation failure")) ++failures;
+		diagnostics.Reset();
+		FrameDiagnostics degraded = committed;
+		degraded.light.roundedParentFailure = 1;
+		degraded.light.geometryParentFailure = 1;
+		degraded.light.exactFallback[static_cast<std::size_t>(ExactFallback::CreateFailure)] = 1;
+		diagnostics.BeginBatch(origin);
+		diagnostics.AddClient(Client::Bar, FrameResult::Continue, degraded, origin, origin + 1ms, Mask(Client::Bar), 0, 0);
+		diagnostics.EndBatch(origin + 1ms, Mask(Client::Bar), 0, 0);
+		diagnostics.BeginBatch(origin + 16ms);
+		diagnostics.AddClient(Client::Bar, FrameResult::Idle, committed, origin + 16ms, origin + 17ms, 0, Mask(Client::Bar), 0);
+		diagnostics.EndBatch(origin + 17ms, 0, Mask(Client::Bar), 0);
+		if (!Expect(diagnostics.Ready(origin + 17ms) && diagnostics.Summary().clients[0].lightFailureFrames == 1
+			&& diagnostics.Summary().clients[0].failures == 0 && diagnostics.Summary().clients[0].recoveries == 0,
+			"lighting allocation degradation is reported separately from present failure and recovery")) ++failures;
+		diagnostics.Reset();
+		FrameDiagnostics pageFailure;
+		pageFailure.presentAttempted = pageFailure.presentFailed = true;
+		pageFailure.getDcResult = -8;
+		diagnostics.BeginBatch(origin);
+		diagnostics.AddClient(Client::PptBottomLeft, FrameResult::Retry, pageFailure, origin, origin + 1ms,
+			Mask(Client::PptBottomLeft), 0, 0);
+		diagnostics.EndBatch(origin + 1ms, Mask(Client::PptBottomLeft), 0, 0);
+		diagnostics.BeginBatch(origin + 16ms);
+		diagnostics.AddClient(Client::PptBottomLeft, FrameResult::Idle, {}, origin + 16ms, origin + 17ms,
+			0, 0, Mask(Client::PptBottomLeft));
+		diagnostics.EndBatch(origin + 17ms, 0, 0, Mask(Client::PptBottomLeft));
+		if (!Expect(diagnostics.Summary().clients[static_cast<std::size_t>(Client::PptBottomLeft)].recoveries == 0,
+			"PageControl hidden after failure is not mistaken for a successful present")) ++failures;
+		FrameDiagnostics pageCommit;
+		pageCommit.presentCommitted = true;
+		diagnostics.BeginBatch(origin + 32ms);
+		diagnostics.AddClient(Client::PptBottomLeft, FrameResult::Idle, pageCommit, origin + 32ms, origin + 33ms,
+			Mask(Client::PptBottomLeft), 0, 0);
+		diagnostics.EndBatch(origin + 33ms, Mask(Client::PptBottomLeft), 0, 0);
+		if (!Expect(diagnostics.Summary().clients[static_cast<std::size_t>(Client::PptBottomLeft)].recoveries == 1,
+			"present failure recovers only after an actual successful commit")) ++failures;
+		diagnostics.AddRecovery(false, 4.0);
+		diagnostics.AddRecovery(true, 3.0);
+		if (!Expect(diagnostics.Ready(origin + 1s) && diagnostics.Summary().recoveryAttempts == 2
+			&& diagnostics.Summary().recoveryFailures == 1 && diagnostics.Summary().recoverySuccesses == 1,
+			"shared device recovery failures and success are retained independently")) ++failures;
+	}
+
+	{
+		using namespace Inkeys::UI::RenderPipeline;
+		Scheduler scheduler;
+		std::mutex mutex;
+		std::condition_variable condition;
+		std::vector<std::string> messages;
+		std::vector<std::chrono::steady_clock::time_point> sent;
+		std::atomic_int barCalls = 0, settingsCalls = 0, continuation = 0;
+		std::atomic_bool slowSettings = false, noSinkSawSample = false, installed = false;
+		std::atomic_bool sinkHadSample = false, sinkReentered = false;
+		(void)scheduler.Register(Client::Bar, [&](const auto&)
+			{
+				const auto call = ++barCalls;
+				if (call == 1) noSinkSawSample = CurrentFrameDiagnostics() != nullptr;
+				if (auto* sample = CurrentFrameDiagnostics())
+				{
+					sample->barSampled = sample->animationAdvanced = sample->presentCommitted = sample->ulwSucceeded = true;
+					sample->rawDtSeconds = sample->animationDtSeconds = 0.016;
+				}
+				condition.notify_all();
+				return continuation.exchange(0) != 0 ? FrameResult::Continue : FrameResult::Idle;
+			});
+		(void)scheduler.Register(Client::Settings, [&](const auto&)
+			{
+				++settingsCalls;
+				if (slowSettings.exchange(false)) std::this_thread::sleep_for(70ms);
+				condition.notify_all();
+				return FrameResult::Idle;
+			});
+		(void)scheduler.Start();
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 2s, [&] { return barCalls.load() == 1 && settingsCalls.load() == 1; });
+		}
+		const bool sinkAccepted = scheduler.SetDiagnosticsSink([&](std::string_view message)
+			{
+				sinkHadSample = CurrentFrameDiagnostics() != nullptr;
+				// PostControl 取得调度锁，验证 sink 确实在内部锁外调用。
+				sinkReentered = scheduler.PostControl([] {});
+				{
+					std::scoped_lock lock(mutex);
+					messages.emplace_back(message);
+					sent.push_back(std::chrono::steady_clock::now());
+				}
+				condition.notify_all();
+				return true;
+			});
+		(void)scheduler.PostControl([&] { installed = true; condition.notify_all(); });
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 2s, [&] { return installed.load(); });
+		}
+		continuation = 1;
+		slowSettings = true;
+		scheduler.Request(Mask(Client::Bar) | Mask(Client::Settings));
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 3s, [&] { return messages.size() >= 2; });
+		}
+		scheduler.Stop();
+		if (!Expect(sinkAccepted && installed.load() && !noSinkSawSample.load() && !sinkHadSample.load()
+			&& sinkReentered.load() && CurrentFrameDiagnostics() == nullptr,
+			"runtime sink can install after Start, stays outside locks and callback TLS")) ++failures;
+		if (!Expect(messages.size() == 2 && sent[1] - sent[0] >= 990ms
+			&& barCalls.load() == 3 && settingsCalls.load() == 2,
+			"pending idle diagnostics flush at the limit without extra client callbacks")) ++failures;
+		if (!Expect(!messages.empty() && messages[0].find("Bar{calls=1") != std::string::npos
+			&& messages[0].find("Settings{calls=1") != std::string::npos
+			&& messages[0].find("longBatches=1") != std::string::npos
+			&& messages[0].find("ulwSuccess=1") != std::string::npos,
+			"real scheduler log contains separate fast-Bar and slow-Settings work")) ++failures;
+	}
+
+	{
+		using namespace Inkeys::UI::RenderPipeline;
+		Scheduler scheduler;
+		Scheduler independent;
+		std::mutex mutex;
+		std::condition_variable condition;
+		std::atomic_int callbacks = 0, attempts = 0;
+		std::atomic_bool isolated = false;
+		std::string acceptedMessage;
+		(void)scheduler.SetDiagnosticsSink([&](std::string_view message)
+			{
+				if (++attempts == 1) throw std::runtime_error("diagnostic sink rejected");
+				{
+					std::scoped_lock lock(mutex);
+					acceptedMessage.assign(message);
+				}
+				condition.notify_all();
+				return true;
+			});
+		(void)scheduler.Register(Client::Bar, [&](const auto&)
+			{
+				if (auto* sample = CurrentFrameDiagnostics())
+				{
+					sample->barSampled = true;
+					sample->presentCommitted = callbacks.load() != 0;
+				}
+				if (++callbacks == 1) throw std::runtime_error("render callback failed");
+				return FrameResult::Idle;
+			});
+		(void)independent.Register(Client::Bar, [&](const auto&)
+			{
+				isolated = CurrentFrameDiagnostics() == nullptr;
+				condition.notify_all();
+				return FrameResult::Idle;
+			});
+		(void)scheduler.Start();
+		(void)independent.Start();
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 3s, [&] { return !acceptedMessage.empty() && isolated.load(); });
+		}
+		scheduler.Stop();
+		independent.Stop();
+		if (!Expect(attempts.load() == 2 && callbacks.load() == 2 && isolated.load()
+			&& acceptedMessage.find("exception=1") != std::string::npos
+			&& acceptedMessage.find("recovered=1") != std::string::npos
+			&& acceptedMessage.find("sinkRejected=1") != std::string::npos,
+			"sink exceptions preserve real callback failure and recovery without leaking across schedulers")) ++failures;
+	}
+
+	{
+		using namespace Inkeys::UI::RenderPipeline;
+		FrameDiagnostics sample;
+		double stoppedMs = 0.0;
+		{
+			FrameStageTimer timer(&sample, FrameStage::Draw);
+			std::this_thread::sleep_for(1ms);
+			timer.Stop();
+			stoppedMs = sample.stageMs[static_cast<std::size_t>(FrameStage::Draw)];
+			// 显式结算后重复 Stop 和析构都不能把同一阶段再计一次。
+			timer.Stop();
+		}
+		if (!Expect(stoppedMs > 0.0
+			&& sample.stageMs[static_cast<std::size_t>(FrameStage::Draw)] == stoppedMs,
+			"stage timer Stop and destruction accumulate the elapsed interval exactly once")) ++failures;
+		FrameStageTimer disabled(nullptr, FrameStage::Draw);
+		disabled.Stop();
+		disabled.Stop();
+	}
+
+	{
+		using namespace Inkeys::UI::RenderPipeline;
+		Scheduler scheduler;
+		std::mutex mutex;
+		std::condition_variable condition;
+		std::atomic_int callbacks = 0;
+		std::atomic_bool restartedWithoutSample = false;
+		int rejectedAttempts = 0;
+		std::chrono::steady_clock::time_point rejectedAt{}, acceptedAt{};
+		std::string acceptedMessage;
+		(void)scheduler.SetDiagnosticsSink([&](std::string_view)
+			{
+				{
+					std::scoped_lock lock(mutex);
+					++rejectedAttempts;
+					rejectedAt = std::chrono::steady_clock::now();
+				}
+				condition.notify_all();
+				return false;
+			});
+		(void)scheduler.Register(Client::Bar, [&](const auto&)
+			{
+				const auto call = ++callbacks;
+				auto* sample = CurrentFrameDiagnostics();
+				if (call == 1 && sample)
+				{
+					sample->barSampled = sample->presentFailed = true;
+					sample->getDcResult = -9;
+				}
+				if (call == 2) restartedWithoutSample = sample == nullptr;
+				condition.notify_all();
+				return FrameResult::Idle;
+			});
+		(void)scheduler.Start();
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 2s, [&] { return rejectedAttempts != 0; });
+		}
+		// 非空 sink 的替换继续交付旧聚合，并保留旧尝试的限频起点。
+		const bool replaced = scheduler.SetDiagnosticsSink([&](std::string_view message)
+			{
+				{
+					std::scoped_lock lock(mutex);
+					acceptedMessage.assign(message);
+					acceptedAt = std::chrono::steady_clock::now();
+				}
+				condition.notify_all();
+				return true;
+			});
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 3s, [&] { return !acceptedMessage.empty(); });
+		}
+		scheduler.Stop();
+		if (!Expect(replaced && rejectedAttempts != 0 && callbacks.load() == 1
+			&& acceptedAt - rejectedAt >= 990ms
+			&& acceptedMessage.find("fail=1") != std::string::npos
+			&& acceptedMessage.find("lastFailure[") != std::string::npos
+			&& acceptedMessage.find("sinkRejected=0") == std::string::npos,
+			"replacing a nonempty sink preserves rejected failure evidence and its rate limit")) ++failures;
+		// Stop 应清理已安装 sink；同一个客户端在下一轮只能收到新的请求。
+		scheduler.Stop();
+		scheduler.Request(Client::Bar);
+		(void)scheduler.Start();
+		{
+			std::unique_lock lock(mutex);
+			condition.wait_for(lock, 2s, [&] { return callbacks.load() == 2; });
+		}
+		scheduler.Stop();
+		if (!Expect(callbacks.load() == 2 && restartedWithoutSample.load()
+			&& CurrentFrameDiagnostics() == nullptr,
+			"Stop is repeatable and restart does not retain the previous diagnostics sink or TLS")) ++failures;
 	}
 
 	return failures;

@@ -14,6 +14,7 @@ module;
 #include <cstdio>
 #include <d2d1effects.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -50,6 +51,27 @@ namespace
 	{
 		return Inkeys::UI::RenderPipeline::FontCollection();
 	}
+
+	// 只在遮罩未命中时测量创建尝试，稳态缓存与分片热路径不读取时钟。
+	class ScopedMaskCreationTimer
+	{
+	public:
+		explicit ScopedMaskCreationTimer(double* elapsedMs) noexcept
+			: elapsedMs_(elapsedMs)
+		{
+			if (elapsedMs_) started_ = std::chrono::steady_clock::now();
+		}
+		~ScopedMaskCreationTimer() noexcept
+		{
+			if (elapsedMs_)
+				*elapsedMs_ += std::chrono::duration<double, std::milli>(
+					std::chrono::steady_clock::now() - started_).count();
+		}
+
+	private:
+		double* elapsedMs_ = nullptr;
+		std::chrono::steady_clock::time_point started_{};
+	};
 
 	constexpr double BarThicknessFineDialLabelFontSizeDip = 10.0;
 
@@ -1463,6 +1485,7 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 	int radiusYQuarter = QuantizeQuarter(roundedRect.radiusY);
 	int strokeWidthQuarter = max(1, QuantizeQuarter(strokeWidth));
 	int standardDeviationQuarter = max(1, QuantizeQuarter(standardDeviation));
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
 	for (auto& cache : frameDiffuseMaskCache)
 	{
 		if (cache.radiusXQuarter == radiusXQuarter
@@ -1470,9 +1493,14 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 			&& cache.strokeWidthQuarter == strokeWidthQuarter
 			&& cache.standardDeviationQuarter == standardDeviationQuarter)
 		{
+			if (diagnostics) ++diagnostics->light.roundedParentHit;
 			return &cache;
 		}
 	}
+
+	if (diagnostics) ++diagnostics->light.roundedParentMiss;
+	ScopedMaskCreationTimer creationTimer(
+		diagnostics ? &diagnostics->light.roundedParentCreateMs : nullptr);
 
 	if (!frameMaskDeviceContext && !frameDiffuseEffectFailureLogged)
 	{
@@ -1513,7 +1541,11 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 				static_cast<unsigned int>(hr));
 		}
 	}
-	if (!frameMaskDeviceContext || !frameGaussianBlurEffect) return nullptr;
+	if (!frameMaskDeviceContext || !frameGaussianBlurEffect)
+	{
+		if (diagnostics) ++diagnostics->light.roundedParentFailure;
+		return nullptr;
+	}
 
 	FrameDiffuseMaskCacheClass cache;
 	cache.radiusXQuarter = radiusXQuarter;
@@ -1592,6 +1624,7 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 
 	if (FAILED(hr))
 	{
+		if (diagnostics) ++diagnostics->light.roundedParentFailure;
 		frameDiffuseMaskUnavailable = true;
 		if (!frameDiffuseMaskFailureLogged)
 		{
@@ -1610,6 +1643,7 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 	}
 	frameDiffuseMaskCache.emplace_back(move(cache));
 	frameDiffuseMaskCreatedThisFrame = true;
+	if (diagnostics) ++diagnostics->light.roundedParentCreate;
 	return &frameDiffuseMaskCache.back();
 }
 
@@ -1639,6 +1673,9 @@ unsigned int BarUIRendering::FillRoundedRectDiffuseMaskSlices(
 			++fillCount;
 		}
 	}
+	// 聚合实际提交数，包含整图烘焙；零面积跳片不计入，也不逐片访问采样槽。
+	if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+		diagnostics->light.slices += fillCount;
 	return fillCount;
 }
 
@@ -1731,37 +1768,44 @@ BarUIRendering::ResolveRoundedRectExactMask(
 	const D2D1_ROUNDED_RECT& roundedRect)
 {
 	FrameDiffuseExactMaskSelectionClass selection;
-	auto Fallback = [&]()
+	using ExactFallback = Inkeys::UI::RenderPipeline::ExactFallback;
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+	auto Fallback = [&](ExactFallback reason)
 		{
+			if (diagnostics)
+				++diagnostics->light.exactFallback[static_cast<std::size_t>(reason)];
 			return selection;
 		};
-	if (!deviceContext || !mask.bitmap || !frameMaskDeviceContext
-		|| frameDiffuseExactMaskUnavailable
-		|| !isfinite(frameDiffuseMaskGeometryScale)
+	if (!deviceContext || !mask.bitmap || !frameMaskDeviceContext)
+		return Fallback(ExactFallback::Other);
+	if (frameDiffuseExactMaskUnavailable)
+		return Fallback(ExactFallback::Unavailable);
+	if (!isfinite(frameDiffuseMaskGeometryScale)
 		|| abs(frameDiffuseMaskGeometryScale - 1.0) > 0.001)
-		return Fallback();
+		return Fallback(ExactFallback::GeometryScale);
 
 	const FLOAT radiusX = max(0.0F, roundedRect.radiusX);
 	const FLOAT radiusY = max(0.0F, roundedRect.radiusY);
 	const bool geometryScaled = abs(radiusX - mask.radiusX) > 0.001F
 		|| abs(radiusY - mask.radiusY) > 0.001F;
-	if (geometryScaled || !isfinite(radiusX) || !isfinite(radiusY)
+	if (geometryScaled) return Fallback(ExactFallback::QuantizedRadius);
+	if (!isfinite(radiusX) || !isfinite(radiusY)
 		|| roundedRect.rect.right <= roundedRect.rect.left
 		|| roundedRect.rect.bottom <= roundedRect.rect.top)
-		return Fallback();
+		return Fallback(ExactFallback::SizeOrBudget);
 
 	FLOAT dpiX = 0.0F;
 	FLOAT dpiY = 0.0F;
 	deviceContext->GetDpi(&dpiX, &dpiY);
 	if (!isfinite(dpiX) || !isfinite(dpiY)
-		|| dpiX != 96.0F || dpiY != 96.0F) return Fallback();
+		|| dpiX != 96.0F || dpiY != 96.0F) return Fallback(ExactFallback::Dpi);
 
 	D2D1_MATRIX_3X2_F transform{};
 	deviceContext->GetTransform(&transform);
 	if (transform._11 != 1.0F || transform._12 != 0.0F
 		|| transform._21 != 0.0F || transform._22 != 1.0F
 		|| transform._31 != 0.0F || transform._32 != 0.0F)
-		return Fallback();
+		return Fallback(ExactFallback::Transform);
 
 	const FLOAT destinationLeft = roundedRect.rect.left - mask.padding;
 	const FLOAT destinationTop = roundedRect.rect.top - mask.padding;
@@ -1773,7 +1817,7 @@ BarUIRendering::ResolveRoundedRectExactMask(
 		};
 	if (!PixelAligned(destinationLeft) || !PixelAligned(destinationTop)
 		|| !PixelAligned(destinationRight) || !PixelAligned(destinationBottom))
-		return Fallback();
+		return Fallback(ExactFallback::Alignment);
 
 	selection.destination = D2D1::RectF(
 		roundf(destinationLeft), roundf(destinationTop),
@@ -1785,7 +1829,7 @@ BarUIRendering::ResolveRoundedRectExactMask(
 		|| width <= 0.0F || height <= 0.0F
 		|| width > MaximumExactMaskDimension
 		|| height > MaximumExactMaskDimension)
-		return Fallback();
+		return Fallback(ExactFallback::SizeOrBudget);
 
 	FrameDiffuseExactMaskKeyClass key;
 	key.width = static_cast<UINT32>(width);
@@ -1799,16 +1843,17 @@ BarUIRendering::ResolveRoundedRectExactMask(
 		frameMaskDeviceContext->GetMaximumBitmapSize();
 	if (logicalBytes == 0 || logicalBytes > MaximumItemBytes
 		|| key.width > maximumBitmapSize || key.height > maximumBitmapSize)
-		return Fallback();
+		return Fallback(ExactFallback::SizeOrBudget);
 
 	for (auto& ready : mask.exactMasks)
 	{
 		if (!ready.bitmap || !ready.key.Matches(key)) continue;
 		ready.lastUse = ++frameDiffuseExactMaskUseSerial;
 		selection.cache = &ready;
+		if (diagnostics) ++diagnostics->light.exactHit;
 		return selection;
 	}
-	if (frameDiffuseMaskFrameSerial == 0) return Fallback();
+	if (frameDiffuseMaskFrameSerial == 0) return Fallback(ExactFallback::Warming);
 
 	FrameDiffuseExactMaskCandidateClass* candidate = nullptr;
 	for (auto& current : mask.exactCandidates)
@@ -1861,7 +1906,7 @@ BarUIRendering::ResolveRoundedRectExactMask(
 		|| frameDiffuseMaskCreatedThisFrame
 		|| frameDiffuseExactMaskPromotionFrameSerial
 			== frameDiffuseMaskFrameSerial)
-		return Fallback();
+		return Fallback(ExactFallback::Warming);
 
 	ComPtr<ID2D1Bitmap1> exactBitmap;
 	HRESULT hr = CreateRoundedRectExactMask(mask, key, exactBitmap);
@@ -1872,7 +1917,7 @@ BarUIRendering::ResolveRoundedRectExactMask(
 		if (IDTLogger) IDTLogger->warn(
 			"[BarUIRendering::ResolveRoundedRectExactMask] 创建精确 A8 遮罩失败，回退预模糊九宫格, hr=0x{:08X}",
 			static_cast<unsigned int>(hr));
-		return Fallback();
+		return Fallback(ExactFallback::CreateFailure);
 	}
 
 	auto EvictOldestFromParent = [&](FrameDiffuseMaskCacheClass& parent)
@@ -1916,7 +1961,7 @@ BarUIRendering::ResolveRoundedRectExactMask(
 		const bool bytesFit = readyBytes
 			<= MaximumReadyMaskBytes - logicalBytes;
 		if (countFits && bytesFit) break;
-		if (!oldestParent) return Fallback();
+		if (!oldestParent) return Fallback(ExactFallback::SizeOrBudget);
 		oldestParent->exactMasks.erase(
 			oldestParent->exactMasks.begin() + oldestIndex);
 	}
@@ -1971,6 +2016,8 @@ void BarUIRendering::DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContex
 		deviceContext->FillOpacityMask(
 			exactMask.cache->bitmap.Get(), brush,
 			&exactMask.destination, &sourceRect);
+		if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+			++diagnostics->light.slices;
 		deviceContext->SetAntialiasMode(originalAntialiasMode);
 		return;
 	}
@@ -2041,6 +2088,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 	int heightQuarter = max(1, QuantizeQuarter(height));
 	int strokeWidthQuarter = max(1, QuantizeQuarter(strokeWidth));
 	int standardDeviationQuarter = max(1, QuantizeQuarter(standardDeviation));
+	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
 	for (auto& cache : frameGeometryDiffuseMaskCache)
 	{
 		if (cache.widthQuarter == widthQuarter
@@ -2049,9 +2097,14 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 			&& cache.strokeWidthQuarter == strokeWidthQuarter
 			&& cache.standardDeviationQuarter == standardDeviationQuarter)
 		{
+			if (diagnostics) ++diagnostics->light.geometryParentHit;
 			return &cache;
 		}
 	}
+
+	if (diagnostics) ++diagnostics->light.geometryParentMiss;
+	ScopedMaskCreationTimer creationTimer(
+		diagnostics ? &diagnostics->light.geometryParentCreateMs : nullptr);
 
 	if (!frameMaskDeviceContext && !frameDiffuseEffectFailureLogged)
 	{
@@ -2092,7 +2145,11 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 				static_cast<unsigned int>(hr));
 		}
 	}
-	if (!frameMaskDeviceContext || !frameGaussianBlurEffect) return nullptr;
+	if (!frameMaskDeviceContext || !frameGaussianBlurEffect)
+	{
+		if (diagnostics) ++diagnostics->light.geometryParentFailure;
+		return nullptr;
+	}
 
 	FrameGeometryDiffuseMaskCacheClass cache;
 	cache.widthQuarter = widthQuarter;
@@ -2165,6 +2222,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 	}
 	if (FAILED(hr))
 	{
+		if (diagnostics) ++diagnostics->light.geometryParentFailure;
 		frameDiffuseMaskUnavailable = true;
 		if (!frameDiffuseMaskFailureLogged)
 		{
@@ -2181,6 +2239,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 		frameGeometryDiffuseMaskCache.erase(frameGeometryDiffuseMaskCache.begin());
 	frameGeometryDiffuseMaskCache.emplace_back(move(cache));
 	frameDiffuseMaskCreatedThisFrame = true;
+	if (diagnostics) ++diagnostics->light.geometryParentCreate;
 	return &frameGeometryDiffuseMaskCache.back();
 }
 
@@ -2202,6 +2261,8 @@ void BarUIRendering::DrawGeometryDiffuseMask(ID2D1DeviceContext* deviceContext,
 	deviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
 	deviceContext->FillOpacityMask(
 		mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
+	if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+		++diagnostics->light.slices;
 	deviceContext->SetAntialiasMode(originalAntialiasMode);
 }
 

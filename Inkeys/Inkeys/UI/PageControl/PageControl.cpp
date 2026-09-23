@@ -45,6 +45,8 @@ namespace Inkeys::UI::PageControl
 		using Client = Inkeys::UI::RenderPipeline::Client;
 		using FrameContext = Inkeys::UI::RenderPipeline::FrameContext;
 		using FrameResult = Inkeys::UI::RenderPipeline::FrameResult;
+		using FrameStage = Inkeys::UI::RenderPipeline::FrameStage;
+		using FrameStageTimer = Inkeys::UI::RenderPipeline::FrameStageTimer;
 		using Scene = Inkeys::UI::Bar::BarSurfaceScene;
 		using WidgetSpec = Inkeys::UI::Bar::BarSurfaceWidgetSpec;
 		using WidgetId = Inkeys::UI::Bar::BarSurfaceWidgetId;
@@ -932,6 +934,14 @@ namespace Inkeys::UI::PageControl
 			bool showDebugFrames, bool lifecycleRendering) noexcept
 		{
 			PresentSceneResult result;
+			auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
+			if (diagnostics)
+			{
+				diagnostics->capacitySize = backingCapacity;
+				diagnostics->viewport = presentationBounds;
+				diagnostics->source = {};
+				diagnostics->zoom = state.bounds.scale;
+			}
 			const UINT width = static_cast<UINT>(presentationBounds.right
 				- presentationBounds.left);
 			const UINT height = static_cast<UINT>(presentationBounds.bottom
@@ -941,6 +951,15 @@ namespace Inkeys::UI::PageControl
 				frameContext.epoch,
 				static_cast<UINT>((std::max)(1L, backingCapacity.cx)),
 				static_cast<UINT>((std::max)(1L, backingCapacity.cy)));
+			if (diagnostics)
+			{
+				diagnostics->resourceResult = resourceHr;
+				diagnostics->presentFailed = FAILED(resourceHr);
+				// Ensure 成功时实际 target 尺寸就是这次申请的 backing 容量。
+				if (SUCCEEDED(resourceHr))
+					diagnostics->targetSize = { (std::max)(1L, backingCapacity.cx),
+						(std::max)(1L, backingCapacity.cy) };
+			}
 			if (FAILED(resourceHr))
 			{
 				result.status = IsDeviceLost(resourceHr)
@@ -949,9 +968,18 @@ namespace Inkeys::UI::PageControl
 			}
 			auto* rawContext = state.scene.DeviceContext();
 			auto* rawGdi = state.scene.GdiInteropRenderTarget();
-			if (!rawContext || !rawGdi) return result;
+			if (!rawContext || !rawGdi)
+			{
+				if (diagnostics)
+				{
+					diagnostics->resourceResult = E_POINTER;
+					diagnostics->presentFailed = true;
+				}
+				return result;
+			}
 			ComPtr<ID2D1DeviceContext> context(rawContext);
 			ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
+			FrameStageTimer drawTimer(diagnostics, FrameStage::Draw);
 			context->BeginDraw();
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
 			context->Clear(D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F));
@@ -1032,9 +1060,14 @@ namespace Inkeys::UI::PageControl
 				if (windowBrush)
 					context->DrawRectangle(&windowRect, windowBrush.Get(), frameWidth);
 			}
+			drawTimer.Stop();
 			HDC source = nullptr;
 			bool presented = false;
+			DWORD presentError = ERROR_SUCCESS;
+			if (diagnostics) diagnostics->presentAttempted = true;
+			FrameStageTimer getDcTimer(diagnostics, FrameStage::GetDC);
 			HRESULT getDcHr = gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source);
+			getDcTimer.Stop();
 			HRESULT releaseDcHr = S_OK;
 			if (SUCCEEDED(getDcHr) && source)
 			{
@@ -1051,11 +1084,32 @@ namespace Inkeys::UI::PageControl
 				info.pblend = &blend;
 				info.prcDirty = forceFullReplacement ? nullptr : &presentDirty;
 				info.dwFlags = ULW_ALPHA;
+				if (diagnostics) diagnostics->ulwAttempted = true;
+				FrameStageTimer ulwTimer(diagnostics, FrameStage::ULW);
 				presented = UpdateLayeredWindowIndirect(hwnd, &info) != FALSE;
-				releaseDcHr = gdi->ReleaseDC(nullptr);
+				if (!presented) presentError = GetLastError();
+				ulwTimer.Stop();
+				// ULW 只读取源 DC；这里没有通过 GDI 修改像素。
+				const RECT gdiModifiedRect{};
+				FrameStageTimer releaseDcTimer(diagnostics, FrameStage::ReleaseDC);
+				releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
+				releaseDcTimer.Stop();
 			}
 			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
+			FrameStageTimer endDrawTimer(diagnostics, FrameStage::EndDraw);
 			const HRESULT endDrawHr = context->EndDraw();
+			endDrawTimer.Stop();
+			if (diagnostics)
+			{
+				diagnostics->getDcResult = getDcHr;
+				diagnostics->releaseDcResult = releaseDcHr;
+				diagnostics->endDrawResult = endDrawHr;
+				diagnostics->ulwError = presentError;
+				diagnostics->ulwSucceeded = presented;
+				diagnostics->presentFailed = FAILED(getDcHr) || FAILED(releaseDcHr)
+					|| FAILED(endDrawHr) || !presented;
+				diagnostics->presentCommitted = !diagnostics->presentFailed;
+			}
 			state.scene.HandleFrameEndDrawResult(endDrawHr);
 			if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
 				|| IsDeviceLost(endDrawHr))
@@ -1406,6 +1460,7 @@ namespace Inkeys::UI::PageControl
 		FrameResult RenderSurface(std::size_t index,
 			const FrameContext& frameContext)
 		{
+			auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
 			if (!initialized.load(std::memory_order_acquire))
 				return FrameResult::Idle;
 			auto& service = Inkeys::Window::GetService();
@@ -1435,7 +1490,9 @@ namespace Inkeys::UI::PageControl
 			bool repeatDirection = false;
 			bool repeatNext = false;
 			{
+				FrameStageTimer renderLockTimer(diagnostics, FrameStage::PresentLockWait);
 				std::unique_lock renderLock(renderTransactionMutex);
+				renderLockTimer.Stop();
 				// 直移可在 frame 取快照后完成；旧帧不得先以 ULW 覆盖新 HWND 坐标。
 				if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
 					directMoveRevision.load(std::memory_order_acquire)))
@@ -1557,7 +1614,9 @@ namespace Inkeys::UI::PageControl
 			if (presentStatus != PresentStatus::Success)
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
+			FrameStageTimer presentationLockTimer(diagnostics, FrameStage::PresentLockWait);
 			std::scoped_lock presentationLock(presentationMutex);
+			presentationLockTimer.Stop();
 			// 拖动期间产生的过期帧不能把已经直移的 HWND 拉回旧坐标。
 			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
 				directMoveRevision.load(std::memory_order_acquire)))

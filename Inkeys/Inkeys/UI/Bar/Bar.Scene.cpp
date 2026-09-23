@@ -602,12 +602,13 @@ namespace Inkeys::UI::Bar
 				logicalBounds.bottom - logicalBounds.top + outset * 2 };
 		}
 
-		void IncludePresentationDamageLocked(const RECT& rect) noexcept
+		bool IncludePresentationDamageLocked(const RECT& rect) noexcept
 		{
 			const RECT damage = ClipToSurface(rect, PresentationLocalRect());
-			if (IsEmpty(damage)) return;
+			if (IsEmpty(damage)) return false;
 			UnionInPlace(pendingDamage, damage);
 			invalidated = true;
+			return true;
 		}
 
 		[[nodiscard]] BarSurfaceLightBorder ShapeLightBorderLocked(
@@ -659,7 +660,7 @@ namespace Inkeys::UI::Bar
 			return result;
 		}
 
-		void UpdateCursorLightDamageLocked(bool cursorLightChanged) noexcept
+		bool UpdateCursorLightDamageLocked(bool cursorLightChanged) noexcept
 		{
 			std::vector<BarSurfaceLightBorder> borders;
 			borders.reserve(widgets.size() + 1);
@@ -682,9 +683,11 @@ namespace Inkeys::UI::Bar
 				rendererOwner.spec.GetFrameCursorLightDamageBounds(), borders);
 			const bool boundsChanged = !EqualRect(
 				&cursorLightDamageBounds, &resolved.current);
-			if (cursorLightChanged || boundsChanged)
-				IncludePresentationDamageLocked(resolved.damage);
+			// 返回本次新旧光照的实际贡献，不受之前累计 damage 是否相同影响。
+			const bool damageContributed = (cursorLightChanged || boundsChanged)
+				&& IncludePresentationDamageLocked(resolved.damage);
 			cursorLightDamageBounds = resolved.current;
+			return damageContributed;
 		}
 
 		[[nodiscard]] std::optional<POINT> LogicalPointFromPresentation(
@@ -731,7 +734,7 @@ namespace Inkeys::UI::Bar
 			return nullptr;
 		}
 
-		void ApplySharedLightingLocked(
+		bool ApplySharedLightingLocked(
 			const BarSurfaceSharedLighting& lighting,
 			std::uint64_t generation)
 		{
@@ -739,7 +742,7 @@ namespace Inkeys::UI::Bar
 			if (appliedSharedLightingGeneration == generation
 				&& EqualRect(&appliedSharedLightingBounds, &logicalBounds)
 				&& appliedSharedLightingOutset == outset)
-				return;
+				return false;
 
 			const bool mappingChanged = !EqualRect(
 				&appliedSharedLightingBounds, &logicalBounds)
@@ -751,12 +754,14 @@ namespace Inkeys::UI::Bar
 			const auto snapshot = ResolveBarSurfaceFrameLightingSnapshot(
 				lighting, logicalBounds, outset);
 			rendererOwner.spec.SetFrameLightingSnapshot(snapshot);
-			if (cursorChanged) UpdateCursorLightDamageLocked(true);
+			const bool cursorDamageContributed = cursorChanged
+				&& UpdateCursorLightDamageLocked(true);
 			if (primaryChanged) IncludeFullDamageLocked();
 			appliedSharedLighting = lighting;
 			appliedSharedLightingGeneration = generation;
 			appliedSharedLightingBounds = logicalBounds;
 			appliedSharedLightingOutset = outset;
+			return primaryChanged || cursorDamageContributed;
 		}
 
 		void InitializeBackgroundLocked()
@@ -1905,9 +1910,10 @@ namespace Inkeys::UI::Bar
 				std::lock_guard lock(scene->impl_->mutex);
 				if (!scene->impl_->sharedLightingSubscribed) continue;
 				scene->impl_->appliedSharedLightingGeneration = 0;
-				scene->impl_->ApplySharedLightingLocked(
-					sharedLighting, sharedLightingGeneration);
-				hooksToNotify.push_back(scene->impl_->hooks);
+				// 仍保存最新光照快照，仅唤醒本次确实需要重绘的订阅者。
+				if (scene->impl_->ApplySharedLightingLocked(
+					sharedLighting, sharedLightingGeneration))
+					hooksToNotify.push_back(scene->impl_->hooks);
 			}
 		}
 		for (const auto& hooks : hooksToNotify)
@@ -2328,6 +2334,14 @@ namespace Inkeys::UI::Bar
 				impl_->ApplySharedLightingLocked(
 					frameLighting, frameLightingGeneration);
 			impl_->rendererOwner.spec.SetFrameZoom(impl_->dpiScale);
+			if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
+			{
+				const auto lighting = impl_->rendererOwner.spec.SnapshotFrameLighting();
+				diagnostics->lightFlags = (lighting.edgeLightingEnabled ? 1u : 0u)
+					| (lighting.primaryLightVisible ? 2u : 0u)
+					| (lighting.cursorLightVisible ? 4u : 0u)
+					| (lighting.cursorIntensity > 0.0001F ? 8u : 0u);
+			}
 			result.invalidated = impl_->invalidated;
 			result.damage = impl_->pendingDamage;
 			(void)impl_->AdvanceAnimationsLocked(frameTime);

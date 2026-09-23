@@ -16,6 +16,7 @@ module;
 #include <functional>
 #include <mutex>
 #include <span>
+#include <string_view>
 
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
@@ -84,6 +85,74 @@ export namespace Inkeys::UI::RenderPipeline
 		Stop,
 	};
 
+	enum class FrameStage : std::uint8_t
+	{
+		PresentLockWait, Draw, GetDC, ULW, ReleaseDC, EndDraw, Count,
+	};
+
+	enum class ExactFallback : std::uint8_t
+	{
+		Transform, SizeOrBudget, Warming, CreateFailure, Other, Unavailable,
+		GeometryScale, QuantizedRadius, Dpi, Alignment, Count,
+	};
+
+	struct LightingDiagnostics
+	{
+		std::uint64_t roundedParentHit = 0, roundedParentMiss = 0;
+		std::uint64_t roundedParentCreate = 0, roundedParentFailure = 0;
+		std::uint64_t geometryParentHit = 0, geometryParentMiss = 0;
+		std::uint64_t geometryParentCreate = 0, geometryParentFailure = 0;
+		double roundedParentCreateMs = 0.0, geometryParentCreateMs = 0.0;
+		std::uint64_t exactHit = 0, slices = 0;
+		std::array<std::uint64_t, static_cast<std::size_t>(ExactFallback::Count)>
+			exactFallback{};
+	};
+
+	// 仅当前渲染回调写入；无 sink / 非调度上下文时访问器返回 nullptr。
+	struct FrameDiagnostics
+	{
+		bool barSampled = false, animationAdvanced = false;
+		bool presentAttempted = false, ulwAttempted = false, ulwSucceeded = false, presentCommitted = false;
+		bool presentDeferred = false, backoffSkipped = false;
+		bool failureRecoveryReset = false, presentFailed = false;
+		bool callbackException = false;
+		double rawDtSeconds = 0.0, animationDtSeconds = 0.0;
+		std::array<double, static_cast<std::size_t>(FrameStage::Count)> stageMs{};
+		HRESULT resourceResult = S_OK, getDcResult = S_OK;
+		HRESULT releaseDcResult = S_OK, endDrawResult = S_OK;
+		DWORD ulwError = 0;
+		std::uint32_t failureCount = 0;
+		std::uint64_t retryDelayFrames = 0, nextRetryFrame = 0;
+		std::uint64_t epoch = 0;
+		Backend backend = Backend::Warp;
+		SIZE targetSize{}, capacitySize{};
+		RECT viewport{};
+		POINT source{};
+		double displayCapacityZoom = 0.0, zoom = 0.0;
+		// bit0: 边缘光开关，bit1: 主光可见，bit2: 鼠标光可见，bit3: 鼠标光有强度。
+		std::uint32_t lightFlags = 0;
+		LightingDiagnostics light;
+	};
+
+	class FrameStageTimer
+	{
+	public:
+		FrameStageTimer(FrameDiagnostics* diagnostics, FrameStage stage) noexcept;
+		~FrameStageTimer();
+		FrameStageTimer(const FrameStageTimer&) = delete;
+		FrameStageTimer& operator=(const FrameStageTimer&) = delete;
+		void Stop() noexcept;
+
+	private:
+		FrameDiagnostics* diagnostics_;
+		FrameStage stage_;
+		std::chrono::steady_clock::time_point start_{};
+	};
+
+	[[nodiscard]] FrameDiagnostics* CurrentFrameDiagnostics() noexcept;
+	// false / 异常表示暂未接收，聚合保留到下一次限频窗口；调用发生在内部锁外。
+	using DiagnosticsSink = std::function<bool(std::string_view)>;
+
 	using ClientMask = std::uint32_t;
 	using RenderCallback = std::function<FrameResult(const FrameContext&)>;
 	using ContextProvider = std::function<FrameContext(std::chrono::steady_clock::time_point)>;
@@ -117,6 +186,7 @@ export namespace Inkeys::UI::RenderPipeline
 	{
 		ClientMask work = 0;
 		ClientMask next = 0;
+		ClientMask requested = 0;
 		bool sleep = true;
 		bool rebuildSharedDevice = false;
 		bool stop = false;
@@ -160,6 +230,8 @@ export namespace Inkeys::UI::RenderPipeline
 		void RequestControl() noexcept;
 		[[nodiscard]] bool PostControl(ControlTask task);
 		void WakeForStop() noexcept;
+		// 可在 Start 前或运行中注册；Stop drain 后释放，不影响其他 Scheduler。
+		[[nodiscard]] bool SetDiagnosticsSink(DiagnosticsSink sink);
 
 	private:
 		struct Impl;
@@ -189,4 +261,5 @@ export namespace Inkeys::UI::RenderPipeline
 	void Request(ClientMask mask) noexcept;
 	[[nodiscard]] bool PostControl(ControlTask task);
 	void WakeForStop() noexcept;
+	[[nodiscard]] bool SetDiagnosticsSink(DiagnosticsSink sink);
 }

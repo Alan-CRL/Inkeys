@@ -768,6 +768,51 @@ namespace
 				}
 	}
 
+	void TestColorSwatchThicknessFollowsPanelScale()
+	{
+		// 使用真实动画模块验证单一最终目标；RenderLoop 的目标来源另做静态审查。
+		constexpr double expandedWidth = 370.0;
+		constexpr double compactWidth = 60.0;
+		constexpr std::array<double, 6> unevenSteps{ 0.008, 0.029, 0.05, 0.011, 0.022, 0.017 };
+		for (bool initiallyOpen : { true, false })
+			for (bool reverseMidway : { false, true })
+				for (bool uneven : { false, true })
+				{
+					BarUiValueClass panelWidth(initiallyOpen ? expandedWidth : compactWidth);
+					BarUiValueClass thickness(panelWidth.val / expandedWidth);
+					BarUiTimelineClass timeline;
+					timeline.Restart(0.4);
+					bool opening = !initiallyOpen;
+					for (int frame = 0; frame < 90; ++frame)
+					{
+						if (reverseMidway && frame == 8)
+						{
+							opening = !opening;
+							timeline.Restart(0.4);
+						}
+						const double targetWidth = opening ? expandedWidth : compactWidth;
+						const auto curve = opening
+							? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+						const double phase = timeline.GetProgress();
+						const BarUiCurveSpecClass curveSpec{ curve, curve, phase, phase > 0.0 };
+						const double remaining = timeline.GetRemainingDuration();
+						// 同目标重复提交不重启，改变目标时从当前比例续接同一批次。
+						panelWidth.SetTar(targetWidth, remaining, std::nullopt, false, curveSpec);
+						thickness.SetTar(targetWidth / expandedWidth,
+							remaining, std::nullopt, false, curveSpec);
+						const double dt = uneven ? unevenSteps[frame % unevenSteps.size()] : 1.0 / 60.0;
+						const BarUiAnimationAdvanceContextClass context{ dt, 1.0, true, false };
+						if (!panelWidth.IsSame()) BarUiAdvanceAnimation(panelWidth, context);
+						if (!thickness.IsSame()) BarUiAdvanceAnimation(thickness, context);
+						timeline.Advance(dt, 1.0);
+						Check(Near(thickness.val / (panelWidth.val / expandedWidth), 1.0),
+							"single swatch thickness target preserves panel scale through back easing and reversal");
+					}
+					Check(panelWidth.IsSame() && thickness.IsSame() && !timeline.IsActive(),
+						"swatch and panel settle together without sustaining hidden animation");
+				}
+	}
+
 	void TestTargetsAndAdvancement()
 	{
 		TestCenteredHiddenButtonRejoinsLayoutBatch();
@@ -1509,6 +1554,7 @@ int main(int argc, char** argv)
 	TestLocalizedFormatFallbacks();
 	TestSharedBarButtonRuntime();
 	TestBarThicknessVisualTransitions();
+	TestColorSwatchThicknessFollowsPanelScale();
 	TestTargetsAndAdvancement();
 	TestKeyframeTimelineTransactions();
 	TestConcurrentAnimationPublication();

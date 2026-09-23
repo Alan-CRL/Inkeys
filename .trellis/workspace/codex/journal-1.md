@@ -327,3 +327,36 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 16: UI3 偶发卡顿第一批修复与诊断
+<!-- trellis-session: v=2 fp=d174486dc527116d -->
+
+**Date**: 2026-09-23
+**Task**: UI3 偶发卡顿第一批修复与诊断
+**Branch**: `bugfix/animation`
+
+### Summary
+
+完成已批准S1-S4：修正颜色块重复描边目标、过滤无影响光照广播、只读DC释放区域与限频非阻塞诊断。完整Debug ARM64构建及新headless无窗口测试通过；原始偶发故障仍待现场反馈，未GUI、未commit/push。
+
+### Main Changes
+
+- 诊断区分回调/动画推进/呈现尝试/成功、各阶段耗时、遮罩计数、资源几何和错误；保持原动画/退避/容量/质量。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 原生MSBuild完整构建及最终增量构建 exit 0；InkeysHeadlessTests.exe --no-window exit 0。
+- [OK] 真实动画模块/脏区算法/光影函数计数探针及独立审查通过，新增C4127已修复。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 如故障用户仍遇到卡顿，依据现有日志中的[UI3Diag]分段信息判断主导阶段；真实Scene hooks/GUI效果仍待运行反馈。
