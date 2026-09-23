@@ -395,10 +395,19 @@ namespace Inkeys::Drawing::Draw3
 		case DrawingCursorPointerAuthority::Mouse:
 			return !mouseUsesSystemCursor && mouseSampleValid;
 		case DrawingCursorPointerAuthority::Touch:
-			return false;
+			return true;
 		default:
 			return penSampleValid || (mouseSampleValid && !mouseUsesSystemCursor);
 		}
+	}
+
+	DrawingCursorPointerAuthority ResolveDrawingCursorVisualAuthority(
+		DrawingCursorPointerAuthority persistentOwner, bool touchCursorSuppressed,
+		bool touchPanActive, bool realMouseTakeoverDuringTouchPan) noexcept
+	{
+		if (touchPanActive && realMouseTakeoverDuringTouchPan)
+			return DrawingCursorPointerAuthority::Mouse;
+		return touchCursorSuppressed ? DrawingCursorPointerAuthority::Touch : persistentOwner;
 	}
 
 	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerForPointerEvent(
@@ -439,12 +448,16 @@ namespace Inkeys::Drawing::Draw3
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool pointerApiAvailable, bool penSampleValid,
 		bool touchBarrierKnown, uint32_t mouseMessageTick,
-		uint32_t touchBarrierTick) noexcept
+		uint32_t touchBarrierTick,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource) noexcept
 	{
 		if (promotedPointerMessage) return true;
 		// Windows 消息 tick 会回绕；有符号差值 <= 0 表示消息早于或等于 Touch barrier。
 		if (touchBarrierKnown &&
 			static_cast<LONG>(mouseMessageTick - touchBarrierTick) <= 0) return true;
+		// 来源标记可捕获没有 promoted 签名的兼容 Mouse，Win7 缺失时沿用旧判断。
+		if (inputSource == IMDT_TOUCH || inputSource == IMDT_PEN) return true;
+		if (inputSource == IMDT_MOUSE || inputSource == IMDT_TOUCHPAD) return false;
 		// Pointer API 能可靠过滤 Pen 提升消息；剩余 WM_MOUSE* 来自真实鼠标。
 		return !pointerApiAvailable && penSampleValid;
 	}

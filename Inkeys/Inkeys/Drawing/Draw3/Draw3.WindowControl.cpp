@@ -48,6 +48,21 @@ namespace Inkeys::Drawing::Draw3
 			UINT32 pointerId, POINTER_INFO* pointerInfo);
 		using GetPointerTypeFunction = BOOL(WINAPI*)(
 			UINT32 pointerId, POINTER_INPUT_TYPE* pointerType);
+		using GetCurrentInputMessageSourceFunction = BOOL(WINAPI*)(
+			INPUT_MESSAGE_SOURCE* inputMessageSource);
+
+		INPUT_MESSAGE_DEVICE_TYPE CurrentInputMessageDeviceType() noexcept
+		{
+			// Win7 不导出该 API；缺失时沿用 promoted 签名及 Touch barrier。
+			static const GetCurrentInputMessageSourceFunction getSource = []() noexcept
+				{
+					const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+					return user32 ? reinterpret_cast<GetCurrentInputMessageSourceFunction>(
+						GetProcAddress(user32, "GetCurrentInputMessageSource")) : nullptr;
+				}();
+			INPUT_MESSAGE_SOURCE source = {};
+			return getSource && getSource(&source) ? source.deviceType : IMDT_UNAVAILABLE;
+		}
 
 		GetPointerTypeFunction ResolveGetPointerType() noexcept
 		{
@@ -172,6 +187,7 @@ namespace Inkeys::Drawing::Draw3
 			bool realMouseTakeover, bool hide) noexcept
 		{
 			if (!hide) return "default-arrow";
+			if (authority == DrawingCursorPointerAuthority::Touch) return "touch-input";
 			if (touchPanActive && !realMouseTakeover) return "touch-pan";
 			if (authority == DrawingCursorPointerAuthority::Pen) return "pen-authority";
 			if (tool == DrawingTool::Eraser) return "eraser-tool";
@@ -256,6 +272,7 @@ namespace Inkeys::Drawing::Draw3
 		mouseCursorSample_.Clear();
 		cursorOwner_.store(DrawingCursorPointerAuthority::Unknown,
 			std::memory_order_release);
+		touchCursorSuppressed_.store(false, std::memory_order_release);
 		window_.store(nullptr, std::memory_order_release);
 	}
 
@@ -415,6 +432,7 @@ namespace Inkeys::Drawing::Draw3
 
 	void WindowController::PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept
 	{
+		SetTouchCursorSuppressed(false);
 		SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
 		PublishMouseCursorSample(sample);
 	}
@@ -564,10 +582,11 @@ namespace Inkeys::Drawing::Draw3
 
 	DrawingCursorPointerAuthority WindowController::CursorOwner() const noexcept
 	{
-		if (touchPanActive_.load(std::memory_order_acquire) &&
-			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire))
-			return DrawingCursorPointerAuthority::Mouse;
-		return cursorOwner_.load(std::memory_order_acquire);
+		return ResolveDrawingCursorVisualAuthority(
+			cursorOwner_.load(std::memory_order_acquire),
+			touchCursorSuppressed_.load(std::memory_order_acquire),
+			touchPanActive_.load(std::memory_order_acquire),
+			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire));
 	}
 
 	bool WindowController::ReadPenCursorSample(DrawingCursorSample& sample) const noexcept
@@ -608,8 +627,11 @@ namespace Inkeys::Drawing::Draw3
 		}
 		else
 		{
+			const bool mouseTakeover = realMouseTakeoverDuringTouchPan_.load(
+				std::memory_order_acquire);
+			if (mouseTakeover && mouseSample.valid) SetTouchCursorSuppressed(false);
 			SetDrawingCursorOwner(ResolveDrawingCursorOwnerAfterTouchPan(
-				realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire),
+				mouseTakeover,
 				penSample.valid, mouseSample.valid));
 		}
 		RequestDrawingCursorRender();
@@ -653,7 +675,14 @@ namespace Inkeys::Drawing::Draw3
 		latestTouchInputBarrierTick_.store(barrierState, std::memory_order_release);
 		if (trackActiveContact)
 			activeTouchContactCount_.fetch_add(1u, std::memory_order_acq_rel);
-		ClearMouseCursorSample();
+		// 活动 Pan 已确认真实 Mouse 接管时，后续 Touch 指头不能清掉 Mouse 光标。
+		const bool keepMouseTakeover = touchPanActive_.load(std::memory_order_acquire) &&
+			realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire);
+		if (!keepMouseTakeover)
+		{
+			SetTouchCursorSuppressed(true);
+			ClearMouseCursorSample();
+		}
 		// Mailbox 已经无效时 Clear 会早退；Touch Down 仍必须重新应用专用工具策略。
 		QueueSystemCursorRefresh();
 		#if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -706,6 +735,7 @@ namespace Inkeys::Drawing::Draw3
 	void WindowController::PublishPenCursorSample(
 		const DrawingCursorSample& sample) noexcept
 	{
+		if (sample.valid) SetTouchCursorSuppressed(false);
 		const bool touchPanActive = touchPanActive_.load(std::memory_order_acquire);
 		const bool realMouseTakeover = realMouseTakeoverDuringTouchPan_.load(
 			std::memory_order_acquire);
@@ -789,11 +819,13 @@ namespace Inkeys::Drawing::Draw3
 
 	bool WindowController::ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool penSampleValid, bool touchBarrierKnown,
-		uint32_t mouseMessageTick, uint32_t touchBarrierTick) const noexcept
+		uint32_t mouseMessageTick, uint32_t touchBarrierTick,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept
 	{
 		return Inkeys::Drawing::Draw3::ShouldIgnoreMouseCursorMessage(
 			promotedPointerMessage, ResolveGetPointerType() != nullptr,
-			penSampleValid, touchBarrierKnown, mouseMessageTick, touchBarrierTick);
+			penSampleValid, touchBarrierKnown, mouseMessageTick, touchBarrierTick,
+			inputSource);
 	}
 
 	void WindowController::RequestDrawingCursorRender() noexcept
@@ -822,6 +854,14 @@ namespace Inkeys::Drawing::Draw3
 				std::memory_order_acquire)),
 			lastCursorTracePointerTypeKnown_.load(std::memory_order_acquire), true);
 		#endif
+		RequestDrawingCursorRender();
+		QueueSystemCursorRefresh();
+	}
+
+	void WindowController::SetTouchCursorSuppressed(bool suppressed) noexcept
+	{
+		if (touchCursorSuppressed_.exchange(suppressed,
+			std::memory_order_acq_rel) == suppressed) return;
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
 	}
@@ -1114,7 +1154,8 @@ namespace Inkeys::Drawing::Draw3
 			lastCursorTracePointerTypeKnown_.store(
 				details.typeKnown, std::memory_order_release);
 #endif
-			const DrawingCursorPointerAuthority previousAuthority = CursorOwner();
+			const DrawingCursorPointerAuthority previousAuthority =
+				cursorOwner_.load(std::memory_order_acquire);
 			DrawingCursorSample penSample;
 			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
 			const bool suppressedPenPointer =
@@ -1168,7 +1209,8 @@ namespace Inkeys::Drawing::Draw3
 			lastCursorTracePointerTypeKnown_.store(
 				details.typeKnown, std::memory_order_release);
 #endif
-			const DrawingCursorPointerAuthority previousAuthority = CursorOwner();
+			const DrawingCursorPointerAuthority previousAuthority =
+				cursorOwner_.load(std::memory_order_acquire);
 			const DrawingCursorPointerAuthority pointerEventType = details.typeKnown
 				? AuthorityForPointerType(details.type) : DrawingCursorPointerAuthority::Unknown;
 			if (ShouldClearMouseCursorSampleForPointerEvent(
@@ -1185,6 +1227,8 @@ namespace Inkeys::Drawing::Draw3
 				if (pointerEventType == DrawingCursorPointerAuthority::Mouse &&
 					touchPanActive_.load(std::memory_order_acquire))
 					realMouseTakeoverDuringTouchPan_.store(true, std::memory_order_release);
+				if (pointerEventType == DrawingCursorPointerAuthority::Mouse)
+					SetTouchCursorSuppressed(false);
 				SetDrawingCursorOwner(ResolveDrawingCursorOwnerForPointerEvent(
 					previousAuthority, pointerEventType,
 					touchPanActive_.load(std::memory_order_acquire),
@@ -1264,6 +1308,7 @@ namespace Inkeys::Drawing::Draw3
 			mouseCursorSample_.Clear();
 			cursorOwner_.store(
 				DrawingCursorPointerAuthority::Unknown, std::memory_order_release);
+			touchCursorSuppressed_.store(false, std::memory_order_release);
 			touchPanActive_.store(false, std::memory_order_release);
 			realMouseTakeoverDuringTouchPan_.store(false, std::memory_order_release);
 			penContactSuppressedForTouchPan_.store(false, std::memory_order_release);
@@ -1359,6 +1404,7 @@ namespace Inkeys::Drawing::Draw3
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());
 			const ULONG_PTR extraInfo = GetMessageExtraInfo();
 			const bool promotedPointerMessage = IsPromotedPointerMouseMessage(extraInfo);
+			const INPUT_MESSAGE_DEVICE_TYPE inputSource = CurrentInputMessageDeviceType();
 			const uint64_t barrierState = latestTouchInputBarrierTick_.load(
 				std::memory_order_acquire);
 			const bool touchBarrierKnown =
@@ -1380,13 +1426,15 @@ namespace Inkeys::Drawing::Draw3
 			};
 #endif
 			if (ShouldIgnoreMouseCursorMessage(promotedPointerMessage, penSampleValid,
-				touchBarrierKnown, messageTick, touchBarrierTick))
+				touchBarrierKnown, messageTick, touchBarrierTick, inputSource))
 			{
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				const bool staleQueuedMouse = touchBarrierKnown &&
 					static_cast<LONG>(messageTick - touchBarrierTick) <= 0;
 				traceMouseDecision(false, promotedPointerMessage ? "promoted-pointer" :
-					staleQueuedMouse ? "stale-touch-barrier" : "pen-compatibility-filter");
+					staleQueuedMouse ? "stale-touch-barrier" :
+					inputSource == IMDT_TOUCH ? "source-touch" :
+					inputSource == IMDT_PEN ? "source-pen" : "pen-compatibility-filter");
 #endif
 				break;
 			}
@@ -1442,6 +1490,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (touchPanActive_.load(std::memory_order_acquire))
 				realMouseTakeoverDuringTouchPan_.store(true, std::memory_order_release);
+			SetTouchCursorSuppressed(false);
 			SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
 			if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
 			{
@@ -1489,6 +1538,7 @@ namespace Inkeys::Drawing::Draw3
 			const uint32_t messageTick = static_cast<uint32_t>(GetMessageTime());
 			const ULONG_PTR extraInfo = GetMessageExtraInfo();
 			const bool promotedPointerMessage = IsPromotedPointerMouseMessage(extraInfo);
+			const INPUT_MESSAGE_DEVICE_TYPE inputSource = CurrentInputMessageDeviceType();
 			const uint64_t barrierState = latestTouchInputBarrierTick_.load(
 				std::memory_order_acquire);
 			const bool touchBarrierKnown =
@@ -1497,11 +1547,13 @@ namespace Inkeys::Drawing::Draw3
 			DrawingCursorSample penSample;
 			const bool penSampleValid = penCursorSample_.Read(penSample) && penSample.valid;
 			const bool accepted = !ShouldIgnoreMouseCursorMessage(promotedPointerMessage,
-				penSampleValid, touchBarrierKnown, messageTick, touchBarrierTick);
+				penSampleValid, touchBarrierKnown, messageTick, touchBarrierTick,
+				inputSource);
 			if (accepted)
 			{
 				if (touchPanActive_.load(std::memory_order_acquire))
 					realMouseTakeoverDuringTouchPan_.store(true, std::memory_order_release);
+				SetTouchCursorSuppressed(false);
 				SetDrawingCursorOwner(DrawingCursorPointerAuthority::Mouse);
 			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -1513,7 +1565,9 @@ namespace Inkeys::Drawing::Draw3
 				activeTouchContactCount_.load(std::memory_order_acquire), accepted,
 				accepted ? "accepted-real-mouse-wheel" :
 				promotedPointerMessage ? "promoted-pointer" :
-				staleQueuedMouse ? "stale-touch-barrier" : "pen-compatibility-filter");
+				staleQueuedMouse ? "stale-touch-barrier" :
+				inputSource == IMDT_TOUCH ? "source-touch" :
+				inputSource == IMDT_PEN ? "source-pen" : "pen-compatibility-filter");
 #endif
 			break;
 		}

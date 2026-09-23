@@ -174,6 +174,10 @@ export namespace Inkeys::Drawing::Draw3
 		bool penSampleValid, bool mouseSampleValid,
 		bool mouseUsesSystemCursor = true, bool touchPanActive = false,
 		bool realMouseTakeoverDuringTouchPan = false) noexcept;
+	// Touch 仅暂时接管视觉；真实 Mouse 接管活动 Pan 时仍保持优先。
+	DrawingCursorPointerAuthority ResolveDrawingCursorVisualAuthority(
+		DrawingCursorPointerAuthority persistentOwner, bool touchCursorSuppressed,
+		bool touchPanActive, bool realMouseTakeoverDuringTouchPan) noexcept;
 	// Touch Pointer 只更新 diagnostics；只有 Pen/真实 Mouse 可改变持久 owner。
 	DrawingCursorPointerAuthority ResolveDrawingCursorOwnerForPointerEvent(
 		DrawingCursorPointerAuthority currentOwner,
@@ -191,7 +195,8 @@ export namespace Inkeys::Drawing::Draw3
 	bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 		bool pointerApiAvailable, bool penSampleValid,
 		bool touchBarrierKnown = false, uint32_t mouseMessageTick = 0,
-		uint32_t touchBarrierTick = 0) noexcept;
+		uint32_t touchBarrierTick = 0,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource = IMDT_UNAVAILABLE) noexcept;
 	// 部分 Pen 驱动缺失 promoted 标记；活动平移中以新鲜且同位置的 Pen 样本识别兼容 Mouse contact。
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
 		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,

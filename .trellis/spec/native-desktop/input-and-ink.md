@@ -18,6 +18,42 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 
 `【合理推断】` 需要让鼠标、笔、触摸行为一致的改动，优先放在两条输入已汇合的位置；如果只改 `CSyncEventHandlerRTS` 或只改 `DrawpadMsgCallback`，需明确另一条路径为何不适用。
 
+## Scenario: Draw3 触摸擦除与主光标归属
+
+### 1. Scope / Trigger
+修改 Draw3 的 RTS Touch 通知、Pointer/Mouse 兼容消息、Pen/Mouse 主光标或系统箭头显隐时适用。Touch 接触圆环与主光标是两条独立呈现路径。
+
+### 2. Signatures
+- `WindowController::NotifyTouchContactBegin/End`、`CursorOwner()`、`SetTouchCursorSuppressed(bool)`。
+- `ResolveDrawingCursorVisualAuthority(persistentOwner,touchCursorSuppressed,touchPanActive,realMouseTakeoverDuringTouchPan)`。
+- `ShouldIgnoreMouseCursorMessage(..., INPUT_MESSAGE_DEVICE_TYPE inputSource)`；Win8+ 动态获取 `GetCurrentInputMessageSource`，Win7 可为 `IMDT_UNAVAILABLE`。
+
+### 3. Contracts
+- Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
+- Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。
+- Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
+
+### 4. Validation & Error Matrix
+| 输入 | 主光标与系统箭头 |
+| --- | --- |
+| 单指/多指 Touch Down、Move、最后 Up/Cancel | 主光标与箭头隐藏；活动擦除圆环仍在，最后一指终态后消失 |
+| Touch/Pen 提升的 Mouse 消息 | 不发布 Mouse Hover，不抢占 Touch/Pen |
+| 后续真实 Mouse/TouchPad 或 Pen 样本 | 立即恢复该设备的既有光标策略 |
+| Touch Pan 中真实 Mouse 已接管 | 后续 Touch 指头不清 Mouse；Pan 停止不回弹到 Touch |
+| Win7 无输入来源 API | 仍用 RTS、promoted 签名及时间屏障；新 Pen Hover 可恢复 |
+
+### 5. Good / Base / Bad Cases
+- Good：当前产品选 Pen 而 Touch 入口配置为 Eraser 时，只显示触点擦除圆环，抬指后仍无小光标；之后真实鼠标移动或笔悬停正常恢复。
+- Base：没有 Touch 输入时沿用 Pen/Mouse 原有光标策略。
+- Bad：只在 Touch 活动计数非零时隐藏系统箭头，最后 Up 后旧 Hover/箭头立即回弹；或把 Touch 写成持久 owner 导致新设备无法接管。
+
+### 6. Tests Required
+Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
+
+### 7. Wrong vs Correct
+- Wrong：Touch Down 只清 Mouse mailbox，仍按旧 Pen/Mouse owner 解析主光标，并在 Touch Up 后依赖 Windows 自动隐藏。
+- Correct：Touch 暂时接管视觉归属并保持到真实新设备输入；兼容 Mouse 不得伪装成接管事件。
+
 ### UI3 Bar 接触消息归一化合同
 
 `【直接确认】` Bar 注册的 `WM_TOUCH` 会把主接触（包括当前系统上报的 Pen）转换成带内部来源标记的 `ExMessage`。Windows 同时可能为同一接触派发 Pointer 兼容鼠标消息，其 `GetMessageExtraInfo()` 的来源签名为 `0xFF515700`（掩码 `0xFFFFFF00`）。

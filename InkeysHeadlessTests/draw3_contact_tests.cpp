@@ -1,9 +1,14 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <windows.h>
 
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.pen_cursor;
@@ -183,6 +188,53 @@ namespace
 		if (!Expect(visual.visible && Near(visual.appearance.opacity, 1.0f),
 			"touch eraser contact remains opaque")) ++failures;
 	}
+
+	void TestTouchCursorOwnership(int& failures)
+	{
+		const DrawingCursorSample penHover{ .x = 10.0f, .y = 20.0f, .valid = true };
+		const DrawingCursorSample mouseHover{ .x = 30.0f, .y = 40.0f, .valid = true };
+		const DrawingCursorAppearance eraser{
+			DrawingCursorShape::EraserGripCircle, 50.0f, 50.0f, 1.0f, 1.0f, 1.0f };
+		// 最后一指 Up 后保持 Touch 视觉归属，旧 Pen/Mouse Hover 不能重新露出。
+		const auto touchOwner = ResolveDrawingCursorVisualAuthority(
+			DrawingCursorPointerAuthority::Pen, true, false, false);
+		if (!Expect(touchOwner == DrawingCursorPointerAuthority::Touch &&
+			!ResolvePrimaryDrawingCursorVisual(penHover, mouseHover, touchOwner,
+				eraser, eraser, true, true).visible &&
+			ShouldHideSystemDrawingCursor(touchOwner, false, false, true, true),
+			"touch hides old application and system cursors")) ++failures;
+		if (!Expect(ResolveDrawingCursorVisualAuthority(
+			DrawingCursorPointerAuthority::Mouse, true, false, false) ==
+			DrawingCursorPointerAuthority::Touch,
+			"touch suppresses a stale mouse owner")) ++failures;
+		if (!Expect(ResolveDrawingCursorVisualAuthority(
+			DrawingCursorPointerAuthority::Mouse, true, true, true) ==
+			DrawingCursorPointerAuthority::Mouse,
+			"real mouse takeover during touch pan remains visible")) ++failures;
+		if (!Expect(ResolveDrawingCursorVisualAuthority(
+			DrawingCursorPointerAuthority::Mouse, false, false, false) ==
+			DrawingCursorPointerAuthority::Mouse &&
+			ResolveDrawingCursorVisualAuthority(
+				DrawingCursorPointerAuthority::Pen, false, false, false) ==
+			DrawingCursorPointerAuthority::Pen,
+			"new mouse or pen input restores normal cursor ownership")) ++failures;
+		if (!Expect(ShouldIgnoreMouseCursorMessage(false, true, false,
+			true, 101u, 100u, IMDT_TOUCH) &&
+			ShouldIgnoreMouseCursorMessage(false, true, false,
+			true, 101u, 100u, IMDT_PEN) &&
+			!ShouldIgnoreMouseCursorMessage(false, true, false,
+			true, 101u, 100u, IMDT_MOUSE) &&
+			!ShouldIgnoreMouseCursorMessage(false, true, false,
+			true, 101u, 100u, IMDT_TOUCHPAD),
+			"identified touch and pen compatibility mouse messages are ignored")) ++failures;
+		if (!Expect(ShouldIgnoreMouseCursorMessage(true, false, false,
+			true, 101u, 100u, IMDT_UNAVAILABLE) &&
+			ShouldIgnoreMouseCursorMessage(false, false, false,
+			true, 100u, 100u, IMDT_UNAVAILABLE) &&
+			!ShouldIgnoreMouseCursorMessage(false, true, false,
+			true, 101u, 100u, IMDT_UNAVAILABLE),
+			"Win7 compatibility signature and touch barrier remain effective")) ++failures;
+	}
 }
 
 int RunDraw3ContactInputTests()
@@ -191,5 +243,6 @@ int RunDraw3ContactInputTests()
 	TestContactLifecycle(failures);
 	TestInvalidAndWakeContracts(failures);
 	TestCursorOpacityContracts(failures);
+	TestTouchCursorOwnership(failures);
 	return failures;
 }

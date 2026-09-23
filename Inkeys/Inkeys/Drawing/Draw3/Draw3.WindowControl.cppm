@@ -201,6 +201,7 @@ export namespace Inkeys::Drawing::Draw3
 		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
 		void ClearActiveDrawingCursorTool() noexcept;
 		DrawingTool EffectiveDrawingCursorTool() const noexcept;
+		// 返回当前视觉归属；Touch 只暂时覆盖，不写入持久 Pen/Mouse owner。
 		DrawingCursorPointerAuthority CursorOwner() const noexcept;
 		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
@@ -229,6 +230,7 @@ export namespace Inkeys::Drawing::Draw3
 		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
+		void SetTouchCursorSuppressed(bool suppressed) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
 		void NotifyTouchContactBegin(bool trackActiveContact,
 			uint32_t touchBarrierTick) noexcept;
@@ -236,7 +238,8 @@ export namespace Inkeys::Drawing::Draw3
 		void ClearMouseCursorSample() noexcept;
 		bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 			bool penSampleValid, bool touchBarrierKnown,
-			uint32_t mouseMessageTick, uint32_t touchBarrierTick) const noexcept;
+			uint32_t mouseMessageTick, uint32_t touchBarrierTick,
+			INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept;
 		void ApplyWindowCursor(const char* trigger) noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
@@ -293,6 +296,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =
 			DrawingCursorPointerAuthority::Unknown;
+		// Touch Up 后继续抑制旧主光标，直到真实 Mouse/Pen 输入接管。
+		std::atomic<bool> touchCursorSuppressed_ = false;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<bool> mouseUsesSystemCursor_ = true;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
