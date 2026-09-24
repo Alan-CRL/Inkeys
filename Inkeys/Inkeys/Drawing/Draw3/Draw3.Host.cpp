@@ -609,14 +609,17 @@ namespace Inkeys::Drawing::Draw3
 			const char* profile=d.response!=SpeedEraser::ResponseModel::DirectTouch?"N/A":
 				d.motionUnit!=SpeedEraser::MotionUnit::MillimetersPerSecond?"Fallback":
 				d.touchProfileWeight<=0?"Small":d.touchProfileWeight>=1?"Classroom":"Intermediate";
-			char curveText[640]{};
+			char curveText[960]{};
 			std::snprintf(curveText,sizeof(curveText),
-				"[TouchCurve] seq=%llu requestedDeviceMode=%s resolvedTouchProfile=%s profileWeight=%.4f profileSource=%s longEdgeMm=%.1f motionSource=%s unit=%s fine=%.3f enter=%.3f exit=%.3f large=%.3f B=%.3f sweepGain=%.3f speed=%.3f sweepSpeed=%.3f fineSpeed=%.3f qualified=%d evidenceMs=%.1f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f geometryPx=%.3f\n",
+				"[TouchCurve] seq=%llu requestedDeviceMode=%s resolvedTouchProfile=%s profileWeight=%.4f profileSource=%s longEdgeMm=%.1f motionSource=%s unit=%s fine=%.3f enter=%.3f exit=%.3f large=%.3f B=%.3f sweepGain=%.3f speed=%.3f sweepSpeed=%.3f fineSpeed=%.3f qualified=%d evidenceMs=%.1f evidenceStartMs=%.1f evidenceFullMs=%.1f evidenceDecayMs=%.1f evidenceCapDIP=%.3f growthTauMs=%.1f largeGrowthTauMs=%.1f logGrowth=%.2f largeLogGrowth=%.2f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f geometryPx=%.3f\n",
 				static_cast<unsigned long long>(sequence),SpeedEraser::DeviceModeName(d.requestedDeviceMode),profile,
 				d.touchProfileWeight,SpeedEraser::TouchProfileSourceName(d.touchProfileSource),d.touchSurfaceLongEdgeMm,
 				SpeedEraser::ScaleSourceName(d.motionSource),SpeedEraser::MotionUnitName(d.motionUnit),
 				d.fineToStandardSpeed,d.sweepEnterSpeed,d.sweepExitSpeed,d.largeTargetSpeed,d.sizes.standardDiameterDip,
 				d.sweepGain,d.speed,d.sweepSpeed,d.fine.speed,d.qualified,d.evidenceSeconds*1000,
+				d.evidenceStartSeconds*1000,d.evidenceFullSeconds*1000,d.evidenceDecaySeconds*1000,
+				d.evidenceCapDiameterDip,d.growthTauSeconds*1000,d.largeGrowthTauSeconds*1000,
+				d.maximumLogGrowthPerSecond,d.largeLogGrowthPerSecond,
 				d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx*2);
 			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
 			OutputDebugStringA(text);

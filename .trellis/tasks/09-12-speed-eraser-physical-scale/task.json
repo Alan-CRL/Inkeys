@@ -24,6 +24,7 @@
   "notes": "",
   "meta": {
     "historical_branch": "feature/eraser",
-    "current_round_baseline": "94e07b2599adab9de4286aa5fb7526e2c1c681f6"
+    "current_round_baseline": "94e07b2599adab9de4286aa5fb7526e2c1c681f6",
+    "warm_burst_round_baseline": "4d1727916a7d2474841156de753ee3d24d2ad7c7"
   }
 }

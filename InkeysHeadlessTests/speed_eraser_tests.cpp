@@ -137,6 +137,105 @@ namespace
 			controller.UpdatePosition(static_cast<float>(time * speed / config.motionPerPixelX), 0.0f, time);
 		}
 	}
+
+	enum class BurstAfter { Ordinary, SamePosition, NoMove, Up };
+	struct BurstSample
+	{
+		double seconds=0,reportedSpeed=0,sweepSpeed=0,evidence=0;
+		float actualDip=0,targetDip=0,evidenceCapDip=0;
+		bool qualified=false,animating=false;
+	};
+	struct WarmBurstTrace
+	{
+		double requestedSeconds=0,actualSeconds=0,fastEnd=0,normalSpeed=0,fastSpeed=0;
+		std::vector<BurstSample> samples;
+	};
+	WarmBurstTrace ReplayWarmBurst(const Config& config,int inputHz,int frameHz,double requestedSeconds,
+		BurstAfter after=BurstAfter::Ordinary,double speedRatio=1.5,double afterSeconds=1.5)
+	{
+		WarmBurstTrace trace;
+		trace.requestedSeconds=requestedSeconds;
+		// 输入切换对齐真实采样时刻，记录不可整除时实际产生的快段长度。
+		trace.actualSeconds=std::max<long>(1,std::lround(requestedSeconds*inputHz))/static_cast<double>(inputHz);
+		trace.fastEnd=2.0+trace.actualSeconds;
+		trace.normalSpeed=std::min(0.9*config.sweepEnterSpeed,
+			std::max(0.6*config.sweepEnterSpeed,1.05*config.fineToStandardSpeed));
+		trace.fastSpeed=speedRatio*config.largeTargetSpeed;
+		const double end=trace.fastEnd+afterSeconds;
+		const auto distanceAt=[&](double seconds)
+		{
+			return trace.normalSpeed*std::min(seconds,2.0)+
+				trace.fastSpeed*std::clamp(seconds-2.0,0.0,trace.actualSeconds)+
+				(after==BurstAfter::Ordinary?trace.normalSpeed*std::max(0.0,seconds-trace.fastEnd):0.0);
+		};
+		Controller controller;controller.Reset(0,0,0,config.response==ResponseModel::DirectTouch?
+			StartKind::Touch:StartKind::Hover,config);
+		trace.samples.reserve(static_cast<size_t>(end*(inputHz+frameHz))+4);
+		const auto record=[&](double seconds)
+		{
+			trace.samples.push_back({seconds,controller.Speed(),controller.SweepSpeed(),
+				controller.SweepEvidenceSeconds(),controller.DiameterDip(),controller.TargetDiameterDip(),
+				controller.SweepEvidenceCapDiameterDip(),controller.SweepQualified(),controller.NeedsAnimation(seconds)});
+		};
+		record(0);
+		int input=1,frame=1;bool sentUp=false;
+		while(std::min(static_cast<double>(input)/inputHz,static_cast<double>(frame)/frameHz)<=end+1e-10)
+		{
+			const double inputTime=static_cast<double>(input)/inputHz;
+			const double frameTime=static_cast<double>(frame)/frameHz;
+			if(inputTime<=frameTime)
+			{
+				if(after==BurstAfter::Ordinary || after==BurstAfter::SamePosition ||
+					inputTime<=trace.fastEnd+1e-10)
+				{
+					controller.UpdatePosition(static_cast<float>(distanceAt(inputTime)/config.motionPerPixelX),0,inputTime);
+					record(inputTime);
+				}
+				else if(after==BurstAfter::Up && !sentUp)
+				{
+					controller.UpdatePosition(static_cast<float>(distanceAt(trace.fastEnd)/config.motionPerPixelX),
+						0,inputTime,nullptr,true);
+					record(inputTime);sentUp=true;
+				}
+				++input;
+			}
+			else {controller.Advance(frameTime);record(frameTime);++frame;}
+		}
+		controller.Advance(end);record(end);
+		return trace;
+	}
+	struct WarmBurstMetrics
+	{
+		float warmDip=0,endDip=0,peakDip=0,afterPeakDip=0,endTargetDip=0,endCapDip=0;
+		double warmEvidence=0,endEvidence=0,peakAt=-1,afterPeakAt=-1;
+		double to125=-1,to2B=-1,to90Target=-1;
+	};
+	WarmBurstMetrics MeasureWarmBurst(const WarmBurstTrace& trace,const Config& config)
+	{
+		WarmBurstMetrics result;
+		const float B=config.sizes.standardDiameterDip;
+		const float fastTarget=CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,trace.fastSpeed));
+		for(const auto& sample:trace.samples)
+		{
+			if(sample.seconds<=2.0+1e-9)
+			{result.warmDip=sample.actualDip;result.warmEvidence=sample.evidence;}
+			if(sample.seconds>=2.0-1e-9)
+			{
+				const double elapsed=sample.seconds-2.0;
+				if(result.to125<0 && sample.actualDip>=1.25f*B)result.to125=elapsed;
+				if(result.to2B<0 && sample.actualDip>=2.0f*B)result.to2B=elapsed;
+				if(result.to90Target<0 && sample.actualDip>=0.9f*fastTarget)result.to90Target=elapsed;
+				if(sample.seconds<=trace.fastEnd+1e-9 && sample.actualDip>result.peakDip)
+				{result.peakDip=sample.actualDip;result.peakAt=elapsed;}
+				if(sample.seconds>=trace.fastEnd-1e-9 && sample.actualDip>result.afterPeakDip)
+				{result.afterPeakDip=sample.actualDip;result.afterPeakAt=elapsed;}
+			}
+			if(sample.seconds<=trace.fastEnd+1e-9)
+			{result.endDip=sample.actualDip;result.endTargetDip=sample.targetDip;
+				result.endCapDip=sample.evidenceCapDip;result.endEvidence=sample.evidence;}
+		}
+		return result;
+	}
 }
 
 namespace
@@ -411,6 +510,112 @@ int RunSpeedEraserTests()
 	Near(surfaceTouch.sweepEnterSpeed,90,0.001,"Surface sweep entry retains previous endpoint");
 	Near(surfaceTouch.sweepExitSpeed,60,0.001,"Surface sweep exit retains previous endpoint");
 	Near(surfaceTouch.largeTargetSpeed,250,0.001,"Surface maximum target retains previous endpoint");
+	const auto surfacePen=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,surface),ResolveSizes(BaseSize::Medium));
+	const auto surfaceMouse=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::Mouse,surface),ResolveSizes(BaseSize::Medium));
+	for(const auto& config:{surfaceMouse,surfacePen,surfaceTouch})
+	for(double duration:{0.050,0.080,0.100,0.120,0.150,0.200,0.250,0.300,0.500,1.000})
+	{
+		const auto trace=ReplayWarmBurst(config,240,120,duration);
+		const auto measured=MeasureWarmBurst(trace,config);
+		const auto elapsedMs=[](double value){return value<0?-1.0:value*1000;};
+		std::cout<<"[WarmBurst] model="<<ResponseModelName(config.response)
+			<<" unit="<<MotionUnitName(config.motionUnit)<<" fast="<<trace.fastSpeed
+			<<" requestedMs="<<duration*1000<<" actualMs="<<trace.actualSeconds*1000
+			<<" warmDIP="<<measured.warmDip<<" warmEvidenceMs="<<measured.warmEvidence*1000
+			<<" endDIP="<<measured.endDip<<" endCapDIP="<<measured.endCapDip
+			<<" pulsePeakDIP="<<measured.peakDip
+			<<" pulsePeakMs="<<measured.peakAt*1000<<" afterPeakDIP="<<measured.afterPeakDip
+			<<" afterPeakMs="<<measured.afterPeakAt*1000<<" evidenceEndMs="<<measured.endEvidence*1000
+			<<" to1.25BMs="<<elapsedMs(measured.to125)<<" to2BMs="<<elapsedMs(measured.to2B)
+			<<" to90TargetMs="<<elapsedMs(measured.to90Target)<<'\n';
+		expect(std::abs(measured.warmDip-config.sizes.standardDiameterDip)<0.05f && measured.warmEvidence<0.001,
+			"warm burst begins from standard size without old sweep evidence");
+		expect(measured.endDip<=measured.endCapDip+0.05f,
+			"area-off warm burst actual diameter stays within its evidence size cap");
+		expect(measured.afterPeakDip<=measured.peakDip+0.1f && trace.samples.back().evidence<0.005,
+			"ordinary post-burst motion cannot keep growing and old sweep evidence decays");
+		if(config.response==ResponseModel::IndirectDip)
+		{
+			if(duration==0.100)Near(measured.endDip,32.0,0.01,"mouse 100ms warm burst stays frozen");
+			if(duration==0.150)Near(measured.endDip,32.0119,0.01,"mouse 150ms warm burst stays frozen");
+			if(duration==0.200)Near(measured.endDip,32.8015,0.02,"mouse 200ms warm burst stays frozen");
+		}
+		else
+		{
+			const float B=config.sizes.standardDiameterDip;
+			if(duration==0.100)expect(measured.endDip<=B*1.15f,"Touch/Pen 100ms warm burst remains near B");
+			if(duration==0.150)expect(measured.endDip<=B*1.25f,"Touch/Pen 150ms warm burst remains controlled");
+			if(duration==0.200)expect(measured.endDip<=B*1.40f,"Touch/Pen 200ms warm burst stays below 1.4B");
+			if(duration==0.500)expect(measured.endDip>=B*2.0f,"half-second Touch/Pen clearing remains useful");
+			if(duration==1.000)expect(measured.to90Target>=0 && measured.to90Target<=1.0,
+				"one-second Touch/Pen clearing approaches its speed target");
+		}
+	}
+	for(const auto& config:{surfacePen,surfaceTouch})
+	{
+		const StartKind kind=config.response==ResponseModel::DirectTouch?StartKind::Touch:StartKind::Hover;
+		const double fast=1.5*config.largeTargetSpeed;
+		const auto fresh=Replay(config,{{0,0},{0.100,fast*0.100},{0.500,fast*0.100}},240,120,
+			{0.100,0.200,0.500},kind);
+		expect(fresh[0]*config.display.dipPerPixelX<=config.sizes.standardDiameterDip*1.15f,
+			"new Touch/Pen contact short sweep remains controlled");
+		Controller fine;fine.Reset(0,0,0,kind,config);fine.Advance(2.0);
+		expect(fine.DiameterDip()<=config.sizes.minimumDiameterDip+0.01f,
+			"fine-state short-burst fixture reaches its low plateau");
+		fine.UpdatePosition(0,0,2.0); // 先重锚长空档，快段只含后续真实位移。
+		for(int step=1;step<=24;++step)
+		{
+			const double elapsed=step/240.0;
+			fine.UpdatePosition(static_cast<float>(fast*elapsed/config.motionPerPixelX),0,2.0+elapsed);
+		}
+		expect(fine.DiameterDip()<=config.sizes.standardDiameterDip*1.15f,
+			"fine-state Touch/Pen fast pulse does not jump to a large eraser");
+		for(auto after:{BurstAfter::SamePosition,BurstAfter::NoMove,BurstAfter::Up})
+		{
+			const auto trace=ReplayWarmBurst(config,240,120,0.200,after);
+			const auto measured=MeasureWarmBurst(trace,config);
+			expect(measured.afterPeakDip<=measured.peakDip+0.1f && trace.samples.back().evidence<0.005,
+				"same-position, no-Move and Up cannot keep growing after a pulse");
+			if(after==BurstAfter::NoMove)
+				expect(!trace.samples.back().animating,"no-Move warm pulse eventually returns to sleep");
+		}
+		Controller reversals,isolated;
+		reversals.Reset(0,0,0,kind,config);isolated.Reset(0,0,0,kind,config);
+		const double ordinary=0.6*config.sweepEnterSpeed;
+		for(int step=1;step<=480;++step)
+		{
+			const double time=step/240.0,x=ordinary*time/config.motionPerPixelX;
+			reversals.UpdatePosition(static_cast<float>(x),0,time);
+			isolated.UpdatePosition(static_cast<float>(x),0,time);
+		}
+		for(int step=1;step<=240;++step)
+		{
+			const double elapsed=step/240.0,phase=std::fmod(elapsed,0.160);
+			const double local=fast*(phase<=0.080?phase:0.160-phase);
+			reversals.UpdatePosition(static_cast<float>((ordinary*2+local)/config.motionPerPixelX),0,2+elapsed);
+		}
+		expect(reversals.DiameterDip()>=config.sizes.standardDiameterDip*2.0f,
+			"continuous short local reversals accumulate true Touch/Pen clearing intent");
+		double time=2.0,x=ordinary*2.0;
+		for(int burst=0;burst<4;++burst)
+		{
+			for(int step=0;step<19;++step)
+			{
+				time+=1.0/240;x+=fast/240;
+				isolated.UpdatePosition(static_cast<float>(x/config.motionPerPixelX),0,time);
+			}
+			expect(isolated.DiameterDip()<=config.sizes.standardDiameterDip*1.15f,
+				"separated isolated fast swipes cannot compound into a large Touch/Pen eraser");
+			for(int step=0;step<192;++step)
+			{
+				time+=1.0/240;
+				if(burst%2==0)x+=ordinary/240;
+				isolated.UpdatePosition(static_cast<float>(x/config.motionPerPixelX),0,time);
+			}
+			expect(isolated.SweepEvidenceSeconds()<0.01,
+				"ordinary or stationary gap drains isolated sweep evidence before the next swipe");
+		}
+	}
 	const auto classroomLaptop=ResolveConfig(classroom,DeviceMode::Laptop,MappedSource(SourceKind::Touch,classroom));
 	Near(classroomLaptop.touchProfileWeight,0.25,0.0001,"explicit Laptop limits classroom size prior");
 	Near(classroomLaptop.largeTargetSpeed,512.5,0.001,"explicit Laptop cannot silently become classroom curve");
@@ -488,7 +693,8 @@ int RunSpeedEraserTests()
 	struct SceneTrace { float actual=0,target=0;double evidence=0,reportedSpeed=0,sweepSpeed=0; };
 	const auto circleTrace=[&](const Config& config,double speed,int hz,int fps,double duration)
 	{
-		Controller controller;controller.Reset(0,0,0,StartKind::Touch,config);
+		Controller controller;controller.Reset(0,0,0,config.response==ResponseModel::DirectTouch?
+			StartKind::Touch:StartKind::Hover,config);
 		constexpr double radius=55.0;int sample=1,frame=1;
 		while(std::min(static_cast<double>(sample)/hz,static_cast<double>(frame)/fps)<=duration+1e-10)
 		{
@@ -560,6 +766,75 @@ int RunSpeedEraserTests()
 	expect(mediumTouch.sweepEnterSpeed>90 && mediumTouch.sweepEnterSpeed<350 &&
 		mediumTouch.largeTargetSpeed>250 && mediumTouch.largeTargetSpeed<1300,
 		"synthetic medium touch surface retains a distinct ordinary and clearing range");
+	auto penFallbackDisplay=surface;penFallbackDisplay.physicalAvailable=false;
+	const auto penDip=ResolveConfig(penFallbackDisplay,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,penFallbackDisplay));
+	const auto penHeuristic=ResolveConfig(penFallbackDisplay,DeviceMode::LargeScreen,MappedSource(SourceKind::IntegratedPen,penFallbackDisplay));
+	const std::array<Config,8> timedScenes{surfaceTouch,mediumTouch,classroomTouch,missingLarge,missingLaptop,
+		surfacePen,penDip,penHeuristic};
+	const auto smooth=[](double x){x=std::clamp(x,0.0,1.0);return x*x*(3.0-2.0*x);};
+	for(const auto& config:timedScenes)
+	{
+		const double B=config.sizes.standardDiameterDip;
+		for(double duration:{0.100,0.200,0.500,1.000})
+		{
+			const auto trace=ReplayWarmBurst(config,240,120,duration);
+			const auto measured=MeasureWarmBurst(trace,config);
+			expect(std::abs(measured.warmDip-B)<0.05 && measured.warmEvidence<0.001,
+				"each physical or fallback scene reaches B before its warm burst");
+			if(duration==0.100)expect(measured.endDip<=B*1.15,"all Touch/Pen scene units resist a 100ms strong pulse");
+			if(duration==0.200)expect(measured.endDip<=B*1.40,"all Touch/Pen scene units keep 200ms growth controlled");
+			if(duration==0.500)expect(measured.endDip>=B*2.0,"all Touch/Pen scene units still grow after 500ms");
+			if(duration==1.000)expect(measured.to90Target>=0 && measured.to90Target<=1.0,
+				"all Touch/Pen scene units can approach a sustained strong target");
+		}
+		// 泄漏证据的稳态许可上限必须覆盖同一速度的合法目标，不能只在最强快扫可达。
+		for(double fraction:{0.0,0.01,0.05,0.10,0.20,0.40,0.60,0.80,1.0})
+		{
+			const double speed=config.sweepEnterSpeed+fraction*(config.largeTargetSpeed-config.sweepEnterSpeed);
+			const double action=SweepActionSpeed(config,speed);
+			const double strength=0.4+0.6*smooth((action-config.sweepEnterSpeed)/
+				(config.largeTargetSpeed-config.sweepEnterSpeed));
+			const double equilibrium=std::min(config.evidenceFullSeconds,strength*config.evidenceDecaySeconds);
+			const double permission=smooth((equilibrium-config.evidenceStartSeconds)/
+				(config.evidenceFullSeconds-config.evidenceStartSeconds));
+			const double permitted=B*std::exp(permission*std::log(config.sizes.maximumDiameterDip/B));
+			const double target=CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,speed));
+			expect(permitted+0.5>=target,"steady evidence permits every Touch/Pen intermediate speed target");
+		}
+		double lower=config.sweepEnterSpeed,upper=config.largeTargetSpeed;
+		for(int i=0;i<32;++i)
+		{
+			const double speed=(lower+upper)*0.5;
+			if(CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,speed))<2*B)lower=speed;
+			else upper=speed;
+		}
+		for(double speed:{config.sweepEnterSpeed*1.01,(lower+upper)*0.5,
+			config.sweepEnterSpeed+0.90*(config.largeTargetSpeed-config.sweepEnterSpeed),
+			config.largeTargetSpeed*1.10})
+		{
+			const auto steady=circleTrace(config,speed,240,120,3.0);
+			const double target=CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,speed));
+			expect(std::abs(steady.actual-target)<=std::max(2.0,target*0.05),
+				"sustained near-enter, 2B, near-large and above-large targets stay reachable");
+		}
+	}
+	double worstWarmRateDifference=0;size_t warmRateCases=0;
+	for(const auto& config:{surfaceTouch,classroomTouch,missingLarge,surfacePen,penDip})
+	for(double requested:{0.080,0.150,0.500})for(int hz:{60,125,240,1000})for(int fps:{30,60,120,144})
+	{
+		const auto trace=ReplayWarmBurst(config,hz,fps,requested);
+		const auto reference=ReplayWarmBurst(config,1000,120,trace.actualSeconds);
+		const auto measured=MeasureWarmBurst(trace,config),expected=MeasureWarmBurst(reference,config);
+		const double difference=std::abs(measured.endDip-expected.endDip)/expected.endDip;
+		worstWarmRateDifference=std::max(worstWarmRateDifference,difference);++warmRateCases;
+		expect(difference<=0.05,"warm Touch/Pen pulse keeps five-percent input/frame-rate consistency");
+		if(hz==60 && requested==0.080)
+			Near(trace.actualSeconds,5.0/60.0,1e-9,"60Hz requested 80ms produces an actual 83.33ms pulse");
+		if(hz==125 && requested==0.150)
+			Near(trace.actualSeconds,19.0/125.0,1e-9,"125Hz requested 150ms produces an actual 152ms pulse");
+	}
+	std::cout<<"[WarmBurstRates] cases="<<warmRateCases<<" worstEndDifferencePct="
+		<<worstWarmRateDifference*100<<'\n';
 	const double mediumSweepSpeed=(mediumTouch.sweepEnterSpeed+mediumTouch.largeTargetSpeed)*0.5;
 	const auto mediumReference=circleTrace(mediumTouch,mediumSweepSpeed,125,60,3.0);
 	expect(circleTrace(mediumTouch,150,125,60,3).actual<=mediumTouch.sizes.standardDiameterDip*1.02f &&
@@ -614,6 +889,18 @@ int RunSpeedEraserTests()
 			const float ratio=ReferenceTargetDiameterDip(config,800)/B;
 			if(priorRatio)expect(ratio>=priorRatio,"low/medium/high gains retain ordered clearing targets");
 			priorRatio=ratio;
+			const auto pen=ResolveInput(surface,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,surface),
+				InputEntry::PenTip,settings).config;
+			for(const auto& timed:{config,pen})for(double duration:{0.100,0.200,0.500})
+			{
+				const auto measured=MeasureWarmBurst(ReplayWarmBurst(timed,240,120,duration),timed);
+				if(duration==0.100)expect(measured.endDip<=B*1.15f,
+					"24/32/40 and low/medium/high Touch/Pen 100ms pulse remains near B");
+				if(duration==0.200)expect(measured.endDip<=B*1.40f,
+					"24/32/40 and low/medium/high Touch/Pen 200ms pulse stays controlled");
+				if(duration==0.500)expect(measured.endDip>=B*2.0f,
+					"24/32/40 and low/medium/high Touch/Pen half-second sweep stays useful");
+			}
 		}
 	}
 	auto assistedClassroom=classroomTouch;assistedClassroom.touchContactAreaAssistance=true;
@@ -623,6 +910,20 @@ int RunSpeedEraserTests()
 	expect(assistedOrdinary[0].area.active && assistedOrdinary[0].diameter>classroomTouch.sizes.standardDiameterDip &&
 		assistedOrdinary[0].diameter<=assistedClassroom.contactArea.maximumFloorDip+0.01f,
 		"area-on classroom Touch respects a finite accepted floor rather than the area-off B target");
+	auto assistedSurface=surfaceTouch;assistedSurface.touchContactAreaAssistance=true;
+	auto oldAreaResponse=assistedSurface;
+	oldAreaResponse.growthTauSeconds=0.120;oldAreaResponse.largeGrowthTauSeconds=0.100;
+	oldAreaResponse.maximumLogGrowthPerSecond=6.0;oldAreaResponse.largeLogGrowthPerSecond=8.0;
+	const auto assistedSample=AreaSample(assistedSurface,40,30);
+	const auto areaPath=std::vector<Knot>{{0,0},{2,120}};
+	const std::vector<double> areaCheckpoints{0.15,0.25,0.40,0.80,1.20};
+	const auto newArea=ReplayArea(assistedSurface,areaPath,240,120,areaCheckpoints,[&](double){return assistedSample;});
+	const auto oldArea=ReplayArea(oldAreaResponse,areaPath,240,120,areaCheckpoints,[&](double){return assistedSample;});
+	for(size_t i=0;i<newArea.size();++i)
+		Near(newArea[i].diameter,oldArea[i].diameter,0.05,
+			"Touch ordinary area floor keeps the accepted pre-burst growth response");
+	expect(newArea.back().area.active && newArea.back().diameter>assistedSurface.sizes.standardDiameterDip,
+		"Touch area assistance remains available without sweep qualification");
 
 	DisplayScale physical;
 	physical.generation = 7;
@@ -1547,7 +1848,11 @@ int RunSpeedEraserTests()
 		const double t=i/1000.0;curved.push_back({t,20.0*(1.0-std::cos(t*3.141592653589793/0.25))});
 	}
 	const auto rounded=Replay(touchPlain,curved,125,60,{0.6,1.0,1.4},StartKind::Touch);
-	for(float d:rounded)expect(d>64,"40mm smooth-decelerating local reversals maintain useful Touch coverage");
+	// 历史每个时刻都>64DIP的断言属于旧快增长；新合同先保护短段，再验证持续折返可达。
+	expect(rounded[0]>=32 && rounded[0]<=40,
+		"40mm smooth reversals at 0.6s remain controlled rather than jumping large");
+	expect(rounded[1]>64 && rounded[2]>80 && rounded[2]>rounded[1],
+		"continued 40mm smooth reversals reach useful intermediate Touch coverage");
 	const auto shortTap=Replay(touchPlain,{{0,0},{0.02,3},{1,3}},125,60,{0.02,0.1,1},StartKind::Touch);
 	for(float d:shortTap)expect(d<=32.0f,"brief small touch stroke cannot turn into large clearing");
 	std::cout << "[SpeedEraser] worst sample/frame deviation=" << worstRateError * 100.0

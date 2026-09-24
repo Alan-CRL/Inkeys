@@ -32,6 +32,8 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 2026-09-23 Touch 场景曲线只调整物理/手动动作路径的清扫阈值；B 仍只控制上述 DIP 尺寸，灵敏度仍是三档温和增益，不能替代 Laptop/LargeScreen 场景选择。面积开启时已接受下限可高于 B，关闭面积也必须独立通过普通擦除回归。
 
+2026-09-25 Touch/ScreenPenHybrid 标准以上增长时间调整不改变 24/32/40、0.5B/B/5B 或 0.85/1/1.15 的含义；灵敏度仍只改变 `SweepActionSpeed` 的清扫动作余量，不能缩放证据时钟或作为场景替代。
+
 ### UI与资源
 使用同一Bar HWND、D2D context、共享RenderPipeline线程。标准大按钮/主题/边缘光/分割线复用Bar现有实现。`Assets/EraserGripVisual.h`是C++预览/HLSL的无副作用比例来源，FXC临时ASCII副本必须同步。
 

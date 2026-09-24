@@ -4150,6 +4150,11 @@ namespace Inkeys::Drawing::Draw3
 					d.motionSource=cfg.motionSource;d.motionUnit=cfg.motionUnit;d.sizes=cfg.sizes;
 					d.fineToStandardSpeed=cfg.fineToStandardSpeed;d.sweepEnterSpeed=cfg.sweepEnterSpeed;
 					d.sweepExitSpeed=cfg.sweepExitSpeed;d.largeTargetSpeed=cfg.largeTargetSpeed;d.sweepGain=cfg.sweepGain;
+					d.evidenceStartSeconds=cfg.evidenceStartSeconds;d.evidenceFullSeconds=cfg.evidenceFullSeconds;
+					d.evidenceDecaySeconds=cfg.evidenceDecaySeconds;d.growthTauSeconds=cfg.growthTauSeconds;
+					d.largeGrowthTauSeconds=cfg.largeGrowthTauSeconds;
+					d.maximumLogGrowthPerSecond=cfg.maximumLogGrowthPerSecond;
+					d.largeLogGrowthPerSecond=cfg.largeLogGrowthPerSecond;
 					d.entry=cfg.inputEntry;d.formalPenResponse=cfg.formalPenResponse;d.developmentResponseOverride=cfg.developmentResponseOverride;
 					d.inputSource=cfg.inputSource;d.response=cfg.response;d.inputMapped=cfg.inputMapped;
 					d.monitor=cfg.display.monitor;d.displayGeneration=cfg.display.generation;d.displayRevision=cfg.display.revision;
@@ -4157,6 +4162,7 @@ namespace Inkeys::Drawing::Draw3
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
 					d.effectiveDiameterDip=controller->DiameterDip();
 					d.targetDiameterDip=controller->TargetDiameterDip();d.touchUnlocked=controller->TouchUnlocked();
+					d.evidenceCapDiameterDip=controller->SweepEvidenceCapDiameterDip();
 					d.needsAnimation=controller->NeedsAnimation(mouseVisualSeconds);
 					d.contactArea=controller->AreaDiagnostics(mouseVisualSeconds);
 					d.fine=controller->FineDiagnostics();

@@ -318,6 +318,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool PreviewOnly() const noexcept { return previewOnly_; }
 		float TargetDiameter() const noexcept;
 		float TargetDiameterDip() const noexcept;
+		float SweepEvidenceCapDiameterDip() const noexcept;
 		bool TouchUnlocked() const noexcept;
 		FineBandDiagnostics FineDiagnostics() const noexcept;
 		ContactAreaDiagnostics AreaDiagnostics(double seconds) const noexcept;
@@ -512,6 +513,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float heuristicGain = 1.0f;
 		float fineToStandardSpeed = 0, sweepEnterSpeed = 0, sweepExitSpeed = 0, largeTargetSpeed = 0;
 		float sweepGain = 1.0f;
+		float evidenceCapDiameterDip = 32;
+		double evidenceStartSeconds = 0, evidenceFullSeconds = 0, evidenceDecaySeconds = 0;
+		double growthTauSeconds = 0, largeGrowthTauSeconds = 0;
+		double maximumLogGrowthPerSecond = 0, largeLogGrowthPerSecond = 0;
 		EraserSizes sizes;
 		float dpiX = 96, dpiY = 96;
 		float dipPerPixelX = 1, dipPerPixelY = 1, motionPerPixelX = 1, motionPerPixelY = 1;

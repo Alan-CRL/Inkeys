@@ -317,11 +317,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			config.sweepExitSpeed=physical?80.0f:320.0f;
 			config.largeTargetSpeed=physical?350.0f:1400.0f;
 			config.historyWindowSeconds=0.040;
-			config.evidenceStartSeconds=0.060;
-			config.evidenceFullSeconds=0.160;
-			config.evidenceDecaySeconds=0.280;
-			config.growthTauSeconds=0.140;
-			config.largeGrowthTauSeconds=0.120;
+			// 标准以上短脉冲先积累有限证据；精细段与屏幕笔补偿不受影响。
+			config.evidenceStartSeconds=0.080;
+			config.evidenceFullSeconds=0.200;
+			config.evidenceDecaySeconds=0.350;
+			config.growthTauSeconds=0.200;
+			config.largeGrowthTauSeconds=0.160;
 			config.holdSeconds=config.decreaseConfirmationSeconds=0.080;
 			config.sweepHoldSeconds=0.200;
 			config.sweepDecreaseConfirmationSeconds=0.240;
@@ -361,15 +362,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				config.sweepExitSpeed=heuristic?80.0f:160.0f;
 				config.largeTargetSpeed=heuristic?400.0f:700.0f;
 			}
-			// Touch 单独减轻资格和扩大阻力；不修改鼠标/屏幕笔的任何参数。
+			// Touch 只加重标准以上短快划的证据/增长阻力，场景速度和面积许可独立。
 			config.historyWindowSeconds=0.050;
-			config.evidenceStartSeconds=0.025;
-			config.evidenceFullSeconds=0.060;
-			config.evidenceDecaySeconds=0.180;
-			config.growthTauSeconds=0.120;
-			config.largeGrowthTauSeconds=0.100;
-			config.maximumLogGrowthPerSecond=6.0;
-			config.largeLogGrowthPerSecond=8.0;
+			config.evidenceStartSeconds=0.080;
+			config.evidenceFullSeconds=0.180;
+			config.evidenceDecaySeconds=0.300;
+			config.growthTauSeconds=0.220;
+			config.largeGrowthTauSeconds=0.180;
+			config.maximumLogGrowthPerSecond=4.0;
+			config.largeLogGrowthPerSecond=6.0;
 		}
 		// 间接设备始终按映射后的 DIP 动作，不因大屏选项或 EDID 改为物理测速。
 		config.movementNoiseDistance=physical?0.2f:0.75f;
@@ -1160,9 +1161,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			else if (realMotionSpeed<=0 && state.maximumDisplacement<config_.touchUnlockEnd) return;
 			if (permitted<=state.logDiameter) return;
 			const double growth=SmoothStep(size);
+			// 面积下限仍用原 Touch 跟随参数；本轮较重的清扫阻力不能拖慢普通拖擦辅助。
+			const bool areaFloorGrowth=config_.response==ResponseModel::DirectTouch && areaMotion &&
+				permitted<=std::log(static_cast<double>(areaGoal))+1e-9;
 			state.logDiameter=Follow(state.logDiameter,permitted,dt,
-				blend(config_.growthTauSeconds,config_.largeGrowthTauSeconds,growth),
-				blend(config_.maximumLogGrowthPerSecond,config_.largeLogGrowthPerSecond,growth));
+				areaFloorGrowth?blend(0.120,0.100,growth):blend(config_.growthTauSeconds,config_.largeGrowthTauSeconds,growth),
+				areaFloorGrowth?blend(6.0,8.0,growth):blend(config_.maximumLogGrowthPerSecond,config_.largeLogGrowthPerSecond,growth));
 			target=permitted;
 		}
 		else
@@ -1348,6 +1352,14 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	float Controller::TargetDiameterDip() const noexcept
 	{
 		return initialized_?static_cast<float>(std::exp(frameState_.logTarget)):config_.sizes.standardDiameterDip;
+	}
+	float Controller::SweepEvidenceCapDiameterDip() const noexcept
+	{
+		if(!initialized_)return config_.sizes.standardDiameterDip;
+		const double permission=SmoothStep((frameState_.sweepEvidence-config_.evidenceStartSeconds)/
+			(config_.evidenceFullSeconds-config_.evidenceStartSeconds));
+		return static_cast<float>(config_.sizes.standardDiameterDip*std::exp(permission*
+			std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip)));
 	}
 	bool Controller::TouchUnlocked() const noexcept
 	{

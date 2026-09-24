@@ -995,6 +995,14 @@ namespace Inkeys::Drawing::Draw3
 						const auto d=ProductHost().RuntimeSnapshot().eraser;
 						return d.active && d.response==expected && d.inputType==(flags==kHiddenTestTouchFlag?0u:1u);
 					}),"actual pen/touch identity routes through the selected response",failures);
+					if(expected==SpeedEraser::ResponseModel::DirectTouch ||
+						expected==SpeedEraser::ResponseModel::ScreenPenHybrid)
+						modeSucceeded &= Check(WaitUntil([expected]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.active && std::abs(d.evidenceStartSeconds-0.080)<0.001 &&
+								std::abs(d.evidenceFullSeconds-(expected==SpeedEraser::ResponseModel::DirectTouch?0.180:0.200))<0.001 &&
+								std::abs(d.growthTauSeconds-(expected==SpeedEraser::ResponseModel::DirectTouch?0.220:0.200))<0.001 &&
+								std::abs(d.evidenceCapDiameterDip-d.sizes.standardDiameterDip)<0.01f;}),
+							"real Touch/ScreenPen Down reports new growth evidence parameters without precharged size",failures);
 					modeSucceeded &= Check(WaitUntil([flags]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 						return d.inputContact && d.inputPositionValid && d.contactId==d.inputSource.cursorId &&
 							d.contactGeneration!=0 && std::abs(d.inputCanvasXpx-80)<0.01f &&
@@ -1055,14 +1063,16 @@ namespace Inkeys::Drawing::Draw3
 						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),
 					"manual classroom Touch ingress latches scene curve and matching cursor",failures);
 				const auto beforeClassroomMoves=ProductHost().RuntimeSnapshot().inputMovePublished;
-				for(int i=1;i<=25;++i)
+				constexpr int classroomMoveCount=40;
+				constexpr int classroomLastX=60+classroomMoveCount*2;
+				for(int i=1;i<=classroomMoveCount;++i)
 				{
 					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,60+i*2,120);
 					std::this_thread::sleep_for(40ms);
 				}
-				modeSucceeded &= Check(WaitUntil([beforeClassroomMoves]{const auto s=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(WaitUntil([beforeClassroomMoves,classroomMoveCount]{const auto s=ProductHost().RuntimeSnapshot();
 					const auto& d=s.eraser;
-					return s.inputMovePublished>=beforeClassroomMoves+25 && d.active &&
+					return s.inputMovePublished>=beforeClassroomMoves+classroomMoveCount && d.active &&
 						d.effectiveDiameterDip>=31.5f && d.effectiveDiameterDip<=35.2f && d.targetDiameterDip<=35.2f &&
 						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),
 					"manual classroom ordinary local Touch remains near the selected B",failures);
@@ -1073,12 +1083,12 @@ namespace Inkeys::Drawing::Draw3
 					classroomObserved.cursorDiameterPx,classroomObserved.nextRadiusPx*2);
 				PublishProductState(speedState);
 				std::this_thread::sleep_for(60ms);
-				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,112,120);
+				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,classroomLastX+2,120);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
 						std::abs(d.largeTargetSpeed-1300)<0.01f;}),
 					"active Touch keeps its latched scene after product setting changes",failures);
-				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,112,120);
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,classroomLastX+2,120);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
 					"manual classroom contact closes before scene change",failures);
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
@@ -1157,6 +1167,16 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && !d.needsAnimation && d.contactArea.active &&
 					std::abs(d.effectiveDiameterDip-d.contactArea.activeFloorDip)<0.001f;}),"held Touch settles at accepted assistance floor",failures);
+				// 等真实模型结果排空后再断言休眠；首次达到floor时仍可能有待消费的旧Move。
+				modeSucceeded &= Check(WaitUntil([]{
+					const auto before=ProductHost().RuntimeSnapshot().eraser;
+					if(!before.active || before.needsAnimation || !before.contactArea.active)return false;
+					std::this_thread::sleep_for(100ms);
+					const auto after=ProductHost().RuntimeSnapshot().eraser;
+					return after.active && !after.needsAnimation && after.contactArea.active &&
+						after.realPointCount==before.realPointCount &&
+						std::abs(after.effectiveDiameterDip-after.contactArea.activeFloorDip)<0.001f;
+				},3s),"area floor waits for the previously queued model output",failures);
 				areaProbe("after-held-check");
 				const auto resting=ProductHost().RuntimeSnapshot();
 				std::this_thread::sleep_for(150ms);

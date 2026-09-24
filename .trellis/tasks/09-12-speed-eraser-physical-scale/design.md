@@ -49,3 +49,13 @@ EraserSizes仍是DIP属性单一来源。真实InputSource、ResponseModel、mot
 DrawingController 的可关闭帧级诊断附带当前选中 contact 的 ID/代际、设备类型、输入画布坐标和实际可见光标坐标；光标不可见时明确标记，不借另一指或鼠标的光标。固定橡皮尺寸取已解析接触；非橡皮工具的橡皮尺寸标为无效。Host 在原 250ms 门后追加同一快照的 `[EraserInput]` 行，含帧时间、身份、工具、面积、速度、目标/实际 DIP、光标/几何像素直径，并保留现有 `[TouchArea]`/`[TouchCurve]` 供旧调测。没有输入的启用边缘只报告显示和无接触状态；不在 RTS packet 热路径写控制台。
 
 用隐藏窗口注入 Touch、Pen、Mouse 与固定橡皮，检查身份、坐标归属、可见性和尺寸；三语言文案经 i18n sync/check，完整 ARM64 solution/headless/专项隐藏测试验证。已有 Window Service owner 断言失败单列，不借诊断改动修复。
+
+## 2026-09-25：暖状态短快划响应设计
+
+复用一套 Controller 与既有清扫证据积分/许可目标/对数 Follow，不改 `ReferenceTargetDiameterDip`、场景权重、倍率、面积或小尺寸精细通道。先只替换 Touch 的 evidence start/full/decay=0.080/0.180/0.300s、growth tau=0.220/0.180s、log rate=4/6每秒；ScreenPenHybrid 对应 0.080/0.200/0.350s、tau=0.200/0.160s，log rate 暂保留4/6。Mouse 等间接模型参数和行为不变。若临界速度受 `strength*decay` 限制导致合法目标长期不可达，应以具体速度和证据上界说明，再局部调整，不能全局放宽。
+
+回放将真实输入与独立帧时钟分开调度。先以 0.6×有效 enter 连续2秒使控制器达到 B 且清扫证据归零，再用1.5×有效 large 给50–1000ms快段，随后恢复普通移动、原地包或无Move。每个 trace 在有界内存保存时间、短窗速度、清扫速度、参考目标、控制器目标/实际 DIP、证据、资格和光标/几何宽度；结束后才汇总峰值、阈值到达时刻、后续增长及衰减，并输出代表数据为 CSV。对帧/输入频率不能整除请求快段时，记录实际结束时刻，不把取整请求时长冒充精确脉冲。
+
+测试分别验证暖状态、新 Down、精细、已有大尺寸和跨抬起会话；Touch 场景大小与标尺回退、ScreenPen 物理/回退及 Mouse 冻结参考；中间速度可达、强快划抗短脉冲、面积独立下限和产品光标/新增几何。仅授权替代此前 ScreenPen 标准以上增长时间的冻结约束，其他已接受合同不动。隐藏产品测试原有 Window Service owner 失败独立记录。
+
+候选已由生产 Controller 的 ARM64 无PDB命令行探针验证，暂不需要新增动态状态。`FollowTarget` 的面积下限若主导当前许可目标，Touch 仍沿用旧120/100ms和6/8每秒跟随，避免新清扫阻力拖慢普通面积辅助；无面积时使用本轮新参数。`SweepEvidenceCapDiameterDip` 只读推导既有证据对应的尺寸上限，供可关闭诊断与有界回放使用，不授予新增长许可。250ms产品控制台快照不能捕获100ms动作全程；全程指标由测试内存采样结束后汇总。

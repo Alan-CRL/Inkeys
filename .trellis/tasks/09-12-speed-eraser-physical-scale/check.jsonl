@@ -9,3 +9,4 @@
 {"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "verify translated setting labels and saved key"}
 {"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "verify output remains bounded"}
 {"file": ".trellis/tasks/09-12-speed-eraser-physical-scale/validation-console-diagnostics-20260924.md", "reason": "current build and integration evidence"}
+{"file": ".trellis/tasks/09-12-speed-eraser-physical-scale/validation-warm-burst-20260925.md", "reason": "current partial ARM64 and pending full solution verification"}
