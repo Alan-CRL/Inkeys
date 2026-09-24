@@ -402,3 +402,43 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 - 专项隐藏测试仍有 DComp/ULW 各两条 Window Service owner 关系失败；本轮新增诊断断言无失败。
 - 用户修复 GitHub SSH agent 后，再正常推送 `bugfix/eraser`；不使用强推或替代认证绕过。
 - Surface 与教室设备启用该选项并重启，采集真实 EDID 与标注动作的限频快照。
+
+
+## Session 20: Touch与屏幕笔暖状态短快划增长阻力
+<!-- trellis-session: v=2 fp=41284dde87eb8867 -->
+
+**Date**: 2026-09-25
+**Task**: Touch与屏幕笔暖状态短快划增长阻力
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+在原 speed-eraser-physical-scale 任务中复现旧短快划并局部调整 Touch/ScreenPen 标准以上证据与增长；保留场景曲线和面积响应，验证记录见 validation-warm-burst-20260925.md。
+
+### Main Changes
+
+- Touch/ScreenPen 标准以上增长参数局部调整，面积主导增长保留旧响应；增加证据尺寸上限只读诊断。
+- 补暖状态时序、场景/回退、频率、尺寸/灵敏度、折返与隔离快划测试及CSV；更新原任务规格。
+
+### Git Commits
+
+`6aefa84e` fix(draw3): resist short touch and pen eraser swipes
+
+原任务保持 in_progress；用户后续授权提交并推送。
+
+### Testing
+
+- [OK] 生产 SpeedEraser.cpp ARM64 无PDB探针运行通过；96组速率最大差0.591%，20组临界目标最大差0.0775 DIP，面积辅助与旧响应最大差0。
+- [OK] 修改的 SpeedEraser.cpp、Host、DrawingController、HiddenWindowTest、headless 测试源分别无PDB语法编译通过。
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 在本进程临时追加 /FS 后退出0；原命令的两个 vc143.pdb C1041 另行记录，未改工程配置。
+- [OK] 最新 headless --no-window 退出0；暖状态240组频率差0.591%，既有 sample/frame 最坏4.613%，精细1728组0失败。
+- [FAIL] 最新 --draw3-eraser-hidden-test 退出1，仅DComp/ULW各两条既有Window Service owner断言；橡皮参数、面积、光标和几何断言未报失败。
+
+### Status
+
+[IN PROGRESS] 原 Trellis 任务保持 in_progress；本机自动验证已执行，真实设备手感与独立窗口 owner 问题仍待处理。
+
+### Next Steps
+
+- 待条件允许时复查无需临时 /FS 的常规本机构建；独立排查隐藏窗口 owner 关系断言。
+- Surface与教室设备真人手感及光标/新增几何仍需人工验收。
