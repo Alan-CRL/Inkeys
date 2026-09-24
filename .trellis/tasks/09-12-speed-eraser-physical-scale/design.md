@@ -41,3 +41,11 @@ EraserSizes仍是DIP属性单一来源。真实InputSource、ResponseModel、mot
 帧级诊断包含请求场景、解析场景/强度/来源、动作标尺与 mm/px 或 DIP/px、有效 fine/enter/exit/large、B/清扫增益、短窗报告速度及清扫速度、长窗 fineSpeed、资格/证据、目标/实际 DIP。`cursorPx` 归属当前诊断 contact，另保留对应实际几何半径；沿用既有限频输出，不加逐包同步 I/O。
 
 先以新增测试证明旧大屏可信物理路径错误，再实现集中解析；测试将公式值、控制器合成回放、隐藏窗口产品接入及真人实机四种证据分开。合成覆盖小平板、较大笔电、20–32 英寸触摸屏、中型演示屏、教室大屏及更大表面，分辨率/DPI/方向/采样率、普通与快速轨迹、回退和面积开关。大屏候选仅是首版标定；设备手感待实测，若中间段不足再作局部、可解释的下一轮调整。
+
+## 2026-09-23：控制台诊断扩展设计
+
+现有 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 和 `DevelopmentOptions::touchAreaTrace` 继续作为兼容开关；仅扩大诊断覆盖并改设置文案，不迁移用户配置。Host 的 `PumpDisplayScale` 已取得同一 Display 快照，在启用时或显示配置刷新时输出一次 `[EraserDisplay]`：EDID 状态/原始尺寸、业务可用物理尺寸及失效原因、拓扑、活动分辨率、有效 DPI 和显示代际。活动分辨率不是 EDID 原始时序，不把缺失 EDID 伪装为厘米。
+
+DrawingController 的可关闭帧级诊断附带当前选中 contact 的 ID/代际、设备类型、输入画布坐标和实际可见光标坐标；光标不可见时明确标记，不借另一指或鼠标的光标。固定橡皮尺寸取已解析接触；非橡皮工具的橡皮尺寸标为无效。Host 在原 250ms 门后追加同一快照的 `[EraserInput]` 行，含帧时间、身份、工具、面积、速度、目标/实际 DIP、光标/几何像素直径，并保留现有 `[TouchArea]`/`[TouchCurve]` 供旧调测。没有输入的启用边缘只报告显示和无接触状态；不在 RTS packet 热路径写控制台。
+
+用隐藏窗口注入 Touch、Pen、Mouse 与固定橡皮，检查身份、坐标归属、可见性和尺寸；三语言文案经 i18n sync/check，完整 ARM64 solution/headless/专项隐藏测试验证。已有 Window Service owner 断言失败单列，不借诊断改动修复。

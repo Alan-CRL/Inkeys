@@ -4118,6 +4118,8 @@ namespace Inkeys::Drawing::Draw3
 				if(!r)for(const auto* candidate:active)
 					if(candidate && !candidate->ended && candidate->tool==DrawingTool::Eraser)
 					{r=candidate;break;}
+				if(!r)for(const auto* candidate:active)
+					if(candidate && !candidate->ended){r=candidate;break;}
 				const SpeedEraser::Controller* controller=nullptr;
 				if(r && r->stroke.widthMode==StrokeWidthMode::SpeedEraser)
 				{
@@ -4170,6 +4172,18 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if(r)
 				{
+					d.inputContact=!r->ended && !r->awaitingReconnect;
+					d.inputType=static_cast<uint32_t>(r->metricDeviceType);
+					if(!controller || d.inputSource.kind==SpeedEraser::SourceKind::Unknown)
+						d.inputSource=r->lastInputSnapshot.source;
+					if(r->handle.record)
+					{d.contactId=r->handle.record->ContactId();d.contactGeneration=r->handle.generation;}
+					if(d.inputContact)
+					{
+						d.inputPositionValid=true;
+						d.inputCanvasXpx=r->lastModelSnapshot.position.x;
+						d.inputCanvasYpx=r->lastModelSnapshot.position.y;
+					}
 					d.selectedTool=static_cast<uint32_t>(r->selectedTool);d.effectiveTool=static_cast<uint32_t>(r->tool);
 					d.downSeconds=r->eraserDiagnostics.downSeconds;d.downDiameterPx=r->eraserDiagnostics.downDiameterPx;
 					d.firstPointRadiusPx=r->stroke.realPoints.empty()?0:r->stroke.realPoints.front().r;
@@ -4181,13 +4195,21 @@ namespace Inkeys::Drawing::Draw3
 					d.entry=r->resolvedEraser.entry;d.eraserKind=r->resolvedEraser.kind;
 					const auto& cfg=r->resolvedEraser.config;
 					d.requestedDeviceMode=cfg.mode;d.touchProfileSource=cfg.touchProfileSource;
+					d.sizes=cfg.sizes;
 					d.nextRadiusPx=r->eraserSize.effectiveDiameterPx*0.5f;
 					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
 					d.effectiveDiameterDip=r->eraserSize.effectiveDiameterPx*std::sqrt(cfg.display.dipPerPixelX*cfg.display.dipPerPixelY);
+					d.targetDiameterDip=d.effectiveDiameterDip;
 					d.formalPenResponse=cfg.formalPenResponse;d.developmentResponseOverride=cfg.developmentResponseOverride;
 				}
 				d.frameSeconds=mouseVisualSeconds;
+				if(!r && d.preview)
+				{
+					const auto& sample=primaryUsesPen?penSample:mouseSample;
+					if(sample.valid)
+					{d.inputPositionValid=true;d.inputCanvasXpx=sample.x;d.inputCanvasYpx=sample.y;}
+				}
 				if(r && !r->ended && !r->awaitingReconnect && r->metricDeviceType==InputDeviceType::Touch &&
 					r->tool==DrawingTool::Eraser)
 				{
@@ -4197,9 +4219,18 @@ namespace Inkeys::Drawing::Draw3
 						RuntimeSpeedEraserContactDiameter(*r):r->stroke.widthEstimator.baseDiameter);
 					const auto& position=r->lastModelSnapshot.position;
 					const auto visual=MakeTouchEraserDrawingCursorVisual(position.x,position.y,appearance);
+					d.cursorVisible=visual.visible;
+					if(visual.visible){d.cursorCanvasXpx=visual.x;d.cursorCanvasYpx=visual.y;}
 					d.cursorDiameterPx=visual.visible?visual.appearance.width:0;
 				}
-				else d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
+				else if(((r && r==primaryRuntime) || (!r && d.preview)) && !currentCursorVisuals.empty())
+				{
+					const auto& visual=currentCursorVisuals.front();
+					d.cursorVisible=visual.visible;
+					if(visual.visible){d.cursorCanvasXpx=visual.x;d.cursorCanvasYpx=visual.y;}
+					d.cursorDiameterPx=visual.visible?visual.appearance.width:0;
+				}
+				else d.cursorDiameterPx=0;
 				observer_.eraserDiagnostics(observer_.context,d);
 			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)

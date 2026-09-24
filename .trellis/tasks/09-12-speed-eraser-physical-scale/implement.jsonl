@@ -4,3 +4,6 @@
 {"file":".trellis/tasks/09-12-display-physical-size-validity/research/draw3-speed-eraser-dynamics-input-evidence.md","reason":"Draw3 scale/dynamics implementation and input ownership contracts"}
 {"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "current DIP sizes and settings"}
 {"file": ".trellis/tasks/09-12-speed-eraser-physical-scale/research/touch-profile-20260923.md", "reason": "current Touch curve evidence and scene plan"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "diagnostic setting and translation compatibility"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "bounded diagnostic output contract"}
+{"file": ".trellis/tasks/09-12-speed-eraser-physical-scale/research/diagnostics-extension-20260923.md", "reason": "console diagnostic source findings"}

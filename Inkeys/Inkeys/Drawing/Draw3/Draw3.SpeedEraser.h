@@ -500,6 +500,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		ScaleSource motionSource = ScaleSource::DipOnly;
 		MotionUnit motionUnit = MotionUnit::DipPerSecond;
 		InputSource inputSource;
+		uint32_t contactId = 0;
+		uint64_t contactGeneration = 0;
+		bool inputContact = false, inputPositionValid = false, cursorVisible = false;
+		float inputCanvasXpx = 0, inputCanvasYpx = 0, cursorCanvasXpx = 0, cursorCanvasYpx = 0;
 		ResponseModel response = ResponseModel::IndirectDip;
 		bool inputMapped = false;
 		float rhoMmPerDip = 0.0f;

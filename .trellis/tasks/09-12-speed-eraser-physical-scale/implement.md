@@ -15,3 +15,10 @@ Recovery override: all steps are executed by the main session only; no subagents
 3. 只在 `ResolveConfig` 集中解析 Touch 物理场景；控制器共用有效阈值，Host/Controller 帧级诊断补可观察字段。
 4. 按仓库要求构建完整 `InkeysRepo.sln Debug|ARM64`，运行 headless `--no-window`、`--draw3-eraser-hidden-test` 和适用产品隐藏验证；检查 diff、编码与用户已有文件。
 5. 更新 spec、本轮验证及 Trellis 会话记录；按用户后续授权提交本轮改动，保持 `in_progress`，不推送、finish 或归档；真人 Surface/教室验收另列。
+
+## 2026-09-23 控制台诊断扩展
+
+1. 复用原配置键，更新三语言设置文案并运行 i18n sync/check。
+2. 在 Host 的现有显示快照入口输出 EDID/分辨率/DPI，在 DrawingController 的选中 contact 诊断中补真实坐标/设备/尺寸归属；Host 限频输出统一输入行，保留原面积明细。
+3. 补隐藏窗口接入断言，执行完整 `InkeysRepo.sln Debug|ARM64`、headless 和专项隐藏测试，分别记录代码结果与原有窗口 owner 失败。
+4. 更新 spec、独立验证记录与会话记录；按用户后续授权提交并推送本轮改动，保持 `in_progress`，不 finish 或归档。

@@ -7419,7 +7419,7 @@ SettingSessionCoroutine RunSettingSession()
 								ImGui::EndChild();
 							};
 
-							drawConsoleOutput("触摸面积控制台输出",
+							drawConsoleOutput("输入与橡皮诊断控制台输出",
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.N),
 								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.TouchArea.E),
 								Experimental.Inkeys3.TouchAreaConsoleOutput, [&]

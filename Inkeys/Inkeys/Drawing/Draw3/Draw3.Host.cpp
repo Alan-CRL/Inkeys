@@ -28,6 +28,57 @@ import Inkeys.Drawing.Draw3.window_control;
 
 namespace Inkeys::Drawing::Draw3
 {
+	namespace
+	{
+		const char* DisplayTopologyName(Inkeys::Display::DisplayTopology value) noexcept
+		{
+			switch(value)
+			{
+			case Inkeys::Display::DisplayTopology::Single:return "Single";
+			case Inkeys::Display::DisplayTopology::Extended:return "Extended";
+			case Inkeys::Display::DisplayTopology::CloneOrMixed:return "CloneOrMixed";
+			default:return "Unknown";
+			}
+		}
+		const char* EdidStatusName(Inkeys::Display::EdidStatus value) noexcept
+		{
+			switch(value)
+			{
+			case Inkeys::Display::EdidStatus::Parsed:return "Parsed";
+			case Inkeys::Display::EdidStatus::ReadFailed:return "ReadFailed";
+			case Inkeys::Display::EdidStatus::ParseFailed:return "ParseFailed";
+			default:return "Unavailable";
+			}
+		}
+		const char* PhysicalReasonName(Inkeys::Display::PhysicalSizeUnavailableReason value) noexcept
+		{
+			switch(value)
+			{
+			case Inkeys::Display::PhysicalSizeUnavailableReason::None:return "None";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::SnapshotFallback:return "SnapshotFallback";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::TopologyUnknown:return "TopologyUnknown";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::CloneOrMixed:return "CloneOrMixed";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::DisplayTargetAmbiguous:return "DisplayTargetAmbiguous";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::EdidUnavailable:return "EdidUnavailable";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::EdidReadFailed:return "EdidReadFailed";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::EdidParseFailed:return "EdidParseFailed";
+			case Inkeys::Display::PhysicalSizeUnavailableReason::MissingDimensions:return "MissingDimensions";
+			default:return "DimensionsBelowMinimum";
+			}
+		}
+		const char* InputDeviceTypeName(uint32_t value) noexcept
+		{
+			switch(static_cast<InputDeviceType>(value))
+			{
+			case InputDeviceType::Touch:return "Touch";
+			case InputDeviceType::Pen:return "Pen";
+			case InputDeviceType::MouseLeft:return "MouseLeft";
+			case InputDeviceType::MouseRight:return "MouseRight";
+			default:return "Unknown";
+			}
+		}
+	}
+
 	struct Host::Impl
 	{
 		Bridge::StateBridge bridge;
@@ -48,7 +99,7 @@ namespace Inkeys::Drawing::Draw3
 		SpeedEraser::InputSource lastTouchAreaMetadataSource;
 		bool touchAreaMetadataPending = true;
 		std::chrono::steady_clock::time_point lastTouchAreaTrace{};
-		bool touchAreaTraceWasEnabled = false, lastTracedContact = false;
+		bool touchAreaTraceWasEnabled = false, lastTracedContact = false, lastTracedInputActivity = false;
 		Inkeys::Display::SnapshotPtr pendingDisplaySnapshot;
 		Inkeys::Display::Subscription displaySubscription;
 		std::atomic_bool displayScaleDirty = false;
@@ -466,6 +517,7 @@ namespace Inkeys::Drawing::Draw3
 			{self->touchAreaTraceWasEnabled=false;return;}
 			const auto now=std::chrono::steady_clock::now();
 			const bool contact=value.eraserContact;
+			const bool inputActivity=value.inputContact || value.preview;
 			const auto traceRevision=self->touchAreaTraceRevision.load(std::memory_order_relaxed);
 			const bool newlyEnabled=!self->touchAreaTraceWasEnabled || traceRevision!=self->observedTouchAreaTraceRevision;
 			self->observedTouchAreaTraceRevision=traceRevision;
@@ -481,11 +533,15 @@ namespace Inkeys::Drawing::Draw3
 				self->lastTouchAreaMetadataTrace=now;
 				if(!self->touchAreaMetadataPending)self->lastTouchAreaMetadataSource=source;
 			}
-			const bool edge=newlyEnabled || contact!=self->lastTracedContact;
-			if(!edge && (!contact || now-self->lastTouchAreaTrace<std::chrono::milliseconds(250)))return;
+			const bool edge=newlyEnabled || contact!=self->lastTracedContact ||
+				inputActivity!=self->lastTracedInputActivity;
+			if(!edge && (!inputActivity || now-self->lastTouchAreaTrace<std::chrono::milliseconds(250)))return;
 			const char* event=newlyEnabled?"enabled":contact!=self->lastTracedContact?
 				(contact?"begin":"end"):"sample";
-			self->touchAreaTraceWasEnabled=true;self->lastTracedContact=contact;self->lastTouchAreaTrace=now;
+			const char* inputEvent=newlyEnabled?"enabled":inputActivity!=self->lastTracedInputActivity?
+				(inputActivity?"begin":"end"):"sample";
+			self->touchAreaTraceWasEnabled=true;self->lastTracedContact=contact;
+			self->lastTracedInputActivity=inputActivity;self->lastTouchAreaTrace=now;
 			const auto& d=value;const auto& a=d.contactArea;const auto& source=d.inputSource;
 			const bool requested=self->window.TouchContactAreaAssistance();
 			const char* gate=!contact?"no-eraser-contact":!d.active?"not-speed-eraser":
@@ -497,11 +553,31 @@ namespace Inkeys::Drawing::Draw3
 				!a.sampleValid?"area-rejected":!a.referenceReady?"waiting-stable-drag":
 				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
 				!a.active?"waiting-accepted-movement":"area-floor-active";
-			std::fprintf(stderr,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
-				static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
-				d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
-				d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
-				d.firstPointRadiusPx,d.cursorDiameterPx,d.nextRadiusPx);
+			if(d.eraserContact || d.preview)
+				std::fprintf(stderr,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
+					static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
+					d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
+					d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
+					d.firstPointRadiusPx,d.cursorDiameterPx,d.nextRadiusPx);
+			// 同一选中输入的限频快照；无可见光标或非橡皮尺寸明确写 -1，不代用其他设备。
+			const bool eraserSizeValid=d.eraserContact || d.preview;
+			const char* eraserKind=eraserSizeValid?
+				(d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed"):"N/A";
+			char inputText[1024]{};
+			std::snprintf(inputText,sizeof(inputText),
+				"[EraserInput] seq=%llu event=%s frameSeconds=%.6f inputContact=%d eraserContact=%d preview=%d tool=%u/%u device=%s inputType=%u source=%s recognition=%u tcid=%u contactId=%u contactGen=%llu cursorId=%u inputCanvasPx=(%.3f,%.3f) inputPositionValid=%d cursorCanvasPx=(%.3f,%.3f) cursorVisible=%d eraserKind=%s B=%.3f targetDip=%.3f actualDip=%.3f cursorDiameterPx=%.3f geometryDiameterPx=%.3f speed=%.3f sweepSpeed=%.3f unit=%s qualified=%d evidenceMs=%.1f areaRaw=(%.3f,%.3f) areaDip=(%.3f,%.3f) areaActive=%d\n",
+				static_cast<unsigned long long>(sequence),inputEvent,d.frameSeconds,d.inputContact,d.eraserContact,d.preview,
+				d.selectedTool,d.effectiveTool,d.inputPositionValid?InputDeviceTypeName(d.inputType):"Unknown",d.inputType,
+				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),source.contextId,
+				d.contactId,static_cast<unsigned long long>(d.contactGeneration),source.cursorId,
+				d.inputPositionValid?d.inputCanvasXpx:-1.0f,d.inputPositionValid?d.inputCanvasYpx:-1.0f,d.inputPositionValid,
+				d.cursorVisible?d.cursorCanvasXpx:-1.0f,d.cursorVisible?d.cursorCanvasYpx:-1.0f,d.cursorVisible,
+				eraserKind,eraserSizeValid?d.sizes.standardDiameterDip:-1.0f,
+				eraserSizeValid?d.targetDiameterDip:-1.0f,eraserSizeValid?d.effectiveDiameterDip:-1.0f,
+				d.cursorVisible?d.cursorDiameterPx:-1.0f,d.eraserContact?d.nextRadiusPx*2:-1.0f,
+				d.speed,d.sweepSpeed,SpeedEraser::MotionUnitName(d.motionUnit),d.qualified,d.evidenceSeconds*1000,
+				a.sample.rawWidth,a.sample.rawHeight,a.widthDip,a.heightDip,a.active);
+			OutputDebugStringA(inputText);std::fputs(inputText,stderr);
 			char text[3072]{};
 			if(!d.active)
 			{
@@ -633,10 +709,33 @@ namespace Inkeys::Drawing::Draw3
 				const UINT dpi = GetDpiForWindow(hwnd);
 				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
 			}
-			if(hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale)
+			const bool syntheticDisplay=hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale.has_value();
+			if(syntheticDisplay)
 			{
 				const auto policy=scale.development;
 				scale=*startOptions.hiddenTestDisplayScale;scale.development=policy;
+			}
+			if(development.touchAreaTrace)
+			{
+				// 只在显示/诊断配置发布时记录同一快照；活动分辨率不冒充 EDID 原始时序。
+				const auto* edidMonitor=syntheticDisplay?nullptr:monitor;
+				const Inkeys::Display::EdidInfo emptyEdid;
+				const Inkeys::Display::PhysicalSizeInfo emptyPhysicalSize;
+				const auto& edid=edidMonitor?edidMonitor->edid:emptyEdid;
+				const auto& physicalSize=edidMonitor?edidMonitor->physicalSize:emptyPhysicalSize;
+				char displayText[768]{};
+				std::snprintf(displayText,sizeof(displayText),
+					"[EraserDisplay] synthetic=%d snapshotGen=%llu scaleGen=%llu topology=%s monitor=%p desktopLeftTopSizePx=(%d,%d,%d,%d) activeResolutionPx=%dx%d effectiveDpi=%.1fx%.1f DIP/px=%.6fx%.6f logicalKnown=%d edidStatus=%s edidValid=%d edidVersion=%u.%u edidRawCm=%dx%d physicalAvailable=%d physicalCm=%dx%d physicalReason=%s\n",
+					syntheticDisplay,static_cast<unsigned long long>(snapshot?snapshot->generation:0),
+					static_cast<unsigned long long>(scale.generation),DisplayTopologyName(snapshot?snapshot->topology:Inkeys::Display::DisplayTopology::Unknown),
+					reinterpret_cast<void*>(scale.monitor),scale.desktopLeft,scale.desktopTop,scale.pixelWidth,scale.pixelHeight,
+					scale.pixelWidth,scale.pixelHeight,96.0/scale.dipPerPixelX,96.0/scale.dipPerPixelY,
+					scale.dipPerPixelX,scale.dipPerPixelY,scale.logicalOutputKnown,EdidStatusName(edid.status),edid.valid,
+					static_cast<unsigned>(edid.majorVersion),static_cast<unsigned>(edid.minorVersion),
+					edid.rawPhysicalWidthCm,edid.rawPhysicalHeightCm,physicalSize.available,
+					physicalSize.widthCm,physicalSize.heightCm,
+					edidMonitor?PhysicalReasonName(physicalSize.unavailableReason):"NoMonitor");
+				OutputDebugStringA(displayText);std::fputs(displayText,stderr);
 			}
 			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
 			scale.revision = previous.revision;

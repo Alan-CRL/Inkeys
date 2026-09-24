@@ -1397,7 +1397,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled)
 			{
-				// 设备初始化前绑定共用控制台，避免遗漏 TouchAreaDevice 启动信息。
+				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
 			}
 			if (touchAreaConsoleOutputEnabled)

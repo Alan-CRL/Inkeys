@@ -431,8 +431,8 @@
       {
         "TouchArea":
         {
-          "N": "Touch area console output",
-          "E": "Output touch-area information to the console on the next launch."
+          "N": "Input and eraser diagnostics console output",
+          "E": "On the next launch, output rate-limited snapshots of display EDID, resolution and DPI, touch area, input coordinates, device type, and eraser size."
         },
         "PptCOM":
         {

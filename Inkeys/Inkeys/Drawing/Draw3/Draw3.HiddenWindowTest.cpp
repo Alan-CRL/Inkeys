@@ -995,6 +995,13 @@ namespace Inkeys::Drawing::Draw3
 						const auto d=ProductHost().RuntimeSnapshot().eraser;
 						return d.active && d.response==expected && d.inputType==(flags==kHiddenTestTouchFlag?0u:1u);
 					}),"actual pen/touch identity routes through the selected response",failures);
+					modeSucceeded &= Check(WaitUntil([flags]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.inputContact && d.inputPositionValid && d.contactId==d.inputSource.cursorId &&
+							d.contactGeneration!=0 && std::abs(d.inputCanvasXpx-80)<0.01f &&
+							std::abs(d.inputCanvasYpx-100)<0.01f &&
+							(flags!=kHiddenTestTouchFlag || (d.cursorVisible &&
+								std::abs(d.cursorCanvasXpx-80)<0.01f && std::abs(d.cursorCanvasYpx-100)<0.01f));}),
+						"diagnostic input identity and canvas cursor belong to the same contact",failures);
 					modeSucceeded &= Check(WaitUntil([]
 					{
 						const auto d=ProductHost().RuntimeSnapshot().eraser;
@@ -1103,7 +1110,10 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(setAreaOption(false),"apply independent area option",failures);
 				postSource(HiddenTestContactPhase::Hover,kHiddenTestMouseFlag,60,80);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.preview && d.inputType==2 && d.effectiveDiameterDip<=16.01f;}),"prepare frozen mouse fine hover",failures);
+					return d.preview && d.inputType==2 && d.effectiveDiameterDip<=16.01f &&
+						d.inputPositionValid && std::abs(d.inputCanvasXpx-60)<0.01f &&
+						d.cursorVisible && std::abs(d.cursorCanvasXpx-60)<0.01f;}),
+					"prepare frozen mouse fine hover with matching diagnostic position",failures);
 				const auto beforeToggle=ProductHost().RuntimeSnapshot().eraser;
 				modeSucceeded &= Check(setAreaOption(true),"enable touch-only area assistance",failures);
 				std::this_thread::sleep_for(60ms);
@@ -1192,7 +1202,11 @@ namespace Inkeys::Drawing::Draw3
 				const auto fixedBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
 				modeSucceeded &= Check(WaitUntil([fixedBefore]{const auto s=ProductHost().RuntimeSnapshot();
-					return s.inputDownPublished>fixedBefore && std::abs(s.eraser.cursorDiameterPx-32)<0.01f;}),
+					const auto& d=s.eraser;
+					return s.inputDownPublished>fixedBefore && std::abs(d.cursorDiameterPx-32)<0.01f &&
+						d.eraserKind==SpeedEraser::EraserKind::Fixed && d.inputPositionValid &&
+						std::abs(d.inputCanvasXpx-60)<0.01f && std::abs(d.inputCanvasYpx-170)<0.01f &&
+						std::abs(d.targetDiameterDip-d.effectiveDiameterDip)<0.01f;}),
 					"fixed Touch eraser ignores area and uses default32 DIP",failures);
 				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
 				ProductHost().SetHiddenTestContactArea({});
@@ -1339,6 +1353,16 @@ namespace Inkeys::Drawing::Draw3
 					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],gapX,gapY);
 					std::this_thread::sleep_for(50ms);
 				}
+				auto inkState=speedState;inkState.tool=Bridge::Tool::HardPen;
+				PublishProductState(inkState);std::this_thread::sleep_for(50ms);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestIntegratedPenFlag,110,100);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.inputContact && !d.eraserContact && d.inputType==1 && d.inputPositionValid &&
+						std::abs(d.inputCanvasXpx-110)<0.01f && std::abs(d.inputCanvasYpx-100)<0.01f;}),
+					"ordinary pen contact reports its input position without an eraser size",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestIntegratedPenFlag,110,100);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.inputContact;}),
+					"ordinary pen diagnostic contact closes",failures);
 
 				ProductHost().SetEraserDevelopmentOptions({});
 
