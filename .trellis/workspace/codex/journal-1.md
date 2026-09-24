@@ -363,3 +363,42 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Next Steps
 
 - 在 Surface 和教室设备分别人工验收普通/清扫手感；独立排查隐藏测试的窗口 owner 关系。
+
+
+## Session 18: 输入与橡皮诊断输出扩展
+<!-- trellis-session: v=2 fp=5763b97e26f75543 -->
+
+**Date**: 2026-09-24
+**Task**: 输入与橡皮诊断输出扩展
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+沿用旧控制台开关，更新三语言名称；新增启动显示/EDID 摘要及限频的设备、坐标、面积、橡皮尺寸快照。完整结果见 validation-console-diagnostics-20260924.md。
+
+### Main Changes
+
+- 保留 TouchArea 持久化键，扩展 Host/Controller 帧级诊断，区分活动分辨率与原始 EDID、可见光标与输入位置、非橡皮无效尺寸。
+- 更新原任务 PRD/design、native-desktop spec、上下文清单及三语言翻译。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cf4a1874` | feat(draw3): expand eraser console diagnostics |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 构建退出 0；InkeysHeadlessTests.exe --no-window 退出 0；i18n check 330/330。
+- [FAIL] Inkeys.exe --draw3-eraser-hidden-test 退出 1：DComp/ULW 各两条 Window Service owner 断言失败；新增诊断断言未报失败。
+- [BLOCKED] 远端 SSH 读取时报 `sign_and_send_pubkey: signing failed for RSA "Github SSH" from agent: communication with agent failed`；GitHub 随后拒绝公钥认证。未绕过身份验证或尝试推送。
+
+### Status
+
+[IN PROGRESS] 原任务仍为 in_progress；真实设备 EDID 与用户动作手感待采样，隐藏窗口 owner 失败待单独处理。
+
+### Next Steps
+
+- 专项隐藏测试仍有 DComp/ULW 各两条 Window Service owner 关系失败；本轮新增诊断断言无失败。
+- 用户修复 GitHub SSH agent 后，再正常推送 `bugfix/eraser`；不使用强推或替代认证绕过。
+- Surface 与教室设备启用该选项并重启，采集真实 EDID 与标注动作的限频快照。

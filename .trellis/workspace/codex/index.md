@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
-- **Last Active**: 2026-09-23
+- **Total Sessions**: 18
+- **Last Active**: 2026-09-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~363 | Active |
+| `journal-1.md` | ~404 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-09-24 | 输入与橡皮诊断输出扩展 | `cf4a1874` | `bugfix/eraser` |
 | 17 | 2026-09-23 | Touch 场景曲线修正 | `5997d23b` | `bugfix/eraser` |
 | 15 | 2026-09-22 | UI3 i18n 格式串异常防护 | `0409256f` | `feature/ui3-i18n` |
 | 14 | 2026-09-22 | 收敛桌面定格 Magnification 链路 | `ba14ddd6`, `7df93730` | `bugfix/settingui` |
