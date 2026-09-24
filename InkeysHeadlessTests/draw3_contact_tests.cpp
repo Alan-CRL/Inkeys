@@ -234,6 +234,18 @@ namespace
 			!ShouldIgnoreMouseCursorMessage(false, true, false,
 			true, 101u, 100u, IMDT_UNAVAILABLE),
 			"Win7 compatibility signature and touch barrier remain effective")) ++failures;
+		// Touch Up 后来源缺失的原位 Move 不能恢复旧鼠标光标；真正移动仍可接管。
+		if (!Expect(ShouldIgnoreUnattributedTouchMouseMove(
+			true, IMDT_UNAVAILABLE, true, 2500, 1029, 2500, 1029) &&
+			!ShouldIgnoreUnattributedTouchMouseMove(
+				true, IMDT_UNAVAILABLE, true, 2500, 1029, 2501, 1029) &&
+			!ShouldIgnoreUnattributedTouchMouseMove(
+				true, IMDT_MOUSE, true, 2500, 1029, 2500, 1029) &&
+			!ShouldIgnoreUnattributedTouchMouseMove(
+				false, IMDT_UNAVAILABLE, true, 2500, 1029, 2500, 1029) &&
+			!ShouldIgnoreUnattributedTouchMouseMove(
+				true, IMDT_UNAVAILABLE, false, 2500, 1029, 2500, 1029),
+			"unattributed touch-position move cannot reclaim the cursor")) ++failures;
 	}
 }
 

@@ -86,6 +86,11 @@ export namespace Inkeys::Drawing::Draw3
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen);
 	// 输出带统一前缀的画布平移诊断；调用方负责只在关键状态或限频采样时调用。
 	void LogCanvasPan(const char* format, ...) noexcept;
+	// 光标输入回调只写有界队列，由绘制线程统一输出，避免控制台 I/O 阻塞 RTS。
+	void SetCursorDiagnosticsEnabled(bool enabled) noexcept;
+	bool CursorDiagnosticsEnabled() noexcept;
+	void RecordCursorDiagnostic(const char* format, ...) noexcept;
+	void FlushCursorDiagnostics() noexcept;
 	// 输出 HRESULT 失败信息。
 	void LogHResult(const char* step, HRESULT result);
 	// 输出 Win32 错误码。

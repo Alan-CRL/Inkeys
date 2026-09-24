@@ -462,6 +462,14 @@ namespace Inkeys::Drawing::Draw3
 		return !pointerApiAvailable && penSampleValid;
 	}
 
+	bool ShouldIgnoreUnattributedTouchMouseMove(bool touchSuppressed,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource, bool touchPositionKnown,
+		int touchX, int touchY, int mouseX, int mouseY) noexcept
+	{
+		return touchSuppressed && inputSource == IMDT_UNAVAILABLE &&
+			touchPositionKnown && mouseX == touchX && mouseY == touchY;
+	}
+
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
 		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,
 		double sampleAgeSeconds) noexcept

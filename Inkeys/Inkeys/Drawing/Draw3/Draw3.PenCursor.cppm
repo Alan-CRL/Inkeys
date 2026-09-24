@@ -197,6 +197,10 @@ export namespace Inkeys::Drawing::Draw3
 		bool touchBarrierKnown = false, uint32_t mouseMessageTick = 0,
 		uint32_t touchBarrierTick = 0,
 		INPUT_MESSAGE_DEVICE_TYPE inputSource = IMDT_UNAVAILABLE) noexcept;
+	// 来源缺失且停在最后 Touch 位置的合成 Move 不能冒充真实鼠标接管。
+	bool ShouldIgnoreUnattributedTouchMouseMove(bool touchSuppressed,
+		INPUT_MESSAGE_DEVICE_TYPE inputSource, bool touchPositionKnown,
+		int touchX, int touchY, int mouseX, int mouseY) noexcept;
 	// 部分 Pen 驱动缺失 promoted 标记；活动平移中以新鲜且同位置的 Pen 样本识别兼容 Mouse contact。
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
 		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,

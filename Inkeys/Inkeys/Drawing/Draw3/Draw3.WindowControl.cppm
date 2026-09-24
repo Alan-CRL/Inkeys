@@ -277,6 +277,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 高 32 位为有效标志，低 32 位保存 Windows uptime tick，保证跨线程一致快照。
 		std::atomic<uint64_t> latestTouchInputBarrierTick_ = 0;
 		std::atomic<uint32_t> activeTouchContactCount_ = 0;
+		// 仅 Drawpad 窗口线程读写；用于识别抬指后原位的来源未知 MouseMove。
+		bool lastTouchMousePositionKnown_ = false;
+		int lastTouchMouseX_ = 0;
+		int lastTouchMouseY_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<bool> selectionMode_ = true;
 		std::atomic<bool> autoSaveEnabled_ = false;
@@ -319,6 +323,9 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingCursorAppearance eraserCursorAppearance_ = {};
 		DrawingCursorAppearance laserCursorAppearance_ = {};
 		HCURSOR defaultCursor_ = nullptr;
+		// 仅窗口线程使用，避免相同系统光标决策反复刷控制台。
+		uint64_t lastCursorSystemDiagnosticKey_ = 0;
+		bool cursorSystemDiagnosticKnown_ = false;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		std::atomic<uint32_t> suppressedPenPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;

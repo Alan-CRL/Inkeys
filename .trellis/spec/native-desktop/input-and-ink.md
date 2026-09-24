@@ -32,12 +32,14 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 - Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
 - Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。
 - Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
+- 当前设备日志还出现 Touch Up 后来源为 `IMDT_UNAVAILABLE`、无 promoted 签名且停在最后 Touch 坐标的合成 `WM_MOUSEMOVE`；触摸视觉归属仍有效时不得让该原位消息接管。窗口线程从已识别 Touch Pointer/兼容 Mouse 维护末触点位置；真实 Mouse/TouchPad 来源和实际移到新位置的 MouseMove 保留接管能力。
 
 ### 4. Validation & Error Matrix
 | 输入 | 主光标与系统箭头 |
 | --- | --- |
 | 单指/多指 Touch Down、Move、最后 Up/Cancel | 主光标与箭头隐藏；活动擦除圆环仍在，最后一指终态后消失 |
 | Touch/Pen 提升的 Mouse 消息 | 不发布 Mouse Hover，不抢占 Touch/Pen |
+| Touch Up 后来源未知且停在末触点的 MouseMove | 不解除 Touch 抑制，不重新绘制主悬停圆环 |
 | 后续真实 Mouse/TouchPad 或 Pen 样本 | 立即恢复该设备的既有光标策略 |
 | Touch Pan 中真实 Mouse 已接管 | 后续 Touch 指头不清 Mouse；Pan 停止不回弹到 Touch |
 | Win7 无输入来源 API | 仍用 RTS、promoted 签名及时间屏障；新 Pen Hover 可恢复 |
@@ -53,6 +55,40 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 ### 7. Wrong vs Correct
 - Wrong：Touch Down 只清 Mouse mailbox，仍按旧 Pen/Mouse owner 解析主光标，并在 Touch Up 后依赖 Windows 自动隐藏。
 - Correct：Touch 暂时接管视觉归属并保持到真实新设备输入；兼容 Mouse 不得伪装成接管事件。
+
+## Scenario: Draw3 光标控制台诊断
+
+### 1. Scope / Trigger
+追查 Pen、Mouse、Touch、荧光笔、橡皮或激光笔光标的归属、重影及抬起后残留时适用。
+
+### 2. Signatures
+- 配置键 `Experimental.Inkeys3.ConsoleOutput.Cursor`，默认 `false`；实验选项“光标调试信息”在下次启动生效。
+- `SetCursorDiagnosticsEnabled(bool)`、`RecordCursorDiagnostic(format, ...)`、`FlushCursorDiagnostics()` 位于 Draw3 diagnostics module。
+
+### 3. Contracts
+- 关闭时不向控制台输出光标诊断；开启时先建立 Debug 控制台，再启用记录。诊断只观察状态，不改变鼠标、笔、触摸的归属和光标显隐。
+- RTS/窗口回调只把定长事件写入有界队列，不直接等待控制台 I/O；绘制线程输出序号、时间、线程和事件，队列溢出必须报告丢弃条数。
+- 输入日志需包含 Touch 生命周期、Pointer/Mouse 来源与过滤结果、Pen/Mouse 样本、owner 和系统光标决策。绘制日志需区分主光标与逐触点光标，覆盖形状、位置、尺寸、透明度、Laser 笔尖和本帧呈现结果；移动时可限频，来源和可见性变化必须立即输出。
+
+### 4. Validation & Error Matrix
+| 条件 | 结果 |
+| --- | --- |
+| 开关关闭 | 不格式化或输出光标日志，原光标策略不变 |
+| 开关开启且 Touch Up 后重现圆环 | 可从输入接受结果、归属变化、最终视觉来源和呈现结果追溯生产者 |
+| 日志生产速度超过控制台消费 | 保留有界内存并报告丢弃数量 |
+| Release 构建 | 不显示实验控制台开关，不要求用户开启 Debug 控制台 |
+
+### 5. Good / Base / Bad Cases
+- Good：错误圆环出现时有 `mouse`/`pointer`、`owner`、`visual source=primary|touch` 和 `present` 的同序列证据。
+- Base：正常单指擦除仅报告一个 Touch visual，最后 Up 后报告 visual 消失。
+- Bad：只打印 `SetCursor` 结果，把 Draw3 自绘的圆环误判为 Windows 系统箭头；或在每个 RTS 包中直接写控制台。
+
+### 6. Tests Required
+运行 i18n `sync/check`、完整 ARM64 Debug Solution 构建、`InkeysHeadlessTests.exe --no-window` 与 `git diff --check`；真实输入日志需由用户在设备上复现后核对。诊断构建通过不等于原光标缺陷已修复。
+
+### 7. Wrong vs Correct
+- Wrong：控制台记录单一“光标可见”布尔值，无法区分系统箭头、主自绘光标和每个 Touch 接触圆环。
+- Correct：同时记录输入来源和最终视觉来源，并明确日志丢弃及呈现成功状态。
 
 ### UI3 Bar 接触消息归一化合同
 
