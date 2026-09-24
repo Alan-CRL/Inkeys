@@ -90,6 +90,8 @@ export namespace Inkeys::Drawing::Draw3
 	void SetCursorDiagnosticsEnabled(bool enabled) noexcept;
 	bool CursorDiagnosticsEnabled() noexcept;
 	void RecordCursorDiagnostic(const char* format, ...) noexcept;
+	// 只观察现有 Bar WM_INPUT，不注册/抢占新的 Raw Input 接收窗口。
+	void RecordCursorRawInput(LPARAM rawInputHandle) noexcept;
 	void FlushCursorDiagnostics() noexcept;
 	// 输出 HRESULT 失败信息。
 	void LogHResult(const char* step, HRESULT result);

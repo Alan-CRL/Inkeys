@@ -201,6 +201,35 @@ export namespace Inkeys::Drawing::Draw3
 	bool ShouldIgnoreUnattributedTouchMouseMove(bool touchSuppressed,
 		INPUT_MESSAGE_DEVICE_TYPE inputSource, bool touchPositionKnown,
 		int touchX, int touchY, int mouseX, int mouseY) noexcept;
+	// 窗口和测试共用完整来源过滤入口，调用方不能再按按键位绕过其中某一条规则。
+	struct MouseCursorMessageFilterInput
+	{
+		UINT message = WM_MOUSEMOVE;
+		bool buttonDown = false;
+		bool promotedPointerMessage = false;
+		bool pointerApiAvailable = false;
+		bool penSampleValid = false;
+		bool touchBarrierKnown = false;
+		uint32_t messageTick = 0;
+		uint32_t touchBarrierTick = 0;
+		INPUT_MESSAGE_DEVICE_TYPE inputSource = IMDT_UNAVAILABLE;
+		bool sourceQuerySucceeded = false;
+		INPUT_MESSAGE_ORIGIN_ID origin = IMO_UNAVAILABLE;
+		bool touchSuppressed = false;
+		bool touchPositionKnown = false;
+		int touchX = 0, touchY = 0;
+		int mouseX = 0, mouseY = 0;
+	};
+	struct MouseCursorMessageFilterResult
+	{
+		const char* rejectionReason = nullptr; // nullptr 表示通过此层过滤，继续既有 Pen 接触等检查。
+		bool sourceRejected = false;
+		bool systemRejected = false;
+		bool positionRejected = false;
+		bool buttonBypass = false;
+	};
+	MouseCursorMessageFilterResult FilterMouseCursorMessage(
+		const MouseCursorMessageFilterInput& input) noexcept;
 	// 部分 Pen 驱动缺失 promoted 标记；活动平移中以新鲜且同位置的 Pen 样本识别兼容 Mouse contact。
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
 		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,

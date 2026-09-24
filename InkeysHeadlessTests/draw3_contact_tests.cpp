@@ -189,6 +189,133 @@ namespace
 			"touch eraser contact remains opaque")) ++failures;
 	}
 
+	void TestSystemTouchMoveFilter(int& failures)
+	{
+		MouseCursorMessageFilterInput input{
+			.buttonDown = true, .pointerApiAvailable = true,
+			.touchBarrierKnown = true, .messageTick = 118939656u, .touchBarrierTick = 118939218u,
+			.sourceQuerySucceeded = true, .origin = IMO_SYSTEM, .touchSuppressed = true,
+			.touchPositionKnown = true, .touchX = 2034, .touchY = 811, .mouseX = 2034, .mouseY = 811
+		};
+		// 回放 event=51 的按键态与 event=60 的非按键态，并覆盖多指使末点不同/不可得。
+		for (int contact = 0; contact < 2; ++contact)
+		{
+			input.buttonDown = contact != 0;
+			for (int position = 0; position < 3; ++position)
+			{
+				input.touchPositionKnown = position != 2;
+				input.mouseX = position == 0 ? 2034 : 2359;
+				const auto result = FilterMouseCursorMessage(input);
+				if (!Expect(result.rejectionReason && result.systemRejected && !result.buttonBypass,
+					"system move cannot reclaim touch with buttons or a different last contact")) ++failures;
+			}
+		}
+
+		input.touchPositionKnown = true;
+		input.mouseX = input.touchX;
+		input.buttonDown = true;
+		input.inputSource = IMDT_MOUSE;
+		if (!Expect(!FilterMouseCursorMessage(input).rejectionReason,
+			"identified mouse can take over at the same touch position")) ++failures;
+		input.inputSource = IMDT_TOUCHPAD;
+		if (!Expect(!FilterMouseCursorMessage(input).rejectionReason,
+			"identified touchpad can take over")) ++failures;
+		input.inputSource = IMDT_PEN;
+		if (!Expect(FilterMouseCursorMessage(input).sourceRejected,
+			"pen compatibility mouse still cannot publish a mouse sample")) ++failures;
+		input.inputSource = IMDT_TOUCH;
+		if (!Expect(FilterMouseCursorMessage(input).sourceRejected,
+			"touch compatibility mouse still cannot publish a mouse sample")) ++failures;
+
+		input.inputSource = IMDT_UNAVAILABLE;
+		input.touchSuppressed = false;
+		if (!Expect(!FilterMouseCursorMessage(input).rejectionReason,
+			"system move retains existing mouse behavior after confirmed takeover")) ++failures;
+		input.touchSuppressed = true;
+		input.sourceQuerySucceeded = false;
+		input.pointerApiAvailable = false;
+		if (!Expect(!FilterMouseCursorMessage(input).systemRejected &&
+			!FilterMouseCursorMessage(input).rejectionReason,
+			"missing or failed source API is not classified as system input")) ++failures;
+		input.buttonDown = false;
+		if (!Expect(FilterMouseCursorMessage(input).positionRejected,
+			"Win7 stationary unknown move retains the existing fallback")) ++failures;
+		++input.mouseX;
+		if (!Expect(!FilterMouseCursorMessage(input).rejectionReason,
+			"Win7 actual mouse movement retains the existing takeover path")) ++failures;
+		input.sourceQuerySucceeded = true;
+		input.pointerApiAvailable = true;
+		input.origin = IMO_INJECTED;
+		if (!Expect(!FilterMouseCursorMessage(input).rejectionReason,
+			"application injection is not blanket classified as system touch move")) ++failures;
+		input.origin = IMO_SYSTEM;
+		input.message = WM_LBUTTONDOWN;
+		if (!Expect(!FilterMouseCursorMessage(input).rejectionReason,
+			"system move rule does not alter button message policy")) ++failures;
+	}
+
+	void TestSystemTouchMoveSequence(int& failures)
+	{
+		DrawingCursorSampleMailbox mouseMailbox;
+		DrawingCursorPointerAuthority persistentOwner = DrawingCursorPointerAuthority::Mouse;
+		bool touchSuppressed = true; // RTS Down 清旧样本，Up 不恢复旧归属。
+		mouseMailbox.Publish({ .x = 30.0f, .y = 40.0f, .valid = true });
+		mouseMailbox.Clear();
+		MouseCursorMessageFilterInput input{
+			.buttonDown = true, .pointerApiAvailable = true,
+			.touchBarrierKnown = true, .messageTick = 118939656u, .touchBarrierTick = 118939218u,
+			.sourceQuerySucceeded = true, .origin = IMO_SYSTEM,
+			.touchPositionKnown = true, .touchX = 2034, .touchY = 811, .mouseX = 2034, .mouseY = 811
+		};
+		// 测试生产过滤入口到 mailbox/visual 的组合；不模拟 Windows 的消息来源 API。
+		const auto receiveMouse = [&]()
+		{
+			input.touchSuppressed = touchSuppressed;
+			const auto decision = FilterMouseCursorMessage(input);
+			if (decision.rejectionReason) return false;
+			touchSuppressed = false;
+			persistentOwner = DrawingCursorPointerAuthority::Mouse;
+			mouseMailbox.Publish({ .x = static_cast<float>(input.mouseX),
+				.y = static_cast<float>(input.mouseY), .valid = true, .inContact = input.buttonDown });
+			return true;
+		};
+		const DrawingCursorAppearance eraser{
+			DrawingCursorShape::EraserGripCircle, 64.0f, 64.0f, 1.0f, 1.0f, 1.0f, 0.5f };
+		const auto primaryVisual = [&]()
+		{
+			DrawingCursorSample mouse;
+			mouseMailbox.Read(mouse);
+			return ResolvePrimaryDrawingCursorVisual({}, mouse,
+				ResolveDrawingCursorVisualAuthority(persistentOwner, touchSuppressed, false, false),
+				eraser, eraser, true, true);
+		};
+		if (!Expect(!receiveMouse() && !primaryVisual().visible &&
+			MakeTouchEraserDrawingCursorVisual(2035.0f, 811.5f, eraser).visible,
+			"event 51 leaves only the active touch eraser visual")) ++failures;
+		// Touch Up 的兼容 Mouse Up 仍被拒绝，不能给错误的 Mouse 样本补一次释放。
+		input.message = WM_LBUTTONUP;
+		input.buttonDown = false;
+		input.inputSource = IMDT_TOUCH;
+		input.promotedPointerMessage = true;
+		input.messageTick = 118939718u;
+		if (!Expect(!receiveMouse() && !primaryVisual().visible,
+			"touch up has no pressed primary cursor to leave behind")) ++failures;
+		input.message = WM_MOUSEMOVE;
+		input.inputSource = IMDT_UNAVAILABLE;
+		input.promotedPointerMessage = false;
+		input.messageTick = 118942828u;
+		input.mouseX = input.touchX = 2359;
+		input.mouseY = input.touchY = 762;
+		if (!Expect(!receiveMouse() && !primaryVisual().visible && touchSuppressed,
+			"event 60 does not resurrect a hover cursor after touch up")) ++failures;
+		input.inputSource = IMDT_MOUSE;
+		input.origin = IMO_HARDWARE;
+		++input.messageTick;
+		if (!Expect(receiveMouse() && primaryVisual().visible &&
+			Near(primaryVisual().appearance.opacity, 0.5f),
+			"real mouse immediately recovers normal hover at the same position")) ++failures;
+	}
+
 	void TestTouchCursorOwnership(int& failures)
 	{
 		const DrawingCursorSample penHover{ .x = 10.0f, .y = 20.0f, .valid = true };
@@ -256,5 +383,7 @@ int RunDraw3ContactInputTests()
 	TestInvalidAndWakeContracts(failures);
 	TestCursorOpacityContracts(failures);
 	TestTouchCursorOwnership(failures);
+	TestSystemTouchMoveFilter(failures);
+	TestSystemTouchMoveSequence(failures);
 	return failures;
 }

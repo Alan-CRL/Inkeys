@@ -32,7 +32,9 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 - Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
 - Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。
 - Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
-- 当前设备日志还出现 Touch Up 后来源为 `IMDT_UNAVAILABLE`、无 promoted 签名且停在最后 Touch 坐标的合成 `WM_MOUSEMOVE`；触摸视觉归属仍有效时不得让该原位消息接管。窗口线程从已识别 Touch Pointer/兼容 Mouse 维护末触点位置；真实 Mouse/TouchPad 来源和实际移到新位置的 MouseMove 保留接管能力。
+- API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效时必须拒绝；不论按键位、触点坐标是否一致或距离 Touch Up 多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
+- 来源 API 缺失/失败或其它未知来源仍保留已有位置回退；API 查询失败不能被当成已确认的系统注入。Win7 的真实设备行为仍需单独实测。
+- WindowControl 必须直接使用 `FilterMouseCursorMessage` 的过滤结果；来源、时间屏障、系统来源、位置回退和按键例外均位于同一个生产入口，调用处不得再按按键条件绕过其中的规则。日志拒绝原因复用该结果。
 
 ### 4. Validation & Error Matrix
 | 输入 | 主光标与系统箭头 |
@@ -50,7 +52,7 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 - Bad：只在 Touch 活动计数非零时隐藏系统箭头，最后 Up 后旧 Hover/箭头立即回弹；或把 Touch 写成持久 owner 导致新设备无法接管。
 
 ### 6. Tests Required
-Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
+Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消息来源过滤、真实 Mouse/Pen 恢复和 Pan 接管；另须调用生产 `FilterMouseCursorMessage` 覆盖系统按键态 Move → Touch Up → 迟到系统 Move → 真实 Mouse 接管，并检查 mailbox 与主光标解析结果。完整 ARM64 Solution 构建。隐藏 Host 测试与真实纯触摸、Pen+Mouse+Touch、Win7 设备验证分别记录结果，不能把纯逻辑通过等同硬件验收。
 
 ### 7. Wrong vs Correct
 - Wrong：Touch Down 只清 Mouse mailbox，仍按旧 Pen/Mouse owner 解析主光标，并在 Touch Up 后依赖 Windows 自动隐藏。
@@ -387,3 +389,12 @@ headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向
 ### 7. Wrong vs Correct
 - Wrong：`if(preview.config_ != config) Reset(...standard)`，或Up把逻辑尺寸夹小但播放大光标动画。
 - Correct：按有效计算配置和来源检查，复制独立尺寸会话并在事件时刻演进；新段重锚，只复用尺寸记忆，不生成空档几何。
+
+## 光标诊断 schema=2 补充合同
+
+- `mouse-source`、`mouse-state phase=before/after`、`mouse-filter` 和 `mouse` 用每个窗口的 `event` 编号关联；多线程日志仍使用全局 `seq`。这些快照是分别读取的观测，不是 RTS 与窗口线程之间的原子事务。
+- 来源需区分 API 不存在（api=0）、调用失败（api=1 ok=0 error）、成功返回未知（api=1 ok=1 device=0）；同时记录 origin 和 InSendMessageEx 的 sent 标志。sent=0 不能单独证明来源是物理设备。来源查询保存并恢复调用方 LastError。
+- 末触点记录包含实际比较坐标、消息时间、via=pointer/compat-mouse。兼容 Mouse 无完整 Pointer ID 时 touchId=0，不能把 extra 低位猜成完整 ID；primary=0/1/2 分别表示未知/非主触点/主触点。
+- 按键位只能说明消息状态，不能确认物理鼠标来源。schema=2 日志已证明 `!buttonDown` 例外会放行 device=0 origin=IMO_SYSTEM 的 Move；修复将已确认的系统来源判定置于按键/位置回退之前。纯函数通过不等于设备验收。
+- Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。落笔可能注销接收；缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
+- 定长日志截断必须包含 `[truncated]`；丢失/截断时事件链检查不能报告证据完整。verify_cursor_trace.py 检查真实输出的来源接管到呈现序列，其无匹配结果不等于全部光标行为正确。

@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
@@ -484,12 +485,60 @@ namespace Inkeys::Drawing::Draw3
 			cursorDiagnosticDropped = 0;
 		}
 		cursorDiagnosticsEnabled.store(true, std::memory_order_release);
-		RecordCursorDiagnostic("enabled capacity=%zu", kCursorDiagnosticCapacity);
+		RecordCursorDiagnostic("enabled schema=2 capacity=%zu rawMode=observe-existing-registration", kCursorDiagnosticCapacity);
+		const DWORD previousError = GetLastError();
+		std::array<RAWINPUTDEVICE, 32> registrations{};
+		UINT count = static_cast<UINT>(registrations.size());
+		const UINT result = GetRegisteredRawInputDevices(registrations.data(), &count, sizeof(RAWINPUTDEVICE));
+		if (result == UINT_MAX)
+			RecordCursorDiagnostic("raw-registration stage=initial known=0 error=%lu",
+				static_cast<unsigned long>(GetLastError()));
+		else
+		{
+			bool mouseRegistered = false;
+			for (UINT index = 0; index < result; ++index)
+			{
+				const auto& registration = registrations[index];
+				if (registration.usUsagePage != 0x01 || registration.usUsage != 0x02) continue;
+				mouseRegistered = true;
+				RecordCursorDiagnostic("raw-registration stage=initial known=1 active=1 hwnd=%p flags=0x%lx",
+					static_cast<void*>(registration.hwndTarget), static_cast<unsigned long>(registration.dwFlags));
+			}
+			if (!mouseRegistered) RecordCursorDiagnostic("raw-registration stage=initial known=1 active=0");
+		}
+		SetLastError(previousError);
 	}
 
 	bool CursorDiagnosticsEnabled() noexcept
 	{
 		return cursorDiagnosticsEnabled.load(std::memory_order_acquire);
+	}
+
+	void RecordCursorRawInput(LPARAM rawInputHandle) noexcept
+	{
+		if (!CursorDiagnosticsEnabled()) return;
+		const DWORD previousError = GetLastError();
+		RAWINPUTHEADER header{};
+		UINT size = sizeof(header);
+		const HRAWINPUT handle = reinterpret_cast<HRAWINPUT>(rawInputHandle);
+		if (GetRawInputData(handle, RID_HEADER, &header, &size, sizeof(header)) == UINT_MAX)
+			RecordCursorDiagnostic("raw-read stage=header ok=0 error=%lu", static_cast<unsigned long>(GetLastError()));
+		else if (header.dwType == RIM_TYPEMOUSE)
+		{
+			RAWINPUT raw{};
+			size = sizeof(raw);
+			const UINT read = GetRawInputData(handle, RID_INPUT, &raw, &size, sizeof(header));
+			if (read == UINT_MAX)
+				RecordCursorDiagnostic("raw-read stage=mouse ok=0 error=%lu", static_cast<unsigned long>(GetLastError()));
+			else if (read >= sizeof(RAWINPUTHEADER) + sizeof(RAWMOUSE))
+				RecordCursorDiagnostic("raw-mouse device=%p mode=%llu flags=0x%x dx=%ld dy=%ld buttons=0x%x data=0x%x extra=0x%lx",
+					static_cast<void*>(raw.header.hDevice), static_cast<unsigned long long>(raw.header.wParam),
+					static_cast<unsigned>(raw.data.mouse.usFlags), raw.data.mouse.lLastX, raw.data.mouse.lLastY,
+					static_cast<unsigned>(raw.data.mouse.usButtonFlags), static_cast<unsigned>(raw.data.mouse.usButtonData),
+					static_cast<unsigned long>(raw.data.mouse.ulExtraInformation));
+			else RecordCursorDiagnostic("raw-read stage=mouse ok=0 short=%u", read);
+		}
+		SetLastError(previousError);
 	}
 
 	void RecordCursorDiagnostic(const char* format, ...) noexcept
@@ -503,6 +552,12 @@ namespace Inkeys::Drawing::Draw3
 		const int length = std::vsnprintf(line.message, sizeof(line.message), format, arguments);
 		va_end(arguments);
 		if (length <= 0) return;
+		if (static_cast<size_t>(length) >= sizeof(line.message))
+		{
+			// 日志截断必须可见，避免把缺字段误判成状态未变化。
+			constexpr char suffix[] = " [truncated]";
+			std::memcpy(line.message + sizeof(line.message) - sizeof(suffix), suffix, sizeof(suffix));
+		}
 		std::lock_guard lock(cursorDiagnosticMutex);
 		line.sequence = ++cursorDiagnosticSequence;
 		if (cursorDiagnosticCount == kCursorDiagnosticCapacity)

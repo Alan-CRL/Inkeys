@@ -241,6 +241,7 @@ export namespace Inkeys::Drawing::Draw3
 			uint32_t mouseMessageTick, uint32_t touchBarrierTick,
 			INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept;
 		void ApplyWindowCursor(const char* trigger) noexcept;
+		void RecordMouseCursorDiagnosticState(uint64_t eventId, const char* phase) const noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
 			POINTER_INPUT_TYPE pointerType, bool pointerTypeKnown,
@@ -281,6 +282,12 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastTouchMousePositionKnown_ = false;
 		int lastTouchMouseX_ = 0;
 		int lastTouchMouseY_ = 0;
+		// 以下字段只补充取证，不参与光标接管判断。兼容 Mouse 无完整 pointerId 时记 0。
+		uint32_t lastTouchMouseDiagnosticTick_ = 0;
+		uint32_t lastTouchMouseDiagnosticPointerId_ = 0;
+		uint32_t lastTouchMouseDiagnosticPrimary_ = 0; // 0 未知、1 非主触点、2 主触点。
+		bool lastTouchMouseDiagnosticFromPointer_ = false;
+		uint64_t cursorMouseDiagnosticEvent_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<bool> selectionMode_ = true;
 		std::atomic<bool> autoSaveEnabled_ = false;

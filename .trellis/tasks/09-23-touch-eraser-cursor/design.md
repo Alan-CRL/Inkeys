@@ -28,3 +28,17 @@ RTS/窗口输入线程只向固定容量队列记录定长事件（序号、tick
 三次独立触摸的日志中，活动接触均只有 `source=touch`，Touch Up 后一帧清成 0 visual；之后约 110ms、1610ms 和 1203ms 各有一条 `source=IMDT_UNAVAILABLE`、`extra=0`、坐标等于最后 Touch 点的 `WM_MOUSEMOVE` 被接受，触摸抑制随即清零并出现 `source=primary` 半透明橡皮圆环。日志无丢弃，不能把这三次残影归咎于渲染未清理或活动 Touch runtime 未退休。当前日志没有证明触摸过程中曾出现第二枚主光标。
 
 窗口线程沿已识别 Touch Pointer/兼容 Mouse 事件记录最近 Touch 客户区位置。在触摸视觉归属仍有效时，来源未知且停在该位置的 `WM_MOUSEMOVE` 不得解除抑制；真实 Mouse/TouchPad 来源、鼠标按键/滚轮或来源未知但位置改变的 Move 继续按既有路径接管。此规则不使用触摸后的固定等待时间，以覆盖日志中的不同迟到间隔；其纯判定由无窗口测试验证。
+
+## 最新复测与本轮修改边界
+
+最新附件 bf983934-b136-446e-8777-35729d9c19a6 含 963 条连续记录。seq=123 是带按键状态的未知原位 Move，被调用处的 `!buttonDown` 例外放行；seq=130 实际呈现双圆环，seq=267 抬起后仍呈现按下主光标，seq=272 变为悬停主光标。这纠正了此前仅覆盖抬起后无按键 Move 的诊断结论。用户批准先增强取证，不把本轮构建通过记为光标已修复。
+
+最小差距位于 WindowControl 的来源查询和消息过滤观测：当前 source=0 合并了三种 API 状态，且记录缺少过滤前样本。WindowControl.cpp/.cppm 增加只用于诊断的来源快照、每窗 event 编号、末触点元数据和 before/after 日志；来源返回值与全部接管条件保持一致。Diagnostics.cpp/.cppm 负责记录初始 Raw Input 注册快照、解析既有 WM_INPUT 及显式截断标记；Bar.Interaction.cpp 只接入观测与记录实际注册/注销结果。关闭开关时不读取 Raw Input 或做日志格式化。
+
+Bar Raw Input 注册在边缘光激活时开启、落笔时关闭，本轮仅观察此生命周期。日志必须说明该覆盖限制，不能把没有 raw-mouse 行解释为硬件没有动作；也不能在 Drawpad 再注册同一类设备而覆盖 Bar 的接收窗口。
+
+验证采用任务目录 verify_cursor_trace.py，直接读真实输入处理与呈现日志，关联来源未知原位接管、双光标、抬起按下残留、迟到悬停。检查器用实际日志验证，并以合成的明确 Mouse/TouchPad/Pen 接管、日志丢失、截断及 schema=2 事件配对序列验证自身。它不复制生产判定，也不宣称执行了真实 WndProc 或硬件回归。
+
+## 已授权的系统来源修复边界
+
+最小行为缺口是 WindowControl 接管前忽略 originId。PenCursor.cpp/.cppm 提供统一来源过滤请求/结果：收拢已有来源/时间屏障、位置回退与按键例外，并优先拒绝触摸归属下已确认的系统注入未知设备 Move。WindowControl.cpp 将实际消息快照传入该入口，直接依据结果早退，诊断复用同一结果。无新增全局输入状态或 Win7 API 依赖；保留未知来源的现有回退。Headless 测试调用同一入口，沿消息序列与已有光标解析器检查残留/恢复；不借本轮改擦除几何、Raw Input 注册或其他窗口层。

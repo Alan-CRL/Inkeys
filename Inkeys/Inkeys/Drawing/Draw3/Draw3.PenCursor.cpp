@@ -470,6 +470,40 @@ namespace Inkeys::Drawing::Draw3
 			touchPositionKnown && mouseX == touchX && mouseY == touchY;
 	}
 
+	MouseCursorMessageFilterResult FilterMouseCursorMessage(
+		const MouseCursorMessageFilterInput& input) noexcept
+	{
+		MouseCursorMessageFilterResult result;
+		result.sourceRejected = ShouldIgnoreMouseCursorMessage(input.promotedPointerMessage,
+			input.pointerApiAvailable, input.penSampleValid, input.touchBarrierKnown,
+			input.messageTick, input.touchBarrierTick, input.inputSource);
+		if (result.sourceRejected)
+		{
+			const bool stale = input.touchBarrierKnown &&
+				static_cast<LONG>(input.messageTick - input.touchBarrierTick) <= 0;
+			result.rejectionReason = input.promotedPointerMessage ? "promoted-pointer" :
+				stale ? "stale-touch-barrier" : input.inputSource == IMDT_TOUCH ? "source-touch" :
+				input.inputSource == IMDT_PEN ? "source-pen" : "pen-compatibility-filter";
+			return result;
+		}
+		// 系统注入的 Move 不是设备接管证据；按键位及任一触点坐标都不能使它重新发布 Mouse。
+		result.systemRejected = input.message == WM_MOUSEMOVE && input.touchSuppressed &&
+			input.sourceQuerySucceeded && input.inputSource == IMDT_UNAVAILABLE && input.origin == IMO_SYSTEM;
+		if (result.systemRejected)
+		{
+			result.rejectionReason = "system-touch-move";
+			return result;
+		}
+		// API 缺失/失败等仍沿用原位置回退；不能把所有未知来源或应用注入一并归为系统来源。
+		const bool touchPositionMove = input.message == WM_MOUSEMOVE &&
+			ShouldIgnoreUnattributedTouchMouseMove(input.touchSuppressed, input.inputSource,
+				input.touchPositionKnown, input.touchX, input.touchY, input.mouseX, input.mouseY);
+		result.buttonBypass = touchPositionMove && input.buttonDown;
+		result.positionRejected = touchPositionMove && !input.buttonDown;
+		if (result.positionRejected) result.rejectionReason = "unattributed-touch-position";
+		return result;
+	}
+
 	bool ShouldTreatMouseContactAsPenCompatibilityMessage(bool touchPanActive,
 		bool penSampleValid, bool mouseInContact, float positionDeltaX, float positionDeltaY,
 		double sampleAgeSeconds) noexcept
