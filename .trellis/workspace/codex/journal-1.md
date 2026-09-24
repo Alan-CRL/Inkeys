@@ -327,3 +327,37 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 19: 触摸橡皮擦光标残留修复与验收
+<!-- trellis-session: v=2 fp=0fbc95540715f559 -->
+
+**Date**: 2026-09-25
+**Task**: 触摸橡皮擦光标残留修复与验收
+**Branch**: `feature/cursor`
+
+### Summary
+
+通过来源诊断定位系统注入 Move 错误接管，统一生产过滤入口并补回归。用户确认人工通过；最终日志 2923 条、7 轮触摸、最多五指，无异常链。
+
+### Main Changes
+
+- 增加 schema=2 光标来源、过滤前后状态及 Raw Input 覆盖诊断。
+- 触摸归属下拒绝已确认的系统注入未知设备 Move，保持真实鼠标接管。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `31c48f4e` | fix: prevent system mouse moves from reclaiming touch cursors |
+| `428860b5` | fix: trace and filter residual touch eraser cursor |
+| `5fdd4a67` | fix: 隐藏触摸橡皮擦后的残留光标 |
+
+### Testing
+
+- [OK] ARM64 原生 MSBuild 完整 Debug|ARM64 Solution 与无窗口回归通过。
+- [OK] 日志检查器五组自测通过；最终人工日志检查退出码 0，用户确认修复。Pen/Win7 未由本份日志硬件验证。
+
+### Status
+
+[OK] **Completed**
