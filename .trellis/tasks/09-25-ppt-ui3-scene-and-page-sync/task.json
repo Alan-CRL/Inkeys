@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-09-25 用户已批准原方案；PPT UI3 与 typed HWND 修复已提交。补充 A 真退出桌面穿透、B 独立可写结束页已实现并通过完整 ARM64 Solution、headless、managed、UInk 全套、hidden Host 保存冷恢复和 offscreen 回归；源码空隙与环境限制见 research/supplement-verification.md。真实 Office/WPS 系统命中、键盘/实体输入/多屏/功耗仍 NOT VERIFIED，binding-only 重绑位置保存与同路径全换 SlideID 为已记录边界。保持 in_progress，不归档、不推送；本次补充未获 commit 授权。",
+  "notes": "2026-09-25 用户已批准原方案；PPT UI3 与 typed HWND 修复已提交。补充 A 真退出桌面穿透、B 独立可写结束页已实现并通过完整 ARM64 Solution、headless、managed、UInk 全套、hidden Host 保存冷恢复和 offscreen 回归；源码空隙与环境限制见 research/supplement-verification.md。真实 Office/WPS 系统命中、键盘/实体输入/多屏/功耗仍 NOT VERIFIED，binding-only 重绑位置保存与同路径全换 SlideID 为已记录边界。本次补充已提交 adfe7fb2，用户已授权推送当前分支；任务保持 in_progress，不归档。",
   "meta": {
     "implementation": "complete",
     "automated_verification": "passed",

@@ -359,3 +359,70 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Next Steps
 
 - 按任务research/manual-validation.md进行真实Office/WPS、键盘/硬件、多屏/任务栏和CPU/端到端延迟验收；当前NOT VERIFIED，任务保留in_progress，不提前归档。
+
+
+## Session 22: PPT 真退出穿透与独立结束页补充修复
+<!-- trellis-session: v=2 fp=44fb2cce845377b6 -->
+
+**Date**: 2026-09-25
+**Task**: PPT 真退出穿透与独立结束页补充修复
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+修复可信退出后的 Selection/窗口收敛；为真实 EndScreen 建立独立 Draw3/UInk 页并完成跨层回归
+
+### Main Changes
+
+- 可信退出边沿版本化 Selection，Window Service 所属线程按最新 revision 隐藏旧画布并只释放主 Drawpad capture
+- EndScreen 使用同文稿附加页、独立 pageGuid/历史和明确 UInk marker，PptCOM 同次读取真实 SlideID 拓扑
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64、Headless、PptCOM.Tests、UInk 全套、Draw3 hidden、Bar offscreen、i18n、diff check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真实 PowerPoint/WPS 与下层输入记录窗口验收 Esc/按钮退出穿透、State 5 冷启动及实体笔；查看 research/supplement-verification.md
+
+
+## Session 23: PPT 补充修复提交记录
+<!-- trellis-session: v=2 fp=4bf4ee76aa2f7441 -->
+
+**Date**: 2026-09-25
+**Task**: PPT 补充修复提交记录
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+提交真实退出桌面穿透与独立结束页修复；保持任务进行中，真实 Office/WPS 验收待办
+
+### Main Changes
+
+- 代码、UInk/托管/隐藏窗口回归与 Trellis 任务规范已提交
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `adfe7fb2` | fix(ppt): restore desktop input and persist end screen ink |
+
+### Testing
+
+- [OK] 完整 ARM64 Solution、Headless、Managed、UInk、Hidden Host、Offscreen、i18n、diff check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送 bugfix/pptui；继续真实 Office/WPS 与桌面系统命中人工验收
