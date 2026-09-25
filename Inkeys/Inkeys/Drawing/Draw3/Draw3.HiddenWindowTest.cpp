@@ -53,6 +53,18 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 
+		constexpr UINT kHiddenCaptureProbeMessage = WM_APP + 0x3D4u;
+		LRESULT CALLBACK HiddenDrawpadWindowProc(HWND window, UINT message,
+			WPARAM wParam, LPARAM lParam)
+		{
+			if (message == kHiddenCaptureProbeMessage)
+			{
+				if (wParam == 1) SetCapture(window);
+				return GetCapture() == window ? 1 : 0;
+			}
+			return DrawpadMsgCallback(window, message, wParam, lParam);
+		}
+
 		template <typename Predicate>
 		bool WaitUntil(Predicate&& predicate, std::chrono::milliseconds timeout = 15s)
 		{
@@ -484,6 +496,17 @@ namespace Inkeys::Drawing::Draw3
 				return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
 					static_cast<WPARAM>(phase), MAKELPARAM(x, y)) != FALSE;
 			};
+			const auto writePage = [&](int x, int y, const char* name)
+			{
+				const bool posted = post(HiddenTestContactPhase::Down, x, y) &&
+					post(HiddenTestContactPhase::Move, x + 45, y + 20) &&
+					post(HiddenTestContactPhase::Up, x + 60, y + 25);
+				return Check(posted && WaitUntil([]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.currentPageHasContent && !state.pen.active;
+				}, 3s), name, failures);
+			};
 			succeeded &= Check(post(HiddenTestContactPhase::Down, 42, 50) &&
 				post(HiddenTestContactPhase::Move, 110, 72), "post persistent held stroke", failures);
 			succeeded &= Check(WaitUntil([beforeHeld]
@@ -503,6 +526,57 @@ namespace Inkeys::Drawing::Draw3
 				const auto state = ProductHost().RuntimeSnapshot();
 				return state.inputRecycled > beforeHeld.inputRecycled && !state.currentPageHasContent;
 			}), "late physical terminal cannot contaminate persisted second page", failures);
+			// 末张真实幻灯片与结束页写不同笔迹，跨页和冷读均不能把它们合并。
+			targetA.pageIndex = 2;
+			targetA.slideId = 603;
+			succeeded &= select(targetA, false, "last real slide starts empty");
+			succeeded &= writePage(55, 60, "last real slide accepts ink A");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, false, "first end screen has an independent empty canvas");
+			succeeded &= writePage(150, 80, "end screen accepts ink B");
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+			Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return !ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 3s), "end screen Undo affects only its own ink", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
+			Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 3s), "end screen Redo restores only its own ink", failures);
+			const auto beforeEndClear = ProductHost().RuntimeSnapshot();
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Clear) ==
+				Bridge::CommandResult::Accepted && WaitUntil([beforeEndClear]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.clearCommandCount > beforeEndClear.clearCommandCount &&
+					!state.currentPageHasContent;
+			}, 3s), "end screen Clear changes only its own canvas", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+				Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 5s), "end screen Undo restores its Clear boundary", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
+				Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return !ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 5s), "end screen Redo clears only its own canvas", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+				Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 5s), "end screen remains writable after Clear history", failures);
+			targetA.pageKind = Bridge::PresentationPageKind::Slide;
+			targetA.pageIndex = 2;
+			targetA.slideId = 603;
+			succeeded &= select(targetA, true, "return from end screen restores last real slide ink A");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, true, "return to end screen restores its own ink B");
 			succeeded &= select(targetB, false, "dirty A parks at independent persistent B");
 			const auto beforeRestart = Bridge::ReadyIdentityFor(targetB);
 			StopProduct(); // 最终屏障与 CloseAndDrain 必须使已接受的旧页保存落盘。
@@ -510,6 +584,7 @@ namespace Inkeys::Drawing::Draw3
 			succeeded &= Check(std::filesystem::is_regular_file(presentationRoot / L"index.json"),
 				"real controller save committed the presentation index", failures);
 			bool completeFile = false;
+			bool separateEndContents = false;
 			const auto files = presentationRoot / L"files";
 			if (std::filesystem::is_directory(files))
 				for (const auto& file : std::filesystem::directory_iterator(files))
@@ -519,14 +594,37 @@ namespace Inkeys::Drawing::Draw3
 					const bool complete = read.status == draw3::uink::UInkReadStatus::Complete && read.document;
 					succeeded &= Check(complete, "drained controller file is a complete readable UInk transaction", failures);
 					completeFile = completeFile || complete;
+					if (complete)
+					{
+						const draw3::uink::UInkCanvas* lastSlide = nullptr;
+						const draw3::uink::UInkCanvas* endScreen = nullptr;
+						for (const auto& canvas : read.document->canvases)
+						{
+							if (canvas.slideId == 603) lastSlide = &canvas;
+							if (draw3::uink::InkeysPageKind(canvas.extra) ==
+								draw3::uink::UInkInkeysPageKind::EndScreen) endScreen = &canvas;
+						}
+						separateEndContents = separateEndContents || (lastSlide && endScreen &&
+							lastSlide->pageGuid != endScreen->pageGuid &&
+							!lastSlide->content.empty() && !endScreen->content.empty() &&
+							endScreen->pageIndex == 3 && !endScreen->slideId);
+					}
 				}
 			succeeded &= Check(completeFile, "held-contact boundary produced durable UInk ink", failures);
+			succeeded &= Check(separateEndContents,
+				"one UInk file contains distinct last-slide and marked end-page content", failures);
 			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
 				"restart hidden Host from the same isolated persistence root", failures)) return false;
 			PublishProductState(pen);
-			// 全新 Controller 没有 warm slot；按重排后的稳定 SlideID 冷恢复，而非旧页索引。
+			// 全新 Controller 没有 warm slot；直接以结束页目标冷读，再核对真实 SlideID 重排。
 			++targetA.sessionRevision;
 			targetA.slideIds = { 603, 601, 602 };
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, true,
+				"cold Host enters end screen before any normal slide and restores ink B");
+			targetA.pageKind = Bridge::PresentationPageKind::Slide;
 			targetA.pageIndex = 1;
 			targetA.slideId = 601;
 			succeeded &= select(targetA, true, "cold reload restores sealed old-page ink at reordered SlideID");
@@ -534,10 +632,38 @@ namespace Inkeys::Drawing::Draw3
 				"previous Host UI commit cannot open the restarted Host", failures);
 			targetA.pageIndex = 0;
 			targetA.slideId = 603;
-			succeeded &= select(targetA, false, "cold reorder leaves the formerly third SlideID empty");
+			succeeded &= select(targetA, true, "cold reorder preserves last-slide ink A");
 			targetA.pageIndex = 2;
 			targetA.slideId = 602;
 			succeeded &= select(targetA, false, "cold reload proves late old-contact packets never saved onto the second SlideID");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, true, "cold reload restores end-page ink B after normal SlideID reorder");
+			// 真退出时仍按下的旧笔只在结束页收尾；它的后续 Move/Up 不得写到桌面。
+			const auto beforeExit = ProductHost().RuntimeSnapshot();
+			succeeded &= Check(post(HiddenTestContactPhase::Down, 70, 90) &&
+				post(HiddenTestContactPhase::Move, 125, 115) && WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().pen.active;
+				}, 2s), "end-page held contact accepted before real workspace exit", failures);
+			PublishProductWorkspace(Bridge::Workspace::Desktop);
+			Bridge::ProductState selection = pen;
+			selection.selectionMode = true;
+			PublishProductState(selection);
+			succeeded &= Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.workspace == Bridge::Workspace::Desktop &&
+					state.selectionMode && !state.currentPageHasContent && !state.pen.active;
+			}, 3s), "held end stroke settles before empty desktop selection", failures);
+			succeeded &= Check(post(HiddenTestContactPhase::Move, 180, 150) &&
+				post(HiddenTestContactPhase::Up, 185, 155) && WaitUntil([beforeExit]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeExit.inputRecycled &&
+						!state.currentPageHasContent;
+				}, 3s), "late physical terminal cannot write the new desktop", failures);
 			if (succeeded) Report("PASS", "real Host held-contact save, drain, cold reload and SlideID reorder");
 			return succeeded;
 		}
@@ -624,9 +750,22 @@ namespace Inkeys::Drawing::Draw3
 					state.presentedContentRevision == state.contentRevision;
 			}), "drawing mode preheats the primary target before readiness", failures);
 			const auto primaryReady = ProductHost().RuntimeSnapshot();
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Primary) &&
+				IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"real Host primary output has a visible non-through Drawpad", failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 1, 0) == 1,
+				"owner thread captures only the primary Drawpad for exit probe", failures);
 			Bridge::ProductState selectionState{};
 			selectionState.selectionMode = true;
 			PublishProductState(selectionState);
+			// 模拟退出时 Selection 先于完整 ULW 帧到达，窗口事务先撤下旧主窗。
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
+				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"waiting Selection hides the old primary HWND", failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
+				"hiding Selection releases primary Drawpad capture on its owner thread", failures);
 			modeSucceeded &= Check(WaitUntil([primaryReady]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
@@ -638,6 +777,17 @@ namespace Inkeys::Drawing::Draw3
 					state.presentedContentRevision == state.contentRevision &&
 					state.auxiliaryFullFrameClean;
 			}), "selection mode advances generation and restores clean ULW", failures);
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
+				!IsWindowVisible(drawpad) && IsWindowVisible(presentation) &&
+				(static_cast<DWORD>(GetWindowLongPtrW(presentation, GWL_EXSTYLE)) &
+					(WS_EX_LAYERED | WS_EX_TRANSPARENT)) ==
+					(WS_EX_LAYERED | WS_EX_TRANSPARENT),
+				"ready Selection restores only the layered through surface", failures);
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
+				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"Selection transition restores hidden offscreen windows", failures);
 
 			if (exerciseCommands)
 			{
@@ -1557,7 +1707,7 @@ namespace Inkeys::Drawing::Draw3
 					L"Inkeys.Draw3.Hidden.Presentation." + suffix,
 					DefWindowProcW, 320, 240));
 				auto drawpadSpec = MakeHiddenSpec(Inkeys::Window::WindowRole::Drawpad,
-					L"Inkeys.Draw3.Hidden.Drawpad." + suffix, DrawpadMsgCallback, 320, 240);
+					L"Inkeys.Draw3.Hidden.Drawpad." + suffix, HiddenDrawpadWindowProc, 320, 240);
 				if (dcompCompatible) drawpadSpec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
 				specs.push_back(std::move(drawpadSpec));
 				return specs;

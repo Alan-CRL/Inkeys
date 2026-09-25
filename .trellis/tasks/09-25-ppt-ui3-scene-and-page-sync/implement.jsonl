@@ -8,3 +8,7 @@
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"PPT session, layout, input, persistence and verification contract"}
 {"file":".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/evidence.md","reason":"PPT session, layout, input, persistence and verification contract"}
 {"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "Current executable session, position, page-ready, input and confirmation contract"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/exit-window-supplement.md", "reason": "2026-09-25 true-exit and EndScreen evidence"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/end-screen-storage-supplement.md", "reason": "2026-09-25 true-exit and EndScreen evidence"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/supplement-baseline.md", "reason": "2026-09-25 true-exit and EndScreen evidence"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/supplement-verification.md", "reason": "Current-turn build, tests and NOT VERIFIED scope"}

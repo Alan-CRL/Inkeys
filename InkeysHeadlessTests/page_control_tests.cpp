@@ -412,6 +412,17 @@ namespace
 		++page.layout.session;
 		gate.Publish(page, 3);
 		Check(!gate.Commit(late, 3) && gate.Commit(page, 3), "new session rejects old success callbacks");
+		PptPageCommitState endGate;
+		auto end = page;
+		end.currentPage = -1;
+		++end.targetRevision;
+		endGate.Publish(end, 3);
+		Check(!endGate.Commit(page, 3) && endGate.Commit(end, 3),
+			"typed end target commits its minus-one display only after the visible surface");
+		++end.targetRevision;
+		endGate.Publish(end, 0);
+		Check(endGate.Commit(end, 0),
+			"hidden end controls cannot hold the matching target indefinitely");
 	}
 
 	void TestHideAndPageCommitRace()

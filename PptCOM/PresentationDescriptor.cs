@@ -349,19 +349,17 @@ namespace PptCOM
             {
                 slides = accessor.GetProperty(presentation, "Slides");
                 descriptor.totalPage = GetInt32(slides, "Count");
-                if (endScreen && descriptor.totalPage > 0 && descriptor.totalPage <= MaximumSlides)
-                {
-                    // 旧 descriptor schema 保持非负页码；只有新 envelope 的 pageStatus 表示结束页。
-                    pageStatus = "EndScreen";
-                    return descriptor;
-                }
-                if (descriptor.totalPage <= 0 || descriptor.currentPage <= 0 ||
-                    descriptor.currentPage > descriptor.totalPage ||
-                    descriptor.totalPage > MaximumSlides)
+                if (descriptor.totalPage <= 0 || descriptor.totalPage > MaximumSlides ||
+                    (!endScreen && (descriptor.currentPage <= 0 ||
+                        descriptor.currentPage > descriptor.totalPage)))
                     return PresentationDescriptorValue.CreateStatus(
                         "Unavailable", bindingRevision);
 
-                if (!hasCurrentSlideId)
+                // 结束页没有 View.Slide；同次枚举真实 SlideID，供 native 冷启动时验证文稿。
+                if (endScreen)
+                    pageStatus = "EndScreen";
+
+                if (!endScreen && !hasCurrentSlideId)
                 {
                     descriptor.status = "PageIndexFallback";
                     pageStatus = stateUnknown ? "Unknown" : "Valid";
@@ -388,13 +386,14 @@ namespace PptCOM
                         accessor.Release(slide);
                     }
                 }
-                if (slideIds[descriptor.currentPage - 1] != currentSlideId)
+                if (!endScreen && slideIds[descriptor.currentPage - 1] != currentSlideId)
                     throw new InvalidOperationException("Current SlideID does not match topology");
 
-                descriptor.currentSlideId = currentSlideId;
+                descriptor.currentSlideId = endScreen ? (int?)null : currentSlideId;
                 descriptor.slideIds = slideIds;
                 descriptor.status = "StableSlideIds";
-                pageStatus = stateUnknown ? "Unknown" : "Valid";
+                if (!endScreen)
+                    pageStatus = stateUnknown ? "Unknown" : "Valid";
                 return descriptor;
             }
             catch (Exception exception)

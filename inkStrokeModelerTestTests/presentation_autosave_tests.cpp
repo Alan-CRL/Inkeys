@@ -16,6 +16,7 @@
 #include <utility>
 
 import Inkeys.Drawing.Draw3.presentation_auto_save;
+import draw3.uink_codec;
 
 namespace
 {
@@ -706,6 +707,186 @@ namespace
 			Draw3UInkImportStatus::UnsupportedContent);
 	}
 
+	void TestEndScreenUInkRoundTrip(TestState& state)
+	{
+		const auto target = MakeTarget();
+		auto snapshot = MakeSnapshot(target, true);
+		snapshot.currentPageIndex = 1;
+		snapshot.activeCanvases = std::move(snapshot.canvases);
+		Draw3UInkCanvasSnapshot end;
+		end.pageGuid = *ParseUInkGuid("77777777-7777-4777-8777-777777777777");
+		end.pageIndex = 1;
+		end.pageNumber = 2;
+		end.extra = MakeInkeysEndScreenExtra(
+			Draw3UInkImportBindingMode::StableSlideId);
+		Draw3UInkStrokeSnapshot first;
+		first.style.kind = Draw3UInkStrokeKind::Pen;
+		first.style.fallbackRgb = 0xabcdef;
+		first.points = { { 11.0f, 12.0f, 4.0f }, { 13.0f, 14.0f, 4.0f } };
+		Draw3UInkClearSnapshot clear;
+		clear.undoId = 1;
+		Draw3UInkStrokeSnapshot last = first;
+		last.undoId = 2;
+		last.style.fallbackRgb = 0x987654;
+		end.operations = { first, clear, last };
+		snapshot.activeCanvases.push_back(end);
+
+		const auto exported = ExportDraw3SnapshotToUInk(snapshot);
+		PRESENTATION_CHECK(state, exported.document &&
+			exported.document->canvases.size() == 2);
+		if (!exported.document) return;
+		const auto encoded = EncodeUInkDocument(*exported.document);
+		PRESENTATION_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		const auto decoded = DecodeUInk(encoded.bytes);
+		PRESENTATION_CHECK(state, decoded.status == UInkReadStatus::Complete &&
+			decoded.document && !decoded.provenance.usedTemporaryIdentity);
+		if (!decoded.document) return;
+		Draw3UInkImportExpectation expected;
+		expected.fileGuid = snapshot.fileGuid;
+		expected.hostId = FormatPresentationKey(target.key);
+		expected.bindingMode = Draw3UInkImportBindingMode::StableSlideId;
+		expected.slideIds = target.slideIds;
+		expected.pageCount = target.totalPages;
+		expected.allowEndScreen = true;
+		const auto imported = ImportApplicationOwnedPresentation(*decoded.document, expected);
+		PRESENTATION_CHECK(state, imported.status == Draw3UInkImportStatus::Success &&
+			imported.snapshot && imported.snapshot->activeCanvases.size() == 2);
+		if (!imported.snapshot || imported.snapshot->activeCanvases.size() != 2) return;
+		PRESENTATION_CHECK(state, imported.snapshot->currentPageIndex == 1 &&
+			imported.snapshot->activeCanvases[0].pageGuid !=
+				imported.snapshot->activeCanvases[1].pageGuid &&
+			imported.snapshot->activeCanvases[0].strokes.size() == 1 &&
+			imported.snapshot->activeCanvases[1].pageGuid == end.pageGuid &&
+			imported.snapshot->activeCanvases[1].strokes.size() == 1 &&
+			imported.snapshot->activeCanvases[1].strokes[0].style.fallbackRgb == 0x987654 &&
+			imported.snapshot->activeCanvases[1].operations.size() == 3 &&
+			InkeysPageKind(imported.snapshot->activeCanvases[1].extra) ==
+				UInkInkeysPageKind::EndScreen);
+
+		// 增页后仍按真实 SlideID 投影，结束页 pageGuid 移到新的内部 N。
+		auto grown = expected;
+		grown.slideIds = { 202, 101 };
+		grown.pageCount = 2;
+		const auto remapped = ImportApplicationOwnedPresentation(*decoded.document, grown);
+		PRESENTATION_CHECK(state, remapped.status == Draw3UInkImportStatus::Success &&
+			remapped.snapshot && remapped.snapshot->currentPageIndex == 2 &&
+			remapped.snapshot->activeCanvases.size() == 2 &&
+			remapped.snapshot->activeCanvases.back().pageIndex == 2 &&
+			remapped.snapshot->activeCanvases.back().pageGuid == end.pageGuid);
+
+		auto beforeDeletion = snapshot;
+		Draw3UInkCanvasSnapshot removed = beforeDeletion.activeCanvases.front();
+		removed.pageGuid = *ParseUInkGuid("99999999-9999-4999-8999-999999999999");
+		removed.pageIndex = 1;
+		removed.pageNumber = 2;
+		removed.slideId = 202;
+		removed.strokes.front().style.fallbackRgb = 0x202020;
+		beforeDeletion.activeCanvases.insert(beforeDeletion.activeCanvases.begin() + 1, removed);
+		beforeDeletion.currentPageIndex = 2;
+		const auto deletedExport = ExportDraw3SnapshotToUInk(beforeDeletion);
+		PRESENTATION_CHECK(state, deletedExport.document.has_value());
+		if (deletedExport.document)
+		{
+			const auto deletedBytes = EncodeUInkDocument(*deletedExport.document);
+			const auto deletedRead = DecodeUInk(deletedBytes.bytes);
+			PRESENTATION_CHECK(state, deletedBytes.status == UInkEncodeStatus::Success &&
+				deletedRead.document.has_value());
+			if (deletedRead.document)
+			{
+				auto shrunk = expected;
+				shrunk.knownSlideIds = { 101, 202 };
+				const auto restored = ImportApplicationOwnedPresentation(*deletedRead.document, shrunk);
+				PRESENTATION_CHECK(state, restored.status == Draw3UInkImportStatus::Success &&
+					restored.snapshot && restored.snapshot->currentPageIndex == 1 &&
+					restored.snapshot->activeCanvases.size() == 2 &&
+					restored.snapshot->activeCanvases.back().pageGuid == end.pageGuid &&
+					restored.snapshot->retainedCanvases.size() == 1 &&
+					restored.snapshot->retainedCanvases.front().pageGuid == removed.pageGuid &&
+					restored.snapshot->retainedCanvases.front().slideId == 202 &&
+					restored.snapshot->retainedCanvases.front().strokes.front().style.fallbackRgb ==
+						0x202020);
+				auto untrusted = shrunk;
+				untrusted.knownSlideIds = { 101 };
+				PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(
+					*deletedRead.document, untrusted).status == Draw3UInkImportStatus::TopologyMismatch);
+			}
+		}
+
+		auto legacy = MakeSnapshot(target, true);
+		const auto legacyExport = ExportDraw3SnapshotToUInk(legacy);
+		PRESENTATION_CHECK(state, legacyExport.document.has_value());
+		if (legacyExport.document)
+		{
+			const auto legacyBytes = EncodeUInkDocument(*legacyExport.document);
+			const auto legacyRead = DecodeUInk(legacyBytes.bytes);
+			PRESENTATION_CHECK(state, legacyBytes.status == UInkEncodeStatus::Success &&
+				legacyRead.status == UInkReadStatus::Complete && legacyRead.document &&
+				ImportApplicationOwnedPresentation(*legacyRead.document, expected).status ==
+					Draw3UInkImportStatus::Success);
+		}
+		auto disallowed = expected;
+		disallowed.allowEndScreen = false;
+		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(
+			*decoded.document, disallowed).status == Draw3UInkImportStatus::TopologyMismatch);
+
+		auto unmarked = *decoded.document;
+		unmarked.canvases[1].extra = MakeInkeysBindingExtra(
+			Draw3UInkImportBindingMode::StableSlideId);
+		PRESENTATION_CHECK(state, EncodeUInkDocument(unmarked).status ==
+			UInkEncodeStatus::InvalidModel);
+		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(unmarked, expected).status ==
+			Draw3UInkImportStatus::TopologyMismatch);
+		auto duplicateMarker = *decoded.document;
+		duplicateMarker.canvases[1].extra->push_back(
+			(*duplicateMarker.canvases[1].extra)[1]);
+		PRESENTATION_CHECK(state, EncodeUInkDocument(duplicateMarker).status ==
+			UInkEncodeStatus::InvalidModel);
+		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(
+			duplicateMarker, expected).status == Draw3UInkImportStatus::TopologyMismatch);
+		auto duplicate = *decoded.document;
+		duplicate.canvases.push_back(duplicate.canvases[1]);
+		duplicate.canvases.back().pageGuid =
+			*ParseUInkGuid("88888888-8888-4888-8888-888888888888");
+		duplicate.canvases.back().pageIndex = 2;
+		duplicate.canvases.back().pageNumber = 3;
+		duplicate.header.pageNum = 3;
+		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(duplicate, expected).status ==
+			Draw3UInkImportStatus::TopologyMismatch);
+		auto forged = *decoded.document;
+		forged.canvases[1].slideId = 202;
+		PRESENTATION_CHECK(state, EncodeUInkDocument(forged).status ==
+			UInkEncodeStatus::InvalidModel);
+		PRESENTATION_CHECK(state, ImportApplicationOwnedPresentation(forged, expected).status ==
+			Draw3UInkImportStatus::TopologyMismatch);
+
+		const auto fallbackTarget = MakeFallbackTarget();
+		auto fallback = MakeSnapshot(fallbackTarget, true);
+		fallback.currentPageIndex = 1;
+		fallback.activeCanvases = std::move(fallback.canvases);
+		Draw3UInkCanvasSnapshot fallbackEnd = end;
+		fallbackEnd.extra = MakeInkeysEndScreenExtra(
+			Draw3UInkImportBindingMode::PageIndexFallback);
+		fallback.activeCanvases.push_back(std::move(fallbackEnd));
+		const auto fallbackExport = ExportDraw3SnapshotToUInk(fallback);
+		PRESENTATION_CHECK(state, fallbackExport.document.has_value());
+		if (fallbackExport.document)
+		{
+			const auto fallbackBytes = EncodeUInkDocument(*fallbackExport.document);
+			const auto fallbackRead = DecodeUInk(fallbackBytes.bytes);
+			Draw3UInkImportExpectation fallbackExpected;
+			fallbackExpected.fileGuid = fallback.fileGuid;
+			fallbackExpected.hostId = FormatPresentationKey(fallbackTarget.key);
+			fallbackExpected.bindingMode = Draw3UInkImportBindingMode::PageIndexFallback;
+			fallbackExpected.pageCount = 1;
+			fallbackExpected.allowEndScreen = true;
+			PRESENTATION_CHECK(state, fallbackBytes.status == UInkEncodeStatus::Success &&
+				fallbackRead.document && ImportApplicationOwnedPresentation(
+					*fallbackRead.document, fallbackExpected).status ==
+						Draw3UInkImportStatus::Success);
+		}
+	}
+
 	void TestWorkerExceptionBecomesCompletion(TestState& state)
 	{
 		const fs::path root = MakeRoot();
@@ -787,6 +968,14 @@ namespace
 	}
 }
 
+int RunPresentationUInkRoundTripTests()
+{
+	TestState state;
+	TestStrictPresentationImporter(state);
+	TestEndScreenUInkRoundTrip(state);
+	return state.failures;
+}
+
 int RunPresentationAutoSaveTests()
 {
 	TestState state;
@@ -825,6 +1014,7 @@ int RunPresentationAutoSaveTests()
 		UINT32_MAX, UINT32_MAX));
 	TestSaveLoadAndClearOverwrite(state);
 	TestStrictPresentationImporter(state);
+	TestEndScreenUInkRoundTrip(state);
 	TestIndexFailureRecoveryAndForeignConflict(state);
 	TestCorruptIndexFallbackAndIsolation(state);
 	TestRootChangeDropsPendingIndexState(state);

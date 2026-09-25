@@ -332,12 +332,14 @@ namespace Inkeys::Window
 		}
 
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
-			DrawpadSurfaceVisibility visibility)
+			DrawpadSurfaceVisibility visibility,
+			std::function<bool()> stillDesired)
 		{
 			Command command;
 			command.type = CommandType::SetDrawpadSurfaceVisibility;
 			command.role = WindowRole::Drawpad;
 			command.drawpadVisibility = visibility;
+			command.stillDesired = std::move(stillDesired);
 			return Submit(std::move(command));
 		}
 
@@ -529,6 +531,7 @@ namespace Inkeys::Window
 			bool enabled = false;
 			DrawpadSurfaceVisibility drawpadVisibility =
 				DrawpadSurfaceVisibility::Hidden;
+			std::function<bool()> stillDesired;
 			DWORD setMask = 0;
 			DWORD clearMask = 0;
 			bool whiteboardMode = false;
@@ -1428,6 +1431,8 @@ namespace Inkeys::Window
 				return false;
 			case CommandType::SetDrawpadSurfaceVisibility:
 			{
+				// 提交前在窗口 owner thread 复核版本，过期退出不能撤销新笔的 capture。
+				if (command.stillDesired && !command.stillDesired()) return false;
 				SetLastError(ERROR_SUCCESS);
 				const bool succeeded =
 					ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
@@ -1636,7 +1641,26 @@ namespace Inkeys::Window
 				SetLastError(ERROR_INVALID_WINDOW_HANDLE);
 				return false;
 			}
+			if (visibility != DrawpadSurfaceVisibility::Primary && GetCapture() == primary)
+			{
+				// 仅释放本次要撤下的主画布捕获，不向主栏或分页控件广播取消消息。
+				if (!ReleaseCapture() && GetCapture() == primary)
+				{
+					const DWORD error = GetLastError();
+					ShowWindow(primary, SW_HIDE);
+					ShowWindow(presentation, SW_HIDE);
+					SetLastError(error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error);
+					return false;
+				}
+			}
 
+			const auto matchesVisibility = [&]() noexcept
+			{
+				return (IsWindowVisible(primary) != FALSE) ==
+					(visibility == DrawpadSurfaceVisibility::Primary) &&
+					(IsWindowVisible(presentation) != FALSE) ==
+					(visibility == DrawpadSurfaceVisibility::Presentation);
+			};
 			DWORD deferredError = ERROR_SUCCESS;
 			HDWP positions = BeginDeferWindowPos(2);
 			if (positions)
@@ -1657,14 +1681,18 @@ namespace Inkeys::Window
 						0, 0, 0, 0, presentationFlags);
 					if (!positions) deferredError = GetLastError();
 				}
-				if (positions)
-				{
-					if (EndDeferWindowPos(positions)) return true;
-					deferredError = GetLastError();
-				}
 			}
-			else
-				deferredError = GetLastError();
+			else deferredError = GetLastError();
+			if (positions)
+			{
+				if (EndDeferWindowPos(positions))
+				{
+					// USER32 返回成功后仍读回两窗；旧主窗可见会继续拦截桌面输入。
+					if (matchesVisibility()) return true;
+					deferredError = ERROR_GEN_FAILURE;
+				}
+				else deferredError = GetLastError();
+			}
 
 			// 批量切换失败时先清空两窗可见性，再显示唯一目标，禁止 alpha 叠加。
 			ShowWindow(primary, SW_HIDE);
@@ -1673,17 +1701,14 @@ namespace Inkeys::Window
 				ShowWindow(primary, SW_SHOWNOACTIVATE);
 			else if (visibility == DrawpadSurfaceVisibility::Presentation)
 				ShowWindow(presentation, SW_SHOWNOACTIVATE);
-			const bool fallbackSucceeded = visibility == DrawpadSurfaceVisibility::Primary
-				? IsWindowVisible(primary) != FALSE
-				: visibility == DrawpadSurfaceVisibility::Presentation
-					? IsWindowVisible(presentation) != FALSE
-					: IsWindowVisible(primary) == FALSE &&
-						IsWindowVisible(presentation) == FALSE;
-			if (fallbackSucceeded)
+			if (matchesVisibility())
 			{
 				SetLastError(ERROR_SUCCESS);
 				return true;
 			}
+			// 目标表面失败时保留安全的双隐藏状态，由状态线程按最新版本重试。
+			ShowWindow(primary, SW_HIDE);
+			ShowWindow(presentation, SW_HIDE);
 			SetLastError(deferredError == ERROR_SUCCESS
 				? ERROR_GEN_FAILURE : deferredError);
 			return false;
@@ -1884,9 +1909,11 @@ namespace Inkeys::Window
 	bool Service::Show(WindowRole role) { return impl_->Show(role); }
 	bool Service::Hide(WindowRole role) { return impl_->Hide(role); }
 	bool Service::HideAllUserWindows() { return impl_->HideAllUserWindows(); }
-	bool Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility visibility)
+	bool Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility visibility,
+		std::function<bool()> stillDesired)
 	{
-		return impl_->SetDrawpadSurfaceVisibility(visibility);
+		return impl_->SetDrawpadSurfaceVisibility(visibility,
+			std::move(stillDesired));
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds) { return impl_->SetBounds(role, bounds); }
 	bool Service::SetClickThrough(WindowRole role, bool enabled) { return impl_->SetClickThrough(role, enabled); }

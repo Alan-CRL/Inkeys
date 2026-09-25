@@ -9,9 +9,10 @@
 - 新独立 IID `D7A63F98-43B8-4BA1-A875-B55A5A04DC3E`：`IPptCOMSessionState.GetSlideShowState(long afterRevision)`、`EndSlideShowIfSession(long expectedShowSessionRevision)`。旧 IPptCOMServer 的 IID、顺序和 v1 descriptor 不变。
 - 状态 envelope 恰含 `schemaVersion/stateRevision/showSessionRevision/bindingRevision/lifecycle/pageStatus/descriptor`。生命周期 `Active/Inactive/Unknown`；页状态 `Valid/EndScreen/Unknown`；descriptor 仍由原严格解析器校验。
 - `Ppt::PublishSession(uint64_t,bool,HWND)`、`PublishPageState(int,int,uint64_t targetRevision=0)`、`ResetPositions()`；业务回执 `pagePresented(session,target,current,total)`。
-- `PublishProductPresentationUiReady(PresentationReadyIdentity)`、`SetProductPresentationInputSuspended(expectedIdentity,bool)`；target/ready 均含 `sessionRevision`。
+- `PublishProductPresentationUiReady(PresentationReadyIdentity)`、`SetProductPresentationInputSuspended(expectedIdentity,bool)`；target/ready 均含 `sessionRevision` 与 `PresentationPageKind`。Slide 用真实 `pageIndex<N`/SlideID；EndScreen 用内部 `pageIndex=N`、无 SlideID，`totalPages=N` 不变。
 - `MessageBox::FallbackPolicy.enabled` 默认true，本入口置false；`MessageBox::IsShowing()` 覆盖排队/模态及回退调用期。`Bar::SetEndShowRequestCallback(function<void(uint64_t)>)` 与 `CompleteEndShowRequest(requestId)` 按请求配对。
 - `TracePptTiming(stage,session,target,observedQpc=0)`；环境变量 `INKEYS_PPT_TIMING=1` 开启，默认关闭。
+- 真退出收尾使用 `StateModeTransitionRevision()` 与 `ChangeStateModeToSelectionIfRevision(expected)`；窗口事务使用 `Window::Service::SetDrawpadSurfaceVisibility(visibility, stillDesired={})`。`stillDesired` 在窗口 owner thread、释放 Drawpad capture/更改显隐之前求值；false 不触碰 HWND，调用方按最新 bridge revision 重试。`INKEYS_PPT_EXIT_TRACE=1` 开启限频退出诊断，默认关闭。
 
 ## 3. Contracts
 
@@ -20,6 +21,7 @@
 - COM getter 只取 owner 发布的不可变缓存；相同 revision 返回空字符串，不能在 getter 扫描 Office。事件保留原页码读取并唤醒既有 owner；descriptor 刷新优先于慢维护，ROT/绑定/原轮询兼容路线不因快速唤醒重复运行。
 - descriptor HWND 是 native 会话准入的必要值。PowerPoint 强类型接口能读取 HWND 时，同一对象的反射 IDispatch 属性可能返回成员不存在；读取器必须在此标量上复用强类型 HWND，非 PIA 提供方沿用 late-bound。不能只通过固定 HWND/PID 的 FakeAccessor 证明真实 PowerPoint 准入。
 - 每场放映有独立 session revision；begin/end/读取候选存在 generation 屏障。旧事件、迟到候选不能复活旧会话。异常和属性缺失属于 Unknown，不凭失败猜测结束；明确 View.State Done 才分类 EndScreen。
+- `View.State==5` 的 EndScreen 可在 `View.Slide` 不可用时读取同一次 `Slides` 的完整、唯一、正数 SlideID 拓扑；descriptor 保持旧 schema、`currentPage=0/currentSlideId=null`。忙碌/坏拓扑为 Unavailable/TransientBusy，绝不把部分 SlideID 或普通 Unavailable 放入结束页目标。State 3/4 的临时黑白屏不是结束页。
 - native 新路径在放映期有界16ms观测，未放映100ms；旧 DLL 放映兼容路径保留50ms。16ms 是调度策略，不是实测端到端延迟承诺。必须保留 descriptor/原始页一致性、文稿 key、binding/target/session revision、SlideID/index 校验。
 - runtime snapshot 在字段前取得 wait revision；等待必须使用判定前的版本，不能在决定等待后重新取版本。Host 重启不能复用旧 target revision。
 - 可见性与生命周期分离；白板覆盖仅隐藏控件并拥有其工作区，不保存位置、不重放 PPT 进入/退出。临时无效页只暂停写入；不同 binding 的未知目标隔离。若已捕获的show HWND确实销毁，或成功查询到其拥有PID已改变，即使COM为Unknown也结束旧会话；不能以暂时隐藏或失焦作同样判断。
@@ -28,7 +30,9 @@
 
 - target 接受后关新 contact admission；绘制线程收尾已接受持久笔迹到旧页，保留 FIFO 已接受命令及保存边界，取消 Laser，停止重连/惯性。未抬起的物理接触隔离至真实 Up/Cancelled，不允许跨页续写，也不无界等待 Up。
 - 文档切换和成功 Present 是不同阶段。只有 replay + Present 成功才发布 identity-ready；页码随后带同一 target 发布。可见 PageControl surface 全部成功提交（没有可见控件则直接回执）后，匹配当前 target 才开放新输入。
-- Unknown/EndScreen 暂停后清除旧 UI-ready；恢复同一页也须取得新回执。旧 UI ack、load/save 完成和 Host 重启前结果不能重新激活旧目标。
+- Unknown 暂停后清除旧 UI-ready；恢复同一页也须取得新回执。完整、可信的 EndScreen 则走独立 target→页槽切换→成功 Present→`-1/N` UI 提交→输入开放，版本与普通页同等严格。旧 UI ack、load/save 完成和 Host 重启前结果不能重新激活旧目标。
+- 真正退出放映时，PptInfo 的可靠 Inactive/已销毁或复用 HWND 边沿发布 Desktop，并以退出检测时的工具模式 revision 有条件地调和 Selection（即使工具枚举本来是 Selection）；后来的用户 Pen/Shape/Eraser 修改不能被旧退出覆盖。等待 Desktop Selection 输出帧期间在 Window Service owner thread 隐藏旧双画布并保持有界重试；呈现成功后有墨迹走辅助穿透 ULW，无墨迹双隐藏。不能靠非 layered 主 HWND 的 `WS_EX_TRANSPARENT`、AdmissionBlocked 或 MA_NOACTIVATE 推断 USER32 穿透。白板、Unknown、结束黑页和同次 rebind 不触发此收尾。
+- EndScreen 的 UInk 是同一文稿文件中 N 个正常页之后的独立第 N+1 个 active canvas：`pageIndex=N/pageNumber=N+1`、单个 `inkeysPageKind=end-screen` marker、无 SlideID、独立 pageGuid/history。真实 `slideIds`/COM 总数/索引 ID 列表仍只有 N 项。codec 仅对这个标记例外，严格应用导入拒绝重复/歧义；旧 N-canvas 文件冷读补空结束页。重排/增删页按 SlideID 投影正常页，结束页 pageGuid 随文稿保留并移至新的内部 N。
 - parked/warm slot 先恢复旧 target，再比较有序 SlideIDs；普通 pageIndex/当前 SlideID/targetRevision 变化不是拓扑变化。
 
 ### 位置、保存和有效缩放
@@ -59,6 +63,9 @@
 | 同页暂停再恢复 / Host 重启 | 旧 ack 无效，重新呈现/回执，不复用旧 target revision |
 | 新场次在旧确认框期间开始 | 旧请求拒绝，不退出新场次、不切新场次模式 |
 | 白板覆盖 / 临时 descriptor 失败 | 不触发正常 PPT 退出或位置保存 |
+| 退出检测后用户主动切 Pen/Shape/Eraser | 模式 revision 已变化时旧 Selection 收尾不覆盖新工具；窗口 owner thread 旧显隐命令在释放 capture 前因 bridge revision 不匹配而拒绝 |
+| Selection 输出未 ready / Present 失败 | 先隐藏旧主 Drawpad 与辅助窗，保留 250ms 重试；不可让非 layered 主窗全屏拦截桌面，也不伪造 ready |
+| EndScreen 已确认并成功 Present / 拓扑暂不可用 | 前者才用独立 `N` 槽和 `-1/N` 同 revision UI 回执开放输入；后者保留安全待定且不冒充普通页 |
 | 无事件且同 HWND 的结束重开完全落在观测间隙 | 外部可观测性限制；必须设备验收，不能宣称仅缓存已证明该提供方全部场景 |
 
 ## 5. Good / Base / Bad Cases

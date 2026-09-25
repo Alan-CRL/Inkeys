@@ -42,10 +42,17 @@ namespace PptCOM.Tests
                 Check(pageStatus == (viewState == 5 ? "EndScreen" : "Valid"), "View.State " + viewState);
                 if (viewState == 5)
                 {
-                    Check(descriptor.status == "Unavailable" && descriptor.currentPage == 0 &&
-                        descriptor.totalPage == 3 && descriptor.slideShowHwnd == 100,
-                        "end screen retains v1 nonnegative page/identity and validated total");
+                    Check(descriptor.status == "StableSlideIds" && descriptor.currentPage == 0 &&
+                        !descriptor.currentSlideId.HasValue && descriptor.totalPage == 3 &&
+                        descriptor.slideIds.Length == 3 && descriptor.slideIds[0] == 101 &&
+                        descriptor.slideIds[1] == 202 && descriptor.slideIds[2] == 303 &&
+                        descriptor.slideShowHwnd == 100,
+                        "end screen retains real topology without inventing a current SlideID");
                     Check(!accessor.Acquired.ContainsKey("current"), "done does not require View.Slide");
+                    Check(accessor.ReleaseCount("item1") == 1 &&
+                        accessor.ReleaseCount("item2") == 1 &&
+                        accessor.ReleaseCount("item3") == 1,
+                        "done releases every topology item exactly once");
                 }
                 else Check(descriptor.status == "StableSlideIds", "black/white/paused keeps valid page");
                 Check(accessor.IsBalanced() && accessor.ReleaseCount("window") == 0,
@@ -82,6 +89,60 @@ namespace PptCOM.Tests
             };
             Descriptor(done, failedCount, 7, out status);
             Check(status == "Unknown" && failedCount.IsBalanced(), "done with unreadable total remains unknown");
+        }
+
+        private static void TestEndScreenColdStartAndFailures()
+        {
+            string status;
+            FakeGraph cold = new FakeGraph("WPS Presentation");
+            FakeNode view = (FakeNode)cold.Window.Properties["View"];
+            view.Properties["State"] = 5;
+            view.Properties.Remove("Slide");
+            FakeAccessor coldAccessor = new FakeAccessor();
+            PresentationDescriptorValue descriptor = Descriptor(cold, coldAccessor, 7, out status);
+            Check(status == "EndScreen" && descriptor.status == "StableSlideIds" &&
+                descriptor.provider == "Wps" && descriptor.currentPage == 0 &&
+                !descriptor.currentSlideId.HasValue && descriptor.slideIds.Length == 3 &&
+                descriptor.slideIds[2] == 303 && coldAccessor.IsBalanced(),
+                "done cold start reads topology without View.Slide on late-bound provider");
+
+            foreach (string stage in new[] { "slides.Item:2", "item2.SlideIndex", "item2.SlideID" })
+            {
+                FakeGraph graph = new FakeGraph("Microsoft PowerPoint");
+                ((FakeNode)graph.Window.Properties["View"]).Properties["State"] = 5;
+                FakeAccessor failed = new FakeAccessor
+                {
+                    FailureStage = stage, Failure = new MissingMemberException(stage)
+                };
+                descriptor = Descriptor(graph, failed, 7, out status);
+                Check(status == "EndScreen" && descriptor.status == "Unavailable" &&
+                    descriptor.slideIds.Length == 0 && failed.IsBalanced(),
+                    stage + " never publishes incomplete done topology");
+                FakeAccessor busy = new FakeAccessor
+                {
+                    FailureStage = stage,
+                    Failure = new COMException("busy", unchecked((int)0x8001010A))
+                };
+                descriptor = Descriptor(graph, busy, 7, out status);
+                Check(status == "EndScreen" && descriptor.status == "TransientBusy" &&
+                    descriptor.slideIds.Length == 0 && busy.IsBalanced(),
+                    stage + " busy done scan stays retryable");
+            }
+
+            foreach (string damage in new[] { "duplicate", "order", "missing" })
+            {
+                FakeGraph graph = new FakeGraph("Microsoft PowerPoint");
+                ((FakeNode)graph.Window.Properties["View"]).Properties["State"] = 5;
+                FakeNode second = ((FakeNode)graph.Presentation.Properties["Slides"]).Items[1];
+                if (damage == "duplicate") second.Properties["SlideID"] = 101;
+                if (damage == "order") second.Properties["SlideIndex"] = 3;
+                if (damage == "missing") second.Properties.Remove("SlideID");
+                FakeAccessor accessor = new FakeAccessor();
+                descriptor = Descriptor(graph, accessor, 7, out status);
+                Check(status == "EndScreen" && descriptor.status == "Unavailable" &&
+                    descriptor.slideIds.Length == 0 && accessor.IsBalanced(),
+                    damage + " done topology cannot become writable");
+            }
         }
 
         private static void TestPublication()
@@ -293,6 +354,7 @@ namespace PptCOM.Tests
         public static int Run()
         {
             TestStateReadAndOwnership();
+            TestEndScreenColdStartAndFailures();
             TestPublication();
             TestExitExecution();
             TestWindowGuard();

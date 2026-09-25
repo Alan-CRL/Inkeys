@@ -139,7 +139,10 @@ namespace
 			if (!currentPptSession.active || currentPptSession.localSession != session
 				|| currentPptSession.serviceGeneration != pptComGeneration.load(std::memory_order_acquire)
 				|| !expectedPptUiTarget || expectedPptUiTarget->targetRevision != revision
-				|| page <= 0 || expectedPptUiTarget->pageIndex != static_cast<std::uint32_t>(page - 1)
+				|| (expectedPptUiTarget->pageKind ==
+					Inkeys::Drawing::Draw3::Bridge::PresentationPageKind::EndScreen
+					? page != -1 || expectedPptUiTarget->pageIndex != expectedPptUiTarget->totalPages
+					: page <= 0 || expectedPptUiTarget->pageIndex != static_cast<std::uint32_t>(page - 1))
 				|| total <= 0 || expectedPptUiTarget->totalPages != static_cast<std::uint32_t>(total)) return;
 			ready = Inkeys::Drawing::Draw3::Bridge::ReadyIdentityFor(*expectedPptUiTarget);
 		}
@@ -545,6 +548,19 @@ void PptInfo()
 		if (!lastIssue.empty() && IDTLogger)
 			IDTLogger->warn("[PPT] session state unavailable: {}", lastIssue);
 	};
+	auto TraceTrueExit = [](const char* reason, const PptSessionToken& session)
+	{
+		static const bool enabled = []
+		{
+			wchar_t value[8]{};
+			return GetEnvironmentVariableW(L"INKEYS_PPT_EXIT_TRACE", value, 8) > 0 &&
+				value[0] == L'1';
+		}();
+		if (enabled && IDTLogger)
+			IDTLogger->info("[PptExitSurface] edge={} session={} service={} show={} binding={}",
+				reason, session.localSession, session.serviceGeneration,
+				session.showSessionRevision, session.bindingRevision);
+	};
 	auto EndSession = [&]
 	{
 		auto session = CapturePptSession();
@@ -594,6 +610,8 @@ void PptInfo()
 			cachedTarget.reset();
 		}
 		bool stateReliable = false;
+		bool exitedThisTick = false;
+		std::uint64_t exitModeRevision = 0;
 		bool descriptorChanged = false;
 		PptLifecycle lifecycle = PptLifecycle::Unknown;
 		PptPageStatus pageStatus = PptPageStatus::Unknown;
@@ -649,12 +667,23 @@ void PptInfo()
 		const D3::PresentationDescriptor* descriptor = sessionApi
 			? (cachedState ? &cachedState->descriptor : nullptr)
 			: (legacyDescriptor ? &*legacyDescriptor : nullptr);
-		if (stateReliable && lifecycle == PptLifecycle::Inactive) EndSession();
+		if (stateReliable && lifecycle == PptLifecycle::Inactive)
+		{
+			const auto ending = CapturePptSession();
+			exitedThisTick = ending.active;
+			if (ending.active) exitModeRevision = StateModeTransitionRevision();
+			if (ending.active) TraceTrueExit("inactive", ending);
+			EndSession();
+		}
 		bool trustedPage = stateReliable && lifecycle == PptLifecycle::Active
 			&& pageStatus == PptPageStatus::Valid && descriptor
 			&& rawPage > 0 && rawTotal > 0
 			&& descriptor->currentPage == static_cast<std::uint32_t>(rawPage)
 			&& descriptor->totalPage == static_cast<std::uint32_t>(rawTotal);
+		bool trustedEndScreen = stateReliable && sessionApi &&
+			lifecycle == PptLifecycle::Active && pageStatus == PptPageStatus::EndScreen &&
+			descriptor && descriptor->status == D3::PresentationDescriptorStatus::StableSlideIds &&
+			descriptor->currentPage == 0 && descriptor->totalPage > 0;
 		auto session = CapturePptSession();
 		bool confirmedWindowEnd = false;
 		if (session.active)
@@ -669,6 +698,9 @@ void PptInfo()
 			if ((windowGone || windowReused) && MatchesPptSession(session, CapturePptSession()))
 			{
 				confirmedWindowEnd = true;
+				exitedThisTick = true;
+				exitModeRevision = StateModeTransitionRevision();
+				TraceTrueExit(windowGone ? "show-window-lost" : "show-window-reused", session);
 				EndSession();
 				session = CapturePptSession();
 			}
@@ -691,6 +723,7 @@ void PptInfo()
 			{
 				// 窗口身份校验同时约束场次和画布目标，不能借旧场次发布另一窗口的缓存。
 				trustedPage = false;
+				trustedEndScreen = false;
 				pageStatus = PptPageStatus::Unknown;
 			}
 			if (descriptorWindowMatches && !endedSessionSnapshot &&
@@ -721,9 +754,12 @@ void PptInfo()
 				QueuePptUiBusinessCommand(PptUiBusinessCommand::Focus);
 				descriptorChanged = true;
 			}
-			if (trustedPage && session.active && (descriptorChanged || !cachedTarget))
+			if ((trustedPage || trustedEndScreen) && session.active &&
+				(descriptorChanged || !cachedTarget))
 			{
-				cachedTarget = D3::ResolvePresentationTarget(*descriptor);
+				cachedTarget = trustedEndScreen
+					? D3::ResolveEndScreenTarget(*descriptor)
+					: D3::ResolvePresentationTarget(*descriptor);
 				if (cachedTarget) cachedTarget->sessionRevision = session.localSession;
 				LARGE_INTEGER acceptedAt{};
 				QueryPerformanceCounter(&acceptedAt);
@@ -736,14 +772,23 @@ void PptInfo()
 		{
 			stateReliable = false;
 			trustedPage = false;
+			trustedEndScreen = false;
 			pageStatus = PptPageStatus::Unknown;
 		}
 		if (cachedTarget && (session.serviceGeneration != serviceGeneration ||
 			cachedTarget->sessionRevision != session.localSession ||
-			cachedTarget->bindingRevision != session.bindingRevision)) trustedPage = false;
+			cachedTarget->bindingRevision != session.bindingRevision))
+		{
+			trustedPage = false;
+			trustedEndScreen = false;
+		}
+		const bool trustedTarget = cachedTarget &&
+			((trustedPage && cachedTarget->pageKind == D3::Bridge::PresentationPageKind::Slide) ||
+				(trustedEndScreen && cachedTarget->pageKind ==
+					D3::Bridge::PresentationPageKind::EndScreen));
 		const bool whiteboard = WhiteboardTransactionActive();
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
-		if (!whiteboard && session.active && (!trustedPage || !cachedTarget))
+		if (!whiteboard && session.active && !trustedTarget)
 		{
 			const bool sameBinding = currentService && session.serviceGeneration == serviceGeneration
 				&& (!cachedState || (cachedState->bindingRevision == session.bindingRevision
@@ -756,8 +801,15 @@ void PptInfo()
 		std::uint64_t targetRevision = 0;
 		if (!whiteboard && !session.active && (confirmedWindowEnd ||
 			(stateReliable && lifecycle == PptLifecycle::Inactive)))
+		{
 			D3::PublishProductWorkspace(D3::Bridge::Workspace::Desktop);
-		else if (!whiteboard && session.active && trustedPage && cachedTarget)
+			if (exitedThisTick)
+			{
+				// 可信退出只收尾一次；若此后用户主动换工具，旧退出不得覆盖它。
+				(void)ChangeStateModeToSelectionIfRevision(exitModeRevision);
+			}
+		}
+		else if (!whiteboard && session.active && trustedTarget)
 		{
 			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget);
 			if (accepted)
@@ -780,7 +832,10 @@ void PptInfo()
 				const auto ready = D3::ProductRuntimeSnapshot();
 				if (ready.running && ready.workspace == D3::Bridge::Workspace::Presentation
 					&& ready.presentationReady && *ready.presentationReady == D3::Bridge::ReadyIdentityFor(*cachedTarget))
-					PptInfoStateBuffer = { rawPage, rawTotal };
+					PptInfoStateBuffer = cachedTarget->pageKind ==
+						D3::Bridge::PresentationPageKind::EndScreen
+						? PptInfoStateStruct{ -1, static_cast<int>(cachedTarget->totalPages) }
+						: PptInfoStateStruct{ rawPage, rawTotal };
 				else targetRevision = 0;
 			}
 		}
@@ -794,12 +849,16 @@ void PptInfo()
 		}
 		int page = PptInfoStateBuffer.CurrentPage, total = PptInfoStateBuffer.TotalPage;
 		if (!session.active) { page = -1; total = -1; }
-		else if (stateReliable && pageStatus == PptPageStatus::EndScreen)
+		else if (stateReliable && pageStatus == PptPageStatus::EndScreen &&
+			trustedEndScreen && targetRevision != 0)
 		{
 			page = -1;
-			total = descriptor && descriptor->totalPage > 0
-				? static_cast<int>(descriptor->totalPage) : rawTotal;
-			if (total <= 0) total = -1;
+			total = static_cast<int>(cachedTarget->totalPages);
+		}
+		else if (stateReliable && pageStatus == PptPageStatus::EndScreen)
+		{
+			// 等真正呈现到独立结束页后再切换数字；旧墨迹与新页码不可短暂错配。
+			targetRevision = 0;
 		}
 		else if (!trustedPage) { page = -1; total = -1; }
 		if (!whiteboard && (page != publishedPage || total != publishedTotal
@@ -985,11 +1044,8 @@ void PPTLinkageMain()
 		{
 			if (IDTLogger) IDTLogger->warn("[PPT] exit failed: {}", static_cast<long>(error.Error()));
 		}
-		const auto afterExit = CapturePptSession();
-		if (exited && !WhiteboardTransactionActive() && afterExit.localSession == request.session.localSession
-			&& afterExit.serviceGeneration == request.session.serviceGeneration
-			&& stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection)
-			ChangeStateModeToSelection();
+		// 业务请求只发起退出；Selection 和窗口穿透由可信 EndSession 边沿统一收尾。
+		if (!exited && IDTLogger) IDTLogger->warn("[PPT] exit request was not accepted");
 
 	}
 	Inkeys::UI::Bar::SetEndShowRequestCallback({});

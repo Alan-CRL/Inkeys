@@ -1,0 +1,7 @@
+# Supplemental baseline and audit boundary
+
+- 2026-09-25: branch bugfix/pptui, HEAD 9d432cd6c68bc7e1c04933702e3dc85ef4e6e669, clean working tree, active task 09-25-ppt-ui3-scene-and-page-sync in_progress. Prior logs/tests in verification.md were executed in an earlier turn and are not evidence of this follow-up run.
+- Product rules retained: position save on memory toggle/true exit/reset, main-bar-only confirmation, paired movement, valid scale, no Draw2 keyboard translation.
+- **Direct source facts (A)**: `PptInfo::EndSession` clears native session/UI position state but only the outer loop later publishes Desktop workspace. `PPTLinkageMain` changes selection mode only after a successful explicit End command. `ReconcileDraw3PresentationState` may return Waiting without touching HWND visibility and currently clears retry; StateMonitoring wakes mainly on runtime revision/retry. Host input admission is separate from USER32 hit testing. These facts do not alone establish which HWND blocked the user's desktop.
+- **Direct source facts (B)**: `View.State==5` is EndScreen; current native `trustedPage` accepts positive valid slides only and suspends the previous target at EndScreen; UI displays -1/N with revision0. `PresentationTarget` validates index below total and stable SlideID list. The source has no typed writable EndScreen target yet.
+- **Unproven**: precise real Exit interleaving, intercepted HWND and UInk representation/codec failure mode. Researchers will document proofs and test seams; no claim of Windows/Office reproduction yet.

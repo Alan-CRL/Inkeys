@@ -638,7 +638,8 @@ export namespace Inkeys::UI::PageControl
 				|| current != state.currentPage || total != state.totalPage) return false;
 			committed |= mask;
 			if (acknowledged || session == 0 || target == 0
-				|| current <= 0 || total <= 0 || (committed & required) != required)
+				|| current == 0 || current < -1 || total <= 0 ||
+				(committed & required) != required)
 				return false;
 			acknowledged = true;
 			return true;

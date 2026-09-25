@@ -4544,7 +4544,8 @@ namespace Inkeys::Drawing::Draw3
 			try
 			{
 				if (!fileGuid) fileGuid = draw3::uink::CreateUInkGuid();
-				if (!fileGuid || target.totalPages != document.Pages().size() ||
+				if (!fileGuid || Bridge::PresentationDocumentPageCount(target) !=
+					document.Pages().size() ||
 					runtimes.size() != document.Pages().size()) return std::nullopt;
 				draw3::uink::Draw3UInkExportSnapshot snapshot;
 				snapshot.fileGuid = *fileGuid;
@@ -4568,8 +4569,9 @@ namespace Inkeys::Drawing::Draw3
 					std::optional<std::int32_t> slideId, bool retained)
 					-> std::optional<draw3::uink::Draw3UInkCanvasSnapshot>
 				{
-					if (!page || !slideId && target.bindingMode ==
-						Bridge::SlideBindingMode::StableSlideId) return std::nullopt;
+					const bool endScreen = !retained && pageIndex == target.totalPages;
+					if (!page || (!slideId && !endScreen && target.bindingMode ==
+						Bridge::SlideBindingMode::StableSlideId)) return std::nullopt;
 					const InkCanvas* canvas = page->FindCanvas(kDefaultDeviceKey);
 					if (!canvas) return std::nullopt;
 					draw3::uink::Draw3UInkCanvasSnapshot output;
@@ -4581,7 +4583,9 @@ namespace Inkeys::Drawing::Draw3
 					output.intervalOrdinal = runtime.intervalOrdinal;
 					output.viewport = { canvas->Viewport().x, canvas->Viewport().y,
 						canvas->Viewport().scale };
-					output.extra = draw3::uink::MakeInkeysBindingExtra(importMode);
+					output.extra = endScreen
+						? draw3::uink::MakeInkeysEndScreenExtra(importMode)
+						: draw3::uink::MakeInkeysBindingExtra(importMode);
 					const std::span<const InkStroke> strokes = canvas->Strokes();
 					for (const RenderItemState& item : runtime.history.Items())
 					{
@@ -4606,6 +4610,7 @@ namespace Inkeys::Drawing::Draw3
 					const InkPage* page = document.PageAt(pageIndex);
 					const std::optional<std::int32_t> slideId = target.bindingMode ==
 						Bridge::SlideBindingMode::StableSlideId
+						&& pageIndex < target.totalPages
 						? std::optional<std::int32_t>(target.slideIds[pageIndex]) : std::nullopt;
 					const auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
 						slideId, false);
@@ -4745,7 +4750,7 @@ namespace Inkeys::Drawing::Draw3
 				for (const auto& source : importedActive)
 					if (source.slideId) bySlideId.emplace(*source.slideId, &source);
 				std::vector<draw3::uink::Draw3UInkCanvasSnapshot> activeCanvases;
-				activeCanvases.reserve(target.totalPages);
+				activeCanvases.reserve(Bridge::PresentationDocumentPageCount(target));
 				for (std::size_t index = 0; index < target.totalPages; ++index)
 				{
 					if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
@@ -4769,7 +4774,25 @@ namespace Inkeys::Drawing::Draw3
 						activeCanvases.push_back(importedActive[index]);
 					}
 				}
-				if (activeCanvases.size() != target.totalPages ||
+				// 历史 UInk 只有 N 个真实页；结束页缺席时新建独立 pageGuid。
+				const auto endScreen = std::find_if(importedActive.begin(),
+					importedActive.end(), [](const auto& canvas)
+					{
+						return draw3::uink::InkeysPageKind(canvas.extra) ==
+							draw3::uink::UInkInkeysPageKind::EndScreen;
+					});
+				if (endScreen != importedActive.end())
+					activeCanvases.push_back(*endScreen);
+				else
+				{
+					const auto pageGuid = draw3::uink::CreateUInkGuid();
+					if (!pageGuid) return std::nullopt;
+					draw3::uink::Draw3UInkCanvasSnapshot blank;
+					blank.pageGuid = *pageGuid;
+					blank.viewport = { 0.0f, 0.0f, 1.0f };
+					activeCanvases.push_back(std::move(blank));
+				}
+				if (activeCanvases.size() != Bridge::PresentationDocumentPageCount(target) ||
 					snapshot.workspaceGuid.IsZero() || snapshot.fileGuid.IsZero())
 					return std::nullopt;
 				DrawingDocumentSlot slot;
@@ -4905,6 +4928,16 @@ namespace Inkeys::Drawing::Draw3
 					draw3::uink::Draw3UInkImportBindingMode::StableSlideId);
 				remapped.activeCanvases.push_back(std::move(blank));
 			}
+			// EndScreen 不属于真实 SlideID 拓扑，重排和增删页只移动其内部槽位。
+			const auto previousEnd = std::find_if(
+				captured->snapshot.activeCanvases.begin(),
+				captured->snapshot.activeCanvases.end(), [](const auto& canvas)
+				{
+					return draw3::uink::InkeysPageKind(canvas.extra) ==
+						draw3::uink::UInkInkeysPageKind::EndScreen;
+				});
+			if (previousEnd == captured->snapshot.activeCanvases.end()) return false;
+			remapped.activeCanvases.push_back(*previousEnd);
 			for (auto& [slideId, canvas] : known)
 			{
 				canvas.slideId = slideId;
@@ -5627,14 +5660,7 @@ namespace Inkeys::Drawing::Draw3
 					const Bridge::PresentationTarget target = *command.presentationTarget;
 					if (activeWorkspace == Bridge::Workspace::Presentation &&
 						activePresentationTarget && *activePresentationTarget == target) continue;
-					const bool stableValid = target.bindingMode !=
-						Bridge::SlideBindingMode::StableSlideId ||
-						(target.slideId && target.slideIds.size() == target.totalPages &&
-							target.pageIndex < target.slideIds.size() &&
-							target.slideIds[target.pageIndex] == *target.slideId);
-					if (target.key.IsZero() || target.totalPages == 0 ||
-						target.totalPages > Bridge::kMaximumPresentationPages ||
-						target.pageIndex >= target.totalPages || !stableValid) continue;
+					if (target.key.IsZero() || !Bridge::ValidPresentationPage(target)) continue;
 					// 同文稿翻页与跨文稿切换都先固定离开侧最新 revision。
 					(void)capturePresentationAutoSave();
 					pendingWorkspaceReady.reset();
@@ -5666,7 +5692,7 @@ namespace Inkeys::Drawing::Draw3
 									*destination->presentationTarget, target,
 									destination->document
 										? destination->document->Pages().size()
-										: target.totalPages))
+									: Bridge::PresentationDocumentPageCount(target)))
 							{
 								topologyConflict = true;
 								destination = nullptr;
@@ -5679,7 +5705,8 @@ namespace Inkeys::Drawing::Draw3
 							std::fputs("[Draw3.Presentation] action=switch result=isolated reason=topology_conflict\n",
 								stderr);
 						}
-						if (!createBlankSlot(*destination, target.totalPages))
+						if (!createBlankSlot(*destination,
+							Bridge::PresentationDocumentPageCount(target)))
 						{
 							// 创建失败时把来源槽恢复为 active，不能留下空 document。
 							swapActiveDocument(*source);
@@ -5710,8 +5737,9 @@ namespace Inkeys::Drawing::Draw3
 						if (bindingUpgrade && (activePresentationMutationRevision != 0 ||
 							activePresentationFileGuid)) markPresentationMutation();
 					}
-					if (!document_ || pageRuntimeStates.size() != target.totalPages ||
-						document_->Pages().size() != target.totalPages)
+					if (!document_ || pageRuntimeStates.size() !=
+						Bridge::PresentationDocumentPageCount(target) ||
+						document_->Pages().size() != Bridge::PresentationDocumentPageCount(target))
 					{
 						std::fputs("[Draw3.Presentation] action=switch result=isolated reason=page_count\n",
 							stderr);

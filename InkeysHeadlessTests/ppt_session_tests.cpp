@@ -38,6 +38,10 @@ int RunPptSessionTests()
 	const std::wstring unavailable = LR"({"schemaVersion":1,"provider":"PowerPoint","status":"Unavailable","fullName":"C:\\slides\\a.pptx","presentationName":"a.pptx","applicationProcessId":12,"slideShowHwnd":34,"currentPage":0,"totalPage":3,"currentSlideId":null,"slideIds":[],"bindingRevision":9})";
 	check(ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", unavailable)).snapshot.has_value(),
 		"explicit end screen preserves v1 descriptor without fabricating slide identity");
+	const std::wstring endTopology = LR"({"schemaVersion":1,"provider":"PowerPoint","status":"StableSlideIds","fullName":"C:\\slides\\a.pptx","presentationName":"a.pptx","applicationProcessId":12,"slideShowHwnd":34,"currentPage":0,"totalPage":3,"currentSlideId":null,"slideIds":[101,202,303],"bindingRevision":9})";
+	check(ParsePptSessionSnapshot(envelope(L"Active", L"EndScreen", endTopology)).snapshot.has_value() &&
+		!ParsePptSessionSnapshot(envelope(L"Active", L"Valid", endTopology)).snapshot,
+		"only EndScreen envelope can authorize a zero-current-page stable topology");
 	check(ParsePptSessionSnapshot(envelope(L"Unknown", L"Unknown", unavailable)).snapshot.has_value(),
 		"read failures stay unknown instead of exiting the workspace");
 	check(!ParsePptSessionSnapshot(envelope(L"Active", L"Valid", unavailable)).snapshot,

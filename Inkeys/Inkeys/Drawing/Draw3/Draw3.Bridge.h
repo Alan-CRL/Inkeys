@@ -61,6 +61,12 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		PageIndexFallback,
 	};
 
+	enum class PresentationPageKind : std::uint8_t
+	{
+		Slide,
+		EndScreen,
+	};
+
 	// COM 事实在一个锁内发布；页码不能脱离文稿身份单独成为 ready。
 	struct PresentationTarget
 	{
@@ -72,6 +78,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::string bindingToken;
 		std::vector<std::int32_t> slideIds;
 		std::optional<std::int32_t> slideId;
+		PresentationPageKind pageKind = PresentationPageKind::Slide;
 		std::uint32_t pageIndex = 0;
 		std::uint32_t totalPages = 0;
 		std::uint64_t bindingRevision = 0;
@@ -89,6 +96,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		PresentationKey key;
 		SlideBindingMode bindingMode = SlideBindingMode::PageIndexFallback;
 		std::optional<std::int32_t> slideId;
+		PresentationPageKind pageKind = PresentationPageKind::Slide;
 		std::uint32_t pageIndex = 0;
 		std::uint64_t bindingRevision = 0;
 		std::uint64_t targetRevision = 0;
@@ -101,8 +109,34 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	constexpr PresentationReadyIdentity ReadyIdentityFor(
 		const PresentationTarget& target) noexcept
 	{
-		return { target.key, target.bindingMode, target.slideId, target.pageIndex,
+		return { target.key, target.bindingMode, target.slideId, target.pageKind,
+			target.pageIndex,
 			target.bindingRevision, target.targetRevision, target.sessionRevision };
+	}
+
+	// PPT 的总页数只含真实幻灯片；结束页固定占用同文稿的附加内部页槽。
+	constexpr std::uint32_t PresentationDocumentPageCount(
+		const PresentationTarget& target) noexcept
+	{
+		return target.totalPages + 1;
+	}
+
+	inline bool ValidPresentationPage(const PresentationTarget& target) noexcept
+	{
+		if (target.totalPages == 0 || target.totalPages > kMaximumPresentationPages)
+			return false;
+		if (target.pageKind == PresentationPageKind::EndScreen)
+		{
+			if (target.pageIndex != target.totalPages || target.slideId) return false;
+		}
+		else if (target.pageIndex >= target.totalPages) return false;
+		if (target.bindingMode == SlideBindingMode::StableSlideId)
+		{
+			if (target.slideIds.size() != target.totalPages) return false;
+			return target.pageKind == PresentationPageKind::EndScreen ||
+				(target.slideId && target.slideIds[target.pageIndex] == *target.slideId);
+		}
+		return !target.slideId && target.slideIds.empty();
 	}
 
 	constexpr bool SelectionUsesAuxiliaryOutput(

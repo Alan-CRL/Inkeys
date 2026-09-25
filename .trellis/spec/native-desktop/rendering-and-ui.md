@@ -413,7 +413,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - Good：连续纯平移只顺序移动两个 HWND 并发布一条候选日志；Scene 不产生整窗 damage，松手时才由一次 `RequestAll` 吸收最终布局。
 - Good：唯一一条 `WM_MOUSEMOVE` 到达时呈现锁正被占用；WndProc 保存最新绝对候选并唤醒 pair，锁释放后无需第二条移动消息也能完成直移。
 - Good：用户键盘设置为 delay 1/speed 31 时，触摸或鼠标长按在约 `500ms` 后首次重复，后续约 `33ms` 一次；轻微帧量化保留计划相位，渲染或 COM 严重迟到只跳过该次机会，不追赶积压。
-- Good：最后一页进入结束页时 raw COM 从 `12/12` 变为 `-1/12`，UI 在不污染 ready buffer 的前提下驱动稳定 Next 转为 EndShow；点击经 A2 dispatcher 进入既有确认/退出流程，返回有效页先恢复 Arrow/NextPage，Draw3-ready 后再更新数字。
+- Good：最后一页进入真实 EndScreen 时先为同文稿附加页取得独立 target/ready，成功 Present 后才发布 `-1/12`；PageControl 的稳定 Next 转为 EndShow，并直接投递原有非确认退出业务。主栏 EndShow 点击才进入 A2 确认。返回真实页同样等待对应画布 ready 再发布数字和开放输入。
 - Base：默认 DPI 下 PPT 为紧凑深色 Bar surface，Whiteboard 为固定三枚 `2x2`；普通 Arrow 只缩放，Add 才转换内容。
 - Bad：`BarSurfaceScene` 继续维护 local hover/pressed，PageControl 设置 `18 DIP` icon 或 `±13 DIP` text offset，或者复制主栏曲线后声称“复用”。
 - Bad：把 Whiteboard 拖动条叠在 Page 上、让 Whiteboard 继承 PPT wheel/long-press/persist，或把 Bar HWND 传入碰撞求解。
@@ -428,7 +428,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、Page 预览、long-press/wheel/persist，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。长按测试必须覆盖 delay `0..3`、speed `0/31` 和越界限制、默认回退 `500ms/约33ms`、Down 立即一次、首次 deadline 前无重复、deadline 到达后一次、后续 interval、`34ms` 在 60 FPS 下保留计划相位、落后一个 interval 时跳过积压、配置关闭与移出/Up/cancel 停止；静态确认每次有效 Arrow Down 只快照一次 SPI、不存在 keyboard/wheel 合成 press，并确认有效 PPT Down 调用 `PromotePptWindow`。触摸纯测试覆盖 primary、无 primary fallback、多指忽略、活动 id 替换 cancel、新 id Move/Up、替换后旧 fallback Up 被忽略和 cancel 清理；静态确认同批先保序处理 primary、四窗注册触摸、禁用边缘/Tablet 手势且兼容 mouse 副本仍被过滤。拖动提交仲裁必须断言 publication 不自动请求 pair、纯平移由 candidate logical bounds 与稳定 outset 生成绝对 target，并可注入一次呈现锁竞争，确认 fallback 显式请求 pair且只保存最新候选；还要覆盖两窗 commit、第二窗失败的第一窗回滚、松手 ownership，以及进入 `ConfigureSurface/PresentScene` 前和窗口提交后的两道 stale revision gate。
 - 生命周期 headless 必须让 Hidden→Visible 在没有任何 Bar/光源外部请求时推进到 deadline 后一帧，断言 deadline 活跃期间续帧且输入锁定、到期自行 Idle/解锁；源码审查初始 Hidden 使用直接透明度 `0` 而不是未消费的零时长动画 target。
 - Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；Scene 源码审查确认即时 Page 槽位使用 `SetDirect`，而 Arrow/Add 仍走 Animated 中点转换。
-- Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口，PPT 状态线程只以不超过 `50ms` 检查 COM，共享 buffer 仍等待 Draw3-ready，结束页仅经 UI 解析器投影。
+- Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口。放映期 native 有界 16ms 观测缓存状态、旧 DLL 兼容路径 50ms；正常页及独立 EndScreen 都等待 Draw3 成功 Present 和同目标 UI 回执，`-1` 仅是显示哨兵。
 - PageControl 输入测试覆盖圆角背景门禁策略；源码审查背景命中读取 Scene 当前动画 Shape，Window Service capture 撤销包含四个 PageControl 角色，且 `ReleaseCapture` 位于呈现锁外。
 - 碰撞覆盖手动 pair 最近可行位置、bottom 优先/middle 回退、极小屏运行时 scale、输入/保存快照不变，并静态断言无 Bar obstacle 参数/查询/通知。
 - Headless 直接断言非零父原点下的标准按钮子内容坐标，以及屏幕光源点到 Surface presentation 点的映射；静态审查分页不再调用本地 cursor-light prepare/reset，且四个 HWND 的进入/离开与成功呈现边界只通知 Main Bar 全局状态机。
@@ -492,14 +492,12 @@ return ShouldContinuePageControlFrame(visible, now < transitionUntil,
     bounds.active, scene.AnimationActive(), longPressActive)
         ? FrameResult::Continue : FrameResult::Idle;
 
-// Wrong：只发布已被结束页分支归一化的 buffer，PageControl 永远收不到 -1/总页数。
-PublishPageState(buffer.CurrentPage, buffer.TotalPage);
+// Wrong：仅凭 COM EndScreen 状态就发布 -1/N，而画布仍是最后一张真实页。
+PublishPageState(-1, observedTotalPage, 0);
 
-// Correct：buffer 只表达 Draw3-ready；结束页在 UI 发布边界单独投影。
-const auto publication = ResolvePageStateForPublication(
-    buffer.CurrentPage, buffer.TotalPage,
-    observedCurrentPage, observedTotalPage);
-PublishPageState(publication.currentPage, publication.totalPage);
+// Correct：独立 EndScreen target 已成功 Present 后，才带该 target revision 发布显示哨兵。
+if (ready.presentationReady == ReadyIdentityFor(endTarget))
+    PublishPageState(-1, endTarget.totalPages, endTarget.targetRevision);
 
 // Wrong：图标切为 EndShow，点击仍固定进入会丢弃 currentPage == -1 的 Next。
 callback = pptCallbacks.nextPage;

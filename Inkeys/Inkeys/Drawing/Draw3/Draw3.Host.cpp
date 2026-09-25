@@ -1244,6 +1244,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 			std::scoped_lock lock(impl_->presentationTargetMutex);
 			snapshot.presentationReady = impl_->readyPresentationTarget;
+			snapshot.presentationUiReady = impl_->uiReadyPresentationTarget;
+			snapshot.presentationSuspended = impl_->suspendedPresentationTarget;
+			snapshot.commandScenePending = impl_->commandScenePending;
 			snapshot.presentationInputReady = !impl_->input.AdmissionBlocked();
 		}
 		snapshot.requestedOutputTarget =

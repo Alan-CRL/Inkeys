@@ -355,6 +355,8 @@ PumpBridgeState();
 - Good：有一笔的选择态由辅助 ULW 穿透显示，Clear 后等当前 revision 的完整 clean 帧再隐藏；Undo 恢复该笔并重新显示辅助窗，Redo 再次隐藏，另一页的 Eraser history 仍存在。
 - Base：初始选择空页两窗隐藏；进入 Pen 先预热主 presenter 再显示，未落笔返回选择再次经辅助 clean 后隐藏。
 - Bad：用窗口穿透样式推断选择模式、让主 Drawpad 承担穿透、复制固定 L2、视觉像素是否为空推断内容，或 Clear 时删除 Stroke/替换 runtime。
+- PPT 真退出的 Desktop Selection 可以先于其辅助 ULW 完整帧就绪；等待时 Window Service owner thread 必须隐藏旧双画布，保持可恢复重试，且在最新 bridge revision、输出目标/content revision 成功 Present 后再显示辅助 ULW（有内容）或双隐藏（空内容）。成对 HWND 事务要读回双窗可见性；AdmissionBlocked、MA_NOACTIVATE 和非 layered 主窗上的 `WS_EX_TRANSPARENT` 不能代替系统命中穿透。白板和更新的 Pen/Presentation 期望优先。
+- PPT EndScreen 仅由可信 State=5 与同次完整文稿拓扑产生明确 `PageKind::EndScreen` 目标：内部索引为真实 `N`，COM/UI 总页数仍 `N`，无 SlideID。正常页与 EndScreen 共用单 Host 页边界、contact 隔离、成功 Present、UI ready 和保存 worker。UInk 文件在 N 个真实 active 页后保存一个带单个 `inkeysPageKind=end-screen` 的独立 pageGuid；codec 两侧和应用严格导入须配套验证，旧 N-canvas 文件冷读补空页。重排/增删幻灯片不能把该页放入 retained SlideID 集合。
 
 ### 6. Tests Required
 

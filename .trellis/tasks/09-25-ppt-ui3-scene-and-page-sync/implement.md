@@ -39,3 +39,12 @@ Exit: main only/cancel/dismiss/fail/doubleclick/modal end-reopen/oldDLL. Real na
 ## Wrap up
 Record actual commands/exit codes/measurements and NOT VERIFIED manual steps in research/verification.md. Keep source/environment failures separate. No commit/push. Journal/archive --no-commit; acceptance pending => in_progress, not falsely archived.
 Manual Office/WPS/device acceptance remains NOT VERIFIED; task remains in_progress. See research/verification.md for authoritative command results and exceptions.
+
+## Supplemental work (2026-09-25 follow-up; original checked items remain historical)
+
+- [ ] Real Office/desktop system hit-test reproduction of the exact interceptor HWND; source-proven Waiting gap and default-off correlated diagnostics are recorded in research/exit-window-supplement.md and research/supplement-verification.md. GUI acceptance remains NOT VERIFIED.
+- [x] Implement versioned true-exit Selection/Desktop handoff, owner-thread safe visibility/capture fallback and retry; hidden Host + Window Service verifies both presenter paths and no-input convergence.
+- [x] Establish typed EndScreen identity and same-file marked UInk design; test codec encode/decode and strict import before final Host validation.
+- [x] Implement target/ready/-1 UI ack, independent pageGuid/history, normal SlideID protection, old-file import and cold End-first Host restoration.
+- [x] Regress A/B plus prior remember/scale/Bar/confirmation paths; run full Solution Debug|ARM64, headless, hidden, offscreen, complete UInk, managed, i18n and diff checks. Sandbox file replacement failure is distinguished from passing sandbox-exempt reruns.
+- [x] Update touched specs and research with command/exit-code evidence and NOT VERIFIED Office/device steps. Keep task in_progress, no archive or commit for this follow-up.

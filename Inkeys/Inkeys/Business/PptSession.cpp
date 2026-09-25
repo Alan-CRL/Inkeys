@@ -96,6 +96,10 @@ namespace Inkeys::Business
 			if (snapshot.descriptor.bindingRevision != snapshot.bindingRevision
 				|| (snapshot.lifecycle == PptLifecycle::Active && snapshot.showSessionRevision == 0)
 				|| (snapshot.pageStatus != PptPageStatus::Unknown && snapshot.lifecycle != PptLifecycle::Active)
+				|| (snapshot.pageStatus == PptPageStatus::EndScreen &&
+					(snapshot.descriptor.currentPage != 0 || snapshot.descriptor.currentSlideId))
+				|| (snapshot.pageStatus == PptPageStatus::Valid
+					&& snapshot.descriptor.currentPage == 0)
 				|| (snapshot.pageStatus == PptPageStatus::Valid
 					&& snapshot.descriptor.status != Drawing::Draw3::PresentationDescriptorStatus::StableSlideIds
 					&& snapshot.descriptor.status != Drawing::Draw3::PresentationDescriptorStatus::PageIndexFallback))

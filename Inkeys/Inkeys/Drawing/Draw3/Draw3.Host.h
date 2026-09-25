@@ -215,6 +215,9 @@ namespace Inkeys::Drawing::Draw3
 		bool selectionMode = true;
 		Bridge::Workspace workspace = Bridge::Workspace::Desktop;
 		std::optional<Bridge::PresentationReadyIdentity> presentationReady;
+		std::optional<Bridge::PresentationReadyIdentity> presentationUiReady;
+		std::optional<Bridge::PresentationReadyIdentity> presentationSuspended;
+		bool commandScenePending = false;
 		bool presentationInputReady = false;
 		HostOutputTarget requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
