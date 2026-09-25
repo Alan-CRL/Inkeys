@@ -426,3 +426,70 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Next Steps
 
 - 推送 bugfix/pptui；继续真实 Office/WPS 与桌面系统命中人工验收
+
+
+## Session 24: PPT UI3 选择态页墨迹和超大控件回归
+<!-- trellis-session: v=2 fp=53ebd2f04256dad0 -->
+
+**Date**: 2026-09-25
+**Task**: PPT UI3 选择态页墨迹和超大控件回归
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+修复 Host 同布尔值新内容版本丢失，并使 PageControl 四窗使用一致预算和可恢复的呈现/窗口提交
+
+### Main Changes
+
+- Selection A-B-A-空页-EndScreen 翻页的内容版本按完整载荷通知，保留辅助 ULW 穿透
+- 四窗共享布局预算、失败阶段诊断、资源与单侧 ULW 重试、真实 PPT 窗口结果读回及屏外隐藏回归
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 修前 A 隐藏 Host 与 B 非对称预算 Headless 均预期失败；修后完整 ARM64 Solution、Headless、Draw3 hidden、四窗 hidden、Bar offscreen、i18n、Trellis validate、diff check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真实 PowerPoint/WPS 和用户大缩放显示器上采集四窗阶段日志与系统命中，确认现场单侧消失实际原因；任务保持 in_progress
+
+
+## Session 25: PPT UI3 回归修复提交记录
+<!-- trellis-session: v=2 fp=ef7924ff56d50862 -->
+
+**Date**: 2026-09-26
+**Task**: PPT UI3 回归修复提交记录
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+提交选择态翻页内容版本修复和大缩放下四控件布局/呈现收敛；任务继续进行中
+
+### Main Changes
+
+- Host 按完整内容状态版本通知，四窗共享资源预算并在单侧失败后安全重试
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `910de60f` | fix(ppt): restore selection ink and large page controls |
+
+### Testing
+
+- [OK] 完整 ARM64 Solution、Headless、Draw3 hidden、PageControl hidden、Bar offscreen、i18n、Trellis validate 和 diff check 已通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真实 PowerPoint/WPS 与用户显示器复核选择态页墨迹、左侧控件可见性及系统输入命中；保持任务 in_progress
