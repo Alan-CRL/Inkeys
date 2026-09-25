@@ -38,6 +38,71 @@ export namespace Inkeys::UI::Ppt
 		bool rememberPosition = true;
 	};
 
+	// 运行偏好独立于磁盘基线；只有同场、同代次的已提交 pair 可以推进它。
+	struct PositionState
+	{
+		LayoutConfiguration configuration;
+		std::uint64_t session = 0;
+		std::uint64_t epoch = 1;
+		std::array<std::uint64_t, 2> pairVersions{};
+		bool active = false;
+
+		void RestorePositions(const LayoutConfiguration& saved) noexcept
+		{
+			configuration.bottomPairWidth = saved.bottomPairWidth;
+			configuration.bottomPairHeight = saved.bottomPairHeight;
+			configuration.middlePairWidth = saved.middlePairWidth;
+			configuration.middlePairHeight = saved.middlePairHeight;
+			++epoch;
+			pairVersions = {};
+		}
+
+		bool BeginSession(std::uint64_t nextSession,
+			const LayoutConfiguration& saved) noexcept
+		{
+			if (nextSession == 0 || nextSession <= session) return false;
+			session = nextSession;
+			active = true;
+			RestorePositions(saved);
+			return true;
+		}
+
+		bool EndSession(std::uint64_t expectedSession) noexcept
+		{
+			if (!active || session != expectedSession) return false;
+			active = false;
+			++epoch;
+			return configuration.rememberPosition;
+		}
+
+		bool SetRemember(bool remember) noexcept
+		{
+			if (configuration.rememberPosition == remember) return false;
+			configuration.rememberPosition = remember;
+			return true; // 两个开关边沿都冻结当时的位置。
+		}
+
+		bool CommitPair(std::uint64_t expectedSession, std::uint64_t expectedEpoch,
+			std::size_t pair, std::uint64_t version, float x, float y) noexcept
+		{
+			if (!active || session != expectedSession || epoch != expectedEpoch
+				|| pair >= pairVersions.size() || version <= pairVersions[pair]
+				|| !std::isfinite(x) || !std::isfinite(y)) return false;
+			pairVersions[pair] = version;
+			if (pair == 0)
+			{
+				configuration.bottomPairWidth = x;
+				configuration.bottomPairHeight = y;
+			}
+			else
+			{
+				configuration.middlePairWidth = x;
+				configuration.middlePairHeight = y;
+			}
+			return true;
+		}
+	};
+
 	struct ControlLayout
 	{
 		RECT expanded{};
@@ -447,7 +512,8 @@ export namespace Inkeys::UI::Ppt
 		std::function<void()> nextPage;
 		std::function<void()> viewShow;
 		std::function<void()> endShow;
-		std::function<void(LayoutConfiguration)> persistPosition;
+		std::function<void(std::string)> persistSettings;
+		std::function<void(std::uint64_t, std::uint64_t, int, int)> pagePresented;
 	};
 
 	// 初始化只注册渲染客户端；窗口本身仍由 Window Service 创建和销毁。
@@ -456,7 +522,10 @@ export namespace Inkeys::UI::Ppt
 
 	[[nodiscard]] WNDPROC WindowProc() noexcept;
 	void PublishPresentationVisible(bool visible) noexcept;
-	void PublishPageState(int currentPage, int totalPage) noexcept;
+	void PublishSession(std::uint64_t session, bool active, HWND showWindow) noexcept;
+	void PublishPageState(int currentPage, int totalPage,
+		std::uint64_t targetRevision = 0) noexcept;
+	void ResetPositions() noexcept;
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept;
 	void QueueGlobalWheel(short delta) noexcept;
 	void SetDebugEnabled(bool enabled) noexcept;

@@ -153,6 +153,8 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 // Host stop: PrepareExitAutoSave -> CloseAndDrain -> destroy controller/worker.
 ~~~
 
+当前会话/目标代次、成功 Present 后 UI 回执门禁及活动 contact 页边界详见 [PPT 会话合同](../ppt-interop/native-session-ui3.md)。保留本节 slot/存储合同；不得再以无限等待 active.empty 作为唯一换页条件。
+
 ## Scenario: PPT 三态 slot、UInk 自动保存与当前进程恢复
 
 ### 1. Scope / Trigger

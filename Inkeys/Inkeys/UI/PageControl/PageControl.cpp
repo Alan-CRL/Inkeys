@@ -7,11 +7,13 @@ module;
 #include <windows.h>
 #include <windowsx.h>
 #include <d2d1_1.h>
+#include <d3d11.h>
 #include <dxgi.h>
 #include <tpcshrd.h>
 #include <wrl/client.h>
 
 #include "../Bar/Bar.DirtyRegion.h"
+#include "../../Drawing/Draw3/Draw3.PptTiming.h"
 
 #include <algorithm>
 #include <array>
@@ -227,6 +229,8 @@ namespace Inkeys::UI::PageControl
 		std::mutex dragCommitMutex;
 		std::array<PptDragCommitTracker, 2> dragCommitTrackers;
 		PptState publishedPpt;
+		PptPageCommitState pageCommit;
+		std::array<std::uint64_t, 2> handedOffDragVersions{};
 		WhiteboardState publishedWhiteboard;
 		PptCallbacks pptCallbacks;
 		WhiteboardCallbacks whiteboardCallbacks;
@@ -277,11 +281,6 @@ namespace Inkeys::UI::PageControl
 				: std::array<std::size_t, 2>{ 2, 3 };
 		}
 
-		[[nodiscard]] constexpr std::uint8_t DragSurfaceCommitMask(
-			std::size_t surfaceIndex) noexcept
-		{
-			return static_cast<std::uint8_t>(1U << (surfaceIndex % 2));
-		}
 
 		void RequestDragPair(std::size_t pairIndex) noexcept
 		{
@@ -340,7 +339,10 @@ namespace Inkeys::UI::PageControl
 				std::scoped_lock snapshotLock(snapshotMutex);
 				result.revision = directMoveRevision.load(
 					std::memory_order_relaxed) + 1;
+				if (candidate.session != publishedPpt.layout.session
+					|| candidate.epoch != publishedPpt.layout.epoch) return {};
 				result.layout = publishedPpt.layout;
+				result.layout.pairVersions[pairIndex] = result.revision;
 				CopyDragPairPosition(pairIndex, candidate, result.layout);
 				auto& tracker = dragCommitTrackers[pairIndex];
 				if (!tracker.ownsLayout)
@@ -380,15 +382,15 @@ namespace Inkeys::UI::PageControl
 		}
 
 		[[nodiscard]] DragCommitSnapshot CommitDragSurface(
-			std::size_t surfaceIndex, std::uint64_t revision) noexcept
+			std::size_t surfaceIndex, const PptState& frame) noexcept
 		{
+			const auto revision = frame.layout.pairVersions[DragPairIndex(surfaceIndex)];
 			std::scoped_lock lock(dragCommitMutex);
 			auto& tracker = dragCommitTrackers[DragPairIndex(surfaceIndex)];
 			if (!tracker.pending || tracker.revision != revision) return {};
 			DragCommitSnapshot result{ tracker.layout, tracker.revision,
 				tracker.committedSurfaceMask, true, false, tracker.released };
-			result.completed = MarkPptDragSurfaceCommitted(tracker, revision,
-				DragSurfaceCommitMask(surfaceIndex));
+			result.completed = MarkPptDragFrameCommitted(tracker, frame, surfaceIndex);
 			result.committedSurfaceMask = tracker.committedSurfaceMask;
 			return result;
 		}
@@ -423,14 +425,6 @@ namespace Inkeys::UI::PageControl
 				dragCommitTrackers[pairIndex], persist);
 		}
 
-		void FinishDragPersistence(std::size_t pairIndex,
-			std::uint64_t revision) noexcept
-		{
-			std::scoped_lock lock(dragCommitMutex);
-			(void)CompletePptDragPersistence(
-				dragCommitTrackers[pairIndex], revision);
-		}
-
 		[[nodiscard]] PptDragRollbackResult RollbackDragTracking(
 			std::size_t pairIndex) noexcept
 		{
@@ -443,6 +437,7 @@ namespace Inkeys::UI::PageControl
 				std::scoped_lock snapshotLock(snapshotMutex);
 				CopyDragPairPosition(pairIndex, result.layout,
 					publishedPpt.layout);
+				publishedPpt.layout.pairVersions[pairIndex] = result.layout.pairVersions[pairIndex];
 				if (result.discardedPending)
 				{
 					const auto rollbackRevision = directMoveRevision.load(
@@ -461,7 +456,10 @@ namespace Inkeys::UI::PageControl
 			{
 				const auto& tracker = dragCommitTrackers[pairIndex];
 				if (tracker.ownsLayout)
+				{
 					CopyDragPairPosition(pairIndex, tracker.layout, state.layout);
+					state.layout.pairVersions[pairIndex] = tracker.layout.pairVersions[pairIndex];
+				}
 			}
 		}
 
@@ -486,30 +484,17 @@ namespace Inkeys::UI::PageControl
 				publishedRevision.load(std::memory_order_relaxed) };
 		}
 
-		[[nodiscard]] RECT PrimaryBounds() noexcept
+		[[nodiscard]] std::pair<RECT, float> LayoutMonitor() noexcept
 		{
 			const auto snapshot = Inkeys::Display::GetSnapshot();
 			if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr)
-				return monitor->bounds;
-			return { 0, 0, GetSystemMetrics(SM_CXSCREEN),
-				GetSystemMetrics(SM_CYSCREEN) };
-		}
-
-		[[nodiscard]] float DpiScale(HWND hwnd) noexcept
-		{
-			const auto snapshot = Inkeys::Display::GetSnapshot();
-			const HMONITOR handle = hwnd
-				? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
-			const auto* monitor = snapshot
-				? (handle ? snapshot->Find(handle) : snapshot->Primary()) : nullptr;
-			if (monitor)
 			{
+				// 分页仍按主屏布局，DPI 必须来自同一显示快照；退场 HWND 可能已移到邻屏。
 				const UINT dpi = monitor->effectiveDpiX
 					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI;
-				return static_cast<float>(dpi)
-					/ static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+				return { monitor->bounds, static_cast<float>(dpi) / USER_DEFAULT_SCREEN_DPI };
 			}
-			return 1.0F;
+			return { { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) }, 1.0F };
 		}
 
 		[[nodiscard]] std::wstring PageNumber(int value, int maximum)
@@ -1083,7 +1068,7 @@ namespace Inkeys::UI::PageControl
 			PptState candidate = source;
 			candidate.layout = layout;
 			const LONG gap = static_cast<LONG>(std::lround(
-				PageControlGapDip * NormalizeScale(dpiScale)));
+				PageControlGapDip * NormalizeDpiScale(dpiScale)));
 			return PageControlGroupsOverlap(
 				monitor, dpiScale, candidate, gap);
 		}
@@ -1109,8 +1094,7 @@ namespace Inkeys::UI::PageControl
 			(void)whiteboard;
 			ppt.presentationVisible = true;
 			CopyDragPairPosition(pairIndex, layout, ppt.layout);
-			const RECT monitor = PrimaryBounds();
-			const float dpiScale = DpiScale(nullptr);
+			const auto [monitor, dpiScale] = LayoutMonitor();
 			const auto pair = DragPair(pairIndex);
 			std::unique_lock renderLock(renderTransactionMutex);
 			for (const std::size_t surfaceIndex : pair)
@@ -1222,13 +1206,18 @@ namespace Inkeys::UI::PageControl
 				candidate.middlePairWidth += left ? dx : -dx;
 				candidate.middlePairHeight -= dy;
 			}
-			const RECT monitor = PrimaryBounds();
-			const float dpiScale = DpiScale(nullptr);
+			const auto [monitor, dpiScale] = LayoutMonitor();
 			PptState ppt;
 			{
 				std::scoped_lock lock(snapshotMutex);
 				ppt = publishedPpt;
 			}
+			if (candidate.session != ppt.layout.session || candidate.epoch != ppt.layout.epoch)
+			{
+				state.dragging = state.dragPending = false;
+				return;
+			}
+			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt);
 			candidate = ClampPageControlLayout(moved, monitor,
 				dpiScale, candidate);
 			const std::size_t pairIndex = bottom ? 0 : 1;
@@ -1243,10 +1232,12 @@ namespace Inkeys::UI::PageControl
 			const PptLayoutState previousFeasible = state.feasibleLayout;
 			state.feasibleLayout = candidate;
 			const auto publication = PublishDragCandidate(pairIndex, candidate);
+			if (publication.revision == 0) return;
 			PptState previousPpt = ppt;
 			CopyDragPairPosition(pairIndex, previousFeasible, previousPpt.layout);
 			PptState candidatePpt = ppt;
 			candidatePpt.layout = publication.layout;
+			candidatePpt = ResolveRuntimePageControlLayout(monitor, dpiScale, candidatePpt);
 			const auto pair = DragPair(pairIndex);
 			std::array<ResolvedSurfaceLayout, 2> candidateLayouts{};
 			std::array<PptDragPresentationTarget, 2> directTargets{};
@@ -1365,16 +1356,63 @@ namespace Inkeys::UI::PageControl
 			}
 		}
 
-		[[nodiscard]] bool PersistDragPosition(const PptLayoutState& layout)
+		void FlushCommittedDrag(std::size_t pair)
 		{
-			std::function<void(PptLayoutState)> callback;
+			PptLayoutState layout;
+			{
+				std::scoped_lock lock(dragCommitMutex);
+				const auto& tracker = dragCommitTrackers[pair];
+				layout = tracker.committedLayout;
+				if (layout.pairVersions[pair] == 0) return;
+				// 已提交位置可在拖动中被开关保存；未提交候选不进入 facade。
+				if (layout.pairVersions[pair] <= handedOffDragVersions[pair])
+				{
+					(void)CompletePptDragPersistence(dragCommitTrackers[pair], tracker.revision);
+					return;
+				}
+			}
+			std::function<void(std::size_t, PptLayoutState)> callback;
 			{
 				std::scoped_lock lock(callbackMutex);
-				callback = pptCallbacks.persistPosition;
+				callback = pptCallbacks.commitPosition;
 			}
-			if (!callback) return false;
-			callback(layout);
-			return true;
+			if (callback) callback(pair, layout);
+			{
+				std::scoped_lock lock(dragCommitMutex);
+				const auto& tracker = dragCommitTrackers[pair];
+				if (tracker.layout.session != layout.session || tracker.layout.epoch != layout.epoch) return;
+				handedOffDragVersions[pair] = (std::max)(handedOffDragVersions[pair], layout.pairVersions[pair]);
+				(void)CompletePptDragPersistence(dragCommitTrackers[pair], layout.pairVersions[pair]);
+			}
+		}
+
+		std::uint8_t VisiblePptMask(const PptState& ppt, const WhiteboardState& whiteboard) noexcept
+		{
+			std::uint8_t result = 0;
+			for (std::size_t index = 0; index < 4; ++index)
+				if (ResolveWorkspaceMode(SurfaceFor(index), ppt, whiteboard) == WorkspaceMode::PptCompact)
+					result |= static_cast<std::uint8_t>(1U << index);
+			return result;
+		}
+
+		void AcknowledgePage(const PptState& frame, std::uint8_t committedMask)
+		{
+			bool visible = false;
+			{
+				std::scoped_lock lock(snapshotMutex);
+				pageCommit.Publish(publishedPpt, VisiblePptMask(publishedPpt, publishedWhiteboard));
+				if (!pageCommit.Commit(frame, committedMask)) return;
+				visible = pageCommit.required != 0;
+			}
+			std::function<void(std::uint64_t, std::uint64_t, int, int)> callback;
+			{
+				std::scoped_lock lock(callbackMutex);
+				callback = pptCallbacks.pagePresented;
+			}
+			Inkeys::Drawing::Draw3::TracePptTiming(visible ? "page-ui-commit" : "page-ui-hidden",
+				frame.layout.session, frame.targetRevision);
+			if (callback) callback(frame.layout.session, frame.targetRevision,
+				frame.currentPage, frame.totalPage);
 		}
 
 		void LogWindowCommitState(std::size_t index, HWND hwnd,
@@ -1413,12 +1451,22 @@ namespace Inkeys::UI::PageControl
 				directMoveRevision.load(std::memory_order_acquire);
 			const HWND hwnd = service.Handle(Roles[index]);
 			if (!hwnd) return FrameResult::Retry;
-			const RECT monitor = PrimaryBounds();
-			const float dpiScale = DpiScale(hwnd);
+			const auto [monitor, dpiScale] = LayoutMonitor();
 			auto renderSnapshot = SnapshotForRender();
 			auto& ppt = renderSnapshot.ppt;
 			const auto& whiteboard = renderSnapshot.whiteboard;
-			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt);
+			float presentationOutsetDip = 0.0F;
+			unsigned bitmapLimit = D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+			{
+				std::unique_lock renderLock(renderTransactionMutex);
+				const auto& scene = surfaces[index].scene;
+				presentationOutsetDip = static_cast<float>(scene.PresentationOutsetPixels())
+					/ NormalizeScale(surfaces[index].appliedSceneScale);
+				if (auto* context = scene.DeviceContext())
+					bitmapLimit = (std::min)(bitmapLimit, context->GetMaximumBitmapSize());
+			}
+			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
+				presentationOutsetDip, bitmapLimit);
 			const Surface surface = SurfaceFor(index);
 			const WorkspaceMode mode = ResolveWorkspaceMode(
 				surface, ppt, whiteboard);
@@ -1432,13 +1480,15 @@ namespace Inkeys::UI::PageControl
 			RECT presentation{};
 			bool keepAnimating = false;
 			bool shouldShow = false;
+			bool pptFrame = false;
 			bool repeatDirection = false;
 			bool repeatNext = false;
 			{
 				std::unique_lock renderLock(renderTransactionMutex);
 				// 直移可在 frame 取快照后完成；旧帧不得先以 ULW 覆盖新 HWND 坐标。
 				if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
-					directMoveRevision.load(std::memory_order_acquire)))
+					directMoveRevision.load(std::memory_order_acquire))
+					|| renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire))
 					return FrameResult::Retry;
 				auto& state = surfaces[index];
 				ConfigureSurface(index, mode, ppt, whiteboard, monitor, target,
@@ -1509,8 +1559,17 @@ namespace Inkeys::UI::PageControl
 					state.pressStarted.time_since_epoch().count() != 0);
 				shouldShow = ShouldKeepPageControlWindowVisible(
 					state.targetVisible, exitTransitionActive);
+				pptFrame = shouldShow && state.configuredMode == WorkspaceMode::PptCompact;
 				if (shouldShow)
 				{
+					// 与发布共享短锁：新隐藏目标不能越过即将显示旧数字的在途帧。
+					{
+						std::scoped_lock snapshotLock(snapshotMutex);
+						if (renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire))
+							return FrameResult::Retry;
+						if (pptFrame) pageCommit.BeginSurface(static_cast<std::uint8_t>(1U << index));
+					}
+
 					const bool presentationSizeChanged =
 						!state.committedPresentationReady
 						|| state.committedPresentationSize.cx != presentationSize.cx
@@ -1557,13 +1616,14 @@ namespace Inkeys::UI::PageControl
 			if (presentStatus != PresentStatus::Success)
 				return presentStatus == PresentStatus::DeviceLost
 					? FrameResult::DeviceLost : FrameResult::Retry;
-			std::scoped_lock presentationLock(presentationMutex);
+			std::unique_lock presentationLock(presentationMutex);
 			// 拖动期间产生的过期帧不能把已经直移的 HWND 拉回旧坐标。
 			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
-				directMoveRevision.load(std::memory_order_acquire)))
+				directMoveRevision.load(std::memory_order_acquire))
+				|| renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire))
 				return FrameResult::Retry;
 			const auto pendingDrag = ObservePendingDrag(
-				index, frameDirectMoveRevision);
+				index, ppt.layout.pairVersions[DragPairIndex(index)]);
 			if (pendingDrag.matched)
 				TraceDrag("consume consumer=render surface=%s revision=%llu "
 					"stage=attempt committed_mask=%u released=%d",
@@ -1577,7 +1637,9 @@ namespace Inkeys::UI::PageControl
 					"result=deferred reason=surface-hidden pending=1",
 					SurfaceName(index),
 					static_cast<unsigned long long>(pendingDrag.revision));
-				RequestDragPair(DragPairIndex(index));
+				(void)RollbackDragTracking(DragPairIndex(index));
+				presentationLock.unlock();
+				FlushCommittedDrag(DragPairIndex(index));
 				return FrameResult::Retry;
 			}
 			bool boundsApplied = true;
@@ -1611,9 +1673,15 @@ namespace Inkeys::UI::PageControl
 				LogWindowCommitState(index, hwnd, shouldShow,
 					boundsApplied, visibilityApplied, true);
 			}
+			{
+				std::scoped_lock snapshotLock(snapshotMutex);
+				// 即使发布在同步提交中途变化，也必须登记实际仍可见的旧 PPT 帧。
+				pageCommit.FinishSurface(static_cast<std::uint8_t>(1U << index), pptFrame);
+			}
 			// owner 可能在同步窗口提交期间发布了更新候选；旧提交必须继续重试。
 			if (!IsPageControlFrameRevisionCurrent(frameDirectMoveRevision,
-				directMoveRevision.load(std::memory_order_acquire)))
+				directMoveRevision.load(std::memory_order_acquire))
+				|| renderSnapshot.revision != publishedRevision.load(std::memory_order_acquire))
 			{
 				if (pendingDrag.matched)
 					TraceDrag("consume consumer=render surface=%s revision=%llu "
@@ -1622,8 +1690,7 @@ namespace Inkeys::UI::PageControl
 						static_cast<unsigned long long>(pendingDrag.revision));
 				return FrameResult::Retry;
 			}
-			const auto dragCommit = CommitDragSurface(
-				index, frameDirectMoveRevision);
+			const auto dragCommit = CommitDragSurface(index, ppt);
 			if (dragCommit.matched)
 				TraceDrag("consume consumer=render surface=%s revision=%llu "
 					"result=committed committed_mask=%u pending=%d",
@@ -1633,6 +1700,9 @@ namespace Inkeys::UI::PageControl
 					dragCommit.completed ? 0 : 1);
 			Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
 				static_cast<unsigned int>(index), presentation, shouldShow);
+			presentationLock.unlock();
+			FlushCommittedDrag(DragPairIndex(index));
+			AcknowledgePage(ppt, pptFrame ? static_cast<std::uint8_t>(1U << index) : 0);
 			return keepAnimating ? FrameResult::Continue : FrameResult::Idle;
 		}
 
@@ -1771,6 +1841,8 @@ namespace Inkeys::UI::PageControl
 				if (state.dragging)
 				{
 					UpdateDragLocked(index, screen);
+					renderLock.unlock();
+					FlushCommittedDrag(DragPairIndex(index));
 					return 0;
 				}
 				if (state.dragPending) return 0;
@@ -1842,9 +1914,9 @@ namespace Inkeys::UI::PageControl
 						state.dragPending = !state.dragging;
 						state.dragStartScreen = local;
 						ClientToScreen(hwnd, &state.dragStartScreen);
-						const RECT monitor = PrimaryBounds();
+						const auto [monitor, dpiScale] = LayoutMonitor();
 						ppt = ResolveRuntimePageControlLayout(
-							monitor, DpiScale(hwnd), ppt);
+							monitor, dpiScale, ppt);
 						state.dragStartLayout = ppt.layout;
 						state.feasibleLayout = ppt.layout;
 						state.lastDragCandidateTrace = {};
@@ -1966,24 +2038,7 @@ namespace Inkeys::UI::PageControl
 					if (dragRelease.pending) RequestDragPair(dragPairIndex);
 				}
 				if (dragEnded) RequestAll();
-				if (dragRelease.persist)
-				{
-					const bool dispatched = PersistDragPosition(dragRelease.layout);
-					TraceDrag("persist pair=%s revision=%llu dispatched=%d "
-						"position=(%.1f,%.1f) pending=%d",
-						dragPairIndex == 0 ? "bottom" : "middle",
-						static_cast<unsigned long long>(dragRelease.revision),
-						dispatched ? 1 : 0,
-						dragPairIndex == 0
-							? dragRelease.layout.bottomPairWidth
-							: dragRelease.layout.middlePairWidth,
-						dragPairIndex == 0
-							? dragRelease.layout.bottomPairHeight
-							: dragRelease.layout.middlePairHeight,
-						dragRelease.pending ? 1 : 0);
-					FinishDragPersistence(
-						dragPairIndex, dragRelease.revision);
-				}
+				if (dragRelease.tracked) FlushCommittedDrag(dragPairIndex);
 				return 0;
 			}
 			if (message == WM_MOUSEWHEEL)
@@ -2039,6 +2094,7 @@ namespace Inkeys::UI::PageControl
 							dragPairIndex == 0 ? rollback.layout.bottomPairHeight
 								: rollback.layout.middlePairHeight);
 						RequestDragPair(dragPairIndex);
+						FlushCommittedDrag(dragPairIndex);
 					}
 				}
 				// ReleaseCapture 会同步重入 WM_CAPTURECHANGED，必须在呈现锁外执行。
@@ -2048,6 +2104,93 @@ namespace Inkeys::UI::PageControl
 			if (message == WM_ERASEBKGND) return 1;
 			return DefWindowProcW(hwnd, message, wParam, lParam);
 		}
+	}
+
+	int RunOffscreenTests()
+	{
+		int failures = 0;
+		auto Check = [&](bool valid, const char* message)
+		{
+			if (!valid) { ++failures; std::fprintf(stderr, "[PageControlScene] FAIL %s\n", message); }
+		};
+		const auto epoch = Inkeys::UI::RenderPipeline::GetDeviceEpoch();
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.currentPage = 7;
+		ppt.totalPage = 28;
+		ppt.layout.showMiddlePair = true;
+		WhiteboardState whiteboard;
+		whiteboard.currentPage = 2;
+		whiteboard.totalPage = 4;
+		whiteboard.previousEnabled = whiteboard.nextEnabled = true;
+		whiteboard.previousInteractive = whiteboard.nextInteractive = true;
+		whiteboard.expandedLayoutTarget = whiteboard.active = true;
+		const auto now = std::chrono::steady_clock::now() + 1s;
+		for (const auto mode : { WorkspaceMode::PptCompact, WorkspaceMode::WhiteboardExpanded })
+			for (std::size_t index = 0; index < (mode == WorkspaceMode::PptCompact ? 4U : 2U); ++index)
+				for (const float scale : { 0.25F, 1.0F, 5.0F, 12.0F })
+				{
+					Scene scene;
+					const auto background = BuildBackground(index, mode);
+					const auto widgets = BuildWidgets(index, mode, ppt, whiteboard);
+					Check(scene.Configure(background, widgets), "product widgets configure");
+					const LONG width = static_cast<LONG>(std::lround(background.bounds.right * scale));
+					const LONG height = static_cast<LONG>(std::lround(background.bounds.bottom * scale));
+					Check(scene.SetBounds({ 200, 100, 200 + width, 100 + height }, scale), "effective bounds accepted");
+					scene.SetOpacity(1.0, 0.0);
+					const LONG outset = scene.PresentationOutsetPixels();
+					const auto bounds = scene.PresentationBounds();
+					Check(bounds.right - bounds.left == width + 2 * outset
+						&& bounds.bottom - bounds.top == height + 2 * outset,
+						"presentation adds equal shadow extents on all sides");
+					const UINT targetWidth = static_cast<UINT>(width + 2 * outset + 23);
+					const UINT targetHeight = static_cast<UINT>(height + 2 * outset + 19);
+					const HRESULT setup = scene.EnsureDeviceResources(epoch, targetWidth, targetHeight);
+					Check(SUCCEEDED(setup), "actual Scene backing allocates");
+					if (FAILED(setup)) continue;
+					auto* context = scene.DeviceContext();
+					context->BeginDraw();
+					context->SetTransform(D2D1::Matrix3x2F::Identity());
+					context->Clear(D2D1::ColorF(0, 0, 0, 0));
+					(void)scene.Render(context, now);
+					Check(SUCCEEDED(context->EndDraw()), "actual Scene renders at final scale");
+					const POINT right{ width - (std::max)(1L, static_cast<LONG>(5 * scale)), height / 2 };
+					const POINT bottom{ width / 2, height - (std::max)(1L, static_cast<LONG>(5 * scale)) };
+					Check(scene.HitTestBackground(right) && scene.HitTestBackground(bottom),
+						"right and bottom content use the same scale as layout");
+					Check(!scene.PresentationToLogical({ 0, 0 }).has_value(), "transparent margin remains click through");
+					for (const auto& widget : widgets)
+					{
+						if (!widget.visible || widget.kind == Inkeys::UI::Bar::BarSurfaceWidgetKind::DragHandle) continue;
+						const auto& rectangle = widget.bounds;
+						const POINT center{ static_cast<LONG>((rectangle.left + rectangle.right) * scale / 2),
+							static_cast<LONG>((rectangle.top + rectangle.bottom) * scale / 2) };
+						Check(scene.HitTest(center) == widget.id, "actual button hit matches rendered position");
+					}
+					ComPtr<ID2D1Image> target;
+					context->GetTarget(&target);
+					ComPtr<ID2D1Bitmap1> bitmap;
+					Check(target && SUCCEEDED(target.As(&bitmap)), "render target supports bitmap readback");
+					if (!bitmap) continue;
+					ComPtr<ID2D1Bitmap1> readable;
+					const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ
+						| D2D1_BITMAP_OPTIONS_CANNOT_DRAW, bitmap->GetPixelFormat());
+					const HRESULT copied = context->CreateBitmap(bitmap->GetPixelSize(), nullptr, 0, &properties, &readable);
+					if (FAILED(copied) || FAILED(readable->CopyFromBitmap(nullptr, bitmap.Get(), nullptr)))
+					{ Check(false, "rendered pixels read back"); continue; }
+					D2D1_MAPPED_RECT mapped{};
+					if (FAILED(readable->Map(D2D1_MAP_OPTIONS_READ, &mapped)))
+					{ Check(false, "readback maps"); continue; }
+					auto Alpha = [&](LONG x, LONG y) { return mapped.bits[y * mapped.pitch + x * 4 + 3]; };
+					Check(Alpha(right.x + outset, right.y + outset) > 16
+						&& Alpha(bottom.x + outset, bottom.y + outset) > 16,
+						"right and bottom body pixels contain visible content instead of one-sided gaps");
+					Check(Alpha(targetWidth - 1, targetHeight - 1) == 0,
+						"extra backing capacity remains outside presentation content");
+					readable->Unmap();
+				}
+		std::fprintf(stderr, "[PageControlScene] failures=%d\n", failures);
+		return failures;
 	}
 
 	bool Acquire()
@@ -2103,8 +2246,14 @@ namespace Inkeys::UI::PageControl
 		for (std::size_t index = 0; index < Roles.size(); ++index)
 		{
 			if (service.Hide(Roles[index]))
+			{
+				{
+					std::scoped_lock lock(snapshotMutex);
+					pageCommit.FinishSurface(static_cast<std::uint8_t>(1U << index), false);
+				}
 				Inkeys::UI::Bar::PublishBorderCursorSurfaceBounds(
 					static_cast<unsigned int>(index), {}, false);
+			}
 		}
 		{
 			std::scoped_lock dragLock(dragCommitMutex);
@@ -2121,6 +2270,13 @@ namespace Inkeys::UI::PageControl
 
 	WNDPROC WindowProc() noexcept { return PageControlWindowProc; }
 
+	void FlushPositionCommits()
+	{
+		// 保存边沿汇入已经成功提交但回调尚未运行的几何，不等待窗口或候选。
+		for (std::size_t pair = 0; pair < dragCommitTrackers.size(); ++pair)
+			FlushCommittedDrag(pair);
+	}
+
 	void SetPptCallbacks(PptCallbacks callbacks)
 	{
 		std::scoped_lock lock(callbackMutex);
@@ -2136,15 +2292,25 @@ namespace Inkeys::UI::PageControl
 	void PublishPptState(const PptState& state) noexcept
 	{
 		PptState merged = state;
+		bool changed = false;
 		{
 			std::scoped_lock dragLock(dragCommitMutex);
-			PreserveOwnedDragLayouts(merged);
 			std::scoped_lock snapshotLock(snapshotMutex);
-			if (ArePptStatesEquivalent(publishedPpt, merged)) return;
+			if (!MergePptPublication(publishedPpt, merged)) return;
+			if (merged.layout.session != publishedPpt.layout.session
+				|| merged.layout.epoch != publishedPpt.layout.epoch)
+			{
+				dragCommitTrackers = {};
+				handedOffDragVersions = {};
+				directMoveRevision.fetch_add(1, std::memory_order_release);
+			}
+			PreserveOwnedDragLayouts(merged);
+			changed = !ArePptStatesEquivalent(publishedPpt, merged);
 			publishedPpt = merged;
-			publishedRevision.fetch_add(1, std::memory_order_release);
+			if (changed) publishedRevision.fetch_add(1, std::memory_order_release);
 		}
-		RequestAll();
+		AcknowledgePage(merged, 0);
+		if (changed) RequestAll();
 	}
 
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept
@@ -2155,6 +2321,7 @@ namespace Inkeys::UI::PageControl
 			publishedWhiteboard = state;
 			publishedRevision.fetch_add(1, std::memory_order_release);
 		}
+		AcknowledgePage(Snapshot().first, 0);
 		RequestAll();
 	}
 
@@ -2234,6 +2401,7 @@ namespace Inkeys::UI::PageControl
 				pairIndex == 0 ? rollback.layout.bottomPairHeight
 					: rollback.layout.middlePairHeight);
 			RequestDragPair(pairIndex);
+			FlushCommittedDrag(pairIndex);
 		}
 		RequestAll();
 	}

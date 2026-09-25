@@ -16,6 +16,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 				left.slideIds == right.slideIds && left.slideId == right.slideId &&
 				left.pageIndex == right.pageIndex && left.totalPages == right.totalPages &&
 				left.bindingRevision == right.bindingRevision &&
+				left.sessionRevision == right.sessionRevision &&
 				left.processLocalIdentity == right.processLocalIdentity;
 		}
 	}
@@ -171,7 +172,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		commands_.clear();
 		finalCommand_.reset();
 		nextSequence_ = 1;
-		nextTargetRevision_ = 1;
+		// Host 重启也不复用目标编号，避免旧 UI/ready completion 命中新一代。
 		state_ = {};
 		running_ = true;
 	}

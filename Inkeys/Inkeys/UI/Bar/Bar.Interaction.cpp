@@ -3393,6 +3393,19 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										else if (temp->preset == BarButtonPresetEnum::Clean)
 											barButtonSet.ExecuteClearClick(doubleClickContinuation);
 										else if (temp->clickFunc) temp->clickFunc();
+										// 仅业务动作交还焦点；打开设置/颜色等编辑入口不抢走输入。
+										switch (temp->preset.load())
+										{
+										case BarButtonPresetEnum::Select:
+										case BarButtonPresetEnum::Draw:
+										case BarButtonPresetEnum::Eraser:
+										case BarButtonPresetEnum::Geometry:
+										case BarButtonPresetEnum::Clean:
+										case BarButtonPresetEnum::Recall:
+										case BarButtonPresetEnum::Redo:
+											Inkeys::UI::Bar::NotifyPptBusinessAction(); break;
+										default: break;
+										}
 										lastClickedMainBarButton = temp;
 										clickCompleted = true;
 										UpdateRendering();
@@ -6125,8 +6138,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 
 		auto ResolveDockInsetDip = []() noexcept
 			{
-				return Inkeys::UI::Bar::WhiteboardActive()
-					? BarWhiteboardBottomInsetDip : 0.0;
+				return Inkeys::UI::Bar::SceneBottomDockInsetDip();
 			};
 		auto ResolveDockDpiScale = [](UINT dpi) noexcept
 			{

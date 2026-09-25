@@ -405,6 +405,7 @@ namespace
 
 	void QueuePptComWriteSetting()
 	{
+		Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::All);
 		QueueBusiness({ SettingBusinessKind::WritePptSetting });
 	}
 
@@ -4586,14 +4587,10 @@ SettingSessionCoroutine RunSettingSession()
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										if (Widgets::button.Standard(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
-											pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
-											pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
-											pptComSetlist.middleBothWidth = MiddleBothWidth = 0;
-											pptComSetlist.middleBothHeight = MiddleBothHeight = 0;
-
+											BottomBothWidth = BottomBothHeight = 0;
+											MiddleBothWidth = MiddleBothHeight = 0;
+											Inkeys::UI::Ppt::ResetPositions();
 											PptComWriteSetting();
-											Inkeys::UI::Ppt::NotifyConfigurationChanged(
-												Inkeys::UI::Ppt::ConfigGroup::All);
 										}
 									}
 

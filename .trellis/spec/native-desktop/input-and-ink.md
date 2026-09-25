@@ -39,7 +39,7 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 
 `【待确认】` 仓库没有给出各 Windows 版本、触摸屏、数位笔驱动和 RTS 版本的正式支持矩阵。
 
-## 笔画生命周期
+## 历史 Draw2 笔画生命周期
 
 `【直接确认】` `IdtDrawpad.cpp::MultiFingerDrawing` 为每个活动接触点处理临时 `StrokeImageClass`/`DibSurface`。可见行为包括：
 
@@ -54,7 +54,9 @@ Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 produce
 
 这些是 `【历史/兼容】` 的现有 Draw2/GDI+ 墨迹模型；图像承载已迁为 `Inkeys.Graphics.DibSurface`，不再依赖 EasyX `IMAGE`。新渲染实现不必复制所有全局结构，但改动当前路径时不能忽略其层次和页级状态。
 
-## 共享状态与并发风险
+当前 PPT 的接触收尾、代次门禁和物理 Up 隔离见 [PPT 会话合同](../ppt-interop/native-session-ui3.md)；不能根据下面的历史 Draw2 共享状态推导生产键盘或页事务。
+
+## 历史共享状态与并发风险
 
 `【直接确认】` `TouchList`、`TouchTemp`、`TouchPos`、`StrokeImageList`、`drawpad`、`RecallImage` 和 `PptImg` 在不同函数/线程中读写；代码并存 `shared_mutex`、`mutex`、`IdtAtomic` 和显式锁。`MultiFingerDrawing` 当前由 detached thread 执行，画板合成和其他状态线程同时运行。
 

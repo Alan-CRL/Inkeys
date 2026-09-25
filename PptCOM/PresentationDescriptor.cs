@@ -62,6 +62,7 @@ namespace PptCOM
     {
         object GetProperty(object target, string name);
         object GetItem(object collection, int oneBasedIndex);
+        void InvokeMethod(object target, string name);
         bool IsComObject(object value);
         void Release(object value);
     }
@@ -95,6 +96,11 @@ namespace PptCOM
             return Invoke(collection, "Item",
                 BindingFlags.GetProperty | BindingFlags.InvokeMethod,
                 new object[] { oneBasedIndex });
+        }
+
+        public void InvokeMethod(object target, string name)
+        {
+            Invoke(target, name, BindingFlags.InvokeMethod, null);
         }
 
         public bool IsComObject(object value)
@@ -224,6 +230,23 @@ namespace PptCOM
         public PresentationDescriptorValue Read(object application,
             object presentation, object slideShowWindow, long bindingRevision)
         {
+            string ignored;
+            return Read(application, presentation, slideShowWindow, bindingRevision, false, out ignored);
+        }
+
+        public PresentationDescriptorValue ReadShow(object application,
+            object presentation, object slideShowWindow, long bindingRevision, out string pageStatus)
+        {
+            return Read(application, presentation, slideShowWindow, bindingRevision, true, out pageStatus);
+        }
+
+        private PresentationDescriptorValue Read(object application,
+            object presentation, object slideShowWindow, long bindingRevision,
+            bool inspectState, out string pageStatus)
+        {
+            pageStatus = "Unknown";
+            bool endScreen = false;
+            bool stateUnknown = false;
             PresentationDescriptorValue descriptor =
                 PresentationDescriptorValue.CreateStatus("Unavailable", bindingRevision);
             if (application == null || presentation == null || slideShowWindow == null)
@@ -256,17 +279,34 @@ namespace PptCOM
             try
             {
                 view = accessor.GetProperty(slideShowWindow, "View");
-                currentSlide = accessor.GetProperty(view, "Slide");
-                descriptor.currentPage = GetInt32(currentSlide, "SlideIndex");
-                try
+                if (inspectState)
                 {
-                    currentSlideId = GetInt32(currentSlide, "SlideID");
-                    hasCurrentSlideId = currentSlideId > 0;
+                    try
+                    {
+                        int state = GetInt32(view, "State");
+                        endScreen = state == 5; // ppSlideShowDone；黑屏/白屏仍是本页，不算结束。
+                        stateUnknown = state < 1 || state > 5;
+                    }
+                    catch (Exception exception)
+                    {
+                        // State 是可选属性。缺失时仍可用自洽 Slide 证明有效页；任何失败都不推断结束。
+                        if (IsBusy(exception)) throw;
+                    }
                 }
-                catch (Exception exception)
+                if (!endScreen)
                 {
-                    if (IsBusy(exception)) throw;
-                    hasCurrentSlideId = false;
+                    currentSlide = accessor.GetProperty(view, "Slide");
+                    descriptor.currentPage = GetInt32(currentSlide, "SlideIndex");
+                    try
+                    {
+                        currentSlideId = GetInt32(currentSlide, "SlideID");
+                        hasCurrentSlideId = currentSlideId > 0;
+                    }
+                    catch (Exception exception)
+                    {
+                        if (IsBusy(exception)) throw;
+                        hasCurrentSlideId = false;
+                    }
                 }
             }
             catch (Exception exception)
@@ -286,6 +326,12 @@ namespace PptCOM
             {
                 slides = accessor.GetProperty(presentation, "Slides");
                 descriptor.totalPage = GetInt32(slides, "Count");
+                if (endScreen && descriptor.totalPage > 0 && descriptor.totalPage <= MaximumSlides)
+                {
+                    // 旧 descriptor schema 保持非负页码；只有新 envelope 的 pageStatus 表示结束页。
+                    pageStatus = "EndScreen";
+                    return descriptor;
+                }
                 if (descriptor.totalPage <= 0 || descriptor.currentPage <= 0 ||
                     descriptor.currentPage > descriptor.totalPage ||
                     descriptor.totalPage > MaximumSlides)
@@ -295,6 +341,7 @@ namespace PptCOM
                 if (!hasCurrentSlideId)
                 {
                     descriptor.status = "PageIndexFallback";
+                    pageStatus = stateUnknown ? "Unknown" : "Valid";
                     return descriptor;
                 }
 
@@ -324,6 +371,7 @@ namespace PptCOM
                 descriptor.currentSlideId = currentSlideId;
                 descriptor.slideIds = slideIds;
                 descriptor.status = "StableSlideIds";
+                pageStatus = stateUnknown ? "Unknown" : "Valid";
                 return descriptor;
             }
             catch (Exception exception)
@@ -341,6 +389,7 @@ namespace PptCOM
                     descriptor.status = "PageIndexFallback";
                     descriptor.currentSlideId = null;
                     descriptor.slideIds = new int[0];
+                    pageStatus = stateUnknown ? "Unknown" : "Valid";
                     return descriptor;
                 }
                 return PresentationDescriptorValue.CreateStatus(

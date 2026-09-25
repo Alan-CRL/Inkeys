@@ -387,6 +387,9 @@ export namespace Inkeys::UI::PageControl
 
 	struct PptLayoutState
 	{
+		std::uint64_t session = 0;
+		std::uint64_t epoch = 0;
+		std::array<std::uint64_t, 2> pairVersions{};
 		float bottomPairWidth = 0.0F;
 		float bottomPairHeight = 0.0F;
 		float middlePairWidth = 0.0F;
@@ -495,7 +498,7 @@ export namespace Inkeys::UI::PageControl
 	{
 		if (!tracker.ownsLayout) return {};
 		tracker.released = true;
-		tracker.persistencePending = persist && tracker.layout.rememberPosition;
+		tracker.persistencePending = persist && tracker.revision != 0; // 这里确认运行期交接，不代表写盘。
 		const PptDragReleaseResult result{
 			tracker.layout,
 			tracker.revision,
@@ -541,11 +544,105 @@ export namespace Inkeys::UI::PageControl
 
 	struct PptState
 	{
+		std::uint64_t publicationRevision = 0;
+		std::uint64_t targetRevision = 0;
 		bool presentationVisible = false;
 		bool longPressEnabled = false;
 		int currentPage = -1;
 		int totalPage = -1;
 		PptLayoutState layout;
+	};
+
+	[[nodiscard]] inline bool MarkPptDragFrameCommitted(PptDragCommitTracker& tracker,
+		const PptState& frame, std::size_t surfaceIndex) noexcept
+	{
+		if (surfaceIndex >= 4 || tracker.layout.session != frame.layout.session
+			|| tracker.layout.epoch != frame.layout.epoch) return false;
+		return MarkPptDragSurfaceCommitted(tracker, frame.layout.pairVersions[surfaceIndex / 2],
+			static_cast<std::uint8_t>(1U << (surfaceIndex % 2)));
+	}
+
+	[[nodiscard]] inline bool MergePptPublication(const PptState& current,
+		PptState& incoming) noexcept
+	{
+		if (incoming.layout.session < current.layout.session) return false;
+		if (incoming.layout.session == current.layout.session
+			&& (incoming.layout.epoch < current.layout.epoch
+				|| (incoming.publicationRevision != 0
+					&& incoming.publicationRevision < current.publicationRevision))) return false;
+		if (incoming.layout.session == current.layout.session
+			&& incoming.layout.epoch == current.layout.epoch)
+		{
+			if (incoming.layout.pairVersions[0] < current.layout.pairVersions[0])
+			{
+				incoming.layout.bottomPairWidth = current.layout.bottomPairWidth;
+				incoming.layout.bottomPairHeight = current.layout.bottomPairHeight;
+				incoming.layout.pairVersions[0] = current.layout.pairVersions[0];
+			}
+			if (incoming.layout.pairVersions[1] < current.layout.pairVersions[1])
+			{
+				incoming.layout.middlePairWidth = current.layout.middlePairWidth;
+				incoming.layout.middlePairHeight = current.layout.middlePairHeight;
+				incoming.layout.pairVersions[1] = current.layout.pairVersions[1];
+			}
+		}
+		return true;
+	}
+
+	struct PptPageCommitState
+	{
+		std::uint64_t session = 0;
+		std::uint64_t target = 0;
+		int current = -1;
+		int total = -1;
+		std::uint8_t required = 0;
+		std::uint8_t committed = 0;
+		bool acknowledged = false;
+		std::uint8_t presentedPpt = 0;
+		std::uint8_t pendingPptPresentation = 0;
+
+		void BeginSurface(std::uint8_t mask) noexcept
+		{
+			pendingPptPresentation |= mask;
+		}
+
+		void FinishSurface(std::uint8_t mask, bool visiblePpt) noexcept
+		{
+			pendingPptPresentation &= static_cast<std::uint8_t>(~mask);
+			if (visiblePpt) presentedPpt |= mask;
+			else presentedPpt &= static_cast<std::uint8_t>(~mask);
+		}
+
+		void Publish(const PptState& state, std::uint8_t visibleMask) noexcept
+		{
+			if (session != state.layout.session || target != state.targetRevision
+				|| current != state.currentPage || total != state.totalPage)
+			{
+				const auto visible = presentedPpt;
+				const auto pending = pendingPptPresentation;
+				*this = { state.layout.session, state.targetRevision,
+					state.currentPage, state.totalPage };
+				presentedPpt = visible;
+				pendingPptPresentation = pending;
+			}
+			// 隐藏目标不是 HWND 已隐藏；淡出旧数字或未完成的呈现仍须交接。
+			const auto requiredMask = static_cast<std::uint8_t>(visibleMask
+				| presentedPpt | pendingPptPresentation);
+			committed &= static_cast<std::uint8_t>(~(requiredMask & ~required));
+			required = requiredMask;
+		}
+
+		bool Commit(const PptState& state, std::uint8_t mask) noexcept
+		{
+			if (session != state.layout.session || target != state.targetRevision
+				|| current != state.currentPage || total != state.totalPage) return false;
+			committed |= mask;
+			if (acknowledged || session == 0 || target == 0
+				|| current <= 0 || total <= 0 || (committed & required) != required)
+				return false;
+			acknowledged = true;
+			return true;
+		}
 	};
 
 	struct WhiteboardState
@@ -573,7 +670,11 @@ export namespace Inkeys::UI::PageControl
 				return first == second
 					|| (std::isnan(first) && std::isnan(second));
 			};
-		return left.presentationVisible == right.presentationVisible
+		return left.targetRevision == right.targetRevision
+			&& left.layout.session == right.layout.session
+			&& left.layout.epoch == right.layout.epoch
+			&& left.layout.pairVersions == right.layout.pairVersions
+			&& left.presentationVisible == right.presentationVisible
 			&& left.longPressEnabled == right.longPressEnabled
 			&& left.currentPage == right.currentPage
 			&& left.totalPage == right.totalPage
@@ -617,7 +718,8 @@ export namespace Inkeys::UI::PageControl
 		std::function<void()> nextPage;
 		std::function<void()> viewShow;
 		std::function<void()> endShow;
-		std::function<void(PptLayoutState)> persistPosition;
+		std::function<void(std::size_t, PptLayoutState)> commitPosition;
+		std::function<void(std::uint64_t, std::uint64_t, int, int)> pagePresented;
 	};
 
 	struct WhiteboardCallbacks
@@ -635,10 +737,21 @@ export namespace Inkeys::UI::PageControl
 		bool vertical = false;
 	};
 
+	// 配置范围只约束输入；已完成屏幕/资源适配的乘积不能再套用输入范围。
 	[[nodiscard]] inline float NormalizeScale(float scale) noexcept
 	{
 		if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
-		return std::clamp(scale, 1.0F / 128.0F, 4.0F);
+		return (std::max)(scale, 1.0F / 65536.0F);
+	}
+
+	[[nodiscard]] inline float NormalizeDpiScale(float scale) noexcept
+	{
+		return std::clamp(NormalizeScale(scale), 0.5F, 4.0F);
+	}
+
+	[[nodiscard]] inline float NormalizeRuntimeControlScale(float scale) noexcept
+	{
+		return (std::min)(NormalizeScale(scale), 3.0F);
 	}
 
 	struct PptDragPresentationTarget
@@ -847,7 +960,7 @@ export namespace Inkeys::UI::PageControl
 			|| surface == Surface::MiddleRight;
 		const bool left = surface == Surface::BottomLeft
 			|| surface == Surface::MiddleLeft;
-		const float normalizedDpi = NormalizeScale(dpiScale);
+		const float normalizedDpi = NormalizeDpiScale(dpiScale);
 		float scale = normalizedDpi;
 		double widthDip = result.vertical
 			? PptCompactShortSideDip : PptCompactLongSideDip;
@@ -859,9 +972,9 @@ export namespace Inkeys::UI::PageControl
 			heightDip = WhiteboardHeightDip;
 		}
 		else if (result.vertical)
-			scale *= NormalizeScale(ppt.layout.middlePairScale);
+			scale *= NormalizeRuntimeControlScale(ppt.layout.middlePairScale);
 		else
-			scale *= NormalizeScale(ppt.layout.bottomPairScale);
+			scale *= NormalizeRuntimeControlScale(ppt.layout.bottomPairScale);
 		result.scale = scale;
 		const LONG width = (std::max)(1L,
 			static_cast<LONG>(std::lround(widthDip * scale)));
@@ -925,8 +1038,8 @@ export namespace Inkeys::UI::PageControl
 			|| moved == Surface::BottomRight;
 		if (bottom)
 		{
-			const float scale = NormalizeScale(dpiScale)
-				* NormalizeScale(layout.bottomPairScale);
+			const float scale = NormalizeDpiScale(dpiScale)
+				* NormalizeRuntimeControlScale(layout.bottomPairScale);
 			const double controlWidth = PptCompactLongSideDip;
 			const double controlHeight = PptCompactShortSideDip;
 			layout.bottomPairWidth = (std::clamp)(layout.bottomPairWidth,
@@ -939,8 +1052,8 @@ export namespace Inkeys::UI::PageControl
 		}
 		else
 		{
-			const float scale = NormalizeScale(dpiScale)
-				* NormalizeScale(layout.middlePairScale);
+			const float scale = NormalizeDpiScale(dpiScale)
+				* NormalizeRuntimeControlScale(layout.middlePairScale);
 			layout.middlePairWidth = (std::clamp)(layout.middlePairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
 					- static_cast<float>((PptCompactShortSideDip
@@ -976,10 +1089,11 @@ export namespace Inkeys::UI::PageControl
 	}
 
 	[[nodiscard]] inline PptState ResolveRuntimePageControlLayout(
-		const RECT& monitor, float dpiScale, PptState ppt) noexcept
+		const RECT& monitor, float dpiScale, PptState ppt,
+		float presentationOutsetDip = 10.0F, unsigned bitmapLimit = 16384) noexcept
 	{
 		if (!ppt.presentationVisible) return ppt;
-		const float normalizedDpi = NormalizeScale(dpiScale);
+		const float normalizedDpi = NormalizeDpiScale(dpiScale);
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
 		const float height = static_cast<float>((std::max)(1L,
@@ -998,8 +1112,16 @@ export namespace Inkeys::UI::PageControl
 					* normalizedDpi),
 				height / static_cast<float>((controlHeight
 					+ PageControlGapDip * 2.0) * normalizedDpi));
-			userScale = (std::min)(NormalizeScale(userScale),
-				(std::max)(1.0F / 128.0F, maximum));
+			const float resourceMaximum = static_cast<float>((std::max)(1U, bitmapLimit) - 1U)
+				/ static_cast<float>((std::max)(controlWidth, controlHeight)
+					+ 2.0 * presentationOutsetDip) / normalizedDpi;
+			const float screenMaximum = (std::min)(
+				width / static_cast<float>((controlWidth + 2.0 * presentationOutsetDip)
+					* 2.0 * normalizedDpi),
+				height / static_cast<float>((controlHeight + 2.0 * presentationOutsetDip)
+					* normalizedDpi));
+			userScale = (std::min)({ std::clamp(NormalizeScale(userScale), 0.5F, 3.0F),
+				maximum, screenMaximum, resourceMaximum });
 		};
 		FitScale(bottomVisible, PptCompactLongSideDip,
 			PptCompactShortSideDip, ppt.layout.bottomPairScale);
@@ -1063,8 +1185,8 @@ export namespace Inkeys::UI::PageControl
 					ppt.layout.middlePairHeight = resolved;
 					break;
 				}
-				if (ppt.layout.middlePairScale <= 1.0F / 128.0F) break;
-				ppt.layout.middlePairScale = (std::max)(1.0F / 128.0F,
+				if (ppt.layout.middlePairScale <= 1.0F / 65536.0F) break;
+				ppt.layout.middlePairScale = (std::max)(1.0F / 65536.0F,
 					ppt.layout.middlePairScale * 0.75F);
 			}
 		}
@@ -1088,10 +1210,13 @@ export namespace Inkeys::UI::PageControl
 		return visibleBounds;
 	}
 
+	// 复用产品 Scene/布局的无 HWND 离屏回归；由已有 UI 离屏入口调用。
+	int RunOffscreenTests();
 	bool Acquire();
 	void Release() noexcept;
 	[[nodiscard]] WNDPROC WindowProc() noexcept;
 	void SetPptCallbacks(PptCallbacks callbacks);
+	void FlushPositionCommits();
 	void SetWhiteboardCallbacks(WhiteboardCallbacks callbacks);
 	void PublishPptState(const PptState& state) noexcept;
 	void PublishWhiteboardState(const WhiteboardState& state) noexcept;

@@ -76,6 +76,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint32_t totalPages = 0;
 		std::uint64_t bindingRevision = 0;
 		std::uint64_t targetRevision = 0;
+		std::uint64_t sessionRevision = 0;
 		bool processLocalIdentity = false;
 
 		friend bool operator==(const PresentationTarget&,
@@ -91,6 +92,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::uint32_t pageIndex = 0;
 		std::uint64_t bindingRevision = 0;
 		std::uint64_t targetRevision = 0;
+		std::uint64_t sessionRevision = 0;
 
 		friend bool operator==(const PresentationReadyIdentity&,
 			const PresentationReadyIdentity&) noexcept = default;
@@ -100,7 +102,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		const PresentationTarget& target) noexcept
 	{
 		return { target.key, target.bindingMode, target.slideId, target.pageIndex,
-			target.bindingRevision, target.targetRevision };
+			target.bindingRevision, target.targetRevision, target.sessionRevision };
 	}
 
 	constexpr bool SelectionUsesAuxiliaryOutput(

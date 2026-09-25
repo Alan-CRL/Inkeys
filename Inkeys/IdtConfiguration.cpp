@@ -704,7 +704,14 @@ bool PptComReadSettingPositionOnly()
 
 	return true;
 }
-string CapturePptComSettingJson()
+namespace
+{
+	std::mutex pptSettingsMutex;
+	std::mutex pptSettingsWriteMutex;
+	Inkeys::PptSettings::WriteJournal pptSettingsJournal;
+}
+
+static Json::Value CapturePptComSettingValue()
 {
 	Json::Value updateVal;
 	{
@@ -729,38 +736,67 @@ string CapturePptComSettingJson()
 		// updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
 	}
 
-	Json::StreamWriterBuilder writerBuilder;
-	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
+	return updateVal;
+}
+
+static void EnsurePptSettingsJournal()
+{
+	if (!pptSettingsJournal.Initialized())
+		pptSettingsJournal.Initialize(CapturePptComSettingValue());
+}
+
+string CapturePptComSettingJson()
+{
+	std::scoped_lock lock(pptSettingsMutex);
+	EnsurePptSettingsJournal();
+	return pptSettingsJournal.CaptureSettings(CapturePptComSettingValue());
+}
+
+string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions, bool remember)
+{
+	std::scoped_lock lock(pptSettingsMutex);
+	EnsurePptSettingsJournal();
+	return pptSettingsJournal.CapturePositions(positions, remember);
+}
+
+Inkeys::PptSettings::Positions SavedPptComPositions()
+{
+	std::scoped_lock lock(pptSettingsMutex);
+	EnsurePptSettingsJournal();
+	return pptSettingsJournal.Saved();
+}
+
+Inkeys::PptSettings::Positions RestorablePptComPositions()
+{
+	std::scoped_lock lock(pptSettingsMutex);
+	EnsurePptSettingsJournal();
+	return pptSettingsJournal.RestoreBaseline();
+}
+
+string RetryPptComSettingJson()
+{
+	std::scoped_lock lock(pptSettingsMutex);
+	return pptSettingsJournal.TakeRetry();
 }
 
 bool WritePptComSettingJson(const string& jsonContent)
 {
-	HANDLE fileHandle = NULL;
-	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
+	// 文件提交串行，但 UI 捕获和读取保存基线不等待磁盘 I/O。
+	std::scoped_lock writeLock(pptSettingsWriteMutex);
+	Inkeys::PptSettings::WriteJournal::PreparedWrite prepared;
 	{
-		UnOccupyFile(&fileHandle);
-		return false;
+		std::scoped_lock lock(pptSettingsMutex);
+		if (!pptSettingsJournal.Prepare(jsonContent, prepared)) return false;
 	}
-	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	if (prepared.revision == 0) return true;
+	const bool succeeded = Inkeys::PptSettings::WriteAtomically(
+		filesystem::path(globalPath) / L"opt" / L"pptcom_configuration.json", prepared.content);
 	{
-		UnOccupyFile(&fileHandle);
-		return false;
+		std::scoped_lock lock(pptSettingsMutex);
+		pptSettingsJournal.Complete(prepared, succeeded);
 	}
-	if (!SetEndOfFile(fileHandle))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	DWORD bytesWritten = 0;
-	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	UnOccupyFile(&fileHandle);
-	return true;
+	if (!succeeded) OutputDebugStringW(L"[Ppt] settings commit failed; frozen request retained for retry\n");
+	return succeeded;
 }
 
 bool PptComWriteSetting()

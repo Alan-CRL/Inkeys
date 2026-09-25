@@ -60,7 +60,9 @@ extern constexpr double BarGeometryAttributeShapeButtonSize = 50.0;
 void BarUISetClass::PublishDisplaySnapshot(
 	Inkeys::Display::SnapshotPtr snapshot) noexcept
 {
-	const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
+	const auto* monitor = snapshot && !Inkeys::UI::Bar::WhiteboardActive()
+		? snapshot->Find(Inkeys::UI::Bar::PptSceneMonitor()) : nullptr;
+	if (!monitor && snapshot) monitor = snapshot->Primary();
 	if (!monitor) return;
 	{
 		lock_guard lock(pendingDisplayPublishMutex);

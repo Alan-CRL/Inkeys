@@ -327,3 +327,35 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 21: PPT UI3 与切页事务修复及自动化验证
+<!-- trellis-session: v=2 fp=a77f11f7e4817ba4 -->
+
+**Date**: 2026-09-25
+**Task**: PPT UI3 与切页事务修复及自动化验证
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+已完成位置保存/缩放、可信放映会话、Draw3页边界、主栏场景、仅主栏退出确认和焦点；完整ARM64与headless/managed/hidden真实持久化/offscreen通过，真实Office及设备验收待完成。
+
+### Main Changes
+
+- 按审阅方案创建并启动09-25-ppt-ui3-scene-and-page-sync；修复版本交接、保存冻结与原子写入、会话/输入/UI门禁、场景和确认。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64、InkeysHeadlessTests --no-window、PptCOM.Tests、Draw3 hidden含真实保存/冷恢复/重排、Bar/PageControl offscreen、i18n、diff check均exit0。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 按任务research/manual-validation.md进行真实Office/WPS、键盘/硬件、多屏/任务栏和CPU/端到端延迟验收；当前NOT VERIFIED，任务保留in_progress，不提前归档。

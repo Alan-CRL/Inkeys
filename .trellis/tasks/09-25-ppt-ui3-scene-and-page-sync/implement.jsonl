@@ -1,0 +1,10 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file":".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/evidence.md","reason":"PPT session, layout, input, persistence and verification contract"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "Current executable session, position, page-ready, input and confirmation contract"}

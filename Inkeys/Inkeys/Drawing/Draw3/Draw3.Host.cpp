@@ -1,4 +1,5 @@
 #include "Draw3.Host.h"
+#include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
 
 import Inkeys.Display;
@@ -87,6 +88,10 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<Bridge::Workspace> workspace = Bridge::Workspace::Desktop;
 		mutable std::mutex presentationTargetMutex;
 		std::optional<Bridge::PresentationReadyIdentity> readyPresentationTarget;
+		std::optional<Bridge::PresentationReadyIdentity> uiReadyPresentationTarget;
+		std::optional<Bridge::PresentationReadyIdentity> suspendedPresentationTarget;
+		bool commandScenePending = false;
+		bool restoreLatestScene = false;
 		std::atomic<HostOutputTarget> requestedOutputTarget =
 			HostOutputTarget::PrimaryDrawpad;
 		std::atomic<std::uint64_t> requestedOutputRevision = 0;
@@ -165,6 +170,30 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		// 调用方持有 presentationTargetMutex；发布、ready 和 UI ack 共用这一交接门。
+		void RefreshPresentationInputGateLocked()
+		{
+			const auto desired = bridge.Snapshot();
+			const auto expected = desired.presentationTarget
+				? std::optional(Bridge::ReadyIdentityFor(*desired.presentationTarget))
+				: std::nullopt;
+			if (suspendedPresentationTarget != expected) suspendedPresentationTarget.reset();
+			if (uiReadyPresentationTarget != expected) uiReadyPresentationTarget.reset();
+			const bool blocked = commandScenePending || (desired.workspace == Bridge::Workspace::Presentation
+				? !expected || readyPresentationTarget != expected ||
+					suspendedPresentationTarget.has_value() ||
+					(startOptions.requirePresentationUiReady && uiReadyPresentationTarget != expected)
+				: workspace.load(std::memory_order_acquire) == Bridge::Workspace::Presentation);
+			const bool changed = input.AdmissionBlocked() != blocked;
+			input.SetAdmissionBlocked(blocked);
+			if (changed)
+			{
+				if (expected) TracePptTiming(blocked ? "input_closed" : "input_open",
+					expected->sessionRevision, expected->targetRevision);
+				PublishRuntimeRevision();
+			}
+		}
+
 		void ResetRuntimeDiagnostics()
 		{
 			presentationMode.store(HostPresentationMode::Automatic, std::memory_order_release);
@@ -190,6 +219,11 @@ namespace Inkeys::Drawing::Draw3
 			{
 				std::scoped_lock lock(presentationTargetMutex);
 				readyPresentationTarget.reset();
+				uiReadyPresentationTarget.reset();
+				suspendedPresentationTarget.reset();
+				input.SetAdmissionBlocked(false);
+				commandScenePending = false;
+				restoreLatestScene = false;
 			}
 			requestedOutputTarget.store(
 				HostOutputTarget::PrimaryDrawpad, std::memory_order_release);
@@ -353,14 +387,18 @@ namespace Inkeys::Drawing::Draw3
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
-			self->workspace.store(value, std::memory_order_release);
-			self->currentPageIndex.store(currentPage, std::memory_order_release);
-			self->pageCount.store(pages, std::memory_order_release);
+			if (presentationTarget) TracePptTiming("canvas_presented",
+				presentationTarget->sessionRevision, presentationTarget->targetRevision);
 			{
 				std::scoped_lock lock(self->presentationTargetMutex);
+				self->workspace.store(value, std::memory_order_release);
+				self->currentPageIndex.store(currentPage, std::memory_order_release);
+				self->pageCount.store(pages, std::memory_order_release);
 				self->readyPresentationTarget = presentationTarget
 					? std::optional<Bridge::PresentationReadyIdentity>(*presentationTarget)
 					: std::nullopt;
+				self->commandScenePending = false;
+				self->RefreshPresentationInputGateLocked();
 			}
 			self->requestedProductPage = false;
 			self->requestedPresentationTargetRevision = presentationTarget
@@ -635,8 +673,12 @@ namespace Inkeys::Drawing::Draw3
 		void PumpBridgeState()
 		{
 			PumpDisplayScale();
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				RefreshPresentationInputGateLocked();
+			}
 			const Bridge::ProductState state = bridge.Snapshot();
-			if (state.revision == appliedBridgeRevision) return;
+			if (state.revision == appliedBridgeRevision && !restoreLatestScene) return;
 			appliedBridgeRevision = state.revision;
 			window.SetSelectionMode(state.selectionMode);
 			window.SetAutoSaveEnabled(state.autoSaveEnabled);
@@ -667,7 +709,7 @@ namespace Inkeys::Drawing::Draw3
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
 			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
 			if (state.workspace != Bridge::Workspace::Presentation &&
-				workspace.load(std::memory_order_acquire) != state.workspace)
+				(workspace.load(std::memory_order_acquire) != state.workspace || restoreLatestScene))
 			{
 				CanvasCommand workspaceCommand;
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
@@ -677,8 +719,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (state.workspace == Bridge::Workspace::Presentation &&
 				state.presentationTarget &&
-				state.presentationTarget->targetRevision !=
-					requestedPresentationTargetRevision)
+				(state.presentationTarget->targetRevision !=
+					requestedPresentationTargetRevision || restoreLatestScene))
 			{
 				CanvasCommand targetCommand;
 				targetCommand.type = CanvasCommandType::SetPresentationTarget;
@@ -690,7 +732,7 @@ namespace Inkeys::Drawing::Draw3
 			else if (state.workspace == Bridge::Workspace::Presentation &&
 				!state.presentationTarget && (workspace.load(
 					std::memory_order_acquire) != Bridge::Workspace::Presentation ||
-					requestedPresentationTargetRevision != 0))
+					requestedPresentationTargetRevision != 0 || restoreLatestScene))
 			{
 				CanvasCommand workspaceCommand;
 				workspaceCommand.type = CanvasCommandType::SetWorkspace;
@@ -699,12 +741,29 @@ namespace Inkeys::Drawing::Draw3
 				window.EnqueueCanvasCommand(workspaceCommand);
 				requestedPresentationTargetRevision = 0;
 			}
+			restoreLatestScene = false;
 			// 显隐线程观察到新模式前，工具、橡皮模式和样式必须已完整应用。
 			if (selectionChanged) PublishRuntimeRevision();
 		}
 
 		void EnqueueCommandScene(const Bridge::Command& command)
 		{
+			{
+				std::scoped_lock lock(presentationTargetMutex);
+				const auto captured = command.presentationTarget
+					? std::optional(Bridge::ReadyIdentityFor(*command.presentationTarget))
+					: std::nullopt;
+				if ((command.workspace == Bridge::Workspace::Presentation ||
+					workspace.load(std::memory_order_acquire) == Bridge::Workspace::Presentation) &&
+					(captured != readyPresentationTarget || command.workspace != workspace.load(std::memory_order_acquire)))
+				{
+					// 旧场景上的已接受命令仍须 FIFO 完成；重放期间不能沿用 latest 的旧 ready 开放输入。
+					readyPresentationTarget.reset();
+					commandScenePending = true;
+					input.SetAdmissionBlocked(true);
+					PublishRuntimeRevision();
+				}
+			}
 			CanvasCommand scene;
 			if (command.workspace == Bridge::Workspace::Presentation &&
 				command.presentationTarget)
@@ -728,6 +787,8 @@ namespace Inkeys::Drawing::Draw3
 			Bridge::Command command;
 			while (bridge.TryConsume(command))
 			{
+				// scene-stamped 命令可能恢复旧场景，排空后必须重新收敛 latest。
+				restoreLatestScene = true;
 				// 先恢复命令发布时的场景，再执行命令；队列排空后才应用 latest state。
 				EnqueueCommandScene(command);
 				CanvasCommand canvas;
@@ -1134,6 +1195,8 @@ namespace Inkeys::Drawing::Draw3
 	HostRuntimeSnapshot Host::RuntimeSnapshot() const noexcept
 	{
 		HostRuntimeSnapshot snapshot;
+		// 等待基准先取：后续字段读取期间的新发布必须使 WaitForChange 立即返回。
+		snapshot.runtimeRevision = impl_->runtimeRevision.Revision();
 		{std::scoped_lock lock(impl_->eraserDiagnosticsMutex);snapshot.eraser=impl_->eraserDiagnostics;snapshot.pen=impl_->penDiagnostics;}
 		snapshot.touchContactAreaAssistanceEnabled=impl_->window.TouchContactAreaAssistance();
 		snapshot.running = impl_->running.load(std::memory_order_acquire);
@@ -1181,6 +1244,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			std::scoped_lock lock(impl_->presentationTargetMutex);
 			snapshot.presentationReady = impl_->readyPresentationTarget;
+			snapshot.presentationInputReady = !impl_->input.AdmissionBlocked();
 		}
 		snapshot.requestedOutputTarget =
 			impl_->requestedOutputTarget.load(std::memory_order_acquire);
@@ -1194,7 +1258,6 @@ namespace Inkeys::Drawing::Draw3
 			impl_->presentedContentRevision.load(std::memory_order_acquire);
 		snapshot.auxiliaryFullFrameClean =
 			impl_->auxiliaryFullFrameClean.load(std::memory_order_acquire);
-		snapshot.runtimeRevision = impl_->runtimeRevision.Revision();
 		snapshot.lastDirtyRect.left = impl_->lastDirtyLeft.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.top = impl_->lastDirtyTop.load(std::memory_order_relaxed);
 		snapshot.lastDirtyRect.right = impl_->lastDirtyRight.load(std::memory_order_relaxed);
@@ -1362,10 +1425,45 @@ namespace Inkeys::Drawing::Draw3
 	Bridge::StateBridge& Host::ProductBridge() noexcept { return impl_->bridge; }
 	void Host::PublishState(const Bridge::ProductState& state) noexcept
 	{
-		impl_->bridge.PublishState(state);
+		{
+			std::scoped_lock lock(impl_->presentationTargetMutex);
+			impl_->bridge.PublishState(state);
+			impl_->RefreshPresentationInputGateLocked();
+		}
 		if (impl_->attachedWindow.load(std::memory_order_acquire))
 			(void)impl_->input.PublishControlWake();
 	}
+	bool Host::PublishPresentationUiReady(
+		const Bridge::PresentationReadyIdentity& identity) noexcept
+	{
+		if (!Running()) return false;
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto state = impl_->bridge.Snapshot();
+		if (state.workspace != Bridge::Workspace::Presentation || !state.presentationTarget ||
+			Bridge::ReadyIdentityFor(*state.presentationTarget) != identity ||
+			impl_->readyPresentationTarget != identity ||
+			impl_->suspendedPresentationTarget == identity) return false;
+		impl_->uiReadyPresentationTarget = identity;
+		TracePptTiming("page_ui_ack", identity.sessionRevision, identity.targetRevision);
+		impl_->RefreshPresentationInputGateLocked();
+		return true;
+	}
+
+	bool Host::SetPresentationInputSuspended(
+		const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept
+	{
+		if (!Running()) return false;
+		std::scoped_lock lock(impl_->presentationTargetMutex);
+		const auto state = impl_->bridge.Snapshot();
+		if (state.workspace != Bridge::Workspace::Presentation || !state.presentationTarget ||
+			Bridge::ReadyIdentityFor(*state.presentationTarget) != expected) return false;
+		impl_->suspendedPresentationTarget = suspended ? std::optional(expected) : std::nullopt;
+		// Unknown/结束页可能把数字改成占位；恢复时必须等待当前 UI 再次确认。
+		if (suspended) impl_->uiReadyPresentationTarget.reset();
+		impl_->RefreshPresentationInputGateLocked();
+		return true;
+	}
+
 	Bridge::CommandResult Host::PublishCommand(Bridge::CommandType command) noexcept
 	{
 		const Bridge::CommandResult result = impl_->bridge.Publish(command);

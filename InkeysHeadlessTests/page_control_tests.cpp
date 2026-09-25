@@ -299,6 +299,202 @@ namespace
 			"cancel explicitly rolls an uncommitted candidate back");
 	}
 
+	void TestVersionedDragPublication()
+	{
+		for (const bool remember : { false, true })
+		{
+			PptState published;
+			published.layout.session = 1;
+			published.layout.epoch = 2;
+			published.publicationRevision = 1;
+			published.layout.rememberPosition = remember;
+			const auto stale = published;
+			PptDragCommitTracker bottom;
+			BeginPptDragTracking(bottom, published.layout);
+			auto moved = published.layout;
+			moved.bottomPairHeight = 200;
+			moved.pairVersions[0] = 10;
+			(void)PublishPptDragCandidate(bottom, moved, 10);
+			const auto released = ReleasePptDragTracking(bottom, true);
+			Check(released.persist && bottom.ownsLayout,
+				"memory-off release still owns the runtime handoff");
+			Check(MarkPptDragSurfaceCommitted(bottom, 10, 3), "both surfaces commit memory-off drag");
+			published.layout = bottom.committedLayout;
+			Check(CompletePptDragPersistence(bottom, 10) && !bottom.ownsLayout,
+				"runtime handoff releases ownership without a disk notification");
+			auto incoming = stale;
+			incoming.publicationRevision = 2;
+			incoming.currentPage = 2;
+			Check(MergePptPublication(published, incoming) && incoming.currentPage == 2
+				&& incoming.layout.bottomPairHeight == 200 && incoming.layout.pairVersions[0] == 10,
+				"late captured snapshot updates page while preserving a released drag");
+			published = incoming;
+			published.layout.middlePairHeight = 80;
+			published.layout.pairVersions[1] = 11;
+			incoming = stale;
+			incoming.publicationRevision = 3;
+			incoming.layout.bottomPairScale = 2.5F;
+			Check(MergePptPublication(published, incoming)
+				&& incoming.layout.bottomPairHeight == 200 && incoming.layout.middlePairHeight == 80
+				&& incoming.layout.bottomPairScale == 2.5F,
+				"settings merge preserves both interleaved pair positions while changing scale");
+			published = incoming;
+			incoming = stale;
+			Check(!MergePptPublication(published, incoming), "late old publication cannot roll back page or visibility");
+			incoming = published;
+			++incoming.layout.epoch;
+			++incoming.publicationRevision;
+			incoming.layout.pairVersions = {};
+			incoming.layout.bottomPairHeight = 0;
+			Check(MergePptPublication(published, incoming) && incoming.layout.bottomPairHeight == 0,
+				"explicit reset epoch replaces old positions");
+			Check(!MergePptPublication(incoming, published), "pre-reset snapshot cannot reactivate old positions");
+			PptDragCommitTracker untouched;
+			BeginPptDragTracking(untouched, incoming.layout);
+			Check(!ReleasePptDragTracking(untouched, true).persist && !untouched.ownsLayout,
+				"drag-handle tap without a movement never leaves permanent ownership");
+		}
+	}
+
+	void TestInterleavedPairFrameCommit()
+	{
+		PptState frame;
+		frame.layout.session = 4;
+		frame.layout.epoch = 8;
+		PptDragCommitTracker bottom, middle;
+		BeginPptDragTracking(bottom, frame.layout);
+		BeginPptDragTracking(middle, frame.layout);
+		frame.layout.pairVersions[0] = 10;
+		frame.layout.bottomPairHeight = 200;
+		(void)PublishPptDragCandidate(bottom, frame.layout, 10);
+		frame.layout.pairVersions[1] = 11;
+		frame.layout.middlePairHeight = 100;
+		(void)PublishPptDragCandidate(middle, frame.layout, 11);
+		frame.publicationRevision = 99;
+		Check(!MarkPptDragFrameCommitted(bottom, frame, 0)
+			&& MarkPptDragFrameCommitted(bottom, frame, 1),
+			"bottom commit uses its candidate revision after a newer middle publication");
+		Check(!MarkPptDragFrameCommitted(middle, frame, 2)
+			&& MarkPptDragFrameCommitted(middle, frame, 3)
+			&& !bottom.pending && !middle.pending,
+			"interleaved pair frames both converge without sharing candidate revisions");
+		auto newSession = frame;
+		newSession.layout.session = 5;
+		newSession.layout.epoch = 1;
+		newSession.publicationRevision = 1;
+		Check(MergePptPublication(frame, newSession),
+			"new native session accepts a restarted facade with smaller local revisions");
+	}
+
+	void TestPagePresentationCommit()
+	{
+		PptState page;
+		page.layout.session = 7;
+		page.targetRevision = 100;
+		page.currentPage = 2;
+		page.totalPage = 9;
+		PptPageCommitState gate;
+		gate.Publish(page, 15);
+		Check(!gate.Commit(page, 3), "bottom pair alone cannot acknowledge visible middle controls");
+		auto late = page;
+		--late.targetRevision;
+		Check(!gate.Commit(late, 12), "late frame cannot satisfy current page presentation");
+		Check(gate.Commit(page, 12) && !gate.Commit(page, 15), "exact page is acknowledged once after all visible surfaces");
+		++page.targetRevision;
+		++page.currentPage;
+		gate.Publish(page, 15);
+		Check(!gate.Commit(page, 1), "next target starts a new commit transaction");
+		gate.Publish(page, 1);
+		Check(gate.Commit(page, 0), "hiding uncommitted surfaces releases their presentation requirement");
+		++page.targetRevision;
+		gate.Publish(page, 0);
+		Check(gate.Commit(page, 0), "all hidden controls acknowledge without waiting for nonexistent frames");
+		++page.layout.session;
+		gate.Publish(page, 3);
+		Check(!gate.Commit(late, 3) && gate.Commit(page, 3), "new session rejects old success callbacks");
+	}
+
+	void TestHideAndPageCommitRace()
+	{
+		PptState oldPage;
+		oldPage.layout.session = 10;
+		oldPage.targetRevision = 20;
+		oldPage.currentPage = 1;
+		oldPage.totalPage = 3;
+		PptPageCommitState gate;
+		gate.Publish(oldPage, 3);
+		gate.BeginSurface(3);
+		gate.FinishSurface(3, true);
+		Check(gate.Commit(oldPage, 3), "initial visible page is committed");
+		auto next = oldPage;
+		++next.targetRevision;
+		++next.currentPage;
+		gate.Publish(next, 0);
+		Check(!gate.Commit(next, 0) && gate.required == 3,
+			"target hide cannot acknowledge new page while old numbers are still visible");
+		gate.BeginSurface(1);
+		gate.FinishSurface(1, true);
+		Check(!gate.Commit(next, 1), "one fading surface with new numbers still waits for its visible peer");
+		gate.FinishSurface(2, false);
+		gate.Publish(next, 0);
+		Check(gate.Commit(next, 0), "new number on one peer plus committed hide on the other completes handoff");
+
+		PptPageCommitState inFlight;
+		inFlight.Publish(oldPage, 3);
+		inFlight.BeginSurface(1);
+		inFlight.Publish(next, 0);
+		Check(!inFlight.Commit(next, 0), "hidden fast path waits for an older frame already in presentation");
+		inFlight.FinishSurface(1, true);
+		inFlight.Publish(next, 0);
+		Check(!inFlight.Commit(oldPage, 1) && !inFlight.Commit(next, 0),
+			"late successful old frame remains an actual visibility requirement without accepting stale digits");
+		inFlight.FinishSurface(1, false);
+		inFlight.Publish(next, 0);
+		Check(inFlight.Commit(next, 0), "successful hide releases the last older in-flight presentation");
+	}
+
+	void TestEffectiveScaleAndResources()
+	{
+		constexpr RECT monitor{ 0, 0, 7680, 4320 };
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.layout.showMiddlePair = true;
+		for (const float dpi : { 1.0F, 1.5F, 2.0F, 3.0F, 4.0F })
+			for (const float user : { 0.5F, 1.0F, 2.5F, 3.0F })
+			{
+				ppt.layout.bottomPairScale = ppt.layout.middlePairScale = user;
+				const auto fitted = ResolveRuntimePageControlLayout(monitor, dpi, ppt);
+				for (const auto surface : { Surface::BottomLeft, Surface::BottomRight,
+					Surface::MiddleLeft, Surface::MiddleRight })
+				{
+					const auto layout = ResolveSurfaceLayout(surface, monitor, dpi, fitted, {});
+					Check(layout.scale == dpi * user && NormalizeScale(layout.scale) == layout.scale,
+						"resolved pixel scale survives Scene-bound and drag translation normalization");
+					Check(!ShouldApplyPageControlSceneBounds(true, layout.logicalBounds,
+						layout.scale, layout.logicalBounds, layout.scale),
+						"effective scale above four does not cause a perpetually dirty frame");
+				}
+			}
+		const auto oversizedDpi = ResolveRuntimePageControlLayout(monitor, 6.0F, ppt);
+		const auto oversizedLayout = ResolveSurfaceLayout(Surface::BottomLeft,
+			monitor, 6.0F, oversizedDpi, {});
+		Check(oversizedLayout.scale == 12.0F && NormalizeScale(oversizedLayout.scale) == 12.0F,
+			"out-of-range DPI is normalized once consistently through fitting and final layout");
+		Check(NormalizeRuntimeControlScale(0.2F) == 0.2F
+			&& NormalizeDpiScale(0.2F) == 0.5F && NormalizeScale(5.0F) == 5.0F,
+			"DPI input, fitted user scale and effective scale have distinct contracts");
+		const auto tiny = ResolveRuntimePageControlLayout({ 0, 0, 100, 80 }, 4, ppt, 10, 64);
+		const auto tinyLayout = ResolveSurfaceLayout(Surface::BottomLeft, { 0, 0, 100, 80 }, 4, tiny, {});
+		Check(tinyLayout.scale < 0.5F && NormalizeScale(tinyLayout.scale) == tinyLayout.scale
+			&& Width(tinyLayout.logicalBounds) + 2 * static_cast<LONG>(std::ceil(10 * tinyLayout.scale)) <= 64,
+			"tiny screen and bitmap limits fit complete presentation below half scale");
+		WhiteboardState whiteboard;
+		whiteboard.expandedLayoutTarget = whiteboard.active = true;
+		const auto expanded = ResolveSurfaceLayout(Surface::BottomLeft, monitor, 2, ppt, whiteboard);
+		Check(expanded.scale == 2 && Width(expanded.logicalBounds) == 460,
+			"whiteboard never inherits PPT user scale or position");
+	}
+
 	void TestDragPureTranslationAndRevisionGate()
 	{
 		ResolvedSurfaceLayout previous;
@@ -844,6 +1040,11 @@ int RunPageControlTests()
 	TestCompactWidgetContracts();
 	TestEndShowContentTargets();
 	TestDragCommitHandoff();
+	TestVersionedDragPublication();
+	TestInterleavedPairFrameCommit();
+	TestPagePresentationCommit();
+	TestHideAndPageCommitRace();
+	TestEffectiveScaleAndResources();
 	TestDragPureTranslationAndRevisionGate();
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndInputPolicy();

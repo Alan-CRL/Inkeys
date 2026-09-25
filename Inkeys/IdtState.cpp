@@ -92,7 +92,7 @@ namespace
 
 	Workspace CurrentPrimaryWorkspace() noexcept
 	{
-		return PptInfoState.TotalPage > 0
+		return PptSessionActive()
 			? Workspace::Presentation : Workspace::Desktop;
 	}
 
@@ -698,7 +698,7 @@ void StateMonitoring()
 			{
 				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
 				Inkeys::UI::Ppt::PublishPresentationVisible(
-					PptInfoState.TotalPage > 0);
+					PptSessionActive());
 				whiteboardPhase.store(WhiteboardPhase::Inactive,
 					std::memory_order_release);
 				continue;
@@ -886,7 +886,7 @@ void StateMonitoring()
 			Inkeys::UI::Bar::SetWhiteboardActive(false);
 			// window mode 恢复后重发 COM 事实；PageControl 始终是共享宿主唯一所有者。
 			Inkeys::UI::Ppt::PublishPresentationVisible(
-				PptInfoState.TotalPage > 0);
+				PptSessionActive());
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 			whiteboardPhase.store(WhiteboardPhase::Inactive,
 				std::memory_order_release);

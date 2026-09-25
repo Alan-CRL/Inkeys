@@ -16,6 +16,7 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <utility>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
 #include "Draw3.SpeedEraser.h"
@@ -338,7 +339,12 @@ namespace Inkeys::Drawing::Draw3
 	{
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
-			canvasCommands_.push_back(command);
+			// 尚未接受的相邻绝对目标可合并；中间的 Clear/Undo/保存屏障绝不跨越。
+			if (command.type == CanvasCommandType::SetPresentationTarget &&
+				!canvasCommands_.empty() &&
+				canvasCommands_.back().type == CanvasCommandType::SetPresentationTarget)
+				canvasCommands_.back() = std::move(command);
+			else canvasCommands_.push_back(std::move(command));
 		}
 		RequestControlWake();
 	}

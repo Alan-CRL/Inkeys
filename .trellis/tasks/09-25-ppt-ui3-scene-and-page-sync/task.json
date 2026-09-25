@@ -1,0 +1,31 @@
+{
+  "id": "ppt-ui3-scene-and-page-sync",
+  "name": "ppt-ui3-scene-and-page-sync",
+  "title": "PPT UI3、切页同步与主栏放映场景修复",
+  "description": "修复 PPT 分页位置与缩放、可信页同步和活动输入边界、主栏放映场景、仅主栏退出确认与焦点；按已审阅计划验证并记录未验证设备项。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-09-25",
+  "completedAt": null,
+  "branch": "bugfix/pptui",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-09-25 用户已批准最终方案；实现与独立检查、完整ARM64 Solution、headless、managed、hidden真实保存/冷恢复及offscreen均通过。真实Office/WPS/键盘/设备/多屏和功耗仍NOT VERIFIED；保持in_progress待人工验收，不commit/push/提前归档。",
+  "meta": {
+    "implementation": "complete",
+    "automated_verification": "passed",
+    "manual_validation": "not_verified",
+    "planning_review": "approved_by_user_2026-09-25"
+  }
+}

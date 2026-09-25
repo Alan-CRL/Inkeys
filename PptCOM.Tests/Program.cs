@@ -16,6 +16,8 @@ namespace PptCOM.Tests
     {
         public string FailureStage;
         public Exception Failure;
+        public Action<string> AfterAcquire;
+        public readonly List<string> Invoked = new List<string>();
         public readonly Dictionary<string, int> Acquired = new Dictionary<string, int>();
         public readonly Dictionary<string, int> Released = new Dictionary<string, int>();
         public readonly List<string> ReleaseOrder = new List<string>();
@@ -32,6 +34,7 @@ namespace PptCOM.Tests
             int count;
             Acquired.TryGetValue(node.Name, out count);
             Acquired[node.Name] = count + 1;
+            if (AfterAcquire != null) AfterAcquire(node.Name);
             return node;
         }
 
@@ -50,6 +53,13 @@ namespace PptCOM.Tests
             FakeNode node = (FakeNode)collection;
             ThrowIfRequested(node.Name + ".Item:" + oneBasedIndex);
             return Acquire(node.Items[oneBasedIndex - 1]);
+        }
+
+        public void InvokeMethod(object target, string name)
+        {
+            string stage = ((FakeNode)target).Name + "." + name;
+            ThrowIfRequested(stage);
+            Invoked.Add(stage);
         }
 
         public bool IsComObject(object value) { return value is FakeNode; }
@@ -263,12 +273,13 @@ namespace PptCOM.Tests
             TestSuccess("Microsoft PowerPoint", "PowerPoint");
             TestSuccess("WPS Presentation", "Wps");
             TestFallbackAndFailures();
+            failures += SlideShowSessionTests.Run();
             if (failures != 0)
             {
                 Console.Error.WriteLine("FAILED count=" + failures);
                 return 1;
             }
-            Console.WriteLine("PASS PptCOM presentation descriptor ownership");
+            Console.WriteLine("PASS PptCOM descriptor ownership and session/owner contracts");
             return 0;
         }
     }

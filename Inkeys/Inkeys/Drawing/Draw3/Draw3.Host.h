@@ -173,6 +173,8 @@ namespace Inkeys::Drawing::Draw3
 		bool enableHiddenTestContactInjection = false;
 		// legacy-compatible HWND 重启后禁止再次选择 DComp。
 		bool allowDirectComposition = true;
+		// 产品需要页码提交确认；独立 Host 无 PageControl 时可显式省略。
+		bool requirePresentationUiReady = false;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
 		std::wstring autoSaveRoot;
 		void* startupContext = nullptr;
@@ -213,6 +215,7 @@ namespace Inkeys::Drawing::Draw3
 		bool selectionMode = true;
 		Bridge::Workspace workspace = Bridge::Workspace::Desktop;
 		std::optional<Bridge::PresentationReadyIdentity> presentationReady;
+		bool presentationInputReady = false;
 		HostOutputTarget requestedOutputTarget = HostOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
 		HostOutputTarget readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
@@ -260,6 +263,10 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
 		// 生命周期事务控制 Drawpad 是否允许本次鼠标输入激活窗口。
 		void SetActivationAllowed(bool enabled) noexcept;
+		bool PublishPresentationUiReady(
+			const Bridge::PresentationReadyIdentity& identity) noexcept;
+		bool SetPresentationInputSuspended(
+			const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept;
 
 	private:
 		bool PublishHiddenTestContact(WPARAM phase, LPARAM position) noexcept;

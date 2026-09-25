@@ -9,6 +9,7 @@ module;
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.A2.h"
+#include "Bar.BottomDock.h"
 #include "Bar.PresentDecision.h"
 #include <limits>
 
@@ -24,6 +25,7 @@ import :Theme;
 
 import Inkeys.UI.Bar.FramePacing;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.Display;
 
 import <ranges>;
 
@@ -40,6 +42,14 @@ namespace
 	IdtAtomic<bool> currentPageHasContent = false;
 	std::atomic_bool contentStateUpdatesReady = false;
 	std::atomic_bool pptPresentationActive = false;
+	// 几何只使用渲染线程已接管的场景；语义发布不能提前改变在途帧的 dock 线。
+	std::atomic_bool pptDockSceneActive = false;
+	std::atomic<HWND> pptPresentationWindow = nullptr;
+	std::atomic<HMONITOR> pptSceneMonitor = nullptr;
+	std::mutex pptSceneMutex;
+	Inkeys::UI::Bar::BarPptSceneState pptSceneState;
+	std::mutex pptBusinessFocusMutex;
+	std::function<void()> pptBusinessFocusCallback;
 	Inkeys::UI::Bar::BarA2CallbackDispatcher endShowDispatcher;
 	std::atomic_bool whiteboardActive = false;
 	std::atomic_bool whiteboardBottomDockRequested = false;
@@ -286,6 +296,80 @@ namespace Inkeys::UI::Bar
 		return pptPresentationActive.load(std::memory_order_acquire);
 	}
 
+	void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept
+	{
+		bool changed = false;
+		{
+			std::scoped_lock lock(pptSceneMutex);
+			// 先发布完整载荷，再开放场景边沿；渲染线程不能读到旧窗口或旧 dock 条件。
+			pptPresentationWindow.store(active ? showWindow : nullptr, std::memory_order_release);
+			changed = pptPresentationActive.exchange(active, std::memory_order_acq_rel) != active;
+			changed = pptSceneState.Publish(session, active) || changed;
+		}
+		if (changed) barUISet.UpdateRendering(
+			contentStateUpdatesReady.load(std::memory_order_acquire));
+	}
+	std::optional<bool> ConsumePptSceneTransition() noexcept
+	{
+		std::scoped_lock lock(pptSceneMutex);
+		const auto transition = pptSceneState.Take();
+		if (transition.has_value())
+			pptDockSceneActive.store(pptSceneState.active, std::memory_order_release);
+		return transition;
+	}
+	HWND PptPresentationWindow() noexcept
+	{
+		return pptPresentationWindow.load(std::memory_order_acquire);
+	}
+	HMONITOR PptSceneMonitor() noexcept
+	{
+		return pptSceneMonitor.load(std::memory_order_acquire);
+	}
+	void UpdatePptSceneMonitor(HWND window) noexcept
+	{
+		{
+			std::scoped_lock lock(pptSceneMutex);
+			if (!WhiteboardActive() && window && IsWindow(window))
+				pptSceneMonitor.store(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST),
+					std::memory_order_release);
+		}
+		barUISet.PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
+	}
+	double SceneBottomDockInsetDip() noexcept
+	{
+		return WhiteboardActive() || pptDockSceneActive.load(std::memory_order_acquire)
+			? 5.0 : 0.0;
+	}
+	bool PptBusinessFocusAllowed() noexcept
+	{
+		return PptPresentationActive() && !WhiteboardActive()
+			&& !barUISet.barState.drawAttributeBar.colorPickerOpen
+			&& !barUISet.barState.eraserAttribute;
+	}
+	void SetBusinessFocusCallback(std::function<void()> callback)
+	{
+		std::scoped_lock lock(pptBusinessFocusMutex);
+		pptBusinessFocusCallback = std::move(callback);
+	}
+	void NotifyPptBusinessAction()
+	{
+		if (!PptBusinessFocusAllowed()) return;
+		std::function<void()> callback;
+		{
+			std::scoped_lock lock(pptBusinessFocusMutex);
+			callback = pptBusinessFocusCallback;
+		}
+		if (callback) callback();
+	}
+	void SetEndShowRequestCallback(std::function<void(std::uint64_t)> callback)
+	{
+		endShowDispatcher.SetStamped(std::move(callback));
+	}
+	void CompleteEndShowRequest(std::uint64_t request) noexcept
+	{
+		endShowDispatcher.Complete(request);
+	}
+
 	void SetEndShowCallback(std::function<void()> callback)
 	{
 		endShowDispatcher.Set(std::move(callback));
@@ -311,7 +395,19 @@ namespace Inkeys::UI::Bar
 			// 工作区切换时默认使用拖拽模式，属性浮层保持收起；后续由用户按钮控制展开。
 			barUISet.CollapseAuxiliaryPanels(true);
 		}
-		if (active) RequestWhiteboardBottomDock();
+		if (active)
+		{
+			if (changed)
+			{
+				// 白板仍以主屏为场景；返回时保持原有收起位置，不重放 PPT 入口。
+				{
+					std::scoped_lock lock(pptSceneMutex);
+					pptSceneMonitor.store(nullptr, std::memory_order_release);
+				}
+				barUISet.PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
+			}
+			RequestWhiteboardBottomDock();
+		}
 		else
 		{
 			// 退出白板后主栏回到 Presentation 的收起态，避免下一次桌面点击
