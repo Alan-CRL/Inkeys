@@ -12,3 +12,6 @@
 {"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/end-screen-storage-supplement.md", "reason": "2026-09-25 true-exit and EndScreen evidence"}
 {"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/supplement-baseline.md", "reason": "2026-09-25 true-exit and EndScreen evidence"}
 {"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/supplement-verification.md", "reason": "Current-turn build, tests and NOT VERIFIED scope"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/content-revision-regression.md", "reason": "Selection content version regression evidence and test boundary"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/pagecontrol-large-visibility-regression.md", "reason": "Large-scale four-surface layout, presentation and retry evidence"}
+{"file": ".trellis/tasks/09-25-ppt-ui3-scene-and-page-sync/research/regression-verification.md", "reason": "Current-turn A/B pre/post tests and NOT VERIFIED scope"}

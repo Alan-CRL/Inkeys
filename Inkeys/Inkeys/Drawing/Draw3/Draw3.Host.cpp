@@ -372,8 +372,10 @@ namespace Inkeys::Drawing::Draw3
 			if (!self) return;
 			{
 				std::scoped_lock lock(self->contentMutex);
+				// 不同页面可同为有墨迹或空白；内容版本也是发布载荷的一部分。
 				if (self->currentPageHasContent.load(
-					std::memory_order_relaxed) == hasContent) return;
+					std::memory_order_relaxed) == hasContent &&
+					self->contentRevision.load(std::memory_order_relaxed) == revision) return;
 				self->currentPageHasContent.store(hasContent, std::memory_order_release);
 				self->contentRevision.store(revision, std::memory_order_release);
 			}

@@ -48,3 +48,12 @@ Manual Office/WPS/device acceptance remains NOT VERIFIED; task remains in_progre
 - [x] Implement target/ready/-1 UI ack, independent pageGuid/history, normal SlideID protection, old-file import and cold End-first Host restoration.
 - [x] Regress A/B plus prior remember/scale/Bar/confirmation paths; run full Solution Debug|ARM64, headless, hidden, offscreen, complete UInk, managed, i18n and diff checks. Sandbox file replacement failure is distinguished from passing sandbox-exempt reruns.
 - [x] Update touched specs and research with command/exit-code evidence and NOT VERIFIED Office/device steps. Keep task in_progress, no archive or commit for this follow-up.
+
+## Regression supplement: selection content and large PageControl (new turn)
+
+- [x] Recheck branch/HEAD/worktree/current task and applicable native-desktop/native specs; preserve previous product decisions. Baseline `2aeca374`, clean at start.
+- [x] Add R17–R19, design boundary and source-vs-runtime research; keep task `in_progress` and validate implement/check contexts.
+- [x] A: pre-fix real Host Selection regression exit1 on true→true and false→false content revision; Host pair-payload repair, post-fix A/B/E/EndScreen/restart/held-contact hidden test exit0. Actual Office/IdtState system hit-through still NOT VERIFIED.
+- [x] B: pre-fix asymmetric old-budget headless exit1; shared group budget, Scene/ULW/window failure propagation, bounded resource retry/backing reset; four offscreen HWND/DPI/pixel/hit/one-sided ULW+resource recovery exit0. User现场单侧消失错误阶段仍 NOT VERIFIED.
+- [x] Full `InkeysRepo.sln Debug|ARM64`, headless, Draw3 hidden, PageControl hidden, Bar offscreen, i18n and diff checks executed this turn; Trellis check found and fixed stale drag budget, reviewed build/hidden/headless again. See research/regression-verification.md for exact logs/environment limits.
+- [x] Record session 24 with `--no-commit` after context/diff validation; task stays `in_progress`, no commit/push authorization for this follow-up.

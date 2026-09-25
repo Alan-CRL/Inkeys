@@ -1417,6 +1417,12 @@ namespace Inkeys::Window
 							if (!succeeded) error = GetLastError();
 						}
 					}
+					if (succeeded && IsPpt(command.role)
+						&& !IsWindowVisible(hwnd))
+					{
+						succeeded = false;
+						error = ERROR_GEN_FAILURE;
+					}
 				}
 				ReportCommandResult(command, succeeded,
 					error == ERROR_SUCCESS && !succeeded ? ERROR_GEN_FAILURE : error,
@@ -1425,6 +1431,11 @@ namespace Inkeys::Window
 			}
 			case CommandType::Hide:
 				ShowWindow(hwnd, SW_HIDE);
+				if (IsPpt(command.role) && IsWindowVisible(hwnd))
+				{
+					ReportCommandResult(command, false, ERROR_GEN_FAILURE, hwnd);
+					return false;
+				}
 				ReportCommandResult(command, true, ERROR_SUCCESS, hwnd);
 				return true;
 			case CommandType::HideAll:
@@ -1451,9 +1462,17 @@ namespace Inkeys::Window
 						command.bounds.bottom - command.bounds.top,
 						SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
 				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
-				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
-				ReportCommandResult(command, succeeded, error, hwnd);
-				return succeeded;
+				bool applied = succeeded;
+				if (applied && IsPpt(command.role))
+				{
+					RECT actual{};
+					applied = GetWindowRect(hwnd, &actual) != FALSE
+						&& EqualRect(&actual, &command.bounds) != FALSE;
+					if (!applied) error = ERROR_GEN_FAILURE;
+				}
+				if (!applied && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				ReportCommandResult(command, applied, error, hwnd);
+				return applied;
 			}
 			case CommandType::SetClickThrough:
 			{

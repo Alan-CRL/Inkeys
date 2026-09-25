@@ -324,7 +324,7 @@ PumpBridgeState();
 ### 3. Contracts
 
 - 当前页内容真值唯一来自当前 interval 的 `CanvasRuntimeHistory::LastVisibleItem()`：存在可见 Stroke 时有内容，否则无内容。Pen、Highlighter、Shape 和 Eraser 都算 Stroke 内容；Laser 与 UInk Clear marker 不算；Eraser 即使把视觉画面擦空仍算。
-- DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后检查内容布尔值；Host 只在布尔值变化时递增单调内容 revision。每次成功 Present 记录实际目标、输出 revision 和对应内容 revision。
+- DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后检查内容；跨文档/页槽切换即使 `hasContent` 不变也发布新的 `contentRevision`。Host 必须把 `(hasContent, contentRevision)` 当成完整载荷：任一字段变化都存储、通知 `WaitForContentRevision` 并推进 runtime wake；两者都相同才幂等跳过。每次成功 Present 记录实际目标、输出 revision 和对应内容 revision，Selection 显隐仍要求 `presentedContentRevision == contentRevision`，不得用新呈现版本反向伪造目标。
 - presentation 状态固定为：非选择只显示主 Drawpad；选择先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。
 - Window Service 用批量窗口位置命令确保两窗互斥可见；失败时先隐藏两窗再收敛到唯一目标。主 Drawpad 不得动态切换 `WS_EX_TRANSPARENT`。
 - Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与非选择均保持完整布局，选择按钮文字恒为“选择”。产品路径不再注册或读取 Pierce/`penetrate.select`。
@@ -363,6 +363,7 @@ PumpBridgeState();
 - Headless 覆盖 `Primary/Presentation/Hidden` 解析、Clear 点击/双击决策，以及 timer begin/end 幂等、失败、模式往返和析构清理。
 - CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、Clear 恢复画布逐笔撤空且不跨第二个边界、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与最近区间恢复。
 - 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨 Clear Redo 不在本期。
+- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出双隐藏合同同时复测。
 - 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
 
 ### 7. Wrong vs Correct

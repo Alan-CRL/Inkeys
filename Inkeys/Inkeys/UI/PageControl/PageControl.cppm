@@ -921,12 +921,38 @@ export namespace Inkeys::UI::PageControl
 	{
 		SIZE size{ 1, 1 };
 		bool changed = false;
+		bool fits = true;
 	};
+
+	struct PageControlSurfaceBudget
+	{
+		float presentationOutsetDip = 10.0F;
+		unsigned bitmapLimit = 16384;
+	};
+
+	[[nodiscard]] inline PageControlSurfaceBudget ResolvePageControlGroupBudget(
+		const std::array<PageControlSurfaceBudget, 4>& surfaces,
+		std::uint8_t visibleMask) noexcept
+	{
+		PageControlSurfaceBudget group;
+		for (std::size_t index = 0; index < surfaces.size(); ++index)
+		{
+			if ((visibleMask & (1U << index)) == 0) continue;
+			group.presentationOutsetDip = (std::max)(
+				group.presentationOutsetDip, surfaces[index].presentationOutsetDip);
+			group.bitmapLimit = (std::min)(group.bitmapLimit,
+				(std::max)(1U, surfaces[index].bitmapLimit));
+		}
+		return group;
+	}
 
 	[[nodiscard]] inline StableBackingResolution ResolveStableBackingSize(
 		SIZE current, SIZE presentation, SIZE targetContent,
-		LONG currentOutset, double currentScale, double targetScale) noexcept
+		LONG currentOutset, double currentScale, double targetScale,
+		unsigned bitmapLimit = 16384) noexcept
 	{
+		const LONG limit = static_cast<LONG>((std::max)(1U,
+			(std::min)(bitmapLimit, 16384U)));
 		current.cx = (std::max)(1L, current.cx);
 		current.cy = (std::max)(1L, current.cy);
 		presentation.cx = (std::max)(1L, presentation.cx);
@@ -942,12 +968,15 @@ export namespace Inkeys::UI::PageControl
 			static_cast<double>(currentOutset)
 				* (std::max)(1.0, targetScale / currentScale)));
 		const SIZE resolved{
-			(std::max)({ current.cx, presentation.cx,
-				targetContent.cx + targetOutset * 2 }),
-			(std::max)({ current.cy, presentation.cy,
-				targetContent.cy + targetOutset * 2 }),
+			(std::min)(limit, (std::max)({ current.cx, presentation.cx,
+				targetContent.cx + targetOutset * 2 })),
+			(std::min)(limit, (std::max)({ current.cy, presentation.cy,
+				targetContent.cy + targetOutset * 2 })),
 		};
-		return { resolved, resolved.cx != current.cx || resolved.cy != current.cy };
+		return { resolved, resolved.cx != current.cx || resolved.cy != current.cy,
+			presentation.cx <= limit && presentation.cy <= limit
+			&& targetContent.cx + targetOutset * 2 <= limit
+			&& targetContent.cy + targetOutset * 2 <= limit };
 	}
 
 	[[nodiscard]] inline ResolvedSurfaceLayout ResolveSurfaceLayout(
@@ -1213,6 +1242,8 @@ export namespace Inkeys::UI::PageControl
 
 	// 复用产品 Scene/布局的无 HWND 离屏回归；由已有 UI 离屏入口调用。
 	int RunOffscreenTests();
+	// 独立命令入口：屏外真实四 HWND、ULW 与 Window Service 提交回归。
+	int RunHiddenWindowTests();
 	bool Acquire();
 	void Release() noexcept;
 	[[nodiscard]] WNDPROC WindowProc() noexcept;

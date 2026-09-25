@@ -506,6 +506,56 @@ namespace
 			"whiteboard never inherits PPT user scale or position");
 	}
 
+	void TestIndependentSurfaceFitRegression()
+	{
+		constexpr RECT monitor{ 0, 0, 7680, 4320 };
+		PptState ppt;
+		ppt.presentationVisible = true;
+		ppt.layout.showBottomPair = true;
+		ppt.layout.bottomPairScale = 3.0F;
+		const auto left = ResolveRuntimePageControlLayout(
+			monitor, 2.5F, ppt, 10.0F, 16384);
+		const auto right = ResolveRuntimePageControlLayout(
+			monitor, 2.5F, ppt, 35.0F, 512);
+		Check(left.layout.bottomPairScale != right.layout.bottomPairScale,
+			"regression setup distinguishes old per-surface fit inputs");
+		const std::array<PageControlSurfaceBudget, 4> budgets{
+			PageControlSurfaceBudget{ 10.0F, 16384 },
+			PageControlSurfaceBudget{ 35.0F, 512 },
+			PageControlSurfaceBudget{ 10.0F, 16384 },
+			PageControlSurfaceBudget{ 10.0F, 16384 },
+		};
+		const auto group = ResolvePageControlGroupBudget(budgets, 3);
+		Check(group.presentationOutsetDip == 35.0F
+			&& group.bitmapLimit == 512,
+			"all visible peers use the same conservative resource budget");
+		for (const float dpi : { 1.0F, 1.5F, 2.0F, 2.5F })
+		{
+			const auto fitted = ResolveRuntimePageControlLayout(monitor, dpi,
+				ppt, group.presentationOutsetDip, group.bitmapLimit);
+			const auto resolvedLeft = ResolveSurfaceLayout(
+				Surface::BottomLeft, monitor, dpi, fitted, {});
+			const auto resolvedRight = ResolveSurfaceLayout(
+				Surface::BottomRight, monitor, dpi, fitted, {});
+			Check(resolvedLeft.scale == resolvedRight.scale
+				&& Width(resolvedLeft.logicalBounds) == Width(resolvedRight.logicalBounds)
+				&& resolvedLeft.logicalBounds.left - monitor.left
+					== monitor.right - resolvedRight.logicalBounds.right
+				&& resolvedLeft.logicalBounds.left >= monitor.left
+				&& resolvedRight.logicalBounds.right <= monitor.right,
+				"shared fit keeps both large controls symmetric and on screen");
+		}
+		const auto bounded = ResolveStableBackingSize({ 800, 600 },
+			{ 300, 150 }, { 260, 110 }, 30, 3.0, 3.0, 512);
+		Check(bounded.fits && bounded.size.cx == 512
+			&& bounded.size.cy == 512,
+			"old backing capacity is reduced to the current bitmap limit");
+		const auto impossible = ResolveStableBackingSize({ 800, 600 },
+			{ 513, 150 }, { 260, 110 }, 30, 3.0, 3.0, 512);
+		Check(!impossible.fits,
+			"a presentation beyond the resource limit is not silently clipped");
+	}
+
 	void TestDragPureTranslationAndRevisionGate()
 	{
 		ResolvedSurfaceLayout previous;
@@ -1056,6 +1106,7 @@ int RunPageControlTests()
 	TestPagePresentationCommit();
 	TestHideAndPageCommitRace();
 	TestEffectiveScaleAndResources();
+	TestIndependentSurfaceFitRegression();
 	TestDragPureTranslationAndRevisionGate();
 	TestWorkspaceAndDpiLayouts();
 	TestWorkspaceTransitionAndInputPolicy();
