@@ -1748,7 +1748,8 @@ namespace Inkeys::Drawing::Draw3
 #endif
 			trackingMouseLeave_ = false;
 			ClearMouseCursorSample();
-			if (CursorOwner() ==
+			// Touch 会暂时覆盖有效归属；离窗时仍要清除持久的 Mouse 归属。
+			if (cursorOwner_.load(std::memory_order_acquire) ==
 				DrawingCursorPointerAuthority::Mouse)
 				SetDrawingCursorOwner(DrawingCursorPointerAuthority::Unknown);
 			RecordCursorDiagnostic("mouse-leave owner=%u suppressed=%u",
