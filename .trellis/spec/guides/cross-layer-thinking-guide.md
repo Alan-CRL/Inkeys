@@ -47,6 +47,11 @@ Win32 window message
 
 依据：`PageControlWindowProc`、`PptDragCommitTracker`、`RenderSurface`、`Window::Service::ApplyCancelPointerCapture`、`BarSurfaceScene::HitTestBackground`。
 
+### COM 属性成为跨层准入条件时
+
+- [ ] 同一属性的强类型/vtable 和 IDispatch/反射读取能力是否真的相同？从真实提供方读取生产适配器，比较两条路径；字典 FakeAccessor 的固定值不能证明真实 COM 暴露了该成员。
+- [ ] native 新增非零 HWND、PID、页身份等必要条件时，上游 reader 的可选/失败兜底是否会悄悄产出零值？保留失败原因和可复现的真实读取证据。
+
 ### Event-backed two-stage state publication
 
 - 跨层状态先区分事实源与 ready 状态：COM 页码是外部事实，Draw3 document runtime 是 native ready，`PptInfoStateBuffer` 是 UI 可发布边界；后层不得提前复述前层尚未完成的目标。

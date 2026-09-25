@@ -48,7 +48,8 @@ JSON schema version 1 恰含 `schemaVersion/provider/status/fullName/presentatio
 
 - `GetPresentationDescriptor()` 把短锁 clone 与锁外 `JavaScriptSerializer` 都放在异常边界内；失败使用手写 Unavailable JSON 兜底。它不访问 Office、不返回 dynamic/RCW，也不得持锁调 COM。
 - 只有 `PptComService` binding/monitor owner 读取 COM 图并刷新缓存。event 只置 refresh-pending；owner 在绑定、页/总数变化和低频复核时刷新。`TransientBusy` 可保留同 binding revision 的上一份 stable/fallback 纯值快照。
-- PowerPoint PIA 绑定对象、WPS 和损坏 IDispatch 统一经 `InvokeMember` late-bound accessor 读取，不做会重复 acquisition 的 typed→dynamic 二次尝试。reflection 必须解包内层异常供 busy HRESULT 分类。
+- 文稿、当前页和完整拓扑等常规属性继续经 `InvokeMember` late-bound accessor 读取；reflection 必须解包内层异常供 busy HRESULT 分类，不做重复获取 COM temporary 的 typed→dynamic 二次尝试。
+- **唯一 HWND 标量例外**：PowerPoint `SlideShowWindow.HWND` 先借用既有 PIA 类型接口读取；真实放映中该接口可返回有效 HWND，而同一对象的 `InvokeMember("HWND")` 会返回 `0x80020003`。不支持该接口的 WPS/其他提供方仍走原 late-bound 路径。类型接口返回 0 或抛错时不得改用前台窗口充当会话身份；不额外释放借用的窗口 RCW。
 - application、active presentation 和 slide-show window 是长期借用字段，reader 不释放。`View`、`View.Slide`、`Slides` 及每个 `Slides.Item(i)` 是本次获取的 temporary；必须在 `finally` 按子到父每次恰好 `ReleaseComObject` 一次，不得 `foreach`、链式 COM 属性或 temporary `FinalReleaseComObject`。
 - 当前页的 `SlideIndex` 和 `SlideID` 必须来自同一个 `View.Slide` acquisition。完整 topology 必须用 `for (1..Count) + Slides.Item(i)` 读取，校验当前 SlideIndex 顺序、正 SlideID、唯一性及当前 ID 对应；descriptor 中的数组顺序只表示本次 COM 的当前页顺序，不能把顺序变化当成 SlideID 身份变化。任一读取失败不得返回部分 `slideIds`。
 - `FullCleanup` 必须先推进 `bindingRevision` 并发布 Unavailable 纯值缓存，再沿既有 event -> window -> presentation -> application 路径解绑/释放。WPS 所需的 final release/GC 只保留在原 cleanup 所有权边界，不下放给 descriptor reader。

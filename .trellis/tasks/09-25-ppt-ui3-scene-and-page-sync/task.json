@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-09-25 用户已批准最终方案；实现与独立检查、完整ARM64 Solution、headless、managed、hidden真实保存/冷恢复及offscreen均通过。真实Office/WPS/键盘/设备/多屏和功耗仍NOT VERIFIED；保持in_progress待人工验收，不commit/push/提前归档。",
+  "notes": "2026-09-25 用户已批准最终方案；实现与独立检查、完整ARM64 Solution、headless、managed、hidden真实保存/冷恢复及offscreen均通过。真实Office/WPS/键盘/设备/多屏和功耗仍NOT VERIFIED；2026-09-25 已定位并修复 descriptor HWND 识别回归，用户反馈基本没有问题，完整人工矩阵仍待验收。保持in_progress，不归档、不推送。",
   "meta": {
     "implementation": "complete",
     "automated_verification": "passed",

@@ -69,6 +69,23 @@ namespace PptCOM
 
     internal sealed class MarshalLateBoundComAccessor : ILateBoundComAccessor
     {
+        private readonly Func<object, int?> typedSlideShowHwnd;
+
+        public MarshalLateBoundComAccessor() : this(ReadTypedSlideShowHwnd) { }
+
+        internal MarshalLateBoundComAccessor(Func<object, int?> typedSlideShowHwnd)
+        {
+            if (typedSlideShowHwnd == null) throw new ArgumentNullException("typedSlideShowHwnd");
+            this.typedSlideShowHwnd = typedSlideShowHwnd;
+        }
+
+        private static int? ReadTypedSlideShowHwnd(object target)
+        {
+            // PowerPoint 的 HWND 可由类型接口读取，但不一定暴露给 IDispatch；借用根对象，不释放 RCW。
+            var window = target as Microsoft.Office.Interop.PowerPoint.SlideShowWindow;
+            return window == null ? (int?)null : window.HWND;
+        }
+
         private static object Invoke(object target, string name,
             BindingFlags flags, object[] arguments)
         {
@@ -88,6 +105,12 @@ namespace PptCOM
 
         public object GetProperty(object target, string name)
         {
+            if (name == "HWND")
+            {
+                int? hwnd = typedSlideShowHwnd(target);
+                if (hwnd.HasValue) return hwnd.Value;
+            }
+            // 非 PowerPoint 接口继续走原 late-bound 路径；类型接口的 busy/失败不伪装成成功。
             return Invoke(target, name, BindingFlags.GetProperty, null);
         }
 

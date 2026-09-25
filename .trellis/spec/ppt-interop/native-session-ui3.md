@@ -18,6 +18,7 @@
 ### 状态来源、调度与身份
 
 - COM getter 只取 owner 发布的不可变缓存；相同 revision 返回空字符串，不能在 getter 扫描 Office。事件保留原页码读取并唤醒既有 owner；descriptor 刷新优先于慢维护，ROT/绑定/原轮询兼容路线不因快速唤醒重复运行。
+- descriptor HWND 是 native 会话准入的必要值。PowerPoint 强类型接口能读取 HWND 时，同一对象的反射 IDispatch 属性可能返回成员不存在；读取器必须在此标量上复用强类型 HWND，非 PIA 提供方沿用 late-bound。不能只通过固定 HWND/PID 的 FakeAccessor 证明真实 PowerPoint 准入。
 - 每场放映有独立 session revision；begin/end/读取候选存在 generation 屏障。旧事件、迟到候选不能复活旧会话。异常和属性缺失属于 Unknown，不凭失败猜测结束；明确 View.State Done 才分类 EndScreen。
 - native 新路径在放映期有界16ms观测，未放映100ms；旧 DLL 放映兼容路径保留50ms。16ms 是调度策略，不是实测端到端延迟承诺。必须保留 descriptor/原始页一致性、文稿 key、binding/target/session revision、SlideID/index 校验。
 - runtime snapshot 在字段前取得 wait revision；等待必须使用判定前的版本，不能在决定等待后重新取版本。Host 重启不能复用旧 target revision。
