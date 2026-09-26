@@ -35,6 +35,7 @@ namespace
 	std::mutex draw3PresentationMutex;
 	std::mutex stateModeTransitionMutex;
 	std::atomic_uint64_t stateModeTransitionRevision = 0;
+	std::atomic_uint64_t draw3ExitSelectionModeRevision = 0;
 	std::mutex eraserPreferencesMutex;
 	Inkeys::Drawing::Draw3::SpeedEraser::InputSettings ReadEraserPreferences()
 	{
@@ -51,6 +52,13 @@ namespace
 		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
 		result.entries[4].penResponse=RestorePenResponse(saved.PenTailResponse.load(),result.automaticPenSupported);
 		return result;
+	}
+	bool ExitSelectionHandoffPending() noexcept
+	{
+		const auto revision = draw3ExitSelectionModeRevision.load(
+			std::memory_order_acquire);
+		return revision != 0 && revision == stateModeTransitionRevision.load(
+			std::memory_order_acquire);
 	}
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
@@ -342,6 +350,8 @@ namespace
 		std::scoped_lock lock(draw3PresentationMutex);
 		const auto desired =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		const auto exitSelectionRevision = draw3ExitSelectionModeRevision.load(
+			std::memory_order_acquire);
 		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 		const bool selectionMode = runtime.selectionMode;
 		const bool whiteboard = runtime.workspace ==
@@ -381,7 +391,10 @@ namespace
 			runtime.presentedContentRevision == runtime.contentRevision;
 		const bool selectionRequested = desired.selectionMode &&
 			desired.workspace != Workspace::Whiteboard && !whiteboardTransition;
+		// 双表面立即隐藏只用于可信 PPT 真退出，普通选择切换等待辅助帧。
 		const bool selectionWaiting = selectionRequested &&
+			desired.workspace == Workspace::Desktop &&
+			ExitSelectionHandoffPending() &&
 			(!runtime.firstFrameReady || !runtime.selectionMode ||
 				runtime.workspace != desired.workspace || !targetReady);
 		if (selectionWaiting)
@@ -452,7 +465,8 @@ namespace
 		const auto hideForNewSelection =
 			[&](const Inkeys::Drawing::Draw3::Bridge::ProductState& state)
 		{
-			if (!state.selectionMode || state.workspace == Workspace::Whiteboard ||
+			if (!ExitSelectionHandoffPending() || !state.selectionMode ||
+				state.workspace != Workspace::Desktop ||
 				whiteboardDesired.load(std::memory_order_acquire) ||
 				whiteboardPhase.load(std::memory_order_acquire) != WhiteboardPhase::Inactive)
 				return;
@@ -496,6 +510,14 @@ namespace
 			return Draw3PresentationReconcileResult::Retry;
 		}
 		draw3PresentationRetryPending.store(false, std::memory_order_release);
+		if (ExitSelectionHandoffPending() && desired.selectionMode &&
+			desired.workspace == Workspace::Desktop)
+		{
+			auto handoffRevision = exitSelectionRevision;
+			(void)draw3ExitSelectionModeRevision.compare_exchange_strong(
+				handoffRevision, 0, std::memory_order_release,
+				std::memory_order_relaxed);
+		}
 		if (draw3SelectionWaitActive)
 		{
 			TraceSelectionWindowState(desired, runtime, "ready-applied",
@@ -830,7 +852,11 @@ bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision)
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
 		BackgroundColorMode = 0;
-		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		// 先登记真退出版本，避免并发协调线程把普通 Selection 当成退出交接。
+		const auto nextRevision = stateModeTransitionRevision.load(
+			std::memory_order_relaxed) + 1;
+		draw3ExitSelectionModeRevision.store(nextRevision, std::memory_order_release);
+		stateModeTransitionRevision.store(nextRevision, std::memory_order_release);
 	}
 	SyncDraw3State();
 	return true;

@@ -43,4 +43,4 @@ rendering-and-ui PageControl sections: legacy persistence terminology now means 
 
 ## Final integration record
 
-Root confirmed: full Debug|ARM64 solution, headless --no-window, managed tests, real Host hidden (including persisted cold recovery/reorder), final Bar/PageControl offscreen and diff check all exit0. Exact evidence and limitations are in verification.md. Generated .log files were preserved under D:/Project/Inkeys/Repo/Inkeys-draw/Build/Validation/ppt-ui3-scene-and-page-sync-20260925 (outside tracked task artifacts); use the same log basenames recorded above. No Office GUI/device result is implied.
+Root confirmed: full Debug|ARM64 solution, headless --no-window, managed tests, real Host hidden (including persisted cold recovery/reorder), final Bar/PageControl offscreen and diff check all exit0. Exact evidence and limitations are in verification.md. Generated .log files were preserved under Build/Validation/ppt-ui3-scene-and-page-sync-20260925 (outside tracked task artifacts); use the same log basenames recorded above. No Office GUI/device result is implied.

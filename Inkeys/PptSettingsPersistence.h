@@ -66,13 +66,8 @@ namespace Inkeys::PptSettings
 			settings_["MemoryWidgetPosition"] = remember;
 			return Capture();
 		}
+		// 投递重试不代表写盘成功；仅 Complete 根据实际结果更新失败状态。
 		std::string Retry() const { return failed_ ? pending_ : std::string{}; }
-		std::string TakeRetry()
-		{
-			auto result = Retry();
-			if (!result.empty()) failed_ = false;
-			return result;
-		}
 
 		struct PreparedWrite
 		{

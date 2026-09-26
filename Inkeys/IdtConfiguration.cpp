@@ -776,7 +776,7 @@ Inkeys::PptSettings::Positions RestorablePptComPositions()
 string RetryPptComSettingJson()
 {
 	std::scoped_lock lock(pptSettingsMutex);
-	return pptSettingsJournal.TakeRetry();
+	return pptSettingsJournal.Retry();
 }
 
 bool WritePptComSettingJson(const string& jsonContent)
