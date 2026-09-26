@@ -41,6 +41,7 @@ export namespace Inkeys::Drawing::Draw3
 			std::size_t, std::size_t) = nullptr;
 		void (*documentReady)(void*, std::size_t, std::size_t) = nullptr;
 		void (*currentPageContentChanged)(void*, bool, std::uint64_t) = nullptr;
+		void (*strokeCompleted)(void*, Bridge::CompletedStrokeKind) = nullptr;
 		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t,
 			const Bridge::PresentationReadyIdentity*) = nullptr;
 		void (*controlWake)(void*) = nullptr;

@@ -177,8 +177,9 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	bool dragPlacementLocked)
 {
 	Initialize();changed_=false;active_=false;
-	if(owner.barState.fold || stateMode.StateModeSelect!=StateModeSelectEnum::IdtEraser || owner.barState.drawAttribute ||
-		owner.barState.geometryAttribute || owner.barState.moreExpanded)Close(owner);
+	const bool shouldClose=owner.barState.fold || stateMode.StateModeSelect!=StateModeSelectEnum::IdtEraser ||
+		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded;
+	if(shouldClose)Close(owner);
 	const bool open=owner.barState.eraserAttribute;if(!open)owner.barState.eraserSensitivityOpen=false;
 	const bool menuOpen=owner.barState.eraserSensitivityOpen;visible_=open;
 	const BarUiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
@@ -277,16 +278,15 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	frame_=next;zoom_=zoom;
 	const auto& g=frame_.geometry;
 	const auto preferences=EraserPreferencesSnapshot();const auto automatic=GetAutomaticState(preferences);
-	const bool clear=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent;
-	changed_|=clear!=clearEnabled_ || automatic!=automatic_ || selectedSize_!=static_cast<int>(preferences.baseSize) || sensitivity_!=static_cast<int>(preferences.sensitivity);
-	clearEnabled_=clear;automatic_=automatic;selectedSize_=static_cast<int>(preferences.baseSize);sensitivity_=static_cast<int>(preferences.sensitivity);
+	changed_|=automatic!=automatic_ || selectedSize_!=static_cast<int>(preferences.baseSize) || sensitivity_!=static_cast<int>(preferences.sensitivity);
+	automatic_=automatic;selectedSize_=static_cast<int>(preferences.baseSize);sensitivity_=static_cast<int>(preferences.sensitivity);
 	changed_|=surface_.fill->val!=GetThemeColor(BarThemeColorEnum::Surface);
 	ConfigureSurface(surface_,g.panel,frame_.panelPose.scale);ConfigureSurface(menu_,g.menu,frame_.menuPose.scale);
 	const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
 	for(int i:buttonVisuals)
 	{
 		auto& b=buttons_[i];changed_|=b.name.SetStringImmediate(ButtonLabel(i));
-		const bool enabled=i!=9 && (i!=0 || clearEnabled_);
+		const bool enabled=i!=9;
 		const bool selected=(i==4 && automatic_==AutomaticState::On) || (i>=6 && i<=8 && sensitivity_==i-6);
 		const bool presented=i<6?frame_.panelVisible:frame_.menuVisible;
 		const double scale=i<6?frame_.panelPose.scale:frame_.menuPose.scale;
@@ -467,9 +467,19 @@ void BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 {
 	if(item==0)
 	{
-		if(!Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent)return;
+		const auto snapshot=Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		const auto returnMode=ResolveEraserClearReturnMode(snapshot.completedStrokeKind,returnToSelectionOnClear_);
 		const auto accepted=Inkeys::Drawing::Draw3::PublishProductCommand(Inkeys::Drawing::Draw3::Bridge::CommandType::Clear);
-		if(accepted==Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)Close(owner);
+		if(accepted==Inkeys::Drawing::Draw3::Bridge::CommandResult::Accepted)
+		{
+			// 从有内容的选择进入橡皮时，清空后优先恢复选择，不受期间橡皮笔迹影响。
+			if(returnMode==BarEraserClearReturnMode::Selection)ChangeStateModeToSelection();
+			else if(returnMode==BarEraserClearReturnMode::Drawing)ChangeStateModeToPen();
+			else if(returnMode==BarEraserClearReturnMode::Shape)ChangeStateModeToShape();
+			// 最近一次是橡皮时保持当前橡皮模式；只在命令被接受后收起面板。
+			Close(owner);
+			owner.UpdateRendering();return;
+		}
 	}
 	else if(IsSize(item))SetGlobalEraserPreference(static_cast<int>(BaseSizePresets[item-1]));
 	else if(item==4)SetGlobalEraserPreference(-1,-1,GetAutomaticState(EraserPreferencesSnapshot())!=AutomaticState::On);
@@ -519,7 +529,7 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 			if(old!=visual)
 			{
 				if(old>=0)StopBarButtonHoverVisual(buttons_[old],false);
-				if(visual>=0 && visual!=9 && (visual!=0 || Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent))StartBarButtonHoverVisual(buttons_[visual]);
+				if(visual>=0 && visual!=9)StartBarButtonHoverVisual(buttons_[visual]);
 			}
 			owner.UpdateRendering(false);
 		}
@@ -529,14 +539,15 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	if(down)
 	{
 		if(owner.barState.eraserSensitivityOpen && !overMenu && hit!=5){owner.barState.eraserSensitivityOpen=false;owner.UpdateRendering(false);}
-		const bool enabled=hit!=9 && (hit!=0 || Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
+		const bool enabled=hit!=9;
 		// 必须是面板收到的新Down才能建立动作票据；主栏开栏的那次Up不能落到中央Clear。
 		pressed_=inside && enabled && owner.barState.eraserAttribute && !cancelled?hit:-1;
 		focused_=-1;owner.UpdateRendering(false);return inside;
 	}
 	if(message.message==WM_LBUTTONUP)
 	{
-		const int pressed=pressed_;pressed_=-1;
+		const int pressed=pressed_;
+		pressed_=-1;
 		// 同一整体按钮内跨区释放，仍执行Down时的动作，不改成另一命令。
 		const int action=ResolveEraserAttributeRelease(pressed,hit,inside,cancelled);
 		if(action>=0 && owner.barState.eraserAttribute)Execute(owner,action);
@@ -558,6 +569,5 @@ bool BarEraserAttributePanel::Keyboard(BarUISetClass& owner,BYTE key,bool down)
 	const int first=owner.barState.eraserSensitivityOpen?6:0,last=owner.barState.eraserSensitivityOpen?8:5;
 	const int delta=key==VK_LEFT || (key==VK_TAB && (GetKeyState(VK_SHIFT)&0x8000))?-1:1;
 	int focus=focused_;if(focus<first || focus>last)focus=first;else focus=first+(focus-first+delta+last-first+1)%(last-first+1);
-	if(focus==0 && !Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent)focus=delta>0?1:5;
 	focused_=focus;hovered_=-1;owner.UpdateRendering(false);return true;
 }

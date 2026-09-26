@@ -83,6 +83,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
 		std::atomic<std::uint64_t> contentRevision = 0;
+		std::atomic<Bridge::CompletedStrokeKind> completedStrokeKind =
+			Bridge::CompletedStrokeKind::None;
 		std::atomic_bool selectionMode = true;
 		std::atomic<Bridge::Workspace> workspace = Bridge::Workspace::Desktop;
 		mutable std::mutex presentationTargetMutex;
@@ -185,6 +187,8 @@ namespace Inkeys::Drawing::Draw3
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
 			contentRevision.store(0, std::memory_order_release);
+			completedStrokeKind.store(
+				Bridge::CompletedStrokeKind::None, std::memory_order_release);
 			selectionMode.store(true, std::memory_order_release);
 			workspace.store(Bridge::Workspace::Desktop, std::memory_order_release);
 			{
@@ -345,6 +349,14 @@ namespace Inkeys::Drawing::Draw3
 			}
 			self->contentCondition.notify_all();
 			self->PublishRuntimeRevision();
+		}
+
+		static void ObserveStrokeCompleted(
+			void* context, Bridge::CompletedStrokeKind kind)
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (!self || kind == Bridge::CompletedStrokeKind::None) return;
+			self->completedStrokeKind.store(kind, std::memory_order_release);
 		}
 
 		static void ObserveWorkspace(void* context, Bridge::Workspace value,
@@ -905,7 +917,8 @@ namespace Inkeys::Drawing::Draw3
 							const DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
-								&ObserveCurrentPageContent, &ObserveWorkspace, &ConsumeBridge,
+								&ObserveCurrentPageContent, &ObserveStrokeCompleted,
+								&ObserveWorkspace, &ConsumeBridge,
 								&ObserveDesktopAutoSave,
 								&ObserveDesktopLoad,
 								&ObservePresentationSave,
@@ -1176,6 +1189,8 @@ namespace Inkeys::Drawing::Draw3
 		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
+		snapshot.completedStrokeKind =
+			impl_->completedStrokeKind.load(std::memory_order_acquire);
 		snapshot.selectionMode = impl_->selectionMode.load(std::memory_order_acquire);
 		snapshot.workspace = impl_->workspace.load(std::memory_order_acquire);
 		{

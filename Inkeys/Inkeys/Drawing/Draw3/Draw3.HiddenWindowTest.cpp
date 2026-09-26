@@ -509,6 +509,9 @@ namespace Inkeys::Drawing::Draw3
 				// 通过隐藏 Drawpad 的 WndProc mailbox 注入完整 Down/Move/Up，
 				// 不调用 SendInput，也不绕过真实绘制线程直接访问 Renderer。
 				const auto beforeContact = ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(beforeContact.completedStrokeKind ==
+					Bridge::CompletedStrokeKind::None,
+					"fresh Host has no completed stroke kind", failures);
 				const auto postContact = [&](HiddenTestContactPhase phase, int x, int y)
 				{
 					return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
@@ -527,7 +530,8 @@ namespace Inkeys::Drawing::Draw3
 							state.inputTerminalPublished > beforeContact.inputTerminalPublished &&
 							state.inputRecycled > beforeContact.inputRecycled &&
 							state.successfulPresentCount > beforeContact.successfulPresentCount &&
-							state.currentPageHasContent;
+							state.currentPageHasContent &&
+							state.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing;
 					}), "hidden contact reached Draw3 consumer and presented", failures);
 
 				modeSucceeded &= Check(WaitUntil([]
@@ -547,7 +551,8 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.nextPageCommandCount > beforeNextPage.nextPageCommandCount &&
 							state.pageCount >= 2 && state.currentPageIndex == 1 &&
-							!state.currentPageHasContent;
+							!state.currentPageHasContent &&
+							state.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing;
 					}), "switching to a blank page publishes no content", failures);
 				const auto pageOneEmpty = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(pageOneEmpty.contentRevision >
@@ -559,6 +564,7 @@ namespace Inkeys::Drawing::Draw3
 				eraserState.tool = Bridge::Tool::FixedEraser;
 				eraserState.selectionMode = false;
 				PublishProductState(eraserState);
+				std::this_thread::sleep_for(40ms); // 先让异步工具状态到达绘制线程，再注入实际笔划。
 				const auto beforeEraser = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(postContact(HiddenTestContactPhase::Down, 72, 88) &&
 					postContact(HiddenTestContactPhase::Move, 112, 104) &&
@@ -571,7 +577,8 @@ namespace Inkeys::Drawing::Draw3
 							state.inputTerminalPublished > beforeEraser.inputTerminalPublished &&
 							state.inputRecycled > beforeEraser.inputRecycled &&
 							state.currentPageHasContent &&
-							state.contentRevision > pageOneEmpty.contentRevision;
+							state.contentRevision > pageOneEmpty.contentRevision &&
+							state.completedStrokeKind == Bridge::CompletedStrokeKind::Eraser;
 					}), "eraser history counts as content on a visually blank page", failures);
 
 				const auto beforePreviousPage = ProductHost().RuntimeSnapshot();
@@ -582,7 +589,8 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.previousPageCommandCount >
 							beforePreviousPage.previousPageCommandCount &&
-							state.currentPageIndex == 0 && state.currentPageHasContent;
+							state.currentPageIndex == 0 && state.currentPageHasContent &&
+							state.completedStrokeKind == Bridge::CompletedStrokeKind::Eraser;
 					}), "returning to the first page restores its content state", failures);
 
 				const auto beforeClear = ProductHost().RuntimeSnapshot();
@@ -593,7 +601,8 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.clearCommandCount > beforeClear.clearCommandCount &&
 							!state.currentPageHasContent &&
-							state.contentRevision > beforeClear.contentRevision;
+							state.contentRevision > beforeClear.contentRevision &&
+							state.completedStrokeKind == Bridge::CompletedStrokeKind::Eraser;
 					}), "clear publishes an empty current page", failures);
 				const auto afterClear = ProductHost().RuntimeSnapshot();
 
@@ -604,7 +613,8 @@ namespace Inkeys::Drawing::Draw3
 						const auto state = ProductHost().RuntimeSnapshot();
 						return state.undoCommandCount > afterClear.undoCommandCount &&
 							state.currentPageHasContent &&
-							state.contentRevision > afterClear.contentRevision;
+							state.contentRevision > afterClear.contentRevision &&
+							state.completedStrokeKind == Bridge::CompletedStrokeKind::Eraser;
 					}), "undo restores content removed by clear", failures);
 				const auto afterUndo = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(afterUndo.currentPageHasContent,
@@ -825,6 +835,53 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear Undo restores annotation",failures);
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().currentPageHasContent;}),"whiteboard Clear Redo reapplies transaction",failures);
+
+				// 最近笔类仅由正常结束的实际笔划更新；命令、翻页和取消均不得覆盖。
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().completedStrokeKind ==
+					Bridge::CompletedStrokeKind::Drawing,
+					"Clear Undo Redo preserve the last completed drawing kind", failures);
+				auto kindState = whiteboardState;
+				kindState.tool = Bridge::Tool::SolidLine;
+				PublishProductState(kindState);
+				std::this_thread::sleep_for(40ms);
+				const auto beforeShape = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 80, 72);
+				postContact(HiddenTestContactPhase::Move, 136, 104);
+				postContact(HiddenTestContactPhase::Up, 192, 136);
+				modeSucceeded &= Check(WaitUntil([beforeShape]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeShape.inputRecycled &&
+						state.completedStrokeKind == Bridge::CompletedStrokeKind::Shape;
+				}), "completed shape updates the last stroke kind", failures);
+				kindState.tool = Bridge::Tool::Laser;
+				PublishProductState(kindState);
+				std::this_thread::sleep_for(40ms);
+				const auto beforeLaser = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 88, 80);
+				postContact(HiddenTestContactPhase::Move, 144, 112);
+				postContact(HiddenTestContactPhase::Up, 200, 144);
+				modeSucceeded &= Check(WaitUntil([beforeLaser]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeLaser.inputRecycled &&
+						state.completedStrokeKind == Bridge::CompletedStrokeKind::Drawing;
+				}), "completed laser maps to the drawing kind", failures);
+				kindState.tool = Bridge::Tool::SolidLine;
+				PublishProductState(kindState);
+				std::this_thread::sleep_for(40ms);
+				const auto beforeCancelledShape = ProductHost().RuntimeSnapshot();
+				postContact(HiddenTestContactPhase::Down, 96, 88);
+				postContact(HiddenTestContactPhase::Move, 152, 120);
+				postContact(HiddenTestContactPhase::Cancelled, 208, 152);
+				modeSucceeded &= Check(WaitUntil([beforeCancelledShape]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeCancelledShape.inputRecycled;
+				}), "cancelled shape retires on the drawing thread", failures);
+				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().completedStrokeKind ==
+					Bridge::CompletedStrokeKind::Drawing,
+					"cancelled stroke does not update the last completed kind", failures);
 				const auto beforeResize = ProductHost().RuntimeSnapshot();
 				const RECT resizedBounds{ 44, 56, 428, 312 };
 				modeSucceeded &= Check(service.SetBounds(Inkeys::Window::WindowRole::Drawpad,

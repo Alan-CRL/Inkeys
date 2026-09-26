@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <thread>
 #include <windows.h>
 
@@ -27,6 +29,21 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		std::atomic<bool> startupEnvironmentDiagnosticsEnabled = false;
+		constexpr size_t kCursorDiagnosticCapacity = 1024;
+		struct CursorDiagnosticLine
+		{
+			uint64_t sequence = 0;
+			uint64_t tickMilliseconds = 0;
+			DWORD threadId = 0;
+			char message[320] = {};
+		};
+		std::atomic<bool> cursorDiagnosticsEnabled = false;
+		std::mutex cursorDiagnosticMutex;
+		std::array<CursorDiagnosticLine, kCursorDiagnosticCapacity> cursorDiagnosticLines;
+		size_t cursorDiagnosticHead = 0;
+		size_t cursorDiagnosticCount = 0;
+		uint64_t cursorDiagnosticSequence = 0;
+		uint64_t cursorDiagnosticDropped = 0;
 
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
@@ -455,6 +472,151 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 #endif
+
+	void SetCursorDiagnosticsEnabled(bool enabled) noexcept
+	{
+		cursorDiagnosticsEnabled.store(false, std::memory_order_release);
+		if (!enabled) return;
+		{
+			std::lock_guard lock(cursorDiagnosticMutex);
+			cursorDiagnosticHead = 0;
+			cursorDiagnosticCount = 0;
+			cursorDiagnosticSequence = 0;
+			cursorDiagnosticDropped = 0;
+		}
+		cursorDiagnosticsEnabled.store(true, std::memory_order_release);
+		RecordCursorDiagnostic("enabled schema=2 capacity=%zu rawMode=observe-existing-registration", kCursorDiagnosticCapacity);
+		const DWORD previousError = GetLastError();
+		std::array<RAWINPUTDEVICE, 32> registrations{};
+		UINT count = static_cast<UINT>(registrations.size());
+		const UINT result = GetRegisteredRawInputDevices(registrations.data(), &count, sizeof(RAWINPUTDEVICE));
+		if (result == UINT_MAX)
+			RecordCursorDiagnostic("raw-registration stage=initial known=0 error=%lu",
+				static_cast<unsigned long>(GetLastError()));
+		else
+		{
+			bool mouseRegistered = false;
+			for (UINT index = 0; index < result; ++index)
+			{
+				const auto& registration = registrations[index];
+				if (registration.usUsagePage != 0x01 || registration.usUsage != 0x02) continue;
+				mouseRegistered = true;
+				RecordCursorDiagnostic("raw-registration stage=initial known=1 active=1 hwnd=%p flags=0x%lx",
+					static_cast<void*>(registration.hwndTarget), static_cast<unsigned long>(registration.dwFlags));
+			}
+			if (!mouseRegistered) RecordCursorDiagnostic("raw-registration stage=initial known=1 active=0");
+		}
+		SetLastError(previousError);
+	}
+
+	bool CursorDiagnosticsEnabled() noexcept
+	{
+		return cursorDiagnosticsEnabled.load(std::memory_order_acquire);
+	}
+
+	void RecordCursorRawInput(LPARAM rawInputHandle) noexcept
+	{
+		if (!CursorDiagnosticsEnabled()) return;
+		const DWORD previousError = GetLastError();
+		RAWINPUTHEADER header{};
+		UINT size = sizeof(header);
+		const HRAWINPUT handle = reinterpret_cast<HRAWINPUT>(rawInputHandle);
+		if (GetRawInputData(handle, RID_HEADER, &header, &size, sizeof(header)) == UINT_MAX)
+			RecordCursorDiagnostic("raw-read stage=header ok=0 error=%lu", static_cast<unsigned long>(GetLastError()));
+		else if (header.dwType == RIM_TYPEMOUSE)
+		{
+			RAWINPUT raw{};
+			size = sizeof(raw);
+			const UINT read = GetRawInputData(handle, RID_INPUT, &raw, &size, sizeof(header));
+			if (read == UINT_MAX)
+				RecordCursorDiagnostic("raw-read stage=mouse ok=0 error=%lu", static_cast<unsigned long>(GetLastError()));
+			else if (read >= sizeof(RAWINPUTHEADER) + sizeof(RAWMOUSE))
+				RecordCursorDiagnostic("raw-mouse device=%p mode=%llu flags=0x%x dx=%ld dy=%ld buttons=0x%x data=0x%x extra=0x%lx",
+					static_cast<void*>(raw.header.hDevice), static_cast<unsigned long long>(raw.header.wParam),
+					static_cast<unsigned>(raw.data.mouse.usFlags), raw.data.mouse.lLastX, raw.data.mouse.lLastY,
+					static_cast<unsigned>(raw.data.mouse.usButtonFlags), static_cast<unsigned>(raw.data.mouse.usButtonData),
+					static_cast<unsigned long>(raw.data.mouse.ulExtraInformation));
+			else RecordCursorDiagnostic("raw-read stage=mouse ok=0 short=%u", read);
+		}
+		SetLastError(previousError);
+	}
+
+	void RecordCursorDiagnostic(const char* format, ...) noexcept
+	{
+		if (!CursorDiagnosticsEnabled() || !format) return;
+		CursorDiagnosticLine line;
+		line.tickMilliseconds = GetTickCount64();
+		line.threadId = GetCurrentThreadId();
+		va_list arguments;
+		va_start(arguments, format);
+		const int length = std::vsnprintf(line.message, sizeof(line.message), format, arguments);
+		va_end(arguments);
+		if (length <= 0) return;
+		if (static_cast<size_t>(length) >= sizeof(line.message))
+		{
+			// 日志截断必须可见，避免把缺字段误判成状态未变化。
+			constexpr char suffix[] = " [truncated]";
+			std::memcpy(line.message + sizeof(line.message) - sizeof(suffix), suffix, sizeof(suffix));
+		}
+		std::lock_guard lock(cursorDiagnosticMutex);
+		line.sequence = ++cursorDiagnosticSequence;
+		if (cursorDiagnosticCount == kCursorDiagnosticCapacity)
+		{
+			cursorDiagnosticHead = (cursorDiagnosticHead + 1) % kCursorDiagnosticCapacity;
+			--cursorDiagnosticCount;
+			++cursorDiagnosticDropped;
+		}
+		cursorDiagnosticLines[(cursorDiagnosticHead + cursorDiagnosticCount) %
+			kCursorDiagnosticCapacity] = line;
+		++cursorDiagnosticCount;
+	}
+
+	void FlushCursorDiagnostics() noexcept
+	{
+		if (!CursorDiagnosticsEnabled()) return;
+		std::array<CursorDiagnosticLine, 64> batch;
+		for (size_t pass = 0; pass < 16; ++pass)
+		{
+			size_t count = 0;
+			uint64_t dropped = 0;
+			{
+				std::lock_guard lock(cursorDiagnosticMutex);
+				count = (std::min)(batch.size(), cursorDiagnosticCount);
+				for (size_t index = 0; index < count; ++index)
+					batch[index] = cursorDiagnosticLines[(cursorDiagnosticHead + index) %
+						kCursorDiagnosticCapacity];
+				cursorDiagnosticHead = (cursorDiagnosticHead + count) % kCursorDiagnosticCapacity;
+				cursorDiagnosticCount -= count;
+				dropped = cursorDiagnosticDropped;
+				cursorDiagnosticDropped = 0;
+			}
+			if (dropped)
+			{
+				char warning[128] = {};
+				const int length = std::snprintf(warning, sizeof(warning),
+					"[CURSOR_TRACE] dropped=%llu\r\n",
+					static_cast<unsigned long long>(dropped));
+				if (length > 0) WriteFastConsoleLine(warning,
+					static_cast<DWORD>((std::min)(length, static_cast<int>(sizeof(warning) - 1))));
+			}
+			if (count == 0) break;
+			char output[32768] = {};
+			size_t used = 0;
+			for (size_t index = 0; index < count; ++index)
+			{
+				const CursorDiagnosticLine& line = batch[index];
+				const int length = std::snprintf(output + used, sizeof(output) - used,
+					"[CURSOR_TRACE] seq=%llu tick=%llu thread=%lu %s\r\n",
+					static_cast<unsigned long long>(line.sequence),
+					static_cast<unsigned long long>(line.tickMilliseconds),
+					static_cast<unsigned long>(line.threadId), line.message);
+				if (length > 0 && static_cast<size_t>(length) < sizeof(output) - used)
+					used += static_cast<size_t>(length);
+			}
+			// 批量写入，避免高频触摸测试时每条记录都等待一次控制台调用。
+			if (used) WriteFastConsoleLine(output, static_cast<DWORD>(used));
+		}
+	}
 
 	double GetQpcTimeMilliseconds()
 	{

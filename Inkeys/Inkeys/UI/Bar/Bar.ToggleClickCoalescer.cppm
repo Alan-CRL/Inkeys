@@ -3,6 +3,7 @@ module;
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include "../../Drawing/Draw3/Draw3.Bridge.h"
 
 export module Inkeys.UI.Bar.ToggleClickCoalescer;
 
@@ -54,6 +55,25 @@ export namespace Inkeys::UI::Bar
 		return selectionMode
 			? BarClearClickAction::None
 			: BarClearClickAction::EnterSelection;
+	}
+
+	enum class BarEraserClearReturnMode : unsigned char
+	{
+		Drawing,
+		Shape,
+		Eraser,
+		Selection,
+	};
+
+	inline BarEraserClearReturnMode ResolveEraserClearReturnMode(
+		Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind kind,
+		bool returnToSelection = false) noexcept
+	{
+		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
+		if (returnToSelection) return BarEraserClearReturnMode::Selection;
+		if (kind == Kind::Shape) return BarEraserClearReturnMode::Shape;
+		if (kind == Kind::Eraser) return BarEraserClearReturnMode::Eraser;
+		return BarEraserClearReturnMode::Drawing;
 	}
 
 	class BarToggleClickCoalescer
