@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
+#include <optional>
 
 namespace Inkeys::UI::Bar
 {
@@ -43,6 +45,39 @@ namespace Inkeys::UI::Bar
 		Dragging,
 		Detaching,
 		Recovering,
+	};
+
+	// 放映生命周期与控件显隐分离；重复页发布不能重放场景动画。
+	enum class BarPptSceneAction { Keep, CenterDock, Detach };
+	[[nodiscard]] constexpr BarPptSceneAction ResolveBarPptSceneAction(
+		bool entering, bool folded, BarBottomDockMode mode, bool whiteboard) noexcept
+	{
+		if (whiteboard) return BarPptSceneAction::Keep;
+		if (folded) return mode == BarBottomDockMode::BottomDocked
+			? BarPptSceneAction::Detach : BarPptSceneAction::Keep;
+		return !entering || mode == BarBottomDockMode::BottomDocked
+			? BarPptSceneAction::CenterDock : BarPptSceneAction::Keep;
+	}
+	struct BarPptSceneState
+	{
+		std::uint64_t session = 0;
+		bool active = false;
+		std::optional<bool> pending;
+		bool Publish(std::uint64_t nextSession, bool nextActive) noexcept
+		{
+			if (active == nextActive && (!nextActive || session == nextSession)) return false;
+			session = nextSession;
+			active = nextActive;
+			// 同一观察轮可先退出 A 再进入 B；退出要求的居中不能被后来的 Enter 覆盖。
+			if (!pending.has_value() || !active) pending = active;
+			return true;
+		}
+		std::optional<bool> Take() noexcept
+		{
+			const auto result = pending;
+			pending.reset();
+			return result;
+		}
 	};
 
 	struct BarBottomDockFeedbackGeometry

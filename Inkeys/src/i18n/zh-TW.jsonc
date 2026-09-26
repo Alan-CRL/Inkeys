@@ -139,7 +139,7 @@
     },
     "EndPresentation":
     {
-      "Body": "目前處於繪圖模式。結束放映將清除畫布內容。\n確定要結束放映嗎？"
+      "Body": "確定結束目前的投影片放映嗎？"
     },
     "WindowCreationFailed":
     {

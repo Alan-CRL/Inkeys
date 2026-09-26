@@ -993,6 +993,17 @@ namespace Inkeys::UI::Bar
 	export bool CurrentPageHasContent() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
+	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;
+	export std::optional<bool> ConsumePptSceneTransition() noexcept;
+	export HWND PptPresentationWindow() noexcept;
+	export HMONITOR PptSceneMonitor() noexcept;
+	export void UpdatePptSceneMonitor(HWND window) noexcept;
+	export double SceneBottomDockInsetDip() noexcept;
+	export void SetBusinessFocusCallback(std::function<void()> callback);
+	export void NotifyPptBusinessAction();
+	export bool PptBusinessFocusAllowed() noexcept;
+	export void SetEndShowRequestCallback(std::function<void(std::uint64_t)> callback);
+	export void CompleteEndShowRequest(std::uint64_t request) noexcept;
 	export void SetEndShowCallback(std::function<void()> callback);
 	export void RequestEndShow();
 	export void CompleteEndShowRequest() noexcept;

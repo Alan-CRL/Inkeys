@@ -74,10 +74,20 @@ namespace PptCOM
         string GetPresentationDescriptor();
     }
 
+    // 独立查询扩展，不能向旧 IUnknown vtable 插入方法。
+    [ComVisible(true)]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("D7A63F98-43B8-4BA1-A875-B55A5A04DC3E")]
+    public interface IPptCOMSessionState
+    {
+        string GetSlideShowState(long afterRevision);
+        int EndSlideShowIfSession(long expectedShowSessionRevision);
+    }
+
     [ComVisible(true)]
     [ClassInterface(ClassInterfaceType.None)]
     [Guid("C44270BE-9A52-400F-AD7C-ED42050A77D8")]
-    public class PptCOMServer : IPptCOMServer
+    public class PptCOMServer : IPptCOMServer, IPptCOMSessionState
     {
         private dynamic pptApplication;
         private dynamic pptActivePresentation;
@@ -85,9 +95,13 @@ namespace PptCOM
 
         private readonly object presentationDescriptorLock = new object();
         private readonly PresentationDescriptorReader presentationDescriptorReader;
+        private readonly ILateBoundComAccessor presentationAccessor = new MarshalLateBoundComAccessor();
+        private readonly SlideShowSessionCache slideShowSession = new SlideShowSessionCache();
+        private readonly SlideShowOwnerMailbox slideShowOwner = new SlideShowOwnerMailbox();
         private PresentationDescriptorValue presentationDescriptorCache =
             PresentationDescriptorValue.CreateStatus("Unavailable", 0);
         private long presentationBindingRevision;
+        private long presentationDescriptorSession;
         private int presentationDescriptorRefreshPending = 1;
         private DateTime nextPresentationDescriptorRefreshUtc = DateTime.MinValue;
 
@@ -119,7 +133,7 @@ namespace PptCOM
         public PptCOMServer()
         {
             presentationDescriptorReader = new PresentationDescriptorReader(
-                new MarshalLateBoundComAccessor(), ResolveWindowProcessId);
+                presentationAccessor, ResolveWindowProcessId);
         }
 
         // 初始化函数
@@ -186,6 +200,31 @@ namespace PptCOM
             }
         }
 
+        public string GetSlideShowState(long afterRevision)
+        {
+            return slideShowSession.GetSince(afterRevision);
+        }
+
+        public int EndSlideShowIfSession(long expectedShowSessionRevision)
+        {
+            if (!slideShowSession.Matches(expectedShowSessionRevision)) return 0;
+            // 模态业务线程等待 owner 的实际执行结果；超时后排队请求失效。
+            return slideShowOwner.RequestExit(expectedShowSessionRevision, 2000);
+        }
+
+        private void ProcessSlideShowExitRequests()
+        {
+            slideShowOwner.ProcessExits(request => SlideShowSessionExit.Execute(
+                request, slideShowSession, (object)pptSlideShowWindow, presentationAccessor));
+        }
+
+        private void PublishSlideShowLifecycle()
+        {
+            SlideShowObservationStamp stamp = slideShowSession.Capture();
+            slideShowSession.Publish(stamp,
+                PresentationDescriptorValue.CreateStatus("Unavailable", stamp.Binding), "Unknown");
+        }
+
         private static int ResolveWindowProcessId(IntPtr window)
         {
             try
@@ -203,11 +242,14 @@ namespace PptCOM
         private void RequestPresentationDescriptorRefresh()
         {
             Interlocked.Exchange(ref presentationDescriptorRefreshPending, 1);
+            slideShowOwner.Wake();
         }
 
         private void InvalidatePresentationDescriptor()
         {
             long revision = Interlocked.Increment(ref presentationBindingRevision);
+            slideShowSession.InvalidateBinding(revision);
+            PublishSlideShowLifecycle();
             lock (presentationDescriptorLock)
             {
                 presentationDescriptorCache =
@@ -225,19 +267,41 @@ namespace PptCOM
             if (!force && pending == 0 && now < nextPresentationDescriptorRefreshUtc) return;
 
             long revision = Interlocked.Read(ref presentationBindingRevision);
-            PresentationDescriptorValue candidate = presentationDescriptorReader.Read(
+            SlideShowObservationStamp stamp = slideShowSession.Capture();
+            if (stamp.Lifecycle != "Active")
+            {
+                PublishSlideShowLifecycle();
+                lock (presentationDescriptorLock)
+                    presentationDescriptorCache = PresentationDescriptorValue.CreateStatus("Unavailable", revision);
+                nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
+                return;
+            }
+            string pageStatus;
+            PresentationDescriptorValue candidate = presentationDescriptorReader.ReadShow(
                 (object)pptApplication, (object)pptActivePresentation,
-                (object)pptSlideShowWindow, revision);
+                (object)pptSlideShowWindow, revision, out pageStatus);
+            if (!slideShowSession.IsCurrent(stamp))
+            {
+                RequestPresentationDescriptorRefresh();
+                return;
+            }
 
             lock (presentationDescriptorLock)
             {
                 if (revision != Interlocked.Read(ref presentationBindingRevision)) return;
                 bool keepStable = candidate.status == "TransientBusy" &&
                     presentationDescriptorCache.bindingRevision == revision &&
+                    presentationDescriptorSession == stamp.Session &&
                     (presentationDescriptorCache.status == "StableSlideIds" ||
                         presentationDescriptorCache.status == "PageIndexFallback");
-                if (!keepStable) presentationDescriptorCache = candidate.Clone();
+                if (!keepStable)
+                {
+                    presentationDescriptorCache = candidate.Clone();
+                    presentationDescriptorSession = stamp.Session;
+                }
             }
+            if (!slideShowSession.Publish(stamp, candidate, pageStatus))
+                RequestPresentationDescriptorRefresh();
             nextPresentationDescriptorRefreshUtc = now.AddSeconds(3);
         }
 
@@ -454,6 +518,8 @@ namespace PptCOM
                 return false;
             }
 
+            slideShowSession.Observe(Interlocked.Read(ref presentationBindingRevision), null, 0);
+            PublishSlideShowLifecycle();
             DateTime now = DateTime.Now;
             if (busyRetryStartTime == DateTime.MinValue || (busyRetryLastSeenTime != DateTime.MinValue && (now - busyRetryLastSeenTime).TotalMilliseconds > 500))
             {
@@ -753,7 +819,6 @@ namespace PptCOM
             Console.WriteLine("Change1");
 
             updateTime = DateTime.Now;
-            RequestPresentationDescriptorRefresh();
 
             try
             {
@@ -769,6 +834,8 @@ namespace PptCOM
                 polling = 1;
             }
 
+            slideShowSession.PageChanged();
+            RequestPresentationDescriptorRefresh();
             Console.WriteLine("Change2");
         }
         private unsafe void SlideShowBegin(object WnObj)
@@ -776,9 +843,10 @@ namespace PptCOM
             Console.WriteLine("Begin1");
 
             updateTime = DateTime.Now;
-            RequestPresentationDescriptorRefresh();
 
-            // 【修改】直接赋值给 dynamic 类型的全局变量
+            // Begin 先废弃旧确认和旧候选，再安装本场窗口；回调内不遍历拓扑/序列化。
+            SlideShowObservationStamp beginStamp = slideShowSession.Begin(
+                Interlocked.Read(ref presentationBindingRevision), false);
             pptSlideShowWindow = WnObj;
 
             try
@@ -803,6 +871,8 @@ namespace PptCOM
             {
                 Console.WriteLine("Begin3");
             }
+            slideShowSession.FinishBegin(beginStamp);
+            RequestPresentationDescriptorRefresh();
             Console.WriteLine("Begin2");
         }
         private unsafe void SlideShowShowEnd(object WnObj)
@@ -810,10 +880,11 @@ namespace PptCOM
             Console.WriteLine("END1");
 
             updateTime = DateTime.Now;
-            RequestPresentationDescriptorRefresh();
 
+            slideShowSession.Observe(Interlocked.Read(ref presentationBindingRevision), false, 0);
             *pptCurrentPage = -1;
             *pptTotalPage = -1;
+            RequestPresentationDescriptorRefresh();
 
             Console.WriteLine("END2");
         }
@@ -1111,6 +1182,7 @@ namespace PptCOM
         public unsafe int PptComService()
         {
             Console.WriteLine("PPT Monitor ReStarted");
+            slideShowOwner.Start();
 
             // 初始化
             bindingEvents = false;
@@ -1127,6 +1199,15 @@ namespace PptCOM
             {
                 while (true)
                 {
+                    if (Thread.VolatileRead(ref *offSignal) != 0) break;
+                    // 到慢维护截止点的同时收到事件，也先消费事件，不让 ROT 排在页刷新前。
+                    RefreshPresentationDescriptorIfNeeded(false);
+                    ProcessSlideShowExitRequests();
+                    if (slideShowOwner.MaintenanceWaitMilliseconds > 0)
+                    {
+                        slideShowOwner.Wait(slideShowOwner.MaintenanceWaitMilliseconds);
+                        continue;
+                    }
                     bool busyRetry = false;
 
                     // 动态绑定/切换逻辑
@@ -1319,16 +1400,21 @@ namespace PptCOM
                         // ----------
                         // 检测是否处于放映模式
                         bool isSlideShowActive = false;
+                        bool lifecycleObserved = false;
+                        SlideShowObservationStamp lifecycleStamp = slideShowSession.Capture();
                         try
                         {
                             activePersentation = pptApplication.ActivePresentation;
 
-                            // 检查 SlideShowWindows 集合
-                            if (activePersentation != null && GetSlideShowWindowsCount(pptApplication) > 0)
+                            // 检查 SlideShowWindows 集合；只有成功读取才可判定真正退出。
+                            int showCount = activePersentation == null ? -1 : GetSlideShowWindowsCount(pptApplication);
+                            lifecycleObserved = showCount == 0;
+                            if (showCount > 0)
                             {
                                 isSlideShowActive = true;
 
                                 slideShowWindow = activePersentation.SlideShowWindow;
+                                lifecycleObserved = slideShowWindow != null;
                                 if (pptSlideShowWindow == null || (pptSlideShowWindow != null && !IsValidSlideShowWindow(pptSlideShowWindow)))
                                 {
                                     if (!AreComObjectsEqual((object)pptSlideShowWindow, (object)slideShowWindow))
@@ -1373,6 +1459,11 @@ namespace PptCOM
                                 Console.WriteLine($"slideShowWindow 被清理");
                             }
                         }
+                        slideShowSession.ObserveIfCurrent(lifecycleStamp,
+                            Interlocked.Read(ref presentationBindingRevision),
+                            lifecycleObserved ? (bool?)isSlideShowActive : null,
+                            isSlideShowActive ? GetPptHwndFromSlideShowWindow((object)pptSlideShowWindow).ToInt64() : 0);
+                        if (!slideShowSession.IsCurrent(lifecycleStamp)) RequestPresentationDescriptorRefresh();
                         if (busyRetry) continue;
 
                         if (isSlideShowActive)
@@ -1479,7 +1570,16 @@ namespace PptCOM
                     }
 
                     // 只有 service owner 枚举 COM 图；公开 getter 始终读取纯值缓存。
-                    RefreshPresentationDescriptorIfNeeded(forcePolling);
+                    int observedCurrentPage = *pptCurrentPage;
+                    int observedTotalPage = *pptTotalPage;
+                    bool pageChanged;
+                    lock (presentationDescriptorLock)
+                    {
+                        pageChanged = presentationDescriptorCache.currentPage != observedCurrentPage ||
+                            presentationDescriptorCache.totalPage != observedTotalPage;
+                    }
+                    RefreshPresentationDescriptorIfNeeded(forcePolling || pageChanged);
+                    ProcessSlideShowExitRequests();
 
                     // 关闭信号检测
                     if (Thread.VolatileRead(ref *offSignal) != 0)
@@ -1488,7 +1588,8 @@ namespace PptCOM
                         break;
                     }
 
-                    Thread.Sleep(500);
+                    slideShowOwner.MaintenanceCompleted();
+                    slideShowOwner.Wait(slideShowOwner.MaintenanceWaitMilliseconds);
                 }
             }
             catch (Exception ex)
@@ -1498,6 +1599,7 @@ namespace PptCOM
             }
             finally
             {
+                slideShowOwner.Stop();
                 FullCleanup(true);
             }
 

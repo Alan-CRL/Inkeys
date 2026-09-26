@@ -62,12 +62,30 @@ namespace PptCOM
     {
         object GetProperty(object target, string name);
         object GetItem(object collection, int oneBasedIndex);
+        void InvokeMethod(object target, string name);
         bool IsComObject(object value);
         void Release(object value);
     }
 
     internal sealed class MarshalLateBoundComAccessor : ILateBoundComAccessor
     {
+        private readonly Func<object, int?> typedSlideShowHwnd;
+
+        public MarshalLateBoundComAccessor() : this(ReadTypedSlideShowHwnd) { }
+
+        internal MarshalLateBoundComAccessor(Func<object, int?> typedSlideShowHwnd)
+        {
+            if (typedSlideShowHwnd == null) throw new ArgumentNullException("typedSlideShowHwnd");
+            this.typedSlideShowHwnd = typedSlideShowHwnd;
+        }
+
+        private static int? ReadTypedSlideShowHwnd(object target)
+        {
+            // PowerPoint 的 HWND 可由类型接口读取，但不一定暴露给 IDispatch；借用根对象，不释放 RCW。
+            var window = target as Microsoft.Office.Interop.PowerPoint.SlideShowWindow;
+            return window == null ? (int?)null : window.HWND;
+        }
+
         private static object Invoke(object target, string name,
             BindingFlags flags, object[] arguments)
         {
@@ -87,6 +105,12 @@ namespace PptCOM
 
         public object GetProperty(object target, string name)
         {
+            if (name == "HWND")
+            {
+                int? hwnd = typedSlideShowHwnd(target);
+                if (hwnd.HasValue) return hwnd.Value;
+            }
+            // 非 PowerPoint 接口继续走原 late-bound 路径；类型接口的 busy/失败不伪装成成功。
             return Invoke(target, name, BindingFlags.GetProperty, null);
         }
 
@@ -95,6 +119,11 @@ namespace PptCOM
             return Invoke(collection, "Item",
                 BindingFlags.GetProperty | BindingFlags.InvokeMethod,
                 new object[] { oneBasedIndex });
+        }
+
+        public void InvokeMethod(object target, string name)
+        {
+            Invoke(target, name, BindingFlags.InvokeMethod, null);
         }
 
         public bool IsComObject(object value)
@@ -224,6 +253,23 @@ namespace PptCOM
         public PresentationDescriptorValue Read(object application,
             object presentation, object slideShowWindow, long bindingRevision)
         {
+            string ignored;
+            return Read(application, presentation, slideShowWindow, bindingRevision, false, out ignored);
+        }
+
+        public PresentationDescriptorValue ReadShow(object application,
+            object presentation, object slideShowWindow, long bindingRevision, out string pageStatus)
+        {
+            return Read(application, presentation, slideShowWindow, bindingRevision, true, out pageStatus);
+        }
+
+        private PresentationDescriptorValue Read(object application,
+            object presentation, object slideShowWindow, long bindingRevision,
+            bool inspectState, out string pageStatus)
+        {
+            pageStatus = "Unknown";
+            bool endScreen = false;
+            bool stateUnknown = false;
             PresentationDescriptorValue descriptor =
                 PresentationDescriptorValue.CreateStatus("Unavailable", bindingRevision);
             if (application == null || presentation == null || slideShowWindow == null)
@@ -256,17 +302,34 @@ namespace PptCOM
             try
             {
                 view = accessor.GetProperty(slideShowWindow, "View");
-                currentSlide = accessor.GetProperty(view, "Slide");
-                descriptor.currentPage = GetInt32(currentSlide, "SlideIndex");
-                try
+                if (inspectState)
                 {
-                    currentSlideId = GetInt32(currentSlide, "SlideID");
-                    hasCurrentSlideId = currentSlideId > 0;
+                    try
+                    {
+                        int state = GetInt32(view, "State");
+                        endScreen = state == 5; // ppSlideShowDone；黑屏/白屏仍是本页，不算结束。
+                        stateUnknown = state < 1 || state > 5;
+                    }
+                    catch (Exception exception)
+                    {
+                        // State 是可选属性。缺失时仍可用自洽 Slide 证明有效页；任何失败都不推断结束。
+                        if (IsBusy(exception)) throw;
+                    }
                 }
-                catch (Exception exception)
+                if (!endScreen)
                 {
-                    if (IsBusy(exception)) throw;
-                    hasCurrentSlideId = false;
+                    currentSlide = accessor.GetProperty(view, "Slide");
+                    descriptor.currentPage = GetInt32(currentSlide, "SlideIndex");
+                    try
+                    {
+                        currentSlideId = GetInt32(currentSlide, "SlideID");
+                        hasCurrentSlideId = currentSlideId > 0;
+                    }
+                    catch (Exception exception)
+                    {
+                        if (IsBusy(exception)) throw;
+                        hasCurrentSlideId = false;
+                    }
                 }
             }
             catch (Exception exception)
@@ -286,15 +349,20 @@ namespace PptCOM
             {
                 slides = accessor.GetProperty(presentation, "Slides");
                 descriptor.totalPage = GetInt32(slides, "Count");
-                if (descriptor.totalPage <= 0 || descriptor.currentPage <= 0 ||
-                    descriptor.currentPage > descriptor.totalPage ||
-                    descriptor.totalPage > MaximumSlides)
+                if (descriptor.totalPage <= 0 || descriptor.totalPage > MaximumSlides ||
+                    (!endScreen && (descriptor.currentPage <= 0 ||
+                        descriptor.currentPage > descriptor.totalPage)))
                     return PresentationDescriptorValue.CreateStatus(
                         "Unavailable", bindingRevision);
 
-                if (!hasCurrentSlideId)
+                // 结束页没有 View.Slide；同次枚举真实 SlideID，供 native 冷启动时验证文稿。
+                if (endScreen)
+                    pageStatus = "EndScreen";
+
+                if (!endScreen && !hasCurrentSlideId)
                 {
                     descriptor.status = "PageIndexFallback";
+                    pageStatus = stateUnknown ? "Unknown" : "Valid";
                     return descriptor;
                 }
 
@@ -318,12 +386,14 @@ namespace PptCOM
                         accessor.Release(slide);
                     }
                 }
-                if (slideIds[descriptor.currentPage - 1] != currentSlideId)
+                if (!endScreen && slideIds[descriptor.currentPage - 1] != currentSlideId)
                     throw new InvalidOperationException("Current SlideID does not match topology");
 
-                descriptor.currentSlideId = currentSlideId;
+                descriptor.currentSlideId = endScreen ? (int?)null : currentSlideId;
                 descriptor.slideIds = slideIds;
                 descriptor.status = "StableSlideIds";
+                if (!endScreen)
+                    pageStatus = stateUnknown ? "Unknown" : "Valid";
                 return descriptor;
             }
             catch (Exception exception)
@@ -341,6 +411,7 @@ namespace PptCOM
                     descriptor.status = "PageIndexFallback";
                     descriptor.currentSlideId = null;
                     descriptor.slideIds = new int[0];
+                    pageStatus = stateUnknown ? "Unknown" : "Valid";
                     return descriptor;
                 }
                 return PresentationDescriptorValue.CreateStatus(

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <cstdint>
 #include <mutex>
 #include <string_view>
 #include <utility>
@@ -38,34 +39,39 @@ namespace Inkeys::UI::Bar
 	public:
 		void Set(std::function<void()> callback)
 		{
+			SetStamped(callback ? std::function<void(std::uint64_t)>(
+				[callback = std::move(callback)](std::uint64_t) { callback(); }) : nullptr);
+		}
+		void SetStamped(std::function<void(std::uint64_t)> callback)
+		{
 			std::scoped_lock lock(mutex_);
 			callback_ = std::move(callback);
-			if (!callback_) outstanding_ = false;
+			if (!callback_) outstanding_ = 0;
 		}
-
 		[[nodiscard]] bool Dispatch()
 		{
-			std::function<void()> callback;
+			std::function<void(std::uint64_t)> callback;
+			std::uint64_t request = 0;
 			{
 				std::scoped_lock lock(mutex_);
-				if (!callback_ || outstanding_) return false;
+				if (!callback_ || outstanding_ != 0) return false;
 				callback = callback_;
-				outstanding_ = true;
+				request = outstanding_ = ++sequence_;
 			}
-			// 业务回调必须在锁外执行，允许回调安全地反向注销自身。
-			callback();
+			// 锁外投递；异常也结束本次请求，旧完成不能解除新请求的 single-flight。
+			try { callback(request); }
+			catch (...) { Complete(request); return false; }
 			return true;
 		}
-
-		void Complete() noexcept
+		void Complete(std::uint64_t request = 0) noexcept
 		{
 			std::scoped_lock lock(mutex_);
-			outstanding_ = false;
+			if (request == 0 || request == outstanding_) outstanding_ = 0;
 		}
-
 	private:
 		std::mutex mutex_;
-		std::function<void()> callback_;
-		bool outstanding_ = false;
+		std::function<void(std::uint64_t)> callback_;
+		std::uint64_t sequence_ = 0;
+		std::uint64_t outstanding_ = 0;
 	};
 }

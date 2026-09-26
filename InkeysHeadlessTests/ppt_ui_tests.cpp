@@ -6,6 +6,8 @@
 #include <cmath>
 #include <iostream>
 #include <string_view>
+#include <fstream>
+#include "../Inkeys/PptSettingsPersistence.h"
 
 import Inkeys.UI.Ppt;
 
@@ -253,10 +255,167 @@ namespace
 			extreme.middlePairScale == original.middlePairScale,
 			"runtime correction does not mutate persisted configuration input");
 	}
+	void TestPositionSessionsAndPersistence()
+	{
+		using namespace Inkeys::PptSettings;
+		PositionState state;
+		WriteJournal journal;
+		Json::Value original;
+		original["MemoryWidgetPosition"] = true;
+		SetPositions(original, { 0, 400, 0, 0 });
+		journal.Initialize(original);
+		auto SavedLayout = [&]
+		{
+			const auto saved = journal.Saved();
+			LayoutConfiguration layout;
+			layout.bottomPairWidth = saved.bottomX;
+			layout.bottomPairHeight = saved.bottomY;
+			layout.middlePairWidth = saved.middleX;
+			layout.middlePairHeight = saved.middleY;
+			return layout;
+		};
+		auto Save = [&]
+		{
+			const auto& layout = state.configuration;
+			return journal.CapturePositions({ layout.bottomPairWidth, layout.bottomPairHeight,
+				layout.middlePairWidth, layout.middlePairHeight }, layout.rememberPosition);
+		};
+		int writes = 0;
+		auto Success = [&](const std::string& content)
+		{
+			++writes;
+			Check(content.find("_InkeysWriteRevision") == std::string::npos,
+				"queue revision is not persisted as a settings key");
+			return true;
+		};
+		Check(state.BeginSession(1, SavedLayout()), "new show restores the saved baseline");
+		Check(state.CommitPair(1, state.epoch, 0, 10, 20, 500)
+			&& journal.Saved().bottomY == 400 && writes == 0,
+			"drag commits current position without writing or changing saved baseline");
+		const auto epoch = state.epoch;
+		Check(state.CommitPair(1, epoch, 1, 11, 30, 70)
+			&& !state.CommitPair(1, epoch, 0, 9, 99, 99)
+			&& state.configuration.bottomPairHeight == 500,
+			"interleaved pairs and stale commits cannot overwrite the other pair");
+		const auto oldSettings = journal.CaptureSettings(original);
+		Check(state.SetRemember(false), "turning memory off is a save edge");
+		const auto turnOff = Save();
+		Check(journal.Commit(oldSettings, Success) && writes == 0,
+			"late settings JSON is superseded by the newer position save");
+		Check(!journal.Commit(turnOff, [](const std::string&) { return false; })
+			&& journal.Saved().bottomY == 400 && journal.Retry() == turnOff,
+			"failed write keeps successful disk baseline and the exact frozen retry payload");
+		Check(state.CommitPair(1, epoch, 0, 12, 0, 0), "memory off allows further runtime dragging");
+		Check(journal.Commit(journal.Retry(), Success) && journal.Saved().bottomY == 500
+			&& journal.Saved().middleY == 70,
+			"retry saves toggle-time position instead of collecting later temporary drag");
+		Check(!state.EndSession(1), "ending a memory-off show does not request a save");
+		Check(state.BeginSession(2, SavedLayout()) && state.configuration.bottomPairHeight == 500,
+			"reentry restores the top position saved when memory was disabled");
+		Check(state.SetRemember(true) && journal.Commit(Save(), Success),
+			"turning memory on also saves the current position");
+		Check(state.CommitPair(2, state.epoch, 0, 20, 80, 120), "second show accepts its own commit");
+		const auto beforeEnd = Save();
+		Check(state.EndSession(2) && journal.Commit(beforeEnd, Success)
+			&& journal.Saved().bottomY == 120 && !state.EndSession(2),
+			"remembered show end saves once and duplicate lifecycle edges are inert");
+		Check(state.BeginSession(3, SavedLayout()), "third show enters");
+		const auto beforeResetEpoch = state.epoch;
+		(void)state.SetRemember(false);
+		state.RestorePositions({});
+		Check(!state.CommitPair(3, beforeResetEpoch, 1, 100, 40, 60)
+			&& journal.Commit(Save(), Success) && journal.Saved().bottomY == 0,
+			"reset saves defaults with memory off and rejects the old gesture epoch");
+		Check(!state.CommitPair(2, state.epoch, 0, 200, 50, 90),
+			"late old-session commit cannot mutate the current show");
+
+		// 模拟写盘途中又有新请求：旧成功只推进真实磁盘基线，不清除新请求。
+		const auto older = journal.CapturePositions({ 1, 2, 3, 4 }, false);
+		WriteJournal::PreparedWrite prepared;
+		Check(journal.Prepare(older, prepared), "prepare old immutable write");
+		const auto newer = journal.CapturePositions({ 5, 6, 7, 8 }, false);
+		journal.Complete(prepared, true);
+		Check(journal.Saved().bottomY == 2
+			&& !journal.Commit(newer, [](const std::string&) { return false; })
+			&& journal.Retry() == newer,
+			"older completion preserves the newer failed save for retry");
+	}
+
+	void TestRapidReentryBeforeSaveCompletion()
+	{
+		using namespace Inkeys::PptSettings;
+		WriteJournal journal;
+		Json::Value disk;
+		SetPositions(disk, { 0, 100, 0, 0 });
+		journal.Initialize(disk);
+		PositionState state;
+		auto Enter = [&](std::uint64_t session)
+		{
+			const auto frozen = journal.RestoreBaseline();
+			LayoutConfiguration restore;
+			restore.bottomPairHeight = frozen.bottomY;
+			return state.BeginSession(session, restore);
+		};
+		Check(Enter(1) && state.CommitPair(1, state.epoch, 0, 10, 0, 500),
+			"rapid reentry setup accepts the current runtime position");
+		const auto ending = journal.CapturePositions({ 0, 500, 0, 0 }, true);
+		Check(state.EndSession(1) && Enter(2) && state.configuration.bottomPairHeight == 500
+			&& journal.Saved().bottomY == 100 && journal.SavedRevision() == 0,
+			"rapid remembered reentry uses the frozen requested baseline without claiming disk success");
+		Check(state.SetRemember(false), "rapid reentry can turn memory off");
+		const auto disabled = journal.CapturePositions({ 0, 500, 0, 0 }, false);
+		Check(state.CommitPair(2, state.epoch, 0, 20, 0, 0) && !state.EndSession(2)
+			&& Enter(3) && state.configuration.bottomPairHeight == 500,
+			"immediate memory-off reentry preserves toggle-time top position while queue is delayed");
+		Check(!journal.Commit(disabled, [](const std::string&) { return false; })
+			&& journal.RestoreBaseline().bottomY == 500 && journal.Saved().bottomY == 100
+			&& journal.Retry() == disabled,
+			"failed delayed save retains usable in-process baseline and exact retry distinct from disk");
+		Check(journal.Commit(ending, [](const std::string&) { return false; })
+			&& journal.Retry() == disabled, "old ending save cannot displace newer failed toggle request");
+		WriteJournal restarted;
+		restarted.Initialize(disk);
+		Check(restarted.RestoreBaseline().bottomY == 100,
+			"a new process restores actual disk data and never invents success of a failed prior save");
+	}
+
+	void TestAtomicPositionFile()
+	{
+		using namespace Inkeys::PptSettings;
+		wchar_t temporary[MAX_PATH]{};
+		Check(GetTempPathW(MAX_PATH, temporary) != 0, "temporary directory available");
+		const auto directory = std::filesystem::path(temporary)
+			/ (L"Inkeys-ppt-settings-" + std::to_wstring(GetCurrentProcessId()));
+		const auto path = directory / L"positions.json";
+		Check(WriteAtomically(path, "old baseline"), "atomic writer creates initial file");
+		const HANDLE held = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+			nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		Check(held != INVALID_HANDLE_VALUE, "test locks old destination against replacement");
+		Check(!WriteAtomically(path, "new baseline"), "locked destination makes replacement fail");
+		if (held != INVALID_HANDLE_VALUE) CloseHandle(held);
+		{
+			std::ifstream file(path, std::ios::binary);
+			const std::string actual((std::istreambuf_iterator<char>(file)), {});
+			Check(actual == "old baseline", "failed atomic replacement preserves old bytes");
+		}
+		Check(WriteAtomically(path, "new baseline"), "same file can be retried after failure");
+		{
+			std::ifstream file(path, std::ios::binary);
+			const std::string actual((std::istreambuf_iterator<char>(file)), {});
+			Check(actual == "new baseline", "successful retry changes complete file contents");
+		}
+		std::error_code error;
+		std::filesystem::remove(path, error);
+		std::filesystem::remove(directory, error);
+	}
+
 }
 
 int RunPptUiTests()
 {
+	TestPositionSessionsAndPersistence();
+	TestRapidReentryBeforeSaveCompletion();
+	TestAtomicPositionFile();
 	TestLayoutAndDpi();
 	TestAnimationAndDrag();
 	TestDamageTransactions();

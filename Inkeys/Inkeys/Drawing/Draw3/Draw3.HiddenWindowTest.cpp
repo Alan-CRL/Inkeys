@@ -1,18 +1,23 @@
 #include "Draw3.HiddenWindowTest.h"
 #include "Draw3.Product.h"
+#include "Draw3.Presentation.h"
+#include "Draw3.PresentationState.h"
 
 import Inkeys.Window;
 import draw3.uink_file;
 import draw3.uink_draw3_import;
 
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <crtdbg.h>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
+#include <variant>
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -49,6 +54,18 @@ namespace Inkeys::Drawing::Draw3
 			++failures;
 			Report("FAIL", name);
 			return false;
+		}
+
+		constexpr UINT kHiddenCaptureProbeMessage = WM_APP + 0x3D4u;
+		LRESULT CALLBACK HiddenDrawpadWindowProc(HWND window, UINT message,
+			WPARAM wParam, LPARAM lParam)
+		{
+			if (message == kHiddenCaptureProbeMessage)
+			{
+				if (wParam == 1) SetCapture(window);
+				return GetCapture() == window ? 1 : 0;
+			}
+			return DrawpadMsgCallback(window, message, wParam, lParam);
 		}
 
 		template <typename Predicate>
@@ -408,6 +425,403 @@ namespace Inkeys::Drawing::Draw3
 			return succeeded;
 		}
 
+		bool CheckPresentationPersistence(Inkeys::Window::Service& service,
+			HWND drawpad, HWND presentation,
+			const HostStyleCallbacks& callbacks, HostStartOptions options, int& failures)
+		{
+			// 独立真实 Host / worker 事务；测试文件只写到当前 Build 产物旁的唯一目录，留供复核。
+			StopProduct();
+			wchar_t imagePath[32768]{};
+			const DWORD imageLength = GetModuleFileNameW(nullptr, imagePath, 32768);
+			if (!Check(imageLength > 0 && imageLength < 32768,
+				"resolve hidden persistence artifact directory", failures)) return false;
+			LARGE_INTEGER started{};
+			QueryPerformanceCounter(&started);
+			const auto root = std::filesystem::path(imagePath).parent_path() /
+				L"Draw3HiddenPptPersistence" / (std::to_wstring(GetCurrentProcessId()) +
+					L"-" + std::to_wstring(started.QuadPart));
+			std::error_code directoryError;
+			std::filesystem::create_directories(root, directoryError);
+			if (!Check(!directoryError, "create isolated presentation persistence root", failures)) return false;
+			options.autoSaveRoot = root.wstring();
+			std::fprintf(stderr, "[Draw3Hidden] persistence_root=%ls\n", options.autoSaveRoot.c_str());
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+				"start hidden Host with real persistence worker", failures)) return false;
+
+			PresentationDescriptor descriptor;
+			descriptor.status = PresentationDescriptorStatus::StableSlideIds;
+			descriptor.provider = "PowerPoint";
+			descriptor.fullName = "C:\\hidden\\persistence-a.pptx";
+			descriptor.presentationName = "persistence-a.pptx";
+			descriptor.applicationProcessId = static_cast<std::int32_t>(GetCurrentProcessId());
+			descriptor.slideShowHwnd = reinterpret_cast<std::intptr_t>(drawpad);
+			descriptor.currentPage = 1;
+			descriptor.totalPage = 3;
+			descriptor.currentSlideId = 601;
+			descriptor.slideIds = { 601, 602, 603 };
+			descriptor.bindingRevision = 1;
+			auto resolvedA = ResolvePresentationTarget(descriptor);
+			descriptor.fullName = "C:\\hidden\\persistence-b.pptx";
+			descriptor.presentationName = "persistence-b.pptx";
+			descriptor.currentSlideId = 701;
+			descriptor.slideIds = { 701, 702, 703 };
+			auto resolvedB = ResolvePresentationTarget(descriptor);
+			if (!Check(resolvedA && resolvedB,
+				"derive persisted identities using production descriptor resolver", failures)) return false;
+			auto targetA = *resolvedA;
+			auto targetB = *resolvedB;
+			targetA.sessionRevision = 31;
+			targetB.sessionRevision = 32;
+			bool succeeded = true;
+			const auto select = [&](Bridge::PresentationTarget& target, bool hasContent, const char* name)
+			{
+				const auto accepted = PublishProductPresentationTarget(target);
+				if (!Check(accepted.has_value(), "persisted target accepted", failures)) return false;
+				target.targetRevision = *accepted;
+				const auto identity = Bridge::ReadyIdentityFor(target);
+				const bool ready = Check(WaitUntil([identity, hasContent]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.workspace == Bridge::Workspace::Presentation &&
+						state.presentationReady == identity && state.currentPageHasContent == hasContent;
+				}), name, failures);
+				return ready && Check(PublishProductPresentationUiReady(identity),
+					"persisted target receives matching page UI commit", failures);
+			};
+			Bridge::ProductState pen;
+			pen.tool = Bridge::Tool::Pen;
+			pen.selectionMode = false;
+			PublishProductState(pen);
+			succeeded &= select(targetA, false, "persistent A starts with an empty first page");
+			const auto firstIdentity = Bridge::ReadyIdentityFor(targetA);
+			const auto beforeHeld = ProductHost().RuntimeSnapshot();
+			const auto post = [&](HiddenTestContactPhase phase, int x, int y)
+			{
+				return PostMessageW(drawpad, kDraw3HiddenTestContactMessage,
+					static_cast<WPARAM>(phase), MAKELPARAM(x, y)) != FALSE;
+			};
+			const auto writePage = [&](int x, int y, const char* name)
+			{
+				const bool posted = post(HiddenTestContactPhase::Down, x, y) &&
+					post(HiddenTestContactPhase::Move, x + 45, y + 20) &&
+					post(HiddenTestContactPhase::Up, x + 60, y + 25);
+				return Check(posted && WaitUntil([]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.currentPageHasContent && !state.pen.active;
+				}, 3s), name, failures);
+			};
+			succeeded &= Check(post(HiddenTestContactPhase::Down, 42, 50) &&
+				post(HiddenTestContactPhase::Move, 110, 72), "post persistent held stroke", failures);
+			succeeded &= Check(WaitUntil([beforeHeld]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.pen.active && state.pen.strokeId > beforeHeld.pen.strokeId && state.pen.inputSequence > 2;
+			}), "persistent old page accepted still-down ink", failures);
+			targetA.pageIndex = 1;
+			targetA.slideId = 602;
+			succeeded &= select(targetA, false, "held ink seals and saves before second page becomes ready");
+			succeeded &= Check(!PublishProductPresentationUiReady(firstIdentity),
+				"late first-page UI commit stays rejected with persistence enabled", failures);
+			succeeded &= Check(post(HiddenTestContactPhase::Move, 210, 150) &&
+				post(HiddenTestContactPhase::Up, 240, 180), "retire old physical contact after persistent switch", failures);
+			succeeded &= Check(WaitUntil([beforeHeld]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.inputRecycled > beforeHeld.inputRecycled && !state.currentPageHasContent;
+			}), "late physical terminal cannot contaminate persisted second page", failures);
+			// 末张真实幻灯片与结束页写不同笔迹，跨页和冷读均不能把它们合并。
+			targetA.pageIndex = 2;
+			targetA.slideId = 603;
+			succeeded &= select(targetA, false, "last real slide starts empty");
+			succeeded &= writePage(55, 60, "last real slide accepts ink A");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, false, "first end screen has an independent empty canvas");
+			succeeded &= writePage(150, 80, "end screen accepts ink B");
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+			Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return !ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 3s), "end screen Undo affects only its own ink", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
+			Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 3s), "end screen Redo restores only its own ink", failures);
+			const auto beforeEndClear = ProductHost().RuntimeSnapshot();
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Clear) ==
+				Bridge::CommandResult::Accepted && WaitUntil([beforeEndClear]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.clearCommandCount > beforeEndClear.clearCommandCount &&
+					!state.currentPageHasContent;
+			}, 3s), "end screen Clear changes only its own canvas", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+				Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 5s), "end screen Undo restores its Clear boundary", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Redo) ==
+				Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return !ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 5s), "end screen Redo clears only its own canvas", failures);
+			succeeded &= Check(PublishProductCommand(Bridge::CommandType::Undo) ==
+				Bridge::CommandResult::Accepted && WaitUntil([]
+			{
+				return ProductHost().RuntimeSnapshot().currentPageHasContent;
+			}, 5s), "end screen remains writable after Clear history", failures);
+			targetA.pageKind = Bridge::PresentationPageKind::Slide;
+			targetA.pageIndex = 2;
+			targetA.slideId = 603;
+			succeeded &= select(targetA, true, "return from end screen restores last real slide ink A");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, true, "return to end screen restores its own ink B");
+			succeeded &= select(targetB, false, "dirty A parks at independent persistent B");
+			const auto beforeRestart = Bridge::ReadyIdentityFor(targetB);
+			StopProduct(); // 最终屏障与 CloseAndDrain 必须使已接受的旧页保存落盘。
+			const auto presentationRoot = root / L"presentation";
+			succeeded &= Check(std::filesystem::is_regular_file(presentationRoot / L"index.json"),
+				"real controller save committed the presentation index", failures);
+			bool completeFile = false;
+			bool separateEndContents = false;
+			bool distinctInkFingerprints = false;
+			const auto inkFingerprint = [](const draw3::uink::UInkCanvas& canvas)
+			{
+				std::uint64_t hash = 1469598103934665603ull;
+				for (const auto& item : canvas.content)
+					if (const auto* ink = std::get_if<draw3::uink::UInkInk>(&item))
+					{
+						hash = (hash ^ ink->points.size()) * 1099511628211ull;
+						for (const auto& point : ink->points)
+						{
+							hash = (hash ^ std::bit_cast<std::uint32_t>(point.x)) *
+								1099511628211ull;
+							hash = (hash ^ std::bit_cast<std::uint32_t>(point.y)) *
+								1099511628211ull;
+						}
+					}
+				return hash;
+			};
+			const auto files = presentationRoot / L"files";
+			if (std::filesystem::is_directory(files))
+				for (const auto& file : std::filesystem::directory_iterator(files))
+				{
+					if (!file.is_regular_file() || file.path().extension() != L".uink") continue;
+					const auto read = draw3::uink::ReadUInkFile(file.path().wstring());
+					const bool complete = read.status == draw3::uink::UInkReadStatus::Complete && read.document;
+					succeeded &= Check(complete, "drained controller file is a complete readable UInk transaction", failures);
+					completeFile = completeFile || complete;
+					if (complete)
+					{
+						const draw3::uink::UInkCanvas* firstSlide = nullptr;
+						const draw3::uink::UInkCanvas* lastSlide = nullptr;
+						const draw3::uink::UInkCanvas* endScreen = nullptr;
+						for (const auto& canvas : read.document->canvases)
+						{
+							if (canvas.slideId == 601) firstSlide = &canvas;
+							if (canvas.slideId == 603) lastSlide = &canvas;
+							if (draw3::uink::InkeysPageKind(canvas.extra) ==
+								draw3::uink::UInkInkeysPageKind::EndScreen) endScreen = &canvas;
+						}
+						separateEndContents = separateEndContents || (lastSlide && endScreen &&
+							lastSlide->pageGuid != endScreen->pageGuid &&
+							!lastSlide->content.empty() && !endScreen->content.empty() &&
+							endScreen->pageIndex == 3 && !endScreen->slideId);
+						// 文件内真实笔迹坐标区分 A/B/Z，配合下方目标身份与成功 ULW Present 校验。
+						if (firstSlide && lastSlide && endScreen &&
+							!firstSlide->content.empty() && !lastSlide->content.empty() &&
+							!endScreen->content.empty())
+						{
+							const auto a = inkFingerprint(*lastSlide);
+							const auto b = inkFingerprint(*firstSlide);
+							const auto z = inkFingerprint(*endScreen);
+							distinctInkFingerprints = distinctInkFingerprints ||
+								(a != b && a != z && b != z);
+						}
+					}
+				}
+			succeeded &= Check(completeFile, "held-contact boundary produced durable UInk ink", failures);
+			succeeded &= Check(separateEndContents,
+				"one UInk file contains distinct last-slide and marked end-page content", failures);
+			succeeded &= Check(distinctInkFingerprints,
+				"real UInk coordinates distinguish Selection A/B/Z content", failures);
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+				"restart hidden Host from the same isolated persistence root", failures)) return false;
+			const auto restarted = ProductHost().RuntimeSnapshot();
+			succeeded &= Check(restarted.running &&
+				restarted.workspace == Bridge::Workspace::Desktop &&
+				!restarted.presentationReady && !restarted.presentationUiReady,
+				"Host restart clears old presentation and UI readiness", failures);
+			PublishProductState(pen);
+			// 全新 Controller 没有 warm slot；直接以结束页目标冷读，再核对真实 SlideID 重排。
+			++targetA.sessionRevision;
+			targetA.slideIds = { 603, 601, 602 };
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, true,
+				"cold Host enters end screen before any normal slide and restores ink B");
+			targetA.pageKind = Bridge::PresentationPageKind::Slide;
+			targetA.pageIndex = 1;
+			targetA.slideId = 601;
+			succeeded &= select(targetA, true, "cold reload restores sealed old-page ink at reordered SlideID");
+			succeeded &= Check(!PublishProductPresentationUiReady(beforeRestart),
+				"previous Host UI commit cannot open the restarted Host", failures);
+			targetA.pageIndex = 0;
+			targetA.slideId = 603;
+			succeeded &= select(targetA, true, "cold reorder preserves last-slide ink A");
+			targetA.pageIndex = 2;
+			targetA.slideId = 602;
+			succeeded &= select(targetA, false, "cold reload proves late old-contact packets never saved onto the second SlideID");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= select(targetA, true, "cold reload restores end-page ink B after normal SlideID reorder");
+			// 选择态连续切换有内容页时，布尔值相同仍需等待新内容版本与 ULW 呈现收敛。
+			Bridge::ProductState selectionView = pen;
+			selectionView.selectionMode = true;
+			PublishProductState(selectionView);
+			const auto selectInSelection = [&](Bridge::PresentationTarget& target,
+				bool hasContent, const char* name)
+			{
+				const auto before = ProductHost().RuntimeSnapshot();
+				if (!select(target, hasContent, name)) return false;
+				const auto identity = Bridge::ReadyIdentityFor(target);
+				const bool contentWake = ProductHost().WaitForContentRevision(
+					before.contentRevision, 2000);
+				const bool settled = WaitUntil([identity, before, hasContent]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.running && state.selectionMode &&
+						state.workspace == Bridge::Workspace::Presentation &&
+						state.presentationReady == identity &&
+						state.currentPageHasContent == hasContent &&
+						state.contentRevision > before.contentRevision &&
+						state.presentedContentRevision == state.contentRevision &&
+						state.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
+						state.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+						state.readyOutputRevision == state.requestedOutputRevision &&
+						(hasContent || state.auxiliaryFullFrameClean);
+				}, 3s);
+				if (!Check(contentWake && settled,
+					"Selection page content revision reaches the presented ULW frame", failures))
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					std::fprintf(stderr,
+						"[Draw3Hidden] Selection %s page=%zu has=%d content=%llu presented=%llu output=%u/%u revision=%llu/%llu\n",
+						name, state.currentPageIndex, state.currentPageHasContent,
+						static_cast<unsigned long long>(state.contentRevision),
+						static_cast<unsigned long long>(state.presentedContentRevision),
+						static_cast<unsigned>(state.requestedOutputTarget),
+						static_cast<unsigned>(state.readyOutputTarget),
+						static_cast<unsigned long long>(state.requestedOutputRevision),
+						static_cast<unsigned long long>(state.readyOutputRevision));
+					return false;
+				}
+				const auto state = ProductHost().RuntimeSnapshot();
+				const auto surface = ResolveDrawpadPresentationSurface(
+					state.selectionMode, state.currentPageHasContent,
+					state.auxiliaryFullFrameClean);
+				const auto expected = hasContent
+					? Inkeys::Window::DrawpadSurfaceVisibility::Presentation
+					: Inkeys::Window::DrawpadSurfaceVisibility::Hidden;
+				return Check(surface == (hasContent
+					? DrawpadPresentationSurface::Presentation
+					: DrawpadPresentationSurface::Hidden) &&
+					service.SetDrawpadSurfaceVisibility(expected) &&
+					!IsWindowVisible(drawpad) &&
+					((IsWindowVisible(presentation) != FALSE) == hasContent) &&
+					(!hasContent || CheckPresentationWindowStyle(presentation, failures)),
+					name, failures);
+			};
+			targetA.pageKind = Bridge::PresentationPageKind::Slide;
+			targetA.pageIndex = 0;
+			targetA.slideId = 603;
+			succeeded &= selectInSelection(targetA, true, "Selection A shows the real slide ink");
+			targetA.pageIndex = 1;
+			targetA.slideId = 601;
+			succeeded &= selectInSelection(targetA, true, "Selection B shows another inked slide");
+			targetA.pageIndex = 0;
+			targetA.slideId = 603;
+			succeeded &= selectInSelection(targetA, true, "Selection returns to A without tool change");
+			targetA.pageIndex = 2;
+			targetA.slideId = 602;
+			succeeded &= selectInSelection(targetA, false, "Selection E hides an empty slide");
+			targetA.pageIndex = 1;
+			targetA.slideId = 601;
+			succeeded &= selectInSelection(targetA, true, "Selection returns to B");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= selectInSelection(targetA, true, "Selection Z shows independent end ink");
+			targetA.pageKind = Bridge::PresentationPageKind::Slide;
+			targetA.pageIndex = 0;
+			targetA.slideId = 603;
+			succeeded &= selectInSelection(targetA, true, "Selection returns from Z to A");
+			targetA.pageIndex = 2;
+			targetA.slideId = 602;
+			succeeded &= selectInSelection(targetA, false, "Selection returns to empty E");
+			succeeded &= selectInSelection(targetB, false, "Selection changes between two empty documents");
+			succeeded &= selectInSelection(targetA, false, "Selection restores empty E after document switch");
+			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
+			targetA.pageIndex = targetA.totalPages;
+			targetA.slideId.reset();
+			succeeded &= selectInSelection(targetA, true, "Selection returns to Z before held-contact exit");
+			const auto beforeDuplicate = ProductHost().RuntimeSnapshot();
+			const auto duplicateRevision = PublishProductPresentationTarget(targetA);
+			succeeded &= Check(duplicateRevision == targetA.targetRevision &&
+				ProductHost().RuntimeSnapshot().contentRevision == beforeDuplicate.contentRevision,
+				"identical accepted target does not republish content", failures);
+			succeeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden),
+				"hide Selection ULW before returning to pen", failures);
+			PublishProductState(pen);
+			succeeded &= Check(WaitUntil([targetA]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return !state.selectionMode &&
+					state.presentationReady == Bridge::ReadyIdentityFor(targetA) &&
+					state.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+					state.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+					state.readyOutputRevision == state.requestedOutputRevision &&
+					state.presentedContentRevision == state.contentRevision;
+			}, 3s), "pen mode remains usable after Selection paging", failures);
+			// 真退出时仍按下的旧笔只在结束页收尾；它的后续 Move/Up 不得写到桌面。
+			const auto beforeExit = ProductHost().RuntimeSnapshot();
+			succeeded &= Check(post(HiddenTestContactPhase::Down, 70, 90) &&
+				post(HiddenTestContactPhase::Move, 125, 115) && WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().pen.active;
+				}, 2s), "end-page held contact accepted before real workspace exit", failures);
+			PublishProductWorkspace(Bridge::Workspace::Desktop);
+			Bridge::ProductState selection = pen;
+			selection.selectionMode = true;
+			PublishProductState(selection);
+			succeeded &= Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.workspace == Bridge::Workspace::Desktop &&
+					state.selectionMode && !state.currentPageHasContent && !state.pen.active;
+			}, 3s), "held end stroke settles before empty desktop selection", failures);
+			succeeded &= Check(post(HiddenTestContactPhase::Move, 180, 150) &&
+				post(HiddenTestContactPhase::Up, 185, 155) && WaitUntil([beforeExit]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return state.inputRecycled > beforeExit.inputRecycled &&
+						!state.currentPageHasContent;
+				}, 3s), "late physical terminal cannot write the new desktop", failures);
+			succeeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden),
+				"restore hidden integration windows after Selection paging", failures);
+			if (succeeded) Report("PASS", "real Host held-contact save, drain, cold reload and SlideID reorder");
+			return succeeded;
+		}
+
 		bool RunMode(Inkeys::Window::Service& service, StyleContext& styleContext,
 			HWND magnifierHost, HWND freeze, HWND drawpad, HWND presentation,
 			HostPresentationMode requiredMode,
@@ -420,6 +834,7 @@ namespace Inkeys::Drawing::Draw3
 			HostStartOptions options{ requiredMode };
 			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
+			options.requirePresentationUiReady = true;
 			if(exerciseEraser)
 			{
 				// 隐藏 HWND 位于屏幕外；注入明确的逻辑像素表面，不伪造 EDID 或实测物理尺寸。
@@ -461,9 +876,9 @@ namespace Inkeys::Drawing::Draw3
 				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
 				"all integration HWNDs remain invisible", failures);
 			modeSucceeded &= Check(GetWindow(freeze, GW_OWNER) == magnifierHost &&
-				GetWindow(drawpad, GW_OWNER) == freeze &&
+				GetWindow(drawpad, GW_OWNER) == presentation &&
 				GetWindow(presentation, GW_OWNER) == freeze,
-				"drawpad and presentation remain Freeze siblings", failures);
+				"Drawpad remains owned by Presentation below Freeze", failures);
 			modeSucceeded &= Check(WaitUntil([]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
@@ -489,9 +904,22 @@ namespace Inkeys::Drawing::Draw3
 					state.presentedContentRevision == state.contentRevision;
 			}), "drawing mode preheats the primary target before readiness", failures);
 			const auto primaryReady = ProductHost().RuntimeSnapshot();
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Primary) &&
+				IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"real Host primary output has a visible non-through Drawpad", failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 1, 0) == 1,
+				"owner thread captures only the primary Drawpad for exit probe", failures);
 			Bridge::ProductState selectionState{};
 			selectionState.selectionMode = true;
 			PublishProductState(selectionState);
+			// 模拟退出时 Selection 先于完整 ULW 帧到达，窗口事务先撤下旧主窗。
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
+				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"waiting Selection hides the old primary HWND", failures);
+			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
+				"hiding Selection releases primary Drawpad capture on its owner thread", failures);
 			modeSucceeded &= Check(WaitUntil([primaryReady]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
@@ -503,6 +931,17 @@ namespace Inkeys::Drawing::Draw3
 					state.presentedContentRevision == state.contentRevision &&
 					state.auxiliaryFullFrameClean;
 			}), "selection mode advances generation and restores clean ULW", failures);
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
+				!IsWindowVisible(drawpad) && IsWindowVisible(presentation) &&
+				(static_cast<DWORD>(GetWindowLongPtrW(presentation, GWL_EXSTYLE)) &
+					(WS_EX_LAYERED | WS_EX_TRANSPARENT)) ==
+					(WS_EX_LAYERED | WS_EX_TRANSPARENT),
+				"ready Selection restores only the layered through surface", failures);
+			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
+				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
+				"Selection transition restores hidden offscreen windows", failures);
 
 			if (exerciseCommands)
 			{
@@ -702,6 +1141,7 @@ namespace Inkeys::Drawing::Draw3
 				targetA.slideId = 101;
 				targetA.totalPages = 1;
 				targetA.bindingRevision = 1;
+				targetA.sessionRevision = 11;
 				Bridge::PresentationTarget targetB = targetA;
 				targetB.key.bytes[0] = 0xB2;
 				targetB.sourceIdentity = "path:c:\\hidden\\b.pptx";
@@ -713,7 +1153,7 @@ namespace Inkeys::Drawing::Draw3
 				auto waitForPresentation = [&](const Bridge::PresentationTarget& target,
 					std::uint64_t targetRevision, bool hasContent, const char* name)
 					{
-						return Check(WaitUntil([target, targetRevision, hasContent]
+						const bool ready = Check(WaitUntil([target, targetRevision, hasContent]
 							{
 								const auto state = ProductHost().RuntimeSnapshot();
 								return state.workspace == Bridge::Workspace::Presentation &&
@@ -723,6 +1163,10 @@ namespace Inkeys::Drawing::Draw3
 									state.presentationReady->targetRevision == targetRevision &&
 									state.presentationReady->slideId == target.slideId;
 							}), name, failures);
+						Bridge::PresentationTarget accepted = target;
+						accepted.targetRevision = targetRevision;
+						return ready && Check(PublishProductPresentationUiReady(
+							Bridge::ReadyIdentityFor(accepted)), "explicit hidden page UI commit", failures);
 					};
 
 				const auto firstARevision = PublishProductPresentationTarget(targetA);
@@ -812,6 +1256,88 @@ namespace Inkeys::Drawing::Draw3
 				if (returnARevision)
 					modeSucceeded &= waitForPresentation(targetA, *returnARevision, true,
 						"A restores its own ink and exact ready revision after B");
+
+				// 真实绘制线程：一直按住旧页，仍须完成新页 Present，但等 UI ack 后才接收新 Down。
+				Bridge::PresentationTarget boundary = targetA;
+				boundary.key.bytes[0] = 0xC3;
+				boundary.sourceIdentity = "path:c:\\hidden\\boundary.pptx";
+				boundary.slideIds = { 301, 302, 303 };
+				boundary.slideId = 301;
+				boundary.totalPages = 3;
+				boundary.sessionRevision = 21;
+				const auto boundaryFirst = PublishProductPresentationTarget(boundary);
+				if (boundaryFirst)
+				{
+					modeSucceeded &= waitForPresentation(boundary, *boundaryFirst, false, "boundary page begins empty");
+					boundary.targetRevision = *boundaryFirst;
+					const auto oldIdentity = Bridge::ReadyIdentityFor(boundary);
+					const auto beforeHeld = ProductHost().RuntimeSnapshot();
+					postContact(HiddenTestContactPhase::Down, 48, 52);
+					postContact(HiddenTestContactPhase::Move, 112, 72);
+					modeSucceeded &= Check(WaitUntil([beforeHeld]
+					{
+						const auto p = ProductHost().RuntimeSnapshot().pen;
+						return p.active && p.strokeId > beforeHeld.pen.strokeId && p.inputSequence > 2;
+					}), "old page has an accepted still-down stroke", failures);
+					boundary.pageIndex = 1; boundary.slideId = 302;
+					const auto pageTwo = PublishProductPresentationTarget(boundary);
+					if (pageTwo)
+					{
+						boundary.targetRevision = *pageTwo;
+						const auto secondIdentity = Bridge::ReadyIdentityFor(boundary);
+						modeSucceeded &= Check(WaitUntil([secondIdentity]
+						{
+							const auto state = ProductHost().RuntimeSnapshot();
+							return state.presentationReady == secondIdentity && !state.currentPageHasContent &&
+								!state.presentationInputReady && !state.pen.active;
+						}), "held contact seals without Up and canvas ready waits for UI", failures);
+						modeSucceeded &= Check(!PublishProductPresentationUiReady(oldIdentity), "late old-page UI ack is rejected", failures);
+						modeSucceeded &= Check(PublishProductPresentationUiReady(secondIdentity) &&
+							ProductHost().RuntimeSnapshot().presentationInputReady, "matching UI ack opens new input", failures);
+						postContact(HiddenTestContactPhase::Move, 240, 190);
+						postContact(HiddenTestContactPhase::Up, 260, 200);
+						modeSucceeded &= Check(WaitUntil([beforeHeld]
+						{
+							const auto state = ProductHost().RuntimeSnapshot();
+							return state.inputRecycled > beforeHeld.inputRecycled && !state.currentPageHasContent;
+						}), "old Move and Up cannot write on the new page", failures);
+						postContact(HiddenTestContactPhase::Down, 52, 92);
+						postContact(HiddenTestContactPhase::Move, 100, 112);
+						postContact(HiddenTestContactPhase::Up, 160, 132);
+						modeSucceeded &= Check(WaitUntil([] { return ProductHost().RuntimeSnapshot().currentPageHasContent; }),
+							"fresh Down after UI ack writes new page", failures);
+						boundary.pageIndex = 2; boundary.slideId = 303;
+						PublishProductPresentationTarget(boundary);
+						boundary.pageIndex = 0; boundary.slideId = 301;
+						const auto rapid = PublishProductPresentationTarget(boundary);
+						modeSucceeded &= Check(!PublishProductPresentationUiReady(secondIdentity), "rapid-target late ack cannot reopen an old page", failures);
+						if (rapid)
+						{
+							modeSucceeded &= waitForPresentation(boundary, *rapid, true, "rapid return restores sealed old-page stroke");
+							boundary.targetRevision = *rapid;
+							const auto current = Bridge::ReadyIdentityFor(boundary);
+							modeSucceeded &= Check(SetProductPresentationInputSuspended(current, true) &&
+								!PublishProductPresentationUiReady(current) && !ProductHost().RuntimeSnapshot().presentationInputReady,
+								"end or unknown state suspends input without dropping the accepted page", failures);
+							modeSucceeded &= Check(!SetProductPresentationInputSuspended(secondIdentity, false) &&
+								SetProductPresentationInputSuspended(current, false) && !ProductHost().RuntimeSnapshot().presentationInputReady &&
+								PublishProductPresentationUiReady(current) && ProductHost().RuntimeSnapshot().presentationInputReady,
+								"current identity and a fresh UI commit resume suspended input", failures);
+						}
+					}
+					const auto parkedB = PublishProductPresentationTarget(targetB);
+					if (parkedB) modeSucceeded &= waitForPresentation(targetB, *parkedB, false, "park dirty boundary document at B");
+					boundary.slideIds = { 303, 301, 302 };
+					boundary.pageIndex = 1; boundary.slideId = 301;
+					++boundary.sessionRevision;
+					const auto reordered = PublishProductPresentationTarget(boundary);
+					if (reordered) modeSucceeded &= waitForPresentation(boundary, *reordered, true,
+						"warm slot reorders with its old SlideIDs before replacing target");
+					boundary.pageIndex = 0; boundary.slideId = 303;
+					const auto blankReordered = PublishProductPresentationTarget(boundary);
+					if (blankReordered) modeSucceeded &= waitForPresentation(boundary, *blankReordered, false,
+						"warm topology maps the empty SlideID instead of old ordinal ink");
+				}
 
 				Bridge::ProductState whiteboardState;whiteboardState.workspace=Bridge::Workspace::Whiteboard;whiteboardState.tool=Bridge::Tool::Pen;whiteboardState.selectionMode=false;
 				PublishProductState(whiteboardState);
@@ -1291,6 +1817,9 @@ namespace Inkeys::Drawing::Draw3
 
 			}
 
+			if (exerciseCommands)
+				modeSucceeded &= CheckPresentationPersistence(service, drawpad, presentation, callbacks, options, failures);
+
 			const auto stopStarted = std::chrono::steady_clock::now();
 			StopProduct();
 			const auto stopElapsed = std::chrono::steady_clock::now() - stopStarted;
@@ -1298,7 +1827,7 @@ namespace Inkeys::Drawing::Draw3
 				!ProductFirstFrameReady(), "bounded complete Draw3 stop", failures);
 			modeSucceeded &= Check(IsWindow(drawpad) && IsWindow(presentation) &&
 				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation) &&
-				GetWindow(drawpad, GW_OWNER) == freeze &&
+				GetWindow(drawpad, GW_OWNER) == presentation &&
 				GetWindow(presentation, GW_OWNER) == freeze,
 				"Host stop leaves hidden Window Service HWND intact", failures);
 			return modeSucceeded;
@@ -1332,7 +1861,7 @@ namespace Inkeys::Drawing::Draw3
 					L"Inkeys.Draw3.Hidden.Presentation." + suffix,
 					DefWindowProcW, 320, 240));
 				auto drawpadSpec = MakeHiddenSpec(Inkeys::Window::WindowRole::Drawpad,
-					L"Inkeys.Draw3.Hidden.Drawpad." + suffix, DrawpadMsgCallback, 320, 240);
+					L"Inkeys.Draw3.Hidden.Drawpad." + suffix, HiddenDrawpadWindowProc, 320, 240);
 				if (dcompCompatible) drawpadSpec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
 				specs.push_back(std::move(drawpadSpec));
 				return specs;

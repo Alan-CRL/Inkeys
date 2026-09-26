@@ -33,6 +33,7 @@ int RunHighlighterGeometryTests();
 int RunCanvasNavigationTests();
 int RunDesktopAutoSaveTests();
 int RunPresentationAutoSaveTests();
+int RunPresentationUInkRoundTripTests();
 int RunInkDocumentTests();
 int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
@@ -2995,6 +2996,8 @@ void operator delete[](void* memory, size_t) noexcept
 
 int wmain(int argc, wchar_t* argv[])
 {
+	if (argc == 2 && wcscmp(argv[1], L"--uink-presentation-only") == 0)
+		return RunPresentationUInkRoundTripTests() == 0 ? 0 : 1;
 	if (argc == 4 && wcscmp(argv[1], L"--benchmark") == 0)
 		return RunRuntimeBenchmark(argv[2], argv[3]);
 	if (argc == 2 && wcscmp(argv[1], L"--laser-incremental-only") == 0)

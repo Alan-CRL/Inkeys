@@ -327,3 +327,169 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 21: PPT UI3 与切页事务修复及自动化验证
+<!-- trellis-session: v=2 fp=a77f11f7e4817ba4 -->
+
+**Date**: 2026-09-25
+**Task**: PPT UI3 与切页事务修复及自动化验证
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+已完成位置保存/缩放、可信放映会话、Draw3页边界、主栏场景、仅主栏退出确认和焦点；完整ARM64与headless/managed/hidden真实持久化/offscreen通过，真实Office及设备验收待完成。
+
+### Main Changes
+
+- 按审阅方案创建并启动09-25-ppt-ui3-scene-and-page-sync；修复版本交接、保存冻结与原子写入、会话/输入/UI门禁、场景和确认。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64、InkeysHeadlessTests --no-window、PptCOM.Tests、Draw3 hidden含真实保存/冷恢复/重排、Bar/PageControl offscreen、i18n、diff check均exit0。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 按任务research/manual-validation.md进行真实Office/WPS、键盘/硬件、多屏/任务栏和CPU/端到端延迟验收；当前NOT VERIFIED，任务保留in_progress，不提前归档。
+
+
+## Session 22: PPT 真退出穿透与独立结束页补充修复
+<!-- trellis-session: v=2 fp=44fb2cce845377b6 -->
+
+**Date**: 2026-09-25
+**Task**: PPT 真退出穿透与独立结束页补充修复
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+修复可信退出后的 Selection/窗口收敛；为真实 EndScreen 建立独立 Draw3/UInk 页并完成跨层回归
+
+### Main Changes
+
+- 可信退出边沿版本化 Selection，Window Service 所属线程按最新 revision 隐藏旧画布并只释放主 Drawpad capture
+- EndScreen 使用同文稿附加页、独立 pageGuid/历史和明确 UInk marker，PptCOM 同次读取真实 SlideID 拓扑
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64、Headless、PptCOM.Tests、UInk 全套、Draw3 hidden、Bar offscreen、i18n、diff check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真实 PowerPoint/WPS 与下层输入记录窗口验收 Esc/按钮退出穿透、State 5 冷启动及实体笔；查看 research/supplement-verification.md
+
+
+## Session 23: PPT 补充修复提交记录
+<!-- trellis-session: v=2 fp=4bf4ee76aa2f7441 -->
+
+**Date**: 2026-09-25
+**Task**: PPT 补充修复提交记录
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+提交真实退出桌面穿透与独立结束页修复；保持任务进行中，真实 Office/WPS 验收待办
+
+### Main Changes
+
+- 代码、UInk/托管/隐藏窗口回归与 Trellis 任务规范已提交
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `adfe7fb2` | fix(ppt): restore desktop input and persist end screen ink |
+
+### Testing
+
+- [OK] 完整 ARM64 Solution、Headless、Managed、UInk、Hidden Host、Offscreen、i18n、diff check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送 bugfix/pptui；继续真实 Office/WPS 与桌面系统命中人工验收
+
+
+## Session 24: PPT UI3 选择态页墨迹和超大控件回归
+<!-- trellis-session: v=2 fp=53ebd2f04256dad0 -->
+
+**Date**: 2026-09-25
+**Task**: PPT UI3 选择态页墨迹和超大控件回归
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+修复 Host 同布尔值新内容版本丢失，并使 PageControl 四窗使用一致预算和可恢复的呈现/窗口提交
+
+### Main Changes
+
+- Selection A-B-A-空页-EndScreen 翻页的内容版本按完整载荷通知，保留辅助 ULW 穿透
+- 四窗共享布局预算、失败阶段诊断、资源与单侧 ULW 重试、真实 PPT 窗口结果读回及屏外隐藏回归
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 修前 A 隐藏 Host 与 B 非对称预算 Headless 均预期失败；修后完整 ARM64 Solution、Headless、Draw3 hidden、四窗 hidden、Bar offscreen、i18n、Trellis validate、diff check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真实 PowerPoint/WPS 和用户大缩放显示器上采集四窗阶段日志与系统命中，确认现场单侧消失实际原因；任务保持 in_progress
+
+
+## Session 25: PPT UI3 回归修复提交记录
+<!-- trellis-session: v=2 fp=ef7924ff56d50862 -->
+
+**Date**: 2026-09-26
+**Task**: PPT UI3 回归修复提交记录
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+提交选择态翻页内容版本修复和大缩放下四控件布局/呈现收敛；任务继续进行中
+
+### Main Changes
+
+- Host 按完整内容状态版本通知，四窗共享资源预算并在单侧失败后安全重试
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `910de60f` | fix(ppt): restore selection ink and large page controls |
+
+### Testing
+
+- [OK] 完整 ARM64 Solution、Headless、Draw3 hidden、PageControl hidden、Bar offscreen、i18n、Trellis validate 和 diff check 已通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真实 PowerPoint/WPS 与用户显示器复核选择态页墨迹、左侧控件可见性及系统输入命中；保持任务 in_progress

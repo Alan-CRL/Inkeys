@@ -87,6 +87,8 @@ export namespace Inkeys::UI::MessageBox
 
 	struct FallbackPolicy
 	{
+		// 需要明确确认的业务可选择失败关闭，不能再弹系统框继续执行。
+		bool enabled = true;
 		HWND owner = nullptr;
 		SystemModality modality = SystemModality::Application;
 		SystemIcon icon = SystemIcon::None;
@@ -126,6 +128,7 @@ export namespace Inkeys::UI::MessageBox
 	[[nodiscard]] Request MakeYesNoRequest(
 		const wchar_t* title, const wchar_t* body) noexcept;
 	[[nodiscard]] Result Show(const Request& request) noexcept;
+	[[nodiscard]] bool IsShowing() noexcept;
 }
 
 #ifdef INKEYS_MESSAGE_BOX_TESTING

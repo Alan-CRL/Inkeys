@@ -15,6 +15,7 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.PageControl;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
@@ -295,6 +296,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--page-control-hidden-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::PageControl::RunHiddenWindowTests();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true);

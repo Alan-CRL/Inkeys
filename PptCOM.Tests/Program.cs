@@ -16,6 +16,8 @@ namespace PptCOM.Tests
     {
         public string FailureStage;
         public Exception Failure;
+        public Action<string> AfterAcquire;
+        public readonly List<string> Invoked = new List<string>();
         public readonly Dictionary<string, int> Acquired = new Dictionary<string, int>();
         public readonly Dictionary<string, int> Released = new Dictionary<string, int>();
         public readonly List<string> ReleaseOrder = new List<string>();
@@ -32,6 +34,7 @@ namespace PptCOM.Tests
             int count;
             Acquired.TryGetValue(node.Name, out count);
             Acquired[node.Name] = count + 1;
+            if (AfterAcquire != null) AfterAcquire(node.Name);
             return node;
         }
 
@@ -50,6 +53,13 @@ namespace PptCOM.Tests
             FakeNode node = (FakeNode)collection;
             ThrowIfRequested(node.Name + ".Item:" + oneBasedIndex);
             return Acquire(node.Items[oneBasedIndex - 1]);
+        }
+
+        public void InvokeMethod(object target, string name)
+        {
+            string stage = ((FakeNode)target).Name + "." + name;
+            ThrowIfRequested(stage);
+            Invoked.Add(stage);
         }
 
         public bool IsComObject(object value) { return value is FakeNode; }
@@ -258,17 +268,59 @@ namespace PptCOM.Tests
                 "identity rejection does not release borrowed roots");
         }
 
+        private sealed class DispatchWindow
+        {
+            public int HWND { get { return 456; } }
+            public string Name { get { return "dispatch-window"; } }
+        }
+
+        private static void TestProductionHwndAccessor()
+        {
+            // 不用字典 FakeAccessor：通过生产分派验证 typed-only HWND 和非 PIA fallback。
+            object typedOnlyWindow = new object(); // 故意不提供可反射的 HWND 属性。
+            int typedCalls = 0;
+            var accessor = new MarshalLateBoundComAccessor(delegate(object target)
+            {
+                ++typedCalls;
+                return ReferenceEquals(target, typedOnlyWindow) ? (int?)123 : null;
+            });
+            Check(Convert.ToInt32(accessor.GetProperty(typedOnlyWindow, "HWND")) == 123 && typedCalls == 1,
+                "production accessor accepts typed HWND without dispatch member");
+            var dispatchWindow = new DispatchWindow();
+            Check(Convert.ToInt32(accessor.GetProperty(dispatchWindow, "HWND")) == 456,
+                "production accessor preserves non-PIA HWND dispatch fallback");
+            int beforeName = typedCalls;
+            Check((string)accessor.GetProperty(dispatchWindow, "Name") == "dispatch-window" &&
+                typedCalls == beforeName, "typed HWND path does not intercept other properties");
+            Check(Convert.ToInt32(new MarshalLateBoundComAccessor().GetProperty(dispatchWindow, "HWND")) == 456,
+                "default production adapter falls back for non-PIA object");
+            var zeroAccessor = new MarshalLateBoundComAccessor(delegate { return (int?)0; });
+            Check(Convert.ToInt32(zeroAccessor.GetProperty(typedOnlyWindow, "HWND")) == 0,
+                "typed zero remains invalid instead of dispatching another identity");
+            foreach (uint code in new uint[] { 0x8001010A, 0x80020003 })
+            {
+                var expected = new COMException("typed HWND failure", unchecked((int)code));
+                var failingAccessor = new MarshalLateBoundComAccessor(delegate { throw expected; });
+                bool preserved = false;
+                try { failingAccessor.GetProperty(dispatchWindow, "HWND"); }
+                catch (COMException error) { preserved = ReferenceEquals(error, expected); }
+                Check(preserved, "typed HWND HRESULT preserved without dispatch retry " + code);
+            }
+        }
+
         public static int Main()
         {
+            TestProductionHwndAccessor();
             TestSuccess("Microsoft PowerPoint", "PowerPoint");
             TestSuccess("WPS Presentation", "Wps");
             TestFallbackAndFailures();
+            failures += SlideShowSessionTests.Run();
             if (failures != 0)
             {
                 Console.Error.WriteLine("FAILED count=" + failures);
                 return 1;
             }
-            Console.WriteLine("PASS PptCOM presentation descriptor ownership");
+            Console.WriteLine("PASS PptCOM descriptor ownership and session/owner contracts");
             return 0;
         }
     }

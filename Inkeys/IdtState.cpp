@@ -33,6 +33,8 @@ namespace
 	using Inkeys::Drawing::Draw3::Bridge::Tool;
 	using Inkeys::Drawing::Draw3::Bridge::Workspace;
 	std::mutex draw3PresentationMutex;
+	std::mutex stateModeTransitionMutex;
+	std::atomic_uint64_t stateModeTransitionRevision = 0;
 	std::mutex eraserPreferencesMutex;
 	Inkeys::Drawing::Draw3::SpeedEraser::InputSettings ReadEraserPreferences()
 	{
@@ -52,6 +54,7 @@ namespace
 	}
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
+	bool draw3SelectionWaitActive = false;
 	// 低位保存期望 owner 状态，高位版本保证旧请求成功也不能覆盖更新后的期望。
 	std::atomic_uint64_t settingOwnerDesiredState = 0;
 	std::atomic_uint64_t settingOwnerAppliedState = 0;
@@ -92,7 +95,7 @@ namespace
 
 	Workspace CurrentPrimaryWorkspace() noexcept
 	{
-		return PptInfoState.TotalPage > 0
+		return PptSessionActive()
 			? Workspace::Presentation : Workspace::Desktop;
 	}
 
@@ -157,6 +160,8 @@ namespace
 
 	void PublishDraw3State() noexcept
 	{
+		// 只序列化状态快照/桥接发布；窗口 owner 提交必须留在锁外。
+		std::scoped_lock modeLock(stateModeTransitionMutex);
 		ProductState state{};
 		state.tool = CurrentDraw3Tool();
 		state.paintDevice = setlist.paintDevice;
@@ -257,14 +262,108 @@ namespace
 			presentationBounds.right, presentationBounds.bottom);
 	}
 
+	void TraceSelectionWindowState(
+		const Inkeys::Drawing::Draw3::Bridge::ProductState& desired,
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		const char* reason, bool hidden, bool force = false) noexcept
+	{
+		static const bool enabled = []() noexcept
+		{
+			wchar_t value[8]{};
+			return GetEnvironmentVariableW(L"INKEYS_PPT_EXIT_TRACE", value, 8) > 0 &&
+				value[0] == L'1';
+		}();
+		if (!enabled || !IDTLogger) return;
+		// 等待期最多每两秒采一组真实 HWND，避免 250ms 重试刷屏。
+		static auto last = std::chrono::steady_clock::time_point{};
+		const auto now = std::chrono::steady_clock::now();
+		if (!force && last != std::chrono::steady_clock::time_point{} &&
+			now - last < std::chrono::seconds(2)) return;
+		last = now;
+		auto& service = Inkeys::Window::GetService();
+		GUITHREADINFO threadInfo{ sizeof(GUITHREADINFO) };
+		const DWORD ownerThread = service.OwnerThreadId(
+			Inkeys::Window::WindowRole::Drawpad);
+		const bool captureKnown = ownerThread &&
+			GetGUIThreadInfo(ownerThread, &threadInfo) != FALSE;
+		IDTLogger->info(
+			"[PptExitSurface] reason={} hidden={} desired={} selection={} bridgeRev={} "
+			"runtime={} selection={} runtimeRev={} first={} presentOk={} inputReady={} "
+			"session={} target={} output={}@{}/{}@{} content={}/{} "
+			"clean={} captureKnown={} capture=0x{:X}",
+			reason, hidden, static_cast<int>(desired.workspace), desired.selectionMode,
+			desired.revision, static_cast<int>(runtime.workspace), runtime.selectionMode,
+			runtime.runtimeRevision, runtime.firstFrameReady,
+			runtime.lastPresentSucceeded, runtime.presentationInputReady,
+			desired.presentationTarget ? desired.presentationTarget->sessionRevision : 0,
+			desired.presentationTarget ? desired.presentationTarget->targetRevision : 0,
+			OutputTargetName(runtime.requestedOutputTarget),
+			runtime.requestedOutputRevision,
+			OutputTargetName(runtime.readyOutputTarget),
+			runtime.readyOutputRevision, runtime.presentedContentRevision,
+			runtime.contentRevision, runtime.auxiliaryFullFrameClean, captureKnown,
+			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
+				captureKnown ? threadInfo.hwndCapture : nullptr)));
+		IDTLogger->info(
+			"[PptExitSurface] ready={}@{} uiReady={}@{} suspended={}@{} commandPending={}",
+			runtime.presentationReady ? runtime.presentationReady->sessionRevision : 0,
+			runtime.presentationReady ? runtime.presentationReady->targetRevision : 0,
+			runtime.presentationUiReady ? runtime.presentationUiReady->sessionRevision : 0,
+			runtime.presentationUiReady ? runtime.presentationUiReady->targetRevision : 0,
+			runtime.presentationSuspended ? runtime.presentationSuspended->sessionRevision : 0,
+			runtime.presentationSuspended ? runtime.presentationSuspended->targetRevision : 0,
+			runtime.commandScenePending);
+		constexpr Inkeys::Window::WindowRole roles[] = {
+			Inkeys::Window::WindowRole::Drawpad,
+			Inkeys::Window::WindowRole::DrawpadPresentation,
+			Inkeys::Window::WindowRole::Freeze,
+			Inkeys::Window::WindowRole::MagnifierHost,
+		};
+		for (const auto role : roles)
+		{
+			const HWND hwnd = service.Handle(role);
+			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
+			const LONG_PTR exStyle = hwnd ? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			IDTLogger->info(
+				"[PptExitSurface] role={} hwnd=0x{:X} owner=0x{:X} valid={} "
+				"visible={} enabled={} exStyle=0x{:X}",
+				static_cast<int>(role),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
+				hwnd && IsWindow(hwnd), hwnd && IsWindowVisible(hwnd),
+				hwnd && IsWindowEnabled(hwnd),
+				static_cast<unsigned long long>(exStyle));
+		}
+	}
+
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
 		std::scoped_lock lock(draw3PresentationMutex);
+		const auto desired =
+			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
 		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 		const bool selectionMode = runtime.selectionMode;
 		const bool whiteboard = runtime.workspace ==
 			Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
+		const bool whiteboardTransition = whiteboardDesired.load(
+			std::memory_order_acquire) ||
+			whiteboardPhase.load(std::memory_order_acquire) != WhiteboardPhase::Inactive;
+		const auto bridgeGuard = [](std::uint64_t revision, bool requireSelection)
+		{
+			return [revision, requireSelection]() noexcept
+			{
+				const auto current = Inkeys::Drawing::Draw3::ProductHost()
+					.ProductBridge().Snapshot();
+				return current.revision == revision &&
+					(!requireSelection || (current.selectionMode &&
+						current.workspace != Workspace::Whiteboard)) &&
+					(current.workspace == Workspace::Whiteboard ||
+						(!whiteboardDesired.load(std::memory_order_acquire) &&
+						whiteboardPhase.load(std::memory_order_acquire) ==
+							WhiteboardPhase::Inactive));
+			};
+		};
 		auto& service = Inkeys::Window::GetService();
 		using Inkeys::Window::WindowRole;
 
@@ -280,10 +379,54 @@ namespace
 			runtime.readyOutputTarget == expectedTarget &&
 			runtime.readyOutputRevision == runtime.requestedOutputRevision &&
 			runtime.presentedContentRevision == runtime.contentRevision;
+		const bool selectionRequested = desired.selectionMode &&
+			desired.workspace != Workspace::Whiteboard && !whiteboardTransition;
+		const bool selectionWaiting = selectionRequested &&
+			(!runtime.firstFrameReady || !runtime.selectionMode ||
+				runtime.workspace != desired.workspace || !targetReady);
+		if (selectionWaiting)
+		{
+			draw3SelectionWaitActive = true;
+			// 旧主 Drawpad 可能仍是非 layered DComp 窗口。新选择帧尚未呈现时，
+			// 先在窗口 owner thread 隐藏双表面，不能把 AdmissionBlocked 当穿透。
+			const HWND primary = service.Handle(WindowRole::Drawpad);
+			const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+			GUITHREADINFO ownerInfo{ sizeof(GUITHREADINFO) };
+			const DWORD ownerThread = service.OwnerThreadId(WindowRole::Drawpad);
+			const bool primaryCaptured = ownerThread &&
+				GetGUIThreadInfo(ownerThread, &ownerInfo) &&
+				ownerInfo.hwndCapture == primary;
+			const bool hidden = primary && presentation && IsWindow(primary) &&
+				IsWindow(presentation) &&
+				!IsWindowVisible(primary) && !IsWindowVisible(presentation);
+			const bool safe = (hidden && !primaryCaptured) || service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
+				bridgeGuard(desired.revision, true));
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			TraceSelectionWindowState(desired, runtime,
+				!runtime.firstFrameReady ? "first-frame" :
+				!runtime.selectionMode ? "selection-not-applied" :
+				runtime.workspace != desired.workspace ? "workspace-not-applied" :
+				"selection-output-not-ready", safe);
+			if (!safe)
+			{
+				if (Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot()
+					.revision != desired.revision)
+					return Draw3PresentationReconcileResult::Retry;
+				if (!draw3PresentationFailureActive)
+					LogDraw3PresentationFailure(runtime,
+						Inkeys::Window::DrawpadSurfaceVisibility::Hidden);
+				draw3PresentationFailureActive = true;
+				return Draw3PresentationReconcileResult::Retry;
+			}
+			draw3PresentationFailureActive = false;
+			return Draw3PresentationReconcileResult::Waiting;
+		}
 		if (!runtime.firstFrameReady ||
 			(selectionMode && !whiteboard && !targetReady))
 		{
-			draw3PresentationRetryPending.store(false, std::memory_order_release);
+			// 失败的 Present 也需有后继机会；仅等待一次 revision 可能永远卡住。
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			draw3PresentationFailureActive = false;
 			return Draw3PresentationReconcileResult::Waiting;
 		}
@@ -306,16 +449,59 @@ namespace
 			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Hidden; break;
 		}
 
-		if (!service.SetDrawpadSurfaceVisibility(visibility))
+		const auto hideForNewSelection =
+			[&](const Inkeys::Drawing::Draw3::Bridge::ProductState& state)
+		{
+			if (!state.selectionMode || state.workspace == Workspace::Whiteboard ||
+				whiteboardDesired.load(std::memory_order_acquire) ||
+				whiteboardPhase.load(std::memory_order_acquire) != WhiteboardPhase::Inactive)
+				return;
+			(void)service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
+				bridgeGuard(state.revision, true));
+		};
+		// 等待窗口提交期间若期望场景已变，旧 ready 不得重新显示主拦截窗。
+		const auto latest =
+			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		if (latest.revision != desired.revision)
+		{
+			hideForNewSelection(latest);
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			return Draw3PresentationReconcileResult::Retry;
+		}
+		if (!service.SetDrawpadSurfaceVisibility(visibility,
+			bridgeGuard(desired.revision, false)))
 		{
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			const auto current = Inkeys::Drawing::Draw3::ProductHost()
+				.ProductBridge().Snapshot();
+			if (current.revision != desired.revision)
+			{
+				hideForNewSelection(current);
+				return Draw3PresentationReconcileResult::Retry;
+			}
 			if (!draw3PresentationFailureActive)
 				LogDraw3PresentationFailure(runtime, visibility);
 			draw3PresentationFailureActive = true;
 			return Draw3PresentationReconcileResult::Retry;
 		}
 
+		const auto after =
+			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		if (after.revision != desired.revision)
+		{
+			// 旧窗口命令已执行也可能赶在新 Selection 发布之后；立即撤下主窗。
+			hideForNewSelection(after);
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			return Draw3PresentationReconcileResult::Retry;
+		}
 		draw3PresentationRetryPending.store(false, std::memory_order_release);
+		if (draw3SelectionWaitActive)
+		{
+			TraceSelectionWindowState(desired, runtime, "ready-applied",
+				visibility == Inkeys::Window::DrawpadSurfaceVisibility::Hidden, true);
+			draw3SelectionWaitActive = false;
+		}
 		if (draw3PresentationFailureActive && IDTLogger)
 			IDTLogger->info(
 				"[状态线程][ReconcileDraw3Presentation] surface 切换已恢复, surface={}",
@@ -416,8 +602,12 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 void SyncDraw3State()
 {
 	// 所有工具入口都汇聚于此，确保 Setting 只在非选择态加入画布 owner 链。
-	const auto settingOwnerState = PublishSettingOwnerDesiredState(
-		stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+	std::uint64_t settingOwnerState = 0;
+	{
+		std::scoped_lock modeLock(stateModeTransitionMutex);
+		settingOwnerState = PublishSettingOwnerDesiredState(
+			stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection);
+	}
 	ApplySettingOwnerDesiredState(settingOwnerState);
 	PublishDraw3State();
 	ReconcileDraw3Presentation();
@@ -610,41 +800,80 @@ float GetEffectivePenOpacity()
 
 bool ChangeStateModeToSelection()
 {
-	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
-	if (state == 1.1) state = 1;
-	stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
-	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
-	BackgroundColorMode = 0;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+		if (state == 1.1) state = 1;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+		BackgroundColorMode = 0;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
+	SyncDraw3State();
+	return true;
+}
+
+std::uint64_t StateModeTransitionRevision() noexcept
+{
+	return stateModeTransitionRevision.load(std::memory_order_acquire);
+}
+
+bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision)
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision)
+			return false;
+		// 版本比较与模式赋值串行；窗口 owner 提交在锁外执行，避免互等。
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtSelection;
+		if (state == 1.1) state = 1;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtSelection;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtSelection;
+		BackgroundColorMode = 0;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
 	SyncDraw3State();
 	return true;
 }
 
 bool ChangeStateModeToPen()
 {
-	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
-	stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
-	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+		BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
 	SyncDraw3State();
 	return true;
 }
 
 bool ChangeStateModeToShape()
 {
-	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
-	stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
-	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
-	BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
+		BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
 	SyncDraw3State();
 	return true;
 }
 
 bool ChangeStateModeToEraser()
 {
-	stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
-	stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
-	stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
-	BackgroundColorMode = 0;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtEraser;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtEraser;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtEraser;
+		BackgroundColorMode = 0;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
 	SyncDraw3State();
 	return true;
 }
@@ -698,7 +927,7 @@ void StateMonitoring()
 			{
 				// 样式事务失败时恢复 Presentation 控件，下一轮仍可重试进入。
 				Inkeys::UI::Ppt::PublishPresentationVisible(
-					PptInfoState.TotalPage > 0);
+					PptSessionActive());
 				whiteboardPhase.store(WhiteboardPhase::Inactive,
 					std::memory_order_release);
 				continue;
@@ -886,7 +1115,7 @@ void StateMonitoring()
 			Inkeys::UI::Bar::SetWhiteboardActive(false);
 			// window mode 恢复后重发 COM 事实；PageControl 始终是共享宿主唯一所有者。
 			Inkeys::UI::Ppt::PublishPresentationVisible(
-				PptInfoState.TotalPage > 0);
+				PptSessionActive());
 			Inkeys::Drawing::Draw3::SetProductActivationAllowed(false);
 			whiteboardPhase.store(WhiteboardPhase::Inactive,
 				std::memory_order_release);

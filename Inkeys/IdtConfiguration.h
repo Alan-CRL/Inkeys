@@ -1,5 +1,6 @@
 #pragma once
 #include "IdtMain.h"
+#include "PptSettingsPersistence.h"
 
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
 bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath);
@@ -220,6 +221,10 @@ extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
 bool PptComReadSettingPositionOnly();
 string CapturePptComSettingJson();
+string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions, bool remember);
+Inkeys::PptSettings::Positions SavedPptComPositions();
+Inkeys::PptSettings::Positions RestorablePptComPositions();
+string RetryPptComSettingJson();
 bool WritePptComSettingJson(const string& jsonContent);
 bool PptComWriteSetting();
 

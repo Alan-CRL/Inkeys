@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <thread>
 
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.pen_cursor;
@@ -89,6 +90,59 @@ namespace
 		if (!Expect(input.TryDequeue(control) && control == nullptr,
 			"control wake is distinguishable from contact")) ++failures;
 		input.AcknowledgeControlWake();
+	}
+
+	void TestPageAdmissionAndQuarantine(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		ContactRecord* record = nullptr;
+		auto dequeueContact = [&]() -> ContactHandle
+		{
+			while (input.TryDequeue(record))
+			{
+				if (record) return { record, record->Generation() };
+				input.AcknowledgeControlWake();
+			}
+			return {};
+		};
+		input.PublishDown(1, 1, InputDeviceType::Pen, MakeSnapshot(10, 20, ContactPhase::Down));
+		const auto old = dequeueContact();
+		if (!Expect(input.ContactAdmitted(old), "initial Down enters current page")) ++failures;
+		input.SetAdmissionBlocked(true);
+		if (!Expect(!input.ContactAdmitted(old), "page boundary invalidates queued old Down")) ++failures;
+		input.DiscardUntilTerminal(old);
+		if (!Expect(input.HasQuarantinedContacts() && input.DiagnosticsSnapshot().occupiedSlots == 1 &&
+			!input.PublishMove(1, 1, MakeSnapshot(50, 60, ContactPhase::Move)),
+			"old contact holds its route and ignores moves after sealing")) ++failures;
+		input.PublishDown(1, 2, InputDeviceType::Touch, MakeSnapshot(30, 40, ContactPhase::Down));
+		const auto during = dequeueContact();
+		input.SetAdmissionBlocked(false);
+		if (!Expect(!input.ContactAdmitted(during), "UI ack cannot admit a Down made while closed")) ++failures;
+		input.DiscardUntilTerminal(during);
+		input.PublishDown(1, 3, InputDeviceType::Pen, MakeSnapshot(70, 80, ContactPhase::Down));
+		const auto fresh = dequeueContact();
+		if (!Expect(input.ContactAdmitted(fresh), "new Down after UI ack is admitted")) ++failures;
+		input.PublishUp(1, 1, MakeSnapshot(100, 110, ContactPhase::Up));
+		input.PublishCancelled(1, 2, MakeSnapshot(100, 110, ContactPhase::Cancelled));
+		if (!Expect(!input.HasQuarantinedContacts() && input.DiagnosticsSnapshot().recycled == 2 &&
+			input.ContactAdmitted(fresh), "old terminals retire exactly their own routes")) ++failures;
+		input.PublishUp(1, 3, MakeSnapshot(90, 100, ContactPhase::Up));
+		input.Recycle(fresh);
+		if (!Expect(input.DiagnosticsSnapshot().occupiedSlots == 0,
+			"all page boundary slots are returned without waiting for another frame")) ++failures;
+
+		// 真实 producer/consumer 并发覆盖 Up 抢先与隔离抢先两条 ownership 路径。
+		for (int iteration = 0; iteration < 128; ++iteration)
+		{
+			input.PublishDown(2, 1, InputDeviceType::Pen, MakeSnapshot(1, 2, ContactPhase::Down));
+			const auto concurrent = dequeueContact();
+			std::jthread terminal([&]() { input.PublishUp(2, 1, MakeSnapshot(3, 4, ContactPhase::Up)); });
+			input.DiscardUntilTerminal(concurrent);
+			terminal.join();
+			if (!Expect(input.DiagnosticsSnapshot().occupiedSlots == 0 && !input.HasQuarantinedContacts(),
+				"terminal versus quarantine race neither leaks nor double-recycles")) { ++failures; break; }
+		}
 	}
 
 	void TestCursorOpacityContracts(int& failures)
@@ -190,6 +244,7 @@ int RunDraw3ContactInputTests()
 	int failures = 0;
 	TestContactLifecycle(failures);
 	TestInvalidAndWakeContracts(failures);
+	TestPageAdmissionAndQuarantine(failures);
 	TestCursorOpacityContracts(failures);
 	return failures;
 }

@@ -27,6 +27,7 @@
 #include <mmsystem.h>
 
 #include "Draw3.Bridge.h"
+#include "Draw3.PptTiming.h"
 #include "Draw3.Presentation.h"
 #include "Draw3.TimerPeriod.h"
 #include "Draw3.SpeedEraser.h"
@@ -1897,7 +1898,7 @@ namespace Inkeys::Drawing::Draw3
 		bool publishedDrawingActivity = false;
 		auto reconcileDrawingActivity = [&]() noexcept
 		{
-			const bool activeNow = HasPhysicalContact(active);
+			const bool activeNow = HasPhysicalContact(active) || input_.HasQuarantinedContacts();
 			if (activeNow == publishedDrawingActivity) return;
 			publishedDrawingActivity = activeNow;
 			if (observer_.drawingActivityChanged)
@@ -3113,38 +3114,8 @@ namespace Inkeys::Drawing::Draw3
 				return true;
 			};
 
-			auto processCommand = [&](ContactRecord* record)
-			{
-				if (!record)
-				{
-					input_.AcknowledgeControlWake(); // 先清 pending，随后复查窗口的全部原子请求。
-					if (observer_.controlWake)
-						observer_.controlWake(observer_.context);
-					return;
-				}
-				const ContactHandle handle{ record, record->Generation() };
-				if (activeWorkspace == Bridge::Workspace::Whiteboard &&
-					window_.SelectionMode())
-				{
-					// 白板“拖动”暂不启用平移，也不能让主 Drawpad 继续落笔。
-					input_.Recycle(handle);
-					return;
-				}
-				if (Bridge::PresentationInputSuppressed(
-					activeWorkspace, activePresentationLoadPending))
-				{
-					// 磁盘恢复完成前拒绝新输入，避免旧文件覆盖刚落下的墨迹。
-					input_.Recycle(handle);
-					return;
-				}
-				initializeStroke(handle); // 出队后立即固定本地 generation。
-			};
-			auto processCommandAndReconcile = [&](ContactRecord* record)
-			{
-				processCommand(record);
-				// Down 后部分路径会直接 continue，必须在命令边界立即发布 0→1。
-				reconcileDrawingActivity();
-			};
+		uint64_t observedAdmissionRevision = input_.AdmissionRevision();
+
 
 		auto appendTerminalFallback = [&](RuntimeStroke& runtime,
 			const ContactSnapshot& snapshot, double inputTime)
@@ -3495,6 +3466,94 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (terminal) finishMouseSpeedEraser(runtime); // 接受 Up/Cancel 即退出，不等烘干或 Hover。
 				return positionMoved || stylusStateChanged || shapeRawChanged || deferUp;
+			};
+
+		bool hapticContinuousActive = false;
+		auto sealPresentationContacts = [&]()
+		{
+			const uint64_t revision = input_.AdmissionRevision();
+			if (revision == observedAdmissionRevision) return;
+			observedAdmissionRevision = revision;
+			if (!input_.AdmissionBlocked() && active.empty() && gestureContacts.empty()) return;
+			// 页边界只收尾已经被绘制线程接受的最后位置，不消费边界后的 Move。
+			// 持久笔迹继续走同一 Stored/L2/保存事务；物理路由在提交后隔离到 Up。
+			for (RuntimeStroke* runtime : active)
+			{
+				if (!runtime || runtime->ended) continue;
+				ContactSnapshot terminal = runtime->awaitingReconnect
+					? runtime->deferredUpSnapshot : runtime->lastInputSnapshot;
+				terminal.phase = ContactPhase::Up;
+				completeModelUp(*runtime, terminal, runtime->tool == DrawingTool::Laser);
+				finishMouseSpeedEraser(*runtime);
+			}
+			for (const auto& contact : gestureContacts)
+				input_.DiscardUntilTerminal(contact.handle);
+			gestureContacts.clear();
+			touchGesture.Reset();
+			panMotion = {};
+			panCentroidValid = false;
+			previousPanContactCount = 0;
+			window_.SetTouchPanActive(false);
+			leftMouseSpeedEraser.CancelVisual();
+			rightMouseSpeedEraser.CancelVisual();
+			penEraserHoverLane.Invalidate();
+			invertedPenEraserHoverLane.Invalidate();
+			if (haptics_) haptics_->StopFeedback();
+			hapticContinuousActive = false;
+			renderer_.ClearAllLaserCoverage();
+			renderer_.ResetLaserParticles();
+			laserLifecycle = {};
+			laserOpacity = 0.0f;
+			laserStableBounds = {};
+			laserLiveBounds = {};
+			laserStrokeLayers.clear();
+			laserCoverageMode = LaserCoverageMode::Inactive;
+			laserParticleDirtyTracker.Clear();
+			window_.RequestFullPresent();
+			if (activePresentationTarget) TracePptTiming("contacts_sealed",
+				activePresentationTarget->sessionRevision,
+				activePresentationTarget->targetRevision);
+		};
+
+			auto processCommand = [&](ContactRecord* record)
+			{
+				if (!record)
+				{
+					input_.AcknowledgeControlWake(); // 先清 pending，随后复查窗口的全部原子请求。
+					if (observer_.controlWake)
+						observer_.controlWake(observer_.context);
+					sealPresentationContacts();
+					return;
+				}
+				const ContactHandle handle{ record, record->Generation() };
+				sealPresentationContacts();
+				if (!input_.ContactAdmitted(handle))
+				{
+					// 被闸门拒绝的 Down 不能在重开后补画；保留其路由直至真实终态。
+					input_.DiscardUntilTerminal(handle);
+					return;
+				}
+				if (activeWorkspace == Bridge::Workspace::Whiteboard &&
+					window_.SelectionMode())
+				{
+					// 白板“拖动”暂不启用平移，也不能让主 Drawpad 继续落笔。
+					input_.DiscardUntilTerminal(handle);
+					return;
+				}
+				if (Bridge::PresentationInputSuppressed(
+					activeWorkspace, activePresentationLoadPending))
+				{
+					// 磁盘恢复完成前拒绝新输入，避免旧文件覆盖刚落下的墨迹。
+					input_.DiscardUntilTerminal(handle);
+					return;
+				}
+				initializeStroke(handle); // 出队后立即固定本地 generation。
+			};
+			auto processCommandAndReconcile = [&](ContactRecord* record)
+			{
+				processCommand(record);
+				// Down 后部分路径会直接 continue，必须在命令边界立即发布 0→1。
+				reconcileDrawingActivity();
 			};
 
 		auto updateCanvasNavigation = [&](int64_t nowQpc)
@@ -3888,7 +3947,6 @@ namespace Inkeys::Drawing::Draw3
 		TimerPeriodController timerPeriod({ nullptr,
 			&BeginOneMillisecondTimerPeriod, &EndOneMillisecondTimerPeriod });
 		double lastActiveFrameStartMs = 0.0;
-		bool hapticContinuousActive = false;
 		std::vector<DrawingCursorVisual> previousCursorVisuals;
 		std::vector<DrawingCursorVisual> currentCursorVisuals;
 		previousCursorVisuals.reserve(kPreheatedStrokeCount + 1);
@@ -4486,7 +4544,8 @@ namespace Inkeys::Drawing::Draw3
 			try
 			{
 				if (!fileGuid) fileGuid = draw3::uink::CreateUInkGuid();
-				if (!fileGuid || target.totalPages != document.Pages().size() ||
+				if (!fileGuid || Bridge::PresentationDocumentPageCount(target) !=
+					document.Pages().size() ||
 					runtimes.size() != document.Pages().size()) return std::nullopt;
 				draw3::uink::Draw3UInkExportSnapshot snapshot;
 				snapshot.fileGuid = *fileGuid;
@@ -4510,8 +4569,9 @@ namespace Inkeys::Drawing::Draw3
 					std::optional<std::int32_t> slideId, bool retained)
 					-> std::optional<draw3::uink::Draw3UInkCanvasSnapshot>
 				{
-					if (!page || !slideId && target.bindingMode ==
-						Bridge::SlideBindingMode::StableSlideId) return std::nullopt;
+					const bool endScreen = !retained && pageIndex == target.totalPages;
+					if (!page || (!slideId && !endScreen && target.bindingMode ==
+						Bridge::SlideBindingMode::StableSlideId)) return std::nullopt;
 					const InkCanvas* canvas = page->FindCanvas(kDefaultDeviceKey);
 					if (!canvas) return std::nullopt;
 					draw3::uink::Draw3UInkCanvasSnapshot output;
@@ -4523,7 +4583,9 @@ namespace Inkeys::Drawing::Draw3
 					output.intervalOrdinal = runtime.intervalOrdinal;
 					output.viewport = { canvas->Viewport().x, canvas->Viewport().y,
 						canvas->Viewport().scale };
-					output.extra = draw3::uink::MakeInkeysBindingExtra(importMode);
+					output.extra = endScreen
+						? draw3::uink::MakeInkeysEndScreenExtra(importMode)
+						: draw3::uink::MakeInkeysBindingExtra(importMode);
 					const std::span<const InkStroke> strokes = canvas->Strokes();
 					for (const RenderItemState& item : runtime.history.Items())
 					{
@@ -4548,6 +4610,7 @@ namespace Inkeys::Drawing::Draw3
 					const InkPage* page = document.PageAt(pageIndex);
 					const std::optional<std::int32_t> slideId = target.bindingMode ==
 						Bridge::SlideBindingMode::StableSlideId
+						&& pageIndex < target.totalPages
 						? std::optional<std::int32_t>(target.slideIds[pageIndex]) : std::nullopt;
 					const auto output = captureCanvas(page, runtimes[pageIndex], pageIndex,
 						slideId, false);
@@ -4687,7 +4750,7 @@ namespace Inkeys::Drawing::Draw3
 				for (const auto& source : importedActive)
 					if (source.slideId) bySlideId.emplace(*source.slideId, &source);
 				std::vector<draw3::uink::Draw3UInkCanvasSnapshot> activeCanvases;
-				activeCanvases.reserve(target.totalPages);
+				activeCanvases.reserve(Bridge::PresentationDocumentPageCount(target));
 				for (std::size_t index = 0; index < target.totalPages; ++index)
 				{
 					if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
@@ -4711,7 +4774,25 @@ namespace Inkeys::Drawing::Draw3
 						activeCanvases.push_back(importedActive[index]);
 					}
 				}
-				if (activeCanvases.size() != target.totalPages ||
+				// 历史 UInk 只有 N 个真实页；结束页缺席时新建独立 pageGuid。
+				const auto endScreen = std::find_if(importedActive.begin(),
+					importedActive.end(), [](const auto& canvas)
+					{
+						return draw3::uink::InkeysPageKind(canvas.extra) ==
+							draw3::uink::UInkInkeysPageKind::EndScreen;
+					});
+				if (endScreen != importedActive.end())
+					activeCanvases.push_back(*endScreen);
+				else
+				{
+					const auto pageGuid = draw3::uink::CreateUInkGuid();
+					if (!pageGuid) return std::nullopt;
+					draw3::uink::Draw3UInkCanvasSnapshot blank;
+					blank.pageGuid = *pageGuid;
+					blank.viewport = { 0.0f, 0.0f, 1.0f };
+					activeCanvases.push_back(std::move(blank));
+				}
+				if (activeCanvases.size() != Bridge::PresentationDocumentPageCount(target) ||
 					snapshot.workspaceGuid.IsZero() || snapshot.fileGuid.IsZero())
 					return std::nullopt;
 				DrawingDocumentSlot slot;
@@ -4847,6 +4928,16 @@ namespace Inkeys::Drawing::Draw3
 					draw3::uink::Draw3UInkImportBindingMode::StableSlideId);
 				remapped.activeCanvases.push_back(std::move(blank));
 			}
+			// EndScreen 不属于真实 SlideID 拓扑，重排和增删页只移动其内部槽位。
+			const auto previousEnd = std::find_if(
+				captured->snapshot.activeCanvases.begin(),
+				captured->snapshot.activeCanvases.end(), [](const auto& canvas)
+				{
+					return draw3::uink::InkeysPageKind(canvas.extra) ==
+						draw3::uink::UInkInkeysPageKind::EndScreen;
+				});
+			if (previousEnd == captured->snapshot.activeCanvases.end()) return false;
+			remapped.activeCanvases.push_back(*previousEnd);
 			for (auto& [slideId, canvas] : known)
 			{
 				canvas.slideId = slideId;
@@ -5567,14 +5658,9 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (!command.presentationTarget) continue;
 					const Bridge::PresentationTarget target = *command.presentationTarget;
-					const bool stableValid = target.bindingMode !=
-						Bridge::SlideBindingMode::StableSlideId ||
-						(target.slideId && target.slideIds.size() == target.totalPages &&
-							target.pageIndex < target.slideIds.size() &&
-							target.slideIds[target.pageIndex] == *target.slideId);
-					if (target.key.IsZero() || target.totalPages == 0 ||
-						target.totalPages > Bridge::kMaximumPresentationPages ||
-						target.pageIndex >= target.totalPages || !stableValid) continue;
+					if (activeWorkspace == Bridge::Workspace::Presentation &&
+						activePresentationTarget && *activePresentationTarget == target) continue;
+					if (target.key.IsZero() || !Bridge::ValidPresentationPage(target)) continue;
 					// 同文稿翻页与跨文稿切换都先固定离开侧最新 revision。
 					(void)capturePresentationAutoSave();
 					pendingWorkspaceReady.reset();
@@ -5606,7 +5692,7 @@ namespace Inkeys::Drawing::Draw3
 									*destination->presentationTarget, target,
 									destination->document
 										? destination->document->Pages().size()
-										: target.totalPages))
+									: Bridge::PresentationDocumentPageCount(target)))
 							{
 								topologyConflict = true;
 								destination = nullptr;
@@ -5619,7 +5705,8 @@ namespace Inkeys::Drawing::Draw3
 							std::fputs("[Draw3.Presentation] action=switch result=isolated reason=topology_conflict\n",
 								stderr);
 						}
-						if (!createBlankSlot(*destination, target.totalPages))
+						if (!createBlankSlot(*destination,
+							Bridge::PresentationDocumentPageCount(target)))
 						{
 							// 创建失败时把来源槽恢复为 active，不能留下空 document。
 							swapActiveDocument(*source);
@@ -5650,14 +5737,16 @@ namespace Inkeys::Drawing::Draw3
 						if (bindingUpgrade && (activePresentationMutationRevision != 0 ||
 							activePresentationFileGuid)) markPresentationMutation();
 					}
-					if (!document_ || pageRuntimeStates.size() != target.totalPages ||
-						document_->Pages().size() != target.totalPages)
+					if (!document_ || pageRuntimeStates.size() !=
+						Bridge::PresentationDocumentPageCount(target) ||
+						document_->Pages().size() != Bridge::PresentationDocumentPageCount(target))
 					{
 						std::fputs("[Draw3.Presentation] action=switch result=isolated reason=page_count\n",
 							stderr);
 						continue;
 					}
 					currentPageIndex_ = target.pageIndex;
+					TracePptTiming("document_switched", target.sessionRevision, target.targetRevision);
 					restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 						forceFullPresent, width, height);
 					if (activePresentationTarget &&
@@ -6260,6 +6349,7 @@ namespace Inkeys::Drawing::Draw3
 				// 导航推进前先按输入 QPC 归类，避免最后 Touch Up 附近的 Pen 被补画。
 				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
 			}
+			sealPresentationContacts();
 			if (window_.ConsumeFullPresentRequest()) forceFullPresent = true;
 			LARGE_INTEGER navigationQpc = {};
 			QueryPerformanceCounter(&navigationQpc);
@@ -6387,7 +6477,8 @@ namespace Inkeys::Drawing::Draw3
 				bool pointerEraserHint = false;
 				if (window_.ConsumeHapticPointerId(pointerId, pointerEraserHint))
 				{
-					if (touchGesture.PanActive() || suppressPenUntilRelease ||
+					if (input_.AdmissionBlocked() || input_.HasQuarantinedContacts() ||
+						touchGesture.PanActive() || suppressPenUntilRelease ||
 						window_.PenContactSuppressedForTouchPan())
 					{
 						hapticContinuousActive = false;
@@ -6610,6 +6701,7 @@ namespace Inkeys::Drawing::Draw3
 				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
 				// 关闭开关时保留原先的 Down 出队顺序，确保它是完整的回滚点。
 			}
+			sealPresentationContacts();
 			// 先把旧 contact 的 Up 转成候选，同帧随后出队的新 Down 才能看到它。
 			for (RuntimeStroke* runtime : active)
 			{
@@ -6640,6 +6732,9 @@ namespace Inkeys::Drawing::Draw3
 
 			if (interruptedStrokeReconnectEnabled)
 				while (input_.TryDequeue(record)) processCommandAndReconcile(record);
+			sealPresentationContacts();
+			hasEndedStroke = hasEndedStroke || std::any_of(active.begin(), active.end(),
+				[](const RuntimeStroke* runtime) { return runtime && runtime->ended; });
 			for (RuntimeStroke* runtime : active)
 			{
 				if (!runtime || !runtime->awaitingReconnect ||
@@ -7337,7 +7432,7 @@ namespace Inkeys::Drawing::Draw3
 								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
 								runtime->metricEligibleQpc);
 						handBackSpeedEraserController(*runtime);
-						input_.Recycle(runtime->handle); // L2 提交与活动层重建完成后才归还 slot。
+						input_.DiscardUntilTerminal(runtime->handle); // 合成收尾不释放仍按下的物理路由。
 						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
 						runtime->handle = {};
 						runtime->selectedTool = DrawingTool::Pen;

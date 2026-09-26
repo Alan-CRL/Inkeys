@@ -28,18 +28,20 @@ namespace Inkeys::UI::MessageBox
 	{
 		std::mutex admissionMutex;
 		thread_local bool showActiveOnThread = false;
+		std::atomic_uint activeShowRequests = 0;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 		thread_local Test::Automation testAutomation{};
 #endif
 
 		struct ReentryGuard
 		{
-			ReentryGuard() noexcept { showActiveOnThread = true; }
-			~ReentryGuard() { showActiveOnThread = false; }
+			ReentryGuard() noexcept { showActiveOnThread = true; ++activeShowRequests; }
+			~ReentryGuard() { --activeShowRequests; showActiveOnThread = false; }
 		};
 
 		Result FallbackToSystem(const Request& request) noexcept
 		{
+			if (!request.fallback.enabled) return Result::Failed;
 			HWND owner = request.fallback.owner;
 			if (owner)
 			{
@@ -249,6 +251,8 @@ namespace Inkeys::UI::MessageBox
 			return true;
 		}
 	}
+
+	bool IsShowing() noexcept { return activeShowRequests.load(std::memory_order_acquire) != 0; }
 
 	Result Show(const Request& request) noexcept
 	{

@@ -489,6 +489,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="PptSettingsPersistence.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -2102,6 +2105,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Business\PptSession.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>

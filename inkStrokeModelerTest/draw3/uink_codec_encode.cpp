@@ -1181,20 +1181,25 @@ namespace draw3::uink
 					if (!document.usesImplicitWorkspace)
 					{
 						const UInkWorkspace* owner = registeredWorkspaces.find(*workspace)->second;
-						if (owner->workspaceType == 2 && !canvas.slideId)
-							return Fail("canvas.slideId");
 						if (owner->workspaceType == 2)
 						{
-							const auto inserted = presentationSlides.emplace(
-								canvas.pageGuid.Bytes(), *canvas.slideId);
-							if (!inserted.second && inserted.first->second != *canvas.slideId)
+							const UInkInkeysPageKind kind = InkeysPageKind(canvas.extra);
+							if (kind == UInkInkeysPageKind::Invalid ||
+								(kind == UInkInkeysPageKind::EndScreen) == canvas.slideId.has_value())
 								return Fail("canvas.slideId");
-							const auto pageInserted = presentationPagesBySlide.emplace(
-								PresentationSlideKey(workspace, *canvas.slideId),
-								canvas.pageGuid.Bytes());
-							if (!pageInserted.second &&
-								pageInserted.first->second != canvas.pageGuid.Bytes())
-								return Fail("canvas.slideId");
+							if (canvas.slideId)
+							{
+								const auto inserted = presentationSlides.emplace(
+									canvas.pageGuid.Bytes(), *canvas.slideId);
+								if (!inserted.second && inserted.first->second != *canvas.slideId)
+									return Fail("canvas.slideId");
+								const auto pageInserted = presentationPagesBySlide.emplace(
+									PresentationSlideKey(workspace, *canvas.slideId),
+									canvas.pageGuid.Bytes());
+								if (!pageInserted.second &&
+									pageInserted.first->second != canvas.pageGuid.Bytes())
+									return Fail("canvas.slideId");
+							}
 						}
 					}
 

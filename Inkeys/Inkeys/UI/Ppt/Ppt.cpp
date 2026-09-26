@@ -13,7 +13,6 @@ module Inkeys.UI.Ppt;
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar;
-import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Window;
 
@@ -49,7 +48,9 @@ namespace Inkeys::UI::Ppt
 		std::atomic_bool initialized = false;
 		std::mutex stateMutex;
 		BusinessCallbacks business;
-		LayoutConfiguration configuration;
+		PositionState positions;
+		std::uint64_t publicationRevision = 0;
+		std::uint64_t targetRevision = 0;
 		TopmostRefreshState topmostRefresh;
 		bool topmostRefreshFailureLogged = false;
 		int currentPage = -1;
@@ -110,6 +111,9 @@ namespace Inkeys::UI::Ppt
 			result.showBottomPair = source.showBottomPair;
 			result.showMiddlePair = source.showMiddlePair;
 			result.rememberPosition = source.rememberPosition;
+			result.session = positions.session;
+			result.epoch = positions.epoch;
+			result.pairVersions = positions.pairVersions;
 			return result;
 		}
 
@@ -123,33 +127,56 @@ namespace Inkeys::UI::Ppt
 					Inkeys::config.PlugIn.PPTHelper.Tentative.EnablePageButtonLongPress;
 				state.currentPage = currentPage;
 				state.totalPage = totalPage;
-				state.layout = ToPageLayout(configuration);
+				state.layout = ToPageLayout(positions.configuration);
+				state.targetRevision = targetRevision;
+				state.publicationRevision = ++publicationRevision;
 			}
 			Inkeys::UI::PageControl::PublishPptState(state);
-			Inkeys::UI::Freeze::SetPresentationActive(state.presentationVisible);
-			Inkeys::UI::Bar::SetPptPresentationActive(state.presentationVisible);
 		}
 
-		void PersistPageLayout(Inkeys::UI::PageControl::PptLayoutState layout)
+		void CommitPageLayout(std::size_t pair,
+			Inkeys::UI::PageControl::PptLayoutState layout)
 		{
-			std::function<void(LayoutConfiguration)> callback;
-			LayoutConfiguration next;
+			std::scoped_lock lock(stateMutex);
+			if (pair >= layout.pairVersions.size()) return;
+			(void)positions.CommitPair(layout.session, layout.epoch, pair,
+				layout.pairVersions[pair], pair == 0 ? layout.bottomPairWidth : layout.middlePairWidth,
+				pair == 0 ? layout.bottomPairHeight : layout.middlePairHeight);
+			// PageControl 已提交这次位置；不因每个鼠标采样反向请求渲染或写盘。
+		}
+
+		std::string CapturePositionSave()
+		{
+			const auto& layout = positions.configuration;
+			return CapturePptComPositionSettingJson({ layout.bottomPairWidth,
+				layout.bottomPairHeight, layout.middlePairWidth, layout.middlePairHeight },
+				layout.rememberPosition);
+		}
+
+		void DispatchSettings(std::string payload)
+		{
+			if (payload.empty()) return;
+			std::function<void(std::string)> callback;
 			{
 				std::scoped_lock lock(stateMutex);
-				configuration.bottomPairWidth = layout.bottomPairWidth;
-				configuration.bottomPairHeight = layout.bottomPairHeight;
-				configuration.middlePairWidth = layout.middlePairWidth;
-				configuration.middlePairHeight = layout.middlePairHeight;
-				configuration.bottomPairScale = layout.bottomPairScale;
-				configuration.middlePairScale = layout.middlePairScale;
-				configuration.showBottomPair = layout.showBottomPair;
-				configuration.showMiddlePair = layout.showMiddlePair;
-				configuration.rememberPosition = layout.rememberPosition;
-				next = configuration;
-				callback = business.persistPosition;
+				callback = business.persistSettings;
 			}
-			if (callback) callback(std::move(next));
+			if (callback) callback(std::move(payload));
 		}
+
+		void PagePresented(std::uint64_t session, std::uint64_t target,
+			int current, int total)
+		{
+			std::function<void(std::uint64_t, std::uint64_t, int, int)> callback;
+			{
+				std::scoped_lock lock(stateMutex);
+				if (!positions.active || session != positions.session
+					|| target != targetRevision || current != currentPage || total != totalPage) return;
+				callback = business.pagePresented;
+			}
+			if (callback) callback(session, target, current, total);
+		}
+
 	}
 
 	bool Initialize(BusinessCallbacks callbacks)
@@ -158,7 +185,11 @@ namespace Inkeys::UI::Ppt
 		{
 			std::scoped_lock lock(stateMutex);
 			business = std::move(callbacks);
-			configuration = SnapshotLegacyConfiguration();
+			positions = {};
+			positions.configuration = SnapshotLegacyConfiguration();
+			(void)SavedPptComPositions();
+			publicationRevision = 0;
+			targetRevision = 0;
 			topmostRefresh = {};
 			topmostRefreshFailureLogged = false;
 			currentPage = -1;
@@ -176,13 +207,13 @@ namespace Inkeys::UI::Ppt
 			std::scoped_lock lock(stateMutex);
 			callbackSnapshot = business;
 		}
-		Inkeys::UI::Bar::SetEndShowCallback(callbackSnapshot.endShow);
 		Inkeys::UI::PageControl::SetPptCallbacks({
 			std::move(callbackSnapshot.previousPage),
 			std::move(callbackSnapshot.nextPage),
 			std::move(callbackSnapshot.viewShow),
-			[] { Inkeys::UI::Bar::RequestEndShow(); },
-			PersistPageLayout,
+			std::move(callbackSnapshot.endShow),
+			CommitPageLayout,
+			PagePresented,
 		});
 		PublishSnapshot();
 		return true;
@@ -190,6 +221,14 @@ namespace Inkeys::UI::Ppt
 
 	void Shutdown() noexcept
 	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		std::uint64_t session = 0;
+		{
+			std::scoped_lock lock(stateMutex);
+			session = positions.session;
+		}
+		PublishSession(session, false, nullptr);
+		DispatchSettings(RetryPptComSettingJson());
 		if (!initialized.exchange(false, std::memory_order_acq_rel)) return;
 		{
 			std::scoped_lock lock(stateMutex);
@@ -197,7 +236,6 @@ namespace Inkeys::UI::Ppt
 			topmostRefreshFailureLogged = false;
 		}
 		PublishSnapshot();
-		Inkeys::UI::Bar::SetEndShowCallback({});
 		Inkeys::UI::PageControl::SetPptCallbacks({});
 		Inkeys::UI::PageControl::Release();
 		std::scoped_lock lock(stateMutex);
@@ -221,6 +259,7 @@ namespace Inkeys::UI::Ppt
 			if (!visible) topmostRefreshFailureLogged = false;
 		}
 		PublishSnapshot();
+		DispatchSettings(RetryPptComSettingJson());
 		if (!requestTopmostRefresh) return;
 
 		const bool refreshed =
@@ -245,28 +284,101 @@ namespace Inkeys::UI::Ppt
 		else if (logRecovery) LogTopmostRefreshState(true);
 	}
 
-	void PublishPageState(int current, int total) noexcept
+	void PublishPageState(int current, int total, std::uint64_t target) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
 		{
 			std::scoped_lock lock(stateMutex);
 			currentPage = current;
 			totalPage = total;
+			targetRevision = target;
 		}
 		PublishSnapshot();
+	}
+
+	void PublishSession(std::uint64_t session, bool active, HWND showWindow) noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire)) return;
+		Inkeys::UI::PageControl::FlushPositionCommits();
+		std::string save;
+		bool changed = false;
+		{
+			std::scoped_lock lock(stateMutex);
+			if (session < positions.session) return;
+			if (active)
+			{
+				if (positions.active && positions.session != session
+					&& positions.configuration.rememberPosition) save = CapturePositionSave();
+				const auto saved = RestorablePptComPositions();
+				LayoutConfiguration baseline;
+				baseline.bottomPairWidth = saved.bottomX;
+				baseline.bottomPairHeight = saved.bottomY;
+				baseline.middlePairWidth = saved.middleX;
+				baseline.middlePairHeight = saved.middleY;
+				changed = positions.BeginSession(session, baseline);
+			}
+			else if (positions.active && positions.session == session)
+			{
+				if (positions.configuration.rememberPosition) save = CapturePositionSave();
+				(void)positions.EndSession(session);
+				topmostRefresh = {};
+				topmostRefreshFailureLogged = false;
+				changed = true;
+			}
+			if (changed)
+			{
+				currentPage = totalPage = -1;
+				targetRevision = 0;
+			}
+		}
+		DispatchSettings(std::move(save));
+		if (!changed) return;
+		PublishSnapshot();
+		Inkeys::UI::Bar::PublishPptSession(session, active, showWindow);
 	}
 
 	void NotifyConfigurationChanged(ConfigGroup group) noexcept
 	{
 		if (!initialized.load(std::memory_order_acquire)) return;
-		// ExitShow 旧设置不再影响运行时，其余分组统一重读兼容配置快照。
-		if (group != ConfigGroup::ExitShow)
+		Inkeys::UI::PageControl::FlushPositionCommits();
+		std::string save;
 		{
 			std::scoped_lock lock(stateMutex);
-			configuration = SnapshotLegacyConfiguration();
+			const auto next = SnapshotLegacyConfiguration();
+			auto& layout = positions.configuration;
+			// 设置只合并非位置字段；旧 legacy 坐标不是本场偏好的所有者。
+			if (group == ConfigGroup::All || group == ConfigGroup::BottomPair)
+			{
+				layout.bottomPairScale = next.bottomPairScale;
+				layout.showBottomPair = next.showBottomPair;
+			}
+			if (group == ConfigGroup::All || group == ConfigGroup::MiddlePair)
+			{
+				layout.middlePairScale = next.middlePairScale;
+				layout.showMiddlePair = next.showMiddlePair;
+			}
+			if (positions.SetRemember(next.rememberPosition)) save = CapturePositionSave();
 		}
+		DispatchSettings(std::move(save));
 		PublishSnapshot();
-		Inkeys::UI::PageControl::NotifyLayoutChanged();
+	}
+
+	void ResetPositions() noexcept
+	{
+		if (!initialized.load(std::memory_order_acquire))
+		{
+			// helper 未启动时由设置 FIFO 接续写入，重置仍必须更新保存目标。
+			(void)CapturePptComPositionSettingJson({}, pptComSetlist.memoryWidgetPosition);
+			return;
+		}
+		std::string save;
+		{
+			std::scoped_lock lock(stateMutex);
+			positions.RestorePositions({});
+			save = CapturePositionSave();
+		}
+		DispatchSettings(std::move(save));
+		PublishSnapshot();
 	}
 
 	void QueueGlobalWheel(short delta) noexcept
