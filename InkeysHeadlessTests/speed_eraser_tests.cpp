@@ -1887,6 +1887,116 @@ int RunSpeedEraserTests()
 		Near(value.area.referenceFloorDip,39,0.001,"confirmed reference does not breathe with contact size");
 		expect(value.diameter<=39.01f,"same-position area increase does not enlarge accepted geometry");
 	}
+	// 窄参考后的合法宽面积持续真实拖动，应能恢复，但不能抬高首次接触的面积上界。
+	const auto recover=ReplayArea(areaConfig,slowDrag,1000,120,{0.2,0.42,0.85,1.2},
+		[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+	expect(recover[0].area.referenceReady && recover[0].area.referenceFloorDip>49,
+		"narrow initial Touch area establishes the original bounded reference");
+	expect(recover[1].area.reason==ContactAreaReason::Outlier && !recover[1].area.sampleValid,
+		"hard-valid wider area first fails the original relative reference");
+	expect(recover[2].area.reason==ContactAreaReason::Ready && recover[2].area.sampleValid &&
+		recover[2].area.referenceFresh,
+		"stable hard-valid outlier recovers after sustained real dragging");
+	expect(recover[2].area.referenceFloorDip<=recover[0].area.referenceFloorDip+0.001f,
+		"recovered area does not exceed the first accepted floor");
+	expect(recover[1].area.outlierAxes==1 && recover[1].area.outlierWidthRatio>2 &&
+		recover[1].area.referenceWidthDip>19 && recover[1].area.recovering,
+		"diagnostics identify the failing reference axis and active recovery candidate");
+	expect(recover[2].area.recoveryCount==1 && recover[2].area.firstReferenceFloorDip==recover[0].area.referenceFloorDip &&
+		recover[2].area.areaFloorAboveStandard && recover[3].diameter>areaConfig.sizes.standardDiameterDip,
+		"recovery restores bounded area assistance to later real movement");
+	const auto spike=ReplayArea(areaConfig,slowDrag,1000,120,{0.45,0.9},
+		[&](double t){return AreaSample(areaConfig,t>=0.4 && t<0.46?52.0f:20.0f,t>=0.4 && t<0.46?50.0f:40.0f);});
+	expect(spike.back().area.recoveryCount==0 && spike.back().area.referenceWidthDip<21 &&
+		spike.back().area.referenceFloorDip<=recover[0].area.referenceFloorDip+0.001f,
+		"isolated hard-valid spike cannot replace the accepted reference");
+	const auto unstable=ReplayArea(areaConfig,slowDrag,1000,120,{1.2},
+		[&](double t){const bool high=static_cast<int>((t-0.4)/0.04)%2==0;
+			return AreaSample(areaConfig,t<0.4?20.0f:(high?52.0f:90.0f),t<0.4?40.0f:50.0f);});
+	expect(unstable[0].area.recoveryCount==0 && unstable[0].area.reason==ContactAreaReason::Outlier,
+		"alternating hard-valid outliers cannot accumulate recovery time");
+	const auto drifting=ReplayArea(areaConfig,slowDrag,1000,120,{0.6,0.85},
+		[&](double t){const float width=t<0.4?20.0f:52.0f+38.0f*static_cast<float>(std::clamp((t-0.4)/0.25,0.0,1.0));
+			return AreaSample(areaConfig,width,t<0.4?40.0f:50.0f);});
+	expect(drifting[0].area.recoveryCount==0 && drifting[0].area.reason==ContactAreaReason::Outlier &&
+		drifting[1].area.recoveryCount==1,
+		"gradual area drift restarts the fixed-anchor window before its final stable interval recovers");
+	for(const auto bad:std::vector<ContactAreaSample>{AreaSample(areaConfig,100.0f,50.0f),
+		AreaSample(areaConfig,NAN,50.0f),AreaSample(areaConfig,90.0f,10.0f),
+		ContactAreaSample{300.0f,200.0f,30.0f,20.0f,ContactAreaUnits::Unverified}})
+	{
+		const auto interrupted=ReplayArea(areaConfig,slowDrag,1000,120,{0.62},
+			[&](double t){return t<0.4?AreaSample(areaConfig,20.0f,40.0f):
+				(t<0.46?AreaSample(areaConfig,52.0f,50.0f):(t<0.5?bad:AreaSample(areaConfig,52.0f,50.0f)));});
+		expect(interrupted[0].area.recoveryCount==0 && interrupted[0].area.reason==ContactAreaReason::Outlier,
+			"hard-invalid packet resets rather than completing an outlier candidate");
+	}
+	const auto stationaryRecovery=ReplayArea(areaConfig,{{0,0},{0.4,4},{1.4,4}},125,60,{1.2},
+		[&](double t){return AreaSample(areaConfig,t<0.5?20.0f:52.0f,t<0.5?40.0f:50.0f);});
+	expect(stationaryRecovery[0].area.recoveryCount==0 && stationaryRecovery[0].area.reason==ContactAreaReason::Outlier,
+		"larger area during a stationary press cannot recover");
+	const auto previewRecovery=ReplayArea(areaConfig,slowDrag,1000,120,{0.45,1.0},
+		[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);},0.45);
+	expect(previewRecovery.back().area.recoveryCount==0 && !previewRecovery.back().area.recovering &&
+		previewRecovery.back().area.recoveryMotionSeconds<=previewRecovery.front().area.recoveryMotionSeconds+1e-9,
+		"Advance frames cannot age a recovery candidate without new input");
+	const auto multiRecovery=ReplayArea(areaConfig,slowDrag,1000,120,{0.7,1.2},
+		[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:(t<0.8?52.0f:90.0f),t<0.4?40.0f:(t<0.8?50.0f:60.0f));});
+	expect(multiRecovery.back().area.recoveryCount==2 &&
+		multiRecovery.back().area.referenceFloorDip<=recover[0].area.referenceFloorDip+0.001f,
+		"multiple recoveries cannot ratchet the first accepted floor upward");
+	const auto newTouch=ReplayArea(areaConfig,slowDrag,125,60,{0.8},
+		[&](double){return AreaSample(areaConfig,52.0f,50.0f);});
+	expect(newTouch[0].area.referenceReady && newTouch[0].area.recoveryCount==0 &&
+		newTouch[0].area.referenceFloorDip>recover[0].area.referenceFloorDip+10,
+		"a genuinely new Touch contact owns a fresh area upper bound");
+	const auto offRecovery=ReplayArea(noAreaConfig,slowDrag,125,60,{1.0},
+		[&](double t){return AreaSample(noAreaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+	expect(!offRecovery[0].area.referenceReady && offRecovery[0].area.recoveryCount==0,
+		"area-off Touch never creates a recovery reference");
+	for(const auto base:{BaseSize::Small,BaseSize::Medium,BaseSize::Large})
+	{
+		const auto c=ResolveConfig(areaDisplay,DeviceMode::Laptop,MappedSource(SourceKind::Touch,areaDisplay),ResolveSizes(base));
+		const auto values=ReplayArea(c,slowDrag,125,60,{0.2,0.85},
+			[&](double t){return AreaSample(c,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+		expect(values.back().area.recoveryCount==1 &&
+			values.back().area.referenceFloorDip<=values.front().area.referenceFloorDip+0.001f,
+			"24/32/40 base sizes retain the first-contact area cap");
+	}
+	for(int hz:{60,125,240,1000})for(int fps:{30,60,120,144})
+	{
+		const auto values=ReplayArea(areaConfig,slowDrag,hz,fps,{0.85,1.2},
+			[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+		expect(values[0].area.recoveryCount==1 && values[0].area.referenceFresh &&
+			std::abs(values.back().diameter-recover[3].diameter)<=recover[3].diameter*0.05f,
+			"outlier recovery is timed in real seconds across input and frame rates");
+	}
+	Controller bridgedArea;const auto narrowArea=AreaSample(areaConfig,20.0f,40.0f),wideArea=AreaSample(areaConfig,52.0f,50.0f);
+	bridgedArea.Reset(0,0,0,StartKind::Touch,areaConfig,0,&narrowArea);
+	for(int i=1;i<=60;++i)
+	{
+		const double t=i/125.0;const auto& sample=t<0.4?narrowArea:wideArea;
+		bridgedArea.UpdatePosition(static_cast<float>(t*10/areaConfig.motionPerPixelX),0,t,&sample);
+	}
+	expect(bridgedArea.AreaDiagnostics(0.48).recovering && bridgedArea.AreaDiagnostics(0.48).recoveryCount==0,
+		"recovery candidate exists before reconnect");
+	bridgedArea.PauseForReconnect(0.48);bridgedArea.Advance(1.48);bridgedArea.ResumeFromReconnect(100,0,1.48);
+	expect(bridgedArea.AreaDiagnostics(1.48).recoveryCount==0 && !bridgedArea.AreaDiagnostics(1.48).recovering,
+		"synthetic reconnect clears only the unfinished recovery candidate");
+	for(int i=1;i<=20;++i)
+	{
+		const double t=1.48+i/125.0;
+		bridgedArea.UpdatePosition(static_cast<float>(100+i*10.0/125/areaConfig.motionPerPixelX),0,t,&wideArea);
+	}
+	expect(bridgedArea.AreaDiagnostics(1.64).recoveryCount==0 && bridgedArea.AreaDiagnostics(1.64).referenceReady,
+		"reconnect preserves accepted reference but cannot reuse pre-gap candidate time");
+	for(int i=21;i<=23;++i)
+	{
+		const double t=1.48+i/125.0;
+		bridgedArea.UpdatePosition(static_cast<float>(100+i*10.0/125/areaConfig.motionPerPixelX),0,t,&wideArea);
+	}
+	expect(bridgedArea.AreaDiagnostics(1.664).recoveryCount==1,
+		"fresh real movement after reconnect can independently complete recovery");
 	const auto outlier=ReplayArea(areaConfig,{{0,0},{1,10},{3,10}},125,60,{1,1.1,2.8},
 		[&](double t){return AreaSample(areaConfig,t<=1?30:70,t<=1?20:50);});
 	expect(outlier[1].area.reason==ContactAreaReason::Outlier && !outlier[1].area.sampleValid,

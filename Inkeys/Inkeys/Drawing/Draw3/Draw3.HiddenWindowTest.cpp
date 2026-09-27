@@ -1104,9 +1104,12 @@ namespace Inkeys::Drawing::Draw3
 				const auto areaProbe=[&](const char* label)
 				{
 					const auto s=ProductHost().RuntimeSnapshot();const auto& d=s.eraser;
-					std::fprintf(stderr,"[AreaProbe] %s mode=%u dip=%g cursor=%g floor=%g ref=%g active=%d age=%g reason=%d points=%llu history=%g anchor=%d radius=%g frame=%llu\n",
+					std::fprintf(stderr,"[AreaProbe] %s mode=%u dip=%g cursor=%g floor=%g ref=%g firstRef=%g refDip=%gx%g recoveries=%u recoveryMs=%g recovering=%d releasing=%d aboveB=%d active=%d age=%g reason=%d points=%llu history=%g anchor=%d radius=%g frame=%llu\n",
 						label,static_cast<unsigned>(requiredMode),d.effectiveDiameterDip,d.cursorDiameterPx,d.contactArea.activeFloorDip,
-						d.contactArea.referenceFloorDip,d.contactArea.active,d.idleSeconds,static_cast<int>(d.contactArea.reason),
+						d.contactArea.referenceFloorDip,d.contactArea.firstReferenceFloorDip,
+						d.contactArea.referenceWidthDip,d.contactArea.referenceHeightDip,d.contactArea.recoveryCount,
+						d.contactArea.recoveryMotionSeconds*1000,d.contactArea.recovering,d.contactArea.releasing,
+						d.contactArea.areaFloorAboveStandard,d.contactArea.active,d.idleSeconds,static_cast<int>(d.contactArea.reason),
 						static_cast<unsigned long long>(d.realPointCount),d.historyRadiusPx,d.resumedWithAnchor,d.resumedMaxRadiusPx,
 						static_cast<unsigned long long>(d.frameSequence));
 				};
@@ -1209,6 +1212,51 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([areaHistory]{return ProductHost().RuntimeSnapshot().redoCommandCount>areaHistory.redoCommandCount;}),
 					"area geometry supports real Redo",failures);
+				// 旧参考失配先按原规则回落；只有后续真实拖动可恢复，光标与新几何仍共用同一尺寸。
+				ProductHost().SetHiddenTestContactArea({200,400,20,40,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				const auto recoveryDownBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([recoveryDownBefore]{const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputDownPublished>recoveryDownBefore && s.eraser.active && s.eraser.contactArea.enabled;}),
+					"recovery probe starts a fresh Touch area contact",failures);
+				int recoveryX=60;
+				for(int i=1;i<=35;++i)
+				{
+					recoveryX=60+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,recoveryX,170);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.referenceReady &&
+						std::abs(d.contactArea.firstReferenceFloorDip-50)<0.01f && d.effectiveDiameterDip>45;}),
+					"recovery probe first establishes its bounded narrow reference",failures);
+				ProductHost().SetHiddenTestContactArea({520,500,52,50,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				for(int i=0;i<30;++i)
+				{
+					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,recoveryX,170);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.referenceReady && d.contactArea.recoveryCount==0 &&
+						!d.contactArea.areaFloorAboveStandard && d.effectiveDiameterDip<=32.5f;},3s),
+					"stationary relative outlier releases the old floor without recovering",failures);
+				areaProbe("recovery-released");
+				const auto releasedArea=ProductHost().RuntimeSnapshot().eraser;
+				for(int i=1;i<=35;++i)
+				{
+					recoveryX=95+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,recoveryX,170);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([releasedArea]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.recoveryCount==1 && d.contactArea.referenceWidthDip>50 &&
+						d.contactArea.referenceFloorDip<=d.contactArea.firstReferenceFloorDip+0.01f &&
+						d.effectiveDiameterDip>40 && d.realPointCount>releasedArea.realPointCount &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f &&
+						std::abs(d.historyRadiusPx-d.nextRadiusPx)<0.01f;},3s),
+					"real drag restores capped area reference with matching cursor and new geometry",failures);
+				areaProbe("recovery-restored");
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,recoveryX,170);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"recovered Touch contact closes without leaking area state",failures);
 				ProductHost().SetHiddenTestContactArea({300,200,30,20,SpeedEraser::ContactAreaUnits::CanvasPixels});
 				modeSucceeded &= Check(setAreaOption(false),"disable area independently of Touch speed",failures);
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);

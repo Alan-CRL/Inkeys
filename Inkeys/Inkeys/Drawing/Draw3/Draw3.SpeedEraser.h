@@ -150,7 +150,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float multiplier = 1.10f, paddingDip = 6, maximumFloorDip = 64;
 		float minimumSpanDip = 2, maximumReportedSpanDip = 96, maximumAspectRatio = 3.5f;
 		float confirmationRatio = 1.25f, outlierRatio = 1.60f, movementNoiseRatio = 0.5f;
-		double confirmationSeconds = 0.050, filterSeconds = 0.050, maximumSampleGapSeconds = 0.080;
+		double confirmationSeconds = 0.050, recoverySeconds = 0.160, filterSeconds = 0.050, maximumSampleGapSeconds = 0.080;
 		double missingTimeoutSeconds = 2.0, invalidGraceSeconds = 0.200, releaseSeconds = 0.180;
 		friend bool operator==(const ContactAreaParameters&, const ContactAreaParameters&) = default;
 	};
@@ -158,9 +158,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		ContactAreaSample sample;
 		float widthDip = -1, heightDip = -1, referenceFloorDip = 0, activeFloorDip = 0;
-		double stableMotionSeconds = 0;
+		float referenceWidthDip = 0, referenceHeightDip = 0, firstReferenceFloorDip = 0;
+		float outlierWidthRatio = 0, outlierHeightRatio = 0;
+		float recoveryCandidateWidthDip = 0, recoveryCandidateHeightDip = 0;
+		double stableMotionSeconds = 0, recoveryMotionSeconds = 0;
+		uint32_t recoveryCount = 0;
+		uint8_t outlierAxes = 0; // 1=宽，2=高；比例是当前轴/参考轴。
 		ContactAreaReason reason = ContactAreaReason::Disabled;
 		bool enabled = false, sampleValid = false, referenceReady = false, referenceFresh = false, active = false;
+		bool recovering = false, releasing = false, areaFloorAboveStandard = false;
 	};
 
 	// PROPERTY_METRICS 描述实际 packet 的逻辑值；不根据数值大小猜单位。
@@ -384,8 +390,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		{
 			ContactAreaDiagnostics diagnostic;
 			float candidateWidth = 0, candidateHeight = 0, referenceWidth = 0, referenceHeight = 0;
+			float firstReferenceFloor = 0, recoveryWidth = 0, recoveryHeight = 0;
+			float recoveryAnchorWidth = 0, recoveryAnchorHeight = 0;
 			double lastSampleSeconds = 0, lastValidSeconds = 0, readySeconds = 0, badSince = -1;
-			bool hasSample = false, hasCandidate = false;
+			double recoveryMotionSeconds = 0;
+			bool hasSample = false, hasCandidate = false, hasRecoveryCandidate = false;
 		};
 		AreaState area_;
 		bool AreaEligible() const noexcept;

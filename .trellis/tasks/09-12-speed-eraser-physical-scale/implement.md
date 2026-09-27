@@ -37,3 +37,11 @@ Recovery override: all steps are executed by the main session only; no subagents
 3. 扫描 20/40/80/100ms 高段与 80/120/200/400/800ms 普通段，核对短折返、持续清扫、新 Down 分段增量、原短脉冲/面积/频率/几何回归；导出有界帧 trace。
 4. 用原 Solution `Debug|ARM64` 完整构建，运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-eraser-hidden-test`，分别报告退出码、橡皮断言与既有 owner 失败；检查编码、diff 和生成二进制。
 5. 更新原任务验证与 spec；按用户后续授权提交并推送本轮修改，保留任务 `in_progress`，不 finish 或归档。真人 Surface、ScreenPen、教室大屏和 Win7 仍需分别验收。
+
+## 2026-09-27 面积参考恢复轮次
+
+1. 核对 `c777b8dd` 工作区、原任务及三份 Surface 稀疏日志；只统计可见正在擦除的接触，不从 250ms 快照推断原始采样率或失配轴。
+2. 在 headless 用真实移动与独立帧构造“初始窄参考 → 硬合法且稳定的相对离群”红灯；再覆盖孤立尖峰、静止按压、硬无效和多轮恢复上界。
+3. 仅改面积状态机与必要的限频诊断；保留初次 50ms 建立、原面积释放、Touch/ScreenPen/Mouse 曲线和 `c777b8dd` 保持许可。
+4. 执行完整 `InkeysRepo.sln Debug|ARM64`、headless、橡皮隐藏窗口专项；记录命令、退出码和所有失败，分清相关断言与既有 owner 断言，不因本轮调整窗口所有权。
+5. 更新原任务与 spec，检查 BOM/CRLF、`git diff --check` 及构建生成文件；按用户后续授权提交并推送本轮修改，保持 `in_progress`，不 finish 或归档，真实 Surface/大屏复测另行等待。

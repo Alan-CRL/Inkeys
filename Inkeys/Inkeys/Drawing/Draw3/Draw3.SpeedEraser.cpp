@@ -615,10 +615,17 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		a.hasSample=true;a.lastSampleSeconds=seconds;
 		a.diagnostic.sample=sample;a.diagnostic.enabled=config_.touchContactAreaAssistance;
 		a.diagnostic.widthDip=a.diagnostic.heightDip=-1;
-		a.diagnostic.sampleValid=false;
-		auto reject=[&](ContactAreaReason reason)
+		a.diagnostic.sampleValid=false;a.diagnostic.outlierAxes=0;
+		a.diagnostic.outlierWidthRatio=a.diagnostic.outlierHeightRatio=0;
+		const auto clearRecovery=[&]()
+		{
+			a.hasRecoveryCandidate=false;a.recoveryWidth=a.recoveryHeight=0;
+			a.recoveryAnchorWidth=a.recoveryAnchorHeight=0;a.recoveryMotionSeconds=0;
+		};
+		auto reject=[&](ContactAreaReason reason,bool hardInvalid=true)
 		{
 			a.diagnostic.reason=reason;a.diagnostic.stableMotionSeconds=0;a.diagnostic.sampleValid=false;
+			if(hardInvalid)clearRecovery();
 			if(a.diagnostic.referenceReady && a.badSince<0)a.badSince=seconds;
 		};
 		if(sample.units!=ContactAreaUnits::CanvasPixels){reject(ContactAreaMetadataReason(sample.units));return;}
@@ -634,14 +641,53 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if(std::max(w,h)>std::min(w,h)*p.maximumAspectRatio){reject(ContactAreaReason::AspectRatio);return;}
 		// 数据有效性与实验开关分开；关闭辅助仍可诊断真实宽高，但不能建立参考。
 		a.diagnostic.sampleValid=true;
-		if(!config_.touchContactAreaAssistance){a.diagnostic.reason=ContactAreaReason::Disabled;return;}
-		if(!touchStartup_ || config_.inputSource.kind!=SourceKind::Touch){a.diagnostic.reason=ContactAreaReason::NotScreenTouch;return;}
-		if(!config_.inputMapped){a.diagnostic.reason=ContactAreaReason::MappingUnknown;return;}
+		if(!config_.touchContactAreaAssistance){clearRecovery();a.diagnostic.reason=ContactAreaReason::Disabled;return;}
+		if(!touchStartup_ || config_.inputSource.kind!=SourceKind::Touch){clearRecovery();a.diagnostic.reason=ContactAreaReason::NotScreenTouch;return;}
+		if(!config_.inputMapped){clearRecovery();a.diagnostic.reason=ContactAreaReason::MappingUnknown;return;}
 		const auto similar=[](float x,float y,float ratio){return std::max(x,y)<=std::min(x,y)*ratio+1.0f;};
 		if(a.diagnostic.referenceReady)
 		{
-			if(!similar(w,a.referenceWidth,p.outlierRatio) || !similar(h,a.referenceHeight,p.outlierRatio))
-			{reject(ContactAreaReason::Outlier);return;}
+			const bool widthOutlier=!similar(w,a.referenceWidth,p.outlierRatio);
+			const bool heightOutlier=!similar(h,a.referenceHeight,p.outlierRatio);
+			a.diagnostic.outlierWidthRatio=w/a.referenceWidth;
+			a.diagnostic.outlierHeightRatio=h/a.referenceHeight;
+			a.diagnostic.outlierAxes=(widthOutlier?1:0)|(heightOutlier?2:0);
+			if(widthOutlier || heightOutlier)
+			{
+				reject(ContactAreaReason::Outlier,false);
+				// 只在持续真实拖动中收集通过硬校验的稳定离群候选；拒绝期间原下限照常释放。
+				if(!moving){clearRecovery();return;}
+				if(!a.hasRecoveryCandidate || dt<=0 || dt>p.maximumSampleGapSeconds ||
+					!similar(w,a.recoveryAnchorWidth,p.confirmationRatio) ||
+					!similar(h,a.recoveryAnchorHeight,p.confirmationRatio))
+				{
+					// 与本轮首包比较，防止缓慢漂移借滤波候选逐包滑过稳定门。
+					a.hasRecoveryCandidate=true;a.recoveryAnchorWidth=a.recoveryWidth=w;
+					a.recoveryAnchorHeight=a.recoveryHeight=h;a.recoveryMotionSeconds=0;
+				}
+				else
+				{
+					const float alpha=static_cast<float>(1.0-std::exp(-dt/Positive(p.filterSeconds,0.050)));
+					a.recoveryWidth+=(w-a.recoveryWidth)*alpha;a.recoveryHeight+=(h-a.recoveryHeight)*alpha;
+					a.recoveryMotionSeconds+=dt;
+				}
+				if(a.recoveryMotionSeconds+1e-9<Positive(p.recoverySeconds,0.160))return;
+				a.referenceWidth=a.recoveryWidth;a.referenceHeight=a.recoveryHeight;
+				const float upper=std::min(config_.sizes.maximumDiameterDip,
+					std::max(config_.sizes.standardDiameterDip,p.maximumFloorDip));
+				// 首次接受的上界不可因多次恢复逐级抬高。
+				a.diagnostic.referenceFloorDip=std::min(a.firstReferenceFloor,std::clamp(
+					p.multiplier*std::max(a.referenceWidth,a.referenceHeight)+p.paddingDip,
+					config_.sizes.standardDiameterDip,upper));
+				a.diagnostic.sampleValid=true;a.diagnostic.reason=ContactAreaReason::Ready;
+				a.diagnostic.outlierAxes=0;
+				a.diagnostic.outlierWidthRatio=w/a.referenceWidth;
+				a.diagnostic.outlierHeightRatio=h/a.referenceHeight;
+				a.lastValidSeconds=seconds;a.badSince=-1;++a.diagnostic.recoveryCount;
+				clearRecovery();
+				return;
+			}
+			clearRecovery();
 			a.diagnostic.sampleValid=true;a.diagnostic.reason=ContactAreaReason::Ready;
 			a.lastValidSeconds=seconds;a.badSince=-1;
 			return; // 本接触参考锁存，不随重压、摊开或噪声继续放大。
@@ -666,6 +712,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			std::max(config_.sizes.standardDiameterDip,p.maximumFloorDip));
 		a.diagnostic.referenceFloorDip=std::clamp(p.multiplier*std::max(a.referenceWidth,a.referenceHeight)+p.paddingDip,
 			config_.sizes.standardDiameterDip,upper);
+		a.firstReferenceFloor=a.diagnostic.referenceFloorDip;
 		a.diagnostic.referenceReady=true;a.diagnostic.reason=ContactAreaReason::Ready;
 		a.readySeconds=a.lastValidSeconds=seconds;a.badSince=-1;
 	}
@@ -698,9 +745,18 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		auto result=area_.diagnostic;
 		const double now=paused_?pauseTime_:seconds;
+		result.referenceWidthDip=area_.referenceWidth;result.referenceHeightDip=area_.referenceHeight;
+		result.firstReferenceFloorDip=area_.firstReferenceFloor;
+		result.recoveryCandidateWidthDip=area_.recoveryWidth;result.recoveryCandidateHeightDip=area_.recoveryHeight;
+		result.recoveryMotionSeconds=area_.recoveryMotionSeconds;
+		result.recovering=area_.hasRecoveryCandidate &&
+			now<=area_.lastSampleSeconds+config_.contactArea.maximumSampleGapSeconds;
 		result.referenceFresh=result.referenceReady && now<=AreaExpirySeconds();
 		result.activeFloorDip=AreaEligible()?static_cast<float>(IdleDiameterDip(frameState_)):0;
 		result.active=AreaEligible() && result.referenceReady && result.activeFloorDip>config_.sizes.minimumDiameterDip+0.01f;
+		result.areaFloorAboveStandard=result.activeFloorDip>config_.sizes.standardDiameterDip+0.01f;
+		result.releasing=result.referenceReady && !result.referenceFresh &&
+			AreaReferenceFloor(now)>config_.sizes.minimumDiameterDip+0.01f;
 		if(result.referenceReady && now>AreaExpirySeconds() && result.reason==ContactAreaReason::Ready)
 			result.reason=ContactAreaReason::Expired;
 		return result;
@@ -1356,6 +1412,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		frameState_ = sampleState_;
 		pauseTime_ = sampleState_.time;
 		paused_ = true;
+		// 真断触保留已接受参考，但待恢复候选必须重新取得连续真实拖动证据。
+		area_.hasRecoveryCandidate=false;area_.recoveryWidth=area_.recoveryHeight=0;
+		area_.recoveryAnchorWidth=area_.recoveryAnchorHeight=0;area_.recoveryMotionSeconds=0;
 	}
 
 	float Controller::ResumeFromReconnect(float x, float y, double seconds) noexcept
