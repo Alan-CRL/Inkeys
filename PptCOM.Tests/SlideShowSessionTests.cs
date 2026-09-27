@@ -7,6 +7,17 @@ using System.Web.Script.Serialization;
 
 namespace PptCOM.Tests
 {
+    public sealed class FakeAnnotationView
+    {
+        public object PointerType { get; set; }
+        public bool LaserPointerEnabled { get; set; }
+    }
+
+    public sealed class FakeAnnotationWindow
+    {
+        public FakeAnnotationView View { get; set; }
+    }
+
     internal static class SlideShowSessionTests
     {
         private static int failures;
@@ -319,6 +330,17 @@ namespace PptCOM.Tests
             Check(client.Join(2000) && result == 1 && executed == 1,
                 "caller receives actual owner result, not queue acknowledgment");
 
+            client = new Thread(delegate() { result = mailbox.RequestAnnotationExit(12, 2000); });
+            client.Start();
+            Check(mailbox.Wait(1000), "annotation exit wakes the COM owner");
+            mailbox.ProcessExits(delegate(SlideShowExitRequest request)
+            {
+                Check(request.Session == 12 && request.Operation == SlideShowOwnerOperation.ExitAnnotation,
+                    "annotation exit keeps the session and operation");
+                return 1;
+            });
+            Check(client.Join(2000) && result == 1, "annotation exit acknowledges owner completion");
+
             Check(mailbox.RequestExit(12, 1) == -1, "unserviced request times out");
             mailbox.ProcessExits(delegate { ++executed; return 1; });
             Check(executed == 1, "timed-out request cannot execute on a later wake");
@@ -329,6 +351,55 @@ namespace PptCOM.Tests
             mailbox.Stop();
             Check(client.Join(2000) && result == -1, "owner shutdown releases waiting command");
             Check(mailbox.RequestExit(12, 1) == -1, "stopped owner rejects new requests");
+        }
+
+        private static void TestAnnotationTakeover()
+        {
+            PptCOMServer server = new PptCOMServer();
+            Type type = typeof(PptCOMServer);
+            SlideShowSessionCache session = (SlideShowSessionCache)type.GetField("slideShowSession",
+                BindingFlags.NonPublic | BindingFlags.Instance).GetValue(server);
+            session.Observe(1, true, 100);
+            FakeAnnotationView view = new FakeAnnotationView { PointerType = 2 };
+            type.GetField("pptSlideShowWindow", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(server, new FakeAnnotationWindow { View = view });
+            MethodInfo refresh = type.GetMethod("RefreshSlideShowAnnotationTool",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            MethodInfo exit = type.GetMethod("ExitSlideShowAnnotationToolOnOwner",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            Check(server.GetSlideShowAnnotationTool() == 0, "annotation getter has no live COM fallback");
+            refresh.Invoke(server, null);
+            Check(server.GetSlideShowAnnotationTool() == 1, "owner cache publishes native pen");
+            view.PointerType = 1;
+            Check(server.GetSlideShowAnnotationTool() == 1, "getter does not query a changed COM view");
+            refresh.Invoke(server, null);
+            Check(server.GetSlideShowAnnotationTool() == 0, "owner refresh clears the old pen");
+
+            SlideShowObservationStamp stamp = session.Capture();
+            view.PointerType = 2;
+            view.LaserPointerEnabled = true;
+            refresh.Invoke(server, null);
+            Check(server.GetSlideShowAnnotationTool() == 2, "laser property takes priority over pen pointer type");
+            int result = (int)exit.Invoke(server, new object[] {
+                new SlideShowExitRequest(stamp.Session, SlideShowOwnerOperation.ExitAnnotation) });
+            Check(result == 1 && !view.LaserPointerEnabled && server.GetSlideShowAnnotationTool() == 0,
+                "owner exits native laser before handing off the tool");
+
+            view.PointerType = "ppSlideShowPointerHighlighter";
+            refresh.Invoke(server, null);
+            Check(server.GetSlideShowAnnotationTool() == 3,
+                "explicit provider highlighter name maps without guessing a numeric value");
+            result = (int)exit.Invoke(server, new object[] {
+                new SlideShowExitRequest(stamp.Session, SlideShowOwnerOperation.ExitAnnotation) });
+            Check(result == 1 && server.GetSlideShowAnnotationTool() == 0,
+                "owner exits a named highlighter before handing off the tool");
+            session.Observe(1, false, 0);
+            Check(server.GetSlideShowAnnotationTool() == 0, "ended show rejects its old cached annotation");
+            session.Observe(1, true, 0);
+            view.PointerType = 2;
+            refresh.Invoke(server, null);
+            Check(server.GetSlideShowAnnotationTool() == 1,
+                "active WPS-style session without typed HWND still publishes native pen");
         }
 
         private static void TestAbi()
@@ -360,6 +431,7 @@ namespace PptCOM.Tests
             TestWindowGuard();
             TestNativeObservationGap();
             TestOwnerMailbox();
+            TestAnnotationTakeover();
             TestAbi();
             return failures;
         }

@@ -99,3 +99,51 @@ if (remember) CommitRuntimePositionAndSave();
 PublishSession(session, authoritativeShowActive, hwnd);
 CommitVersionedPairPosition(); // 始终；仅 toggle/end/reset 冻结保存请求
 ~~~
+
+## Scenario: PPT 原生批注接管与旧加载页门禁
+
+### 1. Scope / Trigger
+
+改动 `GetSlideShowAnnotationTool`、`ExitSlideShowAnnotationTool`、native 自动接管或旧 PPT 加载页时，沿用本合同；两套设置仍分别归属 `main.json` 的 `AutoTakeOver*` 与 `pptcom_configuration.json` 的 `ShowLoadingScreen`。
+
+### 2. Signatures
+
+- 旧 `IPptCOMServer` 方法顺序/GUID 不变：`int GetSlideShowAnnotationTool()` 返回 0=无/不可识别、1=画笔、2=激光笔、3=明确命名的荧光笔；`bool ExitSlideShowAnnotationTool()` 只在 owner 确认原生工具退出后返回 true。
+- native `ChangeStateModeToPptAnnotation(PptAnnotationTool tool, uint64_t expectedRevision)` 在同一工具模式锁内校验 revision、设置笔型与 Pen 模式，再发布 Draw3。
+
+### 3. Contracts
+
+- `PptComService` owner 每次维护时读取 `SlideShowWindow.View`，释放本次获取的 View；跨线程 getter 只读按 session/binding/window 配对的纯值缓存。WPS 可有活动会话但 typed HWND 为 0，不把该值单独当作拒绝接管的依据。
+- 标准 `PointerType=Pen` 映射画笔；可用的 `LaserPointerEnabled=true` 优先映射激光笔。当前 PIA 无此属性，激光状态按名称 late-bound；荧光笔仅在提供方明确返回其名称时映射，不猜测未知整数，也不把标准 Pen 推断成荧光笔。
+- 退出原生工具请求走同一 owner 邮箱，超时请求不能稍后执行；owner 重读工具、关激光/复位指针并确认已退出。native 仅在同一 service/session 且原生退出成功、用户工具 revision 未变化后接管，成功才消耗 `AutoTakeOverOnce`。
+- `kPptLoadingPageEnabled=false` 同时隐藏设置卡片和阻断 `FreezePPT` 触发；旧配置值及加载画面实现仍保留。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+| --- | --- |
+| Office 忙碌、未知工具或 native 原生退出失败 | 不切换 Draw3，不消耗一次性接管；下一次维护可重试 |
+| 退出请求等待时换场或用户换工具 | 拒绝迟到接管，不覆盖新场次/新工具 |
+| WPS Active 但 typed HWND 为 0 | 依靠 session/binding 缓存读取，native 继续校验实际 descriptor/HWND |
+| `ShowLoadingScreen=true` 的旧文件 | 设置入口不可见且本场不触发加载页，磁盘值不被改写 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：owner 读到原生 Pen/Laser/明确命名 Highlighter，成功退出后同一修订切换对应 Draw3 工具。
+- Base：无原生批注时 getter 返回 0，不动用户当前工具。
+- Bad：native getter 直接跨线程访问 Office RCW；先切 Draw3 再忽略原生退出失败；把未知 `PointerType` 整数当作荧光笔。
+
+### 6. Tests Required
+
+- managed fake View 覆盖 owner 缓存、跨线程 getter 不读 live View、Pen/Laser/明确命名 Highlighter、活动会话 HWND=0、owner 退出确认与过期请求。
+- 完整 `InkeysRepo.sln Debug|ARM64` 与 headless/managed 测试；真实 PowerPoint/WPS 的工具选择、原生退出、输入命中仍需非自动 GUI 验收。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong: 先切应用工具，原生批注即使仍占用输入也当作成功。
+ChangeStateModeToPen(); ExitPptSlideShowAnnotationTool();
+// Correct: owner 确认退出后，同一会话与工具版本才发布 Draw3。
+if (ExitPptSlideShowAnnotationTool(server) && SameSession() && SameModeRevision())
+    ChangeStateModeToPptAnnotation(tool, expectedRevision);
+~~~

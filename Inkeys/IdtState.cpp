@@ -876,6 +876,30 @@ bool ChangeStateModeToPen()
 	return true;
 }
 
+bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expectedRevision)
+{
+	if (tool != PptAnnotationTool::Pen && tool != PptAnnotationTool::Laser &&
+		tool != PptAnnotationTool::Highlighter) return false;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (stateModeTransitionRevision.load(std::memory_order_acquire) != expectedRevision)
+			return false;
+		// PPT 接管的笔型和模式在同一次修订中发布，Draw3 不会读到旧工具。
+		stateMode.laserActive = tool == PptAnnotationTool::Laser;
+		if (tool == PptAnnotationTool::Pen)
+			stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
+		else if (tool == PptAnnotationTool::Highlighter)
+			stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+		BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
+	SyncDraw3State();
+	return true;
+}
+
 bool ChangeStateModeToShape()
 {
 	{

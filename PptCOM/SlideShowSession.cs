@@ -198,6 +198,8 @@ namespace PptCOM
         }
     }
 
+    internal enum SlideShowOwnerOperation { ExitShow, ExitAnnotation }
+
     internal sealed class SlideShowExitRequest
     {
         private readonly object gate = new object();
@@ -205,8 +207,13 @@ namespace PptCOM
         private bool completed;
         private int result;
         public readonly long Session;
+        public readonly SlideShowOwnerOperation Operation;
 
-        public SlideShowExitRequest(long session) { Session = session; }
+        public SlideShowExitRequest(long session, SlideShowOwnerOperation operation = SlideShowOwnerOperation.ExitShow)
+        {
+            Session = session;
+            Operation = operation;
+        }
 
         public bool IsCancelled { get { lock (gate) { return cancelled; } } }
 
@@ -285,7 +292,17 @@ namespace PptCOM
 
         public int RequestExit(long session, int milliseconds)
         {
-            SlideShowExitRequest request = new SlideShowExitRequest(session);
+            return Request(session, SlideShowOwnerOperation.ExitShow, milliseconds);
+        }
+
+        public int RequestAnnotationExit(long session, int milliseconds)
+        {
+            return Request(session, SlideShowOwnerOperation.ExitAnnotation, milliseconds);
+        }
+
+        private int Request(long session, SlideShowOwnerOperation operation, int milliseconds)
+        {
+            SlideShowExitRequest request = new SlideShowExitRequest(session, operation);
             lock (gate)
             {
                 if (!running || exits.Count >= 8) return -1;

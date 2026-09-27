@@ -157,6 +157,9 @@ string CaptureSettingJson();
 bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
+// PPT 加载页的配置和实现保留，样式重做前统一禁用。
+inline constexpr bool kPptLoadingPageEnabled = false;
+
 struct PptComSetListStruct
 {
 	PptComSetListStruct()

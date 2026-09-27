@@ -322,10 +322,9 @@ HWND GetPptShow()
 
 	return hWnd;
 }
-int GetPptSlideShowAnnotationTool()
+int GetPptSlideShowAnnotationTool(const IPptCOMServerPtr& pptCom)
 {
 	int toolType = 0;
-	auto pptCom = GetPptComSnapshot();
 	if (pptCom == nullptr) return toolType;
 
 	try
@@ -338,10 +337,9 @@ int GetPptSlideShowAnnotationTool()
 
 	return toolType;
 }
-bool ExitPptSlideShowAnnotationTool()
+bool ExitPptSlideShowAnnotationTool(const IPptCOMServerPtr& pptCom)
 {
 	bool ret = false;
-	auto pptCom = GetPptComSnapshot();
 	if (pptCom == nullptr) return ret;
 
 	try
@@ -496,23 +494,15 @@ void FocusPptShow()
 	(void)FocusPptSession(CapturePptSession());
 }
 
-bool StartPptTakeoverAnnotation(int toolType)
+bool StartPptTakeoverAnnotation(int toolType, std::uint64_t expectedRevision)
 {
-	if (toolType != 1) return false;
-
-	// PPT 接管明确强制软笔，先覆盖笔型再发布，避免短暂发布 Laser。
-	stateMode.laserActive = false;
-	stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
-	bool res = true;
-	if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
-		res = ChangeStateModeToPen();
-	else
-		SyncDraw3State();
-
+	if (toolType < static_cast<int>(PptAnnotationTool::Pen) ||
+		toolType > static_cast<int>(PptAnnotationTool::Highlighter)) return false;
+	if (!ChangeStateModeToPptAnnotation(
+		static_cast<PptAnnotationTool>(toolType), expectedRevision)) return false;
 	barUISet.barButtonSet.UpdateDrawButtonStyle();
 	barUISet.UpdateRendering();
-
-	return res;
+	return true;
 }
 
 bool PptSessionActive()
@@ -745,7 +735,8 @@ void PptInfo()
 				getline(title, ppt_title);
 				getline(title, ppt_software);
 				ppt_software = ppt_software.find(L"WPS") != std::wstring::npos ? L"WPS" : L"PowerPoint";
-				if (!ppt_title_recond[ppt_title] && pptComSetlist.showLoadingScreen) FreezePPT = true;
+				if (kPptLoadingPageEnabled && !ppt_title_recond[ppt_title] &&
+					pptComSetlist.showLoadingScreen) FreezePPT = true;
 				pptTakeoverConsumedInCurrentShow = false;
 				Inkeys::UI::Ppt::PublishSession(session.localSession, true, showWindow);
 				Inkeys::UI::Freeze::SetPresentationActive(true);
@@ -872,13 +863,21 @@ void PptInfo()
 		if (now >= nextMaintenance)
 		{
 			nextMaintenance = now + PptVisibilityPublishInterval;
-			if (session.active && !whiteboard && config.PlugIn.PPTHelper.AutoTakeOver
-				&& !pptTakeoverConsumedInCurrentShow)
+			if (session.active && !whiteboard && currentService && server &&
+				config.PlugIn.PPTHelper.AutoTakeOver &&
+				!pptTakeoverConsumedInCurrentShow)
 			{
-				const int toolType = GetPptSlideShowAnnotationTool();
-				if (toolType == 1 && StartPptTakeoverAnnotation(toolType))
+				const int toolType = GetPptSlideShowAnnotationTool(server);
+				const auto modeRevision = StateModeTransitionRevision();
+				// 原生批注退出成功且仍是同一场放映，才让 Draw3 接管输入。
+				if (toolType >= static_cast<int>(PptAnnotationTool::Pen) &&
+					toolType <= static_cast<int>(PptAnnotationTool::Highlighter) &&
+					MatchesPptSession(session, CapturePptSession()) &&
+					ExitPptSlideShowAnnotationTool(server) &&
+					serviceGeneration == pptComGeneration.load(std::memory_order_acquire) &&
+					MatchesPptSession(session, CapturePptSession()) &&
+					StartPptTakeoverAnnotation(toolType, modeRevision))
 				{
-					ExitPptSlideShowAnnotationTool();
 					if (config.PlugIn.PPTHelper.AutoTakeOverOnce) pptTakeoverConsumedInCurrentShow = true;
 					if (config.PlugIn.PPTHelper.AutoTakeOverExpand && barUISet.barState.fold)
 					{ barUISet.barState.fold = false; barUISet.UpdateRendering(); }
