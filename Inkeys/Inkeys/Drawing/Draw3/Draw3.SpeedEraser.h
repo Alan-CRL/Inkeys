@@ -291,6 +291,17 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool held = false;
 		int direction = 0;
 	};
+	struct FollowDiagnostics
+	{
+		float rawTargetDip=32, growthGoalDip=32;
+		double lastInputSweepSpeed=0, lastInputAgeSeconds=-1;
+		double holdRemainingSeconds=0, decreaseProgressSeconds=0, decreaseConfirmationSeconds=0;
+		uint64_t decreaseResetCount=0;
+		bool motionGrowthPermitted=false, areaGrowthPermitted=false, decreasePending=false, shrinking=false;
+		const char* holdReason="none";
+		const char* decreaseReason="none";
+		const char* lastDecreaseResetReason="none";
+	};
 	class Controller
 	{
 	public:
@@ -321,6 +332,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		float SweepEvidenceCapDiameterDip() const noexcept;
 		bool TouchUnlocked() const noexcept;
 		FineBandDiagnostics FineDiagnostics() const noexcept;
+		FollowDiagnostics FollowStateDiagnostics() const noexcept;
 		ContactAreaDiagnostics AreaDiagnostics(double seconds) const noexcept;
 		double NextAreaWakeSeconds() const noexcept;
 		bool IsPaused() const noexcept { return paused_; }
@@ -342,13 +354,21 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			double time = 0.0;
 			double logDiameter = 0.0;
 			double logTarget = 0.0;
+			double logRawTarget = 0.0, logGrowthGoal = 0.0;
 			double holdUntil = 0.0;
 			double decreaseSince = 0.0;
+			double decreaseConfirmation = 0.0;
 			double maximumDisplacement = 0.0;
 			double sweepEvidence = 0.0;
 			double lastMovementTime = 0.0;
 			double speed = 0.0;
 			double sweepSpeed = 0.0;
+			double lastInputSweepSpeed = 0.0, lastInputTime = -1.0;
+			uint64_t decreaseResetCount = 0;
+			const char* holdReason = "none";
+			const char* decreaseReason = "none";
+			const char* lastDecreaseResetReason = "none";
+			bool motionGrowthPermitted = false, areaGrowthPermitted = false;
 			double fineSpeed = 0, fineEnterEvidence = 0, fineReleaseEvidence = 0;
 			double fineChangeEvidence = 0, fineStableSeconds = 0;
 			int fineDirection = 0, finePendingDirection = 0;
@@ -526,6 +546,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		bool needsAnimation = false;
 		ContactAreaDiagnostics contactArea;
 		FineBandDiagnostics fine;
+		FollowDiagnostics follow;
 		uint32_t selectedTool = 0, effectiveTool = 0;
 		InputEntry entry = InputEntry::MouseLeft;
 		EraserKind eraserKind = EraserKind::Speed;

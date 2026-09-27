@@ -578,6 +578,22 @@ namespace Inkeys::Drawing::Draw3
 				d.speed,d.sweepSpeed,SpeedEraser::MotionUnitName(d.motionUnit),d.qualified,d.evidenceSeconds*1000,
 				a.sample.rawWidth,a.sample.rawHeight,a.widthDip,a.heightDip,a.active);
 			OutputDebugStringA(inputText);std::fputs(inputText,stderr);
+			if(d.eraserContact && d.eraserKind==SpeedEraser::EraserKind::Speed &&
+				(d.response==SpeedEraser::ResponseModel::DirectTouch ||
+					d.response==SpeedEraser::ResponseModel::ScreenPenHybrid))
+			{
+				const auto& f=d.follow;
+				char followText[768]{};
+				// 当前帧无Move时许可为零；另列最近真实输入，避免把残留目标当成新运动。
+				std::snprintf(followText,sizeof(followText),
+					"[EraserFollow] seq=%llu rawTargetDip=%.3f effectiveTargetDip=%.3f evidenceCapDip=%.3f growthGoalDip=%.3f actualDip=%.3f lastInputSweepSpeed=%.3f lastInputAgeMs=%.1f sweepMotionQualified=%d areaMotionQualified=%d holdRemainingMs=%.1f holdReason=%s decreaseMs=%.1f decreaseConfirmMs=%.1f decreasePending=%d shrinking=%d sweeping=%d decreaseAction=%s resetCount=%llu lastResetReason=%s\n",
+					static_cast<unsigned long long>(sequence),f.rawTargetDip,d.targetDiameterDip,d.evidenceCapDiameterDip,
+					f.growthGoalDip,d.effectiveDiameterDip,f.lastInputSweepSpeed,f.lastInputAgeSeconds*1000,
+					f.motionGrowthPermitted,f.areaGrowthPermitted,f.holdRemainingSeconds*1000,f.holdReason,
+					f.decreaseProgressSeconds*1000,f.decreaseConfirmationSeconds*1000,f.decreasePending,f.shrinking,
+					d.sweeping,f.decreaseReason,static_cast<unsigned long long>(f.decreaseResetCount),f.lastDecreaseResetReason);
+				OutputDebugStringA(followText);std::fputs(followText,stderr);
+			}
 			char text[3072]{};
 			if(!d.active)
 			{

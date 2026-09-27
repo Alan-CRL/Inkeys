@@ -29,3 +29,11 @@ Recovery override: all steps are executed by the main session only; no subagents
 2. 仅调整 Touch/ScreenPen 增长参数，保留场景解析、Mouse、精细、面积和尺寸会话；必要时凭不可达测试再做局部修正。
 3. 扩展速度、时长、采样率/帧率、状态、面积及产品几何回归；核对受授权替代的旧断言而不放宽其他容差。
 4. 完整构建 `InkeysRepo.sln Debug|ARM64`，运行 headless、专项隐藏测试，记录退出码和原有 Window Service owner 失败；更新 spec、研究/验证和主会话日志，按用户后续授权提交并推送本轮改动，保持任务 in_progress，不 finish 或归档。
+
+## 2026-09-27 保持／回缩许可轮次
+
+1. 在 `e6bc3c28` 基线上加真实输入/独立帧的 40/120ms 局部圆反例，确认修复前 Touch 与 ScreenPen 均持续 160 DIP；核对既有隐藏测试四条 owner 断言。
+2. 仅统一 `FollowTarget` 三个续期/取消入口的 DirectTouch/ScreenPen 许可，保留 Mouse、面积与场景/增长曲线；补现有限频诊断。
+3. 扫描 20/40/80/100ms 高段与 80/120/200/400/800ms 普通段，核对短折返、持续清扫、新 Down 分段增量、原短脉冲/面积/频率/几何回归；导出有界帧 trace。
+4. 用原 Solution `Debug|ARM64` 完整构建，运行 `InkeysHeadlessTests.exe --no-window` 和 `Inkeys.exe --draw3-eraser-hidden-test`，分别报告退出码、橡皮断言与既有 owner 失败；检查编码、diff 和生成二进制。
+5. 更新原任务验证与 spec；按用户后续授权提交并推送本轮修改，保留任务 `in_progress`，不 finish 或归档。真人 Surface、ScreenPen、教室大屏和 Win7 仍需分别验收。

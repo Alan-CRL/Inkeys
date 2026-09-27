@@ -91,6 +91,7 @@ namespace
 		ContactAreaDiagnostics area;
 		bool animating;
 		double wake;
+		float evidenceCap;
 	};
 	ContactAreaSample AreaSample(const Config& c,float widthDip,float heightDip)
 	{
@@ -123,7 +124,7 @@ namespace
 			}
 			controller.Advance(checkpoint);
 			result.push_back({controller.DiameterDip(),controller.TargetDiameterDip(),controller.AreaDiagnostics(checkpoint),
-				controller.NeedsAnimation(checkpoint),controller.NextAreaWakeSeconds()});
+				controller.NeedsAnimation(checkpoint),controller.NextAreaWakeSeconds(),controller.SweepEvidenceCapDiameterDip()});
 		}
 		return result;
 	}
@@ -233,6 +234,48 @@ namespace
 			if(sample.seconds<=trace.fastEnd+1e-9)
 			{result.endDip=sample.actualDip;result.endTargetDip=sample.targetDip;
 				result.endCapDip=sample.evidenceCapDip;result.endEvidence=sample.evidence;}
+		}
+		return result;
+	}
+	struct HoldPulseSample
+	{
+		double seconds=0,evidence=0;
+		float actual=0,target=0,cap=0;
+		bool sweeping=false;
+		FollowDiagnostics follow;
+	};
+	std::vector<HoldPulseSample> ReplayHoldPulses(const Config& config,double highSeconds,double lowSeconds,
+		double duration=8.0)
+	{
+		Controller controller;
+		constexpr double radius=55.0,centerX=1400.0,centerY=900.0;
+		controller.Reset(static_cast<float>(centerX),static_cast<float>(centerY),0,
+			config.response==ResponseModel::DirectTouch?StartKind::Touch:StartKind::Hover,config);
+		std::vector<HoldPulseSample> result;
+		result.reserve(static_cast<size_t>(duration*100)+1);
+		double angle=0;int input=1,frame=1;
+		while(true)
+		{
+			const double inputTime=input/1000.0,frameTime=frame/100.0+0.0004;
+			if(std::min(inputTime,frameTime)>duration+1e-10)break;
+			if(inputTime<=frameTime)
+			{
+				const double phase=std::fmod(std::max(0.0,inputTime-2.0),highSeconds+lowSeconds);
+				const double speed=inputTime<=2.0 || phase<highSeconds?
+					1.5*config.largeTargetSpeed:0.6*config.sweepEnterSpeed;
+				angle+=speed/(1000.0*radius);
+				controller.UpdatePosition(static_cast<float>(centerX+radius*(std::cos(angle)-1)/config.motionPerPixelX),
+					static_cast<float>(centerY+radius*std::sin(angle)/config.motionPerPixelY),inputTime);
+				++input;
+			}
+			else
+			{
+				controller.Advance(frameTime);
+				result.push_back({frameTime,controller.SweepEvidenceSeconds(),controller.DiameterDip(),
+					controller.TargetDiameterDip(),controller.SweepEvidenceCapDiameterDip(),controller.Sweeping(),
+					controller.FollowStateDiagnostics()});
+				++frame;
+			}
 		}
 		return result;
 	}
@@ -512,6 +555,122 @@ int RunSpeedEraserTests()
 	Near(surfaceTouch.largeTargetSpeed,250,0.001,"Surface maximum target retains previous endpoint");
 	const auto surfacePen=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,surface),ResolveSizes(BaseSize::Medium));
 	const auto surfaceMouse=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::Mouse,surface),ResolveSizes(BaseSize::Medium));
+	{
+		Controller detachedMouse;detachedMouse.Reset(0,0,0,StartKind::Hover,surfaceMouse);
+		const double fast=1.5*surfaceMouse.largeTargetSpeed;
+		FeedLine(detachedMouse,fast,2.0,240,surfaceMouse);
+		const float before=detachedMouse.DiameterDip();
+		detachedMouse.LeaveContact(static_cast<float>(2*fast/surfaceMouse.motionPerPixelX),0,2.0,
+			detachedMouse.Diameter());
+		detachedMouse.Advance(2.8);
+		const auto follow=detachedMouse.FollowStateDiagnostics();
+		expect(before>=surfaceMouse.sizes.maximumDiameterDip*0.95f &&
+			detachedMouse.DiameterDip()<before &&
+			std::abs(follow.growthGoalDip-detachedMouse.DiameterDip())<0.01f &&
+			!follow.motionGrowthPermitted && !follow.areaGrowthPermitted,
+			"detached Mouse size session reports its actual shrinking state without invented growth");
+	}
+	for(const auto& config:{surfaceTouch,surfacePen})
+	{
+		const auto trace=ReplayHoldPulses(config,0.040,0.120);
+		{
+			// 测试先在内存收集每个观察帧，结束后一次性导出；不在真实输入热路径写盘。
+			const auto path=std::filesystem::temp_directory_path()/
+				(std::string("inkeys-hold-pulse-")+ResponseModelName(config.response)+".csv");
+			std::ofstream output(path,std::ios::trunc);output.precision(9);
+			output<<"seconds,actualDip,rawTargetDip,effectiveTargetDip,evidenceCapDip,growthGoalDip,evidenceSeconds,holdRemainingSeconds,decreaseProgressSeconds,decreaseConfirmationSeconds,decreasePending,shrinking,sweeping,lastInputSweepSpeed,lastInputAgeSeconds,motionPermit,areaPermit,holdReason,decreaseAction,resetCount,lastResetReason\n";
+			for(const auto& sample:trace)
+			{
+				const auto& f=sample.follow;
+				output<<sample.seconds<<','<<sample.actual<<','<<f.rawTargetDip<<','<<sample.target<<','
+					<<sample.cap<<','<<f.growthGoalDip<<','<<sample.evidence<<','<<f.holdRemainingSeconds<<','
+					<<f.decreaseProgressSeconds<<','<<f.decreaseConfirmationSeconds<<','<<f.decreasePending<<','
+					<<f.shrinking<<','<<sample.sweeping<<','<<f.lastInputSweepSpeed<<','<<f.lastInputAgeSeconds<<','
+					<<f.motionGrowthPermitted<<','<<f.areaGrowthPermitted<<','<<f.holdReason<<','<<f.decreaseReason<<','
+					<<f.decreaseResetCount<<','<<f.lastDecreaseResetReason<<'\n';
+			}
+			std::cout<<"[HoldTrace] "<<path.string()<<" frames="<<trace.size()<<'\n';
+		}
+		uint64_t observedResets=0;
+		for(const auto& sample:trace)
+		{
+			const auto& f=sample.follow;
+			expect(std::isfinite(f.rawTargetDip) && std::isfinite(f.growthGoalDip) &&
+				f.holdRemainingSeconds>=0 && f.decreaseProgressSeconds>=0,
+				"hold trace exposes finite targets and nonnegative timing state");
+			expect(f.decreaseResetCount-observedResets<=1,
+				"100Hz hold trace captures every decrease reset reason in this replay");
+			observedResets=f.decreaseResetCount;
+			if(sample.actual>config.sizes.standardDiameterDip+0.01f &&
+				!f.motionGrowthPermitted && !f.areaGrowthPermitted)
+				expect(f.growthGoalDip<=sample.actual+0.01f,
+					"no-Move high-band frame reports no executable growth goal after shrink");
+		}
+		const auto at=[&](double seconds)
+		{
+			return *std::min_element(trace.begin(),trace.end(),[&](const auto& a,const auto& b)
+				{return std::abs(a.seconds-seconds)<std::abs(b.seconds-seconds);});
+		};
+		const auto warm=at(2.0),after2=at(4.0),after3=at(5.0),end=at(8.0);
+		std::cout<<"[HoldPulse] model="<<ResponseModelName(config.response)<<" warm="<<warm.actual
+			<<" after2="<<after2.actual<<" after3="<<after3.actual<<" end="<<end.actual
+			<<" endTarget="<<end.target<<" endCap="<<end.cap<<'\n';
+		expect(warm.actual>=config.sizes.maximumDiameterDip*0.95f,
+			"hold-pulse fixture first reaches established large size");
+		expect(after2.actual<=config.sizes.standardDiameterDip*1.25f &&
+			after3.actual<=config.sizes.standardDiameterDip*1.05f &&
+			end.actual<=config.sizes.standardDiameterDip*1.05f,
+			"repeated unpermitted short peaks cannot indefinitely hold established large Touch/Pen size");
+		expect(end.cap<=config.sizes.standardDiameterDip+0.01f &&
+			end.follow.decreaseResetCount>0 && !end.follow.motionGrowthPermitted &&
+			end.follow.lastInputAgeSeconds>=0 && end.follow.lastInputAgeSeconds<0.02,
+			"hold trace distinguishes low evidence, real input age and current no-Move frame permission");
+		const auto ordinary=ReplayHoldPulses(config,0,1.0,5.0);
+		expect(ordinary.back().actual<=config.sizes.standardDiameterDip*1.05f,
+			"pure ordinary movement releases an established Touch/Pen sweep");
+		const auto reversal=ReplayHoldPulses(config,0.800,0.040,3.0);
+		float reversalMinimum=config.sizes.maximumDiameterDip;
+		for(const auto& sample:reversal)if(sample.seconds>=2.0)
+			reversalMinimum=std::min(reversalMinimum,sample.actual);
+		expect(reversalMinimum>=config.sizes.maximumDiameterDip*0.90f,
+			"brief genuine reversal followed by clearing retains the large Touch/Pen size");
+		for(double high:{0.020,0.040,0.080,0.100})for(double low:{0.080,0.120,0.200,0.400,0.800})
+		{
+			const auto duty=ReplayHoldPulses(config,high,low);
+			double lateMaxEvidence=0;
+			for(const auto& sample:duty)if(sample.seconds>=4.0)
+				lateMaxEvidence=std::max(lateMaxEvidence,sample.evidence);
+			std::cout<<"[HoldDuty] model="<<ResponseModelName(config.response)<<" highMs="<<high*1000
+				<<" lowMs="<<low*1000<<" maxEvidenceMs="<<lateMaxEvidence*1000
+				<<" end="<<duty.back().actual<<" cap="<<duty.back().cap<<'\n';
+			if(high<=0.040 && low>=0.120 && lateMaxEvidence<config.evidenceStartSeconds)
+				expect(duty.back().actual<=config.sizes.standardDiameterDip*1.10f,
+					"low-duty unsupported peaks release established Touch/Pen size");
+			if(high>=0.100 && low<=0.080)
+				expect(duty.back().actual>=config.sizes.standardDiameterDip*2.0f,
+					"high-duty repeated real clearing may retain useful Touch/Pen size");
+		}
+		const auto newDown=ReplayHoldPulses(config,1.0,1.0,1.01);
+		const auto diameterAt=[&](double seconds)
+		{
+			if(seconds==0)return config.response==ResponseModel::DirectTouch?
+				config.sizes.touchStartDiameterDip:config.sizes.standardDiameterDip;
+			return std::min_element(newDown.begin(),newDown.end(),[&](const auto& a,const auto& b)
+				{return std::abs(a.seconds-seconds)<std::abs(b.seconds-seconds);})->actual;
+		};
+		float maxFrameDelta=0,previous=diameterAt(0);
+		for(const auto& sample:newDown)
+		{maxFrameDelta=std::max(maxFrameDelta,sample.actual-previous);previous=sample.actual;}
+		std::cout<<"[NewDownGrowth] model="<<ResponseModelName(config.response);
+		for(double t:{0.25,0.50,0.75,1.00})
+		{
+			const float delta=diameterAt(t)-diameterAt(t-0.25);
+			std::cout<<" q"<<static_cast<int>(t*4)<<"Delta="<<delta
+				<<" q"<<static_cast<int>(t*4)<<"RateBPerS="<<delta/config.sizes.standardDiameterDip/0.25;
+		}
+		std::cout<<" maxFrameDelta="<<maxFrameDelta<<" maxFrameRateBPerS="
+			<<maxFrameDelta/config.sizes.standardDiameterDip*100<<'\n';
+	}
 	for(const auto& config:{surfaceMouse,surfacePen,surfaceTouch})
 	for(double duration:{0.050,0.080,0.100,0.120,0.150,0.200,0.250,0.300,0.500,1.000})
 	{
@@ -1655,6 +1814,8 @@ int RunSpeedEraserTests()
 	const auto areaReference=ReplayArea(areaConfig,slowDrag,1000,120,areaTimes,[&](double){return normalArea;},2.0);
 	expect(areaReference[2].diameter>38 && areaReference[2].diameter<40 && areaReference[2].area.active,
 		"ordinary slow touch drag opens bounded area floor without sweep speed");
+	expect(areaReference[2].diameter>areaReference[2].evidenceCap+5,
+		"area floor remains independent of the sweep evidence cap");
 	Near(areaReference[3].area.referenceFloorDip,39,0.001,"max-axis span produces independent bounded floor");
 	expect(!areaReference[4].animating && areaReference[4].wake>3.0 &&
 		areaReference[4].diameter>38,"held touch rests at its area floor and schedules expiry without spinning");
