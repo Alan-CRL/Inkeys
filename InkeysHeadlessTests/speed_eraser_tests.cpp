@@ -14,6 +14,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <utility>
 #include <vector>
 
 import Inkeys.Drawing.Draw3.contact_input;
@@ -90,6 +91,7 @@ namespace
 		ContactAreaDiagnostics area;
 		bool animating;
 		double wake;
+		float evidenceCap;
 	};
 	ContactAreaSample AreaSample(const Config& c,float widthDip,float heightDip)
 	{
@@ -122,7 +124,7 @@ namespace
 			}
 			controller.Advance(checkpoint);
 			result.push_back({controller.DiameterDip(),controller.TargetDiameterDip(),controller.AreaDiagnostics(checkpoint),
-				controller.NeedsAnimation(checkpoint),controller.NextAreaWakeSeconds()});
+				controller.NeedsAnimation(checkpoint),controller.NextAreaWakeSeconds(),controller.SweepEvidenceCapDiameterDip()});
 		}
 		return result;
 	}
@@ -135,6 +137,147 @@ namespace
 			const double time = static_cast<double>(i) / hz;
 			controller.UpdatePosition(static_cast<float>(time * speed / config.motionPerPixelX), 0.0f, time);
 		}
+	}
+
+	enum class BurstAfter { Ordinary, SamePosition, NoMove, Up };
+	struct BurstSample
+	{
+		double seconds=0,reportedSpeed=0,sweepSpeed=0,evidence=0;
+		float actualDip=0,targetDip=0,evidenceCapDip=0;
+		bool qualified=false,animating=false;
+	};
+	struct WarmBurstTrace
+	{
+		double requestedSeconds=0,actualSeconds=0,fastEnd=0,normalSpeed=0,fastSpeed=0;
+		std::vector<BurstSample> samples;
+	};
+	WarmBurstTrace ReplayWarmBurst(const Config& config,int inputHz,int frameHz,double requestedSeconds,
+		BurstAfter after=BurstAfter::Ordinary,double speedRatio=1.5,double afterSeconds=1.5)
+	{
+		WarmBurstTrace trace;
+		trace.requestedSeconds=requestedSeconds;
+		// 输入切换对齐真实采样时刻，记录不可整除时实际产生的快段长度。
+		trace.actualSeconds=std::max<long>(1,std::lround(requestedSeconds*inputHz))/static_cast<double>(inputHz);
+		trace.fastEnd=2.0+trace.actualSeconds;
+		trace.normalSpeed=std::min(0.9*config.sweepEnterSpeed,
+			std::max(0.6*config.sweepEnterSpeed,1.05*config.fineToStandardSpeed));
+		trace.fastSpeed=speedRatio*config.largeTargetSpeed;
+		const double end=trace.fastEnd+afterSeconds;
+		const auto distanceAt=[&](double seconds)
+		{
+			return trace.normalSpeed*std::min(seconds,2.0)+
+				trace.fastSpeed*std::clamp(seconds-2.0,0.0,trace.actualSeconds)+
+				(after==BurstAfter::Ordinary?trace.normalSpeed*std::max(0.0,seconds-trace.fastEnd):0.0);
+		};
+		Controller controller;controller.Reset(0,0,0,config.response==ResponseModel::DirectTouch?
+			StartKind::Touch:StartKind::Hover,config);
+		trace.samples.reserve(static_cast<size_t>(end*(inputHz+frameHz))+4);
+		const auto record=[&](double seconds)
+		{
+			trace.samples.push_back({seconds,controller.Speed(),controller.SweepSpeed(),
+				controller.SweepEvidenceSeconds(),controller.DiameterDip(),controller.TargetDiameterDip(),
+				controller.SweepEvidenceCapDiameterDip(),controller.SweepQualified(),controller.NeedsAnimation(seconds)});
+		};
+		record(0);
+		int input=1,frame=1;bool sentUp=false;
+		while(std::min(static_cast<double>(input)/inputHz,static_cast<double>(frame)/frameHz)<=end+1e-10)
+		{
+			const double inputTime=static_cast<double>(input)/inputHz;
+			const double frameTime=static_cast<double>(frame)/frameHz;
+			if(inputTime<=frameTime)
+			{
+				if(after==BurstAfter::Ordinary || after==BurstAfter::SamePosition ||
+					inputTime<=trace.fastEnd+1e-10)
+				{
+					controller.UpdatePosition(static_cast<float>(distanceAt(inputTime)/config.motionPerPixelX),0,inputTime);
+					record(inputTime);
+				}
+				else if(after==BurstAfter::Up && !sentUp)
+				{
+					controller.UpdatePosition(static_cast<float>(distanceAt(trace.fastEnd)/config.motionPerPixelX),
+						0,inputTime,nullptr,true);
+					record(inputTime);sentUp=true;
+				}
+				++input;
+			}
+			else {controller.Advance(frameTime);record(frameTime);++frame;}
+		}
+		controller.Advance(end);record(end);
+		return trace;
+	}
+	struct WarmBurstMetrics
+	{
+		float warmDip=0,endDip=0,peakDip=0,afterPeakDip=0,endTargetDip=0,endCapDip=0;
+		double warmEvidence=0,endEvidence=0,peakAt=-1,afterPeakAt=-1;
+		double to125=-1,to2B=-1,to90Target=-1;
+	};
+	WarmBurstMetrics MeasureWarmBurst(const WarmBurstTrace& trace,const Config& config)
+	{
+		WarmBurstMetrics result;
+		const float B=config.sizes.standardDiameterDip;
+		const float fastTarget=CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,trace.fastSpeed));
+		for(const auto& sample:trace.samples)
+		{
+			if(sample.seconds<=2.0+1e-9)
+			{result.warmDip=sample.actualDip;result.warmEvidence=sample.evidence;}
+			if(sample.seconds>=2.0-1e-9)
+			{
+				const double elapsed=sample.seconds-2.0;
+				if(result.to125<0 && sample.actualDip>=1.25f*B)result.to125=elapsed;
+				if(result.to2B<0 && sample.actualDip>=2.0f*B)result.to2B=elapsed;
+				if(result.to90Target<0 && sample.actualDip>=0.9f*fastTarget)result.to90Target=elapsed;
+				if(sample.seconds<=trace.fastEnd+1e-9 && sample.actualDip>result.peakDip)
+				{result.peakDip=sample.actualDip;result.peakAt=elapsed;}
+				if(sample.seconds>=trace.fastEnd-1e-9 && sample.actualDip>result.afterPeakDip)
+				{result.afterPeakDip=sample.actualDip;result.afterPeakAt=elapsed;}
+			}
+			if(sample.seconds<=trace.fastEnd+1e-9)
+			{result.endDip=sample.actualDip;result.endTargetDip=sample.targetDip;
+				result.endCapDip=sample.evidenceCapDip;result.endEvidence=sample.evidence;}
+		}
+		return result;
+	}
+	struct HoldPulseSample
+	{
+		double seconds=0,evidence=0;
+		float actual=0,target=0,cap=0;
+		bool sweeping=false;
+		FollowDiagnostics follow;
+	};
+	std::vector<HoldPulseSample> ReplayHoldPulses(const Config& config,double highSeconds,double lowSeconds,
+		double duration=8.0)
+	{
+		Controller controller;
+		constexpr double radius=55.0,centerX=1400.0,centerY=900.0;
+		controller.Reset(static_cast<float>(centerX),static_cast<float>(centerY),0,
+			config.response==ResponseModel::DirectTouch?StartKind::Touch:StartKind::Hover,config);
+		std::vector<HoldPulseSample> result;
+		result.reserve(static_cast<size_t>(duration*100)+1);
+		double angle=0;int input=1,frame=1;
+		while(true)
+		{
+			const double inputTime=input/1000.0,frameTime=frame/100.0+0.0004;
+			if(std::min(inputTime,frameTime)>duration+1e-10)break;
+			if(inputTime<=frameTime)
+			{
+				const double phase=std::fmod(std::max(0.0,inputTime-2.0),highSeconds+lowSeconds);
+				const double speed=inputTime<=2.0 || phase<highSeconds?
+					1.5*config.largeTargetSpeed:0.6*config.sweepEnterSpeed;
+				angle+=speed/(1000.0*radius);
+				controller.UpdatePosition(static_cast<float>(centerX+radius*(std::cos(angle)-1)/config.motionPerPixelX),
+					static_cast<float>(centerY+radius*std::sin(angle)/config.motionPerPixelY),inputTime);
+				++input;
+			}
+			else
+			{
+				controller.Advance(frameTime);
+				result.push_back({frameTime,controller.SweepEvidenceSeconds(),controller.DiameterDip(),
+					controller.TargetDiameterDip(),controller.SweepEvidenceCapDiameterDip(),controller.Sweeping(),
+					controller.FollowStateDiagnostics()});
+				++frame;
+			}
+		}
+		return result;
 	}
 }
 
@@ -385,6 +528,561 @@ int RunSpeedEraserTests()
 				<< " expected=" << expected << " tolerance=" << tolerance << '\n';
 		}
 	};
+	// 本轮红灯：可信物理大屏以前误用 Surface 清扫区间；日志值仅用于公式对照。
+	DisplayScale classroom;
+	classroom.monitor=91;classroom.logicalOutputKnown=true;classroom.physicalAvailable=true;
+	classroom.pixelWidth=1920;classroom.pixelHeight=1080;
+	classroom.dipPerPixelX=classroom.dipPerPixelY=96.0f/144.0f;
+	classroom.cmPerPixelX=139.0f/1920.0f;classroom.cmPerPixelY=78.0f/1080.0f;
+	const auto classroomTouch=ResolveConfig(classroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,classroom),ResolveSizes(BaseSize::Medium));
+	expect(classroomTouch.response==ResponseModel::DirectTouch && classroomTouch.motionSource==ScaleSource::TrustedPhysical &&
+		classroomTouch.motionUnit==MotionUnit::MillimetersPerSecond,"classroom fixture uses real Touch and physical mm/s");
+	Near(classroomTouch.motionPerPixelX,0.723958,0.00001,"classroom log X action scale");
+	Near(classroomTouch.fineToStandardSpeed,30,0.001,"classroom fine threshold stays unchanged");
+	Near(classroomTouch.sweepEnterSpeed,350,0.001,"classroom sweep entry resolves from scene");
+	Near(classroomTouch.sweepExitSpeed,250,0.001,"classroom sweep exit resolves from scene");
+	Near(classroomTouch.largeTargetSpeed,1300,0.001,"classroom maximum target needs sustained fast action");
+	expect(std::string(TouchProfileName(classroomTouch))=="Classroom","resolved classroom profile is observable");
+	for(const auto [speed,target]:std::array<std::pair<double,double>,9>{
+		{{100,32},{200,32},{300,32},{400,32.42},{432.376,33.11},{600,42.16},{800,67.15},{1000,109.40},{1300,160}}})
+		Near(ReferenceTargetDiameterDip(classroomTouch,speed),target,0.08,"classroom reference target table");
+	DisplayScale surface=classroom;surface.pixelWidth=2880;surface.pixelHeight=1920;
+	surface.dipPerPixelX=surface.dipPerPixelY=0.5f;
+	surface.cmPerPixelX=28.0f/2880.0f;surface.cmPerPixelY=19.0f/1920.0f;
+	const auto surfaceTouch=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::Touch,surface),ResolveSizes(BaseSize::Medium));
+	Near(surfaceTouch.sweepEnterSpeed,90,0.001,"Surface sweep entry retains previous endpoint");
+	Near(surfaceTouch.sweepExitSpeed,60,0.001,"Surface sweep exit retains previous endpoint");
+	Near(surfaceTouch.largeTargetSpeed,250,0.001,"Surface maximum target retains previous endpoint");
+	const auto surfacePen=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,surface),ResolveSizes(BaseSize::Medium));
+	const auto surfaceMouse=ResolveConfig(surface,DeviceMode::Laptop,MappedSource(SourceKind::Mouse,surface),ResolveSizes(BaseSize::Medium));
+	{
+		Controller detachedMouse;detachedMouse.Reset(0,0,0,StartKind::Hover,surfaceMouse);
+		const double fast=1.5*surfaceMouse.largeTargetSpeed;
+		FeedLine(detachedMouse,fast,2.0,240,surfaceMouse);
+		const float before=detachedMouse.DiameterDip();
+		detachedMouse.LeaveContact(static_cast<float>(2*fast/surfaceMouse.motionPerPixelX),0,2.0,
+			detachedMouse.Diameter());
+		detachedMouse.Advance(2.8);
+		const auto follow=detachedMouse.FollowStateDiagnostics();
+		expect(before>=surfaceMouse.sizes.maximumDiameterDip*0.95f &&
+			detachedMouse.DiameterDip()<before &&
+			std::abs(follow.growthGoalDip-detachedMouse.DiameterDip())<0.01f &&
+			!follow.motionGrowthPermitted && !follow.areaGrowthPermitted,
+			"detached Mouse size session reports its actual shrinking state without invented growth");
+	}
+	for(const auto& config:{surfaceTouch,surfacePen})
+	{
+		const auto trace=ReplayHoldPulses(config,0.040,0.120);
+		{
+			// 测试先在内存收集每个观察帧，结束后一次性导出；不在真实输入热路径写盘。
+			const auto path=std::filesystem::temp_directory_path()/
+				(std::string("inkeys-hold-pulse-")+ResponseModelName(config.response)+".csv");
+			std::ofstream output(path,std::ios::trunc);output.precision(9);
+			output<<"seconds,actualDip,rawTargetDip,effectiveTargetDip,evidenceCapDip,growthGoalDip,evidenceSeconds,holdRemainingSeconds,decreaseProgressSeconds,decreaseConfirmationSeconds,decreasePending,shrinking,sweeping,lastInputSweepSpeed,lastInputAgeSeconds,motionPermit,areaPermit,holdReason,decreaseAction,resetCount,lastResetReason\n";
+			for(const auto& sample:trace)
+			{
+				const auto& f=sample.follow;
+				output<<sample.seconds<<','<<sample.actual<<','<<f.rawTargetDip<<','<<sample.target<<','
+					<<sample.cap<<','<<f.growthGoalDip<<','<<sample.evidence<<','<<f.holdRemainingSeconds<<','
+					<<f.decreaseProgressSeconds<<','<<f.decreaseConfirmationSeconds<<','<<f.decreasePending<<','
+					<<f.shrinking<<','<<sample.sweeping<<','<<f.lastInputSweepSpeed<<','<<f.lastInputAgeSeconds<<','
+					<<f.motionGrowthPermitted<<','<<f.areaGrowthPermitted<<','<<f.holdReason<<','<<f.decreaseReason<<','
+					<<f.decreaseResetCount<<','<<f.lastDecreaseResetReason<<'\n';
+			}
+			std::cout<<"[HoldTrace] "<<path.string()<<" frames="<<trace.size()<<'\n';
+		}
+		uint64_t observedResets=0;
+		for(const auto& sample:trace)
+		{
+			const auto& f=sample.follow;
+			expect(std::isfinite(f.rawTargetDip) && std::isfinite(f.growthGoalDip) &&
+				f.holdRemainingSeconds>=0 && f.decreaseProgressSeconds>=0,
+				"hold trace exposes finite targets and nonnegative timing state");
+			expect(f.decreaseResetCount-observedResets<=1,
+				"100Hz hold trace captures every decrease reset reason in this replay");
+			observedResets=f.decreaseResetCount;
+			if(sample.actual>config.sizes.standardDiameterDip+0.01f &&
+				!f.motionGrowthPermitted && !f.areaGrowthPermitted)
+				expect(f.growthGoalDip<=sample.actual+0.01f,
+					"no-Move high-band frame reports no executable growth goal after shrink");
+		}
+		const auto at=[&](double seconds)
+		{
+			return *std::min_element(trace.begin(),trace.end(),[&](const auto& a,const auto& b)
+				{return std::abs(a.seconds-seconds)<std::abs(b.seconds-seconds);});
+		};
+		const auto warm=at(2.0),after2=at(4.0),after3=at(5.0),end=at(8.0);
+		std::cout<<"[HoldPulse] model="<<ResponseModelName(config.response)<<" warm="<<warm.actual
+			<<" after2="<<after2.actual<<" after3="<<after3.actual<<" end="<<end.actual
+			<<" endTarget="<<end.target<<" endCap="<<end.cap<<'\n';
+		expect(warm.actual>=config.sizes.maximumDiameterDip*0.95f,
+			"hold-pulse fixture first reaches established large size");
+		expect(after2.actual<=config.sizes.standardDiameterDip*1.25f &&
+			after3.actual<=config.sizes.standardDiameterDip*1.05f &&
+			end.actual<=config.sizes.standardDiameterDip*1.05f,
+			"repeated unpermitted short peaks cannot indefinitely hold established large Touch/Pen size");
+		expect(end.cap<=config.sizes.standardDiameterDip+0.01f &&
+			end.follow.decreaseResetCount>0 && !end.follow.motionGrowthPermitted &&
+			end.follow.lastInputAgeSeconds>=0 && end.follow.lastInputAgeSeconds<0.02,
+			"hold trace distinguishes low evidence, real input age and current no-Move frame permission");
+		const auto ordinary=ReplayHoldPulses(config,0,1.0,5.0);
+		expect(ordinary.back().actual<=config.sizes.standardDiameterDip*1.05f,
+			"pure ordinary movement releases an established Touch/Pen sweep");
+		const auto reversal=ReplayHoldPulses(config,0.800,0.040,3.0);
+		float reversalMinimum=config.sizes.maximumDiameterDip;
+		for(const auto& sample:reversal)if(sample.seconds>=2.0)
+			reversalMinimum=std::min(reversalMinimum,sample.actual);
+		expect(reversalMinimum>=config.sizes.maximumDiameterDip*0.90f,
+			"brief genuine reversal followed by clearing retains the large Touch/Pen size");
+		for(double high:{0.020,0.040,0.080,0.100})for(double low:{0.080,0.120,0.200,0.400,0.800})
+		{
+			const auto duty=ReplayHoldPulses(config,high,low);
+			double lateMaxEvidence=0;
+			for(const auto& sample:duty)if(sample.seconds>=4.0)
+				lateMaxEvidence=std::max(lateMaxEvidence,sample.evidence);
+			std::cout<<"[HoldDuty] model="<<ResponseModelName(config.response)<<" highMs="<<high*1000
+				<<" lowMs="<<low*1000<<" maxEvidenceMs="<<lateMaxEvidence*1000
+				<<" end="<<duty.back().actual<<" cap="<<duty.back().cap<<'\n';
+			if(high<=0.040 && low>=0.120 && lateMaxEvidence<config.evidenceStartSeconds)
+				expect(duty.back().actual<=config.sizes.standardDiameterDip*1.10f,
+					"low-duty unsupported peaks release established Touch/Pen size");
+			if(high>=0.100 && low<=0.080)
+				expect(duty.back().actual>=config.sizes.standardDiameterDip*2.0f,
+					"high-duty repeated real clearing may retain useful Touch/Pen size");
+		}
+		const auto newDown=ReplayHoldPulses(config,1.0,1.0,1.01);
+		const auto diameterAt=[&](double seconds)
+		{
+			if(seconds==0)return config.response==ResponseModel::DirectTouch?
+				config.sizes.touchStartDiameterDip:config.sizes.standardDiameterDip;
+			return std::min_element(newDown.begin(),newDown.end(),[&](const auto& a,const auto& b)
+				{return std::abs(a.seconds-seconds)<std::abs(b.seconds-seconds);})->actual;
+		};
+		float maxFrameDelta=0,previous=diameterAt(0);
+		for(const auto& sample:newDown)
+		{maxFrameDelta=std::max(maxFrameDelta,sample.actual-previous);previous=sample.actual;}
+		std::cout<<"[NewDownGrowth] model="<<ResponseModelName(config.response);
+		for(double t:{0.25,0.50,0.75,1.00})
+		{
+			const float delta=diameterAt(t)-diameterAt(t-0.25);
+			std::cout<<" q"<<static_cast<int>(t*4)<<"Delta="<<delta
+				<<" q"<<static_cast<int>(t*4)<<"RateBPerS="<<delta/config.sizes.standardDiameterDip/0.25;
+		}
+		std::cout<<" maxFrameDelta="<<maxFrameDelta<<" maxFrameRateBPerS="
+			<<maxFrameDelta/config.sizes.standardDiameterDip*100<<'\n';
+	}
+	for(const auto& config:{surfaceMouse,surfacePen,surfaceTouch})
+	for(double duration:{0.050,0.080,0.100,0.120,0.150,0.200,0.250,0.300,0.500,1.000})
+	{
+		const auto trace=ReplayWarmBurst(config,240,120,duration);
+		const auto measured=MeasureWarmBurst(trace,config);
+		const auto elapsedMs=[](double value){return value<0?-1.0:value*1000;};
+		std::cout<<"[WarmBurst] model="<<ResponseModelName(config.response)
+			<<" unit="<<MotionUnitName(config.motionUnit)<<" fast="<<trace.fastSpeed
+			<<" requestedMs="<<duration*1000<<" actualMs="<<trace.actualSeconds*1000
+			<<" warmDIP="<<measured.warmDip<<" warmEvidenceMs="<<measured.warmEvidence*1000
+			<<" endDIP="<<measured.endDip<<" endCapDIP="<<measured.endCapDip
+			<<" pulsePeakDIP="<<measured.peakDip
+			<<" pulsePeakMs="<<measured.peakAt*1000<<" afterPeakDIP="<<measured.afterPeakDip
+			<<" afterPeakMs="<<measured.afterPeakAt*1000<<" evidenceEndMs="<<measured.endEvidence*1000
+			<<" to1.25BMs="<<elapsedMs(measured.to125)<<" to2BMs="<<elapsedMs(measured.to2B)
+			<<" to90TargetMs="<<elapsedMs(measured.to90Target)<<'\n';
+		expect(std::abs(measured.warmDip-config.sizes.standardDiameterDip)<0.05f && measured.warmEvidence<0.001,
+			"warm burst begins from standard size without old sweep evidence");
+		expect(measured.endDip<=measured.endCapDip+0.05f,
+			"area-off warm burst actual diameter stays within its evidence size cap");
+		expect(measured.afterPeakDip<=measured.peakDip+0.1f && trace.samples.back().evidence<0.005,
+			"ordinary post-burst motion cannot keep growing and old sweep evidence decays");
+		if(config.response==ResponseModel::IndirectDip)
+		{
+			if(duration==0.100)Near(measured.endDip,32.0,0.01,"mouse 100ms warm burst stays frozen");
+			if(duration==0.150)Near(measured.endDip,32.0119,0.01,"mouse 150ms warm burst stays frozen");
+			if(duration==0.200)Near(measured.endDip,32.8015,0.02,"mouse 200ms warm burst stays frozen");
+		}
+		else
+		{
+			const float B=config.sizes.standardDiameterDip;
+			if(duration==0.100)expect(measured.endDip<=B*1.15f,"Touch/Pen 100ms warm burst remains near B");
+			if(duration==0.150)expect(measured.endDip<=B*1.25f,"Touch/Pen 150ms warm burst remains controlled");
+			if(duration==0.200)expect(measured.endDip<=B*1.40f,"Touch/Pen 200ms warm burst stays below 1.4B");
+			if(duration==0.500)expect(measured.endDip>=B*2.0f,"half-second Touch/Pen clearing remains useful");
+			if(duration==1.000)expect(measured.to90Target>=0 && measured.to90Target<=1.0,
+				"one-second Touch/Pen clearing approaches its speed target");
+		}
+	}
+	for(const auto& config:{surfacePen,surfaceTouch})
+	{
+		const StartKind kind=config.response==ResponseModel::DirectTouch?StartKind::Touch:StartKind::Hover;
+		const double fast=1.5*config.largeTargetSpeed;
+		const auto fresh=Replay(config,{{0,0},{0.100,fast*0.100},{0.500,fast*0.100}},240,120,
+			{0.100,0.200,0.500},kind);
+		expect(fresh[0]*config.display.dipPerPixelX<=config.sizes.standardDiameterDip*1.15f,
+			"new Touch/Pen contact short sweep remains controlled");
+		Controller fine;fine.Reset(0,0,0,kind,config);fine.Advance(2.0);
+		expect(fine.DiameterDip()<=config.sizes.minimumDiameterDip+0.01f,
+			"fine-state short-burst fixture reaches its low plateau");
+		fine.UpdatePosition(0,0,2.0); // 先重锚长空档，快段只含后续真实位移。
+		for(int step=1;step<=24;++step)
+		{
+			const double elapsed=step/240.0;
+			fine.UpdatePosition(static_cast<float>(fast*elapsed/config.motionPerPixelX),0,2.0+elapsed);
+		}
+		expect(fine.DiameterDip()<=config.sizes.standardDiameterDip*1.15f,
+			"fine-state Touch/Pen fast pulse does not jump to a large eraser");
+		for(auto after:{BurstAfter::SamePosition,BurstAfter::NoMove,BurstAfter::Up})
+		{
+			const auto trace=ReplayWarmBurst(config,240,120,0.200,after);
+			const auto measured=MeasureWarmBurst(trace,config);
+			expect(measured.afterPeakDip<=measured.peakDip+0.1f && trace.samples.back().evidence<0.005,
+				"same-position, no-Move and Up cannot keep growing after a pulse");
+			if(after==BurstAfter::NoMove)
+				expect(!trace.samples.back().animating,"no-Move warm pulse eventually returns to sleep");
+		}
+		Controller reversals,isolated;
+		reversals.Reset(0,0,0,kind,config);isolated.Reset(0,0,0,kind,config);
+		const double ordinary=0.6*config.sweepEnterSpeed;
+		for(int step=1;step<=480;++step)
+		{
+			const double time=step/240.0,x=ordinary*time/config.motionPerPixelX;
+			reversals.UpdatePosition(static_cast<float>(x),0,time);
+			isolated.UpdatePosition(static_cast<float>(x),0,time);
+		}
+		for(int step=1;step<=240;++step)
+		{
+			const double elapsed=step/240.0,phase=std::fmod(elapsed,0.160);
+			const double local=fast*(phase<=0.080?phase:0.160-phase);
+			reversals.UpdatePosition(static_cast<float>((ordinary*2+local)/config.motionPerPixelX),0,2+elapsed);
+		}
+		expect(reversals.DiameterDip()>=config.sizes.standardDiameterDip*2.0f,
+			"continuous short local reversals accumulate true Touch/Pen clearing intent");
+		double time=2.0,x=ordinary*2.0;
+		for(int burst=0;burst<4;++burst)
+		{
+			for(int step=0;step<19;++step)
+			{
+				time+=1.0/240;x+=fast/240;
+				isolated.UpdatePosition(static_cast<float>(x/config.motionPerPixelX),0,time);
+			}
+			expect(isolated.DiameterDip()<=config.sizes.standardDiameterDip*1.15f,
+				"separated isolated fast swipes cannot compound into a large Touch/Pen eraser");
+			for(int step=0;step<192;++step)
+			{
+				time+=1.0/240;
+				if(burst%2==0)x+=ordinary/240;
+				isolated.UpdatePosition(static_cast<float>(x/config.motionPerPixelX),0,time);
+			}
+			expect(isolated.SweepEvidenceSeconds()<0.01,
+				"ordinary or stationary gap drains isolated sweep evidence before the next swipe");
+		}
+	}
+	const auto classroomLaptop=ResolveConfig(classroom,DeviceMode::Laptop,MappedSource(SourceKind::Touch,classroom));
+	Near(classroomLaptop.touchProfileWeight,0.25,0.0001,"explicit Laptop limits classroom size prior");
+	Near(classroomLaptop.largeTargetSpeed,512.5,0.001,"explicit Laptop cannot silently become classroom curve");
+	const auto classroomAuto=ResolveConfig(classroom,DeviceMode::Automatic,MappedSource(SourceKind::Touch,classroom));
+	Near(classroomAuto.touchProfileWeight,1,0.0001,"automatic reliable classroom size reaches endpoint");
+	expect(classroomAuto.touchProfileSource==TouchProfileSource::AutomaticPhysical &&
+		classroomTouch.touchProfileSource==TouchProfileSource::SelectedLargeScreenPhysical,
+		"automatic and selected scene provenance remain distinct");
+	float previousWeight=0;
+	for(float widthCm:{28.0f,32.0f,40.0f,55.0f,70.0f,90.0f,120.0f,139.0f,200.0f})
+	{
+		auto display=classroom;display.cmPerPixelX=widthCm/display.pixelWidth;
+		display.cmPerPixelY=widthCm*0.6f/display.pixelHeight;
+		const auto resolved=ResolveConfig(display,DeviceMode::Automatic,MappedSource(SourceKind::Touch,display));
+		expect(resolved.touchProfileWeight>=previousWeight && resolved.touchProfileWeight>=0 &&
+			resolved.touchProfileWeight<=1 && resolved.sweepExitSpeed<resolved.sweepEnterSpeed &&
+			resolved.sweepEnterSpeed<resolved.largeTargetSpeed,"synthetic physical-size sweep parameters stay ordered and continuous");
+		if(widthCm==70)expect(resolved.touchProfileWeight>0.3f && resolved.touchProfileWeight<0.5f,
+			"synthetic 32-inch class surface gets an intermediate curve");
+		previousWeight=resolved.touchProfileWeight;
+	}
+	for(float boundaryCm:{32.0f,120.0f})
+	{
+		auto below=classroom;below.cmPerPixelX=(boundaryCm-0.01f)/below.pixelWidth;
+		below.cmPerPixelY=0.6f*(boundaryCm-0.01f)/below.pixelHeight;
+		auto above=classroom;above.cmPerPixelX=(boundaryCm+0.01f)/above.pixelWidth;
+		above.cmPerPixelY=0.6f*(boundaryCm+0.01f)/above.pixelHeight;
+		const auto a=ResolveConfig(below,DeviceMode::Automatic,MappedSource(SourceKind::Touch,below));
+		const auto b=ResolveConfig(above,DeviceMode::Automatic,MappedSource(SourceKind::Touch,above));
+		expect(std::abs(a.touchProfileWeight-b.touchProfileWeight)<0.001f,
+			"synthetic scene interpolation stays continuous on both sides of its calibration nodes");
+	}
+	auto classroomRotated=classroom;
+	std::swap(classroomRotated.pixelWidth,classroomRotated.pixelHeight);
+	std::swap(classroomRotated.cmPerPixelX,classroomRotated.cmPerPixelY);
+	const auto rotatedClassroom=ResolveConfig(classroomRotated,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,classroomRotated));
+	Near(rotatedClassroom.touchProfileWeight,classroomTouch.touchProfileWeight,0.0001,"rotation keeps Touch profile meaning");
+	auto manualClassroom=classroom;manualClassroom.physicalAvailable=false;
+	manualClassroom.development.scale=ScaleOverride::ManualSurface;
+	manualClassroom.development.calibration={manualClassroom.monitor,139,78,0};
+	const auto manualClassroomTouch=ResolveConfig(manualClassroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,manualClassroom));
+	expect(manualClassroomTouch.motionSource==ScaleSource::ManualCalibration &&
+		manualClassroomTouch.touchProfileSource==TouchProfileSource::SelectedLargeScreenPhysical,
+		"manual scale can select classroom scene without EDID");
+	Near(manualClassroomTouch.largeTargetSpeed,1300,0.001,"manual classroom uses physical scene curve");
+	auto manualRotated=manualClassroom;manualRotated.orientation=1;
+	std::swap(manualRotated.pixelWidth,manualRotated.pixelHeight);
+	const auto rotatedManualTouch=ResolveConfig(manualRotated,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,manualRotated));
+	Near(rotatedManualTouch.touchProfileWeight,manualClassroomTouch.touchProfileWeight,0.0001,
+		"manual surface rotation changes action axes but not scene intensity");
+	auto missingClassroom=classroom;missingClassroom.physicalAvailable=false;
+	const auto missingLarge=ResolveConfig(missingClassroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,missingClassroom));
+	const auto missingLaptop=ResolveConfig(missingClassroom,DeviceMode::Laptop,MappedSource(SourceKind::Touch,missingClassroom));
+	const auto missingAuto=ResolveConfig(missingClassroom,DeviceMode::Automatic,MappedSource(SourceKind::Touch,missingClassroom));
+	expect(missingLarge.motionSource==ScaleSource::ResolutionDpiHeuristic &&
+		missingLarge.motionUnit==MotionUnit::HeuristicPerSecond && missingLarge.largeTargetSpeed==400 &&
+		missingLarge.touchProfileSource==TouchProfileSource::SelectedLargeScreenFallback,
+		"unknown large-screen size retains the labelled heuristic unit and thresholds");
+	expect(missingLaptop.motionSource==ScaleSource::DipOnly && missingLaptop.largeTargetSpeed==700 &&
+		missingAuto.motionSource==ScaleSource::DipOnly && missingAuto.touchProfileSource==TouchProfileSource::AutomaticFallback,
+		"unknown Laptop and Auto size keep DIP fallback without invented millimeters");
+	auto unmappedClassroom=MappedSource(SourceKind::Touch,classroom);unmappedClassroom.mappedMonitor=0;
+	const auto copiedOrUnknown=ResolveConfig(classroom,DeviceMode::LargeScreen,unmappedClassroom);
+	expect(copiedOrUnknown.motionSource==ScaleSource::ResolutionDpiHeuristic &&
+		copiedOrUnknown.motionUnit==MotionUnit::HeuristicPerSecond && copiedOrUnknown.touchSurfaceLongEdgeMm==0,
+		"unreliable topology mapping cannot consume EDID centimeters as physical Touch speed");
+	auto forceUnavailable=classroom;forceUnavailable.development.scale=ScaleOverride::ForceUnavailable;
+	const auto forcedFallback=ResolveConfig(forceUnavailable,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,forceUnavailable));
+	expect(forcedFallback.motionSource==ScaleSource::ResolutionDpiHeuristic && forcedFallback.largeTargetSpeed==400,
+		"forced scale fallback preserves reference DIP/s thresholds");
+	auto invalidManual=manualClassroom;invalidManual.development.calibration.widthCm=0;
+	const auto rejectedManual=ResolveConfig(invalidManual,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,invalidManual));
+	expect(rejectedManual.motionSource==ScaleSource::ResolutionDpiHeuristic && rejectedManual.touchSurfaceLongEdgeMm==0,
+		"invalid manual dimensions never fabricate a physical scene");
+	struct SceneTrace { float actual=0,target=0;double evidence=0,reportedSpeed=0,sweepSpeed=0; };
+	const auto circleTrace=[&](const Config& config,double speed,int hz,int fps,double duration)
+	{
+		Controller controller;controller.Reset(0,0,0,config.response==ResponseModel::DirectTouch?
+			StartKind::Touch:StartKind::Hover,config);
+		constexpr double radius=55.0;int sample=1,frame=1;
+		while(std::min(static_cast<double>(sample)/hz,static_cast<double>(frame)/fps)<=duration+1e-10)
+		{
+			const double inputTime=static_cast<double>(sample)/hz,frameTime=static_cast<double>(frame)/fps;
+			if(inputTime<=frameTime)
+			{
+				const double angle=speed*inputTime/radius;
+				controller.UpdatePosition(static_cast<float>(radius*(std::cos(angle)-1)/config.motionPerPixelX),
+					static_cast<float>(radius*std::sin(angle)/config.motionPerPixelY),inputTime);++sample;
+			}
+			else {controller.Advance(frameTime);++frame;}
+		}
+		controller.Advance(duration);
+		return SceneTrace{controller.DiameterDip(),controller.TargetDiameterDip(),controller.SweepEvidenceSeconds(),
+			controller.Speed(),controller.SweepSpeed()};
+	};
+	for(double speed:{100.0,200.0,270.0,300.0,322.0,400.0,432.376,600.0,800.0,1000.0,1300.0})
+	{
+		const auto trace=circleTrace(classroomTouch,speed,1000,120,3.0);
+		std::cout<<"[TouchScene] classroom physical-mm/s speed="<<speed<<" reference="
+			<<ReferenceTargetDiameterDip(classroomTouch,speed)<<" controllerTarget="<<trace.target
+			<<" actual="<<trace.actual<<" evidence="<<trace.evidence<<'\n';
+		if(speed<=432.376)
+		{
+			expect(trace.actual<=classroomTouch.sizes.standardDiameterDip*1.10f,
+				"synthetic classroom ordinary local motion stays near B");
+			expect(trace.target<=classroomTouch.sizes.standardDiameterDip*1.10f,
+				"synthetic classroom ordinary target stays near B");
+		}
+		if(speed>=600)Near(trace.actual,ReferenceTargetDiameterDip(classroomTouch,speed),3.0,
+			"synthetic sustained classroom clearing reaches its intermediate or maximum target");
+	}
+	const auto ordinaryClassroomLong=circleTrace(classroomTouch,432.376,125,60,20.0);
+	expect(ordinaryClassroomLong.actual<=classroomTouch.sizes.standardDiameterDip*1.10f &&
+		ordinaryClassroomLong.target<=classroomTouch.sizes.standardDiameterDip*1.10f,
+		"twenty seconds of synthetic ordinary local Touch movement cannot accumulate maximum");
+	std::vector<Knot> classroomReversals{{0,0}};
+	for(int i=1;i<=50;++i)classroomReversals.push_back({i*0.12,i%2?432.376*0.12:0});
+	const auto reversalSizes=Replay(classroomTouch,classroomReversals,125,60,{3.0,6.0},StartKind::Touch);
+	for(float diameterPx:reversalSizes)
+		expect(diameterPx*classroom.dipPerPixelX<=classroomTouch.sizes.standardDiameterDip*1.10f,
+			"synthetic short classroom reversals remain ordinary rather than accumulating maximum");
+	Controller slowFastSlow;slowFastSlow.Reset(0,0,0,StartKind::Touch,classroomTouch);
+	constexpr double localRadius=55.0;double angle=0;float fastPeak=0;
+	for(int i=1;i<=875;++i)
+	{
+		const double time=i/125.0,velocity=time<=1?300.0:time<=3?1000.0:300.0;
+		angle+=velocity/(125.0*localRadius);
+		slowFastSlow.UpdatePosition(static_cast<float>(localRadius*(std::cos(angle)-1)/classroomTouch.motionPerPixelX),
+			static_cast<float>(localRadius*std::sin(angle)/classroomTouch.motionPerPixelY),time);
+		if(time==3.0)fastPeak=slowFastSlow.DiameterDip();
+	}
+	expect(fastPeak>80 && slowFastSlow.DiameterDip()<=classroomTouch.sizes.standardDiameterDip*1.10f,
+		"synthetic slow-fast-slow local arc grows in clearing and returns to ordinary size");
+	for(double speed:{432.376,800.0,1300.0})
+	{
+		const auto reference=circleTrace(classroomTouch,speed,1000,120,3.0);
+		for(int hz:{60,125,240})for(int fps:{30,60,144})
+		{
+			const auto result=circleTrace(classroomTouch,speed,hz,fps,3.0);
+			expect(std::abs(result.actual-reference.actual)<=reference.actual*0.05f,
+				"synthetic classroom local sweep is input and frame-rate consistent");
+		}
+	}
+	DisplayScale mediumSurface=classroom;
+	mediumSurface.cmPerPixelX=70.0f/mediumSurface.pixelWidth;
+	mediumSurface.cmPerPixelY=40.0f/mediumSurface.pixelHeight;
+	const auto mediumTouch=ResolveConfig(mediumSurface,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,mediumSurface));
+	expect(mediumTouch.sweepEnterSpeed>90 && mediumTouch.sweepEnterSpeed<350 &&
+		mediumTouch.largeTargetSpeed>250 && mediumTouch.largeTargetSpeed<1300,
+		"synthetic medium touch surface retains a distinct ordinary and clearing range");
+	auto penFallbackDisplay=surface;penFallbackDisplay.physicalAvailable=false;
+	const auto penDip=ResolveConfig(penFallbackDisplay,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,penFallbackDisplay));
+	const auto penHeuristic=ResolveConfig(penFallbackDisplay,DeviceMode::LargeScreen,MappedSource(SourceKind::IntegratedPen,penFallbackDisplay));
+	const std::array<Config,8> timedScenes{surfaceTouch,mediumTouch,classroomTouch,missingLarge,missingLaptop,
+		surfacePen,penDip,penHeuristic};
+	const auto smooth=[](double x){x=std::clamp(x,0.0,1.0);return x*x*(3.0-2.0*x);};
+	for(const auto& config:timedScenes)
+	{
+		const double B=config.sizes.standardDiameterDip;
+		for(double duration:{0.100,0.200,0.500,1.000})
+		{
+			const auto trace=ReplayWarmBurst(config,240,120,duration);
+			const auto measured=MeasureWarmBurst(trace,config);
+			expect(std::abs(measured.warmDip-B)<0.05 && measured.warmEvidence<0.001,
+				"each physical or fallback scene reaches B before its warm burst");
+			if(duration==0.100)expect(measured.endDip<=B*1.15,"all Touch/Pen scene units resist a 100ms strong pulse");
+			if(duration==0.200)expect(measured.endDip<=B*1.40,"all Touch/Pen scene units keep 200ms growth controlled");
+			if(duration==0.500)expect(measured.endDip>=B*2.0,"all Touch/Pen scene units still grow after 500ms");
+			if(duration==1.000)expect(measured.to90Target>=0 && measured.to90Target<=1.0,
+				"all Touch/Pen scene units can approach a sustained strong target");
+		}
+		// 泄漏证据的稳态许可上限必须覆盖同一速度的合法目标，不能只在最强快扫可达。
+		for(double fraction:{0.0,0.01,0.05,0.10,0.20,0.40,0.60,0.80,1.0})
+		{
+			const double speed=config.sweepEnterSpeed+fraction*(config.largeTargetSpeed-config.sweepEnterSpeed);
+			const double action=SweepActionSpeed(config,speed);
+			const double strength=0.4+0.6*smooth((action-config.sweepEnterSpeed)/
+				(config.largeTargetSpeed-config.sweepEnterSpeed));
+			const double equilibrium=std::min(config.evidenceFullSeconds,strength*config.evidenceDecaySeconds);
+			const double permission=smooth((equilibrium-config.evidenceStartSeconds)/
+				(config.evidenceFullSeconds-config.evidenceStartSeconds));
+			const double permitted=B*std::exp(permission*std::log(config.sizes.maximumDiameterDip/B));
+			const double target=CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,speed));
+			expect(permitted+0.5>=target,"steady evidence permits every Touch/Pen intermediate speed target");
+		}
+		double lower=config.sweepEnterSpeed,upper=config.largeTargetSpeed;
+		for(int i=0;i<32;++i)
+		{
+			const double speed=(lower+upper)*0.5;
+			if(CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,speed))<2*B)lower=speed;
+			else upper=speed;
+		}
+		for(double speed:{config.sweepEnterSpeed*1.01,(lower+upper)*0.5,
+			config.sweepEnterSpeed+0.90*(config.largeTargetSpeed-config.sweepEnterSpeed),
+			config.largeTargetSpeed*1.10})
+		{
+			const auto steady=circleTrace(config,speed,240,120,3.0);
+			const double target=CompensateTargetDiameterDip(config,ReferenceTargetDiameterDip(config,speed));
+			expect(std::abs(steady.actual-target)<=std::max(2.0,target*0.05),
+				"sustained near-enter, 2B, near-large and above-large targets stay reachable");
+		}
+	}
+	double worstWarmRateDifference=0;size_t warmRateCases=0;
+	for(const auto& config:{surfaceTouch,classroomTouch,missingLarge,surfacePen,penDip})
+	for(double requested:{0.080,0.150,0.500})for(int hz:{60,125,240,1000})for(int fps:{30,60,120,144})
+	{
+		const auto trace=ReplayWarmBurst(config,hz,fps,requested);
+		const auto reference=ReplayWarmBurst(config,1000,120,trace.actualSeconds);
+		const auto measured=MeasureWarmBurst(trace,config),expected=MeasureWarmBurst(reference,config);
+		const double difference=std::abs(measured.endDip-expected.endDip)/expected.endDip;
+		worstWarmRateDifference=std::max(worstWarmRateDifference,difference);++warmRateCases;
+		expect(difference<=0.05,"warm Touch/Pen pulse keeps five-percent input/frame-rate consistency");
+		if(hz==60 && requested==0.080)
+			Near(trace.actualSeconds,5.0/60.0,1e-9,"60Hz requested 80ms produces an actual 83.33ms pulse");
+		if(hz==125 && requested==0.150)
+			Near(trace.actualSeconds,19.0/125.0,1e-9,"125Hz requested 150ms produces an actual 152ms pulse");
+	}
+	std::cout<<"[WarmBurstRates] cases="<<warmRateCases<<" worstEndDifferencePct="
+		<<worstWarmRateDifference*100<<'\n';
+	const double mediumSweepSpeed=(mediumTouch.sweepEnterSpeed+mediumTouch.largeTargetSpeed)*0.5;
+	const auto mediumReference=circleTrace(mediumTouch,mediumSweepSpeed,125,60,3.0);
+	expect(circleTrace(mediumTouch,150,125,60,3).actual<=mediumTouch.sizes.standardDiameterDip*1.02f &&
+		mediumReference.actual>mediumTouch.sizes.standardDiameterDip*1.5f &&
+		circleTrace(mediumTouch,mediumTouch.largeTargetSpeed*1.05,125,60,3).actual>
+			mediumTouch.sizes.maximumDiameterDip*0.95f,
+		"synthetic medium scene has ordinary, intermediate and reachable maximum zones");
+	for(const auto pixels:std::array<std::pair<int,int>,3>{{{1920,1080},{2560,1440},{3840,2160}}})
+	for(int dpi:{96,120,144,192})for(bool portrait:{false,true})
+	{
+		auto display=mediumSurface;display.pixelWidth=pixels.first;display.pixelHeight=pixels.second;
+		display.cmPerPixelX=70.0f/display.pixelWidth;display.cmPerPixelY=40.0f/display.pixelHeight;
+		if(portrait){std::swap(display.pixelWidth,display.pixelHeight);std::swap(display.cmPerPixelX,display.cmPerPixelY);}
+		display.dipPerPixelX=display.dipPerPixelY=96.0f/dpi;
+		const auto config=ResolveConfig(display,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,display));
+		Near(config.touchProfileWeight,mediumTouch.touchProfileWeight,0.0001,
+			"same synthetic medium surface resolves the same scene across resolution, DPI and rotation");
+		Near(config.largeTargetSpeed,mediumTouch.largeTargetSpeed,0.001,
+			"same medium scene uses the same mm/s thresholds across display modes");
+		const auto trace=circleTrace(config,mediumSweepSpeed,125,60,3.0);
+		expect(std::abs(trace.actual-mediumReference.actual)<=mediumReference.actual*0.05f,
+			"same physical medium-scene action retains DIP output across display modes");
+	}
+	for(float widthCm:{28.0f,40.0f,55.0f,70.0f,90.0f,120.0f,139.0f,200.0f})
+	{
+		auto display=classroom;display.cmPerPixelX=widthCm/display.pixelWidth;
+		display.cmPerPixelY=widthCm*0.6f/display.pixelHeight;
+		const auto config=ResolveConfig(display,DeviceMode::Automatic,MappedSource(SourceKind::Touch,display));
+		const auto ordinary=circleTrace(config,config.sweepEnterSpeed*0.75,125,60,3);
+		const auto clearing=circleTrace(config,config.largeTargetSpeed*1.05,125,60,3);
+		std::cout<<"[TouchProfile] synthetic widthCm="<<widthCm<<" weight="<<config.touchProfileWeight
+			<<" enter="<<config.sweepEnterSpeed<<" exit="<<config.sweepExitSpeed
+			<<" large="<<config.largeTargetSpeed<<" ordinaryDIP="<<ordinary.actual
+			<<" clearDIP="<<clearing.actual<<'\n';
+		expect(ordinary.actual<=config.sizes.standardDiameterDip*1.05f &&
+			clearing.actual>=config.sizes.maximumDiameterDip*0.85f,
+			"synthetic size family has both ordinary and reachable clearing zones");
+	}
+	for(auto base:{BaseSize::Small,BaseSize::Medium,BaseSize::Large})
+	{
+		float priorRatio=0;
+		for(auto sensitivity:{Sensitivity::Low,Sensitivity::Medium,Sensitivity::High})
+		{
+			InputSettings settings;settings.baseSize=base;settings.sensitivity=sensitivity;
+			const auto parsed=ResolveInput(classroom,DeviceMode::LargeScreen,MappedSource(SourceKind::Touch,classroom),
+				InputEntry::Touch,settings);
+			const auto& config=parsed.config;const float B=static_cast<float>(base);
+			Near(config.sizes.minimumDiameterDip,B*0.5,0.001,"base preset sets only minimum DIP");
+			Near(config.sizes.maximumDiameterDip,B*5,0.001,"base preset sets only maximum DIP");
+			Near(config.largeTargetSpeed,1300,0.001,"base preset and sensitivity do not redefine classroom speed range");
+			Near(config.sweepGain,SweepGain(sensitivity),0.0001,"sensitivity stays a mild sweep gain");
+			const float ratio=ReferenceTargetDiameterDip(config,800)/B;
+			if(priorRatio)expect(ratio>=priorRatio,"low/medium/high gains retain ordered clearing targets");
+			priorRatio=ratio;
+			const auto pen=ResolveInput(surface,DeviceMode::Laptop,MappedSource(SourceKind::IntegratedPen,surface),
+				InputEntry::PenTip,settings).config;
+			for(const auto& timed:{config,pen})for(double duration:{0.100,0.200,0.500})
+			{
+				const auto measured=MeasureWarmBurst(ReplayWarmBurst(timed,240,120,duration),timed);
+				if(duration==0.100)expect(measured.endDip<=B*1.15f,
+					"24/32/40 and low/medium/high Touch/Pen 100ms pulse remains near B");
+				if(duration==0.200)expect(measured.endDip<=B*1.40f,
+					"24/32/40 and low/medium/high Touch/Pen 200ms pulse stays controlled");
+				if(duration==0.500)expect(measured.endDip>=B*2.0f,
+					"24/32/40 and low/medium/high Touch/Pen half-second sweep stays useful");
+			}
+		}
+	}
+	auto assistedClassroom=classroomTouch;assistedClassroom.touchContactAreaAssistance=true;
+	const auto area=AreaSample(assistedClassroom,40,30);
+	const auto assistedOrdinary=ReplayArea(assistedClassroom,{{0,0},{2,400}},125,60,{2.0},
+		[&](double){return area;});
+	expect(assistedOrdinary[0].area.active && assistedOrdinary[0].diameter>classroomTouch.sizes.standardDiameterDip &&
+		assistedOrdinary[0].diameter<=assistedClassroom.contactArea.maximumFloorDip+0.01f,
+		"area-on classroom Touch respects a finite accepted floor rather than the area-off B target");
+	auto assistedSurface=surfaceTouch;assistedSurface.touchContactAreaAssistance=true;
+	auto oldAreaResponse=assistedSurface;
+	oldAreaResponse.growthTauSeconds=0.120;oldAreaResponse.largeGrowthTauSeconds=0.100;
+	oldAreaResponse.maximumLogGrowthPerSecond=6.0;oldAreaResponse.largeLogGrowthPerSecond=8.0;
+	const auto assistedSample=AreaSample(assistedSurface,40,30);
+	const auto areaPath=std::vector<Knot>{{0,0},{2,120}};
+	const std::vector<double> areaCheckpoints{0.15,0.25,0.40,0.80,1.20};
+	const auto newArea=ReplayArea(assistedSurface,areaPath,240,120,areaCheckpoints,[&](double){return assistedSample;});
+	const auto oldArea=ReplayArea(oldAreaResponse,areaPath,240,120,areaCheckpoints,[&](double){return assistedSample;});
+	for(size_t i=0;i<newArea.size();++i)
+		Near(newArea[i].diameter,oldArea[i].diameter,0.05,
+			"Touch ordinary area floor keeps the accepted pre-burst growth response");
+	expect(newArea.back().area.active && newArea.back().diameter>assistedSurface.sizes.standardDiameterDip,
+		"Touch area assistance remains available without sweep qualification");
 
 	DisplayScale physical;
 	physical.generation = 7;
@@ -908,9 +1606,11 @@ int RunSpeedEraserTests()
 		auto d=penDisplay;d.cmPerPixelX=d.cmPerPixelY=rho/10;
 		const auto c=ResolveConfig(d,DeviceMode::Laptop,MappedSource(SourceKind::Touch,d));
 		Near(CompensateTargetDiameterDip(c,100),100,0.0001,"R7 touch dynamic target is DIP, independent of physical density");
-		std::vector<Knot> local{{0,0}};for(int i=1;i<=8;++i)local.push_back({i*0.2,i%2?36.0:0.0});
+		// 历史 180 mm/s 跨表面同目标断言已替代；各场景按自身有效清扫区检查可达性。
+		const double localSpeed=c.largeTargetSpeed*0.72;
+		std::vector<Knot> local{{0,0}};for(int i=1;i<=8;++i)local.push_back({i*0.2,i%2?localSpeed*0.2:0.0});
 		const auto values=Replay(c,local,125,60,{0.8,1.6},StartKind::Touch);
-		expect(values[0]>64 && values[1]>64,"R7 36mm local touch strokes at 180mm/s enter usable sweep");
+		expect(values[0]>64 && values[1]>64,"R7 local touch sweep remains reachable at each effective scene");
 	}
 	Near(penConfig.rhoMmPerDip,0.25,0.00001,"physical axes resolve millimeters per DIP");
 	expect(penConfig.motionUnit==MotionUnit::MillimetersPerSecond && penConfig.sweepEnterSpeed==120 &&
@@ -1114,6 +1814,8 @@ int RunSpeedEraserTests()
 	const auto areaReference=ReplayArea(areaConfig,slowDrag,1000,120,areaTimes,[&](double){return normalArea;},2.0);
 	expect(areaReference[2].diameter>38 && areaReference[2].diameter<40 && areaReference[2].area.active,
 		"ordinary slow touch drag opens bounded area floor without sweep speed");
+	expect(areaReference[2].diameter>areaReference[2].evidenceCap+5,
+		"area floor remains independent of the sweep evidence cap");
 	Near(areaReference[3].area.referenceFloorDip,39,0.001,"max-axis span produces independent bounded floor");
 	expect(!areaReference[4].animating && areaReference[4].wake>3.0 &&
 		areaReference[4].diameter>38,"held touch rests at its area floor and schedules expiry without spinning");
@@ -1185,6 +1887,116 @@ int RunSpeedEraserTests()
 		Near(value.area.referenceFloorDip,39,0.001,"confirmed reference does not breathe with contact size");
 		expect(value.diameter<=39.01f,"same-position area increase does not enlarge accepted geometry");
 	}
+	// 窄参考后的合法宽面积持续真实拖动，应能恢复，但不能抬高首次接触的面积上界。
+	const auto recover=ReplayArea(areaConfig,slowDrag,1000,120,{0.2,0.42,0.85,1.2},
+		[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+	expect(recover[0].area.referenceReady && recover[0].area.referenceFloorDip>49,
+		"narrow initial Touch area establishes the original bounded reference");
+	expect(recover[1].area.reason==ContactAreaReason::Outlier && !recover[1].area.sampleValid,
+		"hard-valid wider area first fails the original relative reference");
+	expect(recover[2].area.reason==ContactAreaReason::Ready && recover[2].area.sampleValid &&
+		recover[2].area.referenceFresh,
+		"stable hard-valid outlier recovers after sustained real dragging");
+	expect(recover[2].area.referenceFloorDip<=recover[0].area.referenceFloorDip+0.001f,
+		"recovered area does not exceed the first accepted floor");
+	expect(recover[1].area.outlierAxes==1 && recover[1].area.outlierWidthRatio>2 &&
+		recover[1].area.referenceWidthDip>19 && recover[1].area.recovering,
+		"diagnostics identify the failing reference axis and active recovery candidate");
+	expect(recover[2].area.recoveryCount==1 && recover[2].area.firstReferenceFloorDip==recover[0].area.referenceFloorDip &&
+		recover[2].area.areaFloorAboveStandard && recover[3].diameter>areaConfig.sizes.standardDiameterDip,
+		"recovery restores bounded area assistance to later real movement");
+	const auto spike=ReplayArea(areaConfig,slowDrag,1000,120,{0.45,0.9},
+		[&](double t){return AreaSample(areaConfig,t>=0.4 && t<0.46?52.0f:20.0f,t>=0.4 && t<0.46?50.0f:40.0f);});
+	expect(spike.back().area.recoveryCount==0 && spike.back().area.referenceWidthDip<21 &&
+		spike.back().area.referenceFloorDip<=recover[0].area.referenceFloorDip+0.001f,
+		"isolated hard-valid spike cannot replace the accepted reference");
+	const auto unstable=ReplayArea(areaConfig,slowDrag,1000,120,{1.2},
+		[&](double t){const bool high=static_cast<int>((t-0.4)/0.04)%2==0;
+			return AreaSample(areaConfig,t<0.4?20.0f:(high?52.0f:90.0f),t<0.4?40.0f:50.0f);});
+	expect(unstable[0].area.recoveryCount==0 && unstable[0].area.reason==ContactAreaReason::Outlier,
+		"alternating hard-valid outliers cannot accumulate recovery time");
+	const auto drifting=ReplayArea(areaConfig,slowDrag,1000,120,{0.6,0.85},
+		[&](double t){const float width=t<0.4?20.0f:52.0f+38.0f*static_cast<float>(std::clamp((t-0.4)/0.25,0.0,1.0));
+			return AreaSample(areaConfig,width,t<0.4?40.0f:50.0f);});
+	expect(drifting[0].area.recoveryCount==0 && drifting[0].area.reason==ContactAreaReason::Outlier &&
+		drifting[1].area.recoveryCount==1,
+		"gradual area drift restarts the fixed-anchor window before its final stable interval recovers");
+	for(const auto bad:std::vector<ContactAreaSample>{AreaSample(areaConfig,100.0f,50.0f),
+		AreaSample(areaConfig,NAN,50.0f),AreaSample(areaConfig,90.0f,10.0f),
+		ContactAreaSample{300.0f,200.0f,30.0f,20.0f,ContactAreaUnits::Unverified}})
+	{
+		const auto interrupted=ReplayArea(areaConfig,slowDrag,1000,120,{0.62},
+			[&](double t){return t<0.4?AreaSample(areaConfig,20.0f,40.0f):
+				(t<0.46?AreaSample(areaConfig,52.0f,50.0f):(t<0.5?bad:AreaSample(areaConfig,52.0f,50.0f)));});
+		expect(interrupted[0].area.recoveryCount==0 && interrupted[0].area.reason==ContactAreaReason::Outlier,
+			"hard-invalid packet resets rather than completing an outlier candidate");
+	}
+	const auto stationaryRecovery=ReplayArea(areaConfig,{{0,0},{0.4,4},{1.4,4}},125,60,{1.2},
+		[&](double t){return AreaSample(areaConfig,t<0.5?20.0f:52.0f,t<0.5?40.0f:50.0f);});
+	expect(stationaryRecovery[0].area.recoveryCount==0 && stationaryRecovery[0].area.reason==ContactAreaReason::Outlier,
+		"larger area during a stationary press cannot recover");
+	const auto previewRecovery=ReplayArea(areaConfig,slowDrag,1000,120,{0.45,1.0},
+		[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);},0.45);
+	expect(previewRecovery.back().area.recoveryCount==0 && !previewRecovery.back().area.recovering &&
+		previewRecovery.back().area.recoveryMotionSeconds<=previewRecovery.front().area.recoveryMotionSeconds+1e-9,
+		"Advance frames cannot age a recovery candidate without new input");
+	const auto multiRecovery=ReplayArea(areaConfig,slowDrag,1000,120,{0.7,1.2},
+		[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:(t<0.8?52.0f:90.0f),t<0.4?40.0f:(t<0.8?50.0f:60.0f));});
+	expect(multiRecovery.back().area.recoveryCount==2 &&
+		multiRecovery.back().area.referenceFloorDip<=recover[0].area.referenceFloorDip+0.001f,
+		"multiple recoveries cannot ratchet the first accepted floor upward");
+	const auto newTouch=ReplayArea(areaConfig,slowDrag,125,60,{0.8},
+		[&](double){return AreaSample(areaConfig,52.0f,50.0f);});
+	expect(newTouch[0].area.referenceReady && newTouch[0].area.recoveryCount==0 &&
+		newTouch[0].area.referenceFloorDip>recover[0].area.referenceFloorDip+10,
+		"a genuinely new Touch contact owns a fresh area upper bound");
+	const auto offRecovery=ReplayArea(noAreaConfig,slowDrag,125,60,{1.0},
+		[&](double t){return AreaSample(noAreaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+	expect(!offRecovery[0].area.referenceReady && offRecovery[0].area.recoveryCount==0,
+		"area-off Touch never creates a recovery reference");
+	for(const auto base:{BaseSize::Small,BaseSize::Medium,BaseSize::Large})
+	{
+		const auto c=ResolveConfig(areaDisplay,DeviceMode::Laptop,MappedSource(SourceKind::Touch,areaDisplay),ResolveSizes(base));
+		const auto values=ReplayArea(c,slowDrag,125,60,{0.2,0.85},
+			[&](double t){return AreaSample(c,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+		expect(values.back().area.recoveryCount==1 &&
+			values.back().area.referenceFloorDip<=values.front().area.referenceFloorDip+0.001f,
+			"24/32/40 base sizes retain the first-contact area cap");
+	}
+	for(int hz:{60,125,240,1000})for(int fps:{30,60,120,144})
+	{
+		const auto values=ReplayArea(areaConfig,slowDrag,hz,fps,{0.85,1.2},
+			[&](double t){return AreaSample(areaConfig,t<0.4?20.0f:52.0f,t<0.4?40.0f:50.0f);});
+		expect(values[0].area.recoveryCount==1 && values[0].area.referenceFresh &&
+			std::abs(values.back().diameter-recover[3].diameter)<=recover[3].diameter*0.05f,
+			"outlier recovery is timed in real seconds across input and frame rates");
+	}
+	Controller bridgedArea;const auto narrowArea=AreaSample(areaConfig,20.0f,40.0f),wideArea=AreaSample(areaConfig,52.0f,50.0f);
+	bridgedArea.Reset(0,0,0,StartKind::Touch,areaConfig,0,&narrowArea);
+	for(int i=1;i<=60;++i)
+	{
+		const double t=i/125.0;const auto& sample=t<0.4?narrowArea:wideArea;
+		bridgedArea.UpdatePosition(static_cast<float>(t*10/areaConfig.motionPerPixelX),0,t,&sample);
+	}
+	expect(bridgedArea.AreaDiagnostics(0.48).recovering && bridgedArea.AreaDiagnostics(0.48).recoveryCount==0,
+		"recovery candidate exists before reconnect");
+	bridgedArea.PauseForReconnect(0.48);bridgedArea.Advance(1.48);bridgedArea.ResumeFromReconnect(100,0,1.48);
+	expect(bridgedArea.AreaDiagnostics(1.48).recoveryCount==0 && !bridgedArea.AreaDiagnostics(1.48).recovering,
+		"synthetic reconnect clears only the unfinished recovery candidate");
+	for(int i=1;i<=20;++i)
+	{
+		const double t=1.48+i/125.0;
+		bridgedArea.UpdatePosition(static_cast<float>(100+i*10.0/125/areaConfig.motionPerPixelX),0,t,&wideArea);
+	}
+	expect(bridgedArea.AreaDiagnostics(1.64).recoveryCount==0 && bridgedArea.AreaDiagnostics(1.64).referenceReady,
+		"reconnect preserves accepted reference but cannot reuse pre-gap candidate time");
+	for(int i=21;i<=23;++i)
+	{
+		const double t=1.48+i/125.0;
+		bridgedArea.UpdatePosition(static_cast<float>(100+i*10.0/125/areaConfig.motionPerPixelX),0,t,&wideArea);
+	}
+	expect(bridgedArea.AreaDiagnostics(1.664).recoveryCount==1,
+		"fresh real movement after reconnect can independently complete recovery");
 	const auto outlier=ReplayArea(areaConfig,{{0,0},{1,10},{3,10}},125,60,{1,1.1,2.8},
 		[&](double t){return AreaSample(areaConfig,t<=1?30:70,t<=1?20:50);});
 	expect(outlier[1].area.reason==ContactAreaReason::Outlier && !outlier[1].area.sampleValid,
@@ -1307,7 +2119,11 @@ int RunSpeedEraserTests()
 		const double t=i/1000.0;curved.push_back({t,20.0*(1.0-std::cos(t*3.141592653589793/0.25))});
 	}
 	const auto rounded=Replay(touchPlain,curved,125,60,{0.6,1.0,1.4},StartKind::Touch);
-	for(float d:rounded)expect(d>64,"40mm smooth-decelerating local reversals maintain useful Touch coverage");
+	// 历史每个时刻都>64DIP的断言属于旧快增长；新合同先保护短段，再验证持续折返可达。
+	expect(rounded[0]>=32 && rounded[0]<=40,
+		"40mm smooth reversals at 0.6s remain controlled rather than jumping large");
+	expect(rounded[1]>64 && rounded[2]>80 && rounded[2]>rounded[1],
+		"continued 40mm smooth reversals reach useful intermediate Touch coverage");
 	const auto shortTap=Replay(touchPlain,{{0,0},{0.02,3},{1,3}},125,60,{0.02,0.1,1},StartKind::Touch);
 	for(float d:shortTap)expect(d<=32.0f,"brief small touch stroke cannot turn into large clearing");
 	std::cout << "[SpeedEraser] worst sample/frame deviation=" << worstRateError * 100.0

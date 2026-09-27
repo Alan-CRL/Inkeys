@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-09-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~596 | Active |
+| `journal-1.md` | ~750 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,13 +29,17 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-09-27 | 笔速橡皮 Canary 前结案 | `5997d23b`, `cf4a1874`, `6aefa84e`, `c777b8dd`, `aea346c8`, `22706ee4` | `bugfix/eraser` |
 | 26 | 2026-09-27 | PPT UI3 任务收尾 | `900ab31f`, `1cd45e57`, `d7b9ec12` | `bugfix/pptui` |
 | 25 | 2026-09-26 | PPT UI3 回归修复提交记录 | `910de60f` | `bugfix/pptui` |
 | 24 | 2026-09-25 | PPT UI3 选择态页墨迹和超大控件回归 | - | `bugfix/pptui` |
 | 23 | 2026-09-25 | PPT 补充修复提交记录 | `adfe7fb2` | `bugfix/pptui` |
 | 22 | 2026-09-25 | PPT 真退出穿透与独立结束页补充修复 | - | `bugfix/pptui` |
 | 21 | 2026-09-25 | PPT UI3 与切页事务修复及自动化验证 | - | `bugfix/pptui` |
+| 20 | 2026-09-25 | Touch与屏幕笔暖状态短快划增长阻力 | `6aefa84e` | `bugfix/eraser` |
 | 19 | 2026-09-25 | 触摸橡皮擦光标残留修复与验收 | `31c48f4e`, `428860b5`, `5fdd4a67` | `feature/cursor` |
+| 18 | 2026-09-24 | 输入与橡皮诊断输出扩展 | `cf4a1874` | `bugfix/eraser` |
+| 17 | 2026-09-23 | Touch 场景曲线修正 | `5997d23b` | `bugfix/eraser` |
 | 16 | 2026-09-23 | UI3 偶发卡顿第一批修复与诊断 | - | `bugfix/animation` |
 | 15 | 2026-09-22 | UI3 i18n 格式串异常防护 | `0409256f` | `feature/ui3-i18n` |
 | 14 | 2026-09-22 | 收敛桌面定格 Magnification 链路 | `ba14ddd6`, `7df93730` | `bugfix/settingui` |

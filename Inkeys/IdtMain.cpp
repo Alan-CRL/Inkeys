@@ -1419,7 +1419,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
 				cursorConsoleOutputEnabled)
 			{
-				// 设备初始化前绑定共用控制台，避免遗漏 TouchAreaDevice 启动信息。
+				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
 			}
 			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(

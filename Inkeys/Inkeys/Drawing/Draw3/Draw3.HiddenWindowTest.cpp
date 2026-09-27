@@ -1588,6 +1588,21 @@ namespace Inkeys::Drawing::Draw3
 						const auto d=ProductHost().RuntimeSnapshot().eraser;
 						return d.active && d.response==expected && d.inputType==(flags==kHiddenTestTouchFlag?0u:1u);
 					}),"actual pen/touch identity routes through the selected response",failures);
+					if(expected==SpeedEraser::ResponseModel::DirectTouch ||
+						expected==SpeedEraser::ResponseModel::ScreenPenHybrid)
+						modeSucceeded &= Check(WaitUntil([expected]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+							return d.active && std::abs(d.evidenceStartSeconds-0.080)<0.001 &&
+								std::abs(d.evidenceFullSeconds-(expected==SpeedEraser::ResponseModel::DirectTouch?0.180:0.200))<0.001 &&
+								std::abs(d.growthTauSeconds-(expected==SpeedEraser::ResponseModel::DirectTouch?0.220:0.200))<0.001 &&
+								std::abs(d.evidenceCapDiameterDip-d.sizes.standardDiameterDip)<0.01f;}),
+							"real Touch/ScreenPen Down reports new growth evidence parameters without precharged size",failures);
+					modeSucceeded &= Check(WaitUntil([flags]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+						return d.inputContact && d.inputPositionValid && d.contactId==d.inputSource.cursorId &&
+							d.contactGeneration!=0 && std::abs(d.inputCanvasXpx-80)<0.01f &&
+							std::abs(d.inputCanvasYpx-100)<0.01f &&
+							(flags!=kHiddenTestTouchFlag || (d.cursorVisible &&
+								std::abs(d.cursorCanvasXpx-80)<0.01f && std::abs(d.cursorCanvasYpx-100)<0.01f));}),
+						"diagnostic input identity and canvas cursor belong to the same contact",failures);
 					modeSucceeded &= Check(WaitUntil([]
 					{
 						const auto d=ProductHost().RuntimeSnapshot().eraser;
@@ -1622,13 +1637,72 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 				ProductHost().SetEraserDevelopmentOptions({});
+				// 合成手动大屏通过真实 Host/Down 路径解析；切场景只在下一次接触生效。
+				auto classroomState=speedState;classroomState.paintDevice=0;
+				PublishProductState(classroomState);
+				SpeedEraser::DevelopmentOptions classroomDevelopment;classroomDevelopment.diagnostics=true;
+				classroomDevelopment.touchAreaTrace=true; // 复用限频诊断观察运动期间速度，不逐包输出。
+				classroomDevelopment.scale=SpeedEraser::ScaleOverride::ManualSurface;
+				classroomDevelopment.calibration={1,139,78,0};
+				ProductHost().SetEraserDevelopmentOptions(classroomDevelopment);
+				modeSucceeded &= Check(WaitUntil([]{return ProductHost().EraserDisplayScaleSnapshot().development.scale==
+					SpeedEraser::ScaleOverride::ManualSurface;}),"manual classroom scale reaches Host before new Down",failures);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.response==SpeedEraser::ResponseModel::DirectTouch &&
+						d.motionSource==SpeedEraser::ScaleSource::ManualCalibration &&
+						d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
+						std::abs(d.sweepEnterSpeed-350)<0.01f && std::abs(d.largeTargetSpeed-1300)<0.01f &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),
+					"manual classroom Touch ingress latches scene curve and matching cursor",failures);
+				const auto beforeClassroomMoves=ProductHost().RuntimeSnapshot().inputMovePublished;
+				constexpr int classroomMoveCount=40;
+				constexpr int classroomLastX=60+classroomMoveCount*2;
+				for(int i=1;i<=classroomMoveCount;++i)
+				{
+					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,60+i*2,120);
+					std::this_thread::sleep_for(40ms);
+				}
+				modeSucceeded &= Check(WaitUntil([beforeClassroomMoves,classroomMoveCount]{const auto s=ProductHost().RuntimeSnapshot();
+					const auto& d=s.eraser;
+					return s.inputMovePublished>=beforeClassroomMoves+classroomMoveCount && d.active &&
+						d.effectiveDiameterDip>=31.5f && d.effectiveDiameterDip<=35.2f && d.targetDiameterDip<=35.2f &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),
+					"manual classroom ordinary local Touch remains near the selected B",failures);
+				const auto classroomObserved=ProductHost().RuntimeSnapshot().eraser;
+				std::fprintf(stderr,"[TouchSceneHidden] unit=%s speed=%.3f sweepSpeed=%.3f targetDIP=%.3f actualDIP=%.3f cursorPx=%.3f geometryPx=%.3f\n",
+					SpeedEraser::MotionUnitName(classroomObserved.motionUnit),classroomObserved.speed,classroomObserved.sweepSpeed,
+					classroomObserved.targetDiameterDip,classroomObserved.effectiveDiameterDip,
+					classroomObserved.cursorDiameterPx,classroomObserved.nextRadiusPx*2);
+				PublishProductState(speedState);
+				std::this_thread::sleep_for(60ms);
+				postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,classroomLastX+2,120);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
+						std::abs(d.largeTargetSpeed-1300)<0.01f;}),
+					"active Touch keeps its latched scene after product setting changes",failures);
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,classroomLastX+2,120);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"manual classroom contact closes before scene change",failures);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::Laptop &&
+						std::abs(d.largeTargetSpeed-512.5f)<0.01f;}),
+					"next Touch contact receives explicit Laptop cap with the same manual scale",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,120);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"manual scene probe cancels without leaking contact",failures);
+				ProductHost().SetEraserDevelopmentOptions({});
 				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
 				const auto areaProbe=[&](const char* label)
 				{
 					const auto s=ProductHost().RuntimeSnapshot();const auto& d=s.eraser;
-					std::fprintf(stderr,"[AreaProbe] %s mode=%u dip=%g cursor=%g floor=%g ref=%g active=%d age=%g reason=%d points=%llu history=%g anchor=%d radius=%g frame=%llu\n",
+					std::fprintf(stderr,"[AreaProbe] %s mode=%u dip=%g cursor=%g floor=%g ref=%g firstRef=%g refDip=%gx%g recoveries=%u recoveryMs=%g recovering=%d releasing=%d aboveB=%d active=%d age=%g reason=%d points=%llu history=%g anchor=%d radius=%g frame=%llu\n",
 						label,static_cast<unsigned>(requiredMode),d.effectiveDiameterDip,d.cursorDiameterPx,d.contactArea.activeFloorDip,
-						d.contactArea.referenceFloorDip,d.contactArea.active,d.idleSeconds,static_cast<int>(d.contactArea.reason),
+						d.contactArea.referenceFloorDip,d.contactArea.firstReferenceFloorDip,
+						d.contactArea.referenceWidthDip,d.contactArea.referenceHeightDip,d.contactArea.recoveryCount,
+						d.contactArea.recoveryMotionSeconds*1000,d.contactArea.recovering,d.contactArea.releasing,
+						d.contactArea.areaFloorAboveStandard,d.contactArea.active,d.idleSeconds,static_cast<int>(d.contactArea.reason),
 						static_cast<unsigned long long>(d.realPointCount),d.historyRadiusPx,d.resumedWithAnchor,d.resumedMaxRadiusPx,
 						static_cast<unsigned long long>(d.frameSequence));
 				};
@@ -1642,7 +1716,10 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(setAreaOption(false),"apply independent area option",failures);
 				postSource(HiddenTestContactPhase::Hover,kHiddenTestMouseFlag,60,80);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.preview && d.inputType==2 && d.effectiveDiameterDip<=16.01f;}),"prepare frozen mouse fine hover",failures);
+					return d.preview && d.inputType==2 && d.effectiveDiameterDip<=16.01f &&
+						d.inputPositionValid && std::abs(d.inputCanvasXpx-60)<0.01f &&
+						d.cursorVisible && std::abs(d.cursorCanvasXpx-60)<0.01f;}),
+					"prepare frozen mouse fine hover with matching diagnostic position",failures);
 				const auto beforeToggle=ProductHost().RuntimeSnapshot().eraser;
 				modeSucceeded &= Check(setAreaOption(true),"enable touch-only area assistance",failures);
 				std::this_thread::sleep_for(60ms);
@@ -1686,6 +1763,16 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && !d.needsAnimation && d.contactArea.active &&
 					std::abs(d.effectiveDiameterDip-d.contactArea.activeFloorDip)<0.001f;}),"held Touch settles at accepted assistance floor",failures);
+				// 等真实模型结果排空后再断言休眠；首次达到floor时仍可能有待消费的旧Move。
+				modeSucceeded &= Check(WaitUntil([]{
+					const auto before=ProductHost().RuntimeSnapshot().eraser;
+					if(!before.active || before.needsAnimation || !before.contactArea.active)return false;
+					std::this_thread::sleep_for(100ms);
+					const auto after=ProductHost().RuntimeSnapshot().eraser;
+					return after.active && !after.needsAnimation && after.contactArea.active &&
+						after.realPointCount==before.realPointCount &&
+						std::abs(after.effectiveDiameterDip-after.contactArea.activeFloorDip)<0.001f;
+				},3s),"area floor waits for the previously queued model output",failures);
 				areaProbe("after-held-check");
 				const auto resting=ProductHost().RuntimeSnapshot();
 				std::this_thread::sleep_for(150ms);
@@ -1718,6 +1805,51 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([areaHistory]{return ProductHost().RuntimeSnapshot().redoCommandCount>areaHistory.redoCommandCount;}),
 					"area geometry supports real Redo",failures);
+				// 旧参考失配先按原规则回落；只有后续真实拖动可恢复，光标与新几何仍共用同一尺寸。
+				ProductHost().SetHiddenTestContactArea({200,400,20,40,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				const auto recoveryDownBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
+				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
+				modeSucceeded &= Check(WaitUntil([recoveryDownBefore]{const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputDownPublished>recoveryDownBefore && s.eraser.active && s.eraser.contactArea.enabled;}),
+					"recovery probe starts a fresh Touch area contact",failures);
+				int recoveryX=60;
+				for(int i=1;i<=35;++i)
+				{
+					recoveryX=60+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,recoveryX,170);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.referenceReady &&
+						std::abs(d.contactArea.firstReferenceFloorDip-50)<0.01f && d.effectiveDiameterDip>45;}),
+					"recovery probe first establishes its bounded narrow reference",failures);
+				ProductHost().SetHiddenTestContactArea({520,500,52,50,SpeedEraser::ContactAreaUnits::CanvasPixels});
+				for(int i=0;i<30;++i)
+				{
+					postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,recoveryX,170);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.referenceReady && d.contactArea.recoveryCount==0 &&
+						!d.contactArea.areaFloorAboveStandard && d.effectiveDiameterDip<=32.5f;},3s),
+					"stationary relative outlier releases the old floor without recovering",failures);
+				areaProbe("recovery-released");
+				const auto releasedArea=ProductHost().RuntimeSnapshot().eraser;
+				for(int i=1;i<=35;++i)
+				{
+					recoveryX=95+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,recoveryX,170);
+					std::this_thread::sleep_for(30ms);
+				}
+				modeSucceeded &= Check(WaitUntil([releasedArea]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.active && d.contactArea.recoveryCount==1 && d.contactArea.referenceWidthDip>50 &&
+						d.contactArea.referenceFloorDip<=d.contactArea.firstReferenceFloorDip+0.01f &&
+						d.effectiveDiameterDip>40 && d.realPointCount>releasedArea.realPointCount &&
+						std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f &&
+						std::abs(d.historyRadiusPx-d.nextRadiusPx)<0.01f;},3s),
+					"real drag restores capped area reference with matching cursor and new geometry",failures);
+				areaProbe("recovery-restored");
+				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,recoveryX,170);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
+					"recovered Touch contact closes without leaking area state",failures);
 				ProductHost().SetHiddenTestContactArea({300,200,30,20,SpeedEraser::ContactAreaUnits::CanvasPixels});
 				modeSucceeded &= Check(setAreaOption(false),"disable area independently of Touch speed",failures);
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
@@ -1731,7 +1863,11 @@ namespace Inkeys::Drawing::Draw3
 				const auto fixedBefore=ProductHost().RuntimeSnapshot().inputDownPublished;
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,170);
 				modeSucceeded &= Check(WaitUntil([fixedBefore]{const auto s=ProductHost().RuntimeSnapshot();
-					return s.inputDownPublished>fixedBefore && std::abs(s.eraser.cursorDiameterPx-32)<0.01f;}),
+					const auto& d=s.eraser;
+					return s.inputDownPublished>fixedBefore && std::abs(d.cursorDiameterPx-32)<0.01f &&
+						d.eraserKind==SpeedEraser::EraserKind::Fixed && d.inputPositionValid &&
+						std::abs(d.inputCanvasXpx-60)<0.01f && std::abs(d.inputCanvasYpx-170)<0.01f &&
+						std::abs(d.targetDiameterDip-d.effectiveDiameterDip)<0.01f;}),
 					"fixed Touch eraser ignores area and uses default32 DIP",failures);
 				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,170);
 				ProductHost().SetHiddenTestContactArea({});
@@ -1878,6 +2014,16 @@ namespace Inkeys::Drawing::Draw3
 					postSource(HiddenTestContactPhase::Cancelled,entryFlags[entry],gapX,gapY);
 					std::this_thread::sleep_for(50ms);
 				}
+				auto inkState=speedState;inkState.tool=Bridge::Tool::HardPen;
+				PublishProductState(inkState);std::this_thread::sleep_for(50ms);
+				postSource(HiddenTestContactPhase::Down,kHiddenTestIntegratedPenFlag,110,100);
+				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
+					return d.inputContact && !d.eraserContact && d.inputType==1 && d.inputPositionValid &&
+						std::abs(d.inputCanvasXpx-110)<0.01f && std::abs(d.inputCanvasYpx-100)<0.01f;}),
+					"ordinary pen contact reports its input position without an eraser size",failures);
+				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestIntegratedPenFlag,110,100);
+				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.inputContact;}),
+					"ordinary pen diagnostic contact closes",failures);
 
 				ProductHost().SetEraserDevelopmentOptions({});
 

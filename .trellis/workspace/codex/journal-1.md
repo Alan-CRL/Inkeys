@@ -329,6 +329,119 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 [OK] **Completed**
 
 
+## Session 17: Touch 场景曲线修正
+<!-- trellis-session: v=2 fp=c2a632b749a69579 -->
+
+**Date**: 2026-09-23
+**Task**: Touch 场景曲线修正
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+恢复 speed-eraser-physical-scale，在当前 bugfix/eraser 基线修正可信物理 Touch 大屏过早触顶，补中间场景和诊断；详见 validation-touch-profile-20260923.md。
+
+### Main Changes
+
+- Touch 物理/手动路径按可靠表面长边解析有界场景清扫参数，保留 DIP/经验回退和其他设备响应。
+- 更新原任务 PRD/design、input-and-ink 等 spec、上下文清单与本轮 CSV/验证记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5997d23b` | fix(draw3): adapt touch eraser sweep to display scene |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 完整构建退出 0；InkeysHeadlessTests.exe --no-window 退出 0。
+- [FAIL] Inkeys.exe --draw3-eraser-hidden-test 退出 1：DComp/ULW 各两条 Window Service owner 关系断言失败；新增 Touch 场景断言未报失败。
+
+### Status
+
+[IN PROGRESS] 原 Trellis 任务保持 in_progress；本轮自动验证已执行，实机手感与隐藏窗口 owner 断言仍待处理。
+
+### Next Steps
+
+- 在 Surface 和教室设备分别人工验收普通/清扫手感；独立排查隐藏测试的窗口 owner 关系。
+
+
+## Session 18: 输入与橡皮诊断输出扩展
+<!-- trellis-session: v=2 fp=5763b97e26f75543 -->
+
+**Date**: 2026-09-24
+**Task**: 输入与橡皮诊断输出扩展
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+沿用旧控制台开关，更新三语言名称；新增启动显示/EDID 摘要及限频的设备、坐标、面积、橡皮尺寸快照。完整结果见 validation-console-diagnostics-20260924.md。
+
+### Main Changes
+
+- 保留 TouchArea 持久化键，扩展 Host/Controller 帧级诊断，区分活动分辨率与原始 EDID、可见光标与输入位置、非橡皮无效尺寸。
+- 更新原任务 PRD/design、native-desktop spec、上下文清单及三语言翻译。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cf4a1874` | feat(draw3): expand eraser console diagnostics |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 构建退出 0；InkeysHeadlessTests.exe --no-window 退出 0；i18n check 330/330。
+- [FAIL] Inkeys.exe --draw3-eraser-hidden-test 退出 1：DComp/ULW 各两条 Window Service owner 断言失败；新增诊断断言未报失败。
+- [BLOCKED] 远端 SSH 读取时报 `sign_and_send_pubkey: signing failed for RSA "Github SSH" from agent: communication with agent failed`；GitHub 随后拒绝公钥认证。未绕过身份验证或尝试推送。
+
+### Status
+
+[IN PROGRESS] 原任务仍为 in_progress；真实设备 EDID 与用户动作手感待采样，隐藏窗口 owner 失败待单独处理。
+
+### Next Steps
+
+- 专项隐藏测试仍有 DComp/ULW 各两条 Window Service owner 关系失败；本轮新增诊断断言无失败。
+- 用户修复 GitHub SSH agent 后，再正常推送 `bugfix/eraser`；不使用强推或替代认证绕过。
+- Surface 与教室设备启用该选项并重启，采集真实 EDID 与标注动作的限频快照。
+
+
+## Session 20: Touch与屏幕笔暖状态短快划增长阻力
+<!-- trellis-session: v=2 fp=41284dde87eb8867 -->
+
+**Date**: 2026-09-25
+**Task**: Touch与屏幕笔暖状态短快划增长阻力
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+在原 speed-eraser-physical-scale 任务中复现旧短快划并局部调整 Touch/ScreenPen 标准以上证据与增长；保留场景曲线和面积响应，验证记录见 validation-warm-burst-20260925.md。
+
+### Main Changes
+
+- Touch/ScreenPen 标准以上增长参数局部调整，面积主导增长保留旧响应；增加证据尺寸上限只读诊断。
+- 补暖状态时序、场景/回退、频率、尺寸/灵敏度、折返与隔离快划测试及CSV；更新原任务规格。
+
+### Git Commits
+
+`6aefa84e` fix(draw3): resist short touch and pen eraser swipes
+
+原任务保持 in_progress；用户后续授权提交并推送。
+
+### Testing
+
+- [OK] 生产 SpeedEraser.cpp ARM64 无PDB探针运行通过；96组速率最大差0.591%，20组临界目标最大差0.0775 DIP，面积辅助与旧响应最大差0。
+- [OK] 修改的 SpeedEraser.cpp、Host、DrawingController、HiddenWindowTest、headless 测试源分别无PDB语法编译通过。
+- [OK] 完整 InkeysRepo.sln Debug|ARM64 在本进程临时追加 /FS 后退出0；原命令的两个 vc143.pdb C1041 另行记录，未改工程配置。
+- [OK] 最新 headless --no-window 退出0；暖状态240组频率差0.591%，既有 sample/frame 最坏4.613%，精细1728组0失败。
+- [FAIL] 最新 --draw3-eraser-hidden-test 退出1，仅DComp/ULW各两条既有Window Service owner断言；橡皮参数、面积、光标和几何断言未报失败。
+
+### Status
+
+[IN PROGRESS] 原 Trellis 任务保持 in_progress；本机自动验证已执行，真实设备手感与独立窗口 owner 问题仍待处理。
+
+### Next Steps
+
+- 待条件允许时复查无需临时 /FS 的常规本机构建；独立排查隐藏窗口 owner 关系断言。
+- Surface与教室设备真人手感及光标/新增几何仍需人工验收。
 ## Session 16: UI3 偶发卡顿第一批修复与诊断
 <!-- trellis-session: v=2 fp=d174486dc527116d -->
 
@@ -594,3 +707,44 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Next Steps
 
 - 处理 PR #217 与最新 dev 的冲突并验证可合并状态
+
+
+## Session 27: 笔速橡皮 Canary 前结案
+<!-- trellis-session: v=2 fp=9e2c9a741c0da203 -->
+
+**Date**: 2026-09-27
+**Task**: 笔速橡皮 Canary 前结案
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+用户报告人工验收通过；PR #219 已可合并，教室大屏仍待现场验证。按用户要求在 canary 发布前归档原任务。
+
+### Main Changes
+
+- 保留 Touch/ScreenPen 短快划、回缩许可和面积参考安全恢复，以及 dev 的橡皮指针所有权修复。
+- 原任务归档为 completed；PR #219 目标分支修正为 dev，并记录未覆盖的大屏范围。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5997d23b` | fix(draw3): adapt touch eraser sweep to display scene |
+| `cf4a1874` | feat(draw3): expand eraser console diagnostics |
+| `6aefa84e` | fix(draw3): resist short touch and pen eraser swipes |
+| `c777b8dd` | fix(draw3): prevent unqualified sweeps from blocking eraser shrink |
+| `aea346c8` | fix(draw3): recover stable touch area after reference mismatch |
+| `22706ee4` | Merge dev into bugfix/eraser |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64、headless --no-window、橡皮专项隐藏窗口测试均退出 0。
+- [OK] 完整 Draw3 隐藏测试有 22 条 PPT 结束页/页墨迹断言；CodeRabbit 在线检查仍显示 pending。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 先发布 canary，再安排教室大屏实机笔速橡皮验收；PPT 隐藏测试失败另行定位。

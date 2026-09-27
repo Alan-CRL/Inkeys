@@ -4278,6 +4278,8 @@ namespace Inkeys::Drawing::Draw3
 				if(!r)for(const auto* candidate:active)
 					if(candidate && !candidate->ended && candidate->tool==DrawingTool::Eraser)
 					{r=candidate;break;}
+				if(!r)for(const auto* candidate:active)
+					if(candidate && !candidate->ended){r=candidate;break;}
 				const SpeedEraser::Controller* controller=nullptr;
 				if(r && r->stroke.widthMode==StrokeWidthMode::SpeedEraser)
 				{
@@ -4303,7 +4305,16 @@ namespace Inkeys::Drawing::Draw3
 				if(controller)
 				{
 					const auto& cfg=controller->Configuration();
-					d.mode=cfg.mode;d.motionSource=cfg.motionSource;d.motionUnit=cfg.motionUnit;d.sizes=cfg.sizes;
+					d.requestedDeviceMode=cfg.mode;d.touchProfileSource=cfg.touchProfileSource;
+					d.touchProfileWeight=cfg.touchProfileWeight;d.touchSurfaceLongEdgeMm=cfg.touchSurfaceLongEdgeMm;
+					d.motionSource=cfg.motionSource;d.motionUnit=cfg.motionUnit;d.sizes=cfg.sizes;
+					d.fineToStandardSpeed=cfg.fineToStandardSpeed;d.sweepEnterSpeed=cfg.sweepEnterSpeed;
+					d.sweepExitSpeed=cfg.sweepExitSpeed;d.largeTargetSpeed=cfg.largeTargetSpeed;d.sweepGain=cfg.sweepGain;
+					d.evidenceStartSeconds=cfg.evidenceStartSeconds;d.evidenceFullSeconds=cfg.evidenceFullSeconds;
+					d.evidenceDecaySeconds=cfg.evidenceDecaySeconds;d.growthTauSeconds=cfg.growthTauSeconds;
+					d.largeGrowthTauSeconds=cfg.largeGrowthTauSeconds;
+					d.maximumLogGrowthPerSecond=cfg.maximumLogGrowthPerSecond;
+					d.largeLogGrowthPerSecond=cfg.largeLogGrowthPerSecond;
 					d.entry=cfg.inputEntry;d.formalPenResponse=cfg.formalPenResponse;d.developmentResponseOverride=cfg.developmentResponseOverride;
 					d.inputSource=cfg.inputSource;d.response=cfg.response;d.inputMapped=cfg.inputMapped;
 					d.monitor=cfg.display.monitor;d.displayGeneration=cfg.display.generation;d.displayRevision=cfg.display.revision;
@@ -4311,20 +4322,35 @@ namespace Inkeys::Drawing::Draw3
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
 					d.effectiveDiameterDip=controller->DiameterDip();
 					d.targetDiameterDip=controller->TargetDiameterDip();d.touchUnlocked=controller->TouchUnlocked();
+					d.evidenceCapDiameterDip=controller->SweepEvidenceCapDiameterDip();
 					d.needsAnimation=controller->NeedsAnimation(mouseVisualSeconds);
 					d.contactArea=controller->AreaDiagnostics(mouseVisualSeconds);
 					d.fine=controller->FineDiagnostics();
+					d.follow=controller->FollowStateDiagnostics();
 					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
 					d.motionPerPixelX=cfg.motionPerPixelX;d.motionPerPixelY=cfg.motionPerPixelY;
 					d.pixelWidth=cfg.display.pixelWidth;d.pixelHeight=cfg.display.pixelHeight;
 					d.manualWidthCm=cfg.display.development.calibration.widthCm;
 					d.manualHeightCm=cfg.display.development.calibration.heightCm;
-					d.speed=controller->Speed();d.evidenceSeconds=controller->SweepEvidenceSeconds();
+					d.speed=controller->Speed();d.sweepSpeed=controller->SweepSpeed();
+					d.evidenceSeconds=controller->SweepEvidenceSeconds();
 					d.sweeping=controller->Sweeping();d.qualified=controller->SweepQualified();d.limited=controller->TargetLimited();
 					d.idleSeconds=controller->SecondsSinceMovement(mouseVisualSeconds);
 				}
 				if(r)
 				{
+					d.inputContact=!r->ended && !r->awaitingReconnect;
+					d.inputType=static_cast<uint32_t>(r->metricDeviceType);
+					if(!controller || d.inputSource.kind==SpeedEraser::SourceKind::Unknown)
+						d.inputSource=r->lastInputSnapshot.source;
+					if(r->handle.record)
+					{d.contactId=r->handle.record->ContactId();d.contactGeneration=r->handle.generation;}
+					if(d.inputContact)
+					{
+						d.inputPositionValid=true;
+						d.inputCanvasXpx=r->lastModelSnapshot.position.x;
+						d.inputCanvasYpx=r->lastModelSnapshot.position.y;
+					}
 					d.selectedTool=static_cast<uint32_t>(r->selectedTool);d.effectiveTool=static_cast<uint32_t>(r->tool);
 					d.downSeconds=r->eraserDiagnostics.downSeconds;d.downDiameterPx=r->eraserDiagnostics.downDiameterPx;
 					d.firstPointRadiusPx=r->stroke.realPoints.empty()?0:r->stroke.realPoints.front().r;
@@ -4335,14 +4361,44 @@ namespace Inkeys::Drawing::Draw3
 					d.inputType=static_cast<uint32_t>(r->metricDeviceType);d.inputSource=r->lastInputSnapshot.source;
 					d.entry=r->resolvedEraser.entry;d.eraserKind=r->resolvedEraser.kind;
 					const auto& cfg=r->resolvedEraser.config;
+					d.requestedDeviceMode=cfg.mode;d.touchProfileSource=cfg.touchProfileSource;
+					d.sizes=cfg.sizes;
 					d.nextRadiusPx=r->eraserSize.effectiveDiameterPx*0.5f;
 					d.dipPerPixelX=cfg.display.dipPerPixelX;d.dipPerPixelY=cfg.display.dipPerPixelY;
 					d.dpiX=96/cfg.display.dipPerPixelX;d.dpiY=96/cfg.display.dipPerPixelY;
 					d.effectiveDiameterDip=r->eraserSize.effectiveDiameterPx*std::sqrt(cfg.display.dipPerPixelX*cfg.display.dipPerPixelY);
+					d.targetDiameterDip=d.effectiveDiameterDip;
 					d.formalPenResponse=cfg.formalPenResponse;d.developmentResponseOverride=cfg.developmentResponseOverride;
 				}
 				d.frameSeconds=mouseVisualSeconds;
-				d.cursorDiameterPx=currentCursorVisuals.empty()?0:currentCursorVisuals.front().appearance.width;
+				if(!r && d.preview)
+				{
+					const auto& sample=primaryUsesPen?penSample:mouseSample;
+					if(sample.valid)
+					{d.inputPositionValid=true;d.inputCanvasXpx=sample.x;d.inputCanvasYpx=sample.y;}
+				}
+				if(r && !r->ended && !r->awaitingReconnect && r->metricDeviceType==InputDeviceType::Touch &&
+					r->tool==DrawingTool::Eraser)
+				{
+					// 诊断必须取当前 contact 的最终 Touch 光标，不能读取列表首项的鼠标/其他手指。
+					auto appearance=eraserAppearance;
+					ApplySpeedEraserCursorDiameter(appearance,r->stroke.widthMode==StrokeWidthMode::SpeedEraser?
+						RuntimeSpeedEraserContactDiameter(*r):r->stroke.widthEstimator.baseDiameter);
+					const auto& position=r->lastModelSnapshot.position;
+					const auto visual=MakeTouchEraserDrawingCursorVisual(position.x,position.y,appearance);
+					d.cursorVisible=visual.visible;
+					if(visual.visible){d.cursorCanvasXpx=visual.x;d.cursorCanvasYpx=visual.y;}
+					d.cursorDiameterPx=visual.visible?visual.appearance.width:0;
+				}
+				// Touch 圆环追加在主光标之后；没有主光标时不能借它填主输入诊断。
+				else if(((r && r==primaryRuntime) || (!r && d.preview)) && primaryCursorCount != 0)
+				{
+					const auto& visual=currentCursorVisuals.front();
+					d.cursorVisible=visual.visible;
+					if(visual.visible){d.cursorCanvasXpx=visual.x;d.cursorCanvasYpx=visual.y;}
+					d.cursorDiameterPx=visual.visible?visual.appearance.width:0;
+				}
+				else d.cursorDiameterPx=0;
 				observer_.eraserDiagnostics(observer_.context,d);
 			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)

@@ -280,6 +280,8 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 因此，文案变更应：先改基准 JSONC，再按任务授权运行 `sync`、处理翻译标记、运行 `check`，并审查所有生成差异。只审计时使用 `check`；`sync` 会写文件，不能在未授权的只读/文档任务中执行。不要手工编辑 `IdtI18nKeys.g.h`。
 
+实验选项的控制台诊断由旧 `SettingsUI/Experimental/ConsoleOutput/TouchArea` 文案键和 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 保存键继续承载；扩大输出内容时只更新三语言可见名称/说明，不改键以保留已有用户选择。
+
 ### 生成键标识符与 Win32 宏合同
 
 #### 1. Scope / Trigger

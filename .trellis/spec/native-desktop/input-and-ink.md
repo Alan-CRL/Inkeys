@@ -167,10 +167,10 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 ## Scenario: 橡皮DIP尺寸、Touch响应与接触面积辅助
 
 ### 1. Scope / Trigger
-2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。2026-09-15 的精细区合同见下文：仅替代最小到标准区间的正速度立即增粗、固定120ms无确认以及独立idle旁路。标准以上清扫、物理补偿、面积换算/倍率和Hover/Down/Up所有权不变，不重写输入队列、模型、中心轨迹或渲染器。
+2026-09-14 同步已接受的 Mouse/ScreenPenHybrid 行为与第七轮 Touch 规格。2026-09-15 的精细区合同见下文：仅替代最小到标准区间的正速度立即增粗、固定120ms无确认以及独立idle旁路。2026-09-23 的 Touch 场景修正又替代了旧“统一物理清扫曲线”要求；2026-09-25 仅授权 Touch/ScreenPenHybrid 标准以上的增长抗短脉冲调整。精细算法、屏幕笔速度映射/补偿、面积换算/倍率和Hover/Down/Up所有权仍不变，不重写输入队列、模型、中心轨迹或渲染器。
 
 ### 2. Signatures
-- `EraserSizes` 全部是直径 DIP：minimum=16、standard=32、maximum=160、touchStart=16、fixed=50；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
+- `EraserSizes` 全部是直径 DIP；`ResolveSizes(BaseSize)` 的当前预设 B=24/32/40，分别给出 minimum=0.5B、standard=B、maximum=5B、touchStart=0.5B、fixed=B。原始 `EraserSizes{}` 默认值只用于兼容直接调用；`DiameterToCanvasPx` 仅在坐标边界换算，`FixedDiameterPx` 完全旁路动态控制。
 - `ResolveConfig(display, mode, InputSource, sizes)` 分离真实来源、响应模型与标尺。来源通过当前 RTS context 的能力及精确 Pointer cursor 对应关系缓存，不改变真实 InputDeviceType。
 - `Controller::UpdatePosition(x,y,seconds,contactArea,terminal)` 只消费真实输入；`Advance` 不制造运动证据；`AreaDiagnostics`、`NextAreaWakeSeconds` 暴露有界状态与过期唤醒。
 - `ContactSnapshot` 保留 `rawContactSize`、既有 `contactSize` 和 `contactAreaUnits`。面积单位状态不影响正常位置、压力、倒转和接触身份。
@@ -186,8 +186,12 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 - 经验增益保持 `1 / clamp(min(max(Wdip,Hdip)/1920, min(Wdip,Hdip)/1080), 0.5, 4)`；它不是屏幕英寸或毫米估计。
 - 间接响应精细/进入/退出/大目标速度为 100/800/600/1900 DIP/s。屏幕笔物理响应为 20/120/80/350 mm/s，DIP回退为 80/480/320/1400 DIP/s。
 - 屏幕笔仅对标准以上增量应用 `g=(0.25/rho)^beta`，默认 beta=0.5，rho 为可信表面的 mm/DIP；基础属性、精细区与固定尺寸不参与补偿。本轮不调整这些已有响应。
-- Touch 动态目标直接用 DIP，不做 rho 整目标补偿。Touch 精细/进入/退出/大目标：物理 30/90/60/250 mm/s；DIP 100/240/160/700 DIP/s；经验 100/120/80/400 reference DIP/s。
-- Touch 历史窗 50ms，证据 start/full/decay 为 25/60/180ms；增长 tau 120/100ms，对数增长限速 6/8 每秒。原有缩小/保持参数不全局改动。面积开关关闭时同样使用新 Touch 速度模型。
+- Touch 动态目标直接用 DIP，不做 rho 整目标补偿。可信物理或有效手动标尺的小屏端点为 30/90/60/250 mm/s，教室大屏端点为 30/350/250/1300 mm/s；DIP 回退仍是 100/240/160/700 DIP/s，经验回退仍是 100/120/80/400 reference DIP/s，不将 mm/s 阈值套用到回退单位。
+- Touch 场景强度仅用于 DirectTouch 物理/手动路径的 enter/exit/large：长边 320–1200 mm 之间用 smoothstep 得到有界 `w`，三项为 `90+260w / 60+190w / 250+1050w` mm/s。Laptop 显式选择限制 `w≤0.25`，LargeScreen 显式选择保证 `w≥0.25`；内部 Automatic 仅在调用者请求时按可信尺寸取原权重，未知尺寸退 Laptop/DIP。此长边是经验先验，不是用户动作或字迹的测量，不按整屏比例计算速度。已保存的 0/1 场景选择不被 EDID 覆盖；标尺、场景、响应模型分别解析，接触期间锁存。Surface 约 28cm 的 Laptop 路径继续严格使用小屏端点。
+- 同一有效参数必须供 `SweepActionSpeed` 后的资格、证据、退出和 `ReferenceTargetDiameterDip` 目标共同使用。普通动作低于进入资格不能凭持续时长充成最大；大屏 B=32、中灵敏度时 100/200/300/400/432.376/600/800/1000/1300 mm/s 的公式参考目标约为 32/32/32/32.42/33.11/42.16/67.15/109.40/160 DIP，实际控制器还受起步、证据与时间响应影响。
+- 2026-09-25 暖状态抗短快划：Touch 历史窗仍为50ms，证据 start/full/decay 改为80/180/300ms，标准以上增长 tau=220/180ms、对数增长限速4/6每秒；ScreenPenHybrid 证据改为80/200/350ms、增长 tau=200/160ms，原有对数限速4/6每秒不变。Mouse/间接模型、场景速度阈值、缩小/保持及精细参数不改。上述证据是泄漏积分及许可尺寸，并非固定等待时长；低于资格的普通运动不能靠时间充满。面积主导的普通 Touch 增长沿用原120/100ms与6/8每秒，不借面积给清扫证据。面积开关关闭时同样使用 Touch 速度模型。
+- `SweepEvidenceCapDiameterDip()` 只读计算证据对应的尺寸上限；帧级 `[TouchCurve]` 附带有效证据/增长参数和该 cap。cap 不代表当前确已获得新运动资格；无Move帧可能仍报告短窗速度但清扫用速度为零，面积下限也可独立高于 cap。分析100ms动作必须用有界内存测试采样，250ms控制台快照不足以逐点重放。
+- 2026-09-27 仅替代上条 2026-09-25 中 DirectTouch/ScreenPen 的“缩小/保持不改”边界：已有大尺寸允许短时高于证据 cap，不能据 cap 直接夹小；保持续期与回缩确认取消需本步真实动作及足够证据支持当前尺寸。被拒绝的增长请求与无可靠资格的近尺寸目标可暂缓本步下降，不得反复清零持续成立的回小意图。接受的增长、可靠的近尺寸目标仍可重置，短折返与连续清扫保留。Mouse/间接模型、原速度目标、增长参数、面积下限和精细区合同不变。
 - 真实路程按时间积分，折返不作净位移抵消；预测、补点、缺失连接和面积变化不提供速度资格。实际位移解锁仍为物理 1–3mm 或回退 2–6 动作单位。
 - Touch 的移动目标不能因为每包误差小于 settle tolerance 就立即吸附。仅目标稳定时允许小误差收敛，否则高回报率会绕过阻尼。此修正规则不改变冻结的间接/屏幕笔响应。
 - 非Touch的Up/Down与Hover改用下文的按入口连续尺寸会话，替代Up Reset、140ms夹小和250ms交还期限。纯Hover仍不新增清扫证据；真正Touch每次新接触仍小起步，面积与真实断触协议不变。
@@ -196,6 +200,7 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 - 已确认的面积按 `wDip=wPx*dipPerPixelX`、`hDip=hPx*dipPerPixelY` 换算一次，不使用 EDID、压力或 WM_TOUCH 的百分之一像素规则。
 - 面积默认拒绝范围外 2..96 DIP、长宽比超过3.5、非有限/非正值和离群跳变。拒绝阈值与辅助上限是两件事，巨值不能被夹成64DIP后使用。
 - 稳定真实拖动确认50ms后锁定本接触的参考；面积参考可与位移解锁并行准备，但实际下限须通过原位移保护。参考不随重压、摊开或噪声反复变大。
+- 2026-09-27 仅替代“相对旧参考失配后本接触永不恢复”的边界：硬无效（单位、有限值、绝对跨度、长宽比等）仍拒绝并平滑释放；通过硬检查的相对离群样本，只有独立候选在连续真实拖动中稳定达到 160ms 才能更新比较参考。每包须与本轮首个候选的固定宽高接近，不能靠滤波候选缓慢漂移穿过稳定门。候选遇硬无效、正常回到旧参考、静止、采样空档或真实重连即清空；帧预览与合成连接不积累恢复时间。初次 50ms 建立不变，首次确认的面积下限作为本接触不可抬高的上界，后续多次恢复的下限仍受它和原配置上限共同约束；新 Touch 接触独立建立上界。接受恢复只影响后续真实输入，不追溯增大已经积分的几何。
 - 下限为 `clamp(1.10*max(wDip,hDip)+6, standard, min(maximum,max(standard,64)))`。自定义 standard 大于64时不反转 clamp 上下界。它是有界拖擦下限，不是手掌分类或压感橡皮。
 - 合成 `max(speedTarget, contactFloor)` 后继续平滑；面积下限无需清扫资格，但只在真实移动中提高已接受尺寸。静止的新面积/新包不能反向放大当前工具。
 - 缺包最长保留2s，显式无效值宽限200ms，过期参考按180ms释放。真实重连平移这些时钟；Up的零面积不是新参考。
@@ -203,15 +208,20 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 - 原始输入与帧预览状态分离；静止只更新当前工具和待用尺寸断点，恢复实际几何时追加同位小半径锚点，不覆盖历史或恢复已擦内容。
 - Touch笔速输入恢复时，若距离上次成功建模的时间乘输出采样率将超过单次输出上限，复用模型Reset/Update在最后已接受位置建立短时间种子，再提交真实输入。不清空历史结果、转换游标、接触身份或尺寸/面积控制器，不增加模型输出上限；此路径不用于Mouse/Pen或其他橡皮模式，种子不提供运动证据。
 - 原始面积有效性独立于实验开关；关闭辅助仍可显示已确认的DIP宽高。未确认单位明确显示unverified，不标成可信像素；referenceFresh单独表示参考是否过期。
-- 诊断每帧可关闭发布，不逐点同步日志。包含真实来源、模型、单位、像素/DPI/手动尺寸、速度/目标/实际DIP、原始/换算面积、有效性、参考/实际下限及最终几何半径。
+- 诊断每帧可关闭发布，磁盘/控制台输出沿用帧级限频，不逐点同步日志。包含真实来源、请求场景、解析 Touch 场景/权重/来源、模型、标尺/单位、像素/DPI/手动尺寸、有效四阈值、B/增益、短窗报告速度、经资格路径的清扫速度、140ms fineSpeed、资格/证据、目标/实际 DIP、面积及对应 contact 的最终光标与几何直径。`cursorPx` 不可从其他光标的列表首项取值。
+- 实验页沿用已保存的 `ConsoleOutput.TouchArea` 键但展示“输入与橡皮诊断”。启用时，Host 在显示快照/诊断配置发布边界输出 EDID 解析状态与原始/可用厘米、活动分辨率、有效 DPI 和失效原因；活动分辨率不是 EDID 时序。每约250ms的 `[EraserInput]` 只对应选中的一个 contact 或橡皮 Hover，带帧时间、接触ID/代际、实际设备、输入画布坐标、可见光标坐标、面积、目标/实际 DIP 与光标/几何像素尺寸。隐藏光标及非橡皮工具的橡皮尺寸必须明确无效；原 `[TouchArea] contact` 仍表示橡皮接触。短窗报告速度可在无新线段的帧仍为正，此时清扫资格速度可为零；稀疏快照不能作为原始轨迹逐点重放。
+- 同一限频诊断中的 Touch/ScreenPen `[EraserFollow]` 另列原始短窗目标、面积/精细后的有效目标、证据 cap、实际可执行增长目标与 actual；最近真实输入清扫速度/年龄不等于无Move当前帧的清扫动作资格。精细低区可沿已有时间状态继续趋向 B，不能把该现象误记为新清扫证据。附带 hold 剩余、decrease 确认进度/门槛、当前动作、累计 reset 次数和最近原因。需要短事件全程时由有界内存帧 trace 结束后导出，不能为美化日志在 `Advance` 帧补造运动证据。
+- 面积参考恢复沿用 `[TouchArea]` 原 250ms 门，额外报告锁存参考宽高、当前/参考比例与离群轴、恢复候选宽高/真实移动累计时间、首次下限上界、恢复次数，以及参考 fresh/正在释放/候选确认中。`areaActive` 可以包含低于 B 的释放尾端，`areaAboveB` 才表示已接受的面积下限当前仍高于标准尺寸；两者不能混称。高频因果检查使用测试内存轨迹，不在 RTS 包路径逐点写盘。
 - 面积开关独立发布并锁存，不进入 Mouse/Pen 的显示标尺变更判定，避免点击 Touch 开关使精细 Hover 重置。
 
 ### 4. Validation & Error Matrix
 | 场景 | 必需结果 |
 |---|---|
-| Mouse/ScreenPen冻结轨迹 | 改动前后浮点位模式一致 |
-| 面积关闭、不同可信密度的同物理Touch运动 | DIP目标一致，不恢复整目标物理补偿 |
+| Mouse/间接冻结轨迹 | 改动前后浮点位模式一致；ScreenPen 速度映射和 beta 仍冻结，标准以上增长时间按2026-09-25合同替代 |
+| 同一 Touch 场景、不同分辨率/DPI/方向的正确物理轨迹 | 单位换算与 DIP 目标/采样率结果一致；不要求跨场景同 mm/s 同目标 |
+| 不同可信物理场景的普通动作和主动清扫 | 各自普通区不误触顶，中间尺寸可控，持续快速清扫可达；不恢复整目标物理补偿 |
 | 未知单位/缺失/零/负值/巨值/离群 | 辅助拒绝或平滑释放，正常触摸仍接收 |
+| 已有参考失配，但后续硬合法面积稳定真实拖动 | 160ms 独立确认后更新比较参考，恢复下限不超过首次确认上界；静止、尖峰、硬无效和合成重连不充当恢复证据 |
 | 新Down/原地长按/起点抖动 | 小尺寸，不因面积或时间开启大洞 |
 | 普通慢拖、无清扫资格 | 可确认并使用有界面积下限 |
 | 静止后面积增大 | 不扩大真实擦除；参考不呼吸 |
@@ -243,7 +253,7 @@ if (!snapshot.eraser.needsAnimation) CheckFrameSequenceStops();
 ## Scenario: RTS Touch contact-area metadata and relative-length conversion
 
 ### 1. Scope / Trigger
-Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. Speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics are frozen.
+Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. In this 2026-09-14 metadata scope, speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics were frozen. The 2026-09-23 Touch physical-scene curve above supersedes only that historical speed-response freeze.
 
 ### 2. Signatures
 - `ResolveContactLengthTransform(axis, span, positionScale)` returns per-axis status, span-to-axis and span-to-canvas factors.
@@ -290,7 +300,7 @@ References: [PROPERTY_METRICS](https://learn.microsoft.com/en-us/windows/win32/a
 ## Scenario: 精细区平台、迟滞与双向确认（2026-09-15）
 
 ### 1. Scope / Trigger
-替代“非零速度立即增粗”和“最小到标准固定120ms、无确认”的旧规则。只改变尺寸意图与跟随；RTS位置、真实路程统计、清扫短窗及参数、面积解释/倍率/上限、DIP属性和固定橡皮旁路不变。
+替代“非零速度立即增粗”和“最小到标准固定120ms、无确认”的旧规则。该 2026-09-15 轮次只改变尺寸意图与跟随；当时 RTS 位置、真实路程统计、清扫短窗及参数、面积解释/倍率/上限、DIP 属性和固定橡皮旁路不变。后续 2026-09-25 的 Touch/ScreenPen 标准以上证据/增长参数按前述新合同替代；本节精细区参数继续适用。
 
 ### 2. Signatures
 - `Config::fineHoldSpeed/fineReleaseSpeed` 与该模型 `fineToStandardSpeed` 同单位，默认分别为其0.20/0.35倍。

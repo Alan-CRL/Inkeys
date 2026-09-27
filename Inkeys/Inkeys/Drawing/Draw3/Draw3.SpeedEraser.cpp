@@ -8,6 +8,11 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 {
 	namespace
 	{
+		// 表面长边只提供有界场景先验，不参与动作 mm/s 的换算。
+		constexpr double kTouchSmallLongEdgeMm=320.0;
+		constexpr double kTouchClassroomLongEdgeMm=1200.0;
+		constexpr double kTouchSelectedProfileLimit=0.25;
+
 		double Positive(double value, double fallback) noexcept
 		{
 			return std::isfinite(value) && value > 0.0 ? value : fallback;
@@ -146,6 +151,35 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		default: return "DIP/s";
 		}
 	}
+	const char* DeviceModeName(DeviceMode mode) noexcept
+	{
+		switch(mode)
+		{
+		case DeviceMode::LargeScreen:return "LargeScreen";
+		case DeviceMode::Automatic:return "Automatic";
+		default:return "Laptop";
+		}
+	}
+	const char* TouchProfileSourceName(TouchProfileSource source) noexcept
+	{
+		switch(source)
+		{
+		case TouchProfileSource::SelectedLaptopPhysical:return "SelectedLaptopPhysical";
+		case TouchProfileSource::SelectedLargeScreenPhysical:return "SelectedLargeScreenPhysical";
+		case TouchProfileSource::AutomaticPhysical:return "AutomaticPhysical";
+		case TouchProfileSource::SelectedLaptopFallback:return "SelectedLaptopNoPhysical";
+		case TouchProfileSource::SelectedLargeScreenFallback:return "SelectedLargeScreenNoPhysical";
+		case TouchProfileSource::AutomaticFallback:return "AutomaticNoPhysical";
+		default:return "NotTouch";
+		}
+	}
+	const char* TouchProfileName(const Config& config) noexcept
+	{
+		if(config.touchProfileSource==TouchProfileSource::NotTouch)return "N/A";
+		if(config.motionUnit!=MotionUnit::MillimetersPerSecond)return "Fallback";
+		return config.touchProfileWeight<=0.0f?"Small":
+			config.touchProfileWeight>=1.0f?"Classroom":"Intermediate";
+	}
 
 	float ResolutionDpiActionGain(const DisplayScale& display) noexcept
 	{
@@ -254,7 +288,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			config.motionSource=ScaleSource::TrustedPhysical;
 		}
 		const double rho=std::sqrt(mmX/dipX)*std::sqrt(mmY/dipY);
-		const bool physical=std::isfinite(mmX) && std::isfinite(mmY) && mmX>0 && mmY>0 &&
+		const bool physical=display.pixelWidth>0 && display.pixelHeight>0 &&
+			std::isfinite(mmX) && std::isfinite(mmY) && mmX>0 && mmY>0 &&
 			std::isfinite(rho) && rho>=0.01 && rho<=10.0;
 		if (physical)
 		{
@@ -282,11 +317,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			config.sweepExitSpeed=physical?80.0f:320.0f;
 			config.largeTargetSpeed=physical?350.0f:1400.0f;
 			config.historyWindowSeconds=0.040;
-			config.evidenceStartSeconds=0.060;
-			config.evidenceFullSeconds=0.160;
-			config.evidenceDecaySeconds=0.280;
-			config.growthTauSeconds=0.140;
-			config.largeGrowthTauSeconds=0.120;
+			// 标准以上短脉冲先积累有限证据；精细段与屏幕笔补偿不受影响。
+			config.evidenceStartSeconds=0.080;
+			config.evidenceFullSeconds=0.200;
+			config.evidenceDecaySeconds=0.350;
+			config.growthTauSeconds=0.200;
+			config.largeGrowthTauSeconds=0.160;
 			config.holdSeconds=config.decreaseConfirmationSeconds=0.080;
 			config.sweepHoldSeconds=0.200;
 			config.sweepDecreaseConfirmationSeconds=0.240;
@@ -299,18 +335,42 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		{
 			const bool heuristic=config.motionSource==ScaleSource::ResolutionDpiHeuristic;
 			config.fineToStandardSpeed=physical?30.0f:100.0f;
-			config.sweepEnterSpeed=physical?90.0f:heuristic?120.0f:240.0f;
-			config.sweepExitSpeed=physical?60.0f:heuristic?80.0f:160.0f;
-			config.largeTargetSpeed=physical?250.0f:heuristic?400.0f:700.0f;
-			// Touch 单独减轻资格和扩大阻力；不修改鼠标/屏幕笔的任何参数。
+			if(physical)
+			{
+				const double longEdgeMm=std::max(mmX*display.pixelWidth,mmY*display.pixelHeight);
+				const double measuredWeight=SmoothStep((longEdgeMm-kTouchSmallLongEdgeMm)/
+					(kTouchClassroomLongEdgeMm-kTouchSmallLongEdgeMm));
+				// 显式场景只约束尺寸先验的范围；EDID/手动标尺都走同一解析。
+				const double weight=mode==DeviceMode::Laptop?std::min(measuredWeight,kTouchSelectedProfileLimit):
+					mode==DeviceMode::LargeScreen?std::max(measuredWeight,kTouchSelectedProfileLimit):measuredWeight;
+				config.touchProfileWeight=static_cast<float>(weight);
+				config.touchSurfaceLongEdgeMm=static_cast<float>(longEdgeMm);
+				config.touchProfileSource=mode==DeviceMode::Laptop?TouchProfileSource::SelectedLaptopPhysical:
+					mode==DeviceMode::LargeScreen?TouchProfileSource::SelectedLargeScreenPhysical:
+					TouchProfileSource::AutomaticPhysical;
+				config.sweepEnterSpeed=static_cast<float>(90.0+260.0*weight);
+				config.sweepExitSpeed=static_cast<float>(60.0+190.0*weight);
+				config.largeTargetSpeed=static_cast<float>(250.0+1050.0*weight);
+			}
+			else
+			{
+				// 回退维持原 DIP/reference DIP 参数，不把物理端点误当作回退单位。
+				config.touchProfileSource=mode==DeviceMode::Laptop?TouchProfileSource::SelectedLaptopFallback:
+					mode==DeviceMode::LargeScreen?TouchProfileSource::SelectedLargeScreenFallback:
+					TouchProfileSource::AutomaticFallback;
+				config.sweepEnterSpeed=heuristic?120.0f:240.0f;
+				config.sweepExitSpeed=heuristic?80.0f:160.0f;
+				config.largeTargetSpeed=heuristic?400.0f:700.0f;
+			}
+			// Touch 只加重标准以上短快划的证据/增长阻力，场景速度和面积许可独立。
 			config.historyWindowSeconds=0.050;
-			config.evidenceStartSeconds=0.025;
-			config.evidenceFullSeconds=0.060;
-			config.evidenceDecaySeconds=0.180;
-			config.growthTauSeconds=0.120;
-			config.largeGrowthTauSeconds=0.100;
-			config.maximumLogGrowthPerSecond=6.0;
-			config.largeLogGrowthPerSecond=8.0;
+			config.evidenceStartSeconds=0.080;
+			config.evidenceFullSeconds=0.180;
+			config.evidenceDecaySeconds=0.300;
+			config.growthTauSeconds=0.220;
+			config.largeGrowthTauSeconds=0.180;
+			config.maximumLogGrowthPerSecond=4.0;
+			config.largeLogGrowthPerSecond=6.0;
 		}
 		// 间接设备始终按映射后的 DIP 动作，不因大屏选项或 EDID 改为物理测速。
 		config.movementNoiseDistance=physical?0.2f:0.75f;
@@ -555,10 +615,17 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		a.hasSample=true;a.lastSampleSeconds=seconds;
 		a.diagnostic.sample=sample;a.diagnostic.enabled=config_.touchContactAreaAssistance;
 		a.diagnostic.widthDip=a.diagnostic.heightDip=-1;
-		a.diagnostic.sampleValid=false;
-		auto reject=[&](ContactAreaReason reason)
+		a.diagnostic.sampleValid=false;a.diagnostic.outlierAxes=0;
+		a.diagnostic.outlierWidthRatio=a.diagnostic.outlierHeightRatio=0;
+		const auto clearRecovery=[&]()
+		{
+			a.hasRecoveryCandidate=false;a.recoveryWidth=a.recoveryHeight=0;
+			a.recoveryAnchorWidth=a.recoveryAnchorHeight=0;a.recoveryMotionSeconds=0;
+		};
+		auto reject=[&](ContactAreaReason reason,bool hardInvalid=true)
 		{
 			a.diagnostic.reason=reason;a.diagnostic.stableMotionSeconds=0;a.diagnostic.sampleValid=false;
+			if(hardInvalid)clearRecovery();
 			if(a.diagnostic.referenceReady && a.badSince<0)a.badSince=seconds;
 		};
 		if(sample.units!=ContactAreaUnits::CanvasPixels){reject(ContactAreaMetadataReason(sample.units));return;}
@@ -574,14 +641,53 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		if(std::max(w,h)>std::min(w,h)*p.maximumAspectRatio){reject(ContactAreaReason::AspectRatio);return;}
 		// 数据有效性与实验开关分开；关闭辅助仍可诊断真实宽高，但不能建立参考。
 		a.diagnostic.sampleValid=true;
-		if(!config_.touchContactAreaAssistance){a.diagnostic.reason=ContactAreaReason::Disabled;return;}
-		if(!touchStartup_ || config_.inputSource.kind!=SourceKind::Touch){a.diagnostic.reason=ContactAreaReason::NotScreenTouch;return;}
-		if(!config_.inputMapped){a.diagnostic.reason=ContactAreaReason::MappingUnknown;return;}
+		if(!config_.touchContactAreaAssistance){clearRecovery();a.diagnostic.reason=ContactAreaReason::Disabled;return;}
+		if(!touchStartup_ || config_.inputSource.kind!=SourceKind::Touch){clearRecovery();a.diagnostic.reason=ContactAreaReason::NotScreenTouch;return;}
+		if(!config_.inputMapped){clearRecovery();a.diagnostic.reason=ContactAreaReason::MappingUnknown;return;}
 		const auto similar=[](float x,float y,float ratio){return std::max(x,y)<=std::min(x,y)*ratio+1.0f;};
 		if(a.diagnostic.referenceReady)
 		{
-			if(!similar(w,a.referenceWidth,p.outlierRatio) || !similar(h,a.referenceHeight,p.outlierRatio))
-			{reject(ContactAreaReason::Outlier);return;}
+			const bool widthOutlier=!similar(w,a.referenceWidth,p.outlierRatio);
+			const bool heightOutlier=!similar(h,a.referenceHeight,p.outlierRatio);
+			a.diagnostic.outlierWidthRatio=w/a.referenceWidth;
+			a.diagnostic.outlierHeightRatio=h/a.referenceHeight;
+			a.diagnostic.outlierAxes=(widthOutlier?1:0)|(heightOutlier?2:0);
+			if(widthOutlier || heightOutlier)
+			{
+				reject(ContactAreaReason::Outlier,false);
+				// 只在持续真实拖动中收集通过硬校验的稳定离群候选；拒绝期间原下限照常释放。
+				if(!moving){clearRecovery();return;}
+				if(!a.hasRecoveryCandidate || dt<=0 || dt>p.maximumSampleGapSeconds ||
+					!similar(w,a.recoveryAnchorWidth,p.confirmationRatio) ||
+					!similar(h,a.recoveryAnchorHeight,p.confirmationRatio))
+				{
+					// 与本轮首包比较，防止缓慢漂移借滤波候选逐包滑过稳定门。
+					a.hasRecoveryCandidate=true;a.recoveryAnchorWidth=a.recoveryWidth=w;
+					a.recoveryAnchorHeight=a.recoveryHeight=h;a.recoveryMotionSeconds=0;
+				}
+				else
+				{
+					const float alpha=static_cast<float>(1.0-std::exp(-dt/Positive(p.filterSeconds,0.050)));
+					a.recoveryWidth+=(w-a.recoveryWidth)*alpha;a.recoveryHeight+=(h-a.recoveryHeight)*alpha;
+					a.recoveryMotionSeconds+=dt;
+				}
+				if(a.recoveryMotionSeconds+1e-9<Positive(p.recoverySeconds,0.160))return;
+				a.referenceWidth=a.recoveryWidth;a.referenceHeight=a.recoveryHeight;
+				const float upper=std::min(config_.sizes.maximumDiameterDip,
+					std::max(config_.sizes.standardDiameterDip,p.maximumFloorDip));
+				// 首次接受的上界不可因多次恢复逐级抬高。
+				a.diagnostic.referenceFloorDip=std::min(a.firstReferenceFloor,std::clamp(
+					p.multiplier*std::max(a.referenceWidth,a.referenceHeight)+p.paddingDip,
+					config_.sizes.standardDiameterDip,upper));
+				a.diagnostic.sampleValid=true;a.diagnostic.reason=ContactAreaReason::Ready;
+				a.diagnostic.outlierAxes=0;
+				a.diagnostic.outlierWidthRatio=w/a.referenceWidth;
+				a.diagnostic.outlierHeightRatio=h/a.referenceHeight;
+				a.lastValidSeconds=seconds;a.badSince=-1;++a.diagnostic.recoveryCount;
+				clearRecovery();
+				return;
+			}
+			clearRecovery();
 			a.diagnostic.sampleValid=true;a.diagnostic.reason=ContactAreaReason::Ready;
 			a.lastValidSeconds=seconds;a.badSince=-1;
 			return; // 本接触参考锁存，不随重压、摊开或噪声继续放大。
@@ -606,6 +712,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			std::max(config_.sizes.standardDiameterDip,p.maximumFloorDip));
 		a.diagnostic.referenceFloorDip=std::clamp(p.multiplier*std::max(a.referenceWidth,a.referenceHeight)+p.paddingDip,
 			config_.sizes.standardDiameterDip,upper);
+		a.firstReferenceFloor=a.diagnostic.referenceFloorDip;
 		a.diagnostic.referenceReady=true;a.diagnostic.reason=ContactAreaReason::Ready;
 		a.readySeconds=a.lastValidSeconds=seconds;a.badSince=-1;
 	}
@@ -638,9 +745,18 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		auto result=area_.diagnostic;
 		const double now=paused_?pauseTime_:seconds;
+		result.referenceWidthDip=area_.referenceWidth;result.referenceHeightDip=area_.referenceHeight;
+		result.firstReferenceFloorDip=area_.firstReferenceFloor;
+		result.recoveryCandidateWidthDip=area_.recoveryWidth;result.recoveryCandidateHeightDip=area_.recoveryHeight;
+		result.recoveryMotionSeconds=area_.recoveryMotionSeconds;
+		result.recovering=area_.hasRecoveryCandidate &&
+			now<=area_.lastSampleSeconds+config_.contactArea.maximumSampleGapSeconds;
 		result.referenceFresh=result.referenceReady && now<=AreaExpirySeconds();
 		result.activeFloorDip=AreaEligible()?static_cast<float>(IdleDiameterDip(frameState_)):0;
 		result.active=AreaEligible() && result.referenceReady && result.activeFloorDip>config_.sizes.minimumDiameterDip+0.01f;
+		result.areaFloorAboveStandard=result.activeFloorDip>config_.sizes.standardDiameterDip+0.01f;
+		result.releasing=result.referenceReady && !result.referenceFresh &&
+			AreaReferenceFloor(now)>config_.sizes.minimumDiameterDip+0.01f;
 		if(result.referenceReady && now>AreaExpirySeconds() && result.reason==ContactAreaReason::Ready)
 			result.reason=ContactAreaReason::Expired;
 		return result;
@@ -727,6 +843,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			? std::clamp(initialDiameterDip,config_.sizes.minimumDiameterDip,config_.sizes.standardDiameterDip)
 			: config_.sizes.standardDiameterDip;
 		sampleState_.logDiameter = sampleState_.logTarget = std::log(kind==StartKind::Touch ? config_.sizes.touchStartDiameterDip : safeStart);
+		sampleState_.logRawTarget=sampleState_.logGrowthGoal=sampleState_.logDiameter;
 		sampleState_.fineHeld=std::exp(sampleState_.logDiameter)<=config_.sizes.minimumDiameterDip+0.001;
 		if(sampleState_.fineHeld)
 		{sampleState_.fineEnterEvidence=config_.fineEnterSeconds;sampleState_.fineDirection=-1;}
@@ -779,6 +896,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				static_cast<double>(config_.sizes.maximumDiameterDip)));
 		detachedStandbyDip_=std::min(std::exp(sampleState_.logDiameter),static_cast<double>(config_.sizes.standardDiameterDip));
 		sampleState_.logTarget=std::log(detachedStandbyDip_);
+		sampleState_.logRawTarget=sampleState_.logTarget;
+		sampleState_.logGrowthGoal=sampleState_.logDiameter;
+		sampleState_.motionGrowthPermitted=sampleState_.areaGrowthPermitted=false;
+		sampleState_.holdReason=sampleState_.decreaseReason="detached";
 		acceptedX_=movementX_=std::isfinite(x)?x:acceptedX_;
 		acceptedY_=movementY_=std::isfinite(y)?y:acceptedY_;
 		acceptedTime_=sampleState_.time;
@@ -793,7 +914,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		const double elapsed=std::max(0.0,seconds-std::max(state.time,state.lastMovementTime+config_.idleStartSeconds));
 		state.logDiameter=Follow(state.logDiameter,goal,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
 		if(std::abs(state.logDiameter-goal)<=config_.settleLogTolerance)state.logDiameter=goal;
-		state.logTarget=goal;state.time=seconds;state.speed=state.fineSpeed=0;
+		state.logTarget=state.logRawTarget=goal;state.logGrowthGoal=state.logDiameter;
+		state.time=seconds;state.speed=state.fineSpeed=0;
+		state.motionGrowthPermitted=state.areaGrowthPermitted=false;
+		state.holdReason=state.decreaseReason="detached";
 		state.sweepEvidence*=std::exp(-dt/config_.evidenceDecaySeconds);
 		if(state.sweepEvidence<1e-6)state.sweepEvidence=0;
 		state.fineReleaseEvidence=std::max(0.0,state.fineReleaseEvidence-2*dt);
@@ -979,6 +1103,18 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		const double startTime=state.time,dt=endTime-startTime;
 		const double standard=std::log(config_.sizes.standardDiameterDip);
 		state.time=endTime;
+		state.logRawTarget=target;
+		state.logGrowthGoal=state.logDiameter;
+		state.holdReason="none";state.decreaseReason="none";
+		state.motionGrowthPermitted=state.areaGrowthPermitted=false;
+		const auto resetDecrease=[&](const char* reason)
+		{
+			if(state.decreasePending || state.shrinking)
+			{++state.decreaseResetCount;state.lastDecreaseResetReason=reason;}
+			state.decreasePending=state.shrinking=false;
+			state.decreaseConfirmation=0;
+			state.decreaseReason=reason;
+		};
 		const float areaGoal=AreaReferenceFloor(endTime);
 		const bool areaOpen=AreaEligible() && state.maximumDisplacement>=config_.touchUnlockEnd &&
 			areaGoal>config_.sizes.minimumDiameterDip;
@@ -990,9 +1126,12 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		acceptAreaFloor();
 		const double logRange=std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip);
 		const double sweepSpeed=SweepActionSpeed(config_,realMotionSpeed);
+		state.sweepSpeed=sweepSpeed;
 		if (!previewOnly_ && sweepSpeed >= config_.sweepEnterSpeed) state.sweepQualified=true;
 		else if (realMotionSpeed > 0 && sweepSpeed < config_.sweepExitSpeed) state.sweepQualified=false;
 		const bool qualifies=!previewOnly_ && (!touchStartup_ || state.maximumDisplacement>=config_.touchUnlockStart) && state.sweepQualified && sweepSpeed >= config_.sweepEnterSpeed;
+		state.motionGrowthPermitted=qualifies;
+		state.areaGrowthPermitted=areaMotion;
 		const double strength=qualifies ? 0.4 + 0.6*SmoothStep((sweepSpeed-config_.sweepEnterSpeed)/
 			(config_.largeTargetSpeed-config_.sweepEnterSpeed)) : 0.0;
 		const double leak=std::exp(-dt/config_.evidenceDecaySeconds);
@@ -1053,11 +1192,15 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		};
 		if(state.logDiameter<=standard+1e-9 && target<=standard)
 		{
-			state.sweeping=state.decreasePending=state.shrinking=false;
+			state.sweeping=false;resetDecrease("low-band");
+			state.holdReason="low-band";
 			state.holdUntil=endTime;
 			if(!qualifies)state.sweepQualified=false;
 			// 零速和移动共用精细确认，idle 不再绕开低区或串联另一轮等待。
+			const bool lowGrowth=target>state.logDiameter && (areaDominates || state.fineDirection>0);
+			if(lowGrowth)state.logGrowthGoal=target;
 			followLow(target,dt);
+			if(!lowGrowth)state.logGrowthGoal=state.logDiameter;
 			acceptAreaFloor();
 			return;
 		}
@@ -1067,9 +1210,10 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			target=std::log(IdleDiameterDip(state));
 			state.logTarget=target;
 			state.sweepQualified=false;
-			state.decreasePending=state.shrinking=false;
+			resetDecrease("idle");state.holdReason="idle";
 			followShrink(target,elapsed,config_.idleTauSeconds,config_.idleLogShrinkPerSecond);
 			if (std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target)) state.logDiameter=target;
+			state.logGrowthGoal=state.logDiameter;
 			if (state.logDiameter<=standard+config_.settleLogTolerance) state.sweeping=false;
 			return;
 		}
@@ -1082,45 +1226,71 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		const auto blend=[](double a,double b,double t){return a+(b-a)*t;};
 		const double difference=target-state.logDiameter;
 		const bool smaller=difference<=std::log(1-config_.decreaseRatio) || target<=standard+1e-9;
-		if (!smaller && qualifies)
+		const bool direct=config_.response==ResponseModel::DirectTouch || config_.response==ResponseModel::ScreenPenHybrid;
+		const double permission=SmoothStep((state.sweepEvidence-config_.evidenceStartSeconds)/
+			(config_.evidenceFullSeconds-config_.evidenceStartSeconds));
+		const double evidenceCap=standard+permission*logRange;
+		// 已有大尺寸可暂时高于证据上限；只有本步真实动作足以支持它，才可续期或撤销回缩意图。
+		const bool supportsCurrent=!direct ||
+			(sweepPermitted && evidenceCap+config_.settleLogTolerance>=state.logDiameter) ||
+			(areaMotion && std::log(static_cast<double>(areaGoal))+config_.settleLogTolerance>=state.logDiameter);
+		if (!smaller && qualifies && supportsCurrent)
+		{
 			state.holdUntil=endTime+blend(config_.holdSeconds,config_.sweepHoldSeconds,resistance);
+			state.holdReason="renewed";
+		}
+		else state.holdReason=smaller?"lower-target":!qualifies?"no-growth-motion":"insufficient-evidence";
 		if (difference>=0)
 		{
-			state.decreasePending=state.shrinking=false;
+			if(!direct)resetDecrease("legacy-nonlower-target");
 			double permitted=target;
 			if (target>standard)
 			{
-				const double permission=SmoothStep((state.sweepEvidence-config_.evidenceStartSeconds)/
-					(config_.evidenceFullSeconds-config_.evidenceStartSeconds));
-				permitted=std::min(target,standard+permission*logRange);
+				permitted=std::min(target,evidenceCap);
 				// 有限的拖擦下限不等于高速清扫，不借面积给速度资格充能。
 				if(areaMotion)permitted=std::max(permitted,std::min(target,std::log(static_cast<double>(areaGoal))));
-				if (!qualifies && !areaMotion) return;
+				if (!qualifies && !areaMotion){state.decreaseReason="no-growth-motion";return;}
 			}
-			else if (realMotionSpeed<=0 && state.maximumDisplacement<config_.touchUnlockEnd) return;
-			if (permitted<=state.logDiameter) return;
+			else if (realMotionSpeed<=0 && state.maximumDisplacement<config_.touchUnlockEnd)
+			{state.decreaseReason="startup-no-motion";return;}
+			if (permitted<=state.logDiameter){state.decreaseReason="growth-rejected-by-cap";return;}
+			// 被证据拒绝的尖峰不能清零此前普通动作积累的回缩确认。
+			if(direct)resetDecrease(areaMotion && permitted<=std::log(static_cast<double>(areaGoal))+1e-9?
+				"accepted-area-growth":"accepted-sweep-growth");
+			state.logGrowthGoal=permitted;
 			const double growth=SmoothStep(size);
+			// 面积下限仍用原 Touch 跟随参数；本轮较重的清扫阻力不能拖慢普通拖擦辅助。
+			const bool areaFloorGrowth=config_.response==ResponseModel::DirectTouch && areaMotion &&
+				permitted<=std::log(static_cast<double>(areaGoal))+1e-9;
 			state.logDiameter=Follow(state.logDiameter,permitted,dt,
-				blend(config_.growthTauSeconds,config_.largeGrowthTauSeconds,growth),
-				blend(config_.maximumLogGrowthPerSecond,config_.largeLogGrowthPerSecond,growth));
+				areaFloorGrowth?blend(0.120,0.100,growth):blend(config_.growthTauSeconds,config_.largeGrowthTauSeconds,growth),
+				areaFloorGrowth?blend(6.0,8.0,growth):blend(config_.maximumLogGrowthPerSecond,config_.largeLogGrowthPerSecond,growth));
 			target=permitted;
 		}
 		else
 		{
-			if (!smaller && !state.shrinking){state.decreasePending=false;return;}
+			if (!smaller && !state.shrinking)
+			{
+				if(!direct || (supportsCurrent && (qualifies || areaMotion)))resetDecrease("supported-near-target");
+				else state.decreaseReason="unsupported-near-target";
+				return;
+			}
 			if (!state.decreasePending){state.decreasePending=true;state.decreaseSince=startTime;}
 			const double confirmation=blend(config_.decreaseConfirmationSeconds,config_.sweepDecreaseConfirmationSeconds,resistance);
+			state.decreaseConfirmation=confirmation;
 			const double releaseStart=std::max(state.holdUntil,state.decreaseSince+confirmation);
 			const double elapsed=endTime-std::max(startTime,releaseStart);
-			if (elapsed<=0)return;
+			if (elapsed<=0){state.decreaseReason="confirming-or-holding";return;}
 			state.shrinking=true;
+			state.decreaseReason="shrinking";
 			followShrink(target,elapsed,
 				blend(config_.shrinkTauSeconds,config_.sweepShrinkTauSeconds,resistance),
 				blend(config_.maximumLogShrinkPerSecond,config_.sweepLogShrinkPerSecond,resistance));
 		}
 		acceptAreaFloor();
 		if(std::abs(state.logDiameter-target)<=config_.settleLogTolerance && canSettle(target))
-		{state.logDiameter=target;state.decreasePending=state.shrinking=false;}
+		{state.logDiameter=target;resetDecrease("settled");}
+		if(difference<0)state.logGrowthGoal=state.logDiameter;
 	}
 
 	void Controller::AdvanceState(DynamicsState& state, double seconds,
@@ -1141,6 +1311,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 				state.time = seconds;
 				state.logTarget = minimum;
 				state.sweepEvidence = 0.0;
+				state.sweepSpeed = 0.0;
 				state.fineSpeed=state.fineReleaseEvidence=state.fineChangeEvidence=0;
 				state.fineHeld=true;state.fineDirection=-1;state.finePendingDirection=0;
 				state.fineEnterEvidence=config_.fineEnterSeconds;
@@ -1171,6 +1342,8 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			const double observedSpeed = HasMotionSupport(midpoint) && incoming && incoming->distance > 0.0 &&
 				incoming->endTime - incoming->startTime <= config_.maximumEvidenceIntervalSeconds
 				? std::min(speed, incoming->distance / (incoming->endTime - incoming->startTime)) : 0.0;
+			if(incoming && incoming->distance>0 && effectiveMovement)
+			{state.lastInputSweepSpeed=SweepActionSpeed(config_,observedSpeed);state.lastInputTime=end;}
 			// 面积只需要稳定拖动，不要求清扫速度；复用长路程窗，且仍受实际位移起步与 idle 门控制。
 			const bool areaMotion=AreaEligible() && incoming && incoming->distance>0 &&
 				incoming->endTime-incoming->startTime<=config_.maximumEvidenceIntervalSeconds &&
@@ -1239,6 +1412,9 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		frameState_ = sampleState_;
 		pauseTime_ = sampleState_.time;
 		paused_ = true;
+		// 真断触保留已接受参考，但待恢复候选必须重新取得连续真实拖动证据。
+		area_.hasRecoveryCandidate=false;area_.recoveryWidth=area_.recoveryHeight=0;
+		area_.recoveryAnchorWidth=area_.recoveryAnchorHeight=0;area_.recoveryMotionSeconds=0;
 	}
 
 	float Controller::ResumeFromReconnect(float x, float y, double seconds) noexcept
@@ -1256,6 +1432,7 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 		ShiftAreaTime(gap);
 		sampleState_.holdUntil += gap;
 		if (sampleState_.decreasePending) sampleState_.decreaseSince += gap;
+		if (sampleState_.lastInputTime>=0) sampleState_.lastInputTime+=gap;
 		// 平移落点基准以排除断点距离，避免缺失段解锁 Touch 起步限制。
 		movementX_ += static_cast<double>(x)-acceptedX_;
 		movementY_ += static_cast<double>(y)-acceptedY_;
@@ -1288,6 +1465,14 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 	{
 		return initialized_?static_cast<float>(std::exp(frameState_.logTarget)):config_.sizes.standardDiameterDip;
 	}
+	float Controller::SweepEvidenceCapDiameterDip() const noexcept
+	{
+		if(!initialized_)return config_.sizes.standardDiameterDip;
+		const double permission=SmoothStep((frameState_.sweepEvidence-config_.evidenceStartSeconds)/
+			(config_.evidenceFullSeconds-config_.evidenceStartSeconds));
+		return static_cast<float>(config_.sizes.standardDiameterDip*std::exp(permission*
+			std::log(config_.sizes.maximumDiameterDip/config_.sizes.standardDiameterDip)));
+	}
 	bool Controller::TouchUnlocked() const noexcept
 	{
 		return touchStartup_ && frameState_.maximumDisplacement>=config_.touchUnlockEnd;
@@ -1301,6 +1486,16 @@ namespace Inkeys::Drawing::Draw3::SpeedEraser
 			std::clamp(frameState_.fineReleaseEvidence/config_.fineReleaseSeconds,0.0,1.0),
 			std::clamp(frameState_.fineChangeEvidence/confirmation,0.0,1.0),
 			frameState_.fineHeld,frameState_.fineDirection};
+	}
+
+	FollowDiagnostics Controller::FollowStateDiagnostics() const noexcept
+	{
+		const auto& state=frameState_;
+		return {static_cast<float>(std::exp(state.logRawTarget)),static_cast<float>(std::exp(state.logGrowthGoal)),
+			state.lastInputSweepSpeed,state.lastInputTime<0?-1:std::max(0.0,state.time-state.lastInputTime),
+			std::max(0.0,state.holdUntil-state.time),state.decreasePending?std::max(0.0,state.time-state.decreaseSince):0,
+			state.decreaseConfirmation,state.decreaseResetCount,state.motionGrowthPermitted,state.areaGrowthPermitted,
+			state.decreasePending,state.shrinking,state.holdReason,state.decreaseReason,state.lastDecreaseResetReason};
 	}
 
 	float Controller::TargetDiameter() const noexcept
