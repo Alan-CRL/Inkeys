@@ -1,5 +1,6 @@
 #pragma once
 #include "IdtMain.h"
+#include "PptSettingsPersistence.h"
 
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
 bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath);
@@ -156,6 +157,9 @@ string CaptureSettingJson();
 bool WriteSettingJson(const string& jsonContent);
 bool WriteSetting();
 
+// PPT 加载页的配置和实现保留，样式重做前统一禁用。
+inline constexpr bool kPptLoadingPageEnabled = false;
+
 struct PptComSetListStruct
 {
 	PptComSetListStruct()
@@ -220,6 +224,10 @@ extern PptComSetListStruct pptComSetlist;
 bool PptComReadSetting();
 bool PptComReadSettingPositionOnly();
 string CapturePptComSettingJson();
+string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions, bool remember);
+Inkeys::PptSettings::Positions SavedPptComPositions();
+Inkeys::PptSettings::Positions RestorablePptComPositions();
+string RetryPptComSettingJson();
 bool WritePptComSettingJson(const string& jsonContent);
 bool PptComWriteSetting();
 

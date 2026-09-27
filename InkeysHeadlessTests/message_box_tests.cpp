@@ -168,6 +168,12 @@ namespace
 			"invalid fallback owner normalizes to null");
 		Check(invalidOwnerCapture.language == invalidForFallback.language,
 			"system fallback preserves the request language");
+		auto failClosed = invalidForFallback;
+		failClosed.fallback.enabled = false;
+		Check(MessageBoxTest::ShowAutomated(failClosed,
+			invalidOwnerAutomation) == Result::Failed
+			&& invalidOwnerCapture.calls == 1,
+			"confirmation failure never reaches a second affirmative system dialog");
 
 		auto requiredOwner = MakeOkRequest(L"Owner", L"Owner is required here.");
 		requiredOwner.requireOwner = true;

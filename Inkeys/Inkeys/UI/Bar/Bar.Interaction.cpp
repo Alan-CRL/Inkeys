@@ -31,6 +31,7 @@ import Inkeys.Window;
 import Inkeys.Display;
 import Inkeys.UI.MessageBox;
 import Inkeys.Startup.Progress;
+import Inkeys.Drawing.Draw3.diagnostics;
 using Inkeys::UI::Bar::BarToggleChannel;
 using Inkeys::UI::Bar::SetBarButtonPressedVisual;
 using Inkeys::UI::Bar::StartBarButtonHoverVisual;
@@ -507,6 +508,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	case WM_INPUT:
 	{
+		Inkeys::Drawing::Draw3::RecordCursorRawInput(lParam);
 		// Raw Input 只负责唤醒并读取系统光标，WM_INPUT 仍交给默认过程完成清理。
 		barUISet.RegisterBorderCursorLight(hWnd);
 		return DefWindowProcW(hWnd, msg, wParam, lParam);
@@ -3393,6 +3395,19 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										else if (temp->preset == BarButtonPresetEnum::Clean)
 											barButtonSet.ExecuteClearClick(doubleClickContinuation);
 										else if (temp->clickFunc) temp->clickFunc();
+										// 仅业务动作交还焦点；打开设置/颜色等编辑入口不抢走输入。
+										switch (temp->preset.load())
+										{
+										case BarButtonPresetEnum::Select:
+										case BarButtonPresetEnum::Draw:
+										case BarButtonPresetEnum::Eraser:
+										case BarButtonPresetEnum::Geometry:
+										case BarButtonPresetEnum::Clean:
+										case BarButtonPresetEnum::Recall:
+										case BarButtonPresetEnum::Redo:
+											Inkeys::UI::Bar::NotifyPptBusinessAction(); break;
+										default: break;
+										}
 										lastClickedMainBarButton = temp;
 										clickCompleted = true;
 										UpdateRendering();
@@ -5579,9 +5594,17 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 		rawInputDevice.usUsage = 0x02;
 		rawInputDevice.dwFlags = RIDEV_REMOVE;
 		rawInputDevice.hwndTarget = nullptr;
-		if (RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice))) return true;
+		if (RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice)))
+		{
+			Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
+				"raw-registration stage=bar-remove known=1 active=0 hwnd=%p", static_cast<void*>(hWnd));
+			return true;
+		}
 
 		DWORD removalError = GetLastError();
+		Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
+			"raw-registration stage=bar-remove known=0 ok=0 error=%lu hwnd=%p",
+			static_cast<unsigned long>(removalError), static_cast<void*>(hWnd));
 		bool needLog = false;
 		{
 			lock_guard lock(borderCursorLightMutex);
@@ -5611,6 +5634,9 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 	if (!RegisterRawInputDevices(&rawInputDevice, 1, sizeof(rawInputDevice)))
 	{
 		DWORD registrationError = GetLastError();
+		Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
+			"raw-registration stage=bar-add known=0 ok=0 error=%lu hwnd=%p",
+			static_cast<unsigned long>(registrationError), static_cast<void*>(hWnd));
 		bool needLog = false;
 		{
 			lock_guard lock(borderCursorLightMutex);
@@ -5633,6 +5659,9 @@ bool BarUISetClass::SetBorderCursorRawInputEnabled(HWND hWnd, bool enabled)
 		borderCursorInputAvailable = true;
 		borderCursorRawInputRegistered = true;
 	}
+	Inkeys::Drawing::Draw3::RecordCursorDiagnostic(
+		"raw-registration stage=bar-add known=1 active=1 hwnd=%p flags=0x%lx",
+		static_cast<void*>(hWnd), static_cast<unsigned long>(rawInputDevice.dwFlags));
 	return true;
 }
 
@@ -6125,8 +6154,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 
 		auto ResolveDockInsetDip = []() noexcept
 			{
-				return Inkeys::UI::Bar::WhiteboardActive()
-					? BarWhiteboardBottomInsetDip : 0.0;
+				return Inkeys::UI::Bar::SceneBottomDockInsetDip();
 			};
 		auto ResolveDockDpiScale = [](UINT dpi) noexcept
 			{

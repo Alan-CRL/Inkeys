@@ -1,0 +1,30 @@
+{
+  "id": "ui3-animation-stutter-investigation",
+  "name": "ui3-animation-stutter-investigation",
+  "title": "UI3 主栏偶发动画卡顿与动态光影深度排查",
+  "description": "UI3偶发卡顿调查与第一批S1-S4修复、限频诊断；第一批已实现验证，待故障现场反馈。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-09-22",
+  "completedAt": null,
+  "branch": "bugfix/animation",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-09-23 S1-S4实现与独立审查完成，InkeysRepo.sln Debug|ARM64完整/增量构建均exit0，新headless --no-window exit0。未GUI/commit/push；D1-D3不在本轮，保留原始故障现场验收。",
+  "meta": {
+    "first_batch_status": "implemented_and_verified",
+    "first_batch_verified_at": "2026-09-23",
+    "verification_report": "verification/first-batch-result.md"
+  }
+}

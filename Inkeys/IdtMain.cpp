@@ -15,6 +15,7 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
+import Inkeys.UI.PageControl;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
@@ -296,6 +297,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--page-control-hidden-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::UI::PageControl::RunHiddenWindowTests();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true);
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
@@ -306,6 +310,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
+	bool cursorConsoleOutputEnabled = false;
 #endif
 	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
@@ -1143,6 +1148,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
 
 		IDTLogger->flush_on(spdlog::level::info);
+
+		// 共用现有文件和线程池，诊断满队列时保留聚合，不能反过来阻塞渲染线程。
+		const auto diagnosticsPool = spdlog::thread_pool();
+		auto diagnosticsLogger = std::make_shared<spdlog::async_logger>(
+			"UI3Diagnostics", IDTLoggerFileSink, diagnosticsPool, spdlog::async_overflow_policy::discard_new);
+		diagnosticsLogger->set_level(spdlog::level::warn);
+		diagnosticsLogger->flush_on(spdlog::level::warn);
+		(void)Inkeys::UI::RenderPipeline::SetDiagnosticsSink(
+			[diagnosticsLogger, diagnosticsPool](std::string_view message)
+			{
+				const auto discarded = diagnosticsPool->discard_counter();
+				diagnosticsLogger->warn("{}", message);
+				return diagnosticsPool->discard_counter() == discarded;
+			});
 		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
 
 		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
@@ -1395,11 +1414,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				draw3ConsoleOutputEnabled);
 			touchAreaConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
-			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled)
+			cursorConsoleOutputEnabled =
+				config.Experimental.Inkeys3.ConsoleOutput.Cursor;
+			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
+				cursorConsoleOutputEnabled)
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
 			}
+			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(
+				cursorConsoleOutputEnabled);
 			if (touchAreaConsoleOutputEnabled)
 			{
 				auto& host = Inkeys::Drawing::Draw3::ProductHost();
@@ -2039,7 +2063,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 启动 PPT 联动插件
 	#ifndef IDT_RELEASE
-	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled && !touchAreaConsoleOutputEnabled)
+	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled &&
+		!touchAreaConsoleOutputEnabled && !cursorConsoleOutputEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();

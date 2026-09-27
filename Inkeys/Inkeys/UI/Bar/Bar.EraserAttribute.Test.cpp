@@ -19,6 +19,7 @@ module Inkeys.UI.Bar;
 import :Main;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.PageControl;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
 
@@ -351,7 +352,7 @@ namespace Inkeys::UI::Bar
 				click(3,true);expect(EraserPreferencesSnapshot().baseSize==Inkeys::Drawing::Draw3::SpeedEraser::BaseSize::Small,"cancelled pointer does not select");
 				click(4);expect(Inkeys::Drawing::Draw3::SpeedEraser::GetAutomaticState(EraserPreferencesSnapshot())==Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::Off && owner.barState.eraserAttribute,"body toggles only the master gate and stays open");
 				click(5);expect(owner.barState.eraserSensitivityOpen && Inkeys::Drawing::Draw3::SpeedEraser::GetAutomaticState(EraserPreferencesSnapshot())==Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::Off,"arrow opens while auto is off without toggling");
-				click(0);expect(owner.barState.eraserAttribute,"empty clear is disabled without closing or changing tool");
+				click(0);expect(owner.barState.eraserAttribute,"rejected empty clear stays open without changing tool");
 				Inkeys::config.Drawing.Eraser.MouseLeft=0;Inkeys::config.Drawing.Eraser.MouseRight=1;
 				click(4);const auto restored=EraserPreferencesSnapshot();
 				expect(Inkeys::Drawing::Draw3::SpeedEraser::GetAutomaticState(restored)==Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On &&
@@ -615,6 +616,7 @@ namespace Inkeys::UI::Bar
 			expect(SUCCEEDED(dc->EndDraw()),"SVG states draw");
 			const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"icon-"+std::to_wstring(dpi)+L"-"+std::to_wstring(static_cast<int>(ui*100))+(dark?L"-dark.png":L"-light.png"));expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"icon states PNG");
 		}
+		failures += Inkeys::UI::PageControl::RunOffscreenTests();
 		owner.spec.DiscardDeviceResources();RenderPipeline::Shutdown();CoUninitialize();
 		report<<"[EraserVisual] failures="<<failures<<'\n';return failures?1:0;
 	}

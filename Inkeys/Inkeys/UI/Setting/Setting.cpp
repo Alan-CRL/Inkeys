@@ -405,6 +405,7 @@ namespace
 
 	void QueuePptComWriteSetting()
 	{
+		Inkeys::UI::Ppt::NotifyConfigurationChanged(Inkeys::UI::Ppt::ConfigGroup::All);
 		QueueBusiness({ SettingBusinessKind::WritePptSetting });
 	}
 
@@ -1333,6 +1334,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
 			#endif
 			}Inkeys3;
 		}Experimental;
@@ -4407,6 +4409,7 @@ SettingSessionCoroutine RunSettingSession()
 								ImGui::EndChild();
 							}
 
+							if (kPptLoadingPageEnabled)
 							{
 								ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 30.0f * settingGlobalScale);
 								PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -4586,14 +4589,10 @@ SettingSessionCoroutine RunSettingSession()
 										ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
 										if (Widgets::button.Standard(IA(I18nKey.SettingsUI.PlugIn.PPTHelper.Reset).c_str(), { 100.0f * settingGlobalScale,30.0f * settingGlobalScale }))
 										{
-											pptComSetlist.bottomBothWidth = BottomBothWidth = 0;
-											pptComSetlist.bottomBothHeight = BottomBothHeight = 0;
-											pptComSetlist.middleBothWidth = MiddleBothWidth = 0;
-											pptComSetlist.middleBothHeight = MiddleBothHeight = 0;
-
+											BottomBothWidth = BottomBothHeight = 0;
+											MiddleBothWidth = MiddleBothHeight = 0;
+											Inkeys::UI::Ppt::ResetPositions();
 											PptComWriteSetting();
-											Inkeys::UI::Ppt::NotifyConfigurationChanged(
-												Inkeys::UI::Ppt::ConfigGroup::All);
 										}
 									}
 
@@ -7377,7 +7376,7 @@ SettingSessionCoroutine RunSettingSession()
 						float inkeys3PanelHeight = 115.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
-						inkeys3PanelHeight += 225.0f;
+						inkeys3PanelHeight += 300.0f;
 					#endif
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
@@ -7444,6 +7443,15 @@ SettingSessionCoroutine RunSettingSession()
 								{
 									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3 =
 										Experimental.Inkeys3.Draw3ConsoleOutput;
+									QueueConfigWrite();
+								});
+							drawConsoleOutput("光标调试信息",
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N),
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E),
+								Experimental.Inkeys3.CursorConsoleOutput, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor =
+										Experimental.Inkeys3.CursorConsoleOutput;
 									QueueConfigWrite();
 								});
 #endif

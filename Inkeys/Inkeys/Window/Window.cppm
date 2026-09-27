@@ -137,7 +137,8 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool Hide(WindowRole role);
 		[[nodiscard]] bool HideAllUserWindows();
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
-			DrawpadSurfaceVisibility visibility);
+			DrawpadSurfaceVisibility visibility,
+			std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
 		// Setting 保持顶层应用窗口，只在自身 owner thread 动态加入或离开 Drawpad owner 链。

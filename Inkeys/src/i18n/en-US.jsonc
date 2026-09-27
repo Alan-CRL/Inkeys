@@ -139,7 +139,7 @@
     },
     "EndPresentation":
     {
-      "Body": "You are currently in drawing mode. Ending the presentation will clear the canvas.\nEnd the presentation?"
+      "Body": "End the current slide show?"
     },
     "WindowCreationFailed":
     {
@@ -443,6 +443,11 @@
         {
           "N": "Draw3 console output",
           "E": "Output Draw3 device and driver information to the console on the next launch."
+        },
+        "Cursor":
+        {
+          "N": "Cursor diagnostics",
+          "E": "Output cursor input ownership and rendered visuals to the console on the next launch."
         }
       }
     },

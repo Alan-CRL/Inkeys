@@ -414,6 +414,7 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h" />
+    <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h" />
     <ClInclude Include="additional\hashlib++\hashlibpp.h" />
     <ClInclude Include="additional\hashlib++\hl_exception.h" />
@@ -472,6 +473,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
+    <ClInclude Include="Inkeys\Business\PptSession.h" />
+    <ClInclude Include="PptSettingsPersistence.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
@@ -1075,6 +1079,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
+    <ClCompile Include="Inkeys\Business\PptSession.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
   </ItemGroup>
   <ItemGroup>

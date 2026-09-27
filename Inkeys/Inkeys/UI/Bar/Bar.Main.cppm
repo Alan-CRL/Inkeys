@@ -92,6 +92,7 @@ public:
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
+	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
 	void Execute(BarUISetClass& owner, int item);
@@ -110,6 +111,7 @@ private:
 	int menuSide_ = -1;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
 	IdtAtomic<bool> visible_ = false;
+	bool returnToSelectionOnClear_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
 	std::array<BarButtonClass,10> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;
@@ -122,7 +124,6 @@ private:
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
-	bool clearEnabled_ = false;
 	int selectedSize_ = 32, sensitivity_ = 1;
 	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;
@@ -993,6 +994,17 @@ namespace Inkeys::UI::Bar
 	export bool CurrentPageHasContent() noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
+	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;
+	export std::optional<bool> ConsumePptSceneTransition() noexcept;
+	export HWND PptPresentationWindow() noexcept;
+	export HMONITOR PptSceneMonitor() noexcept;
+	export void UpdatePptSceneMonitor(HWND window) noexcept;
+	export double SceneBottomDockInsetDip() noexcept;
+	export void SetBusinessFocusCallback(std::function<void()> callback);
+	export void NotifyPptBusinessAction();
+	export bool PptBusinessFocusAllowed() noexcept;
+	export void SetEndShowRequestCallback(std::function<void(std::uint64_t)> callback);
+	export void CompleteEndShowRequest(std::uint64_t request) noexcept;
 	export void SetEndShowCallback(std::function<void()> callback);
 	export void RequestEndShow();
 	export void CompleteEndShowRequest() noexcept;

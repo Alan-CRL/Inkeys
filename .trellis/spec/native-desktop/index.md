@@ -2,7 +2,7 @@
 
 本层主要覆盖 Inkeys/Inkeys.vcxproj 中的 Windows 桌面程序，并记录仓库内独立 Timeout Solution 的工程边界。证据等级沿用 [../index.md](../index.md)；现状、推断、待确认和历史/兼容路径不能互相替代。
 
-**【直接确认】** 主程序同时编译传统 Draw2/PPT 等 Idt* 业务子系统和 Inkeys/Inkeys 下的 C++20 module。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
+**【直接确认】** 主程序编译 Idt* 业务协调与 Inkeys/Inkeys 下的 C++20 module；生产画布已由 IdtDrawpadFacade 和唯一 Draw3 Host 接管，旧 Draw2/键盘转译不参与编译。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
 
 ## 文档索引
 
@@ -10,6 +10,7 @@
 - [build-and-compatibility.md](build-and-compatibility.md)：构建入口、配置、依赖和 Windows 兼容约束。
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工。
+- [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
