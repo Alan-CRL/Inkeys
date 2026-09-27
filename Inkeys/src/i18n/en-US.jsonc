@@ -443,6 +443,11 @@
         {
           "N": "Draw3 console output",
           "E": "Output Draw3 device and driver information to the console on the next launch."
+        },
+        "Cursor":
+        {
+          "N": "Cursor diagnostics",
+          "E": "Output cursor input ownership and rendered visuals to the console on the next launch."
         }
       }
     },

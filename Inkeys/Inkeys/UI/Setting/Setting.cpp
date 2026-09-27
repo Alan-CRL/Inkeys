@@ -1334,6 +1334,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
 			#endif
 			}Inkeys3;
 		}Experimental;
@@ -7375,7 +7376,7 @@ SettingSessionCoroutine RunSettingSession()
 						float inkeys3PanelHeight = 115.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
-						inkeys3PanelHeight += 225.0f;
+						inkeys3PanelHeight += 300.0f;
 					#endif
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
@@ -7442,6 +7443,15 @@ SettingSessionCoroutine RunSettingSession()
 								{
 									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3 =
 										Experimental.Inkeys3.Draw3ConsoleOutput;
+									QueueConfigWrite();
+								});
+							drawConsoleOutput("光标调试信息",
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N),
+								IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E),
+								Experimental.Inkeys3.CursorConsoleOutput, [&]
+								{
+									Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor =
+										Experimental.Inkeys3.CursorConsoleOutput;
 									QueueConfigWrite();
 								});
 #endif

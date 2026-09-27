@@ -447,6 +447,11 @@ inline constexpr struct I18nKeyRoot
                     const char* N = "SettingsUI/Experimental/ConsoleOutput/Draw3/N";
                     const char* E = "SettingsUI/Experimental/ConsoleOutput/Draw3/E";
                 } Draw3{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__Cursor
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/Cursor/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/Cursor/E";
+                } Cursor{};
             } ConsoleOutput{};
         } Experimental{};
         struct Node__SettingsUI__PlugIn
