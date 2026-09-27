@@ -67,6 +67,8 @@ namespace Inkeys::Drawing::Draw3
 		std::wstring_view json) noexcept;
 	std::optional<Bridge::PresentationTarget> ResolvePresentationTarget(
 		const PresentationDescriptor& descriptor) noexcept;
+	std::optional<Bridge::PresentationTarget> ResolveEndScreenTarget(
+		const PresentationDescriptor& descriptor) noexcept;
 	bool CanUpgradePresentationBindingByOrdinal(
 		const Bridge::PresentationTarget& previous,
 		const Bridge::PresentationTarget& next,

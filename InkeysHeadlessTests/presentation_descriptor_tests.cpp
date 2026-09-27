@@ -81,6 +81,31 @@ int RunPresentationDescriptorTests()
 			ready.bindingRevision == first->bindingRevision,
 			"runtime ready snapshot keeps identity without copying topology")) ++failures;
 	}
+	std::wstring endJson = StableJson(L"PowerPoint", L"C:\\\\课程\\\\Lesson.pptx");
+	const auto pageField = endJson.find(L"\"currentPage\":2");
+	endJson.replace(pageField, std::wstring(L"\"currentPage\":2").size(),
+		L"\"currentPage\":0");
+	const auto slideField = endJson.find(L"\"currentSlideId\":202");
+	endJson.replace(slideField, std::wstring(L"\"currentSlideId\":202").size(),
+		L"\"currentSlideId\":null");
+	const auto endDescriptor = ParsePresentationDescriptorJson(endJson);
+	const auto endTarget = endDescriptor.descriptor
+		? ResolveEndScreenTarget(*endDescriptor.descriptor) : std::nullopt;
+	if (!Expect(endTarget && first && endTarget->key == first->key &&
+		endTarget->pageKind == Bridge::PresentationPageKind::EndScreen &&
+		endTarget->pageIndex == 3 && endTarget->totalPages == 3 &&
+		!endTarget->slideId && endTarget->slideIds.size() == 3 &&
+		!ResolvePresentationTarget(*endDescriptor.descriptor),
+		"end target has a separate internal slot without inventing an Office SlideID")) ++failures;
+	if (endTarget && first)
+	{
+		Bridge::StateBridge endBridge;
+		const auto normalRevision = endBridge.PublishPresentationTarget(*first);
+		const auto endRevision = endBridge.PublishPresentationTarget(*endTarget);
+		if (!Expect(normalRevision && endRevision && *endRevision > *normalRevision &&
+			Bridge::ReadyIdentityFor(*first) != Bridge::ReadyIdentityFor(*endTarget),
+			"end and last real slide cannot share target or ready identity")) ++failures;
+	}
 
 	const std::wstring fallbackJson =
 		L"{\"schemaVersion\":1,\"provider\":\"Wps\","
@@ -115,23 +140,23 @@ int RunPresentationDescriptorTests()
 		upgraded.slideIds = { 11, 22 };
 		upgraded.slideId = 11;
 		if (!Expect(CanUpgradePresentationBindingByOrdinal(
-			*fallbackTarget, upgraded, 2),
+			*fallbackTarget, upgraded, 3),
 			"same binding can upgrade all ordinal pages to stable SlideIDs"))
 			++failures;
 		if (!Expect(CanReusePresentationDocumentSlot(
-			*fallbackTarget, upgraded, 2),
+			*fallbackTarget, upgraded, 3),
 			"parked fallback slots accept the same proven ordinal upgrade"))
 			++failures;
 		upgraded.bindingToken += ":other";
 		upgraded.bindingRevision += 1;
 		if (!Expect(CanUpgradePresentationBindingByOrdinal(
-			*fallbackTarget, upgraded, 2),
+			*fallbackTarget, upgraded, 3),
 			"a saved-path fallback can upgrade after slideshow re-entry")) ++failures;
 		Bridge::PresentationTarget otherFallback = *fallbackTarget;
 		otherFallback.bindingRevision += 1;
 		otherFallback.bindingToken += ":other";
 		if (!Expect(CanReusePresentationDocumentSlot(
-			*fallbackTarget, otherFallback, 2),
+			*fallbackTarget, otherFallback, 3),
 			"a saved-path fallback survives a new slideshow HWND")) ++failures;
 		Bridge::PresentationTarget processLocalFallback = *fallbackTarget;
 		processLocalFallback.processLocalIdentity = true;

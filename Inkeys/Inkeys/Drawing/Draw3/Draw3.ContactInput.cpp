@@ -42,7 +42,8 @@ namespace Inkeys::Drawing::Draw3
 			Initializing,
 			Producing,
 			Closing,
-			ConsumerOwned
+			ConsumerOwned,
+			Quarantined
 		};
 
 		constexpr uint64_t kProducerStateMask = 0x7;
@@ -272,6 +273,7 @@ namespace Inkeys::Drawing::Draw3
 				ContactSnapshot candidate;
 				// 来源在 Down 锁存；RTS 映射换代会关闭旧 contact，不在 Move 中拼接另一设备。
 				candidate.source = record.downSnapshot_.source;
+				candidate.admissionRevision = record.downSnapshot_.admissionRevision;
 				candidate.position.x = record.x_.Load();
 				candidate.position.y = record.y_.Load();
 				candidate.pressure = record.pressure_.Load();
@@ -342,6 +344,21 @@ namespace Inkeys::Drawing::Draw3
 				counter.fetch_add(1, std::memory_order_relaxed);
 		}
 
+		bool PublishControlWake() noexcept
+		{
+			SignalWake();
+			bool expected = false;
+			if (!controlWakePending.compare_exchange_strong(expected, true,
+				std::memory_order_acq_rel, std::memory_order_acquire)) return true;
+			if (queue.try_enqueue(controlProducerToken, nullptr))
+			{
+				Count(controlWakes);
+				return true;
+			}
+			controlWakePending.store(false, std::memory_order_release);
+			return false;
+		}
+
 		void SignalWake() noexcept
 		{
 			wakeGeneration.fetch_add(1, std::memory_order_release);
@@ -360,7 +377,8 @@ namespace Inkeys::Drawing::Draw3
 					occupied &= occupied - 1;
 					ContactRecord& record = block->records[slotIndex];
 					const uint64_t generation = ContactRecordAccess::Generation(record);
-					if (ContactRecordAccess::HasRoute(record, generation, ProducerState::Producing) &&
+					if ((ContactRecordAccess::HasRoute(record, generation, ProducerState::Producing) ||
+						ContactRecordAccess::HasRoute(record, generation, ProducerState::Quarantined)) &&
 						ContactRecordAccess::Matches(record, tabletContextId, contactId))
 						return LocatedContact{ &record, generation };
 				}
@@ -463,9 +481,15 @@ namespace Inkeys::Drawing::Draw3
 			uint32_t tabletContextId, uint32_t contactId,
 			ContactSnapshot snapshot, ContactPhase phase) noexcept
 		{
-			if (!ContactRecordAccess::Matches(record, tabletContextId, contactId) ||
-				!ContactRecordAccess::TrySetExactState(record, expectedGeneration,
-					ProducerState::Producing, ProducerState::Closing)) return false;
+			if (!ContactRecordAccess::Matches(record, tabletContextId, contactId)) return false;
+			bool quarantined = false;
+			if (!ContactRecordAccess::TrySetExactState(record, expectedGeneration,
+				ProducerState::Producing, ProducerState::Closing))
+			{
+				quarantined = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
+					ProducerState::Quarantined, ProducerState::Closing);
+				if (!quarantined) return false;
+			}
 			ContactRecordAccess::LockWriter(record); // Up 先关路由，再等待正在发布的 Move 退出。
 			if (!ContactRecordAccess::HasRoute(record, expectedGeneration, ProducerState::Closing) ||
 				!ContactRecordAccess::Matches(record, tabletContextId, contactId))
@@ -489,9 +513,16 @@ namespace Inkeys::Drawing::Draw3
 			ContactRecordAccess::PublishSnapshot(record, snapshot);
 			ContactRecordAccess::UnlockWriter(record);
 			const bool closed = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
-				ProducerState::Closing, ProducerState::ConsumerOwned);
+				ProducerState::Closing, quarantined ? ProducerState::Free : ProducerState::ConsumerOwned);
 			if (closed)
 			{
+				if (quarantined)
+				{
+					quarantinedContacts.fetch_sub(1, std::memory_order_acq_rel);
+					ReleaseSlot(record);
+					Count(recycled);
+					(void)PublishControlWake(); // 无绘制帧时也需退休聚合 physical-contact 状态。
+				}
 				Count(terminalPublished);
 				SignalWake(); // 终态必须打断活动帧等待，不能多滞留一个 120 FPS 周期。
 			}
@@ -520,6 +551,8 @@ namespace Inkeys::Drawing::Draw3
 		HANDLE wakeEvent = nullptr;
 		int64_t qpcFrequency = 0;
 		std::atomic<uint64_t> wakeGeneration = 0;
+		std::atomic<uint64_t> admissionRevision = 0;
+		std::atomic<size_t> quarantinedContacts = 0;
 		std::atomic<bool> diagnosticsEnabled = false;
 		std::atomic<uint64_t> downPublished = 0;
 		std::atomic<uint64_t> downRejected = 0;
@@ -588,8 +621,10 @@ namespace Inkeys::Drawing::Draw3
 		const uint64_t previousGeneration = ContactRecordAccess::Generation(*record);
 		const uint64_t generation = previousGeneration >= kMaxProducerGeneration
 			? 1 : previousGeneration + 1;
+		ContactSnapshot admitted = snapshot;
+		admitted.admissionRevision = impl_->admissionRevision.load(std::memory_order_acquire);
 		ContactRecordAccess::Initialize(
-			*record, tabletContextId, contactId, deviceType, snapshot, generation);
+			*record, tabletContextId, contactId, deviceType, admitted, generation);
 		ContactRecordAccess::SetState(*record, ProducerState::Producing);
 		if (impl_->EnqueueDown(record))
 		{
@@ -655,7 +690,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!handle.record || ContactRecordAccess::Generation(*handle.record) != handle.generation) return false;
 		const ProducerState state = ContactRecordAccess::State(*handle.record);
-		if (state == ProducerState::Free || state == ProducerState::Initializing) return false;
+		if (state == ProducerState::Free || state == ProducerState::Initializing ||
+			state == ProducerState::Quarantined) return false;
 		ContactSnapshot candidate;
 		if (!ContactRecordAccess::ReadSnapshot(*handle.record, candidate) ||
 			ContactRecordAccess::Generation(*handle.record) != handle.generation) return false;
@@ -684,6 +720,64 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	void ContactInputCoordinator::DiscardUntilTerminal(ContactHandle handle) noexcept
+	{
+		if (!handle.record) return;
+		for (;;)
+		{
+			// 先计数再交出路由，保证抢先 Up 不会使计数下溢。
+			impl_->quarantinedContacts.fetch_add(1, std::memory_order_acq_rel);
+			if (ContactRecordAccess::TrySetExactState(*handle.record, handle.generation,
+				ProducerState::Producing, ProducerState::Quarantined)) return;
+			impl_->quarantinedContacts.fetch_sub(1, std::memory_order_acq_rel);
+			if (ContactRecordAccess::Generation(*handle.record) != handle.generation) return;
+			if (ContactRecordAccess::State(*handle.record) == ProducerState::Closing)
+			{
+				YieldProcessor();
+				continue;
+			}
+			Recycle(handle);
+			return;
+		}
+	}
+
+	void ContactInputCoordinator::SetAdmissionBlocked(bool blocked) noexcept
+	{
+		uint64_t revision = impl_->admissionRevision.load(std::memory_order_acquire);
+		while ((revision % 2 != 0) != blocked)
+		{
+			if (impl_->admissionRevision.compare_exchange_weak(revision, revision + 1,
+				std::memory_order_acq_rel, std::memory_order_acquire))
+			{
+				(void)PublishControlWake();
+				return;
+			}
+		}
+	}
+
+	bool ContactInputCoordinator::AdmissionBlocked() const noexcept
+	{
+		return AdmissionRevision() % 2 != 0;
+	}
+
+	uint64_t ContactInputCoordinator::AdmissionRevision() const noexcept
+	{
+		return impl_->admissionRevision.load(std::memory_order_acquire);
+	}
+
+	bool ContactInputCoordinator::ContactAdmitted(ContactHandle handle) const noexcept
+	{
+		const uint64_t revision = AdmissionRevision();
+		return revision % 2 == 0 && handle.record &&
+			handle.record->Generation() == handle.generation &&
+			handle.record->DownSnapshot().admissionRevision == revision;
+	}
+
+	bool ContactInputCoordinator::HasQuarantinedContacts() const noexcept
+	{
+		return impl_->quarantinedContacts.load(std::memory_order_acquire) != 0;
+	}
+
 	void ContactInputCoordinator::CloseAllProducerContacts(int64_t qpc) noexcept
 	{
 		for (ContactBlock* block = impl_->blockHead.load(std::memory_order_acquire); block;
@@ -696,7 +790,8 @@ namespace Inkeys::Drawing::Draw3
 				occupied &= occupied - 1;
 				ContactRecord& record = block->records[slotIndex];
 				const uint64_t generation = ContactRecordAccess::Generation(record);
-				while (ContactRecordAccess::HasRoute(record, generation, ProducerState::Producing))
+				while (ContactRecordAccess::HasRoute(record, generation, ProducerState::Producing) ||
+					ContactRecordAccess::HasRoute(record, generation, ProducerState::Quarantined))
 				{
 					ContactSnapshot snapshot;
 					if (!ContactRecordAccess::ReadSnapshot(record, snapshot))
@@ -730,19 +825,7 @@ namespace Inkeys::Drawing::Draw3
 
 	bool ContactInputCoordinator::PublishControlWake() noexcept
 	{
-		impl_->SignalWake(); // sticky 请求已发布后，即使 queue wake 已合并也要打断活动帧等待。
-		bool expected = false;
-		if (!impl_->controlWakePending.compare_exchange_strong(
-			expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) return true;
-
-		ContactRecord* controlWake = nullptr;
-		if (impl_->queue.try_enqueue(impl_->controlProducerToken, controlWake))
-		{
-			impl_->Count(impl_->controlWakes);
-			return true;
-		}
-		impl_->controlWakePending.store(false, std::memory_order_release);
-		return false;
+		return impl_->PublishControlWake();
 	}
 
 	void ContactInputCoordinator::AcknowledgeControlWake() noexcept

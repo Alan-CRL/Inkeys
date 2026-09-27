@@ -147,6 +147,40 @@ namespace Inkeys::Drawing::Draw3
 			key.bytes[8] = static_cast<std::uint8_t>((key.bytes[8] & 0x3f) | 0x80);
 			return key;
 		}
+
+		Bridge::PresentationTarget TargetIdentityFor(
+			const PresentationDescriptor& descriptor)
+		{
+			Bridge::PresentationTarget target;
+			const auto normalizedPath = NormalizeAbsolutePath(descriptor.fullName);
+			if (normalizedPath)
+				target.sourceIdentity = "path:" + *normalizedPath;
+			else
+			{
+				target.processLocalIdentity = true;
+				target.sourceIdentity = "process:" +
+					std::to_string(GetCurrentProcessId()) + ":" + descriptor.provider + ":" +
+					std::to_string(descriptor.applicationProcessId) + ":" +
+					std::to_string(descriptor.slideShowHwnd) + ":" +
+					std::to_string(descriptor.bindingRevision) + ":" +
+					descriptor.presentationName;
+			}
+			target.key = KeyForIdentity(target.sourceIdentity);
+			target.bindingMode = descriptor.status ==
+				PresentationDescriptorStatus::StableSlideIds
+				? Bridge::SlideBindingMode::StableSlideId
+				: Bridge::SlideBindingMode::PageIndexFallback;
+			target.presentationName = descriptor.presentationName;
+			target.provider = descriptor.provider;
+			target.bindingRevision = descriptor.bindingRevision;
+			target.bindingToken = descriptor.provider + ":" +
+				std::to_string(descriptor.applicationProcessId) + ":" +
+				std::to_string(descriptor.slideShowHwnd) + ":" +
+				std::to_string(descriptor.bindingRevision);
+			target.totalPages = descriptor.totalPage;
+			target.slideIds = descriptor.slideIds;
+			return target;
+		}
 	}
 
 	PresentationDescriptorParseResult ParsePresentationDescriptorJson(
@@ -242,10 +276,15 @@ namespace Inkeys::Drawing::Draw3
 				descriptor.slideIds.push_back(id.asInt());
 			}
 
+			const bool endTopology = descriptor.status ==
+				PresentationDescriptorStatus::StableSlideIds &&
+				descriptor.currentPage == 0 && !descriptor.currentSlideId &&
+				descriptor.totalPage != 0 &&
+				descriptor.slideIds.size() == descriptor.totalPage;
 			const bool active = descriptor.status ==
 				PresentationDescriptorStatus::StableSlideIds || descriptor.status ==
 				PresentationDescriptorStatus::PageIndexFallback;
-			if (active && (descriptor.currentPage == 0 || descriptor.totalPage == 0 ||
+			if (active && ((descriptor.currentPage == 0 && !endTopology) || descriptor.totalPage == 0 ||
 				descriptor.totalPage > Bridge::kMaximumPresentationPages ||
 				descriptor.currentPage > descriptor.totalPage ||
 				(descriptor.fullName.empty() && descriptor.presentationName.empty())))
@@ -253,7 +292,7 @@ namespace Inkeys::Drawing::Draw3
 				result.error = "active_fields";
 				return result;
 			}
-			if (descriptor.status == PresentationDescriptorStatus::StableSlideIds &&
+			if (descriptor.status == PresentationDescriptorStatus::StableSlideIds && !endTopology &&
 				(!descriptor.currentSlideId ||
 					descriptor.slideIds.size() != descriptor.totalPage ||
 					descriptor.slideIds[descriptor.currentPage - 1] !=
@@ -286,37 +325,39 @@ namespace Inkeys::Drawing::Draw3
 			if (descriptor.status != PresentationDescriptorStatus::StableSlideIds &&
 				descriptor.status != PresentationDescriptorStatus::PageIndexFallback)
 				return std::nullopt;
-			Bridge::PresentationTarget target;
-			const auto normalizedPath = NormalizeAbsolutePath(descriptor.fullName);
-			if (normalizedPath)
-				target.sourceIdentity = "path:" + *normalizedPath;
-			else
-			{
-				target.processLocalIdentity = true;
-				target.sourceIdentity = "process:" +
-					std::to_string(GetCurrentProcessId()) + ":" + descriptor.provider + ":" +
-					std::to_string(descriptor.applicationProcessId) + ":" +
-					std::to_string(descriptor.slideShowHwnd) + ":" +
-					std::to_string(descriptor.bindingRevision) + ":" +
-					descriptor.presentationName;
-			}
-			target.key = KeyForIdentity(target.sourceIdentity);
-			target.bindingMode = descriptor.status ==
-				PresentationDescriptorStatus::StableSlideIds
-				? Bridge::SlideBindingMode::StableSlideId
-				: Bridge::SlideBindingMode::PageIndexFallback;
-			target.presentationName = descriptor.presentationName;
-			target.provider = descriptor.provider;
-			target.bindingRevision = descriptor.bindingRevision;
-			target.bindingToken = descriptor.provider + ":" +
-				std::to_string(descriptor.applicationProcessId) + ":" +
-				std::to_string(descriptor.slideShowHwnd) + ":" +
-				std::to_string(descriptor.bindingRevision);
+			if (descriptor.currentPage == 0 || descriptor.currentPage > descriptor.totalPage)
+				return std::nullopt;
+			if (descriptor.status == PresentationDescriptorStatus::StableSlideIds &&
+				(!descriptor.currentSlideId || descriptor.slideIds.size() != descriptor.totalPage ||
+					descriptor.slideIds[descriptor.currentPage - 1] != *descriptor.currentSlideId))
+				return std::nullopt;
+			Bridge::PresentationTarget target = TargetIdentityFor(descriptor);
 			target.pageIndex = descriptor.currentPage - 1;
-			target.totalPages = descriptor.totalPage;
 			target.slideId = descriptor.currentSlideId;
-			target.slideIds = descriptor.slideIds;
-			return target;
+			return Bridge::ValidPresentationPage(target) ? std::optional(target) : std::nullopt;
+		}
+		catch (...)
+		{
+			return std::nullopt;
+		}
+	}
+
+	std::optional<Bridge::PresentationTarget> ResolveEndScreenTarget(
+		const PresentationDescriptor& descriptor) noexcept
+	{
+		try
+		{
+			// 结束页没有 Office SlideID；只接受同次 descriptor 中完整且可信的真实页拓扑。
+			if (descriptor.status != PresentationDescriptorStatus::StableSlideIds ||
+				descriptor.currentPage != 0 || descriptor.currentSlideId ||
+				descriptor.totalPage == 0 ||
+				descriptor.slideIds.size() != descriptor.totalPage ||
+				descriptor.totalPage > Bridge::kMaximumPresentationPages)
+				return std::nullopt;
+			Bridge::PresentationTarget target = TargetIdentityFor(descriptor);
+			target.pageKind = Bridge::PresentationPageKind::EndScreen;
+			target.pageIndex = target.totalPages;
+			return Bridge::ValidPresentationPage(target) ? std::optional(target) : std::nullopt;
 		}
 		catch (...)
 		{
@@ -340,10 +381,9 @@ namespace Inkeys::Drawing::Draw3
 			previous.bindingMode == Bridge::SlideBindingMode::PageIndexFallback &&
 			next.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
 			previous.totalPages == next.totalPages &&
-			documentPageCount == next.totalPages &&
-			next.slideIds.size() == next.totalPages && next.slideId &&
-			next.pageIndex < next.slideIds.size() &&
-			next.slideIds[next.pageIndex] == *next.slideId;
+			documentPageCount == Bridge::PresentationDocumentPageCount(next) &&
+			next.slideIds.size() == next.totalPages &&
+			Bridge::ValidPresentationPage(next);
 	}
 
 	bool CanReusePresentationDocumentSlot(
@@ -370,7 +410,7 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 		if (previous.totalPages != next.totalPages ||
-			documentPageCount != next.totalPages) return false;
+			documentPageCount != Bridge::PresentationDocumentPageCount(next)) return false;
 		if (previous.processLocalIdentity &&
 			(previous.bindingToken.empty() ||
 				previous.bindingToken != next.bindingToken ||

@@ -19,6 +19,7 @@ module Inkeys.UI.Bar;
 import :Main;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.PageControl;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
 
@@ -615,6 +616,7 @@ namespace Inkeys::UI::Bar
 			expect(SUCCEEDED(dc->EndDraw()),"SVG states draw");
 			const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"icon-"+std::to_wstring(dpi)+L"-"+std::to_wstring(static_cast<int>(ui*100))+(dark?L"-dark.png":L"-light.png"));expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"icon states PNG");
 		}
+		failures += Inkeys::UI::PageControl::RunOffscreenTests();
 		owner.spec.DiscardDeviceResources();RenderPipeline::Shutdown();CoUninitialize();
 		report<<"[EraserVisual] failures="<<failures<<'\n';return failures?1:0;
 	}

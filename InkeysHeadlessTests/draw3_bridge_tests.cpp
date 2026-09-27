@@ -110,6 +110,39 @@ namespace
 			"presentation is an explicit third workspace")) ++failures;
 	}
 
+	void TestPresentationSessionIdentity(int& failures)
+	{
+		StateBridge bridge;
+		PresentationTarget target;
+		target.key.bytes[0] = 1;
+		target.sourceIdentity = "path:c:\\session.pptx";
+		target.totalPages = 2;
+		target.bindingRevision = 7;
+		target.sessionRevision = 11;
+		const auto first = bridge.PublishPresentationTarget(target);
+		const auto old = ReadyIdentityFor(*bridge.Snapshot().presentationTarget);
+		const auto repeat = bridge.PublishPresentationTarget(target);
+		if (!Expect(first == repeat, "same session and absolute target publication is idempotent")) ++failures;
+		++target.sessionRevision;
+		const auto reopened = bridge.PublishPresentationTarget(target);
+		const auto current = ReadyIdentityFor(*bridge.Snapshot().presentationTarget);
+		if (!Expect(first && reopened && *first != *reopened && old != current &&
+			current.sessionRevision == target.sessionRevision,
+			"same file and page in a new show cannot match an old ready or UI ack")) ++failures;
+		bridge.Publish(CommandType::Clear);
+		target.pageIndex = 1;
+		bridge.PublishPresentationTarget(target);
+		Command captured;
+		if (!Expect(bridge.TryConsume(captured) && captured.presentationTarget &&
+			ReadyIdentityFor(*captured.presentationTarget) == current,
+			"page change preserves the accepted command session and target")) ++failures;
+		const auto beforeReset = bridge.Snapshot().presentationTarget->targetRevision;
+		bridge.Reset();
+		const auto afterReset = bridge.PublishPresentationTarget(target);
+		if (!Expect(afterReset && *afterReset > beforeReset,
+			"Host reset does not reuse target revisions from an old UI commit")) ++failures;
+	}
+
 	void TestCommandQueue(int& failures)
 	{
 		StateBridge bridge(2);
@@ -407,6 +440,33 @@ namespace
 			"host stop notification releases runtime waiter")) ++failures;
 	}
 
+	void TestPptWaitObservationBoundary(int& failures)
+	{
+		using Inkeys::Drawing::Draw3::Detail::HostRuntimeRevisionSignal;
+		HostRuntimeRevisionSignal signal;
+		std::atomic_bool running = true;
+		double oldMilliseconds = 0.0, capturedMilliseconds = 0.0;
+		constexpr int samples = 8;
+		for (int sample = 0; sample < samples; ++sample)
+		{
+			const auto beforeDecision = signal.Revision();
+			// 确定性安排：ready 正好发生在业务判断与开始等待之间。
+			signal.Publish();
+			const auto oldStart = std::chrono::steady_clock::now();
+			const bool oldWoke = signal.WaitForChange(signal.Revision(), 50, running);
+			const auto fixedStart = std::chrono::steady_clock::now();
+			const bool capturedWoke = signal.WaitForChange(beforeDecision, 50, running);
+			const auto finished = std::chrono::steady_clock::now();
+			oldMilliseconds += std::chrono::duration<double, std::milli>(fixedStart - oldStart).count();
+			capturedMilliseconds += std::chrono::duration<double, std::milli>(finished - fixedStart).count();
+			if (!Expect(!oldWoke && capturedWoke,
+				"ready between decision and wait is preserved by the captured revision")) ++failures;
+		}
+		std::cout << "[PptWaitBoundary] synthetic samples=" << samples
+			<< " old_basis_mean_ms=" << oldMilliseconds / samples
+			<< " captured_basis_mean_ms=" << capturedMilliseconds / samples << '\n';
+	}
+
 	struct DrawingActivityCalls
 	{
 		int started = 0;
@@ -445,6 +505,7 @@ int RunDraw3BridgeTests()
 {
 	int failures = 0;
 	TestProductState(failures);
+	TestPresentationSessionIdentity(failures);
 	TestCommandQueue(failures);
 	TestUnsupportedAndLifecycle(failures);
 	TestEraserModeMapping(failures);
@@ -452,5 +513,6 @@ int RunDraw3BridgeTests()
 	TestDrawpadPresentationPlan(failures);
 	TestPageRuntimeRevisionPolicy(failures);
 	TestDrawingActivityLifecycle(failures);
+	TestPptWaitObservationBoundary(failures);
 	return failures;
 }

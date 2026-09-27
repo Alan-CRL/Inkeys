@@ -97,7 +97,8 @@ namespace Inkeys::UI::Bar
 		[[nodiscard]] float NormalizeScale(float scale) noexcept
 		{
 			if (!std::isfinite(scale) || scale <= 0.0F) return 1.0F;
-			return (std::clamp)(scale, 0.5F, 4.0F);
+			// 接收已按屏幕与资源限制解析的有效缩放，不再套用 DPI/用户配置范围。
+			return (std::max)(scale, 1.0F / 65536.0F);
 		}
 
 		[[nodiscard]] COLORREF ThemeOr(COLORREF value,

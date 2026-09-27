@@ -41,6 +41,7 @@ int RunStartupPreviewStateTests();
 int RunBarPresentationAlphaTests();
 int RunSettingSessionStateTests();
 int RunPptUiTests();
+int RunPptSessionTests();
 int RunPageControlTests();
 int RunWhiteboardUiTests();
 int RunFreezeStateTests();
@@ -1528,6 +1529,7 @@ int main(int argc, char** argv)
 	failureCount += RunBarPresentationAlphaTests();
 	failureCount += RunSettingSessionStateTests();
 	failureCount += RunPptUiTests();
+	failureCount += RunPptSessionTests();
 	failureCount += RunPageControlTests();
 	failureCount += RunWhiteboardUiTests();
 	failureCount += RunFreezeStateTests();

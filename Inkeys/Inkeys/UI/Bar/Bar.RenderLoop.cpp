@@ -353,8 +353,7 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 		const double dpiScale = clamp(
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) /
 			static_cast<double>(USER_DEFAULT_SCREEN_DPI), 0.5, 4.0);
-		const double insetDip = Inkeys::UI::Bar::WhiteboardActive()
-			? BarWhiteboardBottomInsetDip : 0.0;
+		const double insetDip = Inkeys::UI::Bar::SceneBottomDockInsetDip();
 		return ResolveBarBottomDockLine(monitorBounds, workArea, insetDip, dpiScale);
 	}
 
@@ -544,6 +543,7 @@ struct BarRenderLoopState
 	bool displayTransitionActive = false;
 	bool initialBottomDockPlacementApplied = false;
 	bool whiteboardDockPlacementPending = false;
+	bool pptDockPlacementPending = false;
 	bool whiteboardDockAnimationActive = false;
 	double displayCapacityZoom = 1.0;
 	BarUiValueClass displayDpiScale{ 1.0 };
@@ -1028,7 +1028,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 			: 0.0;
 		const double halfWidth = mainButton->GetW() * targetZoom / 2.0 + frameHalf;
 		const double halfHeight = mainButton->GetH() * targetZoom / 2.0 + frameHalf;
-		if (dockLayoutLocked)
+		if (dockLayoutLocked && !state.pptDockPlacementPending)
 		{
 			// 底栏换屏或缩放时直接重算几何，保证可见 stroke 始终贴住 dock 线。
 			const double oldScreenCenterX = state.monitorOrigin.x + oldLocalX;
@@ -1164,6 +1164,7 @@ void BarRenderLoopCoordinator::ApplyDisplayTransition(
 		if (!dragging && state.initialBottomDockPlacementApplied
 			&& !state.whiteboardDockAnimationActive
 			&& !state.whiteboardDockPlacementPending
+			&& !state.pptDockPlacementPending
 			&& frame.bottomDockMode == BarBottomDockMode::BottomDocked)
 		{
 			const double dockLine = CurrentBarBottomDockLine(
@@ -2886,7 +2887,7 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 		totalWidth = layoutTotalWidth;
 		Inkeys::UI::Bar::Zoom::FitInitialAfterMainBarLayout(owner_, totalWidth);
 		const bool whiteboardDockPlacement =
-			state.whiteboardDockPlacementPending;
+			state.whiteboardDockPlacementPending || state.pptDockPlacementPending;
 		if ((!state.initialBottomDockPlacementApplied || whiteboardDockPlacement)
 			&& state.displayTransitionInitialized)
 		{
@@ -2946,13 +2947,16 @@ SetButtonPositionTar(temp->button.x, xO - barBtnGap / 2.0, 40.0, true);
 				state.displayCenterX.SetDirect(screenCenterX - state.monitorOrigin.x);
 				state.displayCenterY.SetDirect(screenCenterY - state.monitorOrigin.y);
 			}
-			state.barState.fold = false;
+			// PPT 场景不主动展开；交接期间的新收起请求仍由用户持有。
+			if (!state.pptDockPlacementPending || state.whiteboardDockPlacementPending)
+				state.barState.fold = false;
 			if (!whiteboardDockPlacement)
 				state.barState.widgetPosition.mainBar = true;
 			state.barState.widgetPosition.primaryBar = false;
 			if (whiteboardDockPlacement)
 			{
 				state.whiteboardDockPlacementPending = false;
+				state.pptDockPlacementPending = false;
 			}
 			state.initialBottomDockPlacementApplied = true;
 			state.unclassifiedDamagePending = true;
@@ -12980,6 +12984,62 @@ BarRenderLoopCoordinator::RenderFrame(
 			ResolveBarDirectWindowTranslationAfterAbsorb(
 				presentedBeforeAbsorb, translation);
 		owner_.RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
+		owner_.directWindowDragPhase.store(
+			BarDirectWindowDragPhase::Idle, memory_order_release);
+	}
+	BarDirectWindowDragPhase expectedScenePhase = BarDirectWindowDragPhase::Idle;
+	if (!owner_.bottomDockDragActive.load(memory_order_acquire)
+		&& owner_.directWindowDragPhase.compare_exchange_strong(expectedScenePhase,
+			BarDirectWindowDragPhase::Absorbing, memory_order_acq_rel, memory_order_acquire))
+	{
+		// 与 Seek 的起拖 CAS 使用同一交接协议；失败时保留尚未消费的场景边沿。
+		lock_guard directDragLock(owner_.directWindowDragMutex);
+		if (const auto entering = Inkeys::UI::Bar::ConsumePptSceneTransition())
+		{
+			const auto action = Inkeys::UI::Bar::ResolveBarPptSceneAction(*entering,
+				state.barState.fold, owner_.bottomDockMode.load(memory_order_acquire),
+				Inkeys::UI::Bar::WhiteboardActive());
+			state.pptDockPlacementPending = false;
+			if (action != Inkeys::UI::Bar::BarPptSceneAction::Keep)
+			{
+				// 从最后已显示的主体重基准，解除低栏时不能先按新 dock 线跳动。
+				const auto presented = owner_.BottomDockPresentedSnapshot();
+				if (presented.serial != 0)
+				{
+					const double zoom = max(0.000001, frame.zoom);
+					const double x = presented.mainCenterScreenX - state.monitorOrigin.x;
+					const double y = presented.mainCenterScreenY
+						+ presented.rigidTranslationDip * presented.zoom - state.monitorOrigin.y;
+					state.displayCenterX.SetDirect(x);
+					state.displayCenterY.SetDirect(y);
+					const auto main = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+					main->x.SetDirect(x / zoom);
+					main->y.SetDirect(y / zoom);
+				}
+				const bool center = action == Inkeys::UI::Bar::BarPptSceneAction::CenterDock;
+				owner_.BeginBottomDockTransition();
+				owner_.bottomDockMode.store(center ? BarBottomDockMode::BottomDocked
+					: BarBottomDockMode::Floating, memory_order_relaxed);
+				owner_.bottomDockCenterMode.store(center ? BarBottomDockCenterMode::Centered
+					: BarBottomDockCenterMode::Free, memory_order_relaxed);
+				owner_.bottomDockPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
+				owner_.bottomDockCenterPhase.store(BarBottomDockPhase::Stable, memory_order_relaxed);
+				owner_.bottomDockElasticOffsetDip.store(0.0, memory_order_relaxed);
+				owner_.bottomDockCenterElasticOffsetDip.store(0.0, memory_order_relaxed);
+				owner_.bottomDockRecoveryActive.store(false, memory_order_relaxed);
+				(void)owner_.FinishBottomDockTransition(true);
+				state.bottomDockSpring = {};
+				state.bottomDockCenterSpring = {};
+				state.bottomDockCaptureBottomSpring = {};
+				state.bottomDockCenterCaptureFarEdgeSpring = {};
+				state.pptDockPlacementPending = center;
+				if (center) Inkeys::UI::Bar::UpdatePptSceneMonitor(
+					Inkeys::UI::Bar::PptPresentationActive()
+						? Inkeys::UI::Bar::PptPresentationWindow() : floating_window);
+				state.unclassifiedDamagePending = true;
+				state.presentDecision.RequireVisualRetry();
+			}
+		}
 		owner_.directWindowDragPhase.store(
 			BarDirectWindowDragPhase::Idle, memory_order_release);
 	}

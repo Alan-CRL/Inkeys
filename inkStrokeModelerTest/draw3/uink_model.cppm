@@ -61,6 +61,31 @@ export namespace draw3::uink
 
 	using UInkExtra = UInkMessagePackValue::Map;
 
+	enum class UInkInkeysPageKind : uint8_t
+	{
+		Normal,
+		EndScreen,
+		Invalid,
+	};
+
+	// 结束页只认一个精确的应用标记；未知值或重复键不能获得无 SlideID 豁免。
+	inline UInkInkeysPageKind InkeysPageKind(
+		const std::optional<UInkExtra>& extra) noexcept
+	{
+		if (!extra) return UInkInkeysPageKind::Normal;
+		bool found = false;
+		for (const auto& pair : *extra)
+		{
+			const auto* key = std::get_if<std::string>(&pair.first.value);
+			if (!key || *key != "inkeysPageKind") continue;
+			if (found) return UInkInkeysPageKind::Invalid;
+			found = true;
+			const auto* value = std::get_if<std::string>(&pair.second.value);
+			if (!value || *value != "end-screen") return UInkInkeysPageKind::Invalid;
+		}
+		return found ? UInkInkeysPageKind::EndScreen : UInkInkeysPageKind::Normal;
+	}
+
 	struct UInkHeader
 	{
 		UInkGuid guid;

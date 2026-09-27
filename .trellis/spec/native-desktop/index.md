@@ -2,7 +2,7 @@
 
 本层主要覆盖 Inkeys/Inkeys.vcxproj 中的 Windows 桌面程序，并记录仓库内独立 Timeout Solution 的工程边界。证据等级沿用 [../index.md](../index.md)；现状、推断、待确认和历史/兼容路径不能互相替代。
 
-**【直接确认】** 主程序同时编译传统 Draw2/PPT 等 Idt* 业务子系统和 Inkeys/Inkeys 下的 C++20 module。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
+**【直接确认】** 主程序编译 Idt* 业务协调与 Inkeys/Inkeys 下的 C++20 module；生产画布已由 IdtDrawpadFacade 和唯一 Draw3 Host 接管，旧 Draw2/键盘转译不参与编译。UI3 已是唯一悬浮栏入口；`IdtFloating` 与旧 `IdtWindow` 源码仅以工程 `None` 项暂存，不参与产品编译。
 
 ## 文档索引
 
