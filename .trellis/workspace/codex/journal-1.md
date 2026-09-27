@@ -707,3 +707,44 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Next Steps
 
 - 处理 PR #217 与最新 dev 的冲突并验证可合并状态
+
+
+## Session 27: 笔速橡皮 Canary 前结案
+<!-- trellis-session: v=2 fp=9e2c9a741c0da203 -->
+
+**Date**: 2026-09-27
+**Task**: 笔速橡皮 Canary 前结案
+**Branch**: `bugfix/eraser`
+
+### Summary
+
+用户报告人工验收通过；PR #219 已可合并，教室大屏仍待现场验证。按用户要求在 canary 发布前归档原任务。
+
+### Main Changes
+
+- 保留 Touch/ScreenPen 短快划、回缩许可和面积参考安全恢复，以及 dev 的橡皮指针所有权修复。
+- 原任务归档为 completed；PR #219 目标分支修正为 dev，并记录未覆盖的大屏范围。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5997d23b` | fix(draw3): adapt touch eraser sweep to display scene |
+| `cf4a1874` | feat(draw3): expand eraser console diagnostics |
+| `6aefa84e` | fix(draw3): resist short touch and pen eraser swipes |
+| `c777b8dd` | fix(draw3): prevent unqualified sweeps from blocking eraser shrink |
+| `aea346c8` | fix(draw3): recover stable touch area after reference mismatch |
+| `22706ee4` | Merge dev into bugfix/eraser |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64、headless --no-window、橡皮专项隐藏窗口测试均退出 0。
+- [OK] 完整 Draw3 隐藏测试有 22 条 PPT 结束页/页墨迹断言；CodeRabbit 在线检查仍显示 pending。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 先发布 canary，再安排教室大屏实机笔速橡皮验收；PPT 隐藏测试失败另行定位。
