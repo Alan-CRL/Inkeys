@@ -9,6 +9,7 @@ module;
 #include <dxgi.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -16,18 +17,37 @@ module;
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <iomanip>
 #include <mutex>
 #include <optional>
 #include <span>
+#include <sstream>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
 module Inkeys.UI.RenderPipeline;
 
+#include "RenderPipeline.Diagnostics.h"
+
 namespace Inkeys::UI::RenderPipeline
 {
 	namespace
 	{
+		thread_local FrameDiagnostics* currentDiagnostics = nullptr;
+
+		class CallbackDiagnosticsScope
+		{
+		public:
+			explicit CallbackDiagnosticsScope(FrameDiagnostics* current) noexcept
+				: previous_(std::exchange(currentDiagnostics, current)) {}
+			~CallbackDiagnosticsScope() { currentDiagnostics = previous_; }
+
+		private:
+			FrameDiagnostics* previous_;
+		};
+
 		constexpr auto ClientCount = static_cast<std::size_t>(Client::Count);
 		constexpr auto FrameInterval = std::chrono::nanoseconds(16'666'667);
 		constexpr std::array<Client, ClientCount> DispatchOrder{
@@ -49,6 +69,99 @@ namespace Inkeys::UI::RenderPipeline
 		[[nodiscard]] constexpr ClientMask AllClientMask() noexcept
 		{
 			return (ClientMask{ 1 } << static_cast<unsigned>(Client::Count)) - 1;
+		}
+
+		void FormatFrameState(std::ostream& out, const FrameDiagnostics& sample)
+		{
+			out << "attempt=" << sample.presentAttempted << ",ulwAttempt=" << sample.ulwAttempted
+				<< ",ulwSuccess=" << sample.ulwSucceeded << ",commit=" << sample.presentCommitted
+				<< ",deferred=" << sample.presentDeferred << ",failed=" << sample.presentFailed
+				<< ",advanced=" << sample.animationAdvanced << ",backoffSkip=" << sample.backoffSkipped
+				<< ",reset=" << sample.failureRecoveryReset << ",exception=" << sample.callbackException
+				<< ",rawDtMs=" << sample.rawDtSeconds * 1000.0
+				<< ",animationDtMs=" << sample.animationDtSeconds * 1000.0
+				<< ",epoch=" << sample.epoch
+				<< ",backend=" << (sample.backend == Backend::Warp ? "WARP" : "HW")
+				<< ",target=" << sample.targetSize.cx << 'x' << sample.targetSize.cy
+				<< ",capacity=" << sample.capacitySize.cx << 'x' << sample.capacitySize.cy
+				<< ",viewport=" << sample.viewport.left << ':' << sample.viewport.top
+				<< ':' << sample.viewport.right << ':' << sample.viewport.bottom
+				<< ",source=" << sample.source.x << ':' << sample.source.y
+				<< ",capacityZoom=" << sample.displayCapacityZoom << ",zoom=" << sample.zoom
+				<< ",lightFlags=" << sample.lightFlags
+				<< ",failureCount=" << sample.failureCount
+				<< ",retryDelay=" << sample.retryDelayFrames << ",nextRetry=" << sample.nextRetryFrame
+				<< ",resourceHr=0x" << std::hex << static_cast<std::uint32_t>(sample.resourceResult)
+				<< ",getDcHr=0x" << static_cast<std::uint32_t>(sample.getDcResult)
+				<< ",releaseDcHr=0x" << static_cast<std::uint32_t>(sample.releaseDcResult)
+				<< ",endDrawHr=0x" << static_cast<std::uint32_t>(sample.endDrawResult) << std::dec
+				<< ",ulwError=" << sample.ulwError;
+		}
+
+		std::string FormatDiagnostics(const DiagnosticsDetail::DiagnosticsAccumulator& diagnostics)
+		{
+			static constexpr const char* clientNames[]{ "Bar", "StartupPreview", "PptBottomLeft",
+				"PptBottomRight", "PptMiddleLeft", "PptMiddleRight", "Settings", "WhiteboardFreeze" };
+			static constexpr const char* resultNames[]{ "idle", "continue", "retry", "deviceLost", "stop" };
+			static constexpr const char* stageNames[]{ "presentLockWait", "draw", "getDC", "ULW", "releaseDC", "endDraw" };
+			static constexpr const char* fallbackNames[]{ "transform", "sizeBudget", "warming", "createFailure",
+				"other", "unavailable", "geometryScale", "quantizedRadius", "dpi", "alignment" };
+			const auto& summary = diagnostics.Summary();
+			std::ostringstream out;
+			out.imbue(std::locale::classic());
+			out << std::fixed << std::setprecision(3)
+				<< "[UI3Diag] batches=" << summary.batches
+				<< " longBatches=" << summary.longBatches << " longPeriods=" << summary.longPeriods
+				<< " batchMs(total/max)=" << summary.batchTotalMs << '/' << summary.batchMaxMs
+				<< " activePeriodMaxMs=" << summary.periodMaxMs
+				<< " masks(requested/continued/retry)=" << summary.requested << '/' << summary.continued << '/' << summary.retried
+				<< " recovery(attempt/fail/success/ms)=" << summary.recoveryAttempts << '/'
+				<< summary.recoveryFailures << '/' << summary.recoverySuccesses << '/' << summary.recoveryMs
+				<< " previousFormatMs=" << diagnostics.PreviousFormatMs()
+				<< " previousSinkMs=" << diagnostics.PreviousSinkMs()
+				<< " sinkRejected=" << diagnostics.SinkRejected();
+			for (std::size_t i = 0; i < summary.clients.size(); ++i)
+			{
+				const auto& client = summary.clients[i];
+				if (client.calls == 0) continue;
+				out << ' ' << clientNames[i] << "{calls=" << client.calls
+					<< ",requested=" << client.requested << ",continued=" << client.continued << ",retried=" << client.retried;
+				for (std::size_t j = 0; j < client.results.size(); ++j)
+					out << ',' << resultNames[j] << '=' << client.results[j];
+				out << ",callbackMs(total/max)=" << client.totalMs << '/' << client.maxMs
+					<< ",activeGapMaxMs=" << client.activeGapMaxMs
+					<< ",commitGapMs(raw/active)=" << client.commitRawGapMaxMs << '/' << client.commitActiveGapMaxMs
+					<< ",advance=" << client.advanced << ",attempt=" << client.attempts << ",ulwAttempt=" << client.ulwAttempts
+					<< ",commit=" << client.commits << ",deferred=" << client.deferred << ",backoffSkip=" << client.skipped
+					<< ",reset=" << client.resets << ",fail=" << client.failures << ",recovered=" << client.recoveries
+					<< ",exception=" << client.exceptions << ",lightFailureFrames=" << client.lightFailureFrames
+					<< ",rawDtMs(total/max)=" << client.rawDtSeconds * 1000.0 << '/' << client.rawDtMaxSeconds * 1000.0
+					<< ",advancedDtMs(total/max)=" << client.usedDtSeconds * 1000.0 << '/' << client.usedDtMaxSeconds * 1000.0;
+				for (std::size_t j = 0; j < client.stageMs.size(); ++j)
+					out << ',' << stageNames[j] << "Ms(total/max)=" << client.stageMs[j] << '/' << client.stageMaxMs[j];
+				const auto& light = client.light;
+				out << ",rounded(hit/miss/create/fail/ms)=" << light.roundedParentHit << '/' << light.roundedParentMiss
+					<< '/' << light.roundedParentCreate << '/' << light.roundedParentFailure << '/' << light.roundedParentCreateMs
+					<< ",geometry(hit/miss/create/fail/ms)=" << light.geometryParentHit << '/' << light.geometryParentMiss
+					<< '/' << light.geometryParentCreate << '/' << light.geometryParentFailure << '/' << light.geometryParentCreateMs
+					<< ",exactHit=" << light.exactHit << ",maskDraws=" << light.slices;
+				for (std::size_t j = 0; j < light.exactFallback.size(); ++j)
+					out << ",fallback_" << fallbackNames[j] << '=' << light.exactFallback[j];
+				out << ",latest[";
+				FormatFrameState(out, client.latest);
+				if (client.maxMs >= DiagnosticsDetail::LongFrameMs)
+				{
+					out << "],slowest[";
+					FormatFrameState(out, client.slowest);
+				}
+				if (client.failures != 0)
+				{
+					out << "],lastFailure[";
+					FormatFrameState(out, client.lastFailure);
+				}
+				out << "]}";
+			}
+			return out.str();
 		}
 
 		std::mutex assetMutex;
@@ -163,6 +276,24 @@ namespace Inkeys::UI::RenderPipeline
 		}
 	}
 
+	FrameDiagnostics* CurrentFrameDiagnostics() noexcept { return currentDiagnostics; }
+
+	FrameStageTimer::FrameStageTimer(FrameDiagnostics* diagnostics, FrameStage stage) noexcept
+		: diagnostics_(diagnostics), stage_(stage)
+	{
+		if (diagnostics_) start_ = std::chrono::steady_clock::now();
+	}
+
+	FrameStageTimer::~FrameStageTimer() { Stop(); }
+
+	void FrameStageTimer::Stop() noexcept
+	{
+		if (!diagnostics_) return;
+		diagnostics_->stageMs[static_cast<std::size_t>(stage_)] +=
+			DiagnosticsDetail::Milliseconds(std::chrono::steady_clock::now() - start_);
+		diagnostics_ = nullptr;
+	}
+
 	void DispatchState::Request(ClientMask mask) noexcept
 	{
 		requested_.fetch_or(mask & AllClientMask(), std::memory_order_release);
@@ -208,7 +339,8 @@ namespace Inkeys::UI::RenderPipeline
 		if (decision.rebuildSharedDevice) decision.next |= registered;
 		decision.next &= registered;
 		// 显式请求可能与注册并发，不能用调用方稍旧的 registered 快照提前清除。
-		decision.next |= TakeRequested();
+		decision.requested = TakeRequested();
+		decision.next |= decision.requested;
 		decision.sleep = decision.next == 0 && !decision.stop;
 		return decision;
 	}
@@ -233,15 +365,44 @@ namespace Inkeys::UI::RenderPipeline
 			{
 				std::scoped_lock lock(callbackMutex);
 				controlTasks.clear();
+				diagnosticsSink = {};
+				pendingDiagnosticsSink.reset();
+				diagnostics.Reset();
 			}
 			if (wakeEvent) ResetEvent(wakeEvent);
 			running.store(false, std::memory_order_release);
 		}
 
+		void EmitDiagnostics() noexcept
+		{
+			if (!diagnosticsSink) return;
+			const auto start = std::chrono::steady_clock::now();
+			if (!diagnostics.Ready(start)) return;
+			diagnostics.BeginAttempt(start);
+			auto formatted = start;
+			bool accepted = false;
+			try
+			{
+				const auto message = FormatDiagnostics(diagnostics);
+				formatted = std::chrono::steady_clock::now();
+				// 格式化和异步投递都在管线/资源锁外；错误不能改变回调或帧结果。
+				accepted = diagnosticsSink(message);
+			}
+			catch (...) {}
+			const auto end = std::chrono::steady_clock::now();
+			diagnostics.CompleteAttempt(accepted,
+				DiagnosticsDetail::Milliseconds(formatted - start),
+				DiagnosticsDetail::Milliseconds(end - formatted));
+		}
+
+		DiagnosticsSink diagnosticsSink;
+		std::optional<DiagnosticsSink> pendingDiagnosticsSink;
+		DiagnosticsDetail::DiagnosticsAccumulator diagnostics;
 		std::mutex callbackMutex;
 		std::condition_variable callbackCondition;
 		std::array<RenderCallback, ClientCount> callbacks{};
 		std::array<std::size_t, ClientCount> activeCallbacks{};
+		std::array<std::uint64_t, ClientCount> callbackGenerations{}, diagnosticGenerations{};
 		ContextProvider contextProvider;
 		DeviceRecoveryCallback deviceRecovery;
 		ControlCallback controlCallback;
@@ -289,9 +450,16 @@ namespace Inkeys::UI::RenderPipeline
 				auto takeControlRequest = [this, &registeredMask]() -> ClientMask
 					{
 						std::deque<ControlTask> tasks;
+						std::optional<DiagnosticsSink> pendingSink;
 						{
 							std::scoped_lock lock(impl_->callbackMutex);
 							tasks.swap(impl_->controlTasks);
+							pendingSink.swap(impl_->pendingDiagnosticsSink);
+						}
+						if (pendingSink)
+						{
+							if (!impl_->diagnosticsSink || !*pendingSink) impl_->diagnostics.Reset();
+							impl_->diagnosticsSink = std::move(*pendingSink);
 						}
 						// 生命周期控制始终先于设备恢复重试，且与渲染回调同线程串行。
 						for (auto& task : tasks)
@@ -309,24 +477,47 @@ namespace Inkeys::UI::RenderPipeline
 						// 控制发布成功后只请求当下实际注册的客户端。
 						return callback && callback() ? registeredMask() : 0;
 					};
-				ClientMask pending = impl_->dispatch.TakeRequested();
+				ClientMask requested = 0, continued = 0, retried = 0;
+				auto takeRequested = [this, &requested]() -> ClientMask
+					{
+						const auto next = impl_->dispatch.TakeRequested();
+						requested |= next;
+						return next;
+					};
+				auto takeControl = [&]() -> ClientMask
+					{
+						const auto next = takeControlRequest();
+						requested |= next;
+						return next;
+					};
+				ClientMask pending = takeRequested();
 				bool recoveryPending = false;
 				auto nextDeadline = std::chrono::steady_clock::now();
 				while (!impl_->stopRequested.load(std::memory_order_acquire))
 				{
-					pending |= takeControlRequest();
+					pending |= takeControl();
+					impl_->EmitDiagnostics();
 					if (pending == 0)
 					{
 						ResetEvent(impl_->wakeEvent);
 						// reset 后再次交换请求和控制位，覆盖 idle 边界竞态。
-						pending = impl_->dispatch.TakeRequested();
-						pending |= takeControlRequest();
+						pending = takeRequested();
+						pending |= takeControl();
 						if (pending == 0)
 						{
 							if (impl_->stopRequested.load(std::memory_order_acquire)) break;
-							WaitForSingleObject(impl_->wakeEvent, INFINITE);
-							pending = impl_->dispatch.TakeRequested();
-							pending |= takeControlRequest();
+							DWORD waitMs = INFINITE;
+							if (impl_->diagnosticsSink)
+							{
+								impl_->diagnostics.MarkIdle();
+								const auto delay = impl_->diagnostics.WaitDelay(std::chrono::steady_clock::now());
+								if (delay != (std::chrono::milliseconds::max)())
+									waitMs = static_cast<DWORD>(delay.count());
+							}
+							// 异常转 idle 后只等到诊断期限；超时不制造任何渲染请求。
+							WaitForSingleObject(impl_->wakeEvent, waitMs);
+							pending = takeRequested();
+							pending |= takeControl();
 						}
 						if (impl_->stopRequested.load(std::memory_order_acquire)) break;
 						if (pending == 0) continue;
@@ -336,7 +527,7 @@ namespace Inkeys::UI::RenderPipeline
 					if (now < nextDeadline) std::this_thread::sleep_until(nextDeadline);
 					const auto frameTime = std::chrono::steady_clock::now();
 					nextDeadline = frameTime + FrameInterval;
-					pending |= impl_->dispatch.TakeRequested();
+					pending |= takeRequested();
 
 					ContextProvider contextProvider;
 					DeviceRecoveryCallback deviceRecovery;
@@ -350,12 +541,25 @@ namespace Inkeys::UI::RenderPipeline
 					}
 					pending &= registered;
 					if (pending == 0) continue;
+					const bool diagnosticActive = static_cast<bool>(impl_->diagnosticsSink);
+					if (diagnosticActive) impl_->diagnostics.BeginBatch(frameTime);
 					if (recoveryPending)
 					{
 						// 恢复失败保留同一批 registered 客户端，下一节拍继续恢复而不使用旧 epoch。
-						if (!deviceRecovery || !deviceRecovery())
+						const auto recoveryStart = diagnosticActive
+							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+						const bool recovered = deviceRecovery && deviceRecovery();
+						if (diagnosticActive)
+							impl_->diagnostics.AddRecovery(recovered, DiagnosticsDetail::Milliseconds(
+								std::chrono::steady_clock::now() - recoveryStart));
+						if (!recovered)
 						{
 							pending |= registered;
+							if (diagnosticActive)
+							{
+								impl_->diagnostics.EndBatch(std::chrono::steady_clock::now(), requested, continued, retried);
+								impl_->EmitDiagnostics();
+							}
 							continue;
 						}
 						recoveryPending = false;
@@ -366,19 +570,48 @@ namespace Inkeys::UI::RenderPipeline
 					std::array<FrameResult, ClientCount> results{};
 					results.fill(FrameResult::Idle);
 					const auto work = std::exchange(pending, 0);
+					const auto requestedWork = requested & work;
+					const auto continuedWork = continued & work;
+					const auto retriedWork = retried & work;
 					for (const auto client : DispatchOrder)
 					{
 						const auto bit = Mask(client);
 						if ((work & bit) == 0) continue;
 						RenderCallback callback;
+						std::uint64_t callbackGeneration = 0;
 						{
 							std::scoped_lock lock(impl_->callbackMutex);
 							callback = impl_->callbacks[Index(client)];
+							if (diagnosticActive) callbackGeneration = impl_->callbackGenerations[Index(client)];
 							if (callback) ++impl_->activeCallbacks[Index(client)];
 						}
 						if (!callback) continue;
-						try { results[Index(client)] = callback(context); }
-						catch (...) { results[Index(client)] = FrameResult::Retry; }
+						std::optional<FrameDiagnostics> sample;
+						if (diagnosticActive)
+						{
+							if (callbackGeneration != impl_->diagnosticGenerations[Index(client)])
+							{
+								impl_->diagnostics.ResetClientActivity(client);
+								impl_->diagnosticGenerations[Index(client)] = callbackGeneration;
+							}
+							sample.emplace();
+							sample->epoch = context.epoch.generation;
+							sample->backend = context.epoch.backend;
+						}
+						const auto callbackStart = diagnosticActive
+							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+						{
+							CallbackDiagnosticsScope diagnosticsScope(sample ? &*sample : nullptr);
+							try { results[Index(client)] = callback(context); }
+							catch (...)
+							{
+								results[Index(client)] = FrameResult::Retry;
+								if (sample) sample->callbackException = true;
+							}
+						}
+						if (sample)
+							impl_->diagnostics.AddClient(client, results[Index(client)], *sample,
+								callbackStart, std::chrono::steady_clock::now(), requestedWork, continuedWork, retriedWork);
 						{
 							std::scoped_lock lock(impl_->callbackMutex);
 							--impl_->activeCallbacks[Index(client)];
@@ -392,10 +625,30 @@ namespace Inkeys::UI::RenderPipeline
 					// 回调执行期间可能注册新客户端；用最新掩码保留其首次请求。
 					registered = registeredMask();
 					const auto decision = impl_->dispatch.Complete(work, registered, results);
+					if (diagnosticActive)
+					{
+						impl_->diagnostics.EndBatch(std::chrono::steady_clock::now(), requestedWork, continuedWork, retriedWork);
+						impl_->EmitDiagnostics();
+					}
 					if (decision.stop) break;
 					pending = decision.next;
-					if (decision.rebuildSharedDevice) recoveryPending = true;
+					requested = decision.requested;
+					continued = 0;
+					retried = 0;
+					for (const auto client : DispatchOrder)
+					{
+						if ((work & Mask(client)) == 0) continue;
+						if (results[Index(client)] == FrameResult::Continue) continued |= Mask(client);
+						if (results[Index(client)] == FrameResult::Retry) retried |= Mask(client);
+					}
+					if (decision.rebuildSharedDevice)
+					{
+						recoveryPending = true;
+						retried |= registered;
+					}
 				}
+				// 退出只投递已经到期的记录，不为诊断延迟进程关闭。
+				impl_->EmitDiagnostics();
 				std::deque<ControlTask> finalTasks;
 				{
 					std::scoped_lock lock(impl_->callbackMutex);
@@ -423,6 +676,7 @@ namespace Inkeys::UI::RenderPipeline
 		{
 			std::scoped_lock lock(impl_->callbackMutex);
 			impl_->callbacks[Index(client)] = std::move(callback);
+			++impl_->callbackGenerations[Index(client)];
 		}
 		Request(client);
 		return true;
@@ -433,6 +687,7 @@ namespace Inkeys::UI::RenderPipeline
 		if (!impl_ || client >= Client::Count) return;
 		std::unique_lock lock(impl_->callbackMutex);
 		impl_->callbacks[Index(client)] = {};
+		++impl_->callbackGenerations[Index(client)];
 		impl_->callbackCondition.wait(lock, [this, client]
 			{ return impl_->activeCallbacks[Index(client)] == 0; });
 	}
@@ -465,6 +720,20 @@ namespace Inkeys::UI::RenderPipeline
 			if (!impl_->running.load(std::memory_order_acquire)
 				|| impl_->stopRequested.load(std::memory_order_acquire)) return false;
 			impl_->controlTasks.push_back(std::move(task));
+		}
+		if (impl_->wakeEvent) SetEvent(impl_->wakeEvent);
+		return true;
+	}
+
+	bool Scheduler::SetDiagnosticsSink(DiagnosticsSink sink)
+	{
+		if (!impl_) return false;
+		{
+			std::scoped_lock lock(impl_->callbackMutex);
+			if (impl_->running.load(std::memory_order_acquire)
+				&& impl_->stopRequested.load(std::memory_order_acquire)) return false;
+			// 沿已有控制点交接，热路径不复制 std::function，也不读取全局 logger。
+			impl_->pendingDiagnosticsSink = std::move(sink);
 		}
 		if (impl_->wakeEvent) SetEvent(impl_->wakeEvent);
 		return true;
@@ -625,4 +894,5 @@ namespace Inkeys::UI::RenderPipeline
 	void Request(ClientMask mask) noexcept { scheduler.Request(mask); }
 	bool PostControl(ControlTask task) { return scheduler.PostControl(std::move(task)); }
 	void WakeForStop() noexcept { scheduler.WakeForStop(); }
+	bool SetDiagnosticsSink(DiagnosticsSink sink) { return scheduler.SetDiagnosticsSink(std::move(sink)); }
 }

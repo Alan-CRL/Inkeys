@@ -10,6 +10,7 @@
 - [build-and-compatibility.md](build-and-compatibility.md)：构建入口、配置、依赖和 Windows 兼容约束。
 - [cpp-conventions.md](cpp-conventions.md)：命名、模块、注释、共享状态和并发习惯。
 - [rendering-and-ui.md](rendering-and-ui.md)：Win32、D3D11、D2D、GDI/EasyX、ImGui 的实际分工。
+- [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、国际化生成链和资源归属。
