@@ -347,9 +347,23 @@ namespace
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
+		std::uint64_t modeRevision = 0;
+		bool modeSelection = false;
+		{
+			std::scoped_lock modeLock(stateModeTransitionMutex);
+			modeRevision = stateModeTransitionRevision.load(std::memory_order_relaxed);
+			modeSelection = stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+		}
 		std::scoped_lock lock(draw3PresentationMutex);
 		const auto desired =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		// 新工具已选中但 bridge 尚未发布时，不提交旧画布可见性。
+		if (modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire) ||
+			modeSelection != desired.selectionMode)
+		{
+			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			return Draw3PresentationReconcileResult::Retry;
+		}
 		const auto exitSelectionRevision = draw3ExitSelectionModeRevision.load(
 			std::memory_order_acquire);
 		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
@@ -359,9 +373,10 @@ namespace
 		const bool whiteboardTransition = whiteboardDesired.load(
 			std::memory_order_acquire) ||
 			whiteboardPhase.load(std::memory_order_acquire) != WhiteboardPhase::Inactive;
-		const auto bridgeGuard = [](std::uint64_t revision, bool requireSelection)
+		const auto bridgeGuard = [](std::uint64_t revision, bool requireSelection,
+			std::uint64_t expectedModeRevision)
 		{
-			return [revision, requireSelection]() noexcept
+			return [revision, requireSelection, expectedModeRevision]() noexcept
 			{
 				const auto current = Inkeys::Drawing::Draw3::ProductHost()
 					.ProductBridge().Snapshot();
@@ -371,7 +386,9 @@ namespace
 					(current.workspace == Workspace::Whiteboard ||
 						(!whiteboardDesired.load(std::memory_order_acquire) &&
 						whiteboardPhase.load(std::memory_order_acquire) ==
-							WhiteboardPhase::Inactive));
+							WhiteboardPhase::Inactive)) &&
+					stateModeTransitionRevision.load(std::memory_order_acquire) ==
+						expectedModeRevision;
 			};
 		};
 		auto& service = Inkeys::Window::GetService();
@@ -414,7 +431,7 @@ namespace
 				!IsWindowVisible(primary) && !IsWindowVisible(presentation);
 			const bool safe = (hidden && !primaryCaptured) || service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
-				bridgeGuard(desired.revision, true));
+				bridgeGuard(desired.revision, true, modeRevision));
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			TraceSelectionWindowState(desired, runtime,
 				!runtime.firstFrameReady ? "first-frame" :
@@ -423,8 +440,10 @@ namespace
 				"selection-output-not-ready", safe);
 			if (!safe)
 			{
-				if (Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot()
-					.revision != desired.revision)
+				if (modeRevision != stateModeTransitionRevision.load(
+					std::memory_order_acquire) ||
+					Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot()
+						.revision != desired.revision)
 					return Draw3PresentationReconcileResult::Retry;
 				if (!draw3PresentationFailureActive)
 					LogDraw3PresentationFailure(runtime,
@@ -465,6 +484,8 @@ namespace
 		const auto hideForNewSelection =
 			[&](const Inkeys::Drawing::Draw3::Bridge::ProductState& state)
 		{
+			const auto currentModeRevision = stateModeTransitionRevision.load(
+				std::memory_order_acquire);
 			if (!ExitSelectionHandoffPending() || !state.selectionMode ||
 				state.workspace != Workspace::Desktop ||
 				whiteboardDesired.load(std::memory_order_acquire) ||
@@ -472,7 +493,7 @@ namespace
 				return;
 			(void)service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Hidden,
-				bridgeGuard(state.revision, true));
+				bridgeGuard(state.revision, true, currentModeRevision));
 		};
 		// 等待窗口提交期间若期望场景已变，旧 ready 不得重新显示主拦截窗。
 		const auto latest =
@@ -484,12 +505,13 @@ namespace
 			return Draw3PresentationReconcileResult::Retry;
 		}
 		if (!service.SetDrawpadSurfaceVisibility(visibility,
-			bridgeGuard(desired.revision, false)))
+			bridgeGuard(desired.revision, false, modeRevision)))
 		{
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			const auto current = Inkeys::Drawing::Draw3::ProductHost()
 				.ProductBridge().Snapshot();
-			if (current.revision != desired.revision)
+			if (current.revision != desired.revision ||
+				modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire))
 			{
 				hideForNewSelection(current);
 				return Draw3PresentationReconcileResult::Retry;
@@ -502,7 +524,8 @@ namespace
 
 		const auto after =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
-		if (after.revision != desired.revision)
+		if (after.revision != desired.revision ||
+			modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire))
 		{
 			// 旧窗口命令已执行也可能赶在新 Selection 发布之后；立即撤下主窗。
 			hideForNewSelection(after);

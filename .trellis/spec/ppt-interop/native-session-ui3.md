@@ -12,7 +12,7 @@
 - `PublishProductPresentationUiReady(PresentationReadyIdentity)`、`SetProductPresentationInputSuspended(expectedIdentity,bool)`；target/ready 均含 `sessionRevision` 与 `PresentationPageKind`。Slide 用真实 `pageIndex<N`/SlideID；EndScreen 用内部 `pageIndex=N`、无 SlideID，`totalPages=N` 不变。
 - `MessageBox::FallbackPolicy.enabled` 默认true，本入口置false；`MessageBox::IsShowing()` 覆盖排队/模态及回退调用期。`Bar::SetEndShowRequestCallback(function<void(uint64_t)>)` 与 `CompleteEndShowRequest(requestId)` 按请求配对。
 - `TracePptTiming(stage,session,target,observedQpc=0)`；环境变量 `INKEYS_PPT_TIMING=1` 开启，默认关闭。
-- 真退出收尾使用 `StateModeTransitionRevision()` 与 `ChangeStateModeToSelectionIfRevision(expected)`；窗口事务使用 `Window::Service::SetDrawpadSurfaceVisibility(visibility, stillDesired={})`。`stillDesired` 在窗口 owner thread、释放 Drawpad capture/更改显隐之前求值；false 不触碰 HWND，调用方按最新 bridge revision 重试。`INKEYS_PPT_EXIT_TRACE=1` 开启限频退出诊断，默认关闭。
+- 真退出收尾使用 `StateModeTransitionRevision()` 与 `ChangeStateModeToSelectionIfRevision(expected)`；窗口事务使用 `Window::Service::SetDrawpadSurfaceVisibility(visibility, stillDesired={})`。`stillDesired` 在窗口 owner thread、释放 Drawpad capture/更改显隐之前同时校验 bridge revision 与工具模式 revision；false 不触碰 HWND，调用方按最新状态重试。`INKEYS_PPT_EXIT_TRACE=1` 开启限频退出诊断，默认关闭。
 
 ## 3. Contracts
 
@@ -63,7 +63,7 @@
 | 同页暂停再恢复 / Host 重启 | 旧 ack 无效，重新呈现/回执，不复用旧 target revision |
 | 新场次在旧确认框期间开始 | 旧请求拒绝，不退出新场次、不切新场次模式 |
 | 白板覆盖 / 临时 descriptor 失败 | 不触发正常 PPT 退出或位置保存 |
-| 退出检测后用户主动切 Pen/Shape/Eraser | 模式 revision 已变化时旧 Selection 收尾不覆盖新工具；窗口 owner thread 旧显隐命令在释放 capture 前因 bridge revision 不匹配而拒绝 |
+| 退出检测后用户主动切 Pen/Shape/Eraser | 模式 revision 已变化时旧 Selection 收尾不覆盖新工具；窗口 owner thread 旧显隐命令在释放 capture 前因 bridge 或工具模式 revision 不匹配而拒绝 |
 | Selection 输出未 ready / Present 失败 | 先隐藏旧主 Drawpad 与辅助窗，保留 250ms 重试；不可让非 layered 主窗全屏拦截桌面，也不伪造 ready |
 | EndScreen 已确认并成功 Present / 拓扑暂不可用 | 前者才用独立 `N` 槽和 `-1/N` 同 revision UI 回执开放输入；后者保留安全待定且不冒充普通页 |
 | 无事件且同 HWND 的结束重开完全落在观测间隙 | 外部可观测性限制；必须设备验收，不能宣称仅缓存已证明该提供方全部场景 |
