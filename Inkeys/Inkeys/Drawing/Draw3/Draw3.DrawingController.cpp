@@ -164,6 +164,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		Bridge::CompletedStrokeKind CompletedStrokeKindForTool(
+			DrawingTool tool) noexcept
+		{
+			if (tool == DrawingTool::Eraser)
+				return Bridge::CompletedStrokeKind::Eraser;
+			if (IsShapeDrawingTool(tool))
+				return Bridge::CompletedStrokeKind::Shape;
+			return Bridge::CompletedStrokeKind::Drawing;
+		}
+
 		bool HasLinearStylusChange(float current, float previous, float epsilon, float maximum) noexcept
 		{
 			if (!std::isfinite(current) || current < 0.0f || current > maximum) return false;
@@ -3893,6 +3903,10 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<DrawingCursorVisual> currentCursorVisuals;
 		previousCursorVisuals.reserve(kPreheatedStrokeCount + 1);
 		currentCursorVisuals.reserve(kPreheatedStrokeCount + 1);
+		uint64_t lastCursorVisualDiagnosticKey = 0;
+		bool cursorVisualDiagnosticKnown = false;
+		bool cursorVisualDiagnosticRecorded = false;
+		double nextCursorVisualDiagnosticMilliseconds = 0.0;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		bool multipleCursorSourceTraceActive = false;
 		uint64_t multipleCursorSourceTraceKey = 0;
@@ -3947,7 +3961,19 @@ namespace Inkeys::Drawing::Draw3
 		{
 			currentCursorVisuals.clear();
 			laserTipVisuals.clear();
-			if (window_.SelectionMode()) return; // 选择态只呈现画布和瞬态层，不保留绘制光标。
+			cursorVisualDiagnosticRecorded = false;
+			if (window_.SelectionMode())
+			{
+				if (CursorDiagnosticsEnabled() &&
+					(!cursorVisualDiagnosticKnown || lastCursorVisualDiagnosticKey != UINT64_MAX))
+				{
+					RecordCursorDiagnostic("frame selection=1 visuals=0 laserTips=0");
+					lastCursorVisualDiagnosticKey = UINT64_MAX;
+					cursorVisualDiagnosticKnown = true;
+					cursorVisualDiagnosticRecorded = true;
+				}
+				return; // 选择态只呈现画布和瞬态层，不保留绘制光标。
+			}
 			DrawingCursorSample penSample;
 			DrawingCursorSample mouseSample;
 			window_.ReadPenCursorSample(penSample);
@@ -4071,6 +4097,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
+			const size_t primaryCursorCount = currentCursorVisuals.size();
+			const size_t primaryLaserTipCount = laserTipVisuals.size();
 			const DrawingCursorAppearance eraserAppearance =
 				window_.CursorAppearanceForTool(DrawingTool::Eraser);
 			for (const RuntimeStroke* runtime : active)
@@ -4110,6 +4138,80 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
+			if (CursorDiagnosticsEnabled())
+			{
+				size_t liveTouchCount = 0;
+				for (const RuntimeStroke* runtime : active)
+					if (runtime && !runtime->ended && !runtime->awaitingReconnect &&
+						runtime->metricDeviceType == InputDeviceType::Touch) ++liveTouchCount;
+				uint64_t key = static_cast<uint64_t>(window_.CursorOwner());
+				key = key * 17u + static_cast<uint64_t>(cursorTool);
+				key = key * 17u + currentCursorVisuals.size();
+				key = key * 17u + primaryCursorCount;
+				key = key * 17u + laserTipVisuals.size();
+				key = key * 17u + primaryLaserTipCount;
+				key = key * 17u + liveTouchCount;
+				key = key * 17u + (penSample.valid ? 1u : 0u);
+				key = key * 17u + (penSample.inContact ? 1u : 0u);
+				key = key * 17u + (penSample.inverted ? 1u : 0u);
+				key = key * 17u + (mouseSample.valid ? 1u : 0u);
+				key = key * 17u + (mouseSample.inContact ? 1u : 0u);
+				const double nowMilliseconds = GetQpcTimeMilliseconds();
+				const bool activeCursor = !currentCursorVisuals.empty() ||
+					!laserTipVisuals.empty() || penSample.valid || mouseSample.valid || liveTouchCount;
+				if (!cursorVisualDiagnosticKnown || key != lastCursorVisualDiagnosticKey ||
+					(activeCursor && nowMilliseconds >= nextCursorVisualDiagnosticMilliseconds))
+				{
+					cursorVisualDiagnosticKnown = true;
+					lastCursorVisualDiagnosticKey = key;
+					nextCursorVisualDiagnosticMilliseconds = nowMilliseconds + 100.0;
+					cursorVisualDiagnosticRecorded = true;
+					RecordCursorDiagnostic("frame tool=%u owner=%u primary=%zu touchVisuals=%zu laserPrimary=%zu laserTouch=%zu liveTouch=%zu pen=%u/%u/%u mouse=%u/%u mouseLifecycle=%u/%u",
+						static_cast<unsigned>(cursorTool), static_cast<unsigned>(window_.CursorOwner()),
+						primaryCursorCount, currentCursorVisuals.size() - primaryCursorCount,
+						primaryLaserTipCount, laserTipVisuals.size() - primaryLaserTipCount,
+						liveTouchCount, penSample.valid ? 1u : 0u,
+						penSample.inContact ? 1u : 0u, penSample.inverted ? 1u : 0u,
+						mouseSample.valid ? 1u : 0u, mouseSample.inContact ? 1u : 0u,
+						mouseSpeedEraser().HasPosition() ? 1u : 0u,
+						mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ? 1u : 0u);
+					for (size_t index = 0; index < currentCursorVisuals.size(); ++index)
+					{
+						const auto& visual = currentCursorVisuals[index];
+						const auto& appearance = visual.appearance;
+						RecordCursorDiagnostic("visual index=%zu source=%s shape=%u x=%.1f y=%.1f width=%.1f height=%.1f opacity=%.3f fill=%.3f outline=%.1f rgb=%.2f/%.2f/%.2f",
+							index, index < primaryCursorCount ? "primary" : "touch",
+							static_cast<unsigned>(appearance.shape), visual.x, visual.y,
+							appearance.width, appearance.height, appearance.opacity,
+							appearance.fillAlpha, appearance.outlineWidth,
+							appearance.red, appearance.green, appearance.blue);
+					}
+					for (size_t index = 0; index < laserTipVisuals.size(); ++index)
+					{
+						const auto& visual = laserTipVisuals[index];
+						RecordCursorDiagnostic("laser-tip index=%zu source=%s x=%.1f y=%.1f radius=%.1f opacity=%.3f color=0x%08x widthDip=%.1f",
+							index, index < primaryLaserTipCount ? "primary" : "touch",
+							visual.dot.x, visual.dot.y, visual.dot.radius,
+							visual.dot.opacity, visual.visualStyle.colorRgba,
+							visual.visualStyle.widthDip);
+					}
+					for (const RuntimeStroke* runtime : active)
+					{
+						if (!runtime || runtime->ended || runtime->awaitingReconnect) continue;
+						const auto* record = runtime->handle.record;
+						RecordCursorDiagnostic("runtime device=%u tool=%u selected=%u tcid=%u cid=%u generation=%llu x=%.1f y=%.1f qpc=%lld",
+							static_cast<unsigned>(runtime->metricDeviceType),
+							static_cast<unsigned>(runtime->tool),
+							static_cast<unsigned>(runtime->selectedTool),
+							record ? record->TabletContextId() : 0,
+							record ? record->ContactId() : 0,
+							static_cast<unsigned long long>(runtime->handle.generation),
+							runtime->lastModelSnapshot.position.x,
+							runtime->lastModelSnapshot.position.y,
+							static_cast<long long>(runtime->lastModelSnapshot.qpc));
+					}
+				}
+			}
 
 			if(observer_.eraserDiagnostics && window_.EraserDiagnosticsEnabled())
 			{
@@ -6024,6 +6126,7 @@ namespace Inkeys::Drawing::Draw3
 		bool auxiliaryCleanVerificationPending = appliedSelectionMode;
 		while (true)
 		{
+			FlushCursorDiagnostics();
 			const bool selectionMode = window_.SelectionMode();
 			const bool selectionUsesAuxiliary =
 				Bridge::SelectionUsesAuxiliaryOutput(selectionMode, activeWorkspace);
@@ -7332,6 +7435,9 @@ namespace Inkeys::Drawing::Draw3
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
 						if (!runtime->ended) return false;
+						if (!runtime->cancelled && observer_.strokeCompleted)
+							observer_.strokeCompleted(observer_.context,
+								CompletedStrokeKindForTool(runtime->tool));
 						if (metrics_ && runtime->metricVisible && !runtime->cancelled)
 							metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
 								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
@@ -7556,6 +7662,11 @@ namespace Inkeys::Drawing::Draw3
 				presentSucceeded = PresentFrame(
 					frameDirty, forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
 			}
+			if (cursorVisualDiagnosticRecorded)
+				RecordCursorDiagnostic("present success=%u visuals=%zu laserTips=%zu dirty=(%ld,%ld,%ld,%ld)",
+					presentSucceeded ? 1u : 0u, currentCursorVisuals.size(),
+					laserTipVisuals.size(), frameDirty.left, frameDirty.top,
+					frameDirty.right, frameDirty.bottom);
 			if (presentSucceeded)
 			{
 				contentRevisionNeedsPresent = false;
@@ -7591,6 +7702,7 @@ namespace Inkeys::Drawing::Draw3
 			previousCanvasPresentMilliseconds = lastPresentDurationMs_;
 			// Up/Cancel 的 Stored 提交与 active 回收完成后再发布最终 1→0。
 			reconcileDrawingActivity();
+			FlushCursorDiagnostics();
 			const bool hasPhysicalContactAfterFrame = HasPhysicalContact(active);
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();
@@ -7674,6 +7786,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
+		FlushCursorDiagnostics();
 		if (haptics_) haptics_->StopFeedback();
 		if (drawingPriorityRaised)
 			SetThreadPriority(GetCurrentThread(), originalThreadPriority);

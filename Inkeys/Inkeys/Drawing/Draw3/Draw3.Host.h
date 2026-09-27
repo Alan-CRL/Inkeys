@@ -210,6 +210,8 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
 		std::uint64_t contentRevision = 0;
+		Bridge::CompletedStrokeKind completedStrokeKind =
+			Bridge::CompletedStrokeKind::None;
 		bool selectionMode = true;
 		Bridge::Workspace workspace = Bridge::Workspace::Desktop;
 		std::optional<Bridge::PresentationReadyIdentity> presentationReady;

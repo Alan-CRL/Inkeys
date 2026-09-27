@@ -35,6 +35,15 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		ConfiguredEraser // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
 	};
 
+	// 绘制线程记录最近一次正常结束的实际笔类，供产品 UI 恢复临时切换前的模式。
+	enum class CompletedStrokeKind : std::uint8_t
+	{
+		None,
+		Drawing,
+		Shape,
+		Eraser,
+	};
+
 	enum class Workspace : std::uint8_t
 	{
 		Desktop,

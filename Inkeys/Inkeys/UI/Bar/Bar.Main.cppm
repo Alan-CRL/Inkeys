@@ -92,6 +92,7 @@ public:
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
+	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
 	void Execute(BarUISetClass& owner, int item);
@@ -110,6 +111,7 @@ private:
 	int menuSide_ = -1;
 	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
 	IdtAtomic<bool> visible_ = false;
+	bool returnToSelectionOnClear_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
 	std::array<BarButtonClass,10> buttons_;
 	std::array<BarUiShapeClass,2> dividers_;
@@ -122,7 +124,6 @@ private:
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
-	bool clearEnabled_ = false;
 	int selectedSize_ = 32, sensitivity_ = 1;
 	Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState automatic_ =
 		Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::On;

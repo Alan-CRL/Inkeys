@@ -294,6 +294,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Draw3, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
 			) \
 			GROUP(UI3, \
 				GROUP(StartupPreview, \

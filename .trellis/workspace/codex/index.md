@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-09-23
+- **Total Sessions**: 19
+- **Last Active**: 2026-09-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~362 | Active |
+| `journal-1.md` | ~395 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-09-25 | 触摸橡皮擦光标残留修复与验收 | `31c48f4e`, `428860b5`, `5fdd4a67` | `feature/cursor` |
 | 16 | 2026-09-23 | UI3 偶发卡顿第一批修复与诊断 | - | `bugfix/animation` |
 | 15 | 2026-09-22 | UI3 i18n 格式串异常防护 | `0409256f` | `feature/ui3-i18n` |
 | 14 | 2026-09-22 | 收敛桌面定格 Magnification 链路 | `ba14ddd6`, `7df93730` | `bugfix/settingui` |

@@ -201,6 +201,7 @@ export namespace Inkeys::Drawing::Draw3
 		void SetActiveDrawingCursorTool(DrawingTool tool) noexcept;
 		void ClearActiveDrawingCursorTool() noexcept;
 		DrawingTool EffectiveDrawingCursorTool() const noexcept;
+		// 返回当前视觉归属；Touch 只暂时覆盖，不写入持久 Pen/Mouse owner。
 		DrawingCursorPointerAuthority CursorOwner() const noexcept;
 		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
@@ -229,6 +230,7 @@ export namespace Inkeys::Drawing::Draw3
 		void RequestDrawingCursorRender() noexcept;
 		void QueueSystemCursorRefresh() noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
+		void SetTouchCursorSuppressed(bool suppressed) noexcept;
 		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
 		void NotifyTouchContactBegin(bool trackActiveContact,
 			uint32_t touchBarrierTick) noexcept;
@@ -236,8 +238,10 @@ export namespace Inkeys::Drawing::Draw3
 		void ClearMouseCursorSample() noexcept;
 		bool ShouldIgnoreMouseCursorMessage(bool promotedPointerMessage,
 			bool penSampleValid, bool touchBarrierKnown,
-			uint32_t mouseMessageTick, uint32_t touchBarrierTick) const noexcept;
+			uint32_t mouseMessageTick, uint32_t touchBarrierTick,
+			INPUT_MESSAGE_DEVICE_TYPE inputSource) const noexcept;
 		void ApplyWindowCursor(const char* trigger) noexcept;
+		void RecordMouseCursorDiagnosticState(uint64_t eventId, const char* phase) const noexcept;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		void TraceCursorState(const char* eventName, uint32_t pointerId,
 			POINTER_INPUT_TYPE pointerType, bool pointerTypeKnown,
@@ -274,6 +278,16 @@ export namespace Inkeys::Drawing::Draw3
 		// 高 32 位为有效标志，低 32 位保存 Windows uptime tick，保证跨线程一致快照。
 		std::atomic<uint64_t> latestTouchInputBarrierTick_ = 0;
 		std::atomic<uint32_t> activeTouchContactCount_ = 0;
+		// 仅 Drawpad 窗口线程读写；用于识别抬指后原位的来源未知 MouseMove。
+		bool lastTouchMousePositionKnown_ = false;
+		int lastTouchMouseX_ = 0;
+		int lastTouchMouseY_ = 0;
+		// 以下字段只补充取证，不参与光标接管判断。兼容 Mouse 无完整 pointerId 时记 0。
+		uint32_t lastTouchMouseDiagnosticTick_ = 0;
+		uint32_t lastTouchMouseDiagnosticPointerId_ = 0;
+		uint32_t lastTouchMouseDiagnosticPrimary_ = 0; // 0 未知、1 非主触点、2 主触点。
+		bool lastTouchMouseDiagnosticFromPointer_ = false;
+		uint64_t cursorMouseDiagnosticEvent_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
 		std::atomic<bool> selectionMode_ = true;
 		std::atomic<bool> autoSaveEnabled_ = false;
@@ -293,6 +307,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<int32_t> activeDrawingCursorTool_ = -1;
 		std::atomic<DrawingCursorPointerAuthority> cursorOwner_ =
 			DrawingCursorPointerAuthority::Unknown;
+		// Touch Up 后继续抑制旧主光标，直到真实 Mouse/Pen 输入接管。
+		std::atomic<bool> touchCursorSuppressed_ = false;
 		std::atomic<bool> systemCursorRefreshPosted_ = false;
 		std::atomic<bool> mouseUsesSystemCursor_ = true;
 #if defined(DRAW3_RTS_DIAGNOSTICS)
@@ -314,6 +330,9 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingCursorAppearance eraserCursorAppearance_ = {};
 		DrawingCursorAppearance laserCursorAppearance_ = {};
 		HCURSOR defaultCursor_ = nullptr;
+		// 仅窗口线程使用，避免相同系统光标决策反复刷控制台。
+		uint64_t lastCursorSystemDiagnosticKey_ = 0;
+		bool cursorSystemDiagnosticKnown_ = false;
 		uint32_t lastHapticPenInfoPointerId_ = 0;
 		std::atomic<uint32_t> suppressedPenPointerId_ = 0;
 		bool lastHapticPenInfoKnown_ = false;
