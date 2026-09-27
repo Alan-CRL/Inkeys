@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 25
-- **Last Active**: 2026-09-26
+- **Total Sessions**: 26
+- **Last Active**: 2026-09-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~495 | Active |
+| `journal-1.md` | ~531 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-09-27 | PPT UI3 任务收尾 | `900ab31f`, `1cd45e57`, `d7b9ec12` | `bugfix/pptui` |
 | 25 | 2026-09-26 | PPT UI3 回归修复提交记录 | `910de60f` | `bugfix/pptui` |
 | 24 | 2026-09-25 | PPT UI3 选择态页墨迹和超大控件回归 | - | `bugfix/pptui` |
 | 23 | 2026-09-25 | PPT 补充修复提交记录 | `adfe7fb2` | `bugfix/pptui` |

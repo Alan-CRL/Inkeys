@@ -493,3 +493,39 @@ Archived the completed 08-24 overlay recovery task, all three 09-01 persistence 
 ### Next Steps
 
 - 在真实 PowerPoint/WPS 与用户显示器复核选择态页墨迹、左侧控件可见性及系统输入命中；保持任务 in_progress
+
+
+## Session 26: PPT UI3 任务收尾
+<!-- trellis-session: v=2 fp=d9b587125219ccb3 -->
+
+**Date**: 2026-09-27
+**Task**: PPT UI3 任务收尾
+**Branch**: `bugfix/pptui`
+
+### Summary
+
+用户接受 PPT UI3 当前结果；审查修复、加载页禁用和批注接管已提交，指定任务归档
+
+### Main Changes
+
+- 仅归档 09-25-ppt-ui3-scene-and-page-sync，其他活跃任务不动
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `900ab31f` | fix(ppt): retain settings retry and scope exit handoff |
+| `1cd45e57` | fix(ppt): disable loading page and restore annotation takeover |
+| `d7b9ec12` | fix(ppt): reject stale drawpad visibility after mode changes |
+
+### Testing
+
+- [OK] 完整 InkeysRepo.sln Debug|ARM64、Headless 与 PptCOM.Tests 已通过；用户确认当前人工验证基本无问题
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 处理 PR #217 与最新 dev 的冲突并验证可合并状态
