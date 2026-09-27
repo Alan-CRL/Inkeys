@@ -29,6 +29,10 @@ namespace Inkeys::Drawing::Draw3
 	std::optional<std::uint64_t> PublishProductPresentationTarget(
 		const Bridge::PresentationTarget& target) noexcept;
 	void ClearProductPresentationTarget() noexcept;
+	bool PublishProductPresentationUiReady(
+		const Bridge::PresentationReadyIdentity& identity) noexcept;
+	bool SetProductPresentationInputSuspended(
+		const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept;
 	// 仅运行中的 Host 接受页请求；相同绝对页幂等成功，调用方可安全周期复核。
 	bool PublishProductPage(std::uint32_t page) noexcept;
 	Bridge::CommandResult PublishProductCommand(Bridge::CommandType command) noexcept;

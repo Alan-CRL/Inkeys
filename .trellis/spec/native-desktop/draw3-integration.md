@@ -153,6 +153,8 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 // Host stop: PrepareExitAutoSave -> CloseAndDrain -> destroy controller/worker.
 ~~~
 
+当前会话/目标代次、成功 Present 后 UI 回执门禁及活动 contact 页边界详见 [PPT 会话合同](../ppt-interop/native-session-ui3.md)。保留本节 slot/存储合同；不得再以无限等待 active.empty 作为唯一换页条件。
+
 ## Scenario: PPT 三态 slot、UInk 自动保存与当前进程恢复
 
 ### 1. Scope / Trigger
@@ -322,7 +324,7 @@ PumpBridgeState();
 ### 3. Contracts
 
 - 当前页内容真值唯一来自当前 interval 的 `CanvasRuntimeHistory::LastVisibleItem()`：存在可见 Stroke 时有内容，否则无内容。Pen、Highlighter、Shape 和 Eraser 都算 Stroke 内容；Laser 与 UInk Clear marker 不算；Eraser 即使把视觉画面擦空仍算。
-- DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后检查内容布尔值；Host 只在布尔值变化时递增单调内容 revision。每次成功 Present 记录实际目标、输出 revision 和对应内容 revision。
+- DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后检查内容；跨文档/页槽切换即使 `hasContent` 不变也发布新的 `contentRevision`。Host 必须把 `(hasContent, contentRevision)` 当成完整载荷：任一字段变化都存储、通知 `WaitForContentRevision` 并推进 runtime wake；两者都相同才幂等跳过。每次成功 Present 记录实际目标、输出 revision 和对应内容 revision，Selection 显隐仍要求 `presentedContentRevision == contentRevision`，不得用新呈现版本反向伪造目标。
 - presentation 状态固定为：非选择只显示主 Drawpad；选择先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。
 - Window Service 用批量窗口位置命令确保两窗互斥可见；失败时先隐藏两窗再收敛到唯一目标。主 Drawpad 不得动态切换 `WS_EX_TRANSPARENT`。
 - Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与非选择均保持完整布局，选择按钮文字恒为“选择”。产品路径不再注册或读取 Pierce/`penetrate.select`。
@@ -353,12 +355,15 @@ PumpBridgeState();
 - Good：有一笔的选择态由辅助 ULW 穿透显示，Clear 后等当前 revision 的完整 clean 帧再隐藏；Undo 恢复该笔并重新显示辅助窗，Redo 再次隐藏，另一页的 Eraser history 仍存在。
 - Base：初始选择空页两窗隐藏；进入 Pen 先预热主 presenter 再显示，未落笔返回选择再次经辅助 clean 后隐藏。
 - Bad：用窗口穿透样式推断选择模式、让主 Drawpad 承担穿透、复制固定 L2、视觉像素是否为空推断内容，或 Clear 时删除 Stroke/替换 runtime。
+- PPT 真退出的 Desktop Selection 可以先于其辅助 ULW 完整帧就绪；等待时 Window Service owner thread 必须隐藏旧双画布，保持可恢复重试，且在最新 bridge revision、输出目标/content revision 成功 Present 后再显示辅助 ULW（有内容）或双隐藏（空内容）。成对 HWND 事务要读回双窗可见性；AdmissionBlocked、MA_NOACTIVATE 和非 layered 主窗上的 `WS_EX_TRANSPARENT` 不能代替系统命中穿透。白板和更新的 Pen/Presentation 期望优先。
+- PPT EndScreen 仅由可信 State=5 与同次完整文稿拓扑产生明确 `PageKind::EndScreen` 目标：内部索引为真实 `N`，COM/UI 总页数仍 `N`，无 SlideID。正常页与 EndScreen 共用单 Host 页边界、contact 隔离、成功 Present、UI ready 和保存 worker。UInk 文件在 N 个真实 active 页后保存一个带单个 `inkeysPageKind=end-screen` 的独立 pageGuid；codec 两侧和应用严格导入须配套验证，旧 N-canvas 文件冷读补空页。重排/增删幻灯片不能把该页放入 retained SlideID 集合。
 
 ### 6. Tests Required
 
 - Headless 覆盖 `Primary/Presentation/Hidden` 解析、Clear 点击/双击决策，以及 timer begin/end 幂等、失败、模式往返和析构清理。
 - CPU history 覆盖普通 `A/B/C` 的 Undo/Redo、`undoFloor` 截止、Clear 恢复画布逐笔撤空且不跨第二个边界、新 Stroke 分支丢弃 redo 和每页隔离；UInk/storage 覆盖 `A/Clear/B/Clear/C`、空 Clear no-op 与最近区间恢复。
 - 隐藏 HWND 集成覆盖双窗固定样式/owner/bounds、互斥可见、输出 generation 往返、clean 握手、Stored Stroke 内容发布、页面切换、Clear 后 Undo 恢复、普通 Stroke Redo 和 presenter recovery；跨 Clear Redo 不在本期。
+- Selection PPT 页级回归须通过真实 Controller observer 和 Host 覆盖两个不同有墨迹页的 `true/r→true/r+1`、两个空页的 `false/r→false/r+1`、相同完整载荷幂等、EndScreen 与普通页往返；每次比较 Host 目标/成功 Present 内容版本及辅助 ULW 的完成输出，不能只等待 `presentationReady` 身份或内容 bool。Pen 模式与真退出双隐藏合同同时复测。
 - 完整 `InkeysRepo.sln Debug|ARM64` 构建，运行 `InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-hidden-test` 与 `git diff --check`；不得启动可见窗口。
 
 ### 7. Wrong vs Correct

@@ -449,10 +449,12 @@ namespace Inkeys::Drawing::Draw3
 			return result;
 		}
 
-		bool ContainsSlideIdSet(const std::vector<std::int32_t>& known,
+		bool CompatibleSlideIdSet(const std::vector<std::int32_t>& known,
 			const std::vector<std::int32_t>& active) noexcept
 		{
-			return std::all_of(active.begin(), active.end(), [&](auto id)
+			if (known.empty() || active.empty()) return known.empty() && active.empty();
+			// 同一路径新增幻灯片时，至少一个稳定 SlideID 连续即可保持原文件的结束页。
+			return std::any_of(active.begin(), active.end(), [&](auto id)
 				{ return std::find(known.begin(), known.end(), id) != known.end(); });
 		}
 
@@ -465,14 +467,8 @@ namespace Inkeys::Drawing::Draw3
 		bool ValidatePresentationTarget(
 			const Bridge::PresentationTarget& target) noexcept
 		{
-			if (target.key.IsZero() || target.sourceIdentity.empty() ||
-				target.totalPages == 0 ||
-				target.totalPages > Bridge::kMaximumPresentationPages ||
-				target.pageIndex >= target.totalPages) return false;
-			if (target.bindingMode == Bridge::SlideBindingMode::StableSlideId)
-				return target.slideId && target.slideIds.size() == target.totalPages &&
-					target.slideIds[target.pageIndex] == *target.slideId;
-			return !target.slideId && target.slideIds.empty();
+			return !target.key.IsZero() && !target.sourceIdentity.empty() &&
+				Bridge::ValidPresentationPage(target);
 		}
 
 		bool ValidatePresentationSaveRequest(
@@ -487,7 +483,7 @@ namespace Inkeys::Drawing::Draw3
 					request.snapshot.currentPageIndex != request.target.pageIndex ||
 					(request.snapshot.activeCanvases.empty() && request.snapshot.retainedCanvases.empty()
 						? request.snapshot.canvases.size() < request.target.totalPages
-						: request.snapshot.activeCanvases.size() != request.target.totalPages))
+						: request.snapshot.activeCanvases.size() < request.target.totalPages))
 					return false;
 				const bool stable = request.target.bindingMode ==
 					Bridge::SlideBindingMode::StableSlideId;
@@ -500,6 +496,10 @@ namespace Inkeys::Drawing::Draw3
 						request.snapshot.workspaceExtra, importMode)) return false;
 				const auto& active = request.snapshot.activeCanvases.empty()
 					? request.snapshot.canvases : request.snapshot.activeCanvases;
+				if (active.size() > Bridge::PresentationDocumentPageCount(request.target) ||
+					(request.target.pageKind == Bridge::PresentationPageKind::EndScreen &&
+						active.size() != Bridge::PresentationDocumentPageCount(request.target)))
+					return false;
 				if (request.clearPageGuid.has_value() !=
 					request.clearIntervalOrdinal.has_value()) return false;
 				bool clearPageFound = !request.clearPageGuid;
@@ -507,11 +507,15 @@ namespace Inkeys::Drawing::Draw3
 				for (std::size_t index = 0; index < active.size(); ++index)
 				{
 					const auto& canvas = active[index];
+					const bool endScreen = index == request.target.totalPages;
+					const auto pageKind = draw3::uink::InkeysPageKind(canvas.extra);
 					if (canvas.pageIndex != index || canvas.pageNumber != index + 1 ||
 						!draw3::uink::HasInkeysBindingExtra(canvas.extra, importMode) ||
-						(stable && (!canvas.slideId ||
+						pageKind == draw3::uink::UInkInkeysPageKind::Invalid ||
+						(pageKind == draw3::uink::UInkInkeysPageKind::EndScreen) != endScreen ||
+						(stable && !endScreen && (!canvas.slideId ||
 							*canvas.slideId != request.target.slideIds[index])) ||
-						(!stable && canvas.slideId)) return false;
+						(endScreen && canvas.slideId) || (!stable && canvas.slideId)) return false;
 					clearPageFound = clearPageFound ||
 						canvas.pageGuid == *request.clearPageGuid;
 					if (request.clearPageGuid && canvas.pageGuid == *request.clearPageGuid)
@@ -567,6 +571,7 @@ namespace Inkeys::Drawing::Draw3
 				Draw3UInkImportBindingMode::StableSlideId ? target.slideIds : std::vector<std::int32_t>{};
 			expectation.knownSlideIds = entry.slideIds;
 			expectation.pageCount = target.totalPages;
+			expectation.allowEndScreen = true;
 			return expectation;
 		}
 
@@ -748,7 +753,7 @@ namespace Inkeys::Drawing::Draw3
 					found->workspaceGuid != FormatUInkGuid(request.snapshot.workspaceGuid) ||
 					(!bindingUpgrade && (found->bindingMode !=
 						BindingModeName(request.target.bindingMode) ||
-						!ContainsSlideIdSet(found->slideIds, request.target.slideIds))))
+						!CompatibleSlideIdSet(found->slideIds, request.target.slideIds))))
 					return PresentationPersistenceStatus::SourceChanged;
 				const std::wstring path = JoinPath(root, WidenAscii(found->relativePath));
 				const auto read = ReadUInkFile(path);
@@ -855,7 +860,7 @@ namespace Inkeys::Drawing::Draw3
 					found->bindingRevision != request.target.bindingRevision) ||
 				(!bindingUpgrade && (found->bindingMode !=
 					BindingModeName(request.target.bindingMode) ||
-					!ContainsSlideIdSet(found->slideIds, request.target.slideIds))))
+					!CompatibleSlideIdSet(found->slideIds, request.target.slideIds))))
 			{
 				completion.status = PresentationPersistenceStatus::CrossProcessConflictDeferred;
 				return completion;

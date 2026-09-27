@@ -24,6 +24,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(productMutex);
 		if (productStopping.load(std::memory_order_acquire)) return false;
+		options.requirePresentationUiReady = true;
 		return productHost.Start(drawpad, drawpadPresentation, callbacks, options,
 			runtimeCallbacks);
 	}
@@ -119,6 +120,24 @@ namespace Inkeys::Drawing::Draw3
 			target, &changed);
 		if (changed) productHost.PublishState(productHost.ProductBridge().Snapshot());
 		return revision;
+	}
+
+	bool PublishProductPresentationUiReady(
+		const Bridge::PresentationReadyIdentity& identity) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) &&
+			productHost.PublishPresentationUiReady(identity);
+	}
+
+	bool SetProductPresentationInputSuspended(
+		const Bridge::PresentationReadyIdentity& expected, bool suspended) noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return false;
+		std::scoped_lock callLock(productCallMutex);
+		return !productStopping.load(std::memory_order_acquire) &&
+			productHost.SetPresentationInputSuspended(expected, suspended);
 	}
 
 	void ClearProductPresentationTarget() noexcept

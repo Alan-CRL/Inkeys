@@ -139,7 +139,7 @@
     },
     "EndPresentation":
     {
-      "Body": "当前处于绘制模式。结束放映将清空画布内容。\n确定结束放映吗？"
+      "Body": "确定结束当前幻灯片放映吗？"
     },
     "WindowCreationFailed":
     {

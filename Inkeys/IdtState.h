@@ -4,6 +4,8 @@
 
 #include "IdtMain.h"
 
+#include <cstdint>
+
 enum class StateModeSelectEnum
 {
 	IdtSelection,
@@ -120,7 +122,11 @@ COLORREF GetPenColor();
 float GetEffectivePenOpacity();
 
 bool ChangeStateModeToSelection();
+std::uint64_t StateModeTransitionRevision() noexcept;
+bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
 bool ChangeStateModeToPen();
+enum class PptAnnotationTool : int { Pen = 1, Laser = 2, Highlighter = 3 };
+bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expectedRevision);
 bool ChangeStateModeToShape();
 bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();

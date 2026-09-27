@@ -139,7 +139,7 @@
     },
     "EndPresentation":
     {
-      "Body": "You are currently in drawing mode. Ending the presentation will clear the canvas.\nEnd the presentation?"
+      "Body": "End the current slide show?"
     },
     "WindowCreationFailed":
     {

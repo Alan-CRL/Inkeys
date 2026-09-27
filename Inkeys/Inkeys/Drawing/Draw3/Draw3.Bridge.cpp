@@ -14,8 +14,10 @@ namespace Inkeys::Drawing::Draw3::Bridge
 				left.presentationName == right.presentationName &&
 				left.provider == right.provider && left.bindingToken == right.bindingToken &&
 				left.slideIds == right.slideIds && left.slideId == right.slideId &&
+				left.pageKind == right.pageKind &&
 				left.pageIndex == right.pageIndex && left.totalPages == right.totalPages &&
 				left.bindingRevision == right.bindingRevision &&
+				left.sessionRevision == right.sessionRevision &&
 				left.processLocalIdentity == right.processLocalIdentity;
 		}
 	}
@@ -66,17 +68,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 	{
 		if (changed) *changed = false;
 		if (target.key.IsZero() || target.sourceIdentity.empty() ||
-			target.totalPages == 0 ||
-			target.totalPages > kMaximumPresentationPages ||
-			target.pageIndex >= target.totalPages)
-			return std::nullopt;
-		if (target.bindingMode == SlideBindingMode::StableSlideId)
-		{
-			if (!target.slideId || target.slideIds.size() != target.totalPages ||
-				target.slideIds[target.pageIndex] != *target.slideId)
-				return std::nullopt;
-		}
-		else if (target.slideId || !target.slideIds.empty()) return std::nullopt;
+			!ValidPresentationPage(target)) return std::nullopt;
 
 		std::scoped_lock lock(mutex_);
 		if (!running_) return std::nullopt;
@@ -171,7 +163,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		commands_.clear();
 		finalCommand_.reset();
 		nextSequence_ = 1;
-		nextTargetRevision_ = 1;
+		// Host 重启也不复用目标编号，避免旧 UI/ready completion 命中新一代。
 		state_ = {};
 		running_ = true;
 	}

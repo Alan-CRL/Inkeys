@@ -66,6 +66,7 @@ export namespace Inkeys::Drawing::Draw3
 		int64_t qpc = 0;
 		ContactPhase phase = ContactPhase::Down;
 		uint64_t sequence = 0;
+		uint64_t admissionRevision = 0; // Down 在入口锁存页边界代次，Move 不改变归属。
 		SpeedEraser::InputSource source;
 	};
 
@@ -198,6 +199,13 @@ export namespace Inkeys::Drawing::Draw3
 		bool TryReadSnapshot(ContactHandle handle, ContactSnapshot& snapshot) const noexcept;
 		// 绘制线程在完成 L2 提交后归还 slot。
 		void Recycle(ContactHandle handle) noexcept;
+		// 已收尾或被拒绝的 contact 只保留物理路由到 Up；随后 producer 自行回收。
+		void DiscardUntilTerminal(ContactHandle handle) noexcept;
+		void SetAdmissionBlocked(bool blocked) noexcept;
+		bool AdmissionBlocked() const noexcept;
+		uint64_t AdmissionRevision() const noexcept;
+		bool ContactAdmitted(ContactHandle handle) const noexcept;
+		bool HasQuarantinedContacts() const noexcept;
 		// RTS 停止回调后取消仍由生产者持有的全部 contact。
 		void CloseAllProducerContacts(int64_t qpc) noexcept;
 
