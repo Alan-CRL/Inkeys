@@ -112,22 +112,41 @@ public:
 	}Shape;
 };
 extern StateModeClass stateMode;
+StateModeClass GetStateModeSnapshot();
+struct StateModeVersionedSnapshot
+{
+	StateModeClass state;
+	std::uint64_t revision = 0;
+};
+StateModeVersionedSnapshot GetStateModeVersionedSnapshot();
 
 bool IsLaserPenSelected() noexcept;
 bool IsLaserToolActive() noexcept;
+bool IsLaserToolActive(const StateModeClass& snapshot) noexcept;
 bool SetPenWidth(float targetWidth, bool setMemory = true);
+bool SetPenWidthIfRevision(float targetWidth,
+	std::uint64_t expectedRevision, bool setMemory = true);
 bool SetPenColor(COLORREF targetColor, bool setMemory = true);
 float GetPenWidth();
+float GetPenWidth(const StateModeClass& snapshot) noexcept;
 COLORREF GetPenColor();
+COLORREF GetPenColor(const StateModeClass& snapshot) noexcept;
 float GetEffectivePenOpacity();
+float GetEffectivePenOpacity(const StateModeClass& snapshot) noexcept;
 
 bool ChangeStateModeToSelection();
 std::uint64_t StateModeTransitionRevision() noexcept;
 bool ChangeStateModeToSelectionIfRevision(std::uint64_t expectedRevision);
 bool ChangeStateModeToPen();
+enum class PenToolSelectionEnum : std::uint8_t { SoftPen, HardPen, Highlighter, Laser };
+bool PenToolSelectionWouldChange(PenToolSelectionEnum tool);
+bool ChangeStateModeToPenTool(PenToolSelectionEnum tool);
 enum class PptAnnotationTool : int { Pen = 1, Laser = 2, Highlighter = 3 };
 bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expectedRevision);
 bool ChangeStateModeToShape();
+bool SetShapeModeSelect(ShapeModeSelectEnum shape);
+bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
+	std::uint64_t expectedRevision);
 bool ChangeStateModeToEraser();
 bool ChangeStateModeToTouchTest();
 // 将当前工具与显式选择模式发布到 Draw3 bridge。

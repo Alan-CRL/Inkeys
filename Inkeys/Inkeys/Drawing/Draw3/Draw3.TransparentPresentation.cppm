@@ -16,7 +16,7 @@ import Inkeys.Drawing.Draw3.renderer;
 
 export namespace Inkeys::Drawing::Draw3
 {
-	// 列出程序支持的四种透明窗口呈现方式。
+	// 首发只选择 DComp/ULW；DWM 枚举值保留给历史兼容代码。
 	enum class TransparentPresentMode
 	{
 		UlwDirtyRect,
@@ -44,7 +44,7 @@ export namespace Inkeys::Drawing::Draw3
 
 	struct TransparentPresentationOptions
 	{
-		// 指定后只尝试该真实后端；Automatic 仍由 Host 使用默认回退链。
+		// 强制模式只允许 DComp/ULW；Automatic 仍由 Host 使用默认回退链。
 		bool requireMode = false;
 		TransparentPresentMode requiredMode = kPreferredTransparentPresentMode;
 		// Window Service 重建 legacy-compatible HWND 后跳过 DComp，避免再次固化窗口样式。
@@ -68,6 +68,8 @@ export namespace Inkeys::Drawing::Draw3
 	const char* TransparentPresentModeName(TransparentPresentMode mode);
 	// 返回启动创建窗口前是否应预置 DComp 扩展样式。
 	bool ShouldPreconfigureNoRedirectionBitmap();
+	// 只测生产 ULW 的 CPU 脏区拷贝与 alpha 检查，不创建窗口或 GPU 资源。
+	int RunUlwDirtyCopyBenchmark() noexcept;
 
 	// 统一管理交换链、透明模式初始化、回退、缩放和呈现。
 	class TransparentPresentationController

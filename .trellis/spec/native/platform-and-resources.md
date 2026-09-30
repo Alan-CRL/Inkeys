@@ -1,8 +1,10 @@
 # Platform and Resources
 
+> 本层主要描述独立 inkStrokeModelerTest/draw3 demo 的历史路径；已集成 Inkeys 主产品的首发选择合同以 native-desktop/draw3-integration.md 为准：仅 DComp/ULW，两种 DWM 透明模式禁用，ULW 保持用户已在 Win7 SP1+仅 KB2670838 实测可用的 FLIP_SEQUENTIAL。
+
 ## Compatibility Target Versus Verified Behavior
 
-Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标。面向平台、设备、交换链、DWM、输入或窗口样式的变更必须考虑该目标，不能仅以 Windows 11 ARM64 开发机结果作为兼容结论。
+Windows 7 SP1 + KB2670838 是已集成 Draw3 图形路径的兼容目标环境。面向平台、设备、交换链、输入或窗口样式的 Draw3 变更必须考虑该环境，不能仅以 Windows 11 ARM64 开发机结果作为兼容结论；此目标不擅自改写 README 对其它模块的最低系统声明。
 
 当前测试程序包含若干兼容候选路径，包括 D3D feature level 重试、DirectComposition 运行时探测、DWM alpha 重试、presenter fallback 和 WARP fallback。
 
@@ -10,7 +12,7 @@ Windows 7 SP1 + KB2670838 是 Inkeys 的正式项目级兼容目标。面向平�
 
 兼容性报告必须区分：
 
-- 项目级目标：Windows 7 SP1 + KB2670838。
+- Draw3 目标环境：Windows 7 SP1 + KB2670838。
 - 当前代码路径：源码中存在的兼容处理。
 - 实测能力：指定操作系统、补丁、GPU/驱动和 presenter 下实际通过的场景。
 
@@ -45,7 +47,7 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 
 ### 3. Contracts
 
-- `Windows 7 SP1 + KB2670838` 是项目目标字段，不是测试结果字段。
+- `Windows 7 SP1 + KB2670838` 是 Draw3 目标环境字段，不是测试结果字段。
 - 实测记录必须包含：OS/补丁、GPU/驱动、feature level、active presenter、是否 WARP、场景与结果。
 - 没有环境记录时，只能声明代码路径存在并标记“待验证”。
 - 首选 DComp 时，`WS_EX_NOREDIRECTIONBITMAP` 必须随 `CreateWindowEx` 的 `dwExStyle` 传入；不能依赖创建后调用 `SetWindowLongPtr` 补设。
@@ -95,7 +97,7 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 
 Wrong：`Windows 7 上 DWM 透明和 resize 均受支持。`
 
-Correct：`Windows 7 SP1 + KB2670838 是项目兼容目标；当前测试程序包含 DWM/ULW 候选路径，但该环境下的透明和 resize 行为待验证。`
+Correct：`Windows 7 SP1 + KB2670838 是 Draw3 兼容目标；已集成主产品仅选择 DComp/ULW，目标环境下的透明和 resize 行为仍待真机验证。`
 
 Wrong：`窗口创建后发现缺少 WS_EX_NOREDIRECTIONBITMAP，再用 SetWindowLongPtr 补上。`
 

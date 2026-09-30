@@ -297,55 +297,92 @@ export
 		return max(1, static_cast<int>(lround(presets[index] * dpiZoom)));
 	}
 
+	float GetBarLaserThicknessPresetDip(size_t index, const StateModeClass& snapshot)
+	{
+		return index < 3 ? snapshot.Pen.Laser.widthPreset[index] : 0.0f;
+	}
+
 	float GetBarLaserThicknessPresetDip(size_t index)
 	{
-		return index < 3 ? stateMode.Pen.Laser.widthPreset[index] : 0.0f;
+		return GetBarLaserThicknessPresetDip(index, GetStateModeSnapshot());
+	}
+
+	int GetBarLaserThicknessPresetPx(size_t index, double dpiZoom,
+		const StateModeClass& snapshot)
+	{
+		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
+		return max(1, static_cast<int>(lround(
+			GetBarLaserThicknessPresetDip(index, snapshot) * dpiZoom)));
 	}
 
 	int GetBarLaserThicknessPresetPx(size_t index, double dpiZoom)
 	{
-		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
-		return max(1, static_cast<int>(lround(
-			GetBarLaserThicknessPresetDip(index) * dpiZoom)));
+		return GetBarLaserThicknessPresetPx(index, dpiZoom, GetStateModeSnapshot());
+	}
+
+	bool IsBarThicknessPresetSelected(PenModeSelectEnum mode,
+		size_t index, double dpiZoom, const StateModeClass& snapshot)
+	{
+		if (snapshot.laserActive)
+		{
+			// 激光状态保存 DIP，选中身份不能与仅供视觉尺寸的像素值比较。
+			return abs(static_cast<double>(GetPenWidth(snapshot))
+				- static_cast<double>(GetBarLaserThicknessPresetDip(index, snapshot)))
+				< 0.001;
+		}
+		// 滑条保存连续笔宽，预设选中必须比较原始值。
+		return abs(static_cast<double>(GetPenWidth(snapshot))
+			- static_cast<double>(GetBarThicknessPresetPx(mode, index, dpiZoom)))
+			< 0.001;
 	}
 
 	bool IsBarThicknessPresetSelected(PenModeSelectEnum mode,
 		size_t index, double dpiZoom)
 	{
-		if (stateMode.laserActive)
+		return IsBarThicknessPresetSelected(mode, index, dpiZoom,
+			GetStateModeSnapshot());
+	}
+
+	double GetBarCurrentPenThicknessVisualWidth(double dpiZoom,
+		const StateModeClass& snapshot)
+	{
+		if (snapshot.laserActive)
 		{
-			// 激光状态保存 DIP，选中身份不能与仅供视觉尺寸的像素值比较。
-			return abs(static_cast<double>(GetPenWidth())
-				- static_cast<double>(GetBarLaserThicknessPresetDip(index)))
-				< 0.001;
+			// Bar 预览在 96-DPI D2D 空间绘制，激光 DIP 只在边界转换一次。
+			return max(0.0, static_cast<double>(GetPenWidth(snapshot))
+				* max(0.0, dpiZoom));
 		}
-		return static_cast<int>(lround(clamp(
-			static_cast<double>(max(0.0f, GetPenWidth())), 0.0, 999.0)))
-			== GetBarThicknessPresetPx(mode, index, dpiZoom);
+		return max(0.0, static_cast<double>(GetPenWidth(snapshot)));
 	}
 
 	double GetBarCurrentPenThicknessVisualWidth(double dpiZoom)
 	{
-		if (stateMode.laserActive)
-		{
-			// Bar 预览在 96-DPI D2D 空间绘制，激光 DIP 只在边界转换一次。
-			return max(0.0, static_cast<double>(GetPenWidth())
-				* max(0.0, dpiZoom));
-		}
-		return max(0.0, static_cast<double>(GetPenWidth()));
+		return GetBarCurrentPenThicknessVisualWidth(dpiZoom,
+			GetStateModeSnapshot());
+	}
+
+	bool IsLaserThicknessPresetMode(const StateModeClass& snapshot)
+	{
+		return snapshot.StateModeSelect == StateModeSelectEnum::IdtPen
+			&& snapshot.laserActive;
 	}
 
 	bool IsLaserThicknessPresetMode()
 	{
-		return stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
-			&& stateMode.laserActive;
+		return IsLaserThicknessPresetMode(GetStateModeSnapshot());
+	}
+
+	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode,
+		const StateModeClass& snapshot)
+	{
+		return !snapshot.laserActive
+			&& (PenModeUsesBrushThickness(mode)
+			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
 	}
 
 	bool PenModeUsesThicknessPresets(PenModeSelectEnum mode)
 	{
-		return !stateMode.laserActive
-			&& (PenModeUsesBrushThickness(mode)
-			|| mode == PenModeSelectEnum::IdtPenHighlighter1);
+		return PenModeUsesThicknessPresets(mode, GetStateModeSnapshot());
 	}
 
 	COLORREF GetBarReadableTextColor(COLORREF background)

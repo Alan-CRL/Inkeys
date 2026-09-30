@@ -119,7 +119,7 @@ namespace
 		}
 
 		if (message == WM_MOUSEWHEEL
-			&& stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection
+			&& GetStateModeSnapshot().StateModeSelect != StateModeSelectEnum::IdtSelection
 			&& PptInfoState.TotalPage != -1)
 		{
 			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
@@ -132,7 +132,7 @@ namespace
 		if ((message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN
 			|| message == WM_RBUTTONDOWN)
 			&& setlist.regularSetting.clickRecover
-			&& stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection)
+			&& GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection)
 		{
 			ScheduleClickCollapse();
 		}

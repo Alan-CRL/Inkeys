@@ -60,6 +60,13 @@ namespace
 			"idle rebase excludes sleep from first animation frame");
 		Check(Near(clock.LastRawElapsedSeconds(), 0.002),
 			"raw delta diagnostics use the same rebased clock as animation");
+		clock.SuspendForIdle(idleWake + std::chrono::milliseconds(2));
+		const auto afterSleep = idleWake + std::chrono::seconds(10);
+		Check(Near(clock.Tick(afterSleep), 0.0) &&
+			Near(clock.LastRawElapsedSeconds(), 9.998),
+			"first idle wake keeps the raw gap but does not jump the animation");
+		Check(Near(clock.Tick(afterSleep + std::chrono::milliseconds(16)), 0.016),
+			"second wake resumes normal animation time");
 	}
 
 	void TestOneSecondFrameRate()

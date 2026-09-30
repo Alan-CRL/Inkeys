@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Full solution build and OS matrix"}
+{"file": ".trellis/spec/ppt-interop/com-contract.md", "reason": "PptCOM DLL TLB and ABI outputs"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/baseline-sources.md", "reason": "Version sources and device setup"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Current build and tests"}

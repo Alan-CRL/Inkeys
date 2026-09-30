@@ -4,20 +4,31 @@
 #include "Draw3.PresentationState.h"
 
 import Inkeys.Window;
+import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.ink_prediction;
 import draw3.uink_file;
 import draw3.uink_draw3_import;
 
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <crtdbg.h>
+#include <cstring>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 #include <filesystem>
+#include <span>
 #include <string>
+#include <tchar.h>
+#include <tpcshrd.h>
 #include <thread>
 #include <vector>
 #include <variant>
+#include <wrl/client.h>
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -845,6 +856,37 @@ namespace Inkeys::Drawing::Draw3
 			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
 			options.requirePresentationUiReady = true;
+			if (exerciseCommands)
+			{
+				// PPT 命令必须经过真实异步加载；缺少 root 会让 Controller 按设计阻止输入。
+				wchar_t imagePath[32768]{};
+				const DWORD imageLength = GetModuleFileNameW(nullptr, imagePath, 32768);
+				if (!Check(imageLength > 0 && imageLength < 32768,
+					"resolve hidden command persistence directory", failures)) return false;
+				LARGE_INTEGER started{};
+				if (!Check(QueryPerformanceCounter(&started) != FALSE,
+					"identify hidden command persistence run", failures)) return false;
+				const auto parent = std::filesystem::path(imagePath).parent_path() /
+					L"Draw3HiddenPptCommands";
+				std::error_code directoryError;
+				std::filesystem::create_directories(parent, directoryError);
+				const DWORD parentAttributes = GetFileAttributesW(parent.c_str());
+				if (!Check(!directoryError && parentAttributes != INVALID_FILE_ATTRIBUTES &&
+					(parentAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+					(parentAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+					"create non-reparse hidden command persistence parent", failures)) return false;
+				const auto root = parent / (std::to_wstring(GetCurrentProcessId()) +
+					L"-" + std::to_wstring(started.QuadPart));
+				const bool created = std::filesystem::create_directory(root, directoryError);
+				const DWORD rootAttributes = GetFileAttributesW(root.c_str());
+				if (!Check(created && !directoryError && rootAttributes != INVALID_FILE_ATTRIBUTES &&
+					(rootAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+					(rootAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+					"create unique non-reparse hidden command persistence root", failures)) return false;
+				options.autoSaveRoot = root.wstring();
+				std::fprintf(stderr, "[Draw3Hidden] command_persistence_root=%ls\n",
+					options.autoSaveRoot.c_str());
+			}
 			if(exerciseEraser)
 			{
 				// 隐藏 HWND 位于屏幕外；注入明确的逻辑像素表面，不伪造 EDID 或实测物理尺寸。
@@ -865,6 +907,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			bool modeSucceeded = true;
 			auto snapshot = ProductHost().RuntimeSnapshot();
+			const auto modeDownBaseline=snapshot.inputDownPublished;
+			const auto modeRecycledBaseline=snapshot.inputRecycled;
 			modeSucceeded &= Check(snapshot.running && snapshot.firstFrameReady &&
 				snapshot.lastPresentSucceeded && snapshot.successfulPresentCount >= 1,
 				"first transparent frame", failures);
@@ -872,8 +916,11 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(snapshot.presentationMode == requiredMode,
 					"forced presenter used the requested real backend", failures);
 			else
-				modeSucceeded &= Check(snapshot.presentationMode != HostPresentationMode::Automatic,
-					"automatic fallback selected a real backend", failures);
+				modeSucceeded &= Check(
+					snapshot.presentationMode == HostPresentationMode::UlwDirtyRect ||
+					(allowDirectComposition && snapshot.presentationMode ==
+						HostPresentationMode::DirectCompositionVisualTree),
+					"automatic fallback selected only DComp or ULW", failures);
 			modeSucceeded &= CheckPresentationStyle(drawpad, snapshot.presentationMode, failures);
 			modeSucceeded &= CheckPresentationWindowStyle(presentation, failures);
 			modeSucceeded &= Check(SendMessageW(drawpad, WM_MOUSEACTIVATE,
@@ -1528,29 +1575,34 @@ namespace Inkeys::Drawing::Draw3
 
 				modeSucceeded &= Check(large.eraser.cursorDiameterPx>large.eraser.dpiX/96*70 &&
 					large.eraser.effectiveDiameterDip>70,"actual contact cursor reaches sweep size",failures);
-				const auto moveCount=large.inputMovePublished;
-				const auto pointCount=large.eraser.realPointCount;
 				// 完全停止所有Move，包括光标消息；只让真实绘制线程的时钟运行。
-				modeSucceeded &= Check(WaitUntil([moveCount]
+				modeSucceeded &= Check(WaitUntil([]
 				{
 					const auto s=ProductHost().RuntimeSnapshot();
-					return s.inputMovePublished==moveCount && s.eraser.active &&
+					return s.eraser.active &&
 						s.eraser.idleSeconds>=1.0 && s.eraser.cursorDiameterPx>0 &&
 						s.eraser.cursorDiameterPx<=s.eraser.dpiX/96*18 &&
 						s.eraser.nextRadiusPx<=s.eraser.dpiX/96*9.0f;
 				},4s),"no Move: final contact cursor and next geometry visibly shrink",failures);
 				const auto quiet=ProductHost().RuntimeSnapshot();
-				modeSucceeded &= Check(quiet.inputMovePublished==moveCount &&
-					quiet.eraser.realPointCount==pointCount &&
-					quiet.eraser.historyRadiusPx>quiet.eraser.nextRadiusPx*1.5f,
-					"idle does not rewrite historical width or submit fake points",failures);
+				// 已观测到实际 idle 后再锁存无输入基线；PostMessage 只保证进入 owner 队列。
+				const auto moveCount=quiet.inputMovePublished;
+				const auto pointCount=quiet.eraser.realPointCount;
+				modeSucceeded &= Check(quiet.eraser.historyRadiusPx>quiet.eraser.nextRadiusPx*1.5f,
+					"idle preserves historical width",failures);
 				modeSucceeded &= Check(WaitUntil([]
 				{
 					return ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.001f;
 				},3s),"effective size settles at exact minimum",failures);
 				const auto stopped=ProductHost().RuntimeSnapshot().eraser.frameSequence;
 				std::this_thread::sleep_for(250ms);
-				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.frameSequence<=stopped+2,
+				const auto settled=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(settled.inputMovePublished==moveCount &&
+					settled.eraser.realPointCount==pointCount,
+					"idle does not submit fake points after settling",failures);
+				modeSucceeded &= Check(std::abs(settled.eraser.historyRadiusPx-quiet.eraser.historyRadiusPx)<0.001f,
+					"idle does not rewrite historical width after settling",failures);
+				modeSucceeded &= Check(settled.eraser.frameSequence<=stopped+2,
 					"settled held eraser stops idle frames",failures);
 				modeSucceeded &= Check(mouseContact(HiddenTestContactPhase::Move,lastX+4,84),
 					"resume with one short real Move",failures);
@@ -1681,17 +1733,25 @@ namespace Inkeys::Drawing::Draw3
 					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::LargeScreen &&
 						std::abs(d.largeTargetSpeed-1300)<0.01f;}),
 					"active Touch keeps its latched scene after product setting changes",failures);
-				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,classroomLastX+2,120);
-				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
-					"manual classroom contact closes before scene change",failures);
+				const auto beforeClassroomUp=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,classroomLastX+2,120),
+					"post classroom Touch Up",failures);
+				modeSucceeded &= Check(WaitUntil([beforeClassroomUp]{const auto s=ProductHost().RuntimeSnapshot();
+					return !s.eraser.active && s.inputTerminalPublished>beforeClassroomUp.inputTerminalPublished &&
+						s.inputRecycled>beforeClassroomUp.inputRecycled;}),
+					"manual classroom contact closes and retires before scene change",failures);
 				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,120);
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && d.requestedDeviceMode==SpeedEraser::DeviceMode::Laptop &&
 						std::abs(d.largeTargetSpeed-512.5f)<0.01f;}),
 					"next Touch contact receives explicit Laptop cap with the same manual scale",failures);
-				postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,120);
-				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
-					"manual scene probe cancels without leaking contact",failures);
+				const auto beforeSceneCancel=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postSource(HiddenTestContactPhase::Cancelled,kHiddenTestTouchFlag,60,120),
+					"post manual scene Touch Cancel",failures);
+				modeSucceeded &= Check(WaitUntil([beforeSceneCancel]{const auto s=ProductHost().RuntimeSnapshot();
+					return !s.eraser.active && s.inputTerminalPublished>beforeSceneCancel.inputTerminalPublished &&
+						s.inputRecycled>beforeSceneCancel.inputRecycled;}),
+					"manual scene probe cancels and retires old route before the next Touch",failures);
 				ProductHost().SetEraserDevelopmentOptions({});
 				// 面积辅助通过真实 mailbox、控制器、光标、模型和保存链路验收。
 				const auto areaProbe=[&](const char* label)
@@ -1732,19 +1792,46 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
 					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,
 					"synthetic metadata uses the product relative-length converter before eraser ingress",failures);
+				modeSucceeded &= Check(WaitUntil([modeDownBaseline,modeRecycledBaseline]{
+					const auto s=ProductHost().RuntimeSnapshot();
+					return s.inputDownPublished>=modeDownBaseline &&
+						s.inputRecycled>=modeRecycledBaseline &&
+						s.inputDownPublished-modeDownBaseline==s.inputRecycled-modeRecycledBaseline;}),
+					"all current-run contact routes retire before area Touch Down",failures);
 				ProductHost().SetHiddenTestContactArea(convertedArea);
-				postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140);
-				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
-					return d.active && d.inputType==0 && d.contactArea.enabled;}),"real Touch receives latched area option",failures);
+				const auto beforeAreaDown=ProductHost().RuntimeSnapshot();
+				modeSucceeded &= Check(postSource(HiddenTestContactPhase::Down,kHiddenTestTouchFlag,60,140),
+					"post area Touch Down",failures);
+				modeSucceeded &= Check(WaitUntil([beforeAreaDown]{const auto s=ProductHost().RuntimeSnapshot();
+					const auto& d=s.eraser;
+					return s.inputDownPublished>beforeAreaDown.inputDownPublished && d.active &&
+						d.inputType==0 && d.contactArea.enabled && d.contactGeneration>0 &&
+						d.inputPositionValid && std::abs(d.inputCanvasYpx-140)<0.01f;}),
+					"real area Touch Down reaches this contact generation",failures);
 				std::this_thread::sleep_for(120ms);
 				modeSucceeded &= Check(ProductHost().RuntimeSnapshot().eraser.effectiveDiameterDip<=16.01f,
 					"Touch Down with a large reported finger still starts small",failures);
 				int areaX=60;
+				const auto areaMovesBefore=ProductHost().RuntimeSnapshot().inputMovePublished;
+				bool areaMovesPosted=true;
 				for(int i=1;i<=35;++i)
 				{
-					areaX=60+i;postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
+					areaX=60+i;areaMovesPosted &= postSource(HiddenTestContactPhase::Move,kHiddenTestTouchFlag,areaX,140);
 					std::this_thread::sleep_for(30ms);
 				}
+				modeSucceeded &= Check(areaMovesPosted,"post all slow area Touch Moves",failures);
+				const auto areaIngress=ProductHost().RuntimeSnapshot();
+				std::fprintf(stderr,"[AreaIngress] mode=%u movesPublishedSoFar=%llu generation=%llu active=%d areaEnabled=%d sampleValid=%d referenceReady=%d areaActive=%d diameter=%.3f target=%.3f floor=%.3f idleMs=%.1f points=%llu\n",
+					static_cast<unsigned>(requiredMode),
+					static_cast<unsigned long long>(areaIngress.inputMovePublished-areaMovesBefore),
+					static_cast<unsigned long long>(areaIngress.eraser.contactGeneration),
+					areaIngress.eraser.active,areaIngress.eraser.contactArea.enabled,
+					areaIngress.eraser.contactArea.sampleValid,
+					areaIngress.eraser.contactArea.referenceReady,
+					areaIngress.eraser.contactArea.active,
+					areaIngress.eraser.effectiveDiameterDip,areaIngress.eraser.targetDiameterDip,
+					areaIngress.eraser.contactArea.activeFloorDip,areaIngress.eraser.idleSeconds*1000,
+					static_cast<unsigned long long>(areaIngress.eraser.realPointCount));
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.active && d.contactArea.active && d.effectiveDiameterDip>38.5f && d.effectiveDiameterDip<40.0f &&
 					std::abs(d.cursorDiameterPx-d.nextRadiusPx*2)<0.01f;}),"slow Touch drag has matching area-assisted cursor and geometry",failures);
@@ -2047,6 +2134,360 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	int RunRendererMapCompatibilityTest() noexcept
+	{
+		int failures = 0;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+		constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+		const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+			nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, requestedLevel, ARRAYSIZE(requestedLevel),
+			D3D11_SDK_VERSION, device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+		if (!Check(SUCCEEDED(createResult) && device && context &&
+			actualLevel == D3D_FEATURE_LEVEL_11_0,
+			"WARP FL11.0 device without HWND", failures)) return 1;
+
+		InkRenderer renderer;
+		renderer.device = device;
+		renderer.context = context;
+		renderer.viewportWidth = 64.0f;
+		renderer.viewportHeight = 64.0f;
+		D3D11_BUFFER_DESC constantDescription = {
+			48, D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER,
+			D3D11_CPU_ACCESS_WRITE, 0, 0
+		};
+		if (!Check(SUCCEEDED(device->CreateBuffer(&constantDescription, nullptr,
+			renderer.globalCB.GetAddressOf())), "create production constant buffer", failures))
+			return 1;
+		D3D11_BUFFER_DESC inkDescription = {};
+		inkDescription.ByteWidth = static_cast<UINT>(
+			InkRenderer::kMaxBufferCapacity * sizeof(InkPoint));
+		inkDescription.Usage = D3D11_USAGE_DYNAMIC;
+		inkDescription.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		inkDescription.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		inkDescription.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+		inkDescription.StructureByteStride = sizeof(InkPoint);
+		if (!Check(SUCCEEDED(device->CreateBuffer(&inkDescription, nullptr,
+			renderer.inkDataBuffer.GetAddressOf())), "create production dynamic SRV buffer", failures))
+			return 1;
+		D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription = {};
+		viewDescription.Format = DXGI_FORMAT_UNKNOWN;
+		viewDescription.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+		viewDescription.Buffer.NumElements = static_cast<UINT>(InkRenderer::kMaxBufferCapacity);
+		if (!Check(SUCCEEDED(device->CreateShaderResourceView(renderer.inkDataBuffer.Get(),
+			&viewDescription, renderer.inkDataSRV.GetAddressOf())),
+			"create production dynamic SRV", failures)) return 1;
+		D3D11_BUFFER_DESC stagingDescription = inkDescription;
+		stagingDescription.Usage = D3D11_USAGE_STAGING;
+		stagingDescription.BindFlags = 0;
+		stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		stagingDescription.MiscFlags = 0;
+		stagingDescription.StructureByteStride = 0;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> staging;
+		if (!Check(SUCCEEDED(device->CreateBuffer(&stagingDescription, nullptr,
+			staging.GetAddressOf())), "create no-window readback buffer", failures)) return 1;
+
+		const auto checkUploaded = [&](const void* expected, size_t bytes, const char* name)
+		{
+			context->CopyResource(staging.Get(), renderer.inkDataBuffer.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (!Check(SUCCEEDED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+				"read back dynamic SRV upload", failures)) return false;
+			const bool matches = std::memcmp(mapped.pData, expected, bytes) == 0;
+			context->Unmap(staging.Get(), 0);
+			return Check(matches, name, failures);
+		};
+		const DirectX::XMFLOAT4 color(0.2f, 0.4f, 0.6f, 1.0f);
+		const std::array<InkPoint, 2> firstStroke = { InkPoint{ 2, 3, 4, 0 },
+			InkPoint{ 18, 20, 4, 1 } };
+		const std::array<InkPoint, 2> secondStroke = { InkPoint{ 5, 7, 3, 2 },
+			InkPoint{ 30, 31, 3, 3 } };
+		const std::array<ShapePrimitive, 1> shape = { ShapePrimitive{
+			{ 4, 6, 2, 0 }, { 28, 32, 0, 0 } } };
+		// 强制模拟 Win7/驱动不支持扩展：每批必须 DISCARD 并从零偏移上传。
+		renderer.mapNoOverwriteOnDynamicBufferSRV = false;
+		Check(renderer.DrawStroke(firstStroke, color) == 0 && renderer.m_bufferHead == 2,
+			"first unsupported-SRV stroke uses DISCARD", failures);
+		Check(renderer.DrawStroke(secondStroke, color) == 0 && renderer.m_bufferHead == 2,
+			"second unsupported-SRV stroke resets offset", failures);
+		checkUploaded(secondStroke.data(), sizeof(secondStroke),
+			"second stroke occupies first two InkPoint slots");
+		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) == 0 &&
+			renderer.m_bufferHead == 2, "unsupported-SRV shape resets offset", failures);
+		checkUploaded(shape.data(), sizeof(shape), "shape occupies first two InkPoint slots");
+
+		D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+		const bool warpOptionsAvailable = SUCCEEDED(device->CheckFeatureSupport(
+			D3D11_FEATURE_D3D11_OPTIONS, &options, sizeof(options)));
+		std::fprintf(stderr, "[Draw3RendererMap] WARP_FL11_0 options=%d dynamic_srv_no_overwrite=%d\n",
+			warpOptionsAvailable, warpOptionsAvailable && options.MapNoOverwriteOnDynamicBufferSRV != FALSE);
+		Microsoft::WRL::ComPtr<ID3D11Device> hardwareDevice;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> hardwareContext;
+		D3D_FEATURE_LEVEL hardwareLevel = D3D_FEATURE_LEVEL_11_0;
+		const HRESULT hardwareResult = D3D11CreateDevice(nullptr,
+			D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+			requestedLevel, ARRAYSIZE(requestedLevel), D3D11_SDK_VERSION,
+			hardwareDevice.GetAddressOf(), &hardwareLevel, hardwareContext.GetAddressOf());
+		D3D11_FEATURE_DATA_D3D11_OPTIONS hardwareOptions = {};
+		const bool hardwareOptionsAvailable = SUCCEEDED(hardwareResult) && hardwareDevice &&
+			SUCCEEDED(hardwareDevice->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
+				&hardwareOptions, sizeof(hardwareOptions)));
+		std::fprintf(stderr,
+			"[Draw3RendererMap] HARDWARE_FL11_0 create_hr=0x%08X options=%d dynamic_srv_no_overwrite=%d\n",
+			static_cast<unsigned int>(hardwareResult), hardwareOptionsAvailable,
+			hardwareOptionsAvailable && hardwareOptions.MapNoOverwriteOnDynamicBufferSRV != FALSE);
+		if (warpOptionsAvailable && options.MapNoOverwriteOnDynamicBufferSRV)
+		{
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (Check(SUCCEEDED(context->Map(renderer.inkDataBuffer.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped)),
+				"begin supported-SRV ring allocation", failures))
+			{
+				context->Unmap(renderer.inkDataBuffer.Get(), 0);
+				renderer.m_bufferHead = 0;
+				renderer.mapNoOverwriteOnDynamicBufferSRV = true;
+				Check(renderer.DrawStroke(firstStroke, color) == 0 &&
+					renderer.DrawStroke(secondStroke, color) == 0 &&
+					renderer.m_bufferHead == 4,
+					"supported-SRV device retains NO_OVERWRITE ring", failures);
+			}
+		}
+		context->ClearState();
+		renderer.ReleaseResources();
+		if (failures == 0) Report("PASS", "no-window WARP dynamic-SRV map compatibility");
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunRendererFailureCommitTest() noexcept
+	{
+		int failures = 0;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+		constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+		const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+			nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, requestedLevel, ARRAYSIZE(requestedLevel),
+			D3D11_SDK_VERSION, device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+		if (!Check(SUCCEEDED(createResult) && device && context &&
+			actualLevel == D3D_FEATURE_LEVEL_11_0,
+			"failure test creates no-window WARP FL11.0 device", failures)) return 1;
+
+		InkRenderer renderer;
+		renderer.device = device;
+		renderer.context = context;
+		renderer.viewportWidth = 64.0f;
+		renderer.viewportHeight = 64.0f;
+		renderer.mapNoOverwriteOnDynamicBufferSRV = false;
+		const D3D11_BUFFER_DESC constantDescription = {
+			48, D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER,
+			D3D11_CPU_ACCESS_WRITE, 0, 0
+		};
+		if (!Check(SUCCEEDED(device->CreateBuffer(&constantDescription, nullptr,
+			renderer.globalCB.GetAddressOf())), "failure test creates constant buffer", failures))
+			return 1;
+
+		const auto createBufferPair = [&](UINT byteWidth,
+			Microsoft::WRL::ComPtr<ID3D11Buffer>& writable,
+			Microsoft::WRL::ComPtr<ID3D11Buffer>& unwritable) -> bool
+		{
+			D3D11_BUFFER_DESC description = {};
+			description.ByteWidth = byteWidth;
+			description.Usage = D3D11_USAGE_DYNAMIC;
+			description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			description.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+			description.StructureByteStride = byteWidth /
+				static_cast<UINT>(InkRenderer::kMaxBufferCapacity);
+			if (FAILED(device->CreateBuffer(&description, nullptr,
+				writable.GetAddressOf()))) return false;
+			// 合法的 DEFAULT 缓冲区没有 CPU 写权限；真实 Map 应返回失败 HRESULT。
+			description.Usage = D3D11_USAGE_DEFAULT;
+			description.CPUAccessFlags = 0;
+			return SUCCEEDED(device->CreateBuffer(&description, nullptr,
+				unwritable.GetAddressOf()));
+		};
+		Microsoft::WRL::ComPtr<ID3D11Buffer> writableInk;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> unwritableInk;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> writableHighlighter;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> unwritableHighlighter;
+		if (!Check(createBufferPair(static_cast<UINT>(
+			InkRenderer::kMaxBufferCapacity * sizeof(InkPoint)),
+			writableInk, unwritableInk) &&
+			createBufferPair(static_cast<UINT>(
+			InkRenderer::kMaxBufferCapacity * sizeof(HighlighterPrimitive)),
+			writableHighlighter, unwritableHighlighter),
+			"failure test creates valid writable/unwritable structured buffers", failures))
+			return 1;
+
+		const DirectX::XMFLOAT4 color(0.2f, 0.4f, 0.6f, 1.0f);
+		const std::vector<InkPoint> points = {
+			{ 4.0f, 4.0f, 3.0f, 0.0f },
+			{ 12.0f, 12.0f, 3.0f, 1.0f },
+			{ 20.0f, 20.0f, 3.0f, 2.0f }
+		};
+		ActiveStroke pen(6.0f, 500.0f);
+		pen.realPoints = points;
+		renderer.inkDataBuffer = unwritableInk;
+		const LiveRasterSubmission failedPen = CommitStablePrefixToL1(pen, 0.0, 0.0, color,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedPen.succeeded && IsRectEmpty(&failedPen.dirty) &&
+			pen.committedIndex == 0 &&
+			!pen.hasCommittedGeometry,
+			"failed real pen Map leaves stable L1 cursor unchanged", failures);
+		renderer.inkDataBuffer = writableInk;
+		const LiveRasterSubmission retriedPen = CommitStablePrefixToL1(pen, 0.0, 0.0, color,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedPen.succeeded && !IsRectEmpty(&retriedPen.dirty) &&
+			pen.committedIndex == 1 &&
+			pen.hasCommittedGeometry,
+			"pen stable L1 retries once after writable buffer restored", failures);
+
+		ActiveStroke highlighter(6.0f, 500.0f,
+			StrokeWidthMode::SimulatedPressure, true);
+		highlighter.realPoints = points;
+		renderer.highlighterPrimitiveBuffer = unwritableHighlighter;
+		const LiveRasterSubmission failedHighlighter = CommitStablePrefixToL1(highlighter,
+			0.0, 0.0, color, StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedHighlighter.succeeded && IsRectEmpty(&failedHighlighter.dirty) &&
+			highlighter.committedIndex == 0 &&
+			!highlighter.hasCommittedGeometry &&
+			highlighter.committedHighlighterGeometry.primitives.empty(),
+			"failed real highlighter Map does not cache unsubmitted geometry", failures);
+		renderer.highlighterPrimitiveBuffer = writableHighlighter;
+		const LiveRasterSubmission retriedHighlighter = CommitStablePrefixToL1(highlighter,
+			0.0, 0.0, color, StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedHighlighter.succeeded &&
+			!IsRectEmpty(&retriedHighlighter.dirty) && highlighter.committedIndex == 1 &&
+			highlighter.hasCommittedGeometry &&
+			highlighter.committedHighlighterGeometry.primitives.size() == 1,
+			"highlighter L1 retry caches stable prefix exactly once", failures);
+
+		ActiveStroke eraser(6.0f, 500.0f);
+		eraser.realPoints = { points[0], points[1] };
+		renderer.inkDataBuffer = unwritableInk;
+		const LiveRasterSubmission failedEraser = CommitEraserRealPointsToL1(eraser,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedEraser.succeeded && IsRectEmpty(&failedEraser.dirty) &&
+			eraser.committedIndex == 0 &&
+			!eraser.hasCommittedGeometry,
+			"failed real eraser Map leaves L1 cursor unchanged", failures);
+		renderer.inkDataBuffer = writableInk;
+		const LiveRasterSubmission retriedEraser = CommitEraserRealPointsToL1(eraser,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedEraser.succeeded && !IsRectEmpty(&retriedEraser.dirty) &&
+			eraser.committedIndex == 1 &&
+			eraser.hasCommittedGeometry,
+			"eraser L1 retry commits accepted real points once", failures);
+
+		ActiveStroke eraserDot(6.0f, 500.0f);
+		eraserDot.hasInputStartPoint = true;
+		eraserDot.inputStartPoint = points[0];
+		renderer.inkDataBuffer = unwritableInk;
+		const LiveRasterSubmission failedDot = CommitEraserRealPointsToL1(eraserDot,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(!failedDot.succeeded && IsRectEmpty(&failedDot.dirty) &&
+			!eraserDot.hasCommittedGeometry,
+			"failed eraser single-point Map preserves retry eligibility", failures);
+		renderer.inkDataBuffer = writableInk;
+		const LiveRasterSubmission retriedDot = CommitEraserRealPointsToL1(eraserDot,
+			StrokeShape::RoundCapsule, renderer, 64, 64);
+		Check(retriedDot.succeeded && !IsRectEmpty(&retriedDot.dirty) &&
+			eraserDot.hasCommittedGeometry,
+			"single-point eraser retry commits after buffer restored", failures);
+
+		pen.l0DrawPoints = points;
+		renderer.inkDataBuffer = unwritableInk;
+		Check(!DrawL0LiveComposite(pen, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 pen reports real Map failure", failures);
+		renderer.inkDataBuffer = writableInk;
+		Check(DrawL0LiveComposite(pen, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 pen reports retry submission", failures);
+		renderer.highlighterPrimitiveBuffer = unwritableHighlighter;
+		Check(!DrawL0LiveComposite(highlighter, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 highlighter reports real Map failure", failures);
+		renderer.highlighterPrimitiveBuffer = writableHighlighter;
+		Check(DrawL0LiveComposite(highlighter, color, StrokeShape::RoundCapsule,
+			renderer, false), "L0 highlighter reports retry submission", failures);
+		const std::array<ShapePrimitive, 1> shape = { ShapePrimitive{
+			{ 4, 6, 2, 0 }, { 28, 32, 0, 0 } } };
+		renderer.inkDataBuffer = unwritableInk;
+		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) < 0,
+			"Shape batch reports real Map failure", failures);
+		renderer.inkDataBuffer = writableInk;
+		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) == 0,
+			"Shape batch reports retry submission", failures);
+
+		context->ClearState();
+		renderer.ReleaseResources();
+		if (failures == 0) Report("PASS", "no-window WARP raster submission failure retry");
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunLaserRasterFailureTest() noexcept
+	{
+		int failures = 0;
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+		constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+		const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+			nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, requestedLevel, ARRAYSIZE(requestedLevel),
+			D3D11_SDK_VERSION, device.GetAddressOf(), &actualLevel, context.GetAddressOf());
+		if (!Check(SUCCEEDED(createResult) && device && context &&
+			actualLevel == D3D_FEATURE_LEVEL_11_0,
+			"Laser test creates no-window WARP FL11.0 device", failures)) return 1;
+
+		Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+		Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+		Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+		if (!Check(SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&
+			SUCCEEDED(dxgiDevice->GetAdapter(adapter.GetAddressOf())) && adapter &&
+			SUCCEEDED(adapter->GetParent(__uuidof(IDXGIFactory2),
+				reinterpret_cast<void**>(factory.GetAddressOf()))) && factory,
+			"Laser test finds WARP DXGI 1.2 factory", failures)) return 1;
+		DXGI_SWAP_CHAIN_DESC1 description = {};
+		description.Width = 64;
+		description.Height = 64;
+		description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		description.SampleDesc.Count = 1;
+		description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		description.BufferCount = 2;
+		description.Scaling = DXGI_SCALING_STRETCH;
+		description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+		description.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+		Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
+		if (!Check(SUCCEEDED(factory->CreateSwapChainForComposition(device.Get(),
+			&description, nullptr, swapChain.GetAddressOf())) && swapChain,
+			"Laser test creates FLIP composition swapchain without HWND", failures)) return 1;
+
+		InkRenderer renderer;
+		if (!Check(renderer.Init(device.Get(), context.Get(), swapChain.Get(), 64, 64),
+			"Laser test initializes production renderer and shaders", failures))
+		{
+			context->ClearState();
+			renderer.ReleaseResources();
+			return 1;
+		}
+		D3D11_BUFFER_DESC unwritableDescription = {};
+		renderer.inkDataBuffer->GetDesc(&unwritableDescription);
+		// 合法的 DEFAULT 缓冲区没有 CPU 写权限，第二层真实 Map 必须失败。
+		unwritableDescription.Usage = D3D11_USAGE_DEFAULT;
+		unwritableDescription.CPUAccessFlags = 0;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> unwritableInk;
+		if (Check(SUCCEEDED(device->CreateBuffer(&unwritableDescription, nullptr,
+			unwritableInk.GetAddressOf())),
+			"Laser test creates non-CPU-writable structured buffer", failures))
+		{
+			failures += RunLaserRasterFailureProductionProbe(renderer,
+				unwritableInk.Get());
+		}
+		context->ClearState();
+		renderer.ReleaseResources();
+		if (failures == 0) Report("PASS", "no-window WARP Laser bake transaction");
+		return failures == 0 ? 0 : 1;
+	}
+
 	int RunHiddenWindowIntegrationTest(bool eraserOnly) noexcept
 	{
 		// 隐藏验收不能弹出 CRT 调试对话框，所有断言改写入测试 stderr。
@@ -2081,8 +2522,9 @@ namespace Inkeys::Drawing::Draw3
 			};
 			StyleContext styleContext{ &service };
 
-			// DComp 的 NOREDIRECTIONBITMAP 必须在 HWND 创建时存在；覆盖产品默认路径和完整桥接命令。
-			if (!Check(service.Start(makeSpecs(true)), "start DComp-compatible hidden Window Service", failures))
+			// 目标系统缺少 DComp API 时仍运行 legacy HWND/ULW 合同。
+			const bool dcompAvailable = ShouldPreconfigureNoRedirectionBitmap();
+			if (!Check(service.Start(makeSpecs(dcompAvailable)), "start initial hidden Window Service", failures))
 				return 1;
 			const HWND dcompMagnifierHost = service.Handle(Inkeys::Window::WindowRole::MagnifierHost);
 			const HWND dcompFreeze = service.Handle(Inkeys::Window::WindowRole::Freeze);
@@ -2090,15 +2532,15 @@ namespace Inkeys::Drawing::Draw3
 				Inkeys::Window::WindowRole::DrawpadPresentation);
 			const HWND dcompDrawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
 			Check(dcompMagnifierHost && dcompFreeze && dcompPresentation && dcompDrawpad,
-				"hidden DComp HWND creation", failures);
+				"initial hidden HWND creation", failures);
 			Check(!IsWindowVisible(dcompMagnifierHost) && !IsWindowVisible(dcompFreeze) &&
 				!IsWindowVisible(dcompPresentation) && !IsWindowVisible(dcompDrawpad),
-				"DComp HWND creation never shows UI", failures);
+				"initial HWND creation never shows UI", failures);
 
 			if(eraserOnly)
 			{
 				RunMode(service,styleContext,dcompMagnifierHost,dcompFreeze,dcompDrawpad,dcompPresentation,
-					HostPresentationMode::Automatic,true,false,false,failures,true);
+					HostPresentationMode::Automatic,dcompAvailable,false,false,failures,true);
 				StopProduct();
 				service.StopAndJoin();
 				if(!Check(service.Start(makeSpecs(false)),"fresh ULW eraser service",failures))return 1;
@@ -2125,37 +2567,41 @@ namespace Inkeys::Drawing::Draw3
 				"hidden visibility leaves both windows hidden", failures);
 			RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
 				dcompPresentation,
-				HostPresentationMode::Automatic, true, true, false, failures);
-			RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
-				dcompPresentation,
-				HostPresentationMode::DirectCompositionVisualTree, true, false, false, failures);
-			// Windows 可能把创建期 NOREDIRECTIONBITMAP 固化；回调结果必须与真实样式一致，不能伪造 legacy fallback。
-			const bool clearReported = service.SetExtendedStyleFlags(
-				Inkeys::Window::WindowRole::Drawpad, 0, WS_EX_NOREDIRECTIONBITMAP);
-			const bool clearApplied = (static_cast<DWORD>(GetWindowLongPtrW(
-				dcompDrawpad, GWL_EXSTYLE)) & WS_EX_NOREDIRECTIONBITMAP) == 0;
-			Check(clearReported == clearApplied,
-				"Window Service reports immutable DComp style truthfully", failures);
-			if (!clearApplied)
+				HostPresentationMode::Automatic, dcompAvailable, true, false, failures);
+			if (dcompAvailable)
+				RunMode(service, styleContext, dcompMagnifierHost, dcompFreeze, dcompDrawpad,
+					dcompPresentation,
+					HostPresentationMode::DirectCompositionVisualTree, true, false, false, failures);
+			if (dcompAvailable)
 			{
-				// 已绑定 DComp 的 HWND 不能直接切换 ULW；先验证失败清理，再重建唯一 legacy HWND。
-				const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
-				HostStartOptions legacyOnDcompOptions{ HostPresentationMode::UlwDirtyRect };
-				legacyOnDcompOptions.allowDirectComposition = false;
-				Check(!StartProduct(dcompDrawpad, dcompPresentation, callbacks,
-					legacyOnDcompOptions),
-					"legacy presenter rejects immutable DComp HWND", failures);
-				Check(!ProductRunning() && !ProductFirstFrameReady(),
-					"failed legacy startup fully stops Draw3 host", failures);
+				// Windows 可能把创建期 NOREDIRECTIONBITMAP 固化；回调结果必须与真实样式一致。
+				const bool clearReported = service.SetExtendedStyleFlags(
+					Inkeys::Window::WindowRole::Drawpad, 0, WS_EX_NOREDIRECTIONBITMAP);
+				const bool clearApplied = (static_cast<DWORD>(GetWindowLongPtrW(
+					dcompDrawpad, GWL_EXSTYLE)) & WS_EX_NOREDIRECTIONBITMAP) == 0;
+				Check(clearReported == clearApplied,
+					"Window Service reports immutable DComp style truthfully", failures);
+				if (!clearApplied)
+				{
+					// 已绑定 DComp 的 HWND 不能直接切换 ULW；先验证失败清理，再重建唯一 legacy HWND。
+					const HostStyleCallbacks callbacks{ &styleContext, &ApplyDrawpadStyle };
+					HostStartOptions legacyOnDcompOptions{ HostPresentationMode::UlwDirtyRect };
+					legacyOnDcompOptions.allowDirectComposition = false;
+					Check(!StartProduct(dcompDrawpad, dcompPresentation, callbacks,
+						legacyOnDcompOptions),
+						"legacy presenter rejects immutable DComp HWND", failures);
+					Check(!ProductRunning() && !ProductFirstFrameReady(),
+						"failed legacy startup fully stops Draw3 host", failures);
+				}
 			}
 			StopProduct();
 			service.StopAndJoin();
 			Check(!IsWindow(dcompMagnifierHost) && !IsWindow(dcompFreeze) &&
 				!IsWindow(dcompPresentation) && !IsWindow(dcompDrawpad),
-				"Window Service destroys DComp-compatible hidden HWNDs", failures);
+				"Window Service destroys initial hidden HWNDs", failures);
 
-			// DWM/ULW 需要可切换的初始重定向表面；停止上一宿主后重建唯一的测试 Drawpad HWND。
-			if (!Check(service.Start(makeSpecs(false)), "start DWM-compatible hidden Window Service", failures))
+			// ULW 需要可切换的初始重定向表面；停止上一宿主后重建唯一的测试 Drawpad HWND。
+			if (!Check(service.Start(makeSpecs(false)), "start legacy-compatible hidden Window Service", failures))
 				return 1;
 			const HWND legacyMagnifierHost = service.Handle(Inkeys::Window::WindowRole::MagnifierHost);
 			const HWND legacyFreeze = service.Handle(Inkeys::Window::WindowRole::Freeze);
@@ -2163,19 +2609,38 @@ namespace Inkeys::Drawing::Draw3
 				Inkeys::Window::WindowRole::DrawpadPresentation);
 			const HWND legacyDrawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
 			Check(legacyMagnifierHost && legacyFreeze && legacyPresentation && legacyDrawpad,
-				"hidden DWM HWND creation", failures);
+				"hidden legacy HWND creation", failures);
 			Check(!IsWindowVisible(legacyMagnifierHost) && !IsWindowVisible(legacyFreeze) &&
 				!IsWindowVisible(legacyPresentation) && !IsWindowVisible(legacyDrawpad),
-				"DWM HWND creation never shows UI", failures);
+				"legacy HWND creation never shows UI", failures);
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
 				legacyPresentation,
 				HostPresentationMode::Automatic, false, false, false, failures);
-			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
-				legacyPresentation,
-				HostPresentationMode::DwmBlurBehind2, false, false, false, failures);
-			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
-				legacyPresentation,
-				HostPresentationMode::DwmBlurBehind, false, false, false, failures);
+			const HostStyleCallbacks legacyCallbacks{ &styleContext, &ApplyDrawpadStyle };
+			const HostPresentationMode disabledModes[] = {
+				HostPresentationMode::DwmBlurBehind2,
+				HostPresentationMode::DwmBlurBehind
+			};
+			for (const HostPresentationMode disabledMode : disabledModes)
+			{
+				// 强制选择必须在附着 HWND 前拒绝，失败后仍能继续启动 ULW。
+				const auto styleCallsBefore = styleContext.callCount.load(std::memory_order_acquire);
+				const auto windowStyleBefore = GetWindowLongPtrW(legacyDrawpad, GWL_EXSTYLE);
+				const HANDLE tabletPropertyBefore = GetProp(
+					legacyDrawpad, MICROSOFT_TABLETPENSERVICE_PROPERTY);
+				HostStartOptions disabledOptions{ disabledMode };
+				disabledOptions.allowDirectComposition = false;
+				Check(!StartProduct(legacyDrawpad, legacyPresentation, legacyCallbacks,
+					disabledOptions), "forced DWM presenter is disabled", failures);
+				Check(!ProductRunning() && !ProductFirstFrameReady(),
+					"rejected DWM startup fully stops Draw3 host", failures);
+				Check(styleContext.callCount.load(std::memory_order_acquire) == styleCallsBefore,
+					"rejected DWM startup does not configure HWND", failures);
+				Check(GetWindowLongPtrW(legacyDrawpad, GWL_EXSTYLE) == windowStyleBefore &&
+					GetProp(legacyDrawpad, MICROSOFT_TABLETPENSERVICE_PROPERTY) == tabletPropertyBefore,
+					"rejected DWM startup preserves HWND style and tablet property", failures);
+				StopProduct();
+			}
 			RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
 				legacyPresentation,
 				HostPresentationMode::UlwDirtyRect, false, true, true, failures);
@@ -2183,7 +2648,7 @@ namespace Inkeys::Drawing::Draw3
 			service.StopAndJoin();
 			Check(!IsWindow(legacyMagnifierHost) && !IsWindow(legacyFreeze) &&
 				!IsWindow(legacyPresentation) && !IsWindow(legacyDrawpad),
-				"Window Service destroys DWM-compatible hidden HWNDs", failures);
+				"Window Service destroys legacy-compatible hidden HWNDs", failures);
 		}
 		catch (...)
 		{

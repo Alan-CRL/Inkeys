@@ -2,6 +2,8 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <future>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -10,6 +12,31 @@ import Inkeys.Window;
 
 namespace
 {
+	constexpr UINT kExitGateBlockOwner = WM_APP + 71;
+	constexpr UINT kExitGateCapture = WM_APP + 72;
+	constexpr UINT kExitGateReadCapture = WM_APP + 73;
+	HANDLE exitGateEntered = nullptr;
+	HANDLE exitGateRelease = nullptr;
+
+	LRESULT CALLBACK ExitGateWindowProc(HWND hwnd, UINT message,
+		WPARAM wParam, LPARAM lParam)
+	{
+		if (message == kExitGateBlockOwner)
+		{
+			if (exitGateEntered) SetEvent(exitGateEntered);
+			if (exitGateRelease) (void)WaitForSingleObject(exitGateRelease, 5000);
+			return 0;
+		}
+		if (message == kExitGateCapture)
+		{
+			(void)SetCapture(hwnd);
+			return GetCapture() == hwnd;
+		}
+		if (message == kExitGateReadCapture)
+			return reinterpret_cast<LRESULT>(GetCapture());
+		return DefWindowProcW(hwnd, message, wParam, lParam);
+	}
+
 	template<std::size_t WindowCount>
 	[[nodiscard]] bool ContainsWindow(
 		const std::array<HWND, WindowCount>& windows, HWND candidate) noexcept
@@ -77,6 +104,147 @@ namespace
 		}
 		return true;
 	}
+}
+
+int RunWindowExitVisibilityTests()
+{
+	using namespace Inkeys::Window;
+	using namespace std::chrono_literals;
+	int failures = 0;
+	auto check = [&](bool condition, const char* name)
+	{
+		if (!condition)
+		{
+			std::cerr << "FAILED exit visibility: " << name << '\n';
+			++failures;
+		}
+	};
+	auto specs = [](const wchar_t* suffix)
+	{
+		std::vector<WindowSpec> result;
+		for (const auto role : { WindowRole::MagnifierHost, WindowRole::Freeze,
+			WindowRole::DrawpadPresentation, WindowRole::Drawpad })
+		{
+			WindowSpec spec;
+			spec.role = role;
+			spec.className = std::wstring(L"Inkeys.Window.ExitGate.") + suffix
+				+ std::to_wstring(static_cast<unsigned>(role));
+			spec.x = -25000;
+			spec.y = -25000;
+			spec.width = 16;
+			spec.height = 16;
+			spec.bindMessages = false;
+			if (role == WindowRole::Drawpad)
+				spec.windowProc = ExitGateWindowProc;
+			result.push_back(std::move(spec));
+		}
+		return result;
+	};
+
+	// owner 停在自建消息中；HideAll 排在旧 Show 前，关闭后 Show 不得再显画布。
+	{
+		Service service(8);
+		check(service.Start(specs(L"Queued")), "queued service starts");
+		const HWND primary = service.Handle(WindowRole::Drawpad);
+		const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+		if (primary && presentation)
+		{
+			check(service.SetDrawpadSurfaceVisibility(
+				DrawpadSurfaceVisibility::Primary), "primary visible before shutdown");
+			check(SendMessageW(primary, kExitGateCapture, 0, 0) != 0,
+				"owner captures primary before shutdown");
+			exitGateEntered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			exitGateRelease = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			check(exitGateEntered && exitGateRelease, "owner block events");
+			if (exitGateEntered && exitGateRelease)
+			{
+				check(PostMessageW(primary, kExitGateBlockOwner, 0, 0) != FALSE,
+					"owner block posted");
+				const bool entered = WaitForSingleObject(exitGateEntered, 2000)
+					== WAIT_OBJECT_0;
+				check(entered, "owner blocked before queue");
+				if (entered)
+				{
+					check(service.RequestHideAllUserWindows(), "hide queued first");
+					auto lateShow = std::async(std::launch::async, [&]
+						{ return service.Show(WindowRole::Drawpad); });
+					check(lateShow.wait_for(50ms) == std::future_status::timeout,
+						"late show waits behind owner");
+					service.BeginShutdown();
+					SetEvent(exitGateRelease);
+					const bool shown = lateShow.get();
+					const bool primaryVisible = IsWindowVisible(primary) != FALSE;
+					const bool presentationVisible = IsWindowVisible(presentation) != FALSE;
+					std::cout << "[ExitVisibilityQueued] show=" << shown
+						<< " primaryVisible=" << primaryVisible
+						<< " presentationVisible=" << presentationVisible << '\n';
+					check(!shown && !primaryVisible && !presentationVisible,
+						"late show cannot restore either surface");
+					check(SendMessageW(primary, kExitGateReadCapture, 0, 0) == 0,
+						"hide all releases owner primary capture");
+				}
+				else SetEvent(exitGateRelease);
+			}
+			if (exitGateEntered) CloseHandle(exitGateEntered);
+			if (exitGateRelease) CloseHandle(exitGateRelease);
+			exitGateEntered = nullptr;
+			exitGateRelease = nullptr;
+		}
+		service.StopAndJoin();
+	}
+
+	// 旧 stillDesired 已进入回调时再关门；owner 返回后必须再次复核。
+	{
+		Service service(8);
+		check(service.Start(specs(L"Callback")), "callback service starts");
+		const HWND primary = service.Handle(WindowRole::Drawpad);
+		const HWND presentation = service.Handle(WindowRole::DrawpadPresentation);
+		if (primary && presentation)
+		{
+			const HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			const HANDLE release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			check(entered && release, "callback block events");
+			if (entered && release)
+			{
+				auto oldVisibility = std::async(std::launch::async, [&]
+				{
+					return service.SetDrawpadSurfaceVisibility(
+						DrawpadSurfaceVisibility::Primary, [&]
+						{
+							SetEvent(entered);
+							(void)WaitForSingleObject(release, 5000);
+							return true;
+						});
+				});
+				const bool enteredCallback = WaitForSingleObject(entered, 2000)
+					== WAIT_OBJECT_0;
+				check(enteredCallback, "old visibility callback entered");
+				service.BeginShutdown();
+				SetEvent(release);
+				const bool applied = oldVisibility.get();
+				const bool primaryVisible = IsWindowVisible(primary) != FALSE;
+				const bool presentationVisible = IsWindowVisible(presentation) != FALSE;
+				std::cout << "[ExitVisibilityCallback] applied=" << applied
+					<< " primaryVisible=" << primaryVisible
+					<< " presentationVisible=" << presentationVisible << '\n';
+				check(!applied && !primaryVisible && !presentationVisible,
+					"old callback cannot restore primary");
+				check(!service.SetDrawpadSurfaceVisibility(
+					DrawpadSurfaceVisibility::Presentation)
+					&& !service.Show(WindowRole::DrawpadPresentation)
+					&& !IsWindowVisible(primary) && !IsWindowVisible(presentation),
+					"post-shutdown presentation requests fail closed");
+				check(service.SetDrawpadSurfaceVisibility(
+					DrawpadSurfaceVisibility::Hidden), "hidden remains allowed");
+			}
+			if (entered) CloseHandle(entered);
+			if (release) CloseHandle(release);
+		}
+		service.StopAndJoin();
+	}
+	if (!failures)
+		std::cout << "PASS exit visibility gate" << '\n';
+	return failures;
 }
 
 int RunWindowTests()
@@ -516,5 +684,6 @@ int RunWindowTests()
 	check(service.Start(std::move(restartSpecs))
 		&& service.Running() && service.Ready(WindowRole::Bar), "restart");
 	service.StopAndJoin();
+	failures += RunWindowExitVisibilityTests();
 	return failures;
 }

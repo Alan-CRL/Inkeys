@@ -356,6 +356,12 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	bool WindowController::HasPendingCanvasCommand() noexcept
+	{
+		const std::scoped_lock lock(canvasCommandMutex_);
+		return !canvasCommands_.empty();
+	}
+
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
 	{
 		if (!resizeRequested_.exchange(false, std::memory_order_acquire)) return false; // 消费一次跨线程尺寸请求。

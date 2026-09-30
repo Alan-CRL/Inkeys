@@ -136,7 +136,7 @@ namespace
 
 	Tool CurrentDraw3Tool() noexcept
 	{
-		if (IsLaserToolActive()) return Tool::Laser;
+		if (IsLaserToolActive(stateMode)) return Tool::Laser;
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser)
 		{
 			return Tool::ConfiguredEraser;
@@ -166,6 +166,37 @@ namespace
 		return Tool::Pen;
 	}
 
+	bool ResolvePenToolMode(PenToolSelectionEnum tool, PenModeSelectEnum& penMode) noexcept
+	{
+		switch (tool)
+		{
+		case PenToolSelectionEnum::SoftPen: penMode = PenModeSelectEnum::IdtPenSoftPen; return true;
+		case PenToolSelectionEnum::HardPen: penMode = PenModeSelectEnum::IdtPenHardPen; return true;
+		case PenToolSelectionEnum::Highlighter: penMode = PenModeSelectEnum::IdtPenHighlighter1; return true;
+		case PenToolSelectionEnum::Laser: return true;
+		default: return false;
+		}
+	}
+
+	bool PenToolSelectionWouldChangeLocked(PenToolSelectionEnum tool,
+		PenModeSelectEnum penMode) noexcept
+	{
+		const bool laser = tool == PenToolSelectionEnum::Laser;
+		return stateMode.StateModeSelect != StateModeSelectEnum::IdtPen ||
+			stateMode.laserActive != laser ||
+			(!laser && stateMode.Pen.ModeSelect != penMode);
+	}
+
+	void ApplyPenModeTransitionLocked()
+	{
+		// 笔型与顶层模式共用一次修订，PPT 的旧条件回调不能覆盖较新的用户选择。
+		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
+		BackgroundColorMode = computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+	}
+
 	void PublishDraw3State() noexcept
 	{
 		// 只序列化状态快照/桥接发布；窗口 owner 提交必须留在锁外。
@@ -174,8 +205,8 @@ namespace
 		state.tool = CurrentDraw3Tool();
 		state.paintDevice = setlist.paintDevice;
 		state.eraserInputs = ReadEraserPreferences();
-		state.widthDip = (std::max)(0.1f, GetPenWidth());
-		state.colorRgba = ColorRefToRgba(GetPenColor());
+		state.widthDip = (std::max)(0.1f, GetPenWidth(stateMode));
+		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.selectionMode =
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
 		state.autoSaveEnabled = setlist.saveSetting.enable;
@@ -347,6 +378,12 @@ namespace
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
+		// 绘图宿主已停时，旧 ready/revision 不得让异步窗口命令重新显示拦截面。
+		if (!Inkeys::Drawing::Draw3::ProductRunning())
+		{
+			draw3PresentationRetryPending.store(false, std::memory_order_release);
+			return Draw3PresentationReconcileResult::Waiting;
+		}
 		std::uint64_t modeRevision = 0;
 		bool modeSelection = false;
 		{
@@ -380,7 +417,8 @@ namespace
 			{
 				const auto current = Inkeys::Drawing::Draw3::ProductHost()
 					.ProductBridge().Snapshot();
-				return current.revision == revision &&
+				return Inkeys::Drawing::Draw3::ProductRunning() &&
+					current.revision == revision &&
 					(!requireSelection || (current.selectionMode &&
 						current.workspace != Workspace::Whiteboard)) &&
 					(current.workspace == Workspace::Whiteboard ||
@@ -663,16 +701,33 @@ void ReconcileDraw3Presentation()
 	(void)ReconcileDraw3PresentationState();
 }
 
+StateModeClass GetStateModeSnapshot()
+{
+	std::scoped_lock lock(stateModeTransitionMutex);
+	return stateMode;
+}
+
+StateModeVersionedSnapshot GetStateModeVersionedSnapshot()
+{
+	std::scoped_lock lock(stateModeTransitionMutex);
+	return { stateMode, stateModeTransitionRevision.load(std::memory_order_relaxed) };
+}
+
 bool IsLaserPenSelected() noexcept
 {
-	return stateMode.laserActive;
+	return GetStateModeSnapshot().laserActive;
+}
+
+bool IsLaserToolActive(const StateModeClass& snapshot) noexcept
+{
+	return Inkeys::Business::IsLaserToolActive(
+		snapshot.StateModeSelect == StateModeSelectEnum::IdtPen,
+		snapshot.laserActive);
 }
 
 bool IsLaserToolActive() noexcept
 {
-	return Inkeys::Business::IsLaserToolActive(
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen,
-		IsLaserPenSelected());
+	return IsLaserToolActive(GetStateModeSnapshot());
 }
 
 void RequestWhiteboardActive(bool active) noexcept
@@ -726,11 +781,16 @@ void RequestWhiteboardNextPage() noexcept
 		whiteboardNextRequested.store(true, std::memory_order_release);
 }
 
-bool SetPenWidth(float targetWidth, bool setMemory)
+static bool SetPenWidthImpl(float targetWidth, bool setMemory,
+	const std::uint64_t* expectedRevision)
 {
 	if (targetWidth <= 0.0f) return false;
+	std::unique_lock lock(stateModeTransitionMutex);
+	if (expectedRevision && stateModeTransitionRevision.load(
+		std::memory_order_relaxed) != *expectedRevision)
+		return false;
 	// 仅活动 Laser 使用独立粗细；其他顶层工具不能被笔型记忆覆盖。
-	if (IsLaserToolActive())
+	if (IsLaserToolActive(stateMode))
 		stateMode.Pen.Laser.width = targetWidth;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
@@ -755,17 +815,30 @@ bool SetPenWidth(float targetWidth, bool setMemory)
 	else
 		return false;
 
+	lock.unlock();
 	if (setMemory) SetMemory();
 	PublishDraw3State();
 	return true;
 }
 
+bool SetPenWidth(float targetWidth, bool setMemory)
+{
+	return SetPenWidthImpl(targetWidth, setMemory, nullptr);
+}
+
+bool SetPenWidthIfRevision(float targetWidth,
+	std::uint64_t expectedRevision, bool setMemory)
+{
+	return SetPenWidthImpl(targetWidth, setMemory, &expectedRevision);
+}
+
 bool SetPenColor(COLORREF targetColor, bool setMemory)
 {
+	std::unique_lock lock(stateModeTransitionMutex);
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
-			IsLaserToolActive(),
+			IsLaserToolActive(stateMode),
 			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
 		if (colorSlot == Inkeys::Business::PenColorStateSlot::Laser)
 			stateMode.Pen.Laser.color = targetColor;
@@ -789,57 +862,73 @@ bool SetPenColor(COLORREF targetColor, bool setMemory)
 	else
 		return false;
 
-	if (setMemory) SetMemory();
 	BackgroundColorMode = computeContrast(targetColor, RGB(255, 255, 255)) >= 3 ? 0 : 1;
+	lock.unlock();
+	if (setMemory) SetMemory();
 	PublishDraw3State();
 	return true;
 }
 
 float GetPenWidth()
 {
-	if (IsLaserToolActive()) return stateMode.Pen.Laser.width;
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+	return GetPenWidth(GetStateModeSnapshot());
+}
+
+float GetPenWidth(const StateModeClass& snapshot) noexcept
+{
+	if (IsLaserToolActive(snapshot)) return snapshot.Pen.Laser.width;
+	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
-		return stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
-			? stateMode.Pen.Highlighter1.width
-			: stateMode.Pen.Brush1.width;
+		return snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+			? snapshot.Pen.Highlighter1.width
+			: snapshot.Pen.Brush1.width;
 	}
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		return stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
-			? stateMode.Shape.Rectangle1.width
-			: stateMode.Shape.StraightLine1.width;
+		return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+			? snapshot.Shape.Rectangle1.width
+			: snapshot.Shape.StraightLine1.width;
 	}
-	return stateMode.Pen.Brush1.width;
+	return snapshot.Pen.Brush1.width;
 }
 
 COLORREF GetPenColor()
 {
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+	return GetPenColor(GetStateModeSnapshot());
+}
+
+COLORREF GetPenColor(const StateModeClass& snapshot) noexcept
+{
+	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtPen)
 	{
 		const auto colorSlot = Inkeys::Business::ResolvePenColorStateSlot(
-			IsLaserToolActive(),
-			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
+			IsLaserToolActive(snapshot),
+			snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1);
 		if (colorSlot == Inkeys::Business::PenColorStateSlot::Laser)
-			return stateMode.Pen.Laser.color;
+			return snapshot.Pen.Laser.color;
 		return colorSlot == Inkeys::Business::PenColorStateSlot::Highlighter
-			? stateMode.Pen.Highlighter1.color : stateMode.Pen.Brush1.color;
+			? snapshot.Pen.Highlighter1.color : snapshot.Pen.Brush1.color;
 	}
-	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+	if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
 	{
-		return stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
-			? stateMode.Shape.Rectangle1.color
-			: stateMode.Shape.StraightLine1.color;
+		return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+			? snapshot.Shape.Rectangle1.color
+			: snapshot.Shape.StraightLine1.color;
 	}
-	return stateMode.Pen.Brush1.color;
+	return snapshot.Pen.Brush1.color;
 }
 
 float GetEffectivePenOpacity()
 {
+	return GetEffectivePenOpacity(GetStateModeSnapshot());
+}
+
+float GetEffectivePenOpacity(const StateModeClass& snapshot) noexcept
+{
 	// Laser 不复用已记忆的 Pen.ModeSelect；当前只有荧光笔使用固定半透明合成。
-	return !IsLaserToolActive() &&
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtPen &&
-		stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+	return !IsLaserToolActive(snapshot) &&
+		snapshot.StateModeSelect == StateModeSelectEnum::IdtPen &&
+		snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
 		? Inkeys::Drawing::Draw3::Bridge::kHighlighterCompositeOpacity : 1.0f;
 }
 
@@ -889,11 +978,36 @@ bool ChangeStateModeToPen()
 {
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
-		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
-		BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
-		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		ApplyPenModeTransitionLocked();
+	}
+	SyncDraw3State();
+	return true;
+}
+
+bool PenToolSelectionWouldChange(PenToolSelectionEnum tool)
+{
+	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
+	if (!ResolvePenToolMode(tool, penMode)) return false;
+	std::scoped_lock lock(stateModeTransitionMutex);
+	return PenToolSelectionWouldChangeLocked(tool, penMode);
+}
+
+bool ChangeStateModeToPenTool(PenToolSelectionEnum tool)
+{
+	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
+	if (!ResolvePenToolMode(tool, penMode)) return false;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		const bool laser = tool == PenToolSelectionEnum::Laser;
+		if (!PenToolSelectionWouldChangeLocked(tool, penMode))
+		{
+			// 重复点击仍是较新的用户意图，但没有视觉变化时不重复发布 Draw3 命令。
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+			return false;
+		}
+		stateMode.laserActive = laser;
+		if (!laser) stateMode.Pen.ModeSelect = penMode;
+		ApplyPenModeTransitionLocked();
 	}
 	SyncDraw3State();
 	return true;
@@ -913,11 +1027,7 @@ bool ChangeStateModeToPptAnnotation(PptAnnotationTool tool, std::uint64_t expect
 			stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenBrush1;
 		else if (tool == PptAnnotationTool::Highlighter)
 			stateMode.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
-		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtPen;
-		stateMode.StateModeSelect = StateModeSelectEnum::IdtPen;
-		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtPen;
-		BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
-		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		ApplyPenModeTransitionLocked();
 	}
 	SyncDraw3State();
 	return true;
@@ -930,11 +1040,43 @@ bool ChangeStateModeToShape()
 		stateMode.StateModeSelectTarget = StateModeSelectEnum::IdtShape;
 		stateMode.StateModeSelect = StateModeSelectEnum::IdtShape;
 		stateMode.StateModeSelectEcho = StateModeSelectEnum::IdtShape;
-		BackgroundColorMode = computeContrast(GetPenColor(), RGB(255, 255, 255)) >= 3 ? 0 : 1;
+		BackgroundColorMode = computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1;
 		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
 	}
 	SyncDraw3State();
 	return true;
+}
+
+static bool SetShapeModeSelectImpl(ShapeModeSelectEnum shape,
+	const std::uint64_t* expectedRevision)
+{
+	if (shape != ShapeModeSelectEnum::IdtShapeStraightLine1 &&
+		shape != ShapeModeSelectEnum::IdtShapeDashedLine1 &&
+		shape != ShapeModeSelectEnum::IdtShapeRectangle1)
+		return false;
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (expectedRevision && stateModeTransitionRevision.load(
+			std::memory_order_relaxed) != *expectedRevision)
+			return false;
+		// 同形状重复点击只更新用户意图版本，旧 PPT 结果仍不能回写。
+		stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		if (stateMode.Shape.ModeSelect == shape) return false;
+		stateMode.Shape.ModeSelect = shape;
+	}
+	SyncDraw3State();
+	return true;
+}
+
+bool SetShapeModeSelect(ShapeModeSelectEnum shape)
+{
+	return SetShapeModeSelectImpl(shape, nullptr);
+}
+
+bool SetShapeModeSelectIfRevision(ShapeModeSelectEnum shape,
+	std::uint64_t expectedRevision)
+{
+	return SetShapeModeSelectImpl(shape, &expectedRevision);
 }
 
 bool ChangeStateModeToEraser()
@@ -1200,8 +1342,9 @@ void StateMonitoring()
 bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
 {
 	if (!stateModeInfo) return false;
-	stateModeInfo->brushWidth = GetPenWidth();
-	stateModeInfo->brushColor = GetPenColor();
+	const auto stateMode = GetStateModeSnapshot();
+	stateModeInfo->brushWidth = GetPenWidth(stateMode);
+	stateModeInfo->brushColor = GetPenColor(stateMode);
 	if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 		stateModeInfo->brushMode = stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? 2.0f : 1.0f;
 	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)

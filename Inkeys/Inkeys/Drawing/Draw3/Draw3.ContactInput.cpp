@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -26,8 +27,8 @@ namespace Inkeys::Drawing::Draw3
 		constexpr size_t kContactSlotsPerBlock = 32;
 		constexpr size_t kMaximumContactSlotCapacity = 4096;
 		constexpr size_t kMinimumIngressQueueCapacity = 256;
-		constexpr size_t kDownProducerTokenCount = 32;
-		constexpr size_t kExplicitProducerCount = kDownProducerTokenCount + 1;
+		constexpr size_t kExplicitProducerCount = 1;
+		constexpr uint32_t kCommandWakeCapacity = 258;
 		constexpr uint64_t kMaxProducerGeneration = (~uint64_t{ 0 }) >> 3;
 		constexpr uint32_t kAllSlotsFree = 0xFFFFFFFFu;
 
@@ -43,7 +44,8 @@ namespace Inkeys::Drawing::Draw3
 			Producing,
 			Closing,
 			ConsumerOwned,
-			Quarantined
+			Quarantined,
+			ClosingDiscarded
 		};
 
 		constexpr uint64_t kProducerStateMask = 0x7;
@@ -119,6 +121,16 @@ namespace Inkeys::Drawing::Draw3
 		using IngressQueue =
 			moodycamel::BlockingConcurrentQueue<ContactRecord*, LowPowerQueueTraits>;
 		using IngressProducerToken = IngressQueue::producer_token_t;
+		ContactRecord* CommandWakeMarker() noexcept
+		{
+			return reinterpret_cast<ContactRecord*>(uintptr_t{ 1 });
+		}
+
+		struct CommandFallbackWake
+		{
+			uint64_t downTarget = 0;
+			uint64_t ordinal = 0;
+		};
 
 		struct ContactBlock
 		{
@@ -138,6 +150,11 @@ namespace Inkeys::Drawing::Draw3
 
 	struct ContactRecordAccess
 	{
+		static uint64_t Route(const ContactRecord& record) noexcept
+		{
+			return record.producerRoute_.Load();
+		}
+
 		static ProducerState State(const ContactRecord& record) noexcept
 		{
 			return RouteState(record.producerRoute_.Load());
@@ -155,6 +172,13 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const uint64_t route = record.producerRoute_.Load();
 			record.producerRoute_.Store(MakeProducerRoute(RouteGeneration(route), state));
+		}
+
+		static void ResetStoppedRecord(ContactRecord& record) noexcept
+		{
+			// Host 已停止所有 producer/consumer；旧 generation 的排队指针不可进入下一次 Start。
+			record.writerLatch_.clear(std::memory_order_relaxed);
+			SetState(record, ProducerState::Free);
 		}
 
 		static void SetRoute(ContactRecord& record, uint64_t generation, ProducerState state) noexcept
@@ -304,11 +328,8 @@ namespace Inkeys::Drawing::Draw3
 			: slotCapacity(RoundUpSlotCapacity(requestedSlotCapacity)),
 			queueCapacity(std::max(kMinimumIngressQueueCapacity, slotCapacity + 1)),
 			queue(queueCapacity, kExplicitProducerCount, 0),
-			controlProducerToken(queue)
+			ingressProducerToken(queue)
 		{
-			for (auto& token : downProducerTokens)
-				token = std::make_unique<IngressProducerToken>(queue);
-
 			const size_t blockCount = slotCapacity / kContactSlotsPerBlock;
 			blocks.reserve(blockCount);
 			ContactBlock* previousBlock = nullptr;
@@ -346,23 +367,107 @@ namespace Inkeys::Drawing::Draw3
 
 		bool PublishControlWake() noexcept
 		{
-			SignalWake();
 			bool expected = false;
 			if (!controlWakePending.compare_exchange_strong(expected, true,
-				std::memory_order_acq_rel, std::memory_order_acquire)) return true;
-			if (queue.try_enqueue(controlProducerToken, nullptr))
+				std::memory_order_acq_rel, std::memory_order_acquire))
 			{
-				Count(controlWakes);
+				SignalWake();
 				return true;
 			}
-			controlWakePending.store(false, std::memory_order_release);
+			LockIngressEnqueue();
+			const bool enqueued =
+				!failNextControlWakeEnqueueForTesting.exchange(false, std::memory_order_acq_rel) &&
+				queue.try_enqueue(ingressProducerToken, nullptr);
+			if (enqueued)
+			{
+				UnlockIngressEnqueue();
+				Count(controlWakes);
+				SignalWake(); // 入队完成后通知，避免空闲线程先醒后再次无限等待。
+				return true;
+			}
+			// 失败时用已成功入队的 Down 水位做逻辑 marker，不能让后续新笔迹抢在 Clear 前。
+			controlWakeDrainTarget.store(downEnqueuedCount.load(std::memory_order_relaxed),
+				std::memory_order_relaxed);
+			controlWakeFallbackPending.store(true, std::memory_order_release);
+			UnlockIngressEnqueue();
+			controlWakeEnqueueFailures.fetch_add(1, std::memory_order_relaxed);
+			SignalWake();
 			return false;
+		}
+
+		bool TryReserveCommandWake() noexcept
+		{
+			uint32_t count = commandWakeReservations.load(std::memory_order_acquire);
+			while (count < kCommandWakeCapacity)
+			{
+				if (commandWakeReservations.compare_exchange_weak(count, count + 1,
+					std::memory_order_acq_rel, std::memory_order_acquire)) return true;
+			}
+			return false;
+		}
+
+		void PublishReservedCommandWake() noexcept
+		{
+			LockIngressEnqueue();
+			const uint64_t ordinal = ++commandWakePublishedOrdinal;
+			const bool enqueued =
+				!failNextCommandWakeEnqueueForTesting.exchange(false, std::memory_order_acq_rel) &&
+				queue.try_enqueue(ingressProducerToken, CommandWakeMarker());
+			if (!enqueued)
+			{
+				const uint64_t write = commandFallbackWrite.load(std::memory_order_relaxed);
+				const uint64_t read = commandFallbackRead.load(std::memory_order_acquire);
+				// 每个 Bridge 命令先占预约；256 个普通槽加 final 小于固定 ring 容量。
+				if (write - read >= kCommandWakeCapacity) std::terminate();
+				commandFallbacks[write % kCommandWakeCapacity] = {
+					downEnqueuedCount.load(std::memory_order_relaxed), ordinal };
+				commandFallbackWrite.store(write + 1, std::memory_order_release);
+			}
+			UnlockIngressEnqueue();
+			if (enqueued) Count(controlWakes);
+			SignalWake();
+		}
+
+		bool TryTakeCommandWakeFallback(ContactRecord*& record) noexcept
+		{
+			const uint64_t read = commandFallbackRead.load(std::memory_order_relaxed);
+			if (read == commandFallbackWrite.load(std::memory_order_acquire)) return false;
+			const CommandFallbackWake& wake = commandFallbacks[read % kCommandWakeCapacity];
+			if (wake.ordinal != commandWakeConsumedOrdinal + 1 ||
+				downDequeuedCount.load(std::memory_order_acquire) < wake.downTarget) return false;
+			commandFallbackRead.store(read + 1, std::memory_order_release);
+			++commandWakeConsumedOrdinal;
+			commandWakeReservations.fetch_sub(1, std::memory_order_acq_rel);
+			lastDequeuedControlWakeKind = ControlWakeKind::Command;
+			record = nullptr;
+			return true;
+		}
+
+		bool TryTakeUnqueuedControlWake(ContactRecord*& record) noexcept
+		{
+			if (!controlWakeFallbackPending.exchange(false, std::memory_order_acq_rel)) return false;
+			record = nullptr;
+			lastDequeuedControlWakeKind = ControlWakeKind::General;
+			controlWakeInlineRecoveries.fetch_add(1, std::memory_order_relaxed);
+			return true;
 		}
 
 		void SignalWake() noexcept
 		{
 			wakeGeneration.fetch_add(1, std::memory_order_release);
 			if (wakeEvent) SetEvent(wakeEvent);
+		}
+
+		void LockIngressEnqueue() noexcept
+		{
+			// 仅串行两个 try_enqueue；不在锁内处理样本、模型或业务回调。
+			while (ingressEnqueueLatch.test_and_set(std::memory_order_acquire))
+				YieldProcessor();
+		}
+
+		void UnlockIngressEnqueue() noexcept
+		{
+			ingressEnqueueLatch.clear(std::memory_order_release);
 		}
 
 		LocatedContact FindProducing(uint32_t tabletContextId, uint32_t contactId) const noexcept
@@ -418,34 +523,13 @@ namespace Inkeys::Drawing::Draw3
 			if (owner && bit != 0) owner->freeMask.fetch_or(bit, std::memory_order_release);
 		}
 
-		int AcquireDownProducerToken() noexcept
-		{
-			uint32_t available = downProducerTokenMask.load(std::memory_order_acquire);
-			while (available != 0)
-			{
-				const uint32_t index = static_cast<uint32_t>(std::countr_zero(available));
-				const uint32_t bit = uint32_t{ 1 } << index;
-				if (downProducerTokenMask.compare_exchange_strong(available, available & ~bit,
-					std::memory_order_acq_rel, std::memory_order_acquire))
-					return static_cast<int>(index);
-			}
-			return -1;
-		}
-
-		void ReleaseDownProducerToken(int index) noexcept
-		{
-			if (index >= 0)
-				downProducerTokenMask.fetch_or(
-					uint32_t{ 1 } << static_cast<uint32_t>(index), std::memory_order_release);
-		}
-
 		bool EnqueueDown(ContactRecord* record) noexcept
 		{
-			const int tokenIndex = AcquireDownProducerToken();
-			if (tokenIndex < 0) return false;
-			const bool enqueued = queue.try_enqueue(
-				*downProducerTokens[static_cast<size_t>(tokenIndex)], record);
-			ReleaseDownProducerToken(tokenIndex);
+			LockIngressEnqueue();
+			const bool enqueued = queue.try_enqueue(ingressProducerToken, record);
+			if (enqueued)
+				downEnqueuedCount.fetch_add(1, std::memory_order_release);
+			UnlockIngressEnqueue();
 			return enqueued;
 		}
 
@@ -490,8 +574,21 @@ namespace Inkeys::Drawing::Draw3
 					ProducerState::Quarantined, ProducerState::Closing);
 				if (!quarantined) return false;
 			}
+			// 测试 hook 仅在 Closing CAS 成功后暂停；默认空指针不改变生产终态。
+			ContactClosePauseForTesting* pause = closePauseForTesting.load(
+				std::memory_order_acquire);
+			if (pause && closePauseForTesting.compare_exchange_strong(pause, nullptr,
+				std::memory_order_acq_rel, std::memory_order_acquire))
+			{
+				pause->entered.store(true, std::memory_order_release);
+				while (!pause->resume.load(std::memory_order_acquire)) YieldProcessor();
+			}
 			ContactRecordAccess::LockWriter(record); // Up 先关路由，再等待正在发布的 Move 退出。
-			if (!ContactRecordAccess::HasRoute(record, expectedGeneration, ProducerState::Closing) ||
+			const uint64_t routeAfterWriter = ContactRecordAccess::Route(record);
+			const ProducerState stateAfterWriter = RouteState(routeAfterWriter);
+			if (RouteGeneration(routeAfterWriter) != expectedGeneration ||
+				(stateAfterWriter != ProducerState::Closing &&
+					stateAfterWriter != ProducerState::ClosingDiscarded) ||
 				!ContactRecordAccess::Matches(record, tabletContextId, contactId))
 			{
 				ContactRecordAccess::UnlockWriter(record);
@@ -502,8 +599,13 @@ namespace Inkeys::Drawing::Draw3
 				ContactSnapshot latest;
 				if (!ContactRecordAccess::ReadSnapshot(record, latest) || !HasFinitePosition(latest))
 				{
-					ContactRecordAccess::UnlockWriter(record);
-					return false;
+					// Down 已通过有限位置校验且在本 generation 内不可变；坏终态仍须闭合路由。
+					latest = record.DownSnapshot();
+					if (!HasFinitePosition(latest))
+					{
+						ContactRecordAccess::UnlockWriter(record);
+						return false; // 内存本身损坏时不能把仍在写的槽伪装为空闲。
+					}
 				}
 				const int64_t terminalQpc = snapshot.qpc;
 				snapshot = latest; // 终态坏包仍要可靠闭合，并沿用最后一个有效位置。
@@ -512,13 +614,22 @@ namespace Inkeys::Drawing::Draw3
 			snapshot.phase = phase;
 			ContactRecordAccess::PublishSnapshot(record, snapshot);
 			ContactRecordAccess::UnlockWriter(record);
-			const bool closed = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
+			bool closed = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
 				ProducerState::Closing, quarantined ? ProducerState::Free : ProducerState::ConsumerOwned);
+			bool producerRecycles = closed && quarantined;
+			if (!closed)
+			{
+				// 消费者在 writer 完成前交出 handle；唯一 Close producer 承担最终释放。
+				closed = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
+					ProducerState::ClosingDiscarded, ProducerState::Free);
+				producerRecycles = closed;
+			}
 			if (closed)
 			{
-				if (quarantined)
+				if (producerRecycles)
 				{
-					quarantinedContacts.fetch_sub(1, std::memory_order_acq_rel);
+					if (quarantined)
+						quarantinedContacts.fetch_sub(1, std::memory_order_acq_rel);
 					ReleaseSlot(record);
 					Count(recycled);
 					(void)PublishControlWake(); // 无绘制帧时也需退休聚合 physical-contact 状态。
@@ -542,10 +653,23 @@ namespace Inkeys::Drawing::Draw3
 		const size_t slotCapacity;
 		const size_t queueCapacity;
 		IngressQueue queue;
-		IngressProducerToken controlProducerToken;
-		std::array<std::unique_ptr<IngressProducerToken>, kDownProducerTokenCount> downProducerTokens;
-		std::atomic<uint32_t> downProducerTokenMask = kAllSlotsFree;
+		IngressProducerToken ingressProducerToken;
+		std::atomic_flag ingressEnqueueLatch = ATOMIC_FLAG_INIT;
+		std::atomic<uint64_t> downEnqueuedCount = 0;
+		std::atomic<uint64_t> downDequeuedCount = 0;
+		std::atomic<uint32_t> commandWakeReservations = 0;
+		uint64_t commandWakePublishedOrdinal = 0; // 单一 ingress enqueue 锁保护。
+		uint64_t commandWakeConsumedOrdinal = 0; // 唯一绘制消费者拥有。
+		std::array<CommandFallbackWake, kCommandWakeCapacity> commandFallbacks{};
+		std::atomic<uint64_t> commandFallbackWrite = 0;
+		std::atomic<uint64_t> commandFallbackRead = 0;
+		ControlWakeKind lastDequeuedControlWakeKind = ControlWakeKind::General;
 		std::atomic<bool> controlWakePending = false;
+		std::atomic<bool> controlWakeFallbackPending = false;
+		std::atomic<uint64_t> controlWakeDrainTarget = 0;
+		std::atomic<bool> failNextControlWakeEnqueueForTesting = false;
+		std::atomic<bool> failNextCommandWakeEnqueueForTesting = false;
+		std::atomic<ContactClosePauseForTesting*> closePauseForTesting = nullptr;
 		std::atomic<ContactBlock*> blockHead = nullptr;
 		std::vector<std::unique_ptr<ContactBlock>> blocks;
 		HANDLE wakeEvent = nullptr;
@@ -561,6 +685,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<uint64_t> terminalPublished = 0;
 		std::atomic<uint64_t> recycled = 0;
 		std::atomic<uint64_t> controlWakes = 0;
+		std::atomic<uint64_t> controlWakeEnqueueFailures = 0;
+		std::atomic<uint64_t> controlWakeInlineRecoveries = 0;
 		std::atomic<uint64_t> activeWaits = 0;
 	};
 
@@ -688,16 +814,22 @@ namespace Inkeys::Drawing::Draw3
 
 	bool ContactInputCoordinator::TryReadSnapshot(ContactHandle handle, ContactSnapshot& snapshot) const noexcept
 	{
-		if (!handle.record || ContactRecordAccess::Generation(*handle.record) != handle.generation) return false;
-		const ProducerState state = ContactRecordAccess::State(*handle.record);
-		if (state == ProducerState::Free || state == ProducerState::Initializing ||
-			state == ProducerState::Quarantined) return false;
+		if (!handle.record) return false;
+		const auto readable = [&](uint64_t route) noexcept
+		{
+			const ProducerState state = RouteState(route);
+			return RouteGeneration(route) == handle.generation &&
+				(state == ProducerState::Producing || state == ProducerState::Closing ||
+					state == ProducerState::ConsumerOwned);
+		};
+		if (!readable(ContactRecordAccess::Route(*handle.record))) return false;
 		ContactSnapshot candidate;
-		if (!ContactRecordAccess::ReadSnapshot(*handle.record, candidate) ||
-			ContactRecordAccess::Generation(*handle.record) != handle.generation) return false;
-		const ProducerState stateAfter = ContactRecordAccess::State(*handle.record);
+		if (!ContactRecordAccess::ReadSnapshot(*handle.record, candidate)) return false;
+		// 单次 route 读取同时核代次和所有权，拒绝已交出 handle 的 ClosingDiscarded。
+		const uint64_t routeAfter = ContactRecordAccess::Route(*handle.record);
+		if (!readable(routeAfter)) return false;
 		if ((candidate.phase == ContactPhase::Up || candidate.phase == ContactPhase::Cancelled) &&
-			stateAfter != ProducerState::ConsumerOwned) return false;
+			RouteState(routeAfter) != ProducerState::ConsumerOwned) return false;
 		snapshot = candidate;
 		return true;
 	}
@@ -714,9 +846,12 @@ namespace Inkeys::Drawing::Draw3
 				impl_->Count(impl_->recycled);
 				return;
 			}
-			if (ContactRecordAccess::Generation(*handle.record) != handle.generation ||
-				ContactRecordAccess::State(*handle.record) != ProducerState::Closing) return;
-			YieldProcessor(); // 并发取消重叠时，等待关闭者交出 consumer ownership。
+			const uint64_t route = ContactRecordAccess::Route(*handle.record);
+			if (RouteGeneration(route) != handle.generation) return;
+			if (RouteState(route) != ProducerState::Closing) return;
+			// 终态正由唯一 producer 写入；消费者先交出 handle，不占住绘制线程。
+			if (ContactRecordAccess::TrySetExactState(*handle.record, handle.generation,
+				ProducerState::Closing, ProducerState::ClosingDiscarded)) return;
 		}
 	}
 
@@ -725,19 +860,24 @@ namespace Inkeys::Drawing::Draw3
 		if (!handle.record) return;
 		for (;;)
 		{
-			// 先计数再交出路由，保证抢先 Up 不会使计数下溢。
+			// 先计数再交出 Producing 路由，保证抢先 Up 不会使计数下溢。
 			impl_->quarantinedContacts.fetch_add(1, std::memory_order_acq_rel);
 			if (ContactRecordAccess::TrySetExactState(*handle.record, handle.generation,
 				ProducerState::Producing, ProducerState::Quarantined)) return;
 			impl_->quarantinedContacts.fetch_sub(1, std::memory_order_acq_rel);
-			if (ContactRecordAccess::Generation(*handle.record) != handle.generation) return;
-			if (ContactRecordAccess::State(*handle.record) == ProducerState::Closing)
+			const uint64_t route = ContactRecordAccess::Route(*handle.record);
+			if (RouteGeneration(route) != handle.generation) return;
+			const ProducerState state = RouteState(route);
+			if (state == ProducerState::Closing)
 			{
-				YieldProcessor();
-				continue;
+				if (ContactRecordAccess::TrySetExactState(*handle.record, handle.generation,
+					ProducerState::Closing, ProducerState::ClosingDiscarded)) return;
+				continue; // 输给 Close 的终态 CAS 时改走 ConsumerOwned 回收。
 			}
-			Recycle(handle);
-			return;
+			if (state == ProducerState::ClosingDiscarded || state == ProducerState::Quarantined)
+				return; // 重复 Discard 不重复计数或释放。
+			if (state == ProducerState::ConsumerOwned) Recycle(handle);
+			if (state != ProducerState::Producing) return;
 		}
 	}
 
@@ -810,17 +950,57 @@ namespace Inkeys::Drawing::Draw3
 
 	bool ContactInputCoordinator::TryDequeue(ContactRecord*& record) noexcept
 	{
-		return impl_->queue.try_dequeue(record);
+		// Command 失败退路按自身发布序号及旧 Down 水位补齐，不会越过前一实体命令。
+		if (impl_->TryTakeCommandWakeFallback(record)) return true;
+		// 实体 marker 与 Down 共用 producer FIFO；General 失败退路等旧 Down 出队。
+		auto fallbackReady = [this]() noexcept
+			{
+				return impl_->controlWakeFallbackPending.load(std::memory_order_acquire) &&
+					impl_->downDequeuedCount.load(std::memory_order_acquire) >=
+					impl_->controlWakeDrainTarget.load(std::memory_order_relaxed);
+			};
+		if (fallbackReady() && impl_->TryTakeUnqueuedControlWake(record)) return true;
+		if (impl_->queue.try_dequeue(record))
+		{
+			if (record == CommandWakeMarker())
+			{
+				record = nullptr;
+				impl_->lastDequeuedControlWakeKind = ControlWakeKind::Command;
+				++impl_->commandWakeConsumedOrdinal;
+				impl_->commandWakeReservations.fetch_sub(1, std::memory_order_acq_rel);
+			}
+			else if (record)
+				impl_->downDequeuedCount.fetch_add(1, std::memory_order_release);
+			else impl_->lastDequeuedControlWakeKind = ControlWakeKind::General;
+			return true;
+		}
+		return fallbackReady() && impl_->TryTakeUnqueuedControlWake(record);
 	}
 
 	void ContactInputCoordinator::WaitDequeue(ContactRecord*& record) noexcept
 	{
-		impl_->queue.wait_dequeue(record);
+		for (;;)
+		{
+			const uint64_t observedGeneration = CaptureWakeGeneration();
+			if (TryDequeue(record)) return;
+			if (impl_->wakeGeneration.load(std::memory_order_acquire) != observedGeneration)
+				continue;
+			// 控制 token 失败只发 event，不能再阻塞于 queue 自身的 semaphore。
+			if (impl_->wakeEvent)
+			{
+				if (WaitForSingleObject(impl_->wakeEvent, INFINITE) != WAIT_FAILED)
+					continue;
+			}
+			Sleep(10); // event 创建/等待失败时保留有限退路，避免无界自旋。
+		}
 	}
 
 	bool ContactInputCoordinator::HasPendingWork() const noexcept
 	{
-		return impl_->queue.size_approx() != 0;
+		return impl_->commandFallbackRead.load(std::memory_order_acquire) !=
+			impl_->commandFallbackWrite.load(std::memory_order_acquire) ||
+			impl_->controlWakeFallbackPending.load(std::memory_order_acquire) ||
+			impl_->queue.size_approx() != 0;
 	}
 
 	bool ContactInputCoordinator::PublishControlWake() noexcept
@@ -828,9 +1008,75 @@ namespace Inkeys::Drawing::Draw3
 		return impl_->PublishControlWake();
 	}
 
+	bool ContactInputCoordinator::TryReserveCommandWake() noexcept
+	{
+		return impl_->TryReserveCommandWake();
+	}
+
+	void ContactInputCoordinator::CancelReservedCommandWake() noexcept
+	{
+		impl_->commandWakeReservations.fetch_sub(1, std::memory_order_acq_rel);
+	}
+
+	void ContactInputCoordinator::PublishReservedCommandWake() noexcept
+	{
+		impl_->PublishReservedCommandWake();
+	}
+
+	ControlWakeKind ContactInputCoordinator::LastDequeuedControlWakeKind() const noexcept
+	{
+		return impl_->lastDequeuedControlWakeKind;
+	}
+
+	void ContactInputCoordinator::FailNextControlWakeEnqueueForTesting() noexcept
+	{
+		impl_->failNextControlWakeEnqueueForTesting.store(true, std::memory_order_release);
+	}
+
+	void ContactInputCoordinator::FailNextCommandWakeEnqueueForTesting() noexcept
+	{
+		impl_->failNextCommandWakeEnqueueForTesting.store(true, std::memory_order_release);
+	}
+
+	void ContactInputCoordinator::PauseNextCloseAfterRouteClosedForTesting(
+		ContactClosePauseForTesting* pause) noexcept
+	{
+		impl_->closePauseForTesting.store(pause, std::memory_order_release);
+	}
+
 	void ContactInputCoordinator::AcknowledgeControlWake() noexcept
 	{
-		impl_->controlWakePending.store(false, std::memory_order_release);
+		if (impl_->lastDequeuedControlWakeKind == ControlWakeKind::General)
+			impl_->controlWakePending.store(false, std::memory_order_release);
+	}
+
+	void ContactInputCoordinator::ResetForNextRun() noexcept
+	{
+		// 仅由所有 producer 已静止且绘制线程已 join 后的 Host::Start 调用；不与 Closing writer 并发。
+		impl_->closePauseForTesting.store(nullptr, std::memory_order_relaxed);
+		ContactRecord* discarded = nullptr;
+		while (impl_->queue.try_dequeue(discarded)) {}
+		for (const auto& block : impl_->blocks)
+		{
+			for (ContactRecord& record : block->records)
+				ContactRecordAccess::ResetStoppedRecord(record);
+			block->freeMask.store(kAllSlotsFree, std::memory_order_release);
+		}
+		impl_->downEnqueuedCount.store(0, std::memory_order_relaxed);
+		impl_->downDequeuedCount.store(0, std::memory_order_relaxed);
+		impl_->commandWakeReservations.store(0, std::memory_order_relaxed);
+		impl_->commandWakePublishedOrdinal = 0;
+		impl_->commandWakeConsumedOrdinal = 0;
+		impl_->commandFallbackWrite.store(0, std::memory_order_relaxed);
+		impl_->commandFallbackRead.store(0, std::memory_order_relaxed);
+		impl_->controlWakePending.store(false, std::memory_order_relaxed);
+		impl_->controlWakeFallbackPending.store(false, std::memory_order_relaxed);
+		impl_->controlWakeDrainTarget.store(0, std::memory_order_relaxed);
+		impl_->failNextControlWakeEnqueueForTesting.store(false, std::memory_order_relaxed);
+		impl_->failNextCommandWakeEnqueueForTesting.store(false, std::memory_order_relaxed);
+		impl_->quarantinedContacts.store(0, std::memory_order_relaxed);
+		impl_->lastDequeuedControlWakeKind = ControlWakeKind::General;
+		if (impl_->wakeEvent) ResetEvent(impl_->wakeEvent);
 	}
 
 	uint64_t ContactInputCoordinator::CaptureWakeGeneration() const noexcept
@@ -918,6 +1164,10 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.terminalPublished = impl_->terminalPublished.load(std::memory_order_relaxed);
 		snapshot.recycled = impl_->recycled.load(std::memory_order_relaxed);
 		snapshot.controlWakes = impl_->controlWakes.load(std::memory_order_relaxed);
+		snapshot.controlWakeEnqueueFailures =
+			impl_->controlWakeEnqueueFailures.load(std::memory_order_relaxed);
+		snapshot.controlWakeInlineRecoveries =
+			impl_->controlWakeInlineRecoveries.load(std::memory_order_relaxed);
 		snapshot.activeWaits = impl_->activeWaits.load(std::memory_order_relaxed);
 		snapshot.slotCapacity = impl_->slotCapacity;
 		snapshot.occupiedSlots = impl_->OccupiedSlotCount();

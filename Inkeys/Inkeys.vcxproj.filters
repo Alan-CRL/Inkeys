@@ -285,6 +285,9 @@
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
     <ClInclude Include="IdtAtomic.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -489,6 +492,12 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -503,6 +512,9 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Net\UpdatePathSafety.h">
+      <Filter>Modules\Inkeys\Net</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
@@ -1886,6 +1898,9 @@
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
@@ -2103,6 +2118,12 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp">

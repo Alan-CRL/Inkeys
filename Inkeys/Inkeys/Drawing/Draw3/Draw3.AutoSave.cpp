@@ -53,6 +53,8 @@ namespace Inkeys::Drawing::Draw3
 
 		std::mutex testFaultMutex;
 		DesktopAutoSaveTestFaultInjection testFaults;
+		constexpr std::size_t kMaximumIndexBytes = 16u * 1024u * 1024u;
+		constexpr Json::ArrayIndex kMaximumIndexEntries = 32768u;
 
 		DesktopAutoSaveTestFaultInjection SnapshotTestFaults() noexcept
 		{
@@ -293,6 +295,7 @@ namespace Inkeys::Drawing::Draw3
 			if (file == INVALID_HANDLE_VALUE) return false;
 			LARGE_INTEGER length = {};
 			if (!GetFileSizeEx(file, &length) || length.QuadPart < 0 ||
+				static_cast<unsigned long long>(length.QuadPart) > kMaximumIndexBytes ||
 				static_cast<unsigned long long>(length.QuadPart) >
 					static_cast<unsigned long long>((std::numeric_limits<std::size_t>::max)()))
 			{
@@ -373,7 +376,8 @@ namespace Inkeys::Drawing::Draw3
 				root["schemaVersion"].asInt() != 1 ||
 				!root["scenario"].isString() || root["scenario"].asString() != "desktop" ||
 				!root["date"].isString() || root["date"].asString() != date ||
-				!root["entries"].isArray()) return false;
+				!root["entries"].isArray() ||
+				root["entries"].size() > kMaximumIndexEntries) return false;
 			std::set<std::string> requestIds;
 			std::set<std::string> fileGuids;
 			std::set<std::string> relativePaths;
@@ -429,14 +433,23 @@ namespace Inkeys::Drawing::Draw3
 			if (!ReadTextFile(path, text)) return IndexReadState::Invalid;
 			Json::CharReaderBuilder builder;
 			builder["collectComments"] = false;
-			std::string errors;
-			std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-			Json::Value parsed;
-			if (!reader || !reader->parse(text.data(), text.data() + text.size(),
-				&parsed, &errors) || !ValidateIndex(parsed, date, dateDirectory))
+			// 索引结构固定且很浅；拒绝异常嵌套，避免解析器深递归。
+			builder["stackLimit"] = 64;
+			try
+			{
+				std::string errors;
+				std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+				Json::Value parsed;
+				if (!reader || !reader->parse(text.data(), text.data() + text.size(),
+					&parsed, &errors) || !ValidateIndex(parsed, date, dateDirectory))
+					return IndexReadState::Invalid;
+				root = std::move(parsed);
+				return IndexReadState::Valid;
+			}
+			catch (const Json::Exception&)
+			{
 				return IndexReadState::Invalid;
-			root = std::move(parsed);
-			return IndexReadState::Valid;
+			}
 		}
 
 		Json::Value NewIndex(const std::string& date)
@@ -508,6 +521,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (maximumDailySequence == (std::numeric_limits<std::uint64_t>::max)())
 				return false;
+			// 超限时保留现有索引与已写入的 UInk，不发布被截断的历史。
+			if (root["entries"].size() >= kMaximumIndexEntries) return false;
 
 			Json::Value entry(Json::objectValue);
 			entry["dailySequence"] = Json::UInt64(maximumDailySequence + 1);
@@ -524,6 +539,7 @@ namespace Inkeys::Drawing::Draw3
 			writer["indentation"] = "  ";
 			writer["commentStyle"] = "None";
 			const std::string text = Json::writeString(writer, root);
+			if (text.size() > kMaximumIndexBytes) return false;
 			const std::optional<draw3::uink::UInkGuid> temporaryGuid = CreateUInkGuid();
 			if (!temporaryGuid) return false;
 			const std::wstring temporaryPath = indexPath + L"." +

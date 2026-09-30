@@ -3,11 +3,13 @@ module;
 #include "../../IdtMain.h"
 #include "../../IdtI18n.h"
 #include "../../IdtI18nKeys.g.h"
+#include "ShutdownSupervisor.h"
 
 #include <dbghelp.h>
 
 #include <sstream>
 #include <algorithm>
+#include <mutex>
 #pragma comment(lib, "DbgHelp.lib")
 
 namespace fs = std::filesystem;
@@ -18,18 +20,96 @@ namespace fs = std::filesystem;
 
 module Inkeys.Helper.CrashHandler;
 
+import Inkeys.Window;
 import Inkeys.UI.MessageBox;
 
 // 静态成员初始化
 LPTOP_LEVEL_EXCEPTION_FILTER CrashHandler::PreviousFilter = nullptr;
+namespace
+{
+	std::mutex g_filterRegistrationMutex;
+	bool g_filterInstalled = false;
+}
 std::atomic<bool> g_isGeneratingDump = false;
+std::atomic<ULONGLONG> g_secondCrashStartTick{ 0 };
+std::atomic<DWORD> g_dumpPrimaryError{ 0 };
+std::atomic<bool> g_dumpFallbackAttempted{ false };
+std::atomic<CrashHandler::IsolatedUefTestMode> g_isolatedUefTestMode{
+	CrashHandler::IsolatedUefTestMode::Disabled };
+std::atomic_bool g_isolatedReportDiskFullInjected{ false };
+namespace
+{
+	constexpr DWORD kCrashReportDeadlineMs = 15000;
+	constexpr DWORD kCrashReportTimeoutExitCode = 0xE1430017;
+	std::atomic<ULONGLONG> g_reportDeadlineTick{ 0 };
+	std::atomic<HANDLE> g_reportReadyEvent{ nullptr };
+	std::atomic<HANDLE> g_reportCancelEvent{ nullptr };
+
+	DWORD WINAPI CrashReportDeadlineThread(void*) noexcept
+	{
+		const HANDLE ready = g_reportReadyEvent.load(std::memory_order_acquire);
+		const HANDLE cancel = g_reportCancelEvent.load(std::memory_order_acquire);
+		if (!ready || !cancel || !SetEvent(ready)) return ERROR_INVALID_HANDLE;
+		const ULONGLONG deadline = g_reportDeadlineTick.load(std::memory_order_acquire);
+		const ULONGLONG now = GetTickCount64();
+		const DWORD remaining = deadline > now ? static_cast<DWORD>(deadline - now) : 0;
+		// 线程只碰 Win32 对象；报告卡住时不依赖堆、日志或故障线程的锁。
+		if (WaitForSingleObject(cancel, remaining) != WAIT_OBJECT_0)
+			TerminateProcess(GetCurrentProcess(), kCrashReportTimeoutExitCode);
+		return 0;
+	}
+
+	bool ArmCrashReportDeadline() noexcept
+	{
+		const HANDLE ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (!ready) return false;
+		const HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (!cancel) { CloseHandle(ready); return false; }
+		g_reportReadyEvent.store(ready, std::memory_order_release);
+		g_reportCancelEvent.store(cancel, std::memory_order_release);
+		g_reportDeadlineTick.store(GetTickCount64() + kCrashReportDeadlineMs,
+			std::memory_order_release);
+		const HANDLE thread = CreateThread(nullptr, 0, CrashReportDeadlineThread,
+			nullptr, 0, nullptr);
+		if (!thread)
+		{
+			CloseHandle(ready);
+			CloseHandle(cancel);
+			g_reportReadyEvent.store(nullptr, std::memory_order_release);
+			g_reportCancelEvent.store(nullptr, std::memory_order_release);
+			return false;
+		}
+		const DWORD started = WaitForSingleObject(ready, 500);
+		CloseHandle(thread);
+		if (started == WAIT_OBJECT_0) return true;
+		// loader 初始化阻止线程 ready 时，不执行可能无界的 dump；延迟线程醒来后看到取消。
+		SetEvent(cancel);
+		return false;
+	}
+
+	struct CrashReportDeadlineGuard
+	{
+		bool armed = false;
+		void Cancel() noexcept
+		{
+			if (!armed) return;
+			armed = false;
+			const HANDLE cancel = g_reportCancelEvent.load(std::memory_order_acquire);
+			if (cancel) SetEvent(cancel);
+		}
+		~CrashReportDeadlineGuard() { Cancel(); }
+	};
+}
 std::atomic<int> CrashHandler::currentUserStateFlag = 0;
 std::atomic<bool> CrashHandler::currentUserIsSecond = false;
 
 // 初始化崩溃处理器
 void CrashHandler::Initialize()
 {
+	std::scoped_lock lock(g_filterRegistrationMutex);
+	if (g_filterInstalled) return;
 	PreviousFilter = SetUnhandledExceptionFilter(UnhandledExceptionHandler);
+	g_filterInstalled = true;
 	_set_invalid_parameter_handler(nullptr);
 	_set_purecall_handler(nullptr);
 }
@@ -41,16 +121,26 @@ void CrashHandler::SetFlag(int initialState)
 }
 void CrashHandler::IsSecond(bool initialState)
 {
+	g_secondCrashStartTick.store(initialState ? GetTickCount64() : 0,
+		std::memory_order_release);
 	currentUserIsSecond.store(initialState);
+}
+
+void CrashHandler::SetIsolatedUefTestMode(IsolatedUefTestMode mode) noexcept
+{
+	g_isolatedReportDiskFullInjected.store(false, std::memory_order_release);
+	g_isolatedUefTestMode.store(mode, std::memory_order_release);
 }
 
 // （可选）关闭/恢复
 void CrashHandler::Shutdown()
 {
-	if (PreviousFilter) {
-		SetUnhandledExceptionFilter(PreviousFilter);
-		PreviousFilter = nullptr;
-	}
+	std::scoped_lock lock(g_filterRegistrationMutex);
+	if (!g_filterInstalled) return;
+	// 旧处理器为 nullptr 仍表示本处理器已安装，正常退出必须恢复该空值。
+	SetUnhandledExceptionFilter(PreviousFilter);
+	PreviousFilter = nullptr;
+	g_filterInstalled = false;
 }
 
 // 获取可执行文件目录
@@ -78,7 +168,8 @@ static bool IsDiskFullError(DWORD err)
 	return err == ERROR_DISK_FULL || err == ERROR_HANDLE_DISK_FULL;
 }
 
-static void CleanupOldCrashFiles(const fs::path& crashDir, size_t keepPairs)
+static void CleanupOldCrashFiles(const fs::path& crashDir, size_t keepPairs,
+	const fs::path& protectedDump = {})
 {
 	try {
 		if (!fs::exists(crashDir) || !fs::is_directory(crashDir)) return;
@@ -108,6 +199,9 @@ static void CleanupOldCrashFiles(const fs::path& crashDir, size_t keepPairs)
 			auto ext = p.extension().wstring();
 			std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
 			if (ext != L".dmp") continue;
+			// 报告写盘失败时可清理旧 pair，但本轮已提交 dump 不能被删后仍报告成功。
+			if (!protectedDump.empty() && CompareStringOrdinal(p.filename().c_str(), -1,
+				protectedDump.filename().c_str(), -1, TRUE) == CSTR_EQUAL) continue;
 
 			CrashPair cp;
 			cp.dmp = p;
@@ -156,6 +250,14 @@ static void AppendLine(std::ostringstream& oss, const std::string& s)
 
 static bool WriteCrashReportTxt(EXCEPTION_POINTERS* pExceptionInfo, const fs::path& txtFilePath, const fs::path& dumpFilePath, bool dumpGenerated, DWORD dumpLastError)
 {
+	if (g_isolatedUefTestMode.load(std::memory_order_acquire)
+		== CrashHandler::IsolatedUefTestMode::ReportDiskFullOnce
+		&& !g_isolatedReportDiskFullInjected.exchange(true, std::memory_order_acq_rel))
+	{
+		// 仅已验真私有child：模拟报告第一次写入前磁盘满，复用真实清理/重试调用链。
+		SetLastError(ERROR_DISK_FULL);
+		return false;
+	}
 	std::ostringstream oss;
 
 	AppendLine(oss, "Inkeys Crash Report");
@@ -175,6 +277,10 @@ static bool WriteCrashReportTxt(EXCEPTION_POINTERS* pExceptionInfo, const fs::pa
 	// Dump status
 	AppendLine(oss, "DumpPath: " + WideToUtf8(dumpFilePath.wstring()));
 	AppendLine(oss, std::string("DumpGenerated: ") + (dumpGenerated ? "true" : "false"));
+	AppendLine(oss, std::string("DumpFallbackAttempted: ") +
+		(g_dumpFallbackAttempted.load(std::memory_order_acquire) ? "true" : "false"));
+	AppendLine(oss, "DumpPrimaryError: " + std::to_string(
+		g_dumpPrimaryError.load(std::memory_order_acquire)));
 	if (!dumpGenerated) {
 		AppendLine(oss, "DumpLastError: " + std::to_string(dumpLastError));
 	}
@@ -308,36 +414,104 @@ static bool WriteCrashReportTxt(EXCEPTION_POINTERS* pExceptionInfo, const fs::pa
 
 	SymCleanup(hProcess);
 
-	// Write file (UTF-8 with BOM)
-	HANDLE hFile = CreateFileW(txtFilePath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+	// 完整写本轮 pending 后无替换发布；报告中途被强退不会留下假完整 .txt。
+	fs::path pendingPath = txtFilePath;
+	pendingPath.replace_extension(L".tx_"); // 与最终路径等长，避免 Win7 深目录额外越过 MAX_PATH。
+	HANDLE hFile = CreateFileW(pendingPath.c_str(), GENERIC_WRITE, 0, NULL,
+		CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		return false;
 	}
-
 	const unsigned char bom[] = { 0xEF,0xBB,0xBF };
 	DWORD written = 0;
-	WriteFile(hFile, bom, (DWORD)sizeof(bom), &written, NULL);
-
 	std::string content = oss.str();
-	WriteFile(hFile, content.data(), (DWORD)content.size(), &written, NULL);
-
-	FlushFileBuffers(hFile);
-	CloseHandle(hFile);
-
-	return true;
+	const BOOL bomWritten = WriteFile(hFile, bom, (DWORD)sizeof(bom), &written, NULL);
+	bool success = bomWritten && written == sizeof(bom);
+	DWORD writeError = success ? 0 : (bomWritten ? ERROR_WRITE_FAULT : GetLastError());
+	if (success)
+	{
+		const BOOL contentWritten = WriteFile(hFile, content.data(),
+			(DWORD)content.size(), &written, NULL);
+		success = contentWritten && written == content.size();
+		if (!success) writeError = contentWritten ? ERROR_WRITE_FAULT : GetLastError();
+	}
+	if (success && !FlushFileBuffers(hFile))
+	{
+		writeError = GetLastError();
+		success = false;
+	}
+	if (!CloseHandle(hFile) && success)
+	{
+		writeError = GetLastError();
+		success = false;
+	}
+	if (success && !MoveFileExW(pendingPath.c_str(), txtFilePath.c_str(),
+		MOVEFILE_WRITE_THROUGH))
+	{
+		writeError = GetLastError();
+		success = false;
+	}
+	if (!success)
+	{
+		DeleteFileW(pendingPath.c_str()); // 仅本轮临时报告；不触碰现有正式报告。
+		SetLastError(writeError ? writeError : ERROR_WRITE_FAULT);
+	}
+	return success;
 }
 
 // 核心：Windows 回调的异常处理函数
 LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExceptionInfo)
 {
-	// 表明启动过程中遇到了错误，防止重复循环
-	if (currentUserIsSecond) return EXCEPTION_EXECUTE_HANDLER;
+	// 崩溃拉起后的五分钟内再崩溃，不再次拉起；首帧出现不能证明启动稳定。
+	constexpr ULONGLONG kCrashRetrySuppressionMilliseconds = 5ULL * 60ULL * 1000ULL;
+	const ULONGLONG secondStart = g_secondCrashStartTick.load(std::memory_order_acquire);
+	if (currentUserIsSecond.load(std::memory_order_acquire) && secondStart != 0 &&
+		GetTickCount64() - secondStart < kCrashRetrySuppressionMilliseconds)
+		return EXCEPTION_EXECUTE_HANDLER;
 
 	bool expected = false;
 	if (!g_isGeneratingDump.compare_exchange_strong(expected, true)) {
 		OutputDebugStringW(L"!!! CrashHandler: 重入异常处理器，放弃处理后续异常 !!!\n");
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
+	const int crashMode = currentUserStateFlag.load(std::memory_order_acquire);
+	// 自动模式在报告前争意图；手动模式待确认后才争，不阻止另一线程正式退出。
+	const bool earlyCrashIntent = Inkeys::Shutdown::TryClaimCrashRestartIntent(
+		GetOffSignalInteropPointer(), crashMode, false);
+	auto armCrashRestart = []() noexcept -> bool
+	{
+		// 仅成功抢到重启意图后关闭 HWND 显示门；手动提示尚未确认时不触碰窗口。
+		Inkeys::Window::GetService().BeginShutdown();
+		// 异常路径只建立低层进程监督，不进入业务退出、窗口或保存锁。
+		const auto result = Inkeys::Shutdown::ArmShutdownSupervisor(
+			Inkeys::Shutdown::Intent::CrashRestart);
+		if (result == Inkeys::Shutdown::ArmResult::FallbackArmed)
+		{
+			OutputDebugStringW(L"CrashHandler: 重启 helper 未建立，仅保留本进程 15 秒强制结束；不会拉起新实例。\n");
+			return true;
+		}
+		if (result != Inkeys::Shutdown::ArmResult::Armed)
+		{
+			const DWORD error = GetLastError();
+			wchar_t message[128]{};
+			_snwprintf_s(message, _countof(message), _TRUNCATE,
+				L"CrashHandler: 自动重启监督未建立，错误码=%lu\n", error);
+			OutputDebugStringW(message);
+		}
+		return result == Inkeys::Shutdown::ArmResult::Armed;
+	};
+	// 自动模式仅在自己赢得意图时由外部监督；CAS 输给受控退出但对方尚未 Arm 时，
+	// 本线程仍须给报告阶段建立不拉起新实例的本地截止。
+	bool automaticDeadlineReady = true;
+	if (earlyCrashIntent && crashMode == 1)
+		automaticDeadlineReady = armCrashRestart();
+	CrashReportDeadlineGuard reportDeadline;
+	const bool needsLocalReportDeadline = crashMode != 1 || !earlyCrashIntent;
+	const bool reportAllowed = needsLocalReportDeadline
+		? ArmCrashReportDeadline() : automaticDeadlineReady;
+	reportDeadline.armed = needsLocalReportDeadline && reportAllowed;
+	if (reportAllowed)
+	{
 
 	OutputDebugStringW(L"--- CrashHandler: 检测到未处理异常 ---\n");
 
@@ -354,7 +528,7 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 			_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: 无法获取当前工作目录: %hs\n", e.what());
 			OutputDebugStringW(errorMsg);
 			// 极端情况，无法确定任何目录，后续文件操作会失败
-			g_isGeneratingDump = false;
+			// 异常链已不可继续；保留一次性门闩，避免另一线程重复询问或拉起。
 			return EXCEPTION_CONTINUE_SEARCH; // 无法继续
 		}
 	}
@@ -422,7 +596,7 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 	DWORD txtLastError = txtGenerated ? 0 : GetLastError();
 
 	if (!txtGenerated && IsDiskFullError(txtLastError)) {
-		CleanupOldCrashFiles(crashDir, 0);
+		CleanupOldCrashFiles(crashDir, 0, dumpFilePath);
 		txtGenerated = WriteCrashReportTxt(pExceptionInfo, txtFilePath, dumpFilePath, dumpGenerated, dumpLastError);
 		txtLastError = txtGenerated ? 0 : GetLastError();
 	}
@@ -437,8 +611,20 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 	}
 
 	OutputDebugStringW(L"--- CrashHandler: 处理结束 ---\n");
+	}
+	else OutputDebugStringW(L"CrashHandler: 报告截止保护未建立，跳过可能无界的 dump/report。\n");
+	// 用户确认框可以等待用户选择；报告阶段的自杀时钟必须先撤销。
+	reportDeadline.Cancel();
+	if (crashMode == 0 && g_isolatedUefTestMode.load(std::memory_order_acquire)
+		== IsolatedUefTestMode::ManualHoldAfterReport)
+	{
+		// 仅已授权私有测试：模拟用户思考超过15秒，验证报告时钟已撤销且取消不重启。
+		Sleep(16000);
+		return EXCEPTION_EXECUTE_HANDLER;
+	}
 
-	if (currentUserStateFlag == 0)
+	if (crashMode == 0 &&
+		InterlockedCompareExchange(GetOffSignalInteropPointer(), 0, 0) == 0)
 	{
 		wstring title = L"Inkeys Error";
 		wstring body = L"Inkeys encountered a problem. Select OK to restart Inkeys and try to recover.";
@@ -470,38 +656,63 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 			Inkeys::UI::MessageBox::Reliability::CriticalNoWait;
 		request.fallback.icon = Inkeys::UI::MessageBox::SystemIcon::Error;
 		if (Inkeys::UI::MessageBox::Show(request)
-			== Inkeys::UI::MessageBox::Result::Ok)
-			ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
+			== Inkeys::UI::MessageBox::Result::Ok
+			&& Inkeys::Shutdown::TryClaimCrashRestartIntent(
+				GetOffSignalInteropPointer(), crashMode, true))
+			(void)armCrashRestart();
 	}
-	else if (currentUserStateFlag == 1) ShellExecuteW(NULL, NULL, exeDir.wstring().c_str(), L"-CrashTry", NULL, SW_SHOWNORMAL);
 
-	g_isGeneratingDump = false; // 重置标志
+	// 未处理异常后进程应终止；保持一次性门闩，避免旧进程退出前另一线程再次拉起实例。
 
 	// EXCEPTION_EXECUTE_HANDLER: 表示“我处理了异常”，阻止系统默认的错误报告对话框（例如 "xxx 已停止工作"）出现，然后通常进程会终止。
 	// EXCEPTION_CONTINUE_SEARCH: 表示“我没处理（或处理了一部分），让系统继续查找其他处理器”（例如 JIT 调试器或 Windows 错误报告）。
 	// EXCEPTION_CONTINUE_EXECUTION: (极其危险，不推荐) 尝试从异常发生点恢复执行，除非你非常清楚你在做什么并且异常是可恢复的，否则不要用。
-	if (currentUserStateFlag == 3) return EXCEPTION_CONTINUE_SEARCH;
+	if (crashMode == 3) return EXCEPTION_CONTINUE_SEARCH;
 	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+static bool CanRetryMinimalDump(DWORD error) noexcept
+{
+	// DbgHelp 的 GetLastError 是 HRESULT；只对内存不可读/标志不兼容降载，不掩盖磁盘和权限错误。
+	return error == static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_PARTIAL_COPY))
+		|| error == ERROR_PARTIAL_COPY
+		|| error == static_cast<DWORD>(E_INVALIDARG)
+		|| error == static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER));
 }
 
 // 辅助函数：生成 Minidump 文件
 bool CrashHandler::GenerateMiniDump(EXCEPTION_POINTERS* pExceptionInfo, const fs::path& dumpFilePath) {
-	// --- 创建文件句柄 ---
-	// 使用 fs::path 的 c_str() 获取宽字符路径
+	g_dumpPrimaryError.store(0, std::memory_order_release);
+	g_dumpFallbackAttempted.store(false, std::memory_order_release);
+	// 本轮只写唯一 pending；完成后才发布最终 .dmp，强退时残片不会冒充有效文件。
+	fs::path pendingPath = dumpFilePath;
+	pendingPath.replace_extension(L".dm_"); // CREATE_NEW 碰到旧残片则失败闭合，不覆盖。
 	HANDLE hFile = CreateFileW(
-		dumpFilePath.c_str(),          // 文件路径 (宽字符)
-		GENERIC_WRITE,                 // 写入权限
+		pendingPath.c_str(),           // 本轮待提交文件
+		GENERIC_READ | GENERIC_WRITE,  // 写入并校验实际长度
 		0,                             // 不共享写入
 		NULL,                          // 默认安全属性
-		CREATE_ALWAYS,                 // 总是创建新文件
+		CREATE_NEW,                    // 不覆盖任何旧的 pending 或正式 dump
 		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, // 普通文件，尝试立即写入磁盘
 		NULL);                         // 无模板文件
 
 	if (hFile == INVALID_HANDLE_VALUE) {
+		const DWORD createError = GetLastError();
 		wchar_t errorMsg[MAX_PATH + 100];
-		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: 无法创建 Dump 文件 '%s' (错误 %lu)\n", dumpFilePath.wstring().c_str(), GetLastError());
+		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: 无法创建 Dump pending 文件 '%s' (错误 %lu)\n", pendingPath.wstring().c_str(), createError);
 		OutputDebugStringW(errorMsg);
+		SetLastError(createError);
 		return false;
+	}
+	if (g_isolatedUefTestMode.load(std::memory_order_acquire)
+		== IsolatedUefTestMode::StallAfterDumpOpen)
+	{
+		// 只有已验明继承父 HANDLE 的私有测试进程能设置；故意模拟 DbgHelp 无界挂起。
+		constexpr char partial[] = "PARTIAL";
+		DWORD written = 0;
+		WriteFile(hFile, partial, sizeof(partial) - 1, &written, nullptr);
+		FlushFileBuffers(hFile);
+		Sleep(INFINITE);
 	}
 
 	// --- 准备 MiniDump 参数 ---
@@ -519,36 +730,64 @@ bool CrashHandler::GenerateMiniDump(EXCEPTION_POINTERS* pExceptionInfo, const fs
 		MiniDumpWithThreadInfo
 		| MiniDumpWithPrivateReadWriteMemory);
 
-	// --- 写入 Dump 文件 ---
-	// MiniDumpWriteDump 函数本身是 ANSI/Unicode 中性的，参数决定行为
-	BOOL success = MiniDumpWriteDump(
-		GetCurrentProcess(),
-		GetCurrentProcessId(),
-		hFile,
-		dumpType,
-		&exceptionInfo,
-		NULL,
-		NULL
-	);
-
-	// --- 清理 ---
-	FlushFileBuffers(hFile); // 确保数据刷盘
-	CloseHandle(hFile);
-
+	// 高保真路径优先；失败后立即保存 DbgHelp 的 HRESULT，不能让 Flush/Close 覆盖首因。
+	BOOL success = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+		hFile, dumpType, &exceptionInfo, nullptr, nullptr);
+	DWORD lastErr = success ? 0 : GetLastError();
+	if (!success)
+	{
+		g_dumpPrimaryError.store(lastErr, std::memory_order_release);
+		if (CanRetryMinimalDump(lastErr))
+		{
+			g_dumpFallbackAttempted.store(true, std::memory_order_release);
+			LARGE_INTEGER beginning{};
+			if (SetFilePointerEx(hFile, beginning, nullptr, FILE_BEGIN) && SetEndOfFile(hFile))
+			{
+				// 仅当前高保真 dump 不可读时回退；MiniDumpNormal 仍保留异常和线程栈。
+				success = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+					hFile, MiniDumpNormal, &exceptionInfo, nullptr, nullptr);
+				lastErr = success ? 0 : GetLastError();
+			}
+			else lastErr = GetLastError();
+		}
+	}
+	if (success)
+	{
+		LARGE_INTEGER size{};
+		if (!GetFileSizeEx(hFile, &size))
+		{
+			lastErr = GetLastError();
+			success = FALSE;
+		}
+		else if (size.QuadPart <= 0)
+		{
+			lastErr = ERROR_INVALID_DATA;
+			success = FALSE;
+		}
+		else if (!FlushFileBuffers(hFile))
+		{
+			lastErr = GetLastError();
+			success = FALSE;
+		}
+	}
+	if (!CloseHandle(hFile) && success)
+	{
+		lastErr = GetLastError();
+		success = FALSE;
+	}
+	if (success && !MoveFileExW(pendingPath.c_str(), dumpFilePath.c_str(),
+		MOVEFILE_WRITE_THROUGH))
+	{
+		lastErr = GetLastError();
+		success = FALSE;
+	}
 	if (!success) {
-		DWORD lastErr = GetLastError();
 		wchar_t errorMsg[100];
-		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: MiniDumpWriteDump 失败 (错误 %lu)\n", lastErr);
+		_snwprintf_s(errorMsg, _countof(errorMsg), _TRUNCATE, L"CrashHandler: Minidump 写入失败 (错误 %lu)\n", lastErr);
 		OutputDebugStringW(errorMsg);
-		// 尝试删除可能不完整的 dump 文件
-		try {
-			fs::remove(dumpFilePath);
-		}
-		catch (const fs::filesystem_error& e) {
-			wchar_t deleteErrorMsg[MAX_PATH + 100];
-			_snwprintf_s(deleteErrorMsg, _countof(deleteErrorMsg), _TRUNCATE, L"CrashHandler: 删除失败的 dump 文件 '%s' 时出错: %hs\n", dumpFilePath.wstring().c_str(), e.what());
-			OutputDebugStringW(deleteErrorMsg);
-		}
+		// 仅删除本轮 pending；已有同名最终 dump 不覆盖，也不扫描其他文件。
+		if (!DeleteFileW(pendingPath.c_str()))
+			OutputDebugStringW(L"CrashHandler: 失败 dump pending 未能删除，正式路径未发布。\n");
 		SetLastError(lastErr);
 		return false;
 	}

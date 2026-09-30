@@ -370,20 +370,11 @@ namespace Inkeys::Drawing::Draw3
 		const Bridge::PresentationTarget& next,
 		std::size_t documentPageCount) noexcept
 	{
-		const bool processLocalBindingMatches =
-			previous.processLocalIdentity == next.processLocalIdentity &&
-			(!previous.processLocalIdentity || (!previous.bindingToken.empty() &&
-				previous.bindingToken == next.bindingToken &&
-				previous.bindingRevision == next.bindingRevision));
-		return previous.key == next.key &&
-			previous.sourceIdentity == next.sourceIdentity &&
-			processLocalBindingMatches &&
-			previous.bindingMode == Bridge::SlideBindingMode::PageIndexFallback &&
-			next.bindingMode == Bridge::SlideBindingMode::StableSlideId &&
-			previous.totalPages == next.totalPages &&
-			documentPageCount == Bridge::PresentationDocumentPageCount(next) &&
-			next.slideIds.size() == next.totalPages &&
-			Bridge::ValidPresentationPage(next);
+		(void)previous;
+		(void)next;
+		(void)documentPageCount;
+		// 旧 page-index 不含 SlideID 证据；即使路径/页数相同，也不能按 ordinal 继承墨迹。
+		return false;
 	}
 
 	bool CanReusePresentationDocumentSlot(

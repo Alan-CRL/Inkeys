@@ -11,6 +11,7 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <utility>
 #include <windows.h>
 #include <wrl/client.h>
 
@@ -206,6 +207,52 @@ namespace Inkeys::Drawing::Draw3
 	{
 		ClearLaserCoverage(laserCompositedColor);
 		ClearLaserIncrementalCoverage();
+		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		laserBakeScratchColor_ = {}; // Laser 生命周期结束后归还按需分配的全尺寸 scratch。
+	}
+
+	bool InkRenderer::BeginLaserBake()
+	{
+		if (!device || !context || !laserCompositedColor.texture ||
+			!laserCompositedColor.rtv) return false;
+		D3D11_TEXTURE2D_DESC committedDescription = {};
+		laserCompositedColor.texture->GetDesc(&committedDescription);
+		if (committedDescription.Width == 0 || committedDescription.Height == 0) return false;
+		if (laserBakeScratchColor_.texture)
+		{
+			D3D11_TEXTURE2D_DESC scratchDescription = {};
+			laserBakeScratchColor_.texture->GetDesc(&scratchDescription);
+			if (scratchDescription.Width != committedDescription.Width ||
+				scratchDescription.Height != committedDescription.Height ||
+				scratchDescription.Format != committedDescription.Format)
+				laserBakeScratchColor_ = {};
+		}
+		if (!laserBakeScratchColor_.texture &&
+			!CreateLaserCoverageResources(committedDescription.Width,
+				committedDescription.Height, laserBakeScratchColor_))
+		{
+			laserBakeScratchColor_ = {};
+			return false;
+		}
+		if (!laserBakeScratchColor_.rtv || !laserBakeScratchColor_.srv) return false;
+		// 先解绑读写槽，再从最后已提交颜色复制；失败重试永远从同一状态起步。
+		UnbindLaserCoverageShaderResources();
+		context->OMSetRenderTargets(0, nullptr, nullptr);
+		context->CopyResource(laserBakeScratchColor_.texture.Get(),
+			laserCompositedColor.texture.Get());
+		return true;
+	}
+
+	ID3D11RenderTargetView* InkRenderer::LaserBakeTarget() const noexcept
+	{
+		return laserBakeScratchColor_.rtv.Get();
+	}
+
+	void InkRenderer::CommitLaserBake() noexcept
+	{
+		UnbindLaserCoverageShaderResources();
+		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		std::swap(laserCompositedColor, laserBakeScratchColor_);
 	}
 
 	bool InkRenderer::CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer)
@@ -332,6 +379,7 @@ namespace Inkeys::Drawing::Draw3
 		laserCompositedColor.rtv.Reset();
 		laserCompositedColor.srv.Reset();
 		laserCompositedColor.texture.Reset();
+		laserBakeScratchColor_ = {};
 		laserStrokeCoverage.rtv.Reset();
 		laserStrokeCoverage.srv.Reset();
 		laserStrokeCoverage.texture.Reset();
@@ -369,6 +417,7 @@ namespace Inkeys::Drawing::Draw3
 		laserIncrementalCoverageEnabled_ = false;
 		laserIncrementalCoverageUnavailable_ = false;
 		m_bufferHead = 0;
+		mapNoOverwriteOnDynamicBufferSRV = false;
 		viewportWidth = 0.0f;
 		viewportHeight = 0.0f;
 	}
@@ -419,6 +468,16 @@ namespace Inkeys::Drawing::Draw3
 	{
 		device = inDevice; // 渲染器只借用外部统一创建的 D3D 设备。
 		context = inContext;
+		if (!device || !context)
+		{
+			mapNoOverwriteOnDynamicBufferSRV = false;
+			return false;
+		}
+		D3D11_FEATURE_DATA_D3D11_OPTIONS deviceOptions = {};
+		// Win7 Platform Update/旧驱动可拒绝动态 SRV 的 NO_OVERWRITE；按本次设备查询，失败即回退。
+		mapNoOverwriteOnDynamicBufferSRV = SUCCEEDED(device->CheckFeatureSupport(
+			D3D11_FEATURE_D3D11_OPTIONS, &deviceOptions, sizeof(deviceOptions))) &&
+			deviceOptions.MapNoOverwriteOnDynamicBufferSRV != FALSE;
 		Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
 		Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
 		if (SUCCEEDED(device.As(&dxgiDevice)) && dxgiDevice &&

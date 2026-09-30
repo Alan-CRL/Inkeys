@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "Production ownership and pre-development checklist"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-child state and data-flow contracts"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/baseline-sources.md", "reason": "HC H2 sources and environment"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Current production call chains"}

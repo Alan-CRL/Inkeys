@@ -559,6 +559,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			auto popup = barUISet.shapeMap[annotation
 				? BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup
 				: BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup];
+			const auto stateMode = GetStateModeSnapshot();
 				bool available = barUISet.barState.drawAttribute
 					&& !barUISet.barState.fold
 					&& (annotation
@@ -1519,6 +1520,7 @@ private:
 
 	void CancelThicknessFineDialSelection()
 		{
+			thicknessFineDialModeRevision = 0;
 			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
 			thicknessFineDialVelocity = 0.0;
 			thicknessFineDialResidualVelocity = 0.0;
@@ -1545,6 +1547,7 @@ private:
 				thicknessFineDialRangeMax);
 			bool shouldCommit = candidateActive
 				&& !thicknessFineDialCommitIssued
+				&& thicknessFineDialModeRevision == StateModeTransitionRevision()
 				&& abs(static_cast<double>(GetPenWidth()) - candidate)
 					> 0.000001;
 			thicknessFineDialCommitIssued = true;
@@ -1555,27 +1558,34 @@ private:
 			barState.drawAttributeBar.thicknessFineDialDragging = false;
 			barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
 			if (shouldCommit)
-				SetPenWidth(static_cast<float>(candidate), true);
+				SetPenWidthIfRevision(static_cast<float>(candidate),
+					thicknessFineDialModeRevision, true);
 			barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
 			barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
+			thicknessFineDialModeRevision = 0;
 			thicknessFineDialCommitIssued = false;
 		}
 
 	void BeginThicknessFineDialDrag(double startValue,
 		double screenX, double unitTravelScreen,
-		const BarThicknessSliderRange& range)
+		const BarThicknessSliderRange& range, std::uint64_t modeRevision)
 		{
 			bool continuingMotion = thicknessFineDialPhase
 				== ThicknessFineDialPhase::Inertia
 				|| thicknessFineDialPhase
 					== ThicknessFineDialPhase::Settling;
+			const bool sameModeRevision =
+				thicknessFineDialModeRevision == modeRevision;
+			if (continuingMotion && !sameModeRevision)
+				CancelThicknessFineDialSelection();
 			thicknessFineDialResidualVelocity =
-				thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
+				sameModeRevision && thicknessFineDialPhase == ThicknessFineDialPhase::Inertia
 					? thicknessFineDialVelocity : 0.0;
-			if (continuingMotion
+			if (continuingMotion && sameModeRevision
 				&& barState.drawAttributeBar.thicknessFineDialCandidateActive)
 				startValue = static_cast<double>(barState.drawAttributeBar
 					.thicknessFineDialVisualWidth);
+			thicknessFineDialModeRevision = modeRevision;
 			thicknessFineDialRangeMin = range.min;
 			thicknessFineDialRangeMax = range.max;
 			thicknessFineDialUnitTravelScreen = max(0.000001,
@@ -1651,6 +1661,14 @@ private:
 
 	void AdvanceThicknessFineDialPhysics()
 		{
+			stateMode = GetStateModeSnapshot();
+			if (thicknessFineDialModeRevision != StateModeTransitionRevision())
+			{
+				// 旧工具的惯性不得落到 PPT 或用户刚选中的新笔型。
+				CancelThicknessFineDialSelection();
+				UpdateRendering(false);
+				return;
+			}
 			if (!barState.drawAttributeBar.thicknessFineDialPhysicsActive
 				|| barState.drawAttributeBar.thicknessViewMode
 					!= ThicknessViewMode::FineDial
@@ -1818,21 +1836,15 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				case IndependentHoverTargetEnum::DrawAttributeThicknessMedium:
 				case IndependentHoverTargetEnum::DrawAttributeThicknessCoarse:
 				{
-					bool laserPresetMode = IsLaserThicknessPresetMode();
+					bool laserPresetMode = IsLaserThicknessPresetMode(stateMode);
 					if (!laserPresetMode
-						&& !PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect))
+						&& !PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect, stateMode))
 						return false;
 					size_t index = static_cast<size_t>(target)
 						- static_cast<size_t>(
 							IndependentHoverTargetEnum::DrawAttributeThicknessFine);
-					int displayedThickness =
-						static_cast<int>(lround(max(0.0f, GetPenWidth())));
-					int presetWidth = laserPresetMode
-						? static_cast<int>(lround(
-							GetBarLaserThicknessPresetDip(index)))
-						: GetBarThicknessPresetPx(
-							stateMode.Pen.ModeSelect, index, barStyle.dpiZoom);
-					return displayedThickness != presetWidth;
+					return !IsBarThicknessPresetSelected(
+						stateMode.Pen.ModeSelect, index, barStyle.dpiZoom, stateMode);
 				}
 			case IndependentHoverTargetEnum::DrawAttributeThicknessAdjust:
 				return ThicknessSliderAvailable()
@@ -3479,6 +3491,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					continueFlag = false;
 					if (msg.message == WM_LBUTTONDOWN)
 					{
+						const auto geometryAtPress = GetStateModeVersionedSnapshot();
+						if (geometryAtPress.state.StateModeSelect != StateModeSelectEnum::IdtShape)
+							continue;
 						*button.pressed = true;
 						StopIndependentHover(hoveredIndependentButton, true, true);
 						hoveredIndependentButton = IndependentHoverTargetEnum::None;
@@ -3493,18 +3508,20 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (!shape->IsClick(msg.x, msg.y, barStyle.zoom)) break;
 							if (!msg.lbutton)
 							{
+							if (StateModeTransitionRevision() != geometryAtPress.revision)
+								break;
 								if (button.closePanel)
 									barState.geometryAttribute = false;
 								else if (button.shapeMode.has_value())
 								{
-									stateMode.Shape.ModeSelect = button.shapeMode.value();
-									SyncDraw3State();
+									SetShapeModeSelectIfRevision(
+										button.shapeMode.value(), geometryAtPress.revision);
 								}
-								else SetPenWidth(static_cast<float>(
+								else SetPenWidthIfRevision(static_cast<float>(
 									GetBarThicknessPresetPx(
 										PenModeSelectEnum::IdtPenSoftPen,
 										button.thicknessPresetIndex,
-										barStyle.dpiZoom)));
+										barStyle.dpiZoom)), geometryAtPress.revision);
 								UpdateRendering();
 								break;
 							}
@@ -3561,11 +3578,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								&& !fineActivationCorridorConsumed
 								&& !rangeTransitionConsumesPress)
 							{
-								PenModeSelectEnum gesturePenMode =
-									stateMode.Pen.ModeSelect;
+				const auto gestureState = GetStateModeVersionedSnapshot();
+				PenModeSelectEnum gesturePenMode =
+					gestureState.state.Pen.ModeSelect;
+				const auto gestureRevision = gestureState.revision;
 								auto range = GetBarThicknessSliderRange(
 									gesturePenMode, barStyle.dpiZoom);
-								float initialWidth = GetPenWidth();
+				float initialWidth = GetPenWidth(gestureState.state);
 								float finalWidth = initialWidth;
 								double lastCandidateWidth = initialWidth;
 								bool candidateChanged = false;
@@ -3598,7 +3617,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								bool penModeChanged = false;
 								if (fineDialPopupReturnGesture
 									&& barState.drawAttributeBar
-										.thicknessFineDialCandidateActive)
+										.thicknessFineDialCandidateActive
+									&& thicknessFineDialModeRevision == gestureRevision)
 								{
 									double visualWidth = static_cast<double>(
 										barState.drawAttributeBar
@@ -3765,7 +3785,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								static_cast<double>(initialWidth);
 							double fineDialPressStartValue =
 								static_cast<double>(initialWidth);
-							if (viewModeAtPress == ThicknessViewMode::FineDial)
+							if (viewModeAtPress == ThicknessViewMode::FineDial
+								&& thicknessFineDialModeRevision == gestureRevision)
 							{
 								double visualSnapshot = static_cast<double>(
 									barState.drawAttributeBar
@@ -4026,8 +4047,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											barState.drawAttributeBar.thicknessSliderDragging = false;
 											barState.drawAttributeBar.thicknessSliderPressed = false;
 											CloseThicknessOverflowTooltip();
-											BeginThicknessFineDialDrag(startValue,
-												screenX, unitTravelScreen, range);
+							BeginThicknessFineDialDrag(startValue,
+								screenX, unitTravelScreen, range, gestureRevision);
 											fineDialAnchorScreenX = screenX;
 											fineDialAnchorValue = static_cast<double>(
 												barState.drawAttributeBar
@@ -4176,8 +4197,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									if (fineDialPopupReturnGesture)
 									{
 										// 抓住 FineDial 浮窗时暂停候选/惯性，保持画面等待点击或拖动分类。
-										BeginThicknessFineDialDrag(initialWidth,
-											pressScreenX, unitTravelScreen, range);
+						BeginThicknessFineDialDrag(initialWidth,
+							pressScreenX, unitTravelScreen, range, gestureRevision);
 										fineDialAnchorScreenX = pressScreenX;
 										fineDialAnchorValue = static_cast<double>(
 											barState.drawAttributeBar
@@ -4774,7 +4795,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 												CommitThicknessFineDialSelection();
 											}
 											else if (candidateChanged)
-												SetPenWidth(finalWidth, true);
+												SetPenWidthIfRevision(finalWidth, gestureRevision, true);
 											barState.drawAttributeBar
 												.thicknessSliderCandidateWidth = 0.0f;
 											barState.drawAttributeBar.thicknessViewMode =
@@ -4804,7 +4825,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									{
 										bool canCommit = gestureCompleted
 											&& candidateChanged;
-										if (canCommit) SetPenWidth(finalWidth, true);
+										if (canCommit)
+											SetPenWidthIfRevision(finalWidth, gestureRevision, true);
 										barState.drawAttributeBar.thicknessSliderDragging = false;
 										barState.drawAttributeBar.thicknessPreviewDragging = false;
 										barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
@@ -4919,6 +4941,30 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 	BarInteractionStageResult HandleDrawAttributePointerStage()
 	{
+		auto SelectPenTool = [&](PenToolSelectionEnum tool)
+			{
+				const bool expectedChange = PenToolSelectionWouldChange(tool);
+				if (expectedChange)
+				{
+					// 先撤销 Fine Dial 候选，再发布新笔型，避免渲染线程吞掉量程过渡。
+					ClosePenTypeMenu();
+					if (barState.drawAttributeBar.thicknessViewMode == ThicknessViewMode::FineDial)
+						CancelThicknessFineDialSelection();
+				}
+				const bool changed = ChangeStateModeToPenTool(tool);
+				if (changed && !expectedChange)
+				{
+					// PPT 在预检与提交间接管时，仍收尾旧面板；最终工具由锁内事务决定。
+					ClosePenTypeMenu();
+					if (barState.drawAttributeBar.thicknessViewMode == ThicknessViewMode::FineDial)
+						CancelThicknessFineDialSelection();
+				}
+				if (changed || expectedChange)
+				{
+					barButtonSet.UpdateDrawButtonStyle();
+					UpdateRendering();
+				}
+			};
 			bool continueFlag = true;
 			{
 
@@ -5005,9 +5051,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						{ BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust,
 							&barState.drawAttributeBar.thicknessAdjustPress, -1 },
 					};
-					bool laserThicknessPresetMode = IsLaserThicknessPresetMode();
+					bool laserThicknessPresetMode = IsLaserThicknessPresetMode(stateMode);
 					bool thicknessPresetMode = laserThicknessPresetMode
-						|| PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect);
+						|| PenModeUsesThicknessPresets(stateMode.Pen.ModeSelect, stateMode);
 						for (const auto& button : thicknessButtons)
 						{
 							bool visible = thicknessPresetMode
@@ -5021,6 +5067,15 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (msg.message == WM_LBUTTONDOWN)
 							{
 								bool clickCompleted = false;
+								const auto pressState = GetStateModeVersionedSnapshot();
+								const auto toolRevisionAtPress = pressState.revision;
+								const bool laserPresetAtPress =
+									IsLaserThicknessPresetMode(pressState.state);
+								if (pressState.state.StateModeSelect != StateModeSelectEnum::IdtPen ||
+									(!laserPresetAtPress && !PenModeUsesThicknessPresets(
+										pressState.state.Pen.ModeSelect, pressState.state)) ||
+									(laserPresetAtPress && button.presetIndex < 0))
+									continue;
 								bool fineDialAtPress =
 									barState.drawAttributeBar.thicknessViewMode
 										== ThicknessViewMode::FineDial;
@@ -5049,25 +5104,30 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									{
 										if (!msg.lbutton)
 										{
+											if (StateModeTransitionRevision() != toolRevisionAtPress)
+											{
+												if (fineDialAtPress) CancelThicknessFineDialSelection();
+												break;
+											}
 											if (button.presetIndex >= 0)
 											{
 												if (fineDialAtPress)
 													CancelThicknessFineDialSelection();
-												if (laserThicknessPresetMode)
-													SetPenWidth(GetBarLaserThicknessPresetDip(
-														button.presetIndex));
-												else SetPenWidth(static_cast<float>(
+												if (laserPresetAtPress)
+													SetPenWidthIfRevision(GetBarLaserThicknessPresetDip(
+														button.presetIndex, pressState.state), toolRevisionAtPress);
+												else SetPenWidthIfRevision(static_cast<float>(
 													GetBarThicknessPresetPx(
-														stateMode.Pen.ModeSelect,
+														pressState.state.Pen.ModeSelect,
 														button.presetIndex,
-														barStyle.dpiZoom)));
+														barStyle.dpiZoom)), toolRevisionAtPress);
 											}
 											else
 											{
 												if (fineDialAtPress)
 												{
 													auto thicknessSliderRange = GetBarThicknessSliderRange(
-														stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+														pressState.state.Pen.ModeSelect, barStyle.dpiZoom);
 													bool fineDialConfirmationAllowed =
 														stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
 														&& thicknessSliderRange.supported
@@ -5226,8 +5286,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								clickCompleted = true;
 								ClosePenTypeMenu();
 								CloseThicknessSlider(true);
-								stateMode.laserActive = true;
-								ChangeStateModeToPen();
+								ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
 								barButtonSet.UpdateDrawButtonStyle();
 								UpdateRendering();
 								break;
@@ -5262,20 +5321,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (!msg.lbutton)
 							{
-								if (stateMode.laserActive || stateMode.Pen.ModeSelect
-									!= PenModeSelectEnum::IdtPenHardPen)
-								{
-									ClosePenTypeMenu();
-									if (barState.drawAttributeBar.thicknessViewMode
-										== ThicknessViewMode::FineDial)
-										CancelThicknessFineDialSelection();
-									stateMode.laserActive = false;
-									stateMode.Pen.ModeSelect =
-										PenModeSelectEnum::IdtPenHardPen;
-									ChangeStateModeToPen();
-									barButtonSet.UpdateDrawButtonStyle();
-									UpdateRendering();
-								}
+								SelectPenTool(PenToolSelectionEnum::HardPen);
 
 								break;
 								}
@@ -5309,20 +5355,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 								if (!msg.lbutton)
 								{
-									if (stateMode.laserActive || stateMode.Pen.ModeSelect
-										!= PenModeSelectEnum::IdtPenSoftPen)
-									{
-										ClosePenTypeMenu();
-										if (barState.drawAttributeBar.thicknessViewMode
-											== ThicknessViewMode::FineDial)
-											CancelThicknessFineDialSelection();
-										stateMode.laserActive = false;
-										stateMode.Pen.ModeSelect =
-											PenModeSelectEnum::IdtPenSoftPen;
-										ChangeStateModeToPen();
-										barButtonSet.UpdateDrawButtonStyle();
-										UpdateRendering();
-									}
+									SelectPenTool(PenToolSelectionEnum::SoftPen);
 									break;
 								}
 							}
@@ -5355,20 +5388,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							{
 							if (!msg.lbutton)
 							{
-								if (stateMode.laserActive || stateMode.Pen.ModeSelect
-									!= PenModeSelectEnum::IdtPenHighlighter1)
-								{
-									ClosePenTypeMenu();
-									if (barState.drawAttributeBar.thicknessViewMode
-										== ThicknessViewMode::FineDial)
-										CancelThicknessFineDialSelection();
-									stateMode.laserActive = false;
-									stateMode.Pen.ModeSelect =
-										PenModeSelectEnum::IdtPenHighlighter1;
-									ChangeStateModeToPen();
-									barButtonSet.UpdateDrawButtonStyle();
-									UpdateRendering();
-								}
+								SelectPenTool(PenToolSelectionEnum::Highlighter);
 
 								break;
 								}
@@ -5417,6 +5437,7 @@ public:
 		while (!offSignal)
 		{
 			const auto pollResult = PollInteractionMessage();
+			stateMode = GetStateModeSnapshot();
 			if (pollResult == BarInteractionStageResult::Shutdown) break;
 			if (pollResult == BarInteractionStageResult::Consumed) continue;
 
@@ -5448,6 +5469,16 @@ public:
 	}
 
 private:
+	bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
+		bool preserveTouchScreenCoordinates = false,
+		BarTouchScreenSample* touchScreenSample = nullptr)
+	{
+		const bool received = ::WaitForBarInteractionMessage(message, filter, hWnd,
+			preserveTouchScreenCoordinates, touchScreenSample);
+		if (received) stateMode = GetStateModeSnapshot();
+		return received;
+	}
+
 	void UpdateRendering(bool updateState = true)
 	{
 		barUISet.UpdateRendering(updateState);
@@ -5527,6 +5558,8 @@ private:
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
 	BarInteractionMemberAccess memberAccess;
 	BarTouchScreenSample currentTouchScreenSample{};
+	StateModeClass stateMode = GetStateModeSnapshot();
+	std::uint64_t thicknessFineDialModeRevision = 0;
 
 	ExMessage msg{};
 	BarButtonClass* lastClickedMainBarButton = nullptr;
@@ -6778,6 +6811,7 @@ namespace Inkeys::UI::Bar
 
 	bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown)
 	{
+		const auto stateMode = GetStateModeSnapshot();
 		// 键盘只在指针仍位于本Bar窗口或Bar拥有焦点时路由，避免拦截其他应用。
 		POINT pointer{};
 		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT

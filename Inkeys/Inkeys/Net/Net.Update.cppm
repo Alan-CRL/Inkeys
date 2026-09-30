@@ -107,3 +107,7 @@ wstring convertToHttp(const wstring& url);
 export extern IdtAtomic<int> downloadLine;
 
 export void AutomaticUpdate();
+
+// 显式无窗口回归入口：只读取调用方提供的隔离更新指令，不启动网络或程序。
+export int RunStagedUpdateJsonBoundaryProbe(const std::wstring& path,
+	bool expectedValid) noexcept;

@@ -410,3 +410,55 @@ headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向
 - 按键位只能说明消息状态，不能确认物理鼠标来源。schema=2 日志已证明 `!buttonDown` 例外会放行 device=0 origin=IMO_SYSTEM 的 Move；修复将已确认的系统来源判定置于按键/位置回退之前。纯函数通过不等于设备验收。
 - Raw Input 只观察现有 Bar 接收入口，记录初始注册状态及后续注册/注销成功或失败。落笔可能注销接收；缺少 raw-mouse 行不证明没有真实鼠标操作。不得为了诊断在第二个 HWND 重复注册同一设备类。
 - 定长日志截断必须包含 `[truncated]`；丢失/截断时事件链检查不能报告证据完整。verify_cursor_trace.py 检查真实输出的来源接管到呈现序列，其无匹配结果不等于全部光标行为正确。
+
+## Scenario: Draw3 Contact Closing 与拒收路由回收
+
+### 1. Scope / Trigger
+
+修改 `ContactInputCoordinator` 的 Down/Move/Up/Cancel、`Recycle`/`DiscardUntilTerminal`、Host Reset 或 Controller 对已出队 Down 的拒收分支时适用；不得为减少等待删除必要输入样本。
+
+### 2. Signatures
+
+- `ContactInputCoordinator::{PublishDown,PublishMove,PublishUp,PublishCancelled,TryReadSnapshot,Recycle,DiscardUntilTerminal,ResetForNextRun}`。
+- route 在低 3 位编码 `Free/Initializing/Producing/Closing/ConsumerOwned/Quarantined/ClosingDiscarded`，高位为 contact generation；`ContactHandle` 同时携带 record 地址与 generation。
+- `ContactClosePauseForTesting` / `PauseNextCloseAfterRouteClosedForTesting` 只供显式无窗口测试，默认 hook 为 null。
+
+### 3. Contracts
+
+- `PublishDown` 成功入队后 record 地址在该 generation 内稳定。普通 Move 只更新同一身份的真实快照；Up/Cancel 先精确 CAS `Producing/Quarantined→Closing`，等已进入的 writer，发布终态，再转 `ConsumerOwned` 或由 producer 自行 Free。Down 合法坐标是坏终态包最后退路，不能让非有限终态把 route 永远留在 Closing。
+- 消费者 `DiscardUntilTerminal` 看到 Producing 时转 Quarantined 并保留物理 route，producer 的终态自行回收；看到 Closing 时精确 CAS `Closing→ClosingDiscarded` 后立即交出 handle，唯一 Close producer 完成终态后 `Free+ReleaseSlot`。若与 `Closing→ConsumerOwned` 竞态输了，则由消费者 `Recycle`，不能同时释放两次。`TryReadSnapshot` 前后均按同一 generation route 拒绝已 Free/Quarantined/ClosingDiscarded 的 handle。
+- `Recycle` 处理已完成 ConsumerOwned；并发 Closing 时也交给 producer 延后回收。不能对仍 Producing 的被拒收 Down 直接 `Recycle` 并丢弃 handle。Laser 禁止多指时，第二 Touch 保持原拒收条件，但走 `DiscardUntilTerminal`，物理 Up/Cancel 自动回收，不改变第一指或画质。
+- `ResetForNextRun` 只有在上一代所有输入 producer（RTS、hidden mailbox/Window 注入及其它 callback）真正静止且唯一绘制 consumer 已 join 后可清 route/freeMask/排队指针；当前 Host 依赖 RTS/Host Stop 时序，未来若改变 callback 生命周期必须补显式 in-flight 证明。诊断累计 `downPublished/recycled` 不在 Reset 时归零，测试必须在每个 RunMode 取本轮 baseline 后比较增量；需要当前资源占用时使用 `occupiedSlots`，不能用跨代绝对计数。未入队 Down 的 `AbortUnqueuedDown` 仍由该 producer 自清，遇另一个 Close 永久 Closing 的条件性等待须单列，不把本 Scenario 宣称全链无死锁。
+
+### 4. Validation & Error Matrix
+
+| 交错 | 必须行为 |
+| --- | --- |
+| Discard 先于 Up | Producing→Quarantined；物理终态后 producer Free，quarantined/recycled 恰一次 |
+| Up 已在 Closing 且 writer 暂停 | 普通 Discard/Recycle 有界返回，producer 放行后终态 Free；不能占住绘制线程 |
+| Close 已转 ConsumerOwned | 消费者 Recycle 一次；二次 Discard 不双释放 |
+| 无效终态坐标 | 使用最后有效位置或合法 Down 回退闭合；内存本身损坏时拒伪造可复用槽 |
+| 旧 handle / 同址新 generation | 旧读/回收失败，不能触碰新 contact 或位图 |
+| Laser 第二 Touch 被拒 | 首指仍活动；第二指 Up/Cancel 后 occupiedSlots 回基线，反复接触不耗尽固定槽 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：在生产 Controller 普通页边界/拒收调用点，Close 已 CAS Closing 且被受控暂停时，Discard 调用本身有界返回并允许其它命令继续；放行后回收槽且新 generation 可复用。若只运行 Coordinator 状态机测试，不升级为完整页切换 PASS。
+- Base：正常 Up 已 ConsumerOwned，原有消费者同步 Recycle 路径不变。
+- Bad：Closing 上无限 `YieldProcessor` 冻结 Draw3 消费线程；或直接 return 后丢 handle，让迟到 Up 留 ConsumerOwned，逐次耗尽槽池。
+
+### 6. Tests Required
+
+- 真生产 `ContactInputCoordinator` 的可控 CAS 后 hook 做旧版红→绿，Up/Cancel、预 Quarantined、逆序 ConsumerOwned、重复 Discard、无效终态、同槽复用与旧 generation 拒读；测试线程先放行再 join，禁止任意点 `SuspendThread`。
+- Controller 拒收 Laser 第二 Touch 的生产判定 helper 需同测试入口执行；正例多轮与非 Laser/多指开启/首指不活跃等负例分开，隐藏 Host 和真触摸设备分别记录。`occupiedSlots`、`inputDownPublished/recycled` 为资源和诊断口径，不能冒充像素 Present。
+- 完整 Solution Debug|ARM64 与可得 Release、Headless `--no-window`、Draw3 隐藏 Host；必须另有生产 Controller 普通页边界/拒收调用点的 Closing 交错测试，不能用 Coordinator 单测替代。真实 RTS callback quiescence、Win7 Hardware/WARP/ULW FLIP、持续 GPU 失败与用户现场卡死各自保留门禁。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：拒收第二根仍 Producing 的手指后丢 handle；Recycle 只处理终态。
+input.Recycle(secondTouch);
+
+// Correct：隔离其物理路由，终态由 producer 安全回收。
+input.DiscardUntilTerminal(secondTouch);
+~~~

@@ -42,13 +42,6 @@ export namespace Inkeys::Drawing::Draw3
 			mutationRevision == queuedRevision && queuedRevision == committedRevision;
 	}
 
-	constexpr bool ShouldPersistLoadedPresentationBindingMigration(
-		Bridge::SlideBindingMode requestedMode, std::int32_t loadedWorkspaceType) noexcept
-	{
-		return requestedMode == Bridge::SlideBindingMode::StableSlideId &&
-			loadedWorkspaceType == draw3::uink::kInkeysPageIndexWorkspaceType;
-	}
-
 	constexpr bool ShouldReleasePresentationClearFallback(
 		std::uint32_t currentIntervalOrdinal,
 		std::uint32_t sealedIntervalOrdinal) noexcept
@@ -56,6 +49,15 @@ export namespace Inkeys::Drawing::Draw3
 		return sealedIntervalOrdinal != UINT32_MAX &&
 			currentIntervalOrdinal == sealedIntervalOrdinal + 1;
 	}
+
+	// 实际索引根；逻辑页身份仍由 target.bindingMode 决定。
+	enum class PresentationStorageTrack : std::uint8_t
+	{
+		Unresolved,
+		Base,
+		PageIndexSidecar,
+		SlideIdSidecar,
+	};
 
 	struct PresentationSaveRequest
 	{
@@ -65,6 +67,7 @@ export namespace Inkeys::Drawing::Draw3
 		// Clear 边界不可与普通 tail 保存合并；只封存指定 Canvas。
 		std::optional<draw3::uink::UInkGuid> clearPageGuid;
 		std::optional<std::uint32_t> clearIntervalOrdinal;
+		std::uint64_t slotGeneration = 0; // Controller 不透明槽代次，worker 原样回显。
 	};
 
 	enum class PresentationLoadKind : std::uint8_t
@@ -79,6 +82,7 @@ export namespace Inkeys::Drawing::Draw3
 		PresentationLoadKind kind = PresentationLoadKind::Current;
 		std::optional<draw3::uink::UInkGuid> pageGuid;
 		std::uint32_t intervalOrdinal = 0;
+		std::uint64_t slotGeneration = 0;
 	};
 
 	enum class PresentationPersistenceOperation : std::uint8_t
@@ -112,6 +116,10 @@ export namespace Inkeys::Drawing::Draw3
 		PresentationLoadKind loadKind = PresentationLoadKind::Current;
 		std::optional<draw3::uink::UInkGuid> pageGuid;
 		std::uint32_t intervalOrdinal = 0;
+		std::uint64_t slotGeneration = 0;
+		PresentationStorageTrack storageTrack = PresentationStorageTrack::Unresolved;
+		// Save 回显请求文件；Load 仅在严格核准 Loaded 后给出实际文件。
+		std::optional<draw3::uink::UInkGuid> fileGuid;
 	};
 
 	enum class PresentationPersistenceSubmitStatus : std::uint8_t
@@ -138,6 +146,9 @@ export namespace Inkeys::Drawing::Draw3
 		std::uint32_t writeDelayMilliseconds = 0;
 		std::string sessionIdOverride;
 		bool throwWorkerOperation = false;
+		// 只供隔离测试停在 UInk 已提交、索引尚未发布的真实 worker 断点。
+		void* afterUInkCommittedEvent = nullptr;
+		void* continueIndexCommitEvent = nullptr;
 	};
 
 	void SetPresentationAutoSaveTestFaultInjection(

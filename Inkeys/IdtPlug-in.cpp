@@ -524,6 +524,7 @@ void PptInfo()
 	int lastRawPage = -2, lastRawTotal = -2;
 	std::int64_t firstObservationQpc = 0, descriptorAcceptanceQpc = 0;
 	std::uint64_t tracedTargetRevision = 0;
+	std::uint64_t loggedDocumentReadyRevision = 0, loggedUiReadyRevision = 0;
 	bool observationPending = false;
 	int publishedPage = -2, publishedTotal = -2;
 	std::uint64_t publishedTarget = UINT64_MAX, publishedSession = 0;
@@ -778,6 +779,30 @@ void PptInfo()
 				(trustedEndScreen && cachedTarget->pageKind ==
 					D3::Bridge::PresentationPageKind::EndScreen));
 		const bool whiteboard = WhiteboardTransactionActive();
+		static const bool tracePptGate = []() noexcept
+		{
+			wchar_t value[8]{};
+			return GetEnvironmentVariableW(L"INKEYS_PPT_TIMING", value, ARRAYSIZE(value)) > 0
+				&& value[0] == L'1';
+		}();
+		if (tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
+		{
+			// 仅记录数值身份门，不把演示文稿路径或标题写入诊断。
+			DWORD showOwner = 0;
+			if (descriptor && descriptor->slideShowHwnd)
+				GetWindowThreadProcessId(reinterpret_cast<HWND>(
+					static_cast<std::uintptr_t>(descriptor->slideShowHwnd)), &showOwner);
+			IDTLogger->info(
+				"[PptGate] lifecycle={} pageStatus={} raw={}/{} descStatus={} desc={}/{} ids={} showOwner={} descPid={} sessionActive={} sessionId={} trustedTarget={} trustedPage={} trustedEnd={} whiteboard={} hostRunning={}",
+				static_cast<int>(lifecycle), static_cast<int>(pageStatus), rawPage, rawTotal,
+				descriptor ? static_cast<int>(descriptor->status) : -1,
+				descriptor ? descriptor->currentPage : 0,
+				descriptor ? descriptor->totalPage : 0,
+				descriptor ? descriptor->slideIds.size() : 0,
+				showOwner, descriptor ? descriptor->applicationProcessId : 0,
+				session.active, session.localSession, static_cast<bool>(trustedTarget), trustedPage,
+				trustedEndScreen, whiteboard, D3::ProductRunning());
+		}
 		const auto bridge = D3::ProductHost().ProductBridge().Snapshot();
 		if (!whiteboard && session.active && !trustedTarget)
 		{
@@ -803,6 +828,14 @@ void PptInfo()
 		else if (!whiteboard && session.active && trustedTarget)
 		{
 			const auto accepted = D3::PublishProductPresentationTarget(*cachedTarget);
+			if (!accepted && tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
+			{
+				const auto observedBridge = D3::ProductHost().ProductBridge().Snapshot();
+				IDTLogger->warn("[PptGate] publish_rejected host={} bridgeWorkspace={} valid={} keyZero={} sourceEmpty={}",
+					D3::ProductHost().Running(), static_cast<int>(observedBridge.workspace),
+					D3::Bridge::ValidPresentationPage(*cachedTarget),
+					cachedTarget->key.IsZero(), cachedTarget->sourceIdentity.empty());
+			}
 			if (accepted)
 			{
 				if (tracedTargetRevision != *accepted)
@@ -811,6 +844,11 @@ void PptInfo()
 					D3::TracePptTiming("native_observed", session.localSession, *accepted, firstObservationQpc);
 					D3::TracePptTiming("descriptor_accepted", session.localSession, *accepted, descriptorAcceptanceQpc);
 					D3::TracePptTiming("target_published", session.localSession, *accepted);
+					if (tracePptGate && IDTLogger)
+						IDTLogger->info("[PptGate] publish_accepted session={} revision={} pageKind={} pageIndex={} slideId={}",
+							session.localSession, *accepted,
+							static_cast<int>(cachedTarget->pageKind), cachedTarget->pageIndex,
+							cachedTarget->slideId.value_or(0));
 					tracedTargetRevision = *accepted;
 					observationPending = false;
 				}
@@ -821,6 +859,24 @@ void PptInfo()
 				}
 				(void)D3::SetProductPresentationInputSuspended(D3::Bridge::ReadyIdentityFor(*cachedTarget), false);
 				const auto ready = D3::ProductRuntimeSnapshot();
+				if (tracePptGate && IDTLogger)
+				{
+					const auto expected = D3::Bridge::ReadyIdentityFor(*cachedTarget);
+					if (ready.presentationReady && *ready.presentationReady == expected &&
+						loggedDocumentReadyRevision != *accepted)
+					{
+						loggedDocumentReadyRevision = *accepted;
+						IDTLogger->info("[PptGate] document_ready session={} revision={} presents={}",
+							session.localSession, *accepted, ready.successfulPresentCount);
+					}
+					if (ready.presentationUiReady && *ready.presentationUiReady == expected &&
+						loggedUiReadyRevision != *accepted)
+					{
+						loggedUiReadyRevision = *accepted;
+						IDTLogger->info("[PptGate] page_ui_ready session={} revision={}",
+							session.localSession, *accepted);
+					}
+				}
 				if (ready.running && ready.workspace == D3::Bridge::Workspace::Presentation
 					&& ready.presentationReady && *ready.presentationReady == D3::Bridge::ReadyIdentityFor(*cachedTarget))
 					PptInfoStateBuffer = cachedTarget->pageKind ==
@@ -902,7 +958,8 @@ void PPTLinkageMain()
 	// 读取 ppt 配置
 	{
 		if (_waccess((globalPath + L"opt\\pptcom_configuration.json").c_str(), 4) == 0) PptComReadSetting();
-		PptComWriteSetting();
+		if (!PptComWriteSetting() && IDTLogger)
+			IDTLogger->warn("[PPTLinkageMain] pptcom_configuration.json 写回失败，保留现存配置文件");
 	}
 	// 检查相关注册表项目
 	pptComSetlist.setAdmin = IsPowerPointRunAsAdminSet();
@@ -1146,8 +1203,42 @@ bool IsPowerPointRunAsAdminSet()
 // 其他插件
 
 // DesktopDrawpadBlocker 插件
+bool LaunchVerifiedDesktopDrawpadBlocker(bool runAsAdmin)
+{
+	const wstring directory = pluginPath + L"DesktopDrawpadBlocker";
+	const wstring executable = directory + L"\\DesktopDrawpadBlocker.exe";
+	const DWORD dirAttributes = GetFileAttributesW(directory.c_str());
+	const DWORD exeAttributes = GetFileAttributesW(executable.c_str());
+	if (dirAttributes == INVALID_FILE_ATTRIBUTES ||
+		!(dirAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+		(dirAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+		exeAttributes == INVALID_FILE_ATTRIBUTES ||
+		(exeAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)))
+		return false;
+	const HRSRC embedded = FindResourceW(nullptr, MAKEINTRESOURCE(237), L"EXE");
+	if (!embedded) return false;
+	const DWORD embeddedSize = SizeofResource(nullptr, embedded);
+	error_code error;
+	if (!embeddedSize || filesystem::file_size(executable, error) != embeddedSize || error)
+		return false;
+	try
+	{
+		sha256wrapper hash;
+		if (hash.getHashFromFileW(executable) != ddbInteractionSetList.DdbSHA256)
+			return false;
+	}
+	catch (...) { return false; }
+	if (isProcessRunning(executable.c_str())) return false;
+	const HINSTANCE launched = ShellExecuteW(nullptr,
+		runAsAdmin ? L"runas" : nullptr, executable.c_str(),
+		nullptr, nullptr, SW_SHOWNORMAL);
+	return reinterpret_cast<INT_PTR>(launched) > 32;
+}
+
 void StartDesktopDrawpadBlocker()
 {
+	// 禁用时不清理命名目录：目录可能包含用户或其他组件文件。
+	if (!ddbInteractionSetList.enable) return;
 	if (ddbInteractionSetList.enable)
 	{
 		// 配置 json
@@ -1161,14 +1252,26 @@ void StartDesktopDrawpadBlocker()
 		}
 
 		// 配置 EXE
+		const wstring ddbDirectory = pluginPath + L"DesktopDrawpadBlocker";
+		const wstring ddbExecutable = ddbDirectory + L"\\DesktopDrawpadBlocker.exe";
+		DWORD directoryAttributes = GetFileAttributesW(ddbDirectory.c_str());
+		if (directoryAttributes == INVALID_FILE_ATTRIBUTES)
+		{
+			error_code error;
+			filesystem::create_directories(ddbDirectory, error);
+			if (error) return;
+			directoryAttributes = GetFileAttributesW(ddbDirectory.c_str());
+		}
+		if (directoryAttributes == INVALID_FILE_ATTRIBUTES ||
+			!(directoryAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+			(directoryAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) return;
+		const DWORD executableAttributes = GetFileAttributesW(ddbExecutable.c_str());
+		if (executableAttributes != INVALID_FILE_ATTRIBUTES &&
+			(executableAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)))
+			return;
 		if (_waccess((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), 0) == -1)
 		{
-			if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == -1)
-			{
-				error_code ec;
-				filesystem::create_directories(pluginPath + L"DesktopDrawpadBlocker", ec);
-			}
-			Inkeys::Load::ExtractResourceFile((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+			if (!Inkeys::Load::ExtractResourceFile(ddbExecutable, L"EXE", MAKEINTRESOURCE(237))) return;
 		}
 		else
 		{
@@ -1193,22 +1296,18 @@ void StartDesktopDrawpadBlocker()
 						this_thread::sleep_for(chrono::milliseconds(500));
 					}
 				}
-				Inkeys::Load::ExtractResourceFile((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), L"EXE", MAKEINTRESOURCE(237));
+				if (!Inkeys::Load::ExtractResourceFile(ddbExecutable, L"EXE", MAKEINTRESOURCE(237))) return;
 			}
 		}
 
-		// 启动 DDB
+		// 所有入口只经同一来源/普通文件/固定 hash 门启动。
 		if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (ddbInteractionSetList.runAsAdmin) ShellExecuteW(NULL, L"runas", (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
-			else ShellExecuteW(NULL, NULL, (pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+			if (!LaunchVerifiedDesktopDrawpadBlocker(ddbInteractionSetList.runAsAdmin)
+				&& IDTLogger)
+				IDTLogger->error("[DesktopDrawpadBlocker] 最终 EXE 校验或启动失败");
 		}
-	}
-	else if (_waccess((pluginPath + L"DesktopDrawpadBlocker").c_str(), 0) == 0)
-	{
-		error_code ec;
-		filesystem::remove_all(pluginPath + L"DesktopDrawpadBlocker", ec);
 	}
 }
 

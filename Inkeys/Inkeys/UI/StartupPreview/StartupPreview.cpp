@@ -72,9 +72,13 @@ namespace Inkeys::UI::StartupPreview
 
 		struct OwnerState final
 		{
+			OwnerState() noexcept : stopEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr)) {}
+			~OwnerState() { if (stopEvent) CloseHandle(stopEvent); }
+
 			std::mutex mutex;
 			std::mutex presentationMutex;
 			std::condition_variable condition;
+			HANDLE stopEvent = nullptr;
 			HWND window = nullptr;
 			DWORD threadId = 0;
 			RECT latestBounds{};
@@ -84,6 +88,7 @@ namespace Inkeys::UI::StartupPreview
 			bool ready = false;
 			bool exited = false;
 			bool creationSucceeded = false;
+			bool stopRequested = false;
 		};
 
 		struct OwnerSnapshot final
@@ -176,6 +181,11 @@ namespace Inkeys::UI::StartupPreview
 			{
 				if (thread_.joinable()) return false;
 				state_ = std::make_shared<OwnerState>();
+				if (!state_->stopEvent)
+				{
+					state_.reset();
+					return false;
+				}
 				state_->latestBounds = bounds;
 				state_->appliedBounds = bounds;
 				auto state = state_;
@@ -194,12 +204,14 @@ namespace Inkeys::UI::StartupPreview
 						const ATOM atom = RegisterClassExW(&klass);
 						const DWORD error = atom ? ERROR_SUCCESS : GetLastError();
 						RECT initial{};
+						bool stopBeforeCreate = false;
 						{
 							std::scoped_lock lock(state->mutex);
 							initial = state->latestBounds;
+							stopBeforeCreate = state->stopRequested;
 						}
 						HWND window = nullptr;
-						if (atom || error == ERROR_CLASS_ALREADY_EXISTS)
+						if (!stopBeforeCreate && (atom || error == ERROR_CLASS_ALREADY_EXISTS))
 						{
 							window = CreateWindowExW(
 								WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -210,20 +222,56 @@ namespace Inkeys::UI::StartupPreview
 								(void)SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
 									SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 						}
+						bool stopAfterCreate = false;
 						{
 							std::scoped_lock lock(state->mutex);
-							state->window = window;
-							state->creationSucceeded = window != nullptr;
+							stopAfterCreate = state->stopRequested;
+							state->window = stopAfterCreate ? nullptr : window;
+							state->creationSucceeded = window != nullptr && !stopAfterCreate;
 							state->ready = true;
 						}
 						state->condition.notify_all();
 						if (window)
 						{
-							MSG message{};
-							while (GetMessageW(&message, nullptr, 0, 0) > 0)
+							// 消息队列尚未建立时的停止投递可能失败，阻塞前由 owner 再次核对。
+							bool stopBeforeWait = stopAfterCreate;
+							if (!stopBeforeWait)
 							{
-								TranslateMessage(&message);
-								DispatchMessageW(&message);
+								std::scoped_lock lock(state->mutex);
+								stopBeforeWait = state->stopRequested;
+							}
+							if (stopBeforeWait)
+							{
+								ShowWindow(window, SW_HIDE);
+								DestroyWindow(window);
+							}
+							else
+							{
+								const HANDLE stopEvent = state->stopEvent;
+								for (;;)
+								{
+									// 事件优先于窗口消息；超时仅兜底 SetEvent/投递均失败的停止请求。
+									const DWORD wait = MsgWaitForMultipleObjectsEx(1, &stopEvent,
+										1000, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+									if (wait == WAIT_OBJECT_0 || wait == WAIT_FAILED) break;
+									{
+										std::scoped_lock lock(state->mutex);
+										if (state->stopRequested) break;
+									}
+									if (wait == WAIT_TIMEOUT) continue;
+									if (wait != WAIT_OBJECT_0 + 1) break;
+									MSG message{};
+									if (!PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) continue;
+									if (message.message == WM_QUIT) break;
+									TranslateMessage(&message);
+									DispatchMessageW(&message);
+								}
+								// WM_QUIT 也可能先于停止窗口消息到达，仍由创建线程销毁 HWND。
+								if (IsWindow(window))
+								{
+									ShowWindow(window, SW_HIDE);
+									DestroyWindow(window);
+								}
 							}
 						}
 						{
@@ -236,22 +284,14 @@ namespace Inkeys::UI::StartupPreview
 				std::unique_lock lock(state_->mutex);
 				if (!state_->condition.wait_for(lock, 2s,
 					[this] { return state_->ready; })) return false;
-				return state_->creationSucceeded;
+				return state_->creationSucceeded && !state_->stopRequested;
 			}
 
 			void Stop() noexcept
 			{
 				if (!thread_.joinable()) return;
 				auto state = state_;
-				HWND window = nullptr;
-				DWORD threadId = 0;
-				{
-					std::scoped_lock lock(state->mutex);
-					window = state->window;
-					threadId = state->threadId;
-				}
-				if (window) PostMessageW(window, OwnerStopMessage, 0, 0);
-				else if (threadId) PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+				RequestStop();
 				std::unique_lock lock(state->mutex);
 				const bool exited = state->condition.wait_for(lock, 1500ms,
 					[&state] { return state->exited; });
@@ -303,7 +343,24 @@ namespace Inkeys::UI::StartupPreview
 			void Show() noexcept { Post(OwnerShowMessage); }
 			void Hide() noexcept { Post(OwnerHideMessage); }
 			void RevalidateTopmost() noexcept { Post(OwnerTopmostMessage); }
-			void RequestStop() noexcept { Post(OwnerStopMessage); }
+			void RequestStop() noexcept
+			{
+				if (!state_) return;
+				auto state = state_;
+				HWND window = nullptr;
+				DWORD threadId = 0;
+				{
+					std::scoped_lock lock(state->mutex);
+					if (state->exited) return;
+					// 消息只用于唤醒；迟到的 owner 必须能读到持续有效的停止请求。
+					state->stopRequested = true;
+					window = state->window;
+					threadId = state->threadId;
+				}
+				(void)SetEvent(state->stopEvent);
+				if (window) (void)PostMessageW(window, OwnerStopMessage, 0, 0);
+				else if (threadId) (void)PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+			}
 
 			void Move(const RECT& bounds, std::uint64_t revision) noexcept
 			{

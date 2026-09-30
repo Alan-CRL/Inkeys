@@ -316,7 +316,17 @@ namespace
 		HMONITOR monitor, const wchar_t* deviceName) noexcept
 	{
 		using GetDpiForMonitorFunction = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
-		static HMODULE shcore = LoadLibraryW(L"Shcore.dll");
+		static HMODULE shcore = []() noexcept -> HMODULE
+			{
+				wchar_t path[MAX_PATH] = {};
+				const UINT length = GetSystemDirectoryW(path, MAX_PATH);
+				constexpr wchar_t suffix[] = L"\\Shcore.dll";
+				if (length == 0 || length >= MAX_PATH ||
+					length + ARRAYSIZE(suffix) > MAX_PATH) return nullptr;
+				// Win7 缺失时走下方 GDI 回退，绝不搜索可写的应用目录。
+				std::copy_n(suffix, ARRAYSIZE(suffix), path + length);
+				return LoadLibraryW(path);
+			}();
 		static auto getDpiForMonitor = shcore
 			? reinterpret_cast<GetDpiForMonitorFunction>(
 				GetProcAddress(shcore, "GetDpiForMonitor"))

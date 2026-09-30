@@ -57,9 +57,11 @@ namespace Inkeys::Drawing::Draw3
 			const size_t remaining = totalPoints - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (m_bufferHead + batchCount > kMaxBufferCapacity)
+			if (!mapNoOverwriteOnDynamicBufferSRV ||
+				m_bufferHead + batchCount > kMaxBufferCapacity)
 			{
-				mapType = D3D11_MAP_WRITE_DISCARD; // 环形缓冲区写满后丢弃旧内容从头写。
+				// 不支持动态 SRV 扩展时每批丢弃；支持时仅在环形缓冲区写满后丢弃。
+				mapType = D3D11_MAP_WRITE_DISCARD;
 				m_bufferHead = 0;
 			}
 
@@ -168,8 +170,10 @@ namespace Inkeys::Drawing::Draw3
 				primitives.size() - startIndex, kMaximumPrimitiveBatch);
 			const size_t pointCount = batchCount * 2;
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
-			if (m_bufferHead + pointCount > kMaxBufferCapacity)
+			if (!mapNoOverwriteOnDynamicBufferSRV ||
+				m_bufferHead + pointCount > kMaxBufferCapacity)
 			{
+				// Shape 与普通笔共用动态 SRV，能力不足时也必须逐批从零偏移上传。
 				mapType = D3D11_MAP_WRITE_DISCARD;
 				m_bufferHead = 0;
 			}

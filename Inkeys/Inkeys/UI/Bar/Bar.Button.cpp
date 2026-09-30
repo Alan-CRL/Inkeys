@@ -55,7 +55,7 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 		clearAcceptedForDoubleClick = false;
 	}
 	const bool selectionMode =
-		stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
+		GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection;
 	const BarClearClickAction action = ResolveBarClearClickAction(
 		selectionMode, Inkeys::UI::Bar::CurrentPageHasContent(),
 		doubleClickContinuation, clearAttemptedForDoubleClick,
@@ -350,11 +350,12 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
-					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtEraser)
+					const auto selectedMode = GetStateModeSnapshot().StateModeSelect;
+					if (selectedMode != StateModeSelectEnum::IdtEraser)
 					{
 						// 切工具的首击不参与开合合并，下一击仍可立即展开属性栏。
 						barUISet.eraserAttribute.RememberEntryFromSelection(
-							stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection &&
+							selectedMode == StateModeSelectEnum::IdtSelection &&
 							Inkeys::UI::Bar::CurrentPageHasContent());
 						ChangeStateModeToEraser();
 					}
@@ -846,9 +847,10 @@ void BarButtonSetClass::StateUpdate()
 }
 void BarButtonSetClass::UpdateDrawButtonStyle()
 {
+	const auto stateMode = GetStateModeSnapshot();
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-	bool laser = IsLaserPenSelected();
+	bool laser = stateMode.laserActive;
 	bool highlighter =
 		!laser && stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1;
 	bool hardPen = !laser && !highlighter &&
@@ -905,6 +907,7 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 }
 void BarButtonSetClass::UpdateEraserButtonStyle()
 {
+	const auto stateMode = GetStateModeSnapshot();
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
 	int styleKey = selected ? 1 : 0;
@@ -922,6 +925,7 @@ void BarButtonSetClass::UpdateEraserButtonStyle()
 }
 void BarButtonSetClass::UpdateGeometryButtonStyle()
 {
+	const auto stateMode = GetStateModeSnapshot();
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
 	bool rectangle = selected
@@ -1310,6 +1314,7 @@ void BarButtonSetClass::ResetIconCaches()
 
 void BarButtonSetClass::PresetHoming()
 {
+	const auto stateMode = GetStateModeSnapshot();
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
 	if (whiteboard) barUISet.barState.geometryAttribute = false;
 	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
@@ -1361,6 +1366,7 @@ void BarButtonSetClass::PresetHoming()
 }
 void BarButtonSetClass::CalcState()
 {
+	const auto stateMode = GetStateModeSnapshot();
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::None;

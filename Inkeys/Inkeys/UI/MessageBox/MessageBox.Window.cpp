@@ -310,7 +310,18 @@ namespace Inkeys::UI::MessageBox::Detail
 			const HMODULE user32 = GetModuleHandleW(L"user32.dll");
 			// owner 可能来自 DPI-unaware 线程，此时 GetDpiForWindow 只会返回虚拟 96。
 			// 当前 UI 线程已是 PMv2，应优先按最终目标 monitor 取得有效 DPI。
-			const HMODULE shcore = LoadLibraryW(L"shcore.dll");
+			wchar_t shcorePath[MAX_PATH] = {};
+			const UINT systemLength = GetSystemDirectoryW(shcorePath, MAX_PATH);
+			constexpr wchar_t shcoreSuffix[] = L"\\shcore.dll";
+			HMODULE shcore = nullptr;
+			if (systemLength > 0 && systemLength < MAX_PATH &&
+				systemLength + ARRAYSIZE(shcoreSuffix) <= MAX_PATH)
+			{
+				// 旧系统无 Shcore 时走下方 GDI 回退，不搜索应用目录 DLL。
+				std::copy_n(shcoreSuffix, ARRAYSIZE(shcoreSuffix),
+					shcorePath + systemLength);
+				shcore = LoadLibraryW(shcorePath);
+			}
 			if (shcore)
 			{
 				using GetDpiForMonitorFn = HRESULT(WINAPI*)(HMONITOR,

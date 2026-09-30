@@ -604,6 +604,99 @@ namespace
 			dateDirectory / isolated.proposedFileName));
 	}
 
+	void TestOversizedIndexIsIsolated(TestState& state)
+	{
+		TempDirectory temporary;
+		AUTOSAVE_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const fs::path root = temporary.Child(L"oversized-index");
+		const fs::path dateDirectory = DateDirectory(root, "2026-09-01");
+		const fs::path indexPath = dateDirectory / L"index.json";
+		const DesktopAutoSaveRequest first = MakeRequest(
+			"91000000-0000-4000-8000-000000000001",
+			"92000000-0000-4000-8000-000000000001", 1,
+			"93000000-0000-4000-8000-000000000001",
+			"2026-09-01", "180000001", 17.0f);
+		DesktopAutoSaveService initial;
+		AUTOSAVE_CHECK(state, initial.Start(root.wstring()));
+		AUTOSAVE_CHECK(state, initial.SubmitPrepared(first) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		initial.CloseAndDrain();
+		AUTOSAVE_CHECK(state, initial.Diagnostics().committed == 1);
+		AUTOSAVE_CHECK(state, fs::is_regular_file(indexPath));
+
+		// 合法 JSON 后附超量空白，旧实现仍会分配并解析整份索引。
+		{
+			std::ofstream stream(indexPath, std::ios::binary | std::ios::app);
+			const std::string padding(16u * 1024u * 1024u, ' ');
+			stream.write(padding.data(), static_cast<std::streamsize>(padding.size()));
+			AUTOSAVE_CHECK(state, !!stream);
+		}
+		const std::vector<std::byte> indexBefore = ReadBytes(indexPath);
+		AUTOSAVE_CHECK(state, indexBefore.size() > 16u * 1024u * 1024u);
+		DesktopAutoSaveService service;
+		AUTOSAVE_CHECK(state, service.Start(root.wstring()));
+		AUTOSAVE_CHECK(state, service.SubmitPrepared(first) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		AUTOSAVE_CHECK(state, service.Diagnostics().failed == 1);
+		AUTOSAVE_CHECK(state, service.Diagnostics().committed == 0);
+		AUTOSAVE_CHECK(state, ReadBytes(indexPath) == indexBefore);
+		AUTOSAVE_CHECK(state, fs::is_regular_file(
+			dateDirectory / first.proposedFileName));
+	}
+
+	void TestDeepIndexIsIsolated(TestState& state)
+	{
+		TempDirectory temporary;
+		AUTOSAVE_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const fs::path root = temporary.Child(L"deep-index");
+		const fs::path indexPath = DateDirectory(root, "2026-09-01") / L"index.json";
+		const DesktopAutoSaveRequest request = MakeRequest(
+			"94000000-0000-4000-8000-000000000001",
+			"95000000-0000-4000-8000-000000000001", 1,
+			"96000000-0000-4000-8000-000000000001",
+			"2026-09-01", "181000001", 19.0f);
+		DesktopAutoSaveService initial;
+		AUTOSAVE_CHECK(state, initial.Start(root.wstring()));
+		AUTOSAVE_CHECK(state, initial.SubmitPrepared(request) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		initial.CloseAndDrain();
+		AUTOSAVE_CHECK(state, initial.Diagnostics().committed == 1);
+		Json::Value index;
+		AUTOSAVE_CHECK(state, ReadJson(indexPath, index));
+		const std::vector<std::byte> originalIndex = ReadBytes(indexPath);
+		Json::Value nested(true);
+		for (int depth = 0; depth < 70; ++depth)
+		{
+			Json::Value outer(Json::arrayValue);
+			outer.append(std::move(nested));
+			nested = std::move(outer);
+		}
+		index["unused"] = std::move(nested);
+		AUTOSAVE_CHECK(state, WriteJson(indexPath, index));
+		const std::vector<std::byte> indexBefore = ReadBytes(indexPath);
+		DesktopAutoSaveService service;
+		AUTOSAVE_CHECK(state, service.Start(root.wstring()));
+		AUTOSAVE_CHECK(state, service.SubmitPrepared(request) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		AUTOSAVE_CHECK(state, service.Diagnostics().failed == 1);
+		AUTOSAVE_CHECK(state, service.Diagnostics().committed == 0);
+		AUTOSAVE_CHECK(state, ReadBytes(indexPath) == indexBefore);
+		const fs::path backupPath = indexPath.wstring() + L".bak";
+		AUTOSAVE_CHECK(state, WriteBytes(backupPath, originalIndex));
+		DesktopAutoSaveService recovered;
+		AUTOSAVE_CHECK(state, recovered.Start(root.wstring()));
+		AUTOSAVE_CHECK(state, recovered.SubmitPrepared(request) ==
+			DesktopAutoSaveSubmitStatus::Accepted);
+		recovered.CloseAndDrain();
+		AUTOSAVE_CHECK(state, recovered.Diagnostics().committed == 1);
+		AUTOSAVE_CHECK(state, ReadBytes(indexPath) == indexBefore);
+		AUTOSAVE_CHECK(state, ReadBytes(backupPath) == originalIndex);
+	}
+
 	void TestInvalidIndexReferenceIsIsolated(TestState& state)
 	{
 		TempDirectory temporary;
@@ -735,6 +828,18 @@ namespace
 	}
 }
 
+int RunDesktopAutoSaveIndexBoundsTests()
+{
+	TestState state;
+	ResetDesktopAutoSaveTestFaultInjection();
+	TestOversizedIndexIsIsolated(state);
+	TestDeepIndexIsIsolated(state);
+	ResetDesktopAutoSaveTestFaultInjection();
+	if (state.failures == 0)
+		std::cout << "Desktop UInk index bounds tests passed." << std::endl;
+	return state.failures;
+}
+
 int RunDesktopAutoSaveTests()
 {
 	TestState state;
@@ -746,6 +851,8 @@ int RunDesktopAutoSaveTests()
 	TestCrossDateAndDrain(state);
 	TestFailureIsolationAndRetry(state);
 	TestIndexBackupRecoveryAndIsolation(state);
+	TestOversizedIndexIsIsolated(state);
+	TestDeepIndexIsIsolated(state);
 	TestInvalidIndexReferenceIsIsolated(state);
 	TestInvalidIndexTimestampIsIsolated(state);
 	TestCommittedClearCanReload(state);

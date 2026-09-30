@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include "Draw3.Presentation.h"
@@ -278,14 +279,32 @@ namespace Inkeys::Drawing::Draw3
 			UInkSourceRevision sourceRevision;
 		};
 
-		bool IsSafeRelativePath(const std::string& value) noexcept
+		std::string FoldAsciiKey(std::string value)
 		{
-			return value.starts_with("files/") && value.ends_with(".uink") &&
-				value.find("..") == std::string::npos &&
-				value.find('\\') == std::string::npos;
+			for (char& character : value)
+				if (character >= 'A' && character <= 'Z')
+					character = static_cast<char>(character - 'A' + 'a');
+			return value;
 		}
 
-		bool DecodeEntry(const Json::Value& value, IndexEntry& entry)
+		bool IsSafeRelativePath(const std::string& value,
+			const std::string& fileGuid, int schemaVersion)
+		{
+			const std::string legacy = "files/" + fileGuid + ".uink";
+			if (value == legacy) return true;
+			if (schemaVersion != 2) return false;
+			const auto logicalGuid = ParseUInkGuid(fileGuid);
+			if (!logicalGuid || FormatUInkGuid(*logicalGuid) != fileGuid) return false;
+			const std::string prefix = "files/" + fileGuid + "_";
+			if (!value.starts_with(prefix) || !value.ends_with(".uink") ||
+				value.size() != prefix.size() + 36 + 5) return false;
+			const std::string transactionGuid = value.substr(prefix.size(), 36);
+			const auto parsed = ParseUInkGuid(transactionGuid);
+			return parsed && FormatUInkGuid(*parsed) == transactionGuid;
+		}
+
+		bool DecodeEntry(const Json::Value& value, int schemaVersion,
+			IndexEntry& entry)
 		{
 			if (!value.isObject() || value.size() != 12 ||
 				!value["sourceIdentity"].isString() ||
@@ -309,11 +328,10 @@ namespace Inkeys::Drawing::Draw3
 			if (entry.sourceIdentity.empty() || entry.sourceIdentity.size() > 32768 ||
 				!ParseUInkGuid(entry.presentationKey) || !ParseUInkGuid(entry.sessionId) ||
 				!ParseUInkGuid(entry.fileGuid) || !ParseUInkGuid(entry.workspaceGuid) ||
-				!IsSafeRelativePath(entry.relativePath) ||
+				!IsSafeRelativePath(entry.relativePath, entry.fileGuid, schemaVersion) ||
 				entry.mutationRevision == 0 ||
 				(entry.bindingMode != "slide-id" && entry.bindingMode != "page-index") ||
 				!DecodeRevision(value["sourceRevision"], entry.sourceRevision)) return false;
-			if (entry.relativePath != "files/" + entry.fileGuid + ".uink") return false;
 			std::set<std::int32_t> ids;
 			for (const Json::Value& id : value["slideIds"])
 			{
@@ -359,9 +377,12 @@ namespace Inkeys::Drawing::Draw3
 			std::string errors;
 			if (!reader || !reader->parse(text.data(), text.data() + text.size(),
 				&root, &errors) || !root.isObject() || root.size() != 3 ||
-				!root["schemaVersion"].isInt() || root["schemaVersion"].asInt() != 1 ||
+				!root["schemaVersion"].isInt() ||
+				(root["schemaVersion"].asInt() != 1 &&
+					root["schemaVersion"].asInt() != 2) ||
 				!root["scenario"].isString() || root["scenario"].asString() != "presentation" ||
 				!root["entries"].isArray()) return IndexState::Invalid;
+			const int schemaVersion = root["schemaVersion"].asInt();
 			std::set<std::string> sources;
 			std::set<std::string> keys;
 			std::set<std::string> fileGuids;
@@ -369,11 +390,12 @@ namespace Inkeys::Drawing::Draw3
 			for (const Json::Value& value : root["entries"])
 			{
 				IndexEntry entry;
-				if (!DecodeEntry(value, entry) ||
+				if (!DecodeEntry(value, schemaVersion, entry) ||
 					!sources.insert(entry.sourceIdentity).second ||
 					!keys.insert(entry.presentationKey).second ||
-					!fileGuids.insert(entry.fileGuid).second ||
-					!paths.insert(entry.relativePath).second) return IndexState::Invalid;
+					!fileGuids.insert(FoldAsciiKey(entry.fileGuid)).second ||
+					!paths.insert(FoldAsciiKey(entry.relativePath)).second)
+					return IndexState::Invalid;
 				entries.push_back(std::move(entry));
 			}
 			return IndexState::Valid;
@@ -398,7 +420,7 @@ namespace Inkeys::Drawing::Draw3
 			const std::vector<IndexEntry>& entries, bool primaryValid)
 		{
 			Json::Value document(Json::objectValue);
-			document["schemaVersion"] = 1;
+			document["schemaVersion"] = 2;
 			document["scenario"] = "presentation";
 			document["entries"] = Json::Value(Json::arrayValue);
 			for (const IndexEntry& entry : entries)
@@ -433,20 +455,202 @@ namespace Inkeys::Drawing::Draw3
 			return committed != FALSE;
 		}
 
+		struct VersionedUInkSave
+		{
+			UInkSaveStatus status = UInkSaveStatus::IoError;
+			std::optional<UInkSourceRevision> revision;
+			std::string relativePath;
+		};
+
+		VersionedUInkSave SaveVersionedUInk(const std::wstring& root,
+			const std::string& fileGuid, const UInkEditingSession& session)
+		{
+			UInkSaveOptions options;
+			options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
+			for (int attempt = 0; attempt != 8; ++attempt)
+			{
+				const auto transactionGuid = CreateUInkGuid();
+				if (!transactionGuid) return {};
+				VersionedUInkSave result;
+				result.relativePath = "files/" + fileGuid + "_" +
+					FormatUInkGuid(*transactionGuid) + ".uink";
+				const auto saved = SaveUInkFile(JoinPath(root,
+					WidenAscii(result.relativePath)), session, options);
+				if (saved.status == UInkSaveStatus::SourceChanged) continue;
+				result.status = saved.status;
+				result.revision = saved.revision;
+				return result;
+			}
+			return { UInkSaveStatus::SourceChanged };
+		}
+
 		std::string BindingModeName(Bridge::SlideBindingMode mode) noexcept
 		{
 			return mode == Bridge::SlideBindingMode::StableSlideId
 				? "slide-id" : "page-index";
 		}
 
-		std::vector<std::int32_t> MergeSlideIds(
-			const std::vector<std::int32_t>& existing,
-			const std::vector<std::int32_t>& active)
+		using PendingKey = std::tuple<PresentationStorageTrack,
+			Bridge::SlideBindingMode, std::string, std::string, std::string,
+			std::uint64_t>;
+		using PendingEntries = std::map<PendingKey, IndexEntry>;
+
+		PendingKey MakePendingKey(PresentationStorageTrack track,
+			const PresentationSaveRequest& request)
 		{
-			std::vector<std::int32_t> result = existing;
-			for (const auto id : active)
-				if (std::find(result.begin(), result.end(), id) == result.end()) result.push_back(id);
-			return result;
+			return { track, request.target.bindingMode,
+				request.target.sourceIdentity, FormatUInkGuid(request.snapshot.fileGuid),
+				FormatUInkGuid(request.snapshot.workspaceGuid), request.slotGeneration };
+		}
+
+		struct IndexedTrack
+		{
+			PresentationStorageTrack track = PresentationStorageTrack::Unresolved;
+			std::wstring root;
+			std::vector<IndexEntry> entries;
+			bool primaryValid = false;
+		};
+
+		struct StorageSelection
+		{
+			std::array<IndexedTrack, 3> tracks;
+			std::size_t selected = 0;
+			IndexedTrack& Current() noexcept { return tracks[selected]; }
+			const IndexedTrack& Current() const noexcept { return tracks[selected]; }
+		};
+
+		bool SelectStorageTrack(const std::wstring& baseRoot,
+			const Bridge::PresentationTarget& target, const std::string& key,
+			const std::string& sessionId, const PendingEntries& pending,
+			StorageSelection& selection, PresentationPersistenceStatus& failure)
+		{
+			selection.tracks = { IndexedTrack{ PresentationStorageTrack::Base, baseRoot },
+				IndexedTrack{ PresentationStorageTrack::SlideIdSidecar,
+					JoinPath(baseRoot, L"slide-id") },
+				IndexedTrack{ PresentationStorageTrack::PageIndexSidecar,
+					JoinPath(baseRoot, L"page-index") } };
+			std::array<const IndexEntry*, 3> found = {};
+			for (std::size_t index = 0; index < selection.tracks.size(); ++index)
+			{
+				auto& track = selection.tracks[index];
+				if (!LoadIndexWithBackup(track.root, track.entries, track.primaryValid))
+				{
+					failure = PresentationPersistenceStatus::IoError;
+					return false;
+				}
+				for (const auto& entry : track.entries)
+				{
+					if ((index == 1 && entry.bindingMode != "slide-id") ||
+						(index == 2 && entry.bindingMode != "page-index"))
+					{
+						failure = PresentationPersistenceStatus::IoError;
+						return false;
+					}
+					if ((entry.sourceIdentity == target.sourceIdentity &&
+							entry.presentationKey != key) ||
+						(entry.presentationKey == key &&
+							entry.sourceIdentity != target.sourceIdentity))
+					{
+						failure = PresentationPersistenceStatus::CrossProcessConflictDeferred;
+						return false;
+					}
+					if (entry.sourceIdentity == target.sourceIdentity) found[index] = &entry;
+				}
+			}
+			if (found[0] && ((found[1] && found[0]->bindingMode == "slide-id") ||
+				(found[2] && found[0]->bindingMode == "page-index")))
+			{
+				failure = PresentationPersistenceStatus::IoError;
+				return false; // 两处同 mode 不能猜哪个是权威。
+			}
+			bool pendingBaseStable = false;
+			bool pendingBaseFallback = false;
+			bool pendingSlideSidecar = false;
+			bool pendingPageSidecar = false;
+			for (const auto& [pendingKey, entry] : pending)
+			{
+				if (entry.sourceIdentity != target.sourceIdentity ||
+					entry.sessionId != sessionId) continue;
+				if (entry.presentationKey != key)
+				{
+					failure = PresentationPersistenceStatus::CrossProcessConflictDeferred;
+					return false;
+				}
+				const auto track = std::get<0>(pendingKey);
+				if (track == PresentationStorageTrack::Base)
+				{
+					pendingBaseStable |= entry.bindingMode == "slide-id";
+					pendingBaseFallback |= entry.bindingMode == "page-index";
+				}
+				else if (track == PresentationStorageTrack::SlideIdSidecar)
+				{
+					if (entry.bindingMode != "slide-id")
+					{
+						failure = PresentationPersistenceStatus::IoError;
+						return false;
+					}
+					pendingSlideSidecar = true;
+				}
+				else if (track == PresentationStorageTrack::PageIndexSidecar)
+				{
+					if (entry.bindingMode != "page-index")
+					{
+						failure = PresentationPersistenceStatus::IoError;
+						return false;
+					}
+					pendingPageSidecar = true;
+				}
+			}
+			if ((pendingBaseStable && pendingBaseFallback) ||
+				((pendingBaseStable || (found[0] && found[0]->bindingMode == "slide-id")) &&
+					(found[1] || pendingSlideSidecar)) ||
+				((pendingBaseFallback || (found[0] && found[0]->bindingMode == "page-index")) &&
+					(found[2] || pendingPageSidecar)) ||
+				(found[0] && ((pendingBaseStable && found[0]->bindingMode != "slide-id") ||
+					(pendingBaseFallback && found[0]->bindingMode != "page-index"))))
+			{
+				failure = PresentationPersistenceStatus::IoError;
+				return false;
+			}
+			const bool stable = target.bindingMode == Bridge::SlideBindingMode::StableSlideId;
+			const std::size_t sidecar = stable ? 1 : 2;
+			if (found[0] && found[0]->bindingMode == BindingModeName(target.bindingMode))
+				selection.selected = 0;
+			else if (found[sidecar] || (stable ? pendingSlideSidecar : pendingPageSidecar))
+				selection.selected = sidecar;
+			else if (found[0] || (stable ? pendingBaseFallback : pendingBaseStable))
+				selection.selected = sidecar;
+			else selection.selected = 0;
+			return true;
+		}
+
+		bool ConflictsWithOtherLogicalFile(const StorageSelection& selection,
+			const PendingEntries& pending, const PresentationSaveRequest& request)
+		{
+			const std::string fileGuid = FormatUInkGuid(request.snapshot.fileGuid);
+			const std::string workspaceGuid = FormatUInkGuid(request.snapshot.workspaceGuid);
+			for (std::size_t index = 0; index < selection.tracks.size(); ++index)
+				for (const auto& entry : selection.tracks[index].entries)
+				{
+					if (index == selection.selected &&
+						entry.sourceIdentity == request.target.sourceIdentity) continue;
+					if (FoldAsciiKey(entry.fileGuid) == fileGuid ||
+						FoldAsciiKey(entry.workspaceGuid) == workspaceGuid) return true;
+				}
+			for (const auto& [key, entry] : pending)
+			{
+				// 同 GUID 的旧槽未发布版本仍是独立身份，不能跨代继承。
+				const bool sameLogicalFile = std::get<0>(key) ==
+					selection.Current().track &&
+					std::get<1>(key) == request.target.bindingMode &&
+					entry.sourceIdentity == request.target.sourceIdentity &&
+					FoldAsciiKey(entry.fileGuid) == fileGuid &&
+					FoldAsciiKey(entry.workspaceGuid) == workspaceGuid &&
+					std::get<5>(key) == request.slotGeneration;
+				if (!sameLogicalFile && (FoldAsciiKey(entry.fileGuid) == fileGuid ||
+					FoldAsciiKey(entry.workspaceGuid) == workspaceGuid)) return true;
+			}
+			return false;
 		}
 
 		bool CompatibleSlideIdSet(const std::vector<std::int32_t>& known,
@@ -627,21 +831,29 @@ namespace Inkeys::Drawing::Draw3
 
 		PresentationPersistenceStatus SavePresentation(const std::wstring& autoSaveRoot,
 			const std::string& sessionId, const PresentationSaveRequest& request,
-			std::map<std::string, IndexEntry>& pendingIndexEntries)
+			PendingEntries& pendingIndexEntries,
+			PresentationStorageTrack& selectedTrack)
 		{
 			const PresentationAutoSaveTestFaultInjection faults = SnapshotTestFaults();
 			if (faults.writeDelayMilliseconds != 0)
 				Sleep(faults.writeDelayMilliseconds);
-			const std::wstring root = JoinPath(autoSaveRoot, L"presentation");
-			const std::wstring files = JoinPath(root, L"files");
-			if (!EnsureDirectory(files)) return PresentationPersistenceStatus::IoError;
+			const std::wstring baseRoot = JoinPath(autoSaveRoot, L"presentation");
 			NamedMutexGuard mutex;
-			if (!mutex.Acquire(root)) return PresentationPersistenceStatus::IoError;
-			std::vector<IndexEntry> entries;
-			bool primaryValid = false;
-			if (!LoadIndexWithBackup(root, entries, primaryValid))
-				return PresentationPersistenceStatus::IoError;
+			if (!mutex.Acquire(baseRoot)) return PresentationPersistenceStatus::IoError;
 			const std::string key = FormatPresentationKey(request.target.key);
+			StorageSelection selection;
+			PresentationPersistenceStatus selectFailure = PresentationPersistenceStatus::IoError;
+			if (!SelectStorageTrack(baseRoot, request.target, key, sessionId,
+				pendingIndexEntries, selection, selectFailure)) return selectFailure;
+			selectedTrack = selection.Current().track;
+			if (ConflictsWithOtherLogicalFile(selection, pendingIndexEntries, request))
+				return PresentationPersistenceStatus::SourceChanged;
+			const std::wstring& root = selection.Current().root;
+			if (!EnsureDirectory(JoinPath(root, L"files")))
+				return PresentationPersistenceStatus::IoError;
+			auto& entries = selection.Current().entries;
+			const bool primaryValid = selection.Current().primaryValid;
+			const PendingKey pendingKey = MakePendingKey(selectedTrack, request);
 			auto found = std::find_if(entries.begin(), entries.end(),
 				[&](const IndexEntry& entry)
 				{ return entry.sourceIdentity == request.target.sourceIdentity; });
@@ -654,7 +866,7 @@ namespace Inkeys::Drawing::Draw3
 				return PresentationPersistenceStatus::CrossProcessConflictDeferred;
 			if (found != entries.end())
 			{
-				const auto pending = pendingIndexEntries.find(request.target.sourceIdentity);
+				const auto pending = pendingIndexEntries.find(pendingKey);
 				if (pending != pendingIndexEntries.end())
 				{
 					const std::wstring pendingPath = JoinPath(root,
@@ -669,15 +881,46 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
-			auto buildDocument = [&](const Draw3UInkExportSnapshot* canonical)
-				-> std::optional<draw3::uink::UInkDocument>
+			struct PreparedDocument
+			{
+				draw3::uink::UInkDocument document;
+				std::vector<std::int32_t> knownSlideIds;
+			};
+			auto buildDocument = [&](const Draw3UInkExportSnapshot* canonical,
+				const std::vector<std::int32_t>& priorKnown)
+				-> std::optional<PreparedDocument>
 			{
 				auto merged = MergePresentationSnapshot(request, canonical);
 				if (!merged) return std::nullopt;
+				std::vector<std::int32_t> known = priorKnown;
+				std::set<std::int32_t> membership(known.begin(), known.end());
+				// 保持旧 known→当前 target→实际写出页的索引顺序，集合只负责低成本判重。
+				for (const auto id : request.target.slideIds)
+					if (membership.insert(id).second) known.push_back(id);
+				std::set<std::int32_t> written;
+				auto include = [&](std::span<const Draw3UInkCanvasSnapshot> canvases)
+				{
+					for (const auto& canvas : canvases)
+					{
+						if (!canvas.slideId) continue; // EndScreen 不属于 Office SlideID 集合。
+						const std::int32_t id = *canvas.slideId;
+						if (id <= 0 || !written.insert(id).second) return false;
+						if (membership.insert(id).second)
+							known.push_back(id);
+					}
+					return true;
+				};
+				const auto& active = merged->activeCanvases.empty() &&
+					merged->retainedCanvases.empty()
+					? merged->canvases : merged->activeCanvases;
+				if (!include(std::span<const Draw3UInkCanvasSnapshot>(active)) ||
+					!include(std::span<const Draw3UInkCanvasSnapshot>(
+						merged->retainedCanvases)) ||
+					known.size() > Bridge::kMaximumPresentationPages) return std::nullopt;
 				auto exported = ExportDraw3SnapshotToUInk(*merged);
-				return std::move(exported.document);
+				if (!exported.document) return std::nullopt;
+				return PreparedDocument{ std::move(*exported.document), std::move(known) };
 			};
-			UInkSourceRevision committedRevision;
 			if (found == entries.end())
 			{
 				IndexEntry entry;
@@ -686,59 +929,76 @@ namespace Inkeys::Drawing::Draw3
 				entry.sessionId = sessionId;
 				entry.fileGuid = FormatUInkGuid(request.snapshot.fileGuid);
 				entry.workspaceGuid = FormatUInkGuid(request.snapshot.workspaceGuid);
-				entry.relativePath = "files/" + entry.fileGuid + ".uink";
 				entry.bindingMode = BindingModeName(request.target.bindingMode);
 				entry.processLocal = request.target.processLocalIdentity;
 				entry.bindingRevision = request.target.bindingRevision;
 				entry.mutationRevision = request.mutationRevision;
 				entry.slideIds = request.target.slideIds;
-				const std::wstring path = JoinPath(root, WidenAscii(entry.relativePath));
-				if (PathExists(path))
+				// 无索引的旧版固定路径只作为严格校验后的 canonical 来源，绝不原位覆盖。
+				const std::wstring legacyPath = JoinPath(root,
+					WidenAscii("files/" + entry.fileGuid + ".uink"));
+				const auto pending = pendingIndexEntries.find(pendingKey);
+				const IndexEntry* canonicalEntry = &entry;
+				std::wstring canonicalPath = legacyPath;
+				if (pending != pendingIndexEntries.end())
 				{
-					const auto existing = ReadUInkFile(path);
+					if (pending->second.sessionId != sessionId ||
+						pending->second.presentationKey != key ||
+						pending->second.fileGuid != entry.fileGuid ||
+						pending->second.workspaceGuid != entry.workspaceGuid ||
+						!IsSafeRelativePath(pending->second.relativePath,
+							entry.fileGuid, 2))
+						return PresentationPersistenceStatus::SourceChanged;
+					canonicalEntry = &pending->second;
+					canonicalPath = JoinPath(root,
+						WidenAscii(canonicalEntry->relativePath));
+				}
+				std::optional<UInkEditingSession> session;
+				if (PathExists(canonicalPath))
+				{
+					const auto existing = ReadUInkFile(canonicalPath);
 					const auto imported = existing.document
 						? ImportApplicationOwnedPresentation(*existing.document,
-							MakeExpectation(entry, request.target))
+							MakeExpectation(*canonicalEntry, request.target))
 						: draw3::uink::Draw3UInkImportResult{};
-					if (!existing.document || !existing.sourceRevision ||
+					if (existing.status != UInkReadStatus::Complete ||
+						!existing.document || !existing.sourceRevision ||
+						(pending != pendingIndexEntries.end() &&
+							*existing.sourceRevision != canonicalEntry->sourceRevision) ||
 						(existing.provenance.containsInvalidCompleteBlocks ||
 							existing.provenance.contentSequenceRecovered) ||
 						existing.document->header.guid.Bytes() != request.snapshot.fileGuid.Bytes() ||
 						!imported.snapshot)
 						return PresentationPersistenceStatus::SourceChanged;
-					auto outputDocument = buildDocument(&*imported.snapshot);
+					auto outputDocument = buildDocument(
+						&*imported.snapshot, canonicalEntry->slideIds);
 					if (!outputDocument) return PresentationPersistenceStatus::Invalid;
 					auto existingSession = CreateUInkEditingSession(existing,
-						request.target.bindingMode == Bridge::SlideBindingMode::StableSlideId
+						canonicalEntry->bindingMode == "slide-id"
 							? draw3::uink::UInkEditingSource::ApplicationOwned
 							: draw3::uink::UInkEditingSource::ApplicationOwnedPrivateWorkspace);
 					if (!existingSession) return PresentationPersistenceStatus::Invalid;
-					existingSession->document = std::move(*outputDocument);
-					UInkSaveOptions options;
-					options.mode = UInkSaveMode::SaveExistingLogicalFile;
-					const auto saved = SaveUInkFile(path, *existingSession, options);
-					if (saved.status != UInkSaveStatus::Committed || !saved.revision)
-						return saved.status == UInkSaveStatus::SourceChanged
-							? PresentationPersistenceStatus::SourceChanged
-							: PresentationPersistenceStatus::IoError;
-					committedRevision = *saved.revision;
+					existingSession->document = std::move(outputDocument->document);
+					entry.slideIds = std::move(outputDocument->knownSlideIds);
+					session = std::move(*existingSession);
 				}
 				else
 				{
-					auto outputDocument = buildDocument(nullptr);
+					if (pending != pendingIndexEntries.end())
+						return PresentationPersistenceStatus::SourceChanged;
+					auto outputDocument = buildDocument(nullptr, entry.slideIds);
 					if (!outputDocument) return PresentationPersistenceStatus::Invalid;
-					UInkEditingSession session;
-					session.document = std::move(*outputDocument);
-					UInkSaveOptions options;
-					options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-					const auto saved = SaveUInkFile(path, session, options);
-					if (saved.status != UInkSaveStatus::Committed || !saved.revision)
-						return saved.status == UInkSaveStatus::SourceChanged
-							? PresentationPersistenceStatus::SourceChanged
-							: PresentationPersistenceStatus::IoError;
-					committedRevision = *saved.revision;
+					session.emplace();
+					session->document = std::move(outputDocument->document);
+					entry.slideIds = std::move(outputDocument->knownSlideIds);
 				}
-				entry.sourceRevision = committedRevision;
+				const auto saved = SaveVersionedUInk(root, entry.fileGuid, *session);
+				if (saved.status != UInkSaveStatus::Committed || !saved.revision)
+					return saved.status == UInkSaveStatus::SourceChanged
+						? PresentationPersistenceStatus::SourceChanged
+						: PresentationPersistenceStatus::IoError;
+				entry.relativePath = saved.relativePath;
+				entry.sourceRevision = *saved.revision;
 				entries.push_back(std::move(entry));
 			}
 			else
@@ -749,8 +1009,11 @@ namespace Inkeys::Drawing::Draw3
 						found->bindingRevision == request.target.bindingRevision) &&
 					found->slideIds.empty() && request.target.slideIds.size() ==
 						request.target.totalPages;
-				if (found->fileGuid != FormatUInkGuid(request.snapshot.fileGuid) ||
-					found->workspaceGuid != FormatUInkGuid(request.snapshot.workspaceGuid) ||
+				const auto indexedFileGuid = ParseUInkGuid(found->fileGuid);
+				const auto indexedWorkspaceGuid = ParseUInkGuid(found->workspaceGuid);
+				if (!indexedFileGuid || *indexedFileGuid != request.snapshot.fileGuid ||
+					!indexedWorkspaceGuid || *indexedWorkspaceGuid !=
+						request.snapshot.workspaceGuid ||
 					(!bindingUpgrade && (found->bindingMode !=
 						BindingModeName(request.target.bindingMode) ||
 						!CompatibleSlideIdSet(found->slideIds, request.target.slideIds))))
@@ -767,27 +1030,40 @@ namespace Inkeys::Drawing::Draw3
 					!read.sourceRevision || *read.sourceRevision != found->sourceRevision ||
 					!imported.snapshot)
 					return PresentationPersistenceStatus::SourceChanged;
-				auto outputDocument = buildDocument(&*imported.snapshot);
+				auto outputDocument = buildDocument(
+					&*imported.snapshot, found->slideIds);
 				if (!outputDocument) return PresentationPersistenceStatus::Invalid;
+				auto writtenKnown = std::move(outputDocument->knownSlideIds);
 				auto session = CreateUInkEditingSession(read,
 					found->bindingMode == "slide-id"
 						? draw3::uink::UInkEditingSource::ApplicationOwned
 						: draw3::uink::UInkEditingSource::ApplicationOwnedPrivateWorkspace);
 				if (!session) return PresentationPersistenceStatus::Invalid;
-				session->document = std::move(*outputDocument);
-				UInkSaveOptions options;
-				options.mode = UInkSaveMode::SaveExistingLogicalFile;
-				const auto saved = SaveUInkFile(path, *session, options);
+				session->document = std::move(outputDocument->document);
+				// 旧 v1 路径按原样读取；新 v2 文件和索引使用规范 GUID 文本。
+				const std::string canonicalFileGuid =
+					FormatUInkGuid(request.snapshot.fileGuid);
+				const auto saved = SaveVersionedUInk(root, canonicalFileGuid, *session);
 				if (saved.status != UInkSaveStatus::Committed || !saved.revision)
 					return saved.status == UInkSaveStatus::SourceChanged
 						? PresentationPersistenceStatus::SourceChanged
 						: PresentationPersistenceStatus::IoError;
+				found->fileGuid = canonicalFileGuid;
+				found->workspaceGuid = FormatUInkGuid(request.snapshot.workspaceGuid);
+				found->relativePath = saved.relativePath;
 				found->sourceRevision = *saved.revision;
 				found->bindingMode = BindingModeName(request.target.bindingMode);
-				found->slideIds = MergeSlideIds(found->slideIds, request.target.slideIds);
+				found->slideIds = std::move(writtenKnown);
 				found->bindingRevision = request.target.bindingRevision;
 				found->processLocal = request.target.processLocalIdentity;
 				found->mutationRevision = request.mutationRevision;
+			}
+			if (faults.afterUInkCommittedEvent && faults.continueIndexCommitEvent)
+			{
+				if (!SetEvent(static_cast<HANDLE>(faults.afterUInkCommittedEvent)) ||
+					WaitForSingleObject(static_cast<HANDLE>(
+						faults.continueIndexCommitEvent), 30000) != WAIT_OBJECT_0)
+					return PresentationPersistenceStatus::IoError;
 			}
 			if (faults.failIndexCommit || !CommitIndex(root, entries, primaryValid))
 			{
@@ -795,42 +1071,79 @@ namespace Inkeys::Drawing::Draw3
 					[&](const IndexEntry& entry)
 					{ return entry.sourceIdentity == request.target.sourceIdentity; });
 				if (written != entries.end())
-					pendingIndexEntries[request.target.sourceIdentity] = *written;
+					pendingIndexEntries[pendingKey] = *written;
 				return PresentationPersistenceStatus::IoError;
 			}
-			pendingIndexEntries.erase(request.target.sourceIdentity);
+			pendingIndexEntries.erase(pendingKey);
+			// 不按路径回收旧版本：外部进程可在校验后替换目录或文件，误删未知数据。
 			return PresentationPersistenceStatus::Committed;
 		}
 
 		PresentationPersistenceCompletion LoadPresentation(const std::wstring& autoSaveRoot,
 			const std::string& sessionId, const PresentationLoadRequest& request,
-			const std::map<std::string, IndexEntry>& pendingIndexEntries)
+			const PendingEntries& pendingIndexEntries,
+			PresentationStorageTrack& selectedTrack)
 		{
 			PresentationPersistenceCompletion completion;
 			completion.operation = PresentationPersistenceOperation::Load;
 			completion.target = request.target;
+			completion.slotGeneration = request.slotGeneration;
 			completion.loadKind = request.kind;
 			completion.pageGuid = request.pageGuid;
 			completion.intervalOrdinal = request.intervalOrdinal;
-			const std::wstring root = JoinPath(autoSaveRoot, L"presentation");
+			const std::wstring baseRoot = JoinPath(autoSaveRoot, L"presentation");
 			NamedMutexGuard mutex;
-			if (!mutex.Acquire(root))
-			{
-				completion.status = PresentationPersistenceStatus::IoError;
-				return completion;
-			}
-			std::vector<IndexEntry> entries;
-			bool primaryValid = false;
-			if (!LoadIndexWithBackup(root, entries, primaryValid))
+			if (!mutex.Acquire(baseRoot))
 			{
 				completion.status = PresentationPersistenceStatus::IoError;
 				return completion;
 			}
 			const std::string key = FormatPresentationKey(request.target.key);
+			StorageSelection selection;
+			PresentationPersistenceStatus selectFailure = PresentationPersistenceStatus::IoError;
+			if (!SelectStorageTrack(baseRoot, request.target, key, sessionId,
+				pendingIndexEntries, selection, selectFailure))
+			{
+				completion.status = selectFailure;
+				return completion;
+			}
+			selectedTrack = selection.Current().track;
+			completion.storageTrack = selectedTrack;
+			const std::wstring& root = selection.Current().root;
+		auto& entries = selection.Current().entries;
 			auto found = std::find_if(entries.begin(), entries.end(),
 				[&](const IndexEntry& entry)
 				{ return entry.sourceIdentity == request.target.sourceIdentity; });
-			const auto pending = pendingIndexEntries.find(request.target.sourceIdentity);
+			auto pending = pendingIndexEntries.end();
+			for (auto iterator = pendingIndexEntries.begin();
+				iterator != pendingIndexEntries.end(); ++iterator)
+			{
+				const auto& pendingKey = iterator->first;
+				if (std::get<0>(pendingKey) != selectedTrack ||
+					std::get<1>(pendingKey) != request.target.bindingMode ||
+					std::get<2>(pendingKey) != request.target.sourceIdentity ||
+					std::get<5>(pendingKey) != request.slotGeneration) continue;
+				if (found != entries.end())
+				{
+					// v1 GUID 大小写不改变身份；同代 pending 按解析值与旧索引比对。
+					const auto pendingFileGuid =
+						ParseUInkGuid(iterator->second.fileGuid);
+					const auto pendingWorkspaceGuid =
+						ParseUInkGuid(iterator->second.workspaceGuid);
+					const auto indexedFileGuid = ParseUInkGuid(found->fileGuid);
+					const auto indexedWorkspaceGuid = ParseUInkGuid(found->workspaceGuid);
+					if (!pendingFileGuid || !pendingWorkspaceGuid ||
+						!indexedFileGuid || !indexedWorkspaceGuid ||
+						*pendingFileGuid != *indexedFileGuid ||
+						*pendingWorkspaceGuid != *indexedWorkspaceGuid) continue;
+				}
+				if (pending != pendingIndexEntries.end())
+				{
+					completion.status = PresentationPersistenceStatus::IoError;
+					return completion; // 同槽存在多个未发布身份时不得猜测最新。
+				}
+				pending = iterator;
+			}
 			if (found == entries.end())
 			{
 				if (pending == pendingIndexEntries.end() ||
@@ -877,8 +1190,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const auto imported = ImportApplicationOwnedPresentation(*read.document,
 				MakeExpectation(*found, request.target));
-			if (!imported.snapshot || FormatUInkGuid(imported.snapshot->workspaceGuid) !=
-				found->workspaceGuid)
+			const auto indexedWorkspaceGuid = ParseUInkGuid(found->workspaceGuid);
+			if (!imported.snapshot || !indexedWorkspaceGuid ||
+				imported.snapshot->workspaceGuid != *indexedWorkspaceGuid)
 			{
 				completion.status = PresentationPersistenceStatus::Invalid;
 				return completion;
@@ -946,6 +1260,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			completion.mutationRevision = found->mutationRevision;
+			completion.fileGuid = *ParseUInkGuid(found->fileGuid);
 			completion.loadedSnapshot = std::make_shared<
 				const draw3::uink::Draw3UInkExportSnapshot>(std::move(projected));
 			completion.status = PresentationPersistenceStatus::Loaded;
@@ -977,7 +1292,7 @@ namespace Inkeys::Drawing::Draw3
 		std::condition_variable condition;
 		std::deque<WorkItem> queue;
 		std::deque<PresentationPersistenceCompletion> completions;
-		std::map<std::string, IndexEntry> pendingIndexEntries;
+		PendingEntries pendingIndexEntries;
 		std::jthread worker;
 		std::wstring autoSaveRoot;
 		std::wstring autoSaveRootKey;
@@ -1031,12 +1346,22 @@ namespace Inkeys::Drawing::Draw3
 					if (item.operation == PresentationPersistenceOperation::Save)
 					{
 						completion.target = item.save.target;
+						completion.slotGeneration = item.save.slotGeneration;
+						completion.fileGuid = item.save.snapshot.fileGuid;
 						completion.mutationRevision = item.save.mutationRevision;
 						completion.clearPageGuid = item.save.clearPageGuid;
 						completion.clearIntervalOrdinal =
 							item.save.clearIntervalOrdinal;
 					}
-					else completion.target = item.load.target;
+					else
+					{
+						completion.target = item.load.target;
+						completion.slotGeneration = item.load.slotGeneration;
+						// 失败回执保留区间加载身份，避免清屏撤销一直等待。
+						completion.loadKind = item.load.kind;
+						completion.pageGuid = item.load.pageGuid;
+						completion.intervalOrdinal = item.load.intervalOrdinal;
+					}
 					try
 					{
 						// 任一工作项异常都必须转换为终态，不能逃出 jthread 触发 terminate。
@@ -1044,10 +1369,12 @@ namespace Inkeys::Drawing::Draw3
 							throw std::runtime_error("injected presentation worker exception");
 						if (item.operation == PresentationPersistenceOperation::Save)
 							completion.status = SavePresentation(
-								autoSaveRoot, sessionId, item.save, pendingIndexEntries);
+								autoSaveRoot, sessionId, item.save, pendingIndexEntries,
+								completion.storageTrack);
 						else
 							completion = LoadPresentation(
-								autoSaveRoot, sessionId, item.load, pendingIndexEntries);
+								autoSaveRoot, sessionId, item.load, pendingIndexEntries,
+								completion.storageTrack);
 					}
 					catch (...)
 					{
@@ -1129,10 +1456,17 @@ namespace Inkeys::Drawing::Draw3
 			!request.clearPageGuid && iterator != impl_->queue.rend(); ++iterator)
 		{
 			if (iterator->operation == PresentationPersistenceOperation::Save &&
-				iterator->save.target.key == request.target.key)
+				iterator->save.target.key == request.target.key &&
+				iterator->save.clearPageGuid) break; // 同文稿任一轨的 Clear 边界均保持 FIFO。
+			if (iterator->operation == PresentationPersistenceOperation::Save &&
+				iterator->save.target.key == request.target.key &&
+				iterator->save.target.sourceIdentity == request.target.sourceIdentity &&
+				iterator->save.target.bindingMode == request.target.bindingMode &&
+				iterator->save.snapshot.fileGuid == request.snapshot.fileGuid &&
+				iterator->save.snapshot.workspaceGuid == request.snapshot.workspaceGuid &&
+				iterator->save.slotGeneration == request.slotGeneration)
 			{
-				// Clear 边界必须保持 FIFO；普通 tail 只能在最近边界之后合并。
-				if (iterator->save.clearPageGuid) break;
+				// 普通 tail 只在同轨、同文件、同槽代次内合并。
 				iterator->save = std::move(request);
 				++impl_->diagnostics.replacedPending;
 				return PresentationPersistenceSubmitStatus::ReplacedPending;

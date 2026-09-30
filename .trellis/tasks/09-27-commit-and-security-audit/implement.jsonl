@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "Error and lifetime audit"}
+{"file": ".trellis/spec/native/platform-and-resources.md", "reason": "Win7 only KB2670838 target"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Production presenter decision"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/baseline-sources.md", "reason": "Refs and Win7 evidence"}

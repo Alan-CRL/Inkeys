@@ -5,18 +5,26 @@
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../../resource.h"
+#include <d3d11.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
 #include <crtdbg.h>
 #include <wincodec.h>
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <span>
 #include <thread>
+#include <vector>
 #pragma comment(lib,"windowscodecs.lib")
 
 module Inkeys.UI.Bar;
 import :Main;
+import :Scene;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.PageControl;
@@ -37,6 +45,10 @@ namespace Inkeys::UI::Bar
 	{
 		std::array<unsigned char,4> ReadEraserTestPixel(ID2D1DeviceContext* context,ID2D1Bitmap1* source,UINT x,UINT y)
 		{
+			// 离屏几何可能越出目标；断言读取应返回失败像素，不能访问映射外内存。
+			if (!context || !source) return {};
+			const auto size = source->GetPixelSize();
+			if (x >= size.width || y >= size.height) return {};
 			ComPtr<ID2D1Bitmap1> readable;
 			const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,source->GetPixelFormat());
 			if(FAILED(context->CreateBitmap(source->GetPixelSize(),nullptr,0,&props,&readable)) || FAILED(readable->CopyFromBitmap(nullptr,source,nullptr)))return {};
@@ -352,6 +364,10 @@ namespace Inkeys::UI::Bar
 				click(3,true);expect(EraserPreferencesSnapshot().baseSize==Inkeys::Drawing::Draw3::SpeedEraser::BaseSize::Small,"cancelled pointer does not select");
 				click(4);expect(Inkeys::Drawing::Draw3::SpeedEraser::GetAutomaticState(EraserPreferencesSnapshot())==Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::Off && owner.barState.eraserAttribute,"body toggles only the master gate and stays open");
 				click(5);expect(owner.barState.eraserSensitivityOpen && Inkeys::Drawing::Draw3::SpeedEraser::GetAutomaticState(EraserPreferencesSnapshot())==Inkeys::Drawing::Draw3::SpeedEraser::AutomaticState::Off,"arrow opens while auto is off without toggling");
+				expect(Inkeys::Drawing::Draw3::PublishProductCommand(
+					Inkeys::Drawing::Draw3::Bridge::CommandType::Clear) ==
+					Inkeys::Drawing::Draw3::Bridge::CommandResult::NotRunning,
+					"unstarted Draw3 product rejects clear command");
 				click(0);expect(owner.barState.eraserAttribute,"rejected empty clear stays open without changing tool");
 				Inkeys::config.Drawing.Eraser.MouseLeft=0;Inkeys::config.Drawing.Eraser.MouseRight=1;
 				click(4);const auto restored=EraserPreferencesSnapshot();
@@ -615,6 +631,210 @@ namespace Inkeys::UI::Bar
 			}
 			expect(SUCCEEDED(dc->EndDraw()),"SVG states draw");
 			const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"icon-"+std::to_wstring(dpi)+L"-"+std::to_wstring(static_cast<int>(ui*100))+(dark?L"-dark.png":L"-light.png"));expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"icon states PNG");
+		}
+		// 在独立 Scheduler 回调中测生产遮罩提交，TLS 诊断只属于该回调。
+		{
+			const auto output=std::filesystem::path(L"Build/eraser-b/exact-mask");
+			std::filesystem::create_directories(output);
+			std::ofstream samples(output/L"measurements.csv");
+			samples<<"case,block,frames,mean_ms,slices,exact_hit,transform_fallback,parent_create\n";
+			std::atomic_bool finished=false;
+			RenderPipeline::Scheduler scheduler;
+			const bool sinkReady=scheduler.SetDiagnosticsSink([](std::string_view){return true;});
+			const bool started=sinkReady && scheduler.Start();
+			const bool registered=started && scheduler.Register(RenderPipeline::Client::Bar,[&](const RenderPipeline::FrameContext&)
+				{
+					constexpr UINT width=512,height=256;
+					BarUIRendering probe(&owner);
+					BarUiShapeClass shape(0,0,210,90,16,16,2,std::nullopt,RGB(220,220,220));
+					shape.enable.Initialization(true);shape.pct.SetDirect(1);
+					shape.framePct.emplace(0);shape.frameLightPct.emplace(1);
+					shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
+					BarUiFrameLightingSnapshot light{};
+					light.primaryLight=D2D1::Point2F(200,125);
+					light.primaryRadius=480;light.primaryLightVisible=true;
+					light.edgeLightingEnabled=true;
+					probe.SetFrameZoom(1);probe.SetFrameLightingSnapshot(light);
+					auto* diagnostic=RenderPipeline::CurrentFrameDiagnostics();
+					expect(diagnostic!=nullptr,"exact mask probe has production diagnostics");
+					const std::array cases{
+						std::pair{"identity",D2D1::Matrix3x2F::Identity()},
+						std::pair{"integer",D2D1::Matrix3x2F::Translation(32.0F,24.0F)},
+						std::pair{"fractional",D2D1::Matrix3x2F::Translation(32.5F,24.0F)}};
+					for(const auto& [name,transform]:cases)
+					{
+						probe.DiscardDeviceResources();
+						const HRESULT setup=probe.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height);
+						expect(SUCCEEDED(setup),"exact mask probe target setup");
+						if(FAILED(setup))continue;
+						auto* dc=probe.GetDeviceContext();
+						auto drawFrame=[&]()
+							{
+								dc->BeginDraw();dc->SetTransform(transform);
+								dc->Clear(D2D1::ColorF(0.0F,0.0F,0.0F,0.0F));
+								probe.PushFrameDirtyClip(dc,D2D1::RectF(0,0,static_cast<FLOAT>(width),static_cast<FLOAT>(height)));
+								const bool drew=probe.Shape(dc,shape,BarUiInheritClass(100,80));
+								probe.PopFrameDirtyClip(dc);
+								const HRESULT hr=dc->EndDraw();probe.HandleFrameEndDrawResult(hr);
+								return drew && SUCCEEDED(hr);
+							};
+						for(int warm=0;warm<16;++warm)
+							expect(drawFrame(),"exact mask warmup frame draws");
+						for(int block=0;block<11;++block)
+						{
+							const auto beforeSlices=diagnostic?diagnostic->light.slices:0;
+							const auto beforeHits=diagnostic?diagnostic->light.exactHit:0;
+							const auto beforeFallback=diagnostic?diagnostic->light.exactFallback[static_cast<size_t>(RenderPipeline::ExactFallback::Transform)]:0;
+							const auto beforeCreate=diagnostic?diagnostic->light.roundedParentCreate:0;
+							const auto began=std::chrono::steady_clock::now();
+							for(int frame=0;frame<64;++frame)
+								expect(drawFrame(),"exact mask measured frame draws");
+							const double elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-began).count()/64.0;
+							const auto slices=diagnostic?diagnostic->light.slices-beforeSlices:0;
+							const auto hits=diagnostic?diagnostic->light.exactHit-beforeHits:0;
+							const auto fallbacks=diagnostic?diagnostic->light.exactFallback[static_cast<size_t>(RenderPipeline::ExactFallback::Transform)]-beforeFallback:0;
+							expect(slices==64*(name==std::string_view("identity")?1:9),"exact mask production FillOpacityMask count");
+							expect(hits==(name==std::string_view("identity")?64:0) && fallbacks==(name==std::string_view("identity")?0:64),"exact mask transform eligibility");
+							samples<<name<<','<<block<<",64,"<<elapsed<<','
+								<<slices<<','<<hits<<','<<fallbacks<<','
+								<<(diagnostic?diagnostic->light.roundedParentCreate-beforeCreate:0)<<'\n';
+						}
+						ComPtr<ID2D1Bitmap1> readable;
+						const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,probe.GetTargetBitmap()->GetPixelFormat());
+						HRESULT hr=dc->CreateBitmap(D2D1::SizeU(width,height),nullptr,0,&properties,&readable);
+						if(SUCCEEDED(hr))hr=readable->CopyFromBitmap(nullptr,probe.GetTargetBitmap(),nullptr);
+						D2D1_MAPPED_RECT mapped{};if(SUCCEEDED(hr))hr=readable->Map(D2D1_MAP_OPTIONS_READ,&mapped);
+						expect(SUCCEEDED(hr),"exact mask BGRA readback");
+						if(SUCCEEDED(hr))
+						{
+							std::ofstream pixels(output/(std::string(name)+".bgra"),std::ios::binary);
+							for(UINT y=0;y<height;++y)pixels.write(reinterpret_cast<const char*>(mapped.bits+y*mapped.pitch),width*4);
+							expect(pixels.good(),"exact mask BGRA saved");readable->Unmap();
+						}
+					}
+					probe.DiscardDeviceResources();finished.store(true,std::memory_order_release);
+					return RenderPipeline::FrameResult::Idle;
+				});
+			expect(registered,"exact mask diagnostic scheduler starts");
+			if(registered)
+			{
+				const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(60);
+				while(!finished.load(std::memory_order_acquire) && std::chrono::steady_clock::now()<deadline)
+					std::this_thread::sleep_for(std::chrono::milliseconds(2));
+				expect(finished.load(std::memory_order_acquire),"exact mask diagnostic scheduler finishes");
+				scheduler.Unregister(RenderPipeline::Client::Bar);
+			}
+			if(started)scheduler.Stop();
+		}
+		// 生产 Scene 的 Widget 自持图标缓存必须随独立 WARP device epoch 重建。
+		{
+			const auto epochA=RenderPipeline::GetDeviceEpoch();
+			RenderPipeline::DeviceEpoch epochB;
+			epochB.backend=RenderPipeline::Backend::Warp;
+			epochB.generation=epochA.generation+1;
+			const D3D_FEATURE_LEVEL featureLevels[]{D3D_FEATURE_LEVEL_11_0};
+			HRESULT warpHr=D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,
+				D3D11_CREATE_DEVICE_BGRA_SUPPORT,featureLevels,1,D3D11_SDK_VERSION,
+				epochB.d3dDevice.GetAddressOf(),&epochB.featureLevel,
+				epochB.immediateContext.GetAddressOf());
+			if(SUCCEEDED(warpHr))warpHr=epochB.d3dDevice.As(&epochB.dxgiDevice);
+			const auto factory=RenderPipeline::D2DFactory();
+			if(SUCCEEDED(warpHr))warpHr=factory
+				? factory->CreateDevice(epochB.dxgiDevice.Get(),epochB.d2dDevice.GetAddressOf())
+				: E_POINTER;
+			expect(SUCCEEDED(warpHr),"independent WARP/D2D epoch initializes");
+
+			BarSurfaceScene scene;
+			BarSurfaceBackgroundSpec background;
+			background.bounds={0,0,80,80};
+			background.visible=false;
+			std::array<BarSurfaceWidgetSpec,1> widgets{};
+			widgets[0].id=1;
+			widgets[0].bounds={5,5,75,75};
+			widgets[0].iconResource=L"barSelect";
+			widgets[0].iconSizeDip=32;
+			widgets[0].useThemeColors=false;
+			widgets[0].content=RGB(255,255,255);
+			const bool configured=scene.Configure(background,widgets)
+				&& scene.SetBounds({0,0,80,80},1.0F);
+			expect(configured,"production Scene icon configures");
+			const RECT presentation=scene.PresentationBounds();
+			const UINT width=static_cast<UINT>(presentation.right-presentation.left);
+			const UINT height=static_cast<UINT>(presentation.bottom-presentation.top);
+			const auto frameTime=std::chrono::steady_clock::now();
+			auto drawScene=[&](const RenderPipeline::DeviceEpoch& epoch,UINT targetWidth,
+				UINT targetHeight,std::vector<unsigned char>& pixels)
+			{
+				if(FAILED(scene.EnsureDeviceResources(epoch,targetWidth,targetHeight)))return false;
+				auto* context=scene.DeviceContext();
+				if(!context)return false;
+				context->BeginDraw();
+				context->SetTransform(D2D1::Matrix3x2F::Identity());
+				context->Clear(D2D1::ColorF(0,0,0,0));
+				const bool rendered=scene.Render(context,frameTime).rendered;
+				const HRESULT endDraw=context->EndDraw();
+				scene.HandleFrameEndDrawResult(endDraw);
+				if(!rendered || FAILED(endDraw))return false;
+				ComPtr<ID2D1Image> image;
+				context->GetTarget(&image);
+				ComPtr<ID2D1Bitmap1> target;
+				if(!image || FAILED(image.As(&target)))return false;
+				ComPtr<ID2D1Bitmap1> readable;
+				const auto props=D2D1::BitmapProperties1(
+					D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+					target->GetPixelFormat());
+				if(FAILED(context->CreateBitmap(target->GetPixelSize(),nullptr,0,
+					&props,&readable)) || FAILED(readable->CopyFromBitmap(nullptr,target.Get(),nullptr)))
+					return false;
+				D2D1_MAPPED_RECT mapped{};
+				if(FAILED(readable->Map(D2D1_MAP_OPTIONS_READ,&mapped)))return false;
+				pixels.resize(static_cast<size_t>(targetWidth)*targetHeight*4);
+				for(UINT y=0;y<targetHeight;++y)
+					std::memcpy(pixels.data()+static_cast<size_t>(y)*targetWidth*4,
+						mapped.bits+y*mapped.pitch,static_cast<size_t>(targetWidth)*4);
+				readable->Unmap();
+				return true;
+			};
+			if(SUCCEEDED(warpHr) && configured)
+			{
+				std::vector<unsigned char> baseline,afterRelease,preserved,
+					afterImplicitRecreate,afterResize;
+				const bool drewBaseline=drawScene(epochA,width,height,baseline);
+				expect(drewBaseline,"Scene icon renders in first epoch");
+				if(drewBaseline)
+				{
+					bool visible=false;
+					for(size_t pixel=3;pixel<baseline.size();pixel+=4)
+						visible|=baseline[pixel]!=0;
+					expect(visible,"Scene SVG contributes visible pixels");
+					scene.ReleaseDeviceResources();
+					const bool drewAfterRelease=drawScene(epochB,width,height,afterRelease);
+					expect(drewAfterRelease,"Scene icon renders after explicit release on new epoch");
+					if(drewAfterRelease)
+					{
+						expect(afterRelease==baseline,"new epoch retains exact BGRA icon pixels");
+						expect(scene.EnsureDeviceResources(epochA,0,height)==E_INVALIDARG,
+						"invalid target does not replace working epoch");
+						expect(drawScene(epochB,width,height,preserved)
+						&& preserved==afterRelease,"failed setup preserves current Scene pixels");
+						expect(drawScene(epochA,width,height,afterImplicitRecreate)
+						&& afterImplicitRecreate==baseline,
+						"implicit epoch recreation retains exact BGRA icon pixels");
+						expect(drawScene(epochA,width+8,height+8,afterResize),
+						"target resize recreates Scene resources");
+					if(afterResize.size()==static_cast<size_t>(width+8)*(height+8)*4)
+					{
+						bool samePixels=true;
+						for(UINT y=0;y<height && samePixels;++y)
+							samePixels=std::memcmp(afterResize.data()+static_cast<size_t>(y)*(width+8)*4,
+								baseline.data()+static_cast<size_t>(y)*width*4,
+								static_cast<size_t>(width)*4)==0;
+						expect(samePixels,"target resize retains exact visible BGRA pixels");
+					}
+				}
+				}
+			}
+			scene.ReleaseDeviceResources();
 		}
 		failures += Inkeys::UI::PageControl::RunOffscreenTests();
 		owner.spec.DiscardDeviceResources();RenderPipeline::Shutdown();CoUninitialize();

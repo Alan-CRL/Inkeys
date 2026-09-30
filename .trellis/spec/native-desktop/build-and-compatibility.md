@@ -96,3 +96,42 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=<NativePlatform>
 3. 涉及平台宏、SIMD、指针宽度或 Win32 API 时，分别检查 Win32、x64、ARM64，而不是从单一配置外推。
 4. 兼容性结论必须记录实际运行过的 Windows、架构和 Office/WPS 组合；未运行的只写“配置存在”或“项目声明”。
 5. 不提交 `Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 等生成输出。
+
+## Scenario: 首发完整压缩包许可文件
+
+### 1. Scope / Trigger
+
+修改 `.github/workflows/build-windows.yml` 的 Package 完整发布 ZIP 时核此合同；自动更新 ZIP 的内容合同单独维持。
+
+### 2. Signatures
+
+CI `Prepare license notices for release packages` 将仓库根 `LICENSE`、`NOTICE`、`ThirdpartyLicenses/` 放入 `signedUpload/{Inkeys,Inkeys64,InkeysArm64}/`，然后现有三条 `Compress-Archive` 生成完整发布 ZIP。
+
+### 3. Contracts
+
+每个完整发布 ZIP 同一顶层架构目录含 `Inkeys.exe`、`Tips.txt`、`LICENSE`、`NOTICE`、`ThirdpartyLicenses/`。`NOTICE` 指向的本项目与第三方许可文件应随包可读。`InkeysUpdate*.zip` 仍由较早步骤仅封装待替换 EXE，不改变既有更新解析、命名或包内路径。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理 |
+| --- | --- |
+| 源 LICENSE/NOTICE/ThirdpartyLicenses 缺失或复制失败 | `Copy-Item -ErrorAction Stop` 使 CI Package 失败，不静默发缺许可完整包 |
+| 完整 ZIP 漏任一许可文件 | 阻止发布并核实际 ZIP entry；不能只凭仓库里有 NOTICE 判通过 |
+| 更新 ZIP 仍仅有 EXE | 保持原更新合同，不把完整包误送给 updater |
+
+### 5. Good / Base / Bad Cases
+
+- Good：Win32/x64/ARM64 三个完整 ZIP 都含上述许可目录，更新 ZIP 仍为 EXE。
+- Base：仓库根许可文件未改，仅调整打包随附；不修改产品运行或依赖版本。
+- Bad：只在源码仓库保留 NOTICE、发布 ZIP 仅含 EXE/Tips 却标注许可已随附。
+
+### 6. Tests Required
+
+对三架构完整 ZIP 逐项枚举 entry；本地同 `Copy-Item`/`Compress-Archive` 命令的隔离 dry-run 可检查打包语义，真正 CI 产物仍需发布前复核。静态 YAML diff、命令退出码与实际 ZIP 内容分开记。
+
+### 7. Wrong vs Correct
+
+~~~text
+Wrong: InkeysArm64/Inkeys.exe + InkeysArm64/Tips.txt
+Correct: 上述文件 + InkeysArm64/LICENSE + NOTICE + ThirdpartyLicenses/*
+~~~

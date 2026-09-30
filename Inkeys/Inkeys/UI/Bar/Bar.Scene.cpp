@@ -735,6 +735,17 @@ namespace Inkeys::UI::Bar
 			return nullptr;
 		}
 
+		void ResetWidgetDeviceCachesLocked() noexcept
+		{
+			// Scene 的稳定按钮不在 rendererOwner 的注册表中，设备切换时需单独丢弃上传位图。
+			for (auto& widget : widgets)
+			{
+				if (!widget.button) continue;
+				widget.button->icon.ResetCache();
+				widget.button->pngIcon.ResetCache();
+			}
+		}
+
 		bool ApplySharedLightingLocked(
 			const BarSurfaceSharedLighting& lighting,
 			std::uint64_t generation)
@@ -1949,6 +1960,7 @@ namespace Inkeys::UI::Bar
 	{
 		std::lock_guard lock(impl_->mutex);
 		impl_->rendererOwner.spec.DiscardDeviceResources();
+		impl_->ResetWidgetDeviceCachesLocked();
 	}
 
 	void BarSurfaceScene::Invalidate() noexcept
@@ -2025,7 +2037,17 @@ namespace Inkeys::UI::Bar
 		UINT width, UINT height)
 	{
 		std::lock_guard lock(impl_->mutex);
-		return impl_->rendererOwner.spec.EnsureDeviceResources(epoch, width, height);
+		auto& renderer = impl_->rendererOwner.spec;
+		const auto targetSize = renderer.GetTargetBitmapSize();
+		// 与 renderer 的复用条件一致；仅成功重建后丢弃 Scene 自持的上传缓存。
+		const bool needsRecreation = renderer.GetDeviceGeneration() != epoch.generation
+			|| !renderer.GetDeviceContext() || !renderer.GetTargetBitmap()
+			|| !renderer.GetGdiInteropRenderTarget()
+			|| targetSize.width != width || targetSize.height != height;
+		const HRESULT result = renderer.EnsureDeviceResources(epoch, width, height);
+		if (SUCCEEDED(result) && needsRecreation)
+			impl_->ResetWidgetDeviceCachesLocked();
+		return result;
 	}
 
 	ID2D1DeviceContext* BarSurfaceScene::DeviceContext() const noexcept

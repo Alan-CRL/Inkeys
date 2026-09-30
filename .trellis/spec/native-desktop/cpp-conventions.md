@@ -132,6 +132,43 @@ if (monitor.physicalSize.available)
     UsePhysicalScale(monitor.physicalSize.widthCm);
 ~~~
 
+## Scenario: StateMode 跨线程值快照与长手势版本
+
+### 1. Scope / Trigger
+
+Bar 渲染/交互、MouseHook、PPT 接管或配置保存访问全局 StateModeClass 时适用。StateModeSelect、Target 和 Echo 含义不同，不能因当前常一起写就合并。
+
+### 2. Signatures
+
+`GetStateModeSnapshot()` 在已有模式锁内复制完整值；`GetStateModeVersionedSnapshot()` 在同一锁内返回 `{ state, revision }`。`GetPenWidth/Color/EffectivePenOpacity(snapshot)` 和 Bar.Layout 带快照重载只读传入值。长手势最终提交用 `SetPenWidthIfRevision(value, expectedRevision)` 或 `SetShapeModeSelectIfRevision(shape, expectedRevision)`。
+
+### 3. Contracts
+
+- 模式、Pen/Shape 子型、宽色的生产写入在 stateModeTransitionMutex 下进行；Bar 一帧只取一次值快照，交互每消息更新。长手势按下时同锁取状态和 revision，抬手或惯性提交仍须在锁内核版本。
+- 条件 PPT 入口原有 expected revision 不得替换成无条件 setter。重复选中同笔型可更新意图版本，但无视觉变化时不重复发布 Draw3 命令。
+- 锁内仅复制/修改小型状态，不做 SetMemory 磁盘 I/O、Draw3 bridge、HWND/GPU/COM 调用；这些副作用在解锁后由原 owner 执行。无参 getter 各自安全，但连续调用不能代替同一业务/帧快照。
+
+### 4. Validation & Error Matrix
+
+| 场景 | 预期 |
+| --- | --- |
+| PPT 旧回调在用户选笔之后到达 | revision 不匹配，旧结果被拒绝 |
+| FineDial/预设/形状按下后模式切换 | 旧候选取消，最终条件 setter 不写新工具 |
+| Bar 帧中途收到模式切换 | 本帧继续用已取得的同代值，下帧看到新状态 |
+| 模式锁争用或保存文件慢 | 不在锁内等待磁盘/窗口/渲染线程；需另量尾延迟 |
+
+### 5. Good / Base / Bad Cases
+
+Good：同锁获取 mode、Laser、penMode、宽色及 revision，帧/手势只消费该份值；Base：单一低频判断只调用一次 GetStateModeSnapshot；Bad：逐字段 IdtAtomic 后以为跨字段天然一致，或裸写子型再调用模式 setter。
+
+### 6. Tests Required
+
+完整 InkeysRepo.sln Debug|ARM64 与适用 Release 构建，InkeysHeadlessTests --no-window；这些仅证明编译和已覆盖逻辑，不直接执行真 Bar/PPT 交错。允许 GUI 后做快速笔型反向、PPT 迟到接管、FineDial 惯性中切工具、形状预设取消及动画尾延迟，分别记实际结果。
+
+### 7. Wrong vs Correct
+
+Wrong：Bar 先裸写 Pen.ModeSelect，再无条件切 Pen；FineDial 用旧候选调用普通 SetPenWidth。Correct：用锁内 Pen 工具事务；长手势从同锁版本快照取工具与 revision，最终用 IfRevision 入口提交。
+
 ## 最小变更边界
 
 - `【直接确认；AGENTS.md】` 只修改完成任务所需的部分，不做未要求的优化。

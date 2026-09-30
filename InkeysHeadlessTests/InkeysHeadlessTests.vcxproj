@@ -156,6 +156,7 @@
 	<ClCompile Include="bar_bottom_dock_tests.cpp" />
 	<ClCompile Include="draw3_bridge_tests.cpp" />
 	<ClCompile Include="draw3_contact_tests.cpp" />
+	<ClCompile Include="update_security_tests.cpp" />
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="eraser_attribute_tests.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm" />

@@ -32,7 +32,10 @@ import draw3.runtime_metrics;
 int RunHighlighterGeometryTests();
 int RunCanvasNavigationTests();
 int RunDesktopAutoSaveTests();
+int RunDesktopAutoSaveIndexBoundsTests();
 int RunPresentationAutoSaveTests();
+int RunPresentationAutoSaveAtomicChild(const wchar_t* root,
+	const wchar_t* readyEventName, const wchar_t* resumeEventName);
 int RunPresentationUInkRoundTripTests();
 int RunInkDocumentTests();
 int RunInkHistoryTests();
@@ -2996,6 +2999,12 @@ void operator delete[](void* memory, size_t) noexcept
 
 int wmain(int argc, wchar_t* argv[])
 {
+	if (argc == 5 && wcscmp(argv[1], L"--presentation-atomic-child") == 0)
+		return RunPresentationAutoSaveAtomicChild(argv[2], argv[3], argv[4]);
+	if (argc == 2 && wcscmp(argv[1], L"--desktop-autosave-index-bounds-only") == 0)
+		return RunDesktopAutoSaveIndexBoundsTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--desktop-autosave-only") == 0)
+		return RunDesktopAutoSaveTests() == 0 ? 0 : 1;
 	if (argc == 2 && wcscmp(argv[1], L"--uink-presentation-only") == 0)
 		return RunPresentationUInkRoundTripTests() == 0 ? 0 : 1;
 	if (argc == 4 && wcscmp(argv[1], L"--benchmark") == 0)

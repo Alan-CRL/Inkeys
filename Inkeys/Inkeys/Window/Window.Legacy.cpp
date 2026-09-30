@@ -156,8 +156,6 @@ void TopWindow()
 	(void)service.Show(Inkeys::Window::WindowRole::Bar);
 	while (rtsWait && !offSignal)
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	if (!offSignal) CrashHandler::IsSecond(false);
-
 	bool topmostRefreshFailureActive = false;
 	while (!offSignal)
 	{

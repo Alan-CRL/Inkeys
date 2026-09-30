@@ -31,6 +31,35 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		UINT QueryCompatibleWindowDpi(HWND hwnd) noexcept
+		{
+			if (!hwnd) return 96;
+			using GetDpiForWindowFunction = UINT(WINAPI*)(HWND);
+			const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+			const auto getDpiForWindow = user32
+				? reinterpret_cast<GetDpiForWindowFunction>(
+					GetProcAddress(user32, "GetDpiForWindow")) : nullptr;
+			if (getDpiForWindow)
+			{
+				const UINT dpi = getDpiForWindow(hwnd);
+				if (dpi != 0) return dpi;
+			}
+			// Win7 无 GetDpiForWindow：沿用显示快照，再退到系统 GDI DPI。
+			const auto display = Inkeys::Display::GetSnapshot();
+			const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+			if (display)
+				if (const auto* info = display->Find(monitor))
+					if (info->effectiveDpiX != 0) return info->effectiveDpiX;
+			const HDC dc = GetDC(hwnd);
+			if (dc)
+			{
+				const int dpi = GetDeviceCaps(dc, LOGPIXELSX);
+				ReleaseDC(hwnd, dc);
+				if (dpi > 0) return static_cast<UINT>(dpi);
+			}
+			return 96;
+		}
+
 		const char* DisplayTopologyName(Inkeys::Display::DisplayTopology value) noexcept
 		{
 			switch(value)
@@ -87,6 +116,7 @@ namespace Inkeys::Drawing::Draw3
 		PresentationAutoSaveService presentationAutoSave;
 		ContactInputCoordinator input;
 		WindowController window;
+		std::mutex commandPublishMutex;
 		mutable std::mutex eraserDiagnosticsMutex;
 		SpeedEraser::Diagnostics eraserDiagnostics;
 		PenRuntimeDiagnostics penDiagnostics;
@@ -781,7 +811,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			else if (hwnd)
 			{
-				const UINT dpi = GetDpiForWindow(hwnd);
+				const UINT dpi = QueryCompatibleWindowDpi(hwnd);
 				scale.dipPerPixelX = scale.dipPerPixelY = 96.0f / (dpi ? dpi : 96u);
 			}
 			const bool syntheticDisplay=hiddenTestContactInjectionEnabled && startOptions.hiddenTestDisplayScale.has_value();
@@ -932,29 +962,31 @@ namespace Inkeys::Drawing::Draw3
 			window.EnqueueCanvasCommand(std::move(scene));
 		}
 
-		void PumpBridgeCommands()
+		void PumpOneBridgeCommand()
 		{
 			Bridge::Command command;
-			while (bridge.TryConsume(command))
+			if (!bridge.TryConsume(command))
 			{
-				// scene-stamped 命令可能恢复旧场景，排空后必须重新收敛 latest。
-				restoreLatestScene = true;
-				// 先恢复命令发布时的场景，再执行命令；队列排空后才应用 latest state。
-				EnqueueCommandScene(command);
-				CanvasCommand canvas;
-				switch (command.type)
-				{
-				case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
-				case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
-				case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
-				case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
-				case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
-				case Bridge::CommandType::PrepareExitAutoSave:
-					canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
-				default: continue;
-				}
-				window.EnqueueCanvasCommand(canvas);
+				std::fputs("[Draw3.Input] action=command_wake result=failed reason=bridge_empty\n",
+					stderr);
+				return;
 			}
+			// 每个独立 Command marker 只执行一条 scene-stamped 命令。
+			restoreLatestScene = true;
+			EnqueueCommandScene(command);
+			CanvasCommand canvas;
+			switch (command.type)
+			{
+			case Bridge::CommandType::Clear: canvas.type = CanvasCommandType::Clear; break;
+			case Bridge::CommandType::Undo: canvas.type = CanvasCommandType::Undo; break;
+			case Bridge::CommandType::Redo: canvas.type = CanvasCommandType::Redo; break;
+			case Bridge::CommandType::NextPage: canvas.type = CanvasCommandType::NextPage; break;
+			case Bridge::CommandType::PreviousPage: canvas.type = CanvasCommandType::PreviousPage; break;
+			case Bridge::CommandType::PrepareExitAutoSave:
+				canvas.type = CanvasCommandType::PrepareExitAutoSave; break;
+			default: return;
+			}
+			window.EnqueueCanvasCommand(canvas);
 		}
 
 		void PumpPresentationCompletions()
@@ -983,14 +1015,14 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
-		static void ConsumeBridge(void* context)
+		static void ConsumeBridge(void* context, ControlWakeKind kind)
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return;
-			// ControlWake 只在绘制线程消费产品快照、I/O 完成和命令队列。
+			// General 只做状态/完成收敛；Command 恰好对应一条 Bridge 命令。
 			self->PumpDesktopCompletions();
 			self->PumpPresentationCompletions();
-			self->PumpBridgeCommands();
+			if (kind == ControlWakeKind::Command) self->PumpOneBridgeCommand();
 			self->PumpBridgeState();
 		}
 
@@ -998,11 +1030,16 @@ namespace Inkeys::Drawing::Draw3
 			HostStyleCallbacks styleCallbacks, HostStartOptions options,
 			HostRuntimeCallbacks runtimeCallbacks)
 		{
+			// 强制 DWM 已禁用，必须在重置 bridge 或附着外部 HWND 前拒绝。
+			if (options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind ||
+				options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind2) return false;
 			if (running.load(std::memory_order_acquire) ||
 				attachedWindow.load(std::memory_order_acquire) ||
 				attachedPresentationWindow.load(std::memory_order_acquire) ||
 				!hwnd || !presentationHwnd || !IsWindow(hwnd) ||
 				!IsWindow(presentationHwnd)) return false;
+			// 上一代 Stop 尾部可能留下普通唤醒；新 Bridge 不能消费旧 marker。
+			input.ResetForNextRun();
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
 			ResetRuntimeDiagnostics();
@@ -1110,7 +1147,7 @@ namespace Inkeys::Drawing::Draw3
 						if (stylusApproved)
 						{
 							StrokeModelConfiguration configuration =
-								CreateStrokeModelConfiguration(GetDpiForWindow(windowHandle));
+								CreateStrokeModelConfiguration(QueryCompatibleWindowDpi(windowHandle));
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
 								startOptions.enableHiddenTestContactInjection);
 							const DrawingControllerRuntimeObserver observer{
@@ -1286,11 +1323,21 @@ namespace Inkeys::Drawing::Draw3
 				exitAutoSavePrepared = false;
 			}
 			// 关闭产品命令生产端，并把退出保存屏障排在所有已接受命令之后。
-			const bool exitBarrierQueued = bridge.StopWithFinalCommand(
-				Bridge::CommandType::PrepareExitAutoSave);
+			bool exitBarrierQueued = false;
+			{
+				std::scoped_lock lock(commandPublishMutex);
+				if (input.TryReserveCommandWake())
+				{
+					exitBarrierQueued = bridge.StopWithFinalCommand(
+						Bridge::CommandType::PrepareExitAutoSave);
+					if (!exitBarrierQueued) input.CancelReservedCommandWake();
+				}
+				else bridge.Stop(); // 预约失败不可接受一个无法送达的最终屏障。
+			}
 			// 再停止 RTS producer；Shutdown 会为仍活动的 contact 发布终止事件。
 			stylus.Shutdown();
-			input.PublishControlWake();
+			if (exitBarrierQueued) input.PublishReservedCommandWake();
+			else input.PublishControlWake();
 			if (exitBarrierQueued)
 			{
 				std::unique_lock lock(exitAutoSaveMutex);
@@ -1622,9 +1669,12 @@ namespace Inkeys::Drawing::Draw3
 
 	Bridge::CommandResult Host::PublishCommand(Bridge::CommandType command) noexcept
 	{
+		std::scoped_lock lock(impl_->commandPublishMutex);
+		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
 		const Bridge::CommandResult result = impl_->bridge.Publish(command);
 		if (result == Bridge::CommandResult::Accepted)
-			(void)impl_->input.PublishControlWake();
+			impl_->input.PublishReservedCommandWake();
+		else impl_->input.CancelReservedCommandWake();
 		return result;
 	}
 }

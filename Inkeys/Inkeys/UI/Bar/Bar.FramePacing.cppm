@@ -85,7 +85,7 @@ export namespace Inkeys::UI::Bar
 		bool waitableTimerFallback = false;
 	};
 
-	// 动画时钟可在真正 idle 唤醒时重置，避免把休眠时间计入首帧动画。
+	// 动画时钟在 idle 后第一次真正回调重基准，避免把休眠时间计入首帧动画。
 	class FrameAnimationClock
 	{
 	public:
@@ -103,6 +103,11 @@ export namespace Inkeys::UI::Bar
 				std::chrono::duration<double>(now - reckon_).count();
 			reckon_ = now;
 			lastRawElapsedSeconds_ = elapsedSeconds;
+			if (resumeFromIdle_)
+			{
+				resumeFromIdle_ = false;
+				return 0.0;
+			}
 			if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0)
 				return 0.0;
 			return std::clamp(elapsedSeconds, 0.0, 0.05);
@@ -117,11 +122,19 @@ export namespace Inkeys::UI::Bar
 		void Rebase(Clock::time_point now = Clock::now()) noexcept
 		{
 			reckon_ = now;
+			resumeFromIdle_ = false;
+		}
+
+		void SuspendForIdle(Clock::time_point now = Clock::now()) noexcept
+		{
+			reckon_ = now;
+			resumeFromIdle_ = true;
 		}
 
 	private:
 		Clock::time_point reckon_;
 		double lastRawElapsedSeconds_ = 0.0;
+		bool resumeFromIdle_ = false;
 	};
 
 	struct FrameRateAverages

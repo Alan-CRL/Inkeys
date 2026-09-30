@@ -68,20 +68,22 @@ class FrameAnimationClock
 public:
 	double Tick(Clock::time_point now = Clock::now()) noexcept;
 	void Rebase(Clock::time_point now = Clock::now()) noexcept;
+	void SuspendForIdle(Clock::time_point now = Clock::now()) noexcept;
 };
 ~~~
 
 #### 3. Contracts
 
 - 动画时钟使用单调时钟；`Tick()` 对非有限值或负值返回 `0`，并将活动帧 `dt` 限制到 `[0, 0.05]` 秒。
-- 只有渲染线程在无可见工作并从 `BarAtomic::wait.WaitAndConsume()` 真正唤醒后，才在处理下一轮状态前调用 `Rebase()`；退出信号已生效时直接停止。
+- Bar 回调确认无可见工作并返回 `Idle` 前调用 `SuspendForIdle()`；下次实际回调的 `Tick()` 先记录原始间隔用于诊断，但动画 `dt=0`，再下一帧按实际间隔推进。共享 Scheduler 统一等待，不能把其他客户端的回调当成 Bar 动画帧。
+- `BarUiAdvanceAnimation` 对合法活动 Value/Color/Pct 的 `dt=0` 保留当前值、目标和活动状态；显式 `forceReplace`、Once、无效数据及关闭动画的即时替换仍优先。SVG/Word 内容关键帧在动画开启且 `dt=0` 时保留目标，在动画关闭时即使 `dt=0` 也要同帧提交目标，不能留一帧旧内容。
 - present/device 失败的 `WaitUntilGenerationChange()` 退避、普通 60 FPS pacing 和连续动画帧不得 rebase，否则会冻结或缩短仍需推进的动画。
 
 #### 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
 | --- | --- |
-| 长时间 idle 后收到 UI 请求 | 唤醒点 rebase；下一轮只计算唤醒后的实际帧间隔 |
+| 长时间 idle 后收到 UI 请求 | 首次回调 `dt=0` 且目标保持活动；第二次回调正常推进，不把休眠计入动画 |
 | idle wait 因退出信号结束 | 直接停止，不再推进动画 |
 | present/device 失败退避结束 | 不 rebase；保留失败等待期间的动画时间语义 |
 | 时钟差为负或非有限 | 本帧 `dt=0` |
@@ -95,20 +97,19 @@ public:
 
 #### 6. Tests Required
 
-- headless 用可注入时间点模拟活动帧、长时间 idle、`Rebase()` 和唤醒后首帧，断言休眠时长不进入结果。
+- headless 用可注入时间点模拟活动帧、长时间 idle、`SuspendForIdle()` 和唤醒后两帧；Value/Color/Pct 分别断言 `dt=0` 不完成，关闭动画时仍即时完成。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工检查长时间静置后的首次展开、属性面板和粗细预览动画。
 
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：idle 等待结束后沿用等待前的动画时刻。
-wait.WaitAndConsume();
-const double dt = clock.Tick(); // 直接得到 50 ms clamp
-
-// Correct：只在真正 idle 唤醒后重置基准。
-wait.WaitAndConsume();
-if (offSignal) return;
+// Wrong：报告 Idle 时只重基准，下一次回调仍把休眠限幅成 50 ms。
 clock.Rebase();
+return FrameResult::Idle;
+
+// Correct：记录 Idle 边界，让首次真正回调消耗休眠时间而不推进动画。
+clock.SuspendForIdle();
+return FrameResult::Idle;
 ~~~
 
 ### UI3 共享串行调度器合同
@@ -350,6 +351,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - Main Bar 必须先迁移到共享 Bar 按钮入口，随后 PageControl 才能接入。若 Main Bar 仍使用 RenderLoop/Interaction 局部算法而 PageControl 单独使用新 helper，仍是两套实现。
 - 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 三枚实例跨 `PptCompact/WhiteboardExpanded` 稳定，Middle 只切 `Hidden/PptCompact`。
 - `BarSurfaceScene` 可以保存每窗稳定 `BarButtonClass`、PPT-only DragHandle 和 `hovered/pressed` id 路由，但不得定义另一套视觉算法或分页专用数值。标准按钮的内部位置、hover/press、内容转换、draw、圆角 hit 和动画值必须调用上述 Bar 入口；Scene 只把共享结果映射到本窗 damage/present。
+- Scene 的稳定 Widget 自持 SVG/PNG D2D 上传位图，不属于 `rendererOwner.svgMap/pngMap/barButtonSet`。显式 `ReleaseDeviceResources()` 与成功的 epoch/target 隐式重建都须清理 Widget 位图；创建失败须保留旧 renderer 和旧缓存。只改变内容、尺寸、颜色或设备域时重建相应位图，普通帧不得反复失效。
 - PPT 外框：Bottom `165x42.5 DIP`，Middle `42.5x165 DIP`；Drag slot `10 DIP`、Arrow `32.5x32.5 DIP`、Page 横向 `70x32.5 DIP`/竖向 `32.5x70 DIP`，两侧外边距与真实按钮间距 `5 DIP`。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 外框 `230x80 DIP`，三枚标准 `70x70 DIP` `2x2` 按钮。
 - 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `BarButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
 - `DrawBarButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveBarButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
@@ -887,6 +889,7 @@ RECT ResolveBarBottomDockCapacityEnvelope(
 - 水平捕获只在竖向已 `BottomDocked`、主栏展开且联合外框中心进入 `BarBottomDockCenterThresholdDip = 40 DIP` 时生效；边界值允许捕获，严格越界立即脱离。竖向继续使用 `BarBottomDockThresholdDip = 20 DIP`；折叠或竖向脱离必须结束水平捕获。
 - 横纵 mode、phase、elastic offset、直接窗口位移和显示环境共用 `bottomDockTransitionSerial` 的同一发布事务。交互线程必须先计算完整两轴候选，再发布偶数稳定 serial；渲染线程不得提交只包含一轴新状态的帧。 deferred barrier 与屏幕抓手 X/Y 也必须在偶数 serial 发布前写入；首次抓取、普通采样和 DPI/显示屏障遵守同一顺序，不能在稳定 serial 之外补写其中一轴或 barrier。
 - 输入、折叠和白板请求的写者必须先通过 `BeginBarBottomDockTransition` CAS 独占奇数 serial，禁止多个 `fetch_add` 写者重叠形成伪稳定偶数。渲染自动写回必须用 `TryBeginBarBottomDockFrameTransition` 同时满足未抓取且 serial 仍等于本帧已消费版本；资格失效就丢弃候选并保留 dirty 重试，不得替旧位图升级到更新输入的 serial。在 PrepareLightingAndDemand 之前作废候选时，必须调用 `BarPresentDecision::RequireVisualRetry()` 同时补 visual demand 和 full dirty；仅 RetainForRetry/RequireFullDirtyRetry 不会令 ShouldPresent 为真，不能保证静止后的正确帧上屏。写事务仅包含短暂本地/原子更新，不跨 D2D 呈现或外部锁。
+- 这两组偶数/奇数版本快照（期望 `bottomDockTransitionSerial` 与已呈现 `bottomDockPresentedMappingSerial`）的写者在领取奇数后、写 relaxed 载荷前设置 release fence，写完后以 release 发布偶数。读者先 acquire 读偶数，读取全部 relaxed 载荷后设置 acquire fence，再重读版本并仅在相等时接受。新增读取点或写者必须保持这个配对；只靠末尾 acquire load 不能保证载荷先于校验。运行期形态变化仍用原有 deferred barrier 处理，不能把未来 barrier 当成成功呈现。
 - 按住时 Free/Dragging 阶段由输入 tracker 拥有，渲染不得强制写成 Stable 或程序化居中；不一致的折叠/居中候选需等完整新 tuple。显示位置的拖动所有权也读取同帧 `bottomDockDragActive`，不另读实时 direct phase 拼接帧状态。
 - 松手发布 `bottomDockDragActive=false` 后，`directWindowDragPhase` 仍可能短暂为 `Dragging`。只要仍有待吸收直移，渲染线程在取得稳定 release tuple 后必须返回 Retry；下一帧先把 phase 原子切到 `Absorbing`，在 `directWindowDragMutex` 内吸收 translation、重基准成功快照并执行 `PositionUpdate()`，然后才允许释放态布局和既有换向动画。
 - 交互重基准、直接 `SetWindowPos` 失败回滚和下一手势起点只读取最后成功呈现快照。水平 tracker 的输入必须是指针驱动、未形变的主体中心；形态呈现 barrier 只能确认窗口位移已提交，不得用视觉主体中心改写抓取偏移或 tracker 基准。水平捕获与脱离首帧必须从已显示像素播入恢复平移，不能把逻辑锚点切换表现为 HWND 跳变。

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-entry side effects and owner review"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "Module and state quality"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Production input side effects"}
+{"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Known cross-thread risk"}

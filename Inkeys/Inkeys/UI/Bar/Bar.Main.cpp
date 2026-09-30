@@ -216,7 +216,7 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	{
 		barButtonSet.StateUpdate();
 		// 非画笔模式的 GetPenWidth 为 0，收起过程中保留最后一次有效的粗细文字。
-		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+		if (GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen)
 			barState.ThicknessDisplayUpdate();
 	}
 

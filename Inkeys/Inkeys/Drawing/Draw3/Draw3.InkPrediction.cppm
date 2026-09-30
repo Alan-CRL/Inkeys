@@ -625,15 +625,20 @@ export namespace Inkeys::Drawing::Draw3
 	// 重建当前 L0 的真实尾部和预测点。
 	void RebuildL0DrawPoints(ActiveStroke& stroke, double liveTipDurationSeconds,
 		StrokeShape shape, int width, int height);
+	struct LiveRasterSubmission
+	{
+		RECT dirty = {};
+		bool succeeded = true; // 空几何是合法 no-op，提交失败必须与空 dirty 区分。
+	};
 	// 将保护窗口之前的稳定前缀提交到 L1。
-	RECT CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
+	LiveRasterSubmission CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
 	// 橡皮不保留 L0，直接把新增真实点（含单击圆点）提交到 L1。
-	RECT CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
+	LiveRasterSubmission CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
 	// 清空并重绘当前 L0 实时内容。
-	void DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
+	bool DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer, bool clearLayer = true);
 }
 

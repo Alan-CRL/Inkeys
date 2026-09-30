@@ -7,6 +7,7 @@
 #include <atomic>
 #include <compare>
 #include <cstddef>
+#include <d3d11.h>
 #include <mutex>
 #include <optional>
 #include <windows.h>
@@ -31,6 +32,26 @@ import Inkeys.Drawing.Draw3.window_control;
 
 export namespace Inkeys::Drawing::Draw3
 {
+	// 显式无窗口诊断入口：用生产 Laser 烘干路径验证真实 WARP Map 失败。
+	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
+		ID3D11Buffer* unwritableInkBuffer) noexcept;
+	// 无 HWND、无磁盘：同一生产 Exit 捕获入口验证停放 Desktop 的源身份。
+	int RunParkedDesktopExitAutoSaveTest() noexcept;
+	// 无 HWND、无磁盘：生产 PPT 快照构造验证活动/停放槽的 retained 身份。
+	int RunParkedPresentationRetainedSaveTest() noexcept;
+	// 无 HWND、无磁盘：生产 PPT 加载 materialize/安装/再保存的 retained 身份。
+	int RunPresentationLoadedRetainedInstallTest() noexcept;
+	// 无 HWND、无磁盘：PPT 冷加载期间新旧 SlideID 拓扑双向投影。
+	int RunPendingPresentationTopologyLoadTest() noexcept;
+	// 无 HWND 策略红测：旧 page-index 与新 Stable 绝不能自动按 ordinal 共用槽。
+	int RunFallbackStableControllerIsolationProbe() noexcept;
+	// 无 HWND：通过 Run 共用的 PPT CPU 槽切换事务验证 fallback/Stable 双轨隔离。
+	int RunFallbackStableControllerLaneProbe() noexcept;
+	// 无 HWND：PPT Current Load 一次瞬态失败后的同目标有界重试。
+	int RunPresentationCurrentLoadRetryProbe() noexcept;
+	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
+	int RunDraw3ControlFenceProductionProbe() noexcept;
+
 	struct DrawingControllerRuntimeObserver
 	{
 		void* context = nullptr;
@@ -44,7 +65,7 @@ export namespace Inkeys::Drawing::Draw3
 		void (*strokeCompleted)(void*, Bridge::CompletedStrokeKind) = nullptr;
 		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t,
 			const Bridge::PresentationReadyIdentity*) = nullptr;
-		void (*controlWake)(void*) = nullptr;
+		void (*controlWake)(void*, ControlWakeKind) = nullptr;
 		bool (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
 			draw3::uink::Draw3UInkExportSnapshot&&) = nullptr;
 		bool (*desktopLoadRequested)(void*, draw3::uink::UInkGuid) = nullptr;
@@ -104,7 +125,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 运行 RTS 多 contact 绘制循环；完全空闲时阻塞在零自旋信号量。
 		void Run();
 	private:
-		void CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
+		bool CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
 		bool PresentFrame(RECT dirty, bool presentFull);
 
 		ContactInputCoordinator& input_;

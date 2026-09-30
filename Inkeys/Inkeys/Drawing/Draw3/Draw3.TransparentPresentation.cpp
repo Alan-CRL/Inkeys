@@ -5,6 +5,8 @@
 #endif
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <cwchar>
 #include <dcomp.h>
@@ -13,6 +15,8 @@
 #include <dwmapi.h>
 #include <dxgi1_2.h>
 #include <dxgi1_3.h>
+#include <exception>
+#include <initializer_list>
 #include <iostream>
 #include <vector>
 #include <windows.h>
@@ -89,8 +93,6 @@ namespace Inkeys::Drawing::Draw3
 
 		constexpr TransparentPresentMode kTransparentPresentModes[] = {
 			TransparentPresentMode::DirectCompositionVisualTree,
-			TransparentPresentMode::DwmBlurBehind2,
-			TransparentPresentMode::DwmBlurBehind,
 			TransparentPresentMode::UlwDirtyRect
 		};
 
@@ -128,6 +130,54 @@ namespace Inkeys::Drawing::Draw3
 			if (layered) setMask |= WS_EX_LAYERED;
 			else clearMask |= WS_EX_LAYERED;
 			return callbacks.setExtendedStyleFlags(callbacks.context, setMask, clearMask);
+		}
+
+		struct UlwDirtyCopyResult
+		{
+			bool allZeroAlpha = true;
+			bool premultipliedAlphaValid = true;
+			bool fullFrameAllZeroAlpha = false;
+		};
+
+		template <typename AfterCopy>
+		UlwDirtyCopyResult CopyAndInspectUlwDirtyRows(const BYTE* mapped, size_t rowPitch,
+			BYTE* dib, int dibWidth, int dibHeight, RECT dirty, bool presentFull,
+			AfterCopy afterCopy)
+		{
+			const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
+			const size_t copyBytes = pixelCount * 4;
+			const BYTE* source = mapped + static_cast<size_t>(dirty.top) * rowPitch +
+				static_cast<size_t>(dirty.left) * 4;
+			BYTE* destination = dib + static_cast<size_t>(dirty.top) *
+				static_cast<size_t>(dibWidth) * 4 + static_cast<size_t>(dirty.left) * 4;
+			for (LONG y = dirty.top; y < dirty.bottom; ++y)
+			{
+				const size_t row = static_cast<size_t>(y - dirty.top);
+				const BYTE* sourceRow = source + row * rowPitch;
+				BYTE* destinationRow = destination + row * static_cast<size_t>(dibWidth) * 4;
+				std::memcpy(destinationRow, sourceRow, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
+			}
+			afterCopy(); // 生产路径仍在检查 DIB 前 Unmap staging texture。
+
+			UlwDirtyCopyResult result;
+			// 检查提交给 ULW 的 BGRA 像素，防止 alpha 或预乘语义回归。
+			for (LONG y = dirty.top; y < dirty.bottom; ++y)
+			{
+				const BYTE* row = dib + static_cast<size_t>(y) *
+					static_cast<size_t>(dibWidth) * 4;
+				for (LONG x = dirty.left; x < dirty.right; ++x)
+				{
+					const BYTE* pixel = row + static_cast<size_t>(x) * 4;
+					const BYTE alpha = pixel[3];
+					result.allZeroAlpha = result.allZeroAlpha && alpha == 0;
+					result.premultipliedAlphaValid = result.premultipliedAlphaValid &&
+						pixel[0] <= alpha && pixel[1] <= alpha && pixel[2] <= alpha;
+				}
+			}
+			result.fullFrameAllZeroAlpha = presentFull && result.allZeroAlpha &&
+				dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
+				dirty.bottom == dibHeight;
+			return result;
 		}
 
 		struct UlwDirtyRectPresenter
@@ -272,44 +322,13 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
 				if (FAILED(context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
-
-				const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
-				const size_t copyBytes = pixelCount * 4;
-				const BYTE* source = static_cast<const BYTE*>(mapped.pData) +
-					static_cast<size_t>(dirty.top) * mapped.RowPitch + static_cast<size_t>(dirty.left) * 4;
-				BYTE* destination = static_cast<BYTE*>(dibBits) +
-					static_cast<size_t>(dirty.top) * static_cast<size_t>(dibWidth) * 4 + static_cast<size_t>(dirty.left) * 4;
-				for (LONG y = dirty.top; y < dirty.bottom; ++y)
-				{
-					const size_t row = static_cast<size_t>(y - dirty.top);
-					const BYTE* sourceRow = source + row * mapped.RowPitch;
-					BYTE* destinationRow = destination + row * static_cast<size_t>(dibWidth) * 4;
-					std::memcpy(destinationRow, sourceRow, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
-				}
-				context->Unmap(stagingTexture.Get(), 0);
-
-				// 验收路径直接检查提交给 ULW 的 BGRA 像素，防止 alpha 或预乘语义回归。
-				bool allZeroAlpha = true;
-				bool premultipliedAlphaValid = true;
-				const BYTE* dib = static_cast<const BYTE*>(dibBits);
-				for (LONG y = dirty.top; y < dirty.bottom; ++y)
-				{
-					const BYTE* row = dib + static_cast<size_t>(y) *
-						static_cast<size_t>(dibWidth) * 4;
-					for (LONG x = dirty.left; x < dirty.right; ++x)
-					{
-						const BYTE* pixel = row + static_cast<size_t>(x) * 4;
-						const BYTE alpha = pixel[3];
-						allZeroAlpha = allZeroAlpha && alpha == 0;
-						premultipliedAlphaValid = premultipliedAlphaValid &&
-							pixel[0] <= alpha && pixel[1] <= alpha && pixel[2] <= alpha;
-					}
-				}
-				lastObservation.premultipliedAlphaValid = premultipliedAlphaValid;
-				lastObservation.updatedRegionAllZeroAlpha = allZeroAlpha;
-				lastObservation.fullFrameAllZeroAlpha = presentFull && allZeroAlpha &&
-					dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
-					dirty.bottom == dibHeight;
+				const UlwDirtyCopyResult copyResult = CopyAndInspectUlwDirtyRows(
+					static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
+					static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
+					[&] { context->Unmap(stagingTexture.Get(), 0); });
+				lastObservation.premultipliedAlphaValid = copyResult.premultipliedAlphaValid;
+				lastObservation.updatedRegionAllZeroAlpha = copyResult.allZeroAlpha;
+				lastObservation.fullFrameAllZeroAlpha = copyResult.fullFrameAllZeroAlpha;
 
 				RECT windowRect = {};
 				if (!GetWindowRect(window, &windowRect)) return false;
@@ -670,6 +689,15 @@ namespace Inkeys::Drawing::Draw3
 		bool TryInitialize(TransparentPresentMode mode)
 		{
 			ReleaseAttempt(); // 每次尝试前清掉上一条路径留下的交换链和 presenter。
+			// 自动、强制及恢复共用此入口；首发禁用两种历史 DWM 透明模式。
+			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
+			{
+				std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
+					<< " is disabled." << std::endl;
+				return false;
+			}
+			// Win7 无 DComp 时直接尝试 ULW，避免先改动主 HWND 的创建期样式合同。
+			if (IsDirectCompositionMode(mode) && !IsDirectCompositionApiAvailable()) return false;
 			activeMode = mode;
 			std::cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			if (!ConfigureWindow(mode))
@@ -974,5 +1002,145 @@ namespace Inkeys::Drawing::Draw3
 	IDXGISwapChain1* TransparentPresentationController::SwapChain() const
 	{
 		return impl_->swapChain.Get();
+	}
+
+	int RunUlwDirtyCopyBenchmark() noexcept
+	{
+		try
+		{
+			enum class PixelPattern { Mixed, Transparent, Half, InvalidAlpha };
+			struct Scenario
+			{
+				const char* name;
+				int width;
+				int height;
+				RECT dirty;
+				bool presentFull;
+				PixelPattern pattern;
+				bool allZeroAlpha;
+				bool premultipliedAlphaValid;
+				bool fullFrameAllZeroAlpha;
+			};
+			constexpr Scenario scenarios[] = {
+				{ "full_mixed", 1920, 1080, { 0, 0, 1920, 1080 }, true,
+					PixelPattern::Mixed, false, true, false },
+				{ "partial_256", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::Mixed, false, true, false },
+				{ "narrow_long", 1920, 1080, { 951, 0, 959, 1080 }, false,
+					PixelPattern::Mixed, false, true, false },
+				{ "full_transparent", 1920, 1080, { 0, 0, 1920, 1080 }, true,
+					PixelPattern::Transparent, true, true, true },
+				{ "partial_transparent", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::Transparent, true, true, false },
+				{ "partial_half", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::Half, false, true, false },
+				{ "partial_invalid_alpha", 1920, 1080, { 480, 304, 736, 560 }, false,
+					PixelPattern::InvalidAlpha, false, false, false },
+			};
+			constexpr int warmupBlocks = 16;
+			constexpr int measuredBlocks = 128;
+			LARGE_INTEGER frequency = {};
+			if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return 1;
+			std::fprintf(stdout,
+				"UlwDirtyCopyBenchmark variant=separate_dib_scan metric=cpu_copy_plus_alpha_scan sample=single_call warmup_blocks=%d measured_blocks=%d qpc_frequency=%lld\n",
+				warmupBlocks, measuredBlocks, static_cast<long long>(frequency.QuadPart));
+
+			for (const Scenario& scenario : scenarios)
+			{
+				const size_t dibStride = static_cast<size_t>(scenario.width) * 4;
+				const size_t rowPitch = dibStride + 64; // 固定 padding 覆盖 staging RowPitch 与 DIB stride 不同的情况。
+				std::vector<BYTE> source(rowPitch * static_cast<size_t>(scenario.height), 0xC7);
+				std::vector<BYTE> initial(dibStride * static_cast<size_t>(scenario.height));
+				std::vector<BYTE> expected(initial.size());
+				std::vector<BYTE> dib(initial.size());
+				for (size_t offset = 0; offset < initial.size(); offset += 4)
+				{
+					initial[offset] = 0xA5;
+					initial[offset + 1] = 0x5A;
+					initial[offset + 2] = 0x3C;
+					initial[offset + 3] = 0; // 脏区外故意留无效预乘色，发现误扫全 DIB。
+				}
+				for (int y = 0; y < scenario.height; ++y)
+				{
+					for (int x = 0; x < scenario.width; ++x)
+					{
+						BYTE* pixel = source.data() + static_cast<size_t>(y) * rowPitch +
+							static_cast<size_t>(x) * 4;
+						const BYTE alpha = scenario.pattern == PixelPattern::Transparent ? 0 :
+							(scenario.pattern == PixelPattern::Mixed ? static_cast<BYTE>(64 + (x + y) % 192) : 128);
+						pixel[3] = alpha;
+						pixel[0] = static_cast<BYTE>((x * 13 + y * 7) % (alpha + 1));
+						pixel[1] = static_cast<BYTE>((x * 5 + y * 11) % (alpha + 1));
+						pixel[2] = static_cast<BYTE>((x * 3 + y * 17) % (alpha + 1));
+						if (scenario.pattern == PixelPattern::InvalidAlpha &&
+							x == (scenario.dirty.left + scenario.dirty.right) / 2 &&
+							y == (scenario.dirty.top + scenario.dirty.bottom) / 2)
+							pixel[0] = 129;
+					}
+				}
+				expected = initial;
+				const size_t copyBytes = static_cast<size_t>(scenario.dirty.right - scenario.dirty.left) * 4;
+				for (LONG y = scenario.dirty.top; y < scenario.dirty.bottom; ++y)
+				{
+					const size_t sourceOffset = static_cast<size_t>(y) * rowPitch +
+						static_cast<size_t>(scenario.dirty.left) * 4;
+					const size_t destinationOffset = static_cast<size_t>(y) * dibStride +
+						static_cast<size_t>(scenario.dirty.left) * 4;
+					std::memcpy(expected.data() + destinationOffset, source.data() + sourceOffset, copyBytes);
+				}
+
+				for (int block = 0; block < warmupBlocks + measuredBlocks; ++block)
+				{
+					std::copy(initial.begin(), initial.end(), dib.begin());
+					UlwDirtyCopyResult result;
+					ULONG64 startCycles = 0;
+					ULONG64 stopCycles = 0;
+					bool cyclesAvailable = QueryThreadCycleTime(GetCurrentThread(), &startCycles) != FALSE;
+					LARGE_INTEGER start = {};
+					LARGE_INTEGER stop = {};
+					if (!QueryPerformanceCounter(&start)) return 1;
+					result = CopyAndInspectUlwDirtyRows(source.data(), rowPitch, dib.data(),
+						scenario.width, scenario.height, scenario.dirty, scenario.presentFull, [] {});
+					if (!QueryPerformanceCounter(&stop)) return 1;
+					cyclesAvailable = cyclesAvailable &&
+						QueryThreadCycleTime(GetCurrentThread(), &stopCycles) != FALSE;
+					if (result.allZeroAlpha != scenario.allZeroAlpha ||
+						result.premultipliedAlphaValid != scenario.premultipliedAlphaValid ||
+						result.fullFrameAllZeroAlpha != scenario.fullFrameAllZeroAlpha ||
+						std::memcmp(dib.data(), expected.data(), dib.size()) != 0)
+					{
+						std::fprintf(stderr, "UlwDirtyCopyBenchmark mismatch scenario=%s block=%d\n",
+							scenario.name, block);
+						return 1;
+					}
+					if (block < warmupBlocks) continue;
+					std::uint64_t hash = 14695981039346656037ull;
+					for (BYTE value : dib) hash = (hash ^ value) * 1099511628211ull;
+					for (BYTE flag : { static_cast<BYTE>(result.allZeroAlpha),
+						static_cast<BYTE>(result.premultipliedAlphaValid),
+						static_cast<BYTE>(result.fullFrameAllZeroAlpha) })
+						hash = (hash ^ flag) * 1099511628211ull;
+					std::fprintf(stdout,
+						"UlwDirtyCopyBenchmark scenario=%s block=%d iterations=1 qpc_ticks=%lld cycles_available=%d thread_cycles=%llu hash=%016llx all_zero=%d premul_valid=%d full_zero=%d\n",
+						scenario.name, block - warmupBlocks + 1,
+						static_cast<long long>(stop.QuadPart - start.QuadPart), cyclesAvailable ? 1 : 0,
+						static_cast<unsigned long long>(cyclesAvailable ? stopCycles - startCycles : 0),
+						static_cast<unsigned long long>(hash), result.allZeroAlpha ? 1 : 0,
+						result.premultipliedAlphaValid ? 1 : 0, result.fullFrameAllZeroAlpha ? 1 : 0);
+				}
+			}
+			std::fflush(stdout);
+			return 0;
+		}
+		catch (const std::exception& error)
+		{
+			std::fprintf(stderr, "UlwDirtyCopyBenchmark exception: %s\n", error.what());
+			return 2;
+		}
+		catch (...)
+		{
+			std::fputs("UlwDirtyCopyBenchmark unknown exception\n", stderr);
+			return 2;
+		}
 	}
 }

@@ -460,6 +460,7 @@
     <ClInclude Include="IdtImage.h" />
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
+    <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtStart.h" />
@@ -471,6 +472,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
     <ClInclude Include="Inkeys\Business\PptSession.h" />
@@ -478,6 +481,7 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
+    <ClInclude Include="Inkeys\Net\UpdatePathSafety.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />
     <ClInclude Include="Launch\IdtLaunchState.h" />
     <ClInclude Include="resource.h" />
@@ -913,6 +917,7 @@
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
+    <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
@@ -1077,6 +1082,8 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
     <ClCompile Include="Inkeys\Business\PptSession.cpp" />

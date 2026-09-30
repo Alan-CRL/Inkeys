@@ -79,7 +79,8 @@ public:
 	bool Advance(BarUISetClass& owner, double dt, double speed, double zoom, UINT dpi,
 		RECT workArea, POINT origin, double rigidX, double rigidY,
 		const BarUiTimelineClass* parentTimeline = nullptr,
-		bool dragPlacementLocked = false);
+		bool dragPlacementLocked = false,
+		std::optional<bool> eraserSelected = std::nullopt);
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false);
@@ -618,6 +619,7 @@ public:
 			snapshot.transitionSerial =
 				bottomDockPresentedTransitionSerial.load(memory_order_relaxed);
 			snapshot.serial = serialBefore;
+			std::atomic_thread_fence(std::memory_order_acquire);
 			if (bottomDockPresentedMappingSerial.load(memory_order_acquire)
 				== serialBefore) return snapshot;
 		}
@@ -796,6 +798,7 @@ protected:
 		directWindowPresentedTranslationY.store(
 			directTranslation.y, memory_order_relaxed);
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_acq_rel);
+		std::atomic_thread_fence(std::memory_order_release);
 		bottomDockPresentedDirectTranslationX.store(
 			directTranslation.x, memory_order_relaxed);
 		bottomDockPresentedDirectTranslationY.store(

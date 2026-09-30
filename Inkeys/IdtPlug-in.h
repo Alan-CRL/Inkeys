@@ -57,6 +57,7 @@ bool IsPowerPointRunAsAdminSet();
 // 其他插件
 
 void StartDesktopDrawpadBlocker();
+bool LaunchVerifiedDesktopDrawpadBlocker(bool runAsAdmin);
 
 class ShortcutAssistantClass
 {

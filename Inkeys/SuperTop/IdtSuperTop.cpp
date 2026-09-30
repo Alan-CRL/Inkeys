@@ -11,6 +11,7 @@ import Inkeys.UI.MessageBox;
 
 #include <tlhelp32.h>
 #include <stdexcept>
+#include <cstdio>
 
 #ifdef MessageBox
 #undef MessageBox
@@ -47,6 +48,43 @@ bool hasUiAccess(HANDLE tok) {
 	BOOL ui_access;
 	GetTokenInformation(tok, TokenUIAccess, &ui_access, sizeof(ui_access), &ret_len);  // 获取 UI 访问权限信息
 	return ui_access;  // 返回 UI 访问权限的值
+}
+
+int RunSuperTopTokenFailureTest() noexcept
+{
+	// 测试进程仅冒用自己的复制令牌；无效目标强制走设置失败后的撤销路径。
+	HANDLE existing = nullptr;
+	if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &existing))
+	{
+		CloseHandle(existing);
+		std::fputs("[SuperTopToken] FAIL: test thread already impersonates\n", stderr);
+		return 1;
+	}
+	if (GetLastError() != ERROR_NO_TOKEN) return 1;
+	HANDLE rawProcessToken = nullptr;
+	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_QUERY,
+		&rawProcessToken)) return 1;
+	IdtHandle processToken(rawProcessToken);
+	HANDLE rawImpersonation = nullptr;
+	if (!DuplicateTokenEx(processToken.get(), TOKEN_IMPERSONATE | TOKEN_QUERY,
+		nullptr, SecurityImpersonation, TokenImpersonation,
+		&rawImpersonation)) return 1;
+	IdtHandle impersonation(rawImpersonation);
+	IdtHandle invalidTarget;
+	const bool updated = UiAccess::RunToken::SetUiAccessToken(
+		impersonation, invalidTarget);
+	HANDLE after = nullptr;
+	const bool stillImpersonating = OpenThreadToken(GetCurrentThread(),
+		TOKEN_QUERY, TRUE, &after) != FALSE;
+	const DWORD afterError = stillImpersonating ? ERROR_SUCCESS : GetLastError();
+	if (after) CloseHandle(after);
+	if (updated || stillImpersonating || afterError != ERROR_NO_TOKEN)
+	{
+		std::fputs("[SuperTopToken] FAIL: failed UIAccess update retained thread token\n", stderr);
+		return 1;
+	}
+	std::fputs("[SuperTopToken] PASS: failed UIAccess update reverted thread token\n", stderr);
+	return 0;
 }
 
 void SurperTopMain(wstring lpCmdLine)
@@ -186,10 +224,12 @@ void SurperTopMain(wstring lpCmdLine)
 		if (!UiAccess::GetToken::GetWinlogonToken(winlogonToken))
 		{
 			cout << "GetWinlogonToken Fail" << endl;
+			return;
 		}
 		if (!UiAccess::RunToken::SetUiAccessToken(winlogonToken, inkeysToken))
 		{
 			cout << "SetUiAccessToken Fail" << endl;
+			return;
 		}
 	}
 

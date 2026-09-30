@@ -68,7 +68,7 @@ Draw3 输入/橡皮控制台诊断仅在显式开关启用时发布：显示/EDI
 
 - 进程级退出入口：`SetOffSignal(int)`。
 - C++20 线程入口：接收并观察 `std::stop_token`，或观察全局 `offSignal`。
-- 共享 UI3 调度器：发布退出标志时同步调用 `RenderScheduler::Scheduler::WakeForStop()`。
+- 共享 UI3 调度器：发布退出标志时同步调用 `Inkeys::UI::RenderPipeline::WakeForStop()`。
 
 ### 3. Contracts
 
@@ -111,49 +111,54 @@ while (!offSignal && RequestUpdateMagWindow == 0)
 
 ### 1. Scope / Trigger
 
-关闭或重启由 UI 命令触发时，必须在后台清理前同步移除全部用户可见窗口。
+正常 Close/Restart 意图（Bar、设置页直接按钮、窗口服务）进入本合同；UEF 的 `offSignalInterop=3` 使用独立报告/确认/重启仲裁，只共享监督器原语，不把报告阶段当作正常 `SetOffSignal(1/2)`。带确认框的动作只有用户 OK 后才算已确认；取消不能启动监督器。
 
 ### 2. Signatures
 
-- 窗口服务：`bool Inkeys::Window::Service::HideAllUserWindows()`。
-- 进程入口：`CloseProgram()`、`RestartProgram()`。
+- `SetOffSignal(int signal)`：`1=Close`、`2=Restart`；只接受首次 `offSignalInterop` CAS。
+- `CloseProgram()`、`RestartProgram()`：统一发布退场意图，再以 `Window::Service::RequestHideAllUserWindows()` 请求 owner thread 隐藏。
+- `Shutdown::ArmShutdownSupervisor(Intent, deadlineMilliseconds=15000)`：外部精确旧进程 HANDLE 与进程内 Win32 截止兜底；`Window::Service::BeginShutdown()` 是显示请求的单调门。
+- 设置页 `QueueClose()`/`QueueRestart()`：直接调用全局入口；确认式 `ConfirmRestart` 仍在用户 OK 后执行。
 
 ### 3. Contracts
 
-- Window Service 分别在 Overlay 与 Setting owner thread 批量执行 `SW_HIDE`，不销毁 HWND；`DisplayObserver` 不属于用户界面。
-- 关闭/重启入口先调用批量隐藏，再执行 CrashHandler 清理和 `SetOffSignal()`。
-- 隐藏失败不得阻断退出信号发布。
+- 首次 `SetOffSignal` 先 CAS 决定 Close/Restart，再关 Window Service 的新显示门，并在任何业务清理、磁盘 I/O、jthread join 或 COM 等待前调用 `ArmShutdownSupervisor`。仅 `Armed/FallbackArmed` 证明独立 15 秒截止已建立；外部 helper 与进程内 `CreateThread` 均失败时返回 `Failed` 并记录错误，不能保证强退。随后发布 `offSignal`、排入隐藏命令并唤醒 UI3 scheduler。迟到显示/恢复请求不得重新显出画布；隐藏 owner 不参与已建立监督器的运行。
+- 隐藏与清理尽力按原顺序完成，正常退出仍排空已接受保存请求；`Armed/FallbackArmed` 的截止到达时按用户决定无条件结束旧进程。已 durable 的 UInk/索引保留最后有效点，未 durable 请求可丢失，不能把强退写作保存成功。
+- 重启 helper 只针对握手验证的当前可信 EXE 和旧进程 HANDLE；旧进程真正 signaled 后才尝试拉起一次。外部 helper 未建立而 `FallbackArmed` 时，本进程截止兜底仍会结束旧进程但不保证新进程启动；双重建立失败时没有 15 秒保证，应保留 `Failed` 日志与发布风险。重复退场请求不能多发 helper；确认框取消不占意图槽。
+- 设置页直接关闭/重启按钮先执行本地 `Setting::Hide()` 的短状态锁与隐藏命令入队，再在同一渲染回调直接调用全局退场入口；不能排在配置写盘、ShellExecute 或其它业务 FIFO 后才尝试监督。`Hide()` 本身若停住，尚未进入 `SetOffSignal`，不是已受 15 秒保护的阶段。先前排队的写入继续由正常退出排空，已建立监督且超过 15 秒时按上述 durability 边界处理。
 
 ### 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
 | --- | --- |
-| 窗口不存在或已经隐藏 | 视为可继续，其他窗口仍被隐藏 |
-| 任一 owner thread 隐藏失败 | 关闭/重启仍继续清理并发布退出信号 |
-| 调用来自任一窗口 owner thread | 该组直接执行，另一组同步投递，不发生自锁 |
+| owner thread / Draw3 / 设置业务 worker 卡住 | 首次正式请求在同步业务等待前尝试 Arm；成功时独立 15 秒退场，不能等隐藏回执后才 Arm |
+| helper 创建或握手失败，但自身线程已建立 | `FallbackArmed` 截止强退旧进程；Restart 不能假报新进程成功 |
+| helper 与自身截止线程均创建失败 | `Failed` 记录错误，无可证明的 15 秒保证，仍尝试正常退出；列发布风险 |
+| 正常提前结束 | 监督器只观察旧进程退出，不误拉起 Close；Restart 最多一个新实例 |
+| 旧进程死亡延迟超过 5 秒 | Restart helper 继续等精确旧 HANDLE，不并行新旧实例 |
+| 用户取消确认 / 重复点击 | 取消零退场；首次 CAS 决定意图，后续请求不改写 |
+| 持久化 I/O 卡住超过 15 秒且监督已建立 | 强制结束，旧 durable 恢复点仍有效，待保存请求明确未验证/可能丢失 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：用户点击关闭后所有界面立即消失，后台线程随后有序退出。
-- Base：部分窗口尚未创建或本来不可见，调用仍可完成。
-- Bad：先执行耗时清理或等待线程，再隐藏窗口。
+- Good：设置页直接 Exit 的业务 worker 已被旧写盘卡住，`Hide()` 正常返回且监督建立后旧 PID 至迟约 15 秒退场，双 Drawpad 不在退场期重新显示。
+- Base：正常保存/线程关闭较快，完整排空后自然退出；确认式 Restart 取消后继续运行。
+- Bad：先把 Close/Restart 投递到同一可能被 I/O 卡住的 FIFO，或先同步等 Window owner 隐藏，再启动 15 秒倒计时；用 `TerminateProcess` 代替未处理异常捕获测试。
 
 ### 6. Tests Required
 
-- Window Service 测试先显示全部用户窗口，调用批量隐藏后断言 HWND 仍有效且均不可见。
-- 完整构建验证关闭入口能够导入 Window 模块，不形成模块依赖环。
+- 独立进程故障注入：正常 Close、Restart、helper 创建/握手失败、旧死亡延迟、重复请求、真实 `RaiseException` 的自动/手动报告、报告卡住与磁盘满，分别核旧 PID、dump/report、唯一新 PID、15 秒边界。`TerminateProcess` 只测监督，不冒充 UEF。
+- 自建隔离 GUI/config 测设置页直接关闭/重启在旧 worker 卡住时的点击到退场；双画布 HWND/capture、设置窗口和单实例交接分别验收。无可靠 GUI 命中或 Win7 设备时记需要人工，不以无窗口套件代替。
+- 最终完整 `InkeysRepo.sln Debug|ARM64` 与 Release 可得架构、相关 Headless/PptCOM；本机编译不推导 Win7 SP1+仅 KB2670838 运行通过。
 
 ### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：清理耗时会让界面看起来卡住。
-CrashHandler::Shutdown();
-SetOffSignal(1);
+// Wrong：已确认的关闭按钮仍排在可能永久阻塞的设置业务 I/O 后面。
+void QueueClose() { QueueBusiness({ SettingBusinessKind::Close }); }
 
-// Correct：视觉退出先完成，隐藏结果不改变退出控制流。
-(void)Inkeys::Window::GetService().HideAllUserWindows();
-CrashHandler::Shutdown();
-SetOffSignal(1);
+// Correct：不等业务 worker 即尝试建立监督；既有命令在正常清理中排空。
+void QueueClose() { ::CloseProgram(); }
 ~~~
 
 ## D2D/GDI present 借用资源事务合同
@@ -224,3 +229,10 @@ const HRESULT endDrawResult = context->EndDraw();
 - detached workers：墨迹、Bar、PPT 等处可见 detached thread，且部分配有 `offSignal`/状态等待。需确认官方退出保证，影响涉及捕获对象、全局资源和快速退出的修改边界。
 - 主退出等待：`IdtMain.cpp` 对选定线程状态有等待与超时逻辑；本轮没有运行验证，不能称为死锁或遗漏。
 - 日志政策：代码已有 7 天/10 MiB 清理行为，但它是否是正式保留要求、是否需要隐私/导出/崩溃上传约束仍待维护者确认。
+
+## 首发更新与崩溃处理边界（2026-09-27）
+
+- 首次发布沿用用户确认的 HTTP/HTTPS 更新策略：先尝试 HTTPS，失败时允许同源 HTTP 回退，合法显式端口（1..65535）保留；HTTPS 链仍须验证证书与主机名。每一跳验证 scheme、host、路径与跳转次数，远端 `representation`、安装器相对路径、哈希格式和 JSON/ZIP 大小在文件操作前校验。HTTP 与同源哈希不提供发布者身份认证，现阶段作为用户明确接受的剩余风险记录，不把它误记为已修复的安全边界。ZIP 只能向本次创建的 staging 目标提取指定 EXE，不能将归档 entry 名直接交给落盘 API，也不能递归清理未知用户文件。
+- 从同一远端 JSON 取得的 MD5/SHA-256 只证明下载结果与该 JSON 一致，不构成发布者身份认证。当前源侧签名/发布公钥和 CDN host allowlist 仍未定；实现运输与路径修补不自动升级为完整供应链验收。启动 update.json 的两阶段解析和旧程序替换还须验证磁盘满/权限错误下旧 EXE 保持可启动。
+- `SetUnhandledExceptionFilter` 的返回值是**前一个**过滤器，可合法为 `nullptr`；是否已安装必须另记。`CloseProgram`/`RestartProgram` 正常清理前无条件恢复前一个值（包括空值）。崩溃路径只保证尽力写 dump/报告与尝试拉起，不在受损进程里同步走业务保存或无限等待；进程内第二次异常不得重复创建子进程，`-CrashTry` 的启动循环要有有限抑制窗口。
+- Desktop/PPT 已提交 UInk 与索引的可读性、自动重启创建新进程、新进程完成初始化、画面恢复分别记录。当前跨进程可见墨迹恢复仍受功能 gate 约束，不因存在自动保存就宣称已支持。真实未处理异常与外部强杀分别验收，Win7 SP1+仅 KB2670838 的结果不得由 Win11 ARM64 编译推导。

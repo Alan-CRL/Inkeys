@@ -73,6 +73,80 @@ bool UnOccupyFile(HANDLE* hFile)
 	return false;
 }
 
+namespace
+{
+	constexpr LONGLONG kMaxLegacyConfigFileBytes = 16LL * 1024 * 1024;
+	mutex g_legacySettingWriteMutex;
+
+	bool ReadBoundedConfigFileSize(HANDLE file, DWORD& size) noexcept
+	{
+		LARGE_INTEGER length = {};
+		// 读取前拒绝空文件、截断到 DWORD 的长度和异常大的本地 JSON。
+		if (!GetFileSizeEx(file, &length) || length.QuadPart <= 0 ||
+			length.QuadPart > kMaxLegacyConfigFileBytes ||
+			length.QuadPart > MAXDWORD) return false;
+		size = static_cast<DWORD>(length.QuadPart);
+		return true;
+	}
+
+	bool ExistingConfigValidOrAbsent(const wstring& path) noexcept
+	{
+		const DWORD attributes = GetFileAttributesW(path.c_str());
+		if (attributes == INVALID_FILE_ATTRIBUTES)
+		{
+			const DWORD error = GetLastError();
+			return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+		}
+		if (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+			return false;
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+			nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE) return false;
+		try
+		{
+			DWORD size = 0;
+			if (!ReadBoundedConfigFileSize(file, size))
+			{
+				CloseHandle(file);
+				return false;
+			}
+			string content(size, '\0');
+			DWORD read = 0;
+			const bool readOk = ReadFile(file, content.data(), size, &read, nullptr) &&
+				read == size;
+			CloseHandle(file);
+			file = INVALID_HANDLE_VALUE;
+			if (!readOk) return false;
+			if (content.compare(0, 3, "\xEF\xBB\xBF") == 0)
+				content.erase(0, 3);
+			istringstream stream(content);
+			Json::CharReaderBuilder reader;
+			reader["stackLimit"] = 64;
+			Json::Value root;
+			string error;
+			return Json::parseFromStream(reader, stream, &root, &error) &&
+				root.isObject();
+		}
+		catch (...)
+		{
+			// 解析或分配失败必须保留磁盘原件。
+			if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+			return false;
+		}
+	}
+
+	bool ParseConfigJson(Json::CharReaderBuilder& reader, istream& stream,
+		Json::Value& root, string& error) noexcept
+	{
+		try
+		{
+			return Json::parseFromStream(reader, stream, &root, &error) &&
+				root.isObject();
+		}
+		catch (...) { return false; }
+	}
+}
+
 SetListStruct setlist;
 shared_mutex setlistUpdateMutex;
 Json::Value setlistVal;
@@ -85,14 +159,12 @@ bool ReadSetting()
 		return false;
 	}
 
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(fileHandle, &fileSize))
+	DWORD dwSize = 0;
+	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
-
-	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -112,10 +184,14 @@ bool ReadSetting()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
+	readerBuilder["stackLimit"] = 64;
+	Json::Value parsedSetting;
 	string jsonErr;
 
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &setlistVal, &jsonErr))
+	if (ParseConfigJson(readerBuilder, jsonContentStream, parsedSetting, jsonErr))
 	{
+		// 仅在根对象完整验证后更新权威配置树，坏文件不能污染后续写入。
+		setlistVal = std::move(parsedSetting);
 		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isInt())
 			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
 		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
@@ -146,7 +222,12 @@ bool ReadSetting()
 			}
 
 			if (setlistVal["Regular"].isMember("TeachingSafetyMode") && setlistVal["Regular"]["TeachingSafetyMode"].isInt())
-				setlist.regularSetting.teachingSafetyMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
+			{
+				const int requestedMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
+				// 设置页只有四个合法选项；损坏配置不能作为 vector 下标传播。
+				if (requestedMode >= 0 && requestedMode < 4)
+					setlist.regularSetting.teachingSafetyMode = requestedMode;
+			}
 		}
 
 		if (setlistVal.isMember("PaintDevice") && setlistVal["PaintDevice"].isInt())
@@ -331,14 +412,12 @@ bool ReadSettingMini()
 		return false;
 	}
 
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(fileHandle, &fileSize))
+	DWORD dwSize = 0;
+	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
-
-	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -358,10 +437,11 @@ bool ReadSettingMini()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
+	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
 	{
 		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
 		{
@@ -530,32 +610,14 @@ string CaptureSettingJson()
 
 bool WriteSettingJson(const string& jsonContent)
 {
-	HANDLE fileHandle = NULL;
-	if (!OccupyFileForWrite(&fileHandle, globalPath + L"opt\\deploy.json"))
-	{
-		UnOccupyFile(&fileHandle);
+	scoped_lock writeLock(g_legacySettingWriteMutex);
+	if (jsonContent.empty() || jsonContent.size() >
+		static_cast<size_t>(kMaxLegacyConfigFileBytes))
 		return false;
-	}
-	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	if (!SetEndOfFile(fileHandle))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	DWORD bytesWritten = 0;
-	if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size())
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	UnOccupyFile(&fileHandle);
-	return true;
+	const filesystem::path path = filesystem::path(globalPath) / L"opt" / L"deploy.json";
+	// 已存在但不可读/不可解析时保留原件；首次缺文件才允许写默认值。
+	if (!ExistingConfigValidOrAbsent(path.wstring())) return false;
+	return Inkeys::PptSettings::WriteAtomically(path, jsonContent);
 }
 
 bool WriteSetting()
@@ -573,14 +635,12 @@ bool PptComReadSetting()
 		return false;
 	}
 
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(fileHandle, &fileSize))
+	DWORD dwSize = 0;
+	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
-
-	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -600,10 +660,11 @@ bool PptComReadSetting()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
+	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
 	{
 		if (updateVal.isMember("ShowLoadingScreen") && updateVal["ShowLoadingScreen"].isBool())
 			pptComSetlist.showLoadingScreen = updateVal["ShowLoadingScreen"].asBool();
@@ -655,14 +716,12 @@ bool PptComReadSettingPositionOnly()
 		return false;
 	}
 
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(fileHandle, &fileSize))
+	DWORD dwSize = 0;
+	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
-
-	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -682,10 +741,11 @@ bool PptComReadSettingPositionOnly()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
+	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
 	{
 		if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
 			pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
@@ -783,14 +843,18 @@ bool WritePptComSettingJson(const string& jsonContent)
 {
 	// 文件提交串行，但 UI 捕获和读取保存基线不等待磁盘 I/O。
 	std::scoped_lock writeLock(pptSettingsWriteMutex);
+	const filesystem::path path = filesystem::path(globalPath) /
+		L"opt" / L"pptcom_configuration.json";
+	if (!ExistingConfigValidOrAbsent(path.wstring())) return false;
 	Inkeys::PptSettings::WriteJournal::PreparedWrite prepared;
 	{
 		std::scoped_lock lock(pptSettingsMutex);
 		if (!pptSettingsJournal.Prepare(jsonContent, prepared)) return false;
 	}
 	if (prepared.revision == 0) return true;
-	const bool succeeded = Inkeys::PptSettings::WriteAtomically(
-		filesystem::path(globalPath) / L"opt" / L"pptcom_configuration.json", prepared.content);
+	const bool succeeded = !prepared.content.empty() &&
+		prepared.content.size() <= static_cast<size_t>(kMaxLegacyConfigFileBytes) &&
+		Inkeys::PptSettings::WriteAtomically(path, prepared.content);
 	{
 		std::scoped_lock lock(pptSettingsMutex);
 		pptSettingsJournal.Complete(prepared, succeeded);
@@ -1002,14 +1066,12 @@ bool GetMemory()
 		return false;
 	}
 
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(fileHandle, &fileSize))
+	DWORD dwSize = 0;
+	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
 	{
 		UnOccupyFile(&fileHandle);
 		return false;
 	}
-
-	DWORD dwSize = static_cast<DWORD>(fileSize.QuadPart);
 	string jsonContent = string(dwSize, '\0');
 
 	DWORD bytesRead = 0;
@@ -1029,10 +1091,11 @@ bool GetMemory()
 
 	istringstream jsonContentStream(jsonContent);
 	Json::CharReaderBuilder readerBuilder;
+	readerBuilder["stackLimit"] = 64;
 	Json::Value updateVal;
 	string jsonErr;
 
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
 	{
 		// Draw
 		if (updateVal.isMember("Draw") && updateVal["Draw"].isObject())
@@ -1087,6 +1150,7 @@ bool GetMemory()
 }
 bool SetMemory()
 {
+	const StateModeClass stateMode = GetStateModeSnapshot();
 	Json::Value updateVal;
 	{
 		// Draw

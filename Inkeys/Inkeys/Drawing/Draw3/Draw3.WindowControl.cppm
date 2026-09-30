@@ -142,6 +142,8 @@ export namespace Inkeys::Drawing::Draw3
 		void CommitSize(int width, int height);
 		// 按真实按键发布顺序消费低频画布命令。
 		bool TryDequeueCanvasCommand(CanvasCommand& command);
+		// 控制 marker 边界只读查询；不弹出队列，也不触碰 HWND。
+		bool HasPendingCanvasCommand() noexcept;
 		// 消费一次窗口缩放请求并返回目标尺寸。
 		bool ConsumeResizeRequest(WindowSize& size);
 		// 消费一次全画布呈现请求。

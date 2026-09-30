@@ -60,6 +60,7 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 ## 设备与线程
 
 - Draw3 独立创建 D3D11.1 hardware-first/WARP-fallback 设备、context、DXGI factory、交换链和呈现资源，禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
+- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 ULW 的 `FLIP_SEQUENTIAL` 独立，不能为修一项而替换交换链模式。
 - UI 线程只向 bridge 发布不可变快照和命令；renderer、document、history、RTS 消费只在 Draw3 绘制线程进行。
 - 进程只允许一套 Draw3 Host、绘制线程和 `RealTimeStylusInput` producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出顺序固定为停止命令生产、停止 RTS、唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
 - `DrawingControllerRuntimeObserver::drawingActivityChanged` 只按全部 physical contact 的聚合值发布 `0→1/1→0`；每个命令消费边界与帧末复核，避免 Down 后提前 `continue` 漏报。Host 通过独立 `HostRuntimeCallbacks` 注入产品通知、再次去重，并在 Run 正常返回、异常或 stop/join 后补发一次 false；Draw3 核心不得直接依赖 Bar。
@@ -68,14 +69,14 @@ Correct：`Debug 保留调试信息 + /MT + undef _DEBUG + Release Vcpkg libs ->
 
 - 主 Drawpad 固定不带选择语义的 `WS_EX_TRANSPARENT`；只有 `ShouldPreconfigureNoRedirectionBitmap()` 能力探测通过时才在创建前预置 `WS_EX_NOREDIRECTIONBITMAP`，随后按主 presenter 模式切换 `WS_EX_NOREDIRECTIONBITMAP`/`WS_EX_LAYERED`。
 - `DrawpadPresentation` 出生即固定包含 `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，运行期不得清除或借其承载输入。
-- DComp 清除 `WS_EX_LAYERED`；DWM 清除 `WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP`；ULW 设置 `WS_EX_LAYERED` 并清除 `WS_EX_NOREDIRECTIONBITMAP`。
+- DComp 清除 `WS_EX_LAYERED`；ULW 设置 `WS_EX_LAYERED` 并清除 `WS_EX_NOREDIRECTIONBITMAP`。两种 DWM 实现属于禁用的历史路径。
 - ULW 必须提交 premultiplied-alpha、top-down 32-bit DIB 和 dirty rect；未绘制像素的 alpha 为零，禁止整窗不透明更新遮挡下层窗口。
 
-Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp target 的主 HWND 可能拒绝后续清除该位（`ERROR_INVALID_PARAMETER`）。Window Service 必须写后读取并核对真实样式。若产品 DComp 启动失败，必须在首帧显示和 Setting 初始化前停止 Draw3 与整条隐藏窗口链，再顺序重建 legacy-compatible 主 Drawpad 及其 presentation-only 前置表面；新 Host 禁用 DComp 并从 DWM2 -> DWM -> ULW 继续。两个主 Drawpad generation 不得同时存在，但同一 generation 必须包含长期待命的 presentation-only 前置表面。
+Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp target 的主 HWND 可能拒绝后续清除该位（`ERROR_INVALID_PARAMETER`）。Window Service 必须写后读取并核对真实样式。若产品 DComp 启动失败，必须在首帧显示和 Setting 初始化前停止 Draw3 与整条隐藏窗口链，再顺序重建 legacy-compatible 主 Drawpad 及其 presentation-only 前置表面；新 Host 禁用 DComp 并只尝试 ULW。两个主 Drawpad generation 不得同时存在，但同一 generation 必须包含长期待命的 presentation-only 前置表面。
 
 ## 功能边界
 
-桥接工具固定为 Pen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、Whiteboard 自动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
+桥接工具固定为 Pen、HardPen、Highlighter、FixedEraser、SpeedEraser、Laser、SolidLine、DashedLine、OutlineRectangle、FilledRectangle。清屏、撤销/重做、页面切换、Desktop UInk 自动保存及当前进程内的 PPT UInk 自动保存/恢复已接入；手动保存、Whiteboard 自动保存、跨进程 PPT 恢复/冲突交互、超级恢复、自动直线拉直和输入测试仍保留 `Unsupported/NotReady` 空接口并隐藏产品入口。保留 Draw3 速度橡皮、固定橡皮及 `SpeedEraserOcController`；仅删除旧 Draw2 压感橡皮实现和设置入口。
 
 ## Scenario: Desktop UInk 自动保存事务与退出屏障
 
@@ -172,25 +173,25 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 - `ShouldQueuePresentationSave(mutationRevision, queuedRevision)` 与 `ShouldEvictPresentationSlot(hasCommittedFile, mutationRevision, queuedRevision, committedRevision, loadPending)`。
 - `StablePresentationTopologyChanged(previous, next) -> bool`；只比较同一 StableSlideId 文稿的有序 `slideIds`。
 - `ImportApplicationOwnedPresentation(document, expectation) -> Draw3UInkImportResult`。
-- 产品布局：`<AutoSave>/presentation/index.json(.bak)` 与 `<AutoSave>/presentation/files/<fileGuid>.uink`。
+- 产品布局：历史 Base 轨仍用 `<AutoSave>/presentation/index.json(.bak)`；同一 source/key 的另一 binding 按 `slide-id/` 或 `page-index/` 独立 sidecar 轨保存。每轨的 schema v2 index 指向 `files/<fileGuid>_<transactionGuid>.uink` 版本文件；旧 schema v1 `files/<fileGuid>.uink` 仍按原路径只读/续存，不删除未知文件。
 
 ### 3. Contracts
 
-- 绘制线程持有 Desktop singleton、Whiteboard singleton和 `map<PresentationKey, DocumentSlot>`；每个 slot 自带 document、history、当前页、页 runtime 与持久化 revision。切换必须 park/swap 整个 slot，然后执行完整 GPU reset/replay，不得共用或并行搬运容器。
+- 绘制线程持有 Desktop singleton、Whiteboard singleton 和按 `(PresentationKey, SlideBindingMode)` 分 lane 的 Presentation slot；每个 slot 自带 document、history、当前页、页 runtime、非零 slot generation 与持久化 revision。切换必须先准备目标 lane，再 park/swap 整个 slot 并执行完整 GPU reset/replay；旧 page-index 与新 StableSlideId 不共用 document、页面或 fileGuid。
 - managed/native 必须把 key、binding、topology、page 和 `targetRevision` 作为一个共享不可变 target 事务发布。产品命令固定发布时的 workspace/target；Host 按 FIFO 执行 `captured scene -> command`，排空后再应用 latest state。ready 使用固定大小 identity，并同时匹配 workspace、key、binding revision、page/SlideID 和 target revision；仅页码相同不算 ready。
 - `StableSlideId` 以规范化绝对路径作 source identity，provider 仅作诊断；无稳定路径时的 process-local identity 必须含 Inkeys PID、Office provider/PID/HWND、binding revision 和名称，防止同一 Office 进程重用未保存名称。
-- 稳定模式写 `workspaceType=2 + hostId=PresentationKey + Canvas.slideId`；同一 SlideID 集合允许任意重排，新增页创建空 Canvas，已删除页以 retained marker 保留在同一 UInk/index，重新出现时按 SlideID 恢复。页码退化写 Inkeys 私有 `workspaceType=128 + inkeysBindingMode=page-index`，不伪造 SlideID；只有 strict importer 验证通过的应用自产文件才可解除 fallback/save-as 保护并原地覆盖。
+- 稳定模式写 `workspaceType=2 + hostId=PresentationKey + Canvas.slideId`；同一 SlideID 集合允许任意重排，新增页创建空 Canvas，已删除页以 retained marker 保留在同一 UInk/index，重新出现时按 SlideID 恢复。页码退化写 Inkeys 私有 `workspaceType=128 + inkeysBindingMode=page-index`，不伪造 SlideID；strict importer 必须验证旧索引与 UInk 的身份和 revision；旧 page-index 数据保持其 lane 与物理版本，新 StableSlideId 会话建立独立 lane/sidecar，不按 ordinal 搬运旧墨迹。
 - `SetPresentationTarget` 复用 active 或 parked/warm slot 时，必须先恢复并读取该 slot 的旧 target，再比较新旧有序 `slideIds`、按旧 SlideID 映射 Canvas，成功后才写入新 target；不得在 swap 前用新 target 覆盖 destination。普通翻页中的 `pageIndex`、当前 `slideId`、binding/target revision 变化不是拓扑变化，不能因此重建 document/runtime。
 - dirty 是“自上次成功提交后发生修改”，每个 Presentation 文档只比较一组 `mutationRevision/queuedRevision/committedRevision`；Stored stroke、成功 Undo/Redo、有历史的 Clear、viewport 修改推进 mutation，Laser/预测/纯 Present 不推进。每次保存都是全部页快照，所以文档级 revision 足以让任一脏页在离页时触发，同时保证无变化零写。不得用 `currentPageHasContent` 作 PPT 保存门控；因此恢复旧文件后 Clear 再立即退出也必须覆盖为全量空 Canvas 集合。
 - PPT 持久化当前始终启用，不读取 Desktop 的 `saveSetting.enable`。未来 PPT 保存开关必须使用独立设置和迁移策略；Host 仍以同一 AutoSave root 启动 PPT worker。
 - 同一 Canvas 的 canonical UInk `content[]` 是 Stroke/Clear 有序日志。普通 save 保留当前 `intervalOrdinal` 之前的 sealed prefix，只替换 active tail；Clear save 先写入当前 tail，再追加独占 undo group 的 Type 6，并把 ordinal 加一。`A,Clear,B,Clear,C` 当前投影只物化 C。
 - `clearPageGuid + clearIntervalOrdinal` 必须同时出现并匹配请求中的页；Boundary 请求严格 FIFO、不可 latest-wins。普通 Tail 只可替换同 key 最近 Boundary 之后的普通 Tail。completion 也携带两字段，controller 仅在当前 ordinal 等于 `sealed+1` 时释放对应 fallback，防止第一次 Clear 的迟到 completion 释放第二次 Clear 内容。
 - 保存触发在 Clear boundary、同 PPT 换页、A/B/workspace 离开和正常退出屏障。快照包含全部页（包括空页）；同一 key 的普通 Tail 使用 latest-wins，Boundary 始终逐项 durable。最终 scene-stamped 屏障位于前序 Clear/Undo/Redo 之后并扫描 active 与全部 parked slot；worker 无超时排空所有已接受请求。显式失败保留旧文件和页级 fallback，并在 completion 被绘制线程处理后恢复 dirty。
-- 同一 PPT 在当前进程内固定同一 `fileGuid/path`，以 `SaveExistingLogicalFile + expected SourceRevision` 原地覆盖。UInk 先 durable commit，再在命名 mutex 内原子发布严格 index；index 失败保留文件并记录 self-written revision，后续请求先验证并收敛，不得永久卡在 `SourceChanged`。
+- 同一 PPT 的每条 storage track 保持逻辑 `fileGuid/workspaceGuid`；每次保存先 durable commit 到新的 versioned UInk 路径，再在同轨命名 mutex 内原子发布 schema v2 index，旧主索引转 backup，旧 UInk 不就地覆盖。index 提交失败保留最后已提交索引/文件及同进程同 root、track、generation 的 self-written pending；后续 Save/Load 只在严格身份与 revision 匹配后收敛，不得永久卡在 `SourceChanged`。不自动回收仍可能被备份索引引用的历史版本。
 - clean inactive slot 只在有已提交文件、三 revision 相等且非 load-pending 时可淘汰。重入已淘汰 slot 必须走 `index -> ReadUInk -> strict import -> drawing-thread materialize`；dirty/pending/failed slot 保持 warm，不得被旧磁盘快照覆盖。加载期间清空 surface、不发布 identity-ready，并丢弃 physical contact/破坏性命令，直到 Loaded/NotFound/失败 completion 收敛。
 - 当前区间 Undo 到 floor 且 `previousClearUndoAvailable` 时，若 boundary fallback 尚在则直接恢复；否则提交一次 `PreviousInterval(pageGuid, intervalOrdinal-1)`。worker 只返回目标区间的可见 tail，controller 只替换匹配 Page/Slide 的 runtime，以 `undoFloor=0、intervalOrdinal=0` 物化并消费跨 Clear 资格；恢复出的 Stroke 可逐笔 Undo/Redo，到空后不得继续进入更早区间。其他 active/retained Canvas 不动。成功后的普通 Tail 保存把恢复画布写成 canonical 新根并截断前后 Clear 分支；跨 Clear Redo 不在本期。
-- 稳定路径同 key/source 的 `PageIndexFallback -> StableSlideId` 在当前 session、页数及完整 SlideID 列表可证明 ordinal 对应时，可按 ordinal 一次性升级 slot；新放映 HWND/binding revision 不阻止同进程恢复。process-local 身份仍要求 exact binding token/revision。升级是持久化 mutation，原位覆盖同一文件为标准 Presentation 元数据；不满足证明条件不得局部混用两种模式。
-- `presentation/index.json` 是严格 schema：source/key/fileGuid/path 均唯一，entry 恰含 source identity、key、sessionId、file/workspace GUID、relative path、binding mode、processLocal、binding revision、mutation revision、slideIds 和 UInk source revision。稳定模式的 `slideIds` 是已知 active/retained SlideID 并集，保存时只增不删；仅 `sessionId == ProcessSessionId()` 的 entry 可自动恢复。稳定路径 page-index 可在同 session/key/source、相同页数下跨放映 binding 按 ordinal 读写，process-local 必须 exact binding。foreign 或不一致内容返回结构化终态，不弹窗、不删未知文件、不静默覆盖。
+- `PageIndexFallback -> StableSlideId` 不能凭路径、页数或完整 SlideID 列表证明旧 ordinal 墨迹的一一对应关系；`CanUpgradePresentationBindingByOrdinal` 必须拒绝。当前会话旧 fallback lane 保留其内容与旧文件，新 Stable lane 建立独立空文稿并保存到独立 track。各 lane 内的稳定 source 可按现有 binding/SlideID 身份恢复；process-local 身份仍要求 exact binding token/revision。
+- 每条 track 的 `index.json(.bak)` 是严格 schema（写 v2、读 v1/v2）：source/key/fileGuid/path 均唯一，entry 恰含 source identity、key、sessionId、file/workspace GUID、relative path、binding mode、processLocal、binding revision、mutation revision、slideIds 和 UInk source revision。稳定模式的 `slideIds` 是已知 active/retained SlideID 并集，保存时只增不删；仅 `sessionId == ProcessSessionId()` 的 entry 可自动恢复。稳定路径 page-index 可在同 session/key/source、相同页数下跨放映 binding 按 ordinal 读写，process-local 必须 exact binding。foreign 或不一致内容返回结构化终态，不弹窗、不删未知文件、不静默覆盖。
 - index commit 失败后的 self-written pending entry 只跨同一规范化 autosave root 的 Host generation 保留；切换 root 清除。I/O 使用保留大小写的绝对路径，folded root key 仅用于等价比较和 named mutex。
 
 ### 4. Validation & Error Matrix
@@ -200,15 +201,15 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 | descriptor busy，或 shared 页码已更新而 descriptor 仍是上一页 | 仅 descriptor bindingRevision 与当前 target 相同才保留且不发 ready；新 binding 首次 busy/stale 必须隔离 |
 | descriptor 明确 unavailable/无放映 | 切到隔离 Presentation slot 或 Desktop，不复用旧 key |
 | 未修改或首次空 PPT | 不写文件；没有内容不等于没有修改 |
-| 恢复后 Clear/Undo/Redo 到空状态 | mutation 推进，下一安全点覆盖同一 `.uink` |
+| 恢复后 Clear/Undo/Redo 到空状态 | mutation 推进，下一安全点提交新版本 UInk 并原子更新该 lane 索引 |
 | 连续多次 Clear | 每个 Boundary 按接受顺序写入同一 Canvas；普通 Tail 不得越过或替换 Boundary |
 | 当前区间已经 Undo 到 floor | 先恢复 `intervalOrdinal-1`；到 0 后停止跨区间 Undo |
 | interval load 时用户继续绘制/破坏命令 | 使用 loadPending 输入闸门抑制，completion 匹配后才重新开放 |
 | SlideID 重排且旧区间加载完成 | 以 pageGuid/SlideID 定位目标页，只替换该页；其他页保留较新 mutation |
-| 稳定路径 fallback 在重开放映后取得完整 SlideID | 同 session/key/source 且页数匹配时按 ordinal 原位升级；process-local binding 不同则拒绝 |
+| 旧 fallback 在新会话取得 StableSlideId | 旧 lane/文件原样保留；新 Stable lane 不导入旧 ordinal 墨迹，独立建页与保存 |
 | 稳定 SlideID 重排/插入/删除 | 按 SlideID 映射 active projection；新增页为空，删除页 retained 且不参与当前 ready，重新出现恢复原 Canvas |
 | Desktop→同一 PPT 或 A→B 命中 parked/warm slot，且有序 SlideID 已变化 | 使用 destination slot 的旧 target 重映射后再更新 target；不得沿用旧 ordinal，也不得拿离开侧 active target 判断 |
-| UInk 成功、index 失败 | 返回 `IoError`、保持 dirty；保留 self-written revision 供后续收敛 |
+| 新版本 UInk 成功、index 失败 | 返回 `IoError`、保持 dirty；磁盘旧索引/旧 UInk 仍是最后已提交恢复点，同进程同 root/track/generation 保留 pending 供严格自恢复 |
 | index 指向 foreign session | 返回 `CrossProcessConflictDeferred`，本期不自动恢复/覆盖 |
 | 文件 revision 与 index 不一致 | 返回 `SourceChanged`，保留原文件和 dirty slot |
 | importer 身份/拓扑不匹配或含 Media/未支持语义 | 返回 Invalid/对应 import 错误，不部分 materialize |
@@ -217,17 +218,17 @@ ClearCurrentInterval(); // completion durable 后 recovery.canvas.reset()
 
 ### 5. Good / Base / Bad Cases
 
-- Good：A 上绘制 -> 换页保存 -> 切 B -> 再进 A；clean A 走冷读取恢复全文稿，B 的画布/历史不变。A 重排或删除页面后仍按 SlideID 显示，删除页 retained，重新出现时恢复原 Canvas；A 恢复后 Clear 并退出，同一文件被覆盖为空。
+- Good：A 上绘制 -> 换页保存 -> 切 B -> 再进 A；clean A 走冷读取恢复全文稿，B 的画布/历史不变。A 重排或删除页面后仍按 SlideID 显示，删除页 retained，重新出现时恢复原 Canvas；A 恢复后 Clear 并退出，新版本保存空 Canvas，旧已提交版本仍可由 backup 恢复。
 - Base：PPT 从未修改，切页/退出零写盘；Desktop 与 Whiteboard 的 slot 不变。
 - Bad：用当前页非空作 dirty，按页生成多个 `.uink`，用页码代替 `PresentationKey`，或 EndShow 后永久保留 clean warm slot 而让索引/导入路径不可达。
 
 ### 6. Tests Required
 
 - descriptor/bridge 纯逻辑：Unicode 路径、provider-independent key、process-local binding token、重复 SlideID、A/B 同页、stale descriptor/busy 保持和 identity-aware ready。
-- UInk/storage：stable/fallback round-trip、稳定 SlideID 重排/插入/删除与 retained Canvas、单文件、index 首次/覆盖失败重试、self-written revision、foreign session、Host restart、Tail latest-wins、Boundary FIFO 与 A/B 独立。
+- UInk/storage：stable/fallback 各轨 round-trip、旧 page-index 字节保留且新 Stable 独立空页、稳定 SlideID 重排/插入/删除与 retained Canvas、index v1/v2 与版本文件、index 首次/覆盖失败重试和旧版本可恢复、self-written pending、foreign session、Host restart、Tail latest-wins、Boundary FIFO 与 A/B 独立。
 - Clear 测试至少覆盖 `A/Clear/B/Clear/C` 当前投影 C、按 ordinal 加载 B/A、boundary/tail 同队列、连续 completion 身份、退出重入、旧区间建新分支和到 ordinal 0 停止。
-- controller 状态：纯策略测试覆盖 load-pending 门控、clean eviction/冷恢复、dirty/pending warm、clear mutation、fallback 迁移与命令场景顺序；另以 `1,2,3,4 -> 1,3,2,4` 断言 parked/warm 需要重映射，并断言仅页码、当前 SlideID 或 revision 变化不重建 runtime。生产 Controller 的 slot park/swap、completion 和全部 parked 最终屏障由完整产品构建与静态调用链核对，真实呈现留给设备验收。
-- 运行 `inkStrokeModelerTestTests.exe`、`InkeysHeadlessTests.exe --no-window`、managed PptCOM ownership harness，以及完整 `InkeysRepo.sln Debug|x64` 构建；真实 PowerPoint/WPS 放映、COM busy/损坏与 Office 进程退出仍须设备验收。
+- controller 状态：纯策略测试覆盖 load-pending 门控、clean eviction/冷恢复、dirty/pending warm、clear mutation、fallback/Stable 双 lane 隔离与命令场景顺序；另以 `1,2,3,4 -> 1,3,2,4` 断言 parked/warm 需要重映射，并断言仅页码、当前 SlideID 或 revision 变化不重建 runtime。生产 Controller 的 slot park/swap、completion 和全部 parked 最终屏障由完整产品构建与静态调用链核对，真实呈现留给设备验收。
+- 运行 `inkStrokeModelerTestTests.exe`、`InkeysHeadlessTests.exe --no-window`、managed PptCOM ownership harness，以及完整 `InkeysRepo.sln Debug|ARM64` 构建；真实 PowerPoint/WPS 放映、COM busy/损坏与 Office 进程退出仍须设备验收。
 
 ### 7. Wrong vs Correct
 
@@ -375,8 +376,11 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 
 ## Presenter 合同
 
+以下首发选路合同来自 2026-09-27 用户决定；H0 源码仍含 DWM 自动/强制路径。本次工作区已在源码中禁止该选择，但隐藏 HWND、Win7 与运行期设备故障尚未实测，不能把静态选路当作透明呈现 PASS。
+
 - Draw3 自己创建 D3D11.1 hardware-first/WARP-fallback device/context、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
-- presenter 模式顺序为 DComp -> DWM2 -> DWM/Win7 -> ULW；每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 使用 premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
+- 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 保持现有 FLIP_SEQUENTIAL swap chain、premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
+- 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。首发实现以用户实测为兼容约束，保留 FLIP，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。
 - 只允许一个绑定主 Drawpad 的 `RealTimeStylusInput` producer；Draw2 RTS 不得初始化或重复发布。退出顺序为停止命令生产 -> 停止 RTS -> 唤醒绘制线程 -> 释放双 presenter/device -> Window Service 销毁两窗。
 

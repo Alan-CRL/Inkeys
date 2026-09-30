@@ -648,6 +648,16 @@ jobs:
           copy tips.txt signedUpload\Inkeys64\Tips.txt
           copy tips.txt signedUpload\InkeysArm64\Tips.txt
 
+      - name: Prepare license notices for release packages
+        shell: pwsh
+        run: |
+          # 完整发布包随附项目与第三方许可；更新包仍仅含待替换的 EXE。
+          foreach ($target in @('signedUpload\Inkeys', 'signedUpload\Inkeys64', 'signedUpload\InkeysArm64')) {
+            Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $target 'LICENSE') -ErrorAction Stop
+            Copy-Item -LiteralPath 'NOTICE' -Destination (Join-Path $target 'NOTICE') -ErrorAction Stop
+            Copy-Item -LiteralPath 'ThirdpartyLicenses' -Destination $target -Recurse -ErrorAction Stop
+          }
+
       - name: Compressed release package 1
         run: |
           Compress-Archive -Path .\signedUpload\Inkeys -DestinationPath ".\packageUpload\32=Inkeys2025====!.zip" -CompressionLevel Optimal

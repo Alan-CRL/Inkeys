@@ -33,9 +33,17 @@ import Inkeys.UI.MessageBox;
 import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
 import Inkeys.Drawing.Draw3.diagnostics;
+import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.transparent_presentation;
 
 #include "IdtMain.h"
+#include "PptSettingsPersistence.h"
 #include "resource.h"
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <iterator>
 
 #include "IdtConfiguration.h"
 #include "IdtDraw.h"
@@ -53,7 +61,11 @@ import Inkeys.Drawing.Draw3.diagnostics;
 #include "IdtTime.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.h"
+#include "Inkeys/Drawing/Draw3/Draw3.PerformanceProbe.h"
+#include "Inkeys/Drawing/Draw3/Draw3.HistoryProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
+#include "Inkeys/Helper/ShutdownSupervisor.h"
+#include "Inkeys/Net/UpdatePathSafety.h"
 #include "Launch/IdtLaunchState.h"
 #include "SuperTop/IdtSuperTop.h"
 
@@ -86,6 +98,7 @@ namespace
 	LONG offSignalInterop = 0;
 	Inkeys::Display::Subscription displaySubscription;
 	std::atomic_bool startupPreviewManualDelayRequested = false;
+	constexpr LONGLONG kMaximumUpdateInstructionBytes = 64LL * 1024LL;
 
 	[[nodiscard]] HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
 	{
@@ -177,36 +190,6 @@ namespace
 		Inkeys::UI::StartupPreview::Stop();
 	}
 
-	bool RunStartupPreviewRetryFailureForManualTest() noexcept
-	{
-		wchar_t enabled[2]{};
-		if (!Inkeys::UI::StartupPreview::IsActive()
-			|| GetEnvironmentVariableW(
-			L"INKEYS_STARTUP_PREVIEW_RETRY_FAILURE", enabled, 2) == 0)
-			return true;
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(800));
-		if (!LaunchState::warnTry)
-		{
-			if (IDTLogger) IDTLogger->warn(
-				"[主线程][IdtMain] 人工测试阶段首次失败，淡出后以 -WarnTry 重试");
-			// 首次自动重试保持普通颜色，不允许闪出 fatal 红色。
-			Inkeys::UI::StartupPreview::RequestFadeOutForExit();
-			(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
-				std::chrono::milliseconds(500));
-			Inkeys::UI::StartupPreview::Stop();
-			(void)ShellExecuteW(nullptr, nullptr, GetCurrentExePath().c_str(),
-				L"-WarnTry", nullptr, SW_SHOWNORMAL);
-			return false;
-		}
-
-		if (IDTLogger) IDTLogger->critical(
-			"[主线程][IdtMain] 人工测试阶段重试后仍失败");
-		PublishFatalStartupFailure(0xD0FEu,
-			L"人工测试：模拟初始化阶段重试后仍失败。");
-		return false;
-	}
-
 	bool WriteStartupPreviewSmokeReport(const std::wstring& path, bool passed,
 		const Inkeys::UI::StartupPreview::Diagnostics& preview,
 		const Inkeys::UI::Bar::PresentationAlphaDiagnostics& alpha) noexcept
@@ -272,11 +255,27 @@ namespace
 
 void SetOffSignal(int signal)
 {
-	InterlockedExchange(&offSignalInterop, static_cast<LONG>(signal));
+	if (signal != 1 && signal != 2) return;
+	// 首次请求决定关闭或重启；先建立独立监督，再进入任何可能卡住的清理。
+	if (InterlockedCompareExchange(&offSignalInterop,
+		static_cast<LONG>(signal), 0) != 0) return;
+	Inkeys::Window::GetService().BeginShutdown();
+	const auto supervisor = Inkeys::Shutdown::ArmShutdownSupervisor(
+		signal == 2 ? Inkeys::Shutdown::Intent::Restart
+			: Inkeys::Shutdown::Intent::Close);
+	const DWORD supervisorError = GetLastError();
 	offSignal.store(signal, std::memory_order_release);
-	if (signal) StopMagnifierCoordinator();
+	(void)Inkeys::Window::GetService().RequestHideAllUserWindows();
 	// 退出标志与调度器休眠事件必须同时发布，不能依赖 Bar 线程代为唤醒。
 	Inkeys::UI::RenderPipeline::WakeForStop();
+	if (supervisor == Inkeys::Shutdown::ArmResult::FallbackArmed && IDTLogger)
+		IDTLogger->warn("[退出监督] 外部监督未建立；自身15秒退场已启动，不能保证重启，错误码={}",
+			supervisorError);
+	else if (supervisor != Inkeys::Shutdown::ArmResult::Armed && IDTLogger)
+		IDTLogger->error("[退出监督] 15 秒保护未建立，错误码={}", supervisorError);
+	// 受控退出清理期异常不应再由未处理异常过滤器误判为普通崩溃。
+	CrashHandler::Shutdown();
+	StopMagnifierCoordinator();
 }
 
 LONG* GetOffSignalInteropPointer()
@@ -289,13 +288,444 @@ IdtAtomic<bool> useMouseInput;
 
 using namespace Inkeys;
 
+namespace
+{
+	bool PublishEmbeddedResourceFileAtomically(const std::wstring& path,
+		LPCWSTR type, LPCWSTR name) noexcept
+	{
+		const HRSRC resource = FindResourceW(nullptr, name, type);
+		if (!resource) return false;
+		const DWORD size = SizeofResource(nullptr, resource);
+		const HGLOBAL loaded = LoadResource(nullptr, resource);
+		const auto* bytes = loaded
+			? static_cast<const char*>(LockResource(loaded)) : nullptr;
+		if (!bytes || !size) return false;
+		const DWORD attributes = GetFileAttributesW(path.c_str());
+		if (attributes != INVALID_FILE_ATTRIBUTES)
+		{
+			if (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+				return false;
+		}
+		else
+		{
+			const DWORD error = GetLastError();
+			if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+				return false;
+		}
+		try
+		{
+			// 同目录新临时文件完整写入后再发布，失败不截断原 DLL。
+			return Inkeys::PptSettings::WriteAtomically(path,
+				std::string(bytes, size));
+		}
+		catch (...) { return false; }
+	}
+
+	HANDLE OpenVerifiedEmbeddedResourceFile(const std::wstring& path,
+		LPCWSTR type, LPCWSTR name) noexcept
+	{
+		const HRSRC resource = FindResourceW(nullptr, name, type);
+		if (!resource) return INVALID_HANDLE_VALUE;
+		const DWORD expectedSize = SizeofResource(nullptr, resource);
+		const HGLOBAL loaded = LoadResource(nullptr, resource);
+		const auto* expected = loaded
+			? static_cast<const unsigned char*>(LockResource(loaded)) : nullptr;
+		if (!expected || !expectedSize) return INVALID_HANDLE_VALUE;
+		const DWORD attributes = GetFileAttributesW(path.c_str());
+		if (attributes == INVALID_FILE_ATTRIBUTES ||
+			(attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)))
+			return INVALID_HANDLE_VALUE;
+		// 验证时独占写入/删除共享权，并保持句柄到 LoadLibrary 返回。
+		HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+			nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+		if (file == INVALID_HANDLE_VALUE) return file;
+		BY_HANDLE_FILE_INFORMATION info = {};
+		LARGE_INTEGER actualSize = {};
+		if (!GetFileInformationByHandle(file, &info) ||
+			(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+			!GetFileSizeEx(file, &actualSize) || actualSize.QuadPart != expectedSize)
+		{
+			CloseHandle(file);
+			return INVALID_HANDLE_VALUE;
+		}
+		std::array<unsigned char, 64 * 1024> buffer = {};
+		DWORD offset = 0;
+		while (offset < expectedSize)
+		{
+			const DWORD count = (std::min)(static_cast<DWORD>(buffer.size()),
+				expectedSize - offset);
+			DWORD read = 0;
+			if (!ReadFile(file, buffer.data(), count, &read, nullptr) ||
+				read != count || std::memcmp(buffer.data(), expected + offset, count) != 0)
+			{
+				CloseHandle(file);
+				return INVALID_HANDLE_VALUE;
+			}
+			offset += count;
+		}
+		return file;
+	}
+
+	LONG WINAPI CrashFilterLifecycleSentinel(EXCEPTION_POINTERS*)
+	{
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+
+	int RunCrashFilterLifecycleTest() noexcept
+	{
+		// 仅显式无窗口测试进程触碰 UEF；退出前恢复进入测试时的原处理器。
+		const auto original = SetUnhandledExceptionFilter(nullptr);
+		CrashHandler::Initialize();
+		CrashHandler::Initialize();
+		const auto installed = SetUnhandledExceptionFilter(nullptr);
+		SetUnhandledExceptionFilter(installed);
+		CrashHandler::Shutdown();
+		CrashHandler::Shutdown();
+		const auto afterNull = SetUnhandledExceptionFilter(CrashFilterLifecycleSentinel);
+		if (!installed || afterNull != nullptr)
+		{
+			SetUnhandledExceptionFilter(original);
+			std::fputs("[CrashFilter] FAIL: null previous filter was not restored\n", stderr);
+			return 1;
+		}
+
+		CrashHandler::Initialize();
+		const auto installedWithSentinel = SetUnhandledExceptionFilter(nullptr);
+		SetUnhandledExceptionFilter(installedWithSentinel);
+		CrashHandler::Shutdown();
+		const auto afterSentinel = SetUnhandledExceptionFilter(original);
+		if (!installedWithSentinel ||
+			installedWithSentinel == CrashFilterLifecycleSentinel ||
+			afterSentinel != CrashFilterLifecycleSentinel)
+		{
+			std::fputs("[CrashFilter] FAIL: non-null previous filter was not restored\n", stderr);
+			return 1;
+		}
+		std::fputs("[CrashFilter] PASS: install and shutdown restore both previous filters\n", stderr);
+		return 0;
+	}
+
+	int RunConfigBoundaryTest() noexcept
+	{
+		const char* stage = "setup";
+		try
+		{
+			// 仅在仓库忽略目录放隔离配置，精确参数返回后绝不进入产品启动链。
+			const auto root = std::filesystem::current_path() /
+				"TestResults" / "release-hardening" /
+				("config-boundary-" + std::to_string(GetCurrentProcessId()));
+			std::filesystem::create_directories(root / "opt");
+			std::filesystem::create_directories(root / "Inkeys" / "Config");
+			globalPath = root.wstring() + L"\\";
+			const auto deploy = root / "opt" / "deploy.json";
+			const auto pptConfig = root / "opt" / "pptcom_configuration.json";
+			const auto mainConfig = root / "Inkeys" / "Config" / "main.json";
+			const auto writeBytes = [](const std::filesystem::path& path,
+				const std::string& bytes)
+			{
+				std::ofstream file(path, std::ios::binary | std::ios::trunc);
+				file.write(bytes.data(), bytes.size());
+				return file.good();
+			};
+			const auto readBytes = [](const std::filesystem::path& path)
+			{
+				std::ifstream file(path, std::ios::binary);
+				return std::string(std::istreambuf_iterator<char>(file),
+					std::istreambuf_iterator<char>());
+			};
+			if (!writeBytes(deploy, "{broken") ||
+				!writeBytes(pptConfig, "{broken") ||
+				!writeBytes(mainConfig, "{broken")) return 1;
+			stage = "legacy malformed";
+			const bool badDeployRead = ReadSetting();
+			const bool badDeployWrite = WriteSetting();
+			stage = "ppt malformed";
+			const bool badPptRead = PptComReadSetting();
+			const bool badPptWrite = PptComWriteSetting();
+			stage = "main malformed";
+			Inkeys::Config isolatedConfig;
+			const bool badMainRead = isolatedConfig.ReadAll();
+			const bool badMainWrite = isolatedConfig.Write();
+			const bool badPreserved = !badDeployRead && !badDeployWrite &&
+				!badPptRead && !badPptWrite &&
+				!badMainRead && !badMainWrite &&
+				readBytes(deploy) == "{broken" &&
+				readBytes(pptConfig) == "{broken" &&
+				readBytes(mainConfig) == "{broken";
+			if (!badPreserved)
+			{
+				std::fputs("[ConfigBoundary] FAIL: malformed existing file was overwritten\n", stderr);
+				return 1;
+			}
+			for (const char* nonObject : { "[]", "1", "\"x\"" })
+			{
+				Inkeys::Config nonObjectConfig;
+				if (!writeBytes(deploy, nonObject)) return 1;
+				stage = "non-object deploy read";
+				const bool deployRead = ReadSetting();
+				stage = "non-object deploy write";
+				const bool deployWrite = WriteSetting();
+				if (!writeBytes(pptConfig, nonObject)) return 1;
+				stage = "non-object ppt read";
+				const bool pptRead = PptComReadSetting();
+				stage = "non-object ppt write";
+				const bool pptWrite = PptComWriteSetting();
+				if (!writeBytes(mainConfig, nonObject)) return 1;
+				stage = "non-object main read";
+				const bool mainRead = nonObjectConfig.ReadAll();
+				stage = "non-object main write";
+				const bool mainWrite = nonObjectConfig.Write();
+				if (deployRead || deployWrite || readBytes(deploy) != nonObject ||
+					pptRead || pptWrite || readBytes(pptConfig) != nonObject ||
+					mainRead || mainWrite || readBytes(mainConfig) != nonObject)
+				{
+					std::fputs("[ConfigBoundary] FAIL: non-object JSON was accepted\n", stderr);
+					return 1;
+				}
+			}
+			std::string oversized = "{}";
+			stage = "oversized";
+			oversized.resize(16 * 1024 * 1024 + 1, ' ');
+			if (!writeBytes(deploy, oversized) || ReadSetting())
+			{
+				std::fputs("[ConfigBoundary] FAIL: oversized JSON was accepted\n", stderr);
+				return 1;
+			}
+			stage = "deeply nested";
+			const std::string deeplyNested = "{\"unknown\":" +
+				std::string(80, '[') + "0" + std::string(80, ']') + "}";
+			Inkeys::Config deepConfig;
+			if (!writeBytes(deploy, deeplyNested) || ReadSetting() ||
+				WriteSetting() || readBytes(deploy) != deeplyNested ||
+				!writeBytes(mainConfig, deeplyNested) || deepConfig.ReadAll() ||
+				deepConfig.Write() || readBytes(mainConfig) != deeplyNested)
+			{
+				std::fputs("[ConfigBoundary] FAIL: deeply nested JSON replaced the last file\n", stderr);
+				return 1;
+			}
+			stage = "near limit";
+			std::string nearLimit = "{\"unknown\":\"";
+			nearLimit.append(16 * 1024 * 1024 - 128, 'x');
+			nearLimit += "\"}";
+			Inkeys::Config nearLimitConfig;
+			if (!writeBytes(mainConfig, nearLimit) ||
+				!nearLimitConfig.ReadAll() || nearLimitConfig.Write() ||
+				readBytes(mainConfig) != nearLimit)
+			{
+				std::fputs("[ConfigBoundary] FAIL: expanded JSON replaced the last readable file\n", stderr);
+				return 1;
+			}
+			stage = "fresh file";
+			globalPath = (root / "fresh").wstring() + L"\\";
+			std::filesystem::create_directories(root / "fresh" / "opt");
+			const bool freshCreated = WriteSetting() &&
+				std::filesystem::exists(root / "fresh" / "opt" / "deploy.json");
+			if (!freshCreated)
+			{
+				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
+				return 1;
+			}
+			std::fputs("[ConfigBoundary] PASS: bounded reads preserve bad files and first-run creation\n", stderr);
+			return 0;
+		}
+		catch (...)
+		{
+			std::fprintf(stderr,
+				"[ConfigBoundary] FAIL: isolated test exception at %s\n", stage);
+			return 1;
+		}
+	}
+
+	int RunDdbDisabledPreservationTest() noexcept
+	{
+		try
+		{
+			const auto root = std::filesystem::current_path() /
+				"TestResults" / "release-hardening" /
+				("ddb-disabled-" + std::to_string(GetCurrentProcessId()));
+			const auto directory = root / "DesktopDrawpadBlocker";
+			std::filesystem::create_directories(directory);
+			const auto sentinel = directory / "user-data.txt";
+			std::ofstream file(sentinel, std::ios::binary | std::ios::trunc);
+			file << "preserve";
+			file.close();
+			pluginPath = root.wstring() + L"\\";
+			ddbInteractionSetList.enable = false;
+			StartDesktopDrawpadBlocker();
+			std::ifstream after(sentinel, std::ios::binary);
+			const std::string content(std::istreambuf_iterator<char>{ after },
+				std::istreambuf_iterator<char>{});
+			if (content != "preserve")
+			{
+				std::fputs("[DdbDisabled] FAIL: unknown file was removed\n", stderr);
+				return 1;
+			}
+			std::fputs("[DdbDisabled] PASS: unknown directory contents preserved\n", stderr);
+			return 0;
+		}
+		catch (...)
+		{
+			std::fputs("[DdbDisabled] FAIL: isolated test exception\n", stderr);
+			return 1;
+		}
+	}
+
+	int RunPptComResourceVerificationTest() noexcept
+	{
+		try
+		{
+			const auto root = std::filesystem::current_path() /
+				"TestResults" / "release-hardening" /
+				("pptcom-resource-" + std::to_string(GetCurrentProcessId()));
+			std::filesystem::create_directories(root);
+			const auto file = root / "PptCOM.dll";
+			if (!PublishEmbeddedResourceFileAtomically(file.wstring(),
+				L"DLL", MAKEINTRESOURCE(222))) return 1;
+			const HANDLE verified = OpenVerifiedEmbeddedResourceFile(
+				file.wstring(), L"DLL", MAKEINTRESOURCE(222));
+			if (verified == INVALID_HANDLE_VALUE) return 1;
+			const HANDLE writer = CreateFileW(file.c_str(), GENERIC_WRITE,
+				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			const bool writeBlocked = writer == INVALID_HANDLE_VALUE;
+			if (writer != INVALID_HANDLE_VALUE) CloseHandle(writer);
+			ACTCTX actCtx = {};
+			actCtx.cbSize = sizeof(actCtx);
+			actCtx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+			actCtx.lpResourceName = MAKEINTRESOURCE(221);
+			actCtx.hModule = GetModuleHandleW(nullptr);
+			const HANDLE activation = CreateActCtxW(&actCtx);
+			ULONG_PTR cookie = 0;
+			const bool active = activation != INVALID_HANDLE_VALUE &&
+				ActivateActCtx(activation, &cookie) != FALSE;
+			const HMODULE loaded = active ? LoadLibraryW(file.c_str()) : nullptr;
+			if (loaded) FreeLibrary(loaded);
+			if (active) DeactivateActCtx(0, cookie);
+			if (activation != INVALID_HANDLE_VALUE) ReleaseActCtx(activation);
+			CloseHandle(verified);
+			const HANDLE publicationLock = CreateFileW(file.c_str(), GENERIC_READ,
+				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			const bool atomicFailurePreserved = publicationLock != INVALID_HANDLE_VALUE &&
+				!PublishEmbeddedResourceFileAtomically(file.wstring(),
+					L"DLL", MAKEINTRESOURCE(222));
+			if (publicationLock != INVALID_HANDLE_VALUE) CloseHandle(publicationLock);
+			const HANDLE stillVerified = OpenVerifiedEmbeddedResourceFile(
+				file.wstring(), L"DLL", MAKEINTRESOURCE(222));
+			if (stillVerified != INVALID_HANDLE_VALUE) CloseHandle(stillVerified);
+			std::ofstream corrupted(file, std::ios::binary | std::ios::trunc);
+			corrupted << "untrusted";
+			corrupted.close();
+			const HANDLE rejected = OpenVerifiedEmbeddedResourceFile(
+				file.wstring(), L"DLL", MAKEINTRESOURCE(222));
+			if (rejected != INVALID_HANDLE_VALUE) CloseHandle(rejected);
+			if (!writeBlocked || !loaded || !atomicFailurePreserved ||
+				stillVerified == INVALID_HANDLE_VALUE ||
+				rejected != INVALID_HANDLE_VALUE)
+			{
+				std::fputs("[PptComResource] FAIL: load, corruption or concurrent writer contract\n", stderr);
+				return 1;
+			}
+			std::fputs("[PptComResource] PASS: embedded bytes verified under read lock\n", stderr);
+			return 0;
+		}
+		catch (...)
+		{
+			std::fputs("[PptComResource] FAIL: isolated test exception\n", stderr);
+			return 1;
+		}
+	}
+}
+
 // 程序入口点
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int /*nCmdShow*/)
 {
+	// 内部监督进程和隔离测试必须在配置、单实例与任何 HWND 初始化前退出。
+	int supervisorExitCode = 0;
+	if (Inkeys::Shutdown::TryRunShutdownSupervisorEarly(
+		GetCommandLineW(), supervisorExitCode)) return supervisorExitCode;
+	constexpr wchar_t kUpdateBoundaryArg[] = L"--staged-update-json-boundary-test";
+	if (lpCmdLine && wcsncmp(lpCmdLine, kUpdateBoundaryArg,
+		ARRAYSIZE(kUpdateBoundaryArg) - 1) == 0 &&
+		(lpCmdLine[ARRAYSIZE(kUpdateBoundaryArg) - 1] == L' ' ||
+			lpCmdLine[ARRAYSIZE(kUpdateBoundaryArg) - 1] == L'\0'))
+	{
+		int argumentCount = 0;
+		LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
+		if (!arguments) return 2;
+		int result = 2;
+		if (argumentCount == 4)
+		{
+			const bool valid = CompareStringOrdinal(arguments[3], -1,
+				L"valid", -1, TRUE) == CSTR_EQUAL;
+			const bool invalid = CompareStringOrdinal(arguments[3], -1,
+				L"invalid", -1, TRUE) == CSTR_EQUAL;
+			if (valid || invalid)
+				result = RunStagedUpdateJsonBoundaryProbe(arguments[2], valid);
+		}
+		LocalFree(arguments);
+		return result;
+	}
 	// 隐藏验收必须先于配置、互斥体和任何产品 UI 初始化。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--pptcom-resource-verification-test", -1, TRUE) == CSTR_EQUAL)
+		return RunPptComResourceVerificationTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--ddb-disabled-preserve-test", -1, TRUE) == CSTR_EQUAL)
+		return RunDdbDisabledPreservationTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--config-boundary-test", -1, TRUE) == CSTR_EQUAL)
+		return RunConfigBoundaryTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--supertop-token-failure-test", -1, TRUE) == CSTR_EQUAL)
+		return RunSuperTopTokenFailureTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--crash-filter-lifecycle-test", -1, TRUE) == CSTR_EQUAL)
+		return RunCrashFilterLifecycleTest();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunRendererMapCompatibilityTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-renderer-commit-failure-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunRendererFailureCommitTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-laser-raster-failure-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunLaserRasterFailureTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-parked-desktop-exit-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunParkedDesktopExitAutoSaveTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-parked-ppt-retained-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunParkedPresentationRetainedSaveTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-loaded-retained-install-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunPresentationLoadedRetainedInstallTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-pending-topology-load-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunPendingPresentationTopologyLoadTest();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-control-fence-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunDraw3ControlFenceProductionProbe();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-fallback-stable-controller-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunFallbackStableControllerIsolationProbe();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-fallback-stable-lane-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunFallbackStableControllerLaneProbe();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-ppt-current-load-retry-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunPresentationCurrentLoadRetryProbe();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-geometry-benchmark", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunDraw3GeometryBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-history-benchmark", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunDraw3HistoryBenchmark();
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-ulw-copy-benchmark", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunUlwDirtyCopyBenchmark();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--page-control-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::PageControl::RunHiddenWindowTests();
@@ -416,7 +846,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 	#ifdef IDT_RELEASE
-		if (!LaunchState::restart && !LaunchState::warnTry && !LaunchState::crashTry && !superTopComplete)
+		// 重启 helper 已等待旧进程真正结束；-Restart/-CrashTry 仍需正常单实例门。
+		if (!LaunchState::warnTry && !superTopComplete)
 		{
 			wstring currentExeDirectory = GetCurrentExeDirectory();
 			{
@@ -531,7 +962,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (OccupyFileForRead(&fileHandle, globalPath + L"update.json"))
 			{
 				LARGE_INTEGER fileSize;
-				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
+				if (flag && (!GetFileSizeEx(fileHandle, &fileSize) ||
+					fileSize.QuadPart <= 0 ||
+					fileSize.QuadPart > kMaximumUpdateInstructionBytes)) flag = false;
 
 				if (flag)
 				{
@@ -552,10 +985,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				istringstream jsonContentStream(jsonContent);
 				Json::CharReaderBuilder readerBuilder;
+				readerBuilder["stackLimit"] = 32;
 				string jsonErr;
 
-				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+				bool parsed = false;
+				try
 				{
+					parsed = Json::parseFromStream(readerBuilder, jsonContentStream,
+						&updateVal, &jsonErr);
+					if (!parsed || !updateVal.isObject()) { flag = false; }
+					else
+					{
 					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 					else flag = false;
 
@@ -572,9 +1012,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					else flag = false;
 
 					if (updateVal.isMember("old_name") && updateVal["old_name"].isString()) old_name = utf8ToUtf16(updateVal["old_name"].asString());
+					}
 				}
-				else flag = false;
+				catch (const std::exception&) { flag = false; }
 			}
+			// 更新指令来自可写文件；任何拼接路径必须先限制为本目录单个 EXE 文件名。
+			if (!IsSafeUpdateExecutableName(representation)) flag = false;
+			if (!IsSafeUpdateHash(thash_md5, 32) ||
+				!IsSafeUpdateHash(thash_sha256, 64)) flag = false;
+			if (!old_name.empty() && !IsSafeUpdateExecutableName(old_name))
+			{
+				old_name.clear();
+				flag = false;
+			}
+			if (!flag) old_name.clear(); // 损坏的更新指令不能指定失败回退要执行的旧程序。
 
 			string hash_md5, hash_sha256;
 			if (flag)
@@ -615,16 +1066,78 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 				if (times > 20) goto fail;
 
-				error_code ec;
-				if (!old_name.empty()) filesystem::remove(main_path + old_name, ec);
-				else filesystem::remove(main_path + L"智绘教.exe", ec);
-
-				wstring target = main_path + L"Inkeys" + L".exe";
-				filesystem::copy_file(globalPath + representation, target, filesystem::copy_options::overwrite_existing, ec);
-
-				ShellExecuteW(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);
-
-				return 0;
+				bool rollbackSafe = true;
+				const bool launched = [&]() -> bool
+					{
+						const wstring target = main_path + L"Inkeys.exe";
+						wchar_t stagedPath[MAX_PATH]{};
+						if (!GetTempFileNameW(main_path.c_str(), L"IKU", 0, stagedPath))
+							return false;
+						const auto removeStage = [&]() noexcept
+							{
+								error_code ignored;
+								filesystem::remove(stagedPath, ignored);
+							};
+						error_code ec;
+						filesystem::copy_file(globalPath + representation, stagedPath,
+							filesystem::copy_options::overwrite_existing, ec);
+						if (ec) { removeStage(); return false; }
+						// 先在同卷临时文件完成复制及复核，旧 EXE 保持可启动。
+						md5wrapper md5;
+						sha256wrapper sha256;
+						if (md5.getHashFromFileW(stagedPath) != thash_md5 ||
+							sha256.getHashFromFileW(stagedPath) != thash_sha256)
+						{
+							removeStage();
+							return false;
+						}
+						const bool hadTarget = filesystem::exists(target, ec);
+						if (ec) { removeStage(); return false; }
+						wchar_t backupPath[MAX_PATH]{};
+						if (hadTarget)
+						{
+							if (!GetTempFileNameW(main_path.c_str(), L"IKB", 0, backupPath))
+							{
+								removeStage();
+								return false;
+							}
+							filesystem::copy_file(target, backupPath,
+								filesystem::copy_options::overwrite_existing, ec);
+							if (ec)
+							{
+								removeStage();
+								filesystem::remove(backupPath, ec);
+								return false;
+							}
+						}
+						if (!MoveFileExW(stagedPath, target.c_str(),
+							MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+						{
+							removeStage();
+							if (hadTarget) filesystem::remove(backupPath, ec);
+							return false;
+						}
+						const HINSTANCE result = ShellExecuteW(
+							nullptr, nullptr, target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+						if (reinterpret_cast<INT_PTR>(result) > 32) return true;
+						// 启动失败时回滚本次替换；备份在启动成功后仍保留供人工恢复。
+						if (hadTarget)
+							rollbackSafe = MoveFileExW(backupPath, target.c_str(),
+								MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+						else
+						{
+							filesystem::remove(target, ec);
+							rollbackSafe = !ec;
+						}
+						return false;
+					}();
+				if (launched) return 0;
+				if (!rollbackSafe)
+				{
+					ShowStartupMessage(L"更新程序启动失败，旧版本恢复也未完成。请检查 Inkeys.exe 与 IKB 备份文件。");
+					return 0;
+				}
+				goto fail;
 			}
 			else flag = false;
 
@@ -637,8 +1150,31 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				filesystem::path directory(globalPath);
 				wstring main_path = directory.parent_path().parent_path().wstring() + L"\\";
 
-				if (!old_name.empty()) ShellExecuteW(NULL, NULL, (main_path + old_name).c_str(), NULL, NULL, SW_SHOWNORMAL);
-				else ShellExecuteW(NULL, NULL, (main_path + L"智绘教.exe").c_str(), NULL, NULL, SW_SHOWNORMAL);
+				// 旧 Inkeys2 不写 old_name：优先恢复智绘教.exe，且始终只在安装主目录选普通 EXE。
+				std::array<wstring, 3> triedNames;
+				size_t triedCount = 0;
+				for (; triedCount < triedNames.size();)
+				{
+					const wstring fallbackName = SelectUpdateRollbackExecutableName(
+						old_name, [&](wstring_view name)
+						{
+							for (size_t i = 0; i < triedCount; ++i)
+								if (_wcsicmp(triedNames[i].c_str(), wstring(name).c_str()) == 0)
+									return false;
+							const wstring candidate = main_path + wstring(name);
+							const DWORD attributes = GetFileAttributesW(candidate.c_str());
+							return attributes != INVALID_FILE_ATTRIBUTES &&
+								(attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) == 0;
+						});
+					if (fallbackName.empty()) break;
+					triedNames[triedCount++] = fallbackName;
+					const HINSTANCE result = ShellExecuteW(nullptr, nullptr,
+						(main_path + fallbackName).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+					if (reinterpret_cast<INT_PTR>(result) > 32) return 0;
+					// 用户取消提升后不能再悄悄尝试另一份旧程序。
+					if (GetLastError() == ERROR_CANCELLED) return 0;
+				}
+				ShowStartupMessage(L"更新回退启动失败，请手动打开安装目录中的旧版本程序。");
 
 				return 0;
 			}
@@ -656,7 +1192,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (OccupyFileForRead(&fileHandle, globalPath + L"installer\\update.json"))
 			{
 				LARGE_INTEGER fileSize;
-				if (flag && !GetFileSizeEx(fileHandle, &fileSize)) flag = false;
+				if (flag && (!GetFileSizeEx(fileHandle, &fileSize) ||
+					fileSize.QuadPart <= 0 ||
+					fileSize.QuadPart > kMaximumUpdateInstructionBytes)) flag = false;
 
 				if (flag)
 				{
@@ -677,10 +1215,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				istringstream jsonContentStream(jsonContent);
 				Json::CharReaderBuilder readerBuilder;
+				readerBuilder["stackLimit"] = 32;
 				string jsonErr;
 
-				if (Json::parseFromStream(readerBuilder, jsonContentStream, &updateVal, &jsonErr))
+				bool parsed = false;
+				try
 				{
+					parsed = Json::parseFromStream(readerBuilder, jsonContentStream,
+						&updateVal, &jsonErr);
+					if (!parsed || !updateVal.isObject()) { flag = false; }
+					else
+					{
 					if (updateVal.isMember("edition") && updateVal["edition"].isString()) tedition = utf8ToUtf16(updateVal["edition"].asString());
 					else flag = false;
 
@@ -698,9 +1243,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 					if (updateVal.isMember("MandatoryUpdate") && updateVal["MandatoryUpdate"].isBool())
 						mandatoryUpdate = updateVal["MandatoryUpdate"].asBool();
+					}
 				}
-				else flag = false;
+				catch (const std::exception&) { flag = false; }
 			}
+			// 待启动的更新程序只能位于本程序的 installer 子目录。
+			if (!IsSafeStagedUpdatePath(path)) flag = false;
+			if (!IsSafeUpdateHash(thash_md5, 32) ||
+				!IsSafeUpdateHash(thash_sha256, 64)) flag = false;
 
 			string hash_md5, hash_sha256;
 			if (flag)
@@ -721,22 +1271,49 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				//符合条件，开始替换版本
 
-				updateVal["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
+				const wstring oldName = GetCurrentExeName();
+				if (!IsSafeUpdateExecutableName(oldName)) flag = false;
+				updateVal["old_name"] = Json::Value(utf16ToUtf8(oldName));
 				if (mandatoryUpdate) updateVal["MandatoryUpdate"] = Json::Value(false);
-
-				if (!OccupyFileForWrite(&fileHandle, globalPath + L"installer\\update.json")) flag = false;
-				if (flag && SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) flag = false;
-				if (flag && !SetEndOfFile(fileHandle)) flag = false;
 
 				if (flag)
 				{
 					Json::StreamWriterBuilder writerBuilder;
-					string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal);
-
-					DWORD bytesWritten = 0;
-					if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) || bytesWritten != jsonContent.size()) flag = false;
+					string nextJson;
+					try { nextJson = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, updateVal); }
+					catch (const Json::Exception&) { flag = false; }
+					const wstring installerPath = globalPath + L"installer\\";
+					const DWORD installerAttributes = GetFileAttributesW(installerPath.c_str());
+					if (nextJson.empty() || nextJson.size() > kMaximumUpdateInstructionBytes ||
+						installerAttributes == INVALID_FILE_ATTRIBUTES ||
+						(installerAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+						(installerAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) flag = false;
+					if (flag)
+					{
+					wchar_t temporaryPath[MAX_PATH]{};
+					if (!GetTempFileNameW(installerPath.c_str(), L"IKJ", 0,
+							temporaryPath)) flag = false;
+					if (flag)
+					{
+						const HANDLE temporary = CreateFileW(temporaryPath, GENERIC_WRITE,
+							0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+						if (temporary == INVALID_HANDLE_VALUE) flag = false;
+						else
+					{
+							DWORD bytesWritten = 0;
+							flag = WriteFile(temporary, nextJson.data(),
+								static_cast<DWORD>(nextJson.size()), &bytesWritten, nullptr) &&
+								bytesWritten == nextJson.size() && FlushFileBuffers(temporary);
+							if (!CloseHandle(temporary)) flag = false;
+						}
+						// 同目录临时指令完整落盘后才替换旧指令；失败保留上次有效文件。
+						if (flag) flag = MoveFileExW(temporaryPath,
+							(globalPath + L"installer\\update.json").c_str(),
+							MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+						if (!flag) DeleteFileW(temporaryPath);
+					}
+					}
 				}
-				UnOccupyFile(&fileHandle);
 
 				if (flag)
 				{
@@ -747,11 +1324,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			else flag = false;
 
-			if (!flag)
-			{
-				error_code ec;
-				filesystem::remove_all(globalPath + L"installer", ec);
-			}
+			// 无效或发布失败的指令不清理未知文件，也不覆盖最后一次有效更新点。
 		}
 	}
 
@@ -1437,7 +2010,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			animationSpeedRate = isfinite(animationSpeedRate)
 				? clamp(animationSpeedRate, 0.1, 5.0) : 1.0;
 			config.Experimental.Inkeys3.UI3.Animation.SpeedRate = animationSpeedRate;
-			config.Write();
+			if (!config.Write() && IDTLogger)
+				IDTLogger->warn("[主线程][IdtMain] main.json 写回失败，保留现存配置文件");
 			Inkeys::UI::Bar::SetAnimationOptions(
 				static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
 				animationSpeedRate);
@@ -1463,7 +2037,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				// StartForInkeys();
 			}
 			else ReadSetting();
-			WriteSetting();
+			if (!WriteSetting() && IDTLogger)
+				IDTLogger->warn("[主线程][IdtMain] deploy.json 写回失败，保留现存配置文件");
 		}
 
 		// 初次读取配置后的操作
@@ -1543,8 +2118,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		//PptCOM 组件加载
 		{
-			if (!Inkeys::Load::ExtractResourceFile((globalPath + L"PptCOM.dll").c_str(), L"DLL", MAKEINTRESOURCE(222)))
-				IDTLogger->warn("[主线程][IdtMain] 解压PptCOM.dll失败");
+			const std::wstring pptComPath = globalPath + L"PptCOM.dll";
+			const bool pptComExtracted = PublishEmbeddedResourceFileAtomically(
+				pptComPath, L"DLL", MAKEINTRESOURCE(222));
+			if (!pptComExtracted)
+				IDTLogger->error("[主线程][IdtMain] 解压PptCOM.dll失败，拒绝加载既有 DLL");
+			const HANDLE verifiedPptCom = pptComExtracted
+				? OpenVerifiedEmbeddedResourceFile(pptComPath,
+					L"DLL", MAKEINTRESOURCE(222)) : INVALID_HANDLE_VALUE;
+			if (pptComExtracted && verifiedPptCom == INVALID_HANDLE_VALUE)
+				IDTLogger->error("[主线程][IdtMain] PptCOM.dll 与内嵌资源不一致，拒绝加载");
 
 			ACTCTX actCtx = { 0 };
 			actCtx.cbSize = sizeof(actCtx);
@@ -1552,11 +2135,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			actCtx.lpResourceName = MAKEINTRESOURCE(221);
 			actCtx.hModule = GetModuleHandle(NULL);
 
-			hActCtx = CreateActCtx(&actCtx);
+			if (verifiedPptCom != INVALID_HANDLE_VALUE)
+				hActCtx = CreateActCtx(&actCtx);
 			if (hActCtx != INVALID_HANDLE_VALUE)
 				actCtxActivated = ActivateActCtx(hActCtx, &ulCookie) != FALSE;
 			if (actCtxActivated)
-				pptComModule = LoadLibraryW((globalPath + L"PptCOM.dll").c_str());
+				pptComModule = LoadLibraryW(pptComPath.c_str());
+			if (verifiedPptCom != INVALID_HANDLE_VALUE)
+				CloseHandle(verifiedPptCom);
 		}
 		if (!actCtxActivated || !pptComModule)
 		{
@@ -1575,11 +2161,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::PptComReady);
-	}
-	if (!RunStartupPreviewRetryFailureForManualTest())
-	{
-		Inkeys::UI::RenderPipeline::Shutdown();
-		return 1;
 	}
 	// 自动更新初始化
 	{
@@ -1777,7 +2358,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 				else if (role == Inkeys::Window::WindowRole::Drawpad)
 				{
-					// DComp 的不可变样式只在能力探测通过时预置；否则保留可切换的 DWM/ULW HWND。
+					// DComp 的不可变样式只在能力探测通过时预置；否则创建可用于 ULW 的 HWND。
 					spec.exStyle &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
 					if (preferDraw3DirectComposition)
 						spec.exStyle |= WS_EX_NOREDIRECTIONBITMAP;
@@ -1881,9 +2462,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!StartWindowService())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Win32 窗口服务启动失败");
+			// 启动失败也必须先建立退场监督，错误提示或窗口 join 不能阻塞 15 秒保护。
+			SetOffSignal(1);
 			PublishFatalStartupFailure(0xD101u,
 				L"窗口服务初始化失败，程序无法继续启动。");
-			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
@@ -1945,7 +2527,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!draw3Started && preferDraw3DirectComposition)
 		{
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
-			IDTLogger->warn("[主线程][IdtMain] Draw3 DComp 初始化失败，重建隐藏窗口链并回退 DWM/ULW");
+			IDTLogger->warn("[主线程][IdtMain] Draw3 DComp 初始化失败，重建隐藏窗口链并回退 ULW");
 			Inkeys::Drawing::Draw3::StopProduct();
 			windowService.StopAndJoin();
 			for (auto& spec : windowSpecs)
@@ -1966,9 +2548,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!draw3Started)
 		{
 			IDTLogger->critical("[主线程][IdtMain] Draw3 Host 初始化失败");
+			// Host 初始化失败后的提示和窗口清理可能依赖已停止的绘制线程，先建立监督。
+			SetOffSignal(1);
 			PublishFatalStartupFailure(0xD201u,
 				L"Draw3 绘图服务初始化失败，程序无法继续启动。");
-			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
@@ -1976,10 +2559,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!setting_window || !Inkeys::UI::Setting::Initialize())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Setting 渲染客户端初始化失败");
+			SetOffSignal(1);
 			PublishFatalStartupFailure(0xD301u,
 				L"设置界面初始化失败，程序无法继续启动。");
 			Inkeys::Drawing::Draw3::StopProduct();
-			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
@@ -1992,11 +2575,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}))
 		{
 			IDTLogger->critical("[主线程][IdtMain] Whiteboard 渲染客户端初始化失败");
+			SetOffSignal(1);
 			PublishFatalStartupFailure(0xD401u,
 				L"白板界面初始化失败，程序无法继续启动。");
 			Inkeys::UI::Setting::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
-			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
@@ -2010,11 +2593,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady())
 		{
 			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧准备失败");
+			SetOffSignal(1);
 			PublishFatalStartupFailure(0xD202u,
 				L"Draw3 首帧提交失败，程序无法继续启动。");
 			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
-			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
@@ -2035,12 +2618,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		else
 		{
 			windowService.SetTopmostRefreshObserver({});
+			SetOffSignal(1);
 			PublishFatalStartupFailure(0xD102u,
 				L"窗口层级初始化失败，程序无法继续启动。");
 			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
 			Inkeys::UI::Setting::Shutdown();
 			Inkeys::Drawing::Draw3::StopProduct();
-			SetOffSignal(1);
 			windowService.StopAndJoin();
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
@@ -2082,6 +2665,33 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	while (!offSignal)
 	{
 		this_thread::sleep_for(chrono::milliseconds(100));
+		if (!offSignal && !Inkeys::Drawing::Draw3::ProductRunning())
+		{
+			// 意外失去绘图消费者时先阻断旧可见性请求，再由窗口 owner 成对撤下画布。
+			SetOffSignal(1);
+			auto& service = Inkeys::Window::GetService();
+			const bool pairedHidden = service.SetDrawpadSurfaceVisibility(
+				Inkeys::Window::DrawpadSurfaceVisibility::Hidden);
+			const bool allHidden = service.HideAllUserWindows();
+			const HWND primary = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+			const HWND presentation = service.Handle(
+				Inkeys::Window::WindowRole::DrawpadPresentation);
+			const bool surfacesHidden = (!primary || !IsWindow(primary) ||
+				!IsWindowVisible(primary)) &&
+				(!presentation || !IsWindow(presentation) ||
+					!IsWindowVisible(presentation));
+			GUITHREADINFO ownerInfo{ sizeof(GUITHREADINFO) };
+			const DWORD ownerThread = service.OwnerThreadId(
+				Inkeys::Window::WindowRole::Drawpad);
+			const bool captureReleased = pairedHidden ||
+				(ownerThread && GetGUIThreadInfo(ownerThread, &ownerInfo) &&
+					ownerInfo.hwndCapture != primary);
+			if (IDTLogger) IDTLogger->critical(
+				"[主线程][IdtMain] Draw3 Host 意外停止，受控退出；成对切换={}，全窗口命令={}，双画布读回={}，捕获释放={}",
+				pairedHidden, allHidden, surfacesHidden, captureReleased);
+			developerModeExitCode = 6;
+			break;
+		}
 		// Bar 渲染线程只发布有限 DIP；主线程沿既有配置路径去重落盘。
 		double committedStartupWidthDip = 0.0;
 		if (Inkeys::UI::StartupPreview::TakeCommittedStartupBarWidthDip(
@@ -2187,8 +2797,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		CloseHandle(launchMutex);
 		launchMutex = NULL;
 	}
-
-	if (offSignal == 2) ShellExecuteW(NULL, NULL, GetCurrentExePath().c_str(), L"-Restart", NULL, SW_SHOWNORMAL);
 
 	IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序");
 

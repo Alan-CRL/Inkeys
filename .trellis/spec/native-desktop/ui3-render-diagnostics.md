@@ -18,7 +18,7 @@ FrameStageTimer(FrameDiagnostics*, FrameStage) noexcept;
 void FrameStageTimer::Stop() noexcept;
 ```
 
-`FrameDiagnostics` 只由当前客户端回调填写；包含 raw/animation dt、推进/尝试/成功/延后/退避标记、各阶段毫秒、实际 API 结果、资源几何和光影计数。`FrameAnimationClock::LastRawElapsedSeconds()` 是只读观测，不改变 `Tick()` 的 50 ms 上限或 `Rebase()` 接线。
+`FrameDiagnostics` 只由当前客户端回调填写；包含 raw/animation dt、推进/尝试/成功/延后/退避标记、各阶段毫秒、实际 API 结果、资源几何和光影计数。`FrameAnimationClock::LastRawElapsedSeconds()` 是只读观测；Idle 后首次回调可报告完整 raw 间隔，同时动画 dt 为 0，后续活动帧仍受 `Tick()` 的 50 ms 上限约束。
 
 `RenderPipeline.Diagnostics.h` 为内部纯数值聚合，置于 module/import 之后；生产 Scheduler 与无窗口测试共用同一实现，不作为新的通用遥测层。
 
@@ -59,7 +59,7 @@ void FrameStageTimer::Stop() noexcept;
 
 - 复用实际聚合器的确定时间测试：健康静默、50 ms 阈值、1 s 限频、拒绝保留、恢复保留、idle 排除、推进与回调分离。
 - 真实 Scheduler 与假客户端：TLS 生命周期、多个客户端/多个实例隔离、动态 sink 安装、sink 异常、Stop/restart、idle 诊断到期不增回调。
-- 帧计时测试：原始 dt 可见，但 clamp/负值回退/Rebase 原行为不变。
+- 帧计时测试：原始 dt 可见，Idle 首次回调动画 dt 为 0，后续活动帧的 clamp/负值回退与显式 Rebase 行为保持可测。
 - 绘制计数使用实际函数体探针或真实 renderer 验证正常分片、exact 单次和跳过分支；不能把计数验证称为完整 GPU/ULW 性能复现。
 - 完整 `InkeysRepo.sln Debug|ARM64` 与 `InkeysHeadlessTests --no-window`；主观流畅度和故障现场仍需独立运行证据。
 

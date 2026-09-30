@@ -62,7 +62,6 @@ mini config 只读取：
 | `--startup-preview-smoke <report>` | 自动 smoke，报告 total width DIP、alpha committed、owner exit、preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段 |
 | `--startup-preview-manual-delay` | 仅人工观察时启用 `ReportStartupMilestoneForManualTest` 分阶段延迟 |
 | `INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1` | 与命令行等价的人工观察延迟入口，便于脚本/临时环境使用 |
-| `INKEYS_STARTUP_PREVIEW_RETRY_FAILURE=1` | 保留的首次重试/最终失败人工测试入口 |
 
 `--startup-preview-smoke` 不隐式启用 manual delay；所有测试 hook 未显式开启时不得拖慢正常启动。
 
@@ -141,7 +140,7 @@ expandedTotalWidthDip = mainButton->GetW() /* target, not w.val */
 
 Preview 失败、mask/shimmer 失败、owner 超时、device loss 或 ULW failure 不得阻止正式启动；核心 RenderPipeline、Window Service、Draw3、Setting、Whiteboard 和 Bar failure 仍按既有 fatal 语义处理。退出顺序至少为：停止新 frame/width -> 注销 observer -> unregister/drain StartupPreview -> render-thread resource release -> owner hide/destroy/join -> Bar/Window/RenderPipeline 既有 shutdown；所有 wait 有界。
 
-保留 `ReportStartupMilestoneForManualTest`、`RunStartupPreviewRetryFailureForManualTest`、`INKEYS_STARTUP_PREVIEW_RETRY_FAILURE`、分阶段延迟、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和 `--startup-preview-smoke`。测试钩子未启用时不得拖慢正常启动，也不得让 render/callback thread sleep。Smoke 应报告 total width DIP、Preview alpha-0/fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段。
+保留 `ReportStartupMilestoneForManualTest`、分阶段延迟、`INKEYS_STARTUP_PREVIEW_MANUAL_DELAY=1`、`--startup-preview-manual-delay` 和 `--startup-preview-smoke`。发布构建不得保留仅凭环境变量存在即可触发重启/fatal 的 `INKEYS_STARTUP_PREVIEW_RETRY_FAILURE` 故障注入入口；真实失败路径另行隔离验证。测试钩子未启用时不得拖慢正常启动，也不得让 render/callback thread sleep。Smoke 应报告 total width DIP、Preview alpha-0/fade-out committed、Bar alpha-0/255 committed、owner exit、Preview inactive 和 recovery；不得输出旧 cache/signature/capture 字段。
 
 ## 10. Validation matrix
 

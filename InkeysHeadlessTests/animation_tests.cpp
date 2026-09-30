@@ -28,12 +28,15 @@ int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
 int RunWindowTests();
+int RunWindowExitVisibilityTests();
 int RunMessageBoxTests(bool runWindowTests);
 int RunMessageBoxVisualTests(const char* outputDirectory);
 int RunMessageBoxFirstFrameChildTest();
 int RunDirtyRegionTests();
 int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
+int RunDraw3ContactInputBenchmarks();
+int RunUpdateSecurityTests();
 int RunToggleClickCoalescerTests();
 int RunRenderSchedulerTests();
 int RunStartupProgressTests();
@@ -722,6 +725,19 @@ namespace
 		auto immediate = immediateContentTransition.Advance(0.01, 1.0);
 		Check(immediate.reachedKeyframe && immediate.finished,
 			"zero-duration content transition applies immediately");
+		BarUiKeyframeTimelineClass disabledContentTransition;
+		disabledContentTransition.Start(1.0, 0.5);
+		const auto idleContent = disabledContentTransition.Advance(0.0, 1.0e12);
+		Check(!idleContent.finished && disabledContentTransition.IsActive(),
+			"zero-time idle frame preserves enabled content transition");
+		const bool previousAnimationEnabled = BarUiAnimationEnabled;
+		BarUiAnimationEnabled = false;
+		const auto disabledContent = disabledContentTransition.Advance(0.0, 1.0e12);
+		BarUiAnimationEnabled = previousAnimationEnabled;
+		Check(disabledContent.reachedKeyframe && disabledContent.finished
+			&& Near(disabledContent.progress, 1.0)
+			&& !disabledContentTransition.IsActive(),
+			"disabled content transition commits its keyframe on the idle wake");
 	}
 
 	void TestCenteredHiddenButtonRejoinsLayoutBatch()
@@ -895,6 +911,53 @@ namespace
 			quantized, BarUiAnimationAdvanceContextClass{ 0.0001, 1.0, true, false });
 		Check(!quantizedFrame.changed && quantizedFrame.active,
 			"quantized color remains scheduled when the pixel value is unchanged");
+
+		// 休眠后的首帧 dt 为零，数值、颜色和透明度都不能瞬间落到目标。
+		BarUiValueClass idleValue(0.0);
+		idleValue.SetTar(10.0, 1.0);
+		auto idleValueFrame = BarUiAdvanceAnimation(idleValue,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idleValueFrame.changed && idleValueFrame.active
+			&& Near(idleValue.val, 0.0) && Near(idleValue.progress, 0.0),
+			"zero-time wake preserves the pending value animation");
+		BarUiColorClass idleColor(RGB(0, 0, 0));
+		idleColor.SetTar(RGB(255, 255, 255), 1.0);
+		auto idleColorFrame = BarUiAdvanceAnimation(idleColor,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idleColorFrame.changed && idleColorFrame.active
+			&& idleColor.val == RGB(0, 0, 0) && Near(idleColor.progress, 0.0),
+			"zero-time wake preserves the pending color animation");
+		BarUiPctClass idlePct(0.0);
+		idlePct.SetTar(1.0, 1.0);
+		auto idlePctFrame = BarUiAdvanceAnimation(idlePct,
+			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		Check(!idlePctFrame.changed && idlePctFrame.active
+			&& Near(idlePct.val, 0.0) && Near(idlePct.progress, 0.0),
+			"zero-time wake preserves the pending opacity animation");
+		BarUiAdvanceAnimation(idleValue,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		BarUiAdvanceAnimation(idleColor,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		BarUiAdvanceAnimation(idlePct,
+			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		Check(Near(idleValue.val, 5.0) && idleColor.val == RGB(128, 128, 128)
+			&& Near(idlePct.val, 0.7071067811865476),
+			"animations resume their original trajectory after the zero-time wake");
+		BarUiValueClass disabledIdleValue(0.0);
+		disabledIdleValue.SetTar(10.0, 1.0);
+		BarUiColorClass disabledIdleColor(RGB(0, 0, 0));
+		disabledIdleColor.SetTar(RGB(255, 255, 255), 1.0);
+		BarUiPctClass disabledIdlePct(0.0);
+		disabledIdlePct.SetTar(1.0, 1.0);
+		const BarUiAnimationAdvanceContextClass disabledIdleContext{ 0.0,
+			1.0e12, false, false };
+		Check(!BarUiAdvanceAnimation(disabledIdleValue, disabledIdleContext).active
+			&& !BarUiAdvanceAnimation(disabledIdleColor, disabledIdleContext).active
+			&& !BarUiAdvanceAnimation(disabledIdlePct, disabledIdleContext).active
+			&& Near(disabledIdleValue.val, 10.0)
+			&& disabledIdleColor.val == RGB(255, 255, 255)
+			&& Near(disabledIdlePct.val, 1.0),
+			"animation-disabled targets replace immediately even on an idle wake");
 
 		BarUiColorClass disabledHover(RGB(0, 0, 0));
 		disabledHover.animateWhenDisabled = true;
@@ -1533,16 +1596,20 @@ namespace
 int main(int argc, char** argv)
 {
 	bool benchmark = false;
+	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
+	bool exitVisibilityGateOnly = false;
 	bool messageBoxFirstFrameChild = false;
 	const char* messageBoxVisualOutput = nullptr;
 	for (int index = 1; index < argc; ++index)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
+		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
 		runWindowTests &= argument != "--no-window";
+		exitVisibilityGateOnly |= argument == "--exit-visibility-gate-test";
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
 	}
@@ -1550,6 +1617,10 @@ int main(int argc, char** argv)
 		return RunMessageBoxFirstFrameChildTest();
 	if (messageBoxVisualOutput)
 		return RunMessageBoxVisualTests(messageBoxVisualOutput);
+	if (draw3ContactBenchmark)
+		return RunDraw3ContactInputBenchmarks();
+	if (exitVisibilityGateOnly)
+		return RunWindowExitVisibilityTests();
 
 	TestCurvesAndTimelines();
 	TestLocalizedFormatFallbacks();
@@ -1585,6 +1656,7 @@ int main(int argc, char** argv)
 	failureCount += RunBarBottomDockTests();
 	failureCount += RunDraw3BridgeTests();
 	failureCount += RunDraw3ContactInputTests();
+	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
