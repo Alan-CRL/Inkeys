@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 #include "Draw3.SpeedEraser.h"
+#include "../../Helper/FailedCleanupDeadline.h"
 #include <windows.h>
 #include <RTSCOM.h>
 #include <RTSCOM_i.c>
@@ -2366,6 +2367,8 @@ namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<IStylusSyncPlugin> plugin;
 		ContactInputCoordinator* coordinator = nullptr;
 		DrawingCursorEventSink* drawingCursorSink = nullptr;
+		// 成功后可持有 Cancelled Signal，其进程寿命 publisher 仍可处理停止证明失败。
+		Shutdown::FailedCleanupSignal failedCleanup;
 		bool comInitialized = false;
 		bool pluginAdded = false;
 		bool initialized = false;
@@ -2392,9 +2395,14 @@ namespace Inkeys::Drawing::Draw3
 #endif
 
 	bool RealTimeStylusInput::Initialize(HWND window, ContactInputCoordinator& coordinator,
-		DrawingCursorEventSink* drawingCursorSink)
+		DrawingCursorEventSink* drawingCursorSink, Shutdown::FailedCleanupSignal failedCleanup)
 	{
-		if (!window || impl_->initialized) return false;
+		if (!window || impl_->initialized)
+		{
+			failedCleanup.BeginKnownFailure();
+			return false;
+		}
+		impl_->failedCleanup = failedCleanup;
 		impl_->coordinator = &coordinator;
 		impl_->drawingCursorSink = drawingCursorSink;
 		DWORD windowProcessId = 0;
@@ -2427,6 +2435,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoInitializeEx(COINIT_MULTITHREADED)", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2444,6 +2453,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoCreateInstance(RealTimeStylus)", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2456,7 +2466,11 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 		traceState.putHwndResult = result;
 #endif
-		if (FAILED(result)) LogHResult("Bind RealTimeStylus HWND", result);
+		if (FAILED(result))
+		{
+			impl_->failedCleanup.BeginKnownFailure();
+			LogHResult("Bind RealTimeStylus HWND", result);
+		}
 		if (SUCCEEDED(result))
 		{
 			result = impl_->stylus->SetAllTabletsMode(TRUE); // 同时接收鼠标、笔和触摸。
@@ -2464,7 +2478,11 @@ namespace Inkeys::Drawing::Draw3
 			traceState.setAllTabletsModeResult = result;
 #endif
 		}
-		if (FAILED(result)) LogHResult("Set RealTimeStylus all-tablets mode", result);
+		if (FAILED(result))
+		{
+			impl_->failedCleanup.BeginKnownFailure();
+			LogHResult("Set RealTimeStylus all-tablets mode", result);
+		}
 		if (SUCCEEDED(result))
 		{
 			const GUID* desiredPacketProperties = kExtendedPacketProperties.data();
@@ -2496,7 +2514,11 @@ namespace Inkeys::Drawing::Draw3
 #endif
 			}
 		}
-		if (FAILED(result)) LogHResult("Set RealTimeStylus packet description", result);
+		if (FAILED(result))
+		{
+			impl_->failedCleanup.BeginKnownFailure();
+			LogHResult("Set RealTimeStylus packet description", result);
+		}
 		if (SUCCEEDED(result))
 		{
 			Microsoft::WRL::ComPtr<IRealTimeStylus2> stylus2;
@@ -2543,6 +2565,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("Configure RealTimeStylus multi-contact input", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2554,6 +2577,7 @@ namespace Inkeys::Drawing::Draw3
 		auto* plugin = new (std::nothrow) StylusSyncPlugin(coordinator, drawingCursorSink);
 		if (!plugin)
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
 #endif
@@ -2562,6 +2586,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (FAILED(plugin->MarshalerResult()))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("CoCreateFreeThreadedMarshaler", plugin->MarshalerResult());
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			traceState.marshalerResult = plugin->MarshalerResult();
@@ -2583,6 +2608,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("AddStylusSyncPlugin", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2598,6 +2624,7 @@ namespace Inkeys::Drawing::Draw3
 #endif
 		if (FAILED(result))
 		{
+			impl_->failedCleanup.BeginKnownFailure();
 			LogHResult("Enable RealTimeStylus", result);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			logTrace();
@@ -2622,11 +2649,17 @@ namespace Inkeys::Drawing::Draw3
 		if (impl_->stylus)
 		{
 			const HRESULT disableResult = impl_->stylus->put_Enabled(FALSE); // 先停止产生新的同步回调。
+			// plugin 已加入却未确认停止时，保留业务对象并接管当前线程，禁止释放后 Reset。
+			if (FAILED(disableResult) && impl_->pluginAdded && impl_->failedCleanup.HasPublisher())
+				impl_->failedCleanup.FailUnprovenProducerStop();
 			if (FAILED(disableResult)) LogHResult("Disable RealTimeStylus", disableResult);
 			if (impl_->pluginAdded)
 			{
 				IStylusSyncPlugin* removedPlugin = nullptr;
 				const HRESULT removeResult = impl_->stylus->RemoveStylusSyncPlugin(0, &removedPlugin);
+				// removedPlugin 的临时强引用也留在 noreturn 栈，不能提前 Release 冒充静止。
+				if (FAILED(removeResult) && impl_->failedCleanup.HasPublisher())
+					impl_->failedCleanup.FailUnprovenProducerStop();
 				if (FAILED(removeResult)) LogHResult("RemoveStylusSyncPlugin", removeResult);
 				if (removedPlugin) removedPlugin->Release();
 				impl_->pluginAdded = false;

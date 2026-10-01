@@ -3007,6 +3007,9 @@ int wmain(int argc, wchar_t* argv[])
 		return RunDesktopAutoSaveTests() == 0 ? 0 : 1;
 	if (argc == 2 && wcscmp(argv[1], L"--uink-presentation-only") == 0)
 		return RunPresentationUInkRoundTripTests() == 0 ? 0 : 1;
+	// 仅运行共享文件编解码/事务回归，避开完整默认套件的 GPU 测试。
+	if (argc == 2 && wcscmp(argv[1], L"--uink-file-only") == 0)
+		return RunUInkTests() == 0 ? 0 : 1;
 	if (argc == 4 && wcscmp(argv[1], L"--benchmark") == 0)
 		return RunRuntimeBenchmark(argv[2], argv[3]);
 	if (argc == 2 && wcscmp(argv[1], L"--laser-incremental-only") == 0)

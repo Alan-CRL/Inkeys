@@ -3,9 +3,11 @@
 #include "Draw3.Bridge.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PenDiagnostics.h"
+#include "../../Helper/FailedCleanupDeadline.h"
 
 #include <windows.h>
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -181,6 +183,51 @@ namespace Inkeys::Drawing::Draw3
 		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
 		bool enableEraserDiagnostics = false; // 默认关闭；仅发布有界快照，不逐点写日志。
 		std::optional<SpeedEraser::DisplayScale> hiddenTestDisplayScale;
+		// 只在已知启动失败后激活；按值保活，不借用 Main 的局部 scope。
+		Shutdown::FailedCleanupSignal failedCleanup;
+		// 仅验真 hidden fixture 借用；事件保留到真实 owner join 或进程死亡。
+		HANDLE successfulPresentReachedEvent = nullptr;
+		HANDLE continueSuccessfulPresentEvent = nullptr;
+		// 显式诊断只在本次 run 创建会话；越界容量仅关闭指标，不阻止产品启动。
+		bool enableRuntimeMetrics = false;
+		std::size_t runtimeMetricsMaximumSamples = 32768;
+	};
+
+	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
+	struct HostHiddenPersistenceSnapshot
+	{
+		std::uint64_t desktopAccepted = 0, desktopCommitted = 0;
+		std::uint64_t desktopFailed = 0, desktopPending = 0;
+		std::uint64_t presentationAccepted = 0, presentationCommitted = 0;
+		std::uint64_t presentationLoaded = 0, presentationFailed = 0;
+		std::uint64_t presentationNotFound = 0; // hidden实测Load终态，不能当Save失败。
+	};
+
+	// GPU owner 按值采集；adapter 描述只在启动和释放前复制，快照不持有 COM 对象。
+	struct HostRuntimeMetricsMetadata
+	{
+		bool graphicsAvailable = false;
+		bool adapterAvailable = false;
+		std::uint32_t driverType = 0;
+		std::uint32_t featureLevel = 0;
+		HostPresentationMode presentationMode = HostPresentationMode::Automatic;
+		HostOutputTarget outputTarget = HostOutputTarget::PrimaryDrawpad;
+		std::uint64_t outputRevision = 0;
+		std::int64_t qpcFrequency = 0;
+		std::array<wchar_t, 128> adapterDescription{};
+	};
+
+	// 进度只用于等待；Session 只能由绘制 owner 或真 join 后的生命周期 owner 读取。
+	struct HostRuntimeMetricsSnapshot
+	{
+		bool enabled = false, unavailable = false, joined = false, sealed = false;
+		bool startupFailed = false, runFailed = false, exportUnavailable = false;
+		std::uint64_t runSerial = 0;
+		std::uint64_t contactSeen = 0, confirmed = 0, pending = 0;
+		std::uint64_t invalid = 0, contactDropped = 0, pendingOverflow = 0;
+		std::uint64_t frameSerial = 0, presentAttempts = 0;
+		std::uint64_t allocatedBytes = 0, payloadByteUpperBound = 0, effectiveSamples = 0;
+		HostRuntimeMetricsMetadata metadata;
 	};
 
 	// 原子快照仅用于无窗口验收和故障诊断，不暴露 Renderer/Document 所有权。
@@ -232,6 +279,7 @@ namespace Inkeys::Drawing::Draw3
 		SpeedEraser::Diagnostics eraser;
 		PenRuntimeDiagnostics pen;
 		bool touchContactAreaAssistanceEnabled = false;
+		HostRuntimeMetricsSnapshot runtimeMetrics;
 	};
 
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
@@ -248,9 +296,13 @@ namespace Inkeys::Drawing::Draw3
 			HostStartOptions options = {},
 			HostRuntimeCallbacks runtimeCallbacks = {});
 		void Stop() noexcept;
+		// 串行 Start/Stop owner 在真 join 后调用；caller 提供新私有绝对路径，旧报告读完再 Start。
+		bool WriteRuntimeMetrics(const wchar_t* absoluteOutputPath) const noexcept;
 		bool Running() const noexcept;
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
+		// Caller 仅在成功 Start 后且不并行下一 Start 时读取；未启用 hidden 则 nullopt。
+		std::optional<HostHiddenPersistenceSnapshot> HiddenPersistenceSnapshot() const noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;

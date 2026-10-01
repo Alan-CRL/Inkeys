@@ -8,6 +8,7 @@
 #include <compare>
 #include <cstddef>
 #include <d3d11.h>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <windows.h>
@@ -30,6 +31,11 @@ import Inkeys.Drawing.Draw3.runtime_metrics;
 import Inkeys.Drawing.Draw3.transparent_presentation;
 import Inkeys.Drawing.Draw3.window_control;
 
+namespace Inkeys::Drawing::Draw3
+{
+	struct DrawingControllerMetricsState;
+}
+
 export namespace Inkeys::Drawing::Draw3
 {
 	// 显式无窗口诊断入口：用生产 Laser 烘干路径验证真实 WARP Map 失败。
@@ -51,6 +57,8 @@ export namespace Inkeys::Drawing::Draw3
 	int RunPresentationCurrentLoadRetryProbe() noexcept;
 	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
 	int RunDraw3ControlFenceProductionProbe() noexcept;
+	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
+	int RunDraw3ContentProofProductionProbe() noexcept;
 
 	struct DrawingControllerRuntimeObserver
 	{
@@ -84,6 +92,7 @@ export namespace Inkeys::Drawing::Draw3
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			DrawingControllerRuntimeObserver observer = {},
 			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr);
+		~DrawingController();
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
@@ -149,6 +158,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::optional<InkCanvasCollection> document_;
 		size_t currentPageIndex_ = 0;
 		RuntimeMetricsSession* metrics_ = nullptr;
+		std::unique_ptr<DrawingControllerMetricsState> metricsState_;
+		bool metricsUnavailable_ = false;
 		PenHapticFeedback* haptics_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;

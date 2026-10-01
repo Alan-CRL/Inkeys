@@ -20,6 +20,7 @@
 #include <DirectXMath.h>
 #include <iostream>
 #include <initializer_list>
+#include <json/json.h>
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <limits>
 #include <memory>
@@ -29,6 +30,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <string>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -1830,10 +1832,703 @@ namespace Inkeys::Drawing::Draw3
 				beforeState, afterState };
 		}
 
+		// 旁挂表只保存 opaque 值键和自有数值，不能给已回收的 contact 延长生存期。
+		struct ContentMetricKey
+		{
+			ContactRecord* opaqueRecord = nullptr;
+			uint64_t generation = 0;
+			bool operator==(const ContentMetricKey&) const = default;
+		};
+		ContentMetricKey MetricKey(ContactHandle handle) noexcept
+		{ return { handle.record, handle.generation }; }
+
+		enum class ContentMetricAdoptionKind : uint8_t
+		{
+			None, Model, RawDown, RawTerminal, Shape
+		};
+		enum class ContentMetricInvalidationReason : uint8_t
+		{
+			Cancelled, InitRejected, ReconnectSuperseded, ContentSuperseded,
+			SceneSuperseded, Fatal, Stopped, ProducerOverflow, Count
+		};
+		struct ContentMetricOutputIdentity
+		{
+			bool exists = false;
+			TransparentOutputTarget target = TransparentOutputTarget::PrimaryDrawpad;
+			uint64_t rawRevision = 0;
+			uint64_t generation = 0;
+			bool operator==(const ContentMetricOutputIdentity&) const = default;
+		};
+		struct ContentMetricRasterSignature
+		{
+			RuntimeMetricsCanvasIdentity canvas;
+			uint64_t historyRevision = 0;
+			InkRasterStateToken rasterState = 0;
+			float viewportX = 0.0f;
+			float viewportY = 0.0f;
+			float viewportScale = 1.0f;
+			int width = 0;
+			int height = 0;
+			bool operator==(const ContentMetricRasterSignature&) const = default;
+		};
+		struct ContentMetricL2Stamp
+		{
+			bool valid = false;
+			ContentMetricRasterSignature signature;
+		};
+		struct ContentMetricLiveNote
+		{
+			bool exists = false;
+			ContentMetricKey key;
+			RuntimeMetricsCanvasIdentity canvas;
+			uint64_t downAdmission = 0;
+			int64_t downQpc = 0;
+			uint64_t consumedSequence = 0;
+			uint64_t adoptedSequence = 0;
+			int64_t adoptedQpc = 0;
+			uint64_t adoptedAdmission = 0;
+			ContentMetricAdoptionKind adoptionKind = ContentMetricAdoptionKind::None;
+			uint64_t contentToken = 0;
+			uint64_t geometrySequence = 0;
+			uint64_t rasteredSequence = 0;
+			uint64_t rasterFrameSerial = 0;
+			RECT nonPredictedBounds = {};
+			DrawingTool tool = DrawingTool::Pen;
+			bool nonPredictedGeometry = false;
+			bool landingConfirmed = false;
+			uint64_t lastWithheldSequence = 0;
+			ContentMetricRasterSignature rasterSurface;
+			bool rasterSurfaceKnown = false;
+		};
+		struct ContentMetricStoredNote
+		{
+			bool exists = false;
+			ContentMetricKey key;
+			RuntimeMetricsCanvasIdentity canvas;
+			RenderItemId item;
+			size_t strokeIndex = 0;
+			uint64_t contentGeneration = 0;
+			InkRasterStateToken afterState = 0;
+			uint64_t terminalSequence = 0;
+			int64_t terminalQpc = 0;
+			uint64_t terminalAdmission = 0;
+			uint64_t contentToken = 0;
+		};
+		struct ContentMetricCandidate
+		{
+			ContentMetricKey key;
+			RuntimeMetricsLandingProof proof;
+			ContentMetricOutputIdentity output;
+		};
+		struct ContentMetricCanvasMapping
+		{
+			InkGuid workspace;
+			InkGuid page;
+			DeviceKey device;
+			uint64_t workspaceOrdinal = 0;
+			uint64_t pageOrdinal = 0;
+		};
+		struct ContentMetricCounters
+		{
+			std::array<uint64_t, static_cast<size_t>(ContentMetricInvalidationReason::Count)> invalidated = {};
+			uint64_t proofOverflow = 0;
+			uint64_t identityExhausted = 0;
+			uint64_t consumedNotAdopted = 0;
+			uint64_t outputMismatch = 0;
+			uint64_t authoritativeWithheld = 0;
+			uint64_t noPresent = 0;
+			uint64_t rasterFailed = 0;
+			uint64_t excludedLaser = 0;
+		};
+
+		struct ControllerContentMetrics
+		{
+			static constexpr size_t kByteBudget = 32u * 1024 * 1024;
+			static constexpr size_t kNoteCapacity = 64;
+			static constexpr size_t kCandidateCapacity = kNoteCapacity * 2;
+			explicit ControllerContentMetrics(RuntimeMetricsSession& session) noexcept : metrics(session) {}
+			static std::unique_ptr<ControllerContentMetrics> Prepare(
+				RuntimeMetricsSession* session, size_t externalAuxiliaryBytes = 0) noexcept;
+			static bool FitsBudget(RuntimeMetricsSession* session,
+				size_t externalAuxiliaryBytes, size_t ownBytes) noexcept;
+
+			uint64_t AllocateContentToken() noexcept
+			{
+				if (!identityAvailable) return 0;
+				if (nextContentToken == 0) { ExhaustIdentity(); return 0; }
+				const uint64_t value = nextContentToken;
+				nextContentToken = value == (std::numeric_limits<uint64_t>::max)() ? 0 : value + 1;
+				return value;
+			}
+			ContentMetricLiveNote* FindLive(ContentMetricKey key) noexcept
+			{
+				for (auto& note : live) if (note.exists && note.key == key) return &note;
+				return nullptr;
+			}
+			ContentMetricStoredNote* FindStored(ContentMetricKey key) noexcept
+			{
+				for (auto& note : stored) if (note.exists && note.key == key) return &note;
+				return nullptr;
+			}
+			bool Register(ContentMetricKey key, const ContactSnapshot& down,
+				InputDeviceType device, DrawingTool tool) noexcept
+			{
+				if (!identityAvailable) return false;
+				if (FindLive(key) || FindStored(key)) return true;
+				if (tool == DrawingTool::Laser) ++counters.excludedLaser;
+				if (!metrics.RegisterContact(key.opaqueRecord, key.generation,
+					device, static_cast<uint32_t>(tool), down.qpc)) return false;
+				for (auto& note : live)
+				{
+					if (note.exists) continue;
+					// 源快照只在真实初始化入口复制一次；以后只用值键。
+					note = {};
+					note.exists = true;
+					note.key = key;
+					note.canvas = canvasIdentity;
+					note.downAdmission = down.admissionRevision;
+					note.downQpc = down.qpc;
+					note.contentToken = AllocateContentToken();
+					note.tool = tool;
+					return note.exists && note.contentToken != 0;
+				}
+				++counters.proofOverflow;
+				Invalidate(key, ContentMetricInvalidationReason::ProducerOverflow);
+				return false;
+			}
+			void NoteConsumed(ContentMetricKey key, uint64_t sequence) noexcept
+			{
+				if (auto* note = FindLive(key)) note->consumedSequence = sequence;
+			}
+			bool Adopt(ContentMetricKey key, const ContactSnapshot& snapshot,
+				ContentMetricAdoptionKind kind, bool nonPredictedGeometry) noexcept
+			{
+				auto* note = FindLive(key);
+				if (!note || !nonPredictedGeometry ||
+					(kind != ContentMetricAdoptionKind::Model && kind != ContentMetricAdoptionKind::RawDown &&
+						kind != ContentMetricAdoptionKind::RawTerminal && kind != ContentMetricAdoptionKind::Shape) ||
+					snapshot.sequence == 0 || snapshot.qpc <= 0 ||
+					(snapshot.phase != ContactPhase::Down && snapshot.phase != ContactPhase::Move && snapshot.phase != ContactPhase::Up) ||
+					snapshot.sequence != note->consumedSequence ||
+					snapshot.sequence < note->adoptedSequence || snapshot.qpc < note->adoptedQpc ||
+					snapshot.qpc < note->downQpc ||
+					snapshot.admissionRevision != note->downAdmission ||
+					(kind == ContentMetricAdoptionKind::RawDown && snapshot.phase != ContactPhase::Down) ||
+					(kind == ContentMetricAdoptionKind::RawTerminal && snapshot.phase != ContactPhase::Up)) return false;
+				const uint64_t geometryToken = AllocateContentToken();
+				if (geometryToken == 0) return false;
+				note->adoptedSequence = snapshot.sequence;
+				note->adoptedQpc = snapshot.qpc;
+				note->adoptedAdmission = snapshot.admissionRevision;
+				note->adoptionKind = kind;
+				note->geometrySequence = snapshot.sequence;
+				note->contentToken = geometryToken;
+				note->nonPredictedGeometry = true;
+				note->rasteredSequence = 0;
+				note->rasterFrameSerial = 0;
+				return true;
+			}
+			void ObserveLiveRaster(ContentMetricKey key, uint64_t geometrySequence,
+				RECT bounds, uint64_t frameSerial, bool sharedLayersSucceeded,
+				const ContentMetricRasterSignature* surface = nullptr) noexcept
+			{
+				auto* note = FindLive(key);
+				if (!note) return;
+				const bool accepted = sharedLayersSucceeded && frameSerial != 0 &&
+					frameSerial == metrics.Snapshot().frameSerial &&
+					SameScene(note->canvas, canvasIdentity) && geometrySequence != 0 &&
+					geometrySequence == note->geometrySequence && geometrySequence == note->adoptedSequence;
+				note->rasteredSequence = accepted ? geometrySequence : 0;
+				note->rasterFrameSerial = accepted ? frameSerial : 0;
+				if (accepted) note->canvas.rasterGeneration = canvasIdentity.rasterGeneration;
+				note->rasterSurfaceKnown = accepted && surface != nullptr;
+				if (note->rasterSurfaceKnown) note->rasterSurface = *surface;
+				note->nonPredictedBounds = bounds;
+			}
+			bool CaptureStored(ContentMetricKey key, const StoredStrokeCpuCommit& committed,
+				const CanvasPageRuntimeState& pageRuntime, const ContactSnapshot& terminal) noexcept
+			{
+				auto* source = FindLive(key);
+				if (source && source->landingConfirmed)
+				{
+					// Down 已经确认；真实 Up 仍计帧，但不再占用第二个 Down landing 槽。
+					source->exists = false;
+					return true;
+				}
+				const auto* item = pageRuntime.history.Find(committed.renderItem);
+				if (!source || !item || !item->visible || item->strokeIndex != committed.strokeIndex ||
+					source->tool == DrawingTool::Laser || !SameScene(source->canvas, canvasIdentity) ||
+					item->contentGeneration == 0 || committed.afterState == 0 ||
+					committed.renderItem.index >= pageRuntime.afterStates.size() ||
+					pageRuntime.afterStates[committed.renderItem.index] != committed.afterState ||
+					terminal.sequence == 0 || terminal.qpc <= 0 ||
+					terminal.phase != ContactPhase::Up || terminal.sequence != source->consumedSequence ||
+					terminal.admissionRevision != source->downAdmission) return false;
+				for (auto& note : stored)
+				{
+					if (note.exists) continue;
+					const uint64_t contentToken = AllocateContentToken();
+					if (contentToken == 0) return false;
+					note = { true, key, source->canvas, committed.renderItem,
+						committed.strokeIndex, item->contentGeneration, committed.afterState,
+						terminal.sequence, terminal.qpc, terminal.admissionRevision, contentToken };
+					source->exists = false;
+					return true;
+				}
+				++counters.proofOverflow;
+				Invalidate(key, ContentMetricInvalidationReason::ProducerOverflow);
+				return false;
+			}
+			bool ObserveCanvas(const InkCanvasCollection& document, size_t pageIndex,
+				uint64_t rasterGeneration, bool newScene) noexcept
+			{
+				if (!identityAvailable) return false;
+				const auto* page = document.PageAt(pageIndex);
+				if (!page || !page->FindCanvas(kDefaultDeviceKey) || rasterGeneration == 0 ||
+					document.WorkspaceGuid().IsZero() || page->PageGuid().IsZero()) return false;
+				if (rasterGeneration < canvasIdentity.rasterGeneration)
+				{ ExhaustIdentity(); return false; } // 产品计数绕回也不能复用旧诊断身份。
+				size_t index = 0;
+				uint64_t workspaceOrdinal = 0;
+				for (; index < mappingCount; ++index)
+				{
+					if (mappings[index].workspace == document.WorkspaceGuid())
+						workspaceOrdinal = mappings[index].workspaceOrdinal;
+					if (mappings[index].workspace == document.WorkspaceGuid() &&
+						mappings[index].page == page->PageGuid() && mappings[index].device == kDefaultDeviceKey) break;
+				}
+				if (index == mappingCount)
+				{
+					if (mappingCount == mappings.size()) { ExhaustIdentity(); return false; }
+					if (workspaceOrdinal == 0) workspaceOrdinal = ++lastWorkspaceOrdinal;
+					mappings[mappingCount++] = { document.WorkspaceGuid(), page->PageGuid(),
+						kDefaultDeviceKey, workspaceOrdinal, ++lastPageOrdinal };
+				}
+				const auto& mapping = mappings[index];
+				if (newScene || canvasIdentity.workspace != mapping.workspaceOrdinal ||
+					canvasIdentity.page != mapping.pageOrdinal)
+				{
+					if (lastSceneGeneration == (std::numeric_limits<uint64_t>::max)())
+					{ ExhaustIdentity(); return false; }
+					const auto previous = canvasIdentity;
+					for (const auto& note : live)
+						if (note.exists && SameScene(note.canvas, previous))
+							Invalidate(note.key, ContentMetricInvalidationReason::SceneSuperseded);
+					for (const auto& note : stored)
+						if (note.exists && SameScene(note.canvas, previous))
+							Invalidate(note.key, ContentMetricInvalidationReason::SceneSuperseded);
+					InvalidateRaster();
+					canvasIdentity.sceneGeneration = ++lastSceneGeneration;
+				}
+				else if (canvasIdentity.rasterGeneration != rasterGeneration) InvalidateRaster();
+				canvasIdentity.workspace = mapping.workspaceOrdinal;
+				canvasIdentity.page = mapping.pageOrdinal;
+				canvasIdentity.rasterGeneration = rasterGeneration;
+				ownerWorkspace = document.WorkspaceGuid();
+				ownerPage = page->PageGuid();
+				return true;
+			}
+			ContentMetricRasterSignature Signature(const InkCanvasCollection& document,
+				size_t pageIndex, const CanvasPageRuntimeState& pageRuntime, int width, int height) const noexcept
+			{
+				const auto* page = document.PageAt(pageIndex);
+				const auto* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+				if (!canvas || document.WorkspaceGuid() != ownerWorkspace || page->PageGuid() != ownerPage)
+					return {};
+				const auto viewport = canvas->Viewport();
+				return { canvasIdentity, pageRuntime.history.Revision(), pageRuntime.rasterState,
+					viewport.x, viewport.y, viewport.scale, width, height };
+			}
+			ContentMetricOutputIdentity ObserveOutput(bool exists, TransparentOutputTarget target, uint64_t rawRevision) noexcept
+			{
+				if (!identityAvailable) return {};
+				if (!exists) { InvalidateOutput(); return {}; }
+				if (target != TransparentOutputTarget::PrimaryDrawpad && target != TransparentOutputTarget::SelectionUlw)
+				{ InvalidateOutput(); return {}; }
+				if (output.exists && output.target == target && output.rawRevision == rawRevision) return output;
+				if (nextOutputGeneration == 0) { ExhaustIdentity(); return {}; }
+				// raw0 和 UINT64_MAX 都是原始值；匿名编号单独推进，不对 raw 做算术。
+				const uint64_t generation = nextOutputGeneration;
+				nextOutputGeneration = generation == (std::numeric_limits<uint64_t>::max)() ? 0 : generation + 1;
+				output = { true, target, rawRevision, generation };
+				return output;
+			}
+			void InvalidateOutput() noexcept { output = {}; candidateCount = 0; compositeReady = false; }
+			static bool SameScene(const RuntimeMetricsCanvasIdentity& left,
+				const RuntimeMetricsCanvasIdentity& right) noexcept
+			{
+				return left.workspace == right.workspace && left.page == right.page &&
+					left.sceneGeneration == right.sceneGeneration;
+			}
+			bool ValidSignature(const ContentMetricRasterSignature& signature) const noexcept
+			{
+				return identityAvailable && signature.canvas == canvasIdentity &&
+					signature.canvas.workspace != 0 && signature.canvas.page != 0 &&
+					signature.canvas.sceneGeneration != 0 && signature.canvas.rasterGeneration != 0 &&
+					signature.canvas.outputGeneration == 0 && signature.width > 0 && signature.height > 0 &&
+					std::isfinite(signature.viewportX) && std::isfinite(signature.viewportY) && signature.viewportScale == 1.0f;
+			}
+			static bool SameSurface(const ContentMetricRasterSignature& left,
+				const ContentMetricRasterSignature& right) noexcept
+			{
+				return left.canvas == right.canvas && left.width == right.width && left.height == right.height &&
+					left.viewportX == right.viewportX && left.viewportY == right.viewportY &&
+					left.viewportScale == right.viewportScale;
+			}
+			bool CompleteFullReplay(const ContentMetricRasterSignature& signature, bool succeeded) noexcept
+			{
+				InvalidateL2();
+				if (!succeeded || !ValidSignature(signature)) return false;
+				l2 = { true, signature };
+				return true;
+			}
+			bool BeginLocalWrite(const ContentMetricRasterSignature& before) noexcept
+			{
+				const bool continuous = l2.valid && l2.signature == before && ValidSignature(before);
+				// 先撤旧资格；后来的另一笔成功不能给此前失败的全页补一个成功戳。
+				InvalidateL2();
+				localWriteBefore = before;
+				localWritePending = continuous;
+				return continuous;
+			}
+			bool CompleteLocalWrite(const ContentMetricRasterSignature& before,
+				const ContentMetricRasterSignature& after, bool succeeded) noexcept
+			{
+				const bool continuous = localWritePending && localWriteBefore == before && succeeded &&
+					ValidSignature(after) && SameSurface(before, after) && after.historyRevision >= before.historyRevision;
+				localWritePending = false;
+				l2.valid = false;
+				candidateCount = 0;
+				compositeReady = false;
+				if (!continuous) return false;
+				l2 = { true, after };
+				return true;
+			}
+			void BeginVisibleReplay(const ContentMetricRasterSignature& signature) noexcept
+			{
+				InvalidateL2();
+				replaySignature = signature;
+				replayPending = ValidSignature(signature);
+			}
+			bool CompleteVisibleReplay(const ContentMetricRasterSignature& signature, bool complete) noexcept
+			{
+				l2.valid = false;
+				candidateCount = 0;
+				compositeReady = false;
+				if (!replayPending || !ValidSignature(signature) || signature != replaySignature)
+				{ replayPending = false; return false; }
+				if (!complete) return false; // 分帧计划保留开始身份，等待全部必要可见 Tile。
+				replayPending = false;
+				l2 = { true, signature };
+				return true;
+			}
+			void InvalidateL2() noexcept
+			{
+				l2.valid = false;
+				candidateCount = 0;
+				compositeReady = false;
+				replayPending = false;
+				localWritePending = false;
+			}
+			void InvalidateRaster() noexcept
+			{
+				InvalidateL2();
+				InvalidateLiveRasters();
+			}
+			void InvalidateLiveRasters() noexcept
+			{
+				for (auto& note : live) { note.rasteredSequence = 0; note.rasterFrameSerial = 0; }
+			}
+			void RetireNotes(ContentMetricKey key) noexcept
+			{
+				if (auto* note = FindLive(key)) note->exists = false;
+				if (auto* note = FindStored(key)) note->exists = false;
+				size_t kept = 0;
+				for (size_t index = 0; index < candidateCount; ++index)
+					if (candidates[index].key != key) candidates[kept++] = candidates[index];
+				candidateCount = kept;
+			}
+			bool Invalidate(ContentMetricKey key, ContentMetricInvalidationReason reason) noexcept
+			{
+				const auto* source = FindLive(key);
+				const bool excludedLaser = source && source->tool == DrawingTool::Laser;
+				const bool changed = metrics.InvalidateContact(key.opaqueRecord, key.generation);
+				const size_t reasonIndex = static_cast<size_t>(reason);
+				if (changed && !excludedLaser && reasonIndex < counters.invalidated.size())
+					++counters.invalidated[reasonIndex];
+				RetireNotes(key); // 已确认、重复或旧代次也只释放这个值键的旁挂状态。
+				return changed;
+			}
+			void ExhaustIdentity() noexcept
+			{
+				if (!identityAvailable) return;
+				identityAvailable = false;
+				++counters.identityExhausted;
+				for (auto& note : live)
+				{
+					if (note.exists) metrics.InvalidateContact(note.key.opaqueRecord, note.key.generation);
+					note.exists = false;
+				}
+				for (auto& note : stored)
+				{
+					if (note.exists) metrics.InvalidateContact(note.key.opaqueRecord, note.key.generation);
+					note.exists = false;
+				}
+				InvalidateRaster();
+				InvalidateOutput();
+			}
+			static bool ClipBounds(RECT bounds, int width, int height, RECT& clipped) noexcept
+			{
+				clipped = { std::clamp(bounds.left, 0L, static_cast<LONG>(width)),
+					std::clamp(bounds.top, 0L, static_cast<LONG>(height)),
+					std::clamp(bounds.right, 0L, static_cast<LONG>(width)),
+					std::clamp(bounds.bottom, 0L, static_cast<LONG>(height)) };
+				return clipped.left < clipped.right && clipped.top < clipped.bottom;
+			}
+			static bool ContainsBounds(RECT outer, RECT inner) noexcept
+			{
+				return outer.left <= inner.left && outer.top <= inner.top &&
+					outer.right >= inner.right && outer.bottom >= inner.bottom;
+			}
+			static bool IntersectsBounds(RECT left, RECT right) noexcept
+			{
+				return left.left < right.right && right.left < left.right &&
+					left.top < right.bottom && right.top < left.bottom;
+			}
+			static bool StoredProjection(InkPixelBounds bounds,
+				const ContentMetricRasterSignature& signature, RECT& projection) noexcept
+			{
+				if (!std::isfinite(bounds.left) || !std::isfinite(bounds.top) ||
+					!std::isfinite(bounds.right) || !std::isfinite(bounds.bottom) ||
+					bounds.left >= bounds.right || bounds.top >= bounds.bottom) return false;
+				// 先在 double 中偏移/裁剪再转 LONG，完全视口外的几何没有成功投影。
+				const auto coordinate = [](double value, int extent, bool ceiling) noexcept -> LONG
+				{
+					return static_cast<LONG>(std::clamp(ceiling ? std::ceil(value) : std::floor(value),
+						0.0, static_cast<double>(extent)));
+				};
+				projection = { coordinate(static_cast<double>(bounds.left) - signature.viewportX, signature.width, false),
+					coordinate(static_cast<double>(bounds.top) - signature.viewportY, signature.height, false),
+					coordinate(static_cast<double>(bounds.right) - signature.viewportX, signature.width, true),
+					coordinate(static_cast<double>(bounds.bottom) - signature.viewportY, signature.height, true) };
+				return projection.left < projection.right && projection.top < projection.bottom;
+			}
+			bool StageCandidate(ContentMetricKey key, const RuntimeMetricsLandingProof& proof) noexcept
+			{
+				if (candidateCount == candidates.size())
+				{
+					++counters.proofOverflow;
+					Invalidate(key, ContentMetricInvalidationReason::ProducerOverflow);
+					return false;
+				}
+				if (!metrics.StageVerifiedLanding(key.opaqueRecord, key.generation, proof))
+				{
+					// overflow/已终结保留 Session 的分母，但不能继续占住旁挂槽。
+					Invalidate(key, ContentMetricInvalidationReason::ContentSuperseded);
+					return false;
+				}
+				candidates[candidateCount++] = { key, proof, output };
+				return true;
+			}
+			void PruneStored(const InkCanvas& canvas, const CanvasPageRuntimeState& pageRuntime) noexcept
+			{
+				for (auto& note : stored)
+				{
+					if (!note.exists) continue;
+					const auto* item = pageRuntime.history.Find(note.item);
+					if (!SameScene(note.canvas, canvasIdentity) || !item || !item->visible ||
+						item->strokeIndex != note.strokeIndex || item->contentGeneration != note.contentGeneration ||
+						note.strokeIndex >= canvas.Strokes().size() || note.item.index >= pageRuntime.afterStates.size() ||
+						pageRuntime.afterStates[note.item.index] != note.afterState)
+						Invalidate(note.key, ContentMetricInvalidationReason::ContentSuperseded);
+				}
+			}
+			size_t FreezeCandidates(const ContentMetricRasterSignature& signature, const InkCanvas& canvas,
+				const CanvasPageRuntimeState& pageRuntime, RECT dirty, bool compositeSucceeded, bool fullComposite) noexcept
+			{
+				candidateCount = 0;
+				frozenFrameSerial = metrics.Snapshot().frameSerial;
+				frozenOutput = output;
+				frozenSignature = signature;
+				compositeReady = false;
+				const auto viewport = canvas.Viewport();
+				if (frozenFrameSerial == 0 || !ValidSignature(signature) ||
+					signature.historyRevision != pageRuntime.history.Revision() ||
+					signature.rasterState != pageRuntime.rasterState || canvas.Device() != kDefaultDeviceKey ||
+					signature.viewportX != viewport.x || signature.viewportY != viewport.y ||
+					signature.viewportScale != viewport.scale) return 0;
+				const bool currentL2 = l2.valid && l2.signature == signature;
+				PruneStored(canvas, pageRuntime);
+				RECT compositeBounds;
+				if (!compositeSucceeded || !output.exists || output.generation == 0 ||
+					!ClipBounds(dirty, signature.width, signature.height, compositeBounds)) return 0;
+				// fullComposite 表示实际整视口合成；PresentFull 开关本身没有这个资格。
+				if (fullComposite && !ContainsBounds(compositeBounds, { 0, 0, signature.width, signature.height })) return 0;
+				compositeReady = true;
+				RuntimeMetricsCanvasIdentity proofCanvas = signature.canvas;
+				proofCanvas.outputGeneration = output.generation;
+				for (auto& note : live)
+				{
+					if (!note.exists || note.landingConfirmed || note.tool == DrawingTool::Laser) continue;
+					if (note.consumedSequence != note.adoptedSequence)
+					{
+						if (note.consumedSequence != 0 && note.lastWithheldSequence != note.consumedSequence)
+						{ ++counters.consumedNotAdopted; note.lastWithheldSequence = note.consumedSequence; }
+						continue;
+					}
+					RECT bounds;
+					if (!SameScene(note.canvas, signature.canvas) || note.canvas.rasterGeneration != signature.canvas.rasterGeneration ||
+						note.contentToken == 0 || note.adoptedSequence == 0 || note.adoptedQpc <= 0 ||
+						note.adoptedAdmission != note.downAdmission || note.adoptionKind == ContentMetricAdoptionKind::None ||
+						!note.nonPredictedGeometry || note.rasteredSequence != note.adoptedSequence ||
+						note.geometrySequence != note.adoptedSequence || note.rasterFrameSerial != frozenFrameSerial ||
+						(note.rasterSurfaceKnown && !SameSurface(note.rasterSurface, signature)) ||
+						!ClipBounds(note.nonPredictedBounds, signature.width, signature.height, bounds) ||
+						!IntersectsBounds(bounds, compositeBounds)) continue;
+					StageCandidate(note.key, { proofCanvas, note.contentToken, 0, note.adoptedSequence,
+						RuntimeMetricsProofKind::Live, frozenFrameSerial });
+				}
+				for (auto& note : stored)
+				{
+					if (!note.exists) continue;
+					const auto* item = pageRuntime.history.Find(note.item);
+					RECT projection;
+					if (!currentL2 || !item || !StoredProjection(item->pixelBounds, signature, projection) ||
+						!ContainsBounds(compositeBounds, projection))
+					{ ++counters.authoritativeWithheld; continue; }
+					StageCandidate(note.key, { proofCanvas, note.contentToken,
+						(uint64_t{ note.item.generation } << 32) | note.item.index,
+						note.terminalSequence, RuntimeMetricsProofKind::Stored, frozenFrameSerial });
+				}
+				return candidateCount;
+			}
+			void PresentReturned(bool called, bool succeeded, int64_t returnQpc, double wallMs,
+				ContentMetricOutputIdentity observed) noexcept
+			{
+				if (!called) { candidateCount = 0; compositeReady = false; return; }
+				// 每个真实调用先独立结算结果；无 proof 或输出不匹配都不能抹掉这次尝试。
+				metrics.RecordVerifiedPresent(wallMs, succeeded);
+				const bool currentFrame = frozenFrameSerial != 0 && frozenFrameSerial == metrics.Snapshot().frameSerial;
+				const bool outputMatches = frozenOutput.exists && observed.exists && output.exists &&
+					frozenOutput == observed && frozenOutput == output;
+				if (succeeded && currentFrame && frozenOutput.exists && !outputMatches) ++counters.outputMismatch;
+				const bool eligible = currentFrame && outputMatches && compositeReady && ValidSignature(frozenSignature);
+				for (size_t index = 0; index < candidateCount; ++index)
+				{
+					const auto candidate = candidates[index];
+					if (!eligible || candidate.output != frozenOutput) continue;
+					if (candidate.proof.kind == RuntimeMetricsProofKind::Stored &&
+						(!l2.valid || l2.signature != frozenSignature))
+					{ ++counters.authoritativeWithheld; continue; }
+					const auto before = metrics.Snapshot();
+					metrics.CommitVerifiedLandings(succeeded, returnQpc, candidate.proof);
+					const auto after = metrics.Snapshot();
+					if (after.confirmed == before.confirmed + 1)
+					{
+						if (auto* note = FindStored(candidate.key)) note->exists = false;
+						if (auto* note = FindLive(candidate.key)) note->landingConfirmed = true;
+					}
+					else if (after.invalid != before.invalid && after.pending < before.pending)
+					{
+						if (auto* note = FindStored(candidate.key)) note->exists = false;
+						if (auto* note = FindLive(candidate.key)) note->exists = false;
+					}
+				}
+				candidateCount = 0;
+				compositeReady = false;
+			}
+			void RecordFrame(const RuntimeMetricsFrameSample& sample) noexcept
+			{
+				if (!sample.presentAttempted) ++counters.noPresent;
+				if ((sample.reasonFlags & (1u << 15)) != 0) ++counters.rasterFailed; // 冻结合同 bit15 是 RasterFailed。
+				metrics.RecordRenderFrame(sample);
+			}
+
+			RuntimeMetricsSession& metrics;
+			std::array<ContentMetricLiveNote, kNoteCapacity> live = {};
+			std::array<ContentMetricStoredNote, kNoteCapacity> stored = {};
+			std::array<ContentMetricCandidate, kCandidateCapacity> candidates = {};
+			std::array<ContentMetricCanvasMapping, kNoteCapacity> mappings = {};
+			size_t mappingCount = 0;
+			size_t candidateCount = 0;
+			uint64_t lastWorkspaceOrdinal = 0;
+			uint64_t lastPageOrdinal = 0;
+			uint64_t lastSceneGeneration = 0;
+			uint64_t nextContentToken = 1;
+			uint64_t nextOutputGeneration = 1;
+			InkGuid ownerWorkspace;
+			InkGuid ownerPage;
+			RuntimeMetricsCanvasIdentity canvasIdentity;
+			ContentMetricOutputIdentity output;
+			ContentMetricL2Stamp l2;
+			ContentMetricRasterSignature replaySignature;
+			bool replayPending = false;
+			ContentMetricRasterSignature localWriteBefore;
+			bool localWritePending = false;
+			ContentMetricOutputIdentity frozenOutput;
+			ContentMetricRasterSignature frozenSignature;
+			uint64_t frozenFrameSerial = 0;
+			bool compositeReady = false;
+			bool identityAvailable = true;
+			ContentMetricCounters counters;
+		};
+		static_assert(std::is_trivially_copyable_v<ContentMetricStoredNote>);
+		static_assert(std::is_trivially_copyable_v<ContentMetricCandidate>);
+		static_assert(sizeof(ControllerContentMetrics) <= 64u * 1024);
+
+		std::unique_ptr<ControllerContentMetrics> ControllerContentMetrics::Prepare(
+			RuntimeMetricsSession* session, size_t externalAuxiliaryBytes) noexcept
+		{
+			if (!FitsBudget(session, externalAuxiliaryBytes, sizeof(ControllerContentMetrics))) return nullptr;
+			return std::unique_ptr<ControllerContentMetrics>(new (std::nothrow) ControllerContentMetrics(*session));
+		}
+
+		bool ControllerContentMetrics::FitsBudget(RuntimeMetricsSession* session,
+			size_t externalAuxiliaryBytes, size_t ownBytes) noexcept
+		{
+			if (!session || ownBytes > kByteBudget) return false;
+			// 先核共同 payload 再分配；Host 的 phase/功能像素缓冲也必须计入余量。
+			if (externalAuxiliaryBytes > kByteBudget - ownBytes ||
+				session->Snapshot().allocatedBytes > kByteBudget - ownBytes - externalAuxiliaryBytes)
+				return false;
+			return true;
+		}
+
+		struct MetricGeometrySnapshot
+		{
+			size_t count = 0;
+			InkPoint tail = {};
+			DirectX::XMFLOAT2 shapeEndpoint = {};
+			bool shapeEndpointValid = false;
+		};
+		MetricGeometrySnapshot CaptureMetricGeometry(const RuntimeStroke& runtime) noexcept
+		{
+			return { runtime.stroke.realPoints.size(),
+				runtime.stroke.realPoints.empty() ? InkPoint{} : runtime.stroke.realPoints.back(),
+				runtime.shape.modeledEndpoint, runtime.shape.hasModeledEndpoint };
+		}
+		bool MetricGeometryChanged(const MetricGeometrySnapshot& before, const RuntimeStroke& runtime) noexcept
+		{
+			if (runtime.shape.active)
+				return runtime.shape.hasModeledEndpoint && (!before.shapeEndpointValid ||
+					before.shapeEndpoint.x != runtime.shape.modeledEndpoint.x || before.shapeEndpoint.y != runtime.shape.modeledEndpoint.y);
+			if (before.count != runtime.stroke.realPoints.size()) return !runtime.stroke.realPoints.empty();
+			if (runtime.stroke.realPoints.empty()) return false;
+			const auto& tail = runtime.stroke.realPoints.back();
+			return before.tail.x != tail.x || before.tail.y != tail.y || before.tail.r != tail.r || before.tail.time != tail.time;
+		}
+
 		void StopFatalInputConsumer(ContactInputCoordinator& input) noexcept
 		{
 			// fatal 后绘制线程不再消费旧 route；只封闭新 admission，终态由 Host/RTS 收拢。
 			input.SetAdmissionBlocked(true);
+		}
+
+		void RejectStrokeInitialization(ContactInputCoordinator& input, ContactHandle handle,
+			const ContactSnapshot&) noexcept
+		{
+			// 同 key 可能已属于下一次 Down；只交出失败旧笔的精确代次，等物理终态回收。
+			input.DiscardUntilTerminal(handle);
 		}
 
 		bool IgnoreAdditionalLaserTouch(ContactInputCoordinator& input, ContactHandle handle,
@@ -2469,6 +3164,79 @@ namespace Inkeys::Drawing::Draw3
 			return { ClampRectToCanvas(dirty, width, height), true };
 		}
 	}
+
+	// 与 Controller 同寿命、只由绘制 owner 写；借用的 Session 由 Host 在真 join 后封口。
+	struct DrawingControllerMetricsState : ControllerContentMetrics
+	{
+		explicit DrawingControllerMetricsState(RuntimeMetricsSession& session) noexcept
+			: ControllerContentMetrics(session) {}
+		static std::unique_ptr<DrawingControllerMetricsState> Prepare(RuntimeMetricsSession* session) noexcept
+		{
+			if (!FitsBudget(session, 0, sizeof(DrawingControllerMetricsState))) return nullptr;
+			return std::unique_ptr<DrawingControllerMetricsState>(
+				new (std::nothrow) DrawingControllerMetricsState(*session));
+		}
+		void Mark(RuntimeMetricsFrameReason reason) noexcept
+		{
+			frame.reasonFlags |= static_cast<uint32_t>(reason);
+			renderAttempt = true;
+		}
+		bool BeginRasterAttempt() noexcept
+		{
+			const bool previous = renderAttempt;
+			renderAttempt = true;
+			return previous;
+		}
+		void RasterReturned(bool previousAttempt, bool succeeded, bool didRasterWork = true) noexcept
+		{
+			// 合法cache miss/Empty不造帧；此前已发生的真实GPU尝试仍保留。
+			if (!didRasterWork) renderAttempt = previousAttempt;
+			else if (!succeeded) Mark(RuntimeMetricsFrameReason::RasterFailed);
+		}
+		void Begin(double startMs, uint32_t physicalBefore = 0) noexcept
+		{
+			metrics.BeginFrame();
+			frame = {};
+			frame.frameSerial = metrics.Snapshot().frameSerial;
+			if (frame.frameSerial == 0) ExhaustIdentity();
+			frame.frameStartMs = startMs;
+			frame.physicalBefore = physicalBefore;
+			if (physicalBefore) frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::PhysicalBefore);
+			frameOpen = true;
+			frameRecorded = false;
+			renderAttempt = false;
+			candidateCount = 0;
+			compositeReady = false;
+		}
+		void Finish(double wallMs = -1.0) noexcept
+		{
+			if (frameOpen && renderAttempt && !frameRecorded)
+			{
+				frame.wallMs = wallMs >= 0.0 ? wallMs : GetQpcTimeMilliseconds() - frame.frameStartMs;
+				if (frame.physicalAfter) frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::PhysicalAfter);
+				frame.reasonFlags |= static_cast<uint32_t>(!frame.presentAttempted ? RuntimeMetricsFrameReason::NoPresent :
+					frame.presentSucceeded ? RuntimeMetricsFrameReason::PresentSucceeded : RuntimeMetricsFrameReason::PresentFailed);
+				RecordFrame(frame);
+				frameRecorded = true;
+			}
+			frameOpen = false;
+		}
+		void EndContacts(ContentMetricInvalidationReason reason) noexcept
+		{
+			for (const auto& note : live) if (note.exists) Invalidate(note.key, reason);
+			for (const auto& note : stored) if (note.exists) Invalidate(note.key, reason);
+		}
+		RuntimeMetricsFrameSample frame;
+		bool frameOpen = false;
+		bool frameRecorded = false;
+		bool renderAttempt = false;
+		bool runFrameActive = false;
+		bool initialL2Cleared = false;
+		int initialWidth = 0;
+		int initialHeight = 0;
+		bool wholeL2Clear = false;
+	};
+	static_assert(sizeof(DrawingControllerMetricsState) <= 64u * 1024);
 
 	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
 		ID3D11Buffer* unwritableInkBuffer) noexcept
@@ -3335,6 +4103,1298 @@ namespace Inkeys::Drawing::Draw3
 		return failures == 0 ? 0 : 1;
 	}
 
+	int RunRejectedStrokeInitializationProductionTest() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* label)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3InitRejection] FAIL: %s\n", label);
+		};
+		const auto sample = [](float x, ContactPhase phase)
+		{
+			ContactSnapshot snapshot;
+			snapshot.position = { x, 20.0f };
+			snapshot.qpc = static_cast<int64_t>(x * 1000.0f);
+			snapshot.phase = phase;
+			return snapshot;
+		};
+		const auto dequeue = [](ContactInputCoordinator& input) -> ContactHandle
+		{
+			ContactRecord* record = nullptr;
+			while (input.TryDequeue(record))
+			{
+				if (record) return { record, record->Generation() };
+				input.AcknowledgeControlWake();
+			}
+			return {};
+		};
+		constexpr uint32_t tablet = 0xE003;
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			const bool firstDown = input.PublishDown(tablet, 1, InputDeviceType::Pen,
+				sample(10.0f, ContactPhase::Down));
+			const bool firstUp = input.PublishUp(tablet, 1, sample(15.0f, ContactPhase::Up));
+			const bool secondDown = input.PublishDown(tablet, 1, InputDeviceType::Pen,
+				sample(30.0f, ContactPhase::Down));
+			const ContactHandle first = dequeue(input);
+			const ContactHandle second = dequeue(input);
+			check(firstDown && firstUp && secondDown && first && second,
+				"I01 serialized old Down/Up and new same-key Down are accepted");
+			if (first && second)
+			{
+				check(first.record != second.record,
+					"I01 record identity differs even when generation values may match");
+				const ContactSnapshot firstDownSnapshot = first.record->DownSnapshot();
+				RejectStrokeInitialization(input, first, firstDownSnapshot);
+				ContactSnapshot observed;
+				check(!input.TryReadSnapshot(first, observed), "I01 old consumer handle is retired");
+				check(input.TryReadSnapshot(second, observed) && observed.phase == ContactPhase::Down,
+					"I01 old initialization failure must not cancel accepted new same-key Down");
+				check(input.PublishMove(tablet, 1, sample(35.0f, ContactPhase::Move)) &&
+					input.TryReadSnapshot(second, observed) && observed.phase == ContactPhase::Move &&
+					observed.position.x == 35.0f, "I01 new same-key Move remains accepted and readable");
+				check(input.PublishUp(tablet, 1, sample(40.0f, ContactPhase::Up)) &&
+					input.TryReadSnapshot(second, observed) && observed.phase == ContactPhase::Up,
+					"I01 new same-key physical Up retains its own terminal");
+				input.Recycle(second);
+				check(input.DiagnosticsSnapshot().occupiedSlots == 0,
+					"I01 both completed contacts release their slots");
+				check(input.PublishDown(tablet, 1, InputDeviceType::Pen,
+					sample(50.0f, ContactPhase::Down)), "I01 released slot accepts another Down");
+				const ContactHandle reused = dequeue(input);
+				if (reused)
+				{
+					check(reused.record == first.record && reused.generation != first.generation,
+						"I01 first slot is reused with a different generation");
+					RejectStrokeInitialization(input, first, firstDownSnapshot);
+					input.Recycle(first);
+					check(!input.TryReadSnapshot(first, observed) &&
+						input.TryReadSnapshot(reused, observed) && observed.phase == ContactPhase::Down,
+						"I01 stale failure cleanup must not touch reused record generation");
+					check(input.PublishUp(tablet, 1, sample(55.0f, ContactPhase::Up)),
+						"I01 reused generation still receives physical Up");
+					input.Recycle(reused);
+				}
+				else check(false, "I01 reused Down is dequeued");
+				check(input.DiagnosticsSnapshot().occupiedSlots == 0,
+					"I01 stale handle neither leaks nor duplicates a slot");
+			}
+		}
+		for (ContactPhase terminal : { ContactPhase::Up, ContactPhase::Cancelled })
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			check(input.PublishDown(tablet, 2, InputDeviceType::Touch,
+				sample(20.0f, ContactPhase::Down)), "I02 rejected contact Down is accepted");
+			const ContactHandle handle = dequeue(input);
+			if (!handle) { check(false, "I02 rejected contact is dequeued"); continue; }
+			const ContactSnapshot down = handle.record->DownSnapshot();
+			RejectStrokeInitialization(input, handle, down);
+			ContactSnapshot observed;
+			check(input.DiagnosticsSnapshot().occupiedSlots == 1 &&
+				input.DiagnosticsSnapshot().recycled == 0 && input.HasQuarantinedContacts(),
+				"I02 rejected Producing route stays occupied until physical terminal");
+			check(!input.TryReadSnapshot(handle, observed) &&
+				!input.PublishMove(tablet, 2, sample(25.0f, ContactPhase::Move)),
+				"I02 discarded route supplies no further model input");
+			RejectStrokeInitialization(input, handle, down);
+			check(input.DiagnosticsSnapshot().occupiedSlots == 1 &&
+				input.DiagnosticsSnapshot().recycled == 0,
+				"I02 repeated rejection neither retires early nor releases twice");
+			const bool closed = terminal == ContactPhase::Up
+				? input.PublishUp(tablet, 2, sample(30.0f, terminal))
+				: input.PublishCancelled(tablet, 2, sample(30.0f, terminal));
+			check(closed && input.DiagnosticsSnapshot().occupiedSlots == 0 &&
+				input.DiagnosticsSnapshot().recycled == 1 &&
+				input.DiagnosticsSnapshot().terminalPublished == 1 && !input.HasQuarantinedContacts(),
+				"I02 physical Up/Cancel performs the sole rejected-route release");
+			check(input.PublishDown(tablet, 2, InputDeviceType::Touch,
+				sample(40.0f, ContactPhase::Down)), "I02 next legitimate contact remains accepted");
+			const ContactHandle next = dequeue(input);
+			check(next && input.PublishUp(tablet, 2, sample(45.0f, ContactPhase::Up)),
+				"I02 next legitimate contact receives terminal");
+			input.Recycle(next);
+			check(input.DiagnosticsSnapshot().occupiedSlots == 0, "I02 next contact releases normally");
+		}
+		for (ContactPhase terminal : { ContactPhase::Up, ContactPhase::Cancelled })
+		{
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			check(input.PublishDown(tablet, 3, InputDeviceType::Pen,
+				sample(60.0f, ContactPhase::Down)), "I03 Closing contact Down is accepted");
+			const ContactHandle handle = dequeue(input);
+			if (!handle) { check(false, "I03 Closing contact is dequeued"); continue; }
+			const ContactSnapshot down = handle.record->DownSnapshot();
+			ContactClosePauseForTesting pause;
+			input.PauseNextCloseAfterRouteClosedForTesting(&pause);
+			std::atomic<bool> producerClosed = false;
+			std::thread producer([&]
+			{
+				const bool closed = terminal == ContactPhase::Up
+					? input.PublishUp(tablet, 3, sample(65.0f, terminal))
+					: input.PublishCancelled(tablet, 3, sample(65.0f, terminal));
+				producerClosed.store(closed, std::memory_order_release);
+			});
+			const auto waitFor = [](const std::atomic<bool>& flag, DWORD timeoutMilliseconds)
+			{
+				const ULONGLONG deadline = GetTickCount64() + timeoutMilliseconds;
+				while (!flag.load(std::memory_order_acquire) && GetTickCount64() < deadline) Sleep(1);
+				return flag.load(std::memory_order_acquire);
+			};
+			const bool entered = waitFor(pause.entered, 1000);
+			bool returnedBeforeResume = false;
+			bool deferredRelease = false;
+			if (entered)
+			{
+				std::atomic<bool> consumerFinished = false;
+				std::thread consumer([&]
+				{
+					RejectStrokeInitialization(input, handle, down);
+					consumerFinished.store(true, std::memory_order_release);
+				});
+				returnedBeforeResume = waitFor(consumerFinished, 100);
+				ContactSnapshot observed;
+				deferredRelease = returnedBeforeResume && !input.TryReadSnapshot(handle, observed) &&
+					input.DiagnosticsSnapshot().occupiedSlots == 1;
+				// 失败断言也必须先放行真实 Close，随后 join 两个拥有夹具引用的线程。
+				pause.resume.store(true, std::memory_order_release);
+				producer.join();
+				consumer.join();
+			}
+			else
+			{
+				pause.resume.store(true, std::memory_order_release);
+				producer.join();
+			}
+			input.PauseNextCloseAfterRouteClosedForTesting(nullptr);
+			check(entered && returnedBeforeResume && deferredRelease,
+				"I03 failure cleanup returns while physical Close is paused without freeing its slot");
+			check(producerClosed.load(std::memory_order_acquire) &&
+				input.DiagnosticsSnapshot().terminalPublished == 1 &&
+				input.DiagnosticsSnapshot().recycled == 1 &&
+				input.DiagnosticsSnapshot().occupiedSlots == 0,
+				"I03 released Close publishes one terminal and releases one slot");
+			input.Recycle(handle);
+			check(input.DiagnosticsSnapshot().recycled == 1,
+				"I03 repeated consumer cleanup does not release twice");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3InitRejection] PASS: shared production failure cleanup identity and lifetime\n", stderr);
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunRuntimeMetricsSessionProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&failures](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3Metrics] FAIL: %s\n", name);
+		};
+		try
+		{
+			LARGE_INTEGER now = {}, frequency = {};
+			if (!QueryPerformanceCounter(&now) || !QueryPerformanceFrequency(&frequency) ||
+				now.QuadPart <= 0 || frequency.QuadPart <= 0 ||
+				frequency.QuadPart > (std::numeric_limits<int64_t>::max)() / 4 ||
+				now.QuadPart > (std::numeric_limits<int64_t>::max)() - frequency.QuadPart * 4)
+			{
+				check(false, "QPC clock is available for deterministic Session fixture");
+				return 1;
+			}
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			uint32_t nextContact = 1;
+			const auto acquire = [&]() -> ContactHandle
+			{
+				ContactSnapshot down;
+				down.phase = ContactPhase::Down;
+				down.qpc = now.QuadPart;
+				if (!input.PublishDown(0xE040, nextContact++, InputDeviceType::Pen, down))
+					return {};
+				ContactRecord* record = nullptr;
+				while (input.TryDequeue(record))
+				{
+					if (record) return { record, record->Generation() };
+					input.AcknowledgeControlWake();
+				}
+				return {};
+			};
+			const auto finish = [&](ContactHandle handle)
+			{
+				if (!handle) return;
+				ContactSnapshot up;
+				up.phase = ContactPhase::Up;
+				up.qpc = now.QuadPart + 1;
+				check(input.PublishUp(handle.record->TabletContextId(),
+					handle.record->ContactId(), up), "fixture publishes actual Coordinator Up");
+				input.Recycle(handle);
+			};
+			RuntimeMetricsLandingProof stored{
+				{ 1, 1, 1, 1, 1 }, 41, 7, 1, RuntimeMetricsProofKind::Stored };
+			stored.frameSerial = 1;
+			{
+				RuntimeMetricsSession metrics(2);
+				const ContactHandle first = acquire();
+				check(static_cast<bool>(first), "real coordinator admits metrics contact");
+				if (!first) return 1;
+				metrics.BeginFrame();
+				check(metrics.RegisterContact(first.record, first.generation, InputDeviceType::Pen,
+					static_cast<uint32_t>(DrawingTool::HardPen), now.QuadPart),
+					"M01 register admitted HardPen Down once");
+				check(metrics.RegisterContact(first.record, first.generation, InputDeviceType::Pen,
+					static_cast<uint32_t>(DrawingTool::HardPen), now.QuadPart) &&
+					metrics.Snapshot().contactSeen == 1,
+					"M01 duplicate registration does not increase denominator");
+				check(metrics.StageVerifiedLanding(first.record, first.generation, stored),
+					"M01 stage content-linked Stored contact");
+				finish(first);
+				ContactSnapshot readBack;
+				check(!input.TryReadSnapshot(first, readBack) &&
+					input.DiagnosticsSnapshot().occupiedSlots == 0,
+					"M01 actual Up and recycle retire runtime identity before first Present");
+				metrics.RecordVerifiedPresent(2.0, false);
+				metrics.CommitVerifiedLandings(false, now.QuadPart + frequency.QuadPart, stored);
+				metrics.BeginFrame();
+				check(metrics.Snapshot().confirmed == 0 && metrics.Snapshot().pending == 1,
+					"M01 failed Present keeps recycled contact pending across BeginFrame");
+				RuntimeMetricsLandingProof nextFrame = stored;
+				nextFrame.frameSerial = 2;
+				RuntimeMetricsLandingProof otherPage = nextFrame;
+				otherPage.canvas.page = 2;
+				metrics.RecordVerifiedPresent(1.0, true);
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 2, otherPage);
+				check(metrics.Snapshot().confirmed == 0 && metrics.Snapshot().pending == 1,
+					"M02 other page success cannot confirm old contact");
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 2, stored);
+				check(metrics.Snapshot().confirmed == 0 && metrics.Snapshot().pending == 1,
+					"M02 old frame proof cannot confirm current success");
+				RuntimeMetricsLandingProof otherContent = nextFrame;
+				++otherContent.contentToken;
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 2, otherContent);
+				check(metrics.Snapshot().confirmed == 0 && metrics.Snapshot().pending == 1,
+					"M02 changed content proof cannot confirm old contact");
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 2, nextFrame);
+				check(metrics.Snapshot().confirmed == 1 && metrics.Snapshot().pending == 0,
+					"M03 current frame and same stored content confirms once after failure");
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 3, nextFrame);
+				check(metrics.Snapshot().confirmed == 1, "M03 duplicate success does not duplicate landing");
+				const ContactHandle second = acquire();
+				check(second && second.record == first.record && second.generation != first.generation,
+					"M04 actual recycled slot reappears with a new generation");
+				if (!second) return 1;
+				check(metrics.RegisterContact(second.record, second.generation, InputDeviceType::Pen,
+					static_cast<uint32_t>(DrawingTool::Laser), now.QuadPart),
+					"M04 new generation is independently registered");
+				check(metrics.StageVerifiedLanding(second.record, second.generation, nextFrame),
+					"M04 new generation is independently staged");
+				finish(second);
+				metrics.InvalidatePending();
+				check(metrics.Snapshot().unpresented == 1 && metrics.Snapshot().pending == 0,
+					"M04 Clear or page change accounts pending contact as unpresented");
+				const ContactHandle third = acquire();
+				check(third && !metrics.RegisterContact(third.record, third.generation,
+					InputDeviceType::Pen, static_cast<uint32_t>(DrawingTool::Pen), now.QuadPart) &&
+					metrics.Snapshot().contactSeen == 3 && metrics.Snapshot().contactRetained == 2 &&
+					metrics.Snapshot().contactDropped == 1,
+					"M05 fixed capacity retains complete seen retained dropped denominator");
+				finish(third);
+				check(metrics.Snapshot().presentAttempts == 2 && metrics.Snapshot().presentSucceeded == 1 &&
+					metrics.Snapshot().presentFailed == 1,
+					"M06 actual Present attempt success and failure counts are distinct");
+			}
+			// 只有Stored可跨失败帧保留证明；活动层/Laser必须在新成功帧重新锁存。
+			for (const auto kind : { RuntimeMetricsProofKind::Live, RuntimeMetricsProofKind::Laser })
+			{
+				RuntimeMetricsSession metrics(4);
+				const ContactHandle handle = acquire();
+				check(static_cast<bool>(handle), "M16 actual contact for live or laser restage contract");
+				if (!handle) return 1;
+				metrics.BeginFrame();
+				RuntimeMetricsLandingProof proof = stored;
+				proof.kind = kind;
+				check(metrics.RegisterContact(handle.record, handle.generation, InputDeviceType::Pen,
+					static_cast<uint32_t>(kind == RuntimeMetricsProofKind::Laser
+						? DrawingTool::Laser : DrawingTool::HardPen), now.QuadPart)
+					&& metrics.StageVerifiedLanding(handle.record, handle.generation, proof),
+					"M16 current live or laser content proof is staged");
+				metrics.RecordVerifiedPresent(1.0, false);
+				metrics.CommitVerifiedLandings(false, now.QuadPart + frequency.QuadPart, proof);
+				metrics.BeginFrame();
+				proof.frameSerial = 2;
+				metrics.RecordVerifiedPresent(1.0, true);
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 2, proof);
+				check(metrics.Snapshot().confirmed == 0 && metrics.Snapshot().pending == 1,
+					"M16 live or laser old-frame content cannot confirm without restage");
+				metrics.BeginFrame();
+				proof.frameSerial = 3;
+				check(metrics.StageVerifiedLanding(handle.record, handle.generation, proof),
+					"M16 real Session restages current-frame live or laser content");
+				metrics.RecordVerifiedPresent(1.0, true);
+				metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * 3, proof);
+				check(metrics.Snapshot().confirmed == 1 && metrics.Snapshot().pending == 0,
+					"M16 only matching restaged success confirms live or laser once");
+				finish(handle);
+			}
+			{
+				RuntimeMetricsSession metrics(96);
+				metrics.BeginFrame();
+				const uint64_t allocatedBefore = metrics.Snapshot().allocatedBytes;
+				for (uint64_t index = 0; index != 65; ++index)
+				{
+					const ContactHandle handle = acquire();
+					check(static_cast<bool>(handle), "M07 real contact for fixed pending capacity");
+					if (!handle) break;
+					RuntimeMetricsLandingProof proof = stored;
+					proof.itemToken = index + 1;
+					check(metrics.RegisterContact(handle.record, handle.generation, InputDeviceType::Pen,
+						static_cast<uint32_t>(DrawingTool::Pen), now.QuadPart),
+						"M07 pending capacity does not lower product or registered contact capacity");
+					check(metrics.StageVerifiedLanding(handle.record, handle.generation, proof) == (index < 64),
+						"M07 sixty-fifth pending sample is explicitly refused");
+					finish(handle);
+				}
+				const RuntimeMetricsSnapshot sample = metrics.Snapshot();
+				check(sample.contactSeen == 65 && sample.contactRetained == 65 && sample.pending == 64 &&
+					sample.pendingOverflow == 1 && sample.unpresented == 1,
+					"M07 pending overflow is explicit without losing its contact denominator");
+				check(allocatedBefore > 0 && allocatedBefore == sample.allocatedBytes,
+					"M07 all hot sampling storage remains preallocated");
+				metrics.InvalidatePending();
+				check(metrics.Snapshot().unpresented == 65 && metrics.Snapshot().pending == 0,
+					"M07 invalidation preserves all unpresented contacts including overflow");
+			}
+			{
+				RuntimeMetricsSession metrics(8);
+				metrics.BeginFrame();
+				for (int64_t invalidDown : { int64_t{ 0 }, int64_t{ -1 } })
+				{
+					const ContactHandle handle = acquire();
+					check(handle && !metrics.RegisterContact(handle.record, handle.generation,
+						InputDeviceType::Pen, static_cast<uint32_t>(DrawingTool::Pen), invalidDown),
+						"M08 zero or negative source QPC is rejected");
+					finish(handle);
+				}
+				const ContactHandle handle = acquire();
+				check(handle && metrics.RegisterContact(handle.record, handle.generation, InputDeviceType::Pen,
+					static_cast<uint32_t>(DrawingTool::Pen), now.QuadPart) &&
+					metrics.StageVerifiedLanding(handle.record, handle.generation, stored),
+					"M08 valid contact remains eligible after bad timestamps");
+				finish(handle);
+				metrics.RecordVerifiedPresent(1.0, true);
+				metrics.CommitVerifiedLandings(true, now.QuadPart - 1, stored);
+				metrics.RecordVerifiedPresent((std::numeric_limits<double>::quiet_NaN)(), false);
+				metrics.RecordVerifiedPresent(-1.0, false);
+				check(metrics.Snapshot().confirmed == 0 && metrics.Snapshot().invalid >= 5,
+					"M08 reverse QPC nonfinite and negative wall are invalid rather than zero latency");
+				metrics.InvalidatePending();
+			}
+			{
+				RuntimeMetricsSession metrics(2);
+				for (uint64_t index = 1; index != 5; ++index)
+				{
+					metrics.BeginFrame();
+					RuntimeMetricsFrameSample sample;
+					sample.frameSerial = index;
+					sample.frameStartMs = static_cast<double>(index);
+					sample.wallMs = index == 4 ? (std::numeric_limits<double>::quiet_NaN)() : 1.0;
+					sample.presentWallMs = 0.5;
+					sample.reasonFlags = 1; // 仅合同夹具，真实原因标志由 U2 的生产 owner 锁存。
+					sample.physicalBefore = 1;
+					sample.physicalAfter = 0;
+					sample.terminalCount = 1;
+					sample.presentAttempted = true;
+					sample.presentSucceeded = true;
+					metrics.RecordRenderFrame(sample);
+				}
+				const RuntimeMetricsSnapshot sample = metrics.Snapshot();
+				check(sample.framesSeen == 4 && sample.framesRetained == 2 &&
+					sample.framesDropped == 1 && sample.framesInvalid == 1,
+					"M09 terminal render frames retain seen kept dropped invalid independently of held contact");
+			}
+			{
+				RuntimeMetricsSession metrics((std::numeric_limits<size_t>::max)());
+				const RuntimeMetricsSnapshot sample = metrics.Snapshot();
+				check(sample.requestedSamples == (std::numeric_limits<size_t>::max)() &&
+					sample.effectiveSamples > 0 && sample.effectiveSamples < sample.requestedSamples &&
+					sample.allocatedBytes > 0 && sample.allocatedBytes <= uint64_t{ 32 } * 1024 * 1024,
+					"M10 huge requested capacity is bounded by actual preallocation byte budget");
+			}
+
+			// 仅本次 CLI 的随机临时目录；不触及真实配置/UInk，也不递归删除未知内容。
+			struct ReportFiles
+			{
+				wchar_t directory[MAX_PATH] = {};
+				std::wstring report;
+				std::wstring existing;
+				bool ownsDirectory = false;
+				~ReportFiles()
+				{
+					if (!ownsDirectory) return;
+					if (!report.empty()) DeleteFileW(report.c_str());
+					if (!existing.empty()) DeleteFileW(existing.c_str());
+					RemoveDirectoryW(directory);
+				}
+			} files;
+			wchar_t temporary[MAX_PATH] = {};
+			const DWORD temporaryLength = GetTempPathW(MAX_PATH, temporary);
+			if (temporaryLength == 0 || temporaryLength >= MAX_PATH ||
+				!GetTempFileNameW(temporary, L"IDT", 0, files.directory) ||
+				!DeleteFileW(files.directory) || !CreateDirectoryW(files.directory, nullptr))
+			{
+				check(false, "M11 isolated report fixture directory is newly created");
+				return 1;
+			}
+			files.ownsDirectory = true;
+			files.report = std::wstring(files.directory) + L"\\report.json";
+			files.existing = std::wstring(files.directory) + L"\\existing.json";
+			struct FileLease
+			{
+				HANDLE handle = INVALID_HANDLE_VALUE;
+				~FileLease() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+			};
+			const auto readText = [](const wchar_t* path, std::string& output)
+			{
+				FileLease file{ CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+					OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr) };
+				LARGE_INTEGER size = {};
+				if (file.handle == INVALID_HANDLE_VALUE || !GetFileSizeEx(file.handle, &size) ||
+					size.QuadPart < 0 || size.QuadPart > 4 * 1024 * 1024) return false;
+				output.resize(static_cast<size_t>(size.QuadPart));
+				DWORD read = 0;
+				return ReadFile(file.handle, output.data(), static_cast<DWORD>(output.size()),
+					&read, nullptr) && read == output.size();
+			};
+			const auto readJson = [&](Json::Value& output)
+			{
+				std::string text;
+				if (!readText(files.report.c_str(), text)) return false;
+				Json::CharReaderBuilder builder;
+				builder["collectComments"] = false;
+				builder["rejectDupKeys"] = true;
+				builder["failIfExtra"] = true;
+				builder["stackLimit"] = 64;
+				builder["allowSpecialFloats"] = false;
+				std::string errors;
+				const auto reader = std::unique_ptr<Json::CharReader>(builder.newCharReader());
+				return reader && reader->parse(text.data(), text.data() + text.size(), &output, &errors);
+			};
+			{
+				constexpr char sentinel[] = "Draw3Metrics-existing-report";
+				{
+					FileLease file{ CreateFileW(files.existing.c_str(), GENERIC_WRITE, 0, nullptr,
+						CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr) };
+					DWORD written = 0;
+					check(file.handle != INVALID_HANDLE_VALUE &&
+						WriteFile(file.handle, sentinel, sizeof(sentinel) - 1, &written, nullptr) &&
+						written == sizeof(sentinel) - 1, "M11 existing report sentinel is owned by fixture");
+				}
+				RuntimeMetricsSession metrics(8);
+				check(!metrics.WriteJson(files.existing.c_str(), input.DiagnosticsSnapshot()),
+					"M11 WriteJson refuses to overwrite a preexisting report");
+				std::string unchanged;
+				check(readText(files.existing.c_str(), unchanged) && unchanged == sentinel,
+					"M11 refusal preserves preexisting bytes");
+			}
+			{
+				RuntimeMetricsSession legacy(8);
+				legacy.BeginFrame();
+				const ContactHandle handle = acquire();
+				check(static_cast<bool>(handle), "M12 real contact for legacy no-proof API");
+				if (!handle) return 1;
+				legacy.StageLanding(handle.record, handle.generation, InputDeviceType::Pen,
+					static_cast<uint32_t>(DrawingTool::HardPen), now.QuadPart);
+				legacy.RecordPresent(1.0);
+				legacy.RecordActiveFrame(1.0, 1.0, 1.0, true);
+				legacy.RecordActiveFrame((std::numeric_limits<double>::quiet_NaN)(), 1.0, 1.0, true);
+				legacy.CommitStagedLandings(true, now.QuadPart + frequency.QuadPart);
+				finish(handle);
+				check(legacy.Snapshot().confirmed == 0 && legacy.Snapshot().legacyUnverified > 0,
+					"M12 old no-proof API produces only unverified observations");
+				check(legacy.WriteJson(files.report.c_str(), input.DiagnosticsSnapshot()),
+					"M12 new report is written without touching a preexisting file");
+				Json::Value report;
+				check(readJson(report) && report["schemaVersion"].asUInt() == 2 &&
+					report["landings"].isArray() && report["landings"].empty() &&
+					report["coverage"]["legacyUnverified"].asUInt64() > 0 &&
+					report["summary"]["legacyThresholdMet"].isBool() &&
+					!report["summary"].isMember("strictPass"),
+					"M12 formal JSON excludes legacy samples and does not claim release strictPass");
+				DeleteFileW(files.report.c_str());
+			}
+			{
+				const std::array<std::pair<DrawingTool, const char*>, 9> tools = {{
+					{ DrawingTool::Pen, "Pen" }, { DrawingTool::HardPen, "HardPen" },
+					{ DrawingTool::Highlighter, "Highlighter" }, { DrawingTool::Eraser, "Eraser" },
+					{ DrawingTool::Laser, "Laser" }, { DrawingTool::SolidLine, "SolidLine" },
+					{ DrawingTool::DashedLine, "DashedLine" },
+					{ DrawingTool::OutlineRectangle, "OutlineRectangle" },
+					{ DrawingTool::FilledRectangle, "FilledRectangle" }
+				}};
+				RuntimeMetricsSession metrics(64);
+				uint64_t frameSerial = 0;
+				for (const auto& tool : tools)
+				{
+					for (int64_t seconds = 1; seconds != 4; ++seconds)
+					{
+						metrics.BeginFrame();
+						const ContactHandle handle = acquire();
+						if (!handle) { check(false, "M13 real tool contact is admitted"); continue; }
+						RuntimeMetricsLandingProof proof = stored;
+						proof.frameSerial = ++frameSerial;
+						proof.itemToken = frameSerial;
+						if (tool.first == DrawingTool::Laser) proof.kind = RuntimeMetricsProofKind::Laser;
+						check(metrics.RegisterContact(handle.record, handle.generation, InputDeviceType::Pen,
+							static_cast<uint32_t>(tool.first), now.QuadPart) &&
+							metrics.StageVerifiedLanding(handle.record, handle.generation, proof),
+							"M13 actual DrawingTool symbol is recorded with content proof");
+						finish(handle);
+						metrics.RecordVerifiedPresent(1.0, true);
+						metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart * seconds, proof);
+					}
+				}
+				metrics.BeginFrame();
+				const ContactHandle unknown = acquire();
+				if (unknown)
+				{
+					RuntimeMetricsLandingProof proof = stored;
+					proof.frameSerial = ++frameSerial;
+					proof.itemToken = frameSerial;
+					check(metrics.RegisterContact(unknown.record, unknown.generation, InputDeviceType::Pen,
+						(std::numeric_limits<uint32_t>::max)(), now.QuadPart) &&
+						metrics.StageVerifiedLanding(unknown.record, unknown.generation, proof),
+						"M13 unknown tool stays an explicitly separate population");
+					finish(unknown);
+					metrics.RecordVerifiedPresent(1.0, true);
+					metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart, proof);
+				}
+				else check(false, "M13 actual unknown-tool fixture contact is admitted");
+				check(metrics.Snapshot().confirmed == 28,
+					"M13 all nine current product tool populations are retained");
+				check(metrics.WriteJson(files.report.c_str(), input.DiagnosticsSnapshot()),
+					"M13 formal tool report is written even when behavioral assertions fail");
+				Json::Value report;
+				check(readJson(report) && report["schemaVersion"].asUInt() == 2,
+					"M13 report is valid JSON with no NaN or nonnumeric extension");
+				for (const auto& tool : tools)
+				{
+					const Json::Value* population = nullptr;
+					for (const Json::Value& candidate : report["toolSummaries"])
+						if (candidate["tool"].asString() == tool.second &&
+							candidate["device"].asString() == "Pen") population = &candidate;
+					check(population && (*population)["count"].asUInt64() == 3 &&
+						(*population)["medianMs"].isNumeric() &&
+						std::abs((*population)["medianMs"].asDouble() - 2000.0) < 0.0001 &&
+						std::abs((*population)["p95Ms"].asDouble() - 3000.0) < 0.0001 &&
+						(*population)["p99Ms"].isNull() &&
+						(*population)["insufficientPopulation"].asBool(),
+						"M13 tool group has exact known median P95 and null small-sample P99");
+				}
+				bool unknownPopulation = false;
+				for (const Json::Value& candidate : report["toolSummaries"])
+					if (candidate["tool"].asString() == "Unknown" && candidate["count"].asUInt64() == 1)
+						unknownPopulation = true;
+				check(unknownPopulation, "M13 unknown tool is not mislabeled as a known tool");
+				check(report["landings"].isArray() && report["landings"].size() == 28,
+					"M13 raw landing count matches formal population");
+				for (const Json::Value& landing : report["landings"])
+					check(!landing.isMember("record") && !landing.isMember("workspaceGuid") &&
+						!landing.isMember("pageGuid") && !landing.isMember("documentPath"),
+						"M13 raw report does not export pointers GUIDs or document paths");
+			}
+			{
+				check(DeleteFileW(files.report.c_str()), "M14 prior owned report is removed before next output");
+				RuntimeMetricsSession metrics(1000);
+				bool populationRegistered = true;
+				for (uint64_t index = 1; index <= 1000; ++index)
+				{
+					metrics.BeginFrame();
+					const ContactHandle handle = acquire();
+					if (!handle) { check(false, "M14 actual percentile fixture contact is admitted"); break; }
+					RuntimeMetricsLandingProof proof = stored;
+					proof.frameSerial = index;
+					proof.itemToken = index;
+					const bool registered = metrics.RegisterContact(handle.record, handle.generation,
+						InputDeviceType::Pen, static_cast<uint32_t>(DrawingTool::Pen), now.QuadPart);
+					const bool staged = metrics.StageVerifiedLanding(handle.record, handle.generation, proof);
+					populationRegistered = populationRegistered && registered && staged;
+					finish(handle);
+					metrics.RecordVerifiedPresent(1.0, true);
+					metrics.CommitVerifiedLandings(true, now.QuadPart + frequency.QuadPart, proof);
+				}
+				check(populationRegistered && metrics.Snapshot().confirmed == 1000,
+					"M14 thousand contacts use actual Session identity and proof");
+				check(metrics.WriteJson(files.report.c_str(), input.DiagnosticsSnapshot()),
+					"M14 thousand-sample report is newly created");
+				Json::Value report;
+				check(readJson(report) && report["toolSummaries"].isArray() &&
+					report["toolSummaries"].size() == 1 &&
+					report["toolSummaries"][0]["count"].asUInt64() == 1000 &&
+					report["toolSummaries"][0]["p99Ms"].isNumeric() &&
+					std::abs(report["toolSummaries"][0]["p99Ms"].asDouble() - 1000.0) < 0.0001 &&
+					!report["toolSummaries"][0]["insufficientPopulation"].asBool(),
+					"M14 P99 becomes numeric only at the declared per-group population boundary");
+				check(DeleteFileW(files.report.c_str()), "M15 prior owned report is removed before empty output");
+				RuntimeMetricsSession empty(8);
+				check(empty.WriteJson(files.report.c_str(), input.DiagnosticsSnapshot()),
+					"M15 empty report is newly created");
+				check(readJson(report) && report["landings"].isArray() &&
+					report["landings"].empty() && report["toolSummaries"].isArray() &&
+					report["toolSummaries"].empty() &&
+					report["summary"]["landingMedianMs"].isNull() &&
+					report["summary"]["landingP95Ms"].isNull() &&
+					report["summary"]["landingP99Ms"].isNull(),
+					"M15 empty population percentiles are null rather than a misleading zero");
+			}
+		}
+		catch (...)
+		{
+			check(false, "metrics fixture catches allocation or report failure");
+		}
+		if (failures == 0)
+			std::fputs("[Draw3Metrics] PASS: production Session pending, bounded outcomes and report contract\n", stderr);
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunDraw3ContentProofProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&failures](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3ContentProof] FAIL: %s\n", name);
+		};
+		try
+		{
+			LARGE_INTEGER now = {}, frequency = {};
+			if (!QueryPerformanceCounter(&now) || !QueryPerformanceFrequency(&frequency) ||
+				now.QuadPart <= 0 || frequency.QuadPart <= 0 ||
+				frequency.QuadPart > (std::numeric_limits<int64_t>::max)() / 4 ||
+				now.QuadPart > (std::numeric_limits<int64_t>::max)() - frequency.QuadPart * 4)
+			{
+				check(false, "fixture has a valid QPC range");
+				return 1;
+			}
+			struct SourceContact
+			{
+				ContentMetricKey key;
+				ContactHandle handle;
+				ContactSnapshot down;
+				uint32_t contactId = 0;
+				bool ready = false;
+			};
+			struct StoredContact
+			{
+				SourceContact source;
+				StoredStrokeCpuCommit committed;
+				ContactSnapshot terminal;
+				bool captured = false;
+			};
+			struct Fixture
+			{
+				static InkGuid Guid(uint8_t marker)
+				{
+					std::array<uint8_t, 16> bytes = {};
+					bytes.back() = marker;
+					return InkGuid(bytes);
+				}
+				explicit Fixture(int64_t sourceQpc) : now(sourceQpc), producer(ControllerContentMetrics::Prepare(&metrics))
+				{
+					input.EnableDiagnostics(true);
+					if (!producer || !document.AppendPage(Guid(2)) || !document.AppendPage(Guid(3)) ||
+						!document.PageAt(0)->GetOrCreateCanvas(kDefaultDeviceKey) ||
+						!document.PageAt(1)->GetOrCreateCanvas(kDefaultDeviceKey) ||
+						!producer->ObserveCanvas(document, 0, 1, false)) throw 1;
+					metrics.BeginFrame();
+					producer->ObserveOutput(true, TransparentOutputTarget::PrimaryDrawpad, 0);
+				}
+				SourceContact Down(InputDeviceType device = InputDeviceType::Pen, DrawingTool tool = DrawingTool::Pen)
+				{
+					SourceContact value;
+					value.contactId = nextContact++;
+					ContactSnapshot down;
+					down.phase = ContactPhase::Down;
+					down.position = { 40.0f, 48.0f };
+					down.qpc = now + value.contactId * 4;
+					if (!input.PublishDown(0xE042, value.contactId, device, down)) return value;
+					ContactRecord* record = nullptr;
+					while (input.TryDequeue(record))
+					{
+						if (record) break;
+						input.AcknowledgeControlWake();
+					}
+					if (!record) return value;
+					value.handle = { record, record->Generation() };
+					value.key = { record, value.handle.generation };
+					value.down = record->DownSnapshot(); // 只在本次实际 handle 仍活时复制。
+					value.ready = producer->Register(value.key, value.down, device, tool);
+					producer->NoteConsumed(value.key, value.down.sequence);
+					producer->Adopt(value.key, value.down, ContentMetricAdoptionKind::RawDown, true);
+					producer->ObserveLiveRaster(value.key, value.down.sequence,
+						{ 36, 44, 44, 52 }, metrics.Snapshot().frameSerial, true);
+					return value;
+				}
+				bool Up(SourceContact value, ContactSnapshot& terminal)
+				{
+					if (!value.handle) return false;
+					ContactSnapshot up = value.down;
+					up.phase = ContactPhase::Up;
+					up.position = { 232.0f, 144.0f };
+					up.qpc = value.down.qpc + 1;
+					return input.PublishUp(0xE042, value.contactId, up) &&
+						input.TryReadSnapshot(value.handle, terminal);
+				}
+				void Retire(SourceContact value)
+				{
+					ContactSnapshot terminal;
+					if (!Up(value, terminal)) throw 1;
+					input.Recycle(value.handle);
+				}
+				StoredContact Store()
+				{
+					StoredContact value;
+					value.source = Down();
+					if (!value.source.handle || !Up(value.source, value.terminal)) throw 1;
+					RuntimeStroke runtime(1000.0f);
+					runtime.handle = value.source.handle;
+					runtime.inUse = true;
+					runtime.ended = true;
+					runtime.ownerWorkspaceGuid = document.WorkspaceGuid();
+					runtime.ownerPageGuid = document.PageAt(0)->PageGuid();
+					runtime.lastInputSnapshot = value.terminal;
+					runtime.lastConsumedSequence = value.terminal.sequence;
+					runtime.stroke.hasInputStartPoint = true;
+					runtime.stroke.inputStartPoint = { 40.0f, 48.0f, 2.0f, 0.0f };
+					runtime.stroke.realPoints = { runtime.stroke.inputStartPoint,
+						{ value.terminal.position.x, value.terminal.position.y, 2.0f, 0.008f } };
+					const auto committed = CommitRuntimeStoredStrokeCpu(runtime, document,
+						runtimes, 0, 0.0, StoredStrokeCommitMode::NormalUp, [&] { return nextRasterToken++; });
+					if (!committed) throw 1;
+					value.committed = *committed;
+					producer->NoteConsumed(value.source.key, value.terminal.sequence);
+					producer->Adopt(value.source.key, value.terminal, ContentMetricAdoptionKind::RawTerminal, true);
+					value.captured = producer->CaptureStored(value.source.key, *committed, runtimes[0], value.terminal);
+					// 与生产相同：CPU afterState 可推进；这一步不授予任何 GPU 成功资格。
+					runtimes[0].rasterState = committed->afterState;
+					input.Recycle(value.source.handle);
+					return value;
+				}
+				ContentMetricRasterSignature Signature() const
+				{ return producer->Signature(document, 0, runtimes[0], 320, 240); }
+				bool Authorize()
+				{ return producer->CompleteFullReplay(Signature(), true); }
+				size_t Freeze(bool compositeSucceeded = true)
+				{
+					return producer->FreezeCandidates(Signature(),
+						*document.PageAt(0)->FindCanvas(kDefaultDeviceKey), runtimes[0],
+						{ 0, 0, 320, 240 }, compositeSucceeded, true);
+				}
+				RuntimeMetricsLandingProof Prime(ContentMetricKey key, bool stored)
+				{
+					// 只为隔离 Session 精确失效接口建输入；不复制 assembler 的采纳/栅格判定。
+					RuntimeMetricsLandingProof proof;
+					proof.canvas = producer->canvasIdentity;
+					proof.canvas.outputGeneration = 1;
+					proof.frameSerial = metrics.Snapshot().frameSerial;
+					if (stored)
+					{
+						const auto* note = producer->FindStored(key);
+						if (!note) throw 1;
+						proof.kind = RuntimeMetricsProofKind::Stored;
+						proof.contentToken = note->contentToken;
+						proof.itemToken = (uint64_t{ note->item.generation } << 32) | note->item.index;
+						proof.consumedSequence = note->terminalSequence;
+					}
+					else
+					{
+						const auto* note = producer->FindLive(key);
+						if (!note) throw 1;
+						proof.contentToken = note->contentToken;
+						proof.consumedSequence = note->adoptedSequence;
+					}
+					if (!metrics.StageVerifiedLanding(key.opaqueRecord, key.generation, proof)) throw 1;
+					return proof;
+				}
+				int64_t now = 0;
+				RuntimeMetricsSession metrics{ 256 };
+				ContactInputCoordinator input;
+				InkCanvasCollection document{ Guid(1) };
+				std::vector<CanvasPageRuntimeState> runtimes = std::vector<CanvasPageRuntimeState>(2);
+				std::unique_ptr<ControllerContentMetrics> producer;
+				uint32_t nextContact = 1;
+				InkRasterStateToken nextRasterToken = 1;
+			};
+			const int64_t returnQpc = now.QuadPart + frequency.QuadPart;
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Store();
+				ContactSnapshot stale;
+				check(a.captured && !fixture.input.TryReadSnapshot(a.source.handle, stale) &&
+					fixture.input.DiagnosticsSnapshot().occupiedSlots == 0,
+					"U201 real CPU Stored is copied before actual Up recycle");
+				const bool authoritative = fixture.Authorize();
+				const size_t frozen = fixture.Freeze();
+				check(authoritative && frozen == 1 && fixture.metrics.Snapshot().pending == 1,
+					"U201 authoritative same-item Stored stages a pure-value pending");
+				fixture.producer->PresentReturned(true, false, returnQpc, 0.5, fixture.producer->output);
+				fixture.metrics.BeginFrame();
+				check(fixture.metrics.Snapshot().confirmed == 0 && fixture.metrics.Snapshot().pending == 1,
+					"U201 failed Present retains recycled Stored across a new frame");
+				fixture.Authorize();
+				fixture.Freeze();
+				fixture.producer->PresentReturned(true, true, returnQpc + 1, 0.5, fixture.producer->output);
+				check(fixture.metrics.Snapshot().confirmed == 1 && fixture.metrics.Snapshot().pending == 0 &&
+					!fixture.producer->FindStored(a.source.key),
+					"U201 next real-content success confirms once and releases Stored note");
+				fixture.producer->PresentReturned(true, true, returnQpc + 2, 0.5, fixture.producer->output);
+				check(fixture.metrics.Snapshot().confirmed == 1, "U201 repeated success cannot duplicate landing");
+			}
+			for (unsigned mismatch = 0; mismatch != 6; ++mismatch)
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Store();
+				fixture.Prime(a.source.key, true);
+				const auto* item = fixture.runtimes[0].history.Find(a.committed.renderItem);
+				check(a.captured && item && item->visible && item->id == a.committed.renderItem,
+					"U202 malformed-proof fixture starts with exact actual history item");
+				if (mismatch == 0)
+				{
+					const auto wrongPage = fixture.producer->Signature(fixture.document, 1, fixture.runtimes[1], 320, 240);
+					fixture.producer->CompleteFullReplay(wrongPage, true);
+					check(fixture.producer->FreezeCandidates(wrongPage,
+						*fixture.document.PageAt(1)->FindCanvas(kDefaultDeviceKey), fixture.runtimes[1],
+						{ 0, 0, 320, 240 }, true, true) == 0, "U202 actual other page cannot stage old Stored");
+				}
+				else if (mismatch == 1)
+				{
+					check(fixture.runtimes[0].history.UndoLastVisible(a.committed.renderItem), "U202 actual Undo hides item");
+					fixture.Authorize(); fixture.Freeze();
+					check(fixture.metrics.Snapshot().pending == 0 && fixture.metrics.Snapshot().unpresented == 1,
+						"U202 hidden Stored is precisely ended before Redo");
+					check(fixture.runtimes[0].history.RedoLastUndone(a.committed.renderItem), "U202 actual Redo restores new content generation");
+				}
+				else
+				{
+					auto* note = fixture.producer->FindStored(a.source.key);
+					if (!note) throw 1;
+					if (mismatch == 2) ++note->item.generation;
+					if (mismatch == 3) ++note->strokeIndex;
+					if (mismatch == 4)
+					{
+						const auto* canvas = fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey);
+						auto footprint = BuildStrokeTileFootprint(canvas->Strokes()[a.committed.strokeIndex]);
+						if (!footprint || !fixture.runtimes[0].history.UpdateItemGeometry(a.committed.renderItem, std::move(*footprint))) throw 1;
+					}
+					if (mismatch == 5) ++note->afterState;
+				}
+				fixture.Authorize();
+				check(fixture.Freeze() == (mismatch == 0 ? 1u : 0u),
+					"U202 only unchanged exact id/content/state can be staged on owner page");
+				fixture.producer->PresentReturned(true, true, returnQpc, 0.5, fixture.producer->output);
+				check(fixture.metrics.Snapshot().confirmed == (mismatch == 0 ? 1u : 0u),
+					"U202 mismatched or Undo-Redo Stored cannot resurrect old landing");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Store();
+				check(fixture.Freeze() == 0, "U203 CPU afterState alone does not authorize L2");
+				const auto beforeB = fixture.Signature();
+				fixture.producer->InvalidateRaster();
+				check(!fixture.producer->BeginLocalWrite(beforeB), "U203 invalid stamp cannot start authoritative local chain");
+				const auto b = fixture.Store();
+				check(a.captured && b.captured && !fixture.producer->CompleteLocalWrite(beforeB, fixture.Signature(), true) &&
+					fixture.Freeze() == 0, "U203 another successful append does not repair old raster failure");
+				fixture.producer->BeginVisibleReplay(beforeB);
+				check(!fixture.producer->CompleteVisibleReplay(fixture.Signature(), true),
+					"U203 changed history signature cannot certify older replay plan");
+				fixture.producer->BeginVisibleReplay(fixture.Signature());
+				check(!fixture.producer->CompleteVisibleReplay(fixture.Signature(), false) && fixture.Freeze() == 0,
+					"U203 incomplete visible replay remains withheld");
+				const bool replay = fixture.Authorize();
+				check(replay && fixture.Freeze() == 2, "U203 complete current history replay certifies both unchanged Stored items");
+				fixture.producer->PresentReturned(true, true, returnQpc, 0.5, fixture.producer->output);
+				check(fixture.metrics.Snapshot().confirmed == 2 && fixture.metrics.Snapshot().presentAttempts == 1,
+					"U203 one success confirms two Stored notes after intervening append");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto before = fixture.Signature();
+				check(fixture.Authorize() && fixture.producer->BeginLocalWrite(before),
+					"U203 exact valid L2 stamp opens a continuous local write");
+				fixture.Store();
+				check(fixture.producer->CompleteLocalWrite(before, fixture.Signature(), true) && fixture.Freeze() == 1,
+					"U203 successful local GPU write advances only its exact before/after chain");
+				fixture.producer->PresentReturned(true, true, returnQpc, 0.5, fixture.producer->output);
+				const auto beforeFailure = fixture.Signature();
+				check(fixture.producer->BeginLocalWrite(beforeFailure), "U203 next local write uses the current stamp");
+				fixture.Store();
+				check(!fixture.producer->CompleteLocalWrite(beforeFailure, fixture.Signature(), false) &&
+					!fixture.producer->CompleteLocalWrite(beforeFailure, fixture.Signature(), true) && fixture.Freeze() == 0,
+					"U203 failed write cannot be repaired by a completion without a new valid before stamp");
+				fixture.producer->BeginVisibleReplay(fixture.Signature());
+				check(!fixture.producer->CompleteVisibleReplay(fixture.Signature(), false) &&
+					fixture.producer->CompleteVisibleReplay(fixture.Signature(), true) && fixture.Freeze() == 1,
+					"U203 incomplete replay retains its start signature until same-plan full completion");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				fixture.Store();
+				const auto live = fixture.Down();
+				fixture.Authorize();
+				check(live.ready && fixture.Freeze() == 2, "U204 current Stored and Live share one frozen frame");
+				fixture.producer->PresentReturned(true, true, returnQpc, 0.5, fixture.producer->output);
+				check(fixture.metrics.Snapshot().confirmed == 2 && fixture.metrics.Snapshot().presentAttempts == 1,
+					"U204 same success QPC confirms distinct contact proofs once");
+				fixture.Retire(live);
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Store(), c = fixture.Store();
+				fixture.Prime(a.source.key, true);
+				const auto cProof = fixture.Prime(c.source.key, true);
+				fixture.metrics.RecordVerifiedPresent(0.5, true);
+				check(fixture.producer->Invalidate(a.source.key, ContentMetricInvalidationReason::Cancelled),
+					"U204 Cancel precisely ends A Registered/Pending key");
+				fixture.metrics.CommitVerifiedLandings(true, returnQpc, cProof);
+				check(fixture.metrics.Snapshot().confirmed == 1 && fixture.metrics.Snapshot().pending == 0 &&
+					fixture.metrics.Snapshot().unpresented == 1,
+					"U204 Cancel A preserves C Stored and current-frame verified success");
+				check(!fixture.producer->Invalidate(a.source.key, ContentMetricInvalidationReason::Cancelled) &&
+					fixture.metrics.Snapshot().unpresented == 1, "U204 repeated Cancel does not inflate denominator");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto c = fixture.Store();
+				fixture.Prime(c.source.key, true);
+				bool registered = true, staged = true, invalidated = true;
+				for (unsigned index = 0; index != 70; ++index)
+				{
+					const auto a = fixture.Down(InputDeviceType::Touch);
+					registered = a.ready && registered;
+					if (a.ready)
+					{
+						const auto* note = fixture.producer->FindLive(a.key);
+						RuntimeMetricsLandingProof proof{ fixture.producer->canvasIdentity,
+							note->contentToken, 0, a.down.sequence, RuntimeMetricsProofKind::Live };
+						proof.canvas.outputGeneration = 1;
+						proof.frameSerial = fixture.metrics.Snapshot().frameSerial;
+						staged = fixture.metrics.StageVerifiedLanding(a.key.opaqueRecord, a.key.generation, proof) && staged;
+					}
+					fixture.Retire(a);
+					invalidated = fixture.producer->Invalidate(a.key, ContentMetricInvalidationReason::ReconnectSuperseded) && invalidated;
+				}
+				check(registered && staged && invalidated && fixture.metrics.Snapshot().pending == 1 &&
+					fixture.metrics.Snapshot().pendingOverflow == 0 && fixture.metrics.Snapshot().unpresented == 70 &&
+					fixture.input.DiagnosticsSnapshot().occupiedSlots == 0,
+					"U205 more than 64 reconnect handoffs release only A while C Stored remains pending");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Down();
+				const auto proof = fixture.Prime(a.key, false);
+				fixture.metrics.RecordVerifiedPresent(0.5, true);
+				fixture.metrics.CommitVerifiedLandings(true, returnQpc, proof);
+				fixture.Retire(a);
+				check(!fixture.producer->Invalidate(a.key, ContentMetricInvalidationReason::ReconnectSuperseded) &&
+					fixture.metrics.Snapshot().unpresented == 0, "U205 already confirmed A is an idempotent reconnect no-op");
+				const auto b = fixture.Down();
+				fixture.Prime(b.key, false);
+				check(a.key.opaqueRecord == b.key.opaqueRecord && a.key.generation != b.key.generation &&
+					!fixture.producer->Invalidate(a.key, ContentMetricInvalidationReason::Cancelled) &&
+					fixture.metrics.Snapshot().pending == 1, "U205 stale same-slot generation cannot cancel new B");
+				fixture.Retire(b);
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Down();
+				check(fixture.producer->Invalidate(a.key, ContentMetricInvalidationReason::InitRejected) &&
+					fixture.metrics.Snapshot().unpresented == 1 && fixture.metrics.Snapshot().pending == 0,
+					"U205 Registered without any proof is precisely ended at initialization rejection");
+				check(!fixture.producer->Invalidate(a.key, ContentMetricInvalidationReason::InitRejected) &&
+					!fixture.metrics.InvalidateContact(nullptr, 1) &&
+					!fixture.metrics.InvalidateContact(a.key.opaqueRecord, a.key.generation + 1) &&
+					fixture.metrics.Snapshot().unpresented == 1, "U205 repeated/unknown/stale exact invalidation is a no-op");
+				fixture.Retire(a);
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Store();
+				fixture.Prime(a.source.key, true);
+				const auto scene = fixture.producer->canvasIdentity.sceneGeneration;
+				check(fixture.producer->ObserveCanvas(fixture.document, 0, 1, false) &&
+					fixture.producer->canvasIdentity.sceneGeneration == scene && fixture.metrics.Snapshot().pending == 1,
+					"U202 unchanged CPU scene does not retire Stored pending");
+				fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey)->ClearStrokes();
+				fixture.runtimes[0] = {};
+				check(fixture.producer->ObserveCanvas(fixture.document, 0, 1, true) &&
+					fixture.producer->canvasIdentity.sceneGeneration != scene && fixture.metrics.Snapshot().pending == 0 &&
+					fixture.metrics.Snapshot().unpresented == 1,
+					"U202 actual CPU Clear changes scene and precisely ends old Stored");
+				fixture.producer->ObserveCanvas(fixture.document, 1, 1, false);
+				fixture.producer->ObserveCanvas(fixture.document, 0, 1, false);
+				fixture.Authorize();
+				fixture.Freeze();
+				fixture.producer->PresentReturned(true, true, returnQpc, 0.5, fixture.producer->output);
+				check(fixture.metrics.Snapshot().confirmed == 0 && fixture.metrics.Snapshot().unpresented == 1 &&
+					fixture.producer->canvasIdentity.sceneGeneration != scene,
+					"U202 returning same page after Clear never resurrects old scene note");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto first = fixture.producer->ObserveOutput(true, TransparentOutputTarget::PrimaryDrawpad, 0);
+				const auto repeat = fixture.producer->ObserveOutput(true, TransparentOutputTarget::PrimaryDrawpad, 0);
+				const auto selection = fixture.producer->ObserveOutput(true, TransparentOutputTarget::SelectionUlw, 1);
+				const auto primary = fixture.producer->ObserveOutput(true, TransparentOutputTarget::PrimaryDrawpad, 2);
+				check(first.exists && first.rawRevision == 0 && first.generation != 0 && repeat == first &&
+					selection.exists && primary.exists && selection.generation != first.generation &&
+					primary.generation != selection.generation,
+					"U206 valid raw0 repeat and raw1/raw2 receive distinct checked anonymous identities");
+				fixture.producer->InvalidateOutput();
+				const auto recovery = fixture.producer->ObserveOutput(true, TransparentOutputTarget::PrimaryDrawpad, 2);
+				check(recovery.exists && recovery.generation != primary.generation,
+					"U206 recovered identical raw tuple receives a new identity");
+				fixture.producer->nextOutputGeneration = (std::numeric_limits<uint64_t>::max)();
+				const auto extreme = fixture.producer->ObserveOutput(true, TransparentOutputTarget::SelectionUlw,
+					(std::numeric_limits<uint64_t>::max)());
+				const auto exhausted = fixture.producer->ObserveOutput(true, TransparentOutputTarget::PrimaryDrawpad, 0);
+				check(extreme.exists && extreme.rawRevision == (std::numeric_limits<uint64_t>::max)() &&
+					extreme.generation == (std::numeric_limits<uint64_t>::max)() && !exhausted.exists &&
+					fixture.producer->counters.identityExhausted != 0,
+					"U206 raw revision is never incremented and exhausted generation fails closed");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				fixture.Store(); fixture.Authorize(); fixture.Freeze();
+				fixture.producer->PresentReturned(true, false, returnQpc, 0.5, fixture.producer->output);
+				fixture.metrics.BeginFrame();
+				const auto nextOutput = fixture.producer->ObserveOutput(true, TransparentOutputTarget::SelectionUlw, 1);
+				fixture.Authorize();
+				check(fixture.Freeze() == 1, "U206 failed Stored can restage against a genuinely new output identity");
+				fixture.producer->PresentReturned(true, true, returnQpc + 1, 0.5, nextOutput);
+				check(fixture.metrics.Snapshot().confirmed == 1 && fixture.metrics.Snapshot().pending == 0 &&
+					fixture.metrics.Snapshot().presentAttempts == 2 && fixture.metrics.Snapshot().presentFailed == 1,
+					"U206 restaged new output confirms Stored once and keeps failed attempt");
+			}
+			for (unsigned result = 0; result != 4; ++result)
+			{
+				Fixture fixture(now.QuadPart);
+				fixture.Store(); fixture.Authorize(); fixture.Freeze(result != 0);
+				const bool called = result != 0, succeeded = result >= 2;
+				auto observed = fixture.producer->output;
+				if (result == 3) ++observed.rawRevision;
+				fixture.producer->PresentReturned(called, succeeded, returnQpc, 0.5, observed);
+				const auto count = fixture.metrics.Snapshot();
+				check(count.presentAttempts == (called ? 1u : 0u) &&
+					count.presentSucceeded == (succeeded ? 1u : 0u) && count.presentFailed == (result == 1 ? 1u : 0u) &&
+					count.confirmed == (result == 2 ? 1u : 0u),
+					"U207 no-call/false/true-match/true-mismatch preserve exact actual attempt/result denominator");
+				RuntimeMetricsFrameSample frame;
+				frame.frameSerial = count.frameSerial;
+				frame.frameStartMs = 1.0; frame.wallMs = 1.0;
+				frame.physicalBefore = 1; frame.physicalAfter = 0; frame.terminalCount = 1;
+				frame.presentAttempted = called; frame.presentSucceeded = succeeded;
+				frame.presentWallMs = called ? 0.5 : 0.0;
+				frame.reasonFlags = result == 0 ? (1u << 14) | (1u << 15) :
+					(result == 1 ? 1u << 16 : 1u << 17); // 固定 CPU 输入对应冻结 FrameReason 位。
+				fixture.producer->RecordFrame(frame);
+				check(fixture.metrics.Snapshot().framesSeen == 1 && fixture.metrics.Snapshot().framesRetained == 1 &&
+					fixture.producer->counters.noPresent == (called ? 0u : 1u) &&
+					fixture.producer->counters.rasterFailed == (result == 0 ? 1u : 0u) &&
+					fixture.producer->counters.outputMismatch == (result == 3 ? 1u : 0u),
+					"U207 terminal after=0 and no-Present attempts enter real frame coverage");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto a = fixture.Down();
+				ContactSnapshot move = a.down;
+				move.phase = ContactPhase::Move; move.qpc += 1; move.position.x += 24.0f;
+				if (!fixture.input.PublishMove(0xE042, a.contactId, move) ||
+					!fixture.input.TryReadSnapshot(a.handle, move)) throw 1;
+				fixture.producer->NoteConsumed(a.key, move.sequence);
+				fixture.Authorize();
+				check(fixture.Freeze() == 0 &&
+					!fixture.producer->Adopt(a.key, move, ContentMetricAdoptionKind::Model, false) &&
+					fixture.producer->FindLive(a.key)->adoptedSequence == a.down.sequence,
+					"U208 consumed or failed model input cannot impersonate an adopted sequence");
+				check(fixture.producer->Adopt(a.key, move, ContentMetricAdoptionKind::Model, true),
+					"U208 explicit real model geometry adoption advances its own sequence");
+				fixture.producer->ObserveLiveRaster(a.key, move.sequence, { 36, 44, 68, 52 },
+					fixture.metrics.Snapshot().frameSerial, false);
+				check(fixture.Freeze() == 0, "U208 adopted geometry requires successful shared raster");
+				fixture.producer->ObserveLiveRaster(a.key, move.sequence, { 36, 44, 68, 52 },
+					fixture.metrics.Snapshot().frameSerial, true);
+				check(fixture.Freeze() == 1, "U208 current adopted/rastered geometry stages live once");
+				fixture.producer->PresentReturned(true, false, returnQpc, 0.5, fixture.producer->output);
+				fixture.metrics.BeginFrame();
+				check(fixture.Freeze() == 0, "U208 old-frame Live cannot stage without new successful raster");
+				ContactSnapshot terminal;
+				if (!fixture.Up(a, terminal)) throw 1;
+				fixture.producer->NoteConsumed(a.key, terminal.sequence);
+				check(fixture.producer->Adopt(a.key, terminal, ContentMetricAdoptionKind::RawTerminal, true) &&
+					fixture.producer->FindLive(a.key)->adoptionKind == ContentMetricAdoptionKind::RawTerminal,
+					"U208 raw terminal fallback has an explicit non-model adoption kind");
+				fixture.input.Recycle(a.handle);
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto laser = fixture.Down(InputDeviceType::Pen, DrawingTool::Laser);
+				fixture.Authorize();
+				check(laser.ready && fixture.Freeze() == 0 && fixture.producer->counters.excludedLaser == 1,
+					"U208 Laser formal landing is excluded even with a valid frame and real contact");
+				fixture.producer->PresentReturned(true, true, returnQpc, 0.5, fixture.producer->output);
+				RuntimeMetricsFrameSample frame;
+				frame.frameSerial = fixture.metrics.Snapshot().frameSerial;
+				frame.wallMs = 1.0; frame.presentWallMs = 0.5;
+				frame.physicalBefore = 1; frame.terminalCount = 1;
+				frame.presentAttempted = true; frame.presentSucceeded = true;
+				frame.reasonFlags = (1u << 8) | (1u << 17);
+				fixture.producer->RecordFrame(frame);
+				fixture.Retire(laser);
+				fixture.producer->Invalidate(laser.key, ContentMetricInvalidationReason::Stopped);
+				check(fixture.metrics.Snapshot().confirmed == 0 && fixture.metrics.Snapshot().presentSucceeded == 1 &&
+					fixture.metrics.Snapshot().framesRetained == 1 && fixture.metrics.Snapshot().unpresented == 1 &&
+					fixture.producer->counters.invalidated[static_cast<size_t>(ContentMetricInvalidationReason::Stopped)] == 0,
+					"U208 excluded Laser still retains frame/result denominator without a false stopped failure reason");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				constexpr size_t ownBytes = sizeof(ControllerContentMetrics);
+				const auto allocated = fixture.metrics.Snapshot().allocatedBytes;
+				const size_t exactExternal = ControllerContentMetrics::kByteBudget - ownBytes - static_cast<size_t>(allocated);
+				check(!ControllerContentMetrics::Prepare(nullptr, (std::numeric_limits<size_t>::max)()) &&
+					ControllerContentMetrics::Prepare(&fixture.metrics, exactExternal) &&
+					!ControllerContentMetrics::Prepare(&fixture.metrics, exactExternal + 1) &&
+					!ControllerContentMetrics::Prepare(&fixture.metrics, (std::numeric_limits<size_t>::max)()) &&
+					ControllerContentMetrics::Prepare(&fixture.metrics, 320u * 240 * 4),
+					"U209 default-null and shared-budget exact/overflow/checkpoint boundaries precede allocation");
+				unsigned captured = 0;
+				for (unsigned index = 0; index != 65; ++index) if (fixture.Store().captured) ++captured;
+				check(captured == 64 && fixture.producer->counters.proofOverflow == 1 &&
+					fixture.metrics.Snapshot().contactSeen == 65 && fixture.metrics.Snapshot().unpresented == 1 &&
+					fixture.metrics.Snapshot().allocatedBytes == allocated && fixture.input.DiagnosticsSnapshot().occupiedSlots == 0,
+					"U209 fixed note overflow retains denominator without hot growth or product admission loss");
+				std::fprintf(stderr, "[Draw3ContentProof] payload: session=%llu auxiliary=%zu commonBudget=%zu\n",
+					static_cast<unsigned long long>(allocated), ownBytes, ControllerContentMetrics::kByteBudget);
+				check(!DrawingControllerMetricsState::Prepare(nullptr) &&
+					DrawingControllerMetricsState::Prepare(&fixture.metrics) &&
+					allocated + sizeof(DrawingControllerMetricsState) <= ControllerContentMetrics::kByteBudget,
+					"U212 real Controller State includes frame/lifetime POD in the common fixed budget");
+				std::fprintf(stderr, "[Draw3ContentProof] runtimeState=%zu\n", sizeof(DrawingControllerMetricsState));
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				const auto stored = fixture.Store();
+				fixture.Authorize();
+				const auto* canvas = fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey);
+				check(fixture.producer->FreezeCandidates(fixture.Signature(), *canvas, fixture.runtimes[0],
+					{ 0, 0, 64, 64 }, true, true) == 0, "U210 PresentFull cannot certify partial actual composite");
+				check(fixture.producer->FreezeCandidates(fixture.Signature(), *canvas, fixture.runtimes[0],
+					{ 0, 0, 64, 64 }, true, false) == 0, "U210 partial dirty must contain complete Stored projection");
+				const auto* item = fixture.runtimes[0].history.Find(stored.committed.renderItem);
+				RECT projection;
+				if (!item || !ControllerContentMetrics::StoredProjection(item->pixelBounds, fixture.Signature(), projection)) throw 1;
+				check(fixture.producer->FreezeCandidates(fixture.Signature(), *canvas, fixture.runtimes[0],
+					projection, true, false) == 1, "U210 exact actual partial projection can stage Stored");
+				fixture.producer->PresentReturned(true, false, returnQpc, 0.5, fixture.producer->output);
+				if (!fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey)->SetViewport({ 1000.0f, 1000.0f, 1.0f })) throw 1;
+				check(fixture.Freeze() == 0, "U210 old viewport stamp cannot certify moved surface");
+				fixture.Authorize();
+				check(fixture.Freeze() == 0 && fixture.metrics.Snapshot().confirmed == 0,
+					"U210 wholly outside current viewport is not zero-latency success");
+			}
+			{
+				Fixture fixture(now.QuadPart);
+				fixture.input.SetAdmissionBlocked(true); fixture.input.SetAdmissionBlocked(false);
+				const auto a = fixture.Down();
+				ContactSnapshot wrong = a.down;
+				wrong.admissionRevision = 0;
+				check(a.down.admissionRevision != 0 && !fixture.producer->Adopt(a.key, wrong, ContentMetricAdoptionKind::RawDown, true),
+					"U211 real revision2 rejects mismatching0 while initial revision0 remains legal");
+				wrong = a.down; wrong.qpc = a.down.qpc - 1;
+				check(!fixture.producer->Adopt(a.key, wrong, ContentMetricAdoptionKind::RawDown, true),
+					"U211 adopted source QPC cannot precede immutable actual Down");
+				fixture.Authorize();
+				const auto surface = fixture.Signature();
+				fixture.producer->ObserveLiveRaster(a.key, a.down.sequence, { 36, 44, 44, 52 },
+					fixture.metrics.Snapshot().frameSerial, true, &surface);
+				check(fixture.Freeze() == 1, "U211 current explicit raster surface stages Live");
+				fixture.metrics.BeginFrame();
+				fixture.producer->ObserveLiveRaster(a.key, a.down.sequence + 1, { 36, 44, 44, 52 },
+					fixture.metrics.Snapshot().frameSerial, true, &surface);
+				check(fixture.Freeze() == 0, "U211 wrong raster geometry sequence is rejected");
+				fixture.producer->ObserveLiveRaster(a.key, a.down.sequence, { 36, 44, 44, 52 },
+					fixture.metrics.Snapshot().frameSerial, true, &surface);
+				auto changedExtent = surface; --changedExtent.width;
+				check(fixture.producer->FreezeCandidates(changedExtent, *fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey),
+					fixture.runtimes[0], { 0, 0, 319, 240 }, true, true) == 0, "U211 old Live raster cannot certify a new canvas extent");
+				fixture.Retire(a);
+			}
+			// 固定CPU结果只验证正式帧helper；这里不注入或宣称真实GPU故障。
+			const char* frameCases[] = {
+				"U213 command-only/no-op does not create a raster frame",
+				"U213 cache miss/Empty does not create a raster failure frame",
+				"U213 failed raster before idle retains one noPresent frame and bit15",
+				"U213 CPU visibility rejection preserves prior raster without bit15",
+				"U213 rollback raster failure retains one frame rather than two",
+				"U213 Empty rollback preserves the prior failed raster frame",
+				"U213 true Present result survives a prior raster failure"
+			};
+			for (size_t index = 0; index != std::size(frameCases); ++index)
+			{
+				RuntimeMetricsSession metrics(8);
+				auto producer = DrawingControllerMetricsState::Prepare(&metrics);
+				if (!producer) throw 1;
+				producer->Begin(1.0);
+				producer->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
+				if (index != 0)
+				{
+					const bool previous = producer->BeginRasterAttempt();
+					producer->RasterReturned(previous, index == 3 || index == 4, index != 1);
+				}
+				if (index == 4 || index == 5)
+				{
+					const bool previous = producer->BeginRasterAttempt();
+					producer->RasterReturned(previous, false, index == 4);
+				}
+				if (index == 6)
+				{
+					producer->PresentReturned(true, true, returnQpc, 0.5, {});
+					producer->frame.presentAttempted = true;
+					producer->frame.presentSucceeded = true;
+					producer->frame.presentWallMs = 0.5;
+				}
+				producer->Finish(1.0);
+				producer->Finish(1.0); // idle/RAII重入不能把同帧或rollback再记一次。
+				const auto sample = metrics.Snapshot();
+				const bool attempted = index >= 2;
+				const bool failed = index == 2 || index >= 4;
+				check(sample.framesSeen == (attempted ? 1u : 0u) && sample.framesRetained == sample.framesSeen &&
+					sample.framesInvalid == 0 && producer->counters.noPresent == (attempted && index != 6 ? 1u : 0u) &&
+					producer->counters.rasterFailed == (failed ? 1u : 0u) &&
+					((producer->frame.reasonFlags & (1u << 15)) != 0) == failed &&
+					((producer->frame.reasonFlags & static_cast<uint32_t>(RuntimeMetricsFrameReason::NoPresent)) != 0) ==
+						(attempted && index != 6) &&
+					(producer->frame.reasonFlags & static_cast<uint32_t>(RuntimeMetricsFrameReason::Command)) != 0 &&
+					sample.presentAttempts == (index == 6 ? 1u : 0u) && sample.presentSucceeded == sample.presentAttempts &&
+					sample.presentFailed == 0 &&
+					(producer->frame.reasonFlags & static_cast<uint32_t>(RuntimeMetricsFrameReason::PresentFailed)) == 0 &&
+					((producer->frame.reasonFlags & static_cast<uint32_t>(RuntimeMetricsFrameReason::PresentSucceeded)) != 0) ==
+						(index == 6), frameCases[index]);
+			}
+		}
+		catch (...)
+		{
+			check(false, "actual Coordinator/CPU commit fixture could not be prepared");
+		}
+		if (failures == 0) std::fputs("[Draw3ContentProof] PASS: production content assembler contract\n", stderr);
+		return failures;
+	}
+
 	int RunParkedDesktopExitAutoSaveTest() noexcept
 	{
 		int failures = 0;
@@ -3725,7 +5785,11 @@ namespace Inkeys::Drawing::Draw3
 			std::fputs("[Draw3FatalActiveInk] PASS: production CPU seal and Exit snapshot\n",
 				stderr);
 		const int laserFailures = RunIgnoredLaserTouchProductionTest();
-		return failures == 0 && laserFailures == 0 ? 0 : 1;
+		const int initializationFailures = RunRejectedStrokeInitializationProductionTest();
+		const int metricsFailures = RunRuntimeMetricsSessionProductionProbe();
+		const int contentProofFailures = RunDraw3ContentProofProductionProbe();
+		return failures == 0 && laserFailures == 0 && initializationFailures == 0 &&
+			metricsFailures == 0 && contentProofFailures == 0 ? 0 : 1;
 	}
 
 	int RunParkedPresentationRetainedSaveTest() noexcept
@@ -4153,8 +6217,11 @@ namespace Inkeys::Drawing::Draw3
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
-		haptics_(haptics)
+			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics)
 	{
+		// 指标预备失败仅关闭诊断，不能影响正常输入/模型/画质或启动。
+		metricsUnavailable_ = metrics && !metricsState_;
+		if (metricsUnavailable_) metrics_ = nullptr;
 		currentProductVisualStyle = window_.ProductVisualStyleSnapshot();
 		window_.SetMouseUsesSystemCursor(configuration_.mouseUsesSystemCursor);
 		ConfigureProductInkCursorAppearances(window_, currentProductVisualStyle,
@@ -4183,6 +6250,8 @@ namespace Inkeys::Drawing::Draw3
 			configuration_.laserParticleConfig, configuration_.dpiScale);
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
+
+	DrawingController::~DrawingController() = default;
 
 	bool DrawingController::SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept
 	{
@@ -4334,11 +6403,35 @@ namespace Inkeys::Drawing::Draw3
 	bool DrawingController::PresentFrame(RECT dirty, bool presentFull)
 	{
 		const double presentStartMs = GetQpcTimeMilliseconds();
+		const bool externalFrame = metricsState_ && !metricsState_->runFrameActive;
+		if (metricsState_)
+		{
+			if (externalFrame && !metricsState_->frameOpen) metricsState_->Begin(presentStartMs);
+			metricsState_->renderAttempt = true;
+			metricsState_->ObserveOutput(true, presentation_.RequestedOutputTarget(), presentation_.RequestedOutputRevision());
+		}
 		const bool succeeded = presentation_.Present(
 			dirty, presentFull, currentContentRevision_);
+		LARGE_INTEGER returnQpc = {};
+		if (metricsState_) QueryPerformanceCounter(&returnQpc); // 真返回点，先于观察回调/ready/诊断。
 		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
 		lastPresentSucceeded_ = succeeded;
-		if (metrics_) metrics_->RecordPresent(lastPresentDurationMs_);
+		if (metricsState_)
+		{
+			const auto observation = presentation_.LastPresentObservation();
+			const auto current = metricsState_->ObserveOutput(true,
+				presentation_.RequestedOutputTarget(), presentation_.RequestedOutputRevision());
+			const ContentMetricOutputIdentity observed{ succeeded, observation.outputTarget,
+				observation.outputRevision, current.generation };
+			const auto beforeMismatch = metricsState_->counters.outputMismatch;
+			metricsState_->PresentReturned(true, succeeded, returnQpc.QuadPart, lastPresentDurationMs_, observed);
+			metricsState_->frame.presentAttempted = true;
+			metricsState_->frame.presentSucceeded = succeeded;
+			metricsState_->frame.presentWallMs += lastPresentDurationMs_;
+			if (metricsState_->counters.outputMismatch != beforeMismatch)
+				metricsState_->Mark(RuntimeMetricsFrameReason::OutputMismatch);
+			if (externalFrame) metricsState_->Finish(GetQpcTimeMilliseconds() - metricsState_->frame.frameStartMs);
+		}
 		if (observer_.presented)
 			observer_.presented(observer_.context, succeeded, dirty, presentFull,
 				presentation_.LastPresentObservation());
@@ -4352,6 +6445,12 @@ namespace Inkeys::Drawing::Draw3
 
 	void DrawingController::ClearCanvas()
 	{
+		if (metricsState_)
+		{
+			if (!metricsState_->runFrameActive) metricsState_->Begin(GetQpcTimeMilliseconds());
+			metricsState_->Mark(RuntimeMetricsFrameReason::Page);
+			metricsState_->InvalidateRaster();
+		}
 		const WindowSize size = window_.Size();
 		const RECT fullCanvas = GetFullCanvasRect(size.width, size.height);
 		renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor); // 内部画布始终保持真透明背景。
@@ -4362,6 +6461,11 @@ namespace Inkeys::Drawing::Draw3
 		renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor); // backbuffer 也不写入 ULW 的命中测试底层。
 		if (!CompositeLayersToBackBuffer(fullCanvas))
 		{
+			if (metricsState_)
+			{
+				metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
+				if (!metricsState_->runFrameActive) metricsState_->Finish();
+			}
 			lastPresentSucceeded_ = false;
 			if (!renderer_.device || FAILED(renderer_.device->GetDeviceRemovedReason()))
 			{
@@ -4372,14 +6476,30 @@ namespace Inkeys::Drawing::Draw3
 			return; // 合成未完成时不把透明空帧提交给窗口。
 		}
 		PresentFrame(fullCanvas, true);
+		if (metricsState_)
+		{
+			metricsState_->initialL2Cleared = true;
+			metricsState_->initialWidth = size.width;
+			metricsState_->initialHeight = size.height;
+		}
 	}
 
 	void DrawingController::PresentFullCanvas()
 	{
+		if (metricsState_)
+		{
+			if (!metricsState_->runFrameActive) metricsState_->Begin(GetQpcTimeMilliseconds());
+			metricsState_->renderAttempt = true;
+		}
 		const WindowSize size = window_.Size();
 		const RECT fullCanvas = GetFullCanvasRect(size.width, size.height);
 		if (!CompositeLayersToBackBuffer(fullCanvas))
 		{
+			if (metricsState_)
+			{
+				metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
+				if (!metricsState_->runFrameActive) metricsState_->Finish();
+			}
 			lastPresentSucceeded_ = false;
 			if (!renderer_.device || FAILED(renderer_.device->GetDeviceRemovedReason()))
 			{
@@ -4399,9 +6519,15 @@ namespace Inkeys::Drawing::Draw3
 		const WindowSize oldSize = window_.Size();
 		if (requestedSize.width <= 0 || requestedSize.height <= 0 ||
 			(requestedSize.width == oldSize.width && requestedSize.height == oldSize.height)) return false;
+		if (metricsState_)
+		{
+			metricsState_->Mark(RuntimeMetricsFrameReason::Resize);
+			metricsState_->InvalidateRaster();
+		}
 
 		if (!renderer_.Resize(presentation_.SwapChain(), requestedSize.width, requestedSize.height)) // 先重建所有尺寸相关 D3D 资源。
 		{
+			if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
 			std::cout << "Failed to resize D3D resources to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			presentation_.MarkRuntimeFailure();
 			graphicsRecoveryPending_ = true;
@@ -4409,6 +6535,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 		if (!presentation_.Resize(requestedSize.width, requestedSize.height)) // 再通知当前透明呈现器更新外部资源。
 		{
+			if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
 			std::cout << "Failed to resize transparent presenter to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			graphicsRecoveryPending_ = presentation_.RecoveryPending();
 			return false;
@@ -4424,6 +6551,17 @@ namespace Inkeys::Drawing::Draw3
 
 	void DrawingController::Run()
 	{
+		struct MetricsRunExit
+		{
+			DrawingControllerMetricsState* state;
+			~MetricsRunExit()
+			{
+				if (!state) return;
+				state->Finish();
+				state->runFrameActive = false;
+				state->EndContacts(ContentMetricInvalidationReason::Stopped);
+			}
+		} metricsRunExit{ metricsState_.get() };
 		using namespace ink::stroke_model;
 		Bridge::Workspace activeWorkspace = Bridge::Workspace::Desktop;
 		DesktopAutoSavePolicy desktopAutoSavePolicy;
@@ -4583,6 +6721,18 @@ namespace Inkeys::Drawing::Draw3
 		};
 		pageRuntimeStates.front().rasterState = allocateRasterStateToken();
 		uint64_t rasterPipelineGeneration = 1;
+		auto metricsSignature = [&](int width, int height) noexcept -> ContentMetricRasterSignature
+		{
+			if (!metricsState_ || !document_ || currentPageIndex_ >= pageRuntimeStates.size()) return {};
+			metricsState_->ObserveCanvas(*document_, currentPageIndex_, rasterPipelineGeneration, false);
+			return metricsState_->Signature(*document_, currentPageIndex_, pageRuntimeStates[currentPageIndex_], width, height);
+		};
+		auto metricsScene = [&](bool newScene = false) noexcept
+		{
+			if (!metricsState_ || !document_) return;
+			metricsState_->ObserveCanvas(*document_, currentPageIndex_, rasterPipelineGeneration, newScene);
+		};
+		metricsScene();
 		UndoCachePolicy appliedUndoPolicy;
 		CompositionCachePolicy appliedCompositionPolicy;
 		uint64_t appliedHistoryCachePolicyGeneration = 0;
@@ -4995,6 +7145,7 @@ namespace Inkeys::Drawing::Draw3
 					!touchGesture.HasContact(runtime->touchGestureKey) ||
 					touchGesture.Disposition(runtime->touchGestureKey) !=
 						CanvasTouchDisposition::Pan) continue;
+				if (metricsState_) metricsState_->Invalidate(MetricKey(runtime->handle), ContentMetricInvalidationReason::Cancelled);
 				ContactSnapshot latest = runtime->lastInputSnapshot;
 				input_.TryReadSnapshot(runtime->handle, latest);
 				const bool terminal = latest.phase == ContactPhase::Up ||
@@ -5370,6 +7521,14 @@ namespace Inkeys::Drawing::Draw3
 					selectedToolSupportsOverride);
 				const bool rightEraser=deviceType==InputDeviceType::MouseRight && selectedToolSupportsOverride && !window_.SelectionMode();
 				const DrawingTool tool = (invertedEraser || rightEraser) ? DrawingTool::Eraser : batchTool;
+				if (metricsState_)
+				{
+					if (!metricsState_->frameOpen) metricsState_->Begin(GetQpcTimeMilliseconds());
+					metricsScene();
+					metricsState_->renderAttempt = true;
+					metricsState_->Register(MetricKey(handle), down, deviceType, tool);
+					metricsState_->NoteConsumed(MetricKey(handle), down.sequence);
+				}
 				const auto entry=SpeedEraser::EntryForInput(static_cast<uint32_t>(deviceType),down.isInvertedCursor);
 				auto eraserDisplay=batchSpeedEraserDisplayScale;
 				if(deviceType==InputDeviceType::Touch)eraserDisplay.development.touchContactAreaAssistance=batchTouchArea;
@@ -5587,6 +7746,7 @@ namespace Inkeys::Drawing::Draw3
 						: reconnectRuntime->stroke.modeledResults;
 					if (observer_.penDiagnostics && reconnectRuntime->stroke.useDisplayTime)
 						++reconnectRuntime->diagnosticModelUpdates;
+					const size_t metricsRealBefore = metricsState_ ? reconnectRuntime->stroke.realPoints.size() : 0;
 					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
 						reconnectInput, reconnectModelOutput); status.ok())
 					{
@@ -5616,6 +7776,13 @@ namespace Inkeys::Drawing::Draw3
 								reconnectRuntime->reconnectManualTestRanges.push_back({
 									reconnectManualTestFirstPointIndex, lastPointIndex });
 							}
+						}
+						if (metricsState_)
+						{
+							// 真接管成功才终结旧A；B始终保留自己的Down/QPC，与旁挂Stored C无关。
+							metricsState_->Invalidate(MetricKey(reconnectRuntime->handle), ContentMetricInvalidationReason::ReconnectSuperseded);
+							metricsState_->Adopt(MetricKey(handle), down, ContentMetricAdoptionKind::Model,
+								reconnectRuntime->stroke.realPoints.size() > metricsRealBefore);
 						}
 						input_.Recycle(reconnectRuntime->handle); // 新 contact 接管前释放已经 ConsumerOwned 的旧 slot。
 						reconnectRuntime->handle = handle;
@@ -5709,11 +7876,8 @@ namespace Inkeys::Drawing::Draw3
 				RuntimeStroke* runtime = acquireStroke();
 				if (!runtime)
 				{
-					ContactSnapshot cancelled = down;
-					cancelled.phase = ContactPhase::Cancelled;
-					input_.PublishCancelled(handle.record->TabletContextId(),
-						handle.record->ContactId(), cancelled);
-					input_.Recycle(handle);
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					RejectStrokeInitialization(input_, handle, down);
 					return false;
 				}
 				runtime->handle = handle;
@@ -5807,11 +7971,8 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
-					ContactSnapshot cancelled = down;
-					cancelled.phase = ContactPhase::Cancelled;
-					input_.PublishCancelled(handle.record->TabletContextId(),
-						handle.record->ContactId(), cancelled);
-					input_.Recycle(handle);
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					RejectStrokeInitialization(input_, handle, down);
 					runtime->cancelled = true;
 					handBackSpeedEraserController(*runtime);
 					runtime->handle = {};
@@ -5867,11 +8028,8 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
-					ContactSnapshot cancelled = down;
-					cancelled.phase = ContactPhase::Cancelled;
-					input_.PublishCancelled(handle.record->TabletContextId(),
-						handle.record->ContactId(), cancelled);
-					input_.Recycle(handle);
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					RejectStrokeInitialization(input_, handle, down);
 					runtime->cancelled = true;
 					handBackSpeedEraserController(*runtime);
 					runtime->handle = {};
@@ -5882,6 +8040,10 @@ namespace Inkeys::Drawing::Draw3
 					ExtractShapeModeledEndpoint(*runtime);
 				else
 					AppendRuntimeModeledPoints(*runtime, -1.0f, 0.0);
+				if (metricsState_)
+					metricsState_->Adopt(MetricKey(handle), down,
+						runtime->shape.active && runtime->shape.hasModeledEndpoint ? ContentMetricAdoptionKind::Shape :
+						!runtime->stroke.realPoints.empty() ? ContentMetricAdoptionKind::Model : ContentMetricAdoptionKind::RawDown, true);
 				if (runtime->tool == DrawingTool::Laser)
 				{
 					const WindowSize laserSize = window_.Size();
@@ -5991,6 +8153,8 @@ namespace Inkeys::Drawing::Draw3
 						runtime.stroke.realPoints.back() = finalPoint;
 				}
 				// 模型异常也保留 RTS 的最终位置，不能因随后回收 contact 而吞掉 Up 点。
+				if (metricsState_ && snapshot.phase == ContactPhase::Up)
+					metricsState_->Adopt(MetricKey(runtime.handle), snapshot, ContentMetricAdoptionKind::RawTerminal, true);
 			};
 
 		auto completeModelUp = [&](RuntimeStroke& runtime,
@@ -6041,6 +8205,7 @@ namespace Inkeys::Drawing::Draw3
 				if (sanitizeEndpoint) runtime.stroke.modelScratch.clear();
 				auto& modelOutput = sanitizeEndpoint
 					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = updateContactModel(
 					runtime, upInput, inputTime, modelOutput); status.ok())
 				{
@@ -6054,6 +8219,10 @@ namespace Inkeys::Drawing::Draw3
 							runtime.stroke.lastMovementInputTime, true);
 					}
 					else AppendRuntimeModeledPoints(runtime, -1.0f, inputTime);
+					if (metricsState_ && !cancelled)
+						metricsState_->Adopt(MetricKey(runtime.handle), snapshot,
+							runtime.shape.active ? ContentMetricAdoptionKind::Shape : ContentMetricAdoptionKind::Model,
+							MetricGeometryChanged(metricsGeometryBefore, runtime));
 				}
 				else
 				{
@@ -6067,6 +8236,8 @@ namespace Inkeys::Drawing::Draw3
 						snapshot.position.x, snapshot.position.y };
 					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
 					runtime.stroke.predictedResults.clear();
+					if (metricsState_ && !cancelled)
+						metricsState_->Adopt(MetricKey(runtime.handle), snapshot, ContentMetricAdoptionKind::Shape, true);
 				}
 				if (sanitizeEndpoint)
 					CapturePenTerminalTrace(runtime.stroke);
@@ -6087,6 +8258,18 @@ namespace Inkeys::Drawing::Draw3
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
 				runtime.lastConsumedSequence = snapshot.sequence;
 				runtime.lastInputSnapshot = snapshot;
+				if (metricsState_)
+				{
+					metricsState_->renderAttempt = true;
+					metricsState_->NoteConsumed(MetricKey(runtime.handle), snapshot.sequence);
+					if (snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled)
+					{
+						++metricsState_->frame.terminalCount;
+						metricsState_->Mark(RuntimeMetricsFrameReason::Terminal);
+					}
+					if (snapshot.phase == ContactPhase::Cancelled)
+						metricsState_->Invalidate(MetricKey(runtime.handle), ContentMetricInvalidationReason::Cancelled);
+				}
 				if (snapshot.phase == ContactPhase::Down) return false;
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
@@ -6188,6 +8371,7 @@ namespace Inkeys::Drawing::Draw3
 				if (boundedEndpointUpdate) runtime.stroke.modelScratch.clear();
 				auto& modelOutput = boundedEndpointUpdate
 					? runtime.stroke.modelScratch : runtime.stroke.modeledResults;
+				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = updateContactModel(
 					runtime, input, inputTime, modelOutput); status.ok())
 				{
@@ -6209,6 +8393,10 @@ namespace Inkeys::Drawing::Draw3
 						}
 					}
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
+					if (metricsState_)
+						metricsState_->Adopt(MetricKey(runtime.handle), snapshot,
+							runtime.shape.active ? ContentMetricAdoptionKind::Shape : ContentMetricAdoptionKind::Model,
+							MetricGeometryChanged(metricsGeometryBefore, runtime));
 				}
 				else
 				{
@@ -6250,6 +8438,8 @@ namespace Inkeys::Drawing::Draw3
 					// 最终文档端点必须严格使用原始 Up，不能让 prediction/modeler 覆盖。
 					SetShapeVisualEndpoint(runtime.shape, runtime.shape.rawEndpoint);
 					runtime.stroke.predictedResults.clear();
+					if (metricsState_ && snapshot.phase == ContactPhase::Up)
+						metricsState_->Adopt(MetricKey(runtime.handle), snapshot, ContentMetricAdoptionKind::Shape, true);
 				}
 				if (deferUp)
 				{
@@ -6317,6 +8507,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!runtime || runtime->ended) continue;
 				ContactSnapshot terminal = runtime->awaitingReconnect
 					? runtime->deferredUpSnapshot : runtime->lastInputSnapshot;
+				if (metricsState_) metricsState_->Invalidate(MetricKey(runtime->handle), ContentMetricInvalidationReason::SceneSuperseded);
 				terminal.phase = ContactPhase::Up;
 				completeModelUp(*runtime, terminal, runtime->tool == DrawingTool::Laser);
 				finishMouseSpeedEraser(*runtime);
@@ -6720,6 +8911,7 @@ namespace Inkeys::Drawing::Draw3
 						translation.viewportDelta.y != 0.0f) &&
 						canvas->SetViewport({ viewport.x, viewport.y, 1.0f }))
 					{
+						if (metricsState_) metricsState_->InvalidateRaster();
 						markPresentationMutation();
 						viewportRefreshPending = true;
 						historyGpuCache.DiscardHotPreimages();
@@ -7374,6 +9566,11 @@ namespace Inkeys::Drawing::Draw3
 			if (tiles.empty())
 			{
 				result.path = CompositionRestorePath::Empty;
+				if (metricsState_ && metricsState_->wholeL2Clear && pageIndex == currentPageIndex_)
+				{
+					metricsState_->CompleteFullReplay(metricsSignature(width, height), true);
+					metricsState_->wholeL2Clear = false;
+				}
 				return result;
 			}
 			const CompositionRestoreRequest request = {
@@ -7389,7 +9586,13 @@ namespace Inkeys::Drawing::Draw3
 				height,
 				clearTargetTiles
 			};
-			return historyGpuCache.RestoreComposition(request);
+			result = historyGpuCache.RestoreComposition(request);
+			if (metricsState_ && metricsState_->wholeL2Clear && pageIndex == currentPageIndex_)
+			{
+				metricsState_->CompleteFullReplay(metricsSignature(width, height), result.path != CompositionRestorePath::Failed);
+				metricsState_->wholeL2Clear = false;
+			}
+			return result;
 		};
 
 		auto appendBlankPageWithRuntime = [&]() -> std::optional<size_t>
@@ -7445,8 +9648,15 @@ namespace Inkeys::Drawing::Draw3
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
 			int width, int height)
 		{
+			if (metricsState_)
+			{
+				metricsScene(true);
+				metricsState_->Mark(RuntimeMetricsFrameReason::Page);
+				metricsState_->InvalidateRaster();
+			}
 			frameDirty = GetFullCanvasRect(width, height);
 			renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
+			if (metricsState_) metricsState_->wholeL2Clear = true;
 			renderer_.ClearOperatorLayer(renderer_.layerL1);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);
 			renderer_.ClearAllLaserCoverage();
@@ -7464,6 +9674,12 @@ namespace Inkeys::Drawing::Draw3
 			previousLaserParticleBounds = {};
 			previousLaserTipBounds = {};
 			forceFullPresent = true;
+			if (metricsState_ && currentPageIndex_ < pageRuntimeStates.size() &&
+				pageRuntimeStates[currentPageIndex_].history.Items().empty())
+			{
+				metricsState_->CompleteFullReplay(metricsSignature(width, height), true);
+				metricsState_->wholeL2Clear = false;
+			}
 		};
 
 		auto restoreAfterDocumentSlotSwitch = [&](RECT& frameDirty,
@@ -7611,6 +9827,11 @@ namespace Inkeys::Drawing::Draw3
 			if (fatalCaptureAttempted) return;
 			fatalCaptureAttempted = true;
 			StopFatalInputConsumer(input_);
+			if (metricsState_)
+			{
+				metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
+				metricsState_->InvalidateRaster();
+			}
 			size_t eligible = 0;
 			size_t committed = 0;
 			size_t failed = 0;
@@ -7839,6 +10060,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto oldLoadPending = activePresentationLoadPending;
 			document_ = std::move(rebuilt->document);
 			pageRuntimeStates = std::move(rebuilt->pageRuntimeStates);
+			if (metricsState_) metricsScene(true);
 			activeRetainedSlides = std::move(rebuilt->retainedSlides);
 			activePresentationFileGuid = rebuilt->fileGuid;
 			activePresentationMutationRevision = oldMutation;
@@ -7887,9 +10109,14 @@ namespace Inkeys::Drawing::Draw3
 			const InkHistoryRasterKey rasterKey = currentRasterKey();
 			const WindowSize size = window_.Size();
 			const InkViewport viewport = canvas->Viewport();
+			const auto metricsBeforeUndo = metricsState_ ? metricsSignature(size.width, size.height) : ContentMetricRasterSignature{};
+			if (metricsState_) metricsState_->BeginLocalWrite(metricsBeforeUndo);
+			const bool metricsHotAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
 			const HotPreimageRestoreResult hotRestore = historyGpuCache.RestorePreimage(
 				canvasIdentity, *itemId, rasterKey, runtime.rasterState,
 				viewport.x, viewport.y, size.width, size.height);
+			if (metricsState_) metricsState_->RasterReturned(metricsHotAttempt, true,
+				hotRestore.restored && !IsEmptyRect(hotRestore.dirty)); // 当前实现false仅前置/未命中返回，未到Copy；void Copy无失败回执。
 			const char* path = "failed";
 			RECT dirty = {};
 			if (hotRestore.restored)
@@ -7924,7 +10151,11 @@ namespace Inkeys::Drawing::Draw3
 						size.height,
 						true
 					};
-					return historyGpuCache.RestoreComposition(rollbackRequest);
+					const bool metricsAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
+					const auto rollback = historyGpuCache.RestoreComposition(rollbackRequest);
+					if (metricsState_) metricsState_->RasterReturned(metricsAttempt,
+						rollback.path != CompositionRestorePath::Failed, !IsEmptyRect(rollback.dirty));
+					return rollback;
 				};
 				const CompositionRestoreRequest request = {
 					canvasIdentity,
@@ -7940,8 +10171,12 @@ namespace Inkeys::Drawing::Draw3
 					true,
 					*itemId
 				};
+				const bool metricsColdAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
 				const CompositionRestoreResult restored =
 					historyGpuCache.RestoreComposition(request);
+				// 当前恢复实现只在映射tile真正尝试后回报dirty；Empty/前置拒绝不冒充栅格失败。
+				if (metricsState_) metricsState_->RasterReturned(metricsColdAttempt,
+					restored.path != CompositionRestorePath::Failed, !IsEmptyRect(restored.dirty));
 				if (restored.path == CompositionRestorePath::Failed)
 				{
 					const CompositionRestoreResult rollback = restoreOriginalTiles();
@@ -7976,6 +10211,13 @@ namespace Inkeys::Drawing::Draw3
 			const size_t hotRemaining = historyGpuCache.ConsecutiveHotDepth(
 				canvasIdentity, rasterKey, runtime.rasterState);
 			const bool historyEnd = !runtime.history.LastVisibleItem().has_value();
+			if (metricsState_)
+			{
+				metricsState_->PruneStored(*canvas, runtime);
+				metricsState_->CompleteLocalWrite(metricsBeforeUndo, metricsSignature(size.width, size.height), true);
+				metricsState_->InvalidateLiveRasters();
+				metricsState_->renderAttempt = true;
+			}
 			std::cout << "[Undo] page=" << (currentPageIndex_ + 1) <<
 				" item=" << itemId->index << " path=" << path <<
 				" hot_remaining=" << hotRemaining;
@@ -8051,10 +10293,16 @@ namespace Inkeys::Drawing::Draw3
 					size.height,
 					true
 				};
-				return historyGpuCache.RestoreComposition(request);
+				const bool metricsAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
+				const auto restored = historyGpuCache.RestoreComposition(request);
+				if (metricsState_) metricsState_->RasterReturned(metricsAttempt,
+					restored.path != CompositionRestorePath::Failed, !IsEmptyRect(restored.dirty));
+				return restored;
 			};
 
 			const char* basePath = "trusted_l2";
+			const auto metricsBeforeRedo = metricsState_ ? metricsSignature(size.width, size.height) : ContentMetricRasterSignature{};
+			if (metricsState_) metricsState_->BeginLocalWrite(metricsBeforeRedo);
 			RECT dirty = {};
 			if (!viewportVisibleClear)
 			{
@@ -8073,6 +10321,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
+			const bool metricsDrawAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
 			renderer_.ClearOperatorLayer(renderer_.layerL1);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);
 			const StoredStrokeRasterTarget target = {
@@ -8081,6 +10330,7 @@ namespace Inkeys::Drawing::Draw3
 			const StoredStrokeRasterResult raster = DrawStoredStroke(
 				strokes[item->strokeIndex], renderer_, target,
 				redoRebuildPoints, redoHighlighterScratch);
+			if (metricsState_) metricsState_->RasterReturned(metricsDrawAttempt, raster.succeeded);
 			const RECT redoDirty = ClampRectToCanvas(
 				raster.dirty, size.width, size.height);
 			if (!raster.succeeded)
@@ -8110,8 +10360,10 @@ namespace Inkeys::Drawing::Draw3
 			bool submitted = true;
 			if (!IsEmptyRect(redoDirty))
 			{
+				const bool metricsResolveAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
 				submitted = renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
 					renderer_.layerL1, renderer_.layerL0, redoDirty);
+				if (metricsState_) metricsState_->RasterReturned(metricsResolveAttempt, submitted);
 			}
 
 			const auto rollbackRedoPixels = [&]()
@@ -8168,6 +10420,13 @@ namespace Inkeys::Drawing::Draw3
 			UnionRectInPlace(frameDirty, dirty);
 			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(
 				viewportVisibleClear, true);
+			if (metricsState_)
+			{
+				metricsState_->PruneStored(*canvas, runtime);
+				metricsState_->CompleteLocalWrite(metricsBeforeRedo, metricsSignature(size.width, size.height), true);
+				metricsState_->InvalidateLiveRasters();
+				metricsState_->renderAttempt = true;
+			}
 			std::cout << "[Redo] page=" << (currentPageIndex_ + 1) <<
 				" item=" << itemId->index << " base=" << basePath <<
 				" path=direct_draw hot_rearmed=" << (hotRearmed ? "true" : "false") <<
@@ -8262,6 +10521,7 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand command;
 			while (active.empty() && window_.TryDequeueCanvasCommand(command))
 			{
+				if (metricsState_) metricsState_->frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::Command);
 				if (!CanvasCommandAllowedAfterExitBarrier(currentLoadRetry,
 					command.type))
 					continue; // 首次最终保存 ACK 后不再接受会写状态或再次保存的命令。
@@ -8867,6 +11127,7 @@ namespace Inkeys::Drawing::Draw3
 						next, { command.deltaX, command.deltaY });
 					if (applied.x == 0.0f && applied.y == 0.0f) continue;
 					if (!canvas->SetViewport({ next.x, next.y, 1.0f })) continue;
+					if (metricsState_) metricsState_->InvalidateRaster();
 					markPresentationMutation();
 					// 视口改变后屏幕热像失效；Canvas-local composition cache 继续复用。
 					historyGpuCache.DiscardHotPreimages();
@@ -8974,6 +11235,14 @@ namespace Inkeys::Drawing::Draw3
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
 		renderer_.WarmUpLaserShaders();
 		renderer_.WarmUpShapeShaders();
+		if (metricsState_ && metricsState_->initialL2Cleared)
+		{
+			const auto size = window_.Size();
+			if (size.width == metricsState_->initialWidth && size.height == metricsState_->initialHeight &&
+				pageRuntimeStates[currentPageIndex_].history.Items().empty())
+				metricsState_->CompleteFullReplay(metricsSignature(size.width, size.height), true);
+			metricsState_->initialL2Cleared = false;
+		}
 		bool appliedSelectionMode = window_.SelectionMode();
 		bool auxiliaryCleanVerificationPending = appliedSelectionMode;
 		unsigned consecutiveRasterFailures = 0;
@@ -9013,7 +11282,26 @@ namespace Inkeys::Drawing::Draw3
 					configuration_.dpiScale);
 			}
 			const double frameStartMs = GetQpcTimeMilliseconds();
-			if (metrics_) metrics_->BeginFrame();
+			if (metricsState_)
+			{
+				const uint32_t before = static_cast<uint32_t>(std::count_if(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime) { return runtime && !runtime->ended && !runtime->awaitingReconnect; }));
+				metricsState_->Begin(frameStartMs, before);
+				metricsState_->runFrameActive = true;
+			}
+			struct MetricsLoopExit
+			{
+				DrawingControllerMetricsState* state;
+				const std::vector<RuntimeStroke*>& active;
+				~MetricsLoopExit()
+				{
+					if (!state) return;
+					state->frame.physicalAfter = static_cast<uint32_t>(std::count_if(active.begin(), active.end(),
+						[](const RuntimeStroke* runtime) { return runtime && !runtime->ended && !runtime->awaitingReconnect; }));
+					state->Finish();
+					state->runFrameActive = false;
+				}
+			} metricsLoopExit{ metricsState_.get(), active };
 			lastPresentDurationMs_ = 0.0;
 			lastPresentSucceeded_ = false;
 		bool rasterSubmissionFailed = false;
@@ -9021,6 +11309,12 @@ namespace Inkeys::Drawing::Draw3
 			RECT viewportRecoveryDirty = {};
 			if (graphicsRecoveryPending_)
 			{
+				if (metricsState_)
+				{
+					metricsState_->Mark(RuntimeMetricsFrameReason::Recovery);
+					metricsState_->InvalidateRaster();
+					metricsState_->InvalidateOutput();
+				}
 				const HRESULT failure = presentation_.LastFailure();
 				graphicsRecoveryPending_ = false;
 				// 先释放旧设备上的 GPU history，再由 presenter 在当前绘制线程重建设备或降级后端。
@@ -9138,8 +11432,10 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (window_.ConsumeCompositionChangedRequest())
 			{
+				if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::Recovery);
 				if (!presentation_.RefreshAfterCompositionChanged())
 				{
+					if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
 					graphicsRecoveryPending_ = presentation_.RecoveryPending();
 					continue;
 				}
@@ -9160,6 +11456,7 @@ namespace Inkeys::Drawing::Draw3
 				// Footprint 是 Canvas-local 真值，窗口 Resize 不需要遍历全页重算。
 				renderer_.ClearRTV(
 					renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
+				if (metricsState_) metricsState_->wholeL2Clear = true;
 				const CompositionRestoreResult resizedPage = restorePageContent(
 					currentPageIndex_, size.width, size.height, false);
 				if (resizedPage.path == CompositionRestorePath::Failed)
@@ -9248,6 +11545,13 @@ namespace Inkeys::Drawing::Draw3
 				const WindowSize size = window_.Size();
 				if (viewportRefreshPending)
 				{
+					if (metricsState_)
+					{
+						metricsState_->Mark(RuntimeMetricsFrameReason::Recovery);
+						metricsState_->Mark(RuntimeMetricsFrameReason::PartialReplay);
+						if (viewportRefreshClearsTransient) metricsState_->InvalidateLiveRasters();
+						metricsState_->BeginVisibleReplay(metricsSignature(size.width, size.height));
+					}
 					renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 					if (viewportRefreshClearsTransient)
 					{
@@ -9352,6 +11656,12 @@ namespace Inkeys::Drawing::Draw3
 						viewportVisibleClear = true;
 				}
 				viewportRecoveryPending = viewportTilePlanIndex < viewportTilePlan.tiles.size();
+				if (metricsState_)
+				{
+					metricsState_->Mark(RuntimeMetricsFrameReason::PartialReplay);
+					metricsState_->CompleteVisibleReplay(metricsSignature(size.width, size.height),
+						!viewportRecoveryPending && !rasterSubmissionFailed);
+				}
 				if (!viewportRecoveryPending)
 				{
 					viewportVisibleClear = true;
@@ -9551,6 +11861,7 @@ namespace Inkeys::Drawing::Draw3
 					hapticContinuousActive = false;
 				}
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
+				if (metricsState_) metricsState_->Finish(); // idle/Hold等待不能混入render wall。
 				lastActiveFrameStartMs = 0.0;
 				if (laserLifecycle.phase == LaserTrailPhase::Hold)
 				{
@@ -9617,6 +11928,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			const bool frameHadActiveContact = HasPhysicalContact(active);
+			if (metricsState_) metricsState_->renderAttempt = true;
 			const uint64_t frameWakeGeneration = input_.CaptureWakeGeneration();
 			LARGE_INTEGER frameQpc = {};
 			QueryPerformanceCounter(&frameQpc);
@@ -9746,6 +12058,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->modelInputThisFrame = true;
 				runtime->stroke.modelScratch.clear();
 				if (observer_.penDiagnostics) ++runtime->diagnosticModelUpdates;
+				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(*runtime) : MetricGeometrySnapshot{};
 				if (absl::Status status = runtime->stroke.modeler.Update(
 					stationaryInput, runtime->stroke.modelScratch); status.ok())
 				{
@@ -9755,6 +12068,10 @@ namespace Inkeys::Drawing::Draw3
 							rawEndpoint, -1.0f);
 					else AppendEndpointBoundedModeledPoints(runtime->stroke,
 						runtime->stroke.modelScratch, -1.0f, runtime->stroke.lastMovementInputTime);
+					if (metricsState_ && rawEndpoint.x == runtime->lastInputSnapshot.position.x &&
+						rawEndpoint.y == runtime->lastInputSnapshot.position.y)
+						metricsState_->Adopt(MetricKey(runtime->handle), runtime->lastInputSnapshot,
+							ContentMetricAdoptionKind::Model, MetricGeometryChanged(metricsGeometryBefore, *runtime));
 				}
 				else
 				{
@@ -10156,6 +12473,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (ShouldBakeLaserBatch(laserLifecycle, laserStrokeLayers.size()))
 			{
+				if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::LaserBake);
 				// 同批次最后一支抬起后一次性烘干，随后 Hold/Fade 只解析稳定颜色。
 				UnionRectInPlace(frameDirty, previousLaserLiveBounds);
 				const bool baked = BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
@@ -10203,6 +12521,7 @@ namespace Inkeys::Drawing::Draw3
 						const double completedTipTaperSeconds = runtime->tool == DrawingTool::Pen
 							? ResolveLiveTipTaperDurationSeconds(runtime->stroke.widthMode,
 								configuration_.liveTipDurationSeconds) : 0.0;
+						const auto metricsBeforeWrite = metricsState_ ? metricsSignature(size.width, size.height) : ContentMetricRasterSignature{};
 						const auto committed = document_
 							? CommitRuntimeStoredStrokeCpu(*runtime, *document_, pageRuntimeStates,
 								currentPageIndex_, completedTipTaperSeconds,
@@ -10211,6 +12530,7 @@ namespace Inkeys::Drawing::Draw3
 						publishPenDiagnostics(*runtime, runtime->rebuildPoints);
 						if (committed)
 						{
+							if (metricsState_) metricsState_->BeginLocalWrite(metricsBeforeWrite);
 							InkPage* page = document_->PageAt(currentPageIndex_);
 							InkCanvas* canvas = page->FindCanvas(kDefaultDeviceKey);
 							CanvasPageRuntimeState& pageRuntime =
@@ -10222,6 +12542,9 @@ namespace Inkeys::Drawing::Draw3
 							const RenderItemId renderItem = committed->renderItem;
 							HotPreimageCaptureResult preimageCapture;
 							const InkRasterStateToken afterState = committed->afterState;
+							if (metricsState_)
+								metricsState_->CaptureStored(MetricKey(runtime->handle), *committed, pageRuntime,
+									runtime->lastInputSnapshot.phase == ContactPhase::Up ? runtime->lastInputSnapshot : runtime->deferredUpSnapshot);
 							{
 								// 进入 runtime history 即成为“有内容”，GPU 呈现失败不回滚文档真值。
 								markPresentationMutation();
@@ -10308,6 +12631,8 @@ namespace Inkeys::Drawing::Draw3
 									}
 								}
 								pageRuntime.rasterState = afterState;
+								if (metricsState_)
+									metricsState_->CompleteLocalWrite(metricsBeforeWrite, metricsSignature(size.width, size.height), submitted);
 								pageRuntime.clearRedoAvailable = false;
 								if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 								{
@@ -10331,6 +12656,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 						else
 						{
+							if (metricsState_) metricsState_->Invalidate(MetricKey(runtime->handle), ContentMetricInvalidationReason::ContentSuperseded);
 							std::cout << "Failed to append completed stroke to the current ink canvas."
 								<< std::endl;
 						}
@@ -10348,10 +12674,10 @@ namespace Inkeys::Drawing::Draw3
 						if (!runtime->cancelled && observer_.strokeCompleted)
 							observer_.strokeCompleted(observer_.context,
 								CompletedStrokeKindForTool(runtime->tool));
-						if (metrics_ && runtime->metricVisible && !runtime->cancelled)
-							metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
-								runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
-								runtime->metricEligibleQpc);
+						if (metricsState_ && (runtime->cancelled || runtime->tool == DrawingTool::Laser ||
+							metricsState_->FindLive(MetricKey(runtime->handle))))
+							metricsState_->Invalidate(MetricKey(runtime->handle), runtime->cancelled ?
+								ContentMetricInvalidationReason::Cancelled : ContentMetricInvalidationReason::Stopped);
 						handBackSpeedEraserController(*runtime);
 						input_.DiscardUntilTerminal(runtime->handle); // 合成收尾不释放仍按下的物理路由。
 						runtime->stroke.Reset(kPenDiameter, configuration_.expectedSpeed);
@@ -10505,14 +12831,44 @@ namespace Inkeys::Drawing::Draw3
 			}
 			frameDirty = ClampRectToCanvas(frameDirty, size.width, size.height);
 			if (forceFullPresent) frameDirty = GetFullCanvasRect(size.width, size.height);
-			if (metrics_)
+			if (metricsState_)
 			{
+				const auto surface = metricsSignature(size.width, size.height);
 				for (RuntimeStroke* runtime : active)
 				{
-					if (runtime && runtime->metricVisible && !runtime->cancelled)
-						metrics_->StageLanding(runtime->handle.record, runtime->handle.generation,
-							runtime->metricDeviceType, static_cast<uint32_t>(runtime->tool),
-							runtime->metricEligibleQpc);
+					if (!runtime || runtime->cancelled || runtime->tool == DrawingTool::Laser) continue;
+					const auto key = MetricKey(runtime->handle);
+					const auto* note = metricsState_->FindLive(key);
+					if (!note || note->landingConfirmed) continue;
+					RECT realBounds = {};
+					bool realContribution = false;
+					if (runtime->shape.active)
+					{
+						const auto realEnd = note->adoptionKind == ContentMetricAdoptionKind::RawDown ?
+							runtime->shape.rawEndpoint : runtime->shape.modeledEndpoint;
+						// 预测矩形的边不必包含真实矩形；只有实际绘制末点与已采纳末点相同才认证Live Shape。
+						realContribution = runtime->shape.primitive.end.x == realEnd.x && runtime->shape.primitive.end.y == realEnd.y;
+						if (realContribution) realBounds = RectFromShapePrimitive(runtime->shape.primitive,
+							runtime->shape.kind, size.width, size.height);
+					}
+					else if (!runtime->stroke.realPoints.empty())
+					{
+						realBounds = RectFromStrokePoints(runtime->stroke.realPoints, size.width, size.height);
+						realContribution = true;
+					}
+					else if (runtime->stroke.hasInputStartPoint && !runtime->stroke.l0DrawPoints.empty())
+					{
+						const auto& first = runtime->stroke.l0DrawPoints.front();
+						const auto& down = runtime->stroke.inputStartPoint;
+						realContribution = first.x == down.x && first.y == down.y;
+						if (realContribution)
+						{
+							const std::array<InkPoint, 1> downPoint = { down };
+							realBounds = RectFromStrokePoints(std::span<const InkPoint>(downPoint), size.width, size.height);
+						}
+					}
+					metricsState_->ObserveLiveRaster(key, note->adoptedSequence, realBounds,
+						metricsState_->frame.frameSerial, !rasterSubmissionFailed && realContribution, &surface);
 				}
 			}
 			bool presentSucceeded = false;
@@ -10591,6 +12947,19 @@ namespace Inkeys::Drawing::Draw3
 						}
 						for (const DrawingCursorVisual& visual : currentCursorVisuals)
 							renderer_.DrawTransientDrawingCursor(visual);
+						if (metricsState_ && snapshotCanvas && currentPageIndex_ < pageRuntimeStates.size())
+						{
+							if (!viewportVisibleClear || viewportRefreshPending || viewportRecoveryPending)
+								metricsState_->InvalidateL2();
+							metricsState_->ObserveOutput(true, presentation_.RequestedOutputTarget(), presentation_.RequestedOutputRevision());
+							const uint64_t withheldBefore = metricsState_->counters.authoritativeWithheld;
+							metricsState_->FreezeCandidates(metricsSignature(size.width, size.height), *snapshotCanvas,
+								pageRuntimeStates[currentPageIndex_], frameDirty, true,
+								frameDirty.left == 0 && frameDirty.top == 0 && frameDirty.right == size.width && frameDirty.bottom == size.height);
+							// 只把本次实际拒绝的新增计数接到帧原因，不能从整个L2状态猜测。
+							if (metricsState_->counters.authoritativeWithheld != withheldBefore)
+								metricsState_->Mark(RuntimeMetricsFrameReason::AuthoritativeWithheld);
+						}
 						presentSucceeded = PresentFrame(frameDirty,
 							forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
 					}
@@ -10598,6 +12967,11 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (rasterSubmissionFailed)
 			{
+				if (metricsState_)
+				{
+					metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
+					metricsState_->InvalidateLiveRasters();
+				}
 				// CPU 点和文档仍为权威；未完成的 GPU 帧不能作为可见回执。
 				activeLayerRebuildPending = true;
 				consecutiveRasterFailures = std::min(consecutiveRasterFailures + 1, 3u);
@@ -10654,13 +13028,6 @@ namespace Inkeys::Drawing::Draw3
 				previousLaserParticleBounds = currentLaserParticleBounds;
 				previousLaserTipBounds = currentLaserTipBounds;
 			}
-			if (metrics_)
-			{
-				LARGE_INTEGER presentQpc = {};
-				QueryPerformanceCounter(&presentQpc);
-				metrics_->CommitStagedLandings(presentSucceeded, presentQpc.QuadPart);
-			}
-
 			const double canvasFrameElapsedMilliseconds =
 				GetQpcTimeMilliseconds() - frameStartMs;
 			previousCanvasFrameWorkMilliseconds = (std::max)(0.0,
@@ -10670,6 +13037,18 @@ namespace Inkeys::Drawing::Draw3
 			reconcileDrawingActivity();
 			FlushCursorDiagnostics();
 			const bool hasPhysicalContactAfterFrame = HasPhysicalContact(active);
+			if (metricsState_)
+			{
+				metricsState_->frame.physicalAfter = static_cast<uint32_t>(std::count_if(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime) { return runtime && !runtime->ended && !runtime->awaitingReconnect; }));
+				if (drawingCursorRequested || speedEraserHoverAnimating) metricsState_->Mark(RuntimeMetricsFrameReason::Hover);
+				if (laserLifecycle.phase == LaserTrailPhase::Active) metricsState_->Mark(RuntimeMetricsFrameReason::LaserActive);
+				if (laserLifecycle.phase == LaserTrailPhase::Hold) metricsState_->Mark(RuntimeMetricsFrameReason::LaserHold);
+				if (laserLifecycle.phase == LaserTrailPhase::Fade) metricsState_->Mark(RuntimeMetricsFrameReason::LaserFade);
+				if (laserExpired) metricsState_->Mark(RuntimeMetricsFrameReason::LaserExpiry);
+				if (shouldStepLaserParticles || shouldDrawLaserParticles) metricsState_->Mark(RuntimeMetricsFrameReason::LaserParticles);
+				metricsState_->Finish(canvasFrameElapsedMilliseconds);
+			}
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();
 			const bool eraserIdle = hasPhysicalContactAfterFrame && !navigationActive &&
@@ -10761,11 +13140,13 @@ namespace Inkeys::Drawing::Draw3
 		}
 		catch (const std::bad_alloc&)
 		{
+			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
 			std::fputs("[Draw3.AutoSave] action=run_exception result=not_queued reason=allocation\n", stderr);
 			throw;
 		}
 		catch (const std::exception& error)
 		{
+			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
 			// Run 的局部 history 仍存活时尽力封口；随后原异常继续交 Host 受控退出。
 			std::fprintf(stderr, "[Draw3.AutoSave] action=run_exception reason=%s\n", error.what());
 			// CPU 追加中途抛错可能留下半事务；数量不齐时不导出可疑 history。

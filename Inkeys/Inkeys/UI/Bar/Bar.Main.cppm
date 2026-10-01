@@ -1,6 +1,7 @@
 ﻿module;
 
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 
 #include <d2d1_1.h>
 #include <dwrite_1.h>
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "Bar.PresentationProbe.h"
 #include "../../Drawing/Draw3/Draw3.SpeedEraser.h"
 
 export module Inkeys.UI.Bar:Main;
@@ -473,6 +475,7 @@ public:
 public:
 	// 渲染更新：状态更新 + 通知计算并渲染
 	void UpdateRendering(bool updateState = true);
+	Inkeys::UI::Bar::Ui3FiniteSignature ReadFiniteSignature(const StateModeVersionedSnapshot& tool);
 	// 工具或白板工作区切换时收起所有属性浮层，主栏本体保持不变。
 	void CollapseAuxiliaryPanels(bool cancelCapture = true);
 	void StartDisplayTracking();

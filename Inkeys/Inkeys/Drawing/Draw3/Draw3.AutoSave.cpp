@@ -329,11 +329,16 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		bool WriteNewTextFileDurable(
-			const std::wstring& path, const std::string& text) noexcept
+			const std::wstring& path, const std::string& text, DWORD* failureError = nullptr) noexcept
 		{
+			if (failureError) *failureError = ERROR_SUCCESS;
 			HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
 				CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, nullptr);
-			if (file == INVALID_HANDLE_VALUE) return false;
+			if (file == INVALID_HANDLE_VALUE)
+			{
+				if (failureError) *failureError = GetLastError();
+				return false;
+			}
 			std::size_t offset = 0;
 			bool succeeded = true;
 			while (offset < text.size())
@@ -341,15 +346,21 @@ namespace Inkeys::Drawing::Draw3
 				const DWORD requested = static_cast<DWORD>((std::min)(
 					text.size() - offset, static_cast<std::size_t>(0x40000000u)));
 				DWORD written = 0;
-				if (!WriteFile(file, text.data() + offset, requested, &written, nullptr) ||
-					written == 0)
+				const BOOL wrote = WriteFile(file, text.data() + offset, requested, &written, nullptr);
+				if (!wrote || written == 0)
 				{
+					// 先保留失败 API 自身的错误；成功但零字节没有 Win32 failure error。
+					if (failureError) *failureError = wrote ? ERROR_SUCCESS : GetLastError();
 					succeeded = false;
 					break;
 				}
 				offset += written;
 			}
-			if (succeeded) succeeded = FlushFileBuffers(file) != FALSE;
+			if (succeeded)
+			{
+				succeeded = FlushFileBuffers(file) != FALSE;
+				if (!succeeded && failureError) *failureError = GetLastError();
+			}
 			CloseHandle(file);
 			// 只清理本次事务尚未发布的临时文件，不触碰任何历史文件。
 			if (!succeeded) DeleteFileW(path.c_str());
@@ -490,10 +501,23 @@ namespace Inkeys::Drawing::Draw3
 
 		bool CommitIndex(const std::wstring& rootPath,
 			const std::wstring& dateDirectory, const DesktopAutoSaveRequest& request,
-			const std::string& relativePath)
+			const std::string& relativePath, const DesktopAutoSaveTestFaultInjection& faults)
 		{
+			const auto reportIndex = [&faults](unsigned stage, DWORD error,
+				int readState = -1, int backupState = -1) noexcept
+			{
+				if (faults.logIndexCommitDiagnostics)
+					std::fprintf(stderr, "[Draw3.AutoSave.TestIo] stage=%u system_error=%lu read_state=%d backup_state=%d\n",
+						stage, error, readState, backupState);
+			};
+			const auto signalProbe = [](void* event) noexcept
+			{
+				if (event) (void)SetEvent(static_cast<HANDLE>(event)); // 诊断失败不改保存终态。
+			};
 			NamedMutexGuard mutex;
+			signalProbe(faults.enteringIndexMutexEvent);
 			if (!mutex.Acquire(rootPath, request.timestamp.localDate)) return false;
+			signalProbe(faults.indexMutexAcquiredEvent);
 			const std::wstring indexPath = JoinPath(dateDirectory, L"index.json");
 			const std::wstring backupPath = JoinPath(dateDirectory, L"index.json.bak");
 			Json::Value root;
@@ -508,8 +532,14 @@ namespace Inkeys::Drawing::Draw3
 				if (backupState == IndexReadState::Valid) root = std::move(backup);
 				else if (primary == IndexReadState::Missing &&
 					backupState == IndexReadState::Missing) root = NewIndex(request.timestamp.localDate);
-				else return false;
+				else
+				{
+					reportIndex(1, ERROR_SUCCESS, static_cast<int>(primary), static_cast<int>(backupState));
+					signalProbe(faults.indexReadCompletedEvent);
+					return false;
+				}
 			}
+			signalProbe(faults.indexReadCompletedEvent);
 
 			std::uint64_t maximumDailySequence = 0;
 			for (const Json::Value& entry : root["entries"])
@@ -544,15 +574,23 @@ namespace Inkeys::Drawing::Draw3
 			if (!temporaryGuid) return false;
 			const std::wstring temporaryPath = indexPath + L"." +
 				WidenAscii(FormatUInkGuid(*temporaryGuid)) + L".tmp";
-			if (!WriteNewTextFileDurable(temporaryPath, text)) return false;
-			Json::Value validated;
-			if (ReadIndex(temporaryPath, request.timestamp.localDate,
-				dateDirectory, validated) !=
-				IndexReadState::Valid || !IndexContainsRequest(validated, request.saveRequestId))
+			DWORD writeError = ERROR_SUCCESS;
+			if (!WriteNewTextFileDurable(temporaryPath, text,
+				faults.logIndexCommitDiagnostics ? &writeError : nullptr))
 			{
+				reportIndex(2, writeError);
+				return false;
+			}
+			Json::Value validated;
+			const IndexReadState temporaryState = ReadIndex(temporaryPath,
+				request.timestamp.localDate, dateDirectory, validated);
+			if (temporaryState != IndexReadState::Valid || !IndexContainsRequest(validated, request.saveRequestId))
+			{
+				reportIndex(3, ERROR_SUCCESS, static_cast<int>(temporaryState));
 				DeleteFileW(temporaryPath.c_str());
 				return false;
 			}
+			reportIndex(4, ERROR_SUCCESS, static_cast<int>(temporaryState)); // 真实 temporary-validated。
 
 			BOOL published = FALSE;
 			if (PathExists(indexPath))
@@ -568,14 +606,135 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (!published)
 			{
+				// 先于日志/Delete 保存原 ReplaceFile/MoveFile 的当场错误。
+				const DWORD publishError = faults.logIndexCommitDiagnostics ? GetLastError() : ERROR_SUCCESS;
+				reportIndex(5, publishError);
 				DeleteFileW(temporaryPath.c_str());
 				return false;
 			}
+			reportIndex(6, ERROR_SUCCESS); // 真实 index-published，不代替最终验证。
 			Json::Value committed;
-			return ReadIndex(indexPath, request.timestamp.localDate,
-				dateDirectory, committed) ==
-				IndexReadState::Valid &&
+			const IndexReadState committedState = ReadIndex(indexPath,
+				request.timestamp.localDate, dateDirectory, committed);
+			const bool valid = committedState == IndexReadState::Valid &&
 				IndexContainsRequest(committed, request.saveRequestId);
+			if (!valid) reportIndex(7, ERROR_SUCCESS, static_cast<int>(committedState));
+			return valid;
+		}
+
+		// 只供隔离 fixture 的预读租约；不改变普通 worker/ReadIndex 的文件访问策略。
+		enum class DesktopFixtureLeaseState { Ready, Missing, Failed };
+
+		class DesktopFixtureReadLeases
+		{
+		public:
+			DesktopFixtureReadLeases() = default;
+			DesktopFixtureReadLeases(const DesktopFixtureReadLeases&) = delete;
+			DesktopFixtureReadLeases& operator=(const DesktopFixtureReadLeases&) = delete;
+			~DesktopFixtureReadLeases()
+			{
+				for (const HANDLE handle : handles_) CloseHandle(handle);
+			}
+
+			DesktopFixtureLeaseState Acquire(const std::wstring& path, bool directory)
+			{
+				// 拒绝 write/delete 共享：文件内容和目录 reparse 本身均不能在检查后被替换。
+				const HANDLE handle = CreateFileW(path.c_str(),
+					directory ? FILE_READ_ATTRIBUTES : GENERIC_READ, FILE_SHARE_READ,
+					nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+				if (handle == INVALID_HANDLE_VALUE)
+				{
+					const DWORD error = GetLastError();
+					return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+						? DesktopFixtureLeaseState::Missing : DesktopFixtureLeaseState::Failed;
+				}
+				BY_HANDLE_FILE_INFORMATION information{};
+				if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &information) ||
+					(information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+					((information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory)
+				{
+					CloseHandle(handle);
+					return DesktopFixtureLeaseState::Failed;
+				}
+				try { handles_.push_back(handle); }
+				catch (...) { CloseHandle(handle); throw; }
+				return DesktopFixtureLeaseState::Ready;
+			}
+
+			DesktopFixtureLeaseState AcquireDirectoryChain(const std::wstring& path)
+			{
+				// 本 fixture 上游只授权 drive 绝对路径；不把普通产品 UNC 路径能力迁入此入口。
+				if (path.size() < 3 || path[0] < L'a' || path[0] > L'z' ||
+					path[1] != L':' || path[2] != L'\\' ||
+					path.find_first_of(L"/:*?\"<>|", 3) != std::wstring::npos)
+					return DesktopFixtureLeaseState::Failed;
+				auto state = Acquire(path.substr(0, 3), true);
+				if (state != DesktopFixtureLeaseState::Ready) return state;
+				std::size_t begin = 3;
+				while (begin < path.size())
+				{
+					const auto delimiter = path.find(L'\\', begin);
+					const auto end = delimiter == std::wstring::npos ? path.size() : delimiter;
+					const auto component = path.substr(begin, end - begin);
+					if (component.empty() || component == L"." || component == L".." ||
+						component.back() == L'.' || component.back() == L' ')
+						return DesktopFixtureLeaseState::Failed;
+					state = Acquire(path.substr(0, end), true);
+					if (state != DesktopFixtureLeaseState::Ready) return state;
+					begin = end + 1;
+				}
+				return DesktopFixtureLeaseState::Ready;
+			}
+
+		private:
+			std::vector<HANDLE> handles_;
+		};
+
+		DesktopPersistenceCompletion ReadCommittedDesktopPath(const std::wstring& path,
+			draw3::uink::UInkGuid fileGuid,
+			std::optional<draw3::uink::UInkSourceRevision>* sourceRevision = nullptr)
+		{
+			DesktopPersistenceCompletion completion;
+			completion.operation = DesktopPersistenceOperation::Load;
+			completion.fileGuid = fileGuid;
+			const auto read = ReadUInkFile(path);
+			const auto imported = read.document
+				? ImportDraw3UInkDocument(*read.document)
+				: draw3::uink::Draw3UInkImportResult{};
+			if (read.status != UInkReadStatus::Complete ||
+				(read.provenance.containsInvalidCompleteBlocks ||
+					read.provenance.contentSequenceRecovered) ||
+				!imported.snapshot ||
+				imported.snapshot->fileGuid != fileGuid)
+				completion.status = DesktopPersistenceStatus::IoError;
+			else
+			{
+				auto snapshot = std::move(*imported.snapshot);
+				completion.status = DesktopPersistenceStatus::Loaded;
+				for (auto& canvas : snapshot.canvases)
+				{
+					auto projected = draw3::uink::ProjectDraw3UInkCanvasInterval(
+						canvas, canvas.intervalOrdinal);
+					if (!projected)
+					{
+						completion.status = DesktopPersistenceStatus::Invalid;
+						break;
+					}
+					canvas = std::move(*projected);
+				}
+				if (completion.status == DesktopPersistenceStatus::Loaded)
+				{
+					completion.loadedSnapshot = std::make_shared<
+						const Draw3UInkExportSnapshot>(std::move(snapshot));
+					completion.status = DesktopPersistenceStatus::Loaded;
+				}
+			}
+			if (sourceRevision && completion.status == DesktopPersistenceStatus::Loaded)
+			{
+				if (!read.sourceRevision) completion.status = DesktopPersistenceStatus::IoError;
+				else *sourceRevision = read.sourceRevision;
+			}
+			return completion;
 		}
 
 		bool ExistingUInkMatches(const std::wstring& path,
@@ -653,7 +812,15 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DesktopAutoSaveTestFaultInjection faults = SnapshotTestFaults();
 				if (faults.writeDelayMilliseconds != 0)
+				{
+					if (faults.enteringWriteDelayEvent &&
+						!SetEvent(static_cast<HANDLE>(faults.enteringWriteDelayEvent)))
+					{
+						logFailure("write-delay-event", request.proposedFileName);
+						return false;
+					}
 					Sleep(faults.writeDelayMilliseconds);
+				}
 				const std::wstring desktopRoot = JoinPath(rootPath, L"desktop");
 				const std::wstring dateDirectory = JoinPath(
 					desktopRoot, WidenAscii(request.timestamp.localDate));
@@ -680,7 +847,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				const std::string relativePath = NarrowAscii(relativeFileName);
 				if (relativePath.empty() || !CommitIndex(
-					rootPath, dateDirectory, request, relativePath))
+					rootPath, dateDirectory, request, relativePath, faults))
 				{
 					logFailure("index-commit", relativeFileName);
 					return false;
@@ -694,6 +861,83 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 		}
+	}
+
+	DesktopAutoSaveFixtureReadReceipt ReadLastCommittedDesktopAutoSaveFixture(
+		const std::wstring& ownedRoot, const std::string& localDate) noexcept
+	{
+		DesktopAutoSaveFixtureReadReceipt result;
+		try
+		{
+			if (!IsValidLocalDate(localDate)) return result;
+			const auto root = NormalizeFullPath(ownedRoot);
+			if (!root) return result;
+			const auto desktop = JoinPath(*root, L"desktop");
+			const auto directory = JoinPath(desktop, WidenAscii(localDate));
+			// drive/root/所有 artifact/date 组件先持真实非 reparse 句柄，直到全部读取返回。
+			// 读取结束先关 lease 再释放 mutex，避免挡住下一次正常索引提交。
+			NamedMutexGuard mutex;
+			DesktopFixtureReadLeases leases;
+			const auto directories = leases.AcquireDirectoryChain(directory);
+			if (directories != DesktopFixtureLeaseState::Ready)
+			{
+				if (directories == DesktopFixtureLeaseState::Missing)
+					result.status = DesktopPersistenceStatus::NotFound;
+				return result;
+			}
+			if (!mutex.Acquire(*root, localDate)) return result;
+			auto indexPath = JoinPath(directory, L"index.json");
+			Json::Value index;
+			const auto primaryLease = leases.Acquire(indexPath, false);
+			if (primaryLease == DesktopFixtureLeaseState::Failed) return result;
+			// missing 时不重新按路径打开，避免不存在检查后有人放入链接。
+			const auto primary = primaryLease == DesktopFixtureLeaseState::Ready
+				? ReadIndex(indexPath, localDate, directory, index) : IndexReadState::Missing;
+			if (primary != IndexReadState::Valid)
+			{
+				indexPath = JoinPath(directory, L"index.json.bak");
+				const auto backupLease = leases.Acquire(indexPath, false);
+				if (backupLease == DesktopFixtureLeaseState::Failed) return result;
+				const auto backup = backupLease == DesktopFixtureLeaseState::Ready
+					? ReadIndex(indexPath, localDate, directory, index) : IndexReadState::Missing;
+				if (backup != IndexReadState::Valid)
+				{
+					if (primary == IndexReadState::Missing && backup == IndexReadState::Missing)
+						result.status = DesktopPersistenceStatus::NotFound;
+					return result;
+				}
+			}
+			const auto& entries = index["entries"];
+			if (entries.empty())
+			{
+				result.status = DesktopPersistenceStatus::NotFound;
+				return result;
+			}
+			// ValidateIndex 已严格核单调唯一 dailySequence，末项才是唯一最后 committed。
+			const auto& entry = entries[entries.size() - 1];
+			const auto guid = ParseUInkGuid(entry["fileGuid"].asString());
+			result.relativePath = WidenAscii(entry["relativePath"].asString());
+			if (!guid || result.relativePath.find(L':') != std::wstring::npos) return result;
+			const auto path = JoinPath(directory, result.relativePath);
+			if (leases.Acquire(path, false) != DesktopFixtureLeaseState::Ready) return result;
+			const auto loaded = ReadCommittedDesktopPath(path, *guid, &result.sourceRevision);
+			result.status = loaded.status;
+			if (loaded.status != DesktopPersistenceStatus::Loaded || !ReadTextFile(indexPath, result.indexBytes))
+			{
+				result.status = DesktopPersistenceStatus::IoError;
+				return result;
+			}
+			result.localDate = localDate;
+			result.storageSession = entry["sessionId"].asString();
+			result.sequenceInSession = entry["sequenceInSession"].asUInt64();
+			result.dailySequence = entry["dailySequence"].asUInt64();
+			result.fileGuid = *guid;
+			result.trigger = entry["trigger"].asString() == "exit" ?
+				DesktopAutoSaveTrigger::Exit : DesktopAutoSaveTrigger::Clear;
+			result.loadedSnapshot = loaded.loadedSnapshot;
+		}
+		catch (...) { result.status = DesktopPersistenceStatus::IoError; }
+		return result;
 	}
 
 	void DesktopAutoSavePolicy::CompleteDesktopClear() noexcept
@@ -923,38 +1167,7 @@ namespace Inkeys::Drawing::Draw3
 						completion.status = DesktopPersistenceStatus::IoError;
 					else
 					{
-						const auto read = ReadUInkFile(load->path);
-						const auto imported = read.document
-							? ImportDraw3UInkDocument(*read.document)
-							: draw3::uink::Draw3UInkImportResult{};
-						if (read.status != UInkReadStatus::Complete ||
-							(read.provenance.containsInvalidCompleteBlocks ||
-								read.provenance.contentSequenceRecovered) ||
-							!imported.snapshot ||
-							imported.snapshot->fileGuid != load->fileGuid)
-							completion.status = DesktopPersistenceStatus::IoError;
-						else
-						{
-							auto snapshot = std::move(*imported.snapshot);
-							completion.status = DesktopPersistenceStatus::Loaded;
-							for (auto& canvas : snapshot.canvases)
-							{
-								auto projected = draw3::uink::ProjectDraw3UInkCanvasInterval(
-									canvas, canvas.intervalOrdinal);
-								if (!projected)
-								{
-									completion.status = DesktopPersistenceStatus::Invalid;
-									break;
-								}
-								canvas = std::move(*projected);
-							}
-							if (completion.status == DesktopPersistenceStatus::Loaded)
-							{
-								completion.loadedSnapshot = std::make_shared<
-									const Draw3UInkExportSnapshot>(std::move(snapshot));
-								completion.status = DesktopPersistenceStatus::Loaded;
-							}
-						}
+						completion = ReadCommittedDesktopPath(load->path, load->fileGuid);
 					}
 					PushCompletion(std::move(completion));
 					continue;

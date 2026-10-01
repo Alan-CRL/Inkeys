@@ -2,6 +2,8 @@ module;
 
 #include <windows.h>
 
+#include "../Helper/FailedCleanupDeadline.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -115,7 +117,8 @@ export namespace Inkeys::Window
 		Service(Service&&) = delete;
 		Service& operator=(Service&&) = delete;
 
-		[[nodiscard]] bool Start(std::vector<WindowSpec> specs);
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs,
+			Shutdown::FailedCleanupSignal failedCleanup = {});
 		void StopAndJoin() noexcept;
 		void Stop() noexcept;
 		[[nodiscard]] bool Running() const noexcept;

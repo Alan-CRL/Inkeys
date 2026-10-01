@@ -9,6 +9,8 @@
 #include <memory>
 #include <windows.h>
 
+#include "../../Helper/FailedCleanupDeadline.h"
+
 export module Inkeys.Drawing.Draw3.transparent_presentation;
 
 import Inkeys.Drawing.Draw3.graphics_initialization;
@@ -49,6 +51,8 @@ export namespace Inkeys::Drawing::Draw3
 		TransparentPresentMode requiredMode = kPreferredTransparentPresentMode;
 		// Window Service 重建 legacy-compatible HWND 后跳过 DComp，避免再次固化窗口样式。
 		bool allowDirectComposition = true;
+		// startup 专用；运行期 Recover/Resize/Present 不激活这个 scope。
+		Shutdown::FailedCleanupSignal failedCleanup;
 	};
 
 	struct TransparentPresentObservation

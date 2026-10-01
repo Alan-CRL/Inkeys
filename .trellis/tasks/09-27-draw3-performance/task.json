@@ -15,7 +15,7 @@
   "branch": "chore/publish",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "e32a5fc06096c1e4ab88a29866c60ebe323fd722",
   "pr_url": null,
   "subtasks": [],
   "children": [],

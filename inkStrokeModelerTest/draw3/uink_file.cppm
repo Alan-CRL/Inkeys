@@ -132,6 +132,18 @@ export namespace draw3::uink
 
 	void SetUInkFileTestFaultInjection(const UInkFileTestFaultInjection& faults) noexcept;
 	void ResetUInkFileTestFaultInjection() noexcept;
+#if defined(DRAW3_TESTING)
+	// 只在真实测试 binary 中提供有限 stage；路径始终由生产 Save 生成。
+	enum class UInkCleanupTestStage : uint8_t
+	{
+		TempBeforeCreate, TempWriterClosed, BackupBeforeReplace,
+		ReplaceFinished, RecoveryMovesFinished, BeforeCleanup
+	};
+	enum class UInkCleanupTestAction : uint8_t { None, ThrowBadAlloc };
+	using UInkCleanupTestHook = UInkCleanupTestAction (*)(UInkCleanupTestStage,
+		const std::wstring&, void*) noexcept;
+	void SetUInkCleanupTestHook(UInkCleanupTestHook hook, void* context) noexcept;
+#endif
 
 	enum class UInkAppendStatus : uint8_t
 	{

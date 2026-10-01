@@ -21,6 +21,8 @@ import draw3.uink_draw3_import;
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <filesystem>
+#include <fstream>
+#include <json/json.h>
 #include <span>
 #include <string>
 #include <tchar.h>
@@ -2485,6 +2487,221 @@ namespace Inkeys::Drawing::Draw3
 		context->ClearState();
 		renderer.ReleaseResources();
 		if (failures == 0) Report("PASS", "no-window WARP Laser bake transaction");
+		return failures == 0 ? 0 : 1;
+	}
+
+	int RunHiddenWindowRuntimeMetricsSmoke(const wchar_t* privateOutputRoot) noexcept
+	{
+		_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+		_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+		_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+		_CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+		int failures = 0;
+		try
+		{
+			if (!Check(privateOutputRoot && *privateOutputRoot && !ProductRunning(),
+				"U3H00 private smoke starts without a product run", failures)) return 1;
+			const std::filesystem::path root(privateOutputRoot);
+			if (!Check(root.is_absolute() && root != root.root_path() &&
+				root == root.lexically_normal() && root.native().size() < MAX_PATH - 64,
+				"U3H00 bounded absolute private root", failures)) return 1;
+			// caller 提供任务私有 root；逐组件拒 reparse，固定子目录必须是本轮全新创建。
+			auto checked = root.root_path();
+			const auto directorySafe = [](const std::filesystem::path& path)
+			{
+				const DWORD attributes = GetFileAttributesW(path.c_str());
+				return attributes != INVALID_FILE_ATTRIBUTES &&
+					(attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+					(attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+			};
+			if (!Check(directorySafe(checked), "U3H00 non-reparse root anchor", failures)) return 1;
+			for (const auto& component : root.relative_path())
+			{
+				checked /= component;
+				if (!Check(directorySafe(checked), "U3H00 non-reparse private parent", failures)) return 1;
+			}
+			const auto output = root / L"u3-h-host-metrics";
+			if (!Check(CreateDirectoryW(output.c_str(), nullptr) && directorySafe(output),
+				"U3H00 create-new smoke directory", failures)) return 1;
+			std::fprintf(stderr, "[Draw3HostMetrics] output=%ls\\n", output.c_str());
+			const auto absent = [](const std::filesystem::path& path)
+			{ return GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_FILE_NOT_FOUND; };
+			const auto neverStarted = output / L"unstarted.json";
+			if (!Check(!ProductHost().WriteRuntimeMetrics(neverStarted.c_str()) && absent(neverStarted),
+				"U3H01 never-started Host refuses export", failures)) return 1;
+
+			Inkeys::Window::Service service(64);
+			StyleContext style{ &service };
+			struct StopBeforeWindowDestruction
+			{
+				Inkeys::Window::Service& service;
+				~StopBeforeWindowDestruction() { StopProduct(); service.StopAndJoin(); }
+			} stopGuard{ service }; // 声明在 style 后：异常/早退也先真 Stop，再销毁回调上下文和 HWND。
+			const std::wstring suffix = std::to_wstring(GetCurrentProcessId()) + L".MetricsSmoke";
+			std::vector<Inkeys::Window::WindowSpec> specs;
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::MagnifierHost,
+				L"Inkeys.Draw3.Hidden.Magnifier." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Freeze,
+				L"Inkeys.Draw3.Hidden.Freeze." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::DrawpadPresentation,
+				L"Inkeys.Draw3.Hidden.Presentation." + suffix, DefWindowProcW, 320, 240));
+			specs.push_back(MakeHiddenSpec(Inkeys::Window::WindowRole::Drawpad,
+				L"Inkeys.Draw3.Hidden.Drawpad." + suffix, DrawpadMsgCallback, 320, 240));
+			if (!Check(service.Start(specs), "U3H02 create invisible legacy Window Service", failures)) return 1;
+			const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+			const HWND presentation = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
+			for (const auto& spec : specs)
+			{
+				DWORD process = 0;
+				const HWND window = service.Handle(spec.role);
+				if (!Check(window && GetWindowThreadProcessId(window, &process) &&
+					process == GetCurrentProcessId() && !IsWindowVisible(window),
+					"U3H02 HWND belongs to this invisible service", failures)) return 1;
+			}
+			const HostStyleCallbacks callbacks{ &style, &ApplyDrawpadStyle };
+			HostStartOptions options{ HostPresentationMode::UlwDirtyRect };
+			options.allowDirectComposition = false;
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+				"U3H03 defaultoff real Host starts", failures)) return 1;
+			const auto off = ProductHost().RuntimeSnapshot();
+			const auto offPath = output / L"defaultoff.json";
+			if (!Check(off.running && off.firstFrameReady && !off.runtimeMetrics.enabled &&
+				off.runtimeMetrics.allocatedBytes == 0 && off.runtimeMetrics.presentAttempts == 0 &&
+				!ProductHost().WriteRuntimeMetrics(offPath.c_str()) && absent(offPath),
+				"U3H03 defaultoff has no Session or export", failures)) return 1;
+			StopProduct();
+
+			// 容量非法仅禁诊断；不能钳成另一 population，产品必须仍可完成真实启动和 Stop。
+			options.enableRuntimeMetrics = true;
+			for (const std::size_t invalidCapacity : { std::size_t{ 0 }, std::size_t{ 32769 } })
+			{
+				options.runtimeMetricsMaximumSamples = invalidCapacity;
+				if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+					"U3H04 invalid metrics capacity preserves product startup", failures)) return 1;
+				const auto unavailable = ProductHost().RuntimeSnapshot().runtimeMetrics;
+				StopProduct();
+				const auto invalidPath = output / (invalidCapacity == 0 ? L"capacity-zero.json" : L"capacity-high.json");
+				if (!Check(unavailable.enabled && unavailable.unavailable && unavailable.allocatedBytes == 0 &&
+					!ProductHost().WriteRuntimeMetrics(invalidPath.c_str()) && absent(invalidPath),
+					"U3H04 unavailable metrics refuses an empty success report", failures)) return 1;
+			}
+			options.enableHiddenTestContactInjection = true;
+			std::uint64_t previousRun = 0;
+			const auto readReport = [](const std::filesystem::path& path, Json::Value& value)
+			{
+				std::error_code error;
+				const auto bytes = std::filesystem::file_size(path, error);
+				if (error || bytes == 0 || bytes > 4u * 1024 * 1024) return false;
+				std::ifstream file(path, std::ios::binary);
+				Json::CharReaderBuilder reader;
+				std::string parseError;
+				return file && Json::parseFromStream(reader, file, &value, &parseError);
+			};
+			for (unsigned run = 1; run <= 2; ++run)
+			{
+				options.runtimeMetricsMaximumSamples = run == 1 ? 128 : 32768;
+				if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+					"U3H05 metrics-on real Host starts", failures)) return 1;
+				const auto initial = ProductHost().RuntimeSnapshot().runtimeMetrics;
+				const auto livePath = output / (run == 1 ? L"live-one.json" : L"live-two.json");
+				if (!Check(initial.enabled && !initial.unavailable && !initial.joined && !initial.sealed &&
+					!initial.startupFailed && initial.runSerial != 0 && initial.runSerial != previousRun &&
+					initial.contactSeen == 0 && initial.confirmed == 0 && initial.pending == 0 &&
+					initial.frameSerial > 0 && initial.presentAttempts > 0 && initial.allocatedBytes > 0 &&
+					initial.payloadByteUpperBound <= 32u * 1024 * 1024 &&
+					initial.effectiveSamples == options.runtimeMetricsMaximumSamples &&
+					initial.metadata.graphicsAvailable && initial.metadata.adapterAvailable &&
+					initial.metadata.qpcFrequency > 0 &&
+					initial.metadata.presentationMode == HostPresentationMode::UlwDirtyRect &&
+					!ProductHost().WriteRuntimeMetrics(livePath.c_str()) && absent(livePath),
+					"U3H05 fresh owner progress, budget and live-export rejection", failures)) return 1;
+				previousRun = initial.runSerial;
+				Bridge::ProductState state;
+				state.tool = Bridge::Tool::SolidLine;
+				state.selectionMode = false;
+				state.widthDip = 2.0f;
+				state.colorRgba = 0x000000FF;
+				state.autoSaveEnabled = false;
+				PublishProductState(state);
+				if (!Check(WaitUntil([]
+				{
+					const auto snapshot = ProductHost().RuntimeSnapshot();
+					return !snapshot.selectionMode && snapshot.workspace == Bridge::Workspace::Desktop &&
+						snapshot.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+						snapshot.readyOutputRevision == snapshot.requestedOutputRevision;
+				}, 2s), "U3H06 actual primary drawing output ready", failures)) return 1;
+				const auto before = ProductHost().RuntimeSnapshot();
+				const auto send = [&](HiddenTestContactPhase phase, int x, int y)
+				{
+					DWORD process = 0;
+					if (drawpad != service.Handle(Inkeys::Window::WindowRole::Drawpad) ||
+						!GetWindowThreadProcessId(drawpad, &process) || process != GetCurrentProcessId()) return false;
+					DWORD_PTR accepted = 0;
+					SetLastError(ERROR_SUCCESS);
+					// 参数只有值，无 timeout 后可能被 owner 迟用的栈 payload；不自动重发 Down。
+					return SendMessageTimeoutW(drawpad, kDraw3HiddenTestContactMessage,
+						static_cast<WPARAM>(phase) | kHiddenTestExternalPenFlag, MAKELPARAM(x, y),
+						SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 2000, &accepted) != 0 && accepted == 0;
+				};
+				if (!Check(send(HiddenTestContactPhase::Down, 40, 48) && WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().runtimeMetrics.contactSeen == 1;
+				}, 2s), "U3H06 true mailbox Down registered by Controller", failures)) return 1;
+				if (!Check(send(HiddenTestContactPhase::Move, 160, 132) && WaitUntil([]
+				{
+					return ProductHost().RuntimeSnapshot().runtimeMetrics.confirmed == 1;
+				}, 2s), "U3H06 real content reaches successful production Present", failures)) return 1;
+				if (!Check(send(HiddenTestContactPhase::Up, 160, 132) && WaitUntil([before]
+				{
+					const auto snapshot = ProductHost().RuntimeSnapshot();
+					return snapshot.inputRecycled == before.inputRecycled + 1 &&
+						snapshot.currentPageHasContent;
+				}, 2s), "U3H06 terminal is consumed and recycled", failures)) return 1;
+				StopProduct();
+				const auto sealed = ProductHost().RuntimeSnapshot().runtimeMetrics;
+				if (!Check(sealed.joined && sealed.sealed && !sealed.startupFailed && !sealed.runFailed &&
+					!sealed.unavailable && sealed.runSerial == initial.runSerial &&
+					sealed.contactSeen == 1 && sealed.confirmed == 1 && sealed.pending == 0 &&
+					sealed.invalid == 0 && sealed.contactDropped == 0 && sealed.pendingOverflow == 0,
+					"U3H07 true Stop join seals exactly this run", failures)) return 1;
+				const auto report = output / (run == 1 ? L"run-one.json" : L"run-two.json");
+				Json::Value value;
+				if (!Check(ProductHost().WriteRuntimeMetrics(report.c_str()) && readReport(report, value),
+					"U3H08 production Session create-new offline export", failures)) return 1;
+				Check(value["schemaVersion"].asUInt() == 2 &&
+					value["coverage"]["contactSeen"].asUInt64() == 1 &&
+					value["coverage"]["confirmed"].asUInt64() == 1 &&
+					value["coverage"]["pending"].asUInt64() == 0 &&
+					value["coverage"]["framesSeen"].asUInt64() > 0 &&
+					value["summary"]["presentAttempts"].asUInt64() == sealed.presentAttempts &&
+					value["input"]["downPublished"].asUInt64() == 1 &&
+					value["input"]["movePublished"].asUInt64() == 1 &&
+					value["input"]["terminalPublished"].asUInt64() == 1 &&
+					value["input"]["recycled"].asUInt64() == 1 &&
+					value["input"]["occupiedSlots"].asUInt64() == 0 &&
+					value["landings"].size() == 1,
+					"U3H08 raw real metrics and input baseline belong to one run", failures);
+				Json::Value unchanged;
+				Check(!ProductHost().WriteRuntimeMetrics(report.c_str()) && readReport(report, unchanged) &&
+					value == unchanged, "U3H09 create-new refuses overwrite and preserves report", failures);
+				if (failures) return 1; // 本 run 报告读取结束后才建立下一 Session。
+			}
+			const auto failedPath = output / L"failed-start.json";
+			Check(!StartProduct(nullptr, presentation, callbacks, options) &&
+				ProductHost().RuntimeSnapshot().runtimeMetrics.startupFailed &&
+				!ProductHost().WriteRuntimeMetrics(failedPath.c_str()) && absent(failedPath),
+				"U3H10 failed Start cannot export the previous sealed run", failures);
+			StopProduct();
+			service.StopAndJoin();
+		}
+		catch (...)
+		{
+			++failures;
+			Report("FAIL", "U3H unexpected Host metrics smoke exception");
+		}
+		if (failures == 0) Report("PASS", "U3H real Host metrics lifecycle smoke");
 		return failures == 0 ? 0 : 1;
 	}
 

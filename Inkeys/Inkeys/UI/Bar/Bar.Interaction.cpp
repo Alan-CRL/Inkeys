@@ -1,4 +1,4 @@
-﻿module;
+module;
 
 #include "../../../IdtMain.h"
 
@@ -12,6 +12,8 @@
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.BottomDock.h"
 #include "Bar.WindowGeometry.h"
+#include "Bar.PresentationProbe.h"
+#include "Bar.Presentation.Source.h"
 
 #ifdef MessageBox
 #undef MessageBox
@@ -392,6 +394,63 @@ void PrepareBarInteractionMessage(ExMessage& message,
 	ApplyBarBottomDockRigidHitTest(message);
 }
 
+namespace
+{
+	Inkeys::UI::Bar::Ui3FixtureWireValue FixtureWireFromMessage(const ExMessage& message) noexcept
+	{
+		return { reinterpret_cast<std::uintptr_t>(message.hwnd), message.message,
+			(message.lbutton ? 1u : 0u) | (message.mbutton ? 2u : 0u) | (message.rbutton ? 4u : 0u),
+			(message.ctrl ? 1u : 0u) | (message.shift ? 2u : 0u), message.category,
+			message.x, message.y, message.wheel };
+	}
+	bool ReadBarPointerPosition(POINT* point) noexcept
+	{
+		if (!point) return false;
+		bool leftDown = false;
+		const auto result = Inkeys::UI::Bar::ReadFixturePointerForCurrentOwner(*point, leftDown);
+		if (result == Inkeys::UI::Bar::Ui3FixturePointResult::NotInstalled) return GetCursorPos(point) != FALSE;
+		return result == Inkeys::UI::Bar::Ui3FixturePointResult::Available;
+	}
+}
+
+namespace Inkeys::UI::Bar
+{
+	Message::Reply DispatchAuthorizedFixtureIndex(HWND window, UINT message, WPARAM index, LPARAM extra) noexcept
+	{
+		if (message == Ui3FixtureIndexMessage)
+		{
+			Ui3FixtureWireValue wire;
+			if (ReceiveAuthorizedFixtureIndex(window, index, extra, wire))
+			{
+				ExMessage input{};
+				input.message = static_cast<USHORT>(wire.message);
+				input.hwnd = window; input.category = EM_MOUSE;
+				input.x = wire.x; input.y = wire.y; input.lbutton = wire.buttons == 1;
+				MarkBarTouchPointerMessage(input, wire.wheel == BarTouchCancelScreenMessageMarker, true);
+				bool enqueued = false;
+				try
+				{
+					Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, input.lbutton);
+					enqueued = Inkeys::Window::Enqueue(window, input);
+				}
+				catch (...) { RejectAuthorizedFixtureSource(Ui3FixtureSourceFailure::Enqueue); }
+				FinishAuthorizedFixtureEnqueue(static_cast<std::uint32_t>(index), enqueued);
+				if (!enqueued)
+				{
+					try { Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false); }
+					catch (...) { RejectAuthorizedFixtureSource(Ui3FixtureSourceFailure::Enqueue); }
+				}
+			}
+			// Discard 仍会调用原 WndProc，私有输入与被拒 OS 输入必须 Handled。
+			return { Message::Action::Handled, 0 };
+		}
+		LRESULT result = 0;
+		if (AuthorizedFixtureWindowMessageMustBeHandled(window, message, index, extra, result))
+			return { Message::Action::Handled, result };
+		return {};
+	}
+}
+
 bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
 	bool preserveTouchScreenCoordinates = false,
 	BarTouchScreenSample* touchScreenSample = nullptr)
@@ -402,6 +461,7 @@ bool WaitForBarInteractionMessage(ExMessage& message, BYTE filter, HWND hWnd,
 		if (Inkeys::Window::TryGet(hWnd, message,
 			static_cast<Inkeys::Message::Filter>(filter)))
 		{
+			if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(message))) return false;
 			// 普通命中在消费时转换；拖动循环保留整次 contact 的绝对屏幕采样。
 			PrepareBarInteractionMessage(message,
 				preserveTouchScreenCoordinates, touchScreenSample);
@@ -420,18 +480,25 @@ bool TryGetBarInteractionMessage(
 	if (!message || !removeMessage || !Inkeys::Window::TryGet(
 		hWnd, *message, static_cast<Inkeys::Message::Filter>(filter)))
 		return false;
+	if (!Inkeys::UI::Bar::ObserveAuthorizedFixtureDequeue(FixtureWireFromMessage(*message))) return false;
 	PrepareBarInteractionMessage(*message, false, touchScreenSample);
 	return true;
 }
 
 void ClearBarInteractionMessages(BYTE filter, HWND hWnd)
 {
-	(void)Inkeys::Window::Clear(
+	const auto removed = Inkeys::Window::Clear(
 		hWnd, static_cast<Inkeys::Message::Filter>(filter));
+	Inkeys::UI::Bar::ObserveAuthorizedFixtureClear(filter, removed);
 }
 
 void QueueBarThicknessSliderEnd(HWND hWnd)
 {
+	if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
+	{
+		Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::UnsupportedState);
+		return;
+	}
 	if (!hWnd) return;
 	POINT point{};
 	if (!GetCursorPos(&point)) point = {};
@@ -450,6 +517,11 @@ void QueueBarThicknessSliderEnd(HWND hWnd)
 
 void QueueBarColorPickerEnd(HWND hWnd)
 {
+	if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
+	{
+		Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::UnsupportedState);
+		return;
+	}
 	if (!hWnd) return;
 	POINT point{};
 	if (!GetCursorPos(&point)) point = {};
@@ -549,7 +621,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			grace = false;
 
 			POINT point{};
-			bool pointAvailable = GetCursorPos(&point)
+			bool pointAvailable = ReadBarPointerPosition(&point)
 				&& BarScreenToLayout(point);
 			if (pointAvailable)
 				point.y = barUISet.BottomDockRigidHitTestY(point.y);
@@ -1413,7 +1485,7 @@ private:
 	void SuppressHoverUntilPointerMove()
 		{
 			POINT point{};
-			if (GetCursorPos(&point))
+			if (ReadBarPointerPosition(&point))
 			{
 				hoverSuppressionScreenPoint = point;
 				suppressHoverUntilPointerMove = true;
@@ -2276,6 +2348,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		}
 		if (!barUISet.IsBottomDockIndicatorPresentedAt(visualX, visualY))
 			return BarInteractionStageResult::PassThrough;
+		if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
+		{
+			Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::Action);
+			return BarInteractionStageResult::Shutdown;
+		}
 
 		// 只消费成功呈现的指示器像素，并同步撤销下层控件候选状态。
 		if (hoveredMainBarButton)
@@ -2378,7 +2455,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			if (suppressHoverUntilPointerMove)
 			{
 				POINT currentPoint{};
-				if (GetCursorPos(&currentPoint)
+				if (ReadBarPointerPosition(&currentPoint)
 					&& currentPoint.x == hoverSuppressionScreenPoint.x
 					&& currentPoint.y == hoverSuppressionScreenPoint.y)
 				{
@@ -3282,6 +3359,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				continueFlag = false;
 				if (msg.message == WM_LBUTTONDOWN)
 				{
+					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::MainFold,
+						Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) return BarInteractionStageResult::Shutdown;
 					// Seek 需要按下时的真实视觉坐标，不能把主体逆形变坐标当作抓取点。
 					ExMessage seekMessage = msg;
 					seekMessage.x = static_cast<short>(clamp(
@@ -3293,10 +3372,16 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 					const BarSeekResult seekResult = Seek(seekMessage);
 					if (seekResult.allowClick)
 					{
+						if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::MainFold,
+							Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) return BarInteractionStageResult::Shutdown;
+						// 奇数publication必须先于coalescer及第一业务写，默认无probe不工作。
+						Inkeys::UI::Bar::Ui3FiniteMutationScope finiteMutation(Inkeys::UI::Bar::Ui3FiniteScene::MainFold);
 						if (barUISet.TryBeginToggle(BarToggleChannel::Main))
 						{
+							finiteMutation.MarkBusinessAccepted();
 							mainButtonClickPulseSerial.fetch_add(
 								1, std::memory_order_relaxed);
+							finiteMutation.ObserveBusinessWrite();
 							// 展开/收起主栏
 							if (barState.fold)
 							{
@@ -3315,6 +3400,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							}
 							UpdateRendering();
 						}
+						else finiteMutation.FinishRejected(Inkeys::UI::Bar::Ui3FiniteStatus::RejectedByBusiness,
+							Inkeys::UI::Bar::Ui3BusinessWriteWitness::NoBusinessWrite);
 					}
 					SuppressHoverUntilPointerMove();
 
@@ -3366,6 +3453,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN || msg.message == WM_LBUTTONDBLCLK)
 						{
+							const auto fixtureAction = temp->preset == BarButtonPresetEnum::Draw
+								? Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute : static_cast<Inkeys::UI::Bar::Ui3FiniteScene>(0);
+							if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(fixtureAction,
+								Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) return BarInteractionStageResult::Shutdown;
 							bool clickCompleted = false;
 							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
 							SetBarButtonPressedVisual(*temp, true);
@@ -3385,7 +3476,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									// Move 缺少 MK_LBUTTON 不能代表抬起，点击只在明确 Up 后执行。
 									if (msg.message == WM_LBUTTONUP && !msg.lbutton)
 									{
+										if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(fixtureAction,
+											Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) return BarInteractionStageResult::Shutdown;
+										Inkeys::UI::Bar::Ui3FiniteMutationScope finiteMutation(
+											Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute, temp->preset == BarButtonPresetEnum::Draw);
 										ClosePenTypeMenu();
+										// ClosePenTypeMenu确有写入，后续拒绝不能假称NoBusinessWrite。
+										finiteMutation.ObserveBusinessWrite();
 										if (temp->preset == BarButtonPresetEnum::More)
 										{
 											if (barUISet.TryBeginToggle(
@@ -5422,6 +5519,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		for (const auto stage : stages)
 		{
 			const auto result = (this->*stage)();
+			if (stage == &BarInteractionSession::HandleMainButtonAndBarPointerStage
+				&& result == BarInteractionStageResult::PassThrough && Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
+			{
+				Inkeys::UI::Bar::RejectAuthorizedFixtureSource(Inkeys::UI::Bar::Ui3FixtureSourceFailure::Action);
+				return BarInteractionStageResult::Shutdown;
+			}
 			if (result != BarInteractionStageResult::PassThrough)
 				return result;
 		}
@@ -5431,6 +5534,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 public:
 	void Run()
 	{
+		Inkeys::UI::Bar::EnterAuthorizedFixtureInteraction();
+		struct FixtureInteractionExit { ~FixtureInteractionExit() { Inkeys::UI::Bar::LeaveAuthorizedFixtureInteraction(); } } fixtureExit;
+		// 私有pure latch独立于Startup tracker；默认observer不存在时不工作。
+		Inkeys::UI::Bar::NotifyFixtureInteractionReady();
 		// Session 构造、mailbox 与交互状态全部可用后再报告 ready。
 		(void)Inkeys::Startup::Report(
 			Inkeys::Startup::Milestone::BarInteractionReady);
@@ -5440,6 +5547,13 @@ public:
 			stateMode = GetStateModeSnapshot();
 			if (pollResult == BarInteractionStageResult::Shutdown) break;
 			if (pollResult == BarInteractionStageResult::Consumed) continue;
+			if (Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled())
+			{
+				if (IsBarTouchCancelMessage(msg)) continue;
+				// 所有辅助面板/工具写入前核同一 frozen Pen 与 closed aux 前提。
+				if (!Inkeys::UI::Bar::PermitAuthorizedFixturePointerStages(
+					barUISet.ReadFiniteSignature(GetStateModeVersionedSnapshot()))) break;
+			}
 
 			const auto keyboardResult = HandleKeyboardMessage();
 			if (keyboardResult == BarInteractionStageResult::Shutdown) break;
@@ -6729,7 +6843,7 @@ BarSeekResult BarUISetClass::Seek(const ExMessage& msg)
 		result.rawPathLength, maximumElasticTravelScreen,
 		maximumInteractionZoom);
 	POINT releasePoint{};
-	if (result.allowClick && GetCursorPos(&releasePoint)
+	if (result.allowClick && ReadBarPointerPosition(&releasePoint)
 		&& BarScreenToLayout(releasePoint)
 		&& IsBottomDockIndicatorPresentedAt(releasePoint.x, releasePoint.y))
 		result.allowClick = false;

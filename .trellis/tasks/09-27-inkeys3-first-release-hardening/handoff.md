@@ -1,6 +1,196 @@
 # 交接与恢复入口
 
-## 2026-09-30 提交尝试记录（任务保持进行中）
+## 2026-10-01 用户要求暂停工程并 commit/push 当前检查点（优先本节）
+
+- 用户明确“先停一下，针对当前已经有了的改动提交 commit 并且 push”。Root已停止实施，唯一仍运行的Draw下一设计checker已interrupt；所有writer停止。工作阶段暂停，Trellis生命周期仍in_progress、completedAt=null，不完成/归档任务，也不隐式恢复工程。
+- 当前commit前HEAD e32a5fc06096c1e4ab88a29866c60ebe323fd722、分支chore/publish/upstream origin/chore/publish；本次签名commit与normal push按已有SSH配置执行，操作结果以实际Git为准，不关闭签名/force push/改分支或合并。
+- 当前全部源码/测试/spec/任务文档为阶段成果，预计155个源码/文档路径。新F069 RED_A已PATCH_READY：sharedcpp C580FBCD…F47C83/cppm D59550F2…AFB136/tests9C830EF9…532566；测试宏关闭前像精确同F067，尚未构建/执行两个预期RED，正式cleanup修复仍未实施。最新F SourceTest108E新invalidstamp消费者门也未新完整编译。旧9AA组合Debug/core/U3小smoke/C10 normal及15s三轮通过不能转为这两个新增门PASS。
+- UI3 first scene off实际firstUp accepted但strict Completed0/216、Deadline失败，完整证据保留；Draw3 fullphase/cost/MoveUp/Laser/N4功能与最终3架构/独立总审尚待。停止的Draw下一designreview没有落盘最终APPROVE，不把已收到的建议算最终设计许可。
+- 本次只提交code/test/spec/Trellis计划/执行/审查记录，不包含ignored Build/Cache/TestResults/private配置/数据/log/dump；四untracked inkStrokeModelerTest/*.cso为Root构建生成，保留本地但明确不stage，不删除未知文件。
+- 恢复时先git状态/最新commit/push结果、本節以及F069实施report/Source首scene调查；先新F069 testBuild/精确两红和Source108新mainBuild/允许on诊断，再批准Green/DrawN1–N4。不重做已验证旧门，不降低Completed/Win7KB/FLIP/两DWM gate/HTTP与旧exe兼容合同。
+
+## 2026-10-01 最新执行检查点：组合Core/PPT通过，首F未完成（优先本节）
+
+- HEAD e32a5fc0 / chore/publish / 当前改动未提交，父+七子 in_progress，不结束/归档/推送。工程约85–90%只是effort粗估，不是发布验收率。真实性能与最后矩阵仍我方职责，用户不用先人工验收才能继续。
+- 新 f-u3h-uink-wire-compilefix-debug-arm64-build完整mainSolution DebugARM640/6warn0error22.94s；Core strictHeadless32828/parked29836/PptCOM33572/offscreen28404自然0。此前HostDXGI类型不可见→Root仅dxgi.h、Source405聚合intnarrow→作者仅UINT cast，旧两failed留。PE9AA0A04D6402F69422A7B348CD44238AE912ABBCDDE97665DC5A28D4277B9D31、源f-u3h-uink-combined-frozen-debug-candidate.json是阶段非HF。
+- U3-H真实specificsmoke19444/0，root u3h-metrics-first-48f6f788bf7845ca9d10fb1b3604d8a3；两Host独立Session/实际ULW/RTS/SolidLine/Present/真join/离线JSON、defaultoff/越界/live/重复/failedStart拒证实际通过。Root Host已接管晚Subscribe漏标（5B1D）+普通DXGI include，现64BB790A…DF7EC28；其余3源冻。U3H不是完整性能，Phase/CPU/MoveUp/Laser/N4功能仍要做。
+- F067生产共享HelperCAE84和tests5A285的230合法目标首存真实一红23824→新green33324；main旧C10 outside release parent32816/producer34084、same12688/foreign1776全部0。C10保存worker hold三轮parent3000/31364/8188、producer35128/32396/5740原15s自身code0016，late47/63/78ms；same7732/18484/31968及foreign30996/18304/33068各0。rawaccepted3含initialLoadNotFound，failure1不伪Save失败，pending口径不含全inflight。Desktop earlier3hold仍记录，不从本PPT推Win7/Office/恢复上屏。
+- RootA/B/C及早DPI/dispatcher/source真接口已Main/proj/filter登记。Root2BB scopedreview closed3fix：新UI3先SS、quoted smoke argv解析、lastsuccess target COMlease比identity防sameAddrABA。quoted badshape three ownprocess17584/34964/29860 each2 expected。Source实码D2773D8B…68222C已 scopedstatic + firstOff/authsuite specificCLEAR。
+- 最新SourceTest.cpp108E2B29B677A6CBC2F7DD597C774ECAE931C1E3BCBEE06855FA5DEFE3324D20只1134增加raw.invalidBarCommitStamps在clocks-on门，inverseECDB字节一致；新门未fullBuild。当前9AA编译的是ECDB，capture-off分支完全相同且独立允许；旧PE **不得capture-on**。
+- 首个真正Foff --ui3-presentation-benchmark --scene main-fold --round1/captureoff/capacity0：parent30540/child13540自然90，ack1/Sealed7/Failed2，source2received/enqueued/consumed，第一Main Up正式accepted64→65，0completed/216unverified，其后215未启动；Root私有data ui3-finite-12d6edaca4423242977c5b080bdd18da/r1/s1 CSV/meta/svg/summary完整保留。sourcefailure13实际Deadline（Target14），all Source/Interact/Window/Pipeline真join/Displaydrain true。没pixels/真实性能PASS。
+- 最后candidate attempt36/surface0/resources0是早退Abort可覆盖，不代表没draw；real render_all hit242/miss71/create71成功/parse77/raster71/upload71/draw313/rejected875/invalidation61、initparse43。ui3_fixture_source_impl2现在只读自己 ui3-f-first-scene-investigation.md，主要假设UnknownWrite对hidden谱系保守与contentAdvanced finished仍pending/随后Idle无Settle，未找到frame/tag前不判唯一根因。计划108新full后on raw4096或private最后meaningful candidate数值摘要，不补Request/强全脏/省光影/降低Completed门。该agent不改源。
+- F069设计 B320+Root uink-cleanup-ownership-root-amendment +49C0100A…00CEF5D独立APPROVE已冻。live metadata pin+NTFS仅64ID/单link/强内容同DELETE HANDLE，proof缺失retain，所有Partial/可能postmutation异常temp disarm/pin保活。test callback noexcept返回None/ThrowBadAlloc，cpp仅指定postmutation内部throw走Save catch，正式DTO/CLI不扩。nativeWin11 metadata proof8booltrue，D盘只读确认NTFS，不推Win7。
+- failed_cleanup_module_impl唯一shared uink_file.cpp/cppm DRAW3_TESTING seam+uink_tests.cpp F069 **RED writer可能半写**；普通cleanup旧行为保留以取precreateFOREIGN与替换temp两个确定性红；原F067命名断言保持。**不能Main/standalone MSBuild直到该writer PATCH_READY**。停写后existingtestsSolution/nativeDebug Build→outside --uink-file-only actual red，Root再交pin/identitygreen并独立review，最后新main+C10受影响再验。Root不碰其源。
+- Draw下一新合同 draw3-phase-and-cost-next-contract.md4E73C62D…F2BB1B(34763>32768须完整读)，N1 RuntimeMetrics2+Controller2 finite phase/finalreceipt/cost，N2 Host/Hidden core2160，N3 MoveUp真实seq(每次+2且failedMove可能已写)与quiet120，N4 Shape L2+UInk真实load。当前 ui3_f_fixture_plan_check只写next-design-review，尚未批准/源写。Down已confirmed16不能证明StoredFinal；Root已选pipelineCompositeComplete/currentwholeL2/final投影/顺序finalReceipts可封，不额外fullViewportPresent；Cold独立clear证明。
+- Root唯一Main/proj/filters/spec/五核心账本/build-run，当前无pending toolprocess/session，只有上述code writer/readers。最后任务Validate为implement25/check24有效，后续新design/review上下文还需补；没有journal/archive触发自动commit。恢复先读本节+git状态/agents，不重复已完测试、不放宽Source/F69/性能门。
+
+## 2026-10-01 当前冻结/未冻结清单（优先本节）
+
+- Git HEAD/branch仍e32a5fc0/chore/publish；所有新工程改动未提交，任务in_progress。Root本轮状态回答约85%/6–10有效小时估计，最终包未冻结，人工先准备环境。
+- H1窄三行实际GREEN已独立3DC71…95D33：完整Debug0/4warn，offscreen18304、Headless21724、parked30344、PptCOM13644各0；frozen PE C84BEC…9763B。随后Root A/B/C改变Probe/RenderLoop，旧绿色不冒新全量。
+- UInk F067实际合法230首存RED：existing testsSolution DebugARM64 Build0；outside --uink-file-only23824自然1精确line2175一红，status5/error3，其它前提/旧tests绿，update/recovery SKIP。GREEN只UniqueSiblingPath同父GUID36leaf+原suffix，sharedHelperCAE84F1A…314F79/test5A2855B2…D5381A；新Standalone Build0、outside33324自然0，真正strictRead/update/opaque predecessor全通过。EXE F97A3801…4DF60，独立A10C0AE4…D3450 scopedGREEN。主product完整Build和原C10longfixture仍待，不能用demoSolution替main。
+- Root唯一五源 Probe.h/cpp/RenderLoop/HeadlessTests/IdtMain已冻 A/B/C+Main早dispatch/DPI真实复用。report ui3-fixture-observer-root-implementation.md记录hash/约束；A仅初始真settled四API+anchor冻结Fitzoom，B exact-owner bounded完成row，C同步owner-only completeviewport/真实alpha/mutation/epoch/16+16MiB Map预算。C及Main尚未新全构建。A/B仅正确Headless项目Build0/test34412自然0，F201–204生产数值合同；新first shadow名已纯改firstCompleted待下一build。不从数值0推wholeF。
+- ui3_fixture_source_impl2唯一新Source.h/cpp/Test.cpp与Interaction/Button仍写入，所有Funcs要真实define，禁止登记/mainBuild直到PATCH_READY；Root不写其文件。source.h已含presentationAlpha和local AuthorizedFixtureEquivalenceReady，Close先于join/C，唯一owningjob超时保活至真结束或自己原15死亡，Raw原BGRA完整文件配对。Auth两Helper未登记未运行，wholeF NO RUN。
+- draw3_host_metrics_impl已四源U3-H PATCH_READY：Host.h88F13F2A…3064A1/cpp1F694064…864F59，HiddenTest.h479F1FB6…BE350/cppF930AFB0…702200/report986346…E6234B；每run新Session/defaultoff/truejoin/offline以及现真实函数RunHiddenWindowRuntimeMetricsSmoke，Root已Main准确selector但未运行。U3 Phase/16+200/CPU/MoveUp/Laser/功能全图仍欠。
+- 两个独立review者现仅写ui3-fixture-observer-root-code-review.md和draw3-host-metrics-code-review.md，不改source/run。Root唯一Build/runtime；目前无pending tool sessions。下一Main build必须等Source停写/工程注册实际defs，再原C10+smoke+整F specific安全许可后执行；不得跑半写版本。
+- UInk cleanup先CREATE_NEW归属/三按路径删除竞态是独立新风险，命名修复没解决。已请review极小附录，Root下一独立unit处理，不通过删除记录/弱化要求关闭。
+
+## 2026-10-01 恢复检查点：Desktop 动态通过，PPT 长路径与 H1 在修（优先本节）
+
+- Branch chore/publish / HEAD e32a5fc06096c1e4ab88a29866c60ebe323fd722 未变；131个工作区条目未提交，G与父/七子任务保持 in_progress。没有提交、归档、推送或新工作树。task validate implement/check 各20 exit0；>32768引用须按路径完整补读。
+- 所有上一轮工具 session 已结束。Desktop 同功能 PE 在 sandbox 外 C09 release / C11 natural 连续保存2/2/0/0并由全新reader严格读回，parent29188/29716及reader34472/23996 exit0，确认 sandbox 的 index ReplaceFile error5 是环境限制，旧失败不删/不改产品事务 flags。PPT C10 outside parent35652/child19284仍65/90、真实SaveUInkFile WriteFailed/error3/final230、temp271。
+- Desktop 真实worker停滞三轮 parent34436/22020/11656 自然0，children31140/34536/34352由原15秒监督自己退出0015/0016/0015，deadline late62/47/31ms；全新reader19284/31708/33848严格保留最后已提交A，pending B丢失符合用户决策。原始 c3b-desktop-hold-unsandboxed-r{1..3}-debug-arm64.*，不是Win7/光学/主动重启证明。
+- F067 Win32控制证据：ordinary229成功、ordinary271父存在error3、extended271成功、短missing229error3；有效root uink-path-boundary-8a3a5b885c174579bf0654cc975944a2/result.json，首个UInt32错误脚本2d8da…没有API调用，无效证据保留。独立设计0366088A…A57B APPROVE，最小共享UniqueSiblingPath同父GUID-onlyleaf，最长49叶名/父前缀边界，不改最终schema/Win7/registry/manifest。现存CREATE_NEW前cleanup路径竞态另项，未由命名修复解决。
+- B3候选原offscreen/Headless/parked/PptCOM0，独立BBC6…18A新H1 NEEDS：full Clear后的UnknownWrite错误恢复Hidden资格。有效新fullDebug Build0，offscreen16204自然1仅H101；H100残留真实外域像素/H102反向合法序绿。原 ui3_svg_proof_impl唯一Probe.cpp（必要h/测试）H1 GREEN writer，其它Bar冻结。未新动态GREEN。
+- failed_cleanup_module_impl唯一uink_tests.cpp+自己的uink-sibling-maxpath-implementation.md RED writer，暂不许改uink_file.cpp/entry/工程。停写后Root真实纯CLI注册、构建/跑精确230首存RED，再交最小产品GREEN。现已编译测试注册RunUInkTests存在；整体默认目标不自动等于无GUI。
+- ui3_f_fixture_plan_check只写新F源/初始化跨组件独立review；Auth两Helpers仍未登记/编译，Bar实际两个defs/source/bootstrap/checkpoint尚不存在，禁止假stub。Draw3 U3实际Host Session、Move/Up/CPU/Laser/功能等价/Release三轮及C04/C06还未完成。Root唯一Main/SS/工程/spec/父账本/Build-run，source半写期间不MSBuild。
+- 当前工程约85%仅估计，人工体验验收/可以发布均未达成。预计剩6–10有效工时可按一天安排，有新故障会增加；给用户最终包冻结通知前不把早期测试包当最终验收。
+
+## 2026-10-01 最新private日志动态结果/后续所有权（優先本节）
+
+- 新private log candidate fullSolution c3b-private-log-b3-red-debug-arm64-build实际0（95635完成）；日志版Fixture5DAC3852…14878E6独立6C3EB34…C032B有限CLEAR。11655 same3case已完成均65/90，四授权negative逐组PASS，无Root测试/编译session运行。不要重起旧pending。ignored c3b-private-log-frozen-debug-candidate.json保存PE/范围/源/三PID/路径，不是HF/Release。
+- 现实际原product日志：C09 parent33120 child2072 /run33120 53990906 0、C11 parent21612 child10292 /run21612 53997656 0 根目录fixture-product.stderr.log第二保存明确stage=index-commit/failed，stdout第一committed。C10 parent12640 child30168 /run12640 54004562 0同stderr action=save status=io_error revision1，NotFound基线1。actor三marker只证明ReadIndex选择返回（无效也发），不是Valid。三种实际Save失败原因未确定，不能据此说已修/only线程卡；Root已交C3原作者read-only查静态路径或下一最小stage/error提案，源码均冻结（Fixture5DAC、AutoA2AF/CC20、HostE502/BAA）。
+- B3真实RED已经精确2 FAIL，独立573800…861 CLEAR_RED_SCOPE/RED_VALID/完整B3 NEEDS_REVISION。Root现已成功WRITE_ALLOWED_B3_GREEN，原ui3_svg_proof_impl唯一七Bar源写入：full/hidden保守认证、台账failed/unverified/tag/reason、initialpub0的实际consumedDPI、SVG覆盖SVG/failure/deferred谱系、真实负例/全BGRA/budget；可能半写，**不能MSBuild**。Root不抢源。
+- Auth helper作者已PATCH_READY两未登记source：h20AB2AF89744BF52871239891CE97399762CA7FC46B21E63D5FFC62EFA087D13/112行；cpp552EEC5AB854D239D5354680DB13433C38D831A2DD428C5D6ED7D5C07737F5EB/845行；report05A7F190…2420530。Root未注册/未接Main/未运行，无F auth/GUI许可；两Bar普通links依赖GetCompiledSourceDescriptor/RunAuthorized真实runner尚不存在，不用stub。将来source64/hash与truejoin/privateroot字体/config/output必须独立实码CLEAR后才集成。
+- 新ui3_fixture_source_impl为READ_ONLY_PREPARE，仅自己research/ui3-fixture-source-implementation.md；实际读RootAuthHeader/R2 §6–10和Bar初始化/queue/point/action/stop，提出immutable64 source/newBootstrap/两链接defs和所需Probe API，不能写Bar/Main/Helper/工程或跑测试，避免与B3冲突。当前四slot Root/B3Green writer/C3 impl只读/Fsource准备。所有completed checker报告已持久化，后续Root按准确source/hashes复审才计进度。
+- Root保持SS/Main/工程/spec/父记录唯一writer；native两Scope补充已写未单独命令当runtimePASS，C04/C06两个设计待审/未实施。仍要Savehold三轮/fresh/F065、UI F/source/两scene三Release轮、Draw U3/MoveUp/CPU/Laser/所有工具、最终Release3架构/HF/611覆盖+最终总审。HEAD e32a5fc0/chore/publish、G和父仍in_progress，无新commit/staging/push/archive，粗估80–85%不升级发布。
+
+## 2026-10-01 最新动态诊断已闭合（优先本节）
+
+- 所有工具session已完成：58216 fullDebug0，29367 strictHeadless13540/parked32812/PptCOM12848全0，95736 same3 C3诊断均65/90，24988 B3 offscreen16476/1准确两红。当前无MSBuild/测试进程/运行session，勿照下方旧pending重启。
+- C3实际marker/data：C09 parent34268/child10968 /run34268 51945843 0、C11 parent30260/child30924 /run30260 51952312 0，根目录（不是artifacts）fixture-failure-diagnostics.txt phase208/currentSave2/1/1/0，fixture-index-probes.txt=1/1/1。这排除mutex永久卡；旧PODtrace2/1/0/1是gate时较早值。C10 parent16028/child22392 /run16028 51958687 0，phase333尾ready/UI/input匹配却PPTSave失败1(absolutefailed2/notfound1)。原因未确认，不改schema/timeouts造绿，持久化/force/fresh均未PASS。
+- failed_cleanup_module_impl已新turn只读新diag/CommitIndex/PresentationSave并写自报告；允许源仍冻结9671/A2AF/CC20，下一固定private产品stdout/stderr或2后续marker必须先Root精确许可，再写。不动历史文件。独立E571…AD60限定3case诊断CLEAR，不给真实F GUI授权。
+- B3七源RED已停写 5E9D/FF098/55E4/2452/8A69/DD64/6A378；raw ui3-b3-red-debug-arm64-offscreen(.results.log复制完整)准确仅B302/B303、真实前提好。cleanup_ui3_design_check只读新report仍审；已指出GREEN前3问题：完整resource失败计数/tag/reason留到StoreOutcome/Absorb、initialpub0用真实consumed targetDPI不造96/late重读、SVG→SVG后绘制遮盖先前required失效。Root接受，待checker报告结束释放slot，再交原B3作者GREEN+负例；Root send_message给inactiveB3因4slot满失败，没有授权成功或修改源码。
+- 第四slot目前Root/cleanup UI checker/C3 impl只读/Auth impl写两新Helper。Auth128/Frozen72+exactregistry/compiled64表descriptor/futureBar普通runner已准唯一两文件WRITE_ALLOWED但未登记，后续defs到位才RootMain/工程接，不成功stub/authOnly。RootSS原语复用小wrapper已新编译；native demo/主产品边界小spec已改；C04/C06两设计文件待独立审、未实施。
+- 本轮新功能PE41CC48316B8F7305920285438EA7C77D119520AE72EEC3F0DDE341C1753C98F3和source identity在ignored c3b-index-probes-b3-red-frozen-debug-candidate.json；不是HF/Release/真实三轮性能。HEAD仍e32a5fc0/chore/publish、G in_progress，无新commit/push/archive。重建仅全部注册源writer停写后，性能不得与编译/扫描/其它bench并行。
+
+## 2026-10-01 C3精准诊断+B3 RED新完整编译（优先本节）
+
+- 新完整Debug|ARM64 Solution c3b-index-probes-b3-red-debug-arm64-build实际0，C3诊断三源9671/A2AF/CC20、七B3 RED源5E9D/FF098/55E4/2452/8A69/DD64/6A378与RootSS五复用wrapper已进入；独立C3 delta STATIC_GREEN/CLEAR report E571…AD60。SST旧C/E授权/算法不改，newAuth两源尚未工程登记/无任何运行许可。
+- 当前唯一实际测试slot exec29367：串行strictHeadless/parked/PptCOM，新prefix c3b-index-probes-b3-red-debug-arm64-{headless,parked} / c3b-index-probes-b3-red-pptcom；尚未拿最终exit，不预PASS。先poll这同session/状态，勿重复测试。旧58216 build0已关闭，无其它MSBuild。
+- Source/PE frozen ignored c3b-index-probes-b3-red-frozen-debug-candidate.json；此候选为诊断+B3 RED，非HF/Release。此前三C3-B release/natural均65/90保留，尚无保存/重启恢复PASS；下一步same3cases新prefix c3b-index-probes-*，在artifacts/C09或C10读numeric diagnostics.txt/index-probes.txt，确定phase208/mutex前后/read后与PPT321/322/323停点，不增sleep/降断言。
+- B3作者七源已SAFE_BUILD_CHECKPOINT停写：实际cache/API/clip/scope/finalize前提已接，FinishDrawing保守unverified桩；现offscreen预期仅B302/B303两红、B300/B301/B304–B307前提应绿，未验证，不放原真实scene/全paint质量。独立cleanup_ui3_design_check只新ui3-svg-proof-code-review.md在审。Root不改这七源，只有实际RED/明确前提后才交回GREEN。
+- Auth worker ui3_fixture_auth_impl唯一写两个新增Ui3PresentationFixtureAuth.h/.cpp+自身报告；R2 Header128/Frozen72/Registry/新增树/三HANDLE/compiled table descriptor及futureBar runner严格未登记，不影响当前编译。RootMain/SS/工程仍唯一Root；未来Bar普通链接defs存在后才登记，不造stub/authOnly。预算raw真实sizeof+4MiB fixed<=64MiB，Bar实际fixed也必须<=4MiB；negative noinherit仅privateauthSuite，所有F运行前另独立CLEAR。
+- Root只补native/index+quality两个短Scope说明防独立demo命令误覆生产；原native demo不变量与入口保留。C06-old-owner/C04-RTS两Root最小design新文件待独立审/未实施/不运行；仍要Draw3 U3/事件CPU/Laser/全三轮、UI F/scene、Savehold/fresh/F065、最后Release3arch/audit/HF总审。没有新commit/staging/push/archive或completed。
+
+## 2026-10-01 03:45 新组合验证及保存首轮失败（优先本节）
+
+- HEAD e32a5fc0/chore/publish，G in_progress，无新commit/staging/push/归档。最新冻结功能PE 74212B55A2682EED4A4B82701525E5B45C67AD2CA7D4A46D22D6B1E9C2781777，完整identity在ignored c3b-frozen-debug-candidate.json；不是最终HF/Release/性能。
+- 最新全Solution c3b-u2p2-b222-green-debug-arm64-build实际0（125warnings0errors）；Headless --no-window自然0 pid26160、parked22032/PptCOM17700自然0。U2-P2 State45296B、helper auxiliary45216B、Session81912B/common33554432B；独立P2 STATIC_GREEN及B2-P2/F066 code+numeric/caller编译 GREEN（reports F5D97…C632 / 220E4…D15）。B222首两非法flags67失败保留，不是因果RED；正确66+前置下完整RED0/test1仅B222 pid10952，改映射后全Green通过。
+- C3-B三个release/nofault首轮均真实父65/positive90，四auth negative每组均PASS：C09 parent33944 child28416，在actual fault gate后save2/1/0/1且Close0；C11 parent33604 child34864同save2/1/0/1；C10 parent29332 child30240尚未到存储gate。Root未报恢复/保存退出PASS。历史私有Natural目录已有两UInk而index仅A，B已越CommitUInk；NamedMutex显式Release已见，尚未确认产品死锁或夹具问题。
+- 当前没有build/test在跑。唯一C3 writer failed_cleanup_module_impl重新接管仅Fixture+原报告，先数字phase/own诊断定位，Host/AutoSave其它四源冻结；若需I/O事件probe须Root先批准精确边界。B3 ui3_svg_proof_impl唯一接管Probe.h/.cpp、UI.cppm/.cpp、Rendering.cpp、RenderLoop.cpp、EraserAttribute.Test.cpp，先真实offscreen RED。Source可能半写，**不得完整MSBuild**。
+- UI F auth worker ui3_fixture_auth_impl目前只读准备/自身报告，未来两新Helper源未授权写；Root唯一SS/Main/工程/父记录/spec，已新增极小DiagnosticsProcess wrappers共享原Quote/Image/FileID/Start，不改旧C/E validator/原路径，未新编译。auth-interface冻结/独立safety后才允许新CLI运行。
+- 下一步等Fixture精准PATCH+B3 RED停写→完整Debug/各归因RED/C3再验→独立修补；仍需C09/C10 hold3轮+freshreader/F065、UI F+两scene、Draw U3及Move/Up/CPU/Laser/真实三轮、C04/C06、最终Release3arch/HF/audit总审。80–85%仍估算，不能说仅剩Win7人工或发布就绪。
+
+## 2026-10-01 03:00 接续核对（优先本节）
+
+- HEAD e32a5fc0/chore/publish，G in_progress，无新暂存/commit/push/归档。C3-B五源已冻结284692…4FC457并独立STATIC GREEN/CLEAR；新PPT reader协议/root严格receipt源未编译。Draw3仅Controller.cpp Undo/Redo真实GPU失败分母修补尚在写，nofullMSBuild。
+- UI3 B2-P2正确project-output standalone Headless自然0 pid14416；完整主程序RenderLoop/Main caller仍未编译。独立review发现颜色环PNG布局role遗漏，root唯一接管Probe.h/RenderLoop.cpp/tests最小RED→GREEN；其它UI源冻结。新case B222仅AttributePreview几何/显隐，不认证PNG像素/增加advance或Request。
+- 当前唯一build/test slot：standalone Headless B222 RED build exec24623；原24257/22516实际0结束。先poll已有会话/对应status，勿重复构建。此独立target不含Controller/Host，所以可在Draw作者写入时构建，完整Solution须等全source冻结。
+- 三位live reviewer/implementer：Draw impl四源中仅cpp、Draw checker只报告、UI checker只报告。Root共享Main/Supervisor/工程/父账本和临时上述三UI源；build/run独占。下一步B222真红绿→Draw最小PATCH+独立review→新全Debug→parked/headless/PptCOM→C3-B release/natural前置及hold三轮/fresh严格reader/F065。UI B3/F、Draw U3/事件成本/真实三轮、C04/C06、最后Release三架构/HF总审仍未完成。
+
+## 2026-10-01 日期切换后即时接续
+
+- 用户environment已切到2026-10-01/Asia-Shanghai，后续新记录按今日，原09-27任务继续，不创建重复父task。前面2026-09-30是各步历史执行日期，不硬改历史证据。
+- exec session79054 CP1十primitive已实际exit0闭合；status c3a-current-pe-cp1-regression-debug-arm64，所有十类+两拒绝通过。默认pre-wake begin-Cancel、真实join、dormant、expiry、早tick与普通15秒合同仍通过。当前没有pending build/test session，先看实际Get-Process和status，勿照下方旧pending重复起。
+- 三实施者仍在U2-P2四源、UI3 B2-P2 RED Bar源、C3-B Fixture/Host/AutoSave五源，**源码可能半写，禁MSBuild**。独立两个P1已绿/19C3-A实际证据均在validation。Root最新PPT-reader HWND身份-only输入已未编译追加，不影响旧PE实际通过；nextcandidate必须新safety/Build。
+- 优先继续：可旧PE真实B002 Natural复验已提取Main fallback（还有F063/nohold标准4站点），读三worker交付→冻结组合build→B2-P2红后green/U2-P2及C3-B相关源真实验证→独立review修补。C04/C06、完整UI3/Draw3采样、Win7/HC-H2人工、最终三架构Release/资源/import/finalHF/611coverage+最后diff总审仍待。不结束、不新commit/push/归档，不将粗估80–85%升级完成。
+
+
+## 2026-09-30 C3-A十九实际通过后的接续（最新）
+
+- 当前有一个唯一运行测试slot：exec session79054，旧冻结candidatePE的 --shutdown-supervisor-tests --failed-cleanup-only 10primitive回归，status前缀c3a-current-pe-cp1-regression-debug-arm64；尚未最终exit，不预PASS，先poll已有session/日志，不重新起同suite。65637（三轮C3hold/C07）已实际0闭合，82105四release/C07实际0闭合，85366首C05release0闭合，6778三测试全部0/57812 build0已闭合。
+- 第三fullDebug0/28.42s/0error4warnings，strictHeadless34212/parked35248/PptCOM7044自然0；U2-P1 CPU ContentProof实际payload为81912+39072/common33554432，旧六+新增全PASS。B2-P1独立code-review最终GREEN已核实际0；没有把它升级真实settled/性能。
+- C3-A实际十九positive全部自然父0：4release、9startup已知故障hold、3ordinary render hold、3Main旧链重建C07；每次四auth negatives全PASS。startup gracetick+15s迟到15–47ms，ordinary Close原15s迟到46–63ms，均非父强杀；C07 generation1→2、旧Signal0、新ULW超旧grace+1s后16逐消费Move+Up仍成功Present21/24/27，最后自然0。raw结果c3a-first-candidate-results.json + 各c3a-case-rN-*，PE身份c3a-frozen-debug-candidate.json。下一改动后的最终候选仍需复验，不推Win7/真实UI体验/驱动无界API/RTS静止/存储恢复。
+- 当前三个mutating agents：draw3_actual_metrics_impl U2-P2只Controller/RuntimeMetrics四源+自报告；ui3_bar_commit_impl B2-P2 RED只Bar Probe/Main/Interaction/Button/RenderLoop+render_scheduler_tests及自报告；failed_cleanup_module_impl C3-B只Fixture/Host/AutoSave五source及自报告。全部可能半写，**不MSBuild**。Root仍唯一Main/Supervisor/SharedHeader/Deadline/工程/spec/父账本及所有build-run，没有新commit/staging/archive。
+- C3-B必要Root协议最小补完：仅PPT两reader允许Trace.oldDrawpad身份纯值，parent producer exact death后传它+originPID重构bindingToken；其余trace全零/无权限升级，Header1024/argc不改。当前source未编译/未review，不用旧C3-A许可运行reader。Root已按case族修ValidCleanupReceipt（Desktop实际workspace0/effectiveactive1、PPT实际workspace2/all3active/601602/enum0-1/canonical日期等），formatter不要只计当前602空页。C10首次Current NotFound正常empty-ready但计failed，按绝对初始基线+后续delta0，并允许hidden-only Host实际completion counter见证。Root contract/report均补此实码来源。
+- F065 AutoSave专用lease先于任何index/backup/UInk读已独立静态修闭，动态正负例待C3-B；公共业务ReadIndex/SubmitLoad不变。C3-B completegeometry MessagePack digest/真实两workerhold+freshsame/foreignread仍实施，不预PASS。C3-B writer提议固定owned子根reparse negative，无privilege列NOT VERIFIED；不攻击外部data。
+- 接下来先poll79054自然结果→无更多进程时记录；可真B002 Natural复验Main共用span/原startup站点，待三个writer PATCH_READY后整体build+各RED/GREEN/独立actualreview。B2P2先真实RED→GREEN，B3/F与Draw3U3/各Tool三轮/CPU+resource/Release3arch/finalHF/最终全diff audit继续。HC/H2同机与Win7/真笔/Office仍人工门禁，但其它工程未完成，不结束task。
+
+
+## 2026-09-30 C3-A/U2-P1/B2-P1 最新恢复入口
+
+- HEAD仍e32a5fc0/chore/publish；G in_progress，无新commit/staging/归档。用户中途询问进度已答：工程粗估80–85%，安排人工完整回归先预留一个工作日/6–10h有效执行（估算，非保证），等待最终候选冻结；这不升级发布门禁。无需等人工，可继续工程。
+- Draw3 U2-P1四源GREEN候选PATCH_READY，Controller cpp1687DA01…CA32CC、Metrics cppFDBE988E…2E004E0，两cppm8BB0/87E不变，normalRun/PresentFrame/E03/U1/M16字节严格保留。draw3_content_design_check正在新draw3-content-proof-p1-code-review.md实码复审，暂无阻断/准备STATIC_GREEN，动态parked绿尚待完整构建，禁止开P2生产接线。
+- UI3 B2-P1 RED七源及Probe normal helper已登记主+Headless。真实strictHeadless pid29248自然1，B201–B209准确九新FAIL，旧B1/B06/R/216仍通过。已正式授权ui3_bar_commit_impl原七源GREEN_IMPLEMENT及Bar.Main.cpp285 WhiteboardActive明确来源修复，**目前可能半写，禁止构建**。B2-P2 Submit/Advance/settled、B3/F仍未接。该worker不触RenderLoop/RenderPipeline/fixture/工程。
+- C3 real合同6EE00…D34E0F6独立GREEN_DESIGN；root新1024B FailedCleanupRealCases.h/authorizer+parent/after-wake helper门/真实Main共用回退span及C07 counterexample已实施，root shared源码+工程已冻结，身份见research/failed-cleanup-real-root-implementation.md。root允许C07最终Close也经同一普通wrapper（case7–14）；默认产品同原路径。新CLI --shutdown-supervisor-tests --failed-cleanup-real-only <producer case> 已接，**未运行，必须等实码safety+Build0**。public reader-only71；不接任意外部receipt路径。
+- failed_cleanup_module_impl C3-A五源冻结：Fixture BAB8B657…D5154F；Host h1B12F390/cpp823EA958；AutoSave cppm0C7186F5，cpp首次3C009已被单行typed-pointer修复为E897076C015CDA579E256B292F5505E64C2E286A14810A0F3DA62C9FE0DB3F4F。C03/C05两个分支/C08 hold-release及显式Host event/getter、Desktop delay event/strict module reader已写；C09/C10/C11和reader夹具分支当前明确90未接，不能跑当PASS。C3-B尚未授权恢复写，避免改正审查/编译的源。
+- 首次组合完整Debug Build c3a-u2green-b2red-debug-arm64-build真实1，首错AutoSave805 mixed wstring*/const ptr initializerlist，最小一行已修。Headless目标该轮确实成功输出，上述九红直接触生产normal helper，不把它叫Solution通过。第二完整build c3a-u2green-b2red-compilefix-debug-arm64-build真实1，首错Bar.Main.cpp285 C2668 WhiteboardActive歧义，其它132 warnings；UI writer处理中。旧PE不是这些新Root/C3/U2源码的最终产物，禁止据旧EXE测试假绿。tool sessions77323/55281/6654均结束，当前无build/test在跑。
+- failed_cleanup_module_check正独占新failed-cleanup-real-cases-code-and-safety-review.md，中间已给C03 pair/C05两pair/C07/C08 pair逐case静态安全CLEAR，但尚待报告/最终冻结源及新Build0后才运行；当前future reader合法expected缺case族/enum/date/slideIds严格核，C3-B前补，现stub90不放行。C04 RTS真实callback静止、C06旧owner独立hold、存储fresh/自动恢复、完整性能/Release3arch/最终HF仍未完成。
+- root唯一Main/ShutdownSupervisor/FailedCleanupDeadline/sharedhead/工程/spec/父账本和所有build-run；新UI B2作者、C3-A作者、Draw3作者文件不重叠。接下来等UI GREEN PATCH→完整Debug→parked U2绿/strictHeadless新绿/primitive回归→独立实际source增量→实际C3-A放行case release先hold后三轮/C07；然后C3-B、Draw3P2/U3、UI3 B2P2/B3/F及最后矩阵。新源码后旧PASS/HF指纹一律不作最终证据。
+
+
+## 2026-09-30 恢复核对：C2/B06已验、Draw3 U2-P1真实红
+
+- HEAD e32a5fc0/chore/publish；当前task G in_progress，工作区后续源码/报告未暂存、未创建新commit。实际不存在运行中的MSBuild/Inkeys/Headless/PptCOM进程；旧tool sessions已完成，勿照下方历史待跑文字重复启动。
+- c-p2-b06-green-debug-arm64-build实际0；strict Headless pid32328自然0，parked U1/M16 pid15540自然0，PptCOM pid12112自然0。C2八模块+Main span独立STATIC GREEN；B1/B06最终实码GREEN。B002 Natural child10320/ordinary0/Arm到death625ms也通过，只证明成功init/普通cleanup，不等于真实C03–C11或保存恢复。
+- Draw3 U2-P1新共享helper桩：完整Debug Solution实际0，parked pid14764自然1、U201–U209共29 FAIL，旧六子组仍PASS。root已授权 draw3_actual_metrics_impl 只四Controller/RuntimeMetrics源码及报告GREEN_IMPLEMENT；normalRun/PresentFrame仍冻结。PATCH_READY之前禁止构建半写源；取绿后再独立actualdiff检查。
+- UI3 finite R2合同439行/B32BF4…D1097正在独立最终审查；后续只先分B2 numeric publication/业务接受点，B3 SVG/私有runner不得顺带无审进入。C3 real-cases仍设计阶段，独立review已指出plain bool trivial、并发publisher幂等见证、observed按case一次封口三问题；合同已最小修订，等待其它阻断和最终结论。
+- root独占IdtMain/ShutdownSupervisor/FailedCleanupDeadline/共享header/工程/spec/父账本及build-run槽；未来fixture Host/AutoSave writer必须另派明确所有权，并与Draw3 U3 Host串行交接。真实Window/Host失败、render/save卡住15秒及fresh UInk/readability、UI3/Draw3三轮整链、Release三架构新改动与最终HF仍未完成；不使用旧93%估算或旧fingerprint，不称仅剩人工/发布就绪。
+
+
+## 2026-09-30 C-P2/B06组合源码最新构建检查点
+
+- C-P2八源＋Main span、B06原5源全部PATCH_READY冻结。完整InkeysRepo.sln Debug|ARM64 native Build实际0，日志/status c-p2-b06-green-debug-arm64-build。编码/diff保持，未更改Win7 KB/FLIP/HW-WARP/两DWMgate/默认closed功能。
+- 当前真实运行中的tool session22095：依次strictHeadless、parked U1/M16、PptCOM.Tests，各输出/status c-p2-b06-green-debug-arm64-{headless,parked}、c-p2-b06-green-pptcom；尚未取得最终输出就不预写PASS。Build session3501已完成0，无MSBuild。
+- failed_cleanup_module_check正在仅写C2 actualdiff报告；cleanup_ui3_design_check仅B06增量及UI3 finite355行设计审查；draw3_content_contract修U2/U3 R1–R5合同。所有产品source当前已冻结，不让read-onlyreview抢写。后续修补/真实C03–C11与正常ULW反例、保存/UInk fresh recovery/实际采样仍待实施，不能把本次Build0/C-P1绿推为完成。
+- 后续真实B002 Natural可复验当前scope的成功StartWindow/Host/RTS/普通cleanup；它不是DComp→ULW/C04停止失败注入。CLI --failed-cleanup-only仍仅十种primitive，不编造更多case。Main root/helper/source身份须随最后改动更新，未生成最终HF/no新commit。
+
+## 2026-09-30 已正式派发B06门控绿色（补充）
+
+- cleanup_ui3_design_check已交C-code GREEN及B1 NEEDS_REVISION后结束，root成功重派ui3_bar_commit_impl GREEN_IMPLEMENT，不再处于“followup被拒未成功”。B06独立真红status：Headless pid32752自然1、Build0。该worker现只改原5源，待PATCH_READY，仍不构建半写C2/Bar。
+- C2模块writer已确认名failedCleanup和默认空Signal，拥有Window/Host/RTS/Presenter8源。Main root接线待compile；模块内部无test gate，未来真实Host/存储注入须另冻结capability。root build/run槽当前空，无新提交。
+- draw3_content_contract正在修独立R1–R5；UI3 finite-target-and-fixture-contract已冻结355行，SHA C655D569…BB74AC4；仍要独立审准确Typed DTO/source/初始化，不能直接当运行许可。下次继续先读最新handoff与git、worker PATCH，再安排复验。
+
+## 2026-09-30 B06红/C-P2实施恢复入口（最新）
+
+- HEAD e32a5fc0/chore/publish，工程未结束，无新commit/staging。C-P1两helper最终独立实码GREEN，全部10类真实primitive与负例绿；B1之前Green后独立发现默认sink会新增计时成本，B06真实有sink反例准确红（最新完整Debug Build0，Headless1仅B06），禁止复用旧B1最终GREEN。
+- root派 failed_cleanup_module_impl 写Window.cppm/cpp、Draw3.Host.h/cpp、RealtimeStylus.cppm/cpp、TransparentPresentation.cppm/cpp；只C-P2必要接口/内部门，字段名failedCleanup，byvalue安全Signal。已WRITE_ALLOWED，**源码可能半写，禁止此时MSBuild**。root Main已接Window局部scope/firstHost跨失败logger+旧Windowjoin/ULW独立scope，UTF8 BOM/CRLF保持；尚未编译，等待worker源码全冻结。
+- ui3_bar_commit_impl B06 RED五源已冻结；root followup GREEN第一次因4slot满未成功，待cleanup_ui3_design_check写当前B1 NEEDS_REVISION报告并结束后，必须重发GREEN_IMPLEMENT。修复仅per-frame detailedCaptureEnabled门：Scheduler源为rawActive；新增7timer/Stamp/新字段raw-only，旧6stage及生产异常sink保留。helper测试clock不能授予detail开关。green后等C2全冻结再新完整Debug Build/Headless/相关CLI/独立增量review。
+- draw3_content_contract正在根据draw3-content-and-host-design-review的R1–R5收敛U2/U3实际Present分母/reconnect旧pending/outputRev0/warmup和owner像素checkpoint，仍research-only；UI3新finite-target-and-fixture-contract.md 355行已交，待独立review，不开跑。两者不改产品。
+- 当前无MSBuild/CLI在跑。最后tool sessions89600(B06 RED build0)/79027(Headless1)均已收尾；C绿89912全部0亦已关闭。现在的PE是B06红candidate，不是最终/发布产物。C2 Main接口和模块后续变更没验证，不复用前PE PASS。
+- 接下来：释放一个worker后派B06门控绿色；C2 PATCH_READY后构建→Headless→真实Host/Window/RTS failed-cleanup、正常ULW反例与Armed render/Desktop/PPT停滞+fresh UInk三类C03–C11。现96B --failed-cleanup-only仅primitive，不假装支持C03等真实case。root负责新capability/测试/共享项目，后续每个case需运行前safety。Draw3 U2/U3、UI3 B2/B3/F、Release3arch/最终HF+总review仍未完成。
+
+## 2026-09-30 C-P1绿/B1独立复审检查点（本节优先）
+
+- 两单元最终冻结完整Debug Build0，ui3-b1-green-debug-arm64-headless自然0、真实PID24596/216layouts。C-P1全部10种case自然父0，授权负例全PASS，raw=c-p1-<case>-green-debug-arm64.*：expiry/expiry-cancel守原grace+15s；allocation/monitor约15s；真实monitor join停滞后001C；原ordinary15s；cancel独立下一scope；begin-CAS后cancel；dormant无clock；earlier无普通Arm的6s-min。未把sentinel升UInk，不把primitive升实际Host/RTS/Window。
+- **独立B1 review发现默认off合同偏离**：Main正常安装DiagnosticsSink，因此nonnull FrameDiagnostics也出现在rawoff产品。新7段timer/stamp原先会默认读钟。当前候选虽Headless绿，不是B1最终GREEN；ui3_bar_commit_impl已再次派发只加per-frame detail-enabled和有真实sink的B06红→绿。旧6段/异常sink保留。root暂不构建该worker半写源，不接UI3 B2/B3/F。
+- cleanup_ui3_design_check核新版C00 CLEAR，C helper暂未发现静态阻断，正在完成C-code/B1-code两报告。C-P2未派发；后续先取C独立最终结论，再唯一worker接Window/Host/RTS/Presenter，Main/工程/rootCLI继续root。
+- Draw3 U2/U3独立design报告已出：U2 NEEDS_REVISION（实际Present分母不能因proof错而抹除、reconnect旧contact终态、合法outputRev0映射）；U3-H生命周期GREEN；U3-F需预热分界/on-off owner像素checkpoint。Laser正式landing暂excluded，但frame/生命周期/cost仍要调查。UI3 finite/source精确合同research继续，未有真实完整三轮性能。
+- HEAD仍e32a5fc0，新增代码/报告未暂存/commit；G及父保持in_progress。当前无build/CLI会话在跑，之后任何调用点/门控修补均需新完整构建/相关复验。不要复用旧HF指纹或93%历史完成度。
+
+## 2026-09-30 当前接续单元（本节优先）
+
+- HEAD仍e32a5fc0/chore/publish，无暂存/新commit。用户可继续工程、允许owned GUI/脚本测试但禁computer-use。G task in_progress；阶段工作继续，未finish/archive。
+- U1 RuntimeMetrics模块已源码冻结、Debug Build/parked/strictHeadless0、独立STATIC GREEN。root后来只加Controller M16有限kind反例，最新parked0，正常Run/E03保持原样；后续U2/U3未批准实施。三源最新hash应在完成checkpoint另算，旧Controller BCF3是M16前。
+- NoHold四wWinMain站点+owned提示自然通过，原Hold D004约15s仍0。D005 real_result原在合成generic后填，已先捕获真实activation/module结果，尚待同新PE Hold/Natural复验。普通产品行为不变。
+- root独占Main/ShutdownSupervisor/工程/父账本/spec/所有build-run槽。新增96B C-P1 early copied-child purpose及--failed-cleanup-only，两个red expiry/allocation已自然父64（详细validation），所有授权负例PASS；parent仅精确清自己的child，红FAIL保留。
+- failed_cleanup_impl只写两个新helper，已GREEN_IMPLEMENT C-P1：sharedState/wake/64位CAS/noreturn/真join/原deadline-min及固定测试门；**暂不改Window/Host/RTS/Presenter**。root已登记主+Headless工程、Main静态no-wait publisher/getter，尚未接C-P2生产调用点。
+- ui3_bar_commit_impl只写RenderPipeline四接口/实现/validator、Bar.RenderLoop和render_scheduler_tests；B1四红后已GREEN_IMPLEMENT，仅真正软件事务stamp/raw真链/七timer，不能扩B2/B3/F。cleanup_ui3_design_check仅写C-P1 safety及U1 M16增量review。
+- 当前无构建/CLI在跑。最近完整Debug c-p1-ui3-b1-red-debug-arm64-build0，B1 strictHeadless1仅四新FAIL，C helper仍RED；接下来等两worker PATCH_READY源码冻结，完整Debug绿构建→Headless/全部C primitive与D005 Hold/Natural/M16→独立实码检查。C00下一scope/CAS竞争补强、更早tick反例及C-P2真实模块、Armed render/save/UInk fresh Load均未完成。
+- C-P1父expiry断言后补原grace范围/绝对grace+15、重复Begin间隔250ms，以及earlier独立6s假已发布tick；尚未在新PE运行，不凭原ordinary案证明helper取min。新purpose运行前安全审查在途（首两红已得到中间CLEAR）。
+- 当前HF是HEAD+持续新增工作区，post-commit旧fingerprint不可用。停止/压缩前读本节、git状态及真实status文件，未知tool session先查进程/日志，不重复杀现有进程。
+
+## 2026-09-30 工程收尾续接（当前所有权）
+
+- 用户确认工程侧可继续，无需等人工验收。E01/E03 已完成本机 Debug 红绿与独立源码检查；E02/F063 正在实现私有真实启动故障夹具，UI3 首批原始采样正在实施，Draw3 性能 Session 设计已审待实施。人工退出/重启最终验收须使用这些后续修补后的同一构建。
+- E01 已源码冻结：ShutdownSupervisor.h/.cpp 和 IdtMain::SetOffSignal 加 Failed-only 当前线程守原截止。独立设计与实际代码 review GREEN，见 `failed-arm-deadline-{design,design-review,implementation,code-review}.md`。Debug ARM64 完整红/绿 Solution均0；红 selector62（6真实失败/2授权拒绝PASS），绿完整suite0（旧22+新8通过，含1汇总共31PASS标签）；Headless --no-window0/PptCOM0。合并 E01/E03 源码的 Release ARM64/x64/Win32 完整 Solution Build各0；三架构新失败边界、parked生产CLI和严格Headless也逐项各0。不得升级Win7/真实按钮/Host停滞/UInk恢复。
+- 新Case普通/create/handshake退场约15.031–15.047s；先耗6s后按剩8985ms退场，总15.062s；模拟Arm已经耗16.5s时接管62ms退场，不能声称模拟Arm本身也在15s内结束。均cleanup未进入，已Flush sentinel不变；它不是UInk恢复证据。双失败Restart不承诺新实例，专用退出码0xE1430019；Close为0xE1430018。
+- E03/F-064 已源码冻结：Draw3.DrawingController.cpp 三个初始化失败入口共用精确handle/generation Discard。Debug ARM64红 CLI1（旧11条身份/过早回收失败）→绿 CLI0，原4项子测、Headless0；独立源码review GREEN。Controller写入权交root，Draw3性能 worker未来触碰Controller必须保留该修补。普通页Closing全Run、实际modeler失败分支、RTS失败quiescence另有未验证合同，不能由helperPASS代替。
+- root 独占共享账本、spec、任务上下文与所有构建/CLI槽。E02 A/B Main/ShutdownSupervisor源码已冻结：D004真wWinMain红63→最终源码Debug构建0、绿CLI0；源码独立静态GREEN。运行前审查逐站点放行后，D005/D003/B002显式子套件亦各0（目标guard已Arm、产品自行退场，B002只验证真实Main处理合成状态）。无hold自然提示仍未验，C失败清理scope跨模块设计未批准。UI3 U04-R RenderPipeline/Scheduler源码已冻结：Headless旧stub六项红1→最终源码0，独立实码review GREEN；只给callback-end代理，真实Bar时刻/ULW及三轮数据待补。中断后无旧worker在跑；`resume_draw3_metrics` 接管现有RuntimeMetrics/Controller测试部分写完的U1红桩，**尚未构建/运行**；`cleanup_scope_contract` 只写C安全生存期合同，`ui3_real_sampling_contract` 只写U04-B/F实际Bar采样与私有runner合同。三者不自行构建，源接口/Host写入权尚未扩展。任何后续修补必须重跑受影响验证。
+- HEAD 仍为 e32a5fc0；上次 post-commit-completion-fingerprint.json 是该检查点快照，本次续接新增文档或源码后须另记新 HF，不能复用旧指纹。无新 commit、push、发布或任务归档授权操作。
+
+## 2026-09-30 提交后完成度核对（当前恢复入口）
+
+- 分支 `chore/publish`；已提交 HEAD `e32a5fc06096c1e4ab88a29866c60ebe323fd722`，tree `df05eeeaed48950b76b772e76b3105026a5f04ef`；父提交/H0 `8b156fca59f0337a6afc6d722941666fcf143080`。该阶段 commit 包含 306 文件、21286 行新增、2002 行删除，不代表任务完成。下方“未提交/审批503”是提交成功前的历史证据，不再描述当前 Git 状态。
+- 用户后续授权覆盖初始“不提交/不启动GUI”的边界：允许该次 commit，以及隔离自建进程的窗口/脚本测试；仍禁 computer-use。用户要求提交后任务继续进行，禁止借记录/归档自动 commit 或 finish。当前 active task 为 `09-27-integration-and-release-check`；父任务与七子任务保持 `in_progress`，记录阶段 commit，不标 completed。
+- 本轮独立完成度复核为 `integration-and-release-check/research/post-commit-completion-audit.md`；用户人工清单及工程侧 E01–E05 为本目录 `completion-and-manual-acceptance.md`。不能确认“工程工作全部完成，仅剩人工”。明确缺口是双监督建立失败后的确定退场；其它工程待办为启动失败清理边界、实际 Controller/Host/启动故障注入、成功帧归属与完整性能采样。
+- 正常退出的 Host drain 在 Armed/FallbackArmed 成功时已受进程级 15 秒保护，不因内部等待无 timeout 就认定必现死锁。DComp→ULW 的 Host::Start 失败返回前通常已停止 Host；待核对的是 Start 失败清理自身和 Window owner join，不是已证实回退后的 StopProduct 必入活动保存屏障。保留正常 ULW 回退和最后已提交恢复点。
+- HC 仍是 run31487748238/`82f7b7c0` 的公开 Canary 候选，未确认就是用户安装版；H2 为 Inkeys2 Release `20260713a` 候选。不得称同机性能对照已完成。Win7 SP1 仅 KB2670838、Hardware FL11.0/无FL11.0→WARP、FLIP 保持、两个 DWM 方案禁用、真笔/Touch、Office durable/可见恢复等保留人工门禁。正式 IDT_RELEASE/CI 是发布准备，开发宏关闭本身不是新增 bug。
+- 四个本任务未跟踪 `inkStrokeModelerTest/*.cso` 已按精确路径清理成功；未删除跟踪资源、不使用 git clean。此轮只更新记录和人工清单，产品源码未修改，未创建新 commit/push/PR/tag/archive。提交后工作区身份见忽略目录 `TestResults/release-hardening/post-commit-completion-fingerprint.json`（在全部本轮记录更新后生成）。
+- 文件所有权：root 独占父账本/清单与共享接口、构建槽；completion_audit 仅写独立报告，已完成。后续先读本节/独立报告和 `git status`，按 E01→E02/E03→E04→最终复审接续。任何后续源码修补须重跑受影响测试，不复用本阶段 PASS。
+
+## 2026-09-30 提交尝试记录（以下为提交成功前历史）
 
 - 用户明确授权提交全部本任务改动；本轮未创建 commit。普通 Git staging、elevated staging、临时 GIT_INDEX_FILE staging 均被自动审批服务 HTTP 503 拒绝，命令未执行；没有关闭签名、改权限、删除锁或绕过审批。git diff --cached 保持为空。
 - 当前工作区仍保留全部源码、测试、spec、Trellis 任务记录和独立 review；四个未跟踪 inkStrokeModelerTest/*.cso 生成物按仓库规则不应提交，且清理命令同样被审批服务 503 拒绝。当前没有 Inkeys/PowerPoint 进程。

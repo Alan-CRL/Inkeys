@@ -11,6 +11,8 @@ module;
 #include "Bar.A2.h"
 #include "Bar.BottomDock.h"
 #include "Bar.PresentDecision.h"
+#include "Bar.PresentationProbe.h"
+#include <bit>
 #include <limits>
 
 #pragma comment(lib, "dxguid.lib")
@@ -206,6 +208,70 @@ void BarMediaClass::LoadFormat()
 // ====================
 // 界面
 
+Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
+	const StateModeVersionedSnapshot& tool)
+{
+	using namespace Inkeys::UI::Bar;
+	Ui3FiniteSignature signature;
+	const auto& attribute = barState.drawAttributeBar;
+	const bool auxClosed = !attribute.penTypeMenuOpen && !attribute.colorPickerOpen
+		&& attribute.thicknessViewMode == ThicknessViewMode::Preview
+		&& !attribute.thicknessSliderHover && !attribute.thicknessSliderPinned
+		&& !attribute.thicknessSliderPressed && !attribute.thicknessSliderDragging
+		&& !attribute.thicknessPreviewDragging && !attribute.thicknessSliderCapture
+		&& !attribute.thicknessFineDialDragging && !attribute.thicknessFineDialPhysicsActive
+		&& !attribute.thicknessFineDialCandidateActive && !attribute.thicknessFineDialRangeTransitionActive
+		&& !attribute.thicknessFineDialActivationPreviewActive && !attribute.thicknessFineDialActivationDwellActive
+		&& !attribute.thicknessSliderHoldHintActive && !attribute.thicknessSliderHoldLocked
+		&& !attribute.thicknessAnnotationHover && !attribute.thicknessAnnotationHoverGrace
+		&& !attribute.thicknessAnnotationPinned && !attribute.thicknessOverflowHover
+		&& !attribute.thicknessOverflowHoverGrace && !attribute.thicknessOverflowPinned
+		&& !attribute.colorPickerPointerPressed && !attribute.colorPickerPointerCapture
+		&& !attribute.colorPickerHoldHintActive && !attribute.colorPickerHoldLocked
+		&& attribute.colorPickerKeyboardDownMask == 0;
+	signature.flags = (barState.fold ? 1u : 0u) | (barState.drawAttribute ? 2u : 0u)
+		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
+		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
+		| (auxClosed ? 64u : 0u);
+	signature.validMask = 1;
+	// 宽/色/工具版本来自同一快照，不用独立getter拼接不同代状态。
+	signature.stateMode = static_cast<std::uint32_t>(tool.state.StateModeSelect);
+	signature.penMode = static_cast<std::uint32_t>(tool.state.Pen.ModeSelect);
+	signature.penColorRgb = GetPenColor(tool.state) & 0x00FFFFFFu;
+	const float width = GetPenWidth(tool.state);
+	signature.penWidthBits = std::bit_cast<std::uint32_t>(width);
+	signature.toolRevision = tool.revision;
+	if (tool.state.StateModeSelect == StateModeSelectEnum::IdtPen && !tool.state.laserActive
+		&& isfinite(width) && width > 0.0f) signature.validMask |= 2;
+	signature.mainSide = barState.widgetPosition.mainBar ? 1u : 0u;
+	signature.primarySide = barState.widgetPosition.primaryBar ? 1u : 0u;
+	signature.validMask |= 4;
+	signature.thicknessView = static_cast<std::uint32_t>(attribute.thicknessViewMode.load());
+	signature.validMask |= 8;
+	signature.darkStyle = barStyle.darkStyle ? 1u : 0u;
+	signature.validMask |= 16;
+	// 环境只做一次非阻塞读取；锁忙/未知display不填零冒充有效mask。
+	{
+		unique_lock displayLock(pendingDisplayPublishMutex, std::try_to_lock);
+		if (displayLock)
+		{
+			const auto serial = pendingDisplaySerial.load(std::memory_order_acquire);
+			const auto dpi = pendingDisplayDpi.load(std::memory_order_relaxed);
+			if (serial != 0 && (serial & 1ULL) == 0 && dpi != 0)
+			{
+				signature.displaySerial = serial;
+				signature.dpi = dpi;
+				signature.validMask |= 32 | 64;
+			}
+		}
+	}
+	const double configZoom = barStyle.configZoom;
+	signature.configZoomBits = std::bit_cast<std::uint64_t>(configZoom);
+	if (isfinite(configZoom) && configZoom > 0.0) signature.validMask |= 128;
+	if (Inkeys::UI::Bar::WhiteboardActive() || Inkeys::UI::Bar::PptPresentationActive()) signature.validMask = 0;
+	return signature;
+}
+
 void BarUISetClass::UpdateRendering(bool updateState)
 {
 	static mutex mtx;
@@ -218,6 +284,14 @@ void BarUISetClass::UpdateRendering(bool updateState)
 		// 非画笔模式的 GetPenWidth 为 0，收起过程中保留最后一次有效的粗细文字。
 		if (GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen)
 			barState.ThicknessDisplayUpdate();
+	}
+
+	if (Inkeys::UI::Bar::CurrentUi3FiniteMutation())
+	{
+		const auto tool = GetStateModeVersionedSnapshot();
+		const auto signature = ReadFiniteSignature(tool);
+		// 规范化已结束；包括UpdateRendering(false)，仍在原Notify/Request之前封口。
+		Inkeys::UI::Bar::FinishCurrentUi3FiniteAtRenderRequest(signature);
 	}
 
 	// 通知计算并渲染

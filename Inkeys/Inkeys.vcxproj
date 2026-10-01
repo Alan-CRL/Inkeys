@@ -461,6 +461,11 @@
     <ClInclude Include="IdtMagnification.h" />
     <ClInclude Include="IdtMain.h" />
     <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
+    <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h" />
+    <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h" />
+    <ClInclude Include="Inkeys\Helper\FailedCleanupRealCases.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationProbe.h" />
+    <ClInclude Include="Inkeys\UI\Bar\Bar.Presentation.Source.h" />
     <ClInclude Include="IdtOther.h" />
     <ClInclude Include="IdtPlug-in.h" />
     <ClInclude Include="IdtStart.h" />
@@ -918,6 +923,8 @@
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
     <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp" />
+    <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp" />
+    <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
@@ -957,6 +964,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp" />
@@ -1082,6 +1092,7 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Bridge.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.HistoryProbe.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp" />

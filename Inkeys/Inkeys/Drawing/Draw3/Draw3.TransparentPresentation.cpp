@@ -22,6 +22,8 @@
 #include <windows.h>
 #include <wrl/client.h>
 
+#include "../../Helper/FailedCleanupDeadline.h"
+
 #pragma comment(lib, "dwmapi.lib")
 
 module Inkeys.Drawing.Draw3.transparent_presentation;
@@ -686,45 +688,65 @@ namespace Inkeys::Drawing::Draw3
 				graphics->device.Get(), graphics->context.Get(), width, height);
 		}
 
-		bool TryInitialize(TransparentPresentMode mode)
+		bool TryInitialize(TransparentPresentMode mode,
+			Shutdown::FailedCleanupSignal releaseSignal = {},
+			Shutdown::FailedCleanupSignal terminalOuterSignal = {})
 		{
+			const auto beginFailure = [&]() noexcept
+			{
+				const ULONGLONG deadline = releaseSignal.BeginKnownFailure();
+				terminalOuterSignal.BeginKnownFailure(deadline);
+			};
 			ReleaseAttempt(); // 每次尝试前清掉上一条路径留下的交换链和 presenter。
 			// 自动、强制及恢复共用此入口；首发禁用两种历史 DWM 透明模式。
 			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
 			{
+				beginFailure();
 				std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
 					<< " is disabled." << std::endl;
 				return false;
 			}
 			// Win7 无 DComp 时直接尝试 ULW，避免先改动主 HWND 的创建期样式合同。
-			if (IsDirectCompositionMode(mode) && !IsDirectCompositionApiAvailable()) return false;
+			if (IsDirectCompositionMode(mode) && !IsDirectCompositionApiAvailable())
+			{
+				beginFailure();
+				return false;
+			}
 			activeMode = mode;
 			std::cout << "Trying transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			if (!ConfigureWindow(mode))
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
 					<< " exStyle=0x" << std::hex
 					<< static_cast<unsigned long>(GetWindowLongPtrW(primaryWindow, GWL_EXSTYLE))
-					<< std::dec << " lastError=" << GetLastError() << std::endl;
+					<< std::dec << " lastError=" << initializeError << std::endl;
 				return false;
 			}
 			if (!CreateSwapChain(mode))
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "CreateSwapChain failed in mode " << TransparentPresentModeName(mode)
-					<< " lastError=" << GetLastError() << std::endl;
+					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
 
 			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height))
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "Renderer initialization failed in mode " << TransparentPresentModeName(mode)
-					<< " lastError=" << GetLastError() << std::endl;
+					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
 			if (!InitializePresenter())
 			{
+				const DWORD initializeError = GetLastError();
+				beginFailure();
 				std::cout << "Presenter initialization failed in mode " << TransparentPresentModeName(mode)
-					<< " lastError=" << GetLastError() << std::endl;
+					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
 			std::cout << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
@@ -794,25 +816,54 @@ namespace Inkeys::Drawing::Draw3
 		impl_->requestedOutputRevision = 0;
 		impl_->lastObservation = {};
 		if (!primaryWindow || !selectionWindow || !IsWindow(primaryWindow) ||
-			!IsWindow(selectionWindow)) return false;
-		if (options.requireMode)
+			!IsWindow(selectionWindow))
 		{
-			const bool initialized = impl_->TryInitialize(options.requiredMode);
-			if (!initialized) impl_->ReleaseAttempt();
-			return initialized;
+			options.failedCleanup.BeginKnownFailure();
+			return false;
 		}
+		const auto tryStartupMode = [&](TransparentPresentMode mode, bool terminal)
+		{
+			Shutdown::FailedCleanupDeadline releaseCleanup(options.failedCleanup.Publisher());
+			if (options.failedCleanup.HasPublisher()) releaseCleanup.PrepareOrFatal();
+			const auto releaseSignal = releaseCleanup.Signal();
+			const auto outerSignal = terminal ? options.failedCleanup : Shutdown::FailedCleanupSignal{};
+			bool initialized = false;
+			try
+			{
+				initialized = impl_->TryInitialize(mode, releaseSignal, outerSignal);
+				if (!initialized)
+				{
+					outerSignal.BeginKnownFailure(releaseSignal.BeginKnownFailure());
+					impl_->ReleaseAttempt();
+					if (!terminal)
+					{
+						const size_t nextIndex = TransparentPresentModeIndex(mode) + 1;
+						std::cout << "Transparent present mode " << TransparentPresentModeName(mode)
+							<< " failed; fallback to " << TransparentPresentModeName(kTransparentPresentModes[nextIndex]) << "." << std::endl;
+					}
+				}
+			}
+			catch (...)
+			{
+				// 异常已终止整个 startup，Host 后续释放继承本次局部失败的原 tick。
+				options.failedCleanup.BeginKnownFailure(releaseSignal.BeginKnownFailure());
+				throw;
+			}
+			// 下一模式是新的普通初始化；前一失败释放必须完成并真正 join 后才继续。
+			// 默认 empty Signal 不 Prepare，不增加 monitor 线程。
+			releaseCleanup.CompleteOrFatal();
+			return initialized;
+		};
+		if (options.requireMode)
+			return tryStartupMode(options.requiredMode, true);
 		const size_t modeCount = ARRAYSIZE(kTransparentPresentModes);
 		const size_t beginIndex = options.allowDirectComposition ? 0 : 1;
 		for (size_t index = beginIndex; index < modeCount; ++index)
 		{
-			if (impl_->TryInitialize(kTransparentPresentModes[index])) return true; // 按优先级选第一个可用透明呈现路径。
-			impl_->ReleaseAttempt();
-			if (index + 1 < modeCount)
-			{
-				std::cout << "Transparent present mode " << TransparentPresentModeName(kTransparentPresentModes[index])
-					<< " failed; fallback to " << TransparentPresentModeName(kTransparentPresentModes[index + 1]) << "." << std::endl;
-			}
+			if (tryStartupMode(kTransparentPresentModes[index], index + 1 == modeCount))
+				return true; // 按优先级选第一个可用透明呈现路径。
 		}
+		options.failedCleanup.BeginKnownFailure();
 		std::cout << "All transparent present modes failed." << std::endl;
 		return false;
 	}

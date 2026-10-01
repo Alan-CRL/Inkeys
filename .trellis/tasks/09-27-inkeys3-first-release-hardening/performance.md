@@ -1,5 +1,12 @@
 # 性能基准与口径
 
+## 2026-09-30 计量工程续接（不构成性能胜出）
+
+- UI3 U04-R raw recorder已Debug/strict Headless/独立实码通过；成功时刻仍为callback-end代理。B1真实四API后的提交戳与七职责分段已取得四条确定红，正在实现；B2/B3/F整体设计仍NEEDS_REVISION，必须冻结有限目标signature、SVG实际ready proof和exact私有输入/runner后才能采三轮。
+- Draw3 U1固定32MiB记录器、64pending、失败保留、seen/retained/drop/invalid分母、工具分群/schema2/null小样本P99及create-new已红→绿+独立GREEN；M16 Live/Laser数值反例亦CLI0。Host仍未传会话，正常Controller仍未产生权威栅格proof，当前这些是记录合同测试，不是Down到像素/成功呈现性能数据。
+- 下一U2/U3合同见integration-and-release-check/research/draw3-content-and-host-contract.md：lastConsumedSequence不等于模型采纳，currentContentRevision不等于逐笔内容，失败后rasterState也不等于L2成功；必须用实际adoptedSequence/authoritative stamp。Laser正式landing若producer不足要明确excluded，而其frame/生命周期仍单独调查；不得拿其它工具外推。
+- 当前仍不能声明UI3/Draw3相比H0、指定Canary或Inkeys2完整性能门槛通过。已有CPU子段数据/撤销的候选原样保留；后续Release真实模块采样与on/off语义/像素复验不与编译/扫描并行，Win7/真输入/光学/HC-H2身份仍单列。
+
 ## 四个基准
 
 | 基准 | 版本/状态 | 可比性 |

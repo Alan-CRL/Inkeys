@@ -11,6 +11,59 @@ namespace Inkeys::UI::RenderPipeline::DiagnosticsDetail
 		constexpr auto DiagnosticInterval = std::chrono::seconds(1);
 		constexpr bool HealthySummariesEnabled = false;
 
+		[[nodiscard]] bool PresentFailed(const FrameDiagnostics& sample) noexcept
+		{
+			return sample.presentFailed
+				|| sample.resourceResult < 0 || sample.getDcResult < 0
+				|| sample.releaseDcResult < 0 || sample.endDrawResult < 0
+				|| (sample.ulwAttempted && sample.ulwError != 0);
+		}
+
+		[[nodiscard]] bool FrameFailed(FrameResult result, const FrameDiagnostics& sample) noexcept
+		{
+			return PresentFailed(sample) || sample.callbackException || result == FrameResult::DeviceLost;
+		}
+
+		[[nodiscard]] bool RawCallbackTimeValid(const RawCallbackSample& sample) noexcept
+		{
+			return sample.endTicks >= sample.startTicks
+				&& sample.startTicks >= sample.frameTimeTicks
+				&& (!sample.hasPreviousActiveCallback
+					|| sample.startTicks >= sample.previousActiveCallbackTicks)
+				&& (!sample.hasPreviousActiveCommit
+					|| sample.endTicks >= sample.previousActiveCommitTicks);
+		}
+
+		[[nodiscard]] BarCommitStampStatus ClassifyBarCommitStamp(const RawCallbackSample& sample) noexcept
+		{
+			const auto& frame = sample.frame;
+			if (!frame.hasBarCommitStamp)
+				return sample.client == Client::Bar && frame.presentCommitted
+					? BarCommitStampStatus::Unverified : BarCommitStampStatus::Absent;
+			// 真戳只能来自 Bar 的完整事务，坏值保留原样与独立分母。
+			if (sample.client != Client::Bar || !frame.barSampled
+				|| !frame.presentAttempted || !frame.ulwAttempted || !frame.ulwSucceeded
+				|| !frame.presentCommitted || frame.presentDeferred || frame.backoffSkipped
+				|| FrameFailed(sample.result, frame) || frame.ulwError != 0
+				|| frame.barCommitEpoch == 0 || frame.barCommitEpoch != sample.contextEpoch
+				|| frame.barCommitEpoch != frame.epoch || frame.barAttemptSerial == 0
+				|| frame.barAttemptSerial != frame.presentAttemptFrameSerial
+				|| !RawCallbackTimeValid(sample) || frame.barCommitTicks < sample.startTicks
+				|| frame.barCommitTicks > sample.endTicks
+				|| (sample.hasPreviousTrueBarCommit && frame.barCommitTicks < sample.previousTrueBarCommitTicks))
+				return BarCommitStampStatus::Invalid;
+			return BarCommitStampStatus::Valid;
+		}
+
+		[[nodiscard]] bool RawBatchTimeValid(const RawBatchSample& sample) noexcept
+		{
+			return sample.endTicks >= sample.beginTicks
+				&& sample.beginTicks >= sample.frameTimeTicks
+				&& (!sample.recoveryAttempted
+					|| (sample.recoveryEndTicks >= sample.recoveryStartTicks
+						&& sample.recoveryStartTicks >= sample.beginTicks));
+		}
+
 		double Milliseconds(DiagnosticClock::duration duration) noexcept
 		{
 			return std::chrono::duration<double, std::milli>(duration).count();
@@ -141,11 +194,8 @@ namespace Inkeys::UI::RenderPipeline::DiagnosticsDetail
 				}
 				out.latest = sample;
 				// Retry 也用于合法的布局交接；只有实际失败信息才建立错误/恢复链。
-				const bool presentFailed = sample.presentFailed
-					|| sample.resourceResult < 0 || sample.getDcResult < 0
-					|| sample.releaseDcResult < 0 || sample.endDrawResult < 0
-					|| (sample.ulwAttempted && sample.ulwError != 0);
-				const bool failed = presentFailed || sample.callbackException || result == FrameResult::DeviceLost;
+				const bool presentFailed = PresentFailed(sample);
+				const bool failed = FrameFailed(result, sample);
 				if (failed)
 				{
 					++out.failures;

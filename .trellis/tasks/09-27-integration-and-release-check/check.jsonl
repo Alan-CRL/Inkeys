@@ -1,3 +1,24 @@
 {"file": ".trellis/spec/native-desktop/index.md", "reason": "Final production quality checklist"}
 {"file": ".trellis/spec/shaders/build-and-encoding.md", "reason": "Shader resource packaging"}
 {"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/baseline-sources.md", "reason": "Comparability and compatibility gaps"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "Review actual shutdown calls and deadlines"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/post-commit-completion-audit.md", "reason": "Independent remaining scope and classification"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-arm-deadline-design.md", "reason": "E01 contract and private test envelope"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-arm-deadline-design-review.md", "reason": "Independent implementation constraints"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/startup-failure-boundary-code-review.md", "reason": "Independent startup caller review"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-raw-capture-code-review.md", "reason": "Independent Scheduler capture review"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/draw3-metrics-design-review.md", "reason": "Metrics proof and sample population gate"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/startup-no-hold-design.md", "reason": "无hold启动故障的真实提示自然返回反例，独立安全检查后由root运行"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-lifetime-contract.md", "reason": "C known-failure cleanup owning lifetime/CAS/noreturn/真实Host和UInk恢复合同，待设计审查"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-real-presentation-contract.md", "reason": "UI3真实Bar事务/stages/SVG/私有HWND采样合同，待设计审查"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-lifetime-design-review.md", "reason": "C最终冻结合同独立GREEN设计和剩余边界"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-harness-design.md", "reason": "C-P1新purpose/96B映射的copied-child红绿与精确退出判据"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-finite-target-and-fixture-design-review.md", "reason": "Independent R2 design decisions and implementation gates"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/draw3-content-proof-p1-code-review.md", "reason": "Actual P1 helper review and pending P2 production gates"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-real-cases-design-review.md", "reason": "Independent real cleanup protocol and lifetime design"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-real-cases-code-and-safety-review.md", "reason": "Exact source and per-selector safety with unreadable future reader gaps"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-finite-candidate-code-review.md", "reason": "B2-P2实际caller和F066完整编译及数值独立GREEN，B3/F仍待"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/uink-sibling-maxpath-design-review.md", "reason": "Independent UInk path contract, unresolved cleanup identity race and actual RED/GREEN gates"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-svg-proof-code-review.md", "reason": "Independent actual SVG proof caller review and H1 ordered-clear regression"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-svg-proof-h1-code-review.md", "reason": "Final scoped H1 ordered-clear actual RED/GREEN review"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/uink-sibling-maxpath-code-review.md", "reason": "Shared UInk legal230 true RED/GREEN with independent cleanup gap"}

@@ -2,3 +2,24 @@
 {"file": ".trellis/spec/ppt-interop/com-contract.md", "reason": "PptCOM DLL TLB and ABI outputs"}
 {"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/baseline-sources.md", "reason": "Version sources and device setup"}
 {"file": ".trellis/tasks/09-27-inkeys3-first-release-hardening/research/architecture-and-validation.md", "reason": "Current build and tests"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "Shutdown intent, durable drain and failure boundary contracts"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "Production fault injection and evidence limits"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/post-commit-completion-audit.md", "reason": "Postcommit E01-E04 actionable coverage gaps"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-arm-deadline-design.md", "reason": "Reviewed Failed-only normal intent deadline design"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/startup-failure-boundary-design.md", "reason": "Reviewed startup failure boundaries"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-raw-sampling-design.md", "reason": "Reviewed bounded raw Scheduler capture"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/draw3-metrics-implementation-design.md", "reason": "Reviewed production metrics U1-U3 split"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-lifetime-contract.md", "reason": "已审C owningState、noreturn与分单元真实验收合同"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-lifetime-design-review.md", "reason": "C最终冻结合同独立GREEN设计和剩余边界"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-harness-design.md", "reason": "C-P1新purpose/96B映射的copied-child红绿与精确退出判据"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-finite-target-and-fixture-contract.md", "reason": "Reviewed finite UI3 R2 publication resource and owned fixture contract"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/draw3-content-and-host-contract.md", "reason": "Reviewed Draw3 actual content and Host sampling contract"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-real-cases-contract.md", "reason": "Reviewed real owner and persistence fault scenarios"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/failed-cleanup-real-root-implementation.md", "reason": "Root authorization Main shared span ownership and exact build boundaries"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-finite-candidate-png-fix.md", "reason": "B222合法前提归因RED与最小PNG角色GREEN，保留失败和最终源身份"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-svg-proof-implementation.md", "reason": "B3 firstSVG/late资源finalize/NoRetained最小方案和真实API RED；完整读取新报告"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/uink-sibling-maxpath-design.md", "reason": "Confirmed shared UInk sibling path boundary and narrow design"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/uink-sibling-maxpath-design-review.md", "reason": "Independent same-parent short GUID design approval and explicit path limits"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-fixture-source-design-review.md", "reason": "Frozen independent F A/B/C and strict lifecycle design"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/ui3-fixture-observer-root-implementation.md", "reason": "Actual root observer exact-outcome checkpoint and early dispatcher identity"}
+{"file": ".trellis/tasks/09-27-integration-and-release-check/research/draw3-host-metrics-implementation.md", "reason": "U3-H actual owner Session lifecycle and bounded smoke scope"}

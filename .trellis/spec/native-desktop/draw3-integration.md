@@ -388,3 +388,18 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 
 - 源任务历史统一保存到 `.trellis/tasks/archive/2026-08/draw3-source/`；其中 `active/` 保留源快照的 `in_progress` 状态但不进入目标 active task 列表，原 2026-07/08 归档按月份保留。
 - 截至 2026-08-16，文件/资源映射、固定库 ABI、HWND/owner/Z 序、独立设备和唯一 RTS 约束已完成静态审计；ARM64 Debug/Release Solution 全量 Rebuild、`--no-window` 纯逻辑测试和隐藏 HWND 的真实 DComp/DWM2/DWM/ULW 合成测试均通过。测试按 DComp-compatible 与 legacy 两个顺序生命周期运行，并验证样式回调结果与实际样式一致；产品启动使用同样的显示前顺序重建合同。
+
+## RuntimeMetrics 有限软件证据（2026-09-30）
+
+- Session 的唯一 render owner 预分配固定 payload，总预算32MiB（不含 allocator metadata），open-address 去重表负载不超过0.5，最多64 pending；这些是诊断容量，不限制产品准入或减少输入。超容量保持 seen/dropped/invalid/missing 分母，不覆盖前缀，不热扩容/写盘/log。
+- 每个真实 Down 只登记一次实际源 QPC/tool/device 和 opaque record值+generation，保存数值不延长或读取ContactRecord寿命。布局/当前frame/output/content身份为完整proof；失败不能通过lastConsumedSequence、hasContent revision或old snapshot推定采纳/权威像素。
+- 同步记实际Present attempt/result。Stored proof可在Up/recycle后按纯值保留，失败后只能在同一当前权威内容的新成功帧确认；Live/Laser必须当前帧重新Stage，BeginFrame不能借用旧活动层proof。旧API/无proof一律legacy/unverified，不宣称正式Down landing。
+- schema2区分attempt/success/failure/unknown、finite invalid/drop/missing和不支持项。tool按真实enum映射。统计仅有限有效分母；小于1000有效样本P99=null，空值null，legacyThresholdMet不是releaseVerdict。WriteJson只在owner结束后离线create-new，不覆盖已有用户文件。
+- U1/M01–M16直接测试真实Session/Coordinator与错误身份/失败/精确帧restage，Debug CPU probe绿和独立review只证明数值合同。实际Controller normalRun/PresentFrame采用源、Host是否创建Session、phase和三轮完整DComp/ULW轨迹必须另由U2/U3证据确认；未实现的接线不能记PASS。
+- Laser的正式Down/Up landing在首次有限proof中不支持，但真实帧成本、Hold/Fade/particle、输入语义和长期资源仍必须单独调查。Down/Move/Up逻辑提交、软件Present return、光学像素可见及GPU duration分别报告，不用一种替代其它。
+
+## 共享 UInk 内部 sibling 路径合同
+
+主产品直接编译共享 `inkStrokeModelerTest/draw3/uink_file.cpp`。SaveUInkFile 的 temp/backup/new-recovery 必须使用规范化最终路径的原同父前缀加独立 GUID36 短叶及固定后缀，不再次拼入最终末名；同目录/同卷原子替换、CREATE_NEW、锁、strong source revision/SHA 和最终格式不变。恢复调用者消费实际返回的 opaque recoveryPath，不能按最终 basename 猜恢复文件名。
+
+此短内部名称不承诺任意最终长路径支持：普通父前缀加最长49字符内部叶仍受 Win32 路径边界约束；不以新 manifest/registry/补丁提升最低平台，不授权按后缀清理未知文件。2026-10-01 shared helper 的合法230首存/更新/predecessor严格回归已真实红绿；主产品原PPT长路径C10、Release三架构与Win7真机仍分别待验证。清理创建/身份归属竞态独立F069，命名修补不能证明其已解决。

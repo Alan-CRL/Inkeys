@@ -4,6 +4,8 @@ module;
 #include <shobjidl.h>
 #include <windows.h>
 
+#include "../Helper/FailedCleanupDeadline.h"
+
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -150,7 +152,8 @@ namespace Inkeys::Window
 			Stop();
 		}
 
-		[[nodiscard]] bool Start(std::vector<WindowSpec> specs)
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs,
+			Shutdown::FailedCleanupSignal failedCleanup)
 		{
 			std::scoped_lock lifecycleLock(lifecycleMutex_);
 			if (shutdownRequested_.load(std::memory_order_acquire))
@@ -158,43 +161,54 @@ namespace Inkeys::Window
 			if (running_.load(std::memory_order_acquire))
 				return false;
 
-			ResetState();
-			for (auto& spec : specs)
+			try
 			{
-				if (!IsValidRole(spec.role) || specs_[RoleIndex(spec.role)].has_value())
+				ResetState();
+				for (auto& spec : specs)
+				{
+					if (!IsValidRole(spec.role) || specs_[RoleIndex(spec.role)].has_value())
+						return false;
+					if (spec.width <= 0 || spec.height <= 0)
+						return false;
+					configured_[RoleIndex(spec.role)].store(true, std::memory_order_relaxed);
+					specs_[RoleIndex(spec.role)] = std::move(spec);
+				}
+
+				overlayEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+				settingEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+				std::promise<bool> overlayPromise;
+				std::promise<bool> settingPromise;
+				auto overlayReady = overlayPromise.get_future();
+				auto settingReady = settingPromise.get_future();
+				running_.store(true, std::memory_order_release);
+
+				overlayThread_ = std::jthread(
+					[this, failedCleanup, promise = std::move(overlayPromise)](std::stop_token token) mutable
+					{
+						RunGroup(false, token, std::move(promise), failedCleanup);
+					});
+				settingThread_ = std::jthread(
+					[this, failedCleanup, promise = std::move(settingPromise)](std::stop_token token) mutable
+					{
+						RunGroup(true, token, std::move(promise), failedCleanup);
+					});
+
+				const bool started = overlayReady.get() && settingReady.get();
+				if (!started)
+				{
+					failedCleanup.BeginKnownFailure();
+					StopUnlocked();
 					return false;
-				if (spec.width <= 0 || spec.height <= 0)
-					return false;
-				configured_[RoleIndex(spec.role)].store(true, std::memory_order_relaxed);
-				specs_[RoleIndex(spec.role)] = std::move(spec);
+				}
+				return true;
 			}
-
-			overlayEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-			settingEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-			std::promise<bool> overlayPromise;
-			std::promise<bool> settingPromise;
-			auto overlayReady = overlayPromise.get_future();
-			auto settingReady = settingPromise.get_future();
-			running_.store(true, std::memory_order_release);
-
-			overlayThread_ = std::jthread(
-				[this, promise = std::move(overlayPromise)](std::stop_token token) mutable
-				{
-					RunGroup(false, token, std::move(promise));
-				});
-			settingThread_ = std::jthread(
-				[this, promise = std::move(settingPromise)](std::stop_token token) mutable
-				{
-					RunGroup(true, token, std::move(promise));
-				});
-
-			const bool started = overlayReady.get() && settingReady.get();
-			if (!started)
+			catch (...)
 			{
+				// thread/promise 的部分启动失败仍先建立截止，再等待已创建 owner。
+				failedCleanup.BeginKnownFailure();
 				StopUnlocked();
 				return false;
 			}
-			return true;
 		}
 
 		void Stop() noexcept
@@ -690,7 +704,8 @@ namespace Inkeys::Window
 		void StopUnlocked() noexcept
 		{
 			if (!running_.exchange(false, std::memory_order_acq_rel) &&
-				!overlayThread_.joinable() && !settingThread_.joinable())
+				!overlayThread_.joinable() && !settingThread_.joinable() &&
+				!overlayEvent_ && !settingEvent_)
 				return;
 
 			overlayThread_.request_stop();
@@ -729,7 +744,8 @@ namespace Inkeys::Window
 			}
 		}
 
-			void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise)
+			void RunGroup(bool settingGroup, std::stop_token token, std::promise<bool> readyPromise,
+				Shutdown::FailedCleanupSignal failedCleanup)
 			{
 				const DWORD threadId = GetCurrentThreadId();
 				(settingGroup ? settingThreadId_ : overlayThreadId_).store(
@@ -741,16 +757,20 @@ namespace Inkeys::Window
 				bool created = false;
 				try
 				{
-					created = CreateGroup(settingGroup, threadId);
+					created = CreateGroup(settingGroup, threadId, failedCleanup);
+					if (!created) failedCleanup.BeginKnownFailure();
 					readyPromise.set_value(created);
 				}
 				catch (...)
 				{
+					failedCleanup.BeginKnownFailure();
+					created = false;
 					try { readyPromise.set_value(false); }
 					catch (...) {}
 				}
 				if (!created)
 				{
+					failedCleanup.BeginKnownFailure();
 					DestroyGroup(settingGroup);
 					(settingGroup ? settingThreadId_ : overlayThreadId_).store(
 						0, std::memory_order_release);
@@ -808,7 +828,8 @@ namespace Inkeys::Window
 				if (comOwned) CoUninitialize();
 			}
 
-		[[nodiscard]] bool CreateGroup(bool settingGroup, DWORD threadId)
+		[[nodiscard]] bool CreateGroup(bool settingGroup, DWORD threadId,
+			Shutdown::FailedCleanupSignal failedCleanup)
 		{
 			constexpr WindowRole overlayCreationOrder[] = {
 				WindowRole::MagnifierHost,
@@ -827,13 +848,14 @@ namespace Inkeys::Window
 			if (settingGroup)
 			{
 				const auto& spec = specs_[RoleIndex(WindowRole::Setting)];
-				if (!spec || CreateWindowFor(*spec, nullptr, threadId)) return true;
+				if (!spec || CreateStartupWindowFor(*spec, nullptr, threadId, failedCleanup)) return true;
 				if (spec->optional)
 				{
 					configured_[RoleIndex(WindowRole::Setting)].store(
 						false, std::memory_order_release);
 					return true;
 				}
+				failedCleanup.BeginKnownFailure();
 				return false;
 			}
 
@@ -857,7 +879,11 @@ namespace Inkeys::Window
 					roleOwner = Handle(WindowRole::Freeze);
 					if (!roleOwner)
 					{
-						if (!spec->optional) return false;
+						if (!spec->optional)
+						{
+							failedCleanup.BeginKnownFailure();
+							return false;
+						}
 						configured_[RoleIndex(role)].store(false, std::memory_order_release);
 						continue;
 					}
@@ -868,16 +894,24 @@ namespace Inkeys::Window
 					roleOwner = Handle(WindowRole::DrawpadPresentation);
 					if (!roleOwner)
 					{
-						if (!spec->optional) return false;
+						if (!spec->optional)
+						{
+							failedCleanup.BeginKnownFailure();
+							return false;
+						}
 						configured_[RoleIndex(role)].store(false, std::memory_order_release);
 						continue;
 					}
 				}
 				else if (IsUiPopup(role))
 					roleOwner = Handle(WindowRole::Drawpad);
-				if (!CreateWindowFor(*spec, roleOwner, threadId))
+				if (!CreateStartupWindowFor(*spec, roleOwner, threadId, failedCleanup))
 				{
-					if (!spec->optional) return false;
+					if (!spec->optional)
+					{
+						failedCleanup.BeginKnownFailure();
+						return false;
+					}
 					configured_[RoleIndex(role)].store(false, std::memory_order_release);
 					continue;
 				}
@@ -889,10 +923,35 @@ namespace Inkeys::Window
 			return true;
 		}
 
+		[[nodiscard]] bool CreateStartupWindowFor(const WindowSpec& spec, HWND owner,
+			DWORD threadId, Shutdown::FailedCleanupSignal failedCleanup)
+		{
+			if (!spec.optional || !failedCleanup.HasPublisher())
+				return CreateWindowFor(spec, owner, threadId, failedCleanup);
+			// optional 的失败只约束本次 rollback，真 join 后才继续下一普通创建。
+			Shutdown::FailedCleanupDeadline optionalCleanup(failedCleanup.Publisher());
+			optionalCleanup.PrepareOrFatal();
+			const auto optionalSignal = optionalCleanup.Signal();
+			bool created = false;
+			try
+			{
+				created = CreateWindowFor(spec, owner, threadId, optionalSignal);
+			}
+			catch (...)
+			{
+				// 未处理异常将使整个 group 失败，后续 DestroyGroup 继承同一原 tick。
+				failedCleanup.BeginKnownFailure(optionalSignal.BeginKnownFailure());
+				throw;
+			}
+			optionalCleanup.CompleteOrFatal();
+			return created;
+		}
+
 		[[nodiscard]] bool CreateWindowFor(
 			const WindowSpec& spec,
 			HWND owner,
-			DWORD threadId)
+			DWORD threadId,
+			Shutdown::FailedCleanupSignal failedCleanup = {})
 		{
 			auto& record = records_[RoleIndex(spec.role)];
 			// 每次创建都绑定自己的生命周期描述，动态重建不会误用旧回调。
@@ -901,10 +960,10 @@ namespace Inkeys::Window
 			{
 				bool prepared = false;
 				try { prepared = spec.beforeCreate(); }
-				catch (...) {}
+				catch (...) { failedCleanup.BeginKnownFailure(); }
 				if (!prepared)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 				record.lifecycleActive = true;
@@ -935,7 +994,7 @@ namespace Inkeys::Window
 					record.classRegistered = true;
 				else if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 			}
@@ -983,12 +1042,13 @@ namespace Inkeys::Window
 			if (!hwnd)
 			{
 				const DWORD createError = GetLastError();
+				failedCleanup.BeginKnownFailure();
 				wchar_t diagnostic[256]{};
 				swprintf_s(diagnostic, L"Inkeys.Window create failed: role=%u error=%lu class=%s\n",
 					static_cast<unsigned>(spec.role), createError, record.className.c_str());
 				OutputDebugStringW(diagnostic);
 				std::fwprintf(stderr, L"%s", diagnostic);
-				RollbackCreation(record);
+				RollbackCreation(record, failedCleanup);
 				return false;
 			}
 			if (!record.lifecycleActive)
@@ -1001,7 +1061,7 @@ namespace Inkeys::Window
 				record.messagesBound = record.channel->Bind(hwnd, spec.messageOptions);
 				if (!record.messagesBound)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 			}
@@ -1023,7 +1083,7 @@ namespace Inkeys::Window
 				try { spec.created(hwnd); }
 				catch (...)
 				{
-					RollbackCreation(record);
+					RollbackCreation(record, failedCleanup);
 					return false;
 				}
 			}
@@ -1081,8 +1141,11 @@ namespace Inkeys::Window
 			record.className.clear();
 		}
 
-		static void RollbackCreation(WindowRecord& record) noexcept
+		static void RollbackCreation(WindowRecord& record,
+			Shutdown::FailedCleanupSignal failedCleanup) noexcept
 		{
+			// 已知失败必须先激活，再进入 channel/DestroyWindow/lifecycle 清理。
+			failedCleanup.BeginKnownFailure();
 			record.ready.store(false, std::memory_order_release);
 			const HWND hwnd = record.hwnd.load(std::memory_order_acquire);
 			if (hwnd && record.messagesBound && record.channel)
@@ -2002,9 +2065,10 @@ namespace Inkeys::Window
 
 	Service::~Service() = default;
 
-	bool Service::Start(std::vector<WindowSpec> specs)
+	bool Service::Start(std::vector<WindowSpec> specs,
+		Shutdown::FailedCleanupSignal failedCleanup)
 	{
-		return impl_->Start(std::move(specs));
+		return impl_->Start(std::move(specs), std::move(failedCleanup));
 	}
 
 	void Service::StopAndJoin() noexcept { impl_->Stop(); }

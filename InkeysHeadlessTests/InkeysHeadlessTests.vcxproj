@@ -134,6 +134,9 @@
     <ClCompile Include="..\Inkeys\Inkeys\Graphics\Surface.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Message\Message.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Helper\FailedCleanupDeadline.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentationProbe.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Presentation.Source.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Window\Window.cppm" />
     <ClCompile Include="animation_tests.cpp" />

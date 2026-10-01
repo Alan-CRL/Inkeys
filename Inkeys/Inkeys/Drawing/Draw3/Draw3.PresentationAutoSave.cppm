@@ -149,6 +149,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 只供隔离测试停在 UInk 已提交、索引尚未发布的真实 worker 断点。
 		void* afterUInkCommittedEvent = nullptr;
 		void* continueIndexCommitEvent = nullptr;
+		// 只供授权 fixture 记录已返回的保存错误；不改变正常保存结果。
+		bool logSaveIoDiagnostics = false;
 	};
 
 	void SetPresentationAutoSaveTestFaultInjection(

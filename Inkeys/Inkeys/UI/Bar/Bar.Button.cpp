@@ -11,6 +11,8 @@ module;
 #include "../../../IdtConfiguration.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.A2.h"
+#include "Bar.PresentationProbe.h"
+#include "Bar.Presentation.Source.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -295,8 +297,12 @@ void BarButtonSetClass::PresetInitialization()
 		{
 			obj->clickFunc = [&]() -> void
 				{
+					// 真 Draw callback 第一业务写前再核当前 Up 和同一个 Pen baseline。
+					if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::Bar::Ui3FiniteScene::DrawAttribute,
+						Inkeys::UI::Bar::Ui3FixtureActionPoint::Callback)) return;
 					if (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen)
 					{
+						Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::UnsupportedState);
 						if (ChangeStateModeToPen())
 						{
 							barUISet.barState.drawAttribute = false;
@@ -306,7 +312,13 @@ void BarButtonSetClass::PresetInitialization()
 					else
 					{
 						if (!barUISet.TryBeginToggle(
-							BarToggleChannel::DrawAttribute)) return;
+							BarToggleChannel::DrawAttribute))
+						{
+							Inkeys::UI::Bar::RejectCurrentUi3FiniteBusiness(Inkeys::UI::Bar::Ui3FiniteStatus::RejectedByBusiness);
+							return;
+						}
+						// 只在真实toggle接受点标记，之后仍走原决策与StateUpdate规范化。
+						Inkeys::UI::Bar::MarkCurrentUi3FiniteBusinessAccepted();
 						const auto decision = ResolveBarDrawButtonToggleDecision(
 							barUISet.barState.drawAttribute);
 						if (decision.openDrawAttribute)

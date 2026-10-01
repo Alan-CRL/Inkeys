@@ -2,7 +2,15 @@
 
 每条 finding 需有 ID、confirmed/hypothesis/not reproducible/already fixed/not applicable、严重性、当前代码证据、触发、实际影响、来源 commit、最小修复与验证。假设不得写成确认缺陷。
 
-## 2026-09-29 17:58 状态修订
+## 2026-09-30 工程续接状态（分项证据）
+
+- F-043/P1-01：普通首次意图的双监督失败同步截止已实施，Debug ARM64真实6场景red→green、2授权拒绝/旧22回归及独立源码review通过；合并源码Release三架构完整Solution Build、新失败边界专项、parked生产CLI及严格Headless逐项各0。新函数不是UEF/低层任意Failed通用处理，双失败Restart不保证launcher；sentinel不升级UInk恢复。
+- F-064（confirmed条件性输入失效，P2）：旧版本Controller三处initializeStroke失败按tablet/contact key取消新producer/过早回收旧handle。真实共用helper红CLI PID17248自然1、I01/I02共11断言失败；精确handle+generation Discard后绿CLI PID34784自然0，旧4项PASS、严格Headless0、独立源码review GREEN。原三个modeler失败分支本身及真笔/普通PPT全Run仍未注入；不称用户画布卡死唯一根因。
+- F-063 当前修补：fatal helper/caller在logger/提示/清理前Arm；D005每个失败先锁存适用错误再Arm（不保证LastError的bool/HANDLE helper用通用ERROR_GEN_FAILURE），源码独立复审GREEN。D004真实wWinMain红63→绿0，随后D005/D003/B002私有站点各绿0；B002只覆盖实际Main处理合成状态，不称自然Bar注册故障。无hold及内部failedStart cleanup另待验证。B004未保护来源与B001/B002的首帧宽度config.Write交错均经实际生产次序排除；B003无实际发布者。
+- E02：已知失败 Start 清理与 DComp→ULW owner join 的启动截止待验证；正常 Armed/FallbackArmed 的 Host 保存 drain 受既有监督保护。不能将可恢复 DComp 失败无条件改成 Close，也不能仅为内部 wait 无 timeout 便上报无条件死锁。
+- E04：集成 Host 未启用已有 RuntimeMetricsSession；正在只读核对成功 Present/失败后 landing 归属。尚未取得整帧性能样本，不将旧 CPU 子段结果升级为主观体验/可见延迟通过。
+
+## 2026-09-29 17:58 状态修订（历史）
 
 以下覆盖表优先于旧逐项行；旧行保留发现时的证据和历史状态。当前自动结果不升级真机、人工体验或正式发布门。
 
@@ -91,3 +99,34 @@
 | F-054 | confirmed（F-041 新 fail-closed Current Load 临时失败后同目标无重试） | 高/安全阻止覆盖的同时可能长期禁用 PPT 输入 | `DrawingController.cpp` 收到 Current IoError/SourceChanged/foreign 后清 loadPending 并置 persistenceInitialized=false；下游拒绝真实 Down/画布命令。唯一同 target retry 在再次收到 SetPresentationTarget 时，但 Host 只在 targetRevision 变化或 restoreLatestScene 时发布；同一目标临时文件错误消失后也没有内生 wake/重试，UI可长时间保持不能书写。H0 曾错误地允许空槽继续编辑，F-041 fail-closed 方向正确；不能为绿测重新放开旧文件覆盖。 | 独立 Controller reviewer 正写实际 diff 报告；待真实生产 Controller+Storage 注入一次 Current IoError、故障解除但 targetRevision 不变的 no-HWND 红测，随后添加有界退避、同 generation/target 身份的重试和成功后 ready 恢复。永久损坏/foreign 仍 fail-closed 且诊断/人工处理分列。 | 已确认（静态调用链），动态红/修补/GUI/PPT/Win7 未验证，发布门禁 |
 
 已确认严重崩溃、死锁、数据损坏、输入失效或高危可利用问题在未修复且未验证前均是发布阻塞。已扫描/编译成功不自动消除风险。
+
+## F-065：新增 strict fixture reader 的预读边界（2026-09-30）
+
+- 状态：confirmed（当前新增源码的静态边界错误）/已确认失败待修；严重性P2/测试隔离与证据完整性。不是普通产品可达高危漏洞，当前新CLI reader分支仍明确90，C3-A/C07未调用该函数。
+- 证据：独立failed-cleanup-real-cases-code-and-safety-review.md核AutoSave.cpp754–828，ReadLastCommittedDesktopAutoSaveFixture在781/785先ReadIndex，805–809才拒index reparse；生产ReadTextFile290–294普通CreateFile可先跟随链接读取外部字节。root/date仅attrs检查，无artifact层保活lease。Root ValidCleanupReceipt也尚未按future reader case族严格核workspace/真实enum/日期月份/SlideIDs，未满足合法expected合同。
+- 触发：显式隔离fixture调用strict reader且index/目录遭重解析替换；或future reader接受不合case的expected。当前只确认源码次序/校验缺口，未执行受限reparse故障注入，不称自然用户恢复缺陷。
+- 最小修复：fixture专用层在任何ReadIndex/ReadUInk之前，对所有artifact/root/date组件和index/backup/选中UInk先OPEN_REPARSE_POINT只读lease核regular/nonreparse，保活到完整读取结束；保留普通ReadIndex/SubmitLoad语义。Root按case族核合法expected，reader负例须early拒绝而非读后拒。各writer仍独占自己的source。
+- 验证门：自有隔离数据positive/negative与无权限reparse能力边界分别记录；实际文件访问/枚举早拒/最后committed完整receipt、C3-B fullBuild+fresh reader+独立安全审查后才关闭。不因此撤回已有C3-A九selector的STATIC/CLEAR，也不凭未运行代码给C3-B许可。
+
+## F-066：颜色环PNG的有限布局计量遗漏（2026-10-01）
+
+- 状态：confirmed，最小修补/回归中。严重性：P2（显式私有观察准确性）；未证实产品PNG动画/渲染功能错误。
+- 证据：Bar.RenderLoop::Advance原pngMap loop将geometry/visibility全部Unspecified；真实DrawAttributeBar_ColorSelect12Wheel在Submit设置x/y/w/h/pct，其它AttributePreview已seen不代表它已IsSame，可能提前判settled。
+- 修补：只将真实可见/target相关颜色环PNG的geometry/enable/pct归AttributePreview；共用纯值映射由真实caller及B222 observer回归使用。普通无probe不额外读原子visibility，保持原advance/draw/缓存/Request/dirty次序，不新增PNG像素认证。
+- 验证：独立review已证遗漏；新B222 RED→GREEN/完整caller编译/独立增量尚待，未将旧B2数值PASS当覆盖。
+
+### F-066 复验更新
+
+最终状态：已验证通过（仅有限布局观察/caller编译）。合法66+三前置的真实RED pid10952/1准确B222失败；最小role映射Green后完整Debug0、Headless26160/0及独立GREEN。两个非法67的早期失败和C3861编译失败全部留存，不作因果证据。实际SVG/PNG像素/主栏性能未因此通过。
+
+## F-067：UInk内部临时sibling重复末名越路径边界
+
+confirmed/P2保存可用性：主工程共享SaveUInkFile的合法最终230WCHAR目标，UniqueSiblingPath追加41后temp271，outside真实WriteFailed/error3；同API纯229成功/271(父存在)error3/extended271成功，区分短missingparent相同3。具体root与设计uink-sibling-maxpath-design.md，最小父内GUID-only leaf待独立审/真实生产RED→GREEN，未修改system/manifest/minWin7。Desktop索引5不混此finding，已同PE outside归runner限制。最终>260路径支持不自动升级。
+
+## F-068：UI3 opt-in SVG 观察的 Clear/unknown 写入顺序资格
+
+confirmed/P1证据正确性：Probe CompleteAttempt使用本帧ever-fullClear恢复Hidden lineage，即使之后UnknownWrite在旧bounds外留下真实像素。独立BBC6…18A查实；新H100三帧真D2D残留像素前提/H102反向正确序绿，H101唯一RED。影响为私有opt-in诊断可能虚报HiddenExpected，不证普通产品像素本身被本探针改变。最小有序资格修复已真实H101红→绿，完整Debug/offscreen/strictHeadless/parked/PptCOM均0且独立3DC71D46…95D33窄门GREEN；不允许凭旧B3 tests0把此项关闭，不列性能收益。
+
+## F-069：UInk内部路径清理缺少创建/身份归属证明（独立未处置）
+
+confirmed-static / 条件性P2未知文件删除风险：uink_file.cpp DeletePathOnExit在CREATE_NEW之前默认active，若PathExists检查后其它writer占candidate，创建失败仍按路径DeleteFileW。另backup/recovery/commit成功清理均按路径；同身份检查与删除之间可被同目录并发修改。来源d272f888/followup UInk导入，独立A10C0AE4…D3450附录确认，不是F067命名新增。触发需本地有同目录写/替换能力，尚无生产动态race复现；不是远端无前提高危漏洞结论。最小下一设计为先证明本次实际创建/恢复来源，再在同一Win7-compatible DELETE HANDLE上核nonreparse/identity后FileDispositionInfo；现有keepalive/权限失败安全保留边界需独立冻结与回归，不声称当前已修。

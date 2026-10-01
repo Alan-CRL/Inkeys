@@ -2,7 +2,62 @@
 
 状态枚举同 execution-ledger.md。每条命令记时间、配置、退出码、关键输出/产物、代码或环境归因；自动测试、构建、人工体验和发布判断分开。
 
-## 2026-09-29 10:15 +08:00 最新集成复验摘要
+## 2026-09-30 提交后核对（本轮无产品修补）
+
+后续工程续接已产生以下产品改动；本标题的“无产品修补”仅描述较早完成度核对，不描述下表检查点。
+
+| 单元 | 实际命令/配置 | 退出码及结果 | 原始证据/限制 |
+| --- | --- | --- | --- |
+| E01 harness 红 | 完整 InkeysRepo.sln Debug ARM64 Build；Inkeys.exe --shutdown-supervisor-tests --failed-arm-only | Build0、CLI62；6真实Failed入口失败、2授权拒绝PASS | e01-failed-arm-red-debug-arm64-build.log、同前缀stdout/stderr；实际state3/cleanup1/25秒仍alive，非环境假红 |
+| E01 修补绿 | 完整 Debug ARM64 Build；Inkeys.exe --shutdown-supervisor-tests | Build0、CLI0；旧22及新6+2通过（另1汇总，31PASS标签） | e01-failed-arm-green-debug-arm64-build.log、e01-failed-arm-green-debug-arm64-full-supervisor.*；普通约15.03秒、耗6秒仍按原截止、过期接管62ms；sentinel不替代UInk |
+| E01 相关回归 | InkeysHeadlessTests.exe --no-window；PptCOM.Tests.exe | 0/0 | e01-failed-arm-green-debug-arm64-headless.log、e01-failed-arm-green-pptcom.log；Headless216layout/animation PASS，本机能力边界 |
+| E01 独立 review | 真实diff/调用者/原始红绿读取 | STATIC GREEN，无新增阻断 | failed-arm-deadline-code-review.md；reviewer未独立运行，Release三架构/Win7/Host停滞仍待 |
+| E03 identity harness 红 | 完整 Debug ARM64 Build；Inkeys.exe --draw3-parked-desktop-exit-test | Build0、CLI1；旧子测PASS、I01/I02拒收身份失败 | e03-contact-identity-red-debug-arm64-*；PID17248自然1，无窗真实共用helper；普通PPT全Run/硬件未验证，当前开始最小修补 |
+| E03 identity 修补绿 | 完整 Debug ARM64 Build；同一生产parked CLI；严格Headless --no-window | Build0、CLI0、Headless0；旧4项及新拒收PASS | e03-contact-identity-green-debug-arm64-{build,headless}.log及stdout/stderr；PID34784自然0，UI/Win7/真实PPT全Run未证明 |
+| E03 独立review | 真实Controller diff、三调用点/Coordinator状态和红绿原始日志 | STATIC GREEN，无新增阻断 | contact-failure-identity-code-review.md；reviewer未独立跑测试 |
+| E01/E03 合并源码 Release 构建 | 原生ARM64 MSBuild完整InkeysRepo.sln Release ARM64/x64/Win32，串行Build | 三架构各exit0 | e01-e03-integrated-release-{ARM64,x64}-build.log、e01-e03-integrated-release-Win32-confirmed-build.log；Win32先一轮会话切换仅有0Error日志/更新产物，后按相同命令补取明确exit0，不删除初轮证据 |
+| E01 Release 专项 | ARM64/x64/Win32 Inkeys.exe --shutdown-supervisor-tests --failed-arm-only，私有精确进程 | 0/0/0，6实际Failed+2拒绝逐架构PASS | e01-e03-integrated-release-<arch>-failed-arm.{stdout,stderr,status.txt}；本机ARM64原生/x64、Win32仿真运行，不是Win7或真实GUI按钮 |
+| E03 Release 专项及严格无窗 | ARM64/x64/Win32生产 --draw3-parked-desktop-exit-test、InkeysHeadlessTests --no-window，串行 | 三架构parked CLI 0/0/0，Headless 0/0/0 | e01-e03-integrated-release-<arch>-parked.{stdout,stderr}.log及 -headless.log；三架构均保留旧4项与新InitRejection通过，Headless216布局/animation通过。按sizeof估算的snapshot内存字节数在Win32与64位不同，不是UInk编码长度；真输入/PPT全Run/Win7未推断 |
+| E02 B + UI3 raw夹具构建 | 完整InkeysRepo.sln Debug|ARM64 Build；E02新入口与RenderPipeline导出/Headless编译 | Build exit0 | e02-ui3-harness-red-debug-arm64-build.log；只有夹具/桩，A顺序和UI3记录器尚未修补，构建不记功能PASS |
+| UI3采样夹具红 | InkeysHeadlessTests.exe --no-window，生产Scheduler加R01/R02/R03/R04/R07/R12/R13/R14夹具 | 自然exit1；仅新增R02/R03/R04/R12/R13/R14六项失败，旧测试无新增失败 | e04-ui3-raw-red-debug-arm64-headless.log；stub Configure=false/Take=null，ABI正确、真实Scheduler参与；正式采样/分位数仍未实现 |
+| E02 D004真实启动红 | 先经独立静态隔离审查，只在自有copied child运行Inkeys.exe --shutdown-supervisor-tests --startup-failure-only D004 | 自然exit63；目标child3924在旧实现25秒仍活，parent仅清理此句柄；wrong-parent/no-handles拒绝PASS | e02-startup-d004-red-debug-arm64.{stdout,stderr,status.txt}、startup-failure-harness-safety-review.md；真实CoInitializeEx S_OK后按鉴权注入D004，failure/gate1、intent/Arm0，哨兵未损；D005/D003/B002未获运行放行，不能冒称被测试 |
+| E02 D004修补绿 | 最终冻结源码完整InkeysRepo.sln Debug|ARM64 Build，私有copied child同一D004生产入口 | Build0、CLI0；child30200 authorized/failure/gate1、intent_at_gate1、arm1/state2，旧HANDLE自然在15172ms signaled；错误父/无继承句柄拒绝PASS | e02-ui3-final-source-debug-arm64-build.log、e02-startup-d004-green-debug-arm64.{stdout,stderr,status.txt}；旧中途Build虽0但Main仍被修改，不作为最终源码证据；哨兵1不等于UInk恢复 |
+| UI3 raw recorder绿 | 同一最终源码Debug|ARM64完整Solution Build；InkeysHeadlessTests --no-window | Build0、Headless0；R01–R14适用断言及旧动画/216布局通过 | e02-ui3-final-source-debug-arm64-build.log、e04-ui3-raw-green-debug-arm64-headless.log；独立实际diff review在途。成功提交时刻仍是callback-end proxy，没有主栏GetDC/ULW/SVG/light整帧样本或HC/H2/Win7结论 |
+| E02 分站点绿 | 经独立运行前安全复核，逐次显式 --startup-failure-only D005 / D003 / B002 | 三父进程自然exit0；目标failure/gate1、intent/Arm1、旧HANDLE由产品监督signaled；两个授权负例每轮PASS | e02-startup-<site>-green-debug-arm64.{stdout,stderr,status.txt}：D005 child30040约15375ms，D003 child2376约15156ms，B002 child9280约15828ms（含初始化前奏）；原始deadline/死亡tick单列。B002是实际Main读取合成失败态，未跑自然Bar Register失败，未推断Win7/恢复 |
+| UI3 U04-R 独立实码复审 | 当前RenderPipeline四文件实际diff/生命周期/测试+红绿原始日志 | STATIC GREEN，无新增阻断 | ui3-raw-capture-code-review.md；包含Default-off、raw-only、join封口、ABA/Releasing、R01–R14；reviewer未复跑。真实Bar采样与Release三架构仍需下一单元 |
+
+| Draw3 U1 红夹具 | 完整 InkeysRepo.sln Debug|ARM64 Build；已有 --draw3-parked-desktop-exit-test | Build0、CLI自然1；198条具体新指标FAIL，原五个子套件仍PASS | e04-draw3-u1-red-debug-arm64-build.log、e04-draw3-u1-red-debug-arm64-parked.{stdout,stderr,status.txt}；真实Session/Coordinator/WriteJson，旧API、容量、归属与导出合同尚未修；不是性能数据 |
+
+| Draw3 U1 绿及独立检查 | 完整Debug|ARM64 Build、parked真实Session probe、严格Headless；独立actualdiff | Build0、parked0、Headless0，STATIC GREEN | e04-u1-nohold-green-debug-arm64-build.*、e04-draw3-u1-green-debug-arm64-parked.*、e04-u1-nohold-green-debug-arm64-headless.*；draw3-metrics-session-code-review.md。固定32MiB/64pending/报告合同，通过仅数值Session，不是实际GPU归属/Host性能 |
+| E02 无hold自然反例 | 经独立CLEAR，新 --startup-no-hold-only D004/D005/D003/B002，私有实际wWinMain及owned提示 | 四父suite各0；child普通码1/1/0/0、Arm到死亡875/828/782/547ms | e02-startup-<site>-natural-debug-arm64.*；PE4AF47839…，哨兵非UInk，B002只真实Main读取合成失败。D005旧real_result含合成通用码，已修字段但旧值不作DLL自然失败证据 |
+| E02 原hold反例复验 | 同PE --startup-failure-only D004 | 父0、child19508专用监督强退码0015，原Arm→死亡15047ms | e02-startup-D004-hold-regression-debug-arm64.*；证明Natural mode没把原Hold变成提前返回，不能替代其它实际启动cleanup |
+| C-P1/B1 RED完整构建 | 主Solution Debug|ARM64 Build，独立新helper登记主/Headless、Bar raw新DTO、Main静态publisher/观察字段 | Build0 | c-p1-ui3-b1-red-debug-arm64-build.*；产品C-P2未接线，UI3真实stamp/timer尚RED，无功能PASS |
+| UI3 B1 RED | InkeysHeadlessTests --no-window，实际CompleteAttempt/Stamp/Classifier/Scheduler | 自然1，准确四条新增B01/B03/B04/B05 FAIL；旧用例无新增失败 | ui3-b1-red-debug-arm64-headless.*；仅软件决策，无实际ULW；已GREEN_IMPLEMENT等待绿 |
+| C-P1 失效清理 RED | exact鉴权96B child，--failed-cleanup-only expiry / allocation | 两父64；expiry child17348已activated/grace0/publisher0、40s仍活，parent-owned清理FAIL；allocation child30380 Prepare返回afterComplete1/自然0仍FAIL | c-p1-{expiry,allocation}-red-debug-arm64.*；wrong-parent/no-inherited负例PASS。仅真实helper的控制失败，不称现场driver挂死；helper已GREEN_IMPLEMENT，生产模块尚未接 |
+| U1 M16补强 | 同最新编译PE --draw3-parked-desktop-exit-test，Live/Laser失败跨帧不restage→拒绝、下一帧restage→成功 | parent0，旧五+SessionPASS | u1-m16-green-debug-arm64-parked.*；只新增真实Session probe，U1数值kind逻辑，不是生产Laser landing。独立增量检查在途 |
+
+| C-P1/B1 绿色源码构建 | 完整InkeysRepo.sln Debug|ARM64 native MSBuild | exit0 | c-p1-ui3-b1-green-debug-arm64-build.*；真实M16及D005字段修补已包含，后续C-P2尚未接线 |
+| UI3 B1 绿 | 严格InkeysHeadlessTests --no-window | exit0，新增B01–B05与旧R01–R14/216layout通过 | ui3-b1-green-debug-arm64-headless.*；真实Bar插点编译，软件决策合同绿，不等于实际ULW/目标/输入/性能采样 |
+| D005实际result修补复验 | 同c-p1/B1 RED编译PE，--startup-no-hold-only D005；--startup-failure-only D005 | 两父0；真初始化S_OK，Natural child7096普通1/875ms；Hold child27736监督0015/15032ms | e02-D005-real-result-{natural,hold}-debug-arm64.*；只观测字段前置锁存，旧合成generic记录保留，不称自然DLL故障 |
+| C-P1 首两绿 | 新绿色PE --failed-cleanup-only expiry / allocation | 两父0；expiry child28024 originalgrace15000、总30047ms/001A；allocation child31096约15031ms/001B；afterComplete均0、publisher1、授权负例PASS | c-p1-{expiry,allocation}-green-debug-arm64.*；primitive实际线程/自退场，不替代Host/RTS/Window清理或UInk恢复。其它8项当前运行中 |
+| C-P1剩余八绿 | 同绿色PE逐项monitor/join/ordinary/cancel/dormant/earlier/begin-cancel/expiry-cancel | 八父自然0；两个鉴权负例每次PASS | c-p1-<case>-green-debug-arm64.*；join monitorPaused1→真实管理join超时约1s→15s001C且afterComplete0；earlier独立6s+31ms；begin-cancel旧Signal保活/join后普通0；expiry-cancel原grace+15015ms001A。不替代C-P2生产owner或UInk恢复 |
+| B1独立发现默认off偏离 | 实际Main SetDiagnosticsSink→Scheduler diagnosticsActive→nonnull diag→新7timer/stamp读clock | 已确认本任务新增计量默认成本，修复待验证 | 独立checker当前意见，B1 worker补detail-enabled/B06有sink默认关闭红绿；上一Headless0不抹去此缺口，不声明最终B1实码GREEN |
+
+| B06产品默认关闭真红 | 完整Debug|ARM64 Solution Build；严格Headless --no-window有真实DiagnosticsSink | Build0、Headless自然1，准确仅B06新fail，旧B/R/216layout无新失败 | ui3-b06-red-debug-arm64-{build,headless}.*；新enabled位已接真实rawActive，但红阶段旧新计时guard未改；待门控绿色，不删除前一Headless0历史 |
+| C-P1独立实码复核 | 实际两helper/Root publisher/96B child/C00及十类raw/status读取 | STATIC GREEN，C00增量CLEAR_SAFETY | failed-cleanup-code-review.md、failed-cleanup-harness-safety-review.md；独立checker未运行。C-P2真实owner/RTS成功quiescence/恢复仍未验证 |
+| C-P2 Root Main接线 | Window局部失败scope、Host跨失败清理span、ULW新独立scope | 已实现待编译/验证；module签名由唯一worker接线中 | Main diff及failed-cleanup-module-implementation.md后续；不得以C-P1十绿升级此行为 |
+
+| C-P2/B06组合源码首次构建 | 完整InkeysRepo.sln Debug|ARM64 native MSBuild /m:1 | 实际exit0 | c-p2-b06-green-debug-arm64-build.*；模块/API/Main span类型链接已验，strictHeadless/parked/PptCOM当前执行中，C03–C11/ULW/RTS/UInk不预记PASS |
+
+| C-P2/B06组合相关自动回归 | 当前完整Build后strictHeadless、生产parked/M16、PptCOM.Tests依次运行 | 全部自然0；PID32328/15540/12112 | c-p2-b06-green-debug-arm64-{headless,parked}.*、c-p2-b06-green-pptcom.*；B06 default-sink计时合同红→绿，独立增量check在途。真实失败cleanup/恢复/整帧性能不由此升级 |
+| C-P2成功启动/正常返回回归 | 同最新PE --startup-no-hold-only B002，沿真实Window/Host/RTS start并Main合成失败prompt正常清理 | 自然parent0；child10320普通0、Arm→death625ms，wrongparent/no-inherited各PASS | c-p2-B002-natural-debug-arm64.*；独立既有四site安全边界。不是C03故障/ULW重建/RTS失败quiescence、哨兵非UInk |
+
+- 已核实 `chore/publish`、HEAD `e32a5fc06096c1e4ab88a29866c60ebe323fd722`、tree `df05eeeaed48950b76b772e76b3105026a5f04ef` 和 H0 父提交；这标识阶段代码，人工/性能门禁未闭合。此前以 H0+全目录指纹记录的 HF 是历史工作区快照，不能替代本 commit 或以后修补的 HF。
+- 2026-09-30 `python .trellis/scripts/task.py validate .trellis/tasks/09-27-<parent及七子任务>`：八项均 exit0。该工具验证上下文引用，不执行产品行为或性能测试。本轮未重跑 Build/Headless/GUI，产品源码 blob 未改变，已有测试的边界沿用各自记录。
+- 四个已确认为本任务生成的未跟踪 `inkStrokeModelerTest/{inkPixelShader,inkVertexShader,laserParticleEmitCS,laserParticleUpdateCS}.cso` 经绝对路径/工作区边界校验后用 `Remove-Item -LiteralPath` 精确清理，exit0；历史审批503失败记录保留。未删除跟踪资源或用户数据。
+- 独立只读完成度报告 `integration-and-release-check/research/post-commit-completion-audit.md` 已完成，不能用未重新触发的生产失败路径写动态 PASS。提交后非 ignored 工作区快照记录在 `TestResults/release-hardening/post-commit-completion-fingerprint.json`，包含这次记录更改与未提交报告，不含已删除生成物。
+
+## 2026-09-29 10:15 +08:00 集成复验摘要（历史检查点）
 
 - 完整 `InkeysRepo.sln Release|ARM64/x64/Win32 /t:Build /m:1` 对最终产品源码三架构各 exit0，日志 `hf-code-freeze-build-release-{ARM64,x64,Win32}.log`；最后 HiddenWindowTest 纯测试交接修改后又完整构建三架构 exit0，日志 `hf-touch-area-current-run-build-release-{ARM64,x64}.log`、`hf-touch-area-current-run-build-release-Win32.log`。`InkeysRepo.sln Debug|ARM64` 对 F-060 最终代码 exit0，日志见 `f060-laser-*-debug-arm64-build.log`。一次 F-057 Debug ARM64 增量 linker C0000005/LNK1000 环境失败保留，原命令重试完整 Solution exit0；不删失败。
 - Release 三架构严格 `InkeysHeadlessTests --no-window` 最后重跑各 exit0（`hf-final-final-<arch>-headless.*`），PptCOM.Tests exit0（`hf-final-final-pptcom-tests.*`）；12项产品无 GUI CLI×3 的 `hf-code-freeze-cli-summary.tsv` 为 **36/36自然 exit0**，包含 x64 F-026 曾 180s 卡住的入口。该旧失败与受控 Closing 红→绿证据继续保留。
@@ -201,3 +256,109 @@
 | 2026-09-29 | F-059 设置页直接结束/重启保护起点 | `QueueClose/QueueRestart` 只改为点击线程直呼现有正式入口；完整 `InkeysRepo.sln Debug|ARM64 /t:Build /p:LinkIncremental=false` | Build0；静态独立复核0阻断；真实设置按钮未点击 | 已修复待GUI验证 | `f057-f059-pptdiag-build-debug-arm64.log`、`setting-exit-intent-{deadline-design,design-review}.md`；普通Close/Restart不再等Setting FIFO旧I/O，确认式Restart仍等OK，取消不Arm。不能以旧noGUI supervisor suite替代按钮链 |
 | 2026-09-29 | 真 Office 新 PptGate 字段与结束页再验 | 最新 Debug|ARM64，自建PowerPoint16.0两页SlideID256/257、ROT可见、`INKEYS_PPT_TIMING=1`，独立根 `ppt-office-own-059314942c0543e3a11da53f2cf7a417` | COM脚本0；真实三页各publish_accepted/document_ready/page_ui_ready；随后Get-Process Inkeys/POWERPNT为空 | 已验证通过（当前诊断字段和本机页身份/ready链）；实际笔迹durable未验 | `ppt-office-gate-ready-final-arm64.log` 及该根 `log/idt1790639088673.log`：新 `sessionActive/sessionId/trustedTarget` 值真实对应；rev1 SlideID256、rev2 257、rev3 EndScreen slideId0，成功Present计数4/6/7。脚本当次Office仍在退出中、INKEYS_FINAL_EXIT字段空，后续进程列表为空；WM_CLOSE Drawpad导致受控Host意外停止exit流程，不冒充设置页正常退出 |
 | 2026-09-29 | F-060 Laser 忽略第二 Touch 槽位 | 同一生产判定 helper +真实 ContactInput，首指保持活动，第二指32轮Down/Up/Cancel，Closing交错；Debug|ARM64完整Solution/早期CLI、Headless及同最终blob隐藏Host | 红CLI PID57232自然1，仅槽位回收断言失败；绿CLI PID34208自然0四项PASS；Solution0/Headless0；隐藏Host沙箱外PID42336自然0，沙箱内因PPT io_error自然1 | 已修复待三架构/真Touch：红绿与同构建隐藏范围 | `f060-laser-{red,green,final}-debug-arm64-*`、`laser-ignored-touch-slot-implementation.md`；沙箱文件替换权限失败保留，不改产品绕过。完整 helper/负例的独立 review 仍进行 |
+
+## 2026-09-30 C3-A/U2-P1/B2-P1 组合首次门
+
+| 实际命令/配置 | 结果 | 精确范围与证据 |
+| --- | --- | --- |
+| 完整InkeysRepo.sln Debug ARM64 native /m1 /nrfalse /LinkIncrementalfalse | 1 | c3a-u2green-b2red-debug-arm64-build.log/status；首源码错AutoSave805 wstring*与const wstring* initializerlist，后续连锁保留；Headless目标另实际构建成功，不算Solution PASS |
+| 新headless产物 --no-window | 1 pid29248自然 | ui3-b2-p1-red-debug-arm64-headless.*，B201–B209准确九红/B210与旧B1/B06/R/216通过；生产numeric helper RED，无GUI；非无条件assert(false) |
+| typed const指针loop一行修补后同完整Solution | 1 | c3a-u2green-b2red-compilefix-debug-arm64-build.*；首Bar.Main285 WhiteboardActive C2668歧义，132 warnings/1 error；属于另UI新接缝，未改SDK/第三方或绕环境；UI作者GREEN修补中 |
+
+U2-P1绿色候选、C3-A真实case/C07、C3-B fresh存储、UI3 finite实际场景/三轮数据均未由这些失败升级PASS。旧Inkeys PE无当前Root/C3等最终源码链接证据，不运行新CLI取假绿。source全冻结且actual-code+safety后重新完整构建/相关测试；失败日志保留。
+
+## 2026-09-30 C3-A首次实际场景与U2/B2数值绿色
+
+- 第三完整InkeysRepo.sln Debug ARM64 native build实际0（c3a-u2-b2-green-f065-debug-arm64-build：0error/4warnings/28.42s），旧两失败不覆盖。strictHeadless自然0 pid34212（九新增B2与旧B/R/216通过）、parked自然0 pid35248（旧六+U2ContentProof通过，Session81912B/aux39072B/共同33554432B）、PptCOM自然0 pid7044。各raw/status精确前缀c3a-u2-b2-green-debug-arm64-headless、draw3-u2-p1-green-debug-arm64-parked、c3a-u2-b2-green-pptcom。
+- PE身份/candidate记录 c3a-frozen-debug-candidate.json；之后Controller/UI/C3-B作者source新增不影响本轮旧PE，但这些PASS不能作为下一候选最终门。
+- 4放行反例C05-before-release（parent1044/child5408）、C03-presenter-release（32864/3180）、C05-created-release（6184/29180）、C08-render-release（33300/31804）全部自然父0。三已知失败scope放行后真join/oldSignal0/超过原grace+1s仍无intent；render-release实际stored/present后暂停250ms再放行，真Close状态2及Host/窗口join自然0。每次四授权负例wrong-image/noinherit/oldpacket/非法case也通过，均未授权/无artifact/窗口/意图。
+- C03-presenter-hold、C05-before-hold、C05-created-hold各三轮（九producer）：真实已知失败/afterwake暂停，Start/Stop未返回，由产品0xE143001A按原grace+15000自然结束，迟到15–47ms；这里从已知失败到grace+fatal总约30秒，不能冒称普通Close15秒。原tick、fatalPublish与原对象仍活的POD见证均在各round stdout/packet。
+- C08-render-hold三轮实际成功content帧后停render owner，正式Close/Arm状态2；旧进程分别自然0xE1430016/0016/0015，始终Stop未返回，原15秒绝对deadline后迟到63/47/46ms，父每轮自然0，未用父强杀PASS。helper与self fallback胜者可以不同，不宣称唯一终止线程。
+- C07 Main同一生产fallback span三轮parent10836/27060/34048、child6752/16380/34580自然0：first false/旧owner与HWND销毁/旧Signal0/唯一new generation1→2、新ULW真成功frame，超过旧grace+1s后16个Move逐消费+Up仍stored/成功content Present，最后正式Close/Stop自然0。before/after success presents3→21/24/27，旧timer未误终止新代；不等同新进程Restart/Win7。
+- 汇总19个positive producer观察（4release+9startuphold+3renderhold+3C07，总19），原始分解 c3a-first-candidate-results.json；严格scope/计时边界未推到GPU硬hang、RTS真实callback静止、C3-B save/readability、真实体验/光学输入或Win7。代码实现后全部相关最终候选仍须复验。
+
+## 2026-10-01 CP1默认门回归
+
+同C3-A冻结PE explicit --shutdown-supervisor-tests --failed-cleanup-only 原十primitive回归自然父0，status/raw c3a-current-pe-cp1-regression-debug-arm64。新增afterwake门仅C3授权scope，原prewake CAS→cancel interleaving、dormant无coldtimer、monitor真join失败、grace expiry/earlier普通原tick等全部通过，两wrong-image/noinherit均拒绝。该结果不替代新P2/C3-B未链接候选，也不把sentinel提升UInk恢复。日期切换后新增记录按Oct1，原日志Sept30保留。
+
+## 2026-10-01 Main共用span后startup Natural再验
+
+旧冻结C3-A候选PE `--shutdown-supervisor-tests --startup-no-hold-only` 自然父0 pid33088，D004/D005/D003/B002真实wWinMain private children26972/13156/33028/19504各按原普通1/1/0/0返回，Arm→death938/781/1312/547ms，真实owned提示确认；wrong-parent/noinherit早拒两项通过。raw c3a-main-span-startup-natural-regression-debug-arm64.*。B002包含同一Main成功窗口/Host/RTS启动清理路径，未替代C3-B保存/真硬件/Win7与自然BarRegister错误；源码后续改变不能当最终PASS。
+
+## 2026-10-01 UI3 B2-P2严格数值门
+
+- ui3-b2-p2-green-headless-debug-arm64-build.status.txt exit0，ARM64原生MSBuild构建现存Headless项目；实际产物在InkeysHeadlessTests/Build/ARM64/Debug。
+- ui3-b2-p2-green-project-output-debug-arm64-headless --no-window 自然exit0 pid14416，B211–B221与旧B/P/R/216通过。
+- ui3-b2-p2-red-project-output-debug-arm64-headless真实RED exit1 pid21704，仅十B211–B220失败；较早ui3-b2-p2-red-debug-arm64-headless误指旧Root/Build因此exit0，不作RED/GREEN证据，原始日志保留。
+- 独立caller核发现F066颜色环PNG布局role未覆盖，root最小修补在途；上述0只限数值helper和已编译Headless源，不含新RenderLoop/Main/DrawP2/C3-B完整主程序。
+
+## 2026-10-01 新完整组合与B222合法红绿
+
+- 完整Solution c3b-u2p2-b222-valid-red-debug-arm64-build 1，首错RenderLoop5709 C3861 helper namespace；原136warnings/1error保留。最小全限定后compilefix完整0/6warnings0errors。
+- B222首两个stub/green standalone自然1（23084/34360）来自夹具flags67被真实DrawAttribute规则拒绝，不算角色因果red；旧失败保留。合法flags66并明确Snapshot/两MarkConsumed前提，正确Root/Build --no-window自然1 pid10952仅B222，才是本次因果RED。
+- 映射最小Green后完整c3b-u2p2-b222-green-debug-arm64-build实际0/125warnings0errors；strictHeadless自然0 pid26160/216layouts0，Draw parked真实0 pid22032（State45296/aux45216/Session81912/common33554432B），PptCOM0 pid17700。独立B2-P2/F066实际编译和数值GREEN、U2-P2源码STATIC_GREEN；不证真实SVG/Hostmetrics性能。
+- 功能PE/source freeze c3b-frozen-debug-candidate.json，EXE74212B55…1777；Root之后新wrappers/B3/Fixture改动不复用旧PE为最终HF。
+
+## 2026-10-01 C3-B 首轮已确认失败
+
+- c3b-C09-desktop-release-debug-arm64 exit65 parent33944 / child28416，child90、实际gate有数值/Save2accepted1committed0failed1pending、未发布Close。
+- c3b-C11-natural-close-debug-arm64 exit65 parent33604 / child34864，child90、Save2/1/0/1，第二请求未达到committed；没有fault的反例亦失败。
+- c3b-C10-ppt-release-debug-arm64 exit65 parent29332 / child30240，child90、Host startup好但未达存储gate，细前提待数字诊断。
+- 三组每组四授权负例均实际PASS；失败没有freshreader运行/15秒hold/数据恢复结果，不以孤立UInk或文件存在替通过。Parent均自然退出，未用Root强杀。原私有root数据保留；Natural有两个UInk/index只A说明B已越CommitUInk，根因待查。
+
+## 2026-10-01 C3精准诊断与B3 RED检查点
+
+完整Solution c3b-index-probes-b3-red-debug-arm64-build实际0/0errors（warnings在raw原log，旧warning未消）。E571…AD60独立STATIC_GREEN/CLEAR仅允许三C3诊断复验，新F不批准。当前strictHeadless/parked/PptCOM exec29367在跑，未预PASS；B3现实际接口/producer但paint保守RED，offscreen还没运行。冻结全部source/PE见c3b-index-probes-b3-red-frozen-debug-candidate.json，不作最终HF。
+
+## 2026-10-01 精确诊断的动态结果与B3有效RED
+
+- 同41CC4831…98F3功能PE，strictHeadless13540/parked32812/PptCOM12848自然0；全Debug0/159warnings0errors。C3诊断独立E571…AD60有限CLEAR下复跑same3case仍各父65/child90，所有4negative继续PASS。前轮fail不隐藏。
+- c3b-index-probes-C09-desktop-release-debug-arm64 parent34268/child10968，固定run …34268 51945843 0/fixture-failure-diagnostics.txt：phase208，真实尾persistence2accepted/1committed/1failed/0pending，fixture-index-probes.txt=1/1/1。C11-natural parent30260/child30924（…30260 51952312 0）同phase208/2/1/1/0及markers1/1/1。排除索引mutex永久等待，POD gate trace2/1/0/1是较早快照，不可冒最终状态；真正失败在已越ReadIndex的保存后续，原因仍待。
+- c3b-index-probes-C10-ppt-release-debug-arm64 parent16028/child22392（…16028 51958687 0）phase333，page1/world2、requested/ready/UI精确match/inputReady1于诊断尾、PPT accepted2/committed0/failed2/NotFound1（包含Save失败1）；initial-notfound不误算Save。固定私有diag与原数据保留，不以尾部inputReady1抹之前timeout。
+- B3真实offscreen ui3-b3-red-debug-arm64-offscreen自然1 pid16476，复制原Build/eraser-b/offscreen-results.log到ignored同prefix.results.log，恰B302+B303/总2；B300/B301/所有旧前提无另fail，实际parse/raster/upload各1、required1/verified0、coverage1/ready4096。有效RED不是非法publication或设备失效。普通--no-window仍0，不将paint桩升级GREEN或真实主栏性能。
+
+## 2026-10-01 私有product日志证据
+
+complete c3b-private-log-b3-red-debug-arm64-build真实0；6C3EB34…C032B独立40行CRT capture安全增量CLEAR。same3case父33120/21612/12640各自然65，children2072/10292/30168各90；四negative全PASS。Root保持代码断言/预算/超时并保留前失败。新run直接根fixture-product.stdout.log/stderr.log实际显示Desktop第二save index-commit失败，PPT第一个Save io_error revision1（NotFound单独基线1）。两个Desktop初版POD gate的pending不作最终；当前尾failed1/pending0和markerRead返回不代表Valid。实因未判，尚无15秒hold或freshreaderPASS。PE/source/PID/各目录在c3b-private-log-frozen-debug-candidate.json。
+
+## 2026-10-01 真实 Desktop 保存与原15秒停滞边界
+
+- 同PE外部运行 c3b-io-diagnostics-unsandboxed-C09-desktop-release-debug-arm64 parent29188/child16552、C11-natural-close parent29716/child34076 natural0，actual persistence2 accepted/2 committed/0 failed/0 pending；全新reader34472/23996 strict receipt和最后B各0。C10-ppt-release parent35652/child19284 65/90，真实WriteFailed/error3/path230仍失败。每组四授权negative PASS。原sandbox5错误保留并归runner，而PPT失败不归环境。
+- c3b-desktop-hold-unsandboxed-r1/r2/r3-debug-arm64 parent34436/22020/11656 exit0，child31140/34536/34352 forced code0xE1430015/0016/0015。Close ticks59225453/59242484/59259015，deadline59240453/59257484/59274015，actual death59240515/59257531/59274046；late62/47/31ms。真实保存worker60sdelay、2/1/0/1、stopReturned0；fresh19284/31708/33848均0，last committed A严格可读，待B按明确决策可丢。不是父强杀代替监督/不是恢复UI。
+- 纯 Win32 ordinary229/271/extended271/missing229控制实验最终exit0，raw uink-path-boundary-8a3a5b885c174579bf0654cc975944a2/result.json。首UInt32错误实验2d8da…exit1且未执行native调用，不计有效对照。产品230保存RED/修后C10待执行。
+- ui3-b3-h1-red-debug-arm64-build完整主Solution exit0；实际offscreen pid16204 exit1，仅H101一FAIL，H100/H102和旧断言通过；raw同prefix.results.log。不将此前B3全绿覆盖未测H1，新GREEN待修改/独立review/复验。
+
+## 2026-10-01 B3 H1 最终窄门红绿与独立复审
+
+新完整主Solution ui3-b3-h1-green-debug-arm64-build exit0/4warnings0errors/25.80s。offscreen18304自然0、H100/101/102及旧SVG/Eraser断言 failures0；strict no-window21724/parked30344/PptCOM13644均自然0。独立H1report3DC71D46…95D33 SCOPED_STATIC_GREEN及已测H1 GREEN；实际3行Probe修补移除后精确恢复旧FD276C00…3201EE，测试与其它六Bar源未弱化。PE C84BEC789B602D72F4D5B36CEA09FFA997A47CDCD41D0DBA5CBFBBBDA179763B / Probe EB99F2A1…2FF4B9，ignored ui3-b3-h1-green-frozen-debug-candidate.json完整身份。该门未覆盖whole F/真实Bar性能/Win7，后续接口变化须复验。
+
+## 2026-10-01 UInk合法230生产共用helper真实红绿
+
+- uink-sibling-maxpath-red-debug-arm64-build：existing inkStrokeModelerTest.sln /t:inkStrokeModelerTestTests DebugARM64 exit0。outside pure --uink-file-only pid23824自然1，EXE DE38C9BE…D8AB2，仅2175首存Committed失败；old temp271/合法target230/parent152/WriteFailed3与targetmissing/sentinel前提均通过，update/recovery明示SKIPPED。
+- 新只同父GUID leaf绿色 uink-sibling-maxpath-green-debug-arm64-build exit0；outside samearg pid33324自然0，PE F97A3801B4E463E9EA6A7A3225A759880AF7CAE8C3E12C6BFC845E6379F4DF60，firstSaveCommitted/error0，strictRead→ApplicationOwned update→strictRead/revision→fault opaque predecessor strict/oldbytes全部通过，All UInk persistence tests passed。新的中文UTF8日志只修RED截断不改断言。独立A10C…D3450 scopedGREEN，helperCAE84…314F79，test5A285…D5381A。
+- 本门与原始Win32控制、主productPPT C10、Release/Win7分别计账；最新mainSolution尚未编译此helper，新C10仍待，不升级自动恢复GUI/全设备/任意长最终path能力。
+
+## 2026-10-01 F A/B helper合同
+
+正确 InkeysHeadlessTests项目 ui3-f-ab-helper-debug-arm64-build实际0，project-output --no-window34412自然0/F201–204和旧B/R/216零失败。仅数值生产observerEnable/Freeze/copy合同，不是真实Fit/GDI/C/Main/整体F。新增局部shadow warning已纯改变量名，下一全build再验；全产品未编译不能复用旧Debug0。
+
+## 2026-10-01 新组合完整编译、Core、U3-H与原C10
+
+- 初 fullSolution f-u3h-uink-first-debug-arm64-build exit1，首Host362 DXGI_ADAPTER_DESC普通TU不可见6连锁；只加dxgi.h后第二exit1唯一Test405 C2397 WM宏int→uint32聚合narrowing。作者仅显式cast消息field，不动动作；两失败全部保留。
+- 第三 f-u3h-uink-wire-compilefix-debug-arm64-build完整InkeysRepo.sln DebugARM64实际0/6warn/0error/22.94s，新所有实际Auth/Source/C/Main/U3/UInk全部链接。新core严格Headless32828/parked29836/PptCOM33572/offscreen28404各自然0；F201–204、F210–214及旧H1/216等通过。PE9AA0A04D6402F69422A7B348CD44238AE912ABBCDDE97665DC5A28D4277B9D31，完整源身份f-u3h-uink-combined-frozen-debug-candidate.json，不冒HF/Release。
+- U3H specific静态/safety7D97许可后真实 --draw3-host-metrics-smoke --output-root private GUIDroot，pid19444自然0：真实四own隐藏窗/ULW/RTS、defaultoff/越界、两次新Session、生产mailbox SolidLine→Present→真Stop/离线CREATE_NEW JSON、错误Start/live/重复导出拒证通过。root u3h-metrics-first-48f6f788bf7845ca9d10fb1b3604d8a3；不是无窗口/16+200/CPU/MoveUp/Laser/全链性能。
+- Quoted missingroot/badshape及unquoted missing值三个真实early子进程17584/34964/29860自然2=expected，不能落普通GUI。没有把期待拒绝2记失败或新普通UI启动。
+- 原 unchanged C10-ppt-release outside新PE：parent32816/producer34084 normal0、same12688/foreign1776 fresh严格reader各0；真实PPT最后提交/foreign session拒绝证明。四negative通过。accepted3包含initialLoadNotFound，raw3/2/1/0里的1不是新Save失败，沿原baseline解释，不伪造计数0。
+- C10-ppt-hold outside三轮 parent3000/31364/8188均0，producers35128/32396/5740由自身原监督code0xE1430016死亡，close72546671/72563296/72579937，deadline72561671/72578296/72594937，death72561718/72578359/72595015，late47/63/78ms；stopReturned0。same fresh7732/18484/31968和foreign30996/18304/33068全部0，保最后durable A、未提交B可丢符合用户决策。raw persistence3/1/1/0不改，pending口径不冒inflight全集；真实worker延迟/未返回与请求receipt另证停滞。不是父强杀/Office/自动上屏/光学/Win7。
+
+## 2026-10-01 首个真实F capture-off已确认失败（保留）
+
+独立Source实码D2773D8B…68222C许可仅old PE9AA/ECDB与108E相同capture-off分支。真实 --ui3-presentation-benchmark --scene main-fold --round 1 --capture off --capacity 0 parent30540/child13540自然90，ack1/stageSealed7/resultFailed2；privateRoot ui3-finite-12d6edaca4423242977c5b080bdd18da/r1/s1 全部CSV/JSON保留。
+
+source_failure=13实际枚举是Deadline（Target=14），首错CAS由RunSource固定下一due时未Completed产生。第一Main Up确实经正式入口accepted（initial64→65、pub1、source2received/enqueued/consumed），之后215计划未开始，0warm/0measured/216unverified。contactcleared/Source+Interact+Window+Scheduler真join/Displaydrain全true，不能把诊断失败冒线程卡住或216成功。
+
+最后row attempt36/surface0/requiredSVG0可由最后早退Abort覆盖，不据它断言从未draw。真实render_all lookupHit242/miss71/create71全成功、parse77/raster71/upload71/draw313/drawRejected875/invalidation61，initparse43；rejected未区分自然hidden/实际proof失效不能直接全部标GPU错误。具体layout/resource完成归因只读调查中，不补Request/强制全脏/关光影/放松Completed。Capture-on新增invalidstamp OR108E静态已独立闭合但未新全build，旧PE不得on。
+
+## 2026-10-01 阶段commit检查边界
+
+用户要求暂停工程后保存并push当前已有改动，因此本次为可恢复的开发检查点，不能作为最终发布通过。全git diff --check通过（原Trellis文档EOL提示保留），G task validate implement25/check24实际0；原Build0/Core/U3H/C10证据均保留。新F069测试宏seam及RED_A未运行、Source108 gate未新fullbuild、UI3首scene Deadline失败、DrawN1–N4/最终3架构未完成。本次不为提交擅自实现Green/删除失败/关闭输入或效果。

@@ -42,6 +42,18 @@ namespace draw3::uink
 		std::atomic<bool> gFailCommit{ false };
 		std::atomic<bool> gFailRollback{ false };
 		std::atomic<bool> gFailCommittedRevisionValidation{ false };
+#if defined(DRAW3_TESTING)
+		UInkCleanupTestHook gCleanupTestHook = nullptr;
+		void* gCleanupTestContext = nullptr;
+		UInkCleanupTestAction NotifyCleanupTest(UInkCleanupTestStage stage, const std::wstring& path) noexcept
+		{
+			if (!gCleanupTestHook) return UInkCleanupTestAction::None;
+			const DWORD originalError = GetLastError();
+			const auto action = gCleanupTestHook(stage, path, gCleanupTestContext);
+			SetLastError(originalError);
+			return action;
+		}
+#endif
 
 		UInkFileTestFaultInjection SnapshotTestFaults() noexcept
 		{
@@ -98,6 +110,9 @@ namespace draw3::uink
 			explicit DeletePathOnExit(std::wstring path) : path_(std::move(path)) {}
 			~DeletePathOnExit()
 			{
+#if defined(DRAW3_TESTING)
+				if (active_ && !path_.empty()) (void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, path_);
+#endif
 				if (active_ && !path_.empty()) DeleteFileW(path_.c_str());
 			}
 			void Release() noexcept { active_ = false; }
@@ -473,13 +488,17 @@ namespace draw3::uink
 		std::optional<std::wstring> UniqueSiblingPath(const std::wstring& target,
 			const wchar_t* suffix)
 		{
+			// 使用同父短叶名，避免重复最终 basename 让内部事务路径越过 MAX_PATH。
+			const size_t separator = target.find_last_of(L"\\/");
+			if (separator == std::wstring::npos) return std::nullopt;
+			const std::wstring parent = target.substr(0, separator + 1);
 			for (uint32_t attempt = 0; attempt < 32; ++attempt)
 			{
 				const std::optional<UInkGuid> guid = CreateUInkGuid();
 				if (!guid) return std::nullopt;
 				std::string token = FormatUInkGuid(*guid);
 				std::wstring wideToken(token.begin(), token.end());
-				std::wstring candidate = target + L"." + wideToken + suffix;
+				std::wstring candidate = parent + wideToken + suffix;
 				if (!PathExists(candidate)) return candidate;
 			}
 			return std::nullopt;
@@ -488,6 +507,9 @@ namespace draw3::uink
 		bool WriteNewFile(const std::wstring& path, std::span<const std::byte> bytes,
 			bool durable, const UInkFileTestFaultInjection& faults, DWORD& error)
 		{
+#if defined(DRAW3_TESTING)
+			(void)NotifyCleanupTest(UInkCleanupTestStage::TempBeforeCreate, path);
+#endif
 			UniqueHandle handle(CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE,
 				0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
 				nullptr));
@@ -935,6 +957,9 @@ namespace draw3::uink
 				return result;
 			}
 
+#if defined(DRAW3_TESTING)
+			(void)NotifyCleanupTest(UInkCleanupTestStage::TempWriterClosed, *tempPath);
+#endif
 			const UInkReadResult selfRead = ReadUInkFile(*tempPath);
 			if (faults.failSelfValidation ||
 				selfRead.status != UInkReadStatus::Complete || !selfRead.document ||
@@ -1016,10 +1041,23 @@ namespace draw3::uink
 					result.systemError = ERROR_NOT_ENOUGH_MEMORY;
 					return result;
 				}
+#if defined(DRAW3_TESTING)
+				(void)NotifyCleanupTest(UInkCleanupTestStage::BackupBeforeReplace, *backupPath);
+#endif
 				const BOOL replaced = faults.failCommit ?
 					(SetLastError(ERROR_UNABLE_TO_MOVE_REPLACEMENT), FALSE) :
 					ReplaceFileW(target->c_str(), tempPath->c_str(), backupPath->c_str(),
 						REPLACEFILE_WRITE_THROUGH, nullptr, nullptr);
+#if defined(DRAW3_TESTING)
+				if (gCleanupTestHook)
+				{
+					const DWORD replaceError = replaced ? ERROR_SUCCESS : GetLastError();
+					const auto action = NotifyCleanupTest(UInkCleanupTestStage::ReplaceFinished, *backupPath);
+					// callback 自身 noexcept；仅真实 postmutation 成功点由 cpp 触发原 catch。
+					if (replaced && action == UInkCleanupTestAction::ThrowBadAlloc) throw std::bad_alloc();
+					if (!replaced) SetLastError(replaceError);
+				}
+#endif
 				if (!replaced)
 				{
 					result.systemError = GetLastError();
@@ -1029,6 +1067,10 @@ namespace draw3::uink
 						afterFailure == *session.sourceRevision)
 					{
 						result.status = UInkSaveStatus::IoError;
+#if defined(DRAW3_TESTING)
+						if (gCleanupTestHook && PathExists(*backupPath))
+							(void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, *backupPath);
+#endif
 						if (PathExists(*backupPath)) DeleteFileW(backupPath->c_str());
 					}
 					else
@@ -1051,6 +1093,11 @@ namespace draw3::uink
 						MOVEFILE_WRITE_THROUGH) && MoveFileExW(backupPath->c_str(), target->c_str(),
 						MOVEFILE_WRITE_THROUGH))
 					{
+#if defined(DRAW3_TESTING)
+						const auto action = NotifyCleanupTest(UInkCleanupTestStage::RecoveryMovesFinished, *newRecovery);
+						if (action == UInkCleanupTestAction::ThrowBadAlloc) throw std::bad_alloc();
+						(void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, *newRecovery);
+#endif
 						DeleteFileW(newRecovery->c_str());
 						result.status = UInkSaveStatus::SourceChanged;
 						AddDiagnostic(result.diagnostics, UInkDiagnosticCode::SourceChanged,
@@ -1092,6 +1139,9 @@ namespace draw3::uink
 					UInkDiagnosticSeverity::Error, "target", result.systemError);
 				return result;
 			}
+#if defined(DRAW3_TESTING)
+			if (!committedBackupPath.empty()) (void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, committedBackupPath);
+#endif
 			if (!committedBackupPath.empty() && !DeleteFileW(committedBackupPath.c_str()))
 			{
 				const DWORD cleanupError = GetLastError();
@@ -1565,6 +1615,13 @@ namespace draw3::uink
 		}
 	}
 
+#if defined(DRAW3_TESTING)
+	void SetUInkCleanupTestHook(UInkCleanupTestHook hook, void* context) noexcept
+	{
+		gCleanupTestContext = context;
+		gCleanupTestHook = hook;
+	}
+#endif
 	void SetUInkFileTestFaultInjection(const UInkFileTestFaultInjection& faults) noexcept
 	{
 		gFailWriteAfterBytes.store(faults.failWriteAfterBytes, std::memory_order_relaxed);

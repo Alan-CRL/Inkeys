@@ -463,7 +463,7 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		VersionedUInkSave SaveVersionedUInk(const std::wstring& root,
-			const std::string& fileGuid, const UInkEditingSession& session)
+			const std::string& fileGuid, const UInkEditingSession& session, bool logIoDiagnostics)
 		{
 			UInkSaveOptions options;
 			options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
@@ -474,8 +474,18 @@ namespace Inkeys::Drawing::Draw3
 				VersionedUInkSave result;
 				result.relativePath = "files/" + fileGuid + "_" +
 					FormatUInkGuid(*transactionGuid) + ".uink";
-				const auto saved = SaveUInkFile(JoinPath(root,
-					WidenAscii(result.relativePath)), session, options);
+				const std::wstring path = JoinPath(root, WidenAscii(result.relativePath));
+				const auto saved = SaveUInkFile(path, session, options);
+				if (logIoDiagnostics && saved.status != UInkSaveStatus::Committed)
+				{
+					const auto diagnostic = std::find_if(saved.diagnostics.begin(), saved.diagnostics.end(),
+						[](const auto& value) { return value.systemError != 0; });
+					// 使用原 UInk result 的真实错误，不能拿 caller 的 stale LastError 猜原因。
+					std::fprintf(stderr, "[Draw3.Presentation.TestIo] stage=4 uink_status=%u system_error=%u error_available=%u path_chars=%zu diagnostic_code=%u diagnostic_error=%u\n",
+						static_cast<unsigned>(saved.status), saved.systemError, saved.systemError != 0 ? 1u : 0u, path.size(),
+						diagnostic == saved.diagnostics.end() ? 0u : static_cast<unsigned>(diagnostic->code),
+						diagnostic == saved.diagnostics.end() ? 0u : diagnostic->systemError);
+				}
 				if (saved.status == UInkSaveStatus::SourceChanged) continue;
 				result.status = saved.status;
 				result.revision = saved.revision;
@@ -835,22 +845,39 @@ namespace Inkeys::Drawing::Draw3
 			PresentationStorageTrack& selectedTrack)
 		{
 			const PresentationAutoSaveTestFaultInjection faults = SnapshotTestFaults();
+			const auto reportIoFailure = [&faults](unsigned stage) noexcept
+			{
+				// 此三边界未保存原 Win32 error，明确只观测已失败站点，不伪造数值。
+				if (faults.logSaveIoDiagnostics)
+					std::fprintf(stderr, "[Draw3.Presentation.TestIo] stage=%u error_available=0\n", stage);
+			};
 			if (faults.writeDelayMilliseconds != 0)
 				Sleep(faults.writeDelayMilliseconds);
 			const std::wstring baseRoot = JoinPath(autoSaveRoot, L"presentation");
 			NamedMutexGuard mutex;
-			if (!mutex.Acquire(baseRoot)) return PresentationPersistenceStatus::IoError;
+			if (!mutex.Acquire(baseRoot))
+			{
+				reportIoFailure(1);
+				return PresentationPersistenceStatus::IoError;
+			}
 			const std::string key = FormatPresentationKey(request.target.key);
 			StorageSelection selection;
 			PresentationPersistenceStatus selectFailure = PresentationPersistenceStatus::IoError;
 			if (!SelectStorageTrack(baseRoot, request.target, key, sessionId,
-				pendingIndexEntries, selection, selectFailure)) return selectFailure;
+				pendingIndexEntries, selection, selectFailure))
+			{
+				if (selectFailure == PresentationPersistenceStatus::IoError) reportIoFailure(2);
+				return selectFailure;
+			}
 			selectedTrack = selection.Current().track;
 			if (ConflictsWithOtherLogicalFile(selection, pendingIndexEntries, request))
 				return PresentationPersistenceStatus::SourceChanged;
 			const std::wstring& root = selection.Current().root;
 			if (!EnsureDirectory(JoinPath(root, L"files")))
+			{
+				reportIoFailure(3);
 				return PresentationPersistenceStatus::IoError;
+			}
 			auto& entries = selection.Current().entries;
 			const bool primaryValid = selection.Current().primaryValid;
 			const PendingKey pendingKey = MakePendingKey(selectedTrack, request);
@@ -992,7 +1019,7 @@ namespace Inkeys::Drawing::Draw3
 					session->document = std::move(outputDocument->document);
 					entry.slideIds = std::move(outputDocument->knownSlideIds);
 				}
-				const auto saved = SaveVersionedUInk(root, entry.fileGuid, *session);
+				const auto saved = SaveVersionedUInk(root, entry.fileGuid, *session, faults.logSaveIoDiagnostics);
 				if (saved.status != UInkSaveStatus::Committed || !saved.revision)
 					return saved.status == UInkSaveStatus::SourceChanged
 						? PresentationPersistenceStatus::SourceChanged
@@ -1043,7 +1070,7 @@ namespace Inkeys::Drawing::Draw3
 				// 旧 v1 路径按原样读取；新 v2 文件和索引使用规范 GUID 文本。
 				const std::string canonicalFileGuid =
 					FormatUInkGuid(request.snapshot.fileGuid);
-				const auto saved = SaveVersionedUInk(root, canonicalFileGuid, *session);
+				const auto saved = SaveVersionedUInk(root, canonicalFileGuid, *session, faults.logSaveIoDiagnostics);
 				if (saved.status != UInkSaveStatus::Committed || !saved.revision)
 					return saved.status == UInkSaveStatus::SourceChanged
 						? PresentationPersistenceStatus::SourceChanged
