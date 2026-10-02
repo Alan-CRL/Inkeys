@@ -184,6 +184,7 @@ namespace Inkeys::Drawing::Draw3
 
 		struct UlwDirtyRectPresenter
 		{
+			const char* diagnosticRole = "Drawpad";
 			HWND window = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11Device> device;
 			Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
@@ -196,7 +197,54 @@ namespace Inkeys::Drawing::Draw3
 			void* dibBits = nullptr;
 			int dibWidth = 0;
 			int dibHeight = 0;
+			UINT finalTextureWidth = 0;
+			UINT finalTextureHeight = 0;
 			TransparentPresentObservation lastObservation{};
+			bool presentSuccessLogged = false;
+			bool presentFailureLogged = false;
+			POINT lastDestination{};
+			SIZE lastDestinationSize{};
+			POINT lastSource{};
+			BLENDFUNCTION lastBlend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+			DWORD lastUpdateFlags = ULW_ALPHA;
+
+			void LogPresentEvent(const char* eventName, RECT dirty, bool presentFull,
+				DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK)
+			{
+				if (!eventName) return;
+				RECT windowRect = {};
+				const BOOL rectOk = window && GetWindowRect(window, &windowRect);
+				const BOOL valid = window && IsWindow(window);
+				const BOOL visible = valid && IsWindowVisible(window);
+				std::cout << "[Draw3Diag][ulw] event=" << eventName
+					<< " role=" << diagnosticRole
+					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
+					<< " valid=" << std::dec << (valid ? 1 : 0)
+					<< " visible=" << (visible ? 1 : 0)
+					<< " style=0x" << std::hex
+					<< static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_STYLE) : 0)
+					<< " exStyle=0x" << static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_EXSTYLE) : 0)
+					<< std::dec << " windowRectOk=" << (rectOk ? 1 : 0)
+					<< " window=(" << windowRect.left << "," << windowRect.top << ","
+					<< windowRect.right << "," << windowRect.bottom << ")"
+					<< " dib=" << dibWidth << "x" << dibHeight
+					<< " staging=" << stagingWidth << "x" << stagingHeight
+					<< " texture=" << finalTextureWidth << "x" << finalTextureHeight
+					<< " dirty=(" << dirty.left << "," << dirty.top << ","
+					<< dirty.right << "," << dirty.bottom << ")"
+					<< " full=" << (presentFull ? 1 : 0)
+					<< " dst=(" << lastDestination.x << "," << lastDestination.y << ")"
+					<< " dstSize=" << lastDestinationSize.cx << "x" << lastDestinationSize.cy
+					<< " src=(" << lastSource.x << "," << lastSource.y << ")"
+					<< " blend=" << static_cast<unsigned>(lastBlend.BlendOp) << ","
+					<< static_cast<unsigned>(lastBlend.BlendFlags) << ","
+					<< static_cast<unsigned>(lastBlend.SourceConstantAlpha) << ","
+					<< static_cast<unsigned>(lastBlend.AlphaFormat)
+					<< " hdcSrc=0x" << std::hex << reinterpret_cast<UINT_PTR>(memoryDC)
+					<< " flags=0x" << std::hex << lastUpdateFlags << std::dec
+					<< " hresult=0x" << std::hex << static_cast<unsigned long>(hresult)
+					<< std::dec << " error=" << error << std::endl;
+			}
 
 			void ReleaseDib()
 			{
@@ -221,6 +269,8 @@ namespace Inkeys::Drawing::Draw3
 				stagingHeight = 0;
 				window = nullptr;
 				lastObservation = {};
+				presentSuccessLogged = false;
+				presentFailureLogged = false;
 			}
 
 			bool CreateStagingTexture(UINT width, UINT height)
@@ -237,7 +287,17 @@ namespace Inkeys::Drawing::Draw3
 				description.SampleDesc.Count = 1;
 				description.Usage = D3D11_USAGE_STAGING; // ULW 需要 CPU 读回像素。
 				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-				if (FAILED(device->CreateTexture2D(&description, nullptr, stagingTexture.ReleaseAndGetAddressOf()))) return false;
+				const HRESULT createResult = device->CreateTexture2D(&description, nullptr,
+					stagingTexture.ReleaseAndGetAddressOf());
+				if (FAILED(createResult))
+				{
+					std::cout << "[Draw3Diag][ulw-init] role=" << diagnosticRole
+						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
+						<< std::dec << " stage=CreateTexture2D size=" << width << "x" << height
+						<< " hresult=0x" << std::hex
+						<< static_cast<unsigned long>(createResult) << std::dec << std::endl;
+					return false;
+				}
 				stagingWidth = width;
 				stagingHeight = height;
 				return true;
@@ -300,21 +360,52 @@ namespace Inkeys::Drawing::Draw3
 				lastObservation = {};
 				lastObservation.ulw = true;
 				lastObservation.usedDirtyRect = !presentFull;
-				if (!context || !stagingTexture || !finalTexture || !EnsureWindowDib()) return false;
+				const auto fail = [&](const char* stage, DWORD error = ERROR_SUCCESS,
+					HRESULT hresult = S_OK)
+				{
+					if (!presentFailureLogged)
+					{
+						std::cout << "[Draw3Diag][ulw] stage=" << stage
+							<< " result=failed hresult=0x" << std::hex
+							<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
+						LogPresentEvent("failure", dirty, presentFull, error, hresult);
+						presentFailureLogged = true;
+					}
+					return false;
+				};
+				if (!context || !stagingTexture || !finalTexture)
+					return fail("resource");
+				if (!EnsureWindowDib())
+				{
+					const DWORD error = GetLastError();
+					return fail("window-dib", error,
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+				}
 				D3D11_TEXTURE2D_DESC finalDescription = {};
 				finalTexture->GetDesc(&finalDescription);
+				finalTextureWidth = finalDescription.Width;
+				finalTextureHeight = finalDescription.Height;
 				// Resize 可与本帧交错：拷贝范围必须同时受 GPU 两端纹理和当前 DIB 限制。
 				const LONG copyWidth = std::min({ static_cast<LONG>(stagingWidth), static_cast<LONG>(dibWidth),
 					static_cast<LONG>(finalDescription.Width) });
 				const LONG copyHeight = std::min({ static_cast<LONG>(stagingHeight), static_cast<LONG>(dibHeight),
 					static_cast<LONG>(finalDescription.Height) });
-				if (copyWidth <= 0 || copyHeight <= 0) return false;
+				if (copyWidth <= 0 || copyHeight <= 0) return fail("empty-size");
 				if (presentFull) dirty = RECT{ 0, 0, copyWidth, copyHeight }; // 全量呈现时忽略传入脏区。
 				dirty.left = std::max(0L, dirty.left);
 				dirty.top = std::max(0L, dirty.top);
 				dirty.right = std::min(copyWidth, dirty.right);
 				dirty.bottom = std::min(copyHeight, dirty.bottom);
-				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return true;
+				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom)
+				{
+					if (!presentSuccessLogged)
+					{
+						LogPresentEvent("success-empty", dirty, presentFull);
+						presentSuccessLogged = true;
+					}
+					presentFailureLogged = false;
+					return true;
+				}
 
 				D3D11_BOX sourceRegion = {
 					static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
@@ -323,7 +414,8 @@ namespace Inkeys::Drawing::Draw3
 				context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
 					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
-				if (FAILED(context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+				const HRESULT mapResult = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+				if (FAILED(mapResult)) return fail("map", ERROR_SUCCESS, mapResult);
 				const UlwDirtyCopyResult copyResult = CopyAndInspectUlwDirtyRows(
 					static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
 					static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
@@ -333,11 +425,21 @@ namespace Inkeys::Drawing::Draw3
 				lastObservation.fullFrameAllZeroAlpha = copyResult.fullFrameAllZeroAlpha;
 
 				RECT windowRect = {};
-				if (!GetWindowRect(window, &windowRect)) return false;
+				if (!GetWindowRect(window, &windowRect))
+				{
+					const DWORD error = GetLastError();
+					return fail("window-rect", error,
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+				}
 				POINT destinationPoint = { windowRect.left, windowRect.top };
 				SIZE destinationSize = { dibWidth, dibHeight };
 				POINT sourcePoint = { 0, 0 };
 				BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+				lastDestination = destinationPoint;
+				lastDestinationSize = destinationSize;
+				lastSource = sourcePoint;
+				lastBlend = blend;
+				lastUpdateFlags = ULW_ALPHA;
 				UPDATELAYEREDWINDOWINFO update = {};
 				update.cbSize = sizeof(update);
 				update.pptDst = &destinationPoint;
@@ -347,7 +449,20 @@ namespace Inkeys::Drawing::Draw3
 				update.pblend = &blend;
 				update.dwFlags = ULW_ALPHA;
 				update.prcDirty = presentFull ? nullptr : &dirty; // 非全量时让 USER32 只更新改变区域。
-				return UpdateLayeredWindowIndirect(window, &update) != FALSE;
+				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
+				if (!updated)
+				{
+					const DWORD error = GetLastError();
+					return fail("UpdateLayeredWindowIndirect", error,
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+				}
+				if (!presentSuccessLogged || presentFailureLogged)
+				{
+					LogPresentEvent(presentFailureLogged ? "recovery" : "success", dirty, presentFull);
+					presentSuccessLogged = true;
+				}
+				presentFailureLogged = false;
+				return true;
 			}
 		};
 
@@ -504,6 +619,8 @@ namespace Inkeys::Drawing::Draw3
 		UINT width = 0;
 		UINT height = 0;
 		bool presentFailureLogged = false;
+		bool presentSuccessLogged = false;
+		TransparentOutputTarget lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		bool recoveryPending = false;
 		HRESULT lastFailure = S_OK;
 		TransparentPresentationOptions options = {};
@@ -525,6 +642,8 @@ namespace Inkeys::Drawing::Draw3
 			dwmBlurPresenter.Reset();
 			dwmExtendedPresenter.Reset();
 			presentFailureLogged = false;
+			presentSuccessLogged = false;
+			lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		}
 
 		HRESULT DeviceFailureOr(HRESULT fallback) const noexcept
@@ -666,6 +785,8 @@ namespace Inkeys::Drawing::Draw3
 
 		bool InitializePresenter()
 		{
+			primaryUlwPresenter.diagnosticRole = "Drawpad";
+			selectionUlwPresenter.diagnosticRole = "DrawpadPresentation";
 			bool primaryInitialized = false;
 			switch (activeMode)
 			{
@@ -732,6 +853,9 @@ namespace Inkeys::Drawing::Draw3
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
+			// DComp 和 ULW 都输出实际 swapchain 描述，包含普通回退的 flags/effect/size。
+			LogSwapChainRuntimeDescription(TransparentPresentModeName(mode),
+				swapChain.Get(), "Draw3 created");
 
 			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height))
 			{
@@ -795,6 +919,9 @@ namespace Inkeys::Drawing::Draw3
 		impl_->lastObservation = {};
 		impl_->recoveryPending = false;
 		impl_->lastFailure = S_OK;
+		impl_->presentFailureLogged = false;
+		impl_->presentSuccessLogged = false;
+		impl_->lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 	}
 
 	bool TransparentPresentationController::Initialize(HWND primaryWindow, HWND selectionWindow,
@@ -815,6 +942,9 @@ namespace Inkeys::Drawing::Draw3
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		impl_->requestedOutputRevision = 0;
 		impl_->lastObservation = {};
+		impl_->presentFailureLogged = false;
+		impl_->presentSuccessLogged = false;
+		impl_->lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		if (!primaryWindow || !selectionWindow || !IsWindow(primaryWindow) ||
 			!IsWindow(selectionWindow))
 		{
@@ -876,6 +1006,13 @@ namespace Inkeys::Drawing::Draw3
 		impl_->requestedOutputTarget = target;
 		if (++impl_->requestedOutputRevision == 0)
 			++impl_->requestedOutputRevision;
+		if (StartupEnvironmentDiagnosticsEnabled())
+		{
+			std::cout << "[Draw3Diag][target] requested="
+				<< (target == TransparentOutputTarget::SelectionUlw
+					? "DrawpadPresentation" : "Drawpad")
+				<< " revision=" << impl_->requestedOutputRevision << std::endl;
+		}
 		return impl_->requestedOutputRevision;
 	}
 
@@ -997,6 +1134,26 @@ namespace Inkeys::Drawing::Draw3
 			const HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
 			succeeded = SUCCEEDED(result);
 			impl_->lastObservation = {};
+			if (!succeeded || impl_->presentFailureLogged || !impl_->presentSuccessLogged ||
+				impl_->lastLoggedOutputTarget != target)
+			{
+				if (!succeeded || StartupEnvironmentDiagnosticsEnabled())
+				{
+					std::cout << "[Draw3Diag][present] mode="
+						<< TransparentPresentModeName(impl_->activeMode)
+						<< " target="
+						<< (target == TransparentOutputTarget::SelectionUlw
+							? "DrawpadPresentation" : "Drawpad")
+						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(impl_->primaryWindow)
+						<< " size=" << std::dec << impl_->width << "x" << impl_->height
+						<< " dirty=(" << dirty.left << "," << dirty.top << ","
+						<< dirty.right << "," << dirty.bottom << ")"
+						<< " full=" << (presentFull ? 1 : 0)
+						<< " result=0x" << std::hex << static_cast<unsigned long>(result)
+						<< std::dec << std::endl;
+				}
+				impl_->lastLoggedOutputTarget = target;
+			}
 			if (!succeeded) impl_->SetFailure(result);
 		}
 		impl_->lastObservation.outputTarget = target;
@@ -1007,7 +1164,11 @@ namespace Inkeys::Drawing::Draw3
 			std::cout << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
 			impl_->presentFailureLogged = true;
 		}
-		if (succeeded) impl_->presentFailureLogged = false;
+		if (succeeded)
+		{
+			impl_->presentFailureLogged = false;
+			impl_->presentSuccessLogged = true;
+		}
 		return succeeded;
 	}
 

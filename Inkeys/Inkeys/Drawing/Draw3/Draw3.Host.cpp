@@ -24,6 +24,7 @@ import Inkeys.Drawing.Draw3.window_control;
 #include <condition_variable>
 #include <cstdio>
 #include <exception>
+#include <iostream>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
@@ -82,6 +83,68 @@ namespace Inkeys::Drawing::Draw3
 			case Inkeys::Display::EdidStatus::ParseFailed:return "ParseFailed";
 			default:return "Unavailable";
 			}
+		}
+
+		const char* HostOutputTargetName(HostOutputTarget value) noexcept
+		{
+			return value == HostOutputTarget::SelectionUlw
+				? "DrawpadPresentation" : "Drawpad";
+		}
+
+		const char* Draw3BuildArchitectureName() noexcept
+		{
+#if defined(_M_ARM64)
+			return "ARM64";
+#elif defined(_M_X64)
+			return "x64";
+#elif defined(_M_IX86)
+			return "Win32";
+#else
+			return "unknown";
+#endif
+		}
+
+		void LogDraw3BuildIdentity()
+		{
+			// 工程的 Debug/Release 配置共用 NDEBUG 定义，配置名由交付构建命令记录；
+			// 这里只输出不会被配置宏误判的编译身份。
+			std::cout << "[Draw3Diag][build] id=draw3-" << __DATE__ << "T" << __TIME__
+				<< " arch=" << Draw3BuildArchitectureName()
+				<< " msvc=" << _MSC_VER << std::endl;
+		}
+
+		void LogDraw3WindowState(const char* eventName, HWND primary, HWND selection)
+		{
+			if (!eventName) return;
+			const auto logWindow = [eventName](const char* role, HWND window)
+			{
+				const BOOL valid = window && IsWindow(window);
+				const BOOL visible = valid && IsWindowVisible(window);
+				RECT windowRect = {};
+				RECT clientRect = {};
+				const BOOL windowRectOk = valid && GetWindowRect(window, &windowRect);
+				const BOOL clientRectOk = valid && GetClientRect(window, &clientRect);
+				DWORD processId = 0;
+				const DWORD threadId = valid ? GetWindowThreadProcessId(window, &processId) : 0;
+				std::cout << "[Draw3Diag][window] event=" << eventName << " role=" << role
+					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
+					<< " valid=" << std::dec << (valid ? 1 : 0)
+					<< " visible=" << (visible ? 1 : 0)
+					<< " pid=" << processId << " tid=" << threadId
+					<< " owner=0x" << std::hex << reinterpret_cast<UINT_PTR>(valid ? GetWindow(window, GW_OWNER) : nullptr)
+					<< " previous=0x" << reinterpret_cast<UINT_PTR>(valid ? GetWindow(window, GW_HWNDPREV) : nullptr)
+					<< " style=0x" << std::hex
+					<< static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_STYLE) : 0)
+					<< " exStyle=0x" << static_cast<unsigned long>(valid ? GetWindowLongPtrW(window, GWL_EXSTYLE) : 0)
+					<< std::dec << " windowRectOk=" << (windowRectOk ? 1 : 0)
+					<< " clientRectOk=" << (clientRectOk ? 1 : 0)
+					<< " window=(" << windowRect.left << "," << windowRect.top << ","
+					<< windowRect.right << "," << windowRect.bottom << ")"
+					<< " client=(" << clientRect.left << "," << clientRect.top << ","
+					<< clientRect.right << "," << clientRect.bottom << ")" << std::endl;
+			};
+			logWindow("Drawpad", primary);
+			logWindow("DrawpadPresentation", selection);
 		}
 		const char* PhysicalReasonName(Inkeys::Display::PhysicalSizeUnavailableReason value) noexcept
 		{
@@ -183,6 +246,10 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::uint64_t> ulwPremultipliedAlphaFailureCount = 0;
 		std::atomic_bool ulwTransparentFullFrameVerified = false;
 		std::atomic_bool lastPresentSucceeded = false;
+		bool presentDiagnosticInitialized = false;
+		HostOutputTarget lastDiagnosticOutputTarget = HostOutputTarget::PrimaryDrawpad;
+		std::uint64_t lastDiagnosticOutputRevision = 0;
+		bool lastDiagnosticPresentSucceeded = false;
 		std::atomic<int> committedWidth = 0;
 		std::atomic<int> committedHeight = 0;
 		std::atomic<std::size_t> currentPageIndex = 0;
@@ -514,6 +581,10 @@ namespace Inkeys::Drawing::Draw3
 			ulwPremultipliedAlphaFailureCount.store(0, std::memory_order_release);
 			ulwTransparentFullFrameVerified.store(false, std::memory_order_release);
 			lastPresentSucceeded.store(false, std::memory_order_release);
+			presentDiagnosticInitialized = false;
+			lastDiagnosticOutputTarget = HostOutputTarget::PrimaryDrawpad;
+			lastDiagnosticOutputRevision = 0;
+			lastDiagnosticPresentSucceeded = false;
 			currentPageIndex.store(0, std::memory_order_release);
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
@@ -576,6 +647,38 @@ namespace Inkeys::Drawing::Draw3
 			bool runtimeChanged = false;
 			const HostOutputTarget outputTarget =
 				ToHostOutputTarget(observation.outputTarget);
+			const bool diagnosticTargetChanged = !self->presentDiagnosticInitialized ||
+				self->lastDiagnosticOutputTarget != outputTarget ||
+				self->lastDiagnosticOutputRevision != observation.outputRevision;
+			const bool diagnosticRecovery = self->presentDiagnosticInitialized &&
+				self->lastDiagnosticPresentSucceeded != succeeded;
+			if (diagnosticTargetChanged || diagnosticRecovery)
+			{
+				std::cout << "[Draw3Diag][present] event="
+					<< (succeeded ? (diagnosticRecovery ? "recovery" : "success") : "failure")
+					<< " mode=" << TransparentPresentModeName(self->presentation.ActiveMode())
+					<< " target=" << HostOutputTargetName(outputTarget)
+					<< " revision=" << observation.outputRevision
+					<< " contentRevision=" << observation.presentedContentRevision
+					<< " dirty=(" << dirty.left << "," << dirty.top << ","
+					<< dirty.right << "," << dirty.bottom << ")"
+					<< " full=" << (presentFull ? 1 : 0)
+					<< " hwnd=0x" << std::hex
+					<< reinterpret_cast<UINT_PTR>(outputTarget == HostOutputTarget::SelectionUlw
+						? self->attachedPresentationWindow.load(std::memory_order_acquire)
+						: self->attachedWindow.load(std::memory_order_acquire))
+					<< " result=0x" << static_cast<unsigned long>(
+						succeeded ? S_OK : self->presentation.LastFailure())
+					<< std::dec << std::endl;
+				if (!succeeded || diagnosticTargetChanged || diagnosticRecovery)
+					LogDraw3WindowState(succeeded ? "present-success" : "present-failure",
+						self->attachedWindow.load(std::memory_order_acquire),
+						self->attachedPresentationWindow.load(std::memory_order_acquire));
+			}
+			self->presentDiagnosticInitialized = true;
+			self->lastDiagnosticOutputTarget = outputTarget;
+			self->lastDiagnosticOutputRevision = observation.outputRevision;
+			self->lastDiagnosticPresentSucceeded = succeeded;
 			runtimeChanged = self->requestedOutputTarget.exchange(
 				outputTarget, std::memory_order_acq_rel) != outputTarget || runtimeChanged;
 			runtimeChanged = self->requestedOutputRevision.exchange(
@@ -1276,6 +1379,8 @@ namespace Inkeys::Drawing::Draw3
 			if (running.load(std::memory_order_acquire) || drawingThread.joinable() ||
 				attachedWindow.load(std::memory_order_acquire) ||
 				attachedPresentationWindow.load(std::memory_order_acquire)) return false;
+			LogDraw3BuildIdentity();
+			LogDraw3WindowState("start-request", hwnd, presentationHwnd);
 			BeginRuntimeMetricsRun(options);
 			// 强制 DWM 已禁用，必须在重置 bridge 或附着外部 HWND 前拒绝。
 			if (options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind ||
@@ -1311,6 +1416,7 @@ namespace Inkeys::Drawing::Draw3
 			if (startOptions.startupMilestone)
 				startOptions.startupMilestone(startOptions.startupContext,
 					HostStartupStage::WindowAttached);
+			LogDraw3WindowState("attached", hwnd, presentationHwnd);
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();
 			if (!options.autoSaveRoot.empty() && !autoSave.Start(
@@ -1339,12 +1445,24 @@ namespace Inkeys::Drawing::Draw3
 			{
 				bool initialized = false;
 				bool graphicsInitialized = false;
+					std::cout << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
+						<< reinterpret_cast<UINT_PTR>(attachedWindow.load(std::memory_order_acquire))
+						<< " selectionHwnd=0x"
+						<< reinterpret_cast<UINT_PTR>(attachedPresentationWindow.load(std::memory_order_acquire))
+						<< std::dec << std::endl;
 				try
 				{
 					const HWND windowHandle = attachedWindow.load(std::memory_order_acquire);
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
 					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics);
+					std::cout << "[Draw3Diag][startup] stage=graphics result="
+						<< (graphicsInitialized ? "ready" : "failed")
+						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(windowHandle)
+						<< " selectionHwnd=0x" << reinterpret_cast<UINT_PTR>(presentationWindowHandle)
+						<< std::dec << " driver=" << (graphics.driverType == D3D_DRIVER_TYPE_WARP ? "WARP" : "Hardware")
+						<< " featureLevel=0x" << std::hex << static_cast<unsigned>(graphics.featureLevel)
+						<< std::dec << std::endl;
 					// 已知失败后先激活；普通设备初始化尚未返回时不设置冷启动上限。
 					if (!graphicsInitialized) failedCleanup.BeginKnownFailure();
 					if (graphicsInitialized && startOptions.startupMilestone)
@@ -1371,6 +1489,11 @@ namespace Inkeys::Drawing::Draw3
 							static_cast<UINT>((std::max)(1, size.width)),
 							static_cast<UINT>((std::max)(1, size.height)), presentationCallbacks,
 							presentationOptions);
+						std::cout << "[Draw3Diag][startup] stage=presenter result="
+							<< (graphicsInitialized ? "ready" : "failed")
+							<< " mode=" << TransparentPresentModeName(presentation.ActiveMode())
+							<< " renderer=0x" << std::hex << reinterpret_cast<UINT_PTR>(&renderer)
+							<< std::dec << " size=" << size.width << "x" << size.height << std::endl;
 						if (!graphicsInitialized) failedCleanup.BeginKnownFailure();
 						if (graphicsInitialized)
 						{
@@ -1394,12 +1517,22 @@ namespace Inkeys::Drawing::Draw3
 					{
 						// RTS 必须在图形资源准备好后才启用，避免输入 producer 先于 renderer 存活。
 						bool stylusApproved = false;
+						bool stylusDecisionValue = false;
+						bool stylusSucceededValue = false;
 						{
 							std::unique_lock lock(startupMutex);
+							std::cout << "[Draw3Diag][startup] gate=rts-ready state=waiting" << std::endl;
 							startupCondition.wait(lock, [this, &token]
 								{ return stylusDecision || token.stop_requested(); });
+							stylusDecisionValue = stylusDecision;
+							stylusSucceededValue = stylusSucceeded;
 							stylusApproved = stylusDecision && stylusSucceeded && !token.stop_requested();
 						}
+						std::cout << "[Draw3Diag][startup] gate=rts-ready result="
+							<< (stylusApproved ? "open" : "closed")
+							<< " decision=" << (stylusDecisionValue ? 1 : 0)
+							<< " stylus=" << (stylusSucceededValue ? 1 : 0)
+							<< " stopped=" << (token.stop_requested() ? 1 : 0) << std::endl;
 						if (stylusApproved)
 						{
 							StrokeModelConfiguration configuration =
@@ -1421,6 +1554,9 @@ namespace Inkeys::Drawing::Draw3
 							};
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get());
+							std::cout << "[Draw3Diag][startup] stage=controller result=ready renderer=0x"
+								<< std::hex << reinterpret_cast<UINT_PTR>(&renderer)
+								<< std::dec << std::endl;
 							if (startOptions.startupMilestone)
 								startOptions.startupMilestone(startOptions.startupContext,
 									HostStartupStage::ControllerReady);
@@ -1429,6 +1565,11 @@ namespace Inkeys::Drawing::Draw3
 							presentation.SetOutputTarget(window.SelectionMode()
 								? TransparentOutputTarget::SelectionUlw
 								: TransparentOutputTarget::PrimaryDrawpad);
+							std::cout << "[Draw3Diag][startup] stage=first-frame attempt target="
+								<< HostOutputTargetName(ToHostOutputTarget(presentation.RequestedOutputTarget()))
+								<< " revision=" << presentation.RequestedOutputRevision()
+								<< " size=" << committedWidth.load(std::memory_order_acquire)
+								<< "x" << committedHeight.load(std::memory_order_acquire) << std::endl;
 							drawing->ClearCanvas();
 							if (runtimeMetrics.session)
 							{
@@ -1438,6 +1579,14 @@ namespace Inkeys::Drawing::Draw3
 									runtimeMetrics.unavailable.store(true, std::memory_order_release);
 							}
 							initialized = lastPresentSucceeded.load(std::memory_order_acquire);
+							std::cout << "[Draw3Diag][startup] stage=first-frame result="
+								<< (initialized ? "committed" : "failed")
+								<< " target=" << HostOutputTargetName(
+									ToHostOutputTarget(presentation.RequestedOutputTarget()))
+								<< " revision=" << presentation.RequestedOutputRevision()
+								<< " size=" << committedWidth.load(std::memory_order_acquire)
+								<< "x" << committedHeight.load(std::memory_order_acquire) << std::endl;
+							LogDraw3WindowState("first-frame", windowHandle, presentationWindowHandle);
 							if (!initialized) failedCleanup.BeginKnownFailure();
 							firstFrameReady.store(initialized, std::memory_order_release);
 							if (initialized && startOptions.startupMilestone)

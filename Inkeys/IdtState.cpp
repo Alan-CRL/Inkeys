@@ -63,6 +63,16 @@ namespace
 	std::atomic_bool draw3PresentationRetryPending = false;
 	bool draw3PresentationFailureActive = false;
 	bool draw3SelectionWaitActive = false;
+	enum class Draw3PresentationGateWaitReason : std::uint8_t
+	{
+		None,
+		BridgeModeMismatch,
+		SelectionHandoff,
+		FirstFrame,
+		SelectionOutput,
+	};
+	Draw3PresentationGateWaitReason draw3PresentationGateWaitReason =
+		Draw3PresentationGateWaitReason::None;
 	// 低位保存期望 owner 状态，高位版本保证旧请求成功也不能覆盖更新后的期望。
 	std::atomic_uint64_t settingOwnerDesiredState = 0;
 	std::atomic_uint64_t settingOwnerAppliedState = 0;
@@ -255,6 +265,68 @@ namespace
 		}
 	}
 
+	[[nodiscard]] const char* Draw3PresentationGateWaitReasonName(
+		Draw3PresentationGateWaitReason reason) noexcept
+	{
+		switch (reason)
+		{
+		case Draw3PresentationGateWaitReason::BridgeModeMismatch:
+			return "bridge-mode-mismatch";
+		case Draw3PresentationGateWaitReason::SelectionHandoff:
+			return "selection-handoff";
+		case Draw3PresentationGateWaitReason::FirstFrame:
+			return "first-frame";
+		case Draw3PresentationGateWaitReason::SelectionOutput:
+			return "selection-output";
+		case Draw3PresentationGateWaitReason::None:
+		default:
+			return "none";
+		}
+	}
+
+	void LogDraw3PresentationGateWait(
+		Draw3PresentationGateWaitReason reason,
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		std::uint64_t bridgeRevision, std::uint64_t modeRevision) noexcept
+	{
+		if (draw3PresentationGateWaitReason == reason) return;
+		draw3PresentationGateWaitReason = reason;
+		if (!IDTLogger) return;
+		IDTLogger->info(
+			"[状态线程][Draw3Gate] state=wait reason={} bridgeRevision={} modeRevision={} "
+			"workspace={} selection={} pageContent={} firstFrame={} output={}@{} ready={}@{} "
+			"content={}/{} auxiliaryClean={} commandPending={} uiReady={} inputReady={}",
+			Draw3PresentationGateWaitReasonName(reason), bridgeRevision, modeRevision,
+			static_cast<unsigned>(runtime.workspace), runtime.selectionMode,
+			runtime.currentPageHasContent, runtime.firstFrameReady,
+			OutputTargetName(runtime.requestedOutputTarget), runtime.requestedOutputRevision,
+			OutputTargetName(runtime.readyOutputTarget), runtime.readyOutputRevision,
+			runtime.presentedContentRevision, runtime.contentRevision,
+			runtime.auxiliaryFullFrameClean, runtime.commandScenePending,
+			runtime.presentationUiReady.has_value(), runtime.presentationInputReady);
+	}
+
+	void LogDraw3PresentationGateReady(
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
+		std::uint64_t bridgeRevision, std::uint64_t modeRevision) noexcept
+	{
+		if (draw3PresentationGateWaitReason ==
+			Draw3PresentationGateWaitReason::None) return;
+		const auto previous = draw3PresentationGateWaitReason;
+		draw3PresentationGateWaitReason =
+			Draw3PresentationGateWaitReason::None;
+		if (!IDTLogger) return;
+		IDTLogger->info(
+			"[状态线程][Draw3Gate] state=ready wake=state-reconcile previousReason={} "
+			"bridgeRevision={} modeRevision={} firstFrame={} output={}@{} ready={}@{} "
+			"content={}/{}",
+			Draw3PresentationGateWaitReasonName(previous), bridgeRevision, modeRevision,
+			runtime.firstFrameReady, OutputTargetName(runtime.requestedOutputTarget),
+			runtime.requestedOutputRevision, OutputTargetName(runtime.readyOutputTarget),
+			runtime.readyOutputRevision, runtime.presentedContentRevision,
+			runtime.contentRevision);
+	}
+
 	void LogDraw3PresentationFailure(
 		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
 		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
@@ -394,16 +466,19 @@ namespace
 		std::scoped_lock lock(draw3PresentationMutex);
 		const auto desired =
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot();
+		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 		// 新工具已选中但 bridge 尚未发布时，不提交旧画布可见性。
 		if (modeRevision != stateModeTransitionRevision.load(std::memory_order_acquire) ||
 			modeSelection != desired.selectionMode)
 		{
+			LogDraw3PresentationGateWait(
+				Draw3PresentationGateWaitReason::BridgeModeMismatch, runtime,
+				desired.revision, modeRevision);
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
 		}
 		const auto exitSelectionRevision = draw3ExitSelectionModeRevision.load(
 			std::memory_order_acquire);
-		const auto runtime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
 		const bool selectionMode = runtime.selectionMode;
 		const bool whiteboard = runtime.workspace ==
 			Inkeys::Drawing::Draw3::Bridge::Workspace::Whiteboard;
@@ -454,6 +529,9 @@ namespace
 				runtime.workspace != desired.workspace || !targetReady);
 		if (selectionWaiting)
 		{
+			LogDraw3PresentationGateWait(
+				Draw3PresentationGateWaitReason::SelectionHandoff, runtime,
+				desired.revision, modeRevision);
 			draw3SelectionWaitActive = true;
 			// 旧主 Drawpad 可能仍是非 layered DComp 窗口。新选择帧尚未呈现时，
 			// 先在窗口 owner thread 隐藏双表面，不能把 AdmissionBlocked 当穿透。
@@ -495,6 +573,11 @@ namespace
 		if (!runtime.firstFrameReady ||
 			(selectionMode && !whiteboard && !targetReady))
 		{
+			LogDraw3PresentationGateWait(
+				!runtime.firstFrameReady
+					? Draw3PresentationGateWaitReason::FirstFrame
+					: Draw3PresentationGateWaitReason::SelectionOutput,
+				runtime, desired.revision, modeRevision);
 			// 失败的 Present 也需有后继机会；仅等待一次 revision 可能永远卡住。
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			draw3PresentationFailureActive = false;
@@ -570,6 +653,7 @@ namespace
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
 		}
+		LogDraw3PresentationGateReady(runtime, desired.revision, modeRevision);
 		draw3PresentationRetryPending.store(false, std::memory_order_release);
 		if (ExitSelectionHandoffPending() && desired.selectionMode &&
 			desired.workspace == Workspace::Desktop)

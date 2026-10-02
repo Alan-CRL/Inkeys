@@ -72,6 +72,50 @@ namespace
 		}
 	}
 
+	[[nodiscard]] const wchar_t* DrawpadSurfaceVisibilityName(
+		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
+	{
+		switch (visibility)
+		{
+		case Inkeys::Window::DrawpadSurfaceVisibility::Primary: return L"primary";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Presentation: return L"presentation";
+		case Inkeys::Window::DrawpadSurfaceVisibility::Hidden: return L"hidden";
+		default: return L"unknown";
+		}
+	}
+
+	void LogDrawpadSurfaceState(const wchar_t* eventName,
+		Inkeys::Window::DrawpadSurfaceVisibility requested,
+		DWORD error, HWND primary, HWND presentation) noexcept
+	{
+		const auto logWindow = [eventName, requested, error](
+			const wchar_t* role, HWND hwnd) noexcept
+		{
+			const bool valid = hwnd && IsWindow(hwnd);
+			RECT bounds{};
+			const bool boundsValid = valid && GetWindowRect(hwnd, &bounds);
+			const LONG_PTR exStyle = valid ? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
+			std::fwprintf(stderr,
+				L"[DrawpadSurface] event=%s requested=%s role=%s hwnd=0x%llX "
+				L"owner=0x%llX previous=0x%llX valid=%u visible=%u topmost=%u "
+				L"layered=%u transparent=%u error=%lu boundsOk=%u bounds=(%ld,%ld,%ld,%ld)\n",
+				eventName, DrawpadSurfaceVisibilityName(requested), role,
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
+					valid ? GetWindow(hwnd, GW_OWNER) : nullptr)),
+				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
+					valid ? GetWindow(hwnd, GW_HWNDPREV) : nullptr)),
+				valid ? 1u : 0u, valid && IsWindowVisible(hwnd) ? 1u : 0u,
+				(exStyle & WS_EX_TOPMOST) ? 1u : 0u,
+				(exStyle & WS_EX_LAYERED) ? 1u : 0u,
+				(exStyle & WS_EX_TRANSPARENT) ? 1u : 0u, error,
+				boundsValid ? 1u : 0u,
+				bounds.left, bounds.top, bounds.right, bounds.bottom);
+		};
+		logWindow(L"Drawpad", primary);
+		logWindow(L"DrawpadPresentation", presentation);
+	}
+
 	[[nodiscard]] const wchar_t* DefaultClassName(WindowRole role) noexcept
 	{
 		switch (role)
@@ -1042,6 +1086,12 @@ namespace Inkeys::Window
 			if (!hwnd)
 			{
 				const DWORD createError = GetLastError();
+				if (spec.role == WindowRole::Drawpad ||
+					spec.role == WindowRole::DrawpadPresentation)
+					LogDrawpadSurfaceState(L"window-create-failed",
+						DrawpadSurfaceVisibility::Hidden, createError,
+						Handle(WindowRole::Drawpad),
+						Handle(WindowRole::DrawpadPresentation));
 				failedCleanup.BeginKnownFailure();
 				wchar_t diagnostic[256]{};
 				swprintf_s(diagnostic, L"Inkeys.Window create failed: role=%u error=%lu class=%s\n",
@@ -1077,6 +1127,18 @@ namespace Inkeys::Window
 				!shutdownRequested_.load(std::memory_order_acquire)
 				? (IsSetting(spec.role) ? SW_SHOW : SW_SHOWNOACTIVATE)
 				: SW_HIDE);
+			if (spec.role == WindowRole::Drawpad ||
+				spec.role == WindowRole::DrawpadPresentation)
+			{
+				const auto initialSurface = !spec.visible
+					? DrawpadSurfaceVisibility::Hidden
+					: spec.role == WindowRole::Drawpad
+						? DrawpadSurfaceVisibility::Primary
+						: DrawpadSurfaceVisibility::Presentation;
+				LogDrawpadSurfaceState(L"window-created", initialSurface,
+					ERROR_SUCCESS, Handle(WindowRole::Drawpad),
+					Handle(WindowRole::DrawpadPresentation));
+			}
 			record.ready.store(true, std::memory_order_release);
 			if (spec.created)
 			{
@@ -1124,8 +1186,21 @@ namespace Inkeys::Window
 				(void)record.channel->Unbind(hwnd);
 				record.messagesBound = false;
 			}
+			if ((role == WindowRole::Drawpad ||
+				role == WindowRole::DrawpadPresentation) && hwnd)
+				LogDrawpadSurfaceState(L"window-destroying",
+					DrawpadSurfaceVisibility::Hidden, ERROR_SUCCESS,
+					Handle(WindowRole::Drawpad),
+					Handle(WindowRole::DrawpadPresentation));
 			if (hwnd && IsWindow(hwnd))
 				DestroyWindow(hwnd);
+			if (role == WindowRole::Drawpad ||
+				role == WindowRole::DrawpadPresentation)
+				LogDrawpadSurfaceState(L"window-destroyed",
+					DrawpadSurfaceVisibility::Hidden, ERROR_SUCCESS,
+					role == WindowRole::Drawpad ? nullptr : Handle(WindowRole::Drawpad),
+					role == WindowRole::DrawpadPresentation
+						? nullptr : Handle(WindowRole::DrawpadPresentation));
 			record.hwnd.store(nullptr, std::memory_order_release);
 			record.threadId.store(0, std::memory_order_release);
 			if (record.channel)
@@ -1806,10 +1881,23 @@ namespace Inkeys::Window
 		{
 			const HWND primary = Handle(WindowRole::Drawpad);
 			const HWND presentation = Handle(WindowRole::DrawpadPresentation);
+			const bool wasPrimaryVisible = primary && IsWindowVisible(primary);
+			const bool wasPresentationVisible = presentation && IsWindowVisible(presentation);
+			const auto complete = [&](bool succeeded, DWORD error) noexcept
+			{
+				// 只在可见性变化或失败时采样窗口快照，并恢复 Win32 错误供命令层记录。
+				const bool changed = wasPrimaryVisible !=
+					(primary && IsWindowVisible(primary)) || wasPresentationVisible !=
+					(presentation && IsWindowVisible(presentation));
+				if (!succeeded || changed)
+					LogDrawpadSurfaceState(succeeded ? L"visibility-applied"
+						: L"visibility-failed", visibility, error, primary, presentation);
+				SetLastError(error);
+				return succeeded;
+			};
 			if (!primary || !presentation || !IsWindow(primary) || !IsWindow(presentation))
 			{
-				SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-				return false;
+				return complete(false, ERROR_INVALID_WINDOW_HANDLE);
 			}
 			if (visibility != DrawpadSurfaceVisibility::Primary && GetCapture() == primary)
 			{
@@ -1819,8 +1907,8 @@ namespace Inkeys::Window
 					const DWORD error = GetLastError();
 					ShowWindow(primary, SW_HIDE);
 					ShowWindow(presentation, SW_HIDE);
-					SetLastError(error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error);
-					return false;
+					return complete(false,
+						error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error);
 				}
 			}
 
@@ -1862,11 +1950,10 @@ namespace Inkeys::Window
 					{
 						ShowWindow(primary, SW_HIDE);
 						ShowWindow(presentation, SW_HIDE);
-						SetLastError(ERROR_OPERATION_ABORTED);
-						return false;
+						return complete(false, ERROR_OPERATION_ABORTED);
 					}
 					// USER32 返回成功后仍读回两窗；旧主窗可见会继续拦截桌面输入。
-					if (matchesVisibility()) return true;
+					if (matchesVisibility()) return complete(true, ERROR_SUCCESS);
 					deferredError = ERROR_GEN_FAILURE;
 				}
 				else deferredError = GetLastError();
@@ -1878,8 +1965,7 @@ namespace Inkeys::Window
 			if (visibility != DrawpadSurfaceVisibility::Hidden &&
 				shutdownRequested_.load(std::memory_order_acquire))
 			{
-				SetLastError(ERROR_OPERATION_ABORTED);
-				return false;
+				return complete(false, ERROR_OPERATION_ABORTED);
 			}
 			if (visibility == DrawpadSurfaceVisibility::Primary)
 				ShowWindow(primary, SW_SHOWNOACTIVATE);
@@ -1887,15 +1973,13 @@ namespace Inkeys::Window
 				ShowWindow(presentation, SW_SHOWNOACTIVATE);
 			if (matchesVisibility())
 			{
-				SetLastError(ERROR_SUCCESS);
-				return true;
+				return complete(true, ERROR_SUCCESS);
 			}
 			// 目标表面失败时保留安全的双隐藏状态，由状态线程按最新版本重试。
 			ShowWindow(primary, SW_HIDE);
 			ShowWindow(presentation, SW_HIDE);
-			SetLastError(deferredError == ERROR_SUCCESS
+			return complete(false, deferredError == ERROR_SUCCESS
 				? ERROR_GEN_FAILURE : deferredError);
-			return false;
 		}
 
 		[[nodiscard]] bool ApplyDrawpadBounds(const RECT& bounds) noexcept
