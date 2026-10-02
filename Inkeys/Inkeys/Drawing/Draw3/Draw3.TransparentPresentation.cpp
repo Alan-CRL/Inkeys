@@ -141,10 +141,16 @@ namespace Inkeys::Drawing::Draw3
 			bool fullFrameAllZeroAlpha = false;
 		};
 
+		constexpr BYTE ComposePrimaryHitUnderlayAlpha(BYTE sourceAlpha) noexcept
+		{
+			const unsigned int alpha = sourceAlpha;
+			return static_cast<BYTE>(alpha + ((255u - alpha) + 127u) / 255u);
+		}
+
 		template <typename AfterCopy>
 		UlwDirtyCopyResult CopyAndInspectUlwDirtyRows(const BYTE* mapped, size_t rowPitch,
 			BYTE* dib, int dibWidth, int dibHeight, RECT dirty, bool presentFull,
-			AfterCopy afterCopy)
+			bool applyPrimaryHitUnderlay, AfterCopy afterCopy)
 		{
 			const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
 			const size_t copyBytes = pixelCount * 4;
@@ -152,30 +158,29 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<size_t>(dirty.left) * 4;
 			BYTE* destination = dib + static_cast<size_t>(dirty.top) *
 				static_cast<size_t>(dibWidth) * 4 + static_cast<size_t>(dirty.left) * 4;
+			UlwDirtyCopyResult result;
 			for (LONG y = dirty.top; y < dirty.bottom; ++y)
 			{
 				const size_t row = static_cast<size_t>(y - dirty.top);
 				const BYTE* sourceRow = source + row * rowPitch;
 				BYTE* destinationRow = destination + row * static_cast<size_t>(dibWidth) * 4;
 				std::memcpy(destinationRow, sourceRow, copyBytes); // 逐行处理 RowPitch 和 DIB stride 不同的情况。
-			}
-			afterCopy(); // 生产路径仍在检查 DIB 前 Unmap staging texture。
-
-			UlwDirtyCopyResult result;
-			// 检查提交给 ULW 的 BGRA 像素，防止 alpha 或预乘语义回归。
-			for (LONG y = dirty.top; y < dirty.bottom; ++y)
-			{
-				const BYTE* row = dib + static_cast<size_t>(y) *
-					static_cast<size_t>(dibWidth) * 4;
-				for (LONG x = dirty.left; x < dirty.right; ++x)
+				for (size_t x = 0; x < pixelCount; ++x)
 				{
-					const BYTE* pixel = row + static_cast<size_t>(x) * 4;
+					BYTE* pixel = destinationRow + x * 4;
+					const BYTE sourceAlpha = sourceRow[x * 4 + 3];
+					result.allZeroAlpha = result.allZeroAlpha && sourceAlpha == 0;
+					if (applyPrimaryHitUnderlay)
+					{
+						// 黑色底层不改 RGB；按预乘 alpha 的 OVER 公式计算最终 8-bit alpha。
+						pixel[3] = ComposePrimaryHitUnderlayAlpha(sourceAlpha);
+					}
 					const BYTE alpha = pixel[3];
-					result.allZeroAlpha = result.allZeroAlpha && alpha == 0;
 					result.premultipliedAlphaValid = result.premultipliedAlphaValid &&
 						pixel[0] <= alpha && pixel[1] <= alpha && pixel[2] <= alpha;
 				}
 			}
+			afterCopy(); // 最终像素检查完成后立即 Unmap staging texture。
 			result.fullFrameAllZeroAlpha = presentFull && result.allZeroAlpha &&
 				dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
 				dirty.bottom == dibHeight;
@@ -185,6 +190,7 @@ namespace Inkeys::Drawing::Draw3
 		struct UlwDirtyRectPresenter
 		{
 			const char* diagnosticRole = "Drawpad";
+			bool applyPrimaryHitUnderlay = false;
 			HWND window = nullptr;
 			Microsoft::WRL::ComPtr<ID3D11Device> device;
 			Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
@@ -336,8 +342,9 @@ namespace Inkeys::Drawing::Draw3
 				}
 				dibWidth = width;
 				dibHeight = height;
-				// 未绘制像素保持零 alpha，避免 ULW 把整窗当成不透明遮挡层。
-				std::fill_n(static_cast<DWORD*>(dibBits), static_cast<size_t>(width) * height, 0u);
+				// 仅 Primary 需要命中底层；Selection 初始仍全透明并保持穿透。
+				std::fill_n(static_cast<DWORD*>(dibBits), static_cast<size_t>(width) * height,
+					applyPrimaryHitUnderlay ? 0x01000000u : 0u);
 				return true;
 			}
 
@@ -419,6 +426,7 @@ namespace Inkeys::Drawing::Draw3
 				const UlwDirtyCopyResult copyResult = CopyAndInspectUlwDirtyRows(
 					static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
 					static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
+					applyPrimaryHitUnderlay,
 					[&] { context->Unmap(stagingTexture.Get(), 0); });
 				lastObservation.premultipliedAlphaValid = copyResult.premultipliedAlphaValid;
 				lastObservation.updatedRegionAllZeroAlpha = copyResult.allZeroAlpha;
@@ -786,7 +794,9 @@ namespace Inkeys::Drawing::Draw3
 		bool InitializePresenter()
 		{
 			primaryUlwPresenter.diagnosticRole = "Drawpad";
+			primaryUlwPresenter.applyPrimaryHitUnderlay = true;
 			selectionUlwPresenter.diagnosticRole = "DrawpadPresentation";
+			selectionUlwPresenter.applyPrimaryHitUnderlay = false;
 			bool primaryInitialized = false;
 			switch (activeMode)
 			{
@@ -1220,6 +1230,97 @@ namespace Inkeys::Drawing::Draw3
 	{
 		try
 		{
+			constexpr BYTE inputAlphas[] = { 0, 127, 128, 254, 255 };
+			constexpr BYTE expectedAlphas[] = { 1, 128, 128, 254, 255 };
+			for (size_t index = 0; index < ARRAYSIZE(inputAlphas); ++index)
+			{
+				if (ComposePrimaryHitUnderlayAlpha(inputAlphas[index]) != expectedAlphas[index])
+				{
+					std::fputs("UlwDirtyCopyBenchmark hit-underlay alpha formula mismatch\n", stderr);
+					return 1;
+				}
+			}
+
+			// 验证首帧、dirty 绘制/擦除/再落笔和 DIB 重建；选择输出不合成命中底层。
+			std::vector<BYTE> sequenceSource(2 * 4, 0);
+			std::vector<BYTE> sequenceDib(2 * 4, 0);
+			const auto copySequence = [](const std::vector<BYTE>& source, std::vector<BYTE>& dib,
+				int width, RECT dirty, bool presentFull, bool applyPrimaryHitUnderlay)
+			{
+				return CopyAndInspectUlwDirtyRows(source.data(), static_cast<size_t>(width) * 4,
+					dib.data(), width, 1, dirty, presentFull, applyPrimaryHitUnderlay, [] {});
+			};
+			const UlwDirtyCopyResult initialClear = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 2, 1 }, true, true);
+			if (!initialClear.allZeroAlpha || !initialClear.fullFrameAllZeroAlpha ||
+				sequenceDib[3] != 1 || sequenceDib[7] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary full clear mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[0] = 32;
+			sequenceSource[3] = 64;
+			const UlwDirtyCopyResult firstStroke = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 1, 1 }, false, true);
+			if (firstStroke.allZeroAlpha || sequenceDib[0] != 32 || sequenceDib[3] != 65 ||
+				sequenceDib[7] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary dirty stroke mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[0] = 0;
+			sequenceSource[3] = 0;
+			const UlwDirtyCopyResult erasedStroke = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 1, 1 }, false, true);
+			if (!erasedStroke.allZeroAlpha || sequenceDib[3] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary dirty erase mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[0] = 24;
+			sequenceSource[3] = 127;
+			const UlwDirtyCopyResult redrawnAfterErase = copySequence(sequenceSource, sequenceDib,
+				2, RECT{ 0, 0, 1, 1 }, false, true);
+			if (redrawnAfterErase.allZeroAlpha || sequenceDib[0] != 24 ||
+				sequenceDib[3] != 128 || sequenceDib[7] != 1 ||
+				sequenceSource[3] != 127)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary redraw after erase mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource.assign(3 * 4, 0);
+			sequenceDib.assign(3 * 4, 0); // 模拟 resize 后重建的 DIB。
+			const UlwDirtyCopyResult resizedClear = copySequence(sequenceSource, sequenceDib,
+				3, RECT{ 0, 0, 3, 1 }, true, true);
+			if (!resizedClear.fullFrameAllZeroAlpha || sequenceDib[3] != 1 ||
+				sequenceDib[7] != 1 || sequenceDib[11] != 1)
+			{
+				std::fputs("UlwDirtyCopyBenchmark resized primary clear mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource[8] = 255;
+			sequenceSource[11] = 255;
+			copySequence(sequenceSource, sequenceDib, 3, RECT{ 2, 0, 3, 1 }, false, true);
+			if (sequenceDib[8] != 255 || sequenceDib[11] != 255)
+			{
+				std::fputs("UlwDirtyCopyBenchmark primary redraw after resize mismatch\n", stderr);
+				return 1;
+			}
+
+			sequenceSource.assign(3 * 4, 0);
+			sequenceDib.assign(3 * 4, 0);
+			copySequence(sequenceSource, sequenceDib, 3, RECT{ 0, 0, 3, 1 }, true, false);
+			if (sequenceDib[3] != 0 || sequenceDib[7] != 0 || sequenceDib[11] != 0)
+			{
+				std::fputs("UlwDirtyCopyBenchmark selection transparency mismatch\n", stderr);
+				return 1;
+			}
+
 			enum class PixelPattern { Mixed, Transparent, Half, InvalidAlpha };
 			struct Scenario
 			{
@@ -1229,25 +1330,26 @@ namespace Inkeys::Drawing::Draw3
 				RECT dirty;
 				bool presentFull;
 				PixelPattern pattern;
+				bool applyPrimaryHitUnderlay;
 				bool allZeroAlpha;
 				bool premultipliedAlphaValid;
 				bool fullFrameAllZeroAlpha;
 			};
 			constexpr Scenario scenarios[] = {
 				{ "full_mixed", 1920, 1080, { 0, 0, 1920, 1080 }, true,
-					PixelPattern::Mixed, false, true, false },
+					PixelPattern::Mixed, true, false, true, false },
 				{ "partial_256", 1920, 1080, { 480, 304, 736, 560 }, false,
-					PixelPattern::Mixed, false, true, false },
+					PixelPattern::Mixed, true, false, true, false },
 				{ "narrow_long", 1920, 1080, { 951, 0, 959, 1080 }, false,
-					PixelPattern::Mixed, false, true, false },
+					PixelPattern::Mixed, false, false, true, false },
 				{ "full_transparent", 1920, 1080, { 0, 0, 1920, 1080 }, true,
-					PixelPattern::Transparent, true, true, true },
+					PixelPattern::Transparent, true, true, true, true },
 				{ "partial_transparent", 1920, 1080, { 480, 304, 736, 560 }, false,
-					PixelPattern::Transparent, true, true, false },
+					PixelPattern::Transparent, false, true, true, false },
 				{ "partial_half", 1920, 1080, { 480, 304, 736, 560 }, false,
-					PixelPattern::Half, false, true, false },
+					PixelPattern::Half, true, false, true, false },
 				{ "partial_invalid_alpha", 1920, 1080, { 480, 304, 736, 560 }, false,
-					PixelPattern::InvalidAlpha, false, false, false },
+					PixelPattern::InvalidAlpha, true, false, false, false },
 			};
 			constexpr int warmupBlocks = 16;
 			constexpr int measuredBlocks = 128;
@@ -1299,6 +1401,15 @@ namespace Inkeys::Drawing::Draw3
 					const size_t destinationOffset = static_cast<size_t>(y) * dibStride +
 						static_cast<size_t>(scenario.dirty.left) * 4;
 					std::memcpy(expected.data() + destinationOffset, source.data() + sourceOffset, copyBytes);
+					if (scenario.applyPrimaryHitUnderlay)
+					{
+						for (LONG x = scenario.dirty.left; x < scenario.dirty.right; ++x)
+						{
+							BYTE* pixel = expected.data() + destinationOffset +
+								static_cast<size_t>(x - scenario.dirty.left) * 4;
+							pixel[3] = ComposePrimaryHitUnderlayAlpha(pixel[3]);
+						}
+					}
 				}
 
 				for (int block = 0; block < warmupBlocks + measuredBlocks; ++block)
@@ -1312,7 +1423,8 @@ namespace Inkeys::Drawing::Draw3
 					LARGE_INTEGER stop = {};
 					if (!QueryPerformanceCounter(&start)) return 1;
 					result = CopyAndInspectUlwDirtyRows(source.data(), rowPitch, dib.data(),
-						scenario.width, scenario.height, scenario.dirty, scenario.presentFull, [] {});
+						scenario.width, scenario.height, scenario.dirty, scenario.presentFull,
+						scenario.applyPrimaryHitUnderlay, [] {});
 					if (!QueryPerformanceCounter(&stop)) return 1;
 					cyclesAvailable = cyclesAvailable &&
 						QueryThreadCycleTime(GetCurrentThread(), &stopCycles) != FALSE;
