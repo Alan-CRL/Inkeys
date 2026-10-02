@@ -1,5 +1,13 @@
 # 性能基准与口径
 
+当前执行/门禁唯一入口：[handoff.md](handoff.md)。以下旧阶段计量状态是当时证据，不等同当前源码。2026-10-01用户明确确认性能HC为20260811a Canary（0809–0811优化）；本轮0813命名不再作为缺基线借口。尚无可比Release三轮数据。
+
+## 2026-10-02 UI3 首场景归因更新（不构成性能通过）
+
+- 当前 Debug ARM64 候选仍不能用于 HC/H2 性能对照。`main-fold / round1 / capture on / capacity4096` exit90，当前 Inkeys SHA `4E31A8C9BAF87E26C5645BC1F7911F07E6603385767D973E7D82B4655AF56DF0`，原始目录 `TestResults/release-hardening/ui3-finite-8fb2b653c4e34e4b84b0789fb27b9712/r1/s1`。
+- retention 修补的实际 B363 离屏红→绿，证明已完整验证的同一 SVG 位图在已知不相交 dirty clip 下可以安全复用；整张 BGRA 逐字节相同。它没有关闭动画、光影、SVG 或帧，也没有降低完成门。
+- 首场景现在是第一目标 2/2 verified；第二目标 settled/pending=1/0、9/10 verified，唯一未验证 tag `0x2000C` 的 `More` SVG `Overwrite`。绑定时快照已确认对象身份；几何摘要记录 expected `[2940,890,3012,962]`、viewport/dirty `[1796,847,3224,1045]`，后续写入 `[2904,959,3048,1013]` 与可见区真实相交3px，不是 Coverage 缺失。没有成功 Present 分位数、GPU/光学延迟或 HC/H2 同机数据，不能宣称 UI3 流畅度或性能改善。
+
 ## 2026-09-30 计量工程续接（不构成性能胜出）
 
 - UI3 U04-R raw recorder已Debug/strict Headless/独立实码通过；成功时刻仍为callback-end代理。B1真实四API后的提交戳与七职责分段已取得四条确定红，正在实现；B2/B3/F整体设计仍NEEDS_REVISION，必须冻结有限目标signature、SVG实际ready proof和exact私有输入/runner后才能采三轮。
@@ -12,11 +20,11 @@
 | 基准 | 版本/状态 | 可比性 |
 | --- | --- | --- |
 | H0 | chore/publish HEAD 8b156fca59f0337a6afc6d722941666fcf143080，tree 56758776f075f5b4ae659108a190111a29f2c59a，任务创建前空工作区 | 当前代码基准；运行数据未验证 |
-| HC | 强候选：2026-08-11 GitHub Actions Canary run 31487748238，SHA 82f7b7c02080c253661514d31b55f3a827382e1d，ARM64 artifact ID 9100206152，archive SHA-256 b0f47b32886c1ad8b20b9aad8160c2fccb1408dc199afbdd6a081d831da432c2 | 来源可追溯；用户实际安装包及同机对照未验证，不能称唯一 HC |
+| HC | 用户确认20260811a Canary；本地 Canary-Inkeys20260811a-arm64.zip SHA28F4E0B32B5C56EA6375A776A539C77FC013A72A6F6B4F7A5A901BFB6BCB004E，内EXE81A3DBB2…6D07E，与version.json/既有CI run31487748238（源码82f7b7c0）相同 | 包/EXE身份已核，包重打包不冒原CI archive相同；同效果Release轨迹/三轮比较未验 |
 | H2 | 最新正式 Inkeys2 Release 20260713a，tag 0d9751b96f063d9aa5f46f8d905a8e153e9c91dd，ARM64 ZIP SHA-256 584b08c6b8af12e8a2c0966c9d39a42cc30d62ea0265629434b525c079ec426e | 公开 Release 身份已核；实际运行/配置未验证 |
 | HF | 完工时 HEAD 加全工作区内容指纹 | 未验证 |
 
-2026-09-29 本地对照二进制补充：H2 正式 ARM64 ZIP 已下载且本机 SHA-256 与上述发布记录相同，内层 `Inkeys.exe` SHA-256 `2300b276aac3402e87b5c6a11ca39a81f2b06f7643f14f8ab85acd830f2635a5`；HC 候选 run31487748238 ARM64 artifact 由 `gh run download` 解包，内层 EXE SHA-256 `81a3dbb26a845308ea2aafe7869844b389968e31f3798aee2e0987f947a6d07e`，原 artifact ZIP 散列未本机复算。两者 PE 均 ARM64 GUI。隔离启动只证明两旧版本各自创建 FloatingWindow/Drawpad 等 HWND，脚本向自有旧 Drawpad 发 WM_CLOSE 未在22秒内自然退出，随后仅强制本任务 PID；没有相同效果/输入轨迹/成功 Present 的帧样本。当前 HF Debug 隔离 GUI 10秒 idle 可见 Bar、Select 双画布隐藏且 UI3 Bar WARP/ULW 成功呈现，物理命中被其它 PID 遮挡，定向自有 Bar 消息也未完成模式切换。以上均**不能**用于 HC/H2/HF 流畅度排序；用户所指 Canary 安装包身份仍待确认。
+2026-09-29 本地对照二进制补充：H2 正式 ARM64 ZIP 已下载且本机 SHA-256 与上述发布记录相同，内层 `Inkeys.exe` SHA-256 `2300b276aac3402e87b5c6a11ca39a81f2b06f7643f14f8ab85acd830f2635a5`；HC 候选 run31487748238 ARM64 artifact 由 `gh run download` 解包，内层 EXE SHA-256 `81a3dbb26a845308ea2aafe7869844b389968e31f3798aee2e0987f947a6d07e`，原 artifact ZIP 散列未本机复算。两者 PE 均 ARM64 GUI。隔离启动只证明两旧版本各自创建 FloatingWindow/Drawpad 等 HWND，脚本向自有旧 Drawpad 发 WM_CLOSE 未在22秒内自然退出，随后仅强制本任务 PID；没有相同效果/输入轨迹/成功 Present 的帧样本。当前 HF Debug 隔离 GUI 10秒 idle 可见 Bar、Select 双画布隐藏且 UI3 Bar WARP/ULW 成功呈现，物理命中被其它 PID 遮挡，定向自有 Bar 消息也未完成模式切换。以上均**不能**用于 HC/H2/HF 流畅度排序；此处是历史未确认状态；2026-10-01用户已确认上述20260811a包并核内EXE一致。
 
 2026-09-29 真实 Host 隐藏窗口持久化资源快照：Release|ARM64 两种 presenter 轮次各自的 `Draw3HiddenPptCommands/<PID>-<QPC>` 唯一根分别保留 8 个 UInk 版本/约18.6 KiB 全部文件；`Draw3HiddenPptPersistence/<PID>-<QPC>` 分别保留 7 个 UInk 版本/约25.4 KiB 全部文件（本轮 PID10396）。这些是保存/冷载/重排场景结束后的**单次磁盘快照**，对应 F-044 为保护最后有效索引而不自动GC旧版本的容量取舍；既不是显存/句柄泄漏速度，也不能推导长时间每小时增长。三架构隐藏测试现在可运行真实输入→成功 Present 功能断言，仍缺把某笔 Down/Move/Up 与对应成功帧关联的生产观察 token；精确测量门见 `integration-and-release-check/research/draw3-hidden-end-to-end-benchmark-design.md`。没有该关联时拒绝报告伪造的 Down→可见像素 median/P95/P99。
 
@@ -169,3 +177,9 @@ F-022 的从头扫描成本随笔长上升在这一子段已测得，但 4096 �
 ## F-025 Laser 事务的资源与性能边界
 
 为防第二层栅格失败污染已提交 Laser 颜色，生产 renderer 仅在烘干时按需创建一份同视口 RGBA8 scratch，额外显存为 `4 × width × height` 字节：1920×1080 约 7.9 MiB、3840×2160 约 31.6 MiB，外加 RTV/SRV 对象；生命周期结束、resize 或设备释放时销毁。每次烘干增加一次已提交层到 scratch 的 GPU CopyResource；当前无 HWND WARP 64×64 红→绿测试验证像素事务，不构成真 GPU 帧成本、ULW/DComp Present 或 HC/H2 性能结论。真实长 Hold/Fade 显存趋势、烘干 P95、硬件 GPU copy 等待必须人工/真机测量；若实质退化需保留正确性并另设计等价低耗实现，不得丢样本或降低视觉效果。
+## 2026-10-01 恢复后性能证据边界
+
+- 用户指定的 0813 对照已锁定为 `Canary-Inkeys20260811a-arm64.zip`（archive SHA `28F4E0B32B5C56EA6375A776A539C77FC013A72A6F6B4F7A5A901BFB6BCB004E`，inner EXE SHA `81A3DBB26A845308EA2AAFE7869844B389968E31F3798AEE2E0987F947A6D07E`）。本轮没有在同设备、同效果、同 Release 配置下完成三轮 HC/H2/Canary 对照，因此不报告性能胜负。
+- UI3 最新 `main-fold round1 capture on capacity4096` 只得到 2 个 accepted 目标、1 个 completed，第二目标 SVG coverage 未验证后 Deadline；所有 timed frame/Present/P95/P99 字段为空，不能作为性能样本。
+- Draw3 N1 生产 metrics/controller 已构建并通过 control-fence/N1 集成合同与 Host metrics 小 smoke；这只验证数据结构、阶段/owner/失败保留和有限生命周期，不代表输入到成功 Present、Move/Up/Laser、GPU/显存或长文档性能。
+- 继续保持门槛：不以回调次数冒充帧率，不关闭动画/动态光影，不减少输入样本，不用 Debug 或不同效果配置替代 Release 对照。

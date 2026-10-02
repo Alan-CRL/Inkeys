@@ -1,5 +1,9 @@
 # 执行账本
 
+- 2026-10-02 续接：UI3 首场景真实证据更新并实施最小 retention 修复。B363 实际 D2D/BGRA 红→绿，已知同 bitmap/semantic/transform/opacity/epoch/surface 的不相交 dirty clip 可安全继承，partial/unknown/opacity/failed commit 继续拒证；当前候选 `InkeysRepo.sln` Debug ARM64 Build0、Headless0、offscreen0、ASYNC01 全绿。UI3 main-fold 当前仍 exit90：第一目标2/2，第二目标9/10，绑定时快照确认唯一 tag `0x2000C` 为 `More`，原因是严格 `Overwrite`；expected `[2940,890,3012,962]` 与 overwrite `[2904,959,3048,1013]` 真实相交3px，后215未开始。下一步只追该真实 composition，不放宽严格门。
+- 2026-10-02 Draw3 增量复验：同一最新 Inkeys Debug ARM64 候选的 control-fence、fallback-controller/lane、PPT current-load-retry、renderer map/commit、laser-raster 七个生产探针均 exit0；`--draw3-host-metrics-smoke` 使用已有 `TestResults/release-hardening` 私有父目录后 exit0，实际 U3H Host metrics lifecycle smoke PASS。第一次传不存在的 root 的 exit1 是夹具前提失败，保留并不归产品。上述仍不覆盖完整 Move/Up/Laser 输入链、长期成本或 Release 三轮性能。
+- 2026-10-02 UI3 有界几何快照：最新 Inkeys SHA `4E31A8C9BAF87E26C5645BC1F7911F07E6603385767D973E7D82B4655AF56DF0` 的 capture-on 首场景仍 exit90；新增 `button-layout.csv` 记录 More 按钮/图标当前矩形，未能证明 3px 后续 overwrite 在像素语义上可豁免。严格 `Overwrite` 继续保留，B363/offscreen 对当前 SHA exit0；不再增加诊断字段或放宽完成门。
+
 - 2026-09-30 新检查点：U1/M16已红绿及独立数值复审；NoHold四站点自然0＋D004/D005 Hold原15s各0，D005真实result观测已修复复验。C-P1/B1最终冻结完整Debug0、strictHeadless0，C expiry/allocation两个primitive绿0，其它8项在串行自有进程验证，独立实码check在途。C-P2/真实UInk恢复、Draw3 U2/U3和UI3 B2/B3/F仍未实现，不宣布仅剩人工。
 
 - 2026-09-30 续接：HEAD e32a5fc0、原分支未变，未暂存/提交；Draw3 U1 HARNESS_READY源码完整Debug|ARM64 Build0，parked真实CLI1，新合同198条FAIL而旧五子套件PASS，已派发GREEN_IMPLEMENT。C清理寿命与UI3真实Bar方案正在独立review。无hold自然提示反例按已审E02夹具补充设计，未执行。

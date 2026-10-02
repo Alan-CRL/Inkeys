@@ -212,6 +212,13 @@ namespace Inkeys::UI::Bar
 		std::uint32_t required = 0, verified = 0, failed = 0, unverified = 0;
 		bool producerPresent = false;
 		std::uint32_t firstUnverifiedSvgTag = 0, firstUnverifiedReason = 0;
+		// 仅有限验真记录首个Coverage失败的实绘制几何，不参与完成判据。
+		std::uint32_t coverageKind = 0, coverageBackingWidth = 0, coverageBackingHeight = 0;
+		std::uint32_t coverageExpectedVisibleBits[4]{}, coverageEffectiveClipBits[4]{}, coverageViewportBits[4]{};
+		std::uint32_t coverageDrawDestBits[4]{}, coverageDrawTransformBits[6]{};
+		bool coverageGeometryPresent = false;
+		std::uint32_t overwriteBoundsBits[4]{};
+		bool overwriteGeometryPresent = false;
 	};
 
 	inline constexpr std::size_t Ui3SvgCapacity = 256;
@@ -252,6 +259,7 @@ namespace Inkeys::UI::Bar
 		std::uint64_t bufferMutationSerial = 0, targetInvalidationSerial = 0;
 		Ui3SvgCoverage coverage = Ui3SvgCoverage::Unknown;
 		bool expectedVisible = false, qualityMatches = false, clearCoversOldBounds = false;
+		bool outsidePresentedViewport = false;
 	};
 	struct Ui3SvgCounters
 	{
@@ -305,6 +313,8 @@ namespace Inkeys::UI::Bar
 		void PopClip(const void* context) noexcept;
 		void ObserveClear(const void* context) noexcept;
 		void ObserveUnknownWrite(const void* context) noexcept;
+		void ObserveNonSvgWrite(const void* context, const std::uint32_t rectBits[4], const std::uint32_t transformBits[6]) noexcept;
+		void DeclareMainLogoInkComposition(const void* context, const void* baseObject, const void* inkObject) noexcept;
 		void ObserveDraw(const void* context, const Ui3SvgObjectObservation&, Ui3SvgDrawObservation) noexcept;
 		void ObserveRejected(const Ui3SvgObjectObservation&, Ui3SvgFailure, bool qualityFallback = false) noexcept;
 		[[nodiscard]] Ui3FiniteResourceProof FinishDrawing() noexcept;
@@ -326,13 +336,21 @@ namespace Inkeys::UI::Bar
 			std::uint32_t tag = 0;
 			Ui3SvgBitmapProof bitmap, expected;
 			Ui3SvgDrawObservation draw;
-			std::uint32_t oldBounds[4]{};
+			Ui3SvgBitmapProof lastVisibleExpected;
+			Ui3SvgDrawObservation lastVisibleDraw;
+			Ui3SvgFrameTarget lastVisibleTarget;
+			std::uint32_t oldBounds[4]{}, writtenBounds[4]{}, overwriteBounds[4]{};
+			std::uint64_t oldBoundsEpoch = 0, oldBoundsSurface = 0;
+			std::uint32_t lastVisibleOpacityBits = 0;
+			bool writtenBoundsKnown = false, overwriteBoundsKnown = false, mainLogoInkDeclared = false, mainLogoInkApplied = false, mainLogoComposited = false;
+			bool lastVisibleProofValid = false;
 			std::uint64_t bytes = 0;
 			bool required = false, expectedVisible = false, semanticSettled = false;
 		bool submitted = false, oldBoundsKnown = false, possiblyVisible = false, overwritten = false;
 		bool hiddenLineageUnknown = false, clearedOld = false;
 			std::uint32_t opacityBits = 0;
 		};
+		[[nodiscard]] Ui3SvgProofReason VisibleProofReason(const Slot&) const noexcept;
 		[[nodiscard]] Slot* Find(std::uint32_t tag) noexcept;
 		[[nodiscard]] const Slot* Find(std::uint32_t tag) const noexcept;
 		void Increment(std::uint64_t&) noexcept;
@@ -414,6 +432,35 @@ namespace Inkeys::UI::Bar
 		std::uint64_t resourceUnverified = 0, unverified = 0, superseded = 0, invalid = 0;
 	};
 
+	// 仅验真夹具 capture-on 安装固定存储；末尾 Idle/Abort 不能覆盖先前有有效 tuple 的候选。
+	enum class Ui3FiniteDiagnosticStage : std::uint32_t
+	{
+		None, BeginFrame, WakeAndSnapshot, DisplayTransition, SubmitTargetsAndLayout,
+		AdvanceAnimationsAndDeriveLayout, PrepareLightingAndDemand, DirtyAndPrepare,
+		SettleCandidate, FinalizeResources, CompleteAttempt,
+	};
+	enum Ui3FiniteCompleteCheck : std::uint32_t
+	{
+		Ui3FiniteCompleteCalled = 1u << 0, Ui3FiniteCompleteCommitted = 1u << 1,
+		Ui3FiniteCompletePredicatesEvaluated = 1u << 2, Ui3FiniteCompleteSameCandidate = 1u << 3,
+		Ui3FiniteCompleteIdentityValid = 1u << 4, Ui3FiniteCompleteGoalCurrent = 1u << 5,
+		Ui3FiniteCompleteAnchorsValid = 1u << 6, Ui3FiniteCompleteLayoutCurrent = 1u << 7,
+		Ui3FiniteCompleteTimingValid = 1u << 8,
+	};
+	struct Ui3FiniteGoalDiagnostic
+	{
+		std::uint64_t runSerial = 0, stepId = 0, sourceSequence = 0, revision = 0;
+		Ui3FiniteCandidate meaningful;
+		Ui3FiniteResourceProof resources;
+		Ui3FiniteDiagnosticStage meaningfulStage = Ui3FiniteDiagnosticStage::None, lastStage = Ui3FiniteDiagnosticStage::None;
+		Ui3FiniteStatus meaningfulStatus = Ui3FiniteStatus::Pending, lastStatus = Ui3FiniteStatus::Pending;
+		std::uint32_t seenRoles = 0, lifecycle = 0, completeChecks = 0;
+		bool consumed = false, hasMeaningful = false;
+		std::uint64_t lastEpoch = 0, lastAttempt = 0;
+		std::uint32_t lastPendingRoles = 0, lastMismatchRoles = 0, lastSeenRoles = 0, lastLifecycle = 0, lastFrameResult = 0;
+		bool lastConsumed = false, lastFrameResultValid = false, lastAborted = false;
+	};
+
 	class Ui3FiniteObserver
 	{
 	public:
@@ -423,6 +470,9 @@ namespace Inkeys::UI::Bar
 		[[nodiscard]] bool SnapshotAccepted(Ui3FiniteAccepted&) const noexcept;
 		// 私有夹具在所有 render/Interaction owner 启动前显式启用，普通 constructor 不变。
 		[[nodiscard]] bool EnableBootstrapBaselineBeforeOwnersStart() noexcept;
+		[[nodiscard]] bool EnableGoalDiagnosticsBeforeOwnersStart(std::span<Ui3FiniteGoalDiagnostic>) noexcept;
+		void ObserveDiagnosticStage(Ui3FiniteDiagnosticStage) noexcept;
+		void NoteDiagnosticFrameExit(std::uint32_t actualFrameResult) noexcept;
 		[[nodiscard]] bool CopyCompletedOutcomeForCurrentOwner(std::uint64_t run, std::uint64_t step,
 			std::uint64_t source, std::uint64_t revision, Ui3FiniteTargetRecord& out) const noexcept;
 		[[nodiscard]] bool InitialPublicationOnly() const noexcept { return publication_->PublicationSerial() == 0; }
@@ -447,6 +497,12 @@ namespace Inkeys::UI::Bar
 		[[nodiscard]] bool TryReadReady(Ui3FixtureReadyValue&) const noexcept;
 		void SealAfterRenderStopped(Ui3FiniteStatus status = Ui3FiniteStatus::Stopped) noexcept;
 		[[nodiscard]] Ui3FiniteObserverCounters CountersAfterRenderStopped() const noexcept { return counters_; }
+		[[nodiscard]] std::span<const Ui3FiniteGoalDiagnostic> DiagnosticsAfterRenderStopped() const noexcept
+		{
+			return sealed_ && !goalDiagnostics_.empty()
+				? std::span<const Ui3FiniteGoalDiagnostic>{ goalDiagnostics_.data(), static_cast<std::size_t>(counters_.retained) }
+				: std::span<const Ui3FiniteGoalDiagnostic>{};
+		}
 		[[nodiscard]] std::span<const Ui3FiniteTargetRecord> RecordsAfterRenderStopped() const noexcept
 		{
 			return { records_.data(), static_cast<std::size_t>(counters_.retained) };
@@ -456,6 +512,8 @@ namespace Inkeys::UI::Bar
 		void PublishReady() noexcept;
 		void StoreOutcome(Ui3FiniteStatus, bool timingValid = false, std::int64_t ticks = 0) noexcept;
 		void ApplyResourceProof() noexcept;
+		[[nodiscard]] Ui3FiniteGoalDiagnostic* UpdateLastDiagnostic() noexcept;
+		void RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage, Ui3FiniteStatus, std::uint32_t completeChecks = 0) noexcept;
 		[[nodiscard]] std::uint32_t RequiredRoles() const noexcept;
 		Ui3FinitePublication* publication_;
 		std::atomic<std::uint32_t> renderOwnerThread_ = 0;
@@ -471,6 +529,8 @@ namespace Inkeys::UI::Bar
 		std::uint64_t previousEpoch_ = 0, previousSurface_ = 0, trackedRun_ = 0, trackedRevision_ = 0;
 		std::array<Ui3FiniteTargetRecord, Ui3FiniteCapacity> records_{};
 		Ui3FiniteObserverCounters counters_;
+		std::span<Ui3FiniteGoalDiagnostic> goalDiagnostics_;
+		Ui3FiniteDiagnosticStage diagnosticStage_ = Ui3FiniteDiagnosticStage::None;
 		// bool/padding不进入word编码；ready由render唯一publisher写数字word。
 		static constexpr std::size_t ReadyWords = 22;
 		std::atomic<std::uint64_t> readySerial_ = 0;
@@ -492,5 +552,6 @@ namespace Inkeys::UI::Bar
 	static_assert(sizeof(Ui3FiniteSignature) == 72 && sizeof(Ui3FiniteAccepted) == 136);
 	static_assert(std::is_standard_layout_v<Ui3FiniteAccepted> && std::is_trivially_copyable_v<Ui3FiniteAccepted>);
 	static_assert(std::is_trivially_copyable_v<Ui3FiniteTargetRecord>);
+	static_assert(std::is_trivially_copyable_v<Ui3FiniteGoalDiagnostic>);
 	static_assert(sizeof(Ui3FinitePublication) <= 256 * 1024);
 }

@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -74,6 +75,33 @@ export namespace draw3::uink
 		const UInkEditingSession& session,
 		const UInkSaveOptions& options = {});
 
+	// 显式请求本次新版本的创建权限；空/失败权限析构均只关闭句柄并保留文件。
+	class UInkOwnedVersion;
+	UInkSaveResult SaveUInkFileWithOwnedVersion(const std::wstring& path,
+		const UInkEditingSession& session, UInkOwnedVersion& ownedVersion,
+		const UInkSaveOptions& options = {});
+	bool TryRemoveOwnedUInkVersion(UInkOwnedVersion& ownedVersion,
+		uint32_t& systemError) noexcept;
+
+	class UInkOwnedVersion
+	{
+	public:
+		UInkOwnedVersion() noexcept;
+		~UInkOwnedVersion() noexcept;
+		UInkOwnedVersion(UInkOwnedVersion&&) noexcept;
+		UInkOwnedVersion& operator=(UInkOwnedVersion&&) noexcept;
+		UInkOwnedVersion(const UInkOwnedVersion&) = delete;
+		UInkOwnedVersion& operator=(const UInkOwnedVersion&) = delete;
+		explicit operator bool() const noexcept;
+
+	private:
+		struct Impl;
+		std::unique_ptr<Impl> impl_;
+		friend UInkSaveResult SaveUInkFileWithOwnedVersion(const std::wstring&,
+			const UInkEditingSession&, UInkOwnedVersion&, const UInkSaveOptions&);
+		friend bool TryRemoveOwnedUInkVersion(UInkOwnedVersion&, uint32_t&) noexcept;
+	};
+
 	struct UInkAppendBatch
 	{
 		std::vector<UInkAppendObject> objects;
@@ -143,6 +171,8 @@ export namespace draw3::uink
 	using UInkCleanupTestHook = UInkCleanupTestAction (*)(UInkCleanupTestStage,
 		const std::wstring&, void*) noexcept;
 	void SetUInkCleanupTestHook(UInkCleanupTestHook hook, void* context) noexcept;
+	// 只在 companion 创建任何文件前模拟可选权限载荷准备失败。
+	void SetUInkOwnedVersionPrepFailureForTesting(bool fail) noexcept;
 #endif
 
 	enum class UInkAppendStatus : uint8_t

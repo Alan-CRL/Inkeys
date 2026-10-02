@@ -666,8 +666,10 @@ namespace Inkeys::Drawing::Draw3
 		{
 			return track == PresentationStorageTrack::Base ||
 				(mode == Bridge::SlideBindingMode::StableSlideId
-					? track == PresentationStorageTrack::SlideIdSidecar
-					: track == PresentationStorageTrack::PageIndexSidecar);
+					? track == PresentationStorageTrack::SlideIdSidecar ||
+						track == PresentationStorageTrack::SlideIdSession
+					: track == PresentationStorageTrack::PageIndexSidecar ||
+						track == PresentationStorageTrack::PageIndexSession);
 		}
 
 		bool PresentationLoadedForLane(
@@ -1899,6 +1901,8 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t lastWithheldSequence = 0;
 			ContentMetricRasterSignature rasterSurface;
 			bool rasterSurfaceKnown = false;
+			uint64_t contactOrdinal = 0;
+			bool terminalObserved = false;
 		};
 		struct ContentMetricStoredNote
 		{
@@ -1913,6 +1917,7 @@ namespace Inkeys::Drawing::Draw3
 			int64_t terminalQpc = 0;
 			uint64_t terminalAdmission = 0;
 			uint64_t contentToken = 0;
+			bool operator==(const ContentMetricStoredNote&) const = default;
 		};
 		struct ContentMetricCandidate
 		{
@@ -1939,6 +1944,130 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t noPresent = 0;
 			uint64_t rasterFailed = 0;
 			uint64_t excludedLaser = 0;
+		};
+
+		struct MetricClockStamp
+		{
+			int64_t qpc = 0;
+			uint64_t cpuTicks = 0;
+			bool cpuAvailable = false;
+		};
+		bool MetricThreadCpu(uint64_t& ticks) noexcept
+		{
+			FILETIME created = {}, exited = {}, kernel = {}, user = {};
+			if (!GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user)) return false;
+			const uint64_t k = (uint64_t{ kernel.dwHighDateTime } << 32) | kernel.dwLowDateTime;
+			const uint64_t u = (uint64_t{ user.dwHighDateTime } << 32) | user.dwLowDateTime;
+			if (u > (std::numeric_limits<uint64_t>::max)() - k) return false;
+			ticks = k + u;
+			return true;
+		}
+		MetricClockStamp ReadMetricClock() noexcept
+		{
+			MetricClockStamp result;
+			LARGE_INTEGER qpc = {};
+			if (QueryPerformanceCounter(&qpc)) result.qpc = qpc.QuadPart;
+			result.cpuAvailable = MetricThreadCpu(result.cpuTicks);
+			return result;
+		}
+		bool MetricCpuDelta(const MetricClockStamp& before, const MetricClockStamp& after, double& ms) noexcept
+		{
+			if (!before.cpuAvailable || !after.cpuAvailable || after.cpuTicks < before.cpuTicks) return false;
+			ms = static_cast<double>(after.cpuTicks - before.cpuTicks) / 10000.0;
+			return std::isfinite(ms);
+		}
+		// 只在 Session 旁挂存在时读 clock；同段多次调用任一读时钟失败会保留 unavailable。
+		class MetricsStageScope
+		{
+		public:
+			MetricsStageScope(RuntimeMetricsFrameCosts* costs, RuntimeMetricsCostStage stage, int64_t frequency, uint32_t* depth = nullptr) noexcept
+				: MetricsStageScope(Enter(costs, depth), stage, frequency, depth, 0) {}
+			MetricsStageScope(RuntimeMetricsFrameCosts* costs, RuntimeMetricsCostStage stage, int64_t frequency, uint32_t* depth, int) noexcept
+				: MetricsStageScope(costs ? &costs->stageAvailableMask : nullptr,
+					costs ? &costs->stageCpuAvailableMask : nullptr, costs ? &costs->stageObservedMask : nullptr,
+					costs ? costs->stageWallMs.data() : nullptr, costs ? costs->stageThreadCpuMs.data() : nullptr,
+					static_cast<size_t>(stage), frequency) { depth_ = depth; }
+			MetricsStageScope(RuntimeMetricsLaserFrame* costs, size_t stage, int64_t frequency) noexcept
+				: MetricsStageScope(costs ? &costs->stageAvailableMask : nullptr,
+					costs ? &costs->stageCpuAvailableMask : nullptr, costs ? &costs->stageObservedMask : nullptr,
+					costs ? costs->stageWallMs.data() : nullptr, costs ? costs->stageThreadCpuMs.data() : nullptr,
+					stage, frequency) {}
+			MetricsStageScope(uint32_t* wallMask, uint32_t* cpuMask, uint32_t* observedMask,
+				double* walls, double* cpus, size_t stage, int64_t frequency) noexcept
+				: wallMask_(wallMask), cpuMask_(cpuMask), walls_(walls), cpus_(cpus), stage_(stage), frequency_(frequency)
+			{
+				if (!wallMask_) return;
+				const uint32_t bit = 1u << stage_;
+				if ((*observedMask & bit) == 0) { *wallMask_ |= bit; *cpuMask_ |= bit; *observedMask |= bit; }
+				before_ = ReadMetricClock();
+			}
+			~MetricsStageScope() { Finish(); }
+			void Finish() noexcept
+			{
+				if (depth_) { --*depth_; depth_ = nullptr; }
+				if (!wallMask_) return;
+				const auto after = ReadMetricClock();
+				const uint32_t bit = 1u << stage_;
+				if (frequency_ <= 0 || before_.qpc <= 0 || after.qpc < before_.qpc) *wallMask_ &= ~bit;
+				else walls_[stage_] += (static_cast<double>(after.qpc) - static_cast<double>(before_.qpc)) * 1000.0 / frequency_;
+				double cpu = 0;
+				if (!MetricCpuDelta(before_, after, cpu)) *cpuMask_ &= ~bit;
+				else cpus_[stage_] += cpu;
+				if (!std::isfinite(walls_[stage_])) *wallMask_ &= ~bit;
+				if (!std::isfinite(cpus_[stage_])) *cpuMask_ &= ~bit;
+				wallMask_ = nullptr;
+			}
+		private:
+			static RuntimeMetricsFrameCosts* Enter(RuntimeMetricsFrameCosts* costs, uint32_t* depth) noexcept
+			{ return depth && (*depth)++ != 0 ? nullptr : costs; }
+			uint32_t* depth_ = nullptr;
+			uint32_t* wallMask_ = nullptr;
+			uint32_t* cpuMask_ = nullptr;
+			double* walls_ = nullptr;
+			double* cpus_ = nullptr;
+			size_t stage_ = 0;
+			int64_t frequency_ = 0;
+			MetricClockStamp before_;
+		};
+		template<class Call>
+		auto MetricsModelCall(RuntimeMetricsFrameCosts* costs, uint32_t kind, int64_t frequency, Call&& call)
+		{
+			MetricsStageScope span(costs, RuntimeMetricsCostStage::ModelPrediction, frequency);
+			if (costs)
+			{
+				auto& count = kind == 0 ? costs->modelResetCalls : kind == 1 ? costs->modelUpdateCalls : costs->predictionCalls;
+				if (count != (std::numeric_limits<uint32_t>::max)()) ++count;
+			}
+			return std::forward<Call>(call)();
+		}
+		template<class Call>
+		auto MetricsLaserCall(RuntimeMetricsLaserFrame* costs, size_t kind, int64_t frequency, Call&& call)
+		{
+			MetricsStageScope span(costs, kind, frequency);
+			if (costs)
+			{
+				costs->collected = true;
+				auto& count = kind == 0 ? costs->incrementalCalls : kind == 1 ? costs->bakeCalls :
+					kind == 2 ? costs->particleStepCalls : costs->particleDrawCalls;
+				if (count != (std::numeric_limits<uint32_t>::max)()) ++count;
+			}
+			if constexpr (std::is_void_v<decltype(std::forward<Call>(call)())>) std::forward<Call>(call)();
+			else
+			{
+				const auto result = std::forward<Call>(call)();
+				if (costs && kind == 1 && !result && costs->bakeFailures != (std::numeric_limits<uint32_t>::max)()) ++costs->bakeFailures;
+				return result;
+			}
+		}
+
+		struct ContentMetricFinalReceipt
+		{
+			ContentMetricStoredNote stored;
+			uint64_t ordinal = 0;
+			RECT projection = {}, expiryProjection = {};
+			bool laser = false, frozen = false, naturalExpiry = false, independentClear = false;
+			bool holdSeen = false, fadeSeen = false, bakeSucceeded = false;
+			int64_t lastAllUpQpc = 0;
 		};
 
 		struct ControllerContentMetrics
@@ -1976,8 +2105,16 @@ namespace Inkeys::Drawing::Draw3
 				if (!identityAvailable) return false;
 				if (FindLive(key) || FindStored(key)) return true;
 				if (tool == DrawingTool::Laser) ++counters.excludedLaser;
+				const uint64_t beforeOrdinal = metrics.Snapshot().contactSeen;
 				if (!metrics.RegisterContact(key.opaqueRecord, key.generation,
-					device, static_cast<uint32_t>(tool), down.qpc)) return false;
+					device, static_cast<uint32_t>(tool), down.qpc))
+				{ FailPhase(RuntimeMetricsPhaseFailure::Retention); return false; }
+				const uint64_t ordinal = metrics.Snapshot().contactSeen;
+				if (phase.boundaries.enabled && (ordinal != beforeOrdinal + 1 || !phase.boundaries.runPrewarm.completed ||
+					down.qpc < phase.boundaries.runPrewarm.ownerEndQpc)) FailPhase(RuntimeMetricsPhaseFailure::Order);
+				if (phase.boundaries.enabled && (final.stored.exists || finalCut.exists ||
+					(ordinal > 16 && !phase.boundaries.warmEnd.exists) || ordinal > 216))
+					FailPhase(RuntimeMetricsPhaseFailure::Order);
 				for (auto& note : live)
 				{
 					if (note.exists) continue;
@@ -1990,6 +2127,8 @@ namespace Inkeys::Drawing::Draw3
 					note.downQpc = down.qpc;
 					note.contentToken = AllocateContentToken();
 					note.tool = tool;
+					note.contactOrdinal = ordinal;
+					if (phase.boundaries.enabled && tool == DrawingTool::Laser) ++phase.terminal.excludedLaser;
 					return note.exists && note.contentToken != 0;
 				}
 				++counters.proofOverflow;
@@ -2111,6 +2250,7 @@ namespace Inkeys::Drawing::Draw3
 					if (lastSceneGeneration == (std::numeric_limits<uint64_t>::max)())
 					{ ExhaustIdentity(); return false; }
 					const auto previous = canvasIdentity;
+					if (phase.boundaries.enabled && final.stored.exists) FailPhase(RuntimeMetricsPhaseFailure::Identity);
 					for (const auto& note : live)
 						if (note.exists && SameScene(note.canvas, previous))
 							Invalidate(note.key, ContentMetricInvalidationReason::SceneSuperseded);
@@ -2252,6 +2392,12 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const auto* source = FindLive(key);
 				const bool excludedLaser = source && source->tool == DrawingTool::Laser;
+				if (phase.boundaries.enabled && source && reason != ContentMetricInvalidationReason::Stopped &&
+					reason != ContentMetricInvalidationReason::Cancelled)
+				{ ++phase.terminal.rejected; FailPhase(RuntimeMetricsPhaseFailure::Rejected); }
+				if (phase.boundaries.enabled && final.stored.exists && final.stored.key == key &&
+					reason != ContentMetricInvalidationReason::Stopped)
+					FailPhase(reason == ContentMetricInvalidationReason::Cancelled ? RuntimeMetricsPhaseFailure::Cancelled : RuntimeMetricsPhaseFailure::Identity);
 				const bool changed = metrics.InvalidateContact(key.opaqueRecord, key.generation);
 				const size_t reasonIndex = static_cast<size_t>(reason);
 				if (changed && !excludedLaser && reasonIndex < counters.invalidated.size())
@@ -2330,16 +2476,21 @@ namespace Inkeys::Drawing::Draw3
 				candidates[candidateCount++] = { key, proof, output };
 				return true;
 			}
+			bool StoredMatches(const ContentMetricStoredNote& note, const InkCanvas& canvas,
+				const CanvasPageRuntimeState& pageRuntime) const noexcept
+			{
+				const auto* item = pageRuntime.history.Find(note.item);
+				return SameScene(note.canvas, canvasIdentity) && item && item->visible &&
+					item->strokeIndex == note.strokeIndex && item->contentGeneration == note.contentGeneration &&
+					note.strokeIndex < canvas.Strokes().size() && note.item.index < pageRuntime.afterStates.size() &&
+					pageRuntime.afterStates[note.item.index] == note.afterState;
+			}
 			void PruneStored(const InkCanvas& canvas, const CanvasPageRuntimeState& pageRuntime) noexcept
 			{
 				for (auto& note : stored)
 				{
 					if (!note.exists) continue;
-					const auto* item = pageRuntime.history.Find(note.item);
-					if (!SameScene(note.canvas, canvasIdentity) || !item || !item->visible ||
-						item->strokeIndex != note.strokeIndex || item->contentGeneration != note.contentGeneration ||
-						note.strokeIndex >= canvas.Strokes().size() || note.item.index >= pageRuntime.afterStates.size() ||
-						pageRuntime.afterStates[note.item.index] != note.afterState)
+					if (!StoredMatches(note, canvas, pageRuntime))
 						Invalidate(note.key, ContentMetricInvalidationReason::ContentSuperseded);
 				}
 			}
@@ -2347,6 +2498,8 @@ namespace Inkeys::Drawing::Draw3
 				const CanvasPageRuntimeState& pageRuntime, RECT dirty, bool compositeSucceeded, bool fullComposite) noexcept
 			{
 				candidateCount = 0;
+				final.frozen = false;
+				frozenFinalStored = {}; frozenFinalOrdinal = 0;
 				frozenFrameSerial = metrics.Snapshot().frameSerial;
 				frozenOutput = output;
 				frozenSignature = signature;
@@ -2365,6 +2518,26 @@ namespace Inkeys::Drawing::Draw3
 				// fullComposite 表示实际整视口合成；PresentFull 开关本身没有这个资格。
 				if (fullComposite && !ContainsBounds(compositeBounds, { 0, 0, signature.width, signature.height })) return 0;
 				compositeReady = true;
+				if (phase.boundaries.enabled && final.stored.exists)
+				{
+					if (!SameScene(final.stored.canvas, signature.canvas) ||
+						(!final.laser && !StoredMatches(final.stored, canvas, pageRuntime)))
+						FailPhase(RuntimeMetricsPhaseFailure::Identity);
+					else if (currentL2)
+					{
+						RECT projection = final.laser ? final.expiryProjection : final.projection;
+						const bool lifecycle = !final.laser || (final.naturalExpiry && !final.independentClear && final.holdSeen && final.fadeSeen &&
+							final.bakeSucceeded && laserQuiet);
+						final.frozen = lifecycle && ClipBounds(projection, signature.width, signature.height, projection) &&
+							ContainsBounds(compositeBounds, projection);
+						if (final.frozen)
+						{
+							frozenFinalStored = final.stored; frozenFinalOrdinal = final.ordinal;
+							finalCut = MakeCut(0, final.laser ? RuntimeMetricsBoundaryAuthority::LaserLifecycleComplete :
+								RuntimeMetricsBoundaryAuthority::StoredHistoryChain, signature, fullComposite);
+						}
+					}
+				}
 				RuntimeMetricsCanvasIdentity proofCanvas = signature.canvas;
 				proofCanvas.outputGeneration = output.generation;
 				for (auto& note : live)
@@ -2413,6 +2586,24 @@ namespace Inkeys::Drawing::Draw3
 					frozenOutput == observed && frozenOutput == output;
 				if (succeeded && currentFrame && frozenOutput.exists && !outputMatches) ++counters.outputMismatch;
 				const bool eligible = currentFrame && outputMatches && compositeReady && ValidSignature(frozenSignature);
+				if (coldArmed && !succeeded) FailPhase(RuntimeMetricsPhaseFailure::Unsealed);
+				if (coldArmed && succeeded && currentFrame && outputMatches && returnQpc > 0 && coldComposite)
+				{
+					finalCut = MakeCut(returnQpc, RuntimeMetricsBoundaryAuthority::StartupClearedSurface, {}, true);
+					finalCut.width = coldWidth; finalCut.height = coldHeight;
+					coldArmed = false;
+				}
+				if (final.stored.exists && final.frozen && final.stored == frozenFinalStored && final.ordinal == frozenFinalOrdinal &&
+					eligible && succeeded && returnQpc >= final.stored.terminalQpc && returnQpc > 0 &&
+					l2.valid && l2.signature == frozenSignature)
+				{
+					finalCut.ownerQpc = returnQpc;
+					if (final.laser) ++phase.terminal.laserLifecycleCompleted;
+					else ++phase.terminal.authoritativeFinalPresented;
+					if (final.ordinal != phase.finalCompletedOrdinal + 1) FailPhase(RuntimeMetricsPhaseFailure::Order);
+					else phase.finalCompletedOrdinal = final.ordinal;
+					final.stored.exists = false;
+				}
 				for (size_t index = 0; index < candidateCount; ++index)
 				{
 					const auto candidate = candidates[index];
@@ -2434,6 +2625,7 @@ namespace Inkeys::Drawing::Draw3
 						if (auto* note = FindLive(candidate.key)) note->exists = false;
 					}
 				}
+				if (finalCut.exists && finalCut.ownerQpc == 0) finalCut = {};
 				candidateCount = 0;
 				compositeReady = false;
 			}
@@ -2443,6 +2635,164 @@ namespace Inkeys::Drawing::Draw3
 				if ((sample.reasonFlags & (1u << 15)) != 0) ++counters.rasterFailed; // 冻结合同 bit15 是 RasterFailed。
 				metrics.RecordRenderFrame(sample);
 			}
+
+			void EnablePhases(ContactInputCoordinator& input, const DrawingControllerRuntimeObserver& observer) noexcept
+			{
+				if (!observer.runtimeMetricsPhaseProgress) return;
+				phase.boundaries.enabled = true;
+				phase.boundaries.runInputBaseline = input.DiagnosticsSnapshot();
+				phaseInput = &input; phaseContext = observer.context; phaseCallback = observer.runtimeMetricsPhaseProgress;
+			}
+			void FailPhase(RuntimeMetricsPhaseFailure reason) noexcept
+			{
+				if (!phase.boundaries.enabled) return;
+				phase.boundaries.incomplete = true;
+				phase.boundaries.failureFlags |= static_cast<uint32_t>(reason);
+				phaseChanged = true;
+			}
+			void ObserveTerminal(ContentMetricKey key, const ContactSnapshot& terminal) noexcept
+			{
+				if (!phase.boundaries.enabled) return;
+				auto* note = FindLive(key);
+				if (!note || note->terminalObserved || (terminal.phase != ContactPhase::Up && terminal.phase != ContactPhase::Cancelled)) return;
+				note->terminalObserved = true;
+				if (terminal.phase == ContactPhase::Up) ++phase.terminal.upConsumed;
+				else { ++phase.terminal.cancelled; FailPhase(RuntimeMetricsPhaseFailure::Cancelled); }
+			}
+			bool CaptureFinal(ContentMetricKey key, const StoredStrokeCpuCommit& committed,
+				const InkCanvas& canvas, const CanvasPageRuntimeState& runtime, const ContactSnapshot& terminal,
+				const ContentMetricRasterSignature& signature) noexcept
+			{
+				if (!phase.boundaries.enabled) return false;
+				++phase.terminal.cpuStoredCompleted;
+				const auto* source = FindLive(key);
+				const auto* item = runtime.history.Find(committed.renderItem);
+				if (!source || !source->terminalObserved || final.stored.exists || !item || item->contentGeneration == 0 ||
+					committed.afterState == 0 ||
+					terminal.phase != ContactPhase::Up || terminal.sequence != source->consumedSequence ||
+					terminal.sequence == 0 || terminal.qpc < source->downQpc || terminal.qpc <= 0 || terminal.admissionRevision != source->downAdmission)
+				{ FailPhase(RuntimeMetricsPhaseFailure::Rejected); return false; }
+				final = {};
+				final.stored = { true, key, source->canvas, committed.renderItem, committed.strokeIndex,
+					item->contentGeneration, committed.afterState, terminal.sequence, terminal.qpc,
+					terminal.admissionRevision, AllocateContentToken() };
+				final.ordinal = source->contactOrdinal;
+				if (!StoredMatches(final.stored, canvas, runtime)) { FailPhase(RuntimeMetricsPhaseFailure::Identity); return false; }
+				if (!StoredProjection(item->pixelBounds, signature, final.projection))
+				{ ++phase.terminal.noVisibleProjection; FailPhase(RuntimeMetricsPhaseFailure::NoProjection); return false; }
+				phaseChanged = true;
+				return true;
+			}
+			void CaptureLaserFinal(ContentMetricKey key, const ContactSnapshot& terminal,
+				const LaserTrailLifecycle& lifecycle) noexcept
+			{
+				if (!phase.boundaries.enabled || terminal.phase != ContactPhase::Up) return;
+				const auto* source = FindLive(key);
+				if (!source || !source->terminalObserved || final.stored.exists || lifecycle.lastAllUpQpc != terminal.qpc)
+				{ FailPhase(RuntimeMetricsPhaseFailure::Order); return; }
+				final = {};
+				final.stored.exists = true; final.stored.key = key; final.stored.canvas = source->canvas;
+				final.stored.terminalSequence = terminal.sequence; final.stored.terminalQpc = terminal.qpc;
+				final.stored.terminalAdmission = terminal.admissionRevision;
+				final.ordinal = source->contactOrdinal; final.laser = true; final.lastAllUpQpc = lifecycle.lastAllUpQpc;
+				final.holdSeen = lifecycle.phase == LaserTrailPhase::Hold;
+				phaseChanged = true;
+			}
+			void ObserveLaserBake(bool succeeded) noexcept
+			{
+				if (succeeded && final.laser && final.stored.exists) final.bakeSucceeded = true;
+			}
+			void ObserveIndependentClear() noexcept
+			{
+				if (final.laser && final.stored.exists)
+				{ final.independentClear = true; FailPhase(RuntimeMetricsPhaseFailure::IndependentClearQuiet); }
+			}
+			void ObserveLaserPhase(const LaserTrailLifecycle& lifecycle) noexcept
+			{
+				if (!phase.boundaries.enabled || !final.stored.exists || !final.laser) return;
+				if (lastLaserPhase != lifecycle.phase) ++phase.terminal.laserPhaseTransitions;
+				lastLaserPhase = lifecycle.phase;
+				final.holdSeen |= lifecycle.phase == LaserTrailPhase::Hold;
+				final.fadeSeen |= lifecycle.phase == LaserTrailPhase::Fade;
+			}
+			void ObserveLaserExpiry(RECT stable, RECT live, RECT previousParticles, RECT particles) noexcept
+			{
+				if (!phase.boundaries.enabled || !final.stored.exists || !final.laser) return;
+				final.naturalExpiry = final.lastAllUpQpc > 0 && final.holdSeen && final.fadeSeen;
+				UnionRectInPlace(final.expiryProjection, stable); UnionRectInPlace(final.expiryProjection, live);
+				UnionRectInPlace(final.expiryProjection, previousParticles); UnionRectInPlace(final.expiryProjection, particles);
+				if (IsEmptyRect(final.expiryProjection))
+				{ ++phase.terminal.noVisibleProjection; FailPhase(RuntimeMetricsPhaseFailure::NoProjection); }
+			}
+			void BeginCold(int width, int height) noexcept
+			{
+				if (!phase.boundaries.enabled || phase.boundaries.coldEnd.exists || metrics.Snapshot().contactSeen != 0 || runEntered) return;
+				coldArmed = width > 0 && height > 0; coldComposite = false; coldWidth = width; coldHeight = height;
+			}
+			void FreezeCold(RECT dirty, bool compositeCompleted) noexcept
+			{
+				if (!coldArmed) return;
+				coldComposite = compositeCompleted && ContainsBounds(dirty, { 0, 0, static_cast<LONG>(coldWidth), static_cast<LONG>(coldHeight) });
+				frozenOutput = output; frozenFrameSerial = metrics.Snapshot().frameSerial;
+			}
+			RuntimeMetricsPhaseBoundary MakeCut(int64_t qpc, RuntimeMetricsBoundaryAuthority authority,
+				const ContentMetricRasterSignature& signature, bool full) const noexcept
+			{
+				RuntimeMetricsPhaseBoundary cut;
+				cut.exists = true; cut.authority = authority; cut.ownerQpc = qpc;
+				cut.frameSerial = metrics.Snapshot().frameSerial;
+				cut.canvas = signature.canvas; cut.canvas.outputGeneration = output.generation;
+				cut.historyRevision = signature.historyRevision; cut.rasterState = signature.rasterState;
+				cut.rawOutputRevision = output.rawRevision; cut.rawOutputTarget = static_cast<uint32_t>(output.target);
+				cut.viewportX = signature.viewportX; cut.viewportY = signature.viewportY; cut.viewportScale = signature.viewportScale;
+				cut.width = static_cast<uint32_t>(signature.width); cut.height = static_cast<uint32_t>(signature.height);
+				cut.pipelineCompositeComplete = true; cut.finalProjectionCovered = true; cut.fullViewportComposite = full;
+				return cut;
+			}
+			void FinishPhases() noexcept
+			{
+				if (!phase.boundaries.enabled) return;
+				phase.terminal.pendingFinal = final.stored.exists ? 1u : 0u;
+				if (finalCut.exists && finalCut.ownerQpc > 0)
+				{
+					finalCut.metrics = metrics.Snapshot(); finalCut.input = phaseInput->DiagnosticsSnapshot();
+					finalCut.terminal = phase.terminal; finalCut.contactSeenOrdinal = finalCut.metrics.contactSeen;
+					if (finalCut.authority == RuntimeMetricsBoundaryAuthority::StartupClearedSurface && finalCut.metrics.contactSeen == 0)
+					{ phase.boundaries.coldEnd = finalCut; phaseChanged = true; }
+					else
+					{
+						const auto& m = finalCut.metrics;
+						if (m.contactDropped || m.pendingOverflow || m.framesDropped || m.framesInvalid || m.presentDropped ||
+							m.presentInvalid || m.durationDropped || m.invalid || m.legacyUnverified)
+							FailPhase(RuntimeMetricsPhaseFailure::Retention);
+						const bool laser = finalCut.authority == RuntimeMetricsBoundaryAuthority::LaserLifecycleComplete;
+						const uint64_t count = phase.finalCompletedOrdinal;
+						const bool complete = !phase.boundaries.incomplete && phase.boundaries.coldEnd.exists && phase.boundaries.runPrewarm.completed &&
+							m.contactSeen == count && !m.pending && !phase.terminal.activeRuntimes && !phase.terminal.awaitingReconnect &&
+							!phase.terminal.pendingFinal && phase.terminal.upConsumed == count &&
+							(laser ? phase.terminal.excludedLaser == count && phase.terminal.laserLifecycleCompleted == count :
+								phase.terminal.cpuStoredCompleted == count && phase.terminal.authoritativeFinalPresented == count && m.confirmed == count);
+						if (complete && count == 16) phase.boundaries.warmEnd = finalCut;
+						if (complete && count == 216 && phase.boundaries.warmEnd.exists) phase.boundaries.measuredEnd = finalCut;
+						phaseChanged = true;
+					}
+					finalCut = {};
+				}
+				phase.boundaries.runTerminal = phase.terminal;
+				if (phaseChanged && phaseCallback) { phaseChanged = false; phaseCallback(phaseContext, phase); }
+			}
+			RuntimeMetricsPhaseProgress phase;
+			ContentMetricFinalReceipt final;
+			ContentMetricStoredNote frozenFinalStored;
+			uint64_t frozenFinalOrdinal = 0;
+			RuntimeMetricsPhaseBoundary finalCut;
+			ContactInputCoordinator* phaseInput = nullptr;
+			void* phaseContext = nullptr;
+			void (*phaseCallback)(void*, const RuntimeMetricsPhaseProgress&) noexcept = nullptr;
+			bool phaseChanged = false, runEntered = false, laserQuiet = false;
+			bool coldArmed = false, coldComposite = false;
+			uint32_t coldWidth = 0, coldHeight = 0;
+			LaserTrailPhase lastLaserPhase = LaserTrailPhase::Inactive;
 
 			RuntimeMetricsSession& metrics;
 			std::array<ContentMetricLiveNote, kNoteCapacity> live = {};
@@ -3169,12 +3519,49 @@ namespace Inkeys::Drawing::Draw3
 	struct DrawingControllerMetricsState : ControllerContentMetrics
 	{
 		explicit DrawingControllerMetricsState(RuntimeMetricsSession& session) noexcept
-			: ControllerContentMetrics(session) {}
+			: ControllerContentMetrics(session)
+		{
+			LARGE_INTEGER frequency = {};
+			if (QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0) metricFrequency = frequency.QuadPart;
+			phase.boundaries.controllerPayloadBytes = sizeof(DrawingControllerMetricsState);
+		}
 		static std::unique_ptr<DrawingControllerMetricsState> Prepare(RuntimeMetricsSession* session) noexcept
 		{
 			if (!FitsBudget(session, 0, sizeof(DrawingControllerMetricsState))) return nullptr;
 			return std::unique_ptr<DrawingControllerMetricsState>(
 				new (std::nothrow) DrawingControllerMetricsState(*session));
+		}
+		RuntimeMetricsFrameCosts* CurrentCosts() noexcept
+		{ return prewarmOpen ? &phase.boundaries.runPrewarm.costs : frameOpen ? &frame.costs : &pendingCosts; }
+		RuntimeMetricsLaserFrame* LaserCosts() noexcept { return frameOpen ? &frame.laser : &pendingLaserCosts; }
+		void BeginPrewarm() noexcept
+		{
+			runEntered = true; coldArmed = false; prewarmOpen = true;
+			prewarmStart = ReadMetricClock();
+			phase.boundaries.runPrewarm.exists = true;
+			phase.boundaries.runPrewarm.ownerStartQpc = prewarmStart.qpc;
+		}
+		void CompletePrewarm(bool completed) noexcept
+		{
+			if (!prewarmOpen) return;
+			const auto after = ReadMetricClock();
+			auto& sample = phase.boundaries.runPrewarm;
+			sample.ownerEndQpc = after.qpc;
+			sample.wallAvailable = prewarmStart.qpc > 0 && after.qpc >= prewarmStart.qpc && metricFrequency > 0;
+			sample.completed = completed && sample.wallAvailable;
+			if (sample.wallAvailable) sample.wallMs = (static_cast<double>(after.qpc) - static_cast<double>(prewarmStart.qpc)) * 1000.0 / metricFrequency;
+			sample.costs.cpuAvailable = sample.wallAvailable && MetricCpuDelta(prewarmStart, after, sample.costs.threadCpuMs);
+			sample.costs.threadSpanWallMs = sample.wallMs;
+			prewarmOpen = false; phaseChanged = true;
+			if (!sample.completed) FailPhase(RuntimeMetricsPhaseFailure::Unsealed);
+			FinishPhases();
+		}
+		void Runtimes(const std::vector<RuntimeStroke*>& active) noexcept
+		{
+			if (!phase.boundaries.enabled) return;
+			phase.terminal.activeRuntimes = static_cast<uint32_t>(active.size());
+			phase.terminal.awaitingReconnect = static_cast<uint32_t>(std::count_if(active.begin(), active.end(),
+				[](const RuntimeStroke* runtime) { return runtime && runtime->awaitingReconnect; }));
 		}
 		void Mark(RuntimeMetricsFrameReason reason) noexcept
 		{
@@ -3197,6 +3584,15 @@ namespace Inkeys::Drawing::Draw3
 		{
 			metrics.BeginFrame();
 			frame = {};
+			// 唤醒后的真实 Down 初始化发生在旧 Finish 之后；只携带工作，绝不携带 wait。
+			frame.costs = pendingCosts;
+			frame.priorIngressWallMs = pendingCosts.stageWallMs[0];
+			frame.priorIngressThreadCpuMs = pendingCosts.stageThreadCpuMs[0];
+			frame.priorIngressAvailableMask = (pendingCosts.stageAvailableMask & 1u) | ((pendingCosts.stageCpuAvailableMask & 1u) << 1);
+			const bool priorWork = pendingCosts.stageObservedMask != 0 || pendingLaserCosts.stageObservedMask != 0;
+			frame.laser = pendingLaserCosts;
+			pendingCosts = {}; pendingLaserCosts = {};
+			frameStartClock = ReadMetricClock();
 			frame.frameSerial = metrics.Snapshot().frameSerial;
 			if (frame.frameSerial == 0) ExhaustIdentity();
 			frame.frameStartMs = startMs;
@@ -3204,7 +3600,7 @@ namespace Inkeys::Drawing::Draw3
 			if (physicalBefore) frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::PhysicalBefore);
 			frameOpen = true;
 			frameRecorded = false;
-			renderAttempt = false;
+			renderAttempt = priorWork;
 			candidateCount = 0;
 			compositeReady = false;
 		}
@@ -3212,6 +3608,10 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (frameOpen && renderAttempt && !frameRecorded)
 			{
+				const auto after = ReadMetricClock();
+				const bool spanValid = frameStartClock.qpc > 0 && after.qpc >= frameStartClock.qpc && metricFrequency > 0;
+				frame.costs.cpuAvailable = spanValid && MetricCpuDelta(frameStartClock, after, frame.costs.threadCpuMs);
+				if (spanValid) frame.costs.threadSpanWallMs = (static_cast<double>(after.qpc) - static_cast<double>(frameStartClock.qpc)) * 1000.0 / metricFrequency;
 				frame.wallMs = wallMs >= 0.0 ? wallMs : GetQpcTimeMilliseconds() - frame.frameStartMs;
 				if (frame.physicalAfter) frame.reasonFlags |= static_cast<uint32_t>(RuntimeMetricsFrameReason::PhysicalAfter);
 				frame.reasonFlags |= static_cast<uint32_t>(!frame.presentAttempted ? RuntimeMetricsFrameReason::NoPresent :
@@ -3220,12 +3620,21 @@ namespace Inkeys::Drawing::Draw3
 				frameRecorded = true;
 			}
 			frameOpen = false;
+			FinishPhases(); // 先保留本次 frame 前缀，再复制同次 Present 的 owner cut。
 		}
 		void EndContacts(ContentMetricInvalidationReason reason) noexcept
 		{
 			for (const auto& note : live) if (note.exists) Invalidate(note.key, reason);
 			for (const auto& note : stored) if (note.exists) Invalidate(note.key, reason);
+			if (phase.boundaries.enabled && !phase.boundaries.measuredEnd.exists) FailPhase(RuntimeMetricsPhaseFailure::Unsealed);
+			FinishPhases();
 		}
+		RuntimeMetricsFrameCosts pendingCosts;
+		RuntimeMetricsLaserFrame pendingLaserCosts;
+		uint32_t ingressDepth = 0;
+		int64_t metricFrequency = 0;
+		MetricClockStamp frameStartClock, prewarmStart;
+		bool prewarmOpen = false;
 		RuntimeMetricsFrameSample frame;
 		bool frameOpen = false;
 		bool frameRecorded = false;
@@ -3241,6 +3650,9 @@ namespace Inkeys::Drawing::Draw3
 	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
 		ID3D11Buffer* unwritableInkBuffer) noexcept
 	{
+		RuntimeMetricsLaserFrame actualCosts;
+		LARGE_INTEGER costFrequency = {};
+		QueryPerformanceFrequency(&costFrequency);
 		int failures = 0;
 		const auto check = [&failures](bool condition, const char* name)
 		{
@@ -3309,8 +3721,8 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<LaserStrokeLayer> referenceLayers = makeLayers();
 		RECT referenceBounds = {}, referenceDirty = {};
 		LaserCoverageMode referenceMode = LaserCoverageMode::FullRedraw;
-		check(BakeLaserStrokeLayers(referenceLayers, renderer, 1.0f, 64, 64,
-			referenceBounds, referenceDirty, referenceMode),
+		check(MetricsLaserCall(&actualCosts, 1, costFrequency.QuadPart, [&] { return BakeLaserStrokeLayers(referenceLayers, renderer, 1.0f, 64, 64,
+			referenceBounds, referenceDirty, referenceMode); }),
 			"reference two-layer bake submits all passes");
 		std::vector<uint8_t> expected;
 		check(readCompositedBGRA(expected), "read two-layer reference BGRA");
@@ -3334,9 +3746,9 @@ namespace Inkeys::Drawing::Draw3
 			failure.switched = true;
 		};
 		// 第一层按生产 shader 成功 source-over，第二层用真实 Map 失败中断。
-		const bool failedBake = BakeLaserStrokeLayers(retryLayers, renderer,
+		const bool failedBake = MetricsLaserCall(&actualCosts, 1, costFrequency.QuadPart, [&] { return BakeLaserStrokeLayers(retryLayers, renderer,
 			1.0f, 64, 64, retryBounds, retryDirty, retryMode,
-			afterLayer, &injection);
+			afterLayer, &injection); });
 		renderer.inkDataBuffer = writableInkBuffer;
 		check(injection.switched, "fault begins only after first layer");
 		check(!failedBake, "second-layer Map failure reports failed bake");
@@ -3348,8 +3760,8 @@ namespace Inkeys::Drawing::Draw3
 		check(readCompositedBGRA(afterFailure), "read failed-bake BGRA");
 		check(afterFailure == blank,
 			"failed second pass leaves committed compositor unchanged");
-		check(BakeLaserStrokeLayers(retryLayers, renderer, 1.0f, 64, 64,
-			retryBounds, retryDirty, retryMode),
+		check(MetricsLaserCall(&actualCosts, 1, costFrequency.QuadPart, [&] { return BakeLaserStrokeLayers(retryLayers, renderer, 1.0f, 64, 64,
+			retryBounds, retryDirty, retryMode); }),
 			"restored buffer submits retained layers once");
 		std::vector<uint8_t> afterRetry;
 		check(readCompositedBGRA(afterRetry), "read retried two-layer BGRA");
@@ -3368,6 +3780,9 @@ namespace Inkeys::Drawing::Draw3
 		check(DrawLaserStrokeLayers(liveLayers, renderer,
 			renderer.backBufferRTV.Get(), fullRect, 1.0f, liveMode),
 			"full Laser redraw retries from ordered CPU layers");
+		check(actualCosts.bakeCalls == 3 && actualCosts.bakeFailures == 1 &&
+			(actualCosts.stageAvailableMask & 2u) != 0 && (actualCosts.stageCpuAvailableMask & 2u) != 0,
+			"N1 actual WARP bake success/failure shares the production wall/CPU collector");
 		return failures;
 	}
 
@@ -4803,7 +5218,7 @@ namespace Inkeys::Drawing::Draw3
 					bytes.back() = marker;
 					return InkGuid(bytes);
 				}
-				explicit Fixture(int64_t sourceQpc) : now(sourceQpc), producer(ControllerContentMetrics::Prepare(&metrics))
+				explicit Fixture(int64_t sourceQpc, size_t capacity = 256) : now(sourceQpc), metrics(capacity), producer(DrawingControllerMetricsState::Prepare(&metrics))
 				{
 					input.EnableDiagnostics(true);
 					if (!producer || !document.AppendPage(Guid(2)) || !document.AppendPage(Guid(3)) ||
@@ -4855,10 +5270,36 @@ namespace Inkeys::Drawing::Draw3
 					if (!Up(value, terminal)) throw 1;
 					input.Recycle(value.handle);
 				}
-				StoredContact Store()
+				void PhasePresent(bool success, int64_t returned)
+				{
+					producer->PresentReturned(true, success, returned, 0.5, producer->output);
+					producer->renderAttempt = true;
+					producer->frame.presentAttempted = true; producer->frame.presentSucceeded = success;
+					producer->frame.presentWallMs = 0.5; producer->frame.presentReturnQpc = returned;
+					producer->Finish();
+				}
+				void EnableFinitePhases()
+				{
+					DrawingControllerRuntimeObserver observer;
+					observer.context = this;
+					observer.runtimeMetricsPhaseProgress = [](void* context, const RuntimeMetricsPhaseProgress& value) noexcept
+					{ static_cast<Fixture*>(context)->observed = value; };
+					producer->EnablePhases(input, observer);
+					producer->Begin(GetQpcTimeMilliseconds()); producer->BeginCold(320, 240);
+					producer->FreezeCold({0, 0, 320, 240}, true);
+					PhasePresent(true, now + 1);
+					producer->BeginPrewarm(); producer->CompletePrewarm(true);
+					now = producer->phase.boundaries.runPrewarm.ownerEndQpc;
+				}
+				StoredContact Store(bool downAlreadyConfirmed = false)
 				{
 					StoredContact value;
 					value.source = Down();
+					if (downAlreadyConfirmed)
+					{
+						Freeze(); PhasePresent(true, now + 10000 + value.source.contactId);
+						producer->Begin(GetQpcTimeMilliseconds());
+					}
 					if (!value.source.handle || !Up(value.source, value.terminal)) throw 1;
 					RuntimeStroke runtime(1000.0f);
 					runtime.handle = value.source.handle;
@@ -4877,7 +5318,11 @@ namespace Inkeys::Drawing::Draw3
 					if (!committed) throw 1;
 					value.committed = *committed;
 					producer->NoteConsumed(value.source.key, value.terminal.sequence);
+					producer->ObserveTerminal(value.source.key, value.terminal);
 					producer->Adopt(value.source.key, value.terminal, ContentMetricAdoptionKind::RawTerminal, true);
+					if (producer->phase.boundaries.enabled)
+						producer->CaptureFinal(value.source.key, *committed, *document.PageAt(0)->FindCanvas(kDefaultDeviceKey),
+							runtimes[0], value.terminal, Signature());
 					value.captured = producer->CaptureStored(value.source.key, *committed, runtimes[0], value.terminal);
 					// 与生产相同：CPU afterState 可推进；这一步不授予任何 GPU 成功资格。
 					runtimes[0].rasterState = committed->afterState;
@@ -4921,14 +5366,211 @@ namespace Inkeys::Drawing::Draw3
 					return proof;
 				}
 				int64_t now = 0;
-				RuntimeMetricsSession metrics{ 256 };
+				RuntimeMetricsSession metrics;
 				ContactInputCoordinator input;
 				InkCanvasCollection document{ Guid(1) };
 				std::vector<CanvasPageRuntimeState> runtimes = std::vector<CanvasPageRuntimeState>(2);
-				std::unique_ptr<ControllerContentMetrics> producer;
+				std::unique_ptr<DrawingControllerMetricsState> producer;
+				RuntimeMetricsPhaseProgress observed;
 				uint32_t nextContact = 1;
 				InkRasterStateToken nextRasterToken = 1;
 			};
+			// N1 数值合同：真实 Coordinator/CPU history/同一 owner assembler；这里的 bool 不冒称 GPU 实测。
+			{
+				Fixture fixture(now.QuadPart, 1024);
+				fixture.EnableFinitePhases();
+				check(fixture.observed.boundaries.coldEnd.exists && fixture.observed.boundaries.runPrewarm.completed,
+					"N101 cold has an independent successful clear/composite receipt and actual CPU prewarm span");
+				for (uint64_t ordinal = 1; ordinal <= 216; ++ordinal)
+				{
+					fixture.producer->Begin(GetQpcTimeMilliseconds()); fixture.Authorize();
+					const auto stored = fixture.Store(true);
+					check(stored.captured && !fixture.producer->FindLive(stored.source.key) && fixture.producer->final.stored.exists,
+						"N102 Down-confirmed live retirement preserves a distinct terminal final receipt");
+					if (ordinal == 16)
+					{
+						fixture.Freeze(); fixture.PhasePresent(true, fixture.now + 20000 + ordinal);
+						check(!fixture.observed.boundaries.warmEnd.exists && !fixture.observed.boundaries.measuredEnd.exists &&
+							fixture.observed.finalCompletedOrdinal == 15 && fixture.metrics.Snapshot().confirmed == 16,
+							"N103 consumed/confirmed Up without current whole-L2 cannot seal warm or measured");
+						fixture.producer->Begin(GetQpcTimeMilliseconds());
+					}
+					fixture.Authorize();
+					const auto signature = fixture.Signature();
+					fixture.producer->FreezeCandidates(signature, *fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey),
+						fixture.runtimes[0], {0, 0, 319, 240}, true, false);
+					if (ordinal == 16)
+					{
+						fixture.PhasePresent(false, fixture.now + 30000 + ordinal);
+						check(!fixture.observed.boundaries.warmEnd.exists && fixture.producer->final.stored.exists,
+							"N104 false Present retains the exact final and denominator without an early boundary");
+						fixture.producer->Begin(GetQpcTimeMilliseconds()); fixture.Authorize(); fixture.Freeze();
+					}
+					{
+						MetricsStageScope geometry(fixture.producer->CurrentCosts(), RuntimeMetricsCostStage::GeometryRasterSubmit, fixture.producer->metricFrequency);
+						RuntimeStroke actualModel(1000.0f); StrokeModelConfiguration configuration;
+						MetricsModelCall(fixture.producer->CurrentCosts(), 0, fixture.producer->metricFrequency,
+							[&] { return actualModel.stroke.modeler.Reset(configuration.modelParams); });
+						const ink::stroke_model::Input input{ .event_type = ink::stroke_model::Input::EventType::kDown,
+							.position = ink::stroke_model::Vec2(40, 48), .time = ink::stroke_model::Time(0), .pressure = 1,
+							.tilt = kHalfPi, .orientation = 0 };
+						MetricsModelCall(fixture.producer->CurrentCosts(), 1, fixture.producer->metricFrequency,
+							[&] { return actualModel.stroke.modeler.Update(input, actualModel.stroke.modeledResults); });
+						MetricsModelCall(fixture.producer->CurrentCosts(), 2, fixture.producer->metricFrequency,
+							[&] { return actualModel.stroke.modeler.Predict(actualModel.stroke.predictedResults); });
+					}
+					fixture.PhasePresent(true, fixture.now + 40000 + ordinal);
+					check(fixture.observed.finalCompletedOrdinal == ordinal && fixture.producer->frame.costs.cpuAvailable &&
+						fixture.producer->frame.costs.modelResetCalls == 1 && fixture.producer->frame.costs.modelUpdateCalls == 1 &&
+						fixture.producer->frame.costs.predictionCalls == 1,
+						"N105 actual model calls and thread CPU coexist with exactly-once current final");
+				}
+				const auto& cuts = fixture.observed.boundaries;
+				check(cuts.warmEnd.exists && cuts.measuredEnd.exists && !cuts.incomplete &&
+					cuts.warmEnd.metrics.contactSeen == 16 && cuts.measuredEnd.metrics.contactSeen == 216 &&
+					cuts.measuredEnd.terminal.authoritativeFinalPresented == 216 && cuts.measuredEnd.metrics.presentFailed == 1 &&
+					cuts.measuredEnd.metrics.framesRetained == fixture.metrics.Snapshot().framesRetained &&
+					!cuts.measuredEnd.fullViewportComposite,
+					"N106 same-session 16/216 success cuts preserve failed frames and accept sufficient original projection dirty");
+				struct OwnedReport
+				{
+					wchar_t path[MAX_PATH] = {};
+					bool owned = false;
+					~OwnedReport() { if (owned) DeleteFileW(path); }
+				} reportFile;
+				wchar_t temporary[MAX_PATH] = {};
+				const DWORD length = GetTempPathW(MAX_PATH, temporary);
+				if (!length || length >= MAX_PATH || !GetTempFileNameW(temporary, L"N1M", 0, reportFile.path)) throw 1;
+				reportFile.owned = true;
+				if (!DeleteFileW(reportFile.path)) throw 1;
+				auto damaged = cuts; damaged.warmEnd.ownerQpc = 0;
+				check(!fixture.metrics.WriteJson(reportFile.path, fixture.input.DiagnosticsSnapshot(), damaged) &&
+					GetFileAttributesW(reportFile.path) == INVALID_FILE_ATTRIBUTES,
+					"N107 malformed phase cut is refused before create-new output");
+				check(fixture.metrics.WriteJson(reportFile.path, fixture.input.DiagnosticsSnapshot(), cuts),
+					"N108 actual owner prefixes export through the production three-argument writer");
+				const auto readReport = [&]()
+				{
+					HANDLE file = CreateFileW(reportFile.path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+					if (file == INVALID_HANDLE_VALUE) throw 1;
+					LARGE_INTEGER size = {}; const bool valid = GetFileSizeEx(file, &size) && size.QuadPart >= 0 && size.QuadPart <= 4 * 1024 * 1024;
+					if (!valid) { CloseHandle(file); throw 1; }
+					std::string text(static_cast<size_t>(size.QuadPart), '\0'); DWORD read = 0;
+					const bool complete = ReadFile(file, text.data(), static_cast<DWORD>(text.size()), &read, nullptr) && read == text.size();
+					CloseHandle(file); if (!complete) throw 1;
+					Json::CharReaderBuilder builder; builder["rejectDupKeys"] = true; builder["failIfExtra"] = true; builder["allowSpecialFloats"] = false;
+					Json::Value value; std::string errors; std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+					if (!reader || !reader->parse(text.data(), text.data() + text.size(), &value, &errors)) throw 1;
+					return value;
+				};
+				auto report = readReport();
+				check(report["contacts"].size() == 216 && report["landings"].size() == 216 &&
+					report["phaseSummaries"][1]["contactSeen"].asUInt64() == 16 && report["phaseSummaries"][2]["contactSeen"].asUInt64() == 200 &&
+					report["phaseSummaries"][2]["downLatency"]["p99Ms"].isNull() && !report["phaseBoundaries"]["incomplete"].asBool(),
+					"N109 raw216 finite 16/200 populations retain their original ordinal and individual P99 gate");
+				check(!fixture.metrics.WriteJson(reportFile.path, fixture.input.DiagnosticsSnapshot(), cuts), "N110 phase export never overwrites an existing report");
+				if (!DeleteFileW(reportFile.path)) throw 1;
+				auto missing = cuts; missing.warmEnd = {}; missing.measuredEnd = {}; missing.incomplete = true;
+				check(fixture.metrics.WriteJson(reportFile.path, fixture.input.DiagnosticsSnapshot(), missing), "N111 missing warm retains an incomplete report");
+				report = readReport();
+				check(report["phaseBoundaries"]["warmEnd"].isNull() && report["phaseBoundaries"]["measuredEnd"].isNull() &&
+					!report["phaseSummaries"][2]["available"].asBool() && report["contacts"].size() == 216,
+					"N111 missing warm cannot invent measured values or erase failed raw contacts");
+			}
+			for (unsigned mismatch = 0; mismatch < 6; ++mismatch)
+			{
+				Fixture fixture(now.QuadPart); fixture.EnableFinitePhases(); fixture.producer->Begin(GetQpcTimeMilliseconds()); fixture.Authorize();
+				const auto stored = fixture.Store(true); fixture.Authorize();
+				if (mismatch == 0) ++fixture.runtimes[0].afterStates[stored.committed.renderItem.index];
+				if (mismatch == 1) ++fixture.producer->final.stored.contentGeneration;
+				fixture.producer->FreezeCandidates(fixture.Signature(), *fixture.document.PageAt(0)->FindCanvas(kDefaultDeviceKey),
+					fixture.runtimes[0], mismatch == 2 ? RECT{40,48,44,52} : RECT{0,0,320,240}, true, mismatch != 2);
+				if (mismatch == 3) ++fixture.producer->l2.signature.canvas.rasterGeneration;
+				if (mismatch == 4) ++fixture.producer->final.stored.contentToken;
+				if (mismatch == 5) fixture.producer->ObserveOutput(true, TransparentOutputTarget::SelectionUlw, 1);
+				fixture.PhasePresent(true, fixture.now + 20000);
+				check(fixture.observed.finalCompletedOrdinal == 0 && fixture.producer->final.stored.exists && !fixture.observed.boundaries.warmEnd.exists,
+					"N112 wrong after-state/content token/partial coverage/old epoch cannot close an independent final");
+			}
+			{
+				for (unsigned independent = 0; independent < 2; ++independent)
+				{
+					Fixture fixture(now.QuadPart); fixture.EnableFinitePhases(); fixture.producer->Begin(GetQpcTimeMilliseconds()); fixture.Authorize();
+					const auto source = fixture.Down(InputDeviceType::Pen, DrawingTool::Laser);
+					ContactSnapshot terminal; if (!fixture.Up(source, terminal)) throw 1;
+					fixture.producer->NoteConsumed(source.key, terminal.sequence); fixture.producer->ObserveTerminal(source.key, terminal);
+					LaserTrailLifecycle lifecycle; BeginLaserContact(lifecycle); EndLaserContact(lifecycle, terminal.qpc);
+					fixture.producer->CaptureLaserFinal(source.key, terminal, lifecycle);
+					fixture.input.Recycle(source.handle);
+					fixture.producer->ObserveLaserBake(true); fixture.producer->laserQuiet = true;
+					fixture.Freeze(); fixture.PhasePresent(true, terminal.qpc + 1);
+					check(fixture.observed.finalCompletedOrdinal == 0 && fixture.producer->final.stored.exists,
+						"N116 Active zero/quiet and baked Hold are not natural Laser completion");
+					fixture.producer->Begin(GetQpcTimeMilliseconds());
+					if (independent) fixture.producer->ObserveIndependentClear();
+					fixture.producer->ObserveLaserPhase(lifecycle);
+					(void)EvaluateLaserTrailOpacity(lifecycle, terminal.qpc + frequency.QuadPart + frequency.QuadPart/2, frequency.QuadPart, 1.0);
+					fixture.producer->ObserveLaserPhase(lifecycle);
+					const int64_t originalUp = lifecycle.lastAllUpQpc;
+					(void)EvaluateLaserTrailOpacity(lifecycle, terminal.qpc + frequency.QuadPart*2, frequency.QuadPart, 1.0);
+					fixture.producer->ObserveLaserPhase(lifecycle);
+					check(originalUp == terminal.qpc && lifecycle.lastAllUpQpc == 0 && fixture.producer->final.lastAllUpQpc == originalUp,
+						"N117 actual Evaluate reset cannot erase the independent Up value");
+					fixture.producer->ObserveLaserExpiry({36,44,240,150}, {}, {32,40,248,160}, {});
+					fixture.Freeze(); fixture.PhasePresent(true, terminal.qpc + frequency.QuadPart*2 + 1);
+					check(fixture.observed.terminal.laserLifecycleCompleted == (independent ? 0u : 1u) && fixture.observed.terminal.authoritativeFinalPresented == 0 &&
+						!fixture.observed.boundaries.warmEnd.exists && fixture.observed.boundaries.incomplete == (independent != 0),
+						"N118 natural expiry old-domain proof is distinct from ordinary landing and IndependentClearQuiet");
+				}
+				{
+					Fixture fixture(now.QuadPart); fixture.EnableFinitePhases(); fixture.producer->Begin(GetQpcTimeMilliseconds());
+					const auto source = fixture.Down(); auto cancelled = source.down; cancelled.phase = ContactPhase::Cancelled; cancelled.qpc += 1;
+					if (!fixture.input.PublishCancelled(0xE042, source.contactId, cancelled) || !fixture.input.TryReadSnapshot(source.handle, cancelled)) throw 1;
+					fixture.producer->ObserveTerminal(source.key, cancelled); fixture.producer->Invalidate(source.key, ContentMetricInvalidationReason::Cancelled);
+					fixture.input.Recycle(source.handle); fixture.producer->renderAttempt = true; fixture.producer->Finish();
+					check(fixture.observed.boundaries.incomplete && fixture.observed.terminal.cancelled == 1 && fixture.metrics.Snapshot().contactSeen == 1 &&
+						!fixture.observed.boundaries.warmEnd.exists && !fixture.observed.boundaries.measuredEnd.exists,
+						"N119 actual Cancel keeps seen and failure reason instead of creating a successful phase");
+				}
+				{
+					Fixture fixture(now.QuadPart); fixture.EnableFinitePhases();
+					RuntimeStroke actualModel(1000.0f); StrokeModelConfiguration configuration;
+					{
+						MetricsStageScope ingress(fixture.producer->CurrentCosts(), RuntimeMetricsCostStage::Ingress,
+							fixture.producer->metricFrequency, &fixture.producer->ingressDepth);
+						MetricsStageScope nested(fixture.producer->CurrentCosts(), RuntimeMetricsCostStage::Ingress,
+							fixture.producer->metricFrequency, &fixture.producer->ingressDepth);
+						MetricsModelCall(fixture.producer->CurrentCosts(), 0, fixture.producer->metricFrequency,
+							[&] { return actualModel.stroke.modeler.Reset(configuration.modelParams); });
+					}
+					fixture.producer->Begin(GetQpcTimeMilliseconds()); fixture.producer->Finish();
+					check(fixture.producer->frame.costs.modelResetCalls == 1 && fixture.producer->frame.priorIngressAvailableMask == 3 &&
+						fixture.producer->pendingCosts.stageObservedMask == 0 && fixture.producer->ingressDepth == 0 &&
+						!fixture.producer->frame.presentAttempted,
+						"N120 actual post-Finish ingress survives once; nested drain/process does not double-count or include wait");
+				}
+				const MetricClockStamp before{1, 10000, true}, after{2, 30000, true}, reverse{2, 9999, true}, failed{};
+				double cpu = 0;
+				check(MetricCpuDelta(before, after, cpu) && cpu == 2.0 && !MetricCpuDelta(before, reverse, cpu) && !MetricCpuDelta(before, failed, cpu),
+					"N113 same production CPU converter checks FILETIME units, backwards time and API failure availability");
+				RuntimeMetricsSession metrics(1); metrics.BeginFrame(); RuntimeMetricsFrameSample frame; frame.frameSerial = 1;
+				metrics.RecordRenderFrame(frame); metrics.RecordRenderFrame(frame); metrics.RecordVerifiedPresent(0, true); metrics.RecordVerifiedPresent(0, false);
+				metrics.RecordVerifiedPresent(-1, false); metrics.RecordActiveFrame(0, 0, 0, true); metrics.RecordActiveFrame(1, 0, 0, true);
+				const auto prefix = metrics.Snapshot();
+				check(prefix.framesSeen == 2 && prefix.framesRetained == 1 && prefix.framesDropped == 1 && prefix.presentRetained == 1 &&
+					prefix.presentDropped == 1 && prefix.presentInvalid == 1 && prefix.durationDropped > 0,
+					"N114 frame/present/duration retention comes from actual containers rather than guessed differences");
+				constexpr size_t reserve = 64u * 1024;
+				const size_t capacity = RuntimeMetricsSession::MaximumSamplesForBudget(reserve);
+				check(capacity >= 46656 && RuntimeMetricsSession::MaximumSamplesForBudget((std::numeric_limits<size_t>::max)()) == 0,
+					"N115 actual new layout can retain nominal Laser frames and rejects external budget overflow before allocation");
+				RuntimeMetricsSession bounded((std::numeric_limits<size_t>::max)(), reserve);
+				check(bounded.Snapshot().effectiveSamples == capacity && bounded.Snapshot().allocatedBytes <= 32u*1024*1024-reserve,
+					"N115 old SIZE_MAX compatibility and common external reservation use the same preflight");
+				std::fprintf(stderr, "[Draw3ContentProof] N1 frame=%zu progress=%zu controller=%zu maxWith64KiB=%zu eventCapacity=0\n",
+					sizeof(RuntimeMetricsFrameSample), sizeof(RuntimeMetricsPhaseProgress), sizeof(DrawingControllerMetricsState), capacity);
+			}
+
 			const int64_t returnQpc = now.QuadPart + frequency.QuadPart;
 			{
 				Fixture fixture(now.QuadPart);
@@ -6222,6 +6864,7 @@ namespace Inkeys::Drawing::Draw3
 		// 指标预备失败仅关闭诊断，不能影响正常输入/模型/画质或启动。
 		metricsUnavailable_ = metrics && !metricsState_;
 		if (metricsUnavailable_) metrics_ = nullptr;
+		if (metricsState_) metricsState_->EnablePhases(input_, observer_);
 		currentProductVisualStyle = window_.ProductVisualStyleSnapshot();
 		window_.SetMouseUsesSystemCursor(configuration_.mouseUsesSystemCursor);
 		ConfigureProductInkCursorAppearances(window_, currentProductVisualStyle,
@@ -6428,6 +7071,7 @@ namespace Inkeys::Drawing::Draw3
 			metricsState_->frame.presentAttempted = true;
 			metricsState_->frame.presentSucceeded = succeeded;
 			metricsState_->frame.presentWallMs += lastPresentDurationMs_;
+			metricsState_->frame.presentReturnQpc = returnQpc.QuadPart;
 			if (metricsState_->counters.outputMismatch != beforeMismatch)
 				metricsState_->Mark(RuntimeMetricsFrameReason::OutputMismatch);
 			if (externalFrame) metricsState_->Finish(GetQpcTimeMilliseconds() - metricsState_->frame.frameStartMs);
@@ -6453,16 +7097,36 @@ namespace Inkeys::Drawing::Draw3
 		}
 		const WindowSize size = window_.Size();
 		const RECT fullCanvas = GetFullCanvasRect(size.width, size.height);
+		if (metricsState_)
+		{
+			metricsState_->BeginCold(size.width, size.height);
+			if (metricsState_->runEntered) metricsState_->ObserveIndependentClear();
+		}
+		MetricsStageScope clearCost(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+			RuntimeMetricsCostStage::GeometryRasterSubmit, metricsState_ ? metricsState_->metricFrequency : 0);
 		renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor); // 内部画布始终保持真透明背景。
 		renderer_.ClearOperatorLayer(renderer_.layerL1); // 清掉当前笔画已确认层。
 		renderer_.ClearOperatorLayer(renderer_.layerL0); // 清掉当前帧实时层。
 		renderer_.ClearAllLaserCoverage(); // Laser 是独立瞬态层，清屏时必须同步清理。
 		renderer_.ResetLaserParticles();
 		renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor); // backbuffer 也不写入 ULW 的命中测试底层。
-		if (!CompositeLayersToBackBuffer(fullCanvas))
+		clearCost.Finish();
+		const bool clearComposite = [&]
+		{
+			MetricsStageScope cost(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+				RuntimeMetricsCostStage::Composite, metricsState_ ? metricsState_->metricFrequency : 0);
+			return CompositeLayersToBackBuffer(fullCanvas);
+		}();
+		if (metricsState_)
+		{
+			metricsState_->ObserveOutput(true, presentation_.RequestedOutputTarget(), presentation_.RequestedOutputRevision());
+			metricsState_->FreezeCold(fullCanvas, clearComposite);
+		}
+		if (!clearComposite)
 		{
 			if (metricsState_)
 			{
+				if (metricsState_->coldArmed) metricsState_->FailPhase(RuntimeMetricsPhaseFailure::Unsealed);
 				metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
 				if (!metricsState_->runFrameActive) metricsState_->Finish();
 			}
@@ -6551,12 +7215,14 @@ namespace Inkeys::Drawing::Draw3
 
 	void DrawingController::Run()
 	{
+		if (metricsState_) metricsState_->BeginPrewarm();
 		struct MetricsRunExit
 		{
 			DrawingControllerMetricsState* state;
 			~MetricsRunExit()
 			{
 				if (!state) return;
+				state->CompletePrewarm(false);
 				state->Finish();
 				state->runFrameActive = false;
 				state->EndContacts(ContentMetricInvalidationReason::Stopped);
@@ -6815,7 +7481,8 @@ namespace Inkeys::Drawing::Draw3
 		for (size_t index = 0; index < kPreheatedStrokeCount; ++index)
 		{
 			auto runtime = std::make_unique<RuntimeStroke>(configuration_.expectedSpeed);
-			if (absl::Status status = runtime->stroke.modeler.Reset(strokeModelParams); !status.ok())
+			if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
+				metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(strokeModelParams); }); !status.ok())
 			{
 				std::cout << "Failed to preheat stroke model: " << status.message() << std::endl;
 				return;
@@ -7177,6 +7844,7 @@ namespace Inkeys::Drawing::Draw3
 			// Touch 的任意工具临时层都丢弃，下一帧只从剩余 Pen/Mouse runtime 重建。
 			renderer_.ClearOperatorLayer(renderer_.layerL1);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			if (metricsState_) metricsState_->ObserveIndependentClear();
 			renderer_.ClearAllLaserCoverage();
 			renderer_.ResetLaserParticles();
 			laserLifecycle = {};
@@ -7312,7 +7980,8 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 				auto runtime = std::make_unique<RuntimeStroke>(configuration_.expectedSpeed);
-				if (absl::Status status = runtime->stroke.modeler.Reset(strokeModelParams); !status.ok())
+				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(strokeModelParams); }); !status.ok())
 				{
 					std::cout << "Failed to initialize expanded stroke model: " << status.message() << std::endl;
 					return nullptr;
@@ -7338,8 +8007,10 @@ namespace Inkeys::Drawing::Draw3
 				Input anchor=next;anchor.event_type=Input::EventType::kDown;
 				anchor.position=Vec2(last.x,last.y);
 				anchor.time=Time(inputTime-1.0/sampling.min_output_rate);
-				if(auto status=runtime.stroke.modeler.Reset(eraserModelParams);!status.ok())return status;
-				if(auto status=runtime.stroke.modeler.Update(anchor,runtime.stroke.modeledResults);!status.ok())return status;
+				if(auto status=MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Reset(eraserModelParams); });!status.ok())return status;
+				if(auto status=MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Update(anchor,runtime.stroke.modeledResults); });!status.ok())return status;
 				runtime.stroke.predictedResults.clear();
 				runtime.stroke.predictedPoints.clear();
 				++runtime.eraserDiagnostics.idleModelReanchors;
@@ -7347,7 +8018,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (observer_.penDiagnostics && runtime.stroke.useDisplayTime)
 				++runtime.diagnosticModelUpdates;
-			return runtime.stroke.modeler.Update(next, modelOutput);
+			return MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
+				metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Update(next, modelOutput); });
 		};
 
 		auto initializeStroke = [&](ContactHandle handle) -> bool
@@ -7747,8 +8419,9 @@ namespace Inkeys::Drawing::Draw3
 					if (observer_.penDiagnostics && reconnectRuntime->stroke.useDisplayTime)
 						++reconnectRuntime->diagnosticModelUpdates;
 					const size_t metricsRealBefore = metricsState_ ? reconnectRuntime->stroke.realPoints.size() : 0;
-					if (absl::Status status = reconnectRuntime->stroke.modeler.Update(
-						reconnectInput, reconnectModelOutput); status.ok())
+					if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
+						metricsState_ ? metricsState_->metricFrequency : 0, [&] { return reconnectRuntime->stroke.modeler.Update(
+						reconnectInput, reconnectModelOutput); }); status.ok())
 					{
 						reconnectRuntime->stationaryModelAdvanceBlocked = false;
 						const double gapSeconds = reconnectResult.gapMilliseconds / 1000.0;
@@ -7968,7 +8641,8 @@ namespace Inkeys::Drawing::Draw3
 				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
 				const auto& modelParams = runtime->tool == DrawingTool::Eraser
 					? eraserModelParams : strokeModelParams;
-				if (absl::Status status = runtime->stroke.modeler.Reset(modelParams); !status.ok())
+				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(modelParams); }); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
@@ -8025,7 +8699,8 @@ namespace Inkeys::Drawing::Draw3
 				};
 				runtime->modelInputThisFrame = true;
 				runtime->stationaryModelAdvanceBlocked = false;
-				if (absl::Status status = stroke.modeler.Update(downInput, stroke.modeledResults); !status.ok())
+				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Update(downInput, stroke.modeledResults); }); !status.ok())
 				{
 					std::cout << "Error: " << status.message() << std::endl;
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
@@ -8049,6 +8724,7 @@ namespace Inkeys::Drawing::Draw3
 					const WindowSize laserSize = window_.Size();
 					if (laserLifecycle.phase == LaserTrailPhase::Inactive)
 					{
+						if (metricsState_) metricsState_->ObserveIndependentClear();
 						renderer_.ClearAllLaserCoverage();
 						laserStableBounds = {};
 						laserLiveBounds = {};
@@ -8060,10 +8736,11 @@ namespace Inkeys::Drawing::Draw3
 					{
 						// 同帧发生"最后 Up → 新 Down"时，也先把上一批按原顺序烘干。
 						UnionRectInPlace(pendingLaserBakeDirty, laserLiveBounds);
-						const bool baked = BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
+						const bool baked = MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 1,
+							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
 							configuration_.dpiScale, laserSize.width, laserSize.height,
 							laserStableBounds, pendingLaserBakeDirty,
-							laserCoverageMode);
+							laserCoverageMode); });
 						if (baked)
 						{
 							laserLiveBounds = {};
@@ -8262,6 +8939,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					metricsState_->renderAttempt = true;
 					metricsState_->NoteConsumed(MetricKey(runtime.handle), snapshot.sequence);
+					metricsState_->ObserveTerminal(MetricKey(runtime.handle), snapshot);
 					if (snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled)
 					{
 						++metricsState_->frame.terminalCount;
@@ -8432,6 +9110,7 @@ namespace Inkeys::Drawing::Draw3
 					FinalizeLaserStrokeLayer(laserStrokeLayers, runtime,
 						laserCancelled,
 						configuration_.dpiScale, laserSize.width, laserSize.height);
+					if (metricsState_ && !laserCancelled) metricsState_->CaptureLaserFinal(MetricKey(runtime.handle), snapshot, laserLifecycle);
 				}
 				if (terminal && runtime.shape.active)
 				{
@@ -8453,8 +9132,9 @@ namespace Inkeys::Drawing::Draw3
 							kActivePredictionMode != InkPredictionMode::Disabled)
 						{
 							// 同帧新 Down 会在渲染前出队，因此候选创建时必须先冻结最新 prediction。
-							if (absl::Status status = runtime.stroke.modeler.Predict(
-								runtime.reconnectPredictedResults); !status.ok())
+							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
+								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime.stroke.modeler.Predict(
+								runtime.reconnectPredictedResults); }); !status.ok())
 								runtime.reconnectPredictedResults.clear();
 						}
 						runtime.awaitingReconnect = true;
@@ -8526,6 +9206,7 @@ namespace Inkeys::Drawing::Draw3
 			invertedPenEraserHoverLane.Invalidate();
 			if (haptics_) haptics_->StopFeedback();
 			hapticContinuousActive = false;
+			if (metricsState_) metricsState_->ObserveIndependentClear();
 			renderer_.ClearAllLaserCoverage();
 			renderer_.ResetLaserParticles();
 			laserLifecycle = {};
@@ -8581,17 +9262,26 @@ namespace Inkeys::Drawing::Draw3
 			};
 			auto processCommandAndReconcile = [&](ContactRecord* record)
 			{
+				MetricsStageScope ingress(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+					RuntimeMetricsCostStage::Ingress, metricsState_ ? metricsState_->metricFrequency : 0,
+					metricsState_ ? &metricsState_->ingressDepth : nullptr);
 				processCommand(record);
 				// Down 后部分路径会直接 continue，必须在命令边界立即发布 0→1。
 				reconcileDrawingActivity();
 			};
 			auto drainIngressBatch = [&]()
 			{
+				MetricsStageScope ingress(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+					RuntimeMetricsCostStage::Ingress, metricsState_ ? metricsState_->metricFrequency : 0,
+					metricsState_ ? &metricsState_->ingressDepth : nullptr);
 				DrainIngressBatch(input_, window_, commandBoundaryPending,
 					processCommandAndReconcile);
 			};
 			auto tryConsumeOneIngress = [&](ContactRecord*& record)
 			{
+				MetricsStageScope ingress(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+					RuntimeMetricsCostStage::Ingress, metricsState_ ? metricsState_->metricFrequency : 0,
+					metricsState_ ? &metricsState_->ingressDepth : nullptr);
 				if (commandBoundaryPending || !input_.TryDequeue(record)) return false;
 				processCommandAndReconcile(record);
 				return true;
@@ -9659,6 +10349,7 @@ namespace Inkeys::Drawing::Draw3
 			if (metricsState_) metricsState_->wholeL2Clear = true;
 			renderer_.ClearOperatorLayer(renderer_.layerL1);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			if (metricsState_) metricsState_->ObserveIndependentClear();
 			renderer_.ClearAllLaserCoverage();
 			renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
 			laserLifecycle = {};
@@ -11233,8 +11924,22 @@ namespace Inkeys::Drawing::Draw3
 			}
 		};
 		// 预热所有激光着色器路径，消除首笔落下时 Qualcomm/Adreno 等 GPU 驱动的 JIT 编译卡顿。
-		renderer_.WarmUpLaserShaders();
-		renderer_.WarmUpShapeShaders();
+		{
+			auto* sample = metricsState_ ? &metricsState_->phase.boundaries.runPrewarm : nullptr;
+			MetricsStageScope shader(sample ? &sample->shaderAvailableMask : nullptr,
+				sample ? &sample->shaderCpuAvailableMask : nullptr, sample ? &sample->shaderObservedMask : nullptr,
+				sample ? sample->shaderWallMs.data() : nullptr, sample ? sample->shaderThreadCpuMs.data() : nullptr,
+				0, metricsState_ ? metricsState_->metricFrequency : 0);
+			renderer_.WarmUpLaserShaders();
+		}
+		{
+			auto* sample = metricsState_ ? &metricsState_->phase.boundaries.runPrewarm : nullptr;
+			MetricsStageScope shader(sample ? &sample->shaderAvailableMask : nullptr,
+				sample ? &sample->shaderCpuAvailableMask : nullptr, sample ? &sample->shaderObservedMask : nullptr,
+				sample ? sample->shaderWallMs.data() : nullptr, sample ? sample->shaderThreadCpuMs.data() : nullptr,
+				1, metricsState_ ? metricsState_->metricFrequency : 0);
+			renderer_.WarmUpShapeShaders();
+		}
 		if (metricsState_ && metricsState_->initialL2Cleared)
 		{
 			const auto size = window_.Size();
@@ -11243,6 +11948,7 @@ namespace Inkeys::Drawing::Draw3
 				metricsState_->CompleteFullReplay(metricsSignature(size.width, size.height), true);
 			metricsState_->initialL2Cleared = false;
 		}
+		if (metricsState_) metricsState_->CompletePrewarm(true);
 		bool appliedSelectionMode = window_.SelectionMode();
 		bool auxiliaryCleanVerificationPending = appliedSelectionMode;
 		unsigned consecutiveRasterFailures = 0;
@@ -11298,6 +12004,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!state) return;
 					state->frame.physicalAfter = static_cast<uint32_t>(std::count_if(active.begin(), active.end(),
 						[](const RuntimeStroke* runtime) { return runtime && !runtime->ended && !runtime->awaitingReconnect; }));
+					state->Runtimes(active);
 					state->Finish();
 					state->runFrameActive = false;
 				}
@@ -11368,6 +12075,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				if (metricsState_) metricsState_->ObserveIndependentClear();
 				renderer_.ClearAllLaserCoverage();
 				renderer_.ResetLaserParticles();
 				renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
@@ -11559,6 +12267,7 @@ namespace Inkeys::Drawing::Draw3
 						penEraserHoverLane.Invalidate();invertedPenEraserHoverLane.Invalidate();
 						renderer_.ClearOperatorLayer(renderer_.layerL1);
 						renderer_.ClearOperatorLayer(renderer_.layerL0);
+						if (metricsState_) metricsState_->ObserveIndependentClear();
 						renderer_.ClearAllLaserCoverage();
 					}
 					viewportTilePlan = {};
@@ -11719,9 +12428,19 @@ namespace Inkeys::Drawing::Draw3
 				updateSpeedEraserHoverLanes(animationQpc.QuadPart);
 			const LaserTrailPhase previousLaserPhase = laserLifecycle.phase;
 			const float previousLaserOpacity = laserOpacity;
+			const double animationLaserHold = laserHoldDurationSeconds_.load(std::memory_order_acquire);
+			if (metricsState_)
+			{
+				auto& sample = metricsState_->frame.laser;
+				sample.collected = true;
+				if (laserLifecycle.lastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.lastAllUpQpc;
+				sample.effectiveHoldSeconds = EffectiveLaserHoldDurationSeconds(laserLifecycle, animationLaserHold);
+				sample.fadeSeconds = kLaserFadeDurationSeconds;
+				metricsState_->ObserveLaserPhase(laserLifecycle);
+			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
-				animationQpc.QuadPart, qpcFrequency,
-				laserHoldDurationSeconds_.load(std::memory_order_acquire));
+				animationQpc.QuadPart, qpcFrequency, animationLaserHold);
+			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
 			const bool laserExpired = previousLaserPhase != LaserTrailPhase::Inactive &&
 				laserLifecycle.phase == LaserTrailPhase::Inactive;
 			const bool laserFadeActive = laserLifecycle.phase == LaserTrailPhase::Fade;
@@ -11785,6 +12504,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (laserExpired)
 			{
+				if (metricsState_) metricsState_->ObserveLaserExpiry(laserStableBounds, laserLiveBounds,
+					previousLaserParticleBounds, currentLaserParticleBounds);
 				UnionRectInPlace(frameDirty, laserStableBounds);
 				UnionRectInPlace(frameDirty, laserLiveBounds);
 				renderer_.ClearAllLaserCoverage();
@@ -11865,6 +12586,7 @@ namespace Inkeys::Drawing::Draw3
 				lastActiveFrameStartMs = 0.0;
 				if (laserLifecycle.phase == LaserTrailPhase::Hold)
 				{
+					if (metricsState_ && metricsState_->phase.boundaries.enabled) ++metricsState_->phase.terminal.holdWaits;
 					if (tryConsumeOneIngress(record))
 					{
 						if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
@@ -11936,6 +12658,8 @@ namespace Inkeys::Drawing::Draw3
 				lastLaserParticleSimulationQpc > 0
 				? static_cast<float>(QpcDeltaSeconds(frameQpc.QuadPart,
 					lastLaserParticleSimulationQpc, qpcFrequency)) : 0.0f;
+			MetricsStageScope geometryCost(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+				RuntimeMetricsCostStage::GeometryRasterSubmit, metricsState_ ? metricsState_->metricFrequency : 0);
 			bool hasEndedStroke = false;
 			// 在处理同帧输入前保存 opacity；新 Down 可能直接恢复满亮，仍需覆盖旧淡出区域。
 			const float preInputLaserOpacity = laserOpacity;
@@ -12059,8 +12783,9 @@ namespace Inkeys::Drawing::Draw3
 				runtime->stroke.modelScratch.clear();
 				if (observer_.penDiagnostics) ++runtime->diagnosticModelUpdates;
 				const auto metricsGeometryBefore = metricsState_ ? CaptureMetricGeometry(*runtime) : MetricGeometrySnapshot{};
-				if (absl::Status status = runtime->stroke.modeler.Update(
-					stationaryInput, runtime->stroke.modelScratch); status.ok())
+				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Update(
+					stationaryInput, runtime->stroke.modelScratch); }); status.ok())
 				{
 					runtime->lastModelInputTime = frameInputTime;
 					if (runtime->stroke.endpointAdmission.recovering)
@@ -12080,9 +12805,19 @@ namespace Inkeys::Drawing::Draw3
 					std::cout << "Error: " << status.message() << std::endl;
 				}
 			}
+			const double inputLaserHold = laserHoldDurationSeconds_.load(std::memory_order_acquire);
+			if (metricsState_)
+			{
+				auto& sample = metricsState_->frame.laser;
+				sample.collected = true;
+				if (laserLifecycle.lastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.lastAllUpQpc;
+				sample.effectiveHoldSeconds = EffectiveLaserHoldDurationSeconds(laserLifecycle, inputLaserHold);
+				sample.fadeSeconds = kLaserFadeDurationSeconds;
+				metricsState_->ObserveLaserPhase(laserLifecycle);
+			}
 			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
-				frameQpc.QuadPart, qpcFrequency,
-				laserHoldDurationSeconds_.load(std::memory_order_acquire));
+				frameQpc.QuadPart, qpcFrequency, inputLaserHold);
+			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
 			laserOpacityChanged = laserOpacityChanged ||
 				std::abs(preInputLaserOpacity - laserOpacity) > 0.0001f;
 			// Up 后同帧新 Down 可能刚完成旧批次 Bake；必须在本帧基础合成前消费该 dirty。
@@ -12164,8 +12899,9 @@ namespace Inkeys::Drawing::Draw3
 						if (!runtime->shape.rawFallbackRequired &&
 							kActivePredictionMode != InkPredictionMode::Disabled)
 						{
-							if (absl::Status status = stroke.modeler.Predict(
-								stroke.predictedResults); !status.ok())
+							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
+								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(
+								stroke.predictedResults); }); !status.ok())
 								stroke.predictedResults.clear();
 						}
 						const DirectX::XMFLOAT2 endpoint = ResolveShapeLiveEndpoint(
@@ -12202,8 +12938,9 @@ namespace Inkeys::Drawing::Draw3
 						stroke.predictedResults.clear();
 						if (kActivePredictionMode != InkPredictionMode::Disabled)
 						{
-							if (absl::Status status = stroke.modeler.Predict(
-								stroke.predictedResults); !status.ok())
+							if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
+								metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(
+								stroke.predictedResults); }); !status.ok())
 								stroke.predictedResults.clear();
 						}
 						RebuildPredictedPoints(stroke);
@@ -12236,12 +12973,13 @@ namespace Inkeys::Drawing::Draw3
 							if (laserCoverageMode == LaserCoverageMode::Incremental)
 							{
 								RECT coverageDirty = {};
-								const bool coverageUpdated = UpdateLaserIncrementalCoverage(
+								const bool coverageUpdated = MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 0,
+									metricsState_ ? metricsState_->metricFrequency : 0, [&] { return UpdateLaserIncrementalCoverage(
 									*layer, coverageRealPoints, coverageVisiblePoints,
 									configuration_.liveTipDurationSeconds +
 									GetPredictionDurationSeconds(stroke), renderer_,
 									configuration_.dpiScale, size.width, size.height,
-									coverageDirty);
+									coverageDirty); });
 								UnionRectInPlace(frameDirty, coverageDirty);
 								UnionRectInPlace(runtime->visibleDirty, coverageDirty);
 								if (!coverageUpdated)
@@ -12377,7 +13115,8 @@ namespace Inkeys::Drawing::Draw3
 					else if (!eraser && !stroke.endpointAdmission.active &&
 						kActivePredictionMode != InkPredictionMode::Disabled)
 					{
-						if (absl::Status status = stroke.modeler.Predict(stroke.predictedResults); !status.ok())
+						if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 2,
+							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Predict(stroke.predictedResults); }); !status.ok())
 							stroke.predictedResults.clear();
 					}
 					RebuildPredictedPoints(stroke);
@@ -12476,10 +13215,12 @@ namespace Inkeys::Drawing::Draw3
 				if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::LaserBake);
 				// 同批次最后一支抬起后一次性烘干，随后 Hold/Fade 只解析稳定颜色。
 				UnionRectInPlace(frameDirty, previousLaserLiveBounds);
-				const bool baked = BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
+				const bool baked = MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 1,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
 					configuration_.dpiScale, size.width, size.height, laserStableBounds,
-					frameDirty, laserCoverageMode);
+					frameDirty, laserCoverageMode); });
 				rasterSubmissionFailed |= !baked;
+				if (metricsState_) metricsState_->ObserveLaserBake(baked);
 				if (baked)
 				{
 					UnionRectInPlace(frameDirty, laserLiveBounds);
@@ -12488,6 +13229,23 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
+			if (metricsState_)
+			{
+				auto& sample = metricsState_->frame.laser;
+				sample.collected = true;
+				sample.trailPhase = static_cast<uint32_t>(laserLifecycle.phase);
+				sample.coverageMode = static_cast<uint32_t>(laserCoverageMode);
+				sample.activeContactCount = laserLifecycle.activeContactCount;
+				if (laserLifecycle.lastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.lastAllUpQpc;
+				sample.opacity = laserOpacity;
+				sample.layerCount = static_cast<uint32_t>(laserStrokeLayers.size());
+				sample.particleRequestedCount = spawnedLaserParticleCount;
+				sample.particlesEnabled = particlesEnabledEffective;
+				sample.particlesAvailable = renderer_.LaserParticlesAvailable();
+				sample.particlesActive = laserParticleSnapshot.hasActive;
+				metricsState_->laserQuiet = laserLifecycle.phase == LaserTrailPhase::Inactive &&
+					laserStrokeLayers.empty() && !laserParticleSnapshot.hasActive && laserParticleEmissionRequests.empty();
+			}
 			const bool shouldStepLaserParticles = particlesEnabledEffective &&
 				(laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny ||
 					!laserParticleEmissionRequests.empty());
@@ -12496,10 +13254,11 @@ namespace Inkeys::Drawing::Draw3
 					!laserParticleEmissionRequests.empty());
 			if (shouldStepLaserParticles)
 			{
-				renderer_.StepLaserParticles(
+				MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 2,
+					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return renderer_.StepLaserParticles(
 					laserParticleWallDeltaSeconds, laserParticleWallDeltaSeconds,
 					laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny,
-					laserParticleEmissionRequests);
+					laserParticleEmissionRequests); });
 				lastLaserParticleSimulationQpc = frameQpc.QuadPart;
 				// 刚到期批次仍提交最后一次 update，但不再绘制退化实例。
 			}
@@ -12542,6 +13301,10 @@ namespace Inkeys::Drawing::Draw3
 							const RenderItemId renderItem = committed->renderItem;
 							HotPreimageCaptureResult preimageCapture;
 							const InkRasterStateToken afterState = committed->afterState;
+							if (metricsState_)
+								metricsState_->CaptureFinal(MetricKey(runtime->handle), *committed, *canvas, pageRuntime,
+									runtime->lastInputSnapshot.phase == ContactPhase::Up ? runtime->lastInputSnapshot : runtime->deferredUpSnapshot,
+									metricsSignature(size.width, size.height));
 							if (metricsState_)
 								metricsState_->CaptureStored(MetricKey(runtime->handle), *committed, pageRuntime,
 									runtime->lastInputSnapshot.phase == ContactPhase::Up ? runtime->lastInputSnapshot : runtime->deferredUpSnapshot);
@@ -12871,6 +13634,7 @@ namespace Inkeys::Drawing::Draw3
 						metricsState_->frame.frameSerial, !rasterSubmissionFailed && realContribution, &surface);
 				}
 			}
+			geometryCost.Finish();
 			bool presentSucceeded = false;
 			if (!IsEmptyRect(frameDirty) && !rasterSubmissionFailed)
 			{
@@ -12898,6 +13662,8 @@ namespace Inkeys::Drawing::Draw3
 						trustedSnapshotViewport = snapshotCanvas->Viewport();
 					}
 				}
+				MetricsStageScope compositeCost(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
+					RuntimeMetricsCostStage::Composite, metricsState_ ? metricsState_->metricFrequency : 0);
 				bool compositeSucceeded = true;
 				if (!viewportVisibleClear && snapshotCanvas)
 				{
@@ -12922,7 +13688,8 @@ namespace Inkeys::Drawing::Draw3
 					{
 						ConfigureLaserRendererStyle(renderer_, laserTrailVisualStyle,
 							configuration_.dpiScale);
-						renderer_.DrawLaserParticles();
+						MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 3,
+							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return renderer_.DrawLaserParticles(); });
 					}
 					if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 					{
@@ -12960,6 +13727,7 @@ namespace Inkeys::Drawing::Draw3
 							if (metricsState_->counters.authoritativeWithheld != withheldBefore)
 								metricsState_->Mark(RuntimeMetricsFrameReason::AuthoritativeWithheld);
 						}
+						compositeCost.Finish();
 						presentSucceeded = PresentFrame(frameDirty,
 							forceFullPresent); // 一帧最多一次 backbuffer 合成和一次 Present。
 					}
@@ -13047,6 +13815,7 @@ namespace Inkeys::Drawing::Draw3
 				if (laserLifecycle.phase == LaserTrailPhase::Fade) metricsState_->Mark(RuntimeMetricsFrameReason::LaserFade);
 				if (laserExpired) metricsState_->Mark(RuntimeMetricsFrameReason::LaserExpiry);
 				if (shouldStepLaserParticles || shouldDrawLaserParticles) metricsState_->Mark(RuntimeMetricsFrameReason::LaserParticles);
+				metricsState_->Runtimes(active);
 				metricsState_->Finish(canvasFrameElapsedMilliseconds);
 			}
 			if (metrics_ && !hasPhysicalContactAfterFrame)

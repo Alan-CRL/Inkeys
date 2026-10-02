@@ -66,6 +66,14 @@ namespace Inkeys::UI::Bar
 			Ui3FixturePixelReceipt pixel;
 			bool succeeded = false;
 		};
+		struct SvgBindingRecord
+		{
+			std::uint32_t tag = 0;
+			const char* source = "";
+			int id = -1;
+			int preset = -1;
+			int iconKind = -1;
+		};
 		struct FixtureState
 		{
 			explicit FixtureState(const Ui3FixtureAuthorization& cap) noexcept
@@ -77,6 +85,9 @@ namespace Inkeys::UI::Bar
 			const std::uint64_t runSerial;
 			std::optional<Ui3FinitePublication> publication;
 			std::optional<Ui3FiniteObserver> observer;
+			std::unique_ptr<Ui3FiniteGoalDiagnostic[]> goalDiagnostics;
+			std::array<SvgBindingRecord, Ui3SvgCapacity> svgBindings{};
+			std::size_t svgBindingCount = 0;
 			Ui3SvgProbe svg{ runSerial };
 			std::array<SourceEntry, Ui3FixtureMaxInputs> entries{};
 			std::array<Ui3FiniteAccepted, Ui3FixtureExpectedSteps> completedGoals{};
@@ -644,6 +655,7 @@ namespace Inkeys::UI::Bar
 			// 统计 scratch 也按峰值计入：两个 capacity 大小的 double 数组，功能为 16+16MiB。
 			state.fixedBytes = sizeof(FixtureState) + CompiledUi3FixtureStorageBytes()
 				+ sizeof(Ui3FixtureAuthorization) + sizeof(Ui3FixturePacketV1) + sizeof(Ui3FixtureFrozenInputV1) + 64 * 1024;
+			if (state.clocks) state.fixedBytes += Ui3FiniteCapacity * sizeof(Ui3FiniteGoalDiagnostic);
 			state.fixedBytes += (state.authorization->Repository().capacity() + state.authorization->PrivateRoot().capacity()
 				+ state.authorization->BinaryDirectory().capacity()) * sizeof(wchar_t);
 			if (state.fixedBytes > Ui3FixtureFixedStorageBudget || input.capture > 1
@@ -656,6 +668,8 @@ namespace Inkeys::UI::Bar
 			state.pixels = std::make_unique<std::uint8_t[]>(state.pixelCapacity);
 			if (state.clocks)
 			{
+				// 诊断固定 prefix 在 owner 启动前分配，sizeof payload 已纳入上述 4MiB/64MiB 门。
+				state.goalDiagnostics = std::make_unique<Ui3FiniteGoalDiagnostic[]>(Ui3FiniteCapacity);
 				state.callbackStatistics = std::make_unique<double[]>(input.capacity);
 				state.batchStatistics = std::make_unique<double[]>(input.capacity);
 			}
@@ -687,25 +701,37 @@ namespace Inkeys::UI::Bar
 		{
 			std::array<BarUiSVGClass*, Ui3SvgCapacity> bound{};
 			std::size_t count = 0;
-			auto bind = [&](BarUiSVGClass& object, std::uint32_t tag)
+			auto bind = [&](BarUiSVGClass& object, std::uint32_t tag, const char* source,
+				int id, int preset, int iconKind)
 			{
 				if (std::find(bound.begin(), bound.begin() + count, &object) != bound.begin() + count) return true;
 				if (count == bound.size() || !object.BindObservationTag(tag)) return false;
 				bound[count++] = &object;
+				if (state.svgBindingCount < state.svgBindings.size())
+					state.svgBindings[state.svgBindingCount++] = { tag, source, id, preset, iconKind };
 				return true;
 			};
 			for (const auto& [id, object] : barUISet.svgMap)
-				if (!object || !bind(*object, 0x10000u + static_cast<std::uint32_t>(id))) return false;
+				if (!object || !bind(*object, 0x10000u + static_cast<std::uint32_t>(id), "svg_map",
+					static_cast<int>(id), -1, -1)) return false;
 			std::uint32_t ordinal = 0;
-			for (auto* button : barUISet.barButtonSet.preset)
-				if (button && button->iconKind == BarButtonIconKindEnum::Svg && !bind(button->icon, 0x20000u + ordinal++)) return false;
+			for (std::size_t preset = 0; preset < std::size(barUISet.barButtonSet.preset); ++preset)
+			{
+				auto* button = barUISet.barButtonSet.preset[preset];
+				if (button && button->iconKind == BarButtonIconKindEnum::Svg
+					&& !bind(button->icon, 0x20000u + ordinal++, "preset", static_cast<int>(preset),
+						static_cast<int>(button->preset.load()), static_cast<int>(button->iconKind.load()))) return false;
+			}
 			auto extensions = barUISet.barButtonSet.GetExtensionRegistrations();
 			if (extensions.size() > Ui3SvgCapacity) return false;
 			std::sort(extensions.begin(), extensions.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
 			for (const auto& registration : extensions)
 				if (registration.button && registration.button->iconKind == BarButtonIconKindEnum::Svg
-					&& !bind(registration.button->icon, 0x20000u + ordinal++)) return false;
-			if (auto* button = barUISet.barButtonSet.GetMoreButton(); button && !bind(button->icon, 0x20000u + ordinal)) return false;
+					&& !bind(registration.button->icon, 0x20000u + ordinal++, "extension", -1,
+						static_cast<int>(registration.button->preset.load()), static_cast<int>(registration.button->iconKind.load()))) return false;
+			if (auto* button = barUISet.barButtonSet.GetMoreButton(); button
+				&& !bind(button->icon, 0x20000u + ordinal, "more", -1,
+					static_cast<int>(button->preset.load()), static_cast<int>(button->iconKind.load()))) return false;
 			return count != 0;
 		}
 		bool WaitBootstrap(FixtureState& state, bool interaction)
@@ -796,6 +822,8 @@ namespace Inkeys::UI::Bar
 			state.observer.emplace(*state.publication);
 			if (!state.observer->EnableBootstrapBaselineBeforeOwnersStart()) return false;
 			state.observer->BindSvgProbeBeforeOwnersStart(&state.svg);
+			if (state.clocks && !state.observer->EnableGoalDiagnosticsBeforeOwnersStart(
+				{ state.goalDiagnostics.get(), Ui3FiniteCapacity })) return false;
 			if (SetActiveUi3FiniteObserver(&*state.observer) != nullptr) return false;
 			state.renderingAttempted = true;
 			if (!barUISet.Rendering() || !WaitBootstrap(state, false)) return false;
@@ -922,6 +950,14 @@ namespace Inkeys::UI::Bar
 		{
 			if (valid) out << ticks; else out << "null";
 		}
+		void FloatBits(std::ostream& out, bool valid, std::uint32_t bits)
+		{
+			if (valid) out << std::bit_cast<float>(bits); else out << "null";
+		}
+		void FloatRectBits(std::ostream& out, bool valid, const std::uint32_t (&bits)[4])
+		{
+			for (const auto value : bits) { out << ','; FloatBits(out, valid, value); }
+		}
 		void SignatureJson(std::ostream& out, const Ui3FiniteSignature& value)
 		{
 			out << "{\"flags\":" << value.flags << ",\"state_mode\":" << value.stateMode << ",\"pen_mode\":" << value.penMode
@@ -1005,6 +1041,46 @@ namespace Inkeys::UI::Bar
 				&& pixel.generation == state.runSerial && pixel.presentationAlpha != 0 && pixel.presentationAlpha <= 255
 				&& SameUi3FiniteSemanticSignature(state.finalSignature, state.measuredEnd.accepted.signature);
 		}
+		void DiagnosticCsv(std::ostream& out, const FixtureState& state, const Ui3FiniteTargetRecord* outcome)
+		{
+			if (!state.clocks) return;
+			const Ui3FiniteGoalDiagnostic* found = nullptr;
+			if (outcome && state.observer) for (const auto& row : state.observer->DiagnosticsAfterRenderStopped())
+				if (row.runSerial == outcome->accepted.runSerial && row.stepId == outcome->accepted.stepId
+					&& row.sourceSequence == outcome->accepted.sourceSequence && row.revision == outcome->accepted.revision) { found = &row; break; }
+			const Ui3FiniteGoalDiagnostic empty;
+			const auto& row = found ? *found : empty; const auto& value = row.meaningful; const auto& resource = row.resources;
+			out << ',' << (found != nullptr) << ',' << row.hasMeaningful << ',' << static_cast<std::uint32_t>(row.meaningfulStage)
+				<< ',' << static_cast<std::uint32_t>(row.meaningfulStatus) << ',' << value.frameAttemptSerial << ',' << value.epoch
+				<< ',' << value.surfaceSerial << ',' << value.rootBatchRevision << ',' << value.drawBatchRevision
+				<< ',' << value.targetWidth << ',' << value.targetHeight << ',' << value.renderDpi << ',' << row.consumed << ',';
+			Tick(out, row.hasMeaningful && value.targetConsumedTicks > 0, value.targetConsumedTicks); out << ',';
+			Tick(out, row.hasMeaningful && value.settledTicks > 0, value.settledTicks);
+			out << ',' << value.settled << ',' << value.stablePublication << ',' << value.pendingRoles << ',' << value.mismatchRoles
+				<< ',' << row.seenRoles << ',' << row.lifecycle << ',' << value.requiredSvg << ',' << value.verifiedSvg << ',' << value.failedSvg
+				<< ',' << value.unverifiedSvg << ',' << value.firstUnverifiedSvgTag << ',' << value.firstUnverifiedReason
+				<< ',' << value.svgProofComplete << ',' << row.completeChecks << ',' << resource.revision << ',' << resource.epoch
+				<< ',' << resource.surfaceSerial << ',' << resource.frameAttemptSerial << ',' << resource.producerPresent
+				<< ',' << static_cast<std::uint32_t>(row.lastStage) << ',' << row.lastAttempt << ',' << row.lastEpoch << ',' << row.lastConsumed
+				<< ',' << row.lastPendingRoles << ',' << row.lastMismatchRoles << ',' << row.lastSeenRoles << ',' << row.lastLifecycle
+				<< ',' << static_cast<std::uint32_t>(row.lastStatus) << ',' << row.lastFrameResult << ',' << row.lastFrameResultValid << ',' << row.lastAborted;
+			const bool coverage = row.hasMeaningful && resource.coverageGeometryPresent;
+			out << ',' << coverage << ',' << (coverage ? resource.coverageKind : 0)
+				<< ',' << (coverage ? resource.coverageBackingWidth : 0)
+				<< ',' << (coverage ? resource.coverageBackingHeight : 0);
+			FloatRectBits(out, coverage, resource.coverageExpectedVisibleBits);
+			FloatRectBits(out, coverage, resource.coverageEffectiveClipBits);
+			FloatRectBits(out, coverage, resource.coverageViewportBits);
+			FloatRectBits(out, coverage, resource.coverageDrawDestBits);
+			for (const auto valueBits : resource.coverageDrawTransformBits)
+			{
+				out << ',';
+				FloatBits(out, coverage, valueBits);
+			}
+			const bool overwrite = row.hasMeaningful && resource.overwriteGeometryPresent;
+			out << ',' << overwrite;
+			FloatRectBits(out, overwrite, resource.overwriteBoundsBits);
+		}
 		void OutcomeCsv(std::ostream& out, const FixtureState& state, std::uint32_t step)
 		{
 			const auto* row = FindOutcome(state, step);
@@ -1026,7 +1102,9 @@ namespace Inkeys::UI::Bar
 				<< ',' << value.accepted.signature.penWidthBits << ',' << value.accepted.signature.mainSide << ',' << value.accepted.signature.primarySide
 				<< ',' << value.accepted.signature.thicknessView << ',' << value.accepted.signature.darkStyle << ',' << value.accepted.signature.dpi
 				<< ',' << value.accepted.signature.toolRevision << ',' << value.accepted.signature.displaySerial << ',' << value.accepted.signature.configZoomBits
-				<< ',' << value.accepted.signature.validMask << '\n';
+				<< ',' << value.accepted.signature.validMask;
+			DiagnosticCsv(out, state, row);
+			out << '\n';
 		}
 		bool WriteSvg(FixtureState& state, const wchar_t* name, const Ui3SvgCounters& value, bool initialization)
 		{
@@ -1154,7 +1232,9 @@ namespace Inkeys::UI::Bar
 			}));
 			keep(WriteOutput(state, L"finite-targets.csv", [&](std::ostream& out)
 			{
-				out << "planned_step,run_phase,terminal_status,retention,run,source,revision,publication,scene,accepted_status,epoch,surface,attempt,owner_receive_ticks,accepted_ticks,consumed_ticks,settled_ticks,final_commit_ticks,pending_roles,proof_mask,failure_flags,reused_revision,required_svg,verified_svg,failed_svg,unverified_svg,first_unverified_tag,first_unverified_reason,flags,state_mode,pen_mode,pen_color_rgb,pen_width_bits,main_side,primary_side,thickness_view,dark_style,dpi,tool_revision,display_serial,config_zoom_bits,valid_mask\n";
+				out << "planned_step,run_phase,terminal_status,retention,run,source,revision,publication,scene,accepted_status,epoch,surface,attempt,owner_receive_ticks,accepted_ticks,consumed_ticks,settled_ticks,final_commit_ticks,pending_roles,proof_mask,failure_flags,reused_revision,required_svg,verified_svg,failed_svg,unverified_svg,first_unverified_tag,first_unverified_reason,flags,state_mode,pen_mode,pen_color_rgb,pen_width_bits,main_side,primary_side,thickness_view,dark_style,dpi,tool_revision,display_serial,config_zoom_bits,valid_mask";
+				if (state.clocks) out << ",diagnostic_present,meaningful_present,meaningful_stage,meaningful_status,meaningful_attempt,meaningful_epoch,meaningful_surface,meaningful_root_batch,meaningful_draw_batch,meaningful_width,meaningful_height,meaningful_dpi,meaningful_consumed,meaningful_consumed_ticks,meaningful_settled_ticks,meaningful_settled,meaningful_stable_publication,meaningful_pending_roles,meaningful_mismatch_roles,meaningful_seen_roles,meaningful_lifecycle,meaningful_required_svg,meaningful_verified_svg,meaningful_failed_svg,meaningful_unverified_svg,meaningful_first_tag,meaningful_first_reason,meaningful_svg_complete,complete_checks,resource_revision,resource_epoch,resource_surface,resource_attempt,resource_producer,last_stage,last_attempt,last_epoch,last_consumed,last_pending_roles,last_mismatch_roles,last_seen_roles,last_lifecycle,last_status,last_frame_result,last_frame_result_valid,last_aborted,coverage_geometry_present,coverage_kind,coverage_backing_width,coverage_backing_height,coverage_expected_left,coverage_expected_top,coverage_expected_right,coverage_expected_bottom,coverage_clip_left,coverage_clip_top,coverage_clip_right,coverage_clip_bottom,coverage_viewport_left,coverage_viewport_top,coverage_viewport_right,coverage_viewport_bottom,coverage_dest_left,coverage_dest_top,coverage_dest_right,coverage_dest_bottom,coverage_transform_m11,coverage_transform_m12,coverage_transform_m21,coverage_transform_m22,coverage_transform_dx,coverage_transform_dy,overwrite_geometry_present,overwrite_left,overwrite_top,overwrite_right,overwrite_bottom";
+				out << '\n';
 				if (state.authorization->Input().scene == 2) OutcomeCsv(out, state, Ui3FixtureSetupStep);
 				for (std::uint32_t step = 1; step <= Ui3FixtureExpectedSteps; ++step) OutcomeCsv(out, state, step);
 			}));
@@ -1188,6 +1268,8 @@ namespace Inkeys::UI::Bar
 					<< ",\"animation_enable\":true,\"animation_speed\":1,\"language\":\"zh-CN\",\"skin_mode\":1,\"legacy_scale\":1"
 					<< ",\"legacy_component_switches\":\"all 16 false\",\"logger_sink\":\"none\",\"mouse_light_scene_covered\":false"
 					<< ",\"backend\":" << state.backend << ",\"feature_level\":" << state.featureLevel << ",\"fixed_bytes\":" << state.fixedBytes
+					<< ",\"goal_diagnostics_enabled\":" << (state.clocks && state.goalDiagnostics ? "true" : "false")
+					<< ",\"goal_diagnostic_bytes\":" << (state.clocks ? Ui3FiniteCapacity * sizeof(Ui3FiniteGoalDiagnostic) : 0)
 					<< ",\"raw_bytes\":" << state.rawBytes << ",\"destination_bytes\":" << state.pixelCapacity << ",\"readable_reserved_bytes\":" << Ui3FixturePixelPayloadLimit / 2
 					<< ",\"total_budgeted_bytes\":" << state.totalBudgetedBytes << ",\"measurement_begin_ticks\":";
 				Tick(out, state.clocks && state.measuredBeginTicks > 0, state.measuredBeginTicks);
@@ -1206,6 +1288,30 @@ namespace Inkeys::UI::Bar
 					<< ",\"window_start_attempted\":" << (state.windowAttempted ? "true" : "false") << ",\"pipeline_init_attempted\":" << (state.pipelineAttempted ? "true" : "false");
 				out << ",\"source_joined\":" << (state.sourceJoined ? "true" : "false") << ",\"interaction_joined\":" << (state.interactionJoined ? "true" : "false")
 					<< ",\"window_owners_joined\":true,\"scheduler_joined\":true,\"display_callbacks_drained\":true,\"source_failure\":" << state.failure.load(std::memory_order_acquire) << "}\n";
+			}));
+			if (state.clocks) keep(WriteOutput(state, L"svg-bindings.csv", [&](std::ostream& out)
+			{
+				out << "tag,source,id,preset,icon_kind\n";
+				// 使用绑定时快照，避免运行期间插件投影变化导致诊断映射与实际 tag 脱节。
+				for (std::size_t index = 0; index < state.svgBindingCount; ++index)
+				{
+					const auto& binding = state.svgBindings[index];
+					out << "0x" << std::hex << binding.tag << std::dec << ',' << binding.source << ',' << binding.id
+						<< ',' << binding.preset << ',' << binding.iconKind << '\n';
+				}
+			}));
+			if (state.clocks) keep(WriteOutput(state, L"button-layout.csv", [&](std::ostream& out)
+			{
+				out << "index,preset,icon_kind,button_x,button_y,button_w,button_h,button_pct,icon_x,icon_y,icon_w,icon_h,icon_pct\n";
+				for (int index = 0; index < barUISet.barButtonSet.tot; ++index)
+				{
+					auto* button = barUISet.barButtonSet.buttonList.Get(index);
+					if (!button) continue;
+					out << index << ',' << static_cast<int>(button->preset.load()) << ',' << static_cast<int>(button->iconKind.load())
+						<< ',' << button->button.x.val << ',' << button->button.y.val << ',' << button->button.w.val << ',' << button->button.h.val
+						<< ',' << button->button.pct.val << ',' << button->icon.x.val << ',' << button->icon.y.val << ',' << button->icon.w.val
+						<< ',' << button->icon.h.val << ',' << button->icon.pct.val << '\n';
+				}
 			}));
 			keep(WriteOutput(state, L"summary.json", [&](std::ostream& out)
 			{
@@ -1231,6 +1337,9 @@ namespace Inkeys::UI::Bar
 				out << "],\"publication_seen\":" << counters.seen << ",\"publication_retained\":" << counters.retained << ",\"publication_dropped\":" << counters.dropped
 					<< ",\"accepted\":" << counters.accepted << ",\"rejected\":" << counters.rejected << ",\"ambiguous\":" << counters.ambiguous
 					<< ",\"no_change\":" << counters.noChange << ",\"invalid\":" << counters.invalid << ",\"observer_resource_unverified_frames\":" << observer.resourceUnverified
+					<< ",\"observer_frames\":" << observer.frames << ",\"observer_commits\":" << observer.commits
+					<< ",\"observer_layout_settled\":" << observer.layoutSettled << ",\"observer_completed\":" << observer.completed
+					<< ",\"observer_unverified\":" << observer.unverified << ",\"observer_superseded\":" << observer.superseded << ",\"observer_invalid\":" << observer.invalid
 					<< ",\"observer_seen\":" << observer.goalsSeen << ",\"observer_retained\":" << observer.retained << ",\"observer_dropped\":" << observer.dropped
 					<< ",\"source_received\":" << state.received.load() << ",\"source_enqueued\":" << state.enqueued.load() << ",\"source_consumed\":" << state.consumed.load()
 					<< ",\"owner_up_to_exact_complete\":";

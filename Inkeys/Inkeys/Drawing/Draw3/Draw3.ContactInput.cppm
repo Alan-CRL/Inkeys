@@ -161,6 +161,15 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> resume = false;
 	};
 
+#if defined(DRAW3_CONTACT_TESTING)
+	// 测试拥有 callback/context；启用前准备，消费者 join 后才可销毁。
+	struct CommandFallbackMissHookForTesting
+	{
+		void* context = nullptr;
+		void (*callback)(void* context) noexcept = nullptr;
+	};
+#endif
+
 	// 只读输入诊断；仅在显式启用后累计热路径计数。
 	struct ContactInputDiagnosticsSnapshot
 	{
@@ -240,6 +249,11 @@ export namespace Inkeys::Drawing::Draw3
 		// 无窗口故障测试：只让下一次 control token 入队失败，默认关闭。
 		void FailNextControlWakeEnqueueForTesting() noexcept;
 		void FailNextCommandWakeEnqueueForTesting() noexcept;
+#if defined(DRAW3_CONTACT_TESTING)
+		// 仅测试构建：下一次 Command fallback 判空后、实体出队前调用一次。
+		void SetNextCommandFallbackMissHookForTesting(
+			CommandFallbackMissHookForTesting* hook) noexcept;
+#endif
 		void PauseNextCloseAfterRouteClosedForTesting(
 			ContactClosePauseForTesting* pause) noexcept;
 		// 消费 ControlWake 后先清 pending，再复查全部窗口请求。

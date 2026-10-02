@@ -426,6 +426,367 @@ namespace
 			"failed Command marker waits for its old Down then precedes new Down")) ++failures;
 	}
 
+#if defined(DRAW3_CONTACT_TESTING)
+	struct CommandFallbackMissPause
+	{
+		HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		HANDLE resume = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		bool resumed = false;
+
+		~CommandFallbackMissPause()
+		{
+			if (resume) CloseHandle(resume);
+			if (entered) CloseHandle(entered);
+		}
+	};
+
+	void PauseAfterCommandFallbackMiss(void* context) noexcept
+	{
+		auto& pause = *static_cast<CommandFallbackMissPause*>(context);
+		const bool entered = SetEvent(pause.entered) != FALSE;
+		// 即使测试前提失败也会有限退场；不能把调度超时算成次序逻辑 RED。
+		const DWORD result = WaitForSingleObject(pause.resume, 10000);
+		pause.resumed = entered && result == WAIT_OBJECT_0;
+	}
+
+	void TestCommandFallbackPublishedAfterConsumerProbe(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3::Bridge;
+		ContactInputCoordinator input;
+		StateBridge bridge;
+		input.EnableDiagnostics(true);
+		ContactRecord* initialRecord = nullptr;
+		Command initialCommand{};
+		if (!Expect(!input.HasPendingWork() && !input.TryDequeue(initialRecord) &&
+			!bridge.TryConsume(initialCommand) && input.DiagnosticsSnapshot().controlWakes == 0,
+			"ASYNC01 premise: fresh input and Bridge queues are empty"))
+		{
+			++failures;
+			return;
+		}
+		// 两个事件先建立再启用 hook；包含失败分支，必须先 join 再销毁它们。
+		CommandFallbackMissPause pause;
+		if (!Expect(pause.entered && pause.resume,
+			"ASYNC01 premise: both deterministic barrier events are created"))
+		{
+			++failures;
+			return;
+		}
+		CommandFallbackMissHookForTesting hook{ &pause, &PauseAfterCommandFallbackMiss };
+		input.SetNextCommandFallbackMissHookForTesting(&hook);
+		int commandWakeCount = 0;
+		int consumedCommandCount = 0;
+		bool unexpectedEvent = false;
+		Command consumedCommands[2]{};
+		std::jthread consumer([&]
+			{
+				for (int attempt = 0; attempt < 4; ++attempt)
+				{
+					ContactRecord* record = nullptr;
+					if (!input.TryDequeue(record)) continue;
+					if (record)
+					{
+						unexpectedEvent = true;
+						input.Recycle({ record, record->Generation() });
+						continue;
+					}
+					if (input.LastDequeuedControlWakeKind() != ControlWakeKind::Command)
+						unexpectedEvent = true;
+					else
+					{
+						++commandWakeCount;
+						Command command{};
+						if (!bridge.TryConsume(command)) unexpectedEvent = true;
+						else
+						{
+							if (consumedCommandCount < 2)
+								consumedCommands[consumedCommandCount] = command;
+							++consumedCommandCount;
+						}
+					}
+					input.AcknowledgeControlWake();
+				}
+			});
+		const bool entered = WaitForSingleObject(pause.entered, 5000) == WAIT_OBJECT_0;
+		const auto publishCommand = [&](CommandType type, bool failEnqueue) noexcept
+			{
+				if (!input.TryReserveCommandWake()) return false;
+				if (bridge.Publish(type) != CommandResult::Accepted)
+				{
+					input.CancelReservedCommandWake();
+					return false;
+				}
+				if (failEnqueue) input.FailNextCommandWakeEnqueueForTesting();
+				input.PublishReservedCommandWake();
+				return true;
+			};
+		// 消费者已经判空：此时 C1 强制进 fallback，C2 才成功进入实体 FIFO。
+		const bool firstPublished = entered && publishCommand(CommandType::Clear, true);
+		const bool firstIsFallback = firstPublished && input.HasPendingWork() &&
+			input.DiagnosticsSnapshot().controlWakes == 0;
+		const bool secondPublished = firstIsFallback && publishCommand(CommandType::Undo, false);
+		const bool secondIsPhysical = secondPublished &&
+			input.DiagnosticsSnapshot().controlWakes == 1;
+		const bool resumeSignaled = SetEvent(pause.resume) != FALSE;
+		consumer.join();
+		input.SetNextCommandFallbackMissHookForTesting(nullptr);
+		const bool premise = entered && firstIsFallback && secondIsPhysical &&
+			resumeSignaled && pause.resumed;
+		if (!Expect(premise,
+			"ASYNC01 premise: consumer probe precedes fallback C1 then physical C2"))
+		{
+			std::cerr << "[ASYNC01] premise=0 entered=" << entered
+				<< " C1_fallback=" << firstIsFallback << " C2_physical=" << secondIsPhysical
+				<< " resume_signaled=" << resumeSignaled << " resumed=" << pause.resumed << '\n';
+			++failures;
+			return;
+		}
+
+		const bool inputPending = input.HasPendingWork();
+		Command leftover{};
+		const bool bridgePending = bridge.TryConsume(leftover);
+		// 258 是预约额度；实体 ConcurrentQueue 的初始 256 不是其硬容量。
+		constexpr int reservationCapacity = 258;
+		int availableReservations = 0;
+		while (availableReservations < reservationCapacity && input.TryReserveCommandWake())
+			++availableReservations;
+		const bool reservationLimitHeld = !input.TryReserveCommandWake();
+		for (int index = 0; index < availableReservations; ++index)
+			input.CancelReservedCommandWake();
+		std::cout << "[ASYNC01] premise=1 command_wakes=" << commandWakeCount
+			<< " consumed_commands=" << consumedCommandCount
+			<< " ingress_pending=" << inputPending << " bridge_pending=" << bridgePending
+			<< " leftover_sequence=" << (bridgePending ? leftover.sequence : 0)
+			<< " free_reservations=" << availableReservations << '\n';
+		if (!Expect(!unexpectedEvent && commandWakeCount == 2 && consumedCommandCount == 2 &&
+			consumedCommands[0].type == CommandType::Clear && consumedCommands[0].sequence == 1 &&
+			consumedCommands[1].type == CommandType::Undo && consumedCommands[1].sequence == 2 &&
+			!inputPending && !bridgePending && availableReservations == reservationCapacity &&
+			reservationLimitHeld,
+			"ASYNC01 fallback probe race preserves C1/C2 wakes, FIFO commands and reservations"))
+			++failures;
+	}
+	enum class DeferredIngressTestKind
+	{
+		Command,
+		Down,
+		General,
+	};
+
+	bool PublishOrderingTestCommand(ContactInputCoordinator& input,
+		Bridge::StateBridge& bridge, Bridge::CommandType type, bool failEnqueue) noexcept
+	{
+		if (!input.TryReserveCommandWake()) return false;
+		const bool accepted = type == Bridge::CommandType::PrepareExitAutoSave
+			? bridge.StopWithFinalCommand(type)
+			: bridge.Publish(type) == Bridge::CommandResult::Accepted;
+		if (!accepted)
+		{
+			input.CancelReservedCommandWake();
+			return false;
+		}
+		if (failEnqueue) input.FailNextCommandWakeEnqueueForTesting();
+		input.PublishReservedCommandWake();
+		return true;
+	}
+
+	int AvailableOrderingTestReservations(ContactInputCoordinator& input) noexcept
+	{
+		int available = 0;
+		while (available < 258 && input.TryReserveCommandWake()) ++available;
+		const bool limitHeld = !input.TryReserveCommandWake();
+		for (int index = 0; index < available; ++index) input.CancelReservedCommandWake();
+		return limitHeld ? available : -1;
+	}
+
+	void TestCommandFallbackDefersIngress(int& failures, DeferredIngressTestKind kind,
+		bool resetDeferred, ContactPhase terminal = ContactPhase::Up)
+	{
+		using namespace Inkeys::Drawing::Draw3::Bridge;
+		ContactInputCoordinator input;
+		StateBridge bridge;
+		input.EnableDiagnostics(true);
+		CommandFallbackMissPause probePause;
+		CommandFallbackMissPause afterFirstPause;
+		if (!Expect(probePause.entered && probePause.resume &&
+			afterFirstPause.entered && afterFirstPause.resume,
+			"ASYNC01 deferred premise: all barrier events are created"))
+		{
+			++failures;
+			return;
+		}
+		CommandFallbackMissHookForTesting hook{ &probePause, &PauseAfterCommandFallbackMiss };
+		input.SetNextCommandFallbackMissHookForTesting(&hook);
+		int observed[4]{};
+		int observedCount = 0;
+		bool validEvents = true;
+		const auto consume = [&](ContactRecord* record)
+			{
+				int event = -2;
+				if (record)
+				{
+					const ContactHandle handle{ record, record->Generation() };
+					ContactSnapshot snapshot{};
+					validEvents = validEvents && (kind == DeferredIngressTestKind::Down ||
+						kind == DeferredIngressTestKind::Command) &&
+						record->DeviceType() == InputDeviceType::Pen && record->ContactId() == 1 &&
+						record->DownSnapshot().position.x == 10 &&
+						record->DownSnapshot().position.y == 20 &&
+						input.TryReadSnapshot(handle, snapshot) && snapshot.phase == terminal &&
+						snapshot.position.x == 30 && snapshot.position.y == 40;
+					input.Recycle(handle);
+					event = 0;
+				}
+				else if (input.LastDequeuedControlWakeKind() == ControlWakeKind::General)
+					event = -1;
+				else
+				{
+					Command command{};
+					if (!bridge.TryConsume(command)) validEvents = false;
+					else
+					{
+						event = static_cast<int>(command.sequence);
+						const auto expected = command.sequence == 1 ? CommandType::Clear
+							: command.sequence == 2 ? CommandType::Undo : CommandType::PrepareExitAutoSave;
+						validEvents = validEvents && command.type == expected;
+					}
+				}
+				if (observedCount < 4) observed[observedCount] = event;
+				else validEvents = false;
+				++observedCount;
+				if (!record) input.AcknowledgeControlWake();
+			};
+		std::jthread consumer([&]
+			{
+				ContactRecord* record = nullptr;
+				if (input.TryDequeue(record)) consume(record);
+				// 第一次实际交出后停住，给主线程观察只有 deferred 的待办状态。
+				PauseAfterCommandFallbackMiss(&afterFirstPause);
+				if (!resetDeferred)
+				{
+					for (int attempt = 0; attempt < 4; ++attempt)
+						if (input.TryDequeue(record)) consume(record);
+				}
+			});
+		const bool entered = WaitForSingleObject(probePause.entered, 5000) == WAIT_OBJECT_0;
+		bool firstIsFallback = false;
+		bool physicalPublished = false;
+		if (entered)
+		{
+			std::jthread producer([&]
+				{
+					firstIsFallback = PublishOrderingTestCommand(
+						input, bridge, CommandType::Clear, true) &&
+						input.HasPendingWork() && input.DiagnosticsSnapshot().controlWakes == 0;
+					if (!firstIsFallback) return;
+					if (kind == DeferredIngressTestKind::Command)
+						physicalPublished = PublishOrderingTestCommand(
+							input, bridge, CommandType::Undo, false) &&
+							input.DiagnosticsSnapshot().controlWakes == 1;
+					else if (kind == DeferredIngressTestKind::Down)
+						physicalPublished = input.PublishDown(0xA5, 1, InputDeviceType::Pen,
+							MakeSnapshot(10, 20, ContactPhase::Down)) &&
+							(terminal == ContactPhase::Cancelled
+								? input.PublishCancelled(0xA5, 1, MakeSnapshot(30, 40, terminal))
+								: input.PublishUp(0xA5, 1, MakeSnapshot(30, 40, terminal)));
+					else physicalPublished = input.PublishControlWake() &&
+						input.DiagnosticsSnapshot().controlWakes == 1;
+				});
+			producer.join();
+		}
+		const bool probeResumeSignaled = SetEvent(probePause.resume) != FALSE;
+		const bool firstReturned = WaitForSingleObject(afterFirstPause.entered, 5000) == WAIT_OBJECT_0;
+		const bool deferredVisible = firstReturned && input.HasPendingWork();
+		const bool needsLaterCommand = !resetDeferred && kind != DeferredIngressTestKind::General;
+		bool laterPublished = !needsLaterCommand;
+		if (firstReturned && firstIsFallback && physicalPublished && needsLaterCommand)
+		{
+			std::jthread producer([&]
+				{
+					// C2 仍被保留：再插入真实 Down/Up，使 C3 final 不能提前到 C2 或该笔之前。
+					if (kind == DeferredIngressTestKind::Command &&
+						(!input.PublishDown(0xA5, 1, InputDeviceType::Pen,
+							MakeSnapshot(10, 20, ContactPhase::Down)) ||
+							!input.PublishUp(0xA5, 1, MakeSnapshot(30, 40, ContactPhase::Up)))) return;
+					laterPublished = PublishOrderingTestCommand(input, bridge,
+						kind == DeferredIngressTestKind::Command
+							? CommandType::PrepareExitAutoSave : CommandType::Undo, true);
+				});
+			producer.join();
+		}
+		const bool finalResumeSignaled = SetEvent(afterFirstPause.resume) != FALSE;
+		consumer.join();
+		input.SetNextCommandFallbackMissHookForTesting(nullptr);
+		const bool premise = entered && firstIsFallback && physicalPublished && firstReturned &&
+			laterPublished && probeResumeSignaled && finalResumeSignaled &&
+			probePause.resumed && afterFirstPause.resumed;
+		if (!Expect(premise, "ASYNC01 deferred premise: exact two-stage producer/consumer handoff"))
+		{
+			std::cerr << "[ASYNC01Deferred] premise=0 kind=" << static_cast<int>(kind)
+				<< " reset=" << resetDeferred << " entered=" << entered
+				<< " physical=" << physicalPublished << " first_returned=" << firstReturned
+				<< " later=" << laterPublished << '\n';
+			++failures;
+			return;
+		}
+
+		bool result = validEvents && deferredVisible && observed[0] == 1;
+		if (resetDeferred)
+		{
+			// producer 和 consumer 已全部 join；才可丢旧事件、旧槽及 Bridge 代次。
+			result = result && observedCount == 1 && input.HasPendingWork();
+			input.ResetForNextRun();
+			bridge.Reset();
+			ContactRecord* record = nullptr;
+			Command command{};
+			result = result && !input.HasPendingWork() && !input.TryDequeue(record) &&
+				input.DiagnosticsSnapshot().occupiedSlots == 0 && !bridge.TryConsume(command);
+			const bool newPublished = PublishOrderingTestCommand(
+				input, bridge, CommandType::Clear, false);
+			result = result && newPublished && input.TryDequeue(record) && !record &&
+				input.LastDequeuedControlWakeKind() == ControlWakeKind::Command &&
+				bridge.TryConsume(command) && command.type == CommandType::Clear && command.sequence == 1;
+			input.AcknowledgeControlWake();
+		}
+		else if (kind == DeferredIngressTestKind::Command)
+		{
+			const auto diagnostics = input.DiagnosticsSnapshot();
+			result = result && observedCount == 4 && observed[1] == 2 &&
+				observed[2] == 0 && observed[3] == 3 && diagnostics.downPublished == 1 &&
+				diagnostics.terminalPublished == 1 && diagnostics.recycled == 1 &&
+				diagnostics.occupiedSlots == 0 && !bridge.Running();
+		}
+		else if (kind == DeferredIngressTestKind::Down)
+		{
+			const auto diagnostics = input.DiagnosticsSnapshot();
+			result = result && observedCount == 3 && observed[1] == 0 && observed[2] == 2 &&
+				diagnostics.downPublished == 1 && diagnostics.terminalPublished == 1 &&
+				diagnostics.recycled == 1 && diagnostics.occupiedSlots == 0;
+		}
+		else result = result && observedCount == 2 && observed[1] == -1;
+
+		if (kind == DeferredIngressTestKind::General)
+		{
+			// 原 General 仍恰好交出并清 pending；下一次请求须再次有实体唤醒。
+			ContactRecord* record = nullptr;
+			const bool published = input.PublishControlWake();
+			result = result && published && input.TryDequeue(record) && !record &&
+				input.LastDequeuedControlWakeKind() == ControlWakeKind::General;
+			input.AcknowledgeControlWake();
+		}
+		Command leftover{};
+		result = result && !input.HasPendingWork() && !bridge.TryConsume(leftover);
+		const int available = AvailableOrderingTestReservations(input);
+		std::cout << "[ASYNC01Deferred] premise=1 kind=" << static_cast<int>(kind)
+			<< " reset=" << resetDeferred << " terminal=" << static_cast<int>(terminal)
+			<< " observed=" << observedCount << " deferred_visible=" << deferredVisible
+			<< " free_reservations=" << available << " result=" << (result && available == 258) << '\n';
+		if (!Expect(result && available == 258,
+			"ASYNC01 deferred event preserves ordinal, Down boundary, pending and stopped reset"))
+			++failures;
+	}
+#endif
+
 	void TestCommandWakeReservationAndGenerationReset(int& failures)
 	{
 		ContactInputCoordinator input;
@@ -999,6 +1360,16 @@ int RunDraw3ContactInputTests()
 	TestControlWakeSeparatesAcceptedContacts(failures, true);
 	TestDistinctCommandsKeepTheirIngressBoundaries(failures);
 	TestFailedCommandMarkerKeepsOrdinalAndContactBoundary(failures);
+#if defined(DRAW3_CONTACT_TESTING)
+	TestCommandFallbackPublishedAfterConsumerProbe(failures);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::Command, false);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::Down, false);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::Down, false, ContactPhase::Cancelled);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::General, false);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::Command, true);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::Down, true);
+	TestCommandFallbackDefersIngress(failures, DeferredIngressTestKind::General, true);
+#endif
 	TestCommandWakeReservationAndGenerationReset(failures);
 	TestPageAdmissionAndQuarantine(failures);
 	TestClosingDiscardLiveness(failures);

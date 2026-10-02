@@ -11914,6 +11914,9 @@ bool presetButton = button.presetIndex >= 0;
 				}
 				{
 					auto obj = BarUISetSvgEnum::logoInk;
+					static_assert(static_cast<int>(BarUISetSvgEnum::logo1) == 0 && static_cast<int>(BarUISetSvgEnum::logoInk) == 1);
+					if (state.finiteSvgProbe) state.finiteSvgProbe->DeclareMainLogoInkComposition(barDeviceContext,
+						state.svgMap[BarUISetSvgEnum::logo1].get(), state.svgMap[obj].get());
 					state.spec.Svg(barDeviceContext, *state.svgMap[obj], state.svgMap[obj]->Inherit(Center, *state.superellipseMap[BarUISetSuperellipseEnum::MainButton]));
 				}
 			}
@@ -13341,6 +13344,7 @@ BarRenderLoopCoordinator::RenderFrame(
 	const Inkeys::UI::RenderPipeline::FrameContext& context)
 {
 	using Inkeys::UI::RenderPipeline::FrameResult;
+	using Inkeys::UI::Bar::Ui3FiniteDiagnosticStage;
 	auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();
 	if (diagnostics) diagnostics->barSampled = true;
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
@@ -13365,6 +13369,12 @@ BarRenderLoopCoordinator::RenderFrame(
 	struct FiniteFrameExit
 	{
 		Inkeys::UI::Bar::Ui3FiniteObserver* observer;
+		void Stage(Ui3FiniteDiagnosticStage stage) noexcept { if (observer) observer->ObserveDiagnosticStage(stage); }
+		FrameResult Finish(FrameResult result) noexcept
+		{
+			if (observer) observer->NoteDiagnosticFrameExit(static_cast<std::uint32_t>(result));
+			return result;
+		}
 		~FiniteFrameExit() { if (observer) observer->AbortFrame(Inkeys::UI::Bar::Ui3FiniteStatus::ResourceUnverified); }
 	} finiteExit{ state.finiteObserver };
 	struct SvgFrameExit
@@ -13403,15 +13413,16 @@ BarRenderLoopCoordinator::RenderFrame(
 	}
 	BarRenderFrameSnapshot frame;
 	frame.ordinal = frameOrdinal_;
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::WakeAndSnapshot);
 	FrameStageTimer wakeAndSnapshotTimer(diagnostics, FrameStage::WakeAndSnapshot);
 	if (WakeAndSnapshot(state, frame) == BarRenderLoopStageResult::Stop)
-		return FrameResult::Idle;
+		return finiteExit.Finish(FrameResult::Idle);
 	wakeAndSnapshotTimer.Stop();
 	if (state.presentDecision.HasFailureBackoff()
 		&& !state.presentDecision.CanAttemptPresent(state.presentAttemptFrameSerial))
 	{
 		if (diagnostics) diagnostics->backoffSkipped = true;
-		return FrameResult::Retry;
+		return finiteExit.Finish(FrameResult::Retry);
 	}
 	BarDirectWindowDragPhase expectedPhase = BarDirectWindowDragPhase::Idle;
 	const bool directTranslationPending =
@@ -13583,7 +13594,7 @@ BarRenderLoopCoordinator::RenderFrame(
 	{
 		// 松手 tuple 已发布但直移所有权尚未交接，下一帧必须先吸收再布局。
 		if (diagnostics) diagnostics->presentDeferred = true;
-		return FrameResult::Retry;
+		return finiteExit.Finish(FrameResult::Retry);
 	}
 	frame.bottomDockLayoutLocked =
 		frame.bottomDockMode == BarBottomDockMode::BottomDocked
@@ -13598,6 +13609,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		state.mainBarLayoutSide = initialSide;
 	}
 	if (diagnostics) diagnostics->animationAdvanced = true;
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::DisplayTransition);
 	FrameStageTimer displayTransitionTimer(diagnostics, FrameStage::DisplayTransition);
 	ApplyDisplayTransition(state, frame);
 	displayTransitionTimer.Stop();
@@ -13609,6 +13621,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		diagnostics->zoom = frame.zoom;
 		diagnostics->displayCapacityZoom = state.displayCapacityZoom;
 	}
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::SubmitTargetsAndLayout);
 	FrameStageTimer submitTargetsTimer(diagnostics, FrameStage::SubmitTargetsAndLayout);
 	SubmitTargetsAndLayout(state, frame);
 	if (state.finiteObserver)
@@ -13629,6 +13642,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		if (!state.finiteSvgProbe) state.finiteObserver->ObserveResources({}); // 无真实B3 producer仍保守拒证。
 	}
 	submitTargetsTimer.Stop();
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::AdvanceAnimationsAndDeriveLayout);
 	FrameStageTimer advanceAnimationsTimer(diagnostics, FrameStage::AdvanceAnimationsAndDeriveLayout);
 	const bool needRendering = AdvanceAnimationsAndDeriveLayout(state, frame)
 		|| state.displayTransitionActive;
@@ -13639,18 +13653,20 @@ BarRenderLoopCoordinator::RenderFrame(
 		state.dirtyRegionTracker.RetainForRetry(true);
 		state.presentDecision.RequireVisualRetry();
 		if (diagnostics) diagnostics->presentDeferred = true;
-		return FrameResult::Retry;
+		return finiteExit.Finish(FrameResult::Retry);
 	}
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::PrepareLightingAndDemand);
 	FrameStageTimer lightingAndDemandTimer(diagnostics, FrameStage::PrepareLightingAndDemand);
 	PrepareLightingAndDemand(state, frame, needRendering);
 	lightingAndDemandTimer.Stop();
+	finiteExit.Stage(Ui3FiniteDiagnosticStage::DirtyAndPrepare);
 	const auto result = CalculateDirtyAndDrawPresent(state, frame, ulwi_, context);
-	if (result == BarRenderLoopStageResult::Stop) return FrameResult::Idle;
-	if (result == BarRenderLoopStageResult::DeviceLost) return FrameResult::DeviceLost;
-	if (result == BarRenderLoopStageResult::Idle) return FrameResult::Idle;
-	if (result == BarRenderLoopStageResult::Continue) return FrameResult::Retry;
+	if (result == BarRenderLoopStageResult::Stop) return finiteExit.Finish(FrameResult::Idle);
+	if (result == BarRenderLoopStageResult::DeviceLost) return finiteExit.Finish(FrameResult::DeviceLost);
+	if (result == BarRenderLoopStageResult::Idle) return finiteExit.Finish(FrameResult::Idle);
+	if (result == BarRenderLoopStageResult::Continue) return finiteExit.Finish(FrameResult::Retry);
 	PaceFrame(state, frameOrdinal_);
 	frameOrdinal_ = 2;
-	return FrameResult::Continue;
+	return finiteExit.Finish(FrameResult::Continue);
 }
 // 渲染更新：状态更新 + 通知计算并渲染

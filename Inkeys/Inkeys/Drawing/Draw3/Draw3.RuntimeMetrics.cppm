@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -53,6 +54,33 @@ export namespace Inkeys::Drawing::Draw3
 		bool operator==(const RuntimeMetricsLandingProof&) const = default;
 	};
 
+	// 四段 wall/CPU 均为同一个 owner span；父段包含子段，不能相加成总成本。
+	enum class RuntimeMetricsCostStage : uint8_t { Ingress, ModelPrediction, GeometryRasterSubmit, Composite };
+	struct RuntimeMetricsFrameCosts
+	{
+		bool cpuAvailable = false;
+		double threadCpuMs = 0, threadSpanWallMs = 0;
+		uint32_t stageAvailableMask = 0, stageCpuAvailableMask = 0, stageObservedMask = 0;
+		std::array<double, 4> stageWallMs = {}, stageThreadCpuMs = {};
+		uint32_t modelResetCalls = 0, modelUpdateCalls = 0, predictionCalls = 0;
+	};
+	struct RuntimeMetricsLaserFrame
+	{
+		bool collected = false;
+		uint32_t trailPhase = 0, coverageMode = 0, activeContactCount = 0;
+		int64_t lastAllUpQpc = 0;
+		double effectiveHoldSeconds = 0, fadeSeconds = 0;
+		float opacity = 0;
+		uint32_t layerCount = 0, particleRequestedCount = 0;
+		bool particlesEnabled = false, particlesAvailable = false, particlesActive = false;
+		// Controller 只能证明请求和 CPU 提交调用，不能冒称 GPU 实际发射。
+		bool requestedOnly = true, emittedAvailable = false;
+		uint32_t stageAvailableMask = 0, stageCpuAvailableMask = 0, stageObservedMask = 0;
+		uint32_t incrementalCalls = 0, bakeCalls = 0, bakeFailures = 0;
+		uint32_t particleStepCalls = 0, particleDrawCalls = 0;
+		std::array<double, 4> stageWallMs = {}, stageThreadCpuMs = {};
+	};
+
 	// 每次真实 render attempt 的数值载荷；终态和恢复帧不依赖仍有按住的 contact。
 	struct RuntimeMetricsFrameSample
 	{
@@ -66,6 +94,11 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t terminalCount = 0;
 		bool presentAttempted = false;
 		bool presentSucceeded = false;
+		int64_t presentReturnQpc = 0;
+		RuntimeMetricsFrameCosts costs;
+		RuntimeMetricsLaserFrame laser;
+		double priorIngressWallMs = 0, priorIngressThreadCpuMs = 0;
+		uint32_t priorIngressAvailableMask = 0;
 	};
 	struct RuntimeMetricsSnapshot
 	{
@@ -89,13 +122,73 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t framesRetained = 0;
 		uint64_t framesDropped = 0;
 		uint64_t framesInvalid = 0;
+		uint64_t presentRetained = 0, presentDropped = 0, presentInvalid = 0, durationDropped = 0;
+	};
+
+	enum class RuntimeMetricsPhase : uint8_t { Cold, Warmup, Measured };
+	enum class RuntimeMetricsBoundaryAuthority : uint8_t
+	{ None, StartupClearedSurface, StoredHistoryChain, LaserLifecycleComplete };
+	enum class RuntimeMetricsPhaseFailure : uint32_t
+	{
+		Cancelled = 1u << 0, Rejected = 1u << 1, Retention = 1u << 2,
+		Identity = 1u << 3, NoProjection = 1u << 4, Order = 1u << 5,
+		Unsealed = 1u << 6, IndependentClearQuiet = 1u << 7
+	};
+	struct RuntimeMetricsTerminalFacts
+	{
+		uint64_t upConsumed = 0, cpuStoredCompleted = 0, authoritativeFinalPresented = 0;
+		uint64_t cancelled = 0, rejected = 0, noVisibleProjection = 0;
+		uint64_t excludedLaser = 0, laserLifecycleCompleted = 0;
+		uint64_t holdWaits = 0, laserPhaseTransitions = 0;
+		uint32_t activeRuntimes = 0, awaitingReconnect = 0, pendingFinal = 0;
+	};
+	struct RuntimeMetricsPhaseBoundary
+	{
+		bool exists = false;
+		RuntimeMetricsBoundaryAuthority authority = RuntimeMetricsBoundaryAuthority::None;
+		int64_t ownerQpc = 0;
+		uint64_t frameSerial = 0, contactSeenOrdinal = 0;
+		RuntimeMetricsSnapshot metrics;
+		ContactInputDiagnosticsSnapshot input;
+		RuntimeMetricsTerminalFacts terminal;
+		RuntimeMetricsCanvasIdentity canvas;
+		uint64_t historyRevision = 0, rasterState = 0, rawOutputRevision = 0;
+		float viewportX = 0, viewportY = 0, viewportScale = 1;
+		uint32_t width = 0, height = 0, rawOutputTarget = 0;
+		bool pipelineCompositeComplete = false, finalProjectionCovered = false, fullViewportComposite = false;
+	};
+	struct RuntimeMetricsRunPrewarm
+	{
+		bool exists = false, completed = false, wallAvailable = false;
+		int64_t ownerStartQpc = 0, ownerEndQpc = 0;
+		double wallMs = 0;
+		RuntimeMetricsFrameCosts costs;
+		uint32_t shaderAvailableMask = 0, shaderCpuAvailableMask = 0, shaderObservedMask = 0;
+		std::array<double, 2> shaderWallMs = {}, shaderThreadCpuMs = {};
+	};
+	struct RuntimeMetricsPhaseBoundaries
+	{
+		bool enabled = false, incomplete = false;
+		uint32_t failureFlags = 0;
+		ContactInputDiagnosticsSnapshot runInputBaseline;
+		RuntimeMetricsPhaseBoundary coldEnd, warmEnd, measuredEnd;
+		RuntimeMetricsRunPrewarm runPrewarm;
+		uint64_t controllerPayloadBytes = 0;
+		RuntimeMetricsTerminalFacts runTerminal;
+	};
+	struct RuntimeMetricsPhaseProgress
+	{
+		uint64_t finalCompletedOrdinal = 0;
+		RuntimeMetricsTerminalFacts terminal;
+		RuntimeMetricsPhaseBoundaries boundaries;
 	};
 
 	// 唯一绘制 owner 的可选指标会话；构造预分配 <=32MiB，结束后才离线导出。
 	class RuntimeMetricsSession
 	{
 	public:
-		explicit RuntimeMetricsSession(size_t maximumSamples = 32768);
+		explicit RuntimeMetricsSession(size_t maximumSamples = 32768, size_t externalAuxiliaryBytes = 0);
+		static size_t MaximumSamplesForBudget(size_t externalAuxiliaryBytes = 0) noexcept;
 		~RuntimeMetricsSession();
 		RuntimeMetricsSession(const RuntimeMetricsSession&) = delete;
 		RuntimeMetricsSession& operator=(const RuntimeMetricsSession&) = delete;
@@ -134,10 +227,15 @@ export namespace Inkeys::Drawing::Draw3
 		// owner 停止后写 schema2；调用者先校验并创建隔离目录，create-new 拒绝覆盖。
 		bool WriteJson(const wchar_t* outputPath,
 			const ContactInputDiagnosticsSnapshot& inputDiagnostics) const;
+		bool WriteJson(const wchar_t* outputPath,
+			const ContactInputDiagnosticsSnapshot& inputDiagnostics,
+			const RuntimeMetricsPhaseBoundaries& phases) const;
 		// 旧混合 200 landing/尾延迟/idle 门，仅供 legacy 分析，不作为首发性能判决。
 		bool MeetsStrictThresholds() const;
 
 	private:
+		bool WriteJsonImpl(const wchar_t* outputPath, const ContactInputDiagnosticsSnapshot& inputDiagnostics,
+			const RuntimeMetricsPhaseBoundaries* phases) const;
 		std::unique_ptr<RuntimeMetricsSessionImpl> impl_;
 	};
 }

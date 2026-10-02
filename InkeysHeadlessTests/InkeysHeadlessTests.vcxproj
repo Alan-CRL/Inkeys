@@ -70,7 +70,7 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <PreprocessorDefinitions>INKEYS_MESSAGE_BOX_TESTING;DRAW3_CONTACT_TESTING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
       <GenerateSourceDependencies>true</GenerateSourceDependencies>

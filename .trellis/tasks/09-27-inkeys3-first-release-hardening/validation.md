@@ -2,6 +2,34 @@
 
 状态枚举同 execution-ledger.md。每条命令记时间、配置、退出码、关键输出/产物、代码或环境归因；自动测试、构建、人工体验和发布判断分开。
 
+## 2026-10-02 UI3 绑定快照与最终候选复验
+
+| 单元 | 实际命令/配置 | 退出码及结果 | 原始证据/限制 |
+| --- | --- | --- | --- |
+| 主 Solution Debug | `InkeysRepo.sln /t:Build Debug|ARM64 /m:1 /nr:false /p:LinkIncremental=false`，ARM64 原生 MSBuild，PATH 规范化 | 0；PptCOM/TLB、shader 与 Inkeys 链均完成 | `resume-20261002-ui3-button-layout-build.log`；当前 Inkeys SHA `4E31A8C9BAF87E26C5645BC1F7911F07E6603385767D973E7D82B4655AF56DF0`；保留既有 C4267 第三方 warning |
+| UI3 首个真实场景 | `Build/ARM64/Debug/Inkeys.exe --ui3-presentation-benchmark --scene main-fold --round 1 --capture on --capacity 4096` | GUI 子系统结果目录已完成；严格结果 90：第一目标 2/2，第二目标 settled/pending=1/0、9/10，唯一 tag `0x2000C` | `ui3-finite-8fb2b653c4e34e4b84b0789fb27b9712/r1/s1/finite-targets.csv`、`summary.json`；`svg-bindings.csv` 在绑定时记录 `0x2000C=More`，`button-layout.csv` 保留当前按钮/图标矩形，expected 与 overwrite 真实相交3px；不放宽严格门，后215未开始 |
+| Headless 回归 | `Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` | 0；ASYNC01 两 wake 按 FIFO 消费、两侧无剩余，7 deferred 全 `result=1`，动画/橡皮失败0 | `resume-20261002-headless-final-candidate`，Headless SHA `AE437D10D198342EEB417A5D8617CA1369F7AD94D65104C9A2D16A78CFEB179B`；不证明自然入队失败频率 |
+| B363/offscreen | `Build/ARM64/Debug/Inkeys.exe --bar-eraser-offscreen-test` | 0；现有 B363 与 PageControl 场景通过 | `resume-20261002-offscreen-button-layout-candidate`，同一最新 Inkeys SHA；GUI stdout为空，stderr仅 `[PageControlScene] failures=0`，退出码由 `Start-Process -Wait` 取得 |
+| Draw3 production probes | 同一 Inkeys SHA 串行运行 control-fence、fallback-controller/lane、PPT current-load-retry、renderer-map/commit、laser-raster failure probes | 7 个入口均 exit0 | `resume-20261002-draw3-final-*`；只覆盖各自 probe 合同，不替代 Move/Up/Laser 完整输入或性能门 |
+| Draw3 Host metrics smoke | `--draw3-host-metrics-smoke --output-root D:\Project\Inkeys\Repo\Inkeys-draw\TestResults\release-hardening` | 0；U3H real Host metrics lifecycle smoke PASS，实际 ULW/RTS 初始化与 owner 清理完成 | `resume-20261002-draw3-final-host-metrics2`、子目录 `u3-h-host-metrics`；第一次传入不存在的 root 的 exit1 保留为非法夹具前提失败，不归产品 |
+| Standalone UInk/PPT build | `inkStrokeModelerTest.sln /t:Build Debug|ARM64 /m:1 /nr:false /p:LinkIncremental=false`，ARM64 原生 MSBuild，PATH 规范化 | 0；2 个已有 warning（第三方 C4244 与 LNK4075） | `precommit-cap01-final-debug-arm64-build.log`；最新测试 EXE SHA `9F400C4B8FB428ED7F8BE735ED488B1C1192DB601F5EDDA69222C2816A8A1B89` |
+| UInk/PPT 当前候选 selectors | 仓库根 working directory，串行沙箱外运行 `--uink-file-only`、`--presentation-version-cap-only`、`--presentation-session-integrity-only`、`--presentation-session-only`、`--presentation-autosave-only`，同一 EXE SHA `9F400C4B8FB428ED7F8BE735ED488B1C1192DB601F5EDDA69222C2816A8A1B89` | 五个 selector 全 exit0 | `precommit-final-<selector>/{command.txt,stdout.log,stderr.log}`；包括 move-only owned token create/remove、replacement 与 same-ID mutation 保留、partial/optional allocation、当前/备份引用 bounded GC、跨进程独立 session 和坏 sidecar 隔离 |
+| UInk/PPT 默认沙箱对照 | 同类 selectors 在沙箱内运行 | exit1；隔离 Win32 ReplaceFileW probe 在无额外 pin 和属性 pin 两种情况下均返回 `ERROR_ACCESS_DENIED`；不作为代码失败 | `precommit-<selector>-current`、`share-probe-*`、`replace-pin-probe-*`；相同最终 EXE 在获准沙箱外、相同 repo cwd 和隔离 NTFS 测试数据均 exit0 |
+| 四个未跟踪 shader 身份 | Standalone FXC 构建前复制至 `precommit-cso-preserve-20261002` 并保存 SHA/长度，构建后与原始路径逐个复核 | 四个原件 SHA 全部一致；仍未跟踪、未 stage | 备份 manifest 及 `git status`；原始身份也见 `resume-20261001-cso-backup-9a77d7936d384ab8b9e1b7a1b2ea51bc/manifest.json` |
+| UInk/PPT Standalone 最终候选 | `inkStrokeModelerTest.sln /t:Build Debug|ARM64`；`ARM64/Debug/inkStrokeModelerTestTests.exe` SHA `9F400C4B8FB428ED7F8BE735ED488B1C1192DB601F5EDDA69222C2816A8A1B89`；仓库根 working directory 沙箱外串行运行五 selectors | Build0、`--uink-file-only`、`--presentation-version-cap-only`、`--presentation-session-integrity-only`、`--presentation-session-only`、`--presentation-autosave-only` 均 exit0 | `precommit-cap01-final-debug-arm64-build.log` 与 `precommit-final-<selector>/{command.txt,stdout.log,stderr.log}`；含 CAP actor 0–7、ownership move/remove/replace rejection、allocator failure 和默认无 override新会话流程 |
+| 同一类 Standalone 沙箱限制 | 先前同 selector 在沙箱内运行；另以隔离 Win32 probe 直接测 `ReplaceFileW`（无额外 pin / 有属性 pin） | Selectors exit1；两种 ReplaceFileW probe 均返回 `ERROR_ACCESS_DENIED`。同源码候选在获准沙箱外用相同 repo cwd 和隔离 NTFS 数据运行 selectors 均绿，归因 runner 文件操作权限 | `precommit-<selector>-current`（EXE SHA `3407AC08C1F3F99D315E2AD4AA970A6BD28840EE223356EEE0558B5F7E284F14`）、`share-probe-*` 与 `replace-pin-probe-*`；失败证据保留，不改生产分享模式 |
+
+## 2026-10-02 UI3 retention / ASYNC01 当前候选复验
+
+| 单元 | 实际命令/配置 | 退出码及结果 | 原始证据/限制 |
+| --- | --- | --- | --- |
+| UI3 retention B363 红 | 当前生产 Debug ARM64 候选，`Inkeys.exe --bar-eraser-offscreen-test` | 1；先前完整 SVG 证明存在时，不相交/部分 dirty clip 的实际 BGRA 虽逐字节相同，但观察器均拒证 | `resume-20261001-ui3-retained-red-premise-run`、`Build/eraser-b/offscreen-results.log`；红灯只针对新增 retention 合同 |
+| UI3 retention B363 绿 | `InkeysRepo.sln /t:Rebuild Debug|ARM64 /m:1 /nr:false /p:LinkIncremental=false`；同一 `--bar-eraser-offscreen-test` | Build0、offscreen0、`B363` failures=0；已知同 bitmap/semantic/transform/opacity/epoch/surface 且 clip 不相交时 `RetainedVerified`，partial/unknown/opacity/fail commit 仍拒证 | `resume-20261001-ui3-retained-green-debug-arm64-build.log`、`resume-20261001-final-current-offscreen/result.txt`；候选 Inkeys SHA `32BB9BFC8250904397199CE2A9D8FCA4745A5B0FE06E96C6E28EF684776A4419` |
+| 当前 Headless 回归 | 同一候选 `Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window` | 0；ASYNC01 `command_wakes=2`, `consumed_commands=2`, 两侧 pending=0，7 deferred case 全 result=1，动画/eraser failures=0 | `resume-20261001-final-current-headless/result.txt`、`stdout.log`；候选 Headless SHA `A37318B6BB4A6006BCA5AFA1465A483E131E2BAC53F9A1B6385A2B1639CAF598` |
+| UI3 首场景当前候选 | `Inkeys.exe --ui3-presentation-benchmark --scene main-fold --round 1 --capture on --capacity 4096`，SHA `4E31A8C9BAF87E26C5645BC1F7911F07E6603385767D973E7D82B4655AF56DF0` | 90；第一目标 2/2 verified，第二目标 settled/pending=1/0、9/10 verified，唯一缺口 tag `0x2000C` / `More` SVG `Overwrite`，后215未开始 | `ui3-finite-8fb2b653c4e34e4b84b0789fb27b9712/r1/s1`；绑定时快照和有界 button-layout 已确认对象/矩形，strict completion 合同仍未满足，不是216项逐项失败，也不是 Coverage 全部失败 |
+
+当前最后一轮 overwrite 诊断候选：`Inkeys.exe` SHA `4E31A8C9BAF87E26C5645BC1F7911F07E6603385767D973E7D82B4655AF56DF0`，Headless SHA `AE437D10D198342EEB417A5D8617CA1369F7AD94D65104A9D2D16A78CFEB179B`；Headless `--no-window` exit0。tag `0x2000C` 的绑定时快照为 `More`，`button-layout.csv` 保留按钮/图标矩形，expected bounds 为 `[2940,890,3012,962]`，实际后续 overwrite bounds 为 `[2904,959,3048,1013]`，存在 3px 垂直相交，故保留严格 Overwrite；该诊断只定位原因，不放行产品。
+
 ## 2026-09-30 提交后核对（本轮无产品修补）
 
 后续工程续接已产生以下产品改动；本标题的“无产品修补”仅描述较早完成度核对，不描述下表检查点。
@@ -362,3 +390,65 @@ source_failure=13实际枚举是Deadline（Target=14），首错CAS由RunSource�
 ## 2026-10-01 阶段commit检查边界
 
 用户要求暂停工程后保存并push当前已有改动，因此本次为可恢复的开发检查点，不能作为最终发布通过。全git diff --check通过（原Trellis文档EOL提示保留），G task validate implement25/check24实际0；原Build0/Core/U3H/C10证据均保留。新F069测试宏seam及RED_A未运行、Source108 gate未新fullbuild、UI3首scene Deadline失败、DrawN1–N4/最终3架构未完成。本次不为提交擅自实现Green/删除失败/关闭输入或效果。
+
+## 2026-10-01 恢复：检查点实际验证（非最终HF）
+
+- 原生ARM64 MSBuild完整 InkeysRepo.sln Debug|ARM64 /t:Build /m:1 /nr:false /p:LinkIncremental=false，exit0，29.23s，六既有warning，无error。四cso原件与备份身份均不变。日志 resume-20261001-checkpoint-debug-arm64-build.*；实际文件身份见同prefix candidate manifest（目录TestResults/release-hardening）。
+- fresh严格 --no-window pid14648 exit0、生产 --bar-eraser-offscreen-test pid12264 exit0；scope仅其真实测试逻辑，不推Win7/Office或最新后续源。core prefix resume-20261001-checkpoint-core.*。
+- PE32D9E52DF6486892ACB3308BB5CAF8364913E2370B526EDBEE16B683559E798C 上 main-fold round1 capture on capacity4096：parent13224/child15636自然90、ack1/Sealed失败。唯一首goal accepted；Completed0、后215未开始；raw35/35、trueBarCommit32、invalid/drop/API失败0，最后idle。根 ui3-finite-ec3fde93df1ace4f8435be9d6302bf7f/r1/s1；无MeasuredEnd/像素等价/性能PASS。最新raw consumer已构建和实际执行，最后有效SVG/pending证据仍缺。
+- 用户确认旧0813命名对应20260811a Canary：archive28F4E0B3…BCB004E，内41,361,696B EXE81A3DBB2…6D07E与发布元数据相同，只读身份 canary-20260811a-arm64-identity.json；尚未执行可比Release样本，不能宣称提升。
+
+## 2026-10-01 恢复：F069/PPT真正因果RED
+
+- NativeARM64 MSBuild inkStrokeModelerTest.sln /t:inkStrokeModelerTestTests /m:1 /nr:false Debug|ARM64 /p:LinkIncremental=false：exit0、39.02s。该目标不读半写的UI3源，PPT RED作者已停写/F069生产HOLD；四cso前后SHA与已备副本不变。真实EXE ARM64/Debug/inkStrokeModelerTestTests.exe，SHA F08BB0A06DAE15729CFA69A73F8216CE4F8A1FFAD1AE41D6D6448623B26174C3。
+- outside --uink-file-only pid26920自然1：只有两line2432 sameForeign/fullbytes保留红。真实NTFS/stage/actions/所有status错误和held strict读取、四own/F067230保存与旧suite无另fail，故RED_VALID。precreate WriteFailed/temp80，replace SelfValidationFailed/temp0；生产cleanup还未修时实际删foreign。raw resume-20261001-f069-red.*。
+- 同EXE outside --presentation-session-only parent21336自然1，seed9832/0，fresh32544/1，两个未使用坏侧轨的Load/Save四红；oldbytes不变。child未继承stdout，Root一次直接合法fresh捕获同新GUID旧根，pid10732/1、StableSlide pageKind0 status3/track1、cross_process_conflict_deferred，validSeed等前提通过且仅emptyVerified红。fresh后续Save/end/fallback因前置红未执行，不记覆盖。raw resume-20261001-ppt-session-red*。
+- 用户授权CAP01安全回收的范围：同进程同PPT一逻辑文稿，保current/bak/pending引用，只删验证仍本worker创建的旧版；跨process旧会话全部保留、不自动恢复。待实现/验证，不写PASS。
+
+## 2026-10-01 局部GREEN与精确失败归因（均非最终候选）
+
+- 主 InkeysRepo.sln DebugARM64 native串行Build exit0、85.83s、104编译重复warnings/0errors；EXE A34A782F77F4C065D2B135FCD06DF2FCA9E25843FF806FDBC84FFAC4F21E4F8D。Core Headless24160/0、offscreen21372/0、resource192/0；START01 actual correct-readonly reuse/wrong-readonly failclosed+9B retained通过。prefix resume-20261001-local-green-*。两readonly新增未取旧helper动态RED，以旧实际startup源码失败链为confirmed、当前真实same-helper green，不冒red。
+- 独立四UI3+Main delta SCOPED_CLEAR（6A59/90B4/422A/4F64/Main28B0）；不重复旧source/Auth全面review。真实on4096 11736/11664自然90，root ui3-finite-e8c4d99a04f2a142a080715949e19367/r1/s1。最后meaningful attempt35 epoch1 surface7/198x198/DPI192，consumed+settled+stablePub1，pending/mismatch0/seen63；Complete mask511所有原谓词真，resource10/1/0/9，first65536 logo1 Overwrite9；末36 Idle/Abort只覆盖canonical未完成行。observer36frames/33commits/3settled，原pending终点猜测作为此次主因排除；成功像素/完整目标仍未验。实际logo1+logoInk同域设计层叠需要正确资格，不能称产品图像错。
+- F069 production3D99/tests64D3 selfSID已独立CLEAR_GREEN_TEST。latest existing standaloneSolution nativeDebug testBuild0/16.80s，EXE8305809064D4CFAB0848F2024630A36627953F3B82BD65353EA2411166538B6F；outside --uink-file-only37776自然0，全部24actor/原F067230/旧UInk tests通过。same-ID modified、backup/recovery foreign、Partial保temp、postmutationbad_alloc、TokenUser双DACL5、sharing32、readonly实Disposition5、multilink50均真实前提满足；原两line2432 RED转绿。raw resume-20261001-f069-green.*，Win7/nonNTFS/runtime/hashquery失效和大文件成本不由此证明。
+- 同8305 --presentation-session-integrity-only38520自然1：新跨mode碰撞status0/track4，files8→10，两个assert RED；knownBase pending+foreignIndex被路由成status2NotFound/track4，empty-not-allowed assert RED；所有真实durable/Loadedpending/foreignCommitted和未改bytes前提通过。raw resume-20261001-ppt-integrity-red.*。初Green80BE独立检查发现这两边界，不把旧session suite或编译转总PASS；两例原writer修复中。
+- 新F069文件API要求核验：GetVolumeInformationByHandleW与SetFileInformationByHandle（FileDispositionInfo）官方minimum Vista，本项目不引入Win8 FileIdInfo；这只是API静态合同证据，Win7SP1仅KB实际运行仍manual。[GetVolumeInformationByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getvolumeinformationbyhandlew)、[SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle)。用户Win7 FLIP实测约束保持，无DWM启用。
+
+## 2026-10-01 companion/PPT绿与UI3最新真实失败
+
+- native既有standaloneSolution Debug ARM64 build0、31.62s，EXE E41B4EB2FDE379F9C752758447C9833574C7E0AE9EE9A4ABC6889F5A1B7F8F56。共享9DA/A21D/6C96 companion获独立CLEAR_COMPANION_TEST且 --uink-file-only15148/0：新5组authority创建/移动/重复/不同ID/同ID内容改/析构仅保留/SourceChanged-Update-Partial不给权限全过，原24/旧suite/F067也过。
+- PPT B665 Green2获同reviewer单delta SCOPED_GREEN2_TEST，integrity28044/0（SourceChanged4 track4 files8→8、pendingForeign Deferred3 track0），session25728/0（default独立seed36156/0 fresh6008/0、EndScreen/fallback/newsave/selectedcorrupt/unusedbad），旧autosave39652/0；故意IO失败的stderr不是suite失败。logs resume-20261001-{companion-uink,ppt-integrity,ppt-session,ppt-autosave}-green.*。纯Service不推真实Controller ready/Office exit透传。
+- 资格预修主Build0 140.75s被最新谱系修主Build0 33.54s/7warn supersede；EC37E7D59FCC55F6AF5DD37231077A40816C832D353A2DA89284894B0D87148F包含A0A2/3B69 B362。独立review确认outside保旧域到clear、原H101/B337等不减，SCOPED_CLEAR actual新offscreen及既定trajectory合法budget。
+- 最新strictHeadless7464/0、offscreen31304/1。实际 report Build/eraser-b/offscreen-results.log（复制 resume-20261001-ui3-lineage-fix-core.offscreen-results.log）恰B352 grouped negative和B358失败，其它包含B362通过。B358 publication非法flags0/displaySerial1，源validator需要64/even非0；作者只修合法fixture且显式premise。B352 variant6第二PushFrameDirtyClip不支持嵌套，实际没有partialclip；先补有限variant日志及真正D2D clip，不放松negative/不改生产为非法fixture绿。尚未新build/复验，不宣资格全green，不运行首scene。
+- 当前Root无MSBuild/runtime进程；UI3 test修/PPT_CAP/DrawN1源writer已真实followup并行独立文件，共享Build将等相应stop。cap policy/N1合同只在真实代码和测试后计完成，无Release/performance/GUI/Win7结论升级。
+## 2026-10-01 恢复后 CAP/ASYNC01/主 Debug/UI3 最新验证
+
+### 独立 UInk/PPT 选择器（最新源码）
+
+- 命令：native ARM64 MSBuild `inkStrokeModelerTest.sln /t:inkStrokeModelerTestTests /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM64 /p:LinkIncremental=false`，退出码 0；最新 standalone EXE SHA `3FCF51611D3530A213BA638BD399F311D2F98B24BED883720240E2C1B4186014`。
+- 运行位置：sandbox 外、同一 EXE、私有临时目录；`--uink-file-only`、`--presentation-version-cap-only`、`--presentation-session-integrity-only`、`--presentation-session-only`、`--presentation-autosave-only` 均退出码 0。CAP actor 0–7、Namespace/ PriorReferences/ RegisterVersion allocation fault 三阶段、foreign/same-ID/坏索引/失败事务及旧 UInk 套件均实际运行。日志：`TestResults/release-hardening/resume-20261001-standalone-cap-namespace-green/`。
+- 同参数在受限 sandbox 首先出现 `IoError/ERROR_ACCESS_DENIED`，原因是 `Local\\Inkeys.UInk.*` 事务 mutex/私有目录权限；该失败保留为环境证据，不计产品红灯。
+
+### 主 Solution Debug ARM64 与 ASYNC01
+
+- 命令：`InkeysRepo.sln /t:Build /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM64 /p:LinkIncremental=false`，退出码 0；Inkeys/PptCOM/TLB/Headless 项目均完成，旧 warning 保留且无本轮新增编译错误。
+- 命令：直接项目 `/t:Rebuild` 生成 `InkeysHeadlessTests/Build/ARM64/Debug/InkeysHeadlessTests.exe`，退出码 0，SHA `260BD4065192F914775DA66CD44F0C3D97D66A38A76AEBB24826D70E47E8DE24`。不能把旧 `Build/ARM64/Debug` 同名文件当作此候选。
+- 最新 Headless 完整运行退出码 0；日志：`TestResults/release-hardening/resume-20261001-headless-rebuild-async01-run/full.log`。确定性 ASYNC01 输出：`premise=1 command_wakes=2 consumed_commands=2 ingress_pending=0 bridge_pending=0 leftover_sequence=0`；7 个 deferred case 均 `result=1`。这是测试屏障交错的回归证据，不是自然负载发生率证明。
+- 最新产品/无窗口 smoke：Headless `--no-window`、产品 Draw3 control fence/N1、Bar eraser offscreen、PptCOM resource verification、Host metrics smoke 均退出码 0；日志：`TestResults/release-hardening/resume-20261001-main-debug-tests/`。N1 smoke 只证明合同/小范围 owner 生命周期，不替代完整 Draw3 性能门。
+
+### UI3 最新真实场景
+
+- 命令：最新 ARM64 Debug `Inkeys.exe --ui3-presentation-benchmark --scene main-fold --round 1 --capture on --capacity 4096`，隔离进程退出码 90（生产 fixture failure，不是运行器崩溃）。raw 根：`TestResults/release-hardening/ui3-finite-a81bda0bad1e3340a4783130921acd22/r1/s1/`。
+- 结果：`source_failure=13 (Deadline)`、`accepted=2`、`completed=1`、后 215 项未开始；第二目标 `settled=1/pending=0`，但 `requiredSvg=10/verifiedSvg=0/unverifiedSvg=10/firstUnverifiedReason=8 (Coverage)`，因此严格 `NoteCompletedGoal` 没有发布完成回执。所有 owner/source/window/scheduler/display join 标志均正常；不能把它写成线程卡死，也不能把 216 项都记为失败。
+- 观察结论：当前证据指向 expanded target 的 dirty clip/coverage 交互，尚未证明是生产 dirty region、D2D clip 还是 observer 合同错误。未改变 Coverage 断言、没有补帧、全脏、关光影或降低画质；完整 216/像素等价/性能仍未验证。
+
+### 证据边界
+
+- 本轮没有运行 Win7 SP1 仅 KB2670838、FL11.0 Hardware、无 FL11 WARP、DComp 不可用→ULW、真实 Office/WPS、HC/H2 同设备 Release 多轮、三架构最终 Release；这些保持人工/发布门禁。FLIP_SEQUENTIAL 与两种禁用 DWM 透明方案约束不变。
+- 本轮未 commit/push/归档；四 `.cso` 继续保留且未 stage。以上结果不能升级为 release-ready。
+
+### 最终 Debug Rebuild 身份（当前源码）
+
+- `InkeysRepo.sln /t:Rebuild /m:1 /nr:false /p:Configuration=Debug /p:Platform=ARM64 /p:LinkIncremental=false`：exit0；`Inkeys.exe` SHA `33A802CEAE88A549FE30D31F9755F310089CF0513803D0511CE21AD67515E34D`，`InkeysHeadlessTests.exe` SHA `CA90182ABC01A4842F3FF368C1DA4D81027668C918CAB7A41B7588B2DB4F5870`，`PptCOM.dll` SHA `AB34C31F9510BE311439B798A35D6980D5DA609D55622C8DFAD339E97733C105`，`PptCOM.tlb` SHA `C652B5DD0603576033B2E0D15869BE103F23FFDCAA2A1984E53F3B6A14DBA606`。
+- 同一最终候选串行：Headless no-window、Draw3 control-fence/N1、Bar eraser offscreen、PptCOM resource verification、Host metrics smoke 均 exit0；日志 `TestResults/release-hardening/resume-20261001-final-debug-tests/`。
+- 同一最终候选 UI3 on4096 仍 exit90、source_failure=13、accepted2/completed1/后215未开始，第二目标 SVG Coverage 未验证；日志 `ui3-finite-a81b.../r1/s1/final-run-output.log` 与 summary。该失败保留为发布阻塞。
+- 最终候选 `PptCOM.Tests/bin/Release/PptCOM.Tests.exe` exit0。最终候选 `Inkeys.exe --shutdown-supervisor-tests` 在仓库根作为 working directory 运行 exit0，覆盖真实 UEF/dump/report、manual/auto stall、failed-arm、helper/handshake 和 15 秒强退；状态文件 `resume-20261001-final-debug-tests/shutdown-supervisor-tests-root-cwd.status.txt`。此前 exit62 是错误把 working directory 设为 `Build/ARM64/Debug`，使 harness 的 `MakeUefTestDirectory` 无法找到仓库根 `InkeysRepo.sln/.trellis`，不计产品失败。

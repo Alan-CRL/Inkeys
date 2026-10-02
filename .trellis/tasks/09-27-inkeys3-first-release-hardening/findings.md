@@ -2,6 +2,12 @@
 
 每条 finding 需有 ID、confirmed/hypothesis/not reproducible/already fixed/not applicable、严重性、当前代码证据、触发、实际影响、来源 commit、最小修复与验证。假设不得写成确认缺陷。
 
+## 2026-10-02 针对性复验增量
+
+- **UI3-FIRST / confirmed strict blocker（高，输入/呈现完成门）**：最新 Debug ARM64 场景仍 exit90。绑定时快照将 `0x2000C` 精确映射为 `More` SVG；第一目标 2/2 verified，第二目标 settled/pending=1/0、9/10 verified。该目标 expected `[2940,890,3012,962]`，后续已知写入 `[2904,959,3048,1013]` 与可见区真实相交3px，原因是 `Overwrite` 而非 Coverage。最小处理是继续追同帧 composition/绘制顺序；当前证据不足以授予资格，因此不放宽断言、不补帧、不降光影质量。证据：`ui3-finite-0bf35ec0bff768429bd4a297ae288b08/r1/s1/{finite-targets.csv,svg-bindings.csv,summary.json}`；后215目标尚未开始，不能写成216项失败。
+- **ASYNC01 / already fixed in scoped deterministic test（中，命令唤醒顺序）**：用户给定“fallback 判空→实体出队”交错已由确定性测试屏障覆盖；最新 `InkeysHeadlessTests --no-window` exit0，输出两次 wake 按 FIFO 消费、`ingress_pending=0`、`bridge_pending=0`、`leftover_sequence=0`、预约释放258，7 deferred case 均 `result=1`。这证明测试交错和生产宏关闭路径，不证明自然负载下实体入队失败频率。
+- **F069 / confirmed bounded to local NTFS**：当前 ownership seam 的生产清理只删除仍由本事务强身份持有的临时文件；foreign/Partial/unknown/竞争替换均保留，既有 standalone selectors exit0。Win7/non-NTFS 组合仍需人工，不能将短 GUID 或现有版本测试外推为全环境通过。
+
 ## 2026-09-30 工程续接状态（分项证据）
 
 - F-043/P1-01：普通首次意图的双监督失败同步截止已实施，Debug ARM64真实6场景red→green、2授权拒绝/旧22回归及独立源码review通过；合并源码Release三架构完整Solution Build、新失败边界专项、parked生产CLI及严格Headless逐项各0。新函数不是UEF/低层任意Failed通用处理，双失败Restart不保证launcher；sentinel不升级UInk恢复。
@@ -130,3 +136,22 @@ confirmed/P1证据正确性：Probe CompleteAttempt使用本帧ever-fullClear恢
 ## F-069：UInk内部路径清理缺少创建/身份归属证明（独立未处置）
 
 confirmed-static / 条件性P2未知文件删除风险：uink_file.cpp DeletePathOnExit在CREATE_NEW之前默认active，若PathExists检查后其它writer占candidate，创建失败仍按路径DeleteFileW。另backup/recovery/commit成功清理均按路径；同身份检查与删除之间可被同目录并发修改。来源d272f888/followup UInk导入，独立A10C0AE4…D3450附录确认，不是F067命名新增。触发需本地有同目录写/替换能力，尚无生产动态race复现；不是远端无前提高危漏洞结论。最小下一设计为先证明本次实际创建/恢复来源，再在同一Win7-compatible DELETE HANDLE上核nonreparse/identity后FileDispositionInfo；现有keepalive/权限失败安全保留边界需独立冻结与回归，不声称当前已修。
+## F-070：ASYNC01 fallback 与实体 marker 交错（2026-10-01）
+
+- 状态：confirmed deterministic race / fixed and verified in the scoped test build；自然负载发生率未测。
+- 证据：在消费者 fallback 判空与实体 dequeue 之间，C1 marker enqueue 故障发布 fallback ordinal=1，随后 C2 实体 marker 被取走并推进 consumed；Bridge FIFO 先消费 C1，旧 fallback ordinal 永远不再等于 expected 2。旧回归没有覆盖该窗口。
+- 修复：ContactInput 保留一个 deferred physical record，实体取出后先重新检查 fallback，再按 C1 fallback→C2 physical 顺序交付；Reset/HasPending 一并处理。没有丢输入、没有全局锁、GPU/IO 等待或改变正常 marker 语义。
+- 验证：先用两线程屏障生成真实 RED（command_wakes=1、pending=1、bridge_pending=1），再用同一最新 Headless Rebuild 绿测：`command_wakes=2 consumed_commands=2 ingress_pending=0 bridge_pending=0 leftover_sequence=0`；Command/Down/Cancel/General/deferred/reset 七个结果均 `result=1`。证据 `resume-20261001-headless-rebuild-async01-run/full.log`。状态：已验证通过（确定性交错），生产 macro-off 最终候选复建待补。
+
+## F-071：CAP01 本进程 owned UInk 版本回收（2026-10-01）
+
+- 状态：confirmed capacity risk / scoped fix verified on local NTFS；Win7/non-NTFS and real Office remain manual.
+- 修复：move-only opaque `UInkOwnedVersion` 只从本次 CreateNew+Committed 的连续 writer proof 转交 authority；当前 index、backup、pending 和 namespace/file identity/content proof 不满足时保留；跨进程旧 session 不自动回收。目录 lease 移动被 Windows `ERROR_ACCESS_DENIED` 拒绝时测试按安全合同验证保留。
+- 验证：最新 native ARM64 standalone selector `--presentation-version-cap-only`、`--uink-file-only`、session integrity/session/autosave 均 exit0；actor 0–7、optional allocation 三阶段、foreign/same-ID/坏索引/partial/prep failure 均实际覆盖。环境 sandbox AccessDenied 失败单独记录，未改产品逻辑。
+
+## F-072：UI3 局部 dirty clip 复用与首场景剩余 Overwrite（2026-10-01）
+
+- 状态：局部 retention 修复已验证；首场景仍有一个 confirmed strict Overwrite，发布阻塞未关闭。
+- 证据：最新 Debug ARM64 候选 `Build/ARM64/Debug/Inkeys.exe` SHA `B761951DB26E36853DD8371B6990742D06C30F60576B09873AAD463ACD9C04F1`。`--bar-eraser-offscreen-test` exit0，B363 实际 D2D 红→绿：整张 BGRA 在不相交/部分 dirty clip 后逐字节相同；仅已完整验证的同 bitmap、语义、变换、opacity、epoch/surface 才允许 `RetainedVerified`。未知写入、部分覆盖、opacity 改变和失败提交继续 unverified。Headless 当前 SHA `AE437D10D198342EEB417A5D8617CA1369F7AD94D65104C9A2D16A78CFEB179B`，`--no-window` exit0，ASYNC01 及既有动画断言无回归。
+- UI3 真实首场景 raw：`TestResults/release-hardening/ui3-finite-4557c6cb4fa93c45b5d364d11e04aa07/r1/s1`，exit90 / source Deadline；第一目标 2/2 verified，第二目标 settled/pending=1/0、9/10 verified，唯一缺口 tag `0x2000C`，reason `Overwrite`。该资源 expected bounds `[2940,890,3012,962]`，后续 overwrite bounds `[2904,959,3048,1013]`，存在真实3px垂直相交；当前 full viewport dirty clip `[1796,847,3224,1045]`，不是 Coverage 缺失；后续 215 个目标未开始。
+- 最小下一步：沿真实绘制顺序定位该 preset/icon 的后续非 SVG 写入或组件叠加，建立对象、顺序、变换、资源和像素等价的精确 composition 证据；没有完整证据不放行 Overwrite。不得用全脏、补帧、关闭光影或降低质量制造完成。

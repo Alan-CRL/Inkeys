@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 #include <windows.h>
@@ -23,6 +24,8 @@
 module Inkeys.Drawing.Draw3.runtime_metrics;
 
 import Inkeys.Drawing.Draw3.window_control;
+import Inkeys.Drawing.Draw3.ink_prediction;
+import Inkeys.Drawing.Draw3.transparent_presentation;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -219,6 +222,92 @@ namespace Inkeys::Drawing::Draw3
 			stream << "]" << (trailingComma ? "," : "") << "\n";
 		}
 
+		void WriteOptional(std::ostringstream& stream, bool available, double value)
+		{ if (available && ValidDuration(value)) stream << value; else stream << "null"; }
+		void WriteCosts(std::ostringstream& stream, const RuntimeMetricsFrameCosts& costs)
+		{
+			stream << "{\"cpuAvailable\": " << (costs.cpuAvailable ? "true" : "false") << ", \"threadCpuMs\": ";
+			WriteOptional(stream, costs.cpuAvailable, costs.threadCpuMs);
+			stream << ", \"threadSpanWallMs\": "; WriteOptional(stream, costs.cpuAvailable, costs.threadSpanWallMs);
+			stream << ", \"inclusiveSpans\": true, \"stageAvailableMask\": " << costs.stageAvailableMask
+				<< ", \"stageCpuAvailableMask\": " << costs.stageCpuAvailableMask
+				<< ", \"modelResetCalls\": " << costs.modelResetCalls << ", \"modelUpdateCalls\": " << costs.modelUpdateCalls
+				<< ", \"predictionCalls\": " << costs.predictionCalls << ", \"stages\": [";
+			constexpr const char* names[] = { "ingress", "modelPrediction", "geometryRasterSubmit", "composite" };
+			for (size_t i = 0; i < 4; ++i)
+			{
+				if (i) stream << ", ";
+				stream << "{\"name\": \"" << names[i] << "\", \"wallMs\": ";
+				WriteOptional(stream, (costs.stageAvailableMask & (1u << i)) != 0, costs.stageWallMs[i]);
+				stream << ", \"threadCpuMs\": ";
+				WriteOptional(stream, (costs.stageCpuAvailableMask & (1u << i)) != 0, costs.stageThreadCpuMs[i]);
+				stream << "}";
+			}
+			stream << "]}";
+		}
+		void WriteTerminal(std::ostringstream& stream, const RuntimeMetricsTerminalFacts& facts)
+		{
+			stream << "{\"upConsumed\": " << facts.upConsumed << ", \"cpuStoredCompleted\": " << facts.cpuStoredCompleted
+				<< ", \"authoritativeFinalPresented\": " << facts.authoritativeFinalPresented
+				<< ", \"cancelled\": " << facts.cancelled << ", \"rejected\": " << facts.rejected
+				<< ", \"noVisibleProjection\": " << facts.noVisibleProjection << ", \"excludedLaser\": " << facts.excludedLaser
+				<< ", \"laserLifecycleCompleted\": " << facts.laserLifecycleCompleted << ", \"holdWaits\": " << facts.holdWaits
+				<< ", \"laserPhaseTransitions\": " << facts.laserPhaseTransitions << ", \"activeRuntimes\": " << facts.activeRuntimes
+				<< ", \"awaitingReconnect\": " << facts.awaitingReconnect << ", \"pendingFinal\": " << facts.pendingFinal << "}";
+		}
+		void WritePrefix(std::ostringstream& stream, const RuntimeMetricsSnapshot& m)
+		{
+			stream << "{\"contactSeen\": " << m.contactSeen << ", \"contactRetained\": " << m.contactRetained
+				<< ", \"contactDropped\": " << m.contactDropped << ", \"pending\": " << m.pending << ", \"confirmed\": " << m.confirmed
+				<< ", \"unpresented\": " << m.unpresented << ", \"invalid\": " << m.invalid << ", \"pendingOverflow\": " << m.pendingOverflow
+				<< ", \"framesSeen\": " << m.framesSeen << ", \"framesRetained\": " << m.framesRetained
+				<< ", \"framesDropped\": " << m.framesDropped << ", \"framesInvalid\": " << m.framesInvalid
+				<< ", \"presentAttempts\": " << m.presentAttempts << ", \"presentSucceeded\": " << m.presentSucceeded
+				<< ", \"presentFailed\": " << m.presentFailed << ", \"presentRetained\": " << m.presentRetained
+				<< ", \"presentDropped\": " << m.presentDropped << ", \"presentInvalid\": " << m.presentInvalid
+				<< ", \"durationDropped\": " << m.durationDropped << "}";
+		}
+		const char* BoundaryName(RuntimeMetricsBoundaryAuthority authority) noexcept
+		{
+			switch (authority)
+			{
+			case RuntimeMetricsBoundaryAuthority::StartupClearedSurface: return "StartupClearedSurface";
+			case RuntimeMetricsBoundaryAuthority::StoredHistoryChain: return "StoredHistoryChain";
+			case RuntimeMetricsBoundaryAuthority::LaserLifecycleComplete: return "LaserLifecycleComplete";
+			default: return "None";
+			}
+		}
+		const char* OutputName(uint32_t value) noexcept
+		{
+			switch (value)
+			{
+			case static_cast<uint32_t>(TransparentOutputTarget::PrimaryDrawpad): return "PrimaryDrawpad";
+			case static_cast<uint32_t>(TransparentOutputTarget::SelectionUlw): return "SelectionUlw";
+			default: return "Unknown";
+			}
+		}
+		void WriteBoundary(std::ostringstream& stream, const RuntimeMetricsPhaseBoundary& b)
+		{
+			if (!b.exists) { stream << "null"; return; }
+			stream << "{\"authority\": \"" << BoundaryName(b.authority) << "\", \"ownerQpc\": " << b.ownerQpc
+				<< ", \"frameSerial\": " << b.frameSerial << ", \"contactSeenOrdinal\": " << b.contactSeenOrdinal
+				<< ", \"workspaceOrdinal\": " << b.canvas.workspace << ", \"pageOrdinal\": " << b.canvas.page
+				<< ", \"sceneGeneration\": " << b.canvas.sceneGeneration << ", \"rasterGeneration\": " << b.canvas.rasterGeneration
+				<< ", \"outputGeneration\": " << b.canvas.outputGeneration << ", \"rawOutputRevision\": " << b.rawOutputRevision
+				<< ", \"rawOutputTarget\": \"" << OutputName(b.rawOutputTarget) << "\", \"historyRevision\": " << b.historyRevision
+				<< ", \"rasterState\": " << b.rasterState << ", \"viewportX\": " << b.viewportX << ", \"viewportY\": " << b.viewportY
+				<< ", \"viewportScale\": " << b.viewportScale << ", \"width\": " << b.width << ", \"height\": " << b.height
+				<< ", \"pipelineCompositeComplete\": " << (b.pipelineCompositeComplete ? "true" : "false")
+				<< ", \"finalProjectionCovered\": " << (b.finalProjectionCovered ? "true" : "false")
+				<< ", \"fullViewportComposite\": " << (b.fullViewportComposite ? "true" : "false") << ", \"prefix\": ";
+			WritePrefix(stream, b.metrics);
+			stream << ", \"inputPrefix\": {\"downPublished\": " << b.input.downPublished << ", \"downRejected\": " << b.input.downRejected
+				<< ", \"movePublished\": " << b.input.movePublished << ", \"moveContended\": " << b.input.moveContended
+				<< ", \"terminalPublished\": " << b.input.terminalPublished << ", \"recycled\": " << b.input.recycled
+				<< ", \"occupiedSlots\": " << b.input.occupiedSlots << "}, \"terminal\": ";
+			WriteTerminal(stream, b.terminal); stream << "}";
+		}
+
 		bool WriteUtf8File(const wchar_t* path, const std::string& text)
 		{
 			if (!path || path[0] == L'\0' || text.size() > MAXDWORD) return false;
@@ -237,7 +326,7 @@ namespace Inkeys::Drawing::Draw3
 
 	struct RuntimeMetricsSessionImpl
 	{
-		explicit RuntimeMetricsSessionImpl(size_t requested);
+		explicit RuntimeMetricsSessionImpl(size_t requested, size_t externalAuxiliaryBytes);
 		size_t FindContact(const LandingKey& key) const noexcept
 		{
 			size_t slot = HashLandingKey(key) & (contactTable.size() - 1);
@@ -290,6 +379,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		size_t maximumSamples = 0;
+		size_t externalAuxiliaryBytes = 0;
 		int64_t qpcFrequency = 0;
 		RuntimeMetricsSnapshot counters;
 		std::vector<MetricContact> contacts;
@@ -322,18 +412,29 @@ namespace Inkeys::Drawing::Draw3
 		uint64_t maximumIdlePresentGrowth = 0;
 	};
 
-	RuntimeMetricsSessionImpl::RuntimeMetricsSessionImpl(size_t requested)
+	static_assert(kRuntimeMetricByteBudget > sizeof(RuntimeMetricsSessionImpl) + kAllocationSlack);
+	static_assert(sizeof(RuntimeMetricsFrameSample) <= 384);
+	static_assert(sizeof(RuntimeMetricsPhaseProgress) <= 2048);
+	static_assert(std::is_trivially_copyable_v<RuntimeMetricsPhaseProgress>);
+
+	size_t RuntimeMetricsSession::MaximumSamplesForBudget(size_t externalAuxiliaryBytes) noexcept
 	{
+		constexpr size_t fixedBytes = sizeof(RuntimeMetricsSessionImpl) + kAllocationSlack;
 		constexpr size_t bytesPerSample = sizeof(MetricContact) + sizeof(LandingSample) +
 			sizeof(RuntimeMetricsFrameSample) + sizeof(PresentSample) + 3 * sizeof(double) +
-			4 * sizeof(size_t);
-		// 哈希表向二次幂上取整但负载始终 <= 1/2；留出固定对象和分配器余量。
-		constexpr size_t budgetCapacity =
-			(kRuntimeMetricByteBudget - sizeof(RuntimeMetricsSessionImpl) - kAllocationSlack) /
-			bytesPerSample;
-		static_assert(budgetCapacity > 0, "metrics fixed state must fit the byte budget");
-		maximumSamples = std::clamp(requested, size_t{ 1 },
-			std::min(kMaximumRuntimeMetricSamples, budgetCapacity));
+			4 * sizeof(size_t); // 二次幂表至多占四槽/项，负载始终 <= 1/2。
+		if (externalAuxiliaryBytes > kRuntimeMetricByteBudget - fixedBytes) return 0;
+		return std::min(kMaximumRuntimeMetricSamples,
+			(kRuntimeMetricByteBudget - fixedBytes - externalAuxiliaryBytes) / bytesPerSample);
+	}
+
+	RuntimeMetricsSessionImpl::RuntimeMetricsSessionImpl(size_t requested, size_t auxiliaryBytes)
+		: externalAuxiliaryBytes(auxiliaryBytes)
+	{
+		// Session 对象和全部 reserve 之前已用实际 sizeof 扣除共同外部载荷。
+		const size_t budgetCapacity = RuntimeMetricsSession::MaximumSamplesForBudget(auxiliaryBytes);
+		if (budgetCapacity == 0) throw std::length_error("Draw3 metrics external storage exceeds budget");
+		maximumSamples = std::clamp(requested, size_t{ 1 }, budgetCapacity);
 		size_t tableSlots = 1;
 		while (tableSlots < maximumSamples * 2) tableSlots *= 2;
 		contacts.reserve(maximumSamples);
@@ -353,15 +454,20 @@ namespace Inkeys::Drawing::Draw3
 			presents.capacity() * sizeof(PresentSample) +
 			(frameIntervalsMs.capacity() + activeFrameWallMs.capacity() +
 				activePresentWallMs.capacity()) * sizeof(double);
-		if (counters.allocatedBytes > kRuntimeMetricByteBudget)
+		if (counters.allocatedBytes > kRuntimeMetricByteBudget - externalAuxiliaryBytes)
 			throw std::length_error("Draw3 metrics storage exceeds fixed byte budget");
 		LARGE_INTEGER frequency = {};
 		if (QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0)
 			qpcFrequency = frequency.QuadPart;
 	}
 
-	RuntimeMetricsSession::RuntimeMetricsSession(size_t maximumSamples)
-		: impl_(std::make_unique<RuntimeMetricsSessionImpl>(maximumSamples))
+	RuntimeMetricsSession::RuntimeMetricsSession(size_t maximumSamples, size_t externalAuxiliaryBytes)
+		: impl_([&]
+			{
+				if (MaximumSamplesForBudget(externalAuxiliaryBytes) == 0)
+					throw std::length_error("Draw3 metrics storage has no budget before allocation");
+				return std::make_unique<RuntimeMetricsSessionImpl>(maximumSamples, externalAuxiliaryBytes);
+			}())
 	{
 	}
 	RuntimeMetricsSession::~RuntimeMetricsSession() = default;
@@ -575,6 +681,17 @@ namespace Inkeys::Drawing::Draw3
 			++impl_->counters.invalid;
 			return;
 		}
+		bool validCosts = !sample.costs.cpuAvailable || (ValidDuration(sample.costs.threadCpuMs) && ValidDuration(sample.costs.threadSpanWallMs));
+		validCosts &= (sample.priorIngressAvailableMask & 1u) == 0 || ValidDuration(sample.priorIngressWallMs);
+		validCosts &= (sample.priorIngressAvailableMask & 2u) == 0 || ValidDuration(sample.priorIngressThreadCpuMs);
+		for (size_t i = 0; i < 4; ++i)
+		{
+			validCosts &= (sample.costs.stageAvailableMask & (1u << i)) == 0 || ValidDuration(sample.costs.stageWallMs[i]);
+			validCosts &= (sample.costs.stageCpuAvailableMask & (1u << i)) == 0 || ValidDuration(sample.costs.stageThreadCpuMs[i]);
+			validCosts &= (sample.laser.stageAvailableMask & (1u << i)) == 0 || ValidDuration(sample.laser.stageWallMs[i]);
+			validCosts &= (sample.laser.stageCpuAvailableMask & (1u << i)) == 0 || ValidDuration(sample.laser.stageThreadCpuMs[i]);
+		}
+		if (!validCosts) { ++impl_->counters.framesInvalid; ++impl_->counters.invalid; return; }
 		if (impl_->frames.size() == impl_->maximumSamples) { ++impl_->counters.framesDropped; return; }
 		impl_->frames.push_back(sample);
 		++impl_->counters.framesRetained;
@@ -582,7 +699,12 @@ namespace Inkeys::Drawing::Draw3
 
 	RuntimeMetricsSnapshot RuntimeMetricsSession::Snapshot() const noexcept
 	{
-		return impl_->counters;
+		auto snapshot = impl_->counters;
+		snapshot.presentRetained = impl_->presents.size();
+		snapshot.presentDropped = impl_->presentDropped;
+		snapshot.presentInvalid = impl_->presentInvalid;
+		snapshot.durationDropped = impl_->durationDropped;
+		return snapshot;
 	}
 
 	void RuntimeMetricsSession::RecordActiveFrame(double frameStartMs, double workMs,
@@ -662,7 +784,63 @@ namespace Inkeys::Drawing::Draw3
 
 	bool RuntimeMetricsSession::WriteJson(const wchar_t* outputPath,
 		const ContactInputDiagnosticsSnapshot& inputDiagnostics) const
+	{ return WriteJsonImpl(outputPath, inputDiagnostics, nullptr); }
+
+	bool RuntimeMetricsSession::WriteJson(const wchar_t* outputPath,
+		const ContactInputDiagnosticsSnapshot& inputDiagnostics, const RuntimeMetricsPhaseBoundaries& phases) const
+	{ return WriteJsonImpl(outputPath, inputDiagnostics, &phases); }
+
+	bool RuntimeMetricsSession::WriteJsonImpl(const wchar_t* outputPath,
+		const ContactInputDiagnosticsSnapshot& inputDiagnostics, const RuntimeMetricsPhaseBoundaries* phases) const
 	{
+		// 拒绝损坏的存在值；缺界则保留 raw 和 incomplete/null，不补伪边界。
+		const auto validBoundary = [&](const RuntimeMetricsPhaseBoundary& b)
+		{
+			return !b.exists || (b.ownerQpc > 0 && b.frameSerial != 0 && b.frameSerial <= impl_->counters.frameSerial &&
+				b.metrics.frameSerial == b.frameSerial && b.contactSeenOrdinal == b.metrics.contactSeen &&
+				b.contactSeenOrdinal <= impl_->counters.contactSeen && b.width > 0 && b.height > 0 &&
+				std::isfinite(b.viewportX) && std::isfinite(b.viewportY) && b.viewportScale == 1.0f &&
+				b.pipelineCompositeComplete && b.finalProjectionCovered && std::string(OutputName(b.rawOutputTarget)) != "Unknown");
+		};
+		if (phases && (!validBoundary(phases->coldEnd) || !validBoundary(phases->warmEnd) || !validBoundary(phases->measuredEnd))) return false;
+		const auto validTerminalCut = [](const RuntimeMetricsPhaseBoundary& b, uint64_t ordinal)
+		{
+			if (!b.exists) return true;
+			const bool laser = b.authority == RuntimeMetricsBoundaryAuthority::LaserLifecycleComplete;
+			return (laser || b.authority == RuntimeMetricsBoundaryAuthority::StoredHistoryChain) &&
+				b.contactSeenOrdinal == ordinal && b.canvas.workspace != 0 && b.canvas.page != 0 && b.canvas.sceneGeneration != 0 &&
+				b.canvas.rasterGeneration != 0 && b.canvas.outputGeneration != 0 && b.terminal.upConsumed == ordinal &&
+				!b.terminal.activeRuntimes && !b.terminal.awaitingReconnect && !b.terminal.pendingFinal &&
+				(laser ? b.terminal.laserLifecycleCompleted == ordinal && b.terminal.excludedLaser == ordinal :
+					b.terminal.cpuStoredCompleted == ordinal && b.terminal.authoritativeFinalPresented == ordinal && b.metrics.confirmed == ordinal);
+		};
+		if (phases && (!validTerminalCut(phases->warmEnd, 16) || !validTerminalCut(phases->measuredEnd, 216) ||
+			(phases->coldEnd.exists && (phases->coldEnd.authority != RuntimeMetricsBoundaryAuthority::StartupClearedSurface ||
+				phases->coldEnd.contactSeenOrdinal != 0 || !phases->coldEnd.fullViewportComposite)))) return false;
+		const bool cold = phases && phases->enabled && phases->coldEnd.exists &&
+			phases->coldEnd.authority == RuntimeMetricsBoundaryAuthority::StartupClearedSurface &&
+			phases->coldEnd.contactSeenOrdinal == 0 && phases->coldEnd.fullViewportComposite;
+		const bool warm = cold && phases->warmEnd.exists && phases->warmEnd.contactSeenOrdinal == 16 &&
+			phases->warmEnd.frameSerial > phases->coldEnd.frameSerial && phases->warmEnd.ownerQpc >= phases->coldEnd.ownerQpc;
+		const bool measured = warm && phases->measuredEnd.exists && phases->measuredEnd.contactSeenOrdinal == 216 &&
+			phases->measuredEnd.frameSerial > phases->warmEnd.frameSerial && phases->measuredEnd.ownerQpc >= phases->warmEnd.ownerQpc;
+		const bool phaseComplete = measured && !phases->incomplete && phases->failureFlags == 0 &&
+			phases->runPrewarm.exists && phases->runPrewarm.completed;
+		const auto frameGroup = [&](uint64_t serial) -> size_t
+		{
+			if (!cold) return 4;
+			if (serial <= phases->coldEnd.frameSerial) return 0;
+			if (!warm || serial <= phases->warmEnd.frameSerial) return 1;
+			if (!measured || serial <= phases->measuredEnd.frameSerial) return 2;
+			return 3;
+		};
+		const auto contactGroup = [&](uint64_t ordinal) -> const char*
+		{
+			if (!phases || !phases->enabled) return "allRun";
+			if (ordinal <= 16) return warm ? "warmup" : "warmTruncated";
+			if (ordinal <= 216 && warm) return measured ? "measured" : "measuredTruncated";
+			return "unclassified";
+		};
 		// caller 必须已停止唯一 owner；排序、格式化与文件 I/O 只在离线封口执行。
 		const std::vector<double> latencies = SortedLandingLatencies(impl_->landings);
 		std::ostringstream stream;
@@ -677,7 +855,19 @@ namespace Inkeys::Drawing::Draw3
 		stream << "  \"capacity\": {\"requestedSamples\": " << impl_->counters.requestedSamples
 			<< ", \"effectiveSamples\": " << impl_->maximumSamples << ", \"allocatedBytes\": "
 			<< impl_->counters.allocatedBytes << ", \"byteBudget\": " << kRuntimeMetricByteBudget
-			<< ", \"pendingCapacity\": " << kPendingCapacity << "},\n";
+			<< ", \"pendingCapacity\": " << kPendingCapacity
+			<< ", \"externalAuxiliaryBytes\": " << impl_->externalAuxiliaryBytes
+			<< ", \"layout\": {\"implBytes\": " << sizeof(RuntimeMetricsSessionImpl)
+			<< ", \"contactBytes\": " << sizeof(MetricContact) << ", \"contactCapacity\": " << impl_->contacts.capacity()
+			<< ", \"hashSlotBytes\": " << sizeof(size_t) << ", \"hashCapacity\": " << impl_->contactTable.capacity()
+			<< ", \"landingBytes\": " << sizeof(LandingSample) << ", \"landingCapacity\": " << impl_->landings.capacity()
+			<< ", \"frameBytes\": " << sizeof(RuntimeMetricsFrameSample) << ", \"frameCapacity\": " << impl_->frames.capacity()
+			<< ", \"presentBytes\": " << sizeof(PresentSample) << ", \"presentCapacity\": " << impl_->presents.capacity()
+			<< ", \"durationBytes\": " << sizeof(double) << ", \"durationCapacity\": "
+			<< impl_->frameIntervalsMs.capacity() + impl_->activeFrameWallMs.capacity() + impl_->activePresentWallMs.capacity()
+			<< ", \"pendingBytes\": " << sizeof(PendingLanding) << ", \"pendingCapacity\": " << kPendingCapacity
+			<< ", \"phaseProgressBytes\": " << sizeof(RuntimeMetricsPhaseProgress)
+			<< ", \"inputEventCapacity\": 0}},\n";
 		stream << "  \"coverage\": {\"contactSeen\": " << impl_->counters.contactSeen
 			<< ", \"contactRetained\": " << impl_->counters.contactRetained
 			<< ", \"contactDropped\": " << impl_->counters.contactDropped
@@ -723,6 +913,146 @@ namespace Inkeys::Drawing::Draw3
 			<< ", \"recycled\": " << inputDiagnostics.recycled
 			<< ", \"controlWakes\": " << inputDiagnostics.controlWakes
 			<< ", \"activeWaits\": " << inputDiagnostics.activeWaits << "},\n";
+
+		stream << "  \"phaseBoundaries\": ";
+		if (!phases) stream << "null";
+		else
+		{
+			stream << "{\"enabled\": " << (phases->enabled ? "true" : "false") << ", \"controllerPayloadBytes\": " << phases->controllerPayloadBytes
+				<< ", \"incomplete\": " << (phaseComplete ? "false" : "true")
+				<< ", \"failureFlags\": " << phases->failureFlags << ", \"coldEnd\": "; WriteBoundary(stream, phases->coldEnd);
+			stream << ", \"warmEnd\": "; WriteBoundary(stream, phases->warmEnd);
+			stream << ", \"measuredEnd\": "; WriteBoundary(stream, phases->measuredEnd);
+			stream << ", \"runTerminal\": "; WriteTerminal(stream, phases->runTerminal);
+			stream << ", \"runInputBaseline\": {\"downPublished\": " << phases->runInputBaseline.downPublished
+				<< ", \"downRejected\": " << phases->runInputBaseline.downRejected << ", \"movePublished\": " << phases->runInputBaseline.movePublished
+				<< ", \"terminalPublished\": " << phases->runInputBaseline.terminalPublished << "}, \"runPrewarm\": ";
+			const auto& p = phases->runPrewarm;
+			if (!p.exists) stream << "null";
+			else
+			{
+				stream << "{\"completed\": " << (p.completed ? "true" : "false") << ", \"ownerStartQpc\": " << p.ownerStartQpc
+					<< ", \"ownerEndQpc\": " << p.ownerEndQpc << ", \"wallMs\": "; WriteOptional(stream, p.wallAvailable, p.wallMs);
+				stream << ", \"costs\": "; WriteCosts(stream, p.costs);
+				stream << ", \"shaderSpans\": [";
+				for (size_t i = 0; i < 2; ++i)
+				{
+					if (i) stream << ", ";
+					stream << "{\"name\": \"" << (i == 0 ? "laser" : "shape") << "\", \"wallMs\": ";
+					WriteOptional(stream, (p.shaderAvailableMask & (1u << i)) != 0, p.shaderWallMs[i]);
+					stream << ", \"threadCpuMs\": "; WriteOptional(stream, (p.shaderCpuAvailableMask & (1u << i)) != 0, p.shaderThreadCpuMs[i]);
+					stream << ", \"gpuMs\": null}";
+				}
+				stream << "]}";
+			}
+			stream << "}";
+		}
+		stream << ",\n  \"phaseSummaries\": ";
+		if (!phases) stream << "null";
+		else
+		{
+			stream << "[";
+			for (size_t group = 0; group < 5; ++group)
+			{
+				if (group) stream << ", ";
+				const char* name = group == 0 ? "cold" : group == 1 ? (warm ? "warmup" : "warmTruncated") :
+					group == 2 ? (measured ? "measured" : "measuredTruncated") : group == 3 ? "postMeasured" : "unclassified";
+				std::vector<double> landingValues, walls, cpus, presents;
+				std::array<std::vector<double>, 4> stageWalls, stageCpus, laserWalls, laserCpus;
+				uint64_t retainedContacts = 0, noPresent = 0, failed = 0, success = 0, rasterFailed = 0, ge50 = 0;
+				uint64_t resetCalls = 0, updateCalls = 0, predictionCalls = 0, laserExcluded = 0;
+				uint64_t laserRequests = 0, bakeCalls = 0, bakeFailures = 0;
+				const auto belongs = [&](uint64_t ordinal)
+				{ return (group == 1 && ordinal <= 16) || (group == 2 && warm && ordinal > 16 && ordinal <= 216) ||
+					(group == 4 && ((ordinal > 16 && !warm) || ordinal > 216)); };
+				for (const auto& contact : impl_->contacts) if (belongs(contact.ordinal))
+				{ ++retainedContacts; if (contact.tool == static_cast<uint32_t>(DrawingTool::Laser)) ++laserExcluded; }
+				for (const auto& landing : impl_->landings) if (belongs(landing.ordinal)) landingValues.push_back(landing.latencyMs);
+				for (const auto& frame : impl_->frames) if (frameGroup(frame.frameSerial) == group)
+				{
+					walls.push_back(frame.wallMs); if (frame.costs.cpuAvailable) cpus.push_back(frame.costs.threadCpuMs);
+					noPresent += !frame.presentAttempted; failed += frame.presentAttempted && !frame.presentSucceeded;
+					success += frame.presentSucceeded; ge50 += frame.wallMs >= 50.0;
+					rasterFailed += (frame.reasonFlags & static_cast<uint32_t>(RuntimeMetricsFrameReason::RasterFailed)) != 0;
+					resetCalls += frame.costs.modelResetCalls; updateCalls += frame.costs.modelUpdateCalls; predictionCalls += frame.costs.predictionCalls;
+					laserRequests += frame.laser.particleRequestedCount; bakeCalls += frame.laser.bakeCalls; bakeFailures += frame.laser.bakeFailures;
+					for (size_t i = 0; i < 4; ++i)
+					{
+						if (frame.costs.stageAvailableMask & (1u << i)) stageWalls[i].push_back(frame.costs.stageWallMs[i]);
+						if (frame.costs.stageCpuAvailableMask & (1u << i)) stageCpus[i].push_back(frame.costs.stageThreadCpuMs[i]);
+						if (frame.laser.stageAvailableMask & (1u << i)) laserWalls[i].push_back(frame.laser.stageWallMs[i]);
+						if (frame.laser.stageCpuAvailableMask & (1u << i)) laserCpus[i].push_back(frame.laser.stageThreadCpuMs[i]);
+					}
+				}
+				for (const auto& present : impl_->presents) if (frameGroup(present.frameSerial) == group) presents.push_back(present.wallMs);
+				const uint64_t seen = group == 1 ? std::min(uint64_t{16}, impl_->counters.contactSeen) : group == 2 && warm ?
+					std::min(uint64_t{200}, impl_->counters.contactSeen > 16 ? impl_->counters.contactSeen - 16 : 0) : group == 4 ?
+					(!warm ? (impl_->counters.contactSeen > 16 ? impl_->counters.contactSeen - 16 : 0) :
+						impl_->counters.contactSeen > 216 ? impl_->counters.contactSeen - 216 : 0) : 0;
+				const RuntimeMetricsSnapshot begin = group == 1 && cold ? phases->coldEnd.metrics : group == 2 && warm ? phases->warmEnd.metrics :
+					group == 3 && measured ? phases->measuredEnd.metrics : RuntimeMetricsSnapshot{};
+				const bool prefixAvailable = group == 0 ? cold : group == 1 ? cold : group == 2 ? warm : group == 3 ? measured : !cold;
+				const RuntimeMetricsSnapshot end = group == 0 && cold ? phases->coldEnd.metrics : group == 1 && warm ? phases->warmEnd.metrics :
+					group == 2 && measured ? phases->measuredEnd.metrics : Snapshot();
+				const auto difference = [](uint64_t a, uint64_t b) { return a >= b ? a - b : uint64_t{0}; };
+				const auto prefixDifference = [&](uint64_t a, uint64_t b)
+				{ return prefixAvailable ? std::to_string(difference(a, b)) : std::string("null"); };
+				stream << "{\"phase\": \"" << name << "\", \"available\": " << ((group == 0 ? cold : group == 1 ? phases->enabled : group == 2 ? warm : group == 3 ? measured : true) ? "true" : "false")
+					<< ", \"complete\": " << ((group == 0 && cold) || (group == 1 && warm) || (group == 2 && phaseComplete) ? "true" : "false")
+					<< ", \"plannedContacts\": " << (group == 1 ? 16 : group == 2 ? 200 : 0)
+					<< ", \"contactSeen\": " << seen << ", \"contactRetained\": " << retainedContacts
+					<< ", \"contactDropped\": " << difference(seen, retainedContacts) << ", \"excludedLaser\": " << laserExcluded
+					<< ", \"framesRetained\": " << walls.size() << ", \"framesSeenPrefixDelta\": " << prefixDifference(end.framesSeen, begin.framesSeen)
+					<< ", \"framesDroppedPrefixDelta\": " << prefixDifference(end.framesDropped, begin.framesDropped)
+					<< ", \"framesInvalidPrefixDelta\": " << prefixDifference(end.framesInvalid, begin.framesInvalid)
+					<< ", \"presentDroppedPrefixDelta\": " << prefixDifference(end.presentDropped, begin.presentDropped)
+					<< ", \"presentInvalidPrefixDelta\": " << prefixDifference(end.presentInvalid, begin.presentInvalid)
+					<< ", \"durationDroppedPrefixDelta\": " << prefixDifference(end.durationDropped, begin.durationDropped)
+					<< ", \"invalidPrefixDelta\": " << prefixDifference(end.invalid, begin.invalid)
+					<< ", \"noPresent\": " << noPresent << ", \"presentSucceeded\": " << success << ", \"presentFailed\": " << failed
+					<< ", \"rasterFailed\": " << rasterFailed << ", \"frameWallGe50Ms\": " << ge50
+					<< ", \"modelResetCalls\": " << resetCalls << ", \"modelUpdateCalls\": " << updateCalls << ", \"predictionCalls\": " << predictionCalls
+					<< ", \"laserParticleRequestedCount\": " << laserRequests << ", \"laserBakeCalls\": " << bakeCalls << ", \"laserBakeFailures\": " << bakeFailures;
+				const auto distribution = [&](const char* label, std::vector<double>& values)
+				{ std::sort(values.begin(), values.end()); stream << ", \"" << label << "\": {"; WriteDistribution(stream, values); stream << "}"; };
+				distribution("downLatency", landingValues); distribution("frameWall", walls); distribution("threadCpu", cpus); distribution("presentWall", presents);
+				const auto terminalBegin = group == 1 && cold ? phases->coldEnd.terminal : group == 2 && warm ? phases->warmEnd.terminal :
+					group == 3 && measured ? phases->measuredEnd.terminal : RuntimeMetricsTerminalFacts{};
+				const auto terminalEnd = group == 0 && cold ? phases->coldEnd.terminal : group == 1 && warm ? phases->warmEnd.terminal :
+					group == 2 && measured ? phases->measuredEnd.terminal : phases->runTerminal;
+				stream << ", \"terminalPrefixDelta\": {\"upConsumed\": " << prefixDifference(terminalEnd.upConsumed, terminalBegin.upConsumed)
+					<< ", \"cpuStoredCompleted\": " << prefixDifference(terminalEnd.cpuStoredCompleted, terminalBegin.cpuStoredCompleted)
+					<< ", \"authoritativeFinalPresented\": " << prefixDifference(terminalEnd.authoritativeFinalPresented, terminalBegin.authoritativeFinalPresented)
+					<< ", \"laserLifecycleCompleted\": " << prefixDifference(terminalEnd.laserLifecycleCompleted, terminalBegin.laserLifecycleCompleted)
+					<< ", \"cancelled\": " << prefixDifference(terminalEnd.cancelled, terminalBegin.cancelled)
+					<< ", \"rejected\": " << prefixDifference(terminalEnd.rejected, terminalBegin.rejected)
+					<< ", \"noVisibleProjection\": " << prefixDifference(terminalEnd.noVisibleProjection, terminalBegin.noVisibleProjection) << "}";
+				stream << ", \"inclusiveCostStages\": [";
+				for (size_t i = 0; i < 4; ++i)
+				{
+					if (i) stream << ", "; stream << "{\"stage\": " << i;
+					distribution("wall", stageWalls[i]); distribution("threadCpu", stageCpus[i]); stream << "}";
+				}
+				stream << "], \"laserCostStages\": [";
+				for (size_t i = 0; i < 4; ++i)
+				{
+					if (i) stream << ", "; stream << "{\"stage\": " << i;
+					distribution("wall", laserWalls[i]); distribution("threadCpu", laserCpus[i]); stream << "}";
+				}
+				stream << "], \"activeFrameIntervals\": null, \"moveLatency\": null, \"upFinalStableLatency\": null}";
+			}
+			stream << "]";
+		}
+		stream << ",\n  \"contacts\": [";
+		constexpr const char* statuses[] = { "Registered", "Pending", "Confirmed", "Unpresented", "Invalid", "Legacy" };
+		for (size_t i = 0; i < impl_->contacts.size(); ++i)
+		{
+			if (i) stream << ", "; const auto& c = impl_->contacts[i];
+			stream << "{\"contactOrdinal\": " << c.ordinal << ", \"generation\": " << c.key.generation << ", \"device\": \"" << DeviceName(c.deviceType)
+				<< "\", \"tool\": \"" << ToolName(c.tool) << "\", \"downQpc\": " << c.downQpc << ", \"status\": \"" << statuses[static_cast<size_t>(c.status)]
+				<< "\", \"retained\": true, \"phase\": \"" << contactGroup(c.ordinal) << "\"}";
+		}
+		stream << "],\n";
 
 		// 分群和排序仅离线执行；工具值来自真实产品符号，未知值单列。
 		std::map<std::pair<InputDeviceType, uint32_t>, std::vector<double>> populations;
@@ -776,7 +1106,56 @@ namespace Inkeys::Drawing::Draw3
 				<< ", \"reasonFlags\": " << frame.reasonFlags << ", \"physicalBefore\": " << frame.physicalBefore
 				<< ", \"physicalAfter\": " << frame.physicalAfter << ", \"terminalCount\": " << frame.terminalCount
 				<< ", \"presentAttempted\": " << (frame.presentAttempted ? "true" : "false")
-				<< ", \"presentSucceeded\": " << (frame.presentSucceeded ? "true" : "false") << "}";
+				<< ", \"presentSucceeded\": " << (frame.presentSucceeded ? "true" : "false") << ", \"presentReturnQpc\": ";
+			if (frame.presentReturnQpc > 0) stream << frame.presentReturnQpc; else stream << "null";
+			stream << ", \"costs\": "; WriteCosts(stream, frame.costs);
+			stream << ", \"priorIngressWallMs\": "; WriteOptional(stream, (frame.priorIngressAvailableMask & 1u) != 0, frame.priorIngressWallMs);
+			stream << ", \"priorIngressThreadCpuMs\": "; WriteOptional(stream, (frame.priorIngressAvailableMask & 2u) != 0, frame.priorIngressThreadCpuMs);
+			stream << ", \"stagesIncludePriorIngress\": true, \"frameCpuExcludesPriorIngress\": true";
+			stream << ", \"laser\": ";
+			if (!frame.laser.collected) stream << "null";
+			else
+			{
+				const auto& l = frame.laser;
+				const char* phaseName = "Unknown";
+				switch (static_cast<LaserTrailPhase>(l.trailPhase))
+				{
+				case LaserTrailPhase::Inactive: phaseName = "Inactive"; break;
+				case LaserTrailPhase::Active: phaseName = "Active"; break;
+				case LaserTrailPhase::Hold: phaseName = "Hold"; break;
+				case LaserTrailPhase::Fade: phaseName = "Fade"; break;
+				}
+				const char* coverageName = "Unknown";
+				switch (static_cast<LaserCoverageMode>(l.coverageMode))
+				{
+				case LaserCoverageMode::Inactive: coverageName = "Inactive"; break;
+				case LaserCoverageMode::Incremental: coverageName = "Incremental"; break;
+				case LaserCoverageMode::FullRedraw: coverageName = "FullRedraw"; break;
+				}
+				stream << "{\"phase\": \"" << phaseName << "\", \"coverage\": \"" << coverageName << "\", \"activeContactCount\": " << l.activeContactCount
+					<< ", \"lastAllUpQpc\": "; if (l.lastAllUpQpc > 0) stream << l.lastAllUpQpc; else stream << "null";
+				stream << ", \"holdSeconds\": "; WriteOptional(stream, true, l.effectiveHoldSeconds);
+				stream << ", \"fadeSeconds\": "; WriteOptional(stream, true, l.fadeSeconds);
+				stream << ", \"opacity\": "; WriteOptional(stream, std::isfinite(l.opacity), l.opacity);
+				stream << ", \"layerCount\": " << l.layerCount
+					<< ", \"particlesEnabled\": " << (l.particlesEnabled ? "true" : "false")
+					<< ", \"particlesAvailable\": " << (l.particlesAvailable ? "true" : "false")
+					<< ", \"particlesActive\": " << (l.particlesActive ? "true" : "false")
+					<< ", \"particleRequestedCount\": " << l.particleRequestedCount
+					<< ", \"requestedOnly\": " << (l.requestedOnly ? "true" : "false")
+					<< ", \"emittedAvailable\": false, \"gpuEmittedCount\": null"
+					<< ", \"incrementalCalls\": " << l.incrementalCalls << ", \"bakeCalls\": " << l.bakeCalls << ", \"bakeFailures\": " << l.bakeFailures
+					<< ", \"particleStepCalls\": " << l.particleStepCalls << ", \"particleDrawCalls\": " << l.particleDrawCalls
+					<< ", \"inclusiveStages\": [";
+				for (size_t i = 0; i < 4; ++i)
+				{
+					if (i) stream << ", "; stream << "{\"stage\": " << i << ", \"wallMs\": ";
+					WriteOptional(stream, (l.stageAvailableMask & (1u << i)) != 0, l.stageWallMs[i]); stream << ", \"threadCpuMs\": ";
+					WriteOptional(stream, (l.stageCpuAvailableMask & (1u << i)) != 0, l.stageThreadCpuMs[i]); stream << "}";
+				}
+				stream << "]}";
+			}
+			stream << "}";
 			stream << (index + 1 == impl_->frames.size() ? "\n" : ",\n");
 		}
 		stream << "  ],\n  \"presents\": [\n";

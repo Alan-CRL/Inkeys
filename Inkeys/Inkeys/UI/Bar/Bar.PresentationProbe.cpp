@@ -72,6 +72,15 @@ namespace Inkeys::UI::Bar
 			out[2] = std::bit_cast<std::uint32_t>(right + padding); out[3] = std::bit_cast<std::uint32_t>(bottom + padding);
 			return SvgRectValid(out);
 		}
+		bool SameSvgBitmapProof(const Ui3SvgBitmapProof& left, const Ui3SvgBitmapProof& right) noexcept
+		{
+			return left.tag == right.tag && left.flags == right.flags && left.colorMask == right.colorMask
+				&& left.color1Rgb == right.color1Rgb && left.color2Rgb == right.color2Rgb
+				&& left.pixelWidth == right.pixelWidth && left.pixelHeight == right.pixelHeight && left.dpi == right.dpi
+				&& left.valueRevision == right.valueRevision && left.epoch == right.epoch && left.surfaceSerial == right.surfaceSerial
+				&& left.requestedWBits == right.requestedWBits && left.requestedHBits == right.requestedHBits
+				&& left.ready == right.ready && left.semanticKnown == right.semanticKnown;
+		}
 	}
 
 	Ui3SvgScopeState* CurrentUi3SvgScope() noexcept { return svgScope; }
@@ -209,7 +218,7 @@ namespace Inkeys::UI::Bar
 		{
 			auto& slot = slots_[i]; slot.required = slot.expectedVisible = slot.semanticSettled = slot.submitted = slot.overwritten = false;
 			slot.draw = {}; slot.expected = {};
-			slot.clearedOld = false;
+			slot.clearedOld = slot.writtenBoundsKnown = slot.overwriteBoundsKnown = slot.mainLogoInkDeclared = slot.mainLogoInkApplied = slot.mainLogoComposited = false;
 		}
 	}
 	void Ui3SvgProbe::Require(const void* key, const Ui3SvgObjectObservation& object, const Ui3SvgBitmapProof& expected,
@@ -231,7 +240,10 @@ namespace Inkeys::UI::Bar
 		{
 			Increment(invalidationSerial_);
 			for (std::size_t i = 0; i < slotCount_; ++i)
-				{ slots_[i].oldBoundsKnown = slots_[i].possiblyVisible = slots_[i].hiddenLineageUnknown = false; }
+			{
+				slots_[i].oldBoundsKnown = slots_[i].possiblyVisible = slots_[i].hiddenLineageUnknown = false;
+				slots_[i].lastVisibleProofValid = false;
+			}
 		}
 		previousSurface_ = target.surfaceSerial; previousEpoch_ = target.epoch;
 		target_ = target; context_ = context; drawing_ = context != nullptr;
@@ -285,13 +297,51 @@ namespace Inkeys::UI::Bar
 		fullBackingCleared_ = false;
 		Increment(mutationSerial_);
 		for (std::size_t i = 0; i < slotCount_; ++i)
+		{
 			if (slots_[i].required) { slots_[i].overwritten = true; slots_[i].hiddenLineageUnknown = true; }
+			slots_[i].lastVisibleProofValid = false;
+		}
+	}
+	void Ui3SvgProbe::ObserveNonSvgWrite(const void* context,
+		const std::uint32_t rect[4], const std::uint32_t transform[6]) noexcept
+	{
+		if (!drawing_ || context != context_) return;
+		std::uint32_t written[4]{};
+		if (!clipKnown_ || clipDepth_ == 0 || !SvgMappedRect(rect, transform, written, 2.0f))
+			{ ObserveUnknownWrite(context); return; }
+		Increment(mutationSerial_);
+		SvgRectIntersect(written, clips_[clipDepth_ - 1].data(), written);
+		// 纯几何/CLIP文字不读取旧SVG；仅实际相交的已绘制可见资源失去证明，不恢复未知谱系。
+		for (std::size_t i = 0; i < slotCount_; ++i)
+		{
+			auto& slot = slots_[i]; if (!slot.required || !slot.submitted) continue;
+			std::uint32_t overlap[4]{}; SvgRectIntersect(written, slot.draw.expectedVisibleBoundsBits, overlap);
+			if (!SvgRectEmpty(overlap))
+			{
+				slot.overwritten = true;
+				slot.overwriteBoundsKnown = true;
+				std::copy_n(written, 4, slot.overwriteBounds);
+			}
+		}
+	}
+	void Ui3SvgProbe::DeclareMainLogoInkComposition(const void* context,
+		const void* baseObject, const void* inkObject) noexcept
+	{
+		if (!drawing_ || context != context_) return;
+		auto* base = Find(0x10000u); auto* ink = Find(0x10001u);
+		// 只接受实际主logo底图已提交之后、着色层尚未提交之前的本帧明确声明。
+		if (base && ink && base->object == baseObject && ink->object == inkObject
+			&& base->required && ink->required && base->expectedVisible && ink->expectedVisible
+			&& base->submitted && !base->overwritten && !ink->submitted
+			&& base->draw.frameAttemptSerial == target_.frameAttemptSerial) ink->mainLogoInkDeclared = true;
 	}
 	void Ui3SvgProbe::ObserveDraw(const void* context, const Ui3SvgObjectObservation& object, Ui3SvgDrawObservation draw) noexcept
 	{
 		if (!drawing_ || context != context_) return;
 		auto* slot = Find(object.tag);
 		if (!slot || !slot->required) { ObserveUnknownWrite(context); return; }
+		const bool declaredInk = slot->mainLogoInkDeclared && !slot->submitted;
+		slot->mainLogoInkDeclared = false; slot->mainLogoInkApplied = declaredInk;
 		Increment(mutationSerial_); slot->submitted = true; slot->overwritten = false;
 		draw.expectedVisible = slot->expectedVisible; draw.windowPresentationAlpha = target_.windowAlpha;
 		draw.frameAttemptSerial = target_.frameAttemptSerial; draw.bufferMutationSerial = mutationSerial_;
@@ -313,12 +363,23 @@ namespace Inkeys::UI::Bar
 		const bool writeKnown = clipKnown_ && clipDepth_ != 0 && SvgMappedRect(draw.destBits, draw.transformBits, written, 2.0f);
 		if (writeKnown) SvgRectIntersect(written, clips_[clipDepth_ - 1].data(), written);
 		else { ObserveUnknownWrite(context); draw.bufferMutationSerial = mutationSerial_; }
+		slot->writtenBoundsKnown = writeKnown;
+		if (writeKnown) std::copy_n(written, 4, slot->writtenBounds);
 		for (std::size_t i = 0; i < slotCount_; ++i)
 		{
 			auto& previous = slots_[i]; if (&previous == slot || !previous.required || !previous.submitted) continue;
 			std::uint32_t overlap[4]{};
 			if (writeKnown) SvgRectIntersect(written, previous.draw.expectedVisibleBoundsBits, overlap);
-			if (!writeKnown || !SvgRectEmpty(overlap)) previous.overwritten = true;
+			const bool declaredLogo = writeKnown && previous.tag == 0x10000u && slot->tag == 0x10001u
+				&& declaredInk && std::equal(draw.destBits, draw.destBits + 4, previous.draw.destBits)
+				&& std::equal(draw.transformBits, draw.transformBits + 6, previous.draw.transformBits);
+			if (declaredLogo) previous.mainLogoComposited = true;
+			else if (!writeKnown || !SvgRectEmpty(overlap))
+			{
+				previous.overwritten = true;
+				previous.overwriteBoundsKnown = writeKnown;
+				if (writeKnown) std::copy_n(written, 4, previous.overwriteBounds);
+			}
 		}
 		slot->draw = draw; slot->possiblyVisible = true;
 	}
@@ -330,6 +391,32 @@ namespace Inkeys::UI::Bar
 			slot->draw.used = object.bitmap; slot->draw.failure = failure;
 			slot->draw.use = qualityFallback ? Ui3SvgUse::QualityFallback : Ui3SvgUse::Missing;
 		}
+	}
+	Ui3SvgProofReason Ui3SvgProbe::VisibleProofReason(const Slot& slot) const noexcept
+	{
+		Ui3SvgProofReason reason = Ui3SvgProofReason::None;
+		const auto& used = slot.draw.used;
+		const double width = std::bit_cast<double>(used.requestedWBits), height = std::bit_cast<double>(used.requestedHBits);
+		const double zoom = std::bit_cast<double>(target_.zoomBits);
+		const double expectedWidth = std::bit_cast<double>(slot.expected.requestedWBits) * zoom;
+		const double expectedHeight = std::bit_cast<double>(slot.expected.requestedHBits) * zoom;
+		const float opacity = std::bit_cast<float>(slot.draw.finalOpacityBits);
+		if (!used.ready || !used.semanticKnown) reason = Ui3SvgProofReason::UnknownBitmap;
+		else if (used.valueRevision == 0 || used.valueRevision != slot.expected.valueRevision || used.tag != slot.tag
+			|| used.colorMask != slot.expected.colorMask || used.color1Rgb != slot.expected.color1Rgb || used.color2Rgb != slot.expected.color2Rgb)
+			reason = Ui3SvgProofReason::Semantic;
+		else if (used.epoch != target_.epoch || used.surfaceSerial != target_.surfaceSerial) reason = Ui3SvgProofReason::Epoch;
+		else if (used.dpi != target_.dpi) reason = Ui3SvgProofReason::Dpi;
+		else if (!slot.draw.qualityMatches) reason = Ui3SvgProofReason::Quality;
+		else if (!std::isfinite(width) || !std::isfinite(height) || !std::isfinite(expectedWidth) || !std::isfinite(expectedHeight)
+			|| width < 1.0 || height < 1.0 || width > 0x7FFFFFFF || height > 0x7FFFFFFF
+			|| std::abs(width - expectedWidth) > 0.01 || std::abs(height - expectedHeight) > 0.01
+			|| used.pixelWidth != static_cast<std::uint32_t>(width) || used.pixelHeight != static_cast<std::uint32_t>(height))
+			reason = Ui3SvgProofReason::Size;
+		else if (!std::isfinite(opacity) || opacity <= 0.0f || opacity > 1.0f || slot.draw.finalOpacityBits != slot.opacityBits || target_.windowAlpha == 0)
+			reason = Ui3SvgProofReason::Opacity;
+		else if (slot.draw.coverage != Ui3SvgCoverage::FullVisibleCoverage) reason = Ui3SvgProofReason::Coverage;
+		return reason;
 	}
 	Ui3FiniteResourceProof Ui3SvgProbe::FinishDrawing() noexcept
 	{
@@ -358,37 +445,66 @@ namespace Inkeys::UI::Bar
 				if (slot.oldBoundsKnown) std::copy_n(slot.oldBounds, 4, slot.draw.expectedVisibleBoundsBits);
 				slot.draw.clearCoversOldBounds = slot.oldBoundsKnown && slot.clearedOld
 					&& (!slot.hiddenLineageUnknown || fullBackingCleared_);
+				std::uint32_t visibleOld[4]{};
+				const float left = std::bit_cast<float>(target_.viewportBits[0]), top = std::bit_cast<float>(target_.viewportBits[1]);
+				const float right = std::bit_cast<float>(target_.viewportBits[2]), bottom = std::bit_cast<float>(target_.viewportBits[3]);
+				const bool exactViewport = SvgRectValid(target_.viewportBits) && !SvgRectEmpty(target_.viewportBits)
+					&& left >= 0 && top >= 0 && right <= static_cast<float>(target_.backingWidth) && bottom <= static_cast<float>(target_.backingHeight)
+					&& right - left == static_cast<float>(target_.width) && bottom - top == static_cast<float>(target_.height);
+				if (slot.oldBoundsKnown && !slot.hiddenLineageUnknown && slot.oldBoundsEpoch == target_.epoch
+					&& slot.oldBoundsSurface == target_.surfaceSerial && exactViewport)
+				{
+					SvgRectIntersect(slot.oldBounds, target_.viewportBits, visibleOld);
+					slot.draw.outsidePresentedViewport = SvgRectEmpty(visibleOld);
+				}
+				// 只对当前真实present源域之外的已知旧paint给资格；不声称已清空整张backing。
 				if (!slot.oldBoundsKnown) reason = Ui3SvgProofReason::HiddenBoundsUnknown;
-				else if (!slot.draw.clearCoversOldBounds) reason = Ui3SvgProofReason::HiddenNotCleared;
+				else if (!slot.draw.clearCoversOldBounds && !slot.draw.outsidePresentedViewport) reason = Ui3SvgProofReason::HiddenNotCleared;
 			}
 			else if (!slot.submitted) reason = Ui3SvgProofReason::NotDrawn;
 			else
 			{
-				const auto& used = slot.draw.used;
-				const double width = std::bit_cast<double>(used.requestedWBits), height = std::bit_cast<double>(used.requestedHBits);
-				const double zoom = std::bit_cast<double>(target_.zoomBits);
-				const double expectedWidth = std::bit_cast<double>(slot.expected.requestedWBits) * zoom;
-				const double expectedHeight = std::bit_cast<double>(slot.expected.requestedHBits) * zoom;
-				const float opacity = std::bit_cast<float>(slot.draw.finalOpacityBits);
-				if (!used.ready || !used.semanticKnown) reason = Ui3SvgProofReason::UnknownBitmap;
-				else if (used.valueRevision == 0 || used.valueRevision != slot.expected.valueRevision || used.tag != slot.tag
-					|| used.colorMask != slot.expected.colorMask || used.color1Rgb != slot.expected.color1Rgb || used.color2Rgb != slot.expected.color2Rgb)
-					reason = Ui3SvgProofReason::Semantic;
-				else if (used.epoch != target_.epoch || used.surfaceSerial != target_.surfaceSerial) reason = Ui3SvgProofReason::Epoch;
-				else if (used.dpi != target_.dpi) reason = Ui3SvgProofReason::Dpi;
-				else if (!slot.draw.qualityMatches) reason = Ui3SvgProofReason::Quality;
-				else if (!std::isfinite(width) || !std::isfinite(height) || !std::isfinite(expectedWidth) || !std::isfinite(expectedHeight)
-					|| width < 1.0 || height < 1.0 || width > 0x7FFFFFFF || height > 0x7FFFFFFF
-					|| std::abs(width - expectedWidth) > 0.01 || std::abs(height - expectedHeight) > 0.01
-					|| used.pixelWidth != static_cast<std::uint32_t>(width) || used.pixelHeight != static_cast<std::uint32_t>(height))
-					reason = Ui3SvgProofReason::Size;
-				else if (!std::isfinite(opacity) || opacity <= 0.0f || opacity > 1.0f || slot.draw.finalOpacityBits != slot.opacityBits || target_.windowAlpha == 0)
-					reason = Ui3SvgProofReason::Opacity;
-				else if (slot.draw.coverage != Ui3SvgCoverage::FullVisibleCoverage) reason = Ui3SvgProofReason::Coverage;
+				reason = VisibleProofReason(slot);
+				if (reason == Ui3SvgProofReason::Coverage && slot.lastVisibleProofValid
+					&& slot.expectedVisible && slot.semanticSettled && slot.expected.semanticKnown
+					&& !slot.hiddenLineageUnknown && !slot.overwritten && slot.draw.failure == Ui3SvgFailure::None
+					&& slot.draw.qualityMatches && slot.draw.coverage == Ui3SvgCoverage::Empty
+					&& slot.oldBoundsKnown && slot.oldBoundsEpoch == target_.epoch
+					&& slot.oldBoundsSurface == target_.surfaceSerial
+					&& slot.lastVisibleTarget.epoch == target_.epoch
+					&& slot.lastVisibleTarget.surfaceSerial == target_.surfaceSerial
+					&& slot.lastVisibleTarget.backingWidth == target_.backingWidth
+					&& slot.lastVisibleTarget.backingHeight == target_.backingHeight
+					&& slot.lastVisibleTarget.dpi == target_.dpi
+					&& slot.lastVisibleTarget.windowAlpha == target_.windowAlpha
+					&& slot.lastVisibleTarget.zoomBits == target_.zoomBits
+					&& slot.lastVisibleOpacityBits == slot.draw.finalOpacityBits
+					&& SameSvgBitmapProof(slot.lastVisibleExpected, slot.expected)
+					&& SameSvgBitmapProof(slot.lastVisibleDraw.used, slot.draw.used)
+					&& std::equal(slot.lastVisibleDraw.destBits, slot.lastVisibleDraw.destBits + 4, slot.draw.destBits)
+					&& std::equal(slot.lastVisibleDraw.transformBits, slot.lastVisibleDraw.transformBits + 6, slot.draw.transformBits)
+					&& std::equal(slot.lastVisibleDraw.expectedVisibleBoundsBits, slot.lastVisibleDraw.expectedVisibleBoundsBits + 4,
+						slot.draw.expectedVisibleBoundsBits))
+				{
+					// 同一已验证位图在已知局部clip内重画后，clip外旧像素保持不变；只继承完整语义匹配的旧证明。
+					reason = Ui3SvgProofReason::None;
+					slot.draw.use = Ui3SvgUse::RetainedVerified;
+				}
+			}
+			if (reason == Ui3SvgProofReason::None && slot.mainLogoComposited)
+			{
+				const auto* ink = Find(0x10001u);
+				// 声明本身不授予成功；上下层本次实际资源、质量、clip和顺序都必须成立。
+				if (!ink || !ink->required || !ink->expectedVisible || !ink->mainLogoInkApplied
+					|| !ink->submitted || ink->overwritten || !ink->semanticSettled || !ink->expected.semanticKnown
+					|| ink->draw.failure != Ui3SvgFailure::None || VisibleProofReason(*ink) != Ui3SvgProofReason::None)
+					reason = Ui3SvgProofReason::Overwrite;
 			}
 			if (reason == Ui3SvgProofReason::None)
 			{
-				++proof.verified; slot.draw.use = slot.expectedVisible ? Ui3SvgUse::DrawnVerified : Ui3SvgUse::HiddenExpected;
+				++proof.verified;
+				if (slot.draw.use != Ui3SvgUse::RetainedVerified)
+					slot.draw.use = slot.expectedVisible ? Ui3SvgUse::DrawnVerified : Ui3SvgUse::HiddenExpected;
 			}
 			else
 			{
@@ -399,6 +515,24 @@ namespace Inkeys::UI::Bar
 			{
 				proof.firstUnverifiedSvgTag = slot.tag;
 				proof.firstUnverifiedReason = static_cast<std::uint32_t>(reason);
+				if (reason == Ui3SvgProofReason::Coverage || reason == Ui3SvgProofReason::Overwrite)
+				{
+					// 保存实际边界用于区分dirty clip、坐标映射和覆盖谱系问题；不改变严格拒证。
+					proof.coverageGeometryPresent = true;
+					proof.coverageKind = static_cast<std::uint32_t>(slot.draw.coverage);
+					proof.coverageBackingWidth = target_.backingWidth;
+					proof.coverageBackingHeight = target_.backingHeight;
+					std::copy_n(slot.draw.expectedVisibleBoundsBits, 4, proof.coverageExpectedVisibleBits);
+					std::copy_n(slot.draw.effectiveClipBits, 4, proof.coverageEffectiveClipBits);
+					std::copy_n(target_.viewportBits, 4, proof.coverageViewportBits);
+					std::copy_n(slot.draw.destBits, 4, proof.coverageDrawDestBits);
+					std::copy_n(slot.draw.transformBits, 6, proof.coverageDrawTransformBits);
+					if (reason == Ui3SvgProofReason::Overwrite && slot.overwriteBoundsKnown)
+					{
+						proof.overwriteGeometryPresent = true;
+						std::copy_n(slot.overwriteBounds, 4, proof.overwriteBoundsBits);
+					}
+				}
 			}
 		}
 		if (proof.required == 0 && proof.firstUnverifiedReason == 0) proof.firstUnverifiedReason = static_cast<std::uint32_t>(Ui3SvgProofReason::NotDrawn);
@@ -408,24 +542,46 @@ namespace Inkeys::UI::Bar
 	{
 		// 失败/deferred已可能在旧bounds外写入：不能用上一成功bounds认证Hidden。
 		if (drawing_ && !committed)
-			for (std::size_t i = 0; i < slotCount_; ++i) { slots_[i].hiddenLineageUnknown = true; slots_[i].draw.use = Ui3SvgUse::Unverified; }
+			for (std::size_t i = 0; i < slotCount_; ++i)
+			{
+				slots_[i].hiddenLineageUnknown = true;
+				slots_[i].lastVisibleProofValid = false;
+				slots_[i].draw.use = Ui3SvgUse::Unverified;
+			}
 		if (drawing_ && committed)
 			for (std::size_t i = 0; i < slotCount_; ++i)
 			{
 				auto& slot = slots_[i];
+				if (slot.draw.use == Ui3SvgUse::DrawnVerified)
+				{
+					slot.lastVisibleExpected = slot.expected;
+					slot.lastVisibleDraw = slot.draw;
+					slot.lastVisibleTarget = target_;
+					slot.lastVisibleOpacityBits = slot.draw.finalOpacityBits;
+					slot.lastVisibleProofValid = slot.expectedVisible;
+				}
+				else if (slot.draw.use != Ui3SvgUse::RetainedVerified
+					&& (slot.submitted || slot.overwritten || slot.clearedOld))
+					slot.lastVisibleProofValid = false;
 				if (fullBackingCleared_) slot.hiddenLineageUnknown = false;
-				if (slot.draw.use == Ui3SvgUse::HiddenExpected) { slot.oldBoundsKnown = slot.possiblyVisible = false; continue; }
-				if (slot.submitted && !SvgRectEmpty(slot.draw.expectedVisibleBoundsBits))
+				if (slot.draw.use == Ui3SvgUse::HiddenExpected)
+				{
+					// 域外只证明当前viewport不可见；backing旧像素未清除时仍须保留谱系，防止以后扩窗漏Require。
+					if (slot.draw.clearCoversOldBounds) slot.oldBoundsKnown = slot.possiblyVisible = false;
+					continue;
+				}
+				if (slot.submitted && slot.writtenBoundsKnown && !SvgRectEmpty(slot.writtenBounds))
 				{
 					if (slot.oldBoundsKnown && !slot.clearedOld)
 					{
 						for (unsigned edge = 0; edge < 4; ++edge)
 						{
-							const float a = std::bit_cast<float>(slot.oldBounds[edge]), b = std::bit_cast<float>(slot.draw.expectedVisibleBoundsBits[edge]);
+							const float a = std::bit_cast<float>(slot.oldBounds[edge]), b = std::bit_cast<float>(slot.writtenBounds[edge]);
 							slot.oldBounds[edge] = std::bit_cast<std::uint32_t>(edge < 2 ? (std::min)(a, b) : (std::max)(a, b));
 						}
 					}
-					else std::copy_n(slot.draw.expectedVisibleBoundsBits, 4, slot.oldBounds);
+					else std::copy_n(slot.writtenBounds, 4, slot.oldBounds);
+					slot.oldBoundsEpoch = target_.epoch; slot.oldBoundsSurface = target_.surfaceSerial;
 					slot.oldBoundsKnown = slot.possiblyVisible = true;
 				}
 			}
@@ -857,6 +1013,52 @@ namespace Inkeys::UI::Bar
 		bootstrapEnabled_ = true;
 		return true;
 	}
+	bool Ui3FiniteObserver::EnableGoalDiagnosticsBeforeOwnersStart(std::span<Ui3FiniteGoalDiagnostic> storage) noexcept
+	{
+		if (!goalDiagnostics_.empty() || storage.size() != Ui3FiniteCapacity || !storage.data()
+			|| sealed_ || !frameClosed_ || counters_.frames != 0
+			|| ownerReadyFlags_.load(std::memory_order_acquire) != 0
+			|| renderOwnerThread_.load(std::memory_order_acquire) != 0
+			|| publication_->PublicationSerial() != 0) return false;
+		goalDiagnostics_ = storage;
+		return true;
+	}
+	Ui3FiniteGoalDiagnostic* Ui3FiniteObserver::UpdateLastDiagnostic() noexcept
+	{
+		if (goalDiagnostics_.empty() || recordIndex_ >= counters_.retained) return nullptr;
+		auto& row = goalDiagnostics_[recordIndex_];
+		const auto& accepted = candidate_.accepted;
+		if (row.runSerial != accepted.runSerial || row.stepId != accepted.stepId
+			|| row.sourceSequence != accepted.sourceSequence || row.revision != accepted.revision) return nullptr;
+		row.lastStage = diagnosticStage_; row.lastAttempt = candidate_.frameAttemptSerial; row.lastEpoch = candidate_.epoch;
+		row.lastPendingRoles = candidate_.pendingRoles; row.lastMismatchRoles = candidate_.mismatchRoles;
+		row.lastSeenRoles = seenRoles_; row.lastLifecycle = lifecycle_; row.lastConsumed = consumed_; row.lastStatus = lastOutcome_;
+		return &row;
+	}
+	void Ui3FiniteObserver::ObserveDiagnosticStage(Ui3FiniteDiagnosticStage stage) noexcept
+	{
+		if (goalDiagnostics_.empty() || sealed_ || frameClosed_) return;
+		diagnosticStage_ = stage;
+		(void)UpdateLastDiagnostic();
+	}
+	void Ui3FiniteObserver::NoteDiagnosticFrameExit(std::uint32_t result) noexcept
+	{
+		if (goalDiagnostics_.empty() || sealed_) return;
+		if (auto* row = UpdateLastDiagnostic()) { row->lastFrameResult = result; row->lastFrameResultValid = true; }
+	}
+	void Ui3FiniteObserver::RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage stage,
+		Ui3FiniteStatus status, std::uint32_t checks) noexcept
+	{
+		if (goalDiagnostics_.empty()) return;
+		diagnosticStage_ = stage;
+		auto* row = UpdateLastDiagnostic();
+		if (!row || candidate_.epoch == 0 || candidate_.surfaceSerial == 0 || candidate_.frameAttemptSerial == 0
+			|| candidate_.targetWidth == 0 || candidate_.targetHeight == 0
+			|| candidate_.targetWidth > 0x7FFFFFFFu || candidate_.targetHeight > 0x7FFFFFFFu) return;
+		// 只复制当前 owner 已锁存的值，不重新读业务、不重新判 SVG，也不改变 canonical outcome。
+		row->meaningful = candidate_; row->resources = resource_; row->meaningfulStage = stage; row->meaningfulStatus = status;
+		row->seenRoles = seenRoles_; row->lifecycle = lifecycle_; row->consumed = consumed_; row->completeChecks = checks; row->hasMeaningful = true;
+	}
 	bool Ui3FiniteObserver::FreezeBootstrapSignature(const Ui3FiniteSignature& signature) noexcept
 	{
 		if (!bootstrapEnabled_ || bootstrapFrozen_ || !initialPublication_ || !consumed_
@@ -943,6 +1145,12 @@ namespace Inkeys::UI::Bar
 			{
 				recordIndex_ = static_cast<std::size_t>(counters_.retained++);
 				records_[recordIndex_] = {}; records_[recordIndex_].accepted = accepted;
+				if (!goalDiagnostics_.empty())
+				{
+					auto& row = goalDiagnostics_[recordIndex_]; row = {};
+					row.runSerial = accepted.runSerial; row.stepId = accepted.stepId;
+					row.sourceSequence = accepted.sourceSequence; row.revision = accepted.revision;
+				}
 			}
 			else { recordIndex_ = Ui3FiniteCapacity; ++counters_.dropped; }
 		}
@@ -958,6 +1166,8 @@ namespace Inkeys::UI::Bar
 			recordIndex_ = Ui3FiniteCapacity;
 			if (!initialPublication_) ++counters_.unverified;
 		}
+		ObserveDiagnosticStage(Ui3FiniteDiagnosticStage::BeginFrame);
+		if (auto* row = UpdateLastDiagnostic()) { row->lastFrameResultValid = false; row->lastAborted = false; }
 	}
 	bool Ui3FiniteObserver::MarkConsumed(const Ui3FiniteSignature& signature, std::uint64_t rootBatch,
 		std::uint64_t drawBatch, std::int64_t ticks) noexcept
@@ -1036,6 +1246,7 @@ namespace Inkeys::UI::Bar
 		resource_ = same ? proof : Ui3FiniteResourceProof{};
 		if (!same) ++counters_.invalid;
 		ApplyResourceProof();
+		RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage::FinalizeResources, lastOutcome_);
 		return candidate_;
 	}
 	Ui3FiniteCandidate Ui3FiniteObserver::SettleCandidate(std::uint64_t surface,
@@ -1063,6 +1274,7 @@ namespace Inkeys::UI::Bar
 			&& (lifecycle_ & 0xFFFF0000u) == 0;
 		ApplyResourceProof(); // producer缺席或0 required都不构成SVG证明。
 		if (candidate_.settled) ++counters_.layoutSettled;
+		RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage::SettleCandidate, lastOutcome_);
 		return candidate_;
 	}
 	void Ui3FiniteObserver::StoreOutcome(Ui3FiniteStatus status, bool timed, std::int64_t ticks) noexcept
@@ -1093,7 +1305,12 @@ namespace Inkeys::UI::Bar
 	{
 		if (sealed_ || frameClosed_) return lastOutcome_;
 		frameClosed_ = true;
-		if (!committed) { StoreOutcome(Ui3FiniteStatus::Pending); return lastOutcome_; }
+		if (!committed)
+		{
+			StoreOutcome(Ui3FiniteStatus::Pending);
+			RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage::CompleteAttempt, lastOutcome_, Ui3FiniteCompleteCalled);
+			return lastOutcome_;
+		}
 		++counters_.commits;
 		const bool sameCandidate = supplied.accepted.runSerial == candidate_.accepted.runSerial
 			&& supplied.accepted.stepId == candidate_.accepted.stepId && supplied.accepted.revision == candidate_.accepted.revision
@@ -1131,6 +1348,12 @@ namespace Inkeys::UI::Bar
 			&& candidate_.accepted.acceptedTicks <= candidate_.targetConsumedTicks
 			&& candidate_.targetConsumedTicks <= candidate_.settledTicks && candidate_.settledTicks <= ticks;
 		if (timed && !validTiming) ++counters_.invalid;
+		std::uint32_t checks = 0;
+		if (!goalDiagnostics_.empty())
+			checks = Ui3FiniteCompleteCalled | Ui3FiniteCompleteCommitted | Ui3FiniteCompletePredicatesEvaluated
+				| (sameCandidate ? Ui3FiniteCompleteSameCandidate : 0u) | (identityValid ? Ui3FiniteCompleteIdentityValid : 0u)
+				| (goalCurrent ? Ui3FiniteCompleteGoalCurrent : 0u) | (anchors ? Ui3FiniteCompleteAnchorsValid : 0u)
+				| (layoutCurrent ? Ui3FiniteCompleteLayoutCurrent : 0u) | (validTiming ? Ui3FiniteCompleteTimingValid : 0u);
 		if (identityValid)
 		{
 			++ready_.committedCount;
@@ -1149,18 +1372,22 @@ namespace Inkeys::UI::Bar
 		}
 		if (outcome == Ui3FiniteStatus::Superseded || outcome == Ui3FiniteStatus::AmbiguousPublication)
 		{
-			StoreOutcome(outcome); return outcome;
+			StoreOutcome(outcome);
+			RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage::CompleteAttempt, outcome, checks);
+			return outcome;
 		}
 		if (!layoutCurrent) outcome = candidate_.pendingRoles != 0 ? Ui3FiniteStatus::Pending : Ui3FiniteStatus::ResourceUnverified;
 		else if (!initialPublication_ && candidate_.svgProofComplete && identityValid
 			&& publication_->NoteCompletedGoal(candidate_.accepted.revision)) outcome = Ui3FiniteStatus::CompletedLayoutAndSvg;
 		StoreOutcome(outcome, validTiming, ticks);
+		RetainMeaningfulDiagnostic(Ui3FiniteDiagnosticStage::CompleteAttempt, outcome, checks);
 		return outcome;
 	}
 	void Ui3FiniteObserver::AbortFrame(Ui3FiniteStatus status) noexcept
 	{
 		if (sealed_ || frameClosed_) return;
 		frameClosed_ = true; ++counters_.unverified; StoreOutcome(status);
+		if (auto* row = UpdateLastDiagnostic()) row->lastAborted = true; // 早退只写 last，不擦掉 meaningful。
 	}
 	void Ui3FiniteObserver::NotifyRegistered() noexcept { ownerReadyFlags_.fetch_or(Ui3FiniteReadyRegistered, std::memory_order_release); }
 	void Ui3FiniteObserver::NotifyInteractionReady() noexcept { ownerReadyFlags_.fetch_or(Ui3FiniteReadyInteraction, std::memory_order_release); }

@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <cstdint>
+#include <cwchar>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -23,6 +24,11 @@
 import Inkeys.Drawing.Draw3.presentation_auto_save;
 import draw3.uink_codec;
 import draw3.uink_file;
+
+#if defined(DRAW3_TESTING)
+void FailNextPresentationCollectionAllocationForTesting() noexcept;
+std::uint64_t PresentationCollectionAllocationFailuresForTesting() noexcept;
+#endif
 
 namespace
 {
@@ -331,6 +337,812 @@ namespace
 		return error ? std::nullopt : found;
 	}
 
+	using PreservedFiles = std::vector<std::pair<fs::path, std::string>>;
+
+	std::optional<PreservedFiles> CapturePresentationFiles(const fs::path& root)
+	{
+		PreservedFiles files;
+		std::error_code error;
+		for (const auto& entry : fs::recursive_directory_iterator(
+			root / L"presentation", error))
+		{
+			if (error) return std::nullopt;
+			if (!entry.is_regular_file()) continue;
+			const auto bytes = ReadFileBytes(entry.path());
+			if (!bytes) return std::nullopt;
+			files.emplace_back(entry.path(), *bytes);
+		}
+		return error || files.empty() ? std::nullopt
+			: std::optional<PreservedFiles>(std::move(files));
+	}
+
+	bool PresentationFilesUnchanged(const PreservedFiles& files)
+	{
+		for (const auto& [path, bytes] : files)
+			if (ReadFileBytes(path) != bytes) return false;
+		return true;
+	}
+
+	std::optional<Bridge::PresentationTarget> MakeRestartTarget(
+		const fs::path& root, bool fallback)
+	{
+		PresentationDescriptor descriptor;
+		descriptor.status = fallback ? PresentationDescriptorStatus::PageIndexFallback
+			: PresentationDescriptorStatus::StableSlideIds;
+		descriptor.provider = "PowerPoint";
+		const auto path = (root / L"fixture-source.pptx").u8string();
+		descriptor.fullName.assign(path.begin(), path.end());
+		descriptor.presentationName = "fixture-source.pptx";
+		descriptor.applicationProcessId = static_cast<std::int32_t>(GetCurrentProcessId());
+		descriptor.slideShowHwnd = 1; // 纯值 fixture，不创建或访问 Office/HWND。
+		descriptor.currentPage = descriptor.totalPage = 1;
+		descriptor.bindingRevision = 1;
+		if (!fallback) { descriptor.currentSlideId = 101; descriptor.slideIds = { 101 }; }
+		return ResolvePresentationTarget(descriptor);
+	}
+
+	Draw3UInkExportSnapshot MakeRestartSnapshot(
+		const Bridge::PresentationTarget& target, bool fresh)
+	{
+		const bool stable = target.bindingMode == Bridge::SlideBindingMode::StableSlideId;
+		auto snapshot = stable ? MakeSnapshot(target, true) : MakeSecondSnapshot(target, true);
+		if (fresh)
+		{
+			snapshot.fileGuid = CreateUInkGuid().value();
+			snapshot.workspaceGuid = CreateUInkGuid().value();
+			snapshot.canvases.front().pageGuid = CreateUInkGuid().value();
+			snapshot.canvases.front().strokes.front().style.fallbackRgb = 0x654321;
+		}
+		if (stable)
+		{
+			Draw3UInkCanvasSnapshot end;
+			end.pageGuid = fresh ? CreateUInkGuid().value()
+				: ParseUInkGuid("77777777-7777-4777-8777-777777777777").value();
+			end.pageIndex = target.totalPages;
+			end.pageNumber = target.totalPages + 1;
+			end.extra = MakeInkeysEndScreenExtra(Draw3UInkImportBindingMode::StableSlideId);
+			end.strokes = snapshot.canvases.front().strokes;
+			end.strokes.front().style.fallbackRgb = fresh ? 0xabcdef : 0x987654;
+			snapshot.canvases.push_back(std::move(end));
+		}
+		return snapshot;
+	}
+
+	int RunDefaultSessionStage(const fs::path& root, bool fresh)
+	{
+		TestState state;
+		for (const bool fallback : { false, true })
+		{
+			const auto resolved = MakeRestartTarget(root, fallback);
+			PRESENTATION_CHECK(state, resolved.has_value());
+			if (!resolved) return state.failures;
+			auto target = *resolved;
+			target.targetRevision = 1;
+			target.sessionRevision = 1;
+			std::vector<Bridge::PresentationTarget> targets{ target };
+			if (!fallback)
+			{
+				auto end = target;
+				end.pageKind = Bridge::PresentationPageKind::EndScreen;
+				end.pageIndex = end.totalPages;
+				end.slideId.reset();
+				end.targetRevision = 2;
+				targets.push_back(std::move(end));
+			}
+			PresentationAutoSaveService service;
+			PRESENTATION_CHECK(state, service.Start(root.wstring()));
+			const auto session = service.SessionId();
+			PRESENTATION_CHECK(state, ParseUInkGuid(session).has_value());
+			service.CloseAndDrain();
+			const auto expectedTrack = fresh ? (fallback ? PresentationStorageTrack::PageIndexSession
+				: PresentationStorageTrack::SlideIdSession)
+				: (fallback ? PresentationStorageTrack::PageIndexSidecar : PresentationStorageTrack::Base);
+			if (fresh)
+			{
+				Json::Value oldIndex;
+				const auto legacy = root / L"presentation" /
+					(fallback ? fs::path(L"page-index/index.json") : fs::path(L"index.json"));
+				const bool validSeed = ReadIndexJson(legacy, oldIndex) &&
+					oldIndex["entries"].size() == 1 && oldIndex["entries"][0]["sessionId"].isString() &&
+					oldIndex["entries"][0]["sessionId"].asString() != session;
+				PRESENTATION_CHECK(state, validSeed);
+				if (!validSeed) return state.failures;
+				for (const auto& requestTarget : targets)
+				{
+					PRESENTATION_CHECK(state, service.Start(root.wstring()));
+					PresentationLoadRequest load{ requestTarget };
+					load.slotGeneration = 71;
+					PRESENTATION_CHECK(state, service.SubmitLoad(std::move(load)) ==
+						PresentationPersistenceSubmitStatus::Accepted);
+					service.CloseAndDrain();
+					const auto result = TakeCompletion(service);
+					std::cout << "[PresentationSession] phase=fresh page_kind="
+						<< static_cast<unsigned>(requestTarget.pageKind) << " mode=" << fallback
+						<< " status=" << static_cast<unsigned>(result.status)
+						<< " track=" << static_cast<unsigned>(result.storageTrack) << '\n';
+					const bool emptyVerified = result.status == PresentationPersistenceStatus::NotFound &&
+						result.storageTrack == expectedTrack && result.target == requestTarget &&
+						result.slotGeneration == 71 && !result.fileGuid && !result.loadedSnapshot;
+					PRESENTATION_CHECK(state, emptyVerified);
+					if (!emptyVerified) return state.failures; // 先证明新轨空白，才继续保存新内容。
+				}
+			}
+			auto snapshot = MakeRestartSnapshot(target, fresh);
+			std::uint64_t revision = 0;
+			for (const auto& requestTarget : targets)
+			{
+				snapshot.currentPageIndex = requestTarget.pageIndex;
+				PRESENTATION_CHECK(state, service.Start(root.wstring()));
+				PresentationSaveRequest save{ requestTarget, ++revision, snapshot };
+				save.slotGeneration = 71;
+				PRESENTATION_CHECK(state, service.SubmitSave(std::move(save)) ==
+					PresentationPersistenceSubmitStatus::Accepted);
+				service.CloseAndDrain();
+				const auto result = TakeCompletion(service);
+				const bool committed = result.status == PresentationPersistenceStatus::Committed &&
+					result.storageTrack == expectedTrack && result.fileGuid == snapshot.fileGuid &&
+					result.target == requestTarget && result.slotGeneration == 71;
+				PRESENTATION_CHECK(state, committed);
+				if (!committed) return state.failures;
+			}
+			if (!fresh) continue;
+			PresentationAutoSaveService cold;
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()) && cold.SessionId() == session);
+			PRESENTATION_CHECK(state, cold.SubmitLoad({ targets.back() }) ==
+				PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			const auto loaded = TakeCompletion(cold);
+			const bool loadedVerified = loaded.status == PresentationPersistenceStatus::Loaded &&
+				loaded.storageTrack == expectedTrack && loaded.fileGuid == snapshot.fileGuid &&
+				loaded.loadedSnapshot && loaded.loadedSnapshot->workspaceGuid == snapshot.workspaceGuid &&
+				loaded.loadedSnapshot->canvases.size() == snapshot.canvases.size() &&
+				loaded.loadedSnapshot->canvases.front().pageGuid == snapshot.canvases.front().pageGuid &&
+				loaded.loadedSnapshot->canvases.front().strokes.size() == 1 &&
+				loaded.loadedSnapshot->canvases.front().strokes.front().style.fallbackRgb == 0x654321 &&
+				(fallback || (loaded.loadedSnapshot->canvases.back().pageGuid == snapshot.canvases.back().pageGuid &&
+					InkeysPageKind(loaded.loadedSnapshot->canvases.back().extra) == UInkInkeysPageKind::EndScreen &&
+					loaded.loadedSnapshot->canvases.back().strokes.size() == 1 &&
+					loaded.loadedSnapshot->canvases.back().strokes.front().style.fallbackRgb == 0xabcdef));
+			PRESENTATION_CHECK(state, loadedVerified);
+			if (!loadedVerified) return state.failures;
+			const std::wstring sessionName(session.begin(), session.end());
+			const fs::path selected = root / L"presentation" / L"sessions" / sessionName /
+				(fallback ? L"page-index" : L"slide-id");
+			Json::Value selectedIndex;
+			const bool selectedVerified = ReadIndexJson(selected / L"index.json", selectedIndex) &&
+				selectedIndex["entries"].size() == 1 &&
+				selectedIndex["entries"][0]["sessionId"].asString() == session;
+			PRESENTATION_CHECK(state, selectedVerified);
+			if (!selectedVerified) return state.failures;
+			const auto savedPath = selected / fs::path(selectedIndex["entries"][0]["relativePath"].asString());
+			PRESENTATION_CHECK(state, savedPath.wstring().size() < MAX_PATH);
+			std::cout << "[PresentationSession] mode=" << fallback
+				<< " committed_path_chars=" << savedPath.wstring().size() << '\n';
+			// 已选轨损坏必须拒绝，不能再次退到另一空轨并开放输入。
+			{ std::ofstream bad(selected / L"index.json", std::ios::binary | std::ios::trunc); bad << "{bad-primary"; }
+			{ std::ofstream bad(selected / L"index.json.bak", std::ios::binary | std::ios::trunc); bad << "{bad-backup"; }
+			const auto beforeFailure = CapturePresentationFiles(root);
+			PRESENTATION_CHECK(state, beforeFailure.has_value());
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()));
+			PRESENTATION_CHECK(state, cold.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			const auto failed = TakeCompletion(cold);
+			PRESENTATION_CHECK(state, failed.status == PresentationPersistenceStatus::IoError &&
+				!failed.fileGuid && !failed.loadedSnapshot);
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()));
+			snapshot.currentPageIndex = target.pageIndex;
+			PRESENTATION_CHECK(state, cold.SubmitSave({ target, revision + 1, snapshot }) ==
+				PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			PRESENTATION_CHECK(state, TakeCompletion(cold).status == PresentationPersistenceStatus::IoError &&
+				beforeFailure && PresentationFilesUnchanged(*beforeFailure));
+		}
+		return state.failures;
+	}
+
+	bool RunSessionChild(TestState& state, const fs::path& root, const wchar_t* phase)
+	{
+		std::wstring executable(32768, L'\0');
+		const DWORD length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+		PRESENTATION_CHECK(state, length && length < executable.size());
+		if (!length || length >= executable.size()) return false;
+		executable.resize(length);
+		std::wstring command = L"\"" + executable + L"\" --presentation-session-child \"" +
+			root.wstring() + L"\" " + phase;
+		STARTUPINFOW startup = {};
+		startup.cb = sizeof(startup);
+		PROCESS_INFORMATION process = {};
+		const bool launched = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr,
+			FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process) != FALSE;
+		PRESENTATION_CHECK(state, launched);
+		if (!launched) return false;
+		const bool natural = WaitForSingleObject(process.hProcess, 20000) == WAIT_OBJECT_0;
+		PRESENTATION_CHECK(state, natural);
+		if (!natural)
+		{
+			// 超时只清理本轮 CreateProcess 返回的精确 HANDLE，始终记失败。
+			PRESENTATION_CHECK(state, TerminateProcess(process.hProcess, 0xE045));
+			PRESENTATION_CHECK(state, WaitForSingleObject(process.hProcess, 5000) == WAIT_OBJECT_0);
+		}
+		DWORD exitCode = 0;
+		const bool exitRead = GetExitCodeProcess(process.hProcess, &exitCode) != FALSE;
+		const bool passed = natural && exitRead && exitCode == 0;
+		PRESENTATION_CHECK(state, passed);
+		std::cout << "[PresentationSession] child_pid=" << process.dwProcessId
+			<< " natural=" << natural << " exit=" << exitCode << '\n';
+		CloseHandle(process.hThread);
+		CloseHandle(process.hProcess);
+		return passed;
+	}
+
+	void TestDefaultProcessSessionStartsIndependent(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const bool created = CreateDirectoryW(root.c_str(), nullptr) != FALSE;
+		PRESENTATION_CHECK(state, created);
+		if (!created || !RunSessionChild(state, root, L"seed")) return;
+		const auto previous = CapturePresentationFiles(root);
+		PRESENTATION_CHECK(state, previous.has_value());
+		if (!previous) return;
+		(void)RunSessionChild(state, root, L"fresh");
+		PRESENTATION_CHECK(state, PresentationFilesUnchanged(*previous));
+		std::wcout << L"[PresentationSession] artifacts=" << root.wstring() << L'\n';
+	}
+
+	void TestUnusedCorruptSidecarDoesNotBlockSelectedTrack(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const auto target = MakeTarget();
+		PresentationAutoSaveService service;
+		ResetPresentationAutoSaveTestFaultInjection();
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 1, MakeSnapshot(target, true) }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		const bool seeded = TakeCompletion(service).status == PresentationPersistenceStatus::Committed;
+		PRESENTATION_CHECK(state, seeded);
+		if (!seeded) return;
+		std::error_code error;
+		for (const auto* name : { L"page-index", L"slide-id" })
+		{
+			const fs::path sidecar = root / L"presentation" / name;
+			PRESENTATION_CHECK(state, fs::create_directory(sidecar, error) && !error);
+			{ std::ofstream bad(sidecar / L"index.json", std::ios::binary); bad << "{unused-invalid"; }
+			const auto untouched = ReadFileBytes(sidecar / L"index.json");
+			PRESENTATION_CHECK(state, untouched.has_value());
+			PRESENTATION_CHECK(state, service.Start(root.wstring()));
+			PRESENTATION_CHECK(state, service.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted);
+			service.CloseAndDrain();
+			const auto loaded = TakeCompletion(service);
+			PRESENTATION_CHECK(state, loaded.status == PresentationPersistenceStatus::Loaded &&
+				loaded.storageTrack == PresentationStorageTrack::Base && loaded.loadedSnapshot);
+			PRESENTATION_CHECK(state, service.Start(root.wstring()));
+			PRESENTATION_CHECK(state, service.SubmitSave({ target, 2, MakeSnapshot(target, false) }) ==
+				PresentationPersistenceSubmitStatus::Accepted);
+			service.CloseAndDrain();
+			PRESENTATION_CHECK(state, TakeCompletion(service).status == PresentationPersistenceStatus::Committed &&
+				ReadFileBytes(sidecar / L"index.json") == untouched);
+		}
+		std::wcout << L"[PresentationSession] sidecar_artifacts=" << root.wstring() << L'\n';
+	}
+
+	void TestCommittedSessionTracksRejectSharedLogicalIdentity(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const bool created = CreateDirectoryW(root.c_str(), nullptr) != FALSE;
+		PRESENTATION_CHECK(state, created);
+		if (!created || !RunSessionChild(state, root, L"seed")) return;
+		ResetPresentationAutoSaveTestFaultInjection();
+		const auto fallback = MakeRestartTarget(root, true);
+		const auto stable = MakeRestartTarget(root, false);
+		PRESENTATION_CHECK(state, fallback && stable);
+		if (!fallback || !stable) return;
+		auto fallbackSnapshot = MakeRestartSnapshot(*fallback, true);
+		PresentationAutoSaveService service;
+		const bool started = service.Start(root.wstring());
+		PRESENTATION_CHECK(state, started);
+		if (!started) return;
+		PresentationSaveRequest first{ *fallback, 1, fallbackSnapshot };
+		first.slotGeneration = 81;
+		PRESENTATION_CHECK(state, service.SubmitSave(std::move(first)) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		const auto committed = TakeCompletion(service);
+		const bool validCommitted = committed.status == PresentationPersistenceStatus::Committed &&
+			committed.storageTrack == PresentationStorageTrack::PageIndexSession &&
+			committed.fileGuid == fallbackSnapshot.fileGuid && committed.slotGeneration == 81;
+		PRESENTATION_CHECK(state, validCommitted);
+		if (!validCommitted) return;
+		PresentationAutoSaveService reader;
+		PRESENTATION_CHECK(state, reader.Start(root.wstring()));
+		PRESENTATION_CHECK(state, reader.SubmitLoad({ *fallback }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		reader.CloseAndDrain();
+		const auto loaded = TakeCompletion(reader);
+		const bool validLoaded = loaded.status == PresentationPersistenceStatus::Loaded &&
+			loaded.storageTrack == PresentationStorageTrack::PageIndexSession &&
+			loaded.fileGuid == fallbackSnapshot.fileGuid && loaded.loadedSnapshot &&
+			loaded.loadedSnapshot->workspaceGuid == fallbackSnapshot.workspaceGuid;
+		PRESENTATION_CHECK(state, validLoaded);
+		if (!validLoaded) return;
+		const auto before = CapturePresentationFiles(root);
+		PRESENTATION_CHECK(state, before.has_value());
+		if (!before) return;
+		auto collision = MakeRestartSnapshot(*stable, true);
+		// 已提交轨已无 pending；另一 mode 仍不能复用其逻辑 file/workspace 身份。
+		collision.fileGuid = fallbackSnapshot.fileGuid;
+		collision.workspaceGuid = fallbackSnapshot.workspaceGuid;
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PresentationSaveRequest second{ *stable, 1, std::move(collision) };
+		second.slotGeneration = 82;
+		PRESENTATION_CHECK(state, service.SubmitSave(std::move(second)) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		const auto rejected = TakeCompletion(service);
+		const auto after = CapturePresentationFiles(root);
+		std::cout << "[PresentationSessionIntegrity] case=committed_guid_collision status="
+			<< static_cast<unsigned>(rejected.status) << " track="
+			<< static_cast<unsigned>(rejected.storageTrack) << " files_before=" << before->size()
+			<< " files_after=" << (after ? after->size() : 0) << '\n';
+		PRESENTATION_CHECK(state, rejected.status == PresentationPersistenceStatus::SourceChanged);
+		PRESENTATION_CHECK(state, after && after->size() == before->size() &&
+			PresentationFilesUnchanged(*before));
+		std::wcout << L"[PresentationSessionIntegrity] collision_artifacts=" << root.wstring() << L'\n';
+	}
+
+	void TestForeignIndexDoesNotHideCurrentGenerationPending(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const auto target = MakeTarget();
+		const auto firstSnapshot = MakeSnapshot(target, true);
+		constexpr const char* firstSession = "12121212-1212-4212-8212-121212121212";
+		constexpr const char* secondSession = "34343434-3434-4343-8343-343434343434";
+		constexpr std::uint64_t generation = 93;
+		PresentationAutoSaveService first;
+		SetPresentationAutoSaveTestFaultInjection({ true, 0, firstSession });
+		const bool started = first.Start(root.wstring());
+		PRESENTATION_CHECK(state, started);
+		if (!started) return;
+		PresentationSaveRequest pendingSave{ target, 1, firstSnapshot };
+		pendingSave.slotGeneration = generation;
+		PRESENTATION_CHECK(state, first.SubmitSave(std::move(pendingSave)) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		first.CloseAndDrain();
+		const auto failed = TakeCompletion(first);
+		const auto pendingFile = SingleUInkFile(root);
+		const fs::path index = root / L"presentation" / L"index.json";
+		const bool pendingPremise = failed.status == PresentationPersistenceStatus::IoError &&
+			failed.storageTrack == PresentationStorageTrack::Base &&
+			failed.slotGeneration == generation && failed.fileGuid == firstSnapshot.fileGuid &&
+			pendingFile && !fs::exists(index) && !fs::exists(root / L"presentation" / L"index.json.bak");
+		PRESENTATION_CHECK(state, pendingPremise);
+		if (!pendingPremise) return;
+		const auto pendingRead = ReadUInkFile(pendingFile->wstring());
+		const bool durablePending = pendingRead.status == UInkReadStatus::Complete &&
+			pendingRead.document && pendingRead.sourceRevision &&
+			pendingRead.document->header.guid.Bytes() == firstSnapshot.fileGuid.Bytes();
+		PRESENTATION_CHECK(state, durablePending);
+		if (!durablePending) return;
+		// 先通过同一 service/root/generation 的真实 Load 证明 pending 可达，不把孤儿冒充 pending。
+		PRESENTATION_CHECK(state, first.Start(root.wstring()));
+		PresentationLoadRequest current{ target };
+		current.slotGeneration = generation;
+		PRESENTATION_CHECK(state, first.SubmitLoad(current) == PresentationPersistenceSubmitStatus::Accepted);
+		first.CloseAndDrain();
+		const auto pendingLoaded = TakeCompletion(first);
+		const bool pendingReachable = pendingLoaded.status == PresentationPersistenceStatus::Loaded &&
+			pendingLoaded.storageTrack == PresentationStorageTrack::Base &&
+			pendingLoaded.slotGeneration == generation && pendingLoaded.fileGuid == firstSnapshot.fileGuid &&
+			pendingLoaded.loadedSnapshot && !fs::exists(index);
+		PRESENTATION_CHECK(state, pendingReachable);
+		if (!pendingReachable) return;
+		// override 只模拟这项并发所有权交错；普通跨进程测试继续使用实际 ProcessSessionId。
+		SetPresentationAutoSaveTestFaultInjection({ false, 0, secondSession });
+		PresentationAutoSaveService second;
+		PRESENTATION_CHECK(state, second.Start(root.wstring()));
+		const auto secondSnapshot = MakeSecondSnapshot(target, true);
+		PRESENTATION_CHECK(state, second.SubmitSave({ target, 1, secondSnapshot }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		second.CloseAndDrain();
+		const auto secondCommitted = TakeCompletion(second);
+		Json::Value secondIndex;
+		const bool foreignPremise = secondCommitted.status == PresentationPersistenceStatus::Committed &&
+			secondCommitted.storageTrack == PresentationStorageTrack::Base &&
+			secondCommitted.fileGuid == secondSnapshot.fileGuid && ReadIndexJson(index, secondIndex) &&
+			secondIndex["entries"].size() == 1 &&
+			secondIndex["entries"][0]["sessionId"].asString() == secondSession;
+		PRESENTATION_CHECK(state, foreignPremise);
+		if (!foreignPremise) return;
+		const auto before = CapturePresentationFiles(root);
+		PRESENTATION_CHECK(state, before.has_value());
+		if (!before) return;
+		SetPresentationAutoSaveTestFaultInjection({ false, 0, firstSession });
+		PRESENTATION_CHECK(state, first.Start(root.wstring()) && first.SessionId() == firstSession);
+		PRESENTATION_CHECK(state, first.SubmitLoad(std::move(current)) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		first.CloseAndDrain();
+		const auto conflict = TakeCompletion(first);
+		const auto after = CapturePresentationFiles(root);
+		std::cout << "[PresentationSessionIntegrity] case=pending_foreign_index status="
+			<< static_cast<unsigned>(conflict.status) << " track="
+			<< static_cast<unsigned>(conflict.storageTrack) << '\n';
+		PRESENTATION_CHECK(state, (conflict.status == PresentationPersistenceStatus::CrossProcessConflictDeferred ||
+			conflict.status == PresentationPersistenceStatus::SourceChanged) &&
+			!conflict.fileGuid && !conflict.loadedSnapshot && conflict.slotGeneration == generation);
+		PRESENTATION_CHECK(state, after && after->size() == before->size() &&
+			PresentationFilesUnchanged(*before));
+		std::wcout << L"[PresentationSessionIntegrity] pending_artifacts=" << root.wstring() << L'\n';
+		ResetPresentationAutoSaveTestFaultInjection();
+	}
+
+	PresentationPersistenceCompletion SaveCapRevision(TestState& state, PresentationAutoSaveService& service,
+		const fs::path& root, const Bridge::PresentationTarget& target, std::uint64_t revision,
+		Draw3UInkExportSnapshot snapshot)
+	{
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		snapshot.currentPageIndex = target.pageIndex;
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, revision, std::move(snapshot) }) ==
+			PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		return TakeCompletion(service);
+	}
+
+	void TestOwnedVersionCollectionConverges(TestState& state)
+	{
+		for (const bool fallback : { false, true })
+		{
+			ResetPresentationAutoSaveTestFaultInjection();
+			const fs::path root = MakeRoot();
+			const auto resolved = MakeRestartTarget(root, fallback);
+			PRESENTATION_CHECK(state, resolved.has_value());
+			if (!resolved) return;
+			const auto normal = *resolved;
+			auto end = normal;
+			if (!fallback) { end.pageKind = Bridge::PresentationPageKind::EndScreen; end.pageIndex = 1; end.slideId.reset(); }
+			auto snapshot = MakeRestartSnapshot(normal, true);
+			PresentationAutoSaveService service;
+			std::optional<fs::path> oldest;
+			for (std::uint64_t revision = 1; revision <= 8; ++revision)
+			{
+				snapshot.canvases.front().strokes.front().style.fallbackRgb = static_cast<std::uint32_t>(0x10000 + revision);
+				const auto saved = SaveCapRevision(state, service, root,
+					(!fallback && revision % 2 == 0) ? end : normal, revision, snapshot);
+				const bool committed = saved.status == PresentationPersistenceStatus::Committed &&
+					saved.fileGuid == snapshot.fileGuid && saved.mutationRevision == revision;
+				PRESENTATION_CHECK(state, committed);
+				if (!committed) return;
+				if (revision == 1) oldest = SingleUInkFile(root);
+				PRESENTATION_CHECK(state, CountUInkFiles(root) == (revision == 1 ? 1u : 2u));
+			}
+			PRESENTATION_CHECK(state, oldest && !fs::exists(*oldest));
+			PresentationAutoSaveService cold;
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()));
+			PRESENTATION_CHECK(state, cold.SubmitLoad({ fallback ? normal : end }) == PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			const auto current = TakeCompletion(cold);
+			PRESENTATION_CHECK(state, current.status == PresentationPersistenceStatus::Loaded && current.loadedSnapshot &&
+				current.loadedSnapshot->fileGuid == snapshot.fileGuid &&
+				!current.loadedSnapshot->canvases.empty() && !current.loadedSnapshot->canvases.front().strokes.empty() &&
+				current.loadedSnapshot->canvases.front().strokes.front().style.fallbackRgb == 0x10008 &&
+				(fallback || InkeysPageKind(current.loadedSnapshot->canvases.back().extra) == UInkInkeysPageKind::EndScreen));
+			const fs::path index = root / L"presentation" / L"index.json";
+			{ std::ofstream bad(index, std::ios::binary | std::ios::trunc); bad << "{force-strict-backup-read"; }
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()));
+			PRESENTATION_CHECK(state, cold.SubmitLoad({ normal }) == PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			const auto backup = TakeCompletion(cold);
+			PRESENTATION_CHECK(state, backup.status == PresentationPersistenceStatus::Loaded && backup.loadedSnapshot &&
+				backup.loadedSnapshot->fileGuid == snapshot.fileGuid &&
+				!backup.loadedSnapshot->canvases.empty() && !backup.loadedSnapshot->canvases.front().strokes.empty() &&
+				backup.loadedSnapshot->canvases.front().strokes.front().style.fallbackRgb == 0x10007);
+			std::wcout << L"[PresentationCap] normal_mode=" << fallback << L" artifacts=" << root.wstring() << L'\n';
+		}
+	}
+
+	void TestFailedIndexProtectsPendingVersions(TestState& state)
+	{
+		const fs::path root = MakeRoot();
+		const auto target = MakeTarget();
+		PresentationAutoSaveService service;
+		ResetPresentationAutoSaveTestFaultInjection();
+		for (std::uint64_t revision = 1; revision <= 2; ++revision)
+		{
+			const auto saved = SaveCapRevision(state, service, root, target, revision, MakeSnapshot(target, true));
+			PRESENTATION_CHECK(state, saved.status == PresentationPersistenceStatus::Committed);
+			if (saved.status != PresentationPersistenceStatus::Committed) return;
+		}
+		const auto original = CapturePresentationFiles(root);
+		PRESENTATION_CHECK(state, original.has_value());
+		if (!original) return;
+		PresentationAutoSaveTestFaultInjection faults;
+		faults.failIndexCommit = true;
+		SetPresentationAutoSaveTestFaultInjection(faults);
+		const auto failed = SaveCapRevision(state, service, root, target, 3, MakeSnapshot(target, false));
+		PRESENTATION_CHECK(state, failed.status == PresentationPersistenceStatus::IoError &&
+			PresentationFilesUnchanged(*original) && CountUInkFiles(root) == 3);
+		if (failed.status != PresentationPersistenceStatus::IoError) return;
+		PRESENTATION_CHECK(state, service.Start(root.wstring()));
+		PRESENTATION_CHECK(state, service.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted);
+		service.CloseAndDrain();
+		const auto pending = TakeCompletion(service);
+		PRESENTATION_CHECK(state, pending.status == PresentationPersistenceStatus::Loaded && pending.loadedSnapshot &&
+			pending.loadedSnapshot->canvases.front().strokes.empty());
+		ResetPresentationAutoSaveTestFaultInjection();
+		const auto committed = SaveCapRevision(state, service, root, target, 4, MakeSnapshot(target, true));
+		PRESENTATION_CHECK(state, committed.status == PresentationPersistenceStatus::Committed && CountUInkFiles(root) == 2);
+		std::wcout << L"[PresentationCap] pending_artifacts=" << root.wstring() << L'\n';
+	}
+
+#if defined(DRAW3_TESTING)
+	enum class CapActorKind { LockedReferences, ReplaceVersion, ChangeSameFile, BadCurrent, BadBackup,
+		MissingCurrent, MissingBackup, MoveNamespace };
+	struct CapActorContext
+	{
+		CapActorKind kind;
+		fs::path root;
+		fs::path candidate;
+		fs::path moved;
+		std::optional<std::string> original;
+		std::optional<std::string> modified;
+		unsigned calls = 0;
+		bool premise = false;
+	};
+
+	void CapActor(void* context, PresentationCollectionTestStage stage,
+		const std::wstring& actualRoot, const std::wstring& actualCandidate) noexcept
+	{
+		auto& actor = *static_cast<CapActorContext*>(context);
+		try
+		{
+			if (fs::path(actualRoot) != actor.root || actor.calls != 0)
+				return;
+			const bool beforeRemoval = actor.kind == CapActorKind::LockedReferences ||
+				actor.kind == CapActorKind::ReplaceVersion || actor.kind == CapActorKind::ChangeSameFile;
+			if (beforeRemoval != (stage == PresentationCollectionTestStage::BeforeOwnedRemoval)) return;
+			if (beforeRemoval && fs::path(actualCandidate) != actor.candidate) return;
+			++actor.calls;
+			if (actor.kind == CapActorKind::LockedReferences)
+			{
+				actor.premise = true;
+				for (const auto* name : { L"index.json", L"index.json.bak" })
+				{
+					const auto path = actor.root / name;
+					HANDLE write = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+						nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+					const DWORD writeError = write == INVALID_HANDLE_VALUE ? GetLastError() : 0;
+					if (write != INVALID_HANDLE_VALUE) CloseHandle(write);
+					const BOOL moved = MoveFileExW(path.c_str(), (path.wstring() + L".unaccepted-move").c_str(), 0);
+					const DWORD moveError = moved ? 0 : GetLastError();
+					actor.premise &= write == INVALID_HANDLE_VALUE && writeError == ERROR_SHARING_VIOLATION &&
+						!moved && moveError == ERROR_SHARING_VIOLATION;
+				}
+			}
+			else if (actor.kind == CapActorKind::ReplaceVersion)
+			{
+				actor.moved = actor.candidate.wstring() + L".original-retained";
+				if (!MoveFileExW(actor.candidate.c_str(), actor.moved.c_str(), 0)) return;
+				HANDLE file = CreateFileW(actor.candidate.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (file == INVALID_HANDLE_VALUE) return;
+				const char bytes[] = "foreign-replacement-must-stay";
+				DWORD written = 0;
+				actor.premise = WriteFile(file, bytes, sizeof(bytes) - 1, &written, nullptr) &&
+					written == sizeof(bytes) - 1 && FlushFileBuffers(file);
+				CloseHandle(file);
+			}
+			else if (actor.kind == CapActorKind::ChangeSameFile)
+			{
+				HANDLE file = CreateFileW(actor.candidate.c_str(), GENERIC_READ | GENERIC_WRITE,
+					FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (file == INVALID_HANDLE_VALUE) return;
+				BY_HANDLE_FILE_INFORMATION before = {}, after = {};
+				LARGE_INTEGER offset; offset.QuadPart = -1;
+				char last = 0; DWORD count = 0;
+				bool changed = GetFileInformationByHandle(file, &before) && SetFilePointerEx(file, offset, nullptr, FILE_END) &&
+					ReadFile(file, &last, 1, &count, nullptr) && count == 1;
+				last ^= 0x5a;
+				changed = changed && SetFilePointerEx(file, offset, nullptr, FILE_END) &&
+					WriteFile(file, &last, 1, &count, nullptr) && count == 1 && FlushFileBuffers(file) &&
+					GetFileInformationByHandle(file, &after);
+				CloseHandle(file);
+				actor.modified = ReadFileBytes(actor.candidate);
+				actor.premise = changed && before.dwVolumeSerialNumber == after.dwVolumeSerialNumber &&
+					before.nFileIndexHigh == after.nFileIndexHigh && before.nFileIndexLow == after.nFileIndexLow &&
+					before.nFileSizeHigh == after.nFileSizeHigh && before.nFileSizeLow == after.nFileSizeLow &&
+					actor.modified && actor.original && actor.modified != actor.original;
+			}
+			else if (actor.kind == CapActorKind::MoveNamespace)
+			{
+				actor.moved = actor.root.wstring() + L"-namespace-retained";
+				SetLastError(ERROR_SUCCESS);
+				const BOOL moved = MoveFileExW(actor.root.c_str(), actor.moved.c_str(), 0);
+				const DWORD error = moved ? ERROR_SUCCESS : GetLastError();
+				// 已持有的目录 lease 不共享删除权限，Windows 返回 ACCESS_DENIED 时必须保留原 namespace。
+				actor.premise = !moved && error == ERROR_ACCESS_DENIED;
+			}
+			else
+			{
+				const bool backup = actor.kind == CapActorKind::BadBackup || actor.kind == CapActorKind::MissingBackup;
+				const auto path = actor.root / (backup ? L"index.json.bak" : L"index.json");
+				if (actor.kind == CapActorKind::MissingCurrent || actor.kind == CapActorKind::MissingBackup)
+					actor.premise = DeleteFileW(path.c_str()) != FALSE;
+				else
+				{
+					std::ofstream bad(path, std::ios::binary | std::ios::trunc);
+					bad << "{invalid-reference-lease";
+					actor.premise = bad.good();
+				}
+			}
+		}
+		catch (...) { actor.premise = false; }
+	}
+
+	struct CapAllocationActorContext
+	{
+		PresentationCollectionAllocationStage expected;
+		fs::path root;
+		unsigned calls = 0;
+		bool committedBeforeRegister = false;
+	};
+
+	void CapAllocationActor(void* context, PresentationCollectionAllocationStage stage) noexcept
+	{
+		auto& actor = *static_cast<CapAllocationActorContext*>(context);
+		if (stage != actor.expected || actor.calls != 0) return;
+		try
+		{
+			if (stage == PresentationCollectionAllocationStage::RegisterVersion)
+			{
+				// 真断点位于 UInk Committed、index 尚为第2版；核实际文件，不按 synthetic 状态猜测。
+				Json::Value current, backup;
+				const fs::path selected = actor.root / L"presentation";
+				if (!ReadIndexJson(selected / L"index.json", current) ||
+					!ReadIndexJson(selected / L"index.json.bak", backup) ||
+					current["entries"][0]["mutationRevision"].asUInt64() != 2) return;
+				const auto firstPath = selected / fs::path(current["entries"][0]["relativePath"].asString());
+				const auto secondPath = selected / fs::path(backup["entries"][0]["relativePath"].asString());
+				for (const auto& file : fs::directory_iterator(selected / L"files"))
+				{
+					if (file.path() == firstPath || file.path() == secondPath || file.path().extension() != L".uink") continue;
+					const auto read = ReadUInkFile(file.path().wstring());
+					actor.committedBeforeRegister = read.status == UInkReadStatus::Complete && read.document && read.sourceRevision;
+				}
+				if (!actor.committedBeforeRegister) return;
+			}
+			++actor.calls;
+			FailNextPresentationCollectionAllocationForTesting();
+		}
+		catch (...) {} // 未实际建立前提时不注入；调用方明确记失败。
+	}
+
+	void TestOptionalCollectionAllocationCannotFailSave(TestState& state)
+	{
+		for (const auto stage : { PresentationCollectionAllocationStage::NamespacePreparation,
+			PresentationCollectionAllocationStage::PriorReferences, PresentationCollectionAllocationStage::RegisterVersion })
+		{
+			ResetPresentationAutoSaveTestFaultInjection();
+			const fs::path root = MakeRoot();
+			const auto target = MakeTarget();
+			PresentationAutoSaveService service;
+			for (std::uint64_t revision = 1; revision <= 2; ++revision)
+			{
+				const auto seeded = SaveCapRevision(state, service, root, target, revision, MakeSnapshot(target, revision == 1));
+				PRESENTATION_CHECK(state, seeded.status == PresentationPersistenceStatus::Committed);
+				if (seeded.status != PresentationPersistenceStatus::Committed) return;
+			}
+			const auto oldFiles = CapturePresentationFiles(root);
+			PRESENTATION_CHECK(state, oldFiles.has_value());
+			if (!oldFiles) return;
+			const auto failuresBefore = PresentationCollectionAllocationFailuresForTesting();
+			CapAllocationActorContext actor{ stage, root };
+			PresentationAutoSaveTestFaultInjection faults;
+			faults.collectionAllocationHook = CapAllocationActor;
+			faults.collectionAllocationContext = &actor;
+			SetPresentationAutoSaveTestFaultInjection(faults);
+			const auto committed = SaveCapRevision(state, service, root, target, 3, MakeSnapshot(target, true));
+			PRESENTATION_CHECK(state, actor.calls == 1 && PresentationCollectionAllocationFailuresForTesting() == failuresBefore + 1 &&
+				(stage != PresentationCollectionAllocationStage::RegisterVersion || actor.committedBeforeRegister));
+			PRESENTATION_CHECK(state, committed.status == PresentationPersistenceStatus::Committed && committed.mutationRevision == 3 &&
+				CountUInkFiles(root) == 3);
+			for (const auto& [path, bytes] : *oldFiles)
+				if (path.extension() == L".uink") PRESENTATION_CHECK(state, ReadFileBytes(path) == bytes);
+			PresentationAutoSaveService cold;
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()));
+			PRESENTATION_CHECK(state, cold.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			const auto loaded = TakeCompletion(cold);
+			PRESENTATION_CHECK(state, loaded.status == PresentationPersistenceStatus::Loaded && loaded.loadedSnapshot &&
+				!loaded.loadedSnapshot->canvases.empty() && loaded.loadedSnapshot->canvases.front().strokes.size() == 1);
+			Json::Value backup;
+			const fs::path index = root / L"presentation" / L"index.json";
+			PRESENTATION_CHECK(state, ReadIndexJson(root / L"presentation" / L"index.json.bak", backup) &&
+				backup["entries"][0]["mutationRevision"].asUInt64() == 2);
+			{ std::ofstream bad(index, std::ios::binary | std::ios::trunc); bad << "{verify-prior-point"; }
+			PRESENTATION_CHECK(state, cold.Start(root.wstring()));
+			PRESENTATION_CHECK(state, cold.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted);
+			cold.CloseAndDrain();
+			const auto previous = TakeCompletion(cold);
+			PRESENTATION_CHECK(state, previous.status == PresentationPersistenceStatus::Loaded && previous.loadedSnapshot &&
+				!previous.loadedSnapshot->canvases.empty() && previous.loadedSnapshot->canvases.front().strokes.empty());
+			std::wcout << L"[PresentationCapAllocation] stage=" << static_cast<unsigned>(stage) << L" artifacts=" << root.wstring() << L'\n';
+		}
+		// 可选失败只隔离 CAP；真正 UInk 写错误仍失败，保留最后索引/文件点。
+		ResetPresentationAutoSaveTestFaultInjection();
+		const fs::path root = MakeRoot();
+		const auto target = MakeTarget();
+		PresentationAutoSaveService service;
+		for (std::uint64_t revision = 1; revision <= 2; ++revision)
+			PRESENTATION_CHECK(state, SaveCapRevision(state, service, root, target, revision, MakeSnapshot(target, true)).status ==
+				PresentationPersistenceStatus::Committed);
+		const auto unchanged = CapturePresentationFiles(root);
+		PRESENTATION_CHECK(state, unchanged.has_value());
+		if (!unchanged) return;
+		CapAllocationActorContext actor{ PresentationCollectionAllocationStage::NamespacePreparation, root };
+		PresentationAutoSaveTestFaultInjection faults;
+		faults.collectionAllocationHook = CapAllocationActor;
+		faults.collectionAllocationContext = &actor;
+		SetPresentationAutoSaveTestFaultInjection(faults);
+		UInkFileTestFaultInjection ioFault;
+		ioFault.failWriteAfterBytes = 0;
+		SetUInkFileTestFaultInjection(ioFault);
+		const auto failed = SaveCapRevision(state, service, root, target, 3, MakeSnapshot(target, false));
+		ResetUInkFileTestFaultInjection();
+		PRESENTATION_CHECK(state, actor.calls == 1 && failed.status == PresentationPersistenceStatus::IoError &&
+			PresentationFilesUnchanged(*unchanged));
+		auto invalid = MakeSnapshot(target, true);
+		invalid.workspaceType = 0;
+		PRESENTATION_CHECK(state, service.SubmitSave({ target, 4, std::move(invalid) }) == PresentationPersistenceSubmitStatus::Invalid);
+		ResetPresentationAutoSaveTestFaultInjection();
+	}
+
+	void TestCollectionInterferenceRetainsUnprovenFiles(TestState& state)
+	{
+		for (const auto kind : { CapActorKind::LockedReferences, CapActorKind::ReplaceVersion, CapActorKind::ChangeSameFile,
+			CapActorKind::BadCurrent, CapActorKind::BadBackup, CapActorKind::MissingCurrent, CapActorKind::MissingBackup,
+			CapActorKind::MoveNamespace })
+		{
+			ResetPresentationAutoSaveTestFaultInjection();
+			const fs::path root = MakeRoot();
+			const auto target = MakeTarget();
+			PresentationAutoSaveService service;
+			for (std::uint64_t revision = 1; revision <= 2; ++revision)
+			{
+				const auto saved = SaveCapRevision(state, service, root, target, revision, MakeSnapshot(target, true));
+				PRESENTATION_CHECK(state, saved.status == PresentationPersistenceStatus::Committed);
+				if (saved.status != PresentationPersistenceStatus::Committed) return;
+			}
+			Json::Value backup;
+			const fs::path selected = root / L"presentation";
+			const bool parsed = ReadIndexJson(selected / L"index.json.bak", backup);
+			PRESENTATION_CHECK(state, parsed);
+			if (!parsed) return;
+			CapActorContext actor{ kind, selected, selected / fs::path(backup["entries"][0]["relativePath"].asString()) };
+			actor.original = ReadFileBytes(actor.candidate);
+			PRESENTATION_CHECK(state, actor.original.has_value());
+			if (!actor.original) return;
+			PresentationAutoSaveTestFaultInjection faults;
+			faults.collectionHook = CapActor;
+			faults.collectionContext = &actor;
+			SetPresentationAutoSaveTestFaultInjection(faults);
+			const auto saved = SaveCapRevision(state, service, root, target, 3, MakeSnapshot(target, true));
+			PRESENTATION_CHECK(state, saved.status == PresentationPersistenceStatus::Committed && actor.calls == 1 && actor.premise);
+			if (actor.calls != 1 || !actor.premise) continue; // actor 没有真正制造前提，不能冒称安全保留 PASS。
+			if (kind == CapActorKind::LockedReferences)
+				PRESENTATION_CHECK(state, !fs::exists(actor.candidate) && CountUInkFiles(root) == 2);
+			else if (kind == CapActorKind::ReplaceVersion)
+				PRESENTATION_CHECK(state, ReadFileBytes(actor.candidate) == std::optional<std::string>("foreign-replacement-must-stay") &&
+					ReadFileBytes(actor.moved) == actor.original);
+			else if (kind == CapActorKind::ChangeSameFile)
+				PRESENTATION_CHECK(state, ReadFileBytes(actor.candidate) == actor.modified);
+			else if (kind == CapActorKind::MoveNamespace)
+				PRESENTATION_CHECK(state, !fs::exists(actor.moved) && !fs::exists(actor.candidate) && CountUInkFiles(root) == 2);
+			else
+				PRESENTATION_CHECK(state, ReadFileBytes(actor.candidate) == actor.original && CountUInkFiles(root) == 3);
+			std::wcout << L"[PresentationCap] actor=" << static_cast<unsigned>(kind) << L" artifacts=" << root.wstring() << L'\n';
+		}
+		ResetPresentationAutoSaveTestFaultInjection();
+	}
+#endif
+
 	void TestSaveLoadAndClearOverwrite(TestState& state)
 	{
 		const fs::path root = MakeRoot();
@@ -440,11 +1252,13 @@ namespace
 			"cccccccc-cccc-4ccc-8ccc-cccccccccccc" });
 		PRESENTATION_CHECK(state, foreign.Start(root.wstring()));
 		PRESENTATION_CHECK(state, foreign.SubmitSave({ target, 3,
-			MakeSnapshot(target, true) }) == PresentationPersistenceSubmitStatus::Accepted);
+			MakeSecondSnapshot(target, true) }) == PresentationPersistenceSubmitStatus::Accepted);
 		foreign.CloseAndDrain();
-		PRESENTATION_CHECK(state, TakeCompletion(foreign).status ==
-			PresentationPersistenceStatus::CrossProcessConflictDeferred);
-		PRESENTATION_CHECK(state, CountUInkFiles(root) == 4);
+		const auto independentlySaved = TakeCompletion(foreign);
+		PRESENTATION_CHECK(state, independentlySaved.status == PresentationPersistenceStatus::Committed &&
+			independentlySaved.storageTrack == PresentationStorageTrack::SlideIdSession);
+		// 首次 index 失败期间缺少有效 bak 的孤儿只保留；后续已失去引用的 owned tail 可回收。
+		PRESENTATION_CHECK(state, CountUInkFiles(root) == 3);
 		std::error_code error;
 		fs::remove_all(root, error);
 	}
@@ -1084,11 +1898,10 @@ namespace
 			PRESENTATION_CHECK(state, TakeCompletion(service).status ==
 				PresentationPersistenceStatus::Committed);
 		}
-		PRESENTATION_CHECK(state, retired && retiredBytes &&
-			ReadFileBytes(*retired) == retiredBytes);
+		PRESENTATION_CHECK(state, retired && retiredBytes && !fs::exists(*retired));
 		PRESENTATION_CHECK(state, ReadFileBytes(unknown) ==
 			std::optional<std::string>("foreign-file-must-stay"));
-		PRESENTATION_CHECK(state, CountUInkFiles(root) == 4);
+		PRESENTATION_CHECK(state, CountUInkFiles(root) == 3);
 		std::error_code error;
 		fs::remove_all(root, error);
 	}
@@ -1608,17 +2421,17 @@ namespace
 		PRESENTATION_CHECK(state, foreign.SubmitLoad({ stable }) ==
 			PresentationPersistenceSubmitStatus::Accepted);
 		foreign.CloseAndDrain();
-		int rejected = 0;
+		int isolated = 0;
 		PresentationPersistenceCompletion completion;
 		while (foreign.TryTakeCompletion(completion))
-			rejected += completion.status ==
-				PresentationPersistenceStatus::CrossProcessConflictDeferred &&
+			isolated += completion.status == PresentationPersistenceStatus::NotFound &&
 				!completion.fileGuid &&
+				!completion.loadedSnapshot &&
 				completion.storageTrack == (completion.target.bindingMode ==
 					Bridge::SlideBindingMode::StableSlideId
-						? PresentationStorageTrack::SlideIdSidecar
-						: PresentationStorageTrack::Base);
-		PRESENTATION_CHECK(state, rejected == 2);
+						? PresentationStorageTrack::SlideIdSession
+						: PresentationStorageTrack::PageIndexSession);
+		PRESENTATION_CHECK(state, isolated == 2);
 		std::error_code error;
 		fs::remove_all(root, error);
 	}
@@ -2409,7 +3222,7 @@ namespace
 			std::move(current) }) == PresentationPersistenceSubmitStatus::Accepted);
 		service.CloseAndDrain();
 		PRESENTATION_CHECK(state, service.Diagnostics().committed == 3);
-		PRESENTATION_CHECK(state, CountUInkFiles(root) == 3);
+		PRESENTATION_CHECK(state, CountUInkFiles(root) == 2);
 
 		PRESENTATION_CHECK(state, service.Start(root.wstring()));
 		PRESENTATION_CHECK(state, service.SubmitLoad({ target }) ==
@@ -2476,6 +3289,58 @@ int RunPresentationAutoSaveAtomicChild(const wchar_t* root,
 	ResetPresentationAutoSaveTestFaultInjection();
 	return started && submitted == PresentationPersistenceSubmitStatus::Accepted &&
 		completion.status == PresentationPersistenceStatus::Committed ? 0 : 2;
+}
+
+int RunPresentationAutoSaveSessionChild(const wchar_t* root, const wchar_t* phase)
+{
+	if (!root || !phase || (wcscmp(phase, L"seed") != 0 && wcscmp(phase, L"fresh") != 0)) return 90;
+	const fs::path path(root);
+	const auto name = path.filename().wstring();
+	const std::wstring prefix = L"InkeysPresentationAutoSave_";
+	if (!path.is_absolute() || !name.starts_with(prefix)) return 91;
+	const std::wstring suffix = name.substr(prefix.size());
+	if (!ParseUInkGuid(std::string(suffix.begin(), suffix.end()))) return 92;
+	const DWORD attributes = GetFileAttributesW(root);
+	if (attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_DIRECTORY) ||
+		(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) return 93;
+	ResetPresentationAutoSaveTestFaultInjection();
+	try { return RunDefaultSessionStage(path, wcscmp(phase, L"fresh") == 0); }
+	catch (...) { return 94; }
+}
+
+int RunPresentationSessionRegressionTests()
+{
+	TestState state;
+	ResetPresentationAutoSaveTestFaultInjection();
+	TestDefaultProcessSessionStartsIndependent(state);
+	TestUnusedCorruptSidecarDoesNotBlockSelectedTrack(state);
+	TestCommittedSessionTracksRejectSharedLogicalIdentity(state);
+	TestForeignIndexDoesNotHideCurrentGenerationPending(state);
+	ResetPresentationAutoSaveTestFaultInjection();
+	return state.failures;
+}
+
+int RunPresentationSessionIntegrityTests()
+{
+	TestState state;
+	ResetPresentationAutoSaveTestFaultInjection();
+	TestCommittedSessionTracksRejectSharedLogicalIdentity(state);
+	TestForeignIndexDoesNotHideCurrentGenerationPending(state);
+	ResetPresentationAutoSaveTestFaultInjection();
+	return state.failures;
+}
+
+int RunPresentationVersionCapTests()
+{
+	TestState state;
+	TestOwnedVersionCollectionConverges(state);
+	TestFailedIndexProtectsPendingVersions(state);
+#if defined(DRAW3_TESTING)
+	TestCollectionInterferenceRetainsUnprovenFiles(state);
+	TestOptionalCollectionAllocationCannotFailSave(state);
+#endif
+	ResetPresentationAutoSaveTestFaultInjection();
+	return state.failures;
 }
 
 int RunPresentationUInkRoundTripTests()

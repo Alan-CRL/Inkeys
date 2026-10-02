@@ -17,6 +17,7 @@
 #include <cwctype>
 #include <limits>
 #include <map>
+#include <memory>
 #include <new>
 #include <optional>
 #include <set>
@@ -43,6 +44,7 @@ namespace draw3::uink
 		std::atomic<bool> gFailRollback{ false };
 		std::atomic<bool> gFailCommittedRevisionValidation{ false };
 #if defined(DRAW3_TESTING)
+		std::atomic<bool> gFailOwnedVersionPrep{ false };
 		UInkCleanupTestHook gCleanupTestHook = nullptr;
 		void* gCleanupTestContext = nullptr;
 		UInkCleanupTestAction NotifyCleanupTest(UInkCleanupTestStage stage, const std::wstring& path) noexcept
@@ -104,22 +106,46 @@ namespace draw3::uink
 			HANDLE value_ = INVALID_HANDLE_VALUE;
 		};
 
+		struct PinnedArtifact
+		{
+			UniqueHandle pin;
+			UInkSourceRevision revision;
+			DWORD proofError = ERROR_NOT_SUPPORTED;
+			bool hasContent = false;
+			bool authorized = false;
+
+			void PinFromHandle(const std::wstring& path, HANDLE original) noexcept;
+			void CaptureContent(HANDLE original) noexcept;
+			void UseRevision(const UInkSourceRevision& actual) noexcept;
+			void Authorize() noexcept { authorized = pin && hasContent; }
+			bool TryCleanup(const std::wstring& path, DWORD& error) noexcept;
+		};
+
 		class DeletePathOnExit
 		{
 		public:
 			explicit DeletePathOnExit(std::wstring path) : path_(std::move(path)) {}
-			~DeletePathOnExit()
+			~DeletePathOnExit() noexcept
 			{
-#if defined(DRAW3_TESTING)
-				if (active_ && !path_.empty()) (void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, path_);
-#endif
-				if (active_ && !path_.empty()) DeleteFileW(path_.c_str());
+				DWORD error = ERROR_SUCCESS;
+				if (active_) (void)artifact_.TryCleanup(path_, error);
+			}
+			void PinFromHandle(HANDLE original) noexcept { artifact_.PinFromHandle(path_, original); }
+			void CaptureContent(HANDLE original) noexcept
+			{
+				artifact_.CaptureContent(original);
+				artifact_.Authorize();
+				Resume();
 			}
 			void Release() noexcept { active_ = false; }
+			void Resume() noexcept { active_ = artifact_.authorized; }
+			bool TryCleanupAt(const std::wstring& path, DWORD& error) noexcept { return artifact_.TryCleanup(path, error); }
+			bool TransferCommittedProof(const UInkSourceRevision& actual, PinnedArtifact& output) noexcept;
 
 		private:
 			std::wstring path_;
-			bool active_ = true;
+			PinnedArtifact artifact_;
+			bool active_ = false;
 		};
 
 		class NamedTransactionGuard
@@ -412,6 +438,173 @@ namespace draw3::uink
 			return HashHandle(handle, revision.length, revision.sha256, error);
 		}
 
+		// 属性 pin 不阻断原 share0 数据句柄；保活原对象，禁止跨关闭期限追认整数 ID。
+		struct LastErrorRestorer
+		{
+			DWORD value = GetLastError();
+			~LastErrorRestorer() { SetLastError(value); }
+		};
+
+		bool CleanupFileInformation(HANDLE handle, BY_HANDLE_FILE_INFORMATION& info, DWORD& error) noexcept
+		{
+			if (GetFileType(handle) != FILE_TYPE_DISK)
+			{
+				error = ERROR_NOT_SUPPORTED;
+				return false;
+			}
+			if (!GetFileInformationByHandle(handle, &info))
+			{
+				error = GetLastError();
+				return false;
+			}
+			if ((info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+				info.nNumberOfLinks != 1 || !info.dwVolumeSerialNumber || !(info.nFileIndexHigh || info.nFileIndexLow))
+			{
+				error = ERROR_NOT_SUPPORTED;
+				return false;
+			}
+			wchar_t filesystem[32] = {};
+			if (!GetVolumeInformationByHandleW(handle, nullptr, 0, nullptr, nullptr, nullptr, filesystem, 32))
+			{
+				error = GetLastError();
+				return false;
+			}
+			if (std::wcscmp(filesystem, L"NTFS") != 0)
+			{
+				error = ERROR_NOT_SUPPORTED;
+				return false;
+			}
+			return true;
+		}
+
+		bool SameCleanupIdentity(const BY_HANDLE_FILE_INFORMATION& info, const UInkSourceRevision& revision) noexcept
+		{
+			return info.dwVolumeSerialNumber == revision.volumeSerial &&
+				((static_cast<uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow) == revision.fileIndex;
+		}
+
+		void PinnedArtifact::PinFromHandle(const std::wstring& path, HANDLE original) noexcept
+		{
+			LastErrorRestorer restore;
+			BY_HANDLE_FILE_INFORMATION originalInfo = {}, pinnedInfo = {};
+			if (!CleanupFileInformation(original, originalInfo, proofError)) return;
+			UniqueHandle candidate(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+			if (!candidate)
+			{
+				proofError = GetLastError();
+				return;
+			}
+			if (!CleanupFileInformation(candidate.Get(), pinnedInfo, proofError)) return;
+			revision.volumeSerial = originalInfo.dwVolumeSerialNumber;
+			revision.fileIndex = (static_cast<uint64_t>(originalInfo.nFileIndexHigh) << 32) | originalInfo.nFileIndexLow;
+			if (!SameCleanupIdentity(pinnedInfo, revision))
+			{
+				proofError = ERROR_FILE_INVALID;
+				return;
+			}
+			pin = std::move(candidate);
+			proofError = ERROR_SUCCESS;
+		}
+
+		void PinnedArtifact::UseRevision(const UInkSourceRevision& actual) noexcept
+		{
+			if (!pin) return;
+			if (actual.volumeSerial != revision.volumeSerial || actual.fileIndex != revision.fileIndex)
+			{
+				proofError = ERROR_FILE_INVALID;
+				return;
+			}
+			revision = actual;
+			hasContent = true;
+			proofError = ERROR_SUCCESS;
+		}
+
+		void PinnedArtifact::CaptureContent(HANDLE original) noexcept
+		{
+			LastErrorRestorer restore;
+			if (!pin) return;
+			try
+			{
+				UInkSourceRevision actual;
+				if (RevisionFromHandle(original, actual, proofError)) UseRevision(actual);
+			}
+			catch (...) { proofError = ERROR_NOT_ENOUGH_MEMORY; }
+		}
+
+		bool PinnedArtifact::TryCleanup(const std::wstring& path, DWORD& error) noexcept
+		{
+			LastErrorRestorer restore;
+			if (!authorized || !pin || !hasContent)
+			{
+				error = proofError == ERROR_SUCCESS ? ERROR_NOT_SUPPORTED : proofError;
+				return false;
+			}
+#if defined(DRAW3_TESTING)
+			(void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, path);
+#endif
+			// 同一 DELETE 句柄拒绝新写入/换名；身份、实际内容与 disposition 之间不再重开路径。
+			UniqueHandle deleting(CreateFileW(path.c_str(), DELETE | GENERIC_READ | FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+			if (!deleting)
+			{
+				error = GetLastError();
+				return false;
+			}
+			try
+			{
+				BY_HANDLE_FILE_INFORMATION pinnedInfo = {}, deletingInfo = {};
+				if (!CleanupFileInformation(pin.Get(), pinnedInfo, error) ||
+					!CleanupFileInformation(deleting.Get(), deletingInfo, error)) return false;
+				if (!SameCleanupIdentity(pinnedInfo, revision) || !SameCleanupIdentity(deletingInfo, revision))
+				{
+					error = ERROR_FILE_INVALID;
+					return false;
+				}
+				UInkSourceRevision actual;
+				if (!RevisionFromHandle(deleting.Get(), actual, error)) return false;
+				if (actual.volumeSerial != revision.volumeSerial || actual.fileIndex != revision.fileIndex ||
+					actual.length != revision.length || actual.sha256 != revision.sha256)
+				{
+					error = ERROR_FILE_INVALID;
+					return false;
+				}
+				FILE_DISPOSITION_INFO disposition = {};
+				disposition.DeleteFile = TRUE;
+				if (!SetFileInformationByHandle(deleting.Get(), FileDispositionInfo, &disposition, sizeof(disposition)))
+				{
+					error = GetLastError();
+					return false;
+				}
+				// DELETE 句柄仍保同对象；先撤属性 pin，剩余引用决定实际回收时机。
+				pin = UniqueHandle{};
+				authorized = false;
+				error = ERROR_SUCCESS;
+				return true;
+			}
+			catch (...)
+			{
+				error = ERROR_NOT_ENOUGH_MEMORY;
+				return false;
+			}
+		}
+
+		bool DeletePathOnExit::TransferCommittedProof(const UInkSourceRevision& actual, PinnedArtifact& output) noexcept
+		{
+			LastErrorRestorer restore;
+			if (!artifact_.pin || !artifact_.hasContent || !artifact_.authorized ||
+				actual.volumeSerial != artifact_.revision.volumeSerial || actual.fileIndex != artifact_.revision.fileIndex ||
+				actual.length != artifact_.revision.length || actual.sha256 != artifact_.revision.sha256) return false;
+			BY_HANDLE_FILE_INFORMATION info = {};
+			DWORD error = ERROR_SUCCESS;
+			if (!CleanupFileInformation(artifact_.pin.Get(), info, error) || !SameCleanupIdentity(info, actual)) return false;
+			// 最终强读确为仍活原创建对象；直接移交 pin，不在 Save 返回后按路径重开追认。
+			output = std::move(artifact_);
+			active_ = false;
+			return true;
+		}
+
 		struct FileSnapshot
 		{
 			std::vector<std::byte> bytes;
@@ -505,7 +698,8 @@ namespace draw3::uink
 		}
 
 		bool WriteNewFile(const std::wstring& path, std::span<const std::byte> bytes,
-			bool durable, const UInkFileTestFaultInjection& faults, DWORD& error)
+			bool durable, const UInkFileTestFaultInjection& faults, DWORD& error,
+			DeletePathOnExit* cleanup = nullptr)
 		{
 #if defined(DRAW3_TESTING)
 			(void)NotifyCleanupTest(UInkCleanupTestStage::TempBeforeCreate, path);
@@ -518,6 +712,14 @@ namespace draw3::uink
 				error = GetLastError();
 				return false;
 			}
+			if (cleanup) cleanup->PinFromHandle(handle.Get());
+			// 所有写入/flush 早退均先从实际排他句柄取内容，再关闭 writer；主错误不被证明采集覆盖。
+			struct ContentCapture
+			{
+				HANDLE original;
+				DeletePathOnExit* cleanup;
+				~ContentCapture() noexcept { if (cleanup) cleanup->CaptureContent(original); }
+			} capture{ handle.Get(), cleanup };
 			size_t position = 0;
 			while (position < bytes.size())
 			{
@@ -797,12 +999,34 @@ namespace draw3::uink
 
 		bool ReadRevisionAtPath(const std::wstring& path,
 			const UInkFileAccessOptions& access, UInkSourceRevision& revision,
-			DWORD& error)
+			DWORD& error, PinnedArtifact* sourceProof = nullptr)
 		{
 			UniqueHandle handle = OpenWithRetry(path, GENERIC_READ, 0, OPEN_EXISTING,
 				FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, access, error);
-			return handle && RevisionFromHandle(handle.Get(), revision, error);
+			if (!handle || !RevisionFromHandle(handle.Get(), revision, error)) return false;
+			if (sourceProof)
+			{
+				// 原强读仍活时连接属性 pin；调用方完整匹配 session 后才授权 backup 清理。
+				sourceProof->PinFromHandle(path, handle.Get());
+				sourceProof->UseRevision(revision);
+			}
+			return true;
 		}
+	}
+
+	struct UInkOwnedVersion::Impl
+	{
+		std::wstring path;
+		PinnedArtifact artifact;
+	};
+
+	UInkOwnedVersion::UInkOwnedVersion() noexcept = default;
+	UInkOwnedVersion::~UInkOwnedVersion() noexcept = default;
+	UInkOwnedVersion::UInkOwnedVersion(UInkOwnedVersion&&) noexcept = default;
+	UInkOwnedVersion& UInkOwnedVersion::operator=(UInkOwnedVersion&&) noexcept = default;
+	UInkOwnedVersion::operator bool() const noexcept
+	{
+		return impl_ && impl_->artifact.pin && impl_->artifact.hasContent && impl_->artifact.authorized;
 	}
 
 	UInkReadResult ReadUInkFile(const std::wstring& path,
@@ -870,8 +1094,9 @@ namespace draw3::uink
 			readResult.diagnostics, readResult.sourceRevision, readResult.sourcePath };
 	}
 
-	UInkSaveResult SaveUInkFile(const std::wstring& path,
-		const UInkEditingSession& session, const UInkSaveOptions& options)
+	static UInkSaveResult SaveUInkFileImpl(const std::wstring& path,
+		const UInkEditingSession& session, const UInkSaveOptions& options,
+		PinnedArtifact* createdProof = nullptr, const std::wstring* createdPath = nullptr)
 	{
 		UInkSaveResult result;
 		try
@@ -884,6 +1109,7 @@ namespace draw3::uink
 				result.systemError = ERROR_INVALID_NAME;
 				return result;
 			}
+			if (createdPath && !SamePath(*createdPath, *target)) createdProof = nullptr;
 			if (HasMedia(session.document))
 			{
 				result.status = UInkSaveStatus::ResourcePackUnsupported;
@@ -948,7 +1174,7 @@ namespace draw3::uink
 				return result;
 			}
 			DeletePathOnExit tempCleanup(*tempPath);
-			if (!WriteNewFile(*tempPath, encoded.bytes, true, faults, error))
+			if (!WriteNewFile(*tempPath, encoded.bytes, true, faults, error, &tempCleanup))
 			{
 				result.status = UInkSaveStatus::IoError;
 				result.systemError = error;
@@ -986,6 +1212,7 @@ namespace draw3::uink
 				return result;
 			}
 
+			PinnedArtifact predecessor;
 			std::wstring committedBackupPath;
 			if (IsCreateNewMode(options.mode))
 			{
@@ -997,12 +1224,15 @@ namespace draw3::uink
 						UInkDiagnosticSeverity::Error, "target", result.systemError);
 					return result;
 				}
+				// 可能改变目标前默认保留；异常展开不得删除尚可能作为恢复材料的 temp。
+				tempCleanup.Release();
 				const BOOL moved = faults.failCommit ?
 					(SetLastError(ERROR_ACCESS_DENIED), FALSE) :
 					MoveFileExW(tempPath->c_str(), target->c_str(), MOVEFILE_WRITE_THROUGH);
 				if (!moved)
 				{
 					result.systemError = GetLastError();
+					if (faults.failCommit) tempCleanup.Resume(); // 固定注入未进入 Move，属于可证安全放弃。
 					result.status = (result.systemError == ERROR_ALREADY_EXISTS ||
 						result.systemError == ERROR_FILE_EXISTS) ? UInkSaveStatus::SourceChanged :
 						UInkSaveStatus::IoError;
@@ -1018,7 +1248,7 @@ namespace draw3::uink
 			else
 			{
 				UInkSourceRevision currentRevision;
-				if (!ReadRevisionAtPath(*target, options.access, currentRevision, error))
+				if (!ReadRevisionAtPath(*target, options.access, currentRevision, error, &predecessor))
 				{
 					result.status = UInkSaveStatus::SourceChanged;
 					result.systemError = error;
@@ -1034,6 +1264,7 @@ namespace draw3::uink
 					return result;
 				}
 
+				predecessor.Authorize();
 				const std::optional<std::wstring> backupPath = UniqueSiblingPath(*target, L".bak");
 				if (!backupPath)
 				{
@@ -1044,6 +1275,7 @@ namespace draw3::uink
 #if defined(DRAW3_TESTING)
 				(void)NotifyCleanupTest(UInkCleanupTestStage::BackupBeforeReplace, *backupPath);
 #endif
+				tempCleanup.Release();
 				const BOOL replaced = faults.failCommit ?
 					(SetLastError(ERROR_UNABLE_TO_MOVE_REPLACEMENT), FALSE) :
 					ReplaceFileW(target->c_str(), tempPath->c_str(), backupPath->c_str(),
@@ -1067,17 +1299,15 @@ namespace draw3::uink
 						afterFailure == *session.sourceRevision)
 					{
 						result.status = UInkSaveStatus::IoError;
-#if defined(DRAW3_TESTING)
-						if (gCleanupTestHook && PathExists(*backupPath))
-							(void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, *backupPath);
-#endif
-						if (PathExists(*backupPath)) DeleteFileW(backupPath->c_str());
+						tempCleanup.Resume(); // 原目标强 revision 完整未变，才重授 temp 清理。
+						DWORD cleanupError = ERROR_SUCCESS;
+						(void)predecessor.TryCleanup(*backupPath, cleanupError);
 					}
 					else
 					{
 						result.status = UInkSaveStatus::PartialCommitRequiresRecovery;
 						result.recoveryPath = PathExists(*backupPath) ? *backupPath : *tempPath;
-						if (result.recoveryPath == *tempPath) tempCleanup.Release();
+						tempCleanup.Release(); // 所有 Partial 都保留 temp，与 locator 选哪一个无关。
 					}
 					return result;
 				}
@@ -1096,9 +1326,9 @@ namespace draw3::uink
 #if defined(DRAW3_TESTING)
 						const auto action = NotifyCleanupTest(UInkCleanupTestStage::RecoveryMovesFinished, *newRecovery);
 						if (action == UInkCleanupTestAction::ThrowBadAlloc) throw std::bad_alloc();
-						(void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, *newRecovery);
 #endif
-						DeleteFileW(newRecovery->c_str());
+						DWORD cleanupError = ERROR_SUCCESS;
+						(void)tempCleanup.TryCleanupAt(*newRecovery, cleanupError);
 						result.status = UInkSaveStatus::SourceChanged;
 						AddDiagnostic(result.diagnostics, UInkDiagnosticCode::SourceChanged,
 							UInkDiagnosticSeverity::Error, "source", error);
@@ -1139,18 +1369,17 @@ namespace draw3::uink
 					UInkDiagnosticSeverity::Error, "target", result.systemError);
 				return result;
 			}
-#if defined(DRAW3_TESTING)
-			if (!committedBackupPath.empty()) (void)NotifyCleanupTest(UInkCleanupTestStage::BeforeCleanup, committedBackupPath);
-#endif
-			if (!committedBackupPath.empty() && !DeleteFileW(committedBackupPath.c_str()))
+			DWORD cleanupError = ERROR_SUCCESS;
+			if (!committedBackupPath.empty() && !predecessor.TryCleanup(committedBackupPath, cleanupError))
 			{
-				const DWORD cleanupError = GetLastError();
 				result.recoveryPath = committedBackupPath;
 				AddDiagnostic(result.diagnostics, UInkDiagnosticCode::IoError,
 					UInkDiagnosticSeverity::Warning, "backup.cleanup", cleanupError);
 			}
 			result.status = UInkSaveStatus::Committed;
 			result.revision = revision;
+			if (createdProof && IsCreateNewMode(options.mode))
+				(void)tempCleanup.TransferCommittedProof(revision, *createdProof);
 			return result;
 		}
 		catch (const std::bad_alloc&)
@@ -1158,6 +1387,58 @@ namespace draw3::uink
 			result.status = UInkSaveStatus::InvalidModel;
 			return result;
 		}
+	}
+
+	UInkSaveResult SaveUInkFile(const std::wstring& path,
+		const UInkEditingSession& session, const UInkSaveOptions& options)
+	{
+		return SaveUInkFileImpl(path, session, options);
+	}
+
+	UInkSaveResult SaveUInkFileWithOwnedVersion(const std::wstring& path,
+		const UInkEditingSession& session, UInkOwnedVersion& ownedVersion,
+		const UInkSaveOptions& options)
+	{
+		ownedVersion = UInkOwnedVersion{};
+		if (!IsCreateNewMode(options.mode)) return SaveUInkFileImpl(path, session, options);
+		std::unique_ptr<UInkOwnedVersion::Impl> pending;
+		{
+			LastErrorRestorer restore;
+			try
+			{
+				// 可选记账只在创建文件前准备；准备失败仍执行一次原保存，不改 core 错误。
+#if defined(DRAW3_TESTING)
+				if (gFailOwnedVersionPrep.load(std::memory_order_relaxed)) throw std::bad_alloc();
+#endif
+				auto preparedPath = NormalizePath(path);
+				if (preparedPath)
+				{
+					pending = std::make_unique<UInkOwnedVersion::Impl>();
+					pending->path = std::move(*preparedPath);
+				}
+			}
+			catch (const std::bad_alloc&) { pending.reset(); }
+		}
+		if (!pending) return SaveUInkFileImpl(path, session, options);
+		// 真实事务在准备异常边界之外；失败不重试，成功只作 noexcept 的权限移交。
+		UInkSaveResult result = SaveUInkFileImpl(path, session, options, &pending->artifact, &pending->path);
+		if (result.status == UInkSaveStatus::Committed && pending->artifact.pin &&
+			pending->artifact.hasContent && pending->artifact.authorized) ownedVersion.impl_ = std::move(pending);
+		return result;
+	}
+
+	bool TryRemoveOwnedUInkVersion(UInkOwnedVersion& ownedVersion, uint32_t& systemError) noexcept
+	{
+		if (!ownedVersion.impl_)
+		{
+			systemError = ERROR_INVALID_HANDLE;
+			return false;
+		}
+		DWORD error = ERROR_SUCCESS;
+		const bool removed = ownedVersion.impl_->artifact.TryCleanup(ownedVersion.impl_->path, error);
+		systemError = error;
+		if (removed) ownedVersion.impl_.reset();
+		return removed;
 	}
 
 	UInkAppendPlan AnalyzeUInkAppend(const UInkReadResult& source,
@@ -1616,6 +1897,11 @@ namespace draw3::uink
 	}
 
 #if defined(DRAW3_TESTING)
+	void SetUInkOwnedVersionPrepFailureForTesting(bool fail) noexcept
+	{
+		gFailOwnedVersionPrep.store(fail, std::memory_order_relaxed);
+	}
+
 	void SetUInkCleanupTestHook(UInkCleanupTestHook hook, void* context) noexcept
 	{
 		gCleanupTestContext = context;

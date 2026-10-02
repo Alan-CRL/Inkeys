@@ -57,6 +57,8 @@ export namespace Inkeys::Drawing::Draw3
 		Base,
 		PageIndexSidecar,
 		SlideIdSidecar,
+		SlideIdSession,
+		PageIndexSession,
 	};
 
 	struct PresentationSaveRequest
@@ -139,6 +141,23 @@ export namespace Inkeys::Drawing::Draw3
 		std::uint64_t failed = 0;
 	};
 
+#if defined(DRAW3_TESTING)
+	enum class PresentationCollectionTestStage : std::uint8_t
+	{
+		BeforeReferenceLeases,
+		BeforeOwnedRemoval,
+	};
+	using PresentationCollectionTestHook = void (*)(void*, PresentationCollectionTestStage,
+		const std::wstring&, const std::wstring&) noexcept;
+	enum class PresentationCollectionAllocationStage : std::uint8_t
+	{
+		NamespacePreparation,
+		PriorReferences,
+		RegisterVersion,
+	};
+	using PresentationCollectionAllocationHook = void (*)(void*, PresentationCollectionAllocationStage) noexcept;
+#endif
+
 	// 仅供无窗口事务测试注入；生产必须保持默认值。
 	struct PresentationAutoSaveTestFaultInjection
 	{
@@ -151,6 +170,12 @@ export namespace Inkeys::Drawing::Draw3
 		void* continueIndexCommitEvent = nullptr;
 		// 只供授权 fixture 记录已返回的保存错误；不改变正常保存结果。
 		bool logSaveIoDiagnostics = false;
+#if defined(DRAW3_TESTING)
+		PresentationCollectionTestHook collectionHook = nullptr;
+		void* collectionContext = nullptr;
+		PresentationCollectionAllocationHook collectionAllocationHook = nullptr;
+		void* collectionAllocationContext = nullptr;
+#endif
 	};
 
 	void SetPresentationAutoSaveTestFaultInjection(

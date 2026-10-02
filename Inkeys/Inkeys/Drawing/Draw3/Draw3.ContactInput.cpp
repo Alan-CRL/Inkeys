@@ -660,6 +660,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<uint32_t> commandWakeReservations = 0;
 		uint64_t commandWakePublishedOrdinal = 0; // 单一 ingress enqueue 锁保护。
 		uint64_t commandWakeConsumedOrdinal = 0; // 唯一绘制消费者拥有。
+		ContactRecord* deferredIngressRecord = nullptr; // 唯一消费者保留，停止后才能重置。
+		std::atomic<bool> deferredIngressPending = false;
 		std::array<CommandFallbackWake, kCommandWakeCapacity> commandFallbacks{};
 		std::atomic<uint64_t> commandFallbackWrite = 0;
 		std::atomic<uint64_t> commandFallbackRead = 0;
@@ -670,6 +672,9 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> failNextControlWakeEnqueueForTesting = false;
 		std::atomic<bool> failNextCommandWakeEnqueueForTesting = false;
 		std::atomic<ContactClosePauseForTesting*> closePauseForTesting = nullptr;
+#if defined(DRAW3_CONTACT_TESTING)
+		std::atomic<CommandFallbackMissHookForTesting*> commandFallbackMissHookForTesting = nullptr;
+#endif
 		std::atomic<ContactBlock*> blockHead = nullptr;
 		std::vector<std::unique_ptr<ContactBlock>> blocks;
 		HANDLE wakeEvent = nullptr;
@@ -952,6 +957,14 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// Command 失败退路按自身发布序号及旧 Down 水位补齐，不会越过前一实体命令。
 		if (impl_->TryTakeCommandWakeFallback(record)) return true;
+#if defined(DRAW3_CONTACT_TESTING)
+		// 原消费窗口的单次测试接缝，不改变 fallback 判定或实体 marker 行为。
+		if (auto* hook = impl_->commandFallbackMissHookForTesting.exchange(
+			nullptr, std::memory_order_acq_rel))
+		{
+			if (hook->callback) hook->callback(hook->context);
+		}
+#endif
 		// 实体 marker 与 Down 共用 producer FIFO；General 失败退路等旧 Down 出队。
 		auto fallbackReady = [this]() noexcept
 			{
@@ -960,8 +973,24 @@ namespace Inkeys::Drawing::Draw3
 					impl_->controlWakeDrainTarget.load(std::memory_order_relaxed);
 			};
 		if (fallbackReady() && impl_->TryTakeUnqueuedControlWake(record)) return true;
-		if (impl_->queue.try_dequeue(record))
+		const bool deferred = impl_->deferredIngressPending.load(std::memory_order_relaxed);
+		if (deferred || impl_->queue.try_dequeue(record))
 		{
+			if (deferred) record = impl_->deferredIngressRecord;
+			ContactRecord* fallback = nullptr;
+			// 实体出队的 acquire 已涵盖更早的 fallback 发布；复查后保留原事件，不能偷用其命令序号。
+			if (impl_->TryTakeCommandWakeFallback(fallback))
+			{
+				impl_->deferredIngressRecord = record;
+				impl_->deferredIngressPending.store(true, std::memory_order_release);
+				record = fallback;
+				return true;
+			}
+			if (deferred)
+			{
+				impl_->deferredIngressRecord = nullptr;
+				impl_->deferredIngressPending.store(false, std::memory_order_release);
+			}
 			if (record == CommandWakeMarker())
 			{
 				record = nullptr;
@@ -997,7 +1026,8 @@ namespace Inkeys::Drawing::Draw3
 
 	bool ContactInputCoordinator::HasPendingWork() const noexcept
 	{
-		return impl_->commandFallbackRead.load(std::memory_order_acquire) !=
+		return impl_->deferredIngressPending.load(std::memory_order_acquire) ||
+			impl_->commandFallbackRead.load(std::memory_order_acquire) !=
 			impl_->commandFallbackWrite.load(std::memory_order_acquire) ||
 			impl_->controlWakeFallbackPending.load(std::memory_order_acquire) ||
 			impl_->queue.size_approx() != 0;
@@ -1038,6 +1068,14 @@ namespace Inkeys::Drawing::Draw3
 		impl_->failNextCommandWakeEnqueueForTesting.store(true, std::memory_order_release);
 	}
 
+#if defined(DRAW3_CONTACT_TESTING)
+	void ContactInputCoordinator::SetNextCommandFallbackMissHookForTesting(
+		CommandFallbackMissHookForTesting* hook) noexcept
+	{
+		impl_->commandFallbackMissHookForTesting.store(hook, std::memory_order_release);
+	}
+#endif
+
 	void ContactInputCoordinator::PauseNextCloseAfterRouteClosedForTesting(
 		ContactClosePauseForTesting* pause) noexcept
 	{
@@ -1054,6 +1092,11 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 仅由所有 producer 已静止且绘制线程已 join 后的 Host::Start 调用；不与 Closing writer 并发。
 		impl_->closePauseForTesting.store(nullptr, std::memory_order_relaxed);
+#if defined(DRAW3_CONTACT_TESTING)
+		impl_->commandFallbackMissHookForTesting.store(nullptr, std::memory_order_relaxed);
+#endif
+		impl_->deferredIngressRecord = nullptr;
+		impl_->deferredIngressPending.store(false, std::memory_order_relaxed);
 		ContactRecord* discarded = nullptr;
 		while (impl_->queue.try_dequeue(discarded)) {}
 		for (const auto& block : impl_->blocks)

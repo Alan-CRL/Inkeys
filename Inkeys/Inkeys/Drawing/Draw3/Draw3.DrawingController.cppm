@@ -82,6 +82,7 @@ export namespace Inkeys::Drawing::Draw3
 		void (*drawingActivityChanged)(void*, bool) = nullptr;
 		void (*eraserDiagnostics)(void*, const SpeedEraser::Diagnostics&) = nullptr;
 		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;
+		void (*runtimeMetricsPhaseProgress)(void*, const RuntimeMetricsPhaseProgress&) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

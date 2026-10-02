@@ -37,6 +37,10 @@ int RunPresentationAutoSaveTests();
 int RunPresentationAutoSaveAtomicChild(const wchar_t* root,
 	const wchar_t* readyEventName, const wchar_t* resumeEventName);
 int RunPresentationUInkRoundTripTests();
+int RunPresentationSessionRegressionTests();
+int RunPresentationSessionIntegrityTests();
+int RunPresentationVersionCapTests();
+int RunPresentationAutoSaveSessionChild(const wchar_t* root, const wchar_t* phase);
 int RunInkDocumentTests();
 int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
@@ -48,6 +52,10 @@ int RunThinStrokeGpuTests();
 namespace
 {
 	std::atomic<uint64_t> gAllocationCount = 0;
+#if defined(DRAW3_TESTING)
+	thread_local bool failNextPresentationCollectionAllocation = false;
+	std::atomic<uint64_t> presentationCollectionAllocationFailures = 0;
+#endif
 
 	struct TestState
 	{
@@ -2965,9 +2973,29 @@ namespace
 	}
 }
 
+#if defined(DRAW3_TESTING)
+void FailNextPresentationCollectionAllocationForTesting() noexcept
+{
+	failNextPresentationCollectionAllocation = true;
+}
+
+uint64_t PresentationCollectionAllocationFailuresForTesting() noexcept
+{
+	return presentationCollectionAllocationFailures.load(std::memory_order_relaxed);
+}
+#endif
+
 void* operator new(size_t size)
 {
 	gAllocationCount.fetch_add(1, std::memory_order_relaxed);
+#if defined(DRAW3_TESTING)
+	if (failNextPresentationCollectionAllocation)
+	{
+		failNextPresentationCollectionAllocation = false;
+		presentationCollectionAllocationFailures.fetch_add(1, std::memory_order_relaxed);
+		throw std::bad_alloc(); // 仅本测试 worker 的下一次真实堆分配失败，普通测试/产品默认关闭。
+	}
+#endif
 	if (void* memory = std::malloc(size)) return memory;
 	throw std::bad_alloc();
 }
@@ -3001,6 +3029,16 @@ int wmain(int argc, wchar_t* argv[])
 {
 	if (argc == 5 && wcscmp(argv[1], L"--presentation-atomic-child") == 0)
 		return RunPresentationAutoSaveAtomicChild(argv[2], argv[3], argv[4]);
+	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-child") == 0)
+		return argc == 4 ? RunPresentationAutoSaveSessionChild(argv[2], argv[3]) : 90;
+	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-only") == 0)
+		return argc == 2 ? (RunPresentationSessionRegressionTests() == 0 ? 0 : 1) : 90;
+	if (argc >= 2 && wcscmp(argv[1], L"--presentation-autosave-only") == 0)
+		return argc == 2 ? (RunPresentationAutoSaveTests() == 0 ? 0 : 1) : 90;
+	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-integrity-only") == 0)
+		return argc == 2 ? (RunPresentationSessionIntegrityTests() == 0 ? 0 : 1) : 90;
+	if (argc >= 2 && wcscmp(argv[1], L"--presentation-version-cap-only") == 0)
+		return argc == 2 ? (RunPresentationVersionCapTests() == 0 ? 0 : 1) : 90;
 	if (argc == 2 && wcscmp(argv[1], L"--desktop-autosave-index-bounds-only") == 0)
 		return RunDesktopAutoSaveIndexBoundsTests() == 0 ? 0 : 1;
 	if (argc == 2 && wcscmp(argv[1], L"--desktop-autosave-only") == 0)

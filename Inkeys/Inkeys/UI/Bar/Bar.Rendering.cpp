@@ -50,6 +50,28 @@ namespace
 			std::bit_cast<std::uint32_t>(matrix._31), std::bit_cast<std::uint32_t>(matrix._32) };
 		Inkeys::UI::Bar::ObserveUi3SvgClipPush(context, rectBits, matrixBits);
 	}
+	void ObserveNonSvgRectWrite(ID2D1DeviceContext* context, const D2D1_RECT_F& rect, FLOAT outset = 0.0F) noexcept
+	{
+		auto* scope = Inkeys::UI::Bar::CurrentUi3SvgScope();
+		if (!scope || !scope->probe) return;
+		D2D1_MATRIX_3X2_F matrix; context->GetTransform(&matrix);
+		const std::uint32_t rectBits[4]{ std::bit_cast<std::uint32_t>(rect.left - outset), std::bit_cast<std::uint32_t>(rect.top - outset),
+			std::bit_cast<std::uint32_t>(rect.right + outset), std::bit_cast<std::uint32_t>(rect.bottom + outset) };
+		const std::uint32_t matrixBits[6]{ std::bit_cast<std::uint32_t>(matrix._11), std::bit_cast<std::uint32_t>(matrix._12),
+			std::bit_cast<std::uint32_t>(matrix._21), std::bit_cast<std::uint32_t>(matrix._22),
+			std::bit_cast<std::uint32_t>(matrix._31), std::bit_cast<std::uint32_t>(matrix._32) };
+		scope->probe->ObserveNonSvgWrite(context, rectBits, matrixBits);
+	}
+	void ObserveNonSvgGeometryWrite(ID2D1DeviceContext* context, ID2D1Geometry* geometry, FLOAT stroke = 0.0F) noexcept
+	{
+		if (!Inkeys::UI::Bar::CurrentUi3SvgScope()) return;
+		D2D1_RECT_F bounds{};
+		const HRESULT result = stroke > 0.0F
+			? geometry->GetWidenedBounds(stroke, nullptr, nullptr, D2D1_DEFAULT_FLATTENING_TOLERANCE, &bounds)
+			: geometry->GetBounds(nullptr, &bounds);
+		if (FAILED(result)) { Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(context); return; }
+		ObserveNonSvgRectWrite(context, bounds, D2D1_DEFAULT_FLATTENING_TOLERANCE);
+	}
 	[[nodiscard]] auto SharedD2DFactory()
 	{
 		return Inkeys::UI::RenderPipeline::D2DFactory();
@@ -1670,6 +1692,7 @@ unsigned int BarUIRendering::FillRoundedRectDiffuseMaskSlices(
 {
 	if (!deviceContext || !bitmap || !brush || !sourceX || !sourceY
 		|| !destinationX || !destinationY || segmentCount <= 0) return 0;
+	// 此私有入口只使用本renderer由几何生成的A8遮罩，不能给任意旧SVG bitmap同样资格。
 	unsigned int fillCount = 0;
 	for (int y = 0; y < segmentCount; y++)
 	{
@@ -1683,7 +1706,7 @@ unsigned int BarUIRendering::FillRoundedRectDiffuseMaskSlices(
 			D2D1_RECT_F sourceRect = D2D1::RectF(
 				sourceX[x], sourceY[y],
 				sourceX[x + 1], sourceY[y + 1]);
-			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillOpacityMask(
+			(ObserveNonSvgRectWrite(deviceContext, destinationRect), deviceContext)->FillOpacityMask(
 				bitmap, brush, &destinationRect, &sourceRect);
 			++fillCount;
 		}
@@ -2028,7 +2051,7 @@ void BarUIRendering::DrawRoundedRectDiffuseMask(ID2D1DeviceContext* deviceContex
 			0.0F, 0.0F,
 			static_cast<FLOAT>(exactMask.cache->key.width),
 			static_cast<FLOAT>(exactMask.cache->key.height));
-		(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillOpacityMask(
+		(ObserveNonSvgRectWrite(deviceContext, exactMask.destination), deviceContext)->FillOpacityMask(
 			exactMask.cache->bitmap.Get(), brush,
 			&exactMask.destination, &sourceRect);
 		if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
@@ -2274,7 +2297,7 @@ void BarUIRendering::DrawGeometryDiffuseMask(ID2D1DeviceContext* deviceContext,
 	brush->SetOpacity(clamp(opacity, 0.0F, 1.0F));
 	D2D1_ANTIALIAS_MODE originalAntialiasMode = deviceContext->GetAntialiasMode();
 	deviceContext->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
-	(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillOpacityMask(
+	(ObserveNonSvgRectWrite(deviceContext, destinationRect), deviceContext)->FillOpacityMask(
 		mask.bitmap.Get(), brush, &destinationRect, &sourceRect);
 	if (auto* diagnostics = Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics())
 		++diagnostics->light.slices;
@@ -2363,15 +2386,15 @@ bool BarUIRendering::DrawPointLightFrame(ID2D1DeviceContext* deviceContext, COLO
 		{
 			if (!brush || intensity <= 0.0F) return;
 			brush->SetOpacity(clamp(lightOpacity * intensity, 0.0F, 1.0F));
-			if (roundedRect) (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawRoundedRectangle(roundedRect, brush, width);
-			else (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(geometry, brush, width);
+			if (roundedRect) (ObserveNonSvgRectWrite(deviceContext, roundedRect->rect, width * 0.5F), deviceContext)->DrawRoundedRectangle(roundedRect, brush, width);
+			else (ObserveNonSvgGeometryWrite(deviceContext, geometry, width), deviceContext)->DrawGeometry(geometry, brush, width);
 		};
 	deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	// 点光范围之外仍完整保留原边框，光源只在基础灰边上增加强调。
 	if (baseFrameBrush)
 	{
-		if (roundedRect) (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawRoundedRectangle(roundedRect, baseFrameBrush, strokeWidth);
-		else (Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
+		if (roundedRect) (ObserveNonSvgRectWrite(deviceContext, roundedRect->rect, strokeWidth * 0.5F), deviceContext)->DrawRoundedRectangle(roundedRect, baseFrameBrush, strokeWidth);
+		else (ObserveNonSvgGeometryWrite(deviceContext, geometry, strokeWidth), deviceContext)->DrawGeometry(geometry, baseFrameBrush, strokeWidth);
 	}
 
 	if (drawPrimaryLight || drawCursorLight)
@@ -2490,7 +2513,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
 		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillRoundedRectangle(&roundedRect, fillBrush);
+		(ObserveNonSvgRectWrite(deviceContext, roundedRect.rect), deviceContext)->FillRoundedRectangle(&roundedRect, fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 	// 渲染到 DC
@@ -2502,7 +2525,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
 			if (!fillBrush) return false;
-			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillRoundedRectangle(&roundedRect, fillBrush);
+			(ObserveNonSvgRectWrite(deviceContext, roundedRect.rect), deviceContext)->FillRoundedRectangle(&roundedRect, fillBrush);
 		}
 		// 渲染边框
 		if (shape.frame.has_value())
@@ -2535,7 +2558,7 @@ bool BarUIRendering::Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeCl
 					ID2D1SolidColorBrush* borderBrush =
 						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
 					if (!borderBrush) return false;
-					(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawRoundedRectangle(
+					(ObserveNonSvgRectWrite(deviceContext, roundedRect.rect, strokeWidth * 0.5F), deviceContext)->DrawRoundedRectangle(
 						&roundedRect, borderBrush, strokeWidth);
 				}
 			}
@@ -2680,7 +2703,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			GetFrameSolidColorBrush(deviceContext, RGB(0, 0, 0), 0.0);
 		if (!fillBrush) return false;
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
-		(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillGeometry(geometry, fillBrush);
+		(ObserveNonSvgGeometryWrite(deviceContext, geometry), deviceContext)->FillGeometry(geometry, fillBrush);
 		deviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 	}
 
@@ -2693,7 +2716,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 			ID2D1SolidColorBrush* fillBrush =
 				GetFrameSolidColorBrush(deviceContext, fill, tarPct);
 			if (!fillBrush) return false;
-			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->FillGeometry(geometry, fillBrush);
+			(ObserveNonSvgGeometryWrite(deviceContext, geometry), deviceContext)->FillGeometry(geometry, fillBrush);
 		}
 		// 渲染边框
 		if (superellipse.frame.has_value())
@@ -2726,7 +2749,7 @@ bool BarUIRendering::Superellipse(ID2D1DeviceContext* deviceContext, const BarUi
 					ID2D1SolidColorBrush* borderBrush =
 						GetFrameSolidColorBrush(deviceContext, frame, tarFramePct);
 					if (!borderBrush) return false;
-					(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(geometry, borderBrush, strokeWidth);
+					(ObserveNonSvgGeometryWrite(deviceContext, geometry, strokeWidth), deviceContext)->DrawGeometry(geometry, borderBrush, strokeWidth);
 				}
 			}
 		}
@@ -2984,7 +3007,7 @@ bool BarUIRendering::Word(ID2D1DeviceContext* deviceContext, const BarUiWordClas
 			GetFrameSolidColorBrush(deviceContext, color, tarPct);
 		if (!fillBrush) return false;
 
-		(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawTextW(
+		(ObserveNonSvgRectWrite(deviceContext, layoutRect), deviceContext)->DrawTextW(
 			tarContent.c_str(),
 			wcslen(tarContent.c_str()),
 			textFormat,

@@ -6,6 +6,14 @@ Active task：`.trellis/tasks/09-27-integration-and-release-check`。日期：20
 
 **已确认：第一 Main Up 被真实业务接受，但在固定下一 due 前未得到 CompletedRevision；随后正常 Close/alljoin/封口，结果 Failed。尚不能由现有产物确定唯一 layout/SVG 原因。** 本轮不是线程崩溃、输入未投递或强杀后的假成功。
 
+## 2026-10-02 Root 针对性复验（新增证据）
+
+最新完整 Debug ARM64 候选 `Inkeys.exe` SHA `4E31A8C9BAF87E26C5645BC1F7911F07E6603385767D973E7D82B4655AF56DF0`，命令为 `--ui3-presentation-benchmark --scene main-fold --round 1 --capture on --capacity 4096`，结果仍为 exit90。第一目标 2/2 verified；第二目标 `settled=1,pending=0`、9/10 verified，唯一未验证 tag `131084 (0x2000C)`，reason `Overwrite`；后215目标未开始。
+
+新增 capture-only `svg-bindings.csv` 使用 **绑定时**快照，不再从运行结束时可能变化的注册表重建映射。它确认 `0x2000C` 对象是 `source=more` 的 `More` SVG；中间 `0x2000B` 空洞来自绑定时重复扩展对象消耗 ordinal，不是目标 tag 未绑定。该目标 expected bounds `[2940,890,3012,962]`，后续已知写入 bounds `[2904,959,3048,1013]`，垂直相交 3px；因此严格 Overwrite 仍是正确的拒证，当前没有足够证据实施资格豁免。
+
+证据目录：`TestResults/release-hardening/ui3-finite-8fb2b653c4e34e4b84b0789fb27b9712/r1/s1/{finite-targets.csv,svg-bindings.csv,button-layout.csv,summary.json}`。有界 button-layout 显示 More 的当前按钮/图标矩形，但不能确定后续 overwrite writer 的像素语义，故不授予豁免。本增量不改变完成定义、不增加绘制帧、不关闭光影或降低质量；完整216目标、第二 scene、Release 三轮和 HC/H2 对照仍未验证。
+
 需纠正派发中的一个枚举解释：冻结 `Bar.Presentation.Source.h:23` 的 `source_failure=13` 是 **Deadline**，Target 是14。`WaitGoal` 到固定下一 due 仍无完成后调用 Deadline；`Fail` 用首错 CAS，之后 `WriteAllOutputs` 的 Target 检查不会覆盖13。这是接受后未完成的期限结局，不是业务拒绝。
 
 最后一行 `surface=0/requiredSvg=0/proofMask=0` **不能证明从未绘制**。`BeginFrame` 清空 candidate；帧在 `SettleCandidate` 之前早退时，RAII Abort把本帧空 surface/resources 写回同一个未完成行。Completed行受保护，未完成行没有“最后有意义candidate”保护。现有 CSV保留的是最后 attempt36 的未完成摘要。
@@ -108,3 +116,54 @@ Inkeys.exe --ui3-presentation-benchmark --scene main-fold --round 1 --capture on
 当前 Source.h `75BBFB73…05A4A0`；Test.cpp `108E2B29…3324D20`；Probe.cpp `0538C544…5B45A8`；RenderLoop.cpp `520190BD…382EC4`；UI.cpp `10B29A34…7CF27`；Rendering.cpp `8A69FCD6…ABE2C`。这些读到的源身份与copied PE区别保存，不称HF。
 
 检查仅产物完整读取/全部CSV状态分组/SHA256及生产调用链静态核对。Root实际首轮结果作为提供的运行证据引用，本writer未运行任何EXE、测试、构建、GUI/Git或修改源码。只新增本报告；本结论明确区分已确认超时链、最后摘要信息丢失、强候选与待诊断原因。
+
+## 2026-10-01 capture-on 最后有效候选诊断增量（PATCH_READY，未构建/运行）
+
+Root提供新事实：完整 InkeysRepo.sln Debug|ARM64 9cce16b对应产物 SHA256 32D9E52DF6486892ACB3308BB5CAF8364913E2370B526EDBEE16B683559E798C 构建 exit0；fresh严格Headless14648/0、offscreen12264/0。随后首 MainFold round1/capture-on/capacity4096，parent13224/child15636，ack1/Sealed/自然exit90。只读raw根 TestResults/release-hardening/ui3-finite-ec3fde93df1ace4f8435be9d6302bf7f/r1/s1 保留callback35/35、零drop/invalid，整run32实际Bar提交、无API失败，最后callback35 Idle未present；首goal accepted1/Completed0，后215未开始。以上为Root运行证据，本writer没有重新运行；raw仍缺同goal完整candidate，未据此修改Unknown/Hidden/pending。
+
+本增量仅改 Bar.PresentationProbe.h/.cpp、Bar.Presentation.Test.cpp、Bar.RenderLoop.cpp。验真FixtureState仅capture-on在原4MiB/共同64MiB预算检查中加入实际 512 * sizeof(Ui3FiniteGoalDiagnostic)，owner前一次分配固定prefix并显式绑定；capture-off不分配/不启用此span。render owner在实际Settle/Finalize/Complete后仅复制已有合法epoch/surface/attempt/尺寸candidate、consumed/seen/pending/mismatch/lifecycle、原resource汇总/首tag原因及Complete局部判别位。早退只记last stage/attempt/真实FrameResult/Abort状态，不能覆盖meaningful。无新clock、GPU、I/O、wake、资源或通用registry；StoreOutcome、NoteCompletedGoal、SVG判据、原返回值与绘制/四API次序均保留。
+
+所有真正join后，现finite-targets.csv仅on追加46个诊断字段；meta追加启用及payload bytes，summary追加已有observer frames/commits/layoutSettled/completed/unverified/superseded/invalid封口计数。Complete mask bit0..8依次为called/committed/predicatesEvaluated/sameCandidate/identityValid/goalCurrent/anchorsValid/layoutCurrent/validTiming；实际结果另在meaningful_status。stage 1..10依次为Begin/Wake/Display/Submit/Advance/Lighting/Dirty/Settle/Finalize/Complete；last_frame_result按现真实FrameResult数字（0 Idle、1 Continue、2 Retry、3 DeviceLost、4 Stop），valid字段区分未记录。
+
+| 源 | 本增量SHA256 |
+| --- | --- |
+| Bar.PresentationProbe.h | 6A59AA3D238445F54497D4FE9881C0E4B5D7C09A512B52C6038EAC228CC032BB |
+| Bar.PresentationProbe.cpp | 90B42FAAD131F88C9A6E716BD1440AC956A310FEA0B7E86825F537252F11C28D |
+| Bar.Presentation.Test.cpp | 422AEBDD2FF085DEE39CDCC36C5C7782D3B7446C894271834ADBE3952C7B5DDB |
+| Bar.RenderLoop.cpp | 4F642B068F6909E98C08B0BA097818E0B2202C89BBA8C0F5929E1C206DA0B8E7 |
+
+静态检查已确认四源原UTF-8无BOM/CRLF/bareLF0、实际diff仅上述诊断接缝、46列/46分隔符且列名唯一、启用/分配/预算/输出均沿原owner寿命。没有build/run/Git/GUI/Computer Use、递归agent、新测试或新报告树。此刻停写，交Root完整构建/core回归及对应安全门后同一首场景取真实candidate与末Idle因果；不沿用旧PE的测试PASS，不预填GREEN。完整216/两scene/全BGRA/on-off/Release三轮/Win7仍未验证。
+
+## 2026-10-01 首goal实际Overwrite归因与精确资格补丁（PATCH_READY，未新构建/运行）
+
+Root新完整Debug|ARM64产物 A34A782F77F4C065D2B135FCD06DF2FCA9E25843FF806FDBC84FFAC4F21E4F8D，build0/85.83s；fresh Headless24160/0、offscreen21372/0、START01 CLI192/0。新实际main-fold on4096 parent11736/child11664自然90，raw根 TestResults/release-hardening/ui3-finite-e8c4d99a04f2a142a080715949e19367/r1/s1。本writer直接读首finite行及raw末五callback：lastMeaningful attempt35/epoch1/surface7/run5078551040306086798/source2/rev1/pub2/rootbatch2，198x198/dpi192，consumed/settled/stable均1，pending/mismatch/lifecycle0、seen63，Complete mask511；required10/verified1/failed0/unverified9，首tag65536/reason9 Overwrite。末36是stage7/Idle/consumed1/pending0/Abort。实际backing3790x1892，末present source1796,847/198x198；不能把该Clear称full backing。Root提供observer36frames/33commits/layoutSettled3/completed0；原成功API/零drop/invalid事实保留。
+
+实际65536是logo1。RenderLoop按Superellipse→logo1→logoInk绘制，Pen下Frame94着色层pct=1、同中心同尺寸；两内嵌资源有实际路径重叠。原整体dest矩形相交一律Overwrite阻断了既定主logo设计层叠。Root因此明确授权精确expected composition：仅真实producer声明的本帧logo1→logoInk、固定两tag/真实对象、已提交底层/未提交上层、相同dest/transform以及两侧既有资源/quality/epoch/surface/DPI/opacity/full coverage全部通过。声明单次消费，不清此前Unknown/overwritten；无声明/倒序/错误对象/旧或错误bitmap/transform/partial/未知重放继续拒证，原B337不降。
+
+本补丁仅Probe.h/.cpp、Rendering.cpp、RenderLoop.cpp、既有EraserAttribute.Test.cpp。共享原visible判据供两层检查；normal Draw/四API/strict canonical保持。Rendering仅已查明不读取旧SVG的Shape/Superellipse/CLIP Word与自身A8几何光mask，在实际域/变换/描边边界/AA及clip下记录纯写，visible相交仍拒，invalid域回原Unknown。oldBounds改为实际mapped且clip裁后的完整写域，带epoch/surface；Hidden的outside资格仅同身份、已知无未知/failed谱系、真实完整viewport数值/尺寸/inside-backing校验和旧域完全不相交，不删required、不追认Retained、不假称旧像素已从backing清空。证明仍staged，只有原四API全成功才canonical完成。
+
+新增B350–B361直接执行真实D2D和同生产probe/renderer：内嵌logo正常顺序及全BGRA等价正例，未声明/倒序/unknown前后/错误cache对象/变换/partial/错误producer对象负例；真实Shape→SVG→CLIP Word→Superellipse不相交/覆盖反例；实际外域旧像素保留而viewport中不存在、mapped旧域在viewport内、unknown向viewport重放及失败/deferred后不得域外追认。原H100/H101/H102和B337保留；新增offscreen旧实现RED未运行，本轮因果RED是上面的真实MainFold，不冒称新增用例已绿。
+
+| 补丁源 | SHA256 |
+| --- | --- |
+| Bar.PresentationProbe.h | AEF1B97D84739607D2764D809C253D5CF83822ACD9E34F310818A8B693C99BAF |
+| Bar.PresentationProbe.cpp | E3FB10973D54604CFC7806F77AAFB2B0755818E9D8240E336AB5815441083A22 |
+| Bar.Rendering.cpp | F935D15A4E0371A7E38601C49AF83734347833333A324C0485BC2E17B005CD1E |
+| Bar.RenderLoop.cpp | 2FE611C2190C950E61BC8DF8D2AE3F1735FD8FF960E8FAE624BD2465A455F4D3 |
+| Bar.EraserAttribute.Test.cpp | 542EC52F2DDC3DE268AA0EA25F0EE5FC03C841EBE1FFA27890351C22F44EAEC0 |
+
+静态已核原编码/CRLF、声明定义及本机SDK GetWidenedBounds签名；内存移除新Rendering观察接缝可精确恢复旧8A69FCD6…ABE2C全文hash，实际绘制/API次序未改。Main保持28B03510…FE4B1、诊断Test保持422AEBDD…B5DDB，无新宽诊断/registry/clock/wake/平台/源码树。未build/run/Git mutation/GUI或递归。当前停写交Root新完整build/offscreen/独立增量复核及fresh同scene，首goal是否Completed、全部216/像素/两scene/Release三轮/Win7仍按新实际结果判。
+
+### 2026-10-01 独立must-fix：域外成功后保留backing谱系
+
+Reviewer确认原CompleteAttempt把所有HiddenExpected都清oldBoundsKnown/possiblyVisible，而B357的outside实际仍有72,72旧alpha且clearCoversOldBounds=false；后续viewport扩回可漏Require。本次仅Probe.cpp+原Eraser测试修正：outside保留旧mapped/write bounds、身份和possiblyVisible，只有真实Clear覆盖旧域时撤销；原资源失效重置路径不变。B357后直接新增B362，不repaint：同epoch/surface，源viewport从0..32扩至非零source48,48/48x48，原72,72像素仍非零，必须required1/verified0/unverified1且拒HiddenExpected。H101/B337及其它反例保留。
+
+新Probe.cpp SHA256 A0A2B77FB78F001BA59E48F70FCA939FC05BA6D52D8E9BA0EB83437423C6FB74；Eraser测试 3B69CF6CAF1B45F830A72D801961B5F19852DBC6DF00F8345DF355F95887A2A0。其它UI3/诊断/Main保持前表hash。静态原编码/CRLF及局部diff已核；没有build/run/Gitmutation/GUI/递归。Root进行中的旧AEF/E3构建不覆盖此序列；修后新构建/实际B362与首goal仍待Root，当前再次PATCH_READY并停写。
+
+### 2026-10-01 EC37 offscreen两项失败的夹具前提修正与有界日志
+
+Root提供新完整Debug0/33.54s，PE EC37E7D59FCC55F6AF5DD37231077A40816C832D353A2DA89284894B0D87148F，实际A0A2/3B69编入；freshHeadless7464/0，offscreen31304自然1，仅B352 grouped与B358失败，其它新增/旧/H101/B337/B362通过。已直接读复制的resume-20261001-ui3-lineage-fix-core.offscreen-results.log；它没有variant数据，不能反推是哪一分项。
+
+B358初始flags0与displaySerial1违背生产FiniteSceneStateSupported的bit64和IsUi3FiniteSignatureValid的非零even合同，原Snapshot/MarkConsumed返回值又未检查。本次只改测试为flags64→65/displaySerial2，增加合法accepted/consumed/settled前提，保原proof与failed不Completed并强化要求Pending返回。B352 variant6调用已active的frameDirtyClip入口，Rendering257–260明确直接return，故没有真实nested clip；改为现B312同样的真实PushAxisAlignedClip及实际matrix的原ObserveClipPush/Pop，保partial必须拒证。旧grouped失败尚不能仅据源码归入6，因此增加测试owner固定8条B352实际required/verified/failed/unverified/首tag/reason/ink语义quality/coverage/createDelta，以及1条B358 tuple/Complete结果日志；没有正式宽诊断或放松negative。
+
+唯一源码EraserAttribute.Test.cpp新SHA256 52ED0E7F9E9CEF666DDA35D44E9BF1CB2E7D65DA97E3A86EB55A70642EEEF645；其它UI3生产/诊断/Main保持上轮hash。原编码/BOM/CRLF、旧H101/B337/B362及每一失败断言已核，未build/run/Gitmutation/GUI/递归。当前PATCH_READY并停写，等待Root同主Solution incremental及同offscreen实际结果，不预填green。

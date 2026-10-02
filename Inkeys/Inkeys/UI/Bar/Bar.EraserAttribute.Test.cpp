@@ -792,8 +792,10 @@ namespace Inkeys::UI::Bar
 						"B307 combined 64MiB capture budget rejects multiplication/addition overflow");
 					const auto fullClip = D2D1::RectF(0, 0, svgSize, svgSize);
 					const auto empty = drawSvg(D2D1::RectF(0, 0, 1, 1), false);
-					expect(transactionOk && empty.unverified == 1 && probe->Observation(svgTag).coverage == Ui3SvgCoverage::Empty,
-						"B310 empty actual clip retains required SVG as unverified");
+					expect(transactionOk && empty.verified == 1 && empty.unverified == 0
+						&& probe->Observation(svgTag).coverage == Ui3SvgCoverage::Empty
+						&& probe->Observation(svgTag).use == Ui3SvgUse::RetainedVerified,
+						"B310 known disjoint clip retains the exact previously verified SVG proof");
 					options.outerClip = false;
 					const auto unknown = drawSvg(fullClip, false);
 					expect(transactionOk && unknown.unverified == 1 && probe->Observation(svgTag).coverage == Ui3SvgCoverage::Unknown,
@@ -1048,6 +1050,267 @@ namespace Inkeys::UI::Bar
 					expect(overlapping.required == 2 && overlapping.verified == 1 && overlapping.unverified == 1
 						&& overlapping.firstUnverifiedSvgTag == svgTag && probe->Observation(svgTag).use == Ui3SvgUse::Unverified,
 						"B337 actual overlapping SVG B invalidates already submitted A");
+
+					// B35：真实内嵌主logo的正常着色层叠必须完整证明；普通相交SVG/B337仍保守。
+					{
+						auto logos = std::make_unique<Ui3SvgProbe>(0xB350);
+						BarUiSVGClass baseLogo, inkLogo;
+						bool logosBound = false;
+						{
+							SvgObservationScope initialization(logos.get(), false, true);
+							baseLogo.Initialization(0, 0, std::nullopt, std::nullopt); baseLogo.InitializationFromResource(L"UI", L"logo1");
+							inkLogo.Initialization(0, 0, RGB(40, 170, 90), std::nullopt); inkLogo.InitializationFromResource(L"UI", L"Frame94");
+							for (auto* logo : { &baseLogo, &inkLogo }) { logo->w.SetDirect(48); logo->h.SetDirect(48); logo->pct.SetDirect(1); logo->enable.Initialization(true); }
+							logosBound = baseLogo.BindObservationTag(0x10000u) && inkLogo.BindObservationTag(0x10001u);
+						}
+						expect(logosBound, "B350 actual embedded logo1 and Frame94 owned tags bind");
+						std::uint64_t logoAttempt = 0;
+						auto paintLogos = [&](unsigned fault, bool observed = true)
+						{
+							SvgObservationScope scope(observed ? logos.get() : nullptr);
+							Ui3SvgFrameTarget target; target.revision = 1; target.epoch = currentEpoch.generation; target.surfaceSerial = 1;
+							target.frameAttemptSerial = ++logoAttempt; target.width = target.height = target.backingWidth = target.backingHeight = svgSize;
+							target.dpi = 96; target.windowAlpha = 255; target.zoomBits = std::bit_cast<std::uint64_t>(1.0);
+							for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(i < 2 ? 0.0f : static_cast<float>(svgSize));
+							if (observed) { logos->BeginFrame(1, currentEpoch.generation, logoAttempt); baseLogo.ObserveFiniteRequirement(true); inkLogo.ObserveFiniteRequirement(true); logos->BeginBackingWrite(dc, target); }
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc, fullClip);
+							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+							const auto savedInk = inkLogo.cacheBitmap;
+							if (fault == 2 && observed) logos->DeclareMainLogoInkComposition(dc, &baseLogo, &inkLogo); // 底层还未提交，声明不可授权倒序。
+							const bool first = renderer.Svg(dc, fault == 2 ? inkLogo : baseLogo, BarUiInheritClass(16, 16));
+							if (fault == 3) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(baseLogo.cacheBitmap.Get(), D2D1::RectF(72, 72, 88, 88), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
+							if (observed && fault != 1 && fault != 2) logos->DeclareMainLogoInkComposition(dc, fault == 8 ? &inkLogo : &baseLogo, &inkLogo);
+							if (fault == 4) inkLogo.cacheBitmap = baseLogo.cacheBitmap; // 真实错误bitmap对象，typed proof不能追认。
+							if (fault == 5) inkLogo.angle.SetDirect(90);
+							if (fault == 6)
+							{
+								// frame dirty入口不允许二次Push；nested反例必须真正压入D2D clip，并沿原producer记录。
+								const auto clip = D2D1::RectF(16, 16, 30, 30);
+								dc->PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_ALIASED);
+								D2D1_MATRIX_3X2_F effective{}; dc->GetTransform(&effective);
+								const float rect[4]{ clip.left, clip.top, clip.right, clip.bottom };
+								const float matrix[6]{ effective._11, effective._12, effective._21, effective._22, effective._31, effective._32 };
+								std::uint32_t r[4], m[6];
+								for (unsigned i = 0; i < 4; ++i) r[i] = std::bit_cast<std::uint32_t>(rect[i]);
+								for (unsigned i = 0; i < 6; ++i) m[i] = std::bit_cast<std::uint32_t>(matrix[i]);
+								ObserveUi3SvgClipPush(dc, r, m);
+							}
+							const bool last = renderer.Svg(dc, fault == 2 ? baseLogo : inkLogo, BarUiInheritClass(16, 16));
+							if (fault == 6) { ObserveUi3SvgClipPop(dc); dc->PopAxisAlignedClip(); }
+							if (fault == 7) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(baseLogo.cacheBitmap.Get(), D2D1::RectF(72, 72, 88, 88), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
+							if (fault == 4) inkLogo.cacheBitmap = savedInk;
+							inkLogo.angle.SetDirect(0);
+							renderer.PopFrameDirtyClip(dc); const auto resources = observed ? logos->FinishDrawing() : Ui3FiniteResourceProof{};
+							const bool ended = SUCCEEDED(dc->EndDraw()); if (observed) logos->CompleteAttempt(ended);
+							expect(first && last && ended, "B350 real logo pair DrawBitmap/EndDraw premise");
+							return resources;
+						};
+						const auto composed = paintLogos(0); const auto composedPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						(void)paintLogos(0, false); const auto ordinaryPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						expect(composed.required == 2 && composed.verified == 2 && composed.failed == 0 && composed.unverified == 0
+							&& composedPixels.size() == svgSize * svgSize * 4 && composedPixels == ordinaryPixels,
+							"B351 declared actual logo composition proves both resources with identical entire ordinary BGRA");
+						for (unsigned fault = 1; fault <= 8; ++fault)
+						{
+							const auto beforeVariant = logos->CountersAfterOwnerStopped();
+							const auto resources = paintLogos(fault); const auto ink = logos->Observation(0x10001u);
+							const auto afterVariant = logos->CountersAfterOwnerStopped();
+							report << "[Ui3B352] variant=" << fault << " required=" << resources.required << " verified=" << resources.verified
+								<< " failed=" << resources.failed << " unverified=" << resources.unverified << " firstTag=" << resources.firstUnverifiedSvgTag
+								<< " reason=" << resources.firstUnverifiedReason << " inkSemantic=" << ink.used.semanticKnown << " inkQuality=" << ink.qualityMatches
+								<< " inkCoverage=" << static_cast<unsigned>(ink.coverage) << " createDelta=" << afterVariant.createSuccess - beforeVariant.createSuccess << '\n';
+							expect(resources.verified < 2, "B352 undeclared/reversed/unknown/wrong-bitmap/transform/partial/wrong-object composition remains unverified");
+						}
+					}
+					// 纯Shape/Superellipse/CLIP文字真实同序写入：不相交保持SVG，相交覆盖必须拒证。
+					{
+						BarUIRendering pure(&owner); pure.ConfigureLocalizedTypography(); pure.SetFrameZoom(1);
+						options = {}; svg.enable.Initialization(true); svg.pct.SetDirect(1);
+						const auto untouched = drawSvg(fullClip, false); const auto originalPixel = ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32);
+						auto paintPure = [&](bool overlaps)
+						{
+							SvgObservationScope scope(probe.get()); auto target = probe->Target(); target.frameAttemptSerial = ++attempt;
+							probe->BeginFrame(1, currentEpoch.generation, attempt); svg.ObserveFiniteRequirement(true); probe->BeginBackingWrite(dc, target);
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc, fullClip);
+							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+							BarUiShapeClass background(0, 0, 32, 32, 0, 0, 1, RGB(255, 255, 255), std::nullopt); background.enable.Initialization(true);
+							bool painted = pure.Shape(dc, background, BarUiInheritClass(56, 56));
+							painted = renderer.Svg(dc, svg, BarUiInheritClass(16, 16)) && painted;
+							BarUiWordClass word(0, 0, 28, 28, L"文", 14, RGB(20, 20, 20)); word.enable.Initialization(true);
+							painted = pure.Word(dc, word, BarUiInheritClass(60, 60)) && painted;
+							BarUiSuperellipseClass shape(0, 0, 28, 28, 3, 1, RGB(255, 255, 255), std::nullopt); shape.enable.Initialization(true);
+							painted = pure.Superellipse(dc, shape, BarUiInheritClass(overlaps ? 24 : 56, overlaps ? 24 : 56)) && painted;
+							renderer.PopFrameDirtyClip(dc); const auto resources = probe->FinishDrawing();
+							const bool ended = SUCCEEDED(dc->EndDraw()); probe->CompleteAttempt(ended);
+							expect(painted && ended, "B353 actual Shape/SVG/CLIP Word/Superellipse same-order D2D premise"); return resources;
+						};
+						expect(untouched.verified == 1 && paintPure(false).verified == 1
+							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32) == originalPixel,
+							"B354 actual disjoint pure writes retain SVG proof and visible pixel");
+						const auto covered = paintPure(true);
+						expect(covered.verified == 0 && covered.firstUnverifiedReason == static_cast<unsigned>(Ui3SvgProofReason::Overwrite)
+							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32) != originalPixel,
+							"B355 actual overlapping pure geometry remains rejected with visibly covered SVG");
+					}
+					// Hidden域外资格仅沿同epoch/surface的实际mapped写域，未知重放及失败事务不能绕过。
+					{
+						auto hiddenProbe = std::make_unique<Ui3SvgProbe>(0xB356); BarUiSVGClass offViewport;
+						{
+							SvgObservationScope initialization(hiddenProbe.get(), false, true);
+							offViewport.Initialization(0, 0, RGB(220, 110, 40), std::nullopt);
+							offViewport.InitializationFromString(LR"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="rgba(10,0,7,0)"/></svg>)SVG");
+							offViewport.w.SetDirect(16); offViewport.h.SetDirect(16); offViewport.enable.Initialization(true); offViewport.pct.SetDirect(1);
+							expect(offViewport.BindObservationTag(0x10002u), "B356 actual outside SVG owned tag binds");
+						}
+						std::uint64_t hiddenAttempt = 0;
+						auto paintHidden = [&](bool visible, bool mappedInside = false, bool unknownReplay = false, bool committed = true, bool expandedViewport = false)
+						{
+							SvgObservationScope scope(hiddenProbe.get()); offViewport.enable.Initialization(visible); offViewport.pct.SetDirect(visible ? 1 : 0);
+							Ui3SvgFrameTarget target; target.revision = 1; target.epoch = currentEpoch.generation; target.surfaceSerial = 1; target.frameAttemptSerial = ++hiddenAttempt;
+							target.width = target.height = visible ? svgSize : expandedViewport ? 48 : 32; target.backingWidth = target.backingHeight = svgSize;
+							target.dpi = 96; target.windowAlpha = 255; target.zoomBits = std::bit_cast<std::uint64_t>(1.0);
+							for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(
+								i < 2 ? (expandedViewport ? 48.0f : 0.0f) : expandedViewport ? 96.0f : static_cast<float>(target.width));
+							hiddenProbe->BeginFrame(1, currentEpoch.generation, hiddenAttempt); offViewport.ObserveFiniteRequirement(true); hiddenProbe->BeginBackingWrite(dc, target);
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix());
+							// negative保留当前viewport中的旧图，不把“已清除”误作“域外”证据。
+							renderer.PushFrameDirtyClip(dc, visible ? fullClip : mappedInside ? D2D1::RectF(32, 32, svgSize, svgSize) : D2D1::RectF(0, 0, 32, 32));
+							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+							if (visible) { if (mappedInside) dc->SetTransform(D2D1::Matrix3x2F::Translation(-56, -56)); (void)renderer.Svg(dc, offViewport, BarUiInheritClass(64, 64)); }
+							if (unknownReplay) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(offViewport.cacheBitmap.Get(), D2D1::RectF(8, 8, 24, 24), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
+							dc->SetTransform(D2D1::IdentityMatrix()); renderer.PopFrameDirtyClip(dc); const auto resources = hiddenProbe->FinishDrawing();
+							const bool ended = SUCCEEDED(dc->EndDraw()); hiddenProbe->CompleteAttempt(ended && committed);
+							expect(ended, "B356 actual viewport/clear/mapped SVG/EndDraw premise"); return resources;
+						};
+						expect(paintHidden(true).verified == 1 && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 72, 72)[3] != 0, "B356 old full mapped paint established");
+						const auto outside = paintHidden(false);
+						expect(outside.required == 1 && outside.verified == 1 && hiddenProbe->Observation(0x10002u).outsidePresentedViewport
+							&& !hiddenProbe->Observation(0x10002u).clearCoversOldBounds && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 72, 72)[3] != 0
+							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 16, 16)[3] == 0,
+							"B357 known old SVG entirely outside actual viewport is proven absent there without claiming backing Clear");
+						// 不重新绘制SVG，直接把非零源viewport扩回保留旧像素；必须仍Require并拒绝Hidden。
+						const auto expanded = paintHidden(false, false, false, true, true);
+						expect(expanded.required == 1 && expanded.verified == 0 && expanded.unverified == 1
+							&& hiddenProbe->NeedsHiddenProof(0x10002u) && hiddenProbe->Observation(0x10002u).use != Ui3SvgUse::HiddenExpected
+							&& std::bit_cast<float>(hiddenProbe->Target().viewportBits[0]) == 48.0f
+							&& std::bit_cast<float>(hiddenProbe->Target().viewportBits[1]) == 48.0f
+							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 72, 72)[3] != 0,
+							"B362 outside success retains actual old paint: no repaint, source48,48 expansion requires and rejects still-visible old SVG");
+					// B363：沿用像素只在先前全覆盖提交、同内容/几何/透明度且本帧clip可知时允许。
+					{
+						auto retainedProbe = std::make_unique<Ui3SvgProbe>(0xB363);
+						BarUiSVGClass retainedSvg;
+						{
+							SvgObservationScope initialization(retainedProbe.get(), false, true);
+							retainedSvg.Initialization(0, 0, RGB(220, 110, 40), std::nullopt);
+							retainedSvg.InitializationFromString(LR"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="rgba(220,110,40,0.75)"/></svg>)SVG");
+							retainedSvg.w.SetDirect(32); retainedSvg.h.SetDirect(32); retainedSvg.pct.SetDirect(1);
+							retainedSvg.enable.Initialization(true);
+							expect(retainedSvg.BindObservationTag(0x10003u), "B363 actual owned retained SVG tag binds");
+						}
+						std::uint64_t retainedAttempt = 0;
+						auto paintRetained = [&](const D2D1_RECT_F& clip, bool unknownAfter = false, bool commit = true)
+						{
+							SvgObservationScope scope(retainedProbe.get()); renderer.SetFrameZoom(1.0);
+							Ui3SvgFrameTarget target; target.revision = 1; target.epoch = currentEpoch.generation; target.surfaceSerial = 1;
+							target.frameAttemptSerial = ++retainedAttempt; target.width = target.height = target.backingWidth = target.backingHeight = svgSize;
+							target.dpi = 96; target.windowAlpha = 255; target.zoomBits = std::bit_cast<std::uint64_t>(1.0);
+							for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(i < 2 ? 0.0f : static_cast<float>(svgSize));
+							retainedProbe->BeginFrame(1, currentEpoch.generation, retainedAttempt);
+							retainedSvg.ObserveFiniteRequirement(true); retainedProbe->BeginBackingWrite(dc, target);
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc, clip);
+							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+							const bool drawn = renderer.Svg(dc, retainedSvg, BarUiInheritClass(16, 16));
+							if (unknownAfter) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(retainedSvg.cacheBitmap.Get(), D2D1::RectF(20, 20, 44, 44), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
+							renderer.PopFrameDirtyClip(dc); const auto proof = retainedProbe->FinishDrawing();
+							const bool ended = SUCCEEDED(dc->EndDraw()); retainedProbe->CompleteAttempt(ended && commit);
+							expect(drawn && ended, "B363 actual same-bitmap D2D draw and EndDraw premise");
+							return proof;
+						};
+						auto reportRetained = [&](const char* stage, const Ui3FiniteResourceProof& proof)
+						{
+							const auto observation = retainedProbe->Observation(0x10003u);
+							report << "[Ui3B363] stage=" << stage << " required=" << proof.required << " verified=" << proof.verified
+								<< " failed=" << proof.failed << " unverified=" << proof.unverified
+								<< " reason=" << proof.firstUnverifiedReason << " coverage=" << static_cast<unsigned>(observation.coverage)
+								<< " use=" << static_cast<unsigned>(observation.use) << " bitmap=" << observation.used.ready << ',' << observation.used.semanticKnown
+								<< " quality=" << observation.qualityMatches << " opacity=" << std::bit_cast<float>(observation.finalOpacityBits)
+								<< " dest=" << std::bit_cast<float>(observation.destBits[0]) << ',' << std::bit_cast<float>(observation.destBits[1])
+								<< ',' << std::bit_cast<float>(observation.destBits[2]) << ',' << std::bit_cast<float>(observation.destBits[3]) << '\n';
+						};
+						const auto seeded = paintRetained(fullClip);
+						const auto seedObservation = retainedProbe->Observation(0x10003u);
+						reportRetained("seed", seeded);
+						const auto referencePixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const auto disjoint = paintRetained(D2D1::RectF(60, 60, 90, 90));
+						reportRetained("disjoint", disjoint);
+						const auto disjointPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const bool disjointPixelsSame = referencePixels.size() == svgSize * svgSize * 4 && disjointPixels == referencePixels;
+						report << "[Ui3B363Pixels] stage=disjoint same=" << disjointPixelsSame << " bytes=" << disjointPixels.size() << '\n';
+						expect(seeded.required == 1 && seeded.verified == 1 && seedObservation.use == Ui3SvgUse::DrawnVerified,
+							"B363 seed is a fully visible, exact D2D SVG proof");
+						expect(disjointPixelsSame, "B363 disjoint dirty Clear/D2D draw preserves exact previously committed BGRA");
+						expect(disjoint.required == 1 && disjoint.verified == 1 && disjoint.unverified == 0
+							&& retainedProbe->Observation(0x10003u).coverage == Ui3SvgCoverage::Empty
+							&& retainedProbe->Observation(0x10003u).use == Ui3SvgUse::RetainedVerified,
+							"B363 known disjoint dirty clip inherits only the exact previous full-coverage proof");
+						const auto partial = paintRetained(D2D1::RectF(32, 0, 60, svgSize));
+						reportRetained("partial", partial);
+						const auto partialPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const bool partialPixelsSame = partialPixels == referencePixels;
+						report << "[Ui3B363Pixels] stage=partial same=" << partialPixelsSame << " bytes=" << partialPixels.size() << '\n';
+						expect(partialPixelsSame, "B363 same-bitmap partial redraw recomposes exact previously committed BGRA");
+						expect(partial.required == 1 && partial.verified == 0 && partial.unverified == 1
+							&& retainedProbe->Observation(0x10003u).coverage == Ui3SvgCoverage::Partial
+							&& retainedProbe->Observation(0x10003u).use == Ui3SvgUse::Unverified,
+							"B363 partially overlapping dirty clip remains unverified even when D2D pixels happen to match");
+						(void)paintRetained(fullClip);
+						retainedSvg.pct.SetDirect(0.5);
+						const auto changedOpacity = paintRetained(D2D1::RectF(60, 60, 90, 90));
+						reportRetained("opacity", changedOpacity);
+						expect(changedOpacity.verified == 0 && changedOpacity.unverified == 1,
+							"B363 changed expected opacity cannot borrow previous full-coverage proof");
+						retainedSvg.pct.SetDirect(1); (void)paintRetained(fullClip);
+						const auto unknown = paintRetained(fullClip, true);
+						reportRetained("unknown", unknown);
+						expect(unknown.verified == 0 && unknown.unverified == 1,
+							"B363 later unknown write still revokes visible SVG proof");
+						(void)paintRetained(fullClip);
+						const auto failedCommit = paintRetained(D2D1::RectF(60, 60, 90, 90), false, false);
+						const auto afterFailedCommit = paintRetained(D2D1::RectF(60, 60, 90, 90));
+						reportRetained("after-failed-commit", afterFailedCommit);
+						expect(failedCommit.verified == 1 && afterFailedCommit.verified == 0 && afterFailedCommit.unverified == 1,
+							"B363 failed presentation cannot leave a reusable retained-pixel proof");
+					}
+						// 消费者前提必须使用支持的closed-aux标记与偶数display serial，不能拿Unsupported伪作失败提交。
+						Ui3FiniteSignature initial; initial.flags = 64; initial.stateMode = 1; initial.penColorRgb = RGB(10, 20, 30); initial.penWidthBits = std::bit_cast<std::uint32_t>(3.0f);
+						initial.toolRevision = 1; initial.dpi = 96; initial.displaySerial = 2; initial.configZoomBits = std::bit_cast<std::uint64_t>(1.0); initial.validMask = Ui3FiniteRequiredMask;
+						auto publication = std::make_unique<Ui3FinitePublication>(0xB358, initial); auto goal = initial; goal.flags ^= 1;
+						auto mutation = publication->BeginMutation(1, Ui3FiniteScene::MainFold, 1); publication->MarkBusinessAccepted(mutation); publication->FinishAtRenderRequest(mutation, goal, 0);
+						auto observer = std::make_unique<Ui3FiniteObserver>(*publication); Ui3FiniteAccepted accepted; const bool stable = observer->SnapshotAccepted(accepted); observer->BeginFrame(accepted, outside.epoch, outside.frameAttemptSerial);
+						const bool consumed = observer->MarkConsumed(goal, 1, 1); for (unsigned role = 1; role <= 6; ++role) observer->ObserveProperty(static_cast<Ui3PropertyRole>(role), false, true);
+						auto candidate = observer->SettleCandidate(outside.surfaceSerial, 32, 32); candidate = observer->FinalizeResources(candidate, outside);
+						expect(stable && accepted.status == Ui3FiniteStatus::Accepted && consumed && candidate.settled, "B358 legal accepted/consumed/settled production premise");
+						const auto completion = observer->CompleteAttempt(candidate, false, false, 0);
+						report << "[Ui3B358] stable=" << stable << " status=" << static_cast<unsigned>(accepted.status) << " flags=" << accepted.signature.flags
+							<< " display=" << accepted.signature.displaySerial << " revision=" << accepted.revision << " publication=" << accepted.publicationSerial
+							<< " consumed=" << consumed << " settled=" << candidate.settled << " svgComplete=" << candidate.svgProofComplete
+							<< " candidate=" << candidate.accepted.revision << ',' << candidate.epoch << ',' << candidate.surfaceSerial << ',' << candidate.frameAttemptSerial
+							<< " resource=" << outside.revision << ',' << outside.epoch << ',' << outside.surfaceSerial << ',' << outside.frameAttemptSerial
+							<< " required=" << outside.required << " verified=" << outside.verified << " producer=" << outside.producerPresent
+							<< " complete=" << static_cast<unsigned>(completion) << " completedRevision=" << publication->CompletedRevision() << '\n';
+						expect(candidate.svgProofComplete && completion == Ui3FiniteStatus::Pending && publication->CompletedRevision() == 0, "B358 actual staged outside proof cannot complete failed present transaction");
+						(void)paintHidden(true, true); const auto visibleOld = paintHidden(false, true);
+						expect(visibleOld.verified == 0 && !hiddenProbe->Observation(0x10002u).outsidePresentedViewport
+							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 16, 16)[3] != 0, "B359 actual mapped old bounds in viewport remain unverified");
+						(void)paintHidden(true); const auto replay = paintHidden(false, false, true);
+						expect(replay.verified == 0 && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 16, 16)[3] != 0,
+							"B360 actual unknown replay into viewport prevents outside Hidden qualification");
+						(void)paintHidden(true); const auto failedOutside = paintHidden(false, false, false, false);
+						const auto afterFailedOutside = paintHidden(false);
+						expect(failedOutside.verified == 1 && afterFailedOutside.verified == 0,
+							"B361 real D2D write plus failed/deferred software completion revokes later outside Hidden proof");
+					}
 					// 真实独立WARP/D2D device epoch，局部SVG显式Reset沿原资源释放函数。
 					RenderPipeline::DeviceEpoch nextEpoch; nextEpoch.backend = RenderPipeline::Backend::Warp; nextEpoch.generation = epoch.generation + 1;
 					const D3D_FEATURE_LEVEL levels[]{D3D_FEATURE_LEVEL_11_0};

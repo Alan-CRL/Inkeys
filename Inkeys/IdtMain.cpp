@@ -401,6 +401,17 @@ namespace
 		return file;
 	}
 
+	HANDLE EnsureVerifiedEmbeddedResourceFile(const std::wstring& path,
+		LPCWSTR type, LPCWSTR name) noexcept
+	{
+		// 正确的只读文件可直接复用；验证获得的 read pin 仍须持有到 LoadLibrary 返回。
+		const HANDLE verified = OpenVerifiedEmbeddedResourceFile(path, type, name);
+		if (verified != INVALID_HANDLE_VALUE) return verified;
+		if (!PublishEmbeddedResourceFileAtomically(path, type, name))
+			return INVALID_HANDLE_VALUE;
+		return OpenVerifiedEmbeddedResourceFile(path, type, name);
+	}
+
 	LONG WINAPI CrashFilterLifecycleSentinel(EXCEPTION_POINTERS*)
 	{
 		return EXCEPTION_CONTINUE_SEARCH;
@@ -646,12 +657,46 @@ namespace
 			const HANDLE stillVerified = OpenVerifiedEmbeddedResourceFile(
 				file.wstring(), L"DLL", MAKEINTRESOURCE(222));
 			if (stillVerified != INVALID_HANDLE_VALUE) CloseHandle(stillVerified);
+			const std::wstring resourcePath = file.wstring();
+			const DWORD originalAttributes = GetFileAttributesW(file.c_str());
+			// 仅本测试新建的私有文件设只读；生产助手不修改 attributes。
+			const bool correctReadonlySet = originalAttributes != INVALID_FILE_ATTRIBUTES &&
+				SetFileAttributesW(file.c_str(), originalAttributes | FILE_ATTRIBUTE_READONLY) != FALSE;
+			const HANDLE correctReadonly = correctReadonlySet
+				? EnsureVerifiedEmbeddedResourceFile(resourcePath, L"DLL", MAKEINTRESOURCE(222))
+				: INVALID_HANDLE_VALUE;
+			BY_HANDLE_FILE_INFORMATION readonlyInfo = {};
+			const bool correctReadonlyVerified = correctReadonly != INVALID_HANDLE_VALUE &&
+				GetFileInformationByHandle(correctReadonly, &readonlyInfo) != FALSE &&
+				(readonlyInfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0;
+			if (correctReadonly != INVALID_HANDLE_VALUE) CloseHandle(correctReadonly);
+			const bool correctReadonlyRestored = correctReadonlySet &&
+				SetFileAttributesW(file.c_str(), originalAttributes) != FALSE;
 			std::ofstream corrupted(file, std::ios::binary | std::ios::trunc);
 			corrupted << "untrusted";
 			corrupted.close();
 			const HANDLE rejected = OpenVerifiedEmbeddedResourceFile(
 				file.wstring(), L"DLL", MAKEINTRESOURCE(222));
 			if (rejected != INVALID_HANDLE_VALUE) CloseHandle(rejected);
+			const bool wrongReadonlySet = originalAttributes != INVALID_FILE_ATTRIBUTES &&
+				SetFileAttributesW(file.c_str(), originalAttributes | FILE_ATTRIBUTE_READONLY) != FALSE;
+			const HANDLE wrongReadonly = wrongReadonlySet
+				? EnsureVerifiedEmbeddedResourceFile(resourcePath, L"DLL", MAKEINTRESOURCE(222))
+				: INVALID_HANDLE_VALUE;
+			if (wrongReadonly != INVALID_HANDLE_VALUE) CloseHandle(wrongReadonly);
+			const HANDLE preservedFile = CreateFileW(file.c_str(), GENERIC_READ,
+				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			std::array<char, 9> preservedBytes = {};
+			DWORD preservedCount = 0;
+			LARGE_INTEGER preservedSize = {};
+			const bool wrongReadonlyPreserved = wrongReadonlySet && wrongReadonly == INVALID_HANDLE_VALUE &&
+				preservedFile != INVALID_HANDLE_VALUE && GetFileSizeEx(preservedFile, &preservedSize) != FALSE &&
+				preservedSize.QuadPart == static_cast<LONGLONG>(preservedBytes.size()) &&
+				ReadFile(preservedFile, preservedBytes.data(), static_cast<DWORD>(preservedBytes.size()), &preservedCount, nullptr) != FALSE &&
+				preservedCount == preservedBytes.size() && std::memcmp(preservedBytes.data(), "untrusted", preservedBytes.size()) == 0;
+			if (preservedFile != INVALID_HANDLE_VALUE) CloseHandle(preservedFile);
+			const bool wrongReadonlyRestored = wrongReadonlySet &&
+				SetFileAttributesW(file.c_str(), originalAttributes) != FALSE;
 			if (!writeBlocked || !loaded || !atomicFailurePreserved ||
 				stillVerified == INVALID_HANDLE_VALUE ||
 				rejected != INVALID_HANDLE_VALUE)
@@ -659,7 +704,13 @@ namespace
 				std::fputs("[PptComResource] FAIL: load, corruption or concurrent writer contract\n", stderr);
 				return 1;
 			}
-			std::fputs("[PptComResource] PASS: embedded bytes verified under read lock\n", stderr);
+			if (!correctReadonlyVerified || !correctReadonlyRestored || !wrongReadonlyPreserved || !wrongReadonlyRestored)
+			{
+				std::fprintf(stderr, "[PptComResource] FAIL: readonly correct=%d restored=%d wrong_preserved=%d restored=%d\n",
+					correctReadonlyVerified, correctReadonlyRestored, wrongReadonlyPreserved, wrongReadonlyRestored);
+				return 1;
+			}
+			std::fputs("[PptComResource] PASS: embedded bytes verified under read lock; correct readonly reuse and wrong readonly preservation\n", stderr);
 			return 0;
 		}
 		catch (...)
@@ -2488,21 +2539,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		//PptCOM 组件加载
 		{
 			const std::wstring pptComPath = globalPath + L"PptCOM.dll";
-			const bool pptComExtracted = PublishEmbeddedResourceFileAtomically(
+			const HANDLE verifiedPptCom = EnsureVerifiedEmbeddedResourceFile(
 				pptComPath, L"DLL", MAKEINTRESOURCE(222));
-			if (!pptComExtracted)
+			if (verifiedPptCom == INVALID_HANDLE_VALUE)
 			{
-				// bool资源助手不承诺保留LastError；用通用失败码，避免记录陈旧的系统错误。
+				// 资源助手不承诺保留LastError；用通用失败码，避免记录陈旧的系统错误。
 				RecordPptComFailure(ERROR_GEN_FAILURE);
-				IDTLogger->error("[主线程][IdtMain] 解压PptCOM.dll失败，拒绝加载既有 DLL");
-			}
-			const HANDLE verifiedPptCom = pptComExtracted
-				? OpenVerifiedEmbeddedResourceFile(pptComPath,
-					L"DLL", MAKEINTRESOURCE(222)) : INVALID_HANDLE_VALUE;
-			if (pptComExtracted && verifiedPptCom == INVALID_HANDLE_VALUE)
-			{
-				RecordPptComFailure(ERROR_GEN_FAILURE);
-				IDTLogger->error("[主线程][IdtMain] PptCOM.dll 与内嵌资源不一致，拒绝加载");
+				IDTLogger->error("[主线程][IdtMain] PptCOM.dll 验证或原子发布失败，拒绝加载");
 			}
 
 			ACTCTX actCtx = { 0 };
