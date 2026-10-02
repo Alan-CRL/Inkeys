@@ -2758,6 +2758,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		std::vector<Inkeys::Window::WindowSpec> windowSpecs;
 		auto createdDrawpadHwnd = std::make_shared<std::atomic<HWND>>(nullptr);
 		const bool preferDraw3DirectComposition =
+			config.Experimental.Inkeys3.Draw3.EnableDirectComposition &&
 			Inkeys::Drawing::Draw3::ShouldPreconfigureNoRedirectionBitmap();
 
 		// 放大窗口固定保留 1 像素，不再读取已废弃的 AvoidFullScreen 配置。

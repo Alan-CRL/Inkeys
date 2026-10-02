@@ -289,6 +289,7 @@ GROUP(UI, \
 		GROUP(Inkeys3, \
 			GROUP(Draw3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
 			) \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \

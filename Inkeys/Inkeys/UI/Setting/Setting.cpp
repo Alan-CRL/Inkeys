@@ -1349,6 +1349,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool DynamicEdgeLighting = Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic;
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
+				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 			#ifndef IDT_RELEASE
@@ -7392,7 +7393,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 						PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
-						float inkeys3PanelHeight = 115.0f
+						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
 					#ifndef IDT_RELEASE
 						inkeys3PanelHeight += 300.0f;
@@ -7474,6 +7475,34 @@ SettingSessionCoroutine RunSettingSession()
 									QueueConfigWrite();
 								});
 #endif
+
+							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::CardBackground);
+							ImGui::BeginChild("启动 DComp", { settingItemWidth * settingGlobalScale,70.0f * settingGlobalScale }, true,
+								ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,20.0f * settingGlobalScale });
+							ImFontMain->Scale = 0.6f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextStrong);
+							ImGui::TextUnformatted("在支持的设备上启动 DComp");
+							ImGui::SetCursorPos({ 20.0f * settingGlobalScale,ImGui::GetCursorPosY() });
+							ImFontMain->Scale = 0.5f, PushFontNum++, ImGui::PushFont(ImFontMain);
+							PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_Text, Widgets::FluentColor::TextSecondary);
+							ImGui::TextUnformatted("重启软件后生效；关闭后使用 ULW 进行测试。");
+							ImGui::SetCursorPos({ settingRightToggleX * settingGlobalScale,25.0f * settingGlobalScale });
+							Widgets::toggle.ToggleBool("##启动 DComp", &Experimental.Inkeys3.EnableDirectComposition);
+							if (Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition !=
+								Experimental.Inkeys3.EnableDirectComposition)
+							{
+								Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition =
+									Experimental.Inkeys3.EnableDirectComposition;
+								QueueConfigWrite();
+							}
+							if (PushStyleColorNum >= 0) ImGui::PopStyleColor(PushStyleColorNum), PushStyleColorNum = 0;
+							if (PushStyleVarNum >= 0) ImGui::PopStyleVar(PushStyleVarNum), PushStyleVarNum = 0;
+							while (PushFontNum) PushFontNum--, ImGui::PopFont();
+							ImGui::EndChild();
 
 
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
