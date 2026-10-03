@@ -1585,6 +1585,91 @@ namespace Inkeys::UI::Bar
 			scene.ReleaseDeviceResources();
 		}
 		failures += Inkeys::UI::PageControl::RunOffscreenTests();
+		// 主按钮展开/反向与点击脉冲：分开量CPU路径和完整离屏绘制，像素读取不计入计时。
+		{
+			struct PathProbe : BarUIRendering
+			{
+				using BarUIRendering::BarUIRendering;
+				using BarUIRendering::GetSuperellipseGeometry;
+			};
+			const auto output=std::filesystem::path(L"Build/eraser-b/ui3-path");
+			std::filesystem::create_directories(output);
+			std::ofstream samples(output/L"measurements.csv");
+			samples<<"zoom,block,geometry_frames,geometry_mean_ms,draw_frames,draw_mean_ms,successful_draws\n";
+			std::array<std::array<double,2>,48> frames{};
+			BarUiValueClass exponent(3.0),size(BarMainButtonWidthDip);
+			const BarUiCurveSpecClass pulse{BarUiCurveEnum::EaseOutBack,BarUiCurveEnum::EaseInBack,0.0,false};
+			for(size_t frame=0;frame<frames.size();++frame)
+			{
+				if(frame==0 || frame==12 || frame==24)
+				{
+					exponent.SetTar(frame==12?3.0:10.0,0.4);
+					size.SetTar(BarMainButtonWidthDip,0.4,BarMainButtonWidthDip*1.1,true,pulse);
+				}
+				const BarUiAnimationAdvanceContextClass advance{1.0/60.0,1.0,true,false};
+				BarUiAdvanceAnimation(exponent,advance);BarUiAdvanceAnimation(size,advance);
+				frames[frame]={static_cast<double>(size.val),static_cast<double>(exponent.val)};
+			}
+			for(const double zoom:{1.0,1.5})
+			{
+				constexpr UINT width=256,height=192;
+				PathProbe renderer(&owner);
+				const HRESULT setup=renderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height);
+				expect(SUCCEEDED(setup),"UI3 path benchmark target setup");
+				if(FAILED(setup))continue;
+				renderer.SetFrameZoom(zoom);
+				BarUiFrameLightingSnapshot light{};
+				light.primaryLight=D2D1::Point2F(105,85);light.primaryRadius=480;
+				light.primaryLightVisible=true;light.edgeLightingEnabled=true;
+				renderer.SetFrameLightingSnapshot(light);
+				BarUiSuperellipseClass shape(0,0,BarMainButtonWidthDip,BarMainButtonHeightDip,
+					3.0,BarButtonFrameThicknessDip,RGB(245,245,245),RGB(200,200,200));
+				shape.enable.Initialization(true);shape.framePct.emplace(0.4);
+				shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
+				auto* dc=renderer.GetDeviceContext();
+				auto drawFrame=[&](const std::array<double,2>& values)
+				{
+					shape.w.SetDirect(values[0]);shape.h.SetDirect(values[0]);shape.n->SetDirect(values[1]);
+					dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());
+					dc->Clear(D2D1::ColorF(0,0,0,0));
+					renderer.PushFrameDirtyClip(dc,D2D1::RectF(0,0,width,height));
+					const bool drew=renderer.Superellipse(dc,shape,BarUiInheritClass(40,32));
+					renderer.PopFrameDirtyClip(dc);
+					const HRESULT hr=dc->EndDraw();renderer.HandleFrameEndDrawResult(hr);
+					return drew && SUCCEEDED(hr);
+				};
+				for(const auto& frame:frames)expect(drawFrame(frame),"UI3 path benchmark warm draw");
+				for(int block=0;block<7;++block)
+				{
+					bool geometryOk=true;
+					const auto geometryStart=std::chrono::steady_clock::now();
+					for(int repeat=0;repeat<32;++repeat)for(const auto& frame:frames)
+					{
+						const auto extent=static_cast<FLOAT>(frame[0]*zoom);
+						const int segments=std::clamp(static_cast<int>((frame[0]*zoom*2)/8.0),24,128);
+						geometryOk &= renderer.GetSuperellipseGeometry(40*static_cast<FLOAT>(zoom),32*static_cast<FLOAT>(zoom),
+							extent,extent,static_cast<FLOAT>(frame[1]),segments)!=nullptr;
+					}
+					const double geometryMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-geometryStart).count()/(32*frames.size());
+					unsigned successful=0;
+					const auto drawStart=std::chrono::steady_clock::now();
+					for(int repeat=0;repeat<4;++repeat)for(const auto& frame:frames)successful+=drawFrame(frame)?1:0;
+					const double drawMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-drawStart).count()/(4*frames.size());
+					expect(geometryOk && successful==4*frames.size(),"UI3 path benchmark all geometry/draws succeed");
+					samples<<zoom<<','<<block<<','<<32*frames.size()<<','<<geometryMs<<','<<4*frames.size()<<','<<drawMs<<','<<successful<<'\n';
+				}
+				std::ofstream pixels(output/(zoom==1.0?L"zoom-1.bgra":L"zoom-1.5.bgra"),std::ios::binary);
+				for(const auto& frame:frames)
+				{
+					expect(drawFrame(frame),"UI3 path snapshot draws");
+					const auto data=ReadSvgProofPixels(dc,renderer.GetTargetBitmap());
+					expect(data.size()==width*height*4,"UI3 path full BGRA readback");
+					pixels.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()));
+				}
+				expect(samples.good() && pixels.good(),"UI3 path benchmark output saved");
+				renderer.DiscardDeviceResources();
+			}
+		}
 		owner.spec.DiscardDeviceResources();RenderPipeline::Shutdown();CoUninitialize();
 		report<<"[EraserVisual] failures="<<failures<<'\n';return failures?1:0;
 	}

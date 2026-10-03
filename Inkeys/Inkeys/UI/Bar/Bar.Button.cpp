@@ -850,16 +850,21 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 
 void BarButtonSetClass::StateUpdate()
 {
-	CalcState();
-	PresetHoming();
-	UpdateDrawButtonStyle();
+	// 同一次刷新共用工具快照，避免高亮、内容和面板归位跨版本。
+	const auto stateMode = GetStateModeSnapshot();
+	CalcState(stateMode);
+	PresetHoming(stateMode);
+	UpdateDrawButtonStyle(stateMode);
 	UpdateWhiteboardButtonStyle();
-	UpdateEraserButtonStyle();
-	UpdateGeometryButtonStyle();
+	UpdateEraserButtonStyle(stateMode);
+	UpdateGeometryButtonStyle(stateMode);
 }
 void BarButtonSetClass::UpdateDrawButtonStyle()
 {
-	const auto stateMode = GetStateModeSnapshot();
+	UpdateDrawButtonStyle(GetStateModeSnapshot());
+}
+void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode)
+{
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
 	bool laser = stateMode.laserActive;
@@ -917,9 +922,8 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle()
 			: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel));
 	whiteboardButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateEraserButtonStyle()
+void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode)
 {
-	const auto stateMode = GetStateModeSnapshot();
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser;
 	int styleKey = selected ? 1 : 0;
@@ -935,9 +939,8 @@ void BarButtonSetClass::UpdateEraserButtonStyle()
 			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel));
 	eraserButtonStyleKey = styleKey;
 }
-void BarButtonSetClass::UpdateGeometryButtonStyle()
+void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode)
 {
-	const auto stateMode = GetStateModeSnapshot();
 	static mutex mtx;
 	bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape;
 	bool rectangle = selected
@@ -1324,9 +1327,8 @@ void BarButtonSetClass::ResetIconCaches()
 	if (moreButton) moreButton->icon.ResetCache();
 }
 
-void BarButtonSetClass::PresetHoming()
+void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 {
-	const auto stateMode = GetStateModeSnapshot();
 	const bool whiteboard = Inkeys::UI::Bar::WhiteboardActive();
 	if (whiteboard) barUISet.barState.geometryAttribute = false;
 	if (!whiteboard && (stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
@@ -1376,9 +1378,8 @@ void BarButtonSetClass::PresetHoming()
 				: IW(I18nKey.UI.Bar.MainButtons.SelectLabel));
 	}
 }
-void BarButtonSetClass::CalcState()
+void BarButtonSetClass::CalcState(const StateModeClass& stateMode)
 {
-	const auto stateMode = GetStateModeSnapshot();
 	{
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection) barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::Selected;
 		else barButtonState[(int)BarButtonPresetEnum::Select].state = BarWidgetState::None;

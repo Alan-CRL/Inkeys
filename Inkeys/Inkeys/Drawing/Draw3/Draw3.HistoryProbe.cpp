@@ -394,6 +394,105 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return true;
 		}
+		bool RunPlannerBenchmarks()
+		{
+			const auto PlannerFail = [](const char* name, size_t block, const char* invariant)
+			{ return Fail(Scenario{ name, 0, false }, block, invariant); };
+			// 缩预算后，高槽的 pin 仍存活；总 resident 数不能代表可用槽已满。
+			CompositionCachePlanner boundary({ kCompositionTileBytes * 4 });
+			for (uint64_t key = 1; key <= 4; ++key) boundary.Acquire({ key });
+			boundary.Pin({ 3 }); boundary.Pin({ 4 }); boundary.Release({ 1 });
+			boundary.SetPolicy({ kCompositionTileBytes * 2 });
+			const auto hole = boundary.Acquire({ 5 });
+			if (hole.status != CompositionCacheAcquireStatus::Allocated || hole.slot.value != 0 ||
+				hole.evictedKey || !boundary.Contains({ 3 }) || !boundary.Contains({ 4 }) ||
+				boundary.Contains({ 2 })) return PlannerFail("planner_shrink_hole", 0, "high pins preserve lowest usable hole");
+			boundary.Unpin({ 4 }); boundary.Unpin({ 3 });
+			if (!boundary.Contains({ 5 }) || boundary.ResidentCount() != 1)
+				return PlannerFail("planner_shrink_hole", 0, "unpin trims only out-of-budget residents");
+			boundary.Pin({ 5 }); boundary.SetPolicy({ 0 });
+			if (boundary.Acquire({ 6 }).status != CompositionCacheAcquireStatus::Disabled ||
+				!boundary.Contains({ 5 })) return PlannerFail("planner_disabled", 0, "disabled retains pinned resident");
+			boundary.Unpin({ 5 });
+			if (boundary.ResidentCount() != 0) return PlannerFail("planner_disabled", 0, "unpin releases disabled slot");
+
+			struct PlannerCase { const char* name; size_t capacity; int mode; };
+			const std::array cases{
+				PlannerCase{ "full_miss_128", 128, 0 }, PlannerCase{ "full_miss_512", 512, 0 },
+				PlannerCase{ "hit_128", 128, 1 }, PlannerCase{ "hit_512", 512, 1 },
+				PlannerCase{ "released_hole_512", 512, 2 }, PlannerCase{ "all_pinned_128", 128, 3 }};
+			for (const auto& scenario : cases)
+			{
+				std::optional<uint64_t> expectedDigest;
+				for (size_t block = 0; block < kWarmupBlocks + kMeasuredBlocks; ++block)
+				{
+					const size_t operations = scenario.mode == 2 ? 8 : 256;
+					std::vector<CompositionCachePlanner> fixtures;
+					fixtures.reserve(scenario.mode == 2 ? operations : 1);
+					for (size_t fixture = 0; fixture < (scenario.mode == 2 ? operations : 1); ++fixture)
+					{
+						auto& planner = fixtures.emplace_back(CompositionCachePolicy{ kCompositionTileBytes * scenario.capacity });
+						for (uint64_t key = 1; key <= scenario.capacity; ++key)
+						{
+							const auto result = planner.Acquire({ key });
+							if (result.status != CompositionCacheAcquireStatus::Allocated || result.slot.value != key - 1 || result.evictedKey)
+								return PlannerFail(scenario.name, block, "prefill assigns unique ordered slots");
+						}
+						if (scenario.mode == 0) { planner.Pin({ 2 }); planner.Acquire({ 1 }); }
+						if (scenario.mode == 2 && !planner.Release({ 257 })) return PlannerFail(scenario.name, block, "release middle slot");
+						if (scenario.mode == 3)
+							for (uint64_t key = 1; key <= scenario.capacity; ++key)
+								if (!planner.Pin({ key })) return PlannerFail(scenario.name, block, "pin every resident");
+					}
+					// 构造、断言和摘要都在计时区外；这里只量实际绘制线程所用的 Acquire。
+					std::array<CompositionCacheAcquireResult, 256> results{};
+					const auto began = Clock::now();
+					for (size_t operation = 0; operation < operations; ++operation)
+					{
+						auto& planner = fixtures[scenario.mode == 2 ? operation : 0];
+						const uint64_t key = scenario.mode == 1 ? 1 + operation % scenario.capacity :
+							scenario.capacity + 1 + (scenario.mode == 2 ? 0 : operation);
+						results[operation] = planner.Acquire({ key });
+					}
+					const uint64_t elapsed = ElapsedNs(began);
+					uint64_t digest = 1469598103934665603ull;
+					for (size_t operation = 0; operation < operations; ++operation)
+					{
+						const auto& result = results[operation];
+						bool valid = !result.evictedKey;
+						if (scenario.mode == 0)
+						{
+							const size_t position = operation % (scenario.capacity - 1);
+							const uint32_t slot = static_cast<uint32_t>(position < scenario.capacity - 2 ? position + 2 : 0);
+							const uint64_t victim = operation < scenario.capacity - 1 ?
+								(position < scenario.capacity - 2 ? position + 3 : 1) :
+								scenario.capacity + 1 + operation - (scenario.capacity - 1);
+							valid = result.status == CompositionCacheAcquireStatus::Allocated && result.slot.value == slot &&
+								result.evictedKey == std::optional<CompositionCacheKeyId>{ { victim } };
+						}
+						else if (scenario.mode == 1) valid &= result.status == CompositionCacheAcquireStatus::Hit && result.slot.value == operation % scenario.capacity;
+						else if (scenario.mode == 2) valid &= result.status == CompositionCacheAcquireStatus::Allocated && result.slot.value == 256;
+						else valid &= result.status == CompositionCacheAcquireStatus::AllUsableSlotsPinned;
+						if (!valid) return PlannerFail(scenario.name, block, "status, lowest slot and LRU victim unchanged");
+						digest = Mix(digest, static_cast<uint64_t>(result.status));
+						digest = Mix(digest, result.slot.value);
+						digest = Mix(digest, result.evictedKey ? result.evictedKey->value : 0);
+					}
+					for (const auto& planner : fixtures)
+					{
+						const size_t pins = scenario.mode == 0 ? 1 : scenario.mode == 3 ? scenario.capacity : 0;
+						if (planner.ResidentCount() != scenario.capacity || planner.PinnedCount() != pins ||
+							(scenario.mode == 0 && !planner.Contains({ 2 }))) return PlannerFail(scenario.name, block, "resident and pin counts unchanged");
+					}
+					if (expectedDigest && *expectedDigest != digest) return PlannerFail(scenario.name, block, "deterministic result digest");
+					expectedDigest = digest;
+					std::fprintf(stdout, "Draw3PlannerBenchmark scenario=%s phase=%s block=%zu capacity=%zu operations=%zu elapsed_ns=%llu digest=%llu hwnd=0 gpu=0 present=0\n",
+						scenario.name, block < kWarmupBlocks ? "warmup" : "measured", block, scenario.capacity, operations,
+						static_cast<unsigned long long>(elapsed), static_cast<unsigned long long>(digest));
+				}
+			}
+			return true;
+		}
 	}
 
 	int RunDraw3HistoryBenchmark() noexcept
@@ -407,6 +506,7 @@ namespace Inkeys::Drawing::Draw3
 				kWarmupBlocks, kMeasuredBlocks);
 			for (const Scenario& scenario : kScenarios)
 				if (!RunScenario(scenario)) return 1;
+			if (!RunPlannerBenchmarks()) return 1;
 			std::fflush(stdout);
 			return 0;
 		}
