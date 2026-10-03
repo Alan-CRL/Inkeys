@@ -280,10 +280,12 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	// 状态更新
 	if (updateState)
 	{
-		barButtonSet.StateUpdate();
-		// 非画笔模式的 GetPenWidth 为 0，收起过程中保留最后一次有效的粗细文字。
-		if (GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen)
-			barState.ThicknessDisplayUpdate();
+		// 按钮、面板归位和粗细文字使用同一工具代次，再统一发布渲染请求。
+		const auto stateMode = GetStateModeSnapshot();
+		barButtonSet.StateUpdate(stateMode);
+		// 仅在画笔模式刷新粗细文字，收起过程中保留最后一次有效显示。
+		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+			barState.ThicknessDisplayUpdate(GetPenWidth(stateMode));
 	}
 
 	if (Inkeys::UI::Bar::CurrentUi3FiniteMutation())

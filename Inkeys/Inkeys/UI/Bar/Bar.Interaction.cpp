@@ -1412,46 +1412,17 @@ private:
 	void StartHover(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>* hoverStage)
 		{
-			if (!hoverPct || !hoverFill || !hoverStage) return;
-			hoverPct->animateWhenDisabled = true;
-			hoverFill->animateWhenDisabled = true;
-			const BarUiCurveSpecClass hoverShowCurve{
-				BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
-			hoverFill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill),
-				BarButtonHoverTransitionDuration, hoverShowCurve);
-			hoverPct->SetTar(
-				BarButtonHoverOpacity, BarButtonHoverTransitionDuration,
-				nullopt, true, hoverShowCurve);
-			*hoverStage = BarButtonHoverStageEnum::Showing;
-			UpdateRendering(false);
+			if (Inkeys::UI::Bar::StartBarButtonHoverVisual(hoverPct, hoverFill, hoverStage))
+				UpdateRendering(false);
 		}
 
 	void StopHover(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
 		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate,
 		bool preserveVisual = false)
 		{
-			if (!hoverPct || !hoverStage) return;
-			if (immediate)
-			{
-				*hoverStage = BarButtonHoverStageEnum::None;
-				// 按下时保留当前视觉值交给按压态续接，隐藏等场景仍立即清零。
-				if (!preserveVisual) hoverPct->SetDirect(0.0);
-				hoverPct->animateWhenDisabled = false;
-				if (hoverFill) hoverFill->animateWhenDisabled = false;
-			}
-			else
-			{
-				// 离开后仍保持灰色背景，直到同一层透明度自然降为零。
-				hoverPct->animateWhenDisabled = true;
-				if (hoverFill) hoverFill->animateWhenDisabled = true;
-				*hoverStage = BarButtonHoverStageEnum::Fading;
-				const BarUiCurveSpecClass hoverExitCurve{
-					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine, 0.0, false };
-				hoverPct->SetTar(
-					0.0, BarButtonHoverTransitionDuration,
-					nullopt, true, hoverExitCurve);
-			}
-			UpdateRendering(false);
+			if (Inkeys::UI::Bar::StopBarButtonHoverVisual(
+				hoverPct, hoverFill, hoverStage, immediate, preserveVisual))
+				UpdateRendering(false);
 		}
 
 	void StartMainBarButtonHover(BarButtonClass* button)
@@ -5058,7 +5029,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (changed || expectedChange)
 				{
-					barButtonSet.UpdateDrawButtonStyle();
+					// 工具样式由统一状态刷新投影，避免在此前单独读取另一代状态。
 					UpdateRendering();
 				}
 			};
@@ -5384,7 +5355,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								ClosePenTypeMenu();
 								CloseThicknessSlider(true);
 								ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
-								barButtonSet.UpdateDrawButtonStyle();
 								UpdateRendering();
 								break;
 							}

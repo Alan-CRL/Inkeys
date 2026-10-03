@@ -116,6 +116,7 @@ public:
 
 	void PositionUpdate(double tarZoom);
 	void ThicknessDisplayUpdate();
+	void ThicknessDisplayUpdate(float penWidth);
 };
 class BarStyleClass
 {

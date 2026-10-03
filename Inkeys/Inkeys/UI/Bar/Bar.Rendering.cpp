@@ -1615,10 +1615,10 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 	if (SUCCEEDED(hr))
 		hr = frameMaskDeviceContext->CreateBitmap(
 			pixelSize, nullptr, 0, bitmapProperties, &outputBitmap);
-	ComPtr<ID2D1SolidColorBrush> sourceBrush;
-	if (SUCCEEDED(hr))
+	// 所有父遮罩与精确遮罩共用恒白画刷，资源重建时随遮罩上下文统一释放。
+	if (SUCCEEDED(hr) && !frameDiffuseExactMaskBrush)
 		hr = frameMaskDeviceContext->CreateSolidColorBrush(
-			D2D1::ColorF(D2D1::ColorF::White), &sourceBrush);
+			D2D1::ColorF(D2D1::ColorF::White), &frameDiffuseExactMaskBrush);
 	if (SUCCEEDED(hr))
 		hr = frameGaussianBlurEffect->SetValue(
 			D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
@@ -1641,7 +1641,7 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 		frameMaskDeviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 		frameMaskDeviceContext->Clear(&transparent);
 		frameMaskDeviceContext->DrawRoundedRectangle(
-			&localRoundedRect, sourceBrush.Get(), cachedStrokeWidth);
+			&localRoundedRect, frameDiffuseExactMaskBrush.Get(), cachedStrokeWidth);
 		hr = frameMaskDeviceContext->EndDraw();
 		frameMaskDeviceContext->SetTarget(nullptr);
 
@@ -2219,10 +2219,10 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 	if (SUCCEEDED(hr))
 		hr = frameMaskDeviceContext->CreateBitmap(
 			pixelSize, nullptr, 0, bitmapProperties, &outputBitmap);
-	ComPtr<ID2D1SolidColorBrush> sourceBrush;
-	if (SUCCEEDED(hr))
+	// 与精确遮罩烘焙共用恒白画刷，随当前设备资源统一释放，避免每次 miss 重建。
+	if (SUCCEEDED(hr) && !frameDiffuseExactMaskBrush)
 		hr = frameMaskDeviceContext->CreateSolidColorBrush(
-			D2D1::ColorF(D2D1::ColorF::White), &sourceBrush);
+			D2D1::ColorF(D2D1::ColorF::White), &frameDiffuseExactMaskBrush);
 	if (SUCCEEDED(hr))
 		hr = frameGaussianBlurEffect->SetValue(
 			D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
@@ -2241,7 +2241,7 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 		frameMaskDeviceContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
 		frameMaskDeviceContext->Clear(&transparent);
 		frameMaskDeviceContext->DrawGeometry(
-			geometry, sourceBrush.Get(), cachedStrokeWidth);
+			geometry, frameDiffuseExactMaskBrush.Get(), cachedStrokeWidth);
 		hr = frameMaskDeviceContext->EndDraw();
 		frameMaskDeviceContext->SetTarget(nullptr);
 

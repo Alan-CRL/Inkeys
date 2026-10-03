@@ -136,6 +136,11 @@ private:
 namespace Inkeys::UI::Bar
 {
 	// Main Bar 与跨 HWND surface 共用这些行为入口，调用方只保留资源和拓扑。
+	bool StartBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage);
+	bool StopBarButtonHoverVisual(BarUiPctClass* hoverPct, BarUiColorClass* hoverFill,
+		IdtAtomic<BarButtonHoverStageEnum>* hoverStage, bool immediate,
+		bool preserveVisual = false);
 	bool StartBarButtonHoverVisual(BarButtonClass& button) noexcept;
 	bool StopBarButtonHoverVisual(BarButtonClass& button, bool immediate,
 		bool preserveVisual = false) noexcept;

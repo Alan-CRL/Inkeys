@@ -238,6 +238,7 @@ bool RegisterButton(
 		void PresetInitialization();
 		void RegisterBuiltInComponents();
 		void StateUpdate();
+		void StateUpdate(const StateModeClass& stateMode);
 		void UpdateDrawButtonStyle();
 		void UpdateWhiteboardButtonStyle();
 		void ExecuteClearClick(bool doubleClickContinuation);

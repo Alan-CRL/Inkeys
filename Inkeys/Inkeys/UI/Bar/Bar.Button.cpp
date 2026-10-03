@@ -850,8 +850,11 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 
 void BarButtonSetClass::StateUpdate()
 {
+	StateUpdate(GetStateModeSnapshot());
+}
+void BarButtonSetClass::StateUpdate(const StateModeClass& stateMode)
+{
 	// 同一次刷新共用工具快照，避免高亮、内容和面板归位跨版本。
-	const auto stateMode = GetStateModeSnapshot();
 	CalcState(stateMode);
 	PresetHoming(stateMode);
 	UpdateDrawButtonStyle(stateMode);

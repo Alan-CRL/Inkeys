@@ -54,7 +54,11 @@ void BarStateClass::PositionUpdate(double tarZoom)
 }
 void BarStateClass::ThicknessDisplayUpdate()
 {
-	int penThickness = static_cast<int>(GetPenWidth());
+	ThicknessDisplayUpdate(GetPenWidth());
+}
+void BarStateClass::ThicknessDisplayUpdate(float penWidth)
+{
+	int penThickness = static_cast<int>(penWidth);
 	int displayedThickness = clamp(penThickness, 0, 999);
 	wstring tar = Inkeys::UI::Bar::Detail::FormatThicknessText(
 		IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat),
