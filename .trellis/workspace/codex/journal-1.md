@@ -916,3 +916,135 @@ Clear 与正式 Draw 的对比会定位设备/读回、生产管线或产品实�
 ### Next Steps
 
 - 用户在原 Win7 环境运行新 Collect-Win7.cmd，回传完整 pixel-test 和正常应用日志，保持任务 in_progress。
+
+
+## Session 32: Win7 诊断已提交并恢复首发准备
+<!-- trellis-session: v=2 fp=47da63332c5fd440 -->
+
+**Date**: 2026-10-03
+**Task**: Win7 诊断已提交并恢复首发准备
+**Branch**: `chore/publish`
+
+### Summary
+
+按用户授权签名提交21a37239，未push/归档；Win7保持in_progress。切回首发G，当前Release ARM64完整solution/Headless/PptCOM均exit0，近期直接复审无新确认回归；匹配Canary硬笔和状态revision/cancel动态验证仍待继续。
+
+### Main Changes
+
+# 原首发准备续接：当前候选验证（2026-10-03）
+
+用户要求提交当前 Win7 诊断而不结束任务，再继续原 Inkeys3 首发准备。已生成现有 SSH 签名 commit `21a37239336864b2b334abedec4e88d484d10473`（Add Win7 input and GPU pixel diagnostics），未 push。Win7 与首发父/子任务均为 in_progress、未归档。签名对象已存在；本机未配置 allowedSignersFile，未将签名验证能力视为已通过，也未改 Git/SSH 全局设置。
+
+## 续接边界
+
+最新 scope 以父 `closeout-0811-20261003.md` 和代码规范 `closeout-20261003.md` 为准：暂停新性能优化，补当前中文硬笔5与旧 Canary 已有三轮的同条件对照，再补实际状态/revision/取消的窄验证。旧手工软笔样本和更早 UI3-FIRST 未完成场景不冒充本范围通过。本轮先完成当前 Release 构建与有限直接复审，未新增产品源码。
+
+## 本次实际验证
+
+完整 InkeysRepo.sln Release|ARM64，vswhere 定位 ARM64 原生 MSBuild，/m:1 /nr:false，隔离 OutDir/ZhjOutputDir。相同 PowerShell invocation 清理 PATH 重复项并设置 MSBUILDDISABLENODEREUSE=1，允许900秒。构建包含 PptCOM 与 TLB依赖，退出0；既有数值转换警告保留，未改工具链或工程。
+
+| 检查 | 实际结果与边界 |
+| --- | --- |
+| 当前完整 Release ARM64 solution | exit0；日志 ARM64-Release/build.stdout.txt、build.stderr.txt |
+| 当前 Release InkeysHeadlessTests --no-window | exit0，PASS animation correctness；不覆盖实际 IdtState 全入口 |
+| 当前 PptCOM.Tests | exit0，PASS descriptor ownership and session/owner contracts；测试假 COM 合同，不启动Office，不代表真实放映退出验收 |
+| 0a19182c/21a37239 与直接依赖复审 | 无确认新回归；报告 [direct review](research/release-resume-direct-review-20261003.md)，非全量发布认证 |
+| 工作区保护 | 原 .gitignore、八份 cso 哈希不变；四Demo、原raw日志和research索引未提交/删除 |
+| 本次交互 GUI/Computer Use | 未运行 |
+| Win7 和正式发布就绪 | 待实测，不声明通过 |
+
+此前同一生产源码的 Debug ARM64、Release x64、两架构 GPU probe 已在 Win7 任务提交前执行且通过；这轮没有无意义重跑。当前候选只冻结一个新的 Release ARM64 程序身份，不将旧其它配置结果混作新的运行。
+
+## 产物
+
+输出根 `C:/Users/alan-/.codex/visualizations/2026/10/03/01a100c6-aa67-7cc3-9d01-6cda328f70c3/release-resume`；[完整身份清单](C:/Users/alan-/.codex/visualizations/2026/10/03/01a100c6-aa67-7cc3-9d01-6cda328f70c3/release-resume/manifest.json)。Inkeys.exe SHA256 `515AB004C1285AB44EA4A8C9AC6D4688607DBF1C669B19586E989E8C5EFE434C`，43060224字节，PE machine 0xaa64。PptCOM.dll/.config/.tlb 及测试程序身份均记manifest。未覆盖此前 Win7 x64 测试包或先前性能对照程序。
+
+## 原任务仍待执行
+
+1. 当前新程序与旧 Canary 中文/硬笔宽度5、动画光影等共同条件的书写/橡皮/撤销自动对照；旧样本曝光与采样口径保持，不能从累计CPU或WGC回调推断可见帧率/完整不退化。
+2. 实际 IdtState/bridge 的跨入口等价、重复/快速切换、旧revision拒绝；FineDial跨代/cancel单独按实际session与隔离保存边界验证。有限静态复审不代替这些动态检查。
+3. Win7唯一GPU根因仍等用户明天日志；其它真实设备/Office、最终HF全量review/矩阵各自保留。
+
+当前会话 active task 为G集成子任务，父首发任务仍继续；后续没有新的 commit/push 授权。此次只提交Win7检查点，首发新文档/续接记录保持可审阅未提交。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `21a37239336864b2b334abedec4e88d484d10473` | Add Win7 input and GPU pixel diagnostics |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续原冻结范围：匹配中文硬笔5自动对照及实际状态/bridge/cancel窄动态检查，等待明天Win7日志；不新增commit/push。
+
+
+## Session 33: 0811配对对照与状态安全收尾续接
+<!-- trellis-session: v=2 fp=3480c6f1efcd7568 -->
+
+**Date**: 2026-10-03
+**Task**: 0811配对对照与状态安全收尾续接
+**Branch**: `chore/publish`
+
+### Summary
+
+21a37239工作区：共同UI3/硬笔5自动采样完成；CPU成本有结果但完整不退化未证。新增实际状态/FineDial早期CLI，两配置构建和检查通过，直接审查无新问题；最终GUI被LockApp阻挡。
+
+### Main Changes
+
+- 五源码325行只补真实状态/bridge/FineDial交错验证；原业务算法、HTTP/PPT/数据保护与Win7路径不变。
+- 更新原任务验收、直接安全记录和CLI边界规范，保留未通过的真实环境门；既有工作区差异未覆盖。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整InkeysRepo.sln Debug/Release ARM64均exit0；两配置状态CLI exit0、附加参数exit2、隔离cwd0文件；Headless均exit0。
+- [OK] 21a/0811中文主按钮各3轮、硬笔5各3轮及橡皮/撤销自动操作成功，均正常退出；最终F017237F GUI回归未发送输入，LockApp遮挡。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户恢复桌面后只补最终F017237F版本短GUI回归和正常退出；不得把累计CPU/WGC当可见帧不退化。
+- 性能优化仍暂停；Win7目标机专项由独立任务处理；真实Office/驱动/正式发布门仍未全验，无commit/push授权。
+
+
+## Session 34: 人工GUI/Office通过，保存阶段待续Win7
+<!-- trellis-session: v=2 fp=d1408bc6b320c77f -->
+
+**Date**: 2026-10-04
+**Task**: 人工GUI/Office通过，保存阶段待续Win7
+**Branch**: `chore/publish`
+
+### Summary
+
+2026-10-04用户确认普通GUI/Office人工验证通过，授权提交当前已有阶段改动但任务继续；不push或发布。
+
+### Main Changes
+
+- 补人工验收与待续交接，按已通过生产CLI及用户确认收口代码PRD；不外推特定FineDial写盘、故障注入、量化性能或Win7。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 五源码仍与上轮已构建/独立复审的325行增量相同，原Debug/Release构建、状态/Headless exit0及extra exit2证据复用；diff --check通过，最终Release SHA仍F017237F。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保存当前阶段后等待用户续接Win7 ULW专项；首发/G/Win7均保持in_progress，不归档、不push。

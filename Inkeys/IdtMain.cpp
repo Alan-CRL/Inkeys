@@ -1045,6 +1045,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
+		{
+			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			const int stateResult = RunStateModeProductionTest();
+			return stateResult != 0 ? stateResult
+				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
 		// argv 识别也覆盖给 mode 加引号的合法写法；坏形状不能落入普通 GUI。
 		if (count > 1 && wcscmp(arguments[1], kHostMetricsSmokeArg) == 0)
 		{

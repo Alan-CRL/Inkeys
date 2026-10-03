@@ -1,3 +1,29 @@
+## 2026-10-04 阶段保存，任务继续
+
+用户确认GUI/Office人工验收通过，并授权commit当前阶段；不结束首发任务，不push、不发布/归档。普通GUI/Office按用户确认记为人工通过，不再把昨天LockApp遮挡列为当前操作阻塞；量化“不倒退”、特定故障链和Win7通过不能由此推断。
+
+当前提交前HEAD21a37239，源码仍为已验证五文件状态/FineDial CLI补证；完整两配置构建/测试与直接审查证据沿用，不重复执行。保留其它工作区日志/生成文件，提交阶段源码、规范与必要记录。后续根据用户下一条指令继续Win7 ULW修复，先核对实际HEAD和独立任务的新日志；本消息不启动新修复或新性能优化。
+
+## 本会话最新续接（覆盖下方早期待办）
+
+HEAD仍21a37239，用户暂停新性能优化的范围不变。本次完成当前21a与0811中文主按钮、硬笔5三轮自动对照，以及相同橡皮/撤销；UI3累计CPU中位数2328.125→2109.375ms（22秒、波动重叠），硬笔5078.125→1359.375ms（18秒、架构不同）。外部WGC不等于Present/FPS/光学延迟，当前捕获间隔尾值较高，完整“不倒退”仍未获可信证据；不继续性能候选。
+
+原状态逻辑缺口已补：真实IdtState/bridge与FineDial早期CLI，最终完整Debug/Release ARM64、两配置状态/附加参数/Headless通过，独立五文件增量审查无确认新问题。新增325行测试入口，不改业务算法；最终Release `Build/ARM64/Release/Inkeys.exe` SHA256 F017237F29F68758ADEC5A255F3B1D623DC2FF2AF6407AA25DE8A7FE576809FE。
+
+最终私有GUI短回归被LockApp覆盖层挡住，PID23196输入已拒绝，等待桌面恢复；此前21a/Canary真实操作及正常退出有效。父closeout-0811-20261003.md续接节、代码/安全各自closeout与两份state-production-verification报告为本次详细证据。代码PRD第一/第三项及安全覆盖/findings项已据证据勾选，其余真实副作用/设备/Office/正式发布门不伪报完成，任务保持in_progress。Win7根因/目标机复验仍由独立任务处理；未在本轮修改、commit/push/发布。原工作区差异与私有新笔迹保留。
+
+## 2026-10-03 恢复发布准备（本节覆盖下方旧起点）
+
+用户明确要求先 commit 当前 Win7 改动、保留该任务未完成，随后继续原首发准备。已按现有 SSH 签名配置生成 commit `21a37239336864b2b334abedec4e88d484d10473`（Add Win7 input and GPU pixel diagnostics），未 push。Win7 任务保持 in_progress/completedAt=null，待明天同设备实测；已有测试包的源码与 EXE 身份仍有效，不因提交而变化。
+
+首发准备父任务和 G 集成子任务均保持 in_progress，当前会话执行入口切回 `.trellis/tasks/09-27-integration-and-release-check`。这次 commit 授权只用于上述 Win7 改动，不自动提交后续首发修改。
+
+- 最新范围沿用 `closeout-0811-20261003.md`：暂停新增性能优化，继续现版/20260811a Canary 的匹配对照、窄状态入口验证、直接规范/安全复审。`automation-20261003.md` 13:28 为先前有限性能结果，不代表原任务全部通过。
+- 已完成的自动三轮 UI3 对照与 Canary 硬笔5样本保留；当前匹配硬笔5书写对照仍待执行，不能据旧软笔/英文探索样本称不退化。
+- `code-and-state-unification/closeout-20261003.md` 的实际 IdtState/bridge 跨入口、重复/快速交替、旧 revision 拒绝以及 FineDial 取消测试仍未完成；旧 Headless 无窗不覆盖全部这些入口。
+- 本轮先执行当前 HEAD 完整 Release|ARM64 solution、适用无 GUI 回归与 0a19182c/21a37239 直接差异复审；记录位于 G 子任务 `research/release-resume-direct-review-20261003.md` 和本次验证文档。未重做 611 历史审计，不扩大更新/PPT政策或后端。
+- 既有 `.gitignore`、四份 Demo cso、raw日志和 `draw3-remaining-minimal-delta.md` 留在工作区，未纳入 Win7 commit；不 reset/stash/clean/归档。GUI/真设备/Office、三架构最终矩阵和全量 HF 发布门仍按实际证据处理。
+
 # 当前状态与恢复入口
 
 ## 当前事实（此节为唯一权威入口）

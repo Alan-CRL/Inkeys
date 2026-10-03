@@ -163,7 +163,11 @@ Good：同锁获取 mode、Laser、penMode、宽色及 revision，帧/手势只�
 
 ### 6. Tests Required
 
-完整 InkeysRepo.sln Debug|ARM64 与适用 Release 构建，InkeysHeadlessTests --no-window；这些仅证明编译和已覆盖逻辑，不直接执行真 Bar/PPT 交错。允许 GUI 后做快速笔型反向、PPT 迟到接管、FineDial 惯性中切工具、形状预设取消及动画尾延迟，分别记实际结果。
+完整 InkeysRepo.sln Debug|ARM64 与适用 Release 构建，InkeysHeadlessTests --no-window；Headless 不直接编译执行 IdtState 入口。
+
+显式 `Inkeys.exe --state-mode-production-test` 在配置、单实例和 HWND 初始化前执行真实 IdtState/bridge 与 BarInteractionSession，成功退出 0，额外参数退出 2。覆盖工具/PPT 等价投影、重复意图 revision+1 但 bridge 不重发、快速切换、旧 revision 的宽度/形状/Selection/PPT 请求拒绝，以及 FineDial 失效 tick、跨代惯性和取消提交。宽色 setter 使用 `setMemory=false`；Cancel 后先断言候选清理才调用空 Commit，失效 Commit 必须被真实版本门拒绝。禁止在未初始化路径的早期检查中执行会保存配置的成功 FineDial Commit。
+
+该 CLI 不启动 Host/Window Service、设备、RTS 或保存 worker；不能证明实际 HWND owner、光标、真实 Office 回调、FineDial 成功保存或呈现尾延迟。获 GUI 授权后以私有配置自动操作分别验证这些边界，不把观察器帧交付次数称为产品可见帧率。
 
 ### 7. Wrong vs Correct
 

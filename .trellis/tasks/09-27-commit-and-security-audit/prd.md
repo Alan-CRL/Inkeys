@@ -19,7 +19,9 @@
 
 ## Acceptance Criteria
 
-- [ ] coverage 每行有 SHA、parents、author/committer 时间、分支/H0、模块、类型、当前映射、结论、finding、复验；总/已/待/缺口精确。
-- [ ] findings 区分 confirmed/hypothesis/already fixed/not applicable/earlier-discovered，并有触发、实际影响、严重性、修复与验证。
+- [x] coverage 每行有 SHA、parents、author/committer 时间、分支/H0、模块、类型、当前映射、结论、finding、复验；总/已/待/缺口精确。
+- [x] findings 区分 confirmed/hypothesis/already fixed/not applicable/earlier-discovered，并有触发、实际影响、严重性、修复与验证。
 - [ ] 无已知未处置的严重崩溃、死锁、数据损坏、输入失效或高危可利用问题；缺失 refs/工具不冒充 PASS。
 - [ ] 目标系统的 device、swap effect、presenter 可达性和失败后安全退路有当前代码与官方 API 证据；真 Win7 未运行则保留人工门禁。
+
+2026-10-03收口：前两项以定义的611历史集合及closeout-20261003.md核对为证；后两项受用户保留来源认证风险、真实环境及延期Win7边界限制，不勾为全项通过。续接仅复审新增状态CLI和直接依赖，无新确认安全缺陷。

@@ -990,6 +990,7 @@ namespace Inkeys::UI::Bar
 
 	export WNDPROC WindowProc() noexcept;
 	export int RunEraserAttributeOffscreenTest();
+	export int RunThicknessFineDialProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
 		HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	export void Initialization();

@@ -171,6 +171,9 @@ bool WhiteboardTransactionActive() noexcept;
 void RequestWhiteboardPreviousPage() noexcept;
 void RequestWhiteboardNextPage() noexcept;
 
+// 显式早期 CLI 仅执行真实状态/bridge 逻辑，不启动窗口或读取、保存配置。
+int RunStateModeProductionTest() noexcept;
+
 void StateMonitoring();
 
 struct StateModeStruct_Discard

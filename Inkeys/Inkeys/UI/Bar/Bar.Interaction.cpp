@@ -8,6 +8,8 @@ module;
 #include "../../../IdtI18nKeys.g.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
+#include "../../Drawing/Draw3/Draw3.Product.h"
+#include <cstdio>
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.BottomDock.h"
@@ -1283,6 +1285,110 @@ public:
 		mainButtonClickPulseSerial(clickPulseSerial),
 		memberAccess(access)
 	{
+	}
+
+	static int RunThicknessFineDialProductionTest() noexcept
+	{
+		const char* stage = "fine-dial-startup-isolation";
+		try
+		{
+			using namespace Inkeys::Drawing::Draw3;
+			if (ProductRunning() || Inkeys::Window::GetService().Running()) return 2;
+			std::atomic<unsigned long long> clickPulse = 0;
+			BarInteractionSession session(::barUISet, clickPulse, {});
+			auto& shared = session.barState.drawAttributeBar;
+			session.barStyle.dpiZoom = 1.0;
+			session.barState.fold = false;
+			session.barState.drawAttribute = true;
+			shared.thicknessViewMode = ThicknessViewMode::FineDial;
+			const auto require = [](bool passed, const char* check)
+			{
+				if (!passed) throw check;
+			};
+			const auto bridgeRevision = [&]
+			{
+				return ProductHost().ProductBridge().Snapshot().revision;
+			};
+			ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			require(SetPenWidth(7.0f, false), "fine-dial-seed-width");
+			const auto range = GetBarThicknessSliderRange(PenModeSelectEnum::IdtPenSoftPen, 1.0);
+			require(range.supported && range.min <= 7 && range.max >= 14, "fine-dial-real-range");
+			const auto begin = [&](double candidate)
+			{
+				session.BeginThicknessFineDialDrag(candidate, 100.0, 4.0, range,
+					StateModeTransitionRevision());
+				require(shared.thicknessFineDialCandidateActive &&
+					shared.thicknessSliderCandidateWidth == static_cast<float>(candidate), "fine-dial-candidate-published");
+			};
+			const auto cleared = [&]
+			{
+				return session.thicknessFineDialModeRevision == 0 &&
+					session.thicknessFineDialPhase == ThicknessFineDialPhase::Idle &&
+					!shared.thicknessFineDialCandidateActive &&
+					!shared.thicknessFineDialDragging && !shared.thicknessFineDialPhysicsActive &&
+					shared.thicknessSliderCandidateWidth == 0.0f;
+			};
+
+			stage = "fine-dial-stale-physics";
+			begin(9.0);
+			session.EndThicknessFineDialDrag(false);
+			require(shared.thicknessFineDialPhysicsActive, "fine-dial-physics-started");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+			const auto afterSwitch = bridgeRevision();
+			session.AdvanceThicknessFineDialPhysics();
+			require(cleared() && GetPenWidth() == 7.0f && bridgeRevision() == afterSwitch,
+				"fine-dial-old-physics-cancelled-without-write");
+
+			stage = "fine-dial-cross-generation-begin";
+			begin(14.0);
+			// 用真实采样环进入惯性，固定输入时间戳避免为交错验证增加等待。
+			session.ResetThicknessFineDialSamples();
+			session.AddThicknessFineDialSample(100.0, session.thicknessFineDialGrabTick);
+			session.AddThicknessFineDialSample(84.0, session.thicknessFineDialGrabTick + 16);
+			session.EndThicknessFineDialDrag(false);
+			require(session.thicknessFineDialPhase == ThicknessFineDialPhase::Inertia &&
+				session.thicknessFineDialVelocity != 0.0, "fine-dial-old-inertia-established");
+			ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			const auto newRevision = StateModeTransitionRevision();
+			begin(7.0);
+			require(session.thicknessFineDialModeRevision == newRevision &&
+				session.thicknessFineDialResidualVelocity == 0.0 &&
+				session.thicknessFineDialRawValue == 7.0 &&
+				shared.thicknessFineDialVisualWidth == 7.0f,
+				"fine-dial-new-generation-does-not-inherit-old-candidate");
+
+			stage = "fine-dial-cancel-then-commit";
+			session.CancelThicknessFineDialSelection();
+			begin(11.0);
+			session.CancelThicknessFineDialSelection();
+			require(cleared(), "fine-dial-cancel-clears-before-no-save-commit");
+			const auto beforeCancelledCommit = bridgeRevision();
+			// 只走取消/失效提交，不能在未初始化配置路径执行成功提交的 SetMemory。
+			session.CommitThicknessFineDialSelection();
+			require(cleared() && GetPenWidth() == 7.0f && bridgeRevision() == beforeCancelledCommit,
+				"fine-dial-cancelled-commit-no-write");
+
+			stage = "fine-dial-stale-commit";
+			begin(12.0);
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			const auto highlighterWidth = GetPenWidth();
+			const auto beforeStaleCommit = bridgeRevision();
+			session.CommitThicknessFineDialSelection();
+			require(cleared() && GetPenWidth() == highlighterWidth && bridgeRevision() == beforeStaleCommit,
+				"fine-dial-stale-commit-no-write");
+			require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "fine-dial-stays-isolated");
+			std::fputs("[StateModeProduction] PASS: FineDial stale physics, cross-generation inertia, cancel and stale commit\n", stderr);
+			return 0;
+		}
+		catch (const char* check)
+		{
+			std::fprintf(stderr, "[StateModeProduction] FAIL: stage=%s check=%s\n", stage, check);
+		}
+		catch (...)
+		{
+			std::fprintf(stderr, "[StateModeProduction] FAIL: stage=%s exception\n", stage);
+		}
+		return 1;
 	}
 
 private:
@@ -5673,6 +5779,14 @@ private:
 	// FineDial 隐藏 Slider 固定态，Popup 返回时恢复进入前的生命周期。
 	bool thicknessFineDialReturnPinned = false;
 };
+}
+
+namespace Inkeys::UI::Bar
+{
+	int RunThicknessFineDialProductionTest() noexcept
+	{
+		return BarInteractionSession::RunThicknessFineDialProductionTest();
+	}
 }
 
 // 鼠标交互

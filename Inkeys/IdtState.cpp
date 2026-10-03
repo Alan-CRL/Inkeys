@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <cstdio>
 #include <cstdint>
 #include <mutex>
 #include <thread>
@@ -1181,6 +1183,202 @@ bool ChangeStateModeToTouchTest()
 {
 	// 输入测试尚未接入 Draw3，入口由设置页隐藏。
 	return false;
+}
+
+int RunStateModeProductionTest() noexcept
+{
+	const char* stage = "startup-isolation";
+	try
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		// 此入口只属于独立的早期测试进程；未启动的 owner 自然拒绝 HWND 副作用。
+		if (ProductRunning() || Inkeys::Window::GetService().Running()) return 2;
+		auto& bridge = ProductHost().ProductBridge();
+		const auto require = [](bool passed, const char* check)
+		{
+			if (!passed) throw check;
+		};
+		const auto sameState = [](const StateModeClass& a, const StateModeClass& b)
+		{
+			return a.StateModeSelect == b.StateModeSelect &&
+				a.StateModeSelectTarget == b.StateModeSelectTarget &&
+				a.StateModeSelectEcho == b.StateModeSelectEcho &&
+				a.laserActive == b.laserActive && a.Pen.ModeSelect == b.Pen.ModeSelect &&
+				a.Pen.Brush1.width == b.Pen.Brush1.width && a.Pen.Brush1.color == b.Pen.Brush1.color &&
+				a.Pen.Highlighter1.width == b.Pen.Highlighter1.width && a.Pen.Highlighter1.color == b.Pen.Highlighter1.color &&
+				a.Pen.Laser.width == b.Pen.Laser.width && a.Pen.Laser.color == b.Pen.Laser.color &&
+				a.Pen.Brush1.widthPreset == b.Pen.Brush1.widthPreset &&
+				a.Pen.Highlighter1.widthPreset == b.Pen.Highlighter1.widthPreset &&
+				a.Pen.Laser.widthPreset[0] == b.Pen.Laser.widthPreset[0] &&
+				a.Pen.Laser.widthPreset[1] == b.Pen.Laser.widthPreset[1] &&
+				a.Pen.Laser.widthPreset[2] == b.Pen.Laser.widthPreset[2] &&
+				a.Shape.ModeSelect == b.Shape.ModeSelect &&
+				a.Shape.StraightLine1.width == b.Shape.StraightLine1.width && a.Shape.StraightLine1.color == b.Shape.StraightLine1.color &&
+				a.Shape.Rectangle1.width == b.Shape.Rectangle1.width && a.Shape.Rectangle1.color == b.Shape.Rectangle1.color;
+		};
+		const auto sameProjection = [](const Bridge::ProductState& a, const Bridge::ProductState& b)
+		{
+			return a.tool == b.tool && a.colorRgba == b.colorRgba && a.widthDip == b.widthDip &&
+				a.paintDevice == b.paintDevice && a.eraserInputs == b.eraserInputs &&
+				a.selectionMode == b.selectionMode && a.autoSaveEnabled == b.autoSaveEnabled &&
+				a.page == b.page && a.hasPage == b.hasPage && a.workspace == b.workspace &&
+				a.presentationTarget == b.presentationTarget;
+		};
+		const auto checkProjection = [&](Bridge::Tool tool)
+		{
+			const auto snapshot = GetStateModeVersionedSnapshot();
+			const auto published = bridge.Snapshot();
+			require(published.tool == tool, "bridge-tool");
+			require(published.widthDip == GetPenWidth(snapshot.state), "bridge-width");
+			require(published.colorRgba == ColorRefToRgba(GetPenColor(snapshot.state)), "bridge-color");
+			require(published.selectionMode == (snapshot.state.StateModeSelect == StateModeSelectEnum::IdtSelection), "bridge-selection");
+			require(snapshot.state.StateModeSelect == snapshot.state.StateModeSelectTarget &&
+				snapshot.state.StateModeSelect == snapshot.state.StateModeSelectEcho, "mode-projection");
+		};
+
+		stage = "cross-entry-equivalence";
+		ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+		require(SetPenWidth(7.0f, false) && SetPenColor(RGB(17, 31, 47), false), "seed-soft-memory");
+		ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+		require(SetPenWidth(15.0f, false) && SetPenColor(RGB(61, 79, 97), false), "seed-highlighter-memory");
+		ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+		require(SetPenWidth(6.0f, false) && SetPenColor(RGB(113, 131, 149), false), "seed-laser-memory");
+		struct EquivalentEntry
+		{
+			PenToolSelectionEnum pen;
+			PptAnnotationTool ppt;
+			Bridge::Tool tool;
+		};
+		const EquivalentEntry entries[]{
+			{ PenToolSelectionEnum::SoftPen, PptAnnotationTool::Pen, Bridge::Tool::Pen },
+			{ PenToolSelectionEnum::Highlighter, PptAnnotationTool::Highlighter, Bridge::Tool::Highlighter },
+			{ PenToolSelectionEnum::Laser, PptAnnotationTool::Laser, Bridge::Tool::Laser },
+		};
+		for (const auto& entry : entries)
+		{
+			// Laser 保留最后普通笔记忆；两条入口从相同 Highlighter 记忆出发。
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			ChangeStateModeToSelection();
+			const auto revision = StateModeTransitionRevision();
+			require(ChangeStateModeToPenTool(entry.pen), "pen-entry-accepted");
+			require(StateModeTransitionRevision() == revision + 1, "pen-entry-revision");
+			const auto direct = GetStateModeSnapshot();
+			const auto directBridge = bridge.Snapshot();
+			checkProjection(entry.tool);
+			ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+			ChangeStateModeToSelection();
+			const auto pptRevision = StateModeTransitionRevision();
+			require(ChangeStateModeToPptAnnotation(entry.ppt, pptRevision), "ppt-entry-accepted");
+			require(StateModeTransitionRevision() == pptRevision + 1, "ppt-entry-revision");
+			require(sameState(direct, GetStateModeSnapshot()) &&
+				sameProjection(directBridge, bridge.Snapshot()), "cross-entry-equivalence");
+		}
+
+		stage = "repeated-intent-and-rapid-switch";
+		const PenToolSelectionEnum tools[]{ PenToolSelectionEnum::SoftPen,
+			PenToolSelectionEnum::HardPen, PenToolSelectionEnum::Highlighter, PenToolSelectionEnum::Laser };
+		const Bridge::Tool projectedTools[]{ Bridge::Tool::Pen, Bridge::Tool::HardPen,
+			Bridge::Tool::Highlighter, Bridge::Tool::Laser };
+		for (int index = 0; index < 32; ++index)
+		{
+			const int slot = index % 4;
+			const auto before = StateModeTransitionRevision();
+			require(ChangeStateModeToPenTool(tools[slot]), "rapid-tool-accepted");
+			require(StateModeTransitionRevision() == before + 1, "rapid-tool-revision");
+			checkProjection(projectedTools[slot]);
+			const auto stable = GetStateModeVersionedSnapshot();
+			const auto stableBridge = bridge.Snapshot();
+			require(!ChangeStateModeToPenTool(tools[slot]), "repeated-tool-no-visual-change");
+			require(StateModeTransitionRevision() == stable.revision + 1 &&
+				sameState(stable.state, GetStateModeSnapshot()), "repeated-intent-revision");
+			require(bridge.Snapshot().revision == stableBridge.revision &&
+				sameProjection(stableBridge, bridge.Snapshot()), "repeated-tool-no-bridge-publication");
+			require(!ChangeStateModeToPptAnnotation(PptAnnotationTool::Pen, stable.revision), "repeated-intent-rejects-old-ppt");
+		}
+
+		stage = "late-callback-rejection";
+		ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+		const auto old = GetStateModeVersionedSnapshot();
+		std::mutex gateMutex;
+		std::condition_variable gate;
+		bool release = false;
+		bool rejected = false;
+		// 确定性排队旧回调，再提交新选择；不靠 Sleep 猜测线程交错。
+		std::thread late([&]
+		{
+			std::unique_lock lock(gateMutex);
+			gate.wait(lock, [&] { return release; });
+			lock.unlock();
+			const bool width = SetPenWidthIfRevision(99.0f, old.revision, false);
+			const bool shape = SetShapeModeSelectIfRevision(ShapeModeSelectEnum::IdtShapeRectangle1, old.revision);
+			const bool selection = ChangeStateModeToSelectionIfRevision(old.revision);
+			const bool ppt = ChangeStateModeToPptAnnotation(PptAnnotationTool::Highlighter, old.revision);
+			rejected = !width && !shape && !selection && !ppt;
+		});
+		ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+		const auto current = GetStateModeVersionedSnapshot();
+		const auto currentBridge = bridge.Snapshot();
+		{
+			std::scoped_lock lock(gateMutex);
+			release = true;
+		}
+		gate.notify_one();
+		late.join();
+		require(rejected && current.revision == StateModeTransitionRevision() &&
+			sameState(current.state, GetStateModeSnapshot()) &&
+			currentBridge.revision == bridge.Snapshot().revision &&
+			sameProjection(currentBridge, bridge.Snapshot()), "late-callbacks-preserve-new-state");
+		require(old.state.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen &&
+			current.state.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen, "value-snapshot-remains-frozen");
+
+		stage = "valid-revision-and-slot-isolation";
+		require(SetPenWidthIfRevision(11.0f, current.revision, false), "valid-width-accepted");
+		const auto widths = GetStateModeSnapshot();
+		require(widths.Pen.Brush1.width == 11.0f && widths.Pen.Highlighter1.width == 15.0f &&
+			widths.Pen.Laser.width == 6.0f, "valid-width-only-target-slot");
+		checkProjection(Bridge::Tool::HardPen);
+		ChangeStateModeToShape();
+		require(SetShapeModeSelectIfRevision(ShapeModeSelectEnum::IdtShapeRectangle1,
+			StateModeTransitionRevision()), "valid-shape-accepted");
+		const auto rectangle = GetStateModeVersionedSnapshot();
+		require(SetPenWidthIfRevision(13.0f, rectangle.revision, false), "valid-shape-width-accepted");
+		require(GetStateModeSnapshot().Shape.Rectangle1.width == 13.0f &&
+			GetStateModeSnapshot().Shape.StraightLine1.width == rectangle.state.Shape.StraightLine1.width,
+			"shape-width-only-target-slot");
+		checkProjection(Bridge::Tool::OutlineRectangle);
+		const auto shapeRevision = StateModeTransitionRevision();
+		const auto shapeBridgeRevision = bridge.Snapshot().revision;
+		require(!SetShapeModeSelectIfRevision(ShapeModeSelectEnum::IdtShapeRectangle1,
+			shapeRevision) && StateModeTransitionRevision() == shapeRevision + 1 &&
+			bridge.Snapshot().revision == shapeBridgeRevision, "repeated-shape-intent-no-publication");
+		require(ChangeStateModeToSelectionIfRevision(StateModeTransitionRevision()), "valid-selection-accepted");
+		checkProjection(Bridge::Tool::Pen);
+
+		stage = "laser-memory-and-top-level-mode";
+		ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+		ChangeStateModeToEraser();
+		require(GetStateModeSnapshot().laserActive && !IsLaserToolActive(), "eraser-overrides-laser-memory");
+		checkProjection(Bridge::Tool::ConfiguredEraser);
+		ChangeStateModeToShape();
+		checkProjection(Bridge::Tool::OutlineRectangle);
+		ChangeStateModeToSelection();
+		checkProjection(Bridge::Tool::Pen);
+		ChangeStateModeToPen();
+		require(IsLaserToolActive(), "pen-restores-laser-memory");
+		checkProjection(Bridge::Tool::Laser);
+		require(!ProductRunning() && !Inkeys::Window::GetService().Running(), "startup-stays-isolated");
+		std::fputs("[StateModeProduction] PASS: cross-entry, repeated intent, rapid switch, late callbacks, slot isolation, laser memory\n", stderr);
+		return 0;
+	}
+	catch (const char* check)
+	{
+		std::fprintf(stderr, "[StateModeProduction] FAIL: stage=%s check=%s\n", stage, check);
+	}
+	catch (...)
+	{
+		std::fprintf(stderr, "[StateModeProduction] FAIL: stage=%s exception\n", stage);
+	}
+	return 1;
 }
 
 void StateMonitoring()

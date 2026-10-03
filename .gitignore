@@ -37,6 +37,7 @@
 /.codex/
 /.claude/
 /.zcode/
+/.cursor/
 
 # Imported Draw3 experiment outputs
 /TestResults/

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
-- **Last Active**: 2026-10-03
+- **Total Sessions**: 34
+- **Last Active**: 2026-10-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~918 | Active |
+| `journal-1.md` | ~1050 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 34 | 2026-10-04 | 人工GUI/Office通过，保存阶段待续Win7 | - | `chore/publish` |
+| 33 | 2026-10-03 | 0811配对对照与状态安全收尾续接 | - | `chore/publish` |
+| 32 | 2026-10-03 | Win7 诊断已提交并恢复首发准备 | `21a37239336864b2b334abedec4e88d484d10473` | `chore/publish` |
 | 31 | 2026-10-03 | Win7 GPU 分界自检与采集候选 | - | `chore/publish` |
 | 30 | 2026-10-03 | Win7 完整日志确认输入成功与透明读回 | - | `chore/publish` |
 | 29 | 2026-10-03 | Win7 PS2 采集脚本兼容性修正 | - | `chore/publish` |
