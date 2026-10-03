@@ -8,13 +8,18 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <d3d11.h>
 #include <DirectXMath.h>
+#include <iostream>
 #include <span>
 #include <windows.h>
+#include <wrl/client.h>
 
 module Inkeys.Drawing.Draw3.renderer;
+
+import Inkeys.Drawing.Draw3.diagnostics;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -244,8 +249,88 @@ namespace Inkeys::Drawing::Draw3
 
 	void InkRenderer::DrawTransientDrawingCursor(const DrawingCursorVisual& visual)
 	{
-		if (!visual.visible || !IsValidDrawingCursorAppearance(visual.appearance) ||
-			!backBufferRTV || !inkDataBuffer || !globalCB) return;
+		if (!visual.visible) return;
+		// 只在绘制线程采样首个请求及每秒一次；关闭诊断时不查询 GPU 状态或格式化日志。
+		static thread_local ULONGLONG previousDiagnosticTick = 0;
+		static thread_local bool diagnosticSampled = false;
+		bool inspectGpu = false;
+		ULONGLONG diagnosticTick = 0;
+		if (StartupEnvironmentDiagnosticsEnabled())
+		{
+			diagnosticTick = GetTickCount64();
+			inspectGpu = !diagnosticSampled || diagnosticTick - previousDiagnosticTick >= 1000;
+			if (inspectGpu)
+			{
+				diagnosticSampled = true;
+				previousDiagnosticTick = diagnosticTick;
+			}
+		}
+		const auto recordGpu = [&](const char* stage, HRESULT result, bool inspectBindings)
+		{
+			if (!inspectGpu) return;
+			using Microsoft::WRL::ComPtr;
+			std::array<D3D11_VIEWPORT, D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE> viewports = {};
+			UINT viewportCount = 0;
+			ComPtr<ID3D11RenderTargetView> boundRtv;
+			ComPtr<ID3D11Resource> boundResource;
+			ComPtr<IUnknown> targetIdentity, backBufferIdentity;
+			ComPtr<ID3D11VertexShader> boundVs;
+			ComPtr<ID3D11PixelShader> boundPs;
+			ComPtr<ID3D11Buffer> boundVsCb, boundPsCb;
+			ComPtr<ID3D11ShaderResourceView> boundSrv;
+			if (inspectBindings && context)
+			{
+				viewportCount = static_cast<UINT>(viewports.size());
+				context->RSGetViewports(&viewportCount, viewports.data());
+				context->OMGetRenderTargets(1, boundRtv.GetAddressOf(), nullptr);
+				if (boundRtv) boundRtv->GetResource(boundResource.GetAddressOf());
+				if (boundResource) boundResource.As(&targetIdentity);
+				if (backBufferTexture) backBufferTexture.As(&backBufferIdentity);
+				context->VSGetShader(boundVs.GetAddressOf(), nullptr, nullptr);
+				context->PSGetShader(boundPs.GetAddressOf(), nullptr, nullptr);
+				context->VSGetConstantBuffers(0, 1, boundVsCb.GetAddressOf());
+				context->PSGetConstantBuffers(0, 1, boundPsCb.GetAddressOf());
+				context->VSGetShaderResources(0, 1, boundSrv.GetAddressOf());
+			}
+			char line[1536] = {};
+			const int length = std::snprintf(line, sizeof(line),
+				"[Draw3Diag][cursor-gpu] tick=%llu stage=%s hr=0x%08lx removed=0x%08lx "
+				"resources=(ctx:%u,rtv:%u,ink:%u,cb:%u,vs:%u,ps:%u,srv:%u) "
+				"bindings=%u vpCount=%u vp=(%.1f,%.1f,%.1f,%.1f,%.2f,%.2f) constants=(%.1f,%.1f) "
+				"xy=(%.1f,%.1f) size=(%.1f,%.1f) opacity=%.3f "
+				"rtv=%p resource=%p backbuffer=%p targetMatch=%u "
+				"bound=(vs:%u,ps:%u,vsCB:%u,psCB:%u,srv:%u) match=(vs:%u,ps:%u,vsCB:%u,psCB:%u,srv:%u)\n",
+				static_cast<unsigned long long>(diagnosticTick), stage, static_cast<unsigned long>(result),
+				static_cast<unsigned long>(device ? device->GetDeviceRemovedReason() : E_POINTER),
+				context ? 1u : 0u, backBufferRTV ? 1u : 0u, inkDataBuffer ? 1u : 0u, globalCB ? 1u : 0u,
+				vertexShader ? 1u : 0u, pixelShader ? 1u : 0u, inkDataSRV ? 1u : 0u,
+				inspectBindings ? 1u : 0u, viewportCount, viewports[0].TopLeftX, viewports[0].TopLeftY,
+				viewports[0].Width, viewports[0].Height, viewports[0].MinDepth, viewports[0].MaxDepth,
+				viewportWidth, viewportHeight, visual.x, visual.y, visual.appearance.width,
+				visual.appearance.height, visual.appearance.opacity,
+				static_cast<void*>(boundRtv.Get()), static_cast<void*>(boundResource.Get()),
+				static_cast<void*>(backBufferTexture.Get()),
+				targetIdentity && backBufferIdentity && targetIdentity.Get() == backBufferIdentity.Get() ? 1u : 0u,
+				boundVs ? 1u : 0u, boundPs ? 1u : 0u, boundVsCb ? 1u : 0u,
+				boundPsCb ? 1u : 0u, boundSrv ? 1u : 0u,
+				boundVs && boundVs.Get() == vertexShader.Get() ? 1u : 0u,
+				boundPs && boundPs.Get() == pixelShader.Get() ? 1u : 0u,
+				boundVsCb && boundVsCb.Get() == globalCB.Get() ? 1u : 0u,
+				boundPsCb && boundPsCb.Get() == globalCB.Get() ? 1u : 0u,
+				boundSrv && boundSrv.Get() == inkDataSRV.Get() ? 1u : 0u);
+			if (length > 0) std::cout.write(line, static_cast<std::streamsize>(
+				std::min(static_cast<size_t>(length), sizeof(line) - 1)));
+		};
+		if (!IsValidDrawingCursorAppearance(visual.appearance))
+		{
+			recordGpu("invalid-appearance", E_INVALIDARG, false);
+			return;
+		}
+		if (!backBufferRTV || !inkDataBuffer || !globalCB)
+		{
+			recordGpu("missing-resources", E_POINTER, false);
+			return;
+		}
 		const DrawingCursorAppearance& appearance = visual.appearance;
 		const float shapeType = appearance.shape == DrawingCursorShape::Circle ? 4.0f
 			: appearance.shape == DrawingCursorShape::Rectangle ? 5.0f : 6.0f;
@@ -255,14 +340,24 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(inkDataBuffer.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		const HRESULT inkMapResult = context->Map(inkDataBuffer.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+		if (FAILED(inkMapResult))
+		{
+			recordGpu("map-ink-data", inkMapResult, false);
+			return;
+		}
 		std::memcpy(mapped.pData, cursorData, sizeof(cursorData));
 		context->Unmap(inkDataBuffer.Get(), 0);
 		m_bufferHead = 2;
 
-		if (FAILED(context->Map(globalCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+		const HRESULT constantsMapResult = context->Map(globalCB.Get(), 0,
+			D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+		if (FAILED(constantsMapResult))
+		{
+			recordGpu("map-global-cb", constantsMapResult, false);
+			return;
+		}
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
@@ -275,6 +370,8 @@ namespace Inkeys::Drawing::Draw3
 		constants->padding[1] = appearance.outlineGreen;
 		constants->padding[2] = appearance.outlineBlue;
 		context->Unmap(globalCB.Get(), 0);
+
+		recordGpu("upload-success", S_OK, false);
 
 		SetOMTarget(backBufferRTV.Get());
 		context->IASetInputLayout(nullptr);
@@ -289,7 +386,10 @@ namespace Inkeys::Drawing::Draw3
 		// Cursor PS 直接输出 premultiplied Add 和 Retain，复用 resolve blend 叠到 backbuffer。
 		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
+		recordGpu("before-draw", S_OK, true);
 		context->Draw(6, 0);
+		// Draw 无 HRESULT；这里只证明命令已发出，像素仍由读回诊断独立验证。
+		recordGpu("after-draw-issued", S_OK, true);
 
 		ID3D11ShaderResourceView* nullResource[] = { nullptr };
 		context->VSSetShaderResources(0, 1, nullResource);

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
-- **Last Active**: 2026-09-27
+- **Total Sessions**: 31
+- **Last Active**: 2026-10-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~750 | Active |
+| `journal-1.md` | ~918 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,10 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 31 | 2026-10-03 | Win7 GPU 分界自检与采集候选 | - | `chore/publish` |
+| 30 | 2026-10-03 | Win7 完整日志确认输入成功与透明读回 | - | `chore/publish` |
+| 29 | 2026-10-03 | Win7 PS2 采集脚本兼容性修正 | - | `chore/publish` |
+| 28 | 2026-10-03 | Win7 输入与实际 ULW 像素调查 | - | `chore/publish` |
 | 27 | 2026-09-27 | 笔速橡皮 Canary 前结案 | `5997d23b`, `cf4a1874`, `6aefa84e`, `c777b8dd`, `aea346c8`, `22706ee4` | `bugfix/eraser` |
 | 26 | 2026-09-27 | PPT UI3 任务收尾 | `900ab31f`, `1cd45e57`, `d7b9ec12` | `bugfix/pptui` |
 | 25 | 2026-09-26 | PPT UI3 回归修复提交记录 | `910de60f` | `bugfix/pptui` |

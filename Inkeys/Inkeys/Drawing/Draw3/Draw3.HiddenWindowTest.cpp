@@ -5,6 +5,8 @@
 
 import Inkeys.Window;
 import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.pen_cursor;
+import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import draw3.uink_file;
@@ -2133,6 +2135,301 @@ namespace Inkeys::Drawing::Draw3
 				GetWindow(presentation, GW_OWNER) == freeze,
 				"Host stop leaves hidden Window Service HWND intact", failures);
 			return modeSucceeded;
+		}
+	}
+
+	int RunRendererPixelTest() noexcept
+	{
+		using Microsoft::WRL::ComPtr;
+		constexpr UINT size = 128;
+		int failures = 0;
+		unsigned productionCases = 0;
+		const auto logResult = [&](const char* stage, HRESULT result)
+		{
+			std::fprintf(stderr, "[Draw3PixelTest] stage=%s hr=0x%08X\n",
+				stage, static_cast<unsigned int>(result));
+			return SUCCEEDED(result);
+		};
+		try
+		{
+			// 测试入口不读取产品配置；显式打开既有 Draw3 诊断以捕获正式 Cursor Map 失败。
+			const bool savedDiagnostics = StartupEnvironmentDiagnosticsEnabled();
+			SetStartupEnvironmentDiagnosticsEnabled(true);
+			struct DiagnosticsRestore
+			{
+				bool enabled;
+				~DiagnosticsRestore() { SetStartupEnvironmentDiagnosticsEnabled(enabled); }
+			} diagnosticsRestore{ savedDiagnostics };
+			struct HiddenWindowOwner
+			{
+				HWND window = nullptr;
+				~HiddenWindowOwner() { if (window) DestroyWindow(window); }
+			} owner;
+			// 与产品普通 HWND swapchain 同类，但永不 Show/激活，不创建产品主窗或写配置。
+			owner.window = CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+				L"STATIC", L"Inkeys Draw3 pixel probe", WS_POPUP,
+				-32000, -32000, size, size, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+			if (!owner.window)
+			{
+				logResult("CreateHiddenWindow", HRESULT_FROM_WIN32(GetLastError()));
+				return 1;
+			}
+			std::fprintf(stderr, "[Draw3PixelTest] hidden_hwnd=%p visible=%d size=%u\n",
+				static_cast<void*>(owner.window), IsWindowVisible(owner.window), size);
+			ComPtr<ID3D11Device> device;
+			ComPtr<ID3D11DeviceContext> context;
+			D3D_FEATURE_LEVEL actualLevel = D3D_FEATURE_LEVEL_11_0;
+			constexpr D3D_FEATURE_LEVEL requestedLevel[] = { D3D_FEATURE_LEVEL_11_0 };
+			if (!logResult("D3D11CreateDevice.WARP.FL11_0", D3D11CreateDevice(nullptr,
+				D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+				requestedLevel, ARRAYSIZE(requestedLevel), D3D11_SDK_VERSION,
+				device.GetAddressOf(), &actualLevel, context.GetAddressOf())) || !device || !context)
+				return 1;
+			D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+			const HRESULT optionsResult = device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
+				&options, sizeof(options));
+			std::fprintf(stderr,
+				"[Draw3PixelTest] feature=0x%X options_hr=0x%08X srv_no_overwrite=%d\n",
+				actualLevel, static_cast<unsigned int>(optionsResult),
+				SUCCEEDED(optionsResult) && options.MapNoOverwriteOnDynamicBufferSRV != FALSE);
+			ComPtr<IDXGIDevice> dxgiDevice;
+			ComPtr<IDXGIAdapter> adapter;
+			ComPtr<IDXGIFactory2> factory;
+			ComPtr<IDXGISwapChain1> swapChain;
+			if (logResult("QueryIDXGIDevice", device.As(&dxgiDevice)) &&
+				logResult("GetAdapter", dxgiDevice->GetAdapter(adapter.GetAddressOf())) &&
+				logResult("GetFactory2", adapter->GetParent(__uuidof(IDXGIFactory2),
+					reinterpret_cast<void**>(factory.GetAddressOf()))))
+			{
+				DXGI_SWAP_CHAIN_DESC1 description = {};
+				description.Width = size;
+				description.Height = size;
+				description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				description.SampleDesc.Count = 1;
+				description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+				description.BufferCount = 2;
+				description.Scaling = DXGI_SCALING_STRETCH;
+				description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+				description.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+				logResult("CreateSwapChainForHwnd.ordinary", factory->CreateSwapChainForHwnd(
+					device.Get(), owner.window, &description, nullptr, nullptr, swapChain.GetAddressOf()));
+				if (swapChain && logResult("GetSwapChainDesc1", swapChain->GetDesc1(&description)))
+					std::fprintf(stderr,
+						"[Draw3PixelTest] swapchain width=%u height=%u format=%u effect=%u alpha=%u flags=0x%X buffers=%u\n",
+						description.Width, description.Height, description.Format, description.SwapEffect,
+						description.AlphaMode, description.Flags, description.BufferCount);
+			}
+			InkRenderer renderer;
+			struct RendererCleanup
+			{
+				InkRenderer& renderer;
+				ID3D11DeviceContext* context;
+				~RendererCleanup() { context->ClearState(); renderer.ReleaseResources(); }
+			} cleanup{ renderer, context.Get() };
+			ComPtr<ID3D11Texture2D> backBuffer;
+			ComPtr<ID3D11RenderTargetView> backRtv;
+			if (swapChain && logResult("GetBuffer0", swapChain->GetBuffer(0,
+				__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuffer.GetAddressOf()))))
+				logResult("CreateBackBufferRTV", device->CreateRenderTargetView(backBuffer.Get(),
+					nullptr, backRtv.GetAddressOf()));
+			ComPtr<ID3D11Texture2D> offscreen;
+			ComPtr<ID3D11RenderTargetView> offscreenRtv;
+			D3D11_TEXTURE2D_DESC textureDescription = {};
+			textureDescription.Width = size;
+			textureDescription.Height = size;
+			textureDescription.MipLevels = 1;
+			textureDescription.ArraySize = 1;
+			textureDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			textureDescription.SampleDesc.Count = 1;
+			textureDescription.Usage = D3D11_USAGE_DEFAULT;
+			textureDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+			if (logResult("CreateOffscreenBGRA", device->CreateTexture2D(&textureDescription,
+				nullptr, offscreen.GetAddressOf())))
+				logResult("CreateOffscreenRTV", device->CreateRenderTargetView(offscreen.Get(),
+					nullptr, offscreenRtv.GetAddressOf()));
+			const auto readPixels = [&](const char* name, ID3D11Texture2D* source,
+				ID3D11RenderTargetView* rtv, bool clearCase) -> bool
+			{
+				if (!source || !rtv) { logResult(name, E_POINTER); return false; }
+				ComPtr<ID3D11Resource> rtvResource;
+				rtv->GetResource(rtvResource.GetAddressOf());
+				ComPtr<IUnknown> rtvIdentity, sourceIdentity;
+				rtvResource.As(&rtvIdentity);
+				source->QueryInterface(IID_PPV_ARGS(sourceIdentity.GetAddressOf()));
+				const bool identityMatches = rtvIdentity && rtvIdentity.Get() == sourceIdentity.Get();
+				D3D11_TEXTURE2D_DESC description = {};
+				source->GetDesc(&description);
+				std::fprintf(stderr,
+					"[Draw3PixelTest] case=%s texture=%p rtv_texture=%p identity=%d width=%u height=%u format=%u bind=0x%X\n",
+					name, static_cast<void*>(source), static_cast<void*>(rtvResource.Get()),
+					identityMatches, description.Width, description.Height, description.Format, description.BindFlags);
+				description.Usage = D3D11_USAGE_STAGING;
+				description.BindFlags = 0;
+				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				description.MiscFlags = 0;
+				ComPtr<ID3D11Texture2D> staging;
+				if (!logResult("CreateReadback", device->CreateTexture2D(&description, nullptr,
+					staging.GetAddressOf()))) return false;
+				ComPtr<ID3D11Query> completed;
+				const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_EVENT, 0 };
+				if (!logResult("CreateReadbackEvent", device->CreateQuery(&queryDescription,
+					completed.GetAddressOf()))) return false;
+				context->OMSetRenderTargets(0, nullptr, nullptr);
+				context->CopyResource(staging.Get(), source);
+				context->End(completed.Get());
+				context->Flush();
+				const auto deadline = std::chrono::steady_clock::now() + 3s;
+				BOOL ready = FALSE;
+				HRESULT waitResult = S_FALSE;
+				do
+				{
+					waitResult = context->GetData(completed.Get(), &ready, sizeof(ready),
+						D3D11_ASYNC_GETDATA_DONOTFLUSH);
+					if (waitResult != S_FALSE) break;
+					std::this_thread::sleep_for(1ms);
+				} while (std::chrono::steady_clock::now() < deadline);
+				if (waitResult != S_OK || !ready)
+				{
+					logResult("ReadbackEvent.wait", waitResult == S_FALSE ? HRESULT_FROM_WIN32(WAIT_TIMEOUT) : waitResult);
+					return false;
+				}
+				D3D11_MAPPED_SUBRESOURCE mapped = {};
+				if (!logResult("MapReadback", context->Map(staging.Get(), 0, D3D11_MAP_READ,
+					D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped))) return false;
+				unsigned alphaNonzero = 0, rgbNonzero = 0, wrongClearPixels = 0;
+				std::array<unsigned, 4> maximum = {}, center = {}, corner = {};
+				constexpr unsigned expected[] = { 64, 32, 16, 128 };
+				for (UINT y = 0; y < description.Height; ++y)
+				{
+					const auto* row = static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch;
+					for (UINT x = 0; x < description.Width; ++x)
+					{
+						const auto* pixel = row + x * 4;
+						alphaNonzero += pixel[3] != 0;
+						rgbNonzero += (pixel[0] | pixel[1] | pixel[2]) != 0;
+						bool wrong = false;
+						for (unsigned channel = 0; channel < 4; ++channel)
+						{
+							if (pixel[channel] > maximum[channel]) maximum[channel] = pixel[channel];
+							if (x == size / 2 && y == size / 2) center[channel] = pixel[channel];
+							if (x == 0 && y == 0) corner[channel] = pixel[channel];
+							wrong |= std::abs(static_cast<int>(pixel[channel]) - static_cast<int>(expected[channel])) > 1;
+						}
+						wrongClearPixels += clearCase && wrong;
+					}
+				}
+				context->Unmap(staging.Get(), 0);
+				bool validCursor = alphaNonzero > 100 && rgbNonzero > 100 &&
+					center[3] >= 120 && center[3] <= 130 && corner[3] == 0;
+				for (unsigned channel = 0; channel < 3; ++channel)
+					validCursor &= std::abs(static_cast<int>(center[channel]) - static_cast<int>(center[3])) <= 1;
+				const bool passed = identityMatches && (clearCase ? wrongClearPixels == 0 : validCursor);
+				std::fprintf(stderr,
+					"[Draw3PixelTest] case=%s alpha_nonzero=%u rgb_nonzero=%u max_bgra=(%u,%u,%u,%u) center_bgra=(%u,%u,%u,%u) corner_bgra=(%u,%u,%u,%u) clear_mismatch=%u result=%s\n",
+					name, alphaNonzero, rgbNonzero, maximum[0], maximum[1], maximum[2], maximum[3],
+					center[0], center[1], center[2], center[3], corner[0], corner[1], corner[2], corner[3],
+					wrongClearPixels, passed ? "PASS" : "FAIL");
+				return passed;
+			};
+			const float color[] = { 16.0f / 255.0f, 32.0f / 255.0f, 64.0f / 255.0f, 128.0f / 255.0f };
+			const auto clearProbe = [&](const char* name, ID3D11Texture2D* texture, ID3D11RenderTargetView* rtv)
+			{
+				if (rtv) context->ClearRenderTargetView(rtv, color);
+				++productionCases;
+				if (!readPixels(name, texture, rtv, true)) ++failures;
+			};
+			clearProbe("backbuffer.clear", backBuffer.Get(), backRtv.Get());
+			clearProbe("offscreen.clear", offscreen.Get(), offscreenRtv.Get());
+			const bool initialized = swapChain && renderer.Init(device.Get(), context.Get(), swapChain.Get(), size, size);
+			std::fprintf(stderr, "[Draw3PixelTest] renderer_init=%d vs=%p ps=%p ink_buffer=%p global_cb=%p srv=%p\n",
+				initialized, static_cast<void*>(renderer.vertexShader.Get()), static_cast<void*>(renderer.pixelShader.Get()),
+				static_cast<void*>(renderer.inkDataBuffer.Get()), static_cast<void*>(renderer.globalCB.Get()),
+				static_cast<void*>(renderer.inkDataSRV.Get()));
+			if (!initialized) ++failures;
+			else
+			{
+				const auto originalTexture = renderer.backBufferTexture;
+				const auto originalRtv = renderer.backBufferRTV;
+				const auto originalBlend = renderer.operatorResolveBlendState;
+				ComPtr<ID3D11BlendState> noBlend;
+				D3D11_BLEND_DESC blendDescription = {};
+				blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+				logResult("CreateComparisonBlendDisabled", device->CreateBlendState(&blendDescription, noBlend.GetAddressOf()));
+				DrawingCursorVisual visual;
+				visual.visible = true;
+				visual.x = visual.y = size * 0.5f;
+				visual.appearance.width = visual.appearance.height = 32.0f;
+				visual.appearance.red = visual.appearance.green = visual.appearance.blue = 1.0f;
+				visual.appearance.opacity = 0.5f;
+				visual.appearance.fillAlpha = 1.0f;
+				const auto drawProbe = [&](const char* name, ID3D11Texture2D* texture,
+					ID3D11RenderTargetView* rtv, bool comparison)
+				{
+					if (!comparison) ++productionCases;
+					if (!texture || !rtv || (comparison && !noBlend))
+					{
+						logResult(name, E_POINTER);
+						if (!comparison) ++failures;
+						return;
+					}
+					// 修改的是独立 probe renderer；正式 Draw 内会重绑 OM，故比较态从持有字段替换。
+					renderer.backBufferTexture = texture;
+					renderer.backBufferRTV = rtv;
+					renderer.operatorResolveBlendState = comparison ? noBlend : originalBlend;
+					renderer.SetScreenSize(static_cast<float>(size), static_cast<float>(size));
+					const float transparent[] = { 0, 0, 0, 0 };
+					context->ClearRenderTargetView(rtv, transparent);
+					ComPtr<ID3D11Query> statistics;
+					const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_PIPELINE_STATISTICS, 0 };
+					if (logResult("CreatePipelineStatistics", device->CreateQuery(&queryDescription, statistics.GetAddressOf())))
+						context->Begin(statistics.Get());
+					renderer.DrawTransientDrawingCursor(visual);
+					if (statistics) context->End(statistics.Get());
+					D3D11_VIEWPORT viewport = {};
+					UINT viewportCount = 1;
+					context->RSGetViewports(&viewportCount, &viewport);
+					std::fprintf(stderr,
+						"[Draw3PixelTest] case=%s viewport_count=%u viewport=(%.1f,%.1f,%.1f,%.1f,%.1f,%.1f) cpu_size=(%.1f,%.1f) comparison=%d\n",
+						name, viewportCount, viewport.TopLeftX, viewport.TopLeftY, viewport.Width,
+						viewport.Height, viewport.MinDepth, viewport.MaxDepth,
+						renderer.viewportWidth, renderer.viewportHeight, comparison);
+					const bool passed = readPixels(name, texture, rtv, false);
+					if (!passed && !comparison) ++failures;
+					if (statistics)
+					{
+						D3D11_QUERY_DATA_PIPELINE_STATISTICS data = {};
+						const auto statisticsDeadline = std::chrono::steady_clock::now() + 3s;
+						HRESULT result = S_FALSE;
+						do
+						{
+							result = context->GetData(statistics.Get(), &data, sizeof(data), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+							if (result != S_FALSE) break;
+							std::this_thread::sleep_for(1ms);
+						} while (std::chrono::steady_clock::now() < statisticsDeadline);
+						std::fprintf(stderr,
+							"[Draw3PixelTest] case=%s statistics_hr=0x%08X ia_vertices=%llu vs_invocations=%llu ps_invocations=%llu\n",
+							name, static_cast<unsigned int>(result), data.IAVertices, data.VSInvocations, data.PSInvocations);
+					}
+					renderer.backBufferTexture = originalTexture;
+					renderer.backBufferRTV = originalRtv;
+					renderer.operatorResolveBlendState = originalBlend;
+				};
+				drawProbe("backbuffer.cursor.production", backBuffer.Get(), backRtv.Get(), false);
+				drawProbe("offscreen.cursor.production", offscreen.Get(), offscreenRtv.Get(), false);
+				drawProbe("backbuffer.cursor.blend_disabled", backBuffer.Get(), backRtv.Get(), true);
+				drawProbe("offscreen.cursor.blend_disabled", offscreen.Get(), offscreenRtv.Get(), true);
+			}
+			const HRESULT removed = device->GetDeviceRemovedReason();
+			logResult("GetDeviceRemovedReason", removed);
+			if (FAILED(removed)) ++failures;
+			std::fprintf(stderr, "[Draw3PixelTest] production_cases=%u failures=%d result=%s\n",
+				productionCases, failures, failures == 0 && productionCases == 4 ? "PASS" : "FAIL");
+			return failures == 0 && productionCases == 4 ? 0 : 1;
+		}
+		catch (...)
+		{
+			Report("FAIL", "renderer pixel probe exception");
+			return 1;
 		}
 	}
 

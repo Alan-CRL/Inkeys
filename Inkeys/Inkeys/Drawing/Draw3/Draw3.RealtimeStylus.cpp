@@ -1137,13 +1137,20 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusDown(IRealTimeStylus* source, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
-				if (!source || !stylusInfo || !packet) return E_INVALIDARG;
+				// 产品构建不启用旧 RTS 宏；通过有界 Cursor 队列观察真实输入到达与发布。
+				RecordInputDiagnostic("Down", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
+				if (!source || !stylusInfo || !packet)
+				{
+					RecordInputDiagnostic("Down", "invalid-argument", stylusInfo);
+					return E_INVALIDARG;
+				}
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				size_t decoderSlotIndex = kContextDecoderCapacity;
 				const RtsContextDecoder* decoder = ResolveContextDecoder(
 					source, stylusInfo->tcid, nullptr, decoderSlotIndex);
 				if (!decoder)
 				{
+					RecordInputDiagnostic("Down", "no-decoder", stylusInfo);
 					PublishDefaultPenCursor();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusDown", stylusInfo, nullptr, 1, propertyCount,
@@ -1152,7 +1159,11 @@ namespace Inkeys::Drawing::Draw3
 					return S_OK;
 				}
 				// 触控板板面不进入擦屏接触链；它控制的桌面指针仍走原鼠标通道。
-				if(SourceForCursor(*decoder,stylusInfo->cid).kind==SpeedEraser::SourceKind::TouchPad)return S_OK;
+				if(SourceForCursor(*decoder,stylusInfo->cid).kind==SpeedEraser::SourceKind::TouchPad)
+				{
+					RecordInputDiagnostic("Down", "touchpad", stylusInfo, decoder);
+					return S_OK;
+				}
 				// 设备模态切换不依赖坐标包解码；Win7 也能在 Touch Down 时清掉旧 Mouse Hover。
 				NotifyRtsStylusDownCursor(decoder->deviceType, drawingCursorSink_);
 
@@ -1170,6 +1181,7 @@ namespace Inkeys::Drawing::Draw3
 					decoder->generation, decoder->deviceType, true };
 				if (activeBindings_.Insert(binding) != RtsBindingInsertResult::Inserted)
 				{
+					RecordInputDiagnostic("Down", "binding-failed", stylusInfo, decoder);
 					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
@@ -1182,6 +1194,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!DecodeSnapshot(*decoder, propertyCount, packet,
 					ContactPhase::Down, QueryQpc(), snapshot))
 				{
+					RecordInputDiagnostic("Down", "decode-failed", stylusInfo, decoder,
+						nullptr, false, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 					PublishDefaultPenCursor(); // 解码失败时不能把旧 Hover visual 留在接触位置。
@@ -1219,13 +1233,20 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("StylusDown", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published, S_OK, 0, deviceType, true);
 #endif
+				RecordInputDiagnostic("Down", published ? "published" : "publish-failed",
+					stylusInfo, decoder, &snapshot, published, 1, propertyCount);
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
 
 			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
-				if (!stylusInfo) return E_INVALIDARG;
+				RecordInputDiagnostic("Up", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
+				if (!stylusInfo)
+				{
+					RecordInputDiagnostic("Up", "invalid-argument", stylusInfo);
+					return E_INVALIDARG;
+				}
 				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
 				const RtsActiveContactBinding* binding = activeBindings_.Find(
 					stylusInfo->tcid, stylusInfo->cid);
@@ -1235,7 +1256,9 @@ namespace Inkeys::Drawing::Draw3
 				if (!packet)
 				{
 					PublishDefaultPenCursor();
-					CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					const bool published = CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					RecordInputDiagnostic("Up", "no-packet-cancel", stylusInfo,
+						binding ? decoderCache_.Resolve(*binding) : nullptr, nullptr, published);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					if (bindingKnown)
 						NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
@@ -1250,6 +1273,8 @@ namespace Inkeys::Drawing::Draw3
 					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
 					const bool published = CloseProducerContact(
 						stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					RecordInputDiagnostic("Up", decoder ? "decode-failed-cancel" : "no-decoder-cancel",
+						stylusInfo, decoder, nullptr, published, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					if (bindingKnown)
 						NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
@@ -1276,6 +1301,8 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("StylusUp", stylusInfo, decoder, 1, propertyCount,
 					packet, &snapshot, true, published);
 #endif
+				RecordInputDiagnostic("Up", published ? "published" : "publish-failed",
+					stylusInfo, decoder, &snapshot, published, 1, propertyCount);
 				return S_OK;
 			}
 
@@ -1319,13 +1346,21 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE Packets(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG packetCount, ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
+				const bool tracePacket = ShouldRecordInputPacket();
 				if (!stylusInfo || !packets || packetCount == 0 || packetBufferLength < packetCount ||
-					packetBufferLength % packetCount != 0) return E_INVALIDARG;
+					packetBufferLength % packetCount != 0)
+				{
+					if (tracePacket) RecordInputDiagnostic("Packets", "invalid-argument", stylusInfo,
+						nullptr, nullptr, false, packetCount);
+					return E_INVALIDARG;
+				}
 				const ULONG propertyCount = packetBufferLength / packetCount;
 				const LONG* lastPacket = packets + static_cast<size_t>(packetCount - 1) * propertyCount;
 				RtsPacketStateGuard stateAccess(stateGate_);
 				if (!stateAccess)
 				{
+					if (tracePacket) RecordInputDiagnostic("Packets", "state-busy", stylusInfo,
+						nullptr, nullptr, false, packetCount, propertyCount);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("Packets", stylusInfo, nullptr, packetCount, propertyCount,
 						lastPacket, nullptr, false, false);
@@ -1339,6 +1374,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, lastPacket,
 					ContactPhase::Move, QueryQpc(), snapshot))
 				{
+					if (tracePacket) RecordInputDiagnostic("Packets", decoder ? "decode-failed" : "no-binding-decoder",
+						stylusInfo, decoder, nullptr, false, packetCount, propertyCount);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 						lastPacket, nullptr, false, false);
@@ -1359,6 +1396,8 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, &snapshot, true, published);
 #endif
+				if (tracePacket) RecordInputDiagnostic("Packets", published ? "published" : "publish-failed",
+					stylusInfo, decoder, &snapshot, published, packetCount, propertyCount);
 				return S_OK;
 			}
 
@@ -1486,6 +1525,32 @@ namespace Inkeys::Drawing::Draw3
 				RecordRtsCallback(trace);
 			}
 #endif
+
+			void RecordInputDiagnostic(const char* event, const char* reason,
+				const StylusInfo* stylusInfo, const RtsContextDecoder* decoder = nullptr,
+				const ContactSnapshot* snapshot = nullptr, bool published = false,
+				ULONG packetCount = 1, ULONG propertyCount = 0) noexcept
+			{
+				if (!CursorDiagnosticsEnabled()) return;
+				RecordCursorDiagnostic("rts-input event=%s reason=%s tcid=%u cid=%u deviceKnown=%u device=%u decoded=%u published=%u packets=%u properties=%u x=%.1f y=%.1f",
+					event, reason, stylusInfo ? static_cast<unsigned>(stylusInfo->tcid) : 0u,
+					stylusInfo ? static_cast<unsigned>(stylusInfo->cid) : 0u,
+					decoder ? 1u : 0u, decoder ? static_cast<unsigned>(decoder->deviceType) : 0u,
+					snapshot ? 1u : 0u, published ? 1u : 0u,
+					static_cast<unsigned>(packetCount), static_cast<unsigned>(propertyCount),
+					snapshot ? snapshot->position.x : 0.0f, snapshot ? snapshot->position.y : 0.0f);
+			}
+
+			bool ShouldRecordInputPacket() noexcept
+			{
+				if (!CursorDiagnosticsEnabled()) return false;
+				// Packets 可并发读取；诊断每秒仅抢占一次，不等待、不改变输入 gate。
+				const ULONGLONG tick = GetTickCount64();
+				ULONGLONG previous = lastInputPacketDiagnosticTick_.load(std::memory_order_relaxed);
+				return (previous == 0 || (tick >= previous && tick - previous >= 1000)) &&
+					lastInputPacketDiagnosticTick_.compare_exchange_strong(
+						previous, tick, std::memory_order_relaxed);
+			}
 
 			void PublishPenCursor(const RtsContextDecoder* decoder,
 				const StylusInfo* stylusInfo, bool inContact,
@@ -1697,6 +1762,7 @@ namespace Inkeys::Drawing::Draw3
 			// lifecycle/Down/Up 串行写普通数组；只有 Packets/InAir 做一次无等待只读尝试。
 			std::mutex stateWriterMutex_;
 			std::atomic<uint32_t> stateGate_ = 0;
+			std::atomic<ULONGLONG> lastInputPacketDiagnosticTick_ = 0;
 			RtsDecoderCache decoderCache_;
 			RtsActiveBindingTable activeBindings_;
 		};

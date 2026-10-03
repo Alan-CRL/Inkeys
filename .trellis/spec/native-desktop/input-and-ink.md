@@ -16,6 +16,12 @@
 
 Draw3 Host 在图形资源准备后才初始化 RTS，退出时先停止 producer，再唤醒并结束绘制线程；`DrawpadMsgCallback` 只把主 Drawpad 消息转发到唯一 Host。
 
+`【直接确认】` `WindowController::HandleWindowMessage` 的 `WM_MOUSE*` 接受/拒绝仅控制 `PublishMouseCursorSample` 光标反馈；绘制 contact 仍由 RTS `StylusDown -> coordinator.PublishDown` 提供。不得用 `accepted-mouse` 或 `mouseContact` 证明绘制 Down 已被准入，也不得把光标兼容过滤直接当成落笔失败的根因。
+
+`【直接确认】` 产品未定义独立 demo 的 `DRAW3_RTS_DIAGNOSTICS` 宏；旧 `RecordCallback/FlushRtsCallbackTrace` 不会因开启 ConsoleOutput 而出现。产品 `ConsoleOutput.Cursor` 的运行期开关通过现有有界队列提供 `rts-input event=Down/Up reason=arrival/published/失败原因`，Packets 每 plugin 至多每秒一次。`published=1` 是 producer mailbox 发布证据，仍须分别验证 controller 准入与 GPU 像素。
+
+`【直接确认】` `present success=1 visuals=1` 仅证明帧提交返回成功，不能证明 cursor shader 已写像素。启用 `ConsoleOutput.Draw3` 后，`[Draw3Diag][ulw-pixels]` 在实际 dirty/full 提交时每 presenter 首次及最多每秒一次区分 `sourceAlphaNonzero/sourceMaxBgra` 与 `finalDibAlphaNonzero/finalDibMaxBgra`。Primary 命中底层能使源全透明时的最终 DIB alpha 为 1；黑墨 RGB 可以全零。需使用底层合成前的源 alpha 判断墨迹，源/最终 DIB 正常且 ULW 成功也不能等同桌面可见。`--draw3-ulw-copy-benchmark` 的 8 个统计用例覆盖非原点脏区、RowPitch、黑墨、白光标及底层前后差异。
+
 `【合理推断】` 需要让鼠标、笔、触摸行为一致的改动，优先放在两条输入已汇合的位置；如果只改 `CSyncEventHandlerRTS` 或只改 `DrawpadMsgCallback`，需明确另一条路径为何不适用。
 
 ## Scenario: Draw3 触摸擦除与主光标归属
@@ -69,6 +75,7 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 
 ### 3. Contracts
 - 关闭时不向控制台输出光标诊断；开启时先建立 Debug 控制台，再启用记录。诊断只观察状态，不改变鼠标、笔、触摸的归属和光标显隐。
+- `InitializeDebugConsole` 保留已有 stdout/stderr 文件或管道重定向；两路均重定向时不创建控制台，只有一路重定向时只初始化缺失输出。采集必须保留启动至退出的全量文件，不能用末屏替代。Win7 PowerShell 2 / 旧 CLR 的 HashAlgorithm 释放使用 public Clear()，不能假设直接 Dispose() 可见；脚本 parser 通过不等于旧 CLR 方法验证。
 - RTS/窗口回调只把定长事件写入有界队列，不直接等待控制台 I/O；绘制线程输出序号、时间、线程和事件，队列溢出必须报告丢弃条数。
 - 输入日志需包含 Touch 生命周期、Pointer/Mouse 来源与过滤结果、Pen/Mouse 样本、owner 和系统光标决策。绘制日志需区分主光标与逐触点光标，覆盖形状、位置、尺寸、透明度、Laser 笔尖和本帧呈现结果；移动时可限频，来源和可见性变化必须立即输出。
 
@@ -472,3 +479,43 @@ input.Recycle(oldHandle);
 // Correct：consumer拒收只修改旧A的地址+代次，物理terminal负责回收。
 input.DiscardUntilTerminal(oldHandle);
 ~~~
+
+## Scenario: Win7 GPU 透明读回分界诊断
+
+### 1. Scope / Trigger
+Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW staging 源 alpha/RGB 全零时适用。缺少 Pointer API 不足以解释已接受的鼠标 RTS contact；staging 全零也不能单独证明 GPU 原纹理没有写入。
+
+### 2. Signatures
+- 显式早退 CLI `--draw3-renderer-pixel-test` 调用 `RunRendererPixelTest() noexcept`，位于产品配置、单实例和主窗初始化之前。
+- `[Draw3PixelTest]` 输出 case、HRESULT、资源身份、纹理描述、viewport、BGRA 统计、pipeline invocation 和设备状态。
+- `[Draw3Diag][cursor-gpu]` 受既有 Draw3 诊断开关控制，包含资源/Map/上传/Draw 前后状态；`after-draw-issued` 只表示 Draw 已发出。
+
+### 3. Contracts
+- 独立 WARP FL11_0、128×128、永不显示的 layered HWND 与普通 FLIP_SEQUENTIAL；复用生产 InkRenderer 和嵌入 shader，不读配置、不创建产品主窗、不在实际画布注入颜色。
+- backbuffer/offscreen 各测已知 BGRA 清屏、正式白色 32px/opacity=0.5 光标；这四项及设备正常共同决定退出 0。两项关闭混合仅为隔离对照，不决定正式用例通过。
+- 清屏核所有像素与预期 BGRA，光标核非零计数、中心预乘白和透明角；RTV 与读回纹理通过 canonical IUnknown 身份比较。
+- query 每项最多等待 3 秒，读回 Map 使用 DO_NOT_WAIT；collector 等候 30 秒，超时仅终止其独立子进程。失败仍保存结果并继续正常应用采集。
+- 运行期光标首个可见请求及最多每秒一次查询实际管线；关闭诊断时不查询或格式化。不更改 Draw、上传、混合或呈现策略。
+- Win7 PS2 collector 使用 public HashAlgorithm.Clear()，保留完整 stdout/stderr 和 exe SHA；不得根据 API 返回成功或纯本机 PASS 宣称 Win7 恢复。
+
+### 4. Validation / Error Matrix
+| 结果 | 判别边界 |
+| --- | --- |
+| 两个 Clear 失败 | 创建/格式/拷贝/readback/设备状态，先看具体 HRESULT |
+| Offscreen Clear 正常而 backbuffer 异常 | swapchain backbuffer 或对应资源路径 |
+| Clear 正常、正式 Cursor 全零 | Map/CB/SRV/shader/viewport/混合或绘制管线 |
+| 关闭混合有像素而正式混合没有 | 进一步调查生产混合路径；不能直接将对照态作为修复 |
+| 独立正式用例正常、实际帧仍全零 | 产品实际资源绑定/上传/目标切换与帧执行顺序 |
+| 原始源和最终 DIB 正常、桌面仍不可见 | USER32/DWM/dirty ULW 与窗口层级 |
+
+### 5. Good / Base / Bad Cases
+- Good：关联正式 Map HRESULT、实际目标身份与像素结果，再据同一设备证据修改生产行为。
+- Base：普通 CLI 之外不开启自检；正常画布无新增标记或模式切换。
+- Bad：将 Draw(void) 或 ULW success 当成出墨证明，或者仅因 Win7 不支持 Pointer API 就跳过已有 RTS contact 正证据。
+
+### 6. Tests Required
+完整 solution Debug|ARM64、候选 Release|x64 和两架构新像素自检；Headless --no-window 验证纯逻辑回归。collector parser 及成功/非零退出/超时/启动异常模拟需证实仍进入正常采集；模拟不启动产品 GUI。Win11 WARP 自检与 Win7 现场独立记录，不互相代替。
+
+### 7. Wrong vs Correct
+- Wrong：`ULW success=1` 或 `Draw issued` 推断 shader 已产出可见墨迹。
+- Correct：Clear/readback、正式 Draw/readback、真实光标 Map/绑定、实际 staging/DIB 和桌面可见性逐段取证；保持 unresolved Win7 任务 in_progress。

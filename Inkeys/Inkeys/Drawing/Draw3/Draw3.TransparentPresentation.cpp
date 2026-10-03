@@ -18,6 +18,8 @@
 #include <exception>
 #include <initializer_list>
 #include <iostream>
+#include <optional>
+#include <sstream>
 #include <vector>
 #include <windows.h>
 #include <wrl/client.h>
@@ -141,16 +143,55 @@ namespace Inkeys::Drawing::Draw3
 			bool fullFrameAllZeroAlpha = false;
 		};
 
+		struct UlwPixelStatistics
+		{
+			size_t alphaNonzero = 0;
+			size_t rgbNonzero = 0;
+			BYTE maxBgra[4]{};
+			RECT alphaBounds{}; // 非零 alpha 的半开区间；全零时保持空矩形。
+			bool premultipliedAlphaValid = true;
+
+			void Include(const BYTE* pixel, LONG x, LONG y)
+			{
+				if (pixel[3] != 0)
+				{
+					if (alphaNonzero++ == 0) alphaBounds = RECT{ x, y, x + 1, y + 1 };
+					else
+					{
+						alphaBounds.left = std::min(alphaBounds.left, x);
+						alphaBounds.top = std::min(alphaBounds.top, y);
+						alphaBounds.right = std::max(alphaBounds.right, x + 1);
+						alphaBounds.bottom = std::max(alphaBounds.bottom, y + 1);
+					}
+				}
+				if (pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0) ++rgbNonzero;
+				for (size_t channel = 0; channel < 4; ++channel)
+					maxBgra[channel] = std::max(maxBgra[channel], pixel[channel]);
+				premultipliedAlphaValid = premultipliedAlphaValid &&
+					pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3];
+			}
+		};
+
+		struct UlwPixelDiagnostic
+		{
+			size_t pixelCount = 0;
+			UlwPixelStatistics source;
+			UlwPixelStatistics finalDib;
+			POINT samplePosition{};
+			BYTE sampleSourceBgra[4]{};
+			BYTE sampleFinalBgra[4]{};
+		};
+
 		constexpr BYTE ComposePrimaryHitUnderlayAlpha(BYTE sourceAlpha) noexcept
 		{
 			const unsigned int alpha = sourceAlpha;
 			return static_cast<BYTE>(alpha + ((255u - alpha) + 127u) / 255u);
 		}
 
-		template <typename AfterCopy>
+		template <bool InspectPixels = false, typename AfterCopy>
 		UlwDirtyCopyResult CopyAndInspectUlwDirtyRows(const BYTE* mapped, size_t rowPitch,
 			BYTE* dib, int dibWidth, int dibHeight, RECT dirty, bool presentFull,
-			bool applyPrimaryHitUnderlay, AfterCopy afterCopy)
+			bool applyPrimaryHitUnderlay, AfterCopy afterCopy, UlwPixelDiagnostic* diagnostic = nullptr)
 		{
 			const size_t pixelCount = static_cast<size_t>(dirty.right - dirty.left);
 			const size_t copyBytes = pixelCount * 4;
@@ -174,6 +215,20 @@ namespace Inkeys::Drawing::Draw3
 					{
 						// 黑色底层不改 RGB；按预乘 alpha 的 OVER 公式计算最终 8-bit alpha。
 						pixel[3] = ComposePrimaryHitUnderlayAlpha(sourceAlpha);
+					}
+					if constexpr (InspectPixels)
+					{
+						// 原始 BGRA 在命中底层合成前的 staging 中读取，不能拿 alpha=1 当成出墨证据。
+						const BYTE* sourcePixel = sourceRow + x * 4;
+						const LONG canvasX = dirty.left + static_cast<LONG>(x);
+						diagnostic->source.Include(sourcePixel, canvasX, y);
+						diagnostic->finalDib.Include(pixel, canvasX, y);
+						if (diagnostic->pixelCount++ == 0 || sourceAlpha > diagnostic->sampleSourceBgra[3])
+						{
+							diagnostic->samplePosition = POINT{ canvasX, y };
+							std::memcpy(diagnostic->sampleSourceBgra, sourcePixel, 4);
+							std::memcpy(diagnostic->sampleFinalBgra, pixel, 4);
+						}
 					}
 					const BYTE alpha = pixel[3];
 					result.premultipliedAlphaValid = result.premultipliedAlphaValid &&
@@ -208,6 +263,8 @@ namespace Inkeys::Drawing::Draw3
 			TransparentPresentObservation lastObservation{};
 			bool presentSuccessLogged = false;
 			bool presentFailureLogged = false;
+			bool pixelDiagnosticLogged = false;
+			ULONGLONG lastPixelDiagnosticTick = 0;
 			POINT lastDestination{};
 			SIZE lastDestinationSize{};
 			POINT lastSource{};
@@ -252,6 +309,43 @@ namespace Inkeys::Drawing::Draw3
 					<< std::dec << " error=" << error << std::endl;
 			}
 
+			void LogPixelDiagnostic(const UlwPixelDiagnostic& pixels, ULONGLONG tick,
+				RECT dirty, bool presentFull, BOOL updated, DWORD error)
+			{
+				std::ostringstream line;
+				line << "[Draw3Diag][ulw-pixels] role=" << diagnosticRole
+					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window) << std::dec
+					<< " tick=" << tick << " dirty=(" << dirty.left << "," << dirty.top << ","
+					<< dirty.right << "," << dirty.bottom << ") full=" << (presentFull ? 1 : 0)
+					<< " api=" << (updated ? "success" : "failed") << " error=" << error
+					<< " underlay=" << (applyPrimaryHitUnderlay ? 1 : 0) << " pixels=" << pixels.pixelCount;
+				const auto writeStatistics = [&](const char* name, const UlwPixelStatistics& stats)
+				{
+					line << " " << name << "AlphaNonzero=" << stats.alphaNonzero
+						<< " " << name << "RgbNonzero=" << stats.rgbNonzero
+						<< " " << name << "MaxBgra=(" << static_cast<unsigned>(stats.maxBgra[0]) << ","
+						<< static_cast<unsigned>(stats.maxBgra[1]) << ","
+						<< static_cast<unsigned>(stats.maxBgra[2]) << ","
+						<< static_cast<unsigned>(stats.maxBgra[3]) << ")"
+						<< " " << name << "AlphaBounds=(" << stats.alphaBounds.left << ","
+						<< stats.alphaBounds.top << "," << stats.alphaBounds.right << ","
+						<< stats.alphaBounds.bottom << ") " << name << "Premul="
+						<< (stats.premultipliedAlphaValid ? 1 : 0);
+				};
+				writeStatistics("source", pixels.source);
+				writeStatistics("finalDib", pixels.finalDib);
+				line << " samplePos=(" << pixels.samplePosition.x << "," << pixels.samplePosition.y << ")";
+				const auto writeSample = [&](const char* name, const BYTE* bgra)
+				{
+					line << " " << name << "=(" << static_cast<unsigned>(bgra[0]) << ","
+						<< static_cast<unsigned>(bgra[1]) << "," << static_cast<unsigned>(bgra[2]) << ","
+						<< static_cast<unsigned>(bgra[3]) << ")";
+				};
+				writeSample("sampleSourceBgra", pixels.sampleSourceBgra);
+				writeSample("sampleFinalBgra", pixels.sampleFinalBgra);
+				std::cout << line.str() << std::endl; // 只输出提交证据，不等同于桌面实际可见。
+			}
+
 			void ReleaseDib()
 			{
 				if (memoryDC && oldBitmap) SelectObject(memoryDC, oldBitmap);
@@ -277,6 +371,8 @@ namespace Inkeys::Drawing::Draw3
 				lastObservation = {};
 				presentSuccessLogged = false;
 				presentFailureLogged = false;
+				pixelDiagnosticLogged = false;
+				lastPixelDiagnosticTick = 0;
 			}
 
 			bool CreateStagingTexture(UINT width, UINT height)
@@ -423,11 +519,28 @@ namespace Inkeys::Drawing::Draw3
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
 				const HRESULT mapResult = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
 				if (FAILED(mapResult)) return fail("map", ERROR_SUCCESS, mapResult);
-				const UlwDirtyCopyResult copyResult = CopyAndInspectUlwDirtyRows(
-					static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
-					static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
-					applyPrimaryHitUnderlay,
-					[&] { context->Unmap(stagingTexture.Get(), 0); });
+				const bool diagnosticsEnabled = StartupEnvironmentDiagnosticsEnabled();
+				const ULONGLONG diagnosticTick = diagnosticsEnabled ? GetTickCount64() : 0;
+				const bool inspectPixels = diagnosticsEnabled &&
+					(!pixelDiagnosticLogged || diagnosticTick - lastPixelDiagnosticTick >= 1000);
+				std::optional<UlwPixelDiagnostic> pixels;
+				if (inspectPixels) pixels.emplace();
+				const auto copyRows = [&]<bool InspectPixels>()
+				{
+					return CopyAndInspectUlwDirtyRows<InspectPixels>(
+						static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
+						static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
+						applyPrimaryHitUnderlay, [&] { context->Unmap(stagingTexture.Get(), 0); },
+						InspectPixels ? &*pixels : nullptr);
+				};
+				// 非采样帧使用原扫描的模板实例，不执行任何诊断像素统计。
+				const UlwDirtyCopyResult copyResult = inspectPixels ?
+					copyRows.operator()<true>() : copyRows.operator()<false>();
+				if (inspectPixels)
+				{
+					pixelDiagnosticLogged = true;
+					lastPixelDiagnosticTick = diagnosticTick;
+				}
 				lastObservation.premultipliedAlphaValid = copyResult.premultipliedAlphaValid;
 				lastObservation.updatedRegionAllZeroAlpha = copyResult.allZeroAlpha;
 				lastObservation.fullFrameAllZeroAlpha = copyResult.fullFrameAllZeroAlpha;
@@ -458,9 +571,10 @@ namespace Inkeys::Drawing::Draw3
 				update.dwFlags = ULW_ALPHA;
 				update.prcDirty = presentFull ? nullptr : &dirty; // 非全量时让 USER32 只更新改变区域。
 				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
+				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
+				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error);
 				if (!updated)
 				{
-					const DWORD error = GetLastError();
 					return fail("UpdateLayeredWindowIndirect", error,
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
 				}
@@ -1320,6 +1434,92 @@ namespace Inkeys::Drawing::Draw3
 				std::fputs("UlwDirtyCopyBenchmark selection transparency mismatch\n", stderr);
 				return 1;
 			}
+
+			// 诊断只统计非原点脏区，忽略 RowPitch padding 与区外像素；覆盖黑墨/白光标及底层 alpha。
+			constexpr int diagnosticWidth = 5;
+			constexpr int diagnosticHeight = 4;
+			constexpr size_t diagnosticPitch = diagnosticWidth * 4 + 8;
+			const RECT diagnosticDirty{ 1, 1, 3, 3 };
+			const auto rectEquals = [](RECT actual, RECT expected)
+			{
+				return actual.left == expected.left && actual.top == expected.top &&
+					actual.right == expected.right && actual.bottom == expected.bottom;
+			};
+			for (int pattern = 0; pattern < 4; ++pattern)
+			{
+				std::vector<BYTE> source(diagnosticPitch * diagnosticHeight, 0xC7);
+				for (LONG y = diagnosticDirty.top; y < diagnosticDirty.bottom; ++y)
+					std::memset(source.data() + static_cast<size_t>(y) * diagnosticPitch + 4, 0, 8);
+				const auto setPixel = [&](LONG x, LONG y, BYTE color, BYTE alpha)
+				{
+					BYTE* pixel = source.data() + static_cast<size_t>(y) * diagnosticPitch + x * 4;
+					pixel[0] = pixel[1] = pixel[2] = color;
+					pixel[3] = alpha;
+				};
+				if (pattern == 1) setPixel(2, 1, 0, 127); // 黑色笔迹：RGB 全零不能代表没有笔迹。
+				if (pattern == 2)
+				{
+					setPixel(1, 2, 127, 127);
+					setPixel(2, 2, 255, 255); // 白色光标最高 alpha 样本。
+				}
+				if (pattern == 3) setPixel(1, 1, 1, 0); // 底层可能修正最终预乘合法性，原始异常仍需可见。
+				const std::vector<BYTE> originalSource = source;
+				for (bool underlay : { false, true })
+				{
+					std::vector<BYTE> dib(diagnosticWidth * diagnosticHeight * 4, 0xA5);
+					std::vector<BYTE> withoutDiagnostic = dib;
+					UlwPixelDiagnostic pixels;
+					bool unmapped = false;
+					const UlwDirtyCopyResult result = CopyAndInspectUlwDirtyRows<true>(source.data(),
+						diagnosticPitch, dib.data(), diagnosticWidth, diagnosticHeight, diagnosticDirty,
+						false, underlay, [&] { unmapped = true; }, &pixels);
+					const UlwDirtyCopyResult plain = CopyAndInspectUlwDirtyRows(source.data(),
+						diagnosticPitch, withoutDiagnostic.data(), diagnosticWidth, diagnosticHeight,
+						diagnosticDirty, false, underlay, [] {});
+					const size_t sourceNonzero = pattern == 1 ? 1 : (pattern == 2 ? 2 : 0);
+					const size_t rgbNonzero = pattern == 2 ? 2 : (pattern == 3 ? 1 : 0);
+					const BYTE sourceMaxAlpha = pattern == 1 ? 127 : (pattern == 2 ? 255 : 0);
+					const BYTE maxColor = pattern == 2 ? 255 : (pattern == 3 ? 1 : 0);
+					const RECT sourceBounds = pattern == 1 ? RECT{ 2, 1, 3, 2 } :
+						(pattern == 2 ? RECT{ 1, 2, 3, 3 } : RECT{});
+					const POINT sample = pattern == 1 ? POINT{ 2, 1 } :
+						(pattern == 2 ? POINT{ 2, 2 } : POINT{ 1, 1 });
+					const BYTE finalMaxAlpha = underlay ? ComposePrimaryHitUnderlayAlpha(sourceMaxAlpha) : sourceMaxAlpha;
+					const size_t sourceOffset = static_cast<size_t>(sample.y) * diagnosticPitch + sample.x * 4;
+					const size_t finalOffset = (static_cast<size_t>(sample.y) * diagnosticWidth + sample.x) * 4;
+					if (!unmapped || pixels.pixelCount != 4 ||
+						pixels.source.alphaNonzero != sourceNonzero ||
+						pixels.finalDib.alphaNonzero != (underlay ? 4 : sourceNonzero) ||
+						pixels.source.rgbNonzero != rgbNonzero || pixels.finalDib.rgbNonzero != rgbNonzero ||
+						pixels.source.maxBgra[3] != sourceMaxAlpha || pixels.finalDib.maxBgra[3] != finalMaxAlpha ||
+						!rectEquals(pixels.source.alphaBounds, sourceBounds) ||
+						!rectEquals(pixels.finalDib.alphaBounds, underlay ? diagnosticDirty : sourceBounds) ||
+						pixels.source.premultipliedAlphaValid != (pattern != 3) ||
+						pixels.finalDib.premultipliedAlphaValid != (pattern != 3 || underlay) ||
+						pixels.samplePosition.x != sample.x || pixels.samplePosition.y != sample.y ||
+						std::memcmp(pixels.sampleSourceBgra, source.data() + sourceOffset, 4) != 0 ||
+						std::memcmp(pixels.sampleFinalBgra, dib.data() + finalOffset, 4) != 0 ||
+						source != originalSource || dib != withoutDiagnostic ||
+						result.allZeroAlpha != (sourceNonzero == 0) || result.fullFrameAllZeroAlpha ||
+						result.allZeroAlpha != plain.allZeroAlpha ||
+						result.premultipliedAlphaValid != plain.premultipliedAlphaValid ||
+						result.fullFrameAllZeroAlpha != plain.fullFrameAllZeroAlpha)
+					{
+						std::fprintf(stderr, "UlwDirtyCopyBenchmark pixel diagnostic mismatch pattern=%d underlay=%d\n",
+							pattern, underlay ? 1 : 0);
+						return 1;
+					}
+					for (size_t channel = 0; channel < 3; ++channel)
+					{
+						if (pixels.source.maxBgra[channel] != maxColor || pixels.finalDib.maxBgra[channel] != maxColor)
+						{
+							std::fputs("UlwDirtyCopyBenchmark diagnostic color maxima mismatch\n", stderr);
+							return 1;
+						}
+					}
+				}
+			}
+			std::fputs("UlwDirtyCopyBenchmark pixel_diagnostics=PASS cases=8\n", stdout);
 
 			enum class PixelPattern { Mixed, Transparent, Half, InvalidAlpha };
 			struct Scenario

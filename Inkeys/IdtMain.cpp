@@ -246,12 +246,27 @@ namespace
 		static std::once_flag consoleOnce;
 		std::call_once(consoleOnce, []
 			{
-				AllocConsole();
-
-				FILE* fp;
-				freopen_s(&fp, "CONOUT$", "w", stdout);
-				freopen_s(&fp, "CONOUT$", "w", stderr);
-				freopen_s(&fp, "CONIN$", "r", stdin);
+				const HANDLE outputHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+				const HANDLE errorHandle = GetStdHandle(STD_ERROR_HANDLE);
+				const auto isRedirected = [](HANDLE handle)
+					{
+						if (!handle || handle == INVALID_HANDLE_VALUE) return false;
+						const DWORD type = GetFileType(handle);
+						return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
+					};
+				const bool outputRedirected = isRedirected(outputHandle);
+				const bool errorRedirected = isRedirected(errorHandle);
+				// 保留采集脚本的文件/管道；两路均重定向时不创建交互控制台。
+				if (!outputRedirected || !errorRedirected)
+				{
+					AllocConsole();
+					FILE* fp;
+					if (outputRedirected) SetStdHandle(STD_OUTPUT_HANDLE, outputHandle);
+					else freopen_s(&fp, "CONOUT$", "w", stdout);
+					if (errorRedirected) SetStdHandle(STD_ERROR_HANDLE, errorHandle);
+					else freopen_s(&fp, "CONOUT$", "w", stderr);
+					freopen_s(&fp, "CONIN$", "r", stdin);
+				}
 				std::ios::sync_with_stdio(true);
 				std::wcout.clear();
 				std::wcin.clear();
@@ -1083,6 +1098,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
+	// GPU 像素自检仅创建不可见测试 HWND，必须先于配置和产品主窗退出。
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
+		return Inkeys::Drawing::Draw3::RunRendererPixelTest();
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)

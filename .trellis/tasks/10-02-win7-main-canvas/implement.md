@@ -34,3 +34,27 @@
 - 已交付经当前环境构建/回归的诊断候选；仍需 Win7 现场反馈才能定因。
 - 不 commit、push 或发布。
 
+## 2026-10-03 — 输入与实际像素继续调查
+
+- [x] 复用原任务；核验新日志、测试 EXE SHA-256 与四个嵌入 shader；不改动 G: 现场包。
+- [x] 分离 WM_MOUSE 光标反馈、RTS contact 落笔、document/history、GPU 像素和 USER32/桌面可见五类证据。
+- [x] 发现产品未编译/启用 DRAW3_RTS_DIAGNOSTICS，纠正“开启现有开关即可看到 RTS 回调”的诊断建议。
+- [x] 在现有有界 Cursor 队列补充 RTS Down/Up 及限频 Packets；不改变输入准入或 producer。
+- [x] 在现有 ULW 读回/复制过程中限频统计原始源像素和最终 DIB；不改变窗口、swapchain、alpha 底层或 dirty 更新策略。
+- [x] 完整 Solution Debug|ARM64 验证；额外构建 x64 Release 实机诊断候选；运行无窗口 Headless 和现有 ULW copy benchmark。
+- [x] 完成独立检查并记录调查结论、证据限制、候选身份及 Win7 最短再现/判别步骤。实机恢复前保持任务 in_progress。
+
+## Win7 完整采集 17:28:38 反馈
+
+- [x] 核验EXE身份；RTS与controller均有13次contact正证据，15个ULW源采样全零、最终Primary只有alpha=1命中底层。
+- [x] 独立输入时间线及共享GPU/资源源码审查；已排除本次鼠标RTS缺席，具体GPU/读回根因仍未证明。
+- [ ] 同Win7设备进行known-color clear/readback与正式cursor draw/readback分界自检；保持任务in_progress。
+
+## GPU 分界测试与失败日志（用户已要求）
+
+当前行为差距：已有证据证明输入被消费而读回透明，但缺少Clear与正式Draw的分界、Cursor Map失败和实际管线状态。最小修改边界：HiddenWindowTest.cpp/.h与IdtMain.cpp注册一个早退诊断命令，RendererPrimitives.cpp补限频Cursor GPU日志，Collect-Win7脚本自动采集独立测试与正常应用。复用生产renderer/shader和普通FLIP_SEQUENTIAL；测试只建永不显示的隔离HWND，不向生产画布注入标记；不改shader、swapchain、输入准入或项目配置。
+
+- [x] 新增Clear/readback、正式cursor/readback与隔离混合对照的GPU像素测试。
+- [x] 补Cursor资源/Map/viewport/RTV/device状态，关闭诊断时不查询管线。
+- [x] Win7 PS2采集先跑诊断、记录失败后仍采正常应用。
+- [x] 独立审查、完整ARM64 Debug构建、适用无交互GUI验证；构建x64 Release候选，记录身份与最短Win7步骤。
