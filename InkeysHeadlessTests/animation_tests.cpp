@@ -88,16 +88,23 @@ namespace
 		using Inkeys::UI::Bar::Detail::FormatWidthDipNumber;
 		using Inkeys::UI::Bar::Detail::FormatWidthDipText;
 		using Inkeys::UI::Bar::Detail::StepFineDialDip;
-		Check(FormatWidthDipText(L"{} DIP", 3.0) == L"3 DIP",
-			"exact integer DIP label");
-		Check(FormatWidthDipNumber(1.9393939393939394) == L"≈2",
-			"fractional classroom DIP label preserves approximation");
-		Check(FormatWidthDipNumber(65535.999) == L"≈65536",
-			"large fractional DIP retains approximation before float narrowing");
-		Check(FormatWidthDipNumber(0.36) == L"≈1",
-			"sub-one DIP label never displays zero");
-		Check(FormatWidthDipText(L"broken {", 1.9393939393939394) == L"≈2 DIP",
-			"malformed DIP translation retains value and unit");
+		Check(FormatWidthDipText(L"Size {}", 3.0) == L"Size 3",
+			"exact integer width label without unit");
+		Check(FormatWidthDipNumber(1.9393939393939394) == L"2",
+			"fractional classroom width label rounds for display");
+		Check(FormatWidthDipNumber(4.5) == L"5"
+			&& FormatWidthDipNumber(4.49) == L"4",
+			"width display rounds positive half upward");
+		Check(FormatWidthDipNumber(65535.999) == L"65536",
+			"large fractional width label rounds safely");
+		Check(FormatWidthDipNumber(0.36) == L"1",
+			"sub-one width label never displays zero");
+		Check(FormatWidthDipNumber(std::numeric_limits<double>::quiet_NaN()) == L"1"
+			&& FormatWidthDipNumber(std::numeric_limits<double>::infinity()) == L"1"
+			&& FormatWidthDipNumber(-1.0) == L"1",
+			"invalid width label uses safe display fallback");
+		Check(FormatWidthDipText(L"broken {", 1.9393939393939394) == L"2",
+			"malformed width translation retains integer without unit");
 		const double fineOrigin = 1.9393939393939394;
 		Check(Near(StepFineDialDip(fineOrigin, fineOrigin, 0.1, 30.0), fineOrigin),
 			"FineDial entering fractional value preserves origin");

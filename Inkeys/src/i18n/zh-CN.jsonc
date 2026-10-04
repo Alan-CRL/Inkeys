@@ -95,7 +95,7 @@
         "FreeLineLabel": "自由线",
         "AnnotationLineLabel": "标注线",
         "HoldThicknessLabel": "保持并固定粗细",
-        "ThicknessFormat": "粗细 {} DIP",
+        "ThicknessFormat": "粗细 {}",
         "AnnotationUnavailableTitle": "启用标注线（暂不可用）",
         "AnnotationFixedUnsupportedTitle": "标注线（粗细固定，暂未支持）",
         "AnnotationDescription": "锁定绘制方向仅为水平、竖直或斜45°",

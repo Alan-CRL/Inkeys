@@ -29,9 +29,8 @@ namespace Inkeys::UI::Bar::Detail
 		using namespace Inkeys::Business::PenWidth;
 		const double safeDip = IsValidDip(widthDip) ? widthDip : 1.0;
 		const auto displayed = RoundPositiveCanvasPx(safeDip);
-		// 仅展示整数；近似标记不得回写业务值，小于 1 DIP 也不能显示 0。
-		return (safeDip != static_cast<double>(displayed)
-			? L"≈" : L"") + std::to_wstring(displayed);
+		// 整数仅用于展示，不回写业务粗细；有效的小于 1 DIP 值仍显示 1。
+		return std::to_wstring(displayed);
 	}
 
 	[[nodiscard]] inline std::wstring FormatWidthDipText(
@@ -44,7 +43,7 @@ namespace Inkeys::UI::Bar::Detail
 		}
 		catch (const std::format_error&)
 		{
-			return number + L" DIP";
+			return number;
 		}
 	}
 

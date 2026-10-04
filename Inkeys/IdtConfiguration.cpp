@@ -517,9 +517,9 @@ string CaptureSettingJson()
     Json::Value widthPreferences;
     {
         std::scoped_lock widthLock(g_penWidthPreferencesMutex);
-        // AutoClean 前冻结宽度对象，未来版本与迁移原值也必须保留。
-        if (!g_penWidthStartupInitialized)
-            g_penWidthStartup = Inkeys::Business::PenWidth::DecodePreferences(setlistVal, false, GetPenWidthContext());
+        // 仅为安全保存保留退休偏好/迁移证据，不将其应用到本版启动状态。
+        // AutoClean 前冻结原对象，未来版本也不得降级覆盖。
+        g_penWidthStartup = Inkeys::Business::PenWidth::DecodePreferences(setlistVal, false, GetPenWidthContext());
         widthPreferences = Inkeys::Business::PenWidth::EncodePreferences(g_penWidthStartup, false);
     }
     if (Inkeys::config.Config.AutoClean) setlistVal.clear();
@@ -1128,15 +1128,17 @@ void InitializePenWidthPreferences(Inkeys::Business::PenWidth::Context context)
     ApplyPenWidthContext(context);
     {
         std::scoped_lock lock(g_penWidthPreferencesMutex);
-        // 初始化仅一次；后续换屏只重解析身份，不再应用启动偏好。
+        // 默认仅初始化一次；后续换屏只重解析身份，不能覆盖手动粗细。
         if (g_penWidthStartupInitialized) return;
-        g_penWidthStartup = DecodePreferences(setlistVal, false, context);
-        setlist.presetSetting.memoryWidth = g_penWidthStartup.memoryWidth;
-        setlist.presetSetting.memoryColor = g_penWidthStartup.memoryColor;
-        setlist.presetSetting.autoDefaultWidth = g_penWidthStartup.autoDefaultWidth;
+        // 本版隐藏且暂不支持启动记忆/启动预设；保留兼容代码但不读取应用残留配置。
+        // g_penWidthStartup = DecodePreferences(setlistVal, false, context);
+        // setlist.presetSetting.memoryWidth = g_penWidthStartup.memoryWidth;
+        // setlist.presetSetting.memoryColor = g_penWidthStartup.memoryColor;
+        // setlist.presetSetting.autoDefaultWidth = g_penWidthStartup.autoDefaultWidth;
         g_penWidthStartupInitialized = true;
     }
-    GetMemory();
+    RestorePenWidthSelections({}, {}, {});
+    // GetMemory(); // 暂停启动恢复粗细/颜色；与 Draw3 文档历史恢复无关。
 }
 
 bool GetMemory()
@@ -1253,10 +1255,14 @@ int RunPenWidthPreferencesProductionTest() noexcept
         require(SetPenWidthPresetIfRevision(1, StateModeTransitionRevision(), false)
             && first.idealCanvasWidthPx == GetPenWidthMetrics(GetStateModeSnapshot()).idealCanvasWidthPx);
 
-        stage = "real-read-legacy-migration-and-partial-memory";
+        stage = "retired-legacy-preferences-and-memory-ignored";
+        require(SetPenColor(RGB(12, 34, 56), false));
+        ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
+        require(SetPenColor(RGB(65, 43, 21), false));
+        ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
         Json::Value deploy(Json::objectValue);
         deploy["Preset"]["MemoryWidth"] = true;
-        deploy["Preset"]["MemoryColor"] = false;
+        deploy["Preset"]["MemoryColor"] = true;
         deploy["Preset"]["AutoDefaultWidth"] = false;
         deploy["Preset"]["DefaultBrush1Width"] = 3.0;
         deploy["Preset"]["DefaultHighlighter1Width"] = 35.0;
@@ -1264,48 +1270,80 @@ int RunPenWidthPreferencesProductionTest() noexcept
         require(writeRoot(directory / L"opt" / L"deploy.json", deploy));
         Json::Value memory(Json::objectValue);
         memory["Draw"]["Brush1"]["Width"] = 12.0;
-        memory["Draw"]["Highlighter1"] = "broken slot";
+        memory["Draw"]["Highlighter1"]["Width"] = 70.0;
         memory["Draw"]["Laser"]["Width"] = 7.0;
+        memory["Draw"]["Brush1"]["Color"]["R"] = 255;
+        memory["Draw"]["Brush1"]["Color"]["G"] = 255;
+        memory["Draw"]["Brush1"]["Color"]["B"] = 255;
+        memory["Draw"]["Brush1"]["Color"]["A"] = 0;
+        memory["Draw"]["Highlighter1"]["Color"] = memory["Draw"]["Brush1"]["Color"];
         memory["Unrelated"] = "keep-memory";
         require(writeRoot(MemoryPath(), memory) && ReadSetting());
+        const auto brushColor = GetStateModeSnapshot().Pen.Brush1.color;
+        const auto requireMedium = [&]()
+        {
+            const auto state = GetStateModeSnapshot();
+            const auto medium = [](Selection selection)
+            { return selection.source == Source::Preset && selection.preset == Preset::Medium; };
+            require(medium(state.Pen.Brush1.widthSelection) && medium(state.Pen.Highlighter1.widthSelection)
+                && medium(state.Pen.Laser.widthSelection));
+            require(std::abs(state.Pen.Brush1.width - Resolve({}, Family::Brush, context).resolvedWidthDip) < 1e-6
+                && std::abs(state.Pen.Highlighter1.width - Resolve({}, Family::Highlighter, context).resolvedWidthDip) < 1e-6
+                && state.Pen.Laser.width == 5.0f && state.Pen.Brush1.color == brushColor
+                && state.Pen.Highlighter1.color == RGB(65, 43, 21));
+        };
         InitializePenWidthPreferences(context);
-        snapshot = GetStateModeSnapshot();
-        require(snapshot.Pen.Brush1.widthSelection.explicitDip == 8.0
-            && std::abs(snapshot.Pen.Highlighter1.widthSelection.explicitDip - 35.0 / 1.5) < 1e-9
-            && snapshot.Pen.Laser.widthSelection.explicitDip == 7.0);
+        requireMedium();
         Json::Value migrated;
-        require(ReadMemoryRoot(MemoryPath(), migrated) && migrated["PenWidth"]["Version"].asInt() == 1
-            && migrated["PenWidth"]["Migration"]["Legacy"]["Brush1"]["Width"].asDouble() == 12.0
-            && migrated["Unrelated"].asString() == "keep-memory");
-        require(WriteSetting() && ReadSetting());
+        require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
+        // 兼容解码仅用于保全保存证据，不代表当前产品支持恢复启动偏好。
+        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
+            && migrated["PenWidth"]["Migration"]["Legacy"] == deploy["Preset"]
+            && migrated["Unrelated"].asString() == "keep");
+        require(ReadSetting());
         context.effectiveDpi = 264.0;
         InitializePenWidthPreferences(context);
-        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 8.0);
-        require(ReadMemoryRoot(MemoryPath(), memory) && memory["PenWidth"] == migrated["PenWidth"]);
+        requireMedium();
+        require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
 
-        stage = "disabled-memory-explicit-startup-not-session";
+        stage = "retired-versioned-startup-and-memory-ignored";
         Preferences startup;
-        startup.memoryWidth = false; startup.autoDefaultWidth = false;
-        startup.valid[0] = true;
-        startup.selections[0] = { Source::ExplicitDip, Preset::Medium, 2.5 };
+        startup.memoryWidth = true; startup.memoryColor = true; startup.autoDefaultWidth = false;
+        startup.valid = { true, true, true };
+        startup.selections = { Selection{ Source::ExplicitDip, Preset::Medium, 2.5 },
+            Selection{ Source::Preset, Preset::Thick, 3.0 }, Selection{ Source::ExplicitDip, Preset::Medium, 7.0 } };
         deploy["PenWidth"] = EncodePreferences(startup, false);
-        deploy.removeMember("Preset");
+        Preferences remembered = startup;
+        remembered.selections[0] = { Source::ExplicitDip, Preset::Medium, 17.0 };
+        memory["PenWidth"] = EncodePreferences(remembered, true);
+        require(writeRoot(directory / L"opt" / L"deploy.json", deploy)
+            && writeRoot(MemoryPath(), memory) && ReadSetting());
+        InitializePenWidthPreferences(context);
+        requireMedium();
+        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
+            && migrated["PenWidth"] == deploy["PenWidth"]);
+        startup.memoryWidth = false;
+        deploy["PenWidth"] = EncodePreferences(startup, false);
         require(writeRoot(directory / L"opt" / L"deploy.json", deploy) && ReadSetting());
         InitializePenWidthPreferences(context);
-        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 2.5);
-        require(SetPenWidth(17.0, false) && WriteSetting() && ReadSetting());
-        InitializePenWidthPreferences(context);
-        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 2.5);
+        requireMedium();
 
-        stage = "portable-preset-memory-versus-explicit";
-        startup.memoryWidth = true;
-        deploy["PenWidth"] = EncodePreferences(startup, false);
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy) && ReadSetting());
-        InitializePenWidthPreferences(context);
-        require(SetPenWidthPresetIfRevision(2, StateModeTransitionRevision(), true));
-        context.paintDevice = 0; context.pixelWidth = 3840; context.pixelHeight = 2160;
+        stage = "classroom-default-and-followup-context-preserves-manual";
+        context.paintDevice = 0; context.pixelWidth = 2560; context.pixelHeight = 1440;
         setlist.paintDevice = 0;
         require(ReadSetting());
+        InitializePenWidthPreferences(context);
+        requireMedium();
+        require(std::abs(GetPenWidthMetrics(GetStateModeSnapshot()).idealCanvasWidthPx - 16.0 / 3.0) < 1e-9);
+        require(SetPenWidth(17.0, false));
+        InitializePenWidthPreferences(context);
+        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.source == Source::ExplicitDip
+            && GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 17.0);
+        context.effectiveDpi = 192.0;
+        InitializePenWidthPreferences(context);
+        require(GetStateModeSnapshot().Pen.Brush1.widthSelection.explicitDip == 17.0);
+        require(SetPenWidthPresetIfRevision(2, StateModeTransitionRevision(), false));
+        context.pixelWidth = 3840; context.pixelHeight = 2160;
         InitializePenWidthPreferences(context);
         snapshot = GetStateModeSnapshot();
         require(snapshot.Pen.Brush1.widthSelection.source == Source::Preset

@@ -9,3 +9,4 @@
 {"file": ".trellis/tasks/10-04-pen-width-dip-defaults/research/tests.md", "reason": "Actual no-GUI production test seams"}
 {"file": ".trellis/tasks/10-04-pen-width-dip-defaults/research/design-review.md", "reason": "Independent design gate and integration checkpoints"}
 {"file": ".trellis/spec/native-desktop/pen-width.md", "reason": "Shared width contract for integration fixes"}
+{"file": ".trellis/tasks/10-04-pen-width-dip-defaults/research/followup-scope.md", "reason": "Current approved follow-up overrides display and startup policy"}

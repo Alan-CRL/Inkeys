@@ -2112,22 +2112,16 @@ void BarRenderLoopCoordinator::SubmitTargetsAndLayout(
 if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			{
 				// 真实粗细仍只在抬起提交；拖动中数字即时显示候选值，抬手后恢复普通动画。
-				double penThickness = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 				bool thicknessCandidateDragging =
 					state.barState.drawAttributeBar.thicknessSliderDragging
 						|| state.barState.drawAttributeBar.thicknessPreviewDragging
 						|| state.barState.drawAttributeBar
 							.thicknessFineDialCandidateActive;
-				if (thicknessCandidateDragging)
-				{
-					penThickness = max(0.0,
-						static_cast<double>(state.barState.drawAttributeBar
-							.thicknessSliderCandidateWidth));
-				}
-				const double visualThickness = Inkeys::Business::PenWidth::Resolve(
-					{ Inkeys::Business::PenWidth::Source::ExplicitDip,
-						Inkeys::Business::PenWidth::Preset::Medium, penThickness },
-					GetPenWidthFamily(stateMode), stateMode.penWidthContext).appliedCanvasWidthPx;
+				const auto previewMetrics = GetBarThicknessPreviewMetrics(stateMode,
+					thicknessCandidateDragging, static_cast<double>(state.barState
+						.drawAttributeBar.thicknessSliderCandidateWidth));
+				const double penThickness = previewMetrics.resolvedWidthDip;
+				const double visualThickness = previewMetrics.appliedCanvasWidthPx;
 				double normalPenPreviewMorph =
 					(PenModeUsesCurvedThicknessPreview(stateMode.Pen.ModeSelect)
 						? 0.0
@@ -2280,24 +2274,24 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					if (targetPolicy.core
 						== BarLaserPreviewSemanticTarget::Laser)
 					{
-						state.drawAttributeLaserCoreThickness.SetTar(
-							laserCoreThickness, operationDur);
+						UpdateBarThicknessPreviewWidth(state.drawAttributeLaserCoreThickness,
+							laserCoreThickness, thicknessCandidateDragging, operationDur);
 						state.drawAttributePenPreviewMorph.SetTar(0.0, operationDur);
 						state.drawAttributeLaserCoreWhiteMix.SetTar(1.0, operationDur);
 					}
 					else if (targetPolicy.core
 						== BarLaserPreviewSemanticTarget::NonLaser)
 					{
-						state.drawAttributeLaserCoreThickness.SetTar(
-							visualThickness, operationDur);
+						UpdateBarThicknessPreviewWidth(state.drawAttributeLaserCoreThickness,
+							visualThickness, thicknessCandidateDragging, operationDur);
 						state.drawAttributePenPreviewMorph.SetTar(
 							normalPenPreviewMorph, operationDur);
 						state.drawAttributeLaserCoreWhiteMix.SetTar(0.0, operationDur);
 					}
 					if (targetPolicy.outer
 						!= BarLaserPreviewSemanticTarget::Hold)
-						state.drawAttributeLaserOuterThickness.SetTar(
-							visualThickness, operationDur);
+						UpdateBarThicknessPreviewWidth(state.drawAttributeLaserOuterThickness,
+							visualThickness, thicknessCandidateDragging, operationDur);
 					state.drawAttributeLaserShellProgress.SetTar(
 						targetPolicy.shellExpanded ? 1.0 : 0.0,
 						operationDur);
@@ -5537,6 +5531,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 // 关闭动画时拖动不会改变 val/tar，仍需每帧重绘圆点位置。
 		if (state.barState.drawAttributeBar.thicknessSliderDragging
 			|| state.barState.drawAttributeBar.thicknessSliderPressed
+			|| state.barState.drawAttributeBar.thicknessPreviewDragging
 			|| state.barState.drawAttributeBar.thicknessFineDialDragging
 			|| state.barState.drawAttributeBar.thicknessFineDialPhysicsActive)
 		{
@@ -6438,7 +6433,7 @@ double baseThumbDiameter =
 			&& sliderThumb->w.val > 0.0 && sliderThumb->h.val > 0.0)
 		{
 			const auto previewTextDip = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
-				state.drawAttributePenThickness.val) + L" DIP";
+				state.drawAttributePenThickness.val);
 			// 整数未变化时复用 DWrite 测量，稳定帧不重复创建 TextLayout。
 			if (previewTextDip != state.drawAttributeThicknessPreviewMeasuredText)
 			{
@@ -9774,10 +9769,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 							: max(0.0, ValueRange(
 								state.drawAttributePenThickness).maximum);
 						const auto measuredThicknessText = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
-							maximumThickness) + L" DIP";
+							maximumThickness);
 						if (state.drawAttributeThicknessEnvelopeMeasuredText != measuredThicknessText)
 						{
-							// 缓存按实际文字更新，近似标记和合法大值不能共用旧整数键。
+							// 缓存按实际整数文字更新，合法大值不能共用旧测量键。
 							state.drawAttributeThicknessEnvelopeMeasuredText = measuredThicknessText;
 							state.drawAttributeThicknessEnvelopeMeasuredSize =
 								state.spec.MeasureText(measuredThicknessText,
@@ -11453,7 +11448,7 @@ bool presetButton = button.presetIndex >= 0;
 														&& static_cast<FLOAT>(circlePx
 														* panelAnimationScale) > innerDiameter)
 													{
-														// 填满时用黑白高对比数字展示逻辑 DIP，保留近似提示。
+														// 填满时用黑白高对比数字展示四舍五入粗细。
 														wstring numberText = Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
 															stateMode.laserActive
 																? GetBarLaserThicknessPresetDip(button.presetIndex, stateMode)

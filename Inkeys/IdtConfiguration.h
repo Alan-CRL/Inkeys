@@ -317,6 +317,6 @@ bool DdbWriteInteraction(bool change, bool close);
 bool GetMemory();
 bool SetMemory();
 
-// 显示上下文与配置就绪后调用一次，必须先于首次输入准入。
+// 显示上下文就绪后初始化中档一次；本版暂停启动记忆/预设恢复，必须先于首次输入准入。
 void InitializePenWidthPreferences(Inkeys::Business::PenWidth::Context context);
 int RunPenWidthPreferencesProductionTest() noexcept;

@@ -95,7 +95,7 @@
         "FreeLineLabel": "Freehand",
         "AnnotationLineLabel": "Annotation",
         "HoldThicknessLabel": "Hold to lock size",
-        "ThicknessFormat": "Size {} DIP",
+        "ThicknessFormat": "Size {}",
         "AnnotationUnavailableTitle": "Annotation is not available yet",
         "AnnotationFixedUnsupportedTitle": "Annotation with fixed size is not supported yet",
         "AnnotationDescription": "Lock the drawing direction to horizontal, vertical, or 45° diagonal",

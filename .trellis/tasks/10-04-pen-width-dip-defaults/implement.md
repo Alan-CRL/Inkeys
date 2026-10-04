@@ -43,3 +43,11 @@
 - [x] 原有41个工作区文件指纹保留，BOM/CRLF和diff检查通过。
 - [x] 用户未授权commit，正式no-commit journal记录；未push/PR/release/归档。
 - [ ] 真实touch/PPT/mixedDPI/Win7及其它架构人工验收，清单research/manual-acceptance.md。任务保持in_progress。
+
+## 本轮增量实施
+
+本轮用户要求优先，见research/followup-scope.md；覆盖原≈DIP显示与启动偏好恢复合同。沿用当前任务不归档，主会话统一构建，独立审查后交付，不自动commit。
+
+### 本轮追加结果
+
+代码、规范与独立修补完成；最终完整ARM64构建、headless/width/state/config/Draw3/离屏Bar/i18n/diff均通过，见research/followup-verification.md。任务保持in_progress，当前触摸实机体验待人工，本轮未commit/push/归档。

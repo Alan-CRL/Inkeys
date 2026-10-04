@@ -25,6 +25,8 @@
   "meta": {
     "automatic_validation": "passed",
     "manual_acceptance": "passed_user_reported",
-    "independent_review": "passed"
+    "independent_review": "passed",
+    "followup_validation": "passed",
+    "followup_manual_acceptance": "pending_live_touch"
   }
 }

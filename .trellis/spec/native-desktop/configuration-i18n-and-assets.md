@@ -48,7 +48,7 @@
 
 ### 3. Contracts
 
-- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段允许按 [pen-width.md](pen-width.md) 一次兼容解码，在清理前保留到新 `PenWidth` schema 的迁移证据；不得恢复旧设置页或重复按px解释新DIP。
+- `Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
 - PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
 - `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
 - 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。

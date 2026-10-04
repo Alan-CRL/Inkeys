@@ -1176,3 +1176,36 @@ Implemented adaptive DIP defaults, identity-aware preferences and safe migration
 ### Next Steps
 
 - User authorized this task commit; task remains in_progress for further adjustments, no archive or push.
+
+
+## Session 40: Pen width follow-up: integer labels, retired startup recovery and live touch preview
+<!-- trellis-session: v=2 fp=8ff4ff7d37043782 -->
+
+**Date**: 2026-10-04
+**Task**: Pen width follow-up: integer labels, retired startup recovery and live touch preview
+**Branch**: `chore/publish`
+
+### Summary
+
+Removed DIP/approximation labels, commented out startup width/color recovery and obsolete startup defaults, fixed candidate preview animation and dirty publication. Automatic gates and independent review passed; task stays in progress.
+
+### Main Changes
+
+- Pure rounded numeric labels; current startup always shared Medium, compatibility data preserved only for safe saving.
+- Live touch candidates immediately update core/outer preview values and mark attribute damage; button animations, hold/cancel/revision behavior retained.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Full ARM64 Debug solution, headless --no-window, production width/state/config/Draw3, offscreen Bar, i18n/diff/format all passed. Evidence: task research/followup-verification.md and followup-review.md.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- User live-touch acceptance and further adjustments. Keep task in_progress; no commit, push or archive this round.

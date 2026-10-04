@@ -362,6 +362,24 @@ export
 		return IsBarThicknessPresetSelected(mode, index, dpiZoom, GetStateModeSnapshot());
 	}
 
+	Inkeys::Business::PenWidth::Metrics GetBarThicknessPreviewMetrics(
+		const StateModeClass& snapshot, bool candidateActive, double candidateDip)
+	{
+		using namespace Inkeys::Business::PenWidth;
+		if (!candidateActive || !IsValidDip(candidateDip))
+			return GetPenWidthMetrics(snapshot);
+		return Resolve({ Source::ExplicitDip, Preset::Medium, candidateDip },
+			GetPenWidthFamily(snapshot), snapshot.penWidthContext);
+	}
+
+	void UpdateBarThicknessPreviewWidth(BarUiValueClass& value,
+		double canvasWidthPx, bool candidateActive, double duration)
+	{
+		// 手势候选值直接更新绘制所读的 val；按钮和程序化切换仍保留过渡动画。
+		if (candidateActive) value.SetDirect(canvasWidthPx);
+		else value.SetTar(canvasWidthPx, duration);
+	}
+
 	double GetBarCurrentPenThicknessVisualWidth(double dpiZoom,
 		const StateModeClass& snapshot)
 	{

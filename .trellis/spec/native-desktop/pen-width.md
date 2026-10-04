@@ -9,7 +9,8 @@
 - `Inkeys::Business::PenWidth::{Selection,Context,Metrics,Resolve,CanvasWidthPx,RoundPositiveCanvasPx}` 位于 `Business/PenWidthPolicy.hpp`。
 - `Selection = Preset(Thin/Medium/Thick) | ExplicitDip(double)`；`Context = revision/paintDevice/effectiveDpi/full pixelWidth/pixelHeight`。
 - `GetPenWidthMetrics(snapshot)`、`SetPenWidthPresetIfRevision(index,revision,save)`、`SetPenWidthIfRevision(double,revision,save)`、`ApplyPenWidthContext(context)`。
-- `InitializePenWidthPreferences(context)` 在ReadSetting后、WriteSetting清理前、RTS准入前调用；Host runtime callback同步发布真实绘制目标。
+- `InitializePenWidthPreferences(context)` 在ReadSetting后、RTS准入前只初始化目标Context及一次Medium；启动Decode/flags/GetMemory已注释停用。Host callback同步发布真实绘制目标。
+- `GetBarThicknessPreviewMetrics(snapshot,candidateActive,candidateDip)`、`UpdateBarThicknessPreviewWidth(value,canvasPx,candidateActive,duration)`：实际Touch候选发布与RenderLoop共用，候选直接更新动画val；AdvanceAnimationsAndDeriveLayout必须将thicknessPreviewDragging计入属性组MarkChanged。
 - `PenWidthPreferences.hpp` codec：`PenWidth.Version=1, Unit="DIP"`；deploy的`Startup`与memory的`Selections`分别保存来源身份。
 
 ## 3. Contracts
@@ -22,11 +23,11 @@
 
 Bar在96DPI D2D物理画布中使用相同目标metrics；布局zoom只能调整布局，不能作为笔宽DPI。最小可见光标、软笔变化/预览溢出、Laser光晕保留；全局激光粒子是单独瞬态视觉缓存，不修改成新多屏模拟。历史uink/撤销几何保持原物理语义，不对读取墨迹重乘DPI。橡皮策略不受本合同影响。
 
-启动优先级：启用且有效记忆 > automatic=false时有效启动选择 > Medium。临时提交写记忆，不变启动默认；工具/PPT切换不恢复默认。旧Preset退休字段只允许一次兼容解码，再移入已知PenWidth新schema，原Legacy和估计信息保留；不能根据3或35猜工厂值。旧Brush/Highlighter原始px无关联历史DPI，使用迁移目标DPI估计保留升级设备像素外观；旧Laser值是DIP，不除DPI。版本化DIP禁止再次迁移。
+当前发布隐藏/不支持启动记忆与启动预设，启动只建立共享Medium；旧Preset flags/default、PenWidth.Startup以及memory值/颜色均不得应用。初始化只一次，后续显示/工具/PPT变化保留用户会话值。GetMemory兼容实现不接生产启动；临时提交安全保存身份，不构成本版恢复能力。codec仍保护Legacy/未来schema：旧Brush/Highlighter px无源DPI时估计除一次，旧Laser DIP不除，版本化DIP不再次迁移；仅为兼容数据安全，不改变本版Medium启动。
 
 memory沿用bounded parse和现成atomic writer，保存失败保留原件，不先截断；未知futureschema原样保留，AutoClean也不能丢弃或降级覆盖。坏字段各槽回退，不吞掉无关配置。
 
-Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/systemScale)～100DIP，向当前合法值/预设扩展。FineDial以精确origin+n*1DIP步进；只真实调整提交，进入/取消不改Selection。整数文字非整数加≈，sub1显示≈1DIP；展示值不反写状态。
+Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/systemScale)～100DIP，向当前合法值/预设扩展。FineDial以精确origin+n*1DIP步进；只真实调整提交，进入/取消不改Selection。整数文字只显示四舍五入数字（不带DIP或≈），sub1最小显示1；展示值不反写状态。活动触摸/Slider/FineDial候选发布后，预览canvas宽度动画同帧SetDirect，非交互仍SetTar；不能让core/outer.val缓动追赶或逐帧提交业务。
 
 ## 4. Validation & Error Matrix
 
@@ -48,7 +49,7 @@ Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/sys
 
 ## 6. Tests Required
 
-真实policy矩阵普通设备100/125/150/200/275%、大屏1080/1440/2160p及荧光；横竖/非16:9/异常数据/奇数与半整数；真实codec和启动记忆优先级、旧px/LaserDIP/幂等/portable/failedsave/futureAutoClean；真实Staterevision、BarFineDial不改值/取消/身份/预览zoom分离；真实Draw3浮点转换与捕获样式锁定。完整Solution Debug|ARM64、headless --no-window、早退生产probes和i18n check；有真实可见HWND的hidden测试未经GUI授权不运行。
+真实policy矩阵普通设备100/125/150/200/275%、大屏1080/1440/2160p及荧光；横竖/非16:9/异常数据/奇数与半整数；真实codec的旧px/LaserDIP/幂等/portable/failedsave/futureAutoClean；生产启动残留旧/new Startup与memory仍Medium、后续初始化保留手动值；真实Staterevision、BarFineDial不改值/取消/身份/预览zoom分离/活动候选到core与outer.val同帧；真实Draw3浮点转换与捕获样式锁定。完整Solution Debug|ARM64、headless --no-window、早退生产probes和i18n check；有真实可见HWND的hidden测试未经GUI授权不运行。
 
 ## 7. Wrong vs Correct
 

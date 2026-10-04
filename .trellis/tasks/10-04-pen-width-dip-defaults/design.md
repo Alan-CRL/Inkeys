@@ -32,7 +32,7 @@ Host 在显示状态就绪后向产品层发布，UI从State读取相同context�
 
 真实旧 SetList 来自 opt/deploy.json，记忆 Inkeys/Memory/memory.json。现生产GetMemory无人调用、Preset读取已移除；历史证据 e6c729d2^：Preset.MemoryWidth/MemoryColor/AutoDefaultWidth/DefaultBrush1Width/DefaultHighlighter1Width。参考529722也已移除读写。新增宽度版本/单位及启动Selection存于已有SetList配置区域；记忆仍现有memory文件。先解析原旧Preset，保留原JSON与旧值/迁移DPI信息再清理，不能按3或35猜工厂值。
 
-恢复优先级：memoryWidth=true且有效该槽记忆 → 对应记忆Selection；否则autoDefaultWidth=false且有效显式启动Selection → 该值；否则Preset Medium。memoryWidth=false不恢复会话值；运行时改宽度仅写记忆，不覆盖启动默认。Laser旧DIP不迁移，不凭空声称旧版已有激光持久字段；实际有字段则按DIP处理。恢复颜色遵守memoryColor原语义。
+当前发布：InitializePenWidthPreferences只准备目标Context并一次建立Preset Medium，原启动Decode/flags/GetMemory注释禁用。旧Preset/default、PenWidth.Startup和memory中的残留值/颜色均不应用到启动；后续显示变化不重设手动值。兼容codec与保存仍保留旧数据/未来schema，仅供保存保护和未来恢复，不代表本版启动支持。Laser旧DIP保持兼容数据，不凭空声称旧版已有激光持久字段。
 
 旧Brush/Highlighter Width实际canvas px、无关联历史DPI，使用迁移时目标scale除一次，记录estimated=true及源px/scale，尽量保留升级设备外观。新版本DIP不再除。部分坏字段按槽回退；未知新版本/枚举不冒充旧px；未知future版本原对象原样保留且写入不得降级覆盖，运行时可用默认，不把默认伪装成已迁移用户值。保存失败保留原文件；deploy沿用已有安全写链，memory仅把截断写替换为现成WriteAtomically并复用bounded parse/valid-or-absent检查，不扩大其它保存功能；旧JSON备份/迁移信息留存，重启可以重新完成估计而不会反复除已标记DIP值。迁移不能破坏无关配置。
 
@@ -42,8 +42,12 @@ Host 在显示状态就绪后向产品层发布，UI从State读取相同context�
 
 Slider保持连续double映射；FineDial以进入时精确值为origin，真实拖动取整步数n后按origin+n*1 DIP步进再限范围，保留origin小数，正负拖动步数按绝对值半整数向上再恢复符号，没有dirty就不提交。取消保留完整Selection，真实提交才切ExplicitDip。控件min/max改double，布局不重写。
 
-整数显示采用安全正数round，精确整数显示3 DIP；非整数加≈；<1 DIP显示≈1 DIP，展示值不能回写。三语言源JSONC更新单位，sync/check，生成物按脚本。
+整数显示采用安全正数round，只显示数字，不显示DIP或≈；<1 DIP最小显示1，展示值不能回写。三语言源JSONC同步，sync/check，生成物按脚本。
 
 ## 局限与回退
 
 大屏按目标全幅，不识别PPT黑边/内容区域。现多屏Host的目标机制保持原能力；不承诺跨屏单笔架构。混合DPI、触摸/PPT/Win7需人工。回退仅本任务delta，保留原JSON迁移信息以支持人工恢复旧配置；不要reset/stash/覆写其它未提交改动。
+
+## 本轮设计覆盖
+
+本轮用户要求优先，见research/followup-scope.md；覆盖原≈DIP显示与启动偏好恢复合同。沿用当前任务不归档，主会话统一构建，独立审查后交付，不自动commit。

@@ -1429,6 +1429,73 @@ public:
 				1, 1.0, widthSnapshot), "bar-shape-selected-uses-shape-slot");
 			require(SetPenWidth(7.0f, false), "fine-dial-restore-existing-fixture");
 
+			stage = "touch-preview-candidate-same-frame";
+			for (const auto tool : { PenToolSelectionEnum::SoftPen, PenToolSelectionEnum::HardPen,
+				PenToolSelectionEnum::Highlighter, PenToolSelectionEnum::Laser })
+			{
+				ChangeStateModeToPenTool(tool);
+				require(SetPenWidth(7.0, false), "touch-preview-seed-width");
+				const auto beforeTouch = GetStateModeVersionedSnapshot();
+				const auto beforeTouchBridge = bridgeRevision();
+				const auto touchRange = GetBarThicknessSliderRange(
+					beforeTouch.state.Pen.ModeSelect, 1.0, beforeTouch.state);
+				// 激光不开放滑轨；仍验证其已有候选预览共用同一单次转换与芯宽规则。
+				const BarThicknessSliderRange candidateRange = touchRange.supported
+					? touchRange : BarThicknessSliderRange{ 1.0, 30.0, true };
+				shared.thicknessSliderCandidateWidth = 7.0;
+				shared.thicknessPreviewDragging = true;
+				require(session.PublishThicknessSliderCandidate(12.25, candidateRange, true),
+					"touch-preview-real-session-publishes-candidate");
+				auto previewSnapshot = beforeTouch.state;
+				previewSnapshot.penWidthContext = { 44, 1, 144.0, 1920, 1080 };
+				BarUiValueClass core{ 7.0 }, outer{ 7.0 };
+				for (const double candidate : { 12.25, 11.75 })
+				{
+					session.PublishThicknessSliderCandidate(candidate, candidateRange, true);
+					const auto live = GetBarThicknessPreviewMetrics(previewSnapshot,
+						shared.thicknessPreviewDragging, shared.thicknessSliderCandidateWidth);
+					const double expectedPx = candidate == 12.25 ? 18.375 : 17.625;
+					UpdateBarThicknessPreviewWidth(core,
+						previewSnapshot.laserActive ? live.appliedCanvasWidthPx / 3.0
+							: live.appliedCanvasWidthPx, shared.thicknessPreviewDragging, 0.2);
+					UpdateBarThicknessPreviewWidth(outer, live.appliedCanvasWidthPx,
+						shared.thicknessPreviewDragging, 0.2);
+					require(live.resolvedWidthDip == candidate && outer.val == expectedPx
+						&& core.val == (previewSnapshot.laserActive ? expectedPx / 3.0 : expectedPx)
+						&& core.IsSame() && outer.IsSame(),
+						"touch-preview-pixels-use-current-candidate-without-animation-tick");
+					require(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 7.0
+						&& StateModeTransitionRevision() == beforeTouch.revision
+						&& bridgeRevision() == beforeTouchBridge,
+						"touch-preview-candidate-does-not-write-business-or-bridge");
+				}
+				shared.thicknessSliderHoldLocked = true;
+				require(!session.PublishThicknessSliderCandidate(20.0, candidateRange, true)
+					&& shared.thicknessSliderCandidateWidth == 11.75,
+					"touch-preview-hold-lock-preserves-candidate");
+				::barUISet.CollapseAuxiliaryPanels(true);
+				session.barState.drawAttribute = true;
+				require(!shared.thicknessPreviewDragging && shared.thicknessSliderCandidateWidth == 0.0
+					&& GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 7.0
+					&& bridgeRevision() == beforeTouchBridge,
+					"touch-preview-public-panel-close-cancels-without-commit");
+				const auto cancelled = GetBarThicknessPreviewMetrics(beforeTouch.state,
+					shared.thicknessPreviewDragging, shared.thicknessSliderCandidateWidth);
+				require(cancelled.resolvedWidthDip == 7.0,
+					"touch-preview-cancel-restores-authoritative-width");
+				UpdateBarThicknessPreviewWidth(outer, cancelled.appliedCanvasWidthPx, false, 0.2);
+				require(outer.tar == cancelled.appliedCanvasWidthPx && !outer.IsSame(),
+					"touch-preview-non-interaction-keeps-transition-animation");
+				require(SetPenWidthIfRevision(11.75, beforeTouch.revision, false),
+					"touch-preview-release-uses-existing-revision-commit");
+				require(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 11.75
+					&& !SetPenWidthIfRevision(12.25, beforeTouch.revision, false),
+					"touch-preview-commit-keeps-fraction-and-rejects-stale-revision");
+			}
+			ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			require(SetPenWidth(7.0, false), "touch-preview-restore-existing-fixture");
+			shared.thicknessViewMode = ThicknessViewMode::FineDial;
+
 			stage = "fine-dial-stale-physics";
 			begin(9.0);
 			session.EndThicknessFineDialDrag(false);
@@ -1749,6 +1816,18 @@ private:
 			}
 			return rawValue;
 		}
+
+	bool PublishThicknessSliderCandidate(double targetWidth,
+		const BarThicknessSliderRange& range, bool candidateAllowed)
+	{
+		if (!candidateAllowed || barState.drawAttributeBar.thicknessSliderHoldLocked
+			|| !Inkeys::Business::PenWidth::IsValidDip(targetWidth)) return false;
+		const double candidate = clamp(targetWidth, range.min, range.max);
+		if (abs(candidate - static_cast<double>(barState.drawAttributeBar
+			.thicknessSliderCandidateWidth)) <= 0.000001) return false;
+		barState.drawAttributeBar.thicknessSliderCandidateWidth = candidate;
+		return true;
+	}
 
 	double PublishThicknessFineDialCandidate()
 		{
@@ -4040,29 +4119,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									[&](double targetWidth,
 										bool candidateAllowed) -> bool
 									{
-										if (!candidateAllowed) return false;
-										if (barState.drawAttributeBar
-											.thicknessSliderHoldLocked)
-											return false;
-
-										double clampedWidth = clamp(
-										static_cast<double>(targetWidth),
-										static_cast<double>(range.min),
-										static_cast<double>(range.max));
-										if (abs(clampedWidth
-											- static_cast<double>(lastCandidateWidth))
-											<= 0.000001)
-											return false;
-
-										lastCandidateWidth = clampedWidth;
+										if (!PublishThicknessSliderCandidate(
+											targetWidth, range, candidateAllowed)) return false;
+										lastCandidateWidth = static_cast<double>(barState.drawAttributeBar
+											.thicknessSliderCandidateWidth);
 										finalWidth = lastCandidateWidth;
-										candidateChanged = abs(
-											static_cast<double>(
-												finalWidth - initialWidth))
-											> 0.000001;
-										barState.drawAttributeBar
-											.thicknessSliderCandidateWidth =
-											finalWidth;
+										candidateChanged = abs(finalWidth - initialWidth) > 0.000001;
 										return true;
 									};
 							double fineDialAnchorScreenX = pressScreenX;
