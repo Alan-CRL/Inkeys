@@ -486,21 +486,29 @@ input.DiscardUntilTerminal(oldHandle);
 Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW staging 源 alpha/RGB 全零时适用。缺少 Pointer API 不足以解释已接受的鼠标 RTS contact；staging 全零也不能单独证明 GPU 原纹理没有写入。
 
 ### 2. Signatures
-- 显式早退 CLI `--draw3-renderer-pixel-test` 调用 `RunRendererPixelTest() noexcept`，位于产品配置、单实例和主窗初始化之前。
+- 显式早退 CLI `--draw3-renderer-pixel-test` 调用 `RunRendererPixelTest() noexcept`，位于产品配置、单实例和主窗初始化之前。复用 `CommandLineToArgvW(GetCommandLineW(), &count)` 识别首个参数（不区分大小写）；引号及尾随空白合法，匹配 flag 后必须 `count==2`，额外参数返回 2，不能落入普通启动。
+- `Collect-Win7.ps1 [-ProbeOnly]`；`Run-Win7-PixelTest.cmd` 使用 Windows PowerShell 执行 `-ProbeOnly`，只保存独立自检结果，不启动产品。
 - `[Draw3PixelTest]` 输出 case、HRESULT、资源身份、纹理描述、viewport、BGRA 统计、pipeline invocation 和设备状态。
 - `[Draw3Diag][cursor-gpu]` 受既有 Draw3 诊断开关控制，包含资源/Map/上传/Draw 前后状态；`after-draw-issued` 只表示 Draw 已发出。
 
 ### 3. Contracts
 - 独立 WARP FL11_0、128×128、永不显示的 layered HWND 与普通 FLIP_SEQUENTIAL；复用生产 InkRenderer 和嵌入 shader，不读配置、不创建产品主窗、不在实际画布注入颜色。
-- backbuffer/offscreen 各测已知 BGRA 清屏、正式白色 32px/opacity=0.5 光标；这四项及设备正常共同决定退出 0。两项关闭混合仅为隔离对照，不决定正式用例通过。
+- backbuffer/offscreen 各测已知 BGRA 清屏、正式白色 Circle 32px/opacity=0.5 光标（GPU shape=4）；这四项及设备正常共同决定退出 0。两项关闭混合仅为隔离对照，不决定正式用例通过。六项均成功也不能覆盖 EraserGrip shape=6、1920×1080、生产 dirty CopySubresourceRegion/阻塞 Map；独立测试使用全量 CopyResource 与显式同步。
 - 清屏核所有像素与预期 BGRA，光标核非零计数、中心预乘白和透明角；RTV 与读回纹理通过 canonical IUnknown 身份比较。
-- query 每项最多等待 3 秒，读回 Map 使用 DO_NOT_WAIT；collector 等候 30 秒，超时仅终止其独立子进程。失败仍保存结果并继续正常应用采集。
+- 运行期原始 source 统计在 staging Map 后、CPU alpha 底层合成前保存，Unmap 后才提交 USER32；日志在 ULW 返回后打印这些已保存值，不能解释成“ULW 返回后才读取源”。source 已零时，纯 DIB/USER32/桌面可见性问题不能单独定因。
+- ULW 使用 swapchain backbuffer 作绘制/复制资源但不调用 Present1；创建成功/GetDesc1=FLIP 不等于已经验证 DXGI FLIP→DWM 呈现。用户既有 Win7 ULW 实测与公开支持声明分别记录，保留现有 FLIP 合同；阻塞 Map 会促使 runtime 提交，不能仅凭无显式 Flush/Present 判读回失效。
+- 对照 Demo 时核实际 EXE 的 SHADER301–304 bytes、真实 profile 和 DXBC 执行/签名块；完整 CSO hash 的 metadata 差异不必意味着指令差异。shader 字节身份不扩大为整个 EXE/C++ 身份，当前源仓库也不自动等于旧实测二进制。
+- query 每项最多等待 3 秒，读回 Map 使用 DO_NOT_WAIT；collector 等候 30 秒，超时及取得子进程后的异常仅尽力终止并等待该精确子进程，禁止按名称杀进程。普通采集失败仍保存结果并继续正常应用采集；`-ProbeOnly` 在记录结束时间后早退，只有 `pixel-test-exit=0` 返回 0，其它结果返回 1。
 - 运行期光标首个可见请求及最多每秒一次查询实际管线；关闭诊断时不查询或格式化。不更改 Draw、上传、混合或呈现策略。
-- Win7 PS2 collector 使用 public HashAlgorithm.Clear()，保留完整 stdout/stderr 和 exe SHA；不得根据 API 返回成功或纯本机 PASS 宣称 Win7 恢复。
+- Win7 PS2 collector 使用 public HashAlgorithm.Clear()，保留完整 stdout/stderr 和 exe SHA。probe 的 `Start-Process` 用 `-NoNewWindow` 与重定向复用采集器控制台（该 CLI 只建永不显示的 HWND）；PS2 的 `-WindowStyle Hidden` 与重定向不在同一参数集。启动后立即保留 `.Handle`，等待退出后读 `.ExitCode`，不能先 `.Refresh()` 导致结果丢失；null 退出码记录明确 error。
+- Windows PowerShell 实测可给 `lpCmdLine` 添加尾随 U+0020，不可对原始全串严格匹配自检 flag。宿主解析/参数集模拟与本机 WinPS5.1 实测都不能替代 Win7 PS2 现场结果；不得根据 API 成功或纯本机 PASS 宣称 Win7 恢复。
 
 ### 4. Validation / Error Matrix
 | 结果 | 判别边界 |
 | --- | --- |
+| collector 参数集错误、无 pixel-test 输出 | 自检未启动，不能把正常应用 exit=0 当自检 PASS |
+| 匹配 GPU flag 但有额外参数 | 启动链之前返回 2，不创建普通窗口或加载配置 |
+| ProbeOnly 子进程非零、超时或退出码不可读 | 保存具体结果后返回 1，不启动正常应用 |
 | 两个 Clear 失败 | 创建/格式/拷贝/readback/设备状态，先看具体 HRESULT |
 | Offscreen Clear 正常而 backbuffer 异常 | swapchain backbuffer 或对应资源路径 |
 | Clear 正常、正式 Cursor 全零 | Map/CB/SRV/shader/viewport/混合或绘制管线 |
@@ -514,8 +522,8 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 - Bad：将 Draw(void) 或 ULW success 当成出墨证明，或者仅因 Win7 不支持 Pointer API 就跳过已有 RTS contact 正证据。
 
 ### 6. Tests Required
-完整 solution Debug|ARM64、候选 Release|x64 和两架构新像素自检；Headless --no-window 验证纯逻辑回归。collector parser 及成功/非零退出/超时/启动异常模拟需证实仍进入正常采集；模拟不启动产品 GUI。Win11 WARP 自检与 Win7 现场独立记录，不互相代替。
+完整 solution Debug|ARM64、候选 Release|x64 和两架构新像素自检；Headless --no-window 验证纯逻辑回归。真实 Win32 argv 验证 exact/quoted/case/trailing-space/tab 与额外参数；在 Windows PowerShell 用新 EXE 和最终脚本实际采集，核六例结果、production_cases=4、visible=0、完整输出和无产品配置/普通启动记录。collector 的成功/非零退出/超时/启动与等待异常/不可读退出码，以及双流大输出，须核完整末尾标记、精确子进程清理和 ProbeOnly 返回；普通分支用 mock 证实失败后仍采集，不能启动真实主窗。Win11 WARP 与 Win7 PS2 现场独立记录，不互相代替。
 
 ### 7. Wrong vs Correct
-- Wrong：`ULW success=1` 或 `Draw issued` 推断 shader 已产出可见墨迹。
-- Correct：Clear/readback、正式 Draw/readback、真实光标 Map/绑定、实际 staging/DIB 和桌面可见性逐段取证；保持 unresolved Win7 任务 in_progress。
+- Wrong：`ULW success=1` 或 `Draw issued` 推断 shader 已产出可见墨迹；`CompareStringOrdinal(lpCmdLine, ..., flag, ...)` 假设宿主没有追加空白。
+- Correct：按 argv 识别早退自检，先核其输出确实存在；Clear/readback、正式 Draw/readback、真实光标 Map/绑定、实际 staging/DIB 和桌面可见性逐段取证；保持 unresolved Win7 任务 in_progress。

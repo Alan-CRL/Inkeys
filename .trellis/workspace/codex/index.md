@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 34
+- **Total Sessions**: 37
 - **Last Active**: 2026-10-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1050 | Active |
+| `journal-1.md` | ~1146 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 37 | 2026-10-04 | 原Draw3与嵌入版深入静态对照 | - | `chore/publish` |
+| 36 | 2026-10-04 | Win7 GPU到ULW静态定位与原Demo字节码对照 | - | `chore/publish` |
+| 35 | 2026-10-04 | Win7 22:48日志定位与PS2自检入口修正 | - | `chore/publish` |
 | 34 | 2026-10-04 | 人工GUI/Office通过，保存阶段待续Win7 | - | `chore/publish` |
 | 33 | 2026-10-03 | 0811配对对照与状态安全收尾续接 | - | `chore/publish` |
 | 32 | 2026-10-03 | Win7 诊断已提交并恢复首发准备 | `21a37239336864b2b334abedec4e88d484d10473` | `chore/publish` |

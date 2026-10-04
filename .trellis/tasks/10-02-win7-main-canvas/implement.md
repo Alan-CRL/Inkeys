@@ -58,3 +58,36 @@
 - [x] 补Cursor资源/Map/viewport/RTV/device状态，关闭诊断时不查询管线。
 - [x] Win7 PS2采集先跑诊断、记录失败后仍采正常应用。
 - [x] 独立审查、完整ARM64 Debug构建、适用无交互GUI验证；构建x64 Release候选，记录身份与最短Win7步骤。
+
+## 2026-10-04 — Win7 22:48:36 采集反馈
+
+用户要求继续定位。新日志EXE身份06CD58C7...DF8AE与GPU候选一致；正常应用有输入和39次原始ULW全零采样，15条Cursor GPU记录证明上传/viewport/目标/VS/PS/CB/SRV绑定正常。但identity pixel-test-error为PS2参数集冲突，独立Clear/正式Draw自检没有启动。已证明的诊断缺陷位于Collect-Win7.ps1的probe启动参数，以及随后实际WinPS复验发现的IdtMain.cpp原始CLI严格比较；本轮最小修补采集器与早退参数入口，重建并验证实际WinPS采集，再依源码/日志明确余下GPU边界。G:原始数据只读；保留旧EXE和复现身份，新候选独立记录源码delta和新hash。不猜测改输入、shader、blend或backend，不创建commit/push。
+
+- [x] 独立新采集输入/像素时间线与共享GPU管线静态核对。
+- [x] 修PS2 probe启动冲突，保留完整输出和失败继续采集；增加只跑自检的简短入口以避免再次重复手动输入测试。
+- [x] 实际新版ARM64/x64 EXE经WinPS5.1 selfprobe采集、超时/大输出/非零/等待异常边界验证，独立检查；Win7 PS2现场不冒称通过。
+- [x] 交付新x64 EXE与脚本修正、准确定位结论和完整身份，等待同Win7自检缺失证据，保持任务in_progress。
+
+### 参数入口追加边界（实际无窗口证明后）
+
+WinPS5.1真实wWinMain参数dumper证明Start-Process给单参数附加U+0020，pwsh7没有。旧GPU命令对lpCmdLine全串严格比较会失配并落入普通启动；一轮仅本任务子进程的复验因此启动了普通应用，已由精确子进程timeout结束，后续改用从不创建HWND的dumper证明。需要同步最小IdtMain.cpp修补：仅将GPU flag放入已有CommandLineToArgvW分支，正确token且argc2执行自检，额外参数返回2早退，不触碰其他CLI、产品输入或GPU呈现。因入口生产文件改变，按仓库规则重建完整Debug|ARM64与Win7 x64 Release候选，再运行新版早退CLI及实际WinPS采集；不再沿用旧EXE身份。
+
+验证与候选身份：research/verification-followup-20261004.md。本机两配置完整构建、Headless、WinPS真实六例及collector边界和独立检查通过；8个CSO与G:采集hash保持。只待同Win7 Run-Win7-PixelTest.cmd结果，不重复正常画布手动序列。
+
+## 2026-10-04 — 等待晚间实测期间的静态定位
+
+用户明确本阶段只继续静态查找；Win7独立像素实测须等晚上。RTS/document已确认，仍未证明GPU非透明输出。最小工作边界为原任务research报告与知识记录：比较demo/原Inkeys3-Draw3和主产品GPU→ULW差异、审核Win7 DXGI能力/FLIP与创建成功的证据边界、资源/线程/Copy/Map/DIB生命周期以及编译shader合同。源码、候选EXE、脚本及先前修正包保持不变；不编译、GUI、commit、push、archive。仅有可因果证明的新源码缺陷才单列其最小修复建议；不凭OS标签改backend或FLIP。
+
+- [x] demo/原独立仓库与产品的GPU→ULW差异和实测身份边界。
+- [x] Win7官方DXGI/FLIP能力与实际ULW无Present1路径核验。
+- [x] 更深资源/线程/Copy/Map/USER32生命周期与compiled shader合同审核。
+- [x] 独立结论审查，保存优先级、反证及晚间已有自检如何分界；保持任务in_progress。
+
+静态汇总：research/static-investigation-summary-20261004.md；独立审查check-static-investigation-20261004.md限定范围PASS。原独立Demo核心路径继承、实际两EXE嵌入shader身份/执行块已核，source统计早于USER32，未证明唯一GPU缺陷。保留prior候选/source/脚本与8个CSO/ZIP hash，不构建或运行本轮GPU/GUI。原任务等待晚间Win7六例分界。
+
+## 2026-10-04 — 用户要求进一步比较原独立版与嵌入版
+
+- [x] 40对模块规范化diff；四个Renderer implementation共54个同名函数体的token比较，42相同、12差异及3个新增Laser Bake方法逐项审核。
+- [x] Cursor成功路径15个context调用/9个b0赋值逐项一致；原版亦是独立HWND线程，核对产品Host独立context、预热、帧门控/metrics/回调顺序。
+- [x] 原仓只读历史核验：dual-source在嵌入前已有；保留Win7实际执行与旧实测版本身份边界。
+- [x] 研究embedding-deep-comparison-20261004.md保存新证据与晚间既有六例的判别；本轮不改变候选或生产行为，保持原任务in_progress。

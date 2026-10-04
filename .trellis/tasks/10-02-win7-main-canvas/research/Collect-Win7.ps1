@@ -1,3 +1,5 @@
+param([switch]$ProbeOnly)
+
 $ErrorActionPreference = 'Stop'
 # Use APIs available in Windows 7's PowerShell 2.0.
 $appRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -17,28 +19,45 @@ $metadata = @(('exe=' + $exePath), ('sha256=' + $exeHash), ('os=' + [Environment
 [IO.File]::WriteAllLines((Join-Path $captureRoot 'identity.txt'), [string[]]$metadata, [Text.Encoding]::UTF8)
 # The explicit early CLI probe creates no visible window and does not load app config.
 # A probe failure/timeout must not prevent collecting the normal application run.
+# PS2 puts WindowStyle and redirects in different parameter sets. Reuse this console;
+# this exact early CLI creates only a never-shown fixture HWND, not the app UI.
 $probeIdentity = Join-Path $captureRoot 'identity.txt'
 $probeProcess = $null
 try {
     Write-Host 'Running isolated renderer pixel test (up to 30 seconds)...'
-    $probeProcess = Start-Process -FilePath $exePath -WorkingDirectory $appRoot -PassThru -WindowStyle Hidden `
+    $probeProcess = Start-Process -FilePath $exePath -WorkingDirectory $appRoot -PassThru -NoNewWindow `
         -ArgumentList '--draw3-renderer-pixel-test' `
         -RedirectStandardOutput (Join-Path $captureRoot 'pixel-test.stdout.txt') `
         -RedirectStandardError (Join-Path $captureRoot 'pixel-test.stderr.txt')
+    # Keep the owned process handle before it exits; do not invalidate it with Refresh.
+    $null = $probeProcess.Handle
     if ($probeProcess.WaitForExit(30000)) {
         $probeProcess.WaitForExit()
-        $probeProcess.Refresh()
-        $probeResult = 'pixel-test-exit=' + $probeProcess.ExitCode
+        $probeExitCode = $probeProcess.ExitCode
+        if ($null -eq $probeExitCode) { throw 'Pixel test exited but its exit code could not be read.' }
+        $probeResult = 'pixel-test-exit=' + $probeExitCode
     } else {
         # Terminate only this isolated child; no process-name based cleanup.
         try { $probeProcess.Kill(); [void]$probeProcess.WaitForExit(5000) } catch { }
         $probeResult = 'pixel-test-timeout=30000'
     }
 } catch {
-    $probeResult = 'pixel-test-error=' + $_.Exception.Message
-    Write-Host ('Pixel test could not finish: ' + $_.Exception.Message)
+    $probeError = $_.Exception.Message
+    # Handle/Wait failures after Start must not leave this isolated child alive.
+    if ($probeProcess) {
+        try { $probeProcess.Kill(); [void]$probeProcess.WaitForExit(5000) } catch { }
+    }
+    $probeResult = 'pixel-test-error=' + $probeError
+    Write-Host ('Pixel test could not finish: ' + $probeError)
 }
 [IO.File]::AppendAllText($probeIdentity, ($probeResult + "`r`n"), [Text.Encoding]::UTF8)
+if ($ProbeOnly) {
+    [IO.File]::AppendAllText($probeIdentity, ('ended=' + [DateTime]::Now.ToString('o') + "`r`n"), [Text.Encoding]::UTF8)
+    Write-Host ('Collected pixel test: ' + $captureRoot)
+    Write-Host 'Return this complete directory, including identity.txt and both pixel-test files.'
+    if ($probeResult -ne 'pixel-test-exit=0') { exit 1 }
+    exit 0
+}
 Write-Host 'Keep ConsoleOutput.Draw3 and ConsoleOutput.Cursor enabled.'
 Write-Host 'Draw with the mouse, then continuously move eraser and laser on the canvas for at least 3 seconds each.'
 Write-Host 'Exit Inkeys normally when finished. This script will then collect the logs.'

@@ -1045,6 +1045,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
 		if (!arguments) return 2;
+		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunRendererPixelTest();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
 			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
@@ -1107,10 +1115,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--bar-eraser-offscreen-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::Bar::RunEraserAttributeOffscreenTest();
-	// GPU 像素自检仅创建不可见测试 HWND，必须先于配置和产品主窗退出。
-	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
-		L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
-		return Inkeys::Drawing::Draw3::RunRendererPixelTest();
 	// 显式无窗口诊断在配置、单实例和 Drawpad HWND 初始化前退出。
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-renderer-map-test", -1, TRUE) == CSTR_EQUAL)

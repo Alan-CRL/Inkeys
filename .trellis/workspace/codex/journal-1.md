@@ -1048,3 +1048,99 @@ Clear 与正式 Draw 的对比会定位设备/读回、生产管线或产品实�
 ### Next Steps
 
 - 保存当前阶段后等待用户续接Win7 ULW专项；首发/G/Win7均保持in_progress，不归档、不push。
+
+
+## Session 35: Win7 22:48日志定位与PS2自检入口修正
+<!-- trellis-session: v=2 fp=1062587681609994 -->
+
+**Date**: 2026-10-04
+**Task**: Win7 22:48日志定位与PS2自检入口修正
+**Branch**: `chore/publish`
+
+### Summary
+
+复用Win7原任务。鼠标RTS/contact已消费，5组Cursor上传和实际绑定正常，39次ULW源仍全零；唯一GPU根因待同Win7独立Clear/Draw结果。修PS2 probe参数集与WinPS尾空格入口，新增仅自检脚本；本机完整ARM64/x64构建、Headless、实际WinPS六例及异常边界和独立检查通过，新x64包已独立交付。未commit/push/archive。
+
+### Main Changes
+
+- IdtMain仅用已有argv解析早退GPU flag；采集器NoNewWindow、句柄/退出码检查、精确异常清理与ProbeOnly，保留格式和既有CSO。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Debug ARM64及Release x64完整solution exit0；ARM64 Headless exit0；实际WinPS5.1六像素用例PASS、额外参数exit2，采集器大输出/非零/异常/超时通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 同Win7解压新包，运行Run-Win7-PixelTest.cmd并回传完整时间目录；保持10-02-win7-main-canvas in_progress。
+
+
+## Session 36: Win7 GPU到ULW静态定位与原Demo字节码对照
+<!-- trellis-session: v=2 fp=8fdc2924d277d128 -->
+
+**Date**: 2026-10-04
+**Task**: Win7 GPU到ULW静态定位与原Demo字节码对照
+**Branch**: `chore/publish`
+
+### Summary
+
+按用户要求等待晚间实测期间只做静态调查。原独立Demo核心GPU/ULW链继承；旧故障EXE及新候选嵌入四shader身份相同，SM5.0与本仓Demo执行/签名块一致；source统计在USER32前保存。重点保留Win7 WARP实际Draw/数据/混合与backbuffer Copy/readback，无唯一根因证明。独立静态审查通过，源码/脚本/候选ZIP及8个CSO hash保持，原任务in_progress。
+
+### Main Changes
+
+- 新增Demo差异、Copy/ULW寿命、shader合同、DXGI FLIP边界与静态汇总报告；同步三条证据契约。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 只读源/CSO/EXE资源与Microsoft合同；独立源文件和DXBC块对照PASS，git diff --check PASS，生产与已有候选保留hash PASS。本轮不编译或运行GPU/GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 晚间使用已交付Run-Win7-PixelTest.cmd，同Win7读取Clear/正式Draw/blend六例；全部PASS后才调查真实shape6/尺寸/dirty同步差异。
+
+
+## Session 37: 原Draw3与嵌入版深入静态对照
+<!-- trellis-session: v=2 fp=4211bc8c636dbf97 -->
+
+**Date**: 2026-10-04
+**Task**: 原Draw3与嵌入版深入静态对照
+**Branch**: `chore/publish`
+
+### Summary
+
+复用Win7原任务，40对模块与54个renderer函数对照；Cursor成功路径一致，检查原版窗口线程、产品门控与metrics，未证明新增唯一缺陷。
+
+### Main Changes
+
+- 新增 research/embedding-deep-comparison-20261004.md 与原任务进度，产品和候选保持。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 静态函数token/调用/常量比较通过；83个保护文件及候选ZIP hash无变化；git diff --check通过。未构建或运行GPU/GUI。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 等待同Win7现有Run-Win7-PixelTest.cmd六例；如全部通过，再单变量核对生产预热/Grip/dirty Copy。任务保持in_progress。
