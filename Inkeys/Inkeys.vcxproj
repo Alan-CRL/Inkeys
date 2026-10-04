@@ -407,6 +407,8 @@
 	<ClInclude Include="Inkeys\Graphics\Surface.hpp" />
 	<ClInclude Include="Inkeys\Business\LegacyDrawState.hpp" />
 	<ClInclude Include="Inkeys\Business\PenToolState.hpp" />
+	<ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp" />
+	<ClInclude Include="Inkeys\Business\PenWidthPreferences.hpp" />
 	<ClInclude Include="Inkeys\Window\Window.Legacy.hpp" />
     <ClInclude Include="IdtAtomic.h" />
 	<ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h" />

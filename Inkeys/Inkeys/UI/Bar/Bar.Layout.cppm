@@ -20,12 +20,9 @@ import Inkeys.Conv.Color;
 
 namespace
 {
-	constexpr double BarBrushThicknessPresetDip[] = { 1.0, 3.0, 6.0 };
-	// 荧光笔细/中/粗预设，落在 30–100 连续滑块量程内。
-	constexpr double BarHighlighterThicknessPresetDip[] = { 35.0, 50.0, 70.0 };
-	constexpr double BarThicknessSliderHardPenMinPx = 1.0;
+	constexpr double BarThicknessSliderHardPenMinCanvasPx = 1.0;
 	constexpr double BarThicknessSliderHardPenMaxDip = 30.0;
-	constexpr double BarThicknessSliderHighlighterMinDip = 30.0;
+	constexpr double BarThicknessSliderHighlighterMinDip = 16.0;
 	constexpr double BarThicknessSliderHighlighterMaxDip = 100.0;
 	constexpr double BarThicknessFineDialBlankDepthDip = 5.0;
 	constexpr double BarThicknessFineDialDragDepthDip = 12.0;
@@ -76,46 +73,65 @@ export
 
 	struct BarThicknessSliderRange
 	{
-		int min = 0;
-		int max = 0;
+		double min = 0.0;
+		double max = 0.0;
 		bool supported = false;
 	};
 
 	BarThicknessSliderRange GetBarThicknessSliderRange(
+		PenModeSelectEnum mode, double dpiZoom, const StateModeClass& snapshot)
+	{
+		using namespace Inkeys::Business::PenWidth;
+		const double scale = SystemScale(snapshot.penWidthContext);
+		BarThicknessSliderRange range;
+		Family family = Family::Brush;
+		if (PenModeUsesBrushThickness(mode))
+			range = { BarThicknessSliderHardPenMinCanvasPx / scale,
+				BarThicknessSliderHardPenMaxDip, true };
+		else if (mode == PenModeSelectEnum::IdtPenHighlighter1)
+		{
+			family = Family::Highlighter;
+			range = { min(BarThicknessSliderHighlighterMinDip, 1.0 / scale),
+				BarThicknessSliderHighlighterMaxDip, true };
+		}
+		if (!range.supported) return range;
+		// 打开控件只扩大量程，不夹断旧偏好或把低于 1 DIP 的预设改写。
+		const auto include = [&](double dip)
+		{
+			if (!IsValidDip(dip)) return;
+			range.min = min(range.min, dip);
+			range.max = max(range.max, dip);
+		};
+		include(GetPenWidthMetrics(snapshot).resolvedWidthDip);
+		for (size_t index = 0; index < 3; ++index)
+			include(Resolve({ Source::Preset, static_cast<Preset>(index), 3.0 },
+				family, snapshot.penWidthContext).resolvedWidthDip);
+		return range;
+	}
+
+	BarThicknessSliderRange GetBarThicknessSliderRange(
 		PenModeSelectEnum mode, double dpiZoom)
 	{
-		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) dpiZoom = 1.0;
-		if (PenModeUsesBrushThickness(mode))
-		{
-			int maximum = max(1, static_cast<int>(lround(
-				BarThicknessSliderHardPenMaxDip * dpiZoom)));
-			return {
-				static_cast<int>(BarThicknessSliderHardPenMinPx),
-				maximum, true };
-		}
-		if (mode == PenModeSelectEnum::IdtPenHighlighter1)
-		{
-			int minimum = max(1, static_cast<int>(lround(
-				BarThicknessSliderHighlighterMinDip * dpiZoom)));
-			int maximum = max(minimum, static_cast<int>(lround(
-				BarThicknessSliderHighlighterMaxDip * dpiZoom)));
-			return { minimum, maximum, true };
-		}
-		return {};
+		return GetBarThicknessSliderRange(mode, dpiZoom, GetStateModeSnapshot());
 	}
 
 	double ResolveThicknessFineDialUnitTravel(
-		double trackTravel, double dpiZoom)
+		double trackTravel, double dpiZoom, const StateModeClass& snapshot)
 	{
 		if (!isfinite(trackTravel) || trackTravel <= 0.0) return 0.0;
 		const auto brushRange = GetBarThicknessSliderRange(
-			PenModeSelectEnum::IdtPenSoftPen, dpiZoom);
+			PenModeSelectEnum::IdtPenSoftPen, dpiZoom, snapshot);
 		const double brushRangeSpan = static_cast<double>(
 			brushRange.max - brushRange.min);
 		if (!brushRange.supported || brushRangeSpan <= 0.0) return 0.0;
 		// FineDial 的每单位行程统一以 Brush 当前 3x 精度为基准，笔型量程仍各自独立。
 		return trackTravel * BarThicknessPreviewTouchDragTravelScale
 			/ brushRangeSpan;
+	}
+
+	double ResolveThicknessFineDialUnitTravel(double trackTravel, double dpiZoom)
+	{
+		return ResolveThicknessFineDialUnitTravel(trackTravel, dpiZoom, GetStateModeSnapshot());
 	}
 
 	struct BarThicknessPreviewGeometry
@@ -283,23 +299,32 @@ export
 			&& logicalY >= rect.top && logicalY <= rect.bottom;
 	}
 
-	int GetBarThicknessPresetPx(
-		PenModeSelectEnum mode, size_t index, double dpiZoom)
+	Inkeys::Business::PenWidth::Metrics GetBarThicknessPresetMetrics(
+		PenModeSelectEnum mode, size_t index, const StateModeClass& snapshot)
 	{
-		if (index >= 3 || !isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
-		// 预设只跟随系统 DPI，不能再叠加 UI 配置缩放。
-		const double* presets = nullptr;
-		if (PenModeUsesBrushThickness(mode))
-			presets = BarBrushThicknessPresetDip;
-		else if (mode == PenModeSelectEnum::IdtPenHighlighter1)
-			presets = BarHighlighterThicknessPresetDip;
-		else return 1;
-		return max(1, static_cast<int>(lround(presets[index] * dpiZoom)));
+		using namespace Inkeys::Business::PenWidth;
+		return Resolve({ Source::Preset, index < 3 ? static_cast<Preset>(index)
+			: Preset::Medium, 3.0 }, mode == PenModeSelectEnum::IdtPenHighlighter1
+			? Family::Highlighter : Family::Brush, snapshot.penWidthContext);
+	}
+
+	double GetBarThicknessPresetPx(PenModeSelectEnum mode, size_t index,
+		double dpiZoom, const StateModeClass& snapshot)
+	{
+		return GetBarThicknessPresetMetrics(mode, index, snapshot).appliedCanvasWidthPx;
+	}
+
+	double GetBarThicknessPresetPx(PenModeSelectEnum mode, size_t index, double dpiZoom)
+	{
+		return GetBarThicknessPresetPx(mode, index, dpiZoom, GetStateModeSnapshot());
 	}
 
 	float GetBarLaserThicknessPresetDip(size_t index, const StateModeClass& snapshot)
 	{
-		return index < 3 ? snapshot.Pen.Laser.widthPreset[index] : 0.0f;
+		using namespace Inkeys::Business::PenWidth;
+		return static_cast<float>(Resolve({ Source::Preset,
+			index < 3 ? static_cast<Preset>(index) : Preset::Medium, 5.0 },
+			Family::Laser, snapshot.penWidthContext).resolvedWidthDip);
 	}
 
 	float GetBarLaserThicknessPresetDip(size_t index)
@@ -307,15 +332,16 @@ export
 		return GetBarLaserThicknessPresetDip(index, GetStateModeSnapshot());
 	}
 
-	int GetBarLaserThicknessPresetPx(size_t index, double dpiZoom,
+	double GetBarLaserThicknessPresetPx(size_t index, double dpiZoom,
 		const StateModeClass& snapshot)
 	{
-		if (!isfinite(dpiZoom) || dpiZoom <= 0.0) return 1;
-		return max(1, static_cast<int>(lround(
-			GetBarLaserThicknessPresetDip(index, snapshot) * dpiZoom)));
+		using namespace Inkeys::Business::PenWidth;
+		return Resolve({ Source::Preset, index < 3 ? static_cast<Preset>(index)
+			: Preset::Medium, 5.0 }, Family::Laser,
+			snapshot.penWidthContext).appliedCanvasWidthPx;
 	}
 
-	int GetBarLaserThicknessPresetPx(size_t index, double dpiZoom)
+	double GetBarLaserThicknessPresetPx(size_t index, double dpiZoom)
 	{
 		return GetBarLaserThicknessPresetPx(index, dpiZoom, GetStateModeSnapshot());
 	}
@@ -323,42 +349,29 @@ export
 	bool IsBarThicknessPresetSelected(PenModeSelectEnum mode,
 		size_t index, double dpiZoom, const StateModeClass& snapshot)
 	{
-		if (snapshot.laserActive)
-		{
-			// 激光状态保存 DIP，选中身份不能与仅供视觉尺寸的像素值比较。
-			return abs(static_cast<double>(GetPenWidth(snapshot))
-				- static_cast<double>(GetBarLaserThicknessPresetDip(index, snapshot)))
-				< 0.001;
-		}
-		// 滑条保存连续笔宽，预设选中必须比较原始值。
-		return abs(static_cast<double>(GetPenWidth(snapshot))
-			- static_cast<double>(GetBarThicknessPresetPx(mode, index, dpiZoom)))
-			< 0.001;
+		using namespace Inkeys::Business::PenWidth;
+		const auto selection = GetPenWidthSelection(snapshot);
+		// 身份来自当前工具槽，不因预设量化碰撞或显式值碰巧相等而误选。
+		return index < 3 && selection.source == Source::Preset
+			&& selection.preset == static_cast<Preset>(index);
 	}
 
 	bool IsBarThicknessPresetSelected(PenModeSelectEnum mode,
 		size_t index, double dpiZoom)
 	{
-		return IsBarThicknessPresetSelected(mode, index, dpiZoom,
-			GetStateModeSnapshot());
+		return IsBarThicknessPresetSelected(mode, index, dpiZoom, GetStateModeSnapshot());
 	}
 
 	double GetBarCurrentPenThicknessVisualWidth(double dpiZoom,
 		const StateModeClass& snapshot)
 	{
-		if (snapshot.laserActive)
-		{
-			// Bar 预览在 96-DPI D2D 空间绘制，激光 DIP 只在边界转换一次。
-			return max(0.0, static_cast<double>(GetPenWidth(snapshot))
-				* max(0.0, dpiZoom));
-		}
-		return max(0.0, static_cast<double>(GetPenWidth(snapshot)));
+		// Bar 与 Draw3 共用绘图目标快照；布局缩放不参与名义笔宽。
+		return GetPenWidthMetrics(snapshot).appliedCanvasWidthPx;
 	}
 
 	double GetBarCurrentPenThicknessVisualWidth(double dpiZoom)
 	{
-		return GetBarCurrentPenThicknessVisualWidth(dpiZoom,
-			GetStateModeSnapshot());
+		return GetBarCurrentPenThicknessVisualWidth(dpiZoom, GetStateModeSnapshot());
 	}
 
 	bool IsLaserThicknessPresetMode(const StateModeClass& snapshot)

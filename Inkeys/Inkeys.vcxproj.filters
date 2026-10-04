@@ -546,6 +546,12 @@
     <ClInclude Include="Inkeys\Business\PenToolState.hpp">
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenWidthPreferences.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
       <Filter>Modules\Inkeys\Window</Filter>
     </ClInclude>

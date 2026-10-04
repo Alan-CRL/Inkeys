@@ -13,6 +13,7 @@ module;
 #include <d2d1helper.h>
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.BottomDock.h"
+#include "Bar.I18nFormat.h"
 #include "Bar.WindowGeometry.h"
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
@@ -667,7 +668,7 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					&& barUISet.barState.drawAttribute && !barUISet.barState.fold
 					&& GetBarThicknessSliderRange(
 						stateMode.Pen.ModeSelect,
-						barUISet.barStyle.dpiZoom).supported;
+						barUISet.barStyle.dpiZoom, stateMode).supported;
 				bool sliderHover = sliderAvailable
 					&& drawAttribute.thicknessViewMode
 						!= ThicknessViewMode::FineDial
@@ -1318,7 +1319,7 @@ public:
 				session.BeginThicknessFineDialDrag(candidate, 100.0, 4.0, range,
 					StateModeTransitionRevision());
 				require(shared.thicknessFineDialCandidateActive &&
-					shared.thicknessSliderCandidateWidth == static_cast<float>(candidate), "fine-dial-candidate-published");
+					shared.thicknessSliderCandidateWidth == candidate, "fine-dial-candidate-published");
 			};
 			const auto cleared = [&]
 			{
@@ -1328,6 +1329,105 @@ public:
 					!shared.thicknessFineDialDragging && !shared.thicknessFineDialPhysicsActive &&
 					shared.thicknessSliderCandidateWidth == 0.0f;
 			};
+
+			stage = "width-dip-ui-contract";
+			using namespace Inkeys::Business::PenWidth;
+			auto widthSnapshot = GetStateModeSnapshot();
+			widthSnapshot.penWidthContext = { 42, 0, 264.0, 2560, 1440 };
+			widthSnapshot.Pen.Brush1.widthSelection = { Source::Preset, Preset::Medium, 3.0 };
+			const auto metrics = GetPenWidthMetrics(widthSnapshot);
+			require(abs(metrics.idealCanvasWidthPx - 5.333333333333333) < 0.000001,
+				"bar-production-continuous-1440p");
+			require(abs(GetBarCurrentPenThicknessVisualWidth(1.0, widthSnapshot)
+				- GetBarCurrentPenThicknessVisualWidth(3.0, widthSnapshot)) < 0.000001,
+				"bar-custom-layout-zoom-does-not-affect-ink");
+			require(IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 1, 3.0,
+				widthSnapshot) && !IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen,
+				0, 3.0, widthSnapshot), "bar-preset-identity");
+			auto overflowSnapshot = widthSnapshot;
+			overflowSnapshot.penWidthContext = { 43, 1, 192.0, 1920, 1080 };
+			overflowSnapshot.Pen.Brush1.widthSelection = { Source::ExplicitDip, Preset::Medium, 30.0 };
+			require(GetBarCurrentPenThicknessVisualWidth(1.0, overflowSnapshot) == 60.0
+				&& GetBarCurrentPenThicknessVisualWidth(3.0, overflowSnapshot) > 50.0,
+				"bar-preview-overflow-compares-canvas-pixels");
+			widthSnapshot.penWidthContext.pixelWidth = 320;
+			widthSnapshot.penWidthContext.pixelHeight = 180;
+			require(RoundPositiveCanvasPx(GetBarThicknessPresetPx(PenModeSelectEnum::IdtPenSoftPen,
+				0, 1.0, widthSnapshot)) == RoundPositiveCanvasPx(GetBarThicknessPresetPx(
+				PenModeSelectEnum::IdtPenSoftPen, 1, 1.0, widthSnapshot)), "bar-identity-collision-fixture");
+			require(IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 1, 1.0,
+				widthSnapshot) && !IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen,
+				0, 1.0, widthSnapshot), "bar-identity-survives-pixel-collision");
+			widthSnapshot.Pen.Brush1.widthSelection = { Source::ExplicitDip, Preset::Medium, 0.2 };
+			const auto expandedRange = GetBarThicknessSliderRange(PenModeSelectEnum::IdtPenSoftPen,
+				3.0, widthSnapshot);
+			require(expandedRange.min <= 0.2 && expandedRange.max >= 30.0,
+				"bar-slider-preserves-valid-sub-dip");
+			widthSnapshot.Pen.Highlighter1.widthSelection = { Source::ExplicitDip, Preset::Medium, 200.0 };
+			widthSnapshot.Pen.ModeSelect = PenModeSelectEnum::IdtPenHighlighter1;
+			const auto highlighterRange = GetBarThicknessSliderRange(PenModeSelectEnum::IdtPenHighlighter1,
+				1.0, widthSnapshot);
+			require(highlighterRange.min <= 16.0 && highlighterRange.max >= 200.0,
+				"bar-slider-new-thin-and-old-custom-available");
+			require(SetPenWidthPresetIfRevision(1, StateModeTransitionRevision(), false),
+				"bar-select-preset-through-production-setter");
+			const auto beforeNoOp = bridgeRevision();
+			const auto beforeNoOpSelection = GetPenWidthSelection(GetStateModeSnapshot());
+			session.BeginThicknessFineDialDrag(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip,
+				100.0, 4.0, range, StateModeTransitionRevision());
+			session.CommitThicknessFineDialSelection();
+			require(bridgeRevision() == beforeNoOp && GetPenWidthSelection(GetStateModeSnapshot()).source
+				== beforeNoOpSelection.source, "fine-dial-open-commit-preserves-preset");
+			require(SetPenWidth(1.939393939393939, false), "fine-dial-fractional-origin");
+			const auto fractionalWidth = GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip;
+			session.BeginThicknessFineDialDrag(fractionalWidth, 100.0, 4.0, range,
+				StateModeTransitionRevision());
+			require(abs(static_cast<double>(shared.thicknessSliderCandidateWidth) - fractionalWidth)
+				< 0.000001, "fine-dial-entry-keeps-origin-fraction");
+			session.thicknessFineDialRawValue = fractionalWidth + 0.5;
+			require(abs(session.PublishThicknessFineDialCandidate() - (fractionalWidth + 1.0))
+				< 0.000001, "fine-dial-positive-half-step");
+			session.thicknessFineDialRawValue = fractionalWidth - 0.5;
+			// 该真实量程下限为 1 DIP；负向半步不得越过端点。
+			require(abs(session.PublishThicknessFineDialCandidate() - (std::max)(range.min, fractionalWidth - 1.0))
+				< 0.000001, "fine-dial-negative-half-step-boundary-clamp");
+			session.CancelThicknessFineDialSelection();
+			const double interiorOrigin = fractionalWidth + 2.0;
+			session.BeginThicknessFineDialDrag(interiorOrigin, 100.0, 4.0, range,
+				StateModeTransitionRevision());
+			session.thicknessFineDialRawValue = interiorOrigin - 0.5;
+			require(abs(session.PublishThicknessFineDialCandidate() - (interiorOrigin - 1.0))
+				< 0.000001, "fine-dial-negative-half-step-preserves-interior-fraction");
+			session.thicknessFineDialRawValue = interiorOrigin + 0.5;
+			require(abs(session.PublishThicknessFineDialCandidate() - (interiorOrigin + 1.0))
+				< 0.000001, "fine-dial-interior-half-step-symmetry");
+			session.CancelThicknessFineDialSelection();
+			session.CommitThicknessFineDialSelection();
+			require(abs(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip - fractionalWidth)
+				< 0.000001, "fine-dial-cancel-preserves-fractional-origin");
+			session.BeginThicknessFineDialDrag(fractionalWidth, 100.0, 4.0, range,
+				StateModeTransitionRevision());
+			session.thicknessFineDialRawValue = fractionalWidth + 1.0;
+			session.PublishThicknessFineDialCandidate();
+			const auto committedRevision = session.CommitThicknessFineDialSelection(false);
+			require(committedRevision == StateModeTransitionRevision()
+				&& GetPenWidthSelection(GetStateModeSnapshot()).source == Source::ExplicitDip
+				&& abs(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip
+					- (fractionalWidth + 1.0)) < 0.000001,
+				"fine-dial-real-commit-keeps-fractional-origin");
+			const double sliderAdjustedWidth = fractionalWidth + 2.25;
+			session.BeginThicknessFineDialDrag(sliderAdjustedWidth, 100.0, 4.0, range,
+				StateModeTransitionRevision(), true);
+			session.CommitThicknessFineDialSelection(false);
+			require(abs(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip - sliderAdjustedWidth)
+				< 0.000001, "slider-to-fine-dial-retains-real-slider-adjustment");
+			widthSnapshot.StateModeSelect = StateModeSelectEnum::IdtShape;
+			widthSnapshot.Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeRectangle1;
+			widthSnapshot.Shape.Rectangle1.widthSelection = { Source::Preset, Preset::Thick, 3.0 };
+			require(IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 2, 1.0,
+				widthSnapshot) && !IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen,
+				1, 1.0, widthSnapshot), "bar-shape-selected-uses-shape-slot");
+			require(SetPenWidth(7.0f, false), "fine-dial-restore-existing-fixture");
 
 			stage = "fine-dial-stale-physics";
 			begin(9.0);
@@ -1577,7 +1677,7 @@ private:
 				&& barState.drawAttribute && !barState.fold
 				&& GetBarThicknessSliderRange(
 					stateMode.Pen.ModeSelect,
-					barStyle.dpiZoom).supported;
+					barStyle.dpiZoom, stateMode).supported;
 		};
 	void ResetThicknessFineDialSamples()
 		{
@@ -1650,20 +1750,21 @@ private:
 			return rawValue;
 		}
 
-	int PublishThicknessFineDialCandidate()
+	double PublishThicknessFineDialCandidate()
 		{
 			thicknessFineDialVisualValue =
 				ProjectThicknessFineDialRubberBand(
 					thicknessFineDialRawValue);
-			int candidate = clamp(static_cast<int>(lround(
-				thicknessFineDialVisualValue)),
-				thicknessFineDialRangeMin,
-				thicknessFineDialRangeMax);
+			double candidate = Inkeys::UI::Bar::Detail::StepFineDialDip(
+				thicknessFineDialOriginDip, thicknessFineDialVisualValue,
+				thicknessFineDialRangeMin, thicknessFineDialRangeMax);
 			barState.drawAttributeBar.thicknessFineDialVisualWidth =
-				static_cast<float>(thicknessFineDialVisualValue);
+				thicknessFineDialVisualValue;
 			barState.drawAttributeBar.thicknessSliderCandidateWidth =
-				static_cast<float>(candidate);
+				candidate;
 			barState.drawAttributeBar.thicknessFineDialCandidateActive = true;
+			thicknessFineDialDirty = thicknessFineDialDirty
+				|| abs(candidate - thicknessFineDialOriginDip) > 0.000001;
 			return candidate;
 		}
 
@@ -1675,6 +1776,7 @@ private:
 			thicknessFineDialResidualVelocity = 0.0;
 			thicknessFineDialSettleTarget = 0.0;
 			thicknessFineDialCommitIssued = false;
+			thicknessFineDialDirty = false;
 			ResetThicknessFineDialSamples();
 			barState.drawAttributeBar.thicknessFineDialDragging = false;
 			barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
@@ -1685,19 +1787,18 @@ private:
 			barState.drawAttributeBar.thicknessSliderHoldProgress = 0.0f;
 		}
 
-	void CommitThicknessFineDialSelection()
+	std::uint64_t CommitThicknessFineDialSelection(bool setMemory = true)
 		{
 			bool candidateActive = barState.drawAttributeBar
 				.thicknessFineDialCandidateActive;
-			int candidate = clamp(static_cast<int>(lround(
-				static_cast<double>(barState.drawAttributeBar
-					.thicknessSliderCandidateWidth))),
-				thicknessFineDialRangeMin,
-				thicknessFineDialRangeMax);
+			double candidate = Inkeys::UI::Bar::Detail::StepFineDialDip(
+				thicknessFineDialOriginDip, thicknessFineDialRawValue,
+				thicknessFineDialRangeMin, thicknessFineDialRangeMax);
 			bool shouldCommit = candidateActive
+				&& thicknessFineDialDirty
 				&& !thicknessFineDialCommitIssued
 				&& thicknessFineDialModeRevision == StateModeTransitionRevision()
-				&& abs(static_cast<double>(GetPenWidth()) - candidate)
+				&& abs(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip - candidate)
 					> 0.000001;
 			thicknessFineDialCommitIssued = true;
 			thicknessFineDialPhase = ThicknessFineDialPhase::Idle;
@@ -1706,18 +1807,25 @@ private:
 			ResetThicknessFineDialSamples();
 			barState.drawAttributeBar.thicknessFineDialDragging = false;
 			barState.drawAttributeBar.thicknessFineDialPhysicsActive = false;
+			std::uint64_t committedRevision = thicknessFineDialModeRevision;
 			if (shouldCommit)
-				SetPenWidthIfRevision(static_cast<float>(candidate),
-					thicknessFineDialModeRevision, true);
+			{
+				if (SetPenWidthIfRevision(candidate, thicknessFineDialModeRevision, setMemory))
+					++committedRevision;
+				else committedRevision = 0;
+			}
+			if (StateModeTransitionRevision() != committedRevision) committedRevision = 0;
 			barState.drawAttributeBar.thicknessFineDialCandidateActive = false;
 			barState.drawAttributeBar.thicknessSliderCandidateWidth = 0.0f;
 			thicknessFineDialModeRevision = 0;
 			thicknessFineDialCommitIssued = false;
+			return committedRevision;
 		}
 
 	void BeginThicknessFineDialDrag(double startValue,
 		double screenX, double unitTravelScreen,
-		const BarThicknessSliderRange& range, std::uint64_t modeRevision)
+		const BarThicknessSliderRange& range, std::uint64_t modeRevision,
+		bool inheritedAdjustment = false)
 		{
 			bool continuingMotion = thicknessFineDialPhase
 				== ThicknessFineDialPhase::Inertia
@@ -1739,6 +1847,12 @@ private:
 			thicknessFineDialRangeMax = range.max;
 			thicknessFineDialUnitTravelScreen = max(0.000001,
 				unitTravelScreen);
+			if (!continuingMotion || !sameModeRevision)
+			{
+				thicknessFineDialOriginDip = startValue;
+				thicknessFineDialDirty = inheritedAdjustment;
+			}
+			else thicknessFineDialDirty = thicknessFineDialDirty || inheritedAdjustment;
 			thicknessFineDialRawValue = startValue;
 			thicknessFineDialVelocity = 0.0;
 			thicknessFineDialGrabTick = GetTickCount64();
@@ -1798,7 +1912,9 @@ private:
 			else
 			{
 				thicknessFineDialSettleTarget = clamp(
-					static_cast<double>(lround(thicknessFineDialRawValue)),
+					Inkeys::UI::Bar::Detail::StepFineDialDip(
+						thicknessFineDialOriginDip, thicknessFineDialRawValue,
+						thicknessFineDialRangeMin, thicknessFineDialRangeMax),
 					static_cast<double>(thicknessFineDialRangeMin),
 					static_cast<double>(thicknessFineDialRangeMax));
 				thicknessFineDialPhase = ThicknessFineDialPhase::Settling;
@@ -1827,7 +1943,7 @@ private:
 				return;
 			}
 			auto range = GetBarThicknessSliderRange(
-				stateMode.Pen.ModeSelect, barStyle.dpiZoom);
+				stateMode.Pen.ModeSelect, barStyle.dpiZoom, stateMode);
 			if (!range.supported || range.min != thicknessFineDialRangeMin
 				|| range.max != thicknessFineDialRangeMax)
 			{
@@ -1874,8 +1990,9 @@ private:
 					< releaseThresholdValue)
 				{
 					thicknessFineDialSettleTarget = clamp(
-						static_cast<double>(lround(
-							thicknessFineDialRawValue)),
+						Inkeys::UI::Bar::Detail::StepFineDialDip(
+						thicknessFineDialOriginDip, thicknessFineDialRawValue,
+						thicknessFineDialRangeMin, thicknessFineDialRangeMax),
 						static_cast<double>(thicknessFineDialRangeMin),
 						static_cast<double>(thicknessFineDialRangeMax));
 					thicknessFineDialPhase =
@@ -1941,11 +2058,8 @@ private:
 					size_t index = static_cast<size_t>(target)
 						- static_cast<size_t>(
 							IndependentHoverTargetEnum::GeometryThicknessFine);
-					return static_cast<int>(lround(max(
-						0.0f, stateMode.Pen.Brush1.width)))
-						!= GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenSoftPen, index,
-							barStyle.dpiZoom);
+					return !IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen,
+						index, barStyle.dpiZoom, stateMode);
 				}
 				case IndependentHoverTargetEnum::GeometryClose:
 					return true;
@@ -3691,11 +3805,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									SetShapeModeSelectIfRevision(
 										button.shapeMode.value(), geometryAtPress.revision);
 								}
-								else SetPenWidthIfRevision(static_cast<float>(
-									GetBarThicknessPresetPx(
-										PenModeSelectEnum::IdtPenSoftPen,
-										button.thicknessPresetIndex,
-										barStyle.dpiZoom)), geometryAtPress.revision);
+								else SetPenWidthPresetIfRevision(button.thicknessPresetIndex,
+									geometryAtPress.revision);
 								UpdateRendering();
 								break;
 							}
@@ -3755,11 +3866,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				const auto gestureState = GetStateModeVersionedSnapshot();
 				PenModeSelectEnum gesturePenMode =
 					gestureState.state.Pen.ModeSelect;
-				const auto gestureRevision = gestureState.revision;
+				auto gestureRevision = gestureState.revision;
 								auto range = GetBarThicknessSliderRange(
-									gesturePenMode, barStyle.dpiZoom);
-				float initialWidth = GetPenWidth(gestureState.state);
-								float finalWidth = initialWidth;
+									gesturePenMode, barStyle.dpiZoom, gestureState.state);
+				double initialWidth = GetPenWidthMetrics(gestureState.state).resolvedWidthDip;
+								double finalWidth = initialWidth;
 								double lastCandidateWidth = initialWidth;
 								bool candidateChanged = false;
 								bool gestureDragged = false;
@@ -3799,10 +3910,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											.thicknessFineDialVisualWidth);
 									if (isfinite(visualWidth))
 									{
-										initialWidth = static_cast<float>(clamp(
+										initialWidth = clamp(
 											visualWidth,
 											static_cast<double>(range.min),
-											static_cast<double>(range.max)));
+											static_cast<double>(range.max));
 										finalWidth = initialWidth;
 										lastCandidateWidth = initialWidth;
 									}
@@ -3867,7 +3978,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										range.max - range.min);
 								double unitTravelScreen = max(0.000001,
 									ResolveThicknessFineDialUnitTravel(
-										trackTravelScreenX, barStyle.dpiZoom));
+										trackTravelScreenX, barStyle.dpiZoom, gestureState.state));
 								double initialNormalized =
 									range.max > range.min
 										? clamp(
@@ -3899,7 +4010,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									? (pressScreenX - thumbCenterScreenX)
 									: 0.0;
 								auto ProjectWidthFromScreenX =
-									[&](double screenX) -> float
+									[&](double screenX) -> double
 									{
 										// screenX 表示目标圆点中心的屏幕横坐标。
 										double rawWidth = range.min
@@ -3909,10 +4020,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											rawWidth,
 											static_cast<double>(range.min),
 											static_cast<double>(range.max));
-										return static_cast<float>(clampedWidth);
+										return clampedWidth;
 									};
 								auto ProjectRelativePreviewWidth =
-									[&](double screenX) -> float
+									[&](double screenX) -> double
 									{
 										double rawWidth = static_cast<double>(
 											initialWidth)
@@ -3923,10 +4034,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										double clampedWidth = clamp(rawWidth,
 											static_cast<double>(range.min),
 											static_cast<double>(range.max));
-										return static_cast<float>(clampedWidth);
+										return clampedWidth;
 									};
 								auto ApplyCandidateWidth =
-									[&](float targetWidth,
+									[&](double targetWidth,
 										bool candidateAllowed) -> bool
 									{
 										if (!candidateAllowed) return false;
@@ -3943,8 +4054,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											<= 0.000001)
 											return false;
 
-										lastCandidateWidth = static_cast<float>(clampedWidth);
-										finalWidth = static_cast<float>(lastCandidateWidth);
+										lastCandidateWidth = clampedWidth;
+										finalWidth = lastCandidateWidth;
 										candidateChanged = abs(
 											static_cast<double>(
 												finalWidth - initialWidth))
@@ -3980,10 +4091,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										bool visualChanged = abs(nextRawValue
 											- thicknessFineDialRawValue) > 0.000001;
 										thicknessFineDialRawValue = nextRawValue;
-										int candidate =
+										double candidate =
 											PublishThicknessFineDialCandidate();
-										lastCandidateWidth = static_cast<float>(candidate);
-										finalWidth = static_cast<float>(candidate);
+										lastCandidateWidth = candidate;
+										finalWidth = candidate;
 										candidateChanged = abs(
 											static_cast<double>(finalWidth - initialWidth))
 											> 0.000001;
@@ -4180,7 +4291,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											// Slider 捕获建立即锁存刻度锚点，按住期间基础预览保持可见。
 											barState.drawAttributeBar
 												.thicknessFineDialActivationPreviewVisualWidth =
-												static_cast<float>(finalWidth);
+												finalWidth;
 											PublishFineActivationPreview(true, false, 0.0f);
 										};
 									auto ActivateFineDialDrag = [&](double screenX,
@@ -4222,15 +4333,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											barState.drawAttributeBar.thicknessSliderPressed = false;
 											CloseThicknessOverflowTooltip();
 							BeginThicknessFineDialDrag(startValue,
-								screenX, unitTravelScreen, range, gestureRevision);
+								screenX, unitTravelScreen, range, gestureRevision, candidateChanged);
 											fineDialAnchorScreenX = screenX;
 											fineDialAnchorValue = static_cast<double>(
 												barState.drawAttributeBar
 													.thicknessFineDialVisualWidth);
-											lastCandidateWidth = static_cast<int>(lround(
-												static_cast<double>(barState.drawAttributeBar
-													.thicknessSliderCandidateWidth)));
-											finalWidth = static_cast<float>(lastCandidateWidth);
+											lastCandidateWidth = static_cast<double>(barState.drawAttributeBar
+												.thicknessSliderCandidateWidth);
+											finalWidth = lastCandidateWidth;
 											candidateChanged = abs(static_cast<double>(
 												finalWidth - initialWidth)) > 0.000001;
 											UpdateRendering(false);
@@ -4246,11 +4356,20 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									auto BeginSliderFromFineDialPopup = [&](double screenX)
 										{
 											// 先提交 FineDial 当前候选，再以切换当帧重新锚定，避免粗细跳变。
-											CommitThicknessFineDialSelection();
-											initialWidth = GetPenWidth();
+											const bool hadCandidate = barState.drawAttributeBar.thicknessFineDialCandidateActive;
+											const auto fineDialCommitRevision = CommitThicknessFineDialSelection();
+											const auto committedRevision = hadCandidate ? fineDialCommitRevision : gestureRevision;
+											const auto committedState = GetStateModeVersionedSnapshot();
+											if (committedRevision == 0 || committedState.revision != committedRevision)
+											{
+												touchGestureCancelled = true;
+												return;
+											}
+											// 仅接续本控件自己的提交版本，不接管期间到达的新工具/显示状态。
+											gestureRevision = committedRevision;
+											initialWidth = GetPenWidthMetrics(committedState.state).resolvedWidthDip;
 											finalWidth = initialWidth;
-											lastCandidateWidth = static_cast<int>(
-												lround(initialWidth));
+											lastCandidateWidth = initialWidth;
 											candidateChanged = false;
 											double committedNormalized = range.max > range.min
 												? clamp((static_cast<double>(initialWidth) - range.min)
@@ -4377,10 +4496,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										fineDialAnchorValue = static_cast<double>(
 											barState.drawAttributeBar
 												.thicknessFineDialVisualWidth);
-										lastCandidateWidth = static_cast<int>(lround(
-											static_cast<double>(barState.drawAttributeBar
-												.thicknessSliderCandidateWidth)));
-										finalWidth = static_cast<float>(lastCandidateWidth);
+										lastCandidateWidth = static_cast<double>(barState.drawAttributeBar
+												.thicknessSliderCandidateWidth);
+										finalWidth = lastCandidateWidth;
 										candidateChanged = abs(static_cast<double>(
 											finalWidth - initialWidth)) > 0.000001;
 									}
@@ -5287,21 +5405,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											{
 												if (fineDialAtPress)
 													CancelThicknessFineDialSelection();
-												if (laserPresetAtPress)
-													SetPenWidthIfRevision(GetBarLaserThicknessPresetDip(
-														button.presetIndex, pressState.state), toolRevisionAtPress);
-												else SetPenWidthIfRevision(static_cast<float>(
-													GetBarThicknessPresetPx(
-														pressState.state.Pen.ModeSelect,
-														button.presetIndex,
-														barStyle.dpiZoom)), toolRevisionAtPress);
+												SetPenWidthPresetIfRevision(button.presetIndex, toolRevisionAtPress);
 											}
 											else
 											{
 												if (fineDialAtPress)
 												{
 													auto thicknessSliderRange = GetBarThicknessSliderRange(
-														pressState.state.Pen.ModeSelect, barStyle.dpiZoom);
+														pressState.state.Pen.ModeSelect, barStyle.dpiZoom, pressState.state);
 													bool fineDialConfirmationAllowed =
 														stateMode.StateModeSelect == StateModeSelectEnum::IdtPen
 														&& thicknessSliderRange.supported
@@ -5764,18 +5875,20 @@ private:
 		BarThicknessFineDialVelocitySampleCount> thicknessFineDialSamples{};
 	size_t thicknessFineDialSampleCount = 0;
 	double thicknessFineDialRawValue = 0.0;
+	double thicknessFineDialOriginDip = 0.0;
 	double thicknessFineDialVisualValue = 0.0;
 	double thicknessFineDialVelocity = 0.0;
 	double thicknessFineDialResidualVelocity = 0.0;
 	double thicknessFineDialSettleTarget = 0.0;
 	double thicknessFineDialUnitTravelScreen = 1.0;
-	int thicknessFineDialRangeMin = 0;
-	int thicknessFineDialRangeMax = 0;
+	double thicknessFineDialRangeMin = 0.0;
+	double thicknessFineDialRangeMax = 0.0;
 	ULONGLONG thicknessFineDialGrabTick = 0;
 	chrono::steady_clock::time_point thicknessFineDialLastPhysicsTime =
 		chrono::steady_clock::now();
 	bool thicknessFineDialPhysicsClockNeedsReset = true;
 	bool thicknessFineDialCommitIssued = false;
+	bool thicknessFineDialDirty = false;
 	// FineDial 隐藏 Slider 固定态，Popup 返回时恢复进入前的生命周期。
 	bool thicknessFineDialReturnPinned = false;
 };

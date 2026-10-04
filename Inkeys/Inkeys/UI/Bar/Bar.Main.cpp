@@ -285,7 +285,7 @@ void BarUISetClass::UpdateRendering(bool updateState)
 		barButtonSet.StateUpdate(stateMode);
 		// 仅在画笔模式刷新粗细文字，收起过程中保留最后一次有效显示。
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-			barState.ThicknessDisplayUpdate(GetPenWidth(stateMode));
+			barState.ThicknessDisplayUpdate(GetPenWidthMetrics(stateMode).resolvedWidthDip);
 	}
 
 	if (Inkeys::UI::Bar::CurrentUi3FiniteMutation())

@@ -1,6 +1,7 @@
 #pragma once
 #include "IdtMain.h"
 #include "PptSettingsPersistence.h"
+#include "Inkeys/Business/PenWidthPolicy.hpp"
 
 bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
 bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath);
@@ -315,3 +316,7 @@ bool DdbWriteInteraction(bool change, bool close);
 
 bool GetMemory();
 bool SetMemory();
+
+// 显示上下文与配置就绪后调用一次，必须先于首次输入准入。
+void InitializePenWidthPreferences(Inkeys::Business::PenWidth::Context context);
+int RunPenWidthPreferencesProductionTest() noexcept;

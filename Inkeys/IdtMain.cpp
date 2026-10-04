@@ -1062,6 +1062,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--pen-width-production-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			const int preferences = RunPenWidthPreferencesProductionTest();
+			if (preferences != 0) return preferences;
+			const int state = RunPenWidthStateProductionTest();
+			return state != 0 ? state
+				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-pen-width-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunPenWidthProductionProbe();
+		}
 		// argv 识别也覆盖给 mode 加引号的合法写法；坏形状不能落入普通 GUI。
 		if (count > 1 && wcscmp(arguments[1], kHostMetricsSmokeArg) == 0)
 		{
@@ -2292,8 +2308,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				setlist.presetSetting.memoryColor = false;
 
 				setlist.presetSetting.autoDefaultWidth = true;
-				setlist.presetSetting.defaultBrush1Width = 3.0f;
-				setlist.presetSetting.defaultHighlighter1Width = 35.0f;
+				setlist.presetSetting.defaultBrush1Width = static_cast<float>(
+					Inkeys::Business::PenWidth::Resolve({},
+						Inkeys::Business::PenWidth::Family::Brush, {}).resolvedWidthDip);
+				setlist.presetSetting.defaultHighlighter1Width = static_cast<float>(
+					Inkeys::Business::PenWidth::Resolve({},
+						Inkeys::Business::PenWidth::Family::Highlighter, {}).resolvedWidthDip);
 			}
 
 			// 插件
@@ -2475,6 +2495,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				// StartForInkeys();
 			}
 			else ReadSetting();
+			// 显示快照已就绪；恢复偏好和迁移必须先于配置清理及首笔准入。
+			Inkeys::Business::PenWidth::Context penWidthStartupContext;
+			penWidthStartupContext.paintDevice = setlist.paintDevice;
+			if (const auto display = Inkeys::Display::GetSnapshot())
+			{
+				penWidthStartupContext.revision = display->generation;
+				if (const auto* target = display->Primary())
+				{
+					penWidthStartupContext.effectiveDpi = target->effectiveDpiX;
+					penWidthStartupContext.pixelWidth = target->pixelWidth;
+					penWidthStartupContext.pixelHeight = target->pixelHeight;
+				}
+			}
+			InitializePenWidthPreferences(penWidthStartupContext);
 			if (!WriteSetting() && IDTLogger)
 				IDTLogger->warn("[主线程][IdtMain] deploy.json 写回失败，保留现存配置文件");
 		}
@@ -3017,6 +3051,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				if (active) Inkeys::UI::Bar::NotifyCanvasDrawingStarted();
 				else Inkeys::UI::Bar::NotifyCanvasDrawingEnded();
+			},
+			[](void*, const Inkeys::Business::PenWidth::Context& context) noexcept
+			{
+				// Host 同步发布实际绘制目标，Bar 与下一笔消费同代粗细。
+				auto targetContext = context;
+				targetContext.paintDevice = setlist.paintDevice;
+				// Host.Reset 后即使目标未变，也重新发布已恢复的启动偏好。
+				if (!ApplyPenWidthContext(targetContext)) SyncDraw3State();
 			}
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,

@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <mutex>
+#include <limits>
 #include <thread>
 
 import Inkeys.Other.Config;
@@ -215,9 +216,10 @@ namespace
 		std::scoped_lock modeLock(stateModeTransitionMutex);
 		ProductState state{};
 		state.tool = CurrentDraw3Tool();
-		state.paintDevice = setlist.paintDevice;
+		state.paintDevice = stateMode.penWidthContext.paintDevice;
+		state.penWidthContext = stateMode.penWidthContext;
 		state.eraserInputs = ReadEraserPreferences();
-		state.widthDip = (std::max)(0.1f, GetPenWidth(stateMode));
+		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.selectionMode =
 			stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
@@ -768,8 +770,20 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 	barUISet.UpdateRendering(false);
 }
 
+namespace { void ResolveWidthSlotsLocked(); }
+
 void SyncDraw3State()
 {
+    // 设备更新必须在同锁内只改设备字段，避免用旧显示快照覆盖新的目标 DPI。
+    {
+        std::scoped_lock lock(stateModeTransitionMutex);
+        if (stateMode.penWidthContext.paintDevice != setlist.paintDevice)
+        {
+            stateMode.penWidthContext.paintDevice = setlist.paintDevice;
+            ResolveWidthSlotsLocked();
+            stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+        }
+    }
 	// 所有工具入口都汇聚于此，确保 Setting 只在非选择态加入画布 owner 链。
 	std::uint64_t settingOwnerState = 0;
 	{
@@ -867,55 +881,135 @@ void RequestWhiteboardNextPage() noexcept
 		whiteboardNextRequested.store(true, std::memory_order_release);
 }
 
-static bool SetPenWidthImpl(float targetWidth, bool setMemory,
-	const std::uint64_t* expectedRevision)
+namespace
 {
-	if (targetWidth <= 0.0f) return false;
-	std::unique_lock lock(stateModeTransitionMutex);
-	if (expectedRevision && stateModeTransitionRevision.load(
-		std::memory_order_relaxed) != *expectedRevision)
-		return false;
-	// 仅活动 Laser 使用独立粗细；其他顶层工具不能被笔型记忆覆盖。
-	if (IsLaserToolActive(stateMode))
-		stateMode.Pen.Laser.width = targetWidth;
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
-	{
-		if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen ||
-			stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
-			stateMode.Pen.Brush1.width = targetWidth;
-		else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
-			stateMode.Pen.Highlighter1.width = targetWidth;
-		else
-			return false;
-	}
-	else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
-	{
-		if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
-			stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
-			stateMode.Shape.StraightLine1.width = targetWidth;
-		else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
-			stateMode.Shape.Rectangle1.width = targetWidth;
-		else
-			return false;
-	}
-	else
-		return false;
-
-	lock.unlock();
-	if (setMemory) SetMemory();
-	PublishDraw3State();
-	return true;
+    using namespace Inkeys::Business::PenWidth;
+    void ResolveWidthSlotsLocked()
+    {
+        const auto resolve = [&](auto& slot, Family family)
+        {
+            slot.width = static_cast<float>(Resolve(slot.widthSelection, family,
+                stateMode.penWidthContext).resolvedWidthDip);
+        };
+        resolve(stateMode.Pen.Brush1, Family::Brush);
+        resolve(stateMode.Pen.Highlighter1, Family::Highlighter);
+        resolve(stateMode.Pen.Laser, Family::Laser);
+        resolve(stateMode.Shape.StraightLine1, Family::Brush);
+        resolve(stateMode.Shape.Rectangle1, Family::Brush);
+        stateMode.Pen.Brush1.widthPreset = static_cast<float>(PresetDip(Preset::Medium, Family::Brush, stateMode.penWidthContext));
+        stateMode.Pen.Highlighter1.widthPreset = static_cast<float>(PresetDip(Preset::Medium, Family::Highlighter, stateMode.penWidthContext));
+    }
+    bool SetPenWidthSelectionImpl(Selection selection, bool setMemory,
+        const std::uint64_t* expectedRevision)
+    {
+        if (!IsValidSelection(selection)) return false;
+        std::unique_lock lock(stateModeTransitionMutex);
+        if (expectedRevision && stateModeTransitionRevision.load(std::memory_order_relaxed) != *expectedRevision)
+            return false;
+        if (IsLaserToolActive(stateMode)) stateMode.Pen.Laser.widthSelection = selection;
+        else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
+        {
+            if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1)
+                stateMode.Pen.Highlighter1.widthSelection = selection;
+            else if (stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenSoftPen ||
+                stateMode.Pen.ModeSelect == PenModeSelectEnum::IdtPenHardPen)
+                stateMode.Pen.Brush1.widthSelection = selection;
+            else return false;
+        }
+        else if (stateMode.StateModeSelect == StateModeSelectEnum::IdtShape)
+        {
+            if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1)
+                stateMode.Shape.Rectangle1.widthSelection = selection;
+            else if (stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeStraightLine1 ||
+                stateMode.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeDashedLine1)
+                stateMode.Shape.StraightLine1.widthSelection = selection;
+            else return false;
+        }
+        else return false;
+        ResolveWidthSlotsLocked();
+        stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+        lock.unlock();
+        // 磁盘和 bridge 副作用始终放在状态锁外。
+        if (setMemory) SetMemory();
+        PublishDraw3State();
+        return true;
+    }
 }
 
-bool SetPenWidth(float targetWidth, bool setMemory)
+bool SetPenWidth(double targetWidth, bool setMemory)
 {
-	return SetPenWidthImpl(targetWidth, setMemory, nullptr);
+    return SetPenWidthSelectionImpl({ Inkeys::Business::PenWidth::Source::ExplicitDip,
+        Inkeys::Business::PenWidth::Preset::Medium, targetWidth }, setMemory, nullptr);
 }
-
-bool SetPenWidthIfRevision(float targetWidth,
-	std::uint64_t expectedRevision, bool setMemory)
+bool SetPenWidthIfRevision(double targetWidth, std::uint64_t expectedRevision, bool setMemory)
 {
-	return SetPenWidthImpl(targetWidth, setMemory, &expectedRevision);
+    return SetPenWidthSelectionImpl({ Inkeys::Business::PenWidth::Source::ExplicitDip,
+        Inkeys::Business::PenWidth::Preset::Medium, targetWidth }, setMemory, &expectedRevision);
+}
+bool SetPenWidthPresetIfRevision(int index, std::uint64_t expectedRevision, bool setMemory)
+{
+    if (index < 0 || index > 2) return false;
+    return SetPenWidthSelectionImpl({ Inkeys::Business::PenWidth::Source::Preset,
+        static_cast<Inkeys::Business::PenWidth::Preset>(index), 3.0 }, setMemory, &expectedRevision);
+}
+Inkeys::Business::PenWidth::Selection GetPenWidthSelection(const StateModeClass& snapshot) noexcept
+{
+    if (IsLaserToolActive(snapshot)) return snapshot.Pen.Laser.widthSelection;
+    if (snapshot.StateModeSelect == StateModeSelectEnum::IdtShape)
+        return snapshot.Shape.ModeSelect == ShapeModeSelectEnum::IdtShapeRectangle1
+            ? snapshot.Shape.Rectangle1.widthSelection : snapshot.Shape.StraightLine1.widthSelection;
+    return snapshot.StateModeSelect == StateModeSelectEnum::IdtPen &&
+        snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1
+        ? snapshot.Pen.Highlighter1.widthSelection : snapshot.Pen.Brush1.widthSelection;
+}
+Inkeys::Business::PenWidth::Family GetPenWidthFamily(const StateModeClass& snapshot) noexcept
+{
+    using namespace Inkeys::Business::PenWidth;
+    if (IsLaserToolActive(snapshot)) return Family::Laser;
+    return snapshot.StateModeSelect == StateModeSelectEnum::IdtPen &&
+        snapshot.Pen.ModeSelect == PenModeSelectEnum::IdtPenHighlighter1 ? Family::Highlighter : Family::Brush;
+}
+Inkeys::Business::PenWidth::Metrics GetPenWidthMetrics(const StateModeClass& snapshot) noexcept
+{
+    return Inkeys::Business::PenWidth::Resolve(GetPenWidthSelection(snapshot),
+        GetPenWidthFamily(snapshot), snapshot.penWidthContext);
+}
+Inkeys::Business::PenWidth::Context GetPenWidthContext()
+{
+    return GetStateModeSnapshot().penWidthContext;
+}
+bool ApplyPenWidthContext(Inkeys::Business::PenWidth::Context context)
+{
+    {
+        std::scoped_lock lock(stateModeTransitionMutex);
+        if (Inkeys::Business::PenWidth::EquivalentContext(context, stateMode.penWidthContext)) return false;
+        stateMode.penWidthContext = context;
+        ResolveWidthSlotsLocked();
+        // 显示/设备变化也使旧滑条手势失效，但不写盘或重置显式 DIP。
+        stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+    }
+    PublishDraw3State();
+    return true;
+}
+void RestorePenWidthSelections(Inkeys::Business::PenWidth::Selection brush,
+    Inkeys::Business::PenWidth::Selection highlighter, Inkeys::Business::PenWidth::Selection laser,
+    const COLORREF* brushColor, const COLORREF* highlighterColor)
+{
+    {
+        std::scoped_lock lock(stateModeTransitionMutex);
+        using namespace Inkeys::Business::PenWidth;
+        if (!IsValidSelection(brush)) brush = {};
+        if (!IsValidSelection(highlighter)) highlighter = {};
+        if (!IsValidSelection(laser)) laser = {};
+        stateMode.Pen.Brush1.widthSelection = brush;
+        stateMode.Pen.Highlighter1.widthSelection = highlighter;
+        stateMode.Pen.Laser.widthSelection = laser;
+        if (brushColor) stateMode.Pen.Brush1.color = *brushColor;
+        if (highlighterColor) stateMode.Pen.Highlighter1.color = *highlighterColor;
+        ResolveWidthSlotsLocked();
+        stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+    }
+    PublishDraw3State();
 }
 
 bool SetPenColor(COLORREF targetColor, bool setMemory)
@@ -1229,7 +1323,7 @@ int RunStateModeProductionTest() noexcept
 			const auto snapshot = GetStateModeVersionedSnapshot();
 			const auto published = bridge.Snapshot();
 			require(published.tool == tool, "bridge-tool");
-			require(published.widthDip == GetPenWidth(snapshot.state), "bridge-width");
+			require(published.widthDip == GetPenWidthMetrics(snapshot.state).resolvedWidthDip, "bridge-width");
 			require(published.colorRgba == ColorRefToRgba(GetPenColor(snapshot.state)), "bridge-color");
 			require(published.selectionMode == (snapshot.state.StateModeSelect == StateModeSelectEnum::IdtSelection), "bridge-selection");
 			require(snapshot.state.StateModeSelect == snapshot.state.StateModeSelectTarget &&
@@ -1634,4 +1728,44 @@ bool GetStateMode_Discard(StateModeStruct_Discard* stateModeInfo)
 	else
 		return false;
 	return true;
+}
+
+int RunPenWidthStateProductionTest() noexcept
+{
+    try
+    {
+        using namespace Inkeys::Business::PenWidth;
+        const auto require = [](bool ok) { if (!ok) throw 1; };
+        setlist.paintDevice = 0;
+        Context large{ 1, 0, 264.0, 2560, 1440 };
+        ApplyPenWidthContext(large);
+        RestorePenWidthSelections({}, {}, {});
+        ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+        require(std::abs(GetPenWidthMetrics(GetStateModeSnapshot()).idealCanvasWidthPx - 16.0 / 3.0) < 1e-9);
+        auto revision = StateModeTransitionRevision();
+        require(SetPenWidthPresetIfRevision(1, revision, false));
+        require(GetPenWidthSelection(GetStateModeSnapshot()).source == Source::Preset);
+        require(!SetPenWidthIfRevision(9.0, revision, false));
+        require(SetPenWidth(1.9393939393939394, false));
+        const auto explicitState = GetStateModeSnapshot();
+        const auto enteringDisplayRevision = StateModeTransitionRevision();
+        large.effectiveDpi = 96.0;
+        require(ApplyPenWidthContext(large));
+        require(!SetPenWidthIfRevision(42.0, enteringDisplayRevision, false));
+        require(explicitState.penWidthContext.effectiveDpi == 264.0
+            && GetStateModeSnapshot().penWidthContext.effectiveDpi == 96.0);
+        require(GetPenWidthSelection(GetStateModeSnapshot()).explicitDip == GetPenWidthSelection(explicitState).explicitDip);
+        revision = StateModeTransitionRevision();
+        require(!ApplyPenWidthContext(large) && revision == StateModeTransitionRevision());
+        require(!SetPenWidth(0.0, false) && !SetPenWidth(-1.0, false) &&
+            !SetPenWidth(std::numeric_limits<double>::quiet_NaN(), false) &&
+            !SetPenWidth(std::numeric_limits<double>::infinity(), false) && !SetPenWidth(MaximumDip + 1, false));
+        ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+        require(GetPenWidthSelection(GetStateModeSnapshot()).explicitDip == GetPenWidthSelection(explicitState).explicitDip);
+        ChangeStateModeToPenTool(PenToolSelectionEnum::Laser);
+        require(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 5.0);
+        std::puts("pen-width-state-production-test: PASS");
+        return 0;
+    }
+    catch (...) { std::puts("pen-width-state-production-test: FAIL"); return 1; }
 }

@@ -141,6 +141,9 @@ namespace Inkeys::Drawing::Draw3
 	{
 		void* context = nullptr;
 		void (*drawingActivityChanged)(void*, bool) noexcept = nullptr;
+		// 同步发布当前画布目标；产品层在返回前更新 DIP 状态及其 bridge。
+		void (*penWidthContextChanged)(void*,
+			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t

@@ -1144,3 +1144,35 @@ Clear 与正式 Draw 的对比会定位设备/读回、生产管线或产品实�
 ### Next Steps
 
 - 等待同Win7现有Run-Win7-PixelTest.cmd六例；如全部通过，再单变量核对生产预热/Grip/dirty Copy。任务保持in_progress。
+
+
+## Session 39: Pen width DIP policy implemented and automatically verified
+<!-- trellis-session: v=2 fp=1714360cd827bc94 -->
+
+**Date**: 2026-10-04
+**Task**: Pen width DIP policy implemented and automatically verified
+**Branch**: `chore/publish`
+
+### Summary
+
+Implemented adaptive DIP defaults, identity-aware preferences and safe migration; independent review and ARM64 headless/production gates passed. User reports this round of manual validation passed; further adjustments remain.
+
+### Main Changes
+
+- Unified true DIP state/config/UI and one continuous Draw3 canvas conversion; preserved preset identity and stroke style.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Final ARM64 Debug solution, headless, production width/state/config/Bar/Draw3, WARP/history/PPT CPU, i18n and diff checks passed; exact evidence in task research/verification.md.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- User authorized this task commit; task remains in_progress for further adjustments, no archive or push.

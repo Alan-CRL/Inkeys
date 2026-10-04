@@ -20,6 +20,7 @@
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
 #include "Draw3.SpeedEraser.h"
+#include "../../Business/PenWidthPolicy.hpp"
 
 module Inkeys.Drawing.Draw3.window_control;
 
@@ -539,22 +540,22 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	void WindowController::SetProductVisualStyle(
-		uint32_t colorRgba, float widthDip) noexcept
+		uint32_t colorRgba, double widthDip,
+		const Inkeys::Business::PenWidth::Context& context) noexcept
 	{
-		if (!std::isfinite(widthDip) || widthDip <= 0.0f)
-			widthDip = 2.0f;
-		productColorRgba_.store(colorRgba, std::memory_order_release);
-		productWidthDip_.store(widthDip, std::memory_order_release);
+		if (!Inkeys::Business::PenWidth::IsValidDip(widthDip)) widthDip = 3.0f;
+		{
+			std::scoped_lock lock(productVisualStyleMutex_);
+			productVisualStyle_ = { colorRgba, widthDip, context };
+		}
 		RequestDrawingCursorRender();
 		RequestControlWake();
 	}
 
 	ProductVisualStyle WindowController::ProductVisualStyleSnapshot() const noexcept
 	{
-		ProductVisualStyle style;
-		style.colorRgba = productColorRgba_.load(std::memory_order_acquire);
-		style.widthDip = productWidthDip_.load(std::memory_order_acquire);
-		return style;
+		std::scoped_lock lock(productVisualStyleMutex_);
+		return productVisualStyle_;
 	}
 
 	void WindowController::EnqueueCanvasCommand(CanvasCommand command)

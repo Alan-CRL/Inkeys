@@ -55,6 +55,7 @@ int RunBarBottomDockTests();
 int RunDraw3BridgeTests();
 int RunDraw3ContactInputTests();
 int RunSpeedEraserTests();
+int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunPresentationDescriptorTests();
 
@@ -84,6 +85,25 @@ namespace
 			"localized thickness format");
 		Check(FormatThicknessText(L"Size {", 42) == L"42",
 			"localized thickness malformed fallback");
+		using Inkeys::UI::Bar::Detail::FormatWidthDipNumber;
+		using Inkeys::UI::Bar::Detail::FormatWidthDipText;
+		using Inkeys::UI::Bar::Detail::StepFineDialDip;
+		Check(FormatWidthDipText(L"{} DIP", 3.0) == L"3 DIP",
+			"exact integer DIP label");
+		Check(FormatWidthDipNumber(1.9393939393939394) == L"≈2",
+			"fractional classroom DIP label preserves approximation");
+		Check(FormatWidthDipNumber(65535.999) == L"≈65536",
+			"large fractional DIP retains approximation before float narrowing");
+		Check(FormatWidthDipNumber(0.36) == L"≈1",
+			"sub-one DIP label never displays zero");
+		Check(FormatWidthDipText(L"broken {", 1.9393939393939394) == L"≈2 DIP",
+			"malformed DIP translation retains value and unit");
+		const double fineOrigin = 1.9393939393939394;
+		Check(Near(StepFineDialDip(fineOrigin, fineOrigin, 0.1, 30.0), fineOrigin),
+			"FineDial entering fractional value preserves origin");
+		Check(Near(StepFineDialDip(fineOrigin, fineOrigin + 0.5, 0.1, 30.0), fineOrigin + 1.0)
+			&& Near(StepFineDialDip(fineOrigin, fineOrigin - 0.5, 0.1, 30.0), fineOrigin - 1.0),
+			"FineDial half-step directions preserve origin fraction");
 		Check(FormatFrameRateText(L"{:.1f}/{:.1f}", 60.0, 120.0,
 			L"Unavailable") == L"60.0/120.0",
 			"localized frame rate format");
@@ -1596,6 +1616,7 @@ namespace
 int main(int argc, char** argv)
 {
 	bool benchmark = false;
+	bool penWidthOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
 	bool exitVisibilityGateOnly = false;
@@ -1605,6 +1626,7 @@ int main(int argc, char** argv)
 	{
 		const std::string_view argument(argv[index]);
 		benchmark |= argument == "--benchmark";
+		penWidthOnly |= argument == "--pen-width-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
 		// 受限 CI 可只执行完全不创建 HWND 的测试集。
@@ -1613,6 +1635,7 @@ int main(int argc, char** argv)
 		if (argument == "--message-box-visual-test" && index + 1 < argc)
 			messageBoxVisualOutput = argv[++index];
 	}
+	if (penWidthOnly) return RunPenWidthTests();
 	if (messageBoxFirstFrameChild)
 		return RunMessageBoxFirstFrameChildTest();
 	if (messageBoxVisualOutput)
@@ -1658,6 +1681,7 @@ int main(int argc, char** argv)
 	failureCount += RunDraw3ContactInputTests();
 	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
+	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
 	if (benchmark) RunBenchmarks();

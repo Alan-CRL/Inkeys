@@ -25,7 +25,8 @@
     "09-27-draw3-performance",
     "09-27-commit-and-security-audit",
     "09-27-crash-restart-recovery",
-    "09-27-integration-and-release-check"
+    "09-27-integration-and-release-check",
+    "10-04-pen-width-dip-defaults"
   ],
   "parent": null,
   "relatedFiles": [],

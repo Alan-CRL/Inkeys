@@ -107,7 +107,7 @@ namespace Inkeys::Drawing::Draw3
 		constexpr double kSpeedEraserHoverHandbackWindowSeconds = 0.250;
 		constexpr double kMaximumLaserHoldDurationSeconds = 24.0 * 60.0 * 60.0;
 		constexpr size_t kPreheatedStrokeCount = 16;
-		// 颜色/宽度由 WindowController 原子发布，绘制线程在帧边界采样。
+		// 颜色/宽度/目标上下文由 WindowController 同锁发布，绘制线程在帧边界采样。
 		thread_local ProductVisualStyle currentProductVisualStyle{};
 
 		const char* CanvasTouchDispositionName(CanvasTouchDisposition disposition) noexcept
@@ -161,28 +161,35 @@ namespace Inkeys::Drawing::Draw3
 			return static_cast<double>(qpc) / static_cast<double>(qpcFrequency);
 		}
 
-		float DiameterForTool(DrawingTool tool,
+		double DiameterForTool(DrawingTool tool,
 			const ProductVisualStyle& visualStyle)
 		{
 			if (tool == DrawingTool::Pen || tool == DrawingTool::HardPen ||
 				tool == DrawingTool::Highlighter ||
 				IsShapeDrawingTool(tool))
-				return (std::max)(0.1f, visualStyle.widthDip);
+				return Inkeys::Business::PenWidth::IsValidDip(visualStyle.widthDip)
+					? visualStyle.widthDip : 3.0f;
 			if (tool == DrawingTool::Laser)
-				return (std::max)(0.1f, visualStyle.widthDip);
+				return Inkeys::Business::PenWidth::IsValidDip(visualStyle.widthDip)
+					? visualStyle.widthDip : 5.0f;
 			return kWideToolDiameter;
 		}
 
-		float DiameterForTool(DrawingTool tool)
+		double DiameterForTool(DrawingTool tool)
 		{
 			return DiameterForTool(tool, currentProductVisualStyle);
 		}
 
 		float CanvasDiameterForTool(DrawingTool tool,
-			const ProductVisualStyle& visualStyle, float dpiScale) noexcept
+			const ProductVisualStyle& visualStyle, float /* modelDpiScale */) noexcept
 		{
-			const float diameter = DiameterForTool(tool, visualStyle);
-			return tool == DrawingTool::Laser ? diameter * dpiScale : diameter;
+			const double diameter = DiameterForTool(tool, visualStyle);
+			// 所有画笔只转换一次；Laser 仍用原有 DIP 预设，不参与大屏比例策略。
+			if (tool == DrawingTool::Laser || tool == DrawingTool::Pen || tool == DrawingTool::HardPen ||
+				tool == DrawingTool::Highlighter || IsShapeDrawingTool(tool))
+				return static_cast<float>(Inkeys::Business::PenWidth::CanvasWidthPx(
+					diameter, visualStyle.penWidthContext));
+			return static_cast<float>(diameter);
 		}
 
 		ShapePrimitiveKind ShapeKindForTool(DrawingTool tool) noexcept
@@ -268,17 +275,25 @@ namespace Inkeys::Drawing::Draw3
 			return ColorForTool(tool, currentProductVisualStyle);
 		}
 
+		float ProductTargetScale(const ProductVisualStyle& visualStyle) noexcept
+		{
+			return static_cast<float>(Inkeys::Business::PenWidth::SystemScale(visualStyle.penWidthContext));
+		}
+
 		void ConfigureLaserRendererStyle(InkRenderer& renderer,
-			const ProductVisualStyle& visualStyle, float dpiScale) noexcept
+			const ProductVisualStyle& visualStyle, float /* modelDpiScale */) noexcept
 		{
 			renderer.ConfigureLaserStyle(
-				dpiScale, ColorForTool(DrawingTool::Laser, visualStyle));
+				ProductTargetScale(visualStyle), ColorForTool(DrawingTool::Laser, visualStyle));
 		}
 
 		bool ProductVisualStyleEqual(const ProductVisualStyle& left,
 			const ProductVisualStyle& right) noexcept
 		{
-			return left.colorRgba == right.colorRgba && left.widthDip == right.widthDip;
+			return left.colorRgba == right.colorRgba && left.widthDip == right.widthDip &&
+				left.penWidthContext.revision == right.penWidthContext.revision &&
+				Inkeys::Business::PenWidth::EquivalentContext(
+					left.penWidthContext, right.penWidthContext);
 		}
 
 		void ConfigureProductInkCursorAppearances(WindowController& window,
@@ -288,7 +303,8 @@ namespace Inkeys::Drawing::Draw3
 				DrawingTool::Pen, visualStyle);
 			const float penCursorDiameter = std::max(
 				CanvasDiameterForTool(DrawingTool::Pen, visualStyle, dpiScale),
-				kMinimumPenCursorDiameterAt96Dpi * dpiScale);
+				kMinimumPenCursorDiameterAt96Dpi * static_cast<float>(
+					Inkeys::Business::PenWidth::SystemScale(visualStyle.penWidthContext)));
 			DrawingCursorAppearance penAppearance = {
 				DrawingCursorShape::Circle,
 				penCursorDiameter,
@@ -303,7 +319,8 @@ namespace Inkeys::Drawing::Draw3
 			const DirectX::XMFLOAT4 highlighterColor = ColorForTool(
 				DrawingTool::Highlighter, visualStyle);
 			// 荧光笔几何和光标共用产品宽度，保持预览、实际笔迹与光标一致。
-			const float highlighterDiameter = std::max(1.0f, visualStyle.widthDip);
+			const float highlighterDiameter = CanvasDiameterForTool(
+				DrawingTool::Highlighter, visualStyle, dpiScale);
 			DrawingCursorAppearance highlighterAppearance = {
 				DrawingCursorShape::Rectangle,
 				highlighterDiameter / kHighlighterNibAspectRatio,
@@ -1628,6 +1645,20 @@ namespace Inkeys::Drawing::Draw3
 		};
 
 
+		void CaptureProductStrokeStyle(RuntimeStroke& runtime,
+			const WindowController& window) noexcept
+		{
+			// 活动笔划仅在 Down 捕获一次；换屏不能修改这份样式或已有物理几何。
+			runtime.visualStyle = window.ProductVisualStyleSnapshot();
+		}
+
+		void ResetNominalStroke(RuntimeStroke& runtime, float baseDiameter,
+			const StrokeModelConfiguration& configuration, StrokeWidthMode widthMode)
+		{
+			runtime.stroke.Reset(baseDiameter, configuration.expectedSpeed, widthMode,
+				runtime.tool == DrawingTool::Highlighter);
+		}
+
 		void AppendRuntimeModeledPoints(RuntimeStroke& runtime,float inputSpeed,double currentInputTime)
 		{
 			if(runtime.stroke.widthMode!=StrokeWidthMode::SpeedEraser)
@@ -2950,6 +2981,7 @@ namespace Inkeys::Drawing::Draw3
 			float dpiScale, int width, int height,
 			RECT& dirty)
 		{
+			dpiScale = ProductTargetScale(layer.visualStyle);
 			ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 			dirty = layer.liveBounds;
 			const LaserIncrementalRanges ranges = PlanLaserIncrementalRanges(
@@ -2997,7 +3029,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		void FinalizeLaserStrokeLayer(std::vector<LaserStrokeLayer>& layers,
-			RuntimeStroke& runtime, bool cancelled, float dpiScale, int width, int height)
+			RuntimeStroke& runtime, bool cancelled, float /* modelDpiScale */, int width, int height)
 		{
 			LaserStrokeLayer* layer = FindLaserStrokeLayer(layers, runtime.laserLayerId);
 			if (!layer) return;
@@ -3012,7 +3044,7 @@ namespace Inkeys::Drawing::Draw3
 					layer->completedPoints.push_back(runtime.stroke.inputStartPoint);
 			}
 			layer->bounds = cancelled ? RECT{} : RectFromLaserPoints(
-				layer->completedPoints, dpiScale, width, height);
+				layer->completedPoints, ProductTargetScale(layer->visualStyle), width, height);
 			runtime.laserLayerId = 0;
 		}
 
@@ -3081,7 +3113,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
 				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
-				layer.bounds = RectFromLaserPoints(points, dpiScale, width, height);
+				layer.bounds = RectFromLaserPoints(points, ProductTargetScale(layer.visualStyle), width, height);
 				if (IsEmptyRect(layer.bounds)) continue;
 				UnionRectInPlace(bakeDirty, layer.bounds);
 				// 每支笔先独立生成 coverage，再按 Down 顺序烘入稳定预乘颜色。
@@ -3347,14 +3379,15 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		RECT RectFromLaserDots(const std::vector<LaserTipVisual>& visuals,
-			float dpiScale, int width, int height) noexcept
+			float /* modelDpiScale */, int width, int height) noexcept
 		{
 			RECT bounds = {};
 			for (const LaserTipVisual& visual : visuals)
 			{
 				const LaserDot& dot = visual.dot;
 				if (!std::isfinite(dot.x) || !std::isfinite(dot.y)) continue;
-				const double radius = static_cast<double>(LaserVisualRadius(dot.radius, dpiScale));
+				const double radius = static_cast<double>(LaserVisualRadius(
+					dot.radius, ProductTargetScale(visual.visualStyle)));
 				if (!std::isfinite(radius)) continue;
 				UnionRectInPlace(bounds, RECT{
 					SaturatingFloorToLong(static_cast<double>(dot.x) - radius - 2.0),
@@ -3646,6 +3679,142 @@ namespace Inkeys::Drawing::Draw3
 		bool wholeL2Clear = false;
 	};
 	static_assert(sizeof(DrawingControllerMetricsState) <= 64u * 1024);
+
+	int RunPenWidthProductionProbe() noexcept
+	{
+		int failures = 0;
+		const auto check = [&failures](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3PenWidth] FAIL: %s\n", name);
+		};
+		const auto nearlyEqual = [](double actual, double expected)
+		{
+			return std::isfinite(actual) && std::abs(actual - expected) < 0.0001;
+		};
+		try
+		{
+			using namespace Inkeys::Business::PenWidth;
+			WindowController window; // 不附着 HWND，不初始化 Host/RTS/GPU。
+			const auto configuration = CreateStrokeModelConfiguration(96);
+			constexpr DrawingTool ordinaryTools[] = { DrawingTool::Pen, DrawingTool::HardPen,
+				DrawingTool::SolidLine, DrawingTool::DashedLine,
+				DrawingTool::OutlineRectangle, DrawingTool::FilledRectangle };
+			struct Case { double dpi; std::array<double, 3> ideal; std::array<int, 3> integer; std::array<double, 3> highlighter; };
+			constexpr Case ordinary[] = {
+				{ 96, { 1, 3, 6 }, { 1, 3, 6 }, { 16, 24, 36 } }, { 120, { 1.25, 3.75, 7.5 }, { 1, 4, 8 }, { 20, 30, 45 } },
+				{ 144, { 1.5, 4.5, 9 }, { 2, 5, 9 }, { 24, 36, 54 } }, { 192, { 2, 6, 12 }, { 2, 6, 12 }, { 32, 48, 72 } },
+				{ 264, { 2.75, 8.25, 16.5 }, { 3, 8, 17 }, { 44, 66, 99 } }
+			};
+			for (const auto& test : ordinary)
+			{
+				Context context; context.effectiveDpi = test.dpi;
+				for (int index = 0; index < 3; ++index)
+				{
+					Selection selection; selection.preset = static_cast<Preset>(index);
+					const auto metrics = Resolve(selection, Family::Brush, context);
+					window.SetProductVisualStyle(0x123456FF, metrics.resolvedWidthDip, context);
+					const auto style = window.ProductVisualStyleSnapshot();
+					for (const auto tool : ordinaryTools)
+					{
+						const float pixels = CanvasDiameterForTool(tool, style, 1.0f);
+						check(nearlyEqual(pixels, test.ideal[index]), "ordinary and shapes retain continuous target pixels");
+						check(RoundPositiveCanvasPx(pixels) == test.integer[index], "integer adapter table is separate from renderer");
+					}
+					ConfigureProductInkCursorAppearances(window, style, 1);
+					check(nearlyEqual(window.CursorAppearanceForTool(DrawingTool::Pen).width,
+						(std::max)(test.ideal[index], 5.0 * SystemScale(context))), "pen cursor keeps intentional DIP visibility minimum");
+					const auto highlighter = Resolve(selection, Family::Highlighter, context);
+					window.SetProductVisualStyle(0x123456FF, highlighter.resolvedWidthDip, context);
+					check(nearlyEqual(CanvasDiameterForTool(DrawingTool::Highlighter, window.ProductVisualStyleSnapshot(), 1),
+						test.highlighter[index]), "ordinary highlighter uses new DIP presets with one target scale");
+				}
+			}
+			struct LargeCase { int width; int height; std::array<double, 3> brush; std::array<double, 3> highlighter; };
+			constexpr LargeCase large[] = {
+				{ 1920, 1080, { 2, 4, 6 }, { 16, 24, 36 } },
+				{ 2560, 1440, { 2.6666666667, 5.3333333333, 8 }, { 21.3333333333, 32, 48 } },
+				{ 3840, 2160, { 4, 8, 12 }, { 32, 48, 72 } }
+			};
+			for (const auto& test : large)
+				for (const double dpi : { 96.0, 120.0, 192.0, 264.0 })
+					for (int index = 0; index < 3; ++index)
+					{
+						Context context; context.paintDevice = 0; context.effectiveDpi = dpi;
+						context.pixelWidth = test.width; context.pixelHeight = test.height;
+						Selection selection; selection.preset = static_cast<Preset>(index);
+						for (const Family family : { Family::Brush, Family::Highlighter })
+						{
+							const auto metrics = Resolve(selection, family, context);
+							window.SetProductVisualStyle(0x123456FF, metrics.resolvedWidthDip, context);
+							const auto style = window.ProductVisualStyleSnapshot();
+							const auto tool = family == Family::Highlighter ? DrawingTool::Highlighter : DrawingTool::HardPen;
+							check(nearlyEqual(CanvasDiameterForTool(tool, style, 1.0f), family == Family::Highlighter
+								? test.highlighter[index] : test.brush[index]), "large presets do not double DPI scale or round DIP");
+							ConfigureProductInkCursorAppearances(window, style, 1.0f);
+							if (family == Family::Highlighter)
+								check(nearlyEqual(window.CursorAppearanceForTool(tool).height, test.highlighter[index]), "highlighter cursor uses same canvas boundary");
+						}
+					}
+			Context context; context.paintDevice = 0; context.effectiveDpi = 264;
+			context.pixelWidth = 2560; context.pixelHeight = 1440; context.revision = 1;
+			const auto middle = Resolve({}, Family::Brush, context);
+			std::fprintf(stderr, "[Draw3PenWidth] 1440p/275%% resolvedDip=%.12f idealPx=%.12f appliedFloatPx=%.12f integerAdapterPx=%d\n",
+				middle.resolvedWidthDip, middle.idealCanvasWidthPx, middle.appliedCanvasWidthPx,
+				RoundPositiveCanvasPx(middle.idealCanvasWidthPx));
+			check(nearlyEqual(middle.resolvedWidthDip, 1.9393939394), "1440p 275 percent preserves fractional resolved DIP");
+			window.SetProductVisualStyle(0x123456FF, middle.resolvedWidthDip, context);
+			RuntimeStroke active(configuration.expectedSpeed);
+			active.tool = DrawingTool::HardPen;
+			CaptureProductStrokeStyle(active, window);
+			const float diameter = CanvasDiameterForTool(active.tool, active.visualStyle, configuration.dpiScale);
+			ResetNominalStroke(active, diameter, configuration, StrokeWidthMode::Fixed);
+			check(nearlyEqual(active.stroke.widthEstimator.baseDiameter, 5.3333333333) &&
+				RoundPositiveCanvasPx(diameter) == 5, "real stroke initialization keeps ideal 5.333 rather than early-rounded 6");
+			context.effectiveDpi = 192; context.revision = 2;
+			window.SetProductVisualStyle(0xAABBCCFF, 3.0f, context);
+			check(nearlyEqual(active.stroke.widthEstimator.baseDiameter, 5.3333333333) &&
+				active.visualStyle.colorRgba == 0x123456FF && active.visualStyle.penWidthContext.revision == 1,
+				"active Down style remains locked across target and preference changes");
+			RuntimeStroke next(configuration.expectedSpeed); next.tool = DrawingTool::HardPen;
+			CaptureProductStrokeStyle(next, window);
+			ResetNominalStroke(next, CanvasDiameterForTool(next.tool, next.visualStyle, configuration.dpiScale),
+				configuration, StrokeWidthMode::Fixed);
+			check(nearlyEqual(next.stroke.widthEstimator.baseDiameter, 6), "next Down consumes changed target context");
+			context.effectiveDpi = 96;
+			window.SetProductVisualStyle(0x123456FF, 0.02f, context);
+			check(nearlyEqual(CanvasDiameterForTool(DrawingTool::HardPen, window.ProductVisualStyleSnapshot(), 1), 0.02),
+				"valid fractional DIP is not clamped to 0.1 or 1 DIP");
+			window.SetProductVisualStyle(0x123456FF, 5.0f, context);
+			CaptureProductStrokeStyle(next, window);
+			ResetNominalStroke(next, CanvasDiameterForTool(next.tool, next.visualStyle, 1), configuration, StrokeWidthMode::Fixed);
+			check(nearlyEqual(next.stroke.widthEstimator.baseDiameter * 0.5, 2.5), "odd nominal width preserves fractional radius");
+			context.effectiveDpi = 264;
+			window.SetProductVisualStyle(0x123456FF, 5, context);
+			check(nearlyEqual(CanvasDiameterForTool(DrawingTool::Laser, window.ProductVisualStyleSnapshot(), 1), 13.75), "laser retains one target DPI multiplication");
+			check(nearlyEqual(CanvasDiameterForTool(DrawingTool::Eraser, next.visualStyle, 2.75f), kWideToolDiameter), "eraser nominal fallback unchanged");
+			context.effectiveDpi = 96;
+			window.SetProductVisualStyle(0x123456FF, (std::numeric_limits<float>::quiet_NaN)(), context);
+			check(nearlyEqual(CanvasDiameterForTool(DrawingTool::HardPen, window.ProductVisualStyleSnapshot(), 1), 3), "invalid product width receives defined safe fallback");
+			context.effectiveDpi = 1536;
+			window.SetProductVisualStyle(0x123456FF, 65536, context);
+			check(nearlyEqual(CanvasDiameterForTool(DrawingTool::HardPen, window.ProductVisualStyleSnapshot(), 1), 1048576), "maximum canvas boundary narrows without overflow");
+			// 旧几何存物理宽度；修改新笔样式、Undo/Redo 都不能重解释为 DIP。
+			InkStroke stored({}, { { 10, 12, 5.3333335f }, { 22, 24, 5.3333335f } });
+			const auto footprint = BuildStrokeTileFootprint(stored);
+			CanvasRuntimeHistory history;
+			const auto item = footprint ? history.AppendStroke(0, *footprint, true) : std::nullopt;
+			check(item && history.UndoLastVisible(*item) && history.RedoLastUndone(*item) &&
+				nearlyEqual(stored.Points()[0].width, 5.3333333333), "historical geometry survives real CPU Undo/Redo unchanged");
+		}
+		catch (...)
+		{
+			check(false, "no-window production fixture construction");
+		}
+		if (!failures) std::fputs("[Draw3PenWidth] PASS: continuous canvas/Down/cursor/history contract\n", stderr);
+		return failures;
+	}
 
 	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
 		ID3D11Buffer* unwritableInkBuffer) noexcept
@@ -8581,7 +8750,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->selectedTool = batchTool; // 倒转覆盖不能污染同批后续 contact 的原始选择。
 				runtime->tool = tool;
 				// 产品样式与工具一样在 Down 时锁存，活动笔划和断触续接不读取后续修改。
-				runtime->visualStyle = window_.ProductVisualStyleSnapshot();
+				CaptureProductStrokeStyle(*runtime, window_);
 				runtime->eraserWidthMode = batchEraserWidthMode;
 				runtime->eraserWidthModeRevision = batchEraserWidthModeRevision;
 				runtime->suppressPressure = suppressPressure;
@@ -8634,9 +8803,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				runtime->speedEraserModelTime = 0.0;
 				runtime->speedEraserModelDiameter = baseDiameter;
-				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
-				runtime->stroke.Reset(baseDiameter, configuration_.expectedSpeed,
-					widthMode, highlighter);
+				ResetNominalStroke(*runtime, baseDiameter, configuration_, widthMode);
 				runtime->stroke.useDisplayTime = (runtime->tool == DrawingTool::Pen || runtime->tool == DrawingTool::HardPen);
 				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
 				const auto& modelParams = runtime->tool == DrawingTool::Eraser
@@ -9891,7 +10058,7 @@ namespace Inkeys::Drawing::Draw3
 					// Touch 笔尖沿用各自 Down 样式，避免多 contact 调色后互相串色。
 					laserTipVisuals.push_back({
 						.dot = { snapshot.position.x, snapshot.position.y,
-							LaserSolidRadius(configuration_.dpiScale), 1.0f },
+							LaserSolidRadius(ProductTargetScale(runtime->visualStyle)), 1.0f },
 						.visualStyle = runtime->visualStyle });
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					++runtimeCursorSourceCount;
@@ -12092,7 +12259,7 @@ namespace Inkeys::Drawing::Draw3
 					layer.stableBounds = {};
 					layer.liveBounds = {};
 					layer.bounds = RectFromLaserPoints(LaserStrokeLayerPoints(layer),
-						configuration_.dpiScale, recoveredSize.width, recoveredSize.height);
+						ProductTargetScale(layer.visualStyle), recoveredSize.width, recoveredSize.height);
 					UnionRectInPlace(laserLiveBounds, layer.bounds);
 				}
 				laserCoverageMode = laserStrokeLayers.empty()
@@ -12189,7 +12356,7 @@ namespace Inkeys::Drawing::Draw3
 					layer.stableBounds = {};
 					layer.liveBounds = {};
 					const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
-					layer.bounds = RectFromLaserPoints(points, configuration_.dpiScale,
+					layer.bounds = RectFromLaserPoints(points, ProductTargetScale(layer.visualStyle),
 						size.width, size.height);
 					UnionRectInPlace(laserLiveBounds, layer.bounds);
 				}
@@ -12991,7 +13158,7 @@ namespace Inkeys::Drawing::Draw3
 									layer->stableBounds = {};
 									layer->liveBounds = {};
 									layer->bounds = RectFromLaserPoints(
-										coverageVisiblePoints, configuration_.dpiScale,
+										coverageVisiblePoints, ProductTargetScale(layer->visualStyle),
 										size.width, size.height);
 									UnionRectInPlace(frameDirty, layer->bounds);
 									UnionRectInPlace(runtime->visibleDirty, layer->bounds);
@@ -13005,7 +13172,7 @@ namespace Inkeys::Drawing::Draw3
 									layer->liveBounds,
 									configuration_.liveTipDurationSeconds +
 									GetPredictionDurationSeconds(stroke),
-									configuration_.dpiScale, size.width, size.height);
+									ProductTargetScale(layer->visualStyle), size.width, size.height);
 								layer->incrementalState.stableCommittedIndex =
 									dirtyPlan.ranges.nextStableCommittedIndex;
 								layer->incrementalState.rebuildRequired = false;

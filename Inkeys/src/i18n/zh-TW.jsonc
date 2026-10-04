@@ -95,7 +95,7 @@
         "FreeLineLabel": "自由線",
         "AnnotationLineLabel": "標註線",
         "HoldThicknessLabel": "按住以固定粗細",
-        "ThicknessFormat": "粗細 {}",
+        "ThicknessFormat": "粗細 {} DIP",
         "AnnotationUnavailableTitle": "標註線暫時無法使用",
         "AnnotationFixedUnsupportedTitle": "標註線尚未支援固定粗細",
         "AnnotationDescription": "將繪製方向鎖定為水平、垂直或斜 45°",

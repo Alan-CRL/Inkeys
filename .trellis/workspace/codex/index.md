@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 37
+- **Total Sessions**: 38
 - **Last Active**: 2026-10-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1146 | Active |
+| `journal-1.md` | ~1178 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-10-04 | Pen width DIP policy implemented and automatically verified | - | `chore/publish` |
 | 37 | 2026-10-04 | 原Draw3与嵌入版深入静态对照 | - | `chore/publish` |
 | 36 | 2026-10-04 | Win7 GPU到ULW静态定位与原Demo字节码对照 | - | `chore/publish` |
 | 35 | 2026-10-04 | Win7 22:48日志定位与PS2自检入口修正 | - | `chore/publish` |

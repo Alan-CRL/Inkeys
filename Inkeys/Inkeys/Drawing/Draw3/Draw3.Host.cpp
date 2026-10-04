@@ -222,6 +222,9 @@ namespace Inkeys::Drawing::Draw3
 		Inkeys::Display::Subscription displaySubscription;
 		std::atomic_bool displayScaleDirty = false;
 		RECT appliedDisplayClientBounds{};
+		Inkeys::Business::PenWidth::Context appliedPenWidthContext;
+		std::uintptr_t appliedPenWidthMonitor = 0;
+		bool penWidthContextPrepared = false;
 		GraphicsDeviceResources graphics;
 		InkRenderer renderer;
 		TransparentPresentationController presentation;
@@ -1185,10 +1188,41 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
 			scale.revision = previous.revision;
-			if (scale == previous && EqualRect(&clientBounds, &appliedDisplayClientBounds)) return;
-			scale.revision = previous.revision + 1;
-			appliedDisplayClientBounds = clientBounds;
-			window.SetSpeedEraserDisplayScale(scale);
+			if (!(scale == previous) || !EqualRect(&clientBounds, &appliedDisplayClientBounds))
+			{
+				scale.revision = previous.revision + 1;
+				appliedDisplayClientBounds = clientBounds;
+				window.SetSpeedEraserDisplayScale(scale);
+			}
+			Inkeys::Business::PenWidth::Context penContext;
+			penContext.paintDevice = bridge.Snapshot().paintDevice;
+			penContext.effectiveDpi = monitor && !syntheticDisplay
+				? (monitor->effectiveDpiX ? monitor->effectiveDpiX : 96u)
+				: syntheticDisplay ? 96.0 / scale.dipPerPixelX : QueryCompatibleWindowDpi(hwnd);
+			penContext.pixelWidth = scale.pixelWidth;
+			penContext.pixelHeight = scale.pixelHeight;
+			if (!monitor && !syntheticDisplay)
+			{
+				// 快照缺目标时用同一目标全幅矩形回退，不借用窗口/工作区/虚拟桌面。
+				MONITORINFO info{};
+				info.cbSize = sizeof(info);
+				if (monitorHandle && GetMonitorInfoW(monitorHandle, &info))
+				{
+					penContext.pixelWidth = info.rcMonitor.right - info.rcMonitor.left;
+					penContext.pixelHeight = info.rcMonitor.bottom - info.rcMonitor.top;
+				}
+			}
+			if (!penWidthContextPrepared || appliedPenWidthMonitor != scale.monitor ||
+				!Inkeys::Business::PenWidth::EquivalentContext(penContext, appliedPenWidthContext))
+			{
+				penContext.revision = appliedPenWidthContext.revision + 1;
+				appliedPenWidthContext = penContext;
+				appliedPenWidthMonitor = scale.monitor;
+				penWidthContextPrepared = true;
+				// 不持显示锁；返回前产品必须发布同代 resolved DIP 和目标上下文。
+				if (runtimeCallbacks.penWidthContextChanged)
+					runtimeCallbacks.penWidthContextChanged(runtimeCallbacks.context, penContext);
+			}
 		}
 
 		void PumpBridgeState()
@@ -1228,7 +1262,7 @@ namespace Inkeys::Drawing::Draw3
 			window.SetEraserInputs(state.eraserInputs);
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
-			window.SetProductVisualStyle(state.colorRgba, state.widthDip);
+			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);
 			if (state.workspace != Bridge::Workspace::Presentation &&
 				(workspace.load(std::memory_order_acquire) != state.workspace || restoreLatestScene))
 			{
@@ -1430,6 +1464,7 @@ namespace Inkeys::Drawing::Draw3
 			window.SetInputCoordinator(&input);
 			window.SetSpeedEraserDisplayScale({});
 			appliedDisplayClientBounds = {};
+			penWidthContextPrepared = false;
 			PublishDisplaySnapshot(Inkeys::Display::GetSnapshot());
 			// 启动握手保证绘制线程先拥有独立 GPU 资源，再启用唯一 RTS producer。
 			{
@@ -1508,6 +1543,8 @@ namespace Inkeys::Drawing::Draw3
 						}
 					}
 
+					// 输入准入前由绘制 owner 同步解析目标并消费产品样式，首笔无异步纠正。
+					if (graphicsInitialized) PumpBridgeState();
 					{
 						std::scoped_lock lock(startupMutex);
 						graphicsReady = graphicsInitialized;

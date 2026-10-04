@@ -38,6 +38,8 @@ namespace Inkeys::Drawing::Draw3
 
 export namespace Inkeys::Drawing::Draw3
 {
+	// 无 HWND：验证生产 DIP 转换、光标及 Down 样式锁存，保留连续浮点宽度。
+	int RunPenWidthProductionProbe() noexcept;
 	// 显式无窗口诊断入口：用生产 Laser 烘干路径验证真实 WARP Map 失败。
 	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
 		ID3D11Buffer* unwritableInkBuffer) noexcept;
