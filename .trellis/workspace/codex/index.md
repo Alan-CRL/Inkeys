@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 39
-- **Last Active**: 2026-10-04
+- **Total Sessions**: 41
+- **Last Active**: 2026-10-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1211 | Active |
+| `journal-1.md` | ~1280 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 42 | 2026-10-05 | Pen width DIP task accepted and completed | `79e5fe0835b39c482cd7c87724c4a8ffa21e2ed8`, `f8054a227174707a984291d875b4fcc6fadf605f`, `849e7107620c5e539cafaabbe725793f1bc6a577` | `chore/publish` |
+| 41 | 2026-10-04 | Pen width matching highlights and shape preset regression | - | `chore/publish` |
 | 40 | 2026-10-04 | Pen width follow-up: integer labels, retired startup recovery and live touch preview | - | `chore/publish` |
 | 39 | 2026-10-04 | Pen width DIP policy implemented and automatically verified | - | `chore/publish` |
 | 37 | 2026-10-04 | 原Draw3与嵌入版深入静态对照 | - | `chore/publish` |

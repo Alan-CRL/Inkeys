@@ -1209,3 +1209,72 @@ Removed DIP/approximation labels, commented out startup width/color recovery and
 ### Next Steps
 
 - User live-touch acceptance and further adjustments. Keep task in_progress; no commit, push or archive this round.
+
+
+## Session 41: Pen width matching highlights and shape preset regression
+<!-- trellis-session: v=2 fp=a14bbb3295473140 -->
+
+**Date**: 2026-10-04
+**Task**: Pen width matching highlights and shape preset regression
+**Branch**: `chore/publish`
+
+### Summary
+
+Explicit DIP matching now highlights the shared pen/shape preset after commit; source precision and independent shape slots remain unchanged. Final automatic gates and independent review passed, task remains in progress.
+
+### Main Changes
+
+- Shared Bar highlight query matches precise DIP with strict double tolerance; abnormal duplicate fallback has deterministic first-match highlight.
+- Production Bar regressions cover real release commit, shape Brush policy, independent slots, cancellation, stale revision and display changes.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Final InkeysRepo.sln Debug|ARM64, headless --no-window, width/state/Draw3/offscreen Bar probes, diff/context/BOM/CRLF all passed; research/preset-shape-verification.md and preset-shape-review.md contain evidence.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- User visual touch and shape acceptance plus further adjustments; keep task in_progress, no commit/push/finish/archive.
+
+
+## Session 42: Pen width DIP task accepted and completed
+<!-- trellis-session: v=2 fp=85c976bfec09ea79 -->
+
+**Date**: 2026-10-05
+**Task**: Pen width DIP task accepted and completed
+**Branch**: `chore/publish`
+
+### Summary
+
+User reported manual acceptance passed on 2026-10-05 and authorized completion. Committed final matching highlights and shape regression, archived only this task; all automatic gates and independent review passed.
+
+### Main Changes
+
+- DIP policy/defaults, paused startup recovery, integer labels, live touch candidates and pen/shape matching highlights delivered.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79e5fe0835b39c482cd7c87724c4a8ffa21e2ed8` | feat(ink): unify DIP pen widths and adaptive defaults |
+| `f8054a227174707a984291d875b4fcc6fadf605f` | fix(ink): simplify width labels and sync touch preview |
+| `849e7107620c5e539cafaabbe725793f1bc6a577` | fix(ink): highlight matching widths across pen and shape presets |
+
+### Testing
+
+- [OK] Final ARM64 build, headless, width/state/Draw3/offscreen probes and independent review PASS; user manual acceptance reported PASS without asserting untested device matrix.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Task completed and archived; release parent and Win7 task remain active. No push or PR.
