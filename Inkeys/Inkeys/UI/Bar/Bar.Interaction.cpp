@@ -1429,6 +1429,200 @@ public:
 				1, 1.0, widthSnapshot), "bar-shape-selected-uses-shape-slot");
 			require(SetPenWidth(7.0f, false), "fine-dial-restore-existing-fixture");
 
+			stage = "explicit-width-matches-preset-highlight";
+			const auto originalContext = GetPenWidthContext();
+			const int originalPaintDevice = setlist.paintDevice;
+			const auto selectedOnly = [&](const StateModeClass& snapshot, int expected)
+			{
+				for (size_t index = 0; index < 3; ++index)
+					require(IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen,
+						index, 4.0, snapshot) == (static_cast<int>(index) == expected),
+						"bar-only-matching-preset-highlighted");
+			};
+			const Context highlightContexts[] = {
+				{ 50, 1, 96.0, 1920, 1080 }, { 51, 1, 264.0, 2560, 1440 },
+				{ 52, 0, 96.0, 1920, 1080 }, { 53, 0, 264.0, 2560, 1440 },
+				{ 54, 0, 264.0, 320, 180 }
+			};
+			for (const auto& context : highlightContexts)
+			{
+				setlist.paintDevice = context.paintDevice;
+				ApplyPenWidthContext(context);
+				for (const auto tool : { PenToolSelectionEnum::SoftPen, PenToolSelectionEnum::HardPen,
+					PenToolSelectionEnum::Highlighter, PenToolSelectionEnum::Laser })
+				{
+					ChangeStateModeToPenTool(tool);
+					for (size_t index = 0; index < 3; ++index)
+					{
+						const auto snapshot = GetStateModeSnapshot();
+						const double targetDip = tool == PenToolSelectionEnum::Laser
+							? GetBarLaserThicknessPresetDip(index, snapshot)
+							: GetBarThicknessPresetMetrics(snapshot.Pen.ModeSelect, index, snapshot).resolvedWidthDip;
+						require(SetPenWidth(targetDip + 1.0, false), "bar-seed-nonpreset-width");
+						selectedOnly(GetStateModeSnapshot(), -1);
+						if (tool == PenToolSelectionEnum::Laser)
+							require(SetPenWidthIfRevision(targetDip, StateModeTransitionRevision(), false),
+								"bar-laser-explicit-width-commit");
+						else
+						{
+							const auto dialRange = GetBarThicknessSliderRange(snapshot.Pen.ModeSelect, 1.0, snapshot);
+							session.BeginThicknessFineDialDrag(targetDip + 1.0, 100.0, 4.0,
+								dialRange, StateModeTransitionRevision());
+							session.thicknessFineDialRawValue = targetDip;
+							session.PublishThicknessFineDialCandidate();
+							require(session.CommitThicknessFineDialSelection(false) == StateModeTransitionRevision(),
+								"bar-real-fine-dial-release-matches-preset");
+						}
+						const auto committed = GetStateModeVersionedSnapshot();
+						const auto committedBridge = bridgeRevision();
+						selectedOnly(committed.state, static_cast<int>(index));
+						require(GetPenWidthSelection(committed.state).source == Source::ExplicitDip
+							&& StateModeTransitionRevision() == committed.revision && bridgeRevision() == committedBridge,
+							"bar-highlight-does-not-rewrite-explicit-source-or-state");
+					}
+				}
+
+				stage = "shape-presets-use-shared-brush-policy";
+				ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+				require(SetPenWidth(9.25, false), "bar-shape-independent-brush-seed");
+				const auto brushSnapshot = GetStateModeSnapshot();
+				ChangeStateModeToShape();
+				for (const auto shape : { ShapeModeSelectEnum::IdtShapeStraightLine1,
+					ShapeModeSelectEnum::IdtShapeDashedLine1, ShapeModeSelectEnum::IdtShapeRectangle1 })
+				{
+					SetShapeModeSelect(shape);
+					const auto beforeShape = GetStateModeSnapshot();
+					const auto otherSelection = shape == ShapeModeSelectEnum::IdtShapeRectangle1
+						? beforeShape.Shape.StraightLine1.widthSelection : beforeShape.Shape.Rectangle1.widthSelection;
+					for (size_t index = 0; index < 3; ++index)
+					{
+						const auto brushPreset = GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen,
+							index, brushSnapshot);
+						require(SetPenWidthPresetIfRevision(static_cast<int>(index), StateModeTransitionRevision(), false),
+							"bar-shape-real-preset-button-setter");
+						const auto presetSnapshot = GetStateModeSnapshot();
+						const auto shapeMetrics = GetPenWidthMetrics(presetSnapshot);
+						require(shapeMetrics.resolvedWidthDip == brushPreset.resolvedWidthDip
+							&& shapeMetrics.appliedCanvasWidthPx == brushPreset.appliedCanvasWidthPx
+							&& GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen,
+								index, presetSnapshot).resolvedWidthDip == brushPreset.resolvedWidthDip,
+							"bar-shape-click-readout-and-ink-use-brush-preset");
+						selectedOnly(presetSnapshot, static_cast<int>(index));
+						require(SetPenWidth(brushPreset.resolvedWidthDip + 0.375, false)
+							&& SetPenWidthIfRevision(brushPreset.resolvedWidthDip, StateModeTransitionRevision(), false),
+							"bar-shape-explicit-release-commit");
+						const auto explicitSnapshot = GetStateModeSnapshot();
+						selectedOnly(explicitSnapshot, static_cast<int>(index));
+						const auto untouched = shape == ShapeModeSelectEnum::IdtShapeRectangle1
+							? explicitSnapshot.Shape.StraightLine1.widthSelection : explicitSnapshot.Shape.Rectangle1.widthSelection;
+						require(GetPenWidthSelection(explicitSnapshot).source == Source::ExplicitDip
+							&& explicitSnapshot.Pen.Brush1.widthSelection.explicitDip == 9.25
+							&& untouched.source == otherSelection.source && untouched.preset == otherSelection.preset
+							&& untouched.explicitDip == otherSelection.explicitDip,
+							"bar-shape-highlight-preserves-independent-slots");
+					}
+				}
+			}
+
+			stage = "preset-highlight-precision-and-invalid-inputs";
+			ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			auto matching = GetStateModeSnapshot();
+			matching.penWidthContext = highlightContexts[0];
+			matching.Pen.Brush1.widthSelection = { Source::ExplicitDip, Preset::Medium, 3.0 };
+			selectedOnly(matching, 1);
+			matching.Pen.Brush1.widthSelection.explicitDip = std::nextafter(3.0, 4.0);
+			selectedOnly(matching, 1);
+			for (int step = 0; step < 16; ++step)
+				matching.Pen.Brush1.widthSelection.explicitDip = std::nextafter(
+					matching.Pen.Brush1.widthSelection.explicitDip, 4.0);
+			selectedOnly(matching, -1);
+			matching.Pen.Brush1.widthSelection.explicitDip = static_cast<double>(std::nextafter(3.0f, 4.0f));
+			selectedOnly(matching, -1);
+			matching.Pen.Brush1.widthSelection.explicitDip = 3.1;
+			require(Inkeys::UI::Bar::Detail::FormatWidthDipNumber(3.1)
+				== Inkeys::UI::Bar::Detail::FormatWidthDipNumber(3.0),
+				"bar-same-rounded-text-fixture");
+			selectedOnly(matching, -1);
+			matching.penWidthContext = highlightContexts[4];
+			matching.Pen.Brush1.widthSelection.explicitDip = GetBarThicknessPresetMetrics(
+				PenModeSelectEnum::IdtPenSoftPen, 1, matching).resolvedWidthDip;
+			selectedOnly(matching, 1);
+			matching.Pen.Brush1.widthSelection = { Source::Preset, Preset::Thick,
+				matching.Pen.Brush1.widthSelection.explicitDip };
+			selectedOnly(matching, 2);
+			// 用真实策略触发异常全幅尺寸的同值回退，显式值只选首档，身份仍优先。
+			matching.penWidthContext = { 56, 0, 96.0,
+				(std::numeric_limits<int>::max)(), (std::numeric_limits<int>::max)() };
+			for (const auto mode : { PenModeSelectEnum::IdtPenSoftPen, PenModeSelectEnum::IdtPenHighlighter1 })
+			{
+				matching.Pen.ModeSelect = mode;
+				const double fallbackDip = GetBarThicknessPresetMetrics(mode, 0, matching).resolvedWidthDip;
+				require(GetBarThicknessPresetMetrics(mode, 1, matching).resolvedWidthDip == fallbackDip
+					&& GetBarThicknessPresetMetrics(mode, 2, matching).resolvedWidthDip == fallbackDip,
+					"bar-duplicate-fallback-dip-fixture");
+				auto& selection = mode == PenModeSelectEnum::IdtPenHighlighter1
+					? matching.Pen.Highlighter1.widthSelection : matching.Pen.Brush1.widthSelection;
+				selection = { Source::ExplicitDip, Preset::Thick, fallbackDip };
+				selectedOnly(matching, 0);
+				require(selection.source == Source::ExplicitDip && selection.explicitDip == fallbackDip,
+					"bar-fallback-highlight-preserves-explicit-dip");
+				selection = { Source::Preset, Preset::Thick, fallbackDip };
+				selectedOnly(matching, 2);
+			}
+			matching.Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
+			matching.penWidthContext = { 55, 0, 1536.0, 1, 1 };
+			matching.Pen.Brush1.widthSelection = { Source::ExplicitDip, Preset::Thin,
+				GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen, 0, matching).resolvedWidthDip };
+			selectedOnly(matching, 0);
+			for (int step = 0; step < 64; ++step)
+				matching.Pen.Brush1.widthSelection.explicitDip = std::nextafter(
+					matching.Pen.Brush1.widthSelection.explicitDip, 1.0);
+			selectedOnly(matching, -1); // 小于 1 DIP 时也不能添加绝对容差吸附。
+			for (const double invalid : { 0.0, -1.0, MaximumDip + 1.0,
+				std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity() })
+			{
+				matching.Pen.Brush1.widthSelection.explicitDip = invalid;
+				selectedOnly(matching, -1);
+			}
+			matching.Pen.Brush1.widthSelection = { static_cast<Source>(99), Preset::Medium, 3.0 };
+			selectedOnly(matching, -1);
+			matching.Pen.Brush1.widthSelection = { Source::Preset, static_cast<Preset>(99), 3.0 };
+			selectedOnly(matching, -1);
+			require(!IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 3, 1.0, matching),
+				"bar-invalid-preset-index-not-selected");
+
+			stage = "explicit-highlight-cancel-stale-and-display-change";
+			setlist.paintDevice = 1;
+			ApplyPenWidthContext(highlightContexts[0]);
+			require(SetPenWidth(7.0, false), "bar-cancel-nonpreset-seed");
+			begin(7.0);
+			session.thicknessFineDialRawValue = 6.0;
+			session.PublishThicknessFineDialCandidate();
+			session.CancelThicknessFineDialSelection();
+			session.CommitThicknessFineDialSelection(false);
+			require(GetPenWidthMetrics(GetStateModeSnapshot()).resolvedWidthDip == 7.0,
+				"bar-cancel-does-not-commit-matching-candidate");
+			selectedOnly(GetStateModeSnapshot(), -1);
+			begin(7.0);
+			session.thicknessFineDialRawValue = 6.0;
+			session.PublishThicknessFineDialCandidate();
+			ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen);
+			session.CommitThicknessFineDialSelection(false);
+			selectedOnly(GetStateModeSnapshot(), -1);
+			require(SetPenWidth(3.0, false), "bar-display-explicit-matching-seed");
+			selectedOnly(GetStateModeSnapshot(), 1);
+			setlist.paintDevice = 0;
+			ApplyPenWidthContext(highlightContexts[3]);
+			const auto afterDisplay = GetStateModeSnapshot();
+			require(GetPenWidthSelection(afterDisplay).source == Source::ExplicitDip
+				&& GetPenWidthMetrics(afterDisplay).resolvedWidthDip == 3.0,
+				"bar-display-change-keeps-explicit-dip");
+			selectedOnly(afterDisplay, -1);
+			setlist.paintDevice = originalPaintDevice;
+			ApplyPenWidthContext(originalContext);
+			ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
+			require(SetPenWidth(7.0, false), "bar-highlight-restore-existing-fixture");
+
 			stage = "touch-preview-candidate-same-frame";
 			for (const auto tool : { PenToolSelectionEnum::SoftPen, PenToolSelectionEnum::HardPen,
 				PenToolSelectionEnum::Highlighter, PenToolSelectionEnum::Laser })

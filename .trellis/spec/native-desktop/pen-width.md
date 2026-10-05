@@ -10,6 +10,7 @@
 - `Selection = Preset(Thin/Medium/Thick) | ExplicitDip(double)`；`Context = revision/paintDevice/effectiveDpi/full pixelWidth/pixelHeight`。
 - `GetPenWidthMetrics(snapshot)`、`SetPenWidthPresetIfRevision(index,revision,save)`、`SetPenWidthIfRevision(double,revision,save)`、`ApplyPenWidthContext(context)`。
 - `InitializePenWidthPreferences(context)` 在ReadSetting后、RTS准入前只初始化目标Context及一次Medium；启动Decode/flags/GetMemory已注释停用。Host callback同步发布真实绘制目标。
+- `IsBarThicknessPresetSelected(mode,index,dpiZoom,snapshot)`：Preset有效身份优先；ExplicitDip对同snapshot的Family/Context预设DIP做严格数值匹配，容差`8*double epsilon*max(abs(value),abs(target))`，无绝对下限；不写Selection/配置，不比较显示整数或canvas量化值。若异常尺寸安全回退使多个档位DIP相同，ExplicitDip只选Thin→Medium→Thick的首个匹配；Preset仍保留其身份。画笔/形状布局与hover共用此函数。
 - `GetBarThicknessPreviewMetrics(snapshot,candidateActive,candidateDip)`、`UpdateBarThicknessPreviewWidth(value,canvasPx,candidateActive,duration)`：实际Touch候选发布与RenderLoop共用，候选直接更新动画val；AdvanceAnimationsAndDeriveLayout必须将thicknessPreviewDragging计入属性组MarkChanged。
 - `PenWidthPreferences.hpp` codec：`PenWidth.Version=1, Unit="DIP"`；deploy的`Startup`与memory的`Selections`分别保存来源身份。
 
@@ -17,7 +18,7 @@
 
 业务/配置/UI是真正Windows DIP。`systemScale=effectiveDpi/96`，有效DPI[1,1536]，非法回退96。普通硬软笔1/3/6DIP，荧光16/24/36DIP，默认Medium。大屏paintDevice0按全幅旋转对称`min(max(W,H)/1920,min(W,H)/1080)`乘参考笔2/4/6px、荧光16/24/36px，再除systemScale得到DIP。其它模式普通设备；不新增识别或EDID宽度单位。Laser3/5/7DIP默认5独立。
 
-硬软共享Brush槽；形状当前独立StraightLine/Rectangle槽，不能凭历史“跟随画笔”注释新增跟随关系。各槽Selection是用户真值，resolved float缓存不能取代身份。Preset换场景重解析，ExplicitDip保留。Context、Selection、width必须在同一状态锁下快照；语义上下文变化推进revision，拒绝过期手势，等价刷新不重设宽度/写盘。
+硬软共享Brush槽；形状当前独立StraightLine/Rectangle槽，不能凭历史“跟随画笔”注释新增跟随关系。形状细/中/粗的点击、读数、预览共用Brush的同代Context与1/3/6DIP（大屏参考2/4/6px）策略；数值匹配高亮不意味着改为共享宽度记忆。各槽Selection是用户真值，resolved float缓存不能取代身份。Preset换场景重解析，ExplicitDip保留。Context、Selection、width必须在同一状态锁下快照；语义上下文变化推进revision，拒绝过期手势，等价刷新不重设宽度/写盘。
 
 `idealCanvasWidthPx=resolvedWidthDip*systemScale`。Draw3原本支持连续float，`appliedCanvasWidthPx=idealCanvasWidthPx`；普通笔/荧光/形状/Laser只在`CanvasDiameterForTool -> CanvasWidthPx`转一次。Down捕获style/context，活动笔迹不被下一代状态改变。整数兼容器独立为`max(1,floor(px+0.5))`；不得先取整DIP或半径。DIP上限65536、canvas上限1048576，输入保护在转换前；不整数化每点压力、预测、模型半径或GPU几何。
 
@@ -35,7 +36,7 @@ Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/sys
 | --- | --- |
 | NaN/Infinity/非正DIP/超限/float下溢 | setter/codec拒绝；resolver安全中档回退 |
 | 坏DPI/尺寸 | 96DPI/1080p确定fallback，无硬件探测等待 |
-| 同px多个Preset | 仅身份选中，不比较px猜测 |
+| 同px多个Preset | Preset身份优先；ExplicitDip匹配精确DIP，不比较px/整数文字猜测 |
 | 旧px没有源DPI | migration记录Legacy、EstimatedSourceDpi、Estimated=true |
 | 未知Version/Unit/枚举、部分字段 | 不作为旧px再次除DPI；保留future对象，独立安全回退 |
 | 原配置坏根/深度/体积/保存失败 | 原文件保持，不丢其它偏好 |
@@ -49,7 +50,7 @@ Slider连续double，基础Brush范围1/systemScale～30DIP、荧光min(16,1/sys
 
 ## 6. Tests Required
 
-真实policy矩阵普通设备100/125/150/200/275%、大屏1080/1440/2160p及荧光；横竖/非16:9/异常数据/奇数与半整数；真实codec的旧px/LaserDIP/幂等/portable/failedsave/futureAutoClean；生产启动残留旧/new Startup与memory仍Medium、后续初始化保留手动值；真实Staterevision、BarFineDial不改值/取消/身份/预览zoom分离/活动候选到core与outer.val同帧；真实Draw3浮点转换与捕获样式锁定。完整Solution Debug|ARM64、headless --no-window、早退生产probes和i18n check；有真实可见HWND的hidden测试未经GUI授权不运行。
+生产Bar新增手动非预设→提交匹配高亮且保持ExplicitDip、严格double容差/同文字不相等/非法输入、形状直线矩形各档与Brush同策略且独立槽、Explicit换屏不改值；真实policy矩阵普通设备100/125/150/200/275%、大屏1080/1440/2160p及荧光；横竖/非16:9/异常数据/奇数与半整数；真实codec的旧px/LaserDIP/幂等/portable/failedsave/futureAutoClean；生产启动残留旧/new Startup与memory仍Medium、后续初始化保留手动值；真实Staterevision、BarFineDial不改值/取消/身份/预览zoom分离/活动候选到core与outer.val同帧；真实Draw3浮点转换与捕获样式锁定。完整Solution Debug|ARM64、headless --no-window、早退生产probes和i18n check；有真实可见HWND的hidden测试未经GUI授权不运行。
 
 ## 7. Wrong vs Correct
 

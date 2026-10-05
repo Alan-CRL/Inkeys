@@ -51,3 +51,22 @@
 ### 本轮追加结果
 
 代码、规范与独立修补完成；最终完整ARM64构建、headless/width/state/config/Draw3/离屏Bar/i18n/diff均通过，见research/followup-verification.md。任务保持in_progress，当前触摸实机体验待人工，本轮未commit/push/归档。
+
+
+## 追加：手动粗细匹配高亮与形状三档统一
+
+最新用户要求见research/preset-shape-scope.md与preset-shape-research.md，覆盖旧“ExplicitDip无预设高亮”展示规则。保持ExplicitDip来源，只派生数值匹配；Preset身份优先。形状按钮值/文案/高亮共用Brush策略，宽度槽仍独立。本轮自动验证和独立审查后保持in_progress，不自动提交。
+
+
+### 追加高亮修复：自动验证结果
+
+- [x] 共用Layout高亮修复与真实Bar回归，形状策略/独立槽保持。
+- [x] 最终完整ARM64 build、headless、production width/state/Draw3/offscreen Bar全部通过，原41项hash与源码BOM/CRLF保持。
+- [ ] 本轮真实触摸/按钮视觉与跨设备人工验收，自动seam不替代实机。
+
+准确命令与验收等级见research/preset-shape-verification.md，独立审查见research/preset-shape-review.md。任务保持in_progress，不自动commit/push/归档。
+
+
+## 最终验收与结束授权（2026-10-05）
+
+用户明确反馈“人工验证通过”，并授权结束本任务和提交commit。记录为用户人工验收通过；不将反馈扩展为逐项设备/架构均已运行。此前pending为历史阶段记录。自动门禁及独立审查已通过，见research/preset-shape-verification.md与preset-shape-review.md；本轮按脚本归档仅此任务，发布父任务和Win7工作保持不变。

@@ -33,3 +33,13 @@
 ## 本轮需求覆盖
 
 本轮用户要求优先，见research/followup-scope.md；覆盖原≈DIP显示与启动偏好恢复合同。沿用当前任务不归档，主会话统一构建，独立审查后交付，不自动commit。
+
+
+## 追加：手动粗细匹配高亮与形状三档统一
+
+最新用户要求见research/preset-shape-scope.md与preset-shape-research.md，覆盖旧“ExplicitDip无预设高亮”展示规则。保持ExplicitDip来源，只派生数值匹配；Preset身份优先。形状按钮值/文案/高亮共用Brush策略，宽度槽仍独立。本轮自动验证和独立审查后保持in_progress，不自动提交。
+
+
+## 最终验收与结束授权（2026-10-05）
+
+用户明确反馈“人工验证通过”，并授权结束本任务和提交commit。记录为用户人工验收通过；不将反馈扩展为逐项设备/架构均已运行。此前pending为历史阶段记录。自动门禁及独立审查已通过，见research/preset-shape-verification.md与preset-shape-review.md；本轮按脚本归档仅此任务，发布父任务和Win7工作保持不变。

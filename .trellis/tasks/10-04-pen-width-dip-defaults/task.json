@@ -27,6 +27,10 @@
     "manual_acceptance": "passed_user_reported",
     "independent_review": "passed",
     "followup_validation": "passed",
-    "followup_manual_acceptance": "pending_live_touch"
+    "followup_manual_acceptance": "passed_user_reported",
+    "preset_shape_validation": "passed",
+    "preset_shape_review": "passed",
+    "preset_shape_manual_acceptance": "passed_user_reported",
+    "acceptance_date": "2026-10-05"
   }
 }

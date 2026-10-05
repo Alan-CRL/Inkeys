@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 
 export module Inkeys.UI.Bar:Layout;
 
@@ -350,10 +351,23 @@ export
 		size_t index, double dpiZoom, const StateModeClass& snapshot)
 	{
 		using namespace Inkeys::Business::PenWidth;
+		if (index >= 3) return false;
 		const auto selection = GetPenWidthSelection(snapshot);
-		// 身份来自当前工具槽，不因预设量化碰撞或显式值碰巧相等而误选。
-		return index < 3 && selection.source == Source::Preset
-			&& selection.preset == static_cast<Preset>(index);
+		if (!IsValidSelection(selection)) return false;
+		// 预设优先按身份；手动值仅派生高亮，不改变来源或按显示整数吸附。
+		if (selection.source == Source::Preset)
+			return selection.preset == static_cast<Preset>(index);
+		// 异常尺寸可能让多个预设回退为相同 DIP，固定只高亮首个匹配档。
+		for (size_t candidateIndex = 0; candidateIndex <= index; ++candidateIndex)
+		{
+			const double targetDip = PresetDip(static_cast<Preset>(candidateIndex),
+				GetPenWidthFamily(snapshot), snapshot.penWidthContext);
+			const double tolerance = 8.0 * std::numeric_limits<double>::epsilon()
+				* (std::max)(abs(selection.explicitDip), abs(targetDip));
+			if (abs(selection.explicitDip - targetDip) <= tolerance)
+				return candidateIndex == index;
+		}
+		return false;
 	}
 
 	bool IsBarThicknessPresetSelected(PenModeSelectEnum mode,

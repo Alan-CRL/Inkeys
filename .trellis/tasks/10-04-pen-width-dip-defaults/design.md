@@ -14,11 +14,11 @@ Resolve(selection,family,context) 是唯一策略解析。scale=有效DPI/96；D
 
 理想 px=resolved DIP*scale；生产连续适配 applied=ideal，安全正数量化函数只供整数兼容与展示测试，max(1,floor(validPx+0.5))。先检查 finite/正数/边界再转换，禁止提前取整DIP或半径。允许有效宽度低于1 DIP；异常数值给确定安全回退/拒绝，有效DIP范围为(0,65536]，canvas px上限1048576；setter/codec拒绝非法、超限或缩窄到float会下溢为0的值；resolver对非法输入安全回退对应中档，最终canvas适配饱和，避免转换溢出。
 
-State API：GetPenWidthSelection(snapshot)、SetPenWidthPresetIfRevision(index,revision,setMemory)、GetPenWidthContext()、GetPenWidthMetrics(snapshot)、ApplyPenWidthContext(context)；原 SetPenWidth/IfRevision 表示 ExplicitDip，不让数值碰巧相等选中预设。精度保留在 Selection/策略 double，bridge/style继续double直至现有float Draw3像素渲染接口在最后浮点转换，不引入整数降级。
+State API：GetPenWidthSelection(snapshot)、SetPenWidthPresetIfRevision(index,revision,setMemory)、GetPenWidthContext()、GetPenWidthMetrics(snapshot)、ApplyPenWidthContext(context)；原 SetPenWidth/IfRevision 表示 ExplicitDip；值与当前预设相等可派生高亮，但不改变来源身份。精度保留在 Selection/策略 double，bridge/style继续double直至现有float Draw3像素渲染接口在最后浮点转换，不引入整数降级。
 
 ## 状态来源、显示上下文与线程
 
-各已有宽度槽附加 Selection；默认 Preset Medium。Preset 身份持久化，resolved float仅缓存；ExplicitDip真值保存DIP。硬/软仍同 Brush；Laser独立；Shape独立槽继续现有关系。预设选中只看身份；ExplicitDip无预设选中。
+各已有宽度槽附加 Selection；默认 Preset Medium。Preset 身份持久化，resolved float仅缓存；ExplicitDip真值保存DIP。硬/软仍同 Brush；Laser独立；Shape独立槽继续现有关系。Preset高亮优先看身份；ExplicitDip以当前场景精确DIP匹配派生高亮，保留来源（详见research/preset-shape-scope.md）。
 
 Context附于StateModeClass/StateModeVersionedSnapshot，宽度、Selection与Context在同一state锁内捕获，GetPenWidthMetrics(snapshot)只读该快照，不拼接另外一代GetContext。
 
@@ -51,3 +51,13 @@ Slider保持连续double映射；FineDial以进入时精确值为origin，真实
 ## 本轮设计覆盖
 
 本轮用户要求优先，见research/followup-scope.md；覆盖原≈DIP显示与启动偏好恢复合同。沿用当前任务不归档，主会话统一构建，独立审查后交付，不自动commit。
+
+
+## 追加：手动粗细匹配高亮与形状三档统一
+
+最新用户要求见research/preset-shape-scope.md与preset-shape-research.md，覆盖旧“ExplicitDip无预设高亮”展示规则。保持ExplicitDip来源，只派生数值匹配；Preset身份优先。形状按钮值/文案/高亮共用Brush策略，宽度槽仍独立。本轮自动验证和独立审查后保持in_progress，不自动提交。
+
+
+## 最终验收与结束授权（2026-10-05）
+
+用户明确反馈“人工验证通过”，并授权结束本任务和提交commit。记录为用户人工验收通过；不将反馈扩展为逐项设备/架构均已运行。此前pending为历史阶段记录。自动门禁及独立审查已通过，见research/preset-shape-verification.md与preset-shape-review.md；本轮按脚本归档仅此任务，发布父任务和Win7工作保持不变。
