@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 41
-- **Last Active**: 2026-10-05
+- **Total Sessions**: 50
+- **Last Active**: 2026-10-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1280 | Active |
+| `journal-1.md` | ~1411 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,10 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 50 | 2026-10-07 | 首发工程任务提交并归档完成 | `79521e64` | `chore/publish` |
+| 49 | 2026-10-07 | 首发工程任务完成，签名阻塞提交 | - | `chore/publish` |
+| 48 | 2026-10-06 | 0811自动窗口对照与有限证据收尾 | - | `chore/publish` |
+| 45 | 2026-10-05 | 首发规范审查及最终Release验证收口 | - | `chore/publish` |
 | 42 | 2026-10-05 | Pen width DIP task accepted and completed | `79e5fe0835b39c482cd7c87724c4a8ffa21e2ed8`, `f8054a227174707a984291d875b4fcc6fadf605f`, `849e7107620c5e539cafaabbe725793f1bc6a577` | `chore/publish` |
 | 41 | 2026-10-04 | Pen width matching highlights and shape preset regression | - | `chore/publish` |
 | 40 | 2026-10-04 | Pen width follow-up: integer labels, retired startup recovery and live touch preview | - | `chore/publish` |

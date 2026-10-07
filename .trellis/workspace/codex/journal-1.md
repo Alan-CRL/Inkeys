@@ -1278,3 +1278,134 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - Task completed and archived; release parent and Win7 task remain active. No push or PR.
+
+## Session 45: 首发规范审查及最终Release验证收口
+<!-- trellis-session: v=2 fp=63d61fa7f586876f -->
+
+**Date**: 2026-10-05
+**Task**: 首发规范审查及最终Release验证收口
+**Branch**: `chore/publish`
+
+### Summary
+
+停止新性能优化，完成有限规范/安全增量复审、正式宏路径ARM64 Release与必要自动GUI回归及本地包检查；0811新配对受通知遮挡，不宣称完整不退化。Win7保持独立，不提交推送发布。
+
+### Main Changes
+
+- 本轮仅任务记录和journal；保留全部预存Win7源码与生成文件。代码规范三AC有证据，任务记completed；安全及首发原剩余门不伪报通过。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Release|ARM64完整solution Build exit0；State/粗细/Draw3粗细/Headless/PptCOM通过，extra预期2，资源与9文件unsigned ZIP校验通过。
+- [OK] 实际Release主钮三轮全部输入成功，属性3到6、三笔书写/擦除撤销/Laser操作、正常退出；设置捕获透明旧限制仍保留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 0811通知遮挡的新配对与共同Present/光学延迟缺口保留；Win7由独立任务处理后需实际最终源码重建与目标机验收，正式CI/签名/上传未执行。不自动追加优化或全仓审查。
+
+
+## Session 48: 0811自动窗口对照与有限证据收尾
+<!-- trellis-session: v=2 fp=7483730555ee8fe0 -->
+
+**Date**: 2026-10-06
+**Task**: 0811自动窗口对照与有限证据收尾
+**Branch**: `chore/publish`
+
+### Summary
+
+复核冻结F81F Release与精确0811并自动运行；150ms序列工作量不等，350ms端点复测未通过。保持既有门控，无新源码或优化，保留Win7独立改动。
+
+### Main Changes
+
+- 原任务交接更正150ms UI3等工作量假设；原始对照与正常退出证据保留
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [未达目标] 双方三轮注入与捕获无错误但不计等工作量性能通过；350ms单轮端点失败后按预算停止
+- [OK] 复用Oct5 Release构建及必要检查；本轮diff check通过，无重复昂贵构建
+
+### Status
+
+**本会话有限执行结束；性能验收未通过，集成任务仍进行中。**
+
+### Next Steps
+
+- Win7独立修复及最终发布重建/CI门仍保留；完整呈现性能不退化尚未取得证据
+
+
+## Session 49: 首发工程任务完成，签名阻塞提交
+<!-- trellis-session: v=2 fp=b155a8163d24a0bc -->
+
+**Date**: 2026-10-07
+**Task**: 首发工程任务完成，签名阻塞提交
+**Branch**: `chore/publish`
+
+### Summary
+
+按用户2026-10-07决定取消后续性能验证，首发父任务及七子工程范围标完成，Win7独立继续。23个收尾文件已暂存；1Password签名socket不可连接，commit失败，按规则停止且未绕过。
+
+### Main Changes
+
+- 修订验收边界与完成状态；Win7源码/spec/诊断/日志不纳入提交
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 有限独立完成范围复审与diff检查通过；无新源码，无重复构建或GUI
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 恢复现有1Password签名代理后提交暂存收尾，再执行任务归档；不重开性能验证
+
+
+## Session 50: 首发工程任务提交并归档完成
+<!-- trellis-session: v=2 fp=18c3e7fe57bdc904 -->
+
+**Date**: 2026-10-07
+**Task**: 首发工程任务提交并归档完成
+**Branch**: `chore/publish`
+
+### Summary
+
+现有签名配置重试成功，首发父任务及七子任务完成并归档。性能验收按用户决定取消；Win7 ULW独立继续，未push。
+
+### Main Changes
+
+- 提交23项首发收尾记录并归档相关Trellis任务
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79521e64` | chore: close first-release engineering work under accepted scope |
+
+### Testing
+
+- [OK] 暂存diff检查通过，未新增源码或重跑构建；Win7独立文件保留
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本任务结束，Win7修复与正式发布执行独立处理
