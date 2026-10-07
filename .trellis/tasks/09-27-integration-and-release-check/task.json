@@ -3,7 +3,7 @@
   "name": "integration-and-release-check",
   "title": "集成验收与发布检查",
   "description": "完整构建、自动化、人工矩阵、产物检查和最终独立复审",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-09-27",
-  "completedAt": null,
+  "completedAt": "2026-10-07",
   "branch": "chore/publish",
   "base_branch": "main",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "09-27-inkeys3-first-release-hardening",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-07：用户取消后续性能验证；本任务工程范围收尾完成。未证性能、特定故障整链和正式发布执行不改记PASS；Win7 ULW由10-02-win7-main-canvas独立处理。依据父任务completion-20261007.md及integration research/completion-scope-review-20261007.md。",
   "meta": {}
 }

@@ -1,3 +1,23 @@
+## 2026-10-07 用户修订范围与完成
+
+用户取消后续性能验证，保持当前实现；Win7 ULW独立修复。工程收尾完成并归档，性能未达目标/旧失败与特定未验证链仍保留原结果，不伪记PASS。正式发布执行门留给后续版本；本次只提交本任务记录，不包含独立Win7工作。完整依据见父任务completion-20261007.md及integration research/completion-scope-review-20261007.md。下方大矩阵为历史范围，不再作为本轮新增阻塞。
+
+## 2026-10-06 最新续接：自动对照执行，目标未伪报通过
+
+实际HEAD仍8d15d051，独立Win7线程新增脏源码/记录完整保留。本轮测试Oct5冻结F81F Release与精确0811 81A3，不是后来Win7工作区的最终构建。解除桌面遮挡后双方各三轮实际自动操作并正常退出；150ms反向受当前既有300ms防误触合同影响，末态不同，CPU中位2531.25/2546.875ms不能算等工作量或不退化。350ms一次有界复测七次成功注入仍前后Bar宽198，端点检查失败，停止方向；业务逐次接受/成功呈现证据仍缺。没有修改门控、动画/质量、生产或测试源码，没有新优化。
+
+规范原三AC工程验收已完成（任务completed），直接安全工程收口和Oct4 GUI/Office、Oct5宽度人工反馈/Release构建及必要检查有效。安全原未测/政策风险、Win7独立修复和正式发布CI/版本/签名门不标PASS；集成与父任务继续in_progress。不要再把Oct3/Oct5同150ms UI3 CPU称共同工作量；另行硬笔5绘图样本的CPU限定结论保留。详细证据verification-closeout-20261006.md及research/canary-evidence-review-20261006.md；Build/automation-perf/canary-0811-resume-20261006保留全部原始文件。未commit/push/archive；本轮停止，不自动衍生下一轮测试或优化。
+
+## 2026-10-05 本轮收口（覆盖下方旧待办）
+
+用户继续暂停新性能优化，授权可见GUI/Computer Use及既有自动操控；本轮不commit/push/发布。实际HEAD为8d15d051，保留独立Win7未提交差异。近期DIP粗细/标签/预览/高亮与用户人工验收已提交；有限增量独立审查无新确认规范/安全缺陷，代码规范原三AC已完成，安全覆盖/findings工程收尾完成但原残余风险/真机发布门不伪报全绿。
+
+最终正式宏路径Release|ARM64完整solution Build exit0（首次自定义共用OutDir的Rebuild遭CleanPptCOM清DLL/CS0006，随后仅Build恢复，首因日志保留）；状态/粗细/Draw3粗细/Headless/PptCOM及预期错误参数均通过，216布局0失败。实际资源与内嵌DLL校验、完整未签名9文件ZIP均通过。EXE位于Build/automation-perf/release-closeout-20261005/ARM64-Release/Inkeys.exe，SHA256 F81F790F7DABEA30A1F230F58E03B5DFB991710A57DFCA02E2CDB0F52D5092E9；HEAD加source-before/after-checks指纹表征包含Win7诊断的当时工作区，独立修复后需对其最终代码重新生成发布程序。
+
+该实际Release已自动完成三轮主钮展开/收起/150ms反向/闲置，以及属性粗细3→6、真实三笔/擦除撤销/Laser操作，正常退出；不要求用户手测。设置捕获透明旧限制仍保留，不算新回归。当前三轮产品累计CPU2109.375/2250/2015.625ms；与旧0811历史样本仅限参考，不证明完整呈现/延迟不退化。本轮Canary主钮被ShellExperienceHost通知遮挡，guard拒绝发送输入；已请求仅关闭通知环境障碍，未触及系统安全/QQ登录或绕过归属保护。
+
+既有后台动画fixture为隐藏窗口，旧More/SVG第二目标exit90不具有效实帧样本，0811也无共同CLI；未重跑216目标、放宽断言或新增benchmark。全部本轮有效证据见G子任务verification-closeout-20261005.md及research/release-incremental-review-20261005.md。其余只留下：可见帧/输入延迟不退化证据、独立Win7 ULW修复/目标机验收、正式CI标记/元数据/三架构/签名/上传。父/G不宣称全部完成、不派生新优化或全仓审查。
+
 ## 2026-10-04 阶段保存，任务继续
 
 用户确认GUI/Office人工验收通过，并授权commit当前阶段；不结束首发任务，不push、不发布/归档。普通GUI/Office按用户确认记为人工通过，不再把昨天LockApp遮挡列为当前操作阻塞；量化“不倒退”、特定故障链和Win7通过不能由此推断。
