@@ -1,8 +1,8 @@
 {
-  "id": "draw3-performance",
-  "name": "draw3-performance",
-  "title": "Draw3 性能专项",
-  "description": "集成 Draw3 的输入到成功呈现全链路调查、最小优化与对照",
+  "id": "commit-and-security-audit",
+  "name": "commit-and-security-audit",
+  "title": "提交审查与安全",
+  "description": "2026-08-10 起相关 commit 逐项覆盖、严重错误和可利用边界修复",
   "status": "completed",
   "dev_type": null,
   "scope": null,

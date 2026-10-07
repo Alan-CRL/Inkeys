@@ -1,8 +1,8 @@
 {
-  "id": "crash-restart-recovery",
-  "name": "crash-restart-recovery",
-  "title": "崩溃重启与恢复",
-  "description": "正常退出、主动/自动重启、崩溃链路和持久化恢复验证与修复",
+  "id": "integration-and-release-check",
+  "name": "integration-and-release-check",
+  "title": "集成验收与发布检查",
+  "description": "完整构建、自动化、人工矩阵、产物检查和最终独立复审",
   "status": "completed",
   "dev_type": null,
   "scope": null,

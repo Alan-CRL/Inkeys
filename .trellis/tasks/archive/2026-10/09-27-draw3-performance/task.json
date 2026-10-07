@@ -1,8 +1,8 @@
 {
-  "id": "integration-and-release-check",
-  "name": "integration-and-release-check",
-  "title": "集成验收与发布检查",
-  "description": "完整构建、自动化、人工矩阵、产物检查和最终独立复审",
+  "id": "draw3-performance",
+  "name": "draw3-performance",
+  "title": "Draw3 性能专项",
+  "description": "集成 Draw3 的输入到成功呈现全链路调查、最小优化与对照",
   "status": "completed",
   "dev_type": null,
   "scope": null,

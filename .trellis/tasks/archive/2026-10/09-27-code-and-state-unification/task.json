@@ -1,8 +1,8 @@
 {
-  "id": "commit-and-security-audit",
-  "name": "commit-and-security-audit",
-  "title": "提交审查与安全",
-  "description": "2026-08-10 起相关 commit 逐项覆盖、严重错误和可利用边界修复",
+  "id": "code-and-state-unification",
+  "name": "code-and-state-unification",
+  "title": "代码规范与统一入口",
+  "description": "第一方代码规范、职责与状态写入者审查、统一语义入口与回归",
   "status": "completed",
   "dev_type": null,
   "scope": null,

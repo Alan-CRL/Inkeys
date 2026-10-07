@@ -1,8 +1,8 @@
 {
-  "id": "ui3-performance",
-  "name": "ui3-performance",
-  "title": "UI3 性能专项",
-  "description": "动画、光影、SVG/路径和呈现链路的归因、最小优化与对照",
+  "id": "baseline-and-acceptance",
+  "name": "baseline-and-acceptance",
+  "title": "发布基线与验收方案",
+  "description": "冻结 H0/HC/H2、性能与功能基线、commit 审查集合和发布门槛",
   "status": "completed",
   "dev_type": null,
   "scope": null,
