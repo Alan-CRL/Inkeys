@@ -1,6 +1,7 @@
 module;
 
 #include "../../IdtMain.h"
+#include "../../PptSettingsPersistence.h"
 
 #include <initializer_list>
 #include <sstream>
@@ -15,8 +16,19 @@ import Inkeys.Conv.Text;
 
 namespace
 {
+	constexpr LONGLONG kMaxConfigFileBytes = 16LL * 1024 * 1024;
+
 	template <typename T>
 	inline constexpr bool InkeysConfigDependentFalseV = false;
+
+	constexpr bool IsRetiredLegacyBarButtonId(std::string_view id) noexcept
+	{
+		return id == "Inkeys.Bar.Pierce";
+	}
+
+	static_assert(IsRetiredLegacyBarButtonId("Inkeys.Bar.Pierce"));
+	static_assert(!Inkeys::IsFixedButtonsA2Id("Inkeys.Bar.Pierce"));
+	static_assert(Inkeys::IsFixedButtonsA2Id(Inkeys::BarButtonId::EndShow));
 
 	bool OccupyConfigFileForRead(HANDLE* hFile, const std::wstring& filePath)
 	{
@@ -30,36 +42,6 @@ namespace
 				0,
 				NULL,
 				OPEN_EXISTING,
-				FILE_ATTRIBUTE_NORMAL,
-				NULL
-			);
-
-			if (*hFile != INVALID_HANDLE_VALUE) return true;
-			if (time >= 3) return false;
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		}
-
-		return false;
-	}
-
-	bool OccupyConfigFileForWrite(HANDLE* hFile, const std::wstring& filePath)
-	{
-		std::filesystem::path directoryPath = std::filesystem::path(filePath).parent_path();
-		if (!std::filesystem::exists(directoryPath))
-		{
-			std::error_code ec;
-			std::filesystem::create_directories(directoryPath, ec);
-		}
-
-		for (int time = 1; time <= 5; time++)
-		{
-			*hFile = CreateFileW(
-				filePath.c_str(),
-				GENERIC_READ | GENERIC_WRITE,
-				0,
-				NULL,
-				OPEN_ALWAYS,
 				FILE_ATTRIBUTE_NORMAL,
 				NULL
 			);
@@ -674,6 +656,25 @@ namespace Inkeys
 	bool Config::Write()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
+		if (!hasLoadedDocument && !hasReadAllDocument)
+		{
+			const std::wstring path = GetFilePath();
+			const DWORD attributes = GetFileAttributesW(path.c_str());
+			if (attributes != INVALID_FILE_ATTRIBUTES)
+			{
+				// 已存在但坏/超限/不可读的配置不能被默认值覆盖。
+				Json::Value existing;
+				if (!LoadDocumentOnly(existing)) return false;
+				loadedDocument = existing;
+				hasLoadedDocument = true;
+			}
+			else
+			{
+				const DWORD error = GetLastError();
+				if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+					return false;
+			}
+		}
 		const bool autoCleanEnabled = LoadConfigValue(this->Config.AutoClean);
 
 		Json::Value baseRoot = Json::Value(Json::objectValue);
@@ -746,7 +747,9 @@ namespace Inkeys
 		}
 
 		// 先迁移旧单数组，再套用文档，避免新区默认值挡住拆分结果。
-		TryMigrateLegacyBarButtonLayout(parsedRoot);
+		// 直接写回完整迁移文档；不能依赖 Bar 后续恰好再次规范化 A1/A2。
+		if (TryMigrateLegacyBarButtonLayout(parsedRoot))
+			(void)WriteDocumentToFile(GetFilePath(), parsedRoot);
 		ApplyDocument(parsedRoot, paths);
 		loadedDocument = parsedRoot;
 		hasLoadedDocument = true;
@@ -819,6 +822,8 @@ namespace Inkeys
 
 // 旧布局中的 Divider 不迁入三区配置；交界分割线改由运行时注入。
 			if (IsRuntimeBoundaryDividerId(id)) continue;
+			// 旧 Pierce 已退出产品合同，迁移时直接丢弃而不是伪装成扩展按钮。
+			if (IsRetiredLegacyBarButtonId(id)) continue;
 			if (IsFixedButtonsA1Id(id)) fixedA1Json.append(makeFixedObject(id));
 			else if (IsFixedButtonsA2Id(id)) fixedA2Json.append(makeFixedObject(id));
 			else extensionJson.append(makeExtensionObject(id, visible));
@@ -867,7 +872,9 @@ namespace Inkeys
 			return false;
 		}
 
-		if (fileSize.QuadPart > static_cast<LONGLONG>(MAXDWORD))
+		if (fileSize.QuadPart <= 0 ||
+			fileSize.QuadPart > kMaxConfigFileBytes ||
+			fileSize.QuadPart > static_cast<LONGLONG>(MAXDWORD))
 		{
 			UnOccupyConfigFile(&fileHandle);
 			return false; // 文件过大
@@ -898,46 +905,25 @@ namespace Inkeys
 
 		std::istringstream jsonContentStream(jsonContent);
 		Json::CharReaderBuilder readerBuilder;
+		readerBuilder["stackLimit"] = 64;
 		std::string jsonErr;
 
-		if (!Json::parseFromStream(readerBuilder, jsonContentStream, &outRoot, &jsonErr)) return false;
-		return true;
+		try
+		{
+			return Json::parseFromStream(readerBuilder, jsonContentStream,
+				&outRoot, &jsonErr) && outRoot.isObject();
+		}
+		catch (...) { return false; }
 	}
 
 	bool Config::WriteDocumentToFile(const std::wstring& filePath, const Json::Value& root)
 	{
-		HANDLE fileHandle = NULL;
-		if (!OccupyConfigFileForWrite(&fileHandle, filePath))
-		{
-			UnOccupyConfigFile(&fileHandle);
-			return false;
-		}
-
-		if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-		{
-			UnOccupyConfigFile(&fileHandle);
-			return false;
-		}
-
-		if (!SetEndOfFile(fileHandle))
-		{
-			UnOccupyConfigFile(&fileHandle);
-			return false;
-		}
-
 		Json::StreamWriterBuilder writerBuilder;
 		writerBuilder["indentation"] = "\t";
 		std::string jsonContent = "\xEF\xBB\xBF" + Json::writeString(writerBuilder, root);
-
-		DWORD bytesWritten = 0;
-		if (!WriteFile(fileHandle, jsonContent.data(), static_cast<DWORD>(jsonContent.size()), &bytesWritten, NULL) ||
-			bytesWritten != jsonContent.size())
-		{
-			UnOccupyConfigFile(&fileHandle);
+		if (jsonContent.empty() || jsonContent.size() >
+			static_cast<std::size_t>(kMaxConfigFileBytes))
 			return false;
-		}
-
-		UnOccupyConfigFile(&fileHandle);
-		return true;
+		return Inkeys::PptSettings::WriteAtomically(filePath, jsonContent);
 	}
 }

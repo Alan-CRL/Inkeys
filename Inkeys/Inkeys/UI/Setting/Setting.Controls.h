@@ -14,7 +14,7 @@ namespace Inkeys::UI::Setting::Design
 	struct Palette
 	{
 		ImU32 appBase, pageSurface, card, cardSecondary, stroke;
-		ImU32 textPrimary, textSecondary, textDisabled, accent;
+		ImU32 textPrimary, textSecondary, textDisabled, accent, criticalText;
 		ImU32 subtleHover, subtlePressed, rowHover, rowPressed, selection;
 		ImU32 scrollbar, scrollbarHovered, scrollbarActive;
 		ImU32 notice[ImFluentInfoSeverity_Critical + 1];
@@ -61,6 +61,10 @@ namespace Inkeys::UI::Setting::Design
 	// 控件字体和自然宽度集中在此；size 是物理像素，行测量参数是 DIP。
 	bool Button(const char* label, const ImVec2& size = ImVec2(0, 0));
 	bool AccentButton(const char* label, const ImVec2& size = ImVec2(0, 0));
+	bool AccentNavigationItem(const char* id, const char* label, bool selected,
+		const char* glyph, bool compact);
+	bool CaptionNavigationButton(const char* id, const char* label, bool selected,
+		const ImVec2& size);
 	bool HyperlinkButton(const char* label);
 	bool IconButton(const char* id, const char* glyph, const ImVec2& size = ImVec2(0, 0));
 	bool ToggleButton(const char* label, bool* value, const ImVec2& size = ImVec2(0, 0));

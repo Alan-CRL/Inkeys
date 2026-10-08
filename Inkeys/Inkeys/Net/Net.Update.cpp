@@ -6,6 +6,13 @@ module;
 #include "../../IdtOther.h"
 #include "../../IdtTime.h"
 #include "../Window/Window.Legacy.hpp"
+#include "UpdatePathSafety.h"
+#include <cstdio>
+#include <exception>
+#include <memory>
+#include <sstream>
+#include <utility>
+#include <vector>
 
 module Inkeys.Net.Update;
 import :Download;
@@ -20,6 +27,13 @@ bool inconsistentArchitecture;
 AutomaticUpdateStateEnum AutomaticUpdateState;
 namespace
 {
+	constexpr unsigned long long kMaxUpdatePackageBytes = 512ull * 1024ull * 1024ull;
+	constexpr unsigned long long kMaxUpdateExecutableBytes = 512ull * 1024ull * 1024ull;
+	constexpr unsigned long long kMaxZipExpandedBytes = 1024ull * 1024ull * 1024ull;
+	constexpr int kMaxZipEntries = 128;
+
+	bool IsValidUpdateUrl(const string& url);
+
 	struct UpdateTargetSnapshot
 	{
 		string channel;
@@ -37,6 +51,96 @@ namespace
 	{
 		unique_lock<shared_mutex> lock(setlistUpdateMutex);
 		setlist.UpdateChannel = channel;
+	}
+
+	struct StagedUpdateMetadata
+	{
+		wstring edition;
+		wstring path;
+		string md5;
+		string sha256;
+		string channel;
+		string arch;
+	};
+
+	bool TryReadStagedUpdateMetadata(const wstring& filePath,
+		StagedUpdateMetadata& output) noexcept
+	{
+		try
+		{
+			constexpr DWORD kMaxStagedJsonBytes = 64 * 1024;
+			const HANDLE raw = CreateFileW(filePath.c_str(), GENERIC_READ,
+				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (raw == INVALID_HANDLE_VALUE) return false;
+			struct FileGuard
+			{
+				HANDLE handle;
+				~FileGuard() { CloseHandle(handle); }
+			} file{ raw };
+			LARGE_INTEGER length{};
+			if (!GetFileSizeEx(raw, &length) || length.QuadPart <= 0 ||
+				length.QuadPart > kMaxStagedJsonBytes) return false;
+			std::string text(static_cast<size_t>(length.QuadPart), '\0');
+			size_t offset = 0;
+			while (offset < text.size())
+			{
+				DWORD read = 0;
+				if (!ReadFile(raw, text.data() + offset,
+					static_cast<DWORD>(text.size() - offset), &read, nullptr) || read == 0)
+					return false;
+				offset += read;
+			}
+			if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
+			Json::CharReaderBuilder builder;
+			builder["stackLimit"] = 32;
+			builder["collectComments"] = false;
+			builder["failIfExtra"] = true;
+			std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+			Json::Value root;
+			std::string errors;
+			if (!reader || !reader->parse(text.data(), text.data() + text.size(),
+				&root, &errors) || !root.isObject() || !root["hash"].isObject())
+				return false;
+			const Json::Value& hash = root["hash"];
+			if (!root["edition"].isString() || !root["path"].isString() ||
+				!hash["md5"].isString() || !hash["sha256"].isString() ||
+				!root["channel"].isString() || !root["arch"].isString())
+				return false;
+			StagedUpdateMetadata candidate;
+			candidate.edition = utf8ToUtf16(root["edition"].asString());
+			candidate.path = utf8ToUtf16(root["path"].asString());
+			candidate.md5 = hash["md5"].asString();
+			candidate.sha256 = hash["sha256"].asString();
+			candidate.channel = root["channel"].asString();
+			candidate.arch = root["arch"].asString();
+			// 所有字段先在局部完成，失败绝不向业务线程发布半份缓存元数据。
+			output = std::move(candidate);
+			return true;
+		}
+		catch (const std::exception&) { return false; }
+		catch (...) { return false; }
+	}
+}
+
+int RunStagedUpdateJsonBoundaryProbe(const std::wstring& path,
+	bool expectedValid) noexcept
+{
+	try
+	{
+		StagedUpdateMetadata metadata;
+		if (TryReadStagedUpdateMetadata(path, metadata) == expectedValid) return 0;
+		std::fputs("[UpdateStagedJson] failed: unexpected validity\n", stderr);
+		return 1;
+	}
+	catch (const std::exception& error)
+	{
+		std::fprintf(stderr, "[UpdateStagedJson] exception: %s\n", error.what());
+		return 2;
+	}
+	catch (...)
+	{
+		std::fputs("[UpdateStagedJson] exception: unknown\n", stderr);
+		return 2;
 	}
 }
 wstring get_domain_name(wstring url) {
@@ -81,15 +185,24 @@ EditionInfoClass GetEditionInfo(string channel, string arch)
 
 	istringstream jsonContentStream(editionInformation);
 	Json::CharReaderBuilder readerBuilder;
+	readerBuilder["stackLimit"] = 32;
 	Json::Value editionInfoValue;
 	string jsonErr;
-	if (Json::parseFromStream(readerBuilder, jsonContentStream, &editionInfoValue, &jsonErr))
+	bool parsed = false;
+	try
+	{
+		parsed = Json::parseFromStream(readerBuilder, jsonContentStream,
+			&editionInfoValue, &jsonErr);
+	}
+	catch (const Json::Exception&) { parsed = false; }
+	if (parsed && editionInfoValue.isObject())
 	{
 		bool informationCompliance = true;
 		int tryTime = 0;
 
 	getInfoStart:
-		if (editionInfoValue.isMember(channel))
+		retEditionInfo = EditionInfoClass();
+		if (editionInfoValue.isMember(channel) && editionInfoValue[channel].isObject())
 		{
 			if (editionInfoValue[channel].isMember("edition_date") && editionInfoValue[channel]["edition_date"].isString()) retEditionInfo.editionDate = utf8ToUtf16(editionInfoValue[channel]["edition_date"].asString());
 			else informationCompliance = false;
@@ -148,6 +261,16 @@ EditionInfoClass GetEditionInfo(string channel, string arch)
 		}
 		else informationCompliance = false;
 
+		if (!IsSafeUpdateExecutableName(retEditionInfo.representation) ||
+			!IsSafeUpdateHash(retEditionInfo.hash_md5, 32) ||
+			!IsSafeUpdateHash(retEditionInfo.hash_sha256, 64) ||
+			retEditionInfo.fileSize.load() == 0 ||
+			retEditionInfo.fileSize.load() > kMaxUpdatePackageBytes)
+			informationCompliance = false;
+		for (int i = 0; i < retEditionInfo.path_size; ++i)
+			if (!IsValidUpdateUrl(retEditionInfo.path[i]))
+				informationCompliance = false;
+
 		// 失败则尝试其他通道
 		if (!informationCompliance && tryTime <= 1)
 		{
@@ -197,15 +320,13 @@ DownloadNewProgramStateClass downloadNewProgramState;
 
 void splitUrl(string input_url, string& prefix, string& domain, string& path)
 {
-	// 更新后的正则表达式，捕获前缀，并要求域名中至少包含一个点
-	regex url_regex(R"(^\s*(?:([a-zA-Z]+://))?((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?::\d+)?)(/\S*)?\s*$)", regex::icase);
-	smatch url_match_result;
-
-	if (regex_match(input_url, url_match_result, url_regex))
+	SafeUpdateUrlParts parsed;
+	if (ParseSafeUpdateUrl(input_url, parsed))
 	{
-		prefix = url_match_result[1].matched ? url_match_result[1].str() : "";
-		domain = url_match_result[2].str();
-		path = url_match_result[3].matched ? url_match_result[3].str() : "";
+		prefix = parsed.scheme == UpdateUrlScheme::Https ? "https://" : "http://";
+		domain.assign(parsed.host);
+		if (parsed.explicitPort) domain += ":" + to_string(parsed.port);
+		path.assign(parsed.path);
 	}
 	else
 	{
@@ -214,110 +335,263 @@ void splitUrl(string input_url, string& prefix, string& domain, string& path)
 		path.clear();
 	}
 }
+namespace
+{
+	bool IsValidUpdateUrl(const string& url)
+	{
+		SafeUpdateUrlParts parsed;
+		return ParseSafeUpdateUrl(url, parsed);
+	}
+}
 AutomaticUpdateStateEnum DownloadNewProgram(DownloadNewProgramStateClass* state, EditionInfoClass editionInfo, string url, string arch)
 {
 	using enum AutomaticUpdateStateEnum;
 
-	error_code ec;
-	if (_waccess((globalPath + L"installer").c_str(), 4) == 0)
-	{
-		filesystem::remove_all(globalPath + L"installer", ec);
-		filesystem::create_directory(globalPath + L"installer", ec);
-	}
-	else filesystem::create_directory(globalPath + L"installer", ec);
-
+	// 远端字段必须先过边界，再创建、删除或移动任何安装文件。
+	if (!state || !IsValidUpdateUrl(url) ||
+		!IsSafeUpdateExecutableName(editionInfo.representation) ||
+		!IsSafeUpdateHash(editionInfo.hash_md5, 32) ||
+		!IsSafeUpdateHash(editionInfo.hash_sha256, 64) ||
+		editionInfo.fileSize.load() == 0 ||
+		editionInfo.fileSize.load() > kMaxUpdatePackageBytes)
+		return UpdateDownloadDamage;
 	string prefix, domain, path;
 	splitUrl(url, prefix, domain, path);
+	if ((prefix != "https://" && prefix != "http://") ||
+		domain.empty() || path.empty())
+		return UpdateDownloadDamage;
+
+	const wstring installer = globalPath + L"installer";
+	error_code ec;
+	filesystem::create_directory(installer, ec);
+	if (ec) return UpdateDownloadDamage;
+	const DWORD installerAttributes = GetFileAttributesW(installer.c_str());
+	if (installerAttributes == INVALID_FILE_ATTRIBUTES ||
+		(installerAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+		(installerAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+		return UpdateDownloadDamage;
+
+	const wstring timestamp = getTimestamp();
+	const wstring stageBase = L"stage_" + timestamp + L"_" +
+		to_wstring(GetCurrentProcessId());
+	wstring stageName, stageDirectory;
+	bool stageCreated = false;
+	for (int attempt = 0; attempt < 10; ++attempt)
+	{
+		stageName = stageBase + L"_" + to_wstring(attempt);
+		stageDirectory = installer + L"\\" + stageName;
+		ec.clear();
+		if (filesystem::create_directory(stageDirectory, ec))
+		{
+			stageCreated = true;
+			break;
+		}
+		if (ec) break;
+	}
+	if (!stageCreated) return UpdateDownloadDamage;
+	const wstring zipPath = stageDirectory + L"\\package.tmp";
+	const wstring payloadPath = stageDirectory + L"\\payload.exe";
+	const wstring stagedJsonPath = stageDirectory + L"\\update.tmp";
+	const wstring finalName = L"new_procedure_" + stageName + L".exe";
+	const wstring finalPath = installer + L"\\" + finalName;
+	const wstring updateJsonPath = installer + L"\\update.json";
+	const auto cleanupStage = [&]
+	{
+		error_code ignored;
+		filesystem::remove(zipPath, ignored);
+		filesystem::remove(payloadPath, ignored);
+		filesystem::remove(stagedJsonPath, ignored);
+		filesystem::remove(stageDirectory, ignored); // 仅尝试删除本次创建的空目录。
+	};
+	if (!IsSafeUpdateExecutableName(finalName))
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
 
 	state->downloadedSize.store(0);
 	state->fileSize.store(editionInfo.fileSize.load());
-
-	wstring timestamp = getTimestamp();
-	bool reslut = DownloadEdition(domain, path, globalPath + L"installer\\", L"new_procedure_" + timestamp + L".tmp", state->downloadedSize, GetRefererInfo());
-
-	if (reslut)
+	if (!DownloadEdition(prefix + domain, path, stageDirectory + L"\\", L"package.tmp",
+		state->downloadedSize, GetRefererInfo()))
 	{
-		error_code ec;
-		filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
-		filesystem::remove(globalPath + L"installer\\" + editionInfo.representation, ec);
-
-		filesystem::rename(globalPath + L"installer\\new_procedure_" + timestamp + L".tmp", globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
-		if (ec) return UpdateDownloadDamage;
-
-		HZIP hz = OpenZip((globalPath + L"installer\\new_procedure_" + timestamp + L".zip").c_str(), 0);
-		SetUnzipBaseDir(hz, (globalPath + L"installer").c_str());
-		ZIPENTRY ze;
-		GetZipItem(hz, -1, &ze);
-		int numitems = ze.index;
-		for (int i = 0; i < numitems; i++)
-		{
-			GetZipItem(hz, i, &ze);
-			UnzipItem(hz, i, ze.name);
-		}
-		CloseZip(hz);
-
-		filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".zip", ec);
-		filesystem::rename(globalPath + L"installer\\" + editionInfo.representation, globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
-		if (ec) return UpdateDownloadDamage;
-
-		string hash_md5, hash_sha256;
-		{
-			hashwrapper* myWrapper = new md5wrapper();
-			hash_md5 = myWrapper->getHashFromFileW(globalPath + L"installer\\new_procedure_" + timestamp + L".exe");
-			delete myWrapper;
-		}
-		{
-			hashwrapper* myWrapper = new sha256wrapper();
-			hash_sha256 = myWrapper->getHashFromFileW(globalPath + L"installer\\new_procedure_" + timestamp + L".exe");
-			delete myWrapper;
-		}
-
-		//创建 update.json 文件，指示更新
-		if (editionInfo.hash_md5 == hash_md5 && editionInfo.hash_sha256 == hash_sha256)
-		{
-			if (!GetUpdateTargetSnapshot().enableAutoUpdate && !mandatoryUpdate)
-			{
-				error_code ec;
-				filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
-
-				return UpdateNew;
-			}
-			else
-			{
-				Json::Value root;
-
-				root["edition"] = Json::Value(utf16ToUtf8(editionInfo.editionDate));
-				root["path"] = Json::Value("installer\\new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
-				root["representation"] = Json::Value("new_procedure_" + utf16ToUtf8(timestamp) + ".exe");
-				root["channel"] = Json::Value(editionInfo.channel);
-
-				root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
-				root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
-
-				root["arch"] = Json::Value(arch);
-
-				root["old_name"] = Json::Value(utf16ToUtf8(GetCurrentExeName()));
-				if (mandatoryUpdate) root["MandatoryUpdate"] = Json::Value(mandatoryUpdate);
-
-				Json::StreamWriterBuilder outjson;
-				outjson.settings_["emitUTF8"] = true;
-				unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
-				ofstream writejson(globalPath + L"installer\\update.json", ios::binary);
-				writejson << "\xEF\xBB\xBF";
-				writer->write(root, &writejson);
-				writejson.close();
-			}
-		}
-		else
-		{
-			error_code ec;
-			filesystem::remove(globalPath + L"installer\\new_procedure_" + timestamp + L".exe", ec);
-
-			return UpdateDownloadDamage;
-		}
+		cleanupStage();
+		return UpdateDownloadFail;
 	}
-	else return UpdateDownloadFail;
+	const DWORD zipAttributes = GetFileAttributesW(zipPath.c_str());
+	ec.clear();
+	const auto compressedSize = filesystem::file_size(zipPath, ec);
+	if (zipAttributes == INVALID_FILE_ATTRIBUTES ||
+		(zipAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0 ||
+		ec || compressedSize == 0 || compressedSize > kMaxUpdatePackageBytes)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
 
+	HZIP archive = OpenZip(zipPath.c_str(), 0);
+	if (!archive)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	bool extracted = false;
+	do
+	{
+		ZIPENTRY summary{};
+		if (GetZipItem(archive, -1, &summary) != ZR_OK ||
+			summary.index <= 0 || summary.index > kMaxZipEntries) break;
+		unsigned long long expandedSize = 0;
+		int executableIndex = -1;
+		long executableSize = 0;
+		bool entriesValid = true;
+		for (int i = 0; i < summary.index; ++i)
+		{
+			ZIPENTRY entry{};
+			if (GetZipItem(archive, i, &entry) != ZR_OK ||
+				entry.comp_size < 0 || entry.unc_size < 0 ||
+				static_cast<unsigned long long>(entry.unc_size) >
+					kMaxUpdateExecutableBytes)
+			{
+				entriesValid = false;
+				break;
+			}
+			expandedSize += static_cast<unsigned long long>(entry.unc_size);
+			if (expandedSize > kMaxZipExpandedBytes)
+			{
+				entriesValid = false;
+				break;
+			}
+			size_t nameLength = 0;
+			while (nameLength < MAX_PATH && entry.name[nameLength] != L'\0')
+				++nameLength;
+			if (nameLength == MAX_PATH)
+			{
+				entriesValid = false;
+				break;
+			}
+			if (_wcsicmp(entry.name, editionInfo.representation.c_str()) == 0)
+			{
+				if (executableIndex != -1 ||
+					wstring_view(entry.name, nameLength) !=
+						wstring_view(editionInfo.representation.c_str(),
+							editionInfo.representation.size()) ||
+					(entry.attr & FILE_ATTRIBUTE_DIRECTORY) != 0 || entry.unc_size == 0)
+				{
+					entriesValid = false;
+					break;
+				}
+				executableIndex = i;
+				executableSize = entry.unc_size;
+			}
+		}
+		if (!entriesValid || executableIndex < 0) break;
+
+		// 只解到有容量上限的内存，绝不把 ZIP entry.name 当落盘路径。
+		vector<char> executable;
+		try { executable.resize(static_cast<size_t>(executableSize)); }
+		catch (...) { break; }
+		if (UnzipItem(archive, executableIndex, executable.data(),
+			static_cast<unsigned int>(executable.size())) != ZR_OK) break;
+		const HANDLE output = CreateFileW(payloadPath.c_str(), GENERIC_WRITE, 0,
+			nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (output == INVALID_HANDLE_VALUE) break;
+		DWORD written = 0;
+		const bool wrote = WriteFile(output, executable.data(),
+			static_cast<DWORD>(executable.size()), &written, nullptr) &&
+			written == executable.size() && FlushFileBuffers(output);
+		const bool closed = CloseHandle(output) != 0;
+		if (!wrote || !closed) break;
+		extracted = true;
+	} while (false);
+	if (CloseZip(archive) != ZR_OK) extracted = false;
+	if (!extracted)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+
+	md5wrapper md5;
+	sha256wrapper sha256;
+	if (editionInfo.hash_md5 != md5.getHashFromFileW(payloadPath) ||
+		editionInfo.hash_sha256 != sha256.getHashFromFileW(payloadPath))
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	if (!GetUpdateTargetSnapshot().enableAutoUpdate && !mandatoryUpdate)
+	{
+		cleanupStage();
+		return UpdateNew;
+	}
+	const wstring oldName = GetCurrentExeName();
+	if (!IsSafeUpdateExecutableName(oldName))
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+
+	Json::Value root;
+	root["edition"] = Json::Value(utf16ToUtf8(editionInfo.editionDate));
+	root["path"] = Json::Value(utf16ToUtf8(L"installer\\" + finalName));
+	root["representation"] = Json::Value(utf16ToUtf8(finalName));
+	root["channel"] = Json::Value(editionInfo.channel);
+	root["hash"]["md5"] = Json::Value(editionInfo.hash_md5);
+	root["hash"]["sha256"] = Json::Value(editionInfo.hash_sha256);
+	root["arch"] = Json::Value(arch);
+	root["old_name"] = Json::Value(utf16ToUtf8(oldName));
+	if (mandatoryUpdate) root["MandatoryUpdate"] = Json::Value(mandatoryUpdate);
+	Json::StreamWriterBuilder outjson;
+	outjson.settings_["emitUTF8"] = true;
+	unique_ptr<Json::StreamWriter> writer(outjson.newStreamWriter());
+	ostringstream jsonStream;
+	jsonStream << "\xEF\xBB\xBF";
+	if (writer->write(root, &jsonStream) != 0)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	const string jsonBytes = jsonStream.str();
+	if (!jsonStream || jsonBytes.empty() || jsonBytes.size() > 64 * 1024)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	const HANDLE jsonFile = CreateFileW(stagedJsonPath.c_str(), GENERIC_WRITE, 0,
+		nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (jsonFile == INVALID_HANDLE_VALUE)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	DWORD jsonWritten = 0;
+	const bool jsonReady = WriteFile(jsonFile, jsonBytes.data(),
+		static_cast<DWORD>(jsonBytes.size()), &jsonWritten, nullptr) &&
+		jsonWritten == jsonBytes.size() && FlushFileBuffers(jsonFile);
+	const bool jsonClosed = CloseHandle(jsonFile) != 0;
+	if (!jsonReady || !jsonClosed)
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+
+	if (!MoveFileExW(payloadPath.c_str(), finalPath.c_str(),
+		MOVEFILE_WRITE_THROUGH))
+	{
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	const DWORD jsonAttributes = GetFileAttributesW(updateJsonPath.c_str());
+	if ((jsonAttributes != INVALID_FILE_ATTRIBUTES &&
+		(jsonAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) ||
+		!MoveFileExW(stagedJsonPath.c_str(), updateJsonPath.c_str(),
+			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+	{
+		error_code ignored;
+		filesystem::remove(finalPath, ignored);
+		cleanupStage();
+		return UpdateDownloadDamage;
+	}
+	cleanupStage();
 	return UpdateRestart;
 }
 
@@ -377,38 +651,23 @@ updateStart:
 				string thash_md5, thash_sha256;
 				string tchannel, tarch;
 
-				Json::Reader reader;
-				Json::Value root;
-
-				ifstream readjson;
-				readjson.imbue(locale("zh_CN.UTF8"));
-				readjson.open((globalPath + L"installer\\update.json").c_str());
-
-				bool fileDamage = false;
-				if (reader.parse(readjson, root))
+				StagedUpdateMetadata cached;
+				bool fileDamage = !TryReadStagedUpdateMetadata(
+					globalPath + L"installer\\update.json", cached);
+				if (!fileDamage)
 				{
-					if (root.isMember("edition")) tedition = utf8ToUtf16(root["edition"].asString());
-					else fileDamage = true;
-					if (root.isMember("path")) tpath = utf8ToUtf16(root["path"].asString());
-					else fileDamage = true;
-
-					if (root.isMember("hash"))
-					{
-						if (root["hash"].isMember("md5")) thash_md5 = root["hash"]["md5"].asString();
-						else fileDamage = true;
-						if (root["hash"].isMember("sha256")) thash_sha256 = root["hash"]["sha256"].asString();
-						else fileDamage = true;
-					}
-					else fileDamage = true;
-
-					// 通道和架构确定
-					if (root.isMember("channel")) tchannel = root["channel"].asString();
-					else fileDamage = true;
-					if (root.isMember("arch")) tarch = root["arch"].asString();
-					else fileDamage = true;
+					tedition = std::move(cached.edition);
+					tpath = std::move(cached.path);
+					thash_md5 = std::move(cached.md5);
+					thash_sha256 = std::move(cached.sha256);
+					tchannel = std::move(cached.channel);
+					tarch = std::move(cached.arch);
 				}
-				readjson.close();
 
+				if (!IsSafeStagedUpdatePath(tpath) ||
+					!IsSafeUpdateHash(thash_md5, 32) ||
+					!IsSafeUpdateHash(thash_sha256, 64))
+					fileDamage = true;
 				if (!fileDamage)
 				{
 					string hash_md5, hash_sha256;
@@ -427,11 +686,8 @@ updateStart:
 					{
 						if (!GetUpdateTargetSnapshot().enableAutoUpdate)
 						{
-							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
-							{
-								error_code ec;
-								filesystem::remove_all(globalPath + L"installer", ec);
-							}
+							error_code ec;
+							filesystem::remove(globalPath + L"installer\\update.json", ec);
 						}
 						else
 						{
@@ -462,11 +718,8 @@ updateStart:
 						UpdateTargetSnapshot currentUpdateTarget = GetUpdateTargetSnapshot();
 						if (currentUpdateTarget.channel != editionInfo.channel || currentUpdateTarget.architecture != updateArch)
 						{
-							if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
-							{
-								error_code ec;
-								filesystem::remove_all(globalPath + L"installer", ec);
-							}
+							error_code ec;
+							filesystem::remove(globalPath + L"installer\\update.json", ec);
 
 							updateTargetChanged = true;
 							break;
@@ -483,11 +736,8 @@ updateStart:
 					}
 					else if (AutomaticUpdateState == UpdateNew && !mandatoryUpdate)
 					{
-						if (_waccess((globalPath + L"installer").c_str(), 0) == 0)
-						{
-							error_code ec;
-							filesystem::remove_all(globalPath + L"installer", ec);
-						}
+						error_code ec;
+						filesystem::remove(globalPath + L"installer\\update.json", ec);
 
 						hasUpdateNew = true;
 						break;

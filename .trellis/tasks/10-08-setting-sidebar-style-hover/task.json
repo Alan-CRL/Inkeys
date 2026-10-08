@@ -1,0 +1,33 @@
+{
+  "id": "setting-sidebar-style-hover",
+  "name": "setting-sidebar-style-hover",
+  "title": "恢复三段式侧栏并修复悬停颜色",
+  "description": "恢复三段式侧栏并修复悬停颜色",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "AlanCRL",
+  "assignee": "AlanCRL",
+  "createdAt": "2026-10-08",
+  "completedAt": "2026-10-08",
+  "branch": "fluent",
+  "base_branch": "fluent",
+  "worktree_path": "D:/Project/Inkeys/Repo/Inkeys",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-06-setting-winui3-design-rebuild",
+  "relatedFiles": [],
+  "notes": "前置内容同步通过后实施；三段式侧栏、共享颜色动画与用户倍率普通窗最小尺寸修复完成，完整ARM64 Solution、最终无窗口、i18n和独立check通过。待审查merge，不commit/push；GUI/窗口实机验收由父任务承载。用户随后明确要求转回原fluent且不保留临时分支；已将完整验证tree转入原目录，保留未提交merge，重新在原目录构建验证。",
+  "meta": {
+    "source_commit": "e2c212d4d9cd68367c08363c450d392e9d63bcef",
+    "depends_on": "10-08-setting-publish-baseline-sync",
+    "verification": "verification.md",
+    "gui_acceptance": "pending_parent",
+    "validated_original_worktree": "C:/Users/alan-/.codex/worktrees/fluent-setting-sidebar/Inkeys",
+    "validated_original_branch": "codex/fluent-setting-sidebar"
+  }
+}

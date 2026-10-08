@@ -2,6 +2,8 @@ module;
 
 #include <windows.h>
 
+#include "../Helper/FailedCleanupDeadline.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -20,12 +22,12 @@ export namespace Inkeys::Window
 		MagnifierHost,
 		MagnifierChild,
 		Freeze,
+		DrawpadPresentation,
 		Drawpad,
 		PptBottomLeft,
 		PptBottomRight,
 		PptMiddleLeft,
 		PptMiddleRight,
-		PptExitShow,
 		Bar,
 		Setting,
 		DisplayObserver,
@@ -39,6 +41,51 @@ export namespace Inkeys::Window
 	// RECT 四字段表示正向 inset；客户区和 resize 热区分别使用各自的度量。
 	[[nodiscard]] RECT QuerySettingClientFrameInsets(HWND hwnd = nullptr,
 		bool maximized = false, UINT dpi = 0) noexcept;
+	enum class DrawpadSurfaceVisibility : std::uint8_t
+	{
+		Primary,
+		Presentation,
+		Hidden,
+	};
+
+	enum class OverlayActivationMode : std::uint8_t
+	{
+		Presentation,
+		Whiteboard,
+	};
+
+	struct OverlayActivationStyle
+	{
+		DWORD setExStyle = 0;
+		DWORD clearExStyle = 0;
+		bool taskbarAnchor = false;
+		bool acceptsActivation = false;
+	};
+
+	[[nodiscard]] constexpr OverlayActivationStyle ResolveOverlayActivationStyle(
+		WindowRole role, OverlayActivationMode mode) noexcept
+	{
+		if (mode == OverlayActivationMode::Whiteboard)
+		{
+			if (role == WindowRole::Freeze)
+				return { WS_EX_APPWINDOW, WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+					true, true };
+			if (role == WindowRole::Drawpad)
+				return { WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, false, true };
+		}
+		return { WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, WS_EX_APPWINDOW,
+			false, false };
+	}
+
+	[[nodiscard]] constexpr bool RequiresOverlayActivationStyleTransition(
+		WindowRole role, OverlayActivationMode from,
+		OverlayActivationMode to) noexcept
+	{
+		const auto before = ResolveOverlayActivationStyle(role, from);
+		const auto after = ResolveOverlayActivationStyle(role, to);
+		return before.setExStyle != after.setExStyle
+			|| before.clearExStyle != after.clearExStyle;
+	}
 
 	struct WindowSpec
 	{
@@ -77,10 +124,12 @@ export namespace Inkeys::Window
 		Service(Service&&) = delete;
 		Service& operator=(Service&&) = delete;
 
-		[[nodiscard]] bool Start(std::vector<WindowSpec> specs);
+		[[nodiscard]] bool Start(std::vector<WindowSpec> specs,
+			Shutdown::FailedCleanupSignal failedCleanup = {});
 		void StopAndJoin() noexcept;
 		void Stop() noexcept;
 		[[nodiscard]] bool Running() const noexcept;
+		void BeginShutdown() noexcept;
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept;
 		[[nodiscard]] bool Ready(WindowRole role) const noexcept;
@@ -98,10 +147,34 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool Show(WindowRole role);
 		[[nodiscard]] bool Hide(WindowRole role);
 		[[nodiscard]] bool HideAllUserWindows();
+		// 受控退出用：只投递给各 HWND owner，不等待可能已经卡住的 owner 完成。
+		[[nodiscard]] bool RequestHideAllUserWindows();
+		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
+			DrawpadSurfaceVisibility visibility,
+			std::function<bool()> stillDesired = {});
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds);
 		[[nodiscard]] bool SetClickThrough(WindowRole role, bool enabled);
-		[[nodiscard]] bool RequestTopmostRefresh();
-		[[nodiscard]] bool PromotePptWindow(WindowRole role);
+		// Setting 保持顶层应用窗口，只在自身 owner thread 动态加入或离开 Drawpad owner 链。
+		[[nodiscard]] bool SetSettingOwnedByDrawpad(bool enabled);
+		// 只在窗口所属 owner thread 修改扩展样式；调用方不得直接触碰 HWND 样式。
+		[[nodiscard]] bool SetExtendedStyleFlags(
+			WindowRole role, DWORD setMask, DWORD clearMask);
+		// Whiteboard 统一切换 taskbar/activation 样式，所有 HWND 操作仍在 owner thread。
+		[[nodiscard]] bool EnterWhiteboardWindowMode();
+		[[nodiscard]] bool LeaveWhiteboardWindowMode();
+		[[nodiscard]] bool WhiteboardWindowMode() const noexcept;
+		[[nodiscard]] bool MinimizeWhiteboardWindowGroup();
+		[[nodiscard]] bool RestoreWhiteboardWindowGroup();
+		[[nodiscard]] bool CancelPointerCapture();
+			[[nodiscard]] bool RequestTopmostRefresh();
+			// 成功 refresh 后在内部锁外调用；传空函数可注销并 drain 正在执行的回调。
+			void SetTopmostRefreshObserver(std::function<void()> callback);
+			[[nodiscard]] bool SetOverlayTopmost(bool topmost);
+			[[nodiscard]] bool OverlayTopmost() const noexcept;
+			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。
+			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen);
+			[[nodiscard]] bool OverlayFullscreen() const noexcept;
+			[[nodiscard]] bool PromotePptWindow(WindowRole role);
 
 		[[nodiscard]] bool BindMessages(
 			WindowRole role,

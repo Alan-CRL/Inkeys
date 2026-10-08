@@ -81,3 +81,12 @@ v1 的 248 DIP 导航、900 DIP 自动阈值、72 DIP 设置行最小高、浅�
 ## 当前用户批准的窗口与深色阶段
 
 2026-09-07用户要求继续测试并直接实现窗口样式和深色主题，允许Computer Use，完成后暂存。此前Out Of Scope中窗口/深色/Computer Use的排除已由本轮明确授权替换；当前要求、默认行为、配置归属和验收见research/approved-window-dark.md。
+
+
+## 2026-10-08 发布内容与侧栏子任务
+
+当前执行用户批准的两个顺序子任务：`10-08-setting-publish-baseline-sync` 完成内容/编译/无窗口复核后，才开始 `10-08-setting-sidebar-style-hover`。固定发布来源为 `e2c212d4`，在隔离工作区保留待审查合并；本轮不启动 GUI/Computer Use，不 commit/push，不修改原工作区已有改动。
+
+父任务继续承载真实鼠标、截图、窄窗/DPI、窗口和常驻会话实机验收。既有 LnkHelper 同步快捷方式 I/O 边界已记录在 task-handover.md，后续单独设计 FIFO 收口，本轮不改其公开接口或线程模型。
+
+本轮两个子任务的代码及自动化/静态复核已完成，分别见各自 verification.md。发布内容17个实际视图/12种更新状态已映射；侧栏与共享悬停修复在完整ARM64 Solution及真实控件连续帧回归中通过。父任务保持in_progress；真实鼠标/截图、完整页面及FIFO实机副作用、用户倍率/最大化恢复/跨屏DPI、窗口/常驻会话继续待验收。高用户倍率叠加物理workarea不足时固定底部可能被裁剪，记录边界，不宣称全部入口可达。

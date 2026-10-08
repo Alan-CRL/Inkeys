@@ -1,0 +1,3 @@
+#include "../Inkeys/resource.h"
+
+IDR_MESSAGE_BOX_ERROR PNG "../Inkeys/src/message_box/error.png"

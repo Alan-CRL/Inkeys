@@ -18,15 +18,25 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "10-08-setting-publish-baseline-sync",
+    "10-08-setting-sidebar-style-hover"
+  ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。2026-10-08接管两个08-13归档任务的后续设置工作和未完成验收，见research/task-handover.md。",
+  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。2026-10-08接管两个08-13归档任务的后续设置工作和未完成验收，见research/task-handover.md。2026-10-08用户批准两个子任务：发布基线同步前置、侧栏与悬停后置；独立工作区，不commit/push/GUI。2026-10-08两个子任务实施及独立静态/无窗口验证完成，保留隔离分支codex/fluent-setting-sidebar的未提交merge；父任务继续in_progress验收真实鼠标/截图/DPI、窗口恢复及常驻会话。用户随后要求直接在原fluent看到改动并删除临时分支：同一验证tree已转入原目录，原目录重编/无窗口验证及清理记录见research/fluent-integration.md。原目录完整ARM64构建退出0/381.8秒，最终正常用户权限--no-window及i18n通过；临时工作区与分支已删除，fluent保留未提交merge。用户已确认本轮改动完成有效，授权提交当前fluent merge commit，不push；其余父任务实机验收仍保留。",
   "meta": {
     "inherited_tasks": [
       ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui",
       ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting"
     ],
-    "handover_date": "2026-10-08"
+    "handover_date": "2026-10-08",
+    "latest_implementation_verification": [
+      ".trellis/tasks/10-08-setting-publish-baseline-sync/verification.md",
+      ".trellis/tasks/10-08-setting-sidebar-style-hover/verification.md"
+    ],
+    "current_delivery_branch": "fluent",
+    "current_delivery_worktree": "D:/Project/Inkeys/Repo/Inkeys",
+    "temporary_delivery_branch_removed": true
   }
 }

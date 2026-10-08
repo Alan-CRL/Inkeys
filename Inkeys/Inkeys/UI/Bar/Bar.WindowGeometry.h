@@ -4,9 +4,25 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 
 namespace Inkeys::UI::Bar
 {
+	// ULW、EndDraw 与成功几何发布不可被直移穿插；失败候选不能作为直移起点。
+	class BarWindowPresentationTransaction
+	{
+	public:
+		BarWindowPresentationTransaction(std::mutex& mutex, bool& boundsReady)
+			: lock_(mutex), boundsReady_(boundsReady) {}
+
+		void WindowUpdated() noexcept { boundsReady_ = false; }
+		void Commit() noexcept { boundsReady_ = true; }
+
+	private:
+		std::unique_lock<std::mutex> lock_;
+		bool& boundsReady_;
+	};
+
 	struct BarWindowScalarRange
 	{
 		double minimum = 0.0;
@@ -272,10 +288,11 @@ namespace Inkeys::UI::Bar
 	}
 
 	[[nodiscard]] constexpr POINT BarLayoutToScreenPoint(
-		POINT layoutPoint, POINT monitorOrigin) noexcept
+		POINT layoutPoint, POINT monitorOrigin,
+		POINT presentedTranslation = {}) noexcept
 	{
-		layoutPoint.x += monitorOrigin.x;
-		layoutPoint.y += monitorOrigin.y;
+		layoutPoint.x += monitorOrigin.x + presentedTranslation.x;
+		layoutPoint.y += monitorOrigin.y + presentedTranslation.y;
 		return layoutPoint;
 	}
 
@@ -369,6 +386,13 @@ namespace Inkeys::UI::Bar
 		RECT viewport{};
 		bool changed = false;
 	};
+
+	[[nodiscard]] constexpr bool ShouldSettleBarWindowViewport(
+		bool idleSettlePending, bool bottomDockDragActive) noexcept
+	{
+		// 按住拖动时即使输入暂时静止，也保留交互开始时预留的窗口包络。
+		return idleSettlePending && !bottomDockDragActive;
+	}
 
 	// 动画期间只允许扩张；进入 idle 的最后一帧才按当前外框一次收缩。
 	class BarWindowViewportController

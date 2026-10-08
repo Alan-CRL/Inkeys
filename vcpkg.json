@@ -11,6 +11,7 @@
     "magic-enum",
     "concurrentqueue",
     "unordered-dense",
+    "msgpack",
     "spdlog"
   ],
   "overrides": [

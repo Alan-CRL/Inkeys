@@ -1,4 +1,5 @@
 #include "Setting.Pages.h"
+#include "imfluent/imfluent_internal.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
@@ -21,79 +22,133 @@ namespace Inkeys::UI::Setting::Design
 		NavigationState& state, int selectedPage)
 	{
 		const auto& pane = geometry.pane;
+		const bool expanded = state.Expanded();
+		const std::string debugLabel = IA(I18nKey.SettingsUI.DebugSoftware.N);
+		const float debugWidth = TextWidth(debugLabel.c_str(), ImFluentTextStyle_Caption)
+			/ Pixels(1.0F) + 24.0F;
+		const auto sections = ResolveNavigationPaneGeometry(pane.Width(), pane.Height(),
+			expanded, ImFluent::GetStyle().NavItemHeight, debugWidth);
 		ImGui::SetCursorPos({ Pixels(pane.left), Pixels(pane.top) });
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, AppBase);
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0F, Pixels(4.0F) });
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0F, Pixels(RowGap) });
 		ImGui::BeginChild("##settings-pane", { Pixels(pane.Width()), Pixels(pane.Height()) },
 			ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-		ImGui::SetCursorPos({ Pixels(4.0F), Pixels(8.0F) });
-		const ImVec2 menuOrigin = ImGui::GetCursorScreenPos();
-		ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
-		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
-		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
-		ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
-		const bool toggled = Button("##pane-toggle", { Pixels(40.0F), Pixels(36.0F) });
-		ImFluent::PopStyleColor(4);
-		ImFluent::DrawIcon("\ue700", menuOrigin,
-			{ menuOrigin.x + Pixels(40.0F), menuOrigin.y + Pixels(36.0F) }, NavigationGlyphSize, TextPrimary);
-		if (state.Expanded())
-			TextAt(IA(I18nKey.SettingsUI.Design.NavigationTitle).c_str(),
-				{ menuOrigin.x + Pixels(44.0F), menuOrigin.y + Pixels(8.0F) },
-				Pixels(pane.Width() - 56.0F), ImFluentTextStyle_BodyStrong);
-
-		// 固定底栏与独立滚动菜单使用相同 4-DIP inset，收起时保留分组占位。
-		constexpr float headerHeight = 56.0F;
-		constexpr float footerHeight = 128.0F;
-		const float listHeight = (std::max)(1.0F, pane.Height() - headerHeight - footerHeight);
-		ImGui::SetCursorPos({ 0.0F, Pixels(headerHeight) });
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { Pixels(4.0F), 0.0F });
-		ImGui::BeginChild("##settings-nav-list", { 0.0F, Pixels(listHeight) },
-			ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
 		int result = -1;
+		bool toggled = false;
 		struct Entry { PageId page; const char* key; const char* glyph; };
-		const std::array entries{
+		const std::array topEntries{
 			Entry{ PageId::Home, I18nKey.SettingsUI.Home.N, "\ue80f" },
-			Entry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue713" },
-			Entry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uedc6" },
-			Entry{ PageId::Preset, I18nKey.SettingsUI.Preset.N, "\uf259" },
-			Entry{ PageId::Plugins, I18nKey.SettingsUI.PlugIn.N, "\uea86" },
-			Entry{ PageId::Components, I18nKey.SettingsUI.Component.N, "\ue74c" },
-			Entry{ PageId::HotKeys, I18nKey.SettingsUI.HotKey.N, "\ue765" },
-			Entry{ PageId::Language, I18nKey.SettingsUI.Language.N, "\ue774" },
-			Entry{ PageId::Configuration, I18nKey.SettingsUI.Configuration.N, "\ue8b7" },
-			Entry{ PageId::Version, I18nKey.SettingsUI.Version.N, "\ue946" },
-			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\uec4a" },
-			Entry{ PageId::Support, I18nKey.SettingsUI.Sponsor.N, "\ue734" },
-			Entry{ PageId::Debug, I18nKey.SettingsUI.DebugSoftware.N, "\ue90f" }
+			Entry{ PageId::Language, I18nKey.SettingsUI.Language.N, "\uf2b7" }
 		};
-		for (size_t index = 0; index < entries.size(); ++index)
-		{
-			if (index == 1 || index == 9)
-			{
-				const ImVec2 origin = ImGui::GetCursorScreenPos();
-				if (state.Expanded())
-					TextAt(IA(index == 1 ? I18nKey.SettingsUI.Design.Preferences : I18nKey.SettingsUI.Design.SupportGroup).c_str(),
-						{ origin.x + Pixels(12.0F), origin.y + Pixels(6.0F) },
-						Pixels(pane.Width() - 28.0F), ImFluentTextStyle_Caption, TextSecondary);
-				ImGui::Dummy({ 0.0F, Pixels(24.0F) });
-			}
-			const auto& entry = entries[index];
+		const std::array middleEntries{
+			Entry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue7b8" },
+			Entry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uee56" },
+			Entry{ PageId::Plugins, I18nKey.SettingsUI.PlugIn.N, "\ue74c" },
+			Entry{ PageId::Components, I18nKey.SettingsUI.Component.N, "\ue70b" },
+			Entry{ PageId::HotKeys, I18nKey.SettingsUI.HotKey.N, "\ue765" },
+			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\uec4a" },
+			Entry{ PageId::Configuration, I18nKey.SettingsUI.Configuration.N, "\ue81e" },
+			Entry{ PageId::Version, I18nKey.SettingsUI.Version.N, "\ue946" }
+		};
+		static_assert(middleEntries.size() == NavigationMiddleItemCount);
+		auto renderEntry = [&](const Entry& entry) {
 			ImGui::PushID(static_cast<int>(entry.page));
 			const bool selected = selectedPage == static_cast<int>(entry.page)
 				|| (entry.page == PageId::Version && selectedPage == static_cast<int>(PageId::Build));
-			if (ImFluent::NavItemEx("##page", IA(entry.key).c_str(), selected, entry.glyph, !state.Expanded()))
+			if (ImFluent::NavItemEx("##page", IA(entry.key).c_str(), selected, entry.glyph, !expanded))
 				result = static_cast<int>(entry.page);
 			ImGui::PopID();
+		};
+		auto setPosition = [](const LayoutRect& bounds, float sectionTop = 0.0F) {
+			ImGui::SetCursorPos({ Pixels(bounds.left), Pixels(bounds.top - sectionTop) });
+		};
+		auto divider = [](const LayoutRect& bounds, float sectionTop = 0.0F) {
+			const ImVec2 origin = ImGui::GetWindowPos();
+			ImGui::GetWindowDrawList()->AddRectFilled(
+				{ origin.x + Pixels(bounds.left), origin.y + Pixels(bounds.top - sectionTop) },
+				{ origin.x + Pixels(bounds.right), origin.y + Pixels(bounds.bottom - sectionTop) },
+				ImFluent::GetColorU32(ImFluentCol_DividerStrokeDefault));
+		};
+		const auto fixedFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+
+		// 顶部的汉堡、主页和语言单独固定；中段滚动不会改变它们的位置。
+		ImGui::SetCursorPos({ 0.0F, 0.0F });
+		if (ImGui::BeginChild("##settings-nav-top", { 0.0F, Pixels(sections.top.Height()) },
+			ImGuiChildFlags_AlwaysUseWindowPadding, fixedFlags))
+		{
+			setPosition(sections.menu);
+			const ImVec2 menuOrigin = ImGui::GetCursorScreenPos();
+			ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
+			toggled = Button("##pane-toggle", { Pixels(sections.menu.Width()), Pixels(sections.menu.Height()) });
+			ImFluent::PopStyleColor(4);
+			ImFluent::DrawIcon("\ue700", menuOrigin,
+				{ menuOrigin.x + Pixels(sections.menu.Width()), menuOrigin.y + Pixels(sections.menu.Height()) },
+				NavigationGlyphSize, TextPrimary);
+			if (expanded)
+				TextAt(IA(I18nKey.SettingsUI.Design.NavigationTitle).c_str(),
+					{ menuOrigin.x + Pixels(44.0F), menuOrigin.y + Pixels(8.0F) },
+					Pixels(pane.Width() - 56.0F), ImFluentTextStyle_BodyStrong);
+			for (size_t index = 0; index < topEntries.size(); ++index)
+			{
+				setPosition(sections.topItems[index]);
+				renderEntry(topEntries[index]);
+			}
+			divider(sections.separators[0]);
 		}
 		ImGui::EndChild();
-		ImGui::SetCursorPos({ 0.0F, Pixels(headerHeight + listHeight) });
-		ImGui::BeginChild("##settings-nav-footer", { 0.0F, Pixels(footerHeight) },
-			ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-		ImGui::Dummy({ 0.0F, Pixels(4.0F) });
-		if (ImFluent::NavItemEx("##community", IA(I18nKey.SettingsUI.Community.N).c_str(), false, "\ue716", !state.Expanded())) result = -2;
-		if (ImFluent::NavItemEx("##restart", IA(I18nKey.SettingsUI.RestartSoftware.N).c_str(), false, "\ue72c", !state.Expanded())) result = -3;
-		if (ImFluent::NavItemEx("##exit", IA(I18nKey.SettingsUI.ExitSoftware.N).c_str(), false, "\ue711", !state.Expanded())) result = -4;
+
+		// 只有此 child 接受滚动；隐藏滚动条保留完整行宽与 x=24 的图标轴。
+		if (sections.middle.Height() > 0.0F)
+		{
+			setPosition(sections.middle);
+			if (ImGui::BeginChild("##settings-nav-list", { 0.0F, Pixels(sections.middle.Height()) },
+				ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar))
+			{
+				for (const auto& entry : middleEntries) renderEntry(entry);
+			}
+			ImGui::EndChild();
+		}
+
+		setPosition(sections.footer);
+		if (ImGui::BeginChild("##settings-nav-footer", { 0.0F, Pixels(sections.footer.Height()) },
+			ImGuiChildFlags_AlwaysUseWindowPadding, fixedFlags))
+		{
+			const float footerTop = sections.footer.top;
+			divider(sections.separators[1], footerTop);
+			setPosition(sections.footerItems[0], footerTop);
+			if (ImFluent::NavItemEx("##community", IA(I18nKey.SettingsUI.Community.N).c_str(),
+				false, "\ue716", !expanded)) result = -2;
+			setPosition(sections.footerItems[1], footerTop);
+			ImGui::PushID(static_cast<int>(PageId::Support));
+			if (AccentNavigationItem("##page", IA(I18nKey.SettingsUI.Sponsor.N).c_str(),
+				selectedPage == static_cast<int>(PageId::Support), "\ue789", !expanded))
+				result = static_cast<int>(PageId::Support);
+			ImGui::PopID();
+			divider(sections.separators[2], footerTop);
+			setPosition(sections.footerItems[2], footerTop);
+			if (ImFluent::NavItemEx("##restart", IA(I18nKey.SettingsUI.RestartSoftware.N).c_str(),
+				false, "\ue72c", !expanded)) result = -3;
+			setPosition(sections.footerItems[3], footerTop);
+			ImFluent::PushStyleColor(ImFluentCol_TextPrimary, GetPalette().criticalText);
+			if (ImFluent::NavItemEx("##exit", IA(I18nKey.SettingsUI.ExitSoftware.N).c_str(),
+				false, "\ue711", !expanded)) result = -4;
+			ImFluent::PopStyleColor();
+			if (sections.debugVisible)
+			{
+				setPosition(sections.debug, footerTop);
+				ImGui::PushID(static_cast<int>(PageId::Debug));
+				if (CaptionNavigationButton("page", debugLabel.c_str(),
+					selectedPage == static_cast<int>(PageId::Debug),
+					{ Pixels(sections.debug.Width()), Pixels(sections.debug.Height()) }))
+					result = static_cast<int>(PageId::Debug);
+				ImGui::PopID();
+			}
+		}
 		ImGui::EndChild();
 		ImGui::PopStyleVar();
 		ImGui::EndChild();

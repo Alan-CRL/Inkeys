@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "核对失败传播、资源释放及低开销日志要求"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "核对 Win7 声明/实测证据和完整 Solution 构建要求"}
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "质量检查索引，供审查者定位 Draw3、窗口、呈现及兼容规范"}
+{"file": ".trellis/tasks/10-02-win7-main-canvas/research/draw3-render-path.md", "reason": "审查主画布目标、显隐门、首次提交与呈现归属"}

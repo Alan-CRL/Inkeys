@@ -17,6 +17,8 @@
 5. 补重复 Hide/Show、打开延迟、资源增长及设备 epoch 恢复的实机证据；记录可见空闲帧时间与打开/缩放/切页表现。旧任务“同等页面帧时间持续回退不超过约 10%”为比较目标，缺少可比基线时明确记录测量边界，不虚报通过。
 6. 核验既有 Mica/legacy Mica/Acrylic/Solid 能力回退、composition 变化及透明 clear 呈现；无法覆盖的 Windows 版本或 API 失败场景明确记录自动验证/静态审计与实机验证边界。
 
+7. 本轮发布基线复核确认 LnkHelper 的 `SetShortcut()` 在发布与旧 Fluent 中都同步枚举/读写桌面快捷方式，当前回调仍位于设置渲染路径。该既有边界问题留作后续设计：冻结修复/创建选项及路径后交业务 FIFO，验证连续切换与退出顺序；本次内容同步不扩大为 ShortcutAssistant 接口/线程重构。见子任务 `10-08-setting-publish-baseline-sync/research/baseline-check.md`。
+
 ## 历史要求与当前范围
 
 - 旧任务的固定 Light、无主题持久化要求已经由本任务实时浅深主题与 SettingDarkMode 配置替代；旧导航、窗口几何和库补丁要求以本任务后续批准设计及现行实现为准，不恢复旧方案。

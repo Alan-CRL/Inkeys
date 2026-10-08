@@ -1,0 +1,155 @@
+{
+  "preexisting_changed": [],
+  "format": [
+    {
+      "path": "Inkeys/IdtConfiguration.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/IdtConfiguration.h",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/IdtMain.cpp",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/IdtState.cpp",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/IdtState.h",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys.vcxproj",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys.vcxproj.filters",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cppm",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.Product.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.TransparentPresentation.cpp",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Interaction.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Layout.cppm",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.Main.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.RenderLoop.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.State.cpp",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/Inkeys/UI/Bar/Bar.State.cppm",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/src/i18n/en-US.jsonc",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-CN.jsonc",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "Inkeys/src/i18n/zh-TW.jsonc",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "InkeysHeadlessTests/InkeysHeadlessTests.vcxproj",
+      "bom": false,
+      "bareLF": 0
+    },
+    {
+      "path": "InkeysHeadlessTests/animation_tests.cpp",
+      "bom": true,
+      "bareLF": 0
+    },
+    {
+      "path": "Scripts/i18n.zh-CN.snapshot.jsonc",
+      "bom": false,
+      "bareLF": 0
+    }
+  ]
+}

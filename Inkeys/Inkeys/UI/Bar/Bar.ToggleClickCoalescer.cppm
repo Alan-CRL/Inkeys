@@ -3,6 +3,7 @@ module;
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include "../../Drawing/Draw3/Draw3.Bridge.h"
 
 export module Inkeys.UI.Bar.ToggleClickCoalescer;
 
@@ -16,8 +17,64 @@ export namespace Inkeys::UI::Bar
 		More,
 		ThicknessAdjust,
 		PenTypeMenu,
+		EraserAttribute,
+		EraserSensitivity,
 		Count,
 	};
+
+	struct BarDrawButtonToggleDecision
+	{
+		bool openDrawAttribute = false;
+	};
+
+	inline BarDrawButtonToggleDecision ResolveBarDrawButtonToggleDecision(
+		bool drawAttributeOpen) noexcept
+	{
+		// 属性面板只负责显隐，不能改写最后选择的笔型。
+		return { !drawAttributeOpen };
+	}
+
+	enum class BarClearClickAction : unsigned char
+	{
+		None,
+		PublishClear,
+		EnterSelection
+	};
+
+	inline BarClearClickAction ResolveBarClearClickAction(
+		bool selectionMode, bool currentPageHasContent,
+		bool doubleClickContinuation,
+		bool clearAttemptedForDoubleClick,
+		bool acceptedClearForDoubleClick) noexcept
+	{
+		if (doubleClickContinuation && clearAttemptedForDoubleClick)
+			return acceptedClearForDoubleClick
+				? BarClearClickAction::EnterSelection
+				: BarClearClickAction::PublishClear;
+		if (currentPageHasContent) return BarClearClickAction::PublishClear;
+		return selectionMode
+			? BarClearClickAction::None
+			: BarClearClickAction::EnterSelection;
+	}
+
+	enum class BarEraserClearReturnMode : unsigned char
+	{
+		Drawing,
+		Shape,
+		Eraser,
+		Selection,
+	};
+
+	inline BarEraserClearReturnMode ResolveEraserClearReturnMode(
+		Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind kind,
+		bool returnToSelection = false) noexcept
+	{
+		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
+		if (returnToSelection) return BarEraserClearReturnMode::Selection;
+		if (kind == Kind::Shape) return BarEraserClearReturnMode::Shape;
+		if (kind == Kind::Eraser) return BarEraserClearReturnMode::Eraser;
+		return BarEraserClearReturnMode::Drawing;
+	}
 
 	class BarToggleClickCoalescer
 	{

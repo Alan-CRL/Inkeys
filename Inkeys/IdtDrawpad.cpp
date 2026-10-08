@@ -9,7 +9,7 @@ import Inkeys.Text.Font;
 #include "IdtDrawpad.h"
 
 #include "IdtConfiguration.h"
-#include "IdtDisplayManagement.h"
+import Inkeys.Display;
 #include "IdtDraw.h"
 #include "Inkeys/Business/LegacyDrawState.hpp"
 #include "IdtHistoricalDrawpad.h"
@@ -48,6 +48,18 @@ Inkeys::Graphics::DibSurface window_background;
 
 HHOOK DrawpadHookCall;
 bool IsHotkeyDown;
+
+static Inkeys::Display::MonitorInfo CurrentPrimaryMonitor()
+{
+	const auto snapshot = Inkeys::Display::GetSnapshot();
+	if (const auto* monitor = snapshot ? snapshot->Primary() : nullptr) return *monitor;
+	Inkeys::Display::MonitorInfo fallback;
+	fallback.bounds = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+	fallback.pixelWidth = fallback.bounds.right;
+	fallback.pixelHeight = fallback.bounds.bottom;
+	return fallback;
+}
+
 LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode >= 0 && (wParam == WM_KEYDOWN || wParam == WM_KEYUP || wParam == WM_SYSKEYDOWN || wParam == WM_SYSKEYUP))
@@ -77,39 +89,6 @@ LRESULT CALLBACK DrawpadHookCallback(int nCode, WPARAM wParam, LPARAM lParam)
 		// 全局状态变量
 		bool checkEndShowIsChecking = CheckEndShow.isChecking;
 
-		// PPT模式：按键反馈
-		if (PptInfoState.TotalPage != -1 && !checkEndShowIsChecking)
-		{
-			// 检查按下的键
-			switch (pKeyInfo->vkCode)
-			{
-			case VK_SPACE:  // 空格键
-			case VK_NEXT:   // PgDn
-			case VK_RIGHT:  // 右箭头
-			case VK_DOWN:   // 下箭头
-			case VK_RETURN: // Enter
-			{
-				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
-					Inkeys::UI::Ppt::FlashPageDirection(true);
-				break;
-			}
-
-			case VK_PRIOR:  // PgUp
-			case VK_LEFT:   // 左箭头
-			case VK_UP:     // 上箭头
-			case VK_BACK:   // Backsapce
-			{
-				if (Inkeys::Inputs::IsKeyBoardDown((BYTE)pKeyInfo->vkCode))
-					Inkeys::UI::Ppt::FlashPageDirection(false);
-				break;
-			}
-
-			case VK_ESCAPE: // ESC
-			{
-				break;
-			}
-			}
-		}
 		// 传递拦截（主要是快捷键）
 		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection && !penetrate.select)
 		{
@@ -513,8 +492,9 @@ void PrepareCanvas(int width, int height)
 }
 void ResetPrepareCanvas()
 {
-	int width = MainMonitor.MonitorWidth;
-	int height = MainMonitor.MonitorHeight;
+	const auto monitor = CurrentPrimaryMonitor();
+	const int width = monitor.pixelWidth;
+	const int height = monitor.pixelHeight;
 
 	unique_lock<shared_mutex> lockPrepareCanvasQueue1(prepareCanvasQueueSm);
 	while (prepareCanvasQueue.size() != setlist.performanceSetting.preparationQuantity)
@@ -556,8 +536,9 @@ void MultiFingerDrawing(LONG pid, TouchMode initialMode, StateModeClass stateInf
 		int height;
 	} screenInfo;
 	{
-		screenInfo.width = MainMonitor.MonitorWidth;
-		screenInfo.height = MainMonitor.MonitorHeight;
+		const auto monitor = CurrentPrimaryMonitor();
+		screenInfo.width = monitor.pixelWidth;
+		screenInfo.height = monitor.pixelHeight;
 	}
 
 	struct
@@ -1495,9 +1476,10 @@ void DrawpadDrawing()
 
 					if (setlist.regularSetting.avoidFullScreen)
 					{
-						const RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-							MainMonitor.rcMonitor.left + MainMonitor.MonitorWidth,
-							MainMonitor.rcMonitor.top + MainMonitor.MonitorHeight - 1 };
+						const auto monitor = CurrentPrimaryMonitor();
+						const RECT bounds{ monitor.bounds.left, monitor.bounds.top,
+							monitor.bounds.left + monitor.pixelWidth,
+							monitor.bounds.top + monitor.pixelHeight - 1 };
 						(void)Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Drawpad, bounds);
 					}
 				}
@@ -1657,9 +1639,10 @@ void DrawpadDrawing()
 
 					if (setlist.regularSetting.avoidFullScreen)
 					{
-						const RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-							MainMonitor.rcMonitor.left + MainMonitor.MonitorWidth,
-							MainMonitor.rcMonitor.top + MainMonitor.MonitorHeight };
+						const auto monitor = CurrentPrimaryMonitor();
+						const RECT bounds{ monitor.bounds.left, monitor.bounds.top,
+							monitor.bounds.left + monitor.pixelWidth,
+							monitor.bounds.top + monitor.pixelHeight };
 						(void)Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Drawpad, bounds);
 					}
 
@@ -1683,9 +1666,10 @@ void DrawpadDrawing()
 			{
 				if (setlist.regularSetting.avoidFullScreen)
 				{
-					const RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-						MainMonitor.rcMonitor.left + MainMonitor.MonitorWidth,
-						MainMonitor.rcMonitor.top + MainMonitor.MonitorHeight - 1 };
+					const auto monitor = CurrentPrimaryMonitor();
+					const RECT bounds{ monitor.bounds.left, monitor.bounds.top,
+						monitor.bounds.left + monitor.pixelWidth,
+						monitor.bounds.top + monitor.pixelHeight - 1 };
 					(void)Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Drawpad, bounds);
 				}
 				topWindowNow = true;
@@ -1825,9 +1809,10 @@ void DrawpadDrawing()
 				timeBeginPeriod(1);
 				if (setlist.regularSetting.avoidFullScreen)
 				{
-					const RECT bounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-						MainMonitor.rcMonitor.left + MainMonitor.MonitorWidth,
-						MainMonitor.rcMonitor.top + MainMonitor.MonitorHeight };
+					const auto monitor = CurrentPrimaryMonitor();
+					const RECT bounds{ monitor.bounds.left, monitor.bounds.top,
+						monitor.bounds.left + monitor.pixelWidth,
+						monitor.bounds.top + monitor.pixelHeight };
 					(void)Inkeys::Window::GetService().SetBounds(Inkeys::Window::WindowRole::Drawpad, bounds);
 				}
 
@@ -2158,9 +2143,10 @@ int drawpad_main()
 
 		}
 
-		RECT drawpadBounds{ MainMonitor.rcMonitor.left, MainMonitor.rcMonitor.top,
-			MainMonitor.rcMonitor.left + MainMonitor.MonitorWidth.load(),
-			MainMonitor.rcMonitor.top + MainMonitor.MonitorHeight.load() };
+		const auto monitor = CurrentPrimaryMonitor();
+		RECT drawpadBounds{ monitor.bounds.left, monitor.bounds.top,
+			monitor.bounds.left + monitor.pixelWidth,
+			monitor.bounds.top + monitor.pixelHeight };
 		(void)Inkeys::Window::GetService().SetBounds(
 			Inkeys::Window::WindowRole::Drawpad, drawpadBounds);
 	}

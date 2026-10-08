@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "区分 Draw3 首帧与 StartupPreview/Bar 覆盖层门控"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Win7 兼容边界与 ARM64 完整 Solution 构建合同"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Win32 窗口、绘制线程、D3D 和透明 presenter 跨层排查"}
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "原生桌面规范索引，指向需按改动点读取的 Draw3 与窗口合同"}
+{"file": ".trellis/tasks/10-02-win7-main-canvas/research/draw3-render-path.md", "reason": "已核对的主画布链路、状态边界和可证伪诊断字段"}

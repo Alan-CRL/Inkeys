@@ -13,6 +13,8 @@ export namespace Inkeys::UI::Setting
 {
 	[[nodiscard]] bool Initialize();
 	void Shutdown() noexcept;
+	// 复用已启动的业务FIFO，不打开设置窗口。
+	void RequestConfigWrite();
 	void Show();
 	void Hide();
 	void Toggle();

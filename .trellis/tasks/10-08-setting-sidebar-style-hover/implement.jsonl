@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "当前桌面实现与验证合同"}
+{"file": ".trellis/tasks/10-08-setting-sidebar-style-hover/research/approved-plan.md", "reason": "本轮用户明确批准的范围和限制"}
+{"file": ".trellis/tasks/10-08-setting-publish-baseline-sync/verification.md", "reason": "Prerequisite complete: content map, full build and regressions"}
+{"file": ".trellis/tasks/10-08-setting-publish-baseline-sync/research/implementation-setting-content.md", "reason": "Preserve synced page IDs, content and business event contracts"}
+{"file": ".trellis/tasks/10-08-setting-sidebar-style-hover/research/sidebar-implementation.md", "reason": "Final production sidebar implementation and scope"}
+{"file": ".trellis/tasks/10-08-setting-sidebar-style-hover/research/hover-validation.md", "reason": "Real DrawData reproduction, repair and final regression"}
+{"file": ".trellis/tasks/10-08-setting-sidebar-style-hover/research/sidebar-hover-check.md", "reason": "Independent final check and manual acceptance boundaries"}
+{"file": ".trellis/tasks/10-08-setting-sidebar-style-hover/verification.md", "reason": "Final child delivery and parent follow-up"}

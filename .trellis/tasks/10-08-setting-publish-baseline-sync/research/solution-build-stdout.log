@@ -1,0 +1,331 @@
+
+  PptCOM -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+
+  Assembly exported to 'C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  compilation object save succeeded; see C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso
+  compilation object save succeeded; see C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso
+  compilation object save succeeded; see C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso
+  compilation object save succeeded; see C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso
+  compilation object save succeeded; see C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso
+  compilation object save succeeded; see C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso
+ROSLYNCODETASKFACTORYCSHARPCOMPILER : warning CS1668: Invalid search path 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\atlmfc\lib\ARM64' specified in 'LIB environment variable' -- 'directory does not exist' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+ROSLYNCODETASKFACTORYCSHARPCOMPILER : warning CS1668: Invalid search path 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\atlmfc\lib\ARM64' specified in 'LIB environment variable' -- 'directory does not exist' [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys.vcxproj]
+  Installing vcpkg dependencies to C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\
+  "C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\vcpkg\vcpkg.exe" install  --x-wait-for-lock --triplet "arm64-windows-static-v143" --vcpkg-root "C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\vcpkg\\" "--x-manifest-root=C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\\" "--x-install-root=C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\\"
+EXEC : internal error : D:\a\_work\1\s\src\vcpkg\base\files.cpp(338): Value was null [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Vcpkg\scripts\buildsystems\msbuild\support\InstallImplementation.targets]
+  Please open an issue at https://github.com/microsoft/vcpkg/issues/new?template=other-type-of-bug-report.md&labels=category:vcpkg-bug with detailed steps to reproduce the problem.
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Vcpkg\scripts\buildsystems\msbuild\support\InstallImplementation.targets(9,5): error MSB3073: The command ""C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\vcpkg\vcpkg.exe" install  --x-wait-for-lock --triplet "arm64-windows-static-v143" --vcpkg-root "C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\vcpkg\\" "--x-manifest-root=C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\\" "--x-install-root=C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\VcpkgInstalled\Arm64\\" " exited with code 1.
+  PptCOM.Tests -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  RenderPipeline.cpp
+  Conv.Text.cppm
+  Bar.WakeSignal.cppm
+  Bar.Animation.cpp
+  Bar.Scene.cppm
+  Bar.FramePacing.cppm
+  Bar.ToggleClickCoalescer.cppm
+  Bar.SurfaceLayout.cppm
+  Bar.Animation.cppm
+  RenderPipeline.cppm
+  Bar.Metrics.cppm
+  Other.Config.cppm
+  Other.Config.cpp
+  StartupPreview.State.cppm
+  Startup.Progress.cpp
+  Startup.Progress.cppm
+  StartupPreview.cpp
+  StartupPreview.State.cpp
+  StartupPreview.cppm
+  Ppt.cppm
+  Whiteboard.cppm
+  Freeze.cppm
+  MessageBox.cppm
+  PageControl.cppm
+  MessageBox.cpp
+  MessageBox.Layout.cpp
+  MessageBox.Window.cpp
+  Display.cpp
+  PptSession.cpp
+  Draw3.Presentation.cpp
+  ppt_session_tests.cpp
+  Draw3.Bridge.cpp
+  Draw3.PenCursor.cpp
+  Display.cppm
+  Draw3.ContactInput.cppm
+  Draw3.PenCursor.cppm
+  Surface.cpp
+  Draw3.ContactInput.cpp
+  Message.cpp
+  Message.cppm
+  FailedCleanupDeadline.cpp
+  Bar.Presentation.Source.cpp
+  Bar.PresentationProbe.cpp
+  Window.cppm
+  imgui_tables.cpp
+  Window.cpp
+  imgui_draw.cpp
+  imfluent.cpp
+  imgui.cpp
+  imgui_widgets.cpp
+  Setting.Controls.cpp
+  animation_tests.cpp
+  dirty_region_tests.cpp
+  window_geometry_tests.cpp
+  frame_pacing_tests.cpp
+  toggle_click_coalescer_tests.cpp
+  render_scheduler_tests.cpp
+  startup_preview_state_tests.cpp
+  setting_session_state_tests.cpp
+  bar_presentation_alpha_tests.cpp
+  setting_design_tests.cpp
+  startup_progress_tests.cpp
+  ppt_ui_tests.cpp
+  page_control_tests.cpp
+  whiteboard_ui_tests.cpp
+  freeze_state_tests.cpp
+  magnifier_coordinator_tests.cpp
+  bar_bottom_dock_tests.cpp
+  bar_display_transition_tests.cpp
+  display_tests.cpp
+  update_security_tests.cpp
+  draw3_bridge_tests.cpp
+  draw3_contact_tests.cpp
+  speed_eraser_tests.cpp
+  pen_width_tests.cpp
+  Bar.EraserAttributeLayout.cppm
+  eraser_attribute_tests.cpp
+  Bar.EraserAttributeMotion.cppm
+  Draw3.SpeedEraser.cpp
+  present_decision_tests.cpp
+  presentation_descriptor_tests.cpp
+  surface_tests.cpp
+  message_tests.cpp
+  message_box_tests.cpp
+  window_tests.cpp
+  wake_signal_tests.cpp
+  Compiling...
+  Bar.Metrics.cppm
+  Startup.Progress.cppm
+  Bar.WakeSignal.cppm
+  RenderPipeline.cppm
+  Conv.Text.cppm
+  Ppt.cppm
+  Bar.ToggleClickCoalescer.cppm
+  PageControl.cppm
+  Bar.FramePacing.cppm
+  Bar.Animation.cppm
+  Freeze.cppm
+  Whiteboard.cppm
+  MessageBox.cppm
+  Display.cppm
+  Draw3.Presentation.cpp
+  Draw3.Bridge.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Conv/Conv.Text.cppm')
+
+  PptSession.cpp
+  ppt_session_tests.cpp
+  Draw3.ContactInput.cppm
+  Draw3.PenCursor.cppm
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm(147,2): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  Surface.cpp
+  Message.cppm
+  FailedCleanupDeadline.cpp
+  Bar.PresentationProbe.cpp
+  Bar.Presentation.Source.cpp
+  imgui.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Message/Message.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Message/Message.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Message/Message.cppm')
+
+  imgui_draw.cpp
+  imgui_tables.cpp
+  dirty_region_tests.cpp
+  bar_presentation_alpha_tests.cpp
+  window_geometry_tests.cpp
+  setting_session_state_tests.cpp
+  imgui_widgets.cpp
+  imfluent.cpp
+  Setting.Controls.cpp
+  setting_design_tests.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(899,25): warning C4211: nonstandard extension used: redefined extern to static [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(907,17): warning C4211: nonstandard extension used: redefined extern to static [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1293,39): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1599,27): warning C4189: 'style': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1606,27): warning C4189: 'style': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1613,27): warning C4189: 'style': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(1651,27): warning C4189: 'style': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(3201,27): warning C4189: 'style': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(4617,18): warning C4189: 'dl': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(5560,27): warning C4189: 'style': local variable is initialized but not referenced [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(6381,25): warning C4456: declaration of 'div_col' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(6312,17):
+      see declaration of 'div_col'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(6570,25): warning C4456: declaration of 'div_col' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(6463,17):
+      see declaration of 'div_col'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(646,17): warning C4505: 'ImFluent::RenderAndConsumePendingError': unreferenced function with internal linkage has been removed [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(765,17): warning C4505: 'ImFluent::RenderAcrylicSurrogate': unreferenced function with internal linkage has been removed [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\imfluent\imfluent.cpp(907,17): warning C4505: 'ImFluent::LocalizeRegisterEntries': unreferenced function with internal linkage has been removed [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  bar_display_transition_tests.cpp
+  bar_bottom_dock_tests.cpp
+  draw3_bridge_tests.cpp
+  update_security_tests.cpp
+  pen_width_tests.cpp
+  Bar.Animation.cpp
+  present_decision_tests.cpp
+  Draw3.SpeedEraser.cpp
+  surface_tests.cpp
+  presentation_descriptor_tests.cpp
+  RenderPipeline.cpp
+  Bar.SurfaceLayout.cppm
+  Other.Config.cppm
+  Startup.Progress.cpp
+  StartupPreview.State.cppm
+  MessageBox.Layout.cpp
+  MessageBox.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+  Bar.Scene.cppm
+  Display.cpp
+  MessageBox.Window.cpp
+  Draw3.ContactInput.cpp
+  Draw3.PenCursor.cpp
+  Message.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cppm')
+
+  Window.cppm
+  frame_pacing_tests.cpp
+  toggle_click_coalescer_tests.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Message/Message.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Message/Message.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Message/Message.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp(21,42): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  render_scheduler_tests.cpp
+  startup_progress_tests.cpp
+  animation_tests.cpp
+  ppt_ui_tests.cpp
+  page_control_tests.cpp
+  freeze_state_tests.cpp
+  magnifier_coordinator_tests.cpp
+  display_tests.cpp
+  wake_signal_tests.cpp
+  draw3_contact_tests.cpp
+  Bar.EraserAttributeLayout.cppm
+  message_tests.cpp
+  message_box_tests.cpp
+  StartupPreview.State.cpp
+  StartupPreview.cppm
+  Window.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\draw3_contact_tests.cpp(61,45): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  Other.Config.cpp
+  whiteboard_ui_tests.cpp
+  Bar.EraserAttributeMotion.cppm
+  speed_eraser_tests.cpp
+  window_tests.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+  StartupPreview.cpp
+  startup_preview_state_tests.cpp
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1383,14): warning C4456: declaration of 'hover' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1292,13):
+      see declaration of 'hover'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Other/Other.Config.cpp')
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1597,14): warning C4456: declaration of 'contact' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1295,13):
+      see declaration of 'contact'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1698,14): warning C4456: declaration of 'x' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1256,9):
+      see declaration of 'x'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1768,14): warning C4456: declaration of 'area' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1066,13):
+      see declaration of 'area'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1785,14): warning C4456: declaration of 'x' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1256,9):
+      see declaration of 'x'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1787,14): warning C4456: declaration of 'area' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1066,13):
+      see declaration of 'area'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1793,14): warning C4456: declaration of 'rotated' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1119,15):
+      see declaration of 'rotated'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1794,14): warning C4456: declaration of 'rotatedConfig' hides previous local declaration [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1121,13):
+      see declaration of 'rotatedConfig'
+
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,63): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1878,51): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,59): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1884,49): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,61): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2001,50): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2068,44): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(297,1): warning C4702: unreachable code [C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  eraser_attribute_tests.cpp
+  InkeysHeadlessTests.vcxproj -> C:\Users\alan-\.codex\worktrees\fluent-setting-sidebar\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

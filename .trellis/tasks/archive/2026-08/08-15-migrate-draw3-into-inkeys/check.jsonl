@@ -1,0 +1,12 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"原生桌面完整质量检查"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"解决方案和 ARM64 验证要求"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"窗口与渲染合同复核"}
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"输入唯一性和退出安全复核"}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"资源生命周期与失败路径复核"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"设置和资源入口复核"}
+{"check":"build","command":"MSBuild.exe InkeysRepo.sln /m:1 /p:Configuration=Debug /p:Platform=ARM64","result":"pass","details":"PptCOM.csproj, Inkeys.exe and InkeysHeadlessTests.exe built successfully."}
+{"check":"headless-logic","command":"Build\\ARM64\\Debug\\InkeysHeadlessTests.exe --no-window","result":"pass","details":"PASS animation correctness"}
+{"check":"hidden-window","command":"Build\\ARM64\\Debug\\Inkeys.exe --draw3-hidden-test","result":"pass","details":"Exit code 0; hidden HWND, real D3D11.1 presenter and shutdown path exercised without ShowWindow or SendInput."}
+{"check":"static","command":"git diff --check plus Draw3/Draw2/resource/owner audit","result":"pass","details":"No whitespace errors; Draw2 sources retained as None; no product Draw3 window creation or shared UI device reference."}
+{"check":"build-release","command":"MSBuild.exe InkeysRepo.sln /m:1 /p:Configuration=Release /p:Platform=ARM64","result":"pass","details":"PptCOM.csproj, Inkeys.exe and InkeysHeadlessTests.exe built successfully."}
+{"check":"transparent-fallback","command":"Build\\ARM64\\Debug\\Inkeys.exe --draw3-hidden-test","result":"pass","details":"Real DComp/DWM2/DWM/ULW backends passed across sequential hidden HWND lifecycles; immutable style callback result matched actual GWL_EXSTYLE and no two Drawpad HWNDs coexisted."}

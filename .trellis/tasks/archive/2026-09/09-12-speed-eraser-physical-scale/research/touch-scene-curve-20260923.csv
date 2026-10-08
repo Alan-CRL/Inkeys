@@ -1,0 +1,12 @@
+scenario,scale,unit,base_dip,speed,reference_target_dip,controller_target_dip,controller_actual_dip,evidence_seconds
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,100,32,32,32,0
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,200,32,32,32,0
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,270,32,32,32,0
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,300,32,32,32,0
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,322,32,32,32,0
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,400,32.4157,32.4156,32.4156,0.06
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,432.376,33.1135,33.1135,33.1135,0.06
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,600,42.1589,42.1586,42.1586,0.06
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,800,67.1536,67.1524,67.1525,0.06
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,1000,109.404,109.401,109.401,0.06
+synthetic-classroom-139x78cm,TrustedPhysical,mm/s,32,1300,160,160,160,0.06

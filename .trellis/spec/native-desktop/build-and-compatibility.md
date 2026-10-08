@@ -7,18 +7,18 @@
 `【直接确认】` 仓库根 `AGENTS.md` 对自动化代理明确要求：
 
 - 构建 `InkeysRepo.sln`，不要单独构建 `Inkeys/Inkeys.vcxproj`；
-- 使用 `Debug | ARM64`；
-- 使用 ARM64 host 的 `MSBuild.exe`；
+- 使用 `Debug | 当前设备原生架构`；
+- 使用当前设备原生架构对应的 host `MSBuild.exe`（例如 x64 设备用 x64 host，ARM64 设备用 ARM64 host）；
 - 构建超时至少 5 分钟；
 - 原因是 `Inkeys` 依赖 `PptCOM`，完整 Solution 构建用于生成并带入 DLL/TLB。
 
 等价参数形式为：
 
 ~~~text
-MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
+MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=<NativePlatform>
 ~~~
 
-`MSBuild.exe` 的绝对路径取决于本机 Visual Studio 安装，不在 Spec 中硬编码。本次 Bootstrap 及本轮证据审计均未执行构建，因此不把上述配置写成“已经构建通过”。
+`MSBuild.exe` 的绝对路径取决于本机 Visual Studio 安装，不在 Spec 中硬编码。Release 或非当前原生架构（Win32/x64/ARM64 中未覆盖者）可以作为任务或风险要求下的额外平台证据，但不能替代当前 AGENTS 要求的 `Debug | 当前设备原生架构` 完整 Solution 验证。构建是否通过必须引用具体任务验证记录，不能由本规范的入口说明推出。
 
 `【历史/兼容】` `GithubRes/CompilationProcess_zh-CN.md` 另有面向一般贡献者的路径：使用仓库内预编译 `PptCOM.dll`/`PptCOM.tlb` 时，可取消项目依赖并单独构建 `Inkeys`。它与当前 `AGENTS.md` 的代理规则适用对象不同；Codex 应遵守 `AGENTS.md`，普通开发者的正式首选流程仍为 `【待确认】`。
 
@@ -91,8 +91,47 @@ MSBuild.exe InkeysRepo.sln /p:Configuration=Debug /p:Platform=ARM64
 
 以下除第一项外是根据当前构建结构形成的 `【合理推断】` 审查清单，不是声称仓库已有完整发布政策：
 
-1. `【直接确认；AGENTS.md】` Codex 使用完整 Solution、`Debug | ARM64`、ARM64 MSBuild host，超时至少 5 分钟。
+1. `【直接确认；AGENTS.md】` Codex 使用完整 Solution、`Debug | 当前设备原生架构`、对应架构 MSBuild host，超时至少 5 分钟。
 2. 新增源码、module、资源或 manifest 时，核对 `Inkeys/Inkeys.vcxproj` 的 Item 类型和条件配置。
 3. 涉及平台宏、SIMD、指针宽度或 Win32 API 时，分别检查 Win32、x64、ARM64，而不是从单一配置外推。
 4. 兼容性结论必须记录实际运行过的 Windows、架构和 Office/WPS 组合；未运行的只写“配置存在”或“项目声明”。
 5. 不提交 `Build/`、`Inkeys/Cache/`、`VcpkgInstalled/`、`PptCOM/obj/` 等生成输出。
+
+## Scenario: 首发完整压缩包许可文件
+
+### 1. Scope / Trigger
+
+修改 `.github/workflows/build-windows.yml` 的 Package 完整发布 ZIP 时核此合同；自动更新 ZIP 的内容合同单独维持。
+
+### 2. Signatures
+
+CI `Prepare license notices for release packages` 将仓库根 `LICENSE`、`NOTICE`、`ThirdpartyLicenses/` 放入 `signedUpload/{Inkeys,Inkeys64,InkeysArm64}/`，然后现有三条 `Compress-Archive` 生成完整发布 ZIP。
+
+### 3. Contracts
+
+每个完整发布 ZIP 同一顶层架构目录含 `Inkeys.exe`、`Tips.txt`、`LICENSE`、`NOTICE`、`ThirdpartyLicenses/`。`NOTICE` 指向的本项目与第三方许可文件应随包可读。`InkeysUpdate*.zip` 仍由较早步骤仅封装待替换 EXE，不改变既有更新解析、命名或包内路径。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理 |
+| --- | --- |
+| 源 LICENSE/NOTICE/ThirdpartyLicenses 缺失或复制失败 | `Copy-Item -ErrorAction Stop` 使 CI Package 失败，不静默发缺许可完整包 |
+| 完整 ZIP 漏任一许可文件 | 阻止发布并核实际 ZIP entry；不能只凭仓库里有 NOTICE 判通过 |
+| 更新 ZIP 仍仅有 EXE | 保持原更新合同，不把完整包误送给 updater |
+
+### 5. Good / Base / Bad Cases
+
+- Good：Win32/x64/ARM64 三个完整 ZIP 都含上述许可目录，更新 ZIP 仍为 EXE。
+- Base：仓库根许可文件未改，仅调整打包随附；不修改产品运行或依赖版本。
+- Bad：只在源码仓库保留 NOTICE、发布 ZIP 仅含 EXE/Tips 却标注许可已随附。
+
+### 6. Tests Required
+
+对三架构完整 ZIP 逐项枚举 entry；本地同 `Copy-Item`/`Compress-Archive` 命令的隔离 dry-run 可检查打包语义，真正 CI 产物仍需发布前复核。静态 YAML diff、命令退出码与实际 ZIP 内容分开记。
+
+### 7. Wrong vs Correct
+
+~~~text
+Wrong: InkeysArm64/Inkeys.exe + InkeysArm64/Tips.txt
+Correct: 上述文件 + InkeysArm64/LICENSE + NOTICE + ThirdpartyLicenses/*
+~~~

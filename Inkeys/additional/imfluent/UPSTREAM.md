@@ -33,6 +33,12 @@ Search for `INKEYS PATCH`. Local changes are deliberately limited to:
 6. Respecting hidden `##` / `###` suffixes in hyperlink and expander labels, so translated
    text can keep a stable interaction ID without rendering the suffix.
 
+7. Interpolating shared animated colors in alpha-weighted RGB before returning straight
+   RGBA, including transparent endpoints. This prevents transient dark hover fills when
+   navigation and popup items transition from transparent black to an opaque light color.
+   Durations, target colors, item IDs, and interaction behavior remain unchanged. The
+   regression samples actual multi-frame NavItemEx/Button/ComboBox/Selectable DrawData.
+
 The new settings shell composes ImGui child regions with these ImFluent widgets.
 The original navigation container remains available; no rendering backend is replaced.
 

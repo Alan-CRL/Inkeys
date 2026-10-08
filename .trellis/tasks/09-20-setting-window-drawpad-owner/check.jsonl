@@ -1,0 +1,2 @@
+{"file":".trellis/spec/native-desktop/index.md","reason":"检查设置窗口实现仍符合已记录的独立生命周期与可交互顶层窗口合同。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"按项目要求验证完整 Solution 的 Debug ARM64 构建。"}

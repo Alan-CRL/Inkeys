@@ -3,9 +3,83 @@
 #include <dxgi.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace Inkeys::UI::Setting
 {
+	enum class BarButtonClickAction : std::uint8_t
+	{
+		ShowAndActivate,
+		Activate,
+		Hide,
+	};
+
+	[[nodiscard]] constexpr BarButtonClickAction ResolveBarButtonClickAction(
+		bool visible, bool focused) noexcept
+	{
+		if (!visible) return BarButtonClickAction::ShowAndActivate;
+		return focused ? BarButtonClickAction::Hide
+			: BarButtonClickAction::Activate;
+	}
+
+	class StartupPreviewPreference final
+	{
+	public:
+		explicit constexpr StartupPreviewPreference(bool enabled = true) noexcept
+			: startupEnabled_(enabled), configuredEnabled_(enabled) {}
+
+		[[nodiscard]] constexpr bool StartupEnabled() const noexcept
+		{
+			return startupEnabled_;
+		}
+
+		[[nodiscard]] constexpr bool ConfiguredEnabled() const noexcept
+		{
+			return configuredEnabled_;
+		}
+
+		[[nodiscard]] constexpr bool SetConfigured(bool enabled) noexcept
+		{
+			if (configuredEnabled_ == enabled) return false;
+			configuredEnabled_ = enabled;
+			writePending_ = true;
+			return true;
+		}
+
+		[[nodiscard]] constexpr bool ConsumeWritePending() noexcept
+		{
+			return std::exchange(writePending_, false);
+		}
+
+	private:
+		bool startupEnabled_ = true;
+		bool configuredEnabled_ = true;
+		bool writePending_ = false;
+	};
+
+	struct LinkedPptScaleDraft
+	{
+		float bottom;
+		float middle;
+		bool bottomLinked;
+		bool middleLinked;
+	};
+
+	[[nodiscard]] constexpr LinkedPptScaleDraft ResolveLinkedPptScaleDraft(
+		LinkedPptScaleDraft draft, bool bottomEdited, bool middleEdited,
+		bool bottomJoined, bool middleJoined) noexcept
+	{
+		if (bottomJoined && draft.middleLinked) draft.bottom = draft.middle;
+		if (middleJoined && draft.bottomLinked) draft.middle = draft.bottom;
+		// 只使用本帧真实编辑；松手前的旧保存 Record 不能把连续拖动回滚。
+		if (draft.bottomLinked && draft.middleLinked)
+		{
+			if (bottomEdited) draft.middle = draft.bottom;
+			else if (middleEdited) draft.bottom = draft.middle;
+		}
+		return draft;
+	}
+
 	[[nodiscard]] constexpr bool IsSharedDeviceLoss(HRESULT result) noexcept
 	{
 		return result == DXGI_ERROR_DEVICE_REMOVED

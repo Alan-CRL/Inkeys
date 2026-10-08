@@ -1,0 +1,4 @@
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"保持 UI3 C++ 最小修改、线程所有权、中文注释、编码与换行约束"}
+{"file":".trellis/spec/native-desktop/rendering-and-ui.md","reason":"遵守底栏二维吸附、动画批次、脏区呈现和命中坐标合同"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"使用完整 Solution、Debug ARM64 与 ARM64 host MSBuild 验证"}
+{"file":".trellis/tasks/08-23-ui3-centered-bar-collapse-animation-root-fix/research/root-cause.md","reason":"使用录像时间点、上个 commit 与当前调用链的根因证据"}

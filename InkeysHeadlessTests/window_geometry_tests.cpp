@@ -1,7 +1,9 @@
+#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
 #include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
 
 #include <iostream>
 #include <string_view>
+#include <thread>
 
 namespace
 {
@@ -14,6 +16,90 @@ namespace
 		if (condition) return;
 		++failureCount;
 		std::cerr << "FAIL " << name << '\n';
+	}
+
+	void TestViewportPresentationTransactionDuringDrag()
+	{
+		std::mutex geometryMutex;
+		bool boundsReady = true;
+		RECT committedWindow{ 100, 900, 800, 1020 };
+		RECT actualWindow = committedWindow;
+		POINT presentedTranslation{ 17, -11 };
+		const POINT monitorOrigin{ 100, 50 };
+		const POINT capacityOrigin{ -200, 400 };
+		BarBottomDockDragTracker dock;
+		const BarBottomDockEnvironment environment{
+			RECT{ 100, 50, 2020, 1130 }, RECT{ 100, 50, 2020, 1082 }, 1.0 };
+		dock.Begin(BarBottomDockMode::Floating, 1000.0, 1040.0,
+			1042.0, environment);
+		auto TryDirectMove = [&](POINT desired)
+			{
+				bool moved = false;
+				std::thread interaction([&]
+					{
+						std::unique_lock lock(geometryMutex, std::try_to_lock);
+						if (!lock.owns_lock() || !boundsReady) return;
+						actualWindow = TranslateBarWindowRect(committedWindow,
+							ResolveBarDirectWindowMoveDelta(desired, presentedTranslation));
+						committedWindow = actualWindow;
+						presentedTranslation = desired;
+						moved = true;
+					});
+				interaction.join();
+				return moved;
+			};
+		int frame = 0;
+		for (double pointerY : { 1022.0, 1045.0, 1065.0, 1022.0, 1010.0, 1042.0 })
+		{
+			const auto update = dock.Update(pointerY, pointerY + 40.0, environment);
+			// 交替包络原点/尺寸，复现果冻与提示进入/离开造成的 HWND resize。
+			const bool expanded = update.mode == BarBottomDockMode::BottomDocked;
+			const RECT viewport = expanded ? RECT{ 80, 880, 830, 1075 }
+				: RECT{ 100, 930, 800, 1050 };
+			const POINT source{ viewport.left - capacityOrigin.x,
+				viewport.top - capacityOrigin.y };
+			const POINT frameTranslation{ 17 + frame * 3,
+				static_cast<LONG>(std::lround(update.constrainedGripScreenY - 1042.0)) };
+			const POINT nextTranslation{ frameTranslation.x + 2, frameTranslation.y + 3 };
+			const RECT candidate = TranslateBarWindowRect(viewport,
+				POINT{ monitorOrigin.x + frameTranslation.x,
+					monitorOrigin.y + frameTranslation.y });
+			const bool failAfterUlw = frame++ == 2;
+			{
+				BarWindowPresentationTransaction transaction(geometryMutex, boundsReady);
+				actualWindow = candidate; // ULW 已改变窗口，EndDraw 尚未完成。
+				transaction.WindowUpdated();
+				Check(!TryDirectMove(nextTranslation)
+					&& SameBarWindowRect(actualWindow, candidate),
+					"drag cannot move a resized HWND using the previous committed origin");
+				if (!failAfterUlw)
+				{
+					committedWindow = candidate;
+					presentedTranslation = frameTranslation;
+					transaction.Commit();
+					Check(!TryDirectMove(nextTranslation),
+						"snapshot publication remains locked until the entire transaction ends");
+				}
+			}
+			if (failAfterUlw)
+			{
+				Check(!TryDirectMove(nextTranslation) && !boundsReady,
+					"EndDraw failure after ULW gates direct moves until a complete retry");
+				BarWindowPresentationTransaction retry(geometryMutex, boundsReady);
+				actualWindow = candidate;
+				retry.WindowUpdated();
+				committedWindow = candidate;
+				presentedTranslation = frameTranslation;
+				retry.Commit();
+			}
+			Check(TryDirectMove(nextTranslation), "direct move resumes from successful resized geometry");
+			const POINT content{ 300, 990 };
+			const POINT actualPixel{ actualWindow.left + content.x - capacityOrigin.x - source.x,
+				actualWindow.top + content.y - capacityOrigin.y - source.y };
+			const POINT expectedPixel = BarLayoutToScreenPoint(content, monitorOrigin, nextTranslation);
+			Check(actualPixel.x == expectedPixel.x && actualPixel.y == expectedPixel.y,
+				"source, viewport and direct translation keep the same content screen position after resize");
+		}
 	}
 
 	void TestCoordinateRoundTrip()
@@ -139,9 +225,14 @@ namespace
 		constexpr POINT directTranslation{ 180, -40 };
 		constexpr POINT translatedLayout = BarScreenToLayoutPoint(
 			screenPoint, monitorOrigin, directTranslation);
+		constexpr POINT translatedRoundTrip = BarLayoutToScreenPoint(
+			translatedLayout, monitorOrigin, directTranslation);
 		Check(translatedLayout.x == layout.x - directTranslation.x
 			&& translatedLayout.y == layout.y - directTranslation.y,
 			"unabsorbed direct-window movement preserves layout hit coordinates");
+		Check(translatedRoundTrip.x == screenPoint.x
+			&& translatedRoundTrip.y == screenPoint.y,
+			"screen and layout mapping includes unabsorbed direct translation both ways");
 		constexpr POINT followUpDelta = ResolveBarDirectWindowMoveDelta(
 			POINT{ 260, 20 }, directTranslation);
 		Check(followUpDelta.x == 80 && followUpDelta.y == 60,
@@ -201,6 +292,30 @@ namespace
 			&& moved.viewport.bottom - moved.viewport.top
 				== settled.viewport.bottom - settled.viewport.top,
 			"whole-Bar drag translates the reservation without resizing");
+	}
+
+	void TestBottomDockDragDefersViewportSettle()
+	{
+		constexpr RECT layoutBounds{ 0, 0, 1920, 1080 };
+		BarWindowViewportController controller;
+		auto reserved = controller.Resolve(
+			RECT{ 820, 420, 920, 520 }, RECT{ 760, 360, 1000, 580 },
+			layoutBounds, 4, false);
+		controller.Commit(reserved.viewport);
+
+		const bool pausedSettle = ShouldSettleBarWindowViewport(true, true);
+		auto paused = controller.Resolve(
+			RECT{ 820, 420, 920, 520 }, RECT{}, layoutBounds, 4, pausedSettle);
+		Check(!pausedSettle && !paused.changed
+			&& SameBarWindowRect(paused.viewport, reserved.viewport),
+			"paused bottom-dock drag keeps the reserved HWND size");
+
+		const bool releasedSettle = ShouldSettleBarWindowViewport(true, false);
+		auto released = controller.Resolve(
+			RECT{ 820, 420, 920, 520 }, RECT{}, layoutBounds, 4, releasedSettle);
+		Check(releasedSettle && released.changed
+			&& SameBarWindowRect(released.viewport, RECT{ 816, 416, 924, 524 }),
+			"bottom-dock release permits one final viewport resize");
 	}
 
 	void TestLayoutClipping()
@@ -283,11 +398,13 @@ namespace
 
 int RunWindowGeometryTests()
 {
+	TestViewportPresentationTransactionDuringDrag();
 	TestCoordinateRoundTrip();
 	TestAnimationEnvelopeUsesSegmentDelta();
 	TestThicknessPreviewInteractionEnvelope();
 	TestViewportResizeKeepsLayoutInputStable();
 	TestBatchExpansionAndIdleShrink();
+	TestBottomDockDragDefersViewportSettle();
 	TestLayoutClipping();
 	TestCapacityFallbackExpansion();
 	TestReservedEnvelopeStaysInsideCapacity();

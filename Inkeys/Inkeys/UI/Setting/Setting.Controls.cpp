@@ -1,4 +1,5 @@
 #include "Setting.Controls.h"
+#include "imfluent/imfluent_internal.h"
 #include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
 #include <cstring>
@@ -19,6 +20,7 @@ namespace Inkeys::UI::Setting::Design
 			.textSecondary = IM_COL32(97, 97, 97, 255),
 			.textDisabled = IM_COL32(154, 154, 154, 255),
 			.accent = IM_COL32(0, 103, 192, 255),
+			.criticalText = IM_COL32(196, 43, 28, 255),
 			.subtleHover = IM_COL32(231, 231, 231, 255),
 			.subtlePressed = IM_COL32(224, 224, 224, 255),
 			.rowHover = IM_COL32(0, 0, 0, 5),
@@ -56,6 +58,7 @@ namespace Inkeys::UI::Setting::Design
 			.textSecondary = IM_COL32(190, 190, 190, 255),
 			.textDisabled = IM_COL32(120, 120, 120, 255),
 			.accent = IM_COL32(96, 205, 255, 255),
+			.criticalText = IM_COL32(255, 153, 164, 255),
 			.subtleHover = IM_COL32(53, 53, 53, 255),
 			.subtlePressed = IM_COL32(47, 47, 47, 255),
 			.rowHover = IM_COL32(255, 255, 255, 8),
@@ -304,6 +307,50 @@ namespace Inkeys::UI::Setting::Design
 	{
 		ControlFontScope font;
 		return ImFluent::AccentButton(label, ResolveButtonSize(label, size));
+	}
+
+	bool AccentNavigationItem(const char* id, const char* label, bool selected,
+		const char* glyph, bool compact)
+	{
+		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const ImVec2 size(ImGui::GetContentRegionAvail().x,
+			Pixels(ImFluent::GetStyle().NavItemHeight));
+		const bool pressed = AccentButton(id, size);
+		const ImU32 foreground = ImFluent::GetColorU32(ImFluentCol_TextOnAccentPrimary);
+		ImFluent::DrawIcon(glyph, { origin.x + Pixels(8.0F), origin.y },
+			{ origin.x + Pixels(32.0F), origin.y + size.y }, NavigationGlyphSize, foreground);
+		if (!compact)
+			TextAt(label, { origin.x + Pixels(44.0F), origin.y + (size.y - Pixels(BodyText.lineHeight)) * 0.5F },
+				(std::max)(0.0F, size.x - Pixels(52.0F)), ImFluentTextStyle_Body, foreground);
+		else if (ImGui::IsItemHovered())
+			ImFluent::SetItemTooltip("%s", label);
+		if (selected)
+		{
+			// 强调按钮的选中标记使用同一前景色，深浅主题都与填充保持对比。
+			const float middle = origin.y + size.y * 0.5F;
+			ImGui::GetWindowDrawList()->AddRectFilled({ origin.x, middle - Pixels(8.0F) },
+				{ origin.x + Pixels(3.0F), middle + Pixels(8.0F) }, foreground, Pixels(1.5F));
+		}
+		return pressed;
+	}
+
+	bool CaptionNavigationButton(const char* id, const char* label, bool selected,
+		const ImVec2& size)
+	{
+		// 调试入口只换文字角色和交互层级，仍沿用真实 Fluent Button 的动画与键盘焦点。
+		const std::string stableLabel = std::string(label) + "###" + id;
+		ImFluent::PushFont(ImFluentTextStyle_Caption, CaptionText.size);
+		ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault,
+			selected ? GetPalette().subtleHover : IM_COL32(0, 0, 0, 0));
+		ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().subtleHover);
+		ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().subtlePressed);
+		ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
+		ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
+		ImFluent::PushStyleColor(ImFluentCol_TextPrimary, selected ? TextPrimary : TextSecondary);
+		const bool pressed = ImFluent::Button(stableLabel.c_str(), size);
+		ImFluent::PopStyleColor(6);
+		ImFluent::PopFont();
+		return pressed;
 	}
 
 	bool HyperlinkButton(const char* label)

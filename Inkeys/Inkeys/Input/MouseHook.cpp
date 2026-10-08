@@ -1,13 +1,11 @@
 module;
 
-#include "../../../IdtMain.h"
+#include "../../IdtMain.h"
 
-#include "../../../IdtConfiguration.h"
-#include "../../../IdtDraw.h"
-#include "../../../IdtDrawpad.h"
-#include "../../../IdtPlug-in.h"
-#include "../../../IdtRts.h"
-#include "../../../IdtState.h"
+#include "../../IdtConfiguration.h"
+#include "../../IdtDraw.h"
+#include "../../IdtPlug-in.h"
+#include "../../IdtState.h"
 #include "../Window/Window.Legacy.hpp"
 
 #include <atomic>
@@ -75,17 +73,8 @@ namespace
 				callback();
 		}
 
-		if (mouseUpPending.load(std::memory_order_acquire)
-			&& mouseUpDeadline <= now
-			&& mouseUpPending.exchange(false, std::memory_order_acq_rel))
-		{
-			if (!offSignal)
-			{
-				if (IDTLogger)
-					IDTLogger->info("[鼠标钩子][MouseUp] 修正遗漏的抬起消息");
-				HandleMouseInput(drawpad_window, mouseUpMessage, 0, 0);
-			}
-		}
+		// Draw3 的 Window Service 已在原 WndProc 路径消费鼠标抬起消息；
+		// 不再通过旧 RTS 全局补发第二份输入。
 	}
 
 	[[nodiscard]] DWORD NextWaitTimeout() noexcept
@@ -117,8 +106,6 @@ namespace
 		else if (message == WM_LBUTTONUP)
 		{
 			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, false);
-			if (useMouseInput && leftButtonPid != 0)
-				ScheduleMouseUp(WM_LBUTTONUP);
 		}
 		else if (message == WM_MBUTTONDOWN)
 			Inkeys::Inputs::SetKeyBoardDown(VK_MBUTTON, true);
@@ -129,13 +116,11 @@ namespace
 		else if (message == WM_RBUTTONUP)
 		{
 			Inkeys::Inputs::SetKeyBoardDown(VK_RBUTTON, false);
-			if (useMouseInput && rightButtonPid != 0)
-				ScheduleMouseUp(WM_RBUTTONUP);
 		}
 
 		if (message == WM_MOUSEWHEEL
-			&& stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection
-			&& !penetrate.select && PptInfoState.TotalPage != -1)
+			&& GetStateModeSnapshot().StateModeSelect != StateModeSelectEnum::IdtSelection
+			&& PptInfoState.TotalPage != -1)
 		{
 			const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
 			const short wheel = GET_WHEEL_DELTA_WPARAM(mouse->mouseData);
@@ -147,8 +132,7 @@ namespace
 		if ((message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN
 			|| message == WM_RBUTTONDOWN)
 			&& setlist.regularSetting.clickRecover
-			&& (stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection
-				|| penetrate.select))
+			&& GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection)
 		{
 			ScheduleClickCollapse();
 		}

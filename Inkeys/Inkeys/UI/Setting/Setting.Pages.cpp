@@ -52,29 +52,46 @@ namespace Inkeys::UI::Setting::Design
 	{
 		GeneralEvents events;
 		PageHeader(IA(I18nKey.SettingsUI.Regular.N).c_str(), IA(I18nKey.SettingsUI.Design.GeneralSubtitle).c_str());
-		SectionHeader(IA(I18nKey.SettingsUI.Design.StartupSection).c_str());
+		SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
 		events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
 			IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
 		const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
 		const std::string create = IA(I18nKey.Operate.Create);
 		const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b",
-			{ { "more", more }, { "create", create } });
-		events.shortcutOptions = shortcutAction == 0;
-		events.createShortcut = shortcutAction == 1;
+			{ { "create", create }, { "more", more } });
+		events.createShortcut = shortcutAction == 0;
+		events.shortcutOptions = shortcutAction == 1;
+		events.startupPreviewChanged = ToggleRow("startup-preview",
+			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
+			nullptr, "\ue768", draft.startupPreview);
 
-		SectionHeader(IA(I18nKey.SettingsUI.Design.AppearanceSection).c_str());
+		SectionHeader(IA(I18nKey.SettingsUI.Regular.Appearance.N).c_str());
 		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+		events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
+		// 总开关只控制可见性，隐藏子项时保留它们的保存值。
+		if (draft.animation)
+		{
+			SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", draft.animationRate,
+				0.1F, 5.0F, events.animationRateActive, "%.1fx");
+			draft.animationRate = round(draft.animationRate * 10.0F) / 10.0F;
+		}
+		events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
+		if (draft.edgeLighting)
+			events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
+				IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
 		SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
 			[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
 		SettingRow("setting-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.E).c_str(), "\ue8a9", sliderWidth, 32.0F,
 			[&](const LayoutRect& bounds) { SliderAction(bounds, draft.settingZoom, 1.00F, 2.00F, events.settingZoomActive); });
-		events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Design.EdgeLighting).c_str(),
-			IA(I18nKey.SettingsUI.Design.EdgeLightingDescription).c_str(), "\ue706", draft.edgeLighting);
 
-		SectionHeader(IA(I18nKey.SettingsUI.Design.BehaviorSection).c_str());
+		SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
 		events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
 			IA(I18nKey.SettingsUI.Design.TopWindowSummary).c_str(), "\ue922", draft.topInterval,
 			{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
@@ -86,11 +103,7 @@ namespace Inkeys::UI::Setting::Design
 		events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
 
-		SectionHeader(IA(I18nKey.SettingsUI.Design.CompatibilitySection).c_str());
-		events.avoidFullscreenChanged = ToggleRow("avoid-fullscreen", IA(I18nKey.SettingsUI.Regular.Tentative.AvoidFulScreen).c_str(),
-			IA(I18nKey.SettingsUI.Design.AvoidFullscreenSummary).c_str(), "\ue7f4", draft.avoidFullscreen);
-		Details("avoid-fullscreen-details", IA(I18nKey.SettingsUI.Design.AvoidFullscreenDetails).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Tentative.AvoidFulScreenE).c_str());
+		SectionHeader(IA(I18nKey.SettingsUI.Regular.Tentative.N).c_str());
 		events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
 			{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
@@ -145,11 +158,10 @@ namespace Inkeys::UI::Setting::Design
 		struct Feature { const char* title; const char* description; const char* icon; HomeAction action; ImU32 tint; ImU32 ink; };
 		const std::array features{
 			Feature{ I18nKey.SettingsUI.Draw.N, I18nKey.SettingsUI.Design.DrawDescription, "\uedc6", HomeAction::Draw, palette.featureTint[0], palette.featureInk[0] },
-			Feature{ I18nKey.SettingsUI.Preset.N, I18nKey.SettingsUI.Design.PresetDescription, "\uf259", HomeAction::Preset, palette.featureTint[1], palette.featureInk[1] },
 			Feature{ I18nKey.SettingsUI.PlugIn.N, I18nKey.SettingsUI.Design.PluginDescription, "\uea86", HomeAction::Plugins, palette.featureTint[2], palette.featureInk[2] }
 		};
 		const bool featureColumns = width >= Pixels(560.0F);
-		const float featureWidth = featureColumns ? (width - Pixels(24.0F)) / 3.0F : width;
+		const float featureWidth = featureColumns ? (width - Pixels(12.0F)) / 2.0F : width;
 		float featureHeight = Pixels(164.0F);
 		for (const auto& feature : features)
 			featureHeight = (std::max)(featureHeight, Pixels(128.0F) + TextHeight(IA(feature.description).c_str(), featureWidth - Pixels(40.0F), ImFluentTextStyle_Caption));
@@ -169,7 +181,7 @@ namespace Inkeys::UI::Setting::Design
 			ImFluent::DrawIcon("\ue76c", { origin.x + featureWidth - Pixels(32.0F), origin.y + Pixels(100.0F) }, { origin.x + featureWidth - Pixels(12.0F), origin.y + Pixels(120.0F) }, 12.0F, TextSecondary);
 			ImGui::PopID();
 		}
-		ImGui::SetCursorScreenPos({ featureOrigin.x, featureOrigin.y + (featureColumns ? featureHeight : featureHeight * 3.0F + Pixels(16.0F)) + Pixels(4.0F) });
+		ImGui::SetCursorScreenPos({ featureOrigin.x, featureOrigin.y + (featureColumns ? featureHeight : featureHeight * 2.0F + Pixels(8.0F)) + Pixels(4.0F) });
 
 		// 宽窗常用设置与作者卡并排；窄窗按阅读顺序纵向排列。
 		const bool bottomColumns = width >= Pixels(740.0F);
@@ -217,9 +229,17 @@ namespace Inkeys::UI::Setting::Design
 			const float bioHeight = (std::max)(Pixels(36.0F), Pixels(20.0F) + TextHeight(developer.c_str(), authorCopyWidth, ImFluentTextStyle_Caption));
 			ImGui::Dummy({ ImGui::GetContentRegionAvail().x, bioHeight });
 			ImGui::GetWindowDrawList()->AddCircleFilled({ authorOrigin.x + Pixels(18.0F), authorOrigin.y + Pixels(18.0F) }, Pixels(18.0F), palette.avatarFill);
-			ImFluent::DrawIcon("\ue77b", authorOrigin, { authorOrigin.x + Pixels(36.0F), authorOrigin.y + Pixels(36.0F) }, 20.0F, TextSecondary);
+			if (content.avatarTexture)
+				ImGui::GetWindowDrawList()->AddImage(content.avatarTexture, authorOrigin,
+					{ authorOrigin.x + Pixels(36.0F), authorOrigin.y + Pixels(36.0F) });
+			else
+				ImFluent::DrawIcon("\ue77b", authorOrigin, { authorOrigin.x + Pixels(36.0F), authorOrigin.y + Pixels(36.0F) }, 20.0F, TextSecondary);
 			TextAt("AlanCRL", { authorOrigin.x + Pixels(48.0F), authorOrigin.y }, authorCopyWidth);
 			TextAt(developer.c_str(), { authorOrigin.x + Pixels(48.0F), authorOrigin.y + Pixels(20.0F) }, authorCopyWidth, ImFluentTextStyle_Caption, TextSecondary);
+			Text("QQ: 2685549821", ImFluentTextStyle_Caption, TextSecondary);
+			if (HyperlinkButton("alan-crl@foxmail.com###author-email")) action = HomeAction::Contact;
+			Text(IA(I18nKey.SettingsUI.Home.Group).c_str(), ImFluentTextStyle_Caption, TextSecondary);
+			Link("home-group", IA(I18nKey.SettingsUI.Home.GroupE).c_str(), HomeAction::Community, action);
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Pixels(10.0F));
 			ImFluent::BeginWrapPanel(Pixels(16.0F), Pixels(8.0F));
 			const std::array links{
@@ -232,6 +252,12 @@ namespace Inkeys::UI::Setting::Design
 				const std::string label = IA(link.first);
 				ImFluent::WrapPanelNextItem(ControlTextWidth(label.c_str()) + Pixels(16.0F));
 				Link(link.first, label.c_str(), link.second, action);
+				if (link.second == HomeAction::Feedback && ImGui::IsItemHovered() && content.feedbackTexture)
+				{
+					ImGui::BeginTooltip();
+					ImGui::Image(content.feedbackTexture, { Pixels(140.0F), Pixels(140.0F) * content.feedbackAspect });
+					ImGui::EndTooltip();
+				}
 			}
 			ImFluent::EndWrapPanel();
 		}
@@ -244,8 +270,7 @@ namespace Inkeys::UI::Setting::Design
 		const std::array footer{
 			std::pair{ IA(I18nKey.SettingsUI.Design.Website), HomeAction::Website },
 			std::pair{ std::string("GitHub"), HomeAction::GitHub },
-			std::pair{ IA(I18nKey.SettingsUI.Community.N), HomeAction::Community },
-			std::pair{ std::string("Bilibili"), HomeAction::Bilibili },
+			std::pair{ IA(I18nKey.SettingsUI.Home.BilibiliChannel), HomeAction::Bilibili },
 			std::pair{ std::string(content.version), HomeAction::Version }
 		};
 		for (const auto& link : footer)

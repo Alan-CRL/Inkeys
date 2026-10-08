@@ -8,13 +8,13 @@ namespace Inkeys::UI::Setting::Design
 	enum class PageId : int
 	{
 		Home = 0, Language = 1, Build = 2, Configuration = 3, General = 4,
-		Draw = 5, Performance = 6, Preset = 7, Plugins = 8, Components = 9,
+		Draw = 5, Plugins = 8, Components = 9,
 		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14,
 	};
 
 	enum class HomeAction
 	{
-		None, Draw, Preset, Plugins, General, Language, Support, Website,
+		None, Draw, Plugins, General, Language, Support, Website,
 		GitHub, Community, Bilibili, Feedback, Contact, Version,
 	};
 
@@ -23,6 +23,9 @@ namespace Inkeys::UI::Setting::Design
 		ImTextureID tutorialTexture = 0;
 		float tutorialAspect = 1.0F;
 		const char* version = "";
+		ImTextureID avatarTexture = 0;
+		ImTextureID feedbackTexture = 0;
+		float feedbackAspect = 1.0F;
 	};
 
 	struct GeneralDraft
@@ -33,8 +36,11 @@ namespace Inkeys::UI::Setting::Design
 		bool edgeLighting;
 		int topInterval;
 		bool rightClickClose;
-		bool avoidFullscreen;
 		int safetyMode;
+		bool startupPreview = true;
+		bool animation = true;
+		float animationRate = 1.0F;
+		bool dynamicEdgeLighting = false;
 	};
 
 	struct GeneralEvents
@@ -48,8 +54,11 @@ namespace Inkeys::UI::Setting::Design
 		bool edgeLightingChanged = false;
 		bool topIntervalChanged = false;
 		bool rightClickCloseChanged = false;
-		bool avoidFullscreenChanged = false;
 		bool safetyModeChanged = false;
+		bool startupPreviewChanged = false;
+		bool animationChanged = false;
+		bool animationRateActive = false;
+		bool dynamicEdgeLightingChanged = false;
 	};
 
 	HomeAction RenderHome(const HomeContent& content);

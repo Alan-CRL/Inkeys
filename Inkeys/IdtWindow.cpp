@@ -85,7 +85,6 @@ void TopWindow()
 	IDTLogger->info("[窗口置顶线程][TopWindow] 显示窗口");
 	ShowWindow(floating_window, SW_SHOWNOACTIVATE);
 	ShowWindow(ppt_window, SW_SHOWNOACTIVATE);
-	ShowWindow(drawpad_window, SW_SHOWNOACTIVATE);
 	ShowWindow(freeze_window, SW_SHOWNOACTIVATE);
 	IDTLogger->info("[窗口置顶线程][TopWindow] 显示窗口完成");
 
@@ -127,14 +126,6 @@ void TopWindow()
 				ShowWindow(ppt_window, SW_SHOWNOACTIVATE);
 
 				if (IsWindowVisible(ppt_window)) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-			for (int i = 1; i <= 10 && !IsWindowVisible(drawpad_window); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口被隐藏 Try" + to_string(i));
-				ShowWindow(drawpad_window, SW_SHOWNOACTIVATE);
-
-				if (IsWindowVisible(drawpad_window)) break;
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 			for (int i = 1; i <= 10 && !IsWindowVisible(freeze_window); i++)
@@ -202,22 +193,6 @@ void TopWindow()
 				this_thread::sleep_for(chrono::milliseconds(10));
 			}
 
-			for (int i = 1; i <= 10 && !(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口 WS_EX_LAYERED 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_LAYERED);
-
-				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_LAYERED) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
-			for (int i = 1; i <= 10 && !(GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE); i++)
-			{
-				IDTLogger->warn("[窗口置顶线程][TopWindow] 画板窗口 WS_EX_NOACTIVATE 样式被隐藏 Try" + to_string(i));
-				SetWindowLong(drawpad_window, GWL_EXSTYLE, GetWindowLong(drawpad_window, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-
-				if (GetWindowLong(drawpad_window, GWL_EXSTYLE) & WS_EX_NOACTIVATE) break;
-				this_thread::sleep_for(chrono::milliseconds(10));
-			}
 
 			for (int i = 1; i <= 10 && !(GetWindowLong(freeze_window, GWL_EXSTYLE) & WS_EX_LAYERED); i++)
 			{
@@ -330,7 +305,6 @@ void TopWindow()
 	IDTLogger->info("[窗口置顶线程][TopWindow] 隐藏窗口");
 	ShowWindow(floating_window, SW_HIDE);
 	ShowWindow(ppt_window, SW_HIDE);
-	ShowWindow(drawpad_window, SW_HIDE);
 	ShowWindow(freeze_window, SW_HIDE);
 	IDTLogger->info("[窗口置顶线程][TopWindow] 隐藏窗口完成");
 

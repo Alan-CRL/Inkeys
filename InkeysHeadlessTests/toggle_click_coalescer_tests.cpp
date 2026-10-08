@@ -2,6 +2,9 @@
 #include <iostream>
 #include <string_view>
 
+#include "../Inkeys/Inkeys/Business/PenToolState.hpp"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+
 import Inkeys.UI.Bar.ToggleClickCoalescer;
 
 namespace
@@ -61,6 +64,93 @@ namespace
 		Check(coalescer.TryBegin(BarToggleChannel::Main, start - 1ms),
 			"non-monotonic injected time rebases the channel");
 	}
+
+	void TestDrawButtonToggleNeverChangesPenType()
+	{
+		const auto closeLaser = ResolveBarDrawButtonToggleDecision(true);
+		Check(!closeLaser.openDrawAttribute,
+			"closing draw attributes preserves Laser");
+
+		const auto openLaser = ResolveBarDrawButtonToggleDecision(false);
+		Check(openLaser.openDrawAttribute,
+			"opening draw attributes preserves Laser");
+
+		const auto closePen = ResolveBarDrawButtonToggleDecision(true);
+		const auto openPen = ResolveBarDrawButtonToggleDecision(false);
+		Check(!closePen.openDrawAttribute && openPen.openDrawAttribute,
+			"non-Laser draw attribute toggles do not change the tool");
+	}
+
+	void TestClearButtonStateMachine()
+	{
+		Check(ResolveBarClearClickAction(false, true, false, false, false) ==
+			BarClearClickAction::PublishClear,
+			"drawing content first click publishes Clear");
+		Check(ResolveBarClearClickAction(false, true, true, true, true) ==
+			BarClearClickAction::EnterSelection,
+			"accepted Clear double click enters Selection without observer delay");
+		Check(ResolveBarClearClickAction(false, true, true, true, false) ==
+			BarClearClickAction::PublishClear,
+			"failed first Clear makes double click retry Clear");
+		Check(ResolveBarClearClickAction(false, false, true, true, false) ==
+			BarClearClickAction::PublishClear,
+			"failed first Clear retries even after an asynchronous empty snapshot");
+		Check(ResolveBarClearClickAction(false, false, false, false, false) ==
+			BarClearClickAction::EnterSelection,
+			"empty drawing click enters Selection");
+		Check(ResolveBarClearClickAction(true, true, false, false, false) ==
+			BarClearClickAction::PublishClear,
+			"Selection with content still publishes Clear");
+		Check(ResolveBarClearClickAction(true, false, false, false, false) ==
+			BarClearClickAction::None,
+			"empty Selection click is a no-op");
+	}
+
+	void TestEraserAttributeClearReturnMode()
+	{
+		using Kind = Inkeys::Drawing::Draw3::Bridge::CompletedStrokeKind;
+		Check(ResolveEraserClearReturnMode(Kind::None) ==
+			BarEraserClearReturnMode::Drawing,
+			"missing stroke history returns to Drawing");
+		Check(ResolveEraserClearReturnMode(Kind::Drawing) ==
+			BarEraserClearReturnMode::Drawing,
+			"drawing stroke returns to Drawing");
+		Check(ResolveEraserClearReturnMode(Kind::Shape) ==
+			BarEraserClearReturnMode::Shape,
+			"shape stroke returns to Shape");
+		Check(ResolveEraserClearReturnMode(Kind::Eraser) ==
+			BarEraserClearReturnMode::Eraser,
+			"eraser stroke keeps Eraser");
+		Check(ResolveEraserClearReturnMode(Kind::Eraser, true) ==
+			BarEraserClearReturnMode::Selection,
+			"selection entry takes priority even after an eraser stroke");
+		Check(ResolveEraserClearReturnMode(Kind::Shape, true) ==
+			BarEraserClearReturnMode::Selection,
+			"selection entry takes priority over the last shape stroke");
+	}
+
+	void TestRememberedLaserOnlyActivatesInPenMode()
+	{
+		using Inkeys::Business::IsLaserToolActive;
+		Check(IsLaserToolActive(true, true),
+			"remembered Laser activates in Pen mode");
+		Check(!IsLaserToolActive(false, true),
+			"Selection Eraser and Shape override remembered Laser");
+		Check(!IsLaserToolActive(true, false),
+			"base pen stays active when Laser is not remembered");
+	}
+
+	void TestLaserUsesIndependentColorState()
+	{
+		using Inkeys::Business::PenColorStateSlot;
+		using Inkeys::Business::ResolvePenColorStateSlot;
+		Check(ResolvePenColorStateSlot(true, true) == PenColorStateSlot::Laser,
+			"Laser color wins over the remembered pen subtype");
+		Check(ResolvePenColorStateSlot(false, true) == PenColorStateSlot::Highlighter,
+			"Highlighter keeps its own color when Laser is inactive");
+		Check(ResolvePenColorStateSlot(false, false) == PenColorStateSlot::Brush,
+			"soft and hard pens continue sharing the brush color");
+	}
 }
 
 int RunToggleClickCoalescerTests()
@@ -69,5 +159,10 @@ int RunToggleClickCoalescerTests()
 	TestSameChannelMergesWithinWindow();
 	TestChannelsAreIndependent();
 	TestNonMonotonicTimeStartsNewWindow();
+	TestDrawButtonToggleNeverChangesPenType();
+	TestClearButtonStateMachine();
+	TestEraserAttributeClearReturnMode();
+	TestRememberedLaserOnlyActivatesInPenMode();
+	TestLaserUsesIndependentColorState();
 	return failureCount;
 }

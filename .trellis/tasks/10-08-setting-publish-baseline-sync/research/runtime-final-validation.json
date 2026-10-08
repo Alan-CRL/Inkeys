@@ -1,0 +1,46 @@
+{
+  "solution": {
+    "configuration": "Debug|ARM64",
+    "native_msbuild": "ARM64; dynamically discovered with vswhere",
+    "node_reuse": false,
+    "timeout_seconds": 900,
+    "second_exit": 0,
+    "second_elapsed_seconds": 486.7,
+    "final_exit": 0,
+    "final_elapsed_seconds": 13.0,
+    "final_stdout": "solution-build-final-stdout.log",
+    "final_stderr": "solution-build-final-stderr.log"
+  },
+  "headless": {
+    "command": "Build/ARM64/Debug/InkeysHeadlessTests.exe --no-window",
+    "exit": 0,
+    "log": "headless-no-window-final.log",
+    "final_line": "PASS animation correctness",
+    "includes": "CheckLinkedPptScaleDraft: production-helper drag/reset/link/join/idle scenarios"
+  },
+  "i18n": {
+    "command": "pwsh -NoProfile -File Scripts/i18n.ps1 check",
+    "exit": 0,
+    "en-US": "366/366",
+    "zh-TW": "366/366"
+  },
+  "own_diff_check": {
+    "exit": 0,
+    "files": 15,
+    "scope": "git diff --check HEAD; runtime/projects/tests/config/3 locales/snapshot",
+    "encoding": "UTF-8 without BOM; CRLF; lone LF=0"
+  },
+  "original_dependencies": {
+    "Vcpkg": {
+      "sha": "99a97de2cb371449d4fb9dc970f2ac562d689ec2",
+      "working_diff_exit": 0,
+      "cached_diff_exit": 0
+    },
+    "HiMsg": {
+      "sha": "e7f42dc108bbd4201486e769648ef83240a90be2",
+      "working_diff_exit": 0,
+      "cached_diff_exit": 0
+    }
+  },
+  "gui": "Not executed; explicitly outside authorization. HWND fixtures compiled but skipped by --no-window."
+}

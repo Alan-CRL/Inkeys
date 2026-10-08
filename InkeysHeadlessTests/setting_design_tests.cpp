@@ -7,6 +7,7 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Controls.h"
 #include "../Inkeys/additional/imfluent/imfluent.h"
+#include "../Inkeys/additional/imfluent/imfluent_internal.h"
 #include "../Inkeys/additional/imfluent/imfluent_icons.h"
 #include "../Inkeys/additional/imgui/imgui_internal.h"
 
@@ -111,6 +112,55 @@ namespace
 				&& Near(page.left - shell.content.left, shell.content.right - page.right),
 				"responsive shell retains bounded panes and symmetric page gutters");
 		}
+	}
+
+	void CheckNavigationPaneGeometry(Checks& checks)
+	{
+		for (float scale : { 1.0F, 1.25F, 1.5F, 1.875F, 2.0F, 4.0F })
+			for (const ImVec2 size : { ImVec2(720, 520), ImVec2(960, 700), ImVec2(1440, 900) })
+				for (bool expanded : { false, true })
+				{
+					Design::NavigationState state;
+					state.Resize(size.x * scale / scale);
+					if (state.Expanded() != expanded) state.Toggle();
+					const auto shell = Design::ResolveShellGeometry(size.x, size.y, state);
+					const auto regions = Design::ResolveNavigationPaneGeometry(
+						shell.pane.Width(), shell.pane.Height(), state.Expanded());
+					const LayoutRect pane{ 0, 0, shell.pane.Width(), shell.pane.Height() };
+					checks.Expect(regions.fits && Contains(pane, regions.top) && Contains(pane, regions.middle)
+						&& Contains(pane, regions.footer) && Disjoint(regions.top, regions.middle)
+						&& Disjoint(regions.middle, regions.footer) && Contains(regions.top, regions.menu),
+						"production pane geometry fits disjoint fixed and scrolling regions at all sizes/DPI/modes");
+					for (const auto& row : regions.topItems)
+						checks.Expect(Contains(regions.top, row) && Near(row.Height(), 36),
+							"two fixed top navigation rows retain 36 DIP height");
+					for (const auto& row : regions.footerItems)
+						checks.Expect(Contains(regions.footer, row) && Near(row.Height(), 36),
+							"community/sponsor/restart/exit fit the measured fixed footer");
+					checks.Expect(regions.menu.bottom <= regions.topItems[0].top
+						&& regions.topItems[1].bottom < regions.separators[0].top
+						&& regions.separators[1].bottom < regions.footerItems[0].top
+						&& regions.footerItems[1].bottom < regions.separators[2].top
+						&& regions.separators[2].bottom < regions.footerItems[2].top,
+						"menu, all three thin separators and fixed rows keep their requested order");
+					for (const auto& divider : regions.separators)
+						checks.Expect(Contains(pane, divider) && Near(divider.Height(), 1),
+							"separators stay within the pane and one DIP thick");
+					checks.Expect(regions.debugVisible == expanded && (expanded
+						? Contains(regions.footer, regions.debug) && Near(regions.debug.Height(), 28)
+							&& Near(regions.debug.Width(), 72) && Near(regions.debug.left + regions.debug.Width() / 2, pane.Width() / 2)
+							&& regions.debug.top > regions.footerItems[3].bottom
+						: Near(regions.debug.Width(), 0) && Near(regions.debug.Height(), 0)),
+						"debug is centered natural-width/28 DIP only in desktop or overlay expansion");
+					checks.Expect(Near(regions.middleContentHeight, 316)
+						&& Near(regions.top.Height() + regions.middle.Height() + regions.footer.Height(), pane.Height())
+						&& (size.y != 520 || regions.middleContentHeight > regions.middle.Height()),
+						"remaining height alone budgets the eight-item middle with overflow at minimum size");
+				}
+		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240, true);
+		checks.Expect(!shortPane.fits && Near(shortPane.middle.Height(), 0)
+			&& Disjoint(shortPane.top, shortPane.footer),
+			"abnormally short existing client explicitly reports insufficient height without fixed-region overlap");
 	}
 
 	std::filesystem::path FindFontDirectory()
@@ -763,6 +813,252 @@ namespace
 		Design::ApplyPalette(false);
 	}
 
+	struct FlatSample
+	{
+		ImVec4 visible{};
+		ImU32 fill = 0;
+		int triangles = 0;
+	};
+
+	float Cross(ImVec2 a, ImVec2 b, ImVec2 p)
+	{
+		return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+	}
+
+	ImVec4 Composite(ImU32 foreground, ImVec4 background)
+	{
+		const auto color = ImGui::ColorConvertU32ToFloat4(foreground);
+		return { color.x * color.w + background.x * (1.0F - color.w),
+			color.y * color.w + background.y * (1.0F - color.w),
+			color.z * color.w + background.z * (1.0F - color.w), 1.0F };
+	}
+
+	// 只栅格化白像素平面三角形；样点避开文字、图标、圆角和描边。
+	FlatSample SampleFlatDrawData(ImVec2 point, const ImDrawList* controlList,
+		int firstVertex, int lastVertex, ImU32 background)
+	{
+		FlatSample result{ ImGui::ColorConvertU32ToFloat4(background) };
+		const auto white = ImGui::GetIO().Fonts->TexUvWhitePixel;
+		for (const auto* list : ImGui::GetDrawData()->CmdLists)
+		{
+			for (const auto& command : list->CmdBuffer)
+			{
+				if (command.UserCallback || point.x < command.ClipRect.x || point.x >= command.ClipRect.z
+					|| point.y < command.ClipRect.y || point.y >= command.ClipRect.w) continue;
+				for (unsigned int index = command.IdxOffset;
+					index + 2 < command.IdxOffset + command.ElemCount; index += 3)
+				{
+					const unsigned int ia = command.VtxOffset + list->IdxBuffer[index];
+					const unsigned int ib = command.VtxOffset + list->IdxBuffer[index + 1];
+					const unsigned int ic = command.VtxOffset + list->IdxBuffer[index + 2];
+					const auto& a = list->VtxBuffer[ia];
+					const auto& b = list->VtxBuffer[ib];
+					const auto& c = list->VtxBuffer[ic];
+					if (a.col != b.col || b.col != c.col
+						|| a.uv.x != white.x || a.uv.y != white.y
+						|| b.uv.x != white.x || b.uv.y != white.y
+						|| c.uv.x != white.x || c.uv.y != white.y) continue;
+					const float ab = Cross(a.pos, b.pos, point);
+					const float bc = Cross(b.pos, c.pos, point);
+					const float ca = Cross(c.pos, a.pos, point);
+					if (!((ab > 0 && bc > 0 && ca > 0) || (ab < 0 && bc < 0 && ca < 0))) continue;
+					result.visible = Composite(a.col, result.visible);
+					++result.triangles;
+					if (list == controlList && ia >= static_cast<unsigned int>(firstVertex)
+						&& ib >= static_cast<unsigned int>(firstVertex) && ic >= static_cast<unsigned int>(firstVertex)
+						&& ia < static_cast<unsigned int>(lastVertex) && ib < static_cast<unsigned int>(lastVertex)
+						&& ic < static_cast<unsigned int>(lastVertex)) result.fill = a.col;
+				}
+			}
+		}
+		return result;
+	}
+
+	void CheckAnimatedColors(Checks& checks, ImFont* regular, float scale)
+	{
+		struct Capture { ImDrawList* list = nullptr; int first = 0, last = 0; ImRect rect; };
+		struct Frame { std::array<FlatSample, 5> sample{}; std::array<ImRect, 5> rect{};
+			bool popup = false; ImGuiID popupId = 0; ImGuiWindow* popupWindow = nullptr; };
+		std::array<int, 2> selected{ 0, 0 };
+		std::array<int, 5> activations{};
+		const char* options[]{ "First", "Second", "Third" };
+		int frames = 0, samples = 0, violations = 0;
+		std::array<int, 5> kindSamples{}, kindViolations{};
+		std::array<float, 5> kindWorst{};
+		float worst = 0.0F;
+		auto& io = ImGui::GetIO();
+		io.ConfigInputTrickleEventQueue = false;
+		Design::ApplyPalette(false);
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
+		auto draw = [&](ImVec2 mouse, bool down, bool dark)
+		{
+			Design::ApplyPalette(dark);
+			io.AddMousePosEvent(mouse.x, mouse.y);
+			io.AddMouseButtonEvent(0, down);
+			ImGui::NewFrame();
+			ImGui::SetNextWindowPos(ImVec2(0, 0));
+			ImGui::SetNextWindowSize(ImVec2(600 * scale, 440 * scale));
+			ImGui::Begin("##hover-draw-data", nullptr, ImGuiWindowFlags_NoDecoration
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+			std::array<Capture, 5> capture{};
+			for (int kind = 0; kind < 4; ++kind)
+			{
+				ImGui::SetCursorScreenPos(ImVec2(20 * scale, (20 + 64 * kind) * scale));
+				auto& item = capture[kind];
+				item.list = ImGui::GetWindowDrawList(); item.first = item.list->VtxBuffer.Size;
+				bool activated = false;
+				if (kind == 0) activated = ImFluent::NavItemEx("hover-nav", "Navigation", false, nullptr, false);
+				else if (kind == 1) activated = Design::Button("Hover button", ImVec2(240 * scale, 32 * scale));
+				else
+				{
+					ImGui::SetNextItemWidth(240 * scale);
+					activated = Design::ComboBox(kind == 2 ? "##hover-combo-a" : "##hover-combo-b",
+						&selected[kind - 2], options, 3);
+				}
+				activations[kind] += activated ? 1 : 0;
+				// Popup结束会恢复combo的LastItemData，主体范围仍由实际item提供。
+				item.rect = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+				item.last = item.list->VtxBuffer.Size;
+			}
+			Frame frame;
+			if (!ImGui::GetCurrentContext()->OpenPopupStack.empty())
+			{
+				const auto& popup = ImGui::GetCurrentContext()->OpenPopupStack.back();
+				frame.popupId = popup.PopupId; frame.popupWindow = popup.Window;
+				if (popup.Window && popup.Window->Active && !popup.Window->Hidden)
+				{
+					frame.popup = true;
+					auto& item = capture[4];
+					item.list = popup.Window->DrawList;
+					item.last = item.list->VtxBuffer.Size;
+					const auto start = popup.Window->DC.CursorStartPos;
+					const float row = 32 * scale + ImGui::GetStyle().ItemSpacing.y;
+					item.rect = ImRect(ImVec2(start.x, start.y + row),
+						ImVec2(popup.Window->WorkRect.Max.x, start.y + row + 32 * scale));
+				}
+			}
+			ImGui::End();
+			ImGui::Render();
+			++frames;
+			for (int kind = 0; kind < 5; ++kind)
+			{
+				const auto& item = capture[kind]; frame.rect[kind] = item.rect;
+				if (!item.list) continue;
+				const ImU32 background = kind == 4
+					? ImGui::GetColorU32(ImGuiCol_PopupBg) : Design::AppBase;
+				const auto point = ImVec2(item.rect.Min.x + item.rect.GetWidth() * 0.62F + 0.37F,
+					item.rect.Min.y + 4.61F * scale);
+				frame.sample[kind] = SampleFlatDrawData(point, item.list, item.first, item.last, background);
+				if (kind == 4 && frame.sample[kind].fill == background) frame.sample[kind].fill = 0;
+			}
+			return frame;
+		};
+		auto target = [](int kind, int state)
+		{
+			return ImFluent::GetColorU32(kind == 0 || kind == 4
+				? (state == 0 ? ImFluentCol_SubtleFillTransparent
+					: state == 1 ? ImFluentCol_SubtleFillSecondary : ImFluentCol_SubtleFillTertiary)
+				: (state == 0 ? ImFluentCol_ControlFillDefault
+					: state == 1 ? ImFluentCol_ControlFillSecondary : ImFluentCol_ControlFillTertiary));
+		};
+		auto verify = [&](const Frame& previous, const Frame& current, int kind, int state)
+		{
+			if (kind == 4 && (!previous.popup || !current.popup)) return;
+			const auto background = ImGui::ColorConvertU32ToFloat4(kind == 4
+				? ImGui::GetColorU32(ImGuiCol_PopupBg) : Design::AppBase);
+			const auto start = Composite(previous.sample[kind].fill, background);
+			const auto end = Composite(target(kind, state), background);
+			const auto visible = current.sample[kind].visible;
+			checks.Expect(current.sample[kind].triangles > 0, "hover samples actual clipped DrawData flat triangles");
+			auto component = [](ImVec4 color, int channel) { return channel == 0 ? color.x : channel == 1 ? color.y : color.z; };
+			for (int channel = 0; channel < 3; ++channel)
+			{
+				const float lower = (std::min)(component(start, channel), component(end, channel));
+				const float upper = (std::max)(component(start, channel), component(end, channel));
+				const float excess = (std::max)(lower - component(visible, channel), component(visible, channel) - upper);
+				worst = (std::max)(worst, excess);
+				kindWorst[kind] = (std::max)(kindWorst[kind], excess);
+				if (excess > 1.01F / 255.0F)
+				{
+					++kindViolations[kind];
+					if (violations++ == 0) std::cerr << "[HoverDrawData] first failure kind=" << kind
+						<< " frame=" << frames << " scale=" << scale << " visible=" << component(visible, channel)
+						<< " endpoints=" << component(start, channel) << ',' << component(end, channel) << '\n';
+				}
+			}
+			++samples; ++kindSamples[kind];
+		};
+		const ImVec2 outside(-100, -100);
+		auto frame = draw(outside, false, false);
+		frame = draw(outside, false, false);
+		for (const bool dark : { false, true, false })
+		{
+			for (int kind = 0; kind < 3; ++kind)
+			{
+				const auto mouse = frame.rect[kind].GetCenter();
+				// 首次进入、快速进出、按下/释放及同一session浅深切换。
+				for (int step = 0; step < 28; ++step)
+				{
+					const bool hover = step < 8 || (step >= 10 && step < 24);
+					const bool down = kind < 2 && step >= 18 && step < 21;
+					const auto next = draw(hover ? mouse : outside, down, dark);
+					verify(frame, next, kind, down ? 2 : hover ? 1 : 0);
+					frame = next;
+				}
+			}
+		}
+		checks.Expect(activations[0] == 3 && activations[1] == 3 && activations[2] == 0,
+			"animated navigation/button release once without editing an idle combo");
+		ImGuiID firstPopupId = 0;
+		ImGuiWindow* firstPopupWindow = nullptr;
+		for (int owner : { 2, 2, 3 })
+		{
+			const auto pressedBody = draw(frame.rect[owner].GetCenter(), true, false);
+			verify(frame, pressedBody, owner, 2); frame = pressedBody;
+			const auto openBody = draw(outside, false, false);
+			verify(frame, openBody, owner, 2); frame = openBody;
+			frame = draw(outside, false, false);
+			checks.Expect(frame.popup && selected[owner - 2] == 0, "actual combo popup opens without changing selection");
+			if (!frame.popup) continue;
+			if (!firstPopupId) { firstPopupId = frame.popupId; firstPopupWindow = frame.popupWindow; }
+			if (owner == 3) checks.Expect(frame.popupId != firstPopupId && frame.popupWindow != firstPopupWindow,
+				"combos with identical option labels retain distinct popup storage owners");
+			const auto mouse = frame.rect[4].GetCenter();
+			for (int step = 0; step < 18; ++step)
+			{
+				const bool hover = step < 8 || step >= 10;
+				const auto next = draw(hover ? mouse : outside, false, step >= 12);
+				verify(frame, next, 4, hover ? 1 : 0); frame = next;
+			}
+			// 点击外部走真实popup关闭路径，下一轮重开仍从透明端点启动。
+			frame = draw(ImVec2(520 * scale, 400 * scale), true, false);
+			frame = draw(outside, false, false);
+			checks.Expect(!frame.popup && selected[owner - 2] == 0, "popup close/reopen preserves combo value");
+		}
+		const auto pressedBody = draw(frame.rect[3].GetCenter(), true, false);
+		verify(frame, pressedBody, 3, 2); frame = pressedBody;
+		const auto openBody = draw(outside, false, false);
+		verify(frame, openBody, 3, 2); frame = openBody;
+		frame = draw(outside, false, false);
+		checks.Expect(frame.popup, "actual combo must open for the final selectable press/release case");
+		if (frame.popup)
+		{
+			const auto mouse = frame.rect[4].GetCenter();
+			const auto pressed = draw(mouse, true, false);
+			verify(frame, pressed, 4, 2);
+			frame = draw(mouse, false, false);
+			checks.Expect(selected[1] == 1 && !frame.popup && activations[3] == 1,
+				"popup selectable commits one value on release and closes its owning combo");
+		}
+		std::cout << "[HoverDrawData] scale=" << scale << " frames=" << frames << " samples=" << samples
+			<< " violations=" << violations << " worst=" << worst << '\n';
+		for (int kind : { 0, 1, 2, 3, 4 })
+			std::cout << "[HoverDrawData] kind=" << kind << " samples=" << kindSamples[kind]
+				<< " violations=" << kindViolations[kind] << " worst=" << kindWorst[kind] << '\n';
+		checks.Expect(violations == 0, "animated visible fills stay within previous and target endpoints (1 LSB)");
+		Design::ApplyPalette(false);
+	}
+
 	void CheckDrawData(Checks& checks)
 	{
 		const auto* data = ImGui::GetDrawData();
@@ -794,6 +1090,132 @@ namespace
 			for (const auto* texture : *data->Textures)
 				pixels |= texture->Pixels && texture->Width > 0 && texture->Height > 0;
 		checks.Expect(pixels, "bundled fonts generate CPU atlas pixels");
+	}
+
+	void CheckNavigationScrolling(Checks& checks, ImFont* regular, ImFont* icons, float scale)
+	{
+		Design::ApplyPalette(false);
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Body, regular, Design::BodyText.size);
+		ImFluent::SetFluentTextStyleFont(ImFluentTextStyle_Caption, regular, Design::CaptionText.size);
+		ImFluent::SetIconFont(icons);
+		for (bool dark : { false, true })
+		for (const ImVec2 size : { ImVec2(720, 520), ImVec2(960, 700), ImVec2(1440, 900) })
+			for (bool expanded : { false, true })
+			{
+				Design::ApplyPalette(dark);
+				Design::NavigationState state; state.Resize(size.x);
+				if (state.Expanded() != expanded) state.Toggle();
+				const auto shell = Design::ResolveShellGeometry(size.x, size.y, state);
+				const float debugWidth = Design::TextWidth("调试软件", ImFluentTextStyle_Caption) / scale + 24;
+				const auto regions = Design::ResolveNavigationPaneGeometry(shell.pane.Width(), shell.pane.Height(), expanded, 36, debugWidth);
+				std::array<ImVec2, 2> fixedOrigins{};
+				float maximumScroll = 0;
+				for (int pass = 0; pass < 3; ++pass)
+				{
+					ImGui::GetIO().AddMousePosEvent(-100, -100);
+					ImGui::GetIO().AddMouseButtonEvent(0, false);
+					ImGui::NewFrame();
+					ImGui::SetNextWindowPos(ImVec2(0, 0));
+					ImGui::SetNextWindowSize(ImVec2(size.x * scale, size.y * scale));
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+					ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, Design::RowGap * scale));
+					ImGui::Begin("##navigation-region-tests", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+					ImGui::PushID(static_cast<int>(size.x) + (expanded ? 1 : 0));
+					ImFluent::PushFont(ImFluentTextStyle_Body);
+					auto begin = [&](const char* id, const LayoutRect& region, bool fixed) {
+						ImGui::SetCursorPos(ImVec2((shell.pane.left + region.left) * scale, (shell.pane.top + region.top) * scale));
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4 * scale, 0));
+						ImGui::BeginChild(id, ImVec2(region.Width() * scale, region.Height() * scale), ImGuiChildFlags_AlwaysUseWindowPadding,
+							ImGuiWindowFlags_NoScrollbar | (fixed ? ImGuiWindowFlags_NoScrollWithMouse : 0));
+					};
+					auto position = [&](const LayoutRect& row, float offset) {
+						ImGui::SetCursorPos(ImVec2(row.left * scale, (row.top - offset) * scale));
+					};
+					auto end = [] { ImGui::EndChild(); ImGui::PopStyleVar(); };
+					begin("top", regions.top, true);
+					const auto topOrigin = ImGui::GetWindowPos();
+					for (int i = 0; i < 2; ++i) {
+						position(regions.topItems[i], 0); ImGui::PushID(i);
+						ImFluent::NavItemEx("item", i == 0 ? "Home" : "Language", i == 0, nullptr, !expanded); ImGui::PopID();
+					}
+					checks.Expect(Near(ImGui::GetScrollY(), 0) && (pass == 0 || Near(ImGui::GetScrollMaxY(), 0)), "actual fixed top child has no scroll range"); end();
+					ImGui::SetNextWindowScroll(ImVec2(0, pass == 2 ? maximumScroll : 0));
+					begin("middle", regions.middle, false);
+					int lastVertices = 0;
+					for (int i = 0; i < 8; ++i) {
+						ImGui::PushID(i); const int first = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+						ImFluent::NavItemEx("item", "Middle page", i == 7, nullptr, !expanded);
+						if (i == 7) lastVertices = ImGui::GetWindowDrawList()->VtxBuffer.Size - first;
+						ImGui::PopID();
+					}
+					if (pass == 1) maximumScroll = ImGui::GetScrollMaxY();
+					if (pass == 2) checks.Expect(lastVertices > 0 && Near(ImGui::GetScrollY(), maximumScroll, 1.0F)
+						&& (size.y != 520 || maximumScroll > 0), "actual middle child scroll reaches the eighth entry at minimum size"); end();
+					begin("footer", regions.footer, true);
+					const auto footerOrigin = ImGui::GetWindowPos();
+					for (int i = 0; i < 4; ++i) {
+						position(regions.footerItems[i], regions.footer.top); ImGui::PushID(i);
+						if (i == 1) {
+							auto* list = ImGui::GetWindowDrawList(); const int first = list->VtxBuffer.Size;
+							checks.Expect(!Design::AccentNavigationItem("##sponsor", "Sponsor", false, "\ue789", !expanded), "idle sponsor has no action");
+							checks.Expect(VertexBounds(list, first, ImFluent::GetColorU32(ImFluentCol_AccentFillDefault), true).Width() > 0,
+								"real sponsor wrapper keeps accent fill in compact and expanded modes");
+						} else if (i == 3) {
+							auto* list = ImGui::GetWindowDrawList(); const int first = list->VtxBuffer.Size;
+							const auto red = Design::GetPalette().criticalText;
+							ImFluent::PushStyleColor(ImFluentCol_TextPrimary, red);
+							ImFluent::NavItemEx("item", "Close", false, "\ue711", !expanded); ImFluent::PopStyleColor();
+							checks.Expect(VertexBounds(list, first, red, true).Width() > 0,
+								"real close text/icon uses the light/dark critical foreground without changing its background");
+						} else ImFluent::NavItemEx("item", "Fixed action", false, nullptr, !expanded);
+						ImGui::PopID();
+					}
+					if (regions.debugVisible) {
+						position(regions.debug, regions.footer.top); auto* list = ImGui::GetWindowDrawList(); const int first = list->VtxBuffer.Size;
+						checks.Expect(!Design::CaptionNavigationButton("debug", "调试软件", false,
+							ImVec2(regions.debug.Width() * scale, regions.debug.Height() * scale)), "idle debug has no action");
+						const auto actual = ImGui::GetItemRectSize(); int glyphVertices = 0;
+						const auto white = ImGui::GetIO().Fonts->TexUvWhitePixel;
+						for (int v = first; v < list->VtxBuffer.Size; ++v) if (list->VtxBuffer[v].uv.x != white.x || list->VtxBuffer[v].uv.y != white.y) ++glyphVertices;
+						checks.Expect(Near(actual.y, 28 * scale, 1.0F) && Near(actual.x, debugWidth * scale, 1.0F) && glyphVertices == 16,
+							"actual debug wrapper draws only four caption glyphs with natural width and 28 DIP height");
+					}
+					checks.Expect(Near(ImGui::GetScrollY(), 0) && (pass == 0 || Near(ImGui::GetScrollMaxY(), 0)), "actual fixed footer child has no scroll range"); end();
+					if (pass == 0) fixedOrigins = { topOrigin, footerOrigin };
+					else checks.Expect(Near(topOrigin.x, fixedOrigins[0].x) && Near(topOrigin.y, fixedOrigins[0].y)
+						&& Near(footerOrigin.x, fixedOrigins[1].x) && Near(footerOrigin.y, fixedOrigins[1].y),
+						"real fixed child origins do not move when middle content scrolls");
+					checks.Expect(Near(ImGui::GetScrollY(), 0) && (pass == 0 || Near(ImGui::GetScrollMaxY(), 0)), "actual region host does not create an outer scroll range");
+					ImFluent::PopFont(); ImGui::PopID(); ImGui::End(); ImGui::PopStyleVar(2); ImGui::Render();
+				}
+			}
+	}
+
+	void CheckSidebarIconSet(Checks& checks, ImFont* icons, float scale)
+	{
+		constexpr std::array<ImWchar, 14> codes{ 0xE80F, 0xF2B7, 0xE7B8, 0xEE56,
+			0xE74C, 0xE70B, 0xE765, 0xEC4A, 0xE81E, 0xE946, 0xE716, 0xE789, 0xE72C, 0xE711 };
+		ImFluent::SetIconFont(icons);
+		for (std::size_t index = 0; index < codes.size(); ++index)
+		{
+			ImGui::PushFont(icons, Design::NavigationGlyphSize);
+			const auto* found = ImGui::GetFontBaked()->FindGlyphNoFallback(codes[index]);
+			const auto glyph = found ? *found : ImFontGlyph{};
+			ImGui::PopFont();
+			checks.Expect(found && glyph.Visible, "all sidebar semantic glyphs exist in the bundled icon font");
+			if (!found) continue;
+			char text[5]{}; ImTextCharToUtf8(text, codes[index]);
+			auto* draw = ImGui::GetWindowDrawList();
+			const int first = draw->VtxBuffer.Size;
+			const ImVec2 min(420 * scale, (20 + 36 * static_cast<float>(index)) * scale);
+			const ImVec2 max(min.x + 24 * scale, min.y + 36 * scale);
+			ImFluent::DrawIcon(text, min, max, Design::NavigationGlyphSize, Design::TextPrimary);
+			const auto bounds = GlyphDrawBounds(draw, first, glyph);
+			checks.Expect(bounds.Width() > 0 && bounds.Height() > 0
+				&& Near(bounds.left + bounds.Width() * 0.5F, (min.x + max.x) * 0.5F, 1.0F)
+				&& Near(bounds.top + bounds.Height() * 0.5F, (min.y + max.y) * 0.5F, 1.0F),
+				"actual semantic sidebar icons draw centered inside the unchanged glyph slot");
+		}
 	}
 
 	void CheckNativeControls(Checks& checks, ImFont* regular, ImFont* icons, float scale)
@@ -857,6 +1279,7 @@ int RunSettingDesignTests()
 {
 	Checks checks;
 	CheckNavigation(checks);
+	CheckNavigationPaneGeometry(checks);
 	const auto fontDirectory = FindFontDirectory();
 	if (fontDirectory.empty())
 	{
@@ -926,6 +1349,7 @@ int RunSettingDesignTests()
 		}
 		CheckMeasuredRows(checks, fonts[0], scale);
 		CheckNativeControls(checks, fonts[0], fonts.back(), scale);
+		CheckSidebarIconSet(checks, fonts.back(), scale);
 		CheckSettingRows(checks, fonts[0], fonts.back(), scale);
 		CheckControlTypography(checks, fonts[0], scale);
 		CheckButtonGroupGeometry(checks);
@@ -947,6 +1371,8 @@ int RunSettingDesignTests()
 		ImGui::End();
 		ImGui::Render();
 		CheckDrawData(checks);
+		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
+		if (scale == 1.0F || scale == 1.875F) CheckAnimatedColors(checks, fonts[0], scale);
 	}
 	return checks.failures;
 }

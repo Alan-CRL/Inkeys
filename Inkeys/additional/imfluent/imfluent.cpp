@@ -569,13 +569,22 @@ namespace ImFluent
             return a;
         if ( t >= 1.f )
             return b;
-        const int t8   = ( int )( t * 256.f );
-        const int it   = 256 - t8;
-        const ImU32 ar = ( a >> 0 ) & 0xFF, br = ( b >> 0 ) & 0xFF;
-        const ImU32 ag = ( a >> 8 ) & 0xFF, bg = ( b >> 8 ) & 0xFF;
-        const ImU32 ab = ( a >> 16 ) & 0xFF, bb = ( b >> 16 ) & 0xFF;
-        const ImU32 aa = ( a >> 24 ) & 0xFF, ba = ( b >> 24 ) & 0xFF;
-        return ( ImU32 )( ( ar * it + br * t8 ) >> 8 ) | ( ( ImU32 )( ( ag * it + bg * t8 ) >> 8 ) << 8 ) | ( ( ImU32 )( ( ab * it + bb * t8 ) >> 8 ) << 16 ) | ( ( ImU32 )( ( aa * it + ba * t8 ) >> 8 ) << 24 );
+        // INKEYS PATCH: 先按透明度加权，避免透明黑到浅色的中间帧合成出暗色；输出仍为普通 RGBA。
+        const float aa = ( float )( ( a >> 24 ) & 0xFF );
+        const float ba = ( float )( ( b >> 24 ) & 0xFF );
+        const float wa = aa * ( 1.f - t );
+        const float wb = ba * t;
+        const float alpha = wa + wb;
+        if ( alpha <= 0.f )
+            return 0;
+        ImU32 result = ( ImU32 )( alpha + 0.5f ) << 24;
+        for ( int shift = 0; shift < 24; shift += 8 )
+        {
+            const float channel = ( ( float )( ( a >> shift ) & 0xFF ) * wa
+                + ( float )( ( b >> shift ) & 0xFF ) * wb ) / alpha;
+            result |= ( ImU32 )( channel + 0.5f ) << shift;
+        }
+        return result;
     }
 
     static void RenderAndConsumePendingHeader()

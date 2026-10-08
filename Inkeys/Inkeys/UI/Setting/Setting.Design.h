@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Setting.Layout.h"
+#include <array>
 #include <vector>
 #include <utility>
 
@@ -120,6 +121,88 @@ namespace Inkeys::UI::Setting::Design
 		result.pageWidth = (std::min)(PageMaximumWidth,
 			(std::max)(0.0F, result.content.Width() - result.gutter * 2.0F));
 		result.pageOffset = (result.content.Width() - result.pageWidth) * 0.5F;
+		return result;
+	}
+
+	inline constexpr float NavigationRowHeight = 36.0F;
+	inline constexpr float NavigationDebugHeight = 28.0F;
+	inline constexpr float NavigationSeparatorBand = 12.0F;
+	inline constexpr size_t NavigationMiddleItemCount = 8;
+
+	struct NavigationPaneGeometry
+	{
+		LayoutRect menu;
+		LayoutRect top;
+		LayoutRect middle;
+		LayoutRect footer;
+		std::array<LayoutRect, 2> topItems;
+		std::array<LayoutRect, 4> footerItems; // 社区、赞助、重启、关闭。
+		std::array<LayoutRect, 3> separators;
+		LayoutRect debug;
+		float middleContentHeight = 0.0F;
+		float minimumHeight = 0.0F;
+		bool debugVisible = false;
+		bool fits = false;
+	};
+
+	// 先测固定行、分割线和调试按钮，再给中段剩余高度；所有坐标相对 pane，单位为 DIP。
+	[[nodiscard]] inline NavigationPaneGeometry ResolveNavigationPaneGeometry(
+		float widthDip, float heightDip, bool expanded,
+		float rowHeightDip = NavigationRowHeight, float debugWidthDip = 72.0F) noexcept
+	{
+		const float width = std::isfinite(widthDip) ? (std::max)(0.0F, widthDip) : 0.0F;
+		const float height = std::isfinite(heightDip) ? (std::max)(0.0F, heightDip) : 0.0F;
+		const float rowHeight = std::isfinite(rowHeightDip) && rowHeightDip > 0.0F
+			? rowHeightDip : NavigationRowHeight;
+		const float inset = (std::min)(4.0F, width * 0.1F);
+		const float right = width - inset;
+		constexpr float headerHeight = 8.0F + NavigationRowHeight + 12.0F;
+		const float pairHeight = rowHeight * 2.0F + RowGap;
+		const float topHeight = headerHeight + pairHeight + NavigationSeparatorBand;
+		const float footerHeight = pairHeight * 2.0F + NavigationSeparatorBand * 2.0F
+			+ 8.0F + (expanded ? 8.0F + NavigationDebugHeight : 0.0F);
+
+		NavigationPaneGeometry result;
+		result.minimumHeight = topHeight + footerHeight;
+		result.fits = height >= result.minimumHeight;
+		result.debugVisible = expanded;
+		// 不够高的既有窗口由 HWND 最小尺寸合同扩展；此处仍保持固定区互不覆盖。
+		const float footerTop = (std::max)(topHeight, height - footerHeight);
+		result.menu = { inset, 8.0F, (std::min)(right, inset + 40.0F),
+			8.0F + NavigationRowHeight };
+		result.top = { 0.0F, 0.0F, width, topHeight };
+		result.middle = { 0.0F, topHeight, width, footerTop };
+		result.footer = { 0.0F, footerTop, width, footerTop + footerHeight };
+		result.topItems[0] = { inset, headerHeight, right, headerHeight + rowHeight };
+		result.topItems[1] = { inset, headerHeight + rowHeight + RowGap, right,
+			headerHeight + pairHeight };
+		const float dividerInset = (std::min)(16.0F, width * 0.4F);
+		auto separator = [&](float bandTop) {
+			const float y = bandTop + (NavigationSeparatorBand - 1.0F) * 0.5F;
+			return LayoutRect{ dividerInset, y, width - dividerInset, y + 1.0F };
+		};
+		result.separators[0] = separator(headerHeight + pairHeight);
+		result.separators[1] = separator(footerTop);
+		const float supportTop = footerTop + NavigationSeparatorBand;
+		result.footerItems[0] = { inset, supportTop, right, supportTop + rowHeight };
+		result.footerItems[1] = { inset, supportTop + rowHeight + RowGap, right,
+			supportTop + pairHeight };
+		result.separators[2] = separator(supportTop + pairHeight);
+		const float actionsTop = supportTop + pairHeight + NavigationSeparatorBand;
+		result.footerItems[2] = { inset, actionsTop, right, actionsTop + rowHeight };
+		result.footerItems[3] = { inset, actionsTop + rowHeight + RowGap, right,
+			actionsTop + pairHeight };
+		if (expanded)
+		{
+			const float debugWidth = std::isfinite(debugWidthDip)
+				? std::clamp(debugWidthDip, 0.0F, right - inset) : 0.0F;
+			const float debugLeft = (width - debugWidth) * 0.5F;
+			const float debugTop = actionsTop + pairHeight + 8.0F;
+			result.debug = { debugLeft, debugTop, debugLeft + debugWidth,
+				debugTop + NavigationDebugHeight };
+		}
+		result.middleContentHeight = rowHeight * static_cast<float>(NavigationMiddleItemCount)
+			+ RowGap * static_cast<float>(NavigationMiddleItemCount - 1);
 		return result;
 	}
 

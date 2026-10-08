@@ -1,0 +1,29 @@
+{
+  "id": "display-physical-size-eraser",
+  "name": "display-physical-size-eraser",
+  "title": "显示物理标尺与笔速橡皮完善",
+  "description": "建立可靠的显示物理尺寸契约，并在后续阶段完善笔速橡皮和手掌橡皮的物理尺度使用。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-09-12",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-12-speed-eraser-physical-scale",
+    "09-12-display-physical-size-validity"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

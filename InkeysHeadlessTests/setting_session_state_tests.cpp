@@ -189,6 +189,23 @@ namespace
 			&& bottomCorrection.top >= smallWork.top,
 			"one-pixel correction moves upward when the original outer touches the work area bottom")) ++failures;
 
+		// 用户倍率提高后的 HWND 最小尺寸复用同一实测 frame 校正，不把系统边框再乘倍率。
+		const WindowFrameRect currentScaleOuter{ 600, 500, 1584, 1224 };
+		const WindowFrameRect doubledClient{ 372, 342, 1812, 1382 };
+		const auto doubledOuter = ResolveWindowFrameCreationCorrection(doubledClient,
+			currentScaleOuter, { 960, 700 }, { 0, 0, 3840, 2160 });
+		if (!Expect(doubledOuter.Width() == 1464 && doubledOuter.Height() == 1064
+			&& doubledOuter.left + doubledOuter.Width() / 2 == 1092
+			&& doubledOuter.top + doubledOuter.Height() / 2 == 862,
+			"scale-two insufficient client grows to minimum using measured frame and current center")) ++failures;
+		const WindowFrameRect sufficientOuter{ 600, 500, 2544, 1924 };
+		if (!Expect(SameFrameRect(ResolveWindowFrameCreationCorrection(
+			{ 612, 512, 2532, 1912 }, sufficientOuter, { 1920, 1400 }, { 0, 0, 3840, 2160 }), sufficientOuter),
+			"already sufficient client keeps its existing size without shrinking after a scale change")) ++failures;
+		if (!Expect(SameFrameRect(ResolveWindowFrameCreationCorrection(doubledClient,
+			currentScaleOuter, { 960, 700 }, { 0, 0, 1000, 800 }), { 0, 0, 1000, 800 }),
+			"scale minimum yields to a work area smaller than the required fixed sidebar")) ++failures;
+
 		const WindowFrameInsets frame{ 12, 12, 12, 12 };
 		const auto normalMinimum = ResolveMinimumWindowFrame(720, 520, frame, 1920, 1040);
 		const auto enlargedMinimum = ResolveMinimumWindowFrame(1440, 1040, frame, 3840, 2080);
@@ -214,16 +231,66 @@ namespace
 			}
 		return failures;
 	}
+	int CheckLinkedPptScaleDraft()
+	{
+		using Inkeys::UI::Setting::LinkedPptScaleDraft;
+		using Inkeys::UI::Setting::ResolveLinkedPptScaleDraft;
+		int failures = 0;
+		auto equal = [](float a, float b) { return std::abs(a - b) < 0.0001F; };
+		LinkedPptScaleDraft draft{ 1.0F, 1.0F, true, true };
+		// 持续拖动中组时保存 Record 尚未更新，下一帧仍须保留当前真实编辑。
+		for (const float value : { 1.2F, 1.4F, 0.6F, 2.0F })
+		{
+			draft.middle = value;
+			draft = ResolveLinkedPptScaleDraft(draft, false, true, false, false);
+			const auto idle = ResolveLinkedPptScaleDraft(draft, false, false, false, false);
+			if (!Expect(equal(draft.bottom, value) && equal(draft.middle, value)
+				&& equal(idle.bottom, value) && equal(idle.middle, value),
+				"linked middle drag and following idle frame retain latest edit")) ++failures;
+		}
+		for (const float value : { 1.6F, 0.8F, 1.0F })
+		{
+			draft.bottom = value;
+			draft = ResolveLinkedPptScaleDraft(draft, true, false, false, false);
+			if (!Expect(equal(draft.bottom, value) && equal(draft.middle, value),
+				"linked bottom drag propagates its actual edit")) ++failures;
+		}
+		const auto reset = ResolveLinkedPptScaleDraft(
+			{ 1.0F, 1.8F, true, true }, true, false, false, false);
+		if (!Expect(equal(reset.bottom, 1.0F) && equal(reset.middle, 1.0F),
+			"reset at the default value still synchronizes the other group")) ++failures;
+		const auto unlinked = ResolveLinkedPptScaleDraft(
+			{ 0.8F, 1.7F, true, false }, false, true, false, false);
+		if (!Expect(equal(unlinked.bottom, 0.8F) && equal(unlinked.middle, 1.7F),
+			"editing an unlinked group does not change the other scale")) ++failures;
+		const auto bottomJoined = ResolveLinkedPptScaleDraft(
+			{ 1.0F, 1.7F, true, true }, false, false, true, false);
+		const auto middleJoined = ResolveLinkedPptScaleDraft(
+			{ 1.6F, 1.0F, true, true }, false, false, false, true);
+		if (!Expect(equal(bottomJoined.bottom, 1.7F)
+			&& equal(bottomJoined.middle, 1.7F)
+			&& equal(middleJoined.bottom, 1.6F)
+			&& equal(middleJoined.middle, 1.6F),
+			"enabling linked scale copies the already linked group")) ++failures;
+		const auto unchanged = ResolveLinkedPptScaleDraft(
+			{ 1.1F, 1.9F, true, true }, false, false, false, false);
+		if (!Expect(equal(unchanged.bottom, 1.1F) && equal(unchanged.middle, 1.9F),
+			"idle linked groups preserve differing initial preferences")) ++failures;
+		return failures;
+	}
 }
 
 int RunSettingSessionStateTests()
 {
+	using Inkeys::UI::Setting::BarButtonClickAction;
+	using Inkeys::UI::Setting::ResolveBarButtonClickAction;
 	using Inkeys::UI::Setting::SessionState;
 	using Inkeys::UI::Setting::NavigationLayout;
 	using Inkeys::UI::Setting::InteractiveWindowOperation;
 	using Inkeys::UI::Setting::BackdropMode;
 	int failures = 0;
 	failures += CheckSettingWindowFrame();
+	failures += CheckLinkedPptScaleDraft();
 
 	if (!Expect(Inkeys::UI::Setting::InteractiveOperationFromHitTest(HTCAPTION)
 		== InteractiveWindowOperation::Move
@@ -321,7 +388,29 @@ int RunSettingSessionStateTests()
 		"setting backdrop prefers Mica, then Acrylic, then solid fallback"))
 		++failures;
 
+	using Inkeys::UI::Setting::StartupPreviewPreference;
+	if (!Expect(ResolveBarButtonClickAction(false, false)
+		== BarButtonClickAction::ShowAndActivate
+		&& ResolveBarButtonClickAction(false, true)
+		== BarButtonClickAction::ShowAndActivate,
+		"hidden setting is shown and activated")) ++failures;
+	if (!Expect(ResolveBarButtonClickAction(true, false)
+		== BarButtonClickAction::Activate,
+		"visible unfocused setting is activated")) ++failures;
+	if (!Expect(ResolveBarButtonClickAction(true, true)
+		== BarButtonClickAction::Hide,
+		"visible focused setting is hidden")) ++failures;
 	SessionState state;
+	StartupPreviewPreference startupPreview;
+	if (!Expect(startupPreview.StartupEnabled()
+		&& startupPreview.ConfiguredEnabled(),
+		"startup preview defaults enabled")) ++failures;
+	if (!Expect(startupPreview.SetConfigured(false)
+		&& startupPreview.StartupEnabled()
+		&& !startupPreview.ConfiguredEnabled()
+		&& startupPreview.ConsumeWritePending()
+		&& !startupPreview.ConsumeWritePending(),
+		"setting changes persistence but not current startup snapshot")) ++failures;
 
 	auto decision = state.Resolve(1, false, false);
 	if (!Expect(decision.initializeResident && !decision.createPresentation
