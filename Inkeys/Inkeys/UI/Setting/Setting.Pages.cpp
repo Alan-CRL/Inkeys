@@ -2,6 +2,7 @@
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
+#include "imgui/imgui_internal.h"
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -48,66 +49,98 @@ namespace Inkeys::UI::Setting::Design
 		}
 	}
 
-	GeneralEvents RenderGeneral(GeneralDraft& draft)
+	void ApplyContentAlpha(ImGuiWindow* window, float alpha)
+	{
+		// 内容自绘文字/图标也直接写入顶点颜色；统一处理整棵子窗口，避免只淡入库控件。
+		if (!window || alpha >= 1.0F) return;
+		alpha = std::clamp(alpha, 0.0F, 1.0F);
+		for (auto& vertex : window->DrawList->VtxBuffer)
+		{
+			const ImU32 originalAlpha = (vertex.col >> IM_COL32_A_SHIFT) & 0xff;
+			const ImU32 fadedAlpha = static_cast<ImU32>(std::round(originalAlpha * alpha));
+			vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (fadedAlpha << IM_COL32_A_SHIFT);
+		}
+		for (ImGuiWindow* child : window->DC.ChildWindows)
+			ApplyContentAlpha(child, alpha);
+	}
+
+	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section)
 	{
 		GeneralEvents events;
-		PageHeader(IA(I18nKey.SettingsUI.Regular.N).c_str(), IA(I18nKey.SettingsUI.Design.GeneralSubtitle).c_str());
-		SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
-		events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
-			IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
-		const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
-		const std::string create = IA(I18nKey.Operate.Create);
-		const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
-			IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b",
-			{ { "create", create }, { "more", more } });
-		events.createShortcut = shortcutAction == 0;
-		events.shortcutOptions = shortcutAction == 1;
-		events.startupPreviewChanged = ToggleRow("startup-preview",
-			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-			nullptr, "\ue768", draft.startupPreview);
-
-		SectionHeader(IA(I18nKey.SettingsUI.Regular.Appearance.N).c_str());
-		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
-		events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
-		// 总开关只控制可见性，隐藏子项时保留它们的保存值。
-		if (draft.animation)
+		// 存储页由原配置保存业务分支承载，避免在此重复提交标题或控件。
+		if (section == GeneralSection::Storage) return events;
+		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
+			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
+			: I18nKey.SettingsUI.Design.GeneralBasic;
+		PageHeader(IA(title).c_str());
+		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
+		if (section == GeneralSection::Basic)
 		{
-			SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", draft.animationRate,
-				0.1F, 5.0F, events.animationRateActive, "%.1fx");
-			draft.animationRate = round(draft.animationRate * 10.0F) / 10.0F;
+			SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
+			events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
+				IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
+			const std::string more = IA(I18nKey.SettingsUI.Regular.StartUp.Link.More);
+			const std::string create = IA(I18nKey.Operate.Create);
+			const int shortcutAction = ButtonGroupRow("shortcut", IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b",
+				{ { "create", create }, { "more", more } });
+			events.createShortcut = shortcutAction == 0;
+			events.shortcutOptions = shortcutAction == 1;
+			events.startupPreviewChanged = ToggleRow("startup-preview",
+				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
+				nullptr, "\ue768", draft.startupPreview);
 		}
-		events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
-		if (draft.edgeLighting)
-			events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
-				IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
-		SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
-			[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
-		SettingRow("setting-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.N).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.E).c_str(), "\ue8a9", sliderWidth, 32.0F,
-			[&](const LayoutRect& bounds) { SliderAction(bounds, draft.settingZoom, 1.00F, 2.00F, events.settingZoomActive); });
+		if (section == GeneralSection::Appearance)
+		{
+			SectionHeader(IA(I18nKey.SettingsUI.Regular.Appearance.N).c_str());
+			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
+			// 总开关只控制可见性，隐藏子项时保留它们的保存值。
+			if (draft.animation)
+			{
+				SliderRow("animation-rate", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRate).c_str(),
+					IA(I18nKey.SettingsUI.Regular.Appearance.AnimationRateE).c_str(), "\ue9d9", draft.animationRate,
+					0.1F, 5.0F, events.animationRateActive, "%.1fx");
+				draft.animationRate = round(draft.animationRate * 10.0F) / 10.0F;
+			}
+			events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
+			if (draft.edgeLighting)
+				events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
+					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
+					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
+			SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", sliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderAction(bounds, draft.barZoom, 0.50F, 2.00F, events.barZoomActive); });
+			SettingRow("setting-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.SettingUIScale.E).c_str(), "\ue8a9", sliderWidth, 32.0F,
+				[&](const LayoutRect& bounds) { SliderAction(bounds, draft.settingZoom, 1.00F, 2.00F, events.settingZoomActive); });
+		}
+		if (section == GeneralSection::Interaction)
+		{
+			SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
+			events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
+				IA(I18nKey.SettingsUI.Design.TopWindowSummary).c_str(), "\ue922", draft.topInterval,
+				{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
+				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
+				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
+				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
+			Details("top-interval-details", IA(I18nKey.SettingsUI.Design.TopWindowDetails).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str());
+			events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
 
-		SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
-		events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
-			IA(I18nKey.SettingsUI.Design.TopWindowSummary).c_str(), "\ue922", draft.topInterval,
-			{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
-			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
-			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
-			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
-		Details("top-interval-details", IA(I18nKey.SettingsUI.Design.TopWindowDetails).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str());
-		events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
+			SectionHeader(IA(I18nKey.SettingsUI.Regular.Tentative.N).c_str());
+			events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
+				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
+				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
 
-		SectionHeader(IA(I18nKey.SettingsUI.Regular.Tentative.N).c_str());
-		events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
-			{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) });
+			SectionHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
+			Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(),
+				IA(I18nKey.SettingsUI.HotKey.E).c_str(), ImFluentInfoSeverity_Informational);
+		}
 		return events;
 	}
 

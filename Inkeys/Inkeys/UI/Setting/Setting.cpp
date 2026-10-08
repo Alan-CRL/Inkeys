@@ -95,6 +95,7 @@ namespace
 	uint64_t settingConsumedThemeSerial = 0;
 	FrameContext settingFrameContext;
 	FrameResult settingFrameResult = FrameResult::Idle;
+	bool settingNavigationClockIdle = true; // 仅共享渲染线程访问，跳过恢复帧的隐藏/移动耗时。
 	uint64_t settingSessionEpoch = 0;
 	Inkeys::UI::Setting::SessionState settingSessionState;
 	Inkeys::UI::Setting::BusinessCompletionSnapshot settingLastBusinessCompletion;
@@ -2040,6 +2041,50 @@ SettingSessionCoroutine RunSettingSession()
 		int settingTab = 0;
 		int settingPlugInTab = 0;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
+		Design::NavigationDestination destination;
+		auto commitSettingScale = [&]()
+		{
+			if (SettingGlobalScale != setlist.settingGlobalScale)
+			{
+				setlist.settingGlobalScale = Inkeys::UI::Setting::NormalizeUserScale(SettingGlobalScale);
+				UpdateSettingScale(QuerySettingDpi(setting_window));
+				// 渲染线程只投递请求，窗口尺寸仍由所属 HWND 线程更新。
+				if (setting_window) (void)PostMessageW(setting_window, SettingEnsureMinimumMessage, 0, 0);
+				{
+					lock_guard stateLock(settingStateMutex);
+					settingSessionState.QueueFontRebuild();
+				}
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+				WriteSetting();
+			}
+		};
+		auto commitGeneralSliders = [&]()
+		{
+			// 导航可能使拖动控件下一帧不再渲染，离页时仍完成已有的释放保存合同。
+			if (BarZoomSavePending || Experimental.Inkeys3.AnimationSpeedSavePending)
+			{
+				QueueConfigWrite();
+				BarZoomSavePending = false;
+				Experimental.Inkeys3.AnimationSpeedSavePending = false;
+			}
+			commitSettingScale();
+		};
+		auto navigateTo = [&](Design::NavigationDestination requested)
+		{
+			requested = Design::NormalizeDestination(requested);
+			if (requested != destination) commitGeneralSliders();
+			destination = requested;
+			settingTab = static_cast<int>(destination.page);
+			Design::NotifyNavigationDestination(navigationState, destination);
+		};
+		auto synchronizeDestination = [&]()
+		{
+			// 保留业务 switch 的原编号；旧配置/快捷键路由统一映射到通用子页。
+			auto requested = Design::DestinationForPage(settingTab);
+			if (settingTab == static_cast<int>(Design::PageId::General))
+				requested.section = destination.section;
+			navigateTo(requested);
+		};
 
 		// 首次恢复只完成常驻资源预热；Show 后才创建交换链并进入绘制循环。
 		settingFrameResult = FrameResult::Idle;
@@ -2095,8 +2140,11 @@ SettingSessionCoroutine RunSettingSession()
 
 				const float widthDip = static_cast<float>(SettingWindowWidth) / settingGlobalScale;
 				navigationState.Resize(widthDip);
-				if (navigationState.overlayOpen && ImGui::IsKeyPressed(ImGuiKey_Escape))
-					navigationState.DismissOverlay();
+				synchronizeDestination();
+				const float navigationDelta = settingNavigationClockIdle ? 0.0F : ImGui::GetIO().DeltaTime;
+				settingNavigationClockIdle = false;
+				Design::AdvanceNavigationAnimations(navigationState, navigationDelta,
+					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate);
 				const auto shellGeometry = Inkeys::UI::Setting::Design::ResolveShellGeometry(
 					widthDip, static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
 
@@ -2221,19 +2269,24 @@ SettingSessionCoroutine RunSettingSession()
 				}
 
 				// 内容与导航单独排布；窄窗覆盖展开不改变正文宽度及其滚动位置。
+				synchronizeDestination();
+				const float contentAlpha = Design::ContentAlpha(navigationState);
+				const bool blockContentInput = navigationState.BlockContentInput();
 				const auto& contentGeometry = shellGeometry.content;
 				ImGui::SetCursorPos({ Widgets::Dip(contentGeometry.left), Widgets::Dip(contentGeometry.top) });
 				ImGui::PushStyleColor(ImGuiCol_ChildBg, Inkeys::UI::Setting::Design::PageSurface);
 				ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0F);
-				ImGui::BeginDisabled(navigationState.overlayOpen);
+				ImGui::BeginDisabled(blockContentInput);
 				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
 					{ Widgets::Dip(shellGeometry.gutter), Widgets::Dip(28.0F) });
 				ImGui::PushID(settingTab);
-				// 插件详情各自保存滚动/展开状态，返回总览不会沿用长详情页的位置。
-				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab : 0);
+				// 插件详情及通用子页各自保存滚动/展开状态，标签翻译不参与窗口标识。
+				ImGui::PushID(settingTab == settingTabEnum::tab4 ? settingPlugInTab
+					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section) : 0);
 				ImGui::BeginChild("##setting-content", { Widgets::Dip(contentGeometry.Width()), Widgets::Dip(contentGeometry.Height()) },
 					ImGuiChildFlags_AlwaysUseWindowPadding,
-					navigationState.overlayOpen ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None);
+					blockContentInput ? ImGuiWindowFlags_NoInputs : ImGuiWindowFlags_None);
+				ImGuiWindow* contentWindow = ImGui::GetCurrentWindow();
 				ImGui::PopStyleVar();
 				ImGui::PopStyleColor();
 				// 所有设置页面共享校准字体；离开内容区后再恢复标题栏字体。
@@ -2248,7 +2301,10 @@ SettingSessionCoroutine RunSettingSession()
 					ImGuiChildFlags_AutoResizeY);
 
 				// 页面只提交内容与业务事件，尺寸及文本对齐由 Design 层负责。
-				switch (settingTab)
+				const int contentPage = destination.page == Design::PageId::General
+					&& destination.section == Design::GeneralSection::Storage
+					? settingTabEnum::tabConfiguration : settingTab;
+				switch (contentPage)
 				{
 					// 主页
 				case settingTabEnum::tab1:
@@ -2264,7 +2320,7 @@ SettingSessionCoroutine RunSettingSession()
 					{
 					case HomeAction::Draw: settingTab = settingTabEnum::tab3; break;
 					case HomeAction::Plugins: settingTab = settingTabEnum::tab4; settingPlugInTab = settingPlugInTabEnum::tabPlug1; break;
-					case HomeAction::General: settingTab = settingTabEnum::tab2; break;
+					case HomeAction::General: navigateTo({ Design::PageId::General, Design::GeneralSection::Basic }); break;
 					case HomeAction::Language: settingTab = settingTabEnum::Language; break;
 					case HomeAction::Support: settingTab = settingTabEnum::tab8; break;
 					case HomeAction::Version: settingTab = settingTabEnum::tab6; break;
@@ -2318,7 +2374,7 @@ SettingSessionCoroutine RunSettingSession()
 				// 配置保存
 				case settingTabEnum::tabConfiguration:
 				{
-					Design::PageHeader(IA(I18nKey.SettingsUI.Configuration.N).c_str());
+					Design::PageHeader(IA(I18nKey.SettingsUI.Design.GeneralStorage).c_str());
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Configuration.Clean.N).c_str());
 
 					{
@@ -2721,118 +2777,116 @@ SettingSessionCoroutine RunSettingSession()
 						Experimental.Inkeys3.StartupPreviewPreferenceState.ConfiguredEnabled(),
 						Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
 						Experimental.Inkeys3.DynamicEdgeLighting };
-					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft);
+					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination.section);
 					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
-					StartUp = draft.startup;
-					if (events.startupChanged && setlist.startUp != StartUp)
+					if (destination.section == Design::GeneralSection::Basic)
 					{
-						SetStartupState(StartUp, GetCurrentExePath(), L"$Inkeys");
-						setlist.startUp = StartUp;
-						WriteSetting();
-					}
-					if (events.createShortcut)
-					{
-						wchar_t desktopPath[MAX_PATH];
-						if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
+						StartUp = draft.startup;
+						if (events.startupChanged && setlist.startUp != StartUp)
 						{
-							SettingBusinessCommand command;
-							command.kind = SettingBusinessKind::CreateShortcut;
-							command.text = wstring(desktopPath) + L"\\" + IW(I18nKey.Widget.LnkName) + L".lnk";
-							command.directory = GetCurrentExePath();
-							QueueBusiness(std::move(command));
+							SetStartupState(StartUp, GetCurrentExePath(), L"$Inkeys");
+							setlist.startUp = StartUp;
+							WriteSetting();
+						}
+						if (events.createShortcut)
+						{
+							wchar_t desktopPath[MAX_PATH];
+							if (SHGetSpecialFolderPathW(0, desktopPath, CSIDL_DESKTOP, FALSE))
+							{
+								SettingBusinessCommand command;
+								command.kind = SettingBusinessKind::CreateShortcut;
+								command.text = wstring(desktopPath) + L"\\" + IW(I18nKey.Widget.LnkName) + L".lnk";
+								command.directory = GetCurrentExePath();
+								QueueBusiness(std::move(command));
+							}
+						}
+						if (events.shortcutOptions)
+						{
+							settingPlugInTab = settingPlugInTabEnum::tabPlug3;
+							settingTab = settingTabEnum::tab4;
+						}
+						if (events.startupPreviewChanged
+							&& Experimental.Inkeys3.StartupPreviewPreferenceState.SetConfigured(draft.startupPreview))
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable = draft.startupPreview;
+							if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
+								QueueConfigWrite();
 						}
 					}
-					if (events.shortcutOptions)
+					if (destination.section == Design::GeneralSection::Appearance)
 					{
-						settingPlugInTab = settingPlugInTabEnum::tabPlug3;
-						settingTab = settingTabEnum::tab4;
-					}
-					if (events.startupPreviewChanged
-						&& Experimental.Inkeys3.StartupPreviewPreferenceState.SetConfigured(draft.startupPreview))
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable = draft.startupPreview;
-						if (Experimental.Inkeys3.StartupPreviewPreferenceState.ConsumeWritePending())
+						Experimental.Inkeys3.AnimationEnable = draft.animation;
+						Experimental.Inkeys3.AnimationSpeedRate = draft.animationRate;
+						if (events.animationChanged)
+						{
+							if (!draft.animation) Design::SnapNavigationAnimations(navigationState);
+							Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable = draft.animation;
+							Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
 							QueueConfigWrite();
-					}
-					Experimental.Inkeys3.AnimationEnable = draft.animation;
-					Experimental.Inkeys3.AnimationSpeedRate = draft.animationRate;
-					if (events.animationChanged)
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.Animation.Enable = draft.animation;
-						Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
-						QueueConfigWrite();
-					}
-					if (fabs(draft.animationRate - static_cast<float>(
-						Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate = static_cast<double>(draft.animationRate);
-						Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
-						Experimental.Inkeys3.AnimationSpeedSavePending = true;
-					}
-					if (!events.animationRateActive && Experimental.Inkeys3.AnimationSpeedSavePending)
-					{
-						QueueConfigWrite();
-						Experimental.Inkeys3.AnimationSpeedSavePending = false;
-					}
-					Experimental.Inkeys3.DynamicEdgeLighting = draft.dynamicEdgeLighting;
-					if (events.dynamicEdgeLightingChanged)
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic = draft.dynamicEdgeLighting;
-						Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, draft.dynamicEdgeLighting);
-						QueueConfigWrite();
-					}
-					BarZoom = draft.barZoom;
-					if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001F)
-					{
-						Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
-						Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
-						BarZoomSavePending = true;
-					}
-					if (!events.barZoomActive && BarZoomSavePending)
-					{
-						QueueConfigWrite();
-						BarZoomSavePending = false;
-					}
-					Experimental.Inkeys3.EdgeLightingEnable = draft.edgeLighting;
-					if (events.edgeLightingChanged && Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable != draft.edgeLighting)
-					{
-						Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = draft.edgeLighting;
-						Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, Experimental.Inkeys3.DynamicEdgeLighting);
-						QueueConfigWrite();
-					}
-					SettingGlobalScale = draft.settingZoom;
-					if (!events.settingZoomActive && SettingGlobalScale != setlist.settingGlobalScale)
-					{
-						setlist.settingGlobalScale = Inkeys::UI::Setting::NormalizeUserScale(SettingGlobalScale);
-						UpdateSettingScale(QuerySettingDpi(setting_window));
-						// 渲染线程只投递请求，窗口尺寸仍由所属 HWND 线程更新。
-						if (setting_window) (void)PostMessageW(setting_window, SettingEnsureMinimumMessage, 0, 0);
-						{
-							lock_guard stateLock(settingStateMutex);
-							settingSessionState.QueueFontRebuild();
 						}
-						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
-						WriteSetting();
+						if (draft.animation && fabs(draft.animationRate - static_cast<float>(
+							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate.load())) > 0.0001F)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.Animation.SpeedRate = static_cast<double>(draft.animationRate);
+							Inkeys::UI::Bar::SetAnimationOptions(draft.animation, draft.animationRate);
+							Experimental.Inkeys3.AnimationSpeedSavePending = true;
+						}
+						if (!events.animationRateActive && Experimental.Inkeys3.AnimationSpeedSavePending)
+						{
+							QueueConfigWrite();
+							Experimental.Inkeys3.AnimationSpeedSavePending = false;
+						}
+						Experimental.Inkeys3.DynamicEdgeLighting = draft.dynamicEdgeLighting;
+						if (events.dynamicEdgeLightingChanged)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic = draft.dynamicEdgeLighting;
+							Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, draft.dynamicEdgeLighting);
+							QueueConfigWrite();
+						}
+						BarZoom = draft.barZoom;
+						if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom.load())) > 0.0001F)
+						{
+							Inkeys::config.UI.Bar.Zoom = static_cast<double>(BarZoom);
+							Inkeys::UI::Bar::SetConfigZoom(static_cast<double>(BarZoom));
+							BarZoomSavePending = true;
+						}
+						if (!events.barZoomActive && BarZoomSavePending)
+						{
+							QueueConfigWrite();
+							BarZoomSavePending = false;
+						}
+						Experimental.Inkeys3.EdgeLightingEnable = draft.edgeLighting;
+						if (events.edgeLightingChanged && Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable != draft.edgeLighting)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = draft.edgeLighting;
+							Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, Experimental.Inkeys3.DynamicEdgeLighting);
+							QueueConfigWrite();
+						}
+						SettingGlobalScale = draft.settingZoom;
+						if (!events.settingZoomActive) commitSettingScale();
 					}
-					TopSleepTime = draft.topInterval;
-					if (events.topIntervalChanged && setlist.topSleepTime != TopSleepTime)
+					if (destination.section == Design::GeneralSection::Interaction)
 					{
-						setlist.topSleepTime = TopSleepTime;
-						WriteSetting();
-						topWindowNow = true;
-					}
-					RightClickClose = draft.rightClickClose;
-					if (events.rightClickCloseChanged && setlist.RightClickClose != RightClickClose)
-					{
-						setlist.RightClickClose = RightClickClose;
-						WriteSetting();
-					}
-					RegularSetting.TeachingSafetyMode = draft.safetyMode;
-					if (events.safetyModeChanged && setlist.regularSetting.teachingSafetyMode != draft.safetyMode)
-					{
-						setlist.regularSetting.teachingSafetyMode = draft.safetyMode;
-						WriteSetting();
-						CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
+						TopSleepTime = draft.topInterval;
+						if (events.topIntervalChanged && setlist.topSleepTime != TopSleepTime)
+						{
+							setlist.topSleepTime = TopSleepTime;
+							WriteSetting();
+							topWindowNow = true;
+						}
+						RightClickClose = draft.rightClickClose;
+						if (events.rightClickCloseChanged && setlist.RightClickClose != RightClickClose)
+						{
+							setlist.RightClickClose = RightClickClose;
+							WriteSetting();
+						}
+						RegularSetting.TeachingSafetyMode = draft.safetyMode;
+						if (events.safetyModeChanged && setlist.regularSetting.teachingSafetyMode != draft.safetyMode)
+						{
+							setlist.regularSetting.teachingSafetyMode = draft.safetyMode;
+							WriteSetting();
+							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
+						}
 					}
 					break;
 				}
@@ -3499,18 +3553,6 @@ SettingSessionCoroutine RunSettingSession()
 						setlist.component.shortcutButton.linkage.classislandClassswap);
 					break;
 				}
-				case settingTabEnum::tab5:
-				{
-					Design::PageHeader(IA(I18nKey.SettingsUI.HotKey.N).c_str());
-					Design::PageContentStart();
-					const string hotKeyDescription =
-						utf16ToUtf8(IW(I18nKey.SettingsUI.HotKey.E));
-					Design::Notice("##hotkey-notice",
-						IA(I18nKey.SettingsUI.HotKey.N).c_str(),
-						hotKeyDescription.c_str(),
-						ImFluentInfoSeverity_Informational);
-					break;
-				}
 				case settingTabEnum::tabExperimental:
 				{
 					Design::PageHeader("实验室");
@@ -3769,6 +3811,7 @@ SettingSessionCoroutine RunSettingSession()
 				ImGui::EndChild();
 				ImFluent::PopFont();
 				Design::BindTextFonts(ImFontMain, ImFontStrong);
+				Design::ApplyContentAlpha(contentWindow, Experimental.Inkeys3.AnimationEnable ? contentAlpha : 1.0F);
 				ImGui::EndChild();
 				ImGui::PopID();
 				ImGui::PopID();
@@ -3790,18 +3833,24 @@ SettingSessionCoroutine RunSettingSession()
 				}
 				Inkeys::UI::Setting::Design::BindTextFonts(ImFontDesignMain, ImFontDesignStrong);
 				ImFluent::PushFont(ImFluentTextStyle_Body);
-				const int navigationAction = Inkeys::UI::Setting::Design::RenderNavigationPane(shellGeometry, navigationState, settingTab);
+				synchronizeDestination();
+				// 正文只渲染一次；若本帧关闭动画，导航使用已归位状态重新解析自己的几何。
+				const auto navigationGeometry = Design::ResolveShellGeometry(static_cast<float>(SettingWindowWidth) / settingGlobalScale,
+					static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
+				const auto navigationAction = Design::RenderNavigationPane(navigationGeometry, navigationState, destination);
 				ImFluent::PopFont();
 				Inkeys::UI::Setting::Design::BindTextFonts(ImFontMain, ImFontStrong);
-				if (navigationAction >= 0)
+				if (navigationAction.kind == Design::NavigationActionKind::Navigate)
 				{
-					settingTab = navigationAction;
+					navigateTo(navigationAction.destination);
 					if (settingTab == settingTabEnum::tab4) settingPlugInTab = settingPlugInTabEnum::tabPlug1;
 				}
-				else if (navigationAction == -2)
+				else if (navigationAction.kind == Design::NavigationActionKind::Community)
 					ShellExecuteW(0, 0, I18n::isIdentifying(L"zh-CN") ? L"https://www.inkeys.top/community.html" : L"https://en.inkeys.top/community.html", 0, 0, SW_SHOW);
-				else if (navigationAction == -3) { Inkeys::UI::Setting::Hide(); RestartProgram(); }
-				else if (navigationAction == -4) { Inkeys::UI::Setting::Hide(); CloseProgram(); }
+				else if (navigationAction.kind == Design::NavigationActionKind::Restart)
+				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); RestartProgram(); }
+				else if (navigationAction.kind == Design::NavigationActionKind::Exit)
+				{ commitGeneralSliders(); Inkeys::UI::Setting::Hide(); CloseProgram(); }
 
 				ImGui::End();
 			}
@@ -3862,6 +3911,7 @@ namespace
 {
 	void DrainSettingSessionOnRenderThread() noexcept
 	{
+		settingNavigationClockIdle = true;
 		if (!settingSession.Done())
 		{
 			settingSessionShouldStop.store(true, memory_order_release);
@@ -3879,6 +3929,12 @@ namespace
 
 	FrameResult RenderSettingFrame(const FrameContext& context)
 	{
+		auto pauseNavigationClock = [](FrameResult result)
+		{
+			// 所有未实际绘制的路径都在渲染线程标记；可见低帧率仍持续推进动画。
+			settingNavigationClockIdle = true;
+			return result;
+		};
 		Inkeys::UI::Setting::SessionDecision decision;
 		Inkeys::UI::Setting::ResizeSnapshot resize;
 		uint64_t fontRebuildSerial = 0;
@@ -3940,7 +3996,7 @@ namespace
 				settingInitializeCompleted = true;
 			}
 			settingInitializeCondition.notify_all();
-			if (!succeeded) return FrameResult::Retry;
+			if (!succeeded) return pauseNavigationClock(FrameResult::Retry);
 		}
 
 		if (decision.rebuildDeviceResources && !settingSession.Done())
@@ -3961,7 +4017,7 @@ namespace
 				if (backendInitialized) ImGui_ImplDX11_Shutdown();
 				CleanupSettingTextures();
 				CleanupDeviceD3D();
-				return FrameResult::Retry;
+				return pauseNavigationClock(FrameResult::Retry);
 			}
 			settingSessionEpoch = context.epoch.generation;
 			lock_guard stateLock(settingStateMutex);
@@ -3974,7 +4030,7 @@ namespace
 			ImGui_ImplDX11_InvalidateDeviceObjects();
 			if (!RebuildSettingFonts()
 				|| !ImGui_ImplDX11_CreateDeviceObjects())
-				return FrameResult::Retry;
+				return pauseNavigationClock(FrameResult::Retry);
 			Widgets::style.ApplyGlobal(Inkeys::UI::Setting::Design::ScrollbarTrackSize);
 			Inkeys::UI::Setting::Design::ApplyScrollbars();
 			lock_guard stateLock(settingStateMutex);
@@ -3993,24 +4049,24 @@ namespace
 		// 只有 Move 可复用 compositor 缓存；Size 必须继续 resize/render/present。
 		if (settingInteractiveOperation.load(memory_order_acquire)
 			== Inkeys::UI::Setting::InteractiveWindowOperation::Move)
-			return FrameResult::Idle;
+			return pauseNavigationClock(FrameResult::Idle);
 
 		if (decision.createPresentation && !g_pSwapChain)
 		{
 			if (!CreatePresentation(setting_window, context.epoch))
-				return FrameResult::Retry;
+				return pauseNavigationClock(FrameResult::Retry);
 		}
 
 		if (!decision.render || settingSession.Done() || !g_pSwapChain)
-			return FrameResult::Idle;
+			return pauseNavigationClock(FrameResult::Idle);
 
 		if (decision.probeOcclusion && g_pSwapChain)
 		{
 			const HRESULT probeResult = g_pSwapChain->Present(0, DXGI_PRESENT_TEST);
-			if (probeResult == DXGI_STATUS_OCCLUDED) return FrameResult::Retry;
+			if (probeResult == DXGI_STATUS_OCCLUDED) return pauseNavigationClock(FrameResult::Retry);
 			if (Inkeys::UI::Setting::IsSharedDeviceLoss(probeResult))
-				return FrameResult::DeviceLost;
-			if (FAILED(probeResult)) return FrameResult::Retry;
+				return pauseNavigationClock(FrameResult::DeviceLost);
+			if (FAILED(probeResult)) return pauseNavigationClock(FrameResult::Retry);
 			g_SwapChainOccluded = false;
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.SetOccluded(false);
@@ -4020,13 +4076,13 @@ namespace
 		{
 			const HRESULT resizeResult = ResizeSwapChain(resize.width, resize.height);
 			if (Inkeys::UI::Setting::IsSharedDeviceLoss(resizeResult))
-				return FrameResult::DeviceLost;
+				return pauseNavigationClock(FrameResult::DeviceLost);
 			if (FAILED(resizeResult))
 			{
 				CleanupPresentation();
 				lock_guard stateLock(settingStateMutex);
 				settingSessionState.ReleasePresentation();
-				return FrameResult::Retry;
+				return pauseNavigationClock(FrameResult::Retry);
 			}
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.ConsumeResize(resize.serial);
@@ -4051,6 +4107,7 @@ namespace
 			lock_guard stateLock(settingStateMutex);
 			settingSessionState.CommitEpoch(context.epoch.generation);
 		}
+		if (settingFrameResult != FrameResult::Continue) settingNavigationClockIdle = true;
 		return settingFrameResult;
 	}
 }

@@ -188,6 +188,10 @@
       "AppearanceSection": "外观",
       "BehaviorSection": "使用行为",
       "CompatibilitySection": "兼容性",
+      "GeneralBasic": "基本",
+      "GeneralAppearance": "外观与动画",
+      "GeneralInteraction": "交互与安全",
+      "GeneralStorage": "存储与配置",
       "GeneralSubtitle": "启动方式、界面大小与日常使用偏好。",
       "EdgeLighting": "启用边缘光影",
       "EdgeLightingDescription": "关闭后仅保留基础边框，停用点光与柔光效果。",
@@ -333,7 +337,7 @@
     },
     "Regular":
     {
-      "N": "常规",
+      "N": "通用",
       "StartUp":
       {
         "N": "开机自启和启动行为",
@@ -351,9 +355,9 @@
       {
         "N": "外观样式",
         "AnimationEnable": "启用动画",
-        "AnimationEnableE": "关闭后，UI3 主栏动画将立即完成。",
+        "AnimationEnableE": "关闭后，UI3 主栏与设置界面的导航及页面动画将立即完成。",
         "AnimationRate": "动画速率",
-        "AnimationRateE": "调整 UI3 主栏动画速率，范围为 0.1x–5.0x。",
+        "AnimationRateE": "调整 UI3 主栏与设置界面的动画速率，范围为 0.1x–5.0x。",
         "EdgeLighting": "边缘光影",
         "EdgeLightingE": "关闭后仅保留基础边框，停用点光与柔光效果。",
         "DynamicEdgeLighting": "动态边缘光影",

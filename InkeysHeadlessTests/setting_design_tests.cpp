@@ -6,6 +6,8 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Design.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Typography.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Controls.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Pages.h"
+#include "../Inkeys/IdtI18n.h"
 #include "../Inkeys/additional/imfluent/imfluent.h"
 #include "../Inkeys/additional/imfluent/imfluent_internal.h"
 #include "../Inkeys/additional/imfluent/imfluent_icons.h"
@@ -19,6 +21,18 @@
 #include <iterator>
 #include <string>
 #include <vector>
+
+// 导航测试只读取语言源的标签，不初始化产品配置、资源或异步服务。
+std::string I18n::getA(std::string key)
+{
+	const auto found = i18n.find(key);
+	return found == i18n.end() ? key : found->second;
+}
+
+bool I18n::isIdentifying(const wchar_t* language)
+{
+	return identifying == language;
+}
 
 namespace
 {
@@ -152,10 +166,10 @@ namespace
 							&& regions.debug.top > regions.footerItems[3].bottom
 						: Near(regions.debug.Width(), 0) && Near(regions.debug.Height(), 0)),
 						"debug is centered natural-width/28 DIP only in desktop or overlay expansion");
-					checks.Expect(Near(regions.middleContentHeight, 316)
+					checks.Expect(Near(regions.middleContentHeight, 236)
 						&& Near(regions.top.Height() + regions.middle.Height() + regions.footer.Height(), pane.Height())
 						&& (size.y != 520 || regions.middleContentHeight > regions.middle.Height()),
-						"remaining height alone budgets the eight-item middle with overflow at minimum size");
+						"remaining height alone budgets the six-root middle with overflow at minimum size");
 				}
 		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240, true);
 		checks.Expect(!shortPane.fits && Near(shortPane.middle.Height(), 0)
@@ -193,6 +207,25 @@ namespace
 		const char* name;
 		std::vector<char> bytes;
 	};
+
+	bool LoadNavigationLabels(const std::filesystem::path& fontDirectory)
+	{
+		std::ifstream stream(fontDirectory.parent_path() / "i18n" / "zh-CN.jsonc", std::ios::binary);
+		Json::Value source;
+		Json::CharReaderBuilder reader;
+		std::string errors;
+		if (!Json::parseFromStream(reader, stream, &source, &errors)) return false;
+		I18n::i18n.clear();
+		auto flatten = [&](auto&& self, const Json::Value& node, const std::string& path) -> void {
+			if (node.isString()) I18n::i18n[path] = node.asString();
+			else if (node.isObject())
+				for (const auto& key : node.getMemberNames())
+					self(self, node[key], path.empty() ? key : path + "/" + key);
+		};
+		flatten(flatten, source, "");
+		I18n::identifying = L"zh-CN";
+		return !I18n::i18n.empty();
+	}
 
 	struct ImGuiSession
 	{
@@ -1092,6 +1125,457 @@ namespace
 		checks.Expect(pixels, "bundled fonts generate CPU atlas pixels");
 	}
 
+	void CheckGeneralSections(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
+		Design::GeneralDraft draft{ true, 1.37F, 1.25F, false, 5, true, 2, false, false, 4.7F, true };
+		auto& io = ImGui::GetIO(); io.DisplaySize = ImVec2(1100 * scale, 1100 * scale);
+		struct Frame { Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0; };
+		auto draw = [&](Design::GeneralSection section, ImVec2 mouse, bool down)
+		{
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			ImGui::NewFrame(); ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##general-section-cpu", nullptr, ImGuiWindowFlags_NoDecoration
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+			ImFluent::PushFont(ImFluentTextStyle_Body); ImGui::PushID(static_cast<int>(section));
+			Frame frame; frame.events = Design::RenderGeneral(draft, section);
+			frame.lastItem = { ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y,
+				ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y };
+			frame.height = ImGui::GetCursorPosY();
+			ImGui::PopID(); ImFluent::PopFont(); ImGui::End(); ImGui::Render();
+			frame.vertices = ImGui::GetDrawData()->TotalVtxCount;
+			return frame;
+		};
+		auto noEdits = [](const Design::GeneralEvents& events) {
+			return !events.startupChanged && !events.createShortcut && !events.shortcutOptions
+				&& !events.barZoomChanged && !events.barZoomActive && !events.settingZoomActive
+				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
+				&& !events.safetyModeChanged && !events.startupPreviewChanged && !events.animationChanged
+				&& !events.animationRateActive && !events.dynamicEdgeLightingChanged;
+		};
+		const ImVec2 outside(-100, -100);
+		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Appearance, Design::GeneralSection::Interaction })
+		{
+			draw(section, outside, false); const auto frame = draw(section, outside, false);
+			checks.Expect(frame.vertices > 0 && noEdits(frame.events), "actual general subpage renders without creating idle edits");
+			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && Near(draft.settingZoom, 1.25F)
+				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 2
+				&& !draft.startupPreview && !draft.animation && Near(draft.animationRate, 4.7F) && draft.dynamicEdgeLighting,
+				"page filtering and conditional hidden controls preserve every resident draft value");
+		}
+		const auto basic = draw(Design::GeneralSection::Basic, outside, false);
+		const ImVec2 toggle((basic.lastItem.left + basic.lastItem.right) / 2, (basic.lastItem.top + basic.lastItem.bottom) / 2);
+		draw(Design::GeneralSection::Basic, toggle, false); draw(Design::GeneralSection::Basic, toggle, true);
+		const auto released = draw(Design::GeneralSection::Basic, toggle, false);
+		checks.Expect(draft.startupPreview && released.events.startupPreviewChanged && !released.events.animationChanged
+			&& !draft.animation && Near(draft.animationRate, 4.7F),
+			"real basic-page startup-preview toggle changes only its existing startup field");
+		auto hidden = draw(Design::GeneralSection::Appearance, outside, false);
+		draft.animation = true; draft.edgeLighting = true;
+		draw(Design::GeneralSection::Appearance, outside, false);
+		const auto shown = draw(Design::GeneralSection::Appearance, outside, false);
+		checks.Expect(shown.height > hidden.height + 100 * scale && draft.dynamicEdgeLighting && Near(draft.animationRate, 4.7F),
+			"actual appearance page reveals rate and dynamic-light controls without resetting their stored values");
+		draft.animation = false; draft.edgeLighting = false;
+		const auto appearance = draw(Design::GeneralSection::Appearance, outside, false);
+		const ImVec2 slider(appearance.lastItem.left + appearance.lastItem.Width() * 0.75F,
+			(appearance.lastItem.top + appearance.lastItem.bottom) / 2);
+		draw(Design::GeneralSection::Appearance, slider, false);
+		const auto dragging = draw(Design::GeneralSection::Appearance, slider, true);
+		const auto committed = draw(Design::GeneralSection::Appearance, slider, false);
+		checks.Expect(dragging.events.settingZoomActive && !committed.events.settingZoomActive
+			&& draft.settingZoom >= 1 && draft.settingZoom <= 2 && !Near(draft.settingZoom, 1.25F)
+			&& Near(draft.barZoom, 1.37F),
+			"actual appearance slider exposes drag/release state and edits only its existing zoom draft");
+		checks.Expect(Near(draft.animationRate, 4.7F) && draft.dynamicEdgeLighting && draft.startupPreview,
+			"conditional children remain intact after subpage controls are edited");
+		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
+	}
+
+	void CheckHierarchicalNavigation(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
+	{
+		using Design::GeneralSection;
+		using Design::NavigationActionKind;
+		using Design::PageId;
+		struct Frame
+		{
+			Design::NavigationAction action;
+			Design::ShellGeometry shell;
+			ImGuiWindow* list = nullptr;
+			ImGuiWindow* parentWindow = nullptr;
+			ImGuiWindow* group = nullptr;
+			std::array<ImVec2, 2> fixedOrigins{};
+			float paneWidth = 0, scroll = 0, maximumScroll = 0, contentAlpha = 1;
+			unsigned int glyphAlpha = 0, flatAlpha = 0;
+			LayoutRect body;
+			int vertices = 0;
+		};
+		auto& io = ImGui::GetIO();
+		const auto previousFlags = io.ConfigFlags;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigInputTrickleEventQueue = false;
+		Design::BindTextFonts(regular, strong);
+		ImFluent::SetIconFont(icons);
+		Design::NavigationState state;
+		Design::NavigationDestination selected;
+		ImVec2 size(960, 700);
+		bool animated = false, dark = false;
+		float rate = 1;
+		float frameDelta = 1.0F / 60.0F;
+		int frames = 0, navigations = 0, businessActions = 0, bodyActions = 0, bodyDraws = 0;
+		float requestedScroll = -1;
+		const ImVec2 outside(-100, -100);
+		auto center = [](const LayoutRect& bounds) { return ImVec2((bounds.left + bounds.right) / 2,
+			(bounds.top + bounds.bottom) / 2); };
+		auto draw = [&](ImVec2 mouse, bool down)
+		{
+			Design::ApplyPalette(dark);
+			io.DisplaySize = ImVec2(size.x * scale, size.y * scale);
+			io.DeltaTime = frameDelta;
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			state.Resize(size.x);
+			Design::AdvanceNavigationAnimations(state, io.DeltaTime, animated, rate);
+			Frame frame; frame.shell = Design::ResolveShellGeometry(size.x, size.y, state);
+			frame.contentAlpha = Design::ContentAlpha(state);
+			ImGui::NewFrame();
+			ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+			ImGui::Begin("##hierarchical-navigation-cpu", nullptr, ImGuiWindowFlags_NoDecoration
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar
+				| ImGuiWindowFlags_NoScrollWithMouse);
+			ImFluent::PushFont(ImFluentTextStyle_Body);
+			// 同产品一样先提交一份正文；菜单关闭的鼠标释放由导航屏障阻止穿透。
+			ImGui::SetCursorScreenPos(ImVec2((frame.shell.content.left + 64) * scale, 180 * scale));
+			ImGui::BeginChild("##hierarchy-body", ImVec2(320 * scale, 100 * scale), ImGuiChildFlags_None,
+				ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+			auto* bodyWindow = ImGui::GetCurrentWindow();
+			Design::TextAt("正文 Agpqy", ImGui::GetCursorScreenPos(), 240 * scale, ImFluentTextStyle_Body);
+			ImGui::SetCursorPos(ImVec2(8 * scale, 40 * scale));
+			ImGui::BeginDisabled(state.BlockContentInput());
+			bodyActions += Design::Button("Body action", ImVec2(160 * scale, 32 * scale)) ? 1 : 0;
+			frame.body = { ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y,
+				ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y };
+			++bodyDraws;
+			ImGui::EndDisabled(); ImGui::EndChild();
+			Design::ApplyContentAlpha(bodyWindow, frame.contentAlpha);
+			const auto white = io.Fonts->TexUvWhitePixel;
+			for (const auto& vertex : bodyWindow->DrawList->VtxBuffer)
+			{
+				const unsigned int alpha = (vertex.col >> IM_COL32_A_SHIFT) & 0xff;
+				if (vertex.uv.x == white.x && vertex.uv.y == white.y) frame.flatAlpha = (std::max)(frame.flatAlpha, alpha);
+				else frame.glyphAlpha = (std::max)(frame.glyphAlpha, alpha);
+			}
+			frame.action = Design::RenderNavigationPane(frame.shell, state, selected);
+			if (frame.action.kind == NavigationActionKind::Navigate)
+			{
+				++navigations; selected = Design::NormalizeDestination(frame.action.destination);
+				Design::NotifyNavigationDestination(state, selected);
+			}
+			else if (frame.action.kind != NavigationActionKind::None) ++businessActions;
+			for (auto* window : ImGui::GetCurrentContext()->Windows)
+			{
+				if (!window->Active || window->RootWindow != ImGui::GetCurrentWindow()) continue;
+				const std::string name(window->Name);
+				// ImGui child 名含父路径，必须先识别更深的子列表，不能误把它当中段滚动窗。
+				if (name.find("##settings-general-children") != std::string::npos) frame.group = window;
+				else if (name.find("##settings-nav-list") != std::string::npos)
+				{
+					frame.list = window; frame.scroll = window->Scroll.y; frame.maximumScroll = window->ScrollMax.y;
+					if (requestedScroll >= 0) ImGui::SetScrollY(window, requestedScroll);
+				}
+				else if (name.find("##settings-nav-top") != std::string::npos) frame.fixedOrigins[0] = window->Pos;
+				else if (name.find("##settings-nav-footer") != std::string::npos) frame.fixedOrigins[1] = window->Pos;
+				else if (name.find("##settings-pane") != std::string::npos) frame.paneWidth = window->Size.x;
+			}
+			frame.parentWindow = frame.list;
+			ImFluent::PopFont(); ImGui::End(); ImGui::PopStyleVar(); ImGui::Render();
+			++frames; frame.vertices = ImGui::GetDrawData()->TotalVtxCount;
+			checks.Expect(ImGui::GetDrawData()->Valid && frame.vertices > 0,
+				"production hierarchy renders real controls every CPU frame");
+			bool finite = true;
+			for (const auto* list : ImGui::GetDrawData()->CmdLists)
+			{
+				for (const auto& vertex : list->VtxBuffer)
+					finite &= std::isfinite(vertex.pos.x) && std::isfinite(vertex.pos.y);
+				for (const auto& command : list->CmdBuffer)
+					finite &= std::isfinite(command.ClipRect.x) && std::isfinite(command.ClipRect.y)
+						&& command.ClipRect.z >= command.ClipRect.x && command.ClipRect.w >= command.ClipRect.y;
+			}
+			checks.Expect(finite, "continuous hierarchy DrawData retains finite bounded geometry");
+			return frame;
+		};
+		auto idle = [&](int count = 3) { Frame frame; for (int i = 0; i < count; ++i) frame = draw(outside, false); return frame; };
+		auto click = [&](const LayoutRect& bounds) {
+			const auto mouse = center(bounds); draw(mouse, false); draw(mouse, true); return draw(mouse, false);
+		};
+		auto key = [&](ImGuiKey pressed) {
+			io.AddKeyEvent(pressed, true); draw(outside, false);
+			io.AddKeyEvent(pressed, false); return draw(outside, false);
+		};
+		auto focusParent = [&](const Frame& frame) {
+			if (!frame.parentWindow) return;
+			ImGui::FocusWindow(frame.parentWindow);
+			ImGui::SetNavID(state.parentItemId, ImGuiNavLayer_Main, frame.parentWindow->NavRootFocusScopeId,
+				ImRect(ImVec2(state.parentBounds.left - frame.parentWindow->Pos.x, state.parentBounds.top - frame.parentWindow->Pos.y),
+					ImVec2(state.parentBounds.right - frame.parentWindow->Pos.x, state.parentBounds.bottom - frame.parentWindow->Pos.y)));
+			ImGui::GetCurrentContext()->NavCursorVisible = true;
+		};
+		Frame frame = idle();
+		if (state.parentBounds.Width() <= 0 || state.chevronBounds.Width() <= 0
+			|| !Disjoint(state.parentBounds, state.chevronBounds))
+			std::cerr << "[HierarchyRect] scale=" << scale << " parent=" << state.parentBounds.left << ','
+				<< state.parentBounds.top << ',' << state.parentBounds.right << ',' << state.parentBounds.bottom
+				<< " chevron=" << state.chevronBounds.left << ',' << state.chevronBounds.top << ','
+				<< state.chevronBounds.right << ',' << state.chevronBounds.bottom << '\n';
+		checks.Expect(state.parentBounds.Width() > 0 && state.chevronBounds.Width() > 0
+			&& Disjoint(state.parentBounds, state.chevronBounds),
+			"actual parent label and chevron have separate hit rectangles");
+		const int beforeArrow = navigations;
+		click(state.chevronBounds); idle();
+		checks.Expect(!state.generalExpanded && navigations == beforeArrow && selected.page == PageId::Home,
+			"real chevron folds the group without routing the current page");
+		click(state.parentBounds); frame = idle();
+		checks.Expect(state.generalExpanded && selected.page == PageId::General && selected.section == GeneralSection::Basic,
+			"real parent label enters default basic and expands the group");
+		click(state.childBounds[1]); frame = idle();
+		checks.Expect(selected.section == GeneralSection::Appearance && state.lastGeneralSection == GeneralSection::Appearance,
+			"real inline child commits its composite destination and remembered child");
+		click(state.chevronBounds); frame = idle();
+		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance,
+			"folding a selected subtree keeps its body destination");
+		click(state.parentBounds); frame = idle();
+		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance,
+			"parent label reopens and enters its remembered child");
+		focusParent(frame); key(ImGuiKey_LeftArrow); frame = idle();
+		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance,
+			"keyboard left folds without changing the remembered page");
+		focusParent(frame); key(ImGuiKey_RightArrow); frame = idle();
+		checks.Expect(state.generalExpanded, "keyboard right opens the focused parent group");
+		focusParent(frame); key(ImGuiKey_Enter); frame = idle();
+		checks.Expect(selected.page == PageId::General && state.generalExpanded,
+			"keyboard enter on parent matches its label click");
+		// 点击动画中完全被裁掉的子项区域，不能激活该子项；同一区域的可见根项允许正常响应。
+		state.generalExpanded = false; frame = idle();
+		animated = true; rate = 0.1F; state.generalExpanded = true; frame = draw(outside, false);
+		checks.Expect(frame.group && state.childBounds[3].top >= frame.group->InnerClipRect.Max.y,
+			"real opening child-window clip excludes the storage item at the beginning of the animation");
+		click(state.childBounds[3]); frame = idle();
+		checks.Expect(selected != Design::NavigationDestination{ PageId::General, GeneralSection::Storage },
+			"clicking the fully clipped storage item cannot activate an invisible general child");
+		if (frame.group)
+		{
+			LayoutRect visibleBasic = state.childBounds[0];
+			visibleBasic.top = (std::max)(visibleBasic.top, frame.group->InnerClipRect.Min.y);
+			visibleBasic.bottom = (std::min)(visibleBasic.bottom, frame.group->InnerClipRect.Max.y);
+			checks.Expect(visibleBasic.Height() > 0, "the real clip retains a visible portion of the basic item");
+			click(visibleBasic); frame = idle();
+			checks.Expect(selected == Design::NavigationDestination{ PageId::General, GeneralSection::Basic },
+				"the visible clipped portion of a real child still accepts mouse activation");
+		}
+		rate = 5; frame = idle(5); animated = false; frame = idle();
+		click(state.childBounds[1]); frame = idle();
+		state.Toggle(); selected = { PageId::Home, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+		frame = idle();
+		click(state.parentBounds); frame = idle();
+		checks.Expect(selected.section == GeneralSection::Appearance && !state.flyoutOpen,
+			"compact first click navigates to remembered child without opening a menu");
+		const int beforeMenu = navigations;
+		click(state.parentBounds); frame = idle();
+		checks.Expect(state.flyoutOpen && navigations == beforeMenu && state.flyoutBounds.Width() > 0,
+			"compact second click opens actual popup without redundant navigation");
+		const LayoutRect client{ 0, 0, size.x * scale, size.y * scale };
+		checks.Expect(Contains(client, state.flyoutBounds) && Near(state.flyoutBounds.Width(), 248 * scale, 1)
+			&& state.flyoutBounds.top >= state.parentBounds.bottom,
+			"actual child menu is 248 DIP and opens below its anchor within the client");
+		click(state.parentBounds); frame = idle();
+		checks.Expect(!state.flyoutOpen && navigations == beforeMenu,
+			"compact third click closes the popup without navigating");
+		click(state.parentBounds); frame = idle();
+		click(state.flyoutChildBounds[3]); frame = idle();
+		checks.Expect(!state.flyoutOpen && selected.page == PageId::General && selected.section == GeneralSection::Storage,
+			"real popup child selects storage and closes the popup");
+		click(state.parentBounds); frame = idle();
+		const auto storageFocus = ImGui::GetCurrentContext()->NavId;
+		key(ImGuiKey_UpArrow); frame = idle();
+		const auto interactionFocus = ImGui::GetCurrentContext()->NavId;
+		checks.Expect(interactionFocus != 0 && interactionFocus != storageFocus
+			&& selected.section == GeneralSection::Storage,
+			"keyboard up moves real flyout focus without navigating its body");
+		key(ImGuiKey_UpArrow); frame = idle();
+		checks.Expect(ImGui::GetCurrentContext()->NavId != interactionFocus,
+			"a second up moves focus to the next visible flyout item");
+		key(ImGuiKey_DownArrow); frame = idle();
+		checks.Expect(ImGui::GetCurrentContext()->NavId == interactionFocus
+			&& selected.section == GeneralSection::Storage,
+			"keyboard down returns to the observed flyout item without activating it");
+		key(ImGuiKey_Space); frame = idle();
+		checks.Expect(!state.flyoutOpen && selected == Design::NavigationDestination{ PageId::General, GeneralSection::Interaction },
+			"keyboard space activates the focused real flyout item and closes the menu");
+		click(state.parentBounds); frame = idle();
+		const int beforeBusiness = businessActions;
+		click(state.footerBounds[3]); frame = idle();
+		checks.Expect(!state.flyoutOpen && businessActions == beforeBusiness,
+			"outside click dismisses real popup without activating the exit footer below it");
+		click(state.parentBounds); frame = idle();
+		const int beforeBody = bodyActions;
+		click(frame.body); frame = idle();
+		checks.Expect(!state.flyoutOpen && bodyActions == beforeBody,
+			"popup outside press and release cannot penetrate the actual body button");
+		click(state.parentBounds); frame = idle(); key(ImGuiKey_Escape); frame = idle();
+		checks.Expect(!state.flyoutOpen && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+			"escape closes the actual popup and returns focus to its compact parent");
+		size = ImVec2(720, 520); frame = idle(); state.Toggle(); frame = idle();
+		checks.Expect(state.overlayOpen && Near(frame.shell.content.left, 48), "narrow expansion retains compact body reservation");
+		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
+		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId
+			&& state.childFocusId != state.parentItemId,
+			"keyboard down focuses a real inline child inside the narrow overlay");
+		const auto focusBeforeOverlayEscape = ImGui::GetCurrentContext()->NavId;
+		key(ImGuiKey_Escape); frame = idle();
+		if (state.overlayOpen || ImGui::GetCurrentContext()->NavId != state.parentItemId)
+			std::cerr << "[HierarchyEscape] scale=" << scale << " before=" << focusBeforeOverlayEscape
+				<< " after=" << ImGui::GetCurrentContext()->NavId << " child=" << state.childFocusId
+				<< " parent=" << state.parentItemId << " restore=" << state.restoreParentFocus
+				<< " reveal=" << state.groupReveal.value << " overlay=" << state.overlayOpen
+				<< " expanded=" << state.Expanded() << " parentY=" << state.parentBounds.top << ','
+				<< state.parentBounds.bottom << " listClip=" << (frame.list ? frame.list->InnerClipRect.Min.y : 0)
+				<< ',' << (frame.list ? frame.list->InnerClipRect.Max.y : 0) << '\n';
+		checks.Expect(!state.overlayOpen && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+			"escape closes overlay and restores the parent when its inline child held keyboard focus");
+		state.Toggle(); frame = idle(); click(state.childBounds[0]); frame = idle();
+		checks.Expect(!state.overlayOpen && selected.section == GeneralSection::Basic,
+			"actual narrow child selection closes only the overlay and keeps its destination");
+		size = ImVec2(960, 700); state.desktopCompact = false; frame = idle();
+		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
+		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId,
+			"a real inline child can hold focus before a responsive mode change");
+		size = ImVec2(720, 520); frame = idle();
+		checks.Expect(!state.Expanded() && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+			"resizing a focused inline child into compact navigation restores visible parent focus");
+
+		// 固定 child 的真实位置、滚动范围与末项命中来自生产提交，避免复制菜单实现。
+		for (bool nextDark : { false, true })
+		for (const ImVec2 nextSize : { ImVec2(720, 520), ImVec2(960, 700), ImVec2(1440, 900) })
+		for (bool expanded : { false, true })
+		{
+			dark = nextDark; size = nextSize; state.Resize(size.x);
+			if (state.Expanded() != expanded) state.Toggle();
+			state.generalExpanded = true; selected = { PageId::Home, GeneralSection::Basic }; requestedScroll = 0;
+			frame = idle(); const auto origins = frame.fixedOrigins;
+			requestedScroll = frame.maximumScroll; frame = idle();
+			checks.Expect(frame.list && Near(frame.scroll, frame.maximumScroll, 1)
+				&& (size.y != 520 || frame.maximumScroll > 0),
+				"actual hierarchical middle scroll reaches its final root at minimum/default/wide sizes");
+			checks.Expect(Near(frame.fixedOrigins[0].y, origins[0].y) && Near(frame.fixedOrigins[1].y, origins[1].y),
+				"actual fixed top/footer origins survive middle scrolling across sizes and themes");
+			if (frame.list)
+			{
+				const LayoutRect visible{ frame.list->InnerClipRect.Min.x, frame.list->InnerClipRect.Min.y,
+					frame.list->InnerClipRect.Max.x, frame.list->InnerClipRect.Max.y };
+				if (!Contains(visible, state.middleBounds[5]))
+					std::cerr << "[HierarchyScroll] scale=" << scale << " size=" << size.x << 'x' << size.y
+						<< " expanded=" << expanded << " narrow=" << state.narrow << " overlay=" << state.overlayOpen
+						<< " scroll=" << frame.scroll << '/' << frame.maximumScroll
+						<< " content=" << frame.list->ContentSize.y << " inner=" << frame.list->InnerRect.GetHeight()
+						<< " cursorMax=" << frame.list->DC.CursorMaxPos.y << " pos=" << frame.list->Pos.y
+						<< " clip=" << visible.left << ',' << visible.top << ',' << visible.right << ',' << visible.bottom
+						<< " last=" << state.middleBounds[5].left << ',' << state.middleBounds[5].top << ','
+						<< state.middleBounds[5].right << ',' << state.middleBounds[5].bottom << '\n';
+				checks.Expect(Contains(visible, state.middleBounds[5]), "last real software-version root is fully visible at the scroll end");
+			}
+			const int before = navigations; click(state.middleBounds[5]); frame = idle();
+			checks.Expect(selected.page == PageId::Version && navigations == before + 1,
+				"software version remains reachable through the final root at every size/mode/theme");
+			requestedScroll = -1;
+		}
+
+		// 动画参数推动真实 pane/DrawData，同时检验反向、速率及关闭，不只测补间公式。
+		size = ImVec2(960, 700); state.Resize(size.x); state.desktopCompact = false;
+		requestedScroll = 0; dark = false; animated = false; frame = idle(); requestedScroll = -1;
+		animated = true; rate = 1; state.Toggle();
+		const float startingWidth = frame.paneWidth;
+		frame = draw(outside, false); const float closingWidth = frame.paneWidth;
+		checks.Expect(closingWidth < startingWidth && closingWidth > 48 * scale,
+			"first animated collapse frame draws an intermediate physical pane width");
+		state.Toggle(); frame = draw(outside, false);
+		checks.Expect(frame.paneWidth > closingWidth && frame.paneWidth < startingWidth,
+			"rapid reversal continues from the current rendered width without jumping");
+		animated = false; frame = draw(outside, false);
+		checks.Expect(Near(frame.paneWidth, 248 * scale, 1) && Near(frame.contentAlpha, 1),
+			"disabling animation snaps actual pane geometry and content alpha in the same frame");
+		for (float speed : { 0.1F, 5.0F })
+		{
+			rate = speed; animated = true; state.Toggle(); float previousWidth = frame.paneWidth;
+			const int expectedFrames = static_cast<int>(std::ceil(0.2F / speed * 60)) + 2;
+			for (int i = 0; i < expectedFrames; ++i)
+			{
+				if (i == 1) dark = !dark;
+				frame = draw(outside, false);
+				checks.Expect(frame.paneWidth <= previousWidth + 1 && frame.paneWidth >= 48 * scale - 1,
+					"actual width motion remains monotonic and bounded during theme and speed changes");
+				checks.Expect(Near(frame.paneWidth / scale, frame.shell.pane.Width(), 1),
+					"drawn pane width and content layout use the same animation geometry");
+				previousWidth = frame.paneWidth;
+			}
+			checks.Expect(Near(frame.paneWidth, 48 * scale, 1), "actual pane reaches compact target at the configured rate");
+			animated = false; state.Toggle(); frame = idle();
+		}
+		// 中途变速仍从当前进度推进，直接检查真实 pane 绘制宽度而非另写补间公式。
+		animated = true; rate = 1; state.Toggle(); frame = idle(2);
+		float previousWidth = frame.paneWidth;
+		rate = 0.1F; frame = draw(outside, false);
+		checks.Expect(frame.paneWidth < previousWidth && frame.paneWidth > 48 * scale,
+			"slowing a live pane tween continues toward its target without rewinding the rendered width");
+		previousWidth = frame.paneWidth;
+		rate = 5.0F; frame = draw(outside, false);
+		checks.Expect(frame.paneWidth < previousWidth && frame.paneWidth >= 48 * scale - 1,
+			"speeding a live pane tween preserves progress and remains bounded in actual DrawData");
+		frame = idle(5);
+		checks.Expect(Near(frame.paneWidth, 48 * scale, 1),
+			"a pane tween changed to the fastest rate still reaches its final geometry");
+		animated = false; state.Toggle(); frame = idle();
+
+		// 可见慢帧不能被当成隐藏恢复而丢弃，否则低帧率下导航永远停在起点。
+		animated = true; rate = 0.1F; frameDelta = 0.2F; state.Toggle();
+		previousWidth = frame.paneWidth; frame = draw(outside, false);
+		checks.Expect(frame.paneWidth < previousWidth && frame.paneWidth > 48 * scale,
+			"a visible 200 ms frame advances real pane motion rather than freezing it");
+		for (int index = 0; index < 45; ++index)
+		{
+			previousWidth = frame.paneWidth; frame = draw(outside, false);
+			checks.Expect(frame.paneWidth <= previousWidth + 1 && frame.paneWidth >= 48 * scale - 1,
+				"slow visible frames keep the production navigation geometry monotonic and bounded");
+		}
+		checks.Expect(Near(frame.paneWidth, 48 * scale, 1),
+			"slow visible frames converge on the compact navigation target");
+		frameDelta = 1.0F / 60.0F;
+		animated = false; state.Toggle(); frame = idle();
+
+		// 先经过真实一帧更新策略，再按产品顺序通知新目的地；上一帧关闭动画时通知应直接显示。
+		animated = true; rate = 1; frame = draw(outside, false);
+		selected = { PageId::General, GeneralSection::Appearance };
+		Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
+		checks.Expect(frame.contentAlpha > 0 && frame.contentAlpha < 1,
+			"new body controls render once with a partial fade after a composite destination changes");
+		checks.Expect(frame.glyphAlpha > 0 && frame.flatAlpha > 0
+			&& frame.glyphAlpha <= static_cast<unsigned int>(std::ceil(255 * frame.contentAlpha))
+			&& frame.flatAlpha <= static_cast<unsigned int>(std::ceil(255 * frame.contentAlpha)),
+			"production content fade reaches both direct text glyphs and real control fill vertices");
+		selected.section = GeneralSection::Interaction; Design::NotifyNavigationDestination(state, selected); frame = idle(10);
+		checks.Expect(Near(frame.contentAlpha, 1) && bodyDraws == frames,
+			"rapid page changes converge on one body render per frame without duplicate controls");
+		checks.Expect(Design::DestinationForPage(static_cast<int>(PageId::Configuration))
+			== Design::NavigationDestination{ PageId::General, GeneralSection::Storage }
+			&& Design::DestinationForPage(static_cast<int>(PageId::HotKeys))
+			== Design::NavigationDestination{ PageId::General, GeneralSection::Interaction },
+			"production legacy-route normalization preserves configuration and hotkey entry destinations");
+		io.ConfigFlags = previousFlags;
+		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
+		Design::ApplyPalette(false);
+		std::cout << "[HierarchyDrawData] scale=" << scale << " frames=" << frames << " navigations=" << navigations
+			<< " businessActions=" << businessActions << " bodyActions=" << bodyActions << '\n';
+	}
+
 	void CheckNavigationScrolling(Checks& checks, ImFont* regular, ImFont* icons, float scale)
 	{
 		Design::ApplyPalette(false);
@@ -1142,15 +1626,15 @@ namespace
 					ImGui::SetNextWindowScroll(ImVec2(0, pass == 2 ? maximumScroll : 0));
 					begin("middle", regions.middle, false);
 					int lastVertices = 0;
-					for (int i = 0; i < 8; ++i) {
+					for (int i = 0; i < 6; ++i) {
 						ImGui::PushID(i); const int first = ImGui::GetWindowDrawList()->VtxBuffer.Size;
-						ImFluent::NavItemEx("item", "Middle page", i == 7, nullptr, !expanded);
-						if (i == 7) lastVertices = ImGui::GetWindowDrawList()->VtxBuffer.Size - first;
+						ImFluent::NavItemEx("item", "Middle page", i == 5, nullptr, !expanded);
+						if (i == 5) lastVertices = ImGui::GetWindowDrawList()->VtxBuffer.Size - first;
 						ImGui::PopID();
 					}
 					if (pass == 1) maximumScroll = ImGui::GetScrollMaxY();
 					if (pass == 2) checks.Expect(lastVertices > 0 && Near(ImGui::GetScrollY(), maximumScroll, 1.0F)
-						&& (size.y != 520 || maximumScroll > 0), "actual middle child scroll reaches the eighth entry at minimum size"); end();
+						&& (size.y != 520 || maximumScroll > 0), "actual middle child scroll reaches the sixth root entry at minimum size"); end();
 					begin("footer", regions.footer, true);
 					const auto footerOrigin = ImGui::GetWindowPos();
 					for (int i = 0; i < 4; ++i) {
@@ -1286,6 +1770,7 @@ int RunSettingDesignTests()
 		checks.Expect(false, "cannot locate Inkeys/src/ttf from test source or working directory");
 		return checks.failures;
 	}
+	checks.Expect(LoadNavigationLabels(fontDirectory), "actual navigation loads bundled Chinese label fixtures");
 	std::array<FontData, 5> sources{ {
 		{ "HarmonyOS_Sans_SC_Regular.ttf", {} },
 		{ "HarmonyOS_SansSC_Bold.ttf", {} },
@@ -1372,6 +1857,10 @@ int RunSettingDesignTests()
 		ImGui::Render();
 		CheckDrawData(checks);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
+		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
+			CheckGeneralSections(checks, fonts[0], fonts[1], fonts.back(), scale);
+		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
+			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
 		if (scale == 1.0F || scale == 1.875F) CheckAnimatedColors(checks, fonts[0], scale);
 	}
 	return checks.failures;

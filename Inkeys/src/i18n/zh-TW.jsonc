@@ -188,6 +188,10 @@
       "AppearanceSection": "外觀",
       "BehaviorSection": "使用行為",
       "CompatibilitySection": "相容性",
+      "GeneralBasic": "基本",
+      "GeneralAppearance": "外觀與動畫",
+      "GeneralInteraction": "互動與安全",
+      "GeneralStorage": "儲存與設定",
       "GeneralSubtitle": "啟動方式、介面大小與日常使用偏好。",
       "EdgeLighting": "啟用邊緣光影",
       "EdgeLightingDescription": "關閉後僅保留基本邊框，停用點光與柔光效果。",
@@ -333,7 +337,7 @@
     },
     "Regular":
     {
-      "N": "常規",
+      "N": "通用",
       "StartUp":
       {
         "N": "開機自動執行與啟動行為",
@@ -351,9 +355,9 @@
       {
         "N": "外觀樣式",
         "AnimationEnable": "啟用動畫",
-        "AnimationEnableE": "關閉後，UI3 主列動畫將立即完成。",
+        "AnimationEnableE": "關閉後，UI3 主列與設定介面的導覽及頁面動畫將立即完成。",
         "AnimationRate": "動畫速率",
-        "AnimationRateE": "調整 UI3 主列動畫速率，範圍為 0.1x–5.0x。",
+        "AnimationRateE": "調整 UI3 主列與設定介面的動畫速率，範圍為 0.1x–5.0x。",
         "EdgeLighting": "邊緣光影",
         "EdgeLightingE": "關閉後僅保留基礎邊框，停用點光與柔光效果。",
         "DynamicEdgeLighting": "動態邊緣光影",

@@ -1,6 +1,6 @@
 # 实施顺序与验收计划
 
-当前首批和全页迁移已完成提交，以下保留历史实施顺序。现执行 research/approved-window-dark.md 的窗口/深色增量及剩余 GUI 验收；本轮明确允许 Computer Use，完成后暂存。
+以下保留历史实施顺序。当前执行 research/approved-hierarchical-nav.md 的分层导航与通用拆分，用户已批准实施；禁止 GUI/Computer Use，不自动 commit/push。
 
 ## 0. 设计审查（已完成）
 
@@ -154,3 +154,18 @@ git diff --check
 - [ ] 补既有 DWM 材质级联、composition 变化和透明 clear 验证，对应 A12；不能覆盖的环境明确记录。
 
 本次不执行产品实现或 GUI，不新增系统主题、高对比、动画或媒体功能；后续验证按当前授权范围执行，不沿用历史 GUI/提交授权。
+
+
+## 当前实施：分层导航
+
+按 [research/approved-hierarchical-nav.md](research/approved-hierarchical-nav.md) 执行导航、内容、连续帧无窗口回归、独立检查与完整 ARM64 构建。父任务仍保留实机验收。
+
+## 分层导航增量交付（2026-10-08）
+
+- [x] 通用四页、旧入口映射、独立子页状态与原保存/实时行为接入。
+- [x] 展开/紧凑/覆盖导航、独立箭头、浮层、键盘与点击屏障、反向/速率/淡入动画。
+- [x] 完整 ARM64 Solution、真实产品控件连续帧、三倍率布局、悬停色、i18n、编码与差异检查、独立审查。
+- [x] 原 fluent 工作区程序重编，保护用户原有文件，交付未提交差异。
+- [ ] 真实鼠标、截图与 GUI 动画/DPI/业务副作用验收；父任务既有剩余验收继续保留。
+
+最终证据：[research/hierarchical-navigation-validation.md](research/hierarchical-navigation-validation.md)、[research/hierarchical-navigation-review.md](research/hierarchical-navigation-review.md)。本轮不自动 commit/push，不把自动检查视为实机验收。

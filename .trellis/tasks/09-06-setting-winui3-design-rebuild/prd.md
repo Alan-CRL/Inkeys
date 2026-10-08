@@ -4,7 +4,7 @@
 
 重建设置界面的布局与页面组织，使其具备用户参考图中的 WinUI 3 桌面应用质感：间距稳定、文字可读、图标与控件居中、操作靠右、主页美观而有实际入口。继续使用内嵌 HarmonyOS Sans 与 ImFluent，保持原有功能、配置和共享 D3D 渲染基础。
 
-设计稿 v1 已获用户大体认可；用户随后明确批准开始写代码。首批已提交 0ffd0341，全页视觉迁移已提交 89770357；当前用户批准继续窗口测试并实现窗口样式与实时深色主题，允许 Computer Use，完成后暂存。最新范围见 research/approved-window-dark.md。
+设计稿 v1 已获用户大体认可；用户随后明确批准开始写代码。历史首批/全页/窗口增量与发布整合已完成，发布整合提交 ff7ad583。当前用户批准通用拆分与分层导航，最新范围见 research/approved-hierarchical-nav.md；禁止 GUI/Computer Use，不自动 commit/push。
 
 ## Background
 
@@ -90,3 +90,8 @@ v1 的 248 DIP 导航、900 DIP 自动阈值、72 DIP 设置行最小高、浅�
 父任务继续承载真实鼠标、截图、窄窗/DPI、窗口和常驻会话实机验收。既有 LnkHelper 同步快捷方式 I/O 边界已记录在 task-handover.md，后续单独设计 FIFO 收口，本轮不改其公开接口或线程模型。
 
 本轮两个子任务的代码及自动化/静态复核已完成，分别见各自 verification.md。发布内容17个实际视图/12种更新状态已映射；侧栏与共享悬停修复在完整ARM64 Solution及真实控件连续帧回归中通过。父任务保持in_progress；真实鼠标/截图、完整页面及FIFO实机副作用、用户倍率/最大化恢复/跨屏DPI、窗口/常驻会话继续待验收。高用户倍率叠加物理workarea不足时固定底部可能被裁剪，记录边界，不宣称全部入口可达。
+
+
+## 当前已批准增量：分层导航与通用拆分
+
+通用四子页、紧凑重复点击导航、页面兼容和动画要求见 [research/approved-hierarchical-nav.md](research/approved-hierarchical-nav.md)。本轮沿用父任务，用户已批准实施；直接 fluent，不创建新任务/分支，不 GUI/commit/push。

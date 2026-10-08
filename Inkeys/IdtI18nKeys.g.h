@@ -191,6 +191,10 @@ inline constexpr struct I18nKeyRoot
             const char* AppearanceSection = "SettingsUI/Design/AppearanceSection";
             const char* BehaviorSection = "SettingsUI/Design/BehaviorSection";
             const char* CompatibilitySection = "SettingsUI/Design/CompatibilitySection";
+            const char* GeneralBasic = "SettingsUI/Design/GeneralBasic";
+            const char* GeneralAppearance = "SettingsUI/Design/GeneralAppearance";
+            const char* GeneralInteraction = "SettingsUI/Design/GeneralInteraction";
+            const char* GeneralStorage = "SettingsUI/Design/GeneralStorage";
             const char* GeneralSubtitle = "SettingsUI/Design/GeneralSubtitle";
             const char* EdgeLighting = "SettingsUI/Design/EdgeLighting";
             const char* EdgeLightingDescription = "SettingsUI/Design/EdgeLightingDescription";

@@ -71,20 +71,84 @@ namespace Inkeys::UI::Setting::Design
 		return result;
 	}
 
+	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage };
+
+	struct NavigationTween
+	{
+		float value = 0.0F;
+		float target = 0.0F;
+		float start = 0.0F;
+		float elapsed = 0.0F;
+		float progress = 0.0F;
+
+		explicit NavigationTween(float initial = 0.0F) noexcept
+			: value(initial), target(initial), start(initial) {}
+		void Reset(float next) noexcept { value = target = start = next; elapsed = progress = 0.0F; }
+		void Target(float next) noexcept
+		{
+			if (target == next) return;
+			// 快速反向从当前可见值起步，不重播已经走过的区间。
+			start = value; target = next; elapsed = progress = 0.0F;
+		}
+		void Advance(float delta, float duration, bool enabled) noexcept
+		{
+			if (!enabled || duration <= 0.0F) { Reset(target); return; }
+			// 使用归一化进度，中途调整速率只改变后续速度，不会倒退已显示的画面。
+			progress = (std::min)(1.0F, progress + delta / duration);
+			elapsed = progress * duration;
+			const float remaining = 1.0F - progress;
+			value = start + (target - start) * (1.0F - remaining * remaining * remaining);
+		}
+		[[nodiscard]] bool Active() const noexcept { return std::abs(value - target) > 0.0001F; }
+	};
+
 	struct NavigationState
 	{
 		bool desktopCompact = false;
 		bool narrow = false;
 		bool overlayOpen = false;
+		bool generalExpanded = true;
+		GeneralSection lastGeneralSection = GeneralSection::Basic;
+		bool flyoutOpen = false;
+		bool restoreParentFocus = false;
+		bool mouseReleaseBarrier = false;
+		bool scrollSelectedGeneral = false;
+		bool animationsInitialized = false;
+		bool animationsEnabled = true;
+		float animationRate = 1.0F;
+		NavigationTween paneWidth{ OpenPaneWidth };
+		NavigationTween groupReveal{ 1.0F };
+		NavigationTween flyoutReveal;
+		NavigationTween contentReveal{ 1.0F };
+		NavigationTween indicatorX;
+		NavigationTween indicatorY;
+		bool indicatorInitialized = false;
+		int contentPage = 0;
+		GeneralSection contentSection = GeneralSection::Basic;
+		// 真实控件提交后的屏幕像素框，同时供连续帧测试观测，不另写一套命中公式。
+		LayoutRect parentBounds, chevronBounds, flyoutBounds;
+		std::array<LayoutRect, 4> childBounds{}, flyoutChildBounds{}, footerBounds{};
+		std::array<LayoutRect, 6> middleBounds{};
+		std::uint32_t parentItemId = 0;
+		std::uint32_t childFocusId = 0;
+		std::uint32_t childWindowItemId = 0;
+		bool inlineChildFocused = false;
 
+		void CloseFlyout() noexcept
+		{
+			if (IsFlyoutOpen()) restoreParentFocus = true;
+			flyoutOpen = false;
+		}
 		void Resize(float widthDip) noexcept
 		{
 			const bool nextNarrow = widthDip < NavigationBreakpoint;
-			if (nextNarrow != narrow) overlayOpen = false;
+			if (nextNarrow != narrow) { overlayOpen = false; CloseFlyout(); scrollSelectedGeneral = true; }
 			narrow = nextNarrow;
 		}
 		void Toggle() noexcept
 		{
+			CloseFlyout();
+			scrollSelectedGeneral = true;
 			if (narrow) overlayOpen = !overlayOpen;
 			else desktopCompact = !desktopCompact;
 		}
@@ -93,7 +157,59 @@ namespace Inkeys::UI::Setting::Design
 		{
 			return narrow ? overlayOpen : !desktopCompact;
 		}
+		[[nodiscard]] bool IsFlyoutOpen() const noexcept
+		{
+			return flyoutOpen || flyoutReveal.value > 0.001F;
+		}
+		[[nodiscard]] bool BlockContentInput() const noexcept
+		{
+			return overlayOpen || (narrow && animationsInitialized && paneWidth.value > CompactPaneWidth + 0.01F)
+				|| IsFlyoutOpen() || mouseReleaseBarrier;
+		}
 	};
+
+	// 产品与无窗口测试共用推进入口；渲染线程每帧调用一次，不跨线程保存 UI 指针。
+	inline void AdvanceNavigationAnimations(NavigationState& state, float delta,
+		bool enabled, float rate) noexcept
+	{
+		// 慢帧仍推进有限时长；隐藏恢复是否跳过首帧由真实会话显隐信号决定。
+		delta = std::isfinite(delta) ? std::clamp(delta, 0.0F, 0.25F) : 0.0F;
+		state.animationsEnabled = enabled;
+		state.animationRate = std::isfinite(rate) ? std::clamp(rate, 0.1F, 5.0F) : 1.0F;
+		const float paneTarget = state.Expanded() ? OpenPaneWidth : CompactPaneWidth;
+		const float groupTarget = state.Expanded() && state.generalExpanded ? 1.0F : 0.0F;
+		if (!state.animationsInitialized)
+		{
+			state.paneWidth.Reset(paneTarget);
+			state.groupReveal.Reset(groupTarget);
+			state.animationsInitialized = true;
+		}
+		state.paneWidth.Target(paneTarget);
+		state.groupReveal.Target(groupTarget);
+		state.flyoutReveal.Target(state.flyoutOpen ? 1.0F : 0.0F);
+		state.paneWidth.Advance(delta, 0.200F / state.animationRate, enabled);
+		state.groupReveal.Advance(delta, 0.160F / state.animationRate, enabled);
+		state.flyoutReveal.Advance(delta, 0.140F / state.animationRate, enabled);
+		state.contentReveal.Advance(delta, 0.120F / state.animationRate, enabled);
+		state.indicatorX.Advance(delta, 0.160F / state.animationRate, enabled);
+		state.indicatorY.Advance(delta, 0.160F / state.animationRate, enabled);
+	}
+
+	inline void SnapNavigationAnimations(NavigationState& state) noexcept
+	{
+		state.animationsEnabled = false;
+		state.paneWidth.Reset(state.Expanded() ? OpenPaneWidth : CompactPaneWidth);
+		state.groupReveal.Reset(state.Expanded() && state.generalExpanded ? 1.0F : 0.0F);
+		state.flyoutReveal.Reset(state.flyoutOpen ? 1.0F : 0.0F);
+		state.contentReveal.Reset(1.0F);
+		state.indicatorX.Reset(state.indicatorX.target);
+		state.indicatorY.Reset(state.indicatorY.target);
+	}
+
+	[[nodiscard]] inline float ContentAlpha(const NavigationState& state) noexcept
+	{
+		return state.animationsEnabled ? state.contentReveal.value : 1.0F;
+	}
 
 	struct ShellGeometry
 	{
@@ -110,11 +226,12 @@ namespace Inkeys::UI::Setting::Design
 	{
 		const float width = std::isfinite(widthDip) ? (std::max)(0.0F, widthDip) : 0.0F;
 		const float height = std::isfinite(heightDip) ? (std::max)(0.0F, heightDip) : 0.0F;
-		const float reserved = (std::min)(width,
-			state.narrow || state.desktopCompact ? CompactPaneWidth : OpenPaneWidth);
+		const float visualWidth = state.animationsInitialized ? state.paneWidth.value
+			: (state.Expanded() ? OpenPaneWidth : CompactPaneWidth);
+		const float reserved = (std::min)(width, state.narrow ? CompactPaneWidth : visualWidth);
 		ShellGeometry result;
 		result.pane = { 0.0F, (std::min)(height, TitleBarHeightDip),
-			(std::min)(width, state.Expanded() ? OpenPaneWidth : CompactPaneWidth), height };
+			(std::min)(width, visualWidth), height };
 		result.content = { reserved, (std::min)(height, TitleBarHeightDip), width, height };
 		result.gutter = (std::min)(width >= 1100.0F ? 40.0F : 24.0F,
 			result.content.Width() * 0.1F);
@@ -127,7 +244,7 @@ namespace Inkeys::UI::Setting::Design
 	inline constexpr float NavigationRowHeight = 36.0F;
 	inline constexpr float NavigationDebugHeight = 28.0F;
 	inline constexpr float NavigationSeparatorBand = 12.0F;
-	inline constexpr size_t NavigationMiddleItemCount = 8;
+	inline constexpr size_t NavigationMiddleItemCount = 6;
 
 	struct NavigationPaneGeometry
 	{
@@ -148,7 +265,8 @@ namespace Inkeys::UI::Setting::Design
 	// 先测固定行、分割线和调试按钮，再给中段剩余高度；所有坐标相对 pane，单位为 DIP。
 	[[nodiscard]] inline NavigationPaneGeometry ResolveNavigationPaneGeometry(
 		float widthDip, float heightDip, bool expanded,
-		float rowHeightDip = NavigationRowHeight, float debugWidthDip = 72.0F) noexcept
+		float rowHeightDip = NavigationRowHeight, float debugWidthDip = 72.0F,
+		float expandedFraction = -1.0F) noexcept
 	{
 		const float width = std::isfinite(widthDip) ? (std::max)(0.0F, widthDip) : 0.0F;
 		const float height = std::isfinite(heightDip) ? (std::max)(0.0F, heightDip) : 0.0F;
@@ -159,13 +277,15 @@ namespace Inkeys::UI::Setting::Design
 		constexpr float headerHeight = 8.0F + NavigationRowHeight + 12.0F;
 		const float pairHeight = rowHeight * 2.0F + RowGap;
 		const float topHeight = headerHeight + pairHeight + NavigationSeparatorBand;
+		const float debugFraction = expandedFraction >= 0.0F
+			? std::clamp(expandedFraction, 0.0F, 1.0F) : (expanded ? 1.0F : 0.0F);
 		const float footerHeight = pairHeight * 2.0F + NavigationSeparatorBand * 2.0F
-			+ 8.0F + (expanded ? 8.0F + NavigationDebugHeight : 0.0F);
+			+ 8.0F + (8.0F + NavigationDebugHeight) * debugFraction;
 
 		NavigationPaneGeometry result;
 		result.minimumHeight = topHeight + footerHeight;
 		result.fits = height >= result.minimumHeight;
-		result.debugVisible = expanded;
+		result.debugVisible = expanded && debugFraction > 0.001F;
 		// 不够高的既有窗口由 HWND 最小尺寸合同扩展；此处仍保持固定区互不覆盖。
 		const float footerTop = (std::max)(topHeight, height - footerHeight);
 		result.menu = { inset, 8.0F, (std::min)(right, inset + 40.0F),
@@ -192,7 +312,7 @@ namespace Inkeys::UI::Setting::Design
 		result.footerItems[2] = { inset, actionsTop, right, actionsTop + rowHeight };
 		result.footerItems[3] = { inset, actionsTop + rowHeight + RowGap, right,
 			actionsTop + pairHeight };
-		if (expanded)
+		if (result.debugVisible)
 		{
 			const float debugWidth = std::isfinite(debugWidthDip)
 				? std::clamp(debugWidthDip, 0.0F, right - inset) : 0.0F;
@@ -204,6 +324,24 @@ namespace Inkeys::UI::Setting::Design
 		result.middleContentHeight = rowHeight * static_cast<float>(NavigationMiddleItemCount)
 			+ RowGap * static_cast<float>(NavigationMiddleItemCount - 1);
 		return result;
+	}
+
+	// 浮层优先下方，空间不足时翻到上方；极短客户区限制高度并交给真实窗口滚动。
+	[[nodiscard]] inline LayoutRect ResolveNavigationFlyoutGeometry(const LayoutRect& anchor,
+		const LayoutRect& client, float scale = 1.0F) noexcept
+	{
+		scale = std::isfinite(scale) && scale > 0.0F ? scale : 1.0F;
+		const float margin = 8.0F * scale;
+		const float width = (std::min)(OpenPaneWidth * scale, (std::max)(1.0F, client.Width() - margin * 2.0F));
+		const float height = (std::min)((NavigationRowHeight * 4.0F + RowGap * 3.0F + 16.0F) * scale,
+			(std::max)(1.0F, client.Height() - margin * 2.0F));
+		const float left = std::clamp(anchor.left, client.left + margin,
+			(std::max)(client.left + margin, client.right - margin - width));
+		float top = anchor.bottom + margin;
+		if (top + height > client.bottom - margin) top = anchor.top - margin - height;
+		top = std::clamp(top, client.top + margin,
+			(std::max)(client.top + margin, client.bottom - margin - height));
+		return { left, top, left + width, top + height };
 	}
 
 	struct RowMeasure

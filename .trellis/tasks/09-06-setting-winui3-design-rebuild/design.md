@@ -1,6 +1,6 @@
 # WinUI 3 桌面设置设计方案 · v1
 
-状态：首批与全部页面迁移已分别提交 0ffd0341、89770357；当前按 research/approved-window-dark.md 实现窗口框架与实时深色主题，允许 Computer Use 检查实际窗口。目标是 WinUI 3 桌面应用的结构和视觉质量；继续使用 ImGui + ImFluent，不迁移到 XAML，也不改共享渲染架构。
+状态：历史页面、窗口与发布整合已完成；当前按 research/approved-hierarchical-nav.md 实现分层导航和通用拆分，禁止 GUI/Computer Use，不自动 commit/push。目标是 WinUI 3 桌面应用的结构和视觉质量；继续使用 ImGui + ImFluent，不迁移到 XAML，也不改共享渲染架构。
 
 ## 视觉方向
 
@@ -106,3 +106,8 @@
 ## 旧任务合同接管（2026-10-08）
 
 本任务承接 archive/2026-10 下两个 08-13 任务的后续设置工作与剩余验收，完整证据入口见 research/task-handover.md。共享 WARP/串行线程/CSO/FIFO、resident/presentation、设备 epoch 和公开窗口接口沿用现行实现。旧固定浅色与旧窗口/导航方案已被本任务后续批准设计替代；既有 DWM 能力回退仅补验证，不新增材质引擎。
+
+
+## 当前设计：分层导航
+
+本轮交互、尺寸、内部路由、动画和兼容合同以 [research/approved-hierarchical-nav.md](research/approved-hierarchical-nav.md) 为准，替代历史平面菜单与不实施动画的约束。

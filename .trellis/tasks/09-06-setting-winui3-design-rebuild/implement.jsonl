@@ -14,3 +14,4 @@
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/task-handover.md", "reason": "旧任务归档接管、剩余验收与历史要求替代关系；不延续历史GUI/提交授权"}
 {"file": ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui/implement.md", "reason": "首轮迁移与resident/DWM验证证据；当前范围以接管记录为准"}
 {"file": ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting/prd.md", "reason": "已完成共享渲染合同及自动化验收基线"}
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-hierarchical-nav.md", "reason": "当前用户批准的分类、交互、动画与禁止GUI/commit范围；优先于历史授权"}

@@ -1409,3 +1409,36 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 本任务结束，Win7修复与正式发布执行独立处理
+
+
+## Session 51: Fluent 分层侧栏与通用四页
+<!-- trellis-session: v=2 fp=d27e0014fa0ae56b -->
+
+**Date**: 2026-10-08
+**Task**: Fluent 分层侧栏与通用四页
+**Branch**: `fluent`
+
+### Summary
+
+直接 fluent 完成通用拆分、分层侧栏和软件动画；自动检查通过，实机验收保留。
+
+### Main Changes
+
+- 通用四子页及旧入口映射，保留原控件配置/FIFO/实时行为。
+- 实现独立箭头、紧凑二次点击菜单、键盘焦点、点击屏障及可反向动画。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 完整 Solution Debug|ARM64 exit0；最终 --no-window exit0；三 DPI 各564帧，悬停色0越界，i18n370/370及diff检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 父任务继续实机鼠标/截图/DPI/业务副作用及窗口常驻会话验收；本轮不 GUI/commit/push。
