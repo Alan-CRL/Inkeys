@@ -111,3 +111,7 @@
 ## 当前设计：分层导航
 
 本轮交互、尺寸、内部路由、动画和兼容合同以 [research/approved-hierarchical-nav.md](research/approved-hierarchical-nav.md) 为准，替代历史平面菜单与不实施动画的约束。
+
+## 父行交互追加（2026-10-08）
+
+新会话通用子列表和groupReveal初始均为折叠。非紧凑父行点击采用展开状态toggle：收起只保留原目的地，展开导航到lastGeneralSection（首次Basic）。纯收起不触发正文transition；动画沿用现有render线程，反向续接当前值。具体当前要求见 `research/approved-hierarchical-nav.md` 末节。

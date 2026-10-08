@@ -107,7 +107,7 @@ namespace Inkeys::UI::Setting::Design
 		bool desktopCompact = false;
 		bool narrow = false;
 		bool overlayOpen = false;
-		bool generalExpanded = true;
+		bool generalExpanded = false;
 		GeneralSection lastGeneralSection = GeneralSection::Basic;
 		bool flyoutOpen = false;
 		bool restoreParentFocus = false;
@@ -117,7 +117,7 @@ namespace Inkeys::UI::Setting::Design
 		bool animationsEnabled = true;
 		float animationRate = 1.0F;
 		NavigationTween paneWidth{ OpenPaneWidth };
-		NavigationTween groupReveal{ 1.0F };
+		NavigationTween groupReveal;
 		NavigationTween flyoutReveal;
 		NavigationTween contentReveal{ 1.0F };
 		NavigationTween indicatorX;

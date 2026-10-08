@@ -78,6 +78,7 @@ namespace Inkeys::UI::Setting::Design
 			state.restoreParentFocus = true; state.scrollSelectedGeneral = true;
 		}
 		bool toggled = false;
+		bool keepOverlayForGroup = false;
 		ImGuiWindow* parentWindow = nullptr;
 		ImDrawList* indicatorList = nullptr;
 		ImRect indicatorClip;
@@ -106,11 +107,13 @@ namespace Inkeys::UI::Setting::Design
 			I18nKey.SettingsUI.Design.GeneralStorage };
 		const std::array childGlyphs{ "\ue713", "\ue790", "\ue72e", "\ue81e" };
 		static_assert(middleEntries.size() == NavigationMiddleItemCount);
-		auto navigate = [&](NavigationDestination destination) {
+		auto navigate = [&](NavigationDestination destination, bool dismissOverlay = true) {
 			destination = NormalizeDestination(destination);
 			if (destination != selected) result = { NavigationActionKind::Navigate, destination };
 			if (destination.page == PageId::General) state.lastGeneralSection = destination.section;
-			state.CloseFlyout(); state.DismissOverlay();
+			state.CloseFlyout();
+			if (dismissOverlay) state.DismissOverlay();
+			else keepOverlayForGroup = true;
 		};
 		auto markSelected = [&](bool isSelected) {
 			if (!isSelected) return;
@@ -224,9 +227,14 @@ namespace Inkeys::UI::Setting::Design
 				{
 					if (state.Expanded())
 					{
-						state.generalExpanded = true;
-						state.scrollSelectedGeneral = true;
-						navigate({ PageId::General, state.lastGeneralSection });
+						state.generalExpanded = !state.generalExpanded;
+						// 纯收起不导航，不重置当前子页及正文淡入；覆盖导航留给父行继续开合。
+						if (state.generalExpanded)
+						{
+							state.scrollSelectedGeneral = true;
+							navigate({ PageId::General, state.lastGeneralSection }, false);
+						}
+						else markSelected(generalSelected);
 					}
 					else if (generalSelected) state.flyoutOpen = !state.flyoutOpen;
 					else navigate({ PageId::General, state.lastGeneralSection });
@@ -377,7 +385,11 @@ namespace Inkeys::UI::Setting::Design
 		ImGui::PopStyleVar(); ImGui::EndChild();
 		ImGui::PopStyleVar(2); ImGui::PopStyleColor();
 		if (toggled) state.Toggle();
-		if (result.kind != NavigationActionKind::None) { state.CloseFlyout(); state.DismissOverlay(); }
+		if (result.kind != NavigationActionKind::None)
+		{
+			state.CloseFlyout();
+			if (!keepOverlayForGroup || result.kind != NavigationActionKind::Navigate) state.DismissOverlay();
+		}
 
 		if (indicatorVisible)
 		{

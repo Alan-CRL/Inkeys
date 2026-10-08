@@ -24,7 +24,7 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。2026-10-08接管两个08-13归档任务的后续设置工作和未完成验收，见research/task-handover.md。2026-10-08用户批准两个子任务：发布基线同步前置、侧栏与悬停后置；独立工作区，不commit/push/GUI。2026-10-08两个子任务实施及独立静态/无窗口验证完成，保留隔离分支codex/fluent-setting-sidebar的未提交merge；父任务继续in_progress验收真实鼠标/截图/DPI、窗口恢复及常驻会话。用户随后要求直接在原fluent看到改动并删除临时分支：同一验证tree已转入原目录，原目录重编/无窗口验证及清理记录见research/fluent-integration.md。原目录完整ARM64构建退出0/381.8秒，最终正常用户权限--no-window及i18n通过；临时工作区与分支已删除，fluent保留未提交merge。用户已确认本轮改动完成有效，授权提交当前fluent merge commit，不push；其余父任务实机验收仍保留。 2026-10-08上轮整合已提交ff7ad583；本轮批准沿用父任务实施通用四页、分层导航及动画，当前范围见approved-hierarchical-nav.md，不新建任务/分支，不GUI/commit/push。 2026-10-08本轮分层导航/通用拆分已直接在fluent完成，完整ARM64 Solution及最终真实控件--no-window exit0，i18n/格式/独立检查通过；见research/hierarchical-navigation-validation.md和review.md。不GUI/commit/push，父任务仍in_progress，实机验收保留。 2026-10-08用户明确授权提交并推送本轮fluent修改；保持父任务in_progress，不结束或归档，随后继续小修改。",
+  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。2026-10-08接管两个08-13归档任务的后续设置工作和未完成验收，见research/task-handover.md。2026-10-08用户批准两个子任务：发布基线同步前置、侧栏与悬停后置；独立工作区，不commit/push/GUI。2026-10-08两个子任务实施及独立静态/无窗口验证完成，保留隔离分支codex/fluent-setting-sidebar的未提交merge；父任务继续in_progress验收真实鼠标/截图/DPI、窗口恢复及常驻会话。用户随后要求直接在原fluent看到改动并删除临时分支：同一验证tree已转入原目录，原目录重编/无窗口验证及清理记录见research/fluent-integration.md。原目录完整ARM64构建退出0/381.8秒，最终正常用户权限--no-window及i18n通过；临时工作区与分支已删除，fluent保留未提交merge。用户已确认本轮改动完成有效，授权提交当前fluent merge commit，不push；其余父任务实机验收仍保留。 2026-10-08上轮整合已提交ff7ad583；本轮批准沿用父任务实施通用四页、分层导航及动画，当前范围见approved-hierarchical-nav.md，不新建任务/分支，不GUI/commit/push。 2026-10-08本轮分层导航/通用拆分已直接在fluent完成，完整ARM64 Solution及最终真实控件--no-window exit0，i18n/格式/独立检查通过；见research/hierarchical-navigation-validation.md和review.md。不GUI/commit/push，父任务仍in_progress，实机验收保留。 2026-10-08用户明确授权提交并推送本轮fluent修改；保持父任务in_progress，不结束或归档，随后继续小修改。 2026-10-08用户追加默认子列表折叠与父行再次点击收起、保留最近子页的小修改；沿用父任务直接fluent实施与无窗口验证，不GUI/commit/push、不结束或归档。上轮已提交6afcd41，push因SSH连接关闭失败。 本轮默认折叠/父行toggle已完成，完整ARM64 Solution及最终真实控件--no-window exit0；684帧三倍率、焦点/菜单外点击/反向动画通过，见research/parent-toggle-validation.md。保持任务及当前会话进行中，不结束/归档，不GUI/commit/push。 2026-10-08用户授权先提交默认折叠/父行开合这一轮，不push；父任务保持进行中。",
   "meta": {
     "inherited_tasks": [
       ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui",
@@ -33,7 +33,8 @@
     "handover_date": "2026-10-08",
     "latest_implementation_verification": [
       ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/hierarchical-navigation-validation.md",
-      ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/hierarchical-navigation-review.md"
+      ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/hierarchical-navigation-review.md",
+      ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/parent-toggle-validation.md"
     ],
     "current_delivery_branch": "fluent",
     "current_delivery_worktree": "D:/Project/Inkeys/Repo/Inkeys",

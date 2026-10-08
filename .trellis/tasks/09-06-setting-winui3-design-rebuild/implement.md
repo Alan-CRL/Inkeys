@@ -169,3 +169,9 @@ git diff --check
 - [ ] 真实鼠标、截图与 GUI 动画/DPI/业务副作用验收；父任务既有剩余验收继续保留。
 
 最终证据：[research/hierarchical-navigation-validation.md](research/hierarchical-navigation-validation.md)、[research/hierarchical-navigation-review.md](research/hierarchical-navigation-review.md)。本轮不自动 commit/push，不把自动检查视为实机验收。
+
+## 父行默认折叠追加（2026-10-08）
+
+本轮按用户小修改调整默认折叠、父行toggle与最近子页保留，并补实际控件输入/反向动画回归；复用完整ARM64 Solution和无窗口验证，不GUI/commit/push，不结束或归档父任务。
+
+本次追加代码、真实控件回归和独立审查已完成；最终证据见 [research/parent-toggle-validation.md](research/parent-toggle-validation.md)。任务与会话继续进行中。

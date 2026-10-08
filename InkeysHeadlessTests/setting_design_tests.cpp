@@ -1320,7 +1320,13 @@ namespace
 					ImVec2(state.parentBounds.right - frame.parentWindow->Pos.x, state.parentBounds.bottom - frame.parentWindow->Pos.y)));
 			ImGui::GetCurrentContext()->NavCursorVisible = true;
 		};
-		Frame frame = idle();
+		checks.Expect(!state.generalExpanded && Near(state.groupReveal.value, 0),
+			"a new resident navigation state starts with its child group folded");
+		Frame frame = draw(outside, false);
+		checks.Expect(!state.generalExpanded && Near(state.groupReveal.value, 0)
+			&& !frame.group && state.childBounds[0].Height() == 0,
+			"the first real draw has no expanded child window or one-frame reveal flash");
+		frame = idle(2);
 		if (state.parentBounds.Width() <= 0 || state.chevronBounds.Width() <= 0
 			|| !Disjoint(state.parentBounds, state.chevronBounds))
 			std::cerr << "[HierarchyRect] scale=" << scale << " parent=" << state.parentBounds.left << ','
@@ -1331,7 +1337,10 @@ namespace
 			&& Disjoint(state.parentBounds, state.chevronBounds),
 			"actual parent label and chevron have separate hit rectangles");
 		const int beforeArrow = navigations;
-		click(state.chevronBounds); idle();
+		click(state.chevronBounds); frame = idle();
+		checks.Expect(state.generalExpanded && navigations == beforeArrow && selected.page == PageId::Home,
+			"real chevron expands the default folded group without routing the current page");
+		click(state.chevronBounds); frame = idle();
 		checks.Expect(!state.generalExpanded && navigations == beforeArrow && selected.page == PageId::Home,
 			"real chevron folds the group without routing the current page");
 		click(state.parentBounds); frame = idle();
@@ -1340,20 +1349,45 @@ namespace
 		click(state.childBounds[1]); frame = idle();
 		checks.Expect(selected.section == GeneralSection::Appearance && state.lastGeneralSection == GeneralSection::Appearance,
 			"real inline child commits its composite destination and remembered child");
-		click(state.chevronBounds); frame = idle();
-		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance,
-			"folding a selected subtree keeps its body destination");
+		const int beforeAppearanceFold = navigations;
 		click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance,
-			"parent label reopens and enters its remembered child");
+		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance
+			&& state.lastGeneralSection == GeneralSection::Appearance && navigations == beforeAppearanceFold,
+			"repeated parent click folds appearance without routing or changing the remembered child");
+		click(state.parentBounds); frame = idle();
+		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance
+			&& navigations == beforeAppearanceFold,
+			"parent label reopens its remembered appearance page without redundant navigation");
+		click(state.childBounds[3]); frame = idle();
+		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
+		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId,
+			"a real child owns keyboard focus before its parent is clicked to fold");
+		const int beforeStorageFold = navigations;
+		click(state.parentBounds); frame = idle();
+		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Storage
+			&& state.lastGeneralSection == GeneralSection::Storage && navigations == beforeStorageFold
+			&& ImGui::GetCurrentContext()->NavId == state.parentItemId,
+			"repeated parent click also preserves the storage page rather than falling back to basic");
+		click(state.parentBounds); frame = idle();
+		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Storage
+			&& navigations == beforeStorageFold,
+			"reopening the parent restores storage without changing its body destination");
+		click(state.childBounds[1]); frame = idle();
 		focusParent(frame); key(ImGuiKey_LeftArrow); frame = idle();
 		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance,
 			"keyboard left folds without changing the remembered page");
 		focusParent(frame); key(ImGuiKey_RightArrow); frame = idle();
 		checks.Expect(state.generalExpanded, "keyboard right opens the focused parent group");
+		const int beforeKeyboardFold = navigations;
 		focusParent(frame); key(ImGuiKey_Enter); frame = idle();
-		checks.Expect(selected.page == PageId::General && state.generalExpanded,
-			"keyboard enter on parent matches its label click");
+		checks.Expect(selected.page == PageId::General && !state.generalExpanded
+			&& selected.section == GeneralSection::Appearance && navigations == beforeKeyboardFold
+			&& ImGui::GetCurrentContext()->NavId == state.parentItemId,
+			"keyboard enter on an expanded parent folds it without navigating its body");
+		focusParent(frame); key(ImGuiKey_Space); frame = idle();
+		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance
+			&& navigations == beforeKeyboardFold && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+			"keyboard space reopens the parent with the same remembered child");
 		// 点击动画中完全被裁掉的子项区域，不能激活该子项；同一区域的可见根项允许正常响应。
 		state.generalExpanded = false; frame = idle();
 		animated = true; rate = 0.1F; state.generalExpanded = true; frame = draw(outside, false);
@@ -1417,15 +1451,84 @@ namespace
 		checks.Expect(!state.flyoutOpen && businessActions == beforeBusiness,
 			"outside click dismisses real popup without activating the exit footer below it");
 		click(state.parentBounds); frame = idle();
-		const int beforeBody = bodyActions;
-		click(frame.body); frame = idle();
-		checks.Expect(!state.flyoutOpen && bodyActions == beforeBody,
-			"popup outside press and release cannot penetrate the actual body button");
+		const int beforeBody = bodyActions, beforeBodyNavigation = navigations;
+		LayoutRect outsideBody = frame.body;
+		// 正文按钮中心可能正好落入基本子项，选择按钮真实位于浮层之外的可见部分。
+		outsideBody.left = (std::max)(outsideBody.left, state.flyoutBounds.right + 1.0F);
+		const auto outsideBodyPoint = center(outsideBody);
+		const bool outsideBodyReachable = outsideBody.Width() > 0 && outsideBody.Height() > 0
+			&& frame.body.Contains(outsideBodyPoint.x, outsideBodyPoint.y)
+			&& !state.flyoutBounds.Contains(outsideBodyPoint.x, outsideBodyPoint.y);
+		checks.Expect(outsideBodyReachable, "the real body button retains a mouse target outside the popup");
+		checks.Expect(selected == Design::NavigationDestination{ PageId::General, GeneralSection::Interaction }
+			&& state.lastGeneralSection == GeneralSection::Interaction,
+			"the outside-body case begins with the actual previously selected interaction page");
+		if (outsideBodyReachable) click(outsideBody);
+		frame = idle();
+		checks.Expect(!state.flyoutOpen && bodyActions == beforeBody && navigations == beforeBodyNavigation
+			&& selected == Design::NavigationDestination{ PageId::General, GeneralSection::Interaction }
+			&& state.lastGeneralSection == GeneralSection::Interaction,
+			"popup outside press and release cannot penetrate the actual body button or change the current page");
 		click(state.parentBounds); frame = idle(); key(ImGuiKey_Escape); frame = idle();
 		checks.Expect(!state.flyoutOpen && ImGui::GetCurrentContext()->NavId == state.parentItemId,
 			"escape closes the actual popup and returns focus to its compact parent");
 		size = ImVec2(720, 520); frame = idle(); state.Toggle(); frame = idle();
 		checks.Expect(state.overlayOpen && Near(frame.shell.content.left, 48), "narrow expansion retains compact body reservation");
+		state.generalExpanded = false; selected = { PageId::Home, GeneralSection::Basic };
+		Design::NotifyNavigationDestination(state, selected); frame = idle();
+		const int beforeOverlayParent = navigations;
+		LayoutRect overlayParentHit;
+		auto clickVisibleOverlayParent = [&]() {
+			LayoutRect visible = state.parentBounds;
+			if (frame.list)
+			{
+				// 窄窗中段可能为最近子项滚动，仅点击父行实际仍可见的裁剪交集。
+				visible.left = (std::max)(visible.left, frame.list->InnerClipRect.Min.x);
+				visible.top = (std::max)(visible.top, frame.list->InnerClipRect.Min.y);
+				visible.right = (std::min)(visible.right, frame.list->InnerClipRect.Max.x);
+				visible.bottom = (std::min)(visible.bottom, frame.list->InnerClipRect.Max.y);
+			}
+			const bool reachable = frame.list && visible.Width() > 0 && visible.Height() > 0;
+			overlayParentHit = visible;
+			checks.Expect(reachable, "the narrow parent retains a visible clipped mouse target");
+			if (reachable) click(visible);
+			frame = idle();
+		};
+		auto checkOverlayParent = [&](bool passed, const char* message) {
+			if (!passed)
+				std::cerr << "[HierarchyOverlayParent] " << message << " scale=" << scale
+					<< " overlay=" << state.overlayOpen << " expanded=" << state.generalExpanded
+					<< " selected=" << static_cast<int>(selected.page) << ',' << static_cast<int>(selected.section)
+					<< " remembered=" << static_cast<int>(state.lastGeneralSection)
+					<< " routes=" << navigations << " before=" << beforeOverlayParent
+					<< " parent=" << state.parentBounds.left << ',' << state.parentBounds.top << ','
+					<< state.parentBounds.right << ',' << state.parentBounds.bottom
+					<< " clip=" << (frame.list ? frame.list->InnerClipRect.Min.x : 0) << ','
+					<< (frame.list ? frame.list->InnerClipRect.Min.y : 0) << ','
+					<< (frame.list ? frame.list->InnerClipRect.Max.x : 0) << ','
+					<< (frame.list ? frame.list->InnerClipRect.Max.y : 0)
+					<< " clicked=" << overlayParentHit.left << ',' << overlayParentHit.top << ','
+					<< overlayParentHit.right << ',' << overlayParentHit.bottom
+					<< " nav=" << ImGui::GetCurrentContext()->NavId << " parentId=" << state.parentItemId
+					<< " hovered=" << ImGui::GetCurrentContext()->HoveredId
+					<< " active=" << ImGui::GetCurrentContext()->ActiveId << '\n';
+			checks.Expect(passed, message);
+		};
+		clickVisibleOverlayParent();
+		checkOverlayParent(state.overlayOpen && state.generalExpanded && selected.page == PageId::General
+			&& selected.section == GeneralSection::Interaction && navigations == beforeOverlayParent + 1,
+			"narrow parent expansion enters its remembered child while keeping the group visible");
+		clickVisibleOverlayParent();
+		checkOverlayParent(state.overlayOpen && !state.generalExpanded && selected.section == GeneralSection::Interaction
+			&& state.lastGeneralSection == GeneralSection::Interaction && navigations == beforeOverlayParent + 1,
+			"narrow repeated parent click folds only its children and preserves its body");
+		clickVisibleOverlayParent();
+		checkOverlayParent(state.overlayOpen && state.generalExpanded && selected.section == GeneralSection::Interaction,
+			"narrow parent can reopen the preserved child inside the same overlay");
+		click(state.childBounds[0]); frame = idle();
+		checks.Expect(!state.overlayOpen && selected.section == GeneralSection::Basic,
+			"an actual narrow leaf selection still closes the overlay after parent expansion");
+		state.Toggle(); frame = idle();
 		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId
 			&& state.childFocusId != state.parentItemId,
@@ -1492,6 +1595,45 @@ namespace
 		// 动画参数推动真实 pane/DrawData，同时检验反向、速率及关闭，不只测补间公式。
 		size = ImVec2(960, 700); state.Resize(size.x); state.desktopCompact = false;
 		requestedScroll = 0; dark = false; animated = false; frame = idle(); requestedScroll = -1;
+		selected = { PageId::General, GeneralSection::Appearance };
+		Design::NotifyNavigationDestination(state, selected); state.generalExpanded = true; frame = idle();
+		animated = true; rate = 1;
+		const int beforeRapidParent = navigations;
+		click(state.parentBounds); frame = draw(outside, false);
+		const float foldingReveal = state.groupReveal.value;
+		checks.Expect(!state.generalExpanded && foldingReveal > 0 && foldingReveal < 1 && frame.group
+			&& Near(frame.group->Size.y, (36 * 4 + 4 * 3) * scale * foldingReveal, 1)
+			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
+			&& Near(frame.contentAlpha, 1),
+			"real parent folding animates the clipped group geometry without restarting the body fade");
+		click(state.parentBounds); const float reversingReveal = state.groupReveal.value;
+		frame = draw(outside, false);
+		checks.Expect(state.generalExpanded && state.groupReveal.value > reversingReveal && state.groupReveal.value < 1
+			&& frame.group && Near(frame.group->Size.y, (36 * 4 + 4 * 3) * scale * state.groupReveal.value, 1)
+			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
+			&& Near(frame.contentAlpha, 1),
+			"rapid parent reversal continues from the current real child-window height without re-navigating");
+		frame = idle(12); click(state.parentBounds); animated = false; frame = draw(outside, false);
+		checks.Expect(!state.generalExpanded && Near(state.groupReveal.value, 0) && !frame.group
+			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
+			&& Near(frame.contentAlpha, 1),
+			"disabling animations settles a parent fold immediately without altering its body");
+		click(state.parentBounds); frame = idle();
+		checks.Expect(state.generalExpanded && Near(state.groupReveal.value, 1)
+			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent,
+			"parent expansion with animations disabled restores its remembered page and full child height");
+		// 正文自身尚在淡入时收起父行，也应继续同一份正文过渡，而非重新开始。
+		animated = true; click(state.childBounds[3]); frame = draw(outside, false);
+		const float fadingBody = frame.contentAlpha;
+		const float fadingProgress = state.contentReveal.progress, fadingTarget = state.contentReveal.target;
+		const int beforeFadingFold = navigations;
+		click(state.parentBounds); frame = draw(outside, false);
+		checks.Expect(fadingBody > 0 && fadingBody < 1 && !state.generalExpanded
+			&& state.contentReveal.value >= fadingBody && state.contentReveal.progress >= fadingProgress
+			&& state.contentReveal.target == fadingTarget && selected.section == GeneralSection::Storage
+			&& state.lastGeneralSection == GeneralSection::Storage && navigations == beforeFadingFold,
+			"folding while storage is fading preserves its active transition and remembered destination");
+		animated = false; frame = idle(); click(state.parentBounds); frame = idle();
 		animated = true; rate = 1; state.Toggle();
 		const float startingWidth = frame.paneWidth;
 		frame = draw(outside, false); const float closingWidth = frame.paneWidth;

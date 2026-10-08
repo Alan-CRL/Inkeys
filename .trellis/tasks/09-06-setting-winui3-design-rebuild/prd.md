@@ -95,3 +95,7 @@ v1 的 248 DIP 导航、900 DIP 自动阈值、72 DIP 设置行最小高、浅�
 ## 当前已批准增量：分层导航与通用拆分
 
 通用四子页、紧凑重复点击导航、页面兼容和动画要求见 [research/approved-hierarchical-nav.md](research/approved-hierarchical-nav.md)。本轮沿用父任务，用户已批准实施；直接 fluent，不创建新任务/分支，不 GUI/commit/push。
+
+## 当前追加：父行默认折叠及再次点击收起
+
+按 `research/approved-hierarchical-nav.md` 的“当前追加小修改”执行：默认子列表折叠，父行开合切换，收起保留正文，再开恢复最近子页；动画及紧凑模式合同继续保留。父任务保持进行中。
