@@ -8,7 +8,7 @@
 
 ## Background
 
-- 关联既有任务 `08-13-setting-fluent2-responsive-ui`。原任务混合了窗口样式、DWM 材质和生命周期改造，本轮新建独立后续任务保留其历史。
+- 关联既有任务 `08-13-setting-fluent2-responsive-ui`。2026-10-08 用户要求将它与 `08-13-unified-render-pipeline-setting` 归档到 `archive/2026-10/`，由本任务统一接管后续设置工作与未完成验收；历史证据和范围替代关系见 `research/task-handover.md`。
 - 初始 HEAD 为 `b67c4f9c`，工作区干净；迁移主要提交为 `791058df`、`82928330`。
 - `Setting.cpp` 4444 行，页面、状态与业务动作仍在大型会话/switch 中。`Setting.Widgets.cpp` 的右侧控件列只定位列左端，缺少按实际 action 尺寸靠右的合同。
 - 内嵌 SC/TC Regular/Bold 的 ascent/descent 总高度为 1.213 em；默认 STB pixel-height 语义与设计字号存在差异。图标使用正文合并与独立偏移。证据与边界见 `research/findings.md`。
@@ -25,6 +25,7 @@
 - R8 实现结构：允许为设置页建立新的 Shell/RowLayout/Typography/Pages/Actions 边界，逐页搬入现有内容；保留共享 D3D11、RenderPipeline、resident session、Show/Hide、device epoch 与窗口公开接口。库缺口仅做可追踪的小范围适配。
 - R9 未来扩展：稳定 ID、纯布局数据与独立交互状态为未来动画等预留边界，不在本轮实现那些功能。
 - R10 设计阶段交付：Trellis 规划三件套、官方/代码证据、真实内嵌字体的可审查页面稿，覆盖宽窗、默认窗、导航收起和最小窗；明确浏览器稿与原生已实现截图的区别。
+- R11 旧任务接管：保留已实现的共享渲染、常驻会话和设备恢复合同，承接显隐生命周期、既有 DWM 材质回退与性能的剩余验收；不重做基础管线、不恢复已被后续批准替代的旧方案。
 
 ## Acceptance Criteria
 
@@ -43,6 +44,9 @@
 - [x] A8 / R5–R7：原入口、字段和副作用映射全部覆盖，长说明关键信息仍可访问，所有原业务与配置行为通过对应静态/无窗口验证。
 - [x] A9 / R8–R9：不新建 D3D device、渲染线程或媒体管线，不改变 resident/epoch/显隐合同；重排不重复调用业务动作。
 - [ ] A10：ARM64 host MSBuild 完整 Debug|ARM64 Solution、适当 headless --no-window、国际化检查和 git diff --check 通过；原生视觉通过当前已授权的 Computer Use 与真实窗口截图检查；锁屏时保留待验收状态。
+
+- [ ] A11 / R11：重复 Hide/Show、打开延迟、资源增长和 device epoch 恢复有对应实机证据；空闲帧时间与切页/缩放表现有可比测量，缺少基线或环境时明确记录边界。
+- [ ] A12 / R11：既有 Mica/legacy Mica/Acrylic/Solid、composition 变化和透明 clear 的验证证据及未覆盖环境已记录，不把静态兼容审计视为实机通过。
 
 ## Out Of Scope
 

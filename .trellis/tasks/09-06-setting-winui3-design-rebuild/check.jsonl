@@ -10,3 +10,7 @@
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-full-migration.md", "reason": "本轮最新用户实施范围、两阶段顺序、脚本窗口验证授权"}
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/approved-window-dark.md", "reason": "最新用户授权：窗口框架/实时深色/暂存及Computer Use"}
 {"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/top-border-followup.md", "reason": "Current user-authorized top border fix; Computer Use is now forbidden."}
+
+{"file": ".trellis/tasks/09-06-setting-winui3-design-rebuild/research/task-handover.md", "reason": "旧任务归档接管、剩余验收与历史要求替代关系；不延续历史GUI/提交授权"}
+{"file": ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui/implement.md", "reason": "首轮迁移与resident/DWM验证证据；当前范围以接管记录为准"}
+{"file": ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting/prd.md", "reason": "已完成共享渲染合同及自动化验收基线"}

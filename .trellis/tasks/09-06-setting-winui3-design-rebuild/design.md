@@ -102,3 +102,7 @@
 ## 窗口与深色设计增量
 
 以research/approved-window-dark.md为当前权威范围：Setting顶层窗口真实frame/client分离、工作区最大化、标题栏独立主题切换命中区；主题颜色通过共享token更新，默认浅色，SettingDarkMode在原配置保存。不替换渲染链。
+
+## 旧任务合同接管（2026-10-08）
+
+本任务承接 archive/2026-10 下两个 08-13 任务的后续设置工作与剩余验收，完整证据入口见 research/task-handover.md。共享 WARP/串行线程/CSO/FIFO、resident/presentation、设备 epoch 和公开窗口接口沿用现行实现。旧固定浅色与旧窗口/导航方案已被本任务后续批准设计替代；既有 DWM 能力回退仅补验证，不新增材质引擎。

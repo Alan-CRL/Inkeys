@@ -2,7 +2,7 @@
   "id": "setting-winui3-design-rebuild",
   "name": "setting-winui3-design-rebuild",
   "title": "Setting WinUI 3 桌面视觉重建与设计审查",
-  "description": "WinUI 3 全页视觉已迁移；继续窗口验收并修复窗口框架、标题栏、滚动条边缘命中，增加实时浅深主题。",
+  "description": "WinUI 3 全页视觉、窗口与实时浅深主题已实现；接管两个 08-13 归档任务，继续页面/窗口、常驻会话、材质与性能验收。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,12 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。",
-  "meta": {}
+  "notes": "首批0ffd0341、全页迁移89770357、窗口/深色9ef709df已提交。当前按用户后续小修仅收薄选项窗口顶部边框，主栏/主按钮未改；真实读数12→2px、命中保护确认。首次创建一像素差已校正，独立目录完整ARM64Solution、无窗口和真实HWND集成回归通过。禁止Computer Use，不自动commit；实际拖动/截图因会话锁定保留待验收。见research/top-border-validation.md。2026-10-08接管两个08-13归档任务的后续设置工作和未完成验收，见research/task-handover.md。",
+  "meta": {
+    "inherited_tasks": [
+      ".trellis/tasks/archive/2026-10/08-13-setting-fluent2-responsive-ui",
+      ".trellis/tasks/archive/2026-10/08-13-unified-render-pipeline-setting"
+    ],
+    "handover_date": "2026-10-08"
+  }
 }

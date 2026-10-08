@@ -53,3 +53,9 @@
 - Draw2/Draw3、画板、白板、定格和背景窗口接入。
 - Setting 业务功能、配置结构、窗口样式或控件视觉重做。
 - DirectComposition、flip model、D3D12 或新第三方渲染依赖。
+
+## 归档与接管（2026-10-08）
+
+用户明确要求归档本任务，并由 `09-06-setting-winui3-design-rebuild` 接管。归档表示结束本任务的独立跟踪；原实现、需求和验证记录保留，未验收事项不因归档自动视为通过。
+
+后续设置界面工作、既有共享渲染与常驻会话合同的回归，以及适用的实机、材质和性能验收统一记录在 `.trellis/tasks/09-06-setting-winui3-design-rebuild/`。接管范围、历史要求的替代关系与待办见该任务的 `research/task-handover.md`；本文原有复选框保留历史状态。
