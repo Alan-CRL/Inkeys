@@ -2,7 +2,7 @@
 
 ## 状态与当前范围
 
-状态：已获明确实现授权，源码实现与自动化验证完成，用户已明确授权提交；任务继续保持 in_progress。2026-10-08 用户先要求规划并暂停实现，随后审阅后明确“批准开始实现”。本任务是 setting-winui3-design-rebuild 的子任务；父任务原有验收不受本任务影响。
+状态：已获明确实现授权，源码实现与自动化验证完成，已提交实现 commit 5aaf7690；2026-10-09 用户确认人工验证完成并授权结束及提交收尾记录。2026-10-08 用户先要求规划并暂停实现，随后审阅后明确“批准开始实现”。本任务是 setting-winui3-design-rebuild 的子任务；父任务原有验收不受本任务影响。
 
 按已审阅的规划实施并验证，最新授权见 research/authorized-implementation.md。只修改当前需求必要的源码/测试并更新相关规范；本轮不启动 GUI/Computer Use，不 push，不修改无关项目/依赖配置；随后用户明确授权 commit，并要求暂不结束任务。
 
@@ -30,7 +30,7 @@
 
 ## 验收标准
 
-以下勾选表示源码检查、真实 Controls/DrawData 连续帧和本次完整构建/无窗口回归通过；不代表实际窗口视觉验收。证据见 research/validation.md，独立检查见 research/final-review.md。GUI/Computer Use 不在本次授权范围。
+以下勾选表示源码检查、真实 Controls/DrawData 连续帧和本次完整构建/无窗口回归通过；不代表实际窗口视觉验收。证据见 research/validation.md，独立检查见 research/final-review.md。代理未进行 GUI/Computer Use；用户已于 2026-10-09 完成人工验收，见 research/manual-acceptance.md。
 
 - [x] A1 / R1–R2：置顶间隔完整说明始终在同一卡片可见，不再有独立展开说明行。
 - [x] A2 / R3–R5：代表性窄/宽内容预算和不同操作组合正确选择布局，标题/说明/图标/操作不重叠、不裁切，操作保持右对齐。

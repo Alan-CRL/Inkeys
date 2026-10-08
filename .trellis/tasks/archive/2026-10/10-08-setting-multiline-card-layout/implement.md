@@ -8,7 +8,7 @@
 - [x] 用户审阅规划并明确授权实现，见 research/authorized-implementation.md。
 - [x] 用户明确授权后执行 task.py start，状态已改为 in_progress。
 
-实现门禁已满足，按本计划派发 implement/check 并完成验证。仍不 GUI/commit/push；父任务保留原有进行中状态。
+实现门禁已满足，按本计划派发 implement/check 并完成验证。代理不 GUI/push；用户已授权实现 commit 及本子任务收尾，父任务保留原有进行中状态。
 
 ## 1. 确定预算和过渡参数
 
@@ -42,4 +42,4 @@
 - [x] 更新与本次布局直接相关的规范/验证记录，说明无窗口检查与实际视觉验收的边界。
 - [x] 默认保留未提交代码，明确授权后才 commit/push；不自动结束父任务。
 
-本计划已按明确授权执行，当前实现重新构建与完整无窗口回归均通过，详见 research/validation.md 和 research/final-review.md。用户已明确授权提交本次改动，任务保持 in_progress；不自动归档本任务或结束父任务。此前试做构建不计入本任务验收；历史边界见 research/suspension-record.md。
+本计划已按明确授权执行，当前实现重新构建与完整无窗口回归均通过，详见 research/validation.md 和 research/final-review.md。实现 commit 5aaf7690 已提交；2026-10-09 用户完成人工验证并授权结束本子任务及提交收尾记录，见 research/manual-acceptance.md。归档本子任务，父任务继续 in_progress，不 push。此前试做构建不计入本任务验收；历史边界见 research/suspension-record.md。
