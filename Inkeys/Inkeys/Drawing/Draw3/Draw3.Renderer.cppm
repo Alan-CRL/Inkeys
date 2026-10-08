@@ -331,7 +331,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 调整交换链和三层画布尺寸，并保留左上角交集内容。
 		bool Resize(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 初始化渲染器及其固定资源。
-		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height);
+		bool Init(ID3D11Device* inDevice, ID3D11DeviceContext* inContext, IDXGISwapChain1* swapChain, UINT width, UINT height, D3D_DRIVER_TYPE driver);
 
 	private:
 		// 创建 BGRA8 Add 与 R16F Retain 两张尺寸相关纹理。
@@ -349,7 +349,7 @@ export namespace Inkeys::Drawing::Draw3
 			ID3D11ShaderResourceView* secondarySource = nullptr,
 			UINT secondarySourceSlot = 0);
 		// 从资源中加载并创建墨迹着色器。
-		bool LoadShaders();
+		bool LoadShaders(D3D_DRIVER_TYPE driver);
 		float shapeRoundedCornerRadiusPixels_ = kShapeRoundedCornerRadiusAt96Dpi;
 		LaserStyleConstants laserStyleConstants_ = {};
 		uint64_t laserStyleGeneration_ = 1;

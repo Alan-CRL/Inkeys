@@ -1052,6 +1052,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return Inkeys::Drawing::Draw3::RunRendererPixelTest();
 		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-renderer-pixel-test-hardware", -1, TRUE) == CSTR_EQUAL)
+		{
+			// 硬件探针与 WARP 分开，缺硬件时明确退出，不进入产品初始化。
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
 			// 先退出启动链；测试中的宽色 setter 不保存，FineDial 只检查失效/取消提交。
@@ -2435,20 +2443,31 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			pptComConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
+		#ifndef IDT_RELEASE
+			// 单次 Win7 采集只覆盖局部诊断开关，不写入持久化配置。
+			wchar_t win7DiagnosticsValue[2]{};
+			const bool win7DiagnosticsEnabled =
+				GetEnvironmentVariableW(L"INKEYS_DRAW3_WIN7_DIAGNOSTICS",
+					win7DiagnosticsValue, 2) == 1 && win7DiagnosticsValue[0] == L'1';
+		#else
+			const bool win7DiagnosticsEnabled = false;
+		#endif
 			draw3ConsoleOutputEnabled =
-				config.Experimental.Inkeys3.ConsoleOutput.Draw3;
+				config.Experimental.Inkeys3.ConsoleOutput.Draw3 || win7DiagnosticsEnabled;
 			Inkeys::Drawing::Draw3::SetStartupEnvironmentDiagnosticsEnabled(
 				draw3ConsoleOutputEnabled);
 			touchAreaConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 			cursorConsoleOutputEnabled =
-				config.Experimental.Inkeys3.ConsoleOutput.Cursor;
+				config.Experimental.Inkeys3.ConsoleOutput.Cursor || win7DiagnosticsEnabled;
 			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
 				cursorConsoleOutputEnabled)
 			{
 				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
 				InitializeDebugConsole();
 			}
+			if (win7DiagnosticsEnabled)
+				std::fprintf(stderr, "[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1\n");
 			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(
 				cursorConsoleOutputEnabled);
 			if (touchAreaConsoleOutputEnabled)

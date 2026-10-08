@@ -34,3 +34,10 @@
 
 - 全套 PPT 重构、交换模式全局替换、重新启用 DWM presenter、修改 `.cso`、性能降级，以及 C10 / 长路径 / UI3 More / Release 性能对照专项。
 - 未经明确要求的 commit、push 或发布。
+
+
+2026-10-08 用户明确保持着色器全部效果，并授权下一修复验证包；只调整控制流，正常候选不得删除DefaultInk/薄线/AA/光影/双源公式。正式HLSL/CSO保持，仅诊断可选完整预编译变体；详见research/guarded-package-plan-20261008.md。
+
+2026-10-09：用户授权开始修复已证实部分；按 research/formal-warp-plan-20261009.md 将实际 Win7 WARP 的默认 PS 改为已实测的完整 guarded 字节码，诊断显式 0/1 保留原版对照；荧光定格偶发与 Win7 Hardware 保留待验证，任务不结束、不提交。
+
+2026-10-09：正式Win7 WARP默认完整shader选择已实现；两架构完整Solution、420 GPU、27策略/后端、Headless及WinPS ProbeOnly/50mock通过，2171字节与87不可变文件保持。新ZIP与EXE身份见research/verification-formal-warp-20261009.md。旧EXE同shader已在Aero两条件验收，新EXE普通启动/HW/定格偶发/PPT仍待验证；任务in_progress，无commit/push。
