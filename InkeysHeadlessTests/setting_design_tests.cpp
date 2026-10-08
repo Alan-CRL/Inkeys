@@ -1204,6 +1204,12 @@ namespace
 			ImGuiWindow* list = nullptr;
 			ImGuiWindow* parentWindow = nullptr;
 			ImGuiWindow* group = nullptr;
+			ImGuiWindow* footer = nullptr;
+			LayoutRect indicator{ FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+			bool indicatorDrawn = false;
+			std::vector<ImVec2> indicatorPoints;
+			int sponsorBlueText = 0, sponsorOtherIcon = 0, sponsorBlueIcon = 0;
+			FlatSample sponsorFill;
 			std::array<ImVec2, 2> fixedOrigins{};
 			float paneWidth = 0, scroll = 0, maximumScroll = 0, contentAlpha = 1;
 			unsigned int glyphAlpha = 0, flatAlpha = 0;
@@ -1284,7 +1290,8 @@ namespace
 					if (requestedScroll >= 0) ImGui::SetScrollY(window, requestedScroll);
 				}
 				else if (name.find("##settings-nav-top") != std::string::npos) frame.fixedOrigins[0] = window->Pos;
-				else if (name.find("##settings-nav-footer") != std::string::npos) frame.fixedOrigins[1] = window->Pos;
+				else if (name.find("##settings-nav-footer") != std::string::npos)
+				{ frame.fixedOrigins[1] = window->Pos; frame.footer = window; }
 				else if (name.find("##settings-pane") != std::string::npos) frame.paneWidth = window->Size.x;
 			}
 			frame.parentWindow = frame.list;
@@ -1302,6 +1309,39 @@ namespace
 						&& command.ClipRect.z >= command.ClipRect.x && command.ClipRect.w >= command.ClipRect.y;
 			}
 			checks.Expect(finite, "continuous hierarchy DrawData retains finite bounded geometry");
+			const ImU32 blue = ImFluent::GetColorU32(ImFluentCol_AccentFillDefault);
+			for (auto* window : ImGui::GetCurrentContext()->Windows)
+			{
+				if (!window->Active || std::string(window->Name).find("##settings-nav-") == std::string::npos) continue;
+				for (const auto& vertex : window->DrawList->VtxBuffer)
+				{
+					if (vertex.col != blue || vertex.uv.x != white.x || vertex.uv.y != white.y) continue;
+					frame.indicatorDrawn = true;
+					frame.indicatorPoints.push_back(vertex.pos);
+					frame.indicator.left = (std::min)(frame.indicator.left, vertex.pos.x);
+					frame.indicator.top = (std::min)(frame.indicator.top, vertex.pos.y);
+					frame.indicator.right = (std::max)(frame.indicator.right, vertex.pos.x);
+					frame.indicator.bottom = (std::max)(frame.indicator.bottom, vertex.pos.y);
+				}
+			}
+			if (frame.footer)
+			{
+				const auto& sponsor = state.footerBounds[1];
+				const ImU32 textBlue = ImFluent::GetColorU32(ImFluentCol_AccentFillDefault);
+				for (const auto& vertex : frame.footer->DrawList->VtxBuffer)
+				{
+					if (!sponsor.Contains(vertex.pos.x, vertex.pos.y)
+						|| (vertex.uv.x == white.x && vertex.uv.y == white.y)) continue;
+					if (vertex.pos.x >= sponsor.left + 44 * scale && vertex.col == textBlue) ++frame.sponsorBlueText;
+					if (vertex.pos.x < sponsor.left + 40 * scale)
+					{
+						frame.sponsorOtherIcon += vertex.col != textBlue ? 1 : 0;
+						frame.sponsorBlueIcon += vertex.col == textBlue ? 1 : 0;
+					}
+				}
+				frame.sponsorFill = SampleFlatDrawData({ sponsor.right - 10 * scale, sponsor.top + 21 * scale },
+					frame.footer->DrawList, 0, frame.footer->DrawList->VtxBuffer.Size, Design::AppBase);
+			}
 			return frame;
 		};
 		auto idle = [&](int count = 3) { Frame frame; for (int i = 0; i < count; ++i) frame = draw(outside, false); return frame; };
@@ -1711,11 +1751,125 @@ namespace
 			&& Design::DestinationForPage(static_cast<int>(PageId::HotKeys))
 			== Design::NavigationDestination{ PageId::General, GeneralSection::Interaction },
 			"production legacy-route normalization preserves configuration and hotkey entry destinations");
+		std::cout << "[HierarchyDrawData] scale=" << scale << " frames=" << frames << " navigations=" << navigations
+			<< " businessActions=" << businessActions << " bodyActions=" << bodyActions << '\n';
+		const int originalFrames = frames;
+		auto indicatorCenter = [](const Frame& actual) { return (actual.indicator.top + actual.indicator.bottom) * 0.5F; };
+		auto rowCenter = [](const LayoutRect& row) { return (row.top + row.bottom) * 0.5F; };
+		auto expectAttached = [&](const Frame& actual, const LayoutRect& row) {
+			checks.Expect(actual.indicatorDrawn && Near(indicatorCenter(actual), rowCenter(row), 0.75F)
+				&& actual.indicator.Width() <= 3 * scale + 1 && actual.indicator.Height() <= 16 * scale + 1,
+				"actual DrawData contains one blue bar attached to its selected navigation row");
+			float topLeft = FLT_MAX, topRight = -FLT_MAX, bottomLeft = FLT_MAX, bottomRight = -FLT_MAX;
+			for (const auto& point : actual.indicatorPoints)
+			{
+				if (Near(point.y, actual.indicator.top, 0.01F * scale))
+				{ topLeft = (std::min)(topLeft, point.x); topRight = (std::max)(topRight, point.x); }
+				if (Near(point.y, actual.indicator.bottom, 0.01F * scale))
+				{ bottomLeft = (std::min)(bottomLeft, point.x); bottomRight = (std::max)(bottomRight, point.x); }
+			}
+			checks.Expect(actual.indicatorDrawn && topLeft <= topRight && bottomLeft <= bottomRight
+				&& topRight - topLeft < actual.indicator.Width() * 0.25F
+				&& bottomRight - bottomLeft < actual.indicator.Width() * 0.25F,
+				"actual blue-bar geometry narrows at both ends into full capsule caps rather than flat edges");
+		};
+		// 原684帧合同保持，追加真实滚轮与蓝条顶点回归；不另写一套导航或动画公式。
+		size = ImVec2(960, 520); state.Resize(size.x); state.desktopCompact = false;
+		state.generalExpanded = false; animated = false; dark = false; rate = 1; requestedScroll = 0;
+		frame = idle(); requestedScroll = -1; click(state.middleBounds[2]); frame = idle();
+		animated = true; frame = idle(12); expectAttached(frame, state.middleBounds[2]);
+		const ImVec2 wheelPoint(frame.list->InnerClipRect.Max.x - 2, frame.list->InnerClipRect.Min.y + 20 * scale);
+		frame = draw(wheelPoint, false);
+		for (float wheel : { -0.2F, -0.2F, 0.2F, 0.2F })
+		{
+			const float previousRow = rowCenter(state.middleBounds[2]), previousBar = indicatorCenter(frame), previousScroll = frame.scroll;
+			io.AddMouseWheelEvent(0, wheel); frame = draw(wheelPoint, false);
+			checks.Expect(std::abs(frame.scroll - previousScroll) > 0.1F,
+				"real mouse wheel moves the selected middle row in both scrolling directions");
+			checks.Expect(Near(indicatorCenter(frame) - previousBar, rowCenter(state.middleBounds[2]) - previousRow, 0.75F),
+				"selected blue bar and its real row move by the same scroll delta in the same frame");
+			expectAttached(frame, state.middleBounds[2]);
+		}
+		click(state.middleBounds[1]); frame = draw(outside, false);
+		checks.Expect(selected.page == PageId::Draw && state.indicatorY.Active() && state.indicatorY.progress == 0,
+			"a real tab change still begins a distinct 160 ms selection transition");
+		for (float wheel : { -0.1F, 0.1F })
+		{
+			const float previousStart = state.indicatorY.start, previousProgress = state.indicatorY.progress;
+			const float previousRow = rowCenter(state.middleBounds[1]);
+			io.AddMouseWheelEvent(0, wheel); frame = draw(wheelPoint, false);
+			checks.Expect(state.indicatorY.progress > previousProgress
+				&& Near((state.indicatorY.start - previousStart) * scale, rowCenter(state.middleBounds[1]) - previousRow, 0.75F)
+				&& frame.indicatorDrawn && Near(indicatorCenter(frame), state.indicatorY.value * scale, 0.75F),
+				"scrolling during a tab transition translates the actual blue bar without restarting its progress");
+		}
+		click(state.middleBounds[2]); frame = draw(outside, false);
+		checks.Expect(selected.page == PageId::Plugins && state.indicatorY.Active() && state.indicatorY.progress == 0
+			&& Near(state.indicatorY.start * scale, indicatorCenter(frame), 0.75F),
+			"reversing the tab selection starts from the current rendered blue-bar position");
+		frame = idle(12); expectAttached(frame, state.middleBounds[2]);
+		// click返回帧仍画旧锚点，首个新目的地帧同时滚动，验证跨锚点的起点补偿。
+		frame = click(state.middleBounds[1]);
+		const float oldAnchorRow = rowCenter(state.middleBounds[2]), oldAnchorBar = indicatorCenter(frame), oldAnchorScroll = frame.scroll;
+		io.AddMouseWheelEvent(0, -0.1F); frame = draw(wheelPoint, false);
+		checks.Expect(selected.page == PageId::Draw && std::abs(frame.scroll - oldAnchorScroll) > 0.1F
+			&& state.indicatorY.progress == 0 && state.indicatorY.Active() && frame.indicatorDrawn
+			&& Near(state.indicatorY.start * scale, oldAnchorBar + rowCenter(state.middleBounds[2]) - oldAnchorRow, 0.75F)
+			&& Near(indicatorCenter(frame), state.indicatorY.start * scale, 0.75F)
+			&& Near(state.indicatorY.target * scale, rowCenter(state.middleBounds[1]), 0.75F),
+			"a real tab change and wheel in the same frame compensate the old anchor scroll before starting the new transition");
+		frame = idle(12); expectAttached(frame, state.middleBounds[1]);
+		selected = { PageId::General, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+		requestedScroll = frame.maximumScroll; frame = idle(12);
+		const auto clippedAnchor = state.indicatorItemId;
+		checks.Expect(!frame.indicatorDrawn && state.indicatorInitialized,
+			"a selected row outside the real clip retains its indicator anchor without drawing a stray bar");
+		requestedScroll = 0; frame = idle(3); requestedScroll = -1;
+		checks.Expect(state.indicatorItemId == clippedAnchor && state.indicatorY.progress >= 0.99F,
+			"bringing the same clipped anchor back into view does not restart the selection transition");
+		expectAttached(frame, state.parentBounds);
+		requestedScroll = frame.maximumScroll; frame = idle(3);
+		selected = { PageId::Draw, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+		frame = idle(12); const auto changedClippedAnchor = state.indicatorItemId;
+		checks.Expect(!frame.indicatorDrawn && changedClippedAnchor != clippedAnchor && state.indicatorY.progress >= 0.99F,
+			"a destination changed while both real rows are clipped still advances its distinct selection anchor");
+		requestedScroll = 0; frame = idle(3); requestedScroll = -1;
+		checks.Expect(state.indicatorItemId == changedClippedAnchor && state.indicatorY.progress >= 0.99F,
+			"revealing a destination changed outside the clip retains its completed transition");
+		expectAttached(frame, state.middleBounds[1]);
+		size = ImVec2(960, 700); frame = idle(); click(state.middleBounds[2]); frame = idle(12);
+		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[2]);
+		checks.Expect(state.groupReveal.Active() && !state.indicatorY.Active(),
+			"expanding another group moves the same selected row and blue bar together without an extra lag");
+		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[2]);
+		frame = idle(12); animated = false;
+		auto sameVisibleColor = [](ImVec4 a, ImVec4 b) { return Near(a.x, b.x, 0.02F)
+			&& Near(a.y, b.y, 0.02F) && Near(a.z, b.z, 0.02F); };
+		for (bool sponsorDark : { false, true })
+		for (bool sponsorCompact : { false, true })
+		{
+			dark = sponsorDark; state.desktopCompact = sponsorCompact;
+			selected = { PageId::Home, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+			frame = idle(20);
+			checks.Expect(sameVisibleColor(frame.sponsorFill.visible, ImGui::ColorConvertU32ToFloat4(Design::AppBase))
+				&& frame.sponsorBlueIcon > 0 && frame.sponsorOtherIcon == 0
+				&& (sponsorCompact ? frame.sponsorBlueText == 0 : frame.sponsorBlueText > 0),
+				"sponsor uses an ordinary unfilled row with text and icon matching the current blue-bar theme token");
+			const auto sponsorMouse = center(state.footerBounds[1]);
+			for (int i = 0; i < 20; ++i) frame = draw(sponsorMouse, false);
+			const auto subtle = Composite(ImFluent::GetColorU32(ImFluentCol_SubtleFillSecondary), ImGui::ColorConvertU32ToFloat4(Design::AppBase));
+			checks.Expect(sameVisibleColor(frame.sponsorFill.visible, subtle), "sponsor hover uses the ordinary subtle navigation background");
+			const int beforeSponsor = navigations;
+			click(state.footerBounds[1]); frame = idle(20);
+			checks.Expect(selected.page == PageId::Support && navigations == beforeSponsor + 1
+				&& sameVisibleColor(frame.sponsorFill.visible, subtle),
+				"the actual sponsor row navigates to its existing page and keeps the normal selected background");
+			expectAttached(frame, state.footerBounds[1]);
+		}
+		std::cout << "[IndicatorSponsorDrawData] scale=" << scale << " frames=" << frames - originalFrames << '\n';
 		io.ConfigFlags = previousFlags;
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 		Design::ApplyPalette(false);
-		std::cout << "[HierarchyDrawData] scale=" << scale << " frames=" << frames << " navigations=" << navigations
-			<< " businessActions=" << businessActions << " bodyActions=" << bodyActions << '\n';
 	}
 
 	void CheckNavigationScrolling(Checks& checks, ImFont* regular, ImFont* icons, float scale)

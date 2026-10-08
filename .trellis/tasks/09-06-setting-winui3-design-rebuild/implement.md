@@ -175,3 +175,15 @@ git diff --check
 本轮按用户小修改调整默认折叠、父行toggle与最近子页保留，并补实际控件输入/反向动画回归；复用完整ARM64 Solution和无窗口验证，不GUI/commit/push，不结束或归档父任务。
 
 本次追加代码、真实控件回归和独立审查已完成；最终证据见 [research/parent-toggle-validation.md](research/parent-toggle-validation.md)。任务与会话继续进行中。
+
+## 选中条滚动同步与赞助追加（2026-10-08）
+
+上一轮已提交f2cdf5ef，本轮仅修滚动位移同步和普通蓝字赞助，并补实际控件回归/独立审查/完整ARM64无窗口验证；不GUI/commit/push，不结束父任务。
+
+本轮追加实现、独立审查及最终自动检查已通过，证据见 [research/scroll-sponsor-validation.md](research/scroll-sponsor-validation.md)。前轮已提交f2cdf5ef；新修改保留未提交，父任务与会话继续进行中。
+
+## 圆头与亮蓝追加（2026-10-08）
+
+仅调整Shell实际绘制和既有DrawData回归，复核圆头几何、浅深主题下赞助图标/文字颜色及普通背景；独立审查、ARM64完整Solution和--no-window通过后提交本轮与前轮未提交差异，不push，不结束父任务。
+
+圆头/亮蓝追加最终完整ARM64构建与无窗口真实DrawData检查通过，详见research/scroll-sponsor-validation.md最新追加章节；按当前用户授权提交前轮滚动修复与本轮最小调整，父任务继续in_progress，不push或结束任务。

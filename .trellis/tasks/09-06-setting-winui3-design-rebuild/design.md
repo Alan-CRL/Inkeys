@@ -115,3 +115,13 @@
 ## 父行交互追加（2026-10-08）
 
 新会话通用子列表和groupReveal初始均为折叠。非紧凑父行点击采用展开状态toggle：收起只保留原目的地，展开导航到lastGeneralSection（首次Basic）。纯收起不触发正文transition；动画沿用现有render线程，反向续接当前值。具体当前要求见 `research/approved-hierarchical-nav.md` 末节。
+
+## 滚动与赞助追加（2026-10-08）
+
+选中项以稳定item锚点区分semantic变化与scroll/layout变化：同锚点的位移作用于正在运行的动画坐标，不重置进度，切换锚点仍使用原过渡。赞助复用普通NavItemEx背景与输入、蓝色label和正常glyph，中央蓝条统一处理；当前用户要求见 `research/approved-hierarchical-nav.md` 末节。
+
+## 圆头与亮蓝追加（2026-10-08）
+
+蓝条尺寸及锚点动画保持，真实绘制圆角达到半宽。普通赞助行的文字与图标共用蓝条AccentFillDefault主题色，取代前轮AccentTextPrimary/普通glyph；背景与输入合同不变。
+
+窄条使用上下两个半宽圆弧并PathFillConvex：现有ImGui PathRect会将圆角钳制到半宽减1物理像素，不能仅传半宽radius声称完整圆头。仅改本地绘制，不改vendor；测试取真实极值端头跨度。

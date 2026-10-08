@@ -123,6 +123,9 @@ namespace Inkeys::UI::Setting::Design
 		NavigationTween indicatorX;
 		NavigationTween indicatorY;
 		bool indicatorInitialized = false;
+		std::uint32_t indicatorItemId = 0, indicatorWindowId = 0;
+		float indicatorAnchorX = 0.0F, indicatorAnchorY = 0.0F;
+		float indicatorWindowX = 0.0F, indicatorWindowY = 0.0F;
 		int contentPage = 0;
 		GeneralSection contentSection = GeneralSection::Basic;
 		// 真实控件提交后的屏幕像素框，同时供连续帧测试观测，不另写一套命中公式。

@@ -81,6 +81,8 @@ namespace Inkeys::UI::Setting::Design
 		bool keepOverlayForGroup = false;
 		ImGuiWindow* parentWindow = nullptr;
 		ImDrawList* indicatorList = nullptr;
+		ImGuiWindow* indicatorWindow = nullptr;
+		ImGuiID indicatorItemId = 0;
 		ImRect indicatorClip;
 		LayoutRect indicatorBounds;
 		bool indicatorVisible = false;
@@ -119,11 +121,11 @@ namespace Inkeys::UI::Setting::Design
 			if (!isSelected) return;
 			auto* window = ImGui::GetCurrentWindow();
 			const auto bounds = ItemBounds();
-			if (bounds.bottom <= window->ClipRect.Min.y || bounds.top >= window->ClipRect.Max.y) return;
 			indicatorBounds = bounds;
 			indicatorClip = window->ClipRect;
 			indicatorList = window->DrawList;
-			indicatorVisible = true;
+			indicatorWindow = window; indicatorItemId = ImGui::GetItemID();
+			indicatorVisible = bounds.bottom > window->ClipRect.Min.y && bounds.top < window->ClipRect.Max.y;
 		};
 		auto navItem = [&](const char* id, const char* label, bool isSelected, const char* glyph, bool compact) {
 			// 保留 ImFluent 的共享颜色动画；选中条单独移动，避免新旧位置出现两条蓝线。
@@ -359,9 +361,18 @@ namespace Inkeys::UI::Setting::Design
 			state.footerBounds[0] = ItemBounds();
 			setPosition(sections.footerItems[1], footerTop);
 			ImGui::PushID(static_cast<int>(PageId::Support));
-			if (AccentNavigationItem("##page", IA(I18nKey.SettingsUI.Sponsor.N).c_str(), selected.page == PageId::Support, "\ue789", !expanded))
-				navigate({ PageId::Support });
-			state.footerBounds[1] = ItemBounds(); ImGui::PopID();
+			const bool sponsorSelected = selected.page == PageId::Support;
+			const ImU32 sponsorBlue = ImFluent::GetColorU32(ImFluentCol_AccentFillDefault);
+			ImFluent::PushStyleColor(ImFluentCol_TextPrimary, sponsorBlue);
+			const bool sponsorPressed = navItem("##page", IA(I18nKey.SettingsUI.Sponsor.N).c_str(), sponsorSelected, nullptr, !expanded);
+			ImFluent::PopStyleColor();
+			state.footerBounds[1] = ItemBounds();
+			// 保留普通导航背景，赞助图标与文字共用选中条的亮蓝主题色。
+			const auto& sponsorBounds = state.footerBounds[1];
+			ImFluent::DrawIcon("\ue789", { sponsorBounds.left + Pixels(8.0F), sponsorBounds.top },
+				{ sponsorBounds.left + Pixels(32.0F), sponsorBounds.bottom }, NavigationGlyphSize, sponsorBlue);
+			if (sponsorPressed) navigate({ PageId::Support });
+			markSelected(sponsorSelected); ImGui::PopID();
 			divider(sections.separators[2], footerTop);
 			setPosition(sections.footerItems[2], footerTop);
 			if (navItem("##restart", IA(I18nKey.SettingsUI.RestartSoftware.N).c_str(), false, "\ue72c", !expanded))
@@ -391,24 +402,49 @@ namespace Inkeys::UI::Setting::Design
 			if (!keepOverlayForGroup || result.kind != NavigationActionKind::Navigate) state.DismissOverlay();
 		}
 
-		if (indicatorVisible)
+		if (indicatorWindow)
 		{
 			const ImVec2 origin = ImGui::GetWindowPos();
 			const float nextX = (indicatorBounds.left - origin.x) / scale;
 			const float nextY = ((indicatorBounds.top + indicatorBounds.bottom) * 0.5F - origin.y) / scale;
+			const bool sameAnchor = state.indicatorItemId == indicatorItemId && state.indicatorWindowId == indicatorWindow->ID;
 			if (!state.indicatorInitialized)
 			{
 				state.indicatorX.Reset(nextX); state.indicatorY.Reset(nextY); state.indicatorInitialized = true;
 			}
-			state.indicatorX.Target(nextX); state.indicatorY.Target(nextY);
+			else
+			{
+				float dx = 0.0F, dy = 0.0F;
+				if (sameAnchor) { dx = nextX - state.indicatorAnchorX; dy = nextY - state.indicatorAnchorY; }
+				else if (auto* previous = ImGui::FindWindowByID(state.indicatorWindowId); previous && previous->Active)
+				{
+					dx = (previous->Pos.x - previous->Scroll.x - origin.x) / scale - state.indicatorWindowX;
+					dy = (previous->Pos.y - previous->Scroll.y - origin.y) / scale - state.indicatorWindowY;
+				}
+				// 同一锚点的滚动/布局位移整体平移补间，真实切项才重设160ms目标。
+				state.indicatorX.value += dx; state.indicatorX.start += dx; state.indicatorX.target += dx;
+				state.indicatorY.value += dy; state.indicatorY.start += dy; state.indicatorY.target += dy;
+				if (sameAnchor) { state.indicatorX.target = nextX; state.indicatorY.target = nextY; }
+				else { state.indicatorX.Target(nextX); state.indicatorY.Target(nextY); }
+			}
+			state.indicatorItemId = indicatorItemId; state.indicatorWindowId = indicatorWindow->ID;
+			state.indicatorAnchorX = nextX; state.indicatorAnchorY = nextY;
+			state.indicatorWindowX = (indicatorWindow->Pos.x - indicatorWindow->Scroll.x - origin.x) / scale;
+			state.indicatorWindowY = (indicatorWindow->Pos.y - indicatorWindow->Scroll.y - origin.y) / scale;
 			if (!state.animationsEnabled) { state.indicatorX.Reset(nextX); state.indicatorY.Reset(nextY); }
-			indicatorList->PushClipRect(indicatorClip.Min, indicatorClip.Max, true);
-			const float x = origin.x + Pixels(state.indicatorX.value), y = origin.y + Pixels(state.indicatorY.value);
-			indicatorList->AddRectFilled({ x, y - Pixels(8.0F) }, { x + Pixels(3.0F), y + Pixels(8.0F) },
-				ImFluent::GetColorU32(ImFluentCol_AccentFillDefault), Pixels(1.5F));
-			indicatorList->PopClipRect();
+			// 被裁掉时仍保留锚点与进度，再次进入可见区域不重新起步。
+			if (indicatorVisible)
+			{
+				indicatorList->PushClipRect(indicatorClip.Min, indicatorClip.Max, true);
+				const float x = origin.x + Pixels(state.indicatorX.value), y = origin.y + Pixels(state.indicatorY.value);
+				const float radius = Pixels(1.5F);
+				// PathRect会把窄条圆角减一像素，直接用半宽圆弧保留完整圆头。
+				indicatorList->PathArcTo({ x + radius, y - Pixels(8.0F) + radius }, radius, IM_PI, IM_PI * 2.0F, 8);
+				indicatorList->PathArcTo({ x + radius, y + Pixels(8.0F) - radius }, radius, 0.0F, IM_PI, 8);
+				indicatorList->PathFillConvex(ImFluent::GetColorU32(ImFluentCol_AccentFillDefault));
+				indicatorList->PopClipRect();
+			}
 		}
-		else state.indicatorInitialized = false;
 
 		const bool anchorVisible = parentWindow && state.parentBounds.bottom > parentWindow->ClipRect.Min.y
 			&& state.parentBounds.top < parentWindow->ClipRect.Max.y;
