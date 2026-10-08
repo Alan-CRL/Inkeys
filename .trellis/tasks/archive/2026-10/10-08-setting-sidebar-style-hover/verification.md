@@ -34,3 +34,15 @@
 本次交付保留隔离工作区的待审查merge，不commit/push；父任务继续in_progress承载实机验收。两个子任务的completed只表示本轮内容实现、编译及无窗口/静态复核完成。
 
 后续用户授权：将同一已验证tree转入 D:/Project/Inkeys/Repo/Inkeys 的 fluent 工作区，不保留临时分支。此前“原工作区不变/隔离保留”描述的是上一轮交付状态；当前转入及原目录重编证据统一见父任务 research/fluent-integration.md。旧PptCOM.dll及原用户测试产物先备份，IdtMain.h用户内容保持。仍未授权commit/push/GUI。
+
+## 用户确认收尾与归档（2026-10-08）
+
+用户已确认侧栏任务可以结束，并授权提交收尾commit。此前三段式与填充赞助等描述保留为历史实现记录，最终状态以父任务的后续增量及最新验证为准：
+
+- fluent整合ff7ad583、分层导航/通用四子页6afcd41b、默认折叠/父行toggle f2cdf5ef、选中条滚动同步/完整圆头/普通背景亮蓝图标及文字2f10f402已提交。当前赞助不再采用填充背景。
+- 最终实际生产Shell控件已纳入连续帧无窗口验证：100%/150%/187.5%各684帧原导航与387帧滚动/赞助检查通过，包含完整圆头真实顶点、同帧切项与滚动、隐藏重现、浅深赞助色和路由。原悬停颜色回归仍0 violations；原“未链接完整Shell”仅描述首轮fixture。
+- 最终完整InkeysRepo.sln Debug|ARM64使用动态定位ARM64原生MSBuild及同一PowerShell PATH workaround，退出0/24.3秒；最终--no-window完整进程退出0，PASS animation correctness。原工作区程序已重编。
+- 最终证据：[父任务分层导航验证](../../../09-06-setting-winui3-design-rebuild/research/hierarchical-navigation-validation.md)、[父任务默认折叠验证](../../../09-06-setting-winui3-design-rebuild/research/parent-toggle-validation.md)、[父任务滚动与圆头/亮蓝验证](../../../09-06-setting-winui3-design-rebuild/research/scroll-sponsor-validation.md)。归档后请按仓库根下父任务路径访问上述资料。
+- 本次收尾只改Trellis记录并归档，不改源码，不重复构建，不启动GUI/Computer Use，不push。真实鼠标/截图、完整页面/DPI/窗口与常驻会话验收继续由父任务承载，不把自动检查或用户结束侧栏任务解释为全部实机验收通过。
+
+侧栏子任务完成并归档，父任务09-06-setting-winui3-design-rebuild继续in_progress；其他子任务未在本次归档范围。

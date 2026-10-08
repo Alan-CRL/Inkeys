@@ -187,3 +187,7 @@ git diff --check
 仅调整Shell实际绘制和既有DrawData回归，复核圆头几何、浅深主题下赞助图标/文字颜色及普通背景；独立审查、ARM64完整Solution和--no-window通过后提交本轮与前轮未提交差异，不push，不结束父任务。
 
 圆头/亮蓝追加最终完整ARM64构建与无窗口真实DrawData检查通过，详见research/scroll-sponsor-validation.md最新追加章节；按当前用户授权提交前轮滚动修复与本轮最小调整，父任务继续in_progress，不push或结束任务。
+
+## 侧栏子任务收尾（2026-10-08）
+
+用户确认侧栏任务结束：实现已提交2f10f402，本次归档10-08-setting-sidebar-style-hover至archive/2026-10并提交收尾记录。通用分类/分层导航、默认折叠、滚动同步与圆头/亮蓝增量交付完成；剩余真实鼠标/截图、全页/DPI、窗口/常驻会话验收仍在父任务，父任务保持in_progress。本次不改源码、不push。
