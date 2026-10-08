@@ -220,12 +220,8 @@ bool CheckPptCom()
 	{
 		_com_util::CheckError(pptCom.CreateInstance(_uuidof(PptCOMServer)));
 		// 在任何 PptCOM 诊断输出前应用独立开关。
-	#ifndef IDT_RELEASE
 		pptCom->SetConsoleOutputEnabled(
 			static_cast<bool>(Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM));
-	#else
-		pptCom->SetConsoleOutputEnabled(false);
-	#endif
 	}
 	catch (_com_error err)
 	{

@@ -240,7 +240,7 @@ namespace
 		}
 	}
 
-#ifndef IDT_RELEASE
+	// 正式构建也按实验开关创建控制台；全部关闭时不会调用此入口。
 	void InitializeDebugConsole()
 	{
 		static std::once_flag consoleOnce;
@@ -277,7 +277,6 @@ namespace
 				std::wcout.imbue(std::locale("chs"));
 			});
 	}
-#endif
 }
 
 void SetOffSignal(int signal)
@@ -1184,12 +1183,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest();
 
-#ifndef IDT_RELEASE
 	bool pptComConsoleOutputEnabled = false;
 	bool draw3ConsoleOutputEnabled = false;
 	bool touchAreaConsoleOutputEnabled = false;
 	bool cursorConsoleOutputEnabled = false;
-#endif
 	// 发布前临时关闭白板；覆盖启动失败和正常退出的全部清理路径。
 	const bool whiteboardFeatureEnabled = IsWhiteboardFeatureEnabled();
 
@@ -2436,7 +2433,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					config.Experimental.Inkeys3.Draw3.TouchContactAreaAssistance;
 				host.SetEraserDevelopmentOptions(options);
 			}
-		#ifndef IDT_RELEASE
 			pptComConsoleOutputEnabled =
 				config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 			draw3ConsoleOutputEnabled =
@@ -2462,7 +2458,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				options.touchAreaTrace = true;
 				host.SetEraserDevelopmentOptions(options);
 			}
-		#endif
 			double animationSpeedRate = static_cast<double>(
 				config.Experimental.Inkeys3.UI3.Animation.SpeedRate);
 			animationSpeedRate = isfinite(animationSpeedRate)
@@ -3181,14 +3176,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (!isolatedStartupFailure) magnifierThread = jthread(MagnifierThread);
 
 	// 启动 PPT 联动插件
-	#ifndef IDT_RELEASE
 	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled &&
 		!touchAreaConsoleOutputEnabled && !cursorConsoleOutputEnabled)
 	{
 		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
 		InitializeDebugConsole();
 	}
-	#endif
 	jthread pptLinkageThread;
 	if (!isolatedStartupFailure) pptLinkageThread = jthread(PPTLinkageMain);
 

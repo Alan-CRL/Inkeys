@@ -1352,12 +1352,10 @@ SettingSessionCoroutine RunSettingSession()
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
-			#ifndef IDT_RELEASE
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
 				bool PptCOMConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.PptCOM;
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
-			#endif
 			}Inkeys3;
 		}Experimental;
 
@@ -7395,9 +7393,7 @@ SettingSessionCoroutine RunSettingSession()
 						PushStyleColorNum++, ImGui::PushStyleColor(ImGuiCol_ChildBg, Widgets::FluentColor::Transparent);
 						float inkeys3PanelHeight = 190.0f
 							+ (Experimental.Inkeys3.DebugMode ? 75.0f : 0.0f);
-					#ifndef IDT_RELEASE
 						inkeys3PanelHeight += 300.0f;
-					#endif
 						ImGui::BeginChild("Inkeys3", { settingItemWidth * settingGlobalScale,
 							inkeys3PanelHeight * settingGlobalScale }, false,
 							ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -7409,7 +7405,6 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::TextUnformatted("Inkeys3");
 						}
 
-#ifndef IDT_RELEASE
 							auto drawConsoleOutput = [&](const char* id, const string& title,
 								const string& description, bool& value, auto&& commit)
 							{
@@ -7474,7 +7469,6 @@ SettingSessionCoroutine RunSettingSession()
 										Experimental.Inkeys3.CursorConsoleOutput;
 									QueueConfigWrite();
 								});
-#endif
 
 							ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5.0f * settingGlobalScale);
 							PushStyleVarNum++, ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
