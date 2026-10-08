@@ -413,4 +413,55 @@ namespace Inkeys::UI::Setting::Design
 			actionRight, actionY + measure.actionHeight };
 		return result;
 	}
+	// 说明保留约24个全角字的可读预算；回程留白避免临界宽度反复切换。
+	inline constexpr float DescriptionMinimumWidth = 280.0F;
+	inline constexpr float DescriptionWidthHysteresis = 16.0F;
+
+	struct MultilineRowGeometry
+	{
+		LayoutRect title, description, icon, action;
+		float height = 72.0F;
+	};
+
+	[[nodiscard]] inline float DescriptionWidth(const RowMeasure& measure, float reveal) noexcept
+	{
+		const float fullWidth = measure.width - measure.padding - measure.textLeft;
+		const float expansion = std::clamp(reveal * 2.0F - 1.0F, 0.0F, 1.0F);
+		return measure.textWidth + (fullWidth - measure.textWidth) * expansion;
+	}
+
+	// 先下移说明，再扩展宽度；反向先收窄，保证过渡中的文字始终避开操作区。
+	[[nodiscard]] inline MultilineRowGeometry ResolveMultilineRowLayout(const RowMeasure& measure,
+		float titleHeight, float descriptionHeight, float inlineDescriptionHeight, float reveal) noexcept
+	{
+		const auto inlineRow = ResolveRowLayout(measure, titleHeight + inlineDescriptionHeight);
+		MultilineRowGeometry result;
+		result.icon = inlineRow.icon;
+		result.action = inlineRow.action;
+		result.title = { inlineRow.text.left, inlineRow.text.top, inlineRow.text.right,
+			inlineRow.text.top + titleHeight };
+		result.description = { inlineRow.text.left, result.title.bottom,
+			inlineRow.text.left + DescriptionWidth(measure, reveal), result.title.bottom + descriptionHeight };
+		result.height = inlineRow.height;
+		if (measure.stacked || descriptionHeight == 0.0F) return result;
+		const float movement = std::clamp(reveal * 2.0F, 0.0F, 1.0F);
+		const float headerHeight = (std::max)(titleHeight, measure.actionHeight);
+		auto move = [movement](float from, float to) { return from + (to - from) * movement; };
+		result.title.top = move(result.title.top, measure.padding + (headerHeight - titleHeight) * 0.5F);
+		result.title.bottom = result.title.top + titleHeight;
+		result.action.top = move(result.action.top, measure.padding + (headerHeight - measure.actionHeight) * 0.5F);
+		result.action.bottom = result.action.top + measure.actionHeight;
+		result.description.top = move(inlineRow.text.top + titleHeight, measure.padding + headerHeight + 8.0F);
+		result.description.bottom = result.description.top + descriptionHeight;
+		if (measure.hasIcon)
+		{
+			result.icon.top = move(result.icon.top, measure.padding + (headerHeight - 24.0F) * 0.5F);
+			result.icon.bottom = result.icon.top + 24.0F;
+		}
+		// 卡片和后续行使用当前排版的实际高度，换行期间不裁掉仍然可见的文字。
+		result.height = (std::max)(72.0F, (std::max)({ result.description.bottom,
+			result.title.bottom, result.action.bottom, result.icon.bottom }) + measure.padding);
+		return result;
+	}
+
 }

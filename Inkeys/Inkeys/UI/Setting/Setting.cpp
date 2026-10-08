@@ -2145,6 +2145,8 @@ SettingSessionCoroutine RunSettingSession()
 				settingNavigationClockIdle = false;
 				Design::AdvanceNavigationAnimations(navigationState, navigationDelta,
 					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate);
+				Design::ConfigureRowAnimations(navigationDelta,
+					Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate);
 				const auto shellGeometry = Inkeys::UI::Setting::Design::ResolveShellGeometry(
 					widthDip, static_cast<float>(SettingWindowHeight) / settingGlobalScale, navigationState);
 

@@ -89,6 +89,9 @@ namespace Inkeys::UI::Setting::Design
 		Palette activePalette = lightPalette;
 		bool activeDarkMode = false;
 
+		float rowAnimationDelta = 0.0F, rowAnimationRate = 1.0F;
+		bool rowAnimationsEnabled = false;
+
 		std::string stateOn = "On";
 		std::string stateOff = "Off";
 
@@ -237,6 +240,13 @@ namespace Inkeys::UI::Setting::Design
 		return (std::max)(72.0F, ControlTextWidth(label) / Pixels(1.0F) + 32.0F);
 	}
 
+	void ConfigureRowAnimations(float delta, bool enabled, float rate)
+	{
+		rowAnimationDelta = std::isfinite(delta) ? std::clamp(delta, 0.0F, 0.25F) : 0.0F;
+		rowAnimationRate = std::isfinite(rate) ? std::clamp(rate, 0.1F, 5.0F) : 1.0F;
+		rowAnimationsEnabled = enabled;
+	}
+
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border)
@@ -245,20 +255,49 @@ namespace Inkeys::UI::Setting::Design
 		const float width = ImGui::GetContentRegionAvail().x;
 		const auto measure = MeasureRow(width / Pixels(1.0F), actionWidthDip,
 			actionHeightDip, glyph && *glyph);
+		// Tween 保存在当前 ImGui 窗口的稳定行 ID 下，随会话销毁，不残留跨 context 指针。
+		ImGui::PushID(id);
+		auto* storage = ImGui::GetStateStorage();
+		const auto valueId = ImGui::GetID("##description-value");
+		const auto targetId = ImGui::GetID("##description-target");
+		const auto startId = ImGui::GetID("##description-start");
+		const auto progressId = ImGui::GetID("##description-progress");
+		const auto frameId = ImGui::GetID("##description-frame");
+		NavigationTween tween(storage->GetFloat(valueId));
+		tween.target = storage->GetFloat(targetId);
+		tween.start = storage->GetFloat(startId);
+		tween.progress = storage->GetFloat(progressId);
+		const int frame = ImGui::GetFrameCount(), previousFrame = storage->GetInt(frameId, -2);
+		const bool hasDescription = description && *description;
+		const float threshold = DescriptionMinimumWidth
+			+ (tween.target > 0.5F ? DescriptionWidthHysteresis : 0.0F);
+		const bool below = hasDescription && !measure.stacked && measure.actionWidth > 0.0F
+			&& measure.textWidth < threshold;
+		if (previousFrame < 0 || measure.stacked || !hasDescription) tween.Reset(below ? 1.0F : 0.0F);
+		tween.Target(below ? 1.0F : 0.0F);
+		// 页切换/隐藏期间不计入动画时长；同一帧重复测量不会推进两次。
+		tween.Advance(previousFrame == frame - 1 ? rowAnimationDelta : 0.0F,
+			0.160F / rowAnimationRate, rowAnimationsEnabled);
+		storage->SetFloat(valueId, tween.value); storage->SetFloat(targetId, tween.target);
+		storage->SetFloat(startId, tween.start); storage->SetFloat(progressId, tween.progress);
+		storage->SetInt(frameId, frame);
+		ImGui::PopID();
 		const float titleHeight = TextHeight(title, Pixels(measure.textWidth));
-		const float descriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
-		const auto row = ResolveRowLayout(measure,
-			(titleHeight + descriptionHeight) / Pixels(1.0F));
+		const float inlineDescriptionHeight = TextHeight(description, Pixels(measure.textWidth), ImFluentTextStyle_Caption);
+		const float descriptionHeight = TextHeight(description,
+			Pixels(DescriptionWidth(measure, tween.value)), ImFluentTextStyle_Caption);
+		const auto row = ResolveMultilineRowLayout(measure, titleHeight / Pixels(1.0F),
+			descriptionHeight / Pixels(1.0F), inlineDescriptionHeight / Pixels(1.0F), tween.value);
 		// 整行占位同时登记尾部间隙，最后一行后直接 EndChild 也不会越过内容边界。
 		ImGui::Dummy({ width, Pixels(row.height + RowGap) });
 		ImDrawList* draw = ImGui::GetWindowDrawList();
 		const ImVec2 bottom(origin.x + width, origin.y + Pixels(row.height));
 		draw->AddRectFilled(origin, bottom, fill, Pixels(4.0F));
 		draw->AddRect(origin, bottom, border, Pixels(4.0F));
-		TextAt(title, { origin.x + Pixels(row.text.left), origin.y + Pixels(row.text.top) },
-			Pixels(row.text.Width()));
-		TextAt(description, { origin.x + Pixels(row.text.left), origin.y + Pixels(row.text.top) + titleHeight },
-			Pixels(row.text.Width()), ImFluentTextStyle_Caption, TextSecondary);
+		TextAt(title, { origin.x + Pixels(row.title.left), origin.y + Pixels(row.title.top) },
+			Pixels(row.title.Width()));
+		TextAt(description, { origin.x + Pixels(row.description.left), origin.y + Pixels(row.description.top) },
+			Pixels(row.description.Width()), ImFluentTextStyle_Caption, TextSecondary);
 		if (measure.hasIcon)
 			ImFluent::DrawIcon(glyph,
 				{ origin.x + Pixels(row.icon.left), origin.y + Pixels(row.icon.top) },

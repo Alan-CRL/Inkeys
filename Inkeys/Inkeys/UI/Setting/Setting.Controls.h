@@ -50,6 +50,8 @@ namespace Inkeys::UI::Setting::Design
 	void PageContentStart();
 	float ControlTextWidth(const char* text);
 	float ButtonWidth(const char* label);
+	// 由现有会话在帧边界提供时钟和软件动画偏好，不新增计时器或持久化状态。
+	void ConfigureRowAnimations(float delta, bool enabled, float rate);
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,

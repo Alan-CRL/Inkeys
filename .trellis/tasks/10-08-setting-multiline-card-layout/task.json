@@ -1,0 +1,38 @@
+{
+  "id": "setting-multiline-card-layout",
+  "name": "setting-multiline-card-layout",
+  "title": "设置卡片多行说明与动态布局",
+  "description": "实现默认多行说明卡片、控件占宽时动态通栏说明及可反向切换动画；已获用户明确实现与commit授权，不GUI/push，不归档。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "setting",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-08",
+  "completedAt": null,
+  "branch": "fluent",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-06-setting-winui3-design-rebuild",
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.Design.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.Controls.h",
+    "Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp",
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "InkeysHeadlessTests/setting_design_tests.cpp"
+  ],
+  "notes": "用户先要求仅规划并暂停，随后明确批准实现并要求恢复继续。源码、自动化回归、独立检查与相关规范更新已完成。用户随后明确要求提交本次改动，但不结束任务；保持in_progress，不GUI/push，不自动归档或结束父任务。",
+  "meta": {
+    "implementation_result": "implemented_and_verified",
+    "verification_record": "research/validation.md",
+    "review_record": "research/final-review.md",
+    "commit_authorized": true
+  }
+}

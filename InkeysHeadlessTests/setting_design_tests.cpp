@@ -321,6 +321,258 @@ namespace
 			"text-only rows reclaim icon and action space");
 	}
 
+	void CheckMultilineRowAnimations(Checks& checks, const std::array<ImFont*, 5>& fonts,
+		const std::filesystem::path& fontDirectory, float scale)
+	{
+		const std::array<const char*, 3> languages{ "zh-CN", "zh-TW", "en-US" };
+		for (size_t language = 0; language < languages.size(); ++language)
+		{
+			std::ifstream stream(fontDirectory.parent_path() / "i18n"
+				/ (std::string(languages[language]) + ".jsonc"), std::ios::binary);
+			Json::Value source;
+			Json::CharReaderBuilder reader;
+			std::string errors;
+			if (!Json::parseFromStream(reader, stream, &source, &errors))
+			{
+				checks.Expect(false, "responsive rows load the actual SC/TC/English localization fixtures");
+				continue;
+			}
+			const auto& setting = source["SettingsUI"]["Regular"]["Behavior"]["TopWindow"];
+			const std::string title = setting["N"].asString(), description = setting["E"].asString();
+			checks.Expect(!title.empty() && !description.empty(), "top interval retains its complete localized explanation");
+			Design::BindTextFonts(fonts[language == 1 ? 2 : 0], fonts[language == 1 ? 3 : 1]);
+			ImFluent::SetIconFont(fonts.back());
+			for (bool dark : { false, true })
+			for (int kind = 0; kind < 3; ++kind)
+			{
+				struct Sample { float reveal = 0, target = 0, height = 0; Design::RowMeasure measure; LayoutRect description; };
+				int calls = 0;
+				float value = 1.25F;
+				int selected = 0;
+				bool diagnosed = false;
+				auto draw = [&](float width, float requestedAction, bool enabled, float rate,
+					bool visible = true, float delta = 1.0F / 120.0F,
+					const char* windowId = "##multiline-transition") {
+					Design::ApplyPalette(dark);
+					Design::ConfigureRowAnimations(delta, enabled, rate);
+					auto& io = ImGui::GetIO();
+					io.DeltaTime = (std::max)(delta, 0.001F);
+					io.DisplaySize = { 1440 * scale, 1600 * scale };
+					io.AddMousePosEvent(-1000, -1000); io.AddMouseButtonEvent(0, false);
+					ImGui::NewFrame();
+					ImGui::SetNextWindowPos({ 0, 0 });
+					ImGui::SetNextWindowSize({ width * scale, 1500 * scale });
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+					ImGui::Begin(windowId, nullptr, ImGuiWindowFlags_NoDecoration
+						| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+					ImGui::PopStyleVar();
+					// 相同窗口中的语言/主题/操作分别使用稳定行 ID；另一个窗口验证状态隔离。
+					ImGui::PushID(static_cast<int>(language) * 6 + static_cast<int>(dark) * 3 + kind);
+					Sample sample;
+					if (visible)
+					{
+						const ImVec2 origin = ImGui::GetCursorScreenPos();
+						const float actualWidth = ImGui::GetContentRegionAvail().x / scale;
+						const auto group = Design::ResolveButtonGroup({ Design::ButtonWidth("Restore defaults"),
+							Design::ButtonWidth("Export configuration"), Design::ButtonWidth("More options") },
+							(std::min)(requestedAction, Design::MeasureRow(actualWidth, FLT_MAX, 32).actionWidth));
+						const float actionWidth = kind == 2 ? group.width : kind == 0
+							? (std::min)(240.0F, requestedAction) : requestedAction;
+						const float actionHeight = kind == 2 ? group.height : kind == 1 ? 64.0F : 32.0F;
+						const int firstVertex = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+						int captionEnd = firstVertex;
+						LayoutRect action, clip;
+						std::vector<LayoutRect> controls;
+						bool changed = false;
+						const int previousCalls = calls;
+						Design::SettingRow("responsive", title.c_str(), description.c_str(), "\ue922", actionWidth, actionHeight,
+							[&](const LayoutRect& bounds) {
+								++calls; action = bounds;
+								// Combo 的灰色箭头不是说明字形；在唯一 action 绘制前截取文本顶点。
+								captionEnd = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+								const auto currentClip = ImGui::GetWindowDrawList()->_ClipRectStack.back();
+								clip = { currentClip.x, currentClip.y, currentClip.z, currentClip.w };
+								auto record = [&] {
+									const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+									controls.push_back({ a.x, a.y, b.x, b.y });
+								};
+								if (kind == 0)
+								{
+									bool active = false;
+									changed = Design::SliderAction(bounds, value, 0.5F, 2, active); record();
+									checks.Expect(!active, "responsive idle slider has no active edit");
+								}
+								else if (kind == 1)
+								{
+									const float top = bounds.top + (bounds.Height() - 32 * scale) * 0.5F;
+									ImGui::SetCursorScreenPos({ bounds.left, top });
+									changed |= Design::Button("Reset", { 72 * scale, 32 * scale }); record();
+									ImGui::SetCursorScreenPos({ bounds.left + 80 * scale, top });
+									ImGui::SetNextItemWidth(bounds.Width() - 80 * scale);
+									const char* options[]{ "Medium (3s)", "Long (10s)" };
+									changed |= Design::ComboBox("##choice", &selected, options, 2); record();
+								}
+								else
+									for (size_t index = 0; index < group.items.size(); ++index)
+									{
+										const auto& item = group.items[index];
+										ImGui::SetCursorScreenPos({ bounds.left + item.left * scale, bounds.top + item.top * scale });
+										ImGui::PushID(static_cast<int>(index));
+										changed |= Design::Button("Action", { item.Width() * scale, item.Height() * scale }); record();
+										ImGui::PopID();
+									}
+								});
+						checks.Expect(calls == previousCalls + 1 && !changed && Near(value, 1.25F) && selected == 0,
+							"each animated frame submits exactly one idle action without changing its values");
+						ImGui::PushID("responsive");
+						const auto* storage = ImGui::GetStateStorage();
+						sample.reveal = storage->GetFloat(ImGui::GetID("##description-value"));
+						sample.target = storage->GetFloat(ImGui::GetID("##description-target"));
+						ImGui::PopID();
+						sample.measure = Design::MeasureRow(actualWidth, actionWidth, actionHeight);
+						const auto& measure = sample.measure;
+						const auto geometry = Design::ResolveMultilineRowLayout(measure,
+							Design::TextHeight(title.c_str(), measure.textWidth * scale) / scale,
+							Design::TextHeight(description.c_str(), Design::DescriptionWidth(measure, sample.reveal) * scale,
+								ImFluentTextStyle_Caption) / scale,
+							Design::TextHeight(description.c_str(), measure.textWidth * scale, ImFluentTextStyle_Caption) / scale,
+							sample.reveal);
+						sample.description = geometry.description; sample.height = geometry.height;
+						const LayoutRect card{ 0, 0, actualWidth, geometry.height };
+						checks.Expect(Contains(card, geometry.title) && Contains(card, geometry.description)
+							&& Contains(card, geometry.action) && Contains(card, geometry.icon)
+							&& Disjoint(geometry.title, geometry.action) && Disjoint(geometry.description, geometry.action)
+							&& Disjoint(geometry.title, geometry.description) && Disjoint(geometry.icon, geometry.title)
+							&& Disjoint(geometry.icon, geometry.description) && Disjoint(geometry.icon, geometry.action),
+							"every live row frame contains disjoint title/description/icon/actions");
+						auto physical = [&](const LayoutRect& rect) -> LayoutRect {
+							return { origin.x + rect.left * scale, origin.y + rect.top * scale,
+								origin.x + rect.right * scale, origin.y + rect.bottom * scale };
+						};
+						const auto descriptionBounds = physical(geometry.description);
+						for (const auto& control : controls)
+							checks.Expect(control.left >= action.left - 1 && control.top >= action.top - 1
+								&& control.right <= action.right + 1 && control.bottom <= action.bottom + 1
+								&& Disjoint(control, descriptionBounds) && Disjoint(control, physical(geometry.title))
+								&& Disjoint(control, physical(geometry.icon)),
+								"actual slider/button/combo/group rectangles fit their right-aligned action allocation");
+						checks.Expect(Near(action.right, origin.x + (actualWidth - measure.padding) * scale, 1),
+							"every natural action budget remains right aligned during reflow");
+						const float followingTop = ImGui::GetCursorScreenPos().y;
+						checks.Expect(Near(followingTop, origin.y + (geometry.height + Design::RowGap) * scale, 1),
+							"downstream cursor follows the current complete wrapped-text height");
+						LayoutRect ink{ FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX };
+						const auto* list = ImGui::GetWindowDrawList();
+						int captionVertices = 0;
+						for (int vertex = firstVertex; vertex < captionEnd; ++vertex)
+							if (list->VtxBuffer[vertex].col == Design::TextSecondary)
+							{
+								++captionVertices;
+								const auto point = list->VtxBuffer[vertex].pos;
+								ink.left = (std::min)(ink.left, point.x); ink.right = (std::max)(ink.right, point.x);
+								ink.top = (std::min)(ink.top, point.y); ink.bottom = (std::max)(ink.bottom, point.y);
+							}
+						int visibleGlyphs = 0;
+						ImFluent::PushFont(ImFluentTextStyle_Caption);
+						for (const char* cursor = description.c_str(); *cursor;)
+						{
+							unsigned int codepoint;
+							cursor += ImTextCharFromUtf8(&codepoint, cursor, nullptr);
+							const auto* glyph = ImGui::GetFontBaked()->FindGlyph(static_cast<ImWchar>(codepoint));
+							if (codepoint >= 32 && glyph && glyph->Visible) ++visibleGlyphs;
+						}
+						ImFluent::PopFont();
+						const bool complete = captionVertices == visibleGlyphs * 4;
+						const bool contained = ink.Width() > 0 && Contains(clip, ink)
+							&& ink.left >= descriptionBounds.left - scale && ink.right <= descriptionBounds.right + scale
+							&& ink.top >= descriptionBounds.top - scale && ink.bottom <= descriptionBounds.bottom + scale
+							&& Disjoint(ink, action);
+						checks.Expect(complete, "every non-space localized description glyph is emitted exactly once");
+						checks.Expect(contained, "actual description vertices remain unclipped inside the live text envelope and avoid controls");
+						if ((!complete || !contained) && !diagnosed)
+						{
+							diagnosed = true;
+							std::cerr << "[MultilineInk] language=" << languages[language] << " scale=" << scale
+								<< " dark=" << dark << " kind=" << kind << " width=" << actualWidth << " reveal=" << sample.reveal
+								<< " vertices=" << captionVertices << "/" << visibleGlyphs * 4
+								<< " ink=" << ink.left << ',' << ink.top << ',' << ink.right << ',' << ink.bottom << '\n';
+						}
+						// 下一张真实公共行也提交 item，覆盖连续卡片及末项 End 的 ImGui 占位合同。
+						Design::SettingRow("following", "Following setting", nullptr, nullptr, 80, 32,
+							[&](const LayoutRect& bounds) {
+								checks.Expect(bounds.top >= followingTop
+									&& followingTop >= origin.y + geometry.height * scale,
+									"the next real card and its control start below every visible description glyph");
+								checks.Expect(!Design::Button("Next", { bounds.Width(), bounds.Height() }), "following card has no idle action");
+							});
+						if (kind == 2)
+							checks.Expect(Design::ButtonGroupRow("public-group", "Actions", nullptr, "\ue922",
+								{ { "restore", "Restore defaults" }, { "export", "Export configuration" },
+								{ "more", "More options" } }) == -1, "the actual public wrapping-group row creates no idle event");
+					}
+					ImGui::PopID(); ImGui::End(); ImGui::Render();
+					return sample;
+				};
+				const auto baseline = draw(900, 320, false, 1);
+				const float narrowWidth = baseline.measure.actionWidth + 88 + 220;
+				const float wideWidth = baseline.measure.actionWidth + 88 + 340;
+				const auto first = draw(narrowWidth, 320, true, 1, true, 1.0F / 120, "##multiline-first");
+				checks.Expect(Near(first.reveal, 1), "first appearance resolves directly to the current responsive mode");
+				draw(wideWidth, 320, false, 1);
+				bool intermediate = false;
+				for (int step = 1; step <= 10; ++step)
+				{
+					const auto sample = draw(wideWidth - 12 * step, 320, true, 1);
+					intermediate |= sample.reveal > 0 && sample.reveal < 1;
+				}
+				checks.Expect(intermediate, "progressive window widths produce visible intermediate layouts");
+				draw(wideWidth, 320, false, 1);
+				Sample expanding;
+				for (int frame = 0; frame < 20; ++frame)
+				{
+					expanding = draw(narrowWidth, 320, true, 1);
+					if (expanding.reveal >= 0.65F) break;
+				}
+				checks.Expect(expanding.reveal >= 0.65F && expanding.reveal < 1
+					&& expanding.description.Width() > expanding.measure.textWidth,
+					"reversal is exercised after full-width expansion has actually begun");
+				const auto reverse = draw(wideWidth, 320, true, 1);
+				checks.Expect(reverse.reveal < expanding.reveal && reverse.reveal > 0 && Near(reverse.target, 0),
+					"late reversal shrinks from current visible progress without resetting");
+				for (int frame = 0; frame < 24; ++frame) draw(narrowWidth, 320, true, 1);
+				const auto below = draw(narrowWidth, 320, true, 1);
+				checks.Expect(Near(below.reveal, 1) && Near(below.description.right, narrowWidth - 16, 1)
+					&& below.description.top >= 16 + below.measure.actionHeight,
+					"settled fallback places the complete description below header/action across the full inner width");
+				for (float budget : { 282.0F, 294.0F, 280.0F, 288.0F })
+					checks.Expect(Near(draw(baseline.measure.actionWidth + 88 + budget, 320, true, 1).target, 1),
+						"small width jitter inside the return margin never redirects the layout");
+				const auto immediate = draw(wideWidth, 320, false, 1);
+				checks.Expect(Near(immediate.reveal, 0), "animation disabled settles the real layout immediately");
+				const auto beforeHide = draw(narrowWidth, 320, true, 0.1F);
+				draw(narrowWidth, 320, true, 0.1F, false);
+				const auto resumed = draw(narrowWidth, 320, true, 0.1F, true, 0.25F);
+				checks.Expect(Near(beforeHide.reveal, resumed.reveal), "absent-page clock is excluded on the first visible frame");
+				const auto zeroDelta = draw(narrowWidth, 320, true, 0.1F, true, 0);
+				checks.Expect(Near(resumed.reveal, zeroDelta.reveal), "session resume delta zero excludes hidden wall-clock time");
+				const auto faster = draw(narrowWidth, 320, true, 5);
+				checks.Expect(faster.reveal > zeroDelta.reveal, "changing the existing speed advances from the current rendered progress");
+				const float fixedWidth = baseline.measure.actionWidth + 88 + 240;
+				const auto smallAction = draw(fixedWidth, 160, false, 1);
+				const auto largerAction = draw(fixedWidth, 320, true, 1);
+				checks.Expect(Near(smallAction.reveal, 0) && largerAction.reveal > 0 && Near(largerAction.target, 1),
+					"changing only the natural action budget redirects the complete description");
+				const auto stacked = draw(300, 320, true, 1);
+				checks.Expect(stacked.measure.stacked && Near(stacked.reveal, 0),
+					"extreme narrowing safely stacks the actual controls below the full description in the current frame");
+				checks.Expect(calls > 50 && Near(value, 1.25F) && selected == 0,
+					"real continuous slider/combo/tall wrapping-group frames preserve business values");
+			}
+		}
+		Design::ApplyPalette(false);
+		Design::ConfigureRowAnimations(0, false, 1);
+	}
+
 	void CheckGlyphs(Checks& checks, ImFont* font, const char* face,
 		Design::TypographyMetrics metrics, float scale)
 	{
@@ -2152,6 +2404,7 @@ int RunSettingDesignTests()
 		ImGui::End();
 		ImGui::Render();
 		CheckDrawData(checks);
+		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
 		CheckNavigationScrolling(checks, fonts[0], fonts.back(), scale);
 		if (scale == 1.0F || scale == 1.5F || scale == 1.875F)
 			CheckGeneralSections(checks, fonts[0], fonts[1], fonts.back(), scale);

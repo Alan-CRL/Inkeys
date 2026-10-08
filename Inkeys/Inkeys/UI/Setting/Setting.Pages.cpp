@@ -96,6 +96,7 @@ namespace Inkeys::UI::Setting::Design
 			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
 			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
+			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
 			// 总开关只控制可见性，隐藏子项时保留它们的保存值。
 			if (draft.animation)
 			{
@@ -121,13 +122,11 @@ namespace Inkeys::UI::Setting::Design
 		{
 			SectionHeader(IA(I18nKey.SettingsUI.Regular.Behavior.N).c_str());
 			events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
-				IA(I18nKey.SettingsUI.Design.TopWindowSummary).c_str(), "\ue922", draft.topInterval,
+				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue922", draft.topInterval,
 				{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
 				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
-			Details("top-interval-details", IA(I18nKey.SettingsUI.Design.TopWindowDetails).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str());
 			events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
 				IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
 

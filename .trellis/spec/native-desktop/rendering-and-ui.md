@@ -1949,6 +1949,9 @@ struct NavigationState; // desktopCompact / narrow / overlayOpen
 ShellGeometry ResolveShellGeometry(float widthDip, float heightDip, const NavigationState&);
 RowMeasure MeasureRow(float width, float actionWidth, float actionHeight, bool hasIcon = true);
 RowGeometry ResolveRowLayout(const RowMeasure&, float textHeight);
+MultilineRowGeometry ResolveMultilineRowLayout(const RowMeasure&, float titleHeight,
+    float descriptionHeight, float inlineDescriptionHeight, float reveal);
+void ConfigureRowAnimations(float delta, bool enabled, float rate);
 ImFontConfig HarmonyFontConfig(float rasterizerDensity);
 float TextHeight(const char*, float widthPixels, ImFluentTextStyle);
 void TextAt(const char*, ImVec2, float widthPixels, ImFluentTextStyle, ImU32);
@@ -1960,7 +1963,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 #### 3. Contracts
 
 - NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定，中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/交互与安全/存储与配置，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭/调试固定。三处1 DIP细线替代分组标题；Debug只展开显示（含overlay），无图标、居中自然宽、Caption12 DIP、28 DIP高。ResolveNavigationPaneGeometry先测固定行/分割带/Debug，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
-- RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。action 按实际宽度靠右，正文预算不足时纵排，长文行高由实际字体测量而来。测量不运行 action；一帧只在实际控件绘制时产生事件。
+- RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。按当前内容宽度及 action 自然宽度动态判断文字预算：说明区不足280 DIP时采用标题/action在上、说明下方通栏，返回行内保留16 DIP余量；标题区不足160 DIP时沿用极窄控件换行。以上是项目预算，不是WinUI官方断点，不以控件数量/固定单行判断代替测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
+- 多行说明布局的补间使用当前ImGui窗口与稳定行ID的StateStorage，随context释放；复用NavigationTween、160ms/已有动画速率和设置帧时钟。先使说明下移避开操作，再扩宽；反向先收窄再上移。首次出现按当前预算直接到位，缺席/隐藏后首帧不累计休眠时间，关闭动画即时到位。卡片及下一行的真实ItemSize包含当前换行包络；说明行数随真实宽度离散变化，不靠裁切换取高度平滑，不绘制两套可交互控件或增加配置/线程。置顶间隔完整说明常驻同一卡片，不另设“详细说明”展开块。
 - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
 - 旧 ImFontMain/Strong 保留给标题栏边界；校准 regular/strong 和独立 icon face 常驻同一 atlas/session，全部内容页和导航使用统一文字角色，离开内容区后恢复原角色。禁止重新引入按页面分支选择旧字体。正文/说明/标题保持14/20、12/16、28/36，字面按1.213×TextOpticalScale（当前0.97）校准；控件文字单独使用ControlText（当前13/20）。
 - 所有普通控件通过 Design 的13 DIP字体wrapper；ButtonWidth与默认Button/AccentButton使用同一天然宽公式，显式尺寸仍由调用者决定。ButtonGroupRow先测各按钮自然宽，再按可用预算换行且每行靠右；Action只在实际绘制时执行。导航Debug文字按钮是Caption12 DIP例外；赞助复用普通NavItemEx背景与输入，文字和图标均用与选中条相同的AccentFillDefault亮蓝主题色，选中条统一处理，关闭只覆盖浅深主题criticalText语义色，保持普通背景交互。
@@ -1982,7 +1986,8 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 | --- | --- |
 | 宽窗手动收起 → 窄窗 → 宽窗 | 恢复手动收起，不被自动模式覆盖 |
 | 窄窗打开/关闭 overlay | 正文位置和宽度不变，点击遮罩/Esc/选项可关闭 |
-| 长说明 / 英文按钮组 / 小内容预算 | 文案和 action 不重叠，必要时 action 下移并保持右对齐 |
+| 长说明 / 英文按钮组 / 小内容预算 | 动态采用行内、下方通栏说明或极窄控件换行，完整文案和 action 不重叠且 action 右对齐 |
+| 说明切换 / 扩宽中反向 / 关闭动画 / 缺席恢复 | 从当前值续接，文字完整可见且不覆盖操作；下一行占位跟随当前文字包络，动作每帧一次 |
 | 校准字形超过原名义 FontSize | 使用明确行框；旧页继续原 face，不把新校准全局套进旧 TextWrapped |
 | 最后一张 SettingRow 后直接 EndChild | 无 SetCursor 扩边断言，滚动范围包含整卡与尾 gap |
 | expander 标题过长或 body 被裁剪 | 标题不占用 chevron，完整标题可获知，Begin/End 栈匹配 |
@@ -1996,7 +2001,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 
 #### 6. Tests Required
 
-`RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
+`RunSettingDesignTests` 复用实际 Design/Typography/Controls 和 ImGui/ImFluent CPU core，无 HWND、无 DX11 backend。多行说明回归用实际简/繁/英资源、浅深主题和六倍率连续帧，包含真实滑动条、按钮加下拉框、较高自然宽换行组及下一张卡片。说明顶点在action回调入口截取；Combo箭头也使用TextSecondary，不能在整卡结束后仅按颜色采样冒充说明字形。覆盖导航往返与 overlay、真实中英文测量、action 右锚/重排、SC/TC regular/bold 字形与多行 TextAt 顶点、NavItemEx 图标轴、真实控件 DrawData、末项 SettingRow 后 End。动态 atlas 纹理仅在 CPU 测试中模拟完成，不将测试纹理 ID 传入产品。完整 Solution Debug|ARM64 后运行 `InkeysHeadlessTests.exe --no-window`，仍不声称验证了实际 DX11 呈现或窗口交互。
 
 #### 7. Wrong vs Correct
 

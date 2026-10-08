@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "10-08-setting-publish-baseline-sync",
-    "10-08-setting-sidebar-style-hover"
+    "10-08-setting-sidebar-style-hover",
+    "10-08-setting-multiline-card-layout"
   ],
   "parent": null,
   "relatedFiles": [],
