@@ -1479,3 +1479,38 @@ User reported manual acceptance passed on 2026-10-05 and authorized completion. 
 ### Next Steps
 
 - 继续由setting-winui3-design-rebuild父任务承载其他设置界面工作；本子任务已结束。
+
+
+## Session 53: 调试入口与内容任务验收收尾
+<!-- trellis-session: v=2 fp=08857f9adab99244 -->
+
+**Date**: 2026-10-09
+**Task**: 调试入口与内容任务验收收尾
+**Branch**: `fluent`
+
+### Summary
+
+用户接受调试入口与内容调整；实现及归档已签名提交，父任务继续进行中，不push。后续版本文字色和汉堡反馈另行修改，不继承commit授权。
+
+### Main Changes
+
+- 标题栏Bug入口、蓝条Debug切换、四控制台迁移和完整EDID卡片已交付
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `926db4d0` | feat(settings): move debug entry to titlebar and group diagnostics |
+| `76e33791` | chore(trellis): archive accepted debug entry task |
+
+### Testing
+
+- [OK] 完整ARM64 Solution、完整--no-window、国际化与格式、独立检查通过；用户确认本轮满意
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 沿用设置重建父任务处理版本文字色和汉堡反馈，不GUI，不自动commit/push
